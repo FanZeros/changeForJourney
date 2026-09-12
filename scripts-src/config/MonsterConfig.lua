@@ -735,6 +735,7 @@ function MC.createMonster(monsterId, level, opts)
     -- 根据攻击类型确定攻击力类别
     local category = AD.getAtkCategory(template.atkType)
 
+    ---@type table<any, any>
     local cfg = {
         [AD.MAX_HP]       = maxHp,
         [AD.ATK_INTERVAL] = template.atkInterval,

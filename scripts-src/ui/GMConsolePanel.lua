@@ -1676,6 +1676,7 @@ end
 function HandleGMConsoleTextInput(eventType, eventData)
     -- GM 面板未打开时，转发给兑换码面板
     if not state.open or state.closing then
+        ---@diagnostic disable-next-line: undefined-global
         HandleRedeemTextInput(eventType, eventData)
         return
     end

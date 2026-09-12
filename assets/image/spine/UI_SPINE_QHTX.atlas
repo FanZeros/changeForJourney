@@ -1,0 +1,17 @@
+UI_SPINE_QHTX.png
+size:2048,2048
+filter:Linear,Linear
+pma:true
+cg
+bounds:821,740,255,151
+offsets:20,22,297,194
+rotate:90
+gq
+bounds:0,195,819,800
+offsets:0,4,821,821
+sb
+bounds:0,0,296,193
+ssg
+bounds:0,997,1002,899
+xx
+bounds:1004,1522,374,374

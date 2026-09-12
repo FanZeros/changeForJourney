@@ -20,7 +20,7 @@ local BottomNav        = require("ui.BottomNav")
 local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
 local AvatarFrameBridge = require("systems.AvatarFrameBridge")
-local Draw             = require("ui.CharacterPanelDraw")
+local Draw             = require("ui.CharacterPanelDraw2")
 local HeroResonance    = require("shared.heroes.HeroResonance")
 
 local CharacterPanel = {}

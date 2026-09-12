@@ -255,9 +255,14 @@ function M.draw(vg, scrollY)
     local selectSlotState = getSelectSlotState()
 
     -- 1) 面板背景（裁剪到设计宽度内，防止两侧超出）
+    --    [横屏三联] 共享大背景右半，与左侧城镇构成同一连续世界；竖屏保持原版
     nvgSave(vg)
     nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-    drawImageCentered(vg, img.panelBg, PANEL_BG_CX, PANEL_BG_CY, PANEL_BG_W, PANEL_BG_H, 1.0)
+    if HORIZON_MODE then
+        require("core.HorizonBg").draw(vg, 1, 1.0)
+    else
+        drawImageCentered(vg, img.panelBg, PANEL_BG_CX, PANEL_BG_CY, PANEL_BG_W, PANEL_BG_H, 1.0)
+    end
     nvgResetScissor(vg)
     nvgRestore(vg)
 

@@ -5,6 +5,7 @@
 
 local GameState  = require("core.GameState")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
+local HorizonBg      = require("core.HorizonBg")  -- [横屏三联] 左右共享大背景
 local ExpTable   = require("config.ExpTable")
 local BF         = require("systems.ButtonFeedback")
 
@@ -372,8 +373,12 @@ function TownScene.draw(vg)
     local _TM = require("systems.TutorialManager")
     local _tmActive = _TM.isActive()
 
-    -- 1) 背景
-    drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
+    -- 1) 背景 [横屏三联：共享大背景左半；竖屏保持原版]
+    if HORIZON_MODE then
+        HorizonBg.draw(vg, 0, 1.0)
+    else
+        drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
+    end
 
     -- ---- 上方建筑（从后到前，带点击缩放动画）----
 

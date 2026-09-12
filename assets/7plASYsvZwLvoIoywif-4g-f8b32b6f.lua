@@ -115,7 +115,7 @@ local DEPLOYED_TXT_DY = 1142 - ROW1_CY -- -149
 -- ======================== 滚动区域 ========================
 
 local SCROLL_TOP     = 1050   -- 标题下方
-local SCROLL_BOTTOM  = 2200   -- 底部导航栏顶边
+local SCROLL_BOTTOM  = 2400   -- 屏幕底边（与 ChurchPage 名册一致；避免底部大片留白）
 local SCROLL_LEFT    = 0
 local SCROLL_RIGHT   = DESIGN_W
 

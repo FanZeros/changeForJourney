@@ -6,6 +6,7 @@
 local GameConfig  = require("config.GameConfig")
 local HeroConfig  = require("config.HeroConfig")
 local DrawUtil    = require("core.DrawUtil")
+local DarkIcon    = require("core.DarkIcon")  -- [暗黑化 P1] 矢量弹窗底板
 local ImageCache  = require("ui.ImageCache")
 local RewardPopup = require("ui.RewardPopup")
 local Protocol    = require("shared.Protocol")
@@ -88,13 +89,13 @@ local BTN_TEXT_A = 191  -- 75% of 255
 
 ---@type table
 local DETAIL = {
-    -- 5) 邮件标题
+    -- 5) 邮件标题 [暗黑化: 深棕→骨白，适配暗底]
     TITLE_X = 540, TITLE_Y = 678, TITLE_FONT = 48,
-    TITLE_R = 0x5f, TITLE_G = 0x37, TITLE_B = 0x37,
-    -- 6) 正文段落区域
+    TITLE_R = 0xd8, TITLE_G = 0xc9, TITLE_B = 0xa3,
+    -- 6) 正文段落区域 [暗黑化: 深棕→浅棕]
     BODY_CX = 540, BODY_CY = 1055, BODY_W = 746, BODY_H = 626,
     BODY_FONT = 36,
-    BODY_R = 0x8d, BODY_G = 0x5f, BODY_B = 0x41,
+    BODY_R = 0xc9, BODY_G = 0xb9, BODY_B = 0x8f,
     -- 7) 奖励图标组合（第一个图标的绝对坐标）
     REWARD_FIRST_CX = 247, REWARD_CY = 1482,
     REWARD_FRAME_W = 160, REWARD_FRAME_H = 160,
@@ -154,7 +155,6 @@ local clampDetailScroll  -- forward declaration; body defined after `state`
 
 -- ======================== 图片句柄 ========================
 
-local imgBg       = -1  -- UI_TY_EJQRK.png（九宫格弹窗背景）
 local imgEntryBg  = -1  -- UI_GG_1.png（条目背景）
 local imgBtnDel   = -1  -- UI_AN_LV.png（绿色按钮）
 local imgBtnClaim = -1  -- UI_AN_HUANG.png（黄色按钮）
@@ -343,7 +343,6 @@ end
 
 function Panel.init(vg)
     vg_ = vg
-    imgBg       = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
     imgEntryBg  = nvgCreateImage(vg, "image/UI_GG_1.png", 0)
     imgBtnDel   = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
     imgBtnClaim = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
@@ -404,10 +403,10 @@ function Panel.draw(vg)
     nvgTranslate(vg, -BG.CX, -BG.CY)
     nvgGlobalAlpha(vg, pAlpha)
 
-    -- 2. 九宫格弹窗背景
-    DrawUtil.drawNineSlice(vg, imgBg,
+    -- 2. 弹窗背景 [暗黑化 P1: 矢量九宫格]
+    DarkIcon.drawNine(vg, "panel",
         BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
-        BG.W, BG.H, BG.IT, BG.IR, BG.IB, BG.IL)
+        BG.W, BG.H, { titleH = BG.IT })
 
     -- 3. 标题 "邮件"（描边文字）
     DrawUtil.drawTextStroke(vg, TTL.X, TTL.Y, "邮件",

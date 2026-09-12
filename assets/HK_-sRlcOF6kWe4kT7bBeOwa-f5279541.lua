@@ -466,7 +466,7 @@ ScenarioDialogueConfig.SCENARIO_41 = {
     mode = "large",
     background = "image/关卡地图/MAP_2.png",
     steps = {
-        { characterId = 10, name = "愤怒的铁匠", text = "又是你们这些强盗…吃我一锤！" },
+        { characterId = 10, name = "昆吾", text = "又是你们这些强盗…吃我一锤！" },
         { characterId = 1,  name = "大狗嚼",      text = "你认错人了吧！我们是来救你的。" },
     },
 }
@@ -477,7 +477,7 @@ ScenarioDialogueConfig.SCENARIO_42 = {
     mode = "large",
     background = "image/关卡地图/MAP_2.png",
     steps = {
-        { characterId = 10, name = "愤怒的铁匠", text = "又是你们这些强盗…吃我一锤！" },
+        { characterId = 10, name = "昆吾", text = "又是你们这些强盗…吃我一锤！" },
         { characterId = 2,  name = "奶龙龙",      text = "什么？！喂喂！我们只是路过的冒险家啊！" },
     },
 }
@@ -488,7 +488,7 @@ ScenarioDialogueConfig.SCENARIO_43 = {
     mode = "large",
     background = "image/关卡地图/MAP_2.png",
     steps = {
-        { characterId = 10, name = "愤怒的铁匠", text = "又是你们这些强盗…吃我一锤！" },
+        { characterId = 10, name = "昆吾", text = "又是你们这些强盗…吃我一锤！" },
         { characterId = 3,  name = "叮咚鸡",      text = "…认错人了吧。不过你想打就陪你打……" },
     },
 }

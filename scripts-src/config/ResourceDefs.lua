@@ -20,7 +20,7 @@ ResourceDefs.DEFS = {
     break_protect     = { iconPath = "image/UI_icon_QH_3.png",   quality = 5, name = "点金石" },
     gold_stone        = { iconPath = "image/UI_icon_QH_3.png",   quality = 5, name = "点金石" },  -- 别名
     weapon_scroll     = { iconPath = "image/UI_ICON_JZ_WQ.png",  quality = 3, name = "武器卷轴" },
-    offhand_scroll    = { iconPath = "image/UI_ICON_JZ_FS.png",  quality = 3, name = "副手卷轴" },
+    offhand_scroll    = { iconPath = "image/UI_icon_JZ_FS.png",  quality = 3, name = "副手卷轴" },
     armor_scroll      = { iconPath = "image/UI_ICON_JZ_HJ.png",  quality = 3, name = "护甲卷轴" },
     accessory_scroll  = { iconPath = "image/UI_ICON_JZ_SP.png",  quality = 3, name = "饰品卷轴" },
     random_scroll     = { iconPath = "image/UI_icon_JZ_SJ.png",  quality = 3, name = "随机卷轴" },

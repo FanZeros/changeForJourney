@@ -8,6 +8,7 @@ local GameState   = require("core.GameState")
 local GameEvents  = require("config.GameEvents")
 local EventBus    = require("core.EventBus")
 local PlayerStore = require("client.data.PlayerStore")
+local DarkIcon    = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 
 local BottomNav = {}
 
@@ -63,10 +64,9 @@ local imgNavBg  = -1
 local imgTabBg1 = -1
 local imgTabBg2 = -1
 local imgTabBg3 = -1
-local imgIcons  = {}
+-- [暗黑化 P0] 页签图标/红点改由 core/DarkIcon.lua 程序化矢量绘制，不再加载贴图
 local imgIconUp    = -1   -- ICON_UP.png 强化角标（小）
 local imgIconUpBig = -1   -- ICON_UP_big.png 强化角标（大，选中态用）
-local imgRedDot    = -1   -- ICON_HD.png 红点角标
 
 -- 各标签角标状态: tabBadges[i] = true 表示该标签需要显示角标
 local tabBadges = {}
@@ -105,16 +105,10 @@ function BottomNav.init(vg)
     imgTabBg2 = nvgCreateImage(vg, "image/UI_YWJM_DBAN2.png", 0)
     imgTabBg3 = nvgCreateImage(vg, "image/UI_YWJM_DBAN3.png", 0)
 
-    for i = 1, TAB_COUNT do
-        imgIcons[i] = nvgCreateImage(vg, tabs[i].iconFile, 0)
-        if imgIcons[i] < 0 then
-            print("[BottomNav] WARN: " .. tabs[i].iconFile .. " load failed")
-        end
-    end
+    -- [暗黑化 P0] 页签图标/红点由 core/DarkIcon.lua 矢量绘制，无需加载
 
     imgIconUp    = nvgCreateImage(vg, "image/ICON_UP.png", 0)
     imgIconUpBig = nvgCreateImage(vg, "image/ICON_UP_big.png", 0)
-    imgRedDot    = nvgCreateImage(vg, "image/ICON_HD.png", 0)
 
     -- 根据当前冒险等级初始化标签解锁状态
     BottomNav.refreshUnlockState(vg)
@@ -169,10 +163,10 @@ function BottomNav.draw(vg)
             end
 
             if tab.locked then
-                -- ===== 锁定态（无动画）=====
+                -- ===== 锁定态（无动画）[暗黑化 P0: 矢量图标 45% 透明表示锁定] =====
                 drawImageCentered(vg, imgTabBg3, cx, UNSEL_BG_CY, UNSEL_W, UNSEL_H, 1.0)
-                drawImageCentered(vg, imgIcons[i], cx, unselIconCY,
-                    UNSEL_ICON_SIZE, UNSEL_ICON_SIZE, 1.0)
+                DarkIcon.draw(vg, DarkIcon.NAV_NAMES[i], cx, unselIconCY,
+                    UNSEL_ICON_SIZE, 0.45)
             else
                 -- ===== 动画态 =====
                 -- 插值：位置、大小
@@ -186,8 +180,8 @@ function BottomNav.draw(vg)
                 drawImageCentered(vg, imgTabBg1, cx, bgCY, bgW, bgH, 1 - t)
                 drawImageCentered(vg, imgTabBg2, cx, bgCY, bgW, bgH, t)
 
-                -- 图标（始终可见，位置和大小插值）
-                drawImageCentered(vg, imgIcons[i], cx, iconCY, iconSz, iconSz, 1.0)
+                -- 图标（始终可见，位置和大小插值）[暗黑化 P0: 矢量图标]
+                DarkIcon.draw(vg, DarkIcon.NAV_NAMES[i], cx, iconCY, iconSz, 1.0)
 
                 -- 角标（右上角，跟随图标位置和大小动画）
                 if tabBadges[i] then
@@ -198,10 +192,8 @@ function BottomNav.draw(vg)
                     local badgeX = cx + iconSz * 0.5 - badgeSz * 0.3
                     local badgeY = iconCY - iconSz * 0.5 + badgeSz * 0.3
                     if tabBadgeStyle[i] == "redDot" then
-                        -- 红点样式
-                        if imgRedDot >= 0 then
-                            drawImageCentered(vg, imgRedDot, badgeX, badgeY, badgeSz, badgeSz, 1.0)
-                        end
+                        -- 红点样式 [暗黑化 P0: 余烬光点]
+                        DarkIcon.draw(vg, "reddot", badgeX, badgeY, badgeSz, 1.0)
                     else
                         -- 默认强化箭头样式：选中/未选中切换大小，始终可见
                         local badgeImg = (t >= 0.5) and imgIconUpBig or imgIconUp

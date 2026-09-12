@@ -51,6 +51,7 @@ local SpinePowerUpEffect = require("ui.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.IntroCutscene")
 local SamsaraCG          = require("ui.SamsaraCG")
 local DrawUtil           = require("core.DrawUtil")
+local DarkIcon           = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库 + 画廊验收页
 
 local Standalone = {}
 
@@ -926,6 +927,11 @@ function HandleNanoVGRender(eventType, eventData)
         IntroCutscene.draw(vg)
     end
 
+    -- [暗黑化 P0] 图标画廊验收页（竖屏路径）
+    if DarkIcon.SHOWCASE then
+        DarkIcon.drawShowcase(vg)
+    end
+
     nvgEndFrame(vg)
 end
 
@@ -1048,7 +1054,10 @@ end
 
 -- 完整点击判定：按下+松开位移过大视为滑动，不触发点击
 local TAP_THRESHOLD = 15  -- 按下到松开的最大位移（设计像素），超过视为滑动
-local pressStartDX, pressStartDY = 0, 0
+---@type number
+local pressStartDX = 0
+---@type number
+local pressStartDY = 0
 local pressValid = false  -- 是否有有效的按下记录
 -- 最小点击间隔（防止移动端单击误触发双击）
 local MIN_TAP_INTERVAL = 0.12  -- 秒（120ms）
@@ -1775,6 +1784,17 @@ function HandleNanoVGRenderHorizon()
     if IntroCutscene.isActive() then IntroCutscene.draw(vg) end
     Viewport.finish(vg)
 
+    -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
+    if DarkIcon.SHOWCASE then
+        nvgSave(vg)
+        nvgScissor(vg, 0, 0, logicalW, logicalH)  -- 重置面板 intersect 裁剪
+        local ss = math.min(logicalW / 1080, logicalH / 2400)
+        nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
+        nvgScale(vg, ss, ss)
+        DarkIcon.drawShowcase(vg)
+        nvgRestore(vg)
+    end
+
     nvgEndFrame(vg)
 end
 
@@ -1800,7 +1820,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()
-    pressStartDX, pressStartDY = dx, dy
+    pressStartDX, pressStartDY = dx or 0, dy or 0
     pressValid = (pid ~= 'none')
     if pid == 'none' or pid == 'modal' then return end
     if pid == 'left' then

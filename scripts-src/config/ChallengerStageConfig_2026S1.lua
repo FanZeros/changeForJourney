@@ -2,6 +2,8 @@
 -- ChallengerStageConfig_2026S1 - 挑战者S1关卡配置（普通至炼狱）
 -- 数据源: docs/配置文件/挑战者服 关卡.txt
 -- 注意：本文件按挑战者服配置文档逐行生成，不再对普通 StageConfig 做倍率/等级偏移。
+-- StageEntry 类定义于 config/StageConfig.lua（过大文件 LSP 索引跳过，此处关闭类型提示）
+---@diagnostic disable: type-not-found
 -- ============================================================================
 
 local Base = require("config.StageConfig")

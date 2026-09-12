@@ -5,8 +5,8 @@
 -- ============================================================================
 
 local DrawUtil          = require("core.DrawUtil")
+local DarkIcon          = require("core.DarkIcon")  -- [暗黑化 P1] 矢量面板/按钮
 local drawTextStroke    = DrawUtil.drawTextStroke
-local drawNineSlice     = DrawUtil.drawNineSlice
 local hitTest           = DrawUtil.hitTest
 local BF                = require("systems.ButtonFeedback")
 local ArtifactDefs      = require("shared.artifact.ArtifactDefs")
@@ -97,7 +97,7 @@ local BTN_EQUIP = {
     W = 210, H = 100,
     NP_T = 15, NP_R = 60, NP_B = 15, NP_L = 60,
     FONT = 38,
-    TEXT_R = 0, TEXT_G = 0, TEXT_B = 0, TEXT_A = 191,
+    TEXT_R = 0xd8, TEXT_G = 0xc9, TEXT_B = 0xa3, TEXT_A = 230,
 }
 
 local BTN_REFINE = {
@@ -105,7 +105,7 @@ local BTN_REFINE = {
     W = 250, H = 100,
     NP_T = 15, NP_R = 60, NP_B = 15, NP_L = 60,
     FONT = 34,
-    TEXT_R = 0, TEXT_G = 0, TEXT_B = 0, TEXT_A = 191,
+    TEXT_R = 0xd8, TEXT_G = 0xc9, TEXT_B = 0xa3, TEXT_A = 230,
 }
 
 local REFINE_COST = {
@@ -116,8 +116,6 @@ local REFINE_COST = {
 
 -- ======================== 图片资源 ========================
 
-local imgBg        = {}
-local imgBtnLv     = -1
 local imgPowerIcon = -1
 
 -- ======================== 状态 ========================
@@ -381,10 +379,6 @@ end
 
 function ArtifactDetailPanel.init(vg)
     ImageCache.init(vg)
-    for i = 1, 6 do
-        imgBg[i] = nvgCreateImage(vg, "image/UI_ZBTS_" .. i .. ".png", 0)
-    end
-    imgBtnLv = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
     imgPowerIcon = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
     print("[ArtifactDetailPanel] init OK")
 end
@@ -467,11 +461,10 @@ function ArtifactDetailPanel.draw(vg)
     nvgGlobalAlpha(vg, progress)
 
     local q = math.max(1, math.min(tonumber(artifact.quality) or 1, 6))
-    local bgImg = imgBg[q] or imgBg[1]
-    drawNineSlice(vg, bgImg,
+    DarkIcon.drawNine(vg, "panel",
         BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
         BG.W, BG.H,
-        BG.IT, BG.IR, BG.IB, BG.IL)
+        { titleH = BG.IT, accent = DarkIcon.QUALITY_ACCENTS[q] })
 
     drawArtifactIcon(vg, artifact, ARTIFACT_ICON.CX, ARTIFACT_ICON.CY, ARTIFACT_ICON.W)
 
@@ -551,11 +544,11 @@ function ArtifactDetailPanel.draw(vg)
 
     local buttonLabel = state.location == "slot" and "取下" or "安装"
     local _bfEq = BF.begin(vg, "artifact_detail_equip", BTN_EQUIP.CX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H)
-    drawNineSlice(vg, imgBtnLv,
+    DarkIcon.drawNine(vg, "btn",
         BTN_EQUIP.CX - BTN_EQUIP.W * 0.5,
         BTN_EQUIP.CY - BTN_EQUIP.H * 0.5,
         BTN_EQUIP.W, BTN_EQUIP.H,
-        BTN_EQUIP.NP_T, BTN_EQUIP.NP_R, BTN_EQUIP.NP_B, BTN_EQUIP.NP_L)
+        { accent = "green", radius = BTN_EQUIP.H * 0.3 })
     BF.finish(vg, _bfEq)
 
     nvgFontFace(vg, "sans")
@@ -568,11 +561,11 @@ function ArtifactDetailPanel.draw(vg)
     local _bfRefine = BF.begin(vg, "artifact_detail_refine_value", BTN_REFINE.CX, BTN_REFINE.CY, BTN_REFINE.W, BTN_REFINE.H)
     nvgSave(vg)
     if not canRefine then nvgGlobalAlpha(vg, 0.45) end
-    drawNineSlice(vg, imgBtnLv,
+    DarkIcon.drawNine(vg, "btn",
         BTN_REFINE.CX - BTN_REFINE.W * 0.5,
         BTN_REFINE.CY - BTN_REFINE.H * 0.5,
         BTN_REFINE.W, BTN_REFINE.H,
-        BTN_REFINE.NP_T, BTN_REFINE.NP_R, BTN_REFINE.NP_B, BTN_REFINE.NP_L)
+        { accent = "green", radius = BTN_REFINE.H * 0.3 })
     nvgRestore(vg)
     BF.finish(vg, _bfRefine)
 

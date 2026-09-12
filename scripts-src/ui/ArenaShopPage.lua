@@ -7,6 +7,7 @@
 local GameState   = require("core.GameState")
 local ArenaConfig = require("config.ArenaConfig")
 local DrawUtil        = require("core.DrawUtil")
+local DarkIcon        = require("core.DarkIcon")  -- [dark] vector cards/buttons/panel
 local drawTextStroke  = DrawUtil.drawTextStroke
 local Protocol    = require("shared.Protocol")
 local BF          = require("systems.ButtonFeedback")
@@ -105,13 +106,11 @@ local CARD_STEP_Y = L.CARD_H + L.CARD_GAP_Y
 -- ======================== 图片句柄 ========================
 
 local shopImg = {
-    cardBg = {},    -- 品质1~5 → UI_SDICONBJ_1~5.png
-    buyBtn = -1,    -- UI_SD_AN.png
     itemIcons = {}, -- 每个商品的图标
     costIcons = {}, -- 每个商品的消耗图标
     -- 二级弹窗
-    dialogBg = -1,  -- UI_TY_EJQRK.png
-    buyBtnYellow = -1, -- UI_AN_HUANG.png
+    -- dialogBg/购买按钮已迁移 DarkIcon.drawNine
+
     btnMinus = -1,  -- UI_AN_JIAN.png
     btnPlus = -1,   -- UI_AN_JIA.png
     coinIcon = -1,  -- UI_icon_JJB_X.png（弹窗消耗侧竞技币图标）
@@ -162,9 +161,7 @@ local SCROLL_BOT = 2240       -- tab 栏上方
 
 function ArenaShopPage.init(vg)
     for i = 1, 5 do
-        shopImg.cardBg[i] = nvgCreateImage(vg, "image/UI_SDICONBJ_" .. i .. ".png", 0)
     end
-    shopImg.buyBtn = nvgCreateImage(vg, "image/UI_SD_AN.png", 0)
 
     for idx, item in ipairs(SHOP_ITEMS) do
         shopImg.itemIcons[idx] = nvgCreateImage(vg, item.icon, 0)
@@ -172,8 +169,6 @@ function ArenaShopPage.init(vg)
     end
 
     -- 二级弹窗图片
-    shopImg.dialogBg = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    shopImg.buyBtnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
     shopImg.btnMinus = nvgCreateImage(vg, "image/UI_AN_JIAN.png", 0)
     shopImg.btnPlus = nvgCreateImage(vg, "image/UI_AN_JIA.png", 0)
     shopImg.coinIcon = nvgCreateImage(vg, "image/UI_icon_JJB_X.png", 0)
@@ -200,57 +195,11 @@ local function drawImageCentered(vg, imgH, cx, cy, w, h, alpha)
     nvgBeginPath(vg); nvgRect(vg, x, y, w, h); nvgFillPaint(vg, paint); nvgFill(vg)
 end
 
-local function drawNineSlice(vg, imgH, dx, dy, dw, dh, iTop, iRight, iBottom, iLeft)
-    if imgH < 0 then return end
-    local srcW, srcH = nvgImageSize(vg, imgH)
-    if srcW <= 0 or srcH <= 0 then return end
-    local sL, sR, sT, sB = iLeft, iRight, iTop, iBottom
-    local sMW, sMH = srcW - sL - sR, srcH - sT - sB
-    if sMW <= 0 or sMH <= 0 then
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, imgH, 1.0)
-        nvgBeginPath(vg); nvgRect(vg, dx, dy, dw, dh); nvgFillPaint(vg, paint); nvgFill(vg)
-        return
-    end
-    local OV = 1
-    local ix0, iy0 = math.floor(dx + 0.5), math.floor(dy + 0.5)
-    local dL = math.min(iLeft, dw * 0.5)
-    local dR = math.min(iRight, dw * 0.5)
-    local dT = math.min(iTop, dh * 0.5)
-    local dB = math.min(iBottom, dh * 0.5)
-    local ix1, iy1 = math.floor(dx + dL + 0.5), math.floor(dy + dT + 0.5)
-    local ix2, iy2 = math.floor(dx + dw - dR + 0.5), math.floor(dy + dh - dB + 0.5)
-    local ix3, iy3 = math.floor(dx + dw + 0.5), math.floor(dy + dh + 0.5)
-    local patches = {
-        { ix1-OV, iy1-OV, ix2-ix1+OV*2, iy2-iy1+OV*2, sL, sT, sMW, sMH },
-        { ix1-OV, iy0,    ix2-ix1+OV*2, iy1-iy0+OV,   sL, 0,  sMW, sT  },
-        { ix1-OV, iy2-OV, ix2-ix1+OV*2, iy3-iy2+OV,   sL, sT+sMH, sMW, sB  },
-        { ix0,    iy1-OV, ix1-ix0+OV,   iy2-iy1+OV*2, 0,  sT, sL,  sMH },
-        { ix2-OV, iy1-OV, ix3-ix2+OV,   iy2-iy1+OV*2, sL+sMW, sT, sR, sMH },
-        { ix0,    iy0,    ix1-ix0+OV, iy1-iy0+OV, 0,      0,      sL, sT },
-        { ix2-OV, iy0,    ix3-ix2+OV, iy1-iy0+OV, sL+sMW, 0,      sR, sT },
-        { ix0,    iy2-OV, ix1-ix0+OV, iy3-iy2+OV, 0,      sT+sMH, sL, sB },
-        { ix2-OV, iy2-OV, ix3-ix2+OV, iy3-iy2+OV, sL+sMW, sT+sMH, sR, sB },
-    }
-    nvgShapeAntiAlias(vg, 0)
-    for _, p in ipairs(patches) do
-        local px, py, pw, ph = p[1], p[2], p[3], p[4]
-        local sx, sy, sw, sh = p[5], p[6], p[7], p[8]
-        if pw > 0 and ph > 0 and sw > 0 and sh > 0 then
-            local scX, scY = pw / sw, ph / sh
-            local paint = nvgImagePattern(vg, px - sx * scX, py - sy * scY,
-                srcW * scX, srcH * scY, 0, imgH, 1.0)
-            nvgBeginPath(vg); nvgRect(vg, px, py, pw, ph); nvgFillPaint(vg, paint); nvgFill(vg)
-        end
-    end
-    nvgShapeAntiAlias(vg, 1)
-end
 
 local function hitTest(dx, dy, cx, cy, w, h)
     return dx >= cx - w * 0.5 and dx <= cx + w * 0.5
        and dy >= cy - h * 0.5 and dy <= cy + h * 0.5
 end
-
--- ======================== 弹窗动画辅助 ========================
 
 local function getPopupAnim()
     if shopState.popupClosing then
@@ -283,10 +232,11 @@ local drawPurchaseDialog
 
 local function drawShopCard(vg, idx, item, cx, cy)
     -- 1) 品质背景
-    local bgImg = shopImg.cardBg[item.quality] or shopImg.cardBg[1]
-    drawNineSlice(vg, bgImg,
+    local q = math.min(item.quality or 1, 6)
+    DarkIcon.drawNine(vg, "plain",
         cx - L.CARD_W * 0.5, cy - L.CARD_H * 0.5,
-        L.CARD_W, L.CARD_H, 20, 20, 20, 20)
+        L.CARD_W, L.CARD_H,
+        { accent = DarkIcon.QUALITY_ACCENTS[q] })
 
     local bought = getPurchased(item.id)
     local soldOut = bought >= item.limitCount
@@ -339,9 +289,9 @@ local function drawShopCard(vg, idx, item, cx, cy)
         nvgText(vg, cx, btnCY, "已售罄", nil)
     else
         local _bfCard = BF.begin(vg, "asp_item_" .. idx, cx, btnCY, L.BTN_W, L.BTN_H)
-        drawNineSlice(vg, shopImg.buyBtn,
+        DarkIcon.drawNine(vg, "btn",
             cx - L.BTN_W * 0.5, btnCY - L.BTN_H * 0.5,
-            L.BTN_W, L.BTN_H, 10, 30, 10, 30)
+            L.BTN_W, L.BTN_H, { accent = "green" })
 
         -- 7) 消耗组合（图标 + 价格）居中
         local priceStr = tostring(item.price)
@@ -487,10 +437,10 @@ drawPurchaseDialog = function(vg)
     nvgTranslate(vg, -DLG.BG_CX, -DLG.BG_CY)
     nvgGlobalAlpha(vg, pAlpha)
 
-    -- 2) 背景（九宫格 上150 下100 左右60）
-    drawNineSlice(vg, shopImg.dialogBg,
+    -- 2) 背景 [dark: vector nine-patch]
+    DarkIcon.drawNine(vg, "panel",
         DLG.BG_CX - DLG.BG_W * 0.5, DLG.BG_CY - DLG.BG_H * 0.5,
-        DLG.BG_W, DLG.BG_H, DLG.BG_IT, DLG.BG_IR, DLG.BG_IB, DLG.BG_IL)
+        DLG.BG_W, DLG.BG_H, { titleH = DLG.BG_IT })
 
     -- 3) 标题"购买道具"
     drawTextStroke(vg, DLG.TITLE_CX, DLG.TITLE_CY, "购买道具",
@@ -604,12 +554,12 @@ drawPurchaseDialog = function(vg)
 
     -- 14) 购买按钮
     local _bfBuy = BF.begin(vg, "asp_confirm", DLG.BUY_CX, DLG.BUY_CY, DLG.BUY_W, DLG.BUY_H)
-    drawNineSlice(vg, shopImg.buyBtnYellow,
+    DarkIcon.drawNine(vg, "btn",
         DLG.BUY_CX - DLG.BUY_W * 0.5, DLG.BUY_CY - DLG.BUY_H * 0.5,
-        DLG.BUY_W, DLG.BUY_H, 10, 30, 10, 30)
+        DLG.BUY_W, DLG.BUY_H, { accent = "gold" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.BUY_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 179))
+    nvgFillColor(vg, nvgRGBA(0xd8, 0xc9, 0xa3, 230))
     nvgText(vg, DLG.BUY_CX, DLG.BUY_CY, "购买", nil)
     BF.finish(vg, _bfBuy)
 

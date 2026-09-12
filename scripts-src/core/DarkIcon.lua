@@ -781,8 +781,14 @@ function DarkIcon.drawNine(vg, style, x, y, w, h, opts)
         nvgStroke(vg)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, x, y, w, h, r)
-        strokeC(vg, a, 0, 0, 0, 0.6)
-        nvgStrokeWidth(vg, math.max(1.5, u * 0.008))
+        if opts.accent then
+            -- 语义色描边（品质/稀有度编码的可选支持）
+            strokeC(vg, a, accent[1], accent[2], accent[3], 0.55)
+            nvgStrokeWidth(vg, math.max(1.5, u * 0.02))
+        else
+            strokeC(vg, a, 0, 0, 0, 0.6)
+            nvgStrokeWidth(vg, math.max(1.5, u * 0.008))
+        end
         nvgStroke(vg)
     elseif style == "btn" then
         local br = opts.radius or h * 0.3

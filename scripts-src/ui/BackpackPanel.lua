@@ -7,6 +7,7 @@
 local GameConfig       = require("config.GameConfig")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local DrawUtil         = require("core.DrawUtil")
+local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1] 矢量九宫格
 local GameState        = require("core.GameState")
 local PlayerStore      = require("client.data.PlayerStore")
 local ImageCache       = require("ui.ImageCache")
@@ -188,14 +189,12 @@ local ITEM_DEFS = {
 
 local imgTopBg    = -1  -- UI_BB_BJ.png
 local imgTitleBg  = -1  -- UI_TJP_MC.png（标题背景，与教堂一致）
-local imgPanel    = -1  -- UI_TJP_1.png（下方面板九宫格）
 local imgDeco     = -1  -- UI_JJC_BTBJ.png（标题装饰）
 local imgBtnBack  = -1  -- UI_AN_FH.png（返回按钮）
 local imgTabBg    = -1  -- UI_AN_1.png（Tab 背景）
 local imgSlider   = -1  -- UI_AN_2.png（Tab 滑块）
 local imgBtnYellow = -1 -- UI_AN_HUANG.png（黄色按钮，碎片转化用）
 local imgBtnGreen  = -1 -- UI_AN_LV.png（批量分解/确认分解按钮绿色）
-local imgConfirmBg = -1 -- UI_TY_EJQRK.png（转区确认弹窗）
 local imgPzsx = {}       -- 品质筛选图标 1~5 (UI_ICON_PZSX_1~5)
 local imgCheckmark = -1  -- UI_icon_GOU.png（选中勾选）
 
@@ -216,7 +215,6 @@ local imgLock = -1        -- 锁定角标 UI_ICON_SUO
 -- imgShardIcon 已移至 DrawUtil.drawShardIcon 统一管理
 
 -- 道具详情九宫格背景（品质 1-5）
-local imgItemDetBg = {}  -- [1..5] = nvgImage handle
 
 -- NanoVG 上下文
 local vg_ = nil
@@ -364,76 +362,6 @@ local function getItemIcon(def)
     itemIconCache[def.key] = handle
     return handle
 end
-
---- 九宫格绘制（修正版：仅在 inset 总和超出目标尺寸时按比例缩小，
---- 避免顶部装饰区被 dh*0.5 clamp 压扁）
-local function drawNineSliceLocal(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLeft)
-    if img < 0 then return end
-    local srcW, srcH = nvgImageSize(vg, img)
-    if srcW <= 0 or srcH <= 0 then return end
-
-    local sL, sR, sT, sB = iLeft, iRight, iTop, iBottom
-    local sMW = srcW - sL - sR
-    local sMH = srcH - sT - sB
-
-    -- 水平 inset：仅在左+右超出宽度时按比例缩小
-    local dL, dR = iLeft, iRight
-    if dL + dR > dw then
-        local r = dw / (dL + dR)
-        dL, dR = dL * r, dR * r
-    end
-    -- 垂直 inset：仅在上+下超出高度时按比例缩小
-    local dT, dB = iTop, iBottom
-    if dT + dB > dh then
-        local r = dh / (dT + dB)
-        dT, dB = dT * r, dB * r
-    end
-
-    if sMW <= 0 or sMH <= 0 then
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, img, 1.0)
-        nvgBeginPath(vg); nvgRect(vg, dx, dy, dw, dh)
-        nvgFillPaint(vg, paint); nvgFill(vg)
-        return
-    end
-
-    local ix0 = math.floor(dx + 0.5)
-    local iy0 = math.floor(dy + 0.5)
-    local ix1 = math.floor(dx + dL + 0.5)
-    local iy1 = math.floor(dy + dT + 0.5)
-    local ix2 = math.floor(dx + dw - dR + 0.5)
-    local iy2 = math.floor(dy + dh - dB + 0.5)
-    local ix3 = math.floor(dx + dw + 0.5)
-    local iy3 = math.floor(dy + dh + 0.5)
-
-    local OV = 1
-    local patches = {
-        { ix1-OV, iy1-OV, ix2-ix1+OV*2, iy2-iy1+OV*2, sL, sT, sMW, sMH },
-        { ix1-OV, iy0,    ix2-ix1+OV*2, iy1-iy0+OV,   sL,      0,       sMW, sT  },
-        { ix1-OV, iy2-OV, ix2-ix1+OV*2, iy3-iy2+OV,   sL,      sT+sMH, sMW, sB  },
-        { ix0,    iy1-OV, ix1-ix0+OV,   iy2-iy1+OV*2, 0,       sT,      sL,  sMH },
-        { ix2-OV, iy1-OV, ix3-ix2+OV,   iy2-iy1+OV*2, sL+sMW, sT,      sR,  sMH },
-        { ix0,    iy0,    ix1-ix0+OV,   iy1-iy0+OV,   0,       0,       sL,  sT  },
-        { ix2-OV, iy0,    ix3-ix2+OV,   iy1-iy0+OV,   sL+sMW, 0,       sR,  sT  },
-        { ix0,    iy2-OV, ix1-ix0+OV,   iy3-iy2+OV,   0,       sT+sMH, sL,  sB  },
-        { ix2-OV, iy2-OV, ix3-ix2+OV,   iy3-iy2+OV,   sL+sMW, sT+sMH, sR,  sB  },
-    }
-
-    nvgShapeAntiAlias(vg, 0)
-    for _, p in ipairs(patches) do
-        local px, py, pw, ph = p[1], p[2], p[3], p[4]
-        local sx, sy, sw, sh = p[5], p[6], p[7], p[8]
-        if pw > 0 and ph > 0 and sw > 0 and sh > 0 then
-            local scaleX, scaleY = pw / sw, ph / sh
-            local paint = nvgImagePattern(vg,
-                px - sx * scaleX, py - sy * scaleY,
-                srcW * scaleX, srcH * scaleY, 0, img, 1.0)
-            nvgBeginPath(vg); nvgRect(vg, px, py, pw, ph)
-            nvgFillPaint(vg, paint); nvgFill(vg)
-        end
-    end
-    nvgShapeAntiAlias(vg, 1)
-end
-
 --- 获取背包装备列表（排序: 品质降→等级降）
 --- 包含 equippedByHeroId 和 enhanceLevel 字段（与 EquipmentBag 一致）
 local function getEquipList()
@@ -856,11 +784,9 @@ local function drawTransferConfirm(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
     nvgFill(vg)
 
-    if imgConfirmBg >= 0 then
-        DrawUtil.drawNineSlice(vg, imgConfirmBg,
-            C.BG_CX - C.BG_W * 0.5, C.BG_CY - C.BG_H * 0.5,
-            C.BG_W, C.BG_H, 40, 40, 40, 40)
-    end
+    DarkIcon.drawNine(vg, "plain",
+        C.BG_CX - C.BG_W * 0.5, C.BG_CY - C.BG_H * 0.5,
+        C.BG_W, C.BG_H)
 
     DrawUtil.drawTextStroke(vg, C.TITLE_CX, C.TITLE_CY, title,
         C.TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -934,11 +860,9 @@ local function drawUrConvertDialog(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 150))
     nvgFill(vg)
 
-    if imgConfirmBg >= 0 then
-        DrawUtil.drawNineSlice(vg, imgConfirmBg,
-            C.BG_CX - C.BG_W * 0.5, C.BG_CY - C.BG_H * 0.5,
-            C.BG_W, C.BG_H, 180, 40, 50, 40)
-    end
+    DarkIcon.drawNine(vg, "panel",
+        C.BG_CX - C.BG_W * 0.5, C.BG_CY - C.BG_H * 0.5,
+        C.BG_W, C.BG_H, { titleH = 180 })
 
     DrawUtil.drawTextStroke(vg, C.TITLE_CX, C.TITLE_CY, "选择目标碎片",
         C.TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -1009,14 +933,10 @@ local function drawItemDetail(vg)
     nvgGlobalAlpha(vg, progress)
 
     -- 1. 品质背景九宫格 X=540 Y=1158 530×650
-    local q = def.quality or 1
-    local bgImg = imgItemDetBg[q] or imgItemDetBg[1]
-    if bgImg and bgImg >= 0 then
-        local bgW, bgH = 530, 650
-        local bgX = 540 - bgW * 0.5
-        local bgY = 1158 - bgH * 0.5
-        drawNineSliceLocal(vg, bgImg, bgX, bgY, bgW, bgH, 400, 93, 93, 93)
-    end
+    local q = math.min(def.quality or 1, 6)
+    DarkIcon.drawNine(vg, "panel",
+        540 - 530 * 0.5, 1158 - 650 * 0.5, 530, 650,
+        { titleH = 400, accent = DarkIcon.QUALITY_ACCENTS[q] })
 
     -- 2. 道具名称 X左对齐317 Y893 字号40 白色 黑色描边4
     local itemName = def.name or ""
@@ -1164,14 +1084,12 @@ function Panel.init(vg)
     vg_ = vg
     imgTopBg   = nvgCreateImage(vg, "image/UI_BB_BJ.png", 0)
     imgTitleBg = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
-    imgPanel   = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
     imgDeco    = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
     imgTabBg   = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
     imgSlider  = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
     imgBtnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
     imgBtnGreen  = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    imgConfirmBg = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
     imgLock      = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
     imgCheckmark = nvgCreateImage(vg, "image/UI_icon_GOU.png", 0)
     -- 品质筛选图标
@@ -1180,11 +1098,6 @@ function Panel.init(vg)
     end
 
     -- imgShardIcon 已移至 DrawUtil.drawShardIcon 统一管理
-
-    -- 加载道具详情九宫格背景（品质 1-6，与 EquipmentDetail 使用同一组图片）
-    for i = 1, 6 do
-        imgItemDetBg[i] = nvgCreateImage(vg, "image/UI_ZBTS_" .. i .. ".png", 0)
-    end
 
     -- 加载角色头像角标（与 EquipmentBag 一致）
     HeroAssetUtil.preloadIcons(vg, imgHeroIcons)
@@ -1318,11 +1231,11 @@ function Panel.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, 0, lowerOY)
 
-    -- 2. 下方背景框（九宫格）
-    DrawUtil.drawNineSlice(vg, imgPanel,
+    -- 2. 下方背景框（九宫格）[暗黑化 P1: 矢量九宫格]
+    DarkIcon.drawNine(vg, "panel",
         LOWER_PANEL.CX - LOWER_PANEL.W * 0.5, LOWER_PANEL.CY - LOWER_PANEL.H * 0.5,
         LOWER_PANEL.W, LOWER_PANEL.H,
-        LOWER_PANEL.IT, LOWER_PANEL.IR, LOWER_PANEL.IB, LOWER_PANEL.IL)
+        { titleH = LOWER_PANEL.IT })
 
     -- 4. 标题装饰（装备 tab 不显示，道具 tab 保留）
     if state.tab ~= "equip" then
@@ -1368,9 +1281,9 @@ function Panel.draw(vg)
         if decomposeState.active then
             -- 分解模式：显示「确认分解」+「取消分解」
             local _bf1 = BF.begin(vg, "bp_confirm_dec", BTN_CONFIRM_DEC.CX, BTN_CONFIRM_DEC.CY, BTN_CONFIRM_DEC.W, BTN_CONFIRM_DEC.H)
-            DrawUtil.drawNineSlice(vg, imgBtnYellow,
+            DarkIcon.drawNine(vg, "btn",
                 BTN_CONFIRM_DEC.CX - BTN_CONFIRM_DEC.W * 0.5, BTN_CONFIRM_DEC.CY - BTN_CONFIRM_DEC.H * 0.5,
-                BTN_CONFIRM_DEC.W, BTN_CONFIRM_DEC.H, 20, 20, 20, 20)
+                BTN_CONFIRM_DEC.W, BTN_CONFIRM_DEC.H, { accent = "gold" })
             nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(BTN_CONFIRM_DEC.TEXT_R, BTN_CONFIRM_DEC.TEXT_G, BTN_CONFIRM_DEC.TEXT_B, 255))
@@ -1378,9 +1291,9 @@ function Panel.draw(vg)
             BF.finish(vg, _bf1)
 
             local _bf2 = BF.begin(vg, "bp_batch_dec", BTN_BATCH_DEC.CX, BTN_BATCH_DEC.CY, BTN_BATCH_DEC.W, BTN_BATCH_DEC.H)
-            DrawUtil.drawNineSlice(vg, imgBtnGreen,
+            DarkIcon.drawNine(vg, "btn",
                 BTN_BATCH_DEC.CX - BTN_BATCH_DEC.W * 0.5, BTN_BATCH_DEC.CY - BTN_BATCH_DEC.H * 0.5,
-                BTN_BATCH_DEC.W, BTN_BATCH_DEC.H, 20, 20, 20, 20)
+                BTN_BATCH_DEC.W, BTN_BATCH_DEC.H, { accent = "green" })
             nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(BTN_BATCH_DEC.TEXT_R, BTN_BATCH_DEC.TEXT_G, BTN_BATCH_DEC.TEXT_B, 255))
@@ -1390,9 +1303,9 @@ function Panel.draw(vg)
             -- 默认模式：仅显示「批量分解」（居中）
             local btnCX = 540
             local _bf2 = BF.begin(vg, "bp_batch_dec", btnCX, BTN_BATCH_DEC.CY, BTN_BATCH_DEC.W, BTN_BATCH_DEC.H)
-            DrawUtil.drawNineSlice(vg, imgBtnGreen,
+            DarkIcon.drawNine(vg, "btn",
                 btnCX - BTN_BATCH_DEC.W * 0.5, BTN_BATCH_DEC.CY - BTN_BATCH_DEC.H * 0.5,
-                BTN_BATCH_DEC.W, BTN_BATCH_DEC.H, 20, 20, 20, 20)
+                BTN_BATCH_DEC.W, BTN_BATCH_DEC.H, { accent = "green" })
             nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(BTN_BATCH_DEC.TEXT_R, BTN_BATCH_DEC.TEXT_G, BTN_BATCH_DEC.TEXT_B, 255))

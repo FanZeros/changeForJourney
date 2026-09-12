@@ -136,8 +136,10 @@ ModuleRegistry.modules = {
                 -- roster: 已拥有的英雄 { [heroId] = { level=1, exp=0, ... } }
                 -- 注意: heroId 使用数字 key（与 HeroConfig.HEROES 一致）
                 roster = {},
-                -- deployed: 出战阵容（最多 5 个英雄 ID）
+                -- deployed: 出战阵容（队1 兼容镜像，最多 4 个英雄 ID）
                 deployed = {},
+                -- [三队并行] teams[1..3] 权威三队结构（见 shared/heroes/TeamSlots.lua）
+                teams = {},
                 urShardConvertDayId = 0,
                 urShardConvertCount = 0,
             }
@@ -179,6 +181,11 @@ ModuleRegistry.modules = {
                     data.deployed[1] = heroId
                     break
                 end
+            end
+            -- [三队并行] teams 归一化 + 旧档迁移（deployed → teams[1] 镜像）
+            do
+                local TeamSlots = require("shared.heroes.TeamSlots")
+                TeamSlots.normalize(data)
             end
             -- 兼容旧存档：确保 advBranch 字段中的 branchId 为数字
             -- 兼容旧存档：确保 awakening 字段中的 nodeIndex key 为数字

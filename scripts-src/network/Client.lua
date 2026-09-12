@@ -1069,9 +1069,11 @@ function Client.Start()
     end)
 
     -- 5.4 阵容变更回调：角色面板出战变更→同步服务端+ 本地即时刷新
-    CharacterPanel.setOnTeamChanged(function()
-        -- 收集当前出战 heroId 列表
-        local team = CharacterPanel.getDeployedTeam()
+    -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 仅提交编队（三栏并行战斗 Phase 3 接入）
+    CharacterPanel.setOnTeamChanged(function(teamIdx)
+        teamIdx = tonumber(teamIdx) or 1
+        -- 收集该队出战 heroId 列表
+        local team = CharacterPanel.getDeployedTeam(teamIdx)
         local deployedIds = {}
         for _, unit in ipairs(team) do
             if unit.heroId then
@@ -1079,18 +1081,23 @@ function Client.Start()
             end
         end
 
-        -- 发送完整阵容到服务端（服务端校验后 markDirty 推送回来）
-        Client.sendAction(Protocol.ACTION_TYPES.SET_DEPLOYED, {
+        -- 发送指定队伍的完整阵容到服务端（服务端校验解锁/唯一性后 markDirty 推送回来）
+        Client.sendAction(Protocol.ACTION_TYPES.SET_TEAM, {
+            teamIdx = teamIdx,
             heroIds = deployedIds,
         })
 
-        -- 本地即时更新战斗画面（不等服务端推送）
-        -- 同时更新快照，防止服务端推送回来时触发重复 reloadStage
-        ClientMsgHandler.setLastDeployedSnapshot(ClientMsgHandler.deployedToString(deployedIds))
-        TopBar.setTotalPower(CharacterPanel.getTotalPower())
-        if #team > 0 then
-            BattleScene.setAllies(team)
-            BattleScene.reloadStage()
+        if teamIdx == 1 then
+            -- 本地即时更新战斗画面（不等服务端推送）
+            -- 同时更新快照，防止服务端推送回来时触发重复 reloadStage
+            ClientMsgHandler.setLastDeployedSnapshot(ClientMsgHandler.deployedToString(deployedIds))
+            TopBar.setTotalPower(CharacterPanel.getTotalPower())
+            if #team > 0 then
+                BattleScene.setAllies(team)
+                BattleScene.reloadStage()
+            end
+        else
+            print("[Client] 队伍" .. teamIdx .. " 编队提交: " .. #deployedIds .. " 人（等待服务端校验推送）")
         end
     end)
 

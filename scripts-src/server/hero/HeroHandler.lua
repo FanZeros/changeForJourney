@@ -41,6 +41,24 @@ handlers[Protocol.ACTION_TYPES.SET_DEPLOYED] = function(uid, params)
     }
 end
 
+--- [三队并行] 批量设置指定队伍阵容
+handlers[Protocol.ACTION_TYPES.SET_TEAM] = function(uid, params)
+    local ok, err, result = HeroService.SetTeam(
+        uid,
+        params and params.teamIdx,
+        params and params.heroIds
+    )
+    if not ok then
+        return { success = false, reason = err }
+    end
+    return {
+        success  = true,
+        teamIdx  = result.teamIdx,
+        slots    = result.slots,
+        deployed = result.deployed,
+    }
+end
+
 --- 英雄升级
 handlers[Protocol.ACTION_TYPES.LEVEL_UP_HERO] = function(uid, params)
     local ok, err, result = HeroService.LevelUpHero(uid, params and params.heroId)

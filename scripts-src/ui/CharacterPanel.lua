@@ -50,22 +50,45 @@ local getSlotCX       = Draw.getSlotCX
 local hitTestTeamSlot = Draw.hitTestTeamSlot
 
 -- ======================== 队伍数据 ========================
--- 5 个编队槽位，每个槽位有 3 种状态：
---   locked    = 未解锁
---   empty     = 已解锁但空位
---   occupied  = 已有角色
--- slot.heroId  = 角色 ID（occupied 时有效）
--- slot.level   = 角色等级
--- slot.exp     = 当前经验
--- slot.maxExp  = 升级所需经验
+-- [三队并行] 3 支队伍，每队 4 槽（Draw.MAX_SLOTS）；teamSlots 恒指向当前激活队的槽位数组，
+-- 页面既有逻辑（部署/拖拽/交换/绘制）继续读写 teamSlots，页签切换时重指向。
+-- 槽位状态: locked=未解锁 / empty=已解锁空位 / occupied=已有角色
+local TEAM_COUNT = ExpTable.TEAM_COUNT or 3
 
-local teamSlots = {
-    { state = "occupied", heroId = 1,  level = 5,  exp = 60,  maxExp = ExpTable.getHeroExpForLevel(5) or 40 },
-    { state = "occupied", heroId = 3,  level = 3,  exp = 30,  maxExp = ExpTable.getHeroExpForLevel(3) or 18 },
-    { state = "empty" },
-    { state = "locked" },
-    { state = "locked" },
-}
+---@type table[] teams[i] = { slots = slot[] }
+local teams = {}
+local activeTeamIdx = 1
+local teamSlots = {}       -- = teams[activeTeamIdx].slots（切换页签时重指向）
+
+--- 构建一支队伍的默认槽位
+---@param teamIdx number
+---@return table slots
+local function buildDefaultSlots(teamIdx)
+    local unlocked = ExpTable.getUnlockedSlotCountForTeam(GameState.getLevel())
+    local slots = {}
+    for i = 1, MAX_SLOTS do
+        slots[i] = { state = (i <= unlocked) and "empty" or "locked" }
+    end
+    if teamIdx == 1 then
+        -- 队1 保留旧版默认开局阵容（服务端数据到达后会被 setHeroesData 覆盖）
+        slots[1] = { state = "occupied", heroId = 1, level = 5, exp = 60, maxExp = ExpTable.getHeroExpForLevel(5) or 40 }
+        slots[2] = { state = "occupied", heroId = 3, level = 3, exp = 30, maxExp = ExpTable.getHeroExpForLevel(3) or 18 }
+        slots[3] = { state = "empty" }
+        slots[4] = { state = "locked" }
+    end
+    return slots
+end
+
+for i = 1, TEAM_COUNT do
+    teams[i] = { slots = buildDefaultSlots(i) }
+end
+teamSlots = teams[activeTeamIdx].slots
+
+--- 每队独立的槽位战力缓存（与 teams 同构切换）
+---@type table[] teamPowerCaches[i] = slotPowerCache（索引对应该队槽位）
+local teamPowerCaches = {}
+for i = 1, TEAM_COUNT do teamPowerCaches[i] = {} end
+local slotPowerCache = teamPowerCaches[activeTeamIdx]  -- = 当前队的战力缓存
 
 -- ======================== 滚动状态 ========================
 local scrollY        = 0      -- 当前滚动偏移（>0 表示内容上移）
@@ -78,8 +101,7 @@ local SCROLL_FRICTION = 0.92  -- 惯性摩擦系数（每帧衰减）
 local SCROLL_MIN_VEL  = 0.5   -- 速度低于此值停止惯性
 local SCROLL_WHEEL_STEP = 80  -- 鼠标滚轮每格滚动像素
 
--- 缓存每个槽位的战斗力（避免每帧 createHero）
-local slotPowerCache = {}   -- slotPowerCache[i] = number
+-- 缓存每个槽位的战斗力（避免每帧 createHero）——见上方 teamPowerCaches
 local runtimeOnlyPowerCache = 0  -- RUNTIME_ONLY 天赋节点的固定战力总额
 
 -- 缓存"可提升"角标状态（避免每帧全量扫描背包计算装备战力）
@@ -515,6 +537,9 @@ function CharacterPanel.init(vg)
         getSelectSlotState  = function() return selectSlotState end,
         isHeroDeployed      = isHeroDeployed,
         getUpgradeBadgeCache = function() return upgradeBadgeCache end,
+        getActiveTeamIdx     = function() return activeTeamIdx end,
+        getUnlockedTeamCount = function() return ExpTable.getUnlockedTeamCount(GameState.getLevel()) end,
+        getTeamOccupiedCounts = function() return CharacterPanel.getTeamOccupiedCounts() end,
     })
     Draw.initImages(vg)
 
@@ -533,11 +558,14 @@ function CharacterPanel.init(vg)
         getHeroRoster     = function() return heroRoster end,
     })
 
-    -- 初始化：清空队伍和拥有列表
-    for i = 1, MAX_SLOTS do
-        teamSlots[i] = { state = (i <= 2) and "empty" or "locked" }
-        slotPowerCache[i] = 0
+    -- 初始化：清空队伍和拥有列表（[三队并行] 三队重置为默认槽位）
+    for t = 1, TEAM_COUNT do
+        teams[t].slots = buildDefaultSlots(t)
+        teamPowerCaches[t] = {}
     end
+    activeTeamIdx = 1
+    teamSlots = teams[1].slots
+    slotPowerCache = teamPowerCaches[1]
     ownedSet = {}
 
     -- 解锁并部署初始英雄
@@ -651,7 +679,7 @@ end
 
 --- 将英雄部署到指定槽位
 ---@param heroId number 英雄 ID
----@param slotIdx number 槽位索引（1~5）
+---@param slotIdx number 槽位索引（1~MAX_SLOTS）
 ---@return boolean 是否成功
 local function deployHeroToSlot(heroId, slotIdx)
     local slot = teamSlots[slotIdx]
@@ -661,6 +689,13 @@ local function deployHeroToSlot(heroId, slotIdx)
     local ownData = ownedSet[heroId]
     if not ownData then
         print("[CharacterPanel] 英雄 " .. heroId .. " 未拥有，无法出战")
+        return false
+    end
+
+    -- [三队并行] 跨队唯一性: 已在其他队 → 拒绝
+    local otherTeam = findHeroTeamIdx(heroId)
+    if otherTeam and otherTeam ~= activeTeamIdx then
+        print("[CharacterPanel] 英雄已在队伍 " .. otherTeam .. " 中，同一英雄只能在一队")
         return false
     end
 
@@ -697,7 +732,7 @@ local function deployHeroToSlot(heroId, slotIdx)
     refreshNavBadge()
 
     -- 通知阵容变更
-    if onTeamChangedCallback then onTeamChangedCallback() end
+    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
 
     require("systems.GameSFX").play("ui_loosen")
 
@@ -735,6 +770,13 @@ function CharacterPanel.handleInput(dx, dy)
         return CharacterDetail.handleInput(dx, dy)
     end
 
+    -- 0.5) [三队并行] 队伍页签点击（释放拖拽到页签上会取消拖拽并切队）
+    local tabIdx = Draw.hitTestTeamTabs(dx, dy)
+    if tabIdx then
+        CharacterPanel.setActiveTeam(tabIdx)
+        return true
+    end
+
     -- A) 如果正在拖拽卡片，释放时检测目标槽位
     if dragState.active then
         local slotIdx = hitTestTeamSlot(dx, dy)
@@ -755,7 +797,7 @@ function CharacterPanel.handleInput(dx, dy)
                     print("[CharacterPanel] 移动槽位 " .. srcIdx .. " → " .. slotIdx)
                     rebuildRoster()
                     refreshNavBadge()
-                    if onTeamChangedCallback then onTeamChangedCallback() end
+                    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
                 else
                     -- 两个都有角色，交换
                     teamSlots[srcIdx], teamSlots[slotIdx] = teamSlots[slotIdx], teamSlots[srcIdx]
@@ -763,7 +805,7 @@ function CharacterPanel.handleInput(dx, dy)
                     print("[CharacterPanel] 交换槽位 " .. srcIdx .. " ↔ " .. slotIdx)
                     rebuildRoster()
                     refreshNavBadge()
-                    if onTeamChangedCallback then onTeamChangedCallback() end
+                    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
                 end
             end
         elseif slotIdx and not dragState.fromSlot then
@@ -783,7 +825,7 @@ function CharacterPanel.handleInput(dx, dy)
                 rebuildRoster()
                 refreshPowerCache()
                 refreshNavBadge()
-                if onTeamChangedCallback then onTeamChangedCallback() end
+                if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
             end
         end
         -- 取消拖拽
@@ -1103,13 +1145,16 @@ function CharacterPanel.removeHero(heroId)
         print("[CharacterPanel] 英雄 " .. heroId .. " 未拥有，无法删除")
         return
     end
-    -- 如果该英雄在队伍中，先移除
-    local wasDeployed = false
-    for i = 1, MAX_SLOTS do
-        if teamSlots[i].state == "occupied" and teamSlots[i].heroId == heroId then
-            teamSlots[i] = { state = "empty" }
-            slotPowerCache[i] = 0
-            wasDeployed = true
+    -- 如果该英雄在队伍中，先移除（[三队并行] 扫描全部队伍）
+    local wasInTeam = nil
+    for t = 1, TEAM_COUNT do
+        local slots = teams[t].slots
+        for i = 1, #slots do
+            if slots[i].state == "occupied" and slots[i].heroId == heroId then
+                slots[i] = { state = "empty" }
+                teamPowerCaches[t][i] = 0
+                wasInTeam = wasInTeam or t
+            end
         end
     end
     ownedSet[heroId] = nil
@@ -1119,8 +1164,14 @@ function CharacterPanel.removeHero(heroId)
     rebuildRoster()
     refreshNavBadge()
 
-    -- 如果被删除的英雄原本在队伍中，通知阵容变更
-    if wasDeployed and onTeamChangedCallback then onTeamChangedCallback() end
+    -- 如果被删除的英雄原本在队伍中，通知阵容变更（队1 需重建战斗单元）
+    if wasInTeam then
+        if wasInTeam == 1 then
+            if onTeamChangedCallback then onTeamChangedCallback(1) end
+        elseif wasInTeam == activeTeamIdx then
+            if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
+        end
+    end
 end
 
 --- 检查某英雄是否已拥有
@@ -1153,33 +1204,61 @@ function CharacterPanel.getShards(heroId)
 end
 
 --- 判断某英雄是否已出战（轻量版，不创建 hero 实例）
+--- [三队并行] 扫描全部队伍（同一英雄同一时刻只能在一队）
 ---@param heroId number
 ---@return boolean
 function CharacterPanel.isHeroDeployed(heroId)
-    for i = 1, MAX_SLOTS do
-        local slot = teamSlots[i]
-        if slot.state == "occupied" and slot.heroId == heroId then
-            return true
+    for t = 1, TEAM_COUNT do
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, #slots do
+                local slot = slots[i]
+                if slot.state == "occupied" and slot.heroId == heroId then
+                    return true
+                end
+            end
         end
     end
     return false
 end
 
---- 获取当前出战队伍的战斗单位列表（供 BattleScene 使用）
+--- 查询英雄所在队伍索引（不在任何队返回 nil）
+---@param heroId number
+---@return number|nil
+local function findHeroTeamIdx(heroId)
+    for t = 1, TEAM_COUNT do
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, #slots do
+                local slot = slots[i]
+                if slot.state == "occupied" and slot.heroId == heroId then
+                    return t
+                end
+            end
+        end
+    end
+    return nil
+end
+
+--- 获取指定队伍的战斗单位列表（供 BattleScene / 三栏并行战斗使用）
+--- [三队并行] 缺省 teamIdx=1（主线战斗沿用队1，与旧行为一致）
+---@param teamIdx? number 队伍索引（1~3），缺省 1
 ---@return table[] 战斗单位列表，每项由 HC.createHero 生成，并应用已穿戴装备属性
-function CharacterPanel.getDeployedTeam()
-    -- [DIAG-HERO] 入口：打印当前 teamSlots 快照
+function CharacterPanel.getDeployedTeam(teamIdx)
+    teamIdx = tonumber(teamIdx) or 1
+    local slots = (teams[teamIdx] and teams[teamIdx].slots) or {}
+    -- [DIAG-HERO] 入口：打印当前队伍槽位快照
     do
         local slotInfo = {}
-        for i = 1, MAX_SLOTS do
-            local s = teamSlots[i]
+        for i = 1, #slots do
+            local s = slots[i]
             slotInfo[i] = string.format("%d:%s(%s)", i, s.state, tostring(s.heroId or "-"))
         end
-        print(string.format("[DIAG-HERO] getDeployedTeam ENTER slots={%s}", table.concat(slotInfo, ",")))
+        print(string.format("[DIAG-HERO] getDeployedTeam ENTER team=%d slots={%s}", teamIdx, table.concat(slotInfo, ",")))
     end
     local team = {}
-    for i = 1, MAX_SLOTS do
-        local slot = teamSlots[i]
+    for i = 1, #slots do
+        local slot = slots[i]
         if slot.state == "occupied" and slot.heroId then
             local ownData = ownedSet[slot.heroId]
             local advBranch = ownData and ownData.advBranch or nil
@@ -1237,14 +1316,15 @@ end
 function CharacterPanel.setInitialHeroes(heroIds, level)
     level = level or 1
     INITIAL_HERO_IDS = heroIds
-    -- 清空现有队伍和拥有列表（根据冒险等级动态解锁槽位）
-    local unlocked = ExpTable.getUnlockedSlotCount(GameState.getLevel())
-    for i = 1, MAX_SLOTS do
-        teamSlots[i] = { state = (i <= unlocked) and "empty" or "locked" }
-        slotPowerCache[i] = 0
+    -- [三队并行] 重置三队默认槽位，初始英雄部署到队1（新手阶段仅队1解锁）
+    for t = 1, TEAM_COUNT do
+        teams[t].slots = buildDefaultSlots(t)
     end
+    activeTeamIdx = 1
+    teamSlots = teams[1].slots
+    slotPowerCache = teamPowerCaches[1]
     ownedSet = {}
-    -- 解锁并部署初始英雄
+    -- 解锁并部署初始英雄（队1）
     for idx, heroId in ipairs(heroIds) do
         ownedSet[heroId] = { level = level, exp = 0, maxExp = ExpTable.getHeroExpForLevel(level) or 5 }
         if idx <= 3 then -- 只部署到前3个可用槽位
@@ -1264,7 +1344,7 @@ function CharacterPanel.setInitialHeroes(heroIds, level)
     refreshNavBadge()
     print("[CharacterPanel] 初始英雄设置完成, 数量: " .. #heroIds)
     -- 通知阵容变更
-    if onTeamChangedCallback then onTeamChangedCallback() end
+    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
 end
 
 --- 获取当前队伍总战斗力（各出战槽位战斗力之和）
@@ -1283,11 +1363,71 @@ function CharacterPanel.refreshPower()
 end
 
 --- 获取队伍槽位数据（只读，供 PlayerInfoPanel 显示队伍配置）
---- 返回 teamSlots 数组和 slotPowerCache 数组
+--- 返回当前激活队的 teamSlots 数组和 slotPowerCache 数组
 ---@return table[] teamSlots
 ---@return table slotPowerCache
 function CharacterPanel.getTeamSlotsData()
     return teamSlots, slotPowerCache
+end
+
+-- ======================== [三队并行] 队伍页签 ========================
+
+--- 当前激活队伍索引
+---@return number
+function CharacterPanel.getActiveTeamIdx()
+    return activeTeamIdx
+end
+
+--- 已解锁的队伍数量
+---@return number
+function CharacterPanel.getUnlockedTeamCount()
+    return ExpTable.getUnlockedTeamCount(GameState.getLevel())
+end
+
+--- 各队上阵人数（供页签角标显示）
+---@return number[]
+function CharacterPanel.getTeamOccupiedCounts()
+    local counts = {}
+    for t = 1, TEAM_COUNT do
+        local n = 0
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, #slots do
+                if slots[i].state == "occupied" then n = n + 1 end
+            end
+        end
+        counts[t] = n
+    end
+    return counts
+end
+
+--- 切换当前编辑的队伍（不触发阵容提交，也不影响队1战斗）
+---@param idx number 队伍索引（1~3）
+---@return boolean 是否切换成功
+function CharacterPanel.setActiveTeam(idx)
+    idx = tonumber(idx)
+    if not idx or idx < 1 or idx > TEAM_COUNT then return false end
+    if idx == activeTeamIdx then return true end
+    if idx > ExpTable.getUnlockedTeamCount(GameState.getLevel()) then
+        local needLv = ExpTable.getTeamUnlockLevel(idx)
+        print(string.format("[CharacterPanel] 队伍%d未解锁（需要冒险等级%s）", idx, tostring(needLv)))
+        return false
+    end
+    activeTeamIdx = idx
+    teamSlots = teams[activeTeamIdx].slots
+    slotPowerCache = teamPowerCaches[activeTeamIdx]
+    -- 取消进行中的拖拽/选择，避免跨队错位
+    dragState.active = false
+    dragState.heroId = nil
+    dragState.rosterIdx = nil
+    dragState.fromSlot = nil
+    selectSlotState.active = false
+    selectSlotState.slotIndex = nil
+    rebuildRoster()
+    refreshPowerCache()
+    refreshNavBadge()
+    print("[CharacterPanel] 切换到队伍 " .. idx)
+    return true
 end
 
 --- 查询详情界面是否打开（供外部判断是否需要隐藏 TopBar/BottomNav）
@@ -1298,12 +1438,18 @@ end
 
 --- 刷新槽位解锁状态（冒险等级提升后调用）
 --- 将 locked 但已达到解锁等级的槽位变为 empty，不影响已占用的槽位
+--- [三队并行] 三支队伍的槽位解锁状态一起刷新
 function CharacterPanel.refreshSlotUnlocks()
-    local unlocked = ExpTable.getUnlockedSlotCount(GameState.getLevel())
-    for i = 1, MAX_SLOTS do
-        if teamSlots[i].state == "locked" and i <= unlocked then
-            teamSlots[i] = { state = "empty" }
-            print("[CharacterPanel] 槽位 " .. i .. " 已解锁")
+    local unlocked = ExpTable.getUnlockedSlotCountForTeam(GameState.getLevel())
+    for t = 1, TEAM_COUNT do
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, #slots do
+                if slots[i].state == "locked" and i <= unlocked then
+                    slots[i] = { state = "empty" }
+                    print("[CharacterPanel] 队伍" .. t .. " 槽位 " .. i .. " 已解锁")
+                end
+            end
         end
     end
     refreshPowerCache()
@@ -1373,51 +1519,82 @@ function CharacterPanel.setHeroesData(data)
             table.concat(ownedKeys, ",")))
     end
 
-    -- 同步 deployed → teamSlots
-    if data.deployed then
-        -- 先清空所有槽位（根据冒险等级动态解锁槽位）
-        local unlocked = ExpTable.getUnlockedSlotCount(GameState.getLevel())
+    -- [三队并行] 同步 deployed/teams → teams[1..3].slots
+    -- 队1 以 deployed 为源（兼容镜像）；队2/3 以 data.teams[2..3].slots 为源
+    ---@param ids table heroId 数组
+    ---@return table slots
+    local function buildSlotsFromIds(ids)
+        local unlocked = ExpTable.getUnlockedSlotCountForTeam(GameState.getLevel())
         -- 🔴 防竞态：全量推送时 player 模块可能尚未分发，getLevel() 返回默认值 1
-        -- 此时 unlocked 会偏小。用 deployed 长度作为下限保证已部署槽位不被锁定
-        local deployedCount = data.deployed and #data.deployed or 0
-        if deployedCount > unlocked then
-            unlocked = deployedCount
+        -- 此时 unlocked 会偏小。用已部署长度作为下限保证已部署槽位不被锁定
+        local cnt = ids and #ids or 0
+        if cnt > unlocked then
+            unlocked = cnt
         end
+        local slots = {}
         for i = 1, MAX_SLOTS do
-            teamSlots[i] = { state = (i <= unlocked) and "empty" or "locked" }
-            slotPowerCache[i] = 0
+            slots[i] = { state = (i <= unlocked) and "empty" or "locked" }
         end
-        -- 重新填充
-        for idx, heroId in ipairs(data.deployed) do
+        for idx, heroId in ipairs(ids or {}) do
             local numId = tonumber(heroId) or heroId
             if idx <= MAX_SLOTS then
                 local ownData = ownedSet[numId]
                 if ownData then
-                    teamSlots[idx] = {
+                    slots[idx] = {
                         state  = "occupied",
                         heroId = numId,
                         level  = ownData.level,
                         exp    = ownData.exp,
                         maxExp = ownData.maxExp,
                     }
-                    slotPowerCache[idx] = calcHeroPower(numId, idx)
                 else
-                    -- [DIAG-HERO] 关键：deployed 里的英雄不在 ownedSet 中！
-                    print(string.format("[DIAG-HERO] WARNING: deployed[%d]=%s NOT in ownedSet! Slot stays empty.",
+                    -- [DIAG-HERO] 关键：阵容里的英雄不在 ownedSet 中！
+                    print(string.format("[DIAG-HERO] WARNING: slots[%d]=%s NOT in ownedSet! Slot stays empty.",
                         idx, tostring(numId)))
                 end
             end
         end
-        -- [DIAG-HERO] 填充后的 teamSlots 状态
-        do
-            local slotInfo = {}
-            for i = 1, MAX_SLOTS do
-                local s = teamSlots[i]
-                slotInfo[i] = string.format("slot%d=%s(%s)", i, s.state, tostring(s.heroId or "-"))
+        return slots
+    end
+
+    if data.deployed then
+        teams[1].slots = buildSlotsFromIds(data.deployed)
+    end
+    if data.teams and type(data.teams) == "table" then
+        for t = 2, TEAM_COUNT do
+            local tdata = data.teams[t]
+            if type(tdata) == "table" and type(tdata.slots) == "table" then
+                teams[t].slots = buildSlotsFromIds(tdata.slots)
             end
-            print(string.format("[DIAG-HERO] setHeroesData AFTER_DEPLOY unlocked=%d slots={%s}",
-                unlocked, table.concat(slotInfo, ",")))
         end
+    end
+
+    -- 重算三队战力缓存 + 重指向当前激活队
+    for t = 1, TEAM_COUNT do
+        local cache = teamPowerCaches[t]
+        for k in pairs(cache) do cache[k] = nil end
+        local slots = teams[t].slots
+        for i = 1, #slots do
+            if slots[i].state == "occupied" and slots[i].heroId then
+                cache[i] = calcHeroPower(slots[i].heroId, i)
+            end
+        end
+    end
+    teamSlots = teams[activeTeamIdx].slots
+    slotPowerCache = teamPowerCaches[activeTeamIdx]
+    -- [DIAG-HERO] 填充后的三队状态
+    do
+        local teamsInfo = {}
+        for t = 1, TEAM_COUNT do
+            local ids = {}
+            local slots = teams[t].slots
+            for i = 1, #slots do
+                ids[i] = tostring(slots[i].heroId or (slots[i].state == "locked" and "L" or "-"))
+            end
+            teamsInfo[t] = "T" .. t .. "[" .. table.concat(ids, ",") .. "]"
+        end
+        print(string.format("[DIAG-HERO] setHeroesData AFTER_TEAMS active=%d %s",
+            activeTeamIdx, table.concat(teamsInfo, " ")))
     end
 
     -- 重建显示列表
@@ -1429,11 +1606,14 @@ end
 --- 重置本地角色会话缓存（切区/返回选服时调用）
 --- 服务端数据到达前不保留旧区角色，避免新区空 roster 继续显示旧角色。
 function CharacterPanel.resetSessionData()
-    local unlocked = ExpTable.getUnlockedSlotCount(GameState.getLevel())
-    for i = 1, MAX_SLOTS do
-        teamSlots[i] = { state = (i <= unlocked) and "empty" or "locked" }
-        slotPowerCache[i] = 0
+    -- [三队并行] 重置全部队伍
+    for t = 1, TEAM_COUNT do
+        teams[t].slots = buildDefaultSlots(t)
+        teamPowerCaches[t] = {}
     end
+    activeTeamIdx = 1
+    teamSlots = teams[1].slots
+    slotPowerCache = teamPowerCaches[1]
     runtimeOnlyPowerCache = 0
     ownedSet = {}
     shardMap = {}
@@ -1536,7 +1716,8 @@ function CharacterPanel.setHeroAdvBranch(heroId, branchId, advLevel)
         ownData.advBranch.second = branchId
     end
     -- 触发阵容重建，使战斗单元立即获得新的 advTalentIds
-    if onTeamChangedCallback then onTeamChangedCallback() end
+    -- 转职变更影响战斗单元 → 固定重建队1
+    if onTeamChangedCallback then onTeamChangedCallback(1) end
 end
 
 --- 重置英雄转职（清除 advBranch）
@@ -1546,7 +1727,8 @@ function CharacterPanel.resetHeroAdvBranch(heroId)
     if not ownData then return end
     ownData.advBranch = nil
     -- 触发阵容重建，清除战斗单元上的 advTalentIds
-    if onTeamChangedCallback then onTeamChangedCallback() end
+    -- 转职变更影响战斗单元 → 固定重建队1
+    if onTeamChangedCallback then onTeamChangedCallback(1) end
 end
 
 --- 立即重算并刷新角标（供装备/卸下后即时更新调用）

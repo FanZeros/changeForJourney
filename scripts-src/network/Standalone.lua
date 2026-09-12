@@ -298,8 +298,14 @@ function Standalone.Start()
     end)
 
     -- 5.1 阵容变更回调：角色面板出战变动 → 同步战斗画面 → 重载关卡 → 更新 TopBar 战力
-    CharacterPanel.setOnTeamChanged(function()
-        local team = CharacterPanel.getDeployedTeam()
+    -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 编队先本地生效（并行战斗 Phase 3 接入）
+    CharacterPanel.setOnTeamChanged(function(teamIdx)
+        teamIdx = tonumber(teamIdx) or 1
+        if teamIdx ~= 1 then
+            print("[Standalone] 队伍" .. teamIdx .. " 编队变更（本地内存生效，Phase 3 并行战斗接入）")
+            return
+        end
+        local team = CharacterPanel.getDeployedTeam(1)
         TopBar.setTotalPower(CharacterPanel.getTotalPower())
         if #team > 0 then
             BattleScene.setAllies(team)

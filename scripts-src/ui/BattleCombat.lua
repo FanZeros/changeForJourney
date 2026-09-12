@@ -1315,7 +1315,7 @@ local function performAttack(attacker, targetList, isAlly)
                                 finalDmg = math.floor(finalDmg * affixMult + 0.5)
                             end
                         end
-                        -- 铁憨憨帝国铁壁：拦截队友伤害（takeDamage前）
+                        -- 丽贝卡帝国铁壁：拦截队友伤害（takeDamage前）
                         local tgtIsAllyForAbsorb = not isAlly
                         if isHealer then tgtIsAllyForAbsorb = isAlly end
                         finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, tgtIsAllyForAbsorb, syncUnitHp, result.category)
@@ -1645,7 +1645,7 @@ local function performComboAttack(entry)
         local hit = result.hits[1]
         local finalDmg = (semMult ~= 1.0) and math.floor(hit.damage * semMult) or hit.damage
         finalDmg = applyGlobalDmgMult(finalDmg)
-        -- 铁憨憨帝国铁壁：拦截队友伤害（连击目标与主攻击一致）
+        -- 丽贝卡帝国铁壁：拦截队友伤害（连击目标与主攻击一致）
         local comboTgtIsAlly = not isAlly
         finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, comboTgtIsAlly, syncUnitHp, result.category)
         result.damageDealt = finalDmg
@@ -1706,7 +1706,7 @@ local function performComboAttack(entry)
             end
         end
 
-        -- 连击命中后：让按攻击计数触发的天赋（如熬夜冠军夜华斩）也能被连击推进/触发（仅对应英雄生效）
+        -- 连击命中后：让按攻击计数触发的天赋（如素华夜华斩）也能被连击推进/触发（仅对应英雄生效）
         TAL.onComboAttack(attacker, curTgt, isAlly, targetList, function(tgt, dmg, isTgtAlly, pfx, clr, projOpts)
             local meta = statMetaFromProjOpts(projOpts)
             local function doTalentDamage()

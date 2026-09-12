@@ -83,7 +83,7 @@ local ATK_TYPE_MAP = {
 HC.HEROES = {
     [1] = {
         quality = 1, classId = CC.WARRIOR,
-        title = "初心之剑", name = "大狗嚼",
+        title = "初心之剑", name = "卡琳",
         talentName = "希望之心", talentDesc = "生命值低于70%时，物理攻击力+25%",
         talentId = "karin_hope",
         gender = "female",
@@ -94,7 +94,7 @@ HC.HEROES = {
     },
     [2] = {
         quality = 1, classId = CC.MAGE,
-        title = "魔法学徒", name = "奶龙龙",
+        title = "魔法学徒", name = "麦琪",
         talentName = "火焰精通", talentDesc = "攻击附加持续2秒的[燃烧]效果，对其每秒造成[魔法攻击力*0.2]的火焰伤害",
         talentId = "maki_fire",
         gender = "female",
@@ -105,7 +105,7 @@ HC.HEROES = {
     },
     [3] = {
         quality = 1, classId = CC.RANGER,
-        title = "林风哨卫", name = "叮咚鸡",
+        title = "林风哨卫", name = "琳达",
         talentName = "精准箭矢", talentDesc = "每3次攻击时造成1.5倍伤害",
         talentId = "linda_precision_arrow",
         gender = "female",
@@ -116,7 +116,7 @@ HC.HEROES = {
     },
     [4] = {
         quality = 2, classId = CC.KNIGHT,
-        title = "圣誓之锋", name = "接化发掌门",
+        title = "圣誓之锋", name = "塞西莉亚",
         talentName = "骑士招架", talentDesc = "物理格挡概率+8% 魔法格挡概率+8%，格挡成功时回复3%最大生命值",
         talentId = "cecilia_parry",
         gender = "female",
@@ -127,7 +127,7 @@ HC.HEROES = {
     },
     [5] = {
         quality = 2, classId = CC.WARRIOR,
-        title = "征服者", name = "叠甲怪",
+        title = "征服者", name = "维多利亚",
         talentName = "战斗征服", talentDesc = "每次攻击为自己增加1层[征服]状态，每层提供2%物理攻击力，最多叠加15层",
         talentId = "victoria_conquer",
         gender = "female",
@@ -138,7 +138,7 @@ HC.HEROES = {
     },
     [6] = {
         quality = 2, classId = CC.MAGE,
-        title = "魔术师", name = "阿姨压一压",
+        title = "魔术师", name = "露娜",
         talentName = "闪电精通", talentDesc = "攻击附加持续2秒的[感电]效果，感电使其受到20%额外伤害",
         talentId = "luna_lightning",
         gender = "female",
@@ -149,7 +149,7 @@ HC.HEROES = {
     },
     [7] = {
         quality = 2, classId = CC.RANGER,
-        title = "闪光机兵", name = "信光机兵",
+        title = "闪光机兵", name = "星织",
         talentName = "闪光协议", talentDesc = "每4次攻击后，下一次攻击连击概率+200%",
         talentId = "hoshiori_flash",
         gender = "female",
@@ -160,7 +160,7 @@ HC.HEROES = {
     },
     [8] = {
         quality = 2, classId = CC.ASSASSIN,
-        title = "蓝雀", name = "愤怒的小雀",
+        title = "蓝雀", name = "绫音",
         talentName = "蓝雀之眼", talentDesc = "战斗开始时[标记]一个随机敌人，使其受到的伤害+25%",
         talentId = "ayane_mark",
         gender = "female",
@@ -171,7 +171,7 @@ HC.HEROES = {
     },
     [9] = {
         quality = 2, classId = CC.PRIEST,
-        title = "自然之使", name = "卡皮巴拉",
+        title = "自然之使", name = "芙罗拉",
         talentName = "自然之愈", talentDesc = "每当进行攻击治疗后，使目标在5秒内每秒恢复治疗量的10%",
         talentId = "flora_regen",
         gender = "female",
@@ -182,7 +182,7 @@ HC.HEROES = {
     },
     [10] = {
         quality = 3, classId = CC.KNIGHT,
-        title = "帝国之枪", name = "铁憨憨",
+        title = "帝国之枪", name = "丽贝卡",
         talentName = "帝国铁壁", talentDesc = "生命加成+20%、仇恨倍率×1.5。战斗中为所有队友承受15%伤害。",
         talentId = "rebecca_bulwark",
         gender = "female",
@@ -193,7 +193,7 @@ HC.HEROES = {
     },
     [11] = {
         quality = 3, classId = CC.WARRIOR,
-        title = "斩夜姬", name = "熬夜冠军",
+        title = "斩夜姬", name = "素华",
         talentName = "夜华斩", talentDesc = "每攻击4次斩出2道斩击，斩击优先命中不同敌人，没有多余敌人时可命中同一敌人，造成物理攻击力200%的斩击伤害",
         talentId = "suhua_nightslash",
         gender = "female",
@@ -204,7 +204,7 @@ HC.HEROES = {
     },
     [12] = {
         quality = 3, classId = CC.MAGE,
-        title = "冰晶使者", name = "雪皇",
+        title = "冰晶使者", name = "艾丝翠德",
         talentName = "冰霜精通", talentDesc = "攻击命中敌人时有25%概率[冰冻]1.5秒，使其攻击冷却进度暂停",
         talentId = "astrid_freeze",
         gender = "female",
@@ -215,7 +215,7 @@ HC.HEROES = {
     },
     [13] = {
         quality = 3, classId = CC.RANGER,
-        title = "蔷薇之花", name = "弹弹弹",
+        title = "蔷薇之花", name = "罗莎琳",
         talentName = "弹射箭矢", talentDesc = "射出的箭矢将在敌人之间弹射1次",
         talentId = "rosalyn_ricochet",
         gender = "female",
@@ -226,7 +226,7 @@ HC.HEROES = {
     },
     [14] = {
         quality = 3, classId = CC.ASSASSIN,
-        title = "影子忍者", name = "内鬼",
+        title = "影子忍者", name = "幽夜",
         talentName = "暴击精通", talentDesc = "暴击概率+15% 暴击伤害+50%",
         talentId = "yuuya_crit_mastery",
         gender = "female",
@@ -237,8 +237,8 @@ HC.HEROES = {
     },
     [15] = {
         quality = 3, classId = CC.PRIEST,
-        title = "光之圣女", name = "复活吧爱人",
-        talentName = "圣光复活", talentDesc = "当复活吧爱人在场时其他角色首次死亡时有25%概率立即使其复活",
+        title = "光之圣女", name = "伊丽莎白",
+        talentName = "圣光复活", talentDesc = "当伊丽莎白在场时其他角色首次死亡时有25%概率立即使其复活",
         talentId = "elizabeth_revive",
         gender = "female",
         atkType = AD.ATK_HOLY, atkInterval = 2.0, atkTargets = 3,
@@ -248,7 +248,7 @@ HC.HEROES = {
     },
     [16] = {
         quality = 4, classId = CC.WARRIOR,
-        title = "灵月剑仙", name = "万剑归宗",
+        title = "灵月剑仙", name = "洛星绘",
         talentName = "灵月飞剑", talentDesc = "每隔5秒在周围生成3-6柄飞剑，朝随机敌人飞去，每柄飞剑造成的伤害为这5秒中该角色的累计伤害的50%，仅产生10%仇恨",
         talentId = "luoxing_flying_sword",
         gender = "female",
@@ -259,8 +259,8 @@ HC.HEROES = {
     },
     [20] = {
         quality = 4, classId = CC.MAGE,
-        title = "摘星使", name = "摘星星星人",
-        talentName = "星之守护", talentDesc = "战斗开始召唤[星门]，每2.6秒造成300%魔伤且不产生仇恨。继承摘星星星人与队友魔伤、魔穿150%；攻速/连击缩短间隔，最多40%。连击积累[星痕]，每层使下次星辉伤害+12%，最多5层。",
+        title = "摘星使", name = "梅丽莎",
+        talentName = "星之守护", talentDesc = "战斗开始召唤[星门]，每2.6秒造成300%魔伤且不产生仇恨。继承梅丽莎与队友魔伤、魔穿150%；攻速/连击缩短间隔，最多40%。连击积累[星痕]，每层使下次星辉伤害+12%，最多5层。",
         talentId = "melissa_star_gate",
         gender = "female",
         atkType = AD.ATK_SHADOW, atkInterval = 3.0, atkTargets = 1,
@@ -270,7 +270,7 @@ HC.HEROES = {
     },
     [21] = {
         quality = 3, classId = CC.WARRIOR,
-        title = "银色闪光", name = "闪电卖鸡",
+        title = "银色闪光", name = "亚历克斯",
         talentName = "银光", talentDesc = "每次攻击有25%概率触发[银光]，额外造成物理伤害×150%的闪电伤害，并使目标麻痹0.3秒（进度条暂停）。每拥有80命中率，触发概率+2%（最多额外增加20%）",
         talentId = "alex_silver_flash",
         gender = "male",
@@ -281,7 +281,7 @@ HC.HEROES = {
     },
     [22] = {
         quality = 3, classId = CC.MAGE,
-        title = "精灵使徒", name = "小黑子鸡哥",
+        title = "精灵使徒", name = "赛拉",
         talentName = "法术机关枪", talentDesc = "每攻击20次时，在短时间内连续攻击10次",
         talentId = "sera_spell_gatling",
         gender = "male",
@@ -292,7 +292,7 @@ HC.HEROES = {
     },
     [23] = {
         quality = 3, classId = CC.PRIEST,
-        title = "吟游诗人", name = "Freestyle诗人",
+        title = "吟游诗人", name = "艾尔温",
         talentName = "能量祝福", talentDesc = "每次攻击治疗命中后，溢出治疗能够完全转为能量护盾；并且溢出治疗转化的能量护盾可溢出为临时能量护盾，最多可溢出为目标能量护盾的50%",
         talentId = "elwyn_energy_blessing",
         gender = "male",
@@ -308,26 +308,26 @@ HC.HEROES = {
 -- dmgSubType:  伤害次类型中文名（斩击/粉碎/穿刺/火焰/冰霜/闪电/暗影/神圣/治疗）
 
 local DMG_TYPE_DATA = {
-    [1]  = { HC.DMG_PHYSICAL, "斩击" },   -- 大狗嚼
-    [2]  = { HC.DMG_MAGICAL,  "火焰" },   -- 奶龙龙
-    [3]  = { HC.DMG_PHYSICAL, "穿刺" },   -- 叮咚鸡
-    [4]  = { HC.DMG_PHYSICAL, "粉碎" },   -- 接化发掌门
-    [5]  = { HC.DMG_PHYSICAL, "穿刺" },   -- 叠甲怪
-    [6]  = { HC.DMG_MAGICAL,  "闪电" },   -- 阿姨压一压
-    [7]  = { HC.DMG_MAGICAL,  "闪电" },   -- 信光机兵
-    [8]  = { HC.DMG_PHYSICAL, "斩击" },   -- 愤怒的小雀
-    [9]  = { HC.DMG_HEALING,  "治疗" },   -- 卡皮巴拉
-    [10] = { HC.DMG_PHYSICAL, "粉碎" },   -- 铁憨憨
-    [11] = { HC.DMG_PHYSICAL, "斩击" },   -- 熬夜冠军
-    [12] = { HC.DMG_MAGICAL,  "冰霜" },   -- 雪皇
-    [13] = { HC.DMG_PHYSICAL, "穿刺" },   -- 弹弹弹
-    [14] = { HC.DMG_MAGICAL,  "暗影" },   -- 内鬼
-    [15] = { HC.DMG_HEALING,  "神圣" },   -- 复活吧爱人
-    [16] = { HC.DMG_PHYSICAL, "穿刺" },   -- 万剑归宗
-    [20] = { HC.DMG_MAGICAL,  "暗影" },   -- 摘星星星人
-    [21] = { HC.DMG_PHYSICAL, "斩击" },   -- 闪电卖鸡
-    [22] = { HC.DMG_MAGICAL,  "闪电" },   -- 小黑子鸡哥
-    [23] = { HC.DMG_HEALING,  "神圣" },   -- Freestyle诗人
+    [1]  = { HC.DMG_PHYSICAL, "斩击" },   -- 卡琳
+    [2]  = { HC.DMG_MAGICAL,  "火焰" },   -- 麦琪
+    [3]  = { HC.DMG_PHYSICAL, "穿刺" },   -- 琳达
+    [4]  = { HC.DMG_PHYSICAL, "粉碎" },   -- 塞西莉亚
+    [5]  = { HC.DMG_PHYSICAL, "穿刺" },   -- 维多利亚
+    [6]  = { HC.DMG_MAGICAL,  "闪电" },   -- 露娜
+    [7]  = { HC.DMG_MAGICAL,  "闪电" },   -- 星织
+    [8]  = { HC.DMG_PHYSICAL, "斩击" },   -- 绫音
+    [9]  = { HC.DMG_HEALING,  "治疗" },   -- 芙罗拉
+    [10] = { HC.DMG_PHYSICAL, "粉碎" },   -- 丽贝卡
+    [11] = { HC.DMG_PHYSICAL, "斩击" },   -- 素华
+    [12] = { HC.DMG_MAGICAL,  "冰霜" },   -- 艾丝翠德
+    [13] = { HC.DMG_PHYSICAL, "穿刺" },   -- 罗莎琳
+    [14] = { HC.DMG_MAGICAL,  "暗影" },   -- 幽夜
+    [15] = { HC.DMG_HEALING,  "神圣" },   -- 伊丽莎白
+    [16] = { HC.DMG_PHYSICAL, "穿刺" },   -- 洛星绘
+    [20] = { HC.DMG_MAGICAL,  "暗影" },   -- 梅丽莎
+    [21] = { HC.DMG_PHYSICAL, "斩击" },   -- 亚历克斯
+    [22] = { HC.DMG_MAGICAL,  "闪电" },   -- 赛拉
+    [23] = { HC.DMG_HEALING,  "神圣" },   -- 艾尔温
 }
 
 for id, dmgData in pairs(DMG_TYPE_DATA) do
@@ -342,26 +342,26 @@ end
 -- offhandTypes : 可穿戴副手子类型列表（与 EquipmentConfig.ITEMS[id].type 匹配）
 
 local WEARABLE_DATA = {
-    [1]  = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 大狗嚼(战士)
-    [2]  = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 奶龙龙(法师)
-    [3]  = { w = {"弓箭","单手弩"},                           o = {"轻盾","重盾"} },       -- 叮咚鸡(游侠)
-    [4]  = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"重盾","圣物"} },       -- 接化发掌门(骑士)
-    [5]  = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 叠甲怪(战士)
-    [6]  = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 阿姨压一压(法师)
-    [7]  = { w = {"手铳","魔杖"},                             o = {"魔典","法珠"} },       -- 信光机兵(游侠)
-    [8]  = { w = {"细剑","单手剑"},                           o = {"轻盾","重盾"} },       -- 愤怒的小雀(刺客)
-    [9]  = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 卡皮巴拉(牧师)
-    [10] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"重盾","圣物"} },       -- 铁憨憨(骑士)
-    [11] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 熬夜冠军(战士)
-    [12] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 雪皇(法师)
-    [13] = { w = {"弓箭","单手弩"},                           o = {"轻盾","重盾"} },       -- 弹弹弹(游侠)
-    [14] = { w = {"手铳","匕首","魔杖"},                      o = {"魔典","法珠"} },       -- 内鬼(刺客)
-    [15] = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 复活吧爱人(牧师)
-    [16] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 万剑归宗(战士)
-    [20] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 摘星星星人(法师)
-    [21] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 闪电卖鸡(战士)
-    [22] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 小黑子鸡哥(法师)
-    [23] = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- Freestyle诗人(牧师)
+    [1]  = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 卡琳(战士)
+    [2]  = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 麦琪(法师)
+    [3]  = { w = {"弓箭","单手弩"},                           o = {"轻盾","重盾"} },       -- 琳达(游侠)
+    [4]  = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"重盾","圣物"} },       -- 塞西莉亚(骑士)
+    [5]  = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 维多利亚(战士)
+    [6]  = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 露娜(法师)
+    [7]  = { w = {"手铳","魔杖"},                             o = {"魔典","法珠"} },       -- 星织(游侠)
+    [8]  = { w = {"细剑","单手剑"},                           o = {"轻盾","重盾"} },       -- 绫音(刺客)
+    [9]  = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 芙罗拉(牧师)
+    [10] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"重盾","圣物"} },       -- 丽贝卡(骑士)
+    [11] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 素华(战士)
+    [12] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 艾丝翠德(法师)
+    [13] = { w = {"弓箭","单手弩"},                           o = {"轻盾","重盾"} },       -- 罗莎琳(游侠)
+    [14] = { w = {"手铳","匕首","魔杖"},                      o = {"魔典","法珠"} },       -- 幽夜(刺客)
+    [15] = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 伊丽莎白(牧师)
+    [16] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 洛星绘(战士)
+    [20] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 梅丽莎(法师)
+    [21] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 亚历克斯(战士)
+    [22] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 赛拉(法师)
+    [23] = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 艾尔温(牧师)
 }
 
 for id, wData in pairs(WEARABLE_DATA) do
@@ -532,7 +532,7 @@ function HC._applyHeroTalent(heroId, attrs, awakening)
     local awk = awakening or {}
     local entries = {}
 
-    -- 骑士 接化发掌门 #4: 物理格挡概率+8% 魔法格挡概率+8%
+    -- 骑士 塞西莉亚 #4: 物理格挡概率+8% 魔法格挡概率+8%
     if heroId == 4 then
         entries[#entries + 1] = { key = AD.PHYS_BLOCK_RATE, flat = 8 }
         entries[#entries + 1] = { key = AD.MAG_BLOCK_RATE, flat = 8 }
@@ -541,12 +541,12 @@ function HC._applyHeroTalent(heroId, attrs, awakening)
             entries[#entries + 1] = { key = AD.PHYS_BLOCK_RATIO, flat = 10 }
             entries[#entries + 1] = { key = AD.MAG_BLOCK_RATIO, flat = 10 }
         end
-    -- 游侠 弹弹弹 #13: 觉醒2 物理穿透+10（固定面板属性，需在首次伤害计算前生效）
+    -- 游侠 罗莎琳 #13: 觉醒2 物理穿透+10（固定面板属性，需在首次伤害计算前生效）
     elseif heroId == 13 then
         if awk[2] or awk["2"] then
             entries[#entries + 1] = { key = AD.PHYS_PEN, flat = 10 }
         end
-    -- 刺客 内鬼 #14: 暴击概率+15% 暴击伤害+50%
+    -- 刺客 幽夜 #14: 暴击概率+15% 暴击伤害+50%
     elseif heroId == 14 then
         -- 觉醒3: 暴击率 15→25
         local critRate = 15
@@ -560,17 +560,17 @@ function HC._applyHeroTalent(heroId, attrs, awakening)
         if awk[2] then
             entries[#entries + 1] = { key = AD.DODGE, flat = 15 }
         end
-    -- 战士 闪电卖鸡 #21: 觉醒2 命中+30（觉醒6 护甲在 TalentManager 战斗内动态结算）
+    -- 战士 亚历克斯 #21: 觉醒2 命中+30（觉醒6 护甲在 TalentManager 战斗内动态结算）
     elseif heroId == 21 then
         if awk[2] then
             entries[#entries + 1] = { key = AD.HIT_VALUE, flat = 30 }
         end
-    -- 法师 小黑子鸡哥 #22: 觉醒2 魔法伤害加成+10%
+    -- 法师 赛拉 #22: 觉醒2 魔法伤害加成+10%
     elseif heroId == 22 then
         if awk[2] then
             entries[#entries + 1] = { key = AD.MAG_DMG_BONUS, flat = 10 }
         end
-    -- 牧师 Freestyle诗人 #23: 觉醒6 治疗暴击率+10%
+    -- 牧师 艾尔温 #23: 觉醒6 治疗暴击率+10%
     elseif heroId == 23 then
         if awk[6] then
             entries[#entries + 1] = { key = AD.HEAL_CRIT_RATE, flat = 10 }

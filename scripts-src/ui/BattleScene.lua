@@ -1549,7 +1549,7 @@ function BattleScene.draw(vg)
 
     -- 14.5~14.7 战斗特效
     if SettingsPanel.isEffectsEnabled() then
-        -- 常驻召唤物（摘星星星人星门，漂浮在卡片旁并自转）
+        -- 常驻召唤物（梅丽莎星门，漂浮在卡片旁并自转）
         ProjectileSystem.drawStarGates(vg, allies, ALLY_CARD_CY, getCardCX, true)
         ProjectileSystem.drawStarGates(vg, enemies, ENEMY_CARD_CY, getCardCX, false)
 
@@ -2031,7 +2031,7 @@ function BattleScene.update(dt)
                 local cx = BattleCombat.getCardCX(allies, idx)
                 SpineCardEffect.playRevive(cx, ALLY_CARD_CY)
             else
-                -- 天赋: 死亡拦截（复活吧爱人复活）
+                -- 天赋: 死亡拦截（伊丽莎白复活）
                 local revived = TAL.onAllyDeath(unit, allies, syncUnitHp)
                 if revived then
                     -- 复活成功，跳过死亡处理；播放复活 Spine 特效

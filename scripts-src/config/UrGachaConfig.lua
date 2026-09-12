@@ -178,7 +178,7 @@ UrGachaConfig.UI = {
 
 UrGachaConfig.UP = {
     heroId  = 20,
-    name    = "摘星星星人",
+    name    = "梅丽莎",
     endTime = nil,
 }
 

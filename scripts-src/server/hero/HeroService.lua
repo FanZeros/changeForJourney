@@ -232,7 +232,7 @@ end
 
 -- ======================== 初始英雄选择 ========================
 
---- 新玩家选择初始英雄（替换默认大狗嚼）
+--- 新玩家选择初始英雄（替换默认卡琳）
 ---@param uid number
 ---@param heroId number|nil
 ---@return boolean ok, string? err, table? result

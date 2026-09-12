@@ -21,9 +21,9 @@ local DESIGN_W = 1080
 
 -- ======================== 商品配置 ========================
 -- 数据来源：建筑-酒馆招募.txt「酒馆商店」章节
--- 英雄 ID 对应：1=大狗嚼 2=奶龙龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=阿姨压一压
---               7=信光机兵 8=愤怒的小雀 9=卡皮巴拉 10=铁憨憨 11=熬夜冠军 12=雪皇
---               13=弹弹弹 14=内鬼 15=复活吧爱人 16=万剑归宗 20=摘星星星人
+-- 英雄 ID 对应：1=卡琳 2=麦琪 3=琳达 4=塞西莉亚 5=维多利亚 6=露娜
+--               7=星织 8=绫音 9=芙罗拉 10=丽贝卡 11=素华 12=艾丝翠德
+--               13=罗莎琳 14=幽夜 15=伊丽莎白 16=洛星绘 20=梅丽莎
 
 local SHOP_ITEMS = {
     {
@@ -40,123 +40,123 @@ local SHOP_ITEMS = {
     },
     -- N 碎片（品质3）
     {
-        id = 2, name = "大狗嚼-碎片", quality = 3,
+        id = 2, name = "卡琳-碎片", quality = 3,
         limitCycle = "daily", limitCount = 50, price = 15,
         icon = "image/角色图标/UI_icon_hero_1.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 3, name = "奶龙龙-碎片", quality = 3,
+        id = 3, name = "麦琪-碎片", quality = 3,
         limitCycle = "daily", limitCount = 50, price = 15,
         icon = "image/角色图标/UI_icon_hero_2.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 4, name = "叮咚鸡-碎片", quality = 3,
+        id = 4, name = "琳达-碎片", quality = 3,
         limitCycle = "daily", limitCount = 50, price = 15,
         icon = "image/角色图标/UI_icon_hero_3.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     -- R 碎片（品质4）
     {
-        id = 5, name = "接化发掌门-碎片", quality = 4,
+        id = 5, name = "塞西莉亚-碎片", quality = 4,
         limitCycle = "daily", limitCount = 50, price = 60,
         icon = "image/角色图标/UI_icon_hero_4.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 6, name = "叠甲怪-碎片", quality = 4,
+        id = 6, name = "维多利亚-碎片", quality = 4,
         limitCycle = "daily", limitCount = 50, price = 60,
         icon = "image/角色图标/UI_icon_hero_5.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 7, name = "阿姨压一压-碎片", quality = 4,
+        id = 7, name = "露娜-碎片", quality = 4,
         limitCycle = "daily", limitCount = 50, price = 60,
         icon = "image/角色图标/UI_icon_hero_6.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 8, name = "信光机兵-碎片", quality = 4,
+        id = 8, name = "星织-碎片", quality = 4,
         limitCycle = "daily", limitCount = 50, price = 60,
         icon = "image/角色图标/UI_icon_hero_7.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 9, name = "愤怒的小雀-碎片", quality = 4,
+        id = 9, name = "绫音-碎片", quality = 4,
         limitCycle = "daily", limitCount = 50, price = 60,
         icon = "image/角色图标/UI_icon_hero_8.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 10, name = "卡皮巴拉-碎片", quality = 4,
+        id = 10, name = "芙罗拉-碎片", quality = 4,
         limitCycle = "daily", limitCount = 50, price = 60,
         icon = "image/角色图标/UI_icon_hero_9.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     -- SR 碎片（品质5）
     {
-        id = 11, name = "铁憨憨-碎片", quality = 5,
+        id = 11, name = "丽贝卡-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_10.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 12, name = "熬夜冠军-碎片", quality = 5,
+        id = 12, name = "素华-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_11.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 13, name = "雪皇-碎片", quality = 5,
+        id = 13, name = "艾丝翠德-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_12.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 14, name = "弹弹弹-碎片", quality = 5,
+        id = 14, name = "罗莎琳-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_13.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 15, name = "内鬼-碎片", quality = 5,
+        id = 15, name = "幽夜-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_14.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 16, name = "复活吧爱人-碎片", quality = 5,
+        id = 16, name = "伊丽莎白-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_15.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 17, name = "闪电卖鸡-碎片", quality = 5,
+        id = 17, name = "亚历克斯-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_21.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 18, name = "小黑子鸡哥-碎片", quality = 5,
+        id = 18, name = "赛拉-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_22.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 19, name = "Freestyle诗人-碎片", quality = 5,
+        id = 19, name = "艾尔温-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_23.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 101, name = "万剑归宗-碎片", quality = 6,
+        id = 101, name = "洛星绘-碎片", quality = 6,
         limitCycle = "daily", limitCount = 20, price = 1125, rewardHeroId = 16,
         icon = "image/角色图标/UI_icon_hero_16.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 103, name = "摘星星星人-碎片", quality = 6,
+        id = 103, name = "梅丽莎-碎片", quality = 6,
         limitCycle = "daily", limitCount = 20, price = 1125, rewardHeroId = 20,
         icon = "image/角色图标/UI_icon_hero_20.png",
         costIcon = "image/UI_icon_JGB_X.png",

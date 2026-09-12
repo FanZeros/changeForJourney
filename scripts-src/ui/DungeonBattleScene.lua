@@ -1084,7 +1084,7 @@ function DungeonScene.update(dt)
     end
 
     -- 通天塔亡者遗志等死亡回调必须先于神器复活/亡魂拦截。
-    -- 死亡拦截顺序与主线 BattleScene 保持一致：神器 → 天赋（复活吧爱人复活）→ 判负。
+    -- 死亡拦截顺序与主线 BattleScene 保持一致：神器 → 天赋（伊丽莎白复活）→ 判负。
     for _, unit in ipairs(state.allies) do
         if unit.hp <= 0 and not unit._artifactDeathHandled then
             notifyTowerAllyDeath(unit)

@@ -550,11 +550,11 @@ MC.MONSTERS = {
     [1003] = { quality = 6, name = "???",      atkType = 7, armorType = 5, atkTargets = 5, atkInterval = 5.00, hpRatio = 0.57, atkRatio = 0.57, attrs = {
         [AD.DODGE] = 0.14, [AD.ABNORMAL_RES] = 0.3, [AD.MAG_ARMOR] = 1.43,
     }},
-    [1005] = { quality = 6, name = "大狗嚼?",    atkType = 1, armorType = 3, atkTargets = 1, atkInterval = 1.40, hpRatio = 1.33, atkRatio = 0.93, attrs = {} },
-    [1006] = { quality = 6, name = "奶龙龙?",    atkType = 4, armorType = 5, atkTargets = 2, atkInterval = 2.60, hpRatio = 0.80, atkRatio = 0.52, attrs = {
+    [1005] = { quality = 6, name = "卡琳?",    atkType = 1, armorType = 3, atkTargets = 1, atkInterval = 1.40, hpRatio = 1.33, atkRatio = 0.93, attrs = {} },
+    [1006] = { quality = 6, name = "麦琪?",    atkType = 4, armorType = 5, atkTargets = 2, atkInterval = 2.60, hpRatio = 0.80, atkRatio = 0.52, attrs = {
         [AD.MAG_ARMOR] = 2.00, [AD.MAG_PEN] = 0.40,
     }},
-    [1007] = { quality = 6, name = "叮咚鸡?",    atkType = 3, armorType = 2, atkTargets = 1, atkInterval = 2.00, hpRatio = 1.00, atkRatio = 1.00, attrs = {
+    [1007] = { quality = 6, name = "琳达?",    atkType = 3, armorType = 2, atkTargets = 1, atkInterval = 2.00, hpRatio = 1.00, atkRatio = 1.00, attrs = {
         [AD.DODGE] = 0.25,
     }},
     -- ---- 剧情特殊怪物 ----
@@ -614,8 +614,8 @@ MC.MONSTER_RANGED = {
     [54] = true,  -- 绿龙
     -- ---- 终焉神殿 ----
     [1003] = true, -- ??? (暗影远程)
-    [1006] = true, -- 奶龙龙? (火焰远程)
-    [1007] = true, -- 叮咚鸡? (穿刺远程)
+    [1006] = true, -- 麦琪? (火焰远程)
+    [1007] = true, -- 琳达? (穿刺远程)
 }
 
 -- ======================== 怪物攻击特效映射 ========================
@@ -683,9 +683,9 @@ MC.MONSTER_EFFECTS = {
     [1001] = "EF_MS_7",   -- ??? (近战斩击)
     [1002] = "EF_MS_36",  -- ??? (近战粉碎)
     [1003] = "EF_MS_47",  -- ??? (远程暗影)
-    [1005] = "EF_ATK_1",  -- 大狗嚼? (近战斩击)
-    [1006] = "EF_ATK_2",  -- 奶龙龙? (远程火焰)
-    [1007] = "EF_ATK_3",  -- 叮咚鸡? (远程穿刺)
+    [1005] = "EF_ATK_1",  -- 卡琳? (近战斩击)
+    [1006] = "EF_ATK_2",  -- 麦琪? (远程火焰)
+    [1007] = "EF_ATK_3",  -- 琳达? (远程穿刺)
     -- ---- 剧情特殊怪物 ----
     [1004] = "EF_MS_39",  -- 愤怒的铁匠 (近战粉碎，复用深海巨人特效)
     -- ---- 副本怪物 ----

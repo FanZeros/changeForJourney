@@ -1,3 +1,5 @@
 # 构建工具产物（Maker build 生成，不入库）
 *.meta
 .luarc.json
+# 临时验证入口（离线 validate/截图用）
+_validate_entry.lua

@@ -88,6 +88,7 @@ teamSlots = teams[activeTeamIdx].slots
 ---@type table[] teamPowerCaches[i] = slotPowerCache（索引对应该队槽位）
 local teamPowerCaches = {}
 for i = 1, TEAM_COUNT do teamPowerCaches[i] = {} end
+---@type table
 local slotPowerCache = teamPowerCaches[activeTeamIdx]  -- = 当前队的战力缓存
 
 -- ======================== 滚动状态 ========================
@@ -677,6 +678,24 @@ end
 
 -- ======================== 出战操作 ========================
 
+--- 查询英雄所在队伍索引（不在任何队返回 nil）
+---@param heroId number
+---@return number|nil
+local function findHeroTeamIdx(heroId)
+    for t = 1, TEAM_COUNT do
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, #slots do
+                local slot = slots[i]
+                if slot.state == "occupied" and slot.heroId == heroId then
+                    return t
+                end
+            end
+        end
+    end
+    return nil
+end
+
 --- 将英雄部署到指定槽位
 ---@param heroId number 英雄 ID
 ---@param slotIdx number 槽位索引（1~MAX_SLOTS）
@@ -1222,24 +1241,6 @@ function CharacterPanel.isHeroDeployed(heroId)
     return false
 end
 
---- 查询英雄所在队伍索引（不在任何队返回 nil）
----@param heroId number
----@return number|nil
-local function findHeroTeamIdx(heroId)
-    for t = 1, TEAM_COUNT do
-        local slots = teams[t] and teams[t].slots
-        if slots then
-            for i = 1, #slots do
-                local slot = slots[i]
-                if slot.state == "occupied" and slot.heroId == heroId then
-                    return t
-                end
-            end
-        end
-    end
-    return nil
-end
-
 --- 获取指定队伍的战斗单位列表（供 BattleScene / 三栏并行战斗使用）
 --- [三队并行] 缺省 teamIdx=1（主线战斗沿用队1，与旧行为一致）
 ---@param teamIdx? number 队伍索引（1~3），缺省 1
@@ -1521,7 +1522,7 @@ function CharacterPanel.setHeroesData(data)
 
     -- [三队并行] 同步 deployed/teams → teams[1..3].slots
     -- 队1 以 deployed 为源（兼容镜像）；队2/3 以 data.teams[2..3].slots 为源
-    ---@param ids table heroId 数组
+    ---@param ids table? heroId 数组（可为 nil）
     ---@return table slots
     local function buildSlotsFromIds(ids)
         local unlocked = ExpTable.getUnlockedSlotCountForTeam(GameState.getLevel())
@@ -1571,6 +1572,7 @@ function CharacterPanel.setHeroesData(data)
 
     -- 重算三队战力缓存 + 重指向当前激活队
     for t = 1, TEAM_COUNT do
+        ---@type table
         local cache = teamPowerCaches[t]
         for k in pairs(cache) do cache[k] = nil end
         local slots = teams[t].slots

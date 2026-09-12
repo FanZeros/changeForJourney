@@ -49,7 +49,7 @@ local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
 
 -- 己方场地上限（固定）
-local MAX_FIELD_ALLIES = 5
+local MAX_FIELD_ALLIES = 4
 
 -- ======================== 常量 ========================
 
@@ -62,16 +62,17 @@ local MAP_CX, MAP_CY = 540, 1200
 -- 卡片尺寸（BattleDraw/BattleCombat 各自有副本，此处仅供本文件布局引用）
 local CARD_W, CARD_H = 198, 438
 
--- 敌方战场阴影
-local ENEMY_SHADOW_CX, ENEMY_SHADOW_CY = 540, 804
-local ENEMY_SHADOW_W, ENEMY_SHADOW_H   = 1080, 556
+-- [左4vs右4] 战场阴影改为左右两列（坐标取自 BattleLayout 单一事实源）
+local BattleLayout = require("core.BattleLayout")
+local ENEMY_SHADOW_CX, ENEMY_SHADOW_CY = BattleLayout.ENEMY_COL_X, BattleLayout.FIELD_CY
+local ENEMY_SHADOW_W, ENEMY_SHADOW_H   = 340, 1830
 
--- 己方战场阴影
-local ALLY_SHADOW_CX, ALLY_SHADOW_CY = 540, 1760
-local ALLY_SHADOW_W, ALLY_SHADOW_H   = 1080, 556
+-- [左4vs右4] 己方战场阴影（左列）
+local ALLY_SHADOW_CX, ALLY_SHADOW_CY = BattleLayout.ALLY_COL_X, BattleLayout.FIELD_CY
+local ALLY_SHADOW_W, ALLY_SHADOW_H   = 340, 1830
 
 -- 敌方卡片组 基准坐标（单卡时的 X=540）
-local ENEMY_CARD_CY      = 804
+local ENEMY_CARD_CY      = BattleLayout.FIELD_CY  -- [左4vs右4] 空列表/弹窗兜底锚点
 local ENEMY_TAG_OFFSET_Y  = -215
 local ENEMY_NAME_OFFSET_Y = 90
 local ENEMY_HP_BG_OFFSET_Y = 153
@@ -80,7 +81,7 @@ local ENEMY_ATK_BG_OFFSET_Y = 181
 local ENEMY_LVL_OFFSET_Y = 215
 
 -- 己方卡片组 基准坐标
-local ALLY_CARD_CY       = 1760
+local ALLY_CARD_CY       = BattleLayout.FIELD_CY  -- [左4vs右4] 空列表/特效兜底锚点
 local ALLY_TAG_OFFSET_Y   = -215
 local ALLY_NAME_OFFSET_Y  = 85
 local ALLY_HP_BG_OFFSET_Y = 153
@@ -1551,8 +1552,8 @@ function BattleScene.draw(vg)
     -- 14.5~14.7 战斗特效
     if SettingsPanel.isEffectsEnabled() then
         -- 常驻召唤物（摘星星星人星门，漂浮在卡片旁并自转）
-        ProjectileSystem.drawStarGates(vg, allies, ALLY_CARD_CY, getCardCX, true)
-        ProjectileSystem.drawStarGates(vg, enemies, ENEMY_CARD_CY, getCardCX, false)
+        ProjectileSystem.drawStarGates(vg, allies, ALLY_CARD_CY, getCardCX, true, BattleCombat.getCardCY)
+        ProjectileSystem.drawStarGates(vg, enemies, ENEMY_CARD_CY, getCardCX, false, BattleCombat.getCardCY)
 
         -- 投射物（在卡片之上）
         ProjectileSystem.draw(vg)
@@ -1970,12 +1971,12 @@ function BattleScene.update(dt)
 
                 -- 掉落回调（通知外部生成装备掉落）
                 if onEnemyDropCallback then
-                    local enemyCX = getCardCX(enemies, i)
+                    local enemyCX, enemyCY = BattleCombat.getCardPos(enemies, i)
                     print("[BattleScene] enemy died, calling dropCallback stageId=" .. tostring(currentStageId))
                     onEnemyDropCallback({
                         stageId = currentStageId,
                         enemyCX = enemyCX,
-                        enemyCY = ENEMY_CARD_CY,
+                        enemyCY = enemyCY,
                     })
                 else
                     print("[BattleScene] enemy died, but onEnemyDropCallback is nil!")
@@ -2029,8 +2030,7 @@ function BattleScene.update(dt)
                 for ai, a in ipairs(allies) do
                     if a == unit then idx = ai; break end
                 end
-                local cx = BattleCombat.getCardCX(allies, idx)
-                SpineCardEffect.playRevive(cx, ALLY_CARD_CY)
+                local cx, cy = BattleCombat.getCardPos(allies, idx)                SpineCardEffect.playRevive(cx, cy)
             else
                 -- 天赋: 死亡拦截（复活吧爱人复活）
                 local revived = TAL.onAllyDeath(unit, allies, syncUnitHp)
@@ -2040,8 +2040,7 @@ function BattleScene.update(dt)
                     for ai, a in ipairs(allies) do
                         if a == unit then idx = ai; break end
                     end
-                    local cx = BattleCombat.getCardCX(allies, idx)
-                    SpineCardEffect.playRevive(cx, ALLY_CARD_CY)
+                    local cx, cy = BattleCombat.getCardPos(allies, idx)                    SpineCardEffect.playRevive(cx, cy)
                 else
                     -- 阵亡台词触发
                     SpeechBubble.trigger(unit, "death")
@@ -2202,11 +2201,10 @@ function BattleScene.update(dt)
                     for _, u in ipairs(allies) do
                         if u == unit then isUnitAlly = true; break end
                     end
-                    local cy = isUnitAlly and ALLY_CARD_CY or ENEMY_CARD_CY
                     local list = isUnitAlly and allies or enemies
-                    local cx = DESIGN_W * 0.5
+                    local cx, cy = DESIGN_W * 0.5, BattleLayout.FIELD_CY
                     for ii, u in ipairs(list) do
-                        if u == unit then cx = getCardCX(list, ii); break end
+                        if u == unit then cx, cy = BattleCombat.getCardPos(list, ii); break end
                     end
                     addFloatingText("恢复 +" .. NumberUtil.format(actual), cx, cy, {0, 255, 82}, false)
                     -- 战斗统计：HOT 持续治疗输出（来源为己方英雄时归因）
@@ -2272,10 +2270,9 @@ function BattleScene.update(dt)
                         syncUnitHp(u)
                         -- 显示回血浮字，让玩家看到 HP_REGEN 的实际回复量
                         local list = entry.isAlly and allies or enemies
-                        local cy = entry.isAlly and ALLY_CARD_CY or ENEMY_CARD_CY
-                        local cx = DESIGN_W * 0.5
+                        local cx, cy = DESIGN_W * 0.5, BattleLayout.FIELD_CY
                         for ii, uu in ipairs(list) do
-                            if uu == u then cx = getCardCX(list, ii); break end
+                            if uu == u then cx, cy = BattleCombat.getCardPos(list, ii); break end
                         end
                         addFloatingText("回复 +" .. NumberUtil.format(actual), cx, cy, {0, 255, 82}, false)
                     end
@@ -2908,8 +2905,7 @@ function BattleScene.refreshAllyStats()
                         for ai, a in ipairs(allies) do
                             if a == u then idx = ai; break end
                         end
-                        local cx = BattleCombat.getCardCX(allies, idx)
-                        SpineCardEffect.playLevelUp(cx, ALLY_CARD_CY)
+                        local cx, cy = BattleCombat.getCardPos(allies, idx)                        SpineCardEffect.playLevelUp(cx, cy)
                     else
                         print(string.format("[BattleScene] refreshAllyStats: hero %s attrs refreshed (equip/awaken change), pending",
                             tostring(u.heroId)))
@@ -3089,8 +3085,7 @@ updateLongPress = function()
 
     for i, u in ipairs(enemies) do
         if u.hp and u.hp > 0 then
-            local cx = getCardCX(enemies, i)
-            local cy = ENEMY_CARD_CY
+            local cx, cy = BattleCombat.getCardPos(enemies, i)
             if math.abs(dx - cx) <= CARD_W * 0.5 and math.abs(dy - cy) <= CARD_H * 0.5 then
                 longPress.unit = u
                 longPress.showPopup = true
@@ -3118,7 +3113,11 @@ drawMonsterInfoPopup = function(vg)
     -- 弹窗位置（怪物卡片上方，高度自适应）
     local popCX = 540
     local popH = 100 + lineCount * 48
-    local popCY = ENEMY_CARD_CY - CARD_H * 0.5 - popH * 0.5 - 10
+    local anchorCY = ENEMY_CARD_CY
+    for ii, uu in ipairs(enemies) do
+        if uu == u then anchorCY = BattleCombat.getCardCY(enemies, ii); break end
+    end
+    local popCY = anchorCY - CARD_H * 0.5 - popH * 0.5 - 10
     local popW = 600
     local popR = 16
 

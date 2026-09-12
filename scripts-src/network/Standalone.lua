@@ -1922,6 +1922,9 @@ function HandleNanoVGRenderHorizon()
         H_skipDone = true
         StartScreen.skipForReconnect()
         DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
+        if H_AUTO_DISMISS_TITLE then
+            DarkTitleScreen.handleTap()  -- 临时验证入口: 无输入环境自动淡出标题
+        end
     end
 
     -- 开始画面：全窗口居中（2400 高画布，适配横屏高度）

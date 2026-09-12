@@ -6,6 +6,7 @@
 local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
 local NumberUtil = require("core.NumberUtil")
+local BattleLayout = require("core.BattleLayout")
 
 local BattleDraw = {}
 
@@ -121,15 +122,16 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
     local count = #units
     if count == 0 then return end
 
-    local totalW = count * CARD_W + (count - 1) * CARD_SPACING
-    local startCX = (DESIGN_W - totalW) * 0.5 + CARD_W * 0.5
+    -- [左4vs右4] 列阵坐标: X 按阵营列，Y 按索引竖排（baseCY 参数保留兼容旧调用，不再使用）
+    local group = isAllyGroup and "ally" or "enemy"
 
     for idx = 1, count do
         local unit = units[idx]
-        local cx = startCX + (idx - 1) * (CARD_W + CARD_SPACING)
-        local animOffY = combat.getCardAnimOffsetY(unit)
-        local chargeOff = combat.getChargeOffsetY(unit, isAllyGroup)
-        local cy = baseCY + animOffY + chargeOff
+        local cx, cy = BattleLayout.cardPos(group, idx)
+        -- 冲锋/受击/死亡等位移动画原沿行阵 Y 轴（朝向敌方），列阵下转置到 X 轴:
+        -- screenDX = -offset（两阵营统一成立: 己方朝敌=+X，敌方朝敌=-X）
+        local animOff = combat.getCardAnimOffsetY(unit) + combat.getChargeOffsetY(unit, isAllyGroup)
+        cx = cx - animOff
 
         -- 远程角色卡片缩放（蓄力缩小/攻击放大）
         local cardScale = combat.getCardScale(unit, isAllyGroup)

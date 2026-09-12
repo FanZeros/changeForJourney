@@ -1068,10 +1068,12 @@ end
 --- 绘制摘星星星人常驻星门召唤物
 ---@param vg table
 ---@param units table[]
----@param cardCY number
+---@param cardCY number 兜底 Y（列阵下为战场中心）
 ---@param getCardCX function
 ---@param isAlly boolean
-function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly)
+-- [左4vs右4] getCardCY 可选: 按索引取竖排 Y
+---@param getCardCY function|nil
+function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly, getCardCY)
     if not vg or not units or not getCardCX then return end
     local imgHandle = getImage("EF_skill_20")
     for i, unit in ipairs(units) do
@@ -1084,8 +1086,9 @@ function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly)
                 count = (unit.awakeningNodes and unit.awakeningNodes[6] == true) and 2 or 1
             end
             local baseX = getCardCX(units, i)
+            local baseCY = getCardCY and getCardCY(units, i) or cardCY
             for gateIndex = 1, count do
-                local cx, cy = getStarGateDrawPosition(baseX, cardCY, gateIndex, count, isAlly)
+                local cx, cy = getStarGateDrawPosition(baseX, baseCY, gateIndex, count, isAlly)
                 local pulse = 0.94 + 0.06 * math.sin(starGateDrawTime * 3.4 + gateIndex)
                 local size = 118 * pulse
                 local alpha = 0.88 + 0.12 * math.sin(starGateDrawTime * 2.6 + gateIndex * 0.7)

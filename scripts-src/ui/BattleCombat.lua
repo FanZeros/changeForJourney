@@ -10,6 +10,7 @@ local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
 local PS  = require("ui.ProjectileSystem")
 local Diag = require("systems.BattleDiag")
+local BattleLayout = require("core.BattleLayout")
 local RCH = require("systems.RelicConditionHandler")
 local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
@@ -258,14 +259,23 @@ local function resolveUnitInList(list, staleRef, stableId)
 end
 
 --- 获取卡片在设计空间中的中�?X 坐标
+--- [左4vs右4] 获取卡片中心坐标: X 按阵营列, Y 按队伍内索引竖排
+local function getCardPos(units, index)
+    return BattleLayout.posForList(units, index, nil)
+end
+
 local function getCardCX(units, index)
-    local count = #units
-    if count == 0 then return DESIGN_W * 0.5 end
-    local totalW = count * CARD_W + (count - 1) * CARD_SPACING
-    local startCX = (DESIGN_W - totalW) * 0.5 + CARD_W * 0.5
-    return startCX + (index - 1) * (CARD_W + CARD_SPACING)
+    local cx = getCardPos(units, index)
+    return cx
+end
+
+local function getCardCY(units, index)
+    local _, cy = getCardPos(units, index)
+    return cy
 end
 BattleCombat.getCardCX = getCardCX
+BattleCombat.getCardCY = getCardCY
+BattleCombat.getCardPos = getCardPos
 
 --- 获取存活单位列表
 local function getAliveUnits(units)
@@ -534,10 +544,9 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     if isTargetAlly then
         BattleStats.recordTaken(target, takenForStats or actual)
     end
-    local tgtCY = isTargetAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
     local tgtList = isTargetAlly and ctx.getAllies() or ctx.getEnemies()
     local tgtIdx = findUnitIndex(tgtList, target)
-    local tgtCX = getCardCX(tgtList, tgtIdx or math.ceil(#tgtList * 0.5))
+    local tgtCX, tgtCY = getCardPos(tgtList, tgtIdx or math.ceil(#tgtList * 0.5))
     local showCrit = statMeta and statMeta.isCrit or false
     addFloatingText((prefix or "") .. "-" .. NumberUtil.format(actual), tgtCX, tgtCY, color or {255, 238, 96}, showCrit)
     setHitFlash(target)
@@ -618,12 +627,12 @@ function BattleCombat.resolveTalentProjStart(attacker, projOpts, allyList, enemy
         local from = projOpts.bounceFromUnit
         for li, u in ipairs(enemyList) do
             if u == from then
-                return getCardCX(enemyList, li), ctx.ENEMY_CARD_CY
+                return getCardPos(enemyList, li)
             end
         end
         for li, u in ipairs(allyList) do
             if u == from then
-                return getCardCX(allyList, li), ctx.ALLY_CARD_CY
+                return getCardPos(allyList, li)
             end
         end
     end
@@ -633,14 +642,14 @@ function BattleCombat.resolveTalentProjStart(attacker, projOpts, allyList, enemy
         local atkIdx = findUnitIndex(allyList, attacker)
         local isAllyGate = true
         if atkIdx then
-            baseX, baseY = getCardCX(allyList, atkIdx), ctx.ALLY_CARD_CY
+            baseX, baseY = getCardPos(allyList, atkIdx)
         else
             atkIdx = findUnitIndex(enemyList, attacker)
             if atkIdx then
                 isAllyGate = false
-                baseX, baseY = getCardCX(enemyList, atkIdx), ctx.ENEMY_CARD_CY
+                baseX, baseY = getCardPos(enemyList, atkIdx)
             else
-                baseX, baseY = getCardCX(allyList, math.max(1, math.ceil(#allyList / 2))), ctx.ALLY_CARD_CY
+                baseX, baseY = getCardPos(allyList, math.max(1, math.ceil(#allyList / 2)))
             end
         end
         local count = projOpts.starGateCount or 1
@@ -665,9 +674,9 @@ function BattleCombat.resolveTalentProjStart(attacker, projOpts, allyList, enemy
         end
     end
     if atkIdx then
-        return getCardCX(allyList, atkIdx), ctx.ALLY_CARD_CY
+        return getCardPos(allyList, atkIdx)
     end
-    return getCardCX(allyList, math.max(1, math.ceil(#allyList / 2))), ctx.ALLY_CARD_CY
+    return getCardPos(allyList, math.max(1, math.ceil(#allyList / 2)))
 end
 
 --- 天赋/周期伤害（带投射物），供 TAL.update 等非攻击流水线调用
@@ -691,8 +700,7 @@ function BattleCombat.dealTalentDamage(attacker, target, damage, isTargetAlly, p
     local lookupList = isTargetAlly and (allyList or ctx.getAllies()) or (enemyList or ctx.getEnemies())
     for li, lu in ipairs(lookupList) do
         if lu == target then
-            local tdCX = getCardCX(lookupList, li)
-            local tdCY = isTargetAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+            local tdCX, tdCY = getCardPos(lookupList, li)
             ctx.onTalentDealDamage(attacker, target, tdCX, tdCY, prefix, applyDamage, projOpts)
             return
         end
@@ -1007,12 +1015,10 @@ local function performAttack(attacker, targetList, isAlly)
     end
     local atkCX, atkCY
     if atkIdx then
-        atkCX = getCardCX(allyList, atkIdx)
-        atkCY = isAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+        atkCX, atkCY = getCardPos(allyList, atkIdx)
     else
         -- 使用列表中点作为伤害数字的显示位置（不发射投射物�?
-        atkCX = getCardCX(allyList, math.max(1, math.ceil(#allyList / 2)))
-        atkCY = isAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+        atkCX, atkCY = getCardPos(allyList, math.max(1, math.ceil(#allyList / 2)))
     end
 
     -- 累计总伤害（用于统一计算攻击吸血�?
@@ -1065,8 +1071,7 @@ local function performAttack(attacker, targetList, isAlly)
                 else
                     tgtIsAlly = not isAlly
                 end
-                local tgtCY = tgtIsAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
-                local tgtCX = getCardCX(tgtList, curIndex)
+                local tgtCX, tgtCY = getCardPos(tgtList, curIndex)
 
                 if result.isMiss then
                     addFloatingText("MISS", tgtCX, tgtCY, { 255, 122, 122 }, false)
@@ -1106,8 +1111,7 @@ local function performAttack(attacker, targetList, isAlly)
                         local resolved, resolvedIdx = resolveUnitInList(liveAllyList, curTgt, tgtStableId)
                         if resolved then
                             curTgt = resolved
-                            curTgtCX = getCardCX(liveAllyList, resolvedIdx)
-                            curTgtCY = isAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+                            curTgtCX, curTgtCY = getCardPos(liveAllyList, resolvedIdx)
                         end
                         -- 投射物飞行期间，目标可能已死亡、禁疗或被副本机制禁疗；落地时检查是否需要重选
                         -- 注意：目标HP满但护盾不满时不重选（仍然治疗原目标，溢出无害）
@@ -1122,13 +1126,11 @@ local function performAttack(attacker, targetList, isAlly)
                                 if #alive == 0 then return end
                                 local fallback = alive[math.random(#alive)]
                                 curTgt = liveAllyList[fallback.index]
-                                curTgtCX = getCardCX(liveAllyList, fallback.index)
-                                curTgtCY = isAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+                                curTgtCX, curTgtCY = getCardPos(liveAllyList, fallback.index)
                             else
                                 local retarget = retargetCandidates[1]
                                 curTgt = liveAllyList[retarget.index]
-                                curTgtCX = getCardCX(liveAllyList, retarget.index)
-                                curTgtCY = isAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+                                curTgtCX, curTgtCY = getCardPos(liveAllyList, retarget.index)
                             end
                         end
                         if not curTgt.attrs then
@@ -1201,8 +1203,7 @@ local function performAttack(attacker, targetList, isAlly)
                                 local lookupList = (isAlly == isTgtAlly) and allyList or targetList
                                 for li, lu in ipairs(lookupList) do
                                     if lu == tgt then
-                                        local tdCX = getCardCX(lookupList, li)
-                                        local tdCY = isTgtAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+                                        local tdCX, tdCY = getCardPos(lookupList, li)
                                         local sourceAttacker = (projOpts and projOpts.sourceAttacker) or attacker
                                         ctx.onTalentDealDamage(sourceAttacker, tgt, tdCX, tdCY, pfx, doTalentDamage, projOpts)
                                         break
@@ -1243,9 +1244,7 @@ local function performAttack(attacker, targetList, isAlly)
                             return
                         end
                         curTgt = resolved
-                        curTgtCX = getCardCX(liveTargetList, resolvedIdx)
-                        local targetIsAlly = not isAlly
-                        curTgtCY = targetIsAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+                        local targetIsAlly = not isAlly                        curTgtCX, curTgtCY = getCardPos(liveTargetList, resolvedIdx)
                         if not curTgt.attrs then
                             Diag.onAttrsNil(curTgt, "applyHit")
                             return
@@ -1464,8 +1463,7 @@ local function performAttack(attacker, targetList, isAlly)
                                 local lookupList = (isAlly == isTgtAlly) and allyList or targetList
                                 for li, lu in ipairs(lookupList) do
                                     if lu == tgt then
-                                        local tdCX = getCardCX(lookupList, li)
-                                        local tdCY = isTgtAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+                                        local tdCX, tdCY = getCardPos(lookupList, li)
                                         -- 由场景决定立�?延迟：传�?doTalentDamage 作为伤害回调
                                         local sourceAttacker = (projOpts and projOpts.sourceAttacker) or attacker
                                         ctx.onTalentDealDamage(sourceAttacker, tgt, tdCX, tdCY, pfx, doTalentDamage, projOpts)
@@ -1518,8 +1516,7 @@ local function performAttack(attacker, targetList, isAlly)
                     curTarget._overkillRatio = math.min(1.0, overkill / (curTarget.maxHp or hpBefore))
                 end
 
-                local tgtCY = (not isAlly) and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
-                local tgtCX = getCardCX(targetList, curIndex)
+                local tgtCX, tgtCY = getCardPos(targetList, curIndex)
                 local ftColor = { 255, 238, 96 }
                 addFloatingText(
                     (isCrit and "暴击 " or "") .. "-" .. NumberUtil.format(actualDmg),
@@ -1546,8 +1543,7 @@ local function performAttack(attacker, targetList, isAlly)
             syncUnitHp(attacker)
             if healActual > 0 then
                 -- 直接复用上方 resolveUnitInList 返回�?atkIdx
-                local aCX = getCardCX(allyList, atkIdx or math.max(1, math.ceil(#allyList / 2)))
-                local aCY = isAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+                local aCX, aCY = getCardPos(allyList, atkIdx or math.max(1, math.ceil(#allyList / 2)))
                 addFloatingText("+" .. NumberUtil.format(math.floor(healActual)), aCX, aCY, { 0, 255, 82 }, false)
             end
         end
@@ -1597,10 +1593,7 @@ local function performComboAttack(entry)
     end
 
     -- ══�?计算位置（使用实际索引，resolveUnitInList 成功时保证非 nil�?══�?
-    local atkCX = getCardCX(allyList, atkIdx)
-    local atkCY = isAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
-    local tgtCX = getCardCX(targetList, tgtIdx)
-    local tgtCY = tgtIsAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+    local atkCX, atkCY = getCardPos(allyList, atkIdx)    local tgtCX, tgtCY = getCardPos(targetList, tgtIdx)
 
     -- 播放攻击动画（lunge + return�?
     playAttackCardAnim(attacker, isAlly)
@@ -1637,8 +1630,7 @@ local function performComboAttack(entry)
         local resolved, resolvedIdx = resolveDamageTarget(liveTargetList, curTgt, entry.tgtStableId, attacker, isAlly)
         if not resolved then return end
         curTgt = resolved
-        curTgtCX = getCardCX(liveTargetList, resolvedIdx)
-        curTgtCY = tgtIsAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+        curTgtCX, curTgtCY = getCardPos(liveTargetList, resolvedIdx)
         if not result.hits or not result.hits[1] then return end
         local semMult = SEM.getDamageTakenMult(curTgt)
         local hpBefore = curTgt.hp
@@ -1699,8 +1691,7 @@ local function performComboAttack(entry)
                 local healActual = attacker.attrs:heal(atkHeal)
                 syncUnitHp(attacker)
                 if healActual > 0 then
-                    local aCX = getCardCX(allyList, atkIdx)
-                    local aCY = isAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+                    local aCX, aCY = getCardPos(allyList, atkIdx)
                     addFloatingText("+" .. NumberUtil.format(math.floor(healActual)), aCX, aCY, { 0, 255, 82 }, false)
                 end
             end
@@ -1717,8 +1708,7 @@ local function performComboAttack(entry)
                 local lookupList = (isAlly == isTgtAlly) and allyList or targetList
                 for li, lu in ipairs(lookupList) do
                     if lu == tgt then
-                        local tdCX = getCardCX(lookupList, li)
-                        local tdCY = isTgtAlly and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
+                        local tdCX, tdCY = getCardPos(lookupList, li)
                         local sourceAttacker = (projOpts and projOpts.sourceAttacker) or attacker
                         ctx.onTalentDealDamage(sourceAttacker, tgt, tdCX, tdCY, pfx, doTalentDamage, projOpts)
                         break

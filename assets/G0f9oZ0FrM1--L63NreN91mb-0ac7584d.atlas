@@ -1,0 +1,17 @@
+UI_SPINE_KPTX.png
+size:2048,2048
+filter:Linear,Linear
+pma:true
+CB
+bounds:563,1505,285,276
+CBKP
+bounds:0,106,224,464
+GS
+bounds:0,572,335,1209
+KPBK
+bounds:337,1317,224,464
+SJ
+bounds:226,417,153,103
+rotate:90
+ZZ
+bounds:0,0,155,104

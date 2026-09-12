@@ -1,0 +1,22 @@
+{
+  "project_id": "m_vvp3",
+  "version": "1.0.2",
+  "author": {
+    "id": "958707982"
+  },
+  "taptap_publish": {
+    "title": "",
+    "description": "",
+    "category": "",
+    "screen_orientation": "landscape",
+    "collection_type": "sce",
+    "trial_note": "",
+    "app_platforms": "1,2",
+    "developer_id": 400200
+  },
+  "assets": {
+    "icon": "",
+    "screenshots": [],
+    "promotional_image": ""
+  }
+}

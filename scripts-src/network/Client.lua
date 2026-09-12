@@ -972,7 +972,7 @@ function Client.Start()
         Client.sendAction(Protocol.ACTION_TYPES.NEXT_STAGE, {
             nextStageId = newStageId,
         })
-        -- 首次进入关卡 0204 →触发情景 41/42/43（愤怒的铁匠）
+        -- 首次进入关卡 0204 →触发情景 41/42/43（昆吾之怒）
         if newStageId == 204 and not enter0204ScenarioFired_ then
             enter0204ScenarioFired_ = true
             if not ClientScenario.isClaimed(41) then

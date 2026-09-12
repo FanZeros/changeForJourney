@@ -5,6 +5,7 @@
 
 local GameConfig = require("config.GameConfig")
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
+local DarkIcon        = require("core.DarkIcon")  -- [暗黑化 P1] 矢量弹窗底板
 
 local Dialog = {}
 
@@ -64,7 +65,6 @@ CLIP.VIS_COUNT = math.floor(CLIP.H / LOG.STEP) -- ~11 条可见
 
 -- ======================== 图片句柄 ========================
 
-local imgBg = -1       -- UI_TY_EJQRK (九宫格背景)
 local imgScoreIcon = -1 -- UI_icon_JJCFS_X
 
 -- ======================== 弹窗动画常量 ========================
@@ -116,64 +116,8 @@ local function drawImageCentered(vg, imgH, cx, cy, w, h, alpha)
     nvgBeginPath(vg); nvgRect(vg, x, y, w, h); nvgFillPaint(vg, paint); nvgFill(vg)
 end
 
-local function drawNineSlice(vg, imgH, dx, dy, dw, dh, iTop, iRight, iBottom, iLeft)
-    if imgH < 0 then return end
-    local srcW, srcH = nvgImageSize(vg, imgH)
-    if srcW <= 0 or srcH <= 0 then return end
-    local sL, sR, sT, sB = iLeft, iRight, iTop, iBottom
-    local sMW, sMH = srcW - sL - sR, srcH - sT - sB
-    local dL = math.min(iLeft, dw * 0.5)
-    local dR = math.min(iRight, dw * 0.5)
-    local dT = math.min(iTop, dh * 0.5)
-    local dB = math.min(iBottom, dh * 0.5)
-    if sMW <= 0 or sMH <= 0 then
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, imgH, 1.0)
-        nvgBeginPath(vg); nvgRect(vg, dx, dy, dw, dh); nvgFillPaint(vg, paint); nvgFill(vg)
-        return
-    end
-    local ix0 = math.floor(dx + 0.5)
-    local iy0 = math.floor(dy + 0.5)
-    local ix1 = math.floor(dx + dL + 0.5)
-    local iy1 = math.floor(dy + dT + 0.5)
-    local ix2 = math.floor(dx + dw - dR + 0.5)
-    local iy2 = math.floor(dy + dh - dB + 0.5)
-    local ix3 = math.floor(dx + dw + 0.5)
-    local iy3 = math.floor(dy + dh + 0.5)
-    local OV = 1
-    local patches = {
-        { ix1-OV, iy1-OV, ix2-ix1+OV*2, iy2-iy1+OV*2, sL, sT, sMW, sMH },
-        { ix1-OV, iy0,    ix2-ix1+OV*2, iy1-iy0+OV,   sL, 0,  sMW, sT  },
-        { ix1-OV, iy2-OV, ix2-ix1+OV*2, iy3-iy2+OV,   sL, sT+sMH, sMW, sB  },
-        { ix0,    iy1-OV, ix1-ix0+OV,   iy2-iy1+OV*2, 0,  sT, sL,  sMH },
-        { ix2-OV, iy1-OV, ix3-ix2+OV,   iy2-iy1+OV*2, sL+sMW, sT, sR, sMH },
-        { ix0,    iy0,    ix1-ix0+OV, iy1-iy0+OV, 0,      0,      sL, sT },
-        { ix2-OV, iy0,    ix3-ix2+OV, iy1-iy0+OV, sL+sMW, 0,      sR, sT },
-        { ix0,    iy2-OV, ix1-ix0+OV, iy3-iy2+OV, 0,      sT+sMH, sL, sB },
-        { ix2-OV, iy2-OV, ix3-ix2+OV, iy3-iy2+OV, sL+sMW, sT+sMH, sR, sB },
-    }
-    nvgShapeAntiAlias(vg, 0)
-    for _, p in ipairs(patches) do
-        local px, py, pw, ph = p[1], p[2], p[3], p[4]
-        local sx, sy, sw, sh = p[5], p[6], p[7], p[8]
-        if pw > 0 and ph > 0 and sw > 0 and sh > 0 then
-            local scX, scY = pw / sw, ph / sh
-            local paint = nvgImagePattern(vg, px - sx * scX, py - sy * scY,
-                srcW * scX, srcH * scY, 0, imgH, 1.0)
-            nvgBeginPath(vg); nvgRect(vg, px, py, pw, ph); nvgFillPaint(vg, paint); nvgFill(vg)
-        end
-    end
-    nvgShapeAntiAlias(vg, 1)
-end
-
-local function hitTest(dx, dy, cx, cy, w, h)
-    return dx >= cx - w * 0.5 and dx <= cx + w * 0.5
-       and dy >= cy - h * 0.5 and dy <= cy + h * 0.5
-end
-
--- ======================== Public API ========================
 
 function Dialog.init(vg)
-    imgBg = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
     imgScoreIcon = nvgCreateImage(vg, "image/UI_icon_JJCFS_X.png", 0)
     print("[ArenaLogDialog] init OK")
 end
@@ -234,10 +178,10 @@ function Dialog.draw(vg)
     nvgTranslate(vg, -BG.CX, -BG.CY)
     nvgGlobalAlpha(vg, pAlpha)
 
-    -- 2. 九宫格弹窗背景
-    drawNineSlice(vg, imgBg,
+    -- 2. 弹窗背景 [暗黑化 P1: 矢量九宫格]
+    DarkIcon.drawNine(vg, "panel",
         BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
-        BG.W, BG.H, BG.IT, BG.IR, BG.IB, BG.IL)
+        BG.W, BG.H, { titleH = BG.IT })
 
     -- 3. 标题 "对战记录"（描边文字）
     drawTextStroke(vg, TTL.X, TTL.Y, "对战记录",

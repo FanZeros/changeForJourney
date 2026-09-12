@@ -384,170 +384,170 @@ MC.LEVELS = {
 -- attrs: 额外属性 { [AD属性key] = 基础值 }，实际值 = 基础值 × (1 + attrScale/100)
 
 MC.MONSTERS = {
-    [1]  = { quality = 1, name = "野狼",       atkType = 1, armorType = 1, atkTargets = 1, atkInterval = 1.6, hpRatio = 1.00, atkRatio = 1.60, attrs = {} },
-    [2]  = { quality = 1, name = "森林精灵",   atkType = 6, armorType = 5, atkTargets = 1, atkInterval = 2.0, hpRatio = 1.20, atkRatio = 1.60, attrs = {} },
-    [3]  = { quality = 2, name = "哥布林",     atkType = 1, armorType = 2, atkTargets = 1, atkInterval = 1.8, hpRatio = 1.00, atkRatio = 1.80, attrs = {} },
-    [4]  = { quality = 1, name = "森林蜘蛛",   atkType = 3, armorType = 1, atkTargets = 1, atkInterval = 1.2, hpRatio = 0.40, atkRatio = 0.96, attrs = {
+    [1]  = { quality = 1, name = "天狗",       atkType = 1, armorType = 1, atkTargets = 1, atkInterval = 1.6, hpRatio = 1.00, atkRatio = 1.60, attrs = {} },
+    [2]  = { quality = 1, name = "鹿蜀",   atkType = 6, armorType = 5, atkTargets = 1, atkInterval = 2.0, hpRatio = 1.20, atkRatio = 1.60, attrs = {} },
+    [3]  = { quality = 2, name = "山膏",     atkType = 1, armorType = 2, atkTargets = 1, atkInterval = 1.8, hpRatio = 1.00, atkRatio = 1.80, attrs = {} },
+    [4]  = { quality = 1, name = "酸与",   atkType = 3, armorType = 1, atkTargets = 1, atkInterval = 1.2, hpRatio = 0.40, atkRatio = 0.96, attrs = {
         [AD.DODGE] = 0.40,
     }},
-    [5]  = { quality = 2, name = "哥布林牧师", atkType = 8, armorType = 5, atkTargets = 2, atkInterval = 3.0, hpRatio = 0.80, atkRatio = 0.60, attrs = {
+    [5]  = { quality = 2, name = "巫彭", atkType = 8, armorType = 5, atkTargets = 2, atkInterval = 3.0, hpRatio = 0.80, atkRatio = 0.60, attrs = {
         [AD.MAG_ARMOR] = 4.00,
     }},
-    [6]  = { quality = 3, name = "哥布林猎手", atkType = 3, armorType = 2, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.80, atkRatio = 0.80, attrs = {
+    [6]  = { quality = 3, name = "蛊雕", atkType = 3, armorType = 2, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.80, atkRatio = 0.80, attrs = {
         [AD.HIT_VALUE] = 0.50,
     }},
-    [7]  = { quality = 3, name = "邪恶之狼",   atkType = 7, armorType = 1, atkTargets = 1, atkInterval = 1.8, hpRatio = 1.00, atkRatio = 0.90, attrs = {
+    [7]  = { quality = 3, name = "九尾狐",   atkType = 7, armorType = 1, atkTargets = 1, atkInterval = 1.8, hpRatio = 1.00, atkRatio = 0.90, attrs = {
         [AD.CRIT_RATE] = 0.3,
     }},
-    [8]  = { quality = 5, name = "森之巨灵",   atkType = 6, armorType = 5, atkTargets = 2, atkInterval = 4.0, hpRatio = 0.80, atkRatio = 0.80, attrs = {
+    [8]  = { quality = 5, name = "雷神",   atkType = 6, armorType = 5, atkTargets = 2, atkInterval = 4.0, hpRatio = 0.80, atkRatio = 0.80, attrs = {
         [AD.PHYS_ARMOR] = 0.29, [AD.MAG_ARMOR] = 2.00,
     }},
-    [9]  = { quality = 5, name = "丛林巨兽",   atkType = 2, armorType = 3, atkTargets = 3, atkInterval = 5.0, hpRatio = 0.60, atkRatio = 1.00, attrs = {
+    [9]  = { quality = 5, name = "诸犍",   atkType = 2, armorType = 3, atkTargets = 3, atkInterval = 5.0, hpRatio = 0.60, atkRatio = 1.00, attrs = {
         [AD.PHYS_ARMOR] = 0.29, [AD.MAG_ARMOR] = 2.00,
     }},
-    [10] = { quality = 2, name = "豺狼人猎手", atkType = 3, armorType = 2, atkTargets = 1, atkInterval = 1.6, hpRatio = 0.67, atkRatio = 1.07, attrs = {
+    [10] = { quality = 2, name = "猛豹", atkType = 3, armorType = 2, atkTargets = 1, atkInterval = 1.6, hpRatio = 0.67, atkRatio = 1.07, attrs = {
         [AD.PHYS_PEN] = 0.67,
     }},
-    [11] = { quality = 3, name = "豺狼人杀手", atkType = 1, armorType = 2, atkTargets = 1, atkInterval = 1.8, hpRatio = 0.50, atkRatio = 0.90, attrs = {
+    [11] = { quality = 3, name = "窫窳", atkType = 1, armorType = 2, atkTargets = 1, atkInterval = 1.8, hpRatio = 0.50, atkRatio = 0.90, attrs = {
         [AD.HIT_VALUE] = 0.31, [AD.CRIT_RATE] = 0.3,
     }},
-    [12] = { quality = 2, name = "猎鹰",       atkType = 6, armorType = 1, atkTargets = 1, atkInterval = 1.0, hpRatio = 0.50, atkRatio = 0.50, attrs = {
+    [12] = { quality = 2, name = "精卫",       atkType = 6, armorType = 1, atkTargets = 1, atkInterval = 1.0, hpRatio = 0.50, atkRatio = 0.50, attrs = {
         [AD.MAG_PEN] = 0.50, [AD.DODGE] = 0.25,
     }},
-    [13] = { quality = 2, name = "蝎子",       atkType = 6, armorType = 4, atkTargets = 1, atkInterval = 1.6, hpRatio = 0.50, atkRatio = 0.80, attrs = {
+    [13] = { quality = 2, name = "豪彘",       atkType = 6, armorType = 4, atkTargets = 1, atkInterval = 1.6, hpRatio = 0.50, atkRatio = 0.80, attrs = {
         [AD.MAG_PEN] = 0.50, [AD.PHYS_ARMOR] = 0.36,
     }},
-    [14] = { quality = 1, name = "强盗",       atkType = 1, armorType = 1, atkTargets = 1, atkInterval = 1.8, hpRatio = 0.61, atkRatio = 1.42, attrs = {
+    [14] = { quality = 1, name = "马腹",       atkType = 1, armorType = 1, atkTargets = 1, atkInterval = 1.8, hpRatio = 0.61, atkRatio = 1.42, attrs = {
         [AD.ATK_HEAL] = 0.67,
     }},
-    [15] = { quality = 2, name = "土匪",       atkType = 1, armorType = 2, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.61, atkRatio = 1.58, attrs = {
+    [15] = { quality = 2, name = "长右",       atkType = 1, armorType = 2, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.61, atkRatio = 1.58, attrs = {
         [AD.ATK_HEAL] = 0.67,
     }},
-    [16] = { quality = 5, name = "盗贼领主",   atkType = 3, armorType = 2, atkTargets = 2, atkInterval = 3.0, hpRatio = 1.00, atkRatio = 0.50, attrs = {
+    [16] = { quality = 5, name = "穷奇",   atkType = 3, armorType = 2, atkTargets = 2, atkInterval = 3.0, hpRatio = 1.00, atkRatio = 0.50, attrs = {
         [AD.PHYS_ARMOR] = 0.24, [AD.MAG_ARMOR] = 1.67,
     }},
-    [17] = { quality = 5, name = "火烈鸟",     atkType = 4, armorType = 1, atkTargets = 3, atkInterval = 3.6, hpRatio = 0.49, atkRatio = 1.17, attrs = {
+    [17] = { quality = 5, name = "毕方",     atkType = 4, armorType = 1, atkTargets = 3, atkInterval = 3.6, hpRatio = 0.49, atkRatio = 1.17, attrs = {
         [AD.MAG_ARMOR] = 2.44, [AD.COMBO_RATE] = 0.1,
     }},
-    [18] = { quality = 3, name = "火焰元素",   atkType = 4, armorType = 5, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.36, atkRatio = 1.31, attrs = {
+    [18] = { quality = 3, name = "金乌",   atkType = 4, armorType = 5, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.36, atkRatio = 1.31, attrs = {
         [AD.MAG_ARMOR] = 1.82, [AD.HIT_VALUE] = 0.45,
     }},
-    [19] = { quality = 1, name = "半人马弓手", atkType = 3, armorType = 2, atkTargets = 1, atkInterval = 1.8, hpRatio = 0.50, atkRatio = 0.90, attrs = {
+    [19] = { quality = 1, name = "英招", atkType = 3, armorType = 2, atkTargets = 1, atkInterval = 1.8, hpRatio = 0.50, atkRatio = 0.90, attrs = {
         [AD.HIT_VALUE] = 0.31, [AD.PHYS_ARMOR] = 0.36,
     }},
-    [20] = { quality = 2, name = "半人马处刑者", atkType = 1, armorType = 3, atkTargets = 1, atkInterval = 2.8, hpRatio = 0.40, atkRatio = 1.12, attrs = {
+    [20] = { quality = 2, name = "孰湖", atkType = 1, armorType = 3, atkTargets = 1, atkInterval = 2.8, hpRatio = 0.40, atkRatio = 1.12, attrs = {
         [AD.MAG_ARMOR] = 2.00, [AD.PHYS_ARMOR] = 0.29, [AD.HIT_VALUE] = 0.25,
     }},
-    [21] = { quality = 5, name = "半人马领主", atkType = 1, armorType = 3, atkTargets = 2, atkInterval = 3.6, hpRatio = 0.77, atkRatio = 0.55, attrs = {
+    [21] = { quality = 5, name = "泰逢", atkType = 1, armorType = 3, atkTargets = 2, atkInterval = 3.6, hpRatio = 0.77, atkRatio = 0.55, attrs = {
         [AD.PHYS_ARMOR] = 0.22, [AD.MAG_ARMOR] = 1.54, [AD.HIT_VALUE] = 0.19,
     }},
-    [22] = { quality = 1, name = "熊怪",       atkType = 2, armorType = 1, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.80, atkRatio = 0.96, attrs = {
+    [22] = { quality = 1, name = "罴",       atkType = 2, armorType = 1, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.80, atkRatio = 0.96, attrs = {
         [AD.PHYS_ARMOR] = 0.29, [AD.COMBO_RATE] = 0.7,
     }},
-    [23] = { quality = 2, name = "熊怪精英",   atkType = 2, armorType = 3, atkTargets = 1, atkInterval = 2.8, hpRatio = 1.00, atkRatio = 1.40, attrs = {
+    [23] = { quality = 2, name = "旄牛",   atkType = 2, armorType = 3, atkTargets = 1, atkInterval = 2.8, hpRatio = 1.00, atkRatio = 1.40, attrs = {
         [AD.PHYS_ARMOR] = 0.36,
     }},
-    [24] = { quality = 3, name = "白熊",       atkType = 5, armorType = 3, atkTargets = 2, atkInterval = 3.0, hpRatio = 0.80, atkRatio = 0.60, attrs = {
+    [24] = { quality = 3, name = "驺虞",       atkType = 5, armorType = 3, atkTargets = 2, atkInterval = 3.0, hpRatio = 0.80, atkRatio = 0.60, attrs = {
         [AD.PHYS_ARMOR] = 0.29, [AD.MAG_ARMOR] = 2.00,
     }},
-    [25] = { quality = 5, name = "熊怪领主",   atkType = 2, armorType = 3, atkTargets = 3, atkInterval = 4.0, hpRatio = 0.57, atkRatio = 0.38, attrs = {
+    [25] = { quality = 5, name = "当康",   atkType = 2, armorType = 3, atkTargets = 3, atkInterval = 4.0, hpRatio = 0.57, atkRatio = 0.38, attrs = {
         [AD.PHYS_ARMOR] = 0.41, [AD.MAG_ARMOR] = 1.43, [AD.DODGE] = 0.14,
     }},
-    [26] = { quality = 2, name = "巨龟",       atkType = 2, armorType = 4, atkTargets = 1, atkInterval = 3.6, hpRatio = 0.67, atkRatio = 1.20, attrs = {
+    [26] = { quality = 2, name = "旋龟",       atkType = 2, armorType = 4, atkTargets = 1, atkInterval = 3.6, hpRatio = 0.67, atkRatio = 1.20, attrs = {
         [AD.PHYS_ARMOR] = 0.48, [AD.MAG_ARMOR] = 1.67,
     }},
-    [27] = { quality = 1, name = "水元素",     atkType = 5, armorType = 5, atkTargets = 1, atkInterval = 2.0, hpRatio = 1.00, atkRatio = 1.00, attrs = {
+    [27] = { quality = 1, name = "冰夷",     atkType = 5, armorType = 5, atkTargets = 1, atkInterval = 2.0, hpRatio = 1.00, atkRatio = 1.00, attrs = {
         [AD.MAG_ARMOR] = 2.50,
     }},
-    [28] = { quality = 5, name = "龙龟",       atkType = 2, armorType = 4, atkTargets = 3, atkInterval = 5.0, hpRatio = 0.62, atkRatio = 0.51, attrs = {
+    [28] = { quality = 5, name = "黄能",       atkType = 2, armorType = 4, atkTargets = 3, atkInterval = 5.0, hpRatio = 0.62, atkRatio = 0.51, attrs = {
         [AD.PHYS_ARMOR] = 0.44, [AD.MAG_ARMOR] = 1.54, [AD.HIT_VALUE] = 0.10,
     }},
-    [29] = { quality = 3, name = "雪怪",       atkType = 5, armorType = 1, atkTargets = 2, atkInterval = 2.6, hpRatio = 0.75, atkRatio = 0.33, attrs = {
+    [29] = { quality = 3, name = "玄冥",       atkType = 5, armorType = 1, atkTargets = 2, atkInterval = 2.6, hpRatio = 0.75, atkRatio = 0.33, attrs = {
         [AD.PHYS_ARMOR] = 0.18, [AD.MAG_ARMOR] = 2.50, [AD.HIT_VALUE] = 0.16,
     }},
-    [30] = { quality = 3, name = "冰原狼",     atkType = 5, armorType = 1, atkTargets = 1, atkInterval = 1.8, hpRatio = 0.44, atkRatio = 1.20, attrs = {
+    [30] = { quality = 3, name = "孟极",     atkType = 5, armorType = 1, atkTargets = 1, atkInterval = 1.8, hpRatio = 0.44, atkRatio = 1.20, attrs = {
         [AD.DODGE] = 0.22, [AD.HIT_VALUE] = 0.28,
     }},
-    [31] = { quality = 5, name = "黑狼王",     atkType = 7, armorType = 3, atkTargets = 3, atkInterval = 3.0, hpRatio = 0.36, atkRatio = 0.55, attrs = {
+    [31] = { quality = 5, name = "梼杌",     atkType = 7, armorType = 3, atkTargets = 3, atkInterval = 3.0, hpRatio = 0.36, atkRatio = 0.55, attrs = {
         [AD.DODGE] = 0.18, [AD.PHYS_ARMOR] = 0.26, [AD.HIT_VALUE] = 0.23,
     }},
-    [32] = { quality = 2, name = "血蜘蛛",     atkType = 3, armorType = 1, atkTargets = 1, atkInterval = 1.4, hpRatio = 0.15, atkRatio = 1.29, attrs = {
+    [32] = { quality = 2, name = "蜚",     atkType = 3, armorType = 1, atkTargets = 1, atkInterval = 1.4, hpRatio = 0.15, atkRatio = 1.29, attrs = {
         [AD.ATK_SPEED] = 0.4, [AD.DODGE] = 0.31,
     }},
-    [33] = { quality = 5, name = "血浴之母",   atkType = 7, armorType = 1, atkTargets = 2, atkInterval = 4.0, hpRatio = 0.46, atkRatio = 1.85, attrs = {
+    [33] = { quality = 5, name = "相柳",   atkType = 7, armorType = 1, atkTargets = 2, atkInterval = 4.0, hpRatio = 0.46, atkRatio = 1.85, attrs = {
         [AD.DODGE] = 0.15, [AD.HIT_VALUE] = 0.19,
     }},
-    [34] = { quality = 4, name = "远古灵兽",   atkType = 6, armorType = 3, atkTargets = 2, atkInterval = 3.0, hpRatio = 0.80, atkRatio = 0.60, attrs = {
+    [34] = { quality = 4, name = "乘黄",   atkType = 6, armorType = 3, atkTargets = 2, atkInterval = 3.0, hpRatio = 0.80, atkRatio = 0.60, attrs = {
         [AD.PHYS_ARMOR] = 0.19, [AD.MAG_ARMOR] = 1.33, [AD.HIT_VALUE] = 0.17,
     }},
-    [35] = { quality = 5, name = "远古巨兽",   atkType = 2, armorType = 4, atkTargets = 3, atkInterval = 5.0, hpRatio = 0.80, atkRatio = 0.67, attrs = {
+    [35] = { quality = 5, name = "饕餮",   atkType = 2, armorType = 4, atkTargets = 3, atkInterval = 5.0, hpRatio = 0.80, atkRatio = 0.67, attrs = {
         [AD.PHYS_ARMOR] = 0.19, [AD.MAG_ARMOR] = 1.33, [AD.PHYS_PEN] = 0.27,
     }},
-    [36] = { quality = 2, name = "石巨人",     atkType = 2, armorType = 4, atkTargets = 2, atkInterval = 3.6, hpRatio = 0.86, atkRatio = 0.51, attrs = {
+    [36] = { quality = 2, name = "夸父",     atkType = 2, armorType = 4, atkTargets = 2, atkInterval = 3.6, hpRatio = 0.86, atkRatio = 0.51, attrs = {
         [AD.PHYS_ARMOR] = 0.20, [AD.MAG_ARMOR] = 1.43, [AD.PHYS_PEN] = 0.29,
     }},
-    [37] = { quality = 1, name = "大虾",       atkType = 5, armorType = 4, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.86, atkRatio = 1.37, attrs = {
+    [37] = { quality = 1, name = "何罗鱼",       atkType = 5, armorType = 4, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.86, atkRatio = 1.37, attrs = {
         [AD.PHYS_ARMOR] = 0.20, [AD.PHYS_PEN] = 0.29,
     }},
-    [38] = { quality = 2, name = "潮汐海灵",   atkType = 6, armorType = 5, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.40, atkRatio = 1.60, attrs = {
+    [38] = { quality = 2, name = "氐人",   atkType = 6, armorType = 5, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.40, atkRatio = 1.60, attrs = {
         [AD.MAG_ARMOR] = 2.00, [AD.MAG_PEN] = 0.40,
     }},
-    [39] = { quality = 5, name = "深海巨人",   atkType = 5, armorType = 3, atkTargets = 3, atkInterval = 5.0, hpRatio = 1.00, atkRatio = 0.56, attrs = {
+    [39] = { quality = 5, name = "龙伯",   atkType = 5, armorType = 3, atkTargets = 3, atkInterval = 5.0, hpRatio = 1.00, atkRatio = 0.56, attrs = {
         [AD.PHYS_ARMOR] = 0.24, [AD.MAG_ARMOR] = 1.67,
     }},
-    [40] = { quality = 1, name = "被诅咒者",   atkType = 7, armorType = 5, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.50, atkRatio = 1.00, attrs = {
+    [40] = { quality = 1, name = "耕父",   atkType = 7, armorType = 5, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.50, atkRatio = 1.00, attrs = {
         [AD.DODGE] = 0.50,
     }},
-    [41] = { quality = 3, name = "幽灵看守者", atkType = 7, armorType = 5, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.29, atkRatio = 0.69, attrs = {
+    [41] = { quality = 3, name = "贰负", atkType = 7, armorType = 5, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.29, atkRatio = 0.69, attrs = {
         [AD.DODGE] = 0.71,
     }},
-    [42] = { quality = 1, name = "邪教徒",     atkType = 4, armorType = 5, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.40, atkRatio = 0.80, attrs = {
+    [42] = { quality = 1, name = "旱魃",     atkType = 4, armorType = 5, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.40, atkRatio = 0.80, attrs = {
         [AD.MAG_ARMOR] = 2.00, [AD.DODGE] = 0.40,
     }},
-    [43] = { quality = 5, name = "地狱石巨人", atkType = 4, armorType = 4, atkTargets = 3, atkInterval = 5.0, hpRatio = 1.00, atkRatio = 0.33, attrs = {
+    [43] = { quality = 5, name = "祝融", atkType = 4, armorType = 4, atkTargets = 3, atkInterval = 5.0, hpRatio = 1.00, atkRatio = 0.33, attrs = {
         [AD.PHYS_ARMOR] = 0.29, [AD.MAG_ARMOR] = 1.00, [AD.DODGE] = 0.10,
     }},
-    [44] = { quality = 1, name = "僵尸",       atkType = 7, armorType = 3, atkTargets = 1, atkInterval = 2.6, hpRatio = 0.75, atkRatio = 0.65, attrs = {
+    [44] = { quality = 1, name = "鱼妇",       atkType = 7, armorType = 3, atkTargets = 1, atkInterval = 2.6, hpRatio = 0.75, atkRatio = 0.65, attrs = {
         [AD.PHYS_ARMOR] = 0.36, [AD.MAG_ARMOR] = 1.25, [AD.MAG_PEN] = 0.25,
     }},
-    [45] = { quality = 2, name = "骷髅战士",   atkType = 1, armorType = 2, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.50, atkRatio = 1.00, attrs = {
+    [45] = { quality = 2, name = "夏耕之尸",   atkType = 1, armorType = 2, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.50, atkRatio = 1.00, attrs = {
         [AD.PHYS_ARMOR] = 0.36, [AD.MAG_ARMOR] = 2.50,
     }},
-    [46] = { quality = 5, name = "幽冥龙",     atkType = 7, armorType = 4, atkTargets = 2, atkInterval = 4.0, hpRatio = 0.29, atkRatio = 1.14, attrs = {
+    [46] = { quality = 5, name = "烛龙",     atkType = 7, armorType = 4, atkTargets = 2, atkInterval = 4.0, hpRatio = 0.29, atkRatio = 1.14, attrs = {
         [AD.DODGE] = 0.29, [AD.MAG_ARMOR] = 1.43, [AD.MAG_PEN] = 0.29,
     }},
-    [47] = { quality = 3, name = "幽灵",       atkType = 7, armorType = 5, atkTargets = 1, atkInterval = 2.2, hpRatio = 0.33, atkRatio = 1.47, attrs = {
+    [47] = { quality = 3, name = "视肉",       atkType = 7, armorType = 5, atkTargets = 1, atkInterval = 2.2, hpRatio = 0.33, atkRatio = 1.47, attrs = {
         [AD.DODGE] = 0.17, [AD.HIT_VALUE] = 0.21, [AD.MAG_PEN] = 0.33,
     }},
-    [48] = { quality = 2, name = "野蛮骷髅",   atkType = 2, armorType = 2, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.33, atkRatio = 1.60, attrs = {
+    [48] = { quality = 2, name = "刑天",   atkType = 2, armorType = 2, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.33, atkRatio = 1.60, attrs = {
         [AD.HIT_VALUE] = 0.21, [AD.PHYS_ARMOR] = 0.24, [AD.MAG_ARMOR] = 1.67,
     }},
-    [49] = { quality = 3, name = "怨灵",       atkType = 7, armorType = 5, atkTargets = 1, atkInterval = 2.2, hpRatio = 0.40, atkRatio = 1.76, attrs = {
+    [49] = { quality = 3, name = "奢比之尸",       atkType = 7, armorType = 5, atkTargets = 1, atkInterval = 2.2, hpRatio = 0.40, atkRatio = 1.76, attrs = {
         [AD.DODGE] = 0.20, [AD.MAG_ARMOR] = 2.00, [AD.MAG_PEN] = 0.00,
     }},
-    [50] = { quality = 5, name = "骨龙",       atkType = 4, armorType = 4, atkTargets = 4, atkInterval = 4.4, hpRatio = 0.67, atkRatio = 0.37, attrs = {
+    [50] = { quality = 5, name = "应龙",       atkType = 4, armorType = 4, atkTargets = 4, atkInterval = 4.4, hpRatio = 0.67, atkRatio = 0.37, attrs = {
         [AD.PHYS_ARMOR] = 0.24, [AD.MAG_ARMOR] = 1.67, [AD.HIT_VALUE] = 0.21,
     }},
-    [51] = { quality = 2, name = "红幼龙",     atkType = 4, armorType = 2, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.40, atkRatio = 1.92, attrs = {
+    [51] = { quality = 2, name = "鸓",     atkType = 4, armorType = 2, atkTargets = 1, atkInterval = 2.4, hpRatio = 0.40, atkRatio = 1.92, attrs = {
         [AD.MAG_ARMOR] = 2.00, [AD.MAG_PEN] = 0.40,
     }},
-    [52] = { quality = 5, name = "红龙",       atkType = 4, armorType = 4, atkTargets = 3, atkInterval = 4.0, hpRatio = 0.33, atkRatio = 0.89, attrs = {
+    [52] = { quality = 5, name = "朱厌",       atkType = 4, armorType = 4, atkTargets = 3, atkInterval = 4.0, hpRatio = 0.33, atkRatio = 0.89, attrs = {
         [AD.MAG_ARMOR] = 1.67, [AD.MAG_PEN] = 0.33, [AD.HIT_VALUE] = 0.21,
     }},
-    [53] = { quality = 2, name = "绿幼龙",     atkType = 3, armorType = 2, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.80, atkRatio = 0.80, attrs = {
+    [53] = { quality = 2, name = "肥遗",     atkType = 3, armorType = 2, atkTargets = 1, atkInterval = 2.0, hpRatio = 0.80, atkRatio = 0.80, attrs = {
         [AD.PHYS_ARMOR] = 0.29, [AD.PHYS_PEN] = 0.40,
     }},
-    [54] = { quality = 5, name = "绿龙",       atkType = 3, armorType = 4, atkTargets = 2, atkInterval = 3.6, hpRatio = 0.67, atkRatio = 0.60, attrs = {
+    [54] = { quality = 5, name = "巴蛇",       atkType = 3, armorType = 4, atkTargets = 2, atkInterval = 3.6, hpRatio = 0.67, atkRatio = 0.60, attrs = {
         [AD.PHYS_ARMOR] = 0.24, [AD.PHYS_PEN] = 0.33, [AD.DODGE] = 0.17,
     }},
     -- ---- 终焉神殿怪物 (至臻级) ----
-    [1001] = { quality = 6, name = "???",      atkType = 1, armorType = 4, atkTargets = 2, atkInterval = 1.00, hpRatio = 0.67, atkRatio = 0.33, attrs = {
+    [1001] = { quality = 6, name = "帝江",      atkType = 1, armorType = 4, atkTargets = 2, atkInterval = 1.00, hpRatio = 0.67, atkRatio = 0.33, attrs = {
         [AD.PHYS_ARMOR] = 0.24, [AD.MAG_ARMOR] = 1.67,
     }},
-    [1002] = { quality = 6, name = "???",      atkType = 2, armorType = 2, atkTargets = 1, atkInterval = 5.00, hpRatio = 0.67, atkRatio = 1.67, attrs = {
+    [1002] = { quality = 6, name = "夸娥",      atkType = 2, armorType = 2, atkTargets = 1, atkInterval = 5.00, hpRatio = 0.67, atkRatio = 1.67, attrs = {
         [AD.DODGE] = 0.17, [AD.PHYS_ARMOR] = 0.24, [AD.MAG_ARMOR] = 1.67,
     }},
-    [1003] = { quality = 6, name = "???",      atkType = 7, armorType = 5, atkTargets = 5, atkInterval = 5.00, hpRatio = 0.57, atkRatio = 0.57, attrs = {
+    [1003] = { quality = 6, name = "共工",      atkType = 7, armorType = 5, atkTargets = 5, atkInterval = 5.00, hpRatio = 0.57, atkRatio = 0.57, attrs = {
         [AD.DODGE] = 0.14, [AD.ABNORMAL_RES] = 0.3, [AD.MAG_ARMOR] = 1.43,
     }},
     [1005] = { quality = 6, name = "大狗嚼?",    atkType = 1, armorType = 3, atkTargets = 1, atkInterval = 1.40, hpRatio = 1.33, atkRatio = 0.93, attrs = {} },
@@ -558,24 +558,24 @@ MC.MONSTERS = {
         [AD.DODGE] = 0.25,
     }},
     -- ---- 剧情特殊怪物 ----
-    [1004] = { quality = 5, name = "愤怒的铁匠", atkType = 2, armorType = 4, atkTargets = 2, atkInterval = 3.00, hpRatio = 1.00, atkRatio = 1.50, attrs = {} },
+    [1004] = { quality = 5, name = "昆吾之怒", atkType = 2, armorType = 4, atkTargets = 2, atkInterval = 3.00, hpRatio = 1.00, atkRatio = 1.50, attrs = {} },
     -- ---- 副本怪物 ----
-    [201] = { quality = 5, name = "石魔左臂",   atkType = 1, armorType = 1, atkTargets = 2, atkInterval = 1.50, hpRatio = 1.78, atkRatio = 0.67, attrs = {
+    [201] = { quality = 5, name = "陆吾·左臂",   atkType = 1, armorType = 1, atkTargets = 2, atkInterval = 1.50, hpRatio = 1.78, atkRatio = 0.67, attrs = {
         [AD.PHYS_ARMOR] = 0.32, [AD.MAG_ARMOR] = 2.22, [AD.ABNORMAL_RES] = 0.4,
     }},
-    [202] = { quality = 5, name = "金幽石魔",   atkType = 4, armorType = 5, atkTargets = 1, atkInterval = 3.00, hpRatio = 2.18, atkRatio = 2.18, attrs = {
+    [202] = { quality = 5, name = "陆吾·金瞳",   atkType = 4, armorType = 5, atkTargets = 1, atkInterval = 3.00, hpRatio = 2.18, atkRatio = 2.18, attrs = {
         [AD.PHYS_ARMOR] = 0.26, [AD.MAG_ARMOR] = 1.82, [AD.ABNORMAL_RES] = 0.4,
     }},
-    [203] = { quality = 5, name = "石魔右臂",   atkType = 2, armorType = 2, atkTargets = 3, atkInterval = 1.20, hpRatio = 1.78, atkRatio = 0.36, attrs = {
+    [203] = { quality = 5, name = "陆吾·右臂",   atkType = 2, armorType = 2, atkTargets = 3, atkInterval = 1.20, hpRatio = 1.78, atkRatio = 0.36, attrs = {
         [AD.PHYS_ARMOR] = 0.32, [AD.MAG_ARMOR] = 2.22, [AD.ABNORMAL_RES] = 0.4,
     }},
-    [204] = { quality = 5, name = "石像左臂",   atkType = 1, armorType = 3, atkTargets = 2, atkInterval = 1.50, hpRatio = 1.78, atkRatio = 0.67, attrs = {
+    [204] = { quality = 5, name = "开明兽·左臂",   atkType = 1, armorType = 3, atkTargets = 2, atkInterval = 1.50, hpRatio = 1.78, atkRatio = 0.67, attrs = {
         [AD.DODGE] = 0.22, [AD.PHYS_ARMOR] = 0.32, [AD.MAG_ARMOR] = 2.22,
     }},
-    [205] = { quality = 5, name = "遗迹石像",   atkType = 6, armorType = 4, atkTargets = 1, atkInterval = 3.00, hpRatio = 2.18, atkRatio = 2.18, attrs = {
+    [205] = { quality = 5, name = "开明兽·九目",   atkType = 6, armorType = 4, atkTargets = 1, atkInterval = 3.00, hpRatio = 2.18, atkRatio = 2.18, attrs = {
         [AD.DODGE] = 0.18, [AD.PHYS_ARMOR] = 0.26, [AD.MAG_ARMOR] = 1.82,
     }},
-    [206] = { quality = 5, name = "石像右臂",   atkType = 2, armorType = 2, atkTargets = 3, atkInterval = 1.20, hpRatio = 1.78, atkRatio = 0.36, attrs = {
+    [206] = { quality = 5, name = "开明兽·右臂",   atkType = 2, armorType = 2, atkTargets = 3, atkInterval = 1.20, hpRatio = 1.78, atkRatio = 0.36, attrs = {
         [AD.DODGE] = 0.22, [AD.PHYS_ARMOR] = 0.32, [AD.MAG_ARMOR] = 2.22,
     }},
 }
@@ -687,7 +687,7 @@ MC.MONSTER_EFFECTS = {
     [1006] = "EF_ATK_2",  -- 奶龙龙? (远程火焰)
     [1007] = "EF_ATK_3",  -- 叮咚鸡? (远程穿刺)
     -- ---- 剧情特殊怪物 ----
-    [1004] = "EF_MS_39",  -- 愤怒的铁匠 (近战粉碎，复用深海巨人特效)
+    [1004] = "EF_MS_39",  -- 昆吾之怒 (近战粉碎，复用深海巨人特效)
     -- ---- 副本怪物 ----
     [201] = "EF_ATK_4",   -- 石魔左臂
     [202] = "EF_MS_43",   -- 金幽石魔

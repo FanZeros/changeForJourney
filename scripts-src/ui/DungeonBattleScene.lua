@@ -14,6 +14,7 @@ local MapAffixSystem    = require("systems.MapAffixSystem")
 local BattleCombat      = require("ui.BattleCombat")
 local BattleStats       = require("systems.BattleStats")
 local BattleDraw        = require("ui.BattleDraw")
+local DarkIcon          = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
 local BattleEffects     = require("ui.BattleEffects")
 local SpineCardEffect  = require("ui.SpineCardEffect")
 local ProjectileSystem  = require("ui.ProjectileSystem")
@@ -693,10 +694,10 @@ end
 function DungeonScene.draw(vg)
     if not state.open then return end
 
-    -- 1. 地图背景（副本对应地图，带漂移）
+    -- 1. 地图背景（副本对应地图，带漂移）[暗黑化 P1: 压暗 tint + 边缘晕影]
     local driftY = -BG_DRIFT_Y_AMP * (1.0 - math.cos(bgAnimTimer * 2 * math.pi / BG_DRIFT_Y_PERIOD)) * 0.5
     local mapImg = getMapImage()
-    drawImageCentered(vg, mapImg, MAP_CX, MAP_CY + driftY, MAP_W, MAP_H, 1.0)
+    DarkIcon.drawDarkScene(vg, mapImg, MAP_CX, MAP_CY + driftY, MAP_W, MAP_H, 1.0)
 
     -- 2. 敌方战场阴影
     drawImageCentered(vg, imgShadow, ENEMY_SHADOW_CX, ENEMY_SHADOW_CY,

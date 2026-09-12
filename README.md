@@ -9,3 +9,11 @@
 访问：https://fanzeros.github.io/changeForJourney/
 
 改造计划（横屏 PC 多面板版）见工作区 docs/suyuan-landscape-plan.md。
+
+## 源码目录 scripts-src/
+
+游戏 Lua 源码（语义路径，300 模块）：
+- `main.lua` 入口；`ui/` 24+ 页面模块（统一 draw/open/isOpen/handleDragBegin 协议）
+- `systems/` 战斗公式/天赋/状态效果；`config/` 数值与关卡配置
+- `network/` Client/Standalone 双模式渲染与输入；`server/` 竞技场等服务端
+- 横屏 PC 版改造进行中（core/Viewport.lua 多面板方案）

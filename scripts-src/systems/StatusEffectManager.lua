@@ -18,11 +18,11 @@ local SEM = {}
 
 -- ======================== 效果类型常量 ========================
 
-SEM.BURNING    = "burning"     -- 燃烧DOT (麦琪)
-SEM.SHOCKED    = "shocked"     -- 感电增伤 (露娜)
-SEM.FROZEN     = "frozen"      -- 冰冻停攻 (艾丝翠德)
-SEM.MARKED     = "marked"      -- 标记增伤 (绫音)
-SEM.HOT        = "hot"         -- 持续治疗 (芙罗拉)
+SEM.BURNING    = "burning"     -- 燃烧DOT (奶龙龙)
+SEM.SHOCKED    = "shocked"     -- 感电增伤 (阿姨压一压)
+SEM.FROZEN     = "frozen"      -- 冰冻停攻 (雪皇)
+SEM.MARKED     = "marked"      -- 标记增伤 (愤怒的小雀)
+SEM.HOT        = "hot"         -- 持续治疗 (卡皮巴拉)
 SEM.VULNERABLE = "vulnerable"  -- 易伤诅咒 (转职天赋105/209/210)
 SEM.ARCANE_MARK = "arcane_mark" -- 秘法印记 (星图节点113)，与 VULNERABLE 独立叠乘
 

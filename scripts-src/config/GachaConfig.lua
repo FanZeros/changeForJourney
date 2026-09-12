@@ -55,48 +55,48 @@ GachaConfig.Pity = {
 
 GachaConfig.Pool = {
     -- N 品质（3 项碎片：R 英雄碎片）
-    { quality = 0, type = "shard", heroId = 1,  amount = 1, weight = 100, stardustValue = 5 },  -- 卡琳碎片
-    { quality = 0, type = "shard", heroId = 2,  amount = 1, weight = 100, stardustValue = 5 },  -- 麦琪碎片
-    { quality = 0, type = "shard", heroId = 3,  amount = 1, weight = 100, stardustValue = 5 },  -- 琳达碎片
+    { quality = 0, type = "shard", heroId = 1,  amount = 1, weight = 100, stardustValue = 5 },  -- 大狗嚼碎片
+    { quality = 0, type = "shard", heroId = 2,  amount = 1, weight = 100, stardustValue = 5 },  -- 奶龙龙碎片
+    { quality = 0, type = "shard", heroId = 3,  amount = 1, weight = 100, stardustValue = 5 },  -- 叮咚鸡碎片
 
     -- R 品质（3 角色 + 6 碎片 = 9 项）
-    { quality = 1, type = "hero",  heroId = 1,  weight = 100, stardustValue = 50 },  -- 卡琳
-    { quality = 1, type = "hero",  heroId = 2,  weight = 100, stardustValue = 50 },  -- 麦琪
-    { quality = 1, type = "hero",  heroId = 3,  weight = 100, stardustValue = 50 },  -- 琳达
-    { quality = 1, type = "shard", heroId = 4,  amount = 1, weight = 100, stardustValue = 25 },  -- 塞西莉亚碎片
-    { quality = 1, type = "shard", heroId = 5,  amount = 1, weight = 100, stardustValue = 25 },  -- 维多利亚碎片
-    { quality = 1, type = "shard", heroId = 6,  amount = 1, weight = 100, stardustValue = 25 },  -- 露娜碎片
-    { quality = 1, type = "shard", heroId = 7,  amount = 1, weight = 100, stardustValue = 25 },  -- 星织碎片
-    { quality = 1, type = "shard", heroId = 8,  amount = 1, weight = 100, stardustValue = 25 },  -- 绫音碎片
-    { quality = 1, type = "shard", heroId = 9,  amount = 1, weight = 100, stardustValue = 25 },  -- 芙罗拉碎片
+    { quality = 1, type = "hero",  heroId = 1,  weight = 100, stardustValue = 50 },  -- 大狗嚼
+    { quality = 1, type = "hero",  heroId = 2,  weight = 100, stardustValue = 50 },  -- 奶龙龙
+    { quality = 1, type = "hero",  heroId = 3,  weight = 100, stardustValue = 50 },  -- 叮咚鸡
+    { quality = 1, type = "shard", heroId = 4,  amount = 1, weight = 100, stardustValue = 25 },  -- 接化发掌门碎片
+    { quality = 1, type = "shard", heroId = 5,  amount = 1, weight = 100, stardustValue = 25 },  -- 叠甲怪碎片
+    { quality = 1, type = "shard", heroId = 6,  amount = 1, weight = 100, stardustValue = 25 },  -- 阿姨压一压碎片
+    { quality = 1, type = "shard", heroId = 7,  amount = 1, weight = 100, stardustValue = 25 },  -- 信光机兵碎片
+    { quality = 1, type = "shard", heroId = 8,  amount = 1, weight = 100, stardustValue = 25 },  -- 愤怒的小雀碎片
+    { quality = 1, type = "shard", heroId = 9,  amount = 1, weight = 100, stardustValue = 25 },  -- 卡皮巴拉碎片
 
     -- SR 品质（6 角色 + 6 碎片 = 12 项）
-    { quality = 2, type = "hero",  heroId = 4,  weight = 100, stardustValue = 250 },  -- 塞西莉亚
-    { quality = 2, type = "hero",  heroId = 5,  weight = 100, stardustValue = 250 },  -- 维多利亚
-    { quality = 2, type = "hero",  heroId = 6,  weight = 100, stardustValue = 250 },  -- 露娜
-    { quality = 2, type = "hero",  heroId = 7,  weight = 100, stardustValue = 250 },  -- 星织
-    { quality = 2, type = "hero",  heroId = 8,  weight = 100, stardustValue = 250 },  -- 绫音
-    { quality = 2, type = "hero",  heroId = 9,  weight = 100, stardustValue = 250 },  -- 芙罗拉
-    { quality = 2, type = "shard", heroId = 10, amount = 1, weight = 100, stardustValue = 100 },  -- 丽贝卡碎片
-    { quality = 2, type = "shard", heroId = 11, amount = 1, weight = 100, stardustValue = 100 },  -- 素华碎片
-    { quality = 2, type = "shard", heroId = 12, amount = 1, weight = 100, stardustValue = 100 },  -- 艾丝翠德碎片
-    { quality = 2, type = "shard", heroId = 13, amount = 1, weight = 100, stardustValue = 100 },  -- 罗莎琳碎片
-    { quality = 2, type = "shard", heroId = 14, amount = 1, weight = 100, stardustValue = 100 },  -- 幽夜碎片
-    { quality = 2, type = "shard", heroId = 15, amount = 1, weight = 100, stardustValue = 100 },  -- 伊丽莎白碎片
-    { quality = 2, type = "shard", heroId = 21, amount = 1, weight = 100, stardustValue = 100 },  -- 亚历克斯碎片
-    { quality = 2, type = "shard", heroId = 22, amount = 1, weight = 100, stardustValue = 100 },  -- 赛拉碎片
-    { quality = 2, type = "shard", heroId = 23, amount = 1, weight = 100, stardustValue = 100 },  -- 艾尔温碎片
+    { quality = 2, type = "hero",  heroId = 4,  weight = 100, stardustValue = 250 },  -- 接化发掌门
+    { quality = 2, type = "hero",  heroId = 5,  weight = 100, stardustValue = 250 },  -- 叠甲怪
+    { quality = 2, type = "hero",  heroId = 6,  weight = 100, stardustValue = 250 },  -- 阿姨压一压
+    { quality = 2, type = "hero",  heroId = 7,  weight = 100, stardustValue = 250 },  -- 信光机兵
+    { quality = 2, type = "hero",  heroId = 8,  weight = 100, stardustValue = 250 },  -- 愤怒的小雀
+    { quality = 2, type = "hero",  heroId = 9,  weight = 100, stardustValue = 250 },  -- 卡皮巴拉
+    { quality = 2, type = "shard", heroId = 10, amount = 1, weight = 100, stardustValue = 100 },  -- 铁憨憨碎片
+    { quality = 2, type = "shard", heroId = 11, amount = 1, weight = 100, stardustValue = 100 },  -- 熬夜冠军碎片
+    { quality = 2, type = "shard", heroId = 12, amount = 1, weight = 100, stardustValue = 100 },  -- 雪皇碎片
+    { quality = 2, type = "shard", heroId = 13, amount = 1, weight = 100, stardustValue = 100 },  -- 弹弹弹碎片
+    { quality = 2, type = "shard", heroId = 14, amount = 1, weight = 100, stardustValue = 100 },  -- 内鬼碎片
+    { quality = 2, type = "shard", heroId = 15, amount = 1, weight = 100, stardustValue = 100 },  -- 复活吧爱人碎片
+    { quality = 2, type = "shard", heroId = 21, amount = 1, weight = 100, stardustValue = 100 },  -- 闪电卖鸡碎片
+    { quality = 2, type = "shard", heroId = 22, amount = 1, weight = 100, stardustValue = 100 },  -- 小黑子鸡哥碎片
+    { quality = 2, type = "shard", heroId = 23, amount = 1, weight = 100, stardustValue = 100 },  -- Freestyle诗人碎片
 
     -- SSR 品质（9 角色）
-    { quality = 3, type = "hero", heroId = 10, weight = 100, stardustValue = 1000 }, -- 丽贝卡
-    { quality = 3, type = "hero", heroId = 11, weight = 100, stardustValue = 1000 }, -- 素华
-    { quality = 3, type = "hero", heroId = 12, weight = 100, stardustValue = 1000 }, -- 艾丝翠德
-    { quality = 3, type = "hero", heroId = 13, weight = 100, stardustValue = 1000 }, -- 罗莎琳
-    { quality = 3, type = "hero", heroId = 14, weight = 100, stardustValue = 1000 }, -- 幽夜
-    { quality = 3, type = "hero", heroId = 15, weight = 100, stardustValue = 1000 }, -- 伊丽莎白
-    { quality = 3, type = "hero", heroId = 21, weight = 100, stardustValue = 1000 }, -- 亚历克斯
-    { quality = 3, type = "hero", heroId = 22, weight = 100, stardustValue = 1000 }, -- 赛拉
-    { quality = 3, type = "hero", heroId = 23, weight = 100, stardustValue = 1000 }, -- 艾尔温
+    { quality = 3, type = "hero", heroId = 10, weight = 100, stardustValue = 1000 }, -- 铁憨憨
+    { quality = 3, type = "hero", heroId = 11, weight = 100, stardustValue = 1000 }, -- 熬夜冠军
+    { quality = 3, type = "hero", heroId = 12, weight = 100, stardustValue = 1000 }, -- 雪皇
+    { quality = 3, type = "hero", heroId = 13, weight = 100, stardustValue = 1000 }, -- 弹弹弹
+    { quality = 3, type = "hero", heroId = 14, weight = 100, stardustValue = 1000 }, -- 内鬼
+    { quality = 3, type = "hero", heroId = 15, weight = 100, stardustValue = 1000 }, -- 复活吧爱人
+    { quality = 3, type = "hero", heroId = 21, weight = 100, stardustValue = 1000 }, -- 闪电卖鸡
+    { quality = 3, type = "hero", heroId = 22, weight = 100, stardustValue = 1000 }, -- 小黑子鸡哥
+    { quality = 3, type = "hero", heroId = 23, weight = 100, stardustValue = 1000 }, -- Freestyle诗人
 }
 
 -- ======================== 预计算：按品质分组 + 总权重 ========================

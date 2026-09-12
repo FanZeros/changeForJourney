@@ -583,7 +583,7 @@ EFFECT_TYPES[5] = {
 }
 
 -- ============================================================================
--- 银光闪光（亚历克斯 #21 天赋触发）
+-- 银光闪光（闪电卖鸡 #21 天赋触发）
 -- 银白色斜向长线切割怪物卡片
 -- ============================================================================
 local SILVER_FLASH_CARD_HW = 99
@@ -726,7 +726,7 @@ function BattleEffects.spawn(armorType, tgtX, tgtY)
     effects[#effects + 1] = fx
 end
 
---- 亚历克斯「银光」触发闪光
+--- 闪电卖鸡「银光」触发闪光
 ---@param tgtX number
 ---@param tgtY number
 function BattleEffects.spawnSilverFlash(tgtX, tgtY)

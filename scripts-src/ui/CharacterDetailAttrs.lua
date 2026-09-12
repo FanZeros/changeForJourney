@@ -211,7 +211,7 @@ local function calcMelissaStarGatePanelInfo(heroId, level, attrs, heroesData, eq
     local mult = 1 + finalDmgBonus / 100
     local selfMagDmg = attrs:getUncapped(AD.MAG_DMG_BONUS) or 0
     local desc = string.format(
-        "星门会继承梅丽莎自身与出战队伍中贡献最高的魔法角色，最多%d名。每名角色贡献 = (魔法伤害加成 + 魔法攻击加成×25%%)×150%%；魔法穿透×150%%。7觉醒时继承范围扩展为全队，继承结果再×150%%。星门最终伤害中，本体魔伤与共鸣为乘法：基础伤害 × (1+本体魔伤%.1f%%) × 共鸣%.2f。当前共鸣魔伤+%.1f%%，共鸣魔穿+%.1f。来源：%s",
+        "星门会继承摘星星星人自身与出战队伍中贡献最高的魔法角色，最多%d名。每名角色贡献 = (魔法伤害加成 + 魔法攻击加成×25%%)×150%%；魔法穿透×150%%。7觉醒时继承范围扩展为全队，继承结果再×150%%。星门最终伤害中，本体魔伤与共鸣为乘法：基础伤害 × (1+本体魔伤%.1f%%) × 共鸣%.2f。当前共鸣魔伤+%.1f%%，共鸣魔穿+%.1f。来源：%s",
         limit, selfMagDmg, mult, finalDmgBonus, finalPen, (#sourceParts > 0 and table.concat(sourceParts, "；") or "无")
     )
     return {
@@ -362,7 +362,7 @@ function M.collectAttributes(heroId, heroCfg, level)
                 key = "_melissaStarGatePen",
                 name = "星门魔穿",
                 value = string.format("+%.1f", starGateInfo.pen),
-                desc = "星门专属继承魔法穿透，来自共鸣角色的魔法穿透×150%，7觉醒时继承结果再×150%。该数值只作用于星门伤害，不改变梅丽莎面板魔法穿透。",
+                desc = "星门专属继承魔法穿透，来自共鸣角色的魔法穿透×150%，7觉醒时继承结果再×150%。该数值只作用于星门伤害，不改变摘星星星人面板魔法穿透。",
             }
         end
     end

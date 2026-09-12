@@ -340,7 +340,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                 end
             end
 
-            -- 11) 征服层数（维多利亚）
+            -- 11) 征服层数（叠甲怪）
             local conqStacks = TAL.getConquerStacks(unit)
             if conqStacks > 0 then
                 drawTextStroke(vg, cx + CARD_W * 0.5 - 28, cy - CARD_H * 0.5 + 28,

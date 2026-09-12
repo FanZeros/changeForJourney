@@ -17,7 +17,7 @@ local DH = GameConfig.Design.HEIGHT  -- 2400
 local CHARACTERS = {
     {
         id       = 1,
-        heroId   = 3,       -- 对应 HeroConfig: 琳达（射手/Ranger）
+        heroId   = 3,       -- 对应 HeroConfig: 叮咚鸡（射手/Ranger）
         class    = "射手",
         title    = "疾风之箭",
         intro    = "擅长远程射击的射手",
@@ -28,7 +28,7 @@ local CHARACTERS = {
     },
     {
         id       = 2,
-        heroId   = 1,       -- 对应 HeroConfig: 卡琳（战士/Warrior）
+        heroId   = 1,       -- 对应 HeroConfig: 大狗嚼（战士/Warrior）
         class    = "战士",
         title    = "初心之剑",
         intro    = "擅长快速打击的战士",
@@ -39,7 +39,7 @@ local CHARACTERS = {
     },
     {
         id       = 3,
-        heroId   = 2,       -- 对应 HeroConfig: 麦琪（法师/Mage）
+        heroId   = 2,       -- 对应 HeroConfig: 奶龙龙（法师/Mage）
         class    = "法师",
         title    = "炽焰之心",
         intro    = "擅长火焰魔法的法师",

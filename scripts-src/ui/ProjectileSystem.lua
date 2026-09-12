@@ -1065,7 +1065,7 @@ function ProjectileSystem.update(dt)
     end
 end
 
---- 绘制梅丽莎常驻星门召唤物
+--- 绘制摘星星星人常驻星门召唤物
 ---@param vg table
 ---@param units table[]
 ---@param cardCY number

@@ -62,16 +62,50 @@ local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen �
 local startScreenWasOpen_ = false
 local fontNormal = -1
 
--- [一次性加载] 预载状态：active 时每帧按时间预算装载清单贴图，渲染层绘制进度遮罩
--- 字节预算：累计装载量达到预算即停止预载，剩余大图转惰性加载（首次使用时经去重包装装载一次）
--- 自适应低端设备（手机 WebView 显存有限），避免全量 500MB+ 贴图把内存打爆
-local preload_ = { active = false, list = {}, idx = 0, bytes = 0 }
-local PRELOAD_BUDGET = 250 * 1024 * 1024
+-- [一次性加载] 三段式加载：
+--   FG 前台预载：进游戏前只载 80MB 核心 UI（小图优先，进度遮罩），快进游戏
+--   BG 后台补载：游戏运行中每帧 3ms 温和补载剩余小图，无感
+--   惰性：>1MB 大图（地图/立绘/弹窗底）保持首次使用时加载（与原版一致，去重包装保证只载一次）
+-- 自适应低端设备：不把 500MB+ 全量贴图塞进显存，避免卡顿/OOM
+local preload_ = { active = false, bg = false, list = {}, idx = 0, bytes = 0, deadline = nil }
+local PRELOAD_FG_BUDGET = 80 * 1024 * 1024   -- 前台预载字节预算
+local PRELOAD_TIME_LIMIT = 30                -- 前台预载总时限（秒）
+local BG_FRAME_BUDGET = 0.003                -- 后台补载每帧时间预算（秒）
+local BG_SKIP_SIZE = 1024 * 1024             -- 后台跳过的大图阈值（1MB，保持惰性）
+
+--- [一次性加载] 预载进度遮罩（全屏，W/H 为当前绘制空间尺寸；须在退出变换内调用）
+local function DrawPreloadOverlay(vg, W, H)
+    local total = #preload_.list
+    local done = preload_.idx
+    local p = total > 0 and (done / total) or 0
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, W, H)
+    nvgFillColor(vg, nvgRGBA(13, 11, 9, 255))
+    nvgFill(vg)
+    DrawUtil.drawTextStroke(vg, W * 0.5, H * 0.42, "资源加载中",
+        math.floor(H * 0.034), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        240, 199, 94, 3)
+    local bw = W * 0.42
+    local bh = math.max(10, H * 0.008)
+    local bx = (W - bw) * 0.5
+    local by = H * 0.48
+    DarkIcon.drawNine(vg, "slot", bx, by, bw, bh)
+    local fw = math.max(bh - 6, (bw - 6) * p)
+    DarkIcon.drawNine(vg, "fill", bx + 3, by + 3, fw, bh - 6)
+    DrawUtil.drawTextStroke(vg, W * 0.5, by + bh * 2.4,
+        string.format("%d / %d", done, total),
+        math.floor(H * 0.024), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        216, 201, 163, 2)
+end
 
 
 -- Design resolution (Mode A — 1080x2400 竖屏)
 local DESIGN_W = GameConfig.Design.WIDTH
 local DESIGN_H = GameConfig.Design.HEIGHT
+
+-- [终焉之门] 全窗口世界大背景（横屏路径底图，战斗页自有背景不受影响）
+local imgWorldBg_ = -1
+local WORLD_BG_PATH = "image/UI_WORLD_BG.png"
 
 local physW, physH, dpr, logicalW, logicalH
 local scale, screenDesignW, screenDesignH, designOffsetX, designOffsetY
@@ -965,27 +999,7 @@ function HandleNanoVGRender(eventType, eventData)
 
     -- [一次性加载] 预载进度遮罩（竖屏路径，设计空间坐标）
     if preload_.active then
-        local total = #preload_.list
-        local done = preload_.idx
-        local p = total > 0 and (done / total) or 0
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-        nvgFillColor(vg, nvgRGBA(13, 11, 9, 255))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, DESIGN_W * 0.5, DESIGN_H * 0.42, "资源加载中",
-            math.floor(DESIGN_H * 0.034), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            240, 199, 94, 3)
-        local bw = DESIGN_W * 0.42
-        local bh = math.max(10, DESIGN_H * 0.008)
-        local bx = (DESIGN_W - bw) * 0.5
-        local by = DESIGN_H * 0.48
-        DarkIcon.drawNine(vg, "slot", bx, by, bw, bh)
-        local fw = math.max(bh - 6, (bw - 6) * p)
-        DarkIcon.drawNine(vg, "fill", bx + 3, by + 3, fw, bh - 6)
-        DrawUtil.drawTextStroke(vg, DESIGN_W * 0.5, by + bh * 2.4,
-            string.format("%d / %d", done, total),
-            math.floor(DESIGN_H * 0.024), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            216, 201, 163, 2)
+        DrawPreloadOverlay(vg, DESIGN_W, DESIGN_H)
     end
 
     nvgEndFrame(vg)
@@ -994,9 +1008,42 @@ end
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
-    -- [一次性加载] 每帧按时间预算预载一批贴图；达到字节预算或装载完毕即结束；
-    -- 期间不推进游戏逻辑；单张失败仅跳过（引擎会记一次 ERROR），不中断预载
+    -- [一次性加载] FG 前台预载：
+    --   1) 开始/标题画面保持可交互（点击即结束前台预载，剩余进后台/惰性）
+    --   2) 总时限 30s；字节预算 80MB；达到任一即转后台补载
+    --   3) 每帧按时间预算装载一批；期间不推进游戏逻辑
     if preload_.active then
+        local dt = eventData["TimeStep"]:GetFloat()
+        if StartScreen.isOpen() then
+            StartScreen.update(dt)
+            if not StartScreen.isOpen() then
+                preload_.active = false
+                preload_.bg = true
+                print("[Standalone] 玩家跳过开始画面，剩余 " ..
+                    (#preload_.list - preload_.idx) .. " 张转后台补载")
+            end
+        end
+        -- [DarkTitleScreen] 横屏标题保持可交互（点击淡出即转后台补载）
+        if DarkTitleScreen.isOpen() then
+            DarkTitleScreen.update(dt)
+            if not DarkTitleScreen.isOpen() then
+                preload_.active = false
+                preload_.bg = true
+                print("[Standalone] 标题画面已点击，剩余 " ..
+                    (#preload_.list - preload_.idx) .. " 张转后台补载")
+            end
+        end
+    end
+    if preload_.active then
+        if preload_.deadline == nil then
+            preload_.deadline = time.elapsedTime + PRELOAD_TIME_LIMIT
+        end
+        if time.elapsedTime > preload_.deadline then
+            preload_.active = false
+            preload_.bg = true
+            print("[Standalone] 前台预载超时(" .. PRELOAD_TIME_LIMIT .. "s)，剩余转后台补载")
+            return
+        end
         local list = preload_.list
         local total = #list
         local t0 = time.elapsedTime
@@ -1007,11 +1054,12 @@ function HandleUpdate(eventType, eventData)
             if handle and handle >= 0 then
                 preload_.bytes = preload_.bytes + (entry[2] or 0)
             end
-            if preload_.bytes >= PRELOAD_BUDGET then
+            if preload_.bytes >= PRELOAD_FG_BUDGET then
                 preload_.active = false
+                preload_.bg = true
                 print(string.format(
-                    "[Standalone] 预载达到字节预算(%.0fMB)，已载 %d/%d 张，剩余转惰性加载",
-                    PRELOAD_BUDGET / 1048576, preload_.idx, total))
+                    "[Standalone] 前台预载达到预算(%.0fMB)，已载 %d/%d 张，剩余转后台补载",
+                    PRELOAD_FG_BUDGET / 1048576, preload_.idx, total))
                 return
             end
         end
@@ -1021,6 +1069,29 @@ function HandleUpdate(eventType, eventData)
                 total, preload_.bytes / 1048576))
         end
         return
+    end
+
+    -- [一次性加载] BG 后台补载：游戏运行中每帧 3ms 温和补载剩余小图；
+    -- >1MB 大图跳过（保持首次使用时惰性加载，避免游戏中途 1s+ 解码卡顿）
+    if preload_.bg and preload_.idx < #preload_.list then
+        local list = preload_.list
+        local total = #list
+        local t0 = time.elapsedTime
+        while preload_.idx < total and time.elapsedTime - t0 < BG_FRAME_BUDGET do
+            preload_.idx = preload_.idx + 1
+            local entry = list[preload_.idx]
+            if (entry[2] or 0) < BG_SKIP_SIZE then
+                local handle = nvgCreateImage(vg, entry[1], 0)
+                if handle and handle >= 0 then
+                    preload_.bytes = preload_.bytes + (entry[2] or 0)
+                end
+            end
+        end
+        if preload_.idx >= total then
+            preload_.bg = false
+            print(string.format("[Standalone] 后台补载完成: 累计 %d/%d 张, %.0fMB（大图保持惰性）",
+                preload_.idx, total, preload_.bytes / 1048576))
+        end
     end
 
     local dt = eventData["TimeStep"]:GetFloat()
@@ -1815,11 +1886,30 @@ function HandleNanoVGRenderHorizon()
     HorizonUpdateTransform()
     nvgBeginFrame(vg, logicalW, logicalH, dpr)
 
-    -- 横屏背景
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, logicalW, logicalH)
-    nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
-    nvgFill(vg)
+    -- 横屏背景：世界大背景图（cover 铺满；战斗页/标题页自带背景会覆盖此处）
+    if imgWorldBg_ < 0 then
+        imgWorldBg_ = nvgCreateImage(vg, WORLD_BG_PATH, 0)
+        if imgWorldBg_ < 0 then
+            print("[Standalone] WARN: world bg load failed: " .. WORLD_BG_PATH)
+        end
+    end
+    if imgWorldBg_ >= 0 then
+        local iw, ih = nvgImageSize(vg, imgWorldBg_)
+        if iw and iw > 0 then
+            local s = math.max(logicalW / iw, logicalH / ih)
+            local dw, dh = iw * s, ih * s
+            local paint = nvgImagePattern(vg, (logicalW - dw) * 0.5, (logicalH - dh) * 0.5, dw, dh, 0, imgWorldBg_, 1.0)
+            nvgBeginPath(vg)
+            nvgRect(vg, 0, 0, logicalW, logicalH)
+            nvgFillPaint(vg, paint)
+            nvgFill(vg)
+        end
+    else
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, logicalW, logicalH)
+        nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
+        nvgFill(vg)
+    end
 
     -- 调试跳过：进主流程
     if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
@@ -1836,6 +1926,10 @@ function HandleNanoVGRenderHorizon()
         nvgScale(vg, ss, ss)
         StartScreen.draw(vg)
         nvgRestore(vg)
+        -- [一次性加载] 预载遮罩（开始画面上层）
+        if preload_.active then
+            DrawPreloadOverlay(vg, logicalW, logicalH)
+        end
         nvgEndFrame(vg)
         return
     end

@@ -8,16 +8,16 @@
 local Viewport = {}
 Viewport.ENABLED = true
 
-Viewport.BASE_W, Viewport.BASE_H = 1920, 1080
+Viewport.BASE_W, Viewport.BASE_H = 1458, 1080  -- 3 x 486 面板无缝拼接
 Viewport.PW, Viewport.PH = 486, 1080  -- 面板视口（base 坐标，1080x2400 * DS）
 Viewport.DESIGN_W, Viewport.DESIGN_H = 1080, 2400  -- 竖屏设计稿
 Viewport.DS = 0.45                                   -- 设计缩放：设计稿 -> 面板视口
 
--- 面板定义（横屏 base 坐标）
+-- 面板定义（横屏 base 坐标，无间隔紧贴）
 Viewport.PANELS = {
-    left   = { id = 'left',   bx = 120,  by = 0 },
-    center = { id = 'center', bx = 717,  by = 0 },
-    right  = { id = 'right',  bx = 1314, by = 0 },
+    left   = { id = 'left',   bx = 0,   by = 0 },
+    center = { id = 'center', bx = 486, by = 0 },
+    right  = { id = 'right',  bx = 972, by = 0 },
 }
 Viewport.ORDER = { 'left', 'center', 'right' }
 

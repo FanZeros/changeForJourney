@@ -44,7 +44,9 @@ local SCROLL_RIGHT = Draw.SCROLL_RIGHT
 local DESIGN_W     = Draw.DESIGN_W
 local DESIGN_H     = GameConfig.Design.HEIGHT  -- 2400
 
+---@type fun(index: number): number
 local getSlotCX       = Draw.getSlotCX
+---@type fun(dx: number, dy: number): number?
 local hitTestTeamSlot = Draw.hitTestTeamSlot
 
 -- ======================== 队伍数据 ========================

@@ -168,7 +168,7 @@ local function getPortraitImage(characterId)
     local handle = nvgCreateImage(vg_, path, 0)
     portraitCache_[characterId] = handle
     print("[ScenarioDialogue] loadPortrait: id=" .. characterId .. " handle=" .. handle)
-    return handle
+    return handle or -1
 end
 
 --- 获取当前模板的立绘布局参数

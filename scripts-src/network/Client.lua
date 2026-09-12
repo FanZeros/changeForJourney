@@ -38,6 +38,7 @@ local LootBoxPage      = require("ui.LootBoxPage")
 local StartScreen      = require("ui.StartScreen")
 local LoadingScreen    = require("ui.LoadingScreen")
 local DarkTitleScreen  = require("ui.DarkTitleScreen")  -- [DarkTitleScreen] 横屏暗黑标题
+local LetterIntro      = require("ui.LetterIntro")      -- [LetterIntro] 先祖来信（首登剧情）
 local LevelUpPopup     = require("ui.LevelUpPopup")
 local OfflineRewardPanel = require("ui.OfflineRewardPanel")
 local UpdateNoticePopup    = require("ui.UpdateNoticePopup")
@@ -1485,7 +1486,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
             StartScreen.skipForReconnect()
             DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
         end
-        if StartScreen.isOpen() or LoadingScreen.isOpen() then
+        if StartScreen.isOpen() or LoadingScreen.isOpen() or LetterIntro.isOpen() then
             local ss = math.min(logicalW / 1080, logicalH / 2400)
             scale = ss
             -- 外层 nvgScale(scale) 会缩放 translate 值：偏移需除以 scale（缩放空间语义）
@@ -1509,7 +1510,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
         nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
         nvgFill(vg)
         -- 左右面板（独立变换，主渲染缩进中面板）
-        if currentState == STATE_IN_GAME and not StartScreen.isOpen() and not LoadingScreen.isOpen() then
+        if currentState == STATE_IN_GAME and not StartScreen.isOpen() and not LoadingScreen.isOpen() and not LetterIntro.isOpen() then
             nvgSave(vg)
             nvgResetTransform(vg)
             ViewportH.begin(vg, ViewportH.PANELS.left, H_ox, H_oy, H_s)
@@ -1856,6 +1857,15 @@ function HandleNanoVGRender_Client(eventType, eventData)
         DarkTitleScreen.draw(vg, logicalW, logicalH)
     end
 
+    -- [LetterIntro] 先祖来信（设计空间 1080×2400，letterbox 同 StartScreen）
+    if LetterIntro.isOpen() then
+        nvgResetTransform(vg)
+        local ssL = math.min(logicalW / 1080, logicalH / 2400)
+        nvgTranslate(vg, (logicalW - 1080 * ssL) * 0.5, (logicalH - 2400 * ssL) * 0.5)
+        nvgScale(vg, ssL, ssL)
+        LetterIntro.draw(vg)
+    end
+
     nvgEndFrame(vg)
 end
 
@@ -2054,6 +2064,11 @@ function HandleUpdate_Client(eventType, eventData)
         DarkTitleScreen.update(dt)
     end
 
+    -- [LetterIntro] 先祖来信动画（逐行显墨/封印/淡出）
+    if LetterIntro.isOpen() then
+        LetterIntro.update(dt)
+    end
+
     -- 加载界面更新 →网络进度 + 资源下载进度（由 LoadingScreen 内部组合）
     if LoadingScreen.isOpen() then
         if currentState == STATE_IN_GAME then
@@ -2111,6 +2126,8 @@ function HandleUpdate_Client(eventType, eventData)
                 print("[Client] roster is empty (new player), starting intro cutscene")
                 GameBGM.start()
                 GameSFX.start()
+                -- [LetterIntro] 先祖来信 → 睁眼过场 → 情景对话 → 选角
+                LetterIntro.start(function()
                 IntroCutscene.start(function()
                     -- 过场动画结束 →衔接情景对话 1（introCompleted 由服务端在选择英雄时标记）
                     print("[Client] intro cutscene finished")
@@ -2131,6 +2148,7 @@ function HandleUpdate_Client(eventType, eventData)
                     end
                     ScenarioDialogue.show(scenarioConfig)
                 end)
+                end)  -- [LetterIntro] 回调闭合
             elseif hasReincarnated then
                 if rosterEmpty then
                     -- 极端情况：尚无角色但标记轮回（补播入场动画）

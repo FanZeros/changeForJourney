@@ -65,7 +65,7 @@ function ImageCache.getEquipIcon(templateId)
         equipCache[evictId] = nil
     end
 
-    return handle
+    return handle or -1
 end
 
 --- 获取神器类型图标（共享，有限集合无需淘汰）
@@ -82,7 +82,7 @@ function ImageCache.getArtifactIcon(artifactTypeId)
     local path = "image/神器图标/UI_icon_SQ_A" .. id .. ".png"
     local handle = nvgCreateImage(vg_, path, 0)
     artifactIconCache[id] = handle
-    return handle
+    return handle or -1
 end
 
 --- 获取品质背景框（共享，有限集合无需淘汰）
@@ -98,7 +98,7 @@ function ImageCache.getQualityBg(quality)
     local path = EquipmentConfig.getQualityBgPath(quality)
     local handle = nvgCreateImage(vg_, path, 0)
     qualityBgCache[quality] = handle
-    return handle
+    return handle or -1
 end
 
 --- 获取当前缓存统计（调试用）

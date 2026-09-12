@@ -6,6 +6,7 @@
 -- ============================================================================
 
 local GameConfig = require("config.GameConfig")
+local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local GameState  = require("core.GameState")
 local Protocol   = require("shared.Protocol")
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
@@ -1673,7 +1674,6 @@ function MarketPage.init(vg)
     img.privClaimBtn    = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
     img.privPointIcon   = nvgCreateImage(vg, "image/UI_icon_TQD.png", 0)   -- 特权点大图标
     img.privAdBtn       = nvgCreateImage(vg, "image/UI_AN_DA.png", 0)      -- 观看广告按钮背景
-    img.imgRedDot       = nvgCreateImage(vg, "image/ICON_HD.png", 0)       -- 红点角标
     img.collectionChestBg = nvgCreateImage(vg, "image/UI_SCDC_KC1.png", 0)
     img.collectionDrawBtn = nvgCreateImage(vg, "image/UI_SCDC_AN.png", 0)
     img.goldenKey = nvgCreateImage(vg, "image/UI_icon_HJYS.png", 0)
@@ -1990,21 +1990,19 @@ function MarketPage.draw(vg)
         nvgText(vg, item.cx, TAB.TEXT_Y, item.name, nil)
 
         -- 道具 tab（index 1）：有特权点且有可购买特权商品时显示红点角标
-        if i == 1 and img.imgRedDot >= 0 and MarketPage.hasPrivilegeRedDot() then
+        if i == 1 and MarketPage.hasPrivilegeRedDot() then
             local textHalfW = getCachedTextWidth(vg, item.name, TAB.FONT) * 0.5
             local rdSz = 30
             local rdX  = item.cx + textHalfW + 10
             local rdY  = TAB.TEXT_Y - 18
-            drawImageCentered(vg, img.imgRedDot, rdX, rdY, rdSz, rdSz, 1.0)
-        end
+            DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
         -- 特权 tab（index 2）可看广告时显示红点角标
-        if i == 2 and not state.privAdWatching and img.imgRedDot >= 0 then
+        if i == 2 and not state.privAdWatching then
             local textHalfW = getCachedTextWidth(vg, item.name, TAB.FONT) * 0.5
             local rdSz = 30
             local rdX  = item.cx + textHalfW + 10
             local rdY  = TAB.TEXT_Y - 18
-            drawImageCentered(vg, img.imgRedDot, rdX, rdY, rdSz, rdSz, 1.0)
-        end
+            DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
     end
 
     -- 弹窗（在裁剪区域外绘制，遮罩覆盖全屏）

@@ -4,6 +4,7 @@
 -- ============================================================================
 
 local GameState  = require("core.GameState")
+local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local ExpTable   = require("config.ExpTable")
 local BF         = require("systems.ButtonFeedback")
 
@@ -361,9 +362,6 @@ function TownScene.init(vg)
 
     imgIconUp      = nvgCreateImage(vg, "image/ICON_UP.png", 0)
     imgLock        = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
-    imgRedDot      = nvgCreateImage(vg, "image/ICON_HD.png", 0)
-
-    print("[TownScene] init OK")
 end
 
 function TownScene.draw(vg)
@@ -396,12 +394,11 @@ function TownScene.draw(vg)
         drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true)
     end
     -- 铁匠铺红点（背包满→提示去分解）
-    if not smithLocked and imgRedDot >= 0 and smithDecomposeRedDot then
+    if not smithLocked and smithDecomposeRedDot then
         local rdSz = 40
         local rdX = SMITH_LBL_CX + SMITH_LBL_W * 0.5 - rdSz * 0.3
         local rdY = SMITH_LBL_CY - SMITH_LBL_H * 0.5 + rdSz * 0.3
-        drawImageCentered(vg, imgRedDot, rdX, rdY, rdSz, rdSz, 1.0)
-    end
+        DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
     -- 铁匠铺可强化角标（任意槽位满足强化消耗条件）
     if not smithLocked and not smithDecomposeRedDot and imgIconUp >= 0 then
         local ok, canEnh = pcall(function() return getBlacksmithPage().canEnhanceAny() end)
@@ -436,8 +433,8 @@ function TownScene.draw(vg)
         local badgeSz = 40
         local badgeX = GUILD_LBL_CX + GUILD_LBL_W * 0.5 - badgeSz * 0.3
         local badgeY = GUILD_LBL_CY - GUILD_LBL_H * 0.5 + badgeSz * 0.3
-        if guildRelicBadgeStyle == "redDot" and imgRedDot >= 0 then
-            drawImageCentered(vg, imgRedDot, badgeX, badgeY, badgeSz, badgeSz, 1.0)
+        if guildRelicBadgeStyle == "redDot" then
+            DarkIcon.draw(vg, "reddot", badgeX, badgeY, badgeSz, 1.0)
         elseif guildRelicBadgeStyle ~= "redDot" and imgIconUp >= 0 then
             drawImageCentered(vg, imgIconUp, badgeX, badgeY, badgeSz, badgeSz, 1.0)
         end
@@ -462,12 +459,11 @@ function TownScene.draw(vg)
         drawBuildingLockOverlay(vg, ARENA_CX, ARENA_CY, "arena", true)
     end
     -- 竞技场红点（有竞技券时）
-    if not arenaLocked and imgRedDot >= 0 and arenaTicketRedDot then
+    if not arenaLocked and arenaTicketRedDot then
         local rdSz = 40
         local rdX = ARENA_LBL_CX + ARENA_LBL_W * 0.5 - rdSz * 0.3
         local rdY = ARENA_LBL_CY - ARENA_LBL_H * 0.5 + rdSz * 0.3
-        drawImageCentered(vg, imgRedDot, rdX, rdY, rdSz, rdSz, 1.0)
-    end
+        DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
     BF.finish(vg, _bfArena)
     if _tmActive and not arenaLocked then _TM.registerHotspot("building_arena", ARENA_CX, ARENA_CY, ARENA_W, ARENA_H) end
 
@@ -490,12 +486,11 @@ function TownScene.draw(vg)
         drawBuildingLockOverlay(vg, MARKET_CX, MARKET_CY, "market", false)
     end
     -- 市场特权红点（有可观看广告时）
-    if not marketLocked and imgRedDot >= 0 and marketPrivRedDot then
+    if not marketLocked and marketPrivRedDot then
         local rdSz = 40
         local rdX = MARKET_LBL_CX + MARKET_LBL_W * 0.5 - rdSz * 0.3
         local rdY = MARKET_LBL_CY - MARKET_LBL_H * 0.5 + rdSz * 0.3
-        drawImageCentered(vg, imgRedDot, rdX, rdY, rdSz, rdSz, 1.0)
-    end
+        DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
     BF.finish(vg, _bfMarket)
 
     -- 6) 教堂建筑

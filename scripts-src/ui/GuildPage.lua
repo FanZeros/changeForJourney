@@ -10,6 +10,7 @@
 
 local GameConfig        = require("config.GameConfig")
 local DrawUtil          = require("core.DrawUtil")
+local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
 local drawNineSlice     = DrawUtil.drawNineSlice
@@ -479,8 +480,6 @@ function GuildPage.init(vg)
     end
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)
     AvatarFrameUtil.preloadFrames(vg, img.frameIcons)
-    img.redDot = nvgCreateImage(vg, "image/ICON_HD.png", 0)
-    img.iconUp = nvgCreateImage(vg, "image/ICON_UP.png", 0)
 
     state.rankData = {}
     state.myRankData = nil
@@ -759,9 +758,8 @@ function GuildPage.draw(vg)
                     local badgeSz = 32
                     local badgeX = relicTab.cx + TAB.SLIDER_W * 0.25
                     local badgeY = TAB.TEXT_Y - TAB.SLIDER_H * 0.25
-                    if style == "redDot" and img.redDot >= 0 then
-                        drawImageCentered(vg, img.redDot, badgeX, badgeY, badgeSz, badgeSz, 1.0)
-                    elseif style ~= "redDot" and img.iconUp >= 0 then
+                    if style == "redDot" then
+                        DarkIcon.draw(vg, "reddot", badgeX, badgeY, badgeSz, 1.0)elseif style ~= "redDot" and img.iconUp >= 0 then
                         drawImageCentered(vg, img.iconUp, badgeX, badgeY, badgeSz, badgeSz, 1.0)
                     end
                 end

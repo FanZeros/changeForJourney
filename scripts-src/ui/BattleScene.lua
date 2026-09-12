@@ -1301,7 +1301,7 @@ function BattleScene.init(vg)
     for _, id in ipairs({1001, 1002, 1003}) do
         imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
     end
-    -- 加载剧情特殊怪物卡片 (1004 愤怒的铁匠)
+    -- 加载剧情特殊怪物卡片 (1004 昆吾之怒)
     imgMonsterCards[1004] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_1004.png", 0)
     -- 加载首通附加特殊怪物卡片 (1005~1007)
     for _, id in ipairs({1005, 1006, 1007}) do

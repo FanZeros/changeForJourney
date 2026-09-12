@@ -19,10 +19,10 @@ ResourceDefs.DEFS = {
     degrade_protect   = { iconPath = "image/UI_icon_QH_2.png",   quality = 4, name = "退级保护石" },  -- 已隐藏(seq5)，保留兼容旧邮件/奖励显示
     break_protect     = { iconPath = "image/UI_icon_QH_3.png",   quality = 5, name = "点金石" },
     gold_stone        = { iconPath = "image/UI_icon_QH_3.png",   quality = 5, name = "点金石" },  -- 别名
-    weapon_scroll     = { iconPath = "image/UI_ICON_JZ_WQ.png",  quality = 3, name = "武器卷轴" },
+    weapon_scroll     = { iconPath = "image/UI_icon_JZ_WQ.png",  quality = 3, name = "武器卷轴" },
     offhand_scroll    = { iconPath = "image/UI_icon_JZ_FS.png",  quality = 3, name = "副手卷轴" },
-    armor_scroll      = { iconPath = "image/UI_ICON_JZ_HJ.png",  quality = 3, name = "护甲卷轴" },
-    accessory_scroll  = { iconPath = "image/UI_ICON_JZ_SP.png",  quality = 3, name = "饰品卷轴" },
+    armor_scroll      = { iconPath = "image/UI_icon_JZ_HJ.png",  quality = 3, name = "护甲卷轴" },
+    accessory_scroll  = { iconPath = "image/UI_icon_JZ_SP.png",  quality = 3, name = "饰品卷轴" },
     random_scroll     = { iconPath = "image/UI_icon_JZ_SJ.png",  quality = 3, name = "随机卷轴" },
     adventure_ticket  = { iconPath = "image/UI_icon_ZMQ_1.png",  quality = 5, name = "冒险招募券" },
     stellar_ticket    = { iconPath = "image/UI_icon_ZMQ_2.png",  quality = 6, name = "星辉招募券" },
@@ -78,25 +78,25 @@ for id, typeKey in pairs(ResourceDefs.ID_TO_TYPE) do
     end
 end
 -- 英雄碎片（101-115）单独维护，不走 DEFS
-ResourceDefs.REWARD_NAMES["101"] = "卡琳碎片"
-ResourceDefs.REWARD_NAMES["102"] = "麦琪碎片"
-ResourceDefs.REWARD_NAMES["103"] = "琳达碎片"
-ResourceDefs.REWARD_NAMES["104"] = "塞西莉亚碎片"
-ResourceDefs.REWARD_NAMES["105"] = "维多利亚碎片"
-ResourceDefs.REWARD_NAMES["106"] = "露娜碎片"
-ResourceDefs.REWARD_NAMES["107"] = "星织碎片"
-ResourceDefs.REWARD_NAMES["108"] = "绫音碎片"
-ResourceDefs.REWARD_NAMES["109"] = "芙罗拉碎片"
-ResourceDefs.REWARD_NAMES["110"] = "丽贝卡碎片"
-ResourceDefs.REWARD_NAMES["111"] = "素华碎片"
-ResourceDefs.REWARD_NAMES["112"] = "艾丝翠德碎片"
-ResourceDefs.REWARD_NAMES["113"] = "罗莎琳碎片"
-ResourceDefs.REWARD_NAMES["114"] = "幽夜碎片"
-ResourceDefs.REWARD_NAMES["115"] = "伊丽莎白碎片"
-ResourceDefs.REWARD_NAMES["116"] = "洛星绘碎片"
-ResourceDefs.REWARD_NAMES["121"] = "亚历克斯碎片"
-ResourceDefs.REWARD_NAMES["122"] = "赛拉碎片"
-ResourceDefs.REWARD_NAMES["123"] = "艾尔温碎片"
+ResourceDefs.REWARD_NAMES["101"] = "大狗嚼碎片"
+ResourceDefs.REWARD_NAMES["102"] = "奶龙龙碎片"
+ResourceDefs.REWARD_NAMES["103"] = "叮咚鸡碎片"
+ResourceDefs.REWARD_NAMES["104"] = "接化发掌门碎片"
+ResourceDefs.REWARD_NAMES["105"] = "叠甲怪碎片"
+ResourceDefs.REWARD_NAMES["106"] = "阿姨压一压碎片"
+ResourceDefs.REWARD_NAMES["107"] = "信光机兵碎片"
+ResourceDefs.REWARD_NAMES["108"] = "愤怒的小雀碎片"
+ResourceDefs.REWARD_NAMES["109"] = "卡皮巴拉碎片"
+ResourceDefs.REWARD_NAMES["110"] = "铁憨憨碎片"
+ResourceDefs.REWARD_NAMES["111"] = "熬夜冠军碎片"
+ResourceDefs.REWARD_NAMES["112"] = "雪皇碎片"
+ResourceDefs.REWARD_NAMES["113"] = "弹弹弹碎片"
+ResourceDefs.REWARD_NAMES["114"] = "内鬼碎片"
+ResourceDefs.REWARD_NAMES["115"] = "复活吧爱人碎片"
+ResourceDefs.REWARD_NAMES["116"] = "万剑归宗碎片"
+ResourceDefs.REWARD_NAMES["121"] = "闪电卖鸡碎片"
+ResourceDefs.REWARD_NAMES["122"] = "小黑子鸡哥碎片"
+ResourceDefs.REWARD_NAMES["123"] = "Freestyle诗人碎片"
 
 -- 英文 key → 中文名（兼容旧格式 reward 字符串）
 for typeKey, def in pairs(ResourceDefs.DEFS) do
@@ -149,7 +149,7 @@ local function resolveShardHeroIdFromEntry(r)
     if keyStr then
         heroId = resolveShardHeroId(keyStr)
         if heroId then return heroId end
-        -- type=shard 时 key 可能是 heroId（如 key=16 表示洛星绘）
+        -- type=shard 时 key 可能是 heroId（如 key=16 表示万剑归宗）
         if r.type == "shard" then
             local directId = tonumber(keyStr)
             if directId then return directId end

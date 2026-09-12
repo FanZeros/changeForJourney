@@ -9,18 +9,16 @@ local CharacterPanel = require("ui.CharacterPanel")
 local HeroAssetUtil   = require("config.HeroAssetUtil")
 local AvatarFrameUtil = require("config.AvatarFrameUtil")
 local HeroConfig     = require("config.HeroConfig")
+local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 
 local TopBar = {}
 
 -- Image handles
 local imgExpBg   = -1
 local imgExpFill = -1
-local imgGold    = -1
-local imgDiamond = -1
-local imgPower   = -1
 local imgFrameIcons = {}  -- [frameId] 头像框
-local imgRedDot  = -1   -- 红点 ICON_HD.png
 local imgHeroIcons = {}  -- [heroId] 角色头像图标
+-- [暗黑化 P0] 金币/钻石/战力/红点 图标改由 core/DarkIcon.lua 程序化矢量绘制，不再加载贴图
 
 -- ======================== 本地数据缓存（多人模式由 Client.lua 设置） ========================
 -- 设置后优先使用，未设置（nil）时回退到 GameState
@@ -75,20 +73,13 @@ local DUMMY_BTN = {
 function TopBar.init(vg)
     imgExpBg   = nvgCreateImage(vg, "image/UI_JYT_1.png", 0)
     imgExpFill = nvgCreateImage(vg, "image/UI_JYT_2.png", 0)
-    imgGold    = nvgCreateImage(vg, "image/UI_icon_JB_X.png", 0)
-    imgDiamond = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
-    imgPower   = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
     AvatarFrameUtil.preloadFrames(vg, imgFrameIcons)
-    imgRedDot  = nvgCreateImage(vg, "image/ICON_HD.png", 0)
 
     -- 加载角色头像图标
     HeroAssetUtil.preloadIcons(vg, imgHeroIcons)
 
     if imgExpBg   < 0 then print("[TopBar] WARN: UI_JYT_1.png load failed") end
     if imgExpFill < 0 then print("[TopBar] WARN: UI_JYT_2.png load failed") end
-    if imgGold    < 0 then print("[TopBar] WARN: UI_icon_JB_X.png load failed") end
-    if imgDiamond < 0 then print("[TopBar] WARN: UI_icon_SJ_X.png load failed") end
-    if imgPower   < 0 then print("[TopBar] WARN: ICON_ZDL.png load failed") end
     print("[TopBar] init OK")
 end
 
@@ -222,9 +213,9 @@ function TopBar.draw(vg)
     local frameImg = AvatarFrameUtil.getIconHandle(imgFrameIcons, cachedAvatarFrameId)
     drawImageCentered(vg, frameImg, 98, 136, 160, 160)
 
-    -- #2c 红点提示（有可更换头像时显示）
-    if TopBar.hasAvailableAvatar() and imgRedDot >= 0 then
-        drawImageCentered(vg, imgRedDot, 160, 74, 74, 74)
+    -- #2c 红点提示（有可更换头像时显示）[暗黑化 P0: 余烬光点]
+    if TopBar.hasAvailableAvatar() then
+        DarkIcon.draw(vg, "reddot", 160, 74, 74, 1)
     end
 
     -- #2d 测试木桩入口：仅作为战斗页快捷入口，由 ClientInput 控制点击范围
@@ -295,9 +286,9 @@ function TopBar.draw(vg)
         nameFontSize, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
 
-    -- #8 战力图标 + 数值: icon center(197,175) 36x36, text left=220, Y=175
+    -- #8 战力图标 + 数值: icon center(197,175) 36x36, text left=220, Y=175 [暗黑化 P0: 余烬火焰]
     local displayPower = GameState.getPower()
-    drawImageCentered(vg, imgPower, 197, 175, 36, 36)
+    DarkIcon.draw(vg, "power", 197, 175, 36, 1)
     drawTextStroke(vg, 220, 175, tostring(displayPower),
         30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         247, 254, 119, 4)
@@ -307,8 +298,8 @@ function TopBar.draw(vg)
     local goldBgW, goldBgH = 170, 47
     drawRoundedRectCentered(vg, goldBgCX, goldBgCY, goldBgW, goldBgH, 18, 0, 0, 0, 204)
 
-    -- #10 金币图标: ICON_JB.png, center(653,100), 73x73
-    drawImageCentered(vg, imgGold, 653, 100, 73, 73)
+    -- #10 金币图标: center(653,100), 73x73 [暗黑化 P0: 暗金做旧币]
+    DarkIcon.draw(vg, "gold", 653, 100, 73, 1)
 
     -- #11 金币数值: left=goldBgLeft+44, Y=100, font 33, white, stroke 4
     local displayGold = cachedGold or GameState.getGold()
@@ -322,8 +313,8 @@ function TopBar.draw(vg)
     local gemBgW, gemBgH = 170, 47
     drawRoundedRectCentered(vg, gemBgCX, gemBgCY, gemBgW, gemBgH, 18, 0, 0, 0, 204)
 
-    -- #13 钻石图标: ICON_ZS.png, center(884,100), 76x76
-    drawImageCentered(vg, imgDiamond, 884, 100, 76, 76)
+    -- #13 钻石图标: center(884,100), 76x76 [暗黑化 P0: 血红宝石]
+    DarkIcon.draw(vg, "gem", 884, 100, 76, 1)
 
     -- #14 钻石数值: left=diamondBgLeft+44, Y=100, font 33, white, stroke 4
     local displayGems = cachedGems or GameState.getGems()

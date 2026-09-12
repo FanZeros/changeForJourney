@@ -660,7 +660,8 @@ function RewardPopup.draw(vg)
     local totalRows = math.ceil(math.max(#items, 1) / COLS)
 
     nvgSave(vg)
-    nvgScissor(vg, CLIP_LEFT, CLIP_TOP, GRID_W, GRID_H)
+    -- [修复] nvgScissor 是绝对设置会覆盖面板 intersect 裁剪，导致奖励物品逃逸面板边界（横屏三联布局下溢出到相邻面板）
+    nvgIntersectScissor(vg, CLIP_LEFT, CLIP_TOP, GRID_W, GRID_H)
 
     for row = 1, totalRows do
         -- 计算该行实际物品数，不满一行时居中偏移

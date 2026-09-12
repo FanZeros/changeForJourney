@@ -5,9 +5,17 @@
 -- ============================================================================
 
 local BattleEffects = {}
+-- [多实例] 活动特效列表随战斗 mount 切换; fxPool/particlePool 对象池全局共享
+local function newFxState()
+    return { effects = {} }
+end
+local BE_BCS = newFxState()
+function BattleEffects.newFxState() return newFxState() end
+function BattleEffects.mount(s) BE_BCS = s or newFxState() end
+function BattleEffects.mountedState() return BE_BCS end
+
 
 -- 活跃特效列表
-local effects = {}
 
 -- ======================== 对象池 ========================
 -- 避免每次命中都创建新 table，减少 GC 压力
@@ -723,7 +731,7 @@ function BattleEffects.spawn(armorType, tgtX, tgtY)
         def.setup(fx)
     end
 
-    effects[#effects + 1] = fx
+    BE_BCS.effects[#BE_BCS.effects + 1] = fx
 end
 
 --- 闪电卖鸡「银光」触发闪光
@@ -740,7 +748,7 @@ function BattleEffects.spawnSilverFlash(tgtX, tgtY)
     if SILVER_FLASH_EFFECT.setup then
         SILVER_FLASH_EFFECT.setup(fx)
     end
-    effects[#effects + 1] = fx
+    BE_BCS.effects[#BE_BCS.effects + 1] = fx
 end
 
 --- 天赋/弹射等附加 VFX（由 BattleCombat 或场景回调触发）
@@ -756,13 +764,13 @@ end
 --- 每帧更新
 function BattleEffects.update(dt)
     local i = 1
-    while i <= #effects do
-        local fx = effects[i]
+    while i <= #BE_BCS.effects do
+        local fx = BE_BCS.effects[i]
         fx.timer = fx.timer + dt
         if fx.timer >= fx.duration then
             -- 回收到对象池而非直接丢弃
             releaseFx(fx)
-            table.remove(effects, i)
+            table.remove(BE_BCS.effects, i)
         else
             i = i + 1
         end
@@ -771,7 +779,7 @@ end
 
 --- 绘制所有活跃特效（默认 alpha 混合，不改全局混合模式避免污染后续 UI）
 function BattleEffects.draw(vg)
-    for _, fx in ipairs(effects) do
+    for _, fx in ipairs(BE_BCS.effects) do
         local t = fx.timer / fx.duration
         local def = fx.def
         if def.draw then
@@ -784,12 +792,12 @@ end
 
 --- 清除所有特效
 function BattleEffects.reset()
-    effects = {}
+    BE_BCS.effects = {}
 end
 
 --- 获取当前活跃特效数量（调试用）
 function BattleEffects.getActiveCount()
-    return #effects
+    return #BE_BCS.effects
 end
 
 return BattleEffects

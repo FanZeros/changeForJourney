@@ -5,12 +5,20 @@
 -- ============================================================================
 
 local ProjectileSystem = {}
+-- ======================== [多实例] 投射物状态容器 ========================
+local function newState()
+    return { projectiles = {} }
+end
+local PS_BCS = newState()
+function ProjectileSystem.newState() return newState() end
+function ProjectileSystem.mount(s) PS_BCS = s or newState() end
+function ProjectileSystem.mountedState() return PS_BCS end
+
 
 local GameSFX = require "systems.GameSFX"
 local Diag = require("systems.BattleDiag")
 
 -- 活跃投射物列表
-local projectiles = {}
 local starGateDrawTime = 0
 
 -- NanoVG 上下文
@@ -785,7 +793,7 @@ function ProjectileSystem.init(vg)
     end
     vg_ = vg
     images = {}
-    projectiles = {}
+    PS_BCS.projectiles = {}
     starGateDrawTime = 0
     print("[ProjectileSystem] init OK")
 end
@@ -868,7 +876,7 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
         proj.bezierSide = (math.random() > 0.5) and 1 or -1
     end
 
-    projectiles[#projectiles + 1] = proj
+    PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
 
 --- 触发一个攻击投射物
@@ -909,7 +917,7 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
         proj.bezierSide = (math.random() > 0.5) and 1 or -1
     end
 
-    projectiles[#projectiles + 1] = proj
+    PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
 
 --- 触发一个技能投射物
@@ -954,7 +962,7 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
         proj.spawnAngle = math.atan(endY - startY, endX - startX)
     end
 
-    projectiles[#projectiles + 1] = proj
+    PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
 
 --- 触发一个转职天赋投射物（按 talentProjKey 查找配置，不依赖 heroId）
@@ -991,7 +999,7 @@ function ProjectileSystem.spawnTalent(talentProjKey, startX, startY, endX, endY,
         end
     end
 
-    projectiles[#projectiles + 1] = proj
+    PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
 
 local function safeInvokeProjectileCallback(label, fn)
@@ -1008,8 +1016,8 @@ end
 function ProjectileSystem.update(dt)
     starGateDrawTime = starGateDrawTime + dt
     local i = 1
-    while i <= #projectiles do
-        local proj = projectiles[i]
+    while i <= #PS_BCS.projectiles do
+        local proj = PS_BCS.projectiles[i]
         proj.timer = proj.timer + dt
 
         -- 目标死亡检测：如果投射物跟踪的目标已死亡，立即触发到达并快速消失
@@ -1058,7 +1066,7 @@ function ProjectileSystem.update(dt)
         end
         -- 加一点淡出余量（duration 后多保留 0.15s 用于淡出动画）
         if proj.timer >= duration + 0.15 then
-            table.remove(projectiles, i)
+            table.remove(PS_BCS.projectiles, i)
         else
             i = i + 1
         end
@@ -1101,7 +1109,7 @@ end
 
 --- 绘制所有活跃投射物
 function ProjectileSystem.draw(vg)
-    for _, proj in ipairs(projectiles) do
+    for _, proj in ipairs(PS_BCS.projectiles) do
         local duration = (proj.cfg and proj.cfg.duration) or 0.01
         if duration <= 0 then duration = 0.01 end
         local t = math.min(1, proj.timer / duration)
@@ -1116,13 +1124,13 @@ end
 
 --- 清除所有投射物
 function ProjectileSystem.reset()
-    projectiles = {}
+    PS_BCS.projectiles = {}
     starGateDrawTime = 0
 end
 
 --- 获取当前活跃投射物数量（调试用）
 function ProjectileSystem.getActiveCount()
-    return #projectiles
+    return #PS_BCS.projectiles
 end
 
 return ProjectileSystem

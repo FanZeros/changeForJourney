@@ -43,6 +43,7 @@ local RedeemConfig      = require("shared.redeem.RedeemConfig")
 local Protocol          = require("shared.Protocol")
 local DiaryPage         = require("ui.DiaryPage")
 local StartScreen       = require("ui.StartScreen")
+local DarkTitleScreen   = require("ui.DarkTitleScreen")  -- [DarkTitleScreen] 横屏暗黑标题
 local EventBus          = require("core.EventBus")
 local GameEvents        = require("config.GameEvents")
 local GameBGM           = require("systems.GameBGM")
@@ -138,6 +139,7 @@ function Standalone.Start()
 
     -- 5. Sub-modules
     StartScreen.init(vg, scene)
+    DarkTitleScreen.init(vg)  -- [DarkTitleScreen] 横屏标题资源
     TopBar.init(vg)
     BottomNav.init(vg)
     BattleScene.init(vg)
@@ -1030,6 +1032,11 @@ function HandleUpdate(eventType, eventData)
         return
     end
 
+    -- [DarkTitleScreen] 横屏标题动画（预载/游戏在标题下方继续进行）
+    if DarkTitleScreen.isOpen() then
+        DarkTitleScreen.update(dt)
+    end
+
     -- StartScreen 刚关闭 → 自动弹出离线收益面板（调试用）
     if startScreenWasOpen_ then
         startScreenWasOpen_ = false
@@ -1818,6 +1825,7 @@ function HandleNanoVGRenderHorizon()
     if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
         H_skipDone = true
         StartScreen.skipForReconnect()
+        DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
     end
 
     -- 开始画面：全窗口居中（2400 高画布，适配横屏高度）
@@ -1925,6 +1933,12 @@ function HandleNanoVGRenderHorizon()
             216, 201, 163, 2)
     end
 
+    -- [DarkTitleScreen] 横屏标题（全窗口逻辑坐标，覆盖一切直至点击淡出）
+    if DarkTitleScreen.isOpen() then
+        nvgResetTransform(vg)
+        DarkTitleScreen.draw(vg, logicalW, logicalH)
+    end
+
     nvgEndFrame(vg)
 end
 
@@ -1947,6 +1961,8 @@ local function HorizonResolveMouse()
 end
 
 function HandleMouseButtonDownHorizon(eventType, eventData)
+    -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
+    if DarkTitleScreen.isOpen() then return end
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()
@@ -1992,6 +2008,8 @@ function HandleMouseMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseButtonUpHorizon(eventType, eventData)
+    -- [DarkTitleScreen] 标题期任意释放 = 点击继续
+    if DarkTitleScreen.isOpen() then DarkTitleScreen.handleTap() return end
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()
@@ -2130,6 +2148,8 @@ function HandleTouchMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseWheelHorizon(eventType, eventData)
+    -- [DarkTitleScreen] 标题期吞掉滚轮
+    if DarkTitleScreen.isOpen() then return end
     local wheel = eventData["Wheel"]:GetInt()
     if ArenaBattleScene.isOpen() then ArenaBattleScene.handleScroll(wheel) return end
     if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end

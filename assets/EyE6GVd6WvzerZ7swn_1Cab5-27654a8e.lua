@@ -37,6 +37,7 @@ local LootBox          = require("ui.LootBox")
 local LootBoxPage      = require("ui.LootBoxPage")
 local StartScreen      = require("ui.StartScreen")
 local LoadingScreen    = require("ui.LoadingScreen")
+local DarkTitleScreen  = require("ui.DarkTitleScreen")  -- [DarkTitleScreen] 横屏暗黑标题
 local LevelUpPopup     = require("ui.LevelUpPopup")
 local OfflineRewardPanel = require("ui.OfflineRewardPanel")
 local UpdateNoticePopup    = require("ui.UpdateNoticePopup")
@@ -667,6 +668,7 @@ function Client.Start()
     StartScreen.init(vg, scene_)
     print("[Client][LOAD]   LoadingScreen.init...")
     LoadingScreen.init(vg)
+    DarkTitleScreen.init(vg)  -- [DarkTitleScreen] 横屏标题资源
     -- StartScreen 关闭后→打开 LoadingScreen（复用视频播放器，避免黑屏闪烁）
     StartScreen.setOnStart(function(vp, vh, bs, bn)
         LoadingScreen.open({ videoPlayer = vp, videoHandle = vh, bgmSource = bs, bgmNode = bn })
@@ -1481,6 +1483,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
         if not H_skipDone and StartScreen.isOpen() then
             H_skipDone = true
             StartScreen.skipForReconnect()
+            DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
         end
         if StartScreen.isOpen() or LoadingScreen.isOpen() then
             local ss = math.min(logicalW / 1080, logicalH / 2400)
@@ -1847,6 +1850,12 @@ function HandleNanoVGRender_Client(eventType, eventData)
         nvgText(vg, spx + sr + 18, spy, label, nil)
     end
 
+    -- [DarkTitleScreen] 横屏标题（全窗口逻辑坐标，覆盖一切直至点击淡出）
+    if HORIZON_MODE and DarkTitleScreen.isOpen() then
+        nvgResetTransform(vg)
+        DarkTitleScreen.draw(vg, logicalW, logicalH)
+    end
+
     nvgEndFrame(vg)
 end
 
@@ -2038,6 +2047,11 @@ function HandleUpdate_Client(eventType, eventData)
     if StartScreen.isOpen() then
         StartScreen.update(dt)
         return
+    end
+
+    -- [DarkTitleScreen] 横屏标题动画（游戏/加载在标题下方继续进行）
+    if DarkTitleScreen.isOpen() then
+        DarkTitleScreen.update(dt)
     end
 
     -- 加载界面更新 →网络进度 + 资源下载进度（由 LoadingScreen 内部组合）

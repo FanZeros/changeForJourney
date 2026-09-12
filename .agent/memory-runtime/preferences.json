@@ -1,0 +1,20 @@
+{
+  "wake_word": null,
+  "wake_word_hint": "用户未设置唤醒词。可在合适时机(非紧急交接中)询问是否设置,设置后更新此字段与 docs/persona.md",
+  "communication_style": "极简短指令;期望自行调研给方案;直接批评型反馈;先试点再全量",
+  "language": "zh-CN",
+  "scoped_preferences": {
+    "gamedev": {
+      "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",
+      "reference_system": "三层参考:角色原版卡面(锁长相)+基准构图图(锁构图)+全队画风板(锁画风)",
+      "acceptance": "交付前必须引擎实拍自查,逐张可挑",
+      "meme_density": "拉满,但真人真名必须谐音化或规避"
+    },
+    "project": {
+      "game_name": "终焉之门 Gate of Finality(原宿命旅途)",
+      "player_title": "远征长",
+      "team_name": "远征队",
+      "parallel_sessions": "用户开多 agent 会话并行,注意文件覆盖"
+    }
+  }
+}

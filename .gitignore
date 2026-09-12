@@ -1,0 +1,27 @@
+# 构建产物（可由构建管线重建）
+dist/
+
+# 临时与日志
+.tmp/
+logs/
+_uploads/
+
+# 引擎运行时与工具（平台自动提供）
+.cli/
+
+# 引擎自带参考目录（平台工作区自带，无需版本化）
+examples/
+templates/
+engine-docs/
+schemas/
+
+# 旧仓库克隆（其历史已在远端，本分支为工作区快照线）
+changeForJourney/
+
+# Agent 配置（会话工具，非项目内容）
+.claude/
+.codex/
+.opencode/
+.gemini/
+.agents/
+.cursor/

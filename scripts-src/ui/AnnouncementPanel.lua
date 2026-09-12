@@ -5,6 +5,7 @@
 
 local GameConfig = require("config.GameConfig")
 local DrawUtil   = require("core.DrawUtil")
+local DarkIcon   = require("core.DarkIcon")  -- [暗黑化 P1-B2] 矢量九宫格面板
 
 local Panel = {}
 
@@ -69,13 +70,13 @@ CLIP.H = CLIP.BOT - CLIP.TOP
 -- ======================== 详情视图布局 ========================
 
 local DETAIL = {
-    -- 5. 公告标题: X540 Y677 字号48 颜色5f3737
+    -- 5. 公告标题: X540 Y677 字号48 [暗黑化: 深棕→骨白，适配暗底]
     TITLE_X = 540, TITLE_Y = 677, TITLE_FONT = 48,
-    TITLE_R = 0x5f, TITLE_G = 0x37, TITLE_B = 0x37,
-    -- 6. 正文段落区域: X540 Y1221 746×958 字号36 颜色8d5f41
+    TITLE_R = 0xd8, TITLE_G = 0xc9, TITLE_B = 0xa3,
+    -- 6. 正文段落区域: X540 Y1221 746×958 字号36 [暗黑化: 深棕→浅棕]
     PARA_CX = 540, PARA_CY = 1221, PARA_W = 746, PARA_H = 958,
     PARA_FONT = 36, PARA_LINE_H = 52,  -- 行高 ≈ 字号×1.44
-    PARA_R = 0x8d, PARA_G = 0x5f, PARA_B = 0x41,
+    PARA_R = 0xc9, PARA_G = 0xb9, PARA_B = 0x8f,
     -- 7. 日期: X右对齐934 Y1783 字号38 颜色c6a997
     DATE_X = 934, DATE_Y = 1783, DATE_FONT = 38,
     DATE_R = 0xc6, DATE_G = 0xa9, DATE_B = 0x97,
@@ -95,7 +96,7 @@ local function easeInCubic(t) return t * t * t end
 
 -- ======================== 图片句柄 ========================
 
-local imgBg      = -1  -- UI_TY_EJQRK.png (九宫格弹窗背景)
+-- [暗黑化 P1-B2] 弹窗底板改由 DarkIcon.drawNine("panel") 矢量绘制，不再加载 UI_TY_EJQRK.png
 local imgIcon    = -1  -- UI_ICON_GG.png  (公告图标)
 local imgEntryBg = -1  -- UI_GG_1.png     (条目背景)
 
@@ -182,7 +183,6 @@ end
 -- ======================== Public API ========================
 
 function Panel.init(vg)
-    imgBg      = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
     imgIcon    = nvgCreateImage(vg, "image/UI_ICON_GG.png", 0)
     imgEntryBg = nvgCreateImage(vg, "image/UI_GG_1.png", 0)
     loadReadSet()  -- 从本地文件恢复已读状态
@@ -308,10 +308,10 @@ function Panel.draw(vg)
     nvgTranslate(vg, -BG.CX, -BG.CY)
     nvgGlobalAlpha(vg, pAlpha)
 
-    -- 2. 九宫格弹窗背景
-    DrawUtil.drawNineSlice(vg, imgBg,
+    -- 2. 矢量九宫格弹窗背景 [暗黑化 P1-B2: 暗铁标题带(titleH=原切片IT) + 金饰线 + 深底主体]
+    DarkIcon.drawNine(vg, "panel",
         BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
-        BG.W, BG.H, BG.IT, BG.IR, BG.IB, BG.IL)
+        BG.W, BG.H, { titleH = BG.IT })
 
     -- 3. 标题 "公告"（描边文字）
     DrawUtil.drawTextStroke(vg, TTL.X, TTL.Y, "公告",

@@ -61,6 +61,9 @@ local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen �
 local startScreenWasOpen_ = false
 local fontNormal = -1
 
+-- [一次性加载] 预载状态：active 时每帧按时间预算装载清单贴图，渲染层绘制进度遮罩
+local preload_ = { active = false, list = {}, idx = 0 }
+
 
 -- Design resolution (Mode A — 1080x2400 竖屏)
 local DESIGN_W = GameConfig.Design.WIDTH
@@ -104,6 +107,18 @@ function Standalone.Start()
     if not vg then
         print("[Standalone] ERROR: nvgCreate failed")
         return
+    end
+
+    -- 2.5 [一次性加载] 全局贴图去重：同一路径全生命周期只加载一次，
+    -- 启动预载与各模块 init 共用同一句柄，避免重复占用显存与二次解码
+    local handleCache = {}
+    local origNvgCreateImage = nvgCreateImage
+    nvgCreateImage = function(ctx, path, flags)
+        local cached = handleCache[path]
+        if cached then return cached end
+        local handle = origNvgCreateImage(ctx, path, flags)
+        if handle and handle >= 0 then handleCache[path] = handle end
+        return handle
     end
 
     -- 3. Font
@@ -689,6 +704,17 @@ function Standalone.Start()
     -- 6. Events
     SubscribeToEvent(vg, "NanoVGRender", "HandleNanoVGRender")
     SubscribeToEvent("Update", "HandleUpdate")
+
+    -- 7. [一次性加载] 装载全量图片清单，交由 HandleUpdate 每帧分帧预载
+    local manifestOk, manifest = pcall(require, "config.AssetManifest")
+    if manifestOk and type(manifest) == "table" and #manifest > 0 then
+        preload_.list = manifest
+        preload_.idx = 0
+        preload_.active = true
+        print("[Standalone] 全量预载开始: " .. #manifest .. " 张贴图")
+    else
+        print("[Standalone] AssetManifest 缺失，跳过全量预载")
+    end
     SubscribeToEvent("ScreenMode", "HandleScreenMode")
     SubscribeToEvent("MouseButtonDown", "HandleMouseButtonDown")
     SubscribeToEvent("MouseButtonUp", "HandleMouseButtonUp")
@@ -932,12 +958,53 @@ function HandleNanoVGRender(eventType, eventData)
         DarkIcon.drawShowcase(vg)
     end
 
+    -- [一次性加载] 预载进度遮罩（竖屏路径，设计空间坐标）
+    if preload_.active then
+        local total = #preload_.list
+        local done = preload_.idx
+        local p = total > 0 and (done / total) or 0
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+        nvgFillColor(vg, nvgRGBA(13, 11, 9, 255))
+        nvgFill(vg)
+        DrawUtil.drawTextStroke(vg, DESIGN_W * 0.5, DESIGN_H * 0.42, "资源加载中",
+            math.floor(DESIGN_H * 0.034), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            240, 199, 94, 3)
+        local bw = DESIGN_W * 0.42
+        local bh = math.max(10, DESIGN_H * 0.008)
+        local bx = (DESIGN_W - bw) * 0.5
+        local by = DESIGN_H * 0.48
+        DarkIcon.drawNine(vg, "slot", bx, by, bw, bh)
+        local fw = math.max(bh - 6, (bw - 6) * p)
+        DarkIcon.drawNine(vg, "fill", bx + 3, by + 3, fw, bh - 6)
+        DrawUtil.drawTextStroke(vg, DESIGN_W * 0.5, by + bh * 2.4,
+            string.format("%d / %d", done, total),
+            math.floor(DESIGN_H * 0.024), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            216, 201, 163, 2)
+    end
+
     nvgEndFrame(vg)
 end
 
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
+    -- [一次性加载] 每帧按时间预算预载一批贴图；期间不推进游戏逻辑
+    if preload_.active then
+        local list = preload_.list
+        local total = #list
+        local t0 = time.elapsedTime
+        while preload_.idx < total and time.elapsedTime - t0 < 0.012 do
+            preload_.idx = preload_.idx + 1
+            nvgCreateImage(vg, list[preload_.idx], 0)
+        end
+        if preload_.idx >= total then
+            preload_.active = false
+            print("[Standalone] 全量预载完成: " .. total .. " 张贴图")
+        end
+        return
+    end
+
     local dt = eventData["TimeStep"]:GetFloat()
 
     -- 开始界面打开时只更新它
@@ -1815,6 +1882,31 @@ function HandleNanoVGRenderHorizon()
         nvgScale(vg, ss, ss)
         DarkIcon.drawShowcase(vg)
         nvgRestore(vg)
+    end
+
+    -- [一次性加载] 预载进度遮罩（横屏路径，基屏幕空间，最后绘制覆盖全部）
+    if preload_.active then
+        local total = #preload_.list
+        local done = preload_.idx
+        local p = total > 0 and (done / total) or 0
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, logicalW, logicalH)
+        nvgFillColor(vg, nvgRGBA(13, 11, 9, 255))
+        nvgFill(vg)
+        DrawUtil.drawTextStroke(vg, logicalW * 0.5, logicalH * 0.42, "资源加载中",
+            math.floor(logicalH * 0.034), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            240, 199, 94, 3)
+        local bw = logicalW * 0.42
+        local bh = math.max(10, logicalH * 0.008)
+        local bx = (logicalW - bw) * 0.5
+        local by = logicalH * 0.48
+        DarkIcon.drawNine(vg, "slot", bx, by, bw, bh)
+        local fw = math.max(bh - 6, (bw - 6) * p)
+        DarkIcon.drawNine(vg, "fill", bx + 3, by + 3, fw, bh - 6)
+        DrawUtil.drawTextStroke(vg, logicalW * 0.5, by + bh * 2.4,
+            string.format("%d / %d", done, total),
+            math.floor(logicalH * 0.024), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            216, 201, 163, 2)
     end
 
     nvgEndFrame(vg)

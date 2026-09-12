@@ -23,6 +23,7 @@ local DungeonBattleScene = require("ui.DungeonBattleScene")
 local TowerBattleScene   = require("ui.TowerBattleScene")
 local LootBox          = require("ui.LootBox")
 local StartScreen      = require("ui.StartScreen")
+local DarkTitleScreen  = require("ui.DarkTitleScreen")  -- [DarkTitleScreen] 横屏暗黑标题
 local LevelUpPopup     = require("ui.LevelUpPopup")
 local OfflineRewardPanel = require("ui.OfflineRewardPanel")
 local UpdateNoticePopup = require("ui.UpdateNoticePopup")
@@ -95,8 +96,14 @@ end
 
 -- ======================== 拖拽分发（统一 Mouse/Touch） ========================
 
+-- [fix] effectiveTab 前向声明：横屏面板路由在文件后段定义（原 local 定义晚于
+-- 上方分发器的闭包捕获，运行时会解析为 nil 全局，LSP undefined-global）
+local effectiveTab
+
 --- 按下事件分发
 local function dispatchDragBegin(dx, dy)
+    -- [DarkTitleScreen] 标题期吞掉按下（继续由 dispatchDragEndAndTap 触发）
+    if DarkTitleScreen.isOpen() then return end
     pressStartDX, pressStartDY = dx, dy
     pressValid = true
     BF.onPress(dx, dy)
@@ -170,6 +177,8 @@ end
 
 --- 移动事件分发
 local function dispatchDragMove(dx, dy)
+    -- [DarkTitleScreen] 标题期吞掉拖动
+    if DarkTitleScreen.isOpen() then return end
     -- 角色选择界面拦截
     if CharacterSelect.isActive() then return end
 
@@ -262,6 +271,12 @@ end
 
 --- 松开事件分发（含点击判定）
 local function dispatchDragEndAndTap(dx, dy)
+    -- [DarkTitleScreen] 标题期任意释放 = 点击继续
+    if DarkTitleScreen.isOpen() then
+        DarkTitleScreen.handleTap()
+        pressValid = false
+        return
+    end
     BF.onRelease()
     BattleScene.handlePressEnd()
     -- 判断是否为有效点击
@@ -535,6 +550,8 @@ end
 
 --- 滚轮事件分发
 function M.dispatchScroll(wheel)
+    -- [DarkTitleScreen] 标题期吞掉滚轮
+    if DarkTitleScreen.isOpen() then return end
     if CharacterSelect.isActive() then return end
     if ScenarioDialogue.isActive() then return end
     if ArenaBattleScene.isOpen() then
@@ -729,7 +746,8 @@ ViewportI = require("core.Viewport")
 HORIZON_MODE = true
 H_panel = 'center'
 
-local function effectiveTab()
+-- [fix] 赋值给文件头部前向声明的 local（不可再加 local，否则上方闭包捕获的仍是 nil）
+function effectiveTab()
     if not HORIZON_MODE then return BottomNav.getSelectedIndex() end
     if H_panel == 'left' then return 4 end
     if H_panel == 'right' then return 1 end

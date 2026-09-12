@@ -1,6 +1,5 @@
 --- 自动生成：全量图片清单（一次性加载用，带文件字节数）
---- 重新生成: cd assets && find image -type f \( -name "*.png" -o -name "*.jpg" \) -printf "%s %P\n" | sort -n | python3 加 image/ 前缀格式化
---- 共 742 项，从小到大排序；预载按累计字节预算自适应降级
+--- 共 743 项，从小到大排序；预载按累计字节预算自适应降级
 return {
     { "image/UI_ZD_GJT2.png", 261 },
     { "image/UI_JJCJL_DYT1.png", 301 },
@@ -618,9 +617,9 @@ return {
     { "image/ICON_DW_7.png", 349677 },
     { "image/ICON_DW_8.png", 349677 },
     { "image/spine/UI_SPINE_KPTX.png", 361691 },
-    { "image/角色卡牌/KP_YX_9.png", 447885 },
-    { "image/角色卡牌/KP_YX_21.png", 478568 },
-    { "image/角色卡牌/KP_YX_11.png", 489926 },
+    { "image/角色卡牌/KP_YX_11.png", 384774 },
+    { "image/角色卡牌/KP_YX_9.png", 404074 },
+    { "image/角色卡牌/KP_YX_21.png", 422776 },
     { "image/spine/UI_SPINE_TFBJ_2.png", 493566 },
     { "image/UI_RZAN_BB.png", 519777 },
     { "image/UI_RZAN_CJ.png", 519777 },
@@ -650,6 +649,7 @@ return {
     { "image/小黑子鸡哥_立绘v2_20260912081206.png", 1323530 },
     { "image/内鬼_立绘_20260912095126.png", 1350372 },
     { "image/edited_奶龙龙_立绘_20260912095253.png", 1350610 },
+    { "image/新旧卡面对比_放大版.png", 1443842 },
     { "image/卡皮巴拉_立绘_双参考版_20260912113427.png", 1470600 },
     { "image/角色立绘/UI_DLH_9.png", 1470600 },
     { "image/KCLH_20.png", 1506217 },
@@ -671,6 +671,7 @@ return {
     { "image/雪皇_立绘试点_20260912081251.png", 1776042 },
     { "image/熬夜冠军_立绘_双参考版_20260912113554.png", 1781583 },
     { "image/角色立绘/UI_DLH_11.png", 1781583 },
+    { "image/原素材_立绘对照.png", 1807098 },
     { "image/edited_弹弹弹_立绘_20260912095925.png", 1851050 },
     { "image/UI_RZ_BJ.png", 1876421 },
     { "image/edited_摘星星星人_立绘v2_20260912094921.png", 1946527 },
@@ -688,6 +689,7 @@ return {
     { "image/UI_ZZBJ_6.png", 2451457 },
     { "image/UI_RW_BJ.png", 2769209 },
     { "image/关卡地图/MAP_FB3.png", 3214379 },
+    { "image/玩梗立绘全家福.png", 3334300 },
     { "image/UI_JJC_BJ1.png", 3382649 },
     { "image/角色立绘/UI_DLH_1.png", 3499953 },
     { "image/角色立绘/UI_DLH_10.png", 3499953 },
@@ -701,7 +703,6 @@ return {
     { "image/UI_MZQD_BJ.png", 4017689 },
     { "image/UI_SC_TQBJ.png", 4017689 },
     { "image/UI_TJP_CH_1.png", 4025789 },
-    { "image/原素材_立绘对照.png", 4742318 },
     { "image/spine/UI_SPINE_TFBJ.png", 5592565 },
     { "image/UI_JTSQ_BJ.png", 5827769 },
     { "image/UI_JSJM_bj.png", 6398489 },
@@ -743,5 +744,4 @@ return {
     { "image/关卡地图/MAP_FB1.png", 7553113 },
     { "image/关卡地图/MAP_FB2.png", 7553113 },
     { "image/UI_CZ_BJ.png", 7913561 },
-    { "image/玩梗立绘全家福.png", 10645174 },
 }

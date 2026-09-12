@@ -62,7 +62,10 @@ local startScreenWasOpen_ = false
 local fontNormal = -1
 
 -- [一次性加载] 预载状态：active 时每帧按时间预算装载清单贴图，渲染层绘制进度遮罩
-local preload_ = { active = false, list = {}, idx = 0 }
+-- 字节预算：累计装载量达到预算即停止预载，剩余大图转惰性加载（首次使用时经去重包装装载一次）
+-- 自适应低端设备（手机 WebView 显存有限），避免全量 500MB+ 贴图把内存打爆
+local preload_ = { active = false, list = {}, idx = 0, bytes = 0 }
+local PRELOAD_BUDGET = 250 * 1024 * 1024
 
 
 -- Design resolution (Mode A — 1080x2400 竖屏)
@@ -989,18 +992,31 @@ end
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
-    -- [一次性加载] 每帧按时间预算预载一批贴图；期间不推进游戏逻辑
+    -- [一次性加载] 每帧按时间预算预载一批贴图；达到字节预算或装载完毕即结束；
+    -- 期间不推进游戏逻辑；单张失败仅跳过（引擎会记一次 ERROR），不中断预载
     if preload_.active then
         local list = preload_.list
         local total = #list
         local t0 = time.elapsedTime
         while preload_.idx < total and time.elapsedTime - t0 < 0.012 do
             preload_.idx = preload_.idx + 1
-            nvgCreateImage(vg, list[preload_.idx], 0)
+            local entry = list[preload_.idx]
+            local handle = nvgCreateImage(vg, entry[1], 0)
+            if handle and handle >= 0 then
+                preload_.bytes = preload_.bytes + (entry[2] or 0)
+            end
+            if preload_.bytes >= PRELOAD_BUDGET then
+                preload_.active = false
+                print(string.format(
+                    "[Standalone] 预载达到字节预算(%.0fMB)，已载 %d/%d 张，剩余转惰性加载",
+                    PRELOAD_BUDGET / 1048576, preload_.idx, total))
+                return
+            end
         end
         if preload_.idx >= total then
             preload_.active = false
-            print("[Standalone] 全量预载完成: " .. total .. " 张贴图")
+            print(string.format("[Standalone] 全量预载完成: %d 张, %.0fMB",
+                total, preload_.bytes / 1048576))
         end
         return
     end

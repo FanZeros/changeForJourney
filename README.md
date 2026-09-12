@@ -17,3 +17,11 @@
 - `systems/` 战斗公式/天赋/状态效果；`config/` 数值与关卡配置
 - `network/` Client/Standalone 双模式渲染与输入；`server/` 竞技场等服务端
 - 横屏 PC 版改造进行中（core/Viewport.lua 多面板方案）
+
+## 横屏 PC 多面板版（已实跑验证）
+
+`core/Viewport.lua` + `network/Standalone.lua`（HORIZON_MODE）：
+- 1920×1080 三联竖屏面板（486×1080/面板，scale 0.45）：左=功能经营（城镇+市场/铁匠/酒馆/竞技场），中=主视图（战斗/角色/日志+全局弹窗），右=角色固定
+- 输入按面板命中 + 设计坐标逆变换，页面代码零改动
+- `H_SKIP_START=true` 跳过开始画面（PC 离线形态）
+- 验证：UrhoXRuntime 软渲染 120 帧 validate Lua 零错误 + 三联截图确认

@@ -62,12 +62,16 @@ local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen �
 local startScreenWasOpen_ = false
 local fontNormal = -1
 
--- [一次性加载] 预载状态：active 时每帧按时间预算装载清单贴图，渲染层绘制进度遮罩
--- 字节预算：累计装载量达到预算即停止预载，剩余大图转惰性加载（首次使用时经去重包装装载一次）
--- 自适应低端设备（手机 WebView 显存有限），避免全量 500MB+ 贴图把内存打爆
-local preload_ = { active = false, list = {}, idx = 0, bytes = 0, deadline = nil }
-local PRELOAD_BUDGET = 250 * 1024 * 1024
-local PRELOAD_TIME_LIMIT = 30  -- 预载总时限（秒），超时剩余转惰性，防任何环境挂死
+-- [一次性加载] 三段式加载：
+--   FG 前台预载：进游戏前只载 80MB 核心 UI（小图优先，进度遮罩），快进游戏
+--   BG 后台补载：游戏运行中每帧 3ms 温和补载剩余小图，无感
+--   惰性：>1MB 大图（地图/立绘/弹窗底）保持首次使用时加载（与原版一致，去重包装保证只载一次）
+-- 自适应低端设备：不把 500MB+ 全量贴图塞进显存，避免卡顿/OOM
+local preload_ = { active = false, bg = false, list = {}, idx = 0, bytes = 0, deadline = nil }
+local PRELOAD_FG_BUDGET = 80 * 1024 * 1024   -- 前台预载字节预算
+local PRELOAD_TIME_LIMIT = 30                -- 前台预载总时限（秒）
+local BG_FRAME_BUDGET = 0.003                -- 后台补载每帧时间预算（秒）
+local BG_SKIP_SIZE = 1024 * 1024             -- 后台跳过的大图阈值（1MB，保持惰性）
 
 --- [一次性加载] 预载进度遮罩（全屏，W/H 为当前绘制空间尺寸；须在退出变换内调用）
 local function DrawPreloadOverlay(vg, W, H)
@@ -1004,9 +1008,9 @@ end
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
-    -- [一次性加载] 预载期处理：
-    --   1) 开始画面保持可交互（"轻触屏幕继续"随时可点，点击即结束预载转惰性）
-    --   2) 总时限 30s 保护，超时剩余转惰性
+    -- [一次性加载] FG 前台预载：
+    --   1) 开始/标题画面保持可交互（点击即结束前台预载，剩余进后台/惰性）
+    --   2) 总时限 30s；字节预算 80MB；达到任一即转后台补载
     --   3) 每帧按时间预算装载一批；期间不推进游戏逻辑
     if preload_.active then
         local dt = eventData["TimeStep"]:GetFloat()
@@ -1014,17 +1018,19 @@ function HandleUpdate(eventType, eventData)
             StartScreen.update(dt)
             if not StartScreen.isOpen() then
                 preload_.active = false
+                preload_.bg = true
                 print("[Standalone] 玩家跳过开始画面，剩余 " ..
-                    (#preload_.list - preload_.idx) .. " 张转惰性加载")
+                    (#preload_.list - preload_.idx) .. " 张转后台补载")
             end
         end
-        -- [DarkTitleScreen] 横屏标题保持可交互（点击淡出即结束预载转惰性）
+        -- [DarkTitleScreen] 横屏标题保持可交互（点击淡出即转后台补载）
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.update(dt)
             if not DarkTitleScreen.isOpen() then
                 preload_.active = false
+                preload_.bg = true
                 print("[Standalone] 标题画面已点击，剩余 " ..
-                    (#preload_.list - preload_.idx) .. " 张转惰性加载")
+                    (#preload_.list - preload_.idx) .. " 张转后台补载")
             end
         end
     end
@@ -1034,7 +1040,8 @@ function HandleUpdate(eventType, eventData)
         end
         if time.elapsedTime > preload_.deadline then
             preload_.active = false
-            print("[Standalone] 预载超时(" .. PRELOAD_TIME_LIMIT .. "s)，剩余转惰性加载")
+            preload_.bg = true
+            print("[Standalone] 前台预载超时(" .. PRELOAD_TIME_LIMIT .. "s)，剩余转后台补载")
             return
         end
         local list = preload_.list
@@ -1047,11 +1054,12 @@ function HandleUpdate(eventType, eventData)
             if handle and handle >= 0 then
                 preload_.bytes = preload_.bytes + (entry[2] or 0)
             end
-            if preload_.bytes >= PRELOAD_BUDGET then
+            if preload_.bytes >= PRELOAD_FG_BUDGET then
                 preload_.active = false
+                preload_.bg = true
                 print(string.format(
-                    "[Standalone] 预载达到字节预算(%.0fMB)，已载 %d/%d 张，剩余转惰性加载",
-                    PRELOAD_BUDGET / 1048576, preload_.idx, total))
+                    "[Standalone] 前台预载达到预算(%.0fMB)，已载 %d/%d 张，剩余转后台补载",
+                    PRELOAD_FG_BUDGET / 1048576, preload_.idx, total))
                 return
             end
         end
@@ -1061,6 +1069,29 @@ function HandleUpdate(eventType, eventData)
                 total, preload_.bytes / 1048576))
         end
         return
+    end
+
+    -- [一次性加载] BG 后台补载：游戏运行中每帧 3ms 温和补载剩余小图；
+    -- >1MB 大图跳过（保持首次使用时惰性加载，避免游戏中途 1s+ 解码卡顿）
+    if preload_.bg and preload_.idx < #preload_.list then
+        local list = preload_.list
+        local total = #list
+        local t0 = time.elapsedTime
+        while preload_.idx < total and time.elapsedTime - t0 < BG_FRAME_BUDGET do
+            preload_.idx = preload_.idx + 1
+            local entry = list[preload_.idx]
+            if (entry[2] or 0) < BG_SKIP_SIZE then
+                local handle = nvgCreateImage(vg, entry[1], 0)
+                if handle and handle >= 0 then
+                    preload_.bytes = preload_.bytes + (entry[2] or 0)
+                end
+            end
+        end
+        if preload_.idx >= total then
+            preload_.bg = false
+            print(string.format("[Standalone] 后台补载完成: 累计 %d/%d 张, %.0fMB（大图保持惰性）",
+                preload_.idx, total, preload_.bytes / 1048576))
+        end
     end
 
     local dt = eventData["TimeStep"]:GetFloat()

@@ -98,6 +98,7 @@ local detailState = {
 }
 
 -- collectAttributes → DetailAttrs 模块
+---@type fun(heroId: (string|number), heroCfg: table, level: number): table
 local collectAttributes = DetailAttrs.collectAttributes
 
 --- 限制属性滚动值（需在 setContext 之前定义，传递给 Draw）

@@ -18,6 +18,7 @@ local EquipmentSystem  = require("systems.EquipmentSystem")
 local RewardPopup      = require("ui.RewardPopup")
 local SpineResultEffect = require("ui.SpineResultEffect")
 local DrawUtil         = require("core.DrawUtil")
+local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local HeroAssetUtil    = require("config.HeroAssetUtil")
 local CharacterPanel   = require("ui.CharacterPanel")
 local HeroConfig       = require("config.HeroConfig")
@@ -783,10 +784,7 @@ local function drawUpperSlotContent(vg, tabName)
                 local pwTextW = nvgTextBounds(vg, 0, 0, powerStr)
                 local pwTotalW = CARD_POWER_ICON_SIZE + 4 + pwTextW
                 local pwStartX = cx - pwTotalW * 0.5
-                drawImageCentered(vg, imgPower,
-                    pwStartX + CARD_POWER_ICON_SIZE * 0.5, CARD_POWER_Y,
-                    CARD_POWER_ICON_SIZE, CARD_POWER_ICON_SIZE, 1.0)
-                local textX = pwStartX + CARD_POWER_ICON_SIZE + 4
+                DarkIcon.draw(vg, "power", pwStartX + CARD_POWER_ICON_SIZE * 0.5, CARD_POWER_Y, CARD_POWER_ICON_SIZE, 1.0)local textX = pwStartX + CARD_POWER_ICON_SIZE + 4
                 drawTextStroke(vg, textX, CARD_POWER_Y, powerStr,
                     30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
                     247, 254, 119, 4)
@@ -1039,8 +1037,6 @@ function BlacksmithPage.init(vg)
     imgReplaceBtn = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
     imgCheckmark = nvgCreateImage(vg, "image/UI_icon_GOU.png", 0)
     imgLvlBadge  = nvgCreateImage(vg, "image/UI_JSJM_DJ.png", 0)
-    imgRedDot    = nvgCreateImage(vg, "image/ICON_HD.png", 0)
-    imgIconUp    = nvgCreateImage(vg, "image/ICON_UP.png", 0)
     -- 一键强化确认弹窗图片
     imgEnhDlgBg    = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
     imgEnhDlgMinus = nvgCreateImage(vg, "image/UI_AN_JIAN.png", 0)
@@ -1063,8 +1059,6 @@ function BlacksmithPage.init(vg)
     imgDeployed     = nvgCreateImage(vg, "image/UI_JSJM_CZZ.png", 0)
     imgLock         = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
     imgPlusCard     = nvgCreateImage(vg, "image/UI_ICON_JIA.png", 0)
-    imgPower        = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
-    imgLvlBadgeCard = nvgCreateImage(vg, "image/UI_JSJM_DJ.png", 0)
     imgExpBarBg     = nvgCreateImage(vg, "image/UI_JSMB_JYT1.png", 0)
     imgExpBarFill   = nvgCreateImage(vg, "image/UI_JSMB_JYT2.png", 0)
 
@@ -1744,15 +1738,14 @@ function BlacksmithPage.draw(vg)
     end
 
     -- 分解标签红点（背包满时，选中也保留）
-    if imgRedDot >= 0 and decomposeRedDot then
+    if decomposeRedDot then
         local fenjieTab = TAB_ITEMS[3]  -- "分解"
         nvgFontFace(vg, "sans"); nvgFontSize(vg, TAB_FONT_SIZE)
         local upSize = 30
         local textHalfW = nvgTextBounds(vg, 0, 0, fenjieTab.name) * 0.5
         local upX = fenjieTab.cx + textHalfW + 10
         local upY = TAB_TEXT_Y - 18
-        DrawUtil.drawImageCentered(vg, imgRedDot, upX, upY, upSize, upSize, 1.0)
-    end
+        DrawUtil.DarkIcon.draw(vg, "reddot", upX, upY, upSize, 1.0)end
 
     -- 强化标签可强化角标（有任意槽位满足强化条件时显示）
     if imgIconUp >= 0 and BlacksmithPage.canEnhanceAny() then

@@ -6,6 +6,7 @@
 -- nvgSpineCreate / nvgSpineRender 是引擎内置全局函数（NanoVG Spine 扩展）
 
 local GameConfig       = require("config.GameConfig")
+local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0]
 local DrawUtil         = require("core.DrawUtil")
 local drawTextStroke   = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -564,8 +565,7 @@ local function drawRosterList(vg)
         local rptW = nvgTextBounds(vg, 0, 0, rPowerStr)
         local rpcW = ROSTER.POWER_ICON_SIZE + POWER_GAP + rptW
         local rpcX = cx - rpcW * 0.5
-        drawImageCentered(vg, img.power, rpcX + ROSTER.POWER_ICON_SIZE * 0.5,
-            cy + ROSTER.POWER_DY, ROSTER.POWER_ICON_SIZE, ROSTER.POWER_ICON_SIZE, 1.0)
+        DarkIcon.draw(vg, "power", rpcX + ROSTER.POWER_ICON_SIZE * 0.5, cy + ROSTER.POWER_DY, ROSTER.POWER_ICON_SIZE, 1.0)
         drawTextStroke(vg, rpcX + ROSTER.POWER_ICON_SIZE + POWER_GAP,
             cy + ROSTER.POWER_DY, rPowerStr,
             30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
@@ -702,8 +702,6 @@ function ChurchPage.init(vg)
     end
 
     -- 卡片详情图片（与角色面板相同）
-    img.power      = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
-    img.lvlBadge   = nvgCreateImage(vg, "image/UI_JSJM_DJ.png", 0)
     img.expBarBg   = nvgCreateImage(vg, "image/UI_JSMB_JYT1.png", 0)
     img.expBarFill = nvgCreateImage(vg, "image/UI_JSMB_JYT2.png", 0)
     img.deployed   = nvgCreateImage(vg, "image/UI_JSJM_CZZ.png", 0)
@@ -717,8 +715,6 @@ function ChurchPage.init(vg)
     img.resetConfBg = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
     img.goldCoin    = nvgCreateImage(vg, "image/UI_icon_JB.png", 0)
     img.iconUp     = nvgCreateImage(vg, "image/ICON_UP.png", 0)
-    img.redDot     = nvgCreateImage(vg, "image/ICON_HD.png", 0)
-    img.resGold    = nvgCreateImage(vg, "image/UI_icon_JB_X.png", 0)
     img.resDiamond = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
 
     -- 天赋面板图片
@@ -1457,8 +1453,7 @@ function ChurchPage.draw(vg)
             local ptW = nvgTextBounds(vg, 0, 0, powerStr)
             local pcW = ROSTER.POWER_ICON_SIZE + POWER_GAP + ptW
             local pcX = cx - pcW * 0.5
-            drawImageCentered(vg, img.power, pcX + ROSTER.POWER_ICON_SIZE * 0.5,
-                cy + ROSTER.POWER_DY, ROSTER.POWER_ICON_SIZE, ROSTER.POWER_ICON_SIZE, 1.0)
+            DarkIcon.draw(vg, "power", pcX + ROSTER.POWER_ICON_SIZE * 0.5, cy + ROSTER.POWER_DY, ROSTER.POWER_ICON_SIZE, 1.0)
             drawTextStroke(vg, pcX + ROSTER.POWER_ICON_SIZE + POWER_GAP,
                 cy + ROSTER.POWER_DY, powerStr,
                 30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,

@@ -71,6 +71,18 @@ end
 local function toDesign(px, py)
     local sx = px / dpr / scale
     local sy = py / dpr / scale
+    if HORIZON_MODE and currentStateFn and currentStateFn() == STATE_IN_GAME
+        and not StartScreen.isOpen() then
+        local lw, lh = graphics:GetWidth() / (graphics:GetDPR() or 1), graphics:GetHeight() / (graphics:GetDPR() or 1)
+        local vox, voy, vs = ViewportI.layout(lw, lh)
+        local pid, pdx, pdy = ViewportI.hit(sx, sy, vox, voy, vs)
+        if pid then
+            H_panel = pid
+            return pdx, pdy, sx, sy
+        end
+        H_panel = 'center'
+        return sx - (vox + ViewportI.PANELS.center.bx * vs), sy - voy, sx, sy
+    end
     return sx - designOffsetX, sy - designOffsetY, sx, sy
 end
 
@@ -117,7 +129,7 @@ local function dispatchDragBegin(dx, dy)
     end
     if LootBox.handleDragBegin(dx, dy) then return end
 
-    local tabIndex = BottomNav.getSelectedIndex()
+    local tabIndex = effectiveTab()
     if tabIndex == 4 and BlacksmithPage.isOpen() then
         BlacksmithPage.handleDragBegin(dx, dy)
         return
@@ -186,7 +198,7 @@ local function dispatchDragMove(dx, dy)
     end
     if LootBox.handleDragMove(dx, dy) then return end
 
-    local tabIndex = BottomNav.getSelectedIndex()
+    local tabIndex = effectiveTab()
     if tabIndex == 4 and BlacksmithPage.isOpen() then
         BlacksmithPage.handleDragMove(dx, dy)
         return
@@ -382,7 +394,7 @@ local function dispatchDragEndAndTap(dx, dy)
         return
     end
 
-    local tabIndex = BottomNav.getSelectedIndex()
+    local tabIndex = effectiveTab()
 
     -- 铁匠铺
     if tabIndex == 4 and BlacksmithPage.isOpen() then
@@ -540,7 +552,7 @@ function M.dispatchScroll(wheel)
     if OfflineRewardPanel.isOpen() then OfflineRewardPanel.handleScroll(wheel); return end
     if LootBox.isPageOpen() then LootBox.handleScroll(wheel); return end
 
-    local tabIndex = BottomNav.getSelectedIndex()
+    local tabIndex = effectiveTab()
     if tabIndex == 4 and BlacksmithPage.isOpen() then
         BlacksmithPage.handleScroll(wheel)
         return
@@ -707,6 +719,21 @@ function M.handleMouseWheel(eventType, eventData)
     if currentStateFn() ~= STATE_IN_GAME then return end
     local wheel = eventData["Wheel"]:GetInt()
     M.dispatchScroll(wheel)
+end
+
+
+-- ============================================================================
+-- 横屏 PC 多面板（changeForJourney）：输入面板路由
+-- ============================================================================
+ViewportI = require("core.Viewport")
+HORIZON_MODE = true
+H_panel = 'center'
+
+local function effectiveTab()
+    if not HORIZON_MODE then return BottomNav.getSelectedIndex() end
+    if H_panel == 'left' then return 4 end
+    if H_panel == 'right' then return 1 end
+    return BottomNav.getSelectedIndex()
 end
 
 return M

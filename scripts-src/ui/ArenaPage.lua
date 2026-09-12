@@ -6,6 +6,7 @@
 -- ============================================================================
 
 local GameConfig = require("config.GameConfig")
+local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local GameState  = require("core.GameState")
 local CharacterPanel = require("ui.CharacterPanel")
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
@@ -311,8 +312,7 @@ local function drawRankItem(vg, bgImg, cx, cy, bgW, bgH, data, s)
     local pwX = cx - (P2.RANK_CX - P2.RK_PW_X) * s
     local pwY = cy + P2.RK_PW_YO * s
     local piW, piH = math.floor(P2.RK_PW_IW * s), math.floor(P2.RK_PW_IH * s)
-    drawImageCentered(vg, img.powerIcon, pwX + piW * 0.5, pwY, piW, piH, 1.0)
-    drawTextStroke(vg, pwX + piW + 4 * s, pwY, formatPower(data.power),
+    DarkIcon.draw(vg, "power", pwX + piW * 0.5, pwY, piW, 1.0)drawTextStroke(vg, pwX + piW + 4 * s, pwY, formatPower(data.power),
         math.floor(P2.RK_PW_FONT * s), NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         P2.RK_PW_R, P2.RK_PW_G, P2.RK_PW_B, math.floor(P2.RK_PW_SW * s),
         { strokeColor = { 0x23, 0x23, 0x23 } })
@@ -356,8 +356,6 @@ function ArenaPage.init(vg)
     img.rankBg   = nvgCreateImage(vg, "image/UI_JJC_1.png", 0)
     img.myRankBg = nvgCreateImage(vg, "image/UI_JJC_2.png", 0)
     img.battleBtn = nvgCreateImage(vg, "image/UI_AN_DA.png", 0)
-    img.powerIcon = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
-    img.btnBack  = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
     img.tabBg    = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
     img.slider   = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
     img.costIcon = nvgCreateImage(vg, "image/UI_icon_JJCQ_X.png", 0)
@@ -371,9 +369,6 @@ function ArenaPage.init(vg)
     -- 角色头像图标
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)
     img.logBtn    = nvgCreateImage(vg, "image/UI_JLAN.png", 0)
-    img.imgRedDot = nvgCreateImage(vg, "image/ICON_HD.png", 0)
-
-    state.rankData = {}
     state.myRankData = nil
 
     ArenaOpponentDialog.init(vg)
@@ -741,11 +736,9 @@ local function drawBattleContent(vg)
     end
 
     -- 6.1 段位奖励红点（有未领取的段位首通奖励时显示）
-    if img.imgRedDot >= 0 and ArenaPage.hasTierRewardRedDot() then
+    if ArenaPage.hasTierRewardRedDot() then
         local rdSz = 40
-        drawImageCentered(vg, img.imgRedDot,
-            P2.TI_CX + P2.TI_W * 0.5 - 30, P2.TI_CY - P2.TI_H * 0.5 + 30, rdSz, rdSz, 1.0)
-    end
+        DarkIcon.draw(vg, "reddot", P2.TI_CX + P2.TI_W * 0.5 - 30, P2.TI_CY - P2.TI_H * 0.5 + 30, rdSz, 1.0)end
 
     -- 7. 段位名称
     drawTextStroke(vg, P2.TN_CX, P2.TN_CY, state.tierName,
@@ -1041,12 +1034,10 @@ function ArenaPage.draw(vg)
         nvgText(vg, item.cx, TAB.TEXT_Y, item.name, nil)
 
         -- 战斗 tab（index 1）有竞技券时显示红点角标（用 state.tickets 合计值，含免费额度）
-        if i == 1 and img.imgRedDot >= 0 and (state.tickets or 0) > 0 then
+        if i == 1 and (state.tickets or 0) > 0 then
             local textW = nvgTextBounds(vg, 0, 0, item.name)  -- 返回单一宽度值
             local rdSz = 30
-            drawImageCentered(vg, img.imgRedDot,
-                item.cx + textW * 0.5 + 10, TAB.TEXT_Y - 18, rdSz, rdSz, 1.0)
-        end
+            DarkIcon.draw(vg, "reddot", item.cx + textW * 0.5 + 10, TAB.TEXT_Y - 18, rdSz, 1.0)end
     end
 
     nvgRestore(vg)  -- 下半部分 end

@@ -794,6 +794,7 @@ end
 -- ============================================================================
 
 function HandleNanoVGRender(eventType, eventData)
+    if HORIZON_MODE then return HandleNanoVGRenderHorizon(eventType, eventData) end
     if not vg then return end
 
     nvgBeginFrame(vg, logicalW, logicalH, dpr)
@@ -1082,6 +1083,7 @@ local function openTrainingDummyBattle()
 end
 
 function HandleMouseButtonDown(eventType, eventData)
+    if HORIZON_MODE then return HandleMouseButtonDownHorizon(eventType, eventData) end
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local mousePos = input:GetMousePosition()
@@ -1136,6 +1138,7 @@ function HandleMouseButtonDown(eventType, eventData)
 end
 
 function HandleMouseMove(eventType, eventData)
+    if HORIZON_MODE then return HandleMouseMoveHorizon(eventType, eventData) end
     local mousePos = input:GetMousePosition()
     local sx = mousePos.x / dpr / scale
     local sy = mousePos.y / dpr / scale
@@ -1186,6 +1189,7 @@ function HandleMouseMove(eventType, eventData)
 end
 
 function HandleMouseButtonUp(eventType, eventData)
+    if HORIZON_MODE then return HandleMouseButtonUpHorizon(eventType, eventData) end
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local mousePos = input:GetMousePosition()
@@ -1341,6 +1345,7 @@ function HandleMouseButtonUp(eventType, eventData)
 end
 
 function HandleTouchBegin(eventType, eventData)
+    if HORIZON_MODE then return HandleTouchBeginHorizon(eventType, eventData) end
     local tx = eventData["X"]:GetInt()
     local ty = eventData["Y"]:GetInt()
     local sx = tx / dpr / scale
@@ -1394,6 +1399,7 @@ function HandleTouchBegin(eventType, eventData)
 end
 
 function HandleTouchMove(eventType, eventData)
+    if HORIZON_MODE then return HandleTouchMoveHorizon(eventType, eventData) end
     local tx = eventData["X"]:GetInt()
     local ty = eventData["Y"]:GetInt()
     local sx = tx / dpr / scale
@@ -1445,6 +1451,7 @@ function HandleTouchMove(eventType, eventData)
 end
 
 function HandleTouchEnd(eventType, eventData)
+    if HORIZON_MODE then return HandleTouchEndHorizon(eventType, eventData) end
     local tx = eventData["X"]:GetInt()
     local ty = eventData["Y"]:GetInt()
     local sx = tx / dpr / scale
@@ -1612,6 +1619,7 @@ function HandleScreenMode(eventType, eventData)
 end
 
 function HandleMouseWheel(eventType, eventData)
+    if HORIZON_MODE then return HandleMouseWheelHorizon(eventType, eventData) end
     local wheel = eventData["Wheel"]:GetInt()
     -- 竞技场对战全屏拦截（转发滚轮给段位奖励弹窗）
     if ArenaBattleScene.isOpen() then
@@ -1662,6 +1670,336 @@ function HandleMouseWheel(eventType, eventData)
         CharacterPanel.handleScroll(wheel)
     end
     HeroRosterPanel.handleScroll(wheel * 60)
+end
+
+
+
+-- ============================================================================
+-- 横屏 PC 多面板模式（changeForJourney）
+-- 左面板：功能页组（城镇 + 铁匠/酒馆/竞技场/市场）
+-- 中面板：BottomNav 主视图（角色/日志/战斗）+ 全屏战斗页 + 全局弹窗层
+-- 右面板：角色固定
+-- 一期限制：弹窗为模态（绘制于中面板空间）；同一页面只在一个面板
+-- ============================================================================
+local Viewport = require("core.Viewport")
+HORIZON_MODE = true
+H_SKIP_START = true   -- 调试：跳过开始画面直接进主界面
+H_skipDone = false
+H_ox, H_oy, H_s = 0, 0, 1
+H_lastPanel = 'center'
+
+local function HorizonUpdateTransform()
+    H_ox, H_oy, H_s = Viewport.layout(logicalW, logicalH)
+end
+
+function HandleNanoVGRenderHorizon()
+    if not vg then return end
+    HorizonUpdateTransform()
+    nvgBeginFrame(vg, logicalW, logicalH, dpr)
+
+    -- 横屏背景
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, logicalW, logicalH)
+    nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
+    nvgFill(vg)
+
+    -- 调试跳过：进主流程
+    if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
+        H_skipDone = true
+        StartScreen.skipForReconnect()
+    end
+
+    -- 开始画面：全窗口居中（2400 高画布，适配横屏高度）
+    if StartScreen.isOpen() then
+        local ss = math.min(logicalW / 1080, logicalH / 2400)
+        nvgSave(vg)
+        nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
+        nvgScale(vg, ss, ss)
+        StartScreen.draw(vg)
+        nvgRestore(vg)
+        nvgEndFrame(vg)
+        return
+    end
+
+    -- 左面板：功能页组（城镇 + 二级页）
+    Viewport.begin(vg, Viewport.PANELS.left, H_ox, H_oy, H_s)
+    TownScene.draw(vg)
+    BlacksmithPage.draw(vg)
+    TavernPage.draw(vg)
+    ArenaPage.draw(vg)
+    MarketPage.draw(vg)
+    Viewport.finish(vg)
+
+    -- 中面板：BottomNav 主视图 + 全屏战斗页
+    Viewport.begin(vg, Viewport.PANELS.center, H_ox, H_oy, H_s)
+    local arenaBattleOpen = ArenaBattleScene.isOpen()
+    local dungeonBattleOpen = DungeonBattleScene.isOpen()
+    if arenaBattleOpen then
+        ArenaBattleScene.draw(vg)
+    elseif dungeonBattleOpen then
+        DungeonBattleScene.draw(vg)
+    else
+        local tabIndex = BottomNav.getSelectedIndex()
+        if tabIndex == 1 then
+            CharacterPanel.draw(vg)
+        elseif tabIndex == 2 then
+            DiaryPage.draw(vg)
+        elseif tabIndex == 3 then
+            BattleScene.draw(vg)
+        else
+            TownScene.draw(vg)
+        end
+        local detailOpen = CharacterPanel.isDetailOpen()
+        if not detailOpen then
+            TopBar.draw(vg)
+            BottomNav.draw(vg)
+        end
+    end
+    Viewport.finish(vg)
+
+    -- 右面板：角色固定
+    Viewport.begin(vg, Viewport.PANELS.right, H_ox, H_oy, H_s)
+    CharacterPanel.draw(vg)
+    Viewport.finish(vg)
+
+    -- 全局弹窗层（模态，绘制于中面板空间，坐标与原竖屏逻辑一致）
+    Viewport.begin(vg, Viewport.PANELS.center, H_ox, H_oy, H_s)
+    HeroRosterPanel.draw(vg)
+    PlayerInfoPanel.draw(vg)
+    LootBox.drawPage(vg)
+    RewardPopup.draw(vg)
+    OfflineRewardPanel.draw(vg)
+    SpinePowerUpEffect.draw(vg)
+    LevelUpPopup.draw(vg)
+    if SamsaraCG.isActive() then SamsaraCG.draw(vg) end
+    if IntroCutscene.isActive() then IntroCutscene.draw(vg) end
+    Viewport.finish(vg)
+
+    nvgEndFrame(vg)
+end
+
+-- 事件坐标 -> 面板命中；全局模态返回 ('modal', dx, dy)
+local function HorizonResolveMouse()
+    local mousePos = input:GetMousePosition()
+    local sx = mousePos.x / dpr
+    local sy = mousePos.y / dpr
+    local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
+    if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
+    if ArenaBattleScene.isOpen() or DungeonBattleScene.isOpen()
+        or LevelUpPopup.isOpen() or PlayerInfoPanel.isOpen()
+        or OfflineRewardPanel.isOpen() or RewardPopup.isOpen()
+        or LootBox.isPageOpen() or LootBox.handleDragBegin == nil then
+        return 'modal', dx or 0, dy or 0
+    end
+    if not pid then return 'none', 0, 0 end
+    H_lastPanel = pid
+    return pid, dx, dy
+end
+
+function HandleMouseButtonDownHorizon(eventType, eventData)
+    local button = eventData["Button"]:GetInt()
+    if button ~= MOUSEB_LEFT then return end
+    local pid, dx, dy = HorizonResolveMouse()
+    pressStartDX, pressStartDY = dx, dy
+    pressValid = (pid ~= 'none')
+    if pid == 'none' or pid == 'modal' then return end
+    if pid == 'left' then
+        if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
+        if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
+        if ArenaPage.isOpen() then ArenaPage.handleDragBegin(dx, dy) return end
+        if MarketPage.isOpen() then MarketPage.handleDragBegin(dx, dy) return end
+    elseif pid == 'center' then
+        if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragBegin(dx, dy) end
+    elseif pid == 'right' then
+        CharacterPanel.handleDragBegin(dx, dy)
+    end
+end
+
+function HandleMouseMoveHorizon(eventType, eventData)
+    local pid, dx, dy = HorizonResolveMouse()
+    if pid == 'none' then return end
+    if pid == 'modal' then
+        if ArenaBattleScene.isOpen() then ArenaBattleScene.handleDragMove(dx, dy) return end
+        if DungeonBattleScene.isOpen() then DungeonBattleScene.handleDragMove(dx, dy) return end
+        if LevelUpPopup.isOpen() then return end
+        if PlayerInfoPanel.isOpen() then PlayerInfoPanel.handleDragMove(dx, dy) return end
+        if OfflineRewardPanel.isOpen() then OfflineRewardPanel.handleDragMove(dx, dy) return end
+        if RewardPopup.handleDragMove(dx, dy) then return end
+        if LootBox.handleDragMove(dx, dy) then return end
+        return
+    end
+    if not pressValid then return end
+    if pid == 'left' then
+        if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
+        if TavernPage.isOpen() then TavernPage.handleDragMove(dx, dy) return end
+        if ArenaPage.isOpen() then ArenaPage.handleDragMove(dx, dy) return end
+        if MarketPage.isOpen() then MarketPage.handleDragMove(dx, dy) return end
+    elseif pid == 'center' then
+        if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragMove(dx, dy) end
+    elseif pid == 'right' then
+        CharacterPanel.handleDragMove(dx, dy)
+    end
+end
+
+function HandleMouseButtonUpHorizon(eventType, eventData)
+    local button = eventData["Button"]:GetInt()
+    if button ~= MOUSEB_LEFT then return end
+    local pid, dx, dy = HorizonResolveMouse()
+    local isTap = false
+    if pressValid then
+        local dist = math.abs(dx - pressStartDX) + math.abs(dy - pressStartDY)
+        isTap = dist < TAP_THRESHOLD
+    end
+    pressValid = false
+    if isTap then
+        local now = time.elapsedTime
+        if now - lastTapTime < MIN_TAP_INTERVAL then isTap = false
+        else lastTapTime = now end
+    end
+    if pid == 'none' then return end
+    if pid == 'modal' then
+        if ArenaBattleScene.isOpen() then
+            ArenaBattleScene.handleDragEnd(dx, dy)
+            if isTap then ArenaBattleScene.handleInput(dx, dy) end
+            return
+        end
+        if DungeonBattleScene.isOpen() then
+            DungeonBattleScene.handleDragEnd(dx, dy)
+            if isTap then DungeonBattleScene.handleInput(dx, dy) end
+            return
+        end
+        if LevelUpPopup.isOpen() then
+            if isTap then LevelUpPopup.handleInput(dx, dy) end
+            return
+        end
+        if PlayerInfoPanel.isOpen() then
+            PlayerInfoPanel.handleDragEnd(dx, dy)
+            if isTap then PlayerInfoPanel.handleInput(dx, dy) end
+            return
+        end
+        if OfflineRewardPanel.isOpen() then
+            OfflineRewardPanel.handleDragEnd(dx, dy)
+            if isTap then OfflineRewardPanel.handleInput(dx, dy) end
+            return
+        end
+        if RewardPopup.isOpen() then
+            RewardPopup.handleDragEnd(dx, dy)
+            if isTap then RewardPopup.handleInput(dx, dy) end
+            return
+        end
+        if LootBox.isPageOpen() then
+            LootBox.handleDragEnd(dx, dy)
+            if isTap then LootBox.handleInput(dx, dy) end
+            return
+        end
+        return
+    end
+    -- 左面板：功能页组点击链
+    if pid == 'left' then
+        if BlacksmithPage.isOpen() then
+            BlacksmithPage.handleDragEnd(dx, dy)
+            if not isTap then return end
+            BlacksmithPage.handleInput(dx, dy)
+            return
+        end
+        if TavernPage.isOpen() then
+            TavernPage.handleDragEnd(dx, dy)
+            if not isTap then return end
+            TavernPage.handleInput(dx, dy)
+            return
+        end
+        if ArenaPage.isOpen() then
+            ArenaPage.handleDragEnd(dx, dy)
+            if not isTap then return end
+            ArenaPage.handleInput(dx, dy)
+            return
+        end
+        if MarketPage.isOpen() then
+            MarketPage.handleDragEnd(dx, dy)
+            if not isTap then return end
+            MarketPage.handleInput(dx, dy)
+            return
+        end
+        if isTap then TownScene.handleInput(dx, dy) end
+        return
+    end
+    -- 右面板：角色链
+    if pid == 'right' then
+        if CharacterPanel.isDraggingCard() then
+            CharacterPanel.handleInput(dx, dy)
+            CharacterPanel.handleDragEnd(dx, dy)
+            return
+        end
+        CharacterPanel.handleDragEnd(dx, dy)
+        if isTap then CharacterPanel.handleInput(dx, dy) end
+        return
+    end
+    -- 中面板：主视图链
+    if ArenaBattleScene.isOpen() or DungeonBattleScene.isOpen() then return end
+    local tabIndex = BottomNav.getSelectedIndex()
+    if tabIndex == 1 then
+        if CharacterPanel.isDraggingCard() then
+            CharacterPanel.handleInput(dx, dy)
+            CharacterPanel.handleDragEnd(dx, dy)
+            return
+        end
+        CharacterPanel.handleDragEnd(dx, dy)
+        if isTap and CharacterPanel.handleInput(dx, dy) then return end
+    elseif tabIndex == 2 then
+        if isTap and DiaryPage.handleInput(dx, dy) then return end
+    elseif tabIndex == 3 then
+        if isTap and BattleScene.handleInput(dx, dy) then return end
+    end
+    if not isTap then return end
+    -- 横屏模式无调试面板（DebugPanel 仅竖屏 screen-space）
+    if TopBar.hitTestTrainingDummy(dx, dy) then
+        openTrainingDummyBattle()
+        return
+    end
+    local detailOpen = CharacterPanel.isDetailOpen()
+    if not detailOpen then
+        local hit = DrawUtil.hitTest(dx, dy, 98, 136, 150, 150)
+        if hit then
+            PlayerInfoPanel.open()
+            return
+        end
+    end
+    BottomNav.handleInput(dx, dy)
+end
+
+function HandleTouchBeginHorizon(eventType, eventData)
+    HandleMouseButtonDownHorizon(eventType, eventData)
+end
+
+function HandleTouchEndHorizon(eventType, eventData)
+    HandleMouseButtonUpHorizon(eventType, eventData)
+end
+
+function HandleTouchMoveHorizon(eventType, eventData)
+    HandleMouseMoveHorizon(eventType, eventData)
+end
+
+function HandleMouseWheelHorizon(eventType, eventData)
+    local wheel = eventData["Wheel"]:GetInt()
+    if ArenaBattleScene.isOpen() then ArenaBattleScene.handleScroll(wheel) return end
+    if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end
+    if LevelUpPopup.isOpen() then return end
+    if PlayerInfoPanel.isOpen() then PlayerInfoPanel.handleScroll(wheel) return end
+    if OfflineRewardPanel.isOpen() then OfflineRewardPanel.handleScroll(wheel) return end
+    if RewardPopup.isOpen() then RewardPopup.handleScroll(wheel) return end
+    if LootBox.isPageOpen() then LootBox.handleScroll(wheel) return end
+    -- 滚轮无坐标：发给最近交互的面板职责页
+    local pid = H_lastPanel
+    if pid == 'left' then
+        if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel) return end
+        if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end
+        if ArenaPage.isOpen() then ArenaPage.handleScroll(wheel) return end
+    elseif pid == 'right' then
+        CharacterPanel.handleScroll(wheel)
+        return
+    else
+        if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleScroll(wheel) return end
+    end
 end
 
 return Standalone

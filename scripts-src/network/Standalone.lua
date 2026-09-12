@@ -1701,6 +1701,25 @@ local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW, logicalH)
 end
 
+--- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（基屏幕空间，绘制于侧栏之后、中面板之前）
+local function HorizonDimSidePanels()
+    local modalOpen =
+        HeroRosterPanel.isVisible() or PlayerInfoPanel.isOpen() or
+        LootBox.isPageOpen() or RewardPopup.isOpen() or
+        OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() or
+        SpinePowerUpEffect.isPlaying() or
+        SamsaraCG.isActive() or IntroCutscene.isActive()
+    if not modalOpen then return end
+
+    local w = Viewport.PW * H_s
+    local h = Viewport.PH * H_s
+    nvgBeginPath(vg)
+    nvgRect(vg, H_ox, H_oy, w, h)
+    nvgRect(vg, H_ox + Viewport.PANELS.right.bx * H_s, H_oy, w, h)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 140))
+    nvgFill(vg)
+end
+
 function HandleNanoVGRenderHorizon()
     if not vg then return end
     HorizonUpdateTransform()
@@ -1739,6 +1758,14 @@ function HandleNanoVGRenderHorizon()
     MarketPage.draw(vg)
     Viewport.finish(vg)
 
+    -- 右面板：角色固定（先于中面板绘制，便于弹窗时统一压暗侧栏）
+    Viewport.begin(vg, Viewport.PANELS.right, H_ox, H_oy, H_s)
+    CharacterPanel.draw(vg)
+    Viewport.finish(vg)
+
+    -- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（在侧栏之上、中面板之下）
+    HorizonDimSidePanels()
+
     -- 中面板：BottomNav 主视图 + 全屏战斗页
     Viewport.begin(vg, Viewport.PANELS.center, H_ox, H_oy, H_s)
     local arenaBattleOpen = ArenaBattleScene.isOpen()
@@ -1764,11 +1791,6 @@ function HandleNanoVGRenderHorizon()
             BottomNav.draw(vg)
         end
     end
-    Viewport.finish(vg)
-
-    -- 右面板：角色固定
-    Viewport.begin(vg, Viewport.PANELS.right, H_ox, H_oy, H_s)
-    CharacterPanel.draw(vg)
     Viewport.finish(vg)
 
     -- 全局弹窗层（模态，绘制于中面板空间，坐标与原竖屏逻辑一致）

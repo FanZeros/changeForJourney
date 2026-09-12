@@ -653,6 +653,155 @@ function DarkIcon.drawQualityFrame(vg, quality, cx, cy, w, h, alpha)
 end
 
 -- ============================================================================
+-- 矢量九宫格面板体系（Track B · 替代贴图九宫格，见 docs/暗黑魔塔改造总体方案.md §4）
+-- ============================================================================
+
+--- 语义色表
+local NINE_ACCENTS = {
+    gold   = { 201, 151,  59 },
+    green  = {  95, 158,  62 },
+    blue   = {  62, 126, 194 },
+    red    = { 196,  58,  30 },
+    purple = { 138,  78, 194 },
+}
+
+--- 解析 accent 参数（字符串键 / {r,g,b} 表）
+local function resolveAccent(v, default)
+    if not v then return default end
+    if type(v) == "table" then return v end
+    return NINE_ACCENTS[v] or default
+end
+
+--- 暗黑矢量面板（直接绘制，天然任意拉伸，无需切片）
+---@param vg any
+---@param style string "panel" 弹窗底(标题带+金饰线) | "plain" 纯底板
+---                   | "btn" 按钮条 | "slot" 凹槽 | "fill" 进度填充
+---@param x number 左上角 X（与 drawNineSlice 同参风格）
+---@param y number 左上角 Y
+---@param w number 宽
+---@param h number 高
+---@param opts table|nil { accent, titleH, studs, radius, alpha }
+function DarkIcon.drawNine(vg, style, x, y, w, h, opts)
+    local a = (opts and opts.alpha) or 1
+    if a <= 0.01 then return end
+    opts = opts or {}
+    local u = math.min(w, h)
+    local accent = resolveAccent(opts.accent, NINE_ACCENTS.gold)
+
+    if style == "panel" then
+        local r = opts.radius or u * 0.046
+        local bandH = opts.titleH or math.max(70, math.min(190, h * 0.17))
+        if bandH > h * 0.5 then bandH = h * 0.5 end
+        -- 1) 标题带（整块圆角底）
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, w, h, r)
+        nvgFillPaint(vg, vGrad(vg, y, y + bandH, { 36, 30, 23 }, { 23, 18, 13 }, a))
+        nvgFill(vg)
+        -- 2) 主体（自金线起，底部圆角）
+        nvgBeginPath(vg)
+        nvgRoundedRectVarying(vg, x, y + bandH, w, h - bandH, 0, 0, r, r)
+        nvgFillPaint(vg, vGrad(vg, y + bandH, y + h, { 28, 23, 18 }, { 16, 13, 10 }, a))
+        nvgFill(vg)
+        -- 3) 语义饰线 + 端点菱形
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x + r * 0.4, y + bandH)
+        nvgLineTo(vg, x + w - r * 0.4, y + bandH)
+        strokeC(vg, a, accent[1], accent[2], accent[3], 0.9)
+        nvgStrokeWidth(vg, math.max(1.5, u * 0.006))
+        nvgStroke(vg)
+        if opts.studs ~= false and w > 220 then
+            diamondPath(vg, x + r * 0.4, y + bandH, u * 0.028)
+            fillC(vg, a, accent[1], accent[2], accent[3], 1)
+            nvgFill(vg)
+            diamondPath(vg, x + w - r * 0.4, y + bandH, u * 0.028)
+            fillC(vg, a, accent[1], accent[2], accent[3], 1)
+            nvgFill(vg)
+        end
+        -- 4) 骨白发丝内衬
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x + u * 0.014, y + u * 0.014, w - u * 0.028, h - u * 0.028, r * 0.85)
+        strokeC(vg, a, 216, 201, 163, 0.08)
+        nvgStrokeWidth(vg, 1)
+        nvgStroke(vg)
+        -- 5) 顶缘高光 + 外描边
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x + r * 0.5, y + 1)
+        nvgLineTo(vg, x + w - r * 0.5, y + 1)
+        strokeC(vg, a, 150, 134, 111, 0.5)
+        nvgStrokeWidth(vg, math.max(1, u * 0.004))
+        nvgStroke(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, w, h, r)
+        strokeC(vg, a, 0, 0, 0, 0.6)
+        nvgStrokeWidth(vg, math.max(1.5, u * 0.006))
+        nvgStroke(vg)
+    elseif style == "plain" then
+        local r = opts.radius or u * 0.06
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, w, h, r)
+        nvgFillPaint(vg, vGrad(vg, y, y + h, { 28, 23, 18 }, { 16, 13, 10 }, a))
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x + u * 0.016, y + u * 0.016, w - u * 0.032, h - u * 0.032, r * 0.85)
+        strokeC(vg, a, 216, 201, 163, 0.08)
+        nvgStrokeWidth(vg, 1)
+        nvgStroke(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, w, h, r)
+        strokeC(vg, a, 0, 0, 0, 0.6)
+        nvgStrokeWidth(vg, math.max(1.5, u * 0.008))
+        nvgStroke(vg)
+    elseif style == "btn" then
+        local br = opts.radius or h * 0.3
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, w, h, br)
+        nvgFillPaint(vg, vGrad(vg, y, y + h, { 42, 36, 29 }, { 26, 21, 16 }, a))
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, w, h, br)
+        strokeC(vg, a, accent[1], accent[2], accent[3], 0.95)
+        nvgStrokeWidth(vg, math.max(1.5, u * 0.03))
+        nvgStroke(vg)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x + br * 0.6, y + math.max(1.5, h * 0.08))
+        nvgLineTo(vg, x + w - br * 0.6, y + math.max(1.5, h * 0.08))
+        strokeC(vg, a, accent[1], accent[2], accent[3], 0.3)
+        nvgStrokeWidth(vg, math.max(1, u * 0.02))
+        nvgStroke(vg)
+    elseif style == "slot" then
+        local sr = opts.radius or h * 0.5
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, w, h, sr)
+        fillC(vg, a, 16, 13, 10, 1)
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x + sr * 0.5, y + math.max(1, h * 0.2))
+        nvgLineTo(vg, x + w - sr * 0.5, y + math.max(1, h * 0.2))
+        strokeC(vg, a, 0, 0, 0, 0.5)
+        nvgStrokeWidth(vg, math.max(1, u * 0.03))
+        nvgStroke(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, w, h, sr)
+        strokeC(vg, a, 0, 0, 0, 0.55)
+        nvgStrokeWidth(vg, math.max(1, u * 0.022))
+        nvgStroke(vg)
+    elseif style == "fill" then
+        local fr = opts.radius or h * 0.5
+        local cDark = { accent[1] * 0.55, accent[2] * 0.55, accent[3] * 0.55 }
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, w, h, fr)
+        nvgFillPaint(vg, vGrad(vg, y, y + h, accent, cDark, a))
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x + fr * 0.5, y + math.max(1, h * 0.22))
+        nvgLineTo(vg, x + w - fr * 0.5, y + math.max(1, h * 0.22))
+        strokeC(vg, a, 255, 240, 200, 0.5)
+        nvgStrokeWidth(vg, math.max(1, u * 0.02))
+        nvgStroke(vg)
+    end
+end
+
+-- ============================================================================
 -- 画廊验收页（新旧对比）
 -- ============================================================================
 
@@ -758,21 +907,43 @@ function DarkIcon.drawShowcase(vg)
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
     end
 
-    -- 四、金属倒角细节样张（大图验收）
-    DrawUtil.drawTextStroke(vg, 84, 1600, "细节样张", 40,
+    -- 四、矢量九宫格（drawNine 五种样式验收）
+    DrawUtil.drawTextStroke(vg, 84, 1560, "矢量九宫格 drawNine", 40,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 201, 151, 59, 3)
-    DarkIcon.draw(vg, "nav_battle", 260, 1800, 300, 1)
-    DarkIcon.draw(vg, "nav_dungeon", 580, 1800, 300, 1)
-    DarkIcon.draw(vg, "gem", 900, 1800, 300, 1)
-    DarkIcon.drawQualityFrame(vg, 6, 260, 2220, 300, 300, 1)
-    DarkIcon.draw(vg, "power", 260, 2220, 220, 1)
-    DarkIcon.drawQualityFrame(vg, 5, 580, 2220, 300, 300, 1)
-    DarkIcon.draw(vg, "gold", 580, 2220, 220, 1)
-    DarkIcon.drawQualityFrame(vg, 3, 900, 2220, 300, 300, 1)
-    DarkIcon.draw(vg, "nav_hero", 900, 2220, 220, 1)
+    -- panel 弹窗底（含标题带文字示意，实际由各模块自绘）
+    DarkIcon.drawNine(vg, "panel", 70, 1620, 400, 280)
+    DrawUtil.drawTextStroke(vg, 270, 1655, "面板 panel", 30,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
+    -- plain 纯底板
+    DarkIcon.drawNine(vg, "plain", 510, 1620, 260, 180)
+    -- btn 按钮条（金/绿/红语义色）
+    DarkIcon.drawNine(vg, "btn", 810, 1620, 210, 64, { accent = "gold" })
+    DarkIcon.drawNine(vg, "btn", 810, 1700, 210, 64, { accent = "green" })
+    DarkIcon.drawNine(vg, "btn", 810, 1780, 210, 64, { accent = "red" })
+    -- slot 凹槽 + fill 进度填充（余烬/蓝）
+    DarkIcon.drawNine(vg, "slot", 70, 1950, 420, 34)
+    DarkIcon.drawNine(vg, "fill", 73, 1953, 290, 28)
+    DarkIcon.drawNine(vg, "slot", 530, 1950, 300, 34)
+    DarkIcon.drawNine(vg, "fill", 533, 1953, 180, 28, { accent = "blue" })
+    -- 区块标注
+    DrawUtil.drawTextStroke(vg, 270, 1935, "panel", 26,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 150, 138, 110, 2)
+    DrawUtil.drawTextStroke(vg, 640, 1835, "plain", 26,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 150, 138, 110, 2)
+    DrawUtil.drawTextStroke(vg, 915, 1880, "btn", 26,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 150, 138, 110, 2)
+    DrawUtil.drawTextStroke(vg, 510, 2035, "slot + fill (ember / blue)", 26,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 150, 138, 110, 2)
+
+    -- 五、细节样张（大图验收）
+    DrawUtil.drawTextStroke(vg, 84, 2140, "细节样张", 40,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 201, 151, 59, 3)
+    DarkIcon.draw(vg, "nav_battle", 230, 2280, 190, 1)
+    DarkIcon.draw(vg, "nav_dungeon", 540, 2280, 190, 1)
+    DarkIcon.draw(vg, "gem", 850, 2280, 190, 1)
 
     -- 页脚
-    DrawUtil.drawTextStroke(vg, 540, 2380, "P1 计划: 关卡地图暗黑滤镜 · 装备图标底座 · 暗黑九宫格面板", 26,
+    DrawUtil.drawTextStroke(vg, 540, 2390, "P1: drawNine 迁移 AnnouncementPanel → MailPanel → … · 关卡地图暗黑滤镜", 26,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 150, 138, 110, 2)
 end
 

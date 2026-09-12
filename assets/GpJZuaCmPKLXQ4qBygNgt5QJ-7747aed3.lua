@@ -24,6 +24,7 @@ local TowerBattleScene   = require("ui.TowerBattleScene")
 local LootBox          = require("ui.LootBox")
 local StartScreen      = require("ui.StartScreen")
 local DarkTitleScreen  = require("ui.DarkTitleScreen")  -- [DarkTitleScreen] 横屏暗黑标题
+local LetterIntro      = require("ui.LetterIntro")      -- [LetterIntro] 先祖来信（首登剧情）
 local LevelUpPopup     = require("ui.LevelUpPopup")
 local OfflineRewardPanel = require("ui.OfflineRewardPanel")
 local UpdateNoticePopup = require("ui.UpdateNoticePopup")
@@ -104,6 +105,8 @@ local effectiveTab
 local function dispatchDragBegin(dx, dy)
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 dispatchDragEndAndTap 触发）
     if DarkTitleScreen.isOpen() then return end
+    -- [LetterIntro] 信件期吞掉按下（轻触翻段由 dispatchDragEndAndTap 触发）
+    if LetterIntro.isOpen() then return end
     pressStartDX, pressStartDY = dx, dy
     pressValid = true
     BF.onPress(dx, dy)
@@ -179,6 +182,8 @@ end
 local function dispatchDragMove(dx, dy)
     -- [DarkTitleScreen] 标题期吞掉拖动
     if DarkTitleScreen.isOpen() then return end
+    -- [LetterIntro] 信件期吞掉拖动
+    if LetterIntro.isOpen() then return end
     -- 角色选择界面拦截
     if CharacterSelect.isActive() then return end
 
@@ -274,6 +279,12 @@ local function dispatchDragEndAndTap(dx, dy)
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.handleTap()
+        pressValid = false
+        return
+    end
+    -- [LetterIntro] 信件期任意释放 = 轻触翻段
+    if LetterIntro.isOpen() then
+        LetterIntro.handleTap()
         pressValid = false
         return
     end
@@ -552,6 +563,8 @@ end
 function M.dispatchScroll(wheel)
     -- [DarkTitleScreen] 标题期吞掉滚轮
     if DarkTitleScreen.isOpen() then return end
+    -- [LetterIntro] 信件期吞掉滚轮
+    if LetterIntro.isOpen() then return end
     if CharacterSelect.isActive() then return end
     if ScenarioDialogue.isActive() then return end
     if ArenaBattleScene.isOpen() then

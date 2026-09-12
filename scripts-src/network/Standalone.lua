@@ -104,8 +104,12 @@ local DESIGN_W = GameConfig.Design.WIDTH
 local DESIGN_H = GameConfig.Design.HEIGHT
 
 -- [终焉之门] 全窗口世界大背景（横屏路径底图，战斗页自有背景不受影响）
+-- 部署环境可能缺图：只尝试一次，失败则回退城镇大图 UI_CZ_BJ，再失败用纯色兜底
+-- （原实现每帧重试 nvgCreateImage，缺图时刷屏 "Could not find resource"）
 local imgWorldBg_ = -1
+local worldBgTried_ = false
 local WORLD_BG_PATH = "image/UI_WORLD_BG.png"
+local WORLD_BG_FALLBACK = "image/UI_CZ_BJ.png"
 
 local physW, physH, dpr, logicalW, logicalH
 local scale, screenDesignW, screenDesignH, designOffsetX, designOffsetY
@@ -1887,10 +1891,19 @@ function HandleNanoVGRenderHorizon()
     nvgBeginFrame(vg, logicalW, logicalH, dpr)
 
     -- 横屏背景：世界大背景图（cover 铺满；战斗页/标题页自带背景会覆盖此处）
-    if imgWorldBg_ < 0 then
-        imgWorldBg_ = nvgCreateImage(vg, WORLD_BG_PATH, 0)
+    -- [fix] 只尝试一次：缺图时每帧重试会刷屏报错；先查 cache:Exists 再加载（避免引擎报错刷屏），
+    --       缺图回退城镇大图，再失败走下方纯色兜底
+    if imgWorldBg_ < 0 and not worldBgTried_ then
+        worldBgTried_ = true
+        if cache:Exists(WORLD_BG_PATH) then
+            imgWorldBg_ = nvgCreateImage(vg, WORLD_BG_PATH, 0)
+        end
         if imgWorldBg_ < 0 then
-            print("[Standalone] WARN: world bg load failed: " .. WORLD_BG_PATH)
+            print("[Standalone] WARN: world bg missing(" .. WORLD_BG_PATH .. "), fallback -> " .. WORLD_BG_FALLBACK)
+            imgWorldBg_ = nvgCreateImage(vg, WORLD_BG_FALLBACK, 0)
+            if imgWorldBg_ < 0 then
+                print("[Standalone] WARN: world bg fallback failed, use solid color")
+            end
         end
     end
     if imgWorldBg_ >= 0 then

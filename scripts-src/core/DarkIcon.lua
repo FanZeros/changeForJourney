@@ -652,6 +652,39 @@ function DarkIcon.drawQualityFrame(vg, quality, cx, cy, w, h, alpha)
     end
 end
 
+--- 暗黑场景底图：压暗 tint + 边缘晕影（用于关卡地图等大幅明亮底图的暗黑化）
+--- tint 取暖灰（保留暖色层次），晕影聚焦战场中心；alpha 用于场景切换过渡
+---@param vg any
+---@param img number nvgCreateImage 句柄
+---@param cx number 中心 X
+---@param cy number 中心 Y
+---@param w number 宽
+---@param h number 高
+---@param alpha number 透明度 0-1
+function DarkIcon.drawDarkScene(vg, img, cx, cy, w, h, alpha)
+    local a = alpha or 1
+    if a <= 0.01 then return end
+    local x, y = cx - w * 0.5, cy - h * 0.5
+
+    -- 1) 暖灰压暗 tint（约 38% 亮度，保留暖色层次）
+    local tint = nvgRGBA(96, 84, 72, math.floor(a * 255 + 0.5))
+    local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img, tint)
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, w, h)
+    nvgFillPaint(vg, paint)
+    nvgFill(vg)
+
+    -- 2) 边缘晕影（中心透明 → 四角压黑，聚焦战场）
+    local rIn = math.min(w, h) * 0.38
+    local rOut = math.max(w, h) * 0.62
+    local vig = nvgRadialGradient(vg, cx, cy, rIn, rOut,
+        nvgRGBA(5, 4, 3, 0), nvgRGBA(5, 4, 3, math.floor(a * 150 + 0.5)))
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, w, h)
+    nvgFillPaint(vg, vig)
+    nvgFill(vg)
+end
+
 -- ============================================================================
 -- 矢量九宫格面板体系（Track B · 替代贴图九宫格，见 docs/暗黑魔塔改造总体方案.md §4）
 -- ============================================================================

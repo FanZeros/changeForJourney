@@ -34,6 +34,7 @@ local SettingsPanel     = require("ui.SettingsPanel")
 local ExpTable = require("config.ExpTable")
 local Diag = require("systems.BattleDiag")
 local NumberUtil = require("core.NumberUtil")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
 
 local BattleResultPanel = require("ui.BattleResultPanel")
 local OfflineCalc = require("systems.OfflineCalc")
@@ -1388,8 +1389,8 @@ function BattleScene.draw(vg)
     -- 1. 地图背景（上下漂移 + 场景切换过渡）
     -- 只向上漂移：0 → -8 → 0，不会向下露出黑底
     local driftY = -BG_DRIFT_Y_AMP * (1.0 - math.cos(bgAnimTimer * 2 * math.pi / BG_DRIFT_Y_PERIOD)) * 0.5
-    -- 底图：带垂直漂移
-    drawImageCentered(vg, imgMap, MAP_CX, MAP_CY + driftY, MAP_W, MAP_H, 1.0)
+    -- 底图：带垂直漂移 [暗黑化 P1: 压暗 tint + 边缘晕影]
+    DarkIcon.drawDarkScene(vg, imgMap, MAP_CX, MAP_CY + driftY, MAP_W, MAP_H, 1.0)
     -- 场景切换过渡叠加层
     if bgTransAnim then
         local t = math.min(bgTransAnim.timer / BG_TRANS_DURATION, 1.0)
@@ -1397,7 +1398,7 @@ function BattleScene.draw(vg)
             local p = t / BG_FADE_OUT_RATIO  -- 0→1
             local transScale = 1.0 + (bgTransAnim.zoomTarget - 1.0) * p
             local bgAlpha = 1.0 - p
-            drawImageCentered(vg, imgMap, MAP_CX, MAP_CY + driftY,
+            DarkIcon.drawDarkScene(vg, imgMap, MAP_CX, MAP_CY + driftY,
                 MAP_W * transScale, MAP_H * transScale, bgAlpha)
         end
     end

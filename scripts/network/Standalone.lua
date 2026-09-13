@@ -23,6 +23,7 @@ local HeroRosterPanel   = require("ui.HeroRosterPanel")
 local RewardPopup       = require("ui.RewardPopup")
 local TownScene         = require("ui.TownScene")
 local BlacksmithPage    = require("ui.BlacksmithPage")
+local ChurchPage        = require("ui.ChurchPage")
 local TavernPage        = require("ui.TavernPage")
 local ArenaPage         = require("ui.ArenaPage")
 local MarketPage        = require("ui.MarketPage")
@@ -220,6 +221,7 @@ function Standalone.Start()
     TopBar.markAvatarViewed()  -- 初始化头像红点基准
     TownScene.init(vg)
     BlacksmithPage.init(vg)
+    ChurchPage.init(vg)
     TavernPage.init(vg)
     DebugPanel.init(vg)
     HeroRosterPanel.init(vg)
@@ -393,6 +395,10 @@ function Standalone.Start()
     -- 5.15 城镇铁匠铺点击 → 打开铁匠铺界面
     TownScene.setOnSmithClick(function()
         BlacksmithPage.open()
+    end)
+    -- 城郊礼拜堂点击 → 打开教堂界面（转职/天赋/祈祷）
+    TownScene.setOnChurchClick(function()
+        ChurchPage.open()
     end)
     -- 5.16 城镇酒馆点击 → 打开酒馆界面
     TownScene.setOnTavernClick(function()
@@ -914,6 +920,7 @@ function Standalone.requestResetToStartScreen()
     if MarketPage.isOpen()          then MarketPage.close()          end
     if TavernPage.isOpen()          then TavernPage.close()          end
     if BlacksmithPage.isOpen()      then BlacksmithPage.close()      end
+    if ChurchPage.isOpen()          then ChurchPage.close()          end
     if HeroRosterPanel.isVisible()  then HeroRosterPanel.hide()      end
     if RewardPopup.isOpen()         then RewardPopup.close()         end
     if OfflineRewardPanel.isOpen()  then OfflineRewardPanel.close()  end
@@ -1041,6 +1048,8 @@ function HandleNanoVGRender(eventType, eventData)
             TownScene.draw(vg)
             -- 铁匠铺二级界面（覆盖在城镇之上）
             BlacksmithPage.draw(vg)
+            -- 教堂二级界面（覆盖在城镇之上）
+            ChurchPage.draw(vg)
             -- 酒馆二级界面（覆盖在城镇之上）
             TavernPage.draw(vg)
             -- 竞技场二级界面（覆盖在城镇之上）
@@ -1055,7 +1064,8 @@ function HandleNanoVGRender(eventType, eventData)
         local tavernOpen = TavernPage.isOpen()
         local arenaOpen = ArenaPage.isOpen()
         local marketOpen = MarketPage.isOpen()
-        if not detailOpen and not smithOpen and not tavernOpen and not arenaOpen and not marketOpen then
+        local churchOpen = ChurchPage.isOpen()
+        if not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not arenaOpen and not marketOpen then
             TopBar.draw(vg)
             BottomNav.draw(vg)
         elseif arenaOpen and not detailOpen and not smithOpen and not tavernOpen then
@@ -1271,6 +1281,7 @@ function HandleUpdate(eventType, eventData)
         local bgmScene
         -- 城镇建筑
         if tabIndex == 4 and (BlacksmithPage.isOpen()
+            or ChurchPage.isOpen()
             or TavernPage.isOpen()
             or ArenaPage.isOpen()
             or MarketPage.isOpen()) then
@@ -1473,6 +1484,10 @@ function HandleMouseButtonDown(eventType, eventData)
         BlacksmithPage.handleDragBegin(dx, dy)
         return
     end
+    if tabIndex == 4 and ChurchPage.isOpen() then
+        ChurchPage.handleDragBegin(dx, dy)
+        return
+    end
     if tabIndex == 4 and TavernPage.isOpen() then
         TavernPage.handleDragBegin(dx, dy)
         return
@@ -1522,6 +1537,10 @@ function HandleMouseMove(eventType, eventData)
     local tabIndex = BottomNav.getSelectedIndex()
     if tabIndex == 4 and BlacksmithPage.isOpen() then
         BlacksmithPage.handleDragMove(dx, dy)
+        return
+    end
+    if tabIndex == 4 and ChurchPage.isOpen() then
+        ChurchPage.handleDragMove(dx, dy)
         return
     end
     if tabIndex == 4 and TavernPage.isOpen() then
@@ -1632,6 +1651,12 @@ function HandleMouseButtonUp(eventType, eventData)
         BlacksmithPage.handleInput(dx, dy)
         return
     end
+    if tabIndex == 4 and ChurchPage.isOpen() then
+        ChurchPage.handleDragEnd(dx, dy)
+        if not isTap then return end
+        ChurchPage.handleInput(dx, dy)
+        return
+    end
     -- 酒馆：拖拽结束转发
     if tabIndex == 4 and TavernPage.isOpen() then
         TavernPage.handleDragEnd(dx, dy)
@@ -1670,7 +1695,7 @@ function HandleMouseButtonUp(eventType, eventData)
         dx, dy,
         tostring(detailOpen), tostring(smithOpen), tostring(tavernOpen), tostring(arenaOpen),
         tostring(ArenaBattleScene.isOpen()), tostring(diaryOverlay)))
-    if not detailOpen and not smithOpen and not tavernOpen and not arenaOpen
+    if not detailOpen and not smithOpen and not ChurchPage.isOpen() and not tavernOpen and not arenaOpen
         and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() and not diaryOverlay then
         if TopBar.hitTestTrainingDummy(dx, dy) then
             openTrainingDummyBattle()
@@ -1692,6 +1717,10 @@ function HandleMouseButtonUp(eventType, eventData)
     elseif tabIndex == 4 then
         if BlacksmithPage.isOpen() then
             BlacksmithPage.handleInput(dx, dy)
+            return
+        end
+        if ChurchPage.isOpen() then
+            ChurchPage.handleInput(dx, dy)
             return
         end
         if TavernPage.isOpen() then
@@ -1748,6 +1777,10 @@ function HandleTouchBegin(eventType, eventData)
         BlacksmithPage.handleDragBegin(dx, dy)
         return
     end
+    if tabIndex == 4 and ChurchPage.isOpen() then
+        ChurchPage.handleDragBegin(dx, dy)
+        return
+    end
     if tabIndex == 4 and TavernPage.isOpen() then
         TavernPage.handleDragBegin(dx, dy)
         return
@@ -1798,6 +1831,10 @@ function HandleTouchMove(eventType, eventData)
     local tabIndex = BottomNav.getSelectedIndex()
     if tabIndex == 4 and BlacksmithPage.isOpen() then
         BlacksmithPage.handleDragMove(dx, dy)
+        return
+    end
+    if tabIndex == 4 and ChurchPage.isOpen() then
+        ChurchPage.handleDragMove(dx, dy)
         return
     end
     if tabIndex == 4 and TavernPage.isOpen() then
@@ -1910,6 +1947,12 @@ function HandleTouchEnd(eventType, eventData)
         BlacksmithPage.handleInput(dx, dy)
         return
     end
+    if tabIndex == 4 and ChurchPage.isOpen() then
+        ChurchPage.handleDragEnd(dx, dy)
+        if not isTap then return end
+        ChurchPage.handleInput(dx, dy)
+        return
+    end
     -- 酒馆：拖拽结束转发
     if tabIndex == 4 and TavernPage.isOpen() then
         TavernPage.handleDragEnd(dx, dy)
@@ -1949,7 +1992,7 @@ function HandleTouchEnd(eventType, eventData)
             dx, dy,
             tostring(detailOpen2), tostring(smithOpen2), tostring(tavernOpen2), tostring(arenaOpen2),
             tostring(ArenaBattleScene.isOpen()), tostring(diaryOverlay2)))
-        if not detailOpen2 and not smithOpen2 and not tavernOpen2 and not arenaOpen2
+        if not detailOpen2 and not smithOpen2 and not ChurchPage.isOpen() and not tavernOpen2 and not arenaOpen2
             and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() and not diaryOverlay2 then
             if TopBar.hitTestTrainingDummy(dx, dy) then
                 openTrainingDummyBattle()
@@ -1973,6 +2016,10 @@ function HandleTouchEnd(eventType, eventData)
         -- 铁匠铺二级界面优先拦截
         if BlacksmithPage.isOpen() then
             BlacksmithPage.handleInput(dx, dy)
+            return
+        end
+        if ChurchPage.isOpen() then
+            ChurchPage.handleInput(dx, dy)
             return
         end
         -- 酒馆二级界面拦截
@@ -2033,6 +2080,10 @@ function HandleMouseWheel(eventType, eventData)
     local tabIndex = BottomNav.getSelectedIndex()
     if tabIndex == 4 and BlacksmithPage.isOpen() then
         BlacksmithPage.handleScroll(wheel)
+        return
+    end
+    if tabIndex == 4 and ChurchPage.isOpen() then
+        ChurchPage.handleScroll(wheel)
         return
     end
     if tabIndex == 4 and TavernPage.isOpen() then
@@ -2164,6 +2215,7 @@ function HandleNanoVGRenderHorizon()
     Viewport.begin(vg, Viewport.PANELS.left, H_ox, H_oy, H_s)
     TownScene.draw(vg)
     BlacksmithPage.draw(vg)
+    ChurchPage.draw(vg)
     TavernPage.draw(vg)
     ArenaPage.draw(vg)
     MarketPage.draw(vg)
@@ -2217,6 +2269,7 @@ function HandleNanoVGRenderHorizon()
         Viewport.begin(vg, Viewport.PANELS.left, oxL, 0, ps)
         TownScene.draw(vg)
         BlacksmithPage.draw(vg)
+        ChurchPage.draw(vg)
         TavernPage.draw(vg)
         ArenaPage.draw(vg)
         MarketPage.draw(vg)
@@ -2336,6 +2389,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     if pid == 'none' or pid == 'modal' then return end
     if pid == 'left' then
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
+        if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
         if ArenaPage.isOpen() then ArenaPage.handleDragBegin(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragBegin(dx, dy) return end
@@ -2362,6 +2416,7 @@ function HandleMouseMoveHorizon(eventType, eventData)
     if not pressValid then return end
     if pid == 'left' then
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
+        if ChurchPage.isOpen() then ChurchPage.handleDragMove(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragMove(dx, dy) return end
         if ArenaPage.isOpen() then ArenaPage.handleDragMove(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragMove(dx, dy) return end
@@ -2433,6 +2488,12 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
             BlacksmithPage.handleDragEnd(dx, dy)
             if not isTap then return end
             BlacksmithPage.handleInput(dx, dy)
+            return
+        end
+        if ChurchPage.isOpen() then
+            ChurchPage.handleDragEnd(dx, dy)
+            if not isTap then return end
+            ChurchPage.handleInput(dx, dy)
             return
         end
         if TavernPage.isOpen() then
@@ -2527,6 +2588,7 @@ function HandleMouseWheelHorizon(eventType, eventData)
     local pid = H_lastPanel
     if pid == 'left' then
         if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel) return end
+        if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel) return end
         if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end
         if ArenaPage.isOpen() then ArenaPage.handleScroll(wheel) return end
     elseif pid == 'right' then

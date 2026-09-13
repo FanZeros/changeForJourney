@@ -30,14 +30,10 @@ local imgRedDot   = -1   -- ICON_HD.png 红点图标
 local smithDecomposeRedDot = false  -- 铁匠铺分解红点（背包满时）
 local marketPrivRedDot     = false  -- 市场特权红点（有可观看广告时）
 local arenaTicketRedDot    = false  -- 竞技场红点（有竞技券时）
-local guildRelicBadge      = false  -- 公会遗物角标是否显示
-local guildRelicBadgeStyle = nil    -- nil=绿色箭头(可强化), "redDot"=红点(新遗物)
 
 -- 上方建筑
-local imgGuild    = -1   -- 冒险者公会
 local imgSmith    = -1   -- 铁匠铺
 local imgArena    = -1   -- 竞技场
-local imgIconGuild = -1  -- 冒险者公会图标
 local imgIconSmith = -1  -- 铁匠铺图标
 local imgIconArena = -1  -- 竞技场图标
 
@@ -56,13 +52,6 @@ local LABEL_INSET_LEFT   = 100
 -- ---- 上方建筑 ----
 
 -- 冒险者公会
-local GUILD_CX,  GUILD_CY  = 216,  656
-local GUILD_W,   GUILD_H   = 433,  462
-local GUILD_LBL_CX, GUILD_LBL_CY = 202, 476
-local GUILD_LBL_W,  GUILD_LBL_H  = 361, 113
-local GUILD_ICON_CX, GUILD_ICON_CY = 72, 470
-local GUILD_ICON_SZ = 64
-local GUILD_TEXT_X,  GUILD_TEXT_Y  = 236, 470
 
 -- 铁匠铺
 local SMITH_CX,  SMITH_CY  = 525,  477
@@ -358,10 +347,8 @@ function TownScene.init(vg)
     imgLabelBg     = nvgCreateImage(vg, "image/UI_CZ_BQ.png", 0)
 
     -- 上方建筑
-    imgGuild       = nvgCreateImage(vg, "image/UI_CZ_MXZGH.png", 0)
     imgSmith       = nvgCreateImage(vg, "image/UI_CZ_TJP.png", 0)
     imgArena       = nvgCreateImage(vg, "image/UI_CZ_JJC.png", 0)
-    imgIconGuild   = nvgCreateImage(vg, "image/ICON_CZ_MXZGH.png", 0)
     imgIconSmith   = nvgCreateImage(vg, "image/ICON_CZ_TJP.png", 0)
     imgIconArena   = nvgCreateImage(vg, "image/ICON_CZ_JJC.png", 0)
 
@@ -432,35 +419,7 @@ function TownScene.draw(vg)
     BF.finish(vg, _bfSmith)
     if _tmActive and not smithLocked then _TM.registerHotspot("building_smith", SMITH_CX, SMITH_CY, SMITH_W, SMITH_H) end
 
-    -- 3) 冒险者公会（左侧）—— 暂未开放，始终上锁
-    local guildLocked = not ExpTable.isBuildingUnlocked("guild", GameState.getLevel())
-    local _bfGuild = (not guildLocked) and BF.begin(vg, "town_guild", GUILD_CX, GUILD_CY, GUILD_W, GUILD_H) or false
-    if guildLocked then
-        drawImageSilhouette(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, 0.85)
-    else
-        drawImageDarkTint(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, 1.0)
-        drawFlashOverlay(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, getClickFlashAlpha("guild"))
-        drawBuildingLabel(vg,
-            GUILD_LBL_CX, GUILD_LBL_CY, GUILD_LBL_W, GUILD_LBL_H,
-            GUILD_ICON_CX, GUILD_ICON_CY, GUILD_ICON_SZ, imgIconGuild,
-            GUILD_TEXT_X, GUILD_TEXT_Y, "亡誓公会")
-    end
-    if guildLocked then
-        drawBuildingLockOverlay(vg, GUILD_CX, GUILD_CY, "guild", false)
-    end
-    -- 公会遗物角标（可强化→绿色箭头，新遗物→红点）
-    if not guildLocked and guildRelicBadge then
-        local badgeSz = 40
-        local badgeX = GUILD_LBL_CX + GUILD_LBL_W * 0.5 - badgeSz * 0.3
-        local badgeY = GUILD_LBL_CY - GUILD_LBL_H * 0.5 + badgeSz * 0.3
-        if guildRelicBadgeStyle == "redDot" then
-            DarkIcon.draw(vg, "reddot", badgeX, badgeY, badgeSz, 1.0)
-        elseif guildRelicBadgeStyle ~= "redDot" and imgIconUp >= 0 then
-            drawImageCentered(vg, imgIconUp, badgeX, badgeY, badgeSz, badgeSz, 1.0)
-        end
-    end
-    BF.finish(vg, _bfGuild)
-    if _tmActive and not guildLocked then _TM.registerHotspot("building_guild", GUILD_CX, GUILD_CY, GUILD_W, GUILD_H) end
+    -- [公会功能已移除] 城镇不再渲染冒险者公会建筑（单机版无公会玩法）
 
     -- 4) 竞技场（右侧）
     local arenaLocked = not _TM.isBuildingUnlocked("arena")
@@ -617,20 +576,6 @@ function TownScene.handleInput(dx, dy)
         return true
     end
 
-    -- 冒险者公会点击检测
-    if dx >= GUILD_CX - GUILD_W * 0.5 and dx <= GUILD_CX + GUILD_W * 0.5
-       and dy >= GUILD_CY - GUILD_H * 0.5 and dy <= GUILD_CY + GUILD_H * 0.5 then
-        if not ExpTable.isBuildingUnlocked("guild", GameState.getLevel()) then
-            print("[TownScene] 冒险者公会暂未开放")
-            return true
-        end
-        print("[TownScene] 点击冒险者公会")
-        BF.trigger("town_guild")
-        triggerClickAnim("guild")
-        if onGuildClick then deferAction(CLICK_CALLBACK_DELAY, onGuildClick) end
-        return true
-    end
-
     -- 竞技场点击检测
     if dx >= ARENA_CX - ARENA_W * 0.5 and dx <= ARENA_CX + ARENA_W * 0.5
        and dy >= ARENA_CY - ARENA_H * 0.5 and dy <= ARENA_CY + ARENA_H * 0.5 then
@@ -708,12 +653,11 @@ function TownScene.setArenaRedDot(show)
     arenaTicketRedDot = show
 end
 
---- 设置公会遗物角标（由 Client 数据变更时驱动）
+--- 设置公会遗物角标（公会功能已移除，保留空实现兼容旧调用）
 ---@param show boolean
----@param style string|nil nil=绿色箭头(可强化), "redDot"=红点(新遗物)
+---@param style string|nil 忽略
 function TownScene.setGuildRelicBadge(show, style)
-    guildRelicBadge = show
-    guildRelicBadgeStyle = style
+    -- no-op: 公会功能已从城镇移除
 end
 
 return TownScene

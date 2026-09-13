@@ -145,6 +145,143 @@ local function interiorRect(row, logicalW, logicalH)
     return ox + ir.x0 * pw, ir.y0 * ph, (ir.x1 - ir.x0) * pw, (ir.y1 - ir.y0) * ph
 end
 
+-- ======================== [三行并行] 选关页面 ========================
+
+local stageSel = { open = false, page = 0 }
+local STAGE_SEL_COLS, STAGE_SEL_ROWS = 4, 4
+
+function BattleTriPage.toggleStageSelect()
+    stageSel.open = not stageSel.open
+    stageSel.page = 0
+end
+
+--- 选关面板布局（含每页关卡格子）
+local function stageSelectLayout(logicalW, logicalH)
+    local BS = require("ui.BattleScene")
+    local maxStage = BS.getMaxStageId() or 1
+    local r1 = table.pack(interiorRect(1, logicalW, logicalH))
+    local r3 = table.pack(interiorRect(COL_COUNT, logicalW, logicalH))
+    local px, py = r1[1], r1[2]
+    local pw, ph = r1[3], (r3[2] + r3[4]) - r1[2]
+    local perPage = STAGE_SEL_COLS * STAGE_SEL_ROWS
+    local cellW = (pw - 60 - (STAGE_SEL_COLS - 1) * 12) / STAGE_SEL_COLS
+    local cellH = 54
+    local gridTop = py + 64
+
+    -- 收集实际存在的关卡 ID（4 位章节制, 从 101 起; ≤ 已解锁最大关）
+    local SC = require("config.StageConfig")
+    local existIds = {}
+    local cur = 101
+    local guard = 0
+    while cur and cur <= maxStage and guard < 999 do
+        guard = guard + 1
+        if SC.getStage(cur) then existIds[#existIds + 1] = cur end
+        local nxt = SC.getNextStageId and SC.getNextStageId(cur)
+        if not nxt or nxt <= cur then break end
+        cur = nxt
+    end
+
+    local maxPage = math.max(0, math.ceil(#existIds / perPage) - 1)
+    local startIdx = stageSel.page * perPage
+    local cells = {}
+    for i = 1, perPage do
+        local id = existIds[startIdx + i - 1]
+        if id then
+            local col, r = (i - 1) % STAGE_SEL_COLS, math.floor((i - 1) / STAGE_SEL_COLS)
+            cells[#cells + 1] = {
+                id = id,
+                x = px + 30 + col * (cellW + 12),
+                y = gridTop + r * (cellH + 10),
+                w = cellW, h = cellH,
+            }
+        end
+    end
+    return { px = px, py = py, pw = pw, ph = ph, cells = cells,
+             maxPage = maxPage, maxStage = maxStage, perPage = perPage,
+             existCount = #existIds }
+end
+
+local function drawStageSelect(vg, logicalW, logicalH)
+    if not stageSel.open then return end
+
+    local BS = require("ui.BattleScene")
+    local SC = require("config.StageConfig")
+    local L = stageSelectLayout(logicalW, logicalH)
+
+    -- 面板
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, L.px, L.py, L.pw, L.ph, 14)
+    nvgFillColor(vg, nvgRGBA(12, 12, 20, 244))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, L.px, L.py, L.pw, L.ph, 14)
+    nvgStrokeColor(vg, nvgRGBA(201, 151, 59, 200))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    -- 标题
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 30)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
+    nvgText(vg, L.px + L.pw * 0.5, L.py + 38, "选择关卡", nil)
+
+    -- 关闭 ✕
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, L.px + L.pw - 36, L.py + 8, 28, 28, 6)
+    nvgFillColor(vg, nvgRGBA(60, 40, 40, 235))
+    nvgFill(vg)
+    nvgFontSize(vg, 20)
+    nvgFillColor(vg, nvgRGBA(230, 200, 200, 255))
+    nvgText(vg, L.px + L.pw - 22, L.py + 22, "X", nil)
+
+    -- 关卡格子
+    local curStage = BS.getStageId()
+    for _, c in ipairs(L.cells) do
+        local unlocked = c.id <= L.maxStage
+        local isCur = (c.id == curStage)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, c.x, c.y, c.w, c.h, 8)
+        if isCur then
+            nvgFillColor(vg, nvgRGBA(201, 151, 59, 235))
+        elseif unlocked then
+            nvgFillColor(vg, nvgRGBA(40, 44, 58, 235))
+        else
+            nvgFillColor(vg, nvgRGBA(22, 22, 30, 235))
+        end
+        nvgFill(vg)
+        if isCur then
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, c.x, c.y, c.w, c.h, 8)
+            nvgStrokeColor(vg, nvgRGBA(240, 199, 94, 255))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
+        end
+        nvgFontSize(vg, 18)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        if unlocked then
+            nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
+        else
+            nvgFillColor(vg, nvgRGBA(110, 112, 125, 255))
+        end
+        local entry = SC.getStage(c.id)
+        nvgText(vg, c.x + c.w * 0.5, c.y + c.h * 0.5,
+            entry and entry.name or ("第" .. c.id .. "关"), nil)
+    end
+
+    -- 翻页
+    nvgFontSize(vg, 20)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
+    nvgText(vg, L.px + 24, L.py + L.ph - 28, "上一页", nil)
+    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+    nvgText(vg, L.px + L.pw - 24, L.py + L.ph - 28, "下一页", nil)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgText(vg, L.px + L.pw * 0.5, L.py + L.ph - 28,
+        string.format("第 %d / %d 页", stageSel.page + 1, L.maxPage + 1), nil)
+end
+BattleTriPage.drawStageSelect = drawStageSelect
+
 --- L0 整套大背景铺满窗口（透明框内将由 L1 垫底透出）
 function BattleTriPage.drawL0(vg, logicalW, logicalH)
     BattleTriPage.init(vg)
@@ -214,7 +351,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             local dh = BattleLayout.STRIP_H * contentScale
             nvgSave(vg)
             nvgScissor(vg, ix, iy, iw, ih)
-            nvgTranslate(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5)
+            nvgTranslate(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5 + ih * 0.06)
             nvgScale(vg, contentScale, contentScale)
             if row == 1 then
                 BattleCombat.mount(nil)
@@ -285,7 +422,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgRestore(vg)
     end
     do
-        local tx, ty = ix1 + iw1 - 40, iy1 + ih1 - 34
+        local tx, ty = ix1 + iw1 - 194, iy1 + 26
         nvgSave(vg)
         nvgTranslate(vg, tx, ty)
         nvgScale(vg, hudScale, hudScale)
@@ -294,7 +431,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgRestore(vg)
     end
     do
-        local tx, ty = ix1 + iw1 - 116, iy1 + ih1 - 34
+        local tx, ty = ix1 + iw1 - 118, iy1 + 26
         nvgSave(vg)
         nvgTranslate(vg, tx, ty)
         nvgScale(vg, hudScale, hudScale)
@@ -304,16 +441,16 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
     end
     local navY = iy1 + 24
     for ni = 1, 2 do
-        local nx = ix1 + iw1 * 0.5 + 130 + (ni - 1) * 62
+        local nx = ix1 + 260 + (ni - 1) * 62
         nvgBeginPath(vg)
         nvgRoundedRect(vg, nx - 27, navY - 17, 54, 34, 8)
-        nvgFillColor(vg, nvgRGBA(30, 34, 50, 225))
+        nvgFillColor(vg, stageSel.open and nvgRGBA(201, 151, 59, 235) or nvgRGBA(30, 34, 50, 225))
         nvgFill(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 22)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(225, 230, 245, 255))
-        nvgText(vg, nx, navY, ni == 1 and "◀" or "▶", nil)
+        nvgText(vg, nx, navY, "关", nil)
     end
 
     -- [对话框覆盖] 扫荡/统计面板（等比覆盖行1 内矩形）
@@ -328,6 +465,9 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgRestore(vg)
     end
 
+    -- [三行并行] 选关页面（覆盖中段, UI 层最上）
+    BattleTriPage.drawStageSelect(vg, logicalW, logicalH)
+
     -- [三行并行] 获得弹窗归属行1
     RewardPopup.drawRegion(vg, ix1, iy1, iw1, ih1, 1)
 end
@@ -338,6 +478,44 @@ end
 ---@return boolean
 function BattleTriPage.handleInput(wx, wy)
     if not isOpen_ then return false end
+    -- [三行并行] 选关页输入
+    if stageSel.open then
+        local L = stageSelectLayout(region.w, region.h)
+        -- 关闭 X
+        if wx >= L.px + L.pw - 36 and wx <= L.px + L.pw - 8
+           and wy >= L.py + 8 and wy <= L.py + 36 then
+            stageSel.open = false
+            return true
+        end
+        -- 面板外点击关闭
+        if wx < L.px or wx > L.px + L.pw or wy < L.py or wy > L.py + L.ph then
+            stageSel.open = false
+            return true
+        end
+        -- 翻页
+        if wy >= L.py + L.ph - 46 and wy <= L.py + L.ph - 10 then
+            if wx >= L.px + 20 and wx <= L.px + 130 then
+                if stageSel.page > 0 then stageSel.page = stageSel.page - 1 end
+                return true
+            elseif wx >= L.px + L.pw - 130 and wx <= L.px + L.pw - 20 then
+                if stageSel.page < L.maxPage then stageSel.page = stageSel.page + 1 end
+                return true
+            end
+        end
+        -- 关卡格子
+        for _, c in ipairs(L.cells) do
+            if wx >= c.x and wx <= c.x + c.w and wy >= c.y and wy <= c.y + c.h then
+                if c.id <= L.maxStage then
+                    local bs = require("ui.BattleScene")
+                    local ok = bs.gotoStage(c.id)
+                    if ok then stageSel.open = false end
+                end
+                return true
+            end
+        end
+        return true
+    end
+
     -- [常驻] 点击行1 内任意处可关闭归属本行的获得弹窗
     if RewardPopup.currentRowTag() then
         RewardPopup.close()
@@ -366,24 +544,21 @@ function BattleTriPage.handleInput(wx, wy)
         bs.handleSpeedButtonInput(987 + (wx - tx) / hudScale, 311 + (wy - ty) / hudScale)
         return true
     end
-    tx, ty = ix1 + iw1 - 40, iy1 + ih1 - 34
+    tx, ty = ix1 + iw1 - 194, iy1 + 26
     if math.abs(wx - tx) <= 65 * hudScale and math.abs(wy - ty) <= 72 * hudScale then
         SweepDialog.handleButtonInput(971 + (wx - tx) / hudScale, 2115 + (wy - ty) / hudScale)
         return true
     end
-    tx, ty = ix1 + iw1 - 116, iy1 + ih1 - 34
+    tx, ty = ix1 + iw1 - 118, iy1 + 26
     if math.abs(wx - tx) <= 65 * hudScale and math.abs(wy - ty) <= 72 * hudScale then
         DamageStatsPanel.handleButtonInput(815 + (wx - tx) / hudScale, 2115 + (wy - ty) / hudScale)
         return true
     end
-    local nx1 = ix1 + iw1 * 0.5 + 130
+    local nx1 = ix1 + 260
     local nx2 = nx1 + 62
     if wy >= iy1 + 7 and wy <= iy1 + 41 then
-        if wx >= nx1 - 27 and wx <= nx1 + 27 then
-            bs.prevStage()
-            return true
-        elseif wx >= nx2 - 27 and wx <= nx2 + 27 then
-            bs.nextStage()
+        if (wx >= nx1 - 27 and wx <= nx1 + 27) or (wx >= nx2 - 27 and wx <= nx2 + 27) then
+            BattleTriPage.toggleStageSelect()
             return true
         end
     end

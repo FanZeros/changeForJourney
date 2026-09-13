@@ -42,35 +42,23 @@ function BattleView.draw(vg, b, bgImg, skipBg)
     local mapImg = bgImg or img.map
 
     -- 1) 地图底带（覆盖战场带）
-    if not skipBg and mapImg and mapImg >= 0 then
-        local paint = nvgImagePattern(vg, 0, 0, STRIP_W, STRIP_H, 0, mapImg, 1.0)
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, STRIP_W, STRIP_H)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-    else
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, STRIP_W, STRIP_H)
-        nvgFillColor(vg, nvgRGBA(28, 30, 38, 255))
-        nvgFill(vg)
-    end
-
-    -- 2) 两侧阵营底影（各覆盖己方/敌方卡线区域）
-    if img.shadow >= 0 then
-        local shH = BattleLayout.CARD_H * BattleLayout.CARD_SCALE + 24   -- ≈234
-        local shY = BattleLayout.STRIP_CY - shH * 0.5
-        local sides = {
-            { x = 0,                                     w = BattleLayout.STRIP_W * 0.5 },
-            { x = BattleLayout.STRIP_W * 0.5,            w = BattleLayout.STRIP_W * 0.5 },
-        }
-        for _, sd in ipairs(sides) do
-            local paint = nvgImagePattern(vg, sd.x, shY, sd.w, shH, 0, img.shadow, 0.85)
+    -- [修复] skipBg 时整块跳过——否则 else 的纯色填充会盖掉 L1 垫底层
+    if not skipBg then
+        if mapImg and mapImg >= 0 then
+            local paint = nvgImagePattern(vg, 0, 0, STRIP_W, STRIP_H, 0, mapImg, 1.0)
             nvgBeginPath(vg)
-            nvgRect(vg, sd.x, shY, sd.w, shH)
+            nvgRect(vg, 0, 0, STRIP_W, STRIP_H)
             nvgFillPaint(vg, paint)
+            nvgFill(vg)
+        else
+            nvgBeginPath(vg)
+            nvgRect(vg, 0, 0, STRIP_W, STRIP_H)
+            nvgFillColor(vg, nvgRGBA(28, 30, 38, 255))
             nvgFill(vg)
         end
     end
+
+    -- 2) 两侧阵营底影已移除——L1 战区背景自带暗调与晕影
 
     -- 3) 卡组（我左单线 / 敌右单线；卡内 UI 偏移沿用 BattleScene 常量）
     BattleDraw.drawCardGroup(vg, enemies, nil,

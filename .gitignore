@@ -32,3 +32,5 @@ _tri_test.lua
 .gemini/
 .agents/
 .cursor/
+_sel_test.lua
+screenshots/

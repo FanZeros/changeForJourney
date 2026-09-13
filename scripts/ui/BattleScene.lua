@@ -2494,6 +2494,18 @@ function BattleScene.getClearedStages()
     return clearedStages
 end
 
+--- [三行并行] 选关页面: 跳转到指定关卡（仅允许 ≤ 已解锁最大关卡）
+function BattleScene.gotoStage(stageId)
+    stageId = tonumber(stageId)
+    if not stageId or stageId < 1 then return false, "无效关卡" end
+    if stageId > maxStageId_ then return false, "关卡尚未解锁" end
+    loadStage(stageId, true)
+    if onStageChangedCallback then
+        onStageChangedCallback(stageId)
+    end
+    return true
+end
+
 --- 当前是否处于终焉神殿关卡
 function BattleScene.isInTerminalTemple()
     return getStageConfig().isTerminalTemple(currentStageId)

@@ -111,6 +111,31 @@ local worldBgTried_ = false
 local WORLD_BG_PATH = "image/UI_WORLD_BG.png"
 local WORLD_BG_FALLBACK = "image/UI_CZ_BJ.png"
 
+-- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
+-- （maxStageId_/clearedStages）每秒比对一次，变化才经 handleStateUpdate 写入，
+-- 供 TutorialManager / BottomNav / DungeonBattleScene 的建筑与页签解锁判定使用
+local battleSync = { lastMax = -1, lastCleared = -1, acc = 0 }
+local function SyncBattleState(dt)
+    battleSync.acc = battleSync.acc + (dt or 0)
+    if battleSync.acc < 1.0 then return end
+    battleSync.acc = 0
+    local maxId = BattleScene.getMaxStageId()
+    local cleared = BattleScene.getClearedStages()
+    local clearedN = 0
+    for _ in pairs(cleared) do clearedN = clearedN + 1 end
+    if maxId == battleSync.lastMax and clearedN == battleSync.lastCleared then return end
+    if battleSync.lastMax == -1 then
+        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(maxId) .. ", cleared=" .. clearedN)
+    end
+    battleSync.lastMax = maxId
+    battleSync.lastCleared = clearedN
+    local clearedStr = {}
+    for k in pairs(cleared) do clearedStr[tostring(k)] = true end
+    ClientDispatcher.handleStateUpdate(cjson.encode({
+        modules = { battle = { maxStageId = maxId, clearedStages = clearedStr } }
+    }))
+end
+
 local physW, physH, dpr, logicalW, logicalH
 local scale, screenDesignW, screenDesignH, designOffsetX, designOffsetY
 
@@ -390,6 +415,20 @@ function Standalone.Start()
         }))
         print("[Standalone] 初始化 lootbox 数据")
     end
+
+    -- 5.242 heroes 初始状态注入：Standalone 模式无 Server 推送，右面板"我的冒险家"
+    -- （CharacterPanel.ownedSet）依赖 heroes 模块状态；默认大狗嚼 Lv1 已部署
+    if not ClientDispatcher.get("heroes") then
+        local cjson = cjson
+        ClientDispatcher.handleStateUpdate(cjson.encode({
+            modules = { heroes = {
+                roster = { [1] = { level = 1, exp = 0, shards = 0 } },
+                deployed = { 1 },
+            } }
+        }))
+        print("[Standalone] 初始化 heroes 数据（大狗嚼 Lv1）")
+    end
+
     -- 订阅 lootbox 数据变化 → 刷新 LootBox UI
     ClientDispatcher.subscribe("lootbox", function(data, moduleName)
         LootBoxSystem.consolidateSeeds(data) -- 合并旧存档中按 stageId 分开的同类种子
@@ -1099,6 +1138,9 @@ function HandleUpdate(eventType, eventData)
     end
 
     local dt = eventData["TimeStep"]:GetFloat()
+
+    -- [Standalone] battle 状态本地同步（建筑/页签解锁判定依赖）
+    SyncBattleState(dt)
 
     -- 开始界面打开时只更新它
     if StartScreen.isOpen() then

@@ -2470,6 +2470,18 @@ function BattleScene.getCurrentStageId()
     return currentStageId
 end
 
+--- [Standalone 状态同步] 本地最远抵达关卡（Client 模式以服务端推送为准）
+---@return number
+function BattleScene.getMaxStageId()
+    return maxStageId_
+end
+
+--- [Standalone 状态同步] 本地已通关表（key 可能为 number，写入状态前需 tostring）
+---@return table
+function BattleScene.getClearedStages()
+    return clearedStages
+end
+
 --- 当前是否处于终焉神殿关卡
 function BattleScene.isInTerminalTemple()
     return getStageConfig().isTerminalTemple(currentStageId)

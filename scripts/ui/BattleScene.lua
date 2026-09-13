@@ -1113,10 +1113,40 @@ local function setupBattleCombatContext()
     })
 end
 
+-- [卡牌惰性加载] 英雄卡/怪物卡大图，首次进战斗时一次性加载
+-- 背景: KP_GW 水墨新卡为 572x1024 PNG（64 张 ~90MB，解码后 ~128MB 显存），
+-- 启动 init 同步解码会阻塞主线程数秒（Web/WASM 端表现为资源加载卡死）。
+local battleCardsLoaded = false
+local function ensureBattleCards(vg)
+    if battleCardsLoaded then return end
+    battleCardsLoaded = true
+    HeroAssetUtil.preloadCards(vg, imgHeroCards)
+    -- 加载怪物卡片背景 (1~54)
+    for id = 1, 54 do
+        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
+    end
+    -- 加载终焉神殿怪物卡片 (1001~1003)
+    for _, id in ipairs({1001, 1002, 1003}) do
+        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
+    end
+    -- 加载剧情特殊怪物卡片 (1004 昆吾之怒)
+    imgMonsterCards[1004] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_1004.png", 0)
+    -- 加载首通附加特殊怪物卡片 (1005~1007)
+    for _, id in ipairs({1005, 1006, 1007}) do
+        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
+    end
+    -- 加载副本怪物卡片 (201~206)
+    for id = 201, 206 do
+        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
+    end
+    print("[BattleScene] 战斗卡牌惰性加载完成（英雄卡 + 怪物卡 64 张）")
+end
+
 --- 加载关卡
 ---@param stageId number 4位关卡ID, 如 0101
 ---@param skipBattleStart? boolean 跳过 TAL/TM 战斗启动（调用方自行在 resetAllyUnit 后调用 startBattleTalents）
 local function loadStage(stageId, skipBattleStart)
+    ensureBattleCards(vg_)
     local stageConfig = getStageConfig()
     local entry = stageConfig.getStage(stageId)
     if not entry then
@@ -1285,29 +1315,10 @@ function BattleScene.init(vg)
     imgMap      = nvgCreateImage(vg, "image/关卡地图/MAP_1.png", 0)
     currentChapter = 1
     imgShadow   = nvgCreateImage(vg, "image/UI_YWJM_MAPYY.png", 0)
-    -- 加载英雄卡片背景
-    HeroAssetUtil.preloadCards(vg, imgHeroCards)
-    -- ⚠️ 新增怪物 ID 时必须在此处补充对应卡面图片加载！
+    -- [卡牌惰性加载] 英雄卡/怪物卡大图改为首次进战斗时加载（ensureBattleCards）
+    -- ⚠️ 新增怪物 ID 时必须补充到 ensureBattleCards 的加载清单！
     -- 否则 BattleDraw 会 fallback 到 imgMonsterCards[1]（怪物1的贴图）。
-    -- 图片路径规则: "image/怪物卡牌/KP_GW_{monsterId}.png"
-    -- 加载怪物卡片背景 (1~54)
-    for id = 1, 54 do
-        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
-    end
-    -- 加载终焉神殿怪物卡片 (1001~1003)
-    for _, id in ipairs({1001, 1002, 1003}) do
-        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
-    end
-    -- 加载剧情特殊怪物卡片 (1004 昆吾之怒)
-    imgMonsterCards[1004] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_1004.png", 0)
-    -- 加载首通附加特殊怪物卡片 (1005~1007)
-    for _, id in ipairs({1005, 1006, 1007}) do
-        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
-    end
-    -- 加载副本怪物卡片 (201~206)
-    for id = 201, 206 do
-        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
-    end
+    ensureBattleCards(vg)
     imgHpBg     = nvgCreateImage(vg, "image/UI_ZD_HP1.png", 0)
     imgHpFill   = nvgCreateImage(vg, "image/UI_ZD_HPT2.png", 0)
     imgEsFill   = nvgCreateImage(vg, "image/UI_ZD_HPT3.png", 0)

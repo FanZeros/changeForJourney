@@ -1,11 +1,11 @@
 -- ============================================================================
--- BattleTriPage - 三栏并行战斗页（Phase 3 / 总 16:9 = 1920x1080）
--- 布局: 三栏各 640x1080，每栏一场战斗（左4 vs 右4 列阵设计稿 1080x1830 带
---       等比缩放约 0.59 恰好填满栏高）
---   栏1 = 队1 = BattleScene 全引擎（完整关卡进度/首通/掉落，零改动复用）
---   栏2/3 = BattleTriDriver 轻量驱动（自动战斗/击杀奖励回调/通关推进）
---   未解锁栏: 暗罩 + 解锁等级 + 该队编队预览
--- 集成: Standalone HORIZON_MODE 下 tab3 由本页替换；BackToPanels() 返回三联经营。
+-- BattleTriPage - 三行并行战斗（Phase 3 修正版）
+-- 布局: 战斗区 = 中段区域（Standalone 传入 486,0,948,1080，左右经营/角色面板
+--       保持原样），纵向堆叠三行战斗（行高 = rh/3 ≈ 360）:
+--   行1 = 队1 = BattleScene 全引擎（完整关卡进度/首通/掉落，零改动复用）
+--   行2/3 = BattleTriDriver 轻量驱动（自动战斗/击杀奖励回调/通关推进）
+--   未解锁行: 暗罩 + 解锁等级 + 该队编队预览；返回按钮退出战斗区
+-- 每行内 8 卡单线: 我方 4 张在左半段、敌方 4 张在右半段（BattleLayout strip 模式）
 -- ============================================================================
 local BattleLayout = require("core.BattleLayout")
 local BattleView   = require("ui.BattleView")
@@ -20,29 +20,23 @@ local GameState    = require("core.GameState")
 
 local BattleTriPage = {}
 
--- ---- 布局参数（设计参数可调）----
-local TOTAL_W, TOTAL_H = 1920, 1080      -- 总画布 16:9
-local COL_W = 640                        -- 单栏宽（调它即调三栏占比）
 local COL_COUNT = ExpTable.TEAM_COUNT or 3
-local FIELD_BAND_H = 1830                -- 战场带高（BattleView 同步）
-local VIEW_SCALE = TOTAL_H / FIELD_BAND_H        -- 0.5902
-local VIEW_W = 1080 * VIEW_SCALE                 -- ≈637.6
 
 -- ---- 状态 ----
 local isOpen_ = false
 local inited = false
 local drivers = {}        -- [2]/[3] = BattleTriDriver
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
+local region = { x = 486, y = 0, w = 948, h = 1080 }  -- 战斗区（窗口坐标）
 
 --- 击杀奖励回调注入（宿主与 BattleScene.setOnEnemyKill 同源）
 function BattleTriPage.setOnKill(cb) triOnKill = cb end
 
 function BattleTriPage.isOpen() return isOpen_ end
 
---- 打开三栏页（懒建驱动器；队2/3 已解锁则自动开战）
+--- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
 function BattleTriPage.open()
     isOpen_ = true
-    local CharacterPanel = require("ui.CharacterPanel")
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
     for t = 2, COL_COUNT do
         if unlocked >= t and not drivers[t] then
@@ -58,7 +52,7 @@ function BattleTriPage.open()
     print("[BattleTriPage] open, unlockedTeams=" .. unlocked)
 end
 
---- 返回三联经营面板
+--- 返回（关闭战斗区，恢复中面板原战斗视图）
 function BattleTriPage.close() isOpen_ = false end
 
 --- 幂等初始化（贴图）
@@ -68,9 +62,10 @@ function BattleTriPage.init(vg)
     BattleView.init(vg)
 end
 
---- 每帧更新: 栏1 走 BattleScene 全引擎（default 状态），栏2/3 走各自驱动
+--- 每帧更新: 行1 走 BattleScene 全引擎（default 状态），行2/3 走各自驱动
 function BattleTriPage.update(dt)
     if not isOpen_ then return end
+    BattleLayout.setMode("strip")
     -- 回到 default 状态供 BattleScene 使用
     BattleCombat.mount(nil)
     ProjectileSystem.mount(nil)
@@ -80,52 +75,47 @@ function BattleTriPage.update(dt)
     SEM.mount(nil)
     local BattleScene = require("ui.BattleScene")
     BattleScene.update(dt)
-    -- 栏2/3
     for t = 2, COL_COUNT do
         local drv = drivers[t]
         if drv then drv:update(dt) end
     end
 end
 
---- 绘制整页（窗口逻辑坐标 1920x1080）
+--- 绘制战斗区（区域窗口坐标，由宿主传入；内部三行均分高度）
 ---@param vg any
----@param logicalW number 窗口逻辑宽（letterbox 适配）
----@param logicalH number 窗口逻辑高
-function BattleTriPage.draw(vg, logicalW, logicalH)
+---@param rx number 区域左上 X（窗口坐标）
+---@param ry number 区域左上 Y
+---@param rw number 区域宽（948）
+---@param rh number 区域高（1080）
+function BattleTriPage.draw(vg, rx, ry, rw, rh)
     if not isOpen_ then return end
     BattleTriPage.init(vg)
-
-    -- 适配: 窗口 → 1920x1080 letterbox
-    local s = math.min(logicalW / TOTAL_W, logicalH / TOTAL_H)
-    local ox = (logicalW - TOTAL_W * s) * 0.5
-    local oy = (logicalH - TOTAL_H * s) * 0.5
-
-    nvgSave(vg)
-    nvgTranslate(vg, ox, oy)
-    nvgScale(vg, s, s)
+    BattleLayout.setMode("strip")
+    region = { x = rx, y = ry, w = rw, h = rh }
 
     -- 底色
     nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, TOTAL_W, TOTAL_H)
+    nvgRect(vg, rx, ry, rw, rh)
     nvgFillColor(vg, nvgRGBA(10, 10, 16, 255))
     nvgFill(vg)
 
     local BattleScene = require("ui.BattleScene")
     local CharacterPanel = require("ui.CharacterPanel")
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    local rowH = rh / COL_COUNT
 
-    for col = 1, COL_COUNT do
-        local x0 = (col - 1) * COL_W
+    for row = 1, COL_COUNT do
+        local ry0 = ry + (row - 1) * rowH
+        -- 等比适配: 条带 948x360 → 区域内每行（宽高取小者，居中）
+        local rowScale = math.min(rw / BattleLayout.STRIP_W, rowH / BattleLayout.STRIP_H)
+        local drawW = BattleLayout.STRIP_W * rowScale
+        local drawH = BattleLayout.STRIP_H * rowScale
         nvgSave(vg)
-        -- 栏内视口: 1080 宽战场带缩放 VIEW_SCALE，垂直方向平移到战场带顶
-        nvgScissor(vg, x0, 0, COL_W, TOTAL_H)
-        local padX = (COL_W - VIEW_W) * 0.5
-        nvgTranslate(vg, x0 + padX, 0)
-        nvgScale(vg, VIEW_SCALE, VIEW_SCALE)
-        nvgTranslate(vg, 0, -BattleLayout.FIELD_TOP)
+        nvgScissor(vg, rx, ry0, rw, rowH)
+        nvgTranslate(vg, rx + (rw - drawW) * 0.5, ry0 + (rowH - drawH) * 0.5)
+        nvgScale(vg, rowScale, rowScale)
 
-        if col == 1 then
-            -- 栏1: BattleScene 的战场（default 状态）
+        if row == 1 then
             BattleCombat.mount(nil)
             ProjectileSystem.mount(nil)
             TM.mount(nil)
@@ -137,86 +127,87 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 enemies = BattleScene.getEnemies() or {},
             })
         else
-            local drv = drivers[col]
+            local drv = drivers[row]
             if drv then
                 drv.mount()
                 BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies })
+            else
+                nvgBeginPath(vg)
+                nvgRect(vg, 0, 0, rw, rowH)
+                nvgFillColor(vg, nvgRGBA(16, 16, 24, 255))
+                nvgFill(vg)
             end
         end
         nvgRestore(vg)
 
-        -- 栏头: 队伍标签 + 关卡进度
-        local headY = 34
+        -- 行头标签（条带坐标转窗口坐标绘制）
+        local headY = ry0 + 24
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 26)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFontSize(vg, 22)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local stageText
-        if col == 1 then
+        if row == 1 then
             stageText = string.format("队1 · 第%s关", tostring(BattleScene.getStageId() or "?"))
-        elseif drivers[col] then
-            stageText = string.format("队%d · 第%s关 · 击杀%d", col, tostring(drivers[col].stageId), drivers[col].kills)
+        elseif drivers[row] then
+            stageText = string.format("队%d · 第%s关 · 击杀%d", row,
+                tostring(drivers[row].stageId), drivers[row].kills)
         else
-            stageText = string.format("队%d", col)
+            stageText = string.format("队%d", row)
         end
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, x0 + COL_W * 0.5 - 130, headY - 20, 260, 40, 10)
+        nvgRoundedRect(vg, rx + 128, headY - 17, 220, 34, 8)
         nvgFillColor(vg, nvgRGBA(16, 18, 28, 200))
         nvgFill(vg)
-        nvgFillColor(vg, nvgRGBA(220, 228, 245, 255))
-        nvgText(vg, x0 + COL_W * 0.5, headY, stageText)
+        nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
+        nvgText(vg, rx + 142, headY, stageText)
 
-        -- 未解锁遮罩
-        if col > unlocked then
+        -- 未解锁行遮罩
+        if row > unlocked then
             nvgBeginPath(vg)
-            nvgRect(vg, x0, 0, COL_W, TOTAL_H)
-            nvgFillColor(vg, nvgRGBA(8, 8, 14, 215))
+            nvgRect(vg, rx, ry0, rw, rowH)
+            nvgFillColor(vg, nvgRGBA(8, 8, 14, 205))
             nvgFill(vg)
-            local needLv = ExpTable.getTeamUnlockLevel(col)
-            nvgFontSize(vg, 30)
-            nvgFillColor(vg, nvgRGBA(200, 205, 220, 255))
-            nvgText(vg, x0 + COL_W * 0.5, TOTAL_H * 0.42, string.format("队%d 未解锁", col))
-            nvgFontSize(vg, 24)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            local needLv = ExpTable.getTeamUnlockLevel(row)
+            nvgFontSize(vg, 26)
+            nvgFillColor(vg, nvgRGBA(205, 210, 228, 255))
+            nvgText(vg, rx + rw * 0.5, ry0 + rowH * 0.38, string.format("队%d 未解锁", row))
+            nvgFontSize(vg, 20)
             nvgFillColor(vg, nvgRGBA(150, 155, 175, 255))
-            nvgText(vg, x0 + COL_W * 0.5, TOTAL_H * 0.42 + 46,
-                string.format("冒险等级达到 %s 解锁", tostring(needLv or "?")))
-            -- 该队编队预览（已配置人数）
-            local counts = CharacterPanel.getTeamOccupiedCounts()
-            nvgText(vg, x0 + COL_W * 0.5, TOTAL_H * 0.42 + 92,
-                    string.format("已编队 %d/%d 人", counts[col] or 0, 4))
+            nvgText(vg, rx + rw * 0.5, ry0 + rowH * 0.38 + 38,
+                string.format("冒险等级达到 %s 解锁 · 已编队 %d/4 人",
+                    tostring(needLv or "?"), (CharacterPanel.getTeamOccupiedCounts()[row] or 0)))
         end
     end
 
-    -- 返回按钮（左上）
+    -- 返回按钮（区域左上）
     nvgBeginPath(vg)
-    nvgRoundedRect(vg, 14, 14, 108, 48, 10)
+    nvgRoundedRect(vg, rx + 14, ry + 14, 100, 44, 9)
     nvgFillColor(vg, nvgRGBA(30, 34, 50, 235))
     nvgFill(vg)
     nvgBeginPath(vg)
-    nvgRoundedRect(vg, 14, 14, 108, 48, 10)
+    nvgRoundedRect(vg, rx + 14, ry + 14, 100, 44, 9)
     nvgStrokeColor(vg, nvgRGBA(120, 130, 160, 255))
     nvgStrokeWidth(vg, 1.5)
     nvgStroke(vg)
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 24)
+    nvgFontSize(vg, 22)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(225, 230, 245, 255))
-    nvgText(vg, 68, 39, "返 回")
-
-    nvgRestore(vg)
+    nvgText(vg, rx + 64, ry + 37, "返 回")
 end
 
---- 输入（窗口逻辑坐标）；返回 true 表示消费
----@param wx number
----@param wy number
+--- 输入（区域本地坐标 lx=窗口X-region.x, ly=窗口Y-region.y）；返回 true 表示消费
+---@param lx number
+---@param ly number
 ---@return boolean
-function BattleTriPage.handleInput(wx, wy)
+function BattleTriPage.handleInput(lx, ly)
     if not isOpen_ then return false end
-    -- 返回按钮命中（窗口即 1920x1080 设计，无需逆变换——由调用方保证比例）
-    if wx >= 14 and wx <= 122 and wy >= 14 and wy <= 62 then
+    if lx >= 14 and lx <= 114 and ly >= 14 and ly <= 58 then
         BattleTriPage.close()
         return true
     end
-    return true  -- 三栏页吞掉其余点击（战斗自动进行）
+    return true  -- 战斗区吞掉其余点击（自动战斗）
 end
 
 return BattleTriPage

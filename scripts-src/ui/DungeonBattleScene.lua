@@ -63,13 +63,13 @@ local BG_DRIFT_Y_PERIOD = 5.0
 -- 敌方战场阴影
 -- [左4vs右4] 敌方战场阴影（右列）
 local BattleLayout = require("core.BattleLayout")
-local ENEMY_SHADOW_CX, ENEMY_SHADOW_CY = BattleLayout.ENEMY_COL_X, BattleLayout.FIELD_CY
-local ENEMY_SHADOW_W, ENEMY_SHADOW_H   = 340, 1830
+local ENEMY_SHADOW_CX, ENEMY_SHADOW_CY = 540, 804
+local ENEMY_SHADOW_W, ENEMY_SHADOW_H   = 1080, 556
 
 -- 己方战场阴影
 -- [左4vs右4] 己方战场阴影（左列）
-local ALLY_SHADOW_CX, ALLY_SHADOW_CY = BattleLayout.ALLY_COL_X, BattleLayout.FIELD_CY
-local ALLY_SHADOW_W, ALLY_SHADOW_H   = 340, 1830
+local ALLY_SHADOW_CX, ALLY_SHADOW_CY = 540, 1760
+local ALLY_SHADOW_W, ALLY_SHADOW_H   = 1080, 556
 
 -- 敌方卡片组基准坐标
 local ENEMY_CARD_CY      = 804

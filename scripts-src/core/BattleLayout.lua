@@ -1,61 +1,83 @@
 -- ============================================================================
--- BattleLayout - 战斗布阵（单一事实源）
--- [左4vs右4] 我方左列竖排 4 张 vs 敌方右列竖排 4 张，中央为弹道/特效带
--- 收编原 BattleDraw.drawCardGroup 与 BattleCombat.getCardCX 两份重复公式
---
--- 坐标契约（相对 1080x2400 设计稿）:
---   X 按阵营:  己方 = ALLY_COL_X（左列），敌方 = ENEMY_COL_X（右列）
---   Y 按索引:  cardPos(group, idx) 从上往下排
--- 动画偏移约定:
---   战斗系统输出的 animOffsetY 沿"朝向敌方"轴（行阵时代为 Y 轴），
---   列阵渲染时转置到 X 轴：screenDX = -offset（两阵营统一成立，见 drawCardGroup）
+-- BattleLayout - 战斗布阵（单一事实源，双模式）
+-- [strip] 三行并行战斗: 每场战斗一个 948x360 条带，8 卡单线——
+--         我方 4 张一排在左半段、敌方 4 张一排在右半段，水平对峙
+-- [classic] 原竖屏全页战斗: 上敌排(CY=804)/下我排(CY=1760) 横排居中
+-- 坐标契约:
+--   strip   : X = 阵营内索引横向展开(我左/敌右), Y = 行中心 STRIP_CY
+--   classic : X = 队伍内索引横向居中展开,    Y = 阵营行基准
+-- 动画偏移契约(渲染侧):
+--   lunge/charge 等 offsetY 沿"朝向敌方"轴; classic 映射到 Y,
+--   strip 映射到 X: screenDX = -offset(两阵营统一成立)
 -- ============================================================================
 
 local BattleLayout = {}
 
--- ---- 卡片尺寸（与 BattleDraw/BattleScene 副本保持一致）----
+-- ---- 模式 ----
+BattleLayout.MODE = "classic"   -- "classic" | "strip"
+function BattleLayout.setMode(m)
+    if m == "strip" or m == "classic" then
+        BattleLayout.MODE = m
+    end
+end
+
+-- ---- 卡片原始尺寸（两模式通用；strip 渲染时乘 CARD_SCALE）----
 BattleLayout.CARD_W = 198
 BattleLayout.CARD_H = 438
 
--- ---- 列阵参数（可调）----
-BattleLayout.MAX_PER_SIDE = 4                  -- 每侧最多上场数量
-BattleLayout.ALLY_COL_X   = 300                -- 己方列中心 X（左）
-BattleLayout.ENEMY_COL_X  = 780                -- 敌方列中心 X（右）
-BattleLayout.FIELD_TOP    = 300                -- 首张卡上边缘 Y
-BattleLayout.PITCH_Y      = BattleLayout.CARD_H + 26   -- 竖排卡间距（中心距）
+-- ======================== strip 模式（三行并行战斗条带） ========================
+-- 条带设计空间 = 948x360（窗口像素 1:1，由 BattleTriPage 逐行平移/裁剪）
+BattleLayout.STRIP_W     = 948
+BattleLayout.STRIP_H     = 360
+BattleLayout.CARD_SCALE  = 0.48                       -- 条带内卡牌缩放(95x210)
+BattleLayout.STRIP_CY    = BattleLayout.STRIP_H * 0.5         -- 180
+BattleLayout.STRIP_MARGIN = 30                            -- 两端留白
+BattleLayout.STRIP_PITCH  = 100                     -- 同阵营卡间距（中心距）
+-- 我方列: 从左端向右; 敌方列: 从右端向左（镜像）
+BattleLayout.STRIP_ALLY_X0  = BattleLayout.STRIP_MARGIN
+    + BattleLayout.CARD_W * BattleLayout.CARD_SCALE * 0.5            -- ≈77.5
+BattleLayout.STRIP_ENEMY_X0 = BattleLayout.STRIP_W
+    - BattleLayout.STRIP_MARGIN - BattleLayout.CARD_W * BattleLayout.CARD_SCALE * 0.5
+    - 3 * BattleLayout.STRIP_PITCH                                    -- ≈570.5
 
--- 战场中心（阴影/兜底锚点用）
-BattleLayout.FIELD_CY = BattleLayout.FIELD_TOP
-    + (BattleLayout.MAX_PER_SIDE * BattleLayout.CARD_H
-       + (BattleLayout.MAX_PER_SIDE - 1) * (BattleLayout.PITCH_Y - BattleLayout.CARD_H)) * 0.5
+BattleLayout.MAX_PER_SIDE = 4
 
---- 阵营列中心 X
----@param group string "ally" | "enemy"
----@return number
-function BattleLayout.columnX(group)
-    return (group == "ally") and BattleLayout.ALLY_COL_X or BattleLayout.ENEMY_COL_X
-end
-
---- 阵营内第 idx 张卡的竖排中心 Y（从上往下）
----@param group string "ally" | "enemy"
----@param idx number 1..MAX_PER_SIDE
----@return number
-function BattleLayout.columnY(group, idx)
-    idx = math.max(1, math.min(BattleLayout.MAX_PER_SIDE, math.floor(tonumber(idx) or 1)))
-    return BattleLayout.FIELD_TOP + BattleLayout.CARD_H * 0.5 + (idx - 1) * BattleLayout.PITCH_Y
-end
-
---- 卡片中心坐标
+--- strip: 阵营内第 idx 张卡的中心
 ---@param group string "ally" | "enemy"
 ---@param idx number
 ---@return number cx
 ---@return number cy
-function BattleLayout.cardPos(group, idx)
-    return BattleLayout.columnX(group), BattleLayout.columnY(group, idx)
+local function stripCardPos(group, idx)
+    idx = math.max(1, math.min(BattleLayout.MAX_PER_SIDE, math.floor(tonumber(idx) or 1)))
+    local cx
+    if group == "ally" then
+        cx = BattleLayout.STRIP_ALLY_X0 + (idx - 1) * BattleLayout.STRIP_PITCH
+    else
+        cx = BattleLayout.STRIP_ENEMY_X0 + (idx - 1) * BattleLayout.STRIP_PITCH
+    end
+    return cx, BattleLayout.STRIP_CY
 end
 
---- 通过单位列表推断阵营（己方卡带 heroId，敌方卡带 monsterId；
---- 过滤副本（存活列表/治疗候选等）与原列表非同一引用也能正确判定）
+-- ======================== classic 模式（原竖屏全页战斗） ========================
+BattleLayout.DESIGN_W  = 1080
+BattleLayout.ENEMY_ROW_CY = 804
+BattleLayout.ALLY_ROW_CY  = 1760
+BattleLayout.CLASSIC_CARD_SPACING = 7
+
+--- classic: 队伍内第 idx 张卡的中心（横排居中，恢复原始公式）
+local function classicCardPos(group, idx, count)
+    count = math.max(1, count or BattleLayout.MAX_PER_SIDE)
+    local totalW = count * BattleLayout.CARD_W + (count - 1) * BattleLayout.CLASSIC_CARD_SPACING
+    local startCX = (BattleLayout.DESIGN_W - totalW) * 0.5 + BattleLayout.CARD_W * 0.5
+    idx = math.max(1, idx or 1)
+    local cx = startCX + (idx - 1) * (BattleLayout.CARD_W + BattleLayout.CLASSIC_CARD_SPACING)
+    local cy = (group == "ally") and BattleLayout.ALLY_ROW_CY or BattleLayout.ENEMY_ROW_CY
+    return cx, cy
+end
+
+-- ======================== 统一入口 ========================
+
+--- 阵营判定（己方卡带 heroId，敌方卡带 monsterId；过滤副本亦正确）
 ---@param units table[]|nil
 ---@return string|nil "ally" | "enemy" | nil
 function BattleLayout.detectGroup(units)
@@ -66,18 +88,37 @@ function BattleLayout.detectGroup(units)
     return nil
 end
 
---- 按单位列表取卡片坐标（列表推断阵营；空列表走战场中心兜底）
+--- 卡片中心坐标（按当前模式）
+---@param group string "ally" | "enemy"
+---@param idx number
+---@param count number|nil classic 模式用于横向居中展开
+---@return number cx
+---@return number cy
+function BattleLayout.cardPos(group, idx, count)
+    if BattleLayout.MODE == "strip" then
+        return stripCardPos(group, idx)
+    end
+    return classicCardPos(group, idx, count)
+end
+
+--- 按单位列表取卡片坐标（空列表走模式对应的兜底点）
 ---@param units table[]|nil
 ---@param idx number|nil
----@param fallbackCY number|nil 空列表时 Y 兜底
+---@param fallbackCY number|nil classic 模式空列表 Y 兜底
 ---@return number cx
 ---@return number cy
 function BattleLayout.posForList(units, idx, fallbackCY)
     local group = BattleLayout.detectGroup(units)
     if not group then
-        return 540, fallbackCY or BattleLayout.FIELD_CY
+        if BattleLayout.MODE == "strip" then
+            return BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY
+        end
+        return BattleLayout.DESIGN_W * 0.5, fallbackCY or BattleLayout.ALLY_ROW_CY
     end
-    return BattleLayout.cardPos(group, idx or 1)
+    return BattleLayout.cardPos(group, idx, idx and #units or nil)
 end
+
+--- 战场中心（classic 兜底锚点用）
+BattleLayout.FIELD_CY = BattleLayout.ALLY_ROW_CY
 
 return BattleLayout

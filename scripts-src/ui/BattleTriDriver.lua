@@ -255,7 +255,7 @@ function BattleTriDriver.new(teamIdx)
                     if actual > 0 then
                         local isUnitAlly = BattleLayout.detectGroup({ unit }) == "ally"
                         local list = isUnitAlly and allies or enemies
-                        local cx, cy = BattleLayout.FIELD_CY, BattleLayout.FIELD_CY
+                        local cx, cy = BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY
                         for ii, uu in ipairs(list) do
                             if uu == unit then cx, cy = BattleCombat.getCardPos(list, ii) break end
                         end

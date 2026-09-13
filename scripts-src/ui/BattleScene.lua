@@ -64,15 +64,15 @@ local CARD_W, CARD_H = 198, 438
 
 -- [左4vs右4] 战场阴影改为左右两列（坐标取自 BattleLayout 单一事实源）
 local BattleLayout = require("core.BattleLayout")
-local ENEMY_SHADOW_CX, ENEMY_SHADOW_CY = BattleLayout.ENEMY_COL_X, BattleLayout.FIELD_CY
-local ENEMY_SHADOW_W, ENEMY_SHADOW_H   = 340, 1830
+local ENEMY_SHADOW_CX, ENEMY_SHADOW_CY = 540, 804
+local ENEMY_SHADOW_W, ENEMY_SHADOW_H   = 1080, 556
 
 -- [左4vs右4] 己方战场阴影（左列）
-local ALLY_SHADOW_CX, ALLY_SHADOW_CY = BattleLayout.ALLY_COL_X, BattleLayout.FIELD_CY
-local ALLY_SHADOW_W, ALLY_SHADOW_H   = 340, 1830
+local ALLY_SHADOW_CX, ALLY_SHADOW_CY = 540, 1760
+local ALLY_SHADOW_W, ALLY_SHADOW_H   = 1080, 556
 
 -- 敌方卡片组 基准坐标（单卡时的 X=540）
-local ENEMY_CARD_CY      = BattleLayout.FIELD_CY  -- [左4vs右4] 空列表/弹窗兜底锚点
+local ENEMY_CARD_CY      = BattleLayout.ENEMY_ROW_CY  -- classic 行基准（兜底锚点）
 local ENEMY_TAG_OFFSET_Y  = -215
 local ENEMY_NAME_OFFSET_Y = 90
 local ENEMY_HP_BG_OFFSET_Y = 153
@@ -81,7 +81,7 @@ local ENEMY_ATK_BG_OFFSET_Y = 181
 local ENEMY_LVL_OFFSET_Y = 215
 
 -- 己方卡片组 基准坐标
-local ALLY_CARD_CY       = BattleLayout.FIELD_CY  -- [左4vs右4] 空列表/特效兜底锚点
+local ALLY_CARD_CY       = BattleLayout.ALLY_ROW_CY  -- classic 行基准（兜底锚点）
 local ALLY_TAG_OFFSET_Y   = -215
 local ALLY_NAME_OFFSET_Y  = 85
 local ALLY_HP_BG_OFFSET_Y = 153

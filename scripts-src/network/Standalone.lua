@@ -44,7 +44,8 @@ local Protocol          = require("shared.Protocol")
 local DiaryPage         = require("ui.DiaryPage")
 local StartScreen       = require("ui.StartScreen")
 local DarkTitleScreen   = require("ui.DarkTitleScreen")  -- [DarkTitleScreen] 横屏暗黑标题
-local BattleTriPage     = require("ui.BattleTriPage")    -- [三栏并行] 三栏战斗页
+local BattleTriPage     = require("ui.BattleTriPage")    -- [三行并行] 三行战斗区
+local BattleLayout      = require("core.BattleLayout")   -- [三行并行] 布阵模式切换
 local EventBus          = require("core.EventBus")
 local GameEvents        = require("config.GameEvents")
 local GameBGM           = require("systems.GameBGM")
@@ -1184,6 +1185,12 @@ function HandleUpdate(eventType, eventData)
         return
     end
 
+    -- [三行并行] 模式守卫: 战斗区打开=strip，否则 classic；exclusive 场景打开时收起战斗区
+    BattleLayout.setMode(BattleTriPage.isOpen() and "strip" or "classic")
+    if BattleTriPage.isOpen() and (ArenaBattleScene.isOpen() or DungeonBattleScene.isOpen()) then
+        BattleTriPage.close()
+    end
+
     -- 竞技场/副本对战更新（打开时独占）
     if ArenaBattleScene.isOpen() then
         ArenaBattleScene.update(dt)
@@ -1883,6 +1890,7 @@ H_lastPanel = 'center'
 
 local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW, logicalH)
+    BattleLayout.setMode(BattleTriPage.isOpen() and "strip" or "classic")  -- [三行并行]
 end
 
 --- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（基屏幕空间，绘制于侧栏之后、中面板之前）
@@ -2007,9 +2015,23 @@ function HandleNanoVGRenderHorizon()
     end
     Viewport.finish(vg)
 
-    -- [三栏并行] 三栏战斗页：全窗口绘制（覆盖三联经营面板）
+    -- [三行并行] 战斗模式布局: 经营(左) | 三行战斗(中段) | 角色(右) 铺满窗口
     if BattleTriPage.isOpen() then
-        BattleTriPage.draw(vg, logicalW, logicalH)
+        local ps = logicalH / 1080                -- 面板缩放（高适配）
+        local oxL = 0
+        local oxR = logicalW - 1458 * ps          -- 右面板: ox + 972*ps = 右缘 - 486*ps
+        Viewport.begin(vg, Viewport.PANELS.left, oxL, 0, ps)
+        TownScene.draw(vg)
+        BlacksmithPage.draw(vg)
+        TavernPage.draw(vg)
+        ArenaPage.draw(vg)
+        MarketPage.draw(vg)
+        Viewport.finish(vg)
+        Viewport.begin(vg, Viewport.PANELS.right, oxR, 0, ps)
+        CharacterPanel.draw(vg)
+        Viewport.finish(vg)
+        -- 中段三行战斗区（宽 = 窗口 - 两侧面板）
+        BattleTriPage.draw(vg, 486 * ps, 0, logicalW - 972 * ps, logicalH)
         nvgEndFrame(vg)
         return
     end
@@ -2077,9 +2099,16 @@ local function HorizonResolveMouse()
     local mousePos = input:GetMousePosition()
     local sx = mousePos.x / dpr
     local sy = mousePos.y / dpr
-    -- [三栏并行] 三栏页打开时独占输入（窗口逻辑坐标）
+    -- [三行并行] 战斗模式命中: 面板按战斗布局定位，中段为三行战斗区
     if BattleTriPage.isOpen() then
-        return 'tri', sx, sy
+        local ps = logicalH / 1080
+        local leftW = 486 * ps
+        if sx < leftW then
+            return 'left', sx / (ps * 0.45), sy / (ps * 0.45)
+        elseif sx > logicalW - leftW then
+            return 'right', (sx - (logicalW - 486 * ps)) / (ps * 0.45), sy / (ps * 0.45)
+        end
+        return 'tri', sx - leftW, sy
     end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end

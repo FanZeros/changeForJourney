@@ -342,8 +342,11 @@ function M.draw(vg, scrollY)
 
     -- 1) 面板背景（裁剪到设计宽度内，防止两侧超出）
     --    [横屏三联] 共享大背景右半，与左侧城镇构成同一连续世界；竖屏保持原版
+    local panelClipW = DESIGN_W
+    ---@diagnostic disable-next-line: undefined-global
+    if H_TRI_L0 then panelClipW = 486 end
     nvgSave(vg)
-    nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
+    nvgScissor(vg, 0, 0, panelClipW, DESIGN_H)
     ---@diagnostic disable-next-line: undefined-global
     if H_TRI_L0 then
         -- [三行并行] L0 整套大背景已铺英灵墙, 不再叠画

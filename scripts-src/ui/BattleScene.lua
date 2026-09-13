@@ -2055,11 +2055,23 @@ function BattleScene.update(dt)
             -- 淡出阶段（reviveTimer < 0）：不推进复活进度
             if unit.reviveTimer < 0 then
                 unit.atkProgress = 0
+                -- [补位] 死亡淡出完成后立即让队列敌人补入同一槽位
+                if unit.reviveTimer >= -0.01 and #enemyQueue > 0 then
+                    local newUnit = table.remove(enemyQueue, 1)
+                    Diag.installSentinel(newUnit)
+                    TAL.initUnit(newUnit)
+                    TAL.checkMarkTarget(allies, enemies)
+                    newUnit.atkProgress = 0
+                    enemies[i] = newUnit
+                    BattleCombat.clearCardAnim(unit)
+                    BattleCombat.clearHitFlash(unit)
+                    BattleCombat.setCardAnim(newUnit, { state = "entering", timer = 0, lungeDir = -1 })
+                end
             else
-                -- 墓碑阶段：推进复活进度
+                -- 墓碑阶段：推进复活进度（队列为空时保留墓碑）
                 unit.atkProgress = math.min(1.0, unit.reviveTimer / TOMBSTONE_REVIVE_TIME)
 
-                -- 复活计时器满且怪物池有剩余 → 原地替换 + 淡入动画
+                -- 兼容旧计时：若淡出阶段未完成替换，计时满时仍补位
                 if unit.reviveTimer >= TOMBSTONE_REVIVE_TIME and #enemyQueue > 0 then
                     local newUnit = table.remove(enemyQueue, 1)
                     Diag.installSentinel(newUnit)

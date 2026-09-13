@@ -1027,4 +1027,191 @@ function DarkIcon.drawShowcase(vg)
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 150, 138, 110, 2)
 end
 
+-- ============================================================================
+-- 天赋符号系统（P2-10 试点）：矢量统一重绘替代 85 张 KTX 贴图
+-- 结构：金属铭牌底座 + 系色符文符号；符号按效果类型归 ~10 类，覆盖全部 153 语义名
+-- ============================================================================
+
+--- 天赋 5 系色（与节点 color 字段映射）
+local TALENT_COLORS = {
+    红 = { 196,  58,  30 },
+    绿 = {  95, 158,  62 },
+    黄 = { 216, 158,  46 },
+    蓝 = {  62, 126, 194 },
+    紫 = { 138,  78, 194 },
+    无 = { 150, 138, 110 },
+}
+
+--- 金属铭牌底座（圆形，暗铁渐变 + 系色饰环 + 黑描边）
+local function drawTalentMedal(vg, colorKey, cx, cy, size, a)
+    local r = size * 0.5
+    local col = TALENT_COLORS[colorKey] or TALENT_COLORS["无"]
+    -- 外黑描边
+    nvgBeginPath(vg); nvgCircle(vg, cx, cy, r)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(a * 255)))
+    nvgFill(vg)
+    -- 主体暗铁渐变
+    nvgBeginPath(vg); nvgCircle(vg, cx, cy, r * 0.92)
+    nvgFillPaint(vg, vGrad(vg, cy - r, cy + r, { 44, 38, 30 }, { 18, 15, 11 }, a))
+    nvgFill(vg)
+    -- 系色饰环
+    nvgBeginPath(vg); nvgCircle(vg, cx, cy, r * 0.78)
+    strokeC(vg, a, col[1], col[2], col[3], 0.85)
+    nvgStrokeWidth(vg, math.max(1.5, size * 0.045))
+    nvgStroke(vg)
+    -- 顶缘高光
+    nvgBeginPath(vg)
+    nvgArc(vg, cx, cy, r * 0.88, -2.6, -0.6, NVG_CW)
+    strokeC(vg, a, 150, 134, 111, 0.5)
+    nvgStrokeWidth(vg, math.max(1, size * 0.02))
+    nvgStroke(vg)
+end
+
+-- 各符号 painter：在 (cx,cy) 中心、半径 s 内绘制系色符号（粗黑描边+系色填充+高光）
+local glyphPainters
+
+local function glyphPath(vg, col, a)
+    nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], math.floor(a * 235)))
+    nvgStrokeColor(vg, nvgRGBA(0, 0, 0, math.floor(a * 255)))
+end
+
+glyphPainters = {
+    -- 剑（攻击/物理）：斜置单手剑
+    sword = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx - s * 0.34, cy + s * 0.34)
+        nvgLineTo(vg, cx + s * 0.30, cy - s * 0.30)
+        nvgStrokeWidth(vg, s * 0.16); nvgLineCap(vg, NVG_BUTT)
+        nvgStroke(vg)
+        -- 护手与柄
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx - s * 0.10, cy + s * 0.14); nvgLineTo(vg, cx + s * 0.14, cy - s * 0.10)
+        nvgStrokeWidth(vg, s * 0.10); nvgStroke(vg)
+        nvgBeginPath(vg); nvgCircle(vg, cx - s * 0.40, cy + s * 0.40, s * 0.09)
+        nvgFill(vg)
+    end,
+    -- 盾（防御/壁垒）
+    shield = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx, cy - s * 0.42)
+        nvgLineTo(vg, cx + s * 0.34, cy - s * 0.26)
+        nvgLineTo(vg, cx + s * 0.28, cy + s * 0.14)
+        nvgQuadTo(vg, cx + s * 0.22, cy + s * 0.40, cx, cy + s * 0.46)
+        nvgQuadTo(vg, cx - s * 0.22, cy + s * 0.40, cx - s * 0.28, cy + s * 0.14)
+        nvgLineTo(vg, cx - s * 0.34, cy - s * 0.26)
+        nvgClosePath(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+    end,
+    -- 药瓶（治疗/生命）
+    potion = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        -- 瓶身圆
+        nvgBeginPath(vg); nvgCircle(vg, cx, cy + s * 0.12, s * 0.30)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        -- 瓶颈
+        nvgBeginPath(vg)
+        nvgRect(vg, cx - s * 0.09, cy - s * 0.36, s * 0.18, s * 0.22)
+        nvgFill(vg); nvgStroke(vg)
+        -- 瓶塞
+        nvgBeginPath(vg)
+        nvgRect(vg, cx - s * 0.13, cy - s * 0.46, s * 0.26, s * 0.12)
+        nvgFillColor(vg, nvgRGBA(150, 134, 111, math.floor(a * 235)))
+        nvgFill(vg)
+    end,
+    -- 法杖（奥术）
+    staff = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx - s * 0.26, cy + s * 0.40)
+        nvgLineTo(vg, cx + s * 0.24, cy - s * 0.24)
+        nvgStrokeWidth(vg, s * 0.09); nvgStroke(vg)
+        -- 顶端宝珠 + 光芒
+        nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.30, cy - s * 0.32, s * 0.14)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
+        nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.30, cy - s * 0.32, s * 0.24)
+        strokeC(vg, a, col[1], col[2], col[3], 0.4)
+        nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
+    end,
+    -- 星（暴击/终极）
+    star = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        nvgBeginPath(vg)
+        for i = 0, 9 do
+            local ang = -math.pi * 0.5 + i * math.pi * 0.2
+            local rr = (i % 2 == 0) and s * 0.44 or s * 0.18
+            local px, py = cx + math.cos(ang) * rr, cy + math.sin(ang) * rr
+            if i == 0 then nvgMoveTo(vg, px, py) else nvgLineTo(vg, px, py) end
+        end
+        nvgClosePath(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
+    end,
+    -- 准星（瞄准/致命）
+    crosshair = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        nvgBeginPath(vg); nvgCircle(vg, cx, cy, s * 0.30)
+        nvgStrokeWidth(vg, s * 0.07); nvgStroke(vg)
+        nvgBeginPath(vg)
+        for _, d in ipairs({ { 0, -1 }, { 0, 1 }, { -1, 0 }, { 1, 0 } }) do
+            nvgMoveTo(vg, cx + d[1] * s * 0.16, cy + d[2] * s * 0.16)
+            nvgLineTo(vg, cx + d[1] * s * 0.44, cy + d[2] * s * 0.44)
+        end
+        nvgStrokeWidth(vg, s * 0.07); nvgStroke(vg)
+        nvgBeginPath(vg); nvgCircle(vg, cx, cy, s * 0.08)
+        nvgFill(vg)
+    end,
+    -- 风/羽（急速/闪避）：三道弧形风刃
+    wind = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        for i = 0, 2 do
+            nvgBeginPath(vg)
+            local oy = (i - 1) * s * 0.24
+            nvgMoveTo(vg, cx - s * 0.38, cy + oy)
+            nvgQuadTo(vg, cx + s * 0.10, cy + oy - s * 0.16, cx + s * 0.38, cy + oy)
+            nvgStrokeWidth(vg, s * 0.10 - i * s * 0.02)
+            nvgLineCap(vg, NVG_ROUND)
+            nvgStroke(vg)
+        end
+    end,
+    -- 弓（远程）
+    bow = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        nvgBeginPath(vg)
+        nvgArc(vg, cx, cy, s * 0.40, -math.pi * 0.42, math.pi * 0.42, NVG_CW)
+        nvgStrokeWidth(vg, s * 0.09); nvgStroke(vg)
+        -- 弦
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx + s * 0.40 * math.cos(-math.pi * 0.42), cy + s * 0.40 * math.sin(-math.pi * 0.42))
+        nvgLineTo(vg, cx + s * 0.40 * math.cos(math.pi * 0.42), cy + s * 0.40 * math.sin(math.pi * 0.42))
+        nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
+        -- 箭
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx - s * 0.30, cy); nvgLineTo(vg, cx + s * 0.34, cy)
+        nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+    end,
+}
+
+--- 天赋矢量符号图标（P2-10 试点）：铭牌底座 + 效果类型符号 + 系色
+---@param vg any
+---@param kind string 符号类型: sword/shield/potion/staff/star/crosshair/wind/bow
+---@param colorKey string 系别: 红/绿/黄/蓝/紫/无
+---@param cx number 中心 X
+---@param cy number 中心 Y
+---@param size number 直径
+---@param alpha number|nil 透明度 0-1
+function DarkIcon.drawTalentGlyph(vg, kind, colorKey, cx, cy, size, alpha)
+    local a = alpha or 1
+    if a <= 0.01 then return end
+    local col = TALENT_COLORS[colorKey] or TALENT_COLORS["无"]
+    local painter = glyphPainters[kind] or glyphPainters.star
+    drawTalentMedal(vg, colorKey, cx, cy, size, a)
+    nvgSave(vg)
+    painter(vg, cx, cy, size * 0.92, col, a)
+    nvgRestore(vg)
+end
+
+DarkIcon.TALENT_COLORS = TALENT_COLORS
+DarkIcon.drawTalentMedal = drawTalentMedal  -- [混合方案用] 金属铭牌底座独立暴露
+
 return DarkIcon

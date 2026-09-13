@@ -68,7 +68,7 @@ local GUILD_TEXT_X,  GUILD_TEXT_Y  = 236, 470
 local SMITH_CX,  SMITH_CY  = 525,  477
 local SMITH_W,   SMITH_H   = 366,  405
 local SMITH_LBL_CX, SMITH_LBL_CY = 534, 372
-local SMITH_LBL_W,  SMITH_LBL_H  = 281, 113
+local SMITH_LBL_W,  SMITH_LBL_H  = 361, 113
 local SMITH_ICON_CX, SMITH_ICON_CY = 444, 366
 local SMITH_ICON_SZ = 64
 local SMITH_TEXT_X,  SMITH_TEXT_Y  = 569, 366
@@ -77,7 +77,7 @@ local SMITH_TEXT_X,  SMITH_TEXT_Y  = 569, 366
 local ARENA_CX,  ARENA_CY  = 878,  684
 local ARENA_W,   ARENA_H   = 380,  421
 local ARENA_LBL_CX, ARENA_LBL_CY = 871, 654
-local ARENA_LBL_W,  ARENA_LBL_H  = 281, 113
+local ARENA_LBL_W,  ARENA_LBL_H  = 361, 113
 local ARENA_ICON_CX, ARENA_ICON_CY = 781, 648
 local ARENA_ICON_SZ = 64
 local ARENA_TEXT_X,  ARENA_TEXT_Y  = 907, 648
@@ -88,7 +88,7 @@ local ARENA_TEXT_X,  ARENA_TEXT_Y  = 907, 648
 local CHURCH_CX,  CHURCH_CY  = 171,  1186
 local CHURCH_W,   CHURCH_H   = 344,  688
 local CHURCH_LBL_CX, CHURCH_LBL_CY = 198, 1506
-local CHURCH_LBL_W,  CHURCH_LBL_H  = 247, 113
+local CHURCH_LBL_W,  CHURCH_LBL_H  = 361, 113
 local CHURCH_ICON_CX, CHURCH_ICON_CY = 125, 1500
 local CHURCH_ICON_SZ = 64
 local CHURCH_TEXT_X,  CHURCH_TEXT_Y  = 232, 1500
@@ -97,7 +97,7 @@ local CHURCH_TEXT_X,  CHURCH_TEXT_Y  = 232, 1500
 local TAVERN_CX,  TAVERN_CY  = 832,  1474
 local TAVERN_W,   TAVERN_H   = 397,  387
 local TAVERN_LBL_CX, TAVERN_LBL_CY = 837, 1598
-local TAVERN_LBL_W,  TAVERN_LBL_H  = 247, 113
+local TAVERN_LBL_W,  TAVERN_LBL_H  = 361, 113
 local TAVERN_ICON_CX, TAVERN_ICON_CY = 764, 1598
 local TAVERN_ICON_SZ = 64
 local TAVERN_TEXT_X,  TAVERN_TEXT_Y  = 871, 1598
@@ -106,7 +106,7 @@ local TAVERN_TEXT_X,  TAVERN_TEXT_Y  = 871, 1598
 local MARKET_CX,  MARKET_CY  = 895,  1094
 local MARKET_W,   MARKET_H   = 369,  454
 local MARKET_LBL_CX, MARKET_LBL_CY = 909, 1220
-local MARKET_LBL_W,  MARKET_LBL_H  = 247, 113
+local MARKET_LBL_W,  MARKET_LBL_H  = 361, 113
 local MARKET_ICON_CX, MARKET_ICON_CY = 836, 1220
 local MARKET_ICON_SZ = 64
 local MARKET_TEXT_X,  MARKET_TEXT_Y  = 943, 1220
@@ -205,6 +205,19 @@ local function drawImageSilhouette(vg, img, cx, cy, w, h, darkness)
         NVG_ZERO, NVG_ONE)                    -- Alpha: keep destination
     drawImageCentered(vg, img, cx, cy, w, h, darkness)
     nvgRestore(vg)
+end
+
+--- [暗黑替换] 建筑压暗绘制：nvgImagePatternTinted 乘法叠色（暖褐 ×≈0.57）
+local function drawImageDarkTint(vg, img, cx, cy, w, h, alpha)
+    if img < 0 or alpha <= 0.01 then return end
+    local x = cx - w * 0.5
+    local y = cy - h * 0.5
+    local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img,
+        nvgRGBA(150, 138, 122, math.floor(255 * alpha)))
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, w, h)
+    nvgFillPaint(vg, paint)
+    nvgFill(vg)
 end
 
 --- 九宫格绘制（复用 EquipmentDetail 已验证的实现）
@@ -373,7 +386,10 @@ function TownScene.draw(vg)
     local _tmActive = _TM.isActive()
 
     -- 1) 背景 [横屏三联：共享大背景左半；竖屏保持原版（用户已专门制作暗黑背景，P3-12a 回退）]
-    if HORIZON_MODE then
+    ---@diagnostic disable-next-line: undefined-global
+    if H_TRI_L0 then
+        -- [三行并行] L0 整套大背景已铺营地场景, 不再叠画
+    elseif HORIZON_MODE then
         HorizonBg.draw(vg, 0, 1.0)
     else
         drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
@@ -387,12 +403,12 @@ function TownScene.draw(vg)
     if smithLocked then
         drawImageSilhouette(vg, imgSmith, SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, 0.85)
     else
-        drawImageCentered(vg, imgSmith, SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, 1.0)
+        drawImageDarkTint(vg, imgSmith, SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, 1.0)
         drawFlashOverlay(vg, imgSmith, SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, getClickFlashAlpha("smith"))
         drawBuildingLabel(vg,
             SMITH_LBL_CX, SMITH_LBL_CY, SMITH_LBL_W, SMITH_LBL_H,
             SMITH_ICON_CX, SMITH_ICON_CY, SMITH_ICON_SZ, imgIconSmith,
-            SMITH_TEXT_X, SMITH_TEXT_Y, "铁匠铺")
+            SMITH_TEXT_X, SMITH_TEXT_Y, "狱火锻炉")
     end
     if smithLocked then
         drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true)
@@ -422,12 +438,12 @@ function TownScene.draw(vg)
     if guildLocked then
         drawImageSilhouette(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, 0.85)
     else
-        drawImageCentered(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, 1.0)
+        drawImageDarkTint(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, 1.0)
         drawFlashOverlay(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, getClickFlashAlpha("guild"))
         drawBuildingLabel(vg,
             GUILD_LBL_CX, GUILD_LBL_CY, GUILD_LBL_W, GUILD_LBL_H,
             GUILD_ICON_CX, GUILD_ICON_CY, GUILD_ICON_SZ, imgIconGuild,
-            GUILD_TEXT_X, GUILD_TEXT_Y, "冒险者公会")
+            GUILD_TEXT_X, GUILD_TEXT_Y, "亡誓公会")
     end
     if guildLocked then
         drawBuildingLockOverlay(vg, GUILD_CX, GUILD_CY, "guild", false)
@@ -452,12 +468,12 @@ function TownScene.draw(vg)
     if arenaLocked then
         drawImageSilhouette(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, 0.85)
     else
-        drawImageCentered(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, 1.0)
+        drawImageDarkTint(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, 1.0)
         drawFlashOverlay(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, getClickFlashAlpha("arena"))
         drawBuildingLabel(vg,
             ARENA_LBL_CX, ARENA_LBL_CY, ARENA_LBL_W, ARENA_LBL_H,
             ARENA_ICON_CX, ARENA_ICON_CY, ARENA_ICON_SZ, imgIconArena,
-            ARENA_TEXT_X, ARENA_TEXT_Y, "竞技场")
+            ARENA_TEXT_X, ARENA_TEXT_Y, "血砂斗场")
     end
     if arenaLocked then
         drawBuildingLockOverlay(vg, ARENA_CX, ARENA_CY, "arena", true)
@@ -479,12 +495,12 @@ function TownScene.draw(vg)
     if marketLocked then
         drawImageSilhouette(vg, imgMarket, MARKET_CX, MARKET_CY, MARKET_W, MARKET_H, 0.85)
     else
-        drawImageCentered(vg, imgMarket, MARKET_CX, MARKET_CY, MARKET_W, MARKET_H, 1.0)
+        drawImageDarkTint(vg, imgMarket, MARKET_CX, MARKET_CY, MARKET_W, MARKET_H, 1.0)
         drawFlashOverlay(vg, imgMarket, MARKET_CX, MARKET_CY, MARKET_W, MARKET_H, getClickFlashAlpha("market"))
         drawBuildingLabel(vg,
             MARKET_LBL_CX, MARKET_LBL_CY, MARKET_LBL_W, MARKET_LBL_H,
             MARKET_ICON_CX, MARKET_ICON_CY, MARKET_ICON_SZ, imgIconMarket,
-            MARKET_TEXT_X, MARKET_TEXT_Y, "市场")
+            MARKET_TEXT_X, MARKET_TEXT_Y, "月蚀黑市")
     end
     if marketLocked then
         drawBuildingLockOverlay(vg, MARKET_CX, MARKET_CY, "market", false)
@@ -503,12 +519,12 @@ function TownScene.draw(vg)
     if churchLocked then
         drawImageSilhouette(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, 0.85)
     else
-        drawImageCentered(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, 1.0)
+        drawImageDarkTint(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, 1.0)
         drawFlashOverlay(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, getClickFlashAlpha("church"))
         drawBuildingLabel(vg,
             CHURCH_LBL_CX, CHURCH_LBL_CY, CHURCH_LBL_W, CHURCH_LBL_H,
             CHURCH_ICON_CX, CHURCH_ICON_CY, CHURCH_ICON_SZ, imgIconChurch,
-            CHURCH_TEXT_X, CHURCH_TEXT_Y, "教堂")
+            CHURCH_TEXT_X, CHURCH_TEXT_Y, "缄默礼拜堂")
     end
     if churchLocked then
         drawBuildingLockOverlay(vg, CHURCH_CX, CHURCH_CY, "church", true)
@@ -529,12 +545,12 @@ function TownScene.draw(vg)
     if tavernLocked then
         drawImageSilhouette(vg, imgTavern, TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, 0.85)
     else
-        drawImageCentered(vg, imgTavern, TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, 1.0)
+        drawImageDarkTint(vg, imgTavern, TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, 1.0)
         drawFlashOverlay(vg, imgTavern, TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, getClickFlashAlpha("tavern"))
         drawBuildingLabel(vg,
             TAVERN_LBL_CX, TAVERN_LBL_CY, TAVERN_LBL_W, TAVERN_LBL_H,
             TAVERN_ICON_CX, TAVERN_ICON_CY, TAVERN_ICON_SZ, imgIconTavern,
-            TAVERN_TEXT_X, TAVERN_TEXT_Y, "酒馆")
+            TAVERN_TEXT_X, TAVERN_TEXT_Y, "腐鸦酒馆")
     end
     if tavernLocked then
         drawBuildingLockOverlay(vg, TAVERN_CX, TAVERN_CY, "tavern", true)

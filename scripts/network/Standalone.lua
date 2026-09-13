@@ -2072,6 +2072,7 @@ H_lastPanel = 'center'
 local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW, logicalH)
     BattleLayout.setMode(BattleTriPage.isOpen() and "strip" or "classic")
+    H_TRI_L0 = BattleTriPage.isOpen()  -- [暗黑替换] 面板透明底开关（L0 已铺营地/英灵墙）
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]
@@ -2211,6 +2212,8 @@ function HandleNanoVGRenderHorizon()
         local ps = logicalH / 1080                -- 面板缩放（高适配）
         local oxL = 0
         local oxR = logicalW - 1458 * ps          -- 右面板: ox + 972*ps = 右缘 - 486*ps
+        BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)  -- [暗黑替换] L1 行内容背景垫底（框内 clip）
+        BattleTriPage.drawL0(vg, logicalW, logicalH)          -- [暗黑替换] L0 框体图（透明框内透出 L1）
         Viewport.begin(vg, Viewport.PANELS.left, oxL, 0, ps)
         TownScene.draw(vg)
         BlacksmithPage.draw(vg)
@@ -2221,8 +2224,8 @@ function HandleNanoVGRenderHorizon()
         Viewport.begin(vg, Viewport.PANELS.right, oxR, 0, ps)
         CharacterPanel.draw(vg)
         Viewport.finish(vg)
-        -- 中段三行战斗区（宽 = 窗口 - 两侧面板）
-        BattleTriPage.draw(vg, 486 * ps, 0, logicalW - 972 * ps, logicalH)
+        -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
+        BattleTriPage.draw(vg, logicalW, logicalH)
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg, logicalW, logicalH)
@@ -2302,7 +2305,7 @@ local function HorizonResolveMouse()
         elseif sx > logicalW - leftW then
             return 'right', (sx - (logicalW - 486 * ps)) / (ps * 0.45), sy / (ps * 0.45)
         end
-        return 'tri', sx - leftW, sy
+        return 'tri', sx, sy
     end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end

@@ -17,7 +17,7 @@ local imgBg       = -1   -- 城镇背景
 local imgChurch   = -1   -- 教堂建筑
 local imgTavern   = -1   -- 酒馆建筑
 local imgMarket   = -1   -- 市场建筑
-local imgLabelBg  = -1   -- 标签背景（共用，九宫格绘制）
+
 local imgIconChurch = -1 -- 教堂图标
 local imgIconTavern = -1 -- 酒馆图标
 local imgIconMarket = -1 -- 市场图标
@@ -309,8 +309,7 @@ local function drawBuildingLabel(vg, lblCx, lblCy, lblW, lblH,
     -- 使用九宫格绘制标签背景（drawNineSlice 接收左上角坐标）
     local lx = lblCx - lblW * 0.5
     local ly = lblCy - lblH * 0.5
-    drawNineSlice(vg, imgLabelBg, lx, ly, lblW, lblH,
-        LABEL_INSET_TOP, LABEL_INSET_RIGHT, LABEL_INSET_BOTTOM, LABEL_INSET_LEFT)
+    DarkIcon.drawNine(vg, "plain", lx, ly, lblW, lblH)
     drawImageCentered(vg, iconImg, iconCx, iconCy, iconSz, iconSz, 1.0)
     drawTextStroke(vg, textX, textY, text,
         LABEL_FONT_SIZE, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,

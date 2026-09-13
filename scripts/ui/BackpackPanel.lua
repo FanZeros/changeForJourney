@@ -192,7 +192,7 @@ local imgTitleBg  = -1  -- UI_TJP_MC.png（标题背景，与教堂一致）
 local imgDeco     = -1  -- UI_JJC_BTBJ.png（标题装饰）
 local imgBtnBack  = -1  -- UI_AN_FH.png（返回按钮）
 local imgTabBg    = -1  -- UI_AN_1.png（Tab 背景）
-local imgSlider   = -1  -- UI_AN_2.png（Tab 滑块）
+
 local imgBtnYellow = -1 -- UI_AN_HUANG.png（黄色按钮，碎片转化用）
 local imgBtnGreen  = -1 -- UI_AN_LV.png（批量分解/确认分解按钮绿色）
 local imgPzsx = {}       -- 品质筛选图标 1~5 (UI_ICON_PZSX_1~5)
@@ -1087,7 +1087,7 @@ function Panel.init(vg)
     imgDeco    = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
     imgTabBg   = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
-    imgSlider  = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     imgBtnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
     imgBtnGreen  = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
     imgLock      = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
@@ -1332,10 +1332,7 @@ function Panel.draw(vg)
     local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
     local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
 
-    DrawUtil.drawNineSlice(vg, imgSlider,
-        sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5,
-        TAB.SLIDER_W, TAB.SLIDER_H,
-        TAB.INSET_TOP, TAB.INSET_RIGHT, TAB.INSET_BOTTOM, TAB.INSET_LEFT)
+    DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
 
     -- 11. Tab 文字
     for i, item in ipairs(TAB_ITEMS) do

@@ -18,6 +18,7 @@ local drawRoundedRectCentered = DrawUtil.drawRoundedRectCentered
 local hitTest                 = DrawUtil.hitTest
 
 local PlayerStore   = require("client.data.PlayerStore")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local M = {}
 
@@ -125,7 +126,7 @@ end
 
 function M.init(vg)
     vg_ = vg
-    img.bg        = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.btnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
     img.qualityBgStandard = nvgCreateImage(vg, "image/UI_icon_ZBBJ_5.png", 0)
     img.qualityBgStellar  = nvgCreateImage(vg, "image/UI_icon_ZBBJ_6.png", 0)
@@ -219,9 +220,7 @@ function M.draw(vg)
     nvgFill(vg)
 
     -- 背景九宫格
-    drawNineSlice(vg, img.bg,
-        BG_CX - BG_W * 0.5, BG_CY - BG_H * 0.5,
-        BG_W, BG_H, BG_INSET_TOP, BG_INSET_RIGHT, BG_INSET_BOTTOM, BG_INSET_LEFT)
+    DarkIcon.drawNine(vg, "panel", BG_CX - BG_W * 0.5, BG_CY - BG_H * 0.5, BG_W, BG_H, { titleH = BG_INSET_TOP })
 
     local isStellarMode = state.mode == "stellar"
     local titleText = isStellarMode and "指定UP角色" or "指定招募"
@@ -364,9 +363,7 @@ function M.draw(vg)
 
     -- 确定按钮
     local ds = BF.begin(vg, "target_confirm", CONFIRM_CX, CONFIRM_CY, CONFIRM_W, CONFIRM_H)
-    drawNineSlice(vg, img.btnYellow,
-        CONFIRM_CX - CONFIRM_W * 0.5, CONFIRM_CY - CONFIRM_H * 0.5,
-        CONFIRM_W, CONFIRM_H, BTN_INSET_TOP, BTN_INSET_RIGHT, BTN_INSET_BOTTOM, BTN_INSET_LEFT)
+    DarkIcon.drawNine(vg, "btn", CONFIRM_CX - CONFIRM_W * 0.5, CONFIRM_CY - CONFIRM_H * 0.5, CONFIRM_W, CONFIRM_H, { accent = "gold" })
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CONFIRM_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)

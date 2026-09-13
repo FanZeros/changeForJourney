@@ -22,6 +22,7 @@ local TavernShopPage    = require("ui.TavernShopPage")
 local TargetRecruitPanel = require("ui.TargetRecruitPanel")
 local BF                = require("systems.ButtonFeedback")
 local ClientDispatcher  = require("network.ClientDispatcher")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local TavernPage = {}
 
 --- 网络发送函数注入点（多人模式由 Client.lua 调用 setSendAction 注入）
@@ -447,9 +448,9 @@ function TavernPage.init(vg)
     img.pityIcon    = nvgCreateImage(vg, "image/UI_icon_TS.png", 0)
     img.ticketIcon  = nvgCreateImage(vg, "image/UI_icon_ZMQ_X.png", 0)
     img.ticketIconStellar = loadImage(vg, UrGachaConfig.UI.ticketIconPath, "image/UI_icon_ZMQ2_X.png")
-    img.diamondIcon = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv       = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    img.tabBg       = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.slider      = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
 
     -- 初始化弹窗子模块（setContext 已在模块级别调用，此处只需 init 加载图片）
@@ -948,10 +949,7 @@ function TavernPage.draw(vg)
 
         -- ============ 16. 招募1次按钮 ============
         local _s3 = BF.begin(vg, "tavern_recruit1", BTN_1_CX, BTN_1_CY, BTN_1_W, BTN_1_H)
-        drawNineSlice(vg, img.btnLv,
-            BTN_1_CX - BTN_1_W * 0.5, BTN_1_CY - BTN_1_H * 0.5,
-            BTN_1_W, BTN_1_H,
-            BTN_INSET_TOP, BTN_INSET_RIGHT, BTN_INSET_BOTTOM, BTN_INSET_LEFT)
+        DarkIcon.drawNine(vg, "btn", BTN_1_CX - BTN_1_W * 0.5, BTN_1_CY - BTN_1_H * 0.5, BTN_1_W, BTN_1_H, { accent = "green" })
 
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, BTN_TEXT_SIZE)
@@ -962,10 +960,7 @@ function TavernPage.draw(vg)
 
         -- ============ 17. 招募10次按钮 ============
         local _s4 = BF.begin(vg, "tavern_recruit10", BTN_10_CX, BTN_10_CY, BTN_10_W, BTN_10_H)
-        drawNineSlice(vg, img.btnLv,
-            BTN_10_CX - BTN_10_W * 0.5, BTN_10_CY - BTN_10_H * 0.5,
-            BTN_10_W, BTN_10_H,
-            BTN_INSET_TOP, BTN_INSET_RIGHT, BTN_INSET_BOTTOM, BTN_INSET_LEFT)
+        DarkIcon.drawNine(vg, "btn", BTN_10_CX - BTN_10_W * 0.5, BTN_10_CY - BTN_10_H * 0.5, BTN_10_W, BTN_10_H, { accent = "green" })
 
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, BTN_TEXT_SIZE)
@@ -978,10 +973,7 @@ function TavernPage.draw(vg)
 
         -- ============ 20.5 指定招募 / 指定UP角色按钮 ==========
         local _s6 = BF.begin(vg, "tavern_target", BTN_TARGET_CX, BTN_TARGET_CY, BTN_TARGET_W, BTN_TARGET_H)
-        drawNineSlice(vg, img.btnTarget,
-            BTN_TARGET_CX - BTN_TARGET_W * 0.5, BTN_TARGET_CY - BTN_TARGET_H * 0.5,
-            BTN_TARGET_W, BTN_TARGET_H,
-            BTN_INSET_TOP, BTN_INSET_RIGHT, BTN_INSET_BOTTOM, BTN_INSET_LEFT)
+        DarkIcon.drawNine(vg, "btn", BTN_TARGET_CX - BTN_TARGET_W * 0.5, BTN_TARGET_CY - BTN_TARGET_H * 0.5, BTN_TARGET_W, BTN_TARGET_H, { accent = "gold" })
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, BTN_TARGET_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -1010,10 +1002,7 @@ function TavernPage.draw(vg)
     local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
     local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
 
-    drawNineSlice(vg, img.slider,
-        sliderCX - SLIDER_W * 0.5, sliderCY - SLIDER_H * 0.5,
-        SLIDER_W, SLIDER_H,
-        SLIDER_INSET_TOP, SLIDER_INSET_RIGHT, SLIDER_INSET_BOTTOM, SLIDER_INSET_LEFT)
+    DarkIcon.drawNine(vg, "btn", sliderCX - SLIDER_W * 0.5, sliderCY - SLIDER_H * 0.5, SLIDER_W, SLIDER_H, { accent = "gold" })
 
     -- Tab 文本
     local tabKeys = { "recruit", "shop" }

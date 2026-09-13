@@ -7,6 +7,7 @@
 ---@diagnostic disable: undefined-global
 
 local DrawUtil          = require("core.DrawUtil")
+local DarkIcon          = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local GameState         = require("core.GameState")
 local AffixConfig       = require("config.AffixConfig")
 local EquipmentConfig   = require("config.EquipmentConfig")
@@ -743,25 +744,11 @@ function M.drawConfirmDialog(vg)
     nvgTranslate(vg, -EMDLG.BG_CX, -EMDLG.BG_CY)
     nvgGlobalAlpha(vg, pAlpha)
 
-    -- 背景（九宫格，与 MarketPage 完全一致）
-    if imgDialogBg and imgDialogBg >= 0 and drawNineSlice then
-        drawNineSlice(vg, imgDialogBg,
-            EMDLG.BG_CX - EMDLG.BG_W * 0.5, EMDLG.BG_CY - EMDLG.BG_H * 0.5,
-            EMDLG.BG_W, EMDLG.BG_H,
-            EMDLG.BG_IT, EMDLG.BG_IR, EMDLG.BG_IB, EMDLG.BG_IL)
-    elseif imgDialogBg and imgDialogBg >= 0 then
-        local bx = EMDLG.BG_CX - EMDLG.BG_W * 0.5
-        local by = EMDLG.BG_CY - EMDLG.BG_H * 0.5
-        local paint = nvgImagePattern(vg, bx, by, EMDLG.BG_W, EMDLG.BG_H, 0, imgDialogBg, 1.0)
-        nvgBeginPath(vg); nvgRect(vg, bx, by, EMDLG.BG_W, EMDLG.BG_H)
-        nvgFillPaint(vg, paint); nvgFill(vg)
-    else
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, EMDLG.BG_CX - EMDLG.BG_W*0.5, EMDLG.BG_CY - EMDLG.BG_H*0.5,
-            EMDLG.BG_W, EMDLG.BG_H, 32)
-        nvgFillColor(vg, nvgRGBA(0x3a, 0x28, 0x1a, 245))
-        nvgFill(vg)
-    end
+    -- 背景 [暗黑化 P1-B5] 矢量面板（原三层贴图回退已移除，矢量绘制无条件可用）
+    DarkIcon.drawNine(vg, "panel",
+        EMDLG.BG_CX - EMDLG.BG_W * 0.5, EMDLG.BG_CY - EMDLG.BG_H * 0.5,
+        EMDLG.BG_W, EMDLG.BG_H,
+        { titleH = EMDLG.BG_IT })
 
     -- 标题"一键强化"
     drawStroke(vg, EMDLG.TITLE_CX, EMDLG.TITLE_CY, "一键强化",
@@ -884,24 +871,13 @@ function M.drawConfirmDialog(vg)
     -- 确认按钮（九宫格黄色按钮，与 MarketPage BUY 按钮一致）
     local canConfirm = goldEnough and scrollEnough
     local _sc = BF.begin(vg, "bse_dlg_confirm", EMDLG.CONFIRM_CX, EMDLG.CONFIRM_CY, EMDLG.CONFIRM_W, EMDLG.CONFIRM_H)
-    if imgBtnYellow and imgBtnYellow >= 0 and drawNineSlice then
-        -- 九宫格黄色按钮（inset: 上20 右60 下20 左60，与 MarketPage 一致）
-        nvgGlobalAlpha(vg, canConfirm and 1.0 or 0.5)
-        drawNineSlice(vg, imgBtnYellow,
-            EMDLG.CONFIRM_CX - EMDLG.CONFIRM_W * 0.5, EMDLG.CONFIRM_CY - EMDLG.CONFIRM_H * 0.5,
-            EMDLG.CONFIRM_W, EMDLG.CONFIRM_H,
-            20, 60, 20, 60)
-        nvgGlobalAlpha(vg, 1.0)
-    elseif imgBtnYellow and imgBtnYellow >= 0 then
-        drawImageCentered(vg, imgBtnYellow, EMDLG.CONFIRM_CX, EMDLG.CONFIRM_CY,
-            EMDLG.CONFIRM_W, EMDLG.CONFIRM_H, canConfirm and 1.0 or 0.5)
-    else
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, EMDLG.CONFIRM_CX - EMDLG.CONFIRM_W * 0.5, EMDLG.CONFIRM_CY - EMDLG.CONFIRM_H * 0.5,
-            EMDLG.CONFIRM_W, EMDLG.CONFIRM_H, 24)
-        nvgFillColor(vg, nvgRGBA(0xe8, 0xb0, 0x20, canConfirm and 255 or 100))
-        nvgFill(vg)
-    end
+    -- 确认按钮 [暗黑化 P1-B3] 矢量金色按钮（原三层贴图回退已移除）
+    nvgGlobalAlpha(vg, canConfirm and 1.0 or 0.5)
+    DarkIcon.drawNine(vg, "btn",
+        EMDLG.CONFIRM_CX - EMDLG.CONFIRM_W * 0.5, EMDLG.CONFIRM_CY - EMDLG.CONFIRM_H * 0.5,
+        EMDLG.CONFIRM_W, EMDLG.CONFIRM_H,
+        { accent = "gold" })
+    nvgGlobalAlpha(vg, 1.0)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, EMDLG.CONFIRM_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0x25, 0x55, 0x3d, canConfirm and 255 or 100))

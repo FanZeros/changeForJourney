@@ -1,5 +1,8 @@
 -- HeroesSchema.lua — heroes 模块 Schema
 -- 英雄阵容（已拥有英雄、出战阵容）
+-- [三队并行] deployed = 队1 兼容镜像；teams[1..3] 为权威三队结构（见 TeamSlots.lua）
+
+local TeamSlots = require("shared.heroes.TeamSlots")
 
 local HeroesSchema = {}
 
@@ -13,6 +16,7 @@ HeroesSchema.Fields = {
             return {
                 roster   = {},
                 deployed = {},
+                teams    = {},
                 urShardConvertDayId = 0,
                 urShardConvertCount = 0,
             }
@@ -118,6 +122,10 @@ HeroesSchema.Fields = {
                     heroData._shardMigrated = true
                 end
             end
+
+            -- [三队并行] teams 归一化 + 旧档迁移（deployed → teams[1]，截断到 4 人；
+            -- teams[1] 与 deployed 双向镜像，跨队去重队1优先）
+            TeamSlots.normalize(data)
         end,
         desc = "英雄阵容",
     },

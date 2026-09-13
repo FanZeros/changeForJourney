@@ -316,6 +316,7 @@ local _sweepRewardStageId = nil
 --- 扫荡固定参数（与服务端 SweepService 保持一致）
 local SWEEP_REWARD_MINUTES = 10   -- 扫荡 = 领取 N 分钟挂机收益（与服务端 SweepService.REWARD_MINUTES 一致）
 local IdleIncomeConfig = require("config.IdleIncomeConfig")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 --- 获取扫荡单次预估奖励，结果按帧缓存
 --- 与服务端 SweepService 完全一致：基于玩家最高进度关卡 maxStageId，
@@ -424,10 +425,7 @@ function SweepDialog.draw(vg)
 
     -- 2) 弹窗背景框（九宫格）
     if imgBg >= 0 then
-        drawNineSlice(vg, imgBg,
-            D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5,
-            D.BG_W, D.BG_H,
-            D.BG_IT, D.BG_IR, D.BG_IB, D.BG_IL)
+        DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
     end
 
     -- 3) 标题 "主线扫荡"

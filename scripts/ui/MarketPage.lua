@@ -630,10 +630,12 @@ end
 -- ======================== 商品卡片绘制 ========================
 
 local function drawShopCard(vg, idx, item, cx, cy)
-    local bgImg = img.cardBg[item.quality] or img.cardBg[1]
-    drawNineSlice(vg, bgImg,
+    -- [暗黑化 P1-B5] 矢量卡底 + 品质语义描边
+    local q = item.quality or 1
+    DarkIcon.drawNine(vg, "plain",
         cx - SL.CARD_W * 0.5, cy - SL.CARD_H * 0.5,
-        SL.CARD_W, SL.CARD_H, 20, 20, 20, 20)
+        SL.CARD_W, SL.CARD_H,
+        { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
 
     local bought = getPurchased(item.id)
     local soldOut = isSoldOut(item)
@@ -699,9 +701,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
         nvgFillColor(vg, nvgRGBA(180, 180, 180, 255))
         nvgText(vg, cx, btnCY, "已售罄", nil)
     else
-        drawNineSlice(vg, img.buyBtn,
-            cx - SL.BTN_W * 0.5, btnCY - SL.BTN_H * 0.5,
-            SL.BTN_W, SL.BTN_H, 10, 30, 10, 30)
+        DarkIcon.drawNine(vg, "btn", cx - SL.BTN_W * 0.5, btnCY - SL.BTN_H * 0.5, SL.BTN_W, SL.BTN_H, { accent = "gold" })
 
         local actualPrice = getActualPrice(item)
         local priceStr = tostring(actualPrice)
@@ -787,9 +787,7 @@ drawPurchaseDialog = function(vg)
     nvgGlobalAlpha(vg, pAlpha)
 
     -- 1. 背景（九宫格 上150 下100 左右60）
-    drawNineSlice(vg, img.dialogBg,
-        DLG.BG_CX - DLG.BG_W * 0.5, DLG.BG_CY - DLG.BG_H * 0.5,
-        DLG.BG_W, DLG.BG_H, DLG.BG_IT, DLG.BG_IR, DLG.BG_IB, DLG.BG_IL)
+    DarkIcon.drawNine(vg, "panel", DLG.BG_CX - DLG.BG_W * 0.5, DLG.BG_CY - DLG.BG_H * 0.5, DLG.BG_W, DLG.BG_H, { titleH = DLG.BG_IT })
 
     -- 2. 标题"购买道具"
     drawTextStroke(vg, DLG.TITLE_CX, DLG.TITLE_CY, "购买道具",
@@ -908,9 +906,7 @@ drawPurchaseDialog = function(vg)
 
     -- 购买按钮
     local _sd = BF.begin(vg, "market_dlg_buy", DLG.BUY_CX, DLG.BUY_CY, DLG.BUY_W, DLG.BUY_H)
-    drawNineSlice(vg, img.buyBtnYellow,
-        DLG.BUY_CX - DLG.BUY_W * 0.5, DLG.BUY_CY - DLG.BUY_H * 0.5,
-        DLG.BUY_W, DLG.BUY_H, 10, 30, 10, 30)
+    DarkIcon.drawNine(vg, "btn", DLG.BUY_CX - DLG.BUY_W * 0.5, DLG.BUY_CY - DLG.BUY_H * 0.5, DLG.BUY_W, DLG.BUY_H, { accent = "gold" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.BUY_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 179))
@@ -1112,9 +1108,7 @@ local function drawKeyConfirmDialog(vg)
     nvgTranslate(vg, -KEY_CF.CX, -KEY_CF.CY)
     nvgGlobalAlpha(vg, pAlpha)
 
-    drawNineSlice(vg, img.dialogBg,
-        KEY_CF.CX - KEY_CF.W * 0.5, KEY_CF.CY - KEY_CF.H * 0.5,
-        KEY_CF.W, KEY_CF.H, 150, 60, 100, 60)
+    DarkIcon.drawNine(vg, "panel", KEY_CF.CX - KEY_CF.W * 0.5, KEY_CF.CY - KEY_CF.H * 0.5, KEY_CF.W, KEY_CF.H, { titleH = 150 })
 
     drawTextStroke(vg, KEY_CF.TITLE_CX, KEY_CF.TITLE_CY, "黄金钥匙不足",
         KEY_CF.TITLE_SIZE, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -1156,10 +1150,7 @@ local function drawKeyConfirmDialog(vg)
         255, 255, 255, KEY_CF.BADGE_STROKE_W, { strokeColor = { 0, 0, 0 } })
 
     local _bfBuy = BF.begin(vg, "market_key_confirm", KEY_CF.BUY_CX, KEY_CF.BUY_CY, KEY_CF.BUY_W, KEY_CF.BUY_H)
-    drawNineSlice(vg, img.buyBtnYellow,
-        KEY_CF.BUY_CX - KEY_CF.BUY_W * 0.5, KEY_CF.BUY_CY - KEY_CF.BUY_H * 0.5,
-        KEY_CF.BUY_W, KEY_CF.BUY_H,
-        KEY_CF.BTN_INSET_TOP, KEY_CF.BTN_INSET_RIGHT, KEY_CF.BTN_INSET_BOTTOM, KEY_CF.BTN_INSET_LEFT)
+    DarkIcon.drawNine(vg, "btn", KEY_CF.BUY_CX - KEY_CF.BUY_W * 0.5, KEY_CF.BUY_CY - KEY_CF.BUY_H * 0.5, KEY_CF.BUY_W, KEY_CF.BUY_H, { accent = "gold" })
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, KEY_CF.BUY_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -1656,7 +1647,7 @@ function MarketPage.init(vg)
     img.buyBtnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
     img.btnMinus = nvgCreateImage(vg, "image/UI_AN_JIAN.png", 0)
     img.btnPlus = nvgCreateImage(vg, "image/UI_AN_JIA.png", 0)
-    img.coinIcon = nvgCreateImage(vg, "image/UI_icon_JB_X.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_SD_AN.png 贴图加载已移除（矢量绘制替代）
     img.diamondIcon = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
     img.privilegeIcon = nvgCreateImage(vg, "image/UI_icon_TQD_X.png", 0)
     for i = 1, 6 do
@@ -1664,7 +1655,7 @@ function MarketPage.init(vg)
     end
 
     -- 特权图片
-    img.privBg          = nvgCreateImage(vg, "image/UI_SC_TQBJ.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.privProgBg      = nvgCreateImage(vg, "image/UI_TQ_JDY2.png", 0)
     img.privProgFill    = nvgCreateImage(vg, "image/UI_TQ_JDY1.png", 0)
     img.privDotActive   = nvgCreateImage(vg, "image/UI_TQ_1.png", 0)
@@ -1907,15 +1898,10 @@ function MarketPage.draw(vg)
     -- 下方背景框（封装为函数以支持水平滑动动画）
     local function drawLowerBg(tabKey)
         if tabKey ~= "privilege" then
-            drawNineSlice(vg, img.lowerBg,
-                P1.LOWER_CX - P1.LOWER_W * 0.5, P1.LOWER_CY - P1.LOWER_H * 0.5,
-                P1.LOWER_W, P1.LOWER_H, P1.LOWER_IT, P1.LOWER_IR, P1.LOWER_IB, P1.LOWER_IL)
+            DarkIcon.drawNine(vg, "plain", P1.LOWER_CX - P1.LOWER_W * 0.5, P1.LOWER_CY - P1.LOWER_H * 0.5, P1.LOWER_W, P1.LOWER_H)
         else
             -- 特权下方背景框（九宫格 UI_TJP_1）
-            drawNineSlice(vg, img.lowerBg,
-                PV.LOWER_CX - PV.LOWER_W * 0.5, PV.LOWER_CY - PV.LOWER_H * 0.5,
-                PV.LOWER_W, PV.LOWER_H,
-                PV.LOWER_IT, PV.LOWER_IR, PV.LOWER_IB, PV.LOWER_IL)
+            DarkIcon.drawNine(vg, "plain", PV.LOWER_CX - PV.LOWER_W * 0.5, PV.LOWER_CY - PV.LOWER_H * 0.5, PV.LOWER_W, PV.LOWER_H)
         end
     end
 
@@ -1972,9 +1958,7 @@ function MarketPage.draw(vg)
     local fromItem = TAB.ITEMS[fromIdx]
     local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
     local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
-    drawNineSlice(vg, img.slider,
-        sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5,
-        TAB.SLIDER_W, TAB.SLIDER_H, TAB.SI_T, TAB.SI_R, TAB.SI_B, TAB.SI_L)
+    DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
 
     -- Tab 文字 + 特权 tab 红点角标
     for i, item in ipairs(TAB.ITEMS) do

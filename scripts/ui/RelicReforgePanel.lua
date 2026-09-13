@@ -15,6 +15,7 @@ local RelicAffix        = require("systems.RelicAffix")
 local RelicDefs         = require("data.RelicDefs")
 local ImageCache        = require("ui.ImageCache")
 local PlayerStore       = require("client.data.PlayerStore")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local RelicReforgePanel = {}
 
@@ -156,8 +157,8 @@ local imgBg         = -1  -- UI_MXZGH_YW_0.png
 local imgBeforeBg   = -1  -- UI_TJP_XL_2.png
 local imgAfterBg    = -1  -- UI_TJP_XL_1.png
 local imgArrow      = -1  -- UI_TJP_JIANTOU.png
-local imgBtnHuang   = -1  -- UI_AN_HUANG.png
-local imgBtnLv      = -1  -- UI_AN_LV.png
+
+
 local imgDustIcon   = -1  -- UI_icon_ASFC_X.png
 local imgInfoIcon   = -1  -- UI_icon_TS.png
 local imgPoolBg     = -1  -- UI_TY_EJQRK.png
@@ -260,10 +261,7 @@ local function drawPoolPopup(vg)
     nvgGlobalAlpha(vg, alpha / 255)
 
     if imgPoolBg >= 0 then
-        drawNineSlice(vg, imgPoolBg,
-            POOL_POPUP.bgCX - POOL_POPUP.bgW * 0.5, POOL_POPUP.bgCY - POOL_POPUP.bgH * 0.5,
-            POOL_POPUP.bgW, POOL_POPUP.bgH,
-            POOL_POPUP.bgNsT, POOL_POPUP.bgNsR, POOL_POPUP.bgNsB, POOL_POPUP.bgNsL)
+        DarkIcon.drawNine(vg, "panel", POOL_POPUP.bgCX - POOL_POPUP.bgW * 0.5, POOL_POPUP.bgCY - POOL_POPUP.bgH * 0.5, POOL_POPUP.bgW, POOL_POPUP.bgH, { titleH = POOL_POPUP.bgNsT })
     end
 
     drawTextStroke(vg, POOL_POPUP.bgCX, POOL_POPUP.titleCY, "可洗练词缀",
@@ -321,8 +319,8 @@ function RelicReforgePanel.init(vg)
     imgArrow    = nvgCreateImage(vg, "image/UI_TJP_JIANTOU.png", 0)
     imgBtnHuang = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
     imgBtnLv    = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    imgDustIcon = nvgCreateImage(vg, "image/UI_icon_ASFC_X.png", 0)
-    imgInfoIcon = nvgCreateImage(vg, "image/UI_icon_TS.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     imgPoolBg   = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
 
     -- 遗物图标 (ICON_YWX_*)
@@ -561,11 +559,7 @@ function RelicReforgePanel.draw(vg)
 
     -- 11) "替换"按钮 UI_AN_HUANG X300 Y1543 410*100
     local _bfReplace = BF.begin(vg, "relic_reforge_replace", BTN_REPLACE.CX, BTN_REPLACE.CY, BTN_REPLACE.W, BTN_REPLACE.H)
-    drawNineSlice(vg, imgBtnHuang,
-        BTN_REPLACE.CX - BTN_REPLACE.W * 0.5,
-        BTN_REPLACE.CY - BTN_REPLACE.H * 0.5,
-        BTN_REPLACE.W, BTN_REPLACE.H,
-        BTN_REPLACE.NP_T, BTN_REPLACE.NP_R, BTN_REPLACE.NP_B, BTN_REPLACE.NP_L)
+    DarkIcon.drawNine(vg, "btn", BTN_REPLACE.CX - BTN_REPLACE.W * 0.5, BTN_REPLACE.CY - BTN_REPLACE.H * 0.5, BTN_REPLACE.W, BTN_REPLACE.H, { accent = "gold" })
     BF.finish(vg, _bfReplace)
 
     -- 12) 文本"替换" X298 Y1542 纯黑不透明度75%
@@ -577,11 +571,7 @@ function RelicReforgePanel.draw(vg)
 
     -- 13) "洗练"按钮 UI_AN_LV X780 Y1543 410*100
     local _bfReforge = BF.begin(vg, "relic_reforge_do", BTN_REFORGE.CX, BTN_REFORGE.CY, BTN_REFORGE.W, BTN_REFORGE.H)
-    drawNineSlice(vg, imgBtnLv,
-        BTN_REFORGE.CX - BTN_REFORGE.W * 0.5,
-        BTN_REFORGE.CY - BTN_REFORGE.H * 0.5,
-        BTN_REFORGE.W, BTN_REFORGE.H,
-        BTN_REFORGE.NP_T, BTN_REFORGE.NP_R, BTN_REFORGE.NP_B, BTN_REFORGE.NP_L)
+    DarkIcon.drawNine(vg, "btn", BTN_REFORGE.CX - BTN_REFORGE.W * 0.5, BTN_REFORGE.CY - BTN_REFORGE.H * 0.5, BTN_REFORGE.W, BTN_REFORGE.H, { accent = "green" })
     BF.finish(vg, _bfReforge)
 
     -- 14) 文本"洗练"/"继续洗练" X778 Y1542 纯黑不透明度75%

@@ -11,6 +11,7 @@ local CC             = require("config.ClassConfig")
 local CharacterPanel = require("ui.CharacterPanel")
 local GameState      = require("core.GameState")
 local BF             = require("systems.ButtonFeedback")
+local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local NumberUtil     = require("core.NumberUtil")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
@@ -1117,10 +1118,10 @@ function M.drawResetConfirmPopup(vg)
     nvgTranslate(vg, -RC.BG_CX, -RC.BG_CY)
     nvgGlobalAlpha(vg, popProgress)
 
-    -- 九宫格背景
-    drawNineSlice(vg, img.resetConfBg,
+    -- 弹窗背景 [暗黑化 P1-B5] 矢量面板
+    DarkIcon.drawNine(vg, "panel",
         RC.BG_CX - RC.BG_W * 0.5, RC.BG_CY - RC.BG_H * 0.5,
-        RC.BG_W, RC.BG_H, 40, 40, 40, 40)
+        RC.BG_W, RC.BG_H)
 
     -- 标题 "重置转职"
     drawTextStroke(vg, RC.BG_CX, RC.TITLE_CY, "⚠ 重置转职", RC.TITLE_FONT,
@@ -1144,19 +1145,19 @@ function M.drawResetConfirmPopup(vg)
     nvgFillColor(vg, nvgRGBA(0xc8, 0x96, 0x20, 255))  -- 金色高亮
     nvgText(vg, RC.BG_CX, RC.LINE2_CY, refundText, nil)
 
-    -- 确认按钮（绿色）
-    drawNineSlice(vg, img.confirmBtn,
+    -- 确认按钮（绿色）[暗黑化 P1-B3]
+    DarkIcon.drawNine(vg, "btn",
         RC.OK_CX - RC.OK_W * 0.5, RC.OK_CY - RC.OK_H * 0.5,
-        RC.OK_W, RC.OK_H, 10, 30, 10, 30)
+        RC.OK_W, RC.OK_H, { accent = "green" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, RC.OK_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(RC.OK_TR, RC.OK_TG, RC.OK_TB, 255))
     nvgText(vg, RC.OK_CX, RC.OK_CY, "确认重置", nil)
 
-    -- 取消按钮（灰色）
-    drawNineSlice(vg, img.cancelBtn,
+    -- 取消按钮（灰色）[暗黑化 P1-B3]
+    DarkIcon.drawNine(vg, "btn",
         RC.CANCEL_CX - RC.CANCEL_W * 0.5, RC.CANCEL_CY - RC.CANCEL_H * 0.5,
-        RC.CANCEL_W, RC.CANCEL_H, 10, 30, 10, 30)
+        RC.CANCEL_W, RC.CANCEL_H)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, RC.CANCEL_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(RC.CANCEL_TR, RC.CANCEL_TG, RC.CANCEL_TB, 255))

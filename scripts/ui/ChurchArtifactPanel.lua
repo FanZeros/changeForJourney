@@ -12,6 +12,7 @@ local ArtifactSchema      = require("shared.artifact.ArtifactSchema")
 local ArtifactDetailPanel = require("ui.ArtifactDetailPanel")
 local ImageCache          = require("ui.ImageCache")
 local ArtifactAssetUtil   = require("config.ArtifactAssetUtil")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -427,7 +428,7 @@ function M.init(vg)
     ArtifactAssetUtil.preloadIcons()
 
     img.topBg     = nvgCreateImage(vg, "image/UI_JTSQ_BJ.png", 0)
-    img.slotGrid  = nvgCreateImage(vg, "image/UI_JTSQ_GZ.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
     img.lowerBg   = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
     img.titleDeco = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
     img.mergeBtn  = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
@@ -495,11 +496,7 @@ function M.drawBg(vg)
         nvgFill(vg)
     end
 
-    drawNineSlice(vg, img.lowerBg,
-        LOWER_PANEL.CX - LOWER_PANEL.W * 0.5,
-        LOWER_PANEL.CY - LOWER_PANEL.H * 0.5,
-        LOWER_PANEL.W, LOWER_PANEL.H,
-        LOWER_PANEL.IT, LOWER_PANEL.IR, LOWER_PANEL.IB, LOWER_PANEL.IL)
+    DarkIcon.drawNine(vg, "plain", LOWER_PANEL.CX - LOWER_PANEL.W * 0.5, LOWER_PANEL.CY - LOWER_PANEL.H * 0.5, LOWER_PANEL.W, LOWER_PANEL.H)
 end
 
 --- 绘制神器 Tab 交互内容

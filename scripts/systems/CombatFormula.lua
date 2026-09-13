@@ -6,6 +6,7 @@
 
 local AD = require("systems.AttributeDef")
 local BattleDiag = require("systems.BattleDiag")
+local BattleLayout = require("core.BattleLayout")
 local MAS -- 延迟加载避免循环依赖
 local function getMAS()
     if not MAS then MAS = require("systems.MapAffixSystem") end
@@ -148,6 +149,8 @@ function CF.selectTarget(units)
         if u.attrs and u.attrs:isAlive() and not u.artifactUntargetable then
             local t = u.attrs:get(AD.THREAT)
             if t < 1 then t = 1 end
+            -- [前后排] 乘以位置受击权重: 前排(靠中心)被攻击概率显著更高
+            t = t * BattleLayout.hitWeight(i)
             totalThreat = totalThreat + t
             alive[#alive + 1] = { index = i, threat = t }
         end

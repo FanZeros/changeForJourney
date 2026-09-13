@@ -347,7 +347,7 @@ end
 function ArenaPage.init(vg)
     img.bg       = nvgCreateImage(vg, "image/UI_JJC_BJ1.png", 0)
     img.nameBg   = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
-    img.lowerBg  = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
     img.titleDeco = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
     img.coin     = nvgCreateImage(vg, "image/UI_icon_JJB_X.png", 0)
     img.ticket   = nvgCreateImage(vg, "image/UI_icon_JJCQ_X.png", 0)
@@ -357,7 +357,7 @@ function ArenaPage.init(vg)
     img.myRankBg = nvgCreateImage(vg, "image/UI_JJC_2.png", 0)
     img.battleBtn = nvgCreateImage(vg, "image/UI_AN_DA.png", 0)
     img.tabBg    = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
-    img.slider   = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.costIcon = nvgCreateImage(vg, "image/UI_icon_JJCQ_X.png", 0)
 
     for i = 1, 8 do
@@ -922,9 +922,7 @@ function ArenaPage.draw(vg)
     nvgTranslate(vg, 0, lowerOY)
 
     -- 下方背景框
-    drawNineSlice(vg, img.lowerBg,
-        P1.LOWER_CX - P1.LOWER_W * 0.5, P1.LOWER_CY - P1.LOWER_H * 0.5,
-        P1.LOWER_W, P1.LOWER_H, P1.LOWER_IT, P1.LOWER_IR, P1.LOWER_IB, P1.LOWER_IL)
+    DarkIcon.drawNine(vg, "plain", P1.LOWER_CX - P1.LOWER_W * 0.5, P1.LOWER_CY - P1.LOWER_H * 0.5, P1.LOWER_W, P1.LOWER_H)
 
     -- 排名 Tab 全屏背景（图层在下方背景框上方，标签栏下方）
     -- Tab 切换时添加淡入/淡出动画，避免背景突然出现/消失
@@ -1017,9 +1015,7 @@ function ArenaPage.draw(vg)
     local fromItem = TAB.ITEMS[fromIdx]
     local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
     local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
-    drawNineSlice(vg, img.slider,
-        sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5,
-        TAB.SLIDER_W, TAB.SLIDER_H, TAB.SI_T, TAB.SI_R, TAB.SI_B, TAB.SI_L)
+    DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
 
     -- Tab 文字
     for i, item in ipairs(TAB.ITEMS) do

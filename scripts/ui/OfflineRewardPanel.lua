@@ -36,6 +36,7 @@ local DrawUtil          = require("core.DrawUtil")
 local BF                = require("systems.ButtonFeedback")
 local ResourceDefs      = require("config.ResourceDefs")
 local ClientDispatcher  = require("network.ClientDispatcher")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local Panel = {}
 
@@ -282,8 +283,8 @@ function Panel.init(vg)
     img.bg            = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
     img.progBg        = nvgCreateImage(vg, "image/UI_LXSYJDT_2.png", 0)
     img.progFill      = nvgCreateImage(vg, "image/UI_XDZJDT.png", 0)
-    img.decoFrame     = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
-    img.btnYellow     = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnGreen      = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
     img.adIcon        = nvgCreateImage(vg, "image/UI_icon_KGG_X.png", 0)
     img.privPointIcon = nvgCreateImage(vg, "image/UI_icon_TQD.png", 0)
@@ -437,9 +438,7 @@ function Panel.draw(vg)
     nvgGlobalAlpha(vg, animAlpha)
 
     -- 2. 弹窗背景框（九宫格）
-    DrawUtil.drawNineSlice(vg, img.bg,
-        BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5, BG.W, BG.H,
-        BG.IT, BG.IR, BG.IB, BG.IL)
+    DarkIcon.drawNine(vg, "panel", BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5, BG.W, BG.H, { titleH = BG.IT })
 
     -- 3. 标题 "欢迎回来"
     DrawUtil.drawTextStroke(vg, TTL.X, TTL.Y, "欢迎回来",
@@ -552,10 +551,7 @@ function Panel.draw(vg)
     if canBonus then
         -- 19. "+2小时"按钮（黄色九宫格）— 左侧
         local _bf1 = BF.begin(vg, "orp_bonus", BTN_DOUBLE.CX, BTN_DOUBLE.CY, BTN_DOUBLE.W, BTN_DOUBLE.H)
-        DrawUtil.drawNineSlice(vg, img.btnYellow,
-            BTN_DOUBLE.CX - BTN_DOUBLE.W * 0.5, BTN_DOUBLE.CY - BTN_DOUBLE.H * 0.5,
-            BTN_DOUBLE.W, BTN_DOUBLE.H,
-            BTN_DOUBLE.NP, BTN_DOUBLE.NP, BTN_DOUBLE.NP, BTN_DOUBLE.NP)
+        DarkIcon.drawNine(vg, "btn", BTN_DOUBLE.CX - BTN_DOUBLE.W * 0.5, BTN_DOUBLE.CY - BTN_DOUBLE.H * 0.5, BTN_DOUBLE.W, BTN_DOUBLE.H, { accent = "gold" })
 
         -- 20. 图标（有特权点→特权点图标，否则→广告图标）
         local bonusIcon = (state.privilegePoint > 0) and img.privPointIcon or img.adIcon
@@ -590,10 +586,7 @@ function Panel.draw(vg)
 
         -- 22. 领取按钮（绿色九宫格）— 右侧
         local _bf2 = BF.begin(vg, "orp_claim", BTN_CLAIM.CX, BTN_CLAIM.CY, BTN_CLAIM.W, BTN_CLAIM.H)
-        DrawUtil.drawNineSlice(vg, img.btnGreen,
-            BTN_CLAIM.CX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5,
-            BTN_CLAIM.W, BTN_CLAIM.H,
-            BTN_CLAIM.NP, BTN_CLAIM.NP, BTN_CLAIM.NP, BTN_CLAIM.NP)
+        DarkIcon.drawNine(vg, "btn", BTN_CLAIM.CX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5, BTN_CLAIM.W, BTN_CLAIM.H, { accent = "green" })
 
         -- 23. "领取" 文字
         nvgFontFace(vg, "sans")
@@ -606,10 +599,7 @@ function Panel.draw(vg)
         -- 已领取额外奖励 或 noDouble 或次数用完：隐藏额外按钮，领取按钮居中
         local claimCX = BG.CX  -- 弹窗水平中心
         local _bf2 = BF.begin(vg, "orp_claim", claimCX, BTN_CLAIM.CY, BTN_CLAIM.W, BTN_CLAIM.H)
-        DrawUtil.drawNineSlice(vg, img.btnGreen,
-            claimCX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5,
-            BTN_CLAIM.W, BTN_CLAIM.H,
-            BTN_CLAIM.NP, BTN_CLAIM.NP, BTN_CLAIM.NP, BTN_CLAIM.NP)
+        DarkIcon.drawNine(vg, "btn", claimCX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5, BTN_CLAIM.W, BTN_CLAIM.H, { accent = "green" })
 
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, BTN_CLAIM.FONT)

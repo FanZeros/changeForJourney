@@ -10,6 +10,7 @@ local drawTextStroke = require("core.DrawUtil").drawTextStroke
 local RewardPopup = require("ui.RewardPopup")
 local BF = require("systems.ButtonFeedback")
 local Protocol = require("shared.Protocol")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local Dialog = {}
 
@@ -288,8 +289,7 @@ function Dialog.draw(vg)
     -- 2. 弹窗背景（九宫格）
     local bgX = BG.CX - BG.W * 0.5
     local bgY = BG.CY - BG.H * 0.5
-    drawNineSlice(vg, img.bg, bgX, bgY, BG.W, BG.H,
-        BG.IT, BG.IR, BG.IB, BG.IL)
+    DarkIcon.drawNine(vg, "panel", bgX, bgY, BG.W, BG.H, { titleH = BG.IT })
 
     -- 3. 标题 "段位奖励"
     drawTextStroke(vg, TTL.X, TTL.Y, "段位奖励",
@@ -348,9 +348,7 @@ function Dialog.draw(vg)
         local fillBot = bottomNodeY
         local fillH = fillBot - fillTop
         if fillH > 0 then
-            drawNineSlice(vg, img.barFill,
-                barLeft, fillTop, barInnerW, fillH,
-                PB.PAD, PB.PAD, PB.PAD, PB.PAD)
+            DarkIcon.drawNine(vg, "fill", barLeft, fillTop, barInnerW, fillH, { accent = "gold" })
         end
     end
 

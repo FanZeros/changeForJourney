@@ -11,6 +11,7 @@ local DrawUtil          = require("core.DrawUtil")
 local NumberUtil        = require("core.NumberUtil")
 local BattleStats       = require("systems.BattleStats")
 local BF                = require("systems.ButtonFeedback")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -333,9 +334,7 @@ function DamageStatsPanel.draw(vg)
 
     -- 3) 九宫格背景
     if imgBg >= 0 then
-        drawNineSlice(vg, imgBg,
-            D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5,
-            D.BG_W, D.BG_H, D.BG_IT, D.BG_IR, D.BG_IB, D.BG_IL)
+        DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
     end
 
     -- 4) 标题

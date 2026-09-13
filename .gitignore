@@ -18,6 +18,13 @@ engine-docs/
 # 旧仓库克隆（其历史已在远端，本分支为工作区快照线）
 changeForJourney/
 
+# 构建工具产物（Maker build 生成，不入库）
+*.meta
+.luarc.json
+# 临时验证入口（离线 validate/截图用）
+_validate_entry.lua
+_tri_test.lua
+
 # Agent 配置（会话工具，非项目内容）
 .claude/
 .codex/

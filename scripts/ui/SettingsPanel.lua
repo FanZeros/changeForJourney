@@ -10,6 +10,7 @@ local RedeemCodePanel = require("ui.RedeemCodePanel")
 local GameBGM = require("systems.GameBGM")
 
 local BF              = require("systems.ButtonFeedback")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
 local drawNineSlice     = DrawUtil.drawNineSlice
@@ -519,10 +520,7 @@ function SettingsPanel.draw(vg)
     nvgTranslate(vg, -BG.CX, -BG.CY)
 
     -- ── 2. 弹窗背景框（九宫格）──
-    drawNineSlice(vg, img.bg,
-        BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
-        BG.W, BG.H,
-        BG.IT, BG.IR, BG.IB, BG.IL)
+    DarkIcon.drawNine(vg, "panel", BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5, BG.W, BG.H, { titleH = BG.IT })
 
     -- ── 3. 标题 "设置" ──
     drawTextStroke(vg, TTL.X, TTL.Y, "设置",

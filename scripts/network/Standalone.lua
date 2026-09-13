@@ -44,10 +44,14 @@ local Protocol          = require("shared.Protocol")
 local DiaryPage         = require("ui.DiaryPage")
 local StartScreen       = require("ui.StartScreen")
 local DarkTitleScreen   = require("ui.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
+local BattleTriPage     = require("ui.BattleTriPage")    -- [三行并行] 三行战斗区
+local BattleLayout      = require("core.BattleLayout")   -- [三行并行] 布阵模式切换
+local ProjectileSystem  = require("ui.ProjectileSystem") -- [三行并行] 渲染缩放
 local EventBus          = require("core.EventBus")
 local GameEvents        = require("config.GameEvents")
 local GameBGM           = require("systems.GameBGM")
 local GameSFX           = require("systems.GameSFX")
+local BattleEffects     = require("ui.BattleEffects")    -- [三行并行] 渲染缩放
 local SpinePowerUpEffect = require("ui.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.IntroCutscene")
 local SamsaraCG          = require("ui.SamsaraCG")
@@ -327,8 +331,14 @@ function Standalone.Start()
     end)
 
     -- 5.1 阵容变更回调：角色面板出战变动 → 同步战斗画面 → 重载关卡 → 更新 TopBar 战力
-    CharacterPanel.setOnTeamChanged(function()
-        local team = CharacterPanel.getDeployedTeam()
+    -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 编队先本地生效（并行战斗 Phase 3 接入）
+    CharacterPanel.setOnTeamChanged(function(teamIdx)
+        teamIdx = tonumber(teamIdx) or 1
+        if teamIdx ~= 1 then
+            print("[Standalone] 队伍" .. teamIdx .. " 编队变更（本地内存生效，Phase 3 并行战斗接入）")
+            return
+        end
+        local team = CharacterPanel.getDeployedTeam(1)
         TopBar.setTotalPower(CharacterPanel.getTotalPower())
         if #team > 0 then
             BattleScene.setAllies(team)
@@ -340,7 +350,8 @@ function Standalone.Start()
     end)
 
     -- 5.2 击杀奖励回调：经验平分给每个上场冒险家，金币/冒险等级经验照常
-    BattleScene.setOnEnemyKill(function(data)
+    -- [三栏并行] 提取为局部函数，BattleScene（栏1）与 BattleTriPage（栏2/3）共用
+    local handleKillRewards = function(data)
         local baseExp  = data.expReward  or 0
         local baseGold = data.goldReward or 0
         local heroIds  = data.heroIds    or {}
@@ -371,7 +382,9 @@ function Standalone.Start()
                 end
             end
         end
-    end)
+    end
+    BattleScene.setOnEnemyKill(handleKillRewards)
+    BattleTriPage.setOnKill(handleKillRewards)  -- [三栏并行] 栏2/3 击杀奖励同源
 
     -- 5.15 城镇铁匠铺点击 → 打开铁匠铺界面
     TownScene.setOnSmithClick(function()
@@ -747,7 +760,7 @@ function Standalone.Start()
             print("[Standalone] 首通奖励: gold=" .. tostring(fcGold)
                 .. " diamond=" .. tostring(fcDiamond)
                 .. " equips=" .. tostring(#fcEquips))
-            RewardPopup.show("首通奖励", rewards)
+            RewardPopup.show("首通奖励", rewards, { row = 1 })  -- [三行并行] 卡在行1内显示
         end
     end)
 
@@ -1220,17 +1233,39 @@ function HandleUpdate(eventType, eventData)
         return
     end
 
+    -- [三行并行] 模式守卫: 战斗区打开=strip，否则 classic；exclusive 场景打开时收起战斗区
+    BattleLayout.setMode(BattleTriPage.isOpen() and "strip" or "classic")
+    local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
+    ProjectileSystem.setRenderScale(triRenderScale)
+    BattleEffects.setRenderScale(triRenderScale)
+    if BattleTriPage.isOpen() and (ArenaBattleScene.isOpen() or DungeonBattleScene.isOpen()) then
+        BattleTriPage.close()
+    end
+
     -- 竞技场/副本对战更新（打开时独占）
     if ArenaBattleScene.isOpen() then
         ArenaBattleScene.update(dt)
     elseif DungeonBattleScene.isOpen() then
         DungeonBattleScene.update(dt)
+    elseif BattleTriPage.isOpen() then
+        -- [三栏并行] 三栏页内部会以 default 状态驱动 BattleScene.update（栏1 引擎）
+        BattleTriPage.update(dt)
     else
         -- 战斗场景始终更新（挂机持续进行）
         BattleScene.update(dt)
     end
 
     local tabIndex = BottomNav.getSelectedIndex()
+    -- [三行并行] 三行战斗区常驻: tab3 下恒开（Arena/Dungeon 独占时由守卫暂收, 关闭后自动重开）
+    if HORIZON_MODE and tabIndex == 3 and not BattleTriPage.isOpen()
+        and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() then
+        BattleTriPage.open()
+    end
+    -- 临时验证钩子: 无输入环境强制打开三栏页（仅 _validate_entry.lua 置位时生效）
+    ---@diagnostic disable-next-line: undefined-global
+    if H_AUTO_OPEN_TRI and HORIZON_MODE and H_skipDone and not BattleTriPage.isOpen() then
+        BattleTriPage.open()
+    end
     if tabIndex == 1 then
         CharacterPanel.update(dt)
     elseif tabIndex == 2 then
@@ -1901,11 +1936,16 @@ local Viewport = require("core.Viewport")
 HORIZON_MODE = true
 H_SKIP_START = true   -- 调试：跳过开始画面直接进主界面
 H_skipDone = false
+H_AUTO_DISMISS_TITLE = false  -- DarkTitleScreen 验收已通过：关闭无输入环境自动淡出钩子
 H_ox, H_oy, H_s = 0, 0, 1
 H_lastPanel = 'center'
 
 local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW, logicalH)
+    BattleLayout.setMode(BattleTriPage.isOpen() and "strip" or "classic")
+    local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
+    ProjectileSystem.setRenderScale(triRenderScale)
+    BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]
 end
 
 --- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（基屏幕空间，绘制于侧栏之后、中面板之前）
@@ -1971,6 +2011,9 @@ function HandleNanoVGRenderHorizon()
         H_skipDone = true
         StartScreen.skipForReconnect()
         DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
+        if H_AUTO_DISMISS_TITLE then
+            DarkTitleScreen.handleTap()  -- 临时验证入口: 无输入环境自动淡出标题
+        end
     end
 
     -- 开始画面：全窗口居中（2400 高画布，适配横屏高度）
@@ -2021,7 +2064,10 @@ function HandleNanoVGRenderHorizon()
         elseif tabIndex == 2 then
             DiaryPage.draw(vg)
         elseif tabIndex == 3 then
-            BattleScene.draw(vg)
+            if not BattleTriPage.isOpen() then
+                BattleScene.draw(vg)
+            end
+            -- [三栏并行] 三栏页打开时中面板留空，全窗绘制见 Viewport.finish 之后
         else
             TownScene.draw(vg)
         end
@@ -2032,6 +2078,27 @@ function HandleNanoVGRenderHorizon()
         end
     end
     Viewport.finish(vg)
+
+    -- [三行并行] 战斗模式布局: 经营(左) | 三行战斗(中段) | 角色(右) 铺满窗口
+    if BattleTriPage.isOpen() then
+        local ps = logicalH / 1080                -- 面板缩放（高适配）
+        local oxL = 0
+        local oxR = logicalW - 1458 * ps          -- 右面板: ox + 972*ps = 右缘 - 486*ps
+        Viewport.begin(vg, Viewport.PANELS.left, oxL, 0, ps)
+        TownScene.draw(vg)
+        BlacksmithPage.draw(vg)
+        TavernPage.draw(vg)
+        ArenaPage.draw(vg)
+        MarketPage.draw(vg)
+        Viewport.finish(vg)
+        Viewport.begin(vg, Viewport.PANELS.right, oxR, 0, ps)
+        CharacterPanel.draw(vg)
+        Viewport.finish(vg)
+        -- 中段三行战斗区（宽 = 窗口 - 两侧面板）
+        BattleTriPage.draw(vg, 486 * ps, 0, logicalW - 972 * ps, logicalH)
+        nvgEndFrame(vg)
+        return
+    end
 
     -- 全局弹窗层（模态，绘制于中面板空间，坐标与原竖屏逻辑一致）
     Viewport.begin(vg, Viewport.PANELS.center, H_ox, H_oy, H_s)
@@ -2095,6 +2162,17 @@ local function HorizonResolveMouse()
     local mousePos = input:GetMousePosition()
     local sx = mousePos.x / dpr
     local sy = mousePos.y / dpr
+    -- [三行并行] 战斗模式命中: 面板按战斗布局定位，中段为三行战斗区
+    if BattleTriPage.isOpen() then
+        local ps = logicalH / 1080
+        local leftW = 486 * ps
+        if sx < leftW then
+            return 'left', sx / (ps * 0.45), sy / (ps * 0.45)
+        elseif sx > logicalW - leftW then
+            return 'right', (sx - (logicalW - 486 * ps)) / (ps * 0.45), sy / (ps * 0.45)
+        end
+        return 'tri', sx - leftW, sy
+    end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
     if ArenaBattleScene.isOpen() or DungeonBattleScene.isOpen()
@@ -2114,6 +2192,11 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()
+    -- [三栏并行] 三栏页自管输入（返回按钮等）
+    if pid == 'tri' then
+        BattleTriPage.handleInput(dx, dy)
+        return
+    end
     pressStartDX, pressStartDY = dx or 0, dy or 0
     pressValid = (pid ~= 'none')
     if pid == 'none' or pid == 'modal' then return end

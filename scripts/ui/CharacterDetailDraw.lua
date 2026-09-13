@@ -17,6 +17,7 @@ local AwakeningPanel    = require("ui.AwakeningPanel")
 local ClientDispatcher  = require("network.ClientDispatcher")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local BF                 = require("systems.ButtonFeedback")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
@@ -444,10 +445,10 @@ function M.initImages(vg)
         imgStatIcons[st.icon] = nvgCreateImage(vg, "image/" .. st.icon .. ".png", 0)
     end
 
-    img.btnHong   = nvgCreateImage(vg, "image/UI_AN_HONG.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv     = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
     img.btnBack   = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    img.tabBg     = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.tabSlider = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
 
     img.arrowBg   = nvgCreateImage(vg, "image/UI_YWJM_HS.png", 0)
@@ -799,8 +800,7 @@ function M.draw(vg)
     -- === 6) 一键卸下 / 一键装备 按钮 ===
     do
         local bx, by = BTN_UNEQUIP_CX - BTN_BATCH_W * 0.5, BTN_UNEQUIP_CY - BTN_BATCH_H * 0.5
-        DrawUtil.drawNineSlice(vg, img.btnHong, bx, by, BTN_BATCH_W, BTN_BATCH_H,
-            NP.hongT, NP.hongR, NP.hongB, NP.hongL)
+        DarkIcon.drawNine(vg, "btn", bx, by, BTN_BATCH_W, BTN_BATCH_H, { accent = "red" })
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 38)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -811,8 +811,7 @@ function M.draw(vg)
     end
     do
         local bx, by = BTN_EQUIP_CX - BTN_BATCH_W * 0.5, BTN_EQUIP_CY - BTN_BATCH_H * 0.5
-        DrawUtil.drawNineSlice(vg, img.btnLv, bx, by, BTN_BATCH_W, BTN_BATCH_H,
-            NP.lvT, NP.lvR, NP.lvB, NP.lvL)
+        DarkIcon.drawNine(vg, "btn", bx, by, BTN_BATCH_W, BTN_BATCH_H, { accent = "green" })
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 38)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -1208,10 +1207,7 @@ function M.draw(vg)
     local tabEased = easeOutCubic(tabT)
     local sliderCX = fromCX + (targetCX - fromCX) * tabEased
     local sliderCY = BTN_TAB_BG_CY
-    DrawUtil.drawNineSlice(vg, img.tabSlider,
-        sliderCX - BTN_TAB_SLIDER_W * 0.5, sliderCY - BTN_TAB_SLIDER_H * 0.5,
-        BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H,
-        10, 70, 10, 70)
+    DarkIcon.drawNine(vg, "btn", sliderCX - BTN_TAB_SLIDER_W * 0.5, sliderCY - BTN_TAB_SLIDER_H * 0.5, BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H, { accent = "gold" })
 
     -- Tab 文字绘制（3个Tab）
     nvgFontFace(vg, "sans")

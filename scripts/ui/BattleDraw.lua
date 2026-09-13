@@ -6,6 +6,7 @@
 local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
 local NumberUtil = require("core.NumberUtil")
+local BattleLayout = require("core.BattleLayout")
 
 local BattleDraw = {}
 
@@ -121,15 +122,31 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
     local count = #units
     if count == 0 then return end
 
-    local totalW = count * CARD_W + (count - 1) * CARD_SPACING
-    local startCX = (DESIGN_W - totalW) * 0.5 + CARD_W * 0.5
+    local group = isAllyGroup and "ally" or "enemy"
+    local stripMode = (BattleLayout.MODE == "strip")
+    local stripCardScale = stripMode and BattleLayout.CARD_SCALE or 1.0
 
     for idx = 1, count do
         local unit = units[idx]
-        local cx = startCX + (idx - 1) * (CARD_W + CARD_SPACING)
-        local animOffY = combat.getCardAnimOffsetY(unit)
-        local chargeOff = combat.getChargeOffsetY(unit, isAllyGroup)
-        local cy = baseCY + animOffY + chargeOff
+        local animOff = combat.getCardAnimOffsetY(unit) + combat.getChargeOffsetY(unit, isAllyGroup)
+        local cx, cy
+        if stripMode then
+            -- [三行并行] 条带坐标: 我左/敌右单线, 朝向敌方轴映射到 X
+            cx, cy = BattleLayout.cardPos(group, idx)
+            cx = cx - animOff
+        else
+            -- classic: 原竖屏行阵, 朝向敌方轴为 Y
+            cx, cy = BattleLayout.cardPos(group, idx, count)
+            cy = cy + animOff
+        end
+
+        -- 条带内卡牌整体缩放（外层；内层远程蓄力缩放嵌套其上）
+        if stripCardScale ~= 1.0 then
+            nvgSave(vg)
+            nvgTranslate(vg, cx, cy)
+            nvgScale(vg, stripCardScale, stripCardScale)
+            nvgTranslate(vg, -cx, -cy)
+        end
 
         -- 远程角色卡片缩放（蓄力缩小/攻击放大）
         local cardScale = combat.getCardScale(unit, isAllyGroup)
@@ -357,6 +374,10 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
 
         -- 关闭远程角色缩放变换
         if hasScale then
+            nvgRestore(vg)
+        end
+        -- 关闭条带整体卡牌缩放
+        if stripCardScale ~= 1.0 then
             nvgRestore(vg)
         end
     end

@@ -295,9 +295,9 @@ local BG_ZOOM_FWD_TARGET  = 1.3   -- 前进：放大淡出
 local BG_ZOOM_BACK_TARGET = 0.7   -- 后退：缩小淡出
 
 -- ======================== 终焉神殿确认弹窗 ========================
-local imgConfirmBg  = -1   -- UI_TY_EJQRK 九宫格背景
-local imgBtnGreen   = -1   -- UI_AN_LV 绿色按钮
-local imgBtnGray    = -1   -- UI_AN_FANG 灰色按钮
+
+
+
 
 -- 弹窗状态
 local confirmDialog = {
@@ -434,9 +434,7 @@ local function drawConfirmDialog(vg)
     nvgGlobalAlpha(vg, pAlpha)
 
     -- 3) 九宫格背景
-    drawNineSlice(vg, imgConfirmBg,
-        CDL.BG_CX - CDL.BG_W * 0.5, CDL.BG_CY - CDL.BG_H * 0.5,
-        CDL.BG_W, CDL.BG_H, 40, 40, 40, 40)
+    DarkIcon.drawNine(vg, "panel", CDL.BG_CX - CDL.BG_W * 0.5, CDL.BG_CY - CDL.BG_H * 0.5, CDL.BG_W, CDL.BG_H, { titleH = 40 })
 
     -- 4) 标题（白色 + 棕色描边，与购买弹窗一致）
     BattleDraw.drawTextStroke(vg, CDL.BG_CX, CDL.TITLE_CY, "⚠ 终焉神殿", CDL.TITLE_FONT,
@@ -461,18 +459,14 @@ local function drawConfirmDialog(vg)
     nvgText(vg, CDL.BG_CX, CDL.LINE3_CY, "（挑战失败将回退到上一关）", nil)
 
     -- 7) 确认按钮（九宫格绿色按钮）
-    drawNineSlice(vg, imgBtnGreen,
-        CDL.OK_CX - CDL.OK_W * 0.5, CDL.OK_CY - CDL.OK_H * 0.5,
-        CDL.OK_W, CDL.OK_H, 10, 30, 10, 30)
+    DarkIcon.drawNine(vg, "btn", CDL.OK_CX - CDL.OK_W * 0.5, CDL.OK_CY - CDL.OK_H * 0.5, CDL.OK_W, CDL.OK_H, { accent = "green" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, CDL.OK_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(CDL.OK_TR, CDL.OK_TG, CDL.OK_TB, 255))
     nvgText(vg, CDL.OK_CX, CDL.OK_CY, "进入", nil)
 
     -- 8) 取消按钮（九宫格灰色按钮）
-    drawNineSlice(vg, imgBtnGray,
-        CDL.CANCEL_CX - CDL.CANCEL_W * 0.5, CDL.CANCEL_CY - CDL.CANCEL_H * 0.5,
-        CDL.CANCEL_W, CDL.CANCEL_H, 10, 30, 10, 30)
+    DarkIcon.drawNine(vg, "btn", CDL.CANCEL_CX - CDL.CANCEL_W * 0.5, CDL.CANCEL_CY - CDL.CANCEL_H * 0.5, CDL.CANCEL_W, CDL.CANCEL_H, { accent = "green" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, CDL.CANCEL_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(CDL.CANCEL_TR, CDL.CANCEL_TG, CDL.CANCEL_TB, 255))

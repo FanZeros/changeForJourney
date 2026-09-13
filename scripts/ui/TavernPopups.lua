@@ -13,6 +13,7 @@ local hitTest        = DrawUtil.hitTest
 local drawImageCentered      = DrawUtil.drawImageCentered
 local drawRoundedRectCentered = DrawUtil.drawRoundedRectCentered
 local BF = require("systems.ButtonFeedback")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local M = {}
 
@@ -627,7 +628,7 @@ end
 --- 初始化弹窗资源
 function M.init(vg)
     img.confirmBg     = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    img.confirmArrow  = nvgCreateImage(vg, "image/UI_TJP_JIANTOU.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.confirmBtnBuy = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
     img.diamondBig    = nvgCreateImage(vg, "image/UI_icon_SJ.png", 0)
     img.ticketBig     = nvgCreateImage(vg, "image/UI_icon_ZMQ_1.png", 0)
@@ -798,10 +799,7 @@ function M.drawAll(vg)
         )
 
         local _bfBuy = BF.begin(vg, "tp_confirm", CF.BUY_CX, CF.BUY_CY, CF.BUY_W, CF.BUY_H)
-        drawNineSlice(vg, img.confirmBtnBuy,
-            CF.BUY_CX - CF.BUY_W * 0.5, CF.BUY_CY - CF.BUY_H * 0.5,
-            CF.BUY_W, CF.BUY_H,
-            CF.BTN_INSET_TOP, CF.BTN_INSET_RIGHT, CF.BTN_INSET_BOTTOM, CF.BTN_INSET_LEFT)
+        DarkIcon.drawNine(vg, "btn", CF.BUY_CX - CF.BUY_W * 0.5, CF.BUY_CY - CF.BUY_H * 0.5, CF.BUY_W, CF.BUY_H, { accent = "gold" })
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, CF.BUY_TEXT_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -827,10 +825,7 @@ function M.drawAll(vg)
         nvgTranslate(vg, -DESIGN_W * 0.5, -DESIGN_H * 0.5)
         nvgGlobalAlpha(vg, pAlpha)
 
-        drawNineSlice(vg, img.confirmBg,
-            INFO.CX - INFO.W * 0.5, INFO.CY - INFO.H * 0.5,
-            INFO.W, INFO.H,
-            INFO.INSET_TOP, INFO.INSET_RIGHT, INFO.INSET_BOTTOM, INFO.INSET_LEFT)
+        DarkIcon.drawNine(vg, "panel", INFO.CX - INFO.W * 0.5, INFO.CY - INFO.H * 0.5, INFO.W, INFO.H, { titleH = INFO.INSET_TOP })
 
         drawTextStroke(vg,
             INFO.TITLE_CX, INFO.TITLE_CY,
@@ -884,10 +879,7 @@ function M.drawAll(vg)
         nvgTranslate(vg, -DESIGN_W * 0.5, -DESIGN_H * 0.5)
         nvgGlobalAlpha(vg, pAlpha)
 
-        drawNineSlice(vg, img.confirmBg,
-            HIST.CX - HIST.W * 0.5, HIST.CY - HIST.H * 0.5,
-            HIST.W, HIST.H,
-            HIST.INSET_TOP, HIST.INSET_RIGHT, HIST.INSET_BOTTOM, HIST.INSET_LEFT)
+        DarkIcon.drawNine(vg, "panel", HIST.CX - HIST.W * 0.5, HIST.CY - HIST.H * 0.5, HIST.W, HIST.H, { titleH = HIST.INSET_TOP })
 
         drawTextStroke(vg,
             HIST.TITLE_CX, HIST.TITLE_CY,

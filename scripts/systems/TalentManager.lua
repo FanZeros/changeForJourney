@@ -25,14 +25,22 @@ local function talentLog(msg)
 end
 
 local TAL = {}
+-- [多实例] 战斗双方列表引用（随战斗 mount 切换）; state/unitStates 为 unit-keyed 全局共享
+local function newBattleRefs()
+    return { bAllies = {}, bEnemies = {} }
+end
+local TAL_DEFAULT = newBattleRefs()
+local TAL_BCS = TAL_DEFAULT
+function TAL.newBattleRefs() return newBattleRefs() end
+function TAL.mount(s) TAL_BCS = s or TAL_DEFAULT end
+function TAL.mountedState() return TAL_BCS end
+
 
 -- ======================== 每单位状态========================
 
 local state = {}
 
 -- 模块级引用（onBattleStart 时缓存）
-local bAllies  = {}
-local bEnemies = {}
 
 -- ======================== 辅助 ========================
 
@@ -205,8 +213,8 @@ end
 ---@param nodeId number
 ---@return boolean
 local function teamHasStarNode(nodeId)
-    if bAllies then
-        for _, ally in ipairs(bAllies) do
+    if TAL_BCS.bAllies then
+        for _, ally in ipairs(TAL_BCS.bAllies) do
             if hasStarNode(ally, nodeId) then return true end
         end
     end
@@ -1217,8 +1225,8 @@ end
 --- 重置所有天赋状态（关卡切换时调用）
 function TAL.reset()
     state = {}
-    bAllies  = {}
-    bEnemies = {}
+    TAL_BCS.bAllies  = {}
+    TAL_BCS.bEnemies = {}
 end
 
 --- 初始化单位天赋状态（单位加入战场时调用）
@@ -1235,8 +1243,8 @@ end
 ---@param allies table 己方单位列表
 ---@param enemies table 敌方单位列表
 function TAL.onBattleStart(allies, enemies)
-    bAllies  = allies
-    bEnemies = enemies
+    TAL_BCS.bAllies  = allies
+    TAL_BCS.bEnemies = enemies
 
     --- 为一组单位应用战斗开始天赋（转职天赋 + 英雄专属）
     ---@param units table[] 要处理的单位列表
@@ -1568,7 +1576,7 @@ function TAL.onBeforeAttack(attacker)
         attacker.attrs:removeModifier("awaken_mark_critdmg")
         -- 觉醒3/5: 仅当存在标记目标时才应用暴击加成
         local anyMarked = false
-        for _, enemy in ipairs(bEnemies) do
+        for _, enemy in ipairs(TAL_BCS.bEnemies) do
             if enemy.hp > 0 and SEM.has(enemy, SEM.MARKED) then
                 anyMarked = true
                 break
@@ -1592,7 +1600,7 @@ function TAL.onBeforeAttack(attacker)
             -- 先应用必暴buff，onAfterAttack中会根据是否已使用来移除
             -- 需要遍历检查是否有未消费的标记目标
             local hasUnusedTarget = false
-            for _, enemy in ipairs(bEnemies) do
+            for _, enemy in ipairs(TAL_BCS.bEnemies) do
                 if enemy.hp > 0 and SEM.has(enemy, SEM.MARKED) and not s.markFirstHitCrit[enemy] then
                     hasUnusedTarget = true
                     break
@@ -1611,7 +1619,7 @@ function TAL.onBeforeAttack(attacker)
         attacker.attrs:removeModifier("awaken_firsthit_crit")
         -- 先应用，onAfterAttack中根据目标判断是否保留
         local hasNewTarget = false
-        for _, enemy in ipairs(bEnemies) do
+        for _, enemy in ipairs(TAL_BCS.bEnemies) do
             if enemy.hp > 0 and not s.firstHitTargets[enemy] then
                 hasNewTarget = true
                 break
@@ -2644,7 +2652,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         -- 210 蚀骨诅咒 带诅咒的敌人受伤时额外暗影伤害(3秒CD)
         if isAlly and dealDmgFn and target.hp > 0 and SEM.has(target, SEM.VULNERABLE) then
             -- 查找拥有210天赋的己方单位
-            for _, ally in ipairs(bAllies) do
+            for _, ally in ipairs(TAL_BCS.bAllies) do
                 if hasAdv(ally, "adv_210_corrosion_curse") and ally.hp > 0 then
                     local as = getState(ally)
                     if as then
@@ -2835,7 +2843,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
 
             local groupHeal = math.floor(healAmt * groupPct + 0.5)
             if groupHeal > 0 then
-                local allyList = isAlly and bAllies or bEnemies
+                local allyList = isAlly and TAL_BCS.bAllies or TAL_BCS.bEnemies
                 for _, ally in ipairs(allyList) do
                     if ally.hp > 0 and ally ~= target then
                         if ally.attrs then
@@ -2862,7 +2870,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             if math.random() < 0.40 then
                 local healAmt = result.appliedHealAmount or result.healAmount or 0
                 if healAmt > 0 then
-                    local enemyList = isAlly and bEnemies or bAllies
+                    local enemyList = isAlly and TAL_BCS.bEnemies or TAL_BCS.bAllies
                     local alive = getAliveEnemies(enemyList)
                     if #alive > 0 then
                         local randTarget = alive[math.random(#alive)]
@@ -3023,7 +3031,7 @@ function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCa
     -- 查找存活的铁憨憨
     local rebecca = nil
     local rebeccaState = nil
-    for _, ally in ipairs(bAllies or {}) do
+    for _, ally in ipairs(TAL_BCS.bAllies or {}) do
         local as = getState(ally)
         if as and as.heroId == 10 and ally.hp > 0 then
             rebecca = ally
@@ -3217,7 +3225,7 @@ function TAL.onDamageTaken(unit, attacker, damage, isUnitAlly, performAttackFn, 
     -- 107 巡游射击: 怪物攻击其他角色后，该角色25%概率立即攻击
     -- 这里处理的是：怪物(attacker)攻击了目标unit)，巡游射击者(ally)延迟反击
     if isUnitAlly and attacker.hp > 0 then
-        for _, ally in ipairs(bAllies) do
+        for _, ally in ipairs(TAL_BCS.bAllies) do
             if ally ~= unit and ally.hp > 0 and hasAdv(ally, "adv_107_patrol_shot") then
                 local chance = 0.25
                 if hasAdv(ally, "adv_213_wind_spirit") then chance = 0.35 end
@@ -3243,7 +3251,7 @@ function TAL.onDamageTaken(unit, attacker, damage, isUnitAlly, performAttackFn, 
         if newStacks > s.praiseStacks then
             s.praiseStacks = newStacks
             -- 更新全队伤害加成
-            for _, ally in ipairs(bAllies) do
+            for _, ally in ipairs(TAL_BCS.bAllies) do
                 if ally.hp > 0 and ally.attrs then
                     ally.attrs:removeModifier("talent_praise")
                     ally.attrs:addModifier("talent_praise", {

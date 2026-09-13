@@ -12,6 +12,7 @@ local hitTest           = DrawUtil.hitTest
 local BF                = require("systems.ButtonFeedback")
 local RelicSystem       = require("systems.RelicSystem")
 local RelicDefs         = require("data.RelicDefs")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local RelicDetailPanel = {}
 
@@ -124,8 +125,8 @@ local BTN_EQUIP = {
 -- ======================== 图片资源 ========================
 
 local imgBg        = {}  -- [1..5] 品质背景
-local imgBtnHuang  = -1  -- UI_AN_HUANG.png
-local imgBtnLv     = -1  -- UI_AN_LV.png
+
+
 local imgPowerIcon = -1  -- ICON_ZDL.png（战力图标）
 local imgUpBig     = -1  -- ICON_UP_big.png（可提升角标）
 local imgLock      = -1  -- UI_ICON_SUO.png（锁定图标，与装备详情一致）
@@ -166,7 +167,7 @@ function RelicDetailPanel.init(vg)
         imgBg[i] = nvgCreateImage(vg, "image/UI_ZBTS_" .. i .. ".png", 0)
     end
     -- 按钮
-    imgBtnHuang = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     imgBtnLv    = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
     -- 战力图标 + 可提升角标
     imgPowerIcon = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
@@ -287,13 +288,12 @@ function RelicDetailPanel.draw(vg)
     nvgTranslate(vg, -BG.CX, -BG.CY)
     nvgGlobalAlpha(vg, progress)
 
-    -- 1) 背景九宫格
+    -- 1) 背景 [暗黑化 P1-B5] 矢量纯底板 + 品质语义描边
     local q = math.min(relic.quality or 1, 5)
-    local bgImg = imgBg[q] or imgBg[1]
-    drawNineSlice(vg, bgImg,
+    DarkIcon.drawNine(vg, "plain",
         BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
         BG.W, BG.H,
-        BG.IT, BG.IR, BG.IB, BG.IL)
+        { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
 
     -- 1.5) 遗物图标 - X629 Y943 160x160（原大图320缩放50%）
     local relicImg = imgRelicIcon[relic.type] or imgRelicIcon[1]
@@ -409,11 +409,7 @@ function RelicDetailPanel.draw(vg)
         ---@diagnostic disable-next-line: assign-type-mismatch
         local btnCX = BG.CX  -- 540 居中
         local _bfEq = BF.begin(vg, "relic_detail_equip", btnCX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H)
-        drawNineSlice(vg, imgBtnLv,
-            btnCX - BTN_EQUIP.W * 0.5,
-            BTN_EQUIP.CY - BTN_EQUIP.H * 0.5,
-            BTN_EQUIP.W, BTN_EQUIP.H,
-            BTN_EQUIP.NP_T, BTN_EQUIP.NP_R, BTN_EQUIP.NP_B, BTN_EQUIP.NP_L)
+        DarkIcon.drawNine(vg, "btn", btnCX - BTN_EQUIP.W * 0.5, BTN_EQUIP.CY - BTN_EQUIP.H * 0.5, BTN_EQUIP.W, BTN_EQUIP.H, { accent = "green" })
         BF.finish(vg, _bfEq)
 
         nvgFontFace(vg, "sans")
@@ -428,11 +424,7 @@ function RelicDetailPanel.draw(vg)
 
         nvgGlobalAlpha(vg, progress * (reforgeAlpha / 255))
         local _bfRef = BF.begin(vg, "relic_detail_reforge", BTN_REFORGE.CX, BTN_REFORGE.CY, BTN_REFORGE.W, BTN_REFORGE.H)
-        drawNineSlice(vg, imgBtnHuang,
-            BTN_REFORGE.CX - BTN_REFORGE.W * 0.5,
-            BTN_REFORGE.CY - BTN_REFORGE.H * 0.5,
-            BTN_REFORGE.W, BTN_REFORGE.H,
-            BTN_REFORGE.NP_T, BTN_REFORGE.NP_R, BTN_REFORGE.NP_B, BTN_REFORGE.NP_L)
+        DarkIcon.drawNine(vg, "btn", BTN_REFORGE.CX - BTN_REFORGE.W * 0.5, BTN_REFORGE.CY - BTN_REFORGE.H * 0.5, BTN_REFORGE.W, BTN_REFORGE.H, { accent = "gold" })
         BF.finish(vg, _bfRef)
         nvgGlobalAlpha(vg, progress)
 
@@ -447,11 +439,7 @@ function RelicDetailPanel.draw(vg)
         local equipLabel = replaceTarget and "替换" or "装备"
 
         local _bfEq = BF.begin(vg, "relic_detail_equip", BTN_EQUIP.CX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H)
-        drawNineSlice(vg, imgBtnLv,
-            BTN_EQUIP.CX - BTN_EQUIP.W * 0.5,
-            BTN_EQUIP.CY - BTN_EQUIP.H * 0.5,
-            BTN_EQUIP.W, BTN_EQUIP.H,
-            BTN_EQUIP.NP_T, BTN_EQUIP.NP_R, BTN_EQUIP.NP_B, BTN_EQUIP.NP_L)
+        DarkIcon.drawNine(vg, "btn", BTN_EQUIP.CX - BTN_EQUIP.W * 0.5, BTN_EQUIP.CY - BTN_EQUIP.H * 0.5, BTN_EQUIP.W, BTN_EQUIP.H, { accent = "green" })
         BF.finish(vg, _bfEq)
 
         nvgFontFace(vg, "sans")

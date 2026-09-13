@@ -717,7 +717,7 @@ function Standalone.Start()
             print("[Standalone] 首通奖励: gold=" .. tostring(fcGold)
                 .. " diamond=" .. tostring(fcDiamond)
                 .. " equips=" .. tostring(#fcEquips))
-            RewardPopup.show("首通奖励", rewards)
+            RewardPopup.show("首通奖励", rewards, { row = 1 })  -- [三行并行] 卡在行1内显示
         end
     end)
 
@@ -1210,11 +1210,11 @@ function HandleUpdate(eventType, eventData)
     end
 
     local tabIndex = BottomNav.getSelectedIndex()
-    -- [三栏并行] 进入 tab3 时自动打开三栏战斗页
-    if HORIZON_MODE and tabIndex == 3 and H_triPrevTab ~= 3 and not BattleTriPage.isOpen() then
+    -- [三行并行] 三行战斗区常驻: tab3 下恒开（Arena/Dungeon 独占时由守卫暂收, 关闭后自动重开）
+    if HORIZON_MODE and tabIndex == 3 and not BattleTriPage.isOpen()
+        and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() then
         BattleTriPage.open()
     end
-    H_triPrevTab = tabIndex
     -- 临时验证钩子: 无输入环境强制打开三栏页（仅 _validate_entry.lua 置位时生效）
     ---@diagnostic disable-next-line: undefined-global
     if H_AUTO_OPEN_TRI and HORIZON_MODE and H_skipDone and not BattleTriPage.isOpen() then

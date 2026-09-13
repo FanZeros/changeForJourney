@@ -17,6 +17,7 @@ local BattleEffects    = require("ui.BattleEffects")
 local SEM              = require("systems.StatusEffectManager")
 local ExpTable     = require("config.ExpTable")
 local GameState    = require("core.GameState")
+local RewardPopup  = require("ui.RewardPopup")
 
 local BattleTriPage = {}
 
@@ -36,6 +37,7 @@ function BattleTriPage.isOpen() return isOpen_ end
 
 --- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
 function BattleTriPage.open()
+    if isOpen_ then return end
     isOpen_ = true
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
     for t = 2, COL_COUNT do
@@ -140,6 +142,11 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
         end
         nvgRestore(vg)
 
+        -- [三行并行] 获得展示归属本行: 行1 的首通奖励弹窗卡在行内显示
+        if row == 1 then
+            RewardPopup.drawRegion(vg, rx, ry0, rw, rowH, 1)
+        end
+
         -- 行头标签（条带坐标转窗口坐标绘制）
         local headY = ry0 + 24
         nvgFontFace(vg, "sans")
@@ -176,21 +183,6 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
         end
     end
 
-    -- 返回按钮（区域左上）
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, rx + 14, ry + 14, 100, 44, 9)
-    nvgFillColor(vg, nvgRGBA(30, 34, 50, 235))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, rx + 14, ry + 14, 100, 44, 9)
-    nvgStrokeColor(vg, nvgRGBA(120, 130, 160, 255))
-    nvgStrokeWidth(vg, 1.5)
-    nvgStroke(vg)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 22)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(225, 230, 245, 255))
-    nvgText(vg, rx + 64, ry + 37, "返 回")
 end
 
 --- 输入（区域本地坐标 lx=窗口X-region.x, ly=窗口Y-region.y）；返回 true 表示消费
@@ -199,9 +191,9 @@ end
 ---@return boolean
 function BattleTriPage.handleInput(lx, ly)
     if not isOpen_ then return false end
-    if lx >= 14 and lx <= 114 and ly >= 14 and ly <= 58 then
-        BattleTriPage.close()
-        return true
+    -- [常驻] 无返回按钮; 点击行内任意处可关闭归属本行的获得弹窗
+    if RewardPopup.currentRowTag() then
+        RewardPopup.close()
     end
     return true  -- 战斗区吞掉其余点击（自动战斗）
 end

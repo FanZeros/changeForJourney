@@ -6,6 +6,8 @@
 
 local TalentStarMap = {}
 
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P2-10] 矢量天赋符号系统
+
 -- [暗黑化 P3-调整] 星图节点图标压暗档（与 DarkIcon.ICON_TINT_DARK 同档，独立常量避免反向依赖 ui 模块）
 local ICON_TINT_DARK = { 72, 64, 54 }
 
@@ -65,10 +67,10 @@ local NODES = {
     [14] = { id=14, gx=2,   gy=2,   st="medium", name="捷击",       adj={5,12},            icon="UI_icon_TF_14.png",   color="绿" },
     [15] = { id=15, gx=2,   gy=-2,  st="medium", name="生机",       adj={10,11},           icon="UI_icon_TF_15.png",   color="黄" },
     [16] = { id=16, gx=-2,  gy=-2,  st="medium", name="魔法帽",     adj={8,9},             icon="UI_icon_TF_16.png",   color="蓝" },
-    [17] = { id=17, gx=-6,  gy=0,   st="small",  name="魔焰",       adj={7,8,25,26},       icon="UI_icon_TF_17.png",   color="蓝" },
-    [18] = { id=18, gx=0,   gy=6,   st="small",  name="灵敏",       adj={5,6,27,28},       icon="UI_icon_TF_18.png",   color="绿" },
-    [19] = { id=19, gx=6,   gy=0,   st="small",  name="战锤",       adj={11,12,29,30},     icon="UI_icon_TF_19.png",   color="红" },
-    [20] = { id=20, gx=0,   gy=-6,  st="small",  name="圣徽",       adj={9,10,31,32},      icon="UI_icon_TF_20.png",   color="黄" },
+    [17] = { id=17, gx=-6,  gy=0,   st="small",  name="魔焰",       adj={7,8,21,25,26},    icon="UI_icon_TF_17.png",   color="蓝" },
+    [18] = { id=18, gx=0,   gy=6,   st="small",  name="灵敏",       adj={5,6,22,27,28},    icon="UI_icon_TF_18.png",   color="绿" },
+    [19] = { id=19, gx=6,   gy=0,   st="small",  name="战锤",       adj={11,12,23,29,30},  icon="UI_icon_TF_19.png",   color="红" },
+    [20] = { id=20, gx=0,   gy=-6,  st="small",  name="圣徽",       adj={9,10,24,31,32},   icon="UI_icon_TF_20.png",   color="黄" },
     [21] = { id=21, gx=-4,  gy=0,   st="large",  name="博学",       adj={17},              icon="UI_icon_TF_21.png",   color="蓝" },
     [22] = { id=22, gx=0,   gy=4,   st="large",  name="轻如蝉翼",   adj={18},              icon="UI_icon_TF_22.png",   color="绿" },
     [23] = { id=23, gx=4,   gy=0,   st="large",  name="刚猛之力",   adj={19},              icon="UI_icon_TF_23.png",   color="红" },
@@ -567,20 +569,20 @@ local function drawEdges(vg)
             local litA = litNodes[idA] or false
             local litB = litNodes[idB] or false
 
-            -- 决定颜色
+            -- 决定颜色 [暗黑化] 三态: 已激活=琥珀金饰线 / 可激活=金闪 / 未激活=暗棕隐线
             local r, g, b, a
             if litA and litB then
-                -- 已激活: 白色
-                r, g, b, a = 255, 255, 255, 255
+                r, g, b, a = 201, 151, 59, 235
             elseif litA or litB then
-                -- 可激活: 闪烁 (在黑色80%和白色之间)
+                -- 可激活: 金色闪烁 (在暗金 45% 和亮金之间)
                 local flash = (math.sin(time.elapsedTime * 4.0) + 1.0) * 0.5  -- 0~1
-                local v = math.floor(255 * flash)
-                r, g, b = v, v, v
-                a = math.floor(204 + (255 - 204) * flash)  -- 80%~100%
+                r = math.floor(140 + (240 - 140) * flash)
+                g = math.floor(105 + (200 - 105) * flash)
+                b = math.floor(38 + (80 - 38) * flash)
+                a = math.floor(180 + (255 - 180) * flash)
             else
-                -- 未激活: 黑色80%
-                r, g, b, a = 0, 0, 0, 204
+                -- 未激活: 暗棕（在暗底上隐约可见走向）
+                r, g, b, a = 46, 38, 28, 210
             end
 
             local wax, way = gridToWorld(nodeA.gx, nodeA.gy)
@@ -616,44 +618,9 @@ local function drawNode(vg, node)
 
     local isLit = litNodes[node.id] or false
 
-    -- 图标绘制
-    local iconHandle = getIconImage(node.icon)
-    if iconHandle >= 0 then
-        local ix = sx - iconHalf
-        local iy = sy - iconHalf
-        -- [暗黑化 P3-调整] 点亮态图标明显压暗（乘法叠色，透明底安全；未点亮态仍叠加原 50% 遮罩）
-        local tint = nvgRGBA(ICON_TINT_DARK[1], ICON_TINT_DARK[2], ICON_TINT_DARK[3], 255)
-        local paint = nvgImagePatternTinted(vg, ix, iy, iconSize, iconSize, 0, iconHandle, tint)
-        nvgBeginPath(vg)
-        nvgRect(vg, ix, iy, iconSize, iconSize)  -- 用矩形让 PNG alpha 自己定义形状
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-
-        -- 未点亮：在图标形状内叠加半透明黑色遮罩
-        -- RGB: result = dst_rgb × (1 - srcAlpha)，srcAlpha=0.5 → 变暗50%
-        -- 图标透明区域 srcAlpha=0 → dst 不变；图标不透明区域 srcAlpha=0.5 → dst×0.5
-        if not isLit then
-            nvgGlobalCompositeBlendFuncSeparate(vg,
-                NVG_ZERO, NVG_ONE_MINUS_SRC_ALPHA,  -- RGB: dst × (1 - srcA)
-                NVG_ZERO, NVG_ONE)                   -- Alpha: 保持 dst
-            -- 用图标 pattern alpha=0.5 作为形状遮罩
-            local maskPaint = nvgImagePattern(vg, ix, iy, iconSize, iconSize, 0, iconHandle, 0.5)
-            nvgBeginPath(vg)
-            nvgRect(vg, ix, iy, iconSize, iconSize)
-            nvgFillPaint(vg, maskPaint)
-            nvgFill(vg)
-            nvgGlobalCompositeOperation(vg, NVG_SOURCE_OVER)  -- 恢复默认混合
-        end
-    else
-        -- 无图标时绘制首字
-        local fontSize = math.max(10, iconSize * 0.35)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, fontSize)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(255, 255, 255, 220))
-        local firstChar = string.sub(node.name, 1, 3)
-        nvgText(vg, sx, sy, firstChar, nil)
-    end
+    -- [暗黑化 P2-10] 矢量天赋符号（金属铭牌 + 系色效果符号），替代 85 张 KTX 贴图
+    -- 点亮态全亮；未点亮态整体 55% 透明（铭牌自带暗铁底，无需原遮罩 blend）
+    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, sx, sy, iconSize * 0.96, isLit and 1.0 or 0.55)
 end
 
 --- 绘制所有节点
@@ -848,7 +815,21 @@ end
 function TalentStarMap.getIconHandle(id)
     local node = NODES[id]
     if not node or not node.icon then return -1 end
-    return getIconImage(node.icon)
+    local h = getIconImage(node.icon)
+    return h or -1
+end
+
+--- [暗黑化 P2-10] 按节点ID绘制矢量天赋符号（铭牌+系色符号）——详情面板等场景用
+---@param vg any
+---@param id number 节点ID
+---@param cx number 中心 X
+---@param cy number 中心 Y
+---@param size number 直径
+---@param alpha number|nil 透明度 0-1
+function TalentStarMap.drawTalentIcon(vg, id, cx, cy, size, alpha)
+    local node = NODES[id]
+    if not node then return end
+    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, cx, cy, size, alpha)
 end
 
 --- 拖拽事件处理 (返回是否消费)

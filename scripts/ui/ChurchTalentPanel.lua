@@ -498,11 +498,8 @@ function M.drawDetailPanel(vg)
         255, 255, 255, TFD.nameStroke,
         { strokeColor = { 0x28, 0x28, 0x28 } })
 
-    -- 4. 天赋图标
-    local iconH = TalentStarMap.getIconHandle(state.tfDetailNodeId)
-    if iconH >= 0 then
-        DarkIcon.drawIconDark(vg, iconH, TFD.iconCX, TFD.iconCY, TFD.iconW, TFD.iconH, 1.0)  -- [暗黑化 P2-B]
-    end
+    -- 4. 天赋图标 [暗黑化 P2-10] 矢量符号（铭牌+系色）
+    TalentStarMap.drawTalentIcon(vg, state.tfDetailNodeId, TFD.iconCX, TFD.iconCY, TFD.iconW, 1.0)
 
     -- 5. 信息文本背景框（纯黑 5% 不透明度，圆角14）
     nvgBeginPath(vg)

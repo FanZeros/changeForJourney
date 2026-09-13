@@ -1088,7 +1088,7 @@ glyphPainters = {
         nvgBeginPath(vg)
         nvgMoveTo(vg, cx - s * 0.10, cy + s * 0.14); nvgLineTo(vg, cx + s * 0.14, cy - s * 0.10)
         nvgStrokeWidth(vg, s * 0.10); nvgStroke(vg)
-        nvgBeginPath(vg); nvgCircle(vg, cx - s * 0.40, cy + s * 0.40, s * 0.09)
+        nvgBeginPath(vg); nvgCircle(vg, cx - s * 0.34, cy + s * 0.34, s * 0.08)
         nvgFill(vg)
     end,
     -- 盾（防御/壁垒）
@@ -1190,7 +1190,148 @@ glyphPainters = {
         nvgMoveTo(vg, cx - s * 0.30, cy); nvgLineTo(vg, cx + s * 0.34, cy)
         nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
     end,
+    -- 书（博学/魔典）
+    tome = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        -- 封面（右页）
+        nvgBeginPath(vg)
+        nvgRect(vg, cx - s * 0.34, cy - s * 0.30, s * 0.62, s * 0.60)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        -- 书脊
+        nvgBeginPath(vg)
+        nvgRect(vg, cx - s * 0.42, cy - s * 0.34, s * 0.10, s * 0.68)
+        nvgFillColor(vg, nvgRGBA(150, 134, 111, math.floor(a * 235)))
+        nvgFill(vg)
+        -- 封面符文星
+        nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.0, cy + s * 0.0, s * 0.14)
+        strokeC(vg, a, 230, 215, 180, 0.9)
+        nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
+    end,
+    -- 拳（体魄/力量）
+    fist = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, cx - s * 0.30, cy - s * 0.22, s * 0.56, s * 0.48, s * 0.12)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        -- 指节
+        nvgBeginPath(vg)
+        for i = 0, 2 do
+            nvgMoveTo(vg, cx - s * 0.18 + i * s * 0.18, cy - s * 0.22)
+            nvgLineTo(vg, cx - s * 0.18 + i * s * 0.18, cy - s * 0.06)
+        end
+        nvgStrokeWidth(vg, s * 0.045); nvgStroke(vg)
+        -- 腕
+        nvgBeginPath(vg)
+        nvgRect(vg, cx - s * 0.18, cy + s * 0.26, s * 0.36, s * 0.16)
+        nvgFill(vg)
+    end,
+    -- 头盔（骑士/假面）
+    helm = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        nvgBeginPath(vg)
+        nvgArc(vg, cx, cy + s * 0.06, s * 0.36, math.pi, 0, NVG_CW)
+        nvgLineTo(vg, cx + s * 0.36, cy + s * 0.30)
+        nvgLineTo(vg, cx - s * 0.36, cy + s * 0.30)
+        nvgClosePath(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        -- 面甲缝
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx - s * 0.20, cy + s * 0.10); nvgLineTo(vg, cx + s * 0.20, cy + s * 0.10)
+        nvgMoveTo(vg, cx - s * 0.16, cy + s * 0.22); nvgLineTo(vg, cx + s * 0.16, cy + s * 0.22)
+        strokeC(vg, a, 0, 0, 0, 0.85)
+        nvgStrokeWidth(vg, s * 0.045); nvgStroke(vg)
+        -- 顶脊
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx, cy - s * 0.40); nvgLineTo(vg, cx, cy - s * 0.16)
+        strokeC(vg, a, 230, 215, 180, 0.7)
+        nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+    end,
+    -- 指环（印记/徽记）
+    ring = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        nvgBeginPath(vg); nvgCircle(vg, cx, cy + s * 0.08, s * 0.28)
+        nvgStrokeWidth(vg, s * 0.11); nvgStroke(vg)
+        -- 宝石
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx, cy - s * 0.36)
+        nvgLineTo(vg, cx + s * 0.14, cy - s * 0.22)
+        nvgLineTo(vg, cx, cy - s * 0.08)
+        nvgLineTo(vg, cx - s * 0.14, cy - s * 0.22)
+        nvgClosePath(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
+    end,
+    -- 旗（战旗/鼓舞）
+    flag = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        -- 旗杆
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx - s * 0.30, cy - s * 0.44); nvgLineTo(vg, cx - s * 0.30, cy + s * 0.44)
+        nvgStrokeWidth(vg, s * 0.07); nvgStroke(vg)
+        -- 旗面
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx - s * 0.24, cy - s * 0.38)
+        nvgLineTo(vg, cx + s * 0.36, cy - s * 0.26)
+        nvgLineTo(vg, cx + s * 0.16, cy - s * 0.02)
+        nvgLineTo(vg, cx + s * 0.36, cy + s * 0.22)
+        nvgLineTo(vg, cx - s * 0.24, cy + s * 0.10)
+        nvgClosePath(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.045); nvgStroke(vg)
+    end,
 }
+
+--- 天赋语义名 → 符号类型关键词规则（顺序敏感：先专后泛，命中即返）
+--- 新增天赋节点自动归类，无需逐名维护
+local TALENT_KIND_RULES = {
+    { "弓", "bow" },   { "箭", "bow" },   { "狙", "bow" },   { "射手", "bow" },
+    { "瞄准", "crosshair" }, { "准星", "crosshair" }, { "致命", "crosshair" },
+    { "暴击", "crosshair" }, { "弱点", "crosshair" }, { "钻心", "crosshair" }, { "狩猎", "crosshair" },
+    { "盾", "shield" }, { "壁垒", "shield" }, { "铠甲", "shield" }, { "重甲", "shield" },
+    { "甲", "shield" }, { "屏障", "shield" }, { "壁垒", "shield" }, { "守护", "shield" },
+    { "誓约", "shield" }, { "龟壳", "shield" }, { "磐石", "shield" }, { "结界", "shield" },
+    { "护幕", "shield" }, { "圣域", "shield" }, { "反击", "shield" },
+    { "治疗", "potion" }, { "愈", "potion" }, { "生机", "potion" }, { "回春", "potion" },
+    { "生命", "potion" }, { "泉", "potion" }, { "恩泽", "potion" }, { "祷言", "potion" },
+    { "圣辉", "potion" }, { "仁心", "potion" }, { "牧师", "potion" }, { "回响", "potion" },
+    { "帽", "helm" }, { "盔", "helm" }, { "假面", "helm" }, { "面具", "helm" }, { "骑士", "helm" },
+    { "杖", "staff" }, { "魔", "staff" }, { "奥术", "staff" }, { "秘法", "staff" },
+    { "秘纹", "staff" }, { "星", "staff" }, { "法核", "staff" }, { "魔导", "staff" },
+    { "虚空", "staff" }, { "深渊", "staff" }, { "法阵", "staff" }, { "法环", "staff" },
+    { "魔力", "staff" }, { "法盾", "staff" }, { "魔法", "staff" }, { "蚀", "staff" },
+    { "步", "wind" }, { "灵敏", "wind" }, { "灵巧", "wind" }, { "急速", "wind" },
+    { "风", "wind" }, { "蝉翼", "wind" }, { "影", "wind" }, { "闪避", "wind" },
+    { "指环", "ring" },
+    { "旗", "flag" }, { "鼓舞", "flag" }, { "战吼", "flag" }, { "号角", "flag" }, { "誓约", "flag" },
+    { "印记", "ring" }, { "徽", "ring" }, { "之魂", "ring" }, { "共鸣", "ring" },
+    { "帽", "helm" }, { "盔", "helm" }, { "假面", "helm" }, { "面具", "helm" }, { "骑士", "helm" },
+    { "书", "tome" }, { "博学", "tome" }, { "聪颖", "tome" }, { "魔典", "tome" }, { "之悟", "tome" },
+    { "拳", "fist" }, { "体", "fist" }, { "力量", "fist" },
+    { "剑", "sword" }, { "刃", "sword" }, { "锋", "sword" }, { "锤", "sword" }, { "斧", "sword" },
+    { "斩", "sword" }, { "击", "sword" }, { "杀", "sword" }, { "刺", "sword" }, { "刀", "sword" },
+    { "破甲", "sword" }, { "连击", "sword" }, { "连斩", "sword" }, { "攻势", "sword" }, { "狂暴", "sword" },
+}
+
+--- 按语义名解析符号类型（先专后泛，fallback star）
+---@param name string 天赋节点名
+---@return string kind
+function DarkIcon.matchTalentKind(name)
+    if not name then return "star" end
+    for _, rule in ipairs(TALENT_KIND_RULES) do
+        if string.find(name, rule[1], 1, true) then return rule[2] end
+    end
+    return "star"
+end
+
+--- 按语义名直接绘制天赋符号（铭牌 + 符号）
+---@param vg any
+---@param name string 天赋节点名
+---@param colorKey string 系别: 红/绿/黄/蓝/紫/无
+---@param cx number 中心 X
+---@param cy number 中心 Y
+---@param size number 直径
+---@param alpha number|nil 透明度 0-1
+function DarkIcon.drawTalentGlyphByName(vg, name, colorKey, cx, cy, size, alpha)
+    DarkIcon.drawTalentGlyph(vg, DarkIcon.matchTalentKind(name), colorKey, cx, cy, size, alpha)
+end
 
 --- 天赋矢量符号图标（P2-10 试点）：铭牌底座 + 效果类型符号 + 系色
 ---@param vg any

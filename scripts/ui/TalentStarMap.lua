@@ -642,7 +642,7 @@ local function drawNode(vg, node)
 
     -- [暗黑化 P2-10] 矢量天赋符号（金属铭牌 + 系色效果符号），替代 85 张 KTX 贴图
     -- 点亮态全亮；未点亮态整体 55% 透明（铭牌自带暗铁底，无需原遮罩 blend）
-    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, sx, sy, iconSize * 0.96, isLit and 1.0 or 0.55)
+    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, sx, sy, iconSize * 0.70, isLit and 1.0 or 0.55)
 end
 
 --- 绘制所有节点

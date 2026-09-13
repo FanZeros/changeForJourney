@@ -1057,7 +1057,12 @@ local function drawTalentMedal(vg, colorKey, cx, cy, size, a)
     -- 系色饰环
     nvgBeginPath(vg); nvgCircle(vg, cx, cy, r * 0.78)
     strokeC(vg, a, col[1], col[2], col[3], 0.85)
-    nvgStrokeWidth(vg, math.max(1.5, size * 0.045))
+    nvgStrokeWidth(vg, math.max(1.2, size * 0.035))
+    nvgStroke(vg)
+    -- 内圈细线（精细层次）
+    nvgBeginPath(vg); nvgCircle(vg, cx, cy, r * 0.60)
+    strokeC(vg, a, col[1], col[2], col[3], 0.35)
+    nvgStrokeWidth(vg, math.max(1, size * 0.018))
     nvgStroke(vg)
     -- 顶缘高光
     nvgBeginPath(vg)
@@ -1088,7 +1093,7 @@ glyphPainters = {
         nvgBeginPath(vg)
         nvgMoveTo(vg, cx - s * 0.34, cy + s * 0.34)
         nvgLineTo(vg, cx + s * 0.30, cy - s * 0.30)
-        nvgStrokeWidth(vg, s * 0.16); nvgLineCap(vg, NVG_BUTT)
+        nvgStrokeWidth(vg, s * 0.11); nvgLineCap(vg, NVG_BUTT)
         nvgStroke(vg)
         -- 护手与柄
         nvgBeginPath(vg)
@@ -1108,14 +1113,14 @@ glyphPainters = {
         nvgQuadTo(vg, cx - s * 0.22, cy + s * 0.40, cx - s * 0.28, cy + s * 0.14)
         nvgLineTo(vg, cx - s * 0.34, cy - s * 0.26)
         nvgClosePath(vg)
-        nvgFill(vg); nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.035); nvgStroke(vg)
     end,
     -- 药瓶（治疗/生命）
     potion = function(vg, cx, cy, s, col, a)
         glyphPath(vg, col, a)
         -- 瓶身圆
         nvgBeginPath(vg); nvgCircle(vg, cx, cy + s * 0.12, s * 0.30)
-        nvgFill(vg); nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.035); nvgStroke(vg)
         -- 瓶颈
         nvgBeginPath(vg)
         nvgRect(vg, cx - s * 0.09, cy - s * 0.36, s * 0.18, s * 0.22)
@@ -1132,10 +1137,10 @@ glyphPainters = {
         nvgBeginPath(vg)
         nvgMoveTo(vg, cx - s * 0.26, cy + s * 0.40)
         nvgLineTo(vg, cx + s * 0.24, cy - s * 0.24)
-        nvgStrokeWidth(vg, s * 0.12); nvgStroke(vg)
+        nvgStrokeWidth(vg, s * 0.085); nvgStroke(vg)
         -- 顶端宝珠 + 光芒
         nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.30, cy - s * 0.32, s * 0.18)
-        nvgFill(vg); nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
         nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.30, cy - s * 0.32, s * 0.30)
         strokeC(vg, a, col[1], col[2], col[3], 0.4)
         nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
@@ -1151,7 +1156,7 @@ glyphPainters = {
             if i == 0 then nvgMoveTo(vg, px, py) else nvgLineTo(vg, px, py) end
         end
         nvgClosePath(vg)
-        nvgFill(vg); nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
     end,
     -- 准星（瞄准/致命）
     crosshair = function(vg, cx, cy, s, col, a)
@@ -1175,7 +1180,7 @@ glyphPainters = {
             local oy = (i - 1) * s * 0.24
             nvgMoveTo(vg, cx - s * 0.38, cy + oy)
             nvgQuadTo(vg, cx + s * 0.10, cy + oy - s * 0.16, cx + s * 0.38, cy + oy)
-            nvgStrokeWidth(vg, s * 0.10 - i * s * 0.02)
+            nvgStrokeWidth(vg, s * 0.075 - i * s * 0.015)
             nvgLineCap(vg, NVG_ROUND)
             nvgStroke(vg)
         end
@@ -1190,11 +1195,11 @@ glyphPainters = {
         nvgBeginPath(vg)
         nvgMoveTo(vg, cx + s * 0.40 * math.cos(-math.pi * 0.42), cy + s * 0.40 * math.sin(-math.pi * 0.42))
         nvgLineTo(vg, cx + s * 0.40 * math.cos(math.pi * 0.42), cy + s * 0.40 * math.sin(math.pi * 0.42))
-        nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
+        nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
         -- 箭
         nvgBeginPath(vg)
         nvgMoveTo(vg, cx - s * 0.30, cy); nvgLineTo(vg, cx + s * 0.34, cy)
-        nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        nvgStrokeWidth(vg, s * 0.035); nvgStroke(vg)
     end,
     -- 书（博学/魔典）
     tome = function(vg, cx, cy, s, col, a)
@@ -1202,7 +1207,7 @@ glyphPainters = {
         -- 封面（右页）
         nvgBeginPath(vg)
         nvgRect(vg, cx - s * 0.34, cy - s * 0.30, s * 0.62, s * 0.60)
-        nvgFill(vg); nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.035); nvgStroke(vg)
         -- 书脊
         nvgBeginPath(vg)
         nvgRect(vg, cx - s * 0.42, cy - s * 0.34, s * 0.10, s * 0.68)
@@ -1211,21 +1216,21 @@ glyphPainters = {
         -- 封面符文星
         nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.0, cy + s * 0.0, s * 0.14)
         strokeC(vg, a, 230, 215, 180, 0.9)
-        nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
+        nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
     end,
     -- 拳（体魄/力量）
     fist = function(vg, cx, cy, s, col, a)
         glyphPath(vg, col, a)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, cx - s * 0.30, cy - s * 0.22, s * 0.56, s * 0.48, s * 0.12)
-        nvgFill(vg); nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.035); nvgStroke(vg)
         -- 指节
         nvgBeginPath(vg)
         for i = 0, 2 do
             nvgMoveTo(vg, cx - s * 0.18 + i * s * 0.18, cy - s * 0.22)
             nvgLineTo(vg, cx - s * 0.18 + i * s * 0.18, cy - s * 0.06)
         end
-        nvgStrokeWidth(vg, s * 0.045); nvgStroke(vg)
+        nvgStrokeWidth(vg, s * 0.032); nvgStroke(vg)
         -- 腕
         nvgBeginPath(vg)
         nvgRect(vg, cx - s * 0.18, cy + s * 0.26, s * 0.36, s * 0.16)
@@ -1239,18 +1244,18 @@ glyphPainters = {
         nvgLineTo(vg, cx + s * 0.36, cy + s * 0.30)
         nvgLineTo(vg, cx - s * 0.36, cy + s * 0.30)
         nvgClosePath(vg)
-        nvgFill(vg); nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.035); nvgStroke(vg)
         -- 面甲缝
         nvgBeginPath(vg)
         nvgMoveTo(vg, cx - s * 0.20, cy + s * 0.10); nvgLineTo(vg, cx + s * 0.20, cy + s * 0.10)
         nvgMoveTo(vg, cx - s * 0.16, cy + s * 0.22); nvgLineTo(vg, cx + s * 0.16, cy + s * 0.22)
         strokeC(vg, a, 0, 0, 0, 0.85)
-        nvgStrokeWidth(vg, s * 0.045); nvgStroke(vg)
+        nvgStrokeWidth(vg, s * 0.032); nvgStroke(vg)
         -- 顶脊
         nvgBeginPath(vg)
         nvgMoveTo(vg, cx, cy - s * 0.40); nvgLineTo(vg, cx, cy - s * 0.16)
         strokeC(vg, a, 230, 215, 180, 0.7)
-        nvgStrokeWidth(vg, s * 0.05); nvgStroke(vg)
+        nvgStrokeWidth(vg, s * 0.035); nvgStroke(vg)
     end,
     -- 指环（印记/徽记）
     ring = function(vg, cx, cy, s, col, a)
@@ -1264,7 +1269,7 @@ glyphPainters = {
         nvgLineTo(vg, cx, cy - s * 0.08)
         nvgLineTo(vg, cx - s * 0.14, cy - s * 0.22)
         nvgClosePath(vg)
-        nvgFill(vg); nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
     end,
     -- 旗（战旗/鼓舞）
     flag = function(vg, cx, cy, s, col, a)
@@ -1281,7 +1286,7 @@ glyphPainters = {
         nvgLineTo(vg, cx + s * 0.36, cy + s * 0.22)
         nvgLineTo(vg, cx - s * 0.24, cy + s * 0.10)
         nvgClosePath(vg)
-        nvgFill(vg); nvgStrokeWidth(vg, s * 0.045); nvgStroke(vg)
+        nvgFill(vg); nvgStrokeWidth(vg, s * 0.032); nvgStroke(vg)
     end,
     -- 问号（终焉环占位节点：待填充内容）
     query = function(vg, cx, cy, s, col, a)

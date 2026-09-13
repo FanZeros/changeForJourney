@@ -161,7 +161,7 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
         nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
         nvgText(vg, rx + 142, headY, stageText)
 
-        -- 未解锁行遮罩
+        -- 未解锁行遮罩（只提示解锁等级）
         if row > unlocked then
             nvgBeginPath(vg)
             nvgRect(vg, rx, ry0, rw, rowH)
@@ -169,14 +169,10 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
             nvgFill(vg)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             local needLv = ExpTable.getTeamUnlockLevel(row)
-            nvgFontSize(vg, 26)
-            nvgFillColor(vg, nvgRGBA(205, 210, 228, 255))
-            nvgText(vg, rx + rw * 0.5, ry0 + rowH * 0.38, string.format("队%d 未解锁", row))
-            nvgFontSize(vg, 20)
-            nvgFillColor(vg, nvgRGBA(150, 155, 175, 255))
-            nvgText(vg, rx + rw * 0.5, ry0 + rowH * 0.38 + 38,
-                string.format("冒险等级达到 %s 解锁 · 已编队 %d/4 人",
-                    tostring(needLv or "?"), (CharacterPanel.getTeamOccupiedCounts()[row] or 0)))
+            nvgFontSize(vg, 22)
+            nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
+            nvgText(vg, rx + rw * 0.5, ry0 + rowH * 0.5,
+                string.format("冒险等级达到 %s 解锁", tostring(needLv or "?")))
         end
     end
 

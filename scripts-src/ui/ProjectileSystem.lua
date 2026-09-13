@@ -248,6 +248,11 @@ end
 local renderScale = 1.0
 function ProjectileSystem.setRenderScale(s) renderScale = s or 1.0 end
 
+-- [看情况抛物线] fly 直线弹的飞行距离 ≥ ARC_TRIGGER_DIST 时升级为贝塞尔弧线
+-- （条带空间: 前排对峙≈193px 直线，跨场≈800px 弧线；可按观感调整）
+local ARC_TRIGGER_DIST = 300
+function ProjectileSystem.setArcTriggerDist(d) ARC_TRIGGER_DIST = d or 300 end
+
 --- 绘制投射物图片（居中，支持旋转/缩放/透明度）
 --- 素材默认朝右(+X方向)，angle=0时朝右，angle=-π/2时朝上
 local function drawProjectileImage(vg, imgHandle, cx, cy, w, h, angle, alpha)
@@ -884,6 +889,15 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
         proj.bezierSide = (math.random() > 0.5) and 1 or -1
     end
 
+    -- [看情况抛物线] fly 直线弹距离足够远时升级为弧线（弧顶始终向上）
+    if cfg.type == "fly" then
+        local ddx, ddy = endX - startX, endY - startY
+        if (ddx * ddx + ddy * ddy) >= ARC_TRIGGER_DIST * ARC_TRIGGER_DIST then
+            proj.arcUpgrade = true
+            proj.bezierSide = (endX >= startX) and -1 or 1
+        end
+    end
+
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
 
@@ -1121,7 +1135,9 @@ function ProjectileSystem.draw(vg)
         local duration = (proj.cfg and proj.cfg.duration) or 0.01
         if duration <= 0 then duration = 0.01 end
         local t = math.min(1, proj.timer / duration)
-        local drawFunc = DRAW_FUNCS[proj.cfg.type]
+        local trajType = proj.cfg.type
+        if proj.arcUpgrade then trajType = "bezier" end  -- [看情况抛物线]
+        local drawFunc = DRAW_FUNCS[trajType]
         if drawFunc then
             nvgSave(vg)
             drawFunc(proj, vg, t)

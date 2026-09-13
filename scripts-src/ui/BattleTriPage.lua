@@ -62,6 +62,32 @@ function BattleTriPage.close() isOpen_ = false end
 --- 幂等初始化（贴图）
 local imgL0, imgL1 = nil, {}   -- [三行并行] L0 整套大背景 + L1 行内容背景
 
+-- [修复] 锁定行专用空状态: 锁定行绘制前挂载, 避免把行1 的飘字/特效/投射物
+-- 重复画到行2/3（此前未挂载, BCS 上残留的是最近一次更新的状态）
+local emptyStates = nil
+local function ensureEmptyStates()
+    if emptyStates then return end
+    emptyStates = {
+        combat = BattleCombat.newState("triLocked"),
+        ps     = ProjectileSystem.newState(),
+        tm     = TM.newState(),
+        tal    = TAL.newBattleRefs(),
+        be     = BattleEffects.newFxState(),
+        sem    = SEM.newSemState(),
+    }
+end
+
+--- 挂载锁定行的全空状态集
+function BattleTriPage.mountEmpty()
+    ensureEmptyStates()
+    BattleCombat.mount(emptyStates.combat)
+    ProjectileSystem.mount(emptyStates.ps)
+    TM.mount(emptyStates.tm)
+    TAL.mount(emptyStates.tal)
+    BattleEffects.mount(emptyStates.be)
+    SEM.mount(emptyStates.sem)
+end
+
 function BattleTriPage.init(vg)
     if inited then return end
     inited = true
@@ -177,7 +203,8 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
                 drv.mount()
                 BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies }, imgL1[row])
             else
-                -- [微调] 锁定行也铺 L1 背景（压暗呈现, 保持大图连续感）
+                -- [微调] 锁定行也铺 L1 背景（挂载空状态, 防止行1 瞬态串染）
+                BattleTriPage.mountEmpty()
                 BattleView.draw(vg, { allies = {}, enemies = {} }, imgL1[row])
             end
         end

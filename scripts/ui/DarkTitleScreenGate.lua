@@ -126,7 +126,8 @@ function DarkTitleScreen.draw(vg, w, h)
         -- [fix] LOGO 以屏幕中心缩放至 50%（原先与大门口共用全屏 cover 矩形，过大）
         local LOGO_SCALE = 0.5
         local lw, lh = dw * LOGO_SCALE, dh * LOGO_SCALE
-        local lx, ly = (w - lw) * 0.5, (h - lh) * 0.5
+        -- [fix] 标题上移 15% 屏高
+        local lx, ly = (w - lw) * 0.5, (h - lh) * 0.5 - h * 0.15
         local paint = nvgImagePattern(vg, lx, ly, lw, lh, 0, imgLogo_, la)
         nvgBeginPath(vg)
         nvgRect(vg, lx, ly, lw, lh)
@@ -141,33 +142,6 @@ function DarkTitleScreen.draw(vg, w, h)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], promptA * 255))
     nvgText(vg, w * 0.5, h * 0.66, "轻 触 屏 幕 继 续", nil)
-
-    -- 6) 四角金色角标（L 形）
-    local inset = math.min(w, h) * 0.035
-    local len   = math.min(w, h) * 0.075
-    nvgStrokeColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 70 * A))
-    nvgStrokeWidth(vg, 2)
-    for _, cx in ipairs({ true, false }) do
-        for _, cy in ipairs({ true, false }) do
-            local px = cx and inset or (w - inset)
-            local py = cy and inset or (h - inset)
-            local sx = cx and 1 or -1
-            local sy = cy and 1 or -1
-            nvgBeginPath(vg)
-            nvgMoveTo(vg, px + sx * len, py)
-            nvgLineTo(vg, px, py)
-            nvgLineTo(vg, px, py + sy * len)
-            nvgStroke(vg)
-        end
-    end
-
-    -- 7) 底部小字
-    nvgFontSize(vg, math.max(13, math.min(w * 0.013, 17)))
-    nvgFillColor(vg, nvgRGBA(160, 152, 130, 110 * A))
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgText(vg, inset + 8, h - inset * 0.9, "终焉之门 · 单机版", nil)
-    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-    nvgText(vg, w - inset - 8, h - inset * 0.9, "H5", nil)
 end
 
 return DarkTitleScreen

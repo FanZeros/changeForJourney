@@ -56,16 +56,16 @@ GachaConfig.Pity = {
 GachaConfig.Pool = {
     -- N 品质（3 项碎片：R 英雄碎片）
     { quality = 0, type = "shard", heroId = 1,  amount = 1, weight = 100, stardustValue = 5 },  -- 大狗嚼碎片
-    { quality = 0, type = "shard", heroId = 2,  amount = 1, weight = 100, stardustValue = 5 },  -- 奶龙龙碎片
+    { quality = 0, type = "shard", heroId = 2,  amount = 1, weight = 100, stardustValue = 5 },  -- 黄桃龙碎片
     { quality = 0, type = "shard", heroId = 3,  amount = 1, weight = 100, stardustValue = 5 },  -- 叮咚鸡碎片
 
     -- R 品质（3 角色 + 6 碎片 = 9 项）
     { quality = 1, type = "hero",  heroId = 1,  weight = 100, stardustValue = 50 },  -- 大狗嚼
-    { quality = 1, type = "hero",  heroId = 2,  weight = 100, stardustValue = 50 },  -- 奶龙龙
+    { quality = 1, type = "hero",  heroId = 2,  weight = 100, stardustValue = 50 },  -- 黄桃龙
     { quality = 1, type = "hero",  heroId = 3,  weight = 100, stardustValue = 50 },  -- 叮咚鸡
     { quality = 1, type = "shard", heroId = 4,  amount = 1, weight = 100, stardustValue = 25 },  -- 接化发掌门碎片
     { quality = 1, type = "shard", heroId = 5,  amount = 1, weight = 100, stardustValue = 25 },  -- 叠甲怪碎片
-    { quality = 1, type = "shard", heroId = 6,  amount = 1, weight = 100, stardustValue = 25 },  -- 阿姨压一压碎片
+    { quality = 1, type = "shard", heroId = 6,  amount = 1, weight = 100, stardustValue = 25 },  -- 阿姨压碎片
     { quality = 1, type = "shard", heroId = 7,  amount = 1, weight = 100, stardustValue = 25 },  -- 信光机兵碎片
     { quality = 1, type = "shard", heroId = 8,  amount = 1, weight = 100, stardustValue = 25 },  -- 愤怒的小雀碎片
     { quality = 1, type = "shard", heroId = 9,  amount = 1, weight = 100, stardustValue = 25 },  -- 卡皮巴拉碎片
@@ -73,7 +73,7 @@ GachaConfig.Pool = {
     -- SR 品质（6 角色 + 6 碎片 = 12 项）
     { quality = 2, type = "hero",  heroId = 4,  weight = 100, stardustValue = 250 },  -- 接化发掌门
     { quality = 2, type = "hero",  heroId = 5,  weight = 100, stardustValue = 250 },  -- 叠甲怪
-    { quality = 2, type = "hero",  heroId = 6,  weight = 100, stardustValue = 250 },  -- 阿姨压一压
+    { quality = 2, type = "hero",  heroId = 6,  weight = 100, stardustValue = 250 },  -- 阿姨压
     { quality = 2, type = "hero",  heroId = 7,  weight = 100, stardustValue = 250 },  -- 信光机兵
     { quality = 2, type = "hero",  heroId = 8,  weight = 100, stardustValue = 250 },  -- 愤怒的小雀
     { quality = 2, type = "hero",  heroId = 9,  weight = 100, stardustValue = 250 },  -- 卡皮巴拉
@@ -84,8 +84,8 @@ GachaConfig.Pool = {
     { quality = 2, type = "shard", heroId = 14, amount = 1, weight = 100, stardustValue = 100 },  -- 内鬼碎片
     { quality = 2, type = "shard", heroId = 15, amount = 1, weight = 100, stardustValue = 100 },  -- 复活吧爱人碎片
     { quality = 2, type = "shard", heroId = 21, amount = 1, weight = 100, stardustValue = 100 },  -- 闪电卖鸡碎片
-    { quality = 2, type = "shard", heroId = 22, amount = 1, weight = 100, stardustValue = 100 },  -- 小黑子鸡哥碎片
-    { quality = 2, type = "shard", heroId = 23, amount = 1, weight = 100, stardustValue = 100 },  -- Freestyle诗人碎片
+    { quality = 2, type = "shard", heroId = 22, amount = 1, weight = 100, stardustValue = 100 },  -- 小黑子碎片
+    { quality = 2, type = "shard", heroId = 23, amount = 1, weight = 100, stardustValue = 100 },  -- 真布诗人碎片
 
     -- SSR 品质（9 角色）
     { quality = 3, type = "hero", heroId = 10, weight = 100, stardustValue = 1000 }, -- 铁憨憨
@@ -95,8 +95,8 @@ GachaConfig.Pool = {
     { quality = 3, type = "hero", heroId = 14, weight = 100, stardustValue = 1000 }, -- 内鬼
     { quality = 3, type = "hero", heroId = 15, weight = 100, stardustValue = 1000 }, -- 复活吧爱人
     { quality = 3, type = "hero", heroId = 21, weight = 100, stardustValue = 1000 }, -- 闪电卖鸡
-    { quality = 3, type = "hero", heroId = 22, weight = 100, stardustValue = 1000 }, -- 小黑子鸡哥
-    { quality = 3, type = "hero", heroId = 23, weight = 100, stardustValue = 1000 }, -- Freestyle诗人
+    { quality = 3, type = "hero", heroId = 22, weight = 100, stardustValue = 1000 }, -- 小黑子
+    { quality = 3, type = "hero", heroId = 23, weight = 100, stardustValue = 1000 }, -- 真布诗人
 }
 
 -- ======================== 预计算：按品质分组 + 总权重 ========================

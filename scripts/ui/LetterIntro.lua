@@ -1,6 +1,6 @@
 -- ============================================================================
 -- LetterIntro.lua — 先祖来信（首登开场剧情·轻松带梗版）
--- 玩法：黑屏 → 暗色信笺逐行显墨（分 7 段，轻触翻段/自动推进）→ 火漆印「宿」
+-- 玩法：黑屏 → 暗色信笺逐行显墨（分 7 段，轻触翻段/自动推进）→ 火漆印「终」
 --       → 淡出，无缝衔接 IntroCutscene（睁眼过场）→ SCENARIO_1 → 选角。
 -- 触发：仅 Client 新手链（roster 为空），在 IntroCutscene 之前。
 -- 绘制：设计空间 1080×2400（横屏由调用方做 letterbox 变换，同 StartScreen）。
@@ -53,7 +53,7 @@ local BLOCKS = {
         { t = "签吧，反正你已经拆信了。", gold = true, seal = true },
     },
     {
-        { t = "——第四十七任团长，你的外祖父", dim = true },
+        { t = "——第三十六任远征长，你的外祖父", dim = true },
         { t = "（欠条别弄丢，那也是遗产）", dim = true },
     },
 }
@@ -223,7 +223,7 @@ function LetterIntro.draw(vg)
         end
     end
 
-    -- 4) 火漆印「宿」（信笺右上标题区，最后一段显完时砸下）
+    -- 4) 火漆印「终」（信笺右上标题区，最后一段显完时砸下）
     if state == "sealed" then
         local p = math.min(1, sealedT / SEAL_DUR)
         local scale = 1.6 - 0.6 * p              -- 从大到小砸落
@@ -242,7 +242,7 @@ function LetterIntro.draw(vg)
         nvgFontSize(vg, 58)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(232, 210, 190, a))
-        nvgText(vg, cx, cy + 2, "宿", nil)
+        nvgText(vg, cx, cy + 2, "终", nil)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_BASELINE)
     end
 

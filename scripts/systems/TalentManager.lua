@@ -146,7 +146,7 @@ local function ensureState(unit)
             -- Hero21 闪电卖鸡: 银光
             silverLightProgressBoost = false,
             silverFlashChecked = false,
-            -- Hero22 小黑子鸡哥: 法术机关枪
+            -- Hero22 小黑子: 法术机关枪
             machineGunNormalCount = 0,   -- 普攻与连击计入，连射弹不计入
             machineGunBurstShot = false,   -- 本帧 performAttack 是否为连射弹
             lastAttackWasBurst = false,  -- 上一击是否为连射（供 onAfterAttack 判定）
@@ -155,7 +155,7 @@ local function ensureState(unit)
             machineGunInBurst = false,
             machineGunOverloadStacks = 0,
             machineGunOverloadTimer = 0,
-            -- Hero23 Freestyle诗人: 能量祝福 / 觉醒7
+            -- Hero23 真布诗人: 能量祝福 / 觉醒7
             prevTotalES = nil,
             elwynInvulnProcChance = 1.0,
             awakElwynTeamBuffApplied = false,
@@ -320,7 +320,7 @@ local function applyAyaneBattleStartMark(units, opposingUnits)
     if #aliveOpponents == 0 then return end
     local target = aliveOpponents[math.random(#aliveOpponents)]
     applyAyaneMark(ayane, target, opposingUnits)
-    talentLog("[Talent] 愤怒的小雀 蓝雀之眼：标记" .. (target.name or "?")
+    talentLog("[Talent] 愤怒的小雀 弹弓怒鸟之眼：标记" .. (target.name or "?")
         .. " (受伤+" .. math.floor(getAyaneMarkMult(ayane) * 100) .. "%)")
 end
 
@@ -1125,7 +1125,7 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
         target.name or "?", bonusDmg, paralyzeDur))
 end
 
---- Freestyle诗人 #23：溢出治疗转能量护盾 + 临时护盾
+--- 真布诗人 #23：溢出治疗转能量护盾 + 临时护盾
 ---@param attacker table
 ---@param target table
 ---@param result table
@@ -1171,18 +1171,18 @@ local function applyElwynEnergyBlessing(attacker, target, result)
         tempGain = math.min(math.max(0, tempCap - curTemp), remaining)
         if tempGain > 0 then
             target.attrs.tempEnergyShield = curTemp + tempGain
-            talentLog(string.format("[Talent] Freestyle诗人 能量祝福：%s 临时护盾+%.0f (上限%.0f)",
+            talentLog(string.format("[Talent] 真布诗人 能量祝福：%s 临时护盾+%.0f (上限%.0f)",
                 target.name or "?", tempGain, tempCap))
         end
     end
 
     if toNormal > 0 then
-        talentLog(string.format("[Talent] Freestyle诗人 能量祝福：%s 护盾+%.0f", target.name or "?", toNormal))
+        talentLog(string.format("[Talent] 真布诗人 能量祝福：%s 护盾+%.0f", target.name or "?", toNormal))
     end
     return toNormal, tempGain
 end
 
---- 查找场上存活的Freestyle诗人（觉醒7用）
+--- 查找场上存活的真布诗人（觉醒7用）
 ---@param units table[]
 ---@return table|nil unit
 ---@return table|nil state
@@ -1195,7 +1195,7 @@ local function findLivingElwyn(units)
     return nil, nil
 end
 
---- Freestyle诗人觉醒7：护盾清零时触发无敌
+--- 真布诗人觉醒7：护盾清零时触发无敌
 ---@param ally table
 ---@param elwyn table
 ---@param elwynState table
@@ -1208,7 +1208,7 @@ local function tryElwynInvulnOnEsBreak(ally, elwyn, elwynState)
 
     ally._elwynInvulnTimer = 2.0
     elwynState.elwynInvulnProcChance = chance * 0.5
-    talentLog(string.format("[Talent] Freestyle诗人 觉醒7：%s 无敌2秒 (下次概率%.0f%%)",
+    talentLog(string.format("[Talent] 真布诗人 觉醒7：%s 无敌2秒 (下次概率%.0f%%)",
         ally.name or "?", elwynState.elwynInvulnProcChance * 100))
 end
 
@@ -1275,7 +1275,7 @@ function TAL.onBattleStart(allies, enemies)
                     .. " 护甲+" .. armorBonus)
             end
 
-            -- #23 Freestyle诗人：觉醒3/4 全队能量护盾加成
+            -- #23 真布诗人：觉醒3/4 全队能量护盾加成
             if unit.heroId == 23 and unit.hp > 0 and unit.attrs and not s.awakElwynTeamBuffApplied then
                 s.awakElwynTeamBuffApplied = true
                 for _, ally in ipairs(units) do
@@ -1293,7 +1293,7 @@ function TAL.onBattleStart(allies, enemies)
                     end
                 end
                 if hasAwaken(unit, 3) or hasAwaken(unit, 4) then
-                    talentLog("[Talent] Freestyle诗人 觉醒：全队能量护盾加成已施加")
+                    talentLog("[Talent] 真布诗人 觉醒：全队能量护盾加成已施加")
                 end
             end
 
@@ -1315,7 +1315,7 @@ function TAL.onBattleStart(allies, enemies)
                 talentLog("[Talent] 内鬼 觉醒5: 战斗开始+10免疫 (剩余" .. RCH.getImmunityCount(unit) .. "次)")
             end
 
-            -- #8 愤怒的小雀 蓝雀之眼：在 applyBattleStartTalents 末尾统一施加（多愤怒的小雀不叠标记）
+            -- #8 愤怒的小雀 弹弓怒鸟之眼：在 applyBattleStartTalents 末尾统一施加（多愤怒的小雀不叠标记）
 
             -- === 转职天赋: 战斗开始===
 
@@ -1395,7 +1395,7 @@ function TAL.onBattleStart(allies, enemies)
     applyBattleStartTalents(enemies, allies)
 end
 
---- 小黑子鸡哥「法术机关枪」：推进攻击计数（普攻与连击共用；连射弹在 onBeforeAttack 中排除）
+--- 小黑子「法术机关枪」：推进攻击计数（普攻与连击共用；连射弹在 onBeforeAttack 中排除）
 ---@param attacker table
 ---@param s table
 local function tickSeraMachineGunCount(attacker, s)
@@ -1418,7 +1418,7 @@ local function tickSeraMachineGunCount(attacker, s)
                 { key = AD.ATK_SPEED, flat = 50 },
             })
         end
-        talentLog(string.format("[Talent] 小黑子鸡哥 法术机关枪：第%d次攻击启动连射×%d",
+        talentLog(string.format("[Talent] 小黑子 法术机关枪：第%d次攻击启动连射×%d",
             s.machineGunNormalCount, s.machineGunShotsLeft))
     end
 end
@@ -1706,7 +1706,7 @@ function TAL.onBeforeAttack(attacker)
         end
     end
 
-    -- #22 小黑子鸡哥 法术机关枪：
+    -- #22 小黑子 法术机关枪：
     -- 普攻与连击计入 machineGunNormalCount；连射弹标记 machineGunBurstShot 不计入，但仍走完整 performAttack
     if heroId == 22 and attacker.attrs then
         s.lastAttackWasBurst = false
@@ -1888,7 +1888,7 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
     talentLog("[Talent] 熬夜冠军 夜华斩：" .. slashCount .. "道斩击(基础=" .. math.floor(baseSlashDmg) .. ")")
 end
 
---- 连击额外攻击的天赋钩子。熬夜冠军「夜华斩」、小黑子鸡哥「法术机关枪」：连击同样推进攻击计数并可触发被动。
+--- 连击额外攻击的天赋钩子。熬夜冠军「夜华斩」、小黑子「法术机关枪」：连击同样推进攻击计数并可触发被动。
 --- 由 BattleCombat.performComboAttack 在连击命中后调用。
 ---@param attacker table 攻击方单位
 ---@param target table 连击目标
@@ -2181,7 +2181,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             end
         end
 
-        -- #2 奶龙龙 火焰精通：附加燃烧
+        -- #2 黄桃龙 火焰精通：附加燃烧
         if heroId == 2 and attacker.attrs and target.hp > 0 then
             local magAtk = attacker.attrs:get(AD.MAG_ATK) or 0
             local burnMult = 0.2
@@ -2232,7 +2232,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             end
         end
 
-        -- #6 阿姨压一压 闪电精通：附加感电
+        -- #6 阿姨压 闪电精通：附加感电
         if heroId == 6 and target.hp > 0 then
             -- 觉醒1: 魔法伤害加成+10%（永久，首次添加成
             if hasAwaken(attacker, 1) and not s.awakLunaDmgApplied then
@@ -2430,7 +2430,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             end
         end
 
-        -- #22 小黑子鸡哥 法术机关枪：仅连射弹触发过载叠层 + 觉醒7全体（触发连射的那次普攻不算连射）
+        -- #22 小黑子 法术机关枪：仅连射弹触发过载叠层 + 觉醒7全体（触发连射的那次普攻不算连射）
         if heroId == 22 and s.lastAttackWasBurst and result and not result.isMiss and result.category ~= "healing" then
             if hasAwaken(attacker, 6) and attacker.attrs then
                 s.machineGunOverloadStacks = math.min(10, (s.machineGunOverloadStacks or 0) + 1)
@@ -2447,7 +2447,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
                             dealDmgFn(u, aoeDmg, not isAlly, "连射 ", { 180, 220, 255 })
                         end
                     end
-                    talentLog("[Talent] 小黑子鸡哥 觉醒7：连射全体")
+                    talentLog("[Talent] 小黑子 觉醒7：连射全体")
                 end
             end
         end
@@ -2779,7 +2779,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             -- 觉醒2: 复活治疗加成已移至通用治疗处理（任何治疗者都生效果
         end
 
-        -- #23 Freestyle诗人 能量祝福：溢出治疗转能量护盾 + 临时护盾
+        -- #23 真布诗人 能量祝福：溢出治疗转能量护盾 + 临时护盾
         local healerId = tonumber(attacker.heroId) or heroId
         if healerId == 23 and target.hp > 0 and result.category == "healing" then
             applyElwynEnergyBlessing(attacker, target, result)
@@ -3000,7 +3000,7 @@ function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCa
 
     if not isTargetAlly then return damage end
 
-    -- Freestyle诗人觉醒7：无敌期间免疫伤害
+    -- 真布诗人觉醒7：无敌期间免疫伤害
     if target._elwynInvulnTimer and target._elwynInvulnTimer > 0 then
         return 0
     end
@@ -3841,7 +3841,7 @@ function TAL.update(dt, allies, enemies, ctx)
                 end
             end
 
-            -- ======== Hero22 小黑子鸡哥 法术机关枪连射队列 ========
+            -- ======== Hero22 小黑子 法术机关枪连射队列 ========
             if s.heroId == 22 and s.machineGunShotsLeft > 0 and ctx.performAttack then
                 s.machineGunShotTimer = (s.machineGunShotTimer or 0) - dt
                 if s.machineGunShotTimer <= 0 then
@@ -3861,12 +3861,12 @@ function TAL.update(dt, allies, enemies, ctx)
                         if hasAwaken(ally, 6) then
                             s.machineGunOverloadTimer = 5.0
                         end
-                        talentLog("[Talent] 小黑子鸡哥 法术机关枪：连射结束")
+                        talentLog("[Talent] 小黑子 法术机关枪：连射结束")
                     end
                 end
             end
 
-            -- ======== Hero22 小黑子鸡哥 过载层数保留倒计时 ========
+            -- ======== Hero22 小黑子 过载层数保留倒计时 ========
             if s.heroId == 22 and (s.machineGunOverloadTimer or 0) > 0 then
                 s.machineGunOverloadTimer = s.machineGunOverloadTimer - dt
                 if s.machineGunOverloadTimer <= 0 then
@@ -3878,7 +3878,7 @@ function TAL.update(dt, allies, enemies, ctx)
                 end
             end
 
-            -- ======== Freestyle诗人觉醒7：无敌倒计时 + 护盾清零检测 ========
+            -- ======== 真布诗人觉醒7：无敌倒计时 + 护盾清零检测 ========
             if ally._elwynInvulnTimer and ally._elwynInvulnTimer > 0 then
                 ally._elwynInvulnTimer = ally._elwynInvulnTimer - dt
                 if ally._elwynInvulnTimer <= 0 then

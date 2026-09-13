@@ -79,11 +79,11 @@ for id, typeKey in pairs(ResourceDefs.ID_TO_TYPE) do
 end
 -- 英雄碎片（101-115）单独维护，不走 DEFS
 ResourceDefs.REWARD_NAMES["101"] = "大狗嚼碎片"
-ResourceDefs.REWARD_NAMES["102"] = "奶龙龙碎片"
+ResourceDefs.REWARD_NAMES["102"] = "黄桃龙碎片"
 ResourceDefs.REWARD_NAMES["103"] = "叮咚鸡碎片"
 ResourceDefs.REWARD_NAMES["104"] = "接化发掌门碎片"
 ResourceDefs.REWARD_NAMES["105"] = "叠甲怪碎片"
-ResourceDefs.REWARD_NAMES["106"] = "阿姨压一压碎片"
+ResourceDefs.REWARD_NAMES["106"] = "阿姨压碎片"
 ResourceDefs.REWARD_NAMES["107"] = "信光机兵碎片"
 ResourceDefs.REWARD_NAMES["108"] = "愤怒的小雀碎片"
 ResourceDefs.REWARD_NAMES["109"] = "卡皮巴拉碎片"
@@ -95,8 +95,8 @@ ResourceDefs.REWARD_NAMES["114"] = "内鬼碎片"
 ResourceDefs.REWARD_NAMES["115"] = "复活吧爱人碎片"
 ResourceDefs.REWARD_NAMES["116"] = "万剑归宗碎片"
 ResourceDefs.REWARD_NAMES["121"] = "闪电卖鸡碎片"
-ResourceDefs.REWARD_NAMES["122"] = "小黑子鸡哥碎片"
-ResourceDefs.REWARD_NAMES["123"] = "Freestyle诗人碎片"
+ResourceDefs.REWARD_NAMES["122"] = "小黑子碎片"
+ResourceDefs.REWARD_NAMES["123"] = "真布诗人碎片"
 
 -- 英文 key → 中文名（兼容旧格式 reward 字符串）
 for typeKey, def in pairs(ResourceDefs.DEFS) do

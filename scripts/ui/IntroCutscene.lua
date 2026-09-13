@@ -605,7 +605,7 @@ end
 --- 阶段5: 淡出 → 黑屏 + 文本
 local bgFadeAlpha5 = 1.0
 local phase5PrevChars_ = 0   -- 上一帧已显示字符数，用于检测新字符触发 blip
-local PHASE5_TEXT = "团长！团长！"
+local PHASE5_TEXT = "远征长！远征长！"
 local PHASE5_TEXT_LEN = utf8.len(PHASE5_TEXT) or 0
 
 local function updatePhase5(dt)
@@ -650,7 +650,7 @@ local function drawPhase5()
     if phaseT >= 1.0 then
         local textElapsed = phaseT - 1.0
         local maxDur = PHASE_DURATIONS[5] - 1.0  -- 可用 2.5s
-        drawTextTyped("团长！团长！", 540, 1150, 58, textElapsed, maxDur)
+        drawTextTyped("远征长！远征长！", 540, 1150, 58, textElapsed, maxDur)
     end
 end
 

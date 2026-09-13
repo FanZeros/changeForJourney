@@ -18,8 +18,8 @@ local SEM = {}
 
 -- ======================== 效果类型常量 ========================
 
-SEM.BURNING    = "burning"     -- 燃烧DOT (奶龙龙)
-SEM.SHOCKED    = "shocked"     -- 感电增伤 (阿姨压一压)
+SEM.BURNING    = "burning"     -- 燃烧DOT (黄桃龙)
+SEM.SHOCKED    = "shocked"     -- 感电增伤 (阿姨压)
 SEM.FROZEN     = "frozen"      -- 冰冻停攻 (雪皇)
 SEM.MARKED     = "marked"      -- 标记增伤 (愤怒的小雀)
 SEM.HOT        = "hot"         -- 持续治疗 (卡皮巴拉)

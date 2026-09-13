@@ -54,7 +54,7 @@ local SHOP_ITEMS = {
         costIcon = "image/UI_icon_JJB_X.png",
     },
     {
-        id = 6, name = "光之圣女-碎片", quality = 5,
+        id = 6, name = "急救复活甲-碎片", quality = 5,
         limitCycle = "weekly", limitCount = 1, price = 4000,
         icon = "image/角色图标/UI_icon_hero_15.png",
         costIcon = "image/UI_icon_JJB_X.png",

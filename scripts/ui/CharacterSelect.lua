@@ -30,7 +30,7 @@ local CHARACTERS = {
         id       = 2,
         heroId   = 1,       -- 对应 HeroConfig: 大狗嚼（战士/Warrior）
         class    = "战士",
-        title    = "初心之剑",
+        title    = "汪卫先锋",
         intro    = "擅长快速打击的战士",
         icon     = "image/ICON_ZY_2.png",
         portrait = "image/角色立绘/UI_DLH_1.png",
@@ -39,7 +39,7 @@ local CHARACTERS = {
     },
     {
         id       = 3,
-        heroId   = 2,       -- 对应 HeroConfig: 奶龙龙（法师/Mage）
+        heroId   = 2,       -- 对应 HeroConfig: 黄桃龙（法师/Mage）
         class    = "法师",
         title    = "炽焰之心",
         intro    = "擅长火焰魔法的法师",
@@ -65,7 +65,7 @@ local CLASS_NAME = {
     strokeSize = 6,
 }
 
---- 角色称号: "初心之剑" 等 (左对齐)
+--- 角色称号: "汪卫先锋" 等 (左对齐)
 local TITLE = {
     x = 306, cy = 1306, fontSize = 56,
     r = 255, g = 255, b = 255,

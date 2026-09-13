@@ -105,7 +105,7 @@ local BTN_TEXT_COLOR = { 255, 255, 255, 255 }
 local vgRef = nil
 
 -- 默认出战英雄 ID 队列（依次添加）
-local DEFAULT_HERO_IDS = { 1, 3, 2, 4, 5 }  -- 大狗嚼, 叮咚鸡, 奶龙龙, 接化发掌门, 叠甲怪
+local DEFAULT_HERO_IDS = { 1, 3, 2, 4, 5 }  -- 大狗嚼, 叮咚鸡, 黄桃龙, 接化发掌门, 叠甲怪
 
 -- 调试用己方等级
 local debugAllyLevel = 1

@@ -13,7 +13,7 @@ TavernConfig.DAY_SECONDS   = 86400
 
 -- ======================== 商品配置 ========================
 -- 与 TavernShopPage.lua 的客户端 SHOP_ITEMS 保持同步
--- 英雄 ID: 1=大狗嚼 2=奶龙龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=阿姨压一压
+-- 英雄 ID: 1=大狗嚼 2=黄桃龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=阿姨压
 --          7=信光机兵 8=愤怒的小雀 9=卡皮巴拉 10=铁憨憨 11=熬夜冠军 12=雪皇
 --          13=弹弹弹 14=内鬼 15=复活吧爱人 16=万剑归宗 20=摘星星星人
 
@@ -23,12 +23,12 @@ TavernConfig.SHOP_ITEMS = {
     { id = 102, name = "星辉招募券",   limitCycle = "daily",  limitCount = 5,  price = 160, rewardType = "stellarRecruitTicket", rewardCount = 1 },
     -- 每日购买（limitCycle="daily"）—— N 碎片（品质3）
     { id = 2,  name = "大狗嚼-碎片",    limitCycle = "daily", limitCount = 50, price = 15,  rewardType = "shard", rewardHeroId = 1,  rewardCount = 1 },
-    { id = 3,  name = "奶龙龙-碎片",    limitCycle = "daily", limitCount = 50, price = 15,  rewardType = "shard", rewardHeroId = 2,  rewardCount = 1 },
+    { id = 3,  name = "黄桃龙-碎片",    limitCycle = "daily", limitCount = 50, price = 15,  rewardType = "shard", rewardHeroId = 2,  rewardCount = 1 },
     { id = 4,  name = "叮咚鸡-碎片",    limitCycle = "daily", limitCount = 50, price = 15,  rewardType = "shard", rewardHeroId = 3,  rewardCount = 1 },
     -- R 碎片（品质4）
     { id = 5,  name = "接化发掌门-碎片", limitCycle = "daily", limitCount = 50, price = 60,  rewardType = "shard", rewardHeroId = 4,  rewardCount = 1 },
     { id = 6,  name = "叠甲怪-碎片", limitCycle = "daily", limitCount = 50, price = 60,  rewardType = "shard", rewardHeroId = 5,  rewardCount = 1 },
-    { id = 7,  name = "阿姨压一压-碎片",    limitCycle = "daily", limitCount = 50, price = 60,  rewardType = "shard", rewardHeroId = 6,  rewardCount = 1 },
+    { id = 7,  name = "阿姨压-碎片",    limitCycle = "daily", limitCount = 50, price = 60,  rewardType = "shard", rewardHeroId = 6,  rewardCount = 1 },
     { id = 8,  name = "信光机兵-碎片",    limitCycle = "daily", limitCount = 50, price = 60,  rewardType = "shard", rewardHeroId = 7,  rewardCount = 1 },
     { id = 9,  name = "愤怒的小雀-碎片",    limitCycle = "daily", limitCount = 50, price = 60,  rewardType = "shard", rewardHeroId = 8,  rewardCount = 1 },
     { id = 10, name = "卡皮巴拉-碎片",  limitCycle = "daily", limitCount = 50, price = 60,  rewardType = "shard", rewardHeroId = 9,  rewardCount = 1 },
@@ -40,8 +40,8 @@ TavernConfig.SHOP_ITEMS = {
     { id = 15, name = "内鬼-碎片",    limitCycle = "daily", limitCount = 50, price = 250, rewardType = "shard", rewardHeroId = 14, rewardCount = 1 },
     { id = 16, name = "复活吧爱人-碎片", limitCycle = "daily", limitCount = 50, price = 250, rewardType = "shard", rewardHeroId = 15, rewardCount = 1 },
     { id = 17, name = "闪电卖鸡-碎片", limitCycle = "daily", limitCount = 50, price = 250, rewardType = "shard", rewardHeroId = 21, rewardCount = 1 },
-    { id = 18, name = "小黑子鸡哥-碎片",    limitCycle = "daily", limitCount = 50, price = 250, rewardType = "shard", rewardHeroId = 22, rewardCount = 1 },
-    { id = 19, name = "Freestyle诗人-碎片",  limitCycle = "daily", limitCount = 50, price = 250, rewardType = "shard", rewardHeroId = 23, rewardCount = 1 },
+    { id = 18, name = "小黑子-碎片",    limitCycle = "daily", limitCount = 50, price = 250, rewardType = "shard", rewardHeroId = 22, rewardCount = 1 },
+    { id = 19, name = "真布诗人-碎片",  limitCycle = "daily", limitCount = 50, price = 250, rewardType = "shard", rewardHeroId = 23, rewardCount = 1 },
     { id = 101, name = "万剑归宗-碎片", limitCycle = "daily", limitCount = 20, price = 1125, rewardType = "shard", rewardHeroId = 16, rewardCount = 1 },
     { id = 103, name = "摘星星星人-碎片", limitCycle = "daily", limitCount = 20, price = 1125, rewardType = "shard", rewardHeroId = 20, rewardCount = 1 },
 }

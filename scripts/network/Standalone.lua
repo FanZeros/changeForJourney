@@ -43,7 +43,7 @@ local RedeemConfig      = require("shared.redeem.RedeemConfig")
 local Protocol          = require("shared.Protocol")
 local DiaryPage         = require("ui.DiaryPage")
 local StartScreen       = require("ui.StartScreen")
-local DarkTitleScreen   = require("ui.DarkTitleScreen")  -- [DarkTitleScreen] 横屏暗黑标题
+local DarkTitleScreen   = require("ui.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
 local EventBus          = require("core.EventBus")
 local GameEvents        = require("config.GameEvents")
 local GameBGM           = require("systems.GameBGM")
@@ -2082,9 +2082,8 @@ function HandleNanoVGRenderHorizon()
             216, 201, 163, 2)
     end
 
-    -- [DarkTitleScreen] 横屏标题（全窗口逻辑坐标，覆盖一切直至点击淡出）
+    -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then
-        nvgResetTransform(vg)
         DarkTitleScreen.draw(vg, logicalW, logicalH)
     end
 

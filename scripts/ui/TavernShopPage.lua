@@ -21,7 +21,7 @@ local DESIGN_W = 1080
 
 -- ======================== 商品配置 ========================
 -- 数据来源：建筑-酒馆招募.txt「酒馆商店」章节
--- 英雄 ID 对应：1=大狗嚼 2=奶龙龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=阿姨压一压
+-- 英雄 ID 对应：1=大狗嚼 2=黄桃龙 3=叮咚鸡 4=接化发掌门 5=叠甲怪 6=阿姨压
 --               7=信光机兵 8=愤怒的小雀 9=卡皮巴拉 10=铁憨憨 11=熬夜冠军 12=雪皇
 --               13=弹弹弹 14=内鬼 15=复活吧爱人 16=万剑归宗 20=摘星星星人
 
@@ -46,7 +46,7 @@ local SHOP_ITEMS = {
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 3, name = "奶龙龙-碎片", quality = 3,
+        id = 3, name = "黄桃龙-碎片", quality = 3,
         limitCycle = "daily", limitCount = 50, price = 15,
         icon = "image/角色图标/UI_icon_hero_2.png",
         costIcon = "image/UI_icon_JGB_X.png",
@@ -71,7 +71,7 @@ local SHOP_ITEMS = {
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 7, name = "阿姨压一压-碎片", quality = 4,
+        id = 7, name = "阿姨压-碎片", quality = 4,
         limitCycle = "daily", limitCount = 50, price = 60,
         icon = "image/角色图标/UI_icon_hero_6.png",
         costIcon = "image/UI_icon_JGB_X.png",
@@ -138,13 +138,13 @@ local SHOP_ITEMS = {
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 18, name = "小黑子鸡哥-碎片", quality = 5,
+        id = 18, name = "小黑子-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_22.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
-        id = 19, name = "Freestyle诗人-碎片", quality = 5,
+        id = 19, name = "真布诗人-碎片", quality = 5,
         limitCycle = "daily", limitCount = 50, price = 250,
         icon = "image/角色图标/UI_icon_hero_23.png",
         costIcon = "image/UI_icon_JGB_X.png",

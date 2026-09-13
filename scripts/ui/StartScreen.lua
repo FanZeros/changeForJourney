@@ -97,7 +97,7 @@ function StartScreen.init(nvgCtx, scene)
     vg_ = nvgCtx
 
     -- 加载图片
-    imgLogo_ = nvgCreateImage(vg_, "image/UI_LOGO.png", 0)
+    imgLogo_ = nvgCreateImage(vg_, "image/LOGO终焉之门_透明版.png", 0)
     imgGlow_ = nvgCreateImage(vg_, "image/UI_KSYXFG.png", 0)
     imgDeco_ = nvgCreateImage(vg_, "image/UI_KSYXJT.png", 0)
 
@@ -340,7 +340,8 @@ function StartScreen.draw(vg)
     -- 2. LOGO  (cx=537 cy=424 874×545) / 上下浮动动画
     if imgLogo_ >= 0 then
         local logoFloat = math.sin(glowTimer_ * 1.2) * 12  -- 幅度12px，周期约5.2秒
-        drawImg(vg, imgLogo_, 537, 424 + logoFloat, 874, 545, 1.0)
+        -- LOGO 透明画布 1920×1080：等比缩放至宽度 1080（高 607），保持构图
+        drawImg(vg, imgLogo_, 540, 403 + logoFloat, 1080, 607, 1.0)
     end
 
     -- 3. 开始游戏背景光 (cx=540 cy=2002 1057×317)  呼吸闪烁

@@ -61,9 +61,9 @@ local SFX_DEFS = {
     -- 16/20/21/22/23 专用音效尚未入库，暂复用相近职业音效（避免加载缺失资源报错）
     EF_ATK_16    = { paths = { "audio/battle_sfx/EF_ATK_11.ogg" }, gain = 0.56 },  -- 万剑归宗→熬夜冠军斩击
     EF_ATK_20    = { paths = { "audio/battle_sfx/EF_ATK_13.ogg" }, gain = 0.56 },  -- 摘星星星人→暗影能量
-    EF_ATK_21    = { paths = { "audio/battle_sfx/EF_ATK_6.ogg"  }, gain = 0.56 },  -- 闪电卖鸡→阿姨压一压闪电
-    EF_ATK_22    = { paths = { "audio/battle_sfx/EF_ATK_6.ogg"  }, gain = 0.56 },  -- 小黑子鸡哥→阿姨压一压闪电
-    EF_ATK_23    = { paths = { "audio/battle_sfx/EF_ATK_15.ogg" }, gain = 0.56 },  -- Freestyle诗人→复活吧爱人圣光
+    EF_ATK_21    = { paths = { "audio/battle_sfx/EF_ATK_6.ogg"  }, gain = 0.56 },  -- 闪电卖鸡→阿姨压闪电
+    EF_ATK_22    = { paths = { "audio/battle_sfx/EF_ATK_6.ogg"  }, gain = 0.56 },  -- 小黑子→阿姨压闪电
+    EF_ATK_23    = { paths = { "audio/battle_sfx/EF_ATK_15.ogg" }, gain = 0.56 },  -- 真布诗人→复活吧爱人圣光
     -- 怪物攻击
     EF_MS_1      = { paths = { "audio/battle_sfx/EF_MS_1.ogg"   }, gain = 0.56 },
     EF_MS_7      = { paths = { "audio/battle_sfx/EF_MS_7.ogg"   }, gain = 0.56 },

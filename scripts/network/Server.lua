@@ -2122,7 +2122,7 @@ function Server.Start()
             if not alreadySent then
                 BroadcastMailService.SendBroadcastMail(
                     "V1.0.05 更新补偿",
-                    "亲爱的团长，非常抱歉！\n\n在之前的版本中，「终焉神殿」（轮回关卡）存在被跳过无法正常触发的问题，可能影响了你的正常游戏进度。目前该问题已在 V1.0.05 版本中修复。\n\n同时，本次更新新增了酒馆「指定招募」功能，你可以自选心仪的冒险家进行定向招募啦！\n\n为表歉意，特此补偿以下物品，请注意查收：\n· 冒险招募券 ×10\n\n感谢你的理解与支持，祝冒险愉快！\n\n——运营团队 敬上",
+                    "亲爱的远征长，非常抱歉！\n\n在之前的版本中，「终焉神殿」（轮回关卡）存在被跳过无法正常触发的问题，可能影响了你的正常游戏进度。目前该问题已在 V1.0.05 版本中修复。\n\n同时，本次更新新增了酒馆「指定招募」功能，你可以自选心仪的冒险家进行定向招募啦！\n\n为表歉意，特此补偿以下物品，请注意查收：\n· 冒险招募券 ×10\n\n感谢你的理解与支持，祝冒险愉快！\n\n——运营团队 敬上",
                     {
                         { type = "adventure_ticket", amount = 10 },
                     },
@@ -2136,7 +2136,7 @@ function Server.Start()
 
             -- V1.0.08 补偿邮件：红色怪物整体削弱（优先说明）+ 首通狂暴机制
             local COMP_TITLE_V2 = "V1.0.08 狂暴机制更新补偿"
-            local COMP_CONTENT_V2 = [[亲爱的团长：
+            local COMP_CONTENT_V2 = [[亲爱的远征长：
 
 为了给大家带来更好的战斗体验，本次更新对关卡战斗进行了以下调整：
 
@@ -2184,7 +2184,7 @@ function Server.Start()
 
             -- V1.0.09 补偿邮件：狂暴机制重做 + 首通狂暴时间延长
             local COMP_TITLE_V3 = "V1.0.09 狂暴机制重做补偿"
-            local COMP_CONTENT_V3 = [[亲爱的团长：
+            local COMP_CONTENT_V3 = [[亲爱的远征长：
 
 1. 上版本临时增加的狂暴机制考虑不周，现已重做，将：狂暴机制修改，改为敌我双方都会狂暴。
 
@@ -2225,7 +2225,7 @@ function Server.Start()
 
             -- V1.0.12 补偿邮件：冰冻调整补偿 + 端午祝福
             local COMP_TITLE_V4 = "V1.0.12 冰冻调整补偿"
-            local COMP_CONTENT_V4 = [[亲爱的团长：
+            local COMP_CONTENT_V4 = [[亲爱的远征长：
 
 上版本对于「冰冻」的修改过于一刀切，给大家的阵容体验带来了影响，我们深感抱歉。
 
@@ -2266,7 +2266,7 @@ function Server.Start()
 
             -- V1.0.15 临时修复补偿邮件：奶妈不回血、装备等级/词缀兼容等问题修复
             local COMP_TITLE_V5 = "V1.0.15 临时修复补偿"
-            local COMP_CONTENT_V5 = [[亲爱的团长：
+            local COMP_CONTENT_V5 = [[亲爱的远征长：
 
 近期版本中出现了多项影响体验的问题，我们已经陆续完成修复，包括：
 
@@ -2307,7 +2307,7 @@ function Server.Start()
 
             -- V1.0.25 补偿邮件：首通钻石下调 + 神器/日常奖励调整
             local COMP_TITLE_V6 = "V1.0.25 版本更新补偿"
-            local COMP_CONTENT_V6 = [[亲爱的团长：
+            local COMP_CONTENT_V6 = [[亲爱的远征长：
 
 V1.0.25版本对资源投放进行了整体调整：
 
@@ -2349,7 +2349,7 @@ V1.0.25版本对资源投放进行了整体调整：
 
             -- V1.0.26 紧急修复补偿邮件：通天塔钻石收益与近期紧急 BUG 修复
             local COMP_TITLE_V7 = "V1.0.26 紧急修复补偿"
-            local COMP_CONTENT_V7 = [[亲爱的团长：
+            local COMP_CONTENT_V7 = [[亲爱的远征长：
 
 近期版本中出现了多项影响体验的问题，我们已经完成紧急修复，包括：
 
@@ -2389,7 +2389,7 @@ V1.0.25版本对资源投放进行了整体调整：
 
             -- 平台服务器调整导致回档补偿邮件
             local COMP_TITLE_V8 = "服务器回档补偿"
-            local COMP_CONTENT_V8 = [[亲爱的团长：
+            local COMP_CONTENT_V8 = [[亲爱的远征长：
 
 非常抱歉！
 

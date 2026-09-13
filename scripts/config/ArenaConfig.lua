@@ -256,7 +256,7 @@ ArenaConfig.SHOP_ITEMS = {
     { id = 3, name = "点金石",       quality = 5, limitCycle = "weekly",   limitCount = 3,  price = 150,  rewardType = "destroyStone",   rewardCount = 1 },
     { id = 4, name = "扫荡券",       quality = 4, limitCycle = "weekly",   limitCount = 2,  price = 100,  rewardType = "sweepTicket",    rewardCount = 1 },
     { id = 5, name = "冒险招募券",   quality = 5, limitCycle = "weekly",   limitCount = 5,  price = 150,  rewardType = "recruitTicket",  rewardCount = 1 },
-    { id = 6, name = "光之圣女-碎片", quality = 5, limitCycle = "weekly",  limitCount = 1,  price = 4000, rewardType = "shard",          rewardHeroId = 15, rewardCount = 10 },
+    { id = 6, name = "急救复活甲-碎片", quality = 5, limitCycle = "weekly",  limitCount = 1,  price = 4000, rewardType = "shard",          rewardHeroId = 15, rewardCount = 10 },
 }
 
 --- 根据 id 查找商品配置

@@ -246,35 +246,41 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     nvgRestore(vg)
                 end
 
-                -- 能量护盾：按血条百分比刻度显示（盾量/maxHp，与血条同一比例尺），
-                -- 不再按护盾上限铺满——满盾也只占血条中对应百分比的一段
+                -- 能量护盾：血条尾部延伸段（不叠加在血量上）——
+                -- [HP 段][常规 ES 青段][临时 ES 亮青段][空]，均按 maxHp 百分比刻度；
+                -- 盾+血未满时盾跟在血量后面，总宽不超过整条
                 local esMax = unit.attrs and (unit.attrs.final["energyShield"] or 0) or 0
                 if esMax > 0 and imgCtx.imgEsFill and imgCtx.imgEsFill >= 0 then
                     local esCur = unit.attrs.energyShield or 0
                     local tempCur = unit.attrs.tempEnergyShield or 0
                     local barScale = (unit.maxHp > 0) and unit.maxHp or esMax
-                    local esRatio = esCur / barScale
-                    local esClipW = fillW * math.max(0, math.min(1, esRatio))
+                    local hpClipW = fillW * math.max(0, math.min(1, hpProgress))
+                    local esClipW = fillW * math.max(0, math.min(1, esCur / barScale))
+                    local esRoom = fillW - hpClipW
+                    if esClipW > esRoom then esClipW = esRoom end
                     if esClipW > 0 then
+                        local esX = fillX + hpClipW
                         nvgSave(vg)
-                        nvgScissor(vg, fillX, fillY, esClipW, fillH)
-                        local esPaint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, imgCtx.imgEsFill, 0.85)
+                        nvgScissor(vg, esX, fillY, esClipW, fillH)
+                        local esPaint = nvgImagePattern(vg, esX, fillY, esClipW, fillH, 0, imgCtx.imgEsFill, 0.85)
                         nvgBeginPath(vg)
-                        nvgRect(vg, fillX, fillY, fillW, fillH)
+                        nvgRect(vg, esX, fillY, esClipW, fillH)
                         nvgFillPaint(vg, esPaint)
                         nvgFill(vg)
                         nvgResetScissor(vg)
                         nvgRestore(vg)
                     end
-                    -- 临时护盾叠在常规护盾之上（同一条血条，更亮的青色，同血条百分比刻度）
+                    -- 临时护盾跟在常规护盾之后（更亮的青色，同一刻度，同样不越界）
                     if tempCur > 0 then
-                        local tempRatio = tempCur / barScale
-                        local tempClipW = fillW * math.max(0, math.min(1, tempRatio))
+                        local tempClipW = fillW * math.max(0, math.min(1, tempCur / barScale))
+                        local tempX = fillX + hpClipW + esClipW
+                        local tempRoom = fillW - hpClipW - esClipW
+                        if tempClipW > tempRoom then tempClipW = tempRoom end
                         if tempClipW > 1 then
                             nvgSave(vg)
-                            nvgScissor(vg, fillX, fillY, tempClipW, fillH)
+                            nvgScissor(vg, tempX, fillY, tempClipW, fillH)
                             nvgBeginPath(vg)
-                            nvgRect(vg, fillX, fillY, fillW, fillH)
+                            nvgRect(vg, tempX, fillY, fillW, fillH)
                             nvgFillColor(vg, nvgRGBA(160, 255, 255, 150))
                             nvgFill(vg)
                             nvgResetScissor(vg)

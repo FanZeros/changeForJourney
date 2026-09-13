@@ -8,6 +8,7 @@
 
 local AD = require("systems.AttributeDef")
 local CC = require("config.ClassConfig")
+local BattleLayout = require("core.BattleLayout")
 
 local TM = {}
 -- ======================== [多实例] 战斗状态容器 ========================
@@ -306,7 +307,8 @@ function TM.selectTarget(targetList)
             end
             local staticBonus = staticThreat * TM.STATIC_THREAT_WEIGHT
 
-            local weight = dynamicThreat + staticBonus
+            -- [前后排] 乘以位置受击权重: 前排(靠中心)被攻击概率显著更高
+            local weight = (dynamicThreat + staticBonus) * BattleLayout.hitWeight(i)
             totalWeight = totalWeight + weight
             alive[#alive + 1] = { index = i, weight = weight }
         end

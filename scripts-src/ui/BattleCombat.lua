@@ -937,7 +937,18 @@ local function performAttack(attacker, targetList, isAlly)
         if not chosenIndex or chosenIndex == 0 then
             local alive = getAliveUnits(targetList)
             if #alive == 0 then _perfAtkDepth = _perfAtkDepth - 1; return end
-            chosenIndex = alive[math.random(#alive)].index
+            -- [前后排] 兜底随机也按位置加权
+            local totalW = 0
+            for _, entry in ipairs(alive) do
+                entry.weight = BattleLayout.hitWeight(entry.index)
+                totalW = totalW + entry.weight
+            end
+            local rollW = math.random() * totalW
+            chosenIndex = alive[#alive].index
+            for _, entry in ipairs(alive) do
+                rollW = rollW - entry.weight
+                if rollW <= 0 then chosenIndex = entry.index break end
+            end
         end
     end
 
@@ -981,7 +992,9 @@ local function performAttack(attacker, targetList, isAlly)
                         staticThreat = u.attrs:get(AD.THREAT)
                         if staticThreat < 1 then staticThreat = 1 end
                     end
-                    local weight = dynamicThreat + staticThreat * TM.STATIC_THREAT_WEIGHT
+                    -- [前后排] 乘以位置受击权重: 额外目标同样偏向后排
+                    local weight = (dynamicThreat + staticThreat * TM.STATIC_THREAT_WEIGHT)
+                        * BattleLayout.hitWeight(i)
                     candidates[#candidates + 1] = { index = i, weight = weight }
                 end
             end

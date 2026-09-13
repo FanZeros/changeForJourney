@@ -44,6 +44,19 @@ BattleLayout.STRIP_ENEMY_X0 = BattleLayout.STRIP_W
 
 BattleLayout.MAX_PER_SIDE = 4
 
+-- ---- 前后排受击权重 ----
+-- 1号位(前排/靠中心)被攻击概率显著更高; 每后退一位权重 ×(1/FRONT_BIAS)
+-- 默认 FRONT_BIAS=2 → 4 槽权重 8/4/2/1（前排被击概率约为后排 8 倍）
+BattleLayout.FRONT_BIAS = 2.0
+
+--- 阵营内第 idx 槽位的受击权重（配合加权随机选取使用）
+---@param idx number 槽位（1=前排）
+---@return number
+function BattleLayout.hitWeight(idx)
+    idx = math.max(1, math.min(BattleLayout.MAX_PER_SIDE, math.floor(tonumber(idx) or 1)))
+    return BattleLayout.FRONT_BIAS ^ (BattleLayout.MAX_PER_SIDE - idx)
+end
+
 --- strip: 阵营内第 idx 张卡的中心
 ---@param group string "ally" | "enemy"
 ---@param idx number

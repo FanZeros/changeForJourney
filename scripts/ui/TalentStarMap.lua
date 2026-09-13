@@ -15,7 +15,7 @@ local ICON_TINT_DARK = { 72, 64, 54 }
 
 local GRID_SPACING  = 360   -- 坐标点间距 (px)
 local LINE_WIDTH    = 12    -- 连接线宽度
-local NODE_MAX      = 200   -- 当前最大天赋节点 ID
+local NODE_MAX      = 208   -- 当前最大天赋节点 ID（201-208 为终焉环占位，待填内容）
 
 -- 缩放范围
 local ZOOM_MIN      = 0.20
@@ -219,22 +219,22 @@ local NODES = {
     [166]= { id=166,gx=0,   gy=14,  st="large",  name="风暴之心",   adj={159,160,198},     icon="UI_icon_TF_114.png",  color="绿" },
     [167]= { id=167,gx=14,  gy=0,   st="large",  name="破晓战旗",   adj={161,162,199},     icon="UI_icon_TF_135.png",  color="红" },
     [168]= { id=168,gx=0,   gy=-14, st="large",  name="圣堂结界",   adj={163,164,200},     icon="UI_icon_TF_128.png",  color="黄" },
-    [169]= { id=169,gx=-18, gy=-12, st="small",  name="星辉护罩",   adj={153,170,185,189}, icon="UI_icon_TF_32.png",   color="蓝" },
+    [169]= { id=169,gx=-18, gy=-12, st="small",  name="星辉护罩",   adj={153,170,185,189,203}, icon="UI_icon_TF_32.png",   color="蓝" },
     [170]= { id=170,gx=-18, gy=-8,  st="small",  name="虚空穿刺",   adj={169,189},         icon="UI_icon_TF_25.png",   color="蓝" },
     [171]= { id=171,gx=-18, gy=8,   st="small",  name="秘法凝视",   adj={172,190},         icon="UI_icon_TF_34.png",   color="蓝" },
-    [172]= { id=172,gx=-18, gy=12,  st="small",  name="奥术爆鸣",   adj={154,171,186,190}, icon="UI_icon_TF_44.png",   color="蓝" },
-    [173]= { id=173,gx=-12, gy=18,  st="small",  name="影步残响",   adj={154,174,186,191}, icon="UI_icon_TF_18.png",   color="绿" },
+    [172]= { id=172,gx=-18, gy=12,  st="small",  name="奥术爆鸣",   adj={154,171,186,190,204}, icon="UI_icon_TF_44.png",   color="蓝" },
+    [173]= { id=173,gx=-12, gy=18,  st="small",  name="影步残响",   adj={154,174,186,191,207}, icon="UI_icon_TF_18.png",   color="绿" },
     [174]= { id=174,gx=-8,  gy=18,  st="small",  name="迅风律动",   adj={173,191},         icon="UI_icon_TF_5.png",    color="绿" },
     [175]= { id=175,gx=8,   gy=18,  st="small",  name="弱点锁定",   adj={176,192},         icon="UI_icon_TF_13.png",   color="绿" },
-    [176]= { id=176,gx=12,  gy=18,  st="small",  name="千刃连携",   adj={155,175,187,192}, icon="UI_icon_TF_28.png",   color="绿" },
-    [177]= { id=177,gx=18,  gy=12,  st="small",  name="战旗鼓舞",   adj={155,178,187,193}, icon="UI_icon_TF_38.png",   color="红" },
+    [176]= { id=176,gx=12,  gy=18,  st="small",  name="千刃连携",   adj={155,175,187,192,208}, icon="UI_icon_TF_28.png",   color="绿" },
+    [177]= { id=177,gx=18,  gy=12,  st="small",  name="战旗鼓舞",   adj={155,178,187,193,206}, icon="UI_icon_TF_38.png",   color="红" },
     [178]= { id=178,gx=18,  gy=8,   st="small",  name="破甲冲锋",   adj={177,193},         icon="UI_icon_TF_30.png",   color="红" },
     [179]= { id=179,gx=18,  gy=-8,  st="small",  name="血色瞄准",   adj={180,194},         icon="UI_icon_TF_37.png",   color="红" },
-    [180]= { id=180,gx=18,  gy=-12, st="small",  name="崩裂重击",   adj={156,179,188,194}, icon="UI_icon_TF_49.png",   color="红" },
-    [181]= { id=181,gx=12,  gy=-18, st="small",  name="圣辉恩泽",   adj={156,182,188,195}, icon="UI_icon_TF_20.png",   color="黄" },
+    [180]= { id=180,gx=18,  gy=-12, st="small",  name="崩裂重击",   adj={156,179,188,194,205}, icon="UI_icon_TF_49.png",   color="红" },
+    [181]= { id=181,gx=12,  gy=-18, st="small",  name="圣辉恩泽",   adj={156,182,188,195,202}, icon="UI_icon_TF_20.png",   color="黄" },
     [182]= { id=182,gx=8,   gy=-18, st="small",  name="磐石守护",   adj={181,195},         icon="UI_icon_TF_31.png",   color="黄" },
     [183]= { id=183,gx=-8,  gy=-18, st="small",  name="灵魂护幕",   adj={184,196},         icon="UI_icon_TF_32.png",   color="黄" },
-    [184]= { id=184,gx=-12, gy=-18, st="small",  name="生命回响",   adj={153,183,185,196}, icon="UI_icon_TF_40.png",   color="黄" },
+    [184]= { id=184,gx=-12, gy=-18, st="small",  name="生命回响",   adj={153,183,185,196,201}, icon="UI_icon_TF_40.png",   color="黄" },
     [185]= { id=185,gx=-18, gy=-18, st="large",  name="永恒壁垒",   adj={153,169,184},     icon="UI_icon_TF_81.png",   color="紫" },
     [186]= { id=186,gx=-18, gy=18,  st="large",  name="奥术风暴",   adj={154,172,173},     icon="UI_icon_TF_82.png",   color="紫" },
     [187]= { id=187,gx=18,  gy=18,  st="large",  name="终结狩猎",   adj={155,176,177},     icon="UI_icon_TF_83.png",   color="紫" },
@@ -251,6 +251,18 @@ local NODES = {
     [198]= { id=198,gx=0,   gy=18,  st="large",  name="风暴连锁",   adj={166,191,192},     icon="UI_icon_TF_114.png",  color="绿" },
     [199]= { id=199,gx=18,  gy=0,   st="large",  name="破灭战阵",   adj={167,193,194},     icon="UI_icon_TF_135.png",  color="红" },
     [200]= { id=200,gx=0,   gy=-18, st="large",  name="不朽圣域",   adj={168,195,196},     icon="UI_icon_TF_128.png",  color="黄" },
+
+    -- ==================== [终焉环占位 201-208] ====================
+    -- 四条边框 ±15 空档上的预留节点，供追加终焉级内容；name/effect 由后续设计填充
+    -- 占位期间渲染为紫色问号铭牌（matchTalentKind fallback → query 符号）
+    [201]= { id=201,gx=-15, gy=-18, st="medium", name="终焉·？？",  adj={185,184},         icon="",                    color="紫" },
+    [202]= { id=202,gx=15,  gy=-18, st="medium", name="终焉·？？",  adj={181,188},         icon="",                    color="紫" },
+    [203]= { id=203,gx=-18, gy=-15, st="medium", name="终焉·？？",  adj={185,169},         icon="",                    color="紫" },
+    [204]= { id=204,gx=-18, gy=15,  st="medium", name="终焉·？？",  adj={172,186},         icon="",                    color="紫" },
+    [205]= { id=205,gx=18,  gy=-15, st="medium", name="终焉·？？",  adj={188,180},         icon="",                    color="紫" },
+    [206]= { id=206,gx=18,  gy=15,  st="medium", name="终焉·？？",  adj={177,187},         icon="",                    color="紫" },
+    [207]= { id=207,gx=-15, gy=18,  st="medium", name="终焉·？？",  adj={186,173},         icon="",                    color="紫" },
+    [208]= { id=208,gx=15,  gy=18,  st="medium", name="终焉·？？",  adj={176,187},         icon="",                    color="紫" },
 }
 
 -- ======================== 效果描述 ========================
@@ -457,6 +469,16 @@ local EFFECTS = {
     [198] = "全体攻击速度+22%，连击概率+18%，暴击率+4%",
     [199] = "全体物理伤害加成+24%，物理攻击加成+12%，物理穿透+8",
     [200] = "全体生命加成+14%，护甲加成+8%，能量护盾加成+6%",
+
+    -- [终焉环占位 201-208] 效果待设计填充
+    [201] = "【终焉·待定】预留槽位 I（北·西段）",
+    [202] = "【终焉·待定】预留槽位 II（北·东段）",
+    [203] = "【终焉·待定】预留槽位 III（西·北段）",
+    [204] = "【终焉·待定】预留槽位 IV（西·南段）",
+    [205] = "【终焉·待定】预留槽位 V（东·北段）",
+    [206] = "【终焉·待定】预留槽位 VI（东·南段）",
+    [207] = "【终焉·待定】预留槽位 VII（南·西段）",
+    [208] = "【终焉·待定】预留槽位 VIII（南·东段）",
 }
 for id, eff in pairs(EFFECTS) do
     if NODES[id] then NODES[id].effect = eff end

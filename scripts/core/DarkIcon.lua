@@ -1277,11 +1277,21 @@ glyphPainters = {
         nvgClosePath(vg)
         nvgFill(vg); nvgStrokeWidth(vg, s * 0.045); nvgStroke(vg)
     end,
+    -- 问号（终焉环占位节点：待填充内容）
+    query = function(vg, cx, cy, s, col, a)
+        glyphPath(vg, col, a)
+        nvgFontSize(vg, s * 0.72)
+        nvgFontFace(vg, "sans")
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], math.floor(a * 235)))
+        nvgText(vg, cx, cy - s * 0.02, "？", nil)
+    end,
 }
 
 --- 天赋语义名 → 符号类型关键词规则（顺序敏感：先专后泛，命中即返）
 --- 新增天赋节点自动归类，无需逐名维护
 local TALENT_KIND_RULES = {
+    { "？？", "query" },  -- [终焉环] 占位节点专属问号符号
     { "弓", "bow" },   { "箭", "bow" },   { "狙", "bow" },   { "射手", "bow" },
     { "瞄准", "crosshair" }, { "准星", "crosshair" }, { "致命", "crosshair" },
     { "暴击", "crosshair" }, { "弱点", "crosshair" }, { "钻心", "crosshair" }, { "狩猎", "crosshair" },

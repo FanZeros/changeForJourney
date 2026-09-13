@@ -911,7 +911,7 @@ function M.draw(vg)
     end
 
     -- === 10) 等级文本 ===
-    local lvlText = "等级" .. tostring(heroLevel)
+    local lvlText = "Lv." .. tostring(heroLevel)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 28)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)

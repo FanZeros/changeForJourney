@@ -246,12 +246,14 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     nvgRestore(vg)
                 end
 
-                -- 能量护盾：常规 ES 按上限比例从左填满；临时 ES 叠在上方同样从左填满
+                -- 能量护盾：按血条百分比刻度显示（盾量/maxHp，与血条同一比例尺），
+                -- 不再按护盾上限铺满——满盾也只占血条中对应百分比的一段
                 local esMax = unit.attrs and (unit.attrs.final["energyShield"] or 0) or 0
                 if esMax > 0 and imgCtx.imgEsFill and imgCtx.imgEsFill >= 0 then
                     local esCur = unit.attrs.energyShield or 0
                     local tempCur = unit.attrs.tempEnergyShield or 0
-                    local esRatio = esCur / esMax
+                    local barScale = (unit.maxHp > 0) and unit.maxHp or esMax
+                    local esRatio = esCur / barScale
                     local esClipW = fillW * math.max(0, math.min(1, esRatio))
                     if esClipW > 0 then
                         nvgSave(vg)
@@ -264,10 +266,9 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                         nvgResetScissor(vg)
                         nvgRestore(vg)
                     end
-                    -- 临时护盾叠在常规护盾之上（同一条血条，更亮的青色，按临时上限比例）
+                    -- 临时护盾叠在常规护盾之上（同一条血条，更亮的青色，同血条百分比刻度）
                     if tempCur > 0 then
-                        local tempMax = esMax * 0.5
-                        local tempRatio = tempCur / math.max(1, tempMax)
+                        local tempRatio = tempCur / barScale
                         local tempClipW = fillW * math.max(0, math.min(1, tempRatio))
                         if tempClipW > 1 then
                             nvgSave(vg)
@@ -322,7 +323,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                 ATK_BAR_W, ATK_BAR_H, ATK_BAR_PADDING, attackProg)
 
             -- 9) 等级文本
-            drawTextStroke(vg, cx, cy + lvlOffY, "等级" .. tostring(unit.level),
+            drawTextStroke(vg, cx, cy + lvlOffY, "Lv." .. tostring(unit.level),
                 32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
 
             -- 10) 状态效果视觉指示

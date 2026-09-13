@@ -35,13 +35,14 @@ end
 ---@param vg any
 ---@param b table { allies, enemies }
 --- [三行并行] bgImg: 外部行背景贴图句柄（L1 战区背景）; 缺省用内置 MAP_1
-function BattleView.draw(vg, b, bgImg)
+--- skipBg: true 时跳过背景带（分层模式: L1 已由宿主垫底绘制）
+function BattleView.draw(vg, b, bgImg, skipBg)
     local allies = b.allies or {}
     local enemies = b.enemies or {}
     local mapImg = bgImg or img.map
 
-    -- 1) 地图底带（拉伸铺满条带）
-    if mapImg and mapImg >= 0 then
+    -- 1) 地图底带（覆盖战场带）
+    if not skipBg and mapImg and mapImg >= 0 then
         local paint = nvgImagePattern(vg, 0, 0, STRIP_W, STRIP_H, 0, mapImg, 1.0)
         nvgBeginPath(vg)
         nvgRect(vg, 0, 0, STRIP_W, STRIP_H)

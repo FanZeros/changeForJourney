@@ -2029,7 +2029,8 @@ function HandleNanoVGRenderHorizon()
         local ps = logicalH / 1080                -- 面板缩放（高适配）
         local oxL = 0
         local oxR = logicalW - 1458 * ps          -- 右面板: ox + 972*ps = 右缘 - 486*ps
-        BattleTriPage.drawL0(vg, logicalW, logicalH)  -- [暗黑替换] L0 整套大背景（营地|框体|英灵墙）
+        BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)  -- [暗黑替换] L1 行内容背景垫底（框内 clip）
+        BattleTriPage.drawL0(vg, logicalW, logicalH)          -- [暗黑替换] L0 框体图（透明框内透出 L1）
         Viewport.begin(vg, Viewport.PANELS.left, oxL, 0, ps)
         TownScene.draw(vg)
         BlacksmithPage.draw(vg)
@@ -2040,8 +2041,8 @@ function HandleNanoVGRenderHorizon()
         Viewport.begin(vg, Viewport.PANELS.right, oxR, 0, ps)
         CharacterPanel.draw(vg)
         Viewport.finish(vg)
-        -- 中段三行战斗区（宽 = 窗口 - 两侧面板; 顶部让出 70px 血月天幕带）
-        BattleTriPage.draw(vg, 486 * ps, 70 * ps, logicalW - 972 * ps, logicalH - 70 * ps)
+        -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
+        BattleTriPage.draw(vg, logicalW, logicalH)
         nvgEndFrame(vg)
         return
     end
@@ -2118,7 +2119,7 @@ local function HorizonResolveMouse()
         elseif sx > logicalW - leftW then
             return 'right', (sx - (logicalW - 486 * ps)) / (ps * 0.45), sy / (ps * 0.45)
         end
-        return 'tri', sx - leftW, sy - 70 * ps
+        return 'tri', sx, sy
     end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end

@@ -259,7 +259,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         if row > unlocked then
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             local needLv = ExpTable.getTeamUnlockLevel(row)
-            nvgFontSize(vg, 22)
+            nvgFontSize(vg, 44)
             nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
             nvgText(vg, ix + iw * 0.5, iy + ih * 0.5,
                 string.format("冒险等级达到 %s 解锁", tostring(needLv or "?")), nil)

@@ -2454,6 +2454,24 @@ function BattleScene.getAllies()
     return allies
 end
 
+--- 获取当前敌方单位列表（引用，非副本）[修复] BattleTriPage 依赖此接口，此前缺失导致每帧 nil 调用
+function BattleScene.getEnemies()
+    return enemies
+end
+
+--- 获取当前关卡 ID [修复] BattleTriPage 依赖（此前仅暴露 getCurrentStageId）
+function BattleScene.getStageId()
+    return currentStageId
+end
+
+--- 触发敌方击杀回调 [修复] BattleTriPage 三队战斗驱动依赖（与主战斗内部调用同构）
+---@param data table { expReward, goldReward, allyCount, expMult, heroIds, stageId }
+function BattleScene.onEnemyKill(data)
+    if onEnemyKillCallback then
+        onEnemyKillCallback(data)
+    end
+end
+
 --- 获取当前关卡敌方场地上限
 function BattleScene.getMaxFieldEnemies()
     return getStageMaxFieldEnemies()

@@ -466,22 +466,8 @@ local function drawEquipGrid(vg)
 
         local equip = equipList[idx]
         if equip then
-            -- 品质背景
-            local qualBg = ImageCache.getQualityBg(equip.quality)
-            if qualBg and qualBg >= 0 then
-                DrawUtil.drawImageCentered(vg, qualBg, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
-            else
-                -- fallback: 品质边框圆角矩形
-                local qc = QUALITY_BORDER[equip.quality] or QUALITY_BORDER[1]
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                    GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS)
-                nvgFillColor(vg, nvgRGBA(qc[1], qc[2], qc[3], 40))
-                nvgFill(vg)
-                nvgStrokeColor(vg, nvgRGBA(qc[1], qc[2], qc[3], 200))
-                nvgStrokeWidth(vg, 3)
-                nvgStroke(vg)
-            end
+            -- 品质背景 [暗黑化 P2-A] 矢量品质框（原 ZBBJ 贴图+fallback 已废弃）
+            DarkIcon.drawQualityBg(vg, equip.quality, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
 
             -- 装备图标
             local icon = ImageCache.getEquipIcon(equip.templateId)
@@ -642,21 +628,8 @@ local function drawItemGrid(vg)
         local cx = CELL_COL_CX[col]
         local cy = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5
 
-        -- 品质背景
-        local qualBg = ImageCache.getQualityBg(def.quality)
-        if qualBg and qualBg >= 0 then
-            DrawUtil.drawImageCentered(vg, qualBg, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
-        else
-            local qc = QUALITY_BORDER[def.quality] or QUALITY_BORDER[1]
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS)
-            nvgFillColor(vg, nvgRGBA(qc[1], qc[2], qc[3], 40))
-            nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(qc[1], qc[2], qc[3], 200))
-            nvgStrokeWidth(vg, 3)
-            nvgStroke(vg)
-        end
+        -- 品质背景 [暗黑化 P2-A] 矢量品质框
+        DarkIcon.drawQualityBg(vg, def.quality, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
 
         -- 道具图标
         if def.isShard and def.heroId then
@@ -889,10 +862,7 @@ local function drawUrConvertDialog(vg)
         if cy > C.CANCEL_CY - 110 then break end
 
         local gridQuality = ({ [1] = 1, [2] = 3, [3] = 5, [4] = 6 })[item.quality] or 1
-        local qBg = ImageCache.getQualityBg(gridQuality)
-        if qBg and qBg >= 0 then
-            DrawUtil.drawImageCentered(vg, qBg, cx, cy, C.CELL_SIZE, C.CELL_SIZE, 1.0)
-        end
+        DarkIcon.drawQualityBg(vg, gridQuality, cx, cy, C.CELL_SIZE, C.CELL_SIZE, 1.0)  -- [暗黑化 P2-A]
         DrawUtil.drawShardIcon(vg, item.heroId, cx, cy, C.CELL_SIZE - 10, 1.0)
     end
 

@@ -331,7 +331,7 @@ function TavernShopPage.init(vg)
         shopImg.cardBg[i]   = nvgCreateImage(vg, "image/UI_SDICONBJ_" .. i .. ".png", 0)
     end
     for i = 1, 6 do
-        shopImg.qualityBg[i] = nvgCreateImage(vg, "image/UI_icon_ZBBJ_" .. i .. ".png", 0)
+    -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
     end
     shopImg.buyBtn      = nvgCreateImage(vg, "image/UI_SD_AN.png",       0)
     -- [暗黑化 P1-B5] 原 image/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
@@ -812,9 +812,8 @@ drawPurchaseDialog = function(vg)
     nvgFill(vg)
 
     -- 品质背景 + 商品图标
-    local rewardBg  = shopImg.qualityBg[item.quality] or shopImg.qualityBg[1]
     local rewardImg = shopImg.itemIcons[item.id]
-    drawImageCentered(vg, rewardBg,  DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)
+    DarkIcon.drawQualityBg(vg, item.quality or 1, DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
     if rewardImg and rewardImg >= 0 then
         drawImageCentered(vg, rewardImg, DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)
     end

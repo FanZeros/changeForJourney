@@ -811,9 +811,8 @@ drawPurchaseDialog = function(vg)
     nvgFill(vg)
 
     -- 5. 品质背景 + 商品图标（居中）
-    local rewardBg = img.qualityBg[item.quality] or img.qualityBg[1]
-    drawImageCentered(vg, rewardBg,
-        DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)
+    DarkIcon.drawQualityBg(vg, item.quality or 1,
+        DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
     local rewardImg = img.itemIcons[idx]
     if rewardImg and rewardImg >= 0 then
         drawImageCentered(vg, rewardImg,
@@ -1129,10 +1128,9 @@ local function drawKeyConfirmDialog(vg)
     nvgFill(vg)
 
     drawImageCentered(vg, img.confirmArrow, KEY_CF.ARROW_CX, KEY_CF.ARROW_CY, KEY_CF.ARROW_W, KEY_CF.ARROW_H, 1.0)
-    local qBg = img.qualityBg[6] or img.qualityBg[5]
-    drawImageCentered(vg, qBg, KEY_CF.DIAMOND_CX, KEY_CF.DIAMOND_CY, KEY_CF.DIAMOND_W, KEY_CF.DIAMOND_H, 1.0)
+    DarkIcon.drawQualityBg(vg, 6, KEY_CF.DIAMOND_CX, KEY_CF.DIAMOND_CY, KEY_CF.DIAMOND_W, KEY_CF.DIAMOND_H, 1.0)  -- [暗黑化 P2-A]
     drawImageCentered(vg, img.diamondBig, KEY_CF.DIAMOND_CX, KEY_CF.DIAMOND_CY, KEY_CF.DIAMOND_W, KEY_CF.DIAMOND_H, 1.0)
-    drawImageCentered(vg, qBg, KEY_CF.KEY_CX, KEY_CF.KEY_CY, KEY_CF.KEY_W, KEY_CF.KEY_H, 1.0)
+    DarkIcon.drawQualityBg(vg, 6, KEY_CF.KEY_CX, KEY_CF.KEY_CY, KEY_CF.KEY_W, KEY_CF.KEY_H, 1.0)  -- [暗黑化 P2-A]
     drawImageCentered(vg, img.goldenKey, KEY_CF.KEY_CX, KEY_CF.KEY_CY, KEY_CF.KEY_W, KEY_CF.KEY_H, 1.0)
 
     local diamondEnough = GameState.getGems() >= state.keyConfirmDiamondCost
@@ -1398,9 +1396,8 @@ local function drawPrivilegeContent(vg)
                 { strokeColor = { 0x31, 0x24, 0x24 } })
 
             -- 品质背景 + 奖励图标
-            local qualBg = img.qualityBg[reward.quality] or img.qualityBg[1]
-            drawImageCentered(vg, qualBg,
-                PV.ICON_CX, rowCY, PV.ICON_W, PV.ICON_H, isClaimed and 0.4 or 1.0)
+            DarkIcon.drawQualityBg(vg, reward.quality or 1,
+                PV.ICON_CX, rowCY, PV.ICON_W, PV.ICON_H, isClaimed and 0.4 or 1.0)  -- [暗黑化 P2-A]
             local rewardIconImg = privRewardIcons[i]
             if rewardIconImg and rewardIconImg >= 0 then
                 drawImageCentered(vg, rewardIconImg,
@@ -1651,7 +1648,7 @@ function MarketPage.init(vg)
     img.diamondIcon = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
     img.privilegeIcon = nvgCreateImage(vg, "image/UI_icon_TQD_X.png", 0)
     for i = 1, 6 do
-        img.qualityBg[i] = nvgCreateImage(vg, "image/UI_icon_ZBBJ_" .. i .. ".png", 0)
+    -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
     end
 
     -- 特权图片

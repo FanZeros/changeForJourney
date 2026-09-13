@@ -653,6 +653,20 @@ function DarkIcon.drawQualityFrame(vg, quality, cx, cy, w, h, alpha)
     end
 end
 
+--- 品质底框统一入口（P2-A）：替代 UI_icon_ZBBJ_1~6 / KP_TY_N~UR 贴图
+--- 与 drawImageCentered 同参风格（中心点定位），quality 自动 clamp 1-6
+---@param vg any
+---@param quality number 品质（1粗铁 2青铜 3秘银 4符文 5黄金 6血钻）
+---@param cx number 中心 X
+---@param cy number 中心 Y
+---@param w number 宽
+---@param h number 高
+---@param alpha number|nil 透明度 0-1（默认 1）
+function DarkIcon.drawQualityBg(vg, quality, cx, cy, w, h, alpha)
+    local q = math.floor(tonumber(quality) or 1)
+    DarkIcon.drawQualityFrame(vg, math.max(1, math.min(6, q)), cx, cy, w, h, alpha or 1)
+end
+
 --- 暗黑场景底图：压暗 tint + 边缘晕影（用于关卡地图等大幅明亮底图的暗黑化）
 --- tint 取暖灰（保留暖色层次），晕影聚焦战场中心；alpha 用于场景切换过渡
 ---@param vg any

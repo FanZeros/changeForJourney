@@ -3,6 +3,7 @@
 -- ============================================================================
 
 local DrawUtil     = require("core.DrawUtil")
+local DarkIcon     = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local ImageCache   = require("ui.ImageCache")
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 
@@ -86,10 +87,7 @@ function ArtifactAssetUtil.drawIcon(vg, artifact, cx, cy, size, opts)
     local typeId = ArtifactAssetUtil.resolveTypeId(artifact)
 
     if not opts.hideQualityBg then
-        local qBg = ImageCache.getQualityBg(q)
-        if qBg >= 0 then
-            DrawUtil.drawImageCentered(vg, qBg, cx, cy, size, size, 1.0)
-        end
+        DarkIcon.drawQualityBg(vg, q, cx, cy, size, size, 1.0)  -- [暗黑化 P2-A] 矢量品质底框
     end
 
     local iconPadding = opts.iconPadding or math.max(12, math.floor(size * 0.12))

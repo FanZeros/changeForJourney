@@ -575,10 +575,7 @@ function DungeonPage.draw(vg)
                 local cy = ry + REWARD_ICON_SIZE * 0.5
 
                 -- 1) 品质背景
-                local qualBg = imgQualityBg[reward.quality] or imgQualityBg[1]
-                if qualBg and qualBg >= 0 then
-                    drawImageCentered(vg, qualBg, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)
-                end
+                DarkIcon.drawQualityBg(vg, reward.quality or 1, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
 
                 -- 2) 资源图标（内缩绘制）
                 if not rewardIconCache[reward.icon] then
@@ -774,11 +771,8 @@ function DungeonPage.drawDetailPanel(vg)
             local cx = startX + (i - 1) * (REWARD_SZ + REWARD_GAP)
             local cy = DT_REW_BG_CY
 
-            -- 品质背景
-            local qualBg = imgQualityBg[reward.quality] or imgQualityBg[1]
-            if qualBg and qualBg >= 0 then
-                drawImageCentered(vg, qualBg, cx, cy, REWARD_SZ, REWARD_SZ, 1.0)
-            end
+            -- 品质背景 [暗黑化 P2-A]
+            DarkIcon.drawQualityBg(vg, reward.quality or 1, cx, cy, REWARD_SZ, REWARD_SZ, 1.0)
 
             -- 资源图标（内缩绘制）
             if not rewardIconCache[reward.icon] then

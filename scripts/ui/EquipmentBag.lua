@@ -5,6 +5,7 @@
 -- ============================================================================
 
 local GameConfig       = require("config.GameConfig")
+local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local EquipmentConfig  = require("config.EquipmentConfig")
 local HeroConfig       = require("config.HeroConfig")
 local HeroAssetUtil    = require("config.HeroAssetUtil")
@@ -707,18 +708,8 @@ function EquipmentBag.draw(vg)
                 local q = equip.quality or 1
                 local qColor = QUALITY_BORDER[q] or QUALITY_BORDER[1]
 
-                -- 品质背景框（铺满整个格子）
-                local qBgImg = getQualityBg(q)
-                if qBgImg >= 0 then
-                    drawImageCentered(vg, qBgImg, cx, cy, CELL_SIZE, CELL_SIZE, 1.0)
-                else
-                    -- fallback: 纯色背景
-                    nvgBeginPath(vg)
-                    nvgRoundedRect(vg, cx - CELL_SIZE * 0.5, cy - CELL_SIZE * 0.5,
-                        CELL_SIZE, CELL_SIZE, CELL_RADIUS)
-                    nvgFillColor(vg, nvgRGBA(0x2a, 0x22, 0x1a, 220))
-                    nvgFill(vg)
-                end
+                -- 品质背景框（铺满整个格子）[暗黑化 P2-A]（矢量绘制无条件可用，原贴图+fallback 已废弃）
+                DarkIcon.drawQualityBg(vg, q, cx, cy, CELL_SIZE, CELL_SIZE, 1.0)
 
                 -- 装备图标
                 local iconImg = getEquipIcon(equip.templateId)

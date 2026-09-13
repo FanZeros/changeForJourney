@@ -567,14 +567,14 @@ function M.drawPanelBottom(vg)
     local scrollCX = goldCX + ICON_SIZE + ICON_GAP
 
     -- 金币图标 + 数量
-    drawImageCentered(vg, imgGoldQBg, goldCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)
+    DarkIcon.drawQualityBg(vg, 2, goldCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
     drawImageCentered(vg, imgGoldIcon, goldCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)
     drawResourceCount(vg, goldCX, data.ownedGold, data.costGold)
 
     -- 卷轴图标 + 数量
     local equipSlot = state.selectedEquipSlot or "weapon"
     local scrollImg = imgScrollIcon[equipSlot] or imgScrollIcon.weapon
-    drawImageCentered(vg, imgScrollQBg, scrollCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)
+    DarkIcon.drawQualityBg(vg, 3, scrollCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)  -- [暗黑化 P2-A] 原卷轴品质底框 UI_icon_ZBBJ_3
     if scrollImg and scrollImg >= 0 then
         drawImageCentered(vg, scrollImg, scrollCX, iconCY, ICON_SIZE, ICON_SIZE, 1.0)
     end

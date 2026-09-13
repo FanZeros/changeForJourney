@@ -7,6 +7,7 @@
 ---@diagnostic disable: undefined-global
 
 local DrawUtil         = require("core.DrawUtil")
+local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local GameState        = require("core.GameState")
 local PlayerStore      = require("client.data.PlayerStore")
 local AffixConfig      = require("config.AffixConfig")
@@ -1064,11 +1065,8 @@ local function drawExtraResPopup(vg)
             nvgFill(vg)
         end
 
-        -- 品质背景 + 图标（小尺寸）
-        local qBg = imgQualityBg[opt.quality]
-        if qBg and qBg >= 0 then
-            drawImageCentered(vg, qBg, iconX, itemY, 56, 56, 1.0)
-        end
+        -- 品质背景 + 图标（小尺寸）[暗黑化 P2-A]
+        DarkIcon.drawQualityBg(vg, opt.quality, iconX, itemY, 56, 56, 1.0)
         local icon = imgExtraRes[opt.key]
         if icon and icon >= 0 then
             drawImageCentered(vg, icon, iconX, itemY, 56, 56, 1.0)
@@ -1127,7 +1125,7 @@ function M.drawPanelBottom(vg)
     nvgFill(vg)
 
     -- 4. 精粹资源图标（左侧）
-    drawImageCentered(vg, imgGoldQBg, XL.RES_ICON_CX, XL.RES_ICON_CY, XL.RES_ICON_SIZE, XL.RES_ICON_SIZE, 1.0)
+    DarkIcon.drawQualityBg(vg, 2, XL.RES_ICON_CX, XL.RES_ICON_CY, XL.RES_ICON_SIZE, XL.RES_ICON_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
     drawImageCentered(vg, imgEssenceIcon, XL.RES_ICON_CX, XL.RES_ICON_CY, XL.RES_ICON_SIZE, XL.RES_ICON_SIZE, 1.0)
 
     -- 5. 精粹资源数量（实时读取，与额外资源保持一致）
@@ -1139,11 +1137,8 @@ function M.drawPanelBottom(vg)
 
     -- 4b. 额外资源槽位（右侧）
     if selectedExtraRes then
-        -- 已选择：显示品质背景 + 资源图标
-        local qBg = imgQualityBg[selectedExtraRes.quality]
-        if qBg and qBg >= 0 then
-            drawImageCentered(vg, qBg, XL.EXTRA_ICON_CX, XL.EXTRA_ICON_CY, XL.EXTRA_ICON_SIZE, XL.EXTRA_ICON_SIZE, 1.0)
-        end
+        -- 已选择：显示品质背景 + 资源图标 [暗黑化 P2-A]
+        DarkIcon.drawQualityBg(vg, selectedExtraRes.quality, XL.EXTRA_ICON_CX, XL.EXTRA_ICON_CY, XL.EXTRA_ICON_SIZE, XL.EXTRA_ICON_SIZE, 1.0)
         local icon = imgExtraRes[selectedExtraRes.key]
         if icon and icon >= 0 then
             drawImageCentered(vg, icon, XL.EXTRA_ICON_CX, XL.EXTRA_ICON_CY, XL.EXTRA_ICON_SIZE, XL.EXTRA_ICON_SIZE, 1.0)

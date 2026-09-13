@@ -115,11 +115,12 @@ local function getActiveHeroes()
     return heroLists[state.mode] or heroLists.standard
 end
 
+--- [暗黑化 P2-A] 品质框改为矢量绘制：返回品质号（standard=SSR 5 黄金 / stellar=UR 6 血钻）
 local function getQualityFrame(mode)
     if mode == "stellar" then
-        return img.qualityBgStellar
+        return 6
     end
-    return img.qualityBgStandard
+    return 5
 end
 
 -- ======================== 初始化 ========================
@@ -298,10 +299,8 @@ function M.draw(vg)
             nvgFill(vg)
         end
 
-        -- 品质框
-        if qualityFrame >= 0 then
-            drawImageCentered(vg, qualityFrame, cx, cy, AVATAR_SIZE, AVATAR_SIZE, 1.0)
-        end
+        -- 品质框 [暗黑化 P2-A]
+        DarkIcon.drawQualityBg(vg, qualityFrame, cx, cy, AVATAR_SIZE, AVATAR_SIZE, 1.0)
 
         -- 英雄头像（160x160 与品质框同尺寸）
         local heroIcon = img.heroIcons[hero.id]
@@ -325,8 +324,8 @@ function M.draw(vg)
     local displayId = state.selectedHeroId or state.confirmedHeroId
     if displayId then
         local heroIcon = img.heroIcons[displayId]
-        if qualityFrame >= 0 then
-            drawImageCentered(vg, qualityFrame, CHOSEN_AVATAR_CX, CHOSEN_AVATAR_CY, AVATAR_SIZE, AVATAR_SIZE, 1.0)
+        if qualityFrame then
+            DarkIcon.drawQualityBg(vg, qualityFrame, CHOSEN_AVATAR_CX, CHOSEN_AVATAR_CY, AVATAR_SIZE, AVATAR_SIZE, 1.0)  -- [暗黑化 P2-A]
         end
         if heroIcon and heroIcon >= 0 then
             drawImageCentered(vg, heroIcon, CHOSEN_AVATAR_CX, CHOSEN_AVATAR_CY, AVATAR_SIZE, AVATAR_SIZE, 1.0)

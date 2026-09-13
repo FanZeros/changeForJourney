@@ -1072,7 +1072,13 @@ local glyphPainters
 
 local function glyphPath(vg, col, a)
     nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], math.floor(a * 235)))
-    nvgStrokeColor(vg, nvgRGBA(0, 0, 0, math.floor(a * 255)))
+    -- [fix] 描边改系色亮调（原黑色描边导致线描类符号——剑刃/法杖杆/风弧/弓——暗底上不可见）
+    local hl = {
+        math.floor(col[1] + (255 - col[1]) * 0.45),
+        math.floor(col[2] + (255 - col[2]) * 0.45),
+        math.floor(col[3] + (255 - col[3]) * 0.45),
+    }
+    nvgStrokeColor(vg, nvgRGBA(hl[1], hl[2], hl[3], math.floor(a * 255)))
 end
 
 glyphPainters = {
@@ -1120,17 +1126,17 @@ glyphPainters = {
         nvgFillColor(vg, nvgRGBA(150, 134, 111, math.floor(a * 235)))
         nvgFill(vg)
     end,
-    -- 法杖（奥术）
+    -- 法杖（奥术）：斜杆 + 顶端宝珠（杆加粗、珠放大提升辨识度）
     staff = function(vg, cx, cy, s, col, a)
         glyphPath(vg, col, a)
         nvgBeginPath(vg)
         nvgMoveTo(vg, cx - s * 0.26, cy + s * 0.40)
         nvgLineTo(vg, cx + s * 0.24, cy - s * 0.24)
-        nvgStrokeWidth(vg, s * 0.09); nvgStroke(vg)
+        nvgStrokeWidth(vg, s * 0.12); nvgStroke(vg)
         -- 顶端宝珠 + 光芒
-        nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.30, cy - s * 0.32, s * 0.14)
+        nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.30, cy - s * 0.32, s * 0.18)
         nvgFill(vg); nvgStrokeWidth(vg, s * 0.04); nvgStroke(vg)
-        nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.30, cy - s * 0.32, s * 0.24)
+        nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.30, cy - s * 0.32, s * 0.30)
         strokeC(vg, a, col[1], col[2], col[3], 0.4)
         nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
     end,

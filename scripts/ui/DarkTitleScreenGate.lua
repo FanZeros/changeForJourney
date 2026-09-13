@@ -123,9 +123,13 @@ function DarkTitleScreen.draw(vg, w, h)
 
     if imgLogo_ >= 0 then
         local la = (0.88 + 0.12 * (0.5 + 0.5 * math.sin(t * 1.4))) * A
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, imgLogo_, la)
+        -- [fix] LOGO 以屏幕中心缩放至 50%（原先与大门口共用全屏 cover 矩形，过大）
+        local LOGO_SCALE = 0.5
+        local lw, lh = dw * LOGO_SCALE, dh * LOGO_SCALE
+        local lx, ly = (w - lw) * 0.5, (h - lh) * 0.5
+        local paint = nvgImagePattern(vg, lx, ly, lw, lh, 0, imgLogo_, la)
         nvgBeginPath(vg)
-        nvgRect(vg, dx, dy, dw, dh)
+        nvgRect(vg, lx, ly, lw, lh)
         nvgFillPaint(vg, paint)
         nvgFill(vg)
     end

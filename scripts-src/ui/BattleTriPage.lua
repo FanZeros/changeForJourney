@@ -60,10 +60,36 @@ end
 function BattleTriPage.close() isOpen_ = false end
 
 --- 幂等初始化（贴图）
+local imgL0, imgL1 = nil, {}   -- [三行并行] L0 整套大背景 + L1 行内容背景
+
 function BattleTriPage.init(vg)
     if inited then return end
     inited = true
     BattleView.init(vg)
+    -- [暗黑替换] L0 整套大背景 + L1 行内容背景（森林/荒原/深渊）
+    imgL0      = nvgCreateImage(vg, "image/暗黑/L0_ui_bg.png", 0)
+    imgL1[1]   = nvgCreateImage(vg, "image/暗黑/L1_row1_forest.png", 0)
+    imgL1[2]   = nvgCreateImage(vg, "image/暗黑/L1_row2_bonefield.png", 0)
+    imgL1[3]   = nvgCreateImage(vg, "image/暗黑/L1_row3_abyss.png", 0)
+end
+
+--- [三行并行] L0 整套大背景铺满窗口（左右面板 + 中段框体同源）
+function BattleTriPage.drawL0(vg, logicalW, logicalH)
+    BattleTriPage.init(vg)
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, logicalW, logicalH)
+    nvgFillColor(vg, nvgRGBA(13, 11, 9, 255))   -- #0D0B09 兜底
+    nvgFill(vg)
+    if imgL0 and imgL0 >= 0 then
+        local s = logicalH / 1080
+        local w = 1920 * s
+        local ox = (logicalW - w) * 0.5
+        local paint = nvgImagePattern(vg, ox, 0, w, logicalH, 0, imgL0, 1.0)
+        nvgBeginPath(vg)
+        nvgRect(vg, ox, 0, w, logicalH)
+        nvgFillPaint(vg, paint)
+        nvgFill(vg)
+    end
 end
 
 --- 每帧更新: 行1 走 BattleScene 全引擎（default 状态），行2/3 走各自驱动
@@ -129,12 +155,12 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
             BattleView.draw(vg, {
                 allies  = BattleScene.getAllies() or {},
                 enemies = BattleScene.getEnemies() or {},
-            })
+            }, imgL1[1])
         else
             local drv = drivers[row]
             if drv then
                 drv.mount()
-                BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies })
+                BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies }, imgL1[row])
             else
                 nvgBeginPath(vg)
                 nvgRect(vg, 0, 0, rw, rowH)
@@ -186,6 +212,25 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
     end
 
 
+    -- [暗黑替换] 骨质分隔条: 行与行交界（骨白窄条 + 中央纹章）
+    for i = 1, COL_COUNT - 1 do
+        local sy = ry + i * rowH
+        nvgBeginPath(vg)
+        nvgRect(vg, rx + rw * 0.12, sy - 4, rw * 0.76, 8)
+        nvgFillColor(vg, nvgRGBA(216, 201, 163, 200))
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgCircle(vg, rx + rw * 0.5, sy, 11)
+        nvgFillColor(vg, nvgRGBA(201, 151, 59, 230))
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgCircle(vg, rx + rw * 0.5, sy, 11)
+        nvgStrokeColor(vg, nvgRGBA(13, 11, 9, 255))
+        nvgStrokeWidth(vg, 2.5)
+        nvgStroke(vg)
+    end
+
+    -- [行1 HUD] 战斗功能按钮（区域坐标; 速度/扫荡/统计复用原绘制重定位+缩放）
     local ry1 = ry
     local rowH1 = rh / COL_COUNT
     local hudScale = 0.55   -- HUD 按钮缩放（原按钮 130x144 对行高过大）

@@ -374,7 +374,10 @@ function TownScene.draw(vg)
     local _tmActive = _TM.isActive()
 
     -- 1) 背景 [横屏三联：共享大背景左半；竖屏保持原版]
-    if HORIZON_MODE then
+    ---@diagnostic disable-next-line: undefined-global
+    if H_TRI_L0 then
+        -- [三行并行] L0 整套大背景已铺营地场景, 不再叠画
+    elseif HORIZON_MODE then
         HorizonBg.draw(vg, 0, 1.0)
     else
         drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
@@ -393,7 +396,7 @@ function TownScene.draw(vg)
         drawBuildingLabel(vg,
             SMITH_LBL_CX, SMITH_LBL_CY, SMITH_LBL_W, SMITH_LBL_H,
             SMITH_ICON_CX, SMITH_ICON_CY, SMITH_ICON_SZ, imgIconSmith,
-            SMITH_TEXT_X, SMITH_TEXT_Y, "铁匠铺")
+            SMITH_TEXT_X, SMITH_TEXT_Y, "狱火锻炉")
     end
     if smithLocked then
         drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true)
@@ -428,7 +431,7 @@ function TownScene.draw(vg)
         drawBuildingLabel(vg,
             GUILD_LBL_CX, GUILD_LBL_CY, GUILD_LBL_W, GUILD_LBL_H,
             GUILD_ICON_CX, GUILD_ICON_CY, GUILD_ICON_SZ, imgIconGuild,
-            GUILD_TEXT_X, GUILD_TEXT_Y, "冒险者公会")
+            GUILD_TEXT_X, GUILD_TEXT_Y, "亡誓公会")
     end
     if guildLocked then
         drawBuildingLockOverlay(vg, GUILD_CX, GUILD_CY, "guild", false)
@@ -458,7 +461,7 @@ function TownScene.draw(vg)
         drawBuildingLabel(vg,
             ARENA_LBL_CX, ARENA_LBL_CY, ARENA_LBL_W, ARENA_LBL_H,
             ARENA_ICON_CX, ARENA_ICON_CY, ARENA_ICON_SZ, imgIconArena,
-            ARENA_TEXT_X, ARENA_TEXT_Y, "竞技场")
+            ARENA_TEXT_X, ARENA_TEXT_Y, "血砂斗场")
     end
     if arenaLocked then
         drawBuildingLockOverlay(vg, ARENA_CX, ARENA_CY, "arena", true)
@@ -485,7 +488,7 @@ function TownScene.draw(vg)
         drawBuildingLabel(vg,
             MARKET_LBL_CX, MARKET_LBL_CY, MARKET_LBL_W, MARKET_LBL_H,
             MARKET_ICON_CX, MARKET_ICON_CY, MARKET_ICON_SZ, imgIconMarket,
-            MARKET_TEXT_X, MARKET_TEXT_Y, "市场")
+            MARKET_TEXT_X, MARKET_TEXT_Y, "月蚀黑市")
     end
     if marketLocked then
         drawBuildingLockOverlay(vg, MARKET_CX, MARKET_CY, "market", false)
@@ -509,7 +512,7 @@ function TownScene.draw(vg)
         drawBuildingLabel(vg,
             CHURCH_LBL_CX, CHURCH_LBL_CY, CHURCH_LBL_W, CHURCH_LBL_H,
             CHURCH_ICON_CX, CHURCH_ICON_CY, CHURCH_ICON_SZ, imgIconChurch,
-            CHURCH_TEXT_X, CHURCH_TEXT_Y, "教堂")
+            CHURCH_TEXT_X, CHURCH_TEXT_Y, "缄默礼拜堂")
     end
     if churchLocked then
         drawBuildingLockOverlay(vg, CHURCH_CX, CHURCH_CY, "church", true)
@@ -535,7 +538,7 @@ function TownScene.draw(vg)
         drawBuildingLabel(vg,
             TAVERN_LBL_CX, TAVERN_LBL_CY, TAVERN_LBL_W, TAVERN_LBL_H,
             TAVERN_ICON_CX, TAVERN_ICON_CY, TAVERN_ICON_SZ, imgIconTavern,
-            TAVERN_TEXT_X, TAVERN_TEXT_Y, "酒馆")
+            TAVERN_TEXT_X, TAVERN_TEXT_Y, "腐鸦酒馆")
     end
     if tavernLocked then
         drawBuildingLockOverlay(vg, TAVERN_CX, TAVERN_CY, "tavern", true)

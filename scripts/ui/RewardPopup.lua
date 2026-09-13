@@ -41,6 +41,7 @@
 -- ============================================================================
 
 local EquipmentConfig = require("config.EquipmentConfig")
+local DarkIcon        = require("core.DarkIcon")  -- [暗黑化 P2-B] 图标压暗绘制
 local HeroConfig      = require("config.HeroConfig")
 local NumberUtil      = require("core.NumberUtil")
 local DrawUtil        = require("core.DrawUtil")
@@ -750,7 +751,7 @@ function RewardPopup.drawContent(vg)
                 if equipImg >= 0 then
                     local iconPadding = 12
                     local iconInner = ICON_SIZE - iconPadding * 2
-                    drawImageCentered(vg, equipImg, cx, cy, iconInner, iconInner, 1.0)
+                    DarkIcon.drawIconDark(vg, equipImg, cx, cy, iconInner, iconInner, 1.0)  -- [暗黑化 P2-B]
                 end
 
                 -- 等级角标（右下角，描边）

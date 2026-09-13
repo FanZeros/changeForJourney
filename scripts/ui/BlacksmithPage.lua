@@ -627,7 +627,7 @@ local function drawRefineUpperSlot(vg)
         DarkIcon.drawQualityBg(vg, qIdx, slotCX, slotCY, slotSize, slotSize, 1.0)
         local eqIcon = getEquipIconCached(equip.templateId)
         if eqIcon and eqIcon > 0 then
-            drawImageCentered(vg, eqIcon, slotCX, slotCY, slotSize - 16, slotSize - 16, 1.0)
+            DarkIcon.drawIconDark(vg, eqIcon, slotCX, slotCY, slotSize - 16, slotSize - 16, 1.0)  -- [暗黑化 P2-B]
         end
 
         -- 槽位强化等级（来自 slotEnhance）
@@ -928,7 +928,7 @@ local function drawEquipSlots(vg)
             DarkIcon.drawQualityBg(vg, qIdx, cx, cy, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, 1.0)  -- [暗黑化 P2-A]
             local eqIcon = getEquipIconCached(equip.templateId)
             if eqIcon and eqIcon > 0 then
-                drawImageCentered(vg, eqIcon, cx, cy, EQUIP_SLOT_SIZE - 16, EQUIP_SLOT_SIZE - 16, 1.0)
+                DarkIcon.drawIconDark(vg, eqIcon, cx, cy, EQUIP_SLOT_SIZE - 16, EQUIP_SLOT_SIZE - 16, 1.0)  -- [暗黑化 P2-B]
             end
             -- 装备等级角标 "Lv.X"（右下角，16方向描边）
             local eqLv = equip.level or 1

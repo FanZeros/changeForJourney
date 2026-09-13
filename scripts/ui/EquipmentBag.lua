@@ -716,7 +716,7 @@ function EquipmentBag.draw(vg)
                 if iconImg >= 0 then
                     local iconPadding = 12
                     local iconSize = CELL_SIZE - iconPadding * 2
-                    drawImageCentered(vg, iconImg, cx, cy, iconSize, iconSize, 1.0)
+                    DarkIcon.drawIconDark(vg, iconImg, cx, cy, iconSize, iconSize, 1.0)  -- [暗黑化 P2-B]
                 else
                     -- 无图标时回退为文字显示
                     nvgFontFace(vg, "sans")

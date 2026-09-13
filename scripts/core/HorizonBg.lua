@@ -37,9 +37,8 @@ function HorizonBg.draw(vg, half, alpha)
     local ox = (canvasW - dw) * 0.5 - half * 1080
     local oy = (canvasH - dh) * 0.5
 
-    -- [暗黑化 P3-12a] 城镇大背景压暗：暖灰 tint（约 38% 亮度，与 DarkIcon.drawDarkScene 同参），保留暖色层次
-    local tint = nvgRGBA(96, 84, 72, math.floor(a * 255 + 0.5))
-    local paint = nvgImagePatternTinted(vg, ox, oy, dw, dh, 0, imgShared, tint)
+    -- [P3-12a 回退] 城镇大背景用户已专门制作暗黑版，保持原样直绘
+    local paint = nvgImagePattern(vg, ox, oy, dw, dh, 0, imgShared, math.floor(a * 255 + 0.5) / 255)
     nvgBeginPath(vg)
     nvgRect(vg, 0, 0, 1080, 2400)
     nvgFillPaint(vg, paint)

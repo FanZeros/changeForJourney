@@ -610,7 +610,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
     local iconCY = REF_ICON_CY
     local equipIconImg = getEquipIcon(equip.templateId)
     if equipIconImg >= 0 then
-        drawImageCentered(vg, equipIconImg, iconCX, iconCY, REF_ICON_SIZE, REF_ICON_SIZE, 1.0)
+        DarkIcon.drawIconDark(vg, equipIconImg, iconCX, iconCY, REF_ICON_SIZE, REF_ICON_SIZE, 1.0)  -- [暗黑化 P2-B]
     else
         -- 无图标时回退为占位框+文字
         nvgBeginPath(vg)

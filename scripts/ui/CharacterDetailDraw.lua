@@ -720,7 +720,7 @@ function M.draw(vg)
             local iconPad = 12
             local iconSize = DT_SLOT_SIZE - iconPad * 2
             if equipIconImg >= 0 then
-                drawImageCentered(vg, equipIconImg, scx, scy, iconSize, iconSize, 1.0)
+                DarkIcon.drawIconDark(vg, equipIconImg, scx, scy, iconSize, iconSize, 1.0)  -- [暗黑化 P2-B]
             else
                 local qualityDef = EquipmentConfig.QUALITY[eq]
                 local qc = qualityDef and qualityDef.color or { 180, 180, 180 }

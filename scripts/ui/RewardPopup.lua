@@ -840,14 +840,7 @@ function RewardPopup.drawContent(vg)
                 end
 
                 -- "?" 问号图标（居中，描边，品质色）
-                local SEED_Q_COLORS = {
-                    [1] = { 0xb5, 0xb5, 0xb5 },  -- 普通 - 灰
-                    [2] = { 0xa2, 0xff, 0x94 },  -- 优质 - 绿
-                    [3] = { 0x72, 0xf2, 0xf5 },  -- 稀有 - 蓝
-                    [4] = { 0xef, 0x79, 0xff },  -- 史诗 - 紫
-                    [5] = { 0xff, 0xed, 0x00 },  -- 传说 - 金
-                    [6] = { 0xff, 0x00, 0x00 },  -- 至臻 - 红
-                }
+                local SEED_Q_COLORS = DarkIcon.QUALITY_TRIM  -- [B-方案] 统一古卷色表
                 local qc = SEED_Q_COLORS[q] or SEED_Q_COLORS[1]
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 80)

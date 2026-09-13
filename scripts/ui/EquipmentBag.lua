@@ -74,7 +74,7 @@ local BAG_SLOT_R, BAG_SLOT_G, BAG_SLOT_B = 0xb6, 0xb0, 0x9d
 
 -- 格子
 local CELL_SIZE   = 160
-local CELL_RADIUS = 24
+local CELL_RADIUS = 16  -- [B-方案] 圆角收紧，贴合古卷硬朗感
 local CELL_GAP    = 30
 local CELL_COLS   = 4
 local CELL_FIRST_ROW_TOP = 627   -- 第一行顶部 Y
@@ -99,18 +99,10 @@ local SCROLL_FRICTION  = 0.90
 local SCROLL_MIN_VEL   = 0.5
 local SCROLL_WHEEL_STEP = 60
 
--- 格子颜色：纯黑 10% 不透明度
-local CELL_BG_R, CELL_BG_G, CELL_BG_B, CELL_BG_A = 0x00, 0x00, 0x00, 25
+-- [B-方案] 原空格平涂常量已废弃（空格子改用 DarkIcon.drawNine "slot" 暗铁凹槽）
 
--- 品质边框颜色
-local QUALITY_BORDER = {
-    [1] = { 0xb5, 0xb5, 0xb5 },  -- 普通 - 灰色
-    [2] = { 0xa2, 0xff, 0x94 },  -- 优质 - 绿色
-    [3] = { 0x72, 0xf2, 0xf5 },  -- 稀有 - 蓝色
-    [4] = { 0xef, 0x79, 0xff },  -- 史诗 - 紫色
-    [5] = { 0xff, 0xed, 0x00 },  -- 传说 - 金色
-    [6] = { 0xff, 0x00, 0x00 },  -- 至臻 - 红色
-}
+-- 品质边框颜色：[B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表
+local QUALITY_BORDER = DarkIcon.QUALITY_TRIM
 
 -- ======================== 图片资源 ========================
 
@@ -846,12 +838,9 @@ function EquipmentBag.draw(vg)
                     drawImageCentered(vg, imgLock, lockX, lockY, lockSize, lockSize, 1.0)
                 end
             else
-                -- 空格子
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cx - CELL_SIZE * 0.5, cy - CELL_SIZE * 0.5,
-                    CELL_SIZE, CELL_SIZE, CELL_RADIUS)
-                nvgFillColor(vg, nvgRGBA(CELL_BG_R, CELL_BG_G, CELL_BG_B, CELL_BG_A))
-                nvgFill(vg)
+                -- 空格子：暗铁凹槽底（[B-方案] 古卷化，顶部高光+描边材质感）
+                DarkIcon.drawNine(vg, "slot", cx - CELL_SIZE * 0.5, cy - CELL_SIZE * 0.5,
+                    CELL_SIZE, CELL_SIZE, { radius = CELL_RADIUS })
             end
 
             ::continue::

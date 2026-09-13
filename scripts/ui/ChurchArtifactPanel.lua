@@ -102,7 +102,7 @@ for c = 1, GRID.COLS do
 end
 
 -- 空格子背景：纯黑 10%
-local CELL_BG_R, CELL_BG_G, CELL_BG_B, CELL_BG_A = 0x00, 0x00, 0x00, 25
+-- [B-方案] 原空格平涂常量已废弃（格子底改用 DarkIcon.drawNine "slot" 暗铁凹槽）
 
 -- 滚动参数
 local SCROLL_FRICTION   = 0.90
@@ -573,12 +573,10 @@ function M.drawContent(vg)
             break
         end
 
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg,
+        -- 格子底：暗铁凹槽（[B-方案] 古卷化，与其他格子界面一致）
+        DarkIcon.drawNine(vg, "slot",
             cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-            GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS)
-        nvgFillColor(vg, nvgRGBA(CELL_BG_R, CELL_BG_G, CELL_BG_B, CELL_BG_A))
-        nvgFill(vg)
+            GRID.CELL_SIZE, GRID.CELL_SIZE, { radius = GRID.CELL_RADIUS })
 
         local artifact = bag[idx]
         local selected = state.selectedBagIdx == idx or (artifact and isRerollSelected(artifact.id))

@@ -70,7 +70,7 @@ local PZSX = {
 -- 6. 网格
 local GRID = {
     CELL_SIZE = 160,
-    CELL_RADIUS = 24,
+    CELL_RADIUS = 16,  -- [B-方案] 圆角收紧，贴合古卷硬朗感
     GAP = 30,
     COLS = 5,
     -- 5列列中心 X 坐标: 均匀分布在面板宽度内
@@ -131,18 +131,10 @@ local TAB_ITEMS = {
     { key = "item",  name = "道具", cx = 839, cy = 2308, textX = 839, textY = 2302 },
 }
 
--- 品质边框颜色
-local QUALITY_BORDER = {
-    [1] = { 0xb5, 0xb5, 0xb5 },  -- 普通 - 灰色
-    [2] = { 0xa2, 0xff, 0x94 },  -- 优质 - 绿色
-    [3] = { 0x72, 0xf2, 0xf5 },  -- 稀有 - 蓝色
-    [4] = { 0xef, 0x79, 0xff },  -- 史诗 - 紫色
-    [5] = { 0xff, 0xed, 0x00 },  -- 传说 - 金色
-    [6] = { 0xff, 0x00, 0x00 },  -- 至臻 - 红色
-}
+-- 品质边框颜色：[B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表（粗铁/青铜/秘银/符文/黄金/血钻）
+local QUALITY_BORDER = DarkIcon.QUALITY_TRIM
 
--- 格子空位颜色：纯黑 10%
-local CELL_BG_R, CELL_BG_G, CELL_BG_B, CELL_BG_A = 0x00, 0x00, 0x00, 25
+-- [B-方案] 原空格平涂常量已废弃（空格子改用 DarkIcon.drawNine "slot" 暗铁凹槽）
 
 -- 滚动参数
 local SCROLL_FRICTION  = 0.90
@@ -561,12 +553,9 @@ local function drawEquipGrid(vg)
                 DrawUtil.drawImageCentered(vg, imgLock, lockX, lockY, lockSize, lockSize, 1.0)
             end
         else
-            -- 空格子: 纯黑 10% 不透明 圆角矩形
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS)
-            nvgFillColor(vg, nvgRGBA(CELL_BG_R, CELL_BG_G, CELL_BG_B, CELL_BG_A))
-            nvgFill(vg)
+            -- 空格子：暗铁凹槽底（[B-方案] 古卷化，顶部高光+描边材质感）
+            DarkIcon.drawNine(vg, "slot", cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
+                GRID.CELL_SIZE, GRID.CELL_SIZE, { radius = GRID.CELL_RADIUS })
         end
         ::continue_equip::
     end

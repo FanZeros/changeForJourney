@@ -72,15 +72,8 @@ local NS_BOTTOM = 93
 local NS_LEFT   = 93
 
 -- ======================== 品质边框/文本颜色 ========================
-
-local QUALITY_COLOR = {
-    [1] = { 0xb5, 0xb5, 0xb5 },  -- 普通
-    [2] = { 0xa2, 0xff, 0x94 },  -- 优质
-    [3] = { 0x72, 0xf2, 0xf5 },  -- 稀有
-    [4] = { 0xef, 0x79, 0xff },  -- 史诗
-    [5] = { 0xff, 0xed, 0x00 },  -- 传说
-    [6] = { 0xff, 0x00, 0x00 },  -- 至臻
-}
+-- [B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表
+local QUALITY_COLOR = DarkIcon.QUALITY_TRIM
 
 -- 词缀品质名 → 图片key映射
 local AFFIX_BADGE_KEY = { "D", "C", "B", "A", "S" }

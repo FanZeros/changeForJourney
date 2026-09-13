@@ -11,6 +11,7 @@ local AD = require("systems.AttributeDef")
 local HeroRosterPanel = require("ui.HeroRosterPanel")
 local CharacterPanel  = require("ui.CharacterPanel")
 local EquipmentConfig = require("config.EquipmentConfig")
+local DarkIcon        = require("core.DarkIcon")  -- [B-方案] 品质古卷色表引用
 local ExpTable        = require("config.ExpTable")
 
 -- Client / Protocol 延迟加载（避免与 network.Client 循环依赖）
@@ -161,14 +162,8 @@ local MAX_RELIC_TYPE    = 5
 local MAX_RELIC_QUALITY = 6
 local RELIC_TYPE_NAMES  = { "岩龟", "毒蛇", "白鹿", "灰狼", "猎鹰" }
 local RELIC_QUALITY_NAMES = { "普通", "优质", "稀有", "史诗", "传说", "至臻" }
-local RELIC_QUALITY_COLORS = {
-    [1] = { 0xb5, 0xb5, 0xb5 },
-    [2] = { 0xa2, 0xff, 0x94 },
-    [3] = { 0x72, 0xf2, 0xf5 },
-    [4] = { 0xef, 0x79, 0xff },
-    [5] = { 0xff, 0xed, 0x00 },
-    [6] = { 0xff, 0x00, 0x00 },
-}
+-- [B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表
+local RELIC_QUALITY_COLORS = DarkIcon.QUALITY_TRIM
 
 -- 资源获取选择器
 local selectedResIdx = 1   -- 当前选中的资源索引 (1~#GameConfig.Resources)
@@ -584,13 +579,7 @@ function DebugPanel.draw(vg, designOffsetX, screenDesignW)
     nvgFill(vg)
     local qDef = EquipmentConfig.QUALITY[equipQuality]
     local qName = qDef and qDef.name or "?"
-    local qColors = {
-        [1] = { 0xb5, 0xb5, 0xb5 },
-        [2] = { 0xa2, 0xff, 0x94 },
-        [3] = { 0x72, 0xf2, 0xf5 },
-        [4] = { 0xef, 0x79, 0xff },
-        [5] = { 0xff, 0xed, 0x00 },
-    }
+    local qColors = DarkIcon.QUALITY_TRIM  -- [B-方案] 统一古卷色表
     local qc = qColors[equipQuality] or { 255, 255, 255 }
     nvgFontSize(vg, 24)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)

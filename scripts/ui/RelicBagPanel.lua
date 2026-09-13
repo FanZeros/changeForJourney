@@ -89,24 +89,16 @@ local FILTER_ITEMS = {
 -- 网格（与 BackpackPanel 一致：160px 格子，5列）
 local GRID = {
     CELL_SIZE = 160,
-    CELL_RADIUS = 24,
+    CELL_RADIUS = 16,  -- [B-方案] 圆角收紧，贴合古卷硬朗感
     GAP = 30,
     COLS = 5,
     MARGIN_LEFT = 80,  -- (1080 - 5*160 - 4*30) / 2 = 80
 }
 
--- 品质边框颜色
-local QUALITY_BORDER = {
-    [1] = { 0xb5, 0xb5, 0xb5 },  -- 普通 - 灰色
-    [2] = { 0xa2, 0xff, 0x94 },  -- 优质 - 绿色
-    [3] = { 0x72, 0xf2, 0xf5 },  -- 稀有 - 蓝色
-    [4] = { 0xef, 0x79, 0xff },  -- 史诗 - 紫色
-    [5] = { 0xff, 0xed, 0x00 },  -- 传说 - 金色
-    [6] = { 0xff, 0x00, 0x00 },  -- 至臻 - 红色
-}
+-- 品质边框颜色：[B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表
+local QUALITY_BORDER = DarkIcon.QUALITY_TRIM
 
--- 格子空位颜色：纯黑 10%（与 BackpackPanel 一致）
-local CELL_BG_R, CELL_BG_G, CELL_BG_B, CELL_BG_A = 0x00, 0x00, 0x00, 25
+-- [B-方案] 原空格平涂常量已废弃（空格子改用 DarkIcon.drawNine "slot" 暗铁凹槽）
 
 -- 遗物类型小图标映射（使用 ICON_YWX 小图标）
 local TYPE_ICONS = {
@@ -543,12 +535,9 @@ function RelicBagPanel.draw(vg)
                 nvgStroke(vg)
             end
         else
-            -- 空格子：纯黑 10% 圆角矩形（与 BackpackPanel 一致）
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS)
-            nvgFillColor(vg, nvgRGBA(CELL_BG_R, CELL_BG_G, CELL_BG_B, CELL_BG_A))
-            nvgFill(vg)
+            -- 空格子：暗铁凹槽底（[B-方案] 古卷化，与 BackpackPanel/EquipmentBag 一致）
+            DarkIcon.drawNine(vg, "slot", cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
+                GRID.CELL_SIZE, GRID.CELL_SIZE, { radius = GRID.CELL_RADIUS })
         end
 
         ::continue_cell::

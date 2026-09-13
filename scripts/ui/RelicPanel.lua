@@ -73,15 +73,8 @@ local RELIC_ICON_SCALE = 0.75
 -- 格子尺寸取平均值用于碰撞/预览判断
 local CELL_SIZE = (CELL_W + CELL_H) * 0.5
 
--- 品质颜色映射（与 RelicBagPanel 一致）
-local QUALITY_COLORS = {
-    [1] = { 0xb5, 0xb5, 0xb5 },  -- 普通 - 灰色
-    [2] = { 0xa2, 0xff, 0x94 },  -- 优质 - 绿色
-    [3] = { 0x72, 0xf2, 0xf5 },  -- 稀有 - 蓝色
-    [4] = { 0xef, 0x79, 0xff },  -- 史诗 - 紫色
-    [5] = { 0xff, 0xed, 0x00 },  -- 传说 - 金色
-    [6] = { 0xff, 0x00, 0x00 },  -- 至臻 - 红色
-}
+-- 品质颜色映射（[B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表）
+local QUALITY_COLORS = DarkIcon.QUALITY_TRIM
 
 -- 高亮颜色
 local HIGHLIGHT_VALID   = { 0x00, 0xff, 0x80, 80 }   -- 绿色半透明（可放置）

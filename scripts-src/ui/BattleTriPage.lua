@@ -188,27 +188,34 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
 
     local ry1 = ry
     local rowH1 = rh / COL_COUNT
+    local hudScale = 0.55   -- HUD 按钮缩放（原按钮 130x144 对行高过大）
     -- 速度（右上; 原设计中心 987,311）
     do
-        local tx, ty = rx + rw - 52, ry1 + 36
+        local tx, ty = rx + rw - 42, ry1 + 26
         nvgSave(vg)
-        nvgTranslate(vg, tx - 987, ty - 311)
+        nvgTranslate(vg, tx, ty)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -987, -311)
         BattleScene.drawSpeedButton(vg)
         nvgRestore(vg)
     end
     -- 扫荡（右下; 原中心 971,2115）
     do
-        local tx, ty = rx + rw - 52, ry1 + rowH1 - 42
+        local tx, ty = rx + rw - 40, ry1 + rowH1 - 34
         nvgSave(vg)
-        nvgTranslate(vg, tx - 971, ty - 2115)
+        nvgTranslate(vg, tx, ty)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -971, -2115)
         SweepDialog.drawButton(vg)
         nvgRestore(vg)
     end
     -- 统计（扫荡左侧; 原中心 815,2115）
     do
-        local tx, ty = rx + rw - 152, ry1 + rowH1 - 42
+        local tx, ty = rx + rw - 116, ry1 + rowH1 - 34
         nvgSave(vg)
-        nvgTranslate(vg, tx - 815, ty - 2115)
+        nvgTranslate(vg, tx, ty)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -815, -2115)
         DamageStatsPanel.drawButton(vg)
         nvgRestore(vg)
     end
@@ -265,22 +272,23 @@ function BattleTriPage.handleInput(lx, ly)
         return true
     end
 
-    -- 速度（右上; 命中以原设计坐标判定, 差值映射）
-    local tx, ty = region.w - 52, 36
-    if math.abs(lx - tx) <= 65 and math.abs(ly - ty) <= 71.5 then
-        bs.handleSpeedButtonInput(987 + (lx - tx), 311 + (ly - ty))
+    -- 速度（右上; 命中范围随缩放, 差值除回缩放后交给原判定）
+    local hudScale = 0.55
+    local tx, ty = region.w - 42, 26
+    if math.abs(lx - tx) <= 65 * hudScale and math.abs(ly - ty) <= 71.5 * hudScale then
+        bs.handleSpeedButtonInput(987 + (lx - tx) / hudScale, 311 + (ly - ty) / hudScale)
         return true
     end
     -- 扫荡（右下）
-    tx, ty = region.w - 52, rowH1 - 42
-    if math.abs(lx - tx) <= 65 and math.abs(ly - ty) <= 72 then
-        SweepDialog.handleButtonInput(971 + (lx - tx), 2115 + (ly - ty))
+    tx, ty = region.w - 40, rowH1 - 34
+    if math.abs(lx - tx) <= 65 * hudScale and math.abs(ly - ty) <= 72 * hudScale then
+        SweepDialog.handleButtonInput(971 + (lx - tx) / hudScale, 2115 + (ly - ty) / hudScale)
         return true
     end
     -- 统计
-    tx, ty = region.w - 152, rowH1 - 42
-    if math.abs(lx - tx) <= 65 and math.abs(ly - ty) <= 72 then
-        DamageStatsPanel.handleButtonInput(815 + (lx - tx), 2115 + (ly - ty))
+    tx, ty = region.w - 116, rowH1 - 34
+    if math.abs(lx - tx) <= 65 * hudScale and math.abs(ly - ty) <= 72 * hudScale then
+        DamageStatsPanel.handleButtonInput(815 + (lx - tx) / hudScale, 2115 + (ly - ty) / hudScale)
         return true
     end
     -- 后退 / 前进（行头右侧）

@@ -714,10 +714,7 @@ function M.draw(vg)
             local scx, scy = slot.cx, slot.cy
             local eq = equippedEquip.quality or 1
 
-            local qBgImg = CharacterDetailRef._getQualityBg(eq)
-            if qBgImg >= 0 then
-                drawImageCentered(vg, qBgImg, scx, scy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)
-            end
+            DarkIcon.drawQualityBg(vg, eq, scx, scy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)  -- [暗黑化 P2-A]
 
             local equipIconImg = CharacterDetailRef._getEquipIcon(equippedEquip.templateId)
             local iconPad = 12

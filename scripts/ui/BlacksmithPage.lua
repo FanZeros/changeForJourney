@@ -7,6 +7,7 @@
 
 local GameConfig       = require("config.GameConfig")
 local GameState        = require("core.GameState")
+local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local EquipmentBag     = require("ui.EquipmentBag")
 local EquipmentDetail  = require("ui.EquipmentDetail")
 local EquipmentConfig  = require("config.EquipmentConfig")
@@ -621,9 +622,9 @@ local function drawRefineUpperSlot(vg)
     local slotSize = 160
 
     if equip then
-        -- 品质底框 + 装备图标（160x160）
+        -- 品质底框 + 装备图标（160x160）[暗黑化 P2-A]
         local qIdx = math.max(1, math.min(6, equip.quality or 1))
-        drawImageCentered(vg, imgQualityBg[qIdx], slotCX, slotCY, slotSize, slotSize, 1.0)
+        DarkIcon.drawQualityBg(vg, qIdx, slotCX, slotCY, slotSize, slotSize, 1.0)
         local eqIcon = getEquipIconCached(equip.templateId)
         if eqIcon and eqIcon > 0 then
             drawImageCentered(vg, eqIcon, slotCX, slotCY, slotSize - 16, slotSize - 16, 1.0)
@@ -924,7 +925,7 @@ local function drawEquipSlots(vg)
         end
         if equip then
             local qIdx = math.max(1, math.min(6, equip.quality or 1))
-            drawImageCentered(vg, imgQualityBg[qIdx], cx, cy, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, 1.0)
+            DarkIcon.drawQualityBg(vg, qIdx, cx, cy, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, 1.0)  -- [暗黑化 P2-A]
             local eqIcon = getEquipIconCached(equip.templateId)
             if eqIcon and eqIcon > 0 then
                 drawImageCentered(vg, eqIcon, cx, cy, EQUIP_SLOT_SIZE - 16, EQUIP_SLOT_SIZE - 16, 1.0)

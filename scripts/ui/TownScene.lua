@@ -376,7 +376,7 @@ function TownScene.draw(vg)
     if HORIZON_MODE then
         HorizonBg.draw(vg, 0, 1.0)
     else
-        drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
+        DarkIcon.drawDarkScene(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)  -- [暗黑化 P3-12a]
     end
 
     -- ---- 上方建筑（从后到前，带点击缩放动画）----

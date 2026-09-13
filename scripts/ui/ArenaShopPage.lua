@@ -173,7 +173,7 @@ function ArenaShopPage.init(vg)
     shopImg.btnPlus = nvgCreateImage(vg, "image/UI_AN_JIA.png", 0)
     shopImg.coinIcon = nvgCreateImage(vg, "image/UI_icon_JJB_X.png", 0)
     for i = 1, 6 do
-        shopImg.qualityBg[i] = nvgCreateImage(vg, "image/UI_icon_ZBBJ_" .. i .. ".png", 0)
+    -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
     end
 
     -- 碎片角标资源（DrawUtil 内部去重，多次调用安全）
@@ -464,9 +464,8 @@ drawPurchaseDialog = function(vg)
     nvgFill(vg)
 
     -- 6) 品质背景 + 商品图标（居中，碎片加角标）
-    local rewardBg = shopImg.qualityBg[item.quality] or shopImg.qualityBg[1]
-    drawImageCentered(vg, rewardBg,
-        DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)
+    DarkIcon.drawQualityBg(vg, item.quality or 1,
+        DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, DLG.ITEM_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
     if item.isShard and item.heroId then
         DrawUtil.drawShardIcon(vg, item.heroId, DLG.ITEM_CX, DLG.ITEM_CY, DLG.ITEM_ICON_SIZE, 1.0)
     else

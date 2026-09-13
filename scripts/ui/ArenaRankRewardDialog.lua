@@ -230,7 +230,7 @@ function Dialog.init(vg)
         img.tier[i] = nvgCreateImage(vg, "image/ICON_DW_" .. i .. ".png", 0)
     end
     for i = 1, 6 do
-        img.qualityBg[i] = nvgCreateImage(vg, EquipmentConfig.getQualityBgPath(i), 0)
+    -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
     end
     RewardPopup.init(vg)
     print("[ArenaRankRewardDialog] init OK")
@@ -379,8 +379,7 @@ function Dialog.draw(vg)
             -- 6.4 品质背景框
             local _bfIcon = BF.begin(vg, "arrd_claim_" .. idx, RK.ICON_CX, RK.ICON_CY + offsetY, RK.ICON_W, RK.ICON_H)
             local qIdx = math.max(1, math.min(6, rk.reward.quality))
-            local qBgImg = img.qualityBg[qIdx]
-            drawImageCentered(vg, qBgImg, RK.ICON_CX, RK.ICON_CY + offsetY, RK.ICON_W, RK.ICON_H, 1.0)
+            DarkIcon.drawQualityBg(vg, qIdx, RK.ICON_CX, RK.ICON_CY + offsetY, RK.ICON_W, RK.ICON_H, 1.0)  -- [暗黑化 P2-A]
 
             -- 6.5 奖励图标
             local rwIcon = getRewardIcon(vg, rk.reward.icon)

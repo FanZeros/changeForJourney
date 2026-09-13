@@ -5,6 +5,7 @@
 -- ============================================================================
 
 local GameConfig      = require("config.GameConfig")
+local DarkIcon        = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local HeroConfig      = require("config.HeroConfig")
 local HeroAssetUtil   = require("config.HeroAssetUtil")
 local ClassConfig     = require("config.ClassConfig")
@@ -372,10 +373,7 @@ function M.draw(vg, heroId, detailState)
             local didScale = BF.begin(vg, "eqp_cell_" .. idx, cx, cy, GRID_CELL, GRID_CELL)
 
             -- 品质背景
-            local qBg = ImageCache.getQualityBg(equip.quality or 1)
-            if qBg and qBg >= 0 then
-                drawImageCentered(vg, qBg, cx, cy, GRID_CELL, GRID_CELL, 1.0)
-            end
+            DarkIcon.drawQualityBg(vg, equip.quality or 1, cx, cy, GRID_CELL, GRID_CELL, 1.0)  -- [暗黑化 P2-A]
 
             -- 装备图标
             local eqIcon = ImageCache.getEquipIcon(equip.templateId)

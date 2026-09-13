@@ -8,6 +8,7 @@
 
 local GameConfig       = require("config.GameConfig")
 local DrawUtil         = require("core.DrawUtil")
+local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local PlayerStore      = require("client.data.PlayerStore")
@@ -300,7 +301,7 @@ function M.drawUpperSlot(vg)
         FJ.REWARD_SIZE, FJ.REWARD_SIZE, FJ.REWARD_RADIUS)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
     nvgFill(vg)
-    drawImageCentered(vg, imgGoldQBg, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)
+    DarkIcon.drawQualityBg(vg, 2, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
     drawImageCentered(vg, imgEssenceIcon, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)
 
     -- 计算选中装备的预估精粹奖励
@@ -392,8 +393,7 @@ function M.drawPanel(vg)
         if idx <= itemCount then
             local item = backpackItems[idx]
             local didScaleCell = BF.begin(vg, "bsd_cell_" .. idx, cx, cy, FJ.GRID_CELL, FJ.GRID_CELL)
-            local qImg = imgQualityBg[item.quality] or imgQualityBg[1]
-            drawImageCentered(vg, qImg, cx, cy, FJ.GRID_CELL, FJ.GRID_CELL, 1.0)
+            DarkIcon.drawQualityBg(vg, item.quality or 1, cx, cy, FJ.GRID_CELL, FJ.GRID_CELL, 1.0)  -- [暗黑化 P2-A]
             local eqIcon = getEquipIconCached(item.templateId)
             if eqIcon and eqIcon > 0 then
                 drawImageCentered(vg, eqIcon, cx, cy, FJ.GRID_CELL - 16, FJ.GRID_CELL - 16, 1.0)

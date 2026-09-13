@@ -158,7 +158,7 @@ local imgBtnGreen  = -1  -- UI_AN_FANG_lv.png    已领取
 local imgRedDot    = -1  -- ICON_HD.png           红点提示
 
 -- 品质框缓存 [quality] = handle
-local qualityBgCache = {}
+local qualityBgCache = {}  -- [暗黑化 P2-A] 已废弃：品质框改矢量绘制，保留空表避免未定义引用
 -- 奖励图标缓存 [path] = handle
 local rewardIconCache = {}
 
@@ -200,15 +200,9 @@ local function getTabIndex(key)
     return 1  -- 默认日任务
 end
 
---- 获取品质背景图（缓存）
+--- [暗黑化 P2-A] 品质框改矢量绘制，原 ZBBJ 贴图缓存函数废弃（保留接口名，返回品质号）
 local function getQualityBg(quality)
-    local cached = qualityBgCache[quality]
-    if cached then return cached end
-    if not vg_ then return -1 end
-    local path = "image/UI_icon_ZBBJ_" .. tostring(quality) .. ".png"
-    local handle = nvgCreateImage(vg_, path, 0)
-    qualityBgCache[quality] = handle
-    return handle
+    return quality
 end
 
 --- 获取奖励图标（缓存）
@@ -328,13 +322,10 @@ local function drawTaskList(vg)
         DrawUtil.drawImageCentered(vg, imgEntryBg,
             ENTRY.BG_CX, cy, ENTRY.BG_W, ENTRY.BG_H, 1.0)
 
-        -- 2) 品质框
-        local qualBg = getQualityBg(task.reward.quality)
-        if qualBg and qualBg >= 0 then
-            DrawUtil.drawImageCentered(vg, qualBg,
-                ENTRY.QUALITY_CX, cy + ENTRY.QUALITY_CY_OFF,
-                ENTRY.QUALITY_W, ENTRY.QUALITY_H, 1.0)
-        end
+        -- 2) 品质框 [暗黑化 P2-A]
+        DarkIcon.drawQualityBg(vg, task.reward.quality,
+            ENTRY.QUALITY_CX, cy + ENTRY.QUALITY_CY_OFF,
+            ENTRY.QUALITY_W, ENTRY.QUALITY_H, 1.0)
 
         -- 3) 奖励图标
         local icon = getRewardIcon(task.reward.icon)

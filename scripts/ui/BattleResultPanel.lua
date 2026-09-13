@@ -27,6 +27,7 @@
 
 local NumberUtil   = require("core.NumberUtil")
 local DrawUtil     = require("core.DrawUtil")
+local DarkIcon     = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local ImageCache   = require("ui.ImageCache")
 local ResourceDefs = require("config.ResourceDefs")
 
@@ -332,12 +333,9 @@ function BRP.draw(vg)
         local cx = HERO_COL_X[col]
         local cy = HERO_ROW_Y[row]
 
-        -- 6.1) 品质背景框
+        -- 6.1) 品质背景框 [暗黑化 P2-A]
         local frameQ = HERO_QUALITY_TO_FRAME[hero.quality] or 3
-        local qBgImg = ImageCache.getQualityBg(frameQ)
-        if qBgImg >= 0 then
-            drawImageCentered(vg, qBgImg, cx, cy, HERO_ICON_SIZE, HERO_ICON_SIZE, 1.0)
-        end
+        DarkIcon.drawQualityBg(vg, frameQ, cx, cy, HERO_ICON_SIZE, HERO_ICON_SIZE, 1.0)
 
         -- 6.2) 角色头像（与品质框同尺寸）
         local heroImg = getHeroIcon(hero.heroId)
@@ -400,10 +398,7 @@ function BRP.draw(vg)
         -- 品质背景框（优先使用 item.quality 覆盖）
         local def = RESOURCE_DEFS[item.type]
         local q = item.quality or (def and def.quality) or 1
-        local qBgImg = ImageCache.getQualityBg(q)
-        if qBgImg >= 0 then
-            drawImageCentered(vg, qBgImg, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)
-        end
+        DarkIcon.drawQualityBg(vg, q, cx, cy, REWARD_ICON_SIZE, REWARD_ICON_SIZE, 1.0)  -- [暗黑化 P2-A]
 
         -- 资源图标（优先使用 item.iconPath 覆盖）
         local resImg = -1

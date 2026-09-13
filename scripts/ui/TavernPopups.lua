@@ -762,9 +762,9 @@ function M.drawAll(vg)
             0, 0, 0, CF.CONTENT_A)
 
         drawImageCentered(vg, img.confirmArrow, CF.ARROW_CX, CF.ARROW_CY, CF.ARROW_W, CF.ARROW_H, 1.0)
-        drawImageCentered(vg, img.diamondBg, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)
+        DarkIcon.drawQualityBg(vg, 5, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_5
         drawImageCentered(vg, img.diamondBig, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)
-        drawImageCentered(vg, img.ticketQBg, CF.TICKET_CX, CF.TICKET_CY, CF.TICKET_W, CF.TICKET_H, 1.0)
+        DarkIcon.drawQualityBg(vg, 5, CF.TICKET_CX, CF.TICKET_CY, CF.TICKET_W, CF.TICKET_H, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_5
         local confirmTicketIcon = img.ticketBig
         if popupState.confirmIsStellar and img.ticketBigStellar >= 0 then
             confirmTicketIcon = img.ticketBigStellar

@@ -1266,6 +1266,25 @@ function HandleUpdate(eventType, eventData)
     if H_AUTO_OPEN_TRI and HORIZON_MODE and H_skipDone and not BattleTriPage.isOpen() then
         BattleTriPage.open()
     end
+    -- 临时验证钩子: 无输入环境强制打开任意 ui 面板（仅 _validate_entry.lua 置位时生效，B3/B5 截图验收用）
+    ---@diagnostic disable-next-line: undefined-global
+    if H_AUTO_TAB and H_skipDone and not H_shotTabSet then
+        H_shotTabSet = true
+        if math.floor(H_AUTO_TAB) ~= 3 and BattleTriPage.isOpen() then
+            BattleTriPage.close()  -- 避免三栏战斗页全屏覆盖目标面板
+        end
+        BottomNav.setSelectedIndex(math.floor(H_AUTO_TAB))
+        print("[ValidateHook] switched tab: " .. tostring(H_AUTO_TAB))
+    end
+    ---@diagnostic disable-next-line: undefined-global
+    if H_AUTO_OPEN_PANEL and H_skipDone and not H_shotPanelOpened then
+        H_shotPanelOpened = true
+        local panelMod = require("ui." .. tostring(H_AUTO_OPEN_PANEL))
+        if panelMod and panelMod.open then
+            panelMod.open()
+            print("[ValidateHook] opened panel: " .. tostring(H_AUTO_OPEN_PANEL))
+        end
+    end
     if tabIndex == 1 then
         CharacterPanel.update(dt)
     elseif tabIndex == 2 then
@@ -1937,6 +1956,9 @@ HORIZON_MODE = true
 H_SKIP_START = true   -- 调试：跳过开始画面直接进主界面
 H_skipDone = false
 H_AUTO_DISMISS_TITLE = false  -- DarkTitleScreen 验收已通过：关闭无输入环境自动淡出钩子
+-- 截图验收钩子默认值（由外部 _validate_entry.lua 运行时覆写；此处定义避免 LSP 未定义全局）
+H_AUTO_TAB = false
+H_AUTO_OPEN_PANEL = false
 H_ox, H_oy, H_s = 0, 0, 1
 H_lastPanel = 'center'
 
@@ -1973,13 +1995,11 @@ function HandleNanoVGRenderHorizon()
     nvgBeginFrame(vg, logicalW, logicalH, dpr)
 
     -- 横屏背景：世界大背景图（cover 铺满；战斗页/标题页自带背景会覆盖此处）
-    -- [fix] 只尝试一次：缺图时每帧重试会刷屏报错；先查 cache:Exists 再加载（避免引擎报错刷屏），
-    --       缺图回退城镇大图，再失败走下方纯色兜底
+    -- [fix] 只尝试一次：缺图时每帧重试会刷屏报错；缺图回退城镇大图，再失败走下方纯色兜底
+    --       （不要用 cache:Exists 预判——Web 预览运行时对 pak 资源返回 false，会误伤正常加载）
     if imgWorldBg_ < 0 and not worldBgTried_ then
         worldBgTried_ = true
-        if cache:Exists(WORLD_BG_PATH) then
-            imgWorldBg_ = nvgCreateImage(vg, WORLD_BG_PATH, 0)
-        end
+        imgWorldBg_ = nvgCreateImage(vg, WORLD_BG_PATH, 0)
         if imgWorldBg_ < 0 then
             print("[Standalone] WARN: world bg missing(" .. WORLD_BG_PATH .. "), fallback -> " .. WORLD_BG_FALLBACK)
             imgWorldBg_ = nvgCreateImage(vg, WORLD_BG_FALLBACK, 0)

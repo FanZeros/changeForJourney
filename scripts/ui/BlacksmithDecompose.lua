@@ -396,7 +396,7 @@ function M.drawPanel(vg)
             DarkIcon.drawQualityBg(vg, item.quality or 1, cx, cy, FJ.GRID_CELL, FJ.GRID_CELL, 1.0)  -- [暗黑化 P2-A]
             local eqIcon = getEquipIconCached(item.templateId)
             if eqIcon and eqIcon > 0 then
-                drawImageCentered(vg, eqIcon, cx, cy, FJ.GRID_CELL - 16, FJ.GRID_CELL - 16, 1.0)
+                DarkIcon.drawIconDark(vg, eqIcon, cx, cy, FJ.GRID_CELL - 16, FJ.GRID_CELL - 16, 1.0)  -- [暗黑化 P2-B]
             end
 
             -- 强化角标

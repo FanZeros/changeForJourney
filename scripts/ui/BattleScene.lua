@@ -134,7 +134,7 @@ local imgDeath    = -1    -- 墓碑图片
 
 -- ======================== 数据 ========================
 
-local stageName = "森林小径1-1"
+local stageName = "黑棘林道1-1"
 local idleRangeText_ = nil  -- 挂机范围显示文本缓存
 
 -- 默认攻击间隔（秒）
@@ -1925,12 +1925,12 @@ function BattleScene.update(dt)
     ART.update(logicDt)
 
 
-    -- ---- 墓碑复活系统（敌方） ----
+    -- ---- 敌人死亡处理（死亡即补位：怪物池有剩余立刻替换新怪，不播墓碑动画） ----
     for i, unit in ipairs(enemies) do
         if unit.hp <= 0 then
-            -- 首次检测到死亡：启动死亡淡出动画 + 发放击杀奖励
+            -- 首次检测到死亡：发放击杀奖励（替换与墓碑共用，仅一次）
             if not unit.reviveTimer then
-                unit.reviveTimer = -DEATH_ANIM_DURATION  -- 负值=淡出阶段
+                unit.reviveTimer = 0  -- 标记已处理
                 unit.atkProgress = 0
                 TM.removeUnit(unit)   -- 清除仇恨记录（仅一次）
                 TAL.onEnemyDeath(unit, allies, enemies)  -- 转职天赋: 敌人死亡钩子（影袭等）
@@ -1979,37 +1979,30 @@ function BattleScene.update(dt)
                 if unit._killedBy and unit._killedBy.heroId then
                     SpeechBubble.trigger(unit._killedBy, "kill")
                 end
-
-                -- 启动死亡动画：怪物向上滑出（lungeDir=-1），超额伤害增加击退
-                local okRatio = unit._overkillRatio or 0
-                BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1, knockbackMult = 1.0 + okRatio * 2.0 })
             end
 
-            unit.reviveTimer = unit.reviveTimer + logicDt
-
-            -- 淡出阶段（reviveTimer < 0）：不推进复活进度
-            if unit.reviveTimer < 0 then
-                unit.atkProgress = 0
+            if #enemyQueue > 0 then
+                -- [改] 死亡即补位：立刻原地替换新怪（不播死亡淡出/墓碑动画）
+                local newUnit = table.remove(enemyQueue, 1)
+                Diag.installSentinel(newUnit)
+                TAL.initUnit(newUnit)
+                TAL.checkMarkTarget(allies, enemies)
+                newUnit.atkProgress = 0
+                enemies[i] = newUnit
+                -- 清理旧单位残留的动画状态
+                BattleCombat.clearCardAnim(unit)
+                BattleCombat.clearHitFlash(unit)
+                -- 新怪滑入入场动画
+                BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
             else
-                -- 墓碑阶段：推进复活进度
-                unit.atkProgress = math.min(1.0, unit.reviveTimer / TOMBSTONE_REVIVE_TIME)
-
-                -- 复活计时器满且怪物池有剩余 → 原地替换 + 淡入动画
-                if unit.reviveTimer >= TOMBSTONE_REVIVE_TIME and #enemyQueue > 0 then
-                    local newUnit = table.remove(enemyQueue, 1)
-                    Diag.installSentinel(newUnit)
-                    TAL.initUnit(newUnit)
-                    TAL.checkMarkTarget(allies, enemies)
-                    newUnit.atkProgress = 0
-                    enemies[i] = newUnit
-                    -- 清理旧单位残留的动画状态
-                    BattleCombat.clearCardAnim(unit)
-                    BattleCombat.clearHitFlash(unit)
-                    -- 启动新怪滑入动画：从上方滑入
-                    BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
+                -- 怪物池为空：保留死亡淡出 → 墓碑表现（进度条渐进至 100% 停驻）
+                if not unit._deathAnimStarted then
+                    unit._deathAnimStarted = true
+                    local okRatio = unit._overkillRatio or 0
+                    BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1, knockbackMult = 1.0 + okRatio * 2.0 })
                 end
+                unit.atkProgress = math.min(1.0, (unit.atkProgress or 0) + logicDt / TOMBSTONE_REVIVE_TIME)
             end
-            -- 若怪物池为空，墓碑保持原样（进度条停在 100%）
         end
     end
 

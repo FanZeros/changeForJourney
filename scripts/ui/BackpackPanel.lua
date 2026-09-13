@@ -472,7 +472,7 @@ local function drawEquipGrid(vg)
             -- 装备图标
             local icon = ImageCache.getEquipIcon(equip.templateId)
             if icon and icon >= 0 then
-                DrawUtil.drawImageCentered(vg, icon, cx, cy, GRID.CELL_SIZE - 10, GRID.CELL_SIZE - 10, 1.0)
+                DarkIcon.drawIconDark(vg, icon, cx, cy, GRID.CELL_SIZE - 10, GRID.CELL_SIZE - 10, 1.0)  -- [暗黑化 P2-B]
             end
 
             -- 等级角标（右下角，16方向描边，与 EquipmentBag 一致）

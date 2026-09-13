@@ -94,7 +94,7 @@ function ArtifactAssetUtil.drawIcon(vg, artifact, cx, cy, size, opts)
     local inner = size - iconPadding * 2
     local iconImg = ImageCache.getArtifactIcon(typeId)
     if iconImg >= 0 then
-        DrawUtil.drawImageCentered(vg, iconImg, cx, cy, inner, inner, 1.0)
+        DarkIcon.drawIconDark(vg, iconImg, cx, cy, inner, inner, 1.0)  -- [暗黑化 P2-B]
     else
         local qc = ArtifactDefs.getQualityColor(q)
         nvgBeginPath(vg)

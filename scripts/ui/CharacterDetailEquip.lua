@@ -378,7 +378,7 @@ function M.draw(vg, heroId, detailState)
             -- 装备图标
             local eqIcon = ImageCache.getEquipIcon(equip.templateId)
             if eqIcon and eqIcon >= 0 then
-                drawImageCentered(vg, eqIcon, cx, cy, GRID_CELL - 16, GRID_CELL - 16, 1.0)
+                DarkIcon.drawIconDark(vg, eqIcon, cx, cy, GRID_CELL - 16, GRID_CELL - 16, 1.0)  -- [暗黑化 P2-B]
             end
 
             -- 强化角标

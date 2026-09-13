@@ -501,7 +501,7 @@ function M.drawDetailPanel(vg)
     -- 4. 天赋图标
     local iconH = TalentStarMap.getIconHandle(state.tfDetailNodeId)
     if iconH >= 0 then
-        drawImageCentered(vg, iconH, TFD.iconCX, TFD.iconCY, TFD.iconW, TFD.iconH, 1.0)
+        DarkIcon.drawIconDark(vg, iconH, TFD.iconCX, TFD.iconCY, TFD.iconW, TFD.iconH, 1.0)  -- [暗黑化 P2-B]
     end
 
     -- 5. 信息文本背景框（纯黑 5% 不透明度，圆角14）

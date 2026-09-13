@@ -667,6 +667,32 @@ function DarkIcon.drawQualityBg(vg, quality, cx, cy, w, h, alpha)
     DarkIcon.drawQualityFrame(vg, math.max(1, math.min(6, q)), cx, cy, w, h, alpha or 1)
 end
 
+--- 明显压暗档 tint（P2-B）：装备/神器等彩色图标整体压至约 28% 亮度（乘法叠色，保留透明底）
+--- 可调档：数值越低越暗；白 (255,255,255) = 原样
+DarkIcon.ICON_TINT_DARK = { 72, 64, 54 }
+
+--- 图标压暗绘制（P2-B）：装备/神器/天赋等亮色卡通风图标的暗黑化
+--- 与 drawImageCentered 同参风格（中心点定位）；乘法叠色保留源图透明通道
+---@param vg any
+---@param img number nvgCreateImage 句柄
+---@param cx number 中心 X
+---@param cy number 中心 Y
+---@param w number 宽
+---@param h number 高
+---@param alpha number|nil 透明度 0-1（默认 1）
+function DarkIcon.drawIconDark(vg, img, cx, cy, w, h, alpha)
+    local a = alpha or 1
+    if a <= 0.01 or not img or img < 0 then return end
+    local t = DarkIcon.ICON_TINT_DARK
+    local x, y = cx - w * 0.5, cy - h * 0.5
+    local tint = nvgRGBA(t[1], t[2], t[3], math.floor(a * 255 + 0.5))
+    local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img, tint)
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, w, h)
+    nvgFillPaint(vg, paint)
+    nvgFill(vg)
+end
+
 --- 暗黑场景底图：压暗 tint + 边缘晕影（用于关卡地图等大幅明亮底图的暗黑化）
 --- tint 取暖灰（保留暖色层次），晕影聚焦战场中心；alpha 用于场景切换过渡
 ---@param vg any

@@ -1302,11 +1302,12 @@ local TALENT_KIND_RULES = {
     { "治疗", "potion" }, { "愈", "potion" }, { "生机", "potion" }, { "回春", "potion" },
     { "生命", "potion" }, { "泉", "potion" }, { "恩泽", "potion" }, { "祷言", "potion" },
     { "圣辉", "potion" }, { "仁心", "potion" }, { "牧师", "potion" }, { "回响", "potion" },
-    { "帽", "helm" }, { "盔", "helm" }, { "假面", "helm" }, { "面具", "helm" }, { "骑士", "helm" },
     { "杖", "staff" }, { "魔", "staff" }, { "奥术", "staff" }, { "秘法", "staff" },
     { "秘纹", "staff" }, { "星", "staff" }, { "法核", "staff" }, { "魔导", "staff" },
     { "虚空", "staff" }, { "深渊", "staff" }, { "法阵", "staff" }, { "法环", "staff" },
     { "魔力", "staff" }, { "法盾", "staff" }, { "魔法", "staff" }, { "蚀", "staff" },
+    { "魔法帽", "staff" }, { "法帽", "staff" },  -- [fix] 法系"魔法帽"先于 helm 的"帽"命中，避免误画头盔
+    { "帽", "helm" }, { "盔", "helm" }, { "假面", "helm" }, { "面具", "helm" }, { "骑士", "helm" },
     { "步", "wind" }, { "灵敏", "wind" }, { "灵巧", "wind" }, { "急速", "wind" },
     { "风", "wind" }, { "蝉翼", "wind" }, { "影", "wind" }, { "闪避", "wind" },
     { "指环", "ring" },

@@ -7,14 +7,15 @@
 local GameBGM = {}
 
 -- ── 轨道定义 ──
+-- [BGM v2] 全套重制：山海经暗黑古卷世界观·东方古风配乐，与 letter 轨同源风格
 local TRACKS = {
-    battle        = { path = "audio/bgm_main.ogg",       gain = 0.50 },
-    other         = { path = "audio/bgm_main1.ogg",      gain = 0.45 },
-    popup         = { path = "audio/bgm_main2.ogg",      gain = 0.40 },
-    town          = { path = "audio/bgm_main_town.ogg",  gain = 0.40 },
-    town_building = { path = "audio/bgm_main_town1.ogg", gain = 0.38 },
-    samsara       = { path = "audio/bgm_Samsara.ogg",    gain = 0.50 },
-    letter        = { path = "audio/bgm_letter.ogg",     gain = 0.35 },  -- [LetterIntro] 先祖来信：暗黑烛光读信氛围
+    battle        = { path = "audio/bgm_battle.ogg",   gain = 0.50 },  -- 战斗：战鼓琵琶二胡，紧张古雅
+    other         = { path = "audio/bgm_roster.ogg",   gain = 0.45 },  -- 角色/其他：笛声行进的冒险旅途
+    popup         = { path = "audio/bgm_diary.ogg",    gain = 0.40 },  -- 日志：古琴书卷，深夜翻阅
+    town          = { path = "audio/bgm_town.ogg",     gain = 0.40 },  -- 城镇：营地市集烟火气
+    town_building = { path = "audio/bgm_building.ogg", gain = 0.38 },  -- 建筑内：炉火旁的古琴箫二重奏
+    samsara       = { path = "audio/bgm_samsara.ogg",  gain = 0.50 },  -- 终焉神殿/轮回：编钟时间之门
+    letter        = { path = "audio/bgm_letter.ogg",   gain = 0.35 },  -- [LetterIntro] 先祖来信：暗黑烛光读信氛围
 }
 
 -- ── 淡入淡出配置 ──

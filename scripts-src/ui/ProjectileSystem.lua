@@ -9,9 +9,10 @@ local ProjectileSystem = {}
 local function newState()
     return { projectiles = {} }
 end
-local PS_BCS = newState()
+local PS_DEFAULT = newState()
+local PS_BCS = PS_DEFAULT
 function ProjectileSystem.newState() return newState() end
-function ProjectileSystem.mount(s) PS_BCS = s or newState() end
+function ProjectileSystem.mount(s) PS_BCS = s or PS_DEFAULT end
 function ProjectileSystem.mountedState() return PS_BCS end
 
 

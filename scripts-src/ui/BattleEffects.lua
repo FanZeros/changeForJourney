@@ -9,9 +9,10 @@ local BattleEffects = {}
 local function newFxState()
     return { effects = {} }
 end
-local BE_BCS = newFxState()
+local BE_DEFAULT = newFxState()
+local BE_BCS = BE_DEFAULT
 function BattleEffects.newFxState() return newFxState() end
-function BattleEffects.mount(s) BE_BCS = s or newFxState() end
+function BattleEffects.mount(s) BE_BCS = s or BE_DEFAULT end
 function BattleEffects.mountedState() return BE_BCS end
 
 

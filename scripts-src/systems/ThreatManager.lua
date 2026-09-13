@@ -21,9 +21,10 @@ local function newState()
         knightFirstAttackReady = {}, -- [unit] = true，本场战斗骑士首次攻击仇恨倍率待触发
     }
 end
-local TM_BCS = newState()
+local TM_DEFAULT = newState()
+local TM_BCS = TM_DEFAULT
 function TM.newState() return newState() end
-function TM.mount(s) TM_BCS = s or newState() end
+function TM.mount(s) TM_BCS = s or TM_DEFAULT end
 function TM.mountedState() return TM_BCS end
 
 local ArtifactRuntime

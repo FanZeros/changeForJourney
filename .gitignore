@@ -3,3 +3,4 @@
 .luarc.json
 # 临时验证入口（离线 validate/截图用）
 _validate_entry.lua
+_tri_test.lua

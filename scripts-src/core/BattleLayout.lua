@@ -33,12 +33,14 @@ BattleLayout.CARD_SCALE  = 0.48                       -- 条带内卡牌缩放(9
 BattleLayout.STRIP_CY    = BattleLayout.STRIP_H * 0.5         -- 180
 BattleLayout.STRIP_MARGIN = 30                            -- 两端留白
 BattleLayout.STRIP_PITCH  = 100                     -- 同阵营卡间距（中心距）
--- 我方列: 从左端向右; 敌方列: 从右端向左（镜像）
+-- 我方从右(前排/靠中)向左排布；敌方从左(前排/靠中)向右排布
+-- → 双方 1 号位都在中央对峙位，4 号位在屏幕两端，完全镜像对称
 BattleLayout.STRIP_ALLY_X0  = BattleLayout.STRIP_MARGIN
-    + BattleLayout.CARD_W * BattleLayout.CARD_SCALE * 0.5            -- ≈77.5
+    + BattleLayout.CARD_W * BattleLayout.CARD_SCALE * 0.5
+    + 3 * BattleLayout.STRIP_PITCH                                    -- ≈377.5（我方前排位）
 BattleLayout.STRIP_ENEMY_X0 = BattleLayout.STRIP_W
     - BattleLayout.STRIP_MARGIN - BattleLayout.CARD_W * BattleLayout.CARD_SCALE * 0.5
-    - 3 * BattleLayout.STRIP_PITCH                                    -- ≈570.5
+    - 3 * BattleLayout.STRIP_PITCH                                    -- ≈570.5（敌方前排位）
 
 BattleLayout.MAX_PER_SIDE = 4
 
@@ -51,7 +53,7 @@ local function stripCardPos(group, idx)
     idx = math.max(1, math.min(BattleLayout.MAX_PER_SIDE, math.floor(tonumber(idx) or 1)))
     local cx
     if group == "ally" then
-        cx = BattleLayout.STRIP_ALLY_X0 + (idx - 1) * BattleLayout.STRIP_PITCH
+        cx = BattleLayout.STRIP_ALLY_X0 - (idx - 1) * BattleLayout.STRIP_PITCH
     else
         cx = BattleLayout.STRIP_ENEMY_X0 + (idx - 1) * BattleLayout.STRIP_PITCH
     end

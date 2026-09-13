@@ -29,9 +29,10 @@ local TAL = {}
 local function newBattleRefs()
     return { bAllies = {}, bEnemies = {} }
 end
-local TAL_BCS = newBattleRefs()
+local TAL_DEFAULT = newBattleRefs()
+local TAL_BCS = TAL_DEFAULT
 function TAL.newBattleRefs() return newBattleRefs() end
-function TAL.mount(s) TAL_BCS = s or newBattleRefs() end
+function TAL.mount(s) TAL_BCS = s or TAL_DEFAULT end
 function TAL.mountedState() return TAL_BCS end
 
 

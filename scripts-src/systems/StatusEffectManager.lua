@@ -19,9 +19,10 @@ local SEM = {}
 local function newSemState()
     return { effects = {} }
 end
-local SEM_BCS = newSemState()
+local SEM_DEFAULT = newSemState()
+local SEM_BCS = SEM_DEFAULT
 function SEM.newSemState() return newSemState() end
-function SEM.mount(s) SEM_BCS = s or newSemState() end
+function SEM.mount(s) SEM_BCS = s or SEM_DEFAULT end
 function SEM.mountedState() return SEM_BCS end
 
 

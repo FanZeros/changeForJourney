@@ -5,7 +5,7 @@
 local ArtifactSchema = {}
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 
-ArtifactSchema.SLOT_COUNT = 5
+ArtifactSchema.SLOT_COUNT = 4
 ArtifactSchema.SUB_SLOT_COUNT = 3
 ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL = 40
 ArtifactSchema.THIRD_SLOT_UNLOCK_LEVEL = 80

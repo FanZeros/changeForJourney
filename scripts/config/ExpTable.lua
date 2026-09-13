@@ -400,7 +400,7 @@ function ExpTable.getUnlockedSlotCount(playerLevel)
             end
         end
     end
-    return math.min(base + extra, 5)  -- 最多 5 个
+    return math.min(base + extra, 4)  -- 最多 4 个（与每队 4 槽一致）
 end
 
 -- ======================== 多队伍（三队并行战斗）解锁规则 ========================

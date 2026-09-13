@@ -64,7 +64,7 @@ HeroesSchema.Fields = {
                 end
                 if #owned > 0 then
                     table.sort(owned)
-                    for i = 1, math.min(#owned, 5) do
+                    for i = 1, math.min(#owned, 4) do
                         data.deployed[i] = owned[i]
                     end
                     print("[DIAG-HERO] HeroesSchema.onLoad: deployed为空但roster有" .. #owned .. "英雄，已自动恢复出战: " .. table.concat(data.deployed, ","))

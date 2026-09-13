@@ -1176,9 +1176,9 @@ local function performAttack(attacker, targetList, isAlly)
                             Diag.onHealZero(attacker, curTgt, healAmt, actual, "applyHealHit")
                         end
                         syncUnitHp(curTgt)
-                        local prefix = result.isCrit and "暴击治疗 +" or "治疗 +"
-                        local color  = result.isCrit and { 0, 255, 82 } or { 0, 255, 82 }
-                        addFloatingText(prefix .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, result.isCrit)
+                        -- 飘字只显示绿色 +数值（暴击放大），无需"治疗"说明
+                        local color = { 0, 255, 82 }
+                        addFloatingText("+" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, result.isCrit)
                         setHitFlash(curTgt)
                         if isAlly and actual > 0 then
                             TM.onHealingDone(attacker, actual)

@@ -51,6 +51,9 @@ local GameSFX           = require("systems.GameSFX")
 local SpinePowerUpEffect = require("ui.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.IntroCutscene")
 local SamsaraCG          = require("ui.SamsaraCG")
+local LetterIntro        = require("ui.LetterIntro")          -- [LetterIntro] 先祖来信（新档开场）
+local ScenarioDialogue   = require("ui.ScenarioDialogue")     -- [LetterIntro] 情景对话
+local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig") -- [LetterIntro] 情景配置
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库 + 画廊验收页
 
@@ -207,6 +210,7 @@ function Standalone.Start()
     BottomNav.init(vg)
     BattleScene.init(vg)
     IntroCutscene.init(vg, scene)
+    ScenarioDialogue.init(vg, scene)  -- [LetterIntro] 情景对话（新档链）
     CharacterPanel.init(vg)
     DiaryPage.init(vg)
     TopBar.markAvatarViewed()  -- 初始化头像红点基准
@@ -817,6 +821,65 @@ function Standalone.Stop()
     end
 end
 
+--- [LetterIntro] StartScreen 关闭后的离线收益弹窗（原 StartScreen 关闭钩子内容提取）
+local function showOfflineRewardPanel_()
+    OfflineRewardPanel.show({
+        offlineSeconds  = 23025,
+        maxSeconds      = 43200,
+        multiplier      = 2.0,
+        adventureExp    = 128000,
+        adventurerExp   = 56000,
+        rewards = {
+            { type = "gold",    amount = 12500 },
+            { type = "diamond", amount = 80 },
+            { type = "essence", amount = 3200 },
+            { type = "equip", templateId = "W5", quality = 5, level = 12 },
+            { type = "equip", templateId = "W4", quality = 4, level = 8 },
+            { type = "equip", templateId = "A3", quality = 3, level = 5 },
+            { type = "equip", templateId = "W3", quality = 3, level = 7 },
+            { type = "equip", templateId = "A2", quality = 2, level = 3 },
+            { type = "equip", templateId = "W2", quality = 2, level = 4 },
+            { type = "equip", templateId = "W1", quality = 1, level = 1 },
+            { type = "equip", templateId = "A4", quality = 4, level = 10 },
+            { type = "equip", templateId = "A5", quality = 5, level = 15 },
+        },
+        onClaim = function(doubled)
+            print("[OfflineRewardPanel] claimed, doubled=" .. tostring(doubled))
+        end,
+    })
+    print("[Standalone] auto-showed OfflineRewardPanel after StartScreen closed")
+end
+
+--- [LetterIntro] 新档标记开场剧情完成（session.introCompleted，模块级整体替换需带全字段）
+local function markIntroCompleted_()
+    local sessionData = ClientDispatcher.get("session") or {}
+    local updated = {
+        lastOnlineTime   = sessionData.lastOnlineTime or 0,
+        firstLoginTime   = sessionData.firstLoginTime or 0,
+        introCompleted   = true,
+        claimedScenarios = sessionData.claimedScenarios,
+    }
+    ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
+    print("[Standalone] intro completed flag saved (session.introCompleted=true)")
+end
+
+--- [LetterIntro] 新档开场链：先祖来信 → 睁眼过场 → 情景1 → 标记完成 + 离线收益
+local function startIntroChain_()
+    LetterIntro.start(function()
+        print("[Standalone] letter finished, starting intro cutscene")
+        IntroCutscene.start(function()
+            print("[Standalone] intro cutscene finished, starting scenario dialogue 1")
+            local scenarioConfig = ScenarioDialogueConfig.SCENARIO_1
+            scenarioConfig.onFinish = function()
+                print("[Standalone] scenario dialogue 1 finished")
+                markIntroCompleted_()
+                showOfflineRewardPanel_()
+            end
+            ScenarioDialogue.show(scenarioConfig)
+        end)
+    end)
+end
+
 --- 清除存档后重置客户端状态并回到开始界面
 --- 由 DebugPanel 的 reset_save 处理器调用
 function Standalone.requestResetToStartScreen()
@@ -856,16 +919,17 @@ function Standalone.requestResetToStartScreen()
     BattleScene.resetToDefault()
     print(string.format("%s step5: BattleScene.resetToDefault done clock=%.4f", TAG, os.clock()))
 
-    -- 6. 重置 ClientDispatcher 中的 equipment / lootbox 为初始数据
+    -- 6. 重置 ClientDispatcher 中的 equipment / lootbox / session 为初始数据
     --    不能调用 ClientDispatcher.reset() 因为会销毁所有订阅者
     local cjson = cjson
     ClientDispatcher.handleStateUpdate(cjson.encode({
         modules = {
             equipment = { inventory = {}, equipped = {}, nextSeq = 1 },
             lootbox   = { seeds = {} },
+            session   = { lastOnlineTime = 0, firstLoginTime = 0, introCompleted = false },
         }
     }))
-    print(string.format("%s step6: ClientDispatcher.handleStateUpdate (equip/lootbox reset) done clock=%.4f", TAG, os.clock()))
+    print(string.format("%s step6: ClientDispatcher.handleStateUpdate (equip/lootbox/session reset) done clock=%.4f", TAG, os.clock()))
 
     -- 7. 重置 BottomNav 回到战斗标签（第 3 个）
     BottomNav.setSelectedIndex(3)
@@ -924,6 +988,13 @@ function HandleNanoVGRender(eventType, eventData)
     -- 开始界面（最高优先级，覆盖一切）
     if StartScreen.isOpen() then
         StartScreen.draw(vg)
+        nvgEndFrame(vg)
+        return
+    end
+
+    -- [LetterIntro] 先祖来信（最高优先级，覆盖一切）
+    if LetterIntro.isOpen() then
+        LetterIntro.draw(vg)
         nvgEndFrame(vg)
         return
     end
@@ -1033,6 +1104,11 @@ function HandleNanoVGRender(eventType, eventData)
     -- 轮回开场动画（覆盖所有游戏 UI）
     if IntroCutscene.isActive() then
         IntroCutscene.draw(vg)
+    end
+
+    -- [LetterIntro] 情景对话（large 全屏覆盖 / small 叠加弹窗）
+    if ScenarioDialogue.isActive() then
+        ScenarioDialogue.draw()
     end
 
     -- [暗黑化 P0] 图标画廊验收页（竖屏路径）
@@ -1154,36 +1230,19 @@ function HandleUpdate(eventType, eventData)
         DarkTitleScreen.update(dt)
     end
 
-    -- StartScreen 刚关闭 → 自动弹出离线收益面板（调试用）
+    -- StartScreen 刚关闭 → 老档弹离线收益；新档走开场链（先祖来信→过场→情景1）
     if startScreenWasOpen_ then
         startScreenWasOpen_ = false
-        OfflineRewardPanel.show({
-            offlineSeconds  = 23025,
-            maxSeconds      = 43200,
-            multiplier      = 2.0,
-            adventureExp    = 128000,
-            adventurerExp   = 56000,
-            rewards = {
-                { type = "gold",    amount = 12500 },
-                { type = "diamond", amount = 80 },
-                { type = "essence", amount = 3200 },
-                { type = "equip", templateId = "W5", quality = 5, level = 12 },
-                { type = "equip", templateId = "W4", quality = 4, level = 8 },
-                { type = "equip", templateId = "A3", quality = 3, level = 5 },
-                { type = "equip", templateId = "W3", quality = 3, level = 7 },
-                { type = "equip", templateId = "A2", quality = 2, level = 3 },
-                { type = "equip", templateId = "W2", quality = 2, level = 4 },
-                { type = "equip", templateId = "W1", quality = 1, level = 1 },
-                { type = "equip", templateId = "A4", quality = 4, level = 10 },
-                { type = "equip", templateId = "A5", quality = 5, level = 15 },
-            },
-            onClaim = function(doubled)
-                print("[OfflineRewardPanel] claimed, doubled=" .. tostring(doubled))
-            end,
-        })
-        print("[Standalone] auto-showed OfflineRewardPanel after StartScreen closed")
         GameBGM.start()
         GameSFX.start()
+        local sessionData = ClientDispatcher.get("session")
+        local introDone = sessionData and sessionData.introCompleted or false
+        if introDone then
+            showOfflineRewardPanel_()
+        else
+            print("[Standalone] new save detected, starting intro chain (letter → cutscene → scenario 1)")
+            startIntroChain_()
+        end
     end
 
     BottomNav.update(dt)
@@ -1208,6 +1267,12 @@ function HandleUpdate(eventType, eventData)
     end
     GameBGM.update(dt)
 
+    -- [LetterIntro] 先祖来信更新（信件期间独占，阻止其他 UI 更新）
+    if LetterIntro.isOpen() then
+        LetterIntro.update(dt)
+        return
+    end
+
     -- 轮回 CG 视频更新（播放期间阻止其他 UI 更新和 BGM 切换）
     if SamsaraCG.isActive() then
         SamsaraCG.update(dt)
@@ -1218,6 +1283,14 @@ function HandleUpdate(eventType, eventData)
     if IntroCutscene.isActive() then
         IntroCutscene.update(dt)
         return
+    end
+
+    -- [LetterIntro] 情景对话更新（large 全屏期间阻止其他 UI 更新）
+    if ScenarioDialogue.isActive() then
+        ScenarioDialogue.update(dt)
+        if ScenarioDialogue.isFullscreen() then
+            return
+        end
     end
 
     -- 竞技场/副本对战更新（打开时独占）
@@ -1434,6 +1507,20 @@ function HandleMouseButtonUp(eventType, eventData)
     -- 开始界面拦截
     if StartScreen.isOpen() then
         if isTap then StartScreen.handleClick(dx, dy) end
+        return
+    end
+    -- [LetterIntro] 信件期：任意释放 = 轻触翻段
+    if LetterIntro.isOpen() then
+        if isTap then LetterIntro.handleTap() end
+        return
+    end
+    -- [LetterIntro] 过场期吞输入（时间轴自动推进）
+    if IntroCutscene.isActive() then
+        return
+    end
+    -- [LetterIntro] 情景对话期：点击推进
+    if ScenarioDialogue.isActive() then
+        if isTap then ScenarioDialogue.advance() end
         return
     end
     -- 竞技场对战全屏拦截（拖拽结束 + 点击）
@@ -1698,6 +1785,20 @@ function HandleTouchEnd(eventType, eventData)
     -- 开始界面拦截
     if StartScreen.isOpen() then
         if isTap then StartScreen.handleClick(dx, dy) end
+        return
+    end
+    -- [LetterIntro] 信件期：任意释放 = 轻触翻段
+    if LetterIntro.isOpen() then
+        if isTap then LetterIntro.handleTap() end
+        return
+    end
+    -- [LetterIntro] 过场期吞输入（时间轴自动推进）
+    if IntroCutscene.isActive() then
+        return
+    end
+    -- [LetterIntro] 情景对话期：点击推进
+    if ScenarioDialogue.isActive() then
+        if isTap then ScenarioDialogue.advance() end
         return
     end
     -- 竞技场对战全屏拦截（拖拽结束 + 点击）

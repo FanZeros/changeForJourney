@@ -878,10 +878,13 @@ end
 
 --- [LetterIntro] 新档开场链：先祖来信 → 睁眼过场 → 情景1 → 标记完成 + 离线收益
 local function startIntroChain_()
+    -- 开场链专属轨道：暗黑烛光读信氛围（信+过场期间），情景1 起切回主曲
+    GameBGM.setScene("letter", { fromStart = true })
     LetterIntro.start(function()
         print("[Standalone] letter finished, starting intro cutscene")
         IntroCutscene.start(function()
             print("[Standalone] intro cutscene finished, starting scenario dialogue 1")
+            GameBGM.setScene("battle", { fromStart = true })  -- 情景1"全员出发"氛围切回主曲
             local scenarioConfig = ScenarioDialogueConfig.SCENARIO_1
             scenarioConfig.onFinish = function()
                 print("[Standalone] scenario dialogue 1 finished")
@@ -1261,6 +1264,8 @@ function HandleUpdate(eventType, eventData)
     BottomNav.update(dt)
 
     -- ── BGM 轨道切换（优先级：城镇建筑 > 标签页）──
+    -- [LetterIntro] 开场链（信/过场/情景1）期间不自动切轨，轨道由开场链自控
+    if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
     do
         local tabIndex = BottomNav.getSelectedIndex()
         local bgmScene
@@ -1278,6 +1283,7 @@ function HandleUpdate(eventType, eventData)
         end
         GameBGM.setScene(bgmScene)
     end
+    end -- [LetterIntro] 守卫闭合
     GameBGM.update(dt)
 
     -- [LetterIntro] 先祖来信更新（信件期间独占，阻止其他 UI 更新）

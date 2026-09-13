@@ -2133,9 +2133,11 @@ function HandleUpdate_Client(eventType, eventData)
                 print("[Client] roster is empty (new player), starting intro cutscene")
                 GameBGM.start()
                 GameSFX.start()
+                GameBGM.setScene("letter", { fromStart = true })  -- [LetterIntro] 暗黑烛光读信氛围
                 -- [LetterIntro] 先祖来信 → 睁眼过场 → 情景对话 → 选角
                 LetterIntro.start(function()
                 IntroCutscene.start(function()
+                    GameBGM.setScene("battle", { fromStart = true })  -- [LetterIntro] 情景1"出发"切回主曲
                     -- 过场动画结束 →衔接情景对话 1（introCompleted 由服务端在选择英雄时标记）
                     print("[Client] intro cutscene finished")
                     print("[Client] starting scenario dialogue 1")
@@ -2354,6 +2356,8 @@ function HandleUpdate_Client(eventType, eventData)
         end
 
         -- ── BGM 轨道切换（优先级：城镇建筑> 标签页）──
+        -- [LetterIntro] 开场链（信/过场/情景1）期间不自动切轨，轨道由开场链自控
+        if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
         do
             local bgmScene
             -- 城镇建筑
@@ -2372,6 +2376,7 @@ function HandleUpdate_Client(eventType, eventData)
             end
             GameBGM.setScene(bgmScene)
         end
+        end -- [LetterIntro] 守卫闭合
         GameBGM.update(dt)
 
         -- 竞技场副本对战更新（打开时独占）

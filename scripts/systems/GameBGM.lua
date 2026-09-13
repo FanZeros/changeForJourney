@@ -14,6 +14,7 @@ local TRACKS = {
     town          = { path = "audio/bgm_main_town.ogg",  gain = 0.40 },
     town_building = { path = "audio/bgm_main_town1.ogg", gain = 0.38 },
     samsara       = { path = "audio/bgm_Samsara.ogg",    gain = 0.50 },
+    letter        = { path = "audio/bgm_letter.ogg",     gain = 0.35 },  -- [LetterIntro] 先祖来信：暗黑烛光读信氛围
 }
 
 -- ── 淡入淡出配置 ──

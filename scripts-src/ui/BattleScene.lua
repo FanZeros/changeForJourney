@@ -2376,6 +2376,11 @@ function BattleScene.setEnemies(list)
     resetBattle()
 end
 
+--- [三栏并行] 只读访问当前场上单位（供 BattleTriPage 渲染栏1）
+function BattleScene.getAllies() return allies end
+function BattleScene.getEnemies() return enemies end
+function BattleScene.getStageId() return currentStageId end
+
 --- 设置己方单位列表（DebugPanel 用）
 function BattleScene.setAllies(list)
     -- [EnemyGuard] setAllies 入口检查：此时 enemies 是否已被污染

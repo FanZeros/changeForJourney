@@ -134,7 +134,7 @@ local imgDeath    = -1    -- 墓碑图片
 
 -- ======================== 数据 ========================
 
-local stageName = "森林小径1-1"
+local stageName = "黑棘林道1-1"
 local idleRangeText_ = nil  -- 挂机范围显示文本缓存
 
 -- 默认攻击间隔（秒）

@@ -240,7 +240,7 @@ MapAffixConfig.AFFIXES = {
 ---
 --- 折磨II 每章1个词缀（23章循环13种词缀）：
 MapAffixConfig.TORMENT2_AFFIXES_BY_CHAPTER = {
-    [139] = { "energy_barrier" },       -- 森林小径: 能量壁障
+    [139] = { "energy_barrier" },       -- 黑棘林道: 能量壁障
     [140] = { "berserk_low_hp" },       -- 幽光林地: 濒死狂怒
     [141] = { "iron_wall" },            -- 迷雾沼泽: 铁壁强化
     [142] = { "vengeance_oath" },       -- 巨木之根: 复仇之誓

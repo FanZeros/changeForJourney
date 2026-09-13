@@ -35,7 +35,7 @@ local COOLDOWN_SECONDS = {
 }
 
 --- 商品配置版本号：每次调整 SHOP_ITEMS 序号时递增，登录时对比此版本号清除旧购买记录
-local SHOP_CONFIG_VERSION = 4  -- 新增腐化石 id 21/22、神圣石特权商品 id 23
+local SHOP_CONFIG_VERSION = 5  -- 单机版去除每日限购（全部商品不限购）
 
 --- 特权里程「特权点」档位奖励版本（仅 10/20/30 三档为 privilege_point）
 --- v1: 10→3, 20→5, 30→5  |  v2: 10→5, 20→7, 30→10
@@ -45,19 +45,19 @@ local PRIVILEGE_MILE_REWARD_VERSION = MileCompLogic.PRIVILEGE_MILE_REWARD_VERSIO
 --- rewardType 统一使用 CurrencyService.REWARD_TO_CURRENCY 的 key（canonical 名称），特殊奖励在 Buy 内分支处理
 local SHOP_ITEMS = {
     -- 特权点商品（每日刷新）
-    [1]  = { name = "扫荡券",       rewardType = "sweep_ticket",          currency = "privilege", price = 1,  rewardCount = 1,   restockType = "daily", limitCount = 10 },
-    [2]  = { name = "冒险招募券",   rewardType = "adventure_ticket",      currency = "privilege", price = 1,  rewardCount = 1,   restockType = "daily", limitCount = 20 },
-    [3]  = { name = "钻石",         rewardType = "diamond",               currency = "privilege", price = 1,  rewardCount = 240, restockType = "daily", limitCount = 20 },
-    [4]  = { name = "随机卷轴",     rewardType = "random_scroll",         currency = "privilege", price = 1,  rewardCount = 20,  restockType = "daily", limitCount = 6  },
-    [5]  = { name = "加速卡",       rewardType = "speed_card",            currency = "privilege", price = 10, rewardCount = 1,   restockType = "daily", limitCount = 1  },
-    [6]  = { name = "随机优质遗物", rewardType = "random_quality_relic",  currency = "privilege", price = 1,  rewardCount = 1,   restockType = "daily", limitCount = 5  },
-    [7]  = { name = "奥术粉尘",     rewardType = "arcane_dust",           currency = "privilege", price = 1,  rewardCount = 288, restockType = "daily", limitCount = 5  },
+    [1]  = { name = "扫荡券",       rewardType = "sweep_ticket",          currency = "privilege", price = 1,  rewardCount = 1,   restockType = "daily", limitCount = -1 },
+    [2]  = { name = "冒险招募券",   rewardType = "adventure_ticket",      currency = "privilege", price = 1,  rewardCount = 1,   restockType = "daily", limitCount = -1 },
+    [3]  = { name = "钻石",         rewardType = "diamond",               currency = "privilege", price = 1,  rewardCount = 240, restockType = "daily", limitCount = -1 },
+    [4]  = { name = "随机卷轴",     rewardType = "random_scroll",         currency = "privilege", price = 1,  rewardCount = 20,  restockType = "daily", limitCount = -1  },
+    [5]  = { name = "加速卡",       rewardType = "speed_card",            currency = "privilege", price = 10, rewardCount = 1,   restockType = "daily", limitCount = -1  },
+    [6]  = { name = "随机优质遗物", rewardType = "random_quality_relic",  currency = "privilege", price = 1,  rewardCount = 1,   restockType = "daily", limitCount = -1  },
+    [7]  = { name = "奥术粉尘",     rewardType = "arcane_dust",           currency = "privilege", price = 1,  rewardCount = 288, restockType = "daily", limitCount = -1  },
     -- 钻石商品（每日刷新，40% 折扣）
-    [8]  = { name = "冒险招募券",   rewardType = "adventure_ticket",      currency = "diamond", price = 180, discount = 0.4, rewardCount = 1,  restockType = "daily", limitCount = 2 },
-    [9]  = { name = "洗练石",       rewardType = "enhance_star",          currency = "diamond", price = 180, discount = 0.4, rewardCount = 2,  restockType = "daily", limitCount = 5 },
-    [10] = { name = "随机卷轴",     rewardType = "random_scroll",         currency = "diamond", price = 180, discount = 0.4, rewardCount = 10, restockType = "daily", limitCount = 5 },
-    [11] = { name = "点金石",       rewardType = "break_protect",         currency = "diamond", price = 500, discount = 0.4, rewardCount = 1,  restockType = "daily", limitCount = 3 },
-    [21] = { name = "腐化石",       rewardType = "corrupt_stone",         currency = "diamond", price = 500, discount = 0.4, rewardCount = 1,  restockType = "daily", limitCount = 3 },
+    [8]  = { name = "冒险招募券",   rewardType = "adventure_ticket",      currency = "diamond", price = 180, discount = 0.4, rewardCount = 1,  restockType = "daily", limitCount = -1 },
+    [9]  = { name = "洗练石",       rewardType = "enhance_star",          currency = "diamond", price = 180, discount = 0.4, rewardCount = 2,  restockType = "daily", limitCount = -1 },
+    [10] = { name = "随机卷轴",     rewardType = "random_scroll",         currency = "diamond", price = 180, discount = 0.4, rewardCount = 10, restockType = "daily", limitCount = -1 },
+    [11] = { name = "点金石",       rewardType = "break_protect",         currency = "diamond", price = 500, discount = 0.4, rewardCount = 1,  restockType = "daily", limitCount = -1 },
+    [21] = { name = "腐化石",       rewardType = "corrupt_stone",         currency = "diamond", price = 500, discount = 0.4, rewardCount = 1,  restockType = "daily", limitCount = -1 },
     -- 钻石商品（永久，不限购）
     [12] = { name = "冒险招募券",   rewardType = "adventure_ticket",      currency = "diamond", price = 180, rewardCount = 1,   restockType = "permanent", limitCount = -1 },
     [13] = { name = "洗练石",       rewardType = "enhance_star",          currency = "diamond", price = 180, rewardCount = 2,   restockType = "permanent", limitCount = -1 },
@@ -67,9 +67,9 @@ local SHOP_ITEMS = {
     [16] = { name = "金币",         rewardType = "gold",                  currency = "diamond", price = 188, rewardCount = 6666, restockType = "permanent", limitCount = -1 },
     [17] = { name = "精粹",         rewardType = "essence",               currency = "diamond", price = 188, rewardCount = 666,  restockType = "permanent", limitCount = -1 },
     -- 星辉招募券（每日刷新）
-    [18] = { name = "星辉招募券",   rewardType = "stellar_ticket",      currency = "diamond", price = 900, discount = 0.8, rewardCount = 1,   restockType = "daily", limitCount = 30 },
-    [19] = { name = "星辉招募券",   rewardType = "stellar_ticket",      currency = "privilege", price = 4,  rewardCount = 1,   restockType = "daily", limitCount = 10 },
-    [23] = { name = "神圣石",       rewardType = "sacred_stone",        currency = "privilege", price = 5,  rewardCount = 1,   restockType = "daily", limitCount = 5  },
+    [18] = { name = "星辉招募券",   rewardType = "stellar_ticket",      currency = "diamond", price = 900, discount = 0.8, rewardCount = 1,   restockType = "daily", limitCount = -1 },
+    [19] = { name = "星辉招募券",   rewardType = "stellar_ticket",      currency = "privilege", price = 4,  rewardCount = 1,   restockType = "daily", limitCount = -1 },
+    [23] = { name = "神圣石",       rewardType = "sacred_stone",        currency = "privilege", price = 5,  rewardCount = 1,   restockType = "daily", limitCount = -1  },
     [20] = { name = "黄金钥匙",     rewardType = "golden_key",          currency = "diamond", price = 600, rewardCount = 1,   restockType = "permanent", limitCount = -1 },
 }
 

@@ -2,7 +2,7 @@
 -- MarketPage - 城镇市场界面（道具商店）
 -- 从城镇页面点击市场进入的二级界面
 -- 职责：市场UI 背景、资源展示、道具商品列表、购买交互
--- 包含三个 Tab：道具 / 特权 / 典藏
+-- 包含两个 Tab：道具 / 典藏
 -- ============================================================================
 
 local GameConfig = require("config.GameConfig")
@@ -84,12 +84,11 @@ local TAB = {
     INA_R = 255, INA_G = 255, INA_B = 255,
     ANIM_DUR = 0.35,
     ITEMS = {
-        { name = "道具",   cx = 372, cy = 2308 },
-        { name = "特权",   cx = 638, cy = 2308 },
-        { name = "典藏",   cx = 905, cy = 2308 },
+        { name = "道具",   cx = 505, cy = 2308 },
+        { name = "典藏",   cx = 772, cy = 2308 },
     },
-    MAP   = { items = 1, privilege = 2, collection = 3 },
-    KEYS  = { "items", "privilege", "collection" },
+    MAP   = { items = 1, collection = 2 },
+    KEYS  = { "items", "collection" },
 }
 
 -- ======================== 商品配置 ========================
@@ -98,63 +97,63 @@ local SHOP_ITEMS = {
     -- ===== 特权点商品（每日刷新）=====
     {
         id = 1, name = "扫荡券", quality = 4, rewardCount = 1,
-        restockType = "daily", limitCount = 10,
+        restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
         icon = "image/UI_icon_SDQ.png",
         costIcon = "image/UI_icon_TQD_X.png",
     },
     {
         id = 2, name = "冒险招募券", quality = 4, rewardCount = 1,
-        restockType = "daily", limitCount = 20,
+        restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
         icon = "image/UI_icon_ZMQ_1.png",
         costIcon = "image/UI_icon_TQD_X.png",
     },
     {
         id = 3, name = "钻石", quality = 5, rewardCount = 240,
-        restockType = "daily", limitCount = 20,
+        restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
         icon = "image/UI_icon_SJ.png",
         costIcon = "image/UI_icon_TQD_X.png",
     },
     {
         id = 4, name = "随机卷轴", quality = 3, rewardCount = 20,
-        restockType = "daily", limitCount = 6,
+        restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
         icon = "image/UI_icon_JZ_SJ.png",
         costIcon = "image/UI_icon_TQD_X.png",
     },
     {
         id = 5, name = "加速卡", quality = 5, rewardCount = 1,
-        restockType = "daily", limitCount = 1,
+        restockType = "daily", limitCount = -1,
         currency = "privilege", price = 10,
         icon = "image/UI_icon_JSK.png",
         costIcon = "image/UI_icon_TQD_X.png",
     },
     {
         id = 6, name = "随机优质遗物", quality = 2, rewardCount = 1,
-        restockType = "daily", limitCount = 5,
+        restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
         icon = "image/ICON_SJYW.png",
         costIcon = "image/UI_icon_TQD_X.png",
     },
     {
         id = 7, name = "奥术粉尘", quality = 3, rewardCount = 288,
-        restockType = "daily", limitCount = 5,
+        restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
         icon = "image/UI_icon_ASFC.png",
         costIcon = "image/UI_icon_TQD_X.png",
     },
     {
         id = 19, name = "星辉招募券", quality = 6, rewardCount = 1,
-        restockType = "daily", limitCount = 10,
+        restockType = "daily", limitCount = -1,
         currency = "privilege", price = 4,
         icon = "image/UI_icon_ZMQ_2.png",
         costIcon = "image/UI_icon_TQD_X.png",
     },
     {
         id = 23, name = "神圣石", quality = 6, rewardCount = 1,
-        restockType = "daily", limitCount = 5,
+        restockType = "daily", limitCount = -1,
         currency = "privilege", price = 5,
         icon = "image/UI_icon_SSS.png",
         costIcon = "image/UI_icon_TQD_X.png",
@@ -162,35 +161,35 @@ local SHOP_ITEMS = {
     -- ===== 钻石商品（每日刷新，40% 折扣价=====
     {
         id = 8, name = "冒险招募券", quality = 5, rewardCount = 1,
-        restockType = "daily", limitCount = 2,
+        restockType = "daily", limitCount = -1,
         currency = "diamond", price = 180, discount = 0.4,
         icon = "image/UI_icon_ZMQ_1.png",
         costIcon = "image/UI_icon_SJ_X.png",
     },
     {
         id = 9, name = "洗练石", quality = 3, rewardCount = 2,
-        restockType = "daily", limitCount = 5,
+        restockType = "daily", limitCount = -1,
         currency = "diamond", price = 180, discount = 0.4,
         icon = "image/UI_icon_QH_1.png",
         costIcon = "image/UI_icon_SJ_X.png",
     },
     {
         id = 10, name = "随机卷轴", quality = 3, rewardCount = 10,
-        restockType = "daily", limitCount = 5,
+        restockType = "daily", limitCount = -1,
         currency = "diamond", price = 180, discount = 0.4,
         icon = "image/UI_icon_JZ_SJ.png",
         costIcon = "image/UI_icon_SJ_X.png",
     },
     {
         id = 11, name = "点金石", quality = 5, rewardCount = 1,
-        restockType = "daily", limitCount = 3,
+        restockType = "daily", limitCount = -1,
         currency = "diamond", price = 500, discount = 0.4,
         icon = "image/UI_icon_QH_3.png",
         costIcon = "image/UI_icon_SJ_X.png",
     },
     {
         id = 21, name = "腐化石", quality = 5, rewardCount = 1,
-        restockType = "daily", limitCount = 3,
+        restockType = "daily", limitCount = -1,
         currency = "diamond", price = 500, discount = 0.4,
         icon = "image/UI_icon_FHS.png",
         costIcon = "image/UI_icon_SJ_X.png",
@@ -248,7 +247,7 @@ local SHOP_ITEMS = {
     -- ===== 星辉招募券（每日刷新） =====
     {
         id = 18, name = "星辉招募券", quality = 6, rewardCount = 1,
-        restockType = "daily", limitCount = 30,
+        restockType = "daily", limitCount = -1,
         currency = "diamond", price = 900, discount = 0.8,
         icon = "image/UI_icon_ZMQ_2.png",
         costIcon = "image/UI_icon_SJ_X.png",
@@ -263,7 +262,7 @@ local SHOP_ITEMS = {
 }
 
 --- 与服务端 MarketService.SHOP_CONFIG_VERSION 保持一致；版本升级时会清空购买记录
-local SHOP_CONFIG_VERSION = 4
+local SHOP_CONFIG_VERSION = 5
 
 --- 按商品 id 索引（SHOP_ITEMS 为展示顺序数组，禁止用 itemId 当下标）
 local SHOP_ITEMS_BY_ID = {}
@@ -1991,13 +1990,6 @@ function MarketPage.draw(vg)
 
         -- 道具 tab（index 1）：有特权点且有可购买特权商品时显示红点角标
         if i == 1 and MarketPage.hasPrivilegeRedDot() then
-            local textHalfW = getCachedTextWidth(vg, item.name, TAB.FONT) * 0.5
-            local rdSz = 30
-            local rdX  = item.cx + textHalfW + 10
-            local rdY  = TAB.TEXT_Y - 18
-            DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
-        -- 特权 tab（index 2）可看广告时显示红点角标
-        if i == 2 and not state.privAdWatching then
             local textHalfW = getCachedTextWidth(vg, item.name, TAB.FONT) * 0.5
             local rdSz = 30
             local rdX  = item.cx + textHalfW + 10

@@ -243,10 +243,17 @@ local function getImage(key)
     return handle
 end
 
+-- [三行并行] 条带渲染缩放：投射物/星门等视觉尺寸 × renderScale
+-- （卡牌在条带内缩至 CARD_SCALE，投射物同步缩放避免比例失调；飞行时长为 duration 制不受影响）
+local renderScale = 1.0
+function ProjectileSystem.setRenderScale(s) renderScale = s or 1.0 end
+
 --- 绘制投射物图片（居中，支持旋转/缩放/透明度）
 --- 素材默认朝右(+X方向)，angle=0时朝右，angle=-π/2时朝上
 local function drawProjectileImage(vg, imgHandle, cx, cy, w, h, angle, alpha)
     if not imgHandle or imgHandle <= 0 then return end
+    w = w * renderScale
+    h = h * renderScale
     nvgSave(vg)
     nvgTranslate(vg, cx, cy)
     if angle ~= 0 then
@@ -446,7 +453,7 @@ local function updateAndDrawBezier(proj, vg, t)
     end
 
     -- 计算垂直偏移量：max(最小半径, 距离×0.4)
-    local perpLen = math.max(MIN_ARC_RADIUS, dist * 0.4)
+    local perpLen = math.max(MIN_ARC_RADIUS * renderScale, dist * 0.4)
 
     -- 归一化方向 + 垂直方向
     local ndx = dx / dist
@@ -954,7 +961,7 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
     if cfg.type == "flyingSword" then
         local count = (opts and opts.flyingSwordCount) or 1
         local idx = (opts and opts.flyingSwordIndex) or 1
-        local radius = (opts and opts.flyingSwordRadius) or 90
+        local radius = ((opts and opts.flyingSwordRadius) or 90) * renderScale
         local angleOnRing = (2 * math.pi / count) * (idx - 1) - math.pi * 0.5
         proj.centerX = startX
         proj.centerY = startY
@@ -1099,7 +1106,7 @@ function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly, ge
             for gateIndex = 1, count do
                 local cx, cy = getStarGateDrawPosition(baseX, baseCY, gateIndex, count, isAlly)
                 local pulse = 0.94 + 0.06 * math.sin(starGateDrawTime * 3.4 + gateIndex)
-                local size = 118 * pulse
+                local size = 118 * pulse * renderScale
                 local alpha = 0.88 + 0.12 * math.sin(starGateDrawTime * 2.6 + gateIndex * 0.7)
                 drawStarGateAura(vg, cx, cy, size, alpha)
                 drawProjectileImage(vg, imgHandle, cx, cy, size, size, starGateDrawTime * 1.8 * (isAlly and 1 or -1), alpha)

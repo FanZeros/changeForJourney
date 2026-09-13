@@ -46,10 +46,12 @@ local StartScreen       = require("ui.StartScreen")
 local DarkTitleScreen   = require("ui.DarkTitleScreen")  -- [DarkTitleScreen] 横屏暗黑标题
 local BattleTriPage     = require("ui.BattleTriPage")    -- [三行并行] 三行战斗区
 local BattleLayout      = require("core.BattleLayout")   -- [三行并行] 布阵模式切换
+local ProjectileSystem  = require("ui.ProjectileSystem") -- [三行并行] 渲染缩放
 local EventBus          = require("core.EventBus")
 local GameEvents        = require("config.GameEvents")
 local GameBGM           = require("systems.GameBGM")
 local GameSFX           = require("systems.GameSFX")
+local BattleEffects     = require("ui.BattleEffects")    -- [三行并行] 渲染缩放
 local SpinePowerUpEffect = require("ui.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.IntroCutscene")
 local SamsaraCG          = require("ui.SamsaraCG")
@@ -1187,6 +1189,9 @@ function HandleUpdate(eventType, eventData)
 
     -- [三行并行] 模式守卫: 战斗区打开=strip，否则 classic；exclusive 场景打开时收起战斗区
     BattleLayout.setMode(BattleTriPage.isOpen() and "strip" or "classic")
+    local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
+    ProjectileSystem.setRenderScale(triRenderScale)
+    BattleEffects.setRenderScale(triRenderScale)
     if BattleTriPage.isOpen() and (ArenaBattleScene.isOpen() or DungeonBattleScene.isOpen()) then
         BattleTriPage.close()
     end
@@ -1890,7 +1895,10 @@ H_lastPanel = 'center'
 
 local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW, logicalH)
-    BattleLayout.setMode(BattleTriPage.isOpen() and "strip" or "classic")  -- [三行并行]
+    BattleLayout.setMode(BattleTriPage.isOpen() and "strip" or "classic")
+    local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
+    ProjectileSystem.setRenderScale(triRenderScale)
+    BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]
 end
 
 --- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（基屏幕空间，绘制于侧栏之后、中面板之前）

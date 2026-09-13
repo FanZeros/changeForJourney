@@ -11,6 +11,10 @@ local function newFxState()
 end
 local BE_DEFAULT = newFxState()
 local BE_BCS = BE_DEFAULT
+-- [三行并行] 条带渲染缩放：粒子视觉尺寸 × fxScale（与卡牌缩放同步）
+local fxScale = 1.0
+function BattleEffects.setRenderScale(s) fxScale = s or 1.0 end
+
 function BattleEffects.newFxState() return newFxState() end
 function BattleEffects.mount(s) BE_BCS = s or BE_DEFAULT end
 function BattleEffects.mountedState() return BE_BCS end
@@ -267,7 +271,7 @@ EFFECT_TYPES[2] = {
                     local dist = p.speed * pt
                     local px = tx + math.cos(p.angle) * dist
                     local py = ty + math.sin(p.angle) * dist
-                    local sz = p.size * (1 - pt * 0.4)
+                    local sz = (p.size * (1 - pt * 0.4)) * fxScale
                     if sz > 1 then
                         nvgCircle(vg, px, py, sz)
                         hasAny = true
@@ -379,7 +383,7 @@ EFFECT_TYPES[3] = {
                     local dist = d.speed * pt
                     local px = tx + math.cos(d.angle) * dist
                     local py = ty + math.sin(d.angle) * dist + 90 * pt * pt
-                    local sz = d.size * (1 - pt * 0.5)
+                    local sz = (d.size * (1 - pt * 0.5)) * fxScale
                     local rot = d.rotSpd * pt
 
                     if sz > 1 then
@@ -485,7 +489,7 @@ EFFECT_TYPES[4] = {
                     local dist = p.speed * pt
                     local px = tx + math.cos(p.angle) * dist
                     local py = ty + math.sin(p.angle) * dist
-                    local sz = p.size * (1 - pt * 0.4)
+                    local sz = (p.size * (1 - pt * 0.4)) * fxScale
                     if sz > 1 then
                         nvgCircle(vg, px, py, sz)
                         hasAny = true

@@ -20,8 +20,15 @@ local GameState    = require("core.GameState")
 local RewardPopup  = require("ui.RewardPopup")
 local SweepDialog      = require("ui.SweepDialog")
 local DamageStatsPanel = require("ui.DamageStatsPanel")
+local StageConfig  = require("config.StageConfig")
 
 local BattleTriPage = {}
+
+--- 关卡 ID → 显示名（与主战斗页一致：StageConfig 关卡表名称，如"森林小径1-1"）
+local function stageDisplayName(stageId)
+    local entry = stageId and StageConfig.getStage(tonumber(stageId))
+    return (entry and entry.name) or tostring(stageId or "?")
+end
 
 local COL_COUNT = ExpTable.TEAM_COUNT or 3
 
@@ -156,15 +163,15 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local stageText
         if row == 1 then
-            stageText = string.format("队1 · 第%s关", tostring(BattleScene.getStageId() or "?"))
+            stageText = string.format("队1 · %s", stageDisplayName(BattleScene.getStageId()))
         elseif drivers[row] then
-            stageText = string.format("队%d · 第%s关 · 击杀%d", row,
-                tostring(drivers[row].stageId), drivers[row].kills)
+            stageText = string.format("队%d · %s · 击杀%d", row,
+                stageDisplayName(drivers[row].stageId), drivers[row].kills)
         else
             stageText = string.format("队%d", row)
         end
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, rx + 128, headY - 17, 220, 34, 8)
+        nvgRoundedRect(vg, rx + 128, headY - 17, 260, 34, 8)
         nvgFillColor(vg, nvgRGBA(16, 18, 28, 200))
         nvgFill(vg)
         nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))

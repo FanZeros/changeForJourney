@@ -539,7 +539,9 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     local tgtIdx = findUnitIndex(tgtList, target)
     local tgtCX = getCardCX(tgtList, tgtIdx or math.ceil(#tgtList * 0.5))
     local showCrit = statMeta and statMeta.isCrit or false
-    addFloatingText((prefix or "") .. "-" .. NumberUtil.format(actual), tgtCX, tgtCY, color or {255, 238, 96}, showCrit)
+    -- 伤害飘字配色：普通白色 / 暴击红色
+    addFloatingText((prefix or "") .. "-" .. NumberUtil.format(actual), tgtCX, tgtCY,
+        showCrit and { 255, 60, 60 } or { 255, 255, 255 }, showCrit)
     setHitFlash(target)
     if actual > 0 then
         require("systems.GameSFX").play("hit")
@@ -1335,19 +1337,17 @@ local function performAttack(attacker, targetList, isAlly)
                             MAS.onEnemyDamaged(curTgt)
                         end
 
-                        local baseColor = (result.category == "magical")
-                            and { 113, 253, 255 } or { 255, 238, 96 }
+                        -- 飘字配色：普通白色 / 暴击红色（物理魔法不再分色，格挡由前缀表达）
                         local prefix = ""
-                        local color  = baseColor
                         if hit.isCrit then
                             prefix = "暴击 "
                         end
                         if hit.isBlocked then
                             prefix = prefix .. "格挡 "
-                            color  = { 180, 180, 180 }
                         end
 
-                        addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit)
+                        addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY,
+                            hit.isCrit and { 255, 60, 60 } or { 255, 255, 255 }, hit.isCrit)
 
                         -- 暴击回调（供台词系统触发暴击台词�?
                         if hit.isCrit and ctx.onCrit then
@@ -1520,7 +1520,7 @@ local function performAttack(attacker, targetList, isAlly)
 
                 local tgtCY = (not isAlly) and ctx.ALLY_CARD_CY or ctx.ENEMY_CARD_CY
                 local tgtCX = getCardCX(targetList, curIndex)
-                local ftColor = { 255, 238, 96 }
+                local ftColor = isCrit and { 255, 60, 60 } or { 255, 255, 255 }
                 addFloatingText(
                     (isCrit and "暴击 " or "") .. "-" .. NumberUtil.format(actualDmg),
                     tgtCX, tgtCY, ftColor, isCrit

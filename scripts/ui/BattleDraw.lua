@@ -160,13 +160,16 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
 
         local animState = combat.getAnimState(unit)
         local isDying = animState == "dying"
+        local isGone = animState == "gone"
         local isTombstoneIn = animState == "tombstone_in"
         local isDead  = unit.hp <= 0
         local isReviving = animState == "reviving"
         local isEntering = animState == "entering"
         local transAlpha = combat.getTransitionAlpha(unit)
 
-        if isDying then
+        if isGone then
+            -- [死亡即补位] 空位期：完全隐藏，等待新怪从右补入
+        elseif isDying then
             -- 死亡淡出：显示原卡牌向上/向下滑出
             local cardBgImg
             if unit.heroId then

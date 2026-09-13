@@ -1845,9 +1845,15 @@ function BattleCombat.updateCardAnims(dt)
             end
         elseif anim.state == "dying" then
             if anim.timer >= DEATH_ANIM_DURATION then
-                anim.state = "tombstone_in"
+                if anim.noTombstone then
+                    anim.state = "gone"   -- [死亡即补位] 退场完成 → 空位期（完全隐藏，等待新怪从右补入）
+                else
+                    anim.state = "tombstone_in"
+                end
                 anim.timer = 0
             end
+        elseif anim.state == "gone" then
+            -- 空位期：停留至被替换（不渲染，无过渡）
         elseif anim.state == "tombstone_in" then
             if anim.timer >= TOMBSTONE_FADEIN then
                 anim.state = "dead_done"
@@ -1933,6 +1939,8 @@ function BattleCombat.getTransitionAlpha(unit)
         return 1.0 - fadeT
     elseif anim.state == "tombstone_in" then
         return math.min(1, anim.timer / TOMBSTONE_FADEIN)
+    elseif anim.state == "gone" then
+        return 0   -- 空位期：完全隐藏
     elseif anim.state == "reviving" then
         return math.min(1, anim.timer / REVIVE_ANIM_DURATION)
     elseif anim.state == "entering" then

@@ -104,6 +104,9 @@ local NAV = {
 -- 墓碑复活间隔（秒）
 local TOMBSTONE_REVIVE_TIME = 2.0
 
+-- 死亡即补位：退场+空位总时长（秒），期满新怪从右补入
+local RESPAWN_DELAY = 1.0
+
 -- 死亡/复活动画常量（定义在 BattleCombat，此处引用）
 local DEATH_ANIM_DURATION  = BattleCombat.DEATH_ANIM_DURATION
 local REVIVE_ANIM_DURATION = BattleCombat.REVIVE_ANIM_DURATION
@@ -1979,28 +1982,32 @@ function BattleScene.update(dt)
                 if unit._killedBy and unit._killedBy.heroId then
                     SpeechBubble.trigger(unit._killedBy, "kill")
                 end
+
+                -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空走原竖直墓碑流程
+                local okRatio = unit._overkillRatio or 0
+                BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1,
+                    knockbackMult = 1.0 + okRatio * 2.0, noTombstone = (#enemyQueue > 0) })
             end
 
+            unit.reviveTimer = unit.reviveTimer + logicDt
+
             if #enemyQueue > 0 then
-                -- [改] 死亡即补位：立刻原地替换新怪（不播死亡淡出/墓碑动画）
-                local newUnit = table.remove(enemyQueue, 1)
-                Diag.installSentinel(newUnit)
-                TAL.initUnit(newUnit)
-                TAL.checkMarkTarget(allies, enemies)
-                newUnit.atkProgress = 0
-                enemies[i] = newUnit
-                -- 清理旧单位残留的动画状态
-                BattleCombat.clearCardAnim(unit)
-                BattleCombat.clearHitFlash(unit)
-                -- 新怪滑入入场动画
-                BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
-            else
-                -- 怪物池为空：保留死亡淡出 → 墓碑表现（进度条渐进至 100% 停驻）
-                if not unit._deathAnimStarted then
-                    unit._deathAnimStarted = true
-                    local okRatio = unit._overkillRatio or 0
-                    BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1, knockbackMult = 1.0 + okRatio * 2.0 })
+                -- [死亡即补位 v2] 退场(向右滑出0.4s) → 1s 空位 → 新怪从右滑入补位
+                if unit.reviveTimer >= RESPAWN_DELAY then
+                    local newUnit = table.remove(enemyQueue, 1)
+                    Diag.installSentinel(newUnit)
+                    TAL.initUnit(newUnit)
+                    TAL.checkMarkTarget(allies, enemies)
+                    newUnit.atkProgress = 0
+                    enemies[i] = newUnit
+                    -- 清理旧单位残留的动画状态
+                    BattleCombat.clearCardAnim(unit)
+                    BattleCombat.clearHitFlash(unit)
+                    -- 新怪从右侧滑入入场
+                    BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
                 end
+            else
+                -- 怪物池为空：保留墓碑表现（进度条渐进至 100% 停驻）
                 unit.atkProgress = math.min(1.0, (unit.atkProgress or 0) + logicDt / TOMBSTONE_REVIVE_TIME)
             end
         end

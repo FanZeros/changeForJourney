@@ -6,6 +6,9 @@
 
 local TalentStarMap = {}
 
+-- [暗黑化 P3-调整] 星图节点图标压暗档（与 DarkIcon.ICON_TINT_DARK 同档，独立常量避免反向依赖 ui 模块）
+local ICON_TINT_DARK = { 72, 64, 54 }
+
 -- ======================== 常量 ========================
 
 local GRID_SPACING  = 360   -- 坐标点间距 (px)
@@ -618,7 +621,9 @@ local function drawNode(vg, node)
     if iconHandle >= 0 then
         local ix = sx - iconHalf
         local iy = sy - iconHalf
-        local paint = nvgImagePattern(vg, ix, iy, iconSize, iconSize, 0, iconHandle, 1.0)
+        -- [暗黑化 P3-调整] 点亮态图标明显压暗（乘法叠色，透明底安全；未点亮态仍叠加原 50% 遮罩）
+        local tint = nvgRGBA(ICON_TINT_DARK[1], ICON_TINT_DARK[2], ICON_TINT_DARK[3], 255)
+        local paint = nvgImagePatternTinted(vg, ix, iy, iconSize, iconSize, 0, iconHandle, tint)
         nvgBeginPath(vg)
         nvgRect(vg, ix, iy, iconSize, iconSize)  -- 用矩形让 PNG alpha 自己定义形状
         nvgFillPaint(vg, paint)

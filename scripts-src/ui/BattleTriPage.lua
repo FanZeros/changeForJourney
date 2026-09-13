@@ -18,6 +18,8 @@ local SEM              = require("systems.StatusEffectManager")
 local ExpTable     = require("config.ExpTable")
 local GameState    = require("core.GameState")
 local RewardPopup  = require("ui.RewardPopup")
+local SweepDialog      = require("ui.SweepDialog")
+local DamageStatsPanel = require("ui.DamageStatsPanel")
 
 local BattleTriPage = {}
 
@@ -183,6 +185,59 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
         end
     end
 
+
+    local ry1 = ry
+    local rowH1 = rh / COL_COUNT
+    -- 速度（右上; 原设计中心 987,311）
+    do
+        local tx, ty = rx + rw - 52, ry1 + 36
+        nvgSave(vg)
+        nvgTranslate(vg, tx - 987, ty - 311)
+        BattleScene.drawSpeedButton(vg)
+        nvgRestore(vg)
+    end
+    -- 扫荡（右下; 原中心 971,2115）
+    do
+        local tx, ty = rx + rw - 52, ry1 + rowH1 - 42
+        nvgSave(vg)
+        nvgTranslate(vg, tx - 971, ty - 2115)
+        SweepDialog.drawButton(vg)
+        nvgRestore(vg)
+    end
+    -- 统计（扫荡左侧; 原中心 815,2115）
+    do
+        local tx, ty = rx + rw - 152, ry1 + rowH1 - 42
+        nvgSave(vg)
+        nvgTranslate(vg, tx - 815, ty - 2115)
+        DamageStatsPanel.drawButton(vg)
+        nvgRestore(vg)
+    end
+    -- 后退/前进（行头右侧小按钮）
+    local navY = ry1 + 24
+    for ni = 1, 2 do
+        local nx = rx + rw * 0.5 + 130 + (ni - 1) * 62
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, nx - 27, navY - 17, 54, 34, 8)
+        nvgFillColor(vg, nvgRGBA(30, 34, 50, 225))
+        nvgFill(vg)
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 22)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(225, 230, 245, 255))
+        nvgText(vg, nx, navY, ni == 1 and "◀" or "▶", nil)
+    end
+
+    -- [对话框覆盖] 扫荡/统计面板打开时等比覆盖战斗区
+    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() then
+        local fit = math.min(rw / 1080, rh / 960)
+        nvgSave(vg)
+        nvgTranslate(vg, rx + rw * 0.5, ry + rh * 0.5)
+        nvgScale(vg, fit, fit)
+        nvgTranslate(vg, -540, -1195)
+        if SweepDialog.isOpen() then SweepDialog.draw(vg) end
+        if DamageStatsPanel.isOpen() then DamageStatsPanel.draw(vg) end
+        nvgRestore(vg)
+    end
 end
 
 --- 输入（区域本地坐标 lx=窗口X-region.x, ly=窗口Y-region.y）；返回 true 表示消费
@@ -191,10 +246,56 @@ end
 ---@return boolean
 function BattleTriPage.handleInput(lx, ly)
     if not isOpen_ then return false end
-    -- [常驻] 无返回按钮; 点击行内任意处可关闭归属本行的获得弹窗
+    -- [常驻] 点击行内任意处可关闭归属本行的获得弹窗
     if RewardPopup.currentRowTag() then
         RewardPopup.close()
+        return true
     end
+
+    local rowH1 = region.h / COL_COUNT
+    local bs = require("ui.BattleScene")
+
+    -- 对话框打开: 坐标逆映射到设计空间, 交给对话框处理
+    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() then
+        local fit = math.min(region.w / 1080, region.h / 960)
+        local dx = (lx - region.w * 0.5) / fit + 540
+        local dy = (ly - region.h * 0.5) / fit + 1195
+        if SweepDialog.isOpen() then SweepDialog.handleInput(dx, dy) end
+        if DamageStatsPanel.isOpen() then DamageStatsPanel.handleInput(dx, dy) end
+        return true
+    end
+
+    -- 速度（右上; 命中以原设计坐标判定, 差值映射）
+    local tx, ty = region.w - 52, 36
+    if math.abs(lx - tx) <= 65 and math.abs(ly - ty) <= 71.5 then
+        bs.handleSpeedButtonInput(987 + (lx - tx), 311 + (ly - ty))
+        return true
+    end
+    -- 扫荡（右下）
+    tx, ty = region.w - 52, rowH1 - 42
+    if math.abs(lx - tx) <= 65 and math.abs(ly - ty) <= 72 then
+        SweepDialog.handleButtonInput(971 + (lx - tx), 2115 + (ly - ty))
+        return true
+    end
+    -- 统计
+    tx, ty = region.w - 152, rowH1 - 42
+    if math.abs(lx - tx) <= 65 and math.abs(ly - ty) <= 72 then
+        DamageStatsPanel.handleButtonInput(815 + (lx - tx), 2115 + (ly - ty))
+        return true
+    end
+    -- 后退 / 前进（行头右侧）
+    local nx1 = region.w * 0.5 + 130
+    local nx2 = nx1 + 62
+    if ly >= 7 and ly <= 41 then
+        if lx >= nx1 - 27 and lx <= nx1 + 27 then
+            bs.prevStage()
+            return true
+        elseif lx >= nx2 - 27 and lx <= nx2 + 27 then
+            bs.nextStage()
+            return true
+        end
+    end
+
     return true  -- 战斗区吞掉其余点击（自动战斗）
 end
 

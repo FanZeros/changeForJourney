@@ -784,6 +784,7 @@ end
 -- 类型 → 绘制函数映射
 local DRAW_FUNCS = {
     fly          = updateAndDrawFly,
+    pierce       = updateAndDrawFly,  -- [单发穿透] 直线路径, 命中事件在 update 中按位置触发
     shake        = updateAndDrawShake,
     bezier       = updateAndDrawBezier,
     lightning    = updateAndDrawLightning,
@@ -942,6 +943,41 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
 
+--- [单发穿透] 一发弹沿直线穿过目标群, 按位置进度(atT)依次触发命中事件
+--- 与"一次丢 N 个弹"相对: 多目标攻击只飞一发, 视觉为穿透
+--- @param source table { heroId=id } 或 { key=effectKey }（弹体视觉取自对应配置）
+--- @param hitEvents table[] 已按 atT 升序排序的 { atT=0..1, onHit=function }
+--- @return boolean 是否成功生成（无弹体配置返回 false, 调用方回退逐目标）
+function ProjectileSystem.spawnPierce(source, startX, startY, endX, endY, hitEvents, opts)
+    local base = nil
+    if type(source) == "table" then
+        if source.heroId then base = CONFIGS[source.heroId]
+        elseif source.key then base = MONSTER_CONFIGS[source.key] end
+    end
+    if not base or not hitEvents or #hitEvents == 0 then return false end
+
+    -- 防御: 强制按 atT 升序（探测曾抓到插入序触发/队头阻塞问题）
+    table.sort(hitEvents, function(a, b) return (a.atT or 0) < (b.atT or 0) end)
+
+    local cfg = setmetatable({ type = "pierce" }, { __index = base })
+    if base.imgKey then GameSFX.play(base.imgKey) end
+
+    local proj = {
+        cfg          = cfg,
+        timer        = 0,
+        startX       = startX,
+        startY       = startY,
+        endX         = endX,
+        endY         = endY,
+        pierceEvents = hitEvents,
+        nextEventIdx = 1,
+        onArrive     = opts and opts.onArrive or nil,
+        arrived      = false,
+    }
+    PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
+    return true
+end
+
 --- 触发一个技能投射物
 function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArrive, opts)
     local cfg = SKILL_CONFIGS[heroId]
@@ -1041,6 +1077,21 @@ function ProjectileSystem.update(dt)
     while i <= #PS_BCS.projectiles do
         local proj = PS_BCS.projectiles[i]
         proj.timer = proj.timer + dt
+
+        -- [单发穿透] 按飞行进度依次触发沿线命中事件
+        if proj.pierceEvents and not proj.arrived then
+            local pdur = (proj.cfg and proj.cfg.duration) or 0.5
+            if pdur <= 0 then pdur = 0.01 end
+            local pt = math.min(1, proj.timer / pdur)
+            while proj.nextEventIdx <= #proj.pierceEvents
+                  and proj.pierceEvents[proj.nextEventIdx].atT <= pt do
+                local ev = proj.pierceEvents[proj.nextEventIdx]
+                proj.nextEventIdx = proj.nextEventIdx + 1
+                if ev.onHit then
+                    safeInvokeProjectileCallback("pierce-hit", ev.onHit)
+                end
+            end
+        end
 
         -- 目标死亡检测：如果投射物跟踪的目标已死亡，立即触发到达并快速消失
         -- 防止治疗投射物飞向墓碑的视觉问题

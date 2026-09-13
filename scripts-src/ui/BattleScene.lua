@@ -1111,6 +1111,64 @@ local function setupBattleCombatContext()
                 hitCallback()
             end
         end,
+        -- [单发穿透] 多目标攻击: 一发弹沿目标线依次结算（视觉穿透而非齐射）
+        onPierceAttack = function(attacker, atkCX, atkCY, pack)
+            local events = pack.events
+            if not events or #events == 0 then return end
+            local hasHeroEffect = attacker.heroId
+                                  and ProjectileSystem.hasHeroEffect(attacker.heroId)
+            local hasMonsterEffect = attacker.atkEffect
+                                     and ProjectileSystem.hasMonsterProjectile(attacker.atkEffect)
+            if not hasHeroEffect and not hasMonsterEffect then
+                -- 无弹体配置: 回退立即逐个结算（与 onAttackHit 的 else 路径一致）
+                for _, ev in ipairs(events) do
+                    if ev.applyHit then pcall(ev.applyHit) end
+                    if ev.target and ev.target.attrs then
+                        BattleEffects.spawn(ev.target.attrs.armorType or 1, ev.tgtCX, ev.tgtCY)
+                    end
+                end
+                return
+            end
+
+            -- 飞行方向: 攻击者 → 最远目标
+            local maxDot, dirX, dirY = 0, 1, 0
+            for _, ev in ipairs(events) do
+                local dx, dy = ev.tgtCX - atkCX, ev.tgtCY - atkCY
+                local d = dx * dx + dy * dy
+                if d > maxDot then
+                    maxDot = d
+                    local len = math.sqrt(d)
+                    if len > 0 then dirX, dirY = dx / len, dy / len end
+                end
+            end
+            local maxDist = math.sqrt(maxDot)
+
+            -- 各目标按沿方向投影换算触发进度, 排序后交给穿透弹
+            local hitEvents = {}
+            for _, ev in ipairs(events) do
+                local projDist = (ev.tgtCX - atkCX) * dirX + (ev.tgtCY - atkCY) * dirY
+                local t = (maxDist > 0) and (projDist / maxDist) or 1
+                t = math.max(0.05, math.min(1, t))
+                local tgt = ev.target
+                hitEvents[#hitEvents + 1] = {
+                    atT = t,
+                    onHit = function()
+                        if ev.applyHit then pcall(ev.applyHit) end
+                        if tgt and tgt.attrs then
+                            BattleEffects.spawn(tgt.attrs.armorType or 1, ev.tgtCX, ev.tgtCY)
+                        end
+                    end,
+                }
+            end
+            table.sort(hitEvents, function(a, b) return a.atT < b.atT end)
+
+            -- 终点越过最远目标 18%, 呈现穿透飞出感
+            local endX = atkCX + dirX * maxDist * 1.18
+            local endY = atkCY + dirY * maxDist * 1.18
+            local source = hasHeroEffect and { heroId = attacker.heroId } or { key = attacker.atkEffect }
+            ProjectileSystem.spawnPierce(source, atkCX, atkCY, endX, endY, hitEvents)
+        end,
+
         onTalentDealDamage = function(attacker, target, tgtCX, tgtCY, pfx, applyDamage, projOpts)
             BattleCombat.onTalentDealDamage(attacker, target, tgtCX, tgtCY, pfx, applyDamage, projOpts, allies, enemies)
         end,

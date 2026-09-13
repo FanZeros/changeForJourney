@@ -1043,6 +1043,12 @@ local function performAttack(attacker, targetList, isAlly)
     -- 多目标攻击：基础攻击仇恨每次出手只计算一次，伤害仇恨仍按每个目标分别计算
     local baseThreatCounted = false
 
+    -- [单发穿透] 多目标攻击收集为一次穿透弹的命中事件（替代逐目标各丢一弹）
+    local piercePack = nil
+    if atkTargets > 1 and not isHealer and not skipProjectile and BCS.ctx.onPierceAttack then
+        piercePack = { events = {} }
+    end
+
     -- 连击必须在主伤害 applyHit 落地后再排队（避免投射物未到时连击先触发，与弹射叠在一起像误触发）
     local comboDelayStep = LUNGE_DURATION + RETURN_DURATION + 0.05
     local function queueComboAfterHit(curIndex, curTarget, comboCount)
@@ -1500,6 +1506,15 @@ local function performAttack(attacker, targetList, isAlly)
                     -- 通知 BattleScene：由场景决定立即/延迟伤害
                     if skipProjectile then
                         applyHit()  -- 攻击者不可寻址，跳过投射物动画直接生效
+                    elseif piercePack then
+                        -- [单发穿透] 只收集结算事件, 由一发穿透弹沿线依次触发
+                        piercePack.events[#piercePack.events + 1] = {
+                            target = curTgt,
+                            tgtCX  = curTgtCX,
+                            tgtCY  = curTgtCY,
+                            result = result,
+                            applyHit = applyHit,
+                        }
                     elseif BCS.ctx.onAttackHit then
                         BCS.ctx.onAttackHit(attacker, curTgt, atkCX, atkCY, curTgtCX, curTgtCY, result, applyHit)
                     else
@@ -1550,6 +1565,11 @@ local function performAttack(attacker, targetList, isAlly)
             end
         end -- curTarget alive check
     end -- target loop
+
+    -- [单发穿透] 目标收集完毕 → 发射一发穿透弹（无收集/无宿主支持时各目标已走原路径）
+    if piercePack and #piercePack.events > 0 then
+        BCS.ctx.onPierceAttack(attacker, atkCX, atkCY, piercePack)
+    end
 
     -- 攻击吸血（所有目标伤害合计后统一计算一次）
     if totalDmgDealt > 0 and attacker.hp > 0 and attacker.attrs and ART.canHeal(attacker) then

@@ -207,6 +207,19 @@ local function drawImageSilhouette(vg, img, cx, cy, w, h, darkness)
     nvgRestore(vg)
 end
 
+--- [暗黑替换] 建筑压暗绘制：nvgImagePatternTinted 乘法叠色（暖褐 ×≈0.57）
+local function drawImageDarkTint(vg, img, cx, cy, w, h, alpha)
+    if img < 0 or alpha <= 0.01 then return end
+    local x = cx - w * 0.5
+    local y = cy - h * 0.5
+    local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img,
+        nvgRGBA(150, 138, 122, math.floor(255 * alpha)))
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, w, h)
+    nvgFillPaint(vg, paint)
+    nvgFill(vg)
+end
+
 --- 九宫格绘制（复用 EquipmentDetail 已验证的实现）
 --- 参数: 目标区域左上角(dx,dy)、宽高(dw,dh)、四边 inset
 local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLeft)
@@ -391,7 +404,7 @@ function TownScene.draw(vg)
     if smithLocked then
         drawImageSilhouette(vg, imgSmith, SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, 0.85)
     else
-        drawImageCentered(vg, imgSmith, SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, 1.0)
+        drawImageDarkTint(vg, imgSmith, SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, 1.0)
         drawFlashOverlay(vg, imgSmith, SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, getClickFlashAlpha("smith"))
         drawBuildingLabel(vg,
             SMITH_LBL_CX, SMITH_LBL_CY, SMITH_LBL_W, SMITH_LBL_H,
@@ -426,7 +439,7 @@ function TownScene.draw(vg)
     if guildLocked then
         drawImageSilhouette(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, 0.85)
     else
-        drawImageCentered(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, 1.0)
+        drawImageDarkTint(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, 1.0)
         drawFlashOverlay(vg, imgGuild, GUILD_CX, GUILD_CY, GUILD_W, GUILD_H, getClickFlashAlpha("guild"))
         drawBuildingLabel(vg,
             GUILD_LBL_CX, GUILD_LBL_CY, GUILD_LBL_W, GUILD_LBL_H,
@@ -456,7 +469,7 @@ function TownScene.draw(vg)
     if arenaLocked then
         drawImageSilhouette(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, 0.85)
     else
-        drawImageCentered(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, 1.0)
+        drawImageDarkTint(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, 1.0)
         drawFlashOverlay(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, getClickFlashAlpha("arena"))
         drawBuildingLabel(vg,
             ARENA_LBL_CX, ARENA_LBL_CY, ARENA_LBL_W, ARENA_LBL_H,
@@ -483,7 +496,7 @@ function TownScene.draw(vg)
     if marketLocked then
         drawImageSilhouette(vg, imgMarket, MARKET_CX, MARKET_CY, MARKET_W, MARKET_H, 0.85)
     else
-        drawImageCentered(vg, imgMarket, MARKET_CX, MARKET_CY, MARKET_W, MARKET_H, 1.0)
+        drawImageDarkTint(vg, imgMarket, MARKET_CX, MARKET_CY, MARKET_W, MARKET_H, 1.0)
         drawFlashOverlay(vg, imgMarket, MARKET_CX, MARKET_CY, MARKET_W, MARKET_H, getClickFlashAlpha("market"))
         drawBuildingLabel(vg,
             MARKET_LBL_CX, MARKET_LBL_CY, MARKET_LBL_W, MARKET_LBL_H,
@@ -507,7 +520,7 @@ function TownScene.draw(vg)
     if churchLocked then
         drawImageSilhouette(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, 0.85)
     else
-        drawImageCentered(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, 1.0)
+        drawImageDarkTint(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, 1.0)
         drawFlashOverlay(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, getClickFlashAlpha("church"))
         drawBuildingLabel(vg,
             CHURCH_LBL_CX, CHURCH_LBL_CY, CHURCH_LBL_W, CHURCH_LBL_H,
@@ -533,7 +546,7 @@ function TownScene.draw(vg)
     if tavernLocked then
         drawImageSilhouette(vg, imgTavern, TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, 0.85)
     else
-        drawImageCentered(vg, imgTavern, TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, 1.0)
+        drawImageDarkTint(vg, imgTavern, TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, 1.0)
         drawFlashOverlay(vg, imgTavern, TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, getClickFlashAlpha("tavern"))
         drawBuildingLabel(vg,
             TAVERN_LBL_CX, TAVERN_LBL_CY, TAVERN_LBL_W, TAVERN_LBL_H,

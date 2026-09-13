@@ -129,6 +129,21 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
     nvgFillColor(vg, nvgRGBA(10, 10, 16, 255))
     nvgFill(vg)
 
+    -- [微调] 血月辉光：天幕带下缘溢光到行1顶部
+    do
+        local gx, gy = rx + rw * 0.54, ry - 6
+        local glow = nvgRadialGradient(vg, gx, gy, 8, 190,
+            nvgRGBA(224, 72, 72, 70), nvgRGBA(166, 30, 30, 0))
+        nvgBeginPath(vg)
+        nvgRect(vg, rx, ry, rw, 130)
+        nvgFillPaint(vg, glow)
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgCircle(vg, gx, ry + 2, 15)
+        nvgFillColor(vg, nvgRGBA(224, 72, 72, 110))
+        nvgFill(vg)
+    end
+
     local BattleScene = require("ui.BattleScene")
     local CharacterPanel = require("ui.CharacterPanel")
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
@@ -162,10 +177,8 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
                 drv.mount()
                 BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies }, imgL1[row])
             else
-                nvgBeginPath(vg)
-                nvgRect(vg, 0, 0, rw, rowH)
-                nvgFillColor(vg, nvgRGBA(16, 16, 24, 255))
-                nvgFill(vg)
+                -- [微调] 锁定行也铺 L1 背景（压暗呈现, 保持大图连续感）
+                BattleView.draw(vg, { allies = {}, enemies = {} }, imgL1[row])
             end
         end
         nvgRestore(vg)
@@ -200,7 +213,7 @@ function BattleTriPage.draw(vg, rx, ry, rw, rh)
         if row > unlocked then
             nvgBeginPath(vg)
             nvgRect(vg, rx, ry0, rw, rowH)
-            nvgFillColor(vg, nvgRGBA(8, 8, 14, 205))
+            nvgFillColor(vg, nvgRGBA(8, 8, 14, 160))
             nvgFill(vg)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             local needLv = ExpTable.getTeamUnlockLevel(row)

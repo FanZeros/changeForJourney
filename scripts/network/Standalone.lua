@@ -2116,6 +2116,10 @@ function HandleNanoVGRenderHorizon()
         Viewport.finish(vg)
         -- 中段三行战斗区（宽 = 窗口 - 两侧面板）
         BattleTriPage.draw(vg, 486 * ps, 0, logicalW - 972 * ps, logicalH)
+        -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
+        if DarkTitleScreen.isOpen() then
+            DarkTitleScreen.draw(vg, logicalW, logicalH)
+        end
         nvgEndFrame(vg)
         return
     end

@@ -656,13 +656,11 @@ local function drawShopCard(vg, idx, item, cx, cy)
         SL.COUNT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         255, 255, 255, SL.COUNT_SW, { strokeColor = { 0, 0, 0 } })
 
-    -- 限购文本
-    local limitText
-    if item.limitCount == -1 then
-        limitText = "不限购"
-    else
+    -- 限购文本（仅限购商品显示；不限购不显示）
+    if item.limitCount ~= -1 then
         local remaining = item.limitCount - bought
         if remaining < 0 then remaining = 0 end
+        local limitText
         if item.restockType == "cooldown" then
             local cdLeft = getCooldownRemaining(item)
             local cdStr
@@ -680,11 +678,11 @@ local function drawShopCard(vg, idx, item, cx, cy)
         else
             limitText = "限购" .. remaining .. "份"
         end
+        nvgFontFace(vg, "sans"); nvgFontSize(vg, SL.LIMIT_FONT)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(SL.LIMIT_R, SL.LIMIT_G, SL.LIMIT_B, 255))
+        nvgText(vg, cx, cy + SL.LIMIT_OY, limitText, nil)
     end
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, SL.LIMIT_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(SL.LIMIT_R, SL.LIMIT_G, SL.LIMIT_B, 255))
-    nvgText(vg, cx, cy + SL.LIMIT_OY, limitText, nil)
 
     -- 购买按钮
     ---@diagnostic disable-next-line: assign-type-mismatch

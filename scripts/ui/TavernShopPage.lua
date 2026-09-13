@@ -29,136 +29,136 @@ local DESIGN_W = 1080
 local SHOP_ITEMS = {
     {
         id = 1, name = "冒险招募券", quality = 5,
-        limitCycle = "daily", limitCount = 5, price = 40,
+        limitCycle = "daily", limitCount = -1, price = 40,
         icon = "image/UI_icon_ZMQ_1.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 102, name = "星辉招募券", quality = 6,
-        limitCycle = "daily", limitCount = 5, price = 160,
+        limitCycle = "daily", limitCount = -1, price = 160,
         icon = "image/UI_icon_ZMQ_2.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     -- N 碎片（品质3）
     {
         id = 2, name = "大狗嚼-碎片", quality = 3,
-        limitCycle = "daily", limitCount = 50, price = 15,
+        limitCycle = "daily", limitCount = -1, price = 15,
         icon = "image/角色图标/UI_icon_hero_1.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 3, name = "黄桃龙-碎片", quality = 3,
-        limitCycle = "daily", limitCount = 50, price = 15,
+        limitCycle = "daily", limitCount = -1, price = 15,
         icon = "image/角色图标/UI_icon_hero_2.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 4, name = "叮咚鸡-碎片", quality = 3,
-        limitCycle = "daily", limitCount = 50, price = 15,
+        limitCycle = "daily", limitCount = -1, price = 15,
         icon = "image/角色图标/UI_icon_hero_3.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     -- R 碎片（品质4）
     {
         id = 5, name = "接化发掌门-碎片", quality = 4,
-        limitCycle = "daily", limitCount = 50, price = 60,
+        limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_4.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 6, name = "叠甲怪-碎片", quality = 4,
-        limitCycle = "daily", limitCount = 50, price = 60,
+        limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_5.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 7, name = "阿姨压-碎片", quality = 4,
-        limitCycle = "daily", limitCount = 50, price = 60,
+        limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_6.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 8, name = "信光机兵-碎片", quality = 4,
-        limitCycle = "daily", limitCount = 50, price = 60,
+        limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_7.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 9, name = "愤怒的小雀-碎片", quality = 4,
-        limitCycle = "daily", limitCount = 50, price = 60,
+        limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_8.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 10, name = "卡皮巴拉-碎片", quality = 4,
-        limitCycle = "daily", limitCount = 50, price = 60,
+        limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_9.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     -- SR 碎片（品质5）
     {
         id = 11, name = "铁憨憨-碎片", quality = 5,
-        limitCycle = "daily", limitCount = 50, price = 250,
+        limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_10.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 12, name = "熬夜冠军-碎片", quality = 5,
-        limitCycle = "daily", limitCount = 50, price = 250,
+        limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_11.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 13, name = "雪皇-碎片", quality = 5,
-        limitCycle = "daily", limitCount = 50, price = 250,
+        limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_12.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 14, name = "弹弹弹-碎片", quality = 5,
-        limitCycle = "daily", limitCount = 50, price = 250,
+        limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_13.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 15, name = "内鬼-碎片", quality = 5,
-        limitCycle = "daily", limitCount = 50, price = 250,
+        limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_14.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 16, name = "复活吧爱人-碎片", quality = 5,
-        limitCycle = "daily", limitCount = 50, price = 250,
+        limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_15.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 17, name = "闪电卖鸡-碎片", quality = 5,
-        limitCycle = "daily", limitCount = 50, price = 250,
+        limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_21.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 18, name = "小黑子-碎片", quality = 5,
-        limitCycle = "daily", limitCount = 50, price = 250,
+        limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_22.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 19, name = "真布诗人-碎片", quality = 5,
-        limitCycle = "daily", limitCount = 50, price = 250,
+        limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_23.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 101, name = "万剑归宗-碎片", quality = 6,
-        limitCycle = "daily", limitCount = 20, price = 1125, rewardHeroId = 16,
+        limitCycle = "daily", limitCount = -1, price = 1125, rewardHeroId = 16,
         icon = "image/角色图标/UI_icon_hero_16.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
     {
         id = 103, name = "摘星星星人-碎片", quality = 6,
-        limitCycle = "daily", limitCount = 20, price = 1125, rewardHeroId = 20,
+        limitCycle = "daily", limitCount = -1, price = 1125, rewardHeroId = 20,
         icon = "image/角色图标/UI_icon_hero_20.png",
         costIcon = "image/UI_icon_JGB_X.png",
     },
@@ -459,6 +459,7 @@ local function getPurchased(itemId)
 end
 
 local function isSoldOut(item)
+    if item.limitCount < 0 then return false end  -- 不限购
     return getPurchased(item.id) >= item.limitCount
 end
 
@@ -544,7 +545,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
         { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
 
     local bought   = getPurchased(item.id)
-    local soldOut  = bought >= item.limitCount
+    local soldOut  = item.limitCount >= 0 and bought >= item.limitCount
     local locked   = isLockedByOwnership(item)
 
     -- 商品名
@@ -562,18 +563,20 @@ local function drawShopCard(vg, idx, item, cx, cy)
     -- 仅冒险招募券 id=1 不需要角标，其余碎片默认1个
     -- 不显示角标（均为1个/次）
 
-    -- 限购文本（剩余可购次数）
-    local remaining = math.max(0, item.limitCount - bought)
-    local limitText
-    if item.limitCycle == "daily" then
-        limitText = "限购" .. remaining .. "次/日"
-    else
-        limitText = "限购" .. remaining .. "次/周"
+    -- 限购文本（仅限购商品显示；不限购不显示）
+    if item.limitCount >= 0 then
+        local remaining = math.max(0, item.limitCount - bought)
+        local limitText
+        if item.limitCycle == "daily" then
+            limitText = "限购" .. remaining .. "次/日"
+        else
+            limitText = "限购" .. remaining .. "次/周"
+        end
+        nvgFontFace(vg, "sans"); nvgFontSize(vg, L.LIMIT_FONT)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(L.LIMIT_R, L.LIMIT_G, L.LIMIT_B, 255))
+        nvgText(vg, cx, cy + L.LIMIT_OY, limitText, nil)
     end
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, L.LIMIT_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(L.LIMIT_R, L.LIMIT_G, L.LIMIT_B, 255))
-    nvgText(vg, cx, cy + L.LIMIT_OY, limitText, nil)
 
     -- 购买按钮
     ---@diagnostic disable-next-line: assign-type-mismatch

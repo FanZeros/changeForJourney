@@ -49,15 +49,17 @@ function TavernService.ShopBuy(uid, itemId, quantity)
         PDM.MarkDirty(uid, "tavern")
     end
 
-    -- 检查购买次数限制
+    -- 检查购买次数限制（limitCount < 0 = 不限购；购买记录始终累计）
     local purchased   = tavern.shopPurchased or {}
     local alreadyBought = purchased[itemId] or 0
-    local remaining   = item.limitCount - alreadyBought
-    if remaining <= 0 then
-        return { success = false, reason = "已达购买上限" }
-    end
-    if quantity > remaining then
-        quantity = remaining
+    if item.limitCount >= 0 then
+        local remaining   = item.limitCount - alreadyBought
+        if remaining <= 0 then
+            return { success = false, reason = "已达购买上限" }
+        end
+        if quantity > remaining then
+            quantity = remaining
+        end
     end
 
     -- 检查酒馆币余额

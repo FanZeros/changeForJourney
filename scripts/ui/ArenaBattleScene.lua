@@ -34,6 +34,7 @@ local ArenaRankRewardDialog = require("ui.ArenaRankRewardDialog")
 local BattleResultPanel     = require("ui.BattleResultPanel")
 local BF                    = require("systems.ButtonFeedback")
 local SettingsPanel         = require("ui.SettingsPanel")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local drawTextStroke    = BattleDraw.drawTextStroke
 local drawImageCentered = BattleDraw.drawImageCentered
@@ -156,9 +157,9 @@ local imgAllyTags = {}
 local imgTierIcons = {}  -- ICON_DW_1~8
 
 -- 投降确认弹窗图片
-local imgConfirmBg  = -1  -- UI_TY_EJQRK.png（九宫格弹窗背景）
-local imgBtnRed     = -1  -- UI_AN_FANG_hong.png（红色按钮 - 确认投降）
-local imgBtnGray    = -1  -- UI_AN_FANG.png（灰色按钮 - 取消）
+
+
+
 
 -- ======================== 状态 ========================
 
@@ -299,9 +300,7 @@ local function drawConfirmDialog(vg)
     nvgGlobalAlpha(vg, pAlpha)
 
     -- 3) 九宫格背景
-    drawNineSlice(vg, imgConfirmBg,
-        C.BG_CX - C.BG_W * 0.5, C.BG_CY - C.BG_H * 0.5,
-        C.BG_W, C.BG_H, 40, 40, 40, 40)
+    DarkIcon.drawNine(vg, "panel", C.BG_CX - C.BG_W * 0.5, C.BG_CY - C.BG_H * 0.5, C.BG_W, C.BG_H, { titleH = 40 })
 
     -- 4) 标题
     drawTextStroke(vg, C.BG_CX, C.TITLE_CY, "确认投降？",
@@ -323,18 +322,14 @@ local function drawConfirmDialog(vg)
     nvgText(vg, C.BG_CX, C.LINE2_CY, "本次挑战机会消耗", nil)
 
     -- 7) 确认按钮（红色）
-    drawNineSlice(vg, imgBtnRed,
-        C.OK_CX - C.OK_W * 0.5, C.OK_CY - C.OK_H * 0.5,
-        C.OK_W, C.OK_H, 20, 20, 20, 20)
+    DarkIcon.drawNine(vg, "btn", C.OK_CX - C.OK_W * 0.5, C.OK_CY - C.OK_H * 0.5, C.OK_W, C.OK_H, { accent = "red" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, C.OK_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(C.OK_TR, C.OK_TG, C.OK_TB, 255))
     nvgText(vg, C.OK_CX, C.OK_CY, "投降", nil)
 
     -- 8) 取消按钮（灰色）
-    drawNineSlice(vg, imgBtnGray,
-        C.CANCEL_CX - C.CANCEL_W * 0.5, C.CANCEL_CY - C.CANCEL_H * 0.5,
-        C.CANCEL_W, C.CANCEL_H, 20, 20, 20, 20)
+    DarkIcon.drawNine(vg, "btn", C.CANCEL_CX - C.CANCEL_W * 0.5, C.CANCEL_CY - C.CANCEL_H * 0.5, C.CANCEL_W, C.CANCEL_H, { accent = "green" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, C.CANCEL_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(C.CANCEL_TR, C.CANCEL_TG, C.CANCEL_TB, 255))

@@ -8,6 +8,7 @@ local DrawUtil        = require("core.DrawUtil")
 local EquipmentConfig = require("config.EquipmentConfig")
 local ImageCache      = require("ui.ImageCache")
 local BF              = require("systems.ButtonFeedback")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local lastClickX = 0
 local lastClickY = 0
 
@@ -373,9 +374,7 @@ function LootBoxPage.draw(vg)
     nvgFill(vg)
 
     -- 2. 面板背景（九宫格）
-    drawNineSlice(vg, imgPanel,
-        PANEL_CX - PANEL_W * 0.5, PANEL_CY - PANEL_H * 0.5, PANEL_W, PANEL_H,
-        PANEL_9P_TOP, PANEL_9P_RIGHT, PANEL_9P_BOTTOM, PANEL_9P_LEFT)
+    DarkIcon.drawNine(vg, "panel", PANEL_CX - PANEL_W * 0.5, PANEL_CY - PANEL_H * 0.5, PANEL_W, PANEL_H, { titleH = PANEL_9P_TOP })
 
     -- 3. 标题 "战利品"
     drawTextStroke(vg, TITLE_CX, TITLE_CY, "战利品", TITLE_SIZE,
@@ -411,11 +410,11 @@ function LootBoxPage.draw(vg)
 
     -- 8-9. 分解按钮（分解模式下显示"取消分解"，正常模式显示"一键分解"）
     local decompBtnText = decomposeMode and "取消分解" or "一键分解"
-    local decompBtnImg  = decomposeMode and imgBtnYellow or imgBtnRed
     local _bfDecomp = BF.begin(vg, "lbp_decompose", BTN_DECOMPOSE_CX, BTN_Y, BTN_W, BTN_H)
-    drawNineSlice(vg, decompBtnImg,
+    -- [暗黑化 P1-B3] 矢量按钮：分解模式=金 取消分解=红
+    DarkIcon.drawNine(vg, "btn",
         BTN_DECOMPOSE_CX - BTN_W * 0.5, BTN_Y - BTN_H * 0.5, BTN_W, BTN_H,
-        BTN_9P_TB, BTN_9P_LR, BTN_9P_TB, BTN_9P_LR)
+        { accent = decomposeMode and "gold" or "red" })
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, BTN_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -425,9 +424,7 @@ function LootBoxPage.draw(vg)
 
     -- 10-11. 一键领取按钮
     local _bfClaimAll = BF.begin(vg, "lbp_claim_all", BTN_CLAIM_ALL_CX, BTN_Y, BTN_W, BTN_H)
-    drawNineSlice(vg, imgBtnYellow,
-        BTN_CLAIM_ALL_CX - BTN_W * 0.5, BTN_Y - BTN_H * 0.5, BTN_W, BTN_H,
-        BTN_9P_TB, BTN_9P_LR, BTN_9P_TB, BTN_9P_LR)
+    DarkIcon.drawNine(vg, "btn", BTN_CLAIM_ALL_CX - BTN_W * 0.5, BTN_Y - BTN_H * 0.5, BTN_W, BTN_H, { accent = "gold" })
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, BTN_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -437,9 +434,7 @@ function LootBoxPage.draw(vg)
 
     -- 12. 全部分解按钮（居中，面板底部）
     local _bfAllDecomp = BF.begin(vg, "lbp_all_decompose", BTN_ALL_DECOMP_CX, BTN_ALL_DECOMP_Y, BTN_W, BTN_H)
-    drawNineSlice(vg, imgBtnRed,
-        BTN_ALL_DECOMP_CX - BTN_W * 0.5, BTN_ALL_DECOMP_Y - BTN_H * 0.5, BTN_W, BTN_H,
-        BTN_9P_TB, BTN_9P_LR, BTN_9P_TB, BTN_9P_LR)
+    DarkIcon.drawNine(vg, "btn", BTN_ALL_DECOMP_CX - BTN_W * 0.5, BTN_ALL_DECOMP_Y - BTN_H * 0.5, BTN_W, BTN_H, { accent = "red" })
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, BTN_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -480,18 +475,14 @@ function LootBoxPage.draw(vg)
         nvgText(vg, CONFIRM_CX, CONFIRM_CY + 55, "是否继续？", nil)
 
         local _bfCancel = BF.begin(vg, "lbp_all_decomp_cancel", CONFIRM_CANCEL_CX, CONFIRM_BTN_Y, CONFIRM_BTN_W, CONFIRM_BTN_H)
-        drawNineSlice(vg, imgBtnYellow,
-            CONFIRM_CANCEL_CX - CONFIRM_BTN_W * 0.5, CONFIRM_BTN_Y - CONFIRM_BTN_H * 0.5,
-            CONFIRM_BTN_W, CONFIRM_BTN_H, BTN_9P_TB, BTN_9P_LR, BTN_9P_TB, BTN_9P_LR)
+        DarkIcon.drawNine(vg, "btn", CONFIRM_CANCEL_CX - CONFIRM_BTN_W * 0.5, CONFIRM_BTN_Y - CONFIRM_BTN_H * 0.5, CONFIRM_BTN_W, CONFIRM_BTN_H, { accent = "gold" })
         nvgFontSize(vg, 38)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
         nvgText(vg, CONFIRM_CANCEL_CX, CONFIRM_BTN_Y, "取消", nil)
         BF.finish(vg, _bfCancel)
 
         local _bfOk = BF.begin(vg, "lbp_all_decomp_ok", CONFIRM_OK_CX, CONFIRM_BTN_Y, CONFIRM_BTN_W, CONFIRM_BTN_H)
-        drawNineSlice(vg, imgBtnRed,
-            CONFIRM_OK_CX - CONFIRM_BTN_W * 0.5, CONFIRM_BTN_Y - CONFIRM_BTN_H * 0.5,
-            CONFIRM_BTN_W, CONFIRM_BTN_H, BTN_9P_TB, BTN_9P_LR, BTN_9P_TB, BTN_9P_LR)
+        DarkIcon.drawNine(vg, "btn", CONFIRM_OK_CX - CONFIRM_BTN_W * 0.5, CONFIRM_BTN_Y - CONFIRM_BTN_H * 0.5, CONFIRM_BTN_W, CONFIRM_BTN_H, { accent = "red" })
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
         nvgText(vg, CONFIRM_OK_CX, CONFIRM_BTN_Y, "确认分解", nil)
         BF.finish(vg, _bfOk)
@@ -543,15 +534,14 @@ function drawComboItem(vg, entry, index, cx, cy)
     drawTextStroke(vg, iconCX, cy + LEVEL_Y_OFFSET, lvText, LEVEL_SIZE,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, LEVEL_STROKE)
 
-    -- 5.7 按钮（分解模式下显示红色"分解"，正常模式显示绿色"领取"）
+    -- 5.7 按钮（分解模式下显示红色"分解"，正常模式显示绿色"领取"）[暗黑化 P1-B3]
     local claimCX = cx + CLAIM_CX_OFFSET
     local btnId = decomposeMode and ("lbp_decompose_" .. index) or ("lbp_claim_" .. index)
-    local btnImg = decomposeMode and imgBtnRedFang or imgBtnGreen
     local btnText = decomposeMode and "分解" or "领取"
     local _bfClaim = BF.begin(vg, btnId, claimCX, cy, CLAIM_W, CLAIM_H)
-    drawNineSlice(vg, btnImg,
+    DarkIcon.drawNine(vg, "btn",
         claimCX - CLAIM_W * 0.5, cy - CLAIM_H * 0.5, CLAIM_W, CLAIM_H,
-        CLAIM_9P, CLAIM_9P, CLAIM_9P, CLAIM_9P)
+        { accent = decomposeMode and "red" or "green" })
 
     -- 5.8 按钮文本
     nvgFontFace(vg, "sans")

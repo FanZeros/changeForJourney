@@ -15,6 +15,16 @@ local function statusLog(msg)
 end
 
 local SEM = {}
+-- [多实例] 状态效果表随战斗 mount 切换（避免并行战斗 DOT/HOT 多重 tick）
+local function newSemState()
+    return { effects = {} }
+end
+local SEM_DEFAULT = newSemState()
+local SEM_BCS = SEM_DEFAULT
+function SEM.newSemState() return newSemState() end
+function SEM.mount(s) SEM_BCS = s or SEM_DEFAULT end
+function SEM.mountedState() return SEM_BCS end
+
 
 -- ======================== 效果类型常量 ========================
 
@@ -27,15 +37,14 @@ SEM.VULNERABLE = "vulnerable"  -- 易伤诅咒 (转职天赋105/209/210)
 SEM.ARCANE_MARK = "arcane_mark" -- 秘法印记 (星图节点113)，与 VULNERABLE 独立叠乘
 
 -- ======================== 效果表 ========================
--- 结构: effects[unit] = { [effectType] = { remaining, source, data, tickTimer } }
+-- 结构: SEM_BCS.effects[unit] = { [effectType] = { remaining, source, data, tickTimer } }
 
-local effects = {}
 
 -- ======================== 核心 API ========================
 
 --- 重置所有效果（关卡切换时调用）
 function SEM.reset()
-    effects = {}
+    SEM_BCS.effects = {}
 end
 
 --- 施加状态效果（同类型刷新）
@@ -59,14 +68,14 @@ function SEM.apply(unit, effectType, baseDuration, source, data)
         return
     end
 
-    if not effects[unit] then
-        effects[unit] = {}
+    if not SEM_BCS.effects[unit] then
+        SEM_BCS.effects[unit] = {}
     end
 
     -- 叠层支持：data.stackable=true 时叠加而非覆盖
     local d = data or {}
     if d.stackable and effectType == SEM.BURNING then
-        local existing = effects[unit][effectType]
+        local existing = SEM_BCS.effects[unit][effectType]
         if existing then
             local maxStacks = d.maxStacks or 3
             local curStacks = existing.data.stacks or 1
@@ -94,7 +103,7 @@ function SEM.apply(unit, effectType, baseDuration, source, data)
     end
 
     -- 同类型刷新（覆盖）
-    effects[unit][effectType] = {
+    SEM_BCS.effects[unit][effectType] = {
         remaining = duration,
         source    = source,
         data      = d,
@@ -108,11 +117,11 @@ end
 ---@param unit table
 ---@param effectType string
 function SEM.remove(unit, effectType)
-    if effects[unit] then
-        effects[unit][effectType] = nil
+    if SEM_BCS.effects[unit] then
+        SEM_BCS.effects[unit][effectType] = nil
         -- 清理空表
-        if not next(effects[unit]) then
-            effects[unit] = nil
+        if not next(SEM_BCS.effects[unit]) then
+            SEM_BCS.effects[unit] = nil
         end
     end
 end
@@ -120,7 +129,7 @@ end
 --- 清理单位所有效果（单位死亡/移除时调用）
 ---@param unit table
 function SEM.removeUnit(unit)
-    effects[unit] = nil
+    SEM_BCS.effects[unit] = nil
 end
 
 --- 查询是否有指定效果
@@ -128,7 +137,7 @@ end
 ---@param effectType string
 ---@return boolean
 function SEM.has(unit, effectType)
-    return effects[unit] ~= nil and effects[unit][effectType] ~= nil
+    return SEM_BCS.effects[unit] ~= nil and SEM_BCS.effects[unit][effectType] ~= nil
 end
 
 --- 获取指定效果数据
@@ -136,8 +145,8 @@ end
 ---@param effectType string
 ---@return table|nil
 function SEM.get(unit, effectType)
-    if effects[unit] then
-        return effects[unit][effectType]
+    if SEM_BCS.effects[unit] then
+        return SEM_BCS.effects[unit][effectType]
     end
     return nil
 end
@@ -177,35 +186,35 @@ end
 ---@return number 倍率（无效果返回1.0）
 function SEM.getDamageTakenMult(unit)
     local mult = 1.0
-    if not effects[unit] then return mult end
+    if not SEM_BCS.effects[unit] then return mult end
 
-    local shocked = effects[unit][SEM.SHOCKED]
+    local shocked = SEM_BCS.effects[unit][SEM.SHOCKED]
     if shocked then
         mult = mult * (1.0 + (shocked.data.mult or 0.20))
     end
 
-    local marked = effects[unit][SEM.MARKED]
+    local marked = SEM_BCS.effects[unit][SEM.MARKED]
     if marked then
         mult = mult * (1.0 + (marked.data.mult or 0.25))
     end
 
-    local vuln = effects[unit][SEM.VULNERABLE]
+    local vuln = SEM_BCS.effects[unit][SEM.VULNERABLE]
     if vuln then
         mult = mult * (1.0 + (vuln.data.mult or 0.20))
     end
 
-    local arcaneMark = effects[unit][SEM.ARCANE_MARK]
+    local arcaneMark = SEM_BCS.effects[unit][SEM.ARCANE_MARK]
     if arcaneMark then
         mult = mult * (1.0 + (arcaneMark.data.mult or 0.08))
     end
 
     -- 冰冻增伤（觉醒效果 Hero12 Node2: data.extraDmgMult）
-    local frozen = effects[unit][SEM.FROZEN]
+    local frozen = SEM_BCS.effects[unit][SEM.FROZEN]
     if frozen and frozen.data.extraDmgMult then
         mult = mult * (1.0 + frozen.data.extraDmgMult)
     end
 
-    local hot = effects[unit][SEM.HOT]
+    local hot = SEM_BCS.effects[unit][SEM.HOT]
     if hot and hot.data and hot.data.dmgReduction then
         mult = mult * 0.95
     end
@@ -229,8 +238,8 @@ local VISUAL_MAP = {
 ---@return table[] { {icon, r, g, b}, ... }
 function SEM.getVisuals(unit)
     local result = {}
-    if effects[unit] then
-        for effectType, _ in pairs(effects[unit]) do
+    if SEM_BCS.effects[unit] then
+        for effectType, _ in pairs(SEM_BCS.effects[unit]) do
             local vis = VISUAL_MAP[effectType]
             if vis then
                 result[#result + 1] = { icon = vis.icon, r = vis.r, g = vis.g, b = vis.b }
@@ -246,10 +255,10 @@ end
 function SEM.update(dt, callbacks)
     callbacks = callbacks or {}
 
-    for unit, unitEffects in pairs(effects) do
+    for unit, unitEffects in pairs(SEM_BCS.effects) do
         -- 跳过已死亡单位
         if unit.hp <= 0 then
-            effects[unit] = nil
+            SEM_BCS.effects[unit] = nil
         else
             local toRemove = {}
 
@@ -305,7 +314,7 @@ function SEM.update(dt, callbacks)
 
             -- 清理空表
             if not next(unitEffects) then
-                effects[unit] = nil
+                SEM_BCS.effects[unit] = nil
             end
         end
     end

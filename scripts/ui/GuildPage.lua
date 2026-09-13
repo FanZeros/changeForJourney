@@ -467,11 +467,11 @@ end
 -- ======================== Public API ========================
 
 function GuildPage.init(vg)
-    img.lowerBg = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
     img.nameBg  = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
     img.btnBack = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
     img.tabBg   = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
-    img.slider  = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.rankBg  = nvgCreateImage(vg, "image/UI_PHB_BJ.png", 0)
     img.listBg  = nvgCreateImage(vg, "image/UI_PHB_1.png", 0)
     for i = 1, 3 do
@@ -651,9 +651,7 @@ function GuildPage.draw(vg)
     nvgTranslate(vg, 0, lowerOY)
 
     -- 下方背景框
-    drawNineSlice(vg, img.lowerBg,
-        LOWER.CX - LOWER.W * 0.5, LOWER.CY - LOWER.H * 0.5,
-        LOWER.W, LOWER.H, LOWER.IT, LOWER.IR, LOWER.IB, LOWER.IL)
+    DarkIcon.drawNine(vg, "plain", LOWER.CX - LOWER.W * 0.5, LOWER.CY - LOWER.H * 0.5, LOWER.W, LOWER.H)
 
     -- 排名 Tab 全屏背景（淡入/淡出）
     local rankBgAlpha = 0
@@ -731,9 +729,7 @@ function GuildPage.draw(vg)
         local fromItem   = TAB_ITEMS[fromIdx]
         local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
         local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
-        drawNineSlice(vg, img.slider,
-            sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5,
-            TAB.SLIDER_W, TAB.SLIDER_H, TAB.SI_T, TAB.SI_R, TAB.SI_B, TAB.SI_L)
+        DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
 
         -- Tab 文字
         for i, item in ipairs(TAB_ITEMS) do

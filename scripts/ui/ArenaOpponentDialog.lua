@@ -21,6 +21,7 @@ local AD              = require("systems.AttributeDef")
 local BF              = require("systems.ButtonFeedback")
 local RelicBridge     = require("systems.RelicBridge")
 local AvatarFrameBridge = require("systems.AvatarFrameBridge")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local Dialog = {}
 
@@ -666,9 +667,7 @@ function Dialog.draw(vg)
     nvgGlobalAlpha(vg, pAlpha)
 
     -- 2. 弹窗背景框（九宫格）
-    drawNineSlice(vg, img.bg,
-        D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5,
-        D.BG_W, D.BG_H, D.BG_IT, D.BG_IR, D.BG_IB, D.BG_IL)
+    DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
 
     -- 3. 标题 "选择对手"
     drawTextStroke(vg, D.TT_CX, D.TT_CY, "选择对手",

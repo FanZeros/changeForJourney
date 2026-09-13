@@ -403,6 +403,39 @@ function ExpTable.getUnlockedSlotCount(playerLevel)
     return math.min(base + extra, 5)  -- 最多 5 个
 end
 
+-- ======================== 多队伍（三队并行战斗）解锁规则 ========================
+-- 队1 开局解锁；队2/队3 达到冒险等级阈值解锁（阈值可调）
+ExpTable.TEAM_COUNT = 3
+ExpTable.TEAM_UNLOCK_LEVELS = { 10, 20 }  -- [i] = 解锁第 (i+1) 队所需等级
+ExpTable.TEAM_MAX_SLOTS = 4               -- 每队最多上阵人数（左4角色 vs 右4敌人）
+
+--- 根据冒险等级计算已解锁的队伍数量
+---@param playerLevel number 当前冒险等级
+---@return number 已解锁队伍数（1~TEAM_COUNT）
+function ExpTable.getUnlockedTeamCount(playerLevel)
+    local count = 1
+    for i, lv in ipairs(ExpTable.TEAM_UNLOCK_LEVELS) do
+        if playerLevel >= lv then
+            count = i + 1
+        end
+    end
+    return math.min(count, ExpTable.TEAM_COUNT)
+end
+
+--- 获取解锁指定队伍所需的冒险等级
+---@param teamIdx number 队伍索引（1~TEAM_COUNT）
+---@return number|nil 解锁等级；队1 无需解锁返回 nil
+function ExpTable.getTeamUnlockLevel(teamIdx)
+    return ExpTable.TEAM_UNLOCK_LEVELS[teamIdx - 1]
+end
+
+--- 每队出战槽位数（复用"出战槽位+1"节奏 Lv2/Lv6/Lv10，上限 4）
+---@param playerLevel number 当前冒险等级
+---@return number 该队已解锁槽位数（2~TEAM_MAX_SLOTS）
+function ExpTable.getUnlockedSlotCountForTeam(playerLevel)
+    return math.min(ExpTable.getUnlockedSlotCount(playerLevel), ExpTable.TEAM_MAX_SLOTS)
+end
+
 --- 装备槽位强化等级上限（初始 1，每升一级冒险等级 +1）
 --- 规则: 上限 = 冒险等级（Lv.1→上限1, Lv.2→上限2, ..., Lv.200→上限200）
 ---@param playerLevel number 当前冒险等级

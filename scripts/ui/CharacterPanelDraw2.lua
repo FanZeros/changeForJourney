@@ -121,7 +121,9 @@ local SCROLL_RIGHT   = DESIGN_W
 
 -- ======================== 导出共享常量（供 CharacterPanel hit testing 使用） ========================
 
-M.MAX_SLOTS    = 5
+-- [三队并行] 每队最多 4 槽（左4角色 vs 右4敌人）
+M.MAX_SLOTS    = 4
+M.TEAM_TAB_COUNT = 3   -- 队伍页签数量（与 ExpTable.TEAM_COUNT 对应）
 M.CARD_W       = CARD_W
 M.CARD_H       = CARD_H
 M.CARD_SPACING = CARD_SPACING
@@ -165,6 +167,9 @@ local getDragState        -- function() return dragState end
 local getSelectSlotState  -- function() return selectSlotState end
 local isHeroDeployed      -- function(heroId) return bool end
 local getUpgradeBadgeCache -- function() return upgradeBadgeCache end
+local getActiveTeamIdx    -- [三队并行] function() return activeTeamIdx end
+local getUnlockedTeamCount -- [三队并行] function() return unlockedCount end
+local getTeamOccupiedCounts -- [三队并行] function() return counts[] end
 
 --- 注入来自 CharacterPanel 的共享状态
 function M.setContext(ctx)
@@ -176,6 +181,9 @@ function M.setContext(ctx)
     getSelectSlotState   = ctx.getSelectSlotState
     isHeroDeployed       = ctx.isHeroDeployed
     getUpgradeBadgeCache = ctx.getUpgradeBadgeCache
+    getActiveTeamIdx     = ctx.getActiveTeamIdx
+    getUnlockedTeamCount = ctx.getUnlockedTeamCount
+    getTeamOccupiedCounts = ctx.getTeamOccupiedCounts
 end
 
 -- ======================== 图片初始化 ========================
@@ -240,6 +248,84 @@ function M.hitTestTeamSlot(dx, dy)
     return nil
 end
 
+-- ======================== [三队并行] 队伍页签 ========================
+
+local TAB_W, TAB_H, TAB_GAP = 240, 54, 16
+local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px 间隙）
+
+--- 计算第 idx 个页签的左上角 X
+---@param idx number
+---@return number
+local function teamTabX(idx)
+    local totalW = M.TEAM_TAB_COUNT * TAB_W + (M.TEAM_TAB_COUNT - 1) * TAB_GAP
+    return (DESIGN_W - totalW) * 0.5 + (idx - 1) * (TAB_W + TAB_GAP)
+end
+
+--- 绘制三队页签（队1/队2/队3，含解锁状态与上阵人数角标）
+function M.drawTeamTabs(vg)
+    if not getActiveTeamIdx or not getUnlockedTeamCount then return end
+    local activeIdx    = getActiveTeamIdx() or 1
+    local unlockedCnt  = getUnlockedTeamCount() or 1
+    local counts       = getTeamOccupiedCounts and getTeamOccupiedCounts() or {}
+
+    for i = 1, M.TEAM_TAB_COUNT do
+        local x = teamTabX(i)
+        local y = TAB_Y
+        local isActive = (i == activeIdx)
+        local isLocked = (i > unlockedCnt)
+
+        -- 底板
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, TAB_W, TAB_H, 12)
+        if isActive then
+            nvgFillColor(vg, nvgRGBA(96, 165, 250, 230))
+        elseif isLocked then
+            nvgFillColor(vg, nvgRGBA(40, 40, 52, 180))
+        else
+            nvgFillColor(vg, nvgRGBA(56, 62, 80, 210))
+        end
+        nvgFill(vg)
+        -- 激活页签高亮描边
+        if isActive then
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, x, y, TAB_W, TAB_H, 12)
+            nvgStrokeColor(vg, nvgRGBA(190, 225, 255, 255))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
+        end
+
+        -- 文案
+        nvgFontFace(vg, "sans")
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        local label
+        if isLocked then
+            local needLv = ExpTable.getTeamUnlockLevel(i)
+            label = string.format("队%d · Lv%s解锁", i, tostring(needLv or "?"))
+            nvgFontSize(vg, 22)
+            nvgFillColor(vg, nvgRGBA(150, 150, 165, 255))
+        else
+            label = string.format("队%d（%d/%d）", i, counts[i] or 0, M.MAX_SLOTS)
+            nvgFontSize(vg, 24)
+            nvgFillColor(vg, isActive and nvgRGBA(255, 255, 255, 255) or nvgRGBA(205, 210, 225, 255))
+        end
+        nvgText(vg, x + TAB_W * 0.5, y + TAB_H * 0.5 + 1, label)
+    end
+end
+
+--- 页签命中检测
+---@param dx number 设计空间 X
+---@param dy number 设计空间 Y
+---@return number|nil 命中的队伍索引
+function M.hitTestTeamTabs(dx, dy)
+    for i = 1, M.TEAM_TAB_COUNT do
+        local x = teamTabX(i)
+        if dx >= x and dx <= x + TAB_W and dy >= TAB_Y and dy <= TAB_Y + TAB_H then
+            return i
+        end
+    end
+    return nil
+end
+
 -- ======================== 绘制主函数 ========================
 
 --- 绘制角色面板（编队槽位 + 角色列表）
@@ -266,7 +352,10 @@ function M.draw(vg, scrollY)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- 2) 绘制 5 个编队槽位
+    -- 1.5) [三队并行] 绘制三队页签
+    M.drawTeamTabs(vg)
+
+    -- 2) 绘制编队槽位
     -- 拖拽中：计算鼠标悬停的目标槽位（用于高亮提示）
     local dragHoverSlot = nil
     if dragState.active and dragState.heroId then

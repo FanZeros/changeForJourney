@@ -861,6 +861,11 @@ local function loadAndPushFullState(uid)
                     if not pushData.heroes then pushData.heroes = {} end
                     pushData.heroes.roster = recoveredRoster
                     pushData.heroes.deployed = recoveredDeployed
+                    do
+                        -- [三队并行] 恢复路径同样维护 teams 镜像
+                        local TeamSlots = require("shared.heroes.TeamSlots")
+                        TeamSlots.normalize(pushData.heroes)
+                    end
                     heroesData = pushData.heroes
                     rosterCount = countHeroesRoster(heroesData)
                     rosterEmpty = rosterCount <= 0
@@ -869,6 +874,10 @@ local function loadAndPushFullState(uid)
                     if pdmHeroes then
                         pdmHeroes.roster = recoveredRoster
                         pdmHeroes.deployed = recoveredDeployed
+                        do
+                            local TeamSlots = require("shared.heroes.TeamSlots")
+                            TeamSlots.normalize(pdmHeroes)
+                        end
                         PDM.MarkDirty(uid, "heroes")
                     end
 

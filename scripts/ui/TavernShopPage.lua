@@ -12,6 +12,7 @@ local BF             = require("systems.ButtonFeedback")
 local PlayerStore    = require("client.data.PlayerStore")
 local ClientDispatcher = require("network.ClientDispatcher")
 local TavernConfig     = require("config.TavernConfig")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local TavernShopPage = {}
 
@@ -333,8 +334,8 @@ function TavernShopPage.init(vg)
         shopImg.qualityBg[i] = nvgCreateImage(vg, "image/UI_icon_ZBBJ_" .. i .. ".png", 0)
     end
     shopImg.buyBtn      = nvgCreateImage(vg, "image/UI_SD_AN.png",       0)
-    shopImg.coinBarIcon = nvgCreateImage(vg, "image/UI_icon_JGB_X.png",  0)
-    shopImg.dialogBg    = nvgCreateImage(vg, "image/UI_TY_EJQRK.png",    0)
+    -- [暗黑化 P1-B5] 原 image/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     shopImg.buyBtnYellow= nvgCreateImage(vg, "image/UI_AN_HUANG.png",    0)
     shopImg.btnMinus    = nvgCreateImage(vg, "image/UI_AN_JIAN.png",     0)
     shopImg.btnPlus     = nvgCreateImage(vg, "image/UI_AN_JIA.png",      0)
@@ -535,11 +536,12 @@ local drawPurchaseDialog
 -- ======================== 绘制单个商品卡片 ========================
 
 local function drawShopCard(vg, idx, item, cx, cy)
-    -- 品质背景
-    local bgImg = shopImg.cardBg[item.quality] or shopImg.cardBg[1]
-    drawNineSlice(vg, bgImg,
+    -- [暗黑化 P1-B5] 矢量卡底 + 品质语义描边
+    local q = item.quality or 1
+    DarkIcon.drawNine(vg, "plain",
         cx - L.CARD_W * 0.5, cy - L.CARD_H * 0.5,
-        L.CARD_W, L.CARD_H, 20, 20, 20, 20)
+        L.CARD_W, L.CARD_H,
+        { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
 
     local bought   = getPurchased(item.id)
     local soldOut  = bought >= item.limitCount
@@ -596,9 +598,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
         nvgText(vg, cx, btnCY, "拥有后可买", nil)
     else
         local _bf = BF.begin(vg, "tsp_item_" .. idx, cx, btnCY, L.BTN_W, L.BTN_H)
-        drawNineSlice(vg, shopImg.buyBtn,
-            cx - L.BTN_W * 0.5, btnCY - L.BTN_H * 0.5,
-            L.BTN_W, L.BTN_H, 10, 30, 10, 30)
+        DarkIcon.drawNine(vg, "btn", cx - L.BTN_W * 0.5, btnCY - L.BTN_H * 0.5, L.BTN_W, L.BTN_H, { accent = "gold" })
 
         -- 消耗图标 + 价格居中
         local priceStr = tostring(item.price)
@@ -688,10 +688,7 @@ end
 function TavernShopPage.drawContent(vg)
     -- 背景框（九宫格：上200 左10 右10 下200）
     -- 原始标注：中心 X540 Y1371，尺寸 1080×2058
-    drawNineSlice(vg, shopImg.pageBg,
-        540 - 1080 * 0.5, 1371 - 2058 * 0.5,
-        1080, 2058,
-        200, 10, 200, 10)
+    DarkIcon.drawNine(vg, "plain", 540 - 1080 * 0.5, 1371 - 2058 * 0.5, 1080, 2058)
 
     -- 标题装饰（UI_JJC_BTBJ.png，与竞技场相同位置 X540 Y497 W660 H60）
     drawImageCentered(vg, shopImg.titleDeco, L.TITLE_CX, L.TITLE_CY, 660, 60, 1.0)
@@ -791,9 +788,7 @@ drawPurchaseDialog = function(vg)
     nvgGlobalAlpha(vg, pAlpha)
 
     -- 背景
-    drawNineSlice(vg, shopImg.dialogBg,
-        DLG.BG_CX - DLG.BG_W * 0.5, DLG.BG_CY - DLG.BG_H * 0.5,
-        DLG.BG_W, DLG.BG_H, DLG.BG_IT, DLG.BG_IR, DLG.BG_IB, DLG.BG_IL)
+    DarkIcon.drawNine(vg, "panel", DLG.BG_CX - DLG.BG_W * 0.5, DLG.BG_CY - DLG.BG_H * 0.5, DLG.BG_W, DLG.BG_H, { titleH = DLG.BG_IT })
 
     -- 标题
     drawTextStroke(vg, DLG.TITLE_CX, DLG.TITLE_CY, "购买道具",
@@ -895,9 +890,7 @@ drawPurchaseDialog = function(vg)
 
     -- 购买按钮
     local _bfBuy = BF.begin(vg, "tsp_confirm", DLG.BUY_CX, DLG.BUY_CY, DLG.BUY_W, DLG.BUY_H)
-    drawNineSlice(vg, shopImg.buyBtnYellow,
-        DLG.BUY_CX - DLG.BUY_W * 0.5, DLG.BUY_CY - DLG.BUY_H * 0.5,
-        DLG.BUY_W, DLG.BUY_H, 10, 30, 10, 30)
+    DarkIcon.drawNine(vg, "btn", DLG.BUY_CX - DLG.BUY_W * 0.5, DLG.BUY_CY - DLG.BUY_H * 0.5, DLG.BUY_W, DLG.BUY_H, { accent = "gold" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.BUY_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, shopState.pendingBuy and 100 or 179))

@@ -673,7 +673,7 @@ function ChurchPage.init(vg)
     img.nameBg   = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
     img.btnBack  = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
     img.tabBg    = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
-    img.slider   = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.plus     = nvgCreateImage(vg, "image/UI_ICON_JIA.png", 0)
 
     -- 转职相关图片
@@ -710,9 +710,9 @@ function ChurchPage.init(vg)
     for i = 1, 6 do
         img.confirmBg[i] = nvgCreateImage(vg, "image/UI_ZYTS_" .. i .. ".png", 0)
     end
-    img.confirmBtn  = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    img.cancelBtn   = nvgCreateImage(vg, "image/UI_AN_FANG.png", 0)
-    img.resetConfBg = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/UI_AN_FANG.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
     img.goldCoin    = nvgCreateImage(vg, "image/UI_icon_JB.png", 0)
     img.iconUp     = nvgCreateImage(vg, "image/ICON_UP.png", 0)
     img.resDiamond = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
@@ -729,7 +729,7 @@ function ChurchPage.init(vg)
         img.tfDetailBg[colorName] = nvgCreateImage(vg, "image/UI_TFWBK_" .. fileSuffix .. ".png", 0)
     end
 
-    img.tfResetBtn = nvgCreateImage(vg, "image/UI_AN_HONG.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_HONG.png 贴图加载已移除（矢量绘制替代）
     img.tfInfoIcon = nvgCreateImage(vg, "image/UI_icon_TS.png", 0)
 
     -- 天赋星图初始化
@@ -1627,10 +1627,7 @@ function ChurchPage.draw(vg)
     local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
     local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
 
-    drawNineSlice(vg, img.slider,
-        sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5,
-        TAB.SLIDER_W, TAB.SLIDER_H,
-        TAB.INSET_TOP, TAB.INSET_RIGHT, TAB.INSET_BOTTOM, TAB.INSET_LEFT)
+    DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
 
     -- Tab 文本
     for i, item in ipairs(TAB_ITEMS) do

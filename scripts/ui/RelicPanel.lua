@@ -24,6 +24,7 @@ local RelicSystem       = require("systems.RelicSystem")
 local RelicGrid         = require("systems.RelicGrid")
 local RelicDefs         = require("data.RelicDefs")
 local PlayerStore       = require("client.data.PlayerStore")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local RelicPanel = {}
 
@@ -419,8 +420,8 @@ end
 function RelicPanel.init(vg)
     img.bg        = nvgCreateImage(vg, "image/UI_MXZGH_YW_BJ.png", 0)
     img.rotBtn    = nvgCreateImage(vg, "image/UI_MXZGH_YW_XZAN.png", 0)
-    img.flipBtn   = nvgCreateImage(vg, "image/UI_MXZGH_YW_JXAN.png", 0)
-    img.bagBtn    = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.cancelBtn = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
     img.infoIcon  = nvgCreateImage(vg, "image/UI_icon_TS.png", 0)
     img.overviewBg = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
@@ -1194,10 +1195,7 @@ function drawBottomButtons(vg)
         -- 安装/调整子模式：显示"取消"按钮（替代背包按钮）
         local cancelLabel = state.adjustingRelic and "取消调整" or "取消安装"
         local _bfCancel = BF.begin(vg, "relic_cancel_place", BTN_CANCEL.CX, BTN_CANCEL.CY, BTN_CANCEL.W, BTN_CANCEL.H)
-        drawNineSlice(vg, img.cancelBtn,
-            BTN_CANCEL.CX - BTN_CANCEL.W * 0.5, BTN_CANCEL.CY - BTN_CANCEL.H * 0.5,
-            BTN_CANCEL.W, BTN_CANCEL.H,
-            BTN_CANCEL.NP_T, BTN_CANCEL.NP_R, BTN_CANCEL.NP_B, BTN_CANCEL.NP_L)
+        DarkIcon.drawNine(vg, "btn", BTN_CANCEL.CX - BTN_CANCEL.W * 0.5, BTN_CANCEL.CY - BTN_CANCEL.H * 0.5, BTN_CANCEL.W, BTN_CANCEL.H, { accent = "gold" })
         BF.finish(vg, _bfCancel)
 
         nvgFontFace(vg, "sans")
@@ -1208,10 +1206,7 @@ function drawBottomButtons(vg)
     elseif state.adjustMode then
         -- 调整模式（未拾取遗物时）：显示"退出调整"按钮
         local _bfExit = BF.begin(vg, "relic_exit_adjust", BTN_BAG.CX, BTN_BAG.CY, BTN_BAG.W, BTN_BAG.H)
-        drawNineSlice(vg, img.cancelBtn,
-            BTN_BAG.CX - BTN_BAG.W * 0.5, BTN_BAG.CY - BTN_BAG.H * 0.5,
-            BTN_BAG.W, BTN_BAG.H,
-            BTN_BAG.NP_T, BTN_BAG.NP_R, BTN_BAG.NP_B, BTN_BAG.NP_L)
+        DarkIcon.drawNine(vg, "btn", BTN_BAG.CX - BTN_BAG.W * 0.5, BTN_BAG.CY - BTN_BAG.H * 0.5, BTN_BAG.W, BTN_BAG.H, { accent = "gold" })
         BF.finish(vg, _bfExit)
 
         nvgFontFace(vg, "sans")
@@ -1224,10 +1219,7 @@ function drawBottomButtons(vg)
 
         -- 调整模式按钮
         local _bfAdj = BF.begin(vg, "relic_adjust", BTN_ADJUST.CX, BTN_ADJUST.CY, BTN_ADJUST.W, BTN_ADJUST.H)
-        drawNineSlice(vg, img.bagBtn,
-            BTN_ADJUST.CX - BTN_ADJUST.W * 0.5, BTN_ADJUST.CY - BTN_ADJUST.H * 0.5,
-            BTN_ADJUST.W, BTN_ADJUST.H,
-            BTN_ADJUST.NP_T, BTN_ADJUST.NP_R, BTN_ADJUST.NP_B, BTN_ADJUST.NP_L)
+        DarkIcon.drawNine(vg, "btn", BTN_ADJUST.CX - BTN_ADJUST.W * 0.5, BTN_ADJUST.CY - BTN_ADJUST.H * 0.5, BTN_ADJUST.W, BTN_ADJUST.H, { accent = "green" })
         BF.finish(vg, _bfAdj)
 
         nvgFontFace(vg, "sans")
@@ -1238,10 +1230,7 @@ function drawBottomButtons(vg)
 
         -- 背包按钮
         local _bfBag = BF.begin(vg, "relic_bag", BTN_BAG.CX, BTN_BAG.CY, BTN_BAG.W, BTN_BAG.H)
-        drawNineSlice(vg, img.bagBtn,
-            BTN_BAG.CX - BTN_BAG.W * 0.5, BTN_BAG.CY - BTN_BAG.H * 0.5,
-            BTN_BAG.W, BTN_BAG.H,
-            BTN_BAG.NP_T, BTN_BAG.NP_R, BTN_BAG.NP_B, BTN_BAG.NP_L)
+        DarkIcon.drawNine(vg, "btn", BTN_BAG.CX - BTN_BAG.W * 0.5, BTN_BAG.CY - BTN_BAG.H * 0.5, BTN_BAG.W, BTN_BAG.H, { accent = "green" })
         BF.finish(vg, _bfBag)
 
         nvgFontFace(vg, "sans")
@@ -1512,10 +1501,7 @@ function RelicPanel.drawOverviewPanel(vg)
     nvgGlobalAlpha(vg, alpha / 255)
 
     if img.overviewBg >= 0 then
-        drawNineSlice(vg, img.overviewBg,
-            OVERVIEW.bgCX - OVERVIEW.bgW * 0.5, OVERVIEW.bgCY - OVERVIEW.bgH * 0.5,
-            OVERVIEW.bgW, OVERVIEW.bgH,
-            OVERVIEW.bgNsT, OVERVIEW.bgNsR, OVERVIEW.bgNsB, OVERVIEW.bgNsL)
+        DarkIcon.drawNine(vg, "panel", OVERVIEW.bgCX - OVERVIEW.bgW * 0.5, OVERVIEW.bgCY - OVERVIEW.bgH * 0.5, OVERVIEW.bgW, OVERVIEW.bgH, { titleH = OVERVIEW.bgNsT })
     end
 
     drawTextStroke(vg, OVERVIEW.bgCX, OVERVIEW.titleCY, "遗物效果总览",

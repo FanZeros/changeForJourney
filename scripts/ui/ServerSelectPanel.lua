@@ -5,6 +5,7 @@
 
 local GameConfig        = require("config.GameConfig")
 local DrawUtil          = require("core.DrawUtil")
+local DarkIcon          = require("core.DarkIcon")  -- [暗黑化 P1-B5] 矢量九宫格
 local ServerListConfig  = require("shared.ServerListConfig")
 
 local M = {}
@@ -520,12 +521,10 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
     nvgFill(vg)
 
-    -- 2. 九宫格弹窗背景
-    if imgBg_ >= 0 then
-        DrawUtil.drawNineSlice(vg, imgBg_,
-            BG_CX - BG_W * 0.5, BG_CY - BG_H * 0.5, BG_W, BG_H,
-            BG_9_TOP, BG_9_RIGHT, BG_9_BOTTOM, BG_9_LEFT)
-    end
+    -- 2. 弹窗背景 [暗黑化 P1-B5] 矢量面板
+    DarkIcon.drawNine(vg, "panel",
+        BG_CX - BG_W * 0.5, BG_CY - BG_H * 0.5, BG_W, BG_H,
+        { titleH = BG_9_TOP })
 
     -- 3. 标题 "选择服务器"
     DrawUtil.drawTextStroke(vg, TITLE_CX, TITLE_CY, "选择服务器",
@@ -627,14 +626,12 @@ function M.draw(vg)
         local cy = ITEM_FIRST_CY + (idx - 1) * (ITEM_H + ITEM_GAP) - itemScrollY_
         -- 可见性检查
         if cy + ITEM_H * 0.5 >= listClipTop and cy - ITEM_H * 0.5 <= listClipTop + listClipH then
-            -- 6a. 条目背景（九宫格，四边各切 32）
+            -- 6a. 条目背景 [暗黑化 P1-B5] 矢量纯底板
             local selectable = isChallengerSelectable(srv)
             local itemAlpha = selectable and 1.0 or 0.55
-            if imgItem_ >= 0 then
-                DrawUtil.drawNineSlice(vg, imgItem_,
-                    ITEM_CX - ITEM_W * 0.5, cy - ITEM_H * 0.5, ITEM_W, ITEM_H,
-                    32, 32, 32, 32)
-            end
+            DarkIcon.drawNine(vg, "plain",
+                ITEM_CX - ITEM_W * 0.5, cy - ITEM_H * 0.5, ITEM_W, ITEM_H,
+                { alpha = itemAlpha })
 
             -- 6b. 服务器名称（左对齐）
             nvgFontFace(vg, "sans")

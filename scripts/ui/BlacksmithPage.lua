@@ -273,7 +273,7 @@ local imgPlus     = -1   -- UI_ICON_TJP_JIA.png
 local imgLowerBg  = -1   -- UI_TJP_1.png
 local imgBtnBack  = -1   -- UI_AN_FH.png
 local imgTabBg    = -1   -- UI_AN_1.png
-local imgSlider   = -1   -- UI_AN_2.png
+
 local imgArrow    = -1   -- UI_TJP_JIANTOU.png（提升箭头）
 local imgEnhBtn   = -1   -- UI_AN_LV.png（强化按钮背景）
 local imgGoldIcon = -1   -- UI_icon_JB.png（金币图标）
@@ -1026,7 +1026,7 @@ function BlacksmithPage.init(vg)
     imgLowerBg  = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
     imgBtnBack  = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
     imgTabBg    = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
-    imgSlider   = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     imgArrow    = nvgCreateImage(vg, "image/UI_TJP_JIANTOU.png", 0)
     imgEnhBtn   = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
     imgGoldIcon = nvgCreateImage(vg, "image/UI_icon_JB.png", 0)
@@ -1716,10 +1716,7 @@ function BlacksmithPage.draw(vg)
     local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
 
     -- 使用九宫格绘制滑块
-    drawNineSlice(vg, imgSlider,
-        sliderCX - SLIDER_W * 0.5, sliderCY - SLIDER_H * 0.5,
-        SLIDER_W, SLIDER_H,
-        SLIDER_INSET_TOP, SLIDER_INSET_RIGHT, SLIDER_INSET_BOTTOM, SLIDER_INSET_LEFT)
+    DarkIcon.drawNine(vg, "btn", sliderCX - SLIDER_W * 0.5, sliderCY - SLIDER_H * 0.5, SLIDER_W, SLIDER_H, { accent = "gold" })
 
     -- Tab 文本
     for i, item in ipairs(TAB_ITEMS) do
@@ -1745,7 +1742,8 @@ function BlacksmithPage.draw(vg)
         local textHalfW = nvgTextBounds(vg, 0, 0, fenjieTab.name) * 0.5
         local upX = fenjieTab.cx + textHalfW + 10
         local upY = TAB_TEXT_Y - 18
-        DrawUtil.DarkIcon.draw(vg, "reddot", upX, upY, upSize, 1.0)end
+        DarkIcon.draw(vg, "reddot", upX, upY, upSize, 1.0)
+    end
 
     -- 强化标签可强化角标（有任意槽位满足强化条件时显示）
     if imgIconUp >= 0 and BlacksmithPage.canEnhanceAny() then

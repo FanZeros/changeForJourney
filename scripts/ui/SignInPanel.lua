@@ -11,6 +11,7 @@ local SignInConfig  = require("shared.signin.SignInConfig")
 local Protocol     = require("shared.Protocol")
 local BF           = require("systems.ButtonFeedback")
 local ResourceDefs = require("config.ResourceDefs")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local Panel = {}
 
@@ -212,11 +213,11 @@ local LOWER_SLIDE_DIST = 1600
 -- ======================== 图片句柄 ========================
 
 local imgTopBg    = -1  -- UI_MZQD_BJ.png
-local imgPanel    = -1  -- UI_MZQD_1.png（九宫格面板）
+
 local imgEntry    = -1  -- UI_MZQD_2.png（条目背景）
 local imgBtnBack  = -1  -- UI_AN_FH.png（返回按钮）
 local imgTabBg    = -1  -- UI_AN_1.png（Tab 背景）
-local imgSlider   = -1  -- UI_AN_2.png（Tab 滑块）
+
 local imgBtnSign  = -1  -- UI_AN_FANG_huang.png（签到按钮 - 黄）
 local imgBtnDone  = -1  -- UI_AN_FANG_lv.png（已领取按钮 - 绿）
 local imgBtnRetro = -1  -- UI_AN_FANG_hong.png（补签按钮 - 红）
@@ -224,15 +225,15 @@ local imgLock     = -1  -- ICON_GN_BAN.png（锁标志）
 
 -- 每日签到专用图片
 local imgDailyTopBg    = -1  -- UI_MRQD_BJ.png（每日顶部背景）
-local imgDailyPanel    = -1  -- UI_MRQD_1.png（每日九宫格面板）
+
 local imgDailyEntry    = -1  -- UI_MRQD_2.png（普通格子背景）
 local imgDailyEntryAct = -1  -- UI_MRQD_3.png（可签到格子背景）
 local imgCheckmark     = -1  -- UI_icon_GOU.png（已签勾号）
 local imgMissedStamp   = -1  -- UI_JSJM_CZZ.png（补签戳章）
-local imgDailySignBtn  = -1  -- UI_AN_HUANG.png（每日签到按钮）
+
 
 -- 补签确认弹窗图片
-local imgConfirmBg = -1   -- UI_TY_EJQRK.png（确认框背景）
+
 local imgArrowIcon = -1   -- UI_TJP_JIANTOU.png（箭头分隔符）
 local imgRedDot    = -1   -- ICON_HD.png（红点提示）
 
@@ -408,23 +409,23 @@ end
 
 function Panel.init(vg)
     vg_ = vg
-    imgTopBg   = nvgCreateImage(vg, "image/UI_MZQD_BJ.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_MZQD_1.png 贴图加载已移除（矢量绘制替代）
     imgPanel   = nvgCreateImage(vg, "image/UI_MZQD_1.png", 0)
     imgEntry   = nvgCreateImage(vg, "image/UI_MZQD_2.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    imgTabBg   = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     imgSlider  = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
     imgBtnSign  = nvgCreateImage(vg, "image/UI_AN_FANG_huang.png", 0)
     imgBtnDone  = nvgCreateImage(vg, "image/UI_AN_FANG_lv.png", 0)
     imgBtnRetro = nvgCreateImage(vg, "image/UI_AN_FANG_hong.png", 0)
     imgLock     = nvgCreateImage(vg, "image/ICON_GN_BAN.png", 0)
     -- 每日签到图片
-    imgDailyTopBg    = nvgCreateImage(vg, "image/UI_MRQD_BJ.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_MRQD_1.png 贴图加载已移除（矢量绘制替代）
     imgDailyPanel    = nvgCreateImage(vg, "image/UI_MRQD_1.png", 0)
     imgDailyEntry    = nvgCreateImage(vg, "image/UI_MRQD_2.png", 0)
     imgDailyEntryAct = nvgCreateImage(vg, "image/UI_MRQD_3.png", 0)
     imgCheckmark     = nvgCreateImage(vg, "image/UI_icon_GOU.png", 0)
-    imgMissedStamp   = nvgCreateImage(vg, "image/UI_JSJM_CZZ.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     imgDailySignBtn  = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
     -- 确认弹窗图片
     imgConfirmBg  = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
@@ -654,9 +655,7 @@ local function drawWeeklyContent(vg, skipTopBg)
     end
 
     -- 2. 下方九宫格面板背景
-    DrawUtil.drawNineSlice(vg, imgPanel,
-        PANEL.CX - PANEL.W * 0.5, PANEL.CY - PANEL.H * 0.5,
-        PANEL.W, PANEL.H, PANEL.IT, PANEL.IR, PANEL.IB, PANEL.IL)
+    DarkIcon.drawNine(vg, "plain", PANEL.CX - PANEL.W * 0.5, PANEL.CY - PANEL.H * 0.5, PANEL.W, PANEL.H)
 
     -- 3. 签到条目列表（可滚动裁剪）
     local data = WEEKLY_DATA
@@ -710,21 +709,21 @@ local function drawWeeklyContent(vg, skipTopBg)
                 ENTRY.LOCK_CX, cy + ENTRY.LOCK_CY_OFF,
                 ENTRY.LOCK_W, ENTRY.LOCK_H, 1.0)
 
-            -- 右侧按钮（所有状态都显示按钮）
-            local btnImg, btnText
+            -- 右侧按钮（所有状态都显示按钮）[暗黑化 P1-B3] 矢量按钮三态
+            local btnAccent, btnText
             if item.status == "available" or item.status == "locked" then
-                btnImg = imgBtnSign;  btnText = "签到"
+                btnAccent = "gold";   btnText = "签到"
             elseif item.status == "claimed" then
-                btnImg = imgBtnDone;  btnText = "已领取"
+                btnAccent = "green";  btnText = "已领取"
             else -- "missed"
-                btnImg = imgBtnRetro; btnText = "补签"
+                btnAccent = "red";    btnText = "补签"
             end
 
-            DrawUtil.drawNineSlice(vg, btnImg,
+            DarkIcon.drawNine(vg, "btn",
                 ENTRY.BTN_CX - ENTRY.BTN_W * 0.5,
                 cy + ENTRY.BTN_CY_OFF - ENTRY.BTN_H * 0.5,
                 ENTRY.BTN_W, ENTRY.BTN_H,
-                ENTRY.BTN_INSET, ENTRY.BTN_INSET, ENTRY.BTN_INSET, ENTRY.BTN_INSET)
+                { accent = btnAccent })
 
             nvgFontFace(vg, "sans"); nvgFontSize(vg, ENTRY.BTN_FONT)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -765,10 +764,7 @@ local function drawDailyContent(vg, skipTopBg)
     end
 
     -- 2. 每日下方九宫格面板背景
-    DrawUtil.drawNineSlice(vg, imgDailyPanel,
-        DAILY_PANEL.CX - DAILY_PANEL.W * 0.5, DAILY_PANEL.CY - DAILY_PANEL.H * 0.5,
-        DAILY_PANEL.W, DAILY_PANEL.H,
-        DAILY_PANEL.IT, DAILY_PANEL.IR, DAILY_PANEL.IB, DAILY_PANEL.IL)
+    DarkIcon.drawNine(vg, "plain", DAILY_PANEL.CX - DAILY_PANEL.W * 0.5, DAILY_PANEL.CY - DAILY_PANEL.H * 0.5, DAILY_PANEL.W, DAILY_PANEL.H)
 
     -- 3. 网格区域（可滚动裁剪）
     local data = DAILY_DATA
@@ -796,12 +792,7 @@ local function drawDailyContent(vg, skipTopBg)
 
     if hasAvailable then
         local _bf1 = BF.begin(vg, "sip_daily_sign", DAILY_SIGN_BTN.CX, DAILY_SIGN_BTN.CY, DAILY_SIGN_BTN.W, DAILY_SIGN_BTN.H)
-        DrawUtil.drawNineSlice(vg, imgDailySignBtn,
-            DAILY_SIGN_BTN.CX - DAILY_SIGN_BTN.W * 0.5,
-            DAILY_SIGN_BTN.CY - DAILY_SIGN_BTN.H * 0.5,
-            DAILY_SIGN_BTN.W, DAILY_SIGN_BTN.H,
-            DAILY_SIGN_BTN.INSET, DAILY_SIGN_BTN.INSET,
-            DAILY_SIGN_BTN.INSET, DAILY_SIGN_BTN.INSET)
+        DarkIcon.drawNine(vg, "btn", DAILY_SIGN_BTN.CX - DAILY_SIGN_BTN.W * 0.5, DAILY_SIGN_BTN.CY - DAILY_SIGN_BTN.H * 0.5, DAILY_SIGN_BTN.W, DAILY_SIGN_BTN.H, { accent = "gold" })
 
         nvgFontFace(vg, "sans"); nvgFontSize(vg, DAILY_SIGN_BTN.FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -850,9 +841,7 @@ local function drawConfirmDialog(vg)
     nvgGlobalAlpha(vg, pAlpha)
 
     -- 3) 确认框背景（九宫格）
-    DrawUtil.drawNineSlice(vg, imgConfirmBg,
-        C.BG_CX - C.BG_W * 0.5, C.BG_CY - C.BG_H * 0.5,
-        C.BG_W, C.BG_H, 40, 40, 40, 40)
+    DarkIcon.drawNine(vg, "panel", C.BG_CX - C.BG_W * 0.5, C.BG_CY - C.BG_H * 0.5, C.BG_W, C.BG_H, { titleH = 40 })
 
     -- 4) 标题 "补签确认"
     DrawUtil.drawTextStroke(vg, C.TITLE_CX, C.TITLE_CY, "补签确认",
@@ -919,10 +908,7 @@ local function drawConfirmDialog(vg)
 
     -- 10) 确认按钮（黄色）
     local _bf2 = BF.begin(vg, "sip_confirm", C.BTN_CX, C.BTN_CY, C.BTN_W, C.BTN_H)
-    DrawUtil.drawNineSlice(vg, imgDailySignBtn,
-        C.BTN_CX - C.BTN_W * 0.5, C.BTN_CY - C.BTN_H * 0.5,
-        C.BTN_W, C.BTN_H,
-        C.BTN_INSET, C.BTN_INSET, C.BTN_INSET, C.BTN_INSET)
+    DarkIcon.drawNine(vg, "btn", C.BTN_CX - C.BTN_W * 0.5, C.BTN_CY - C.BTN_H * 0.5, C.BTN_W, C.BTN_H, { accent = "gold" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, C.BTN_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(C.BTN_R, C.BTN_G, C.BTN_B, 255))
@@ -1020,10 +1006,7 @@ function Panel.draw(vg)
     local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
     local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
 
-    DrawUtil.drawNineSlice(vg, imgSlider,
-        sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5,
-        TAB.SLIDER_W, TAB.SLIDER_H,
-        TAB.INSET_TOP, TAB.INSET_RIGHT, TAB.INSET_BOTTOM, TAB.INSET_LEFT)
+    DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
 
     -- Tab 文字 + 红点
     for i, item in ipairs(TAB_ITEMS) do

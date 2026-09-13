@@ -13,6 +13,7 @@ local RelicSystem  = require("systems.RelicSystem")
 local RelicDefs    = require("data.RelicDefs")
 local RelicDetailPanel = require("ui.RelicDetailPanel")
 local EventBus     = require("core.EventBus")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 
 local RelicBagPanel = {}
@@ -158,9 +159,9 @@ local BAG_MAX_DISPLAY = 20  -- 固定显示 20 格（4行×5列）
 
 -- ======================== 图片句柄 ========================
 
-local imgPanel   = -1  -- UI_TJP_1.png（九宫格背景）
+
 local imgDeco    = -1  -- UI_JJC_BTBJ.png（标题装饰条）
-local imgMergeBtn = -1 -- UI_AN_LV.png（绿色按钮九宫格）
+
 local imgIconUp  = -1  -- ICON_UP.png（可提升角标）
 local imgLock    = -1  -- UI_ICON_SUO.png（锁定角标）
 
@@ -222,7 +223,7 @@ end
 function RelicBagPanel.init(vg)
     vg_ = vg
     imgPanel    = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
-    imgDeco     = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     imgMergeBtn = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
     imgIconUp   = nvgCreateImage(vg, "image/ICON_UP.png", 0)
     imgLock     = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
@@ -372,9 +373,7 @@ function RelicBagPanel.draw(vg)
     nvgTranslate(vg, 0, slideOY)
 
     -- 九宫格背景面板
-    DrawUtil.drawNineSlice(vg, imgPanel,
-        0, PANEL_TOP - 40, DESIGN_W, PANEL_H + 80,
-        LOWER_PANEL.IT, LOWER_PANEL.IR, LOWER_PANEL.IB, LOWER_PANEL.IL)
+    DarkIcon.drawNine(vg, "plain", 0, PANEL_TOP - 40, DESIGN_W, PANEL_H + 80)
 
     -- 标题装饰条
     if imgDeco >= 0 then
@@ -573,9 +572,7 @@ function RelicBagPanel.draw(vg)
         local btnX = MERGE_BTN.CX - MERGE_BTN.W * 0.5
         local btnY = MERGE_BTN.CY - MERGE_BTN.H * 0.5
         local _bfMerge = BF.begin(vg, "relicBagMerge", MERGE_BTN.CX, MERGE_BTN.CY, MERGE_BTN.W, MERGE_BTN.H)
-        DrawUtil.drawNineSlice(vg, imgMergeBtn,
-            btnX, btnY, MERGE_BTN.W, MERGE_BTN.H,
-            MERGE_BTN.NINE_IT, MERGE_BTN.NINE_IR, MERGE_BTN.NINE_IB, MERGE_BTN.NINE_IL)
+        DarkIcon.drawNine(vg, "btn", btnX, btnY, MERGE_BTN.W, MERGE_BTN.H, { accent = "green" })
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, MERGE_BTN.FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)

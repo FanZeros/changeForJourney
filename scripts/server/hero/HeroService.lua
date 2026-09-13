@@ -13,6 +13,7 @@ local AvatarFrameConfig = require("config.AvatarFrameConfig")
 local UrGachaConfig   = require("config.UrGachaConfig")
 local TaskService     = require("server.task.TaskService")
 local HeroResonance   = require("shared.heroes.HeroResonance")
+local TeamSlots       = require("shared.heroes.TeamSlots")
 
 local HeroService = {}
 
@@ -53,7 +54,7 @@ end
 
 -- ======================== 上阵 / 下阵 / 批量设置 ========================
 
---- 上阵英雄
+--- 上阵英雄（队1；保持旧接口语义，供 HeroHandler DEPLOY_HERO 使用）
 ---@param uid number
 ---@param heroId number|nil
 ---@return boolean ok, string? err
@@ -68,22 +69,31 @@ function HeroService.DeployHero(uid, heroId)
         return false, "未拥有该英雄"
     end
 
+    TeamSlots.normalize(heroes)
+
     for _, id in ipairs(heroes.deployed) do
         if id == heroId then
             return false, "英雄已在阵容中"
         end
     end
 
-    if #heroes.deployed >= 5 then
-        return false, "阵容已满"
+    -- 跨队唯一性: 该英雄已在队2/3 → 拒绝
+    local otherTeam = TeamSlots.findHeroTeam(heroes, heroId)
+    if otherTeam then
+        return false, "英雄已在队伍" .. otherTeam .. "中"
+    end
+
+    if #heroes.deployed >= ExpTable.TEAM_MAX_SLOTS then
+        return false, "每队最多上阵 " .. ExpTable.TEAM_MAX_SLOTS .. " 人"
     end
 
     heroes.deployed[#heroes.deployed + 1] = heroId
+    TeamSlots.setTeam(heroes, 1, heroes.deployed)
     PDM.MarkDirty(uid, "heroes")
     return true
 end
 
---- 下阵英雄
+--- 下阵英雄（队1）
 ---@param uid number
 ---@param heroId number|nil
 ---@return boolean ok, string? err
@@ -112,55 +122,43 @@ function HeroService.UndeployHero(uid, heroId)
         return false, "英雄不在阵容中"
     end
 
+    TeamSlots.setTeam(heroes, 1, heroes.deployed)
     PDM.MarkDirty(uid, "heroes")
     return true
 end
 
---- 批量设置出战阵容
+--- 批量设置指定队伍的出战阵容
+--- 队1 = 旧 SET_DEPLOYED 语义（不允许为空，写 deployed 镜像）
+--- 队2/3 = 三队并行编队（允许为空 = 清空该队）
+---@param uid number
+---@param teamIdx number 队伍索引 1~3
+---@param heroIds table|nil
+---@return boolean ok, string? err, table? result
+function HeroService.SetTeam(uid, teamIdx, heroIds)
+    local heroes = PDM.GetModule(uid, "heroes")
+    if not heroes then return false, "数据未加载" end
+
+    local player = PDM.GetModule(uid, "player")
+    local playerLevel = player and (player.level or 1) or 1
+
+    local ok, err = TeamSlots.validate(heroes, teamIdx, heroIds, playerLevel)
+    if not ok then return false, err end
+
+    local slots = TeamSlots.setTeam(heroes, teamIdx, heroIds or {})
+    PDM.MarkDirty(uid, "heroes")
+    print(string.format("[HeroService] SET_TEAM uid=%s team=%d slots=%s",
+        tostring(uid), teamIdx, table.concat(slots, ",")))
+    return true, nil, { teamIdx = teamIdx, slots = slots, deployed = heroes.deployed }
+end
+
+--- 批量设置出战阵容（队1，兼容旧协议 SET_DEPLOYED）
 ---@param uid number
 ---@param heroIds table|nil
 ---@return boolean ok, string? err, table? result
 function HeroService.SetDeployed(uid, heroIds)
-    local heroes = PDM.GetModule(uid, "heroes")
-    if not heroes then return false, "数据未加载" end
-
-    if not heroIds or type(heroIds) ~= "table" then
-        return false, "缺少 heroIds"
-    end
-
-    if #heroIds == 0 then
-        return false, "阵容不能为空"
-    end
-
-    if #heroIds > 5 then
-        return false, "阵容上限 5 人"
-    end
-
-    -- 校验所有英雄
-    local seen = {}
-    for _, id in ipairs(heroIds) do
-        local numId = tonumber(id)
-        if not numId then
-            return false, "无效的 heroId"
-        end
-        if not heroes.roster[numId] then
-            return false, "未拥有英雄: " .. tostring(numId)
-        end
-        if seen[numId] then
-            return false, "重复的英雄: " .. tostring(numId)
-        end
-        seen[numId] = true
-    end
-
-    -- 原子替换
-    local newDeployed = {}
-    for _, id in ipairs(heroIds) do
-        newDeployed[#newDeployed + 1] = tonumber(id)
-    end
-    heroes.deployed = newDeployed
-
-    PDM.MarkDirty(uid, "heroes")
-    return true, nil, { deployed = heroes.deployed }
+    local ok, err, result = HeroService.SetTeam(uid, 1, heroIds)
+    if not ok then return false, err end
+    return true, nil, { deployed = result.deployed }
 end
 
 -- ======================== 英雄升级 ========================
@@ -354,6 +352,7 @@ function HeroService.SelectInitialHero(uid, heroId)
         },
     }
     heroes.deployed = { heroId }
+    TeamSlots.setTeam(heroes, 1, heroes.deployed)
     PDM.MarkDirty(uid, "heroes")
 
     -- 同步设置头像

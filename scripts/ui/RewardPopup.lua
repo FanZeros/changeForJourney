@@ -116,6 +116,7 @@ local RESOURCE_DEFS = ResourceDefs.DEFS
 
 local state = {
     open     = false,
+    rowTag   = nil,    -- [三行并行] 归属战斗行（1..3）; nil=全局弹窗（外侧显示）
     title    = "",
     subtitle = "",
     items    = {},     -- 排序后的奖励列表
@@ -285,6 +286,7 @@ end
 ---@param opts table|nil 可选参数 { onItemClick = function(item, index), onClose = function(), subtitle = string }
 function RewardPopup.show(title, rewards, opts)
     state.title    = title or "奖励"
+    state.rowTag   = opts and opts.row or nil
     state.subtitle = (opts and opts.subtitle) or ""
     state.scrollY = 0
     state.scrollMax = 0
@@ -603,8 +605,60 @@ end
 
 --- 绘制奖励弹窗（在设计空间内调用）
 ---@param vg any NanoVG 上下文
+--- [三行并行] 行内绘制: 遮罩只盖本行, 弹窗等比缩放嵌入行内
+--- @param rowTag number 归属行（1..3）; 不匹配则不绘制
+function RewardPopup.drawRegion(vg, rx, ry, rw, rh, rowTag)
+    if not state.open or state.rowTag ~= rowTag then return end
+
+    local animAlpha = 1.0
+    if state.animPhase == "opening" then
+        animAlpha = math.min(1.0, (time.elapsedTime - state.animStart) / ANIM_OPEN_DURATION)
+    elseif state.animPhase == "closing" then
+        animAlpha = 1.0 - math.min(1.0, (time.elapsedTime - state.animStart) / ANIM_CLOSE_DURATION)
+    end
+
+    -- 行内遮罩
+    nvgBeginPath(vg)
+    nvgRect(vg, rx, ry, rw, rh)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(MASK_ALPHA * animAlpha)))
+    nvgFill(vg)
+
+    -- 弹窗内容等比嵌入: 设计锚点(540, GLOW_CY=1044) → 行中心
+    local fit = math.min(rw / (DESIGN_W * 1.04), rh / 920)
+    nvgSave(vg)
+    nvgTranslate(vg, rx + rw * 0.5, ry + rh * 0.48)
+    nvgScale(vg, fit, fit)
+    nvgTranslate(vg, -540, -GLOW_CY)
+    RewardPopup.drawContent(vg)
+    nvgRestore(vg)
+end
+
+--- [三行并行] 当前归属行（nil=全局）
+function RewardPopup.currentRowTag()
+    return state.open and state.rowTag or nil
+end
+
+--- 全局绘制（无行归属时走原全屏路径）
 function RewardPopup.draw(vg)
-    if not state.open then return end
+    if not state.open or state.rowTag then return end
+
+    -- 全屏黑色遮罩
+    local animAlpha = 1.0
+    if state.animPhase == "opening" then
+        animAlpha = math.min(1.0, (time.elapsedTime - state.animStart) / ANIM_OPEN_DURATION)
+    elseif state.animPhase == "closing" then
+        animAlpha = 1.0 - math.min(1.0, (time.elapsedTime - state.animStart) / ANIM_CLOSE_DURATION)
+    end
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(MASK_ALPHA * animAlpha)))
+    nvgFill(vg)
+
+    RewardPopup.drawContent(vg)
+end
+
+--- 弹窗内容（无遮罩; 由 draw/drawRegion 包裹）
+function RewardPopup.drawContent(vg)
 
     -- === 动画进度计算 ===
     local animAlpha = 1.0   -- 整体透明度
@@ -622,11 +676,7 @@ function RewardPopup.draw(vg)
         animScale = 1.0 - easeInCubic(t) * 0.3  -- 缩小到 0.7
     end
 
-    -- 1) 全屏黑色遮罩（透明度随动画）
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(MASK_ALPHA * animAlpha)))
-    nvgFill(vg)
+    -- （遮罩由 draw / drawRegion 外层负责）
 
     -- === 以弹窗中心为原点进行缩放 ===
     local pivotX, pivotY = DESIGN_W * 0.5, GLOW_CY

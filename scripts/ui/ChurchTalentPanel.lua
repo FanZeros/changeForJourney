@@ -9,6 +9,10 @@ local DrawUtil      = require("core.DrawUtil")
 local TalentStarMap = require("ui.TalentStarMap")
 local TalentEffect  = require("systems.TalentEffect")
 local BF            = require("systems.ButtonFeedback")
+local DarkIcon      = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+
+-- 天赋系颜色 → 暗黑语义 accent（配合 DarkIcon.drawNine "plain" 样式）
+local TF_ACCENT = { ["红"] = "red", ["绿"] = "green", ["黄"] = "gold", ["蓝"] = "blue", ["紫"] = "purple" }
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -392,13 +396,13 @@ function M.drawContent(vg)
     end
     BF.finish(vg, _bfInfo)
 
-    -- 6. 重置按钮 UI_AN_LV 九宫格
+    -- 6. 重置按钮 [暗黑化 P1-B3] 矢量按钮（绿色）
     local _bf1 = BF.begin(vg, "ctp_reset", TF.rstCX, TF.rstCY, TF.rstW, TF.rstH)
-    drawNineSlice(vg, img.confirmBtn,
+    DarkIcon.drawNine(vg, "btn",
         TF.rstCX - TF.rstW * 0.5,
         TF.rstCY - TF.rstH * 0.5,
         TF.rstW, TF.rstH,
-        TF.rstNsT, TF.rstNsR, TF.rstNsB, TF.rstNsL)
+        { accent = "green" })
 
     -- 7. "重置"文字 (居中于按钮, #1d5037)
     nvgFontFace(vg, "sans")
@@ -479,17 +483,14 @@ function M.drawDetailPanel(vg)
     nvgTranslate(vg, -TFD.bgCX, -TFD.bgCY)
     nvgGlobalAlpha(vg, progress)
 
-    -- 2. 面板背景（按天赋颜色选择对应图片）
+    -- 2. 面板背景 [暗黑化 P1-B5] 矢量纯底板（按天赋颜色语义描边）
     local color = node.color or "无"
     if color == "无" then color = "紫" end  -- 起始点使用紫色背景
-    local bgImg = img.tfDetailBg[color]
-    if bgImg and bgImg > 0 then
-        drawNineSlice(vg, bgImg,
-            TFD.bgCX - TFD.bgW * 0.5,
-            TFD.bgCY - TFD.bgH * 0.5,
-            TFD.bgW, TFD.bgH,
-            TFD.bgNsT, TFD.bgNsR, TFD.bgNsB, TFD.bgNsL)
-    end
+    DarkIcon.drawNine(vg, "plain",
+        TFD.bgCX - TFD.bgW * 0.5,
+        TFD.bgCY - TFD.bgH * 0.5,
+        TFD.bgW, TFD.bgH,
+        { accent = TF_ACCENT[color] or "purple" })
 
     -- 3. 天赋名（白色 + 描边 #282828）
     drawTextStroke(vg, TFD.nameCX, TFD.nameCY, node.name or "未知",
@@ -529,7 +530,7 @@ function M.drawDetailPanel(vg)
     local isLit = TalentStarMap.isNodeLit(state.tfDetailNodeId)
     local isTerminal = isLit and isTerminalNode(state.tfDetailNodeId)
     local btnKey = isTerminal and "ctp_reset_single" or "ctp_activate"
-    local btnImg = isTerminal and img.tfResetBtn or img.confirmBtn
+    local btnAccent = isTerminal and "red" or "green"  -- [暗黑化 P1-B3] 重置=红 激活=绿
     local btnText = isTerminal and "重置" or (isLit and "已激活" or "激活")
     -- 红色按钮文字: 白色; 绿色按钮文字: 深绿; 已激活灰显: 深绿
     local btnTextR = isTerminal and 0xFF or TFD.btnR
@@ -537,13 +538,11 @@ function M.drawDetailPanel(vg)
     local btnTextB = isTerminal and 0xFF or TFD.btnB
 
     local _bf2 = BF.begin(vg, btnKey, TFD.btnCX, TFD.btnCY, TFD.btnW, TFD.btnH)
-    if btnImg and btnImg >= 0 then
-        drawNineSlice(vg, btnImg,
-            TFD.btnCX - TFD.btnW * 0.5,
-            TFD.btnCY - TFD.btnH * 0.5,
-            TFD.btnW, TFD.btnH,
-            TFD.btnNsT, TFD.btnNsR, TFD.btnNsB, TFD.btnNsL)
-    end
+    DarkIcon.drawNine(vg, "btn",
+        TFD.btnCX - TFD.btnW * 0.5,
+        TFD.btnCY - TFD.btnH * 0.5,
+        TFD.btnW, TFD.btnH,
+        { accent = btnAccent })
 
     -- 8. 按钮文本
     nvgFontFace(vg, "sans")
@@ -589,12 +588,11 @@ function M.drawOverviewPanel(vg)
     nvgTranslate(vg, -TOV.bgCX, -TOV.bgCY)
     nvgGlobalAlpha(vg, alpha / 255)
 
-    if img.resetConfBg and img.resetConfBg >= 0 then
-        drawNineSlice(vg, img.resetConfBg,
-            TOV.bgCX - TOV.bgW * 0.5, TOV.bgCY - TOV.bgH * 0.5,
-            TOV.bgW, TOV.bgH,
-            TOV.bgNsT, TOV.bgNsR, TOV.bgNsB, TOV.bgNsL)
-    end
+    -- 1. 弹窗底 [暗黑化 P1-B5] 矢量面板
+    DarkIcon.drawNine(vg, "panel",
+        TOV.bgCX - TOV.bgW * 0.5, TOV.bgCY - TOV.bgH * 0.5,
+        TOV.bgW, TOV.bgH,
+        { titleH = TOV.bgNsT })
 
     drawTextStroke(vg, TOV.bgCX, TOV.titleCY, "天赋效果总览",
         TOV.titleFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,

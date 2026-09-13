@@ -14,6 +14,7 @@ local PlayerStore      = require("client.data.PlayerStore")
 local HC               = require("config.HeroConfig")
 local ImageCache       = require("ui.ImageCache")
 local BF               = require("systems.ButtonFeedback")
+local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1-B5] 矢量九宫格
 local ExpTable         = require("config.ExpTable")
 local GameState        = require("core.GameState")
 
@@ -525,14 +526,13 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
 
     local q = equip.quality or 1
     local qColor = QUALITY_COLOR[q] or QUALITY_COLOR[1]
-    local bgImg = imgBg[q] or imgBg[1]
 
-    -- 1) 九宫格背景（坐标取整避免缝隙）
+    -- 1) 背景（坐标取整避免缝隙）[暗黑化 P1-B5] 矢量纯底板 + 品质语义描边
     local bgX = math.floor(bgCX - bgW * 0.5 + 0.5)
     local bgY = math.floor(bgCY - bgH * 0.5 + 0.5)
-    drawNineSlice(vg, bgImg,
+    DarkIcon.drawNine(vg, "plain",
         bgX, bgY, bgW, bgH,
-        NS_TOP, NS_RIGHT, NS_BOTTOM, NS_LEFT)
+        { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
 
     -- 2) 装备名称 - 左对齐 X578 Y625 字号40 纯白 描边4
     local nameStr = equip.name or "???"

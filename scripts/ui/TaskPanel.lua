@@ -12,6 +12,7 @@ local NumberUtil       = require("core.NumberUtil")
 local ImageCache       = require("ui.ImageCache")
 local RewardPopup      = require("ui.RewardPopup")
 local BF               = require("systems.ButtonFeedback")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local Panel = {}
 
@@ -143,14 +144,14 @@ end
 
 local imgTopBg     = -1  -- UI_RW_BJ.png
 local imgTitleBg   = -1  -- UI_TJP_MC.png
-local imgPanel     = -1  -- UI_TJP_1.png
+
 local imgDeco      = -1  -- UI_JJC_BTBJ.png
 local imgEntryBg   = -1  -- UI_RW_1.png
 local imgBarBg     = -1  -- UI_RW_JDT2.png  进度条背景
 local imgBarFill   = -1  -- UI_RW_JDT1.png
 local imgBtnBack   = -1  -- UI_AN_FH.png
 local imgTabBg     = -1  -- UI_AN_1.png
-local imgSlider    = -1  -- UI_AN_2.png
+
 local imgBtnRed    = -1  -- UI_AN_FANG_hong.png  未满足
 local imgBtnYellow = -1  -- UI_AN_FANG_huang.png 领取
 local imgBtnGreen  = -1  -- UI_AN_FANG_lv.png    已领取
@@ -476,14 +477,14 @@ end
 function Panel.init(vg)
     vg_ = vg
     imgTopBg     = nvgCreateImage(vg, "image/UI_RW_BJ.png", 0)
-    imgTitleBg   = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
     imgPanel     = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
     imgDeco      = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
     imgEntryBg   = nvgCreateImage(vg, "image/UI_RW_1.png", 0)
     imgBarBg     = nvgCreateImage(vg, "image/UI_RW_JDT2.png", 0)
     imgBarFill   = nvgCreateImage(vg, "image/UI_RW_JDT1.png", 0)
     imgBtnBack   = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    imgTabBg     = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     imgSlider    = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
     imgBtnRed    = nvgCreateImage(vg, "image/UI_AN_FANG_hong.png", 0)
     imgBtnYellow = nvgCreateImage(vg, "image/UI_AN_FANG_huang.png", 0)
@@ -610,10 +611,7 @@ function Panel.draw(vg)
     nvgTranslate(vg, 0, lowerOY)
 
     -- 2. 下方背景框（九宫格）
-    DrawUtil.drawNineSlice(vg, imgPanel,
-        LOWER_PANEL.CX - LOWER_PANEL.W * 0.5, LOWER_PANEL.CY - LOWER_PANEL.H * 0.5,
-        LOWER_PANEL.W, LOWER_PANEL.H,
-        LOWER_PANEL.IT, LOWER_PANEL.IR, LOWER_PANEL.IB, LOWER_PANEL.IL)
+    DarkIcon.drawNine(vg, "plain", LOWER_PANEL.CX - LOWER_PANEL.W * 0.5, LOWER_PANEL.CY - LOWER_PANEL.H * 0.5, LOWER_PANEL.W, LOWER_PANEL.H)
 
     -- 4. 标题装饰
     DrawUtil.drawImageCentered(vg, imgDeco, DECO.CX, DECO.CY, DECO.W, DECO.H, 1.0)
@@ -647,10 +645,7 @@ function Panel.draw(vg)
     local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
     local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
 
-    DrawUtil.drawNineSlice(vg, imgSlider,
-        sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5,
-        TAB.SLIDER_W, TAB.SLIDER_H,
-        TAB.INSET_TOP, TAB.INSET_RIGHT, TAB.INSET_BOTTOM, TAB.INSET_LEFT)
+    DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
 
     -- 10. Tab 文字 + 红点
     for i, item in ipairs(TAB_ITEMS) do

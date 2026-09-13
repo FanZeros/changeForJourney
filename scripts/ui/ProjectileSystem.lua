@@ -5,12 +5,21 @@
 -- ============================================================================
 
 local ProjectileSystem = {}
+-- ======================== [多实例] 投射物状态容器 ========================
+local function newState()
+    return { projectiles = {} }
+end
+local PS_DEFAULT = newState()
+local PS_BCS = PS_DEFAULT
+function ProjectileSystem.newState() return newState() end
+function ProjectileSystem.mount(s) PS_BCS = s or PS_DEFAULT end
+function ProjectileSystem.mountedState() return PS_BCS end
+
 
 local GameSFX = require "systems.GameSFX"
 local Diag = require("systems.BattleDiag")
 
 -- 活跃投射物列表
-local projectiles = {}
 local starGateDrawTime = 0
 
 -- NanoVG 上下文
@@ -234,10 +243,22 @@ local function getImage(key)
     return handle
 end
 
+-- [三行并行] 条带渲染缩放：投射物/星门等视觉尺寸 × renderScale
+-- （卡牌在条带内缩至 CARD_SCALE，投射物同步缩放避免比例失调；飞行时长为 duration 制不受影响）
+local renderScale = 1.0
+function ProjectileSystem.setRenderScale(s) renderScale = s or 1.0 end
+
+-- [看情况抛物线] fly 直线弹的飞行距离 ≥ ARC_TRIGGER_DIST 时升级为贝塞尔弧线
+-- （条带空间: 前排对峙≈193px 直线，跨场≈800px 弧线；可按观感调整）
+local ARC_TRIGGER_DIST = 300
+function ProjectileSystem.setArcTriggerDist(d) ARC_TRIGGER_DIST = d or 300 end
+
 --- 绘制投射物图片（居中，支持旋转/缩放/透明度）
 --- 素材默认朝右(+X方向)，angle=0时朝右，angle=-π/2时朝上
 local function drawProjectileImage(vg, imgHandle, cx, cy, w, h, angle, alpha)
     if not imgHandle or imgHandle <= 0 then return end
+    w = w * renderScale
+    h = h * renderScale
     nvgSave(vg)
     nvgTranslate(vg, cx, cy)
     if angle ~= 0 then
@@ -437,7 +458,7 @@ local function updateAndDrawBezier(proj, vg, t)
     end
 
     -- 计算垂直偏移量：max(最小半径, 距离×0.4)
-    local perpLen = math.max(MIN_ARC_RADIUS, dist * 0.4)
+    local perpLen = math.max(MIN_ARC_RADIUS * renderScale, dist * 0.4)
 
     -- 归一化方向 + 垂直方向
     local ndx = dx / dist
@@ -763,6 +784,7 @@ end
 -- 类型 → 绘制函数映射
 local DRAW_FUNCS = {
     fly          = updateAndDrawFly,
+    pierce       = updateAndDrawFly,  -- [单发穿透] 直线路径, 命中事件在 update 中按位置触发
     shake        = updateAndDrawShake,
     bezier       = updateAndDrawBezier,
     lightning    = updateAndDrawLightning,
@@ -785,7 +807,7 @@ function ProjectileSystem.init(vg)
     end
     vg_ = vg
     images = {}
-    projectiles = {}
+    PS_BCS.projectiles = {}
     starGateDrawTime = 0
     print("[ProjectileSystem] init OK")
 end
@@ -868,7 +890,16 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
         proj.bezierSide = (math.random() > 0.5) and 1 or -1
     end
 
-    projectiles[#projectiles + 1] = proj
+    -- [看情况抛物线] fly 直线弹距离足够远时升级为弧线（弧顶始终向上）
+    if cfg.type == "fly" then
+        local ddx, ddy = endX - startX, endY - startY
+        if (ddx * ddx + ddy * ddy) >= ARC_TRIGGER_DIST * ARC_TRIGGER_DIST then
+            proj.arcUpgrade = true
+            proj.bezierSide = (endX >= startX) and -1 or 1
+        end
+    end
+
+    PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
 
 --- 触发一个攻击投射物
@@ -909,7 +940,42 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
         proj.bezierSide = (math.random() > 0.5) and 1 or -1
     end
 
-    projectiles[#projectiles + 1] = proj
+    PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
+end
+
+--- [单发穿透] 一发弹沿直线穿过目标群, 按位置进度(atT)依次触发命中事件
+--- 与"一次丢 N 个弹"相对: 多目标攻击只飞一发, 视觉为穿透
+--- @param source table { heroId=id } 或 { key=effectKey }（弹体视觉取自对应配置）
+--- @param hitEvents table[] 已按 atT 升序排序的 { atT=0..1, onHit=function }
+--- @return boolean 是否成功生成（无弹体配置返回 false, 调用方回退逐目标）
+function ProjectileSystem.spawnPierce(source, startX, startY, endX, endY, hitEvents, opts)
+    local base = nil
+    if type(source) == "table" then
+        if source.heroId then base = CONFIGS[source.heroId]
+        elseif source.key then base = MONSTER_CONFIGS[source.key] end
+    end
+    if not base or not hitEvents or #hitEvents == 0 then return false end
+
+    -- 防御: 强制按 atT 升序（探测曾抓到插入序触发/队头阻塞问题）
+    table.sort(hitEvents, function(a, b) return (a.atT or 0) < (b.atT or 0) end)
+
+    local cfg = setmetatable({ type = "pierce" }, { __index = base })
+    if base.imgKey then GameSFX.play(base.imgKey) end
+
+    local proj = {
+        cfg          = cfg,
+        timer        = 0,
+        startX       = startX,
+        startY       = startY,
+        endX         = endX,
+        endY         = endY,
+        pierceEvents = hitEvents,
+        nextEventIdx = 1,
+        onArrive     = opts and opts.onArrive or nil,
+        arrived      = false,
+    }
+    PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
+    return true
 end
 
 --- 触发一个技能投射物
@@ -945,7 +1011,7 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
     if cfg.type == "flyingSword" then
         local count = (opts and opts.flyingSwordCount) or 1
         local idx = (opts and opts.flyingSwordIndex) or 1
-        local radius = (opts and opts.flyingSwordRadius) or 90
+        local radius = ((opts and opts.flyingSwordRadius) or 90) * renderScale
         local angleOnRing = (2 * math.pi / count) * (idx - 1) - math.pi * 0.5
         proj.centerX = startX
         proj.centerY = startY
@@ -954,7 +1020,7 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
         proj.spawnAngle = math.atan(endY - startY, endX - startX)
     end
 
-    projectiles[#projectiles + 1] = proj
+    PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
 
 --- 触发一个转职天赋投射物（按 talentProjKey 查找配置，不依赖 heroId）
@@ -991,7 +1057,7 @@ function ProjectileSystem.spawnTalent(talentProjKey, startX, startY, endX, endY,
         end
     end
 
-    projectiles[#projectiles + 1] = proj
+    PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
 
 local function safeInvokeProjectileCallback(label, fn)
@@ -1008,9 +1074,24 @@ end
 function ProjectileSystem.update(dt)
     starGateDrawTime = starGateDrawTime + dt
     local i = 1
-    while i <= #projectiles do
-        local proj = projectiles[i]
+    while i <= #PS_BCS.projectiles do
+        local proj = PS_BCS.projectiles[i]
         proj.timer = proj.timer + dt
+
+        -- [单发穿透] 按飞行进度依次触发沿线命中事件
+        if proj.pierceEvents and not proj.arrived then
+            local pdur = (proj.cfg and proj.cfg.duration) or 0.5
+            if pdur <= 0 then pdur = 0.01 end
+            local pt = math.min(1, proj.timer / pdur)
+            while proj.nextEventIdx <= #proj.pierceEvents
+                  and proj.pierceEvents[proj.nextEventIdx].atT <= pt do
+                local ev = proj.pierceEvents[proj.nextEventIdx]
+                proj.nextEventIdx = proj.nextEventIdx + 1
+                if ev.onHit then
+                    safeInvokeProjectileCallback("pierce-hit", ev.onHit)
+                end
+            end
+        end
 
         -- 目标死亡检测：如果投射物跟踪的目标已死亡，立即触发到达并快速消失
         -- 防止治疗投射物飞向墓碑的视觉问题
@@ -1058,7 +1139,7 @@ function ProjectileSystem.update(dt)
         end
         -- 加一点淡出余量（duration 后多保留 0.15s 用于淡出动画）
         if proj.timer >= duration + 0.15 then
-            table.remove(projectiles, i)
+            table.remove(PS_BCS.projectiles, i)
         else
             i = i + 1
         end
@@ -1068,10 +1149,12 @@ end
 --- 绘制摘星星星人常驻星门召唤物
 ---@param vg table
 ---@param units table[]
----@param cardCY number
+---@param cardCY number 兜底 Y（列阵下为战场中心）
 ---@param getCardCX function
 ---@param isAlly boolean
-function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly)
+-- [左4vs右4] getCardCY 可选: 按索引取竖排 Y
+---@param getCardCY function|nil
+function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly, getCardCY)
     if not vg or not units or not getCardCX then return end
     local imgHandle = getImage("EF_skill_20")
     for i, unit in ipairs(units) do
@@ -1084,10 +1167,11 @@ function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly)
                 count = (unit.awakeningNodes and unit.awakeningNodes[6] == true) and 2 or 1
             end
             local baseX = getCardCX(units, i)
+            local baseCY = getCardCY and getCardCY(units, i) or cardCY
             for gateIndex = 1, count do
-                local cx, cy = getStarGateDrawPosition(baseX, cardCY, gateIndex, count, isAlly)
+                local cx, cy = getStarGateDrawPosition(baseX, baseCY, gateIndex, count, isAlly)
                 local pulse = 0.94 + 0.06 * math.sin(starGateDrawTime * 3.4 + gateIndex)
-                local size = 118 * pulse
+                local size = 118 * pulse * renderScale
                 local alpha = 0.88 + 0.12 * math.sin(starGateDrawTime * 2.6 + gateIndex * 0.7)
                 drawStarGateAura(vg, cx, cy, size, alpha)
                 drawProjectileImage(vg, imgHandle, cx, cy, size, size, starGateDrawTime * 1.8 * (isAlly and 1 or -1), alpha)
@@ -1098,11 +1182,13 @@ end
 
 --- 绘制所有活跃投射物
 function ProjectileSystem.draw(vg)
-    for _, proj in ipairs(projectiles) do
+    for _, proj in ipairs(PS_BCS.projectiles) do
         local duration = (proj.cfg and proj.cfg.duration) or 0.01
         if duration <= 0 then duration = 0.01 end
         local t = math.min(1, proj.timer / duration)
-        local drawFunc = DRAW_FUNCS[proj.cfg.type]
+        local trajType = proj.cfg.type
+        if proj.arcUpgrade then trajType = "bezier" end  -- [看情况抛物线]
+        local drawFunc = DRAW_FUNCS[trajType]
         if drawFunc then
             nvgSave(vg)
             drawFunc(proj, vg, t)
@@ -1113,13 +1199,13 @@ end
 
 --- 清除所有投射物
 function ProjectileSystem.reset()
-    projectiles = {}
+    PS_BCS.projectiles = {}
     starGateDrawTime = 0
 end
 
 --- 获取当前活跃投射物数量（调试用）
 function ProjectileSystem.getActiveCount()
-    return #projectiles
+    return #PS_BCS.projectiles
 end
 
 return ProjectileSystem

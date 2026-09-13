@@ -9,6 +9,7 @@ local Protocol = require("shared.Protocol")
 
 local RewardPopup     = require("ui.RewardPopup")
 local BF              = require("systems.ButtonFeedback")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
 local drawNineSlice     = DrawUtil.drawNineSlice
@@ -372,10 +373,7 @@ function RedeemCodePanel.draw(vg)
     nvgTranslate(vg, -BG.CX, -BG.CY)
 
     -- ── 1. 背景框（九宫格）──
-    drawNineSlice(vg, img.bg,
-        BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
-        BG.W, BG.H,
-        BG.IT, BG.IR, BG.IB, BG.IL)
+    DarkIcon.drawNine(vg, "panel", BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5, BG.W, BG.H, { titleH = BG.IT })
 
     -- ── 2. 标题 "兑换码"（无描边，纯色文本）──
     nvgFontFace(vg, "sans")

@@ -14,6 +14,7 @@ local DungeonIdleConfig = require("config.DungeonIdleConfig")
 local RewardPopup       = require("ui.RewardPopup")
 local PlayerInfoPanel   = require("ui.PlayerInfoPanel")
 local NumberUtil    = require("core.NumberUtil")
+local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local DungeonPage = {}
 
@@ -38,13 +39,13 @@ local imgRelic       = -1   -- ICON_SJYW.png 遗物图标
 local imgQualityBg   = {}   -- UI_icon_ZBBJ_N.png 品质背景 (1-5)
 
 -- 详情面板图片
-local imgDetailBg    = -1   -- UI_TY_EJQRK.png 九宫格弹窗背景
+
 local imgFloorBg1    = -1   -- ICON_LXBJ_1.png 上一层背景
 local imgFloorBg2    = -1   -- ICON_LXBJ_2.png 当前层背景
 local imgFloorBg3    = -1   -- ICON_LXBJ_3.png 下一层背景
 local imgArrow       = -1   -- UI_TJP_JIANTOU.png 过渡箭头
-local imgBtnYellow   = -1   -- UI_AN_HUANG.png 扫荡按钮背景
-local imgBtnGreen    = -1   -- UI_AN_LV.png 挑战按钮背景
+
+
 local imgRedDot      = -1   -- ICON_HD.png 红点提示
 local imgChest       = -1   -- UI_icon_FBBX.png 挂机宝箱
 
@@ -430,8 +431,8 @@ function DungeonPage.init(vg)
     imgFloorBg1  = nvgCreateImage(vg, "image/ICON_LXBJ_1.png", 0)
     imgFloorBg2  = nvgCreateImage(vg, "image/ICON_LXBJ_2.png", 0)
     imgFloorBg3  = nvgCreateImage(vg, "image/ICON_LXBJ_3.png", 0)
-    imgArrow     = nvgCreateImage(vg, "image/UI_TJP_JIANTOU.png", 0)
-    imgBtnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
+    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     imgBtnGreen  = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
     imgRedDot    = nvgCreateImage(vg, "image/ICON_HD.png", 0)
     imgChest     = nvgCreateImage(vg, "image/UI_icon_FBBX.png", 0)
@@ -682,8 +683,7 @@ function DungeonPage.drawDetailPanel(vg)
     -- 3. 九宫格弹窗背景 UI_TY_EJQRK
     local bgX = DT_BG_CX - DT_BG_W * 0.5
     local bgY = DT_BG_CY - DT_BG_H * 0.5
-    DrawUtil.drawNineSlice(vg, imgDetailBg, bgX, bgY, DT_BG_W, DT_BG_H,
-        DT_BG_IT, DT_BG_IR, DT_BG_IB, DT_BG_IL)
+    DarkIcon.drawNine(vg, "panel", bgX, bgY, DT_BG_W, DT_BG_H, { titleH = DT_BG_IT })
 
     -- 3. 标题（白色 + #593219描边6）
     DrawUtil.drawTextStroke(vg, DT_TITLE_X, DT_TITLE_Y, detailDungeon.name,
@@ -828,11 +828,7 @@ function DungeonPage.drawDetailPanel(vg)
     local sweepDisabled = (currentFloor <= 1) or (dailyRemain <= 0)
     local _bfSweep = BF.begin(vg, "dt_sweep_btn", DT_SWEEP_CX, DT_SWEEP_CY, DT_SWEEP_W, DT_SWEEP_H)
     nvgGlobalAlpha(vg, sweepDisabled and 0.45 or 1.0)
-    DrawUtil.drawNineSlice(vg, imgBtnYellow,
-        DT_SWEEP_CX - DT_SWEEP_W * 0.5,
-        DT_SWEEP_CY - DT_SWEEP_H * 0.5,
-        DT_SWEEP_W, DT_SWEEP_H,
-        DT_BTN_NP_T, DT_BTN_NP_R, DT_BTN_NP_B, DT_BTN_NP_L)
+    DarkIcon.drawNine(vg, "btn", DT_SWEEP_CX - DT_SWEEP_W * 0.5, DT_SWEEP_CY - DT_SWEEP_H * 0.5, DT_SWEEP_W, DT_SWEEP_H, { accent = "gold" })
     BF.finish(vg, _bfSweep)
 
     -- 19. 扫荡按钮文本 "扫荡上一层"
@@ -845,11 +841,7 @@ function DungeonPage.drawDetailPanel(vg)
 
     -- 20. 挑战按钮背景 UI_AN_LV（九宫格）
     local _bfFight = BF.begin(vg, "dt_fight_btn", DT_FIGHT_CX, DT_FIGHT_CY, DT_FIGHT_W, DT_FIGHT_H)
-    DrawUtil.drawNineSlice(vg, imgBtnGreen,
-        DT_FIGHT_CX - DT_FIGHT_W * 0.5,
-        DT_FIGHT_CY - DT_FIGHT_H * 0.5,
-        DT_FIGHT_W, DT_FIGHT_H,
-        DT_BTN_NP_T, DT_BTN_NP_R, DT_BTN_NP_B, DT_BTN_NP_L)
+    DarkIcon.drawNine(vg, "btn", DT_FIGHT_CX - DT_FIGHT_W * 0.5, DT_FIGHT_CY - DT_FIGHT_H * 0.5, DT_FIGHT_W, DT_FIGHT_H, { accent = "green" })
     BF.finish(vg, _bfFight)
 
     -- 21. 挑战按钮文本 "挑战"

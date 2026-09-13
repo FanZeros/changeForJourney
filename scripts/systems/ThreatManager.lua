@@ -8,8 +8,26 @@
 
 local AD = require("systems.AttributeDef")
 local CC = require("config.ClassConfig")
+local BattleLayout = require("core.BattleLayout")
 
 local TM = {}
+-- ======================== [多实例] 战斗状态容器 ========================
+-- 每场并行战斗一个实例; TM.mount(s) 切换当前模拟的战斗
+local function newState()
+    return {
+        threatTable = {},            -- threatTable[target] = threatValue
+        hasKnightOrWarrior = false,  -- 队伍中是否有骑士/战士存活（射手天赋用）
+        forcedTarget = nil,
+        forcedTargetTimer = 0,
+        knightFirstAttackReady = {}, -- [unit] = true，本场战斗骑士首次攻击仇恨倍率待触发
+    }
+end
+local TM_DEFAULT = newState()
+local TM_BCS = TM_DEFAULT
+function TM.newState() return newState() end
+function TM.mount(s) TM_BCS = s or TM_DEFAULT end
+function TM.mountedState() return TM_BCS end
+
 local ArtifactRuntime
 local function getArtifactRuntime()
     if not ArtifactRuntime then ArtifactRuntime = require("systems.ArtifactRuntime") end
@@ -38,34 +56,29 @@ TM.KNIGHT_FIRST_ATTACK_THREAT_MULT = 20
 TM.RANGER_THREAT_REDUCTION = 0.80  -- 降低80%（即仇恨乘以0.2）
 
 -- ======================== 仇恨表 ========================
--- 结构: threatTable[target] = threatValue
+-- 结构: TM_BCS.threatTable[target] = threatValue
 -- 全队共享：所有敌方单位基于同一张仇恨表选择目标
 
-local threatTable = {}
-local hasKnightOrWarrior = false  -- 队伍中是否有骑士/战士存活（射手天赋用）
-local forcedTarget = nil
-local forcedTargetTimer = 0
-local knightFirstAttackReady = {}  -- [unit] = true，本场战斗骑士首次攻击仇恨倍率待触发
 
 -- ======================== 核心 API ========================
 
 --- 重置所有仇恨数据（关卡切换时调用）
 function TM.reset()
-    threatTable = {}
-    hasKnightOrWarrior = false
-    forcedTarget = nil
-    forcedTargetTimer = 0
-    knightFirstAttackReady = {}
+    TM_BCS.threatTable = {}
+    TM_BCS.hasKnightOrWarrior = false
+    TM_BCS.forcedTarget = nil
+    TM_BCS.forcedTargetTimer = 0
+    TM_BCS.knightFirstAttackReady = {}
 end
 
 --- 清除指定单位的仇恨记录（单位死亡/移除时调用）
 ---@param unit table 要移除的单位引用
 function TM.removeUnit(unit)
-    threatTable[unit] = nil
-    knightFirstAttackReady[unit] = nil
-    if forcedTarget == unit then
-        forcedTarget = nil
-        forcedTargetTimer = 0
+    TM_BCS.threatTable[unit] = nil
+    TM_BCS.knightFirstAttackReady[unit] = nil
+    if TM_BCS.forcedTarget == unit then
+        TM_BCS.forcedTarget = nil
+        TM_BCS.forcedTargetTimer = 0
     end
 end
 
@@ -73,7 +86,7 @@ end
 ---@param target table 目标（己方单位）
 ---@return number 仇恨值
 function TM.getThreat(target)
-    return threatTable[target] or 0
+    return TM_BCS.threatTable[target] or 0
 end
 
 --- 增加仇恨值
@@ -83,15 +96,15 @@ function TM.addThreat(target, amount)
     if amount <= 0 then return end
     amount = getArtifactRuntime().adjustThreatGain(target, amount)
     if amount <= 0 then return end
-    local old = threatTable[target] or 0
-    threatTable[target] = old + amount
+    local old = TM_BCS.threatTable[target] or 0
+    TM_BCS.threatTable[target] = old + amount
 end
 
 --- 清空指定单位的动态仇恨值
 ---@param target table 目标单位
 function TM.clearThreat(target)
     if not target then return end
-    threatTable[target] = 0
+    TM_BCS.threatTable[target] = 0
 end
 
 --- 按比例清除指定单位的动态仇恨值
@@ -101,8 +114,8 @@ function TM.reduceThreatPercent(target, percent)
     if not target then return end
     percent = math.max(0, math.min(100, tonumber(percent) or 0))
     if percent <= 0 then return end
-    local old = threatTable[target] or 0
-    threatTable[target] = math.max(0, old * (1 - percent / 100))
+    local old = TM_BCS.threatTable[target] or 0
+    TM_BCS.threatTable[target] = math.max(0, old * (1 - percent / 100))
 end
 
 --- 设置指定单位的动态仇恨值
@@ -110,7 +123,7 @@ end
 ---@param amount number 仇恨值
 function TM.setThreat(target, amount)
     if not target then return end
-    threatTable[target] = math.max(0, tonumber(amount) or 0)
+    TM_BCS.threatTable[target] = math.max(0, tonumber(amount) or 0)
 end
 
 --- 嘲讽：确保目标仇恨至少领先其他存活队友指定数值
@@ -122,14 +135,14 @@ function TM.tauntToLead(target, allyList, leadAmount)
     local maxThreat = 0
     for _, ally in ipairs(allyList or {}) do
         if ally ~= target and ally.hp > 0 then
-            local threat = threatTable[ally] or 0
+            local threat = TM_BCS.threatTable[ally] or 0
             if threat > maxThreat then maxThreat = threat end
         end
     end
-    local targetThreat = threatTable[target] or 0
+    local targetThreat = TM_BCS.threatTable[target] or 0
     local desired = maxThreat + math.max(0, leadAmount or 0)
     if targetThreat < desired then
-        threatTable[target] = desired
+        TM_BCS.threatTable[target] = desired
     end
 end
 
@@ -138,8 +151,8 @@ end
 ---@param duration number 持续时间（秒）
 function TM.forceTarget(target, duration)
     if not target or target.hp <= 0 then return end
-    forcedTarget = target
-    forcedTargetTimer = math.max(forcedTargetTimer or 0, duration or 0)
+    TM_BCS.forcedTarget = target
+    TM_BCS.forcedTargetTimer = math.max(TM_BCS.forcedTargetTimer or 0, duration or 0)
 end
 
 --- 战斗开始时初始化仇恨（处理骑士天赋"阵前叫嚣"等）
@@ -148,22 +161,22 @@ end
 ---@param enemies table 敌方单位列表
 function TM.onBattleStart(allies, enemies)
     -- 检测队伍中是否有骑士/战士存活（用于射手天赋"远程攻击"）
-    hasKnightOrWarrior = false
+    TM_BCS.hasKnightOrWarrior = false
     for _, ally in ipairs(allies) do
         if ally.hp > 0 and (ally.classId == CC.KNIGHT or ally.classId == CC.WARRIOR) then
-            hasKnightOrWarrior = true
+            TM_BCS.hasKnightOrWarrior = true
             break
         end
     end
 
     for _, ally in ipairs(allies) do
         if ally.classId == CC.KNIGHT and ally.hp > 0 then
-            knightFirstAttackReady[ally] = true
+            TM_BCS.knightFirstAttackReady[ally] = true
             print("[Threat] 骑士 " .. ally.name .. " 阵前叫嚣: 首次攻击仇恨×" .. TM.KNIGHT_FIRST_ATTACK_THREAT_MULT)
         end
     end
 
-    if hasKnightOrWarrior then
+    if TM_BCS.hasKnightOrWarrior then
         print("[Threat] 队伍中有骑士/战士，射手仇恨倍率降低" .. (TM.RANGER_THREAT_REDUCTION * 100) .. "%")
     end
 end
@@ -200,14 +213,14 @@ function TM.onDamageDealt(damageSource, damage, includeBaseThreat, threatScale)
 
     local amount = ((includeBaseThreat and baseThreat or 0) + damage * dmgCoeff) * threatMult * threatScale
 
-    if includeBaseThreat and classId == CC.KNIGHT and knightFirstAttackReady[damageSource] then
+    if includeBaseThreat and classId == CC.KNIGHT and TM_BCS.knightFirstAttackReady[damageSource] then
         amount = amount * TM.KNIGHT_FIRST_ATTACK_THREAT_MULT
-        knightFirstAttackReady[damageSource] = nil
+        TM_BCS.knightFirstAttackReady[damageSource] = nil
         print("[Threat] 骑士 " .. tostring(damageSource.name) .. " 阵前叫嚣首次攻击: 仇恨×" .. TM.KNIGHT_FIRST_ATTACK_THREAT_MULT)
     end
 
     -- 射手天赋"远程攻击"：队伍有骑士/战士时仇恨降低80%
-    if classId == CC.RANGER and hasKnightOrWarrior then
+    if classId == CC.RANGER and TM_BCS.hasKnightOrWarrior then
         amount = amount * (1.0 - TM.RANGER_THREAT_REDUCTION)
     end
 
@@ -239,7 +252,7 @@ function TM.onHealingDone(healer, healAmount)
     local amount = (healBase + healAmount * healCoeff) * threatMult
 
     -- 射手天赋"远程攻击"：队伍有骑士/战士时仇恨降低80%
-    if classId == CC.RANGER and hasKnightOrWarrior then
+    if classId == CC.RANGER and TM_BCS.hasKnightOrWarrior then
         amount = amount * (1.0 - TM.RANGER_THREAT_REDUCTION)
     end
 
@@ -249,20 +262,20 @@ end
 --- 每帧更新：仇恨衰减
 ---@param dt number 帧间隔（秒）
 function TM.update(dt)
-    if forcedTarget then
-        forcedTargetTimer = forcedTargetTimer - dt
-        if forcedTargetTimer <= 0 or forcedTarget.hp <= 0 then
-            forcedTarget = nil
-            forcedTargetTimer = 0
+    if TM_BCS.forcedTarget then
+        TM_BCS.forcedTargetTimer = TM_BCS.forcedTargetTimer - dt
+        if TM_BCS.forcedTargetTimer <= 0 or TM_BCS.forcedTarget.hp <= 0 then
+            TM_BCS.forcedTarget = nil
+            TM_BCS.forcedTargetTimer = 0
         end
     end
-    for target, threat in pairs(threatTable) do
+    for target, threat in pairs(TM_BCS.threatTable) do
         local decay = math.max(TM.DECAY_MIN * dt, threat * TM.DECAY_RATE * dt)
         local newThreat = threat - decay
         if newThreat <= 0 then
-            threatTable[target] = nil
+            TM_BCS.threatTable[target] = nil
         else
-            threatTable[target] = newThreat
+            TM_BCS.threatTable[target] = newThreat
         end
     end
 end
@@ -272,9 +285,9 @@ end
 ---@param targetList table 目标列表（己方单位）
 ---@return number 被选中目标在列表中的索引（1-based），0 = 无有效目标
 function TM.selectTarget(targetList)
-    if forcedTarget and forcedTarget.hp > 0 and forcedTargetTimer > 0 and not forcedTarget.artifactUntargetable then
+    if TM_BCS.forcedTarget and TM_BCS.forcedTarget.hp > 0 and TM_BCS.forcedTargetTimer > 0 and not TM_BCS.forcedTarget.artifactUntargetable then
         for i, u in ipairs(targetList) do
-            if u == forcedTarget then
+            if u == TM_BCS.forcedTarget then
                 return i
             end
         end
@@ -294,7 +307,8 @@ function TM.selectTarget(targetList)
             end
             local staticBonus = staticThreat * TM.STATIC_THREAT_WEIGHT
 
-            local weight = dynamicThreat + staticBonus
+            -- [前后排] 乘以位置受击权重: 前排(靠中心)被攻击概率显著更高
+            local weight = (dynamicThreat + staticBonus) * BattleLayout.hitWeight(i)
             totalWeight = totalWeight + weight
             alive[#alive + 1] = { index = i, weight = weight }
         end
@@ -318,7 +332,7 @@ end
 ---@return table[] { unit, threat }
 function TM.getThreatsFor()
     local result = {}
-    for target, threat in pairs(threatTable) do
+    for target, threat in pairs(TM_BCS.threatTable) do
         result[#result + 1] = { unit = target, threat = threat }
     end
     table.sort(result, function(a, b) return a.threat > b.threat end)

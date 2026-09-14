@@ -39,3 +39,4 @@ screenshots/
 .emmylua/
 tools/
 urhox-libs/
+.build/

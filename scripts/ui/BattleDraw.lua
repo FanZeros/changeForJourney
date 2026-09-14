@@ -266,41 +266,45 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     nvgRestore(vg)
                 end
 
-                -- 能量护盾：血条尾部延伸段（不叠加在血量上）——
-                -- [HP 段][常规 ES 青段][临时 ES 亮青段][空]，均按 maxHp 百分比刻度；
-                -- 盾+血未满时盾跟在血量后面，总宽不超过整条
+                -- 能量护盾：血条左端覆盖段（0% 起，按 maxHp 百分比刻度，叠加在血量上）——
+                -- [常规 ES 青段][临时 ES 亮青段] 从最左端依次排列；满血时也能显示
+                -- （修复原尾部延伸段设计：满血时 esRoom=0 被裁为 0 宽，护盾不可见）
                 local esMax = unit.attrs and (unit.attrs.final["energyShield"] or 0) or 0
-                if esMax > 0 and imgCtx.imgEsFill and imgCtx.imgEsFill >= 0 then
+                if esMax > 0 then
                     local esCur = unit.attrs.energyShield or 0
                     local tempCur = unit.attrs.tempEnergyShield or 0
                     local barScale = (unit.maxHp > 0) and unit.maxHp or esMax
-                    local hpClipW = fillW * math.max(0, math.min(1, hpProgress))
                     local esClipW = fillW * math.max(0, math.min(1, esCur / barScale))
-                    local esRoom = fillW - hpClipW
-                    if esClipW > esRoom then esClipW = esRoom end
                     if esClipW > 0 then
-                        local esX = fillX + hpClipW
+                        local esX = fillX
                         nvgSave(vg)
                         nvgScissor(vg, esX, fillY, esClipW, fillH)
-                        local esPaint = nvgImagePattern(vg, esX, fillY, esClipW, fillH, 0, imgCtx.imgEsFill, 0.85)
+                        -- [fix] 原 UI_ZD_HPT3.png 实为 KTX2 纹理误名 .png，NanoVG 无法解码，
+                        -- 改用程序化青色填充（与 +护盾数值同色系），不再依赖该贴图
                         nvgBeginPath(vg)
                         nvgRect(vg, esX, fillY, esClipW, fillH)
-                        nvgFillPaint(vg, esPaint)
+                        nvgFillColor(vg, nvgRGBA(69, 239, 254, 216))
                         nvgFill(vg)
+                        nvgBeginPath(vg)
+                        nvgMoveTo(vg, esX, fillY + 1)
+                        nvgLineTo(vg, esX + esClipW, fillY + 1)
+                        nvgStrokeColor(vg, nvgRGBA(200, 255, 255, 130))
+                        nvgStrokeWidth(vg, 1)
+                        nvgStroke(vg)
                         nvgResetScissor(vg)
                         nvgRestore(vg)
                     end
                     -- 临时护盾跟在常规护盾之后（更亮的青色，同一刻度，同样不越界）
                     if tempCur > 0 then
                         local tempClipW = fillW * math.max(0, math.min(1, tempCur / barScale))
-                        local tempX = fillX + hpClipW + esClipW
-                        local tempRoom = fillW - hpClipW - esClipW
+                        local tempX = fillX + esClipW
+                        local tempRoom = fillW - esClipW
                         if tempClipW > tempRoom then tempClipW = tempRoom end
                         if tempClipW > 1 then
                             nvgSave(vg)
                             nvgScissor(vg, tempX, fillY, tempClipW, fillH)
                             nvgBeginPath(vg)
-                            nvgRect(vg, tempX, fillY, fillW, fillH)
+                            nvgRect(vg, tempX, fillY, tempClipW, fillH)
                             nvgFillColor(vg, nvgRGBA(160, 255, 255, 150))
                             nvgFill(vg)
                             nvgResetScissor(vg)

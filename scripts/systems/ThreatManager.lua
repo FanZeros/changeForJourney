@@ -177,7 +177,7 @@ function TM.onBattleStart(allies, enemies)
     end
 
     if TM_BCS.hasKnightOrWarrior then
-        print("[Threat] 队伍中有骑士/战士，射手仇恨倍率降低" .. (TM.RANGER_THREAT_REDUCTION * 100) .. "%")
+        print("[Threat] 队伍中有守誓者/破阵者，夜猎者仇恨倍率降低" .. (TM.RANGER_THREAT_REDUCTION * 100) .. "%")
     end
 end
 

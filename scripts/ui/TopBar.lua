@@ -16,6 +16,8 @@ local TopBar = {}
 -- Image handles
 local imgExpBg   = -1
 local imgExpFill = -1
+local imgGoldIcon = -1   -- [三队并行] 金币图标（以角色详情页 UI_icon_JB_X 为准）
+local imgGemIcon  = -1   -- [三队并行] 钻石图标（以角色详情页 UI_icon_SJ_X 为准）
 local imgFrameIcons = {}  -- [frameId] 头像框
 local imgHeroIcons = {}  -- [heroId] 角色头像图标
 -- [暗黑化 P0] 金币/钻石/战力/红点 图标改由 core/DarkIcon.lua 程序化矢量绘制，不再加载贴图
@@ -68,6 +70,8 @@ local drawTextStroke = require("core.DrawUtil").drawTextStroke
 function TopBar.init(vg)
     imgExpBg   = nvgCreateImage(vg, "image/UI_JYT_1.png", 0)
     imgExpFill = nvgCreateImage(vg, "image/UI_JYT_2.png", 0)
+    imgGoldIcon = nvgCreateImage(vg, "image/UI_icon_JB_X.png", 0)
+    imgGemIcon  = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
     AvatarFrameUtil.preloadFrames(vg, imgFrameIcons)
 
     -- 加载角色头像图标
@@ -280,8 +284,8 @@ function TopBar.draw(vg, offsetY)
     local goldBgW, goldBgH = 170, 47
     drawRoundedRectCentered(vg, goldBgCX, goldBgCY, goldBgW, goldBgH, 18, 0, 0, 0, 204)
 
-    -- #10 金币图标: center(653,100), 73x73 [暗黑化 P0: 暗金做旧币]
-    DarkIcon.draw(vg, "gold", 653, 100, 73, 1)
+    -- #10 金币图标: center(653,100), 73x73 [三队并行] 以角色详情页图标为准
+    drawImageCentered(vg, imgGoldIcon, 653, 100, 73, 73, 1.0)
 
     -- #11 金币数值: left=goldBgLeft+44, Y=100, font 33, white, stroke 4
     local displayGold = cachedGold or GameState.getGold()
@@ -295,8 +299,8 @@ function TopBar.draw(vg, offsetY)
     local gemBgW, gemBgH = 170, 47
     drawRoundedRectCentered(vg, gemBgCX, gemBgCY, gemBgW, gemBgH, 18, 0, 0, 0, 204)
 
-    -- #13 钻石图标: center(884,100), 76x76 [暗黑化 P0: 血红宝石]
-    DarkIcon.draw(vg, "gem", 884, 100, 76, 1)
+    -- #13 钻石图标: center(884,100), 76x76 [三队并行] 以角色详情页图标为准
+    drawImageCentered(vg, imgGemIcon, 884, 100, 76, 76, 1.0)
 
     -- #14 钻石数值: left=diamondBgLeft+44, Y=100, font 33, white, stroke 4
     local displayGems = cachedGems or GameState.getGems()

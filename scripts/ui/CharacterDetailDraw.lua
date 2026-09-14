@@ -6,7 +6,6 @@
 local HC               = require("config.HeroConfig")
 local CC               = require("config.ClassConfig")
 local GameConfig        = require("config.GameConfig")
-local GameState         = require("core.GameState")
 local ExpTable          = require("config.ExpTable")
 local EquipmentBag      = require("ui.EquipmentBag")
 local PlayerStore       = require("client.data.PlayerStore")
@@ -36,18 +35,6 @@ local DT_BG_W,  DT_BG_H   = 1240, 1290
 
 -- 角色卡片中心
 local DT_CARD_CX, DT_CARD_CY = 540, 497
-
--- 资源栏（金币/钻石）
-local DT_GOLD_ICON_CX  = 137
-local DT_GEM_ICON_CX   = 367
-local DT_RES_Y          = 100
-local DT_RES_BG_W       = 170
-local DT_RES_BG_H       = 47
-local DT_RES_BG_R       = 18
-local DT_GOLD_ICON_SIZE = 73
-local DT_GEM_ICON_SIZE  = 76
-local DT_GOLD_BG_CX     = 137 + 79
-local DT_GEM_BG_CX      = 367 + 81
 
 -- 装备槽位
 local DT_SLOT_SIZE = 160
@@ -320,8 +307,6 @@ local img = {
     slotOffhand   = -1,
     slotArmor     = -1,
     slotAccessory = -1,
-    detailGold    = -1,
-    detailDiamond = -1,
     midBg         = -1,
     midExpBg      = -1,
     midExpFill    = -1,
@@ -425,8 +410,6 @@ function M.initImages(vg)
     img.slotOffhand   = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_FS.png", 0)
     img.slotArmor     = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_HJ.png", 0)
     img.slotAccessory = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_SS.png", 0)
-    img.detailGold    = nvgCreateImage(vg, "image/UI_icon_JB_X.png", 0)
-    img.detailDiamond = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
 
     img.midBg      = nvgCreateImage(vg, "image/UI_JSJM_0.png", 0)
     img.midExpBg   = nvgCreateImage(vg, "image/UI_JSXQ_JYT1.png", 0)
@@ -555,29 +538,7 @@ function M.draw(vg)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- === 2) 金币资源栏 ===
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, DT_GOLD_BG_CX - DT_RES_BG_W * 0.5, DT_RES_Y - DT_RES_BG_H * 0.5,
-        DT_RES_BG_W, DT_RES_BG_H, DT_RES_BG_R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
-    nvgFill(vg)
-    drawImageCentered(vg, img.detailGold, DT_GOLD_ICON_CX, DT_RES_Y,
-        DT_GOLD_ICON_SIZE, DT_GOLD_ICON_SIZE, 1.0)
-    local goldTextX = DT_GOLD_BG_CX - DT_RES_BG_W * 0.5 + 44
-    drawTextStroke(vg, goldTextX, DT_RES_Y, require("core.NumberUtil").format(GameState.getGold()),
-        33, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-
-    -- === 3) 钻石资源栏 ===
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, DT_GEM_BG_CX - DT_RES_BG_W * 0.5, DT_RES_Y - DT_RES_BG_H * 0.5,
-        DT_RES_BG_W, DT_RES_BG_H, DT_RES_BG_R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
-    nvgFill(vg)
-    drawImageCentered(vg, img.detailDiamond, DT_GEM_ICON_CX, DT_RES_Y,
-        DT_GEM_ICON_SIZE, DT_GEM_ICON_SIZE, 1.0)
-    local gemTextX = DT_GEM_BG_CX - DT_RES_BG_W * 0.5 + 44
-    drawTextStroke(vg, gemTextX, DT_RES_Y, require("core.NumberUtil").format(GameState.getGems()),
-        33, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+    -- === 2) [三队并行] 金币/钻石资源栏已移除——货币显示统一在左侧 TopBar ===
 
     -- === 动态内容开始（箭头切换时水平滑入+淡入） ===
     nvgSave(vg)

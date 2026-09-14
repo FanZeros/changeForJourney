@@ -3,7 +3,6 @@
 -- 坐标系: 设计分辨率 1080x2400，所有位置为中心点坐标
 -- ============================================================================
 
-local CF  = require("systems.CombatFormula")
 local AD  = require("systems.AttributeDef")
 local TM  = require("systems.ThreatManager")
 local SEM = require("systems.StatusEffectManager")
@@ -13,8 +12,6 @@ local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
 local SC  = require("config.StageConfig")
 local MC  = require("config.MonsterConfig")
-local BattleLayout = require("core.BattleLayout") -- [队列前移补位] 敌方卡槽间距
-local GameConfig = require("config.GameConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
 
 local BattleCombat      = require("ui.BattleCombat")
@@ -25,14 +22,11 @@ local ProjectileSystem  = require("ui.ProjectileSystem")
 local LootBox           = require("ui.LootBox")
 local SweepDialog       = require("ui.SweepDialog")
 local DamageStatsPanel  = require("ui.DamageStatsPanel")
-local BattleStats       = require("systems.BattleStats")
 local SpeechBubble      = require("ui.SpeechBubble")
 local SpineCardEffect   = require("ui.SpineCardEffect")
 local GameBGM           = require("systems.GameBGM")
 local BottomNav         = require("ui.BottomNav")
-local SettingsPanel     = require("ui.SettingsPanel")
 
-local ExpTable = require("config.ExpTable")
 local Diag = require("systems.BattleDiag")
 local NumberUtil = require("core.NumberUtil")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
@@ -40,8 +34,6 @@ local DarkIcon = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
 local BattleResultPanel = require("ui.BattleResultPanel")
 local OfflineCalc = require("systems.OfflineCalc")
 local StageUtils = require("shared.StageUtils")
-local ChallengerServerConfig = require("shared.ChallengerServerConfig")
-local ArtifactBridge = require("systems.ArtifactBridge")
 local PlayerInfoPanel = require("ui.PlayerInfoPanel")
 
 local BattleScene = {}
@@ -705,7 +697,7 @@ local function resetAllyUnit(u)
                     if CP.applyAvatarFrameAttributes then
                         CP.applyAvatarFrameAttributes(newUnit.attrs)
                     end
-                    local artifactEffects = ArtifactBridge.applyToUnit(newUnit.attrs, partySlot)
+                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
                     if artifactEffects and #artifactEffects > 0 then
                         u.artifactEffects = artifactEffects
                     else
@@ -1266,7 +1258,7 @@ local function loadStage(stageId, skipBattleStart)
 
     -- ---- 地图词缀：仅首通模式生效，挂机模式不应用 ----
     if isFirstClear then
-        local affixConfig = ChallengerServerConfig.GetByServerId(PlayerInfoPanel.getServerId())
+        local affixConfig = require("shared.ChallengerServerConfig").GetByServerId(PlayerInfoPanel.getServerId())
         if affixConfig and affixConfig.seasonAffixMode == "difficulty_count" then
             MAS.onStageLoad(entry.chapter, allies, "challenger_s1")
         else
@@ -1306,7 +1298,7 @@ local function loadStage(stageId, skipBattleStart)
     -- 重置战斗状态
     battleActive = true
     if isFirstClear then
-        firstClearTimeLeft = GameConfig.Battle.TIME_LIMIT_SEC
+        firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     else
         firstClearTimeLeft = nil
     end
@@ -1621,7 +1613,7 @@ function BattleScene.draw(vg)
     BattleScene.drawSpeedButton(vg)
 
     -- 14.5~14.7 战斗特效
-    if SettingsPanel.isEffectsEnabled() then
+    if require("ui.SettingsPanel").isEffectsEnabled() then
         -- 常驻召唤物（摘星星星人星门，漂浮在卡片旁并自转）
         ProjectileSystem.drawStarGates(vg, allies, ALLY_CARD_CY, getCardCX, true)
         ProjectileSystem.drawStarGates(vg, enemies, ENEMY_CARD_CY, getCardCX, false)
@@ -1637,7 +1629,7 @@ function BattleScene.draw(vg)
     end
 
     -- 15. 浮动伤害数字
-    if SettingsPanel.isDamageNumbersEnabled() then
+    if require("ui.SettingsPanel").isDamageNumbersEnabled() then
         drawFloatingTexts(vg)
     end
 
@@ -2023,7 +2015,7 @@ function BattleScene.update(dt)
                 -- 发放击杀奖励（经验 + 金币）
                 if onEnemyKillCallback and (unit.expReward or unit.goldReward) then
                     local allyCount = #allies
-                    local expMult = ExpTable.getHeroCountExpMult(allyCount)
+                    local expMult = require("config.ExpTable").getHeroCountExpMult(allyCount)
                     -- 收集上场冒险家 heroId 列表
                     local heroIds = {}
                     for _, ally in ipairs(allies) do
@@ -2076,7 +2068,7 @@ function BattleScene.update(dt)
                         local moved = enemies[j + 1]
                         enemies[j] = moved
                         BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
-                            advanceDist = BattleLayout.STRIP_PITCH })
+                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
                     end
                     local newUnit = table.remove(enemyQueue, 1)
                     Diag.installSentinel(newUnit)
@@ -2289,7 +2281,7 @@ function BattleScene.update(dt)
                     addFloatingText("恢复 +" .. NumberUtil.format(actual), cx, cy, {0, 255, 82}, false)
                     -- 战斗统计：HOT 持续治疗输出（来源为己方英雄时归因）
                     if source and source.heroId then
-                        BattleStats.recordHeal(source, actual, true)
+                        require("systems.BattleStats").recordHeal(source, actual, true)
                     end
                 end
             end
@@ -2343,7 +2335,7 @@ function BattleScene.update(dt)
         for _, entry in ipairs(allUnits) do
             local u = entry.unit
             if u.hp > 0 and u.attrs then
-                local regenAmt = CF.calcHpRegen(u.attrs)
+                local regenAmt = require("systems.CombatFormula").calcHpRegen(u.attrs)
                 if regenAmt > 0 then
                     local actual = u.attrs:heal(regenAmt)
                     if actual > 0 then
@@ -2407,7 +2399,7 @@ end
 local function resetBattle()
     battleActive = true
     if isFirstClear then
-        firstClearTimeLeft = GameConfig.Battle.TIME_LIMIT_SEC
+        firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     else
         firstClearTimeLeft = nil
     end
@@ -2997,7 +2989,7 @@ function BattleScene.refreshAllyStats()
                     if relicConds and #relicConds > 0 then
                         u.relicConditions = relicConds
                     end
-                    local artifactEffects = ArtifactBridge.applyToUnit(newUnit.attrs, partySlot)
+                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
                     if artifactEffects and #artifactEffects > 0 then
                         u.artifactEffects = artifactEffects
                     else

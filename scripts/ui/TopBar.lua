@@ -59,11 +59,6 @@ end
 
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
 
-local trainingDummyVisible = false
-
-local DUMMY_BTN = {
-    CX = 98, CY = 286, W = 166, H = 58,
-}
 
 -- ============================================================================
 -- Public API
@@ -189,17 +184,19 @@ function TopBar.resetSessionData()
 end
 
 --- 每帧绘制（在设计空间 1080x2400 内调用）
-function TopBar.draw(vg)
-    -- #1 头像背景框: center(239,139), 382x136, black 70%, r=36
-    drawRoundedRectCentered(vg, 239, 139, 382, 136, 36, 0, 0, 0, 178)
+function TopBar.draw(vg, offsetY)
+    -- 可选纵向偏移：三行并行左面板调用时上移头像区（热区同步用 TopBar.hitTestAvatar）
+    local oy = tonumber(offsetY) or 0
+    -- #1 头像背景框: center(239,139+oy), 382x136, black 70%, r=36
+    drawRoundedRectCentered(vg, 239, 139 + oy, 382, 136, 36, 0, 0, 0, 178)
 
-    -- #2 玩家头像: center(98,136), 150x150（裁剪为圆角矩形）
+    -- #2 玩家头像: center(98,136+oy), 150x150（裁剪为圆角矩形）
     -- 始终先画灰色底作为底层背景
-    drawRoundedRectCentered(vg, 98, 136, 150, 150, 20, 80, 80, 100, 255)
+    drawRoundedRectCentered(vg, 98, 136 + oy, 150, 150, 20, 80, 80, 100, 255)
     local avatarImg = imgHeroIcons[cachedAvatarHeroId] or imgHeroIcons[1]
     if avatarImg and avatarImg >= 0 then
         -- 用圆角裁剪绘制头像（覆盖在灰色底上）
-        local avCX, avCY, avW, avH = 98, 136, 150, 150
+        local avCX, avCY, avW, avH = 98, 136 + oy, 150, 150
         nvgSave(vg)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, avCX - avW * 0.5, avCY - avH * 0.5, avW, avH, 20)
@@ -211,30 +208,15 @@ function TopBar.draw(vg)
 
     -- #2b 头像框覆盖层（新头像框素材画布为 300×300，显示尺寸 160×160）
     local frameImg = AvatarFrameUtil.getIconHandle(imgFrameIcons, cachedAvatarFrameId)
-    drawImageCentered(vg, frameImg, 98, 136, 160, 160)
+    drawImageCentered(vg, frameImg, 98, 136 + oy, 160, 160)
 
     -- #2c 红点提示（有可更换头像时显示）[暗黑化 P0: 余烬光点]
     if TopBar.hasAvailableAvatar() then
         DarkIcon.draw(vg, "reddot", 160, 74, 74, 1)
     end
 
-    -- #2d 测试木桩入口：仅作为战斗页快捷入口，由 ClientInput 控制点击范围
-    if trainingDummyVisible then
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, DUMMY_BTN.CX - DUMMY_BTN.W * 0.5, DUMMY_BTN.CY - DUMMY_BTN.H * 0.5,
-            DUMMY_BTN.W, DUMMY_BTN.H, 18)
-        nvgFillColor(vg, nvgRGBA(0x3c, 0x2a, 0x1f, 210))
-        nvgFill(vg)
-        nvgStrokeWidth(vg, 3)
-        nvgStrokeColor(vg, nvgRGBA(0xff, 0xd2, 0x73, 220))
-        nvgStroke(vg)
-        drawTextStroke(vg, DUMMY_BTN.CX, DUMMY_BTN.CY, "测试木桩", 28,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 235, 170, 3,
-            { strokeColor = { 0x3a, 0x21, 0x12 } })
-    end
-
-    -- #3 等级背景框: center(98,200), 66x38, black, r=14
-    drawRoundedRectCentered(vg, 98, 200, 66, 38, 14, 0, 0, 0, 255)
+    -- #3 等级背景框: center(98,200+oy), 66x38, black, r=14
+    drawRoundedRectCentered(vg, 98, 200 + oy, 66, 38, 14, 0, 0, 0, 255)
 
     -- #4 等级文本: center(98,200), font 30, white
     local displayLevel = cachedLevel or GameState.getLevel()
@@ -242,10 +224,10 @@ function TopBar.draw(vg)
     nvgFontSize(vg, 30)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, 98, 200, tostring(displayLevel), nil)
+    nvgText(vg, 98, 200 + oy, tostring(displayLevel), nil)
 
-    -- #5 经验条背景: UI_JYT_1.png, center(290,138), 206x24
-    local expCX, expCY = 290, 138
+    -- #5 经验条背景: UI_JYT_1.png, center(290,138+oy), 206x24
+    local expCX, expCY = 290, 138 + oy
     local expW, expH = 206, 24
     drawImageCentered(vg, imgExpBg, expCX, expCY, expW, expH)
 
@@ -271,7 +253,7 @@ function TopBar.draw(vg)
         nvgRestore(vg)
     end
 
-    -- #7 玩家名称: left=187, Y=103, font 30, white, stroke 4
+    -- #7 玩家名称: left=187, Y=103+oy, font 30, white, stroke 4
     --    自适应缩放：名称区域最大宽度 = 头像背景右边界(430) - 左起点(187) - 边距(8)
     local displayName = cachedName or GameState.getName()
     local nameMaxW = 235
@@ -282,14 +264,14 @@ function TopBar.draw(vg)
     if advance > nameMaxW and advance > 0 then
         nameFontSize = math.max(16, math.floor(nameFontSize * nameMaxW / advance))
     end
-    drawTextStroke(vg, 187, 103, displayName,
+    drawTextStroke(vg, 187, 103 + oy, displayName,
         nameFontSize, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
 
-    -- #8 战力图标 + 数值: icon center(197,175) 36x36, text left=220, Y=175 [暗黑化 P0: 余烬火焰]
+    -- #8 战力图标 + 数值: icon center(197,175+oy) 36x36, text left=220, Y=175+oy [暗黑化 P0: 余烬火焰]
     local displayPower = GameState.getPower()
-    DarkIcon.draw(vg, "power", 197, 175, 36, 1)
-    drawTextStroke(vg, 220, 175, tostring(displayPower),
+    DarkIcon.draw(vg, "power", 197, 175 + oy, 36, 1)
+    drawTextStroke(vg, 220, 175 + oy, tostring(displayPower),
         30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         247, 254, 119, 4)
 
@@ -324,20 +306,15 @@ function TopBar.draw(vg)
         255, 255, 255, 4)
 end
 
---- 设置测试木桩入口是否显示
----@param visible boolean
-function TopBar.setTrainingDummyVisible(visible)
-    trainingDummyVisible = visible == true
-end
-
---- 测试木桩入口命中检测
+--- 头像点击热区检测（与 TopBar.draw 的头像位置随 offsetY 同步）
 ---@param x number
 ---@param y number
+---@param offsetY number|nil  与 draw 调用传入的 offsetY 一致
 ---@return boolean
-function TopBar.hitTestTrainingDummy(x, y)
-    if not trainingDummyVisible then return false end
-    return x >= DUMMY_BTN.CX - DUMMY_BTN.W * 0.5 and x <= DUMMY_BTN.CX + DUMMY_BTN.W * 0.5
-       and y >= DUMMY_BTN.CY - DUMMY_BTN.H * 0.5 and y <= DUMMY_BTN.CY + DUMMY_BTN.H * 0.5
+function TopBar.hitTestAvatar(x, y, offsetY)
+    local oy = tonumber(offsetY) or 0
+    return x >= 98 - 75 and x <= 98 + 75
+       and y >= (136 + oy) - 75 and y <= (136 + oy) + 75
 end
 
 return TopBar

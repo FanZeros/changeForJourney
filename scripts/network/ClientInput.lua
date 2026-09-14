@@ -246,34 +246,6 @@ local function dispatchDragMove(dx, dy)
     end
 end
 
-local function openTrainingDummyBattle()
-    local allies = CharacterPanel.getDeployedTeam()
-    if not allies or #allies == 0 then
-        print("[TrainingDummy] no deployed heroes, cannot open")
-        return
-    end
-    print("[TrainingDummy] opening battle with allies=" .. tostring(#allies))
-    DungeonBattleScene.open({
-        allies = allies,
-        data = {
-            dungeonId = "training_dummy",
-            floor = 1,
-            monsterLevel = 1,
-            monsters = { 1 },
-            classBonus = "",
-            classBonusValue = 0,
-            rageTime = 999999,
-            superRageTime = 999999,
-            trainingDummy = true,
-            dummyMaxHp = 1000000000000,
-            dummyRegen = 1000000000000,
-        },
-        onClose = function()
-            print("[TrainingDummy] closed")
-        end,
-    })
-end
-
 --- 松开事件分发（含点击判定）
 local function dispatchDragEndAndTap(dx, dy)
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续
@@ -503,11 +475,7 @@ local function dispatchDragEndAndTap(dx, dy)
                     or CharacterPanel.isDetailOpen()
                     or DiaryPage.hasOverlayOpen()
     if not detailOpen and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() then
-        if TopBar.hitTestTrainingDummy(dx, dy) then
-            openTrainingDummyBattle()
-            return
-        end
-        if DrawUtil.hitTest(dx, dy, 98, 136, 150, 150) then
+        if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
         end

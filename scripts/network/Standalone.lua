@@ -419,7 +419,6 @@ function Standalone.Start()
     ArenaPage.init(vg)
     ArenaBattleScene.init(vg)
     DungeonBattleScene.init(vg)
-    TopBar.setTrainingDummyVisible(true)
     TownScene.setOnArenaClick(function()
         ArenaPage.open()
     end)
@@ -1400,34 +1399,6 @@ local pressValid = false  -- 是否有有效的按下记录
 local MIN_TAP_INTERVAL = 0.12  -- 秒（120ms）
 local lastTapTime = 0
 
-local function openTrainingDummyBattle()
-    local allies = CharacterPanel.getDeployedTeam()
-    if not allies or #allies == 0 then
-        print("[TrainingDummy][Standalone] no deployed heroes, cannot open")
-        return
-    end
-    print("[TrainingDummy][Standalone] opening battle with allies=" .. tostring(#allies))
-    DungeonBattleScene.open({
-        allies = allies,
-        data = {
-            dungeonId = "training_dummy",
-            floor = 1,
-            monsterLevel = 1,
-            monsters = { 1 },
-            classBonus = "",
-            classBonusValue = 0,
-            rageTime = 999999,
-            superRageTime = 999999,
-            trainingDummy = true,
-            dummyMaxHp = 1000000000000,
-            dummyRegen = 1000000000000,
-        },
-        onClose = function()
-            print("[TrainingDummy][Standalone] closed")
-        end,
-    })
-end
-
 function HandleMouseButtonDown(eventType, eventData)
     if HORIZON_MODE then return HandleMouseButtonDownHorizon(eventType, eventData) end
     local button = eventData["Button"]:GetInt()
@@ -1683,13 +1654,7 @@ function HandleMouseButtonUp(eventType, eventData)
         tostring(ArenaBattleScene.isOpen()), tostring(diaryOverlay)))
     if not detailOpen and not smithOpen and not ChurchPage.isOpen() and not tavernOpen and not arenaOpen
         and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() and not diaryOverlay then
-        if TopBar.hitTestTrainingDummy(dx, dy) then
-            openTrainingDummyBattle()
-            return
-        end
-        local hit = DrawUtil.hitTest(dx, dy, 98, 136, 150, 150)
-        print(string.format("[Standalone] hitTest(%.0f,%.0f, 98,136, 150,150) = %s", dx, dy, tostring(hit)))
-        if hit then
+        if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
         end
@@ -1980,13 +1945,7 @@ function HandleTouchEnd(eventType, eventData)
             tostring(ArenaBattleScene.isOpen()), tostring(diaryOverlay2)))
         if not detailOpen2 and not smithOpen2 and not ChurchPage.isOpen() and not tavernOpen2 and not arenaOpen2
             and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() and not diaryOverlay2 then
-            if TopBar.hitTestTrainingDummy(dx, dy) then
-                openTrainingDummyBattle()
-                return
-            end
-            local hit = DrawUtil.hitTest(dx, dy, 98, 136, 150, 150)
-            print(string.format("[Standalone][Touch] hitTest(%.0f,%.0f, 98,136, 150,150) = %s", dx, dy, tostring(hit)))
-            if hit then
+            if TopBar.hitTestAvatar(dx, dy, 0) then
                 PlayerInfoPanel.open()
                 return
             end
@@ -2272,9 +2231,10 @@ function HandleNanoVGRenderHorizon()
         ArenaPage.draw(vg)
         MarketPage.draw(vg)
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
+        -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
         if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
             or ArenaPage.isOpen() or MarketPage.isOpen()) then
-            TopBar.draw(vg)
+            TopBar.draw(vg, -30)
         end
         Viewport.finish(vg)
         Viewport.begin(vg, Viewport.PANELS.right, oxR, 0, ps)
@@ -2544,11 +2504,11 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     -- 左面板：功能页组点击链
     if pid == 'left' then
-        -- [三行并行] TopBar（测试木桩入口）优先命中：仅城镇主视图（无二级页）时
+        -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
         if isTap and not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
             or ArenaPage.isOpen() or MarketPage.isOpen()) then
-            if TopBar.hitTestTrainingDummy(dx, dy) then
-                openTrainingDummyBattle()
+            if TopBar.hitTestAvatar(dx, dy, -30) then
+                PlayerInfoPanel.open()
                 return
             end
         end
@@ -2614,14 +2574,9 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     if not isTap then return end
     -- 横屏模式无调试面板（DebugPanel 仅竖屏 screen-space）
-    if TopBar.hitTestTrainingDummy(dx, dy) then
-        openTrainingDummyBattle()
-        return
-    end
     local detailOpen = CharacterPanel.isDetailOpen()
     if not detailOpen then
-        local hit = DrawUtil.hitTest(dx, dy, 98, 136, 150, 150)
-        if hit then
+        if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
         end

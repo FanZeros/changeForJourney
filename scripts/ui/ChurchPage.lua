@@ -615,14 +615,17 @@ local function drawRosterList(vg)
             28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 4)
 
-        -- h) 出战中标识
-        if CharacterPanel.isHeroDeployed(entry.heroId) then
+        -- h) 出战中标识（[三队并行] 显示所属队伍：队1/队2/队3）
+        local deployTeams = CharacterPanel.getHeroDeployTeams and CharacterPanel.getHeroDeployTeams(entry.heroId) or nil
+        if deployTeams and #deployTeams > 0 then
+            local labels = {}
+            for i, t in ipairs(deployTeams) do labels[i] = "队" .. t end
             drawImageCentered(vg, img.deployed, cx + ROSTER.DEPLOYED_DX, cy + ROSTER.DEPLOYED_DY, ROSTER.DEPLOYED_W, ROSTER.DEPLOYED_H, 1.0)
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 28)
+            nvgFontSize(vg, #deployTeams > 1 and 22 or 28)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-            nvgText(vg, cx + ROSTER.DEPLOYED_DX, cy + ROSTER.DEPLOYED_TXT_DY, "出战中", nil)
+            nvgText(vg, cx + ROSTER.DEPLOYED_DX, cy + ROSTER.DEPLOYED_TXT_DY, table.concat(labels, "·"), nil)
         end
 
         -- i) 可转职角标（右上角 ICON_UP 40x40）

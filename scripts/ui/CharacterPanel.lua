@@ -537,6 +537,7 @@ function CharacterPanel.init(vg)
         getDragState        = function() return dragState end,
         getSelectSlotState  = function() return selectSlotState end,
         isHeroDeployed      = isHeroDeployed,
+        getHeroDeployTeams  = function(h) return CharacterPanel.getHeroDeployTeams(h) end,
         getUpgradeBadgeCache = function() return upgradeBadgeCache end,
         getActiveTeamIdx     = function() return activeTeamIdx end,
         getUnlockedTeamCount = function() return ExpTable.getUnlockedTeamCount(GameState.getLevel()) end,
@@ -1239,6 +1240,26 @@ function CharacterPanel.isHeroDeployed(heroId)
         end
     end
     return false
+end
+
+--- 获取英雄出战的所有队伍编号（[三队并行] 队1/队2/队3），未出战返回空表
+---@param heroId number
+---@return integer[]
+function CharacterPanel.getHeroDeployTeams(heroId)
+    local result = {}
+    for t = 1, TEAM_COUNT do
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, #slots do
+                local slot = slots[i]
+                if slot.state == "occupied" and slot.heroId == heroId then
+                    result[#result + 1] = t
+                    break
+                end
+            end
+        end
+    end
+    return result
 end
 
 --- 获取指定队伍的战斗单位列表（供 BattleScene / 三栏并行战斗使用）

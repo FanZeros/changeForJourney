@@ -167,6 +167,7 @@ local getRosterPowerCache -- function() return rosterPowerCache end
 local getDragState        -- function() return dragState end
 local getSelectSlotState  -- function() return selectSlotState end
 local isHeroDeployed      -- function(heroId) return bool end
+local getHeroDeployTeams  -- [三队并行] function(heroId) return integer[] 出战队伍编号列表
 local getUpgradeBadgeCache -- function() return upgradeBadgeCache end
 local getActiveTeamIdx    -- [三队并行] function() return activeTeamIdx end
 local getUnlockedTeamCount -- [三队并行] function() return unlockedCount end
@@ -181,6 +182,7 @@ function M.setContext(ctx)
     getDragState         = ctx.getDragState
     getSelectSlotState   = ctx.getSelectSlotState
     isHeroDeployed       = ctx.isHeroDeployed
+    getHeroDeployTeams   = ctx.getHeroDeployTeams
     getUpgradeBadgeCache = ctx.getUpgradeBadgeCache
     getActiveTeamIdx     = ctx.getActiveTeamIdx
     getUnlockedTeamCount = ctx.getUnlockedTeamCount
@@ -736,14 +738,17 @@ function M.draw(vg, scrollY)
             28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 4)
 
-        -- h) 出战中标识
-        if isHeroDeployed(entry.heroId) then
+        -- h) 出战中标识（[三队并行] 显示所属队伍：队1/队2/队3）
+        local deployTeams = getHeroDeployTeams and getHeroDeployTeams(entry.heroId) or nil
+        if deployTeams and #deployTeams > 0 then
+            local labels = {}
+            for i, t in ipairs(deployTeams) do labels[i] = "队" .. t end
             drawImageCentered(vg, img.deployed, cx + DEPLOYED_DX, cy + DEPLOYED_DY, DEPLOYED_W, DEPLOYED_H, 1.0)
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 28)
+            nvgFontSize(vg, #deployTeams > 1 and 22 or 28)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-            nvgText(vg, cx + DEPLOYED_DX, cy + DEPLOYED_TXT_DY, "出战中", nil)
+            nvgText(vg, cx + DEPLOYED_DX, cy + DEPLOYED_TXT_DY, table.concat(labels, "·"), nil)
         end
 
         -- i) 可提升角标（右上角，所有已拥有角色）：从缓存查找

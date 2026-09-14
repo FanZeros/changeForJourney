@@ -494,7 +494,7 @@ function CharacterDetail.handleInput(dx, dy)
     end
 
     -- 返回按钮
-    if hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
+    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
         CharacterDetail.close()
         return true
     end

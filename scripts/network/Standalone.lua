@@ -61,6 +61,7 @@ local SpinePowerUpEffect = require("ui.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.IntroCutscene")
 local SamsaraCG          = require("ui.SamsaraCG")
 local LetterIntro        = require("ui.LetterIntro")          -- [LetterIntro] 先祖来信（新档开场）
+local CharacterDetail    = require("ui.CharacterDetail")  -- [三队并行] 中缝返回键目标
 local ScenarioDialogue   = require("ui.ScenarioDialogue")     -- [LetterIntro] 情景对话
 local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig") -- [LetterIntro] 情景配置
 local DrawUtil           = require("core.DrawUtil")
@@ -2065,6 +2066,7 @@ H_AUTO_OPEN_PANEL = false
 H_ox, H_oy, H_s = 0, 0, 1
 H_lastPanel = 'center'
 H_lastTopBarPower = nil  -- [三队并行] TopBar 战力逐帧比对缓存
+H_SEAM_BACK = false      -- [三队并行] 三行模式=true：返回键由中缝层绘制，页面内不画
 
 local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW, logicalH)
@@ -2073,6 +2075,7 @@ local function HorizonUpdateTransform()
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]
+    H_SEAM_BACK = BattleTriPage.isOpen()  -- [三队并行] 中缝返回键层开关
     -- [三队并行] TopBar 战力跟随当前编辑队伍（页签切换无回调，逐帧比对刷新）
     local curPower = CharacterPanel.getTotalPower()
     if curPower ~= H_lastTopBarPower then
@@ -2098,6 +2101,33 @@ local function HorizonDimSidePanels()
     nvgRect(vg, H_ox + Viewport.PANELS.right.bx * H_s, H_oy, w, h)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 140))
     nvgFill(vg)
+end
+
+--- [三队并行] 中缝返回键：目标页关闭函数（nil=当前无打开的二级页）
+local function seamBackTarget()
+    if     ChurchPage.isOpen()      then return function() ChurchPage.close() end
+    elseif BlacksmithPage.isOpen()  then return function() BlacksmithPage.close() end
+    elseif TavernPage.isOpen()      then return function() TavernPage.close() end
+    elseif ArenaPage.isOpen()       then return function() ArenaPage.close() end
+    elseif MarketPage.isOpen()      then return function() MarketPage.close() end
+    elseif CharacterDetail.isOpen() then return function() CharacterDetail.close() end
+    end
+    return nil
+end
+
+--- [三队并行] 中缝返回键矩形（窗口坐标）：左页在左框柱，详情页在右框柱
+local function seamBackRect()
+    local psL = logicalH / 1080
+    local ix, iy, iw, ih = BattleTriPage.getInteriorRect(1)
+    local cx, dir
+    if CharacterDetail.isOpen() then
+        cx = ((ix + iw) + (logicalW - 486 * psL)) * 0.5
+        dir = "right"
+    else
+        cx = (486 * psL + ix) * 0.5
+        dir = "left"
+    end
+    return cx, logicalH * 0.5, 184 * psL * 0.45, 143 * psL * 0.45, dir
 end
 
 function HandleNanoVGRenderHorizon()
@@ -2257,6 +2287,12 @@ function HandleNanoVGRenderHorizon()
                 ScenarioDialogue.draw()
             end
             nvgRestore(vg)
+        end
+        -- [三队并行] 中缝返回键（窗口坐标，页面视口之外）：左页‹ / 详情›
+        local seamClose = seamBackTarget()
+        if seamClose then
+            local scx, scy, sw, sh, sdir = seamBackRect()
+            DrawUtil.drawBackChevron(vg, scx, scy, sw, sh, sdir)
         end
         -- [DWP] 下载进行中: 全屏进度遮罩独占显示（完成后露出标题屏可点击进入）
         if preload_.active then
@@ -2461,6 +2497,15 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     if pid == 'none' then return end
     if pid == 'tri' then
+        -- [三队并行] 中缝返回键优先命中（框柱在页面视口之外，属 tri 窗口区）
+        local seamClose = seamBackTarget()
+        if seamClose then
+            local scx, scy, sw, sh = seamBackRect()
+            if math.abs(dx - scx) <= sw * 0.5 and math.abs(dy - scy) <= sh * 0.5 then
+                if isTap then seamClose() end
+                return
+            end
+        end
         BattleTriPage.handleDragEnd(dx, dy)
         if isTap then BattleTriPage.handleInput(dx, dy) end
         return

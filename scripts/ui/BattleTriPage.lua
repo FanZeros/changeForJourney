@@ -45,6 +45,7 @@ function BattleTriPage.setOnKill(cb) triOnKill = cb end
 
 function BattleTriPage.isOpen() return isOpen_ end
 
+
 --- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
 function BattleTriPage.open()
     if isOpen_ then return end
@@ -146,6 +147,13 @@ local function interiorRect(row, logicalW, logicalH)
     local pw = ph * PLATE_AR
     local ox = (logicalW - pw) * 0.5
     return ox + ir.x0 * pw, ir.y0 * ph, (ir.x1 - ir.x0) * pw, (ir.y1 - ir.y0) * ph
+end
+
+--- [三队并行] 行内矩形（窗口坐标）导出：供 Standalone 中缝返回键定位
+---@param row number 行号 1~3
+---@return number x number y number w number h
+function BattleTriPage.getInteriorRect(row)
+    return interiorRect(row, region.w, region.h)
 end
 
 --- L0 整套大背景铺满窗口（透明框内将由 L1 垫底透出）

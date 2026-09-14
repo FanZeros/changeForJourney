@@ -6,6 +6,7 @@
 local HC = require("config.HeroConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
 local DrawUtil = require("core.DrawUtil")
+local DarkIcon = require("core.DarkIcon")   -- [三队并行] 页签复用按钮条背景
 local ExpTable = require("config.ExpTable")
 local TutorialManager = require("systems.TutorialManager")
 
@@ -274,24 +275,13 @@ function M.drawTeamTabs(vg)
         local isActive = (i == activeIdx)
         local isLocked = (i > unlockedCnt)
 
-        -- 底板
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, x, y, TAB_W, TAB_H, 12)
+        -- 底板：复用暗黑按钮条背景（DarkIcon.drawNine "btn"，语义金描边）
         if isActive then
-            nvgFillColor(vg, nvgRGBA(96, 165, 250, 230))
+            DarkIcon.drawNine(vg, "btn", x, y, TAB_W, TAB_H, { accent = "gold" })
         elseif isLocked then
-            nvgFillColor(vg, nvgRGBA(40, 40, 52, 180))
+            DarkIcon.drawNine(vg, "btn", x, y, TAB_W, TAB_H, { alpha = 0.38 })
         else
-            nvgFillColor(vg, nvgRGBA(56, 62, 80, 210))
-        end
-        nvgFill(vg)
-        -- 激活页签高亮描边
-        if isActive then
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, x, y, TAB_W, TAB_H, 12)
-            nvgStrokeColor(vg, nvgRGBA(190, 225, 255, 255))
-            nvgStrokeWidth(vg, 2)
-            nvgStroke(vg)
+            DarkIcon.drawNine(vg, "btn", x, y, TAB_W, TAB_H, { accent = "gold", alpha = 0.62 })
         end
 
         -- 文案

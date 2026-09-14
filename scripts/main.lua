@@ -5,19 +5,18 @@
 --
 -- ⚠️ AI 开发注意（架构备忘）:
 --
--- 本项目当前为【多人模式 · 常驻服架构】
---   .project/settings.json → multiplayer.enabled = true, persistent_world.enabled = true
--- 运行时实际加载的是 Client.lua（客户端）和 Server.lua（服务端），
--- Standalone.lua 不会被执行！
+-- 本项目当前为【单机模式】
+--   .project/settings.json → multiplayer.enabled = false
+-- 运行时实际加载的是 network/Standalone.lua；
+-- network/Client.lua（客户端）和 network/Server.lua（服务端）只在
+-- 多人模式开启时才会被执行。单机下的数据/存档逻辑以 Standalone.lua 内实现为准。
 --
--- 数据持久化走 serverCloud（服务端 SaveManager），不是 clientCloud 云存档。
--- 流程: Handler 修改数据 → SaveManager.markDirty(uid, module) → 推送客户端 + 定时落库
---
--- 因此：所有新增 UI 模块（require / init / draw / 输入处理）必须同时集成到：
+-- 若将来切回多人模式（settings.json → multiplayer.enabled = true），
+-- 所有新增 UI 模块（require / init / draw / 输入处理）必须同时集成到：
 --   1. network/Client.lua       — require、init(vg)、draw(vg)、数据设置
 --   2. network/ClientInput.lua  — require、输入拦截（drag/tap/scroll）、点击检测
 --
--- 不要只改 Standalone.lua，那只在单机模式下生效！
+-- 只改 Standalone.lua 的话，在多人模式下不会生效！
 -- ============================================================================
 
 ---@type table

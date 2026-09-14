@@ -342,11 +342,11 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
             end
 
-            -- 7+8) 攻击进度条
-            local attackProg = unit.atkProgressVisual
-            if attackProg == nil then attackProg = unit.atkProgress end
-            drawProgressBar(vg, imgCtx.imgAtkBg, imgCtx.imgAtkFill, cx, cy + atkBgOffY,
-                ATK_BAR_W, ATK_BAR_H, ATK_BAR_PADDING, attackProg)
+            -- [已隐藏] 攻击/行动进度条按需求不再显示（单位仍有 atkProgress 逻辑，仅不渲染）
+            -- local attackProg = unit.atkProgressVisual
+            -- if attackProg == nil then attackProg = unit.atkProgress end
+            -- drawProgressBar(vg, imgCtx.imgAtkBg, imgCtx.imgAtkFill, cx, cy + atkBgOffY,
+            --     ATK_BAR_W, ATK_BAR_H, ATK_BAR_PADDING, attackProg)
 
             -- 9) 等级文本
             drawTextStroke(vg, cx, cy + lvlOffY, "Lv." .. tostring(unit.level),

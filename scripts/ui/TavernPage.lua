@@ -984,7 +984,7 @@ function TavernPage.draw(vg)
 
     -- ============ 18. 返回按钮 ============
     local _s5 = BF.begin(vg, "tavern_back", BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H)
-    drawImageCentered(vg, img.btnBack, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, 1.0)
+    DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
     BF.finish(vg, _s5)
 
     -- ============ 19. 底部滑块背景 ============

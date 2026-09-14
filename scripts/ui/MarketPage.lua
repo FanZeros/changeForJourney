@@ -10,6 +10,7 @@ local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标�
 local GameState  = require("core.GameState")
 local Protocol   = require("shared.Protocol")
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
+local DrawUtil        = require("core.DrawUtil")  -- [三队并行] 返回键 chevron
 local BF = require("systems.ButtonFeedback")
 local RewardPopup = require("ui.RewardPopup")
 
@@ -76,7 +77,7 @@ P1.BG_CY = P1.BG_H * 0.5
 -- Tab 系统
 local TAB = {
     BACK_CX = 958, BACK_CY = 1150, BACK_W = 184, BACK_H = 143,
-    BG_CX = 639, BG_CY = 2308, BG_W = 810, BG_H = 143,
+    BG_CX = 540, BG_CY = 2308, BG_W = 810, BG_H = 143,
     SLIDER_W = 277, SLIDER_H = 143,
     SI_T = 10, SI_R = 70, SI_B = 10, SI_L = 70,
     TEXT_Y = 2302, FONT = 40,
@@ -1944,7 +1945,7 @@ function MarketPage.draw(vg)
 
     -- ========== 返回按钮 & Tab 栏==========
     local _sb = BF.begin(vg, "market_back", TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H)
-    drawImageCentered(vg, img.btnBack, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, 1.0)
+    DrawUtil.drawBackChevron(vg, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, "left")
     BF.finish(vg, _sb)
     drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
 

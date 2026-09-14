@@ -112,19 +112,19 @@ local BTN_BACK_CX, BTN_BACK_CY = 958, 1150
 local BTN_BACK_W, BTN_BACK_H   = 184, 143
 
 -- 9. 页面选项滑块背景（与角色界面完全一致）
-local TAB_BG_CX, TAB_BG_CY = 639, 2308
+local TAB_BG_CX, TAB_BG_CY = 540, 2308
 local TAB_BG_W, TAB_BG_H   = 810, 143
 
 -- 10. 三个滑块按钮位置（Y 与 tab 背景一致 = 2308，参考 CharacterDetail）
 local TAB_ITEMS = {
-    { name = "强化", cx = 372, cy = 2308 },
-    { name = "洗练", cx = 638, cy = 2308 },
-    { name = "分解", cx = 905, cy = 2308 },
+    { name = "强化", cx = 274, cy = 2308 },
+    { name = "洗练", cx = 540, cy = 2308 },
+    { name = "分解", cx = 806, cy = 2308 },
 }
 
 -- 11. 滑块按钮（九宫格）
 local SLIDER_W, SLIDER_H = 277, 143
-local SLIDER_DEFAULT_CX   = 905   -- 默认在强化位置
+local SLIDER_DEFAULT_CX   = 806   -- 默认在强化位置
 local SLIDER_DEFAULT_CY   = 2308
 -- 九宫格 inset: 上10 下10 左70 右70
 local SLIDER_INSET_TOP    = 10
@@ -1704,7 +1704,7 @@ function BlacksmithPage.draw(vg)
     nvgRestore(vg)
 
     -- 8. 返回按钮
-    drawImageCentered(vg, imgBtnBack, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, 1.0)
+    DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
 
     -- 9. 页面选项滑块背景
     drawImageCentered(vg, imgTabBg, TAB_BG_CX, TAB_BG_CY, TAB_BG_W, TAB_BG_H, 1.0)

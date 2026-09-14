@@ -10,6 +10,7 @@ local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标�
 local GameState  = require("core.GameState")
 local CharacterPanel = require("ui.CharacterPanel")
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
+local DrawUtil        = require("core.DrawUtil")  -- [三队并行] 返回键 chevron
 local ArenaOpponentDialog = require("ui.ArenaOpponentDialog")
 local ArenaRankRewardDialog = require("ui.ArenaRankRewardDialog")
 local ArenaLogDialog = require("ui.ArenaLogDialog")
@@ -116,7 +117,7 @@ P2.CLIP_BOT = P2.CLIP_TOP + P2.CLIP_H  -- 1767
 -- Tab 系统（参考铁匠铺）
 local TAB = {
     BACK_CX = 958, BACK_CY = 1150, BACK_W = 184, BACK_H = 143,
-    BG_CX = 639, BG_CY = 2308, BG_W = 810, BG_H = 143,
+    BG_CX = 540, BG_CY = 2308, BG_W = 810, BG_H = 143,
     SLIDER_W = 277, SLIDER_H = 143,
     SI_T = 10, SI_R = 70, SI_B = 10, SI_L = 70,
     TEXT_Y = 2302, FONT = 40,
@@ -124,9 +125,9 @@ local TAB = {
     INA_R = 255, INA_G = 255, INA_B = 255,
     ANIM_DUR = 0.35,
     ITEMS = {
-        { name = "战斗", cx = 372, cy = 2308 },
-        { name = "排名", cx = 638, cy = 2308 },
-        { name = "商店", cx = 905, cy = 2308 },
+        { name = "战斗", cx = 274, cy = 2308 },
+        { name = "排名", cx = 540, cy = 2308 },
+        { name = "商店", cx = 806, cy = 2308 },
     },
     MAP   = { battle = 1, rank = 2, shop = 3 },
     KEYS  = { "battle", "rank", "shop" },
@@ -1006,7 +1007,7 @@ function ArenaPage.draw(vg)
 
     -- ========== 返回按钮 & Tab 栏 ==========
     local _bf_back = BF.begin(vg, "arena_back", TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H)
-    drawImageCentered(vg, img.btnBack, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, 1.0)
+    DrawUtil.drawBackChevron(vg, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, "left")
     BF.finish(vg, _bf_back)
     drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
 

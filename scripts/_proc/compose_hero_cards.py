@@ -85,8 +85,8 @@ def night_inner(card, ix0, iy0, ix1, iy1):
     arr[..., :3] = np.clip(arr[..., :3] * mult, 0, 255)
     return Image.fromarray(arr.astype('uint8'), 'RGBA')
 
-def hero_layer(hero_path, scale_rel=0.98):
-    """完整立绘: 提亮 -> 实体bbox裁剪 -> 等比缩放(不截断)"""
+def hero_layer(hero_path, scale_rel=1.0):
+    """完整立绘: 提亮 -> 实体bbox裁剪 -> 高度顶满卡高(scale_rel), 宽度溢出居中裁边"""
     hero = Image.open(hero_path).convert('RGBA')
     hero = ImageEnhance.Brightness(hero).enhance(1.14)
     hero = ImageEnhance.Contrast(hero).enhance(1.08)
@@ -100,9 +100,6 @@ def hero_layer(hero_path, scale_rel=0.98):
     hw, hh = hero.size
     s = (H * scale_rel) / hh
     nw, nh = int(hw * s), int(hh * s)
-    if nw > W * 0.92:
-        s = (W * 0.92) / hw
-        nw, nh = int(hw * s), int(hh * s)
     return hero.resize((nw, nh), Image.LANCZOS), (W - nw) // 2, H - nh
 
 def fog_vignette(card, fog_a=85):

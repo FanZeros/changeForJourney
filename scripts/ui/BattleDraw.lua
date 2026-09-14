@@ -217,7 +217,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                 end
             end
 
-            -- 2) 职业标签
+            -- 2) 职业标签（敌方：仅 Boss 显示骷髅头，普通怪不显示）
             local actualTag = tagImg
             if isAllyGroup and unit.classId then
                 local iconIdx = CLASS_ICON_MAP[unit.classId]
@@ -225,7 +225,9 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     actualTag = imgCtx.imgAllyTags[iconIdx]
                 end
             end
-            drawImageCentered(vg, actualTag, cx, cy + tagOffY, TAG_SIZE, TAG_SIZE, alpha)
+            if isAllyGroup or unit.isBoss then
+                drawImageCentered(vg, actualTag, cx, cy + tagOffY, TAG_SIZE, TAG_SIZE, alpha)
+            end
 
             -- 3) 单位名称
             drawTextStroke(vg, cx, cy + nameOffY, unit.name,

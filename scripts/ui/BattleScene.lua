@@ -878,6 +878,7 @@ local function generateEnemyList(stageEntry)
     if stageEntry.bossId > 0 then
         local bossUnit = MC.createMonster(stageEntry.bossId, level)
         if bossUnit then
+            bossUnit.isBoss = true  -- [Boss 标识] 卡顶骷髅头仅 Boss 显示
             local insertPos = math.ceil(#list / 2) + 1
             table.insert(list, insertPos, bossUnit)
         end

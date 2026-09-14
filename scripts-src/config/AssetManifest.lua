@@ -1,6 +1,6 @@
 --- 自动生成：全量图片清单（一次性加载用，带文件字节数）
 --- 已剔除设计稿/美术参照（edited_*/玩梗*/原素材_*/新旧卡面*/角色总览/Freestyle*），游戏不引用
---- 共 735 项，从小到大排序；预载按字节预算(250MB)自适应降级，30s 总时限保护
+--- 共 736 项，从小到大排序；预载按字节预算(250MB)自适应降级，30s 总时限保护
 return {
     { "image/UI_ZD_GJT2.png", 261 },
     { "image/UI_JJCJL_DYT1.png", 301 },
@@ -219,6 +219,7 @@ return {
     { "image/UI_MXZGH_YW_0.png", 35472 },
     { "image/UI_AN_FH.png", 35653 },
     { "image/UI_TY_EJQRK.png", 35938 },
+    { "image/UI_ICON_XG.png", 36961 },
     { "image/UI_MRQD_1.png", 37386 },
     { "image/UI_MZQD_1.png", 38054 },
     { "image/UI_YWJM_DB.png", 39517 },

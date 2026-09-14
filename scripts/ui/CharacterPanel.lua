@@ -712,11 +712,20 @@ local function deployHeroToSlot(heroId, slotIdx)
         return false
     end
 
-    -- [三队并行] 跨队唯一性: 已在其他队 → 拒绝
+    -- [三队并行] 跨队唯一性: 已在其他队 → 先从原队移出（同一英雄全局只能在一队）
     local otherTeam = findHeroTeamIdx(heroId)
     if otherTeam and otherTeam ~= activeTeamIdx then
-        print("[CharacterPanel] 英雄已在队伍 " .. otherTeam .. " 中，同一英雄只能在一队")
-        return false
+        local otherSlots = teams[otherTeam].slots
+        for i = 1, #otherSlots do
+            if otherSlots[i].state == "occupied" and otherSlots[i].heroId == heroId then
+                otherSlots[i] = { state = "empty" }
+                if teamPowerCaches[otherTeam] then teamPowerCaches[otherTeam][i] = 0 end
+                print(string.format("[CharacterPanel] 英雄%d 从队伍%d 移出，编入当前队伍%d", heroId, otherTeam, activeTeamIdx))
+                -- 先同步原队（单机: 队1 需刷新战斗画面；联机: 先提交原队再提交当前队，避免服务端唯一性校验拒绝）
+                if onTeamChangedCallback then onTeamChangedCallback(otherTeam) end
+                break
+            end
+        end
     end
 
     -- 如果该英雄已在其他槽位，先移除
@@ -1587,6 +1596,28 @@ function CharacterPanel.setHeroesData(data)
             local tdata = data.teams[t]
             if type(tdata) == "table" and type(tdata.slots) == "table" then
                 teams[t].slots = buildSlotsFromIds(tdata.slots)
+            end
+        end
+    end
+
+    -- [三队并行] 跨队去重（队1 优先保留）：同一英雄只允许出现在一个队伍
+    -- 老存档/旧版本服务端可能写入过跨队重复数据，加载时统一修正
+    do
+        local seenHero = {}
+        for t = 1, TEAM_COUNT do
+            local slots = teams[t] and teams[t].slots
+            if slots then
+                for i = 1, #slots do
+                    local s = slots[i]
+                    if s.state == "occupied" and s.heroId then
+                        if seenHero[s.heroId] then
+                            print(string.format("[CharacterPanel] 去重: 英雄%d 重复编队，移出队伍%d", s.heroId, t))
+                            slots[i] = { state = "empty" }
+                        else
+                            seenHero[s.heroId] = true
+                        end
+                    end
+                end
             end
         end
     end

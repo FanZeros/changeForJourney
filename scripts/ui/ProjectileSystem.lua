@@ -893,6 +893,18 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
         cfg = setmetatable({ hitRatio = ratio }, { __index = cfg })
     end
 
+    -- [治疗抛物线] 治疗弹统一改为贝塞尔轨迹；不继承 melee 的 hitRatio，保持落点时结算
+    if opts and opts.forceBezier and cfg.type ~= "bezier" then
+        cfg = {
+            type     = "bezier",
+            imgKey   = cfg.imgKey,
+            imgW     = cfg.imgW,
+            imgH     = cfg.imgH,
+            duration = cfg.duration or 0.5,
+            trail    = cfg.trail,
+        }
+    end
+
     local proj = {
         cfg      = cfg,
         timer    = 0,
@@ -941,6 +953,18 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
     if cfg.type == "melee" then
         local ratio = calcMeleeHitRatio(startX, startY, endX, endY)
         cfg = setmetatable({ hitRatio = ratio }, { __index = cfg })
+    end
+
+    -- [治疗抛物线] 治疗弹统一改为贝塞尔轨迹；不继承 melee 的 hitRatio，保持落点时结算
+    if opts and opts.forceBezier and cfg.type ~= "bezier" then
+        cfg = {
+            type     = "bezier",
+            imgKey   = cfg.imgKey,
+            imgW     = cfg.imgW,
+            imgH     = cfg.imgH,
+            duration = cfg.duration or 0.5,
+            trail    = cfg.trail,
+        }
     end
 
     local proj = {

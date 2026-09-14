@@ -71,7 +71,7 @@ local BTN_BACK = {
 
 -- 4. Tab 栏 + 滑块（三 Tab，布局参考铁匠铺）
 local TAB = {
-    BG_CX = 639, BG_CY = 2308, BG_W = 810, BG_H = 143,
+    BG_CX = 540, BG_CY = 2308, BG_W = 810, BG_H = 143,
     SLIDER_W = 277, SLIDER_H = 143,
     INSET_TOP = 10, INSET_BOTTOM = 10, INSET_LEFT = 70, INSET_RIGHT = 70,
     FONT_SIZE = 40,
@@ -82,9 +82,9 @@ local TAB = {
 
 -- 5. 三个滑块按钮位置
 local TAB_ITEMS = {
-    { name = "转职", cx = 372, cy = 2308, textX = 372, textY = 2302 },
-    { name = "天赋", cx = 638, cy = 2308, textX = 638, textY = 2302 },
-    { name = "神器", cx = 905, cy = 2308, textX = 905, textY = 2302 },
+    { name = "转职", cx = 274, cy = 2308, textX = 274, textY = 2302 },
+    { name = "天赋", cx = 540, cy = 2308, textX = 540, textY = 2302 },
+    { name = "神器", cx = 806, cy = 2308, textX = 806, textY = 2302 },
 }
 
 local TAB_KEYS = { "zhuanzhi", "tianfu", "shenqi" }
@@ -1619,7 +1619,7 @@ function ChurchPage.draw(vg)
     end
 
     -- 6. 返回按钮
-    drawImageCentered(vg, img.btnBack, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, 1.0)
+    DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
 
     -- 7. 页面选项滑块背景
     drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)

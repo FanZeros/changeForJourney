@@ -1274,7 +1274,7 @@ function Panel.draw(vg)
     end
 
     -- 8. 返回按钮
-    DrawUtil.drawImageCentered(vg, imgBtnBack, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, 1.0)
+    DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
 
     -- 9. Tab 背景
     DrawUtil.drawImageCentered(vg, imgTabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)

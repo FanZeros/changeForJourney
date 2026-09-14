@@ -21,6 +21,7 @@ local RewardPopup  = require("ui.RewardPopup")
 local SweepDialog       = require("ui.SweepDialog")
 local DamageStatsPanel  = require("ui.DamageStatsPanel")
 local StageSelectDialog = require("ui.StageSelectDialog")
+local EquipmentBag      = require("ui.EquipmentBag")
 local StageConfig       = require("config.StageConfig")
 
 local function stageDisplayName(stageId)
@@ -329,6 +330,16 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
 
     -- [三行并行] 获得弹窗归属行1
     RewardPopup.drawRegion(vg, ix1, iy1, iw1, ih1, 1)
+
+    -- 装备背包覆盖战斗区（无灰底；铺进行 1~3 内框）
+    if EquipmentBag.shouldBattleOverlay() then
+        local ox, oy, ow = interiorRect(1, logicalW, logicalH)
+        local _, y3, _, h3 = interiorRect(COL_COUNT, logicalW, logicalH)
+        EquipmentBag.setOverlayRegion(ox, oy, ow, (y3 + h3) - oy)
+        EquipmentBag.drawOverlay(vg)
+    else
+        EquipmentBag.setOverlayRegion(nil)
+    end
 end
 
 --- 输入（窗口坐标）；返回 true 表示消费
@@ -337,6 +348,12 @@ end
 ---@return boolean
 function BattleTriPage.handleInput(wx, wy)
     if not isOpen_ then return false end
+
+    -- 装备背包覆盖战斗区：窗口坐标映射到背包设计空间
+    if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
+        local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
+        return EquipmentBag.handleInput(dx, dy)
+    end
 
     -- [常驻] 点击行1 内任意处可关闭归属本行的获得弹窗
     if RewardPopup.currentRowTag() then
@@ -383,6 +400,56 @@ function BattleTriPage.handleInput(wx, wy)
     end
 
     return true  -- 战斗区吞掉其余点击（自动战斗）
+end
+
+---@param wx number
+---@param wy number
+---@return boolean
+function BattleTriPage.handleDragBegin(wx, wy)
+    if not isOpen_ then return false end
+    if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
+        local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
+        EquipmentBag.handleDragBegin(dx, dy)
+        return true
+    end
+    return false
+end
+
+---@param wx number
+---@param wy number
+---@return boolean
+function BattleTriPage.handleDragMove(wx, wy)
+    if not isOpen_ then return false end
+    if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
+        local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
+        EquipmentBag.handleDragMove(dx, dy)
+        return true
+    end
+    return false
+end
+
+---@param wx number
+---@param wy number
+---@return boolean
+function BattleTriPage.handleDragEnd(wx, wy)
+    if not isOpen_ then return false end
+    if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
+        local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
+        EquipmentBag.handleDragEnd(dx, dy)
+        return true
+    end
+    return false
+end
+
+---@param wheel number
+---@return boolean
+function BattleTriPage.handleScroll(wheel)
+    if not isOpen_ then return false end
+    if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
+        EquipmentBag.handleScroll(wheel)
+        return true
+    end
+    return false
 end
 
 return BattleTriPage

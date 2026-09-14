@@ -446,8 +446,8 @@ function CharacterDetail.handleInput(dx, dy)
         return CharacterDetail._EquipDetail.handleInput(dx, dy)
     end
 
-    -- 装备背包优先处理
-    if EquipmentBag.isOpen() then
+    -- 装备背包优先处理（战斗页覆盖时背包格子走中间战斗区，右侧栏仍可点槽位）
+    if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleInput(dx, dy)
     end
 
@@ -641,7 +641,9 @@ end
 function CharacterDetail.handleDragBegin(dx, dy)
     if not detailState.open or detailState.closing then return true end
     if CharacterDetail._EquipDetail.isOpen() then return true end
-    if EquipmentBag.isOpen() then return EquipmentBag.handleDragBegin(dx, dy) end
+    if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
+        return EquipmentBag.handleDragBegin(dx, dy)
+    end
     detailState.attrTip = nil  -- 拖拽时关闭气泡
     -- 配装面板滚动（只在格子区域内启动）
     if detailState.tab == "equip" and CharacterDetail._EquipPanel then
@@ -667,7 +669,9 @@ end
 function CharacterDetail.handleDragMove(dx, dy)
     if not detailState.open or detailState.closing then return true end
     if CharacterDetail._EquipDetail.isOpen() then return true end
-    if EquipmentBag.isOpen() then return EquipmentBag.handleDragMove(dx, dy) end
+    if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
+        return EquipmentBag.handleDragMove(dx, dy)
+    end
     -- 配装面板滚动
     if detailState.equipDragging and CharacterDetail._EquipPanel then
         local panel = CharacterDetail._EquipPanel
@@ -693,7 +697,9 @@ end
 function CharacterDetail.handleDragEnd(dx, dy)
     if not detailState.open then return false end
     if CharacterDetail._EquipDetail.isOpen() then return true end
-    if EquipmentBag.isOpen() then return EquipmentBag.handleDragEnd(dx, dy) end
+    if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
+        return EquipmentBag.handleDragEnd(dx, dy)
+    end
     -- 配装面板滚动结束
     if detailState.equipDragging and CharacterDetail._EquipPanel then
         detailState.equipDragging = false
@@ -712,7 +718,10 @@ end
 function CharacterDetail.handleScroll(wheel)
     if not detailState.open or detailState.closing then return end
     if CharacterDetail._EquipDetail.isOpen() then return end
-    if EquipmentBag.isOpen() then EquipmentBag.handleScroll(wheel); return end
+    if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
+        EquipmentBag.handleScroll(wheel)
+        return
+    end
     -- 配装面板滚轮
     if detailState.tab == "equip" and CharacterDetail._EquipPanel then
         CharacterDetail._EquipPanel.onDrag(wheel * ATTR_SCROLL_WHEEL_STEP)

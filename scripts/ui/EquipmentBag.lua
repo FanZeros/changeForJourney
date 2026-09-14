@@ -15,6 +15,7 @@ local PlayerStore      = require("client.data.PlayerStore")
 local AVC              = require("config.AdvancementConfig")
 local EquipmentDetail  = require("ui.EquipmentDetail")
 local ImageCache       = require("ui.ImageCache")
+local BF               = require("systems.ButtonFeedback")
 
 local EquipmentBag = {}
 
@@ -28,8 +29,9 @@ local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 local bagState = {
     open       = false,
     closing    = false,   -- 关闭动画中
-    slot       = nil,     -- "weapon" | "offhand" | "armor" | "accessory"
-    slotName   = "",      -- "主武器" | "副武器" | "护甲" | "饰品"
+    slot       = nil,     -- 打开时的目标槽位 "weapon" | "offhand" | "armor" | "accessory" | nil
+    filter     = nil,     -- 当前页签过滤；nil = 所有
+    slotName   = "",      -- "主武器" | "副武器" | "护甲" | "饰品" | "全部装备"
     heroId     = nil,     -- 当前角色 ID（传递给 EquipmentDetail）
     scrollY    = 0,
     scrollMax  = 0,
@@ -67,10 +69,35 @@ local BAG_TITLE_CX, BAG_TITLE_CY = 540, 522
 local BAG_TITLE_FONT = 60
 local BAG_TITLE_R, BAG_TITLE_G, BAG_TITLE_B = 0x36, 0x2c, 0x21
 
--- 部位名称
+-- 部位名称 / 过滤页签
 local BAG_SLOT_CX, BAG_SLOT_CY = 540, 585
 local BAG_SLOT_FONT = 40
 local BAG_SLOT_R, BAG_SLOT_G, BAG_SLOT_B = 0xb6, 0xb0, 0x9d
+
+local FILTER_TABS = {
+    { key = nil,        label = "所有",   slotName = "全部装备" },
+    { key = "weapon",   label = "主武器", slotName = "主武器" },
+    { key = "offhand",  label = "副武器", slotName = "副武器" },
+    { key = "armor",    label = "护甲",   slotName = "护甲" },
+    { key = "accessory",label = "饰品",   slotName = "饰品" },
+}
+local TAB_Y    = 585
+local TAB_H    = 44
+local TAB_W    = 140
+local TAB_GAP  = 10
+local TAB_FONT = 26
+local TAB_TOTAL_W = #FILTER_TABS * TAB_W + (#FILTER_TABS - 1) * TAB_GAP
+local TAB_X0   = BAG_BG_CX - TAB_TOTAL_W * 0.5
+
+local function tabRect(i)
+    local x = TAB_X0 + (i - 1) * (TAB_W + TAB_GAP)
+    return x, TAB_Y - TAB_H * 0.5, TAB_W, TAB_H
+end
+
+local function sameFilter(a, b)
+    if a == nil and b == nil then return true end
+    return a == b
+end
 
 -- 格子
 local CELL_SIZE   = 160
@@ -134,6 +161,64 @@ local function clampScroll()
     bagState.scrollY = math.max(0, math.min(bagState.scrollMax, bagState.scrollY))
 end
 
+--- 三行战斗页覆盖层：背包画在中间战斗区，不盖灰底、不被右侧栏裁剪
+local overlayRegion = nil  -- { x, y, w, h } 窗口坐标，nil = 不覆盖
+
+local function overlayFit()
+    if not overlayRegion then return 1 end
+    return math.min(overlayRegion.w / BAG_BG_W, overlayRegion.h / BAG_BG_H)
+end
+
+--- 窗口坐标 → 背包设计坐标（覆盖层开启时）
+---@param wx number
+---@param wy number
+---@return number dx
+---@return number dy
+function EquipmentBag.overlayToDesign(wx, wy)
+    local R = overlayRegion
+    if not R then return wx, wy end
+    local fit = overlayFit()
+    return (wx - R.x - R.w * 0.5) / fit + BAG_BG_CX,
+           (wy - R.y - R.h * 0.5) / fit + BAG_BG_CY
+end
+
+--- 设置/清除战斗区覆盖矩形
+---@param x number|nil
+---@param y number|nil
+---@param w number|nil
+---@param h number|nil
+function EquipmentBag.setOverlayRegion(x, y, w, h)
+    if x == nil then
+        overlayRegion = nil
+        return
+    end
+    overlayRegion = { x = x, y = y, w = w, h = h }
+end
+
+function EquipmentBag.hasOverlayRegion()
+    return overlayRegion ~= nil
+end
+
+--- 角色装备栏打开的背包才覆盖战斗页（铁匠铺选择模式不覆盖）
+function EquipmentBag.shouldBattleOverlay()
+    return bagState.open and bagState.onSelect == nil
+end
+
+--- 覆盖层绘制：无灰底，等比铺进战斗区内矩形
+---@param vg any
+function EquipmentBag.drawOverlay(vg)
+    if not bagState.open or not overlayRegion then return end
+    local R = overlayRegion
+    local fit = overlayFit()
+    nvgSave(vg)
+    nvgIntersectScissor(vg, R.x, R.y, R.w, R.h)
+    nvgTranslate(vg, R.x + R.w * 0.5, R.y + R.h * 0.5)
+    nvgScale(vg, fit, fit)
+    nvgTranslate(vg, -BAG_BG_CX, -BAG_BG_CY)
+    EquipmentBag.draw(vg, { skipOverlay = true })
+    nvgRestore(vg)
+end
+
 -- ======================== Public API ========================
 
 --- 初始化（加载图片资源）
@@ -173,7 +258,8 @@ function EquipmentBag.open(slot, slotName, heroId, onSelect)
     bagState.open      = true
     bagState.closing   = false
     bagState.slot       = slot
-    bagState.slotName   = slotName
+    bagState.filter     = slot          -- 打开时定位到该部位；nil 则为「所有」
+    bagState.slotName   = slotName or (slot == nil and "全部装备" or "")
     bagState.heroId     = heroId
     bagState.scrollY    = 0
     bagState.scrollMax  = 0
@@ -181,7 +267,7 @@ function EquipmentBag.open(slot, slotName, heroId, onSelect)
     bagState.scrollVel  = 0
     bagState.openTime   = time.elapsedTime
     bagState.onSelect   = onSelect
-    print("[EquipmentBag] open slot=" .. tostring(slot) .. " name=" .. slotName .. " heroId=" .. tostring(heroId) .. " selectMode=" .. tostring(onSelect ~= nil))
+    print("[EquipmentBag] open slot=" .. tostring(slot) .. " name=" .. tostring(slotName) .. " heroId=" .. tostring(heroId) .. " selectMode=" .. tostring(onSelect ~= nil))
 end
 
 --- 关闭背包（启动关闭动画）
@@ -315,7 +401,7 @@ local function getFilteredEquips()
         return {}
     end
 
-    local slot = bagState.slot
+    local slot = bagState.filter   -- 页签过滤；nil = 所有
     local heroId = bagState.heroId
 
     -- 构建可穿戴子类型过滤集合
@@ -355,6 +441,13 @@ local function getFilteredEquips()
                     -- 207/220 双持模式：主手武器也标记为已装备（防止同一武器装两个槽）
                     if dualWieldMode then
                         equippedSeqs[wSeq] = true
+                    end
+                end
+            elseif slot == nil then
+                -- 「所有」页签：当前英雄四个槽位都算已装备
+                for _, sk in ipairs({ "weapon", "offhand", "armor", "accessory" }) do
+                    if heroEquipped[sk] then
+                        equippedSeqs[tostring(heroEquipped[sk])] = true
                     end
                 end
             else
@@ -445,6 +538,21 @@ function EquipmentBag.handleInput(dx, dy)
     -- 同帧保护：防止 open() 同帧的点击事件立即关闭弹窗
     if time.elapsedTime - bagState.openTime < 0.05 then return true end
 
+    -- 部位页签
+    for i, tab in ipairs(FILTER_TABS) do
+        local tx, ty, tw, th = tabRect(i)
+        if dx >= tx and dx <= tx + tw and dy >= ty and dy <= ty + th then
+            if not sameFilter(bagState.filter, tab.key) then
+                bagState.filter   = tab.key
+                bagState.slotName = tab.slotName
+                bagState.scrollY  = 0
+                bagState.scrollVel = 0
+                BF.trigger("bag_filter_" .. tostring(tab.key or "all"))
+            end
+            return true
+        end
+    end
+
     -- 点击背包背景外部 → 关闭
     if not hitTest(dx, dy, BAG_BG_CX, BAG_BG_CY, BAG_BG_W, BAG_BG_H) then
         EquipmentBag.close()
@@ -474,7 +582,7 @@ function EquipmentBag.handleInput(dx, dy)
                             EquipmentBag.close()
                         else
                             -- 装备模式：打开装备详情面板
-                            EquipmentDetail.open(entry.seq, bagState.slot, bagState.heroId)
+                            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId)
                         end
                         return true
                     end
@@ -551,8 +659,18 @@ end
 
 --- 绘制背包界面
 ---@param vg any NanoVG 上下文
-function EquipmentBag.draw(vg)
+---@param opts table|nil { skipOverlay = boolean } 覆盖层绘制时跳过灰底
+function EquipmentBag.draw(vg, opts)
     if not bagState.open then return end
+    -- 战斗页覆盖开启时，角色栏内不再画背包（本体由 drawOverlay 画）
+    -- 首帧 overlayRegion 尚未设置，也要跳过，避免闪在右侧栏
+    if not (opts and opts.skipOverlay) then
+        if overlayRegion then return end
+        if bagState.onSelect == nil then
+            local BTP = require("ui.BattleTriPage")
+            if BTP.isOpen() then return end
+        end
+    end
 
     -- === 动画计算 ===
     local progress, slideOY, overlayAlpha
@@ -566,6 +684,7 @@ function EquipmentBag.draw(vg)
             bagState.open    = false
             bagState.closing = false
             bagState.slot    = nil
+            bagState.filter  = nil
             bagState.slotName = ""
             bagState.onSelect = nil
             return
@@ -579,6 +698,9 @@ function EquipmentBag.draw(vg)
 
     slideOY      = -SLIDE_DIST * (1 - progress)  -- 从上方滑入
     overlayAlpha = math.floor(128 * progress)     -- 遮罩渐入（50%黑色）
+    if overlayRegion then
+        overlayAlpha = 0  -- 覆盖战斗页时不加灰底
+    end
 
     -- === 惯性滚动 ===
     if not bagState.dragging and math.abs(bagState.scrollVel) > SCROLL_MIN_VEL then
@@ -602,7 +724,8 @@ function EquipmentBag.draw(vg)
     local heroEquipped = equipData and equipData.equipped and equipData.equipped[heroId]
     if heroEquipped and equipData.inventory then
         -- 当前槽位已装备的战斗力
-        local eqSeq = heroEquipped[bagState.slot]
+        local cmpSlot = bagState.filter or bagState.slot
+        local eqSeq = cmpSlot and heroEquipped[cmpSlot]
         if eqSeq then
             local eqItem = equipData.inventory[tostring(eqSeq)]
             if eqItem then
@@ -611,7 +734,7 @@ function EquipmentBag.draw(vg)
         end
 
         -- 副手槽：若副手为空但主手是双手武器，基准 = 双手武器战斗力 / 2
-        if bagState.slot == "offhand" and equippedPower == 0 then
+        if cmpSlot == "offhand" and equippedPower == 0 then
             local weaponSeq = heroEquipped["weapon"]
             if weaponSeq then
                 local weaponItem = equipData.inventory[tostring(weaponSeq)]
@@ -624,7 +747,7 @@ function EquipmentBag.draw(vg)
         end
 
         -- 主手槽：预计算副手战斗力（供双手武器 ICON_UP 对比用）
-        if bagState.slot == "weapon" then
+        if cmpSlot == "weapon" then
             local ohSeq = heroEquipped["offhand"]
             if ohSeq then
                 local ohItem = equipData.inventory[tostring(ohSeq)]
@@ -640,11 +763,13 @@ function EquipmentBag.draw(vg)
     bagState.scrollMax = math.max(0, totalContentH - VISIBLE_CONTENT_H)
     clampScroll()
 
-    -- === 1) 全屏半透明遮罩 ===
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, overlayAlpha))
-    nvgFill(vg)
+    -- === 1) 全屏半透明遮罩（战斗页覆盖时不加灰底）===
+    if overlayAlpha > 0 then
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, overlayAlpha))
+        nvgFill(vg)
+    end
 
     -- === 应用滑入偏移 ===
     nvgSave(vg)
@@ -660,10 +785,28 @@ function EquipmentBag.draw(vg)
     nvgFillColor(vg, nvgRGBA(BAG_TITLE_R, BAG_TITLE_G, BAG_TITLE_B, 255))
     nvgText(vg, BAG_TITLE_CX, BAG_TITLE_CY, "背包", nil)
 
-    -- === 4) 装备部位名 ===
-    nvgFontSize(vg, BAG_SLOT_FONT)
-    nvgFillColor(vg, nvgRGBA(BAG_SLOT_R, BAG_SLOT_G, BAG_SLOT_B, 255))
-    nvgText(vg, BAG_SLOT_CX, BAG_SLOT_CY, bagState.slotName, nil)
+    -- === 4) 部位页签（所有 / 主武器 / 副武器 / 护甲 / 饰品）===
+    for i, tab in ipairs(FILTER_TABS) do
+        local tx, ty, tw, th = tabRect(i)
+        local selected = sameFilter(bagState.filter, tab.key)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, tx, ty, tw, th, 10)
+        if selected then
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 230))
+        else
+            nvgFillColor(vg, nvgRGBA(0x36, 0x2c, 0x21, 70))
+        end
+        nvgFill(vg)
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, TAB_FONT)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        if selected then
+            nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
+        else
+            nvgFillColor(vg, nvgRGBA(BAG_SLOT_R, BAG_SLOT_G, BAG_SLOT_B, 255))
+        end
+        nvgText(vg, tx + tw * 0.5, ty + th * 0.5, tab.label, nil)
+    end
 
     -- === 5) 装备格子（裁剪区域） ===
     nvgSave(vg)
@@ -814,7 +957,7 @@ function EquipmentBag.draw(vg)
                     local itemPower = EquipmentDetail.calcEquipPower(equip, heroId)
                     -- 双手武器替换主手+副手，基准用两者之和
                     local baseline = equippedPower
-                    if bagState.slot == "weapon" and equip.grip == "twohand" then
+                    if (bagState.filter or bagState.slot) == "weapon" and equip.grip == "twohand" then
                         baseline = equippedPower + offhandPower
                     end
                     if itemPower > baseline then

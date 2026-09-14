@@ -2364,7 +2364,9 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     local pid, dx, dy = HorizonResolveMouse()
     -- [三栏并行] 三栏页自管输入（返回按钮等）
     if pid == 'tri' then
-        BattleTriPage.handleInput(dx, dy)
+        pressStartDX, pressStartDY = dx or 0, dy or 0
+        pressValid = true
+        BattleTriPage.handleDragBegin(dx, dy)
         return
     end
     pressStartDX, pressStartDY = dx or 0, dy or 0
@@ -2397,6 +2399,10 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if not pressValid then return end
+    if pid == 'tri' then
+        BattleTriPage.handleDragMove(dx, dy)
+        return
+    end
     if pid == 'left' then
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragMove(dx, dy) return end
@@ -2428,6 +2434,11 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         else lastTapTime = now end
     end
     if pid == 'none' then return end
+    if pid == 'tri' then
+        BattleTriPage.handleDragEnd(dx, dy)
+        if isTap then BattleTriPage.handleInput(dx, dy) end
+        return
+    end
     if pid == 'modal' then
         if ArenaBattleScene.isOpen() then
             ArenaBattleScene.handleDragEnd(dx, dy)
@@ -2560,6 +2571,7 @@ function HandleMouseWheelHorizon(eventType, eventData)
     -- [DarkTitleScreen] 标题期吞掉滚轮
     if DarkTitleScreen.isOpen() then return end
     local wheel = eventData["Wheel"]:GetInt()
+    if BattleTriPage.handleScroll(wheel) then return end
     if ArenaBattleScene.isOpen() then ArenaBattleScene.handleScroll(wheel) return end
     if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end
     if LevelUpPopup.isOpen() then return end

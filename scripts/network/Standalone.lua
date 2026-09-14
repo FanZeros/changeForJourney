@@ -2191,28 +2191,23 @@ function HandleNanoVGRenderHorizon()
         return
     end
 
-    -- [三行并行守卫] 三行战斗模式打开时，左右面板由下方 BattleTriPage 分支按
-    -- 三行布局重新绘制（viewport 变换不同）；此处跳过，避免右侧「我的冒险家」
-    -- 面板与左侧城镇建筑名牌各被绘制两次。
-    if not BattleTriPage.isOpen() then
-        -- 左面板：功能页组（城镇 + 二级页）
-        Viewport.begin(vg, Viewport.PANELS.left, H_ox, H_oy, H_s)
-        TownScene.draw(vg)
-        BlacksmithPage.draw(vg)
-        ChurchPage.draw(vg)
-        TavernPage.draw(vg)
-        ArenaPage.draw(vg)
-        MarketPage.draw(vg)
-        Viewport.finish(vg)
+    -- 左面板：功能页组（城镇 + 二级页）
+    Viewport.begin(vg, Viewport.PANELS.left, H_ox, H_oy, H_s)
+    TownScene.draw(vg)
+    BlacksmithPage.draw(vg)
+    ChurchPage.draw(vg)
+    TavernPage.draw(vg)
+    ArenaPage.draw(vg)
+    MarketPage.draw(vg)
+    Viewport.finish(vg)
 
-        -- 右面板：角色固定（先于中面板绘制，便于弹窗时统一压暗侧栏）
-        Viewport.begin(vg, Viewport.PANELS.right, H_ox, H_oy, H_s)
-        CharacterPanel.draw(vg)
-        Viewport.finish(vg)
+    -- 右面板：角色固定（先于中面板绘制，便于弹窗时统一压暗侧栏）
+    Viewport.begin(vg, Viewport.PANELS.right, H_ox, H_oy, H_s)
+    CharacterPanel.draw(vg)
+    Viewport.finish(vg)
 
-        -- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（在侧栏之上、中面板之下）
-        HorizonDimSidePanels()
-    end
+    -- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（在侧栏之上、中面板之下）
+    HorizonDimSidePanels()
 
     -- 中面板：BottomNav 主视图 + 全屏战斗页
     Viewport.begin(vg, Viewport.PANELS.center, H_ox, H_oy, H_s)
@@ -2258,6 +2253,11 @@ function HandleNanoVGRenderHorizon()
         TavernPage.draw(vg)
         ArenaPage.draw(vg)
         MarketPage.draw(vg)
+        -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
+        if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
+            or ArenaPage.isOpen() or MarketPage.isOpen()) then
+            TopBar.draw(vg)
+        end
         Viewport.finish(vg)
         Viewport.begin(vg, Viewport.PANELS.right, oxR, 0, ps)
         CharacterPanel.draw(vg)
@@ -2490,6 +2490,14 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     -- 左面板：功能页组点击链
     if pid == 'left' then
+        -- [三行并行] TopBar（测试木桩入口）优先命中：仅城镇主视图（无二级页）时
+        if isTap and not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
+            or ArenaPage.isOpen() or MarketPage.isOpen()) then
+            if TopBar.hitTestTrainingDummy(dx, dy) then
+                openTrainingDummyBattle()
+                return
+            end
+        end
         if BlacksmithPage.isOpen() then
             BlacksmithPage.handleDragEnd(dx, dy)
             if not isTap then return end

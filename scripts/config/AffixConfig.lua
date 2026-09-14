@@ -30,15 +30,15 @@ AffixConfig.AFFIXES = {
     -- 基础属性（六围）
     { id = 1,  key = "str",           dataType = "float", baseValue = 0.67,  weight = 100, name = "力量" },
     { id = 2,  key = "agi",           dataType = "float", baseValue = 0.67,  weight = 100, name = "敏捷" },
-    { id = 3,  key = "int",           dataType = "float", baseValue = 0.67,  weight = 100, name = "智慧" },
+    { id = 3,  key = "int",           dataType = "float", baseValue = 0.67,  weight = 100, name = "秘识" },
     { id = 4,  key = "vit",           dataType = "float", baseValue = 0.67,  weight = 100, name = "体质" },
-    { id = 5,  key = "luk",           dataType = "float", baseValue = 0.67,  weight = 100, name = "运气" },
-    { id = 6,  key = "spi",           dataType = "float", baseValue = 0.67,  weight = 100, name = "精神" },
+    { id = 5,  key = "luk",           dataType = "float", baseValue = 0.67,  weight = 100, name = "命数" },
+    { id = 6,  key = "spi",           dataType = "float", baseValue = 0.67,  weight = 100, name = "魂火" },
 
     -- 防御属性
     { id = 7,  key = "maxHp",         dataType = "int",   baseValue = 33,    weight = 100, name = "生命值" },
     { id = 8,  key = "armor",         dataType = "float", baseValue = 1.43,  weight = 100, name = "护甲" },
-    { id = 9,  key = "energyShield",  dataType = "float", baseValue = 10.00, weight = 100, name = "能量护盾" },
+    { id = 9,  key = "energyShield",  dataType = "float", baseValue = 10.00, weight = 100, name = "魂幕" },
     { id = 10, key = "dodge",         dataType = "float", baseValue = 1.00,  weight = 100, name = "闪避值" },
     { id = 11, key = "hpRegen",       dataType = "float", baseValue = 3.33,  weight = 100, name = "每秒回血" },
     { id = 12, key = "atkHeal",       dataType = "float", baseValue = 2.22,  weight = 100, name = "攻击回血" },

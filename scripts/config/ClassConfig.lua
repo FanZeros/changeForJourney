@@ -29,7 +29,7 @@ CC.PRIEST  = "priest"   -- 牧师
 
 CC.CLASSES = {
     [CC.KNIGHT] = {
-        name = "骑士",
+        name = "守誓者",
         -- 仇恨系数（取范围中值）
         baseAttackThreatMin = 60,  baseAttackThreatMax = 100,
         dmgThreatCoeffMin   = 10.0, dmgThreatCoeffMax   = 15.0,
@@ -46,7 +46,7 @@ CC.CLASSES = {
     },
 
     [CC.WARRIOR] = {
-        name = "战士",
+        name = "破阵者",
         baseAttackThreatMin = 10,  baseAttackThreatMax = 20,
         dmgThreatCoeffMin   = 0.5, dmgThreatCoeffMax   = 0.7,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
@@ -59,7 +59,7 @@ CC.CLASSES = {
     },
 
     [CC.MAGE] = {
-        name = "法师",
+        name = "咒术师",
         baseAttackThreatMin = 0,   baseAttackThreatMax = 5,
         dmgThreatCoeffMin   = 0.5, dmgThreatCoeffMax   = 0.7,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
@@ -72,7 +72,7 @@ CC.CLASSES = {
     },
 
     [CC.RANGER] = {
-        name = "射手",
+        name = "夜猎者",
         baseAttackThreatMin = 1,   baseAttackThreatMax = 2,
         dmgThreatCoeffMin   = 0.8, dmgThreatCoeffMax   = 1.0,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
@@ -85,7 +85,7 @@ CC.CLASSES = {
     },
 
     [CC.ASSASSIN] = {
-        name = "刺客",
+        name = "无痕者",
         baseAttackThreatMin = 0,   baseAttackThreatMax = 0,
         dmgThreatCoeffMin   = 0.3, dmgThreatCoeffMax   = 0.5,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
@@ -98,7 +98,7 @@ CC.CLASSES = {
     },
 
     [CC.PRIEST] = {
-        name = "牧师",
+        name = "提灯者",
         baseAttackThreatMin = 0,   baseAttackThreatMax = 5,
         dmgThreatCoeffMin   = 0.5, dmgThreatCoeffMax   = 0.7,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
@@ -130,7 +130,7 @@ function CC.get(classId)
 end
 
 --- 通过中文名获取职业 ID
----@param name string 中文职业名（骑士/战士/法师/游侠/射手/刺客/牧师）
+---@param name string 中文职业名（守誓者/破阵者/咒术师/夜猎者/无痕者/提灯者）
 ---@return string|nil classId
 function CC.getIdByName(name)
     return CC.NAME_TO_ID[name]

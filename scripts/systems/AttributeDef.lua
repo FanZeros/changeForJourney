@@ -135,10 +135,10 @@ AD.META = {
     -- 基础属性（六围）
     [AD.STR] = { name = "力量",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.AGI] = { name = "敏捷",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
-    [AD.INT] = { name = "智慧",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
+    [AD.INT] = { name = "秘识",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.VIT] = { name = "体质",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
-    [AD.LUK] = { name = "运气",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
-    [AD.SPI] = { name = "精神",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
+    [AD.LUK] = { name = "命数",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
+    [AD.SPI] = { name = "魂火",   valueModel = 5,  dataType = AD.TYPE_FLOAT, default = 0 },
 
     -- 防御属性
     [AD.MAX_HP]           = { name = "生命值",       valueModel = 0.03, dataType = AD.TYPE_INT,   default = 0 },
@@ -146,10 +146,10 @@ AD.META = {
     [AD.HP]               = { name = "当前生命",     valueModel = 0,    dataType = AD.TYPE_INT,   default = 0 },
     [AD.ARMOR]            = { name = "护甲",         valueModel = 0.7,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.RESISTANCE]       = { name = "伤害抗性",     valueModel = 0,    dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.ENERGY_SHIELD]    = { name = "能量护盾",     valueModel = 0.1,  dataType = AD.TYPE_FLOAT, default = 0 },
+    [AD.ENERGY_SHIELD]    = { name = "魂幕",     valueModel = 0.1,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.ES_REGEN_INTERVAL] = { name = "护盾恢复间隔", valueModel = 0,   dataType = AD.TYPE_FLOAT, default = 1.2 },
     [AD.DODGE]            = { name = "闪避值",       valueModel = 1,    dataType = AD.TYPE_FLOAT, default = 0 },
-    [AD.THREAT]           = { name = "仇恨值",       valueModel = 0.08, dataType = AD.TYPE_INT,   default = 1 },
+    [AD.THREAT]           = { name = "怨引值",       valueModel = 0.08, dataType = AD.TYPE_INT,   default = 1 },
     [AD.HP_REGEN]         = { name = "每秒回血",     valueModel = 0.3,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.ATK_HEAL]         = { name = "攻击回血",     valueModel = 0.45, dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.PHYS_BLOCK_RATE]  = { name = "物理格挡概率", valueModel = 50,   dataType = AD.TYPE_PCT,   default = 0,  cap = 100 },
@@ -160,8 +160,8 @@ AD.META = {
     [AD.HP_BONUS]         = { name = "生命加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.DODGE_BONUS]      = { name = "闪避加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.ES_REGEN_SPEED]   = { name = "护盾恢复速度",   valueModel = 0,    dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.ES_BONUS]         = { name = "能量护盾加成",   valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.ES_DMG_REDUCE]    = { name = "能量护盾伤害减免", valueModel = 60, dataType = AD.TYPE_PCT,   default = 20, cap = 80 },
+    [AD.ES_BONUS]         = { name = "魂幕加成",   valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
+    [AD.ES_DMG_REDUCE]    = { name = "魂幕伤害减免", valueModel = 60, dataType = AD.TYPE_PCT,   default = 20, cap = 80 },
     [AD.ARMOR_BONUS]      = { name = "护甲加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
 
     -- 攻击属性
@@ -195,12 +195,12 @@ AD.META = {
     [AD.FINAL_DAMAGE_BONUS]        = { name = "最终伤害",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
     [AD.FINAL_STR_BONUS]           = { name = "最终力量",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
     [AD.FINAL_AGI_BONUS]           = { name = "最终敏捷",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
-    [AD.FINAL_INT_BONUS]           = { name = "最终智慧",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
+    [AD.FINAL_INT_BONUS]           = { name = "最终秘识",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
     [AD.FINAL_VIT_BONUS]           = { name = "最终体质",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
-    [AD.FINAL_LUK_BONUS]           = { name = "最终运气",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
-    [AD.FINAL_SPI_BONUS]           = { name = "最终精神",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
+    [AD.FINAL_LUK_BONUS]           = { name = "最终命数",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
+    [AD.FINAL_SPI_BONUS]           = { name = "最终魂火",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
     [AD.FINAL_ARMOR_BONUS]         = { name = "最终护甲",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
-    [AD.FINAL_ENERGY_SHIELD_BONUS] = { name = "最终能量护盾",   valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
+    [AD.FINAL_ENERGY_SHIELD_BONUS] = { name = "最终魂幕",   valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
     [AD.FINAL_DODGE_BONUS]         = { name = "最终闪避",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
 
     -- 治疗属性
@@ -274,12 +274,12 @@ AD.DESC = {
     [AD.FINAL_DAMAGE_BONUS]        = "作为独立乘区百分比提高造成的最终伤害",
     [AD.FINAL_STR_BONUS]           = "最终乘区百分比增加力量，并重新计算六围派生",
     [AD.FINAL_AGI_BONUS]           = "最终乘区百分比增加敏捷，并重新计算六围派生",
-    [AD.FINAL_INT_BONUS]           = "最终乘区百分比增加智慧，并重新计算六围派生",
+    [AD.FINAL_INT_BONUS]           = "最终乘区百分比增加秘识，并重新计算六围派生",
     [AD.FINAL_VIT_BONUS]           = "最终乘区百分比增加体质，并重新计算六围派生",
-    [AD.FINAL_LUK_BONUS]           = "最终乘区百分比增加运气，并重新计算六围派生",
-    [AD.FINAL_SPI_BONUS]           = "最终乘区百分比增加精神，并重新计算六围派生",
+    [AD.FINAL_LUK_BONUS]           = "最终乘区百分比增加命数，并重新计算六围派生",
+    [AD.FINAL_SPI_BONUS]           = "最终乘区百分比增加魂火，并重新计算六围派生",
     [AD.FINAL_ARMOR_BONUS]         = "最终乘区百分比增加护甲",
-    [AD.FINAL_ENERGY_SHIELD_BONUS] = "最终乘区百分比增加能量护盾",
+    [AD.FINAL_ENERGY_SHIELD_BONUS] = "最终乘区百分比增加魂幕",
     [AD.FINAL_DODGE_BONUS]         = "最终乘区百分比增加闪避值",
 
     -- 治疗属性
@@ -375,8 +375,8 @@ AD.ATK_HOLY      = 8   -- 神圣（治疗）
 
 AD.ATK_TYPE_NAME = {
     [1] = "斩击", [2] = "粉碎", [3] = "穿刺",
-    [4] = "火焰", [5] = "冰霜", [6] = "闪电",
-    [7] = "暗影", [8] = "神圣",
+    [4] = "业火", [5] = "冥霜", [6] = "雷殛",
+    [7] = "暗影", [8] = "烛照",
 }
 
 -- 攻击类型 → 伤害大类: "physical" / "magical" / "healing"

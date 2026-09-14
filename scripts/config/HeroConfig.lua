@@ -95,7 +95,7 @@ HC.HEROES = {
     [2] = {
         quality = 1, classId = CC.MAGE,
         title = "火球一本龙", name = "黄桃龙",
-        talentName = "火焰精通", talentDesc = "攻击附加持续2秒的[燃烧]效果，对其每秒造成[魔法攻击力*0.2]的火焰伤害",
+        talentName = "火焰精通", talentDesc = "攻击附加持续2秒的[燃烧]效果，对其每秒造成[魔法攻击力*0.2]的业火伤害",
         talentId = "maki_fire",
         gender = "female",
         atkType = AD.ATK_FIRE, atkInterval = 2.6, atkTargets = 2,
@@ -271,7 +271,7 @@ HC.HEROES = {
     [21] = {
         quality = 3, classId = CC.WARRIOR,
         title = "赛道之王", name = "闪电卖鸡",
-        talentName = "银光", talentDesc = "每次攻击有25%概率触发[银光]，额外造成物理伤害×150%的闪电伤害，并使目标麻痹0.3秒（进度条暂停）。每拥有80命中率，触发概率+2%（最多额外增加20%）",
+        talentName = "银光", talentDesc = "每次攻击有25%概率触发[银光]，额外造成物理伤害×150%的雷殛伤害，并使目标麻痹0.3秒（进度条暂停）。每拥有80命中率，触发概率+2%（最多额外增加20%）",
         talentId = "alex_silver_flash",
         gender = "male",
         atkType = AD.ATK_SLASH, atkInterval = 3.0, atkTargets = 2,

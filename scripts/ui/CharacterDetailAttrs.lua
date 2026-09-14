@@ -86,10 +86,10 @@ M.ATTR_RIGHT_PRIORITY = {
 M.STAT_LAYOUT = {
     { col = 1, row = 1, key = AD.STR, name = "力量", icon = "ICON_SX_LL" },
     { col = 1, row = 2, key = AD.AGI, name = "敏捷", icon = "ICON_SX_MJ" },
-    { col = 1, row = 3, key = AD.INT, name = "智慧", icon = "ICON_SX_ZH" },
+    { col = 1, row = 3, key = AD.INT, name = "秘识", icon = "ICON_SX_ZH" },
     { col = 2, row = 1, key = AD.VIT, name = "体质", icon = "ICON_SX_TZ" },
-    { col = 2, row = 2, key = AD.LUK, name = "运气", icon = "ICON_SX_YQ" },
-    { col = 2, row = 3, key = AD.SPI, name = "精神", icon = "ICON_SX_JS" },
+    { col = 2, row = 2, key = AD.LUK, name = "命数", icon = "ICON_SX_YQ" },
+    { col = 2, row = 3, key = AD.SPI, name = "魂火", icon = "ICON_SX_JS" },
 }
 
 -- ======================== 属性收集 ========================

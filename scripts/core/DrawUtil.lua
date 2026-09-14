@@ -298,6 +298,32 @@ function DrawUtil.easeOutBack(t)
     return t * t * ((s + 1) * t + s) + 1
 end
 
+--- 二级页返回键（三队并行）：暗黑圆角底 + 方向箭头，dir="left" 为左关箭头 ‹，dir="right" 为右关箭头 ›
+---@param vg any NanoVG 上下文
+---@param cx number 按钮中心 X（设计空间）
+---@param cy number 按钮中心 Y
+---@param w number 宽
+---@param h number 高
+---@param dir string "left" 或 "right"
+function DrawUtil.drawBackChevron(vg, cx, cy, w, h, dir)
+    DrawUtil.drawRoundedRectCentered(vg, cx, cy, w, h, h * 0.18, 60, 42, 31, 210)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cx - w * 0.5, cy - h * 0.5, w, h, h * 0.18)
+    nvgStrokeColor(vg, nvgRGBA(255, 210, 115, 220))
+    nvgStrokeWidth(vg, 3)
+    nvgStroke(vg)
+    local s = (dir == "left") and 1 or -1
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, cx + s * w * 0.11, cy - h * 0.17)
+    nvgLineTo(vg, cx - s * w * 0.11, cy)
+    nvgLineTo(vg, cx + s * w * 0.11, cy + h * 0.17)
+    nvgStrokeColor(vg, nvgRGBA(255, 235, 170, 255))
+    nvgStrokeWidth(vg, math.max(8, w * 0.07))
+    nvgLineCap(vg, NVG_ROUND)
+    nvgLineJoin(vg, NVG_ROUND)
+    nvgStroke(vg)
+end
+
 -- ============================================================================
 -- drawResonanceMark  —— 共鸣加成小标识（等级徽章右下角）
 -- ============================================================================

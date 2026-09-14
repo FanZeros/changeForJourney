@@ -185,17 +185,17 @@ M.BTN_BATCH_H    = BTN_BATCH_H
 
 -- ======================== 底部按钮布局常量 ========================
 
-local BTN_BACK_CX, BTN_BACK_CY = 122, 2308
+local BTN_BACK_CX, BTN_BACK_CY = 122, 1150
 local BTN_BACK_W, BTN_BACK_H   = 184, 143
 
-local BTN_TAB_BG_CX, BTN_TAB_BG_CY = 639, 2308
+local BTN_TAB_BG_CX, BTN_TAB_BG_CY = 540, 2308
 local BTN_TAB_BG_W, BTN_TAB_BG_H   = 810, 143
 
 -- 3-Tab 布局（参考铁匠铺 SLIDER_W=277）
 local BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H = 277, 143
-local BTN_TAB_ATTR_CX, BTN_TAB_ATTR_CY     = 372, 2308
-local BTN_TAB_EQUIP_CX, BTN_TAB_EQUIP_CY   = 638, 2308
-local BTN_TAB_AWAKEN_CX, BTN_TAB_AWAKEN_CY = 905, 2308
+local BTN_TAB_ATTR_CX, BTN_TAB_ATTR_CY     = 274, 2308
+local BTN_TAB_EQUIP_CX, BTN_TAB_EQUIP_CY   = 540, 2308
+local BTN_TAB_AWAKEN_CX, BTN_TAB_AWAKEN_CY = 806, 2308
 
 local TEXT_ATTR_CX, TEXT_ATTR_CY     = 372, 2302
 local TEXT_EQUIP_CX, TEXT_EQUIP_CY   = 638, 2302
@@ -1153,7 +1153,7 @@ function M.draw(vg)
     -- ===              底部按钮区域（静态，不参与切换动画）          ===
     -- ================================================================
 
-    drawImageCentered(vg, img.btnBack, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, 1.0)
+    DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "right")
 
     drawImageCentered(vg, img.tabBg, BTN_TAB_BG_CX, BTN_TAB_BG_CY, BTN_TAB_BG_W, BTN_TAB_BG_H, 1.0)
 

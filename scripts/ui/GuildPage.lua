@@ -56,7 +56,7 @@ local LOWER_DIST = 1600
 local BTN_BACK = { CX = 122, CY = 2308, W = 184, H = 143 }
 
 local TAB = {
-    BG_CX = 639, BG_CY = 2308, BG_W = 810, BG_H = 143,
+    BG_CX = 540, BG_CY = 2308, BG_W = 810, BG_H = 143,
     SLIDER_W = 410, SLIDER_H = 143,
     SI_T = 10, SI_R = 70, SI_B = 10, SI_L = 70,
     TEXT_Y = 2302, FONT = 40,
@@ -720,7 +720,7 @@ function GuildPage.draw(vg)
     local hideBottomUI = (state.tab == 2 and RelicPanel.isAdjustMode())
     if not hideBottomUI then
         local _bf_back = BF.begin(vg, "guild_back", BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H)
-        drawImageCentered(vg, img.btnBack, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, 1.0)
+        DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
         BF.finish(vg, _bf_back)
         drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
 

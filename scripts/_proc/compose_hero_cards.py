@@ -86,11 +86,16 @@ def night_inner(card, ix0, iy0, ix1, iy1):
     return Image.fromarray(arr.astype('uint8'), 'RGBA')
 
 def hero_layer(hero_path, scale_rel=1.0):
-    """完整立绘: 提亮 -> 实体bbox裁剪 -> 高度顶满卡高(scale_rel), 宽度溢出居中裁边"""
+    """完整立绘: 暗黑化调色(降饱和+暖褐偏移) -> 实体bbox裁剪 -> 高度顶满卡高"""
     hero = Image.open(hero_path).convert('RGBA')
-    hero = ImageEnhance.Brightness(hero).enhance(1.14)
-    hero = ImageEnhance.Contrast(hero).enhance(1.08)
-    hero = ImageEnhance.Color(hero).enhance(1.10)
+    hero = ImageEnhance.Color(hero).enhance(0.70)          # 去鲜艳
+    hero = ImageEnhance.Brightness(hero).enhance(0.97)     # 轻压亮
+    hero = ImageEnhance.Contrast(hero).enhance(1.10)
+    arr = np.asarray(hero).astype(np.float32)
+    arr[..., 0] = np.clip(arr[..., 0] * 1.03, 0, 255)      # 暖褐偏移: 压蓝提暖
+    arr[..., 1] = np.clip(arr[..., 1] * 0.97, 0, 255)
+    arr[..., 2] = np.clip(arr[..., 2] * 0.80, 0, 255)
+    hero = Image.fromarray(arr.astype('uint8'), 'RGBA')
     binm = np.asarray(hero.split()[3]) >= 128
     rowhit = binm.sum(axis=1) / binm.shape[1] > 0.02
     colhit = binm.sum(axis=0) / binm.shape[0] > 0.02

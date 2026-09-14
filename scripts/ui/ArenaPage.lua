@@ -115,7 +115,7 @@ P2.CLIP_BOT = P2.CLIP_TOP + P2.CLIP_H  -- 1767
 
 -- Tab 系统（参考铁匠铺）
 local TAB = {
-    BACK_CX = 122, BACK_CY = 2308, BACK_W = 184, BACK_H = 143,
+    BACK_CX = 958, BACK_CY = 1150, BACK_W = 184, BACK_H = 143,
     BG_CX = 639, BG_CY = 2308, BG_W = 810, BG_H = 143,
     SLIDER_W = 277, SLIDER_H = 143,
     SI_T = 10, SI_R = 70, SI_B = 10, SI_L = 70,
@@ -840,7 +840,7 @@ function ArenaPage.draw(vg)
         end
     end
 
-    local upperOY = -UPPER_DIST * (1 - progress)
+    local upperOX = -UPPER_DIST * (1 - progress)  -- [横向] 从左侧滑入/滑出
     local lowerOY =  LOWER_DIST * (1 - lowerProgress)
     local overlayAlpha = math.floor(180 * progress)
 
@@ -862,7 +862,7 @@ function ArenaPage.draw(vg)
 
     -- ========== 上半部分（从上方滑入） ==========
     nvgSave(vg)
-    nvgTranslate(vg, 0, upperOY)
+    nvgTranslate(vg, upperOX, 0)
 
     -- 排名 Tab 时跳过上半部分（竞技场背景、名称、资源栏），由排名全屏背景替代
     -- Tab 切换动画期间上半部分也需要淡入/淡出

@@ -519,13 +519,13 @@ function M.draw(vg)
         switchAlpha = 0.2 + 0.8 * math.min(1.0, progress * 1.8)
     end
 
-    local upperOY = -UPPER_SLIDE_DIST * (1 - progress)
+    local upperOX = UPPER_SLIDE_DIST * (1 - progress)  -- [横向] 右面板页从右侧滑入/滑出
     local lowerOY =  LOWER_SLIDE_DIST * (1 - lowerProgress)
     local overlayAlpha = math.floor(180 * progress)
 
     -- 箭头切换时不做垂直滑入
     if detailState.switchDir then
-        upperOY = 0
+        upperOX = 0
         lowerOY = 0
     end
 
@@ -546,7 +546,7 @@ function M.draw(vg)
 
     -- ================== 上半部分（从上方滑入） ==================
     nvgSave(vg)
-    nvgTranslate(vg, 0, upperOY)
+    nvgTranslate(vg, upperOX, 0)
 
     -- === 1) 背景图 ===
     nvgSave(vg)

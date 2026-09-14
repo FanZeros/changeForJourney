@@ -315,11 +315,30 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgRestore(vg)
     end
 
-    -- [对话框覆盖] 选关/扫荡/统计面板（等比覆盖行1 内矩形）
+    -- [对话框覆盖] 选关/扫荡/统计面板（全窗口居中模态，不再局限行1 内矩形）
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
-        local fit = math.min(iw1 / 1080, ih1 / 960)
+        local fit = math.min(logicalW / 1080, logicalH / 1200)
+        -- 弹窗自带的设计稿压暗（黑128）只覆盖 1080 宽设计带，两侧补齐同色压暗避免亮度接缝
+        local bx0 = logicalW * 0.5 - 540 * fit
+        local bx1 = logicalW * 0.5 + 540 * fit
         nvgSave(vg)
-        nvgTranslate(vg, ix1 + iw1 * 0.5, iy1 + ih1 * 0.5)
+        nvgScissor(vg, 0, 0, logicalW, logicalH)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
+        if bx0 > 0 then
+            nvgBeginPath(vg)
+            nvgRect(vg, 0, 0, bx0, logicalH)
+            nvgFill(vg)
+        end
+        if bx1 < logicalW then
+            nvgBeginPath(vg)
+            nvgRect(vg, bx1, 0, logicalW - bx1, logicalH)
+            nvgFill(vg)
+        end
+        nvgRestore(vg)
+        -- 弹窗本体：设计锚点 (540,1195) 对齐窗口中心
+        nvgSave(vg)
+        nvgScissor(vg, 0, 0, logicalW, logicalH)
+        nvgTranslate(vg, logicalW * 0.5, logicalH * 0.5)
         nvgScale(vg, fit, fit)
         nvgTranslate(vg, -540, -1195)
         if SweepDialog.isOpen() then SweepDialog.draw(vg) end
@@ -366,11 +385,11 @@ function BattleTriPage.handleInput(wx, wy)
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
     local bs = require("ui.BattleScene")
 
-    -- 对话框打开: 逆映射到设计空间
+    -- 对话框打开: 逆映射到设计空间（全窗口居中模态，与渲染变换一致）
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
-        local fit = math.min(iw1 / 1080, ih1 / 960)
-        local dx = (wx - ix1 - iw1 * 0.5) / fit + 540
-        local dy = (wy - iy1 - ih1 * 0.5) / fit + 1195
+        local fit = math.min(logicalW / 1080, logicalH / 1200)
+        local dx = (wx - logicalW * 0.5) / fit + 540
+        local dy = (wy - logicalH * 0.5) / fit + 1195
         if SweepDialog.isOpen() then SweepDialog.handleInput(dx, dy) end
         if DamageStatsPanel.isOpen() then DamageStatsPanel.handleInput(dx, dy) end
         if StageSelectDialog.isOpen() then StageSelectDialog.handleInput(dx, dy) end

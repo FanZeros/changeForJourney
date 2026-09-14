@@ -46,6 +46,9 @@ local DiaryPage         = require("ui.DiaryPage")
 local StartScreen       = require("ui.StartScreen")
 local DarkTitleScreen   = require("ui.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
 local BattleTriPage     = require("ui.BattleTriPage")    -- [三行并行] 三行战斗区
+local SweepDialog       = require("ui.SweepDialog")          -- [三行并行] 全窗模态弹窗
+local DamageStatsPanel  = require("ui.DamageStatsPanel")     -- [三行并行] 全窗模态弹窗
+local StageSelectDialog = require("ui.StageSelectDialog")    -- [三行并行] 全窗模态弹窗
 local BattleLayout      = require("core.BattleLayout")   -- [三行并行] 布阵模式切换
 local ProjectileSystem  = require("ui.ProjectileSystem") -- [三行并行] 渲染缩放
 local EventBus          = require("core.EventBus")
@@ -2334,6 +2337,10 @@ local function HorizonResolveMouse()
     local sy = mousePos.y / dpr
     -- [三行并行] 战斗模式命中: 面板按战斗布局定位，中段为三行战斗区
     if BattleTriPage.isOpen() then
+        -- [全窗模态] 选关/扫荡/统计弹窗打开时，全窗口点击直通三行页弹窗层（含左右面板区）
+        if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
+            return 'tri', sx, sy
+        end
         local ps = logicalH / 1080
         local leftW = 486 * ps
         if sx < leftW then

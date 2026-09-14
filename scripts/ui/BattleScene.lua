@@ -661,6 +661,9 @@ end
 local function resetAllyUnit(u)
     u.atkProgress = 0
     u.reviveTimer = nil
+    u._fallen = nil
+    u._fallenPending = nil
+    BattleCombat.clearCardAnim(u)  -- 清残留死亡/退场动画（gone 状态会导致重置后不渲染）
     if u.attrs then
         local restored = restoreFromSnapshot(u)
         if not restored then
@@ -2086,8 +2089,18 @@ function BattleScene.update(dt)
                     BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
                 end
             else
-                -- 怪物池为空：保留墓碑表现（进度条渐进至 100% 停驻）
-                unit.atkProgress = math.min(1.0, (unit.atkProgress or 0) + logicDt / TOMBSTONE_REVIVE_TIME)
+                -- [池空前移] 无后续敌人：死亡槽位仍由后方敌人前移填位（队列收缩）
+                if unit.reviveTimer >= RESPAWN_DELAY then
+                    for j = i, #enemies - 1 do
+                        local moved = enemies[j + 1]
+                        enemies[j] = moved
+                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
+                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
+                    end
+                    table.remove(enemies)
+                    BattleCombat.clearCardAnim(unit)
+                    BattleCombat.clearHitFlash(unit)
+                end
             end
         end
     end
@@ -2120,12 +2133,36 @@ function BattleScene.update(dt)
                     SpeechBubble.trigger(unit, "death")
 
                     unit.reviveTimer = 0       -- 标记已处理，防止重复调用
+                    unit._fallenPending = true -- [阵亡紧凑] 退场完成后移至队尾
                     unit.atkProgress = 0
                     TM.removeUnit(unit)
                     SEM.removeUnit(unit)
-                    -- 启动死亡动画：角色向下滑出（lungeDir=+1），超额伤害增加击退
+                    -- 启动死亡动画：角色向下滑出（lungeDir=+1），超额伤害增加击退；完成后直接隐藏
                     local okRatio = unit._overkillRatio or 0
-                    BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = 1, knockbackMult = 1.0 + okRatio * 2.0 })
+                    BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = 1,
+                        knockbackMult = 1.0 + okRatio * 2.0, noTombstone = true })
+                end
+            end
+        end
+    end
+
+    -- [阵亡紧凑] 阵亡英雄退场动画完成后移至队尾，存活英雄前移填位
+    -- （单位对象保留：下一关 resetAllyUnit 全员重置复活）
+    for i = #allies, 1, -1 do
+        local u = allies[i]
+        if u._fallenPending then
+            local st = BattleCombat.getAnimState(u)
+            if st == "gone" or st == nil then
+                u._fallenPending = nil
+                u._fallen = true
+                table.remove(allies, i)
+                table.insert(allies, u)
+                for j = i, #allies - 1 do
+                    local moved = allies[j]
+                    if moved.hp > 0 then
+                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
+                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
+                    end
                 end
             end
         end

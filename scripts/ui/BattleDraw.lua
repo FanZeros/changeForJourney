@@ -167,7 +167,8 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
         local isEntering = animState == "entering"
         local transAlpha = combat.getTransitionAlpha(unit)
 
-        if isGone then
+        if (isAllyGroup and unit._fallen) or isGone then
+            -- [阵亡紧凑] 已退场英雄不渲染（保留在队尾供复活/关卡重置）
             -- [死亡即补位] 空位期：完全隐藏，等待新怪从右补入
         elseif isDying then
             -- 死亡淡出：显示原卡牌向上/向下滑出

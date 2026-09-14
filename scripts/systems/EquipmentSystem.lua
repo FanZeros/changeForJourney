@@ -555,6 +555,29 @@ function EquipmentSystem.findPartySlot(deployed, heroId)
     return nil
 end
 
+--- [三队并行] 在全部队伍中查找英雄的出战槽位（槽位强化/神器按位置生效，队无关）
+--- 供详情面板等显示侧使用，与 getDeployedTeam 战斗侧语义保持一致
+---@param heroesData table|nil heroes 模块数据（含 deployed/teams）
+---@param heroId number
+---@return number|nil partySlot (1~5) 或 nil（未出战）
+function EquipmentSystem.findPartySlotInTeams(heroesData, heroId)
+    if not heroesData then return nil end
+    local teams = heroesData.teams
+    if type(teams) == "table" then
+        local numId = tonumber(heroId)
+        for t = 1, 3 do
+            local td = teams[t]
+            local slots = td and td.slots
+            if type(slots) == "table" then
+                for i, id in ipairs(slots) do
+                    if tonumber(id) == numId then return i end
+                end
+            end
+        end
+    end
+    return EquipmentSystem.findPartySlot(heroesData.deployed, heroId)
+end
+
 -- ======================== 属性计算 ========================
 
 --- 计算装备实例的属性修改器条目列表

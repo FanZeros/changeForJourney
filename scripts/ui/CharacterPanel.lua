@@ -116,14 +116,20 @@ local ownedSet = {}
 
 --- 将出战槽位等级与 ownedSet 对齐（共鸣同步后调用）
 local function syncTeamSlotsFromOwned()
-    for i = 1, MAX_SLOTS do
-        local slot = teamSlots[i]
-        if slot.state == "occupied" and slot.heroId then
-            local own = ownedSet[slot.heroId]
-            if own then
-                slot.level  = own.level
-                slot.exp    = own.exp
-                slot.maxExp = own.maxExp
+    -- [三队并行] 同步全部队伍的槽位快照（非激活队也要跟随等级/共鸣变化，否则编队槽显示过期等级）
+    for t = 1, TEAM_COUNT do
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, MAX_SLOTS do
+                local slot = slots[i]
+                if slot.state == "occupied" and slot.heroId then
+                    local own = ownedSet[slot.heroId]
+                    if own then
+                        slot.level  = own.level
+                        slot.exp    = own.exp
+                        slot.maxExp = own.maxExp
+                    end
+                end
             end
         end
     end
@@ -324,22 +330,31 @@ local function refreshPowerCache()
         HC.setDefaultLitNodes(litNodes)
     end
 
-    -- 统计上阵角色数（用于 RUNTIME_ONLY 天赋战力计算）
+    -- [三队并行] 刷新全部队伍的战力缓存（队2/3 挂机升级时 active 可能停在队1）
     local deployedCount = 0
-    for i = 1, MAX_SLOTS do
-        local slot = teamSlots[i]
-        if slot.state == "occupied" and slot.heroId then
-            slotPowerCache[i] = calcHeroPower(slot.heroId, i)
-            deployedCount = deployedCount + 1
-        else
-            slotPowerCache[i] = 0
+    for t = 1, TEAM_COUNT do
+        local slots = teams[t] and teams[t].slots
+        local cache = teamPowerCaches[t]
+        if slots and cache then
+            for i = 1, MAX_SLOTS do
+                local slot = slots[i]
+                if slot.state == "occupied" and slot.heroId then
+                    cache[i] = calcHeroPower(slot.heroId, i)
+                    if t == 1 then deployedCount = deployedCount + 1 end
+                else
+                    cache[i] = 0
+                end
+            end
         end
     end
 
-    -- 同步总战斗力到 GameState（触发事件，驱动 SpinePowerUpEffect 等）
+    -- 同步总战斗力到 GameState（语义保持=队1主线出战战力，驱动 SpinePowerUpEffect 等）
     local total = 0
-    for i = 1, MAX_SLOTS do
-        total = total + (slotPowerCache[i] or 0)
+    do
+        local mainCache = teamPowerCaches[1]
+        for i = 1, MAX_SLOTS do
+            total = total + (mainCache[i] or 0)
+        end
     end
 
     -- 加上 RUNTIME_ONLY 天赋节点的固定战力（每个节点 × 上阵角色数）

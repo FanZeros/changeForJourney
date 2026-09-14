@@ -108,7 +108,7 @@ local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqD
     local heroEq = getHeroEquipped(eqData, heroId)
     if heroEq and eqData and eqData.inventory then
         local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-        local partySlot = EquipmentSystem.findPartySlot(heroesData and heroesData.deployed, heroId)
+        local partySlot = EquipmentSystem.findPartySlotInTeams(heroesData, heroId)
 
         local appliedSeqs = {}
         for _, slotKey in ipairs(EquipmentConfig.SLOTS) do
@@ -133,7 +133,7 @@ local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqD
     local challenger = ClientDispatcher.get("challenger") or PlayerStore.Get("challenger")
     AvatarFrameBridge.applyToUnit(attrs, challenger and challenger.unlockedAvatarFrames or nil)
 
-    local partySlotForArtifact = EquipmentSystem.findPartySlot(heroesData and heroesData.deployed, heroId)
+    local partySlotForArtifact = EquipmentSystem.findPartySlotInTeams(heroesData, heroId)
     if partySlotForArtifact then
         ArtifactBridge.applyToUnit(attrs, partySlotForArtifact)
     end

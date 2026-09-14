@@ -2105,6 +2105,7 @@ H_AUTO_TAB = false
 H_AUTO_OPEN_PANEL = false
 H_ox, H_oy, H_s = 0, 0, 1
 H_lastPanel = 'center'
+H_lastTopBarPower = nil  -- [三队并行] TopBar 战力逐帧比对缓存
 
 local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW, logicalH)
@@ -2113,6 +2114,12 @@ local function HorizonUpdateTransform()
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]
+    -- [三队并行] TopBar 战力跟随当前编辑队伍（页签切换无回调，逐帧比对刷新）
+    local curPower = CharacterPanel.getTotalPower()
+    if curPower ~= H_lastTopBarPower then
+        H_lastTopBarPower = curPower
+        TopBar.setTotalPower(curPower)
+    end
 end
 
 --- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（基屏幕空间，绘制于侧栏之后、中面板之前）

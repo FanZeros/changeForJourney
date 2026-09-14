@@ -8,12 +8,7 @@ local DrawUtil      = require("core.DrawUtil")
 local PlayerStore   = require("client.data.PlayerStore")
 local BF            = require("systems.ButtonFeedback")
 local Protocol      = require("shared.Protocol")
-local GameEvents    = require("config.GameEvents")
-local DungeonConfig     = require("config.DungeonConfig")
 local DungeonIdleConfig = require("config.DungeonIdleConfig")
-local RewardPopup       = require("ui.RewardPopup")
-local PlayerInfoPanel   = require("ui.PlayerInfoPanel")
-local NumberUtil    = require("core.NumberUtil")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local DungeonPage = {}
@@ -113,6 +108,90 @@ local TEXT_SIZE_MD   = 40
 -- ======================== 副本数据 ========================
 
 -- 副本配置
+-- [local 余量优化] 副本详情面板设计常量归组（原为顶层散落 local）
+local DT = {
+    TITLE_FONT = 60,
+    TITLE_SW = 6,
+    TYPE_FONT = 40,
+    CONTENT_ROUND = 16,
+    FLOOR_BG_SIZE = 182,
+    FLOOR_FONT = 65,
+    FLOOR_SW = 5,
+    ARROW_SIZE = 48,
+    CURLVL_FONT = 36,
+    CURLVL_SW = 5,
+    REW_BG_ROUND = 16,
+    DAILY_FONT = 40,
+    DAILY_SW = 5,
+    SWEEP_FONT = 40,
+    FIGHT_FONT = 40,
+    CHEST_GAP = 24,
+    CHEST_CX = 540,
+    CHEST_SIZE = 140,
+    CHEST_HINT_FONT = 32,
+    CHEST_REWARD_FONT = 30,
+    BG_CX = 540,
+    BG_CY = 1195,
+    BG_W = 950,
+    BG_H = 1117,
+    BG_IT = 180,
+    BG_IR = 40,
+    BG_IB = 50,
+    BG_IL = 40,
+    TITLE_X = 540,
+    TITLE_Y = 705,
+    TITLE_SR = 0x59,
+    TITLE_SG = 0x32,
+    TITLE_SB = 0x19,
+    TYPE_X = 540,
+    TYPE_Y = 816,
+    TYPE_R = 0xB6,
+    TYPE_G = 0xB0,
+    TYPE_B = 0x9D,
+    CONTENT_CX = 540,
+    CONTENT_CY = 1019,
+    CONTENT_W = 800,
+    CONTENT_H = 325,
+    FLOOR_PREV_CX = 253,
+    FLOOR_PREV_CY = 1002,
+    FLOOR_CURR_CX = 540,
+    FLOOR_CURR_CY = 1002,
+    FLOOR_NEXT_CX = 828,
+    FLOOR_NEXT_CY = 1002,
+    ARROW1_CX = 395,
+    ARROW1_CY = 1003,
+    ARROW2_CX = 688,
+    ARROW2_CY = 1003,
+    CURLVL_X = 540,
+    CURLVL_Y = 1134,
+    REW_BG_CX = 540,
+    REW_BG_CY = 1328,
+    REW_BG_W = 800,
+    REW_BG_H = 220,
+    DAILY_X = 540,
+    DAILY_Y = 1530,
+    DAILY_R = 0x8D,
+    DAILY_G = 0xFF,
+    DAILY_B = 0x88,
+    SWEEP_CX = 330,
+    SWEEP_CY = 1633,
+    SWEEP_W = 390,
+    SWEEP_H = 100,
+    FIGHT_CX = 750,
+    FIGHT_CY = 1633,
+    FIGHT_W = 390,
+    FIGHT_H = 100,
+    BTN_NP_T = 15,
+    BTN_NP_R = 60,
+    BTN_NP_B = 15,
+    BTN_NP_L = 60,
+}
+DT.PANEL_BOTTOM = DT.BG_CY + DT.BG_H * 0.5
+DT.CHEST_CY = DT.PANEL_BOTTOM + DT.CHEST_GAP + 70
+DT.CHEST_HINT_Y = DT.CHEST_CY + 70 + 24
+DT.CHEST_REWARD_Y = DT.CHEST_HINT_Y + 42
+
+
 local dungeonList = {
     {
         id = "gold_mine",
@@ -154,12 +233,12 @@ local dungeonList = {
 ---@return number reward2 第二个奖励数值(首通奖励)
 local function getFloorRewards(dungeonId, floor)
     if dungeonId == "gold_mine" then
-        local floorData = DungeonConfig.getGoldMineFloor(floor)
+        local floorData = require("config.DungeonConfig").getGoldMineFloor(floor)
         if floorData then
             return floorData.sweepGold, floorData.firstGold
         end
     elseif dungeonId == "ancient_ruin" then
-        local floorData = DungeonConfig.getAncientRuinFloor(floor)
+        local floorData = require("config.DungeonConfig").getAncientRuinFloor(floor)
         if floorData then
             return floorData.sweepDust, floorData.firstRelicCount
         end
@@ -205,7 +284,7 @@ end
 ---@return boolean unlocked
 ---@return string|nil lockText 未解锁时的提示文字
 local function isDungeonUnlocked(dungeonId)
-    local unlockReq = DungeonConfig.UNLOCK_CONDITIONS[dungeonId]
+    local unlockReq = require("config.DungeonConfig").UNLOCK_CONDITIONS[dungeonId]
     if not unlockReq or unlockReq <= 0 then return true, nil end
     local battleData = PlayerStore.Get("battle")
     local maxStageId = battleData and tonumber(battleData.maxStageId) or 0
@@ -220,78 +299,30 @@ end
 -- ======================== 详情面板布局常量 ========================
 
 -- 背景框（九宫格）
-local DT_BG_CX, DT_BG_CY = 540, 1195
-local DT_BG_W, DT_BG_H   = 950, 1117
-local DT_BG_IT, DT_BG_IR, DT_BG_IB, DT_BG_IL = 180, 40, 50, 40
 
 -- 标题
-local DT_TITLE_X, DT_TITLE_Y = 540, 705
-local DT_TITLE_FONT = 60
-local DT_TITLE_SR, DT_TITLE_SG, DT_TITLE_SB = 0x59, 0x32, 0x19  -- 描边 #593219
-local DT_TITLE_SW = 6
 
 -- 副本类型文本
-local DT_TYPE_X, DT_TYPE_Y = 540, 816
-local DT_TYPE_FONT = 40
-local DT_TYPE_R, DT_TYPE_G, DT_TYPE_B = 0xB6, 0xB0, 0x9D  -- #b6b09d
 
 -- 上方内容背景
-local DT_CONTENT_CX, DT_CONTENT_CY = 540, 1019
-local DT_CONTENT_W, DT_CONTENT_H   = 800, 325
-local DT_CONTENT_ROUND = 16
 
 -- 层数显示
-local DT_FLOOR_PREV_CX, DT_FLOOR_PREV_CY = 253, 1002  -- 上一层
-local DT_FLOOR_CURR_CX, DT_FLOOR_CURR_CY = 540, 1002  -- 当前层
-local DT_FLOOR_NEXT_CX, DT_FLOOR_NEXT_CY = 828, 1002  -- 下一层
-local DT_FLOOR_BG_SIZE = 182
-local DT_FLOOR_FONT    = 65
-local DT_FLOOR_SW      = 5  -- 层数描边
 
 -- 过渡箭头
-local DT_ARROW1_CX, DT_ARROW1_CY = 395, 1003
-local DT_ARROW2_CX, DT_ARROW2_CY = 688, 1003
-local DT_ARROW_SIZE = 48
 
 -- "当前层数" 文本
-local DT_CURLVL_X, DT_CURLVL_Y = 540, 1134
-local DT_CURLVL_FONT = 36
-local DT_CURLVL_SW   = 5
 
 -- 奖励区域背景（下方）
-local DT_REW_BG_CX, DT_REW_BG_CY = 540, 1328
-local DT_REW_BG_W, DT_REW_BG_H   = 800, 220
-local DT_REW_BG_ROUND = 16
 
 -- 剩余次数文本
-local DT_DAILY_X, DT_DAILY_Y = 540, 1530
-local DT_DAILY_FONT = 40
-local DT_DAILY_R, DT_DAILY_G, DT_DAILY_B = 0x8D, 0xFF, 0x88  -- #8dff88
-local DT_DAILY_SW = 5
 
 -- 扫荡按钮
-local DT_SWEEP_CX, DT_SWEEP_CY = 330, 1633
-local DT_SWEEP_W, DT_SWEEP_H   = 390, 100
-local DT_SWEEP_FONT = 40
 
 -- 挑战按钮
-local DT_FIGHT_CX, DT_FIGHT_CY = 750, 1633
-local DT_FIGHT_W, DT_FIGHT_H   = 390, 100
-local DT_FIGHT_FONT = 40
 
 -- 按钮九宫格 insets（UI_AN_HUANG / UI_AN_LV 统一）
-local DT_BTN_NP_T, DT_BTN_NP_R, DT_BTN_NP_B, DT_BTN_NP_L = 15, 60, 15, 60
 
 -- 挂机宝箱（详情面板底边下方）
-local DT_PANEL_BOTTOM = DT_BG_CY + DT_BG_H * 0.5  -- 1753.5
-local DT_CHEST_GAP    = 24
-local DT_CHEST_CX     = 540
-local DT_CHEST_CY     = DT_PANEL_BOTTOM + DT_CHEST_GAP + 70  -- 底边 + 间距 + 半高
-local DT_CHEST_SIZE   = 140
-local DT_CHEST_HINT_Y = DT_CHEST_CY + 70 + 24  -- 宝箱下方
-local DT_CHEST_REWARD_Y = DT_CHEST_HINT_Y + 42
-local DT_CHEST_HINT_FONT = 32
-local DT_CHEST_REWARD_FONT = 30
 
 -- ======================== 状态 ========================
 
@@ -352,9 +383,9 @@ local function drawRoundedRect(vg, x, y, w, h, r, rr, gg, bb, aa)
     nvgFill(vg)
 end
 
---- 格式化数字（委托给 NumberUtil，支持 K/M/B/T）
+--- 格式化数字（委托给 require("core.NumberUtil")，支持 K/M/B/T）
 local function formatNumber(n)
-    return NumberUtil.format(n)
+    return require("core.NumberUtil").format(n)
 end
 
 --- 从 PlayerStore 获取货币数据
@@ -673,84 +704,84 @@ function DungeonPage.drawDetailPanel(vg)
 
     -- 2. 面板内容整体缩放（以面板中心为锚点）
     nvgSave(vg)
-    nvgTranslate(vg, DT_BG_CX, DT_BG_CY)
+    nvgTranslate(vg, DT.BG_CX, DT.BG_CY)
     nvgScale(vg, scale, scale)
-    nvgTranslate(vg, -DT_BG_CX, -DT_BG_CY)
+    nvgTranslate(vg, -DT.BG_CX, -DT.BG_CY)
 
     -- 3. 九宫格弹窗背景 UI_TY_EJQRK
-    local bgX = DT_BG_CX - DT_BG_W * 0.5
-    local bgY = DT_BG_CY - DT_BG_H * 0.5
-    DarkIcon.drawNine(vg, "panel", bgX, bgY, DT_BG_W, DT_BG_H, { titleH = DT_BG_IT })
+    local bgX = DT.BG_CX - DT.BG_W * 0.5
+    local bgY = DT.BG_CY - DT.BG_H * 0.5
+    DarkIcon.drawNine(vg, "panel", bgX, bgY, DT.BG_W, DT.BG_H, { titleH = DT.BG_IT })
 
     -- 3. 标题（白色 + #593219描边6）
-    DrawUtil.drawTextStroke(vg, DT_TITLE_X, DT_TITLE_Y, detailDungeon.name,
-        DT_TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, DT_TITLE_SW,
-        { strokeColor = { DT_TITLE_SR, DT_TITLE_SG, DT_TITLE_SB } })
+    DrawUtil.drawTextStroke(vg, DT.TITLE_X, DT.TITLE_Y, detailDungeon.name,
+        DT.TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 255, 255, DT.TITLE_SW,
+        { strokeColor = { DT.TITLE_SR, DT.TITLE_SG, DT.TITLE_SB } })
 
     -- 4. 副本类型文本（无描边）
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, DT_TYPE_FONT)
+    nvgFontSize(vg, DT.TYPE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(DT_TYPE_R, DT_TYPE_G, DT_TYPE_B, 255))
-    nvgText(vg, DT_TYPE_X, DT_TYPE_Y, "每日副本", nil)
+    nvgFillColor(vg, nvgRGBA(DT.TYPE_R, DT.TYPE_G, DT.TYPE_B, 255))
+    nvgText(vg, DT.TYPE_X, DT.TYPE_Y, "每日副本", nil)
 
     -- 5. 上方内容区域背景（圆角矩形，黑色5%透明度）
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
-        DT_CONTENT_CX - DT_CONTENT_W * 0.5,
-        DT_CONTENT_CY - DT_CONTENT_H * 0.5,
-        DT_CONTENT_W, DT_CONTENT_H, DT_CONTENT_ROUND)
+        DT.CONTENT_CX - DT.CONTENT_W * 0.5,
+        DT.CONTENT_CY - DT.CONTENT_H * 0.5,
+        DT.CONTENT_W, DT.CONTENT_H, DT.CONTENT_ROUND)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 13))  -- 5% of 255 ≈ 13
     nvgFill(vg)
 
     -- 6. 三个层数背景图
     -- 上一层 (ICON_LXBJ_1)
-    drawImageCentered(vg, imgFloorBg1, DT_FLOOR_PREV_CX, DT_FLOOR_PREV_CY,
-        DT_FLOOR_BG_SIZE, DT_FLOOR_BG_SIZE, 1.0)
+    drawImageCentered(vg, imgFloorBg1, DT.FLOOR_PREV_CX, DT.FLOOR_PREV_CY,
+        DT.FLOOR_BG_SIZE, DT.FLOOR_BG_SIZE, 1.0)
     -- 当前层 (ICON_LXBJ_2)
-    drawImageCentered(vg, imgFloorBg2, DT_FLOOR_CURR_CX, DT_FLOOR_CURR_CY,
-        DT_FLOOR_BG_SIZE, DT_FLOOR_BG_SIZE, 1.0)
+    drawImageCentered(vg, imgFloorBg2, DT.FLOOR_CURR_CX, DT.FLOOR_CURR_CY,
+        DT.FLOOR_BG_SIZE, DT.FLOOR_BG_SIZE, 1.0)
     -- 下一层 (ICON_LXBJ_3)
-    drawImageCentered(vg, imgFloorBg3, DT_FLOOR_NEXT_CX, DT_FLOOR_NEXT_CY,
-        DT_FLOOR_BG_SIZE, DT_FLOOR_BG_SIZE, 1.0)
+    drawImageCentered(vg, imgFloorBg3, DT.FLOOR_NEXT_CX, DT.FLOOR_NEXT_CY,
+        DT.FLOOR_BG_SIZE, DT.FLOOR_BG_SIZE, 1.0)
 
     -- 7. 层数数字（白色 + 黑色描边5）
     local prevFloor = currentFloor - 1  -- 第1层时显示0
     local nextFloor = currentFloor + 1
 
-    DrawUtil.drawTextStroke(vg, DT_FLOOR_PREV_CX, DT_FLOOR_PREV_CY, tostring(prevFloor),
-        DT_FLOOR_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, DT_FLOOR_SW)
+    DrawUtil.drawTextStroke(vg, DT.FLOOR_PREV_CX, DT.FLOOR_PREV_CY, tostring(prevFloor),
+        DT.FLOOR_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 255, 255, DT.FLOOR_SW)
 
-    DrawUtil.drawTextStroke(vg, DT_FLOOR_CURR_CX, DT_FLOOR_CURR_CY, tostring(currentFloor),
-        DT_FLOOR_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, DT_FLOOR_SW)
+    DrawUtil.drawTextStroke(vg, DT.FLOOR_CURR_CX, DT.FLOOR_CURR_CY, tostring(currentFloor),
+        DT.FLOOR_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 255, 255, DT.FLOOR_SW)
 
-    DrawUtil.drawTextStroke(vg, DT_FLOOR_NEXT_CX, DT_FLOOR_NEXT_CY, tostring(nextFloor),
-        DT_FLOOR_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, DT_FLOOR_SW)
+    DrawUtil.drawTextStroke(vg, DT.FLOOR_NEXT_CX, DT.FLOOR_NEXT_CY, tostring(nextFloor),
+        DT.FLOOR_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 255, 255, DT.FLOOR_SW)
 
     -- 8. 过渡箭头（两个，在层数图标之间）
-    drawImageCentered(vg, imgArrow, DT_ARROW1_CX, DT_ARROW1_CY,
-        DT_ARROW_SIZE, DT_ARROW_SIZE, 1.0)
-    drawImageCentered(vg, imgArrow, DT_ARROW2_CX, DT_ARROW2_CY,
-        DT_ARROW_SIZE, DT_ARROW_SIZE, 1.0)
+    drawImageCentered(vg, imgArrow, DT.ARROW1_CX, DT.ARROW1_CY,
+        DT.ARROW_SIZE, DT.ARROW_SIZE, 1.0)
+    drawImageCentered(vg, imgArrow, DT.ARROW2_CX, DT.ARROW2_CY,
+        DT.ARROW_SIZE, DT.ARROW_SIZE, 1.0)
 
     -- ==================== 下半部分 ====================
 
     -- 14. "当前层数" 文本（白色 + 黑色描边5）
     local curLvlText = "当前层数"
-    DrawUtil.drawTextStroke(vg, DT_CURLVL_X, DT_CURLVL_Y, curLvlText,
-        DT_CURLVL_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, DT_CURLVL_SW)
+    DrawUtil.drawTextStroke(vg, DT.CURLVL_X, DT.CURLVL_Y, curLvlText,
+        DT.CURLVL_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 255, 255, DT.CURLVL_SW)
 
     -- 15. 奖励区域背景（圆角矩形，黑色5%透明度）
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
-        DT_REW_BG_CX - DT_REW_BG_W * 0.5,
-        DT_REW_BG_CY - DT_REW_BG_H * 0.5,
-        DT_REW_BG_W, DT_REW_BG_H, DT_REW_BG_ROUND)
+        DT.REW_BG_CX - DT.REW_BG_W * 0.5,
+        DT.REW_BG_CY - DT.REW_BG_H * 0.5,
+        DT.REW_BG_W, DT.REW_BG_H, DT.REW_BG_ROUND)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 13))  -- 5% of 255 ≈ 13
     nvgFill(vg)
 
@@ -761,7 +792,7 @@ function DungeonPage.drawDetailPanel(vg)
         local REWARD_IN = REWARD_SZ - 24    -- 136 内缩
         local REWARD_GAP = 20
         local totalW = #rewards * REWARD_SZ + (#rewards - 1) * REWARD_GAP
-        local startX = DT_REW_BG_CX - totalW * 0.5 + REWARD_SZ * 0.5
+        local startX = DT.REW_BG_CX - totalW * 0.5 + REWARD_SZ * 0.5
 
         -- 动态获取当前层奖励数值
         local dtSweepGold, dtFirstGold = getFloorRewards(detailDungeon.id, currentFloor)
@@ -769,7 +800,7 @@ function DungeonPage.drawDetailPanel(vg)
 
         for i, reward in ipairs(rewards) do
             local cx = startX + (i - 1) * (REWARD_SZ + REWARD_GAP)
-            local cy = DT_REW_BG_CY
+            local cy = DT.REW_BG_CY
 
             -- 品质背景 [暗黑化 P2-A]
             DarkIcon.drawQualityBg(vg, reward.quality or 1, cx, cy, REWARD_SZ, REWARD_SZ, 1.0)
@@ -810,52 +841,52 @@ function DungeonPage.drawDetailPanel(vg)
     local dailyRemain = dailyMax - dailyUsed
     if dailyRemain < 0 then dailyRemain = 0 end
     local dailyText = "今日次数:" .. dailyRemain .. "/" .. dailyMax
-    local dtR, dtG, dtB = DT_DAILY_R, DT_DAILY_G, DT_DAILY_B
+    local dtR, dtG, dtB = DT.DAILY_R, DT.DAILY_G, DT.DAILY_B
     if dailyRemain <= 0 then
         dtR, dtG, dtB = 0xFF, 0x44, 0x44  -- 红色警告
     end
-    DrawUtil.drawTextStroke(vg, DT_DAILY_X, DT_DAILY_Y, dailyText,
-        DT_DAILY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        dtR, dtG, dtB, DT_DAILY_SW)
+    DrawUtil.drawTextStroke(vg, DT.DAILY_X, DT.DAILY_Y, dailyText,
+        DT.DAILY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        dtR, dtG, dtB, DT.DAILY_SW)
 
     -- 18. 扫荡按钮背景 UI_AN_HUANG（九宫格）
     local sweepDisabled = (currentFloor <= 1) or (dailyRemain <= 0)
-    local _bfSweep = BF.begin(vg, "dt_sweep_btn", DT_SWEEP_CX, DT_SWEEP_CY, DT_SWEEP_W, DT_SWEEP_H)
+    local _bfSweep = BF.begin(vg, "dt_sweep_btn", DT.SWEEP_CX, DT.SWEEP_CY, DT.SWEEP_W, DT.SWEEP_H)
     nvgGlobalAlpha(vg, sweepDisabled and 0.45 or 1.0)
-    DarkIcon.drawNine(vg, "btn", DT_SWEEP_CX - DT_SWEEP_W * 0.5, DT_SWEEP_CY - DT_SWEEP_H * 0.5, DT_SWEEP_W, DT_SWEEP_H, { accent = "gold" })
+    DarkIcon.drawNine(vg, "btn", DT.SWEEP_CX - DT.SWEEP_W * 0.5, DT.SWEEP_CY - DT.SWEEP_H * 0.5, DT.SWEEP_W, DT.SWEEP_H, { accent = "gold" })
     BF.finish(vg, _bfSweep)
 
     -- 19. 扫荡按钮文本 "扫荡上一层"
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, DT_SWEEP_FONT)
+    nvgFontSize(vg, DT.SWEEP_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, sweepDisabled and 100 or 191))
-    nvgText(vg, DT_SWEEP_CX, DT_SWEEP_CY, "扫荡上一层", nil)
+    nvgText(vg, DT.SWEEP_CX, DT.SWEEP_CY, "扫荡上一层", nil)
     nvgGlobalAlpha(vg, 1.0)  -- 恢复全局透明度
 
     -- 20. 挑战按钮背景 UI_AN_LV（九宫格）
-    local _bfFight = BF.begin(vg, "dt_fight_btn", DT_FIGHT_CX, DT_FIGHT_CY, DT_FIGHT_W, DT_FIGHT_H)
-    DarkIcon.drawNine(vg, "btn", DT_FIGHT_CX - DT_FIGHT_W * 0.5, DT_FIGHT_CY - DT_FIGHT_H * 0.5, DT_FIGHT_W, DT_FIGHT_H, { accent = "green" })
+    local _bfFight = BF.begin(vg, "dt_fight_btn", DT.FIGHT_CX, DT.FIGHT_CY, DT.FIGHT_W, DT.FIGHT_H)
+    DarkIcon.drawNine(vg, "btn", DT.FIGHT_CX - DT.FIGHT_W * 0.5, DT.FIGHT_CY - DT.FIGHT_H * 0.5, DT.FIGHT_W, DT.FIGHT_H, { accent = "green" })
     BF.finish(vg, _bfFight)
 
     -- 21. 挑战按钮文本 "挑战"
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, DT_FIGHT_FONT)
+    nvgFontSize(vg, DT.FIGHT_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))  -- 纯黑不透明度75%
-    nvgText(vg, DT_FIGHT_CX, DT_FIGHT_CY, "挑战", nil)
+    nvgText(vg, DT.FIGHT_CX, DT.FIGHT_CY, "挑战", nil)
 
     -- 22. 挂机宝箱（面板正下方）
     local idleAmount = 0
     if detailDungeon then
         idleAmount = select(1, getIdleClaimPreview(detailDungeon.id))
     end
-    local _bfChest = BF.begin(vg, "dt_idle_chest", DT_CHEST_CX, DT_CHEST_CY, DT_CHEST_SIZE, DT_CHEST_SIZE)
-    drawImageCentered(vg, imgChest, DT_CHEST_CX, DT_CHEST_CY, DT_CHEST_SIZE, DT_CHEST_SIZE, 1.0)
+    local _bfChest = BF.begin(vg, "dt_idle_chest", DT.CHEST_CX, DT.CHEST_CY, DT.CHEST_SIZE, DT.CHEST_SIZE)
+    drawImageCentered(vg, imgChest, DT.CHEST_CX, DT.CHEST_CY, DT.CHEST_SIZE, DT.CHEST_SIZE, 1.0)
     BF.finish(vg, _bfChest)
     if idleAmount > 0 and imgRedDot >= 0 then
-        local rdX = DT_CHEST_CX + DT_CHEST_SIZE * 0.5 - 18
-        local rdY = DT_CHEST_CY - DT_CHEST_SIZE * 0.5 + 18
+        local rdX = DT.CHEST_CX + DT.CHEST_SIZE * 0.5 - 18
+        local rdY = DT.CHEST_CY - DT.CHEST_SIZE * 0.5 + 18
         drawImageCentered(vg, imgRedDot, rdX, rdY, 44, 44, 1.0)
     end
 
@@ -870,11 +901,11 @@ function DungeonPage.drawDetailPanel(vg)
         else
             timeTxt = "挂机 " .. formatIdleDuration(accumSec) .. "/" .. maxHourText
         end
-        DrawUtil.drawTextStroke(vg, DT_CHEST_CX, DT_CHEST_HINT_Y, timeTxt,
-            DT_CHEST_HINT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        DrawUtil.drawTextStroke(vg, DT.CHEST_CX, DT.CHEST_HINT_Y, timeTxt,
+            DT.CHEST_HINT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             0xB6, 0xB0, 0x9D, 4)
-        DrawUtil.drawTextStroke(vg, DT_CHEST_CX, DT_CHEST_REWARD_Y, "已存奖励：" .. formatNumber(idleAmount),
-            DT_CHEST_REWARD_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        DrawUtil.drawTextStroke(vg, DT.CHEST_CX, DT.CHEST_REWARD_Y, "已存奖励：" .. formatNumber(idleAmount),
+            DT.CHEST_REWARD_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             0xFF, 0xEA, 0x00, 4)
     end
 
@@ -912,7 +943,7 @@ function DungeonPage.handleInput(dx, dy)
     -- 详情面板打开时，优先处理面板内交互
     if detailOpen then
         -- 挂机宝箱绘制在详情面板外侧，必须先于“点击背景外关闭面板”处理
-        if DrawUtil.hitTest(dx, dy, DT_CHEST_CX, DT_CHEST_CY, DT_CHEST_SIZE, DT_CHEST_SIZE) then
+        if DrawUtil.hitTest(dx, dy, DT.CHEST_CX, DT.CHEST_CY, DT.CHEST_SIZE, DT.CHEST_SIZE) then
             BF.trigger("dt_idle_chest")
             if pendingIdleClaim then
                 print("[DungeonPage] idle claim pending, skip")
@@ -936,14 +967,14 @@ function DungeonPage.handleInput(dx, dy)
         end
 
         -- 点击九宫格背景外区域 → 关闭面板
-        if not DrawUtil.hitTest(dx, dy, DT_BG_CX, DT_BG_CY, DT_BG_W, DT_BG_H) then
+        if not DrawUtil.hitTest(dx, dy, DT.BG_CX, DT.BG_CY, DT.BG_W, DT.BG_H) then
             detailOpen = false
             detailDungeon = nil
             return true
         end
 
         -- 扫荡按钮
-        if DrawUtil.hitTest(dx, dy, DT_SWEEP_CX, DT_SWEEP_CY, DT_SWEEP_W, DT_SWEEP_H) then
+        if DrawUtil.hitTest(dx, dy, DT.SWEEP_CX, DT.SWEEP_CY, DT.SWEEP_W, DT.SWEEP_H) then
             BF.trigger("dt_sweep_btn")
             if pendingSweep then
                 print("[DungeonPage] sweep request pending, skip")
@@ -971,7 +1002,7 @@ function DungeonPage.handleInput(dx, dy)
         end
 
         -- 挑战按钮
-        if DrawUtil.hitTest(dx, dy, DT_FIGHT_CX, DT_FIGHT_CY, DT_FIGHT_W, DT_FIGHT_H) then
+        if DrawUtil.hitTest(dx, dy, DT.FIGHT_CX, DT.FIGHT_CY, DT.FIGHT_W, DT.FIGHT_H) then
             BF.trigger("dt_fight_btn")
             if pendingChallenge then
                 print("[DungeonPage] challenge request pending, skip")
@@ -1064,7 +1095,7 @@ function DungeonPage.onActionResult(data)
                     rewards[#rewards + 1] = { type = "relic", relicType = r.type, quality = r.quality or 4 }
                 end
             end
-            RewardPopup.show("扫荡奖励", rewards)
+            require("ui.RewardPopup").show("扫荡奖励", rewards)
         else
             print("[DungeonPage] SWEEP FAIL: " .. tostring(data.reason))
         end
@@ -1078,7 +1109,7 @@ function DungeonPage.onActionResult(data)
         if data.success then
             -- 忽略迟到的旧区服响应，避免覆盖新区服的 idleAccumSec
             local respSid = tonumber(data.serverId)
-            local curSid = PlayerInfoPanel.getServerId()
+            local curSid = require("ui.PlayerInfoPanel").getServerId()
             if respSid and curSid and respSid ~= curSid then
                 print(string.format(
                     "[DungeonPage] IDLE CLAIM stale sid=%s cur=%s, ignore accum update",
@@ -1097,7 +1128,7 @@ function DungeonPage.onActionResult(data)
                 dungeonState[dId].idleAccumSec = data.accumSec
             end
             if amount > 0 then
-                RewardPopup.show("挂机奖励", {
+                require("ui.RewardPopup").show("挂机奖励", {
                     { type = rewardType, amount = amount },
                 })
             end
@@ -1181,7 +1212,7 @@ function DungeonPage.onActionResult(data)
             if (data.diamondReward or 0) > 0 then
                 rewards[#rewards + 1] = { type = "diamond", amount = data.diamondReward }
             end
-            RewardPopup.show("扫荡奖励", rewards)
+            require("ui.RewardPopup").show("扫荡奖励", rewards)
         else
             print("[DungeonPage] TOWER_SWEEP FAIL: " .. tostring(data.reason))
         end

@@ -218,6 +218,7 @@ return {
     { "image/UI_MXZGH_YW_0.png", 35472 },
     { "image/UI_AN_FH.png", 35653 },
     { "image/UI_TY_EJQRK.png", 35938 },
+    { "image/UI_ICON_XG.png", 36961 },
     { "image/UI_MRQD_1.png", 37386 },
     { "image/UI_MZQD_1.png", 38054 },
     { "image/UI_YWJM_DB.png", 39517 },

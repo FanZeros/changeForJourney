@@ -2600,26 +2600,50 @@ function HandleMouseWheelHorizon(eventType, eventData)
     -- [DarkTitleScreen] 标题期吞掉滚轮
     if DarkTitleScreen.isOpen() then return end
     local wheel = eventData["Wheel"]:GetInt()
+
+    -- [三行并行] 装备袋战斗区覆盖层优先（全屏级）
     if BattleTriPage.handleScroll(wheel) then return end
+
+    -- 全屏战斗场景
     if ArenaBattleScene.isOpen() then ArenaBattleScene.handleScroll(wheel) return end
     if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end
+    -- 全屏弹窗
     if LevelUpPopup.isOpen() then return end
-    if PlayerInfoPanel.isOpen() then PlayerInfoPanel.handleScroll(wheel) return end
     if OfflineRewardPanel.isOpen() then OfflineRewardPanel.handleScroll(wheel) return end
     if RewardPopup.isOpen() then RewardPopup.handleScroll(wheel) return end
     if LootBox.isPageOpen() then LootBox.handleScroll(wheel) return end
-    -- 滚轮无坐标：发给最近交互的面板职责页
-    local pid = H_lastPanel
+
+    -- [按鼠标位置路由] 滚轮作用于鼠标所在的面板（左右面板可同开二级页，
+    -- 不再依赖"最近点击面板"记录；滚到哪边就滚哪边的列表）
+    local pid = select(1, HorizonResolveMouse())
+
+    if pid == 'modal' then
+        PlayerInfoPanel.handleScroll(wheel)
+        return
+    end
+
     if pid == 'left' then
         if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel) return end
         if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel) return end
         if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end
         if ArenaPage.isOpen() then ArenaPage.handleScroll(wheel) return end
-    elseif pid == 'right' then
+        if MarketPage.isOpen() then MarketPage.handleScroll(wheel) return end
+        return
+    end
+
+    if pid == 'right' then
         CharacterPanel.handleScroll(wheel)
         return
-    else
-        if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleScroll(wheel) return end
+    end
+
+    if pid == 'tri' then return end  -- 三行战斗区无滚动内容（选关/扫荡为翻页按钮）
+
+    -- center：主视图 Tab 页
+    local tab = BottomNav.getSelectedIndex()
+    if tab == 1 then
+        CharacterPanel.handleScroll(wheel)
+    elseif tab == 2 then
+        DiaryPage.handleScroll(wheel)
     end
 end
 

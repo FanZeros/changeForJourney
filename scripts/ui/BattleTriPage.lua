@@ -250,7 +250,15 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local stageText
         if row == 1 then
-            stageText = string.format("【小队1】%s", stageDisplayName(BattleScene.getStageId()))
+            -- [进度显示] 首通模式：击杀怪/总怪 百分比；挂机模式不显示
+            local killed, total = BattleScene.getStageKillProgress()
+            if killed then
+                local pct = math.floor(killed / total * 100 + 0.5)
+                stageText = string.format("【小队1】%s · %d%%",
+                    stageDisplayName(BattleScene.getStageId()), pct)
+            else
+                stageText = string.format("【小队1】%s", stageDisplayName(BattleScene.getStageId()))
+            end
         elseif drivers[row] then
             stageText = string.format("【小队%d】%s · 击杀%d", row,
                 stageDisplayName(drivers[row].stageId), drivers[row].kills)

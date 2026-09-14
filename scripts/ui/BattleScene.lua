@@ -59,9 +59,9 @@ local ALLY_SHADOW_W, ALLY_SHADOW_H   = 1080, 556
 -- 敌方卡片组 基准坐标（单卡时的 X=540）
 local ENEMY_CARD_CY      = 804
 local ENEMY_TAG_OFFSET_Y  = -215
-local ENEMY_NAME_OFFSET_Y = 90
-local ENEMY_HP_BG_OFFSET_Y = 153
-local ENEMY_HP_VAL_OFFSET_Y = 135
+local ENEMY_NAME_OFFSET_Y = 102
+local ENEMY_HP_BG_OFFSET_Y = 165
+local ENEMY_HP_VAL_OFFSET_Y = 147
 local ENEMY_ATK_BG_OFFSET_Y = 181
 local ENEMY_LVL_OFFSET_Y = 215
 
@@ -219,6 +219,10 @@ local isFirstClear = true
 -- 初始=第一关已解锁（新档可立即挑战/挂机/选关）；此前初始 0 会导致：
 -- 选关列表 fallback 只显示 1-1、扫荡弹窗无法识别关卡（当前关进度脱节）
 local maxStageId_ = SC.NORMAL_FIRST_STAGE or 101
+
+-- 当关击杀进度（死亡怪/总怪，首通模式用于行内进度显示）
+local stageEnemyTotal_ = 0
+local stageKillCount_ = 0
 
 -- 是否已收到首次服务端 battle 数据（首次加载需无条件恢复关卡）
 local initialBattleDataLoaded = false
@@ -1250,6 +1254,8 @@ local function loadStage(stageId, skipBattleStart)
     -- 前 maxField 个上场，其余入队列
     -- 特殊怪物（_isBonusMonster）占用 maxField 名额（避免超出屏幕），替换末位普通怪物
     enemies, enemyQueue = assignEnemiesToField(allEnemies, maxField)
+    stageEnemyTotal_ = #allEnemies
+    stageKillCount_ = 0
 
     -- ---- 地图词缀：仅首通模式生效，挂机模式不应用 ----
     if isFirstClear then
@@ -2046,6 +2052,7 @@ function BattleScene.update(dt)
                     SpeechBubble.trigger(unit._killedBy, "kill")
                 end
 
+                stageKillCount_ = stageKillCount_ + 1
                 -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空不再显示墓碑（完全隐藏空位）
                 local okRatio = unit._overkillRatio or 0
                 BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1,
@@ -2557,6 +2564,16 @@ end
 ---@return number
 function BattleScene.getMaxStageId()
     return maxStageId_
+end
+
+--- 当关击杀进度（死亡怪/总怪）；挂机模式返回 nil（进度无意义）
+---@return number|nil killed
+---@return number total
+function BattleScene.getStageKillProgress()
+    if not isFirstClear then return nil end
+    if stageEnemyTotal_ <= 0 then return nil end
+    if stageKillCount_ > stageEnemyTotal_ then stageKillCount_ = stageEnemyTotal_ end
+    return stageKillCount_, stageEnemyTotal_
 end
 
 --- [Standalone 状态同步] 本地已通关表（key 可能为 number，写入状态前需 tostring）

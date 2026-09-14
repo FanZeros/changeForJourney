@@ -13,6 +13,7 @@ local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
 local SC  = require("config.StageConfig")
 local MC  = require("config.MonsterConfig")
+local BattleLayout = require("core.BattleLayout") -- [队列前移补位] 敌方卡槽间距
 local GameConfig = require("config.GameConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
 
@@ -230,7 +231,9 @@ local clearedStages = {}
 local isFirstClear = true
 
 -- 玩家累计抵达过的最远关卡 ID（服务端 maxStageId，用于判断前进提示动画）
-local maxStageId_ = 0
+-- 初始=第一关已解锁（新档可立即挑战/挂机/选关）；此前初始 0 会导致：
+-- 选关列表 fallback 只显示 1-1、扫荡弹窗无法识别关卡（当前关进度脱节）
+local maxStageId_ = SC.NORMAL_FIRST_STAGE or 101
 
 -- 是否已收到首次服务端 battle 数据（首次加载需无条件恢复关卡）
 local initialBattleDataLoaded = false
@@ -1212,6 +1215,13 @@ local function loadStage(stageId, skipBattleStart)
 
     currentStageId = stageId
     stageName = entry.name
+    -- 解锁进度兜底：能被加载的关卡必然已解锁。此前手动"前进"按钮在未通关时
+    -- 直接 loadStage(nextId) 不推进 maxStageId_，导致当前关进度与解锁进度脱节
+    -- （选关列表只显示到旧进度、扫荡弹窗识别不了当前关卡）
+    if stageId > maxStageId_ then
+        maxStageId_ = stageId
+        recalcIdleIncome()
+    end
     isFirstClear = not clearedStages[stageId]
     idleRangeText_ = nil  -- 关卡变化时重新计算挂机范围文本
 
@@ -2051,10 +2061,10 @@ function BattleScene.update(dt)
                     SpeechBubble.trigger(unit._killedBy, "kill")
                 end
 
-                -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空走原竖直墓碑流程
+                -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空不再显示墓碑（完全隐藏空位）
                 local okRatio = unit._overkillRatio or 0
                 BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1,
-                    knockbackMult = 1.0 + okRatio * 2.0, noTombstone = (#enemyQueue > 0) })
+                    knockbackMult = 1.0 + okRatio * 2.0, noTombstone = true })
             end
 
             unit.reviveTimer = unit.reviveTimer + logicDt
@@ -2062,16 +2072,24 @@ function BattleScene.update(dt)
             if #enemyQueue > 0 then
                 -- [死亡即补位 v2] 退场(向右滑出0.4s) → 1s 空位 → 新怪从右滑入补位
                 if unit.reviveTimer >= RESPAWN_DELAY then
+                    -- [队列前移补位] 死亡槽位 i 由后方敌人依次前移一格填入，
+                    -- 新怪从怪物池进入队尾淡入补齐（保持敌我阵列紧凑）
+                    for j = i, #enemies - 1 do
+                        local moved = enemies[j + 1]
+                        enemies[j] = moved
+                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
+                            advanceDist = BattleLayout.STRIP_PITCH })
+                    end
                     local newUnit = table.remove(enemyQueue, 1)
                     Diag.installSentinel(newUnit)
                     TAL.initUnit(newUnit)
                     TAL.checkMarkTarget(allies, enemies)
                     newUnit.atkProgress = 0
-                    enemies[i] = newUnit
+                    enemies[#enemies] = newUnit
                     -- 清理旧单位残留的动画状态
                     BattleCombat.clearCardAnim(unit)
                     BattleCombat.clearHitFlash(unit)
-                    -- 新怪从右侧滑入入场
+                    -- 新怪从右侧滑入淡入补位（队尾）
                     BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
                 end
             else
@@ -3113,7 +3131,7 @@ function BattleScene.resetToDefault()
     bgAnimTimer = 0
     bgTransAnim = nil
     currentChapter = 0
-    maxStageId_ = 0
+    maxStageId_ = SC.NORMAL_FIRST_STAGE or 101
     enemies = {}
     enemyQueue = {}
     SEM.reset()

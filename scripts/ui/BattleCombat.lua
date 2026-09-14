@@ -82,6 +82,9 @@ local REVIVE_ANIM_DURATION = 0.35
 local REVIVE_ANIM_DISTANCE = 80
 local TOMBSTONE_FADEIN     = 0.25
 
+-- 队列前移补位（条带布局：敌人死亡后，后方敌人前移一格填入空位）
+local ADVANCE_DURATION     = 0.28
+
 -- 入场动画
 local ENTER_ANIM_DURATION  = 0.30
 local ENTER_ANIM_DISTANCE  = 100
@@ -1862,6 +1865,10 @@ function BattleCombat.updateCardAnims(dt)
             if anim.timer >= REVIVE_ANIM_DURATION then
                 toRemove[#toRemove + 1] = unit
             end
+        elseif anim.state == "advance" then
+            if anim.timer >= ADVANCE_DURATION then
+                toRemove[#toRemove + 1] = unit
+            end
         end
         ::continue::
     end
@@ -1923,6 +1930,14 @@ function BattleCombat.getCardAnimOffsetY(unit)
         local t = math.min(1, anim.timer / ENTER_ANIM_DURATION)
         t = 1 - (1 - t) * (1 - t)  -- ease-out
         return anim.lungeDir * ENTER_ANIM_DISTANCE * (1 - t)
+    elseif anim.state == "advance" then
+        -- [队列前移] 从旧槽位（右移一格处）平滑滑向新槽位；仅条带布局生效（classic 下不位移）
+        if BattleLayout.MODE ~= "strip" then return 0 end
+        local dist = anim.advanceDist or 0
+        if dist <= 0 then return 0 end
+        local t = math.min(1, anim.timer / ADVANCE_DURATION)
+        t = 1 - (1 - t) * (1 - t)  -- ease-out
+        return anim.lungeDir * dist * (1 - t)
     end
     return 0
 end

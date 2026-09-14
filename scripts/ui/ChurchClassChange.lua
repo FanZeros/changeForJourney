@@ -133,12 +133,12 @@ local CLASS_COLORS = {
 
 --- classId → 基础职业中文名
 local CLASS_DISPLAY_NAMES = {
-    [CC.KNIGHT]   = "骑士",
-    [CC.WARRIOR]  = "战士",
-    [CC.MAGE]     = "法师",
-    [CC.RANGER]   = "射手",
-    [CC.ASSASSIN] = "刺客",
-    [CC.PRIEST]   = "牧师",
+    [CC.KNIGHT]   = "守誓者",
+    [CC.WARRIOR]  = "破阵者",
+    [CC.MAGE]     = "咒术师",
+    [CC.RANGER]   = "夜猎者",
+    [CC.ASSASSIN] = "无痕者",
+    [CC.PRIEST]   = "提灯者",
 }
 
 --- classId → 一转分支 { { id, name }, { id, name } }

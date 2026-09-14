@@ -108,7 +108,7 @@ local LOWER_BG_CX, LOWER_BG_W, LOWER_BG_H = 540, 1080, 1670
 local LOWER_BG_CY = DESIGN_H - LOWER_BG_H * 0.5  -- 2400 - 835 = 1565
 
 -- 8. 返回按钮（与角色详情界面完全一致）
-local BTN_BACK_CX, BTN_BACK_CY = 122, 2308
+local BTN_BACK_CX, BTN_BACK_CY = 958, 1150
 local BTN_BACK_W, BTN_BACK_H   = 184, 143
 
 -- 9. 页面选项滑块背景（与角色界面完全一致）
@@ -1557,7 +1557,7 @@ function BlacksmithPage.draw(vg)
         end
     end
 
-    local upperOY = -UPPER_SLIDE_DIST * (1 - progress)
+    local upperOX = -UPPER_SLIDE_DIST * (1 - progress)  -- [横向] 从左侧滑入/滑出
     local lowerOY =  LOWER_SLIDE_DIST * (1 - lowerProgress)
     local overlayAlpha = math.floor(180 * progress)
 
@@ -1569,7 +1569,7 @@ function BlacksmithPage.draw(vg)
 
     -- ================== 上半部分（从上方滑入） ==================
     nvgSave(vg)
-    nvgTranslate(vg, 0, upperOY)
+    nvgTranslate(vg, upperOX, 0)
 
     -- 1. 铁匠铺背景图（裁剪到设计宽度）
     nvgSave(vg)

@@ -66,7 +66,7 @@ local CHAR_SLOT = {
 
 -- 3. 返回按钮
 local BTN_BACK = {
-    CX = 122, CY = 2308, W = 184, H = 143,
+    CX = 958, CY = 1150, W = 184, H = 143,
 }
 
 -- 4. Tab 栏 + 滑块（三 Tab，布局参考铁匠铺）
@@ -1287,7 +1287,7 @@ function ChurchPage.draw(vg)
     end
 
     local upperDist = state.closing and ANIM.UPPER_SLIDE_OUT or ANIM.UPPER_SLIDE_IN
-    local upperOY = -upperDist * (1 - progress)
+    local upperOX = -upperDist * (1 - progress)  -- [横向] 从左侧滑入/滑出
     local lowerOY =  ANIM.LOWER_SLIDE_DIST * (1 - lowerProgress)
     local overlayAlpha = math.floor(180 * progress)
 
@@ -1337,7 +1337,7 @@ function ChurchPage.draw(vg)
 
     -- ================== 上半部分（从上方滑入） ==================
     nvgSave(vg)
-    nvgTranslate(vg, 0, upperOY + upperTabOY)
+    nvgTranslate(vg, upperOX, upperTabOY)
 
     local isArtifactTab = (state.tab == "shenqi")
 
@@ -1673,9 +1673,9 @@ function ChurchPage.draw(vg)
 
     nvgRestore(vg)  -- 结束下半部分偏移
 
-    -- === 教堂名称（在 Tab 内容之上重绘，跟随 upperOY，确保不被星图覆盖） ===
+    -- === 教堂名称（在 Tab 内容之上重绘，跟随 upperOX，确保不被星图覆盖） ===
     nvgSave(vg)
-    nvgTranslate(vg, 0, upperOY)
+    nvgTranslate(vg, upperOX, 0)
     drawImageCentered(vg, img.nameBg, CHURCH.NAME_BG_CX, CHURCH.NAME_BG_CY, CHURCH.NAME_BG_W, CHURCH.NAME_BG_H, 1.0)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CHURCH.NAME_FONT_SIZE)

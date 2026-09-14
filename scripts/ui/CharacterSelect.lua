@@ -18,7 +18,7 @@ local CHARACTERS = {
     {
         id       = 1,
         heroId   = 3,       -- 对应 HeroConfig: 叮咚鸡（射手/Ranger）
-        class    = "射手",
+        class    = "夜猎者",
         title    = "疾风之箭",
         intro    = "擅长远程射击的射手",
         icon     = "image/ICON_ZY_4.png",
@@ -29,7 +29,7 @@ local CHARACTERS = {
     {
         id       = 2,
         heroId   = 1,       -- 对应 HeroConfig: 大狗嚼（战士/Warrior）
-        class    = "战士",
+        class    = "破阵者",
         title    = "汪卫先锋",
         intro    = "擅长快速打击的战士",
         icon     = "image/ICON_ZY_2.png",
@@ -40,7 +40,7 @@ local CHARACTERS = {
     {
         id       = 3,
         heroId   = 2,       -- 对应 HeroConfig: 黄桃龙（法师/Mage）
-        class    = "法师",
+        class    = "咒术师",
         title    = "炽焰之心",
         intro    = "擅长火焰魔法的法师",
         icon     = "image/ICON_ZY_3.png",

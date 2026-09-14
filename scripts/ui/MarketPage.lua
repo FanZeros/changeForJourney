@@ -75,7 +75,7 @@ P1.BG_CY = P1.BG_H * 0.5
 
 -- Tab 系统
 local TAB = {
-    BACK_CX = 122, BACK_CY = 2308, BACK_W = 184, BACK_H = 143,
+    BACK_CX = 958, BACK_CY = 1150, BACK_W = 184, BACK_H = 143,
     BG_CX = 639, BG_CY = 2308, BG_W = 810, BG_H = 143,
     SLIDER_W = 277, SLIDER_H = 143,
     SI_T = 10, SI_R = 70, SI_B = 10, SI_L = 70,
@@ -1781,7 +1781,7 @@ function MarketPage.draw(vg)
         lowerProgress = progress
     end
 
-    local upperOY = -UPPER_DIST * (1 - progress)
+    local upperOX = -UPPER_DIST * (1 - progress)  -- [横向] 从左侧滑入/滑出
     local lowerOY =  LOWER_DIST * (1 - lowerProgress)
     local overlayAlpha = math.floor(180 * progress)
 
@@ -1801,7 +1801,7 @@ function MarketPage.draw(vg)
 
     -- ========== 上半部分（从上方滑入） ==========
     nvgSave(vg)
-    nvgTranslate(vg, 0, upperOY)
+    nvgTranslate(vg, upperOX, 0)
 
     -- 状态初始化（绘制分离，仅在实际切换到特权tab 时执行一次）
     if state.tab == "privilege" and state.privRefreshSyncTime == 0 then

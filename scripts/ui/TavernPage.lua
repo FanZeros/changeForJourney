@@ -57,7 +57,7 @@ local NAME_TEXT_CX, NAME_TEXT_CY = 148, 130
 local NAME_FONT_SIZE              = 50
 
 -- 4. 返回按钮（与教堂完全一致）
-local BTN_BACK_CX, BTN_BACK_CY = 122, 2308
+local BTN_BACK_CX, BTN_BACK_CY = 958, 1150
 local BTN_BACK_W, BTN_BACK_H   = 184, 143
 
 -- 5. 招募池子分类图（尺寸共用；坐标见 pools 表）
@@ -810,10 +810,10 @@ function TavernPage.draw(vg)
     end
 
     -- 整体从上方滑入
-    local upperOY = (1 - progress) * (-DESIGN_H)
+    local upperOX = (1 - progress) * (-DESIGN_W)  -- [横向] 从左侧滑入/滑出
 
     nvgSave(vg)
-    nvgTranslate(vg, 0, upperOY)
+    nvgTranslate(vg, upperOX, 0)
 
     -- ============ 1. 酒馆背景图（随卡池切换） ============
     nvgSave(vg)

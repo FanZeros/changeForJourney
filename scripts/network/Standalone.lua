@@ -47,6 +47,7 @@ local StartScreen       = require("ui.StartScreen")
 local DarkTitleScreen   = require("ui.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
 local BattleTriPage     = require("ui.BattleTriPage")    -- [三行并行] 三行战斗区
 local SweepDialog       = require("ui.SweepDialog")          -- [三行并行] 全窗模态弹窗
+local PlayerStore       = require("client.data.PlayerStore") -- [单机] 数据缓存（扫荡/选关弹窗读取 battle 模块）
 local DamageStatsPanel  = require("ui.DamageStatsPanel")     -- [三行并行] 全窗模态弹窗
 local StageSelectDialog = require("ui.StageSelectDialog")    -- [三行并行] 全窗模态弹窗
 local BattleLayout      = require("core.BattleLayout")   -- [三行并行] 布阵模式切换
@@ -170,6 +171,11 @@ end
 -- ============================================================================
 
 function Standalone.Start()
+    -- 0. PlayerStore 初始化：单机模式下此前从未调用（仅多人 Client.lua 调），
+    --    导致 SyncBattleState 写入的 battle 模块不会落到 PlayerStore 缓存，
+    --    扫荡/选关弹窗读 PlayerStore.Get("battle") 恒为 nil → "未知关卡"
+    PlayerStore.Init()
+
     -- 1. Minimal scene (renderer needs a viewport)
     local scene = Scene()
     sceneRef_ = scene  -- 保存引用
@@ -413,7 +419,6 @@ function Standalone.Start()
     ArenaPage.init(vg)
     ArenaBattleScene.init(vg)
     DungeonBattleScene.init(vg)
-    TopBar.setTrainingDummyVisible(true)
     TownScene.setOnArenaClick(function()
         ArenaPage.open()
     end)
@@ -1394,34 +1399,6 @@ local pressValid = false  -- 是否有有效的按下记录
 local MIN_TAP_INTERVAL = 0.12  -- 秒（120ms）
 local lastTapTime = 0
 
-local function openTrainingDummyBattle()
-    local allies = CharacterPanel.getDeployedTeam()
-    if not allies or #allies == 0 then
-        print("[TrainingDummy][Standalone] no deployed heroes, cannot open")
-        return
-    end
-    print("[TrainingDummy][Standalone] opening battle with allies=" .. tostring(#allies))
-    DungeonBattleScene.open({
-        allies = allies,
-        data = {
-            dungeonId = "training_dummy",
-            floor = 1,
-            monsterLevel = 1,
-            monsters = { 1 },
-            classBonus = "",
-            classBonusValue = 0,
-            rageTime = 999999,
-            superRageTime = 999999,
-            trainingDummy = true,
-            dummyMaxHp = 1000000000000,
-            dummyRegen = 1000000000000,
-        },
-        onClose = function()
-            print("[TrainingDummy][Standalone] closed")
-        end,
-    })
-end
-
 function HandleMouseButtonDown(eventType, eventData)
     if HORIZON_MODE then return HandleMouseButtonDownHorizon(eventType, eventData) end
     local button = eventData["Button"]:GetInt()
@@ -1677,13 +1654,7 @@ function HandleMouseButtonUp(eventType, eventData)
         tostring(ArenaBattleScene.isOpen()), tostring(diaryOverlay)))
     if not detailOpen and not smithOpen and not ChurchPage.isOpen() and not tavernOpen and not arenaOpen
         and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() and not diaryOverlay then
-        if TopBar.hitTestTrainingDummy(dx, dy) then
-            openTrainingDummyBattle()
-            return
-        end
-        local hit = DrawUtil.hitTest(dx, dy, 98, 136, 150, 150)
-        print(string.format("[Standalone] hitTest(%.0f,%.0f, 98,136, 150,150) = %s", dx, dy, tostring(hit)))
-        if hit then
+        if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
         end
@@ -1974,13 +1945,7 @@ function HandleTouchEnd(eventType, eventData)
             tostring(ArenaBattleScene.isOpen()), tostring(diaryOverlay2)))
         if not detailOpen2 and not smithOpen2 and not ChurchPage.isOpen() and not tavernOpen2 and not arenaOpen2
             and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() and not diaryOverlay2 then
-            if TopBar.hitTestTrainingDummy(dx, dy) then
-                openTrainingDummyBattle()
-                return
-            end
-            local hit = DrawUtil.hitTest(dx, dy, 98, 136, 150, 150)
-            print(string.format("[Standalone][Touch] hitTest(%.0f,%.0f, 98,136, 150,150) = %s", dx, dy, tostring(hit)))
-            if hit then
+            if TopBar.hitTestAvatar(dx, dy, 0) then
                 PlayerInfoPanel.open()
                 return
             end
@@ -2099,6 +2064,7 @@ H_AUTO_TAB = false
 H_AUTO_OPEN_PANEL = false
 H_ox, H_oy, H_s = 0, 0, 1
 H_lastPanel = 'center'
+H_lastTopBarPower = nil  -- [三队并行] TopBar 战力逐帧比对缓存
 
 local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW, logicalH)
@@ -2107,6 +2073,12 @@ local function HorizonUpdateTransform()
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]
+    -- [三队并行] TopBar 战力跟随当前编辑队伍（页签切换无回调，逐帧比对刷新）
+    local curPower = CharacterPanel.getTotalPower()
+    if curPower ~= H_lastTopBarPower then
+        H_lastTopBarPower = curPower
+        TopBar.setTotalPower(curPower)
+    end
 end
 
 --- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（基屏幕空间，绘制于侧栏之后、中面板之前）
@@ -2259,9 +2231,10 @@ function HandleNanoVGRenderHorizon()
         ArenaPage.draw(vg)
         MarketPage.draw(vg)
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
+        -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
         if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
             or ArenaPage.isOpen() or MarketPage.isOpen()) then
-            TopBar.draw(vg)
+            TopBar.draw(vg, -30)
         end
         Viewport.finish(vg)
         Viewport.begin(vg, Viewport.PANELS.right, oxR, 0, ps)
@@ -2269,6 +2242,22 @@ function HandleNanoVGRenderHorizon()
         Viewport.finish(vg)
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
         BattleTriPage.draw(vg, logicalW, logicalH)
+        -- [LetterIntro] 新档开场链（信/过场/情景1）：全窗口设计空间覆盖三行战斗
+        if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then
+            local ss = math.min(logicalW / 1080, logicalH / 2400)
+            nvgSave(vg)
+            nvgScissor(vg, 0, 0, logicalW, logicalH)
+            nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
+            nvgScale(vg, ss, ss)
+            if LetterIntro.isOpen() then
+                LetterIntro.draw(vg)
+            elseif IntroCutscene.isActive() then
+                IntroCutscene.draw(vg)
+            elseif ScenarioDialogue.isActive() then
+                ScenarioDialogue.draw()
+            end
+            nvgRestore(vg)
+        end
         -- [DWP] 下载进行中: 全屏进度遮罩独占显示（完成后露出标题屏可点击进入）
         if preload_.active then
             DrawPreloadOverlay(vg, logicalW, logicalH)
@@ -2294,6 +2283,14 @@ function HandleNanoVGRenderHorizon()
     LevelUpPopup.draw(vg)
     if SamsaraCG.isActive() then SamsaraCG.draw(vg) end
     if IntroCutscene.isActive() then IntroCutscene.draw(vg) end
+    -- [LetterIntro] 情景对话（large 全屏覆盖 / small 叠加弹窗）
+    if ScenarioDialogue.isActive() then
+        ScenarioDialogue.draw()
+    end
+    -- [LetterIntro] 先祖来信（最高优先级，覆盖一切）
+    if LetterIntro.isOpen() then
+        LetterIntro.draw(vg)
+    end
     Viewport.finish(vg)
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
@@ -2450,6 +2447,18 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if now - lastTapTime < MIN_TAP_INTERVAL then isTap = false
         else lastTapTime = now end
     end
+    -- [LetterIntro] 开场链输入：信件翻段 / 过场吞输入 / 情景对话推进
+    if LetterIntro.isOpen() then
+        if isTap then LetterIntro.handleTap() end
+        return
+    end
+    if IntroCutscene.isActive() then
+        return
+    end
+    if ScenarioDialogue.isActive() then
+        if isTap then ScenarioDialogue.advance() end
+        return
+    end
     if pid == 'none' then return end
     if pid == 'tri' then
         BattleTriPage.handleDragEnd(dx, dy)
@@ -2495,11 +2504,11 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     -- 左面板：功能页组点击链
     if pid == 'left' then
-        -- [三行并行] TopBar（测试木桩入口）优先命中：仅城镇主视图（无二级页）时
+        -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
         if isTap and not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
             or ArenaPage.isOpen() or MarketPage.isOpen()) then
-            if TopBar.hitTestTrainingDummy(dx, dy) then
-                openTrainingDummyBattle()
+            if TopBar.hitTestAvatar(dx, dy, -30) then
+                PlayerInfoPanel.open()
                 return
             end
         end
@@ -2565,14 +2574,9 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     if not isTap then return end
     -- 横屏模式无调试面板（DebugPanel 仅竖屏 screen-space）
-    if TopBar.hitTestTrainingDummy(dx, dy) then
-        openTrainingDummyBattle()
-        return
-    end
     local detailOpen = CharacterPanel.isDetailOpen()
     if not detailOpen then
-        local hit = DrawUtil.hitTest(dx, dy, 98, 136, 150, 150)
-        if hit then
+        if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
         end
@@ -2596,26 +2600,50 @@ function HandleMouseWheelHorizon(eventType, eventData)
     -- [DarkTitleScreen] 标题期吞掉滚轮
     if DarkTitleScreen.isOpen() then return end
     local wheel = eventData["Wheel"]:GetInt()
+
+    -- [三行并行] 装备袋战斗区覆盖层优先（全屏级）
     if BattleTriPage.handleScroll(wheel) then return end
+
+    -- 全屏战斗场景
     if ArenaBattleScene.isOpen() then ArenaBattleScene.handleScroll(wheel) return end
     if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end
+    -- 全屏弹窗
     if LevelUpPopup.isOpen() then return end
-    if PlayerInfoPanel.isOpen() then PlayerInfoPanel.handleScroll(wheel) return end
     if OfflineRewardPanel.isOpen() then OfflineRewardPanel.handleScroll(wheel) return end
     if RewardPopup.isOpen() then RewardPopup.handleScroll(wheel) return end
     if LootBox.isPageOpen() then LootBox.handleScroll(wheel) return end
-    -- 滚轮无坐标：发给最近交互的面板职责页
-    local pid = H_lastPanel
+
+    -- [按鼠标位置路由] 滚轮作用于鼠标所在的面板（左右面板可同开二级页，
+    -- 不再依赖"最近点击面板"记录；滚到哪边就滚哪边的列表）
+    local pid = select(1, HorizonResolveMouse())
+
+    if pid == 'modal' then
+        PlayerInfoPanel.handleScroll(wheel)
+        return
+    end
+
     if pid == 'left' then
         if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel) return end
         if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel) return end
         if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end
         if ArenaPage.isOpen() then ArenaPage.handleScroll(wheel) return end
-    elseif pid == 'right' then
+        if MarketPage.isOpen() then MarketPage.handleScroll(wheel) return end
+        return
+    end
+
+    if pid == 'right' then
         CharacterPanel.handleScroll(wheel)
         return
-    else
-        if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleScroll(wheel) return end
+    end
+
+    if pid == 'tri' then return end  -- 三行战斗区无滚动内容（选关/扫荡为翻页按钮）
+
+    -- center：主视图 Tab 页
+    local tab = BottomNav.getSelectedIndex()
+    if tab == 1 then
+        CharacterPanel.handleScroll(wheel)
+    elseif tab == 2 then
+        DiaryPage.handleScroll(wheel)
     end
 end
 

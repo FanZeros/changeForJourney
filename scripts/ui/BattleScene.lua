@@ -3,7 +3,6 @@
 -- 坐标系: 设计分辨率 1080x2400，所有位置为中心点坐标
 -- ============================================================================
 
-local CF  = require("systems.CombatFormula")
 local AD  = require("systems.AttributeDef")
 local TM  = require("systems.ThreatManager")
 local SEM = require("systems.StatusEffectManager")
@@ -13,7 +12,6 @@ local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
 local SC  = require("config.StageConfig")
 local MC  = require("config.MonsterConfig")
-local GameConfig = require("config.GameConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
 
 local BattleCombat      = require("ui.BattleCombat")
@@ -24,26 +22,14 @@ local ProjectileSystem  = require("ui.ProjectileSystem")
 local LootBox           = require("ui.LootBox")
 local SweepDialog       = require("ui.SweepDialog")
 local DamageStatsPanel  = require("ui.DamageStatsPanel")
-local BattleStats       = require("systems.BattleStats")
 local SpeechBubble      = require("ui.SpeechBubble")
-local SpineCardEffect   = require("ui.SpineCardEffect")
-local GameBGM           = require("systems.GameBGM")
 local BottomNav         = require("ui.BottomNav")
-local SettingsPanel     = require("ui.SettingsPanel")
 
-local ExpTable = require("config.ExpTable")
 local Diag = require("systems.BattleDiag")
-local NumberUtil = require("core.NumberUtil")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
 
 local BattleResultPanel = require("ui.BattleResultPanel")
 local OfflineCalc = require("systems.OfflineCalc")
-local StageUtils = require("shared.StageUtils")
-local StageProvider = require("shared.StageProvider")
-local ChallengerServerConfig = require("shared.ChallengerServerConfig")
-local ArtifactBridge = require("systems.ArtifactBridge")
-local ServerListConfig = require("shared.ServerListConfig")
-local PlayerInfoPanel = require("ui.PlayerInfoPanel")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -73,9 +59,9 @@ local ALLY_SHADOW_W, ALLY_SHADOW_H   = 1080, 556
 -- 敌方卡片组 基准坐标（单卡时的 X=540）
 local ENEMY_CARD_CY      = 804
 local ENEMY_TAG_OFFSET_Y  = -215
-local ENEMY_NAME_OFFSET_Y = 90
-local ENEMY_HP_BG_OFFSET_Y = 153
-local ENEMY_HP_VAL_OFFSET_Y = 135
+local ENEMY_NAME_OFFSET_Y = 102
+local ENEMY_HP_BG_OFFSET_Y = 165
+local ENEMY_HP_VAL_OFFSET_Y = 147
 local ENEMY_ATK_BG_OFFSET_Y = 181
 local ENEMY_LVL_OFFSET_Y = 215
 
@@ -158,8 +144,8 @@ local longPress = {
 
 -- 攻击类型名称
 local ATK_TYPE_NAMES = {
-    [1] = "斩击", [2] = "粉碎", [3] = "穿刺", [4] = "火焰",
-    [5] = "冰霜", [6] = "闪电", [7] = "暗影", [8] = "神圣",
+    [1] = "斩击", [2] = "粉碎", [3] = "穿刺", [4] = "业火",
+    [5] = "冥霜", [6] = "雷殛", [7] = "暗影", [8] = "烛照",
 }
 -- 护甲类型名称
 local ARMOR_TYPE_NAMES = {
@@ -210,7 +196,7 @@ end
 local currentStageId = 0101
 
 local function getStageConfig()
-    return StageProvider.GetForServer(PlayerInfoPanel.getServerId())
+    return require("shared.StageProvider").GetForServer(require("ui.PlayerInfoPanel").getServerId())
 end
 
 --- 获取当前关卡的敌方场地上限
@@ -230,7 +216,13 @@ local clearedStages = {}
 local isFirstClear = true
 
 -- 玩家累计抵达过的最远关卡 ID（服务端 maxStageId，用于判断前进提示动画）
-local maxStageId_ = 0
+-- 初始=第一关已解锁（新档可立即挑战/挂机/选关）；此前初始 0 会导致：
+-- 选关列表 fallback 只显示 1-1、扫荡弹窗无法识别关卡（当前关进度脱节）
+local maxStageId_ = SC.NORMAL_FIRST_STAGE or 101
+
+-- 当关击杀进度（死亡怪/总怪，首通模式用于行内进度显示）
+local stageEnemyTotal_ = 0
+local stageKillCount_ = 0
 
 -- 是否已收到首次服务端 battle 数据（首次加载需无条件恢复关卡）
 local initialBattleDataLoaded = false
@@ -669,6 +661,9 @@ end
 local function resetAllyUnit(u)
     u.atkProgress = 0
     u.reviveTimer = nil
+    u._fallen = nil
+    u._fallenPending = nil
+    BattleCombat.clearCardAnim(u)  -- 清残留死亡/退场动画（gone 状态会导致重置后不渲染）
     if u.attrs then
         local restored = restoreFromSnapshot(u)
         if not restored then
@@ -704,7 +699,7 @@ local function resetAllyUnit(u)
                     if CP.applyAvatarFrameAttributes then
                         CP.applyAvatarFrameAttributes(newUnit.attrs)
                     end
-                    local artifactEffects = ArtifactBridge.applyToUnit(newUnit.attrs, partySlot)
+                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
                     if artifactEffects and #artifactEffects > 0 then
                         u.artifactEffects = artifactEffects
                     else
@@ -763,7 +758,7 @@ local drawProgressBar     = BattleDraw.drawProgressBar
 ---@param n number
 ---@return string
 local function formatNumber(n)
-    return NumberUtil.format(n)
+    return require("core.NumberUtil").format(n)
 end
 
 --- 重新计算挂机收益（每分钟金币/经验）
@@ -886,6 +881,7 @@ local function generateEnemyList(stageEntry)
     if stageEntry.bossId > 0 then
         local bossUnit = MC.createMonster(stageEntry.bossId, level)
         if bossUnit then
+            bossUnit.isBoss = true  -- [Boss 标识] 卡顶骷髅头仅 Boss 显示
             local insertPos = math.ceil(#list / 2) + 1
             table.insert(list, insertPos, bossUnit)
         end
@@ -895,7 +891,7 @@ local function generateEnemyList(stageEntry)
     if isFirstClear then
         local bonusIds = getFirstClearBonusMonsterIds(stageEntry)
         if bonusIds then
-            local bonusAtStart = ServerListConfig.isFirstClearBonusAtStart(PlayerInfoPanel.getServerId())
+            local bonusAtStart = require("shared.ServerListConfig").isFirstClearBonusAtStart(require("ui.PlayerInfoPanel").getServerId())
             local bonusCount = #bonusIds
             for i, monsterId in ipairs(bonusIds) do
                 local bonusUnit = MC.createMonster(monsterId, level)
@@ -954,7 +950,7 @@ end
 local function generateIdleEnemyList()
     local IDLE_STAGE_COUNT = 5
     local stageConfig = getStageConfig()
-    local stages = StageUtils.collectPrevStages(maxStageId_, IDLE_STAGE_COUNT, stageConfig)
+    local stages = require("shared.StageUtils").collectPrevStages(maxStageId_, IDLE_STAGE_COUNT, stageConfig)
     -- 新玩家可能不足 5 关，有多少用多少
     if #stages == 0 then
         -- fallback: 用当前关卡（极端情况）
@@ -1212,6 +1208,13 @@ local function loadStage(stageId, skipBattleStart)
 
     currentStageId = stageId
     stageName = entry.name
+    -- 解锁进度兜底：能被加载的关卡必然已解锁。此前手动"前进"按钮在未通关时
+    -- 直接 loadStage(nextId) 不推进 maxStageId_，导致当前关进度与解锁进度脱节
+    -- （选关列表只显示到旧进度、扫荡弹窗识别不了当前关卡）
+    if stageId > maxStageId_ then
+        maxStageId_ = stageId
+        recalcIdleIncome()
+    end
     isFirstClear = not clearedStages[stageId]
     idleRangeText_ = nil  -- 关卡变化时重新计算挂机范围文本
 
@@ -1226,7 +1229,7 @@ local function loadStage(stageId, skipBattleStart)
     -- 挂机模式：使用范围内最早（最低）章节的背景素材
     local bgChapter = entry.chapter
     if not isFirstClear then
-        local stages = StageUtils.collectPrevStages(maxStageId_, 5, stageConfig)
+        local stages = require("shared.StageUtils").collectPrevStages(maxStageId_, 5, stageConfig)
         if #stages > 0 then
             bgChapter = stages[#stages].chapter  -- 最低关的章节
         end
@@ -1255,10 +1258,12 @@ local function loadStage(stageId, skipBattleStart)
     -- 前 maxField 个上场，其余入队列
     -- 特殊怪物（_isBonusMonster）占用 maxField 名额（避免超出屏幕），替换末位普通怪物
     enemies, enemyQueue = assignEnemiesToField(allEnemies, maxField)
+    stageEnemyTotal_ = #allEnemies
+    stageKillCount_ = 0
 
     -- ---- 地图词缀：仅首通模式生效，挂机模式不应用 ----
     if isFirstClear then
-        local affixConfig = ChallengerServerConfig.GetByServerId(PlayerInfoPanel.getServerId())
+        local affixConfig = require("shared.ChallengerServerConfig").GetByServerId(require("ui.PlayerInfoPanel").getServerId())
         if affixConfig and affixConfig.seasonAffixMode == "difficulty_count" then
             MAS.onStageLoad(entry.chapter, allies, "challenger_s1")
         else
@@ -1298,7 +1303,7 @@ local function loadStage(stageId, skipBattleStart)
     -- 重置战斗状态
     battleActive = true
     if isFirstClear then
-        firstClearTimeLeft = GameConfig.Battle.TIME_LIMIT_SEC
+        firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     else
         firstClearTimeLeft = nil
     end
@@ -1505,7 +1510,7 @@ function BattleScene.draw(vg)
         if not idleRangeText_ then
             -- 缓存挂机范围文本，避免每帧重算
             local stageConfig = getStageConfig()
-            local stages = StageUtils.collectPrevStages(maxStageId_, 5, stageConfig)
+            local stages = require("shared.StageUtils").collectPrevStages(maxStageId_, 5, stageConfig)
             if #stages > 0 then
                 local last = stages[#stages]  -- 最低关（起始）
                 local first = stages[1]       -- 最高关（结束）
@@ -1613,7 +1618,7 @@ function BattleScene.draw(vg)
     BattleScene.drawSpeedButton(vg)
 
     -- 14.5~14.7 战斗特效
-    if SettingsPanel.isEffectsEnabled() then
+    if require("ui.SettingsPanel").isEffectsEnabled() then
         -- 常驻召唤物（摘星星星人星门，漂浮在卡片旁并自转）
         ProjectileSystem.drawStarGates(vg, allies, ALLY_CARD_CY, getCardCX, true)
         ProjectileSystem.drawStarGates(vg, enemies, ENEMY_CARD_CY, getCardCX, false)
@@ -1625,11 +1630,11 @@ function BattleScene.draw(vg)
         BattleEffects.draw(vg)
 
         -- 卡片 Spine 特效（升级/复活，在攻击特效之上）
-        SpineCardEffect.draw(vg)
+        require("ui.SpineCardEffect").draw(vg)
     end
 
     -- 15. 浮动伤害数字
-    if SettingsPanel.isDamageNumbersEnabled() then
+    if require("ui.SettingsPanel").isDamageNumbersEnabled() then
         drawFloatingTexts(vg)
     end
 
@@ -1816,7 +1821,7 @@ function BattleScene.update(dt)
                 -- 解锁导航（终焉神殿中导航被锁定）
                 BottomNav.setAllLocked(false)
                 -- 恢复战斗 BGM（终焉神殿使用 samsara BGM）
-                GameBGM.setScene("battle")
+                require("systems.GameBGM").setScene("battle")
                 print("[BattleScene] 终焉神殿失败，回退 → " .. tostring(targetId))
             elseif not isFirstClear then
                 -- 挂机模式：阵亡不回退，重新加载当前关卡继续战斗
@@ -1883,7 +1888,7 @@ function BattleScene.update(dt)
                     maxStageId_ = targetStageId
                     recalcIdleIncome()
                 end
-                GameBGM.setScene("battle")
+                require("systems.GameBGM").setScene("battle")
                 bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
                 loadStage(targetStageId, true)
                 regenAccum = 0
@@ -2015,7 +2020,7 @@ function BattleScene.update(dt)
                 -- 发放击杀奖励（经验 + 金币）
                 if onEnemyKillCallback and (unit.expReward or unit.goldReward) then
                     local allyCount = #allies
-                    local expMult = ExpTable.getHeroCountExpMult(allyCount)
+                    local expMult = require("config.ExpTable").getHeroCountExpMult(allyCount)
                     -- 收集上场冒险家 heroId 列表
                     local heroIds = {}
                     for _, ally in ipairs(allies) do
@@ -2051,10 +2056,11 @@ function BattleScene.update(dt)
                     SpeechBubble.trigger(unit._killedBy, "kill")
                 end
 
-                -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空走原竖直墓碑流程
+                stageKillCount_ = stageKillCount_ + 1
+                -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空不再显示墓碑（完全隐藏空位）
                 local okRatio = unit._overkillRatio or 0
                 BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1,
-                    knockbackMult = 1.0 + okRatio * 2.0, noTombstone = (#enemyQueue > 0) })
+                    knockbackMult = 1.0 + okRatio * 2.0, noTombstone = true })
             end
 
             unit.reviveTimer = unit.reviveTimer + logicDt
@@ -2062,21 +2068,39 @@ function BattleScene.update(dt)
             if #enemyQueue > 0 then
                 -- [死亡即补位 v2] 退场(向右滑出0.4s) → 1s 空位 → 新怪从右滑入补位
                 if unit.reviveTimer >= RESPAWN_DELAY then
+                    -- [队列前移补位] 死亡槽位 i 由后方敌人依次前移一格填入，
+                    -- 新怪从怪物池进入队尾淡入补齐（保持敌我阵列紧凑）
+                    for j = i, #enemies - 1 do
+                        local moved = enemies[j + 1]
+                        enemies[j] = moved
+                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
+                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
+                    end
                     local newUnit = table.remove(enemyQueue, 1)
                     Diag.installSentinel(newUnit)
                     TAL.initUnit(newUnit)
                     TAL.checkMarkTarget(allies, enemies)
                     newUnit.atkProgress = 0
-                    enemies[i] = newUnit
+                    enemies[#enemies] = newUnit
                     -- 清理旧单位残留的动画状态
                     BattleCombat.clearCardAnim(unit)
                     BattleCombat.clearHitFlash(unit)
-                    -- 新怪从右侧滑入入场
+                    -- 新怪从右侧滑入淡入补位（队尾）
                     BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
                 end
             else
-                -- 怪物池为空：保留墓碑表现（进度条渐进至 100% 停驻）
-                unit.atkProgress = math.min(1.0, (unit.atkProgress or 0) + logicDt / TOMBSTONE_REVIVE_TIME)
+                -- [池空前移] 无后续敌人：死亡槽位仍由后方敌人前移填位（队列收缩）
+                if unit.reviveTimer >= RESPAWN_DELAY then
+                    for j = i, #enemies - 1 do
+                        local moved = enemies[j + 1]
+                        enemies[j] = moved
+                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
+                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
+                    end
+                    table.remove(enemies)
+                    BattleCombat.clearCardAnim(unit)
+                    BattleCombat.clearHitFlash(unit)
+                end
             end
         end
     end
@@ -2092,7 +2116,7 @@ function BattleScene.update(dt)
                     if a == unit then idx = ai; break end
                 end
                 local cx = BattleCombat.getCardCX(allies, idx)
-                SpineCardEffect.playRevive(cx, ALLY_CARD_CY)
+                require("ui.SpineCardEffect").playRevive(cx, ALLY_CARD_CY)
             else
                 -- 天赋: 死亡拦截（复活吧爱人复活）
                 local revived = TAL.onAllyDeath(unit, allies, syncUnitHp)
@@ -2103,18 +2127,42 @@ function BattleScene.update(dt)
                         if a == unit then idx = ai; break end
                     end
                     local cx = BattleCombat.getCardCX(allies, idx)
-                    SpineCardEffect.playRevive(cx, ALLY_CARD_CY)
+                    require("ui.SpineCardEffect").playRevive(cx, ALLY_CARD_CY)
                 else
                     -- 阵亡台词触发
                     SpeechBubble.trigger(unit, "death")
 
                     unit.reviveTimer = 0       -- 标记已处理，防止重复调用
+                    unit._fallenPending = true -- [阵亡紧凑] 退场完成后移至队尾
                     unit.atkProgress = 0
                     TM.removeUnit(unit)
                     SEM.removeUnit(unit)
-                    -- 启动死亡动画：角色向下滑出（lungeDir=+1），超额伤害增加击退
+                    -- 启动死亡动画：角色向下滑出（lungeDir=+1），超额伤害增加击退；完成后直接隐藏
                     local okRatio = unit._overkillRatio or 0
-                    BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = 1, knockbackMult = 1.0 + okRatio * 2.0 })
+                    BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = 1,
+                        knockbackMult = 1.0 + okRatio * 2.0, noTombstone = true })
+                end
+            end
+        end
+    end
+
+    -- [阵亡紧凑] 阵亡英雄退场动画完成后移至队尾，存活英雄前移填位
+    -- （单位对象保留：下一关 resetAllyUnit 全员重置复活）
+    for i = #allies, 1, -1 do
+        local u = allies[i]
+        if u._fallenPending then
+            local st = BattleCombat.getAnimState(u)
+            if st == "gone" or st == nil then
+                u._fallenPending = nil
+                u._fallen = true
+                table.remove(allies, i)
+                table.insert(allies, u)
+                for j = i, #allies - 1 do
+                    local moved = allies[j]
+                    if moved.hp > 0 then
+                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
+                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
+                    end
                 end
             end
         end
@@ -2270,10 +2318,10 @@ function BattleScene.update(dt)
                     for ii, u in ipairs(list) do
                         if u == unit then cx = getCardCX(list, ii); break end
                     end
-                    addFloatingText("恢复 +" .. NumberUtil.format(actual), cx, cy, {0, 255, 82}, false)
+                    addFloatingText("恢复 +" .. require("core.NumberUtil").format(actual), cx, cy, {0, 255, 82}, false)
                     -- 战斗统计：HOT 持续治疗输出（来源为己方英雄时归因）
                     if source and source.heroId then
-                        BattleStats.recordHeal(source, actual, true)
+                        require("systems.BattleStats").recordHeal(source, actual, true)
                     end
                 end
             end
@@ -2327,7 +2375,7 @@ function BattleScene.update(dt)
         for _, entry in ipairs(allUnits) do
             local u = entry.unit
             if u.hp > 0 and u.attrs then
-                local regenAmt = CF.calcHpRegen(u.attrs)
+                local regenAmt = require("systems.CombatFormula").calcHpRegen(u.attrs)
                 if regenAmt > 0 then
                     local actual = u.attrs:heal(regenAmt)
                     if actual > 0 then
@@ -2339,7 +2387,7 @@ function BattleScene.update(dt)
                         for ii, uu in ipairs(list) do
                             if uu == u then cx = getCardCX(list, ii); break end
                         end
-                        addFloatingText("回复 +" .. NumberUtil.format(actual), cx, cy, {0, 255, 82}, false)
+                        addFloatingText("回复 +" .. require("core.NumberUtil").format(actual), cx, cy, {0, 255, 82}, false)
                     end
                 end
             end
@@ -2391,7 +2439,7 @@ end
 local function resetBattle()
     battleActive = true
     if isFirstClear then
-        firstClearTimeLeft = GameConfig.Battle.TIME_LIMIT_SEC
+        firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     else
         firstClearTimeLeft = nil
     end
@@ -2556,6 +2604,16 @@ function BattleScene.getMaxStageId()
     return maxStageId_
 end
 
+--- 当关击杀进度（死亡怪/总怪）；挂机模式返回 nil（进度无意义）
+---@return number|nil killed
+---@return number total
+function BattleScene.getStageKillProgress()
+    if not isFirstClear then return nil end
+    if stageEnemyTotal_ <= 0 then return nil end
+    if stageKillCount_ > stageEnemyTotal_ then stageKillCount_ = stageEnemyTotal_ end
+    return stageKillCount_, stageEnemyTotal_
+end
+
 --- [Standalone 状态同步] 本地已通关表（key 可能为 number，写入状态前需 tostring）
 ---@return table
 function BattleScene.getClearedStages()
@@ -2589,7 +2647,7 @@ local function doEnterTerminalTemple(nextId)
     for _, u in ipairs(allies) do resetAllyUnit(u) end
     startBattleTalents()
     BottomNav.setAllLocked(true)
-    GameBGM.setScene("samsara", { fromStart = true })
+    require("systems.GameBGM").setScene("samsara", { fromStart = true })
     if onStageChangedCallback then
         onStageChangedCallback(nextId)
     end
@@ -2814,7 +2872,7 @@ function BattleScene.completeReincarnation()
     end
 
     -- 切换 BGM 回战斗
-    GameBGM.setScene("battle")
+    require("systems.GameBGM").setScene("battle")
     -- 背景过渡
     bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
     loadStage(pr.targetStageId, true)
@@ -2981,7 +3039,7 @@ function BattleScene.refreshAllyStats()
                     if relicConds and #relicConds > 0 then
                         u.relicConditions = relicConds
                     end
-                    local artifactEffects = ArtifactBridge.applyToUnit(newUnit.attrs, partySlot)
+                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
                     if artifactEffects and #artifactEffects > 0 then
                         u.artifactEffects = artifactEffects
                     else
@@ -3013,7 +3071,7 @@ function BattleScene.refreshAllyStats()
                             if a == u then idx = ai; break end
                         end
                         local cx = BattleCombat.getCardCX(allies, idx)
-                        SpineCardEffect.playLevelUp(cx, ALLY_CARD_CY)
+                        require("ui.SpineCardEffect").playLevelUp(cx, ALLY_CARD_CY)
                     else
                         print(string.format("[BattleScene] refreshAllyStats: hero %s attrs refreshed (equip/awaken change), pending",
                             tostring(u.heroId)))
@@ -3113,7 +3171,7 @@ function BattleScene.resetToDefault()
     bgAnimTimer = 0
     bgTransAnim = nil
     currentChapter = 0
-    maxStageId_ = 0
+    maxStageId_ = SC.NORMAL_FIRST_STAGE or 101
     enemies = {}
     enemyQueue = {}
     SEM.reset()

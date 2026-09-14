@@ -321,8 +321,7 @@ local function calcEquipPower(equip, heroId)
     local slotBoost = 0
     if detState.heroId and detState.slot then
         local heroesData = PlayerStore.Get("heroes")
-        local deployed = heroesData and heroesData.deployed
-        local partySlot = EquipmentSystem.findPartySlot(deployed, detState.heroId)
+        local partySlot = EquipmentSystem.findPartySlotInTeams(heroesData, detState.heroId)
         if partySlot then
             local slotEnhanceData = PlayerStore.Get("slotEnhance")
             slotBoost = EquipmentSystem.calcSlotBoost(slotEnhanceData, partySlot, detState.slot, equip.grip)
@@ -490,8 +489,7 @@ end
 local function getSlotEnhLevel(equipSlot)
     if not detState.heroId or not equipSlot then return nil end
     local heroesData = PlayerStore.Get("heroes")
-    local deployed = heroesData and heroesData.deployed
-    local partySlot = EquipmentSystem.findPartySlot(deployed, detState.heroId)
+    local partySlot = EquipmentSystem.findPartySlotInTeams(heroesData, detState.heroId)
     if not partySlot then return nil end
     local slotEnhanceData = PlayerStore.Get("slotEnhance")
     if not slotEnhanceData or not slotEnhanceData.levels then return 0 end
@@ -662,8 +660,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
         local slotBoost = 0
         if detState.heroId and detState.slot then
             local heroesData = PlayerStore.Get("heroes")
-            local deployed = heroesData and heroesData.deployed
-            local partySlot = EquipmentSystem.findPartySlot(deployed, detState.heroId)
+            local partySlot = EquipmentSystem.findPartySlotInTeams(heroesData, detState.heroId)
             if partySlot then
                 local slotEnhanceData = PlayerStore.Get("slotEnhance")
                 slotBoost = EquipmentSystem.calcSlotBoost(slotEnhanceData, partySlot, detState.slot, equip.grip)

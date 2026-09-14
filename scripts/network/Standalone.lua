@@ -47,6 +47,7 @@ local StartScreen       = require("ui.StartScreen")
 local DarkTitleScreen   = require("ui.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
 local BattleTriPage     = require("ui.BattleTriPage")    -- [三行并行] 三行战斗区
 local SweepDialog       = require("ui.SweepDialog")          -- [三行并行] 全窗模态弹窗
+local PlayerStore       = require("client.data.PlayerStore") -- [单机] 数据缓存（扫荡/选关弹窗读取 battle 模块）
 local DamageStatsPanel  = require("ui.DamageStatsPanel")     -- [三行并行] 全窗模态弹窗
 local StageSelectDialog = require("ui.StageSelectDialog")    -- [三行并行] 全窗模态弹窗
 local BattleLayout      = require("core.BattleLayout")   -- [三行并行] 布阵模式切换
@@ -170,6 +171,11 @@ end
 -- ============================================================================
 
 function Standalone.Start()
+    -- 0. PlayerStore 初始化：单机模式下此前从未调用（仅多人 Client.lua 调），
+    --    导致 SyncBattleState 写入的 battle 模块不会落到 PlayerStore 缓存，
+    --    扫荡/选关弹窗读 PlayerStore.Get("battle") 恒为 nil → "未知关卡"
+    PlayerStore.Init()
+
     -- 1. Minimal scene (renderer needs a viewport)
     local scene = Scene()
     sceneRef_ = scene  -- 保存引用

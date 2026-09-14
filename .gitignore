@@ -34,3 +34,8 @@ _tri_test.lua
 .cursor/
 _sel_test.lua
 screenshots/
+
+# 引擎挂载目录与 LSP 类型（平台自动提供，不入库）
+.emmylua/
+tools/
+urhox-libs/

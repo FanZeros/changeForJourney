@@ -10,7 +10,7 @@ function Start()
         return
     end
     for i, id in ipairs(IDS) do
-        local p = string.format("image/_tmp_old/KP_YX_%d.png", id)
+        local p = string.format("image/角色卡牌/KP_YX_%d.png", id)
         imgs[i] = nvgCreateImage(nvg, p, 0)
         print(string.format("[cardref] %d -> %s (v2)", id, tostring(imgs[i])))
     end

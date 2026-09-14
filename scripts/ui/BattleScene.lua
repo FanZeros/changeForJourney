@@ -1156,22 +1156,40 @@ local function ensureBattleCards(vg)
     end
     -- 投射物/特效图（战斗中弹道首用会卡顿，一并预热）
     for _, key in ipairs(ProjectileSystem.getImageKeys()) do
-        q[#q + 1] = { fn = function() ProjectileSystem.prewarmOne(key) end }
+        q[#q + 1] = {
+            path = "image/特效投射物/" .. key .. ".png",
+            fn = function() ProjectileSystem.prewarmOne(key) end,
+        }
     end
     print("[BattleScene] 战斗卡牌分帧加载启动: " .. #q .. " 项")
 end
 
---- 每帧消化加载队列（时间预算内尽量多载，Web 端实际每帧 1 张）
+--- 每帧消化加载队列；仅消化 DWP 已下载完成的项（未完成的跳过下一帧重试，
+--- 杜绝泵内同步等待下载），时间预算内尽量多载
 local function pumpBattleCards()
     if not battleCardQueue then return end
+    local cache = GetCache()
     local t0 = time.elapsedTime
-    while #battleCardQueue > 0 and time.elapsedTime - t0 < 0.008 do
-        local job = table.remove(battleCardQueue, 1)
-        if job.fn then
-            job.fn()
+    local i = 1
+    while i <= #battleCardQueue and time.elapsedTime - t0 < 0.008 do
+        local job = battleCardQueue[i]
+        local st = cache:GetDownloadState(job.path)
+        if st == DOWNLOAD_COMPLETED or st == DOWNLOAD_FAILED or job.downloadSkip then
+            -- 已就绪（或下载失败/未入清单，直接解码兜底）
+            if st == DOWNLOAD_FAILED and not job.downloadSkip then
+                job.downloadSkip = true   -- 失败项重试一次（不无限卡队列）
+                i = i + 1
+            else
+                table.remove(battleCardQueue, i)
+                if job.fn then
+                    job.fn()
+                else
+                    local h = nvgCreateImage(vg_, job.path, 0)
+                    if job.apply then job.apply(h) end
+                end
+            end
         else
-            local h = nvgCreateImage(vg_, job.path, 0)
-            if job.apply then job.apply(h) end
+            i = i + 1   -- 下载中：跳过，下一帧再试
         end
     end
     if #battleCardQueue == 0 then

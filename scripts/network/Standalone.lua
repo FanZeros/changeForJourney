@@ -75,22 +75,24 @@ local fontNormal = -1
 --   BG 后台补载：游戏运行中每帧 3ms 温和补载剩余小图，无感
 --   惰性：>1MB 大图（地图/立绘/弹窗底）保持首次使用时加载（与原版一致，去重包装保证只载一次）
 -- 自适应低端设备：不把 500MB+ 全量贴图塞进显存，避免卡顿/OOM
-local preload_ = { active = false, bg = false, list = {}, idx = 0, bytes = 0, deadline = nil }
+local preload_ = { active = false, bg = false, list = {}, idx = 0, bytes = 0, deadline = nil,
+                    dwpActive = false, dwpDone = 0, dwpTotal = 0, skipWait = false }
 local PRELOAD_FG_BUDGET = 80 * 1024 * 1024   -- 前台预载字节预算
-local PRELOAD_TIME_LIMIT = 30                -- 前台预载总时限（秒）
+local PRELOAD_TIME_LIMIT = 180               -- DWP 预下载等待上限（秒）；到点放行进入，引擎后台继续
 local BG_FRAME_BUDGET = 0.003                -- 后台补载每帧时间预算（秒）
 local BG_SKIP_SIZE = 1024 * 1024             -- 后台跳过的大图阈值（1MB，保持惰性）
 
 --- [一次性加载] 预载进度遮罩（全屏，W/H 为当前绘制空间尺寸；须在退出变换内调用）
 local function DrawPreloadOverlay(vg, W, H)
-    local total = #preload_.list
-    local done = preload_.idx
+    -- 进度源: DWP 下载进度（等待期主显示）；fallback 兼容旧 idx/total
+    local total = (preload_.dwpTotal > 0) and preload_.dwpTotal or #preload_.list
+    local done = (preload_.dwpTotal > 0) and preload_.dwpDone or preload_.idx
     local p = total > 0 and (done / total) or 0
     nvgBeginPath(vg)
     nvgRect(vg, 0, 0, W, H)
     nvgFillColor(vg, nvgRGBA(13, 11, 9, 255))
     nvgFill(vg)
-    DrawUtil.drawTextStroke(vg, W * 0.5, H * 0.42, "资源加载中",
+    DrawUtil.drawTextStroke(vg, W * 0.5, H * 0.42, "资源下载中",
         math.floor(H * 0.034), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         240, 199, 94, 3)
     local bw = W * 0.42
@@ -810,13 +812,38 @@ function Standalone.Start()
     SubscribeToEvent(vg, "NanoVGRender", "HandleNanoVGRender")
     SubscribeToEvent("Update", "HandleUpdate")
 
-    -- 7. [一次性加载] 装载全量图片清单，交由 HandleUpdate 每帧分帧预载
+    -- 7. [DWP 异步预下载] Web/WASM 端同步 nvgCreateImage 单张 0.3-0.5s，711 张全量
+    --    同步解码会冻结主线程数分钟（玩家感知为卡死）。改为引擎异步批量下载：
+    --    仅落盘缓存（不解码/不上传 GPU/不阻塞主线程），首用 nvgCreateImage 命中本地
+    --    缓存后只剩快速本地解码。桌面端本地文件瞬时完成，行为不变。
     local manifestOk, manifest = pcall(require, "config.AssetManifest")
     if manifestOk and type(manifest) == "table" and #manifest > 0 then
         preload_.list = manifest
         preload_.idx = 0
+        preload_.dwpActive = true
         preload_.active = true
-        print("[Standalone] 全量预载开始: " .. #manifest .. " 张贴图")
+        local paths = {}
+        for _, e in ipairs(manifest) do paths[#paths + 1] = e[1] end
+        local okDWP, err = pcall(function()
+            GetCache():DownloadResources(paths,
+                function(success, failedCount)
+                    preload_.dwpActive = false
+                    print(string.format(
+                        "[Standalone] DWP 全量预下载完成: success=%s failed=%s",
+                        tostring(success), tostring(failedCount)))
+                end,
+                function(done, total, bytes, totalBytes)
+                    preload_.dwpDone = done
+                    preload_.dwpTotal = total
+                end)
+        end)
+        if not okDWP then
+            preload_.dwpActive = false
+            preload_.active = false
+            print("[Standalone] DownloadResources 不可用，跳过预下载: " .. tostring(err))
+        else
+            print("[Standalone] DWP 全量预下载启动: " .. #manifest .. " 项")
+        end
     else
         print("[Standalone] AssetManifest 缺失，跳过全量预载")
     end
@@ -1153,90 +1180,40 @@ end
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
-    -- [一次性加载] FG 前台预载：
-    --   1) 开始/标题画面保持可交互（点击即结束前台预载，剩余进后台/惰性）
-    --   2) 总时限 30s；字节预算 80MB；达到任一即转后台补载
-    --   3) 每帧按时间预算装载一批；期间不推进游戏逻辑
+    -- [DWP 异步预下载] 等待期：
+    --   1) 开始/标题画面保持可交互；引擎后台线程下载（主线程零阻塞，帧率正常）
+    --   2) 下载完成（或点击标题跳过等待 / 45s 兜底超时）即放行进入游戏
+    --   3) 主线程全程不做任何同步加载；未就绪图首用时由 DWP 占位机制兜底
     if preload_.active then
         local dt = eventData["TimeStep"]:GetFloat()
         if StartScreen.isOpen() then
             StartScreen.update(dt)
             if not StartScreen.isOpen() then
-                preload_.active = false
-                preload_.bg = true
-                print("[Standalone] 玩家跳过开始画面，剩余 " ..
-                    (#preload_.list - preload_.idx) .. " 张转后台补载")
+                preload_.skipWait = true
             end
         end
-        -- [DarkTitleScreen] 横屏标题保持可交互（点击淡出即转后台补载）
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.update(dt)
             if not DarkTitleScreen.isOpen() then
-                preload_.active = false
-                preload_.bg = true
-                print("[Standalone] 标题画面已点击，剩余 " ..
-                    (#preload_.list - preload_.idx) .. " 张转后台补载")
+                preload_.skipWait = true
+                print("[Standalone] 标题画面已点击，跳过等待放行进入")
             end
         end
-    end
-    if preload_.active then
-        if preload_.deadline == nil then
+        if preload_.dwpActive and preload_.deadline == nil then
             preload_.deadline = time.elapsedTime + PRELOAD_TIME_LIMIT
         end
-        if time.elapsedTime > preload_.deadline then
-            preload_.active = false
-            preload_.bg = true
-            print("[Standalone] 前台预载超时(" .. PRELOAD_TIME_LIMIT .. "s)，剩余转后台补载")
-            return
+        if preload_.dwpActive and preload_.deadline ~= nil
+           and time.elapsedTime > preload_.deadline then
+            preload_.dwpActive = false
+            print("[Standalone] DWP 预下载超时(" .. PRELOAD_TIME_LIMIT .. "s)，放行进入（引擎后台继续）")
         end
-        local list = preload_.list
-        local total = #list
-        local t0 = time.elapsedTime
-        while preload_.idx < total and time.elapsedTime - t0 < 0.012 do
-            preload_.idx = preload_.idx + 1
-            local entry = list[preload_.idx]
-            local handle = nvgCreateImage(vg, entry[1], 0)
-            if handle and handle >= 0 then
-                preload_.bytes = preload_.bytes + (entry[2] or 0)
-            end
-            if preload_.bytes >= PRELOAD_FG_BUDGET then
-                preload_.active = false
-                preload_.bg = true
-                print(string.format(
-                    "[Standalone] 前台预载达到预算(%.0fMB)，已载 %d/%d 张，剩余转后台补载",
-                    PRELOAD_FG_BUDGET / 1048576, preload_.idx, total))
-                return
-            end
-        end
-        if preload_.idx >= total then
+        if not preload_.dwpActive or preload_.skipWait then
             preload_.active = false
-            print(string.format("[Standalone] 全量预载完成: %d 张, %.0fMB",
-                total, preload_.bytes / 1048576))
+            local pct = (preload_.dwpTotal > 0)
+                and math.floor(preload_.dwpDone * 100 / preload_.dwpTotal) or 100
+            print("[Standalone] DWP 预下载等待结束（" .. pct .. "%），放行进入游戏")
         end
         return
-    end
-
-    -- [一次性加载] BG 后台补载：游戏运行中每帧 3ms 温和补载剩余小图；
-    -- >1MB 大图跳过（保持首次使用时惰性加载，避免游戏中途 1s+ 解码卡顿）
-    if preload_.bg and preload_.idx < #preload_.list then
-        local list = preload_.list
-        local total = #list
-        local t0 = time.elapsedTime
-        while preload_.idx < total and time.elapsedTime - t0 < BG_FRAME_BUDGET do
-            preload_.idx = preload_.idx + 1
-            local entry = list[preload_.idx]
-            if (entry[2] or 0) < BG_SKIP_SIZE then
-                local handle = nvgCreateImage(vg, entry[1], 0)
-                if handle and handle >= 0 then
-                    preload_.bytes = preload_.bytes + (entry[2] or 0)
-                end
-            end
-        end
-        if preload_.idx >= total then
-            preload_.bg = false
-            print(string.format("[Standalone] 后台补载完成: 累计 %d/%d 张, %.0fMB（大图保持惰性）",
-                preload_.idx, total, preload_.bytes / 1048576))
-        end
     end
 
     local dt = eventData["TimeStep"]:GetFloat()
@@ -2279,6 +2256,12 @@ function HandleNanoVGRenderHorizon()
         Viewport.finish(vg)
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
         BattleTriPage.draw(vg, logicalW, logicalH)
+        -- [DWP] 下载进行中: 全屏进度遮罩独占显示（完成后露出标题屏可点击进入）
+        if preload_.active then
+            DrawPreloadOverlay(vg, logicalW, logicalH)
+            nvgEndFrame(vg)
+            return
+        end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg, logicalW, logicalH)

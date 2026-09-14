@@ -40,3 +40,8 @@ screenshots/
 tools/
 urhox-libs/
 .build/
+
+# Electron 离线版构建产物与依赖（main.js/package.json 入库）
+electron-shell/node_modules/
+electron-shell/game/
+electron-shell/release/

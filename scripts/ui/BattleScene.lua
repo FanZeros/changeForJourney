@@ -1113,33 +1113,71 @@ local function setupBattleCombatContext()
     })
 end
 
--- [卡牌惰性加载] 英雄卡/怪物卡大图，首次进战斗时一次性加载
--- 背景: KP_GW 水墨新卡为 572x1024 PNG（64 张 ~90MB，解码后 ~128MB 显存），
--- 启动 init 同步解码会阻塞主线程数秒（Web/WASM 端表现为资源加载卡死）。
-local battleCardsLoaded = false
+-- [卡牌分帧加载] 英雄卡/怪物卡/投射物图，首次进战斗时构建队列，由 update 分帧消化
+-- 背景: KP_GW 水墨新卡为 572x1024 PNG（64 张 ~90MB），
+-- Web/WASM 端单张解码 ~0.3s，同步一次性加载会冻结主线程 30-60s（表现为卡死）。
+-- 分帧策略: 每帧预算 8ms，Web 端实际每帧消化 1 张，卡面渐进出现，战斗逻辑全程不冻结。
+local battleCardQueue = nil   -- nil=未构建; table=加载中
 local function ensureBattleCards(vg)
-    if battleCardsLoaded then return end
-    battleCardsLoaded = true
-    HeroAssetUtil.preloadCards(vg, imgHeroCards)
-    -- 加载怪物卡片背景 (1~54)
+    if battleCardQueue then return end
+    battleCardQueue = {}
+    local q = battleCardQueue
+    -- 预填 -1（对齐原 init 语义: 表始终有值，加载完成后覆盖；BattleDraw 依赖 img < 0 判空）
+    for _, id in ipairs(HeroAssetUtil.getAssetIds()) do
+        if imgHeroCards[id] == nil then imgHeroCards[id] = -1 end
+    end
+    for _, id in ipairs({1001, 1002, 1003, 1004, 1005, 1006, 1007, 201, 202, 203, 204, 205, 206}) do
+        if imgMonsterCards[id] == nil then imgMonsterCards[id] = -1 end
+    end
     for id = 1, 54 do
-        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
+        if imgMonsterCards[id] == nil then imgMonsterCards[id] = -1 end
     end
-    -- 加载终焉神殿怪物卡片 (1001~1003)
-    for _, id in ipairs({1001, 1002, 1003}) do
-        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
+    -- 英雄卡（编队卡面优先出现）
+    for _, id in ipairs(HeroAssetUtil.getAssetIds()) do
+        q[#q + 1] = {
+            path = HeroAssetUtil.getCardPath(id),
+            apply = function(h)
+                if h and h >= 0 then imgHeroCards[id] = h end
+            end,
+        }
     end
-    -- 加载剧情特殊怪物卡片 (1004 昆吾之怒)
-    imgMonsterCards[1004] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_1004.png", 0)
-    -- 加载首通附加特殊怪物卡片 (1005~1007)
-    for _, id in ipairs({1005, 1006, 1007}) do
-        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
+    -- 怪物卡 (1~54 / 1001~1007 / 201~206)
+    local monsterIds = {}
+    for id = 1, 54 do monsterIds[#monsterIds + 1] = id end
+    for _, id in ipairs({1001, 1002, 1003, 1004, 1005, 1006, 1007}) do
+        monsterIds[#monsterIds + 1] = id
     end
-    -- 加载副本怪物卡片 (201~206)
-    for id = 201, 206 do
-        imgMonsterCards[id] = nvgCreateImage(vg, "image/怪物卡牌/KP_GW_" .. id .. ".png", 0)
+    for id = 201, 206 do monsterIds[#monsterIds + 1] = id end
+    for _, id in ipairs(monsterIds) do
+        q[#q + 1] = {
+            path = string.format("image/怪物卡牌/KP_GW_%d.png", id),
+            apply = function(h) imgMonsterCards[id] = h end,
+        }
     end
-    print("[BattleScene] 战斗卡牌惰性加载完成（英雄卡 + 怪物卡 64 张）")
+    -- 投射物/特效图（战斗中弹道首用会卡顿，一并预热）
+    for _, key in ipairs(ProjectileSystem.getImageKeys()) do
+        q[#q + 1] = { fn = function() ProjectileSystem.prewarmOne(key) end }
+    end
+    print("[BattleScene] 战斗卡牌分帧加载启动: " .. #q .. " 项")
+end
+
+--- 每帧消化加载队列（时间预算内尽量多载，Web 端实际每帧 1 张）
+local function pumpBattleCards()
+    if not battleCardQueue then return end
+    local t0 = time.elapsedTime
+    while #battleCardQueue > 0 and time.elapsedTime - t0 < 0.008 do
+        local job = table.remove(battleCardQueue, 1)
+        if job.fn then
+            job.fn()
+        else
+            local h = nvgCreateImage(vg_, job.path, 0)
+            if job.apply then job.apply(h) end
+        end
+    end
+    if #battleCardQueue == 0 then
+        print("[BattleScene] 战斗卡牌分帧加载完成")
+        battleCardQueue = nil
+    end
 end
 
 --- 加载关卡
@@ -1697,6 +1735,7 @@ function BattleScene.draw(vg)
 end
 
 function BattleScene.update(dt)
+    pumpBattleCards()
     for _, list in ipairs({ enemies, enemyQueue }) do
         for _, unit in ipairs(list) do
             if unit and unit.monsterId == 1007 and unit.attrs then

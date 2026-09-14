@@ -248,6 +248,26 @@ end
 local renderScale = 1.0
 function ProjectileSystem.setRenderScale(s) renderScale = s or 1.0 end
 
+--- [分帧预热] 收集全部投射物图 key（去重，供战斗卡牌分帧泵预热）
+function ProjectileSystem.getImageKeys()
+    local keys, seen = {}, {}
+    for _, cfgTable in ipairs({ CONFIGS, MONSTER_CONFIGS, SKILL_CONFIGS, TALENT_PROJ_CONFIGS }) do
+        for _, cfg in pairs(cfgTable) do
+            local k = cfg.imgKey
+            if k and not seen[k] then
+                seen[k] = true
+                keys[#keys + 1] = k
+            end
+        end
+    end
+    return keys
+end
+
+--- [分帧预热] 单张预热（走 getImage 缓存，命中即跳过）
+function ProjectileSystem.prewarmOne(key)
+    getImage(key)
+end
+
 -- [看情况抛物线] fly 直线弹的飞行距离 ≥ ARC_TRIGGER_DIST 时升级为贝塞尔弧线
 -- （条带空间: 前排对峙≈193px 直线，跨场≈800px 弧线；可按观感调整）
 local ARC_TRIGGER_DIST = 300

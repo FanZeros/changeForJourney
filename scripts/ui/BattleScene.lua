@@ -40,10 +40,8 @@ local DarkIcon = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
 local BattleResultPanel = require("ui.BattleResultPanel")
 local OfflineCalc = require("systems.OfflineCalc")
 local StageUtils = require("shared.StageUtils")
-local StageProvider = require("shared.StageProvider")
 local ChallengerServerConfig = require("shared.ChallengerServerConfig")
 local ArtifactBridge = require("systems.ArtifactBridge")
-local ServerListConfig = require("shared.ServerListConfig")
 local PlayerInfoPanel = require("ui.PlayerInfoPanel")
 
 local BattleScene = {}
@@ -211,7 +209,7 @@ end
 local currentStageId = 0101
 
 local function getStageConfig()
-    return StageProvider.GetForServer(PlayerInfoPanel.getServerId())
+    return require("shared.StageProvider").GetForServer(PlayerInfoPanel.getServerId())
 end
 
 --- 获取当前关卡的敌方场地上限
@@ -898,7 +896,7 @@ local function generateEnemyList(stageEntry)
     if isFirstClear then
         local bonusIds = getFirstClearBonusMonsterIds(stageEntry)
         if bonusIds then
-            local bonusAtStart = ServerListConfig.isFirstClearBonusAtStart(PlayerInfoPanel.getServerId())
+            local bonusAtStart = require("shared.ServerListConfig").isFirstClearBonusAtStart(PlayerInfoPanel.getServerId())
             local bonusCount = #bonusIds
             for i, monsterId in ipairs(bonusIds) do
                 local bonusUnit = MC.createMonster(monsterId, level)

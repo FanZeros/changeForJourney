@@ -2282,6 +2282,22 @@ function HandleNanoVGRenderHorizon()
         Viewport.finish(vg)
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
         BattleTriPage.draw(vg, logicalW, logicalH)
+        -- [LetterIntro] 新档开场链（信/过场/情景1）：全窗口设计空间覆盖三行战斗
+        if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then
+            local ss = math.min(logicalW / 1080, logicalH / 2400)
+            nvgSave(vg)
+            nvgScissor(vg, 0, 0, logicalW, logicalH)
+            nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
+            nvgScale(vg, ss, ss)
+            if LetterIntro.isOpen() then
+                LetterIntro.draw(vg)
+            elseif IntroCutscene.isActive() then
+                IntroCutscene.draw(vg)
+            elseif ScenarioDialogue.isActive() then
+                ScenarioDialogue.draw()
+            end
+            nvgRestore(vg)
+        end
         -- [DWP] 下载进行中: 全屏进度遮罩独占显示（完成后露出标题屏可点击进入）
         if preload_.active then
             DrawPreloadOverlay(vg, logicalW, logicalH)
@@ -2307,6 +2323,14 @@ function HandleNanoVGRenderHorizon()
     LevelUpPopup.draw(vg)
     if SamsaraCG.isActive() then SamsaraCG.draw(vg) end
     if IntroCutscene.isActive() then IntroCutscene.draw(vg) end
+    -- [LetterIntro] 情景对话（large 全屏覆盖 / small 叠加弹窗）
+    if ScenarioDialogue.isActive() then
+        ScenarioDialogue.draw()
+    end
+    -- [LetterIntro] 先祖来信（最高优先级，覆盖一切）
+    if LetterIntro.isOpen() then
+        LetterIntro.draw(vg)
+    end
     Viewport.finish(vg)
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
@@ -2462,6 +2486,18 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         local now = time.elapsedTime
         if now - lastTapTime < MIN_TAP_INTERVAL then isTap = false
         else lastTapTime = now end
+    end
+    -- [LetterIntro] 开场链输入：信件翻段 / 过场吞输入 / 情景对话推进
+    if LetterIntro.isOpen() then
+        if isTap then LetterIntro.handleTap() end
+        return
+    end
+    if IntroCutscene.isActive() then
+        return
+    end
+    if ScenarioDialogue.isActive() then
+        if isTap then ScenarioDialogue.advance() end
+        return
     end
     if pid == 'none' then return end
     if pid == 'tri' then

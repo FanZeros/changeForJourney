@@ -2264,6 +2264,11 @@ function HandleNanoVGRenderHorizon()
         TavernPage.draw(vg)
         ArenaPage.draw(vg)
         MarketPage.draw(vg)
+        -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
+        if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
+            or ArenaPage.isOpen() or MarketPage.isOpen()) then
+            TopBar.draw(vg)
+        end
         Viewport.finish(vg)
         Viewport.begin(vg, Viewport.PANELS.right, oxR, 0, ps)
         CharacterPanel.draw(vg)
@@ -2496,6 +2501,14 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     -- 左面板：功能页组点击链
     if pid == 'left' then
+        -- [三行并行] TopBar（测试木桩入口）优先命中：仅城镇主视图（无二级页）时
+        if isTap and not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
+            or ArenaPage.isOpen() or MarketPage.isOpen()) then
+            if TopBar.hitTestTrainingDummy(dx, dy) then
+                openTrainingDummyBattle()
+                return
+            end
+        end
         if BlacksmithPage.isOpen() then
             BlacksmithPage.handleDragEnd(dx, dy)
             if not isTap then return end

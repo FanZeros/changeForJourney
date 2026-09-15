@@ -1,7 +1,7 @@
 {
   "name": "zhongyan-zhimen-win64-offline",
   "productName": "ZhongYanZhiMen",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "终焉之门·单机版 Windows 离线版（Electron 壳，免登录双击即玩）",
   "author": "FanZeros",
   "license": "UNLICENSED",

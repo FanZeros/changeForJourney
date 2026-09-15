@@ -3,9 +3,17 @@
 > 宿命旅途（TapTap 856061）H5 化 + 横屏 PC 多面板改造的完整记录。
 > 仓库：https://github.com/FanZeros/changeForJourney
 > 线上：https://fanzeros.github.io/changeForJourney/
-> 更新：2026-09-12
+> 更新：2026-09-15
 
 ---
+
+## 2026-09-15 部署 v1.0.3（终焉之门·单机版）
+
+- 以 `workspace` 分支最新源码（998d7eb，2026-09-14 晚：三队并行返回键层、角色卡暗黑化调色统一等）重新 Maker 构建（version bump 1.0.2 → 1.0.3）
+- 产物按 skill §3/§4 打补丁：去 preview-bridge/水印、WS 免登录 shim、eruda 移除、crossorigin；sw-coop.js 沿用 engine-cache 增强版
+- **GitHub Pages**: main 根目录产物全量替换为 1.0.3（旧 1.0.0/1.0.1/assets 移除）；scripts-src 同步最新源码快照
+- **Windows 离线版**: `win64-v1.0.3` Release（electron-builder --dir 产物 zip，445MB，双击 `ZhongYanZhiMen.exe` 即玩）
+- 校验：manifest 4562 条全存在；index.html 与上一部署版补丁形态一致
 
 ## 一、项目概述
 

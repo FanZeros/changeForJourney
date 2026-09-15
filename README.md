@@ -1,6 +1,7 @@
-# 宿命旅途 H5（changeForJourney）
+# 终焉之门·单机版 H5（changeForJourney）
 
-宿命旅途（856061）Web 版：UrhoX H5 构建产物 + GitHub Pages 离线自部署形态。
+终焉之门·单机版（宿命旅途 856061 改名演进线）Web 版：UrhoX H5 构建产物 + GitHub Pages 离线自部署形态。
+当前线上产物：v1.0.3（2026-09-15）；Windows 离线版下载见 Releases（tag `win64-v1.0.3`）。
 
 - 免登录离线运行（WebSocket shim → skipping login），广告为 FakeAd 预览
 - 跨域隔离由最小 Service Worker（sw-coop.js）注入，引擎 70MB 运行时走官方 CDN

@@ -116,6 +116,18 @@ function LetterIntro.isOpen()
     return active
 end
 
+--- 清档/重开时强制关闭信件（避免上一轮回调残留）
+function LetterIntro.reset()
+    active = false
+    state = "reveal"
+    blockIdx = 1
+    revealT = 0
+    sealedT = 0
+    fadeT = 0
+    totalT = 0
+    onFinishCb = nil
+end
+
 --- 轻触：未显完→整段显完；已显完→下一段/封印
 function LetterIntro.handleTap()
     if not active or state ~= "reveal" then return end

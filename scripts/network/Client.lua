@@ -163,6 +163,7 @@ local rewardFlushTimer = 0
 
 --- 离线收益面板自动弹出控制
 local loadingScreenWasOpen_ = true   -- LoadingScreen 初始为开启状态
+local pendingIntroAfterTitle_ = false -- [LetterIntro] 等横屏标题关闭后再走开场链
 local offlineRewardAutoShown_ = false -- 避免重复弹出
 local updateNoticeShown_     = false -- 更新提醒弹窗是否已弹出
 local offlineRewardData_     = nil   -- 服务端推送的离线收益数据
@@ -1327,6 +1328,7 @@ function Client.resetForNewSession()
     local TAG = "[Client][DIAG-RESET]"
     print(string.format("%s resetForNewSession START clock=%.4f", TAG, os.clock()))
     loadingScreenWasOpen_ = true
+    pendingIntroAfterTitle_ = false
     offlineRewardAutoShown_ = false
     deferredRewardPopupShown_ = false
     updateNoticeShown_ = false
@@ -1355,6 +1357,7 @@ function Client.resetForNewSession()
     enter0204ScenarioFired_    = false   -- 重置铁匠铺204触发标志，清档后可重新触发情景1/42/43
     townEntranceScenarioFired_ = false   -- 重置城镇入场触发标志，清档后可重新触发情景3/24/25/26
     IntroCutscene.reset()
+    LetterIntro.reset()
     print(string.format("%s resetForNewSession DONE clock=%.4f →all flags reset, IntroCutscene ready", TAG, os.clock()))
 end
 
@@ -2060,6 +2063,32 @@ function HandleUpdate_Client(eventType, eventData)
     -- [DarkTitleScreen] 横屏标题动画（游戏/加载在标题下方继续进行）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.update(dt)
+    elseif pendingIntroAfterTitle_ and not LoadingScreen.isOpen() then
+        -- 标题已关闭（或不存在）且加载完成 → 启动先祖来信开场链
+        pendingIntroAfterTitle_ = false
+        print("[Client] title closed, starting intro chain (letter → cutscene → scenario 1)")
+        GameBGM.setScene("letter", { fromStart = true })
+        LetterIntro.start(function()
+            IntroCutscene.start(function()
+                GameBGM.setScene("battle", { fromStart = true })
+                print("[Client] intro cutscene finished")
+                print("[Client] starting scenario dialogue 1")
+                local scenarioConfig = ScenarioDialogueConfig.SCENARIO_1
+                scenarioConfig.onFinish = function()
+                    print("[Client] scenario dialogue 1 finished, opening character select")
+                    CharacterSelect.show({
+                        background = scenarioConfig.background,
+                        onFinish = function(heroId)
+                            print("[Client] character selected: heroId=" .. heroId)
+                            Client.sendAction(Protocol.ACTION_TYPES.SELECT_INITIAL_HERO, {
+                                heroId = heroId,
+                            })
+                        end,
+                    })
+                end
+                ScenarioDialogue.show(scenarioConfig)
+            end)
+        end)
     end
 
     -- [LetterIntro] 先祖来信动画（逐行显墨/封印/淡出）
@@ -2120,35 +2149,11 @@ function HandleUpdate_Client(eventType, eventData)
             local hasReincarnated = sessionData and sessionData.hasReincarnated or false
 
             if rosterEmpty and not IntroCutscene.isFinished() then
-                -- roster 为空 = 新玩家，启动过场动画 + 开场剧情
-                print("[Client] roster is empty (new player), starting intro cutscene")
+                -- roster 为空 = 新玩家。横屏标题打开时先挂起，关闭后再播信
+                print("[Client] roster is empty (new player), queue intro after title")
+                pendingIntroAfterTitle_ = true
                 GameBGM.start()
                 GameSFX.start()
-                GameBGM.setScene("letter", { fromStart = true })  -- [LetterIntro] 暗黑烛光读信氛围
-                -- [LetterIntro] 先祖来信 → 睁眼过场 → 情景对话 → 选角
-                LetterIntro.start(function()
-                IntroCutscene.start(function()
-                    GameBGM.setScene("battle", { fromStart = true })  -- [LetterIntro] 情景1"出发"切回主曲
-                    -- 过场动画结束 →衔接情景对话 1（introCompleted 由服务端在选择英雄时标记）
-                    print("[Client] intro cutscene finished")
-                    print("[Client] starting scenario dialogue 1")
-                    local scenarioConfig = ScenarioDialogueConfig.SCENARIO_1
-                    scenarioConfig.onFinish = function()
-                        -- 情景对话1结束 →选择初始角色
-                        print("[Client] scenario dialogue 1 finished, opening character select")
-                        CharacterSelect.show({
-                            background = scenarioConfig.background,
-                            onFinish = function(heroId)
-                                print("[Client] character selected: heroId=" .. heroId)
-                                Client.sendAction(Protocol.ACTION_TYPES.SELECT_INITIAL_HERO, {
-                                    heroId = heroId,
-                                })
-                            end,
-                        })
-                    end
-                    ScenarioDialogue.show(scenarioConfig)
-                end)
-                end)  -- [LetterIntro] 回调闭合
             elseif hasReincarnated then
                 if rosterEmpty then
                     -- 极端情况：尚无角色但标记轮回（补播入场动画）

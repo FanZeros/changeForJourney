@@ -73,6 +73,7 @@ local Standalone = {}
 local vg = nil
 local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen 使用
 local startScreenWasOpen_ = false
+local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发一次（等标题关闭）
 local fontNormal = -1
 
 -- [一次性加载] 三段式加载：
@@ -1009,10 +1010,12 @@ function Standalone.requestResetToStartScreen()
 
     -- 10. 重置开场动画状态（让清档后可以重新播放）
     IntroCutscene.reset()
+    LetterIntro.reset()
     print(string.format("%s step10: IntroCutscene.reset done clock=%.4f", TAG, os.clock()))
 
-    -- 11. 设置标志：重新进入开始界面流程
+    -- 11. 设置标志：重新进入开始界面流程（等标题关闭后再走开场链）
     startScreenWasOpen_ = true
+    postStartFlowDone_ = false
     print(string.format("%s step11: startScreenWasOpen_=true clock=%.4f", TAG, os.clock()))
 
     -- 12. 重新打开 StartScreen
@@ -1221,8 +1224,10 @@ function HandleUpdate(eventType, eventData)
             local pct = (preload_.dwpTotal > 0)
                 and math.floor(preload_.dwpDone * 100 / preload_.dwpTotal) or 100
             print("[Standalone] DWP 预下载等待结束（" .. pct .. "%），放行进入游戏")
+            -- 不 return：本帧立刻进入下方开场判定，避免标题关闭边沿被吞掉
+        else
+            return
         end
-        return
     end
 
     local dt = eventData["TimeStep"]:GetFloat()
@@ -1240,10 +1245,14 @@ function HandleUpdate(eventType, eventData)
     -- [DarkTitleScreen] 横屏标题动画（预载/游戏在标题下方继续进行）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.update(dt)
+        startScreenWasOpen_ = true
+        return
     end
 
-    -- StartScreen 刚关闭 → 老档弹离线收益；新档走开场链（先祖来信→过场→情景1）
-    if startScreenWasOpen_ then
+    -- 开始页/标题刚关闭 → 老档弹离线收益；新档走开场链（先祖来信→过场→情景1）
+    -- 必须等 DarkTitleScreen 关闭后再播，否则信件会被标题盖住且点击被吞
+    if not postStartFlowDone_ then
+        postStartFlowDone_ = true
         startScreenWasOpen_ = false
         GameBGM.start()
         GameSFX.start()
@@ -2084,6 +2093,27 @@ local function HorizonUpdateTransform()
     end
 end
 
+--- [LetterIntro] 开场链全窗口覆盖：设计空间 1080×2400 letterbox，必须画在 DarkTitle 之后
+local function HorizonDrawIntroOverlay()
+    if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
+        return
+    end
+    local ss = math.min(logicalW / 1080, logicalH / 2400)
+    nvgSave(vg)
+    nvgResetTransform(vg)
+    nvgScissor(vg, 0, 0, logicalW, logicalH)
+    nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
+    nvgScale(vg, ss, ss)
+    if LetterIntro.isOpen() then
+        LetterIntro.draw(vg)
+    elseif IntroCutscene.isActive() then
+        IntroCutscene.draw(vg)
+    elseif ScenarioDialogue.isActive() then
+        ScenarioDialogue.draw()
+    end
+    nvgRestore(vg)
+end
+
 --- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（基屏幕空间，绘制于侧栏之后、中面板之前）
 local function HorizonDimSidePanels()
     local modalOpen =
@@ -2272,22 +2302,6 @@ function HandleNanoVGRenderHorizon()
         Viewport.finish(vg)
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
         BattleTriPage.draw(vg, logicalW, logicalH)
-        -- [LetterIntro] 新档开场链（信/过场/情景1）：全窗口设计空间覆盖三行战斗
-        if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then
-            local ss = math.min(logicalW / 1080, logicalH / 2400)
-            nvgSave(vg)
-            nvgScissor(vg, 0, 0, logicalW, logicalH)
-            nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
-            nvgScale(vg, ss, ss)
-            if LetterIntro.isOpen() then
-                LetterIntro.draw(vg)
-            elseif IntroCutscene.isActive() then
-                IntroCutscene.draw(vg)
-            elseif ScenarioDialogue.isActive() then
-                ScenarioDialogue.draw()
-            end
-            nvgRestore(vg)
-        end
         -- [三队并行] 中缝返回键（窗口坐标，页面视口之外）：左页‹ / 详情›
         local seamClose = seamBackTarget()
         if seamClose then
@@ -2304,6 +2318,8 @@ function HandleNanoVGRenderHorizon()
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg, logicalW, logicalH)
         end
+        -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
+        HorizonDrawIntroOverlay()
         nvgEndFrame(vg)
         return
     end
@@ -2318,15 +2334,6 @@ function HandleNanoVGRenderHorizon()
     SpinePowerUpEffect.draw(vg)
     LevelUpPopup.draw(vg)
     if SamsaraCG.isActive() then SamsaraCG.draw(vg) end
-    if IntroCutscene.isActive() then IntroCutscene.draw(vg) end
-    -- [LetterIntro] 情景对话（large 全屏覆盖 / small 叠加弹窗）
-    if ScenarioDialogue.isActive() then
-        ScenarioDialogue.draw()
-    end
-    -- [LetterIntro] 先祖来信（最高优先级，覆盖一切）
-    if LetterIntro.isOpen() then
-        LetterIntro.draw(vg)
-    end
     Viewport.finish(vg)
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
@@ -2369,6 +2376,8 @@ function HandleNanoVGRenderHorizon()
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.draw(vg, logicalW, logicalH)
     end
+    -- [LetterIntro] 开场覆盖必须在标题之后（非三行路径同样需要）
+    HorizonDrawIntroOverlay()
 
     nvgEndFrame(vg)
 end
@@ -2409,6 +2418,8 @@ end
 function HandleMouseButtonDownHorizon(eventType, eventData)
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
     if DarkTitleScreen.isOpen() then return end
+    -- [LetterIntro] 开场链独占输入
+    if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()
@@ -2436,6 +2447,8 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
 end
 
 function HandleMouseMoveHorizon(eventType, eventData)
+    if DarkTitleScreen.isOpen() then return end
+    if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local pid, dx, dy = HorizonResolveMouse()
     if pid == 'none' then return end
     if pid == 'modal' then
@@ -2644,6 +2657,7 @@ end
 function HandleMouseWheelHorizon(eventType, eventData)
     -- [DarkTitleScreen] 标题期吞掉滚轮
     if DarkTitleScreen.isOpen() then return end
+    if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local wheel = eventData["Wheel"]:GetInt()
 
     -- [三行并行] 装备袋战斗区覆盖层优先（全屏级）

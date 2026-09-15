@@ -1,5 +1,5 @@
 {
-  "note": "按规划拼的 1:1 原图板。改完后运行 python .tmp/split_edit_sheets.py",
+  "note": "按规划拼的 1:1 原图板。改完后运行 python tools/dark_edit_sheets/split_edit_sheets.py",
   "root": "assets/image",
   "sheets": [
     {

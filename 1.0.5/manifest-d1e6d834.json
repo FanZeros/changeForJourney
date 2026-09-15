@@ -272,6 +272,15 @@
       "fs_path": "image/角色卡牌/KP_YX_5.png"
     },
     {
+      "uuid": "AFj1wSKA9tyyzKpj3FxfSkRr",
+      "ext": ".png",
+      "hash": "f49df42b",
+      "size": 1242257,
+      "hash@windows": "45df1533",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF01_wasteland_20260915115642.png"
+    },
+    {
       "uuid": "AGSGgQRMunkSObt80_sktK7E",
       "ext": ".lua",
       "hash": "0b182e4b",
@@ -573,6 +582,13 @@
       "fs_path": "ui/ArenaRankPage.lua"
     },
     {
+      "uuid": "AUr3gaEdyytPumTLVE0-ogyN",
+      "ext": ".png",
+      "hash": "4390ec1d",
+      "size": 2097282,
+      "fs_path": "image/KF01_wax_letter_20260915114109.png"
+    },
+    {
       "uuid": "AV2EgajqoCyVrxdQMTLH6dUM",
       "ext": ".png",
       "hash": "dd6e82ee",
@@ -603,6 +619,13 @@
       "hash": "006a115d",
       "size": 1389529,
       "fs_path": "image/怪物卡牌/KP_GW_42.png"
+    },
+    {
+      "uuid": "AXbI4YQvO4nSKIomBBM5hc_3",
+      "ext": ".png",
+      "hash": "1447dccd",
+      "size": 2400650,
+      "fs_path": "image/KF09_three_awaken_20260915114118.png"
     },
     {
       "uuid": "AXwiqbohifdpalapLzJ_JGvm",
@@ -652,6 +675,15 @@
       "hash": "867fb5b4",
       "size": 53845,
       "fs_path": "image/特效投射物/EF_ATK_23.png"
+    },
+    {
+      "uuid": "A_QZuebGwnW-DJUCV7AGK2Gf",
+      "ext": ".png",
+      "hash": "92d42e8e",
+      "size": 1242257,
+      "hash@windows": "3a5c4886",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF14_letter_warning_20260915115841.png"
     },
     {
       "uuid": "Aaa-Yf-L7QUjvkgQsZIoGd6p",
@@ -748,8 +780,8 @@
     {
       "uuid": "AfODWb7Lftg5_JJ0pBdHvDkP",
       "ext": ".lua",
-      "hash": "af499e05",
-      "size": 10193,
+      "hash": "f1625ce3",
+      "size": 11754,
       "groups": [
         "default",
         "#blocking"
@@ -1141,6 +1173,15 @@
       "fs_path": "image/特效投射物/EF_ATK_10.png"
     },
     {
+      "uuid": "B82byURJTU9QfBrLcThVa-vQ",
+      "ext": ".png",
+      "hash": "7d792ae5",
+      "size": 1242257,
+      "hash@windows": "b9b28dca",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF09_break_seal_20260915115844.png"
+    },
+    {
       "uuid": "B89ekX6I6-LhOwranquBghUC",
       "ext": ".lua",
       "hash": "5349ec9e",
@@ -1271,6 +1312,13 @@
         "#blocking"
       ],
       "fs_path": "ui/SamsaraCG.lua"
+    },
+    {
+      "uuid": "BFXvadm_aEe5znBqIa69XUYL",
+      "ext": ".png",
+      "hash": "a7c61a9e",
+      "size": 2317347,
+      "fs_path": "image/KF03_dragonhat_20260915114110.png"
     },
     {
       "uuid": "BGDb8W6KGlU7CF6ySakAo7PJ",
@@ -2028,6 +2076,15 @@
       "fs_path": "image/怪物卡牌/KP_GW_40.png"
     },
     {
+      "uuid": "BqTeeWEsCfhqS63ueCkf7GiP",
+      "ext": ".png",
+      "hash": "dfa00717",
+      "size": 1242257,
+      "hash@windows": "c51cf381",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF10_unfold_blank_20260915115842.png"
+    },
+    {
       "uuid": "Br496atE13N4sUXE2ah9_MUT",
       "ext": ".png",
       "hash": "bd037509",
@@ -2127,6 +2184,13 @@
       "hash": "d93d74f7",
       "size": 34357,
       "fs_path": "image/UI_JSXQ_KGZ_FS.png"
+    },
+    {
+      "uuid": "BsPkeTrabfZ4gj6gzvFxJDuy",
+      "ext": ".png",
+      "hash": "6d2828f7",
+      "size": 2629544,
+      "fs_path": "image/KF02_letter_text_20260915114110.png"
     },
     {
       "uuid": "BtRyeetp2KTSUHG3-OoZ_W3G",
@@ -2497,11 +2561,27 @@
       "fs_path": "image/角色图标/UI_icon_hero_5.png"
     },
     {
+      "uuid": "CDA28RzIU663PVIUtO1mL0u1",
+      "ext": ".png",
+      "hash": "952c761b",
+      "size": 4116077,
+      "fs_path": "image/GF_intro_storyboard_4x4_20260915123929.png"
+    },
+    {
       "uuid": "CDDYqVVWP9JXbhRnGNkAN_QB",
       "ext": ".png",
       "hash": "cf3a01ab",
       "size": 1448106,
       "fs_path": "image/底板B_深褐古卷_20260912223431.png"
+    },
+    {
+      "uuid": "CDjW8Topuh_WfUiVBRUijlhn",
+      "ext": ".png",
+      "hash": "8d4a2ed7",
+      "size": 1242257,
+      "hash@windows": "9f68c73c",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF11_letter_line1_20260915115842.png"
     },
     {
       "uuid": "CDuqaUE2fvWjGPLtfNlz3X6T",
@@ -2663,6 +2743,15 @@
       "fs_path": "image/怪物卡牌/KP_GW_18.png"
     },
     {
+      "uuid": "CQ6peXFGULlCBWAlE5Hymoj7",
+      "ext": ".png",
+      "hash": "dcaa0895",
+      "size": 1242257,
+      "hash@windows": "62d53b5c",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF08_burnt_hat_20260915115639.png"
+    },
+    {
       "uuid": "CQpCEUXQElyswnJlpXBxYEoq",
       "ext": ".png",
       "hash": "019c36ed",
@@ -2704,6 +2793,13 @@
       "hash": "6e32e4d3",
       "size": 85619,
       "fs_path": "image/神器图标/UI_icon_SQ_A10.png"
+    },
+    {
+      "uuid": "CT5gaU7TQh_3RuymYKNLs_dT",
+      "ext": ".png",
+      "hash": "01d8b925",
+      "size": 4104445,
+      "fs_path": "image/GF_REF_letter_full_20260915120132.png"
     },
     {
       "uuid": "CT8n0TD9EAMaJFfkLUxdboW2",
@@ -3567,8 +3663,8 @@
     {
       "uuid": "DDyWcWEAwAwuncxpk0ulqio6",
       "ext": ".lua",
-      "hash": "045edd43",
-      "size": 114049,
+      "hash": "05d5df4c",
+      "size": 114213,
       "groups": [
         "default",
         "#blocking"
@@ -3716,8 +3812,8 @@
     {
       "uuid": "DM6hGRnGw-AKr_WXREa3wuuw",
       "ext": ".lua",
-      "hash": "c1baa50e",
-      "size": 112908,
+      "hash": "e775bd6c",
+      "size": 112299,
       "groups": [
         "default",
         "#blocking"
@@ -4093,6 +4189,13 @@
       "fs_path": "image/特效投射物/EF_MS_46.png"
     },
     {
+      "uuid": "DhBIGbFLL7bwlRUJ_5DjOcFZ",
+      "ext": ".png",
+      "hash": "e1158df0",
+      "size": 2116491,
+      "fs_path": "image/KF08_blackthorn_wake_20260915114112.png"
+    },
+    {
       "uuid": "DhgqcTI0iigW8DMTzHCk0FXr",
       "ext": ".png",
       "hash": "c7f8cb20",
@@ -4252,6 +4355,13 @@
       "hash": "b88c870a",
       "size": 7875,
       "fs_path": "image/UI_icon_JJB_X.png"
+    },
+    {
+      "uuid": "Du9V4cb8ex80URGrkTGyc_oN",
+      "ext": ".png",
+      "hash": "937b1f2d",
+      "size": 2482896,
+      "fs_path": "image/KF05_tower_fall_20260915114110.png"
     },
     {
       "uuid": "DuomadVhjEO4RHl82DjuzyFA",
@@ -4434,6 +4544,13 @@
       "fs_path": "server/gm/CrossInstanceService.lua"
     },
     {
+      "uuid": "E3t80QAmR9tznss0Q8Y4W2Cv",
+      "ext": ".png",
+      "hash": "1ee54b0a",
+      "size": 4379058,
+      "fs_path": "image/GF_intro_storyboard_4x4_20260915120624.png"
+    },
+    {
       "uuid": "E4RBQYzuuZPm6cXY9YqwQkVb",
       "ext": ".png",
       "hash": "467158be",
@@ -4570,6 +4687,15 @@
       "hash": "1b6afe8f",
       "size": 70438,
       "fs_path": "audio/battle_sfx/EF_MS_8.ogg"
+    },
+    {
+      "uuid": "EADXySKEkKFF8igjogegksSk",
+      "ext": ".png",
+      "hash": "6e09ece6",
+      "size": 1242257,
+      "hash@windows": "894eab81",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF04_light_column_20260915115649.png"
     },
     {
       "uuid": "EAFhqe3F9VtBzRUwR82WGLfj",
@@ -4740,8 +4866,8 @@
     {
       "uuid": "EJ0AieAjNBl0b3-OP9SIZfh1",
       "ext": ".lua",
-      "hash": "cc84ab9d",
-      "size": 5517,
+      "hash": "5014a430",
+      "size": 7197,
       "groups": [
         "default",
         "#blocking"
@@ -5463,8 +5589,8 @@
     {
       "uuid": "Ep9SERYYQDSVQKbtRlcXTfnF",
       "ext": ".lua",
-      "hash": "f640376a",
-      "size": 26394,
+      "hash": "f9d4083e",
+      "size": 26441,
       "groups": [
         "default",
         "#blocking"
@@ -5561,11 +5687,25 @@
       "fs_path": "config/StageConfig_Torment5.lua"
     },
     {
+      "uuid": "ErxfEfV1hyXhv1MhZLRFPX4T",
+      "ext": ".png",
+      "hash": "9f5850c5",
+      "size": 4340537,
+      "fs_path": "image/GF_intro_storyboard_4x4_20260915124441.png"
+    },
+    {
       "uuid": "ErxhcedVCB7RuhAnf91yKztH",
       "ext": ".png",
       "hash": "3f9e0121",
       "size": 21237,
       "fs_path": "image/UI_icon_SJ.png"
+    },
+    {
+      "uuid": "EsOJ-Zg_yEG5neQXmbBo6SC9",
+      "ext": ".png",
+      "hash": "67e09baf",
+      "size": 2179671,
+      "fs_path": "image/KF10_logo_gate_20260915114116.png"
     },
     {
       "uuid": "EsPsad4mZEBwVeuDr1oOuZsQ",
@@ -6315,6 +6455,15 @@
       "fs_path": "audio/battle_sfx/EF_ZY_224.ogg"
     },
     {
+      "uuid": "FNFHcRSzASyoXgVhHdPWObXK",
+      "ext": ".png",
+      "hash": "5683fd98",
+      "size": 1242257,
+      "hash@windows": "e241ac6c",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF05_candle_20260915115639.png"
+    },
+    {
       "uuid": "FOUNMf7oSZWuBqNF906HCoVA",
       "ext": ".png",
       "hash": "6b48a67d",
@@ -6476,6 +6625,15 @@
       "fs_path": "server/awakening/AwakeningService.lua"
     },
     {
+      "uuid": "FXFw2Q-NC3n6_5nS28AWIhOj",
+      "ext": ".png",
+      "hash": "9967bfdb",
+      "size": 1242257,
+      "hash@windows": "e135b831",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF06_desk_relics_20260915115639.png"
+    },
+    {
       "uuid": "FXG0WXVTkEN1XGz55DrwAuk_",
       "ext": ".lua",
       "hash": "460c81f7",
@@ -6503,6 +6661,13 @@
       "hash": "22b5d79d",
       "size": 4017689,
       "fs_path": "image/UI_MZQD_BJ.png"
+    },
+    {
+      "uuid": "FYkmeTdKyNg-n2agF0OWImuR",
+      "ext": ".png",
+      "hash": "a71ea18b",
+      "size": 2064597,
+      "fs_path": "image/KF04_final_gate_20260915114115.png"
     },
     {
       "uuid": "FYs5qWL4z9hdOD7GzuZ9RFKN",
@@ -6602,6 +6767,15 @@
       "hash": "38e2ad97",
       "size": 1139,
       "fs_path": "image/UI_ICON_JIA.png"
+    },
+    {
+      "uuid": "Fg3V2R602qXe4oHYR7BBSUbP",
+      "ext": ".png",
+      "hash": "1106fbe6",
+      "size": 1242257,
+      "hash@windows": "f59d2506",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF13_letter_more_20260915115841.png"
     },
     {
       "uuid": "Fg4iMbeTdNrnQwo4r0VP3SN7",
@@ -6721,8 +6895,8 @@
     {
       "uuid": "FkFkMTXlDI8A-6ytbqnzEcQB",
       "ext": ".lua",
-      "hash": "e79de1da",
-      "size": 957,
+      "hash": "eafcb28b",
+      "size": 1051,
       "groups": [
         "default",
         "#blocking"
@@ -6746,6 +6920,15 @@
       "hash": "112f556b",
       "size": 74674,
       "fs_path": "image/神器图标/UI_icon_SQ_A7.png"
+    },
+    {
+      "uuid": "Fl-GeVcp9DG3uNl6or_e_OY3",
+      "ext": ".png",
+      "hash": "37852d90",
+      "size": 1242257,
+      "hash@windows": "bb3bfe5e",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF02_gate_far_20260915115650.png"
     },
     {
       "uuid": "Fm8WWc_AjldGsAdj04hcioMZ",
@@ -7497,6 +7680,15 @@
       "fs_path": "image/角色图标/UI_icon_hero_4.png"
     },
     {
+      "uuid": "GO-RYXAffWZrh6eSzgec2Esy",
+      "ext": ".png",
+      "hash": "2f0800ea",
+      "size": 1242257,
+      "hash@windows": "9153e104",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF12_letter_mid_20260915115842.png"
+    },
+    {
       "uuid": "GO2UKX8ciOhyHq-hm4aKtcpI",
       "ext": ".ogg",
       "hash": "d434220c",
@@ -7913,6 +8105,22 @@
       "fs_path": "image/spine/UI_SPINE_JGZM.json"
     },
     {
+      "uuid": "GsR6wUfbgyfi-5ErI77gjEp9",
+      "ext": ".png",
+      "hash": "2fbb329c",
+      "size": 1242257,
+      "hash@windows": "7b274998",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF15_letter_sign_20260915115841.png"
+    },
+    {
+      "uuid": "GsVwWemszNGFuRP2L-U3dRmM",
+      "ext": ".png",
+      "hash": "55cfac59",
+      "size": 4341250,
+      "fs_path": "image/GF_intro_storyboard_4x4_20260915121525.png"
+    },
+    {
       "uuid": "GtAA4WZHAGG38HscXgy5Y8ug",
       "ext": ".png",
       "hash": "4394a1a1",
@@ -8289,6 +8497,13 @@
       "fs_path": "image/ICON_UP.png"
     },
     {
+      "uuid": "H8xTke5wS7A260i3J_QGQdyT",
+      "ext": ".png",
+      "hash": "7c49f094",
+      "size": 4160842,
+      "fs_path": "image/GF_intro_storyboard_4x4_20260915122029.png"
+    },
+    {
       "uuid": "H9Bl0dp2Glav3wWpPQ9dbnNe",
       "ext": ".lua",
       "hash": "07832b34",
@@ -8348,6 +8563,13 @@
       "hash": "8dd1dbc9",
       "size": 52749,
       "fs_path": "image/装备图标/UI_icon_ZB_A13.png"
+    },
+    {
+      "uuid": "HC5KAWFR0Sw08vyeDPEk_pci",
+      "ext": ".png",
+      "hash": "6a5db66d",
+      "size": 4649014,
+      "fs_path": "image/GF_KF16_letter_full_20260915115840.png"
     },
     {
       "uuid": "HC_8cbLrIX9VH-dXO_IDpsfO",
@@ -8415,6 +8637,15 @@
       "hash": "9a33324c",
       "size": 121193,
       "fs_path": "image/天赋图标/UI_icon_TF_112.png"
+    },
+    {
+      "uuid": "HGKYGQzNhAAR-mekMTvzX3V-",
+      "ext": ".png",
+      "hash": "64387b07",
+      "size": 1242257,
+      "hash@windows": "c301263d",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF07_wax_seal_20260915115637.png"
     },
     {
       "uuid": "HGKdMX5NWp5b9HxpuzmFDxIn",
@@ -9129,6 +9360,13 @@
       "fs_path": "image/UI_SDICONBJ_4.png"
     },
     {
+      "uuid": "HiZzQRHCGvpXxYJfF28LuAta",
+      "ext": ".png",
+      "hash": "7f63fd89",
+      "size": 2062416,
+      "fs_path": "image/KF07_samsara_vortex_20260915114114.png"
+    },
+    {
       "uuid": "HjeYIR-f3Op62KL4fLVjbCE6",
       "ext": ".lua",
       "hash": "4ddb8e59",
@@ -9237,6 +9475,13 @@
       "fs_path": "image/职业图标/UI_icon_ZY_218.png"
     },
     {
+      "uuid": "Ho7Z4UjNfCk5BUP2MgEzpv02",
+      "ext": ".png",
+      "hash": "98c75ced",
+      "size": 1730217,
+      "fs_path": "image/KF06_dying_eye_20260915114109.png"
+    },
+    {
       "uuid": "HoJX6XcYJ1t04GdWdvjmj8Wt",
       "ext": ".png",
       "hash": "c7c3826c",
@@ -9337,6 +9582,15 @@
       "fs_path": "image/UI_SC_TQBJ.png"
     },
     {
+      "uuid": "HvLxuefb5WCCcHYfWlrITiXe",
+      "ext": ".png",
+      "hash": "e272e8d1",
+      "size": 1242257,
+      "hash@windows": "5b5f6c87",
+      "size@windows": 6269489,
+      "fs_path": "image/GF_KF03_light_swell_20260915115642.png"
+    },
+    {
       "uuid": "Hvca2fKayKRH69SKh-Txncze",
       "ext": ".png",
       "hash": "ee453eb2",
@@ -9420,20 +9674,20 @@
     }
   ],
   "metadata": {
-    "total_files": 1140,
-    "local_files": 1139,
+    "total_files": 1172,
+    "local_files": 1171,
     "remote_files": 1,
-    "total_size": 435358788,
+    "total_size": 544982989,
     "preload_files": 1,
     "preload_size": 47,
     "groups": {
       "#blocking": {
         "files": 333,
-        "size": 7402412
+        "size": 7405349
       },
       "default": {
-        "files": 1140,
-        "size": 435359507
+        "files": 1172,
+        "size": 544983708
       },
       "#config": {
         "files": 1,

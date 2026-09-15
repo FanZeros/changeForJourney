@@ -3,9 +3,16 @@
 > 宿命旅途（TapTap 856061）H5 化 + 横屏 PC 多面板改造的完整记录。
 > 仓库：https://github.com/FanZeros/changeForJourney
 > 线上：https://fanzeros.github.io/changeForJourney/
-> 更新：2026-09-15
+> 更新：2026-09-15（v1.0.4）
 
 ---
+
+## 2026-09-15 部署 v1.0.4（先祖来信开场修复）
+
+- 修横屏标题盖住/吞掉先祖来信：等 DarkTitleScreen 关闭后再播 LetterIntro → 过场 → 情景1
+- 开场覆盖提到全窗口最上层（letterbox 1080×2400），开场期间独占输入
+- 预载结束当帧继续开场判定，避免标题关闭边沿被吞
+- 源码 workspace@f642038
 
 ## 2026-09-15 部署 v1.0.3（终焉之门·单机版）
 

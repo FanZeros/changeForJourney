@@ -162,8 +162,10 @@
     {
       "uuid": "AARlKfT2SH4KEwNRHg6uFhte",
       "ext": ".png",
-      "hash": "8b56ecd8",
-      "size": 158820,
+      "hash": "666683f4",
+      "size": 158557,
+      "hash@windows": "c10f42ec",
+      "size@windows": 349677,
       "fs_path": "image/ICON_DW_2.png"
     },
     {
@@ -746,8 +748,8 @@
     {
       "uuid": "AfODWb7Lftg5_JJ0pBdHvDkP",
       "ext": ".lua",
-      "hash": "6771bb44",
-      "size": 9948,
+      "hash": "af499e05",
+      "size": 10193,
       "groups": [
         "default",
         "#blocking"
@@ -3536,15 +3538,19 @@
     {
       "uuid": "DDPLsYBYLig-UfXFAfZYlbJO",
       "ext": ".png",
-      "hash": "477e687b",
-      "size": 268407,
+      "hash": "c115874c",
+      "size": 158557,
+      "hash@windows": "8c8f1d64",
+      "size@windows": 349677,
       "fs_path": "image/ICON_DW_7.png"
     },
     {
       "uuid": "DDUpMdBE4wnvWq3o43ke7NPF",
       "ext": ".png",
-      "hash": "8d60338b",
-      "size": 152969,
+      "hash": "1febf893",
+      "size": 158557,
+      "hash@windows": "ef4859dc",
+      "size@windows": 349677,
       "fs_path": "image/ICON_DW_1.png"
     },
     {
@@ -3561,8 +3567,8 @@
     {
       "uuid": "DDyWcWEAwAwuncxpk0ulqio6",
       "ext": ".lua",
-      "hash": "8117f6e3",
-      "size": 114031,
+      "hash": "045edd43",
+      "size": 114049,
       "groups": [
         "default",
         "#blocking"
@@ -3710,8 +3716,8 @@
     {
       "uuid": "DM6hGRnGw-AKr_WXREa3wuuw",
       "ext": ".lua",
-      "hash": "4064633b",
-      "size": 112123,
+      "hash": "c1baa50e",
+      "size": 112908,
       "groups": [
         "default",
         "#blocking"
@@ -4367,8 +4373,10 @@
     {
       "uuid": "E1mcwcIxvnT8Mg8tdpOGa291",
       "ext": ".png",
-      "hash": "ada708b9",
-      "size": 230572,
+      "hash": "be985762",
+      "size": 158557,
+      "hash@windows": "efdb2e68",
+      "size@windows": 349677,
       "fs_path": "image/ICON_DW_4.png"
     },
     {
@@ -7303,8 +7311,10 @@
     {
       "uuid": "GCZ64X192DwA5MHlpB8sU0qp",
       "ext": ".png",
-      "hash": "d445f119",
-      "size": 184095,
+      "hash": "ee99cdbf",
+      "size": 158557,
+      "hash@windows": "c55295e9",
+      "size@windows": 349677,
       "fs_path": "image/ICON_DW_3.png"
     },
     {
@@ -7941,8 +7951,10 @@
     {
       "uuid": "Gwg6CTz0zAEGenKEANe8tpu8",
       "ext": ".png",
-      "hash": "9b36ae51",
-      "size": 207974,
+      "hash": "caa1a33b",
+      "size": 158557,
+      "hash@windows": "fbfb0f7e",
+      "size@windows": 349677,
       "fs_path": "image/ICON_DW_6.png"
     },
     {
@@ -8263,8 +8275,10 @@
     {
       "uuid": "H85h2YH8MOJXLjEPGXDrCuNJ",
       "ext": ".png",
-      "hash": "39292156",
-      "size": 202532,
+      "hash": "4d6c353e",
+      "size": 158557,
+      "hash@windows": "6f20d90c",
+      "size@windows": 349677,
       "fs_path": "image/ICON_DW_5.png"
     },
     {
@@ -8469,8 +8483,10 @@
     {
       "uuid": "HHzjMeqWIDIfnbfx1edU0vGq",
       "ext": ".png",
-      "hash": "71a332e3",
-      "size": 301552,
+      "hash": "1d376587",
+      "size": 158557,
+      "hash@windows": "b0686bfd",
+      "size@windows": 349677,
       "fs_path": "image/ICON_DW_8.png"
     },
     {
@@ -9407,17 +9423,17 @@
     "total_files": 1140,
     "local_files": 1139,
     "remote_files": 1,
-    "total_size": 435357740,
+    "total_size": 435358788,
     "preload_files": 1,
     "preload_size": 47,
     "groups": {
       "#blocking": {
         "files": 333,
-        "size": 7401364
+        "size": 7402412
       },
       "default": {
         "files": 1140,
-        "size": 435358459
+        "size": 435359507
       },
       "#config": {
         "files": 1,

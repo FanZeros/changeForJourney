@@ -248,7 +248,7 @@ end
 
 --- 松开事件分发（含点击判定）
 local function dispatchDragEndAndTap(dx, dy)
-    -- [DarkTitleScreen] 标题期任意释放 = 点击继续
+    -- [DarkTitleScreen] 标题期任意释放 = 点击继续（资源未就绪时 handleTap 内部忽略）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.handleTap()
         pressValid = false

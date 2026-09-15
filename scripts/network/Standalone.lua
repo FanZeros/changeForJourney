@@ -84,7 +84,7 @@ local fontNormal = -1
 local preload_ = { active = false, bg = false, list = {}, idx = 0, bytes = 0, deadline = nil,
                     dwpActive = false, dwpDone = 0, dwpTotal = 0, skipWait = false }
 local PRELOAD_FG_BUDGET = 80 * 1024 * 1024   -- 前台预载字节预算
-local PRELOAD_TIME_LIMIT = 180               -- DWP 预下载等待上限（秒）；到点放行进入，引擎后台继续
+local PRELOAD_TIME_LIMIT = 180               -- DWP 预下载等待上限（秒）；超时后仍允许进入，避免永久卡死
 local BG_FRAME_BUDGET = 0.003                -- 后台补载每帧时间预算（秒）
 local BG_SKIP_SIZE = 1024 * 1024             -- 后台跳过的大图阈值（1MB，保持惰性）
 
@@ -224,6 +224,7 @@ function Standalone.Start()
     -- 5. Sub-modules
     StartScreen.init(vg, scene)
     DarkTitleScreen.init(vg)  -- [DarkTitleScreen] 横屏标题资源
+    LetterIntro.init(vg)      -- [LetterIntro] 书斋/火漆全窗口素材
     TopBar.init(vg)
     BottomNav.init(vg)
     BattleScene.init(vg)
@@ -850,11 +851,14 @@ function Standalone.Start()
         if not okDWP then
             preload_.dwpActive = false
             preload_.active = false
+            DarkTitleScreen.setReady(true)
             print("[Standalone] DownloadResources 不可用，跳过预下载: " .. tostring(err))
         else
+            DarkTitleScreen.setReady(false)
             print("[Standalone] DWP 全量预下载启动: " .. #manifest .. " 项")
         end
     else
+        DarkTitleScreen.setReady(true)
         print("[Standalone] AssetManifest 缺失，跳过全量预载")
     end
     SubscribeToEvent("ScreenMode", "HandleScreenMode")
@@ -1054,9 +1058,11 @@ function HandleNanoVGRender(eventType, eventData)
         return
     end
 
-    -- [LetterIntro] 先祖来信（最高优先级，覆盖一切）
+    -- [LetterIntro] 先祖来信（最高优先级，覆盖一切；竖屏路径也全窗口）
     if LetterIntro.isOpen() then
-        LetterIntro.draw(vg)
+        nvgResetTransform(vg)
+        ---@diagnostic disable-next-line: missing-parameter
+        LetterIntro.draw(vg, logicalW, logicalH)
         nvgEndFrame(vg)
         return
     end
@@ -1182,7 +1188,7 @@ function HandleNanoVGRender(eventType, eventData)
     end
 
     -- [一次性加载] 预载进度遮罩（竖屏路径，设计空间坐标）
-    if preload_.active then
+    if preload_.active and not DarkTitleScreen.isOpen() and not StartScreen.isOpen() then
         DrawPreloadOverlay(vg, DESIGN_W, DESIGN_H)
     end
 
@@ -1193,38 +1199,41 @@ end
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
     -- [DWP 异步预下载] 等待期：
-    --   1) 开始/标题画面保持可交互；引擎后台线程下载（主线程零阻塞，帧率正常）
-    --   2) 下载完成（或点击标题跳过等待 / 45s 兜底超时）即放行进入游戏
-    --   3) 主线程全程不做任何同步加载；未就绪图首用时由 DWP 占位机制兜底
+    --   1) 标题画面可显示，但资源未完成前不允许进入（避免无背景界面）
+    --   2) 下载完成后解锁标题点击；超时后仍解锁，避免永久卡死
+    --   3) 主线程全程不做任何同步加载
     if preload_.active then
         local dt = eventData["TimeStep"]:GetFloat()
         if StartScreen.isOpen() then
             StartScreen.update(dt)
-            if not StartScreen.isOpen() then
-                preload_.skipWait = true
-            end
         end
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.update(dt)
-            if not DarkTitleScreen.isOpen() then
-                preload_.skipWait = true
-                print("[Standalone] 标题画面已点击，跳过等待放行进入")
-            end
         end
+        local total = preload_.dwpTotal
+        local done = preload_.dwpDone
+        local pct = (total > 0) and math.floor(done * 100 / total) or 0
+        DarkTitleScreen.loadPercent = pct
+        DarkTitleScreen.loadDone = done
+        DarkTitleScreen.loadTotal = total
+        DarkTitleScreen.setReady(false)
+
         if preload_.dwpActive and preload_.deadline == nil then
             preload_.deadline = time.elapsedTime + PRELOAD_TIME_LIMIT
         end
+        local timedOut = false
         if preload_.dwpActive and preload_.deadline ~= nil
            and time.elapsedTime > preload_.deadline then
+            timedOut = true
             preload_.dwpActive = false
-            print("[Standalone] DWP 预下载超时(" .. PRELOAD_TIME_LIMIT .. "s)，放行进入（引擎后台继续）")
+            print("[Standalone] DWP 预下载超时(" .. PRELOAD_TIME_LIMIT .. "s)，解锁进入（引擎后台继续）")
         end
-        if not preload_.dwpActive or preload_.skipWait then
+        if not preload_.dwpActive then
             preload_.active = false
-            local pct = (preload_.dwpTotal > 0)
-                and math.floor(preload_.dwpDone * 100 / preload_.dwpTotal) or 100
-            print("[Standalone] DWP 预下载等待结束（" .. pct .. "%），放行进入游戏")
-            -- 不 return：本帧立刻进入下方开场判定，避免标题关闭边沿被吞掉
+            DarkTitleScreen.setReady(true)
+            print("[Standalone] DWP 预下载等待结束（" .. pct .. "%），标题可点击进入"
+                .. (timedOut and " [timeout]" or ""))
+            -- 不 return：本帧立刻进入下方开场判定
         else
             return
         end
@@ -2093,23 +2102,27 @@ local function HorizonUpdateTransform()
     end
 end
 
---- [LetterIntro] 开场链全窗口覆盖：设计空间 1080×2400 letterbox，必须画在 DarkTitle 之后
+--- [LetterIntro] 开场链全窗口覆盖：信件铺满窗口；过场/情景仍用 1080×2400 letterbox
 local function HorizonDrawIntroOverlay()
     if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
         return
     end
-    local ss = math.min(logicalW / 1080, logicalH / 2400)
     nvgSave(vg)
     nvgResetTransform(vg)
     nvgScissor(vg, 0, 0, logicalW, logicalH)
-    nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
-    nvgScale(vg, ss, ss)
     if LetterIntro.isOpen() then
-        LetterIntro.draw(vg)
-    elseif IntroCutscene.isActive() then
-        IntroCutscene.draw(vg)
-    elseif ScenarioDialogue.isActive() then
-        ScenarioDialogue.draw()
+        -- 全窗口逻辑坐标，16:9 cover，不再 letterbox 成竖条
+        ---@diagnostic disable-next-line: missing-parameter
+        LetterIntro.draw(vg, logicalW, logicalH)
+    else
+        local ss = math.min(logicalW / 1080, logicalH / 2400)
+        nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
+        nvgScale(vg, ss, ss)
+        if IntroCutscene.isActive() then
+            IntroCutscene.draw(vg)
+        elseif ScenarioDialogue.isActive() then
+            ScenarioDialogue.draw()
+        end
     end
     nvgRestore(vg)
 end
@@ -2202,7 +2215,7 @@ function HandleNanoVGRenderHorizon()
         H_skipDone = true
         StartScreen.skipForReconnect()
         DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
-        if H_AUTO_DISMISS_TITLE then
+        if H_AUTO_DISMISS_TITLE and DarkTitleScreen.isReady() then
             DarkTitleScreen.handleTap()  -- 临时验证入口: 无输入环境自动淡出标题
         end
     end
@@ -2308,15 +2321,12 @@ function HandleNanoVGRenderHorizon()
             local scx, scy, sw, sh, sdir = seamBackRect()
             DrawUtil.drawBackChevron(vg, scx, scy, sw, sh, sdir)
         end
-        -- [DWP] 下载进行中: 全屏进度遮罩独占显示（完成后露出标题屏可点击进入）
-        if preload_.active then
-            DrawPreloadOverlay(vg, logicalW, logicalH)
-            nvgEndFrame(vg)
-            return
-        end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
+        -- 资源未就绪时标题自带进度条，不允许点进空背景界面
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg, logicalW, logicalH)
+        elseif preload_.active then
+            DrawPreloadOverlay(vg, logicalW, logicalH)
         end
         -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
         HorizonDrawIntroOverlay()
@@ -2347,34 +2357,11 @@ function HandleNanoVGRenderHorizon()
         nvgRestore(vg)
     end
 
-    -- [一次性加载] 预载进度遮罩（横屏路径，基屏幕空间，最后绘制覆盖全部）
-    if preload_.active then
-        local total = #preload_.list
-        local done = preload_.idx
-        local p = total > 0 and (done / total) or 0
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, logicalW, logicalH)
-        nvgFillColor(vg, nvgRGBA(13, 11, 9, 255))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5, logicalH * 0.42, "资源加载中",
-            math.floor(logicalH * 0.034), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            240, 199, 94, 3)
-        local bw = logicalW * 0.42
-        local bh = math.max(10, logicalH * 0.008)
-        local bx = (logicalW - bw) * 0.5
-        local by = logicalH * 0.48
-        DarkIcon.drawNine(vg, "slot", bx, by, bw, bh)
-        local fw = math.max(bh - 6, (bw - 6) * p)
-        DarkIcon.drawNine(vg, "fill", bx + 3, by + 3, fw, bh - 6)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5, by + bh * 2.4,
-            string.format("%d / %d", done, total),
-            math.floor(logicalH * 0.024), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            216, 201, 163, 2)
-    end
-
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.draw(vg, logicalW, logicalH)
+    elseif preload_.active then
+        DrawPreloadOverlay(vg, logicalW, logicalH)
     end
     -- [LetterIntro] 开场覆盖必须在标题之后（非三行路径同样需要）
     HorizonDrawIntroOverlay()

@@ -671,6 +671,7 @@ function Client.Start()
     print("[Client][LOAD]   LoadingScreen.init...")
     LoadingScreen.init(vg)
     DarkTitleScreen.init(vg)  -- [DarkTitleScreen] 横屏标题资源
+    LetterIntro.init(vg)      -- [LetterIntro] 书斋/火漆全窗口素材
     -- StartScreen 关闭后→打开 LoadingScreen（复用视频播放器，避免黑屏闪烁）
     StartScreen.setOnStart(function(vp, vh, bs, bn)
         LoadingScreen.open({ videoPlayer = vp, videoHandle = vh, bgmSource = bs, bgmNode = bn })
@@ -1495,6 +1496,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
             H_skipDone = true
             StartScreen.skipForReconnect()
             DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
+            DarkTitleScreen.setReady(not LoadingScreen.isOpen())
         end
         if StartScreen.isOpen() or LoadingScreen.isOpen() or LetterIntro.isOpen() then
             local ss = math.min(logicalW / 1080, logicalH / 2400)
@@ -1858,13 +1860,11 @@ function HandleNanoVGRender_Client(eventType, eventData)
         DarkTitleScreen.draw(vg, logicalW, logicalH)
     end
 
-    -- [LetterIntro] 先祖来信（设计空间 1080×2400，letterbox 同 StartScreen）
+    -- [LetterIntro] 先祖来信（全窗口 16:9 cover，盖住三联面板）
     if LetterIntro.isOpen() then
         nvgResetTransform(vg)
-        local ssL = math.min(logicalW / 1080, logicalH / 2400)
-        nvgTranslate(vg, (logicalW - 1080 * ssL) * 0.5, (logicalH - 2400 * ssL) * 0.5)
-        nvgScale(vg, ssL, ssL)
-        LetterIntro.draw(vg)
+        ---@diagnostic disable-next-line: missing-parameter
+        LetterIntro.draw(vg, logicalW, logicalH)
     end
 
     nvgEndFrame(vg)
@@ -2061,7 +2061,9 @@ function HandleUpdate_Client(eventType, eventData)
     end
 
     -- [DarkTitleScreen] 横屏标题动画（游戏/加载在标题下方继续进行）
+    -- LoadingScreen 未完成时锁点击，避免点进无背景界面
     if DarkTitleScreen.isOpen() then
+        DarkTitleScreen.setReady(not LoadingScreen.isOpen())
         DarkTitleScreen.update(dt)
     elseif pendingIntroAfterTitle_ and not LoadingScreen.isOpen() then
         -- 标题已关闭（或不存在）且加载完成 → 启动先祖来信开场链

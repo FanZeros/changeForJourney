@@ -2,16 +2,24 @@
 -- LetterIntro.lua — 先祖来信（首登开场剧情·轻松带梗版）
 -- 玩法：黑屏 → 暗色信笺逐行显墨（分 7 段，轻触翻段/自动推进）→ 火漆印「终」
 --       → 淡出，无缝衔接 IntroCutscene（睁眼过场）→ SCENARIO_1 → 选角。
--- 触发：仅 Client 新手链（roster 为空），在 IntroCutscene 之前。
--- 绘制：设计空间 1080×2400（横屏由调用方做 letterbox 变换，同 StartScreen）。
+-- 绘制：全窗口逻辑坐标（调用方 nvgResetTransform 后传入 logicalW/logicalH），
+--       横屏 16:9 cover 铺满，不再做 1080×2400 letterbox 窄条。
+-- 素材（本地路径，不走 URL）：
+--   image/GF_KF06_desk_relics_20260915115639.png  书斋桌案（信封+帽）
+--   image/GF_KF07_wax_seal_20260915115637.png     火漆特写「终」
 -- ============================================================================
 
-local DarkIcon = require("core.DarkIcon")
-
+---@class LetterIntro
+---@field init fun(vg: userdata)
+---@field start fun(onFinish: function|nil)
+---@field isOpen fun(): boolean
+---@field reset fun()
+---@field handleTap fun()
+---@field update fun(dt: number)
+---@field draw fun(vg: userdata, w: number, h: number)
 local LetterIntro = {}
 
 -- ======================== 信件内容（blocks × lines） ========================
--- gold=true 的行用亮金色（关键句）
 local BLOCKS = {
     {
         { t = "致我从未谋面的孩子：", gold = true },
@@ -58,15 +66,6 @@ local BLOCKS = {
     },
 }
 
--- ======================== 布局常量（设计空间 1080×2400） ========================
--- 注：panel 样式自带标题分隔线（约面板顶部 176px 处），正文从分隔线下方起排
-local PANEL_X, PANEL_Y, PANEL_W, PANEL_H = 60, 170, 960, 2000
-local TEXT_X, TEXT_W = 125, 820
-local TEXT_Y0 = 460
-local LINE_H = 50
-local FS_BODY, FS_HEAD = 36, 42
-local SIG_RIGHT_X = TEXT_X + 800   -- 落款右对齐基线
-
 local C_INK  = { 214, 200, 166 }
 local C_GOLD = { 232, 200, 120 }
 local C_DIM  = { 150, 142, 124 }
@@ -74,31 +73,58 @@ local C_BG   = { 4, 4, 7 }
 
 -- ======================== 状态 ========================
 local vg_       = nil
+local imgDesk_  = -1
+local imgSeal_  = -1
 local active    = false
 local state     = "reveal"   -- reveal | sealed | fading
 local blockIdx  = 1
-local revealT   = 0          -- 当前段已用时间
+local revealT   = 0
 local sealedT   = 0
 local fadeT     = 0
 local totalT    = 0
 local onFinishCb = nil
 
-local LINE_REVEAL = 0.45     -- 行显墨间隔
-local BLOCK_HOLD  = 1.5      -- 段末自动翻页延迟
+local LINE_REVEAL = 0.45
+local BLOCK_HOLD  = 1.5
 local SEAL_DUR    = 0.9
 local FADE_DUR    = 0.6
 
 local function lineCount(b) return #BLOCKS[b] end
 
---- 已显行的全局序号（含之前所有段）
-local function revealedLineTotal(b, revealed)
-    local n = 0
-    for i = 1, b - 1 do n = n + lineCount(i) end
-    return n + revealed
+--- 16:9 图 cover 铺满窗口（与 DarkTitleScreen 同一套算法）
+local function coverRect(w, h, imgAR)
+    local winAR = w / h
+    local dw, dh
+    if winAR > imgAR then
+        dw, dh = w, w / imgAR
+    else
+        dh, dw = h, h * imgAR
+    end
+    return (w - dw) * 0.5, (h - dh) * 0.5, dw, dh
 end
 
 -- ======================== 生命周期 ========================
---- 启动信件（onFinish 在淡出完成后回调）
+---@param vg userdata
+function LetterIntro.init(vg)
+    vg_ = vg
+    if imgDesk_ < 0 then
+        imgDesk_ = nvgCreateImage(vg, "image/GF_KF06_desk_relics_20260915115639.png", 0)
+        if imgDesk_ < 0 then
+            print("[LetterIntro] WARN: GF_KF06_desk_relics load failed")
+        else
+            print("[LetterIntro] desk relics loaded")
+        end
+    end
+    if imgSeal_ < 0 then
+        imgSeal_ = nvgCreateImage(vg, "image/GF_KF07_wax_seal_20260915115637.png", 0)
+        if imgSeal_ < 0 then
+            print("[LetterIntro] WARN: GF_KF07_wax_seal load failed")
+        else
+            print("[LetterIntro] wax seal loaded")
+        end
+    end
+end
+
 function LetterIntro.start(onFinish)
     if active then return end
     active      = true
@@ -116,7 +142,6 @@ function LetterIntro.isOpen()
     return active
 end
 
---- 清档/重开时强制关闭信件（避免上一轮回调残留）
 function LetterIntro.reset()
     active = false
     state = "reveal"
@@ -128,13 +153,12 @@ function LetterIntro.reset()
     onFinishCb = nil
 end
 
---- 轻触：未显完→整段显完；已显完→下一段/封印
 function LetterIntro.handleTap()
     if not active or state ~= "reveal" then return end
     local cur = lineCount(blockIdx)
     local revealed = math.floor(revealT / LINE_REVEAL)
     if revealed < cur then
-        revealT = cur * LINE_REVEAL   -- 整段瞬间显完
+        revealT = cur * LINE_REVEAL
     elseif blockIdx < #BLOCKS then
         blockIdx = blockIdx + 1
         revealT = 0
@@ -151,7 +175,6 @@ function LetterIntro.update(dt)
         revealT = revealT + dt
         local cur = lineCount(blockIdx)
         if revealT >= cur * LINE_REVEAL + BLOCK_HOLD then
-            -- 自动翻段
             if blockIdx < #BLOCKS then
                 blockIdx = blockIdx + 1
                 revealT = 0
@@ -180,30 +203,82 @@ function LetterIntro.update(dt)
     end
 end
 
--- ======================== 绘制（设计空间 1080×2400） ========================
-function LetterIntro.draw(vg)
+-- ======================== 绘制（全窗口逻辑坐标） ========================
+---@param vg userdata
+---@param w number
+---@param h number
+local function drawLetter(vg, w, h)
     if not active then return end
+    if w <= 0 or h <= 0 then return end
 
     local fade = 1.0
     if state == "fading" then fade = 1.0 - fadeT / FADE_DUR end
-    -- 烛光呼吸（轻微确定性闪烁）
     local flicker = 0.93 + 0.05 * math.sin(totalT * 11.0) + 0.02 * math.sin(totalT * 23.7)
 
-    -- 1) 全屏暗幕
+    -- 1) 全屏暗底（盖住左右城镇/角色面板）
     nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, 1080, 2400)
-    nvgFillColor(vg, nvgRGBA(C_BG[1], C_BG[2], C_BG[3], 250 * fade))
+    nvgRect(vg, 0, 0, w, h)
+    nvgFillColor(vg, nvgRGBA(C_BG[1], C_BG[2], C_BG[3], 255 * fade))
     nvgFill(vg)
 
-    -- 2) 信笺底板（暗铁金饰九宫格）
-    local panelA = 255 * fade
-    nvgSave(vg)
-    nvgGlobalAlpha(vg, fade)
-    DarkIcon.drawNine(vg, "panel", PANEL_X, PANEL_Y, PANEL_W, PANEL_H)
+    -- 2) 背景：reveal 用书斋桌案，sealed 叠火漆特写（16:9 cover 铺满）
+    local imgAR = 16 / 9
+    local dx, dy, dw, dh = coverRect(w, h, imgAR)
+    local bgImg = imgDesk_
+    local bgA = fade * flicker
+    if state == "sealed" and imgSeal_ >= 0 then
+        local p = math.min(1, sealedT / SEAL_DUR)
+        if imgDesk_ >= 0 then
+            local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, imgDesk_, bgA * (1 - p))
+            nvgBeginPath(vg)
+            nvgRect(vg, 0, 0, w, h)
+            nvgFillPaint(vg, paint)
+            nvgFill(vg)
+        end
+        bgImg = imgSeal_
+        bgA = fade * (0.85 + 0.15 * p)
+    end
+    if bgImg >= 0 then
+        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, bgImg, bgA)
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, w, h)
+        nvgFillPaint(vg, paint)
+        nvgFill(vg)
+    end
 
-    -- 3) 正文逐行显墨
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_BASELINE)
-    local lineY = TEXT_Y0
+    -- 3) 半透明信笺底板（横屏居中，约占 62% 宽 × 78% 高）
+    local panelW = math.min(w * 0.62, h * 1.05)
+    local panelH = math.min(h * 0.78, w * 0.72)
+    local panelX = (w - panelW) * 0.5
+    local panelY = (h - panelH) * 0.5 - h * 0.02
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, panelX, panelY, panelW, panelH, math.max(10, h * 0.012))
+    nvgFillColor(vg, nvgRGBA(12, 10, 8, 210 * fade))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, panelX, panelY, panelW, panelH, math.max(10, h * 0.012))
+    nvgStrokeColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 90 * fade))
+    nvgStrokeWidth(vg, math.max(1.5, h * 0.0025))
+    nvgStroke(vg)
+
+    -- 标题分隔金线
+    local padX = panelW * 0.08
+    local textX = panelX + padX
+    local textW = panelW - padX * 2
+    local lineY0 = panelY + panelH * 0.10
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, textX, lineY0)
+    nvgLineTo(vg, textX + textW, lineY0)
+    nvgStrokeColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 120 * fade))
+    nvgStrokeWidth(vg, 1.5)
+    nvgStroke(vg)
+
+    -- 4) 正文逐行显墨
+    local fsHead = math.max(22, math.min(w * 0.028, h * 0.045))
+    local fsBody = math.max(18, math.min(w * 0.022, h * 0.036))
+    local lineH  = fsBody * 1.55
+    local lineY  = lineY0 + lineH * 1.35
+    nvgFontFace(vg, "sans")
     for b = 1, blockIdx do
         local maxLine = lineCount(b)
         if b == blockIdx then
@@ -212,70 +287,49 @@ function LetterIntro.draw(vg)
         for i = 1, maxLine do
             local L = BLOCKS[b][i]
             local isHead = (b == 1 and i == 1)
-            local fs = isHead and FS_HEAD or FS_BODY
+            local fs = isHead and fsHead or fsBody
             local col = L.gold and C_GOLD or (L.dim and C_DIM or C_INK)
-            -- 行内淡入：当前段最后一行按相位渐显
             local a = 255
             if b == blockIdx then
                 local phase = revealT - (i - 1) * LINE_REVEAL
                 if phase < 0.4 then a = 255 * math.max(0, phase / 0.4) end
             end
             a = a * flicker * fade
-            nvgFontFace(vg, "sans")
             nvgFontSize(vg, fs)
-            if L.dim then nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BASELINE) end
+            if L.dim then
+                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BASELINE)
+            else
+                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_BASELINE)
+            end
             nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], a))
-            nvgText(vg, L.dim and SIG_RIGHT_X or TEXT_X, lineY, L.t, nil)
-            if L.dim then nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_BASELINE) end
-            lineY = lineY + LINE_H
+            nvgText(vg, L.dim and (textX + textW) or textX, lineY, L.t, nil)
+            lineY = lineY + lineH
         end
         if b < blockIdx then
-            -- 段间空行
-            lineY = lineY + LINE_H * 0.6
+            lineY = lineY + lineH * 0.45
         end
-    end
-
-    -- 4) 火漆印「终」（信笺右上标题区，最后一段显完时砸下）
-    if state == "sealed" then
-        local p = math.min(1, sealedT / SEAL_DUR)
-        local scale = 1.6 - 0.6 * p              -- 从大到小砸落
-        local a = 255 * math.min(1, p * 2) * fade
-        local cx, cy, r = 900, 258, 56 * scale
-        nvgBeginPath(vg)
-        nvgCircle(vg, cx, cy, r)
-        nvgFillColor(vg, nvgRGBA(148, 38, 32, 232 * a / 255))
-        nvgFill(vg)
-        nvgBeginPath(vg)
-        nvgCircle(vg, cx, cy, r * 0.72)
-        nvgStrokeColor(vg, nvgRGBA(120, 26, 22, 255 * a / 255))
-        nvgStrokeWidth(vg, 4)
-        nvgStroke(vg)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 58)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(232, 210, 190, a))
-        nvgText(vg, cx, cy + 2, "终", nil)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_BASELINE)
     end
 
     -- 5) 底部提示
     local hintA = (0.35 + 0.5 * (0.5 + 0.5 * math.sin(totalT * 2.2))) * fade
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 30)
+    nvgFontSize(vg, math.max(16, math.min(w * 0.018, 28)))
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 160 * hintA))
+    nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 180 * hintA))
     if state == "reveal" then
-        nvgText(vg, 540, 2270, "· 轻 触 翻 阅 ·", nil)
+        nvgText(vg, w * 0.5, panelY + panelH + h * 0.045, "· 轻 触 翻 阅 ·", nil)
+    elseif state == "sealed" then
+        nvgText(vg, w * 0.5, panelY + panelH + h * 0.045, "· 火 漆 已 落 ·", nil)
     end
 
-    -- 6) 四角金饰角标（呼应标题界面）
-    local inset, len = 36, 60
-    nvgStrokeColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 70 * fade))
-    nvgStrokeWidth(vg, 2.5)
+    -- 6) 四角金饰（全窗口）
+    local inset, len = math.max(18, h * 0.028), math.max(28, h * 0.05)
+    nvgStrokeColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 90 * fade))
+    nvgStrokeWidth(vg, 2.2)
     for _, cx in ipairs({ true, false }) do
         for _, cy in ipairs({ true, false }) do
-            local px = cx and inset or (1080 - inset)
-            local py = cy and inset or (2400 - inset)
+            local px = cx and inset or (w - inset)
+            local py = cy and inset or (h - inset)
             local sx = cx and 1 or -1
             local sy = cy and 1 or -1
             nvgBeginPath(vg)
@@ -285,8 +339,8 @@ function LetterIntro.draw(vg)
             nvgStroke(vg)
         end
     end
-
-    nvgRestore(vg)
 end
+
+LetterIntro.draw = drawLetter
 
 return LetterIntro

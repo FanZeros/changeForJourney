@@ -1498,7 +1498,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
             DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
             DarkTitleScreen.setReady(not LoadingScreen.isOpen())
         end
-        if StartScreen.isOpen() or LoadingScreen.isOpen() or LetterIntro.isOpen() then
+        if StartScreen.isOpen() or LoadingScreen.isOpen() or LetterIntro.isOpen() or CharacterSelect.isActive() then
             local ss = math.min(logicalW / 1080, logicalH / 2400)
             scale = ss
             -- 外层 nvgScale(scale) 会缩放 translate 值：偏移需除以 scale（缩放空间语义）
@@ -1781,8 +1781,8 @@ function HandleNanoVGRender_Client(eventType, eventData)
             ScenarioDialogue.draw()
         end
 
-        -- 选择初始角色界面（情景对话结束后显示）
-        if CharacterSelect.isActive() then
+        -- 选择初始角色：横屏改由全窗口 letterbox 绘制（见 HandleNanoVGRender_Client 尾部）
+        if CharacterSelect.isActive() and not HORIZON_MODE then
             CharacterSelect.draw()
         end
 
@@ -1865,6 +1865,14 @@ function HandleNanoVGRender_Client(eventType, eventData)
         nvgResetTransform(vg)
         ---@diagnostic disable-next-line: missing-parameter
         LetterIntro.draw(vg, logicalW, logicalH)
+    end
+    -- 选角：竖屏 1080×2400 letterbox 全窗口覆盖（不再缩进中栏）
+    if CharacterSelect.isActive() then
+        nvgResetTransform(vg)
+        local ss = math.min(logicalW / 1080, logicalH / 2400)
+        nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
+        nvgScale(vg, ss, ss)
+        CharacterSelect.draw()
     end
 
     nvgEndFrame(vg)
@@ -2068,28 +2076,22 @@ function HandleUpdate_Client(eventType, eventData)
     elseif pendingIntroAfterTitle_ and not LoadingScreen.isOpen() then
         -- 标题已关闭（或不存在）且加载完成 → 启动先祖来信开场链
         pendingIntroAfterTitle_ = false
-        print("[Client] title closed, starting intro chain (letter → cutscene → scenario 1)")
+        print("[Client] title closed, starting letter then character select (skip cutscene/scenario)")
         GameBGM.setScene("letter", { fromStart = true })
         LetterIntro.start(function()
-            IntroCutscene.start(function()
-                GameBGM.setScene("battle", { fromStart = true })
-                print("[Client] intro cutscene finished")
-                print("[Client] starting scenario dialogue 1")
-                local scenarioConfig = ScenarioDialogueConfig.SCENARIO_1
-                scenarioConfig.onFinish = function()
-                    print("[Client] scenario dialogue 1 finished, opening character select")
-                    CharacterSelect.show({
-                        background = scenarioConfig.background,
-                        onFinish = function(heroId)
-                            print("[Client] character selected: heroId=" .. heroId)
-                            Client.sendAction(Protocol.ACTION_TYPES.SELECT_INITIAL_HERO, {
-                                heroId = heroId,
-                            })
-                        end,
+            GameBGM.setScene("battle", { fromStart = true })
+            print("[Client] letter finished, opening character select")
+            -- 跳过情景1仍领取标记，避免后续系统再拉起开场对话
+            Client.sendAction(Protocol.ACTION_TYPES.CLAIM_SCENARIO_REWARD, { scenarioId = 1 })
+            CharacterSelect.show({
+                background = "image/关卡地图/MAP_1.png",
+                onFinish = function(heroId)
+                    print("[Client] character selected: heroId=" .. heroId)
+                    Client.sendAction(Protocol.ACTION_TYPES.SELECT_INITIAL_HERO, {
+                        heroId = heroId,
                     })
-                end
-                ScenarioDialogue.show(scenarioConfig)
-            end)
+                end,
+            })
         end)
     end
 

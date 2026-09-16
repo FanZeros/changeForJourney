@@ -1,7 +1,7 @@
 -- ============================================================================
 -- LetterIntro.lua — 先祖来信（首登开场剧情·轻松带梗版）
--- 玩法：黑屏 → 暗色信笺逐行显墨（分 7 段，轻触翻段/自动推进）→ 火漆印「终」
---       → 淡出，无缝衔接 IntroCutscene（睁眼过场）→ SCENARIO_1 → 选角。
+-- 玩法：暗色信笺逐行显墨（短版 3 段，轻触翻段/自动推进）→ 火漆印「终」→ 淡出进游戏。
+--       后续睁眼过场 / 情景1 已取消，解锁在信件结束时直接发放。
 -- 绘制：全窗口逻辑坐标（调用方 nvgResetTransform 后传入 logicalW/logicalH），
 --       横屏 16:9 cover 铺满，不再做 1080×2400 letterbox 窄条。
 -- 素材（本地路径，不走 URL）：
@@ -23,46 +23,18 @@ local LetterIntro = {}
 local BLOCKS = {
     {
         { t = "致我从未谋面的孩子：", gold = true },
-        { t = "当你拆开这封信时，" },
-        { t = "我应该已经死了。" },
-        { t = "——别哭，按公会的规矩，" },
-        { t = "这叫「荣休」。" },
+        { t = "拆开这封信时，我已经死了。" },
+        { t = "按公会规矩，这叫「荣休」。" },
     },
     {
-        { t = "六年前我带最后一支队伍进了那座塔。" },
-        { t = "走出来的只有我的帽子。" },
-        { t = "帽子留给你，别嫌旧，" },
-        { t = "它挡过龙息。" },
-    },
-    {
-        { t = "随信附上：公会印鉴一枚、" },
-        { t = "旧名册一本、" },
-        { t = "欠酒馆的账单一沓（坐稳，真的很多）。" },
-    },
-    {
-        { t = "名册上睡着二十三个名字。" },
-        { t = "有会叠甲的，有熬夜的，还有内鬼——" },
-        { t = "对，名册里真有一个内鬼，" },
-        { t = "你自己排查。" },
+        { t = "帽子、印鉴、名册，都留给你。" },
         { t = "塔底下的东西不讲道理，" },
         { t = "但他们够吵。" },
     },
     {
-        { t = "酒在柜子里，账在抽屉里，塔在门外。" },
-        { t = "教堂的钟只为活着的人敲，" },
-        { t = "能不进就别进。" },
-    },
-    {
-        { t = "本想写点鼓舞人心的话收尾，" },
-        { t = "但律师说遗产信里不许画饼。" },
-        { t = "所以只说一句大实话：" },
         { t = "公会不需要英雄，", gold = true },
-        { t = "需要一个签字的傻子。", gold = true },
-        { t = "签吧，反正你已经拆信了。", gold = true, seal = true },
-    },
-    {
+        { t = "需要一个签字的傻子。", gold = true, seal = true },
         { t = "——第三十六任远征长，你的外祖父", dim = true },
-        { t = "（欠条别弄丢，那也是遗产）", dim = true },
     },
 }
 
@@ -154,17 +126,25 @@ function LetterIntro.reset()
 end
 
 function LetterIntro.handleTap()
-    if not active or state ~= "reveal" then return end
-    local cur = lineCount(blockIdx)
-    local revealed = math.floor(revealT / LINE_REVEAL)
-    if revealed < cur then
-        revealT = cur * LINE_REVEAL
-    elseif blockIdx < #BLOCKS then
-        blockIdx = blockIdx + 1
-        revealT = 0
-    else
-        state = "sealed"
-        sealedT = 0
+    if not active then return end
+    -- 任意阶段都允许点击推进：翻段 / 跳过火漆 / 立刻淡出
+    if state == "reveal" then
+        local cur = lineCount(blockIdx)
+        local revealed = math.floor(revealT / LINE_REVEAL)
+        if revealed < cur then
+            revealT = cur * LINE_REVEAL
+        elseif blockIdx < #BLOCKS then
+            blockIdx = blockIdx + 1
+            revealT = 0
+        else
+            state = "sealed"
+            sealedT = 0
+        end
+    elseif state == "sealed" then
+        state = "fading"
+        fadeT = 0
+    elseif state == "fading" then
+        fadeT = FADE_DUR
     end
 end
 

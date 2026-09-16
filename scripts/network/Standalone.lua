@@ -913,33 +913,26 @@ end
 --- [LetterIntro] 新档标记开场剧情完成（session.introCompleted，模块级整体替换需带全字段）
 local function markIntroCompleted_()
     local sessionData = ClientDispatcher.get("session") or {}
+    local claimed = sessionData.claimedScenarios or {}
+    claimed["1"] = true  -- 跳过情景1仍标记已领取，避免后续系统再拉起
     local updated = {
         lastOnlineTime   = sessionData.lastOnlineTime or 0,
         firstLoginTime   = sessionData.firstLoginTime or 0,
         introCompleted   = true,
-        claimedScenarios = sessionData.claimedScenarios,
+        claimedScenarios = claimed,
     }
     ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
-    print("[Standalone] intro completed flag saved (session.introCompleted=true)")
+    print("[Standalone] intro completed flag saved (session.introCompleted=true, scenario 1 claimed)")
 end
 
---- [LetterIntro] 新档开场链：先祖来信 → 睁眼过场 → 情景1 → 标记完成 + 离线收益
+--- [LetterIntro] 新档开场链：只播先祖来信，结束后直接解锁进游戏（不再播睁眼过场/情景1）
 local function startIntroChain_()
-    -- 开场链专属轨道：暗黑烛光读信氛围（信+过场期间），情景1 起切回主曲
     GameBGM.setScene("letter", { fromStart = true })
     LetterIntro.start(function()
-        print("[Standalone] letter finished, starting intro cutscene")
-        IntroCutscene.start(function()
-            print("[Standalone] intro cutscene finished, starting scenario dialogue 1")
-            GameBGM.setScene("battle", { fromStart = true })  -- 情景1"全员出发"氛围切回主曲
-            local scenarioConfig = ScenarioDialogueConfig.SCENARIO_1
-            scenarioConfig.onFinish = function()
-                print("[Standalone] scenario dialogue 1 finished")
-                markIntroCompleted_()
-                showOfflineRewardPanel_()
-            end
-            ScenarioDialogue.show(scenarioConfig)
-        end)
+        print("[Standalone] letter finished, skip cutscene/scenario, unlocking")
+        GameBGM.setScene("battle", { fromStart = true })
+        markIntroCompleted_()
+        showOfflineRewardPanel_()
     end)
 end
 
@@ -1564,9 +1557,9 @@ function HandleMouseButtonUp(eventType, eventData)
         if isTap then StartScreen.handleClick(dx, dy) end
         return
     end
-    -- [LetterIntro] 信件期：任意释放 = 轻触翻段
+    -- [LetterIntro] 信件期：任意释放 = 轻触翻段（不依赖 isTap）
     if LetterIntro.isOpen() then
-        if isTap then LetterIntro.handleTap() end
+        LetterIntro.handleTap()
         return
     end
     -- [LetterIntro] 过场期吞输入（时间轴自动推进）
@@ -1854,9 +1847,9 @@ function HandleTouchEnd(eventType, eventData)
         if isTap then StartScreen.handleClick(dx, dy) end
         return
     end
-    -- [LetterIntro] 信件期：任意释放 = 轻触翻段
+    -- [LetterIntro] 信件期：任意释放 = 轻触翻段（不依赖 isTap）
     if LetterIntro.isOpen() then
-        if isTap then LetterIntro.handleTap() end
+        LetterIntro.handleTap()
         return
     end
     -- [LetterIntro] 过场期吞输入（时间轴自动推进）
@@ -2405,8 +2398,12 @@ end
 function HandleMouseButtonDownHorizon(eventType, eventData)
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
     if DarkTitleScreen.isOpen() then return end
-    -- [LetterIntro] 开场链独占输入
-    if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
+    -- [LetterIntro] 开场期也要记 pressValid，否则抬起被当成无效点击
+    if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then
+        pressValid = true
+        pressStartDX, pressStartDY = 0, 0
+        return
+    end
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()
@@ -2483,9 +2480,9 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if now - lastTapTime < MIN_TAP_INTERVAL then isTap = false
         else lastTapTime = now end
     end
-    -- [LetterIntro] 开场链输入：信件翻段 / 过场吞输入 / 情景对话推进
+    -- [LetterIntro] 开场链输入：信件任意释放即翻段（不依赖 isTap，避免 pressValid 丢失）
     if LetterIntro.isOpen() then
-        if isTap then LetterIntro.handleTap() end
+        LetterIntro.handleTap()
         return
     end
     if IntroCutscene.isActive() then

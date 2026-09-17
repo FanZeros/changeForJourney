@@ -144,8 +144,8 @@ end
 ---@param vg any NanoVG 上下文
 function DamageStatsPanel.init(vg)
     cachedVg = vg
-    imgBtn = nvgCreateImage(vg, "image/UI_ICON_TJ.png", 0)
-    imgBg  = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
+    imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_TJ.png", 0)
+    imgBg  = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
     print("[DamageStatsPanel] init OK")
 end
 

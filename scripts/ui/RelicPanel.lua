@@ -411,18 +411,18 @@ end
 -- ======================== 初始化 ========================
 
 function RelicPanel.init(vg)
-    img.bg        = nvgCreateImage(vg, "image/UI_MXZGH_YW_BJ.png", 0)
-    img.rotBtn    = nvgCreateImage(vg, "image/UI_MXZGH_YW_XZAN.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    img.cancelBtn = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
-    img.infoIcon  = nvgCreateImage(vg, "image/UI_icon_TS.png", 0)
-    img.overviewBg = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
+    img.bg        = nvgCreateImage(vg, "image/界面底板/UI_MXZGH_YW_BJ.png", 0)
+    img.rotBtn    = nvgCreateImage(vg, "image/界面底板/UI_MXZGH_YW_XZAN.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
+    img.cancelBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    img.infoIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
+    img.overviewBg = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
 
     -- 遗物 grid 图标 (ICON_YW_*)
     local iconKeys = { "GUI", "SHE", "LU", "LANG", "YING" }
     for i, key in ipairs(iconKeys) do
-        imgRelicGrid[i] = nvgCreateImage(vg, "image/ICON_YW_" .. key .. ".png", 0)
+        imgRelicGrid[i] = nvgCreateImage(vg, "image/遗物图标/ICON_YW_" .. key .. ".png", 0)
     end
 
     RelicBagPanel.init(vg)

@@ -164,19 +164,19 @@ end
 function RelicDetailPanel.init(vg)
     -- 品质背景 (UI_ZBTS_1~6)
     for i = 1, 6 do
-        imgBg[i] = nvgCreateImage(vg, "image/UI_ZBTS_" .. i .. ".png", 0)
+        imgBg[i] = nvgCreateImage(vg, "image/品质框/UI_ZBTS_" .. i .. ".png", 0)
     end
     -- 按钮
-    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    imgBtnLv    = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
+    imgBtnLv    = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     -- 战力图标 + 可提升角标
-    imgPowerIcon = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
-    imgUpBig     = nvgCreateImage(vg, "image/ICON_UP_big.png", 0)
-    imgLock      = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
+    imgPowerIcon = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
+    imgUpBig     = nvgCreateImage(vg, "image/通用图标/ICON_UP_big.png", 0)
+    imgLock      = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
     -- 遗物图标 (ICON_YWX_*)
     local iconKeys = { "GUI", "SHE", "LU", "LANG", "YING" }
     for i, key in ipairs(iconKeys) do
-        imgRelicIcon[i] = nvgCreateImage(vg, "image/ICON_YWX_" .. key .. ".png", 0)
+        imgRelicIcon[i] = nvgCreateImage(vg, "image/遗物图标/ICON_YWX_" .. key .. ".png", 0)
     end
     print("[RelicDetailPanel] init OK")
 end

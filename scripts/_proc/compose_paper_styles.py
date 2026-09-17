@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 ROOT = '/workspace'
 W, H = 572, 1024
 LIHUI = os.path.join(ROOT, 'assets/image/角色立绘/大狗嚼_透明立绘.png')
-BASE_B = Image.open(os.path.join(ROOT, 'assets/image/底板B_深褐古卷_20260912223431.png')).convert('RGBA')
+BASE_B = Image.open(os.path.join(ROOT, 'assets/image/_drafts/底板B_深褐古卷_20260912223431.png')).convert('RGBA')
 RNG = np.random.default_rng(11)
 
 def night_inner(card, ix0, iy0, ix1, iy1):

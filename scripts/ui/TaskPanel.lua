@@ -467,20 +467,20 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     vg_ = vg
-    imgTopBg     = nvgCreateImage(vg, "image/UI_RW_BJ.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
-    imgPanel     = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
-    imgDeco      = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
-    imgEntryBg   = nvgCreateImage(vg, "image/UI_RW_1.png", 0)
-    imgBarBg     = nvgCreateImage(vg, "image/UI_RW_JDT2.png", 0)
-    imgBarFill   = nvgCreateImage(vg, "image/UI_RW_JDT1.png", 0)
-    imgBtnBack   = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
-    imgSlider    = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
-    imgBtnRed    = nvgCreateImage(vg, "image/UI_AN_FANG_hong.png", 0)
-    imgBtnYellow = nvgCreateImage(vg, "image/UI_AN_FANG_huang.png", 0)
-    imgBtnGreen  = nvgCreateImage(vg, "image/UI_AN_FANG_lv.png", 0)
-    imgRedDot    = nvgCreateImage(vg, "image/ICON_HD.png", 0)
+    imgTopBg     = nvgCreateImage(vg, "image/界面底板/UI_RW_BJ.png", 0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
+    imgPanel     = nvgCreateImage(vg, "image/界面底板/UI_TJP_1.png", 0)
+    imgDeco      = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
+    imgEntryBg   = nvgCreateImage(vg, "image/界面底板/UI_RW_1.png", 0)
+    imgBarBg     = nvgCreateImage(vg, "image/进度条/UI_RW_JDT2.png", 0)
+    imgBarFill   = nvgCreateImage(vg, "image/进度条/UI_RW_JDT1.png", 0)
+    imgBtnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
+    imgSlider    = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
+    imgBtnRed    = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_hong.png", 0)
+    imgBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_huang.png", 0)
+    imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_lv.png", 0)
+    imgRedDot    = nvgCreateImage(vg, "image/通用图标/ICON_HD.png", 0)
 
     print("[TaskPanel] init OK")
 end

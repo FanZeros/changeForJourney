@@ -102,11 +102,11 @@ local QUALITY_BORDER = DarkIcon.QUALITY_TRIM
 
 -- 遗物类型小图标映射（使用 ICON_YWX 小图标）
 local TYPE_ICONS = {
-    [1] = "image/ICON_YWX_GUI.png",   -- 岩龟
-    [2] = "image/ICON_YWX_SHE.png",   -- 毒蛇
-    [3] = "image/ICON_YWX_LU.png",    -- 白鹿
-    [4] = "image/ICON_YWX_LANG.png",  -- 灰狼
-    [5] = "image/ICON_YWX_YING.png",  -- 猎鹰
+    [1] = "image/遗物图标/ICON_YWX_GUI.png",   -- 岩龟
+    [2] = "image/遗物图标/ICON_YWX_SHE.png",   -- 毒蛇
+    [3] = "image/遗物图标/ICON_YWX_LU.png",    -- 白鹿
+    [4] = "image/遗物图标/ICON_YWX_LANG.png",  -- 灰狼
+    [5] = "image/遗物图标/ICON_YWX_YING.png",  -- 猎鹰
 }
 
 -- 合成按钮布局（面板底部居中）
@@ -214,11 +214,11 @@ end
 
 function RelicBagPanel.init(vg)
     vg_ = vg
-    imgPanel    = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    imgMergeBtn = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    imgIconUp   = nvgCreateImage(vg, "image/ICON_UP.png", 0)
-    imgLock     = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
+    imgPanel    = nvgCreateImage(vg, "image/界面底板/UI_TJP_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
+    imgMergeBtn = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    imgIconUp   = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+    imgLock     = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
 
     for t, path in pairs(TYPE_ICONS) do
         imgTypeIcons[t] = nvgCreateImage(vg, path, 0)

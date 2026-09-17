@@ -319,16 +319,16 @@ end
 --- 初始化（加载图片资源，仅调用一次）
 function PlayerInfoPanel.init(vg)
     -- 上半部分
-    img.bg      = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
+    img.bg      = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
     img.avatar  = nvgCreateImage(vg, "image/角色图标/UI_icon_hero_1.png", 0)
     AvatarFrameUtil.preloadFrames(vg, img.frameIcons)
-    img.power   = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
-    img.expBg   = nvgCreateImage(vg, "image/UI_WJXX_JDT.png", 0)
-    img.expFill = nvgCreateImage(vg, "image/UI_WJXX_JDT1.png", 0)
+    img.power   = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
+    img.expBg   = nvgCreateImage(vg, "image/进度条/UI_WJXX_JDT.png", 0)
+    img.expFill = nvgCreateImage(vg, "image/进度条/UI_WJXX_JDT1.png", 0)
 
     -- 下半部分：段位徽章 (1~8)
     for i = 1, 8 do
-        img.tierBadge[i] = nvgCreateImage(vg, "image/ICON_DW_" .. i .. ".png", 0)
+        img.tierBadge[i] = nvgCreateImage(vg, "image/段位图标/ICON_DW_" .. i .. ".png", 0)
     end
 
     -- 下半部分：角色卡牌
@@ -339,19 +339,19 @@ function PlayerInfoPanel.init(vg)
 
     -- 下半部分：职业图标 (1~6)
     for i = 1, 6 do
-        img.classIcons[i] = nvgCreateImage(vg, "image/ICON_ZY_" .. i .. ".png", 0)
+        img.classIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
 
     -- 下半部分：卡片子元素
-    img.lvlBadge    = nvgCreateImage(vg, "image/UI_JSJM_DJ.png", 0)
-    img.expBarBgS   = nvgCreateImage(vg, "image/UI_JSMB_JYT1.png", 0)
-    img.expBarFillS = nvgCreateImage(vg, "image/UI_JSMB_JYT2.png", 0)
+    img.lvlBadge    = nvgCreateImage(vg, "image/界面底板/UI_JSJM_DJ.png", 0)
+    img.expBarBgS   = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT1.png", 0)
+    img.expBarFillS = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
 
     -- 下半部分：设置按钮
-    img.settingBtn = nvgCreateImage(vg, "image/UI_AN_SZ.png", 0)
+    img.settingBtn = nvgCreateImage(vg, "image/按钮/UI_AN_SZ.png", 0)
 
     -- 红点提示图标
-    img.redDot = nvgCreateImage(vg, "image/ICON_HD.png", 0)
+    img.redDot = nvgCreateImage(vg, "image/通用图标/ICON_HD.png", 0)
 
     if img.bg < 0 then print("[PlayerInfoPanel] WARN: UI_TY_EJQRK.png load failed") end
     if img.power < 0 then print("[PlayerInfoPanel] WARN: ICON_ZDL.png load failed") end

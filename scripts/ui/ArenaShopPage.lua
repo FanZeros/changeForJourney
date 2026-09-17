@@ -25,39 +25,39 @@ local SHOP_ITEMS = {
     {
         id = 1, name = "随机强化卷轴", quality = 3,
         limitCycle = "weekly", limitCount = 20, price = 50,
-        icon = "image/UI_icon_JZ_SJ.png",
-        costIcon = "image/UI_icon_JJB_X.png",
+        icon = "image/货币道具/UI_icon_JZ_SJ.png",
+        costIcon = "image/货币道具/UI_icon_JJB_X.png",
         rewardCount = 10,
     },
     {
         id = 2, name = "洗练石", quality = 3,
         limitCycle = "weekly", limitCount = 4, price = 50,
-        icon = "image/UI_icon_QH_1.png",
-        costIcon = "image/UI_icon_JJB_X.png",
+        icon = "image/货币道具/UI_icon_QH_1.png",
+        costIcon = "image/货币道具/UI_icon_JJB_X.png",
     },
     {
         id = 3, name = "点金石", quality = 5,
         limitCycle = "weekly", limitCount = 3, price = 150,
-        icon = "image/UI_icon_QH_3.png",
-        costIcon = "image/UI_icon_JJB_X.png",
+        icon = "image/货币道具/UI_icon_QH_3.png",
+        costIcon = "image/货币道具/UI_icon_JJB_X.png",
     },
     {
         id = 4, name = "扫荡券", quality = 4,
         limitCycle = "weekly", limitCount = 2, price = 100,
-        icon = "image/UI_icon_SDQ.png",
-        costIcon = "image/UI_icon_JJB_X.png",
+        icon = "image/货币道具/UI_icon_SDQ.png",
+        costIcon = "image/货币道具/UI_icon_JJB_X.png",
     },
     {
         id = 5, name = "冒险招募券", quality = 5,
         limitCycle = "weekly", limitCount = 5, price = 150,
-        icon = "image/UI_icon_ZMQ_1.png",
-        costIcon = "image/UI_icon_JJB_X.png",
+        icon = "image/货币道具/UI_icon_ZMQ_1.png",
+        costIcon = "image/货币道具/UI_icon_JJB_X.png",
     },
     {
         id = 6, name = "急救复活甲-碎片", quality = 5,
         limitCycle = "weekly", limitCount = 1, price = 4000,
         icon = "image/角色图标/UI_icon_hero_15.png",
-        costIcon = "image/UI_icon_JJB_X.png",
+        costIcon = "image/货币道具/UI_icon_JJB_X.png",
         rewardCount = 10,
         isShard = true, heroId = 15,
     },
@@ -169,9 +169,9 @@ function ArenaShopPage.init(vg)
     end
 
     -- 二级弹窗图片
-    shopImg.btnMinus = nvgCreateImage(vg, "image/UI_AN_JIAN.png", 0)
-    shopImg.btnPlus = nvgCreateImage(vg, "image/UI_AN_JIA.png", 0)
-    shopImg.coinIcon = nvgCreateImage(vg, "image/UI_icon_JJB_X.png", 0)
+    shopImg.btnMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
+    shopImg.btnPlus = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
+    shopImg.coinIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JJB_X.png", 0)
     for i = 1, 6 do
     -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
     end

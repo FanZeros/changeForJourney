@@ -11,33 +11,33 @@ local ResourceDefs = {}
 --- key = snake_case type 字符串（与奖励协议 payload 一致）
 --- value = { iconPath, quality, name }
 ResourceDefs.DEFS = {
-    gold              = { iconPath = "image/UI_icon_JB.png",     quality = 2, name = "金币" },
-    diamond           = { iconPath = "image/UI_icon_SJ.png",     quality = 5, name = "钻石" },
-    essence           = { iconPath = "image/UI_icon_JC.png",     quality = 2, name = "精粹" },
-    enhance_star      = { iconPath = "image/UI_icon_QH_1.png",   quality = 3, name = "洗练石" },
-    refine_stone      = { iconPath = "image/UI_icon_QH_1.png",   quality = 3, name = "洗练石" },  -- 别名
-    degrade_protect   = { iconPath = "image/UI_icon_QH_2.png",   quality = 4, name = "退级保护石" },  -- 已隐藏(seq5)，保留兼容旧邮件/奖励显示
-    break_protect     = { iconPath = "image/UI_icon_QH_3.png",   quality = 5, name = "点金石" },
-    gold_stone        = { iconPath = "image/UI_icon_QH_3.png",   quality = 5, name = "点金石" },  -- 别名
-    weapon_scroll     = { iconPath = "image/UI_icon_JZ_WQ.png",  quality = 3, name = "武器卷轴" },
-    offhand_scroll    = { iconPath = "image/UI_icon_JZ_FS.png",  quality = 3, name = "副手卷轴" },
-    armor_scroll      = { iconPath = "image/UI_icon_JZ_HJ.png",  quality = 3, name = "护甲卷轴" },
-    accessory_scroll  = { iconPath = "image/UI_icon_JZ_SP.png",  quality = 3, name = "饰品卷轴" },
-    random_scroll     = { iconPath = "image/UI_icon_JZ_SJ.png",  quality = 3, name = "随机卷轴" },
-    adventure_ticket  = { iconPath = "image/UI_icon_ZMQ_1.png",  quality = 5, name = "冒险招募券" },
-    stellar_ticket    = { iconPath = "image/UI_icon_ZMQ_2.png",  quality = 6, name = "星辉招募券" },
-    sweep_ticket      = { iconPath = "image/UI_icon_SDQ.png",    quality = 4, name = "扫荡券" },
-    arena_ticket      = { iconPath = "image/UI_icon_JJCQ.png",   quality = 4, name = "竞技券" },
-    arena_coin        = { iconPath = "image/UI_icon_JJB.png",    quality = 3, name = "竞技币" },
+    gold              = { iconPath = "image/货币道具/UI_icon_JB.png",     quality = 2, name = "金币" },
+    diamond           = { iconPath = "image/货币道具/UI_icon_SJ.png",     quality = 5, name = "钻石" },
+    essence           = { iconPath = "image/货币道具/UI_icon_JC.png",     quality = 2, name = "精粹" },
+    enhance_star      = { iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石" },
+    refine_stone      = { iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石" },  -- 别名
+    degrade_protect   = { iconPath = "image/货币道具/UI_icon_QH_2.png",   quality = 4, name = "退级保护石" },  -- 已隐藏(seq5)，保留兼容旧邮件/奖励显示
+    break_protect     = { iconPath = "image/货币道具/UI_icon_QH_3.png",   quality = 5, name = "点金石" },
+    gold_stone        = { iconPath = "image/货币道具/UI_icon_QH_3.png",   quality = 5, name = "点金石" },  -- 别名
+    weapon_scroll     = { iconPath = "image/货币道具/UI_icon_JZ_WQ.png",  quality = 3, name = "武器卷轴" },
+    offhand_scroll    = { iconPath = "image/货币道具/UI_icon_JZ_FS.png",  quality = 3, name = "副手卷轴" },
+    armor_scroll      = { iconPath = "image/货币道具/UI_icon_JZ_HJ.png",  quality = 3, name = "护甲卷轴" },
+    accessory_scroll  = { iconPath = "image/货币道具/UI_icon_JZ_SP.png",  quality = 3, name = "饰品卷轴" },
+    random_scroll     = { iconPath = "image/货币道具/UI_icon_JZ_SJ.png",  quality = 3, name = "随机卷轴" },
+    adventure_ticket  = { iconPath = "image/货币道具/UI_icon_ZMQ_1.png",  quality = 5, name = "冒险招募券" },
+    stellar_ticket    = { iconPath = "image/货币道具/UI_icon_ZMQ_2.png",  quality = 6, name = "星辉招募券" },
+    sweep_ticket      = { iconPath = "image/货币道具/UI_icon_SDQ.png",    quality = 4, name = "扫荡券" },
+    arena_ticket      = { iconPath = "image/货币道具/UI_icon_JJCQ.png",   quality = 4, name = "竞技券" },
+    arena_coin        = { iconPath = "image/货币道具/UI_icon_JJB.png",    quality = 3, name = "竞技币" },
     tavern_coin       = { iconPath = "image/UI_icon_JGB.png",    quality = 3, name = "酒馆币" },
-    privilege_point   = { iconPath = "image/UI_icon_TQD.png",    quality = 4, name = "特权点" },
-    arcane_dust       = { iconPath = "image/UI_icon_ASFC.png",   quality = 3, name = "奥术粉尘" },  -- 序号17
-    speed_card        = { iconPath = "image/UI_icon_JSK.png",    quality = 5, name = "加速卡" },    -- 序号18
+    privilege_point   = { iconPath = "image/货币道具/UI_icon_TQD.png",    quality = 4, name = "特权点" },
+    arcane_dust       = { iconPath = "image/货币道具/UI_icon_ASFC.png",   quality = 3, name = "奥术粉尘" },  -- 序号17
+    speed_card        = { iconPath = "image/货币道具/UI_icon_JSK.png",    quality = 5, name = "加速卡" },    -- 序号18
     privilege_card    = { iconPath = "image/UI_icon_TQK.png",    quality = 6, name = "特权卡" },    -- 序号19
-    golden_key        = { iconPath = "image/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙" },
-    corrupt_stone     = { iconPath = "image/UI_icon_FHS.png",    quality = 3, name = "腐化石" },
-    sacred_stone      = { iconPath = "image/UI_icon_SSS.png",    quality = 6, name = "神圣石" },
-    relic             = { iconPath = "image/ICON_SJYW.png",      quality = 4, name = "遗物" },      -- 上古遗迹掉落（随机遗物图标）
+    golden_key        = { iconPath = "image/货币道具/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙" },
+    corrupt_stone     = { iconPath = "image/货币道具/UI_icon_FHS.png",    quality = 3, name = "腐化石" },
+    sacred_stone      = { iconPath = "image/货币道具/UI_icon_SSS.png",    quality = 6, name = "神圣石" },
+    relic             = { iconPath = "image/货币道具/ICON_SJYW.png",      quality = 4, name = "遗物" },      -- 上古遗迹掉落（随机遗物图标）
 }
 
 --- 数字 ID（来自资源配置表序号）→ snake_case type 映射

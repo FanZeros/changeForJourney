@@ -30,137 +30,137 @@ local SHOP_ITEMS = {
     {
         id = 1, name = "冒险招募券", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 40,
-        icon = "image/UI_icon_ZMQ_1.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        icon = "image/货币道具/UI_icon_ZMQ_1.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 102, name = "星辉招募券", quality = 6,
         limitCycle = "daily", limitCount = -1, price = 160,
-        icon = "image/UI_icon_ZMQ_2.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        icon = "image/货币道具/UI_icon_ZMQ_2.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     -- N 碎片（品质3）
     {
         id = 2, name = "大狗嚼-碎片", quality = 3,
         limitCycle = "daily", limitCount = -1, price = 15,
         icon = "image/角色图标/UI_icon_hero_1.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 3, name = "黄桃龙-碎片", quality = 3,
         limitCycle = "daily", limitCount = -1, price = 15,
         icon = "image/角色图标/UI_icon_hero_2.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 4, name = "叮咚鸡-碎片", quality = 3,
         limitCycle = "daily", limitCount = -1, price = 15,
         icon = "image/角色图标/UI_icon_hero_3.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     -- R 碎片（品质4）
     {
         id = 5, name = "接化发掌门-碎片", quality = 4,
         limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_4.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 6, name = "叠甲怪-碎片", quality = 4,
         limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_5.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 7, name = "阿姨压-碎片", quality = 4,
         limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_6.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 8, name = "信光机兵-碎片", quality = 4,
         limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_7.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 9, name = "愤怒的小雀-碎片", quality = 4,
         limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_8.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 10, name = "卡皮巴拉-碎片", quality = 4,
         limitCycle = "daily", limitCount = -1, price = 60,
         icon = "image/角色图标/UI_icon_hero_9.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     -- SR 碎片（品质5）
     {
         id = 11, name = "铁憨憨-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_10.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 12, name = "熬夜冠军-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_11.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 13, name = "雪皇-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_12.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 14, name = "弹弹弹-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_13.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 15, name = "内鬼-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_14.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 16, name = "复活吧爱人-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_15.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 17, name = "闪电卖鸡-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_21.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 18, name = "小黑子-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_22.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 19, name = "真布诗人-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_23.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 101, name = "万剑归宗-碎片", quality = 6,
         limitCycle = "daily", limitCount = -1, price = 1125, rewardHeroId = 16,
         icon = "image/角色图标/UI_icon_hero_16.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
         id = 103, name = "摘星星星人-碎片", quality = 6,
         limitCycle = "daily", limitCount = -1, price = 1125, rewardHeroId = 20,
         icon = "image/角色图标/UI_icon_hero_20.png",
-        costIcon = "image/UI_icon_JGB_X.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
 }
 
@@ -325,21 +325,21 @@ local DLG = {
 -- ======================== Init ========================
 
 function TavernShopPage.init(vg)
-    shopImg.pageBg    = nvgCreateImage(vg, "image/UI_TJP_1.png",    0)
-    shopImg.titleDeco = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
+    shopImg.pageBg    = nvgCreateImage(vg, "image/界面底板/UI_TJP_1.png",    0)
+    shopImg.titleDeco = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
     for i = 1, 6 do
-        shopImg.cardBg[i]   = nvgCreateImage(vg, "image/UI_SDICONBJ_" .. i .. ".png", 0)
+        shopImg.cardBg[i]   = nvgCreateImage(vg, "image/界面底板/UI_SDICONBJ_" .. i .. ".png", 0)
     end
     for i = 1, 6 do
     -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
     end
-    shopImg.buyBtn      = nvgCreateImage(vg, "image/UI_SD_AN.png",       0)
-    -- [暗黑化 P1-B5] 原 image/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    shopImg.buyBtnYellow= nvgCreateImage(vg, "image/UI_AN_HUANG.png",    0)
-    shopImg.btnMinus    = nvgCreateImage(vg, "image/UI_AN_JIAN.png",     0)
-    shopImg.btnPlus     = nvgCreateImage(vg, "image/UI_AN_JIA.png",      0)
-    shopImg.coinIcon    = nvgCreateImage(vg, "image/UI_icon_JGB_X.png",  0)
+    shopImg.buyBtn      = nvgCreateImage(vg, "image/界面底板/UI_SD_AN.png",       0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
+    shopImg.buyBtnYellow= nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png",    0)
+    shopImg.btnMinus    = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png",     0)
+    shopImg.btnPlus     = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png",      0)
+    shopImg.coinIcon    = nvgCreateImage(vg, "image/货币道具/UI_icon_JGB_X.png",  0)
 
     for _, item in ipairs(SHOP_ITEMS) do
         shopImg.itemIcons[item.id] = nvgCreateImage(vg, item.icon,     0)

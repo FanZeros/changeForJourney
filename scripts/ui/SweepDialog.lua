@@ -104,9 +104,9 @@ local D = {
 -- ======================== 奖励项定义 ========================
 -- 每个奖励项：{ quality, iconPath, label }
 local REWARD_ITEMS = {
-    { quality = 2, iconPath = "image/UI_icon_JB.png",      label = "金币"     },
-    { quality = 2, iconPath = "image/UI_icon_JB.png",      label = "随机装备",  isEquip = true  },
-    { quality = 3, iconPath = "image/UI_icon_JZ_SJ.png",   label = "随机卷轴" },
+    { quality = 2, iconPath = "image/货币道具/UI_icon_JB.png",      label = "金币"     },
+    { quality = 2, iconPath = "image/货币道具/UI_icon_JB.png",      label = "随机装备",  isEquip = true  },
+    { quality = 3, iconPath = "image/货币道具/UI_icon_JZ_SJ.png",   label = "随机卷轴" },
 }
 -- 装备图标用固定的 B 品质背景占位
 local EQUIP_PLACEHOLDER_QUALITY = 2
@@ -243,8 +243,8 @@ end
 ---@param vg any NanoVG 上下文
 function SweepDialog.init(vg)
     cachedVg = vg
-    imgBtnSweep = nvgCreateImage(vg, "image/UI_ICON_SD.png", 0)
-    imgBg       = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
+    imgBtnSweep = nvgCreateImage(vg, "image/通用图标/UI_ICON_SD.png", 0)
+    imgBg       = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
 
     -- 预加载奖励图标（装备用 "?" 文字绘制，无需加载图片）
     for i, item in ipairs(REWARD_ITEMS) do
@@ -254,8 +254,8 @@ function SweepDialog.init(vg)
     end
 
     -- 确认按钮 & 扫荡券图标
-    imgActBtn     = nvgCreateImage(vg, "image/UI_AN_HUANG.png",   0)
-    imgTicketIcon = nvgCreateImage(vg, "image/UI_icon_SDQ_X.png", 0)
+    imgActBtn     = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png",   0)
+    imgTicketIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_SDQ_X.png", 0)
 
     -- 初始化 ImageCache（如未初始化）
     ImageCache.init(vg)

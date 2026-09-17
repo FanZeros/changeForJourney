@@ -5,8 +5,8 @@
 -- 绘制：全窗口逻辑坐标（调用方 nvgResetTransform 后传入 logicalW/logicalH），
 --       横屏 16:9 cover 铺满，不再做 1080×2400 letterbox 窄条。
 -- 素材（本地路径，不走 URL）：
---   image/GF_KF06_desk_relics_20260915115639.png  书斋桌案（信封+帽）
---   image/GF_KF07_wax_seal_20260915115637.png     火漆特写「终」
+--   image/界面底板/GF_KF06_desk_relics_20260915115639.png  书斋桌案（信封+帽）
+--   image/界面底板/GF_KF07_wax_seal_20260915115637.png     火漆特写「终」
 -- ============================================================================
 
 ---@class LetterIntro
@@ -80,7 +80,7 @@ end
 function LetterIntro.init(vg)
     vg_ = vg
     if imgDesk_ < 0 then
-        imgDesk_ = nvgCreateImage(vg, "image/GF_KF06_desk_relics_20260915115639.png", 0)
+        imgDesk_ = nvgCreateImage(vg, "image/界面底板/GF_KF06_desk_relics_20260915115639.png", 0)
         if imgDesk_ < 0 then
             print("[LetterIntro] WARN: GF_KF06_desk_relics load failed")
         else
@@ -88,7 +88,7 @@ function LetterIntro.init(vg)
         end
     end
     if imgSeal_ < 0 then
-        imgSeal_ = nvgCreateImage(vg, "image/GF_KF07_wax_seal_20260915115637.png", 0)
+        imgSeal_ = nvgCreateImage(vg, "image/界面底板/GF_KF07_wax_seal_20260915115637.png", 0)
         if imgSeal_ < 0 then
             print("[LetterIntro] WARN: GF_KF07_wax_seal load failed")
         else

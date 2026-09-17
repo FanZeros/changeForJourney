@@ -85,7 +85,7 @@ end
 function Panel.init(vg)
     vg_ = vg
     for i = 1, 3 do
-        imgCardBg[i] = nvgCreateImage(vg, "image/UI_TTTSXY_" .. i .. ".png", 0)
+        imgCardBg[i] = nvgCreateImage(vg, "image/界面底板/UI_TTTSXY_" .. i .. ".png", 0)
     end
 end
 

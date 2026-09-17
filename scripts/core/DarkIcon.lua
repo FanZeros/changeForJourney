@@ -887,15 +887,15 @@ end
 
 ---@type table<string, string> 旧图标贴图路径（对比用）
 local OLD_PATHS = {
-    gold         = "image/UI_icon_JB_X.png",
-    gem          = "image/UI_icon_SJ_X.png",
-    power        = "image/ICON_ZDL.png",
-    reddot       = "image/ICON_HD.png",
-    nav_hero     = "image/ICON_GN_1.png",
-    nav_log      = "image/ICON_GN_2.png",
-    nav_battle   = "image/ICON_GN_3.png",
-    nav_town     = "image/ICON_GN_4.png",
-    nav_dungeon  = "image/ICON_GN_5.png",
+    gold         = "image/货币道具/UI_icon_JB_X.png",
+    gem          = "image/货币道具/UI_icon_SJ_X.png",
+    power        = "image/通用图标/ICON_ZDL.png",
+    reddot       = "image/通用图标/ICON_HD.png",
+    nav_hero     = "image/通用图标/ICON_GN_1.png",
+    nav_log      = "image/通用图标/ICON_GN_2.png",
+    nav_battle   = "image/通用图标/ICON_GN_3.png",
+    nav_town     = "image/通用图标/ICON_GN_4.png",
+    nav_dungeon  = "image/通用图标/ICON_GN_5.png",
 }
 
 ---@type table<string, number> 旧图标句柄缓存

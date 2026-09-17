@@ -68,10 +68,10 @@ local drawTextStroke = require("core.DrawUtil").drawTextStroke
 
 --- 初始化（加载图片资源，仅调用一次）
 function TopBar.init(vg)
-    imgExpBg   = nvgCreateImage(vg, "image/UI_JYT_1.png", 0)
-    imgExpFill = nvgCreateImage(vg, "image/UI_JYT_2.png", 0)
-    imgGoldIcon = nvgCreateImage(vg, "image/UI_icon_JB_X.png", 0)
-    imgGemIcon  = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
+    imgExpBg   = nvgCreateImage(vg, "image/进度条/UI_JYT_1.png", 0)
+    imgExpFill = nvgCreateImage(vg, "image/进度条/UI_JYT_2.png", 0)
+    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
+    imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     AvatarFrameUtil.preloadFrames(vg, imgFrameIcons)
 
     -- 加载角色头像图标

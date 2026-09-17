@@ -146,23 +146,23 @@ local ARROW_OFFSET_Y   = ICON_SIZE * 0.5 + ARROW_H * 0.5 - 50  -- 图标下方�
 
 --- 初始化图片资源（在 CharacterDetail.init 中调用）
 function M.initImages(vg)
-    imgBg          = nvgCreateImage(vg, "image/UI_JX_BJ.png", 0)
-    imgTitleBg     = nvgCreateImage(vg, "image/UI_JX_1.png", 0)
-    imgSubTitleBg  = nvgCreateImage(vg, "image/UI_ZBT1.png", 0)
-    imgActivateBtn = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
-    imgGlowA       = nvgCreateImage(vg, "image/UI_JXICON_A.png", 0)
-    imgGlowB       = nvgCreateImage(vg, "image/UI_JXICON_B.png", 0)
-    imgSelectArrow = nvgCreateImage(vg, "image/UI_JX_JT.png", 0)
+    imgBg          = nvgCreateImage(vg, "image/界面底板/UI_JX_BJ.png", 0)
+    imgTitleBg     = nvgCreateImage(vg, "image/界面底板/UI_JX_1.png", 0)
+    imgSubTitleBg  = nvgCreateImage(vg, "image/界面底板/UI_ZBT1.png", 0)
+    imgActivateBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    imgGlowA       = nvgCreateImage(vg, "image/界面底板/UI_JXICON_A.png", 0)
+    imgGlowB       = nvgCreateImage(vg, "image/界面底板/UI_JXICON_B.png", 0)
+    imgSelectArrow = nvgCreateImage(vg, "image/界面底板/UI_JX_JT.png", 0)
     -- imgShardIcon 已移至 DrawUtil.drawShardIcon 统一管理
 
     for i = 1, 7 do
-        imgNodesA[i] = nvgCreateImage(vg, "image/UI_JXICON_A" .. i .. ".png", 0)
-        imgNodesB[i] = nvgCreateImage(vg, "image/UI_JXICON_B" .. i .. ".png", 0)
+        imgNodesA[i] = nvgCreateImage(vg, "image/界面底板/UI_JXICON_A" .. i .. ".png", 0)
+        imgNodesB[i] = nvgCreateImage(vg, "image/界面底板/UI_JXICON_B" .. i .. ".png", 0)
     end
 
-    imgBadges["R"]   = nvgCreateImage(vg, "image/UI_PZBZ_R.png", 0)
-    imgBadges["SR"]  = nvgCreateImage(vg, "image/UI_PZBZ_SR.png", 0)
-    imgBadges["SSR"] = nvgCreateImage(vg, "image/UI_PZBZ_SSR.png", 0)
+    imgBadges["R"]   = nvgCreateImage(vg, "image/品质框/UI_PZBZ_R.png", 0)
+    imgBadges["SR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SR.png", 0)
+    imgBadges["SSR"] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SSR.png", 0)
 
     print("[AwakeningPanel] initImages OK")
 end

@@ -297,10 +297,10 @@ end
 --- 初始化（传入 NanoVG 上下文）
 function M.init(nvgCtx)
     vg_ = nvgCtx
-    imgBg_   = nvgCreateImage(vg_, "image/UI_TY_EJQRK.png", 0)
-    imgTabA_ = nvgCreateImage(vg_, "image/UI_TYAN_A.png", 0)
-    imgTabB_ = nvgCreateImage(vg_, "image/UI_TYAN_B.png", 0)
-    imgItem_ = nvgCreateImage(vg_, "image/UI_GG_1.png", 0)
+    imgBg_   = nvgCreateImage(vg_, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgTabA_ = nvgCreateImage(vg_, "image/界面底板/UI_TYAN_A.png", 0)
+    imgTabB_ = nvgCreateImage(vg_, "image/界面底板/UI_TYAN_B.png", 0)
+    imgItem_ = nvgCreateImage(vg_, "image/界面底板/UI_GG_1.png", 0)
 end
 
 --- 设置服务器数据

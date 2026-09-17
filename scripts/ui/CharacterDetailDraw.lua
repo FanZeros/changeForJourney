@@ -405,38 +405,38 @@ end
 
 --- 初始化图片（在 CharacterDetail.init 中调用）
 function M.initImages(vg)
-    img.detailBg      = nvgCreateImage(vg, "image/UI_JSXQ_bj.png", 0)
-    img.slotWeapon    = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_WQ.png", 0)
-    img.slotOffhand   = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_FS.png", 0)
-    img.slotArmor     = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_HJ.png", 0)
-    img.slotAccessory = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_SS.png", 0)
+    img.detailBg      = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_bj.png", 0)
+    img.slotWeapon    = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_KGZ_WQ.png", 0)
+    img.slotOffhand   = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_KGZ_FS.png", 0)
+    img.slotArmor     = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_KGZ_HJ.png", 0)
+    img.slotAccessory = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_KGZ_SS.png", 0)
 
-    img.midBg      = nvgCreateImage(vg, "image/UI_JSJM_0.png", 0)
-    img.midExpBg   = nvgCreateImage(vg, "image/UI_JSXQ_JYT1.png", 0)
-    img.midExpFill = nvgCreateImage(vg, "image/UI_JSXQ_JYT2.png", 0)
-    img.midDiv1    = nvgCreateImage(vg, "image/UI_JSXQ_FGXj.png", 0)
+    img.midBg      = nvgCreateImage(vg, "image/界面底板/UI_JSJM_0.png", 0)
+    img.midExpBg   = nvgCreateImage(vg, "image/进度条/UI_JSXQ_JYT1.png", 0)
+    img.midExpFill = nvgCreateImage(vg, "image/进度条/UI_JSXQ_JYT2.png", 0)
+    img.midDiv1    = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_FGXj.png", 0)
 
-    imgQualityBadges["R"]   = nvgCreateImage(vg, "image/UI_PZBZ_R.png", 0)
-    imgQualityBadges["SR"]  = nvgCreateImage(vg, "image/UI_PZBZ_SR.png", 0)
-    imgQualityBadges["SSR"] = nvgCreateImage(vg, "image/UI_PZBZ_SSR.png", 0)
-    imgQualityBadges["UR"]  = nvgCreateImage(vg, "image/UI_PZBZ_UR.png", 0)
+    imgQualityBadges["R"]   = nvgCreateImage(vg, "image/品质框/UI_PZBZ_R.png", 0)
+    imgQualityBadges["SR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SR.png", 0)
+    imgQualityBadges["SSR"] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SSR.png", 0)
+    imgQualityBadges["UR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_UR.png", 0)
 
-    img.attrDeco = nvgCreateImage(vg, "image/ICON_XX.png", 0)
-    img.midDiv2  = nvgCreateImage(vg, "image/UI_JSXQ_FGXj.png", 0)
+    img.attrDeco = nvgCreateImage(vg, "image/通用图标/ICON_XX.png", 0)
+    img.midDiv2  = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_FGXj.png", 0)
 
     for _, st in ipairs(STAT_LAYOUT) do
         imgStatIcons[st.icon] = nvgCreateImage(vg, "image/" .. st.icon .. ".png", 0)
     end
 
-    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    img.btnLv     = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    img.btnBack   = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
-    img.tabSlider = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
+    img.btnLv     = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    img.btnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
+    img.tabSlider = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
-    img.arrowBg   = nvgCreateImage(vg, "image/UI_YWJM_HS.png", 0)
-    img.arrowIcon = nvgCreateImage(vg, "image/UI_YWJM_XYG2.png", 0)
-    img.slotSelected = nvgCreateImage(vg, "image/UI_TJPXZTBBJ.png", 0)
+    img.arrowBg   = nvgCreateImage(vg, "image/界面底板/UI_YWJM_HS.png", 0)
+    img.arrowIcon = nvgCreateImage(vg, "image/界面底板/UI_YWJM_XYG2.png", 0)
+    img.slotSelected = nvgCreateImage(vg, "image/界面底板/UI_TJPXZTBBJ.png", 0)
 end
 
 --- 返回 imgIconUp（由 CharacterDetail 管理，此处仅提供给外部使用的便捷接口）

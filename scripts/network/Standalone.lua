@@ -124,8 +124,8 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 -- （原实现每帧重试 nvgCreateImage，缺图时刷屏 "Could not find resource"）
 local imgWorldBg_ = -1
 local worldBgTried_ = false
-local WORLD_BG_PATH = "image/UI_WORLD_BG.png"
-local WORLD_BG_FALLBACK = "image/UI_CZ_BJ.png"
+local WORLD_BG_PATH = "image/界面底板/UI_WORLD_BG.png"
+local WORLD_BG_FALLBACK = "image/界面底板/UI_CZ_BJ.png"
 
 -- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
 -- （maxStageId_/clearedStages）每秒比对一次，变化才经 handleStateUpdate 写入，

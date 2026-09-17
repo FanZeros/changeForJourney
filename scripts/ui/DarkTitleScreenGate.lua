@@ -6,8 +6,8 @@
 -- 背景：竖屏 StartScreen（1080×2400 视频标题）在横屏三联布局下被
 --       H_skipDone/skipForReconnect 跳过，导致 H5 无标题瞬间。
 --       本模块以横屏原生比例补上标题仪式感，素材全部取自本地 workspace。
--- 素材：image/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
---       image/LOGO终焉之门_透明版.png（1920×1080 透明 LOGO，与背景同构图对位）
+-- 素材：image/界面底板/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
+--       image/界面底板/LOGO终焉之门_透明版.png（1920×1080 透明 LOGO，与背景同构图对位）
 -- 接入：Client.lua / Standalone.lua 的 HORIZON 渲染与输入路径（见各文件标记
 --       [DarkTitleScreen]）。
 -- ============================================================================
@@ -20,8 +20,8 @@ local isOpen_   = false
 local timer_    = 0      -- 打开以来的累计时间（驱动动画）
 local fadeOut_  = false  -- 是否正在淡出
 local fadeA_    = 1.0    -- 淡出透明度 1→0
-local imgLogo_  = -1     -- image/LOGO终焉之门_透明版.png（1920×1080 透明画布）
-local imgGate_  = -1     -- image/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
+local imgLogo_  = -1     -- image/界面底板/LOGO终焉之门_透明版.png（1920×1080 透明画布）
+local imgGate_  = -1     -- image/界面底板/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
 
 local FADE_TIME = 0.55   -- 淡出时长（秒）
 local ready_    = true   -- 资源未就绪时锁点击，避免空背景进游戏
@@ -39,13 +39,13 @@ local C_GOLD      = { 216, 201, 163 }   -- 骨金（提示文字/角标）
 function DarkTitleScreen.init(vg)
     vg_ = vg
     if imgLogo_ < 0 then
-        imgLogo_ = nvgCreateImage(vg, "image/LOGO终焉之门_透明版.png", 0)
+        imgLogo_ = nvgCreateImage(vg, "image/界面底板/LOGO终焉之门_透明版.png", 0)
         if imgLogo_ < 0 then
             print("[DarkTitleScreen] WARN: LOGO终焉之门_透明版.png load failed")
         end
     end
     if imgGate_ < 0 then
-        imgGate_ = nvgCreateImage(vg, "image/UI_TITLE_BG_GATE.png", 0)
+        imgGate_ = nvgCreateImage(vg, "image/界面底板/UI_TITLE_BG_GATE.png", 0)
     end
 end
 

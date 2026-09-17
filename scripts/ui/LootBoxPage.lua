@@ -267,11 +267,11 @@ end
 --- 初始化
 function LootBoxPage.init(vg)
     cachedVg = vg
-    imgPanel = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    imgBtnGreen = nvgCreateImage(vg, "image/UI_AN_FANG.png", 0)
-    imgBtnRed = nvgCreateImage(vg, "image/UI_AN_HONG.png", 0)
-    imgBtnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
-    imgBtnRedFang = nvgCreateImage(vg, "image/UI_AN_FANG_hong.png", 0)
+    imgPanel = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgBtnGreen = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
+    imgBtnRed = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
+    imgBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    imgBtnRedFang = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_hong.png", 0)
     print("[LootBoxPage] init OK, panel=" .. imgPanel
         .. " btnG=" .. imgBtnGreen .. " btnR=" .. imgBtnRed
         .. " btnY=" .. imgBtnYellow .. " btnRF=" .. imgBtnRedFang)

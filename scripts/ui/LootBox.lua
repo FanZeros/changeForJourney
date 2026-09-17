@@ -72,8 +72,8 @@ local drawTextStroke = require("core.DrawUtil").drawTextStroke
 ---@param vg any NanoVG 上下文
 function LootBox.init(vg)
     cachedVg = vg
-    imgBox    = nvgCreateImage(vg, "image/ICON_BX.png", 0)
-    imgRedDot = nvgCreateImage(vg, "image/ICON_HD.png", 0)
+    imgBox    = nvgCreateImage(vg, "image/通用图标/ICON_BX.png", 0)
+    imgRedDot = nvgCreateImage(vg, "image/通用图标/ICON_HD.png", 0)
     if imgBox < 0 then print("[LootBox] WARN: ICON_BX.png load failed") end
     if imgRedDot < 0 then print("[LootBox] WARN: ICON_HD.png load failed") end
     seedCount = 0

@@ -178,8 +178,8 @@ end
 
 --- 初始化（加载图片资源，仅调用一次）
 function SettingsPanel.init(vg)
-    img.bg      = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    img.codeBtn = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
+    img.bg      = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    img.codeBtn = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
 
     if img.bg < 0 then print("[SettingsPanel] WARN: UI_TY_EJQRK.png load failed") end
     if img.codeBtn < 0 then print("[SettingsPanel] WARN: UI_AN_LV.png load failed") end

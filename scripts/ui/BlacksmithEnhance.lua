@@ -186,12 +186,12 @@ end
 --- 初始化强化界面专属图片
 function M.init(vg)
     -- 加载 4 种卷轴图标
-    imgScrollIcon.weapon    = nvgCreateImage(vg, "image/UI_icon_JZ_WQ.png", 0)
-    imgScrollIcon.offhand   = nvgCreateImage(vg, "image/UI_icon_JZ_FS.png", 0)
-    imgScrollIcon.armor     = nvgCreateImage(vg, "image/UI_icon_JZ_HJ.png", 0)
-    imgScrollIcon.accessory = nvgCreateImage(vg, "image/UI_icon_JZ_SP.png", 0)
+    imgScrollIcon.weapon    = nvgCreateImage(vg, "image/货币道具/UI_icon_JZ_WQ.png", 0)
+    imgScrollIcon.offhand   = nvgCreateImage(vg, "image/货币道具/UI_icon_JZ_FS.png", 0)
+    imgScrollIcon.armor     = nvgCreateImage(vg, "image/货币道具/UI_icon_JZ_HJ.png", 0)
+    imgScrollIcon.accessory = nvgCreateImage(vg, "image/货币道具/UI_icon_JZ_SP.png", 0)
     -- 卷轴品质背景（quality=3，绿色品质）
-    imgScrollQBg = nvgCreateImage(vg, "image/UI_icon_ZBBJ_3.png", 0)
+    imgScrollQBg = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_3.png", 0)
 end
 
 -- ======================== 数据更新 ========================

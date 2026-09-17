@@ -43,11 +43,11 @@ local ANIM_SPEED = 10.0
 -- ======================== 标签数据 ========================
 
 local tabs = {
-    { name = "角色", iconFile = "image/ICON_GN_1.png",   locked = true },  -- 由引导1解锁
-    { name = "日志", iconFile = "image/ICON_GN_2.png",   locked = true },  -- 由引导3解锁
-    { name = "战斗", iconFile = "image/ICON_GN_3.png" },
-    { name = "城镇", iconFile = "image/ICON_GN_4.png",   locked = true },  -- 由引导4解锁
-    { name = "副本", iconFile = "image/ICON_GN_5.png",   locked = true },  -- 首通0305解锁
+    { name = "角色", iconFile = "image/通用图标/ICON_GN_1.png",   locked = true },  -- 由引导1解锁
+    { name = "日志", iconFile = "image/通用图标/ICON_GN_2.png",   locked = true },  -- 由引导3解锁
+    { name = "战斗", iconFile = "image/通用图标/ICON_GN_3.png" },
+    { name = "城镇", iconFile = "image/通用图标/ICON_GN_4.png",   locked = true },  -- 由引导4解锁
+    { name = "副本", iconFile = "image/通用图标/ICON_GN_5.png",   locked = true },  -- 首通0305解锁
 }
 
 local selectedIndex = 3  -- 默认选中"战斗"
@@ -100,15 +100,15 @@ end
 -- ======================== Public API ========================
 
 function BottomNav.init(vg)
-    imgNavBg  = nvgCreateImage(vg, "image/UI_YWJM_DB.png", 0)
-    imgTabBg1 = nvgCreateImage(vg, "image/UI_YWJM_DBAN1.png", 0)
-    imgTabBg2 = nvgCreateImage(vg, "image/UI_YWJM_DBAN2.png", 0)
-    imgTabBg3 = nvgCreateImage(vg, "image/UI_YWJM_DBAN3.png", 0)
+    imgNavBg  = nvgCreateImage(vg, "image/界面底板/UI_YWJM_DB.png", 0)
+    imgTabBg1 = nvgCreateImage(vg, "image/界面底板/UI_YWJM_DBAN1.png", 0)
+    imgTabBg2 = nvgCreateImage(vg, "image/界面底板/UI_YWJM_DBAN2.png", 0)
+    imgTabBg3 = nvgCreateImage(vg, "image/界面底板/UI_YWJM_DBAN3.png", 0)
 
     -- [暗黑化 P0] 页签图标/红点由 core/DarkIcon.lua 矢量绘制，无需加载
 
-    imgIconUp    = nvgCreateImage(vg, "image/ICON_UP.png", 0)
-    imgIconUpBig = nvgCreateImage(vg, "image/ICON_UP_big.png", 0)
+    imgIconUp    = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+    imgIconUpBig = nvgCreateImage(vg, "image/通用图标/ICON_UP_big.png", 0)
 
     -- 根据当前冒险等级初始化标签解锁状态
     BottomNav.refreshUnlockState(vg)

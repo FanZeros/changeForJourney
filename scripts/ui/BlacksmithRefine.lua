@@ -280,10 +280,10 @@ refineData = {
 
 --- 额外资源定义
 local EXTRA_RES_OPTIONS = {
-    { key = "enhanceStone", name = "洗练石", iconPath = "image/UI_icon_QH_1.png", quality = 3, cost = 1 },
-    { key = "destroyStone", name = "点金石", iconPath = "image/UI_icon_QH_3.png", quality = 5, cost = nil },  -- cost 动态：当前品质即为消耗数
-    { key = "corruptStone", name = "腐化石", iconPath = "image/UI_icon_FHS.png", quality = 3, cost = 1 },
-    { key = "sacredStone", name = "神圣石", iconPath = "image/UI_icon_SSS.png", quality = 6, cost = 1 },
+    { key = "enhanceStone", name = "洗练石", iconPath = "image/货币道具/UI_icon_QH_1.png", quality = 3, cost = 1 },
+    { key = "destroyStone", name = "点金石", iconPath = "image/货币道具/UI_icon_QH_3.png", quality = 5, cost = nil },  -- cost 动态：当前品质即为消耗数
+    { key = "corruptStone", name = "腐化石", iconPath = "image/货币道具/UI_icon_FHS.png", quality = 3, cost = 1 },
+    { key = "sacredStone", name = "神圣石", iconPath = "image/货币道具/UI_icon_SSS.png", quality = 6, cost = 1 },
 }
 
 --- 当前选中的额外资源 (nil = 未选择)

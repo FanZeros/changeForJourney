@@ -157,8 +157,8 @@ end
 
 --- 初始化（加载图片资源，仅调用一次）
 function RedeemCodePanel.init(vg)
-    img.bg         = nvgCreateImage(vg, "image/UI_EJBB.png", 0)
-    img.confirmBtn = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
+    img.bg         = nvgCreateImage(vg, "image/界面底板/UI_EJBB.png", 0)
+    img.confirmBtn = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
 
     if img.bg < 0 then print("[RedeemCodePanel] WARN: UI_EJBB.png load failed") end
     if img.confirmBtn < 0 then print("[RedeemCodePanel] WARN: UI_AN_LV.png load failed") end

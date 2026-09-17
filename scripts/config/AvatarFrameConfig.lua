@@ -1,30 +1,30 @@
 -- ============================================================================
 -- AvatarFrameConfig - 头像框配置
--- 素材: assets/image/UI_icon_TXK_1.png ~ UI_icon_TXK_6.png
+-- 素材: assets/image/头像框/UI_icon_TXK_1.png ~ UI_icon_TXK_6.png
 -- ============================================================================
 
 local C = {}
 
 C.FRAMES = {
-    { id = 1, name = "默认", icon = "image/UI_icon_TXK_1.png", defaultUnlocked = true,
+    { id = 1, name = "默认", icon = "image/头像框/UI_icon_TXK_1.png", defaultUnlocked = true,
       unlockDesc = "获取途径：默认开放", attributes = {}, attributeDesc = "无属性" },
-    { id = 2, name = "青铜挑战者", icon = "image/UI_icon_TXK_2.png", defaultUnlocked = false,
+    { id = 2, name = "青铜挑战者", icon = "image/头像框/UI_icon_TXK_2.png", defaultUnlocked = false,
       unlockDesc = "获取途径：挑战者区服达成青铜挑战者 II",
       attributes = { { key = "hpBonus", value = 3.5 } }, attributeDesc = "生命加成 +3.5%" },
-    { id = 3, name = "白银挑战者", icon = "image/UI_icon_TXK_3.png", defaultUnlocked = false,
+    { id = 3, name = "白银挑战者", icon = "image/头像框/UI_icon_TXK_3.png", defaultUnlocked = false,
       unlockDesc = "获取途径：挑战者区服达成白银挑战者 II",
       attributes = { { key = "armorBonus", value = 3.5 } }, attributeDesc = "护甲加成 +3.5%" },
-    { id = 4, name = "黄金挑战者", icon = "image/UI_icon_TXK_4.png", defaultUnlocked = false,
+    { id = 4, name = "黄金挑战者", icon = "image/头像框/UI_icon_TXK_4.png", defaultUnlocked = false,
       unlockDesc = "获取途径：挑战者区服达成黄金挑战者 II",
       attributes = {
           { key = "physAtkBonus", value = 1.5 },
           { key = "magAtkBonus", value = 1.5 },
       },
       attributeDesc = "物理/魔法攻击加成 +1.5%" },
-    { id = 5, name = "铂金挑战者", icon = "image/UI_icon_TXK_5.png", defaultUnlocked = false,
+    { id = 5, name = "铂金挑战者", icon = "image/头像框/UI_icon_TXK_5.png", defaultUnlocked = false,
       unlockDesc = "获取途径：挑战者区服达成铂金挑战者 II",
       attributes = { { key = "critRate", value = 2 } }, attributeDesc = "暴击率 +2%" },
-    { id = 6, name = "钻石挑战者", icon = "image/UI_icon_TXK_6.png", defaultUnlocked = false,
+    { id = 6, name = "钻石挑战者", icon = "image/头像框/UI_icon_TXK_6.png", defaultUnlocked = false,
       unlockDesc = "获取途径：挑战者区服达成钻石挑战者 II",
       attributes = { { key = "dmgBonus", value = 5 } }, attributeDesc = "伤害加成 +5%" },
 }

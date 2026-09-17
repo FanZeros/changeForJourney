@@ -192,24 +192,24 @@ end
 -- ======================== 图片初始化 ========================
 
 function M.initImages(vg)
-    img.panelBg    = nvgCreateImage(vg, "image/UI_JSJM_bj.png", 0)
-    img.listBg     = nvgCreateImage(vg, "image/UI_JSJM_0.png", 0)
-    img.deployed   = nvgCreateImage(vg, "image/UI_JSJM_CZZ.png", 0)
-    img.lock       = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
-    img.plus       = nvgCreateImage(vg, "image/UI_ICON_JIA.png", 0)
-    img.power      = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
-    img.lvlBadge   = nvgCreateImage(vg, "image/UI_JSJM_DJ.png", 0)
-    img.expBarBg   = nvgCreateImage(vg, "image/UI_JSMB_JYT1.png", 0)
-    img.expBarFill = nvgCreateImage(vg, "image/UI_JSMB_JYT2.png", 0)
-    img.iconUp     = nvgCreateImage(vg, "image/ICON_UP.png", 0)
-    img.shardSp    = nvgCreateImage(vg, "image/ICON_SP.png", 0)
+    img.panelBg    = nvgCreateImage(vg, "image/界面底板/UI_JSJM_bj.png", 0)
+    img.listBg     = nvgCreateImage(vg, "image/界面底板/UI_JSJM_0.png", 0)
+    img.deployed   = nvgCreateImage(vg, "image/界面底板/UI_JSJM_CZZ.png", 0)
+    img.lock       = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+    img.plus       = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
+    img.power      = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
+    img.lvlBadge   = nvgCreateImage(vg, "image/界面底板/UI_JSJM_DJ.png", 0)
+    img.expBarBg   = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT1.png", 0)
+    img.expBarFill = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
+    img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+    img.shardSp    = nvgCreateImage(vg, "image/货币道具/ICON_SP.png", 0)
 
     -- 英雄卡片背景
     HeroAssetUtil.preloadCards(vg, img.heroCards)
 
     -- 职业图标 (1~6)
     for i = 1, 6 do
-        img.classIcons[i] = nvgCreateImage(vg, "image/ICON_ZY_" .. i .. ".png", 0)
+        img.classIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
 end
 

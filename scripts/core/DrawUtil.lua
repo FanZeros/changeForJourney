@@ -246,7 +246,7 @@ DrawUtil._heroIconImgs = {}
 ---@param vg any NanoVG context
 function DrawUtil.initShardAssets(vg)
     if DrawUtil._shardBadgeImg >= 0 then return end  -- 已初始化
-    DrawUtil._shardBadgeImg = nvgCreateImage(vg, "image/ICON_SP.png", 0)
+    DrawUtil._shardBadgeImg = nvgCreateImage(vg, "image/货币道具/ICON_SP.png", 0)
     local HeroAssetUtil = require("config.HeroAssetUtil")
     for _, i in ipairs(HeroAssetUtil.getAssetIds()) do
         local path = HeroAssetUtil.getIconPath(i)

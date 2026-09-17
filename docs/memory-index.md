@@ -1,7 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-13 | 版本:v2.0-暗黑化阶段
+> 更新时间:2026-09-17 | 版本:v2.1-workspace-checkout
+>
+> **本会话(2026-09-17)**：新 Maker 工作区从 GitHub `FanZeros/changeForJourney` 的 `workspace` 分支检出到 `/workspace`。HEAD `d790dc0`。已 build，单机入口 `scripts/main.lua`。本环境 `project_id=m_2h73`（仓库记录为 `m_bk73`，勿提交回共享分支）。下一步等用户指令；挂起任务仍见下文 §6 与 `docs/山海经怪兽替换交接.md`。
 
 ---
 

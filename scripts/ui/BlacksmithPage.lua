@@ -1430,8 +1430,9 @@ function BlacksmithPage.handleInput(dx, dy)
         return BlacksmithEnhance.handleDialogInput(dx, dy)
     end
 
-    -- 返回按钮
-    if hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
+    -- 返回按钮（三行模式由中缝层接管）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
         BlacksmithPage.close()
         return true
     end
@@ -1703,8 +1704,11 @@ function BlacksmithPage.draw(vg)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- 8. 返回按钮
-    DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
+    -- 8. 返回按钮（三行模式由中缝层绘制）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK then
+        DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
+    end
 
     -- 9. 页面选项滑块背景
     drawImageCentered(vg, imgTabBg, TAB_BG_CX, TAB_BG_CY, TAB_BG_W, TAB_BG_H, 1.0)

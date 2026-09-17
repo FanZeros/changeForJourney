@@ -1012,8 +1012,9 @@ function ChurchPage.handleInput(dx, dy)
         if consumed then return true end
     end
 
-    -- 返回按钮
-    if hitTest(dx, dy, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H) then
+    -- 返回按钮（三行模式由中缝层接管）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H) then
         ChurchPage.close()
         return true
     end
@@ -1618,8 +1619,11 @@ function ChurchPage.draw(vg)
         nvgRestore(vg)
     end
 
-    -- 6. 返回按钮
-    DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
+    -- 6. 返回按钮（三行模式由中缝层绘制）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK then
+        DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
+    end
 
     -- 7. 页面选项滑块背景
     drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)

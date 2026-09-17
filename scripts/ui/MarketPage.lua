@@ -1944,9 +1944,12 @@ function MarketPage.draw(vg)
     end
 
     -- ========== 返回按钮 & Tab 栏==========
-    local _sb = BF.begin(vg, "market_back", TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H)
-    DrawUtil.drawBackChevron(vg, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, "left")
-    BF.finish(vg, _sb)
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK then
+        local _sb = BF.begin(vg, "market_back", TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H)
+        DrawUtil.drawBackChevron(vg, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, "left")
+        BF.finish(vg, _sb)
+    end
     drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
 
     -- 滑块动画
@@ -2121,8 +2124,9 @@ function MarketPage.handleInput(dx, dy)
         return true
     end
 
-    -- 返回按钮
-    if hitTest(dx, dy, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H) then
+    -- 返回按钮（三行模式由中缝层接管）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK and hitTest(dx, dy, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H) then
         BF.trigger("market_back")
         MarketPage.close(); return true
     end

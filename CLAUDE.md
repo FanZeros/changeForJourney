@@ -19,30 +19,23 @@
 
 ## 上次做了什么（截至 2026-09-17）
 
-1. **本会话**：从 `FanZeros/changeForJourney` 的 `workspace` 分支拉取并落到 `/workspace`
-   - HEAD：`d790dc0`（`fix: 角色/敌人立绘等比裁切不拉伸`）
-   - 已构建，入口 `main.lua`，单机模式
-   - 本环境 `project_id` 被 build 写成 `m_2h73`（相对仓库里的 `m_bk73`，**不提交回共享分支**）
-2. 历史：横屏暗黑标题、先祖来信、山海经怪兽第一期改名、底板 B 定稿、暗黑强梗试点
+1. 新工作区从 `origin/workspace@d790dc0` 落地并完成单机 build
+2. **修复角色详情右侧栏重复返回按钮**：三行模式下页内 `drawBackChevron` 与中缝层返回键叠画。`H_SEAM_BACK=true` 时详情/铁匠/教堂/酒馆/竞技场/市场不再画页内返回，只保留中缝那一颗。已 build。
 
 ## Git 状态(2026-09-17)
 
 - 分支：`workspace` tracking `origin/workspace`
-- HEAD：`d790dc0`
-- 远程 URL 不含 PAT（credential.helper=store）
+- 远程 URL 不含 PAT
+- 本环境 `project.json` 的 `project_id` 是 Maker 运行时 ID，勿提交回共享分支
 - 用户曾在会话明文给出 PAT：**务必在 GitHub 撤销/轮换**
 
 ## likely_next_task
 
-**等用户下指令。** 记忆里挂起的方向仍是：
-
-1. 山海经替换第二期：63 张水墨立绘合成入包（见 `docs/山海经怪兽替换交接.md`）
-2. 全量 20 张暗黑强梗立绘/卡面重做（见 `docs/memory-index.md` §6）
+等用户验收右侧栏返回按钮修复；挂起方向仍是山海经立绘入包 / 暗黑强梗立绘重做。
 
 ## 避雷清单（摘要）
 
-- 🔴 多 agent 并行：push 前必须 fetch；不要覆盖另一会话未提交改动
-- 🔴 `/workspace/assets/**/*.meta` 承载 uuid，替换图片**绝不动 .meta**
+- 🔴 三行模式 `H_SEAM_BACK`：二级页返回键只由 Standalone 中缝层绘制；页内再画就会叠一颗
+- 🔴 多 agent 并行：push 前必须 fetch
+- 🔴 `/workspace/assets/**/*.meta` 承载 uuid，替换图片绝不动 .meta
 - `git add` 只用显式路径；`dist/` 不手改
-- 用户 PAT 曾明文出现，已提醒撤销
-- 本环境 `project.json` 的 `project_id` 是 Maker 运行时 ID，勿当玩法改动提交

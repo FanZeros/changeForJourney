@@ -493,7 +493,8 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- 返回按钮
+    -- 返回按钮（三行模式由中缝层接管）
+    ---@diagnostic disable-next-line: undefined-global
     if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
         CharacterDetail.close()
         return true

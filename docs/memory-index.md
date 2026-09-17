@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-17 | 版本:v2.2-extra-talent-pilot
+> 更新时间:2026-09-17 | 版本:v2.3-electron-win
 >
-> **本会话(2026-09-17)**：落地 4 个混合追加技试点（衔骨图鉴/冰雕收藏/分裂弹/预存复活）。核心模块 `scripts/systems/ExtraTalentSystem.lua`，层数存 `roster.extraTalent`。已 build。挂起：其余 16 人追加技、山海经立绘。
+> **本会话(2026-09-17)**：构筑 Electron Windows 离线包（h5-pages-deploy §8）。产物 `electron-shell/release/ZhongYanZhiMen-win64-unpacked.zip`。追加技试点仍待验收。
 
 ---
 

@@ -2,6 +2,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.3-electron-win | 2026-09-17 | Electron Windows 离线包：win-unpacked zip 461MB |
 | v2.2-extra-talent | 2026-09-17 | 4 个混合追加技试点：衔骨图鉴/冰雕/分裂弹/预存复活 |
 | v2.1-seam-back | 2026-09-17 | 三行模式隐藏页内重复返回键，只留中缝层 |
 | v2.1-workspace | 2026-09-17 | 新工作区检出 origin/workspace@d790dc0；已 build 单机；等用户指令 |

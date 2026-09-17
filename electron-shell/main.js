@@ -6,7 +6,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const GAME_DIR = path.join(process.resourcesPath || __dirname, 'game');
+const GAME_DIR = app.isPackaged
+  ? path.join(process.resourcesPath, 'game')
+  : path.join(__dirname, 'game');
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',

@@ -548,7 +548,7 @@ function M.draw(vg)
     -- === 4) 角色卡片 ===
     local cx, cy = DT_CARD_CX, DT_CARD_CY
     local cardImg = imgHeroCards[heroId] or imgHeroCards[1]
-    drawImageCentered(vg, cardImg, cx, cy, CARD.W, CARD.H, 1.0)
+    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD.W, CARD.H, 1.0)
 
     -- 职业标志图标
     local iconIdx = CLASS_ICON_MAP[heroCfg.classId]

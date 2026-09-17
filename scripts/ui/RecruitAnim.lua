@@ -483,7 +483,7 @@ local function drawDupeToShardCard(vg, cx, cy, item, alpha)
     -- 正常英雄卡
     local cardImg = getHeroCardImage(vg, heroId)
     drawCardBg(vg, qTag, cx, cy, CARD_W, CARD_H, alpha)
-    drawImageCentered(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
+    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
 
     -- 品质角标
     local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
@@ -535,7 +535,7 @@ local function drawDecomposeCard(vg, cx, cy, item, alpha)
     local bgImg   = img.cardBg[bgTag] or img.cardBg["SSR"]
     local cardImg = getHeroCardImage(vg, heroId)
     drawImageCentered(vg, bgImg, cx, cy, CARD_W, CARD_H, alpha)
-    drawImageCentered(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
+    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
 
     -- 品质角标
     local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
@@ -585,7 +585,7 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
 
     local cardImg = getHeroCardImage(vg, heroId)
     drawCardBg(vg, qTag, cx, cy, CARD_W, CARD_H, alpha)
-    drawImageCentered(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
+    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
 
     local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
     if badgeImg and badgeImg >= 0 then

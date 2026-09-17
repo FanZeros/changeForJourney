@@ -528,7 +528,7 @@ local function drawRosterList(vg)
 
         -- a) 角色卡片
         local cardImg = getHeroCardImage(vg, entry.heroId)
-        drawImageCentered(vg, cardImg, cx, cy, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
+        DrawUtil.drawImageCover(vg, cardImg, cx, cy, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
 
         -- b) 职业图标（左上角，60x60）
         local iconIdx = ClassChange.CLASS_NUM[heroCfg.classId]
@@ -1411,7 +1411,7 @@ function ChurchPage.draw(vg)
         -- a) 角色卡牌（飞行动画期间隐藏槽位上的卡片，由飞行动画绘制）
         if not state.selectAnim then
         local cardImg = getHeroCardImage(vg, state.selectedHeroId)
-        drawImageCentered(vg, cardImg, cx, cy, CHAR_SLOT.W, CHAR_SLOT.H, 1.0)
+        DrawUtil.drawImageCover(vg, cardImg, cx, cy, CHAR_SLOT.W, CHAR_SLOT.H, 1.0)
         end
 
         if heroCfg then
@@ -1721,7 +1721,7 @@ function ChurchPage.draw(vg)
         local cardImg = getHeroCardImage(vg, state.selectedHeroId)
         nvgSave(vg)
         nvgGlobalAlpha(vg, 1.0)
-        drawImageCentered(vg, cardImg, curX, curY, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
+        DrawUtil.drawImageCover(vg, cardImg, curX, curY, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
         nvgRestore(vg)
     end
 

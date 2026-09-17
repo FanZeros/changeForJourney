@@ -273,7 +273,7 @@ function CharacterSelect.draw()
     if portrait and portrait >= 0 then
         local pw = PORTRAIT.w * portraitScale
         local ph = PORTRAIT.h * portraitScale
-        DrawUtil.drawImageCentered(vg_, portrait, PORTRAIT.cx, PORTRAIT.cy, pw, ph, 1.0)
+        DrawUtil.drawImageCover(vg_, portrait, PORTRAIT.cx, PORTRAIT.cy, pw, ph, 1.0)
     end
 
     -- 以下 UI 元素都带下方偏移动画

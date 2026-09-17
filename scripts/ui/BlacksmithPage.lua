@@ -763,7 +763,7 @@ local function drawUpperSlotContent(vg, tabName)
             local heroInfo = HeroConfig.get(heroId)
             local cardIdx = heroId or 1
             if imgHeroCards[cardIdx] and imgHeroCards[cardIdx] >= 0 then
-                drawImageCentered(vg, imgHeroCards[cardIdx], cx, cy, CARD_W, CARD_H, 1.0)
+                DrawUtil.drawImageCover(vg, imgHeroCards[cardIdx], cx, cy, CARD_W, CARD_H, 1.0)
             end
 
             -- 职业图标（卡片顶部）

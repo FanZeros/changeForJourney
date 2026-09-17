@@ -7,6 +7,7 @@ local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
 local NumberUtil = require("core.NumberUtil")
 local BattleLayout = require("core.BattleLayout")
+local DrawUtil = require("core.DrawUtil")
 
 local BattleDraw = {}
 
@@ -180,7 +181,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             else
                 cardBgImg = imgCtx.imgHeroCards[1]
             end
-            drawImageCentered(vg, cardBgImg, cx, cy, CARD_W, CARD_H, transAlpha)
+            DrawUtil.drawImageCover(vg, cardBgImg, cx, cy, CARD_W, CARD_H, transAlpha)
 
         elseif isDead then
             -- 墓碑渲染
@@ -204,7 +205,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             else
                 cardBgImg = imgCtx.imgHeroCards[1]
             end
-            drawImageCentered(vg, cardBgImg, cx, cy, CARD_W, CARD_H, alpha)
+            DrawUtil.drawImageCover(vg, cardBgImg, cx, cy, CARD_W, CARD_H, alpha)
 
             -- 受击闪烁
             if not isReviving and not isEntering then

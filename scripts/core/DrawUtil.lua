@@ -108,6 +108,54 @@ function DrawUtil.drawImageCentered(vg, img, cx, cy, w, h, alpha)
     nvgFill(vg)
 end
 
+--- 等比 cover：保持原图比例填满目标框，超出部分居中裁切
+---@param vg any
+---@param img number
+---@param cx number
+---@param cy number
+---@param w number
+---@param h number
+---@param alpha number|nil
+function DrawUtil.drawImageCover(vg, img, cx, cy, w, h, alpha)
+    alpha = alpha or 1.0
+    if img < 0 or alpha <= 0.01 or w <= 0 or h <= 0 then return end
+    local srcW, srcH = nvgImageSize(vg, img)
+    if not srcW or srcW <= 0 or not srcH or srcH <= 0 then
+        DrawUtil.drawImageCentered(vg, img, cx, cy, w, h, alpha)
+        return
+    end
+    local scale = math.max(w / srcW, h / srcH)
+    local dw, dh = srcW * scale, srcH * scale
+    local x = cx - dw * 0.5
+    local y = cy - dh * 0.5
+    nvgSave(vg)
+    nvgIntersectScissor(vg, cx - w * 0.5, cy - h * 0.5, w, h)
+    local paint = nvgImagePattern(vg, x, y, dw, dh, 0, img, alpha)
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, dw, dh)
+    nvgFillPaint(vg, paint)
+    nvgFill(vg)
+    nvgRestore(vg)
+end
+
+--- 等比 cover（水平镜像，用于敌方卡）
+---@param vg any
+---@param img number
+---@param cx number
+---@param cy number
+---@param w number
+---@param h number
+---@param alpha number|nil
+function DrawUtil.drawImageCoverMirrored(vg, img, cx, cy, w, h, alpha)
+    alpha = alpha or 1.0
+    if img < 0 or alpha <= 0.01 or w <= 0 or h <= 0 then return end
+    nvgSave(vg)
+    nvgTranslate(vg, cx, cy)
+    nvgScale(vg, -1, 1)
+    DrawUtil.drawImageCover(vg, img, 0, 0, w, h, alpha)
+    nvgRestore(vg)
+end
+
 -- ============================================================================
 -- drawNineSlice  —— 九宫格绘制
 -- ============================================================================

@@ -11,6 +11,7 @@ local ExpTable = require("config.ExpTable")
 local TutorialManager = require("systems.TutorialManager")
 
 local drawImageCentered  = DrawUtil.drawImageCentered
+local drawImageCover     = DrawUtil.drawImageCover
 local drawTextStroke     = DrawUtil.drawTextStroke
 
 local M = {}
@@ -443,7 +444,7 @@ function M.draw(vg, scrollY)
 
             -- a) 角色卡片背景
             local cardImg = img.heroCards[heroId] or img.heroCards[1]
-            drawImageCentered(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
+            drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
 
             -- b) 职业标志图标（偏移与战斗界面一致）
             local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -609,7 +610,7 @@ function M.draw(vg, scrollY)
         -- a) 角色卡片背景
         local cardImg = img.heroCards[entry.heroId] or img.heroCards[1]
         local isOwned = entry.owned
-        drawImageCentered(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
+        drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
 
         -- a2) 未拥有角色遮罩：纯黑 50% 透明度
         if not isOwned then
@@ -783,7 +784,7 @@ function M.draw(vg, scrollY)
     if dragState.active and dragState.heroId then
         local cardImg = img.heroCards[dragState.heroId] or img.heroCards[1]
         -- 半透明浮动卡片
-        drawImageCentered(vg, cardImg, dragState.cx, dragState.cy, CARD_W * 1.05, CARD_H * 1.05, 0.8)
+        drawImageCover(vg, cardImg, dragState.cx, dragState.cy, CARD_W * 1.05, CARD_H * 1.05, 0.8)
         -- 高亮边框
         nvgBeginPath(vg)
         nvgRoundedRect(vg, dragState.cx - CARD_W * 0.525, dragState.cy - CARD_H * 0.525,

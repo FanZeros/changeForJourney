@@ -188,7 +188,7 @@ local function drawPortrait(characterId, alpha, offsetX)
 
     local p = getPortraitLayout()
     local cx = p.cx + (offsetX or 0)
-    DrawUtil.drawImageCentered(vg_, img, cx, p.cy, p.w, p.h, alpha)
+    DrawUtil.drawImageCover(vg_, img, cx, p.cy, p.w, p.h, alpha)
 end
 
 --- 绘制带动画的立绘

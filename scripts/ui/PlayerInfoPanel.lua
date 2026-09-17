@@ -633,7 +633,7 @@ local function drawTeamCard(vg, cx, cy, slot, power)
     -- a) 角色卡片背景
     local cardImg = img.heroCards[heroId] or img.heroCards[1]
     if cardImg and cardImg >= 0 then
-        drawImageCentered(vg, cardImg, cx, cy, cw, ch, 1.0)
+        DrawUtil.drawImageCover(vg, cardImg, cx, cy, cw, ch, 1.0)
     end
 
     -- b) 职业图标

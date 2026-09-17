@@ -65,6 +65,7 @@ function BattleView.draw(vg, b, bgImg, skipBg)
         -215, 90, 153, 135, 181, 215, img.enemyTag, false)
     BattleDraw.drawCardGroup(vg, allies, nil,
         -215, 85, 153, 135, 181, 215, nil, true)
+    require("systems.ExtraTalentSystem").drawIceStatues(vg)
 
     -- 4) 飘字 / 特效 / 投射物 / 星门（均为 mounted 状态内容；坐标即条带坐标）
     BattleDraw.drawFloatingTexts(vg)

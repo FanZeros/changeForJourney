@@ -185,7 +185,7 @@ local function createAllyHero(heroId, level)
     local ownData = CharacterPanel.getOwnedHero(heroId)
     local advBranch = ownData and ownData.advBranch or nil
     local awakening = ownData and ownData.awakening or nil
-    local unit = HC.createHero(heroId, level, advBranch, awakening)
+    local unit = HC.createHero(heroId, level, advBranch, awakening, ownData and ownData.extraTalent)
     if not unit then
         -- 兜底：如果英雄 ID 无效，创建简单单位
         return {

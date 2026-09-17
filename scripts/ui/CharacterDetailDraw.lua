@@ -17,6 +17,7 @@ local ClientDispatcher  = require("network.ClientDispatcher")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local ETS = require("systems.ExtraTalentSystem")
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
@@ -1139,8 +1140,12 @@ function M.draw(vg)
         0x66, 0xf8, 0x62, 5)
 
     local talentDesc = heroCfg.talentDesc or ""
+    local extraLine = ETS.getDesc(heroId, ownData and ownData.extraTalent)
+    if extraLine ~= "" then
+        talentDesc = talentDesc .. "\n" .. extraLine
+    end
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 34)
+    nvgFontSize(vg, extraLine ~= "" and 28 or 34)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
     nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
     nvgTextBox(vg, TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH, talentDesc, nil)

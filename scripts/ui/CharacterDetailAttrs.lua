@@ -143,7 +143,7 @@ local function buildHeroAttrsForDetail(heroId, level, heroesData, eqData)
     local heroCfg = HC.get(heroId)
     if not heroCfg then return nil, nil end
     local hd = getHeroRuntimeData(heroesData, heroId)
-    local unit = HC.createHero(heroId, level, hd and hd.advBranch or nil, hd and hd.awakening or nil)
+    local unit = HC.createHero(heroId, level, hd and hd.advBranch or nil, hd and hd.awakening or nil, hd and hd.extraTalent)
     if not unit or not unit.attrs then return nil, heroCfg end
     applyDetailRuntimeBonuses(unit.attrs, heroId, heroCfg.classId, heroesData, eqData)
     return unit, heroCfg
@@ -240,7 +240,12 @@ function M.collectAttributes(heroId, heroCfg, level)
             awakening = hd.awakening
         end
     end
-    local hero = HC.createHero(heroId, level, advBranch, awakening)
+    local extraTalent = nil
+    if heroesData and heroesData.roster then
+        local hd = heroesData.roster[heroId] or heroesData.roster[tostring(heroId)]
+        extraTalent = hd and hd.extraTalent
+    end
+    local hero = HC.createHero(heroId, level, advBranch, awakening, extraTalent)
     if not hero or not hero.attrs then
         return { left = {}, right = {} }
     end

@@ -677,7 +677,8 @@ local function resetAllyUnit(u)
                 local newUnit = HC.createHero(u.heroId,
                     heroLevel,
                     (owned and owned.advBranch) or u.advBranch,
-                    owned and owned.awakening)
+                    owned and owned.awakening,
+                    owned and owned.extraTalent)
                 if newUnit and newUnit.attrs then
                     local partySlot = nil
                     for ai, a in ipairs(allies) do
@@ -1504,6 +1505,7 @@ function BattleScene.draw(vg)
         ENEMY_TAG_OFFSET_Y, ENEMY_NAME_OFFSET_Y,
         ENEMY_HP_BG_OFFSET_Y, ENEMY_HP_VAL_OFFSET_Y,
         ENEMY_ATK_BG_OFFSET_Y, ENEMY_LVL_OFFSET_Y, imgEnemyTag, false)
+    require("systems.ExtraTalentSystem").drawIceStatues(vg)
 
     -- 5. 关卡名（挂机模式显示范围文本，首通模式显示关卡名）
     if not isFirstClear then
@@ -3020,7 +3022,7 @@ function BattleScene.refreshAllyStats()
                     and CharacterPanel.getEffectiveLevel(u.heroId) or owned.level
                 -- 重建完整属性（含最新等级/觉醒/转职/装备），存入 _pendingSnapshot 延迟生效
                 -- 当前战斗中 u.attrs / u.hp / u.maxHp / u.atkInterval 保持不变
-                local newUnit = HC.createHero(u.heroId, heroLevel, owned.advBranch, owned.awakening)
+                local newUnit = HC.createHero(u.heroId, heroLevel, owned.advBranch, owned.awakening, owned.extraTalent)
                 if newUnit and newUnit.attrs then
                     local partySlot = nil
                     for ai, a in ipairs(allies) do

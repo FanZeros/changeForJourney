@@ -49,6 +49,7 @@ Protocol.ACTION_TYPES = {
     SET_DEPLOYED   = "set_deployed",    -- 设置完整出战阵容（队1，兼容旧客户端）
     SET_TEAM       = "set_team",        -- [三队并行] 设置指定队伍阵容 { teamIdx, heroIds }
     LEVEL_UP_HERO  = "level_up_hero",   -- 英雄升级
+    SYNC_EXTRA_TALENT = "sync_extra_talent", -- 追加技永久层同步 { heroId, extraTalent }
 
     -- 经济
     DRAW_CARD      = "draw_card",       -- 抽卡（旧版简易抽卡）

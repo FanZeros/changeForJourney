@@ -105,6 +105,9 @@ HeroesSchema.Fields = {
                 -- 碎片字段初始化
                 heroData.shards = tonumber(heroData.shards) or 0
 
+                -- 追加技永久层（#1/#12/#13/#15）
+                heroData.extraTalent = require("systems.ExtraTalentSystem").normalize(heroData.extraTalent)
+
                 -- MIGRATION: dupeCount → shards 迁移（每 dupeCount = 15 碎片）
                 -- 仅对未迁移的存档执行一次：检查 _shardMigrated 标志
                 if not heroData._shardMigrated then

@@ -410,6 +410,7 @@ local function getOwnedHeroList()
                 maxExp    = ownData and ownData.maxExp or 5,
                 advBranch = ownData and ownData.advBranch or nil,
                 awakening = ownData and ownData.awakening or nil,
+                extraTalent = ownData and ownData.extraTalent or nil,
             }
         end
     end
@@ -540,7 +541,7 @@ local function drawRosterList(vg)
         if not rosterPowerCache[entry.heroId] then
             local pw = 0
             local statLevel = entry.level or 1
-            local heroUnit = HC.createHero(entry.heroId, statLevel, entry.advBranch, entry.awakening)
+            local heroUnit = HC.createHero(entry.heroId, statLevel, entry.advBranch, entry.awakening, entry.extraTalent)
             if heroUnit and heroUnit.attrs then
                 local a = heroUnit.attrs
                 CharacterPanel.applyEquippedItems(a, entry.heroId)
@@ -1431,7 +1432,7 @@ function ChurchPage.draw(vg)
                 cachedPowerValue = 0
                 local selAdvBranch = ownData and ownData.advBranch or nil
                 local selAwakening = ownData and ownData.awakening or nil
-                local heroUnit = HC.createHero(state.selectedHeroId, statLevel, selAdvBranch, selAwakening)
+                local heroUnit = HC.createHero(state.selectedHeroId, statLevel, selAdvBranch, selAwakening, ownData and ownData.extraTalent)
                 if heroUnit and heroUnit.attrs then
                     local a = heroUnit.attrs
                     CharacterPanel.applyEquippedItems(a, state.selectedHeroId)

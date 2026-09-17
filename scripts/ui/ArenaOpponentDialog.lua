@@ -264,7 +264,7 @@ local function buildEnemyUnits(defense)
 
     for seq, heroData in ipairs(defense.heroes) do
         -- 1. 创建基础英雄单位（不会应用任何天赋星图，因为已清除）
-        local unit = HeroConfig.createHero(heroData.heroId, heroData.level, heroData.advBranch, heroData.awakening)
+        local unit = HeroConfig.createHero(heroData.heroId, heroData.level, heroData.advBranch, heroData.awakening, false)
         if unit then
             -- 2. 应用装备加成（使用 seq*100+slotIdx 生成唯一 modifierId，避免同英雄多槽位覆盖）
             local equipMap = nil

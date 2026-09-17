@@ -84,7 +84,7 @@ HC.HEROES = {
     [1] = {
         quality = 1, classId = CC.WARRIOR,
         title = "汪卫先锋", name = "大狗嚼",
-        talentName = "希望之心", talentDesc = "生命值低于70%时，物理攻击力+25%",
+        talentName = "希望之心", talentDesc = "生命值低于70%时，物理攻击力+25%。追加技【衔骨图鉴】：每击杀永久生命上限+1；每8杀解锁一种敌人攻击属性咬进图鉴，8系齐了普攻变为全系撕咬。",
         talentId = "karin_hope",
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.4, atkTargets = 1,
@@ -205,7 +205,7 @@ HC.HEROES = {
     [12] = {
         quality = 3, classId = CC.MAGE,
         title = "甜蜜冰后", name = "雪皇",
-        talentName = "冰霜精通", talentDesc = "攻击命中敌人时有25%概率[冰冻]1.5秒，使其攻击冷却进度暂停",
+        talentName = "冰霜精通", talentDesc = "攻击命中敌人时有25%概率[冰冻]1.5秒，使其攻击冷却进度暂停。追加技【冰雕收藏】：每击杀永久魔攻+0.2、冰冻率+0.05%；冰冻结杀留下冰雕（最多3座）挡弹道，碎时冻全场。",
         talentId = "astrid_freeze",
         gender = "female",
         atkType = AD.ATK_ICE, atkInterval = 4.0, atkTargets = 4,
@@ -216,7 +216,7 @@ HC.HEROES = {
     [13] = {
         quality = 3, classId = CC.RANGER,
         title = "鱼尾纹克星", name = "弹弹弹",
-        talentName = "弹射箭矢", talentDesc = "射出的箭矢将在敌人之间弹射1次",
+        talentName = "弹射箭矢", talentDesc = "射出的箭矢将在敌人之间弹射1次。追加技【分裂弹】：每击杀永久物攻+0.25；弹射击杀计分裂层，每8层额外弹射+1（最多+5）；40次分裂击杀后普攻进化为环绕弹。",
         talentId = "rosalyn_ricochet",
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 1.2, atkTargets = 1,
@@ -238,7 +238,7 @@ HC.HEROES = {
     [15] = {
         quality = 3, classId = CC.PRIEST,
         title = "急救复活甲", name = "复活吧爱人",
-        talentName = "圣光复活", talentDesc = "当复活吧爱人在场时其他角色首次死亡时有25%概率立即使其复活",
+        talentName = "圣光复活", talentDesc = "当复活吧爱人在场时其他角色首次死亡时有25%概率立即使其复活。追加技【预存复活】：成功复活永久生命上限+2、复活率+0.5%（上限80%），并给被救者存一张下场必死也活的票；自己阵亡按发卡数放神圣核爆。",
         talentId = "elizabeth_revive",
         gender = "female",
         atkType = AD.ATK_HOLY, atkInterval = 2.0, atkTargets = 3,
@@ -379,8 +379,9 @@ end
 ---@param level number 英雄等级
 ---@param advBranch table|nil 转职分支 { first=number?, second=number? }
 ---@param awakening table|nil 觉醒数据 { [1]=true, [2]=true, ... }
+---@param extraTalent table|nil|boolean 追加技永久层；false=不应用
 ---@return table|nil 战斗单位 { name, level, hp, maxHp, atkProgress, attrs, heroId, classId, ... }
-function HC.createHero(heroId, level, advBranch, awakening)
+function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
     local hero = HC.HEROES[heroId]
     if not hero then
         print("[HeroConfig] 未知英雄 ID: " .. tostring(heroId))
@@ -444,6 +445,11 @@ function HC.createHero(heroId, level, advBranch, awakening)
 
     -- 应用角色特有天赋（作为 modifier，含觉醒增强）
     HC._applyHeroTalent(heroId, attrs, awakening)
+
+    -- 应用追加技永久层（试点 #1/#12/#13/#15）
+    if extraTalent ~= false then
+        require("systems.ExtraTalentSystem").applyToAttrs(heroId, attrs, extraTalent)
+    end
 
     -- 应用转职属性加成（一转+二转的 statBonus 叠加）
     if advBranch then

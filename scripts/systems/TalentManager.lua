@@ -11,6 +11,7 @@ local CF  = require("systems.CombatFormula")
 local SEM = require("systems.StatusEffectManager")
 local RCH = require("systems.RelicConditionHandler")
 local Diag = require("systems.BattleDiag")
+local ETS = require("systems.ExtraTalentSystem")
 
 local MAS
 local function getMAS()
@@ -1224,6 +1225,7 @@ end
 
 --- 重置所有天赋状态（关卡切换时调用）
 function TAL.reset()
+    ETS.flush()
     state = {}
     TAL_BCS.bAllies  = {}
     TAL_BCS.bEnemies = {}
@@ -1401,6 +1403,7 @@ function TAL.onBattleStart(allies, enemies)
     -- 双方均应用战斗开始天赋
     applyBattleStartTalents(allies, enemies)
     applyBattleStartTalents(enemies, allies)
+    ETS.onBattleStart(allies, enemies)
 end
 
 --- 小黑子「法术机关枪」：推进攻击计数（普攻与连击共用；连射弹在 onBeforeAttack 中排除）
@@ -2292,9 +2295,10 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         -- #12 雪皇 冰霜精通：25%概率附加冰冻1.5秒 + 觉醒
         if heroId == 12 and target.hp > 0 then
             -- 觉醒1: 概率25%→35%  觉醒3: 概率→50%
-            local freezeChance = 0.25
-            if hasAwaken(attacker, 1) then freezeChance = 0.35 end
-            if hasAwaken(attacker, 3) then freezeChance = 0.50 end
+            local freezeChance = 0.25 + ETS.getSnowFreezeBonus(ETS.getOwned(12))
+            if hasAwaken(attacker, 1) then freezeChance = 0.35 + ETS.getSnowFreezeBonus(ETS.getOwned(12)) end
+            if hasAwaken(attacker, 3) then freezeChance = 0.50 + ETS.getSnowFreezeBonus(ETS.getOwned(12)) end
+            freezeChance = math.min(0.80, freezeChance)
             -- 觉醒4: 持续时间+0.5秒
             local freezeDur = 1.5
             if hasAwaken(attacker, 4) then freezeDur = 2.0 end
@@ -2359,6 +2363,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             local bounceCount = 1
             if hasAwaken(attacker, 3) then bounceCount = 2 end
             if hasAwaken(attacker, 7) then bounceCount = 3 end
+            bounceCount = bounceCount + ETS.getExtraBounces(ETS.getOwned(13))
 
             local baseDmg = result.totalDamage or 0
             local allowRepeatBounce = hasAwaken(attacker, 7)
@@ -2993,6 +2998,8 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             talentLog("[Talent] 共鸣之歌: " .. (attacker.name or "?") .. " 触发全队伤害+5% (3s)")
         end
     end
+
+    ETS.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn)
 end
 
 --- 伤害拦截：在 takeDamage 之前修改伤害值（用于铁憨憨吸收队友伤害）
@@ -3007,6 +3014,9 @@ function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCa
     if damage <= 0 then return damage end
 
     if not isTargetAlly then return damage end
+
+    damage = ETS.absorbWithIceStatue(target, damage, TAL_BCS.bEnemies)
+    if damage <= 0 then return 0 end
 
     -- 真布诗人觉醒7：无敌期间免疫伤害
     if target._elwynInvulnTimer and target._elwynInvulnTimer > 0 then
@@ -3296,6 +3306,10 @@ end
 ---@param syncHpFn function syncUnitHp(unit) 的引用
 ---@return boolean 是否阻止死亡（true=复活）
 function TAL.onAllyDeath(dyingUnit, allies, syncHpFn)
+    if ETS.tryTicketRevive(dyingUnit, allies, syncHpFn) then
+        return true
+    end
+
     -- ======== 星图节点125 不死鸟之翼 免疫致命伤害 + 3秒恢复0%HP ========
     if hasStarNode(dyingUnit, 125) then
         local ds = getState(dyingUnit)
@@ -3351,10 +3365,12 @@ function TAL.onAllyDeath(dyingUnit, allies, syncHpFn)
         if ally.heroId == 15 and ally.hp > 0 and ally ~= dyingUnit then
             local elizState = getState(ally)
             if elizState and not elizState.reviveUsed[dyingUnit] then
-                -- 计算复活概率: 基础25%, 觉醒1次0%, 觉醒5→50%
-                local reviveRate = 0.25
-                if hasAwaken(ally, 1) then reviveRate = 0.40 end
-                if hasAwaken(ally, 5) then reviveRate = 0.60 end
+                -- 计算复活概率: 基础25%, 觉醒1→40%, 觉醒5→60%；追加技永久层叠加上限80%
+                local extraRate = ETS.getReviveRateBonus(ETS.getOwned(15))
+                local reviveRate = 0.25 + extraRate
+                if hasAwaken(ally, 1) then reviveRate = 0.40 + extraRate end
+                if hasAwaken(ally, 5) then reviveRate = 0.60 + extraRate end
+                reviveRate = math.min(0.80, reviveRate)
                 -- 觉醒4: 战斗中首次死亡的角色必定复活
                 if hasAwaken(ally, 4) then
                     reviveRate = 1.0
@@ -3384,12 +3400,16 @@ function TAL.onAllyDeath(dyingUnit, allies, syncHpFn)
                     end
 
                     talentLog("[Talent] 复活吧爱人 圣光复活: " .. (dyingUnit.name or "?") .. " 被复活！(概率=" .. math.floor(reviveRate * 100) .. "%)")
+                    ETS.onSuccessfulRevive(ally, dyingUnit)
                     return true
                 else
                     elizState.reviveUsed[dyingUnit] = true
                 end
             end
         end
+    end
+    if dyingUnit.heroId == 15 then
+        ETS.onLoverDeathNuke(dyingUnit, allies, TAL_BCS.bEnemies, TAL_BCS.dealDamage)
     end
     return false
 end
@@ -3399,6 +3419,7 @@ end
 ---@param allies table 己方单位列表
 ---@param enemies table 敌方单位列表
 function TAL.onEnemyDeath(deadEnemy, allies, enemies)
+    ETS.onEnemyDeath(deadEnemy, allies, enemies)
     for _, ally in ipairs(allies) do
         if ally.hp > 0 then
             local s = getState(ally)
@@ -3476,6 +3497,8 @@ end
 ---@param ctx table { healUnit, dealDamage, syncHp, performAttack }
 function TAL.update(dt, allies, enemies, ctx)
     local TM = require("systems.ThreatManager")
+    TAL_BCS.dealDamage = ctx and ctx.dealDamage
+    ETS.update(dt)
 
     for _, ally in ipairs(allies) do
         if ally.hp > 0 then

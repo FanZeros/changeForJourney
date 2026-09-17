@@ -8,6 +8,7 @@ local TAL = require("systems.TalentManager")
 local NumberUtil = require("core.NumberUtil")
 local BattleLayout = require("core.BattleLayout")
 local DrawUtil = require("core.DrawUtil")
+local ETS = require("systems.ExtraTalentSystem")
 
 local BattleDraw = {}
 
@@ -380,6 +381,10 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             if conqStacks > 0 then
                 drawTextStroke(vg, cx + CARD_W * 0.5 - 28, cy - CARD_H * 0.5 + 28,
                     "征" .. tostring(conqStacks), 24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 200, 50, 3)
+            end
+
+            if isAllyGroup then
+                ETS.drawOrbit(vg, unit, cx, cy)
             end
         end
 

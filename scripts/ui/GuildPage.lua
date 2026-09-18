@@ -467,15 +467,15 @@ end
 -- ======================== Public API ========================
 
 function GuildPage.init(vg)
-    -- [暗黑化 P1-B5] 原 image/界面底板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
-    img.nameBg  = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
+    img.nameBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     img.btnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     img.tabBg   = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
-    img.rankBg  = nvgCreateImage(vg, "image/界面底板/UI_PHB_BJ.png", 0)
-    img.listBg  = nvgCreateImage(vg, "image/界面底板/UI_PHB_1.png", 0)
+    img.rankBg  = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_PHB_BJ.png", 0)
+    img.listBg  = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_PHB_1.png", 0)
     for i = 1, 3 do
-        img.top[i]    = nvgCreateImage(vg, "image/界面底板/UI_PHBTOP" .. i .. ".png", 0)
+        img.top[i]    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_PHBTOP" .. i .. ".png", 0)
         img.trophy[i] = nvgCreateImage(vg, "image/通用图标/ICON_PHB_TOP" .. i .. ".png", 0)
     end
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)

@@ -10,7 +10,7 @@
 local HorizonBg = {}
 
 local imgShared = -1
-local IMG_PATH = "image/界面底板/UI_CZ_BJ.png"  -- 城镇大背景（1080x2400）
+local IMG_PATH = "image/界面底板/城镇世界/UI_CZ_BJ.png"  -- 城镇大背景（1080x2400）
 
 function HorizonBg.init(vg)
     if imgShared < 0 then

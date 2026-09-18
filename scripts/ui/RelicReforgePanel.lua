@@ -313,15 +313,15 @@ end
 -- ======================== 初始化 ========================
 
 function RelicReforgePanel.init(vg)
-    imgBg       = nvgCreateImage(vg, "image/界面底板/UI_MXZGH_YW_0.png", 0)
-    imgBeforeBg = nvgCreateImage(vg, "image/界面底板/UI_TJP_XL_2.png", 0)
-    imgAfterBg  = nvgCreateImage(vg, "image/界面底板/UI_TJP_XL_1.png", 0)
-    imgArrow    = nvgCreateImage(vg, "image/界面底板/UI_TJP_JIANTOU.png", 0)
+    imgBg       = nvgCreateImage(vg, "image/界面底板/遗物神器/UI_MXZGH_YW_0.png", 0)
+    imgBeforeBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_XL_2.png", 0)
+    imgAfterBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_XL_1.png", 0)
+    imgArrow    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
     imgBtnHuang = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgBtnLv    = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    imgPoolBg   = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgPoolBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
 
     -- 遗物图标 (ICON_YWX_*)
     local iconKeys = { "GUI", "SHE", "LU", "LANG", "YING" }

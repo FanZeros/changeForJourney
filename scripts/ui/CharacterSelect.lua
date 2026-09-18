@@ -165,9 +165,9 @@ end
 ---@param vg any NanoVG context
 function CharacterSelect.init(vg)
     vg_ = vg
-    imgPanel_   = nvgCreateImage(vg, "image/界面底板/UI_XZCSZY_1.png", 0)
-    imgCardBG1_ = nvgCreateImage(vg, "image/界面底板/UI_XZCSZY_AN1.png", 0)
-    imgCardBG2_ = nvgCreateImage(vg, "image/界面底板/UI_XZCSZY_AN2.png", 0)
+    imgPanel_   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_XZCSZY_1.png", 0)
+    imgCardBG1_ = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_XZCSZY_AN1.png", 0)
+    imgCardBG2_ = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_XZCSZY_AN2.png", 0)
     imgButton_  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
 
     for i, ch in ipairs(CHARACTERS) do

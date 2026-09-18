@@ -87,19 +87,21 @@ HeroesSchema.Fields = {
                     end
                 end
                 if heroData.awakening then
+                    local AC = require("config.AwakeningConfig")
                     local fixedAwk = {}
                     for k, v in pairs(heroData.awakening) do
-                        local numK = tonumber(k)
-                        if numK then fixedAwk[numK] = v end
+                        if k == "_awk3Migrated" then
+                            if v then fixedAwk._awk3Migrated = true end
+                        else
+                            local numK = tonumber(k)
+                            if numK then fixedAwk[numK] = v end
+                        end
                     end
-                    heroData.awakening = fixedAwk
+                    heroData.awakening = AC.migrateAwakening(fixedAwk, heroData._awk3Migrated == true)
+                    heroData._awk3Migrated = true
                 end
                 if heroData.dupeCount == nil then
-                    local awakeCount = 0
-                    if heroData.awakening then
-                        for _ in pairs(heroData.awakening) do awakeCount = awakeCount + 1 end
-                    end
-                    heroData.dupeCount = awakeCount
+                    heroData.dupeCount = require("config.AwakeningConfig").countActivated(heroData.awakening)
                 end
 
                 -- 碎片字段初始化
@@ -113,10 +115,7 @@ HeroesSchema.Fields = {
                 if not heroData._shardMigrated then
                     local dc = heroData.dupeCount or 0
                     -- 已用于觉醒的点数不迁移（它们已经"消费"了）
-                    local awakeCount = 0
-                    if heroData.awakening then
-                        for _ in pairs(heroData.awakening) do awakeCount = awakeCount + 1 end
-                    end
+                    local awakeCount = require("config.AwakeningConfig").countActivated(heroData.awakening)
                     -- 可迁移的 dupeCount = 总 dupeCount - 已消耗的觉醒数
                     local migratable = dc - awakeCount
                     if migratable > 0 then

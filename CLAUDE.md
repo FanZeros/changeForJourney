@@ -15,17 +15,13 @@
 - 入口 `scripts/main.lua`，单机 `network/Standalone.lua`
 - GitHub：`FanZeros/changeForJourney` 分支 `workspace`
 
-## 上次做了什么（截至 2026-09-17）
+## 上次做了什么（截至 2026-09-18）
 
-1. 落地 4 个混合追加技试点（衔骨/冰雕/分裂弹/预存复活）
-2. **构筑 Electron Windows 离线包**（h5-pages-deploy §8）
-   - 壳：`electron-shell/`（main.js 内置 http 发 COOP/COEP）
-   - 产物：`electron-shell/release/ZhongYanZhiMen-win64-unpacked.zip`（461MB，不解压不入库）
-   - 解压后运行 `win-unpacked/ZhongYanZhiMen.exe`；首次需联网拉引擎 WASM
+觉醒从 7 节点压成 3 节点：1 粗暴 / 2 机制 / 3 进化。旧档 1–3→新1、4–6→新2、7→新3。碎片合计仍 280。超模技仍走这三档。
 
 ## likely_next_task
 
-验收 4 个试点手感；或把 zip 发给用户测 Windows 双击即玩。
+验收觉醒拼图页：三块六边形嵌合角色核、顺序点亮、旧档并档。
 
 ## 避雷清单（摘要）
 

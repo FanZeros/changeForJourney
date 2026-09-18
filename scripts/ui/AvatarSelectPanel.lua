@@ -197,13 +197,13 @@ local onFrameConfirmed = nil
 --- 初始化（加载图片资源，仅调用一次）
 function AvatarSelectPanel.init(vg)
     -- 弹窗背景
-    img.bg = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    img.bg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     -- 角色头像图标
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)
     AvatarFrameUtil.preloadFrames(vg, img.frameIcons)
     -- Tab 背景
-    img.tabSelBg = nvgCreateImage(vg, "image/界面底板/UI_FXAN_1.png", 0)
-    img.tabUnselBg = nvgCreateImage(vg, "image/界面底板/UI_FXAN_2.png", 0)
+    img.tabSelBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_FXAN_1.png", 0)
+    img.tabUnselBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_FXAN_2.png", 0)
     -- 穿戴按钮
     img.wearBtn = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     img.lockIcon = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)

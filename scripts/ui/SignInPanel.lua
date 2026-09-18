@@ -409,9 +409,9 @@ end
 
 function Panel.init(vg)
     vg_ = vg
-    -- [暗黑化 P1-B5] 原 image/界面底板/UI_MZQD_1.png 贴图加载已移除（矢量绘制替代）
-    imgPanel   = nvgCreateImage(vg, "image/界面底板/UI_MZQD_1.png", 0)
-    imgEntry   = nvgCreateImage(vg, "image/界面底板/UI_MZQD_2.png", 0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/签到任务/UI_MZQD_1.png 贴图加载已移除（矢量绘制替代）
+    imgPanel   = nvgCreateImage(vg, "image/界面底板/签到任务/UI_MZQD_1.png", 0)
+    imgEntry   = nvgCreateImage(vg, "image/界面底板/签到任务/UI_MZQD_2.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     imgSlider  = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
@@ -420,16 +420,16 @@ function Panel.init(vg)
     imgBtnRetro = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_hong.png", 0)
     imgLock     = nvgCreateImage(vg, "image/通用图标/ICON_GN_BAN.png", 0)
     -- 每日签到图片
-    -- [暗黑化 P1-B5] 原 image/界面底板/UI_MRQD_1.png 贴图加载已移除（矢量绘制替代）
-    imgDailyPanel    = nvgCreateImage(vg, "image/界面底板/UI_MRQD_1.png", 0)
-    imgDailyEntry    = nvgCreateImage(vg, "image/界面底板/UI_MRQD_2.png", 0)
-    imgDailyEntryAct = nvgCreateImage(vg, "image/界面底板/UI_MRQD_3.png", 0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/签到任务/UI_MRQD_1.png 贴图加载已移除（矢量绘制替代）
+    imgDailyPanel    = nvgCreateImage(vg, "image/界面底板/签到任务/UI_MRQD_1.png", 0)
+    imgDailyEntry    = nvgCreateImage(vg, "image/界面底板/签到任务/UI_MRQD_2.png", 0)
+    imgDailyEntryAct = nvgCreateImage(vg, "image/界面底板/签到任务/UI_MRQD_3.png", 0)
     imgCheckmark     = nvgCreateImage(vg, "image/货币道具/UI_icon_GOU.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     imgDailySignBtn  = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     -- 确认弹窗图片
-    imgConfirmBg  = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
-    imgArrowIcon  = nvgCreateImage(vg, "image/界面底板/UI_TJP_JIANTOU.png", 0)
+    imgConfirmBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    imgArrowIcon  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
     imgRedDot     = nvgCreateImage(vg, "image/通用图标/ICON_HD.png", 0)
     ImageCache.init(vg)
     print("[SignInPanel] init OK")

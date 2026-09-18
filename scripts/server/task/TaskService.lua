@@ -189,10 +189,7 @@ function TaskService.RefreshAchievements(uid)
                 ssrCount = ssrCount + 1
             end
 
-            local awkCount = 0
-            if heroData.awakening then
-                for _ in pairs(heroData.awakening) do awkCount = awkCount + 1 end
-            end
+            local awkCount = require("config.AwakeningConfig").countActivated(heroData.awakening)
             if quality == 1 then
                 awkRMax = math.max(awkRMax, awkCount)
             elseif quality == 2 then

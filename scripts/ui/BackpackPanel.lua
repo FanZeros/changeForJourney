@@ -292,10 +292,7 @@ local TRANSFER_CONFIRM = {
 ---@return boolean
 local function isHeroFullyAwakened(heroId)
     local hero = CharacterPanel.getOwnedHero(heroId)
-    if not hero or not hero.awakening then return false end
-    local count = 0
-    for _ in pairs(hero.awakening) do count = count + 1 end
-    return count >= 7
+    return require("config.AwakeningConfig").isFullyAwakened(hero and hero.awakening)
 end
 
 --- 获取单枚碎片对应的酒馆币转化数量
@@ -1041,9 +1038,9 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     vg_ = vg
-    imgTopBg   = nvgCreateImage(vg, "image/界面底板/UI_BB_BJ.png", 0)
-    imgTitleBg = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
-    imgDeco    = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
+    imgTopBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_BB_BJ.png", 0)
+    imgTitleBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
+    imgDeco    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     imgTabBg   = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）

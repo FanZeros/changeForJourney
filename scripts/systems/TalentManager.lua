@@ -124,6 +124,8 @@ local function ensureState(unit)
             frozenAllTriggered = false,
             -- Hero12 雪皇: 觉醒7 冰冻叠层魔攻
             freezeAtkStacks = 0,
+            -- Hero8 愤怒的小雀: 仇册（打过自己的人）
+            feudAttackers = {},
             -- Hero14 内鬼: 觉醒4 首次攻击目标必暴
             firstHitTargets = {},      -- [target] = true
             -- Hero14 内鬼: 觉醒6 击杀暴伤叠加
@@ -152,9 +154,10 @@ local function ensureState(unit)
             starGateLastAttackComboCount = 0,
             starGateSpeedFactor = 0,
             starGateInterval = 2.6,
-            -- Hero21 闪电卖鸡: 银光
+            -- Hero21 闪电卖鸡: 氮气
             silverLightProgressBoost = false,
             silverFlashChecked = false,
+            nitroStacks = 0,
             -- Hero22 小黑子: 法术机关枪
             machineGunNormalCount = 0,   -- 普攻与连击计入，连射弹不计入
             machineGunBurstShot = false,   -- 本帧 performAttack 是否为连射弹
@@ -192,12 +195,13 @@ local function hasAdv(unit, talentId)
     return false
 end
 
---- 检查单位是否已激活指定觉醒节点
+--- 检查单位是否已激活指定觉醒节点（旧 1–7 会映射到新 1/2/3）
 ---@param unit table
 ---@param nodeIndex number 1~7
 ---@return boolean
 local function hasAwaken(unit, nodeIndex)
-    return unit.awakeningNodes ~= nil and unit.awakeningNodes[nodeIndex] == true
+    if not unit then return false end
+    return require("config.AwakeningConfig").hasNode(unit.awakeningNodes, nodeIndex)
 end
 
 --- 检查单位所属队伍是否已点亮指定天赋星图节点
@@ -329,7 +333,7 @@ local function applyAyaneBattleStartMark(units, opposingUnits)
     if #aliveOpponents == 0 then return end
     local target = aliveOpponents[math.random(#aliveOpponents)]
     applyAyaneMark(ayane, target, opposingUnits)
-    talentLog("[Talent] 愤怒的小雀 弹弓怒鸟之眼：标记" .. (target.name or "?")
+    talentLog("[Talent] 愤怒的小雀 仇册：标记" .. (target.name or "?")
         .. " (受伤+" .. math.floor(getAyaneMarkMult(ayane) * 100) .. "%)")
 end
 
@@ -597,8 +601,8 @@ local function fireLuoxingFlyingSwords(attacker, s, targetList, isAlly, dealDmgF
     if not attacker or attacker.hp <= 0 or not dealDmgFn or not targetList then return false, false end
 
     -- 每柄飞剑 = 窗口累计伤害 × 比例（默认50%；觉醒3：60%）
-    local swordDmgPct = 0.50
-    if hasAwaken(attacker, 3) then swordDmgPct = 0.60 end
+    local swordDmgPct = 0.50 + ETS.getSwordCoeffBonus(attacker)
+    if hasAwaken(attacker, 3) then swordDmgPct = swordDmgPct + 0.10 end
 
     local accumulated = math.floor((s.flyingSwordDamage or 0) + (s.flyingSwordCarryover or 0) + 0.5)
     if accumulated <= 0 then
@@ -681,23 +685,29 @@ end
 ---@param melissa table
 ---@return number
 local function getMelissaStarGateDmgMult(melissa)
-    if hasAwaken(melissa, 5) then return 4.00 end
-    if hasAwaken(melissa, 1) then return 3.40 end
-    return 3.00
+    local base = 3.00
+    if hasAwaken(melissa, 5) then
+        base = 4.00
+    elseif hasAwaken(melissa, 1) then
+        base = 3.40
+    end
+    return base + ETS.getStarGateDmgBonus(melissa)
 end
 
 --- 摘星星星人 #20：星门数量；基础1个，觉醒6为2个
 ---@param melissa table
 ---@return number
 local function getMelissaStarGateCount(melissa)
-    return hasAwaken(melissa, 6) and 2 or 1
+    local n = hasAwaken(melissa, 6) and 2 or 1
+    n = n + ETS.extraStarGates(melissa)
+    return math.min(3, n)
 end
 
 --- 摘星星星人 #20：觉醒6后星门可在本体死亡后继续攻击
 ---@param melissa table
 ---@return boolean
 local function canMelissaStarGatePersistAfterDeath(melissa)
-    return hasAwaken(melissa, 6)
+    return hasAwaken(melissa, 6) or ETS.starGatePersist(melissa)
 end
 
 --- 同步星门表现层状态；ProjectileSystem 根据这些标记绘制死亡后仍存在的星门
@@ -1098,7 +1108,7 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
     local hitVal = attacker.attrs:get(AD.HIT_VALUE)
     local extraProc = math.min(20, math.floor(hitVal / 80) * 2)
     local baseProc = hasAwaken(attacker, 1) and 30 or 25
-    local procChance = (baseProc + extraProc) / 100
+    local procChance = (baseProc + extraProc) / 100 + ETS.getNitroProcBonus(attacker)
 
     if math.random() >= procChance then return end
 
@@ -1117,10 +1127,29 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
     end
 
     if bonusDmg > 0 then
-        dealDmgFn(target, bonusDmg, not isAlly, "银光", { 200, 230, 255 }, {
+        dealDmgFn(target, bonusDmg, not isAlly, "氮气", { 200, 230, 255 }, {
             silverFlashVfx = true,
             instantDamage = true,
         })
+        -- 氮气贯穿：额外打一名其他存活敌人（对侧）
+        local pierceList = isAlly and TAL_BCS.bEnemies or TAL_BCS.bAllies
+        if pierceList then
+            local others = {}
+            for _, u in ipairs(pierceList) do
+                if u ~= target and (u.hp or 0) > 0 then
+                    others[#others + 1] = u
+                end
+            end
+            if #others > 0 then
+                local pierceTgt = others[math.random(#others)]
+                local pierceDmg = math.floor(bonusDmg * 0.60 + 0.5)
+                if pierceDmg > 0 then
+                    dealDmgFn(pierceTgt, pierceDmg, not isAlly, "超车 ", { 180, 220, 255 }, {
+                        instantDamage = true,
+                    })
+                end
+            end
+        end
     end
 
     local paralyzeDur = hasAwaken(attacker, 4) and 0.5 or 0.3
@@ -1130,7 +1159,21 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
         s.silverLightProgressBoost = true
     end
 
-    talentLog(string.format("[Talent] 闪电卖鸡 银光 → %s (%.0f伤害, 麻痹%.1fs)",
+    -- 氮气叠加速：每触发 +8% 攻速，最多 5 层
+    if attacker.attrs then
+        local stacks = math.min(5, (s.nitroStacks or 0) + 1)
+        s.nitroStacks = stacks
+        local nitroSpd = stacks * 8
+        attacker.attrs:removeModifier("talent_nitro_speed")
+        attacker.attrs:addModifier("talent_nitro_speed", {
+            { key = AD.ATK_SPEED, flat = nitroSpd },
+        })
+        attacker.atkInterval = attacker.attrs:getActualInterval()
+        talentLog(string.format("[Talent] 闪电卖鸡 氮气叠速 ×%d (+%d%%)", stacks, nitroSpd))
+        attacker._nitroKill = true
+    end
+
+    talentLog(string.format("[Talent] 闪电卖鸡 氮气 → %s (%.0f伤害, 麻痹%.1fs)",
         target.name or "?", bonusDmg, paralyzeDur))
 end
 
@@ -1319,6 +1362,21 @@ function TAL.onBattleStart(allies, enemies)
                 summonMelissaStarGate(unit, s)
             end
 
+            if unit._etsPreciseStart and unit._etsPreciseStart > 0 then
+                s.preciseChain = true
+                unit._etsPreciseStart = unit._etsPreciseStart - 1
+            end
+            if unit._etsBeamStart and unit._etsBeamStart > 0 then
+                s.flashReady = true
+                unit._etsBeamStart = unit._etsBeamStart - 1
+            end
+            if unit._etsGatlingStart and unit._etsGatlingStart > 0 then
+                s.machineGunShotsLeft = unit._etsGatlingStart
+                s.machineGunShotTimer = 0.05
+                s.machineGunInBurst = true
+                unit._etsGatlingStart = nil
+            end
+
             -- #14 内鬼 觉醒5: 战斗开始获得10次免疫（共用 RCH.immunityCount）
             if unit.heroId == 14 and unit.hp > 0 and hasAwaken(unit, 5) then
                 RCH.addImmunityCharges(unit, 10)
@@ -1415,6 +1473,7 @@ local function tickSeraMachineGunCount(attacker, s)
     local interval = 20
     if hasAwaken(attacker, 1) then interval = 18 end
     if hasAwaken(attacker, 5) then interval = 15 end
+    interval = math.max(8, interval - ETS.getGatlingCut(attacker))
     if s.machineGunNormalCount % interval == 0 then
         s.machineGunShotsLeft = hasAwaken(attacker, 3) and 12 or 10
         s.machineGunShotTimer = 0
@@ -1446,14 +1505,14 @@ function TAL.onBeforeAttack(attacker)
 
     -- === 原有英雄天赋 ===
 
-    -- #1 大狗嚼 希望之心：HP<70%时物理攻击力+25%
+    -- #1 大狗嚼 衔骨狂：HP<70%时攻速+20%，普攻额外撕咬
     if heroId == 1 and attacker.attrs then
         local hpPct = attacker.hp / math.max(1, attacker.maxHp)
         if hpPct < 0.7 and not s.hopeBuff then
             local entries = {
-                { key = AD.PHYS_ATK, pct = 25 },
+                { key = AD.ATK_SPEED, flat = 20 },
             }
-            -- 觉醒1: 攻速10%
+            -- 觉醒1: 再加攻速10%（合计30%）
             if hasAwaken(attacker, 1) then entries[#entries+1] = { key = AD.ATK_SPEED, flat = 10 } end
             -- 觉醒2: 物穿+10
             if hasAwaken(attacker, 2) then entries[#entries+1] = { key = AD.PHYS_PEN, flat = 10 } end
@@ -1475,7 +1534,7 @@ function TAL.onBeforeAttack(attacker)
             end
             attacker.attrs:addModifier("talent_hope", entries)
             s.hopeBuff = true
-            talentLog("[Talent] 大狗嚼 希望之心：激励(HP=" .. math.floor(hpPct * 100) .. "%)")
+            talentLog("[Talent] 大狗嚼 衔骨狂：激励(HP=" .. math.floor(hpPct * 100) .. "%)")
         elseif hpPct >= 0.7 and s.hopeBuff then
             attacker.attrs:removeModifier("talent_hope")
             s.hopeBuff = false
@@ -1493,26 +1552,34 @@ function TAL.onBeforeAttack(attacker)
         end
     end
 
-    -- #3 叮咚鸡 精准箭矢：每3次攻击造成1.5倍伤害
+    -- #3 叮咚鸡 已读不回：前两刀 70% 伤害，第三刀 1.8 倍且必暴
     if heroId == 3 and attacker.attrs then
         s.atkCount = s.atkCount + 1
-        -- 觉醒3: 上次精准命中后25%概率继续精准（通过标记实现)
         local forcePrec = s.preciseChain or false
+        attacker.attrs:removeModifier("talent_precise")
+        s.preciseBuff = false
         if s.atkCount % 3 == 0 or forcePrec then
-            -- 觉醒1: 倍率1.5→1.8
-            local precBonus = hasAwaken(attacker, 1) and 80 or 50
+            -- 觉醒1: 第三刀 1.8→2.2 倍
+            local precBonus = hasAwaken(attacker, 1) and 120 or 80
             local entries = {
                 { key = AD.DMG_BONUS, flat = precBonus },
+                { key = AD.PHYS_CRIT_RATE, flat = 100 },
             }
             -- 觉醒4: 无视护甲（穿透9999)
             if hasAwaken(attacker, 4) then
                 entries[#entries+1] = { key = AD.PHYS_PEN, flat = 9999 }
             end
-            -- 觉醒2: 物暴击5%（与精准箭矢独立的永久加成在onBattleStart处理更合理，但这里也可添加）
             attacker.attrs:addModifier("talent_precise", entries)
             s.preciseBuff = true
             s.preciseChain = false
-            talentLog("[Talent] 叮咚鸡 精准箭矢：第" .. s.atkCount .. "次攻击，伤害×" .. (1 + precBonus / 100))
+            attacker._preciseKill = true
+            talentLog("[Talent] 叮咚鸡 已读不回：第" .. s.atkCount .. "次通知到了 ×" .. (1 + precBonus / 100))
+        else
+            attacker.attrs:addModifier("talent_precise", {
+                { key = AD.DMG_BONUS, flat = -30 },
+            })
+            s.preciseBuff = false
+            attacker._preciseKill = nil
         end
     end
 
@@ -1530,13 +1597,16 @@ function TAL.onBeforeAttack(attacker)
         end
     end
 
-    -- #7 信光机兵 闪光协议：闪光就绪时连击+200%
+    -- #7 信光机兵 必杀蓄力：蓄满时打贯穿光线；觉醒7才给连击
     if heroId == 7 and attacker.attrs and s.flashReady then
-        local flashCombo = 200
-        attacker.attrs:addModifier("talent_flash", {
-            { key = AD.COMBO_RATE, flat = flashCombo },
-        })
-        talentLog("[Talent] 信光机兵 闪光协议：连击概率" .. flashCombo .. "%")
+        if hasAwaken(attacker, 7) then
+            attacker.attrs:addModifier("talent_flash", {
+                { key = AD.COMBO_RATE, flat = 200 },
+            })
+            talentLog("[Talent] 信光机兵 必杀蓄力：光线+连击")
+        else
+            talentLog("[Talent] 信光机兵 必杀蓄力：光线就绪")
+        end
     end
 
     -- #7 信光机兵觉醒效果（非闪光时也生效的永久加成）
@@ -1801,6 +1871,9 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
     -- 觉醒1: 伤害系数200%→250%
     local slashMult = 2.0
     if hasAwaken(attacker, 1) then slashMult = 2.5 end
+    -- 通宵斩：自身生命越低斩越痛（最多 +50%）
+    local selfHpPct = attacker.hp / math.max(1, attacker.maxHp or 1)
+    slashMult = slashMult * (1.0 + (1.0 - selfHpPct) * 0.50)
 
     -- 觉醒4: 斩击数从2提升到3
     local slashCount = 2
@@ -1893,10 +1966,11 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
         if allSame then
             opts.bezierSide = sides[si] or (si % 2 == 1 and 1 or -1)
         end
-        dealDmgFn(st, dmg, not isAlly, "夜华斩", { 255, 50, 80 }, opts)
+        dealDmgFn(st, dmg, not isAlly, "通宵斩", { 255, 50, 80 }, opts)
+        attacker._nightSlashKill = true
     end
 
-    talentLog("[Talent] 熬夜冠军 夜华斩：" .. slashCount .. "道斩击(基础=" .. math.floor(baseSlashDmg) .. ")")
+    talentLog("[Talent] 熬夜冠军 通宵斩：" .. slashCount .. "道斩击(基础=" .. math.floor(baseSlashDmg) .. ")")
 end
 
 --- 连击额外攻击的天赋钩子。熬夜冠军「夜华斩」、小黑子「法术机关枪」：连击同样推进攻击计数并可触发被动。
@@ -1952,9 +2026,20 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
     -- 跳过miss的后续效果
     if result and result.isMiss then return end
 
-    -- #1 大狗嚼 觉醒4: 希望之心激活时，吸取造成伤害的10%回复HP
-    if heroId == 1 and s.hopeBuff and hasAwaken(attacker, 4) then
-        if result and result.totalDamage and result.totalDamage > 0 and attacker.attrs then
+    -- #23 真布诗人 护盾说唱：有盾的人下次攻击附带神圣伤
+    if attacker._rhymeShot and attacker._rhymeShot > 0 and dealDmgFn and target and (target.hp or 0) > 0
+        and result and result.category ~= "healing" then
+        local rhymeDmg = attacker._rhymeShot
+        attacker._rhymeShot = nil
+        dealDmgFn(target, rhymeDmg, not isAlly, "押韵 ", { 255, 220, 120 }, {
+            instantDamage = true,
+            statCategory = "magical",
+        })
+    end
+
+    -- #1 大狗嚼 衔骨狂
+    if heroId == 1 and s.hopeBuff then
+        if hasAwaken(attacker, 4) and result and result.totalDamage and result.totalDamage > 0 and attacker.attrs then
             local healAmt = math.floor(result.totalDamage * 0.10 + 0.5)
             if healAmt > 0 then
                 attacker.attrs:heal(healAmt)
@@ -1963,22 +2048,35 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
                 talentLog("[Talent] 大狗嚼 觉醒4: 吸血 " .. healAmt .. " HP (伤害=" .. result.totalDamage .. ")")
             end
         end
+        -- 残血普攻额外撕咬
+        if dealDmgFn and target and (target.hp or 0) > 0
+            and result and result.category ~= "healing" and not attacker._etsBiting then
+            local physAtk = attacker.attrs and attacker.attrs:get(AD.PHYS_ATK) or 0
+            local biteDmg = math.floor(physAtk * 0.40 + 0.5)
+            if biteDmg > 0 then
+                dealDmgFn(target, biteDmg, not isAlly, "撕咬 ", { 255, 180, 90 }, {
+                    instantDamage = true,
+                    statCategory = "physical",
+                })
+            end
+        end
     end
 
-    -- #3 叮咚鸡 精准箭矢：移除临时buff + 觉醒效果
-    if heroId == 3 and s.preciseBuff then
+    -- #3 叮咚鸡 已读不回：第三刀额外效果后清 modifier
+    if heroId == 3 then
+        if s.preciseBuff then
         -- 觉醒5: 精准箭矢造成暴击时额外50%伤害
         if hasAwaken(attacker, 5) and result and result.isCrit and dealDmgFn and target.hp > 0 then
             local bonusDmg = math.floor((result.totalDamage or 0) * 0.50 + 0.5)
             if bonusDmg > 0 then
-                dealDmgFn(target, bonusDmg, not isAlly, "精准暴击 ", { 255, 200, 50 })
+                dealDmgFn(target, bonusDmg, not isAlly, "已读暴击 ", { 255, 200, 50 })
             end
         end
         -- 觉醒3: 精准命中后25%概率下次攻击也是精准
         if hasAwaken(attacker, 3) then
             if math.random() < 0.25 then
                 s.preciseChain = true
-                talentLog("[Talent] 叮咚鸡 觉醒3：精准连锁触发")
+                talentLog("[Talent] 叮咚鸡 觉醒3：已读连锁触发")
             end
         end
         -- 觉醒7: 精准箭矢散射3个敌人
@@ -2008,6 +2106,8 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         end
         attacker.attrs:removeModifier("talent_precise")
         s.preciseBuff = false
+        end
+        attacker.attrs:removeModifier("talent_precise")
     end
 
     -- #7 信光机兵 闪光协议：消费闪避/ 计数 + 觉醒效果
@@ -2035,6 +2135,22 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             attacker.attrs:removeModifier("talent_flash")
             -- 觉醒7: 闪光消耗时移除闪光专属加成
             attacker.attrs:removeModifier("awaken_flash7_boost")
+            -- 必杀光线：贯穿当前目标以外的存活敌人
+            if dealDmgFn and targetList and result and (result.totalDamage or 0) > 0 then
+                local beamDmg = math.floor((result.totalDamage or 0) * 0.70 + 0.5)
+                if beamDmg > 0 then
+                    for _, u in ipairs(targetList) do
+                        if u ~= target and (u.hp or 0) > 0 then
+                            dealDmgFn(u, beamDmg, not isAlly, "必杀 ", { 120, 220, 255 }, {
+                                instantDamage = true,
+                                statCategory = result.category or "magical",
+                            })
+                        end
+                    end
+                    talentLog("[Talent] 信光机兵 必杀光线 贯穿")
+                end
+            end
+            attacker._beamKill = true
             s.flashReady = false
             s.atkCount = 0
         else
@@ -2049,7 +2165,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
                     attacker.attrs:removeModifier("awaken_flash_exclusive")
                     -- 非闪光状态清除连击概率（连击只能由闪光触发）
                 end
-                talentLog("[Talent] 信光机兵 闪光协议：下次攻击连击概率200% (每" .. flashInterval .. "秒)")
+                talentLog("[Talent] 信光机兵 必杀蓄力：下次攻击连击概率200% (每" .. flashInterval .. "次)")
             end
         end
 
@@ -2084,7 +2200,16 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         -- 觉醒2: 最大层数5 (15→20)
         local maxConquer = 15
         if hasAwaken(attacker, 2) then maxConquer = 20 end
+        if attacker._etsConquerStart then
+            s.conquerStacks = math.max(s.conquerStacks, attacker._etsConquerStart)
+            attacker._etsConquerStart = nil
+        end
         s.conquerStacks = math.min(maxConquer, s.conquerStacks + 1)
+        if s.conquerStacks >= maxConquer then
+            attacker._conquerFullKill = true
+        else
+            attacker._conquerFullKill = nil
+        end
         attacker.attrs:removeModifier("talent_conquer")
         if s.conquerStacks > 0 then
             local entries = {
@@ -2189,6 +2314,27 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             -- 觉醒7: 超暴击（暴击率溢出→超暴击率，触发后再乘一次暴击伤害）
             if hasAwaken(attacker, 7) and result and result.isCrit then
                 tryYouyeSuperCrit(attacker, target, result, isAlly, dealDmgFn)
+            end
+            -- 抄作业：暴击偷攻速（每次 +8%，最多 +40%）
+            if result and result.isCrit and attacker.attrs then
+                local stolen = math.min(40, (s.stolenSpeed or 0) + 8)
+                s.stolenSpeed = stolen
+                local copySpd = stolen
+                attacker.attrs:removeModifier("talent_copy_speed")
+                attacker.attrs:addModifier("talent_copy_speed", {
+                    { key = AD.ATK_SPEED, flat = copySpd },
+                })
+                attacker.atkInterval = attacker.attrs:getActualInterval()
+                talentLog(string.format("[Talent] 内鬼 抄作业 攻速+%.0f%%", copySpd))
+                -- 暴击击杀残血：<15% 直接收工
+                if target.hp > 0 then
+                    local hpPct = target.hp / math.max(1, target.maxHp or 1)
+                    if hpPct < 0.15 and dealDmgFn then
+                        dealDmgFn(target, target.hp, not isAlly, "收工 ", { 180, 80, 255 }, {
+                            instantDamage = true,
+                        })
+                    end
+                end
             end
         end
 
@@ -2295,9 +2441,9 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         -- #12 雪皇 冰霜精通：25%概率附加冰冻1.5秒 + 觉醒
         if heroId == 12 and target.hp > 0 then
             -- 觉醒1: 概率25%→35%  觉醒3: 概率→50%
-            local freezeChance = 0.25 + ETS.getSnowFreezeBonus(ETS.getOwned(12))
-            if hasAwaken(attacker, 1) then freezeChance = 0.35 + ETS.getSnowFreezeBonus(ETS.getOwned(12)) end
-            if hasAwaken(attacker, 3) then freezeChance = 0.50 + ETS.getSnowFreezeBonus(ETS.getOwned(12)) end
+            local freezeChance = 0.25 + ETS.getSnowFreezeBonus(ETS.getOwned(12), attacker)
+            if hasAwaken(attacker, 1) then freezeChance = 0.35 + ETS.getSnowFreezeBonus(ETS.getOwned(12), attacker) end
+            if hasAwaken(attacker, 3) then freezeChance = 0.50 + ETS.getSnowFreezeBonus(ETS.getOwned(12), attacker) end
             freezeChance = math.min(0.80, freezeChance)
             -- 觉醒4: 持续时间+0.5秒
             local freezeDur = 1.5
@@ -2363,7 +2509,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             local bounceCount = 1
             if hasAwaken(attacker, 3) then bounceCount = 2 end
             if hasAwaken(attacker, 7) then bounceCount = 3 end
-            bounceCount = bounceCount + ETS.getExtraBounces(ETS.getOwned(13))
+            bounceCount = bounceCount + ETS.getExtraBounces(ETS.getOwned(13), attacker)
 
             local baseDmg = result.totalDamage or 0
             local allowRepeatBounce = hasAwaken(attacker, 7)
@@ -2465,13 +2611,13 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             end
         end
 
-        -- #4 接化发掌门 觉醒7: 释放累积的格挡伤害作为固定伤害
-        if heroId == 4 and hasAwaken(attacker, 7) and s.blockAbsorbedDmg > 0 then
+        -- #4 接化发掌门 化劲：释放格挡反击池
+        if heroId == 4 and s.blockAbsorbedDmg > 0 then
             local bonusDmg = s.blockAbsorbedDmg
             s.blockAbsorbedDmg = 0
             if bonusDmg > 0 and target.hp > 0 and dealDmgFn then
-                dealDmgFn(target, bonusDmg, not isAlly, "格挡反伤 ", { 200, 200, 255 })
-                talentLog("[Talent] 接化发掌门 觉醒7: 释放格挡伤害 " .. bonusDmg)
+                dealDmgFn(target, bonusDmg, not isAlly, "化劲 ", { 200, 200, 255 })
+                talentLog("[Talent] 接化发掌门 化劲反击 " .. bonusDmg)
             end
         end
 
@@ -2748,6 +2894,11 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
                 if hotMult > 1 then
                     talentLog("[Talent] 卡皮巴拉觉醒4: 暴击HOT翻倍 hps=" .. hps)
                 end
+                local overflow = result.overhealAmount
+                if overflow == nil then
+                    overflow = math.max(0, (result.healAmount or 0) - (result.appliedHealAmount or 0))
+                end
+                ETS.onOverflowHeal(attacker, overflow or 0)
             end
             -- 觉醒3: 治疗暴击+15%（永久加成，首次添加成
             if hasAwaken(attacker, 3) and not s.awakFloraHealCrit then
@@ -2792,10 +2943,20 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             -- 觉醒2: 复活治疗加成已移至通用治疗处理（任何治疗者都生效果
         end
 
-        -- #23 真布诗人 能量祝福：溢出治疗转能量护盾 + 临时护盾
+        -- #23 真布诗人 护盾说唱：溢出治疗转能量护盾 + 有盾队友下次攻击附带神圣伤
         local healerId = tonumber(attacker.heroId) or heroId
         if healerId == 23 and target.hp > 0 and result.category == "healing" then
-            applyElwynEnergyBlessing(attacker, target, result)
+            local nGain, tGain = applyElwynEnergyBlessing(attacker, target, result)
+            if ((nGain or 0) + (tGain or 0) > 0) or ((target.attrs and ((target.attrs.energyShield or 0) + (target.attrs.tempEnergyShield or 0)) > 0)) then
+                if ETS.hasNode(attacker, 4) then
+                    target._rhymeShot = math.max(target._rhymeShot or 0, math.floor((result.healAmount or 0) * 0.20 + 0.5))
+                end
+                local overflow = result.overhealAmount
+                if overflow == nil then
+                    overflow = math.max(0, (result.healAmount or 0) - (result.appliedHealAmount or 0))
+                end
+                ETS.onOverflowHeal(attacker, overflow or 0)
+            end
         end
 
         -- 111 激励 治疗时填充目标5%攻击进度 + 3秒治疗加成10%
@@ -3120,6 +3281,7 @@ function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCa
     if rebecca.hp <= 0 and rebHpBefore > 0 then
         local overkill = math.max(0, transferDmg - rebHpBefore)
         rebecca._overkillRatio = math.min(1.0, overkill / (rebecca.maxHp or rebHpBefore))
+        ETS.onShareFatal(rebecca)
     end
 
     -- 觉醒2: 吸收时回复2%最大HP（3秒CD）
@@ -3218,11 +3380,33 @@ function TAL.onDamageTaken(unit, attacker, damage, isUnitAlly, performAttackFn, 
                 end
             end
         end
-        -- 觉醒7: 记录格挡掉的伤害，下次攻击作为固定伤害增伤
-        if hasAwaken(unit, 7) then
+        -- 化劲：格挡掉的伤害进反击池（觉醒7额外再记一份）
+        do
             local blockedAmt = result.blockedDamage or math.floor(damage * 0.3 + 0.5)
-            s.blockAbsorbedDmg = s.blockAbsorbedDmg + blockedAmt
-            talentLog("[Talent] 接化发掌门 觉醒7: 吸收伤害+" .. blockedAmt .. " (累计=" .. s.blockAbsorbedDmg .. ")")
+            if hasAwaken(unit, 7) then
+                blockedAmt = math.floor(blockedAmt * 1.5 + 0.5)
+            end
+            s.blockAbsorbedDmg = (s.blockAbsorbedDmg or 0) + blockedAmt
+            ETS.onBlock(unit, blockedAmt)
+            talentLog("[Talent] 接化发掌门 化劲蓄力+" .. blockedAmt .. " (累计=" .. s.blockAbsorbedDmg .. ")")
+        end
+    end
+
+    -- #8 愤怒的小雀 仇册：记下打过自己的人，优先标记
+    if isUnitAlly and attacker and (attacker.hp or 0) > 0 then
+        for _, ally in ipairs(TAL_BCS.bAllies or {}) do
+            if ally.heroId == 8 and (ally.hp or 0) > 0 then
+                local as = getState(ally)
+                if as then
+                    as.feudAttackers = as.feudAttackers or {}
+                    as.feudAttackers[attacker] = true
+                    if not SEM.has(attacker, SEM.MARKED) then
+                        applyAyaneMark(ally, attacker, TAL_BCS.bEnemies or {})
+                        talentLog("[Talent] 愤怒的小雀 仇册：记下 " .. (attacker.name or "?"))
+                    end
+                end
+                break
+            end
         end
     end
 
@@ -3366,7 +3550,7 @@ function TAL.onAllyDeath(dyingUnit, allies, syncHpFn)
             local elizState = getState(ally)
             if elizState and not elizState.reviveUsed[dyingUnit] then
                 -- 计算复活概率: 基础25%, 觉醒1→40%, 觉醒5→60%；追加技永久层叠加上限80%
-                local extraRate = ETS.getReviveRateBonus(ETS.getOwned(15))
+                local extraRate = ETS.getReviveRateBonus(ETS.getOwned(15), ally)
                 local reviveRate = 0.25 + extraRate
                 if hasAwaken(ally, 1) then reviveRate = 0.40 + extraRate end
                 if hasAwaken(ally, 5) then reviveRate = 0.60 + extraRate end
@@ -3474,14 +3658,27 @@ function TAL.onEnemyDeath(deadEnemy, allies, enemies)
         end
     end
 
-    -- #8 愤怒的小雀 觉醒2: 被标记敌人死亡 → 转移标记（全队仅一次）
-    local ayane = getPrimaryAyane(allies, true)
+    -- #8 愤怒的小雀 仇册：被标记敌人死亡 → 优先传给仇人，否则随机
+    local ayane = getPrimaryAyane(allies, false)
     if ayane and SEM.has(deadEnemy, SEM.MARKED) then
+        local as = getState(ayane)
         local aliveEnemies = getAliveEnemies(enemies)
-        if #aliveEnemies > 0 then
-            local newTarget = aliveEnemies[math.random(#aliveEnemies)]
+        local newTarget = nil
+        if as and as.feudAttackers then
+            as.feudAttackers[deadEnemy] = nil
+            for foe, _ in pairs(as.feudAttackers) do
+                if foe and (foe.hp or 0) > 0 then
+                    newTarget = foe
+                    break
+                end
+            end
+        end
+        if not newTarget and #aliveEnemies > 0 then
+            newTarget = aliveEnemies[math.random(#aliveEnemies)]
+        end
+        if newTarget then
             applyAyaneMark(ayane, newTarget, enemies)
-            talentLog("[Talent] 愤怒的小雀 觉醒2: 标记转移→" .. (newTarget.name or "?")
+            talentLog("[Talent] 愤怒的小雀 仇册转移→" .. (newTarget.name or "?")
                 .. " (增伤=" .. math.floor(getAyaneMarkMult(ayane) * 100) .. "%)")
         else
             clearAyaneMarks(enemies)
@@ -3975,14 +4172,26 @@ end
 ---@param allies table[] 己方单位
 ---@param enemies table[] 敌方单位
 function TAL.checkMarkTarget(allies, enemies)
-    local ayane = getPrimaryAyane(allies, true)
+    local ayane = getPrimaryAyane(allies, false)
     if not ayane then return end
     if hasAnyAyaneMark(enemies) then return end
     local aliveEnemies = getAliveEnemies(enemies)
     if #aliveEnemies == 0 then return end
-    local target = aliveEnemies[math.random(#aliveEnemies)]
+    local as = getState(ayane)
+    local target = nil
+    if as and as.feudAttackers then
+        for foe, _ in pairs(as.feudAttackers) do
+            if foe and (foe.hp or 0) > 0 then
+                target = foe
+                break
+            end
+        end
+    end
+    if not target then
+        target = aliveEnemies[math.random(#aliveEnemies)]
+    end
     applyAyaneMark(ayane, target, enemies)
-    talentLog("[Talent] 愤怒的小雀 觉醒2: 补标 " .. (target.name or "?")
+    talentLog("[Talent] 愤怒的小雀 仇册补标 " .. (target.name or "?")
         .. " (增伤=" .. math.floor(getAyaneMarkMult(ayane) * 100) .. "%)")
 end
 return TAL

@@ -280,7 +280,7 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     cachedVg = vg
-    img.bg            = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    img.bg            = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     img.progBg        = nvgCreateImage(vg, "image/进度条/UI_LXSYJDT_2.png", 0)
     img.progFill      = nvgCreateImage(vg, "image/进度条/UI_XDZJDT.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）

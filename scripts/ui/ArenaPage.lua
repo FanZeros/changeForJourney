@@ -346,16 +346,16 @@ end
 -- ======================== Public API ========================
 
 function ArenaPage.init(vg)
-    img.bg       = nvgCreateImage(vg, "image/界面底板/UI_JJC_BJ1.png", 0)
-    img.nameBg   = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
-    -- [暗黑化 P1-B5] 原 image/界面底板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
-    img.titleDeco = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
+    img.bg       = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BJ1.png", 0)
+    img.nameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
+    img.titleDeco = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     img.coin     = nvgCreateImage(vg, "image/货币道具/UI_icon_JJB_X.png", 0)
     img.ticket   = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCQ_X.png", 0)
     img.gem      = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
 
-    img.rankBg   = nvgCreateImage(vg, "image/界面底板/UI_JJC_1.png", 0)
-    img.myRankBg = nvgCreateImage(vg, "image/界面底板/UI_JJC_2.png", 0)
+    img.rankBg   = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_1.png", 0)
+    img.myRankBg = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_2.png", 0)
     img.battleBtn = nvgCreateImage(vg, "image/按钮/UI_AN_DA.png", 0)
     img.tabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
@@ -369,7 +369,7 @@ function ArenaPage.init(vg)
 
     -- 角色头像图标
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)
-    img.logBtn    = nvgCreateImage(vg, "image/界面底板/UI_JLAN.png", 0)
+    img.logBtn    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JLAN.png", 0)
     state.myRankData = nil
 
     ArenaOpponentDialog.init(vg)

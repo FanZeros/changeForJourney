@@ -192,10 +192,10 @@ end
 -- ======================== 初始化 ========================
 
 function RankPage.init(vg)
-    img.bg = nvgCreateImage(vg, "image/界面底板/UI_PHB_BJ.png", 0)
-    img.listBg = nvgCreateImage(vg, "image/界面底板/UI_PHB_1.png", 0)
+    img.bg = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_PHB_BJ.png", 0)
+    img.listBg = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_PHB_1.png", 0)
     for i = 1, 3 do
-        img.top[i]    = nvgCreateImage(vg, "image/界面底板/UI_PHBTOP" .. i .. ".png", 0)
+        img.top[i]    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_PHBTOP" .. i .. ".png", 0)
         img.trophy[i] = nvgCreateImage(vg, "image/通用图标/ICON_PHB_TOP" .. i .. ".png", 0)
     end
     for i = 1, 8 do

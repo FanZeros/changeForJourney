@@ -627,7 +627,7 @@ end
 
 --- 初始化弹窗资源
 function M.init(vg)
-    img.confirmBg     = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    img.confirmBg     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.confirmBtnBuy = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.diamondBig    = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)

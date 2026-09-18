@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-17 | 版本:v2.3-electron-win
+> 更新时间:2026-09-18 | 版本:v2.7-awk3
 >
-> **本会话(2026-09-17)**：构筑 Electron Windows 离线包（h5-pages-deploy §8）。产物 `electron-shell/release/ZhongYanZhiMen-win64-unpacked.zip`。追加技试点仍待验收。
+> **本会话(2026-09-18)**：觉醒 7 阶压成 3 阶（粗暴/机制/进化）。旧档映射 + `_awk3Migrated`。已 build。
 
 ---
 

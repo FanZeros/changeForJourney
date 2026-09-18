@@ -343,19 +343,19 @@ end
 -- ======================== Public API ========================
 
 function TownScene.init(vg)
-    imgBg          = nvgCreateImage(vg, "image/界面底板/UI_CZ_BJ.png", 0)
-    imgLabelBg     = nvgCreateImage(vg, "image/界面底板/UI_CZ_BQ.png", 0)
+    imgBg          = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
+    imgLabelBg     = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_BQ.png", 0)
 
     -- 上方建筑
-    imgSmith       = nvgCreateImage(vg, "image/界面底板/UI_CZ_TJP.png", 0)
-    imgArena       = nvgCreateImage(vg, "image/界面底板/UI_CZ_JJC.png", 0)
+    imgSmith       = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
+    imgArena       = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_JJC.png", 0)
     imgIconSmith   = nvgCreateImage(vg, "image/通用图标/ICON_CZ_TJP.png", 0)
     imgIconArena   = nvgCreateImage(vg, "image/通用图标/ICON_CZ_JJC.png", 0)
 
     -- 下方建筑
-    imgChurch      = nvgCreateImage(vg, "image/界面底板/UI_CZ_JT.png", 0)
-    imgTavern      = nvgCreateImage(vg, "image/界面底板/UI_CZ_JG.png", 0)
-    imgMarket      = nvgCreateImage(vg, "image/界面底板/UI_CZ_SJ.png", 0)
+    imgChurch      = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
+    imgTavern      = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_JG.png", 0)
+    imgMarket      = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_SJ.png", 0)
     imgIconChurch  = nvgCreateImage(vg, "image/通用图标/ICON_CZ_JT.png", 0)
     imgIconTavern  = nvgCreateImage(vg, "image/通用图标/ICON_CZ_JG.png", 0)
     imgIconMarket  = nvgCreateImage(vg, "image/通用图标/ICON_CZ_SC.png", 0)

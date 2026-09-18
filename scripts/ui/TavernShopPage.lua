@@ -325,16 +325,16 @@ local DLG = {
 -- ======================== Init ========================
 
 function TavernShopPage.init(vg)
-    shopImg.pageBg    = nvgCreateImage(vg, "image/界面底板/UI_TJP_1.png",    0)
-    shopImg.titleDeco = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
+    shopImg.pageBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png",    0)
+    shopImg.titleDeco = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     for i = 1, 6 do
-        shopImg.cardBg[i]   = nvgCreateImage(vg, "image/界面底板/UI_SDICONBJ_" .. i .. ".png", 0)
+        shopImg.cardBg[i]   = nvgCreateImage(vg, "image/界面底板/商店/UI_SDICONBJ_" .. i .. ".png", 0)
     end
     for i = 1, 6 do
     -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
     end
-    shopImg.buyBtn      = nvgCreateImage(vg, "image/界面底板/UI_SD_AN.png",       0)
-    -- [暗黑化 P1-B5] 原 image/界面底板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
+    shopImg.buyBtn      = nvgCreateImage(vg, "image/界面底板/商店/UI_SD_AN.png",       0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     shopImg.buyBtnYellow= nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png",    0)
     shopImg.btnMinus    = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png",     0)

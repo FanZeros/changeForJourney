@@ -84,7 +84,7 @@ HC.HEROES = {
     [1] = {
         quality = 1, classId = CC.WARRIOR,
         title = "汪卫先锋", name = "大狗嚼",
-        talentName = "希望之心", talentDesc = "生命值低于70%时，物理攻击力+25%。追加技【衔骨图鉴】：每击杀永久生命上限+1；每8杀解锁一种敌人攻击属性咬进图鉴，8系齐了普攻变为全系撕咬。",
+        talentName = "衔骨狂", talentDesc = "生命值低于70%时进入衔骨：攻击速度+20%，普攻额外撕咬一次（物理攻击力×40%）。超模技【衔骨图鉴】需觉醒1/4/7解锁。",
         talentId = "karin_hope",
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.4, atkTargets = 1,
@@ -95,7 +95,7 @@ HC.HEROES = {
     [2] = {
         quality = 1, classId = CC.MAGE,
         title = "火球一本龙", name = "黄桃龙",
-        talentName = "火焰精通", talentDesc = "攻击附加持续2秒的[燃烧]效果，对其每秒造成[魔法攻击力*0.2]的业火伤害",
+        talentName = "一本火球", talentDesc = "只会这一招但烫：攻击附加持续2秒的[燃烧]，每秒造成[魔法攻击力*0.2]的业火伤害",
         talentId = "maki_fire",
         gender = "female",
         atkType = AD.ATK_FIRE, atkInterval = 2.6, atkTargets = 2,
@@ -106,7 +106,7 @@ HC.HEROES = {
     [3] = {
         quality = 1, classId = CC.RANGER,
         title = "等通知哨兵", name = "叮咚鸡",
-        talentName = "精准箭矢", talentDesc = "每3次攻击时造成1.5倍伤害",
+        talentName = "已读不回", talentDesc = "前两刀是已读（伤害仅 70%）。第三刀通知到了：1.8 倍伤害且必定暴击",
         talentId = "linda_precision_arrow",
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 2.0, atkTargets = 1,
@@ -117,7 +117,7 @@ HC.HEROES = {
     [4] = {
         quality = 2, classId = CC.KNIGHT,
         title = "浑元形意宗师", name = "接化发掌门",
-        talentName = "骑士招架", talentDesc = "物理格挡概率+8% 魔法格挡概率+8%，格挡成功时回复3%最大生命值",
+        talentName = "化劲", talentDesc = "接化发：物理/魔法格挡概率+8%。格挡成功回复 3% 最大生命，并把挡掉的伤害存进反击池，下次攻击一并打出",
         talentId = "cecilia_parry",
         gender = "female",
         atkType = AD.ATK_CRUSH, atkInterval = 2.7, atkTargets = 1,
@@ -128,7 +128,7 @@ HC.HEROES = {
     [5] = {
         quality = 2, classId = CC.WARRIOR,
         title = "叠甲战神", name = "叠甲怪",
-        talentName = "战斗征服", talentDesc = "每次攻击为自己增加1层[征服]状态，每层提供2%物理攻击力，最多叠加15层",
+        talentName = "叠甲", talentDesc = "每次攻击叠1层[甲片]，每层提供2%物理攻击力，最多15层；满层焊死",
         talentId = "victoria_conquer",
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 1.2, atkTargets = 1,
@@ -139,7 +139,7 @@ HC.HEROES = {
     [6] = {
         quality = 2, classId = CC.MAGE,
         title = "电音天后", name = "阿姨压",
-        talentName = "闪电精通", talentDesc = "攻击附加持续2秒的[感电]效果，感电使其受到20%额外伤害",
+        talentName = "安可", talentDesc = "电音残留：攻击附加持续2秒的[感电]，使其受到20%额外伤害",
         talentId = "luna_lightning",
         gender = "female",
         atkType = AD.ATK_LIGHTNING, atkInterval = 3.2, atkTargets = 3,
@@ -150,7 +150,7 @@ HC.HEROES = {
     [7] = {
         quality = 2, classId = CC.RANGER,
         title = "光之巨人", name = "信光机兵",
-        talentName = "闪光协议", talentDesc = "每4次攻击后，下一次攻击连击概率+200%",
+        talentName = "必杀蓄力", talentDesc = "每 4 次攻击蓄满光线，下次攻击打出贯穿光线（本次伤害 ×70% 打所有其他敌人）",
         talentId = "hoshiori_flash",
         gender = "female",
         atkType = AD.ATK_LIGHTNING, atkInterval = 1.5, atkTargets = 2,
@@ -161,7 +161,7 @@ HC.HEROES = {
     [8] = {
         quality = 2, classId = CC.ASSASSIN,
         title = "弹弓怒鸟", name = "愤怒的小雀",
-        talentName = "弹弓怒鸟之眼", talentDesc = "战斗开始时[标记]一个随机敌人，使其受到的伤害+25%",
+        talentName = "仇册", talentDesc = "开场先记一笔仇。之后优先[标记]打过自己的人（受伤+25%）；被标记的死了，仇恨传给下一个",
         talentId = "ayane_mark",
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.0, atkTargets = 2,
@@ -172,7 +172,7 @@ HC.HEROES = {
     [9] = {
         quality = 2, classId = CC.PRIEST,
         title = "温泉教主", name = "卡皮巴拉",
-        talentName = "自然之愈", talentDesc = "每当进行攻击治疗后，使目标在5秒内每秒恢复治疗量的10%",
+        talentName = "温泉", talentDesc = "治疗后让目标泡5秒温泉：每秒恢复治疗量的10%",
         talentId = "flora_regen",
         gender = "female",
         atkType = AD.ATK_HOLY, atkInterval = 2.0, atkTargets = 2,
@@ -183,7 +183,7 @@ HC.HEROES = {
     [10] = {
         quality = 3, classId = CC.KNIGHT,
         title = "扛门大将军", name = "铁憨憨",
-        talentName = "帝国铁壁", talentDesc = "生命加成+20%、仇恨倍率×1.5。战斗中为所有队友承受15%伤害。",
+        talentName = "扛门", talentDesc = "把门抗在身前：生命加成+20%、仇恨倍率×1.5。战斗中为所有队友承受15%伤害。",
         talentId = "rebecca_bulwark",
         gender = "female",
         atkType = AD.ATK_CRUSH, atkInterval = 2.2, atkTargets = 2,
@@ -194,7 +194,7 @@ HC.HEROES = {
     [11] = {
         quality = 3, classId = CC.WARRIOR,
         title = "熬夜修仙党", name = "熬夜冠军",
-        talentName = "夜华斩", talentDesc = "每攻击4次斩出2道斩击，斩击优先命中不同敌人，没有多余敌人时可命中同一敌人，造成物理攻击力200%的斩击伤害",
+        talentName = "通宵斩", talentDesc = "每攻击 4 次斩出 2 道通宵斩（优先不同敌人）。基础为物理攻击力 200%；自身生命越低斩越痛（最多 +50%）",
         talentId = "suhua_nightslash",
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.6, atkTargets = 1,
@@ -205,7 +205,7 @@ HC.HEROES = {
     [12] = {
         quality = 3, classId = CC.MAGE,
         title = "甜蜜冰后", name = "雪皇",
-        talentName = "冰霜精通", talentDesc = "攻击命中敌人时有25%概率[冰冻]1.5秒，使其攻击冷却进度暂停。追加技【冰雕收藏】：每击杀永久魔攻+0.2、冰冻率+0.05%；冰冻结杀留下冰雕（最多3座）挡弹道，碎时冻全场。",
+        talentName = "冰雕术", talentDesc = "25%概率把敌人冻成收藏1.5秒（攻击进度暂停）。超模技【冰雕收藏】需觉醒1/4/7解锁。",
         talentId = "astrid_freeze",
         gender = "female",
         atkType = AD.ATK_ICE, atkInterval = 4.0, atkTargets = 4,
@@ -216,7 +216,7 @@ HC.HEROES = {
     [13] = {
         quality = 3, classId = CC.RANGER,
         title = "鱼尾纹克星", name = "弹弹弹",
-        talentName = "弹射箭矢", talentDesc = "射出的箭矢将在敌人之间弹射1次。追加技【分裂弹】：每击杀永久物攻+0.25；弹射击杀计分裂层，每8层额外弹射+1（最多+5）；40次分裂击杀后普攻进化为环绕弹。",
+        talentName = "弹弹弹", talentDesc = "箭矢在敌人之间再弹1次。超模技【分裂弹】需觉醒1/4/7解锁。",
         talentId = "rosalyn_ricochet",
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 1.2, atkTargets = 1,
@@ -227,7 +227,7 @@ HC.HEROES = {
     [14] = {
         quality = 3, classId = CC.ASSASSIN,
         title = "藏得最深的人", name = "内鬼",
-        talentName = "暴击精通", talentDesc = "暴击概率+15% 暴击伤害+50%",
+        talentName = "抄作业", talentDesc = "暴击概率+15%、暴击伤害+50%。暴击时偷目标 8% 攻速（最多 +40%）；目标生命低于 15% 时暴击直接收工",
         talentId = "yuuya_crit_mastery",
         gender = "female",
         atkType = AD.ATK_SHADOW, atkInterval = 0.9, atkTargets = 1,
@@ -238,7 +238,7 @@ HC.HEROES = {
     [15] = {
         quality = 3, classId = CC.PRIEST,
         title = "急救复活甲", name = "复活吧爱人",
-        talentName = "圣光复活", talentDesc = "当复活吧爱人在场时其他角色首次死亡时有25%概率立即使其复活。追加技【预存复活】：成功复活永久生命上限+2、复活率+0.5%（上限80%），并给被救者存一张下场必死也活的票；自己阵亡按发卡数放神圣核爆。",
+        talentName = "圣光复活", talentDesc = "在场时其他角色首次死亡有25%概率立刻复活。超模技【预存复活】需觉醒1/4/7解锁。",
         talentId = "elizabeth_revive",
         gender = "female",
         atkType = AD.ATK_HOLY, atkInterval = 2.0, atkTargets = 3,
@@ -249,7 +249,7 @@ HC.HEROES = {
     [16] = {
         quality = 4, classId = CC.WARRIOR,
         title = "御剑飞行家", name = "万剑归宗",
-        talentName = "灵月飞剑", talentDesc = "每隔5秒在周围生成3-6柄飞剑，朝随机敌人飞去，每柄飞剑造成的伤害为这5秒中该角色的累计伤害的50%，仅产生10%仇恨",
+        talentName = "万剑", talentDesc = "每隔5秒在周围生成3-6柄飞剑，朝随机敌人飞去，每柄造成这5秒累计伤害的50%，仅产生10%仇恨",
         talentId = "luoxing_flying_sword",
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 1.5, atkTargets = 2,
@@ -260,7 +260,7 @@ HC.HEROES = {
     [20] = {
         quality = 4, classId = CC.MAGE,
         title = "太空出差人", name = "摘星星星人",
-        talentName = "星之守护", talentDesc = "战斗开始召唤[星门]，每2.6秒造成300%魔伤且不产生仇恨。继承摘星星星人与队友魔伤、魔穿150%；攻速/连击缩短间隔，最多40%。连击积累[星痕]，每层使下次星辉伤害+12%，最多5层。",
+        talentName = "出差星门", talentDesc = "开战就放一扇出差用的[星门]，每2.6秒造成300%魔伤且不产生仇恨。继承摘星星星人与队友魔伤、魔穿150%；攻速/连击缩短间隔，最多40%。连击积累[星痕]，每层使下次星辉伤害+12%，最多5层。",
         talentId = "melissa_star_gate",
         gender = "female",
         atkType = AD.ATK_SHADOW, atkInterval = 3.0, atkTargets = 1,
@@ -271,7 +271,7 @@ HC.HEROES = {
     [21] = {
         quality = 3, classId = CC.WARRIOR,
         title = "赛道之王", name = "闪电卖鸡",
-        talentName = "银光", talentDesc = "每次攻击有25%概率触发[银光]，额外造成物理伤害×150%的雷殛伤害，并使目标麻痹0.3秒（进度条暂停）。每拥有80命中率，触发概率+2%（最多额外增加20%）",
+        talentName = "氮气", talentDesc = "每次攻击有 25% 概率踩氮气：额外造成物理伤害×150% 的雷殛伤害、麻痹 0.3 秒、贯穿另一名敌人，并给自己叠 8% 攻速（最多 5 层）。每拥有 80 命中率，触发概率 +2%（最多额外 +20%）",
         talentId = "alex_silver_flash",
         gender = "male",
         atkType = AD.ATK_SLASH, atkInterval = 3.0, atkTargets = 2,
@@ -282,7 +282,7 @@ HC.HEROES = {
     [22] = {
         quality = 3, classId = CC.MAGE,
         title = "两年半练习生", name = "小黑子",
-        talentName = "法术机关枪", talentDesc = "每攻击20次时，在短时间内连续攻击10次",
+        talentName = "两年半连打", talentDesc = "每攻击20次进入舞台时间，短时间内连续攻击10次",
         talentId = "sera_spell_gatling",
         gender = "male",
         atkType = AD.ATK_LIGHTNING, atkInterval = 1.2, atkTargets = 1,
@@ -293,7 +293,7 @@ HC.HEROES = {
     [23] = {
         quality = 3, classId = CC.PRIEST,
         title = "即兴说唱王", name = "真布诗人",
-        talentName = "能量祝福", talentDesc = "每次攻击治疗命中后，溢出治疗能够完全转为能量护盾；并且溢出治疗转化的能量护盾可溢出为临时能量护盾，最多可溢出为目标能量护盾的50%",
+        talentName = "护盾说唱", talentDesc = "治疗溢出全部转为能量护盾，还可再溢出为临时护盾（上限为目标能量护盾的50%）；有盾的队友下次攻击附带治疗量20%的神圣伤",
         talentId = "elwyn_energy_blessing",
         gender = "male",
         atkType = AD.ATK_HOLY, atkInterval = 1.5, atkTargets = 3,
@@ -378,7 +378,7 @@ end
 ---@param heroId number 英雄序号 (1~15, 16, 20~23)
 ---@param level number 英雄等级
 ---@param advBranch table|nil 转职分支 { first=number?, second=number? }
----@param awakening table|nil 觉醒数据 { [1]=true, [2]=true, ... }
+---@param awakening table|nil 觉醒数据 { [1]=true, [2]=true, [3]=true }
 ---@param extraTalent table|nil|boolean 追加技永久层；false=不应用
 ---@return table|nil 战斗单位 { name, level, hp, maxHp, atkProgress, attrs, heroId, classId, ... }
 function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
@@ -446,9 +446,9 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
     -- 应用角色特有天赋（作为 modifier，含觉醒增强）
     HC._applyHeroTalent(heroId, attrs, awakening)
 
-    -- 应用追加技永久层（试点 #1/#12/#13/#15）
+    -- 应用追加技永久层（需觉醒1；extraTalent=false 表示对手不套本地层）
     if extraTalent ~= false then
-        require("systems.ExtraTalentSystem").applyToAttrs(heroId, attrs, extraTalent)
+        require("systems.ExtraTalentSystem").applyToAttrs(heroId, attrs, extraTalent, awakening)
     end
 
     -- 应用转职属性加成（一转+二转的 statBonus 叠加）
@@ -506,14 +506,11 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
             heroId, tostring(unit.name), abStr, tidStr))
     end
 
-    -- 觉醒信息（供 TalentManager 使用）
-    unit.awakeningNodes = {}
-    if awakening then
-        for k, v in pairs(awakening) do
-            if v then
-                unit.awakeningNodes[tonumber(k) or k] = true
-            end
-        end
+    -- 觉醒信息（供 TalentManager 使用；旧 7 阶存档压成 1/2/3）
+    unit.awakeningNodes = require("config.AwakeningConfig").migrateAwakening(awakening)
+    -- 对手单位禁止读写本地 extraTalent
+    if extraTalent == false then
+        unit._etsDisabled = true
     end
 
     -- 天赋星图运行时节点集合（供 TalentManager 检查 RUNTIME_ONLY 节点）
@@ -535,6 +532,7 @@ function HC._applyHeroTalent(heroId, attrs, awakening)
     local hero = HC.HEROES[heroId]
     if not hero then return end
 
+    local AC = require("config.AwakeningConfig")
     local awk = awakening or {}
     local entries = {}
 
@@ -542,43 +540,43 @@ function HC._applyHeroTalent(heroId, attrs, awakening)
     if heroId == 4 then
         entries[#entries + 1] = { key = AD.PHYS_BLOCK_RATE, flat = 8 }
         entries[#entries + 1] = { key = AD.MAG_BLOCK_RATE, flat = 8 }
-        -- 觉醒5: 物理/魔法格挡比例提升10%
-        if awk[5] then
+        -- 旧觉醒5 → 新 2 机制: 物理/魔法格挡比例提升10%
+        if AC.hasNode(awk, 5) then
             entries[#entries + 1] = { key = AD.PHYS_BLOCK_RATIO, flat = 10 }
             entries[#entries + 1] = { key = AD.MAG_BLOCK_RATIO, flat = 10 }
         end
-    -- 游侠 弹弹弹 #13: 觉醒2 物理穿透+10（固定面板属性，需在首次伤害计算前生效）
+    -- 游侠 弹弹弹 #13: 旧觉醒2 → 新 1 粗暴 物理穿透+10
     elseif heroId == 13 then
-        if awk[2] or awk["2"] then
+        if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.PHYS_PEN, flat = 10 }
         end
     -- 刺客 内鬼 #14: 暴击概率+15% 暴击伤害+50%
     elseif heroId == 14 then
-        -- 觉醒3: 暴击率 15→25
+        -- 旧觉醒3 → 新 1: 暴击率 15→25
         local critRate = 15
-        if awk[3] then critRate = 25 end
-        -- 觉醒1: 暴击伤害 50→75
+        if AC.hasNode(awk, 3) then critRate = 25 end
+        -- 旧觉醒1 → 新 1: 暴击伤害 50→75
         local critDmg = 50
-        if awk[1] then critDmg = 75 end
+        if AC.hasNode(awk, 1) then critDmg = 75 end
         entries[#entries + 1] = { key = AD.CRIT_RATE, flat = critRate }
         entries[#entries + 1] = { key = AD.CRIT_DMG, flat = critDmg }
-        -- 觉醒2: 闪避值+15
-        if awk[2] then
+        -- 旧觉醒2 → 新 1: 闪避值+15
+        if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.DODGE, flat = 15 }
         end
-    -- 战士 闪电卖鸡 #21: 觉醒2 命中+30（觉醒6 护甲在 TalentManager 战斗内动态结算）
+    -- 战士 闪电卖鸡 #21: 旧觉醒2 → 新 1 命中+30
     elseif heroId == 21 then
-        if awk[2] then
+        if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.HIT_VALUE, flat = 30 }
         end
-    -- 法师 小黑子 #22: 觉醒2 魔法伤害加成+10%
+    -- 法师 小黑子 #22: 旧觉醒2 → 新 1 魔法伤害加成+10%
     elseif heroId == 22 then
-        if awk[2] then
+        if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.MAG_DMG_BONUS, flat = 10 }
         end
-    -- 牧师 真布诗人 #23: 觉醒6 治疗暴击率+10%
+    -- 牧师 真布诗人 #23: 旧觉醒6 → 新 2 治疗暴击率+10%
     elseif heroId == 23 then
-        if awk[6] then
+        if AC.hasNode(awk, 6) then
             entries[#entries + 1] = { key = AD.HEAL_CRIT_RATE, flat = 10 }
         end
     end

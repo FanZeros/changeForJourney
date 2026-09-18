@@ -223,7 +223,7 @@ end
 ---@param vg any NanoVG 上下文
 function RecruitAnim.init(vg)
     cachedVg = vg
-    img.resultBg = nvgCreateImage(vg, "image/界面底板/UI_XKJM.png", 0)
+    img.resultBg = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_XKJM.png", 0)
     img.glowSR  = nvgCreateImage(vg, "image/品质框/UI_PZG_SR.png", 0)
     img.glowSSR = nvgCreateImage(vg, "image/品质框/UI_PZG_SSR.png", 0)
     img.glowUR  = nvgCreateImage(vg, "image/品质框/UI_PZG_UR.png", 0)

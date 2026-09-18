@@ -131,12 +131,11 @@ function GMService.ActivateAwakening(uid, heroId)
         return false, "未拥有该英雄"
     end
 
-    if not hero.awakening then
-        hero.awakening = {}
-    end
+    local AC = require("config.AwakeningConfig")
+    hero.awakening = AC.migrateAwakening(hero.awakening)
 
     local nodeIndex = nil
-    for i = 1, 7 do
+    for i = 1, AC.NODE_COUNT do
         if not hero.awakening[i] then
             nodeIndex = i
             break
@@ -147,6 +146,8 @@ function GMService.ActivateAwakening(uid, heroId)
     end
 
     hero.awakening[nodeIndex] = true
+    hero.awakening._awk3Migrated = true
+    hero._awk3Migrated = true
     PDM.MarkDirty(uid, "heroes")
 
     print("[GMService] ActivateAwakening uid=" .. tostring(uid)
@@ -196,7 +197,10 @@ function GMService.GiveHero(uid, heroId, level)
         classId = cfg.classId or 1,
         dupeCount = 0,
         shards = existingShards,
+        awakening = { _awk3Migrated = true },
+        extraTalent = require("systems.ExtraTalentSystem").normalize(nil),
         _shardMigrated = true,
+        _awk3Migrated = true,
     }
 
     PDM.MarkDirty(uid, "heroes")

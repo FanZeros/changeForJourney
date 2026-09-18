@@ -673,8 +673,8 @@ end
 
 --- 初始化（加载图片资源，仅调用一次）
 function ChurchPage.init(vg)
-    img.bg       = nvgCreateImage(vg, "image/界面底板/UI_JTZZBJ.png", 0)
-    img.nameBg   = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
+    img.bg       = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTZZBJ.png", 0)
+    img.nameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     img.btnBack  = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     img.tabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
@@ -682,11 +682,11 @@ function ChurchPage.init(vg)
 
     -- 转职相关图片
     for i = 1, 6 do
-        img.classBg[i] = nvgCreateImage(vg, "image/界面底板/UI_ZZBJ_" .. i .. ".png", 0)
+        img.classBg[i] = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZBJ_" .. i .. ".png", 0)
     end
-    img.titleBg    = nvgCreateImage(vg, "image/界面底板/UI_ZBT1.png", 0)
-    img.branchLine  = nvgCreateImage(vg, "image/界面底板/UI_ZZXT_1Z.png", 0)
-    img.branchLine2 = nvgCreateImage(vg, "image/界面底板/UI_ZZXT_2Z.png", 0)
+    img.titleBg    = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
+    img.branchLine  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
+    img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
     -- 加载所有职业图标（基础1~6、一转101~112、二转201~224）
     local classIconIds = {
         1, 2, 3, 4, 5, 6,                                         -- 基础职业
@@ -699,7 +699,7 @@ function ChurchPage.init(vg)
     end
 
     -- 角色列表背景（与角色面板相同）
-    img.listBg = nvgCreateImage(vg, "image/界面底板/UI_JSJM_0.png", 0)
+    img.listBg = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_0.png", 0)
     -- 职业小图标（角色卡牌左上角）
     for i = 1, 6 do
         img.classIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
@@ -708,29 +708,29 @@ function ChurchPage.init(vg)
     -- 卡片详情图片（与角色面板相同）
     img.expBarBg   = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT1.png", 0)
     img.expBarFill = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
-    img.deployed   = nvgCreateImage(vg, "image/界面底板/UI_JSJM_CZZ.png", 0)
+    img.deployed   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_CZZ.png", 0)
 
     -- 转职确认弹窗图片
     for i = 1, 6 do
-        img.confirmBg[i] = nvgCreateImage(vg, "image/界面底板/UI_ZYTS_" .. i .. ".png", 0)
+        img.confirmBg[i] = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZYTS_" .. i .. ".png", 0)
     end
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_FANG.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/界面底板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
     img.goldCoin    = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
     img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     img.resDiamond = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
 
     -- 天赋面板图片
-    img.tfBg          = nvgCreateImage(vg, "image/界面底板/UI_JTTF_BJ.png", 0)
-    img.tfBorderGlow  = nvgCreateImage(vg, "image/界面底板/UI_JTTF_BJGY.png", 0)
-    img.tfPointGlow   = nvgCreateImage(vg, "image/界面底板/UI_JTTF_HG.png", 0)
-    img.tfSliderThumb = nvgCreateImage(vg, "image/界面底板/UI_JTTF_HK.png", 0)
+    img.tfBg          = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_BJ.png", 0)
+    img.tfBorderGlow  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_BJGY.png", 0)
+    img.tfPointGlow   = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HG.png", 0)
+    img.tfSliderThumb = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HK.png", 0)
 
     -- 天赋详情面板背景（5种颜色）
     local colorFileMap = { ["红"]="HONG", ["绿"]="LV", ["黄"]="HUANG", ["蓝"]="LAN", ["紫"]="ZI" }
     for colorName, fileSuffix in pairs(colorFileMap) do
-        img.tfDetailBg[colorName] = nvgCreateImage(vg, "image/界面底板/UI_TFWBK_" .. fileSuffix .. ".png", 0)
+        img.tfDetailBg[colorName] = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_TFWBK_" .. fileSuffix .. ".png", 0)
     end
 
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HONG.png 贴图加载已移除（矢量绘制替代）

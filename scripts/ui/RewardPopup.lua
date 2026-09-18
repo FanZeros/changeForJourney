@@ -275,8 +275,8 @@ end
 function RewardPopup.init(vg)
     cachedVg = vg
     ImageCache.init(vg)
-    imgGlow  = nvgCreateImage(vg, "image/界面底板/UI_GXHD_2.png", 0)
-    imgPanel = nvgCreateImage(vg, "image/界面底板/UI_GXHD_1.png", 0)
+    imgGlow  = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_2.png", 0)
+    imgPanel = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_1.png", 0)
     if imgGlow  < 0 then print("[RewardPopup] WARN: UI_GXHD_2.png load failed") end
     if imgPanel < 0 then print("[RewardPopup] WARN: UI_GXHD_1.png load failed") end
 end

@@ -244,7 +244,7 @@ end
 function SweepDialog.init(vg)
     cachedVg = vg
     imgBtnSweep = nvgCreateImage(vg, "image/通用图标/UI_ICON_SD.png", 0)
-    imgBg       = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgBg       = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
 
     -- 预加载奖励图标（装备用 "?" 文字绘制，无需加载图片）
     for i, item in ipairs(REWARD_ITEMS) do

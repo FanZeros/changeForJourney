@@ -320,7 +320,10 @@ function GachaService.GachaPull(uid, count, payType, poolId)
                     classId = cfg and cfg.classId or 1,
                     dupeCount = 0,
                     shards = existingShards,
+                    awakening = { _awk3Migrated = true },
+                    extraTalent = require("systems.ExtraTalentSystem").normalize(nil),
                     _shardMigrated = true,
+                    _awk3Migrated = true,
                 }
                 addedHeroIds[#addedHeroIds + 1] = heroId
                 results[#results + 1] = {
@@ -330,12 +333,7 @@ function GachaService.GachaPull(uid, count, payType, poolId)
             else
                 -- 重复英雄 → 检查是否满觉醒
                 local hero = heroes.roster[heroId]
-                local awakeCount = 0
-                if hero.awakening then
-                    for _ in pairs(hero.awakening) do awakeCount = awakeCount + 1 end
-                end
-
-                if awakeCount >= 7 then
+                if require("config.AwakeningConfig").isFullyAwakened(hero.awakening) then
                     local heroCfg = HeroConfig.get(heroId)
                     if heroCfg and tonumber(heroCfg.quality) == HeroConfig.QUALITY_UR then
                         -- UR满觉醒后仍保留为碎片，不自动分解为酒馆币

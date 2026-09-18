@@ -256,14 +256,8 @@ function CharacterDetail.hasAwakeningUpgrade(heroId)
     local ownData = CharacterPanel.getOwnedHero(heroId)
     if not ownData then return false end
     local AwakeningConfig = require("config.AwakeningConfig")
-    -- 计算已激活节点数（节点按顺序激活：1, 2, 3, ...）
-    local awakening = ownData.awakening
-    local activatedCount = 0
-    if awakening then
-        for _ in pairs(awakening) do
-            activatedCount = activatedCount + 1
-        end
-    end
+    -- 计算已激活节点数（节点按顺序激活：1, 2, 3）
+    local activatedCount = AwakeningConfig.countActivated(ownData.awakening)
     -- 下一个待点亮的节点
     local nextNode = activatedCount + 1
     local cost = AwakeningConfig.getShardCost(nextNode)

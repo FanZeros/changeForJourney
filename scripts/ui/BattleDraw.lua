@@ -259,14 +259,19 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                 end
 
                 local clipW = fillW * math.max(0, math.min(1, hpProgress))
-                if clipW > 0 and imgCtx.imgHpFill >= 0 then
+                if clipW > 0 then
                     nvgSave(vg)
                     nvgScissor(vg, fillX, fillY, clipW, fillH)
-                    local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, imgCtx.imgHpFill, 1.0)
                     nvgBeginPath(vg)
                     nvgRect(vg, fillX, fillY, fillW, fillH)
-                    nvgFillPaint(vg, paint)
+                    nvgFillColor(vg, nvgRGBA(0x3d, 0xc4, 0x4a, 235))
                     nvgFill(vg)
+                    nvgBeginPath(vg)
+                    nvgMoveTo(vg, fillX, fillY + 1)
+                    nvgLineTo(vg, fillX + clipW, fillY + 1)
+                    nvgStrokeColor(vg, nvgRGBA(0x9a, 0xff, 0x8c, 140))
+                    nvgStrokeWidth(vg, 1)
+                    nvgStroke(vg)
                     nvgResetScissor(vg)
                     nvgRestore(vg)
                 end
@@ -288,12 +293,12 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                         -- 改用程序化青色填充（与 +护盾数值同色系），不再依赖该贴图
                         nvgBeginPath(vg)
                         nvgRect(vg, esX, fillY, esClipW, fillH)
-                        nvgFillColor(vg, nvgRGBA(69, 239, 254, 216))
+                        nvgFillColor(vg, nvgRGBA(245, 248, 252, 230))
                         nvgFill(vg)
                         nvgBeginPath(vg)
                         nvgMoveTo(vg, esX, fillY + 1)
                         nvgLineTo(vg, esX + esClipW, fillY + 1)
-                        nvgStrokeColor(vg, nvgRGBA(200, 255, 255, 130))
+                        nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 160))
                         nvgStrokeWidth(vg, 1)
                         nvgStroke(vg)
                         nvgResetScissor(vg)
@@ -310,7 +315,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                             nvgScissor(vg, tempX, fillY, tempClipW, fillH)
                             nvgBeginPath(vg)
                             nvgRect(vg, tempX, fillY, tempClipW, fillH)
-                            nvgFillColor(vg, nvgRGBA(160, 255, 255, 150))
+                            nvgFillColor(vg, nvgRGBA(255, 255, 255, 200))
                             nvgFill(vg)
                             nvgResetScissor(vg)
                             nvgRestore(vg)
@@ -335,20 +340,20 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                 local totalW = hpW + esW + tempW
                 local startX = cx - totalW * 0.5
                 drawTextStroke(vg, startX + hpW * 0.5, cy + hpValOffY, hpText,
-                    28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+                    28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0x66, 0xf8, 0x62, 4)
                 local shieldX = startX + hpW
                 if esText ~= "" then
                     drawTextStroke(vg, shieldX + esW * 0.5, cy + hpValOffY, esText,
-                        28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0x45, 0xEF, 0xFE, 4)
+                        28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
                     shieldX = shieldX + esW
                 end
                 if tempText ~= "" then
                     drawTextStroke(vg, shieldX + tempW * 0.5, cy + hpValOffY, tempText,
-                        28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 120, 255, 255, 4)
+                        28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
                 end
             else
                 drawTextStroke(vg, cx, cy + hpValOffY, hpText,
-                    28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+                    28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0x66, 0xf8, 0x62, 4)
             end
 
             -- [已隐藏] 攻击/行动进度条按需求不再显示（单位仍有 atkProgress 逻辑，仅不渲染）

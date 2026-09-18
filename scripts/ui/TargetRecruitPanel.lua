@@ -366,7 +366,7 @@ function M.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CONFIRM_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))  -- 纯黑75%不透明度
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, 191))  -- 纯黑75%不透明度
     nvgText(vg, CONFIRM_CX, CONFIRM_CY, "确定", nil)
     BF.finish(vg, ds)
 end

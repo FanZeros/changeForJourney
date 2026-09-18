@@ -829,7 +829,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, REF_ENH_BTN_FONT)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+            nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
             nvgText(vg, REF_BTN_CX + offsetX, enhBtnCY, "前往洗练", nil)
             BF.finish(vg, _bf2)
 
@@ -843,7 +843,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, REF_ENH_BTN_FONT)
                 nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))   -- 纯黑 75% 不透明度
+                nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
                 nvgText(vg, REF_BTN_CX + offsetX, decBtnCY, "立即分解", nil)
                 BF.finish(vg, _bf3)
             end

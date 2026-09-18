@@ -188,7 +188,7 @@ function ETS.getStatusLine(heroId, extra)
             return string.format("%s · %s · %s",
                 lockedTag(awk, 1, string.format("生命上限 +%d", extra.stacks)),
                 lockedTag(awk, 4, string.format("图鉴 %d/8", biteCount(extra))),
-                n7 and "全系撕咬" or "【未解锁】8系齐进化")
+                n7 and "全系撕咬" or "【未解锁】全系撕咬")
         end,
         [2] = function()
             return string.format("%s · %s",
@@ -304,7 +304,7 @@ function ETS.getDesc(heroId, extra)
     local awk = ownedAwakening(heroId)
     local unlocked = awkHas(awk, 1) or awkHas(awk, 4) or awkHas(awk, 7)
     if not unlocked then
-        return name .. "（觉醒1粗暴 / 2机制 / 3进化解锁）\n未点觉醒，超模技不会生效"
+        return name .. "（觉醒后解锁）"
     end
     return name .. "  Lv." .. tostring(extra.stacks) .. "\n" .. ETS.getStatusLine(heroId, extra)
 end

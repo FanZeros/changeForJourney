@@ -291,40 +291,52 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         end
     end
 
-    -- [行1 HUD] 战斗功能按钮：选关 / 扫荡 / 统计 / 速度（同一套图标按钮）
+    -- [行1 HUD] 从右上角往左排：速度(可选) / 扫荡 / 统计 / 选关
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
     local hudScale = 0.55
-    do
-        local tx, ty = ix1 + iw1 - 42, iy1 + 26
+    local hudPad = 4
+    local hudHalf = 36
+    local hudY = iy1 + hudHalf + 2
+    local hudGap = 72
+    local showSpeed = BattleScene.isSpeedButtonVisible()
+    local cursorX = ix1 + iw1 - hudPad - hudHalf
+    local hudSpeedX, hudSweepX, hudStatsX, hudStageX
+    if showSpeed then
+        hudSpeedX = cursorX
+        cursorX = cursorX - hudGap
+    end
+    hudSweepX = cursorX
+    cursorX = cursorX - hudGap
+    hudStatsX = cursorX
+    cursorX = cursorX - hudGap
+    hudStageX = cursorX
+    if showSpeed then
         nvgSave(vg)
-        nvgTranslate(vg, tx, ty)
+        nvgTranslate(vg, hudSpeedX, hudY)
         nvgScale(vg, hudScale, hudScale)
         nvgTranslate(vg, -987, -311)
         BattleScene.drawSpeedButton(vg)
         nvgRestore(vg)
     end
     do
-        local tx, ty = ix1 + iw1 - 194, iy1 + 26
         nvgSave(vg)
-        nvgTranslate(vg, tx, ty)
+        nvgTranslate(vg, hudSweepX, hudY)
         nvgScale(vg, hudScale, hudScale)
         nvgTranslate(vg, -971, -2115)
         SweepDialog.drawButton(vg)
         nvgRestore(vg)
     end
     do
-        local tx, ty = ix1 + iw1 - 118, iy1 + 26
         nvgSave(vg)
-        nvgTranslate(vg, tx, ty)
+        nvgTranslate(vg, hudStatsX, hudY)
         nvgScale(vg, hudScale, hudScale)
         nvgTranslate(vg, -815, -2115)
         DamageStatsPanel.drawButton(vg)
         nvgRestore(vg)
     end
     do
-        local tx, ty = ix1 + iw1 - 270, iy1 + 26
         nvgSave(vg)
-        nvgTranslate(vg, tx, ty)
+        nvgTranslate(vg, hudStageX, hudY)
         nvgScale(vg, hudScale, hudScale)
         nvgTranslate(vg, -659, -2115)
         StageSelectDialog.drawButton(vg)
@@ -413,24 +425,37 @@ function BattleTriPage.handleInput(wx, wy)
     end
 
     local hudScale = 0.55
-    local tx, ty = ix1 + iw1 - 42, iy1 + 26
-    if math.abs(wx - tx) <= 65 * hudScale and math.abs(wy - ty) <= 71.5 * hudScale then
-        bs.handleSpeedButtonInput(987 + (wx - tx) / hudScale, 311 + (wy - ty) / hudScale)
+    local hudPad = 4
+    local hudHalf = 36
+    local hudY = iy1 + hudHalf + 2
+    local hudGap = 72
+    local showSpeed = bs.isSpeedButtonVisible()
+    local cursorX = ix1 + iw1 - hudPad - hudHalf
+    local hudSpeedX, hudSweepX, hudStatsX, hudStageX
+    if showSpeed then
+        hudSpeedX = cursorX
+        cursorX = cursorX - hudGap
+    end
+    hudSweepX = cursorX
+    cursorX = cursorX - hudGap
+    hudStatsX = cursorX
+    cursorX = cursorX - hudGap
+    hudStageX = cursorX
+    local hitW, hitH = 65 * hudScale, 72 * hudScale
+    if showSpeed and math.abs(wx - hudSpeedX) <= hitW and math.abs(wy - hudY) <= hitH then
+        bs.handleSpeedButtonInput(987 + (wx - hudSpeedX) / hudScale, 311 + (wy - hudY) / hudScale)
         return true
     end
-    tx, ty = ix1 + iw1 - 194, iy1 + 26
-    if math.abs(wx - tx) <= 65 * hudScale and math.abs(wy - ty) <= 72 * hudScale then
-        SweepDialog.handleButtonInput(971 + (wx - tx) / hudScale, 2115 + (wy - ty) / hudScale)
+    if math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
+        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale)
         return true
     end
-    tx, ty = ix1 + iw1 - 118, iy1 + 26
-    if math.abs(wx - tx) <= 65 * hudScale and math.abs(wy - ty) <= 72 * hudScale then
-        DamageStatsPanel.handleButtonInput(815 + (wx - tx) / hudScale, 2115 + (wy - ty) / hudScale)
+    if math.abs(wx - hudStatsX) <= hitW and math.abs(wy - hudY) <= hitH then
+        DamageStatsPanel.handleButtonInput(815 + (wx - hudStatsX) / hudScale, 2115 + (wy - hudY) / hudScale)
         return true
     end
-    tx, ty = ix1 + iw1 - 270, iy1 + 26
-    if math.abs(wx - tx) <= 65 * hudScale and math.abs(wy - ty) <= 72 * hudScale then
-        StageSelectDialog.handleButtonInput(659 + (wx - tx) / hudScale, 2115 + (wy - ty) / hudScale)
+    if math.abs(wx - hudStageX) <= hitW and math.abs(wy - hudY) <= hitH then
+        StageSelectDialog.handleButtonInput(659 + (wx - hudStageX) / hudScale, 2115 + (wy - hudY) / hudScale)
         return true
     end
 

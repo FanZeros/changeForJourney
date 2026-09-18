@@ -418,7 +418,7 @@ function LootBoxPage.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, BTN_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))  -- 75% 不透明度
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))  -- 75% 不透明度
     nvgText(vg, BTN_DECOMPOSE_CX, BTN_Y, decompBtnText, nil)
     BF.finish(vg, _bfDecomp)
 
@@ -428,7 +428,7 @@ function LootBoxPage.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, BTN_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))  -- 75% 不透明度
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))  -- 75% 不透明度
     nvgText(vg, BTN_CLAIM_ALL_CX, BTN_Y, "一键领取", nil)
     BF.finish(vg, _bfClaimAll)
 
@@ -438,7 +438,7 @@ function LootBoxPage.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, BTN_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
     nvgText(vg, BTN_ALL_DECOMP_CX, BTN_ALL_DECOMP_Y, "全部分解", nil)
     BF.finish(vg, _bfAllDecomp)
 
@@ -477,13 +477,13 @@ function LootBoxPage.draw(vg)
         local _bfCancel = BF.begin(vg, "lbp_all_decomp_cancel", CONFIRM_CANCEL_CX, CONFIRM_BTN_Y, CONFIRM_BTN_W, CONFIRM_BTN_H)
         DarkIcon.drawNine(vg, "btn", CONFIRM_CANCEL_CX - CONFIRM_BTN_W * 0.5, CONFIRM_BTN_Y - CONFIRM_BTN_H * 0.5, CONFIRM_BTN_W, CONFIRM_BTN_H, { accent = "gold" })
         nvgFontSize(vg, 38)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
         nvgText(vg, CONFIRM_CANCEL_CX, CONFIRM_BTN_Y, "取消", nil)
         BF.finish(vg, _bfCancel)
 
         local _bfOk = BF.begin(vg, "lbp_all_decomp_ok", CONFIRM_OK_CX, CONFIRM_BTN_Y, CONFIRM_BTN_W, CONFIRM_BTN_H)
         DarkIcon.drawNine(vg, "btn", CONFIRM_OK_CX - CONFIRM_BTN_W * 0.5, CONFIRM_BTN_Y - CONFIRM_BTN_H * 0.5, CONFIRM_BTN_W, CONFIRM_BTN_H, { accent = "red" })
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
         nvgText(vg, CONFIRM_OK_CX, CONFIRM_BTN_Y, "确认分解", nil)
         BF.finish(vg, _bfOk)
     end
@@ -547,7 +547,7 @@ function drawComboItem(vg, entry, index, cx, cy)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CLAIM_TEXT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))  -- 75% 不透明度
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))  -- 75% 不透明度
     nvgText(vg, claimCX, cy, btnText, nil)
     BF.finish(vg, _bfClaim)
 end

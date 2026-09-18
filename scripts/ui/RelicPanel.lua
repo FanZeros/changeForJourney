@@ -1166,71 +1166,65 @@ function drawBottomButtons(vg)
     if showFlip then
         local _bfFlip = BF.begin(vg, "relic_flip", BTN_FLIP.CX, BTN_FLIP.CY, BTN_FLIP.W, BTN_FLIP.H)
         drawImageCentered(vg, img.flipBtn, BTN_FLIP.CX, BTN_FLIP.CY, BTN_FLIP.W, BTN_FLIP.H, 1.0)
-        BF.finish(vg, _bfFlip)
-
         drawTextStroke(vg, BTN_FLIP.TEXT_CX, BTN_FLIP.TEXT_CY, "翻转",
             BTN_FLIP.FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, BTN_FLIP.STROKE_SIZE,
             { strokeColor = { BTN_FLIP.STROKE_R, BTN_FLIP.STROKE_G, BTN_FLIP.STROKE_B } })
+        BF.finish(vg, _bfFlip)
     end
 
     -- 旋转按钮（始终显示，安装模式下可用）
     local _bfRot = BF.begin(vg, "relic_rotate", BTN_ROTATE.CX, BTN_ROTATE.CY, BTN_ROTATE.W, BTN_ROTATE.H)
     drawImageCentered(vg, img.rotBtn, BTN_ROTATE.CX, BTN_ROTATE.CY, BTN_ROTATE.W, BTN_ROTATE.H, 1.0)
-    BF.finish(vg, _bfRot)
-
     drawTextStroke(vg, BTN_ROTATE.TEXT_CX, BTN_ROTATE.TEXT_CY, "旋转",
         BTN_ROTATE.FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, BTN_ROTATE.STROKE_SIZE,
         { strokeColor = { BTN_ROTATE.STROKE_R, BTN_ROTATE.STROKE_G, BTN_ROTATE.STROKE_B } })
+    BF.finish(vg, _bfRot)
 
     if state.placementMode then
         -- 安装/调整子模式：显示"取消"按钮（替代背包按钮）
         local cancelLabel = state.adjustingRelic and "取消调整" or "取消安装"
         local _bfCancel = BF.begin(vg, "relic_cancel_place", BTN_CANCEL.CX, BTN_CANCEL.CY, BTN_CANCEL.W, BTN_CANCEL.H)
         DarkIcon.drawNine(vg, "btn", BTN_CANCEL.CX - BTN_CANCEL.W * 0.5, BTN_CANCEL.CY - BTN_CANCEL.H * 0.5, BTN_CANCEL.W, BTN_CANCEL.H, { accent = "gold" })
-        BF.finish(vg, _bfCancel)
-
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, BTN_CANCEL.FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
         nvgText(vg, BTN_CANCEL.CX, BTN_CANCEL.CY, cancelLabel, nil)
+        BF.finish(vg, _bfCancel)
     elseif state.adjustMode then
         -- 调整模式（未拾取遗物时）：显示"退出调整"按钮
         local _bfExit = BF.begin(vg, "relic_exit_adjust", BTN_BAG.CX, BTN_BAG.CY, BTN_BAG.W, BTN_BAG.H)
         DarkIcon.drawNine(vg, "btn", BTN_BAG.CX - BTN_BAG.W * 0.5, BTN_BAG.CY - BTN_BAG.H * 0.5, BTN_BAG.W, BTN_BAG.H, { accent = "gold" })
-        BF.finish(vg, _bfExit)
-
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, BTN_BAG.FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
         nvgText(vg, BTN_BAG.TEXT_CX, BTN_BAG.TEXT_CY, "退出调整", nil)
+        BF.finish(vg, _bfExit)
     else
         -- 正常模式：调整模式按钮 + 背包按钮
 
         -- 调整模式按钮
         local _bfAdj = BF.begin(vg, "relic_adjust", BTN_ADJUST.CX, BTN_ADJUST.CY, BTN_ADJUST.W, BTN_ADJUST.H)
         DarkIcon.drawNine(vg, "btn", BTN_ADJUST.CX - BTN_ADJUST.W * 0.5, BTN_ADJUST.CY - BTN_ADJUST.H * 0.5, BTN_ADJUST.W, BTN_ADJUST.H, { accent = "green" })
-        BF.finish(vg, _bfAdj)
-
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, BTN_ADJUST.FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(BTN_ADJUST.TEXT_R, BTN_ADJUST.TEXT_G, BTN_ADJUST.TEXT_B, BTN_ADJUST.TEXT_A))
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
         nvgText(vg, BTN_ADJUST.TEXT_CX, BTN_ADJUST.TEXT_CY, "调整模式", nil)
+        BF.finish(vg, _bfAdj)
 
         -- 背包按钮
         local _bfBag = BF.begin(vg, "relic_bag", BTN_BAG.CX, BTN_BAG.CY, BTN_BAG.W, BTN_BAG.H)
         DarkIcon.drawNine(vg, "btn", BTN_BAG.CX - BTN_BAG.W * 0.5, BTN_BAG.CY - BTN_BAG.H * 0.5, BTN_BAG.W, BTN_BAG.H, { accent = "green" })
-        BF.finish(vg, _bfBag)
-
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, BTN_BAG.FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(BTN_BAG.TEXT_R, BTN_BAG.TEXT_G, BTN_BAG.TEXT_B, BTN_BAG.TEXT_A))
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
         nvgText(vg, BTN_BAG.TEXT_CX, BTN_BAG.TEXT_CY, "遗物背包", nil)
+        BF.finish(vg, _bfBag)
 
         -- 新手引导热点：遗物背包按钮
         local _TM = require("systems.TutorialManager")

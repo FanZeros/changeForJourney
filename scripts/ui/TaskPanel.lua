@@ -417,7 +417,7 @@ local function drawTaskList(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, ENTRY.BTN_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, ENTRY.BTN_TEXT_A))
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, ENTRY.BTN_TEXT_A))
         nvgText(vg, ENTRY.BTN_CX, btnCY, btnText, nil)
         BF.finish(vg, _bf1)
     end

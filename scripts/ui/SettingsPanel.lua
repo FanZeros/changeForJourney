@@ -550,7 +550,7 @@ function SettingsPanel.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CODE_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, CODE_TXT.A))
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, CODE_TXT.A))
     nvgText(vg, CODE_TXT.X, CODE_TXT.Y, "兑换码", nil)
     BF.finish(vg, _bf1)
 

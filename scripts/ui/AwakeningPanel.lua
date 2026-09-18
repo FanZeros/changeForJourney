@@ -503,11 +503,12 @@ function M.draw(vg, heroId)
     end
     local _bfAct = BF.begin(vg, "awp_activate", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, imgActivateBtn, BTN_CX, BTN_CY, BTN_W, BTN_H, btnAlpha)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, BTN_TEXT_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(btnTextAlpha * 255)))
-    nvgText(vg, BTN_CX, BTN_CY, btnText, nil)
+    local tr = math.floor(244 * btnTextAlpha)
+    local tg = math.floor(237 * btnTextAlpha)
+    local tb = math.floor(224 * btnTextAlpha)
+    drawTextStroke(vg, BTN_CX, BTN_CY, btnText, BTN_TEXT_FONT,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4,
+        { strokeColor = { 0x2a, 0x1c, 0x14 } })
     BF.finish(vg, _bfAct)
 end
 

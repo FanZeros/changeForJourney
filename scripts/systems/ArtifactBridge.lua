@@ -137,7 +137,7 @@ end
 
 --- 应用影响指定出战槽位的神器效果。
 ---@param attrs table UnitAttributes
----@param partySlot number 出战槽位 1~5
+---@param partySlot number 出战槽位 1~4
 ---@param artifactData table|nil 可选神器模块数据
 ---@return table[] runtimeEffects 需要战斗运行时处理的效果
 function ArtifactBridge.applyToUnit(attrs, partySlot, artifactData)

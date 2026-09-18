@@ -43,7 +43,7 @@ local HINT = {
 
 -- 出战槽位（1~4 号位）
 local SLOT = {
-    CX_LIST   = { 115, 327, 540, 750, 962 },
+    CX_LIST   = { 222, 434, 646, 858 },
     LABEL_Y   = 346,
     GRID_CY   = 624,
     SIZE      = 160,
@@ -134,7 +134,7 @@ local state = {
     dragging     = false,
     lastDragY    = 0,
     scrollVel    = 0,
-    selectedSlot = nil,   -- 1~5 | nil
+    selectedSlot = nil,   -- 1~4 | nil
     selectedSubSlot = nil, -- 1~3 | nil
     selectedBagIdx = nil, -- 背包格子索引 | nil
     pendingEquipArtifactId = nil, -- 从详情点击装备后等待选择槽位
@@ -510,7 +510,7 @@ function M.drawContent(vg)
 
     -- 出战槽位标签 + 格子
     local unlockedSubSlots = getUnlockedSubSlotCount()
-    for i = 1, 5 do
+    for i = 1, ArtifactSchema.SLOT_COUNT do
         local cx = SLOT.CX_LIST[i]
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, SLOT.LABEL_FONT)
@@ -710,7 +710,7 @@ function M.handleTabInput(dx, dy)
 
     -- 出战槽位点击
     local unlockedSubSlots = getUnlockedSubSlotCount()
-    for i = 1, 5 do
+    for i = 1, ArtifactSchema.SLOT_COUNT do
         for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
             local cx, cy, size = getSlotCell(i, subSlot)
             if hitTest(dx, dy, cx, cy, size, size) then

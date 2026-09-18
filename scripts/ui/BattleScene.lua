@@ -1258,6 +1258,12 @@ local function loadStage(stageId, skipBattleStart)
 
     -- 前 maxField 个上场，其余入队列
     -- 特殊怪物（_isBonusMonster）占用 maxField 名额（避免超出屏幕），替换末位普通怪物
+    -- [三行并行] 条带布局每侧最多 MAX_PER_SIDE(4) 张卡——挂机混合 maxField 保底 5，
+    -- 超出槽位的怪 clamp 后会同槽叠卡（视觉上"两个敌人重叠"）；
+    -- 上场数按布局槽位收缩，多余的留队列，由击杀补位机制（enemies[#enemies]=newUnit）进场
+    if require("core.BattleLayout").MODE == "strip" then
+        maxField = math.min(maxField, require("core.BattleLayout").MAX_PER_SIDE)
+    end
     enemies, enemyQueue = assignEnemiesToField(allEnemies, maxField)
     stageEnemyTotal_ = #allEnemies
     stageKillCount_ = 0

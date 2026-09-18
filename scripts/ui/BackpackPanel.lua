@@ -292,10 +292,7 @@ local TRANSFER_CONFIRM = {
 ---@return boolean
 local function isHeroFullyAwakened(heroId)
     local hero = CharacterPanel.getOwnedHero(heroId)
-    if not hero or not hero.awakening then return false end
-    local count = 0
-    for _ in pairs(hero.awakening) do count = count + 1 end
-    return count >= 7
+    return require("config.AwakeningConfig").isFullyAwakened(hero and hero.awakening)
 end
 
 --- 获取单枚碎片对应的酒馆币转化数量

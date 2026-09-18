@@ -206,14 +206,7 @@ end
 
 local function getAwakeLevel(heroId)
     local ownData = CharacterPanel.getOwnedHero(heroId)
-    if not ownData or not ownData.awakening then return 0 end
-    local count = 0
-    for i = 1, 7 do
-        if ownData.awakening[i] then
-            count = count + 1
-        end
-    end
-    return count
+    return require("config.AwakeningConfig").countActivated(ownData and ownData.awakening)
 end
 
 local function drawRoundedBtn(vg, x, y, w, h, r, g, b, a, text, radius)
@@ -431,9 +424,9 @@ function DebugPanel.draw(vg, designOffsetX, screenDesignW)
     -- 第五行: 提升觉醒按钮
     if isOwned then
         local awakeLv = getAwakeLevel(getSelectedHeroId())
-        if awakeLv >= 7 then
+        if awakeLv >= require("config.AwakeningConfig").NODE_COUNT then
             drawRoundedBtn(vg, btnX, curY, btnW, BTN_H,
-                80, 80, 80, 255, "觉醒已满 Lv7")
+                80, 80, 80, 255, "觉醒已满 Lv3")
         else
             drawRoundedBtn(vg, btnX, curY, btnW, BTN_H,
                 160, 90, 180, 255, "觉醒 Lv " .. awakeLv .. " → " .. (awakeLv + 1))
@@ -845,7 +838,7 @@ function DebugPanel.handleInput(sx, sy)
                 local heroId = getSelectedHeroId()
                 if not CharacterPanel.isOwned(heroId) then
                     print("[Debug] 英雄 " .. heroId .. " 未拥有，无法觉醒")
-                elseif getAwakeLevel(heroId) >= 7 then
+                elseif getAwakeLevel(heroId) >= require("config.AwakeningConfig").NODE_COUNT then
                     print("[Debug] 英雄 " .. heroId .. " 已满觉醒")
                 else
                     getClient().sendAction(getProtocol().ACTION_TYPES.GM_AWAKENING, {

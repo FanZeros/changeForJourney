@@ -195,12 +195,13 @@ local function hasAdv(unit, talentId)
     return false
 end
 
---- 检查单位是否已激活指定觉醒节点
+--- 检查单位是否已激活指定觉醒节点（旧 1–7 会映射到新 1/2/3）
 ---@param unit table
 ---@param nodeIndex number 1~7
 ---@return boolean
 local function hasAwaken(unit, nodeIndex)
-    return unit.awakeningNodes ~= nil and unit.awakeningNodes[nodeIndex] == true
+    if not unit then return false end
+    return require("config.AwakeningConfig").hasNode(unit.awakeningNodes, nodeIndex)
 end
 
 --- 检查单位所属队伍是否已点亮指定天赋星图节点

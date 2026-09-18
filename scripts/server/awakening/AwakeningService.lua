@@ -11,10 +11,10 @@ local AwakeningConfig  = require("config.AwakeningConfig")
 local AwakeningService = {}
 
 --- 激活觉醒节点
---- 觉醒节点必须按顺序激活: 1→2→3→4→5→6→7
+--- 觉醒节点必须按顺序激活: 1→2→3
 ---@param uid number
 ---@param heroId number
----@param nodeIndex number 1-7
+---@param nodeIndex number 1-3
 ---@return boolean ok
 ---@return string|nil errReason
 ---@return table|nil result { heroId, nodeIndex }
@@ -28,7 +28,8 @@ function AwakeningService.Activate(uid, heroId, nodeIndex)
         return false, "参数缺失"
     end
 
-    if nodeIndex < 1 or nodeIndex > 7 then
+    nodeIndex = tonumber(nodeIndex)
+    if not nodeIndex or nodeIndex < 1 or nodeIndex > AwakeningConfig.NODE_COUNT then
         return false, "无效的觉醒节点: " .. tostring(nodeIndex)
     end
 
@@ -37,10 +38,8 @@ function AwakeningService.Activate(uid, heroId, nodeIndex)
         return false, "未拥有该英雄"
     end
 
-    -- 初始化觉醒数据
-    if not hero.awakening then
-        hero.awakening = {}
-    end
+    -- 初始化觉醒数据（旧 7 阶压成 3 阶）
+    hero.awakening = AwakeningConfig.migrateAwakening(hero.awakening)
 
     -- 检查是否已激活
     if hero.awakening[nodeIndex] then
@@ -64,6 +63,8 @@ function AwakeningService.Activate(uid, heroId, nodeIndex)
     -- === 原子修改 ===
     hero.shards = currentShards - shardCost
     hero.awakening[nodeIndex] = true
+    hero.awakening._awk3Migrated = true
+    hero._awk3Migrated = true
 
     -- === 持久化（MarkDirty 是同步内存操作，不会抛异常） ===
     PDM.MarkDirty(uid, "heroes")

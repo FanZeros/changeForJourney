@@ -199,22 +199,24 @@ ModuleRegistry.modules = {
                     end
                 end
                 if heroData.awakening then
+                    local AC = require("config.AwakeningConfig")
                     local fixedAwk = {}
                     for k, v in pairs(heroData.awakening) do
-                        local numK = tonumber(k)
-                        if numK then
-                            fixedAwk[numK] = v
+                        if k == "_awk3Migrated" then
+                            if v then fixedAwk._awk3Migrated = true end
+                        else
+                            local numK = tonumber(k)
+                            if numK then
+                                fixedAwk[numK] = v
+                            end
                         end
                     end
-                    heroData.awakening = fixedAwk
+                    heroData.awakening = AC.migrateAwakening(fixedAwk, heroData._awk3Migrated == true)
+                    heroData._awk3Migrated = true
                 end
                 -- 迁移：老存档没有 dupeCount，从已激活觉醒数推算
                 if heroData.dupeCount == nil then
-                    local awakeCount = 0
-                    if heroData.awakening then
-                        for _ in pairs(heroData.awakening) do awakeCount = awakeCount + 1 end
-                    end
-                    heroData.dupeCount = awakeCount
+                    heroData.dupeCount = require("config.AwakeningConfig").countActivated(heroData.awakening)
                 end
             end
         end,

@@ -146,7 +146,10 @@ local function grantHeroResult(uid, heroes, currency, poolItem, index, results)
             classId = cfg and cfg.classId or 1,
             dupeCount = 0,
             shards = existingShards,
+            awakening = { _awk3Migrated = true },
+            extraTalent = require("systems.ExtraTalentSystem").normalize(nil),
             _shardMigrated = true,
+            _awk3Migrated = true,
         }
         results[#results + 1] = {
             type = "hero", heroId = heroId, quality = poolItem.quality,
@@ -156,12 +159,7 @@ local function grantHeroResult(uid, heroes, currency, poolItem, index, results)
     end
 
     local hero = heroes.roster[heroId]
-    local awakeCount = 0
-    if hero.awakening then
-        for _ in pairs(hero.awakening) do awakeCount = awakeCount + 1 end
-    end
-
-    if awakeCount >= 7 then
+    if require("config.AwakeningConfig").isFullyAwakened(hero.awakening) then
         local heroCfg = HeroConfig.get(heroId)
         if heroCfg and tonumber(heroCfg.quality) == HeroConfig.QUALITY_UR then
             -- UR满觉醒后仍保留为碎片，不自动分解为酒馆币

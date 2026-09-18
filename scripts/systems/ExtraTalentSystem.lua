@@ -1,6 +1,6 @@
 -- ============================================================================
 -- ExtraTalentSystem - 角色超模追加技（觉醒解锁）
--- 觉醒1=粗暴永久层  觉醒4=机制  觉醒7=形态进化
+-- 觉醒1=粗暴永久层  觉醒2=机制（旧4）  觉醒3=形态进化（旧7）
 -- 未点对应节点则不生效（不再默认自带）
 -- ============================================================================
 
@@ -132,7 +132,11 @@ end
 
 local function awkHas(awk, node)
     if type(awk) ~= "table" then return false end
-    return awk[node] == true or awk[tostring(node)] == true
+    local AC = require("config.AwakeningConfig")
+    local migrated = AC.migrateAwakening(awk)
+    local mapped = AC.mapLegacyNode(node)
+    if mapped <= 0 then mapped = node end
+    return migrated[mapped] == true or awk[node] == true or awk[tostring(node)] == true
 end
 
 --- 单位/存档是否已点指定觉醒节点
@@ -144,10 +148,7 @@ function ETS.hasNode(unit, node, awakening)
     if unit and unit._etsDisabled then return false end
     if awakening and awkHas(awakening, node) then return true end
     if unit then
-        local nodes = unit.awakeningNodes
-        if type(nodes) == "table" and (nodes[node] == true or nodes[tostring(node)] == true) then
-            return true
-        end
+        if awkHas(unit.awakeningNodes, node) then return true end
         local hid = toHeroId(unit.heroId)
         if hid > 0 then
             return awkHas(ownedAwakening(hid), node)
@@ -303,7 +304,7 @@ function ETS.getDesc(heroId, extra)
     local awk = ownedAwakening(heroId)
     local unlocked = awkHas(awk, 1) or awkHas(awk, 4) or awkHas(awk, 7)
     if not unlocked then
-        return name .. "（觉醒1/4/7解锁）\n未点觉醒，超模技不会生效"
+        return name .. "（觉醒1粗暴 / 2机制 / 3进化解锁）\n未点觉醒，超模技不会生效"
     end
     return name .. "  Lv." .. tostring(extra.stacks) .. "\n" .. ETS.getStatusLine(heroId, extra)
 end

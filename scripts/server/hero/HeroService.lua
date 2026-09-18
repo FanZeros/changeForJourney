@@ -347,9 +347,10 @@ function HeroService.SelectInitialHero(uid, heroId)
             classId = cfg and cfg.classId or 1,
             dupeCount = 0,
             shards = 0,
-            awakening = {},
+            awakening = { _awk3Migrated = true },
             extraTalent = require("systems.ExtraTalentSystem").normalize(nil),
             _shardMigrated = true,
+            _awk3Migrated = true,
         },
     }
     heroes.deployed = { heroId }
@@ -485,8 +486,9 @@ function HeroService.SynthesizeHero(uid, heroId)
     roster.classId = cfg.classId or 1
     roster.dupeCount = 0
     if not roster.awakening then
-        roster.awakening = {}
+        roster.awakening = { _awk3Migrated = true }
     end
+    roster._awk3Migrated = true
     roster.extraTalent = require("systems.ExtraTalentSystem").normalize(roster.extraTalent)
 
     PDM.MarkDirty(uid, "heroes")
@@ -534,12 +536,8 @@ function HeroService.ConvertShardToCoin(uid, heroId)
         return false, "未拥有该英雄"
     end
 
-    -- 检查是否满觉醒（7个觉醒节点全开启）
-    local awakeCount = 0
-    if roster.awakening then
-        for _ in pairs(roster.awakening) do awakeCount = awakeCount + 1 end
-    end
-    if awakeCount < 7 then
+    -- 检查是否满觉醒（3个觉醒节点全开启）
+    if not require("config.AwakeningConfig").isFullyAwakened(roster.awakening) then
         return false, "该英雄未满觉醒"
     end
 

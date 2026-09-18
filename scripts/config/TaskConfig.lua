@@ -247,29 +247,17 @@ TaskConfig.ACHIEVEMENT = {
     -- -------- R 级角色觉醒 (29-35) --------
     { id = "a_awk_r_1", name = "任意R级角色觉醒至1阶",  condKey = "awk_r_max", target = 1, reward = { type = "diamond", amount = 50,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
     { id = "a_awk_r_2", name = "任意R级角色觉醒至2阶",  condKey = "awk_r_max", target = 2, reward = { type = "diamond", amount = 80,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_r_3", name = "任意R级角色觉醒至3阶",  condKey = "awk_r_max", target = 3, reward = { type = "diamond", amount = 100, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_r_4", name = "任意R级角色觉醒至4阶",  condKey = "awk_r_max", target = 4, reward = { type = "diamond", amount = 150, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_r_5", name = "任意R级角色觉醒至5阶",  condKey = "awk_r_max", target = 5, reward = { type = "diamond", amount = 200, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_r_6", name = "任意R级角色觉醒至6阶",  condKey = "awk_r_max", target = 6, reward = { type = "diamond", amount = 288, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_r_7", name = "任意R级角色觉醒至7阶",  condKey = "awk_r_max", target = 7, reward = { type = "diamond", amount = 400, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_awk_r_3", name = "任意R级角色觉醒至3阶",  condKey = "awk_r_max", target = 3, reward = { type = "diamond", amount = 400, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
 
     -- -------- SR 级角色觉醒 (36-42) --------
     { id = "a_awk_sr_1", name = "任意SR级角色觉醒至1阶",  condKey = "awk_sr_max", target = 1, reward = { type = "diamond", amount = 100, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
     { id = "a_awk_sr_2", name = "任意SR级角色觉醒至2阶",  condKey = "awk_sr_max", target = 2, reward = { type = "diamond", amount = 150, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_sr_3", name = "任意SR级角色觉醒至3阶",  condKey = "awk_sr_max", target = 3, reward = { type = "diamond", amount = 200, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_sr_4", name = "任意SR级角色觉醒至4阶",  condKey = "awk_sr_max", target = 4, reward = { type = "diamond", amount = 300, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_sr_5", name = "任意SR级角色觉醒至5阶",  condKey = "awk_sr_max", target = 5, reward = { type = "diamond", amount = 500, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_sr_6", name = "任意SR级角色觉醒至6阶",  condKey = "awk_sr_max", target = 6, reward = { type = "diamond", amount = 688, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_sr_7", name = "任意SR级角色觉醒至7阶",  condKey = "awk_sr_max", target = 7, reward = { type = "diamond", amount = 888, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_awk_sr_3", name = "任意SR级角色觉醒至3阶",  condKey = "awk_sr_max", target = 3, reward = { type = "diamond", amount = 888, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
 
     -- -------- SSR 级角色觉醒 (43-49) --------
     { id = "a_awk_ssr_1", name = "任意SSR级角色觉醒至1阶", condKey = "awk_ssr_max", target = 1, reward = { type = "diamond", amount = 200,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
     { id = "a_awk_ssr_2", name = "任意SSR级角色觉醒至2阶", condKey = "awk_ssr_max", target = 2, reward = { type = "diamond", amount = 300,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_ssr_3", name = "任意SSR级角色觉醒至3阶", condKey = "awk_ssr_max", target = 3, reward = { type = "diamond", amount = 500,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_ssr_4", name = "任意SSR级角色觉醒至4阶", condKey = "awk_ssr_max", target = 4, reward = { type = "diamond", amount = 688,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_ssr_5", name = "任意SSR级角色觉醒至5阶", condKey = "awk_ssr_max", target = 5, reward = { type = "diamond", amount = 888,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_ssr_6", name = "任意SSR级角色觉醒至6阶", condKey = "awk_ssr_max", target = 6, reward = { type = "diamond", amount = 1288, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_ssr_7", name = "任意SSR级角色觉醒至7阶", condKey = "awk_ssr_max", target = 7, reward = { type = "diamond", amount = 1888, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_awk_ssr_3", name = "任意SSR级角色觉醒至3阶", condKey = "awk_ssr_max", target = 3, reward = { type = "diamond", amount = 1888, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
 
     -- -------- 竞技场段位 (50-56) --------
     { id = "a_arena_1", name = "竞技场段位达到青铜级", condKey = "arena_tier", target = 2, reward = { type = "diamond", amount = 50,   icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },

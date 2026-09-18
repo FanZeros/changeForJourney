@@ -153,7 +153,7 @@ local function calcMelissaStarGatePanelInfo(heroId, level, attrs, heroesData, eq
     if tonumber(heroId) ~= 20 or not attrs then return nil end
     local hd = getHeroRuntimeData(heroesData, heroId)
     local awakening = hd and hd.awakening or nil
-    local awakened7 = awakening and (awakening[7] or awakening["7"]) and true or false
+    local awakened7 = require("config.AwakeningConfig").hasNode(awakening, 7)
     local limit = awakened7 and 4 or 3
     local includeSelf = true
     local resonanceWeight = 1.50

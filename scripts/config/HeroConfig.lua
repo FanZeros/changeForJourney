@@ -378,7 +378,7 @@ end
 ---@param heroId number 英雄序号 (1~15, 16, 20~23)
 ---@param level number 英雄等级
 ---@param advBranch table|nil 转职分支 { first=number?, second=number? }
----@param awakening table|nil 觉醒数据 { [1]=true, [2]=true, ... }
+---@param awakening table|nil 觉醒数据 { [1]=true, [2]=true, [3]=true }
 ---@param extraTalent table|nil|boolean 追加技永久层；false=不应用
 ---@return table|nil 战斗单位 { name, level, hp, maxHp, atkProgress, attrs, heroId, classId, ... }
 function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
@@ -506,15 +506,8 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
             heroId, tostring(unit.name), abStr, tidStr))
     end
 
-    -- 觉醒信息（供 TalentManager 使用）
-    unit.awakeningNodes = {}
-    if awakening then
-        for k, v in pairs(awakening) do
-            if v then
-                unit.awakeningNodes[tonumber(k) or k] = true
-            end
-        end
-    end
+    -- 觉醒信息（供 TalentManager 使用；旧 7 阶存档压成 1/2/3）
+    unit.awakeningNodes = require("config.AwakeningConfig").migrateAwakening(awakening)
     -- 对手单位禁止读写本地 extraTalent
     if extraTalent == false then
         unit._etsDisabled = true
@@ -539,6 +532,7 @@ function HC._applyHeroTalent(heroId, attrs, awakening)
     local hero = HC.HEROES[heroId]
     if not hero then return end
 
+    local AC = require("config.AwakeningConfig")
     local awk = awakening or {}
     local entries = {}
 
@@ -546,43 +540,43 @@ function HC._applyHeroTalent(heroId, attrs, awakening)
     if heroId == 4 then
         entries[#entries + 1] = { key = AD.PHYS_BLOCK_RATE, flat = 8 }
         entries[#entries + 1] = { key = AD.MAG_BLOCK_RATE, flat = 8 }
-        -- 觉醒5: 物理/魔法格挡比例提升10%
-        if awk[5] then
+        -- 旧觉醒5 → 新 2 机制: 物理/魔法格挡比例提升10%
+        if AC.hasNode(awk, 5) then
             entries[#entries + 1] = { key = AD.PHYS_BLOCK_RATIO, flat = 10 }
             entries[#entries + 1] = { key = AD.MAG_BLOCK_RATIO, flat = 10 }
         end
-    -- 游侠 弹弹弹 #13: 觉醒2 物理穿透+10（固定面板属性，需在首次伤害计算前生效）
+    -- 游侠 弹弹弹 #13: 旧觉醒2 → 新 1 粗暴 物理穿透+10
     elseif heroId == 13 then
-        if awk[2] or awk["2"] then
+        if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.PHYS_PEN, flat = 10 }
         end
     -- 刺客 内鬼 #14: 暴击概率+15% 暴击伤害+50%
     elseif heroId == 14 then
-        -- 觉醒3: 暴击率 15→25
+        -- 旧觉醒3 → 新 1: 暴击率 15→25
         local critRate = 15
-        if awk[3] then critRate = 25 end
-        -- 觉醒1: 暴击伤害 50→75
+        if AC.hasNode(awk, 3) then critRate = 25 end
+        -- 旧觉醒1 → 新 1: 暴击伤害 50→75
         local critDmg = 50
-        if awk[1] then critDmg = 75 end
+        if AC.hasNode(awk, 1) then critDmg = 75 end
         entries[#entries + 1] = { key = AD.CRIT_RATE, flat = critRate }
         entries[#entries + 1] = { key = AD.CRIT_DMG, flat = critDmg }
-        -- 觉醒2: 闪避值+15
-        if awk[2] then
+        -- 旧觉醒2 → 新 1: 闪避值+15
+        if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.DODGE, flat = 15 }
         end
-    -- 战士 闪电卖鸡 #21: 觉醒2 命中+30（觉醒6 护甲在 TalentManager 战斗内动态结算）
+    -- 战士 闪电卖鸡 #21: 旧觉醒2 → 新 1 命中+30
     elseif heroId == 21 then
-        if awk[2] then
+        if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.HIT_VALUE, flat = 30 }
         end
-    -- 法师 小黑子 #22: 觉醒2 魔法伤害加成+10%
+    -- 法师 小黑子 #22: 旧觉醒2 → 新 1 魔法伤害加成+10%
     elseif heroId == 22 then
-        if awk[2] then
+        if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.MAG_DMG_BONUS, flat = 10 }
         end
-    -- 牧师 真布诗人 #23: 觉醒6 治疗暴击率+10%
+    -- 牧师 真布诗人 #23: 旧觉醒6 → 新 2 治疗暴击率+10%
     elseif heroId == 23 then
-        if awk[6] then
+        if AC.hasNode(awk, 6) then
             entries[#entries + 1] = { key = AD.HEAL_CRIT_RATE, flat = 10 }
         end
     end

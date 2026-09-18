@@ -1208,7 +1208,7 @@ function ProjectileSystem.drawStarGates(vg, units, cardCY, getCardCX, isAlly, ge
         if shouldDraw then
             local count = unit._starGateCount or 1
             if count <= 0 then
-                count = (unit.awakeningNodes and unit.awakeningNodes[6] == true) and 2 or 1
+                count = require("config.AwakeningConfig").hasNode(unit.awakeningNodes, 6) and 2 or 1
             end
             local baseX = getCardCX(units, i)
             local baseCY = getCardCY and getCardCY(units, i) or cardCY

@@ -15,17 +15,15 @@
 - 入口 `scripts/main.lua`，单机 `network/Standalone.lua`
 - GitHub：`FanZeros/changeForJourney` 分支 `workspace`
 
-## 上次做了什么（截至 2026-09-17）
+## 上次做了什么（截至 2026-09-18）
 
-1. 落地 4 个混合追加技试点（衔骨/冰雕/分裂弹/预存复活）
-2. **构筑 Electron Windows 离线包**（h5-pages-deploy §8）
-   - 壳：`electron-shell/`（main.js 内置 http 发 COOP/COEP）
-   - 产物：`electron-shell/release/ZhongYanZhiMen-win64-unpacked.zip`（461MB，不解压不入库）
-   - 解压后运行 `win-unpacked/ZhongYanZhiMen.exe`；首次需联网拉引擎 WASM
+1. 全员天赋改名对齐梗人设（希望之心→衔骨狂 等）
+2. 5 个主技能加轻量机制：衔骨狂攻速 / 已读不回必暴 / 必杀光线 / 氮气贯穿 / 抄作业偷攻速
+3. 通宵斩残血加伤、护盾说唱押韵伤一并落地
 
 ## likely_next_task
 
-验收 4 个试点手感；或把 zip 发给用户测 Windows 双击即玩。
+验收改名+机制手感；其余 16 人追加技仍可铺。
 
 ## 避雷清单（摘要）
 

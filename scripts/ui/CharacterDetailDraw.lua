@@ -426,7 +426,7 @@ function M.initImages(vg)
     img.midDiv2  = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_FGXj.png", 0)
 
     for _, st in ipairs(STAT_LAYOUT) do
-        imgStatIcons[st.icon] = nvgCreateImage(vg, "image/" .. st.icon .. ".png", 0)
+        imgStatIcons[st.icon] = nvgCreateImage(vg, "image/通用图标/" .. st.icon .. ".png", 0)
     end
 
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）

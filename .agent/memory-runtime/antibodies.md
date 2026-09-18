@@ -7,7 +7,7 @@
 - [scope:gamedev] build 的 LSP 检查挡 Lua 类型标注:`nvgCreateImage` 返回 `integer?`,修法 = `or -1` 兜底 + 标注改 `integer`;行内抑制 `---@diagnostic disable-line`
 - [scope:gamedev] generate_image 透明底用 `transparent=true` 边缘质量差;用**黑白抠图法**(白底生成 → edit_image 黑底【构图必须一致,黑底用 nanobanana 模型】→ ImageMagick difference 抠图)
 - [scope:project] 天赋显示名已对齐梗人设（衔骨狂/已读不回/必杀蓄力/氮气/抄作业等）；内部 talentId 未改，避免存档/觉醒对不上
-- [scope:project] 追加技层数在 `roster.extraTalent`；竞技场对手 `createHero(..., false)` 禁止套本地层。击杀用 `_killedBy`，弹射击杀另标 `_killedByRicochet`
+- [scope:project] 超模技走觉醒节点：1=粗暴永久层、4=机制、7=进化；未点不生效。层数在 `roster.extraTalent`。竞技场对手 `createHero(..., false)` 打 `_etsDisabled`，禁止套本地层。击杀用 `_killedBy`，弹射击杀另标 `_killedByRicochet`
 - [scope:project] 三行模式 `H_SEAM_BACK=true` 时二级页返回键由 Standalone 中缝层绘制；页内再 `drawBackChevron` 会在角色详情左缘叠一颗假返回按钮（输入已跳过、绘制漏跳过）
 - [scope:project] **并行 agent 会话编辑同一项目会互相覆盖文件**(已发生:LetterIntro 被旧缓冲覆盖、HorizonBg 中间态卡 build)。多会话并行时:开工前 stat 关键文件 mtime;发现语义漂移立即停下与用户确认分工
 - [scope:project] 用户会引用另一会话的产出(文案/文档/截图)让本会话落地,产出物以用户最新粘贴的为准

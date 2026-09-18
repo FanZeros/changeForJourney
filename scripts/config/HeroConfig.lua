@@ -84,7 +84,7 @@ HC.HEROES = {
     [1] = {
         quality = 1, classId = CC.WARRIOR,
         title = "汪卫先锋", name = "大狗嚼",
-        talentName = "衔骨狂", talentDesc = "生命值低于70%时进入衔骨：攻击速度+20%，普攻额外撕咬一次（物理攻击力×40%）。追加技【衔骨图鉴】：每击杀永久生命上限+1；每8杀解锁一种敌人攻击属性咬进图鉴。",
+        talentName = "衔骨狂", talentDesc = "生命值低于70%时进入衔骨：攻击速度+20%，普攻额外撕咬一次（物理攻击力×40%）。超模技【衔骨图鉴】需觉醒1/4/7解锁。",
         talentId = "karin_hope",
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.4, atkTargets = 1,
@@ -205,7 +205,7 @@ HC.HEROES = {
     [12] = {
         quality = 3, classId = CC.MAGE,
         title = "甜蜜冰后", name = "雪皇",
-        talentName = "冰雕术", talentDesc = "25%概率把敌人冻成收藏1.5秒（攻击进度暂停）。追加技【冰雕收藏】：每击杀永久魔攻+0.2、冰冻率+0.05%；冰冻结杀留下冰雕（最多3座）挡弹道，碎时冻全场。",
+        talentName = "冰雕术", talentDesc = "25%概率把敌人冻成收藏1.5秒（攻击进度暂停）。超模技【冰雕收藏】需觉醒1/4/7解锁。",
         talentId = "astrid_freeze",
         gender = "female",
         atkType = AD.ATK_ICE, atkInterval = 4.0, atkTargets = 4,
@@ -216,7 +216,7 @@ HC.HEROES = {
     [13] = {
         quality = 3, classId = CC.RANGER,
         title = "鱼尾纹克星", name = "弹弹弹",
-        talentName = "弹弹弹", talentDesc = "箭矢在敌人之间再弹1次。追加技【分裂弹】：每击杀永久物攻+0.25；弹射击杀计分裂层，每8层额外弹射+1（最多+5）；40次分裂击杀后普攻进化为环绕弹。",
+        talentName = "弹弹弹", talentDesc = "箭矢在敌人之间再弹1次。超模技【分裂弹】需觉醒1/4/7解锁。",
         talentId = "rosalyn_ricochet",
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 1.2, atkTargets = 1,
@@ -238,7 +238,7 @@ HC.HEROES = {
     [15] = {
         quality = 3, classId = CC.PRIEST,
         title = "急救复活甲", name = "复活吧爱人",
-        talentName = "预存复活", talentDesc = "在场时其他角色首次死亡有25%概率立刻复活。追加技【预存复活】：成功复活永久生命上限+2、复活率+0.5%（上限80%），并给被救者存一张下场必死也活的票；自己阵亡按发卡数放神圣核爆。",
+        talentName = "圣光复活", talentDesc = "在场时其他角色首次死亡有25%概率立刻复活。超模技【预存复活】需觉醒1/4/7解锁。",
         talentId = "elizabeth_revive",
         gender = "female",
         atkType = AD.ATK_HOLY, atkInterval = 2.0, atkTargets = 3,
@@ -446,9 +446,9 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
     -- 应用角色特有天赋（作为 modifier，含觉醒增强）
     HC._applyHeroTalent(heroId, attrs, awakening)
 
-    -- 应用追加技永久层（试点 #1/#12/#13/#15）
+    -- 应用追加技永久层（需觉醒1；extraTalent=false 表示对手不套本地层）
     if extraTalent ~= false then
-        require("systems.ExtraTalentSystem").applyToAttrs(heroId, attrs, extraTalent)
+        require("systems.ExtraTalentSystem").applyToAttrs(heroId, attrs, extraTalent, awakening)
     end
 
     -- 应用转职属性加成（一转+二转的 statBonus 叠加）
@@ -514,6 +514,10 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
                 unit.awakeningNodes[tonumber(k) or k] = true
             end
         end
+    end
+    -- 对手单位禁止读写本地 extraTalent
+    if extraTalent == false then
+        unit._etsDisabled = true
     end
 
     -- 天赋星图运行时节点集合（供 TalentManager 检查 RUNTIME_ONLY 节点）

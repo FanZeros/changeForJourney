@@ -307,7 +307,7 @@ local POWER_SKIP = {
 ---@param unlockedAvatarFrames table|nil 已解锁头像框集合（真实玩家快照）
 ---@return number power
 local function calcHeroPower(heroId, level, equipMap, advBranch, awakening, unlockedAvatarFrames)
-    local hero = HC.createHero(heroId, level, advBranch, awakening)
+    local hero = HC.createHero(heroId, level, advBranch, awakening, false)
     if not hero or not hero.attrs then return 0 end
     local a = hero.attrs
 

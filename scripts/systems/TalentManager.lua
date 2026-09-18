@@ -600,8 +600,8 @@ local function fireLuoxingFlyingSwords(attacker, s, targetList, isAlly, dealDmgF
     if not attacker or attacker.hp <= 0 or not dealDmgFn or not targetList then return false, false end
 
     -- 每柄飞剑 = 窗口累计伤害 × 比例（默认50%；觉醒3：60%）
-    local swordDmgPct = 0.50
-    if hasAwaken(attacker, 3) then swordDmgPct = 0.60 end
+    local swordDmgPct = 0.50 + ETS.getSwordCoeffBonus(attacker)
+    if hasAwaken(attacker, 3) then swordDmgPct = swordDmgPct + 0.10 end
 
     local accumulated = math.floor((s.flyingSwordDamage or 0) + (s.flyingSwordCarryover or 0) + 0.5)
     if accumulated <= 0 then
@@ -684,23 +684,29 @@ end
 ---@param melissa table
 ---@return number
 local function getMelissaStarGateDmgMult(melissa)
-    if hasAwaken(melissa, 5) then return 4.00 end
-    if hasAwaken(melissa, 1) then return 3.40 end
-    return 3.00
+    local base = 3.00
+    if hasAwaken(melissa, 5) then
+        base = 4.00
+    elseif hasAwaken(melissa, 1) then
+        base = 3.40
+    end
+    return base + ETS.getStarGateDmgBonus(melissa)
 end
 
 --- 摘星星星人 #20：星门数量；基础1个，觉醒6为2个
 ---@param melissa table
 ---@return number
 local function getMelissaStarGateCount(melissa)
-    return hasAwaken(melissa, 6) and 2 or 1
+    local n = hasAwaken(melissa, 6) and 2 or 1
+    n = n + ETS.extraStarGates(melissa)
+    return math.min(3, n)
 end
 
 --- 摘星星星人 #20：觉醒6后星门可在本体死亡后继续攻击
 ---@param melissa table
 ---@return boolean
 local function canMelissaStarGatePersistAfterDeath(melissa)
-    return hasAwaken(melissa, 6)
+    return hasAwaken(melissa, 6) or ETS.starGatePersist(melissa)
 end
 
 --- 同步星门表现层状态；ProjectileSystem 根据这些标记绘制死亡后仍存在的星门
@@ -1101,7 +1107,7 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
     local hitVal = attacker.attrs:get(AD.HIT_VALUE)
     local extraProc = math.min(20, math.floor(hitVal / 80) * 2)
     local baseProc = hasAwaken(attacker, 1) and 30 or 25
-    local procChance = (baseProc + extraProc) / 100
+    local procChance = (baseProc + extraProc) / 100 + ETS.getNitroProcBonus(attacker)
 
     if math.random() >= procChance then return end
 
@@ -1163,6 +1169,7 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
         })
         attacker.atkInterval = attacker.attrs:getActualInterval()
         talentLog(string.format("[Talent] 闪电卖鸡 氮气叠速 ×%d (+%d%%)", stacks, nitroSpd))
+        attacker._nitroKill = true
     end
 
     talentLog(string.format("[Talent] 闪电卖鸡 氮气 → %s (%.0f伤害, 麻痹%.1fs)",
@@ -1354,6 +1361,21 @@ function TAL.onBattleStart(allies, enemies)
                 summonMelissaStarGate(unit, s)
             end
 
+            if unit._etsPreciseStart and unit._etsPreciseStart > 0 then
+                s.preciseChain = true
+                unit._etsPreciseStart = unit._etsPreciseStart - 1
+            end
+            if unit._etsBeamStart and unit._etsBeamStart > 0 then
+                s.flashReady = true
+                unit._etsBeamStart = unit._etsBeamStart - 1
+            end
+            if unit._etsGatlingStart and unit._etsGatlingStart > 0 then
+                s.machineGunShotsLeft = unit._etsGatlingStart
+                s.machineGunShotTimer = 0.05
+                s.machineGunInBurst = true
+                unit._etsGatlingStart = nil
+            end
+
             -- #14 内鬼 觉醒5: 战斗开始获得10次免疫（共用 RCH.immunityCount）
             if unit.heroId == 14 and unit.hp > 0 and hasAwaken(unit, 5) then
                 RCH.addImmunityCharges(unit, 10)
@@ -1450,6 +1472,7 @@ local function tickSeraMachineGunCount(attacker, s)
     local interval = 20
     if hasAwaken(attacker, 1) then interval = 18 end
     if hasAwaken(attacker, 5) then interval = 15 end
+    interval = math.max(8, interval - ETS.getGatlingCut(attacker))
     if s.machineGunNormalCount % interval == 0 then
         s.machineGunShotsLeft = hasAwaken(attacker, 3) and 12 or 10
         s.machineGunShotTimer = 0
@@ -1548,12 +1571,14 @@ function TAL.onBeforeAttack(attacker)
             attacker.attrs:addModifier("talent_precise", entries)
             s.preciseBuff = true
             s.preciseChain = false
+            attacker._preciseKill = true
             talentLog("[Talent] 叮咚鸡 已读不回：第" .. s.atkCount .. "次通知到了 ×" .. (1 + precBonus / 100))
         else
             attacker.attrs:addModifier("talent_precise", {
                 { key = AD.DMG_BONUS, flat = -30 },
             })
             s.preciseBuff = false
+            attacker._preciseKill = nil
         end
     end
 
@@ -1941,6 +1966,7 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
             opts.bezierSide = sides[si] or (si % 2 == 1 and 1 or -1)
         end
         dealDmgFn(st, dmg, not isAlly, "通宵斩", { 255, 50, 80 }, opts)
+        attacker._nightSlashKill = true
     end
 
     talentLog("[Talent] 熬夜冠军 通宵斩：" .. slashCount .. "道斩击(基础=" .. math.floor(baseSlashDmg) .. ")")
@@ -2123,6 +2149,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
                     talentLog("[Talent] 信光机兵 必杀光线 贯穿")
                 end
             end
+            attacker._beamKill = true
             s.flashReady = false
             s.atkCount = 0
         else
@@ -2172,7 +2199,16 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         -- 觉醒2: 最大层数5 (15→20)
         local maxConquer = 15
         if hasAwaken(attacker, 2) then maxConquer = 20 end
+        if attacker._etsConquerStart then
+            s.conquerStacks = math.max(s.conquerStacks, attacker._etsConquerStart)
+            attacker._etsConquerStart = nil
+        end
         s.conquerStacks = math.min(maxConquer, s.conquerStacks + 1)
+        if s.conquerStacks >= maxConquer then
+            attacker._conquerFullKill = true
+        else
+            attacker._conquerFullKill = nil
+        end
         attacker.attrs:removeModifier("talent_conquer")
         if s.conquerStacks > 0 then
             local entries = {
@@ -2404,9 +2440,9 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         -- #12 雪皇 冰霜精通：25%概率附加冰冻1.5秒 + 觉醒
         if heroId == 12 and target.hp > 0 then
             -- 觉醒1: 概率25%→35%  觉醒3: 概率→50%
-            local freezeChance = 0.25 + ETS.getSnowFreezeBonus(ETS.getOwned(12))
-            if hasAwaken(attacker, 1) then freezeChance = 0.35 + ETS.getSnowFreezeBonus(ETS.getOwned(12)) end
-            if hasAwaken(attacker, 3) then freezeChance = 0.50 + ETS.getSnowFreezeBonus(ETS.getOwned(12)) end
+            local freezeChance = 0.25 + ETS.getSnowFreezeBonus(ETS.getOwned(12), attacker)
+            if hasAwaken(attacker, 1) then freezeChance = 0.35 + ETS.getSnowFreezeBonus(ETS.getOwned(12), attacker) end
+            if hasAwaken(attacker, 3) then freezeChance = 0.50 + ETS.getSnowFreezeBonus(ETS.getOwned(12), attacker) end
             freezeChance = math.min(0.80, freezeChance)
             -- 觉醒4: 持续时间+0.5秒
             local freezeDur = 1.5
@@ -2472,7 +2508,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             local bounceCount = 1
             if hasAwaken(attacker, 3) then bounceCount = 2 end
             if hasAwaken(attacker, 7) then bounceCount = 3 end
-            bounceCount = bounceCount + ETS.getExtraBounces(ETS.getOwned(13))
+            bounceCount = bounceCount + ETS.getExtraBounces(ETS.getOwned(13), attacker)
 
             local baseDmg = result.totalDamage or 0
             local allowRepeatBounce = hasAwaken(attacker, 7)
@@ -2857,6 +2893,11 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
                 if hotMult > 1 then
                     talentLog("[Talent] 卡皮巴拉觉醒4: 暴击HOT翻倍 hps=" .. hps)
                 end
+                local overflow = result.overhealAmount
+                if overflow == nil then
+                    overflow = math.max(0, (result.healAmount or 0) - (result.appliedHealAmount or 0))
+                end
+                ETS.onOverflowHeal(attacker, overflow or 0)
             end
             -- 觉醒3: 治疗暴击+15%（永久加成，首次添加成
             if hasAwaken(attacker, 3) and not s.awakFloraHealCrit then
@@ -2906,7 +2947,14 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         if healerId == 23 and target.hp > 0 and result.category == "healing" then
             local nGain, tGain = applyElwynEnergyBlessing(attacker, target, result)
             if ((nGain or 0) + (tGain or 0) > 0) or ((target.attrs and ((target.attrs.energyShield or 0) + (target.attrs.tempEnergyShield or 0)) > 0)) then
-                target._rhymeShot = math.max(target._rhymeShot or 0, math.floor((result.healAmount or 0) * 0.20 + 0.5))
+                if ETS.hasNode(attacker, 4) then
+                    target._rhymeShot = math.max(target._rhymeShot or 0, math.floor((result.healAmount or 0) * 0.20 + 0.5))
+                end
+                local overflow = result.overhealAmount
+                if overflow == nil then
+                    overflow = math.max(0, (result.healAmount or 0) - (result.appliedHealAmount or 0))
+                end
+                ETS.onOverflowHeal(attacker, overflow or 0)
             end
         end
 
@@ -3232,6 +3280,7 @@ function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCa
     if rebecca.hp <= 0 and rebHpBefore > 0 then
         local overkill = math.max(0, transferDmg - rebHpBefore)
         rebecca._overkillRatio = math.min(1.0, overkill / (rebecca.maxHp or rebHpBefore))
+        ETS.onShareFatal(rebecca)
     end
 
     -- 觉醒2: 吸收时回复2%最大HP（3秒CD）
@@ -3337,6 +3386,7 @@ function TAL.onDamageTaken(unit, attacker, damage, isUnitAlly, performAttackFn, 
                 blockedAmt = math.floor(blockedAmt * 1.5 + 0.5)
             end
             s.blockAbsorbedDmg = (s.blockAbsorbedDmg or 0) + blockedAmt
+            ETS.onBlock(unit, blockedAmt)
             talentLog("[Talent] 接化发掌门 化劲蓄力+" .. blockedAmt .. " (累计=" .. s.blockAbsorbedDmg .. ")")
         end
     end
@@ -3499,7 +3549,7 @@ function TAL.onAllyDeath(dyingUnit, allies, syncHpFn)
             local elizState = getState(ally)
             if elizState and not elizState.reviveUsed[dyingUnit] then
                 -- 计算复活概率: 基础25%, 觉醒1→40%, 觉醒5→60%；追加技永久层叠加上限80%
-                local extraRate = ETS.getReviveRateBonus(ETS.getOwned(15))
+                local extraRate = ETS.getReviveRateBonus(ETS.getOwned(15), ally)
                 local reviveRate = 0.25 + extraRate
                 if hasAwaken(ally, 1) then reviveRate = 0.40 + extraRate end
                 if hasAwaken(ally, 5) then reviveRate = 0.60 + extraRate end

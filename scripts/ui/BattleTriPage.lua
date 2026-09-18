@@ -102,7 +102,7 @@ function BattleTriPage.init(vg)
     inited = true
     BattleView.init(vg)
     -- [暗黑替换] L0 整套大背景 + L1 行内容背景（森林/荒原/深渊）
-    imgL0      = nvgCreateImage(vg, "image/暗黑/L0_ui_bg_v3.png", 0)
+    imgL0      = nvgCreateImage(vg, "image/暗黑/L0_ui_bg_v5.png", 0)  -- [L0改版 v5] 哥特金卷草, 等高三行
     imgL1[1]   = nvgCreateImage(vg, "image/暗黑/L1_row1_forest.png", 0)
     imgL1[2]   = nvgCreateImage(vg, "image/暗黑/L1_row2_bonefield.png", 0)
     imgL1[3]   = nvgCreateImage(vg, "image/暗黑/L1_row3_abyss.png", 0)

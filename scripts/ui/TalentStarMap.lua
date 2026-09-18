@@ -507,6 +507,42 @@ do
     print("[TalentStarMap] 边数: " .. #EDGES)
 end
 
+-- [视觉降噪] 长边过滤：网格距离 > LONG_EDGE_DIST 的连线不绘制。
+-- 仅影响视觉层——邻接数据（NODES.adj）与服务端解锁校验（TalentNodeDefs）不变。
+-- 保底：若某节点所有邻接边均为长边，恢复其最短一条，避免出现视觉孤岛。
+local LONG_EDGE_DIST = 3.0
+do
+    local function edgeDist(a, b)
+        local na, nb = NODES[a], NODES[b]
+        if not na or not nb then return 0 end
+        local dx, dy = na.gx - nb.gx, na.gy - nb.gy
+        return math.sqrt(dx * dx + dy * dy)
+    end
+    local kept, dropped = {}, {}
+    local deg = {}
+    for _, e in ipairs(EDGES) do
+        local d = edgeDist(e[1], e[2])
+        if d <= LONG_EDGE_DIST then
+            kept[#kept + 1] = e
+            deg[e[1]] = (deg[e[1]] or 0) + 1
+            deg[e[2]] = (deg[e[2]] or 0) + 1
+        else
+            dropped[#dropped + 1] = { e[1], e[2], d }
+        end
+    end
+    for _, drop in ipairs(dropped) do
+        local a, b = drop[1], drop[2]
+        if (deg[a] or 0) == 0 or (deg[b] or 0) == 0 then
+            kept[#kept + 1] = { a, b }
+            deg[a] = (deg[a] or 0) + 1
+            deg[b] = (deg[b] or 0) + 1
+        end
+    end
+    print("[TalentStarMap] 视觉连线: " .. #kept .. " / 邻接边 " .. #EDGES
+        .. "（长边过滤 > " .. LONG_EDGE_DIST .. " 格）")
+    EDGES = kept
+end
+
 -- ======================== 运行时状态 ========================
 
 ---@type userdata NanoVG context

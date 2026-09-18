@@ -20,7 +20,33 @@ electron-shell/
 - CSS 隐藏 fab + MutationObserver 移除 eruda
 - WebSocket shim：登录服改连 `ws://127.0.0.1:1/` → skipping login
 
-## 构筑
+## 一键脚本（推荐，本机跑）
+
+云端代理传 ~466MB zip 会被超时掐断，**打包和上传请在本机直连 GitHub**。
+
+Windows 双击：
+
+| 文件 | 做什么 |
+|------|--------|
+| `pack_release.bat` | 同步 `dist/` → 打补丁 → electron-builder → zip |
+| `pack_and_upload.bat` | 上面全套 + 上传 GitHub Release `win64-v{version}` |
+| `upload_only.bat` | 已有 zip 只上传（不重打） |
+
+命令行：
+
+```bash
+cd electron-shell
+python pack_release.py              # 只打包
+python pack_release.py --upload     # 打包并上传
+python pack_release.py --upload-only  # 已有 zip 只上传
+```
+
+上传凭据（任选）：`gh auth login` / 环境变量 `GITHUB_TOKEN` / git 已保存的 github.com 凭据。
+版本号读 `package.json` 的 `version`。产物：`release/ZhongYanZhiMen-win64-offline-{version}.zip`。
+
+前提：仓库根已有最新 `dist/`（Maker Build 过）。脚本会删预览桥/凭证、去水印、注入免登录 WS shim。
+
+## 构筑（手动）
 
 本机 Windows（有 NSIS）：
 
@@ -39,7 +65,7 @@ npm run dir     # 产出 release/win-unpacked/
 # 再 zip win-unpacked
 ```
 
-产物：`release/ZhongYanZhiMen-win64-unpacked.zip`（解压后运行 `ZhongYanZhiMen.exe`）。
+产物：`release/ZhongYanZhiMen-win64-offline-{version}.zip`（解压后运行 `ZhongYanZhiMen.exe`）。
 首次启动仍需联网拉引擎 WASM（约 70MB，官方 CDN）。
 
 ## 运行行为（main.js 定稿）

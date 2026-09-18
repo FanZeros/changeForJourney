@@ -41,3 +41,11 @@ npm run dir     # 产出 release/win-unpacked/
 
 产物：`release/ZhongYanZhiMen-win64-unpacked.zip`（解压后运行 `ZhongYanZhiMen.exe`）。
 首次启动仍需联网拉引擎 WASM（约 70MB，官方 CDN）。
+
+## 运行行为（main.js 定稿）
+
+- 窗口锁定 **1590×987**（resizable/maximizable/fullscreenable 均关）：任何屏幕下 UI 元素大小恒定
+- 内置 http 监听 `127.0.0.1:30000-49999` 随机端口，支持 Range 请求（视频拖动进度条）
+- 黑屏自愈：加载失败 2s 自动重试；渲染进程崩溃自动 reload
+- 诊断日志：`%APPDATA%/zhongyan-zhimen-win64-offline/electron-main.log`（黑屏排查取此文件）
+- **F12** 切换 DevTools（用户自助诊断）

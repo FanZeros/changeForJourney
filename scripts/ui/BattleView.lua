@@ -27,8 +27,8 @@ function BattleView.init(vg)
     if img.loaded then return end
     img.loaded   = true
     img.map      = nvgCreateImage(vg, "image/关卡地图/MAP_1.png", 0)
-    img.shadow   = nvgCreateImage(vg, "image/UI_YWJM_MAPYY.png", 0)
-    img.enemyTag = nvgCreateImage(vg, "image/ICON_ZY_XG.png", 0)
+    img.shadow   = nvgCreateImage(vg, "image/界面底板/UI_YWJM_MAPYY.png", 0)
+    img.enemyTag = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
 end
 
 --- 绘制一条战斗条带（b = { allies, enemies }；条带设计坐标 948x360）
@@ -65,6 +65,7 @@ function BattleView.draw(vg, b, bgImg, skipBg)
         -215, 90, 153, 135, 181, 215, img.enemyTag, false)
     BattleDraw.drawCardGroup(vg, allies, nil,
         -215, 85, 153, 135, 181, 215, nil, true)
+    require("systems.ExtraTalentSystem").drawIceStatues(vg)
 
     -- 4) 飘字 / 特效 / 投射物 / 星门（均为 mounted 状态内容；坐标即条带坐标）
     BattleDraw.drawFloatingTexts(vg)

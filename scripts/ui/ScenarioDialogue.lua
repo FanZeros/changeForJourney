@@ -188,7 +188,7 @@ local function drawPortrait(characterId, alpha, offsetX)
 
     local p = getPortraitLayout()
     local cx = p.cx + (offsetX or 0)
-    DrawUtil.drawImageCentered(vg_, img, cx, p.cy, p.w, p.h, alpha)
+    DrawUtil.drawImageCover(vg_, img, cx, p.cy, p.w, p.h, alpha)
 end
 
 --- 绘制带动画的立绘
@@ -323,9 +323,9 @@ end
 function ScenarioDialogue.init(vg, sceneRef)
     vg_ = vg
     scene_ = sceneRef
-    imgTextBG_ = nvgCreateImage(vg, "image/UI_QJDH_BJ1.png", 0)
-    imgNameBG_ = nvgCreateImage(vg, "image/UI_QJDH_1.png", 0)
-    imgArrow_  = nvgCreateImage(vg, "image/ICON_SJX.png", 0)
+    imgTextBG_ = nvgCreateImage(vg, "image/界面底板/UI_QJDH_BJ1.png", 0)
+    imgNameBG_ = nvgCreateImage(vg, "image/界面底板/UI_QJDH_1.png", 0)
+    imgArrow_  = nvgCreateImage(vg, "image/通用图标/ICON_SJX.png", 0)
     print("[ScenarioDialogue] init: textBG=" .. imgTextBG_
         .. " nameBG=" .. imgNameBG_ .. " arrow=" .. imgArrow_)
 end

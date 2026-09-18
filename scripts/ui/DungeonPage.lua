@@ -196,32 +196,32 @@ local dungeonList = {
     {
         id = "gold_mine",
         name = "黄金矿洞",
-        cardImage = "image/UI_FBRK_1.png",
+        cardImage = "image/界面底板/UI_FBRK_1.png",
         maxDaily = 2,
         rewards = {
-            { type = "gold", icon = "image/UI_icon_JB_X.png", quality = 2, label = "扫荡" },
-            { type = "gold", icon = "image/UI_icon_JB_X.png", quality = 2, label = "首通" },
+            { type = "gold", icon = "image/货币道具/UI_icon_JB_X.png", quality = 2, label = "扫荡" },
+            { type = "gold", icon = "image/货币道具/UI_icon_JB_X.png", quality = 2, label = "首通" },
         },
     },
     {
         id = "ancient_ruin",
         name = "上古遗迹",
         titleColor = { 0x78, 0xFF, 0xF7 },  -- #78FFF7
-        cardImage = "image/UI_FBRK_2.png",
+        cardImage = "image/界面底板/UI_FBRK_2.png",
         maxDaily = 2,
         rewards = {
-            { type = "dust",  icon = "image/UI_icon_ASFC.png", quality = 3, label = "奥术尘" },
-            { type = "relic", icon = "image/ICON_SJYW.png", quality = 4, label = "遗物" },
+            { type = "dust",  icon = "image/货币道具/UI_icon_ASFC.png", quality = 3, label = "奥术尘" },
+            { type = "relic", icon = "image/货币道具/ICON_SJYW.png", quality = 4, label = "遗物" },
         },
     },
     {
         id = "babel_tower",
         name = "通天塔",
         titleColor = { 0xFF, 0xD7, 0x00 },  -- #FFD700 金色
-        cardImage = "image/UI_FBRK_3.png",
+        cardImage = "image/界面底板/UI_FBRK_3.png",
         maxDaily = 2,
         rewards = {
-            { type = "diamond", icon = "image/UI_icon_SJ_X.png", quality = 5, label = "钻石" },
+            { type = "diamond", icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5, label = "钻石" },
         },
     },
 }
@@ -444,29 +444,29 @@ end
 -- ======================== Public API ========================
 
 function DungeonPage.init(vg)
-    imgTopPattern = nvgCreateImage(vg, "image/UI_FB_BJ.png", 0)
-    imgCard1      = nvgCreateImage(vg, "image/UI_FBRK_1.png", 0)
-    imgCard2      = nvgCreateImage(vg, "image/UI_FBRK_2.png", 0)
-    imgCard3      = nvgCreateImage(vg, "image/UI_FBRK_3.png", 0)
-    imgGold       = nvgCreateImage(vg, "image/UI_icon_JB_X.png", 0)
-    imgGem        = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
-    imgDust       = nvgCreateImage(vg, "image/UI_icon_ASFC.png", 0)
-    imgRelic      = nvgCreateImage(vg, "image/ICON_SJYW.png", 0)
+    imgTopPattern = nvgCreateImage(vg, "image/界面底板/UI_FB_BJ.png", 0)
+    imgCard1      = nvgCreateImage(vg, "image/界面底板/UI_FBRK_1.png", 0)
+    imgCard2      = nvgCreateImage(vg, "image/界面底板/UI_FBRK_2.png", 0)
+    imgCard3      = nvgCreateImage(vg, "image/界面底板/UI_FBRK_3.png", 0)
+    imgGold       = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
+    imgGem        = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
+    imgDust       = nvgCreateImage(vg, "image/货币道具/UI_icon_ASFC.png", 0)
+    imgRelic      = nvgCreateImage(vg, "image/货币道具/ICON_SJYW.png", 0)
     -- 加载品质背景 1-6
     for i = 1, 6 do
-        imgQualityBg[i] = nvgCreateImage(vg, "image/UI_icon_ZBBJ_" .. tostring(i) .. ".png", 0)
+        imgQualityBg[i] = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_" .. tostring(i) .. ".png", 0)
     end
 
     -- 详情面板图片
-    imgDetailBg  = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    imgFloorBg1  = nvgCreateImage(vg, "image/ICON_LXBJ_1.png", 0)
-    imgFloorBg2  = nvgCreateImage(vg, "image/ICON_LXBJ_2.png", 0)
-    imgFloorBg3  = nvgCreateImage(vg, "image/ICON_LXBJ_3.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    imgBtnGreen  = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    imgRedDot    = nvgCreateImage(vg, "image/ICON_HD.png", 0)
-    imgChest     = nvgCreateImage(vg, "image/UI_icon_FBBX.png", 0)
+    imgDetailBg  = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgFloorBg1  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_1.png", 0)
+    imgFloorBg2  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_2.png", 0)
+    imgFloorBg3  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_3.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
+    imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    imgRedDot    = nvgCreateImage(vg, "image/通用图标/ICON_HD.png", 0)
+    imgChest     = nvgCreateImage(vg, "image/货币道具/UI_icon_FBBX.png", 0)
 
     print("[DungeonPage] init OK")
 end

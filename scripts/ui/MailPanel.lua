@@ -343,9 +343,9 @@ end
 
 function Panel.init(vg)
     vg_ = vg
-    imgEntryBg  = nvgCreateImage(vg, "image/UI_GG_1.png", 0)
-    imgBtnDel   = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    imgBtnClaim = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
+    imgEntryBg  = nvgCreateImage(vg, "image/界面底板/UI_GG_1.png", 0)
+    imgBtnDel   = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    imgBtnClaim = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     ImageCache.init(vg)
     print("[MailPanel] init OK")
 end

@@ -152,28 +152,28 @@ end
 
 -- key → { iconPath, quality, name, source, desc, getter }
 local ITEM_DEFS = {
-    { key = "gold",          iconPath = "image/UI_icon_JB.png",     quality = 2, name = "金币",       source = "击杀/通关/任务",         desc = "强化武器，购买资源",                                       getter = function() return GameState.getGold() end },
-    { key = "gems",          iconPath = "image/UI_icon_SJ.png",     quality = 5, name = "钻石",       source = "成就/首通/活动",         desc = "酒馆招募抽卡",                                             getter = function() return GameState.getGems() end },
-    { key = "essence",       iconPath = "image/UI_icon_JC.png",     quality = 2, name = "精粹",       source = "分解装备获得",           desc = "用于洗练装备",                                             getter = function() return GameState.getEssence() end },
-    { key = "enhanceStone",  iconPath = "image/UI_icon_QH_1.png",   quality = 3, name = "洗练石",     source = "市场购买/任务",          desc = "洗练时使用可以只洗练数值高低，不洗练属性",                  getter = function() return GameState.getEnhanceStone() end },
+    { key = "gold",          iconPath = "image/货币道具/UI_icon_JB.png",     quality = 2, name = "金币",       source = "击杀/通关/任务",         desc = "强化武器，购买资源",                                       getter = function() return GameState.getGold() end },
+    { key = "gems",          iconPath = "image/货币道具/UI_icon_SJ.png",     quality = 5, name = "钻石",       source = "成就/首通/活动",         desc = "酒馆招募抽卡",                                             getter = function() return GameState.getGems() end },
+    { key = "essence",       iconPath = "image/货币道具/UI_icon_JC.png",     quality = 2, name = "精粹",       source = "分解装备获得",           desc = "用于洗练装备",                                             getter = function() return GameState.getEssence() end },
+    { key = "enhanceStone",  iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石",     source = "市场购买/任务",          desc = "洗练时使用可以只洗练数值高低，不洗练属性",                  getter = function() return GameState.getEnhanceStone() end },
     -- seq5 degradeStone 已隐藏，不在背包显示
-    { key = "destroyStone",  iconPath = "image/UI_icon_QH_3.png",   quality = 5, name = "点金石",     source = "市场购买/任务",          desc = "洗练时使用可将装备升阶，最高升到史诗品质",                  getter = function() return GameState.getDestroyStone() end },
-    { key = "weaponScroll",    iconPath = "image/UI_icon_JZ_WQ.png",  quality = 3, name = "武器卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getWeaponScroll() end },
-    { key = "offhandScroll",   iconPath = "image/UI_icon_JZ_FS.png",  quality = 3, name = "副手卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getOffhandScroll() end },
-    { key = "armorScroll",     iconPath = "image/UI_icon_JZ_HJ.png",  quality = 3, name = "护甲卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getArmorScroll() end },
-    { key = "accessoryScroll", iconPath = "image/UI_icon_JZ_SP.png",  quality = 3, name = "饰品卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getAccessoryScroll() end },
-    { key = "recruitTicket", iconPath = "image/UI_icon_ZMQ_1.png",  quality = 5, name = "冒险招募券", source = "市场/活动/福利",         desc = "酒馆常规招募抽卡",                                       getter = function() return GameState.getRecruitTicket() end },
-    { key = "stellarRecruitTicket", iconPath = "image/UI_icon_ZMQ_2.png", quality = 6, name = "星辉招募券", source = "活动/福利", desc = "酒馆星辉招募抽卡", getter = function() return GameState.getStellarRecruitTicket() end },
-    { key = "goldenKey", iconPath = "image/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙", source = "首通奖励/市场购买", desc = "开启神器宝箱", getter = function() return GameState.getGoldenKey() end },
-    { key = "sweepTicket",   iconPath = "image/UI_icon_SDQ.png",    quality = 4, name = "扫荡券",     source = "活动获得/看广告获得",    desc = "可以立即扫荡获得半小时的离线收益",                          getter = function() return GameState.getSweepTicket() end },
-    { key = "arenaTicket",   iconPath = "image/UI_icon_JJCQ.png",   quality = 4, name = "竞技券",     source = "每日获得",              desc = "进行竞技场战斗",                                           getter = function() return GameState.getArenaTicket() end },
-    { key = "arenaCoin",     iconPath = "image/UI_icon_JJB.png",    quality = 3, name = "竞技币",     source = "竞技场获得",            desc = "竞技场商店",                                               getter = function() return GameState.getArenaCoin() end },
+    { key = "destroyStone",  iconPath = "image/货币道具/UI_icon_QH_3.png",   quality = 5, name = "点金石",     source = "市场购买/任务",          desc = "洗练时使用可将装备升阶，最高升到史诗品质",                  getter = function() return GameState.getDestroyStone() end },
+    { key = "weaponScroll",    iconPath = "image/货币道具/UI_icon_JZ_WQ.png",  quality = 3, name = "武器卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getWeaponScroll() end },
+    { key = "offhandScroll",   iconPath = "image/货币道具/UI_icon_JZ_FS.png",  quality = 3, name = "副手卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getOffhandScroll() end },
+    { key = "armorScroll",     iconPath = "image/货币道具/UI_icon_JZ_HJ.png",  quality = 3, name = "护甲卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getArmorScroll() end },
+    { key = "accessoryScroll", iconPath = "image/货币道具/UI_icon_JZ_SP.png",  quality = 3, name = "饰品卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getAccessoryScroll() end },
+    { key = "recruitTicket", iconPath = "image/货币道具/UI_icon_ZMQ_1.png",  quality = 5, name = "冒险招募券", source = "市场/活动/福利",         desc = "酒馆常规招募抽卡",                                       getter = function() return GameState.getRecruitTicket() end },
+    { key = "stellarRecruitTicket", iconPath = "image/货币道具/UI_icon_ZMQ_2.png", quality = 6, name = "星辉招募券", source = "活动/福利", desc = "酒馆星辉招募抽卡", getter = function() return GameState.getStellarRecruitTicket() end },
+    { key = "goldenKey", iconPath = "image/货币道具/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙", source = "首通奖励/市场购买", desc = "开启神器宝箱", getter = function() return GameState.getGoldenKey() end },
+    { key = "sweepTicket",   iconPath = "image/货币道具/UI_icon_SDQ.png",    quality = 4, name = "扫荡券",     source = "活动获得/看广告获得",    desc = "可以立即扫荡获得半小时的离线收益",                          getter = function() return GameState.getSweepTicket() end },
+    { key = "arenaTicket",   iconPath = "image/货币道具/UI_icon_JJCQ.png",   quality = 4, name = "竞技券",     source = "每日获得",              desc = "进行竞技场战斗",                                           getter = function() return GameState.getArenaTicket() end },
+    { key = "arenaCoin",     iconPath = "image/货币道具/UI_icon_JJB.png",    quality = 3, name = "竞技币",     source = "竞技场获得",            desc = "竞技场商店",                                               getter = function() return GameState.getArenaCoin() end },
     { key = "tavernCoin",    iconPath = "image/UI_icon_JGB.png",    quality = 3, name = "酒馆币",     source = "非UR满觉醒碎片分解",  desc = "在酒馆商店兑换自选",                                       getter = function() return GameState.getTavernCoin() end },
-    { key = "privilegePoint",iconPath = "image/UI_icon_TQD.png",    quality = 4, name = "特权点",     source = "通过特权商店获得",      desc = "可以消耗掉来购买东西",                                     getter = function() return GameState.getPrivilegePoint() end },
-    { key = "arcaneDust",    iconPath = "image/UI_icon_ASFC.png", quality = 3, name = "奥术粉尘",   source = "活动/任务获得",         desc = "用于遗物洗练消耗",                                         getter = function() return GameState.getArcaneDust() end },
-    { key = "corruptStone",  iconPath = "image/UI_icon_FHS.png", quality = 3, name = "腐化石",     source = "关卡首通/活动/市场",      desc = "可将装备进行魔化，可能会发生预想不到的事情",                 getter = function() return GameState.getCorruptStone() end },
-    { key = "sacredStone",   iconPath = "image/UI_icon_SSS.png", quality = 6, name = "神圣石",     source = "关卡首通/活动/市场",      desc = "可对已经被魔化的装备净化一次，使其去除魔化效果回到普通状态，每件装备只能被净化一次", getter = function() return GameState.getSacredStone() end },
-    { key = "speedCard",     iconPath = "image/UI_icon_JSK.png",  quality = 5, name = "加速卡",     source = "市场购买获得",          desc = "提升20%在线挂机收益，包括金币/经验/装备等；获得时即刻开始生效，持续24小时。", getter = function() return GameState.getSpeedCardDisplayCount() end, amountTextGetter = function() return GameState.formatSpeedCardRemain() end, detailAmountTextGetter = function() return "剩余:" .. GameState.formatSpeedCardRemain() end, descGetter = function() return "提升20%在线挂机收益，包括金币/经验/装备等；当前剩余时间：" .. GameState.formatSpeedCardRemain() end },
+    { key = "privilegePoint",iconPath = "image/货币道具/UI_icon_TQD.png",    quality = 4, name = "特权点",     source = "通过特权商店获得",      desc = "可以消耗掉来购买东西",                                     getter = function() return GameState.getPrivilegePoint() end },
+    { key = "arcaneDust",    iconPath = "image/货币道具/UI_icon_ASFC.png", quality = 3, name = "奥术粉尘",   source = "活动/任务获得",         desc = "用于遗物洗练消耗",                                         getter = function() return GameState.getArcaneDust() end },
+    { key = "corruptStone",  iconPath = "image/货币道具/UI_icon_FHS.png", quality = 3, name = "腐化石",     source = "关卡首通/活动/市场",      desc = "可将装备进行魔化，可能会发生预想不到的事情",                 getter = function() return GameState.getCorruptStone() end },
+    { key = "sacredStone",   iconPath = "image/货币道具/UI_icon_SSS.png", quality = 6, name = "神圣石",     source = "关卡首通/活动/市场",      desc = "可对已经被魔化的装备净化一次，使其去除魔化效果回到普通状态，每件装备只能被净化一次", getter = function() return GameState.getSacredStone() end },
+    { key = "speedCard",     iconPath = "image/货币道具/UI_icon_JSK.png",  quality = 5, name = "加速卡",     source = "市场购买获得",          desc = "提升20%在线挂机收益，包括金币/经验/装备等；获得时即刻开始生效，持续24小时。", getter = function() return GameState.getSpeedCardDisplayCount() end, amountTextGetter = function() return GameState.formatSpeedCardRemain() end, detailAmountTextGetter = function() return "剩余:" .. GameState.formatSpeedCardRemain() end, descGetter = function() return "提升20%在线挂机收益，包括金币/经验/装备等；当前剩余时间：" .. GameState.formatSpeedCardRemain() end },
     { key = "privilegeCard", iconPath = "image/UI_icon_TQK.png", quality = 6, name = "特权卡",     source = "通过活动获得",          desc = "1.每日赠送100个特权点\n2.特权商店每次重置进度时进度直接填满\n\n永久生效", getter = function() return GameState.getPrivilegeCardDisplayCount() end, amountTextGetter = function() return GameState.isPrivilegeCardOwned() and "已激活" or "未拥有" end, detailAmountTextGetter = function() return GameState.isPrivilegeCardOwned() and "已激活" or "未拥有" end },
 }
 
@@ -1041,19 +1041,19 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     vg_ = vg
-    imgTopBg   = nvgCreateImage(vg, "image/UI_BB_BJ.png", 0)
-    imgTitleBg = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
-    imgDeco    = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
-    imgBtnBack = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    imgTabBg   = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
-    imgBtnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
-    imgBtnGreen  = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    imgLock      = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
-    imgCheckmark = nvgCreateImage(vg, "image/UI_icon_GOU.png", 0)
+    imgTopBg   = nvgCreateImage(vg, "image/界面底板/UI_BB_BJ.png", 0)
+    imgTitleBg = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
+    imgDeco    = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
+    imgBtnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
+    imgTabBg   = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
+    imgBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    imgLock      = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+    imgCheckmark = nvgCreateImage(vg, "image/货币道具/UI_icon_GOU.png", 0)
     -- 品质筛选图标
     for i = 1, 5 do
-        imgPzsx[i] = nvgCreateImage(vg, "image/UI_ICON_PZSX_" .. i .. ".png", 0)
+        imgPzsx[i] = nvgCreateImage(vg, "image/通用图标/UI_ICON_PZSX_" .. i .. ".png", 0)
     end
 
     -- imgShardIcon 已移至 DrawUtil.drawShardIcon 统一管理

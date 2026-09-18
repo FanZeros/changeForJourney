@@ -71,6 +71,17 @@ end
 
 --- 物理像素 → 设计坐标
 local function toDesign(px, py)
+    -- 信件/选角全窗口覆盖：按 1080×2400 letterbox 映射，不走中栏面板
+    if HORIZON_MODE and (LetterIntro.isOpen() or CharacterSelect.isActive()) then
+        local lw = graphics:GetWidth() / (graphics:GetDPR() or 1)
+        local lh = graphics:GetHeight() / (graphics:GetDPR() or 1)
+        local ss = math.min(lw / 1080, lh / 2400)
+        local ox = (lw - 1080 * ss) * 0.5
+        local oy = (lh - 2400 * ss) * 0.5
+        local sx = px / dpr
+        local sy = py / dpr
+        return (sx - ox) / ss, (sy - oy) / ss, sx, sy
+    end
     local sx = px / dpr / scale
     local sy = py / dpr / scale
     if HORIZON_MODE and currentStateFn and currentStateFn() == STATE_IN_GAME
@@ -105,8 +116,12 @@ local effectiveTab
 local function dispatchDragBegin(dx, dy)
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 dispatchDragEndAndTap 触发）
     if DarkTitleScreen.isOpen() then return end
-    -- [LetterIntro] 信件期吞掉按下（轻触翻段由 dispatchDragEndAndTap 触发）
-    if LetterIntro.isOpen() then return end
+    -- [LetterIntro] 信件期也要记 pressValid，否则抬起被当成无效点击
+    if LetterIntro.isOpen() then
+        pressValid = true
+        pressStartDX, pressStartDY = dx, dy
+        return
+    end
     pressStartDX, pressStartDY = dx, dy
     pressValid = true
     BF.onPress(dx, dy)
@@ -248,13 +263,13 @@ end
 
 --- 松开事件分发（含点击判定）
 local function dispatchDragEndAndTap(dx, dy)
-    -- [DarkTitleScreen] 标题期任意释放 = 点击继续
+    -- [DarkTitleScreen] 标题期任意释放 = 点击继续（资源未就绪时 handleTap 内部忽略）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.handleTap()
         pressValid = false
         return
     end
-    -- [LetterIntro] 信件期任意释放 = 轻触翻段
+    -- [LetterIntro] 信件期任意释放 = 轻触翻段（不依赖 isTap）
     if LetterIntro.isOpen() then
         LetterIntro.handleTap()
         pressValid = false

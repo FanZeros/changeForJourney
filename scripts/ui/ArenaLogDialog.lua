@@ -118,7 +118,7 @@ end
 
 
 function Dialog.init(vg)
-    imgScoreIcon = nvgCreateImage(vg, "image/UI_icon_JJCFS_X.png", 0)
+    imgScoreIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCFS_X.png", 0)
     print("[ArenaLogDialog] init OK")
 end
 

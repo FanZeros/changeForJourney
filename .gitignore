@@ -1,47 +1,45 @@
-# 构建产物（可由构建管线重建）
+# Build artifacts & runtime state
+.build/
 dist/
-
-# 临时与日志
-.tmp/
-logs/
-_uploads/
-
-# 引擎运行时与工具（平台自动提供）
 .cli/
+logs/
+*.log
+logs/.nfs*
+.sce/logs/
+.sce/build/build_steps/__pycache__/
 
-# 引擎自带参考目录（平台工作区自带，无需版本化）
-examples/
-templates/
-engine-docs/
-/schemas/
+# Electron Windows 离线包（game/ 是 dist 拷贝，release/ 是构筑产物）
+electron-shell/game/
+electron-shell/node_modules/
+electron-shell/release/
 
-# 旧仓库克隆（其历史已在远端，本分支为工作区快照线）
-changeForJourney/
+# Temp & swap files
+.tmp/
+*.crswap
+.DS_Store
 
-# 构建工具产物（Maker build 生成，不入库）
-*.meta
-.luarc.json
-# 临时验证入口（离线 validate/截图用）
-_validate_entry.lua
-_tri_test.lua
+# OSS util
+.ossutil_checkpoint/
+ossutil_output/
 
-# Agent 配置（会话工具，非项目内容）
-.claude/
-.codex/
-.opencode/
-.gemini/
-.agents/
+# Editor / IDE / agent configs
+.vscode/
 .cursor/
-_sel_test.lua
-screenshots/
-
-# 引擎挂载目录与 LSP 类型（平台自动提供，不入库）
+.codex/
+.gemini/
+.claude/
 .emmylua/
+.installer/
+.maker/
+
+# Maker engine assets & agent files (provided by ai-dev-kit, not user source)
+engine-docs/
+examples/
+lua-tools/
+schemas/
+skills/
+templates/
 tools/
 urhox-libs/
-.build/
-
-# Electron 离线版构建产物与依赖（main.js/package.json 入库）
-electron-shell/node_modules/
-electron-shell/game/
-electron-shell/release/
+AGENTS.md
+CLAUDE.md

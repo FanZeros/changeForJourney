@@ -73,6 +73,7 @@ local Standalone = {}
 local vg = nil
 local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen 使用
 local startScreenWasOpen_ = false
+local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发一次（等标题关闭）
 local fontNormal = -1
 
 -- [一次性加载] 三段式加载：
@@ -83,7 +84,7 @@ local fontNormal = -1
 local preload_ = { active = false, bg = false, list = {}, idx = 0, bytes = 0, deadline = nil,
                     dwpActive = false, dwpDone = 0, dwpTotal = 0, skipWait = false }
 local PRELOAD_FG_BUDGET = 80 * 1024 * 1024   -- 前台预载字节预算
-local PRELOAD_TIME_LIMIT = 180               -- DWP 预下载等待上限（秒）；到点放行进入，引擎后台继续
+local PRELOAD_TIME_LIMIT = 180               -- DWP 预下载等待上限（秒）；超时后仍允许进入，避免永久卡死
 local BG_FRAME_BUDGET = 0.003                -- 后台补载每帧时间预算（秒）
 local BG_SKIP_SIZE = 1024 * 1024             -- 后台跳过的大图阈值（1MB，保持惰性）
 
@@ -123,8 +124,8 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 -- （原实现每帧重试 nvgCreateImage，缺图时刷屏 "Could not find resource"）
 local imgWorldBg_ = -1
 local worldBgTried_ = false
-local WORLD_BG_PATH = "image/UI_WORLD_BG.png"
-local WORLD_BG_FALLBACK = "image/UI_CZ_BJ.png"
+local WORLD_BG_PATH = "image/界面底板/UI_WORLD_BG.png"
+local WORLD_BG_FALLBACK = "image/界面底板/UI_CZ_BJ.png"
 
 -- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
 -- （maxStageId_/clearedStages）每秒比对一次，变化才经 handleStateUpdate 写入，
@@ -223,6 +224,7 @@ function Standalone.Start()
     -- 5. Sub-modules
     StartScreen.init(vg, scene)
     DarkTitleScreen.init(vg)  -- [DarkTitleScreen] 横屏标题资源
+    LetterIntro.init(vg)      -- [LetterIntro] 书斋/火漆全窗口素材
     TopBar.init(vg)
     BottomNav.init(vg)
     BattleScene.init(vg)
@@ -849,11 +851,14 @@ function Standalone.Start()
         if not okDWP then
             preload_.dwpActive = false
             preload_.active = false
+            DarkTitleScreen.setReady(true)
             print("[Standalone] DownloadResources 不可用，跳过预下载: " .. tostring(err))
         else
+            DarkTitleScreen.setReady(false)
             print("[Standalone] DWP 全量预下载启动: " .. #manifest .. " 项")
         end
     else
+        DarkTitleScreen.setReady(true)
         print("[Standalone] AssetManifest 缺失，跳过全量预载")
     end
     SubscribeToEvent("ScreenMode", "HandleScreenMode")
@@ -908,33 +913,26 @@ end
 --- [LetterIntro] 新档标记开场剧情完成（session.introCompleted，模块级整体替换需带全字段）
 local function markIntroCompleted_()
     local sessionData = ClientDispatcher.get("session") or {}
+    local claimed = sessionData.claimedScenarios or {}
+    claimed["1"] = true  -- 跳过情景1仍标记已领取，避免后续系统再拉起
     local updated = {
         lastOnlineTime   = sessionData.lastOnlineTime or 0,
         firstLoginTime   = sessionData.firstLoginTime or 0,
         introCompleted   = true,
-        claimedScenarios = sessionData.claimedScenarios,
+        claimedScenarios = claimed,
     }
     ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
-    print("[Standalone] intro completed flag saved (session.introCompleted=true)")
+    print("[Standalone] intro completed flag saved (session.introCompleted=true, scenario 1 claimed)")
 end
 
---- [LetterIntro] 新档开场链：先祖来信 → 睁眼过场 → 情景1 → 标记完成 + 离线收益
+--- [LetterIntro] 新档开场链：只播先祖来信，结束后直接解锁进游戏（不再播睁眼过场/情景1）
 local function startIntroChain_()
-    -- 开场链专属轨道：暗黑烛光读信氛围（信+过场期间），情景1 起切回主曲
     GameBGM.setScene("letter", { fromStart = true })
     LetterIntro.start(function()
-        print("[Standalone] letter finished, starting intro cutscene")
-        IntroCutscene.start(function()
-            print("[Standalone] intro cutscene finished, starting scenario dialogue 1")
-            GameBGM.setScene("battle", { fromStart = true })  -- 情景1"全员出发"氛围切回主曲
-            local scenarioConfig = ScenarioDialogueConfig.SCENARIO_1
-            scenarioConfig.onFinish = function()
-                print("[Standalone] scenario dialogue 1 finished")
-                markIntroCompleted_()
-                showOfflineRewardPanel_()
-            end
-            ScenarioDialogue.show(scenarioConfig)
-        end)
+        print("[Standalone] letter finished, skip cutscene/scenario, unlocking")
+        GameBGM.setScene("battle", { fromStart = true })
+        markIntroCompleted_()
+        showOfflineRewardPanel_()
     end)
 end
 
@@ -1009,10 +1007,12 @@ function Standalone.requestResetToStartScreen()
 
     -- 10. 重置开场动画状态（让清档后可以重新播放）
     IntroCutscene.reset()
+    LetterIntro.reset()
     print(string.format("%s step10: IntroCutscene.reset done clock=%.4f", TAG, os.clock()))
 
-    -- 11. 设置标志：重新进入开始界面流程
+    -- 11. 设置标志：重新进入开始界面流程（等标题关闭后再走开场链）
     startScreenWasOpen_ = true
+    postStartFlowDone_ = false
     print(string.format("%s step11: startScreenWasOpen_=true clock=%.4f", TAG, os.clock()))
 
     -- 12. 重新打开 StartScreen
@@ -1051,9 +1051,11 @@ function HandleNanoVGRender(eventType, eventData)
         return
     end
 
-    -- [LetterIntro] 先祖来信（最高优先级，覆盖一切）
+    -- [LetterIntro] 先祖来信（最高优先级，覆盖一切；竖屏路径也全窗口）
     if LetterIntro.isOpen() then
-        LetterIntro.draw(vg)
+        nvgResetTransform(vg)
+        ---@diagnostic disable-next-line: missing-parameter
+        LetterIntro.draw(vg, logicalW, logicalH)
         nvgEndFrame(vg)
         return
     end
@@ -1179,7 +1181,7 @@ function HandleNanoVGRender(eventType, eventData)
     end
 
     -- [一次性加载] 预载进度遮罩（竖屏路径，设计空间坐标）
-    if preload_.active then
+    if preload_.active and not DarkTitleScreen.isOpen() and not StartScreen.isOpen() then
         DrawPreloadOverlay(vg, DESIGN_W, DESIGN_H)
     end
 
@@ -1190,39 +1192,44 @@ end
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
     -- [DWP 异步预下载] 等待期：
-    --   1) 开始/标题画面保持可交互；引擎后台线程下载（主线程零阻塞，帧率正常）
-    --   2) 下载完成（或点击标题跳过等待 / 45s 兜底超时）即放行进入游戏
-    --   3) 主线程全程不做任何同步加载；未就绪图首用时由 DWP 占位机制兜底
+    --   1) 标题画面可显示，但资源未完成前不允许进入（避免无背景界面）
+    --   2) 下载完成后解锁标题点击；超时后仍解锁，避免永久卡死
+    --   3) 主线程全程不做任何同步加载
     if preload_.active then
         local dt = eventData["TimeStep"]:GetFloat()
         if StartScreen.isOpen() then
             StartScreen.update(dt)
-            if not StartScreen.isOpen() then
-                preload_.skipWait = true
-            end
         end
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.update(dt)
-            if not DarkTitleScreen.isOpen() then
-                preload_.skipWait = true
-                print("[Standalone] 标题画面已点击，跳过等待放行进入")
-            end
         end
+        local total = preload_.dwpTotal
+        local done = preload_.dwpDone
+        local pct = (total > 0) and math.floor(done * 100 / total) or 0
+        DarkTitleScreen.loadPercent = pct
+        DarkTitleScreen.loadDone = done
+        DarkTitleScreen.loadTotal = total
+        DarkTitleScreen.setReady(false)
+
         if preload_.dwpActive and preload_.deadline == nil then
             preload_.deadline = time.elapsedTime + PRELOAD_TIME_LIMIT
         end
+        local timedOut = false
         if preload_.dwpActive and preload_.deadline ~= nil
            and time.elapsedTime > preload_.deadline then
+            timedOut = true
             preload_.dwpActive = false
-            print("[Standalone] DWP 预下载超时(" .. PRELOAD_TIME_LIMIT .. "s)，放行进入（引擎后台继续）")
+            print("[Standalone] DWP 预下载超时(" .. PRELOAD_TIME_LIMIT .. "s)，解锁进入（引擎后台继续）")
         end
-        if not preload_.dwpActive or preload_.skipWait then
+        if not preload_.dwpActive then
             preload_.active = false
-            local pct = (preload_.dwpTotal > 0)
-                and math.floor(preload_.dwpDone * 100 / preload_.dwpTotal) or 100
-            print("[Standalone] DWP 预下载等待结束（" .. pct .. "%），放行进入游戏")
+            DarkTitleScreen.setReady(true)
+            print("[Standalone] DWP 预下载等待结束（" .. pct .. "%），标题可点击进入"
+                .. (timedOut and " [timeout]" or ""))
+            -- 不 return：本帧立刻进入下方开场判定
+        else
+            return
         end
-        return
     end
 
     local dt = eventData["TimeStep"]:GetFloat()
@@ -1240,10 +1247,14 @@ function HandleUpdate(eventType, eventData)
     -- [DarkTitleScreen] 横屏标题动画（预载/游戏在标题下方继续进行）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.update(dt)
+        startScreenWasOpen_ = true
+        return
     end
 
-    -- StartScreen 刚关闭 → 老档弹离线收益；新档走开场链（先祖来信→过场→情景1）
-    if startScreenWasOpen_ then
+    -- 开始页/标题刚关闭 → 老档弹离线收益；新档走开场链（先祖来信→过场→情景1）
+    -- 必须等 DarkTitleScreen 关闭后再播，否则信件会被标题盖住且点击被吞
+    if not postStartFlowDone_ then
+        postStartFlowDone_ = true
         startScreenWasOpen_ = false
         GameBGM.start()
         GameSFX.start()
@@ -1546,9 +1557,9 @@ function HandleMouseButtonUp(eventType, eventData)
         if isTap then StartScreen.handleClick(dx, dy) end
         return
     end
-    -- [LetterIntro] 信件期：任意释放 = 轻触翻段
+    -- [LetterIntro] 信件期：任意释放 = 轻触翻段（不依赖 isTap）
     if LetterIntro.isOpen() then
-        if isTap then LetterIntro.handleTap() end
+        LetterIntro.handleTap()
         return
     end
     -- [LetterIntro] 过场期吞输入（时间轴自动推进）
@@ -1836,9 +1847,9 @@ function HandleTouchEnd(eventType, eventData)
         if isTap then StartScreen.handleClick(dx, dy) end
         return
     end
-    -- [LetterIntro] 信件期：任意释放 = 轻触翻段
+    -- [LetterIntro] 信件期：任意释放 = 轻触翻段（不依赖 isTap）
     if LetterIntro.isOpen() then
-        if isTap then LetterIntro.handleTap() end
+        LetterIntro.handleTap()
         return
     end
     -- [LetterIntro] 过场期吞输入（时间轴自动推进）
@@ -2084,6 +2095,31 @@ local function HorizonUpdateTransform()
     end
 end
 
+--- [LetterIntro] 开场链全窗口覆盖：信件铺满窗口；过场/情景仍用 1080×2400 letterbox
+local function HorizonDrawIntroOverlay()
+    if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
+        return
+    end
+    nvgSave(vg)
+    nvgResetTransform(vg)
+    nvgScissor(vg, 0, 0, logicalW, logicalH)
+    if LetterIntro.isOpen() then
+        -- 全窗口逻辑坐标，16:9 cover，不再 letterbox 成竖条
+        ---@diagnostic disable-next-line: missing-parameter
+        LetterIntro.draw(vg, logicalW, logicalH)
+    else
+        local ss = math.min(logicalW / 1080, logicalH / 2400)
+        nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
+        nvgScale(vg, ss, ss)
+        if IntroCutscene.isActive() then
+            IntroCutscene.draw(vg)
+        elseif ScenarioDialogue.isActive() then
+            ScenarioDialogue.draw()
+        end
+    end
+    nvgRestore(vg)
+end
+
 --- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（基屏幕空间，绘制于侧栏之后、中面板之前）
 local function HorizonDimSidePanels()
     local modalOpen =
@@ -2172,7 +2208,7 @@ function HandleNanoVGRenderHorizon()
         H_skipDone = true
         StartScreen.skipForReconnect()
         DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
-        if H_AUTO_DISMISS_TITLE then
+        if H_AUTO_DISMISS_TITLE and DarkTitleScreen.isReady() then
             DarkTitleScreen.handleTap()  -- 临时验证入口: 无输入环境自动淡出标题
         end
     end
@@ -2272,38 +2308,21 @@ function HandleNanoVGRenderHorizon()
         Viewport.finish(vg)
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
         BattleTriPage.draw(vg, logicalW, logicalH)
-        -- [LetterIntro] 新档开场链（信/过场/情景1）：全窗口设计空间覆盖三行战斗
-        if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then
-            local ss = math.min(logicalW / 1080, logicalH / 2400)
-            nvgSave(vg)
-            nvgScissor(vg, 0, 0, logicalW, logicalH)
-            nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
-            nvgScale(vg, ss, ss)
-            if LetterIntro.isOpen() then
-                LetterIntro.draw(vg)
-            elseif IntroCutscene.isActive() then
-                IntroCutscene.draw(vg)
-            elseif ScenarioDialogue.isActive() then
-                ScenarioDialogue.draw()
-            end
-            nvgRestore(vg)
-        end
         -- [三队并行] 中缝返回键（窗口坐标，页面视口之外）：左页‹ / 详情›
         local seamClose = seamBackTarget()
         if seamClose then
             local scx, scy, sw, sh, sdir = seamBackRect()
             DrawUtil.drawBackChevron(vg, scx, scy, sw, sh, sdir)
         end
-        -- [DWP] 下载进行中: 全屏进度遮罩独占显示（完成后露出标题屏可点击进入）
-        if preload_.active then
-            DrawPreloadOverlay(vg, logicalW, logicalH)
-            nvgEndFrame(vg)
-            return
-        end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
+        -- 资源未就绪时标题自带进度条，不允许点进空背景界面
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg, logicalW, logicalH)
+        elseif preload_.active then
+            DrawPreloadOverlay(vg, logicalW, logicalH)
         end
+        -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
+        HorizonDrawIntroOverlay()
         nvgEndFrame(vg)
         return
     end
@@ -2318,15 +2337,6 @@ function HandleNanoVGRenderHorizon()
     SpinePowerUpEffect.draw(vg)
     LevelUpPopup.draw(vg)
     if SamsaraCG.isActive() then SamsaraCG.draw(vg) end
-    if IntroCutscene.isActive() then IntroCutscene.draw(vg) end
-    -- [LetterIntro] 情景对话（large 全屏覆盖 / small 叠加弹窗）
-    if ScenarioDialogue.isActive() then
-        ScenarioDialogue.draw()
-    end
-    -- [LetterIntro] 先祖来信（最高优先级，覆盖一切）
-    if LetterIntro.isOpen() then
-        LetterIntro.draw(vg)
-    end
     Viewport.finish(vg)
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
@@ -2340,35 +2350,14 @@ function HandleNanoVGRenderHorizon()
         nvgRestore(vg)
     end
 
-    -- [一次性加载] 预载进度遮罩（横屏路径，基屏幕空间，最后绘制覆盖全部）
-    if preload_.active then
-        local total = #preload_.list
-        local done = preload_.idx
-        local p = total > 0 and (done / total) or 0
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, logicalW, logicalH)
-        nvgFillColor(vg, nvgRGBA(13, 11, 9, 255))
-        nvgFill(vg)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5, logicalH * 0.42, "资源加载中",
-            math.floor(logicalH * 0.034), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            240, 199, 94, 3)
-        local bw = logicalW * 0.42
-        local bh = math.max(10, logicalH * 0.008)
-        local bx = (logicalW - bw) * 0.5
-        local by = logicalH * 0.48
-        DarkIcon.drawNine(vg, "slot", bx, by, bw, bh)
-        local fw = math.max(bh - 6, (bw - 6) * p)
-        DarkIcon.drawNine(vg, "fill", bx + 3, by + 3, fw, bh - 6)
-        DrawUtil.drawTextStroke(vg, logicalW * 0.5, by + bh * 2.4,
-            string.format("%d / %d", done, total),
-            math.floor(logicalH * 0.024), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            216, 201, 163, 2)
-    end
-
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.draw(vg, logicalW, logicalH)
+    elseif preload_.active then
+        DrawPreloadOverlay(vg, logicalW, logicalH)
     end
+    -- [LetterIntro] 开场覆盖必须在标题之后（非三行路径同样需要）
+    HorizonDrawIntroOverlay()
 
     nvgEndFrame(vg)
 end
@@ -2409,6 +2398,12 @@ end
 function HandleMouseButtonDownHorizon(eventType, eventData)
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
     if DarkTitleScreen.isOpen() then return end
+    -- [LetterIntro] 开场期也要记 pressValid，否则抬起被当成无效点击
+    if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then
+        pressValid = true
+        pressStartDX, pressStartDY = 0, 0
+        return
+    end
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()
@@ -2436,6 +2431,8 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
 end
 
 function HandleMouseMoveHorizon(eventType, eventData)
+    if DarkTitleScreen.isOpen() then return end
+    if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local pid, dx, dy = HorizonResolveMouse()
     if pid == 'none' then return end
     if pid == 'modal' then
@@ -2483,9 +2480,9 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if now - lastTapTime < MIN_TAP_INTERVAL then isTap = false
         else lastTapTime = now end
     end
-    -- [LetterIntro] 开场链输入：信件翻段 / 过场吞输入 / 情景对话推进
+    -- [LetterIntro] 开场链输入：信件任意释放即翻段（不依赖 isTap，避免 pressValid 丢失）
     if LetterIntro.isOpen() then
-        if isTap then LetterIntro.handleTap() end
+        LetterIntro.handleTap()
         return
     end
     if IntroCutscene.isActive() then
@@ -2644,6 +2641,7 @@ end
 function HandleMouseWheelHorizon(eventType, eventData)
     -- [DarkTitleScreen] 标题期吞掉滚轮
     if DarkTitleScreen.isOpen() then return end
+    if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local wheel = eventData["Wheel"]:GetInt()
 
     -- [三行并行] 装备袋战斗区覆盖层优先（全屏级）

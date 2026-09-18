@@ -763,7 +763,7 @@ local function drawUpperSlotContent(vg, tabName)
             local heroInfo = HeroConfig.get(heroId)
             local cardIdx = heroId or 1
             if imgHeroCards[cardIdx] and imgHeroCards[cardIdx] >= 0 then
-                drawImageCentered(vg, imgHeroCards[cardIdx], cx, cy, CARD_W, CARD_H, 1.0)
+                DrawUtil.drawImageCover(vg, imgHeroCards[cardIdx], cx, cy, CARD_W, CARD_H, 1.0)
             end
 
             -- 职业图标（卡片顶部）
@@ -1021,54 +1021,54 @@ end
 --- 初始化（加载图片资源）
 function BlacksmithPage.init(vg)
     -- 共享图片
-    imgBg       = nvgCreateImage(vg, "image/UI_TJP_CH_1.png", 0)
-    imgNameBg   = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
-    imgPlus     = nvgCreateImage(vg, "image/UI_ICON_TJP_JIA.png", 0)
-    imgLowerBg  = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
-    imgBtnBack  = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    imgTabBg    = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
-    imgArrow    = nvgCreateImage(vg, "image/UI_TJP_JIANTOU.png", 0)
-    imgEnhBtn   = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    imgGoldIcon = nvgCreateImage(vg, "image/UI_icon_JB.png", 0)
-    imgGoldQBg  = nvgCreateImage(vg, "image/UI_icon_ZBBJ_2.png", 0)
-    imgEssenceIcon = nvgCreateImage(vg, "image/UI_icon_JC.png", 0)
-    imgXlBefore  = nvgCreateImage(vg, "image/UI_TJP_XL_2.png", 0)
-    imgXlAfter   = nvgCreateImage(vg, "image/UI_TJP_XL_1.png", 0)
-    imgReplaceBtn = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
-    imgCheckmark = nvgCreateImage(vg, "image/UI_icon_GOU.png", 0)
-    imgLvlBadge  = nvgCreateImage(vg, "image/UI_JSJM_DJ.png", 0)
+    imgBg       = nvgCreateImage(vg, "image/界面底板/UI_TJP_CH_1.png", 0)
+    imgNameBg   = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
+    imgPlus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_TJP_JIA.png", 0)
+    imgLowerBg  = nvgCreateImage(vg, "image/界面底板/UI_TJP_1.png", 0)
+    imgBtnBack  = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
+    imgTabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
+    imgArrow    = nvgCreateImage(vg, "image/界面底板/UI_TJP_JIANTOU.png", 0)
+    imgEnhBtn   = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+    imgGoldQBg  = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_2.png", 0)
+    imgEssenceIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JC.png", 0)
+    imgXlBefore  = nvgCreateImage(vg, "image/界面底板/UI_TJP_XL_2.png", 0)
+    imgXlAfter   = nvgCreateImage(vg, "image/界面底板/UI_TJP_XL_1.png", 0)
+    imgReplaceBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    imgCheckmark = nvgCreateImage(vg, "image/货币道具/UI_icon_GOU.png", 0)
+    imgLvlBadge  = nvgCreateImage(vg, "image/界面底板/UI_JSJM_DJ.png", 0)
     -- 一键强化确认弹窗图片
-    imgEnhDlgBg    = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    imgEnhDlgMinus = nvgCreateImage(vg, "image/UI_AN_JIAN.png", 0)
-    imgEnhDlgPlus  = nvgCreateImage(vg, "image/UI_AN_JIA.png", 0)
+    imgEnhDlgBg    = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgEnhDlgMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
+    imgEnhDlgPlus  = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
     for i = 1, 6 do
-        imgQualityBg[i] = nvgCreateImage(vg, "image/UI_icon_ZBBJ_" .. i .. ".png", 0)
+        imgQualityBg[i] = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_" .. i .. ".png", 0)
     end
 
     -- 加载词缀等级图标
     local grades = { "D", "C", "B", "A", "S" }
     for _, g in ipairs(grades) do
-        imgGrade[g] = nvgCreateImage(vg, "image/ICON_CZBZ_" .. g .. ".png", 0)
+        imgGrade[g] = nvgCreateImage(vg, "image/通用图标/ICON_CZBZ_" .. g .. ".png", 0)
     end
 
     -- 编队卡片图片
     HeroAssetUtil.preloadCards(vg, imgHeroCards)
     for i = 1, 6 do
-        imgClassIcons[i] = nvgCreateImage(vg, "image/ICON_ZY_" .. i .. ".png", 0)
+        imgClassIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
-    imgDeployed     = nvgCreateImage(vg, "image/UI_JSJM_CZZ.png", 0)
-    imgLock         = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
-    imgPlusCard     = nvgCreateImage(vg, "image/UI_ICON_JIA.png", 0)
-    imgExpBarBg     = nvgCreateImage(vg, "image/UI_JSMB_JYT1.png", 0)
-    imgExpBarFill   = nvgCreateImage(vg, "image/UI_JSMB_JYT2.png", 0)
+    imgDeployed     = nvgCreateImage(vg, "image/界面底板/UI_JSJM_CZZ.png", 0)
+    imgLock         = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+    imgPlusCard     = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
+    imgExpBarBg     = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT1.png", 0)
+    imgExpBarFill   = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
 
     -- 装备槽位背景图
-    imgSlotBg.weapon    = nvgCreateImage(vg, "image/UI_TJP_ZBL_WQ.png", 0)
-    imgSlotBg.offhand   = nvgCreateImage(vg, "image/UI_TJP_ZBL_FS.png", 0)
-    imgSlotBg.armor     = nvgCreateImage(vg, "image/UI_TJP_ZBL_HJ.png", 0)
-    imgSlotBg.accessory = nvgCreateImage(vg, "image/UI_TJP_ZBL_SP.png", 0)
-    imgSlotSelected     = nvgCreateImage(vg, "image/UI_TJPXZTBBJ.png", 0)
+    imgSlotBg.weapon    = nvgCreateImage(vg, "image/界面底板/UI_TJP_ZBL_WQ.png", 0)
+    imgSlotBg.offhand   = nvgCreateImage(vg, "image/界面底板/UI_TJP_ZBL_FS.png", 0)
+    imgSlotBg.armor     = nvgCreateImage(vg, "image/界面底板/UI_TJP_ZBL_HJ.png", 0)
+    imgSlotBg.accessory = nvgCreateImage(vg, "image/界面底板/UI_TJP_ZBL_SP.png", 0)
+    imgSlotSelected     = nvgCreateImage(vg, "image/界面底板/UI_TJPXZTBBJ.png", 0)
 
     -- 装备背包初始化
     EquipmentBag.init(vg)
@@ -1430,8 +1430,9 @@ function BlacksmithPage.handleInput(dx, dy)
         return BlacksmithEnhance.handleDialogInput(dx, dy)
     end
 
-    -- 返回按钮
-    if hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
+    -- 返回按钮（三行模式由中缝层接管）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
         BlacksmithPage.close()
         return true
     end
@@ -1703,8 +1704,11 @@ function BlacksmithPage.draw(vg)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- 8. 返回按钮
-    DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
+    -- 8. 返回按钮（三行模式由中缝层绘制）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK then
+        DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
+    end
 
     -- 9. 页面选项滑块背景
     drawImageCentered(vg, imgTabBg, TAB_BG_CX, TAB_BG_CY, TAB_BG_W, TAB_BG_H, 1.0)

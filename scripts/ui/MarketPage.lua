@@ -100,165 +100,165 @@ local SHOP_ITEMS = {
         id = 1, name = "扫荡券", quality = 4, rewardCount = 1,
         restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
-        icon = "image/UI_icon_SDQ.png",
-        costIcon = "image/UI_icon_TQD_X.png",
+        icon = "image/货币道具/UI_icon_SDQ.png",
+        costIcon = "image/货币道具/UI_icon_TQD_X.png",
     },
     {
         id = 2, name = "冒险招募券", quality = 4, rewardCount = 1,
         restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
-        icon = "image/UI_icon_ZMQ_1.png",
-        costIcon = "image/UI_icon_TQD_X.png",
+        icon = "image/货币道具/UI_icon_ZMQ_1.png",
+        costIcon = "image/货币道具/UI_icon_TQD_X.png",
     },
     {
         id = 3, name = "钻石", quality = 5, rewardCount = 240,
         restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
-        icon = "image/UI_icon_SJ.png",
-        costIcon = "image/UI_icon_TQD_X.png",
+        icon = "image/货币道具/UI_icon_SJ.png",
+        costIcon = "image/货币道具/UI_icon_TQD_X.png",
     },
     {
         id = 4, name = "随机卷轴", quality = 3, rewardCount = 20,
         restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
-        icon = "image/UI_icon_JZ_SJ.png",
-        costIcon = "image/UI_icon_TQD_X.png",
+        icon = "image/货币道具/UI_icon_JZ_SJ.png",
+        costIcon = "image/货币道具/UI_icon_TQD_X.png",
     },
     {
         id = 5, name = "加速卡", quality = 5, rewardCount = 1,
         restockType = "daily", limitCount = -1,
         currency = "privilege", price = 10,
-        icon = "image/UI_icon_JSK.png",
-        costIcon = "image/UI_icon_TQD_X.png",
+        icon = "image/货币道具/UI_icon_JSK.png",
+        costIcon = "image/货币道具/UI_icon_TQD_X.png",
     },
     {
         id = 6, name = "随机优质遗物", quality = 2, rewardCount = 1,
         restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
-        icon = "image/ICON_SJYW.png",
-        costIcon = "image/UI_icon_TQD_X.png",
+        icon = "image/货币道具/ICON_SJYW.png",
+        costIcon = "image/货币道具/UI_icon_TQD_X.png",
     },
     {
         id = 7, name = "奥术粉尘", quality = 3, rewardCount = 288,
         restockType = "daily", limitCount = -1,
         currency = "privilege", price = 1,
-        icon = "image/UI_icon_ASFC.png",
-        costIcon = "image/UI_icon_TQD_X.png",
+        icon = "image/货币道具/UI_icon_ASFC.png",
+        costIcon = "image/货币道具/UI_icon_TQD_X.png",
     },
     {
         id = 19, name = "星辉招募券", quality = 6, rewardCount = 1,
         restockType = "daily", limitCount = -1,
         currency = "privilege", price = 4,
-        icon = "image/UI_icon_ZMQ_2.png",
-        costIcon = "image/UI_icon_TQD_X.png",
+        icon = "image/货币道具/UI_icon_ZMQ_2.png",
+        costIcon = "image/货币道具/UI_icon_TQD_X.png",
     },
     {
         id = 23, name = "神圣石", quality = 6, rewardCount = 1,
         restockType = "daily", limitCount = -1,
         currency = "privilege", price = 5,
-        icon = "image/UI_icon_SSS.png",
-        costIcon = "image/UI_icon_TQD_X.png",
+        icon = "image/货币道具/UI_icon_SSS.png",
+        costIcon = "image/货币道具/UI_icon_TQD_X.png",
     },
     -- ===== 钻石商品（每日刷新，40% 折扣价=====
     {
         id = 8, name = "冒险招募券", quality = 5, rewardCount = 1,
         restockType = "daily", limitCount = -1,
         currency = "diamond", price = 180, discount = 0.4,
-        icon = "image/UI_icon_ZMQ_1.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_ZMQ_1.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 9, name = "洗练石", quality = 3, rewardCount = 2,
         restockType = "daily", limitCount = -1,
         currency = "diamond", price = 180, discount = 0.4,
-        icon = "image/UI_icon_QH_1.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_QH_1.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 10, name = "随机卷轴", quality = 3, rewardCount = 10,
         restockType = "daily", limitCount = -1,
         currency = "diamond", price = 180, discount = 0.4,
-        icon = "image/UI_icon_JZ_SJ.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_JZ_SJ.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 11, name = "点金石", quality = 5, rewardCount = 1,
         restockType = "daily", limitCount = -1,
         currency = "diamond", price = 500, discount = 0.4,
-        icon = "image/UI_icon_QH_3.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_QH_3.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 21, name = "腐化石", quality = 5, rewardCount = 1,
         restockType = "daily", limitCount = -1,
         currency = "diamond", price = 500, discount = 0.4,
-        icon = "image/UI_icon_FHS.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_FHS.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     -- ===== 钻石商品（永久，不限购） =====
     {
         id = 12, name = "冒险招募券", quality = 5, rewardCount = 1,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 180,
-        icon = "image/UI_icon_ZMQ_1.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_ZMQ_1.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 13, name = "洗练石", quality = 3, rewardCount = 2,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 180,
-        icon = "image/UI_icon_QH_1.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_QH_1.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 14, name = "点金石", quality = 5, rewardCount = 1,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 500,
-        icon = "image/UI_icon_QH_3.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_QH_3.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 22, name = "腐化石", quality = 5, rewardCount = 1,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 500,
-        icon = "image/UI_icon_FHS.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_FHS.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 15, name = "奥术粉尘", quality = 3, rewardCount = 288,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 180,
-        icon = "image/UI_icon_ASFC.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_ASFC.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 16, name = "金币", quality = 1, rewardCount = 6666,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 188,
-        icon = "image/UI_icon_JB.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_JB.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 17, name = "精粹", quality = 2, rewardCount = 666,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 188,
-        icon = "image/UI_icon_JC.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_JC.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     -- ===== 星辉招募券（每日刷新） =====
     {
         id = 18, name = "星辉招募券", quality = 6, rewardCount = 1,
         restockType = "daily", limitCount = -1,
         currency = "diamond", price = 900, discount = 0.8,
-        icon = "image/UI_icon_ZMQ_2.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_ZMQ_2.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 20, name = "黄金钥匙", quality = 6, rewardCount = 1,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 600,
-        icon = "image/UI_icon_HJYS.png",
-        costIcon = "image/UI_icon_SJ_X.png",
+        icon = "image/货币道具/UI_icon_HJYS.png",
+        costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
 }
 
@@ -1214,12 +1214,12 @@ end
 
 -- 观看广告累计次数奖励梯度（来源：建筑-市场.txt 市场-特权配置表
 local PRIVILEGE_REWARDS = {
-    { threshold = 5,  quality = 5, icon = "image/UI_icon_ZMQ_1.png", amount = 5,    label = "冒险招募券" },
-    { threshold = 10, quality = 5, icon = "image/UI_icon_SJ.png",    amount = 1000, label = "钻石" },
-    { threshold = 15, quality = 5, icon = "image/UI_icon_SJ.png",    amount = 2000, label = "钻石" },
-    { threshold = 20, quality = 6, icon = "image/UI_icon_HJYS.png",  amount = 10,   label = "黄金钥匙" },
-    { threshold = 25, quality = 6, icon = "image/UI_icon_ZMQ_2.png", amount = 10,   label = "星辉招募券" },
-    { threshold = 30, quality = 2, icon = "image/UI_icon_JC.png", amount = "大量", label = "大量精粹" },
+    { threshold = 5,  quality = 5, icon = "image/货币道具/UI_icon_ZMQ_1.png", amount = 5,    label = "冒险招募券" },
+    { threshold = 10, quality = 5, icon = "image/货币道具/UI_icon_SJ.png",    amount = 1000, label = "钻石" },
+    { threshold = 15, quality = 5, icon = "image/货币道具/UI_icon_SJ.png",    amount = 2000, label = "钻石" },
+    { threshold = 20, quality = 6, icon = "image/货币道具/UI_icon_HJYS.png",  amount = 10,   label = "黄金钥匙" },
+    { threshold = 25, quality = 6, icon = "image/货币道具/UI_icon_ZMQ_2.png", amount = 10,   label = "星辉招募券" },
+    { threshold = 30, quality = 2, icon = "image/货币道具/UI_icon_JC.png", amount = "大量", label = "大量精粹" },
 }
 
 -- 奖励图标预加载句柄（在 init 时填充）
@@ -1616,55 +1616,55 @@ end
 -- ======================== Public API ========================
 
 function MarketPage.init(vg)
-    img.bg       = nvgCreateImage(vg, "image/UI_SCBJ.png", 0)
-    img.nameBg   = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
-    img.lowerBg  = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
-    img.titleDeco = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
-    img.gold     = nvgCreateImage(vg, "image/UI_icon_JB_X.png", 0)
-    img.gem      = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
-    img.privilege = nvgCreateImage(vg, "image/UI_icon_TQD_X.png", 0)
+    img.bg       = nvgCreateImage(vg, "image/界面底板/UI_SCBJ.png", 0)
+    img.nameBg   = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
+    img.lowerBg  = nvgCreateImage(vg, "image/界面底板/UI_TJP_1.png", 0)
+    img.titleDeco = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
+    img.gold     = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
+    img.gem      = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
+    img.privilege = nvgCreateImage(vg, "image/货币道具/UI_icon_TQD_X.png", 0)
 
-    img.btnBack  = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    img.tabBg    = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
-    img.slider   = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
+    img.btnBack  = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
+    img.tabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
+    img.slider   = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
     -- 商品卡片
     for i = 1, 6 do
-        img.cardBg[i] = nvgCreateImage(vg, "image/UI_SDICONBJ_" .. i .. ".png", 0)
+        img.cardBg[i] = nvgCreateImage(vg, "image/界面底板/UI_SDICONBJ_" .. i .. ".png", 0)
     end
-    img.buyBtn = nvgCreateImage(vg, "image/UI_SD_AN.png", 0)
+    img.buyBtn = nvgCreateImage(vg, "image/界面底板/UI_SD_AN.png", 0)
     for idx, item in ipairs(SHOP_ITEMS) do
         img.itemIcons[idx] = nvgCreateImage(vg, item.icon, 0)
         img.costIcons[idx] = nvgCreateImage(vg, item.costIcon, 0)
     end
 
     -- 弹窗
-    img.dialogBg = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    img.buyBtnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
-    img.btnMinus = nvgCreateImage(vg, "image/UI_AN_JIAN.png", 0)
-    img.btnPlus = nvgCreateImage(vg, "image/UI_AN_JIA.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_SD_AN.png 贴图加载已移除（矢量绘制替代）
-    img.diamondIcon = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
-    img.privilegeIcon = nvgCreateImage(vg, "image/UI_icon_TQD_X.png", 0)
+    img.dialogBg = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    img.buyBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    img.btnMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
+    img.btnPlus = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/UI_SD_AN.png 贴图加载已移除（矢量绘制替代）
+    img.diamondIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
+    img.privilegeIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TQD_X.png", 0)
     for i = 1, 6 do
     -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
     end
 
     -- 特权图片
-    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    img.privProgBg      = nvgCreateImage(vg, "image/UI_TQ_JDY2.png", 0)
-    img.privProgFill    = nvgCreateImage(vg, "image/UI_TQ_JDY1.png", 0)
-    img.privDotActive   = nvgCreateImage(vg, "image/UI_TQ_1.png", 0)
-    img.privDotInactive = nvgCreateImage(vg, "image/UI_TQ_2.png", 0)
-    img.privRewardBg    = nvgCreateImage(vg, "image/UI_TQ_3.png", 0)
-    img.privClaimBtn    = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    img.privPointIcon   = nvgCreateImage(vg, "image/UI_icon_TQD.png", 0)   -- 特权点大图标
-    img.privAdBtn       = nvgCreateImage(vg, "image/UI_AN_DA.png", 0)      -- 观看广告按钮背景
-    img.collectionChestBg = nvgCreateImage(vg, "image/UI_SCDC_KC1.png", 0)
-    img.collectionDrawBtn = nvgCreateImage(vg, "image/UI_SCDC_AN.png", 0)
-    img.goldenKey = nvgCreateImage(vg, "image/UI_icon_HJYS.png", 0)
-    img.diamondBig = nvgCreateImage(vg, "image/UI_icon_SJ.png", 0)
-    img.confirmArrow = nvgCreateImage(vg, "image/UI_TJP_JIANTOU.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
+    img.privProgBg      = nvgCreateImage(vg, "image/进度条/UI_TQ_JDY2.png", 0)
+    img.privProgFill    = nvgCreateImage(vg, "image/进度条/UI_TQ_JDY1.png", 0)
+    img.privDotActive   = nvgCreateImage(vg, "image/界面底板/UI_TQ_1.png", 0)
+    img.privDotInactive = nvgCreateImage(vg, "image/界面底板/UI_TQ_2.png", 0)
+    img.privRewardBg    = nvgCreateImage(vg, "image/界面底板/UI_TQ_3.png", 0)
+    img.privClaimBtn    = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    img.privPointIcon   = nvgCreateImage(vg, "image/货币道具/UI_icon_TQD.png", 0)   -- 特权点大图标
+    img.privAdBtn       = nvgCreateImage(vg, "image/按钮/UI_AN_DA.png", 0)      -- 观看广告按钮背景
+    img.collectionChestBg = nvgCreateImage(vg, "image/界面底板/UI_SCDC_KC1.png", 0)
+    img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/UI_SCDC_AN.png", 0)
+    img.goldenKey = nvgCreateImage(vg, "image/货币道具/UI_icon_HJYS.png", 0)
+    img.diamondBig = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
+    img.confirmArrow = nvgCreateImage(vg, "image/界面底板/UI_TJP_JIANTOU.png", 0)
     for i, reward in ipairs(PRIVILEGE_REWARDS) do
         privRewardIcons[i] = nvgCreateImage(vg, reward.icon, 0)
     end
@@ -1944,9 +1944,12 @@ function MarketPage.draw(vg)
     end
 
     -- ========== 返回按钮 & Tab 栏==========
-    local _sb = BF.begin(vg, "market_back", TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H)
-    DrawUtil.drawBackChevron(vg, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, "left")
-    BF.finish(vg, _sb)
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK then
+        local _sb = BF.begin(vg, "market_back", TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H)
+        DrawUtil.drawBackChevron(vg, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, "left")
+        BF.finish(vg, _sb)
+    end
     drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
 
     -- 滑块动画
@@ -2121,8 +2124,9 @@ function MarketPage.handleInput(dx, dy)
         return true
     end
 
-    -- 返回按钮
-    if hitTest(dx, dy, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H) then
+    -- 返回按钮（三行模式由中缝层接管）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK and hitTest(dx, dy, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H) then
         BF.trigger("market_back")
         MarketPage.close(); return true
     end

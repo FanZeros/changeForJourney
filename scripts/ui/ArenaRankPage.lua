@@ -192,14 +192,14 @@ end
 -- ======================== 初始化 ========================
 
 function RankPage.init(vg)
-    img.bg = nvgCreateImage(vg, "image/UI_PHB_BJ.png", 0)
-    img.listBg = nvgCreateImage(vg, "image/UI_PHB_1.png", 0)
+    img.bg = nvgCreateImage(vg, "image/界面底板/UI_PHB_BJ.png", 0)
+    img.listBg = nvgCreateImage(vg, "image/界面底板/UI_PHB_1.png", 0)
     for i = 1, 3 do
-        img.top[i]    = nvgCreateImage(vg, "image/UI_PHBTOP" .. i .. ".png", 0)
-        img.trophy[i] = nvgCreateImage(vg, "image/ICON_PHB_TOP" .. i .. ".png", 0)
+        img.top[i]    = nvgCreateImage(vg, "image/界面底板/UI_PHBTOP" .. i .. ".png", 0)
+        img.trophy[i] = nvgCreateImage(vg, "image/通用图标/ICON_PHB_TOP" .. i .. ".png", 0)
     end
     for i = 1, 8 do
-        img.tier[i] = nvgCreateImage(vg, "image/ICON_DW_" .. i .. ".png", 0)
+        img.tier[i] = nvgCreateImage(vg, "image/段位图标/ICON_DW_" .. i .. ".png", 0)
     end
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)
     AvatarFrameUtil.preloadFrames(vg, img.frameIcons)

@@ -477,18 +477,18 @@ function DungeonScene.init(vg)
     imgMapGoldMine   = nvgCreateImage(vg, "image/关卡地图/MAP_FB1.png", 0)
     imgMapAncientRuin = nvgCreateImage(vg, "image/关卡地图/MAP_FB2.png", 0)
     imgMapBabelTower = nvgCreateImage(vg, "image/关卡地图/MAP_FB3.png", 0)
-    imgShadow        = nvgCreateImage(vg, "image/UI_YWJM_MAPYY.png", 0)
-    imgRetreatBtn    = nvgCreateImage(vg, "image/UI_AN_HONG.png", 0)
-    imgSpeedIcon     = nvgCreateImage(vg, "image/UI_ICON_kong.png", 0)
-    imgEnemyTag      = nvgCreateImage(vg, "image/ICON_ZY_XG.png", 0)
+    imgShadow        = nvgCreateImage(vg, "image/界面底板/UI_YWJM_MAPYY.png", 0)
+    imgRetreatBtn    = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
+    imgSpeedIcon     = nvgCreateImage(vg, "image/通用图标/UI_ICON_kong.png", 0)
+    imgEnemyTag      = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
     for i = 1, 6 do
-        imgAllyTags[i] = nvgCreateImage(vg, "image/ICON_ZY_" .. i .. ".png", 0)
+        imgAllyTags[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
 
     -- 确认弹窗图片
-    imgConfirmBg = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    imgBtnRed    = nvgCreateImage(vg, "image/UI_AN_FANG_hong.png", 0)
-    imgBtnGray   = nvgCreateImage(vg, "image/UI_AN_FANG.png", 0)
+    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgBtnRed    = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_hong.png", 0)
+    imgBtnGray   = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
     BattleEffects.init(vg)
     ProjectileSystem.init(vg)
     BattleResultPanel.init(vg)
@@ -878,18 +878,18 @@ function DungeonScene.update(dt)
                     if srvResult.relics and #srvResult.relics > 0 then
                         -- 逐个展示已随机出结果的遗物（带具体类型图标和品质）
                         local RELIC_ICONS = {
-                            [1] = "image/ICON_YWX_GUI.png",   -- 岩龟
-                            [2] = "image/ICON_YWX_SHE.png",   -- 毒蛇
-                            [3] = "image/ICON_YWX_LU.png",    -- 白鹿
-                            [4] = "image/ICON_YWX_LANG.png",  -- 灰狼
-                            [5] = "image/ICON_YWX_YING.png",  -- 猎鹰
+                            [1] = "image/遗物图标/ICON_YWX_GUI.png",   -- 岩龟
+                            [2] = "image/遗物图标/ICON_YWX_SHE.png",   -- 毒蛇
+                            [3] = "image/遗物图标/ICON_YWX_LU.png",    -- 白鹿
+                            [4] = "image/遗物图标/ICON_YWX_LANG.png",  -- 灰狼
+                            [5] = "image/遗物图标/ICON_YWX_YING.png",  -- 猎鹰
                         }
                         for _, r in ipairs(srvResult.relics) do
                             rewards[#rewards + 1] = {
                                 type     = "relic",
                                 amount   = 1,
                                 quality  = r.quality or 4,
-                                iconPath = RELIC_ICONS[r.type] or "image/ICON_SJYW.png",
+                                iconPath = RELIC_ICONS[r.type] or "image/货币道具/ICON_SJYW.png",
                             }
                         end
                     end

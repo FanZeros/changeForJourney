@@ -224,9 +224,9 @@ end
 --- 初始化（加载图片资源）
 ---@param vg any NanoVG 上下文
 function EquipmentBag.init(vg)
-    imgBagBg = nvgCreateImage(vg, "image/UI_EJBB.png", 0)
-    imgIconUp = nvgCreateImage(vg, "image/ICON_UP.png", 0)
-    imgLock = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
+    imgBagBg = nvgCreateImage(vg, "image/界面底板/UI_EJBB.png", 0)
+    imgIconUp = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+    imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
 
     -- 加载角色头像角标
     HeroAssetUtil.preloadIcons(vg, imgHeroIcons)

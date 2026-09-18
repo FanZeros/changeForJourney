@@ -11,6 +11,7 @@ local ExpTable = require("config.ExpTable")
 local TutorialManager = require("systems.TutorialManager")
 
 local drawImageCentered  = DrawUtil.drawImageCentered
+local drawImageCover     = DrawUtil.drawImageCover
 local drawTextStroke     = DrawUtil.drawTextStroke
 
 local M = {}
@@ -192,24 +193,24 @@ end
 -- ======================== 图片初始化 ========================
 
 function M.initImages(vg)
-    img.panelBg    = nvgCreateImage(vg, "image/UI_JSJM_bj.png", 0)
-    img.listBg     = nvgCreateImage(vg, "image/UI_JSJM_0.png", 0)
-    img.deployed   = nvgCreateImage(vg, "image/UI_JSJM_CZZ.png", 0)
-    img.lock       = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
-    img.plus       = nvgCreateImage(vg, "image/UI_ICON_JIA.png", 0)
-    img.power      = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
-    img.lvlBadge   = nvgCreateImage(vg, "image/UI_JSJM_DJ.png", 0)
-    img.expBarBg   = nvgCreateImage(vg, "image/UI_JSMB_JYT1.png", 0)
-    img.expBarFill = nvgCreateImage(vg, "image/UI_JSMB_JYT2.png", 0)
-    img.iconUp     = nvgCreateImage(vg, "image/ICON_UP.png", 0)
-    img.shardSp    = nvgCreateImage(vg, "image/ICON_SP.png", 0)
+    img.panelBg    = nvgCreateImage(vg, "image/界面底板/UI_JSJM_bj.png", 0)
+    img.listBg     = nvgCreateImage(vg, "image/界面底板/UI_JSJM_0.png", 0)
+    img.deployed   = nvgCreateImage(vg, "image/界面底板/UI_JSJM_CZZ.png", 0)
+    img.lock       = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+    img.plus       = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
+    img.power      = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
+    img.lvlBadge   = nvgCreateImage(vg, "image/界面底板/UI_JSJM_DJ.png", 0)
+    img.expBarBg   = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT1.png", 0)
+    img.expBarFill = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
+    img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+    img.shardSp    = nvgCreateImage(vg, "image/货币道具/ICON_SP.png", 0)
 
     -- 英雄卡片背景
     HeroAssetUtil.preloadCards(vg, img.heroCards)
 
     -- 职业图标 (1~6)
     for i = 1, 6 do
-        img.classIcons[i] = nvgCreateImage(vg, "image/ICON_ZY_" .. i .. ".png", 0)
+        img.classIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
 end
 
@@ -443,7 +444,7 @@ function M.draw(vg, scrollY)
 
             -- a) 角色卡片背景
             local cardImg = img.heroCards[heroId] or img.heroCards[1]
-            drawImageCentered(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
+            drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
 
             -- b) 职业标志图标（偏移与战斗界面一致）
             local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -609,7 +610,7 @@ function M.draw(vg, scrollY)
         -- a) 角色卡片背景
         local cardImg = img.heroCards[entry.heroId] or img.heroCards[1]
         local isOwned = entry.owned
-        drawImageCentered(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
+        drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
 
         -- a2) 未拥有角色遮罩：纯黑 50% 透明度
         if not isOwned then
@@ -783,7 +784,7 @@ function M.draw(vg, scrollY)
     if dragState.active and dragState.heroId then
         local cardImg = img.heroCards[dragState.heroId] or img.heroCards[1]
         -- 半透明浮动卡片
-        drawImageCentered(vg, cardImg, dragState.cx, dragState.cy, CARD_W * 1.05, CARD_H * 1.05, 0.8)
+        drawImageCover(vg, cardImg, dragState.cx, dragState.cy, CARD_W * 1.05, CARD_H * 1.05, 0.8)
         -- 高亮边框
         nvgBeginPath(vg)
         nvgRoundedRect(vg, dragState.cx - CARD_W * 0.525, dragState.cy - CARD_H * 0.525,

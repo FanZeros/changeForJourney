@@ -280,7 +280,7 @@ function CharacterDetail.init(vg)
     -- 装备图标/品质背景缓存已迁移至 ImageCache 共享模块
     CharacterDetail._ImageCache.init(vg)
     -- imgIconUp 挂在模块表上，供 Draw 通过 CharacterDetailRef 访问
-    CharacterDetail._imgIconUp = nvgCreateImage(vg, "image/ICON_UP.png", 0)
+    CharacterDetail._imgIconUp = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     -- 委托 Draw 子模块加载所有详情界面图片
     Draw.initImages(vg)
     -- 初始化觉醒面板图片
@@ -493,7 +493,8 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- 返回按钮
+    -- 返回按钮（三行模式由中缝层接管）
+    ---@diagnostic disable-next-line: undefined-global
     if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
         CharacterDetail.close()
         return true

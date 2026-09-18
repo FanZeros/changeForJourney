@@ -11,7 +11,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 
 ROOT = '/workspace'
-BASE_PATH = os.path.join(ROOT, 'assets/image/底板B_深褐古卷_20260912223431.png')
+BASE_PATH = os.path.join(ROOT, 'assets/image/_drafts/底板B_深褐古卷_20260912223431.png')
 LIHUI_DIR = os.path.join(ROOT, 'assets/image/角色立绘')
 OUT_DIR = os.path.join(ROOT, 'assets/image/角色卡牌')
 

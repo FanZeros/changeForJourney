@@ -282,7 +282,7 @@ local function calcHeroPower(heroId, partySlot)
     local ownData = ownedSet[heroId]
     local advBranch = ownData and ownData.advBranch or nil
     local awakening = ownData and ownData.awakening or nil
-    local hero = HC.createHero(heroId, level, advBranch, awakening)
+    local hero = HC.createHero(heroId, level, advBranch, awakening, ownData and ownData.extraTalent)
     if not hero or not hero.attrs then return 0 end
     local a = hero.attrs
 
@@ -1170,6 +1170,7 @@ function CharacterPanel.addHero(heroId, level)
         shards    = shardMap[heroId] or 0,
         advBranch = nil,
         awakening = nil,
+        extraTalent = require("systems.ExtraTalentSystem").normalize(nil),
     }
     if not shardMap[heroId] then
         shardMap[heroId] = ownedSet[heroId].shards
@@ -1230,6 +1231,26 @@ end
 ---@return table|nil
 function CharacterPanel.getOwnedHero(heroId)
     return ownedSet[heroId]
+end
+
+--- 写入追加技永久层（本地 ownedSet + Dispatcher 镜像，不触发整表重建）
+---@param heroId number
+---@param extra table
+function CharacterPanel.patchExtraTalent(heroId, extra)
+    heroId = tonumber(heroId)
+    if not heroId then return end
+    extra = require("systems.ExtraTalentSystem").normalize(extra)
+    local owned = ownedSet[heroId]
+    if owned then
+        owned.extraTalent = extra
+    end
+    local disp = ClientDispatcher.get("heroes")
+    if disp and disp.roster then
+        local hd = disp.roster[heroId] or disp.roster[tostring(heroId)]
+        if hd then
+            hd.extraTalent = extra
+        end
+    end
 end
 
 --- 获取某英雄的重复获得次数（旧接口，兼容保留）
@@ -1309,7 +1330,7 @@ function CharacterPanel.getDeployedTeam(teamIdx)
             local ownData = ownedSet[slot.heroId]
             local advBranch = ownData and ownData.advBranch or nil
             local awakening = ownData and ownData.awakening or nil
-            local unit = HC.createHero(slot.heroId, getHeroLevel(slot.heroId), advBranch, awakening)
+            local unit = HC.createHero(slot.heroId, getHeroLevel(slot.heroId), advBranch, awakening, ownData and ownData.extraTalent)
             if unit then
                 -- 应用已穿戴装备属性
                 if unit.attrs then
@@ -1550,6 +1571,7 @@ function CharacterPanel.setHeroesData(data)
                     awakening = heroData.awakening,
                     dupeCount = heroData.dupeCount or 0,
                     shards = heroData.shards or 0,
+                    extraTalent = require("systems.ExtraTalentSystem").normalize(heroData.extraTalent),
                 }
             end
         end

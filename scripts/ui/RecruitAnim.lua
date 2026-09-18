@@ -223,10 +223,10 @@ end
 ---@param vg any NanoVG 上下文
 function RecruitAnim.init(vg)
     cachedVg = vg
-    img.resultBg = nvgCreateImage(vg, "image/UI_XKJM.png", 0)
-    img.glowSR  = nvgCreateImage(vg, "image/UI_PZG_SR.png", 0)
-    img.glowSSR = nvgCreateImage(vg, "image/UI_PZG_SSR.png", 0)
-    img.glowUR  = nvgCreateImage(vg, "image/UI_PZG_UR.png", 0)
+    img.resultBg = nvgCreateImage(vg, "image/界面底板/UI_XKJM.png", 0)
+    img.glowSR  = nvgCreateImage(vg, "image/品质框/UI_PZG_SR.png", 0)
+    img.glowSSR = nvgCreateImage(vg, "image/品质框/UI_PZG_SSR.png", 0)
+    img.glowUR  = nvgCreateImage(vg, "image/品质框/UI_PZG_UR.png", 0)
 
     -- [暗黑化 P2-A] 卡底 KP_TY_N~UR 改由 drawCardBg 矢量绘制，贴图加载已移除
     if img.glowUR < 0 then
@@ -234,13 +234,13 @@ function RecruitAnim.init(vg)
         print("[RecruitAnim] UI_PZG_UR missing, fallback to SSR glow")
     end
     for _, b in ipairs({ "R", "SR", "SSR", "UR" }) do
-        img.qualityBadge[b] = nvgCreateImage(vg, "image/UI_PZBZ_" .. b .. ".png", 0)
+        img.qualityBadge[b] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_" .. b .. ".png", 0)
     end
     -- [暗黑化 P2-A] 资源图标底 UI_icon_ZBBJ_1~6 改由 DarkIcon.drawQualityBg 绘制，贴图加载已移除
     for i = 1, 6 do
-        img.classIcons[i] = nvgCreateImage(vg, "image/ICON_ZY_" .. i .. ".png", 0)
+        img.classIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
-    img.shardIcon = nvgCreateImage(vg, "image/ICON_SP.png", 0)
+    img.shardIcon = nvgCreateImage(vg, "image/货币道具/ICON_SP.png", 0)
     print("[RecruitAnim] init OK")
 end
 
@@ -483,7 +483,7 @@ local function drawDupeToShardCard(vg, cx, cy, item, alpha)
     -- 正常英雄卡
     local cardImg = getHeroCardImage(vg, heroId)
     drawCardBg(vg, qTag, cx, cy, CARD_W, CARD_H, alpha)
-    drawImageCentered(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
+    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
 
     -- 品质角标
     local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
@@ -535,7 +535,7 @@ local function drawDecomposeCard(vg, cx, cy, item, alpha)
     local bgImg   = img.cardBg[bgTag] or img.cardBg["SSR"]
     local cardImg = getHeroCardImage(vg, heroId)
     drawImageCentered(vg, bgImg, cx, cy, CARD_W, CARD_H, alpha)
-    drawImageCentered(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
+    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
 
     -- 品质角标
     local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
@@ -585,7 +585,7 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
 
     local cardImg = getHeroCardImage(vg, heroId)
     drawCardBg(vg, qTag, cx, cy, CARD_W, CARD_H, alpha)
-    drawImageCentered(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
+    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
 
     local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
     if badgeImg and badgeImg >= 0 then

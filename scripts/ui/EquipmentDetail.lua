@@ -857,19 +857,19 @@ end
 ---@param vg any NanoVG 上下文
 function EquipmentDetail.init(vg)
     for i = 1, 6 do
-        imgBg[i] = nvgCreateImage(vg, "image/UI_ZBTS_" .. i .. ".png", 0)
+        imgBg[i] = nvgCreateImage(vg, "image/品质框/UI_ZBTS_" .. i .. ".png", 0)
     end
-    imgPowerIcon = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
-    imgArrowUp   = nvgCreateImage(vg, "image/ICON_UP.png", 0)
-    imgArrowDown = nvgCreateImage(vg, "image/ICON_down.png", 0)
-    imgBtnGreen  = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    imgBtnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
-    imgBtnRed    = nvgCreateImage(vg, "image/UI_AN_HONG.png", 0)
-    imgLock      = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
+    imgPowerIcon = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
+    imgArrowUp   = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+    imgArrowDown = nvgCreateImage(vg, "image/通用图标/ICON_down.png", 0)
+    imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    imgBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    imgBtnRed    = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
+    imgLock      = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
     ImageCache.init(vg)
 
     for _, key in ipairs(AFFIX_BADGE_KEY) do
-        imgAffixBadge[key] = nvgCreateImage(vg, "image/ICON_CZBZ_" .. key .. ".png", 0)
+        imgAffixBadge[key] = nvgCreateImage(vg, "image/通用图标/ICON_CZBZ_" .. key .. ".png", 0)
     end
 
     print("[EquipmentDetail] init OK")

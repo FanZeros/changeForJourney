@@ -475,7 +475,7 @@ end
 ---@return string 背景框资源路径
 function EquipmentConfig.getQualityBgPath(quality)
     local q = math.min(quality or 1, 6)
-    return "image/UI_icon_ZBBJ_" .. tostring(q) .. ".png"
+    return "image/品质框/UI_icon_ZBBJ_" .. tostring(q) .. ".png"
 end
 
 return EquipmentConfig

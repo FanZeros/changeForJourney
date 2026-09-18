@@ -6,8 +6,8 @@
 -- 背景：竖屏 StartScreen（1080×2400 视频标题）在横屏三联布局下被
 --       H_skipDone/skipForReconnect 跳过，导致 H5 无标题瞬间。
 --       本模块以横屏原生比例补上标题仪式感，素材全部取自本地 workspace。
--- 素材：image/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
---       image/LOGO终焉之门_透明版.png（1920×1080 透明 LOGO，与背景同构图对位）
+-- 素材：image/界面底板/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
+--       image/界面底板/LOGO终焉之门_透明版.png（1920×1080 透明 LOGO，与背景同构图对位）
 -- 接入：Client.lua / Standalone.lua 的 HORIZON 渲染与输入路径（见各文件标记
 --       [DarkTitleScreen]）。
 -- ============================================================================
@@ -20,10 +20,11 @@ local isOpen_   = false
 local timer_    = 0      -- 打开以来的累计时间（驱动动画）
 local fadeOut_  = false  -- 是否正在淡出
 local fadeA_    = 1.0    -- 淡出透明度 1→0
-local imgLogo_  = -1     -- image/LOGO终焉之门_透明版.png（1920×1080 透明画布）
-local imgGate_  = -1     -- image/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
+local imgLogo_  = -1     -- image/界面底板/LOGO终焉之门_透明版.png（1920×1080 透明画布）
+local imgGate_  = -1     -- image/界面底板/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
 
 local FADE_TIME = 0.55   -- 淡出时长（秒）
+local ready_    = true   -- 资源未就绪时锁点击，避免空背景进游戏
 
 -- 暗黑魔塔色板（与 DarkIcon/UI 暗黑化一致）
 local C_BG_TOP    = {  6,  6, 10 }
@@ -38,13 +39,13 @@ local C_GOLD      = { 216, 201, 163 }   -- 骨金（提示文字/角标）
 function DarkTitleScreen.init(vg)
     vg_ = vg
     if imgLogo_ < 0 then
-        imgLogo_ = nvgCreateImage(vg, "image/LOGO终焉之门_透明版.png", 0)
+        imgLogo_ = nvgCreateImage(vg, "image/界面底板/LOGO终焉之门_透明版.png", 0)
         if imgLogo_ < 0 then
             print("[DarkTitleScreen] WARN: LOGO终焉之门_透明版.png load failed")
         end
     end
     if imgGate_ < 0 then
-        imgGate_ = nvgCreateImage(vg, "image/UI_TITLE_BG_GATE.png", 0)
+        imgGate_ = nvgCreateImage(vg, "image/界面底板/UI_TITLE_BG_GATE.png", 0)
     end
 end
 
@@ -62,12 +63,24 @@ function DarkTitleScreen.isOpen()
     return isOpen_
 end
 
---- 点击任意位置 → 开始淡出（由输入层在 tap 时调用）
+--- 资源未就绪时锁点击（预载进行中不允许进入）
+function DarkTitleScreen.setReady(ready)
+    ready_ = ready and true or false
+end
+
+function DarkTitleScreen.isReady()
+    return ready_
+end
+
+--- 点击任意位置 → 开始淡出（资源未就绪时忽略）
 function DarkTitleScreen.handleTap()
-    if isOpen_ and not fadeOut_ then
-        fadeOut_ = true
-        print("[DarkTitleScreen] tap → fade out")
+    if not isOpen_ or fadeOut_ then return end
+    if not ready_ then
+        print("[DarkTitleScreen] tap ignored: resources not ready")
+        return
     end
+    fadeOut_ = true
+    print("[DarkTitleScreen] tap → fade out")
 end
 
 ---@param dt number
@@ -135,13 +148,40 @@ function DarkTitleScreen.draw(vg, w, h)
         nvgFill(vg)
     end
 
-    -- 5) "轻触屏幕继续" 脉冲提示
-    local promptA = (0.30 + 0.62 * (0.5 + 0.5 * math.sin(t * 2.3))) * A
+    -- 5) 底部提示：未就绪显示加载进度，就绪后才允许轻触进入
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, math.max(20, math.min(w * 0.024, 32)))
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], promptA * 255))
-    nvgText(vg, w * 0.5, h * 0.66, "轻 触 屏 幕 继 续", nil)
+    if not ready_ then
+        local pct = DarkTitleScreen.loadPercent or 0
+        local done = DarkTitleScreen.loadDone or 0
+        local total = DarkTitleScreen.loadTotal or 0
+        nvgFontSize(vg, math.max(18, math.min(w * 0.022, 28)))
+        nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 220 * A))
+        nvgText(vg, w * 0.5, h * 0.78, string.format("资源加载中  %d%%", pct), nil)
+        local bw = w * 0.36
+        local bh = math.max(8, h * 0.01)
+        local bx = (w - bw) * 0.5
+        local by = h * 0.83
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, bx, by, bw, bh, bh * 0.5)
+        nvgFillColor(vg, nvgRGBA(40, 36, 28, 180 * A))
+        nvgFill(vg)
+        local fw = math.max(bh, bw * math.min(1, pct / 100))
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, bx, by, fw, bh, bh * 0.5)
+        nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 210 * A))
+        nvgFill(vg)
+        if total > 0 then
+            nvgFontSize(vg, math.max(14, math.min(w * 0.016, 20)))
+            nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 140 * A))
+            nvgText(vg, w * 0.5, by + bh + h * 0.035, string.format("%d / %d", done, total), nil)
+        end
+    else
+        local promptA = (0.30 + 0.62 * (0.5 + 0.5 * math.sin(t * 2.3))) * A
+        nvgFontSize(vg, math.max(20, math.min(w * 0.024, 32)))
+        nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], promptA * 255))
+        nvgText(vg, w * 0.5, h * 0.78, "轻 触 屏 幕 继 续", nil)
+    end
 end
 
 return DarkTitleScreen

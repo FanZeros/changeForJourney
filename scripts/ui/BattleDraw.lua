@@ -7,6 +7,8 @@ local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
 local NumberUtil = require("core.NumberUtil")
 local BattleLayout = require("core.BattleLayout")
+local DrawUtil = require("core.DrawUtil")
+local ETS = require("systems.ExtraTalentSystem")
 
 local BattleDraw = {}
 
@@ -180,7 +182,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             else
                 cardBgImg = imgCtx.imgHeroCards[1]
             end
-            drawImageCentered(vg, cardBgImg, cx, cy, CARD_W, CARD_H, transAlpha)
+            DrawUtil.drawImageCover(vg, cardBgImg, cx, cy, CARD_W, CARD_H, transAlpha)
 
         elseif isDead then
             -- 墓碑渲染
@@ -204,7 +206,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             else
                 cardBgImg = imgCtx.imgHeroCards[1]
             end
-            drawImageCentered(vg, cardBgImg, cx, cy, CARD_W, CARD_H, alpha)
+            DrawUtil.drawImageCover(vg, cardBgImg, cx, cy, CARD_W, CARD_H, alpha)
 
             -- 受击闪烁
             if not isReviving and not isEntering then
@@ -379,6 +381,10 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             if conqStacks > 0 then
                 drawTextStroke(vg, cx + CARD_W * 0.5 - 28, cy - CARD_H * 0.5 + 28,
                     "征" .. tostring(conqStacks), 24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 200, 50, 3)
+            end
+
+            if isAllyGroup then
+                ETS.drawOrbit(vg, unit, cx, cy)
             end
         end
 

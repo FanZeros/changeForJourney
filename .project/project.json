@@ -1,11 +1,11 @@
 {
   "$schema": "../schemas/project.schema.json",
-  "project_id": "m_eaz3",
+  "project_id": "m_bk73",
   "author": {
     "id": "958707982"
   },
   "entry": "main.lua",
-  "version": "1.0.2",
+  "version": "1.0.7",
   "taptap_publish": {
     "title": "终焉之门·单机版",
     "description": "终焉之门·单机版——暗黑风卡牌收集对战游戏。收集 20 位风格化英雄，体验抽卡、养成、天赋、装备与神器体系，挑战关卡地图与竞技场。本地单机运行，无需联网。",
@@ -23,6 +23,6 @@
     "icon_url": "https://tapcode-sce.spark.xd.com/assets/game_material/m_eaz3/ICON_2026-09-14T05-09-21_01.png"
   },
   "metadata": {
-    "updated_at": "2026-09-14T05:09:29.874Z"
+    "updated_at": "2026-09-17T12:00:00.000Z"
   }
 }

@@ -162,10 +162,10 @@ UrGachaConfig.TargetUp = {
 -- ======================== UI 资产 ========================
 
 UrGachaConfig.UI = {
-    bgPath          = "image/UI_KCBJ_2.png",
-    poolTabPath     = "image/UI_KCFL_2.png",
-    ticketIconPath  = "image/UI_icon_ZMQ2_X.png",
-    portraitPattern = "image/KCLH_%d.png",
+    bgPath          = "image/界面底板/UI_KCBJ_2.png",
+    poolTabPath     = "image/界面底板/UI_KCFL_2.png",
+    ticketIconPath  = "image/货币道具/UI_icon_ZMQ2_X.png",
+    portraitPattern = "image/界面底板/KCLH_%d.png",
     portraitCx      = 540,
     portraitCy      = 1145,
     poolTabCx       = 249,

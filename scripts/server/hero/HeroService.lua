@@ -348,6 +348,7 @@ function HeroService.SelectInitialHero(uid, heroId)
             dupeCount = 0,
             shards = 0,
             awakening = {},
+            extraTalent = require("systems.ExtraTalentSystem").normalize(nil),
             _shardMigrated = true,
         },
     }
@@ -486,6 +487,7 @@ function HeroService.SynthesizeHero(uid, heroId)
     if not roster.awakening then
         roster.awakening = {}
     end
+    roster.extraTalent = require("systems.ExtraTalentSystem").normalize(roster.extraTalent)
 
     PDM.MarkDirty(uid, "heroes")
 
@@ -763,6 +765,47 @@ function HeroService.GetHeroEffectiveLevel(uid, heroId)
     if not heroId or not heroes or not heroes.roster then return 1 end
     local hero = heroes.roster[heroId] or heroes.roster[tostring(heroId)]
     return hero and hero.level or 1
+end
+
+--- 同步追加技永久层（客户端战斗结算后上报；只增不减）
+---@param uid number
+---@param heroId number|nil
+---@param extraTalent table|nil
+---@return boolean ok, string? err, table? result
+function HeroService.SyncExtraTalent(uid, heroId, extraTalent)
+    local heroes = PDM.GetModule(uid, "heroes")
+    if not heroes then return false, "数据未加载" end
+    heroId = tonumber(heroId)
+    if not heroId then return false, "缺少 heroId" end
+    local roster = heroes.roster and (heroes.roster[heroId] or heroes.roster[tostring(heroId)])
+    if not roster then return false, "未拥有该英雄" end
+
+    local ETS = require("systems.ExtraTalentSystem")
+    local incoming = ETS.normalize(extraTalent)
+    local current = ETS.normalize(roster.extraTalent)
+    if incoming.stacks < current.stacks then
+        incoming.stacks = current.stacks
+    end
+    if incoming.splitKills < current.splitKills then
+        incoming.splitKills = current.splitKills
+    end
+    if incoming.iceStatues < current.iceStatues then
+        incoming.iceStatues = current.iceStatues
+    end
+    if incoming.issuedCards < current.issuedCards then
+        incoming.issuedCards = current.issuedCards
+    end
+    for k, v in pairs(current.biteTypes) do
+        if v then incoming.biteTypes[k] = true end
+    end
+    for k, v in pairs(current.tickets) do
+        if v then incoming.tickets[k] = true end
+    end
+    roster.extraTalent = incoming
+    PDM.MarkDirty(uid, "heroes")
+    print(string.format("[HeroService] SYNC_EXTRA_TALENT uid=%s heroId=%s stacks=%d",
+        tostring(uid), tostring(heroId), incoming.stacks))
+    return true, nil, { heroId = heroId, extraTalent = incoming }
 end
 
 return HeroService

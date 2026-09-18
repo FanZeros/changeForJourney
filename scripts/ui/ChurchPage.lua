@@ -410,6 +410,7 @@ local function getOwnedHeroList()
                 maxExp    = ownData and ownData.maxExp or 5,
                 advBranch = ownData and ownData.advBranch or nil,
                 awakening = ownData and ownData.awakening or nil,
+                extraTalent = ownData and ownData.extraTalent or nil,
             }
         end
     end
@@ -528,7 +529,7 @@ local function drawRosterList(vg)
 
         -- a) 角色卡片
         local cardImg = getHeroCardImage(vg, entry.heroId)
-        drawImageCentered(vg, cardImg, cx, cy, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
+        DrawUtil.drawImageCover(vg, cardImg, cx, cy, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
 
         -- b) 职业图标（左上角，60x60）
         local iconIdx = ClassChange.CLASS_NUM[heroCfg.classId]
@@ -540,7 +541,7 @@ local function drawRosterList(vg)
         if not rosterPowerCache[entry.heroId] then
             local pw = 0
             local statLevel = entry.level or 1
-            local heroUnit = HC.createHero(entry.heroId, statLevel, entry.advBranch, entry.awakening)
+            local heroUnit = HC.createHero(entry.heroId, statLevel, entry.advBranch, entry.awakening, entry.extraTalent)
             if heroUnit and heroUnit.attrs then
                 local a = heroUnit.attrs
                 CharacterPanel.applyEquippedItems(a, entry.heroId)
@@ -672,20 +673,20 @@ end
 
 --- 初始化（加载图片资源，仅调用一次）
 function ChurchPage.init(vg)
-    img.bg       = nvgCreateImage(vg, "image/UI_JTZZBJ.png", 0)
-    img.nameBg   = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
-    img.btnBack  = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    img.tabBg    = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
-    img.plus     = nvgCreateImage(vg, "image/UI_ICON_JIA.png", 0)
+    img.bg       = nvgCreateImage(vg, "image/界面底板/UI_JTZZBJ.png", 0)
+    img.nameBg   = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
+    img.btnBack  = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
+    img.tabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
+    img.plus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
 
     -- 转职相关图片
     for i = 1, 6 do
-        img.classBg[i] = nvgCreateImage(vg, "image/UI_ZZBJ_" .. i .. ".png", 0)
+        img.classBg[i] = nvgCreateImage(vg, "image/界面底板/UI_ZZBJ_" .. i .. ".png", 0)
     end
-    img.titleBg    = nvgCreateImage(vg, "image/UI_ZBT1.png", 0)
-    img.branchLine  = nvgCreateImage(vg, "image/UI_ZZXT_1Z.png", 0)
-    img.branchLine2 = nvgCreateImage(vg, "image/UI_ZZXT_2Z.png", 0)
+    img.titleBg    = nvgCreateImage(vg, "image/界面底板/UI_ZBT1.png", 0)
+    img.branchLine  = nvgCreateImage(vg, "image/界面底板/UI_ZZXT_1Z.png", 0)
+    img.branchLine2 = nvgCreateImage(vg, "image/界面底板/UI_ZZXT_2Z.png", 0)
     -- 加载所有职业图标（基础1~6、一转101~112、二转201~224）
     local classIconIds = {
         1, 2, 3, 4, 5, 6,                                         -- 基础职业
@@ -698,42 +699,42 @@ function ChurchPage.init(vg)
     end
 
     -- 角色列表背景（与角色面板相同）
-    img.listBg = nvgCreateImage(vg, "image/UI_JSJM_0.png", 0)
+    img.listBg = nvgCreateImage(vg, "image/界面底板/UI_JSJM_0.png", 0)
     -- 职业小图标（角色卡牌左上角）
     for i = 1, 6 do
-        img.classIcons[i] = nvgCreateImage(vg, "image/ICON_ZY_" .. i .. ".png", 0)
+        img.classIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
 
     -- 卡片详情图片（与角色面板相同）
-    img.expBarBg   = nvgCreateImage(vg, "image/UI_JSMB_JYT1.png", 0)
-    img.expBarFill = nvgCreateImage(vg, "image/UI_JSMB_JYT2.png", 0)
-    img.deployed   = nvgCreateImage(vg, "image/UI_JSJM_CZZ.png", 0)
+    img.expBarBg   = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT1.png", 0)
+    img.expBarFill = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
+    img.deployed   = nvgCreateImage(vg, "image/界面底板/UI_JSJM_CZZ.png", 0)
 
     -- 转职确认弹窗图片
     for i = 1, 6 do
-        img.confirmBg[i] = nvgCreateImage(vg, "image/UI_ZYTS_" .. i .. ".png", 0)
+        img.confirmBg[i] = nvgCreateImage(vg, "image/界面底板/UI_ZYTS_" .. i .. ".png", 0)
     end
-    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/UI_AN_FANG.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
-    img.goldCoin    = nvgCreateImage(vg, "image/UI_icon_JB.png", 0)
-    img.iconUp     = nvgCreateImage(vg, "image/ICON_UP.png", 0)
-    img.resDiamond = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_FANG.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/界面底板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
+    img.goldCoin    = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+    img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+    img.resDiamond = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
 
     -- 天赋面板图片
-    img.tfBg          = nvgCreateImage(vg, "image/UI_JTTF_BJ.png", 0)
-    img.tfBorderGlow  = nvgCreateImage(vg, "image/UI_JTTF_BJGY.png", 0)
-    img.tfPointGlow   = nvgCreateImage(vg, "image/UI_JTTF_HG.png", 0)
-    img.tfSliderThumb = nvgCreateImage(vg, "image/UI_JTTF_HK.png", 0)
+    img.tfBg          = nvgCreateImage(vg, "image/界面底板/UI_JTTF_BJ.png", 0)
+    img.tfBorderGlow  = nvgCreateImage(vg, "image/界面底板/UI_JTTF_BJGY.png", 0)
+    img.tfPointGlow   = nvgCreateImage(vg, "image/界面底板/UI_JTTF_HG.png", 0)
+    img.tfSliderThumb = nvgCreateImage(vg, "image/界面底板/UI_JTTF_HK.png", 0)
 
     -- 天赋详情面板背景（5种颜色）
     local colorFileMap = { ["红"]="HONG", ["绿"]="LV", ["黄"]="HUANG", ["蓝"]="LAN", ["紫"]="ZI" }
     for colorName, fileSuffix in pairs(colorFileMap) do
-        img.tfDetailBg[colorName] = nvgCreateImage(vg, "image/UI_TFWBK_" .. fileSuffix .. ".png", 0)
+        img.tfDetailBg[colorName] = nvgCreateImage(vg, "image/界面底板/UI_TFWBK_" .. fileSuffix .. ".png", 0)
     end
 
-    -- [暗黑化 P1-B5] 原 image/UI_AN_HONG.png 贴图加载已移除（矢量绘制替代）
-    img.tfInfoIcon = nvgCreateImage(vg, "image/UI_icon_TS.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HONG.png 贴图加载已移除（矢量绘制替代）
+    img.tfInfoIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
 
     -- 天赋星图初始化
     TalentStarMap.init(vg)
@@ -1012,8 +1013,9 @@ function ChurchPage.handleInput(dx, dy)
         if consumed then return true end
     end
 
-    -- 返回按钮
-    if hitTest(dx, dy, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H) then
+    -- 返回按钮（三行模式由中缝层接管）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H) then
         ChurchPage.close()
         return true
     end
@@ -1411,7 +1413,7 @@ function ChurchPage.draw(vg)
         -- a) 角色卡牌（飞行动画期间隐藏槽位上的卡片，由飞行动画绘制）
         if not state.selectAnim then
         local cardImg = getHeroCardImage(vg, state.selectedHeroId)
-        drawImageCentered(vg, cardImg, cx, cy, CHAR_SLOT.W, CHAR_SLOT.H, 1.0)
+        DrawUtil.drawImageCover(vg, cardImg, cx, cy, CHAR_SLOT.W, CHAR_SLOT.H, 1.0)
         end
 
         if heroCfg then
@@ -1430,7 +1432,7 @@ function ChurchPage.draw(vg)
                 cachedPowerValue = 0
                 local selAdvBranch = ownData and ownData.advBranch or nil
                 local selAwakening = ownData and ownData.awakening or nil
-                local heroUnit = HC.createHero(state.selectedHeroId, statLevel, selAdvBranch, selAwakening)
+                local heroUnit = HC.createHero(state.selectedHeroId, statLevel, selAdvBranch, selAwakening, ownData and ownData.extraTalent)
                 if heroUnit and heroUnit.attrs then
                     local a = heroUnit.attrs
                     CharacterPanel.applyEquippedItems(a, state.selectedHeroId)
@@ -1618,8 +1620,11 @@ function ChurchPage.draw(vg)
         nvgRestore(vg)
     end
 
-    -- 6. 返回按钮
-    DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
+    -- 6. 返回按钮（三行模式由中缝层绘制）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK then
+        DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
+    end
 
     -- 7. 页面选项滑块背景
     drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
@@ -1721,7 +1726,7 @@ function ChurchPage.draw(vg)
         local cardImg = getHeroCardImage(vg, state.selectedHeroId)
         nvgSave(vg)
         nvgGlobalAlpha(vg, 1.0)
-        drawImageCentered(vg, cardImg, curX, curY, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
+        DrawUtil.drawImageCover(vg, cardImg, curX, curY, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
         nvgRestore(vg)
     end
 

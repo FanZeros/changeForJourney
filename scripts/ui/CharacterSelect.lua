@@ -21,7 +21,7 @@ local CHARACTERS = {
         class    = "夜猎者",
         title    = "疾风之箭",
         intro    = "擅长远程射击的射手",
-        icon     = "image/ICON_ZY_4.png",
+        icon     = "image/通用图标/ICON_ZY_4.png",
         portrait = "image/角色立绘/UI_DLH_3.png",
         classColor = { 0x8e, 0xff, 0x78 },  -- #8eff78
         titleColor = { 0xc2, 0xff, 0xb6 },  -- #c2ffb6
@@ -32,7 +32,7 @@ local CHARACTERS = {
         class    = "破阵者",
         title    = "汪卫先锋",
         intro    = "擅长快速打击的战士",
-        icon     = "image/ICON_ZY_2.png",
+        icon     = "image/通用图标/ICON_ZY_2.png",
         portrait = "image/角色立绘/UI_DLH_1.png",
         classColor = { 0xff, 0xb4, 0x00 },  -- #ffb400
         titleColor = { 0xff, 0xd9, 0x7e },  -- #ffd97e
@@ -43,7 +43,7 @@ local CHARACTERS = {
         class    = "咒术师",
         title    = "炽焰之心",
         intro    = "擅长火焰魔法的法师",
-        icon     = "image/ICON_ZY_3.png",
+        icon     = "image/通用图标/ICON_ZY_3.png",
         portrait = "image/角色立绘/UI_DLH_2.png",
         classColor = { 0x2b, 0xed, 0xff },  -- #2bedff
         titleColor = { 0xa4, 0xfc, 0xff },  -- #a4fcff
@@ -165,10 +165,10 @@ end
 ---@param vg any NanoVG context
 function CharacterSelect.init(vg)
     vg_ = vg
-    imgPanel_   = nvgCreateImage(vg, "image/UI_XZCSZY_1.png", 0)
-    imgCardBG1_ = nvgCreateImage(vg, "image/UI_XZCSZY_AN1.png", 0)
-    imgCardBG2_ = nvgCreateImage(vg, "image/UI_XZCSZY_AN2.png", 0)
-    imgButton_  = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
+    imgPanel_   = nvgCreateImage(vg, "image/界面底板/UI_XZCSZY_1.png", 0)
+    imgCardBG1_ = nvgCreateImage(vg, "image/界面底板/UI_XZCSZY_AN1.png", 0)
+    imgCardBG2_ = nvgCreateImage(vg, "image/界面底板/UI_XZCSZY_AN2.png", 0)
+    imgButton_  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
 
     for i, ch in ipairs(CHARACTERS) do
         imgPortraits_[i] = nvgCreateImage(vg, ch.portrait, 0)
@@ -273,7 +273,7 @@ function CharacterSelect.draw()
     if portrait and portrait >= 0 then
         local pw = PORTRAIT.w * portraitScale
         local ph = PORTRAIT.h * portraitScale
-        DrawUtil.drawImageCentered(vg_, portrait, PORTRAIT.cx, PORTRAIT.cy, pw, ph, 1.0)
+        DrawUtil.drawImageCover(vg_, portrait, PORTRAIT.cx, PORTRAIT.cy, pw, ph, 1.0)
     end
 
     -- 以下 UI 元素都带下方偏移动画

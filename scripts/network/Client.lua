@@ -163,6 +163,7 @@ local rewardFlushTimer = 0
 
 --- 离线收益面板自动弹出控制
 local loadingScreenWasOpen_ = true   -- LoadingScreen 初始为开启状态
+local pendingIntroAfterTitle_ = false -- [LetterIntro] 等横屏标题关闭后再走开场链
 local offlineRewardAutoShown_ = false -- 避免重复弹出
 local updateNoticeShown_     = false -- 更新提醒弹窗是否已弹出
 local offlineRewardData_     = nil   -- 服务端推送的离线收益数据
@@ -670,6 +671,7 @@ function Client.Start()
     print("[Client][LOAD]   LoadingScreen.init...")
     LoadingScreen.init(vg)
     DarkTitleScreen.init(vg)  -- [DarkTitleScreen] 横屏标题资源
+    LetterIntro.init(vg)      -- [LetterIntro] 书斋/火漆全窗口素材
     -- StartScreen 关闭后→打开 LoadingScreen（复用视频播放器，避免黑屏闪烁）
     StartScreen.setOnStart(function(vp, vh, bs, bn)
         LoadingScreen.open({ videoPlayer = vp, videoHandle = vh, bgmSource = bs, bgmNode = bn })
@@ -1327,6 +1329,7 @@ function Client.resetForNewSession()
     local TAG = "[Client][DIAG-RESET]"
     print(string.format("%s resetForNewSession START clock=%.4f", TAG, os.clock()))
     loadingScreenWasOpen_ = true
+    pendingIntroAfterTitle_ = false
     offlineRewardAutoShown_ = false
     deferredRewardPopupShown_ = false
     updateNoticeShown_ = false
@@ -1355,6 +1358,7 @@ function Client.resetForNewSession()
     enter0204ScenarioFired_    = false   -- 重置铁匠铺204触发标志，清档后可重新触发情景1/42/43
     townEntranceScenarioFired_ = false   -- 重置城镇入场触发标志，清档后可重新触发情景3/24/25/26
     IntroCutscene.reset()
+    LetterIntro.reset()
     print(string.format("%s resetForNewSession DONE clock=%.4f →all flags reset, IntroCutscene ready", TAG, os.clock()))
 end
 
@@ -1492,8 +1496,9 @@ function HandleNanoVGRender_Client(eventType, eventData)
             H_skipDone = true
             StartScreen.skipForReconnect()
             DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
+            DarkTitleScreen.setReady(not LoadingScreen.isOpen())
         end
-        if StartScreen.isOpen() or LoadingScreen.isOpen() or LetterIntro.isOpen() then
+        if StartScreen.isOpen() or LoadingScreen.isOpen() or LetterIntro.isOpen() or CharacterSelect.isActive() then
             local ss = math.min(logicalW / 1080, logicalH / 2400)
             scale = ss
             -- 外层 nvgScale(scale) 会缩放 translate 值：偏移需除以 scale（缩放空间语义）
@@ -1776,8 +1781,8 @@ function HandleNanoVGRender_Client(eventType, eventData)
             ScenarioDialogue.draw()
         end
 
-        -- 选择初始角色界面（情景对话结束后显示）
-        if CharacterSelect.isActive() then
+        -- 选择初始角色：横屏改由全窗口 letterbox 绘制（见 HandleNanoVGRender_Client 尾部）
+        if CharacterSelect.isActive() and not HORIZON_MODE then
             CharacterSelect.draw()
         end
 
@@ -1855,13 +1860,19 @@ function HandleNanoVGRender_Client(eventType, eventData)
         DarkTitleScreen.draw(vg, logicalW, logicalH)
     end
 
-    -- [LetterIntro] 先祖来信（设计空间 1080×2400，letterbox 同 StartScreen）
+    -- [LetterIntro] 先祖来信（全窗口 16:9 cover，盖住三联面板）
     if LetterIntro.isOpen() then
         nvgResetTransform(vg)
-        local ssL = math.min(logicalW / 1080, logicalH / 2400)
-        nvgTranslate(vg, (logicalW - 1080 * ssL) * 0.5, (logicalH - 2400 * ssL) * 0.5)
-        nvgScale(vg, ssL, ssL)
-        LetterIntro.draw(vg)
+        ---@diagnostic disable-next-line: missing-parameter
+        LetterIntro.draw(vg, logicalW, logicalH)
+    end
+    -- 选角：竖屏 1080×2400 letterbox 全窗口覆盖（不再缩进中栏）
+    if CharacterSelect.isActive() then
+        nvgResetTransform(vg)
+        local ss = math.min(logicalW / 1080, logicalH / 2400)
+        nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
+        nvgScale(vg, ss, ss)
+        CharacterSelect.draw()
     end
 
     nvgEndFrame(vg)
@@ -2058,8 +2069,30 @@ function HandleUpdate_Client(eventType, eventData)
     end
 
     -- [DarkTitleScreen] 横屏标题动画（游戏/加载在标题下方继续进行）
+    -- LoadingScreen 未完成时锁点击，避免点进无背景界面
     if DarkTitleScreen.isOpen() then
+        DarkTitleScreen.setReady(not LoadingScreen.isOpen())
         DarkTitleScreen.update(dt)
+    elseif pendingIntroAfterTitle_ and not LoadingScreen.isOpen() then
+        -- 标题已关闭（或不存在）且加载完成 → 启动先祖来信开场链
+        pendingIntroAfterTitle_ = false
+        print("[Client] title closed, starting letter then character select (skip cutscene/scenario)")
+        GameBGM.setScene("letter", { fromStart = true })
+        LetterIntro.start(function()
+            GameBGM.setScene("battle", { fromStart = true })
+            print("[Client] letter finished, opening character select")
+            -- 跳过情景1仍领取标记，避免后续系统再拉起开场对话
+            Client.sendAction(Protocol.ACTION_TYPES.CLAIM_SCENARIO_REWARD, { scenarioId = 1 })
+            CharacterSelect.show({
+                background = "image/关卡地图/MAP_1.png",
+                onFinish = function(heroId)
+                    print("[Client] character selected: heroId=" .. heroId)
+                    Client.sendAction(Protocol.ACTION_TYPES.SELECT_INITIAL_HERO, {
+                        heroId = heroId,
+                    })
+                end,
+            })
+        end)
     end
 
     -- [LetterIntro] 先祖来信动画（逐行显墨/封印/淡出）
@@ -2120,35 +2153,11 @@ function HandleUpdate_Client(eventType, eventData)
             local hasReincarnated = sessionData and sessionData.hasReincarnated or false
 
             if rosterEmpty and not IntroCutscene.isFinished() then
-                -- roster 为空 = 新玩家，启动过场动画 + 开场剧情
-                print("[Client] roster is empty (new player), starting intro cutscene")
+                -- roster 为空 = 新玩家。横屏标题打开时先挂起，关闭后再播信
+                print("[Client] roster is empty (new player), queue intro after title")
+                pendingIntroAfterTitle_ = true
                 GameBGM.start()
                 GameSFX.start()
-                GameBGM.setScene("letter", { fromStart = true })  -- [LetterIntro] 暗黑烛光读信氛围
-                -- [LetterIntro] 先祖来信 → 睁眼过场 → 情景对话 → 选角
-                LetterIntro.start(function()
-                IntroCutscene.start(function()
-                    GameBGM.setScene("battle", { fromStart = true })  -- [LetterIntro] 情景1"出发"切回主曲
-                    -- 过场动画结束 →衔接情景对话 1（introCompleted 由服务端在选择英雄时标记）
-                    print("[Client] intro cutscene finished")
-                    print("[Client] starting scenario dialogue 1")
-                    local scenarioConfig = ScenarioDialogueConfig.SCENARIO_1
-                    scenarioConfig.onFinish = function()
-                        -- 情景对话1结束 →选择初始角色
-                        print("[Client] scenario dialogue 1 finished, opening character select")
-                        CharacterSelect.show({
-                            background = scenarioConfig.background,
-                            onFinish = function(heroId)
-                                print("[Client] character selected: heroId=" .. heroId)
-                                Client.sendAction(Protocol.ACTION_TYPES.SELECT_INITIAL_HERO, {
-                                    heroId = heroId,
-                                })
-                            end,
-                        })
-                    end
-                    ScenarioDialogue.show(scenarioConfig)
-                end)
-                end)  -- [LetterIntro] 回调闭合
             elseif hasReincarnated then
                 if rosterEmpty then
                     -- 极端情况：尚无角色但标记轮回（补播入场动画）

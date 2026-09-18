@@ -97,19 +97,19 @@ function StartScreen.init(nvgCtx, scene)
     vg_ = nvgCtx
 
     -- 加载图片
-    imgLogo_ = nvgCreateImage(vg_, "image/LOGO终焉之门_透明版.png", 0)
-    imgGlow_ = nvgCreateImage(vg_, "image/UI_KSYXFG.png", 0)
-    imgDeco_ = nvgCreateImage(vg_, "image/UI_KSYXJT.png", 0)
+    imgLogo_ = nvgCreateImage(vg_, "image/界面底板/LOGO终焉之门_透明版.png", 0)
+    imgGlow_ = nvgCreateImage(vg_, "image/界面底板/UI_KSYXFG.png", 0)
+    imgDeco_ = nvgCreateImage(vg_, "image/界面底板/UI_KSYXJT.png", 0)
 
     -- 底部渐变遮罩（与加载界面相同）
-    imgMask_ = nvgCreateImage(vg_, "image/UI_ZRJM_HD.png", 0)
+    imgMask_ = nvgCreateImage(vg_, "image/界面底板/UI_ZRJM_HD.png", 0)
 
     -- 视频首帧静态图（视频解码就绪前的fallback，避免黑屏闪烁）
-    imgBgFallback_ = nvgCreateImage(vg_, "image/UI_DLJMBJ_Frame1.jpg", 0)
+    imgBgFallback_ = nvgCreateImage(vg_, "image/界面底板/UI_DLJMBJ_Frame1.jpg", 0)
 
     -- 区服网络状态图标
     for i = 1, 3 do
-        imgFwq_[i] = nvgCreateImage(vg_, "image/ICON_FWQ_" .. i .. ".png", 0)
+        imgFwq_[i] = nvgCreateImage(vg_, "image/通用图标/ICON_FWQ_" .. i .. ".png", 0)
     end
 
     -- 选服面板初始化（数据由 setServerListData 注入）

@@ -627,18 +627,18 @@ end
 
 --- 初始化弹窗资源
 function M.init(vg)
-    img.confirmBg     = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    img.confirmBtnBuy = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
-    img.diamondBig    = nvgCreateImage(vg, "image/UI_icon_SJ.png", 0)
-    img.ticketBig     = nvgCreateImage(vg, "image/UI_icon_ZMQ_1.png", 0)
-    local stellarTicketPath = UrGachaConfig.UI.ticketIconPath or "image/UI_icon_ZMQ2_X.png"
+    img.confirmBg     = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
+    img.confirmBtnBuy = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    img.diamondBig    = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
+    img.ticketBig     = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_1.png", 0)
+    local stellarTicketPath = UrGachaConfig.UI.ticketIconPath or "image/货币道具/UI_icon_ZMQ2_X.png"
     img.ticketBigStellar = nvgCreateImage(vg, stellarTicketPath, 0)
     if img.ticketBigStellar < 0 then
-        img.ticketBigStellar = nvgCreateImage(vg, "image/UI_icon_ZMQ_2.png", 0)
+        img.ticketBigStellar = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_2.png", 0)
     end
-    img.diamondBg     = nvgCreateImage(vg, "image/UI_icon_ZBBJ_5.png", 0)
-    img.ticketQBg     = nvgCreateImage(vg, "image/UI_icon_ZBBJ_5.png", 0)
+    img.diamondBg     = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_5.png", 0)
+    img.ticketQBg     = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_5.png", 0)
     print("[TavernPopups] init OK")
 end
 

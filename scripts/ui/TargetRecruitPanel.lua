@@ -127,14 +127,14 @@ end
 
 function M.init(vg)
     vg_ = vg
-    -- [暗黑化 P1-B5] 原 image/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    img.btnYellow = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
-    img.qualityBgStandard = nvgCreateImage(vg, "image/UI_icon_ZBBJ_5.png", 0)
-    img.qualityBgStellar  = nvgCreateImage(vg, "image/UI_icon_ZBBJ_6.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
+    img.btnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    img.qualityBgStandard = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_5.png", 0)
+    img.qualityBgStellar  = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_6.png", 0)
 
     -- 加载职业图标
     for i = 1, 6 do
-        img.classBadge[i] = nvgCreateImage(vg, "image/ICON_ZY_" .. i .. ".png", 0)
+        img.classBadge[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
 
     heroLists.standard = {}

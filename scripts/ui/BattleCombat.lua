@@ -222,13 +222,14 @@ end
 local function statMetaFromProjOpts(projOpts)
     if not projOpts then return nil end
     if projOpts.isDot or projOpts.statCategory or projOpts.isCrit or projOpts.critEligible ~= nil
-        or projOpts.threatScale then
+        or projOpts.threatScale or projOpts.isRicochet then
         return {
             isDot = projOpts.isDot,
             category = projOpts.statCategory,
             isCrit = projOpts.isCrit,
             critEligible = projOpts.critEligible,
             threatScale = projOpts.threatScale,
+            isRicochet = projOpts.isRicochet,
         }
     end
     return nil
@@ -534,6 +535,9 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
         local overkill = math.max(0, damage - hpBefore)
         target._overkillRatio = math.min(1.0, overkill / (target.maxHp or hpBefore))
         target._killedBy = source
+        if statMeta and statMeta.isRicochet then
+            target._killedByRicochet = true
+        end
         if source and isTargetAlly == false then
             DungeonBattle.onEnemyKill(source)
         end

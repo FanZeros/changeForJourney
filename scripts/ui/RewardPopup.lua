@@ -173,11 +173,11 @@ local heroIconCache = {}
 -- 遗物类型图标缓存: [relicType] = nvgImage handle
 local relicIconCache = {}
 local RELIC_ICON_PATHS = {
-    [1] = "image/ICON_YWX_GUI.png",   -- 岩龟
-    [2] = "image/ICON_YWX_SHE.png",   -- 毒蛇
-    [3] = "image/ICON_YWX_LU.png",    -- 白鹿
-    [4] = "image/ICON_YWX_LANG.png",  -- 灰狼
-    [5] = "image/ICON_YWX_YING.png",  -- 猎鹰
+    [1] = "image/遗物图标/ICON_YWX_GUI.png",   -- 岩龟
+    [2] = "image/遗物图标/ICON_YWX_SHE.png",   -- 毒蛇
+    [3] = "image/遗物图标/ICON_YWX_LU.png",    -- 白鹿
+    [4] = "image/遗物图标/ICON_YWX_LANG.png",  -- 灰狼
+    [5] = "image/遗物图标/ICON_YWX_YING.png",  -- 猎鹰
 }
 
 -- 装备图标/品质背景缓存已迁移至 ImageCache 共享模块（LRU 淘汰，防止 VRAM 累积）
@@ -275,8 +275,8 @@ end
 function RewardPopup.init(vg)
     cachedVg = vg
     ImageCache.init(vg)
-    imgGlow  = nvgCreateImage(vg, "image/UI_GXHD_2.png", 0)
-    imgPanel = nvgCreateImage(vg, "image/UI_GXHD_1.png", 0)
+    imgGlow  = nvgCreateImage(vg, "image/界面底板/UI_GXHD_2.png", 0)
+    imgPanel = nvgCreateImage(vg, "image/界面底板/UI_GXHD_1.png", 0)
     if imgGlow  < 0 then print("[RewardPopup] WARN: UI_GXHD_2.png load failed") end
     if imgPanel < 0 then print("[RewardPopup] WARN: UI_GXHD_1.png load failed") end
 end

@@ -346,30 +346,30 @@ end
 -- ======================== Public API ========================
 
 function ArenaPage.init(vg)
-    img.bg       = nvgCreateImage(vg, "image/UI_JJC_BJ1.png", 0)
-    img.nameBg   = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
-    img.titleDeco = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
-    img.coin     = nvgCreateImage(vg, "image/UI_icon_JJB_X.png", 0)
-    img.ticket   = nvgCreateImage(vg, "image/UI_icon_JJCQ_X.png", 0)
-    img.gem      = nvgCreateImage(vg, "image/UI_icon_SJ_X.png", 0)
+    img.bg       = nvgCreateImage(vg, "image/界面底板/UI_JJC_BJ1.png", 0)
+    img.nameBg   = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
+    img.titleDeco = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
+    img.coin     = nvgCreateImage(vg, "image/货币道具/UI_icon_JJB_X.png", 0)
+    img.ticket   = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCQ_X.png", 0)
+    img.gem      = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
 
-    img.rankBg   = nvgCreateImage(vg, "image/UI_JJC_1.png", 0)
-    img.myRankBg = nvgCreateImage(vg, "image/UI_JJC_2.png", 0)
-    img.battleBtn = nvgCreateImage(vg, "image/UI_AN_DA.png", 0)
-    img.tabBg    = nvgCreateImage(vg, "image/UI_AN_1.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
-    img.costIcon = nvgCreateImage(vg, "image/UI_icon_JJCQ_X.png", 0)
+    img.rankBg   = nvgCreateImage(vg, "image/界面底板/UI_JJC_1.png", 0)
+    img.myRankBg = nvgCreateImage(vg, "image/界面底板/UI_JJC_2.png", 0)
+    img.battleBtn = nvgCreateImage(vg, "image/按钮/UI_AN_DA.png", 0)
+    img.tabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
+    img.costIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCQ_X.png", 0)
 
     for i = 1, 8 do
-        img.tier[i] = nvgCreateImage(vg, "image/ICON_DW_" .. i .. ".png", 0)
+        img.tier[i] = nvgCreateImage(vg, "image/段位图标/ICON_DW_" .. i .. ".png", 0)
     end
-    img.scoreIcon = nvgCreateImage(vg, "image/UI_icon_JJCFS_X.png", 0)
+    img.scoreIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCFS_X.png", 0)
     AvatarFrameUtil.preloadFrames(vg, img.frameIcons)
 
     -- 角色头像图标
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)
-    img.logBtn    = nvgCreateImage(vg, "image/UI_JLAN.png", 0)
+    img.logBtn    = nvgCreateImage(vg, "image/界面底板/UI_JLAN.png", 0)
     state.myRankData = nil
 
     ArenaOpponentDialog.init(vg)
@@ -1006,9 +1006,12 @@ function ArenaPage.draw(vg)
     end
 
     -- ========== 返回按钮 & Tab 栏 ==========
-    local _bf_back = BF.begin(vg, "arena_back", TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H)
-    DrawUtil.drawBackChevron(vg, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, "left")
-    BF.finish(vg, _bf_back)
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK then
+        local _bf_back = BF.begin(vg, "arena_back", TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H)
+        DrawUtil.drawBackChevron(vg, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, "left")
+        BF.finish(vg, _bf_back)
+    end
     drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
 
     -- 滑块动画
@@ -1070,8 +1073,9 @@ function ArenaPage.handleInput(dx, dy)
         return ArenaOpponentDialog.handleInput(dx, dy)
     end
 
-    -- 返回按钮
-    if hitTest(dx, dy, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H) then
+    -- 返回按钮（三行模式由中缝层接管）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK and hitTest(dx, dy, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H) then
         BF.trigger("arena_back")
         ArenaPage.close(); return true
     end

@@ -17,6 +17,7 @@ local ClientDispatcher  = require("network.ClientDispatcher")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local ETS = require("systems.ExtraTalentSystem")
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
@@ -405,38 +406,38 @@ end
 
 --- 初始化图片（在 CharacterDetail.init 中调用）
 function M.initImages(vg)
-    img.detailBg      = nvgCreateImage(vg, "image/UI_JSXQ_bj.png", 0)
-    img.slotWeapon    = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_WQ.png", 0)
-    img.slotOffhand   = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_FS.png", 0)
-    img.slotArmor     = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_HJ.png", 0)
-    img.slotAccessory = nvgCreateImage(vg, "image/UI_JSXQ_KGZ_SS.png", 0)
+    img.detailBg      = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_bj.png", 0)
+    img.slotWeapon    = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_KGZ_WQ.png", 0)
+    img.slotOffhand   = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_KGZ_FS.png", 0)
+    img.slotArmor     = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_KGZ_HJ.png", 0)
+    img.slotAccessory = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_KGZ_SS.png", 0)
 
-    img.midBg      = nvgCreateImage(vg, "image/UI_JSJM_0.png", 0)
-    img.midExpBg   = nvgCreateImage(vg, "image/UI_JSXQ_JYT1.png", 0)
-    img.midExpFill = nvgCreateImage(vg, "image/UI_JSXQ_JYT2.png", 0)
-    img.midDiv1    = nvgCreateImage(vg, "image/UI_JSXQ_FGXj.png", 0)
+    img.midBg      = nvgCreateImage(vg, "image/界面底板/UI_JSJM_0.png", 0)
+    img.midExpBg   = nvgCreateImage(vg, "image/进度条/UI_JSXQ_JYT1.png", 0)
+    img.midExpFill = nvgCreateImage(vg, "image/进度条/UI_JSXQ_JYT2.png", 0)
+    img.midDiv1    = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_FGXj.png", 0)
 
-    imgQualityBadges["R"]   = nvgCreateImage(vg, "image/UI_PZBZ_R.png", 0)
-    imgQualityBadges["SR"]  = nvgCreateImage(vg, "image/UI_PZBZ_SR.png", 0)
-    imgQualityBadges["SSR"] = nvgCreateImage(vg, "image/UI_PZBZ_SSR.png", 0)
-    imgQualityBadges["UR"]  = nvgCreateImage(vg, "image/UI_PZBZ_UR.png", 0)
+    imgQualityBadges["R"]   = nvgCreateImage(vg, "image/品质框/UI_PZBZ_R.png", 0)
+    imgQualityBadges["SR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SR.png", 0)
+    imgQualityBadges["SSR"] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SSR.png", 0)
+    imgQualityBadges["UR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_UR.png", 0)
 
-    img.attrDeco = nvgCreateImage(vg, "image/ICON_XX.png", 0)
-    img.midDiv2  = nvgCreateImage(vg, "image/UI_JSXQ_FGXj.png", 0)
+    img.attrDeco = nvgCreateImage(vg, "image/通用图标/ICON_XX.png", 0)
+    img.midDiv2  = nvgCreateImage(vg, "image/界面底板/UI_JSXQ_FGXj.png", 0)
 
     for _, st in ipairs(STAT_LAYOUT) do
         imgStatIcons[st.icon] = nvgCreateImage(vg, "image/" .. st.icon .. ".png", 0)
     end
 
-    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    img.btnLv     = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    img.btnBack   = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
-    img.tabSlider = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
+    img.btnLv     = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    img.btnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
+    img.tabSlider = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
-    img.arrowBg   = nvgCreateImage(vg, "image/UI_YWJM_HS.png", 0)
-    img.arrowIcon = nvgCreateImage(vg, "image/UI_YWJM_XYG2.png", 0)
-    img.slotSelected = nvgCreateImage(vg, "image/UI_TJPXZTBBJ.png", 0)
+    img.arrowBg   = nvgCreateImage(vg, "image/界面底板/UI_YWJM_HS.png", 0)
+    img.arrowIcon = nvgCreateImage(vg, "image/界面底板/UI_YWJM_XYG2.png", 0)
+    img.slotSelected = nvgCreateImage(vg, "image/界面底板/UI_TJPXZTBBJ.png", 0)
 end
 
 --- 返回 imgIconUp（由 CharacterDetail 管理，此处仅提供给外部使用的便捷接口）
@@ -548,7 +549,7 @@ function M.draw(vg)
     -- === 4) 角色卡片 ===
     local cx, cy = DT_CARD_CX, DT_CARD_CY
     local cardImg = imgHeroCards[heroId] or imgHeroCards[1]
-    drawImageCentered(vg, cardImg, cx, cy, CARD.W, CARD.H, 1.0)
+    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD.W, CARD.H, 1.0)
 
     -- 职业标志图标
     local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -1139,8 +1140,12 @@ function M.draw(vg)
         0x66, 0xf8, 0x62, 5)
 
     local talentDesc = heroCfg.talentDesc or ""
+    local extraLine = ETS.getDesc(heroId, ownData and ownData.extraTalent)
+    if extraLine ~= "" then
+        talentDesc = talentDesc .. "\n" .. extraLine
+    end
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 34)
+    nvgFontSize(vg, extraLine ~= "" and 28 or 34)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
     nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
     nvgTextBox(vg, TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH, talentDesc, nil)
@@ -1153,7 +1158,11 @@ function M.draw(vg)
     -- ===              底部按钮区域（静态，不参与切换动画）          ===
     -- ================================================================
 
-    DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "right")
+    -- 三行模式返回键由中缝层绘制，页面内不再重复画
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK then
+        DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "right")
+    end
 
     drawImageCentered(vg, img.tabBg, BTN_TAB_BG_CX, BTN_TAB_BG_CY, BTN_TAB_BG_W, BTN_TAB_BG_H, 1.0)
 

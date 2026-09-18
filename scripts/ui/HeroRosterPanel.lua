@@ -6,6 +6,7 @@
 local HC = require("config.HeroConfig")
 local CC = require("config.ClassConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
+local DrawUtil = require("core.DrawUtil")
 
 local Panel = {}
 
@@ -147,14 +148,13 @@ function Panel.draw(vg)
 
         local qc = QUALITY_COLORS[hero.quality] or { 200, 200, 200 }
 
-        -- 卡片背景（使用对应英雄卡片图片）
+        -- 卡片背景（使用对应英雄卡片图片，等比裁切不拉伸）
         local cardImg = imgHeroCards[id] or imgHeroCards[1]
         if cardImg and cardImg > 0 then
-            local imgPaint = nvgImagePattern(vg, MARGIN, cardY, cardW, CARD_H, 0, cardImg, 1.0)
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, MARGIN, cardY, cardW, CARD_H, 10)
-            nvgFillPaint(vg, imgPaint)
-            nvgFill(vg)
+            nvgSave(vg)
+            nvgIntersectScissor(vg, MARGIN, cardY, cardW, CARD_H)
+            DrawUtil.drawImageCover(vg, cardImg, MARGIN + cardW * 0.5, cardY + CARD_H * 0.5, cardW, CARD_H, 1.0)
+            nvgRestore(vg)
         else
             nvgBeginPath(vg)
             nvgRoundedRect(vg, MARGIN, cardY, cardW, CARD_H, 10)

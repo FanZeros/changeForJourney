@@ -264,7 +264,7 @@ local function buildEnemyUnits(defense)
 
     for seq, heroData in ipairs(defense.heroes) do
         -- 1. 创建基础英雄单位（不会应用任何天赋星图，因为已清除）
-        local unit = HeroConfig.createHero(heroData.heroId, heroData.level, heroData.advBranch, heroData.awakening)
+        local unit = HeroConfig.createHero(heroData.heroId, heroData.level, heroData.advBranch, heroData.awakening, false)
         if unit then
             -- 2. 应用装备加成（使用 seq*100+slotIdx 生成唯一 modifierId，避免同英雄多槽位覆盖）
             local equipMap = nil
@@ -492,14 +492,14 @@ end
 -- ======================== Public API ========================
 
 function Dialog.init(vg)
-    img.bg          = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    img.ticketIcon  = nvgCreateImage(vg, "image/UI_icon_JJCQ_X.png", 0)
-    img.powerIcon   = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
-    img.oppBg       = nvgCreateImage(vg, "image/UI_JJC_3.png", 0)
-    img.challengeBtn = nvgCreateImage(vg, "image/UI_AN_FANG.png", 0)
-    img.refreshBtn  = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    img.costIcon    = nvgCreateImage(vg, "image/UI_icon_JJCQ_X.png", 0)
-    img.groupScoreIcon = nvgCreateImage(vg, "image/UI_icon_JJCFS_X.png", 0)
+    img.bg          = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    img.ticketIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCQ_X.png", 0)
+    img.powerIcon   = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
+    img.oppBg       = nvgCreateImage(vg, "image/界面底板/UI_JJC_3.png", 0)
+    img.challengeBtn = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
+    img.refreshBtn  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    img.costIcon    = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCQ_X.png", 0)
+    img.groupScoreIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCFS_X.png", 0)
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)
     AvatarFrameUtil.preloadFrames(vg, img.frameIcons)
 

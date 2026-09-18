@@ -433,25 +433,25 @@ end
 function TavernPage.init(vg)
     vg_ = vg
     -- 上半部分
-    img.bgStandard      = loadImage(vg, "image/UI_KCBJ_1.png")
+    img.bgStandard      = loadImage(vg, "image/界面底板/UI_KCBJ_1.png")
     img.bgStellar       = loadImage(vg, UrGachaConfig.UI.bgPath)
-    img.nameBg    = nvgCreateImage(vg, "image/UI_TJP_MC.png", 0)
-    img.btnBack   = nvgCreateImage(vg, "image/UI_AN_FH.png", 0)
-    img.poolCatStandard = nvgCreateImage(vg, "image/UI_KCFL_1.png", 0)
+    img.nameBg    = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
+    img.btnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
+    img.poolCatStandard = nvgCreateImage(vg, "image/界面底板/UI_KCFL_1.png", 0)
     img.poolCatStellar  = loadImage(vg, UrGachaConfig.UI.poolTabPath)
-    img.poolSel   = nvgCreateImage(vg, "image/UI_KCFL_gl.png", 0)
+    img.poolSel   = nvgCreateImage(vg, "image/界面底板/UI_KCFL_gl.png", 0)
     reloadUpPortrait(vg)
-    img.timerBg   = nvgCreateImage(vg, "image/UI_YXTBBJ.png", 0)
-    img.timerIcon = nvgCreateImage(vg, "image/UI_icon_NZ.png", 0)
+    img.timerBg   = nvgCreateImage(vg, "image/界面底板/UI_YXTBBJ.png", 0)
+    img.timerIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_NZ.png", 0)
     -- 下半部分
-    img.pityBg      = nvgCreateImage(vg, "image/UI_JG_SMBJ.png", 0)
-    img.pityIcon    = nvgCreateImage(vg, "image/UI_icon_TS.png", 0)
-    img.ticketIcon  = nvgCreateImage(vg, "image/UI_icon_ZMQ_X.png", 0)
-    img.ticketIconStellar = loadImage(vg, UrGachaConfig.UI.ticketIconPath, "image/UI_icon_ZMQ2_X.png")
-    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    img.btnLv       = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
-    img.slider      = nvgCreateImage(vg, "image/UI_AN_2.png", 0)
+    img.pityBg      = nvgCreateImage(vg, "image/界面底板/UI_JG_SMBJ.png", 0)
+    img.pityIcon    = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
+    img.ticketIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_X.png", 0)
+    img.ticketIconStellar = loadImage(vg, UrGachaConfig.UI.ticketIconPath, "image/货币道具/UI_icon_ZMQ2_X.png")
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
+    img.btnLv       = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
+    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
+    img.slider      = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
     -- 初始化弹窗子模块（setContext 已在模块级别调用，此处只需 init 加载图片）
     TavernPopups.init(vg)
@@ -464,7 +464,7 @@ function TavernPage.init(vg)
 
     -- 初始化指定招募面板
     TargetRecruitPanel.init(vg)
-    img.btnTarget = nvgCreateImage(vg, "image/UI_AN_HUANG.png", 0)
+    img.btnTarget = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
 
     -- currency 推送到达后清除星辉保底 fallback，以服务端模块数据为准
     ClientDispatcher.subscribe("currency", function(data)
@@ -983,9 +983,12 @@ function TavernPage.draw(vg)
     end -- state.tab ~= "shop"
 
     -- ============ 18. 返回按钮 ============
-    local _s5 = BF.begin(vg, "tavern_back", BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H)
-    DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
-    BF.finish(vg, _s5)
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK then
+        local _s5 = BF.begin(vg, "tavern_back", BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H)
+        DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
+        BF.finish(vg, _s5)
+    end
 
     -- ============ 19. 底部滑块背景 ============
     drawImageCentered(vg, img.tabBg, TAB_BG_CX, TAB_BG_CY, TAB_BG_W, TAB_BG_H, 1.0)
@@ -1102,8 +1105,9 @@ function TavernPage.handleInput(dx, dy)
         return RecruitAnim.handleInput(dx, dy)
     end
 
-    -- 返回按钮
-    if hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
+    -- 返回按钮（三行模式由中缝层接管）
+    ---@diagnostic disable-next-line: undefined-global
+    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
         -- 招募请求进行中，不允许离开（避免引导组8 invisible 步骤期间提前退出）
         if pendingGachaPull then return true end
         BF.trigger("tavern_back")

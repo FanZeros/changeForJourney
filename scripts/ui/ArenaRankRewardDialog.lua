@@ -82,7 +82,7 @@ for _, tier in ipairs(ArenaConfig.TIERS) do
         reward   = {
             type    = "gem",
             quality = 5,  -- 奖励均为钻石，统一最高品质背景
-            icon    = "image/UI_icon_SJ.png",
+            icon    = "image/货币道具/UI_icon_SJ.png",
             qty     = tier.firstRewardDiamond,
         },
         scoreReq = tier.scoreMin,
@@ -222,12 +222,12 @@ end
 -- ======================== Public API ========================
 
 function Dialog.init(vg)
-    img.bg       = nvgCreateImage(vg, "image/UI_TY_EJQRK.png", 0)
-    img.barBg    = nvgCreateImage(vg, "image/UI_JJCJL_DYT2.png", 0)
-    img.barFill  = nvgCreateImage(vg, "image/UI_JJCJL_DYT1.png", 0)
-    img.rewardBg = nvgCreateImage(vg, "image/UI_JJC_DWJLBJ.png", 0)
+    img.bg       = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    img.barBg    = nvgCreateImage(vg, "image/界面底板/UI_JJCJL_DYT2.png", 0)
+    img.barFill  = nvgCreateImage(vg, "image/界面底板/UI_JJCJL_DYT1.png", 0)
+    img.rewardBg = nvgCreateImage(vg, "image/界面底板/UI_JJC_DWJLBJ.png", 0)
     for i = 1, 8 do
-        img.tier[i] = nvgCreateImage(vg, "image/ICON_DW_" .. i .. ".png", 0)
+        img.tier[i] = nvgCreateImage(vg, "image/段位图标/ICON_DW_" .. i .. ".png", 0)
     end
     for i = 1, 6 do
     -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）

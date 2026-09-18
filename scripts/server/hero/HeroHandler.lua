@@ -174,6 +174,22 @@ handlers[Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT] = function(uid, params)
     }
 end
 
+handlers[Protocol.ACTION_TYPES.SYNC_EXTRA_TALENT] = function(uid, params)
+    local ok, err, result = HeroService.SyncExtraTalent(
+        uid,
+        params and params.heroId,
+        params and params.extraTalent
+    )
+    if not ok then
+        return { success = false, reason = err }
+    end
+    return {
+        success = true,
+        heroId = result.heroId,
+        extraTalent = result.extraTalent,
+    }
+end
+
 HeroHandler.actionHandlers = handlers
 
 return HeroHandler

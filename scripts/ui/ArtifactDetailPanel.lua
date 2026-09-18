@@ -379,7 +379,7 @@ end
 
 function ArtifactDetailPanel.init(vg)
     ImageCache.init(vg)
-    imgPowerIcon = nvgCreateImage(vg, "image/ICON_ZDL.png", 0)
+    imgPowerIcon = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
     print("[ArtifactDetailPanel] init OK")
 end
 

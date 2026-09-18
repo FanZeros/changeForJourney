@@ -79,7 +79,7 @@ function LoadingScreen.init(nvgCtx)
     print("[LoadingScreen] init start")
     vg_ = nvgCtx
     print("[LoadingScreen] loading images...")
-    imgMask_    = nvgCreateImage(vg_, "image/界面底板/UI_ZRJM_HD.png", 0)
+    imgMask_    = nvgCreateImage(vg_, "image/界面底板/标题与加载/UI_ZRJM_HD.png", 0)
     imgBarBg_   = nvgCreateImage(vg_, "image/进度条/UI_ZRJM_JDT2.png", 0)
     imgBarFill_ = nvgCreateImage(vg_, "image/进度条/UI_ZRJM_JDT1.png", 0)
     print("[LoadingScreen] images OK")

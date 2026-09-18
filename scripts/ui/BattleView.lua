@@ -27,7 +27,7 @@ function BattleView.init(vg)
     if img.loaded then return end
     img.loaded   = true
     img.map      = nvgCreateImage(vg, "image/关卡地图/MAP_1.png", 0)
-    img.shadow   = nvgCreateImage(vg, "image/界面底板/UI_YWJM_MAPYY.png", 0)
+    img.shadow   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY.png", 0)
     img.enemyTag = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
 end
 

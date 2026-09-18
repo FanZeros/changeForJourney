@@ -427,10 +427,10 @@ function M.init(vg)
     ImageCache.init(vg)
     ArtifactAssetUtil.preloadIcons()
 
-    img.topBg     = nvgCreateImage(vg, "image/界面底板/UI_JTSQ_BJ.png", 0)
-    -- [暗黑化 P1-B5] 原 image/界面底板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
-    img.lowerBg   = nvgCreateImage(vg, "image/界面底板/UI_TJP_1.png", 0)
-    img.titleDeco = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
+    img.topBg     = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTSQ_BJ.png", 0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
+    img.lowerBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
+    img.titleDeco = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     img.mergeBtn  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     img.rerollBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.iconUp    = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)

@@ -1616,10 +1616,10 @@ end
 -- ======================== Public API ========================
 
 function MarketPage.init(vg)
-    img.bg       = nvgCreateImage(vg, "image/界面底板/UI_SCBJ.png", 0)
-    img.nameBg   = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
-    img.lowerBg  = nvgCreateImage(vg, "image/界面底板/UI_TJP_1.png", 0)
-    img.titleDeco = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
+    img.bg       = nvgCreateImage(vg, "image/界面底板/商店/UI_SCBJ.png", 0)
+    img.nameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
+    img.lowerBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
+    img.titleDeco = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     img.gold     = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     img.gem      = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     img.privilege = nvgCreateImage(vg, "image/货币道具/UI_icon_TQD_X.png", 0)
@@ -1630,20 +1630,20 @@ function MarketPage.init(vg)
 
     -- 商品卡片
     for i = 1, 6 do
-        img.cardBg[i] = nvgCreateImage(vg, "image/界面底板/UI_SDICONBJ_" .. i .. ".png", 0)
+        img.cardBg[i] = nvgCreateImage(vg, "image/界面底板/商店/UI_SDICONBJ_" .. i .. ".png", 0)
     end
-    img.buyBtn = nvgCreateImage(vg, "image/界面底板/UI_SD_AN.png", 0)
+    img.buyBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SD_AN.png", 0)
     for idx, item in ipairs(SHOP_ITEMS) do
         img.itemIcons[idx] = nvgCreateImage(vg, item.icon, 0)
         img.costIcons[idx] = nvgCreateImage(vg, item.costIcon, 0)
     end
 
     -- 弹窗
-    img.dialogBg = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    img.dialogBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     img.buyBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.btnMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
     img.btnPlus = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
-    -- [暗黑化 P1-B5] 原 image/界面底板/UI_SD_AN.png 贴图加载已移除（矢量绘制替代）
+    -- [暗黑化 P1-B5] 原 image/界面底板/商店/UI_SD_AN.png 贴图加载已移除（矢量绘制替代）
     img.diamondIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     img.privilegeIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TQD_X.png", 0)
     for i = 1, 6 do
@@ -1654,17 +1654,17 @@ function MarketPage.init(vg)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.privProgBg      = nvgCreateImage(vg, "image/进度条/UI_TQ_JDY2.png", 0)
     img.privProgFill    = nvgCreateImage(vg, "image/进度条/UI_TQ_JDY1.png", 0)
-    img.privDotActive   = nvgCreateImage(vg, "image/界面底板/UI_TQ_1.png", 0)
-    img.privDotInactive = nvgCreateImage(vg, "image/界面底板/UI_TQ_2.png", 0)
-    img.privRewardBg    = nvgCreateImage(vg, "image/界面底板/UI_TQ_3.png", 0)
+    img.privDotActive   = nvgCreateImage(vg, "image/界面底板/商店/UI_TQ_1.png", 0)
+    img.privDotInactive = nvgCreateImage(vg, "image/界面底板/商店/UI_TQ_2.png", 0)
+    img.privRewardBg    = nvgCreateImage(vg, "image/界面底板/商店/UI_TQ_3.png", 0)
     img.privClaimBtn    = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     img.privPointIcon   = nvgCreateImage(vg, "image/货币道具/UI_icon_TQD.png", 0)   -- 特权点大图标
     img.privAdBtn       = nvgCreateImage(vg, "image/按钮/UI_AN_DA.png", 0)      -- 观看广告按钮背景
-    img.collectionChestBg = nvgCreateImage(vg, "image/界面底板/UI_SCDC_KC1.png", 0)
-    img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/UI_SCDC_AN.png", 0)
+    img.collectionChestBg = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_KC1.png", 0)
+    img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_AN.png", 0)
     img.goldenKey = nvgCreateImage(vg, "image/货币道具/UI_icon_HJYS.png", 0)
     img.diamondBig = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
-    img.confirmArrow = nvgCreateImage(vg, "image/界面底板/UI_TJP_JIANTOU.png", 0)
+    img.confirmArrow = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
     for i, reward in ipairs(PRIVILEGE_REWARDS) do
         privRewardIcons[i] = nvgCreateImage(vg, reward.icon, 0)
     end

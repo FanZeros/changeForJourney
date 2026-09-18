@@ -1038,9 +1038,9 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     vg_ = vg
-    imgTopBg   = nvgCreateImage(vg, "image/界面底板/UI_BB_BJ.png", 0)
-    imgTitleBg = nvgCreateImage(vg, "image/界面底板/UI_TJP_MC.png", 0)
-    imgDeco    = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
+    imgTopBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_BB_BJ.png", 0)
+    imgTitleBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
+    imgDeco    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     imgTabBg   = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）

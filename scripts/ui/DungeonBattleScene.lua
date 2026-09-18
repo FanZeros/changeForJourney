@@ -477,7 +477,7 @@ function DungeonScene.init(vg)
     imgMapGoldMine   = nvgCreateImage(vg, "image/关卡地图/MAP_FB1.png", 0)
     imgMapAncientRuin = nvgCreateImage(vg, "image/关卡地图/MAP_FB2.png", 0)
     imgMapBabelTower = nvgCreateImage(vg, "image/关卡地图/MAP_FB3.png", 0)
-    imgShadow        = nvgCreateImage(vg, "image/界面底板/UI_YWJM_MAPYY.png", 0)
+    imgShadow        = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY.png", 0)
     imgRetreatBtn    = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
     imgSpeedIcon     = nvgCreateImage(vg, "image/通用图标/UI_ICON_kong.png", 0)
     imgEnemyTag      = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
@@ -486,7 +486,7 @@ function DungeonScene.init(vg)
     end
 
     -- 确认弹窗图片
-    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgBtnRed    = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_hong.png", 0)
     imgBtnGray   = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
     BattleEffects.init(vg)

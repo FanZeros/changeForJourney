@@ -100,10 +100,10 @@ end
 -- ======================== Public API ========================
 
 function BottomNav.init(vg)
-    imgNavBg  = nvgCreateImage(vg, "image/界面底板/UI_YWJM_DB.png", 0)
-    imgTabBg1 = nvgCreateImage(vg, "image/界面底板/UI_YWJM_DBAN1.png", 0)
-    imgTabBg2 = nvgCreateImage(vg, "image/界面底板/UI_YWJM_DBAN2.png", 0)
-    imgTabBg3 = nvgCreateImage(vg, "image/界面底板/UI_YWJM_DBAN3.png", 0)
+    imgNavBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_DB.png", 0)
+    imgTabBg1 = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_DBAN1.png", 0)
+    imgTabBg2 = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_DBAN2.png", 0)
+    imgTabBg3 = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_DBAN3.png", 0)
 
     -- [暗黑化 P0] 页签图标/红点由 core/DarkIcon.lua 矢量绘制，无需加载
 

@@ -222,10 +222,10 @@ end
 -- ======================== Public API ========================
 
 function Dialog.init(vg)
-    img.bg       = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
-    img.barBg    = nvgCreateImage(vg, "image/界面底板/UI_JJCJL_DYT2.png", 0)
-    img.barFill  = nvgCreateImage(vg, "image/界面底板/UI_JJCJL_DYT1.png", 0)
-    img.rewardBg = nvgCreateImage(vg, "image/界面底板/UI_JJC_DWJLBJ.png", 0)
+    img.bg       = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    img.barBg    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJL_DYT2.png", 0)
+    img.barFill  = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJL_DYT1.png", 0)
+    img.rewardBg = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_DWJLBJ.png", 0)
     for i = 1, 8 do
         img.tier[i] = nvgCreateImage(vg, "image/段位图标/ICON_DW_" .. i .. ".png", 0)
     end

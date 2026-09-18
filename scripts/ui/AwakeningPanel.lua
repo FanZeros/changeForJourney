@@ -170,15 +170,15 @@ end
 -- ======================== 初始化 ========================
 
 function M.initImages(vg)
-    imgBg          = nvgCreateImage(vg, "image/界面底板/UI_JX_BJ.png", 0)
-    imgTitleBg     = nvgCreateImage(vg, "image/界面底板/UI_JX_1.png", 0)
-    imgSubTitleBg  = nvgCreateImage(vg, "image/界面底板/UI_ZBT1.png", 0)
+    imgBg          = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_BJ.png", 0)
+    imgTitleBg     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_1.png", 0)
+    imgSubTitleBg  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
     imgActivateBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
-    imgSelectArrow = nvgCreateImage(vg, "image/界面底板/UI_JX_JT.png", 0)
+    imgSelectArrow = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_JT.png", 0)
 
     for i = 1, NODE_COUNT do
-        imgNodesA[i] = nvgCreateImage(vg, "image/界面底板/UI_JXICON_A" .. i .. ".png", 0)
-        imgNodesB[i] = nvgCreateImage(vg, "image/界面底板/UI_JXICON_B" .. i .. ".png", 0)
+        imgNodesA[i] = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JXICON_A" .. i .. ".png", 0)
+        imgNodesB[i] = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JXICON_B" .. i .. ".png", 0)
     end
 
     imgBadges["R"]   = nvgCreateImage(vg, "image/品质框/UI_PZBZ_R.png", 0)

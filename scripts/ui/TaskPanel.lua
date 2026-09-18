@@ -467,11 +467,11 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     vg_ = vg
-    imgTopBg     = nvgCreateImage(vg, "image/界面底板/UI_RW_BJ.png", 0)
-    -- [暗黑化 P1-B5] 原 image/界面底板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
-    imgPanel     = nvgCreateImage(vg, "image/界面底板/UI_TJP_1.png", 0)
-    imgDeco      = nvgCreateImage(vg, "image/界面底板/UI_JJC_BTBJ.png", 0)
-    imgEntryBg   = nvgCreateImage(vg, "image/界面底板/UI_RW_1.png", 0)
+    imgTopBg     = nvgCreateImage(vg, "image/界面底板/签到任务/UI_RW_BJ.png", 0)
+    -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
+    imgPanel     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
+    imgDeco      = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
+    imgEntryBg   = nvgCreateImage(vg, "image/界面底板/签到任务/UI_RW_1.png", 0)
     imgBarBg     = nvgCreateImage(vg, "image/进度条/UI_RW_JDT2.png", 0)
     imgBarFill   = nvgCreateImage(vg, "image/进度条/UI_RW_JDT1.png", 0)
     imgBtnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)

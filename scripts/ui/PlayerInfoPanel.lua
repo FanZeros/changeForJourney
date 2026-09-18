@@ -319,7 +319,7 @@ end
 --- 初始化（加载图片资源，仅调用一次）
 function PlayerInfoPanel.init(vg)
     -- 上半部分
-    img.bg      = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    img.bg      = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     img.avatar  = nvgCreateImage(vg, "image/角色图标/UI_icon_hero_1.png", 0)
     AvatarFrameUtil.preloadFrames(vg, img.frameIcons)
     img.power   = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
@@ -343,7 +343,7 @@ function PlayerInfoPanel.init(vg)
     end
 
     -- 下半部分：卡片子元素
-    img.lvlBadge    = nvgCreateImage(vg, "image/界面底板/UI_JSJM_DJ.png", 0)
+    img.lvlBadge    = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_DJ.png", 0)
     img.expBarBgS   = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT1.png", 0)
     img.expBarFillS = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
 

@@ -1376,20 +1376,20 @@ function BattleScene.init(vg)
     -- 地图背景（loadStage 会根据章节自动切换）
     imgMap      = nvgCreateImage(vg, "image/关卡地图/MAP_1.png", 0)
     currentChapter = 1
-    imgShadow   = nvgCreateImage(vg, "image/界面底板/UI_YWJM_MAPYY.png", 0)
+    imgShadow   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY.png", 0)
     -- [卡牌惰性加载] 英雄卡/怪物卡大图改为首次进战斗时加载（ensureBattleCards）
     -- ⚠️ 新增怪物 ID 时必须补充到 ensureBattleCards 的加载清单！
     -- 否则 BattleDraw 会 fallback 到 imgMonsterCards[1]（怪物1的贴图）。
     ensureBattleCards(vg)
-    imgHpBg     = nvgCreateImage(vg, "image/界面底板/UI_ZD_HP1.png", 0)
-    imgHpFill   = nvgCreateImage(vg, "image/界面底板/UI_ZD_HPT2.png", 0)
-    imgEsFill   = nvgCreateImage(vg, "image/界面底板/UI_ZD_HPT3.png", 0)
-    imgAtkBg    = nvgCreateImage(vg, "image/界面底板/UI_ZD_GJT1.png", 0)
-    imgAtkFill  = nvgCreateImage(vg, "image/界面底板/UI_ZD_GJT2.png", 0)
-    imgBtnBack  = nvgCreateImage(vg, "image/界面底板/UI_YWJM_XYGA.png", 0)
-    imgBtnFwd     = nvgCreateImage(vg, "image/界面底板/UI_YWJM_XYGB.png", 0)
-    imgBtnFwdGrey = nvgCreateImage(vg, "image/界面底板/UI_YWJM_XYG.png", 0)
-    imgBtnIcon    = nvgCreateImage(vg, "image/界面底板/UI_YWJM_XYG2.png", 0)
+    imgHpBg     = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HP1.png", 0)
+    imgHpFill   = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HPT2.png", 0)
+    imgEsFill   = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HPT3.png", 0)
+    imgAtkBg    = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_GJT1.png", 0)
+    imgAtkFill  = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_GJT2.png", 0)
+    imgBtnBack  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYGA.png", 0)
+    imgBtnFwd     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYGB.png", 0)
+    imgBtnFwdGrey = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG.png", 0)
+    imgBtnIcon    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG2.png", 0)
     BattleScene.imgSpeedIcon  = nvgCreateImage(vg, "image/通用图标/UI_ICON_kong.png", 0)
     imgEnemyTag = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
     for i = 1, 6 do
@@ -1398,7 +1398,7 @@ function BattleScene.init(vg)
     imgDeath    = nvgCreateImage(vg, "image/品质框/KP_Death.png", 0)
 
     -- 终焉神殿确认弹窗
-    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     imgBtnGray   = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
 

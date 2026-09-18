@@ -196,7 +196,7 @@ local dungeonList = {
     {
         id = "gold_mine",
         name = "黄金矿洞",
-        cardImage = "image/界面底板/UI_FBRK_1.png",
+        cardImage = "image/界面底板/副本秘境/UI_FBRK_1.png",
         maxDaily = 2,
         rewards = {
             { type = "gold", icon = "image/货币道具/UI_icon_JB_X.png", quality = 2, label = "扫荡" },
@@ -207,7 +207,7 @@ local dungeonList = {
         id = "ancient_ruin",
         name = "上古遗迹",
         titleColor = { 0x78, 0xFF, 0xF7 },  -- #78FFF7
-        cardImage = "image/界面底板/UI_FBRK_2.png",
+        cardImage = "image/界面底板/副本秘境/UI_FBRK_2.png",
         maxDaily = 2,
         rewards = {
             { type = "dust",  icon = "image/货币道具/UI_icon_ASFC.png", quality = 3, label = "奥术尘" },
@@ -218,7 +218,7 @@ local dungeonList = {
         id = "babel_tower",
         name = "通天塔",
         titleColor = { 0xFF, 0xD7, 0x00 },  -- #FFD700 金色
-        cardImage = "image/界面底板/UI_FBRK_3.png",
+        cardImage = "image/界面底板/副本秘境/UI_FBRK_3.png",
         maxDaily = 2,
         rewards = {
             { type = "diamond", icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5, label = "钻石" },
@@ -444,10 +444,10 @@ end
 -- ======================== Public API ========================
 
 function DungeonPage.init(vg)
-    imgTopPattern = nvgCreateImage(vg, "image/界面底板/UI_FB_BJ.png", 0)
-    imgCard1      = nvgCreateImage(vg, "image/界面底板/UI_FBRK_1.png", 0)
-    imgCard2      = nvgCreateImage(vg, "image/界面底板/UI_FBRK_2.png", 0)
-    imgCard3      = nvgCreateImage(vg, "image/界面底板/UI_FBRK_3.png", 0)
+    imgTopPattern = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FB_BJ.png", 0)
+    imgCard1      = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FBRK_1.png", 0)
+    imgCard2      = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FBRK_2.png", 0)
+    imgCard3      = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FBRK_3.png", 0)
     imgGold       = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     imgGem        = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     imgDust       = nvgCreateImage(vg, "image/货币道具/UI_icon_ASFC.png", 0)
@@ -458,7 +458,7 @@ function DungeonPage.init(vg)
     end
 
     -- 详情面板图片
-    imgDetailBg  = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgDetailBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgFloorBg1  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_1.png", 0)
     imgFloorBg2  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_2.png", 0)
     imgFloorBg3  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_3.png", 0)

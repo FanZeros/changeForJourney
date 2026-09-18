@@ -214,7 +214,7 @@ end
 
 function RelicBagPanel.init(vg)
     vg_ = vg
-    imgPanel    = nvgCreateImage(vg, "image/界面底板/UI_TJP_1.png", 0)
+    imgPanel    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     imgMergeBtn = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     imgIconUp   = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)

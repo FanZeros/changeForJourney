@@ -184,7 +184,7 @@ end
 
 function Panel.init(vg)
     imgIcon    = nvgCreateImage(vg, "image/通用图标/UI_ICON_GG.png", 0)
-    imgEntryBg = nvgCreateImage(vg, "image/界面底板/UI_GG_1.png", 0)
+    imgEntryBg = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GG_1.png", 0)
     loadReadSet()  -- 从本地文件恢复已读状态
     print("[AnnouncementPanel] init OK")
 end

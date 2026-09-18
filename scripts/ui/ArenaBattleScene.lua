@@ -355,8 +355,8 @@ end
 -- ======================== Public API ========================
 
 function ArenaBattle.init(vg)
-    imgMap = nvgCreateImage(vg, "image/界面底板/MAP_JJC.png", 0)
-    imgShadow = nvgCreateImage(vg, "image/界面底板/UI_YWJM_MAPYY.png", 0)
+    imgMap = nvgCreateImage(vg, "image/界面底板/竞技场排行/MAP_JJC.png", 0)
+    imgShadow = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY.png", 0)
     imgSurrenderBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
     imgEnemyTag = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
     for i = 1, 6 do
@@ -366,7 +366,7 @@ function ArenaBattle.init(vg)
         imgTierIcons[i] = nvgCreateImage(vg, "image/段位图标/ICON_DW_" .. i .. ".png", 0)
     end
     -- 投降确认弹窗图片
-    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/UI_TY_EJQRK.png", 0)
+    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgBtnRed    = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_hong.png", 0)
     imgBtnGray   = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
     BattleEffects.init(vg)

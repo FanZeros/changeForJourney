@@ -219,10 +219,10 @@ end
 ---@param vg any NanoVG 上下文
 function BRP.init(vg)
     cachedVg = vg
-    imgWinBg    = nvgCreateImage(vg, "image/界面底板/UI_JJCJS_ZDSL.png", 0)
-    imgLoseBg   = nvgCreateImage(vg, "image/界面底板/UI_JJCJS_ZDSB.png", 0)
-    imgWinGlow  = nvgCreateImage(vg, "image/界面底板/UI_GXHD_2.png", 0)
-    imgLoseGlow = nvgCreateImage(vg, "image/界面底板/UI_GXHD_3.png", 0)
+    imgWinBg    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJS_ZDSL.png", 0)
+    imgLoseBg   = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJS_ZDSB.png", 0)
+    imgWinGlow  = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_2.png", 0)
+    imgLoseGlow = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_3.png", 0)
     imgScoreIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCFS_X.png", 0)
     print("[BattleResultPanel] init OK")
 end

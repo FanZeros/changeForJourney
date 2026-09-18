@@ -25,6 +25,7 @@ local ATTR_NAME_MAP = {
     ["生命值"]       = AD.MAX_HP,
     ["护甲"]         = AD.PHYS_ARMOR,
     ["能量护盾"]     = AD.MAG_ARMOR,
+    ["护盾"]         = AD.MAG_ARMOR,
     ["物理护甲"]     = AD.PHYS_ARMOR,   -- [兼容旧文本]
     ["魔法护甲"]     = AD.MAG_ARMOR,    -- [兼容旧文本]
     ["每秒回血"]     = AD.HP_REGEN,
@@ -39,6 +40,7 @@ local ATTR_NAME_MAP = {
     ["生命加成"]     = AD.HP_BONUS,
     ["护甲加成"]     = AD.ARMOR_BONUS,
     ["能量护盾加成"] = AD.ES_BONUS,
+    ["护盾加成"]     = AD.ES_BONUS,
     -- 攻击属性
     ["物理攻击力"]   = AD.PHYS_ATK,
     ["魔法攻击力"]   = AD.MAG_ATK,

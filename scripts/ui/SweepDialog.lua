@@ -291,7 +291,7 @@ function SweepDialog.drawButton(vg)
     local _ds = BF.begin(vg, "sweep_btn", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, imgBtnSweep, BTN_CX, BTN_CY, BTN_W, BTN_H, 1.0)
     -- 图标下方绘制"扫荡"文字标签（样式与战利品文字保持一致：白色 32px 描边4）
-    drawTextStroke(vg, BTN_CX, 2174, "扫荡", 32,
+    drawTextStroke(vg, BTN_CX, BTN_CY + BTN_H * 0.42, "扫荡", 32,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
     BF.finish(vg, _ds)
 end

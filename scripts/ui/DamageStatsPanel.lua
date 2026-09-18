@@ -171,7 +171,7 @@ function DamageStatsPanel.drawButton(vg)
     if imgBtn < 0 then return end
     local _ds = BF.begin(vg, "dmgstat_btn", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, imgBtn, BTN_CX, BTN_CY, BTN_W, BTN_H, 1.0)
-    drawTextStroke(vg, BTN_CX, 2174, "统计", 32,
+    drawTextStroke(vg, BTN_CX, BTN_CY + BTN_H * 0.42, "统计", 32,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
     BF.finish(vg, _ds)
 end

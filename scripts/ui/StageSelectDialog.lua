@@ -22,8 +22,11 @@ local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 -- 扫荡 (971, 2115) / 统计 (815, 2115) / 选关放统计左侧
 local BTN_CX = 659
 local BTN_CY = 2115
+-- 与扫荡/统计同一套圆钮画布，按素材原比例绘制避免压扁
 local BTN_W  = 130
 local BTN_H  = 144
+local ICON_W = 130
+local ICON_H = 144
 
 local D = {
     OVL_A   = 128,
@@ -189,14 +192,14 @@ end
 function StageSelectDialog.drawButton(vg)
     local _ds = BF.begin(vg, "stage_sel_btn", BTN_CX, BTN_CY, BTN_W, BTN_H)
     if imgBtn >= 0 then
-        drawImageCentered(vg, imgBtn, BTN_CX, BTN_CY, BTN_W, BTN_H, 1.0)
+        drawImageCentered(vg, imgBtn, BTN_CX, BTN_CY, ICON_W, ICON_H, 1.0)
     else
         nvgBeginPath(vg)
         nvgRoundedRect(vg, BTN_CX - BTN_W * 0.5, BTN_CY - BTN_H * 0.5, BTN_W, BTN_H, 18)
         nvgFillColor(vg, nvgRGBA(201, 151, 59, 230))
         nvgFill(vg)
     end
-    drawTextStroke(vg, BTN_CX, 2174, "选关", 32,
+    drawTextStroke(vg, BTN_CX, BTN_CY + BTN_H * 0.42, "选关", 32,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
     BF.finish(vg, _ds)
 end

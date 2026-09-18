@@ -727,7 +727,7 @@ local function drawWeeklyContent(vg, skipTopBg)
 
             nvgFontFace(vg, "sans"); nvgFontSize(vg, ENTRY.BTN_FONT)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, ENTRY.BTN_TEXT_A))
+            nvgFillColor(vg, nvgRGBA(244, 237, 224, ENTRY.BTN_TEXT_A))
             nvgText(vg, ENTRY.BTN_CX, cy + ENTRY.BTN_CY_OFF, btnText, nil)
 
             -- locked 状态：叠加黑色 50% 遮罩
@@ -796,7 +796,7 @@ local function drawDailyContent(vg, skipTopBg)
 
         nvgFontFace(vg, "sans"); nvgFontSize(vg, DAILY_SIGN_BTN.FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, DAILY_SIGN_BTN.TEXT_A))
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, DAILY_SIGN_BTN.TEXT_A))
         nvgText(vg, DAILY_SIGN_BTN.CX, DAILY_SIGN_BTN.CY, "签到", nil)
         BF.finish(vg, _bf1)
     end

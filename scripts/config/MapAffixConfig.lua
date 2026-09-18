@@ -75,7 +75,7 @@ function MapAffixConfig.formatAffixText(id, params, def)
     local p = params or {}
     if id == "energy_barrier" then
         return "怪物获得" .. pct(p.shieldPct) .. "%最大生命的护盾",
-            "所有怪物获得最大生命值×" .. pct(p.shieldPct) .. "%的能量护盾"
+            "所有怪物获得最大生命值×" .. pct(p.shieldPct) .. "%的护盾"
     elseif id == "berserk_low_hp" then
         return "怪物低于" .. pct(p.threshold) .. "%血时暴走",
             "怪物生命低于" .. pct(p.threshold) .. "%时，攻击速度+" .. pct(p.atkSpeedBonus) .. "%，伤害+" .. pct(p.dmgBonus) .. "%"
@@ -127,11 +127,11 @@ end
 --- desc: 效果描述（UI 展示用）
 --- params: 数值参数表
 MapAffixConfig.AFFIXES = {
-    -- 1. 能量壁障：怪物获得基于最大HP的能量护盾
+    -- 1. 能量壁障：怪物获得基于最大HP的护盾
     energy_barrier = {
         name = "能量壁障",
         shortDesc = "怪物获得12%最大生命的护盾",
-        desc = "所有怪物获得最大生命值×%d%%的能量护盾",
+        desc = "所有怪物获得最大生命值×%d%%的护盾",
         params = { shieldPct = 0.12 },
     },
     -- 2. 濒死狂怒：低血暴走

@@ -977,7 +977,7 @@ function TavernPage.draw(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, BTN_TARGET_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 191))
         nvgText(vg, BTN_TARGET_CX, BTN_TARGET_CY, isStellarPoolSelected() and "指定UP角色" or "指定招募", nil)
         BF.finish(vg, _s6)
     end -- state.tab ~= "shop"

@@ -191,7 +191,7 @@ local ADV_BRANCH_ATTRS = {
     [112] = { { name = "精神", value = "+5" }, { name = "体质", value = "+5" } },
     -- ===== 二转 =====
     [201] = { { name = "精神", value = "+5" }, { name = "体质", value = "+5" }, { name = "治疗加成", value = "+20%" } },
-    [202] = { { name = "体质", value = "+5" }, { name = "力量", value = "+5" }, { name = "能量护盾", value = "+49" } },
+    [202] = { { name = "体质", value = "+5" }, { name = "力量", value = "+5" }, { name = "护盾", value = "+49" } },
     [203] = { { name = "体质", value = "+5" }, { name = "力量", value = "+5" }, { name = "护甲", value = "+7" } },
     [204] = { { name = "体质", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "物理暴击率", value = "+6.25%" } },
     [205] = { { name = "力量", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "物理暴击率", value = "+6.25%" } },
@@ -412,7 +412,7 @@ function M.drawContent(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, BTN_RESET_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 178))   -- 纯黑 70% 不透明
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
         nvgText(vg, BTN_RESET_CX, BTN_RESET_CY, "重置", nil)
         BF.finish(vg, _bfReset)
     end

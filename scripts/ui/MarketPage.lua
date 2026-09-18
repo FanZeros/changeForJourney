@@ -907,7 +907,7 @@ drawPurchaseDialog = function(vg)
     DarkIcon.drawNine(vg, "btn", DLG.BUY_CX - DLG.BUY_W * 0.5, DLG.BUY_CY - DLG.BUY_H * 0.5, DLG.BUY_W, DLG.BUY_H, { accent = "gold" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.BUY_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 179))
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, 179))
     nvgText(vg, DLG.BUY_CX, DLG.BUY_CY, "购买", nil)
     BF.finish(vg, _sd)
 
@@ -1515,7 +1515,7 @@ local function drawPrivilegeContent(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, PV.BOT_AD_PLUS_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))   -- 75% 黑191/255
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 191))   -- 75% 黑191/255
         nvgText(vg, PV.BOT_AD_PLUS_CX, PV.BOT_AD_PLUS_Y,
             "+" .. tostring(getPrivilegeAdRewardPoints()), nil)
     end

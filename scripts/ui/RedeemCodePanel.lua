@@ -437,7 +437,7 @@ function RedeemCodePanel.draw(vg)
     nvgFontSize(vg, CONFIRM_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     local btnTextAlpha = state.submitting and 100 or CONFIRM_TXT.A
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, btnTextAlpha))
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, btnTextAlpha))
     nvgText(vg, CONFIRM_TXT.X, CONFIRM_TXT.Y, state.submitting and "提交中..." or "确定", nil)
     BF.finish(vg, _bf1)
 

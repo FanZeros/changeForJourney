@@ -776,7 +776,7 @@ function AvatarSelectPanel.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, WEAR_BTN.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, WEAR_BTN.TEXT_A))
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, WEAR_BTN.TEXT_A))
     nvgText(vg, WEAR_BTN.CX, WEAR_BTN.CY, "穿戴", nil)
     BF.finish(vg, _bf1)
 

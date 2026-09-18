@@ -146,7 +146,7 @@ AD.META = {
     [AD.HP]               = { name = "当前生命",     valueModel = 0,    dataType = AD.TYPE_INT,   default = 0 },
     [AD.ARMOR]            = { name = "护甲",         valueModel = 0.7,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.RESISTANCE]       = { name = "伤害抗性",     valueModel = 0,    dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.ENERGY_SHIELD]    = { name = "魂幕",     valueModel = 0.1,  dataType = AD.TYPE_FLOAT, default = 0 },
+    [AD.ENERGY_SHIELD]    = { name = "护盾",     valueModel = 0.1,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.ES_REGEN_INTERVAL] = { name = "护盾恢复间隔", valueModel = 0,   dataType = AD.TYPE_FLOAT, default = 1.2 },
     [AD.DODGE]            = { name = "闪避值",       valueModel = 1,    dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.THREAT]           = { name = "怨引值",       valueModel = 0.08, dataType = AD.TYPE_INT,   default = 1 },
@@ -160,8 +160,8 @@ AD.META = {
     [AD.HP_BONUS]         = { name = "生命加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.DODGE_BONUS]      = { name = "闪避加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.ES_REGEN_SPEED]   = { name = "护盾恢复速度",   valueModel = 0,    dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.ES_BONUS]         = { name = "魂幕加成",   valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.ES_DMG_REDUCE]    = { name = "魂幕伤害减免", valueModel = 60, dataType = AD.TYPE_PCT,   default = 20, cap = 80 },
+    [AD.ES_BONUS]         = { name = "护盾加成",   valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
+    [AD.ES_DMG_REDUCE]    = { name = "护盾伤害减免", valueModel = 60, dataType = AD.TYPE_PCT,   default = 20, cap = 80 },
     [AD.ARMOR_BONUS]      = { name = "护甲加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
 
     -- 攻击属性
@@ -200,7 +200,7 @@ AD.META = {
     [AD.FINAL_LUK_BONUS]           = { name = "最终命数",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
     [AD.FINAL_SPI_BONUS]           = { name = "最终魂火",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
     [AD.FINAL_ARMOR_BONUS]         = { name = "最终护甲",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
-    [AD.FINAL_ENERGY_SHIELD_BONUS] = { name = "最终魂幕",   valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
+    [AD.FINAL_ENERGY_SHIELD_BONUS] = { name = "最终护盾",   valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
     [AD.FINAL_DODGE_BONUS]         = { name = "最终闪避",       valueModel = 60, dataType = AD.TYPE_PCT, default = 0 },
 
     -- 治疗属性
@@ -220,17 +220,17 @@ AD.DESC = {
     -- 基础属性（六围）
     [AD.STR] = "每1点增加1物理攻击力、0.5%物理伤害加成、1.0护甲、5生命值",
     [AD.AGI] = "每1点增加0.5物理攻击力、0.5魔法攻击力、0.4%攻击速度、0.15护甲、0.1%闪避加成、0.4命中值、0.35闪避值",
-    [AD.INT] = "每1点增加1魔法攻击力、0.5%魔法伤害加成、3.0能量护盾、0.5%能量护盾加成、8生命值",
-    [AD.VIT] = "每1点增加33生命值、0.5%护甲加成、2.0能量护盾",
+    [AD.INT] = "每1点增加1魔法攻击力、0.5%魔法伤害加成、3.0护盾、0.5%护盾加成、8生命值",
+    [AD.VIT] = "每1点增加33生命值、0.5%护甲加成、2.0护盾",
     [AD.LUK] = "每1点增加0.5物理攻击力、0.5魔法攻击力、0.5%最大伤害加成、0.3%暴击概率、1.5%暴击伤害、0.34闪避值",
-    [AD.SPI] = "每1点增加2.5能量护盾、0.5%能量护盾加成、0.1%异常状态抗性、1治疗量、0.4%治疗加成、10生命值",
+    [AD.SPI] = "每1点增加2.5护盾、0.5%护盾加成、0.1%异常状态抗性、1治疗量、0.4%治疗加成、10生命值",
 
     -- 防御属性
-    [AD.MAX_HP]           = "单位生命值，归零则判定死亡",
+    [AD.MAX_HP]           = "生命上限。生命归零则死亡。",
     [AD.ARMOR]            = "将同比转化为伤害抗性，转化率 = 0.01×护甲/(0.01×护甲+1)",
     [AD.RESISTANCE]       = "通常只能通过护甲转化而来",
-    [AD.ENERGY_SHIELD]    = "受到生命值伤害之前先消耗能量护盾，该值为能量护盾上限",
-    [AD.ES_REGEN_INTERVAL] = "基础值为1.2秒，能量护盾恢复间隔",
+    [AD.ENERGY_SHIELD]    = "受伤时先扣除护盾，护盾扣完后才扣生命。该值为护盾上限。",
+    [AD.ES_REGEN_INTERVAL] = "护盾恢复间隔，基础1.2秒。",
     [AD.DODGE]            = "影响被命中概率，命中率=(命中值+150)/(闪避值+150)",
     [AD.THREAT]           = "影响被敌方随机攻击的权重，仇恨值越高越容易被集火",
     [AD.HP_REGEN]         = "每秒恢复的生命值，可被治疗属性增幅",
@@ -242,6 +242,9 @@ AD.DESC = {
     [AD.ABNORMAL_RES]     = "减少受到的异常状态持续时间，上限80%",
     [AD.HP_BONUS]         = "百分比增加生命值上限",
     [AD.DODGE_BONUS]     = "百分比增加闪避值",
+    [AD.ES_BONUS]         = "百分比增加护盾上限",
+    [AD.ES_DMG_REDUCE]    = "护盾受到伤害时减免的比例",
+    [AD.ES_REGEN_SPEED]   = "百分比加快护盾恢复速度",
 
     -- 攻击属性
     [AD.PHYS_ATK]       = "单位基础物理攻击力",
@@ -279,7 +282,7 @@ AD.DESC = {
     [AD.FINAL_LUK_BONUS]           = "最终乘区百分比增加命数，并重新计算六围派生",
     [AD.FINAL_SPI_BONUS]           = "最终乘区百分比增加魂火，并重新计算六围派生",
     [AD.FINAL_ARMOR_BONUS]         = "最终乘区百分比增加护甲",
-    [AD.FINAL_ENERGY_SHIELD_BONUS] = "最终乘区百分比增加魂幕",
+    [AD.FINAL_ENERGY_SHIELD_BONUS] = "最终乘区百分比增加护盾",
     [AD.FINAL_DODGE_BONUS]         = "最终乘区百分比增加闪避值",
 
     -- 治疗属性

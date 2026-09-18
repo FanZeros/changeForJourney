@@ -38,7 +38,7 @@ AffixConfig.AFFIXES = {
     -- 防御属性
     { id = 7,  key = "maxHp",         dataType = "int",   baseValue = 33,    weight = 100, name = "生命值" },
     { id = 8,  key = "armor",         dataType = "float", baseValue = 1.43,  weight = 100, name = "护甲" },
-    { id = 9,  key = "energyShield",  dataType = "float", baseValue = 10.00, weight = 100, name = "魂幕" },
+    { id = 9,  key = "energyShield",  dataType = "float", baseValue = 10.00, weight = 100, name = "护盾" },
     { id = 10, key = "dodge",         dataType = "float", baseValue = 1.00,  weight = 100, name = "闪避值" },
     { id = 11, key = "hpRegen",       dataType = "float", baseValue = 3.33,  weight = 100, name = "每秒回血" },
     { id = 12, key = "atkHeal",       dataType = "float", baseValue = 2.22,  weight = 100, name = "攻击回血" },
@@ -78,7 +78,7 @@ AffixConfig.AFFIXES = {
     { id = 40, key = "magAtkBonus",  dataType = "pct",   baseValue = 1.7,   weight = 100, name = "魔法攻击加成" },
     { id = 41, key = "hpBonus",      dataType = "pct",   baseValue = 1.7,   weight = 100, name = "生命加成" },
     { id = 42, key = "dodgeBonus",   dataType = "pct",   baseValue = 1.7,   weight = 100, name = "闪避加成" },
-    { id = 43, key = "esBonus",      dataType = "pct",   baseValue = 1.7,   weight = 100, name = "能量护盾加成" },
+    { id = 43, key = "esBonus",      dataType = "pct",   baseValue = 1.7,   weight = 100, name = "护盾加成" },
     { id = 44, key = "armorBonus",   dataType = "pct",   baseValue = 1.7,   weight = 100, name = "护甲加成" },
 }
 
@@ -96,7 +96,7 @@ AffixConfig.CORRUPT_AFFIXES = {
     { id = 1009, key = "finalLukBonus",          dataType = "pct", baseValue = 1.7, weight = 100, name = "最终运气" },
     { id = 1010, key = "finalSpiBonus",          dataType = "pct", baseValue = 1.7, weight = 100, name = "最终精神" },
     { id = 1011, key = "finalArmorBonus",        dataType = "pct", baseValue = 1.7, weight = 100, name = "最终护甲" },
-    { id = 1012, key = "finalEnergyShieldBonus", dataType = "pct", baseValue = 1.7, weight = 100, name = "最终能量护盾" },
+    { id = 1012, key = "finalEnergyShieldBonus", dataType = "pct", baseValue = 1.7, weight = 100, name = "最终护盾" },
     { id = 1013, key = "finalDodgeBonus",        dataType = "pct", baseValue = 1.7, weight = 100, name = "最终闪避" },
 }
 

@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.5-talent-rework | 2026-09-18 | 8 个主技能按梗人设整段换机制 |
 | v2.4-talent-rename | 2026-09-18 | 全员天赋改名+5 主技能机制对齐梗人设 |
 | v2.3-electron-win | 2026-09-17 | Electron Windows 离线包：win-unpacked zip 461MB |
 | v2.2-extra-talent | 2026-09-17 | 4 个混合追加技试点：衔骨图鉴/冰雕/分裂弹/预存复活 |

@@ -84,7 +84,7 @@ HC.HEROES = {
     [1] = {
         quality = 1, classId = CC.WARRIOR,
         title = "汪卫先锋", name = "大狗嚼",
-        talentName = "衔骨狂", talentDesc = "生命值低于70%时进入衔骨：物理攻击力+25%、攻击速度+10%（觉醒1再+10%）。追加技【衔骨图鉴】：每击杀永久生命上限+1；每8杀解锁一种敌人攻击属性咬进图鉴，8系齐了普攻变为全系撕咬。",
+        talentName = "衔骨狂", talentDesc = "生命值低于70%时进入衔骨：攻击速度+20%，普攻额外撕咬一次（物理攻击力×40%）。追加技【衔骨图鉴】：每击杀永久生命上限+1；每8杀解锁一种敌人攻击属性咬进图鉴。",
         talentId = "karin_hope",
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.4, atkTargets = 1,
@@ -106,7 +106,7 @@ HC.HEROES = {
     [3] = {
         quality = 1, classId = CC.RANGER,
         title = "等通知哨兵", name = "叮咚鸡",
-        talentName = "已读不回", talentDesc = "前两刀是已读，第三刀通知到了：每3次攻击造成1.5倍伤害，并必定暴击",
+        talentName = "已读不回", talentDesc = "前两刀是已读（伤害仅 70%）。第三刀通知到了：1.8 倍伤害且必定暴击",
         talentId = "linda_precision_arrow",
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 2.0, atkTargets = 1,
@@ -117,7 +117,7 @@ HC.HEROES = {
     [4] = {
         quality = 2, classId = CC.KNIGHT,
         title = "浑元形意宗师", name = "接化发掌门",
-        talentName = "化劲", talentDesc = "接化发：物理/魔法格挡概率+8%，格挡成功时回复3%最大生命值",
+        talentName = "化劲", talentDesc = "接化发：物理/魔法格挡概率+8%。格挡成功回复 3% 最大生命，并把挡掉的伤害存进反击池，下次攻击一并打出",
         talentId = "cecilia_parry",
         gender = "female",
         atkType = AD.ATK_CRUSH, atkInterval = 2.7, atkTargets = 1,
@@ -150,7 +150,7 @@ HC.HEROES = {
     [7] = {
         quality = 2, classId = CC.RANGER,
         title = "光之巨人", name = "信光机兵",
-        talentName = "必杀蓄力", talentDesc = "每4次攻击蓄满光线：下次攻击连击概率+200%，并额外打出一道贯穿光线",
+        talentName = "必杀蓄力", talentDesc = "每 4 次攻击蓄满光线，下次攻击打出贯穿光线（本次伤害 ×70% 打所有其他敌人）",
         talentId = "hoshiori_flash",
         gender = "female",
         atkType = AD.ATK_LIGHTNING, atkInterval = 1.5, atkTargets = 2,
@@ -161,7 +161,7 @@ HC.HEROES = {
     [8] = {
         quality = 2, classId = CC.ASSASSIN,
         title = "弹弓怒鸟", name = "愤怒的小雀",
-        talentName = "仇册", talentDesc = "开场把仇记在册上：[标记]一个随机敌人，使其受到的伤害+25%",
+        talentName = "仇册", talentDesc = "开场先记一笔仇。之后优先[标记]打过自己的人（受伤+25%）；被标记的死了，仇恨传给下一个",
         talentId = "ayane_mark",
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.0, atkTargets = 2,
@@ -194,7 +194,7 @@ HC.HEROES = {
     [11] = {
         quality = 3, classId = CC.WARRIOR,
         title = "熬夜修仙党", name = "熬夜冠军",
-        talentName = "通宵斩", talentDesc = "每攻击4次斩出2道通宵斩，优先命中不同敌人，造成物理攻击力200%的斩击伤害；自身生命越低斩越痛",
+        talentName = "通宵斩", talentDesc = "每攻击 4 次斩出 2 道通宵斩（优先不同敌人）。基础为物理攻击力 200%；自身生命越低斩越痛（最多 +50%）",
         talentId = "suhua_nightslash",
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.6, atkTargets = 1,
@@ -227,7 +227,7 @@ HC.HEROES = {
     [14] = {
         quality = 3, classId = CC.ASSASSIN,
         title = "藏得最深的人", name = "内鬼",
-        talentName = "抄作业", talentDesc = "暴击概率+15%、暴击伤害+50%。暴击时偷5%攻速（最多+40%）；暴击时若目标生命低于15%直接收工",
+        talentName = "抄作业", talentDesc = "暴击概率+15%、暴击伤害+50%。暴击时偷目标 8% 攻速（最多 +40%）；目标生命低于 15% 时暴击直接收工",
         talentId = "yuuya_crit_mastery",
         gender = "female",
         atkType = AD.ATK_SHADOW, atkInterval = 0.9, atkTargets = 1,
@@ -271,7 +271,7 @@ HC.HEROES = {
     [21] = {
         quality = 3, classId = CC.WARRIOR,
         title = "赛道之王", name = "闪电卖鸡",
-        talentName = "氮气", talentDesc = "每次攻击有25%概率踩氮气：额外造成物理伤害×150%的雷殛伤害，麻痹0.3秒，并贯穿到另一名敌人。每拥有80命中率，触发概率+2%（最多额外增加20%）",
+        talentName = "氮气", talentDesc = "每次攻击有 25% 概率踩氮气：额外造成物理伤害×150% 的雷殛伤害、麻痹 0.3 秒、贯穿另一名敌人，并给自己叠 8% 攻速（最多 5 层）。每拥有 80 命中率，触发概率 +2%（最多额外 +20%）",
         talentId = "alex_silver_flash",
         gender = "male",
         atkType = AD.ATK_SLASH, atkInterval = 3.0, atkTargets = 2,

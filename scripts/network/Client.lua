@@ -20,14 +20,11 @@ local TownScene        = require("ui.TownScene")
 local BlacksmithPage   = require("ui.BlacksmithPage")
 local ChurchPage       = require("ui.ChurchPage")
 local TavernPage       = require("ui.TavernPage")
-local ArenaPage        = require("ui.ArenaPage")
 local MarketPage       = require("ui.MarketPage")
 local GuildPage        = require("ui.GuildPage")
-local ArenaBattleScene    = require("ui.ArenaBattleScene")
 local DungeonBattleScene  = require("ui.DungeonBattleScene")
 local TowerBattleScene    = require("ui.TowerBattleScene")
 local TowerBuffPick       = require("ui.TowerBuffPick")
-local ArenaOpponentDialog = require("ui.ArenaOpponentDialog")
 local GameState        = require("core.GameState")
 local ExpTable         = require("config.ExpTable")
 local HeroConfig       = require("config.HeroConfig")
@@ -819,21 +816,10 @@ function Client.Start()
         end)
         TavernPage.open()
     end)
-    print("[Client][LOAD]   ArenaPage.init...")
-    ArenaPage.init(vg)
-    print("[Client][LOAD]   ArenaBattleScene.init...")
-    ArenaBattleScene.init(vg)
     print("[Client][LOAD]   DungeonBattleScene.init...")
     DungeonBattleScene.init(vg)
     print("[Client][LOAD]   TowerBuffPick.init...")
     TowerBuffPick.init(vg)
-    -- 竞技场：点击直接开页面；打开动画结束后播入场情景54（无离场分支）
-    TownScene.setOnArenaClick(function()
-        ArenaPage.setOnOpenCallback(function()
-            ClientScenario.playFirstVisit(54, nil, nil)
-        end)
-        ArenaPage.open()
-    end)
     print("[Client][LOAD]   MarketPage.init...")
     MarketPage.init(vg)
     -- 注入 sendAction，让 MarketPage 走服务端购买流程
@@ -1417,8 +1403,6 @@ function Client.transitionToServerSelectAfterTransfer()
     GameBGM.stop()
     GameSFX.stop()
 
-    if ArenaBattleScene.isOpen()       then ArenaBattleScene.close()       end
-    if ArenaPage.isOpen()              then ArenaPage.close()              end
     if MarketPage.isOpen()             then MarketPage.close()             end
     if TavernPage.isOpen()             then TavernPage.close()             end
     if BlacksmithPage.isOpen()         then BlacksmithPage.close()         end
@@ -1440,7 +1424,6 @@ function Client.transitionToServerSelectAfterTransfer()
     if RelicReforgePanel.isVisible()   then RelicReforgePanel.hide()       end
     if DungeonBattleScene.isOpen()     then DungeonBattleScene.close()     end
     if TowerBattleScene.isActive()     then TowerBattleScene.close()       end
-    if ArenaOpponentDialog.isOpen()    then ArenaOpponentDialog.close()    end
 
     showOverlay = false
     Client.prepareForServerSelectReturn()
@@ -1531,7 +1514,6 @@ function HandleNanoVGRender_Client(eventType, eventData)
             BlacksmithPage.draw(vg)
             ChurchPage.draw(vg)
             TavernPage.draw(vg)
-            ArenaPage.draw(vg)
             MarketPage.draw(vg)
             GuildPage.draw(vg)
             ViewportH.finish(vg)
@@ -1582,14 +1564,9 @@ function HandleNanoVGRender_Client(eventType, eventData)
         nvgSave(vg)
         nvgTranslate(vg, designOffsetX, designOffsetY)
 
-        -- 竞技场副本对战全屏优先（覆盖所有其他界面）
-        local arenaBattleOpen = ArenaBattleScene.isOpen()
         local dungeonBattleOpen = DungeonBattleScene.isOpen()
         local towerBattleOpen = TowerBattleScene.isActive()
-        if arenaBattleOpen then
-            ArenaBattleScene.draw(vg)
-            -- 不绘制TopBar/BottomNav
-        elseif towerBattleOpen then
+        if towerBattleOpen then
             TowerBattleScene.draw(vg)
             -- 不绘制TopBar/BottomNav
         elseif dungeonBattleOpen then
@@ -1611,7 +1588,6 @@ function HandleNanoVGRender_Client(eventType, eventData)
                     BlacksmithPage.draw(vg)
                     ChurchPage.draw(vg)
                     TavernPage.draw(vg)
-                    ArenaPage.draw(vg)
                     MarketPage.draw(vg)
                     GuildPage.draw(vg)
                 elseif idx == 5 then
@@ -1653,18 +1629,17 @@ function HandleNanoVGRender_Client(eventType, eventData)
             local smithOpen  = BlacksmithPage.isOpen()
             local churchOpen = ChurchPage.isOpen()
             local tavernOpen = TavernPage.isOpen()
-            local arenaOpen  = ArenaPage.isOpen()
             local marketOpen = MarketPage.isOpen()
             local guildOpen  = GuildPage.isOpen()
             local signInOpen = SignInPanel.isOpen()
             local backpackOpen = BackpackPanel.isOpen()
             local taskOpen   = TaskPanel.isOpen()
-            if not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not arenaOpen and not marketOpen and not guildOpen and not signInOpen and not backpackOpen and not taskOpen then
+            if not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not marketOpen and not guildOpen and not signInOpen and not backpackOpen and not taskOpen then
                 if tabIndex ~= 5 then
                     TopBar.draw(vg)
                 end
                 BottomNav.draw(vg)
-            elseif taskOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not arenaOpen and not guildOpen and not signInOpen and not backpackOpen then
+            elseif taskOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not guildOpen and not signInOpen and not backpackOpen then
                 local animP = TaskPanel.getAnimProgress()
                 if animP < 1.0 then
                     local fadeAlpha = 1.0 - animP
@@ -1674,7 +1649,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
                     BottomNav.draw(vg)
                     nvgRestore(vg)
                 end
-            elseif backpackOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not arenaOpen and not guildOpen and not signInOpen then
+            elseif backpackOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not guildOpen and not signInOpen then
                 local animP = BackpackPanel.getAnimProgress()
                 if animP < 1.0 then
                     local fadeAlpha = 1.0 - animP
@@ -1684,7 +1659,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
                     BottomNav.draw(vg)
                     nvgRestore(vg)
                 end
-            elseif signInOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not arenaOpen and not guildOpen then
+            elseif signInOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not guildOpen then
                 local animP = SignInPanel.getAnimProgress()
                 if animP < 1.0 then
                     local fadeAlpha = 1.0 - animP
@@ -1694,17 +1669,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
                     BottomNav.draw(vg)
                     nvgRestore(vg)
                 end
-            elseif arenaOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen then
-                local animP = ArenaPage.getAnimProgress()
-                if animP < 1.0 then
-                    local fadeAlpha = 1.0 - animP
-                    nvgSave(vg)
-                    nvgGlobalAlpha(vg, fadeAlpha)
-                    TopBar.draw(vg)
-                    BottomNav.draw(vg)
-                    nvgRestore(vg)
-                end
-            elseif marketOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not arenaOpen and not guildOpen then
+            elseif marketOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not guildOpen then
                 local animP = MarketPage.getAnimProgress()
                 if animP < 1.0 then
                     local fadeAlpha = 1.0 - animP
@@ -1714,7 +1679,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
                     BottomNav.draw(vg)
                     nvgRestore(vg)
                 end
-            elseif guildOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not arenaOpen and not marketOpen then
+            elseif guildOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not marketOpen then
                 local animP = GuildPage.getAnimProgress()
                 if animP < 1.0 then
                     local fadeAlpha = 1.0 - animP
@@ -2214,7 +2179,6 @@ function HandleUpdate_Client(eventType, eventData)
                 .. " | smith=" .. tostring(BlacksmithPage.isOpen())
                 .. " church=" .. tostring(ChurchPage.isOpen())
                 .. " tavern=" .. tostring(TavernPage.isOpen())
-                .. " arena=" .. tostring(ArenaPage.isOpen())
                 .. " market=" .. tostring(MarketPage.isOpen())
                 .. " guild=" .. tostring(GuildPage.isOpen()))
             if lastTabIndex == BATTLE_TAB and tabIndex ~= BATTLE_TAB then
@@ -2297,9 +2261,6 @@ function HandleUpdate_Client(eventType, eventData)
             if TavernPage.isOpen() then
                 TavernPage.forceClose()
             end
-            if ArenaPage.isOpen() then
-                ArenaPage.forceClose()
-            end
             if MarketPage.isOpen() then
                 MarketPage.forceClose()
             end
@@ -2317,7 +2278,6 @@ function HandleUpdate_Client(eventType, eventData)
             if tabIndex == 4 and (BlacksmithPage.isOpen()
                 or ChurchPage.isOpen()
                 or TavernPage.isOpen()
-                or ArenaPage.isOpen()
                 or MarketPage.isOpen()
                 or GuildPage.isOpen()) then
                 bgmScene = "town_building"
@@ -2332,10 +2292,7 @@ function HandleUpdate_Client(eventType, eventData)
         end -- [LetterIntro] 守卫闭合
         GameBGM.update(dt)
 
-        -- 竞技场副本对战更新（打开时独占）
-        if ArenaBattleScene.isOpen() then
-            ArenaBattleScene.update(dt)
-        elseif TowerBattleScene.isActive() then
+        if TowerBattleScene.isActive() then
             TowerBattleScene.update(dt)
         elseif DungeonBattleScene.isOpen() then
             DungeonBattleScene.update(dt)
@@ -2359,8 +2316,6 @@ function HandleUpdate_Client(eventType, eventData)
         TownScene.setSmithRedDot(bagFull_)
         BlacksmithPage.setDecomposeRedDot(bagFull_)
 
-        -- 竞技场建筑红点（与 BottomNav 查询条件保持一致）
-        TownScene.setArenaRedDot(ArenaPage.hasTicketRedDot())
 
         -- 心跳发送（每15 秒发送一次，仅发事件名，不携带数据）
         heartbeatTimer = heartbeatTimer + dt
@@ -2441,7 +2396,6 @@ function HandleUpdate_Client(eventType, eventData)
         LevelUpPopup.update(dt)
         OfflineRewardPanel.update(dt)
         TavernPage.update(dt)
-        ArenaPage.update(dt)
         MarketPage.update(dt)
         PlayerInfoPanel.update(dt)
     end

@@ -27,8 +27,6 @@ ResourceDefs.DEFS = {
     adventure_ticket  = { iconPath = "image/货币道具/UI_icon_ZMQ_1.png",  quality = 5, name = "冒险招募券" },
     stellar_ticket    = { iconPath = "image/货币道具/UI_icon_ZMQ_2.png",  quality = 6, name = "星辉招募券" },
     sweep_ticket      = { iconPath = "image/货币道具/UI_icon_SDQ.png",    quality = 4, name = "扫荡券" },
-    arena_ticket      = { iconPath = "image/货币道具/UI_icon_JJCQ.png",   quality = 4, name = "竞技券" },
-    arena_coin        = { iconPath = "image/货币道具/UI_icon_JJB.png",    quality = 3, name = "竞技币" },
     tavern_coin       = { iconPath = "image/UI_icon_JGB.png",    quality = 3, name = "酒馆币" },
     arcane_dust       = { iconPath = "image/货币道具/UI_icon_ASFC.png",   quality = 3, name = "奥术粉尘" },  -- 序号17
     speed_card        = { iconPath = "image/货币道具/UI_icon_JSK.png",    quality = 5, name = "加速卡" },    -- 序号18
@@ -49,8 +47,6 @@ ResourceDefs.ID_TO_TYPE = {
     ["6"]  = "break_protect",
     ["7"]  = "adventure_ticket",
     ["8"]  = "sweep_ticket",
-    ["9"]  = "arena_ticket",
-    ["10"] = "arena_coin",
     ["11"] = "tavern_coin",
     ["13"] = "weapon_scroll",
     ["14"] = "offhand_scroll",

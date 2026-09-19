@@ -230,7 +230,6 @@ local BUILDING_UNLOCK_THRESHOLDS = {
     -- church 和 tavern 默认开放，不设阈值
     -- 解锁判定：maxStageId > threshold（maxStageId = 下一个 stageId）
     smith   = 204,   -- 首通 2-4 后解锁（通 2-4 → maxStageId=205 > 204）
-    arena   = 205,   -- 首通 2-5 后解锁（通 2-5 → maxStageId=301 > 205）
 }
 
 --- 获取当前最远通关 stageId（0 表示未通关任何关卡）
@@ -245,7 +244,7 @@ end
 --- 解锁条件（满足任一即可）：
 ---   1. maxStageId > threshold（玩家已前进到下一关）
 ---   2. clearedStages[threshold] == true（玩家已通关阈值关卡，但尚未点击前进）
----@param buildingKey string  如 "church" / "tavern" / "smith" / "arena"
+---@param buildingKey string  如 "church" / "tavern" / "smith"
 ---@return boolean
 function TutorialManager.isBuildingUnlocked(buildingKey)
     local threshold = BUILDING_UNLOCK_THRESHOLDS[buildingKey]

@@ -152,7 +152,6 @@ function TaskService.RefreshAchievements(uid)
 
     local heroes = PDM.GetModule(uid, "heroes")
     local player = PDM.GetModule(uid, "player")
-    local arena  = PDM.GetModule(uid, "arena")
 
     if not heroes or not player then return end
 
@@ -216,15 +215,6 @@ function TaskService.RefreshAchievements(uid)
     taskData.achProg["adv2_count"]  = adv2Count
 
     -- 竞技场段位
-    if arena then
-        local okAC, ArenaConfig = pcall(require, "config.ArenaConfig")
-        if okAC and ArenaConfig and ArenaConfig.getTierByScore then
-            local tier = ArenaConfig.getTierByScore(arena.rankScore or 0)
-            taskData.achProg["arena_tier"] = tier and tier.icon or 0
-        end
-    end
-
-    PDM.MarkDirty(uid, "task")
 end
 
 -- ======================== 生命周期 ========================

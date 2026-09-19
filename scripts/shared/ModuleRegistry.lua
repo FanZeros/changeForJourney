@@ -97,8 +97,6 @@ ModuleRegistry.modules = {
                 stellarRecruitTicket = 0,
                 goldenKey = 0,
                 sweepTicket = 0,
-                arenaTicket = 0,
-                arenaCoin = 0,
                 tavernCoin = 0,
                 privilegePoint = 0,
                 arcaneDust = 0,
@@ -344,69 +342,6 @@ ModuleRegistry.modules = {
         end,
     },
 
-    -- ========== 竞技场 ==========
-    {
-        name = "arena",
-        key  = "mod_arena",
-        scope = "server",
-        getDefault = function()
-            return {
-                rankScore        = 0,       -- 段位分（永久累积）
-                weekScore        = 1000,    -- 周期分（每周重置）
-                groupId          = nil,     -- 当前所属小组ID
-                weekId           = 0,       -- 当前赛周ID
-                lastSettleWeekId = 0,       -- 上次结算的赛周ID
-                reachedTiers     = {},      -- 已达成的段位ID（用于首次奖励判断）
-                totalWins        = 0,       -- 累计进攻胜利
-                totalLosses      = 0,       -- 累计进攻失败
-                ticketsUsedToday = 0,       -- 今日已使用竞技券
-                ticketResetDay   = 0,       -- 竞技券重置日编号
-                shopPurchased    = {},      -- 商店已购买次数 { [itemId] = count }
-                shopWeekId       = 0,       -- 商店购买记录对应的赛周（用于每周重置）
-            }
-        end,
-        onLoad = function(data)
-            data.rankScore        = tonumber(data.rankScore)        or 0
-            data.weekScore        = tonumber(data.weekScore)        or 1000
-            data.weekId           = tonumber(data.weekId)           or 0
-            data.lastSettleWeekId = tonumber(data.lastSettleWeekId) or 0
-            data.totalWins        = tonumber(data.totalWins)        or 0
-            data.totalLosses      = tonumber(data.totalLosses)      or 0
-            data.ticketsUsedToday = tonumber(data.ticketsUsedToday) or 0
-            data.ticketResetDay   = tonumber(data.ticketResetDay)   or 0
-            data.shopWeekId       = tonumber(data.shopWeekId)       or 0
-            if not data.shopPurchased then
-                data.shopPurchased = {}
-            else
-                -- cjson 反序列化后数字 key 变成字符串 key，需要转回数字
-                local fixedShop = {}
-                for k, v in pairs(data.shopPurchased) do
-                    local numK = tonumber(k)
-                    if numK then
-                        fixedShop[numK] = tonumber(v) or 0
-                    end
-                end
-                data.shopPurchased = fixedShop
-            end
-            if not data.reachedTiers then
-                data.reachedTiers = {}
-            else
-                -- reachedTiers 是 dict: { [tierId]=true }
-                -- cjson 反序列化后数字 key 变成字符串 key，需要转回数字
-                local fixed = {}
-                for k, v in pairs(data.reachedTiers) do
-                    local numK = tonumber(k)
-                    if numK then
-                        fixed[numK] = v
-                    else
-                        fixed[k] = v
-                    end
-                end
-                data.reachedTiers = fixed
-            end
-            data.groupId = tonumber(data.groupId)  -- 可为 nil
-        end,
-    },
 
     -- ========== 战利品缓冲 ==========
     {

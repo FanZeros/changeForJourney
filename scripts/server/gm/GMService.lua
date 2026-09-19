@@ -21,7 +21,6 @@ local VALID_RESOURCE_KEYS = {
     gold = true, gems = true, essence = true,
     recruitTicket = true, stellarRecruitTicket = true, goldenKey = true, enhanceStone = true,
     degradeStone = true, destroyStone = true,
-    arenaTicket = true, arenaCoin = true,
     sweepTicket = true, tavernCoin = true,
     weaponScroll = true, offhandScroll = true,
     armorScroll = true, accessoryScroll = true,

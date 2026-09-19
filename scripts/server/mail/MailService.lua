@@ -257,7 +257,7 @@ function MailService.SendDynamicMail(uid, mail)
         body    = mail.body or "",
         rewards = mail.rewards or {},
         date    = os.date("%Y/%m/%d"),
-        source  = mail.source,   -- 来源标识（如 "arena_weekly"），可选
+        source  = mail.source,   -- 来源标识（如 "weekly"），可选
     }
 
     PDM.MarkDirty(uid, "mail")

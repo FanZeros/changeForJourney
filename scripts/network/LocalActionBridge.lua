@@ -16,8 +16,6 @@ local LOCAL_UID = 1
 local inited_ = false
 local handlers_ = {}
 local pdmAttached_ = false
-local arenaRankings_ = nil
-local arenaMyRank_ = 1
 
 local function registerHandlers(handlers)
     if type(handlers) ~= "table" then return end
@@ -36,7 +34,6 @@ local function loadHandlers()
         { "server.gacha.GachaHandler", "actionHandlers" },
         { "server.equipment.EquipmentHandler", "actionHandlers" },
         { "server.blacksmith.BlacksmithHandler", "actionHandlers" },
-        { "server.arena.ArenaHandler", "actionHandlers" },
         { "server.task.TaskHandler", "actionHandlers" },
         { "server.mail.MailHandler", "actionHandlers" },
         { "server.redeem.RedeemHandler", nil },
@@ -99,8 +96,6 @@ local function defaultCurrency()
     data.stellarRecruitTicket = GameState.getStellarRecruitTicket()
     data.goldenKey = GameState.getGoldenKey()
     data.sweepTicket = GameState.getSweepTicket()
-    data.arenaTicket = GameState.getArenaTicket()
-    data.arenaCoin = GameState.getArenaCoin()
     data.tavernCoin = GameState.getTavernCoin()
     data.arcaneDust = GameState.getArcaneDust()
     data.corruptStone = GameState.getCorruptStone()
@@ -163,8 +158,6 @@ local function syncCurrencyIntoPdm()
     cur.stellarRecruitTicket = GameState.getStellarRecruitTicket()
     cur.goldenKey = GameState.getGoldenKey()
     cur.sweepTicket = GameState.getSweepTicket()
-    cur.arenaTicket = GameState.getArenaTicket()
-    cur.arenaCoin = GameState.getArenaCoin()
     cur.tavernCoin = GameState.getTavernCoin()
     cur.arcaneDust = GameState.getArcaneDust()
     cur.corruptStone = GameState.getCorruptStone()
@@ -178,309 +171,6 @@ local function deliverActionResult(result)
     if okMsg and Msg and Msg.handleActionResult then
         pcall(Msg.handleActionResult, result)
     end
-end
-
-local function remainingArenaTickets(arena)
-    local ArenaConfig = require("config.ArenaConfig")
-    local used = arena and arena.ticketsUsedToday or 0
-    local remaining = math.max(0, ArenaConfig.TICKET_DAILY_FREE - used)
-    local currency = ClientDispatcher.get("currency")
-    remaining = remaining + math.max(0, currency and currency.arenaTicket or 0)
-    return remaining
-end
-
-local function resetDailyTickets(arena)
-    local today = math.floor((os.time() + 28800) / 86400)
-    if (arena.ticketResetDay or 0) ~= today then
-        arena.ticketsUsedToday = 0
-        arena.ticketResetDay = today
-    end
-end
-
-local function buildLocalArenaRankings()
-    if arenaRankings_ then return arenaRankings_, arenaMyRank_ end
-    local ArenaConfig = require("config.ArenaConfig")
-    local ArenaAITemplates = require("config.ArenaAITemplates")
-    local CharacterPanel = require("ui.CharacterPanel")
-    local arena = ClientDispatcher.get("arena") or defaultFromSchema("arena")
-    local player = ClientDispatcher.get("player") or defaultPlayer()
-    local myPower = 0
-    if CharacterPanel.getTotalPower then
-        myPower = CharacterPanel.getTotalPower() or 0
-    end
-    local rankScore = arena.rankScore or 0
-    local weekScore = arena.weekScore or ArenaConfig.WEEK_SCORE_INIT
-    local groupId = arena.groupId or 1
-    local rankings = {
-        {
-            uid = LOCAL_UID,
-            name = player.name or GameState.getName() or "玩家",
-            weekScore = weekScore,
-            power = myPower,
-            listId = nil,
-            joinTime = 0,
-            avatarHeroId = player.avatarHeroId or 1,
-            rankScore = rankScore,
-        },
-    }
-    local names = ArenaConfig.AI_NAMES
-    for i = 1, ArenaConfig.GROUP_SIZE - 1 do
-        local aiSeed = groupId * 1000 + i
-        local nameIdx = ((groupId + i - 1) % #names) + 1
-        rankings[#rankings + 1] = {
-            uid = -aiSeed,
-            name = names[nameIdx],
-            weekScore = ArenaConfig.WEEK_SCORE_INIT,
-            power = ArenaAITemplates.deterministicPowerByScore(rankScore, aiSeed),
-            listId = nil,
-            joinTime = i,
-            avatarHeroId = (aiSeed % 15) + 1,
-            rankScore = rankScore,
-        }
-    end
-    table.sort(rankings, function(a, b)
-        if a.weekScore ~= b.weekScore then
-            return a.weekScore > b.weekScore
-        end
-        return (a.joinTime or 0) < (b.joinTime or 0)
-    end)
-    local myRank = 1
-    for i, r in ipairs(rankings) do
-        r.rank = i
-        if r.uid == LOCAL_UID then
-            myRank = i
-        end
-    end
-    arenaRankings_ = rankings
-    arenaMyRank_ = myRank
-    return rankings, myRank
-end
-
-local function findArenaEntry(uid)
-    local rankings = arenaRankings_ or select(1, buildLocalArenaRankings())
-    for i, r in ipairs(rankings) do
-        if r.uid == uid then
-            return r, i
-        end
-    end
-    return nil, nil
-end
-
-local function localArenaEnter()
-    local ArenaConfig = require("config.ArenaConfig")
-    local arena = ensureModule("arena", function()
-        return defaultFromSchema("arena")
-    end)
-    resetDailyTickets(arena)
-    if not arena.groupId then
-        arena.groupId = 1
-        arena.weekId = ArenaConfig.calcWeekId()
-        arena.weekScore = arena.weekScore or ArenaConfig.WEEK_SCORE_INIT
-        PDM.MarkDirty(LOCAL_UID, "arena")
-    end
-    local rankings, myRank = buildLocalArenaRankings()
-    local tier = ArenaConfig.getTierByScore(arena.rankScore or 0)
-    return {
-        success = true,
-        action = Protocol.ACTION_TYPES.ARENA_ENTER,
-        rankings = rankings,
-        myRank = myRank,
-        weekScore = arena.weekScore or ArenaConfig.WEEK_SCORE_INIT,
-        rankScore = arena.rankScore or 0,
-        tier = tier and ArenaConfig.getTierDisplayName(tier) or "黑铁级 V",
-        tierId = tier and tier.id or 1,
-        tickets = remainingArenaTickets(arena),
-        weekId = arena.weekId or ArenaConfig.calcWeekId(),
-        defenseLogs = {},
-        battleHistory = arena.battleHistory or {},
-        globalRankings = rankings,
-        globalMyRank = myRank,
-        shopPurchased = arena.shopPurchased or {},
-        reachedTiers = arena.reachedTiers or {},
-        claimedTiers = arena.claimedTiers or {},
-    }
-end
-
-local function localArenaGetOpponent(params)
-    local ArenaConfig = require("config.ArenaConfig")
-    local ArenaAITemplates = require("config.ArenaAITemplates")
-    local arena = ClientDispatcher.get("arena")
-    if not arena then
-        return { success = false, reason = "数据未加载", action = Protocol.ACTION_TYPES.ARENA_GET_OPPONENT }
-    end
-    resetDailyTickets(arena)
-    if remainingArenaTickets(arena) <= 0 then
-        return { success = false, reason = "竞技券不足", action = Protocol.ACTION_TYPES.ARENA_GET_OPPONENT }
-    end
-    local targetUid = params and tonumber(params.targetUid)
-    if not targetUid then
-        return { success = false, reason = "缺少目标玩家", action = Protocol.ACTION_TYPES.ARENA_GET_OPPONENT }
-    end
-    local currency = ClientDispatcher.get("currency")
-    if currency and (currency.arenaTicket or 0) > 0 then
-        currency.arenaTicket = currency.arenaTicket - 1
-        PDM.MarkDirty(LOCAL_UID, "currency")
-    else
-        arena.ticketsUsedToday = (arena.ticketsUsedToday or 0) + 1
-        PDM.MarkDirty(LOCAL_UID, "arena")
-    end
-    local defense
-    if ArenaConfig.isAIPlayer(targetUid) then
-        defense = ArenaAITemplates.generateDefenseByScore(arena.rankScore or 0)
-    else
-        defense = { heroes = {}, power = 0 }
-    end
-    return {
-        success = true,
-        action = Protocol.ACTION_TYPES.ARENA_GET_OPPONENT,
-        targetUid = targetUid,
-        defense = defense,
-        tickets = remainingArenaTickets(arena),
-    }
-end
-
-local function localArenaBattleResult(params)
-    local ArenaConfig = require("config.ArenaConfig")
-    local arena = ClientDispatcher.get("arena")
-    if not arena then
-        return { success = false, reason = "数据未加载", action = Protocol.ACTION_TYPES.ARENA_BATTLE_RESULT }
-    end
-    local targetUid = params and tonumber(params.targetUid)
-    local isWin = params and params.isWin
-    if not targetUid or isWin == nil then
-        return { success = false, reason = "参数不完整", action = Protocol.ACTION_TYPES.ARENA_BATTLE_RESULT }
-    end
-    buildLocalArenaRankings()
-    local myEntry, myRank = findArenaEntry(LOCAL_UID)
-    local oppEntry, oppRank = findArenaEntry(targetUid)
-    if not myRank then myRank = arenaMyRank_ or 1 end
-    if not oppRank then oppRank = myRank end
-    local rankDiff = myRank - oppRank
-    local rule = ArenaConfig.getAttackScoring(rankDiff)
-    local scoreChange, coinReward
-    if isWin then
-        scoreChange = rule.winScore
-        coinReward = rule.winCoin
-        arena.totalWins = (arena.totalWins or 0) + 1
-    else
-        scoreChange = rule.loseScore
-        coinReward = rule.loseCoin
-        arena.totalLosses = (arena.totalLosses or 0) + 1
-    end
-    arena.weekScore = math.max(0, (arena.weekScore or ArenaConfig.WEEK_SCORE_INIT) + scoreChange)
-    if myEntry then
-        myEntry.weekScore = arena.weekScore
-    end
-    if oppEntry and ArenaConfig.isAIPlayer(targetUid) then
-        local defChange = isWin and ArenaConfig.DEFENSE_LOSE_SCORE or ArenaConfig.DEFENSE_WIN_SCORE
-        oppEntry.weekScore = math.max(0, (oppEntry.weekScore or ArenaConfig.WEEK_SCORE_INIT) + defChange)
-    end
-    if arenaRankings_ then
-        table.sort(arenaRankings_, function(a, b)
-            if a.weekScore ~= b.weekScore then
-                return a.weekScore > b.weekScore
-            end
-            return (a.joinTime or 0) < (b.joinTime or 0)
-        end)
-        for i, r in ipairs(arenaRankings_) do
-            r.rank = i
-            if r.uid == LOCAL_UID then
-                arenaMyRank_ = i
-                myRank = i
-            end
-            if r.uid == targetUid then
-                oppRank = i
-            end
-        end
-    end
-    PDM.MarkDirty(LOCAL_UID, "arena")
-    local currency = ClientDispatcher.get("currency")
-    if currency and coinReward > 0 then
-        currency.arenaCoin = (currency.arenaCoin or 0) + coinReward
-        PDM.MarkDirty(LOCAL_UID, "currency")
-    end
-    if not arena.battleHistory then arena.battleHistory = {} end
-    arena.battleHistory[#arena.battleHistory + 1] = {
-        type = "attack",
-        opponentName = oppEntry and oppEntry.name or "未知",
-        result = isWin and "win" or "lose",
-        scoreChange = scoreChange,
-        timestamp = os.time(),
-    }
-    local TaskService = require("server.task.TaskService")
-    pcall(TaskService.UpdateProgress, LOCAL_UID, "arena", 1)
-    pcall(TaskService.RefreshAchievements, LOCAL_UID)
-    return {
-        success = true,
-        action = Protocol.ACTION_TYPES.ARENA_BATTLE_RESULT,
-        isWin = isWin,
-        scoreChange = scoreChange,
-        coinReward = coinReward,
-        weekScore = arena.weekScore,
-        myRank = myRank,
-        oppRank = oppRank,
-        rankDiff = rankDiff,
-        tickets = remainingArenaTickets(arena),
-    }
-end
-
-local function localArenaGetLog()
-    return {
-        success = true,
-        action = Protocol.ACTION_TYPES.ARENA_GET_LOG,
-        logs = {},
-        totalChange = 0,
-    }
-end
-
-local function localArenaClaimTier(params)
-    local ArenaConfig = require("config.ArenaConfig")
-    local arena = ClientDispatcher.get("arena")
-    if not arena then
-        return { success = false, reason = "数据未加载", action = Protocol.ACTION_TYPES.ARENA_CLAIM_TIER }
-    end
-    local tierId = params and tonumber(params.tierId)
-    if not tierId then
-        return { success = false, reason = "缺少段位ID", action = Protocol.ACTION_TYPES.ARENA_CLAIM_TIER }
-    end
-    if not arena.reachedTiers then arena.reachedTiers = {} end
-    if not arena.claimedTiers then arena.claimedTiers = {} end
-    local tierDef
-    for _, t in ipairs(ArenaConfig.TIERS) do
-        if t.id == tierId then tierDef = t; break end
-    end
-    if not arena.reachedTiers[tierId] then
-        if tierDef and (arena.rankScore or 0) >= (tierDef.scoreMin or 0) then
-            arena.reachedTiers[tierId] = true
-        else
-            return { success = false, reason = "尚未达到该段位", action = Protocol.ACTION_TYPES.ARENA_CLAIM_TIER }
-        end
-    end
-    if arena.claimedTiers[tierId] then
-        return { success = false, reason = "已领取", action = Protocol.ACTION_TYPES.ARENA_CLAIM_TIER }
-    end
-    if not tierDef then
-        return { success = false, reason = "段位配置不存在", action = Protocol.ACTION_TYPES.ARENA_CLAIM_TIER }
-    end
-    local diamond = tierDef.firstRewardDiamond or 0
-    local currency = ClientDispatcher.get("currency")
-    if diamond > 0 then
-        if not currency then
-            return { success = false, reason = "数据未加载", action = Protocol.ACTION_TYPES.ARENA_CLAIM_TIER }
-        end
-        currency.gems = (currency.gems or 0) + diamond
-        PDM.MarkDirty(LOCAL_UID, "currency")
-    end
-    arena.claimedTiers[tierId] = true
-    PDM.MarkDirty(LOCAL_UID, "arena")
-    return {
-        success = true,
-        action = Protocol.ACTION_TYPES.ARENA_CLAIM_TIER,
-        tierId = tierId,
-        diamond = diamond,
-        gems = currency and currency.gems,
-        claimedTiers = arena.claimedTiers,
-    }
 end
 
 local function localGuildEnter()
@@ -511,17 +201,7 @@ end
 
 local function tryLocalCloudFallback(action, params)
     local AT = Protocol.ACTION_TYPES
-    if action == AT.ARENA_ENTER then
-        return localArenaEnter()
-    elseif action == AT.ARENA_GET_OPPONENT then
-        return localArenaGetOpponent(params)
-    elseif action == AT.ARENA_BATTLE_RESULT then
-        return localArenaBattleResult(params)
-    elseif action == AT.ARENA_GET_LOG then
-        return localArenaGetLog()
-    elseif action == AT.ARENA_CLAIM_TIER then
-        return localArenaClaimTier(params)
-    elseif action == AT.GUILD_ENTER then
+    if action == AT.GUILD_ENTER then
         return localGuildEnter()
     end
     return nil
@@ -632,9 +312,6 @@ function M.init()
     ensureModule("battle", function()
         return defaultFromSchema("battle")
     end)
-    ensureModule("arena", function()
-        return defaultFromSchema("arena")
-    end)
     ensureModule("task", function()
         return defaultFromSchema("task")
     end)
@@ -692,12 +369,7 @@ function M.dispatch(action, params)
     syncCurrencyIntoPdm()
 
     local AT = Protocol.ACTION_TYPES
-    if action == AT.ARENA_ENTER
-        or action == AT.ARENA_GET_OPPONENT
-        or action == AT.ARENA_BATTLE_RESULT
-        or action == AT.ARENA_GET_LOG
-        or action == AT.ARENA_CLAIM_TIER
-        or action == AT.GUILD_ENTER then
+    if action == AT.GUILD_ENTER then
         local fallback = tryLocalCloudFallback(action, params)
         if fallback then
             deliverActionResult(fallback)

@@ -70,8 +70,6 @@ SignInConfig.REWARD_TO_CURRENCY = {
     corrupt_stone     = "corruptStone",
     sacred_stone      = "sacredStone",
     sweep_ticket      = "sweepTicket",
-    arena_ticket      = "arenaTicket",
-    arena_coin        = "arenaCoin",
     tavern_coin       = "tavernCoin",
     privilege_point   = "privilegePoint",
 }

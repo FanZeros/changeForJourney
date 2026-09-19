@@ -31,12 +31,6 @@ QuotaConsts.KEYS = {
         refreshCount = 1,
     },
     -- 未来扩展示例:
-    -- ARENA_TICKET = {
-    --     key          = "arena_ticket",
-    --     limit        = 5,
-    --     refreshType  = "day",
-    --     refreshCount = 1,
-    -- },
 }
 
 --- key 字符串 -> 定义 的反查表（惰性构建）

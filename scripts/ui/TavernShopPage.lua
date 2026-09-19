@@ -2,7 +2,7 @@
 -- TavernShopPage - 酒馆商店界面
 -- 职责：酒馆商店商品列表绘制、购买交互
 -- 被 TavernPage.lua 的商店 Tab 调用
--- 布局与 ArenaShopPage 完全一致，商品/货币替换为酒馆数据
+-- 布局为标准商店页样式，商品/货币使用酒馆数据
 -- ============================================================================
 
 local GameState      = require("core.GameState")
@@ -703,7 +703,7 @@ function TavernShopPage.drawContent(vg)
     nvgText(vg, L.TITLE_CX, L.TITLE_CY, "酒馆商店", nil)
 
     -- 酒馆币资源栏（竞技场风格：圆角黑底 + 图标 + 描边文字）
-    -- 布局参考 ArenaPage R1 组（bg中心534→540 偏移+6）
+    -- 布局：R1 组（bg中心534→540 偏移+6）
     local RES_BG_W = 220
     local RES_BG_H = 47
     local RES_BG_R = 18

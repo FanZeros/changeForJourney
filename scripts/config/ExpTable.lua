@@ -327,12 +327,11 @@ ExpTable.BUILDING_KEY_MAP = {
     ["铁匠铺"] = "smith",
     ["酒馆"]   = "tavern",
     ["市场"]   = "market",
-    ["竞技场"] = "arena",
     ["冒险者公会"] = "guild",
 }
 
 --- 判断指定建筑在当前冒险等级是否已解锁
----@param buildingKey string 建筑 key（"church"/"smith"/"tavern"/"market"/"arena"/"guild"）
+---@param buildingKey string 建筑 key（"church"/"smith"/"tavern"/"market"/"guild"）
 ---@param playerLevel number 当前冒险等级
 ---@return boolean
 function ExpTable.isBuildingUnlocked(buildingKey, playerLevel)

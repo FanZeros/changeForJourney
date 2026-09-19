@@ -27,14 +27,11 @@
 --   "building_church"        — 城镇教堂建筑
 --   "building_tavern"        — 城镇酒馆建筑
 --   "building_smith"         — 城镇铁匠铺建筑
---   "building_arena"         — 城镇竞技场建筑
 --   "talent_toggle"          — 天赋滑块按钮
 --   "talent_node_area"       — 天赋节点整体区域
 --   "tavern_btn_gacha10"     — 酒馆十连抽按钮
 --   "character_new_hero"     — 角色面板新角色位置
 --   "smith_btn_enhance"      — 铁匠铺强化按钮
---   "arena_btn_start"        — 竞技场「开始对战」按钮
---   "arena_opponent_1"       — 竞技场第一位对手挑战按钮
 --   "building_guild"         — 城镇冒险者公会建筑
 --   "relic_tab"              — 公会页面遗物标签按钮
 --   "relic_bag_btn"          — 遗物面板背包按钮
@@ -249,39 +246,6 @@ TutorialConfig[11] = {
     },
 }
 
--- ─── 引导组 12 ───
--- 触发：情景51/52/53（首通0205）结束后
--- 解锁：竞技场
-TutorialConfig[12] = {
-    triggerScenarios = { 51, 52, 53 },
-    unlocks = { "arena" },
-    steps = {
-        {
-            text      = "前往城镇",
-            highlight = "tab_town",
-            advanceOn = "enter_panel_town",
-        },
-        {
-            text      = "前往竞技场",
-            highlight = "building_arena",
-            advanceOn = "click_highlight",
-        },
-    },
-}
-
--- ─── 引导组 13 ───
--- 触发：情景54（竞技场入场）结束后
-TutorialConfig[13] = {
-    triggerScenarios = { 54 },
-    steps = {
-        {
-            text      = "点击开始对战按钮进行挑战",
-            highlight = "arena_btn_start",
-            advanceOn = "click_highlight",
-        },
-        -- 第二步已移除：不再强制挑战第一个对手，改为让玩家自行挑选对手
-    },
-}
 
 -- ─── 引导组 14 ───
 -- 触发：情景55/56/57（首通1305）结束后

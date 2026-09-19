@@ -25,9 +25,7 @@ local TownScene         = require("ui.TownScene")
 local BlacksmithPage    = require("ui.BlacksmithPage")
 local ChurchPage        = require("ui.ChurchPage")
 local TavernPage        = require("ui.TavernPage")
-local ArenaPage         = require("ui.ArenaPage")
 local MarketPage        = require("ui.MarketPage")
-local ArenaBattleScene  = require("ui.ArenaBattleScene")
 local DungeonBattleScene = require("ui.DungeonBattleScene")
 local LootBox           = require("ui.LootBox")
 local LootBoxPage       = require("ui.LootBoxPage")
@@ -369,13 +367,8 @@ function Standalone.Start()
     TownScene.setOnTavernClick(function()
         TavernPage.open()
     end)
-    -- 5.17 城镇竞技场点击 → 打开竞技场界面
-    ArenaPage.init(vg)
-    ArenaBattleScene.init(vg)
+    -- 5.17 城镇副本入口
     DungeonBattleScene.init(vg)
-    TownScene.setOnArenaClick(function()
-        ArenaPage.open()
-    end)
     -- 5.18 城镇市场点击 → 打开市场界面
     MarketPage.init(vg)
     TownScene.setOnMarketClick(function()
@@ -922,8 +915,6 @@ function Standalone.requestResetToStartScreen()
     print(string.format("%s step1: BGM/SFX stopped clock=%.4f", TAG, os.clock()))
 
     -- 2. 关闭所有打开的面板/弹窗
-    if ArenaBattleScene.isOpen()    then ArenaBattleScene.close()    end
-    if ArenaPage.isOpen()           then ArenaPage.close()           end
     if MarketPage.isOpen()          then MarketPage.close()          end
     if TavernPage.isOpen()          then TavernPage.close()          end
     if BlacksmithPage.isOpen()      then BlacksmithPage.close()      end
@@ -1033,13 +1024,8 @@ function HandleNanoVGRender(eventType, eventData)
         return
     end
 
-    -- 竞技场对战全屏优先（覆盖所有其他界面）
-    local arenaBattleOpen = ArenaBattleScene.isOpen()
-    local dungeonBattleOpen = DungeonBattleScene.isOpen()
-    if arenaBattleOpen then
-        ArenaBattleScene.draw(vg)
-        -- 不绘制 TopBar/BottomNav
-    elseif dungeonBattleOpen then
+    -- 副本对战全屏优先（覆盖所有其他界面）
+    if DungeonBattleScene.isOpen() then
         DungeonBattleScene.draw(vg)
         -- 不绘制 TopBar/BottomNav
     else
@@ -1063,8 +1049,6 @@ function HandleNanoVGRender(eventType, eventData)
             ChurchPage.draw(vg)
             -- 酒馆二级界面（覆盖在城镇之上）
             TavernPage.draw(vg)
-            -- 竞技场二级界面（覆盖在城镇之上）
-            ArenaPage.draw(vg)
             -- 市场二级界面（覆盖在城镇之上）
             MarketPage.draw(vg)
         end
@@ -1073,22 +1057,11 @@ function HandleNanoVGRender(eventType, eventData)
         local detailOpen = CharacterPanel.isDetailOpen()
         local smithOpen = BlacksmithPage.isOpen()
         local tavernOpen = TavernPage.isOpen()
-        local arenaOpen = ArenaPage.isOpen()
         local marketOpen = MarketPage.isOpen()
         local churchOpen = ChurchPage.isOpen()
-        if not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not arenaOpen and not marketOpen then
+        if not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not marketOpen then
             TopBar.draw(vg)
             BottomNav.draw(vg)
-        elseif arenaOpen and not detailOpen and not smithOpen and not tavernOpen then
-            local animP = ArenaPage.getAnimProgress()
-            if animP < 1.0 then
-                local fadeAlpha = 1.0 - animP
-                nvgSave(vg)
-                nvgGlobalAlpha(vg, fadeAlpha)
-                TopBar.draw(vg)
-                BottomNav.draw(vg)
-                nvgRestore(vg)
-            end
         elseif tavernOpen and not detailOpen and not smithOpen then
             local animP = TavernPage.getAnimProgress()
             if animP < 1.0 then
@@ -1099,7 +1072,7 @@ function HandleNanoVGRender(eventType, eventData)
                 BottomNav.draw(vg)
                 nvgRestore(vg)
             end
-        elseif marketOpen and not detailOpen and not smithOpen and not tavernOpen and not arenaOpen then
+        elseif marketOpen and not detailOpen and not smithOpen and not tavernOpen then
             local animP = MarketPage.getAnimProgress()
             if animP < 1.0 then
                 local fadeAlpha = 1.0 - animP
@@ -1253,7 +1226,6 @@ function HandleUpdate(eventType, eventData)
         if tabIndex == 4 and (BlacksmithPage.isOpen()
             or ChurchPage.isOpen()
             or TavernPage.isOpen()
-            or ArenaPage.isOpen()
             or MarketPage.isOpen()) then
             bgmScene = "town_building"
         -- 标签页
@@ -1298,14 +1270,12 @@ function HandleUpdate(eventType, eventData)
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)
-    if BattleTriPage.isOpen() and (ArenaBattleScene.isOpen() or DungeonBattleScene.isOpen()) then
+    if BattleTriPage.isOpen() and DungeonBattleScene.isOpen() then
         BattleTriPage.close()
     end
 
-    -- 竞技场/副本对战更新（打开时独占）
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.update(dt)
-    elseif DungeonBattleScene.isOpen() then
+    -- 副本对战更新（打开时独占）
+    if DungeonBattleScene.isOpen() then
         DungeonBattleScene.update(dt)
     elseif BattleTriPage.isOpen() then
         -- [三栏并行] 三栏页内部会以 default 状态驱动 BattleScene.update（栏1 引擎）
@@ -1316,9 +1286,9 @@ function HandleUpdate(eventType, eventData)
     end
 
     local tabIndex = BottomNav.getSelectedIndex()
-    -- [三行并行] 三行战斗区常驻: tab3 下恒开（Arena/Dungeon 独占时由守卫暂收, 关闭后自动重开）
+    -- [三行并行] 三行战斗区常驻: tab3 下恒开（Dungeon 独占时由守卫暂收, 关闭后自动重开）
     if HORIZON_MODE and tabIndex == 3 and not BattleTriPage.isOpen()
-        and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() then
+        and not DungeonBattleScene.isOpen() then
         BattleTriPage.open()
     end
     -- 临时验证钩子: 无输入环境强制打开三栏页（仅 _validate_entry.lua 置位时生效）
@@ -1360,14 +1330,10 @@ function HandleUpdate(eventType, eventData)
     TownScene.setSmithRedDot(bagFull_)
     BlacksmithPage.setDecomposeRedDot(bagFull_)
 
-    -- 竞技场建筑红点（与 BottomNav 查询条件保持一致）
-    TownScene.setArenaRedDot(ArenaPage.hasTicketRedDot())
-
     RewardPopup.update(dt)
     OfflineRewardPanel.update(dt)
     LevelUpPopup.update(dt)
     TavernPage.update(dt)
-    ArenaPage.update(dt)
     MarketPage.update(dt)
     PlayerInfoPanel.update(dt)
 end
@@ -1394,11 +1360,6 @@ function HandleMouseButtonDown(eventType, eventData)
     local dy = sy - designOffsetY
     pressStartDX, pressStartDY = dx, dy
     pressValid = true
-    -- 竞技场对战全屏拦截（转发拖拽给段位奖励弹窗）
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.handleDragBegin(dx, dy)
-        return
-    end
     -- 副本/测试木桩全屏拦截
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragBegin(dx, dy)
@@ -1433,10 +1394,6 @@ function HandleMouseButtonDown(eventType, eventData)
         TavernPage.handleDragBegin(dx, dy)
         return
     end
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        ArenaPage.handleDragBegin(dx, dy)
-        return
-    end
     if tabIndex == 1 then
         CharacterPanel.handleDragBegin(dx, dy)
     end
@@ -1449,11 +1406,6 @@ function HandleMouseMove(eventType, eventData)
     local sy = mousePos.y / dpr / scale
     local dx = sx - designOffsetX
     local dy = sy - designOffsetY
-    -- 竞技场对战全屏拦截（转发拖拽移动给段位奖励弹窗）
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.handleDragMove(dx, dy)
-        return
-    end
     -- 副本/测试木桩全屏拦截
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragMove(dx, dy)
@@ -1486,10 +1438,6 @@ function HandleMouseMove(eventType, eventData)
     end
     if tabIndex == 4 and TavernPage.isOpen() then
         TavernPage.handleDragMove(dx, dy)
-        return
-    end
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        ArenaPage.handleDragMove(dx, dy)
         return
     end
     if tabIndex == 1 then
@@ -1541,12 +1489,6 @@ function HandleMouseButtonUp(eventType, eventData)
     -- [LetterIntro] 情景对话期：点击推进
     if ScenarioDialogue.isActive() then
         if isTap then ScenarioDialogue.advance() end
-        return
-    end
-    -- 竞技场对战全屏拦截（拖拽结束 + 点击）
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.handleDragEnd(dx, dy)
-        if isTap then ArenaBattleScene.handleInput(dx, dy) end
         return
     end
     -- 副本/测试木桩全屏拦截（拖拽结束 + 点击）
@@ -1605,13 +1547,6 @@ function HandleMouseButtonUp(eventType, eventData)
         TavernPage.handleInput(dx, dy)
         return
     end
-    -- 竞技场：拖拽结束转发
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        ArenaPage.handleDragEnd(dx, dy)
-        if not isTap then return end
-        ArenaPage.handleInput(dx, dy)
-        return
-    end
     -- 角色界面：卡片拖拽落点始终处理，滚动惯性始终结算
     if tabIndex == 1 then
         if CharacterPanel.isDraggingCard() then
@@ -1630,14 +1565,9 @@ function HandleMouseButtonUp(eventType, eventData)
     local detailOpen = CharacterPanel.isDetailOpen()
     local smithOpen = BlacksmithPage.isOpen()
     local tavernOpen = TavernPage.isOpen()
-    local arenaOpen = ArenaPage.isOpen()
     local diaryOverlay = DiaryPage.hasOverlayOpen()
-    print(string.format("[Standalone] avatar check: dx=%.0f dy=%.0f detail=%s smith=%s tavern=%s arena=%s arenaBattle=%s diary=%s",
-        dx, dy,
-        tostring(detailOpen), tostring(smithOpen), tostring(tavernOpen), tostring(arenaOpen),
-        tostring(ArenaBattleScene.isOpen()), tostring(diaryOverlay)))
-    if not detailOpen and not smithOpen and not ChurchPage.isOpen() and not tavernOpen and not arenaOpen
-        and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() and not diaryOverlay then
+    if not detailOpen and not smithOpen and not ChurchPage.isOpen() and not tavernOpen
+        and not DungeonBattleScene.isOpen() and not diaryOverlay then
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
@@ -1662,10 +1592,6 @@ function HandleMouseButtonUp(eventType, eventData)
             TavernPage.handleInput(dx, dy)
             return
         end
-        if ArenaPage.isOpen() then
-            ArenaPage.handleInput(dx, dy)
-            return
-        end
         if TownScene.handleInput(dx, dy) then return end
     end
     BottomNav.handleInput(dx, dy)
@@ -1681,11 +1607,6 @@ function HandleTouchBegin(eventType, eventData)
     local dy = sy - designOffsetY
     pressStartDX, pressStartDY = dx, dy
     pressValid = true
-    -- 竞技场对战全屏拦截（转发拖拽给段位奖励弹窗）
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.handleDragBegin(dx, dy)
-        return
-    end
     -- 副本/测试木桩全屏拦截
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragBegin(dx, dy)
@@ -1720,10 +1641,6 @@ function HandleTouchBegin(eventType, eventData)
         TavernPage.handleDragBegin(dx, dy)
         return
     end
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        ArenaPage.handleDragBegin(dx, dy)
-        return
-    end
     if tabIndex == 1 then
         CharacterPanel.handleDragBegin(dx, dy)
     end
@@ -1737,11 +1654,6 @@ function HandleTouchMove(eventType, eventData)
     local sy = ty / dpr / scale
     local dx = sx - designOffsetX
     local dy = sy - designOffsetY
-    -- 竞技场对战全屏拦截（转发拖拽移动给段位奖励弹窗）
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.handleDragMove(dx, dy)
-        return
-    end
     -- 副本/测试木桩全屏拦截
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragMove(dx, dy)
@@ -1774,10 +1686,6 @@ function HandleTouchMove(eventType, eventData)
     end
     if tabIndex == 4 and TavernPage.isOpen() then
         TavernPage.handleDragMove(dx, dy)
-        return
-    end
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        ArenaPage.handleDragMove(dx, dy)
         return
     end
     if tabIndex == 1 then
@@ -1831,12 +1739,6 @@ function HandleTouchEnd(eventType, eventData)
     -- [LetterIntro] 情景对话期：点击推进
     if ScenarioDialogue.isActive() then
         if isTap then ScenarioDialogue.advance() end
-        return
-    end
-    -- 竞技场对战全屏拦截（拖拽结束 + 点击）
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.handleDragEnd(dx, dy)
-        if isTap then ArenaBattleScene.handleInput(dx, dy) end
         return
     end
     -- 副本/测试木桩全屏拦截（拖拽结束 + 点击）
@@ -1895,13 +1797,6 @@ function HandleTouchEnd(eventType, eventData)
         TavernPage.handleInput(dx, dy)
         return
     end
-    -- 竞技场：拖拽结束转发
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        ArenaPage.handleDragEnd(dx, dy)
-        if not isTap then return end
-        ArenaPage.handleInput(dx, dy)
-        return
-    end
     -- 角色界面：卡片拖拽落点始终处理，滚动惯性始终结算
     if tabIndex == 1 then
         if CharacterPanel.isDraggingCard() then
@@ -1921,14 +1816,9 @@ function HandleTouchEnd(eventType, eventData)
         local detailOpen2 = CharacterPanel.isDetailOpen()
         local smithOpen2 = BlacksmithPage.isOpen()
         local tavernOpen2 = TavernPage.isOpen()
-        local arenaOpen2 = ArenaPage.isOpen()
         local diaryOverlay2 = DiaryPage.hasOverlayOpen()
-        print(string.format("[Standalone][Touch] avatar check: dx=%.0f dy=%.0f detail=%s smith=%s tavern=%s arena=%s arenaBattle=%s diary=%s",
-            dx, dy,
-            tostring(detailOpen2), tostring(smithOpen2), tostring(tavernOpen2), tostring(arenaOpen2),
-            tostring(ArenaBattleScene.isOpen()), tostring(diaryOverlay2)))
-        if not detailOpen2 and not smithOpen2 and not ChurchPage.isOpen() and not tavernOpen2 and not arenaOpen2
-            and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() and not diaryOverlay2 then
+        if not detailOpen2 and not smithOpen2 and not ChurchPage.isOpen() and not tavernOpen2
+            and not DungeonBattleScene.isOpen() and not diaryOverlay2 then
             if TopBar.hitTestAvatar(dx, dy, 0) then
                 PlayerInfoPanel.open()
                 return
@@ -1956,11 +1846,6 @@ function HandleTouchEnd(eventType, eventData)
             TavernPage.handleInput(dx, dy)
             return
         end
-        -- 竞技场二级界面拦截
-        if ArenaPage.isOpen() then
-            ArenaPage.handleInput(dx, dy)
-            return
-        end
         if TownScene.handleInput(dx, dy) then return end
     end
     BottomNav.handleInput(dx, dy)
@@ -1974,11 +1859,6 @@ end
 function HandleMouseWheel(eventType, eventData)
     if HORIZON_MODE then return HandleMouseWheelHorizon(eventType, eventData) end
     local wheel = eventData["Wheel"]:GetInt()
-    -- 竞技场对战全屏拦截（转发滚轮给段位奖励弹窗）
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.handleScroll(wheel)
-        return
-    end
     -- 副本/测试木桩全屏拦截
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleScroll(wheel)
@@ -2017,10 +1897,6 @@ function HandleMouseWheel(eventType, eventData)
     end
     if tabIndex == 4 and TavernPage.isOpen() then
         TavernPage.handleScroll(wheel)
-        return
-    end
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        ArenaPage.handleScroll(wheel)
         return
     end
     if tabIndex == 1 then
@@ -2131,7 +2007,6 @@ local function seamBackList()
     if     ChurchPage.isOpen()      then leftClose = function() ChurchPage.close() end
     elseif BlacksmithPage.isOpen()  then leftClose = function() BlacksmithPage.close() end
     elseif TavernPage.isOpen()      then leftClose = function() TavernPage.close() end
-    elseif ArenaPage.isOpen()       then leftClose = function() ArenaPage.close() end
     elseif MarketPage.isOpen()      then leftClose = function() MarketPage.close() end
     end
     if leftClose then
@@ -2217,7 +2092,6 @@ function HandleNanoVGRenderHorizon()
         BlacksmithPage.draw(vg)
         ChurchPage.draw(vg)
         TavernPage.draw(vg)
-        ArenaPage.draw(vg)
         MarketPage.draw(vg)
         Viewport.finish(vg)
 
@@ -2232,11 +2106,8 @@ function HandleNanoVGRenderHorizon()
 
     -- 中面板：BottomNav 主视图 + 全屏战斗页
     Viewport.begin(vg, Viewport.PANELS.center, H_ox, H_oy, H_s)
-    local arenaBattleOpen = ArenaBattleScene.isOpen()
     local dungeonBattleOpen = DungeonBattleScene.isOpen()
-    if arenaBattleOpen then
-        ArenaBattleScene.draw(vg)
-    elseif dungeonBattleOpen then
+    if dungeonBattleOpen then
         DungeonBattleScene.draw(vg)
     else
         local tabIndex = BottomNav.getSelectedIndex()
@@ -2272,12 +2143,11 @@ function HandleNanoVGRenderHorizon()
         BlacksmithPage.draw(vg)
         ChurchPage.draw(vg)
         TavernPage.draw(vg)
-        ArenaPage.draw(vg)
         MarketPage.draw(vg)
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
         -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
         if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
-            or ArenaPage.isOpen() or MarketPage.isOpen()) then
+            or MarketPage.isOpen()) then
             TopBar.draw(vg, -30)
         end
         Viewport.finish(vg)
@@ -2364,7 +2234,7 @@ local function HorizonResolveMouse()
     end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
-    if ArenaBattleScene.isOpen() or DungeonBattleScene.isOpen()
+    if DungeonBattleScene.isOpen()
         or LevelUpPopup.isOpen() or PlayerInfoPanel.isOpen()
         or OfflineRewardPanel.isOpen() or RewardPopup.isOpen()
         or LootBox.isPageOpen() or LootBox.handleDragBegin == nil then
@@ -2401,7 +2271,6 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
-        if ArenaPage.isOpen() then ArenaPage.handleDragBegin(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragBegin(dx, dy) return end
     elseif pid == 'center' then
         if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragBegin(dx, dy) end
@@ -2416,7 +2285,6 @@ function HandleMouseMoveHorizon(eventType, eventData)
     local pid, dx, dy = HorizonResolveMouse()
     if pid == 'none' then return end
     if pid == 'modal' then
-        if ArenaBattleScene.isOpen() then ArenaBattleScene.handleDragMove(dx, dy) return end
         if DungeonBattleScene.isOpen() then DungeonBattleScene.handleDragMove(dx, dy) return end
         if LevelUpPopup.isOpen() then return end
         if PlayerInfoPanel.isOpen() then PlayerInfoPanel.handleDragMove(dx, dy) return end
@@ -2434,7 +2302,6 @@ function HandleMouseMoveHorizon(eventType, eventData)
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragMove(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragMove(dx, dy) return end
-        if ArenaPage.isOpen() then ArenaPage.handleDragMove(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragMove(dx, dy) return end
     elseif pid == 'center' then
         if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragMove(dx, dy) end
@@ -2487,11 +2354,6 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     if pid == 'modal' then
-        if ArenaBattleScene.isOpen() then
-            ArenaBattleScene.handleDragEnd(dx, dy)
-            if isTap then ArenaBattleScene.handleInput(dx, dy) end
-            return
-        end
         if DungeonBattleScene.isOpen() then
             DungeonBattleScene.handleDragEnd(dx, dy)
             if isTap then DungeonBattleScene.handleInput(dx, dy) end
@@ -2527,7 +2389,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if pid == 'left' then
         -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
         if isTap and not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
-            or ArenaPage.isOpen() or MarketPage.isOpen()) then
+            or MarketPage.isOpen()) then
             if TopBar.hitTestAvatar(dx, dy, -30) then
                 PlayerInfoPanel.open()
                 return
@@ -2551,12 +2413,6 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
             TavernPage.handleInput(dx, dy)
             return
         end
-        if ArenaPage.isOpen() then
-            ArenaPage.handleDragEnd(dx, dy)
-            if not isTap then return end
-            ArenaPage.handleInput(dx, dy)
-            return
-        end
         if MarketPage.isOpen() then
             MarketPage.handleDragEnd(dx, dy)
             if not isTap then return end
@@ -2578,7 +2434,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     -- 中面板：主视图链
-    if ArenaBattleScene.isOpen() or DungeonBattleScene.isOpen() then return end
+    if DungeonBattleScene.isOpen() then return end
     local tabIndex = BottomNav.getSelectedIndex()
     if tabIndex == 1 then
         if CharacterPanel.isDraggingCard() then
@@ -2627,7 +2483,6 @@ function HandleMouseWheelHorizon(eventType, eventData)
     if BattleTriPage.handleScroll(wheel) then return end
 
     -- 全屏战斗场景
-    if ArenaBattleScene.isOpen() then ArenaBattleScene.handleScroll(wheel) return end
     if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end
     -- 全屏弹窗
     if LevelUpPopup.isOpen() then return end
@@ -2648,7 +2503,6 @@ function HandleMouseWheelHorizon(eventType, eventData)
         if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel) return end
         if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel) return end
         if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end
-        if ArenaPage.isOpen() then ArenaPage.handleScroll(wheel) return end
         if MarketPage.isOpen() then MarketPage.handleScroll(wheel) return end
         return
     end

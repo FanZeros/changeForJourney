@@ -37,8 +37,6 @@ local state = {
     stellarRecruitTicket = 0,
     goldenKey            = 0,
     sweepTicket   = GameConfig.Currency.START_SWEEP_TICKET,
-    arenaTicket   = GameConfig.Currency.START_ARENA_TICKET,
-    arenaCoin     = GameConfig.Currency.START_ARENA_COIN,
     tavernCoin    = GameConfig.Currency.START_TAVERN_COIN,
     privilegePoint = GameConfig.Currency.START_PRIVILEGE_POINT,
     arcaneDust = 0,
@@ -107,23 +105,6 @@ function GameState.bindToPlayerStore()
         lastPower = newPower
     end)
 
-    -- 订阅 currency 模块：检测竞技券/特权点变化 → emit CURRENCY_CHANGED
-    -- 用于 BottomNav 城镇红点刷新
-    local lastArenaTicket = nil
-    local lastPrivilegePoint = nil
-    ps.Subscribe("currency", function(data, _fieldKey)
-        if not data then return end
-        local newTicket = data.arenaTicket
-        if newTicket ~= nil and newTicket ~= lastArenaTicket then
-            lastArenaTicket = newTicket
-            EventBus.emit(GameEvents.CURRENCY_CHANGED, { arenaTicket = newTicket })
-        end
-        local newPriv = data.privilegePoint
-        if newPriv ~= nil and newPriv ~= lastPrivilegePoint then
-            lastPrivilegePoint = newPriv
-            EventBus.emit(GameEvents.CURRENCY_CHANGED, { privilegePoint = newPriv })
-        end
-    end)
 
     print("[GameState] bound to PlayerStore (multiplayer proxy mode)")
 end
@@ -270,19 +251,6 @@ function GameState.getSweepTicket()
     return state.sweepTicket
 end
 
-function GameState.getArenaTicket()
-    if isMultiplayer() then
-        return getPS().GetField("currency", "arenaTicket") or 0
-    end
-    return state.arenaTicket
-end
-
-function GameState.getArenaCoin()
-    if isMultiplayer() then
-        return getPS().GetField("currency", "arenaCoin") or 0
-    end
-    return state.arenaCoin
-end
 
 function GameState.getTavernCoin()
     if isMultiplayer() then
@@ -401,8 +369,6 @@ GameState.setRecruitTicket = makeSetter("recruitTicket", "recruitTicket", GameEv
 GameState.setStellarRecruitTicket = makeSetter("stellarRecruitTicket", "stellarRecruitTicket", GameEvents.CURRENCY_CHANGED)
 GameState.setGoldenKey            = makeSetter("goldenKey",            "goldenKey",            GameEvents.CURRENCY_CHANGED)
 GameState.setSweepTicket   = makeSetter("sweepTicket",   "sweepTicket",   GameEvents.CURRENCY_CHANGED)
-GameState.setArenaTicket   = makeSetter("arenaTicket",   "arenaTicket",   GameEvents.CURRENCY_CHANGED)
-GameState.setArenaCoin     = makeSetter("arenaCoin",     "arenaCoin",     GameEvents.CURRENCY_CHANGED)
 GameState.setTavernCoin    = makeSetter("tavernCoin",    "tavernCoin",    GameEvents.CURRENCY_CHANGED)
 GameState.setPrivilegePoint = makeSetter("privilegePoint","privilegePoint",GameEvents.CURRENCY_CHANGED)
 
@@ -474,8 +440,6 @@ function GameState.syncFromCurrency(data)
         stellarRecruitTicket = "setStellarRecruitTicket",
         goldenKey = "setGoldenKey",
         sweepTicket = "setSweepTicket",
-        arenaTicket = "setArenaTicket",
-        arenaCoin = "setArenaCoin",
         tavernCoin = "setTavernCoin",
         privilegePoint = "setPrivilegePoint",
         arcaneDust = "setArcaneDust",
@@ -516,8 +480,6 @@ function GameState.reset()
     state.accessoryScroll = GameConfig.Currency.START_ACCESSORY_SCROLL
     state.recruitTicket = GameConfig.Currency.START_RECRUIT_TICKET
     state.sweepTicket   = GameConfig.Currency.START_SWEEP_TICKET
-    state.arenaTicket   = GameConfig.Currency.START_ARENA_TICKET
-    state.arenaCoin     = GameConfig.Currency.START_ARENA_COIN
     state.tavernCoin    = GameConfig.Currency.START_TAVERN_COIN
     state.privilegePoint = GameConfig.Currency.START_PRIVILEGE_POINT
     state.corruptStone = GameConfig.Currency.START_CORRUPT_STONE
@@ -530,8 +492,8 @@ function GameState.reset()
         weaponScroll = state.weaponScroll, offhandScroll = state.offhandScroll,
         armorScroll = state.armorScroll, accessoryScroll = state.accessoryScroll,
         recruitTicket = state.recruitTicket,
-        sweepTicket = state.sweepTicket, arenaTicket = state.arenaTicket,
-        arenaCoin = state.arenaCoin, tavernCoin = state.tavernCoin,
+        sweepTicket = state.sweepTicket,
+        tavernCoin = state.tavernCoin,
         privilegePoint = state.privilegePoint,
         corruptStone = state.corruptStone, sacredStone = state.sacredStone,
     })

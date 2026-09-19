@@ -2164,6 +2164,16 @@ function HandleNanoVGRenderHorizon()
             DrawUtil.drawBackChevron(vg, seamBtn.cx, logicalH * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir)
         end
+        -- [修复] 玩家信息面板（点头像打开）——横屏此前从未绘制，open 成功但不可见
+        if PlayerInfoPanel.isOpen() then
+            local fit = math.min(logicalW / 1080, logicalH / 2400)
+            nvgSave(vg)
+            nvgScissor(vg, 0, 0, logicalW, logicalH)
+            nvgTranslate(vg, (logicalW - 1080 * fit) * 0.5, (logicalH - 2400 * fit) * 0.5)
+            nvgScale(vg, fit, fit)
+            PlayerInfoPanel.draw(vg)
+            nvgRestore(vg)
+        end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面
         if DarkTitleScreen.isOpen() then
@@ -2200,6 +2210,16 @@ function HandleNanoVGRenderHorizon()
         nvgRestore(vg)
     end
 
+    -- [修复] 玩家信息面板（非三行横屏路径同样漏画）
+    if PlayerInfoPanel.isOpen() then
+        local fit = math.min(logicalW / 1080, logicalH / 2400)
+        nvgSave(vg)
+        nvgScissor(vg, 0, 0, logicalW, logicalH)
+        nvgTranslate(vg, (logicalW - 1080 * fit) * 0.5, (logicalH - 2400 * fit) * 0.5)
+        nvgScale(vg, fit, fit)
+        PlayerInfoPanel.draw(vg)
+        nvgRestore(vg)
+    end
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.draw(vg, logicalW, logicalH)
@@ -2326,6 +2346,15 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         local now = time.elapsedTime
         if now - lastTapTime < MIN_TAP_INTERVAL then isTap = false
         else lastTapTime = now end
+    end
+    -- [三行并行][修复] 玩家信息面板全窗模态（面板横屏绘制为 fit 居中，命中同变换）
+    if BattleTriPage.isOpen() and PlayerInfoPanel.isOpen() then
+        local fit = math.min(logicalW / 1080, logicalH / 2400)
+        local pdx = (dx - (logicalW - 1080 * fit) * 0.5) / fit
+        local pdy = (dy - (logicalH - 2400 * fit) * 0.5) / fit
+        PlayerInfoPanel.handleDragEnd(pdx, pdy)
+        if isTap then PlayerInfoPanel.handleInput(pdx, pdy) end
+        return
     end
     -- [LetterIntro] 开场链输入：信件任意释放即翻段（不依赖 isTap，避免 pressValid 丢失）
     if LetterIntro.isOpen() then

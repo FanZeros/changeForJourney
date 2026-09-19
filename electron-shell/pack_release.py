@@ -206,13 +206,15 @@ def patch_index_html(html: str) -> str:
     html = html.replace("\\!", "!")
     # 窗口标题（否则显示 TapTap Maker）
     html = html.replace("<title>TapTap Maker</title>", "<title>终焉之门·单机版</title>")
-    # 去预览桥
+    # 去预览桥 / 去水印：只删标签本身，保留同行其余内容（bridge 的 <script> 常与 </head> 同行！）
     out = []
     for line in html.splitlines(True):
-        if "__preview-bridge.js" in line:
-            continue
         if 'id="watermark-logo"' in line:
             continue
+        if "__preview-bridge.js" in line:
+            line = re.sub(r"<script[^>]*__preview-bridge\.js[^>]*></script>\s*", "", line)
+            if not line.strip():
+                continue
         out.append(line)
     html = "".join(out)
     # loading-logo 走 CDN，COEP credentialless 下必须带 crossorigin 才能加载
@@ -233,6 +235,22 @@ def patch_index_html(html: str) -> str:
         'crossorigin="anonymous" crossorigin="anonymous"',
         'crossorigin="anonymous"',
     )
+    # ---- 失配校验：手术任何一环没生效就直接报错（曾因静默失配产出坏包） ----
+    problems = []
+    if "终焉之门·单机版" not in html:
+        problems.append("标题替换未生效（<title> 模板变了）")
+    if "__preview-bridge" in html:
+        problems.append("预览桥未移除")
+    if "</head>" not in html:
+        problems.append("</head> 丢失（去桥误删）")
+    if "PatchedWS" not in html:
+        problems.append("免登录 WS shim 未注入（</head> 锚失配）")
+    if 'id="loading-logo" crossorigin' not in html:
+        problems.append("loading-logo crossorigin 未加（模板变了）")
+    if "https://tapcode-sce.spark.xd.com/src/web/src/index.min.js" in html:
+        problems.append("index.min.js 仍指向 CDN（未本地化）")
+    if problems:
+        die("index.html 手术校验失败：\n  - " + "\n  - ".join(problems))
     return html
 
 

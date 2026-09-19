@@ -290,30 +290,67 @@ def download_dist_snapshot(ver: str) -> None:
     log("本机无 dist/，从 Release %s 匿名拉取 %s（公开仓库无需 token）…" % (DIST_SNAPSHOT_TAG, name))
     tmp = RELEASE / name
     tmp.parent.mkdir(parents=True, exist_ok=True)
-    req = Request(url, headers={"User-Agent": "zyjm-pack-release"})
+    expected = None
+    ok = False
+    for attempt in range(1, 9):  # 断流/代理中断最多重试 8 次，支持断点续传
+        have = tmp.stat().st_size if tmp.exists() else 0
+        headers = {"User-Agent": "zyjm-pack-release"}
+        if have:
+            headers["Range"] = "bytes=%d-" % have  # 服务器支持则 206 续传；不支持返回 200 则从头重写
+            if expected and have < expected:
+                log("第 %d 次续传：从 %.0f/%.0f MB 继续…" % (attempt, have / 1048576, expected / 1048576))
+        req = Request(url, headers=headers)
+        try:
+            with urlopen(req, timeout=120) as resp:  # 120s 读超时：断流快速感知
+                status = getattr(resp, "status", 200)
+                if expected is None:
+                    cl = resp.headers.get("Content-Length")
+                    if cl:
+                        # 206 时 Content-Length 是剩余量，总大小 = 已有 + 剩余
+                        expected = have + int(cl) if status == 206 else int(cl)
+                        log("快照总大小 %.0f MB" % (expected / 1048576))
+                append = bool(headers.get("Range")) and status == 206
+                if append:
+                    log("服务端支持断点续传，从 %.0f MB 处继续…" % (have / 1048576))
+                with tmp.open("ab" if append else "wb") as out:
+                    while True:
+                        chunk = resp.read(1 << 20)
+                        if not chunk:
+                            break
+                        out.write(chunk)
+        except HTTPError as e:
+            if e.code == 404:
+                die("dist 快照不存在：%s\n"
+                    "  云端还没上传 dist-%s.zip（tag=%s）。请让云端会话 Build 后执行\n"
+                    "  python pack_release.py --dist-only 上传，或核对 package.json version。" % (url, ver, DIST_SNAPSHOT_TAG))
+            if e.code in (401, 403):
+                die("拉取 dist 快照被拒 HTTP %s（仓库可能为私有）。\n"
+                    "  配置 token 任选：gh auth login / setx GITHUB_TOKEN <PAT> / git 凭据助手已登录。" % e.code)
+            log("下载中断（HTTP %s），3s 后重试…" % e.code)
+            time.sleep(3)
+            continue
+        except (URLError, OSError) as e:
+            log("下载中断（%s），3s 后重试…" % e)
+            time.sleep(3)
+            continue
+        size = tmp.stat().st_size if tmp.exists() else 0
+        if expected and size < expected:
+            log("下载不完整 %.0f/%.0f MB，重试…" % (size / 1048576, expected / 1048576))
+            time.sleep(3)
+            continue
+        ok = True
+        break
+    if not ok:
+        die("dist 快照多次下载仍不完整（网络对 GitHub release 资产不稳）。\n"
+            "  已保留 %.0f MB 残档，重跑本脚本会自动断点续传。" % ((tmp.stat().st_size if tmp.exists() else 0) / 1048576))
+    # 完整性：zip 中心目录必须有效（截断的 zip 在此报错，删除残档让下次全量/续传重来）
     try:
-        with urlopen(req, timeout=3600) as resp, tmp.open("wb") as out:
-            total = 0
-            while True:
-                chunk = resp.read(1 << 20)
-                if not chunk:
-                    break
-                out.write(chunk)
-                total += len(chunk)
-                if total % (16 << 20) < (1 << 20):
-                    log("  downloaded %.0f MB" % (total / 1048576))
-    except HTTPError as e:
-        if e.code == 404:
-            die("dist 快照不存在：%s\n"
-                "  云端还没上传 dist-%s.zip（tag=%s）。请让云端会话 Build 后执行\n"
-                "  python pack_release.py --dist-only 上传，或核对 package.json version。" % (url, ver, DIST_SNAPSHOT_TAG))
-        if e.code in (401, 403):
-            die("拉取 dist 快照被拒 HTTP %s（仓库可能为私有）。\n"
-                "  配置 token 任选：gh auth login / setx GITHUB_TOKEN <PAT> / git 凭据助手已登录。" % e.code)
-        die("拉取 dist 快照失败 HTTP %s：%s" % (e.code, e.read().decode(errors="replace")[:300]))
-    except URLError as e:
-        die("拉取 dist 快照网络错误: %s" % e)
-    log("下载完成 %.0f MB，解压到 dist/ …" % (tmp.stat().st_size / 1048576))
+        with zipfile.ZipFile(tmp) as zf:
+            n = len(zf.namelist())
+    except zipfile.BadZipFile:
+        tmp.unlink()
+        die("下载内容不是有效 zip（可能截断/被网关污染），已删除，请重跑本脚本。")
+    log("下载完成 %.0f MB（%d 条目），解压到 dist/ …" % (tmp.stat().st_size / 1048576, n))
     # 统一走 staging：无论 zip 布局（有/无单层根目录）都正确落到 dist/
     target = ROOT / "dist"
     stage = ROOT / ".tmp_dist_stage"
@@ -323,7 +360,12 @@ def download_dist_snapshot(ver: str) -> None:
     entries = [p for p in stage.iterdir()]
     src = entries[0] if (len(entries) == 1 and entries[0].is_dir()) else stage
     if target.exists():
-        shutil.rmtree(target)
+        try:
+            shutil.rmtree(target)
+        except OSError:
+            backup = ROOT / ("dist.old-%d" % int(time.time()))
+            os.rename(str(target), str(backup))
+            log("WARN 旧 dist/ 无法完全删除（权限/占用），已改名 %s（确认无用后可手动删）" % backup.name)
     shutil.move(str(src), str(target))
     shutil.rmtree(stage, ignore_errors=True)
     tmp.unlink()
@@ -380,7 +422,8 @@ def clean_dist_spill() -> None:
             [git, "status", "--porcelain", "--", "project.json"],
             cwd=str(ROOT), capture_output=True, text=True, timeout=30,
         ).stdout
-        if out.strip():  # 被 dist 散落覆盖过 → 恢复 tracked 版本
+        tracked_modified = any(l[:2].strip() == "M" for l in out.splitlines())
+        if tracked_modified:  # 仅 tracked 且被改动才还原（untracked 时 checkout 会报 pathspec 错）
             subprocess.run([git, "checkout", "--", "project.json"], cwd=str(ROOT), timeout=30)
             removed += 1
     if removed:

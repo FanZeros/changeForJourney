@@ -2286,6 +2286,9 @@ function HandleNanoVGRenderHorizon()
         Viewport.finish(vg)
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
         BattleTriPage.draw(vg, logicalW, logicalH)
+        -- [行1 HUD] 宿主最终层级绘制：速度/扫荡/统计/选关按钮——
+        -- 确保位于一切战斗行背景与框柱之上（用户实测按钮被行1背景穿帮）
+        BattleTriPage.drawHud(vg, logicalW, logicalH)
         -- [三队并行] 中缝返回键（窗口坐标，页面视口之外）：左页‹ / 详情›，两级并存各自绘制
         for _, seamBtn in ipairs(seamBackList()) do
             DrawUtil.drawBackChevron(vg, seamBtn.cx, logicalH * 0.5,

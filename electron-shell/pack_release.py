@@ -174,6 +174,8 @@ def github_token() -> str:
 
 def patch_index_html(html: str) -> str:
     html = html.replace("\\!", "!")
+    # 窗口标题（否则显示 TapTap Maker）
+    html = html.replace("<title>TapTap Maker</title>", "<title>终焉之门·单机版</title>")
     # 去预览桥
     out = []
     for line in html.splitlines(True):
@@ -183,6 +185,11 @@ def patch_index_html(html: str) -> str:
             continue
         out.append(line)
     html = "".join(out)
+    # loading-logo 走 CDN，COEP credentialless 下必须带 crossorigin 才能加载
+    html = html.replace(
+        '<img id="loading-logo" src=',
+        '<img id="loading-logo" crossorigin="anonymous" src=',
+    )
     if "fab-main" not in html:
         html = html.replace("  </style>", CSS_HIDE + "  </style>", 1)
     if "PatchedWS" not in html:

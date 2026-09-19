@@ -342,6 +342,37 @@ handlers[Protocol.ACTION_TYPES.GM_REPAIR_SAVE] = GMLogger.WrapGMAction(
     end
 )
 
+--- GM: 给装备（DebugPanel 装备生成用；此前漏注册导致单机/联网均 no handler）
+--- params: { templateId: string, quality?: number, level?: number }
+handlers[Protocol.ACTION_TYPES.GM_GIVE_EQUIP] = GMLogger.WrapGMAction(
+    Protocol.ACTION_TYPES.GM_GIVE_EQUIP,
+    function(uid, params)
+        if not checkGMAuth(uid) then return { success = false, reason = "权限不足" } end
+        local EquipmentService = require("server.equipment.EquipmentService")
+        local templateId = params and params.templateId
+        local quality = params and tonumber(params.quality) or nil
+        local level = params and tonumber(params.level) or nil
+        local ok, reason, result = EquipmentService.GmGiveEquip(uid, templateId, level, quality)
+        if not ok then return { success = false, reason = reason } end
+        return { success = true, seq = result.seq }
+    end
+)
+
+--- GM: 给遗物（DebugPanel 遗物生成用）
+--- params: { relicType: number, quality: number }
+handlers[Protocol.ACTION_TYPES.GM_GIVE_RELIC] = GMLogger.WrapGMAction(
+    Protocol.ACTION_TYPES.GM_GIVE_RELIC,
+    function(uid, params)
+        if not checkGMAuth(uid) then return { success = false, reason = "权限不足" } end
+        local RelicService = require("server.relic.RelicService")
+        local relicType = params and tonumber(params.relicType) or 1
+        local quality = params and tonumber(params.quality) or 1
+        local ok, reason, result = RelicService.GmGiveRelic(uid, relicType, quality)
+        if not ok then return { success = false, reason = reason } end
+        return { success = true }
+    end
+)
+
 -- ======================== 导出 ========================
 
 -- handlers 作为子表供 registerHandlers 使用

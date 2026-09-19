@@ -32,7 +32,7 @@ local PANEL_BG_H    = 1290
 
 -- 卡片尺寸（与战斗场景一致）
 local CARD_W        = 198
-local CARD_H        = 438
+local CARD_H        = 350    -- [卡高4/5] 原438
 local CARD_SPACING  = 7
 local CARD_CY       = 544      -- 编队位置 Y 轴中心
 
@@ -46,7 +46,7 @@ local PLUS_ICON_H   = 64
 
 -- 职业标签（与战斗界面一致：偏移 -215）
 local TAG_SIZE        = 60
-local TAG_OFFSET_Y    = -215   -- 相对卡片中心的 Y 偏移（同 BattleScene）
+local TAG_OFFSET_Y    = -172   -- [卡高4/5] 原-215, 相对卡片中心的 Y 偏移
 
 -- 战斗力图标+数值 Y 位置
 local POWER_Y       = 680
@@ -98,11 +98,11 @@ local ROW1_CY        = 1291    -- 第一排 Y 中心
 local MAX_PER_ROW    = 5
 
 -- 行间距
-local ROW2_CY        = 1834    -- 第二排 Y 中心
+local ROW2_CY        = 1725    -- [卡高4/5] 第二排 Y 中心(1291+434)
 local ROW_SPACING    = ROW2_CY - ROW1_CY  -- 543
 
 -- 角色名背景（相对卡片行 Y 中心的偏移）
-local NAME_BG_DY     = 1544 - ROW1_CY   -- 253
+local NAME_BG_DY     = CARD_H * 0.5 + 34  -- [卡高4/5] 名牌中心=卡底下方34(原253)
 local NAME_BG_W      = 193
 local NAME_BG_H      = 48
 local NAME_BG_RADIUS = 24
@@ -111,8 +111,8 @@ local NAME_BG_RADIUS = 24
 local DEPLOYED_W     = 134
 local DEPLOYED_H     = 56
 local DEPLOYED_DX    = -CARD_W * 0.5 + 134 * 0.5  -- -32, 左对齐卡片
-local DEPLOYED_DY    = 1145 - ROW1_CY  -- -146
-local DEPLOYED_TXT_DY = 1142 - ROW1_CY -- -149
+local DEPLOYED_DY    = -CARD_H * 0.5 + 58  -- [卡高4/5] 原-146(顶下73)→顶下58
+local DEPLOYED_TXT_DY = -120  -- [卡高4/5] 原-149
 
 -- ======================== 滚动区域 ========================
 
@@ -592,12 +592,12 @@ function M.draw(vg, scrollY)
             goto continueRoster
         end
 
-        -- 顶部渐变透明：卡片主体滚入裁剪上边界时逐渐变透明
-        -- 使用 rowCY（卡片视觉中心）判定，当中心接近 SCROLL_TOP 时开始淡出
-        local FADE_H = 150
+        -- 顶部渐隐[放缓]：卡片顶边触及裁剪上边界才开始淡出，完全出界才消失
+        -- （原：中心到边界即全隐——半张卡还在视野内就变白）
         local fadeAlpha = 1.0
-        if rowCY < SCROLL_TOP + FADE_H then
-            fadeAlpha = math.max(0, (rowCY - SCROLL_TOP) / FADE_H)
+        local distToExit = (rowCY + CARD_H * 0.5) - SCROLL_TOP  -- 卡片底缘到上边界距离
+        if distToExit < CARD_H then
+            fadeAlpha = math.max(0, distToExit / CARD_H)
         end
         nvgGlobalAlpha(vg, fadeAlpha)
 

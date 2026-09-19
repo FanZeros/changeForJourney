@@ -883,12 +883,28 @@ function M.handleDragEnd(dx, dy)
     state.tfMapDragging = false
 end
 
---- 滚轮滚动（效果总览列表）
+--- 滚轮滚动（效果总览列表 / 天赋星图滚轮缩放）
 ---@param wheel number
-function M.handleScroll(wheel)
-    if not state.tfOverviewOpen or state.tfOverviewClosing then return end
-    state.tfOverviewScrollY = state.tfOverviewScrollY - wheel * 80
-    clampOverviewScroll()
+---@param msx number|nil 鼠标设计坐标X (缩放锚点, 可为nil)
+---@param msy number|nil 鼠标设计坐标Y
+function M.handleScroll(wheel, msx, msy)
+    -- 效果总览（模态）优先：列表滚动
+    if state.tfOverviewOpen or state.tfOverviewClosing then
+        state.tfOverviewScrollY = state.tfOverviewScrollY - wheel * 80
+        clampOverviewScroll()
+        return
+    end
+
+    -- 天赋星图：滚轮缩放（上滚放大 / 下滚缩小，以鼠标位置为锚）
+    local step = 0.08 * wheel
+    local v = math.max(0, math.min(1, state.tfZoomSliderValue - step))
+    if math.abs(v - state.tfZoomSliderValue) < 1e-6 then return end
+    state.tfZoomSliderValue = v
+    if msx and msy then
+        TalentStarMap.zoomAt(v, msx, msy)
+    else
+        TalentStarMap.setZoom(v)
+    end
 end
 
 --- 预加载 Spine 资源

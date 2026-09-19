@@ -543,7 +543,7 @@ local function dispatchDragEndAndTap(dx, dy)
 end
 
 --- 滚轮事件分发
-function M.dispatchScroll(wheel)
+function M.dispatchScroll(wheel, msx, msy)
     -- [DarkTitleScreen] 标题期吞掉滚轮
     if DarkTitleScreen.isOpen() then return end
     -- [LetterIntro] 信件期吞掉滚轮
@@ -571,7 +571,7 @@ function M.dispatchScroll(wheel)
         return
     end
     if tabIndex == 4 and ChurchPage.isOpen() then
-        ChurchPage.handleScroll(wheel)
+        ChurchPage.handleScroll(wheel, msx, msy)
         return
     end
     if tabIndex == 4 and TavernPage.isOpen() then
@@ -731,7 +731,9 @@ function M.handleMouseWheel(eventType, eventData)
     end
     if currentStateFn() ~= STATE_IN_GAME then return end
     local wheel = eventData["Wheel"]:GetInt()
-    M.dispatchScroll(wheel)
+    local mousePos = input:GetMousePosition()
+    local msx, msy = toDesign(mousePos.x, mousePos.y)
+    M.dispatchScroll(wheel, msx, msy)
 end
 
 

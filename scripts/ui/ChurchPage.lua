@@ -1215,7 +1215,9 @@ end
 
 --- 鼠标滚轮滚动
 ---@param wheel number
-function ChurchPage.handleScroll(wheel)
+---@param msx number|nil 鼠标设计坐标X (滚轮缩放锚点用, 可为nil)
+---@param msy number|nil 鼠标设计坐标Y
+function ChurchPage.handleScroll(wheel, msx, msy)
     if not state.open or state.closing then return end
     if isRosterVisible() then
         state.rosterScrollY = state.rosterScrollY - wheel * 80
@@ -1224,7 +1226,7 @@ function ChurchPage.handleScroll(wheel)
         return
     end
     if state.tab == "tianfu" and TalentPanel.handleScroll then
-        TalentPanel.handleScroll(wheel)
+        TalentPanel.handleScroll(wheel, msx, msy)
     elseif state.tab == "shenqi" then
         ArtifactPanel.handleScroll(wheel)
     end

@@ -399,7 +399,7 @@ def download_dist_snapshot(ver: str) -> None:
                         if a.get("name", "").startswith(name + ".part"))
     if part_names:  # 分片模式：下方逐片下载合并，跳过完整包下载
         log("云端为分片快照（%d 片），逐片下载合并…" % len(part_names))
-        tmp.unlink()
+        tmp.unlink(missing_ok=True)
         parts_dir = RELEASE / "snapshot_parts"
         parts_dir.mkdir(parents=True, exist_ok=True)
         with tmp.open("wb") as out:
@@ -423,7 +423,7 @@ def download_dist_snapshot(ver: str) -> None:
         with zipfile.ZipFile(tmp) as zf:
             n = len(zf.namelist())
     except zipfile.BadZipFile:
-        tmp.unlink()
+        tmp.unlink(missing_ok=True)
         die("下载内容不是有效 zip（可能截断/被网关污染），已删除，请重跑本脚本。")
     log("下载完成 %.0f MB（%d 条目），解压到 dist/ …" % (tmp.stat().st_size / 1048576, n))
     # 统一走 staging：无论 zip 布局（有/无单层根目录）都正确落到 dist/
@@ -443,7 +443,7 @@ def download_dist_snapshot(ver: str) -> None:
             log("WARN 旧 dist/ 无法完全删除（权限/占用），已改名 %s（确认无用后可手动删）" % backup.name)
     shutil.move(str(src), str(target))
     shutil.rmtree(stage, ignore_errors=True)
-    tmp.unlink()
+    tmp.unlink(missing_ok=True)
     if not (target / "index.html").exists():
         die("dist 快照解压后没有 index.html，内容异常")
     # 写来源指纹（供 ensure_dist 下次比对云端是否更新）

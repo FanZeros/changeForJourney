@@ -647,9 +647,9 @@ function M.drawOverviewPanel(vg)
             else
                 nvgFillColor(vg, nvgRGBA(TOV.textR, TOV.textG, TOV.textB, 255))
             end
-            -- 测量实际文本高度（nvgTextBoxBounds 返回4个值: x1,y1,x2,y2）
-            local _, _, _, by2 = nvgTextBoxBounds(vg, contentLeft, y, contentW, line.text, nil)
-            local textH = by2 - y
+            -- 测量实际文本高度（nvgTextBoxBounds 返回 bounds 表 {xmin,ymin,xmax,ymax}，非多返回值）
+            local bounds = nvgTextBoxBounds(vg, contentLeft, y, contentW, line.text, nil)
+            local textH = (bounds and bounds[4] or (y + TOV.lineH)) - y
             nvgTextBox(vg, contentLeft, y, contentW, line.text, nil)
             y = y + math.max(TOV.lineH, textH) + 10
         end

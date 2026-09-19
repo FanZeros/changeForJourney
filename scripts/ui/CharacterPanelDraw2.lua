@@ -49,17 +49,17 @@ local TAG_SIZE        = 60
 local TAG_OFFSET_Y    = -172   -- [卡高4/5] 原-215, 相对卡片中心的 Y 偏移
 
 -- 战斗力图标+数值 Y 位置
-local POWER_Y       = 636     -- [卡高4/5] 原680——卡底边上移44(半高差)，卡内元素等量上移保持距底83
+local POWER_Y       = 680
 local POWER_ICON_SIZE = 36
 
 -- 等级徽章（以最中心卡牌为基准的相对偏移）
 local LVL_BADGE_SIZE  = 56
 local LVL_BADGE_DX    = 477 - 540    -- -63
-local LVL_BADGE_DY    = (725 - 44) - CARD_CY -- [卡高4/5] 原181→137
+local LVL_BADGE_DY    = 725 - CARD_CY -- 181
 
 -- 经验条
 local EXP_BAR_DX      = 552 - 540    -- 12（相对卡牌中心）
-local EXP_BAR_DY      = (727 - 44) - CARD_CY -- [卡高4/5] 原183→139
+local EXP_BAR_DY      = 727 - CARD_CY -- 183
 local EXP_BAR_BG_W    = 148
 local EXP_BAR_BG_H    = 28
 local EXP_BAR_PADDING = 4
@@ -144,7 +144,7 @@ M.DESIGN_W     = DESIGN_W
 -- ======================== 图片资源 ========================
 
 local img = {
-    panelBg    = -1,   -- UI_JSJM_bj.png
+    panelBg    = -1,   -- UI_JSJM_BJ.png
     listBg     = -1,   -- UI_JSJM_0.png
     deployed   = -1,   -- UI_JSJM_CZZ.png（出战中标识）
     lock       = -1,   -- UI_ICON_SUO.png
@@ -193,7 +193,7 @@ end
 -- ======================== 图片初始化 ========================
 
 function M.initImages(vg)
-    img.panelBg    = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_bj.png", 0)
+    img.panelBg    = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_BJ.png", 0)
     img.listBg     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_0.png", 0)
     img.deployed   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_CZZ.png", 0)
     img.lock       = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
@@ -254,8 +254,8 @@ end
 
 -- ======================== [三队并行] 队伍页签 ========================
 
-local TAB_W, TAB_H, TAB_GAP = 262, 60, 14
-local TAB_Y = 252   -- 页签顶边（槽位卡上边缘 325 之上，留 13px 间隙）
+local TAB_W, TAB_H, TAB_GAP = 240, 54, 16
+local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px 间隙）
 
 --- 计算第 idx 个页签的左上角 X
 ---@param idx number
@@ -292,12 +292,13 @@ function M.drawTeamTabs(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         local label
         if isLocked then
-            label = string.format("队%d · 未解锁", i)
-            nvgFontSize(vg, 24)
+            local needLv = ExpTable.getTeamUnlockLevel(i)
+            label = string.format("队%d · Lv%s解锁", i, tostring(needLv or "?"))
+            nvgFontSize(vg, 22)
             nvgFillColor(vg, nvgRGBA(150, 150, 165, 255))
         else
             label = string.format("队%d（%d/%d）", i, counts[i] or 0, M.MAX_SLOTS)
-            nvgFontSize(vg, 26)
+            nvgFontSize(vg, 24)
             nvgFillColor(vg, isActive and nvgRGBA(255, 255, 255, 255) or nvgRGBA(205, 210, 225, 255))
         end
         nvgText(vg, x + TAB_W * 0.5, y + TAB_H * 0.5 + 1, label)

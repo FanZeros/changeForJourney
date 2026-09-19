@@ -265,7 +265,7 @@ local img = {
     btnBack   = -1,   -- UI_AN_FH.png
     poolCatStandard = -1,   -- UI_KCFL_1.png
     poolCatStellar  = -1,   -- UI_KCFL_2.png
-    poolSel   = -1,   -- UI_KCFL_gl.png
+    poolSel   = -1,   -- UI_KCFL_GL.png
     upPortrait      = -1,   -- KCLH_{heroId}.png 当期 UP
     timerBg   = -1,   -- UI_YXTBBJ.png
     timerIcon = -1,   -- UI_icon_NZ.png
@@ -439,7 +439,7 @@ function TavernPage.init(vg)
     img.btnBack   = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     img.poolCatStandard = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_KCFL_1.png", 0)
     img.poolCatStellar  = loadImage(vg, UrGachaConfig.UI.poolTabPath)
-    img.poolSel   = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_KCFL_gl.png", 0)
+    img.poolSel   = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_KCFL_GL.png", 0)
     reloadUpPortrait(vg)
     img.timerBg   = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_YXTBBJ.png", 0)
     img.timerIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_NZ.png", 0)

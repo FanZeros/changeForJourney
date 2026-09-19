@@ -2139,31 +2139,37 @@ local function HorizonDimSidePanels()
     nvgFill(vg)
 end
 
---- [三队并行] 中缝返回键：目标页关闭函数（nil=当前无打开的二级页）
-local function seamBackTarget()
-    if     ChurchPage.isOpen()      then return function() ChurchPage.close() end
-    elseif BlacksmithPage.isOpen()  then return function() BlacksmithPage.close() end
-    elseif TavernPage.isOpen()      then return function() TavernPage.close() end
-    elseif ArenaPage.isOpen()       then return function() ArenaPage.close() end
-    elseif MarketPage.isOpen()      then return function() MarketPage.close() end
-    elseif CharacterDetail.isOpen() then return function() CharacterDetail.close() end
-    end
-    return nil
-end
-
---- [三队并行] 中缝返回键矩形（窗口坐标）：左页在左框柱，详情页在右框柱
-local function seamBackRect()
+--- [三队并行] 中缝返回键列表：左页‹（左框柱）/ 详情›（右框柱），两级二级页可同时存在
+--- 各占一个框柱位，互不竞争（此前 if/else 单按钮，左右同开时只能活一个）
+local function seamBackList()
+    local list = {}
     local psL = logicalH / 1080
+    local sw, sh = 184 * psL * 0.45, 143 * psL * 0.45
     local ix, iy, iw, ih = BattleTriPage.getInteriorRect(1)
-    local cx, dir
+    -- 右框柱 ›：角色详情页
     if CharacterDetail.isOpen() then
-        cx = ((ix + iw) + (logicalW - 486 * psL)) * 0.5
-        dir = "right"
-    else
-        cx = (486 * psL + ix) * 0.5
-        dir = "left"
+        list[#list + 1] = {
+            cx = ((ix + iw) + (logicalW - 486 * psL)) * 0.5,
+            sw = sw, sh = sh, dir = "right",
+            close = function() CharacterDetail.close() end,
+        }
     end
-    return cx, logicalH * 0.5, 184 * psL * 0.45, 143 * psL * 0.45, dir
+    -- 左框柱 ‹：左栏二级页（教堂/铁匠/酒馆/竞技场/市场）
+    local leftClose
+    if     ChurchPage.isOpen()      then leftClose = function() ChurchPage.close() end
+    elseif BlacksmithPage.isOpen()  then leftClose = function() BlacksmithPage.close() end
+    elseif TavernPage.isOpen()      then leftClose = function() TavernPage.close() end
+    elseif ArenaPage.isOpen()       then leftClose = function() ArenaPage.close() end
+    elseif MarketPage.isOpen()      then leftClose = function() MarketPage.close() end
+    end
+    if leftClose then
+        list[#list + 1] = {
+            cx = (486 * psL + ix) * 0.5,
+            sw = sw, sh = sh, dir = "left",
+            close = leftClose,
+        }
+    end
+    return list
 end
 
 function HandleNanoVGRenderHorizon()
@@ -2308,11 +2314,10 @@ function HandleNanoVGRenderHorizon()
         Viewport.finish(vg)
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
         BattleTriPage.draw(vg, logicalW, logicalH)
-        -- [三队并行] 中缝返回键（窗口坐标，页面视口之外）：左页‹ / 详情›
-        local seamClose = seamBackTarget()
-        if seamClose then
-            local scx, scy, sw, sh, sdir = seamBackRect()
-            DrawUtil.drawBackChevron(vg, scx, scy, sw, sh, sdir)
+        -- [三队并行] 中缝返回键（窗口坐标，页面视口之外）：左页‹ / 详情›，两级并存各自绘制
+        for _, seamBtn in ipairs(seamBackList()) do
+            DrawUtil.drawBackChevron(vg, seamBtn.cx, logicalH * 0.5,
+                seamBtn.sw, seamBtn.sh, seamBtn.dir)
         end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面
@@ -2494,12 +2499,11 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     if pid == 'none' then return end
     if pid == 'tri' then
-        -- [三队并行] 中缝返回键优先命中（框柱在页面视口之外，属 tri 窗口区）
-        local seamClose = seamBackTarget()
-        if seamClose then
-            local scx, scy, sw, sh = seamBackRect()
-            if math.abs(dx - scx) <= sw * 0.5 and math.abs(dy - scy) <= sh * 0.5 then
-                if isTap then seamClose() end
+        -- [三队并行] 中缝返回键优先命中（框柱在页面视口之外，属 tri 窗口区；左右两级各自独立命中）
+        for _, seamBtn in ipairs(seamBackList()) do
+            if math.abs(dx - seamBtn.cx) <= seamBtn.sw * 0.5
+                and math.abs(dy - logicalH * 0.5) <= seamBtn.sh * 0.5 then
+                if isTap then seamBtn.close() end
                 return
             end
         end

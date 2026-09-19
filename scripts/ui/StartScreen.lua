@@ -97,7 +97,7 @@ function StartScreen.init(nvgCtx, scene)
     vg_ = nvgCtx
 
     -- 加载图片
-    imgLogo_ = nvgCreateImage(vg_, "image/界面底板/标题与加载/LOGO终焉之门_透明版.png", 0)
+    imgLogo_ = nvgCreateImage(vg_, "image/界面底板/标题与加载/UI_LOGO_TM.png", 0)
     imgGlow_ = nvgCreateImage(vg_, "image/界面底板/标题与加载/UI_KSYXFG.png", 0)
     imgDeco_ = nvgCreateImage(vg_, "image/界面底板/标题与加载/UI_KSYXJT.png", 0)
 
@@ -105,7 +105,7 @@ function StartScreen.init(nvgCtx, scene)
     imgMask_ = nvgCreateImage(vg_, "image/界面底板/标题与加载/UI_ZRJM_HD.png", 0)
 
     -- 视频首帧静态图（视频解码就绪前的fallback，避免黑屏闪烁）
-    imgBgFallback_ = nvgCreateImage(vg_, "image/界面底板/标题与加载/UI_DLJMBJ_Frame1.jpg", 0)
+    imgBgFallback_ = nvgCreateImage(vg_, "image/界面底板/标题与加载/UI_DLJMBJ_FRAME1.jpg", 0)
 
     -- 区服网络状态图标
     for i = 1, 3 do

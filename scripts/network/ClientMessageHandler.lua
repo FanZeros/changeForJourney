@@ -20,7 +20,6 @@ local ClientDispatcher = require("network.ClientDispatcher")
  local RewardPopup
  local LootBox, LootBoxPage
  local BlacksmithPage, ChurchPage, TavernPage
- local ArenaPage, ArenaBattleScene, ArenaOpponentDialog
  local MarketPage, GuildPage, DungeonPage, DungeonBattleScene
  local GMConsolePanel, RelicReforgePanel, MailPanel, AnnouncementPanel
  local TopBar, BattleScene, CharacterPanel
@@ -72,9 +71,6 @@ local ClientDispatcher = require("network.ClientDispatcher")
      BackpackPanel       = require("ui.BackpackPanel")
      ChurchPage          = require("ui.ChurchPage")
      TavernPage          = require("ui.TavernPage")
-     ArenaPage           = require("ui.ArenaPage")
-     ArenaBattleScene    = require("ui.ArenaBattleScene")
-     ArenaOpponentDialog = require("ui.ArenaOpponentDialog")
      MarketPage          = require("ui.MarketPage")
      GuildPage           = require("ui.GuildPage")
      DungeonPage         = require("ui.DungeonPage")
@@ -480,12 +476,10 @@ local ClientDispatcher = require("network.ClientDispatcher")
              return
          end
          if TavernPage.onActionResult then TavernPage.onActionResult(data) end
-         if ArenaOpponentDialog.onActionResult then ArenaOpponentDialog.onActionResult(data) end
          if MarketPage.onActionResult then MarketPage.onActionResult(data) end
          if BlacksmithPage.onActionResult then BlacksmithPage.onActionResult(data) end
          if EquipmentDetail.onActionResult then EquipmentDetail.onActionResult(data) end
          if ChurchPage.onActionResult then ChurchPage.onActionResult(data) end
-         if ArenaPage.onActionResult then ArenaPage.onActionResult(data) end
          if GuildPage.onActionResult then GuildPage.onActionResult(data) end
          if DungeonPage.onActionResult then DungeonPage.onActionResult(data) end
          if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE then
@@ -628,10 +622,7 @@ local ClientDispatcher = require("network.ClientDispatcher")
      if EquipmentDetail.onActionResult then pcall(EquipmentDetail.onActionResult, data) end
      if ChurchPage.onActionResult then pcall(ChurchPage.onActionResult, data) end
      if TavernPage.onActionResult then pcall(TavernPage.onActionResult, data) end
-     if ArenaPage.onActionResult then pcall(ArenaPage.onActionResult, data) end
-     if ArenaBattleScene.onActionResult then pcall(ArenaBattleScene.onActionResult, data) end
      if DungeonBattleScene.onActionResult then pcall(DungeonBattleScene.onActionResult, data) end
-     if ArenaOpponentDialog.onActionResult then pcall(ArenaOpponentDialog.onActionResult, data) end
      if MarketPage.onActionResult then pcall(MarketPage.onActionResult, data) end
      if GuildPage.onActionResult then pcall(GuildPage.onActionResult, data) end
      if GMConsolePanel.onActionResult then pcall(GMConsolePanel.onActionResult, data) end
@@ -745,7 +736,7 @@ local ClientDispatcher = require("network.ClientDispatcher")
              local CURRENCY_KEY_TO_POPUP_TYPE = {
                  recruitTicket = "adventure_ticket", sweep_ticket = "sweep_ticket",
                  goldenKey = "golden_key", corruptStone = "corrupt_stone", sacredStone = "sacred_stone",
-                 arena_ticket = "arena_ticket", gems = "diamond", gold = "gold", essence = "essence",
+                 gems = "diamond", gold = "gold", essence = "essence",
                  weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll",
                  armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll", randomScroll = "random_scroll",
              }

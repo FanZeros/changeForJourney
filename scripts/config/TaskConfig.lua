@@ -20,7 +20,6 @@ TaskConfig.STATUS = {
 TaskConfig.REWARD_TO_CURRENCY = {
     diamond           = "gems",
     gold              = "gold",
-    arena_coin        = "arenaCoin",
     adventure_ticket  = "recruitTicket",
     stellar_ticket    = "stellarRecruitTicket",
     golden_key        = "goldenKey",
@@ -114,13 +113,6 @@ TaskConfig.DAILY = {
         target = 60,
         reward = { type = "diamond", amount = 582, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
     },
-    {
-        id = "d_arena_3",
-        name = "参加3次竞技场",
-        condKey = "arena",
-        target = 3,
-        reward = { type = "arena_coin", amount = 100, icon = "image/货币道具/UI_icon_JJB.png", quality = 3 },
-    },
 }
 
 -- ======================== 周任务定义（8 条） ========================
@@ -189,13 +181,6 @@ TaskConfig.WEEKLY = {
         target = 20,
         reward = { type = "diamond", amount = 1320, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
     },
-    {
-        id = "w_arena_15",
-        name = "参加15次竞技场",
-        condKey = "arena",
-        target = 15,
-        reward = { type = "arena_coin", amount = 888, icon = "image/货币道具/UI_icon_JJB.png", quality = 3 },
-    },
 }
 
 -- ======================== 成就定义（56 条） ========================
@@ -252,14 +237,6 @@ TaskConfig.ACHIEVEMENT = {
     { id = "a_awk_ssr_2", name = "任意SSR级角色觉醒至2阶", condKey = "awk_ssr_max", target = 2, reward = { type = "diamond", amount = 300,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
     { id = "a_awk_ssr_3", name = "任意SSR级角色觉醒至3阶", condKey = "awk_ssr_max", target = 3, reward = { type = "diamond", amount = 1888, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
 
-    -- -------- 竞技场段位 (50-56) --------
-    { id = "a_arena_1", name = "竞技场段位达到青铜级", condKey = "arena_tier", target = 2, reward = { type = "diamond", amount = 50,   icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_arena_2", name = "竞技场段位达到白银级", condKey = "arena_tier", target = 3, reward = { type = "diamond", amount = 100,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_arena_3", name = "竞技场段位达到黄金级", condKey = "arena_tier", target = 4, reward = { type = "diamond", amount = 200,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_arena_4", name = "竞技场段位达到铂金级", condKey = "arena_tier", target = 5, reward = { type = "diamond", amount = 400,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_arena_5", name = "竞技场段位达到钻石级", condKey = "arena_tier", target = 6, reward = { type = "diamond", amount = 688,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_arena_6", name = "竞技场段位达到大师级", condKey = "arena_tier", target = 7, reward = { type = "diamond", amount = 1288, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_arena_7", name = "竞技场段位达到传说级", condKey = "arena_tier", target = 8, reward = { type = "diamond", amount = 1888, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
 }
 
 -- ======================== 按 ID 快速查找 ========================

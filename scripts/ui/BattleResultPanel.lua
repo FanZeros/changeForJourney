@@ -16,7 +16,7 @@
 --       isWin        = true,
 --       elapsedSecs  = 51,
 --       heroStats    = { { heroId=1, quality=3, totalDamage=12345 }, ... },
---       rewards      = { { type="arena_coin", amount=20 } },
+--       rewards      = { { type="tavern_coin", amount=20 } },
 --       -- 竞技场专用（可选）
 --       arenaMode    = true,
 --       scoreChange  = 15,

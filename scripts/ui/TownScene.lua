@@ -28,13 +28,10 @@ local imgRedDot   = -1   -- ICON_HD.png 红点图标
 
 -- ======================== 外部驱动标志 ========================
 local smithDecomposeRedDot = false  -- 铁匠铺分解红点（背包满时）
-local arenaTicketRedDot    = false  -- 竞技场红点（有竞技券时）
 
 -- 上方建筑
 local imgSmith    = -1   -- 铁匠铺
-local imgArena    = -1   -- 竞技场
 local imgIconSmith = -1  -- 铁匠铺图标
-local imgIconArena = -1  -- 竞技场图标
 
 -- ======================== 布局常量 ========================
 
@@ -61,14 +58,6 @@ local SMITH_ICON_CX, SMITH_ICON_CY = 444, 366
 local SMITH_ICON_SZ = 64
 local SMITH_TEXT_X,  SMITH_TEXT_Y  = 569, 366
 
--- 竞技场
-local ARENA_CX,  ARENA_CY  = 878,  720
-local ARENA_W,   ARENA_H   = 380,  421
-local ARENA_LBL_CX, ARENA_LBL_CY = 871, 690
-local ARENA_LBL_W,  ARENA_LBL_H  = 361, 113
-local ARENA_ICON_CX, ARENA_ICON_CY = 781, 684
-local ARENA_ICON_SZ = 64
-local ARENA_TEXT_X,  ARENA_TEXT_Y  = 907, 684
 
 -- ---- 下方建筑 ----
 
@@ -347,9 +336,7 @@ function TownScene.init(vg)
 
     -- 上方建筑
     imgSmith       = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
-    imgArena       = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_JJC.png", 0)
     imgIconSmith   = nvgCreateImage(vg, "image/通用图标/ICON_CZ_TJP.png", 0)
-    imgIconArena   = nvgCreateImage(vg, "image/通用图标/ICON_CZ_JJC.png", 0)
 
     -- 下方建筑
     imgChurch      = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
@@ -420,30 +407,6 @@ function TownScene.draw(vg)
 
     -- [公会功能已移除] 城镇不再渲染冒险者公会建筑（单机版无公会玩法）
 
-    -- 4) 竞技场（右侧）
-    local arenaLocked = not _TM.isBuildingUnlocked("arena")
-    local _bfArena = (not arenaLocked) and BF.begin(vg, "town_arena", ARENA_CX, ARENA_CY, ARENA_W, ARENA_H) or false
-    if arenaLocked then
-        drawImageSilhouette(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, 0.85)
-    else
-        drawImageDarkTint(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, 1.0)
-        drawFlashOverlay(vg, imgArena, ARENA_CX, ARENA_CY, ARENA_W, ARENA_H, getClickFlashAlpha("arena"))
-        drawBuildingLabel(vg,
-            ARENA_LBL_CX, ARENA_LBL_CY, ARENA_LBL_W, ARENA_LBL_H,
-            ARENA_ICON_CX, ARENA_ICON_CY, ARENA_ICON_SZ, imgIconArena,
-            ARENA_TEXT_X, ARENA_TEXT_Y, "血砂斗场")
-    end
-    if arenaLocked then
-        drawBuildingLockOverlay(vg, ARENA_CX, ARENA_CY, "arena", true)
-    end
-    -- 竞技场红点（有竞技券时）
-    if not arenaLocked and arenaTicketRedDot then
-        local rdSz = 40
-        local rdX = ARENA_LBL_CX + ARENA_LBL_W * 0.5 - rdSz * 0.3
-        local rdY = ARENA_LBL_CY - ARENA_LBL_H * 0.5 + rdSz * 0.3
-        DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
-    BF.finish(vg, _bfArena)
-    if _tmActive and not arenaLocked then _TM.registerHotspot("building_arena", ARENA_CX, ARENA_CY, ARENA_W, ARENA_H) end
 
     -- ---- 下方建筑 ----
 
@@ -532,12 +495,6 @@ function TownScene.setOnTavernClick(fn)
     onTavernClick = fn
 end
 
---- 回调：点击竞技场
-local onArenaClick = nil
-
-function TownScene.setOnArenaClick(fn)
-    onArenaClick = fn
-end
 
 --- 回调：点击市场
 local onMarketClick = nil
@@ -569,19 +526,6 @@ function TownScene.handleInput(dx, dy)
         return true
     end
 
-    -- 竞技场点击检测
-    if dx >= ARENA_CX - ARENA_W * 0.5 and dx <= ARENA_CX + ARENA_W * 0.5
-       and dy >= ARENA_CY - ARENA_H * 0.5 and dy <= ARENA_CY + ARENA_H * 0.5 then
-        if not _TM.isBuildingUnlocked("arena") then
-            print("[TownScene] 竞技场未被引导解锁")
-            return true
-        end
-        print("[TownScene] 点击竞技场")
-        BF.trigger("town_arena")
-        triggerClickAnim("arena")
-        if onArenaClick then deferAction(CLICK_CALLBACK_DELAY, onArenaClick) end
-        return true
-    end
 
     -- 教堂点击检测
     if dx >= CHURCH_CX - CHURCH_W * 0.5 and dx <= CHURCH_CX + CHURCH_W * 0.5
@@ -634,11 +578,6 @@ function TownScene.setSmithRedDot(show)
     smithDecomposeRedDot = show
 end
 
---- 设置竞技场红点（有竞技券时由外部驱动）
----@param show boolean
-function TownScene.setArenaRedDot(show)
-    arenaTicketRedDot = show
-end
 
 --- 设置公会遗物角标（公会功能已移除，保留空实现兼容旧调用）
 ---@param show boolean

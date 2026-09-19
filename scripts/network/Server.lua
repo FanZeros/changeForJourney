@@ -108,7 +108,6 @@ registerHandlers(require("server.hero.HeroHandler").actionHandlers)
 registerHandlers(require("server.gacha.GachaHandler").actionHandlers)
 registerHandlers(require("server.equipment.EquipmentHandler").actionHandlers)
 registerHandlers(require("server.blacksmith.BlacksmithHandler").actionHandlers)
-registerHandlers(require("server.arena.ArenaHandler").actionHandlers)
 registerHandlers(require("server.task.TaskHandler").actionHandlers)
 registerHandlers(require("server.mail.MailHandler").actionHandlers)
 -- ── 直接导出 handlers table 的模块 ──
@@ -145,7 +144,6 @@ local AnnouncementConfig     = require("shared.AnnouncementConfig")
 local OfflineService         = require("server.offline.OfflineService")
 local IdleSettleService      = require("server.offline.IdleSettleService")
 local DungeonIdleService     = require("server.dungeon.DungeonIdleService")
-local ArenaService           = require("server.arena.ArenaService")
 local CrossInstanceService   = require("server.gm.CrossInstanceService")
 local ChallengerService      = require("server.challenger.ChallengerService")
 registerHandlers(require("server.offline.OfflineHandler").actionHandlers)
@@ -1011,40 +1009,37 @@ local function loadAndPushFullState(uid)
             -- 同步公会排行榜分数（修正 avatarHeroId 编码变更导致的过时 cloud score）
             BattleService.SyncGuildRankOnLogin(uid)
 
-            -- 竞技场周结算（异步，确保结算邮件在推送邮件列表前已发放）
-            ArenaService.SettleOnLogin(uid, function()
-                -- 拉取跨实例待投递邮件（其他实例 GM 发送的离线邮件）
-                CrossInstanceService.FetchPendingMails(uid, function()
-                    ChallengerService.ProcessLoginRewards(uid)
-                    -- 推送邮件列表（合并配置 + 玩家已领取/已删除状态）
-                    local mailList = MailHandler.buildMailList(uid)
-                    print("[Server][DEBUG-MAIL] uid=" .. tostring(uid)
-                        .. " mailList count=" .. tostring(mailList and #mailList or "NIL")
-                        .. " type=" .. type(mailList))
-                    ServerDispatcher.sendEvent(uid, Protocol.RES_ACTION_RESULT, {
-                        success    = true,
-                        mailPush   = true,
-                        mails      = mailList,
-                    })
+            -- 拉取跨实例待投递邮件（其他实例 GM 发送的离线邮件）
+            CrossInstanceService.FetchPendingMails(uid, function()
+                ChallengerService.ProcessLoginRewards(uid)
+                -- 推送邮件列表（合并配置 + 玩家已领取/已删除状态）
+                local mailList = MailHandler.buildMailList(uid)
+                print("[Server][DEBUG-MAIL] uid=" .. tostring(uid)
+                    .. " mailList count=" .. tostring(mailList and #mailList or "NIL")
+                    .. " type=" .. type(mailList))
+                ServerDispatcher.sendEvent(uid, Protocol.RES_ACTION_RESULT, {
+                    success    = true,
+                    mailPush   = true,
+                    mails      = mailList,
+                })
 
-                    -- 推送公告列表（基于开服时间计算日期）
-                    local serverId = SaveManager.getServerId(uid)
-                    local srvCfg = ServerListConfig.find(serverId)
-                    local openTime = (srvCfg and srvCfg.openTime) or 0
-                    local annList = AnnouncementConfig.buildWithDates(openTime)
-                    print("[Server][DEBUG-ANN] uid=" .. tostring(uid)
-                        .. " serverId=" .. tostring(serverId)
-                        .. " openTime=" .. tostring(openTime)
-                        .. " announcements count=" .. tostring(annList and #annList or "NIL"))
-                    ServerDispatcher.sendEvent(uid, Protocol.RES_ACTION_RESULT, {
-                        success          = true,
-                        announcementPush = true,
-                        announcements    = annList,
-                    })
+                -- 推送公告列表（基于开服时间计算日期）
+                local serverId = SaveManager.getServerId(uid)
+                local srvCfg = ServerListConfig.find(serverId)
+                local openTime = (srvCfg and srvCfg.openTime) or 0
+                local annList = AnnouncementConfig.buildWithDates(openTime)
+                print("[Server][DEBUG-ANN] uid=" .. tostring(uid)
+                    .. " serverId=" .. tostring(serverId)
+                    .. " openTime=" .. tostring(openTime)
+                    .. " announcements count=" .. tostring(annList and #annList or "NIL"))
+                ServerDispatcher.sendEvent(uid, Protocol.RES_ACTION_RESULT, {
+                    success          = true,
+                    announcementPush = true,
+                    announcements    = annList,
+                })
 
-                    print("[Server] player entered game uid=" .. tostring(uid))
-                end)  -- CrossInstanceService.FetchPendingMails callback
-            end)  -- ArenaService.SettleOnLogin callback
+                print("[Server] player entered game uid=" .. tostring(uid))
+            end)  -- CrossInstanceService.FetchPendingMails callback
         end)
     end)
 end

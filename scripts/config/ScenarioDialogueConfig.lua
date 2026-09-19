@@ -577,7 +577,7 @@ ScenarioDialogueConfig.SCENARIO_50 = {
 ScenarioDialogueConfig.SCENARIO_51 = {
     mode = "small",
     steps = {
-        { characterId = 1, name = "大狗嚼", text = "唔，这波的怪物有点扛咬……叫！听说城里新开了竞技场，去那练练爪子？" },
+        { characterId = 1, name = "大狗嚼", text = "唔，这波的怪物有点扛咬……叫！还得继续练爪子，下次一口吞掉它们！" },
     },
 }
 
@@ -586,7 +586,7 @@ ScenarioDialogueConfig.SCENARIO_51 = {
 ScenarioDialogueConfig.SCENARIO_52 = {
     mode = "small",
     steps = {
-        { characterId = 2, name = "黄桃龙", text = "呜！这怪物皮好厚！黄桃龙的火球都烧不动了……需要加练！听说竞技场很锻炼龙！" },
+        { characterId = 2, name = "黄桃龙", text = "呜！这怪物皮好厚！黄桃龙的火球都烧不动了……需要加练，喷出更强的火球！" },
     },
 }
 
@@ -595,20 +595,10 @@ ScenarioDialogueConfig.SCENARIO_52 = {
 ScenarioDialogueConfig.SCENARIO_53 = {
     mode = "small",
     steps = {
-        { characterId = 3, name = "叮咚鸡", text = "……战况，比预期艰难。叮咚~建议通知：前往竞技场，特训。" },
+        { characterId = 3, name = "叮咚鸡", text = "……战况，比预期艰难。叮咚~建议通知：继续特训，增强火力。" },
     },
 }
 
---- 情景 54：首次进入竞技场
---- 出现条件: 首次进入竞技场
-ScenarioDialogueConfig.SCENARIO_54 = {
-    mode = "small",
-    steps = {
-        { characterId = 9,  name = "村长",  text = "就这么办，竞技场的场子，你给我罩住了，我放心。" },
-        { characterId = 20, name = "黑衣人", text = "包在我身上，保证场场'精彩'，让您满意。（离开）" },
-        { characterId = 9,  name = "村长",  text = "哦？新面孔！来来来，登记一下就能上场！赢了有奖，输了……也有安慰奖！" },
-    },
-}
 
 -- 情景 55：大狗嚼首次通关关卡1305
 -- 出现条件: 初始角色为大狗嚼时首次通关关卡1305

@@ -45,8 +45,6 @@ GameConfig.Currency = {
     START_ACCESSORY_SCROLL = 0,-- 饰品卷轴
     START_RECRUIT_TICKET = 0,
     START_SWEEP_TICKET = 0,
-    START_ARENA_TICKET = 0,
-    START_ARENA_COIN = 0,
     START_TAVERN_COIN = 0,
     START_PRIVILEGE_POINT = 0,
     START_CORRUPT_STONE = 0,
@@ -69,8 +67,6 @@ GameConfig.Resources = {
     { key = "recruitTicket", name = "冒险招募券", giveAmount = 10   },
     { key = "stellarRecruitTicket", name = "星辉招募券", giveAmount = 10 },
     { key = "sweepTicket",   name = "扫荡券",     giveAmount = 10   },
-    { key = "arenaTicket",   name = "竞技券",     giveAmount = 5    },
-    { key = "arenaCoin",     name = "竞技币",     giveAmount = 50   },
     { key = "tavernCoin",    name = "酒馆币",     giveAmount = 50   },
     { key = "arcaneDust",    name = "奥术粉尘", giveAmount = 1000 },
     { key = "corruptStone",  name = "腐化石",   giveAmount = 10   },
@@ -94,7 +90,7 @@ GameConfig.Features = {
     OFFLINE_REWARDS = true,
 }
 
--- 限时战斗（首通推关 / 副本 / 竞技场）：超时自动判负
+-- 限时战斗（首通推关 / 副本）：超时自动判负
 GameConfig.Battle = {
     TIME_LIMIT_SEC = 300,   -- 5 分钟
 }

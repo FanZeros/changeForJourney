@@ -113,12 +113,6 @@ function BottomNav.init(vg)
     -- 根据当前冒险等级初始化标签解锁状态
     BottomNav.refreshUnlockState(vg)
 
-    -- 监听货币变化，刷新城镇标签红点（竞技券/特权点消耗后及时清除）
-    EventBus.on(GameEvents.CURRENCY_CHANGED, function(data)
-        if data and data.arenaTicket ~= nil then
-            BottomNav.refreshTownBadge()
-        end
-    end)
 
     print("[BottomNav] init OK")
 end
@@ -312,15 +306,6 @@ function BottomNav.refreshTownBadge()
             return
         end
     end
-    -- 竞技场红点（有竞技券）
-    local okAP, AP = pcall(require, "ui.ArenaPage")
-    if okAP and AP and AP.hasTicketRedDot then
-        if AP.hasTicketRedDot() then
-            BottomNav.setBadge(4, true, "redDot")
-            return
-        end
-    end
-    -- 公会遗物角标（可强化→箭头，新遗物→红点）
     local okRS, RS = pcall(require, "systems.RelicSystem")
     if okRS and RS and RS.getRelicBadgeInfo then
         local show, style = RS.getRelicBadgeInfo()

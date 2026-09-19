@@ -135,14 +135,7 @@ Protocol.ACTION_TYPES = {
     DECOMPOSE_LOOT_ALL = "decompose_loot_all", -- 一键分解全部战利品
     DECOMPOSE_LOOT     = "decompose_loot",     -- 分解指定组战利品
 
-    -- 竞技�?
-    ARENA_ENTER         = "arena_enter",          -- 进入竞技场（惰性结�?分组+自动同步防守阵容+返回排名�?
-    ARENA_GET_OPPONENT  = "arena_get_opponent",    -- 获取对手防守阵容
-    ARENA_BATTLE_RESULT = "arena_battle_result",   -- 提交战斗结果（结算积分）
-    ARENA_GET_LOG       = "arena_get_log",         -- 获取防守记录（延迟结算）
-    ARENA_SHOP_BUY      = "arena_shop_buy",        -- 竞技场商店购�?
     TAVERN_SHOP_BUY     = "tavern_shop_buy",       -- 酒馆商店购买
-    ARENA_CLAIM_TIER    = "arena_claim_tier",      -- 领取段位首通奖�?
 
     -- 离线收益
     CLAIM_OFFLINE_REWARDS = "claim_offline_rewards", -- 领取离线收益

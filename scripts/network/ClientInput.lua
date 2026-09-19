@@ -15,10 +15,8 @@ local TownScene        = require("ui.TownScene")
 local BlacksmithPage   = require("ui.BlacksmithPage")
 local ChurchPage       = require("ui.ChurchPage")
 local TavernPage       = require("ui.TavernPage")
-local ArenaPage        = require("ui.ArenaPage")
 local MarketPage       = require("ui.MarketPage")
 local GuildPage        = require("ui.GuildPage")
-local ArenaBattleScene = require("ui.ArenaBattleScene")
 local DungeonBattleScene = require("ui.DungeonBattleScene")
 local TowerBattleScene   = require("ui.TowerBattleScene")
 local LootBox          = require("ui.LootBox")
@@ -132,11 +130,6 @@ local function dispatchDragBegin(dx, dy)
     -- 情景对话拦截（全屏，吞掉所有输入）
     if ScenarioDialogue.isActive() then return end
 
-    -- 竞技场/副本对战全屏拦截
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.handleDragBegin(dx, dy)
-        return
-    end
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragBegin(dx, dy)
         return
@@ -165,10 +158,6 @@ local function dispatchDragBegin(dx, dy)
     end
     if tabIndex == 4 and TavernPage.isOpen() then
         TavernPage.handleDragBegin(dx, dy)
-        return
-    end
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        ArenaPage.handleDragBegin(dx, dy)
         return
     end
     if tabIndex == 4 and MarketPage.isOpen() then
@@ -205,11 +194,6 @@ local function dispatchDragMove(dx, dy)
     -- 情景对话拦截
     if ScenarioDialogue.isActive() then return end
 
-    -- 竞技场/副本对战全屏拦截
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.handleDragMove(dx, dy)
-        return
-    end
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragMove(dx, dy)
         return
@@ -238,10 +222,6 @@ local function dispatchDragMove(dx, dy)
     end
     if tabIndex == 4 and TavernPage.isOpen() then
         TavernPage.handleDragMove(dx, dy)
-        return
-    end
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        ArenaPage.handleDragMove(dx, dy)
         return
     end
     if tabIndex == 4 and MarketPage.isOpen() then
@@ -297,11 +277,10 @@ local function dispatchDragEndAndTap(dx, dy)
 
     -- ===== [INPUT_DEBUG] 输入诊断：每次 tap 打印所有拦截层状态 =====
     if isTap then
-        print(string.format("[INPUT_DEBUG] TAP(%.0f,%.0f) CharSel=%s ScnDlg=%s Arena=%s UpdNotice=%s PInfo=%s Reward=%s LvUp=%s OffRwd=%s LootBox=%s BS=%s Church=%s Tavern=%s ArenaP=%s Market=%s GuildP=%s tab=%s",
+        print(string.format("[INPUT_DEBUG] TAP(%.0f,%.0f) CharSel=%s ScnDlg=%s UpdNotice=%s PInfo=%s Reward=%s LvUp=%s OffRwd=%s LootBox=%s BS=%s Church=%s Tavern=%s Market=%s GuildP=%s tab=%s",
             dx, dy,
             tostring(CharacterSelect.isActive()),
             tostring(ScenarioDialogue.isActive()),
-            tostring(ArenaBattleScene.isOpen()),
             tostring(DungeonBattleScene.isOpen()),
             tostring(UpdateNoticePopup.isOpen()),
             tostring(PlayerInfoPanel.isOpen()),
@@ -312,7 +291,6 @@ local function dispatchDragEndAndTap(dx, dy)
             tostring(BlacksmithPage.isOpen()),
             tostring(ChurchPage.isOpen()),
             tostring(TavernPage.isOpen()),
-            tostring(ArenaPage.isOpen()),
             tostring(MarketPage.isOpen()),
             tostring(GuildPage.isOpen()),
             tostring(BottomNav.getSelectedIndex())
@@ -345,13 +323,6 @@ local function dispatchDragEndAndTap(dx, dy)
         end
     end
 
-    -- 竞技场/副本对战拦截
-    if ArenaBattleScene.isOpen() then
-        if isTap then print("[INPUT_DEBUG] >>> 被 ArenaBattleScene 拦截") end
-        ArenaBattleScene.handleDragEnd(dx, dy)
-        if isTap then ArenaBattleScene.handleInput(dx, dy) end
-        return
-    end
     if TowerBattleScene.isActive() then
         if isTap then TowerBattleScene.handleClick(dx, dy) end
         return
@@ -433,14 +404,6 @@ local function dispatchDragEndAndTap(dx, dy)
         TavernPage.handleInput(dx, dy)
         return
     end
-    -- 竞技场
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        if isTap then print("[INPUT_DEBUG] >>> 被 ArenaPage 拦截 (tab=4)") end
-        ArenaPage.handleDragEnd(dx, dy)
-        if not isTap then return end
-        ArenaPage.handleInput(dx, dy)
-        return
-    end
     -- 市场
     if tabIndex == 4 and MarketPage.isOpen() then
         if isTap then print("[INPUT_DEBUG] >>> 被 MarketPage 拦截 (tab=4)") end
@@ -485,11 +448,11 @@ local function dispatchDragEndAndTap(dx, dy)
     -- 头像点击 → 打开玩家信息面板
     -- 头像中心(98,136), 150x150, 仅在无子页面遮挡时响应
     local detailOpen = BlacksmithPage.isOpen() or ChurchPage.isOpen()
-                    or TavernPage.isOpen() or ArenaPage.isOpen()
+                    or TavernPage.isOpen()
                     or MarketPage.isOpen() or GuildPage.isOpen()
                     or CharacterPanel.isDetailOpen()
                     or DiaryPage.hasOverlayOpen()
-    if not detailOpen and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() then
+    if not detailOpen and not DungeonBattleScene.isOpen() then
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
@@ -513,10 +476,6 @@ local function dispatchDragEndAndTap(dx, dy)
         end
         if TavernPage.isOpen() then
             TavernPage.handleInput(dx, dy)
-            return
-        end
-        if ArenaPage.isOpen() then
-            ArenaPage.handleInput(dx, dy)
             return
         end
         if MarketPage.isOpen() then
@@ -550,10 +509,6 @@ function M.dispatchScroll(wheel, msx, msy)
     if LetterIntro.isOpen() then return end
     if CharacterSelect.isActive() then return end
     if ScenarioDialogue.isActive() then return end
-    if ArenaBattleScene.isOpen() then
-        ArenaBattleScene.handleScroll(wheel)
-        return
-    end
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleScroll(wheel)
         return
@@ -576,10 +531,6 @@ function M.dispatchScroll(wheel, msx, msy)
     end
     if tabIndex == 4 and TavernPage.isOpen() then
         TavernPage.handleScroll(wheel)
-        return
-    end
-    if tabIndex == 4 and ArenaPage.isOpen() then
-        ArenaPage.handleScroll(wheel)
         return
     end
     if tabIndex == 4 and MarketPage.isOpen() then

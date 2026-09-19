@@ -8,7 +8,6 @@ local GameState      = require("core.GameState")
 local DrawUtil       = require("core.DrawUtil")
 local StageConfig    = require("config.StageConfig")
 local PlayerStore    = require("client.data.PlayerStore")
-local ArenaConfig    = require("config.ArenaConfig")
 local CharacterPanel    = require("ui.CharacterPanel")
 local HeroConfig        = require("config.HeroConfig")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
@@ -53,7 +52,6 @@ local img = {
     expBg    = -1,  -- UI_WJXX_JDT.png  经验进度条背景
     expFill  = -1,  -- UI_WJXX_JDT1.png 经验进度条填充
     -- 下半部分
-    tierBadge  = {},  -- [1~8] 段位徽章 ICON_DW_1~8.png
     heroCards  = {},  -- [heroId] 角色卡牌 KP_YX_*.png
     heroIcons  = {},  -- [heroId] 角色头像图标 UI_icon_hero_*.png
     classIcons = {},  -- [1~6] 职业图标 ICON_ZY_1~6.png
@@ -185,38 +183,6 @@ local EXP_BAR = {
     PAD = 6,  -- 内间距
 }
 
--- ── 下半部分：竞技场信息 ──
-
--- 竞技场信息背景框
-local ARENA_BG = {
-    CX = 540, CY = 833, W = 800, H = 174, R = 16,
-    A = 13,  -- 纯黑 5%
-}
-
--- "竞技场排位" 标题文本
-local ARENA_TITLE = {
-    X = 303, Y = 804, FONT = 48,
-    R = 0x50, G = 0x2c, B = 0x15,
-}
-
--- 段位分数值
-local RANK_SCORE = {
-    X = 305, Y = 866, FONT = 38,
-    FR = 255, FG = 255, FB = 255,
-    SW = 5, SR = 0, SG = 0, SB = 0,
-}
-
--- 段位徽章图片
-local RANK_BADGE = {
-    CX = 792, CY = 840, W = 232, H = 232,
-}
-
--- 段位名称文本
-local RANK_NAME = {
-    X = 794, Y = 904, FONT = 50,
-    FR = 255, FG = 255, FB = 255,
-    SW = 5, SR = 0, SG = 0, SB = 0,
-}
 
 -- ── 下半部分：队伍配置 ──
 
@@ -327,10 +293,6 @@ function PlayerInfoPanel.init(vg)
     img.expBg   = nvgCreateImage(vg, "image/进度条/UI_WJXX_JDT.png", 0)
     img.expFill = nvgCreateImage(vg, "image/进度条/UI_WJXX_JDT1.png", 0)
 
-    -- 下半部分：段位徽章 (1~8)
-    for i = 1, 8 do
-        img.tierBadge[i] = nvgCreateImage(vg, "image/段位图标/ICON_DW_" .. i .. ".png", 0)
-    end
 
     -- 下半部分：角色卡牌
     HeroAssetUtil.preloadCards(vg, img.heroCards)
@@ -985,46 +947,6 @@ function PlayerInfoPanel.draw(vg)
     -- 下半部分
     -- ================================================================
 
-    -- ── 19. 竞技场信息背景框 ──
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        ARENA_BG.CX - ARENA_BG.W * 0.5, ARENA_BG.CY - ARENA_BG.H * 0.5,
-        ARENA_BG.W, ARENA_BG.H, ARENA_BG.R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, ARENA_BG.A))
-    nvgFill(vg)
-
-    -- ── 20. "竞技场排位" 标题（居中对齐）──
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, ARENA_TITLE.FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(ARENA_TITLE.R, ARENA_TITLE.G, ARENA_TITLE.B, 255))
-    nvgText(vg, ARENA_TITLE.X, ARENA_TITLE.Y, "竞技场排位", nil)
-
-    -- ── 21. 段位分（居中对齐）──
-    local rankScore = 0
-    local okArenaPage, ArenaPage = pcall(require, "ui.ArenaPage")
-    if okArenaPage and ArenaPage and ArenaPage.getRankScore then
-        rankScore = ArenaPage.getRankScore()
-    end
-    drawTextStroke(vg, RANK_SCORE.X, RANK_SCORE.Y, "段位分:" .. tostring(rankScore),
-        RANK_SCORE.FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        RANK_SCORE.FR, RANK_SCORE.FG, RANK_SCORE.FB, RANK_SCORE.SW,
-        { strokeColor = { RANK_SCORE.SR, RANK_SCORE.SG, RANK_SCORE.SB } })
-
-    -- ── 22. 段位徽章 ──
-    local tier = ArenaConfig.getTierByScore(rankScore)
-    local badgeIdx = tier and tier.icon or 1
-    local badgeImg = img.tierBadge[badgeIdx]
-    if badgeImg and badgeImg >= 0 then
-        drawImageCentered(vg, badgeImg, RANK_BADGE.CX, RANK_BADGE.CY, RANK_BADGE.W, RANK_BADGE.H, 1.0)
-    end
-
-    -- ── 23. 段位名称 ──
-    local tierDisplayName = tier and ArenaConfig.getTierDisplayName(tier) or "黑铁级 V"
-    drawTextStroke(vg, RANK_NAME.X, RANK_NAME.Y, tierDisplayName,
-        RANK_NAME.FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        RANK_NAME.FR, RANK_NAME.FG, RANK_NAME.FB, RANK_NAME.SW,
-        { strokeColor = { RANK_NAME.SR, RANK_NAME.SG, RANK_NAME.SB } })
 
     -- ── 24. 队伍配置背景框 ──
     nvgBeginPath(vg)

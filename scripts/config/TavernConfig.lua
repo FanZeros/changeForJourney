@@ -4,7 +4,7 @@
 
 local TavernConfig = {}
 
--- 周期基准时间（与 ArenaConfig 保持一致）
+-- 周期基准时间
 TavernConfig.WEEK_EPOCH    = 1704038400   -- 2024-01-01 00:00:00 UTC
 TavernConfig.WEEK_SECONDS  = 604800       -- 7天
 

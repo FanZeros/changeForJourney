@@ -1,8 +1,8 @@
 ---@diagnostic disable: param-type-mismatch
 -- ============================================================================
--- BroadcastMailService - 全服邮件管理
--- 职责: 全服广播邮件的发送、存储、过期清理、登录合并
--- 层级: server/mail  |  通过 serverCloud 存储全局邮件表
+-- BroadcastMailService - 全服邮件管理（单机本地公告版）
+-- 职责: 公告的发送、存储（内存）、过期清理、登录合并
+-- 层级: server/mail  |  单机化：不再依赖 serverCloud，公告仅本次运行内存中生效
 -- ============================================================================
 
 local PDM = require("server.character.PlayerDataManager")
@@ -13,13 +13,7 @@ local BroadcastMailService = {}
 
 -- ======================== 常量 ========================
 
---- 全局邮件表的 PUBLIC_UID（类似 ArenaConfig.PUBLIC_UID 模式）
-local PUBLIC_UID = "BROADCAST_MAIL_PUBLIC"
-
---- serverCloud 存储 key
-local CLOUD_KEY = "global_broadcast_mails"
-
---- 最大保留邮件数
+--- 最大保留公告数
 local MAX_BROADCAST_MAILS = 100
 
 --- 默认过期天数
@@ -27,15 +21,12 @@ local DEFAULT_EXPIRE_DAYS = 30
 
 -- ======================== 内部状态 ========================
 
---- 内存中的全服邮件缓存（启动后从 serverCloud 加载）
+--- 内存中的公告缓存
 ---@type table[]
 local broadcastMails_ = {}
 
 --- 是否已完成初始化加载
 local initialized_ = false
-
---- 是否正在加载中（防止重复加载）
-local loading_ = false
 
 --- 是否已初始化
 ---@return boolean
@@ -85,7 +76,7 @@ local function shouldExcludeMailForCurrentServer(uid, mail)
     return ServerListConfig.isChallengerServer(PDM.GetServerId(uid)) and isCompensationMail(mail)
 end
 
---- 清理过期邮件（修改内存表，返回清理数量）
+--- 清理过期公告（修改内存表，返回清理数量）
 ---@return number cleanedCount
 local function cleanExpired()
     local cleaned = 0
@@ -101,70 +92,19 @@ local function cleanExpired()
     return cleaned
 end
 
---- 持久化当前内存表到 serverCloud
-local function persistToCloud()
-    local commit = serverCloud:BatchCommit("broadcast_mail_save")
-    commit:ScoreSet(PUBLIC_UID, CLOUD_KEY, broadcastMails_)
-    commit:Commit({
-        ok = function()
-            print("[BroadcastMailService] persisted " .. #broadcastMails_ .. " mails to cloud")
-        end,
-        error = function(code, reason)
-            print("[BroadcastMailService][ERROR] persist failed code=" .. tostring(code)
-                .. " reason=" .. tostring(reason))
-        end,
-    })
-end
-
 -- ======================== 初始化 ========================
 
---- 从 serverCloud 加载全局邮件表（服务器启动时调用一次）
---- 加载完成后自动清理过期邮件
+--- 初始化（单机本地公告：不读云端，公告仅本次运行内存中生效）
 ---@param callback function|nil  可选回调 callback(ok)
 function BroadcastMailService.Init(callback)
     if initialized_ then
         if callback then callback(true) end
         return
     end
-    if loading_ then
-        print("[BroadcastMailService] already loading, skip duplicate Init()")
-        return
-    end
-
-    loading_ = true
-    print("[BroadcastMailService] Init: loading global broadcast mails...")
-
-    serverCloud:Get(PUBLIC_UID, CLOUD_KEY, {
-        ok = function(scores)
-            local data = scores and scores[CLOUD_KEY]
-            if type(data) == "table" then
-                broadcastMails_ = data
-            else
-                broadcastMails_ = {}
-            end
-
-            -- 启动时清理过期邮件
-            local cleaned = cleanExpired()
-            if cleaned > 0 then
-                print("[BroadcastMailService] startup cleanup: removed " .. cleaned .. " expired mails")
-                persistToCloud()
-            end
-
-            initialized_ = true
-            loading_ = false
-            print("[BroadcastMailService] Init complete, " .. #broadcastMails_ .. " active mails loaded")
-            if callback then callback(true) end
-        end,
-        error = function(code, reason)
-            -- 首次读取失败时使用空表（不阻塞服务器启动）
-            print("[BroadcastMailService][WARN] Init cloud read failed code=" .. tostring(code)
-                .. " reason=" .. tostring(reason) .. " — using empty list")
-            broadcastMails_ = {}
-            initialized_ = true
-            loading_ = false
-            if callback then callback(false) end
-        end,
-    })
+    broadcastMails_ = {}
+    initialized_ = true
+    print("[BroadcastMailService] Init local (no serverCloud)")
+    if callback then callback(true) end
 end
 
 -- ======================== 核心 API ========================
@@ -226,9 +166,6 @@ function BroadcastMailService.SendBroadcastMail(title, content, rewards, expireD
     -- 追加到内存表
     broadcastMails_[#broadcastMails_ + 1] = mail
 
-    -- 持久化到 serverCloud
-    persistToCloud()
-
     print("[BroadcastMailService] SendBroadcastMail id=" .. mail.id
         .. " title=" .. title .. " expireDays=" .. days
         .. " total=" .. #broadcastMails_)
@@ -282,7 +219,6 @@ function BroadcastMailService.RemoveMail(mailId)
     for i, mail in ipairs(broadcastMails_) do
         if mail.id == mailId then
             table.remove(broadcastMails_, i)
-            persistToCloud()
             print("[BroadcastMailService] RemoveMail id=" .. mailId)
             return true
         end
@@ -300,7 +236,6 @@ function BroadcastMailService.CleanExpired()
 
     local cleaned = cleanExpired()
     if cleaned > 0 then
-        persistToCloud()
         print("[BroadcastMailService] CleanExpired: removed " .. cleaned .. " mails")
     end
     return cleaned

@@ -4,9 +4,8 @@
 -- 层级: server/redeem
 -- ============================================================================
 
-local Protocol     = require("shared.Protocol")
+local Protocol      = require("shared.Protocol")
 local RedeemService = require("server.redeem.RedeemService")
-local ServerDispatcher = require("network.ServerDispatcher")
 
 local handlers = {}
 
@@ -14,9 +13,6 @@ handlers[Protocol.ACTION_TYPES.REDEEM_CODE] = function(uid, params)
     local ok, reason, result = RedeemService.Redeem(uid, params and params.code)
     if not ok then
         return { success = false, reason = reason, redeemAction = true }
-    end
-    if result.privilegePayload then
-        ServerDispatcher.pushModule(uid, "privilege", result.privilegePayload)
     end
     return {
         success      = true,

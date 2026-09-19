@@ -30,10 +30,8 @@ ResourceDefs.DEFS = {
     arena_ticket      = { iconPath = "image/货币道具/UI_icon_JJCQ.png",   quality = 4, name = "竞技券" },
     arena_coin        = { iconPath = "image/货币道具/UI_icon_JJB.png",    quality = 3, name = "竞技币" },
     tavern_coin       = { iconPath = "image/UI_icon_JGB.png",    quality = 3, name = "酒馆币" },
-    privilege_point   = { iconPath = "image/货币道具/UI_icon_TQD.png",    quality = 4, name = "特权点" },
     arcane_dust       = { iconPath = "image/货币道具/UI_icon_ASFC.png",   quality = 3, name = "奥术粉尘" },  -- 序号17
     speed_card        = { iconPath = "image/货币道具/UI_icon_JSK.png",    quality = 5, name = "加速卡" },    -- 序号18
-    privilege_card    = { iconPath = "image/UI_icon_TQK.png",    quality = 6, name = "特权卡" },    -- 序号19
     golden_key        = { iconPath = "image/货币道具/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙" },
     corrupt_stone     = { iconPath = "image/货币道具/UI_icon_FHS.png",    quality = 3, name = "腐化石" },
     sacred_stone      = { iconPath = "image/货币道具/UI_icon_SSS.png",    quality = 6, name = "神圣石" },
@@ -54,14 +52,12 @@ ResourceDefs.ID_TO_TYPE = {
     ["9"]  = "arena_ticket",
     ["10"] = "arena_coin",
     ["11"] = "tavern_coin",
-    ["12"] = "privilege_point",
     ["13"] = "weapon_scroll",
     ["14"] = "offhand_scroll",
     ["15"] = "armor_scroll",
     ["16"] = "accessory_scroll",
     ["17"] = "arcane_dust",
     ["18"] = "speed_card",
-    ["19"] = "privilege_card",
     ["20"] = "stellar_ticket",
     ["21"] = "golden_key",
     ["22"] = "corrupt_stone",

@@ -22,7 +22,6 @@ MailConfig.MAILS = {
         type       = "permanent",
         remainDays = 30,
         rewards    = {
-            { type = "privilege_point", amount = 5 },
             { type = "diamond",         amount = 888 },
         },
     },
@@ -45,17 +44,6 @@ MailConfig.MAILS = {
         remainDays = 7,
         rewards    = {
             { type = "adventure_ticket", amount = 20 },
-        },
-    },
-    {
-        id         = "mail_bug_compensate_ad_stuck",
-        title      = "广告异常补偿",
-        body       = "亲爱的远征长，非常抱歉！\n\n我们发现上版本存在观看广告后特权点未正常到账的问题，可能导致您的部分广告观看未能获得应有的奖励。\n\n目前该问题已在新版本中修复。为表歉意，特此补偿15个特权点，请注意查收！\n\n——运营团队 敬上",
-        type       = "timed",
-        excludeChallenger = true,
-        remainDays = 7,
-        rewards    = {
-            { type = "privilege_point", amount = 15 },
         },
     },
     {
@@ -84,26 +72,26 @@ MailConfig.MAILS = {
     {
         id         = "mail_v1015_balance_compensate",
         title      = "V1.0.15 版本大改补偿",
-        body       = "亲爱的远征长，你好！\n\n本次V1.0.15版本进行了一次重要的系统大改。\n\n由于原先版本的玩法过于畸形——所有角色都需要堆格挡才能通关，这严重限制了构筑多样性和游戏乐趣。因此我们做出了大幅度调整，包括属性系统重做、关卡等级压缩等改动。\n\n这可能会导致已有的高等级装备被降级，我们深知这会影响到大家的游戏体验，但这是为了游戏长期健康运营而必须经历的改动。\n\n希望各位远征长能够理解，我们会持续优化平衡，让每种流派都有可玩性。\n\n为表歉意，特此补偿以下物资：\n· 精粹 ×200000\n· 冒险招募券 ×30\n· 特权点 ×30\n· 洗练石 ×100\n\n感谢你的支持与理解！\n\n——运营团队 敬上",
+        body       = "亲爱的远征长，你好！\n\n本次V1.0.15版本进行了一次重要的系统大改。\n\n由于原先版本的玩法过于畸形——所有角色都需要堆格挡才能通关，这严重限制了构筑多样性和游戏乐趣。因此我们做出了大幅度调整，包括属性系统重做、关卡等级压缩等改动。\n\n这可能会导致已有的高等级装备被降级，我们深知这会影响到大家的游戏体验，但这是为了游戏长期健康运营而必须经历的改动。\n\n希望各位远征长能够理解，我们会持续优化平衡，让每种流派都有可玩性。\n\n为表歉意，特此补偿以下物资：\n· 精粹 ×200000\n· 冒险招募券 ×30\n· 钻石 ×600\n· 洗练石 ×100\n\n感谢你的支持与理解！\n\n——运营团队 敬上",
         type       = "permanent",
         excludeChallenger = true,
         remainDays = 30,
         rewards    = {
             { type = "essence",          amount = 200000 },
             { type = "adventure_ticket", amount = 30 },
-            { type = "privilege_point",  amount = 30 },
+            { type = "diamond",          amount = 600 },
             { type = "enhance_star",     amount = 100 },
         },
     },
     {
         id         = "mail_v1013_hotfix_compensate",
         title      = "V1.0.13 临时修复补偿",
-        body       = "亲爱的远征长，非常抱歉！\n\n我们发现V1.0.13版本更新后，市场商品出现了「刚更新就已售罄」的异常问题，同时通天塔挑战也出现了错误。\n\n目前上述问题均已紧急修复。为表歉意，特此补偿20个特权点，请注意查收！\n\n感谢各位远征长的耐心与理解！\n\n——运营团队 敬上",
+        body       = "亲爱的远征长，非常抱歉！\n\n我们发现V1.0.13版本更新后，市场商品出现了「刚更新就已售罄」的异常问题，同时通天塔挑战也出现了错误。\n\n目前上述问题均已紧急修复。为表歉意，特此补偿300钻石，请注意查收！\n\n感谢各位远征长的耐心与理解！\n\n——运营团队 敬上",
         type       = "timed",
         excludeChallenger = true,
         remainDays = 7,
         rewards    = {
-            { type = "privilege_point", amount = 20 },
+            { type = "diamond", amount = 300 },
         },
     },
 

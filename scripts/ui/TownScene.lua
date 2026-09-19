@@ -28,7 +28,6 @@ local imgRedDot   = -1   -- ICON_HD.png 红点图标
 
 -- ======================== 外部驱动标志 ========================
 local smithDecomposeRedDot = false  -- 铁匠铺分解红点（背包满时）
-local marketPrivRedDot     = false  -- 市场特权红点（有可观看广告时）
 local arenaTicketRedDot    = false  -- 竞技场红点（有竞技券时）
 
 -- 上方建筑
@@ -464,12 +463,6 @@ function TownScene.draw(vg)
     if marketLocked then
         drawBuildingLockOverlay(vg, MARKET_CX, MARKET_CY, "market", false)
     end
-    -- 市场特权红点（有可观看广告时）
-    if not marketLocked and marketPrivRedDot then
-        local rdSz = 40
-        local rdX = MARKET_LBL_CX + MARKET_LBL_W * 0.5 - rdSz * 0.3
-        local rdY = MARKET_LBL_CY - MARKET_LBL_H * 0.5 + rdSz * 0.3
-        DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
     BF.finish(vg, _bfMarket)
 
     -- 6) 教堂建筑
@@ -639,12 +632,6 @@ end
 ---@param show boolean
 function TownScene.setSmithRedDot(show)
     smithDecomposeRedDot = show
-end
-
---- 设置市场特权红点（有可观看广告时由外部驱动）
----@param show boolean
-function TownScene.setMarketRedDot(show)
-    marketPrivRedDot = show
 end
 
 --- 设置竞技场红点（有竞技券时由外部驱动）

@@ -72,12 +72,10 @@ GameConfig.Resources = {
     { key = "arenaTicket",   name = "竞技券",     giveAmount = 5    },
     { key = "arenaCoin",     name = "竞技币",     giveAmount = 50   },
     { key = "tavernCoin",    name = "酒馆币",     giveAmount = 50   },
-    { key = "privilegePoint", name = "特权点",   giveAmount = 20   },
     { key = "arcaneDust",    name = "奥术粉尘", giveAmount = 1000 },
     { key = "corruptStone",  name = "腐化石",   giveAmount = 10   },
     { key = "sacredStone",   name = "神圣石",   giveAmount = 3    },
     { key = "speedCardExpireAt", name = "加速卡", giveAmount = 86400 },
-    { key = "privilegeCardOwned", name = "特权卡", giveAmount = 1 },  -- 永久，1=激活
 }
 
 -- 玩家初始信息

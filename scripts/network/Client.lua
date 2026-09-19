@@ -68,7 +68,6 @@ local DungeonPage        = require("ui.DungeonPage")
 local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig")
 local CharacterSelect  = require("ui.CharacterSelect")
 local DrawUtil         = require("core.DrawUtil")
-local AdManager        = require("systems.AdManager")
 local TutorialManager  = require("systems.TutorialManager")
 local TutorialConfig   = require("config.TutorialConfig")
 local ClientMsgHandler = require("network.ClientMessageHandler")
@@ -578,13 +577,6 @@ local function handleServerDisconnected(eventType, eventData)
         TavernPage.onServerDisconnect()
     end
     local okMP, MarketPageMod = pcall(require, "ui.MarketPage")
-    if okMP and MarketPageMod and MarketPageMod.onServerDisconnect then
-        MarketPageMod.onServerDisconnect()
-    end
-    local AdManager = require("systems.AdManager")
-    if AdManager.OnServerDisconnect then
-        AdManager.OnServerDisconnect()
-    end
 
     if currentState == STATE_IN_GAME or currentState == STATE_SERVER_SELECT then
         -- 游戏/选服中断线：显示遮罩，等待平台自动重连
@@ -1213,9 +1205,6 @@ function Client.Start()
     GameState.bindToPlayerStore()
     print("[Client][LOAD] step 6: OK")
 
-    -- 6.5 广告管理器初始化（注入sendAction 依赖，订阅adPending 模块）
-    AdManager.Init(Client.sendAction)
-
     -- 7. 注册远程事件
     print("[Client][LOAD] step 7-10: register events & subscribe...")
     network:RegisterRemoteEvent(Protocol.REQ_CLIENT_READY)
@@ -1828,43 +1817,6 @@ function HandleNanoVGRender_Client(eventType, eventData)
         end
     end
 
-    -- 广告加载指示器（绝对顶层，覆盖所有UI）
-    if AdManager.IsLoading() then
-        local t   = os.clock()
-        local bh  = 68
-        local bw  = 300
-        local px  = designOffsetX + (DESIGN_W - bw) / 2
-        local py  = designOffsetY + (DESIGN_H - bh) / 2
-        local br  = bh / 2  -- pill 形圆角
-
-        -- 半透明深色背景气泡
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, px, py, bw, bh, br)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 185))
-        nvgFill(vg)
-
-        -- 转圈动画（旋转弧线）
-        local spx = px + bh / 2
-        local spy = py + bh / 2
-        local sr  = 16.0
-        local a0  = t * 3.5                         -- 转速：3.5 rad/s
-        local a1  = a0 + math.pi * 1.4              -- 弧长≈252°
-        nvgBeginPath(vg)
-        nvgArc(vg, spx, spy, sr, a0, a1, NVG_CW)
-        nvgStrokeColor(vg, nvgRGBA(255, 215, 100, 240))
-        nvgStrokeWidth(vg, 3.5)
-        nvgLineCap(vg, NVG_ROUND)
-        nvgStroke(vg)
-
-        -- 文字 "广告加载中 + 动态省略号（每 0.5s 增一个点，~3 循环）
-        local dotCount = math.floor(t * 2) % 4
-        local label    = "广告加载中" .. string.rep(".", dotCount)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 28)
-        nvgFillColor(vg, nvgRGBA(255, 255, 255, 230))
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgText(vg, spx + sr + 18, spy, label, nil)
-    end
 
     -- [DarkTitleScreen] 横屏标题（全窗口逻辑坐标，覆盖一切直至点击淡出）
     if HORIZON_MODE and DarkTitleScreen.isOpen() then
@@ -1901,9 +1853,6 @@ function HandleUpdate_Client(eventType, eventData)
 
     -- ClientDispatcher tick（检查批次超时）→始终运行，不受StartScreen 阻断
     ClientDispatcher.update(dt)
-
-    -- 广告管理器每帧更新（三重超时计时）
-    AdManager.Update(dt)
 
     GameAlgoService.Update(dt)
 
@@ -2068,9 +2017,6 @@ function HandleUpdate_Client(eventType, eventData)
                 LoadingScreen.setStatusText("")
                 LoadingScreen.clearTapToRetry()
             end
-            -- 数据加载完成后，重试未完成的 AD_CONFIRM（重连场景：之前发到死连接上的）
-            local AdManager = require("systems.AdManager")
-            if AdManager.RetryNow then AdManager.RetryNow() end
         end
     end
 
@@ -2238,14 +2184,9 @@ function HandleUpdate_Client(eventType, eventData)
             offlineRewardAutoShown_ = true
             local rewardData = offlineRewardData_
             offlineRewardData_ = nil  -- 消费后清除
-            rewardData.privilegePoint = GameState.getPrivilegePoint()
-            rewardData.onClaim = function(bonusClaimed, usePrivilege)
-                print("[OfflineRewardPanel] claimed, bonusClaimed=" .. tostring(bonusClaimed)
-                    .. " usePrivilege=" .. tostring(usePrivilege))
-                Client.sendAction(Protocol.ACTION_TYPES.CLAIM_OFFLINE_REWARDS, {
-                    claimBonus   = bonusClaimed or false,
-                    usePrivilege = usePrivilege or false,
-                })
+            rewardData.onClaim = function()
+                print("[OfflineRewardPanel] claimed")
+                Client.sendAction(Protocol.ACTION_TYPES.CLAIM_OFFLINE_REWARDS, {})
             end
             OfflineRewardPanel.show(rewardData)
             print("[Client] auto-showed OfflineRewardPanel after LoadingScreen closed")
@@ -2418,8 +2359,7 @@ function HandleUpdate_Client(eventType, eventData)
         TownScene.setSmithRedDot(bagFull_)
         BlacksmithPage.setDecomposeRedDot(bagFull_)
 
-        -- 市场/竞技场建筑红点（与BottomNav 查询条件保持一致）
-        TownScene.setMarketRedDot(MarketPage.hasPrivilegeRedDot())
+        -- 竞技场建筑红点（与 BottomNav 查询条件保持一致）
         TownScene.setArenaRedDot(ArenaPage.hasTicketRedDot())
 
         -- 心跳发送（每15 秒发送一次，仅发事件名，不携带数据）
@@ -2535,8 +2475,6 @@ function HandleInputFocus_Client(eventType, eventData)
         print("[Client] InputFocus: focus=" .. tostring(hasFocus) .. " minimized=" .. tostring(minimized)
             .. " state=" .. tostring(currentState))
 
-        -- 广告焦点变化通知必须在early return 之前，失焦也需要通知（暂停加载超时计时器）
-        AdManager.OnFocusChange(hasFocus and not minimized)
 
         if not hasFocus or minimized then
             focusLostAt_ = os.time()

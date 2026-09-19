@@ -169,12 +169,10 @@ local ITEM_DEFS = {
     { key = "arenaTicket",   iconPath = "image/货币道具/UI_icon_JJCQ.png",   quality = 4, name = "竞技券",     source = "每日获得",              desc = "进行竞技场战斗",                                           getter = function() return GameState.getArenaTicket() end },
     { key = "arenaCoin",     iconPath = "image/货币道具/UI_icon_JJB.png",    quality = 3, name = "竞技币",     source = "竞技场获得",            desc = "竞技场商店",                                               getter = function() return GameState.getArenaCoin() end },
     { key = "tavernCoin",    iconPath = "image/UI_icon_JGB.png",    quality = 3, name = "酒馆币",     source = "非UR满觉醒碎片分解",  desc = "在酒馆商店兑换自选",                                       getter = function() return GameState.getTavernCoin() end },
-    { key = "privilegePoint",iconPath = "image/货币道具/UI_icon_TQD.png",    quality = 4, name = "特权点",     source = "通过特权商店获得",      desc = "可以消耗掉来购买东西",                                     getter = function() return GameState.getPrivilegePoint() end },
     { key = "arcaneDust",    iconPath = "image/货币道具/UI_icon_ASFC.png", quality = 3, name = "奥术粉尘",   source = "活动/任务获得",         desc = "用于遗物洗练消耗",                                         getter = function() return GameState.getArcaneDust() end },
     { key = "corruptStone",  iconPath = "image/货币道具/UI_icon_FHS.png", quality = 3, name = "腐化石",     source = "关卡首通/活动/市场",      desc = "可将装备进行魔化，可能会发生预想不到的事情",                 getter = function() return GameState.getCorruptStone() end },
     { key = "sacredStone",   iconPath = "image/货币道具/UI_icon_SSS.png", quality = 6, name = "神圣石",     source = "关卡首通/活动/市场",      desc = "可对已经被魔化的装备净化一次，使其去除魔化效果回到普通状态，每件装备只能被净化一次", getter = function() return GameState.getSacredStone() end },
     { key = "speedCard",     iconPath = "image/货币道具/UI_icon_JSK.png",  quality = 5, name = "加速卡",     source = "市场购买获得",          desc = "提升20%在线挂机收益，包括金币/经验/装备等；获得时即刻开始生效，持续24小时。", getter = function() return GameState.getSpeedCardDisplayCount() end, amountTextGetter = function() return GameState.formatSpeedCardRemain() end, detailAmountTextGetter = function() return "剩余:" .. GameState.formatSpeedCardRemain() end, descGetter = function() return "提升20%在线挂机收益，包括金币/经验/装备等；当前剩余时间：" .. GameState.formatSpeedCardRemain() end },
-    { key = "privilegeCard", iconPath = "image/UI_icon_TQK.png", quality = 6, name = "特权卡",     source = "通过活动获得",          desc = "1.每日赠送100个特权点\n2.特权商店每次重置进度时进度直接填满\n\n永久生效", getter = function() return GameState.getPrivilegeCardDisplayCount() end, amountTextGetter = function() return GameState.isPrivilegeCardOwned() and "已激活" or "未拥有" end, detailAmountTextGetter = function() return GameState.isPrivilegeCardOwned() and "已激活" or "未拥有" end },
 }
 
 -- ======================== 图片句柄 ========================
@@ -1693,17 +1691,6 @@ function Panel.onActionResult(data)
             RewardPopup.show("分解奖励", rewards)
         end
         print("[BackpackPanel] 分解完成，精粹+" .. essenceReward)
-        return
-    end
-
-    if data.action == Protocol.ACTION_TYPES.TRANSFER_PRIVILEGE_CARD then
-        itemDetState.transferPending = false
-        if not data.success then
-            local LootBoxPage = require("ui.LootBoxPage")
-            if LootBoxPage.showToast then
-                LootBoxPage.showToast(data.reason or "转区失败")
-            end
-        end
         return
     end
 

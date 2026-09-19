@@ -20,13 +20,12 @@
 --           { type = "diamond", amount = 20 },
 --           { type = "equip",   templateId = "W3", quality = 3, level = 5 },
 --       },
---       onClaim   = function(doubled) end,  -- 领取回调(doubled=是否翻倍)
+--       onClaim   = function() end,  -- 领取回调
 --   })
 --
 --   -- 在渲染/更新/输入中调用对应方法
 -- ============================================================================
 
-local AdManager       = require("systems.AdManager")
 
 local GameConfig        = require("config.GameConfig")
 local EquipmentConfig   = require("config.EquipmentConfig")
@@ -145,15 +144,6 @@ for c = 1, COLS do
     COL_CX[c] = FIRST_COL_LEFT + (c - 1) * (ICON_SIZE + COL_GAP) + ICON_SIZE * 0.5
 end
 
--- 19+20+21. 翻倍按钮
-local BTN_DOUBLE = {
-    CX = 330, CY = 1855, W = 390, H = 100,
-    NP = 35,  -- 九宫格切割
-    ICON_CX = 271, ICON_CY = 1855, ICON_W = 70, ICON_H = 70,
-    TEXT_CX = 361, TEXT_CY = 1855, FONT = 40,
-    TR = 0, TG = 0, TB = 0, TA = 191,  -- 纯黑75%
-}
-
 -- 22+23. 领取按钮
 local BTN_CLAIM = {
     CX = 750, CY = 1855, W = 390, H = 100,
@@ -178,8 +168,6 @@ local img = {
     decoFrame     = -1,   -- UI_JJC_BTBJ.png
     btnYellow     = -1,   -- UI_AN_HUANG.png
     btnGreen      = -1,   -- UI_AN_LV.png
-    adIcon        = -1,   -- UI_icon_KGG_X.png
-    privPointIcon = -1,   -- UI_icon_TQD.png（特权点图标）
 }
 
 -- 资源图标缓存
@@ -197,13 +185,6 @@ local state = {
     adventurerExp   = 0,
     rewards         = {},
     onClaim         = nil,
-    noDouble        = false,   -- 是否禁用翻倍按钮（扫荡等已应用奖励的场景）
-    doubled         = false,   -- 是否已点击翻倍
-    privilegePoint  = 0,       -- 当前特权点数（>0 时用特权点翻倍，否则看广告）
-    usedPrivilege   = false,   -- 是否消耗了特权点翻倍
-    -- 浮动提示
-    floatText     = nil,
-    floatTextTime = 0,
     -- 滚动
     scrollY    = 0,
     scrollMax  = 0,
@@ -286,8 +267,6 @@ function Panel.init(vg)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnGreen      = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    img.adIcon        = nvgCreateImage(vg, "image/货币道具/UI_icon_KGG_X.png", 0)
-    img.privPointIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TQD.png", 0)
 
     if img.bg < 0 then print("[OfflineRewardPanel] WARN: UI_TY_EJQRK.png load failed") end
     print("[OfflineRewardPanel] init OK")
@@ -302,7 +281,6 @@ function Panel.show(data)
     state.adventureExp   = data.adventureExp or 0
     state.adventurerExp  = data.adventurerExp or 0
     state.onClaim        = data.onClaim
-    state.noDouble       = data.noDouble or false
 
     -- 排序奖励：资源在前，装备在后
     local resources = {}
@@ -332,20 +310,9 @@ function Panel.show(data)
     state.scrollY        = 0
     state.scrollVel      = 0
     state.dragging       = false
-    state.bonusClaimed   = false   -- 是否已领取额外奖励
-    state.bonusPreviewApplied = false
-    state.privilegePoint = data.privilegePoint or 0
-    state.usedPrivilege  = false
-    -- 额外奖励相关
-    state.bonusRemaining = data.bonusRemaining or 0
-    state.bonusMaxDaily  = data.bonusMaxDaily or 3
-    state.bonusHours     = data.bonusHours or 2
-    state.bonusPreview   = data.bonusPreview  -- { gold, adventureExp, adventurerExp }
     state.open           = true
     state.animPhase = "opening"
     state.animStart = time.elapsedTime
-    -- 订阅 adConfirmed 模块：处理断线重连期间服务端确认的广告奖励
-    ClientDispatcher.subscribe("adConfirmed", Panel._onAdConfirmed)
     print("[OfflineRewardPanel] show: offline=" .. state.offlineSeconds .. "s, rewards=" .. #state.rewards)
 end
 
@@ -362,16 +329,6 @@ function Panel.isOpen()
     return state.open
 end
 
---- adConfirmed 模块推送回调（断线重连期间服务端确认广告奖励）
-function Panel._onAdConfirmed(data)
-    if not state.open then return end
-    if not data or data.scene ~= "offline_bonus" then return end
-    if state.bonusClaimed then return end  -- 已标记过，忽略重复推送
-    print("[OfflineRewardPanel] _onAdConfirmed: server confirmed offline_bonus ad, applying bonus")
-    state.bonusClaimed = true
-    self_applyBonusPreview()
-end
-
 --- 更新（惯性滚动 + 动画状态机）
 ---@param dt number
 function Panel.update(dt)
@@ -386,7 +343,6 @@ function Panel.update(dt)
         if time.elapsedTime - state.animStart >= ANIM_CLOSE_DUR then
             state.open = false
             state.animPhase = "none"
-            ClientDispatcher.unsubscribe("adConfirmed", Panel._onAdConfirmed)
             return
         end
     end
@@ -545,88 +501,16 @@ function Panel.draw(vg)
     -- 17. 奖励物品网格（可滚动裁剪区域）
     self_drawRewardGrid(vg)
 
-    -- 额外奖励按钮可用条件：未领取过、未禁用、有剩余次数
-    local canBonus = not state.bonusClaimed and not state.noDouble and state.bonusRemaining > 0
+    -- 领取按钮（居中）
+    local _bf2 = BF.begin(vg, "orp_claim", BG.CX, BTN_CLAIM.CY, BTN_CLAIM.W, BTN_CLAIM.H)
+    DarkIcon.drawNine(vg, "btn", BG.CX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5, BTN_CLAIM.W, BTN_CLAIM.H, { accent = "green" })
 
-    if canBonus then
-        -- 19. "+2小时"按钮（黄色九宫格）— 左侧
-        local _bf1 = BF.begin(vg, "orp_bonus", BTN_DOUBLE.CX, BTN_DOUBLE.CY, BTN_DOUBLE.W, BTN_DOUBLE.H)
-        DarkIcon.drawNine(vg, "btn", BTN_DOUBLE.CX - BTN_DOUBLE.W * 0.5, BTN_DOUBLE.CY - BTN_DOUBLE.H * 0.5, BTN_DOUBLE.W, BTN_DOUBLE.H, { accent = "gold" })
-
-        -- 20. 图标（有特权点→特权点图标，否则→广告图标）
-        local bonusIcon = (state.privilegePoint > 0) and img.privPointIcon or img.adIcon
-        DrawUtil.drawImageCentered(vg, bonusIcon,
-            BTN_DOUBLE.ICON_CX, BTN_DOUBLE.ICON_CY,
-            BTN_DOUBLE.ICON_W, BTN_DOUBLE.ICON_H, 1.0)
-
-        -- 21. "+2小时" 文字 + 消耗提示 + 剩余次数
-        local bonusBtnText = "+" .. tostring(state.bonusHours) .. "小时"
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_DOUBLE.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(BTN_DOUBLE.TR, BTN_DOUBLE.TG, BTN_DOUBLE.TB, BTN_DOUBLE.TA))
-        nvgText(vg, BTN_DOUBLE.TEXT_CX, BTN_DOUBLE.TEXT_CY - 16, bonusBtnText, nil)
-        -- 消耗提示：有特权点→固定扣1点；否则看广告
-        nvgFontSize(vg, 24)
-        if state.privilegePoint > 0 then
-            nvgFillColor(vg, nvgRGBA(80, 60, 40, 200))
-            nvgText(vg, BTN_DOUBLE.TEXT_CX, BTN_DOUBLE.TEXT_CY + 10,
-                "消耗1特权点", nil)
-        else
-            nvgFillColor(vg, nvgRGBA(80, 60, 40, 180))
-            nvgText(vg, BTN_DOUBLE.TEXT_CX, BTN_DOUBLE.TEXT_CY + 10,
-                "观看广告", nil)
-        end
-        -- 剩余次数小字
-        nvgFontSize(vg, 24)
-        nvgFillColor(vg, nvgRGBA(80, 60, 40, 160))
-        nvgText(vg, BTN_DOUBLE.TEXT_CX, BTN_DOUBLE.TEXT_CY + 34,
-            "剩余" .. tostring(state.bonusRemaining) .. "次", nil)
-        BF.finish(vg, _bf1)
-
-        -- 22. 领取按钮（绿色九宫格）— 右侧
-        local _bf2 = BF.begin(vg, "orp_claim", BTN_CLAIM.CX, BTN_CLAIM.CY, BTN_CLAIM.W, BTN_CLAIM.H)
-        DarkIcon.drawNine(vg, "btn", BTN_CLAIM.CX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5, BTN_CLAIM.W, BTN_CLAIM.H, { accent = "green" })
-
-        -- 23. "领取" 文字
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_CLAIM.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(BTN_CLAIM.TR, BTN_CLAIM.TG, BTN_CLAIM.TB, BTN_CLAIM.TA))
-        nvgText(vg, BTN_CLAIM.TEXT_CX, BTN_CLAIM.TEXT_CY, "领取", nil)
-        BF.finish(vg, _bf2)
-    else
-        -- 已领取额外奖励 或 noDouble 或次数用完：隐藏额外按钮，领取按钮居中
-        local claimCX = BG.CX  -- 弹窗水平中心
-        local _bf2 = BF.begin(vg, "orp_claim", claimCX, BTN_CLAIM.CY, BTN_CLAIM.W, BTN_CLAIM.H)
-        DarkIcon.drawNine(vg, "btn", claimCX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5, BTN_CLAIM.W, BTN_CLAIM.H, { accent = "green" })
-
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_CLAIM.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(BTN_CLAIM.TR, BTN_CLAIM.TG, BTN_CLAIM.TB, BTN_CLAIM.TA))
-        nvgText(vg, claimCX, BTN_CLAIM.TEXT_CY, "领取", nil)
-        BF.finish(vg, _bf2)
-    end
-
-    -- 浮动提示（PC端无法播放广告等）
-    if state.floatText then
-        local FLOAT_DUR  = 1.5
-        local FLOAT_DIST = 100
-        local elapsed = time.elapsedTime - state.floatTextTime
-        if elapsed >= FLOAT_DUR then
-            state.floatText = nil
-        else
-            local t      = elapsed / FLOAT_DUR
-            local offsetY = -FLOAT_DIST * t
-            DrawUtil.drawTextStroke(vg,
-                BTN_DOUBLE.CX, BTN_DOUBLE.CY + offsetY,
-                state.floatText,
-                40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                255, 80, 80, 6,
-                { alpha = 1.0 - t })
-        end
-    end
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, BTN_CLAIM.FONT)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(BTN_CLAIM.TR, BTN_CLAIM.TG, BTN_CLAIM.TB, BTN_CLAIM.TA))
+    nvgText(vg, BG.CX, BTN_CLAIM.TEXT_CY, "领取", nil)
+    BF.finish(vg, _bf2)
 
     -- 恢复变换
     nvgGlobalAlpha(vg, 1.0)
@@ -639,44 +523,6 @@ function Panel.draw(vg)
 end
 
 -- ======================== 内部辅助函数 ========================
-
---- 重新计算奖励列表滚动范围
-local function refreshRewardScrollMax()
-    local totalRows = math.ceil(math.max(#state.rewards, 1) / COLS)
-    local totalH = totalRows * ICON_SIZE + (totalRows - 1) * ROW_GAP
-    state.scrollMax = math.max(0, totalH - CLIP.H)
-    clampScroll()
-end
-
---- 将额外奖励预览值叠加到面板显示数据上
-function self_applyBonusPreview()
-    if state.bonusPreviewApplied then return end
-    local bp = state.bonusPreview
-    if not bp then return end
-    state.bonusPreviewApplied = true
-    state.adventureExp  = state.adventureExp  + (bp.adventureExp or 0)
-    state.adventurerExp = state.adventurerExp + (bp.adventurerExp or 0)
-    -- 叠加金币到 rewards 列表中对应条目
-    local goldAdded = bp.gold or 0
-    if goldAdded > 0 then
-        for _, item in ipairs(state.rewards) do
-            if item.type == "gold" then
-                item.amount = (item.amount or 0) + goldAdded
-                goldAdded = 0
-                break
-            end
-        end
-        -- 如果没有金币条目，新增一个
-        if goldAdded > 0 then
-            state.rewards[#state.rewards + 1] = { type = "gold", amount = goldAdded }
-        end
-    end
-
-    for _, item in ipairs(bp.rewards or {}) do
-        state.rewards[#state.rewards + 1] = item
-    end
-    refreshRewardScrollMax()
-end
 
 -- ======================== 内部绘制函数 ========================
 
@@ -804,49 +650,12 @@ end
 function Panel.handleInput(dx, dy)
     if not state.open then return false end
 
-    -- "+2小时"额外奖励按钮（仅可用时可点击）
-    local canBonus = not state.bonusClaimed and not state.noDouble and state.bonusRemaining > 0
-    if canBonus
-       and DrawUtil.hitTest(dx, dy, BTN_DOUBLE.CX, BTN_DOUBLE.CY, BTN_DOUBLE.W, BTN_DOUBLE.H) then
-        BF.trigger("orp_bonus")
-        if state.privilegePoint > 0 then
-            -- 有特权点：直接消耗特权点领取额外奖励
-            print("[OfflineRewardPanel] 特权点+2小时 clicked")
-            state.bonusClaimed  = true
-            state.usedPrivilege = true
-            -- 增加显示数值（加上 bonusPreview）
-            self_applyBonusPreview()
-        else
-            -- 无特权点：看广告领取额外奖励（含 PC/Web）
-            print("[OfflineRewardPanel] 广告+2小时 clicked — showing ad")
-            AdManager.ShowAdWithMute(function(result)
-                if not result.success then
-                    print("[OfflineRewardPanel] 广告未完成（reason=" .. tostring(result.reason) .. "），不领取额外")
-                    if result.reason == "already_loading" then
-                        state.floatText = "广告正在加载中…"
-                    else
-                        state.floatText = "广告加载失败，请稍后再试"
-                    end
-                    state.floatTextTime = time.elapsedTime
-                    return
-                end
-                -- AD_CONFIRM 已由 AdManager 统一发送（AdHandler 推送 adConfirmed 模块）
-                print("[OfflineRewardPanel] 广告完成 — applying +2h bonus preview")
-                state.bonusClaimed = true
-                self_applyBonusPreview()
-            end, "offline_bonus")
-        end
-        return true
-    end
-
-    -- 领取按钮（额外奖励已领/不可用时居中，否则在右侧）
-    local claimHitCX = (not canBonus) and BG.CX or BTN_CLAIM.CX
-    if DrawUtil.hitTest(dx, dy, claimHitCX, BTN_CLAIM.CY, BTN_CLAIM.W, BTN_CLAIM.H) then
+    -- 领取按钮（居中）
+    if DrawUtil.hitTest(dx, dy, BG.CX, BTN_CLAIM.CY, BTN_CLAIM.W, BTN_CLAIM.H) then
         BF.trigger("orp_claim")
-        print("[OfflineRewardPanel] 领取 clicked, bonusClaimed=" .. tostring(state.bonusClaimed)
-            .. " usedPrivilege=" .. tostring(state.usedPrivilege))
+        print("[OfflineRewardPanel] 领取 clicked")
         if state.onClaim then
-            state.onClaim(state.bonusClaimed, state.usedPrivilege)
+            state.onClaim()
         end
         Panel.close()
         return true

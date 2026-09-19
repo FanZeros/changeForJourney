@@ -67,7 +67,6 @@ local ClientMsgHandler   = require("network.ClientMessageHandler")
 local LocalActionBridge  = require("network.LocalActionBridge")
 local TaskPanel          = require("ui.TaskPanel")
 local SignInPanel        = require("ui.SignInPanel")
-local AdManager          = require("systems.AdManager")
 
 local Standalone = {}
 
@@ -279,7 +278,6 @@ function Standalone.Start()
     TaskPanel.setSendAction(localSendAction)
     TavernPage.setSendAction(localSendAction)
     MarketPage.setSendAction(localSendAction)
-    AdManager.Init(localSendAction)
 
     -- 5.05 冒险等级提升弹窗：监听 PLAYER_LEVEL_UP 事件，并刷新解锁状态
     EventBus.on(GameEvents.PLAYER_LEVEL_UP, function(data)
@@ -1362,8 +1360,7 @@ function HandleUpdate(eventType, eventData)
     TownScene.setSmithRedDot(bagFull_)
     BlacksmithPage.setDecomposeRedDot(bagFull_)
 
-    -- 市场/竞技场建筑红点（与 BottomNav 查询条件保持一致）
-    TownScene.setMarketRedDot(MarketPage.hasPrivilegeRedDot())
+    -- 竞技场建筑红点（与 BottomNav 查询条件保持一致）
     TownScene.setArenaRedDot(ArenaPage.hasTicketRedDot())
 
     RewardPopup.update(dt)

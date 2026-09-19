@@ -28,6 +28,8 @@ local function newState(id)
     return {
         id = id or "?",
         floatingTexts   = {},
+        pendingFt       = {},  -- [伤害排队] 待显示伤害飘字队列
+        ftSpawnCd       = 0.0, -- [伤害排队] 出队倒计时
         cardAnims       = {},
         hitFlashes      = {},
         hpBuffers       = {},
@@ -435,7 +437,19 @@ BattleCombat.syncUnitHp = syncUnitHp
 ---@param color table {r,g,b}
 ---@param isCrit boolean
 ---@param fontSize number|nil
-local function addFloatingText(text, cx, cy, color, isCrit, fontSize)
+local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred)
+    -- [伤害排队] deferred=true 时先入待显示队列，由 updateFloatingTexts 按间隔放出
+    -- （多个伤害同帧产生时依次显示：队列>3 间隔 0.1s，否则 0.2s）
+    if deferred then
+        if #BCS.pendingFt >= 20 then
+            table.remove(BCS.pendingFt, 1)  -- 防极端积累：丢弃最老
+        end
+        BCS.pendingFt[#BCS.pendingFt + 1] = {
+            text = text, cx = cx, cy = cy,
+            color = color, isCrit = isCrit or false, fontSize = fontSize,
+        }
+        return
+    end
     -- 飘字上限：超出时将最早的飘字跳到快速淡出阶�?
     while #BCS.floatingTexts >= MAX_FLOATING_TEXTS do
         local oldest = BCS.floatingTexts[1]
@@ -575,14 +589,14 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
     if actual > 0 then
         addFloatingText((prefix or "") .. "-" .. NumberUtil.format(actual), tgtCX, tgtCY,
-            showCrit and { 255, 60, 60 } or { 255, 255, 255 }, showCrit)
+            showCrit and { 255, 60, 60 } or { 255, 255, 255 }, showCrit, nil, true)
         if shieldAbsorb > 0 then
             addFloatingText("-" .. NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
-                { 168, 168, 168 }, false)
+                { 168, 168, 168 }, false, nil, true)
         end
     elseif shieldAbsorb > 0 then
         addFloatingText((prefix or "") .. "-" .. NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
-            { 168, 168, 168 }, false)
+            { 168, 168, 168 }, false, nil, true)
     end
     setHitFlash(target)
     if actual > 0 then
@@ -1401,14 +1415,14 @@ local function performAttack(attacker, targetList, isAlly)
                         local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
                         if actual > 0 then
                             addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY,
-                                hit.isCrit and { 255, 60, 60 } or { 255, 255, 255 }, hit.isCrit)
+                                hit.isCrit and { 255, 60, 60 } or { 255, 255, 255 }, hit.isCrit, nil, true)
                             if shieldAbsorb > 0 then
                                 addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                                    { 168, 168, 168 }, false)
+                                    { 168, 168, 168 }, false, nil, true)
                             end
                         elseif shieldAbsorb > 0 then
                             addFloatingText(prefix .. "-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                                { 168, 168, 168 }, false)
+                                { 168, 168, 168 }, false, nil, true)
                         end
 
                         -- 暴击回调（供台词系统触发暴击台词�?
@@ -1741,14 +1755,14 @@ local function performComboAttack(entry)
         -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
         local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
         if actual > 0 then
-            addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit)
+            addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit, nil, true)
             if shieldAbsorb > 0 then
                 addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                    { 168, 168, 168 }, false)
+                    { 168, 168, 168 }, false, nil, true)
             end
         elseif shieldAbsorb > 0 then
             addFloatingText(prefix .. "-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                { 168, 168, 168 }, false)
+                { 168, 168, 168 }, false, nil, true)
         end
 
         if curTgt.hp <= 0 and hpBefore > 0 then
@@ -2083,6 +2097,15 @@ end
 -- ======================== 浮动文字更新 ========================
 
 function BattleCombat.updateFloatingTexts(dt)
+    -- [伤害排队] 待显示伤害飘字按间隔放出（剩余>3 时 0.1s，否则 0.2s）
+    if #BCS.pendingFt > 0 then
+        BCS.ftSpawnCd = BCS.ftSpawnCd - dt
+        if BCS.ftSpawnCd <= 0 then
+            local p = table.remove(BCS.pendingFt, 1)
+            addFloatingText(p.text, p.cx, p.cy, p.color, p.isCrit, p.fontSize, false)
+            BCS.ftSpawnCd = (#BCS.pendingFt > 3) and 0.1 or 0.2
+        end
+    end
     local i = 1
     while i <= #BCS.floatingTexts do
         local ft = BCS.floatingTexts[i]
@@ -2148,6 +2171,8 @@ end
 
 function BattleCombat.reset()
     BCS.floatingTexts = {}
+    BCS.pendingFt     = {}   -- [伤害排队] 清空待显示队列
+    BCS.ftSpawnCd     = 0
     BCS.cardAnims     = {}
     BCS.hitFlashes    = {}
     BCS.hpBuffers     = {}

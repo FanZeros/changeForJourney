@@ -2013,9 +2013,10 @@ function BattleScene.update(dt)
 
 
     -- ---- 敌人死亡处理（死亡即补位：怪物池有剩余立刻替换新怪，不播墓碑动画） ----
-    -- [补位节流] 多只敌人同帧死亡时，补位/收缩按 1s 间隔逐只进行
-    --（冷却按 enemies 引用隔离存 weak-key 表，三行多场战斗互不干扰）
-    local REINFORCE_INTERVAL = 1.0
+    -- [补位节流] 多只敌人同帧死亡时，补位/收缩按 0.4s 间隔逐只进行
+    --（首只按 RESPAWN_DELAY 1s，其后每只 +0.4s：AOE 杀 3 只 ≈1.8s 补全
+    --；冷却按 enemies 引用隔离存 weak-key 表，三行多场战斗互不干扰）
+    local REINFORCE_INTERVAL = 0.4
     local reinforceCd = (reinforceCdByList[enemies] or 0) - logicDt
     if reinforceCd < 0 then reinforceCd = 0 end
     reinforceCdByList[enemies] = reinforceCd

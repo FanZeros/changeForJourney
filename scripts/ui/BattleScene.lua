@@ -93,6 +93,9 @@ local TOMBSTONE_REVIVE_TIME = 2.0
 -- 死亡即补位：退场+空位总时长（秒），期满新怪从右补入
 local RESPAWN_DELAY = 1.0
 
+-- [补位节流] 按 enemies 引用隔离的补位冷却（weak-key，多只同帧死亡时逐只补入防一齐涌入）
+local reinforceCdByList = setmetatable({}, { __mode = "k" })
+
 -- 死亡/复活动画常量（定义在 BattleCombat，此处引用）
 local DEATH_ANIM_DURATION  = BattleCombat.DEATH_ANIM_DURATION
 local REVIVE_ANIM_DURATION = BattleCombat.REVIVE_ANIM_DURATION
@@ -2010,6 +2013,12 @@ function BattleScene.update(dt)
 
 
     -- ---- 敌人死亡处理（死亡即补位：怪物池有剩余立刻替换新怪，不播墓碑动画） ----
+    -- [补位节流] 多只敌人同帧死亡时，补位/收缩按 1s 间隔逐只进行
+    --（冷却按 enemies 引用隔离存 weak-key 表，三行多场战斗互不干扰）
+    local REINFORCE_INTERVAL = 1.0
+    local reinforceCd = (reinforceCdByList[enemies] or 0) - logicDt
+    if reinforceCd < 0 then reinforceCd = 0 end
+    reinforceCdByList[enemies] = reinforceCd
     for i, unit in ipairs(enemies) do
         if unit.hp <= 0 then
             -- 首次检测到死亡：发放击杀奖励（替换与墓碑共用，仅一次）
@@ -2075,7 +2084,10 @@ function BattleScene.update(dt)
 
             if #enemyQueue > 0 then
                 -- [死亡即补位 v2] 退场(向右滑出0.4s) → 1s 空位 → 新怪从右滑入补位
-                if unit.reviveTimer >= RESPAWN_DELAY then
+                -- [补位节流] 同帧多只待补位时按 REINFORCE_INTERVAL 逐只补入
+                if unit.reviveTimer >= RESPAWN_DELAY and reinforceCd <= 0 then
+                    reinforceCd = REINFORCE_INTERVAL
+                    reinforceCdByList[enemies] = reinforceCd
                     -- [队列前移补位] 死亡槽位 i 由后方敌人依次前移一格填入，
                     -- 新怪从怪物池进入队尾淡入补齐（保持敌我阵列紧凑）
                     for j = i, #enemies - 1 do
@@ -2097,8 +2109,10 @@ function BattleScene.update(dt)
                     BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
                 end
             else
-                -- [池空前移] 无后续敌人：死亡槽位仍由后方敌人前移填位（队列收缩）
-                if unit.reviveTimer >= RESPAWN_DELAY then
+                -- [池空前移] 无后续敌人：死亡槽位仍由后方敌人前移填位（队列收缩，共享补位节流）
+                if unit.reviveTimer >= RESPAWN_DELAY and reinforceCd <= 0 then
+                    reinforceCd = REINFORCE_INTERVAL
+                    reinforceCdByList[enemies] = reinforceCd
                     for j = i, #enemies - 1 do
                         local moved = enemies[j + 1]
                         enemies[j] = moved

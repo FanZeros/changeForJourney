@@ -448,6 +448,9 @@ local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred)
             text = text, cx = cx, cy = cy,
             color = color, isCrit = isCrit or false, fontSize = fontSize,
         }
+        if #BCS.pendingFt == 1 then
+            BCS.ftSpawnCd = 0  -- [伤害排队] 首条立即显示；后续才相对上一条间隔 0.2/0.1s
+        end
         return
     end
     -- 飘字上限：超出时将最早的飘字跳到快速淡出阶�?

@@ -49,17 +49,17 @@ local TAG_SIZE        = 60
 local TAG_OFFSET_Y    = -172   -- [卡高4/5] 原-215, 相对卡片中心的 Y 偏移
 
 -- 战斗力图标+数值 Y 位置
-local POWER_Y       = 680
+local POWER_Y       = 636     -- [卡高4/5] 原680——卡底边上移44(半高差)，卡内元素等量上移保持距底83
 local POWER_ICON_SIZE = 36
 
 -- 等级徽章（以最中心卡牌为基准的相对偏移）
 local LVL_BADGE_SIZE  = 56
 local LVL_BADGE_DX    = 477 - 540    -- -63
-local LVL_BADGE_DY    = 725 - CARD_CY -- 181
+local LVL_BADGE_DY    = (725 - 44) - CARD_CY -- [卡高4/5] 原181→137
 
 -- 经验条
 local EXP_BAR_DX      = 552 - 540    -- 12（相对卡牌中心）
-local EXP_BAR_DY      = 727 - CARD_CY -- 183
+local EXP_BAR_DY      = (727 - 44) - CARD_CY -- [卡高4/5] 原183→139
 local EXP_BAR_BG_W    = 148
 local EXP_BAR_BG_H    = 28
 local EXP_BAR_PADDING = 4

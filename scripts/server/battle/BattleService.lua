@@ -1095,13 +1095,29 @@ local SCENARIO_REWARDS = {
 ---@return boolean ok, string? err, table? result
 function BattleService.ClaimScenarioReward(uid, scenarioId)
     local rewardDef = SCENARIO_REWARDS[scenarioId]
-    if not rewardDef then
-        return false, "无效的情景ID"
-    end
 
     local sessionData = PDM.GetModule(uid, "session")
     if not sessionData then
         return false, "数据未加载"
+    end
+
+    -- [兜底] SCENARIO_REWARDS 未定义但客户端 Config 存在且无 rewards 的纯对话情景：
+    -- 只标记已播放，防止 claimedScenarios 永不落档 → 重启后重复播放。
+    -- Config 中带 rewards 的情景缺失服务端定义视为配置错误，仍拒绝以暴露缺口（防吞奖励）。
+    if not rewardDef then
+        local okCfg, cfg = pcall(require, "config.ScenarioDialogueConfig")
+        local cfgDef = okCfg and cfg and cfg["SCENARIO_" .. tostring(scenarioId)] or nil
+        if cfgDef and cfgDef.rewards == nil then
+            if not sessionData.claimedScenarios then
+                sessionData.claimedScenarios = {}
+            end
+            sessionData.claimedScenarios[tostring(scenarioId)] = true
+            PDM.MarkDirty(uid, "session")
+            print("[BattleService] scenario none-fallback uid=" .. tostring(uid)
+                .. " scenarioId=" .. tostring(scenarioId) .. " marked claimed (config none)")
+            return true, nil, { rewardType = "none" }
+        end
+        return false, "无效的情景ID"
     end
 
     -- 防重复

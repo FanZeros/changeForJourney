@@ -675,7 +675,6 @@ return {
     { "image/角色立绘/UI_DLH_5.png", 1293643 },
     { "image/界面底板/签到任务/UI_MRQD_BJ.png", 1364871 },
     { "image/界面底板/签到任务/UI_MZQD_BJ.png", 1353482 },
-    { "image/界面底板/商店/UI_SC_TQBJ.png", 1746902 },
     { "image/spine/UI_SPINE_TFBJ.png", 2982459 },
     { "image/界面底板/教堂转职/UI_JTSQ_BJ.png", 1945288 },
     { "image/界面底板/角色与觉醒/UI_JSJM_bj.png", 2278443 },

@@ -6,7 +6,6 @@
  -- ============================================================================
 
 local Protocol         = require("shared.Protocol")
-local MarketSchema     = require("shared.market.MarketSchema")
 local ArtifactDefs     = require("shared.artifact.ArtifactDefs")
 local ClientDispatcher = require("network.ClientDispatcher")
  local GameState        = require("core.GameState")
@@ -29,7 +28,6 @@ local ClientDispatcher = require("network.ClientDispatcher")
  local EquipmentDetail
  local RedeemCodePanel, SignInPanel, LootBoxSystem
  local TutorialManager
-local AdManager
 
  local M = {}
 
@@ -94,7 +92,6 @@ local AdManager
      LootBoxSystem       = require("systems.LootBoxSystem")
      TutorialManager         = require("systems.TutorialManager")
     AnnouncementPanel       = require("ui.AnnouncementPanel")
-    AdManager               = require("systems.AdManager")
 
      -- 批量合并监听
      EventBus.on("RELIC_BATCH_MERGE_START", function(data)
@@ -507,23 +504,7 @@ local AdManager
                  LootBoxPage.showToast(data.reason or "天赋操作失败")
              end
          end
-         -- AD_CONFIRM 失败时触发重试机制
-         if data.action == Protocol.ACTION_TYPES.AD_CONFIRM and AdManager and AdManager.OnAdConfirmResult then
-             AdManager.OnAdConfirmResult(data)
-         end
-         if data.action == Protocol.ACTION_TYPES.TRANSFER_CLOSED_CHALLENGER_CARD then
-             local ServerSelectPanel = require("ui.ServerSelectPanel")
-             if ServerSelectPanel.setClosedTransferPending then
-                 ServerSelectPanel.setClosedTransferPending(false)
-             end
-             if LootBoxPage and LootBoxPage.showToast then
-                 LootBoxPage.showToast(data.reason or "特权卡转出失败")
-             end
-             return
-         end
-         if data.action == Protocol.ACTION_TYPES.TRANSFER_PRIVILEGE_CARD
-             or data.action == Protocol.ACTION_TYPES.TRANSFER_CLOSED_CHALLENGER_CARD
-             or data.action == Protocol.ACTION_TYPES.CONVERT_UR_SHARD
+             if data.action == Protocol.ACTION_TYPES.CONVERT_UR_SHARD
              or data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT then
              local BackpackPanel = require("ui.BackpackPanel")
              if BackpackPanel.onActionResult then BackpackPanel.onActionResult(data) end
@@ -541,10 +522,6 @@ local AdManager
          return
      end
 
-     -- AD_CONFIRM 成功时停止重试
-     if data.action == Protocol.ACTION_TYPES.AD_CONFIRM and AdManager and AdManager.OnAdConfirmResult then
-         AdManager.OnAdConfirmResult(data)
-     end
      if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE_CONFIRM then
          finishReforgeConfirmWhenSynced(data.relicId, data.newAffixId)
      end
@@ -727,14 +704,6 @@ local AdManager
      if data.action == Protocol.ACTION_TYPES.MARKET_BUY and data.rewardType and not data.marketSpecialShown then
          RewardPopup.show("购买成功", { { type = data.rewardType, amount = data.rewardCount or 1 } })
      end
-     if data.action == Protocol.ACTION_TYPES.WATCH_PRIVILEGE_AD then
-         RewardPopup.show("观看广告奖励", {
-             { type = "privilege_point", amount = data.rewardCount or MarketSchema.AD_PRIVILEGE_REWARD_PER_WATCH },
-         })
-     end
-     if data.action == Protocol.ACTION_TYPES.CLAIM_PRIVILEGE_REWARD and data.rewardType then
-         RewardPopup.show("里程奖励", { { type = data.rewardType, amount = data.amount or 1 } })
-     end
 
      -- 战利品领取
      if data.claimed and data.claimedCount and data.claimedCount > 0 then
@@ -826,28 +795,6 @@ local AdManager
              { type = "shard", heroId = data.toHeroId, amount = data.amount or 0 },
          })
      end
-
-    -- 特权卡转区：返回选服界面
-     if data.action == Protocol.ACTION_TYPES.TRANSFER_PRIVILEGE_CARD and data.success then
-         local Client = require("network.Client")
-         if Client.transitionToServerSelectAfterTransfer then
-             Client.transitionToServerSelectAfterTransfer()
-         end
-         return
-     end
-
-     -- 活动结束后的转出请求在选服界面发起，成功后由服务端重新推送区服列表。
-     if data.action == Protocol.ACTION_TYPES.TRANSFER_CLOSED_CHALLENGER_CARD then
-         local ServerSelectPanel = require("ui.ServerSelectPanel")
-         if ServerSelectPanel.setClosedTransferPending then
-             ServerSelectPanel.setClosedTransferPending(false)
-         end
-         if not data.success and LootBoxPage and LootBoxPage.showToast then
-             LootBoxPage.showToast(data.reason or "特权卡转出失败")
-         end
-         return
-     end
-
      -- 扫荡结果
      if data.action == Protocol.ACTION_TYPES.SWEEP and data.success then
          local rewards = {}

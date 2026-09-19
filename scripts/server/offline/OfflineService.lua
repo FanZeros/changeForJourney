@@ -65,17 +65,6 @@ local function getTodayDateStr()
     return os.date("!%Y-%m-%d", t)
 end
 
---- 获取当日剩余额外奖励次数
----@param sessionData table
----@return number remaining
-local function getRemainingBonusCount(sessionData)
-    local today = getTodayDateStr()
-    if sessionData.offlineBonusDate ~= today then
-        return 3  -- BONUS_MAX_DAILY 保留兼容，后续移除
-    end
-    local used = sessionData.offlineBonusCount or 0
-    return math.max(0, 3 - used)
-end
 
 --- 玩家进入游戏后计算离线收益，返回面板数据（不做网络 IO）
 ---@param uid number
@@ -189,10 +178,6 @@ function OfflineService.CalcOnEnter(uid)
         return
     end
 
-    -- 计算额外 +2 小时的奖励预览（供面板展示，保持 bonus 机制兼容）
-    local bonusSeconds = 7200
-    local bonusRewards = OfflineCalc.calcOnlineIdleRewards(bonusSeconds, incomeStageId, heroCount, dropStageId, stageConfig)
-
     -- 构建面板展示数据（v2 结构）
     local panelData = {
         offlineSeconds = rewards.seconds,
@@ -201,23 +186,7 @@ function OfflineService.CalcOnEnter(uid)
         adventureExp   = rewards.adventureExp,
         adventurerExp  = rewards.adventurerExp,
         rewards        = {},
-        -- 额外奖励信息（保持向后兼容）
-        bonusRemaining = getRemainingBonusCount(sessionData),
-        bonusMaxDaily  = 3,
-        bonusSeconds   = bonusSeconds,
     }
-
-    -- 额外奖励预览数据（供客户端增加显示值）
-    if bonusRewards then
-        panelData.bonusPreview = {
-            gold          = bonusRewards.gold,
-            adventureExp  = bonusRewards.adventureExp,
-            adventurerExp = bonusRewards.adventurerExp,
-            rewards       = {},
-        }
-        appendEquipPreviewItems(panelData.bonusPreview.rewards, bonusRewards.equipSeeds)
-        appendScrollPreviewItems(panelData.bonusPreview.rewards, bonusRewards.scrollDrops)
-    end
 
     -- 金币
     if rewards.gold > 0 then
@@ -233,8 +202,8 @@ function OfflineService.CalcOnEnter(uid)
     -- 卷轴掉落
     appendScrollPreviewItems(panelData.rewards, rewards.scrollDrops)
 
-    -- 暂存到内存（包含 bonusRewards 供领取时使用）
-    pendingRewards[uid] = { rewards = rewards, panelData = panelData, bonusRewards = bonusRewards }
+    -- 暂存到内存（供领取时使用）
+    pendingRewards[uid] = { rewards = rewards, panelData = panelData }
 
     -- 返回面板数据，由 Server.lua 负责推送
     print("[OfflineService] offline reward ready uid=" .. tostring(uid)
@@ -245,22 +214,16 @@ end
 
 -- ======================== 领取离线收益 ========================
 
---- 离线 +2 小时额外奖励：用特权点代替看广告时消耗的点数（固定 1，禁止一次扣光）
-local OFFLINE_BONUS_PRIVILEGE_COST = 1
-
 --- 领取离线收益
 ---@param uid number
----@param claimBonus boolean 是否领取额外 +2 小时奖励
----@param usePrivilege boolean 是否消耗特权点（而非看广告）
 ---@return boolean ok, string? err, table? result
-function OfflineService.ClaimRewards(uid, claimBonus, usePrivilege)
+function OfflineService.ClaimRewards(uid)
     local pending = pendingRewards[uid]
     if not pending then
         return false, "无待领取的离线收益"
     end
     local rewards = pending.rewards
 
-    -- 如果请求额外奖励，校验每日次数
     local sessionData = PDM.GetModule(uid, "session")
     if not sessionData then
         return false, "session 数据未加载"
@@ -275,48 +238,8 @@ function OfflineService.ClaimRewards(uid, claimBonus, usePrivilege)
         return false, "数据未加载"
     end
 
-    local bonusApplied = false
-    local bonusRewards = pending.bonusRewards
-    local privilegeDeducted = 0
-
-    if claimBonus then
-        local remaining = getRemainingBonusCount(sessionData)
-        if remaining <= 0 then
-            return false, "今日额外奖励次数已用完"
-        end
-        if not bonusRewards then
-            return false, "额外奖励数据异常"
-        end
-        -- 扣除特权点（如果使用特权点）— 固定只扣 1 点，不与余额挂钩
-        if usePrivilege then
-            local balBefore = math.max(0, math.floor(tonumber(currency.privilegePoint) or 0))
-            local okDeduct, newBal = CurrencyService.Deduct(uid, "privilegePoint", OFFLINE_BONUS_PRIVILEGE_COST)
-            if not okDeduct then
-                print("[OfflineService] privilege deduct FAIL uid=" .. tostring(uid)
-                    .. " need=" .. OFFLINE_BONUS_PRIVILEGE_COST
-                    .. " bal=" .. tostring(balBefore))
-                return false, "特权点不足"
-            end
-            privilegeDeducted = OFFLINE_BONUS_PRIVILEGE_COST
-            print("[OfflineService] privilege deduct uid=" .. tostring(uid)
-                .. " cost=" .. OFFLINE_BONUS_PRIVILEGE_COST
-                .. " " .. tostring(balBefore) .. "→" .. tostring(newBal))
-        end
-        -- 更新每日计数
-        local today = getTodayDateStr()
-        if sessionData.offlineBonusDate ~= today then
-            sessionData.offlineBonusDate  = today
-            sessionData.offlineBonusCount = 0
-        end
-        sessionData.offlineBonusCount = (sessionData.offlineBonusCount or 0) + 1
-        bonusApplied = true
-    end
-
-    -- 1) 金币（基础 + 额外奖励）
+    -- 1) 金币
     local goldAmount = rewards.gold
-    if bonusApplied then
-        goldAmount = goldAmount + (bonusRewards.gold or 0)
-    end
     goldAmount = math.floor(goldAmount)
     currency.gold = (currency.gold or 0) + goldAmount
     PDM.MarkDirty(uid, "currency")
@@ -327,9 +250,6 @@ function OfflineService.ClaimRewards(uid, claimBonus, usePrivilege)
     local perHeroExp = 0
     if heroCount > 0 then
         local totalHeroExp = rewards.adventurerExp
-        if bonusApplied then
-            totalHeroExp = totalHeroExp + (bonusRewards.adventurerExp or 0)
-        end
         totalHeroExp = math.floor(totalHeroExp)
         perHeroExp = math.floor(totalHeroExp / heroCount + 0.5)
         for _, heroId in ipairs(deployed) do
@@ -346,9 +266,6 @@ function OfflineService.ClaimRewards(uid, claimBonus, usePrivilege)
 
     -- 3) 冒险经验（玩家升级）
     local playerExp = rewards.adventureExp
-    if bonusApplied then
-        playerExp = playerExp + (bonusRewards.adventureExp or 0)
-    end
     playerExp = math.floor(playerExp)
     local oldLv = playerData.level or 1
     playerData.exp = (playerData.exp or 0) + playerExp
@@ -360,9 +277,6 @@ function OfflineService.ClaimRewards(uid, claimBonus, usePrivilege)
 
     -- 4) 装备种子 → 战利品缓冲
     local equipSeedGroups = { rewards.equipSeeds }
-    if bonusApplied then
-        equipSeedGroups[#equipSeedGroups + 1] = bonusRewards.equipSeeds
-    end
     local equipDirty = false
     for _, equipSeeds in ipairs(equipSeedGroups) do
         for _, seed in ipairs(equipSeeds or {}) do
@@ -379,9 +293,6 @@ function OfflineService.ClaimRewards(uid, claimBonus, usePrivilege)
 
     -- 5) 卷轴掉落 → 货币
     local scrollDropGroups = { rewards.scrollDrops }
-    if bonusApplied then
-        scrollDropGroups[#scrollDropGroups + 1] = bonusRewards.scrollDrops
-    end
     local scrollDirty = false
     for _, scrollDrops in ipairs(scrollDropGroups) do
         for scrollField, count in pairs(scrollDrops or {}) do
@@ -405,24 +316,12 @@ function OfflineService.ClaimRewards(uid, claimBonus, usePrivilege)
     PDM.MarkDirty(uid, "session")
 
     print("[OfflineService] claimed offline rewards uid=" .. tostring(uid)
-        .. " bonus=" .. tostring(bonusApplied)
-        .. " usePrivilege=" .. tostring(usePrivilege)
-        .. " privilegeCost=" .. tostring(privilegeDeducted)
-        .. " privilegeLeft=" .. tostring(currency.privilegePoint or 0)
         .. " gold=" .. goldAmount)
 
-    -- 含特权点扣除时立即刷盘，缩短断线丢扣账窗口
-    if privilegeDeducted > 0 then
-        PDM.FlushImmediate(uid)
-    end
-
     return true, nil, {
-        bonusApplied = bonusApplied,
-        gold         = goldAmount,
-        heroExp      = perHeroExp,
-        playerExp    = playerExp,
-        privilegeCost = privilegeDeducted,
-        privilegeLeft = currency.privilegePoint or 0,
+        gold      = goldAmount,
+        heroExp   = perHeroExp,
+        playerExp = playerExp,
     }
 end
 

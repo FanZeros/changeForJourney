@@ -7,7 +7,6 @@
 local PDM             = require("server.character.PlayerDataManager")
 local CharacterSchema = require("shared.schemas.CharacterSchema")
 local CurrencyService = require("server.currency.CurrencyService")
-local MarketService   = require("server.market.MarketService")
 local MailService     = require("server.mail.MailService")
 local CrossInstanceService = require("server.gm.CrossInstanceService")
 local HeroConfig      = require("config.HeroConfig")
@@ -23,11 +22,11 @@ local VALID_RESOURCE_KEYS = {
     recruitTicket = true, stellarRecruitTicket = true, goldenKey = true, enhanceStone = true,
     degradeStone = true, destroyStone = true,
     arenaTicket = true, arenaCoin = true,
-    sweepTicket = true, privilegePoint = true, tavernCoin = true,
+    sweepTicket = true, tavernCoin = true,
     weaponScroll = true, offhandScroll = true,
     armorScroll = true, accessoryScroll = true,
     arcaneDust = true, corruptStone = true, sacredStone = true,
-    speedCardExpireAt = true, privilegeCardOwned = true,
+    speedCardExpireAt = true,
 }
 
 -- ======================== GM: 给资源 ========================
@@ -54,15 +53,6 @@ function GMService.GiveResource(uid, key, amount)
         currency[key] = math.max(now, tonumber(currency[key]) or 0) + amount
         PDM.MarkDirty(uid, "currency")
         newBalance = currency[key]
-    elseif key == "privilegeCardOwned" then
-        local currency = PDM.GetModule(uid, "currency")
-        if not currency then return false, "数据未加载" end
-        currency.privilegeCardOwned = amount  -- 1=激活, 0=取消
-        PDM.MarkDirty(uid, "currency")
-        newBalance = currency.privilegeCardOwned
-        if amount >= 1 then
-            MarketService.OnPrivilegeCardActivated(uid)
-        end
     else
         newBalance = CurrencyService.Add(uid, key, amount)
         if newBalance == 0 then

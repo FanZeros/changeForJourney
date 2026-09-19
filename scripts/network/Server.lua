@@ -149,7 +149,6 @@ local ArenaService           = require("server.arena.ArenaService")
 local CrossInstanceService   = require("server.gm.CrossInstanceService")
 local ChallengerService      = require("server.challenger.ChallengerService")
 registerHandlers(require("server.offline.OfflineHandler").actionHandlers)
-registerHandlers(require("server.ad.AdHandler").actionHandlers)
 
 -- ======================== 区服进度摘要更新 ========================
 
@@ -435,14 +434,6 @@ local function handleRequest(connection, action, params)
             if result ~= nil then
                 result.action = action   -- 客户端依赖 action 字段做分支路由
                 sendActionResult(uid, result)
-
-                if action == Protocol.ACTION_TYPES.TRANSFER_PRIVILEGE_CARD and result.success then
-                    if returnPlayerToServerSelect then
-                        returnPlayerToServerSelect(uid)
-                    else
-                        print("[Server] transfer privilege card succeeded but returnPlayerToServerSelect is nil uid=" .. tostring(uid))
-                    end
-                end
             end
         else
             print("[Server] handler error action=" .. tostring(action)
@@ -762,13 +753,8 @@ local function loadAndPushFullState(uid)
             end
 
             -- 登录时重置过期的每日限购记录（pushFullState 前执行，确保客户端收到干净数据）
-            local loginMarketReset = MarketService.ResetDailyShopItems(uid)
+            MarketService.ResetDailyShopItems(uid)
             TavernService.ResetShopLimits(uid)
-            local mileComp = loginMarketReset and loginMarketReset.mileComp
-            local dailyGrantPoints = loginMarketReset and loginMarketReset.dailyGrantPoints
-
-            -- 特权卡跨服转入：进入不同区服时发放待转入特权卡
-            MarketService.ApplyPendingPrivilegeCardTransfer(uid)
 
             -- 老玩家首通黄金钥匙补偿：全量推送前写入动态邮件，确保客户端登录后可见
             MailService.CheckAndSendGoldenKeyRetroCompensation(uid)
@@ -938,16 +924,6 @@ local function loadAndPushFullState(uid)
             ServerDispatcher.pushFullState(uid, pushData)
             sendServerDiag(uid, "Phase2 pushFullState DONE")
 
-            -- 推送特权广告初始状态（独立 privilege 模块，客户端 setPrivilegeData 消费）
-            local privPayload = MarketService.GetPrivilegeAdPayload(uid)
-            if privPayload then
-                ServerDispatcher.pushModule(uid, "privilege", privPayload)
-            end
-
-            -- 推送广告崩溃补偿标记（adPending 模块，客户端 AdManager 消费）
-            local AdHandler = require("server.ad.AdHandler")
-            AdHandler.CheckAndPushPending(uid)
-
             -- 将当前区服进度摘要写入 global_profile（供选服列表展示）
             -- 此时 PDM 刚加载完毕，数据与 SaveManager 一致，updateServerProgress 均可正确读取
             updateServerProgress(uid)
@@ -1031,39 +1007,6 @@ local function loadAndPushFullState(uid)
                 end
             end
 
-            -- 特权卡每日福利 / 里程补差：登录后弹奖励窗（等 LoadingScreen / 离线收益面板关闭后再展示）
-            if connections[uid] then
-                local popRewards = {}
-                local popTitle = "奖励"
-                local popSubtitle = nil
-
-                if dailyGrantPoints and dailyGrantPoints > 0 then
-                    popRewards[#popRewards + 1] = { type = "privilege_point", amount = dailyGrantPoints }
-                    popTitle = "特权卡福利"
-                    popSubtitle = "每日登录赠送特权点。"
-                end
-                if mileComp and mileComp.amount and mileComp.amount > 0 then
-                    popRewards[#popRewards + 1] = { type = "privilege_point", amount = mileComp.amount }
-                    if #popRewards > 1 then
-                        popTitle = "特权奖励"
-                        popSubtitle = "含每日福利与里程奖励调整。"
-                    else
-                        popTitle = "里程奖励调整"
-                        popSubtitle = "今日已领取的里程特权点，已按新版本补发差额。"
-                    end
-                end
-
-                if #popRewards > 0 then
-                    ServerDispatcher.sendEvent(uid, Protocol.RES_ACTION_RESULT, {
-                        success             = true,
-                        deferredRewardPopup = true,
-                        popupTitle          = popTitle,
-                        popupSubtitle       = popSubtitle,
-                        rewards             = popRewards,
-                    })
-                end
-            end
-
             TaskService.OnPlayerEnter(uid)
             -- 同步公会排行榜分数（修正 avatarHeroId 编码变更导致的过时 cloud score）
             BattleService.SyncGuildRankOnLogin(uid)
@@ -1106,18 +1049,6 @@ local function loadAndPushFullState(uid)
     end)
 end
 
---- 重连后补推特权广告状态 + adPending（与 loadAndPushFullState 一致）
---- resendFromCache 重放的 privilege 可能过期，且不会自动推送 adPending
----@param uid number
-local function pushReconnectPrivilegeAndAdState(uid)
-    local privPayload = MarketService.GetPrivilegeAdPayload(uid)
-    if privPayload then
-        ServerDispatcher.pushModule(uid, "privilege", privPayload)
-    end
-    local AdHandler = require("server.ad.AdHandler")
-    AdHandler.CheckAndPushPending(uid)
-end
-
 --- 重连后补推 PDM 权威模块（resendFromCache 批次可能晚于增量 push 到达，旧包覆盖最新操作）
 ---@param uid number
 local function pushReconnectAuthoritativeModules(uid)
@@ -1146,9 +1077,8 @@ local function handleReconnect(uid)
         -- 重连时重置过期的每日限购记录（配置可能从cooldown改为daily，旧记录需清除）
         MarketService.ResetDailyShopItems(uid)
         TavernService.ResetShopLimits(uid)
-        -- resendFromCache 批次可能晚于增量 push 到达；先补推 PDM 权威模块，再推 privilege（依赖 market）
+        -- resendFromCache 批次可能晚于增量 push 到达；补推 PDM 权威模块
         pushReconnectAuthoritativeModules(uid)
-        pushReconnectPrivilegeAndAdState(uid)
         -- 邮件列表不走缓存：MailConfig 可能在热更后变化，必须重新构建推送
         ChallengerService.ProcessLoginRewards(uid)
         local mailListC = MailHandler.buildMailList(uid)
@@ -1200,7 +1130,6 @@ local function handleReconnect(uid)
 
             ServerDispatcher.pushFullState(uid, pushData)
             pushReconnectAuthoritativeModules(uid)
-            pushReconnectPrivilegeAndAdState(uid)
 
             -- 重连时补推邮件列表（与首次登录一致）
             ChallengerService.ProcessLoginRewards(uid)
@@ -1823,29 +1752,6 @@ local function handleNewGame(eventType, eventData)
         tostring(uid), tostring(clearServerId), resetCount))
 end
 
---- 处理返回选服请求（不清档，仅允许特权卡转区 pending 状态）
-local function handleReturnServerSelect(eventType, eventData)
-    local connection = eventData["Connection"]:GetPtr("Connection")
-    if not connection then return end
-
-    local uid = getUID(connection)
-    if not uid then return end
-
-    local gp = PDM.GetModule(uid, "global_profile")
-        or SaveManager.getTable(uid, "global_profile")
-    if not gp or (gp.pendingPrivilegeCardTransfer or 0) < 1 then
-        print("[Server] reject REQ_RETURN_SERVER_SELECT: no pending privilege transfer uid="
-            .. tostring(uid))
-        ServerDispatcher.sendEvent(uid, Protocol.RES_SAVE_RESULT, {
-            status = Protocol.SAVE_STATUS_FAILED,
-            tips   = "转区状态已失效，请重新进入游戏",
-        })
-        return
-    end
-
-    returnPlayerToServerSelect(uid)
-end
-
 --- 在线状态存储用的系统 UID（未来扩展用，记录哪些玩家在线）
 local ONLINE_STATUS_UID = 1
 
@@ -2053,7 +1959,6 @@ local function registerNetworkEvents()
     network:RegisterRemoteEvent(Protocol.REQ_LOAD_SAVE)
     network:RegisterRemoteEvent(Protocol.REQ_ACTION)
     network:RegisterRemoteEvent(Protocol.REQ_NEW_GAME)
-    network:RegisterRemoteEvent(Protocol.REQ_RETURN_SERVER_SELECT)
     network:RegisterRemoteEvent(Protocol.REQ_HEARTBEAT)
     network:RegisterRemoteEvent("C_ResendRequest")
 
@@ -2074,7 +1979,6 @@ local function registerNetworkEvents()
     SubscribeToEvent(Protocol.REQ_CLIENT_READY, handleClientReady)
     SubscribeToEvent(Protocol.REQ_ACTION, handleAction)
     SubscribeToEvent(Protocol.REQ_NEW_GAME, handleNewGame)
-    SubscribeToEvent(Protocol.REQ_RETURN_SERVER_SELECT, handleReturnServerSelect)
     SubscribeToEvent(Protocol.REQ_HEARTBEAT, handleHeartbeat)
     SubscribeToEvent("C_ResendRequest", handleResendRequest)
 
@@ -2111,342 +2015,13 @@ function Server.Start()
 
     GameAlgoProxy.Start()
 
-    -- 初始化全服邮件服务（预加载云端邮件表，避免 GM 发送时的异步竞态）
+    -- 初始化全服公告服务（单机本地公告，不依赖云端存储）
     local okBms, BroadcastMailService = pcall(require, "server.mail.BroadcastMailService")
     if okBms and BroadcastMailService then
-        BroadcastMailService.Init(function(ok)
-            if not ok then return end
-            local startupMailChanged = false
-            -- V1.0.05 补偿邮件：终焉神殿修复 + 招募自选上线
-            -- 去重逻辑：检查是否已发送过同标题的邮件
-            local COMP_TITLE = "V1.0.05 更新补偿"
-            local existingMails = BroadcastMailService.GetAllMails()
-            local alreadySent = false
-            for _, m in ipairs(existingMails) do
-                if m.title == COMP_TITLE then
-                    alreadySent = true
-                    break
-                end
-            end
-            if not alreadySent then
-                BroadcastMailService.SendBroadcastMail(
-                    "V1.0.05 更新补偿",
-                    "亲爱的远征长，非常抱歉！\n\n在之前的版本中，「终焉神殿」（轮回关卡）存在被跳过无法正常触发的问题，可能影响了你的正常游戏进度。目前该问题已在 V1.0.05 版本中修复。\n\n同时，本次更新新增了酒馆「指定招募」功能，你可以自选心仪的冒险家进行定向招募啦！\n\n为表歉意，特此补偿以下物品，请注意查收：\n· 冒险招募券 ×10\n\n感谢你的理解与支持，祝冒险愉快！\n\n——运营团队 敬上",
-                    {
-                        { type = "adventure_ticket", amount = 10 },
-                    },
-                    14,  -- 14天过期
-                    nil,
-                    true
-                )
-                startupMailChanged = true
-                print("[Server] V1.0.05 compensation mail sent")
-            end
-
-            -- V1.0.08 补偿邮件：红色怪物整体削弱（优先说明）+ 首通狂暴机制
-            local COMP_TITLE_V2 = "V1.0.08 狂暴机制更新补偿"
-            local COMP_CONTENT_V2 = [[亲爱的远征长：
-
-为了给大家带来更好的战斗体验，本次更新对关卡战斗进行了以下调整：
-
-【调整】红色精英怪物整体强度大幅削弱
-本版本中所有红色精英（至臻级）怪物的血量、攻击力及特殊属性均已被大幅度下调，整体闯关难度不升反降，请放心推进。
-
-【新增】首通关卡狂暴机制
-为避免玩家使用肉盾+奶妈阵容无限磨血挂机通关，在首通关卡中增加了怪物狂暴机制。随着战斗时间推移，敌方怪物将逐渐变得更强（60秒起攻速提升，120秒起攻击力也会提升），请合理安排输出阵容，速战速决！
-
-为表歉意与感谢，特此发放以下补偿，请注意查收：
-· 冒险招募券 ×20
-· 钻石 ×888
-· 扫荡券 ×10
-
-感谢你的理解与支持，祝冒险愉快！
-
-——运营团队 敬上]]
-            local COMP_REWARDS_V2 = {
-                { type = "adventure_ticket", amount = 20 },
-                { type = "diamond", amount = 888 },
-                { type = "sweep_ticket", amount = 10 },
-            }
-            -- 幂等修正：检测云端已存邮件是否为最新版本。
-            -- 旧版本（奖励 type 写错 recruitTicket/gems/sweepTicket，或文案过时）
-            -- 一律移除后重发最新版；内容一致则跳过，保证不会重复发放。
-            local needSendV2 = true
-            for _, m2 in ipairs(BroadcastMailService.GetAllMails()) do
-                if m2.title == COMP_TITLE_V2 then
-                    if m2.content == COMP_CONTENT_V2 then
-                        needSendV2 = false
-                    else
-                        BroadcastMailService.RemoveMail(m2.id)
-                        startupMailChanged = true
-                        print("[Server] removed outdated V1.0.08 mail id=" .. tostring(m2.id)
-                            .. ", will resend latest version")
-                    end
-                    break
-                end
-            end
-            if needSendV2 then
-                BroadcastMailService.SendBroadcastMail(COMP_TITLE_V2, COMP_CONTENT_V2, COMP_REWARDS_V2, 14, nil, true)
-                startupMailChanged = true
-                print("[Server] V1.0.08 berserk compensation mail sent")
-            end
-
-            -- V1.0.09 补偿邮件：狂暴机制重做 + 首通狂暴时间延长
-            local COMP_TITLE_V3 = "V1.0.09 狂暴机制重做补偿"
-            local COMP_CONTENT_V3 = [[亲爱的远征长：
-
-1. 上版本临时增加的狂暴机制考虑不周，现已重做，将：狂暴机制修改，改为敌我双方都会狂暴。
-
-2. 首通狂暴时间延长，普通狂暴延长至8分钟，超级狂暴延长至12分钟。
-
-为表歉意与感谢，特此发放以下补偿，请注意查收：
-· 冒险招募券 ×20
-· 钻石 ×888
-· 扫荡券 ×10
-
-感谢你的理解与支持，祝冒险愉快！
-
-——运营团队 敬上]]
-            local COMP_REWARDS_V3 = {
-                { type = "adventure_ticket", amount = 20 },
-                { type = "diamond", amount = 888 },
-                { type = "sweep_ticket", amount = 10 },
-            }
-            local needSendV3 = true
-            for _, m3 in ipairs(BroadcastMailService.GetAllMails()) do
-                if m3.title == COMP_TITLE_V3 then
-                    if m3.content == COMP_CONTENT_V3 then
-                        needSendV3 = false
-                    else
-                        BroadcastMailService.RemoveMail(m3.id)
-                        startupMailChanged = true
-                        print("[Server] removed outdated V1.0.09 mail id=" .. tostring(m3.id)
-                            .. ", will resend latest version")
-                    end
-                    break
-                end
-            end
-            if needSendV3 then
-                BroadcastMailService.SendBroadcastMail(COMP_TITLE_V3, COMP_CONTENT_V3, COMP_REWARDS_V3, 14, nil, true)
-                startupMailChanged = true
-                print("[Server] V1.0.09 berserk compensation mail sent")
-            end
-
-            -- V1.0.12 补偿邮件：冰冻调整补偿 + 端午祝福
-            local COMP_TITLE_V4 = "V1.0.12 冰冻调整补偿"
-            local COMP_CONTENT_V4 = [[亲爱的远征长：
-
-上版本对于「冰冻」的修改过于一刀切，给大家的阵容体验带来了影响，我们深感抱歉。
-
-为表歉意与感谢，特此发放以下补偿，请注意查收：
-· 冒险招募券 ×20
-· 钻石 ×888
-· 扫荡券 ×10
-
-同时祝大家端午节安康，希望大家在端午节期间都要开心~
-
-感谢你的理解与支持，祝冒险愉快！
-
-——运营团队 敬上]]
-            local COMP_REWARDS_V4 = {
-                { type = "adventure_ticket", amount = 20 },
-                { type = "diamond", amount = 888 },
-                { type = "sweep_ticket", amount = 10 },
-            }
-            local needSendV4 = true
-            for _, m4 in ipairs(BroadcastMailService.GetAllMails()) do
-                if m4.title == COMP_TITLE_V4 then
-                    if m4.content == COMP_CONTENT_V4 then
-                        needSendV4 = false
-                    else
-                        BroadcastMailService.RemoveMail(m4.id)
-                        startupMailChanged = true
-                        print("[Server] removed outdated V1.0.12 mail id=" .. tostring(m4.id)
-                            .. ", will resend latest version")
-                    end
-                    break
-                end
-            end
-            if needSendV4 then
-                BroadcastMailService.SendBroadcastMail(COMP_TITLE_V4, COMP_CONTENT_V4, COMP_REWARDS_V4, 14, nil, true)
-                startupMailChanged = true
-                print("[Server] V1.0.12 freeze compensation mail sent")
-            end
-
-            -- V1.0.15 临时修复补偿邮件：奶妈不回血、装备等级/词缀兼容等问题修复
-            local COMP_TITLE_V5 = "V1.0.15 临时修复补偿"
-            local COMP_CONTENT_V5 = [[亲爱的远征长：
-
-近期版本中出现了多项影响体验的问题，我们已经陆续完成修复，包括：
-
-【修复】奶妈治疗目标异常，导致部分情况下看起来不回血的问题。
-【修复】装备等级异常与旧版格挡率词缀兼容问题。
-【修复】部分关卡怪物数量配置异常导致的战斗显示问题。
-
-给大家带来的不便我们深感抱歉。为表歉意，特此发放以下补偿，请注意查收：
-· 精粹 ×200000
-· 冒险招募券 ×20
-
-感谢你的理解与支持，祝冒险愉快！
-
-——运营团队 敬上]]
-            local COMP_REWARDS_V5 = {
-                { type = "essence", amount = 200000 },
-                { type = "adventure_ticket", amount = 20 },
-            }
-            local needSendV5 = true
-            for _, m5 in ipairs(BroadcastMailService.GetAllMails()) do
-                if m5.title == COMP_TITLE_V5 then
-                    if m5.content == COMP_CONTENT_V5 then
-                        needSendV5 = false
-                    else
-                        BroadcastMailService.RemoveMail(m5.id)
-                        startupMailChanged = true
-                        print("[Server] removed outdated V1.0.15 mail id=" .. tostring(m5.id)
-                            .. ", will resend latest version")
-                    end
-                    break
-                end
-            end
-            if needSendV5 then
-                BroadcastMailService.SendBroadcastMail(COMP_TITLE_V5, COMP_CONTENT_V5, COMP_REWARDS_V5, 14, nil, true)
-                startupMailChanged = true
-                print("[Server] V1.0.15 hotfix compensation mail sent")
-            end
-
-            -- V1.0.25 补偿邮件：首通钻石下调 + 神器/日常奖励调整
-            local COMP_TITLE_V6 = "V1.0.25 版本更新补偿"
-            local COMP_CONTENT_V6 = [[亲爱的远征长：
-
-V1.0.25版本对资源投放进行了整体调整：
-
-【调整说明】
-本次版本降低了关卡通关（首通）奖励中的钻石数量，但对应增加了精粹、奥术粉尘、黄金钥匙等更多资源投放，便于大家体验全新的神器系统。
-
-同时，每日/每周任务提升了钻石与招募资源产出；签到也加入了黄金钥匙、星辉招募券等高价值奖励，长期游玩的收益会更加稳定。
-
-为表感谢，特此发放以下补偿，请注意查收：
-· 黄金钥匙 ×10
-· 钻石 ×1888
-
-感谢你的理解与支持，祝冒险愉快！
-
-——运营团队 敬上]]
-            local COMP_REWARDS_V6 = {
-                { type = "golden_key", amount = 10 },
-                { type = "diamond", amount = 1888 },
-            }
-            local needSendV6 = true
-            for _, m6 in ipairs(BroadcastMailService.GetAllMails()) do
-                if m6.title == COMP_TITLE_V6 then
-                    if m6.content == COMP_CONTENT_V6 then
-                        needSendV6 = false
-                    else
-                        BroadcastMailService.RemoveMail(m6.id)
-                        startupMailChanged = true
-                        print("[Server] removed outdated V1.0.25 mail id=" .. tostring(m6.id)
-                            .. ", will resend latest version")
-                    end
-                    break
-                end
-            end
-            if needSendV6 then
-                BroadcastMailService.SendBroadcastMail(COMP_TITLE_V6, COMP_CONTENT_V6, COMP_REWARDS_V6, 14, nil, true)
-                startupMailChanged = true
-                print("[Server] V1.0.25 compensation mail sent")
-            end
-
-            -- V1.0.26 紧急修复补偿邮件：通天塔钻石收益与近期紧急 BUG 修复
-            local COMP_TITLE_V7 = "V1.0.26 紧急修复补偿"
-            local COMP_CONTENT_V7 = [[亲爱的远征长：
-
-近期版本中出现了多项影响体验的问题，我们已经完成紧急修复，包括：
-
-【修复】通天塔挂机/结算收益异常，导致部分情况下钻石未正常获得的问题。
-【修复】近期反馈的多项紧急问题，提升整体稳定性与游戏体验。
-
-给大家带来的不便我们深感抱歉。为表歉意，特此发放以下补偿，请注意查收：
-· 黄金钥匙 ×20
-· 星辉招募券 ×10
-
-感谢你的耐心反馈与理解支持，祝冒险愉快！
-
-——运营团队 敬上]]
-            local COMP_REWARDS_V7 = {
-                { type = "golden_key", amount = 20 },
-                { type = "stellar_ticket", amount = 10 },
-            }
-            local needSendV7 = true
-            for _, m7 in ipairs(BroadcastMailService.GetAllMails()) do
-                if m7.title == COMP_TITLE_V7 then
-                    if m7.content == COMP_CONTENT_V7 then
-                        needSendV7 = false
-                    else
-                        BroadcastMailService.RemoveMail(m7.id)
-                        startupMailChanged = true
-                        print("[Server] removed outdated V1.0.26 mail id=" .. tostring(m7.id)
-                            .. ", will resend latest version")
-                    end
-                    break
-                end
-            end
-            if needSendV7 then
-                BroadcastMailService.SendBroadcastMail(COMP_TITLE_V7, COMP_CONTENT_V7, COMP_REWARDS_V7, 14, nil, true)
-                startupMailChanged = true
-                print("[Server] V1.0.26 hotfix compensation mail sent")
-            end
-
-            -- 平台服务器调整导致回档补偿邮件
-            local COMP_TITLE_V8 = "服务器回档补偿"
-            local COMP_CONTENT_V8 = [[亲爱的远征长：
-
-非常抱歉！
-
-由于 TapTap 平台服务器于昨日进行了调整，昨天下午至今日早上期间出现了异常 BUG，导致所有创意工坊的服务端游戏均出现了不同程度的回档问题，可能影响了你的游戏进度与体验。
-
-目前平台侧问题已修复，游戏服务也已恢复正常。给大家带来的不便我们深感抱歉，为表歉意，特此发放以下补偿，请注意查收：
-· 扫荡券 ×100
-· 特权点 ×30
-· 星辉招募券 ×20
-· 黄金钥匙 ×20
-
-感谢你的理解与支持，祝冒险愉快！
-
-——运营团队 敬上]]
-            local COMP_REWARDS_V8 = {
-                { type = "sweep_ticket", amount = 100 },
-                { type = "privilege_point", amount = 30 },
-                { type = "stellar_ticket", amount = 20 },
-                { type = "golden_key", amount = 20 },
-            }
-            local needSendV8 = true
-            for _, m8 in ipairs(BroadcastMailService.GetAllMails()) do
-                if m8.title == COMP_TITLE_V8 then
-                    if m8.content == COMP_CONTENT_V8 then
-                        needSendV8 = false
-                    else
-                        BroadcastMailService.RemoveMail(m8.id)
-                        startupMailChanged = true
-                        print("[Server] removed outdated rollback compensation mail id=" .. tostring(m8.id)
-                            .. ", will resend latest version")
-                    end
-                    break
-                end
-            end
-            if needSendV8 then
-                BroadcastMailService.SendBroadcastMail(COMP_TITLE_V8, COMP_CONTENT_V8, COMP_REWARDS_V8, 14, nil, true)
-                startupMailChanged = true
-                print("[Server] rollback compensation mail sent")
-            end
-
-            if startupMailChanged then
-                BroadcastMailService.NotifyOnlinePlayers()
-                print("[Server] startup compensation mails changed, notified online players once")
-            end
-        end)
+        BroadcastMailService.Init(nil)
     end
 
-    -- 初始化兑换码服务（预加载全服一次性码使用记录）
+    -- 初始化兑换码服务（固定兑换码，无需云端记录）
     local okRedeem, RedeemService = pcall(require, "server.redeem.RedeemService")
     if okRedeem and RedeemService and RedeemService.Init then
         RedeemService.Init(nil)

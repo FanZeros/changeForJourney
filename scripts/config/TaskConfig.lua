@@ -73,13 +73,6 @@ TaskConfig.DAILY = {
         reward = { type = "golden_key", amount = 1, icon = "image/货币道具/UI_icon_HJYS.png", quality = 6 },
     },
     {
-        id = "d_ad_1",
-        name = "观看1次广告",
-        condKey = "watch_ad",
-        target = 1,
-        reward = { type = "privilege_point", amount = 1, icon = "image/货币道具/UI_icon_TQD.png", quality = 4 },
-    },
-    {
         id = "d_decompose_20",
         name = "分解20件装备",
         condKey = "decompose",

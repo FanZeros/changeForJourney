@@ -14,9 +14,7 @@ local DrawUtil        = require("core.DrawUtil")  -- [三队并行] 返回键 ch
 local BF = require("systems.ButtonFeedback")
 local RewardPopup = require("ui.RewardPopup")
 
-local AdManager  = require("systems.AdManager")
 local NumberUtil   = require("core.NumberUtil")
-local MarketSchema = require("shared.market.MarketSchema")
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 local PlayerStore  = require("client.data.PlayerStore")
 local StageConfig  = require("config.StageConfig")
@@ -28,10 +26,6 @@ local sendAction_ = nil
 
 function MarketPage.setSendAction(fn)
     sendAction_ = fn
-end
-
-local function getPrivilegeAdRewardPoints()
-    return MarketSchema.AD_PRIVILEGE_REWARD_PER_WATCH
 end
 
 -- ======================== 设计分辨率========================
@@ -51,10 +45,6 @@ local P1 = {
     -- 资源栏公用
     RES_BG_W = 170, RES_BG_H = 47, RES_BG_R = 18, RES_BG_A = 204,
     RES_FONT = 33, RES_SW = 4, RES_SR = 0x23, RES_SG = 0x23, RES_SB = 0x23,
-    -- 资源0（特权点）— 金币左侧，间距同金币到钻石
-    R0_BG_CX = 505, R0_BG_CY = 303,
-    R0_ICON_CX = 441, R0_ICON_CY = 303, R0_ICON_W = 82, R0_ICON_H = 82,
-    R0_TX = 524, R0_TY = 304,
     -- 资源1（金币）
     R1_BG_CX = 738, R1_BG_CY = 303,
     R1_ICON_CX = 674, R1_ICON_CY = 303, R1_ICON_W = 82, R1_ICON_H = 82,
@@ -95,70 +85,6 @@ local TAB = {
 -- ======================== 商品配置 ========================
 
 local SHOP_ITEMS = {
-    -- ===== 特权点商品（每日刷新）=====
-    {
-        id = 1, name = "扫荡券", quality = 4, rewardCount = 1,
-        restockType = "daily", limitCount = -1,
-        currency = "privilege", price = 1,
-        icon = "image/货币道具/UI_icon_SDQ.png",
-        costIcon = "image/货币道具/UI_icon_TQD_X.png",
-    },
-    {
-        id = 2, name = "冒险招募券", quality = 4, rewardCount = 1,
-        restockType = "daily", limitCount = -1,
-        currency = "privilege", price = 1,
-        icon = "image/货币道具/UI_icon_ZMQ_1.png",
-        costIcon = "image/货币道具/UI_icon_TQD_X.png",
-    },
-    {
-        id = 3, name = "钻石", quality = 5, rewardCount = 240,
-        restockType = "daily", limitCount = -1,
-        currency = "privilege", price = 1,
-        icon = "image/货币道具/UI_icon_SJ.png",
-        costIcon = "image/货币道具/UI_icon_TQD_X.png",
-    },
-    {
-        id = 4, name = "随机卷轴", quality = 3, rewardCount = 20,
-        restockType = "daily", limitCount = -1,
-        currency = "privilege", price = 1,
-        icon = "image/货币道具/UI_icon_JZ_SJ.png",
-        costIcon = "image/货币道具/UI_icon_TQD_X.png",
-    },
-    {
-        id = 5, name = "加速卡", quality = 5, rewardCount = 1,
-        restockType = "daily", limitCount = -1,
-        currency = "privilege", price = 10,
-        icon = "image/货币道具/UI_icon_JSK.png",
-        costIcon = "image/货币道具/UI_icon_TQD_X.png",
-    },
-    {
-        id = 6, name = "随机优质遗物", quality = 2, rewardCount = 1,
-        restockType = "daily", limitCount = -1,
-        currency = "privilege", price = 1,
-        icon = "image/货币道具/ICON_SJYW.png",
-        costIcon = "image/货币道具/UI_icon_TQD_X.png",
-    },
-    {
-        id = 7, name = "奥术粉尘", quality = 3, rewardCount = 288,
-        restockType = "daily", limitCount = -1,
-        currency = "privilege", price = 1,
-        icon = "image/货币道具/UI_icon_ASFC.png",
-        costIcon = "image/货币道具/UI_icon_TQD_X.png",
-    },
-    {
-        id = 19, name = "星辉招募券", quality = 6, rewardCount = 1,
-        restockType = "daily", limitCount = -1,
-        currency = "privilege", price = 4,
-        icon = "image/货币道具/UI_icon_ZMQ_2.png",
-        costIcon = "image/货币道具/UI_icon_TQD_X.png",
-    },
-    {
-        id = 23, name = "神圣石", quality = 6, rewardCount = 1,
-        restockType = "daily", limitCount = -1,
-        currency = "privilege", price = 5,
-        icon = "image/货币道具/UI_icon_SSS.png",
-        costIcon = "image/货币道具/UI_icon_TQD_X.png",
-    },
     -- ===== 钻石商品（每日刷新，40% 折扣价=====
     {
         id = 8, name = "冒险招募券", quality = 5, rewardCount = 1,
@@ -263,7 +189,7 @@ local SHOP_ITEMS = {
 }
 
 --- 与服务端 MarketService.SHOP_CONFIG_VERSION 保持一致；版本升级时会清空购买记录
-local SHOP_CONFIG_VERSION = 5
+local SHOP_CONFIG_VERSION = 6
 
 --- 按商品 id 索引（SHOP_ITEMS 为展示顺序数组，禁止用 itemId 当下标）
 local SHOP_ITEMS_BY_ID = {}
@@ -395,8 +321,6 @@ local DLG = {
 
 local ANIM_DUR       = 0.45
 local CLOSE_DUR      = 0.38
--- [已移除] UI层广告超时：AdManager 自身有三重超时保护（8s焦点清理/40s加载超时），
--- 此处的20s超时在玩家广告时长>20s时会误触发，导致SDK正常回调被忽略、服务端计数丢失。
 local UPPER_DIST     = 1200
 local LOWER_DIST     = 1600
 
@@ -418,7 +342,7 @@ end
 
 local img = {
     bg = -1, nameBg = -1, lowerBg = -1, titleDeco = -1,
-    gold = -1, gem = -1, privilege = -1,
+    gold = -1, gem = -1,
     btnBack = -1, tabBg = -1, slider = -1,
     -- 商品
     cardBg = {},       -- 品质1~6
@@ -429,20 +353,9 @@ local img = {
     dialogBg = -1, buyBtnYellow = -1,
     coinIcon = -1,     -- 弹窗消耗侧金币图标 (UI_icon_JB.png)
     diamondIcon = -1,  -- 弹窗消耗侧钻石图标 (UI_icon_SJ.png)
-    privilegeIcon = -1, -- 弹窗消耗侧特权点图标(UI_icon_TQD.png)
     qualityBg = {},    -- 品质1~6
     btnMinus = -1,     -- 减按钮(UI_AN_JIAN.png)
     btnPlus = -1,      -- 加按钮(UI_AN_JIA.png)
-    -- 特权
-    privBg = -1,          -- UI_SC_TQBJ.png  上方背景 1080×930
-    privLowerBg = -1,     -- UI_TJP_1.png    下方背景框（与 lowerBg 相同资源，单独记录语义）
-    privProgBg = -1,      -- UI_TQ_JDY2.png  进度条背景
-    privProgFill = -1,    -- UI_TQ_JDY1.png  进度条填充
-    privDotActive = -1,   -- UI_TQ_1.png     已激活进度点
-    privDotInactive = -1, -- UI_TQ_2.png     未激活进度点
-    privRewardBg = -1,    -- UI_TQ_3.png     奖励背景
-    privClaimBtn = -1,    -- UI_AN_LV.png    领取按钮（复用绿色按钮）
-    imgRedDot    = -1,    -- ICON_HD.png     红点角标
     -- 典藏
     collectionChestBg = -1, -- UI_SCDC_KC1.png
     collectionDrawBtn = -1, -- UI_SCDC_AN.png
@@ -468,17 +381,6 @@ local state = {
     sliderDragging = false,
     -- 浮动提示
     floatText = nil, floatTextX = 0, floatTextY = 0, floatTextTime = 0,
-    -- 特权 tab
-    privScrollY = 0, privDragging = false, privLastDragY = 0,
-    privWatchCount = 0,        -- 累计观看广告次数
-    privRefreshHour = 0,       -- 刷新时间 时
-    privRefreshMin = 0,        -- 刷新时间 分
-    privClaimed = {},          -- { [threshold] = true }  已领取的奖励
-    privAdWatching = false,    -- 正在播放广告（防重复点击）
-    privAdCooldownUntil = 0,   -- 广告冷却截止时间（time.elapsedTime），默认见 MarketSchema.AD_PRIVILEGE_CLICK_COOLDOWN_SECS
-    privRefreshTotalSecs = 0,  -- 刷新倒计时总秒数（服务端同步时设置，用于实时倒计时）
-    privRefreshSyncTime = 0,   -- 服务端同步时的 time.elapsedTime（用于计算已经过时间）
-    -- [已移除] 广告确认重试机制：现用AdManager + AdHandler 统一处理
     -- 神器宝箱：黄金钥匙快速购买确认框
     keyConfirmVisible = false,
     keyConfirmClosing = false,
@@ -886,8 +788,6 @@ drawPurchaseDialog = function(vg)
     local dialogCostIcon = img.coinIcon
     if item.currency == "diamond" then
         dialogCostIcon = img.diamondIcon or img.coinIcon
-    elseif item.currency == "privilege" then
-        dialogCostIcon = img.privilegeIcon or img.coinIcon
     end
     -- 测量文本宽度以居中排列 图标+文本
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.COST_FONT)
@@ -1210,319 +1110,6 @@ local function drawCollectionContent(vg)
     drawCollectionDrawButton(vg, "collection_draw_10", COL.BTN_TEN_X, "抽10次", COL.TEN_KEY)
 end
 
--- ======================== 特权奖励配置 ========================
-
--- 观看广告累计次数奖励梯度（来源：建筑-市场.txt 市场-特权配置表
-local PRIVILEGE_REWARDS = {
-    { threshold = 5,  quality = 5, icon = "image/货币道具/UI_icon_ZMQ_1.png", amount = 5,    label = "冒险招募券" },
-    { threshold = 10, quality = 5, icon = "image/货币道具/UI_icon_SJ.png",    amount = 1000, label = "钻石" },
-    { threshold = 15, quality = 5, icon = "image/货币道具/UI_icon_SJ.png",    amount = 2000, label = "钻石" },
-    { threshold = 20, quality = 6, icon = "image/货币道具/UI_icon_HJYS.png",  amount = 10,   label = "黄金钥匙" },
-    { threshold = 25, quality = 6, icon = "image/货币道具/UI_icon_ZMQ_2.png", amount = 10,   label = "星辉招募券" },
-    { threshold = 30, quality = 2, icon = "image/货币道具/UI_icon_JC.png", amount = "大量", label = "大量精粹" },
-}
-
--- 奖励图标预加载句柄（在 init 时填充）
-local privRewardIcons = {}   -- { [i] = imgHandle }
-
--- 特权页布局常量
-local PV = {
-    -- 上方背景
-    BG_CX = 540, BG_CY = 465, BG_W = 1080, BG_H = 930,
-    -- 刷新时间文字（CENTER 对齐，中心 X：190/441，无描边）
-    REFRESH_LABEL_CX = 190, REFRESH_LABEL_Y = 467, REFRESH_FONT = 38,
-    REFRESH_TIME_CX  = 441, REFRESH_TIME_Y  = 467,
-    -- 下方背景框（九宫格）
-    LOWER_CX = 540, LOWER_CY = 1547, LOWER_W = 1080, LOWER_H = 1706,
-    LOWER_IT = 200, LOWER_IR = 150,  LOWER_IB = 10,   LOWER_IL = 150,
-    -- 黑色半透明条（进度条左侧装饰）
-    STRIP_CX = 195, STRIP_CY = 1480, STRIP_W = 140, STRIP_H = 1068, STRIP_R = 30,
-    -- 进度条背景
-    PROG_BG_CX = 195, PROG_BG_CY = 1528, PROG_BG_W = 30, PROG_BG_H = 938,
-    -- 进度条内边距
-    PROG_PAD = 5,
-    -- 奖励行第一行基准 Y（相对原始设计坐标）
-    ROW_FIRST_Y = 1046,
-    ROW_STEP    = 48 + 220,  -- 间距48 + 行高220
-    ROW_MAX_Y   = 1993,      -- 截断 Y（绝对设计坐标）
-    -- 进度条
-    DOT_X = 195, DOT_W = 70, DOT_H = 70,
-    -- 奖励背景（规格书 Y1051，进度点 Y1046，差值 +5）
-    REWARD_BG_CX = 610, REWARD_BG_W = 637, REWARD_BG_H = 220, REWARD_BG_OY = 5,
-    -- 进度需求背景（左侧文字区）
-    REQ_BG_CX = 485, REQ_BG_W = 209, REQ_BG_H = 142, REQ_BG_R = 40,
-    -- 文字偏移（相对行 CY）
-    LABEL_X = 487, LABEL_OY = -24,   -- "累计观看" / "可领取 相对行中心Y 的偏移
-    PROG_X  = 485, PROG_OY  =  26,   -- "0/5" 偏移
-    -- 品质+奖励图标
-    ICON_CX = 824, ICON_W = 160, ICON_H = 160,
-    -- 角标
-    BADGE_OX = 56, BADGE_OY = 50,
-    -- 已领取遮罩文字
-    CLAIMED_TEXT_X = 613, CLAIMED_TEXT_OY = -6,
-    -- ===== 下半底栏（特权点 + 观看广告按钮） =====
-    -- 1. 特权点背景（纯黑10%，圆角18）
-    BOT_PT_BG_CX = 245, BOT_PT_BG_CY = 2109, BOT_PT_BG_W = 256, BOT_PT_BG_H = 140, BOT_PT_BG_R = 18,
-    -- 2. 特权点大图标 UI_icon_TQD
-    BOT_PT_ICON_CX = 127, BOT_PT_ICON_CY = 2111, BOT_PT_ICON_W = 160, BOT_PT_ICON_H = 160,
-    -- 3. 文本"特权点 居中 X264 Y2075 字号38 颜色454545
-    BOT_PT_LABEL_CX = 264, BOT_PT_LABEL_Y = 2075, BOT_PT_LABEL_FONT = 38,
-    -- 4. 特权点数值 左对齐与"特权点"相同 X，Y2136 字号54 纯白+描边232323
-    BOT_PT_VAL_X = 264, BOT_PT_VAL_Y = 2136, BOT_PT_VAL_FONT = 54,
-    -- 5. 观看广告按钮背景 UI_AN_DA
-    BOT_AD_BTN_CX = 759, BOT_AD_BTN_CY = 2108, BOT_AD_BTN_W = 570, BOT_AD_BTN_H = 148,
-    -- 6. "观看广告"文字 斜体 居中 X759 Y2083 字号50 纯白+纯黑描边5
-    BOT_AD_TEXT_CX = 759, BOT_AD_TEXT_Y = 2083, BOT_AD_TEXT_FONT = 50,
-    -- 7. 特权点小图标 UI_icon_TQD_X 居中 X725 Y2140 70*70
-    BOT_AD_ICON_CX = 725, BOT_AD_ICON_CY = 2140, BOT_AD_ICON_W = 70, BOT_AD_ICON_H = 70,
-    -- 8. "+1"文字 居中 X782 Y2140 字号40 黑色75%不透明
-    BOT_AD_PLUS_CX = 782, BOT_AD_PLUS_Y = 2140, BOT_AD_PLUS_FONT = 40,
-    -- 滚动量
-    SCROLL_TOP_Y = 940,   -- 奖励区截断上边界
-    SCROLL_BOT_Y = 1993,  -- 奖励区截断下边界
-}
-
--- 文字宽度缓存（避免 nvgScale 下多段文本抖动，见铁律 #15）
-local _privTextWidthCache = {}
-local function getCachedTextWidth(vg, text, fontSize)
-    local key = text .. "\0" .. tostring(fontSize)
-    local w = _privTextWidthCache[key]
-    if not w then
-        w = nvgTextBounds(vg, 0, 0, text)
-        _privTextWidthCache[key] = w
-    end
-    return w
-end
-
--- ======================== 特权页绘制（内部内容，在 lowerOY translate 内） ========================
-
-local function drawPrivilegeContent(vg)
-    -- 注意：此函数在 nvgTranslate(0, lowerOY) 内执行
-    -- 刷新时间文字位于上方 Banner，由 draw() 上半部分条件块统一绘制，此处不绘制。
-
-    -- 黑色装饰条（固定不动，5% 不透明度）
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        PV.STRIP_CX - PV.STRIP_W * 0.5, PV.STRIP_CY - PV.STRIP_H * 0.5,
-        PV.STRIP_W, PV.STRIP_H, PV.STRIP_R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 13))   -- 5% 黑13/255
-    nvgFill(vg)
-
-    -- ===== 奖励行 + 进度条背景 + 进度条填充 + 进度点（随滚动移动） =====
-    local totalRows = #PRIVILEGE_REWARDS
-    local totalH = totalRows * (PV.REWARD_BG_H + 48) - 48
-    local maxScroll = math.max(0, (PV.ROW_FIRST_Y + totalH) - PV.ROW_MAX_Y)
-    state.privScrollY = math.max(0, math.min(state.privScrollY, maxScroll))
-
-    nvgSave(vg)
-    nvgIntersectScissor(vg, 0, PV.SCROLL_TOP_Y, DESIGN_W, PV.SCROLL_BOT_Y - PV.SCROLL_TOP_Y)
-    nvgTranslate(vg, 0, -state.privScrollY)
-
-    -- 进度条背景/填充的高度动态计算：从第一个奖励点到最后一个奖励点
-    local firstDotY  = PV.ROW_FIRST_Y
-    local lastDotY   = PV.ROW_FIRST_Y + (totalRows - 1) * (PV.REWARD_BG_H + 48)
-    local dynProgCY  = (firstDotY + lastDotY) * 0.5   -- 背景中心 Y
-    local dynProgH   = lastDotY - firstDotY            -- 背景高度（首末点间距）
-
-    -- 进度条背景 (UI_TQ_JDY2) 随滚动移动，高度动态覆盖首到末奖励点
-    drawImageCentered(vg, img.privProgBg,
-        PV.PROG_BG_CX, dynProgCY, PV.PROG_BG_W, dynProgH, 1.0)
-
-    -- 进度条填充 (UI_TQ_JDY1, 内边距5) 随滚动移动
-    local progX = PV.PROG_BG_CX - PV.PROG_BG_W * 0.5 + PV.PROG_PAD
-    local progW = PV.PROG_BG_W - PV.PROG_PAD * 2
-    local progTop = dynProgCY - dynProgH * 0.5 + PV.PROG_PAD
-    local progBotFull = dynProgCY + dynProgH * 0.5 - PV.PROG_PAD
-    local progH = progBotFull - progTop
-
-    -- 进度填充：从第一个门槛(5次)开始，从上往下增长到最后一个门槛(30次)
-    local minThreshold = PRIVILEGE_REWARDS[1].threshold               -- 5
-    local maxThreshold = PRIVILEGE_REWARDS[#PRIVILEGE_REWARDS].threshold -- 30
-    local watchClamped = math.max(0, state.privWatchCount - minThreshold)
-    local watchFrac    = math.min(1.0, watchClamped / (maxThreshold - minThreshold))
-    local fillH = progH * watchFrac
-    if img.privProgFill >= 0 and fillH > 1 then
-        -- 从顶部往下填充
-        local paint = nvgImagePattern(vg, progX, progTop, progW, progH, 0, img.privProgFill, 1.0)
-        nvgBeginPath(vg)
-        nvgRect(vg, progX, progTop, progW, fillH)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-    end
-
-    for i, reward in ipairs(PRIVILEGE_REWARDS) do
-        local rowCY = PV.ROW_FIRST_Y + (i - 1) * (PV.REWARD_BG_H + 48)
-        local screenRowCY = rowCY - state.privScrollY
-        -- 视口外跳过绘制
-        if screenRowCY >= PV.SCROLL_TOP_Y - PV.REWARD_BG_H and screenRowCY <= PV.SCROLL_BOT_Y + PV.REWARD_BG_H then
-
-            local isClaimed  = state.privClaimed[reward.threshold] == true
-            local isClaimable = (not isClaimed) and (state.privWatchCount >= reward.threshold)
-
-            -- 进度条
-            local dotImg = (state.privWatchCount >= reward.threshold) and img.privDotActive or img.privDotInactive
-            drawImageCentered(vg, dotImg,
-                PV.DOT_X, rowCY, PV.DOT_W, PV.DOT_H, 1.0)
-
-            -- 奖励背景框 (UI_TQ_3)，规格 Y1051 比进度点 Y1046 低 5px
-            drawImageCentered(vg, img.privRewardBg,
-                PV.REWARD_BG_CX, rowCY + PV.REWARD_BG_OY, PV.REWARD_BG_W, PV.REWARD_BG_H, 1.0)
-
-            -- 进度需求背景（黑色10%，圆角40）
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg,
-                PV.REQ_BG_CX - PV.REQ_BG_W * 0.5, rowCY - PV.REQ_BG_H * 0.5,
-                PV.REQ_BG_W, PV.REQ_BG_H, PV.REQ_BG_R)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))   -- 10% 黑26/255
-            nvgFill(vg)
-
-            -- "累计观看" / "可领取" 文字（以需求背景中心 X 居中）
-            local labelText   = isClaimable and "可领取" or "累计观看"
-            local labelColorR = isClaimable and 0xfa or 0xff
-            local labelColorG = isClaimable and 0xff or 0xff
-            local labelColorB = isClaimable and 0x7e or 0xff
-            drawTextStroke(vg, PV.REQ_BG_CX, rowCY + PV.LABEL_OY, labelText,
-                PV.REFRESH_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                labelColorR, labelColorG, labelColorB, 5,
-                { strokeColor = { 0x31, 0x24, 0x24 } })
-
-            -- 进度文字 "当前/阈值"（居中）
-            local progText = tostring(math.min(state.privWatchCount, reward.threshold))
-                .. "/" .. tostring(reward.threshold)
-            drawTextStroke(vg, PV.REQ_BG_CX, rowCY + PV.PROG_OY, progText,
-                PV.REFRESH_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                255, 255, 255, 5,
-                { strokeColor = { 0x31, 0x24, 0x24 } })
-
-            -- 品质背景 + 奖励图标
-            DarkIcon.drawQualityBg(vg, reward.quality or 1,
-                PV.ICON_CX, rowCY, PV.ICON_W, PV.ICON_H, isClaimed and 0.4 or 1.0)  -- [暗黑化 P2-A]
-            local rewardIconImg = privRewardIcons[i]
-            if rewardIconImg and rewardIconImg >= 0 then
-                drawImageCentered(vg, rewardIconImg,
-                    PV.ICON_CX, rowCY, PV.ICON_W, PV.ICON_H, isClaimed and 0.4 or 1.0)
-            end
-
-            -- 奖励数量角标（右下角，与其他地方样式一致）
-            drawTextStroke(vg,
-                PV.ICON_CX + PV.BADGE_OX, rowCY + PV.BADGE_OY,
-                tostring(reward.amount),
-                40, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                255, 255, 255, 5, { strokeColor = { 0, 0, 0 } })
-
-            -- 已领取状态：黑色50%遮罩 + "已领取文字
-            if isClaimed then
-                -- 用 UI_TQ_3 图片 alpha 形状裁剪遮罩（与 TalentStarMap 同技巧）
-                -- blend: dst × (1 - srcAlpha)，图片透明区不受影响，不透明区变暗50%
-                nvgGlobalCompositeBlendFuncSeparate(vg,
-                    NVG_ZERO, NVG_ONE_MINUS_SRC_ALPHA,
-                    NVG_ZERO, NVG_ONE)
-                local maskPaint = nvgImagePattern(vg,
-                    PV.REWARD_BG_CX - PV.REWARD_BG_W * 0.5,
-                    rowCY + PV.REWARD_BG_OY - PV.REWARD_BG_H * 0.5,
-                    PV.REWARD_BG_W, PV.REWARD_BG_H, 0, img.privRewardBg, 0.5)
-                nvgBeginPath(vg)
-                nvgRect(vg,
-                    PV.REWARD_BG_CX - PV.REWARD_BG_W * 0.5,
-                    rowCY + PV.REWARD_BG_OY - PV.REWARD_BG_H * 0.5,
-                    PV.REWARD_BG_W, PV.REWARD_BG_H)
-                nvgFillPaint(vg, maskPaint)
-                nvgFill(vg)
-                nvgGlobalCompositeOperation(vg, NVG_SOURCE_OVER)  -- 恢复默认混合
-                -- "已领取
-                drawTextStroke(vg, PV.CLAIMED_TEXT_X, rowCY + PV.CLAIMED_TEXT_OY, "已领取",
-                    48, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                    0x50, 0xff, 0x50, 6, { strokeColor = { 0, 0, 0 } })
-            end
-
-            -- 可领取状态：整行高亮边框提示（玩家点击整个奖励行即可领取，无单独按钮）
-            if isClaimable then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg,
-                    PV.REWARD_BG_CX - PV.REWARD_BG_W * 0.5 - 3,
-                    rowCY + PV.REWARD_BG_OY - PV.REWARD_BG_H * 0.5 - 3,
-                    PV.REWARD_BG_W + 6, PV.REWARD_BG_H + 6, 12)
-                nvgStrokeColor(vg, nvgRGBA(0xfa, 0xff, 0x7e, 200))
-                nvgStrokeWidth(vg, 3)
-                nvgStroke(vg)
-            end
-        end
-    end
-
-    nvgResetScissor(vg)
-    nvgRestore(vg)
-
-    -- ===== 底栏：特权点展示 + 观看广告按钮 =====
-
-    -- 1. 特权点背景（纯黑10%，圆角18）
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        PV.BOT_PT_BG_CX - PV.BOT_PT_BG_W * 0.5, PV.BOT_PT_BG_CY - PV.BOT_PT_BG_H * 0.5,
-        PV.BOT_PT_BG_W, PV.BOT_PT_BG_H, PV.BOT_PT_BG_R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))   -- 10% 黑26/255
-    nvgFill(vg)
-
-    -- 2. 特权点大图标 UI_icon_TQD
-    drawImageCentered(vg, img.privPointIcon,
-        PV.BOT_PT_ICON_CX, PV.BOT_PT_ICON_CY, PV.BOT_PT_ICON_W, PV.BOT_PT_ICON_H, 1.0)
-
-    -- 3. 文本"特权点（居中X264，颜色54545，无描边）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, PV.BOT_PT_LABEL_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x45, 0x45, 0x45, 255))
-    nvgText(vg, PV.BOT_PT_LABEL_CX, PV.BOT_PT_LABEL_Y, "特权点", nil)
-
-    -- 4. 特权点数值（LEFT 对齐同 X264，Y2136，字号54，纯白+描边232323）
-    local ptVal = tostring(GameState.getPrivilegePoint())
-    drawTextStroke(vg, PV.BOT_PT_VAL_X, PV.BOT_PT_VAL_Y, ptVal,
-        PV.BOT_PT_VAL_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 5, { strokeColor = { 0x23, 0x23, 0x23 } })
-
-    -- 5+6+7+8. 观看广告按钮（带点击反馈）
-    local adSc = BF.begin(vg, "priv_watch_ad", PV.BOT_AD_BTN_CX, PV.BOT_AD_BTN_CY,
-        PV.BOT_AD_BTN_W, PV.BOT_AD_BTN_H)
-
-    -- 5. 按钮背景 UI_AN_DA
-    drawImageCentered(vg, img.privAdBtn,
-        PV.BOT_AD_BTN_CX, PV.BOT_AD_BTN_CY, PV.BOT_AD_BTN_W, PV.BOT_AD_BTN_H, 1.0)
-
-    if state.privAdWatching then
-        -- 6. 加载中：文字"加载中..."（斜体，居中，字号50，半透明脉冲）
-        local pulse = math.abs(math.sin(time.elapsedTime * 3.0))  -- 呼吸闪烁
-        local loadAlpha = math.floor(140 + 115 * pulse)
-        drawTextStroke(vg, PV.BOT_AD_TEXT_CX, PV.BOT_AD_TEXT_Y, "加载中..",
-            PV.BOT_AD_TEXT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 5, { strokeColor = { 0, 0, 0 }, italic = true, alpha = loadAlpha / 255 })
-    elseif state.privAdCooldownUntil > 0 and time.elapsedTime < state.privAdCooldownUntil then
-        -- 6. 冷却中：显示倒计时秒数
-        local cdRemain = math.ceil(state.privAdCooldownUntil - time.elapsedTime)
-        local cdText = string.format("冷却 %ds", cdRemain)
-        drawTextStroke(vg, PV.BOT_AD_TEXT_CX, PV.BOT_AD_TEXT_Y, cdText,
-            PV.BOT_AD_TEXT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            200, 200, 200, 5, { strokeColor = { 0, 0, 0 }, italic = true })
-    else
-        -- 6. 正常：文字"观看广告"（斜体，居中 X759 Y2083，字号50，纯白+纯黑描边5）
-        drawTextStroke(vg, PV.BOT_AD_TEXT_CX, PV.BOT_AD_TEXT_Y, "观看广告",
-            PV.BOT_AD_TEXT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 5, { strokeColor = { 0, 0, 0 }, italic = true })
-
-        -- 7. 特权点小图标 UI_icon_TQD_X
-        drawImageCentered(vg, img.privilege,
-            PV.BOT_AD_ICON_CX, PV.BOT_AD_ICON_CY, PV.BOT_AD_ICON_W, PV.BOT_AD_ICON_H, 1.0)
-
-        -- 8. "+N"文字（居中 X782 Y2140，字号40，纯黑75%）
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, PV.BOT_AD_PLUS_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 191))   -- 75% 黑191/255
-        nvgText(vg, PV.BOT_AD_PLUS_CX, PV.BOT_AD_PLUS_Y,
-            "+" .. tostring(getPrivilegeAdRewardPoints()), nil)
-    end
-
-    BF.finish(vg, adSc)
-end
-
 local function drawItemsContent(vg)
     -- 标题
     drawImageCentered(vg, img.titleDeco, P1.DECO_CX, P1.DECO_CY, P1.DECO_W, P1.DECO_H, 1.0)
@@ -1560,58 +1147,7 @@ local function drawItemsContent(vg)
     nvgRestore(vg)
 end
 
-local TAB_DRAW = { collection = drawCollectionContent, privilege = drawPrivilegeContent, items = drawItemsContent }
-
--- ======================== 特权数据同步 API ========================
-
---- 接收服务端推送的 privilege 模块数据
-function MarketPage.setPrivilegeData(data)
-    if not data then return end
-    if data.watchCount ~= nil then
-        state.privWatchCount = data.watchCount
-    end
-    -- 刷新时间：转为总秒数并记录同步时刻，用于实时倒计时
-    if data.refreshHour ~= nil or data.refreshMin ~= nil then
-        local h = data.refreshHour or state.privRefreshHour
-        local m = data.refreshMin  or state.privRefreshMin
-        state.privRefreshHour       = h
-        state.privRefreshMin        = m
-        state.privRefreshTotalSecs  = h * 3600 + m * 60
-        state.privRefreshSyncTime   = time.elapsedTime
-    end
-    if data.claimed then
-        state.privClaimed = {}
-        for _, th in ipairs(data.claimed) do
-            state.privClaimed[th] = true
-        end
-    end
-    print("[MarketPage] privilege data synced, watchCount=" .. tostring(state.privWatchCount))
-end
-
---- 断线时释放广告观看锁，避免重连后按钮永久不可点
-function MarketPage.onServerDisconnect()
-    if state.privAdWatching then
-        print("[MarketPage] onServerDisconnect: clearing privAdWatching lock")
-    end
-    state.privAdWatching = false
-end
-
---- 是否需要在市场建筑标签显示红点
---- 条件：有特权点 AND 至少一件特权商品未售罄（可购买）
---- 注意：getCooldownRemaining 不能作为条件——冷却期内仍可购买剩余次数；
----       isSoldOut 内部的 getPurchased 已处理"冷却到期→自动归零视为补货"逻辑
-function MarketPage.hasPrivilegeRedDot()
-    local pts = GameState.getPrivilegePoint()
-    if pts <= 0 then return false end
-    for _, item in ipairs(SHOP_ITEMS) do
-        if item.currency == "privilege" then
-            if not isSoldOut(item) then
-                return true
-            end
-        end
-    end
-    return false
-end
+local TAB_DRAW = { collection = drawCollectionContent, items = drawItemsContent }
 
 -- ======================== Public API ========================
 
@@ -1622,7 +1158,6 @@ function MarketPage.init(vg)
     img.titleDeco = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     img.gold     = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     img.gem      = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
-    img.privilege = nvgCreateImage(vg, "image/货币道具/UI_icon_TQD_X.png", 0)
 
     img.btnBack  = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     img.tabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
@@ -1645,35 +1180,18 @@ function MarketPage.init(vg)
     img.btnPlus = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
     -- [暗黑化 P1-B5] 原 image/界面底板/商店/UI_SD_AN.png 贴图加载已移除（矢量绘制替代）
     img.diamondIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
-    img.privilegeIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TQD_X.png", 0)
     for i = 1, 6 do
     -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
     end
 
-    -- 特权图片
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    img.privProgBg      = nvgCreateImage(vg, "image/进度条/UI_TQ_JDY2.png", 0)
-    img.privProgFill    = nvgCreateImage(vg, "image/进度条/UI_TQ_JDY1.png", 0)
-    img.privDotActive   = nvgCreateImage(vg, "image/界面底板/商店/UI_TQ_1.png", 0)
-    img.privDotInactive = nvgCreateImage(vg, "image/界面底板/商店/UI_TQ_2.png", 0)
-    img.privRewardBg    = nvgCreateImage(vg, "image/界面底板/商店/UI_TQ_3.png", 0)
-    img.privClaimBtn    = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    img.privPointIcon   = nvgCreateImage(vg, "image/货币道具/UI_icon_TQD.png", 0)   -- 特权点大图标
-    img.privAdBtn       = nvgCreateImage(vg, "image/按钮/UI_AN_DA.png", 0)      -- 观看广告按钮背景
     img.collectionChestBg = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_KC1.png", 0)
     img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_AN.png", 0)
     img.goldenKey = nvgCreateImage(vg, "image/货币道具/UI_icon_HJYS.png", 0)
     img.diamondBig = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
     img.confirmArrow = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
-    for i, reward in ipairs(PRIVILEGE_REWARDS) do
-        privRewardIcons[i] = nvgCreateImage(vg, reward.icon, 0)
-    end
 
     state.purchased = {}
     state.scrollY = 0
-    state.privScrollY = 0
-    state.privClaimed = {}
-    state.privWatchCount = 0
     state.dialogOpen = false
     state.dialogItemIdx = nil
 
@@ -1698,8 +1216,6 @@ function MarketPage.open()
     state.dialogOpen = false
     state.dialogItemIdx = nil
     state.popupClosing = false
-    state.privScrollY = 0
-    state.privDragging = false
     print("[MarketPage] 打开市场")
 end
 
@@ -1744,7 +1260,6 @@ function MarketPage.getAnimProgress()
     end
 end
 
--- [已移除] AD_CONFIRM_TIMEOUT / AD_CONFIRM_MAX_RETRIES：现用AdManager + AdHandler 统一处理
 
 function MarketPage.update(dt)
     if not state.open then return end
@@ -1757,7 +1272,6 @@ function MarketPage.update(dt)
             state.dialogItemIdx = nil
         end
     end
-    -- [已移除] UI层广告超时：由 AdManager 三重超时保护统一处理
 end
 
 -- ======================== 主绘制========================
@@ -1804,19 +1318,8 @@ function MarketPage.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, upperOX, 0)
 
-    -- 状态初始化（绘制分离，仅在实际切换到特权tab 时执行一次）
-    if state.tab == "privilege" and state.privRefreshSyncTime == 0 then
-        -- 与服务端 getDayId 一致：UTC+8 午夜 0:00 切日（非中午 12 点）
-        local secsOfDay = (os.time() + 28800) % 86400
-        state.privRefreshTotalSecs = 86400 - secsOfDay
-        state.privRefreshSyncTime  = time.elapsedTime
-    end
-
     -- 资源栏数据（切换动画时两侧都可能绘制，提前计算一次）
     local resGroups = {
-        { bgCX = P1.R0_BG_CX, bgCY = P1.R0_BG_CY, iCX = P1.R0_ICON_CX, iCY = P1.R0_ICON_CY,
-          iW = P1.R0_ICON_W, iH = P1.R0_ICON_H, tX = P1.R0_TX, tY = P1.R0_TY,
-          icon = img.privilege, val = formatNumber(GameState.getPrivilegePoint()) },
         { bgCX = P1.R1_BG_CX, bgCY = P1.R1_BG_CY, iCX = P1.R1_ICON_CX, iCY = P1.R1_ICON_CY,
           iW = P1.R1_ICON_W, iH = P1.R1_ICON_H, tX = P1.R1_TX, tY = P1.R1_TY,
           icon = img.gold, val = formatNumber(GameState.getGold()) },
@@ -1827,41 +1330,22 @@ function MarketPage.draw(vg)
 
     -- 绘制指定 tab 的上半部分可变内容（背景图 + 资源栏/刷新时间）
     local function drawUpperVariant(tabKey)
-        -- 背景图（特权 tab 专属上方背景，其余用标准背景图
+        -- 背景图
         -- 使用 nvgIntersectScissor 而非 nvgScissor，以保留外层动画裁剪区域，防止内容溢出屏幕
         nvgSave(vg); nvgIntersectScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-        if tabKey == "privilege" then
-            drawImageCentered(vg, img.privBg, PV.BG_CX, PV.BG_CY, PV.BG_W, PV.BG_H, 1.0)
-        else
-            drawImageCentered(vg, img.bg, P1.BG_CX, P1.BG_CY, P1.BG_W, P1.BG_H, 1.0)
-        end
+        drawImageCentered(vg, img.bg, P1.BG_CX, P1.BG_CY, P1.BG_W, P1.BG_H, 1.0)
         nvgRestore(vg)
-        -- 特权 tab：刷新时间文字
-        if tabKey == "privilege" and state.privRefreshSyncTime > 0 then
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, PV.REFRESH_FONT)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0xff, 0xfa, 0x7b, 255))
-            nvgText(vg, PV.REFRESH_LABEL_CX, PV.REFRESH_LABEL_Y, "刷新时间", nil)
-            nvgFillColor(vg, nvgRGBA(0x9d, 0x50, 0x2a, 255))
-            local remaining = math.max(0, state.privRefreshTotalSecs - (time.elapsedTime - state.privRefreshSyncTime))
-            local remH = math.floor(remaining / 3600)
-            local remM = math.floor((remaining % 3600) / 60)
-            nvgText(vg, PV.REFRESH_TIME_CX, PV.REFRESH_TIME_Y, string.format("%d:%02d", remH, remM), nil)
-        end
-        -- 资源栏（非特权 tab）
-        if tabKey ~= "privilege" then
-            for _, r in ipairs(resGroups) do
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, r.bgCX - P1.RES_BG_W * 0.5, r.bgCY - P1.RES_BG_H * 0.5,
-                    P1.RES_BG_W, P1.RES_BG_H, P1.RES_BG_R)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, P1.RES_BG_A)); nvgFill(vg)
-                drawImageCentered(vg, r.icon, r.iCX, r.iCY, r.iW, r.iH, 1.0)
-                drawTextStroke(vg, r.tX, r.tY, r.val,
-                    P1.RES_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, P1.RES_SW,
-                    { strokeColor = { P1.RES_SR, P1.RES_SG, P1.RES_SB } })
-            end
+        -- 资源栏
+        for _, r in ipairs(resGroups) do
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, r.bgCX - P1.RES_BG_W * 0.5, r.bgCY - P1.RES_BG_H * 0.5,
+                P1.RES_BG_W, P1.RES_BG_H, P1.RES_BG_R)
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, P1.RES_BG_A)); nvgFill(vg)
+            drawImageCentered(vg, r.icon, r.iCX, r.iCY, r.iW, r.iH, 1.0)
+            drawTextStroke(vg, r.tX, r.tY, r.val,
+                P1.RES_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                255, 255, 255, P1.RES_SW,
+                { strokeColor = { P1.RES_SR, P1.RES_SG, P1.RES_SB } })
         end
     end
 
@@ -1893,12 +1377,7 @@ function MarketPage.draw(vg)
 
     -- 下方背景框（封装为函数以支持水平滑动动画）
     local function drawLowerBg(tabKey)
-        if tabKey ~= "privilege" then
-            DarkIcon.drawNine(vg, "plain", P1.LOWER_CX - P1.LOWER_W * 0.5, P1.LOWER_CY - P1.LOWER_H * 0.5, P1.LOWER_W, P1.LOWER_H)
-        else
-            -- 特权下方背景框（九宫格 UI_TJP_1）
-            DarkIcon.drawNine(vg, "plain", PV.LOWER_CX - PV.LOWER_W * 0.5, PV.LOWER_CY - PV.LOWER_H * 0.5, PV.LOWER_W, PV.LOWER_H)
-        end
+        DarkIcon.drawNine(vg, "plain", P1.LOWER_CX - P1.LOWER_W * 0.5, P1.LOWER_CY - P1.LOWER_H * 0.5, P1.LOWER_W, P1.LOWER_H)
     end
 
     if isAnimating then
@@ -1959,7 +1438,7 @@ function MarketPage.draw(vg)
     local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
     DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
 
-    -- Tab 文字 + 特权 tab 红点角标
+    -- Tab 文字
     for i, item in ipairs(TAB.ITEMS) do
         local isActive = (state.tab == TAB.KEYS[i])
         nvgFontFace(vg, "sans"); nvgFontSize(vg, TAB.FONT)
@@ -1970,14 +1449,6 @@ function MarketPage.draw(vg)
             nvgFillColor(vg, nvgRGBA(TAB.INA_R, TAB.INA_G, TAB.INA_B, 255))
         end
         nvgText(vg, item.cx, TAB.TEXT_Y, item.name, nil)
-
-        -- 道具 tab（index 1）：有特权点且有可购买特权商品时显示红点角标
-        if i == 1 and MarketPage.hasPrivilegeRedDot() then
-            local textHalfW = getCachedTextWidth(vg, item.name, TAB.FONT) * 0.5
-            local rdSz = 30
-            local rdX  = item.cx + textHalfW + 10
-            local rdY  = TAB.TEXT_Y - 18
-            DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
     end
 
     -- 弹窗（在裁剪区域外绘制，遮罩覆盖全屏）
@@ -2084,9 +1555,6 @@ function MarketPage.handleInput(dx, dy)
                 if item.currency == "diamond" then
                     currName = "钻石"
                     balance = GameState.getGems()
-                elseif item.currency == "privilege" then
-                    currName = "特权点"
-                    balance = GameState.getPrivilegePoint()
                 else
                     balance = GameState.getGold()
                 end
@@ -2119,11 +1587,6 @@ function MarketPage.handleInput(dx, dy)
         return true
     end
 
-    -- 广告加载中：禁用所有其他按钮（返回、Tab切换、领取奖励、购买等）
-    if state.privAdWatching then
-        return true
-    end
-
     -- 返回按钮（三行模式由中缝层接管）
     ---@diagnostic disable-next-line: undefined-global
     if not H_SEAM_BACK and hitTest(dx, dy, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H) then
@@ -2141,84 +1604,9 @@ function MarketPage.handleInput(dx, dy)
                 state.tab = newTab
                 require("systems.GameSFX").playUIMove(2)
                 state.scrollY = 0
-                state.privScrollY = 0
                 print("[MarketPage] 切换到 " .. item.name)
             end
             return true
-        end
-    end
-
-    -- 特权 Tab：观看广告按钮
-    if state.tab == "privilege" then
-        if hitTest(dx, dy, PV.BOT_AD_BTN_CX, PV.BOT_AD_BTN_CY, PV.BOT_AD_BTN_W, PV.BOT_AD_BTN_H) then
-            if state.privAdWatching then
-                -- 防重复点击
-                return true
-            end
-            -- 冷却检查：看完广告后 N 秒内禁止再次点击（防止 SDK 未完全清理导致卡住）
-            if state.privAdCooldownUntil > 0 and time.elapsedTime < state.privAdCooldownUntil then
-                state.floatTextX    = PV.BOT_AD_BTN_CX
-                state.floatTextY    = PV.BOT_AD_BTN_CY
-                state.floatTextTime = time.elapsedTime
-                state.floatText     = "广告冷却中，请稍后再试"
-                return true
-            end
-            BF.trigger("priv_watch_ad")
-            state.privAdWatching = true
-            AdManager.ShowAdWithMute(function(result)
-                state.privAdWatching = false
-                -- 设置冷却，防止看完广告后立即再点导致 SDK 未清理卡死
-                state.privAdCooldownUntil = time.elapsedTime + MarketSchema.AD_PRIVILEGE_CLICK_COOLDOWN_SECS
-                result = result or {}
-                if result.success then
-                    -- AD_CONFIRM 已由 AdManager 统一发送给服务端（AdHandler 结算奖励区
-                    -- 服务端结算后会推送 privilege 模块更新（watchCount +1）
-                    if result.reason == "absolute_timeout_deferred" then
-                        -- 长时间后台回来，连接已死，奖励将在重连后自动补发
-                        print("[MarketPage] 广告完成但网络待恢复，奖励将在重连后自动发放")
-                        state.floatTextX    = PV.BOT_AD_BTN_CX
-                        state.floatTextY    = PV.BOT_AD_BTN_CY
-                        state.floatTextTime = time.elapsedTime
-                        state.floatText     = "奖励将在网络恢复后自动发送"
-                    else
-                        -- 正常成功：显示广告奖励弹窗
-                        local adRewards = { { type = "privilege_point", amount = getPrivilegeAdRewardPoints() } }
-                        RewardPopup.show("广告奖励", adRewards)
-                        print("[MarketPage] 广告完成（reason=" .. tostring(result.reason) .. "），等待服务端推送")
-                    end
-                else
-                    print("[MarketPage] 广告未完成 " .. tostring(result.reason))
-                    state.floatTextX    = PV.BOT_AD_BTN_CX
-                    state.floatTextY    = PV.BOT_AD_BTN_CY
-                    state.floatTextTime = time.elapsedTime
-                    if result.reason == "already_loading" then
-                        state.floatText = "广告正在加载中"
-                    else
-                        state.floatText = "广告加载失败，请稍后再试"
-                    end
-                end
-            end, "privilege")
-            return true
-        end
-    end
-
-    -- 特权 Tab：点击奖励行领取
-    if state.tab == "privilege" then
-        for i, reward in ipairs(PRIVILEGE_REWARDS) do
-            local rowCY = PV.ROW_FIRST_Y + (i - 1) * (PV.REWARD_BG_H + 48) - state.privScrollY
-            local isClaimed   = state.privClaimed[reward.threshold] == true
-            local isClaimable = (not isClaimed) and (state.privWatchCount >= reward.threshold)
-            if isClaimable then
-                -- 整个奖励背景行均可点击
-                if hitTest(dx, dy, PV.REWARD_BG_CX, rowCY + PV.REWARD_BG_OY, PV.REWARD_BG_W, PV.REWARD_BG_H) then
-                    print("[MarketPage] 领取特权奖励 threshold=" .. reward.threshold)
-                    if sendAction_ then
-                        sendAction_(Protocol.ACTION_TYPES.CLAIM_PRIVILEGE_REWARD,
-                            { threshold = reward.threshold })
-                    end
-                    return true
-                end
-            end
         end
     end
 
@@ -2297,11 +1685,6 @@ function MarketPage.handleDragBegin(dx, dy)
         state.lastDragY = dy
         return true
     end
-    if state.tab == "privilege" and dy >= PV.SCROLL_TOP_Y and dy <= PV.SCROLL_BOT_Y then
-        state.privDragging = true
-        state.privLastDragY = dy
-        return true
-    end
     return true
 end
 
@@ -2321,11 +1704,6 @@ function MarketPage.handleDragMove(dx, dy)
         state.lastDragY = dy
         return true
     end
-    if state.privDragging then
-        state.privScrollY = state.privScrollY + (state.privLastDragY - dy)
-        state.privLastDragY = dy
-        return true
-    end
     return true
 end
 
@@ -2333,7 +1711,6 @@ function MarketPage.handleDragEnd(dx, dy)
     if not state.open or state.closing then return false end
     state.sliderDragging = false
     state.dragging = false
-    state.privDragging = false
     return true
 end
 
@@ -2342,8 +1719,6 @@ function MarketPage.handleScroll(wheel)
     if state.dialogOpen or state.popupClosing or state.keyConfirmVisible then return true end
     if state.tab == "items" then
         state.scrollY = state.scrollY - wheel * 60
-    elseif state.tab == "privilege" then
-        state.privScrollY = state.privScrollY - wheel * 60
     end
     return true
 end
@@ -2503,14 +1878,6 @@ end
 function MarketPage.resetSessionData()
     state.purchased = {}
     state.shopConfigVersion = 0
-    state.privClaimed = {}
-    state.privWatchCount = 0
-    state.privRefreshHour = 0
-    state.privRefreshMin = 0
-    state.privRefreshTotalSecs = 0
-    state.privRefreshSyncTime = 0
-    state.privAdWatching = false
-    state.privAdCooldownUntil = 0
     state.artifactFreeDrawDayId = 0
     state.dialogOpen = false
     state.dialogItemIdx = nil

@@ -53,7 +53,6 @@ local function loadHandlers()
         { "server.artifact.ArtifactHandler", "actionHandlers" },
         { "server.dungeon.DungeonHandler", "actionHandlers" },
         { "server.offline.OfflineHandler", "actionHandlers" },
-        { "server.ad.AdHandler", "actionHandlers" },
         { "server.tower.TowerHandler", "actionHandlers" },
     }
     for _, pack in ipairs(packs) do
@@ -103,12 +102,10 @@ local function defaultCurrency()
     data.arenaTicket = GameState.getArenaTicket()
     data.arenaCoin = GameState.getArenaCoin()
     data.tavernCoin = GameState.getTavernCoin()
-    data.privilegePoint = GameState.getPrivilegePoint()
     data.arcaneDust = GameState.getArcaneDust()
     data.corruptStone = GameState.getCorruptStone()
     data.sacredStone = GameState.getSacredStone()
     data.speedCardExpireAt = GameState.getSpeedCardExpireAt()
-    data.privilegeCardOwned = GameState.isPrivilegeCardOwned() and 1 or 0
     return data
 end
 
@@ -169,12 +166,10 @@ local function syncCurrencyIntoPdm()
     cur.arenaTicket = GameState.getArenaTicket()
     cur.arenaCoin = GameState.getArenaCoin()
     cur.tavernCoin = GameState.getTavernCoin()
-    cur.privilegePoint = GameState.getPrivilegePoint()
     cur.arcaneDust = GameState.getArcaneDust()
     cur.corruptStone = GameState.getCorruptStone()
     cur.sacredStone = GameState.getSacredStone()
     cur.speedCardExpireAt = GameState.getSpeedCardExpireAt()
-    cur.privilegeCardOwned = GameState.isPrivilegeCardOwned() and 1 or 0
 end
 
 local function deliverActionResult(result)

@@ -115,7 +115,7 @@ function BottomNav.init(vg)
 
     -- 监听货币变化，刷新城镇标签红点（竞技券/特权点消耗后及时清除）
     EventBus.on(GameEvents.CURRENCY_CHANGED, function(data)
-        if data and (data.arenaTicket ~= nil or data.privilegePoint ~= nil) then
+        if data and data.arenaTicket ~= nil then
             BottomNav.refreshTownBadge()
         end
     end)
@@ -309,14 +309,6 @@ function BottomNav.refreshTownBadge()
         local ok, canEnh = pcall(BP.canEnhanceAny)
         if ok and canEnh then
             BottomNav.setBadge(4, true, nil)
-            return
-        end
-    end
-    -- 市场特权红点（有可观看广告）
-    local okMP, MP = pcall(require, "ui.MarketPage")
-    if okMP and MP and MP.hasPrivilegeRedDot then
-        if MP.hasPrivilegeRedDot() then
-            BottomNav.setBadge(4, true, "redDot")
             return
         end
     end

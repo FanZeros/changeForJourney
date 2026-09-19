@@ -1006,8 +1006,8 @@ function DebugPanel.handleInput(sx, sy)
                     adventureExp    = 128456,
                     adventurerExp   = 56230,
                     rewards         = mockRewards,
-                    onClaim         = function(doubled)
-                        print("[Debug] 离线收益领取, doubled=" .. tostring(doubled))
+                    onClaim         = function()
+                        print("[Debug] 离线收益领取")
                     end,
                 })
                 print("[Debug] 打开离线收益面板（mock 数据）")

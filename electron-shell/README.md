@@ -66,7 +66,17 @@ npm run dir     # 产出 release/win-unpacked/
 ```
 
 产物：`release/ZhongYanZhiMen-win64-offline-{version}.zip`（解压后运行 `ZhongYanZhiMen.exe`）。
-首次启动仍需联网拉引擎 WASM（约 70MB，官方 CDN）。
+
+## 自带运行时（完全离线）
+
+`pack_release.py` 默认把**引擎运行时**（UrhoXRuntime wasm/js/data，约 83MB）从官方 CDN
+镜像到 `game_engine/`（`.gitignore` 已排除，不入库），打包时并入 `game/src/engine/`，
+并把 `game/1.0.2/engine-*.json` 的 `base_url` 补丁成相对路径 `src/engine/`、
+web 入口 loader `index.min.js` 本地化到 `game/src/web/src/`。
+
+- 引擎加载链（`stable.json → manifest → assets/{uuid}-{hash}{ext}`）全部落在本地 server
+- **玩家首次启动零联网**（登录服已被 WebSocket shim 拦截 → skipping login）
+- 镜像按 size 校验、幂等增量下载：`--runtime-only` 单独预下载；`--skip-runtime` 退回联网拉取形态
 
 ## 运行行为（main.js 定稿）
 

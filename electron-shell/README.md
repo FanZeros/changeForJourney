@@ -46,6 +46,10 @@ python pack_release.py --upload-only  # 已有 zip 只上传
 
 前提：仓库根已有最新 `dist/`（Maker Build 过）。脚本会删预览桥/凭证、去水印、注入免登录 WS shim。
 
+**本机没有 dist/？** 脚本会自动从 GitHub Release `dist-snapshot` 拉取 `dist-{version}.zip`
+解压（需本机 GitHub 凭据/token）。该快照由云端会话在 Build 后执行
+`python pack_release.py --dist-only` 上传维护。
+
 ## 构筑（手动）
 
 本机 Windows（有 NSIS）：

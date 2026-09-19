@@ -242,6 +242,133 @@ def fetch_json(url: str, timeout: int = 60):
         return json.loads(resp.read().decode())
 
 
+# ---- dist 快照托管（本机无 Maker 时自动拉取） ----
+# dist/ 是 Maker 构建产物（gitignore，不入库）。云端会话在 Build 后把 dist 打成
+# dist-{version}.zip 上传到 Release tag=dist-snapshot；本机脚本缺 dist 时自动下载解压。
+DIST_SNAPSHOT_TAG = "dist-snapshot"
+
+
+def download_dist_snapshot(ver: str) -> None:
+    repo = git_remote_repo()
+    token = github_token()
+    if not token:
+        die("本机没有 dist/ 且找不到 GitHub token（拉取 dist 快照需要）。\n"
+            "  任选：gh auth login / setx GITHUB_TOKEN <PAT> / git 已存凭据")
+    name = "dist-%s.zip" % ver
+    url = "https://github.com/%s/releases/download/%s/%s" % (repo, DIST_SNAPSHOT_TAG, name)
+    log("本机无 dist/，从 Release %s 拉取 %s …" % (DIST_SNAPSHOT_TAG, name))
+    tmp = RELEASE / name
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    req = Request(url, headers={"User-Agent": "zyjm-pack-release"})
+    try:
+        with urlopen(req, timeout=3600) as resp, tmp.open("wb") as out:
+            total = 0
+            while True:
+                chunk = resp.read(1 << 20)
+                if not chunk:
+                    break
+                out.write(chunk)
+                total += len(chunk)
+                if total % (16 << 20) < (1 << 20):
+                    log("  downloaded %.0f MB" % (total / 1048576))
+    except HTTPError as e:
+        die("拉取 dist 快照失败 HTTP %s：%s\n"
+            "  请让云端会话在 Build 后上传 dist-%s.zip（tag=%s）。" % (e.code, e.read().decode(errors="replace")[:300], ver, DIST_SNAPSHOT_TAG))
+    except URLError as e:
+        die("拉取 dist 快照网络错误: %s" % e)
+    log("下载完成 %.0f MB，解压到 dist/ …" % (tmp.stat().st_size / 1048576))
+    target = ROOT / "dist"
+    if target.exists():
+        shutil.rmtree(target)
+    with zipfile.ZipFile(tmp) as zf:
+        names = zf.namelist()
+        root_prefix = ""
+        first = names[0].split("/", 1)
+        if len(first) == 2 and all(n.split("/", 1)[0] == first[0] for n in names[:20]):
+            root_prefix = first[0] + "/"  # zip 内有单层根目录则剥掉
+        zf.extractall(ROOT)
+    if root_prefix and (ROOT / root_prefix.rstrip("/")).is_dir():
+        if target.exists():
+            shutil.rmtree(target)
+        (ROOT / root_prefix.rstrip("/")).rename(target)
+    tmp.unlink()
+    if not (target / "index.html").exists():
+        die("dist 快照解压后没有 index.html，内容异常")
+    log("dist/ 就绪（来自快照 %s）" % name)
+
+
+def ensure_dist(ver: str) -> None:
+    if (ROOT / "dist" / "index.html").exists():
+        return
+    download_dist_snapshot(ver)
+
+
+def upload_dist_snapshot(ver: str) -> None:
+    """云端用：把 dist/ 打成 dist-{ver}.zip 上传到 Release dist-snapshot。"""
+    dist = ROOT / "dist"
+    if not (dist / "index.html").exists():
+        die("没有 dist/，先 Build")
+    token = github_token()
+    if not token:
+        die("找不到 GitHub token")
+    repo = git_remote_repo()
+    out = RELEASE / ("dist-%s.zip" % ver)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        out.unlink()
+    log("压缩 dist → %s …" % out.name)
+    files = []
+    for dirpath, _d, filenames in os.walk(dist):
+        for fn in filenames:
+            fp = Path(dirpath) / fn
+            files.append((fp, fp.relative_to(dist).as_posix()))
+    n = len(files)
+    with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for i, (fp, arc) in enumerate(files, 1):
+            zf.write(fp, arcname=arc)
+            if i % 200 == 0 or i == n:
+                log("  zip %d/%d" % (i, n))
+    log("dist 快照 %.0f MB" % (out.stat().st_size / 1048576))
+    rel = get_or_create_release_tag(repo, token, DIST_SNAPSHOT_TAG,
+                                    "dist 快照（供本机 pack_release 自动拉取）")
+    rid = int(rel.get("id") or 0)
+    delete_asset_if_exists(repo, token, rel, out.name)
+    upload_file(repo, token, rid, out, "application/zip")
+    log("dist 快照已上传：Release %s / %s" % (DIST_SNAPSHOT_TAG, out.name))
+
+
+def get_or_create_release_tag(repo: str, token: str, tag: str, desc: str) -> dict:
+    status_url = "https://api.github.com/repos/%s/releases/tags/%s" % (repo, tag)
+    req = Request(status_url, headers={
+        "Authorization": "token " + token,
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "zyjm-pack-release",
+    })
+    try:
+        with urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode())
+    except HTTPError as e:
+        if e.code != 404:
+            body = e.read().decode(errors="replace")[:800]
+            die("GET release 失败 %s %s" % (e.code, body))
+    log("创建 Release %s …" % tag)
+    payload = json.dumps({
+        "tag_name": tag,
+        "name": tag,
+        "body": desc,
+        "draft": False,
+        "prerelease": False,
+    }).encode("utf-8")
+    _st, rel = api_request(
+        "POST",
+        "https://api.github.com/repos/%s/releases" % repo,
+        token,
+        data=payload,
+        content_type="application/json",
+    )
+    return rel or {}
+
+
 def runtime_files(stable: dict, manifest: dict) -> list:
     """返回 [(relpath, url, size, crc32)]：引擎 stable.json + assets + index.min.js。"""
     version = stable["version"]
@@ -586,6 +713,10 @@ def parse_args() -> argparse.Namespace:
                    help="不下载/不并入自带运行时（玩家首启需联网拉引擎 WASM）")
     p.add_argument("--runtime-only", action="store_true",
                    help="只下载离线运行时镜像到 game_engine/，不打包")
+    p.add_argument("--dist-only", action="store_true",
+                   help="云端用：把 dist/ 打成快照上传 Release dist-snapshot（供本机自动拉取）")
+    p.add_argument("--no-fetch-dist", action="store_true",
+                   help="本机缺 dist/ 时不自动从 Release 拉快照（直接报错）")
     return p.parse_args()
 
 
@@ -600,11 +731,16 @@ def main() -> int:
     if args.runtime_only:
         download_runtime()
         return 0
+    if args.dist_only:
+        upload_dist_snapshot(ver)
+        return 0
     if not args.skip_runtime:
         download_runtime()
     else:
         log("跳过离线运行时（--skip-runtime）")
     if not args.skip_sync:
+        if not args.no_fetch_dist:
+            ensure_dist(ver)
         sync_dist()
     else:
         if not (GAME / "index.html").exists():

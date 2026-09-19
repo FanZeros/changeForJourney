@@ -319,19 +319,8 @@ def pick_latest_snapshot_asset(assets: list, ver: str) -> str:
 def download_dist_snapshot(ver: str) -> None:
     repo = git_remote_repo()
     # 匿名列 Release 资产，选 dist-{ver}-* 最新（带 commit hash 的文件名天然防旧缓存）
-    api = "https://api.github.com/repos/%s/releases/tags/%s" % (repo, DIST_SNAPSHOT_TAG)
-    name = ""
-    try:
-        with urlopen(Request(api, headers={"User-Agent": "zyjm-pack-release"}), timeout=60) as resp:
-            rel = json.loads(resp.read().decode())
-        name = pick_latest_snapshot_asset(rel.get("assets"), ver)
-    except HTTPError as e:
-        if e.code != 404:
-            log("WARN 列快照资产失败 HTTP %s，尝试固定名…" % e.code)
-    except Exception as e:
-        log("WARN 列快照资产失败(%s)，尝试固定名…" % e)
-    if not name:
-        name = dist_snapshot_name(ver)
+    snap_name, _remote = fetch_latest_snapshot_info(ver)
+    name = snap_name or dist_snapshot_name(ver)
     url = "https://github.com/%s/releases/download/%s/%s" % (repo, DIST_SNAPSHOT_TAG, name)
     log("本机无 dist/，从 Release %s 匿名拉取 %s（公开仓库无需 token）…" % (DIST_SNAPSHOT_TAG, name))
     tmp = RELEASE / name
@@ -417,12 +406,68 @@ def download_dist_snapshot(ver: str) -> None:
     tmp.unlink()
     if not (target / "index.html").exists():
         die("dist 快照解压后没有 index.html，内容异常")
+    # 写来源指纹（供 ensure_dist 下次比对云端是否更新）
+    m = re.match(r"^dist-%s-([0-9a-f]{7,})\.zip$" % re.escape(ver), name)
+    try:
+        (target / "snapshot-meta.json").write_text(
+            json.dumps({
+                "commit": m.group(1) if m else "",
+                "snapshot": name,
+                "version": ver,
+                "fetchedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            }, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
     log("dist/ 就绪（来自快照 %s）" % name)
 
 
+def fetch_latest_snapshot_info(ver: str):
+    """匿名列 Release 资产，返回 (最新资产名, commit短hash|None)；不可达返回 (None, None)。"""
+    api = "https://api.github.com/repos/%s/releases/tags/%s" % (git_remote_repo(), DIST_SNAPSHOT_TAG)
+    try:
+        with urlopen(Request(api, headers={"User-Agent": "zyjm-pack-release"}), timeout=60) as resp:
+            rel = json.loads(resp.read().decode())
+        name = pick_latest_snapshot_asset(rel.get("assets"), ver)
+        if not name:
+            return None, None
+        m = re.match(r"^dist-%s-([0-9a-f]{7,})\.zip$" % re.escape(ver), name)
+        return name, (m.group(1) if m else None)
+    except Exception:
+        return None, None
+
+
+def read_local_snapshot_commit() -> "str | None":
+    """本机 dist 的来源 commit（拉取成功时写入 dist/snapshot-meta.json）。"""
+    p = ROOT / "dist" / "snapshot-meta.json"
+    if not p.exists():
+        return None
+    try:
+        return (json.loads(p.read_text(encoding="utf-8")).get("commit") or "").strip() or None
+    except Exception:
+        return None
+
+
 def ensure_dist(ver: str) -> None:
-    if (ROOT / "dist" / "index.html").exists():
+    """保证本机 dist 与云端最新快照一致：
+    - 本机无 dist → 拉
+    - 有 dist 且带 meta：commit 与云端最新一致 → 跳过；不一致/云端不可达本地无指纹 → 重拉
+    - 有 dist 但无 meta（旧版拉的/手动放的，来源不明）→ 重拉一次（拉取后写入 meta，此后可比对）
+    """
+    if not (ROOT / "dist" / "index.html").exists():
+        download_dist_snapshot(ver)
         return
+    snap_name, remote_commit = fetch_latest_snapshot_info(ver)
+    local_commit = read_local_snapshot_commit()
+    if not snap_name:
+        log("WARN 无法获取云端快照信息，沿用本机现有 dist/")
+        return
+    if local_commit and remote_commit and local_commit == remote_commit:
+        log("dist/ 已是云端最新快照（commit %s）" % local_commit)
+        return
+    log("本机 dist 落后云端（本机 %s / 云端 %s）→ 重新拉取 %s" %
+        (local_commit or "无指纹", remote_commit or snap_name, snap_name))
     download_dist_snapshot(ver)
 
 

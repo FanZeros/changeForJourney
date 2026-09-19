@@ -54,7 +54,6 @@ local GameSFX           = require("systems.GameSFX")
 local BattleEffects     = require("ui.BattleEffects")    -- [三行并行] 渲染缩放
 local SpinePowerUpEffect = require("ui.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.IntroCutscene")
-local SamsaraCG          = require("ui.SamsaraCG")
 local LetterIntro        = require("ui.LetterIntro")          -- [LetterIntro] 先祖来信（新档开场）
 local CharacterDetail    = require("ui.CharacterDetail")  -- [三队并行] 中缝返回键目标
 local ScenarioDialogue   = require("ui.ScenarioDialogue")     -- [LetterIntro] 情景对话
@@ -636,19 +635,14 @@ function Standalone.Start()
         BlacksmithPage.openToAutoDecompose()
     end)
 
-    -- 5.24 轮回回调：倒计时结束 → 播放 CG 视频 → 播放开场动画 → 完成关卡加载
+    -- 5.24 轮回回调：倒计时结束 → 播放开场动画 → 完成关卡加载
     BattleScene.setOnReincarnate(function(data)
-        print("[Standalone] reincarnation triggered, playing CG video then intro cutscene (difficulty "
+        print("[Standalone] reincarnation triggered, starting intro cutscene (difficulty "
             .. tostring(data.fromDifficulty) .. " → " .. tostring(data.toDifficulty) .. ")")
-        -- 先播放轮回 CG 视频（BGM 在视频模块内部静音/恢复）
-        SamsaraCG.start(function()
-            -- CG 视频结束后，播放开场动画
-            print("[Standalone] CG video finished, starting intro cutscene")
-            IntroCutscene.reset()
-            IntroCutscene.start(function()
-                print("[Standalone] reincarnation intro finished, completing stage load")
-                BattleScene.completeReincarnation()
-            end)
+        IntroCutscene.reset()
+        IntroCutscene.start(function()
+            print("[Standalone] reincarnation intro finished, completing stage load")
+            BattleScene.completeReincarnation()
         end)
     end)
 
@@ -1106,11 +1100,6 @@ function HandleNanoVGRender(eventType, eventData)
     -- 冒险等级提升弹窗（最顶层）
     LevelUpPopup.draw(vg)
 
-    -- 轮回 CG 视频（覆盖所有游戏 UI）
-    if SamsaraCG.isActive() then
-        SamsaraCG.draw(vg)
-    end
-
     -- 轮回开场动画（覆盖所有游戏 UI）
     if IntroCutscene.isActive() then
         IntroCutscene.draw(vg)
@@ -1242,12 +1231,6 @@ function HandleUpdate(eventType, eventData)
     -- [LetterIntro] 先祖来信更新（信件期间独占，阻止其他 UI 更新）
     if LetterIntro.isOpen() then
         LetterIntro.update(dt)
-        return
-    end
-
-    -- 轮回 CG 视频更新（播放期间阻止其他 UI 更新和 BGM 切换）
-    if SamsaraCG.isActive() then
-        SamsaraCG.update(dt)
         return
     end
 
@@ -1974,8 +1957,7 @@ local function HorizonDimSidePanels()
         HeroRosterPanel.isVisible() or PlayerInfoPanel.isOpen() or
         LootBox.isPageOpen() or RewardPopup.isOpen() or
         OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() or
-        SpinePowerUpEffect.isPlaying() or
-        SamsaraCG.isActive() or IntroCutscene.isActive()
+        SpinePowerUpEffect.isPlaying() or IntroCutscene.isActive()
     if not modalOpen then return end
 
     local w = Viewport.PW * H_s
@@ -2196,7 +2178,6 @@ function HandleNanoVGRenderHorizon()
     OfflineRewardPanel.draw(vg)
     SpinePowerUpEffect.draw(vg)
     LevelUpPopup.draw(vg)
-    if SamsaraCG.isActive() then SamsaraCG.draw(vg) end
     Viewport.finish(vg)
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）

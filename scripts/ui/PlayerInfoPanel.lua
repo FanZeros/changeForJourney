@@ -17,6 +17,7 @@ local AvatarSelectPanel = require("ui.AvatarSelectPanel")
 local SettingsPanel     = require("ui.SettingsPanel")
 local GMConsolePanel    = require("ui.GMConsolePanel")
 local TopBar            = require("ui.TopBar")
+local CharacterDetail   = require("ui.CharacterDetail")
 
 local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
@@ -430,10 +431,51 @@ function PlayerInfoPanel.isOpen()
     return state.open
 end
 
+--- 命中队伍角色卡（布局计算与 draw 中卡片循环一致，含滚动偏移与裁剪区）
+---@param dx number
+---@param dy number
+---@return table|nil 命中的槽位 { heroId, level, exp, maxExp }
+local function hitTestTeamCard(dx, dy)
+    local teamSlots = CharacterPanel.getTeamSlotsData()
+    local occupied = {}
+    for i = 1, 5 do
+        if teamSlots[i] and teamSlots[i].state == "occupied" and teamSlots[i].heroId then
+            occupied[#occupied + 1] = teamSlots[i]
+        end
+    end
+    local cw = TEAM_CARDS.CARD_W
+    local sp = TEAM_CARDS.SPACING
+    local maxPerRow = TEAM_CARDS.MAX_PER_ROW
+    local scrollOff = state.cardScrollY
+    for idx, slot in ipairs(occupied) do
+        local row = math.ceil(idx / maxPerRow)
+        local col = ((idx - 1) % maxPerRow) + 1
+        local rowStart = (row - 1) * maxPerRow + 1
+        local rowEnd = math.min(row * maxPerRow, #occupied)
+        local cardsInRow = rowEnd - rowStart + 1
+        local rowTotalW = cardsInRow * cw + (cardsInRow - 1) * sp
+        local rowStartX = TEAM_BG.CX - rowTotalW * 0.5
+        local cx = rowStartX + (col - 1) * (cw + sp) + cw * 0.5
+        local cy = TEAM_CARDS.FIRST_ROW_CY + (row - 1) * TEAM_CARDS.ROW_SPACING - scrollOff
+        -- 与绘制 Scissor 一致：整卡在裁剪区内才响应点击
+        if cy + TEAM_CARDS.CARD_H * 0.5 > TEAM_CARDS.CLIP_TOP
+            and cy - TEAM_CARDS.CARD_H * 0.5 < TEAM_CARDS.CLIP_BOTTOM
+            and hitTest(dx, dy, cx, cy, cw, TEAM_CARDS.CARD_H) then
+            return slot
+        end
+    end
+    return nil
+end
+
 --- 点击处理（返回 true 表示消费了事件）
 function PlayerInfoPanel.handleInput(dx, dy)
     if not state.open then return false end
     if state.closing then return true end
+
+    -- 角色详情在面板之上打开时优先接管（与 CharacterPanel 模式一致）
+    if CharacterDetail.isOpen() then
+        return CharacterDetail.handleInput(dx, dy)
+    end
 
     -- GMConsolePanel 优先拦截（最顶层）
     if GMConsolePanel.isOpen() then
@@ -522,6 +564,15 @@ function PlayerInfoPanel.handleInput(dx, dy)
         return true
     end
 
+    -- 队伍角色卡点击 → 打开角色详情（与 CharacterPanel 行为一致）
+    local teamSlot = hitTestTeamCard(dx, dy)
+    if teamSlot then
+        print("[PlayerInfoPanel] 点击队伍卡 → 角色详情 heroId=" .. tostring(teamSlot.heroId))
+        require("systems.GameSFX").play("ui_pick")
+        require("ui.CharacterDetail").open(teamSlot.heroId)
+        return true
+    end
+
     -- 弹窗内部点击消费事件防穿透
     return true
 end
@@ -529,6 +580,9 @@ end
 --- 拖拽开始（转发给子面板）
 function PlayerInfoPanel.handleDragBegin(dx, dy)
     if not state.open or state.closing then return false end
+    if CharacterDetail.isOpen() then
+        return CharacterDetail.handleDragBegin(dx, dy)
+    end
     if GMConsolePanel.isOpen() then
         return GMConsolePanel.handleDragBegin and GMConsolePanel.handleDragBegin(dx, dy) or true
     end
@@ -544,6 +598,9 @@ end
 --- 拖拽移动（转发给子面板）
 function PlayerInfoPanel.handleDragMove(dx, dy)
     if not state.open or state.closing then return false end
+    if CharacterDetail.isOpen() then
+        return CharacterDetail.handleDragMove(dx, dy)
+    end
     if GMConsolePanel.isOpen() then
         return GMConsolePanel.handleDragMove and GMConsolePanel.handleDragMove(dx, dy) or true
     end
@@ -559,6 +616,9 @@ end
 --- 拖拽结束（转发给子面板）
 function PlayerInfoPanel.handleDragEnd(dx, dy)
     if not state.open or state.closing then return false end
+    if CharacterDetail.isOpen() then
+        return CharacterDetail.handleDragEnd(dx, dy)
+    end
     if GMConsolePanel.isOpen() then
         if GMConsolePanel.handleDragEnd then GMConsolePanel.handleDragEnd(dx, dy) end
         return true
@@ -577,6 +637,10 @@ end
 ---@param wheel number 滚轮值（正=向上滚）
 function PlayerInfoPanel.handleScroll(wheel)
     if not state.open or state.closing then return false end
+    -- 角色详情优先接管滚轮（与 CharacterPanel 模式一致）
+    if CharacterDetail.isOpen() then
+        return CharacterDetail.handleScroll(wheel)
+    end
     -- SettingsPanel 不需要滚轮，但打开时消费事件
     if SettingsPanel.isOpen() then return true end
     -- AvatarSelectPanel 优先拦截滚轮
@@ -1100,6 +1164,8 @@ function PlayerInfoPanel.draw(vg)
     nvgRestore(vg)
 
     -- 在 PlayerInfoPanel 变换之外绘制子面板（它们有自己的遮罩和缩放）
+    -- 角色详情覆盖在队伍卡之上（从队伍卡点击打开）
+    CharacterDetail.draw(vg)
     AvatarSelectPanel.draw(vg)
     SettingsPanel.draw(vg)
     GMConsolePanel.draw(vg)

@@ -36,17 +36,17 @@ local D = {
     BG_IT   = 180,  BG_IR  = 40,  BG_IB = 50,  BG_IL = 40,
 
     TT_Y    = 705,  TT_FONT = 60,  TT_SW = 6,
-    TT_SR   = 0x46, TT_SG  = 0x2f, TT_SB = 0x20,
+    TT_SR   = 0x00, TT_SG  = 0x00, TT_SB = 0x00,
 
     SUB_Y   = 800,  SUB_FONT = 34,
-    SUB_R   = 0xb6, SUB_G  = 0xb0, SUB_B = 0x9d,
+    SUB_R   = 0xd8, SUB_G  = 0xc9, SUB_B = 0xa3,
 
     -- 当前关卡信息条
     CUR_BG_CX = 540, CUR_BG_CY = 888,
     CUR_BG_W  = 800, CUR_BG_H  = 72, CUR_BG_R = 16, CUR_BG_A = 18,
     CUR_LBL_X = 169, CUR_VAL_X = 904,
     CUR_FONT  = 36,
-    CUR_LBL_R = 0x8d, CUR_LBL_G = 0x5f, CUR_LBL_B = 0x41,
+    CUR_LBL_R = 0xd8, CUR_LBL_G = 0xc9, CUR_LBL_B = 0xa3,
 
     -- 关卡网格
     COLS      = 4,
@@ -297,11 +297,11 @@ function StageSelectDialog.draw(vg)
             end
 
             local label = shortStageLabel(id)
-            local fr, fg, fb = 0x46, 0x2f, 0x20
+            local fr, fg, fb = 0, 0, 0
             if isCur then
-                fr, fg, fb = 0x8d, 0x5f, 0x41
+                fr, fg, fb = 0, 0, 0
             elseif isBoss then
-                fr, fg, fb = 0x8a, 0x3a, 0x28
+                fr, fg, fb = 0xA6, 0x1E, 0x1E
             end
             drawTextStroke(vg, cx, cy - 12, label, 30,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -321,7 +321,7 @@ function StageSelectDialog.draw(vg)
             nvgFontSize(vg, 22)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             if isCur then
-                nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+                nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 255))
             else
                 nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
             end
@@ -333,27 +333,25 @@ function StageSelectDialog.draw(vg)
     local pageStr = string.format("%d / %d", state.page + 1, maxPage + 1)
     drawTextStroke(vg, D.BG_CX, D.PAGE_Y, pageStr, D.PAGE_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 4, { strokeColor = { 0x46, 0x2f, 0x20 } })
+        255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
 
     if imgAct >= 0 then
         if state.page > 0 then
             drawImageCentered(vg, imgAct, D.BG_CX - 280, D.PAGE_Y, D.ARROW_W, D.ARROW_H, 1.0)
-            nvgFontFace(vg, "sans"); nvgFontSize(vg, 28)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 178))
-            nvgText(vg, D.BG_CX - 280, D.PAGE_Y, "上一页", nil)
+            drawTextStroke(vg, D.BG_CX - 280, D.PAGE_Y, "上一页", 28,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4,
+                { strokeColor = { 0, 0, 0 } })
         end
         if state.page < maxPage then
             drawImageCentered(vg, imgAct, D.BG_CX + 280, D.PAGE_Y, D.ARROW_W, D.ARROW_H, 1.0)
-            nvgFontFace(vg, "sans"); nvgFontSize(vg, 28)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 178))
-            nvgText(vg, D.BG_CX + 280, D.PAGE_Y, "下一页", nil)
+            drawTextStroke(vg, D.BG_CX + 280, D.PAGE_Y, "下一页", 28,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4,
+                { strokeColor = { 0, 0, 0 } })
         end
     else
         nvgFontFace(vg, "sans"); nvgFontSize(vg, 28)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x46, 0x2f, 0x20, 220))
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 220))
         if state.page > 0 then nvgText(vg, D.BG_CX - 280, D.PAGE_Y, "上一页", nil) end
         if state.page < maxPage then nvgText(vg, D.BG_CX + 280, D.PAGE_Y, "下一页", nil) end
     end

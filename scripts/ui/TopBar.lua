@@ -70,8 +70,8 @@ local drawTextStroke = require("core.DrawUtil").drawTextStroke
 function TopBar.init(vg)
     imgExpBg   = nvgCreateImage(vg, "image/进度条/UI_JYT_1.png", 0)
     imgExpFill = nvgCreateImage(vg, "image/进度条/UI_JYT_2.png", 0)
-    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
-    imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
+    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+    imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
     AvatarFrameUtil.preloadFrames(vg, imgFrameIcons)
 
     -- 加载角色头像图标
@@ -288,7 +288,7 @@ function TopBar.draw(vg, offsetY)
     drawImageCentered(vg, imgGoldIcon, 653, 100, 73, 73, 1.0)
 
     -- #11 金币数值: left=goldBgLeft+44, Y=100, font 33, white, stroke 4
-    local displayGold = cachedGold or GameState.getGold()
+    local displayGold = GameState.getGold()  -- [修复] 直读实时值(此前 cachedGold 推送一次后恒旧, 花费不更新)
     local goldBgLeft = goldBgCX - goldBgW * 0.5
     drawTextStroke(vg, goldBgLeft + 44, 100, NumberUtil.format(displayGold),
         33, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
@@ -303,7 +303,7 @@ function TopBar.draw(vg, offsetY)
     drawImageCentered(vg, imgGemIcon, 884, 100, 76, 76, 1.0)
 
     -- #14 钻石数值: left=diamondBgLeft+44, Y=100, font 33, white, stroke 4
-    local displayGems = cachedGems or GameState.getGems()
+    local displayGems = GameState.getGems()  -- [修复] 同上
     local gemBgLeft = gemBgCX - gemBgW * 0.5
     drawTextStroke(vg, gemBgLeft + 44, 100, NumberUtil.format(displayGems),
         33, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,

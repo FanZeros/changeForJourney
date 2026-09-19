@@ -15,17 +15,19 @@
 - 入口 `scripts/main.lua`，单机 `network/Standalone.lua`
 - GitHub：`FanZeros/changeForJourney` 分支 `workspace`
 
-## 上次做了什么（截至 2026-09-18）
+## 上次做了什么（截至 2026-09-19）
 
-觉醒从 7 节点压成 3 节点：1 粗暴 / 2 机制 / 3 进化。旧档 1–3→新1、4–6→新2、7→新3。碎片合计仍 280。超模技仍走这三档。
+竞技场功能彻底删除（d1d36e5）：13 个 Arena 文件删净，Standalone/Client/LocalActionBridge/TownScene/任务/引导/剧情(情景54)/货币(竞技券/币)/Protocol 全链清理。特权点保留现状（无获取渠道，洗练/UR恢复锁死，用户已拍板不动）。
 
 ## likely_next_task
 
-验收觉醒拼图页：三块六边形嵌合角色核、顺序点亮、旧档并档。
+- 素材清理二轮：竞技场图（竞技场排行/ 目录、UI_CZ_JJC、ICON_CZ_JJC、UI_icon_JJCQ/JJB）现已无引用，可删（UI_JJC_BTBJ 仍被 TaskPanel/TavernShopPage 共用需保留）
+- 特权点后续：若做获取渠道或改计价再动 ArtifactService/HeroService
 
 ## 避雷清单（摘要）
 
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
-- 追加技层数跟角色走（roster.extraTalent），竞技场对手 createHero(..., false) 不要套本地层
+- ~~竞技场~~已删除；BattleResultPanel 的 arenaMode 是通用参数（Dungeon 传 false），别误删
+- 追加技层数跟角色走（roster.extraTalent），对手 createHero(..., false) 不要套本地层
 - 击杀认定用 `_killedBy`；弹射击杀用 `_killedByRicochet`
 - `/workspace/assets/**/*.meta` 绝不动

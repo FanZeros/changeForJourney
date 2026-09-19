@@ -20,6 +20,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -295,20 +296,18 @@ def download_dist_snapshot(ver: str) -> None:
     except URLError as e:
         die("拉取 dist 快照网络错误: %s" % e)
     log("下载完成 %.0f MB，解压到 dist/ …" % (tmp.stat().st_size / 1048576))
+    # 统一走 staging：无论 zip 布局（有/无单层根目录）都正确落到 dist/
     target = ROOT / "dist"
+    stage = ROOT / ".tmp_dist_stage"
+    shutil.rmtree(stage, ignore_errors=True)
+    with zipfile.ZipFile(tmp) as zf:
+        zf.extractall(stage)
+    entries = [p for p in stage.iterdir()]
+    src = entries[0] if (len(entries) == 1 and entries[0].is_dir()) else stage
     if target.exists():
         shutil.rmtree(target)
-    with zipfile.ZipFile(tmp) as zf:
-        names = zf.namelist()
-        root_prefix = ""
-        first = names[0].split("/", 1)
-        if len(first) == 2 and all(n.split("/", 1)[0] == first[0] for n in names[:20]):
-            root_prefix = first[0] + "/"  # zip 内有单层根目录则剥掉
-        zf.extractall(ROOT)
-    if root_prefix and (ROOT / root_prefix.rstrip("/")).is_dir():
-        if target.exists():
-            shutil.rmtree(target)
-        (ROOT / root_prefix.rstrip("/")).rename(target)
+    shutil.move(str(src), str(target))
+    shutil.rmtree(stage, ignore_errors=True)
     tmp.unlink()
     if not (target / "index.html").exists():
         die("dist 快照解压后没有 index.html，内容异常")
@@ -319,6 +318,55 @@ def ensure_dist(ver: str) -> None:
     if (ROOT / "dist" / "index.html").exists():
         return
     download_dist_snapshot(ver)
+
+
+# ---- 旧版解压 bug 的散落清理（幂等） ----
+# 旧逻辑把无单层根的 zip extractall(ROOT)，产物散落到仓库根：
+#   index.html / latest.json / 1.x.x.json / env.json、1.0.2/ 等版本目录、
+#   assets/ 混入 hash 产物（如 Auvzyb9O1qsQ1hKZcs3Amp5Y-66e4c3d7.py）、project.json 被覆盖。
+SPILL_TOP_FILES = ("index.html", "latest.json", "1.x.x.json", "env.json")
+HASH_PRODUCT = re.compile(r"^.+-[0-9a-f]{8}\.[A-Za-z0-9]+$")
+
+
+def clean_dist_spill() -> None:
+    removed = 0
+    for n in SPILL_TOP_FILES:
+        p = ROOT / n
+        if p.exists():
+            p.unlink()
+            removed += 1
+    for p in ROOT.iterdir():
+        if p.is_dir() and re.match(r"^\d+\.\d+\.\d+", p.name) \
+                and ((p / "manifest-origin.json").exists() or (p / "version.json").exists()):
+            shutil.rmtree(p)
+            removed += 1
+    assets = ROOT / "assets"
+    if assets.is_dir():
+        git = shutil.which("git") or shutil.which("git.exe")
+        if git:
+            out = subprocess.run(
+                [git, "ls-files", "--others", "--exclude-standard", "--", "assets"],
+                cwd=str(ROOT), capture_output=True, text=True, timeout=60,
+            ).stdout
+            for rel in out.splitlines():
+                rel = rel.strip().replace("/", os.sep)
+                if rel and HASH_PRODUCT.match(os.path.basename(rel)):
+                    fp = ROOT / rel
+                    if fp.exists():
+                        fp.unlink()
+                        removed += 1
+    pj = ROOT / "project.json"
+    git = shutil.which("git") or shutil.which("git.exe")
+    if pj.exists() and git:
+        out = subprocess.run(
+            [git, "status", "--porcelain", "--", "project.json"],
+            cwd=str(ROOT), capture_output=True, text=True, timeout=30,
+        ).stdout
+        if out.strip():  # 被 dist 散落覆盖过 → 恢复 tracked 版本
+            subprocess.run([git, "checkout", "--", "project.json"], cwd=str(ROOT), timeout=30)
+            removed += 1
+    if removed:
+        log("清理旧版解压散落产物 %d 项（仓库根恢复干净）" % removed)
 
 
 def upload_dist_snapshot(ver: str) -> None:
@@ -743,6 +791,7 @@ def main() -> int:
     ver = read_version()
     log("version %s" % ver)
     log("shell %s" % SHELL)
+    clean_dist_spill()
     if args.upload_only:
         upload_release(ver)
         return 0

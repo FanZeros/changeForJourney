@@ -507,9 +507,10 @@ do
     print("[TalentStarMap] 边数: " .. #EDGES)
 end
 
--- [视觉降噪] 长边过滤：网格距离 > LONG_EDGE_DIST 的连线不绘制。
+-- [视觉降噪 + 保连通] 长边过滤：网格距离 > LONG_EDGE_DIST 的连线不绘制。
 -- 仅影响视觉层——邻接数据（NODES.adj）与服务端解锁校验（TalentNodeDefs）不变。
--- 保底：若某节点所有邻接边均为长边，恢复其最短一条，避免出现视觉孤岛。
+-- 连通性保证：过滤后用并查集检查，若星图分裂成多个连通分量，
+-- 按距离升序恢复最短的桥接长边，直到全图视觉连通（消除断线/悬空节点）。
 local LONG_EDGE_DIST = 3.0
 do
     local function edgeDist(a, b)
@@ -518,28 +519,47 @@ do
         local dx, dy = na.gx - nb.gx, na.gy - nb.gy
         return math.sqrt(dx * dx + dy * dy)
     end
+
+    -- 并查集
+    local parent = {}
+    for id = 0, NODE_MAX do
+        if NODES[id] then parent[id] = id end
+    end
+    local function find(x)
+        while parent[x] ~= x do
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        end
+        return x
+    end
+    local function union(a, b)
+        local ra, rb = find(a), find(b)
+        if ra ~= rb then parent[ra] = rb end
+    end
+
     local kept, dropped = {}, {}
-    local deg = {}
     for _, e in ipairs(EDGES) do
         local d = edgeDist(e[1], e[2])
         if d <= LONG_EDGE_DIST then
             kept[#kept + 1] = e
-            deg[e[1]] = (deg[e[1]] or 0) + 1
-            deg[e[2]] = (deg[e[2]] or 0) + 1
+            union(e[1], e[2])
         else
             dropped[#dropped + 1] = { e[1], e[2], d }
         end
     end
+
+    -- 按距离升序恢复桥接边，直至全图连通
+    table.sort(dropped, function(x, y) return x[3] < y[3] end)
     for _, drop in ipairs(dropped) do
         local a, b = drop[1], drop[2]
-        if (deg[a] or 0) == 0 or (deg[b] or 0) == 0 then
+        if find(a) ~= find(b) then
             kept[#kept + 1] = { a, b }
-            deg[a] = (deg[a] or 0) + 1
-            deg[b] = (deg[b] or 0) + 1
+            union(a, b)
         end
     end
+
     print("[TalentStarMap] 视觉连线: " .. #kept .. " / 邻接边 " .. #EDGES
-        .. "（长边过滤 > " .. LONG_EDGE_DIST .. " 格）")
+        .. "（长边过滤 > " .. LONG_EDGE_DIST .. " 格，已保连通）")
     EDGES = kept
 end
 
@@ -750,6 +770,27 @@ end
 local function clampCamera()
     camX = math.max(-CAM_BOUND, math.min(CAM_BOUND, camX))
     camY = math.max(-CAM_BOUND, math.min(CAM_BOUND, camY))
+end
+
+--- 滚轮缩放 (以指定屏幕点为锚, 缩放前后该点的世界坐标保持不动)
+--- @param sliderValue number 0~1 (0=最大缩放, 1=最小缩放, 与滑块一致)
+--- @param msx number 鼠标设计坐标X
+--- @param msy number 鼠标设计坐标Y
+function TalentStarMap.zoomAt(sliderValue, msx, msy)
+    local oldZoom = zoom
+    local newZoom = ZOOM_MAX - (ZOOM_MAX - ZOOM_MIN) * sliderValue
+    if math.abs(newZoom - oldZoom) < 1e-6 then return end
+
+    -- 鼠标下的世界坐标 (旧 zoom)
+    local wx = (msx - viewOffX - viewW * 0.5) / oldZoom + camX
+    local wy = (msy - viewOffY - viewH * 0.5) / oldZoom + camY
+
+    zoom = newZoom
+
+    -- 反推相机, 使该世界点仍投影在鼠标处
+    camX = wx - (msx - viewOffX - viewW * 0.5) / zoom
+    camY = wy - (msy - viewOffY - viewH * 0.5) / zoom
+    clampCamera()
 end
 
 --- 平移相机 (拖拽时调用)

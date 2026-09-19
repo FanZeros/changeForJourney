@@ -925,7 +925,7 @@ end
 isClickedEquipEquipped = function()
     local equipData = PlayerStore.Get("equipment")
     if not equipData or not equipData.equipped then return false, nil end
-    local heroEquipped = equipData.equipped[detState.heroId]
+    local heroEquipped = EquipmentSystem.getHeroSlots(equipData, detState.heroId)
     if not heroEquipped then return false, nil end
 
     local seqStr = detState.equipSeq
@@ -952,7 +952,7 @@ end
 getComparisonEquip = function()
     local equipData = PlayerStore.Get("equipment")
     if not equipData or not equipData.equipped then return nil, nil end
-    local heroEquipped = equipData.equipped[detState.heroId]
+    local heroEquipped = EquipmentSystem.getHeroSlots(equipData, detState.heroId)
     if not heroEquipped then return nil, nil end
 
     local slot = detState.slot
@@ -1125,23 +1125,20 @@ function EquipmentDetail.handleInput(dx, dy)
                 require("systems.GameSFX").play("install")
             end
         end
-        -- 乐观更新本地 equipment 缓存，立即刷新角标（不等服务端推送）
+        -- 多人模式乐观更新：数字 heroId 写入 equipped（单机已由 Standalone.tryLocalAction 落地）
         local okPS, PS = pcall(require, "client.data.PlayerStore")
         if okPS then
             local eq = PS.Get("equipment")
             if eq then
-                eq.equipped = eq.equipped or {}
-                local hid = tostring(detState.heroId)
-                if isEquipped then
-                    -- 卸下：清除对应槽位
-                    local sl = equippedSlot or detState.slot
-                    if eq.equipped[hid] then
-                        eq.equipped[hid][sl] = nil
+                local hid = tonumber(detState.heroId)
+                if hid then
+                    local slots = EquipmentSystem.ensureHeroSlots(eq, hid)
+                    if isEquipped then
+                        local sl = equippedSlot or detState.slot
+                        slots[sl] = nil
+                    else
+                        slots[detState.slot] = tonumber(detState.equipSeq)
                     end
-                else
-                    -- 穿戴：写入 seq
-                    eq.equipped[hid] = eq.equipped[hid] or {}
-                    eq.equipped[hid][detState.slot] = tonumber(detState.equipSeq)
                 end
             end
         end

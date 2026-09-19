@@ -181,117 +181,22 @@ function EquipmentService.EquipItem(uid, seq, heroId, slot)
     local equipData = PDM.GetModule(uid, "equipment")
     if not equipData then return false, "数据未加载" end
 
-    seq    = tonumber(seq)
-    heroId = tonumber(heroId)
-    if not seq or not heroId or not slot then
+    local heroesData = PDM.GetModule(uid, "heroes")
+    local seqN = tonumber(seq)
+    local heroN = tonumber(heroId)
+    if not seqN or not heroN or not slot then
         return false, "参数缺失"
     end
-
-    local seqStr = tostring(seq)
-
-    -- 验证装备存在于背包
-    if not equipData.inventory or not equipData.inventory[seqStr] then
-        return false, "装备不存在"
+    local ok, err, result = EquipmentSystem.applyEquip(equipData, seqN, heroN, slot, heroesData)
+    if not ok then
+        return false, err
     end
-
-    -- 验证槽位匹配
-    local equip = equipData.inventory[seqStr]
-    local isDualWieldOffhand = false
-    if equip.slot ~= slot then
-        -- 特殊情况：207/220 天赋允许单手武器放入副手槽
-        if slot == "offhand" and equip.slot == "weapon" and equip.grip == "onehand" then
-            local heroesData = PDM.GetModule(uid, "heroes")
-            local hd = heroesData and heroesData.roster and (heroesData.roster[heroId] or heroesData.roster[tostring(heroId)])
-            local advBranch = hd and hd.advBranch
-            local dualMode = AVC.getDualWieldMode(advBranch)
-            if dualMode then
-                local mainWeaponSeq = equipData.equipped and equipData.equipped[heroId] and equipData.equipped[heroId]["weapon"]
-                local mainWeaponType = nil
-                if mainWeaponSeq then
-                    local mainWeapon = equipData.inventory[tostring(mainWeaponSeq)]
-                    mainWeaponType = mainWeapon and mainWeapon.type
-                end
-                if dualMode == "different" and mainWeaponType and equip.type == mainWeaponType then
-                    return false, "武器精通：副手必须装备不同类型的武器"
-                elseif dualMode == "same" and mainWeaponType and equip.type ~= mainWeaponType then
-                    return false, "双刃精通：副手必须装备相同类型的武器"
-                end
-                isDualWieldOffhand = true
-                print("[EquipmentService] EQUIP 207/220 dual-wield: weapon→offhand, mode=" .. dualMode .. " type=" .. equip.type)
-            else
-                return false, "槽位不匹配"
-            end
-        else
-            return false, "槽位不匹配"
-        end
-    end
-
-    -- 初始化 equipped 结构
-    if not equipData.equipped then
-        equipData.equipped = {}
-    end
-    if not equipData.equipped[heroId] then
-        equipData.equipped[heroId] = {}
-    end
-
-    -- 防止同一装备被多个英雄穿戴：自动从原英雄卸下
-    if equipData.equipped then
-        for hid, slots in pairs(equipData.equipped) do
-            for s, eqSeq in pairs(slots) do
-                if tostring(eqSeq) == seqStr then
-                    if hid == heroId and s == slot then
-                        -- 已经在目标位置
-                    else
-                        slots[s] = nil
-                        print("[EquipmentService] EQUIP auto-unequip seq=" .. seqStr
-                            .. " from hero=" .. tostring(hid) .. " slot=" .. s)
-                    end
-                end
-            end
-        end
-    end
-
-    -- 记录旧装备
-    local oldSeq = equipData.equipped[heroId][slot]
-
-    -- ====== 双手武器互斥逻辑 ======
-    local unequippedSlots = {}
-
-    if slot == "weapon" and equip.grip == "twohand" then
-        if equipData.equipped[heroId]["offhand"] then
-            local removedSeq = equipData.equipped[heroId]["offhand"]
-            equipData.equipped[heroId]["offhand"] = nil
-            unequippedSlots[#unequippedSlots + 1] = { slot = "offhand", seq = removedSeq }
-            print("[EquipmentService] EQUIP twohand→remove offhand seq=" .. tostring(removedSeq))
-        end
-    elseif slot == "offhand" then
-        local weaponSeq = equipData.equipped[heroId]["weapon"]
-        if weaponSeq then
-            local weaponEquip = equipData.inventory[tostring(weaponSeq)]
-            if weaponEquip and weaponEquip.grip == "twohand" then
-                equipData.equipped[heroId]["weapon"] = nil
-                unequippedSlots[#unequippedSlots + 1] = { slot = "weapon", seq = weaponSeq }
-                print("[EquipmentService] EQUIP offhand→remove twohand weapon seq=" .. tostring(weaponSeq))
-            end
-        end
-    end
-
-    -- 穿戴新装备
-    equipData.equipped[heroId][slot] = seq
     PDM.MarkDirty(uid, "equipment")
-
     print("[EquipmentService] EQUIP uid=" .. tostring(uid)
-        .. " heroId=" .. tostring(heroId) .. " slot=" .. slot
-        .. " seq=" .. seqStr
-        .. (oldSeq and (" replaced=" .. tostring(oldSeq)) or ""))
-
-    return true, nil, {
-        seq     = seq,
-        heroId  = heroId,
-        slot    = slot,
-        oldSeq  = oldSeq,
-        unequippedSlots = #unequippedSlots > 0 and unequippedSlots or nil,
-    }
+        .. " heroId=" .. tostring(result.heroId) .. " slot=" .. tostring(result.slot)
+        .. " seq=" .. tostring(result.seq)
+        .. (result.oldSeq and (" replaced=" .. tostring(result.oldSeq)) or ""))
+    return true, nil, result
 end
 
 --- 卸下装备
@@ -303,28 +208,20 @@ function EquipmentService.UnequipItem(uid, heroId, slot)
     local equipData = PDM.GetModule(uid, "equipment")
     if not equipData then return false, "数据未加载" end
 
-    heroId = tonumber(heroId)
-    if not heroId or not slot then
+    local heroN = tonumber(heroId)
+    if heroN == nil or not slot then
         return false, "参数缺失"
     end
-
-    if not equipData.equipped or not equipData.equipped[heroId] then
-        return false, "无已装备数据"
+    ---@cast heroN number
+    local ok, err, result = EquipmentSystem.applyUnequip(equipData, heroN, slot)
+    if not ok then
+        return false, err
     end
-
-    local curSeq = equipData.equipped[heroId][slot]
-    if not curSeq then
-        return false, "该槽位无装备"
-    end
-
-    equipData.equipped[heroId][slot] = nil
     PDM.MarkDirty(uid, "equipment")
-
     print("[EquipmentService] UNEQUIP uid=" .. tostring(uid)
-        .. " heroId=" .. tostring(heroId) .. " slot=" .. slot
-        .. " seq=" .. tostring(curSeq))
-
-    return true, nil, { heroId = heroId, slot = slot, removedSeq = curSeq }
+        .. " heroId=" .. tostring(result.heroId) .. " slot=" .. tostring(result.slot)
+        .. " seq=" .. tostring(result.removedSeq))
+    return true, nil, result
 end
 
 -- ======================== 批量穿戴 / 卸下 ========================
@@ -340,24 +237,18 @@ function EquipmentService.UnequipAll(uid, heroId)
     heroId = tonumber(heroId)
     if not heroId then return false, "参数缺失" end
 
-    if not equipData.equipped or not equipData.equipped[heroId] then
-        return true, nil, { heroId = heroId, removed = 0 }
+    local ok, err, result = EquipmentSystem.applyUnequipAll(equipData, heroId)
+    if not ok then
+        return false, err
     end
-
-    local removed = 0
-    for slot, _ in pairs(equipData.equipped[heroId]) do
-        equipData.equipped[heroId][slot] = nil
-        removed = removed + 1
-    end
-
-    if removed > 0 then
+    if (result.removed or 0) > 0 then
         PDM.MarkDirty(uid, "equipment")
     end
 
     print("[EquipmentService] UNEQUIP_ALL uid=" .. tostring(uid)
-        .. " heroId=" .. tostring(heroId) .. " removed=" .. removed)
+        .. " heroId=" .. tostring(result.heroId) .. " removed=" .. tostring(result.removed))
 
-    return true, nil, { heroId = heroId, removed = removed }
+    return true, nil, result
 end
 
 --- 一键装备：为指定英雄的每个槽位装备战斗力最高的可穿戴装备
@@ -375,8 +266,7 @@ function EquipmentService.EquipAllBest(uid, heroId)
     local heroCfg = HC.get(heroId)
     if not heroCfg then return false, "英雄不存在" end
 
-    if not equipData.equipped then equipData.equipped = {} end
-    if not equipData.equipped[heroId] then equipData.equipped[heroId] = {} end
+    EquipmentSystem.ensureHeroSlots(equipData, heroId)
 
     local inventory = equipData.inventory
     if not inventory then return true, nil, { heroId = heroId, equipped = 0 } end
@@ -430,12 +320,13 @@ function EquipmentService.EquipAllBest(uid, heroId)
     -- 按顺序处理：weapon → armor → accessory → offhand
     local SLOT_ORDER = { "weapon", "armor", "accessory", "offhand" }
     local changed = 0
+    local heroSlots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
 
     for _, slotName in ipairs(SLOT_ORDER) do
         local ws = wearableSets[slotName]  -- nil = 不限制
 
         -- 当前已装备的战斗力
-        local curSeq = equipData.equipped[heroId][slotName]
+        local curSeq = heroSlots[slotName]
         local curPower = 0
         if curSeq then
             local curEquip = inventory[tostring(curSeq)]
@@ -448,7 +339,7 @@ function EquipmentService.EquipAllBest(uid, heroId)
         -- 副手槽处理时，已装备双手武器则跳过
         local baseline = curPower
         if slotName == "weapon" then
-            local ohSeq = equipData.equipped[heroId]["offhand"]
+            local ohSeq = heroSlots["offhand"]
             if ohSeq then
                 local ohEquip = inventory[tostring(ohSeq)]
                 if ohEquip then
@@ -457,7 +348,7 @@ function EquipmentService.EquipAllBest(uid, heroId)
             end
         elseif slotName == "offhand" then
             -- 如果主手是双手武器，副手不可装备
-            local wpnSeq = equipData.equipped[heroId]["weapon"]
+            local wpnSeq = heroSlots["weapon"]
             if wpnSeq then
                 local wpnEquip = inventory[tostring(wpnSeq)]
                 if wpnEquip and wpnEquip.grip == "twohand" then
@@ -486,7 +377,7 @@ function EquipmentService.EquipAllBest(uid, heroId)
                 matchSlot = true
             elseif slotName == "offhand" and equip.slot == "weapon" and equip.grip == "onehand" and dualMode then
                 -- 双持天赋：单手武器可放副手
-                local mainWeaponSeq = equipData.equipped[heroId]["weapon"]
+                local mainWeaponSeq = heroSlots["weapon"]
                 local mainWeaponType = nil
                 if mainWeaponSeq then
                     local mw = inventory[tostring(mainWeaponSeq)]
@@ -510,7 +401,7 @@ function EquipmentService.EquipAllBest(uid, heroId)
             -- 双手武器替换主手时，基准 = 当前主手 + 当前副手（卸副手的代价）
             local itemBaseline = baseline
             if slotName == "weapon" and equip.grip == "twohand" then
-                local ohSeq2 = equipData.equipped[heroId]["offhand"]
+                local ohSeq2 = heroSlots["offhand"]
                 if ohSeq2 then
                     local ohEquip2 = inventory[tostring(ohSeq2)]
                     if ohEquip2 then
@@ -539,28 +430,15 @@ function EquipmentService.EquipAllBest(uid, heroId)
                 equippedSeqNums[tonumber(curSeq)] = nil
             end
 
-            -- 双手武器互斥处理
-            if slotName == "weapon" and bestGrip == "twohand" then
-                local ohSeq = equipData.equipped[heroId]["offhand"]
-                if ohSeq then
-                    equippedSeqNums[tonumber(ohSeq)] = nil
-                    equipData.equipped[heroId]["offhand"] = nil
-                end
-            elseif slotName == "offhand" then
-                local wpnSeq = equipData.equipped[heroId]["weapon"]
-                if wpnSeq then
-                    local wpnEquip = inventory[tostring(wpnSeq)]
-                    if wpnEquip and wpnEquip.grip == "twohand" then
-                        equippedSeqNums[tonumber(wpnSeq)] = nil
-                        equipData.equipped[heroId]["weapon"] = nil
-                    end
-                end
+            local applied, applyErr = EquipmentSystem.applyEquip(
+                equipData, bestSeq, heroId, slotName, heroesData)
+            if not applied then
+                print("[EquipmentService] EQUIP_ALL_BEST apply failed: " .. tostring(applyErr))
+                goto continue_slot
             end
-
-            -- 装备新物品
-            equipData.equipped[heroId][slotName] = bestSeq
             equippedSeqNums[bestSeq] = true
             changed = changed + 1
+            heroSlots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
 
             print("[EquipmentService] EQUIP_ALL_BEST uid=" .. tostring(uid)
                 .. " heroId=" .. tostring(heroId) .. " slot=" .. slotName

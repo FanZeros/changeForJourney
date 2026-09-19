@@ -117,7 +117,7 @@ function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData)
     if not equipData or not equipData.inventory then return false end
 
     local inventory = equipData.inventory
-    local heroEquipped = equipData.equipped and equipData.equipped[heroId]
+    local heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
 
     -- 1) 当前已装备物品的战斗力（空槽 = 0）
     local equippedPower = 0
@@ -218,7 +218,7 @@ function CharacterDetail.hasAnyUpgradeForHero(heroId)
     if not equipData then return false end
 
     local inventory = equipData.inventory
-    local heroEquipped = equipData.equipped and equipData.equipped[heroId]
+    local heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
 
     -- 检测主手是否为双手武器 → 副手槽位被占用则跳过
     local offhandOccupied = false

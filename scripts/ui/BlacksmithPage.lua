@@ -463,7 +463,7 @@ local function deriveSelectedEquip()
         state.selectedEquip = nil
         return
     end
-    local heroEquipped = eqData.equipped[tostring(slot.heroId)] or eqData.equipped[slot.heroId]
+    local heroEquipped = EquipmentSystem.getHeroSlots(eqData, slot.heroId)
     if not heroEquipped then
         state.selectedEquip = nil
         BlacksmithEnhance.updateEnhanceData(nil)
@@ -866,7 +866,7 @@ local function drawEquipSlots(vg)
     local heroEquipped = nil
     if heroId and eqData and eqData.equipped then
         -- 尝试字符串和数字两种 key
-        heroEquipped = eqData.equipped[tostring(heroId)] or eqData.equipped[heroId]
+        heroEquipped = EquipmentSystem.getHeroSlots(eqData, heroId)
     end
 
     -- 诊断日志（每 3 秒打印一次）
@@ -1170,8 +1170,7 @@ function BlacksmithPage.open(preSelectEquip, initialTab)
             for partySlot = 1, 5 do
                 local slot = teamSlots[partySlot]
                 if slot and slot.state == "occupied" and slot.heroId then
-                    local heroEquipped = eqData.equipped[tostring(slot.heroId)]
-                                     or eqData.equipped[slot.heroId]
+                    local heroEquipped = EquipmentSystem.getHeroSlots(eqData, slot.heroId)
                     if heroEquipped then
                         for _, slotKey in ipairs(EQUIP_SLOT_ORDER) do
                             local seq = heroEquipped[slotKey]

@@ -95,8 +95,7 @@ M.STAT_LAYOUT = {
 -- ======================== 属性收集 ========================
 
 local function getHeroEquipped(eqData, heroId)
-    if not eqData or not eqData.equipped then return nil end
-    return eqData.equipped[heroId] or eqData.equipped[tostring(heroId)]
+    return EquipmentSystem.getHeroSlots(eqData, heroId)
 end
 
 local function getHeroRuntimeData(heroesData, heroId)

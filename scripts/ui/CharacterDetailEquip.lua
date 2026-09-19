@@ -12,6 +12,7 @@ local ClassConfig     = require("config.ClassConfig")
 local AD              = require("systems.AttributeDef")
 local PlayerStore     = require("client.data.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
+local EquipmentSystem = require("systems.EquipmentSystem")
 local ImageCache      = require("ui.ImageCache")
 local AVC             = require("config.AdvancementConfig")
 local BF              = require("systems.ButtonFeedback")
@@ -119,7 +120,7 @@ end
 local function getEquippedWeaponType(heroId)
     local equipData = PlayerStore.Get("equipment")
     if not equipData or not equipData.equipped or not equipData.inventory then return nil end
-    local heroEquipped = equipData.equipped[heroId]
+    local heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
     if not heroEquipped then return nil end
     local weaponSeq = heroEquipped["weapon"]
     if not weaponSeq then return nil end
@@ -228,7 +229,7 @@ local function refreshItems()
     end
 
     -- 当前英雄该槽位已装备的 seq（标记为已穿戴，排第一）
-    local heroEquipped = equipData.equipped and equipData.equipped[heroId]
+    local heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
     local currentEquipSeq = nil
     if heroEquipped then
         currentEquipSeq = heroEquipped[slot]
@@ -248,6 +249,9 @@ local function refreshItems()
         local seqStr = tostring(seq)
 
         -- 判断是否可穿戴
+        if not equip.type or not equip.slot then
+            EquipmentSystem.hydrate(equip)
+        end
         local canWear = true
         if wearableSet and not wearableSet[equip.type] then
             canWear = false

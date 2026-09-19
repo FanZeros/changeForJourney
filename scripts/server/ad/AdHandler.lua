@@ -63,7 +63,9 @@ local function setPending(uid, scene)
     }
     pendingCache_[uid] = data
     -- 持久化到 serverCloud，确保断线/崩溃后重连仍可读取
-    serverCloud:Set(uid, AD_PENDING_KEY, data)
+    pcall(function()
+        serverCloud:Set(uid, AD_PENDING_KEY, data)
+    end)
     return true
 end
 
@@ -72,7 +74,9 @@ end
 local function clearPending(uid)
     if pendingCache_[uid] then
         pendingCache_[uid] = nil
-        serverCloud:Set(uid, AD_PENDING_KEY, false)
+        pcall(function()
+            serverCloud:Set(uid, AD_PENDING_KEY, false)
+        end)
         -- 推送 false 通知客户端清除 adPending 标记
         ---@diagnostic disable-next-line: param-type-mismatch
         ServerDispatcher.pushModule(uid, "adPending", false)
@@ -243,41 +247,44 @@ function AdHandler.CheckAndPushPending(uid)
     end
 
     -- 内存无缓存（进程重启/首次加载），从 cloud 异步读取
-    serverCloud:Get(uid, AD_PENDING_KEY, {
-        ok = function(scores)
-            local data = scores and scores[AD_PENDING_KEY]
-            if not data or data == false or type(data) ~= "table" then
-                return  -- 无 pending 标记
-            end
+    local okCloud = pcall(function()
+        serverCloud:Get(uid, AD_PENDING_KEY, {
+            ok = function(scores)
+                local data = scores and scores[AD_PENDING_KEY]
+                if not data or data == false or type(data) ~= "table" then
+                    return
+                end
 
-            local elapsed = os.time() - (data.timestamp or 0)
+                local elapsed = os.time() - (data.timestamp or 0)
 
-            -- 过期清除
-            if elapsed > PENDING_EXPIRY_SECS then
-                print(string.format("%s CheckAndPushPending EXPIRED (cloud) uid=%s scene=%s elapsed=%ds",
+                if elapsed > PENDING_EXPIRY_SECS then
+                    print(string.format("%s CheckAndPushPending EXPIRED (cloud) uid=%s scene=%s elapsed=%ds",
+                        TAG, tostring(uid), data.scene, elapsed))
+                    pendingCache_[uid] = nil
+                    pcall(function()
+                        serverCloud:Set(uid, AD_PENDING_KEY, false)
+                    end)
+                    return
+                end
+
+                pendingCache_[uid] = data
+                print(string.format("%s CheckAndPushPending PUSH (cloud) uid=%s scene=%s elapsed=%ds",
                     TAG, tostring(uid), data.scene, elapsed))
-                pendingCache_[uid] = nil
-                serverCloud:Set(uid, AD_PENDING_KEY, false)
-                return
-            end
-
-            -- 写入内存缓存
-            pendingCache_[uid] = data
-
-            -- 推送给客户端
-            print(string.format("%s CheckAndPushPending PUSH (cloud) uid=%s scene=%s elapsed=%ds",
-                TAG, tostring(uid), data.scene, elapsed))
-            ServerDispatcher.pushModule(uid, "adPending", {
-                scene     = data.scene,
-                timestamp = data.timestamp,
-                elapsed   = elapsed,
-            })
-        end,
-        error = function(code, reason)
-            print(string.format("%s CheckAndPushPending cloud read error uid=%s code=%s",
-                TAG, tostring(uid), tostring(code)))
-        end,
-    })
+                ServerDispatcher.pushModule(uid, "adPending", {
+                    scene     = data.scene,
+                    timestamp = data.timestamp,
+                    elapsed   = elapsed,
+                })
+            end,
+            error = function(code, reason)
+                print(string.format("%s CheckAndPushPending cloud read error uid=%s code=%s",
+                    TAG, tostring(uid), tostring(code)))
+            end,
+        })
+    end)
+    if not okCloud then
+        print(string.format("%s CheckAndPushPending skip cloud uid=%s", TAG, tostring(uid)))
+    end
 end
 
 --- 返回崩溃补偿最小经过时间（客户端也可能需要此常量）

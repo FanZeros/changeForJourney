@@ -672,6 +672,9 @@ function EquipmentSystem.addToInventory(equipData, equip)
     equipData.nextSeq = seq + 1
 
     equip.seq = seq
+    if not equip.type or not equip.slot then
+        EquipmentSystem.hydrate(equip)
+    end
     equipData.inventory[tostring(seq)] = equip
 
     return seq
@@ -695,7 +698,215 @@ end
 ---@param seq number
 ---@return table|nil
 function EquipmentSystem.getFromInventory(equipData, seq)
-    return equipData.inventory[tostring(seq)]
+    if not equipData or not equipData.inventory then return nil end
+    local key = tostring(seq)
+    local equip = equipData.inventory[key] or equipData.inventory[seq]
+    if equip and (not equip.type or not equip.slot) then
+        EquipmentSystem.hydrate(equip)
+    end
+    return equip
+end
+
+--- 读取某英雄的已穿戴槽位表（兼容 cjson 把数字 heroId 变成字符串）
+---@param equipData table
+---@param heroId number|string
+---@return table|nil
+function EquipmentSystem.getHeroSlots(equipData, heroId)
+    if not equipData or not equipData.equipped then return nil end
+    local equipped = equipData.equipped
+    local n = tonumber(heroId)
+    local slots = equipped[heroId]
+    if slots then return slots end
+    if n ~= nil then
+        slots = equipped[n]
+        if slots then return slots end
+        slots = equipped[tostring(n)]
+        if slots then return slots end
+    end
+    return nil
+end
+
+--- 确保某英雄的穿戴表存在，并把字符串 key 并到数字 key
+---@param equipData table
+---@param heroId number|string
+---@return table
+function EquipmentSystem.ensureHeroSlots(equipData, heroId)
+    if not equipData.equipped then
+        equipData.equipped = {}
+    end
+    local n = tonumber(heroId)
+    local slots = EquipmentSystem.getHeroSlots(equipData, heroId)
+    if slots then
+        if n ~= nil and not equipData.equipped[n] then
+            equipData.equipped[n] = slots
+            equipData.equipped[tostring(n)] = nil
+        end
+        return slots
+    end
+    slots = {}
+    if n ~= nil then
+        equipData.equipped[n] = slots
+    else
+        equipData.equipped[heroId] = slots
+    end
+    return slots
+end
+
+--- 本地穿戴（服务端 / 单机共用）。heroesData 可选，用于双持校验。
+---@param equipData table
+---@param seq number|string
+---@param heroId number|string
+---@param slot string
+---@param heroesData table|nil
+---@return boolean ok
+---@return string|nil err
+---@return table|nil result
+function EquipmentSystem.applyEquip(equipData, seq, heroId, slot, heroesData)
+    local seqN = tonumber(seq)
+    local heroN = tonumber(heroId)
+    if not equipData or not seqN or not heroN or not slot then
+        return false, "参数缺失"
+    end
+    seq = seqN
+    heroId = heroN
+
+    local equip = EquipmentSystem.getFromInventory(equipData, seq)
+    if not equip then
+        return false, "装备不存在"
+    end
+    if not equip.slot then
+        EquipmentSystem.hydrate(equip)
+    end
+
+    local seqStr = tostring(seq)
+    if equip.slot ~= slot then
+        if slot == "offhand" and equip.slot == "weapon" and equip.grip == "onehand" then
+            local dualMode = nil
+            if heroesData and heroesData.roster then
+                local hd = heroesData.roster[heroId] or heroesData.roster[tostring(heroId)]
+                local AVC = require("config.AdvancementConfig")
+                dualMode = AVC.getDualWieldMode(hd and hd.advBranch)
+            end
+            if not dualMode then
+                return false, "槽位不匹配"
+            end
+            local heroSlots = EquipmentSystem.getHeroSlots(equipData, heroId)
+            local mainWeaponSeq = heroSlots and heroSlots["weapon"]
+            local mainWeaponType = nil
+            if mainWeaponSeq then
+                local mainWeapon = EquipmentSystem.getFromInventory(equipData, mainWeaponSeq)
+                mainWeaponType = mainWeapon and mainWeapon.type
+            end
+            if dualMode == "different" and mainWeaponType and equip.type == mainWeaponType then
+                return false, "武器精通：副手必须装备不同类型的武器"
+            elseif dualMode == "same" and mainWeaponType and equip.type ~= mainWeaponType then
+                return false, "双刃精通：副手必须装备相同类型的武器"
+            end
+        else
+            return false, "槽位不匹配"
+        end
+    end
+
+    local slots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
+
+    if equipData.equipped then
+        for hid, hslots in pairs(equipData.equipped) do
+            if type(hslots) == "table" then
+                for s, eqSeq in pairs(hslots) do
+                    if tostring(eqSeq) == seqStr then
+                        local sameHero = tonumber(hid) == heroId
+                        if not (sameHero and s == slot) then
+                            hslots[s] = nil
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    local oldSeq = slots[slot]
+    local unequippedSlots = {}
+
+    if slot == "weapon" and equip.grip == "twohand" then
+        if slots["offhand"] then
+            local removedSeq = slots["offhand"]
+            slots["offhand"] = nil
+            unequippedSlots[#unequippedSlots + 1] = { slot = "offhand", seq = removedSeq }
+        end
+    elseif slot == "offhand" then
+        local weaponSeq = slots["weapon"]
+        if weaponSeq then
+            local weaponEquip = EquipmentSystem.getFromInventory(equipData, weaponSeq)
+            if weaponEquip and weaponEquip.grip == "twohand" then
+                slots["weapon"] = nil
+                unequippedSlots[#unequippedSlots + 1] = { slot = "weapon", seq = weaponSeq }
+            end
+        end
+    end
+
+    slots[slot] = seq
+    print("[EquipmentSystem] applyEquip heroId=" .. tostring(heroId)
+        .. " slot=" .. slot .. " seq=" .. seqStr
+        .. (oldSeq and (" replaced=" .. tostring(oldSeq)) or ""))
+
+    return true, nil, {
+        seq = seq,
+        heroId = heroId,
+        slot = slot,
+        oldSeq = oldSeq,
+        unequippedSlots = #unequippedSlots > 0 and unequippedSlots or nil,
+    }
+end
+
+---@param equipData table
+---@param heroId number|string
+---@param slot string
+---@return boolean ok
+---@return string|nil err
+---@return table|nil result
+function EquipmentSystem.applyUnequip(equipData, heroId, slot)
+    local heroN = tonumber(heroId)
+    if not equipData or heroN == nil or not slot then
+        return false, "参数缺失"
+    end
+    ---@cast heroN number
+    local slots = EquipmentSystem.getHeroSlots(equipData, heroN)
+    if not slots then
+        return false, "无已装备数据"
+    end
+    local curSeq = slots[slot]
+    if not curSeq then
+        return false, "该槽位无装备"
+    end
+    slots[slot] = nil
+    print("[EquipmentSystem] applyUnequip heroId=" .. tostring(heroN)
+        .. " slot=" .. slot .. " seq=" .. tostring(curSeq))
+    return true, nil, { heroId = heroN, slot = slot, removedSeq = curSeq }
+end
+
+---@param equipData table
+---@param heroId number|string
+---@return boolean ok
+---@return string|nil err
+---@return table|nil result
+function EquipmentSystem.applyUnequipAll(equipData, heroId)
+    local heroN = tonumber(heroId)
+    if not equipData or heroN == nil then
+        return false, "参数缺失"
+    end
+    ---@cast heroN number
+    local slots = EquipmentSystem.getHeroSlots(equipData, heroN)
+    if not slots then
+        return true, nil, { heroId = heroN, removed = 0 }
+    end
+    local removed = 0
+    for slot, _ in pairs(slots) do
+        slots[slot] = nil
+        removed = removed + 1
+    end
+    print("[EquipmentSystem] applyUnequipAll heroId=" .. tostring(heroN)
+        .. " removed=" .. removed)
+    return true, nil, { heroId = heroN, removed = removed }
 end
 
 -- ======================== 数据瘦身（存储优化） ========================
@@ -893,8 +1104,9 @@ function EquipmentSystem.hydrate(equip)
     EquipmentSystem.normalizeCorruptRevert(equip)
     EquipmentSystem.migrateLegacyCorruptSnapshot(equip)
 
-    -- 从模板还原装备基础属性
+    -- 从模板还原装备基础属性（兼容 templateId 被 cjson 转成 number）
     local tpl = EquipmentConfig.ITEMS[equip.templateId]
+        or EquipmentConfig.ITEMS[tostring(equip.templateId)]
     if tpl then
         equip.name = tpl.name
         equip.type = tpl.type

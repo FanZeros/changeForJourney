@@ -571,9 +571,19 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     local tgtIdx = findUnitIndex(tgtList, target)
     local tgtCX, tgtCY = getCardPos(tgtList, tgtIdx or math.ceil(#tgtList * 0.5))
     local showCrit = statMeta and statMeta.isCrit or false
-    -- 伤害飘字配色：普通白色 / 暴击红色
-    addFloatingText((prefix or "") .. "-" .. NumberUtil.format(actual), tgtCX, tgtCY,
-        showCrit and { 255, 60, 60 } or { 255, 255, 255 }, showCrit)
+    -- 伤害飘字配色：普通白色 / 暴击红色 / 护盾吸收灰色（完全吸收时不显示 -0）
+    local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
+    if actual > 0 then
+        addFloatingText((prefix or "") .. "-" .. NumberUtil.format(actual), tgtCX, tgtCY,
+            showCrit and { 255, 60, 60 } or { 255, 255, 255 }, showCrit)
+        if shieldAbsorb > 0 then
+            addFloatingText("-" .. NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
+                { 168, 168, 168 }, false)
+        end
+    elseif shieldAbsorb > 0 then
+        addFloatingText((prefix or "") .. "-" .. NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
+            { 168, 168, 168 }, false)
+    end
     setHitFlash(target)
     if actual > 0 then
         require("systems.GameSFX").play("hit")
@@ -1387,8 +1397,19 @@ local function performAttack(attacker, targetList, isAlly)
                             prefix = prefix .. "格挡 "
                         end
 
-                        addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY,
-                            hit.isCrit and { 255, 60, 60 } or { 255, 255, 255 }, hit.isCrit)
+                        -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
+                        local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
+                        if actual > 0 then
+                            addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY,
+                                hit.isCrit and { 255, 60, 60 } or { 255, 255, 255 }, hit.isCrit)
+                            if shieldAbsorb > 0 then
+                                addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+                                    { 168, 168, 168 }, false)
+                            end
+                        elseif shieldAbsorb > 0 then
+                            addFloatingText(prefix .. "-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+                                { 168, 168, 168 }, false)
+                        end
 
                         -- 暴击回调（供台词系统触发暴击台词�?
                         if hit.isCrit and BCS.ctx.onCrit then
@@ -1717,7 +1738,18 @@ local function performComboAttack(entry)
             color  = { 180, 180, 180 }
         end
 
-        addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit)
+        -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
+        local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
+        if actual > 0 then
+            addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit)
+            if shieldAbsorb > 0 then
+                addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+                    { 168, 168, 168 }, false)
+            end
+        elseif shieldAbsorb > 0 then
+            addFloatingText(prefix .. "-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+                { 168, 168, 168 }, false)
+        end
 
         if curTgt.hp <= 0 and hpBefore > 0 then
             local overkill = math.max(0, finalDmg - hpBefore)

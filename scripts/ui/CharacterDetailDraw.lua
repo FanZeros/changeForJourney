@@ -61,11 +61,6 @@ local MID_EXP_CX, MID_EXP_CY = 536, 1083
 local MID_EXP_W, MID_EXP_H   = 910, 54
 local MID_EXP_PADDING         = 5
 
-local MID_QUALITY_BOX_CX, MID_QUALITY_BOX_CY = 310, 1175
-local MID_QUALITY_BOX_W, MID_QUALITY_BOX_H   = 440, 60
-local MID_QUALITY_LABEL_X  = 121
-local MID_QUALITY_LABEL_Y  = 1175
-local MID_QUALITY_ICON_RIGHT_X = 509
 
 local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 770, 1175
 local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 440, 60
@@ -323,7 +318,6 @@ local img = {
     arrowIcon     = -1,   -- 切换箭头图标 UI_YWJM_XYG2（默认向右）
 }
 
-local imgQualityBadges = {}
 local imgStatIcons     = {}
 
 -- 来自 CharacterPanel 的共享图片（通过 setContext 注入）
@@ -417,10 +411,6 @@ function M.initImages(vg)
     img.midExpFill = nvgCreateImage(vg, "image/进度条/UI_JSXQ_JYT2.png", 0)
     img.midDiv1    = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_FGXj.png", 0)
 
-    imgQualityBadges["R"]   = nvgCreateImage(vg, "image/品质框/UI_PZBZ_R.png", 0)
-    imgQualityBadges["SR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SR.png", 0)
-    imgQualityBadges["SSR"] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SSR.png", 0)
-    imgQualityBadges["UR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_UR.png", 0)
 
     img.attrDeco = nvgCreateImage(vg, "image/通用图标/ICON_XX.png", 0)
     img.midDiv2  = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_FGXj.png", 0)
@@ -882,31 +872,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, MID_EXP_CX, MID_EXP_CY, lvlText, nil)
 
-    -- === 11) 品质内容背景框 ===
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        MID_QUALITY_BOX_CX - MID_QUALITY_BOX_W * 0.5,
-        MID_QUALITY_BOX_CY - MID_QUALITY_BOX_H * 0.5,
-        MID_QUALITY_BOX_W, MID_QUALITY_BOX_H, 20)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-    nvgFill(vg)
-
-    -- === 12) "品质"文本 ===
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 35)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-    nvgText(vg, MID_QUALITY_LABEL_X, MID_QUALITY_LABEL_Y, "品质", nil)
-
-    -- === 13) 品质文字图标 ===
-    local qualityName = HC.QUALITY_INFO[heroCfg.quality]
-        and HC.QUALITY_INFO[heroCfg.quality].name or "R"
-    local qBadge = imgQualityBadges[qualityName]
-    if qBadge and qBadge >= 0 then
-        local qImgW, qImgH = nvgImageSize(vg, qBadge)
-        local qDrawCX = MID_QUALITY_ICON_RIGHT_X - qImgW * 0.5
-        drawImageCentered(vg, qBadge, qDrawCX, MID_QUALITY_LABEL_Y, qImgW, qImgH, 1.0)
-    end
+    -- [品质显示已取消] 原 §11 品质内容背景框 / §12 "品质"文本 / §13 品质文字图标 整体移除
 
     -- === 14) 职业内容背景框 ===
     nvgBeginPath(vg)

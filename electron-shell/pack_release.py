@@ -283,9 +283,55 @@ def fetch_json(url: str, timeout: int = 60):
 DIST_SNAPSHOT_TAG = "dist-snapshot"
 
 
+def dist_snapshot_name(ver: str) -> str:
+    """dist-{ver}-{commit短hash}.zip——hash 进文件名，避免 CDN 同名缓存取到旧快照。"""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=str(ROOT),
+            capture_output=True, text=True, timeout=15,
+        )
+        h = out.stdout.strip()
+        if h:
+            return "dist-%s-%s.zip" % (ver, h)
+    except Exception:
+        pass
+    return "dist-%s.zip" % ver
+
+
+def pick_latest_snapshot_asset(assets: list, ver: str) -> str:
+    """从 Release 资产里挑 dist-{ver}-* 系列最新的一个（按 updated_at）。"""
+    import re as _re
+    cands = []
+    pat = _re.compile(r"^dist-%s-[0-9a-f]{7,}\.zip$" % _re.escape(ver))
+    legacy = "dist-%s.zip" % ver
+    for a in assets or []:
+        name = a.get("name") or ""
+        if pat.match(name):
+            cands.append((a.get("updated_at") or "", name))
+        elif name == legacy:
+            cands.append((a.get("updated_at") or "", name))
+    if not cands:
+        return ""
+    cands.sort()
+    return cands[-1][1]
+
+
 def download_dist_snapshot(ver: str) -> None:
     repo = git_remote_repo()
-    name = "dist-%s.zip" % ver
+    # 匿名列 Release 资产，选 dist-{ver}-* 最新（带 commit hash 的文件名天然防旧缓存）
+    api = "https://api.github.com/repos/%s/releases/tags/%s" % (repo, DIST_SNAPSHOT_TAG)
+    name = ""
+    try:
+        with urlopen(Request(api, headers={"User-Agent": "zyjm-pack-release"}), timeout=60) as resp:
+            rel = json.loads(resp.read().decode())
+        name = pick_latest_snapshot_asset(rel.get("assets"), ver)
+    except HTTPError as e:
+        if e.code != 404:
+            log("WARN 列快照资产失败 HTTP %s，尝试固定名…" % e.code)
+    except Exception as e:
+        log("WARN 列快照资产失败(%s)，尝试固定名…" % e)
+    if not name:
+        name = dist_snapshot_name(ver)
     url = "https://github.com/%s/releases/download/%s/%s" % (repo, DIST_SNAPSHOT_TAG, name)
     log("本机无 dist/，从 Release %s 匿名拉取 %s（公开仓库无需 token）…" % (DIST_SNAPSHOT_TAG, name))
     tmp = RELEASE / name
@@ -439,7 +485,7 @@ def upload_dist_snapshot(ver: str) -> None:
     if not token:
         die("找不到 GitHub token")
     repo = git_remote_repo()
-    out = RELEASE / ("dist-%s.zip" % ver)
+    out = RELEASE / dist_snapshot_name(ver)
     out.parent.mkdir(parents=True, exist_ok=True)
     if out.exists():
         out.unlink()
@@ -459,6 +505,12 @@ def upload_dist_snapshot(ver: str) -> None:
     rel = get_or_create_release_tag(repo, token, DIST_SNAPSHOT_TAG,
                                     "dist 快照（供本机 pack_release 自动拉取）")
     rid = int(rel.get("id") or 0)
+    # 清理本版本旧快照（保留刚上传的），避免 CDN 同名缓存与资产堆积
+    prefix_new = out.name
+    for a in rel.get("assets") or []:
+        an = a.get("name") or ""
+        if an != prefix_new and (an.startswith("dist-%s-" % ver) or an == "dist-%s.zip" % ver):
+            delete_asset_if_exists(repo, token, rel, an)
     delete_asset_if_exists(repo, token, rel, out.name)
     upload_file(repo, token, rid, out, "application/zip")
     log("dist 快照已上传：Release %s / %s" % (DIST_SNAPSHOT_TAG, out.name))

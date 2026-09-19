@@ -164,6 +164,22 @@ def token_from_git_credentials() -> str:
             tok = u.password or u.username or ""
             if tok and tok not in ("x-oauth-basic", "git"):
                 return tok
+    # Windows 凭据管理器 / macOS 钥匙串等由 git 凭据助手管理——走 git credential fill
+    git = shutil.which("git") or shutil.which("git.exe")
+    if git:
+        try:
+            out = subprocess.run(
+                [git, "credential", "fill"],
+                input="protocol=https\nhost=github.com\n\n",
+                capture_output=True, text=True, timeout=15,
+            ).stdout
+            for line in out.splitlines():
+                if line.startswith("password="):
+                    tok = line[len("password="):].strip()
+                    if tok:
+                        return tok
+        except Exception:
+            pass
     return ""
 
 
@@ -250,13 +266,9 @@ DIST_SNAPSHOT_TAG = "dist-snapshot"
 
 def download_dist_snapshot(ver: str) -> None:
     repo = git_remote_repo()
-    token = github_token()
-    if not token:
-        die("本机没有 dist/ 且找不到 GitHub token（拉取 dist 快照需要）。\n"
-            "  任选：gh auth login / setx GITHUB_TOKEN <PAT> / git 已存凭据")
     name = "dist-%s.zip" % ver
     url = "https://github.com/%s/releases/download/%s/%s" % (repo, DIST_SNAPSHOT_TAG, name)
-    log("本机无 dist/，从 Release %s 拉取 %s …" % (DIST_SNAPSHOT_TAG, name))
+    log("本机无 dist/，从 Release %s 匿名拉取 %s（公开仓库无需 token）…" % (DIST_SNAPSHOT_TAG, name))
     tmp = RELEASE / name
     tmp.parent.mkdir(parents=True, exist_ok=True)
     req = Request(url, headers={"User-Agent": "zyjm-pack-release"})
@@ -272,8 +284,14 @@ def download_dist_snapshot(ver: str) -> None:
                 if total % (16 << 20) < (1 << 20):
                     log("  downloaded %.0f MB" % (total / 1048576))
     except HTTPError as e:
-        die("拉取 dist 快照失败 HTTP %s：%s\n"
-            "  请让云端会话在 Build 后上传 dist-%s.zip（tag=%s）。" % (e.code, e.read().decode(errors="replace")[:300], ver, DIST_SNAPSHOT_TAG))
+        if e.code == 404:
+            die("dist 快照不存在：%s\n"
+                "  云端还没上传 dist-%s.zip（tag=%s）。请让云端会话 Build 后执行\n"
+                "  python pack_release.py --dist-only 上传，或核对 package.json version。" % (url, ver, DIST_SNAPSHOT_TAG))
+        if e.code in (401, 403):
+            die("拉取 dist 快照被拒 HTTP %s（仓库可能为私有）。\n"
+                "  配置 token 任选：gh auth login / setx GITHUB_TOKEN <PAT> / git 凭据助手已登录。" % e.code)
+        die("拉取 dist 快照失败 HTTP %s：%s" % (e.code, e.read().decode(errors="replace")[:300]))
     except URLError as e:
         die("拉取 dist 快照网络错误: %s" % e)
     log("下载完成 %.0f MB，解压到 dist/ …" % (tmp.stat().st_size / 1048576))

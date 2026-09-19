@@ -46,6 +46,10 @@ python pack_release.py --upload-only  # 已有 zip 只上传
 
 前提：仓库根已有最新 `dist/`（Maker Build 过）。脚本会删预览桥/凭证、去水印、注入免登录 WS shim。
 
+**本机没有 dist/？** 脚本会自动从 GitHub Release `dist-snapshot` 拉取 `dist-{version}.zip`
+解压（需本机 GitHub 凭据/token）。该快照由云端会话在 Build 后执行
+`python pack_release.py --dist-only` 上传维护。
+
 ## 构筑（手动）
 
 本机 Windows（有 NSIS）：
@@ -66,7 +70,17 @@ npm run dir     # 产出 release/win-unpacked/
 ```
 
 产物：`release/ZhongYanZhiMen-win64-offline-{version}.zip`（解压后运行 `ZhongYanZhiMen.exe`）。
-首次启动仍需联网拉引擎 WASM（约 70MB，官方 CDN）。
+
+## 自带运行时（完全离线）
+
+`pack_release.py` 默认把**引擎运行时**（UrhoXRuntime wasm/js/data，约 83MB）从官方 CDN
+镜像到 `game_engine/`（`.gitignore` 已排除，不入库），打包时并入 `game/src/engine/`，
+并把 `game/1.0.2/engine-*.json` 的 `base_url` 补丁成相对路径 `src/engine/`、
+web 入口 loader `index.min.js` 本地化到 `game/src/web/src/`。
+
+- 引擎加载链（`stable.json → manifest → assets/{uuid}-{hash}{ext}`）全部落在本地 server
+- **玩家首次启动零联网**（登录服已被 WebSocket shim 拦截 → skipping login）
+- 镜像按 size 校验、幂等增量下载：`--runtime-only` 单独预下载；`--skip-runtime` 退回联网拉取形态
 
 ## 运行行为（main.js 定稿）
 

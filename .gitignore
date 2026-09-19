@@ -8,11 +8,6 @@ logs/.nfs*
 .sce/logs/
 .sce/build/build_steps/__pycache__/
 
-# Electron Windows 离线包（game/ 是 dist 拷贝，release/ 是构筑产物）
-electron-shell/game/
-electron-shell/node_modules/
-electron-shell/release/
-
 # Temp & swap files
 .tmp/
 *.crswap
@@ -43,3 +38,9 @@ tools/
 urhox-libs/
 AGENTS.md
 CLAUDE.md
+
+# Electron Windows 离线包（game/ 是 dist 拷贝，release/ 是构筑产物，game_engine/ 是离线运行时镜像）
+electron-shell/game/
+electron-shell/node_modules/
+electron-shell/release/
+electron-shell/game_engine/

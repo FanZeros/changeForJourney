@@ -481,11 +481,11 @@ function TownScene.draw(vg)
     if churchLocked then
         drawBuildingLockOverlay(vg, CHURCH_CX, CHURCH_CY, "church", true)
     end
-    -- 教堂角标（标签右上角）：天赋可用 或 转职可用
+    -- 教堂角标（骑在标签右上角，约一半探出牌外）：天赋可用 或 转职可用
     if not churchLocked and imgIconUp >= 0 and getChurchPage().hasAnyChurchBadge() then
         local upSize = 40
-        local upX = CHURCH_LBL_CX + CHURCH_LBL_W * 0.5 - upSize * 0.3
-        local upY = CHURCH_LBL_CY - CHURCH_LBL_H * 0.5 + upSize * 0.3
+        local upX = CHURCH_LBL_CX + CHURCH_LBL_W * 0.5 - upSize * 0.15
+        local upY = CHURCH_LBL_CY - CHURCH_LBL_H * 0.5 - upSize * 0.15
         drawImageCentered(vg, imgIconUp, upX, upY, upSize, upSize, 1.0)
     end
     BF.finish(vg, _bfChurch)

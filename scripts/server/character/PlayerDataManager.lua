@@ -326,6 +326,21 @@ function PlayerDataManager.SetServerId(uid, serverId)
     print("[PDM] SetServerId uid=" .. tostring(uid) .. " serverId=" .. tostring(serverId))
 end
 
+--- 单机：把 ClientDispatcher 的模块表直接挂到 PDM，不走云存档
+---@param uid number
+---@param modules table
+---@param serverId number|nil
+function PlayerDataManager.AttachLocalModules(uid, modules, serverId)
+    local pd = ensurePlayerData(uid)
+    pd.modules = modules
+    pd.serverId = serverId or 1
+    pd.localMode = true
+    pd.dirty = {}
+    pd.sessionVersion = pd.sessionVersion or 1
+    print("[PDM] AttachLocalModules uid=" .. tostring(uid)
+        .. " serverId=" .. tostring(pd.serverId))
+end
+
 --- 获取玩家区服 ID
 ---@param uid number
 ---@return number|nil
@@ -678,6 +693,11 @@ function PlayerDataManager.MarkDirty(uid, fieldKey)
         serverDispatcher_.pushModule(uid, fieldKey, pd.modules[fieldKey])
     end
 
+    -- 单机：只推本地模块，不走 serverCloud 防抖存盘
+    if pd.localMode then
+        return
+    end
+
     -- 2. 脏标记 + 启动防抖
     pd.dirty[fieldKey] = true
     dirtyUIDs_[uid] = true
@@ -691,7 +711,7 @@ end
 ---@param uid number
 function PlayerDataManager.FlushImmediate(uid)
     local pd = playerData_[uid]
-    if not pd or not next(pd.dirty) then
+    if not pd or pd.localMode or not next(pd.dirty) then
         return
     end
     -- 确保该 uid 在 dirtyUIDs 中（flushDirtyData 遍历它）
@@ -898,6 +918,19 @@ end
 --- 将所有脏数据批量提交到 serverCloud（由防抖计时器触发）
 --- 🔴 写入串行化: 同一 (uid, actualKey) 有 in-flight 提交时，跳过该 key 并标记 reflush
 flushDirtyData = function()
+    -- 单机 localMode 不写云：清掉脏标记，避免碰到 serverCloud
+    for uid in pairs(dirtyUIDs_) do
+        local pdLocal = playerData_[uid]
+        if pdLocal and pdLocal.localMode then
+            pdLocal.dirty = {}
+            dirtyUIDs_[uid] = nil
+        end
+    end
+    if not next(dirtyUIDs_) then
+        debounceRunning_ = false
+        return
+    end
+
     -- 诊断：记录 flush 触发时的脏 UID 列表
     local flushDiagUIDs = {}
     for uid in pairs(dirtyUIDs_) do
@@ -1473,6 +1506,11 @@ function PlayerDataManager.UseQuota(uid, quotaKey, amount)
     -- 4. 推送缓存变更到客户端
     PlayerDataManager.MarkDirty(uid, "quotas")
 
+    -- 单机：限额只记在本地缓存
+    if pd.localMode then
+        return true, nil
+    end
+
     -- 5. 异步提交到 serverCloud
     serverCloud.quota:Add(uid, keyDef.key, amount,
         keyDef.limit, keyDef.refreshType, keyDef.refreshCount, {
@@ -1502,6 +1540,10 @@ function PlayerDataManager.RefreshQuota(uid, quotaKey, callback)
     local pd = playerData_[uid]
     if not pd then
         if callback then callback(false) end
+        return
+    end
+    if pd.localMode then
+        if callback then callback(true) end
         return
     end
 

@@ -13,6 +13,7 @@ local ClassConfig      = require("config.ClassConfig")
 local AD               = require("systems.AttributeDef")
 local PlayerStore      = require("client.data.PlayerStore")
 local AVC              = require("config.AdvancementConfig")
+local EquipmentSystem  = require("systems.EquipmentSystem")
 local EquipmentDetail  = require("ui.EquipmentDetail")
 local ImageCache       = require("ui.ImageCache")
 local BF               = require("systems.ButtonFeedback")
@@ -300,7 +301,7 @@ end
 local function getEquippedWeaponType(heroId)
     local equipData = PlayerStore.Get("equipment")
     if not equipData or not equipData.equipped or not equipData.inventory then return nil end
-    local heroEquipped = equipData.equipped[heroId]
+    local heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
     if not heroEquipped then return nil end
     local weaponSeq = heroEquipped["weapon"]
     if not weaponSeq then return nil end
@@ -424,9 +425,9 @@ local function getFilteredEquips()
 
     -- 2) 再按原逻辑构建 equippedSeqs（控制"已装备"标签显示）
     if equipData.equipped then
-        if heroId and equipData.equipped[heroId] then
+        local heroEquipped = heroId and EquipmentSystem.getHeroSlots(equipData, heroId)
+        if heroId and heroEquipped then
             -- 指定英雄模式：只标记该英雄已装备的装备
-            local heroEquipped = equipData.equipped[heroId]
             if slot == "offhand" then
                 -- 副手槽位：副手本身 + 主手双手武器也算占用
                 if heroEquipped["offhand"] then
@@ -481,6 +482,9 @@ local function getFilteredEquips()
         end
 
         if slotMatch then
+            if not equip.type or not equip.slot then
+                EquipmentSystem.hydrate(equip)
+            end
             -- 按英雄可穿戴类型过滤
             if wearableSet and not wearableSet[equip.type] then
                 goto skip
@@ -721,7 +725,7 @@ function EquipmentBag.draw(vg, opts)
     local offhandPower = 0   -- 副手战斗力（仅 weapon 槽使用，供双手武器对比）
     local heroId = bagState.heroId
     local equipData = heroId and PlayerStore.Get("equipment") or nil
-    local heroEquipped = equipData and equipData.equipped and equipData.equipped[heroId]
+    local heroEquipped = equipData and EquipmentSystem.getHeroSlots(equipData, heroId)
     if heroEquipped and equipData.inventory then
         -- 当前槽位已装备的战斗力
         local cmpSlot = bagState.filter or bagState.slot

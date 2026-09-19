@@ -100,6 +100,36 @@ function ClientDispatcher.get(moduleName)
     return moduleData[moduleName]
 end
 
+--- 读取全部模块（单机本地桥把同一份表喂给 PDM）
+---@return table<string, table>
+function ClientDispatcher.getAll()
+    return moduleData
+end
+
+--- 直接写入模块并通知订阅者（避免 JSON 往返拆表）
+---@param moduleName string
+---@param data table
+function ClientDispatcher.set(moduleName, data)
+    if type(data) == "table" then
+        ModuleRegistry.applyOnLoad(moduleName, data)
+        CharacterSchema.applyOnLoad(moduleName, data)
+    end
+    moduleData[moduleName] = data
+    local subs = subscribers[moduleName]
+    if subs then
+        for i = 1, #subs do
+            local ok, err = pcall(subs[i], data, moduleName)
+            if not ok then
+                print("[ClientDispatcher] set subscriber error module=" .. moduleName
+                    .. ": " .. tostring(err))
+            end
+        end
+    end
+    if onAnyUpdate then
+        onAnyUpdate({ [moduleName] = data })
+    end
+end
+
 --- 订阅模块数据变化
 ---@param moduleName string
 ---@param callback function(data, moduleName)

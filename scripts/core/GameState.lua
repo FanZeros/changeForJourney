@@ -455,6 +455,46 @@ function GameState.syncPlayerData(data)
     if data.name   then state.name   = data.name end
 end
 
+--- 把 currency 模块同步回单机本地 state（本地桥 MarkDirty 后调用）
+---@param data table
+function GameState.syncFromCurrency(data)
+    if isMultiplayer() or type(data) ~= "table" then return end
+    local map = {
+        gold = "setGold",
+        gems = "setGems",
+        essence = "setEssence",
+        enhanceStone = "setEnhanceStone",
+        degradeStone = "setDegradeStone",
+        destroyStone = "setDestroyStone",
+        weaponScroll = "setWeaponScroll",
+        offhandScroll = "setOffhandScroll",
+        armorScroll = "setArmorScroll",
+        accessoryScroll = "setAccessoryScroll",
+        recruitTicket = "setRecruitTicket",
+        stellarRecruitTicket = "setStellarRecruitTicket",
+        goldenKey = "setGoldenKey",
+        sweepTicket = "setSweepTicket",
+        arenaTicket = "setArenaTicket",
+        arenaCoin = "setArenaCoin",
+        tavernCoin = "setTavernCoin",
+        privilegePoint = "setPrivilegePoint",
+        arcaneDust = "setArcaneDust",
+        corruptStone = "setCorruptStone",
+        sacredStone = "setSacredStone",
+    }
+    for field, setterName in pairs(map) do
+        if data[field] ~= nil and type(GameState[setterName]) == "function" then
+            GameState[setterName](data[field])
+        end
+    end
+    if data.speedCardExpireAt ~= nil then
+        state.speedCardExpireAt = data.speedCardExpireAt
+    end
+    if data.privilegeCardOwned ~= nil then
+        state.privilegeCardOwned = data.privilegeCardOwned
+    end
+end
+
 --- 重置所有缓存状态到初始默认值（仅单机模式使用）
 function GameState.reset()
     if isMultiplayer() then return end

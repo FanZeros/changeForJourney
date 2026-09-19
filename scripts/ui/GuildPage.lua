@@ -520,7 +520,7 @@ function GuildPage.onActionResult(data)
                 uids[#uids + 1] = r.uid
             end
         end
-        if #uids > 0 then
+        if #uids > 0 and type(GetUserNickname) == "function" then
             GetUserNickname({
                 userIds = uids,
                 onSuccess = function(nicknames)

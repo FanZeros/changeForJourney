@@ -38,10 +38,7 @@ local PlayerInfoPanel   = require("ui.PlayerInfoPanel")
 local RedeemCodePanel   = require("ui.RedeemCodePanel")
 local MailPanel         = require("ui.MailPanel")
 local AnnouncementPanel = require("ui.AnnouncementPanel")
-local MailConfig        = require("shared.mail.MailConfig")
 local AnnouncementConfig = require("shared.AnnouncementConfig")
-local RedeemConfig      = require("shared.redeem.RedeemConfig")
-local Protocol          = require("shared.Protocol")
 local DiaryPage         = require("ui.DiaryPage")
 local StartScreen       = require("ui.StartScreen")
 local DarkTitleScreen   = require("ui.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
@@ -66,8 +63,30 @@ local ScenarioDialogue   = require("ui.ScenarioDialogue")     -- [LetterIntro] �
 local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig") -- [LetterIntro] 情景配置
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库 + 画廊验收页
+local ClientMsgHandler   = require("network.ClientMessageHandler")
+local LocalActionBridge  = require("network.LocalActionBridge")
+local TaskPanel          = require("ui.TaskPanel")
+local SignInPanel        = require("ui.SignInPanel")
+local AdManager          = require("systems.AdManager")
 
 local Standalone = {}
+
+local localBridgeReady_ = false
+
+local function localSendAction(action, params)
+    return require("network.Client").sendAction(action, params)
+end
+
+--- 单机无服务器：所有 Client.sendAction 落到本地 Handler
+---@param action string
+---@param params table|nil
+---@return boolean handled
+function Standalone.tryLocalAction(action, params)
+    if not localBridgeReady_ then
+        return false
+    end
+    return LocalActionBridge.dispatch(action, params)
+end
 
 -- NanoVG context & font
 local vg = nil
@@ -245,100 +264,22 @@ function Standalone.Start()
     PlayerInfoPanel.init(vg)
     SpinePowerUpEffect.init()
 
-    -- 兑换码回调（单机模式本地校验）
-    -- 注意：一次性批量码(FATE-XXXX)仅服务端加载，单机模式只能验证公开不限量码
-    local usedCodes = {}
-    RedeemCodePanel.setSendAction(function(action, params)
-        local code = params and params.code or ""
-        print("[Standalone] redeem code request: " .. code)
-        local upper = string.upper(code)
-        local cfg = RedeemConfig.CODE_MAP[upper]
-        if not cfg then
-            RedeemCodePanel.onActionResult({ success = false, reason = "无效的兑换码", redeemAction = true })
-        elseif usedCodes[upper] then
-            RedeemCodePanel.onActionResult({ success = false, reason = "该兑换码已使用过", redeemAction = true })
-        else
-            usedCodes[upper] = true
-            RedeemCodePanel.onActionResult({ success = true, redeemAction = true, rewards = cfg.rewards })
-        end
-    end)
-
-    -- 邮件回调（单机模式本地处理）
-    local mailClaimed = {}
-    local mailDeleted = {}
-    local function buildLocalMailList()
-        local list = {}
-        for _, cfg in ipairs(MailConfig.MAILS) do
-            if not mailDeleted[cfg.id] then
-                list[#list + 1] = {
-                    id         = cfg.id,
-                    title      = cfg.title,
-                    date       = cfg.date,
-                    remainDays = cfg.remainDays,
-                    body       = cfg.body,
-                    rewards    = cfg.rewards,
-                    read       = mailClaimed[cfg.id] or false,
-                }
-            end
-        end
-        return list
-    end
-    -- 注入初始邮件数据
-    MailPanel.setMailData(buildLocalMailList())
-    -- 注入公告数据（基于开服时间计算日期，单机模式 openTime=0 取当前日期）
+    ClientMsgHandler.setup({ sendAction = localSendAction })
+    ClientMsgHandler.setupDataSubscriptions()
     AnnouncementPanel.setAnnouncementData(AnnouncementConfig.buildWithDates(0))
 
-    MailPanel.setSendAction(function(action, params)
-        print("[Standalone] mail action: " .. tostring(action))
-        if action == Protocol.ACTION_TYPES.CLAIM_MAIL then
-            local mailId = params and params.mailId
-            if mailId and not mailClaimed[mailId] then
-                mailClaimed[mailId] = true
-                -- 查找邮件奖励
-                local rewards = {}
-                for _, cfg in ipairs(MailConfig.MAILS) do
-                    if cfg.id == mailId then rewards = cfg.rewards or {}; break end
-                end
-                MailPanel.onActionResult({
-                    success    = true,
-                    mailAction = true,
-                    action     = Protocol.ACTION_TYPES.CLAIM_MAIL,
-                    mailId     = mailId,
-                    rewards    = rewards,
-                })
-            end
-        elseif action == Protocol.ACTION_TYPES.CLAIM_ALL_MAIL then
-            local allRewards = {}
-            for _, cfg in ipairs(MailConfig.MAILS) do
-                if not mailClaimed[cfg.id] and not mailDeleted[cfg.id] then
-                    mailClaimed[cfg.id] = true
-                    for _, r in ipairs(cfg.rewards or {}) do
-                        allRewards[#allRewards + 1] = r
-                    end
-                end
-            end
-            MailPanel.onActionResult({
-                success    = true,
-                mailAction = true,
-                action     = Protocol.ACTION_TYPES.CLAIM_ALL_MAIL,
-                rewards    = allRewards,
-            })
-        elseif action == Protocol.ACTION_TYPES.DELETE_READ then
-            local deletedIds = {}
-            for _, cfg in ipairs(MailConfig.MAILS) do
-                if mailClaimed[cfg.id] and not mailDeleted[cfg.id] then
-                    mailDeleted[cfg.id] = true
-                    deletedIds[#deletedIds + 1] = cfg.id
-                end
-            end
-            MailPanel.onActionResult({
-                success    = true,
-                mailAction = true,
-                action     = Protocol.ACTION_TYPES.DELETE_READ,
-                deletedIds = deletedIds,
-            })
+    RedeemCodePanel.setSendAction(function(action, params)
+        local sent = localSendAction(action, params)
+        if not sent then
+            RedeemCodePanel.onActionResult({ success = false, reason = "本地处理失败", redeemAction = true })
         end
     end)
+    MailPanel.setSendAction(localSendAction)
+    SignInPanel.setSendAction(localSendAction)
+    TaskPanel.setSendAction(localSendAction)
+    TavernPage.setSendAction(localSendAction)
+    MarketPage.setSendAction(localSendAction)
+    AdManager.Init(localSendAction)
 
     -- 5.05 冒险等级提升弹窗：监听 PLAYER_LEVEL_UP 事件，并刷新解锁状态
     EventBus.on(GameEvents.PLAYER_LEVEL_UP, function(data)
@@ -354,11 +295,23 @@ function Standalone.Start()
     -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 编队先本地生效（并行战斗 Phase 3 接入）
     CharacterPanel.setOnTeamChanged(function(teamIdx)
         teamIdx = tonumber(teamIdx) or 1
+        local team = CharacterPanel.getDeployedTeam(teamIdx)
+        local deployedIds = {}
+        for _, unit in ipairs(team) do
+            if unit.heroId then
+                deployedIds[#deployedIds + 1] = unit.heroId
+            end
+        end
+        if localBridgeReady_ then
+            localSendAction(require("shared.Protocol").ACTION_TYPES.SET_TEAM, {
+                teamIdx = teamIdx,
+                heroIds = deployedIds,
+            })
+        end
         if teamIdx ~= 1 then
-            print("[Standalone] 队伍" .. teamIdx .. " 编队变更（本地内存生效，Phase 3 并行战斗接入）")
+            print("[Standalone] 队伍" .. teamIdx .. " 编队变更")
             return
         end
-        local team = CharacterPanel.getDeployedTeam(1)
         TopBar.setTotalPower(CharacterPanel.getTotalPower())
         if #team > 0 then
             BattleScene.setAllies(team)
@@ -463,6 +416,28 @@ function Standalone.Start()
             } }
         }))
         print("[Standalone] 初始化 heroes 数据（大狗嚼 Lv1）")
+    end
+
+    PlayerStore.Subscribe("signin", function(data, _fieldKey)
+        if data then SignInPanel.setSignInData(data) end
+    end)
+    PlayerStore.Subscribe("task", function(data, _fieldKey)
+        if data then TaskPanel.setTaskData(data) end
+    end)
+    PlayerStore.Subscribe("market", function(data, _fieldKey)
+        if data then MarketPage.setMarketData(data) end
+    end)
+
+    LocalActionBridge.init()
+    localBridgeReady_ = true
+    do
+        local mailData = ClientDispatcher.get("mail")
+        if mailData then
+            local okMail, MailService = pcall(require, "server.mail.MailService")
+            if okMail and MailService.BuildMailList then
+                MailPanel.setMailData(MailService.BuildMailList(1))
+            end
+        end
     end
 
     -- 订阅 lootbox 数据变化 → 刷新 LootBox UI

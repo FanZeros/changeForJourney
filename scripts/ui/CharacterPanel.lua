@@ -206,7 +206,11 @@ local selectSlotState = {
 local function applyEquippedItems(attrs, heroId, partySlot)
     -- 优先从 ClientDispatcher 读最新数据（见 refreshPowerCache 注释）
     local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-    if not eqData or not eqData.equipped or not eqData.equipped[heroId] or not eqData.inventory then
+    if not eqData or not eqData.inventory then
+        return nil
+    end
+    local heroEq = EquipmentSystem.getHeroSlots(eqData, heroId)
+    if not heroEq then
         return nil
     end
 
@@ -217,7 +221,6 @@ local function applyEquippedItems(attrs, heroId, partySlot)
         partySlot = EquipmentSystem.findPartySlot(heroesData and heroesData.deployed, heroId)
     end
 
-    local heroEq = eqData.equipped[heroId]
     local appliedSeqs = {}
     local equippedArmorType = nil  -- 穿戴护甲对应的护甲类型枚举
     for _, slotKey in ipairs(EquipmentConfig.SLOTS) do

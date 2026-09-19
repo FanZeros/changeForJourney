@@ -17,12 +17,22 @@ local cache = {}
 -- 由 Server.lua 维护，ServerDispatcher 通过引用使用
 local connections = {}
 
+--- 单机：无连接时把 sendEvent 转到本地回调
+---@type (fun(uid: number, eventName: string, payload: table)|nil)
+local localEventSink_ = nil
+
 -- ======================== 初始化 ========================
 
 --- 设置连接映射表的引用（由 Server.lua 调用）
 ---@param connMap table uid → connection 的映射表
 function ServerDispatcher.init(connMap)
     connections = connMap
+end
+
+--- 单机动作桥：异步 Handler 的 respond() 走这里，不发远程事件
+---@param fn fun(uid: number, eventName: string, payload: table)|nil
+function ServerDispatcher.setLocalEventSink(fn)
+    localEventSink_ = fn
 end
 
 -- ======================== 内部工具 ========================
@@ -44,6 +54,10 @@ end
 local function sendToClient(uid, eventName, payload)
     local conn = connections[uid]
     if not conn then
+        if localEventSink_ then
+            localEventSink_(uid, eventName, payload)
+            return
+        end
         print("[ServerDispatcher] no connection for uid=" .. tostring(uid))
         return
     end

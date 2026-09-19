@@ -449,9 +449,15 @@ local AdManager
 
  --- 操作结果
  function M.handleActionResult(eventType, eventData)
-     local dataStr = eventData["Data"]:GetString()
-     local ok, data = pcall(cjson.decode, dataStr)
-     if not ok then return end
+     local data
+     if type(eventType) == "table" and eventType.action ~= nil then
+         data = eventType
+     else
+         local dataStr = eventData["Data"]:GetString()
+         local ok
+         ok, data = pcall(cjson.decode, dataStr)
+         if not ok then return end
+     end
      if data.action == "server_diag" then
         print("[Client][SDIAG] " .. tostring(data.message or data.reason or ""))
         return
@@ -460,8 +466,7 @@ local AdManager
     print("[Client][ActionResult] received action=" .. tostring(data.action)
          .. " success=" .. tostring(data.success)
          .. " mailPush=" .. tostring(data.mailPush)
-         .. " announcementPush=" .. tostring(data.announcementPush)
-         .. " dataLen=" .. tostring(#dataStr))
+         .. " announcementPush=" .. tostring(data.announcementPush))
 
      if not data.success then
          print("[Client] action failed: action=" .. tostring(data.action)

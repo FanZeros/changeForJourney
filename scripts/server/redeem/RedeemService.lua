@@ -66,6 +66,18 @@ function RedeemService.Init(callback)
     -- 先加载批次码到 CODE_MAP（服务端专属数据）
     loadBatchCodes()
 
+    local hasCloud = false
+    pcall(function()
+        hasCloud = serverCloud ~= nil and serverCloud.Get ~= nil
+    end)
+    if not hasCloud then
+        initialized_ = true
+        globalUsedOnetime_ = {}
+        print("[RedeemService] Init local (no serverCloud)")
+        if callback then callback(true) end
+        return
+    end
+
     print("[RedeemService] Init: loading global onetime codes...")
     ---@diagnostic disable-next-line: param-type-mismatch
     serverCloud:Get(GLOBAL_REDEEM_UID, GLOBAL_REDEEM_KEY, {
@@ -92,18 +104,23 @@ end
 
 --- 持久化全局一次性码记录到 serverCloud
 local function persistGlobalUsed()
-    local commit = serverCloud:BatchCommit("redeem_global_save")
-    ---@diagnostic disable-next-line: param-type-mismatch
-    commit:ScoreSet(GLOBAL_REDEEM_UID, GLOBAL_REDEEM_KEY, globalUsedOnetime_)
-    commit:Commit({
-        ok = function()
-            -- 静默成功
-        end,
-        error = function(code, reason)
-            print("[RedeemService][ERROR] persist global used failed code=" .. tostring(code)
-                .. " reason=" .. tostring(reason))
-        end,
-    })
+    local ok, err = pcall(function()
+        local commit = serverCloud:BatchCommit("redeem_global_save")
+        ---@diagnostic disable-next-line: param-type-mismatch
+        commit:ScoreSet(GLOBAL_REDEEM_UID, GLOBAL_REDEEM_KEY, globalUsedOnetime_)
+        commit:Commit({
+            ok = function()
+                -- 静默成功
+            end,
+            error = function(code, reason)
+                print("[RedeemService][ERROR] persist global used failed code=" .. tostring(code)
+                    .. " reason=" .. tostring(reason))
+            end,
+        })
+    end)
+    if not ok then
+        print("[RedeemService] persist skipped: " .. tostring(err))
+    end
 end
 
 --- 获取全服已用一次性码数量

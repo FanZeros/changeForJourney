@@ -210,9 +210,21 @@ end
 ---@param params table|nil
 ---@return boolean sent  true if message was sent, false if no connection
 function Client.sendAction(action, params)
-    local conn = network:GetServerConnection()
+    local conn = nil
+    local okConn, got = pcall(function()
+        return network:GetServerConnection()
+    end)
+    if okConn then
+        conn = got
+    end
     if not conn then
-        print("[Client] no server connection, cannot send action")
+        local okLocal, handled = pcall(function()
+            return require("network.Standalone").tryLocalAction(action, params)
+        end)
+        if okLocal and handled then
+            return true
+        end
+        print("[Client] no server connection, cannot send action action=" .. tostring(action))
         return false
     end
 

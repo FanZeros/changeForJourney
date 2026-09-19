@@ -622,7 +622,7 @@ function M.draw(vg)
     local heroEquipped = nil
     local heroInventory = nil
     if equipData then
-        heroEquipped = equipData.equipped and equipData.equipped[heroId]
+        heroEquipped = EquipmentSystem.getHeroSlots(equipData, heroId)
         heroInventory = equipData.inventory
     end
 

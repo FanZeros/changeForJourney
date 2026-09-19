@@ -292,7 +292,63 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         end
     end
 
-    -- [行1 HUD] 从右上角往左排：速度(可选) / 扫荡 / 统计 / 选关
+    -- [对话框覆盖] 选关/扫荡/统计面板（全窗口居中模态，不再局限行1 内矩形）
+    -- 注意: 行1 HUD 按钮已上提至宿主最终层级（drawHud），保证任何行背景/框柱都不会盖住按钮
+    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
+        local fit = math.min(logicalW / 1080, logicalH / 1200)
+        -- 弹窗自带的设计稿压暗（黑128）只覆盖 1080 宽设计带，两侧补齐同色压暗避免亮度接缝
+        local bx0 = logicalW * 0.5 - 540 * fit
+        local bx1 = logicalW * 0.5 + 540 * fit
+        nvgSave(vg)
+        nvgScissor(vg, 0, 0, logicalW, logicalH)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
+        if bx0 > 0 then
+            nvgBeginPath(vg)
+            nvgRect(vg, 0, 0, bx0, logicalH)
+            nvgFill(vg)
+        end
+        if bx1 < logicalW then
+            nvgBeginPath(vg)
+            nvgRect(vg, bx1, 0, logicalW - bx1, logicalH)
+            nvgFill(vg)
+        end
+        nvgRestore(vg)
+        -- 弹窗本体：设计锚点 (540,1195) 对齐窗口中心
+        nvgSave(vg)
+        nvgScissor(vg, 0, 0, logicalW, logicalH)
+        nvgTranslate(vg, logicalW * 0.5, logicalH * 0.5)
+        nvgScale(vg, fit, fit)
+        nvgTranslate(vg, -540, -1195)
+        if SweepDialog.isOpen() then SweepDialog.draw(vg) end
+        if DamageStatsPanel.isOpen() then DamageStatsPanel.draw(vg) end
+        if StageSelectDialog.isOpen() then StageSelectDialog.draw(vg) end
+        nvgRestore(vg)
+    end
+
+    -- [三行并行] 获得弹窗归属行1
+    local rx1, ry1, rw1, rh1 = interiorRect(1, logicalW, logicalH)
+    RewardPopup.drawRegion(vg, rx1, ry1, rw1, rh1, 1)
+
+    -- 装备背包覆盖战斗区（无灰底；铺进行 1~3 内框）
+    if EquipmentBag.shouldBattleOverlay() then
+        local ox, oy, ow = interiorRect(1, logicalW, logicalH)
+        local _, y3, _, h3 = interiorRect(COL_COUNT, logicalW, logicalH)
+        EquipmentBag.setOverlayRegion(ox, oy, ow, (y3 + h3) - oy)
+        EquipmentBag.drawOverlay(vg)
+    else
+        EquipmentBag.setOverlayRegion(nil)
+    end
+end
+
+--- [行1 HUD] 从右上角往左排：速度(可选) / 扫荡 / 统计 / 选关
+--- 由宿主在 BattleTriPage.draw 之后调用——保证按钮位于一切战斗背景/框柱之上（避免穿帮）。
+--- 任一模态对话框打开时不绘制（弹窗压暗与本体在 draw 内已覆盖按钮位）。
+function BattleTriPage.drawHud(vg, logicalW, logicalH)
+    if not isOpen_ then return end
+    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
+        return
+    end
+    local BattleScene = require("ui.BattleScene")
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
     local hudScale = 0.55
     local hudPad = 4
@@ -342,51 +398,6 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgTranslate(vg, -659, -2115)
         StageSelectDialog.drawButton(vg)
         nvgRestore(vg)
-    end
-
-    -- [对话框覆盖] 选关/扫荡/统计面板（全窗口居中模态，不再局限行1 内矩形）
-    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 1200)
-        -- 弹窗自带的设计稿压暗（黑128）只覆盖 1080 宽设计带，两侧补齐同色压暗避免亮度接缝
-        local bx0 = logicalW * 0.5 - 540 * fit
-        local bx1 = logicalW * 0.5 + 540 * fit
-        nvgSave(vg)
-        nvgScissor(vg, 0, 0, logicalW, logicalH)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-        if bx0 > 0 then
-            nvgBeginPath(vg)
-            nvgRect(vg, 0, 0, bx0, logicalH)
-            nvgFill(vg)
-        end
-        if bx1 < logicalW then
-            nvgBeginPath(vg)
-            nvgRect(vg, bx1, 0, logicalW - bx1, logicalH)
-            nvgFill(vg)
-        end
-        nvgRestore(vg)
-        -- 弹窗本体：设计锚点 (540,1195) 对齐窗口中心
-        nvgSave(vg)
-        nvgScissor(vg, 0, 0, logicalW, logicalH)
-        nvgTranslate(vg, logicalW * 0.5, logicalH * 0.5)
-        nvgScale(vg, fit, fit)
-        nvgTranslate(vg, -540, -1195)
-        if SweepDialog.isOpen() then SweepDialog.draw(vg) end
-        if DamageStatsPanel.isOpen() then DamageStatsPanel.draw(vg) end
-        if StageSelectDialog.isOpen() then StageSelectDialog.draw(vg) end
-        nvgRestore(vg)
-    end
-
-    -- [三行并行] 获得弹窗归属行1
-    RewardPopup.drawRegion(vg, ix1, iy1, iw1, ih1, 1)
-
-    -- 装备背包覆盖战斗区（无灰底；铺进行 1~3 内框）
-    if EquipmentBag.shouldBattleOverlay() then
-        local ox, oy, ow = interiorRect(1, logicalW, logicalH)
-        local _, y3, _, h3 = interiorRect(COL_COUNT, logicalW, logicalH)
-        EquipmentBag.setOverlayRegion(ox, oy, ow, (y3 + h3) - oy)
-        EquipmentBag.drawOverlay(vg)
-    else
-        EquipmentBag.setOverlayRegion(nil)
     end
 end
 

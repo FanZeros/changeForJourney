@@ -254,8 +254,8 @@ end
 
 -- ======================== [三队并行] 队伍页签 ========================
 
-local TAB_W, TAB_H, TAB_GAP = 240, 54, 16
-local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px 间隙）
+local TAB_W, TAB_H, TAB_GAP = 262, 60, 14
+local TAB_Y = 252   -- 页签顶边（槽位卡上边缘 325 之上，留 13px 间隙）
 
 --- 计算第 idx 个页签的左上角 X
 ---@param idx number
@@ -292,13 +292,12 @@ function M.drawTeamTabs(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         local label
         if isLocked then
-            local needLv = ExpTable.getTeamUnlockLevel(i)
-            label = string.format("队%d · Lv%s解锁", i, tostring(needLv or "?"))
-            nvgFontSize(vg, 22)
+            label = string.format("队%d · 未解锁", i)
+            nvgFontSize(vg, 24)
             nvgFillColor(vg, nvgRGBA(150, 150, 165, 255))
         else
             label = string.format("队%d（%d/%d）", i, counts[i] or 0, M.MAX_SLOTS)
-            nvgFontSize(vg, 24)
+            nvgFontSize(vg, 26)
             nvgFillColor(vg, isActive and nvgRGBA(255, 255, 255, 255) or nvgRGBA(205, 210, 225, 255))
         end
         nvgText(vg, x + TAB_W * 0.5, y + TAB_H * 0.5 + 1, label)

@@ -316,38 +316,37 @@ def pick_latest_snapshot_asset(assets: list, ver: str) -> str:
     return cands[-1][1]
 
 
-def download_dist_snapshot(ver: str) -> None:
-    repo = git_remote_repo()
-    # 匿名列 Release 资产，选 dist-{ver}-* 最新（带 commit hash 的文件名天然防旧缓存）
-    snap_name, _remote = fetch_latest_snapshot_info(ver)
-    name = snap_name or dist_snapshot_name(ver)
-    url = "https://github.com/%s/releases/download/%s/%s" % (repo, DIST_SNAPSHOT_TAG, name)
-    log("本机无 dist/，从 Release %s 匿名拉取 %s（公开仓库无需 token）…" % (DIST_SNAPSHOT_TAG, name))
-    tmp = RELEASE / name
-    tmp.parent.mkdir(parents=True, exist_ok=True)
+def list_release_assets():
+    """匿名拉取 Release 资产列表；失败返回 []。"""
+    api = "https://api.github.com/repos/%s/releases/tags/%s" % (git_remote_repo(), DIST_SNAPSHOT_TAG)
+    try:
+        with urlopen(Request(api, headers={"User-Agent": "zyjm-pack-release"}), timeout=60) as resp:
+            return json.loads(resp.read().decode()).get("assets") or []
+    except Exception:
+        return []
+
+
+def download_asset_to(url: str, dest: Path, resume_hint: bool = True) -> None:
+    """单个资产下载（断点续传 + 重试 + 大小校验），供完整包/分片共用。"""
     expected = None
     ok = False
-    for attempt in range(1, 9):  # 断流/代理中断最多重试 8 次，支持断点续传
-        have = tmp.stat().st_size if tmp.exists() else 0
+    for attempt in range(1, 9):
+        have = dest.stat().st_size if dest.exists() else 0
         headers = {"User-Agent": "zyjm-pack-release"}
         if have:
-            headers["Range"] = "bytes=%d-" % have  # 服务器支持则 206 续传；不支持返回 200 则从头重写
+            headers["Range"] = "bytes=%d-" % have
             if expected and have < expected:
-                log("第 %d 次续传：从 %.0f/%.0f MB 继续…" % (attempt, have / 1048576, expected / 1048576))
+                log("  第 %d 次续传：从 %.0f/%.0f MB 继续…" % (attempt, have / 1048576, expected / 1048576))
         req = Request(url, headers=headers)
         try:
-            with urlopen(req, timeout=120) as resp:  # 120s 读超时：断流快速感知
+            with urlopen(req, timeout=120) as resp:
                 status = getattr(resp, "status", 200)
                 if expected is None:
                     cl = resp.headers.get("Content-Length")
                     if cl:
-                        # 206 时 Content-Length 是剩余量，总大小 = 已有 + 剩余
                         expected = have + int(cl) if status == 206 else int(cl)
-                        log("快照总大小 %.0f MB" % (expected / 1048576))
                 append = bool(headers.get("Range")) and status == 206
-                if append:
-                    log("服务端支持断点续传，从 %.0f MB 处继续…" % (have / 1048576))
-                with tmp.open("ab" if append else "wb") as out:
+                with dest.open("ab" if append else "wb") as out:
                     while True:
                         chunk = resp.read(1 << 20)
                         if not chunk:
@@ -355,30 +354,68 @@ def download_dist_snapshot(ver: str) -> None:
                         out.write(chunk)
         except HTTPError as e:
             if e.code == 404:
-                die("dist 快照不存在：%s\n"
-                    "  云端还没上传 dist-%s.zip（tag=%s）。请让云端会话 Build 后执行\n"
-                    "  python pack_release.py --dist-only 上传，或核对 package.json version。" % (url, ver, DIST_SNAPSHOT_TAG))
-            if e.code in (401, 403):
-                die("拉取 dist 快照被拒 HTTP %s（仓库可能为私有）。\n"
-                    "  配置 token 任选：gh auth login / setx GITHUB_TOKEN <PAT> / git 凭据助手已登录。" % e.code)
-            log("下载中断（HTTP %s），3s 后重试…" % e.code)
+                raise FileNotFoundError(url)
+            if e.code == 416:  # Range 越界：残档可能已完整或超界
+                size = dest.stat().st_size if dest.exists() else 0
+                if expected and size >= expected:
+                    ok = True
+                    break
+                dest.unlink(missing_ok=True)  # 无法判定则删档重下
+                expected = None
+                continue
+            log("  下载中断（HTTP %s），3s 后重试…" % e.code)
             time.sleep(3)
             continue
         except (URLError, OSError) as e:
-            log("下载中断（%s），3s 后重试…" % e)
+            log("  下载中断（%s），3s 后重试…" % e)
             time.sleep(3)
             continue
-        size = tmp.stat().st_size if tmp.exists() else 0
+        size = dest.stat().st_size if dest.exists() else 0
         if expected and size < expected:
-            log("下载不完整 %.0f/%.0f MB，重试…" % (size / 1048576, expected / 1048576))
+            log("  下载不完整 %.0f/%.0f MB，重试…" % (size / 1048576, expected / 1048576))
             time.sleep(3)
             continue
         ok = True
         break
     if not ok:
-        die("dist 快照多次下载仍不完整（网络对 GitHub release 资产不稳）。\n"
-            "  已保留 %.0f MB 残档，重跑本脚本会自动断点续传。" % ((tmp.stat().st_size if tmp.exists() else 0) / 1048576))
-    # 完整性：zip 中心目录必须有效（截断的 zip 在此报错，删除残档让下次全量/续传重来）
+        die("下载多次仍不完整：%s（已保留残档，重跑自动续传）" % dest.name)
+
+
+def download_dist_snapshot(ver: str) -> None:
+    repo = git_remote_repo()
+    # 匿名列 Release 资产，选 dist-{ver}-* 最新（带 commit hash 的文件名天然防旧缓存）
+    assets = list_release_assets()
+    snap_name, _remote = fetch_latest_snapshot_info(ver)
+    name = snap_name or dist_snapshot_name(ver)
+    url = "https://github.com/%s/releases/download/%s/%s" % (repo, DIST_SNAPSHOT_TAG, name)
+    tmp = RELEASE / name
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+
+    # 分片优先：云端可能只有 name.partNN 系列片（完整单连接传不完大包）
+    part_names = sorted(a["name"] for a in assets
+                        if a.get("name", "").startswith(name + ".part"))
+    if part_names:  # 分片模式：下方逐片下载合并，跳过完整包下载
+        log("云端为分片快照（%d 片），逐片下载合并…" % len(part_names))
+        tmp.unlink()
+        parts_dir = RELEASE / "snapshot_parts"
+        parts_dir.mkdir(parents=True, exist_ok=True)
+        with tmp.open("wb") as out:
+            for pn in part_names:
+                purl = "https://github.com/%s/releases/download/%s/%s" % (repo, DIST_SNAPSHOT_TAG, pn)
+                pdest = parts_dir / pn  # 独立子目录：避免与云端切片工作文件(release/*.partNN)同名冲突
+                log("  下载 %s" % pn)
+                download_asset_to(purl, pdest)
+                shutil.copyfileobj(pdest.open("rb"), out, 1 << 20)
+        log("分片合并完成")
+
+    if not part_names:
+        try:
+            download_asset_to(url, tmp)
+        except FileNotFoundError:
+            die("dist 快照不存在：%s\n"
+                "  云端还没上传（tag=%s）。请让云端会话 Build 后执行\n"
+                "  python pack_release.py --dist-only 上传，或核对 package.json version。" % (url, DIST_SNAPSHOT_TAG))
+    # 完整性：zip 中心目录必须有效（截断的 zip 在此报错，删除残档让下次重下）
     try:
         with zipfile.ZipFile(tmp) as zf:
             n = len(zf.namelist())

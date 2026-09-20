@@ -2485,15 +2485,15 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     if pid == 'none' then return end
-    if pid == 'tri' then
-        -- [三队并行] 中缝返回键优先命中（框柱在页面视口之外，属 tri 窗口区；左右两级各自独立命中）
-        for _, seamBtn in ipairs(seamBackList()) do
-            if math.abs(dx - seamBtn.cx) <= seamBtn.sw * 0.5
-                and math.abs(dy - logicalH * 0.5) <= seamBtn.sh * 0.5 then
-                if isTap then seamBtn.close() end
-                return
-            end
+    -- [三队并行] 中缝返回键优先命中（条贴页面运动前缘,可能落在 tri 缝隙也可能落在面板区内;左右两级各自独立命中）
+    for _, seamBtn in ipairs(seamBackList()) do
+        if math.abs(dx - seamBtn.cx) <= seamBtn.sw * 0.5
+            and math.abs(dy - logicalH * 0.5) <= seamBtn.sh * 0.5 then
+            if isTap then seamBtn.close() end
+            return
         end
+    end
+    if pid == 'tri' then
         BattleTriPage.handleDragEnd(dx, dy)
         if isTap then BattleTriPage.handleInput(dx, dy) end
         return

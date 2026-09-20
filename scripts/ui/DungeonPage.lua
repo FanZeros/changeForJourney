@@ -10,6 +10,8 @@ local BF            = require("systems.ButtonFeedback")
 local Protocol      = require("shared.Protocol")
 local DungeonIdleConfig = require("config.DungeonIdleConfig")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local ExpTable      = require("config.ExpTable")
+local GameState     = require("core.GameState")
 
 local DungeonPage = {}
 
@@ -439,6 +441,35 @@ local function getDungeonData()
     currentFloor = s.floor
     dailyUsed    = s.dailyUsed
     dailyMax     = s.dailyMax
+end
+
+local function toast(msg)
+    local ok, LootBoxPage = pcall(require, "ui.LootBoxPage")
+    if ok and LootBoxPage and LootBoxPage.showToast then
+        LootBoxPage.showToast(msg)
+    end
+    print("[DungeonPage] " .. tostring(msg))
+end
+
+--- 通天塔三军攻坚：三队均需解锁且各至少 1 人
+---@return table|nil teamAllies
+---@return string|nil err
+local function collectTowerTeams()
+    local CharacterPanel = require("ui.CharacterPanel")
+    local needLv = ExpTable.getTeamUnlockLevel(3) or 20
+    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    if unlocked < 3 then
+        return nil, "三军攻坚需冒险等级" .. tostring(needLv) .. "解锁三队"
+    end
+    local teams = {}
+    for t = 1, 3 do
+        local allies = CharacterPanel.getDeployedTeam(t) or {}
+        if #allies == 0 then
+            return nil, "三军攻坚需三队均有出战（队" .. t .. "为空）"
+        end
+        teams[t] = allies
+    end
+    return teams, nil
 end
 
 -- ======================== Public API ========================
@@ -874,7 +905,8 @@ function DungeonPage.drawDetailPanel(vg)
     nvgFontSize(vg, DT.FIGHT_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))  -- 纯黑不透明度75%
-    nvgText(vg, DT.FIGHT_CX, DT.FIGHT_CY, "挑战", nil)
+    local fightLabel = (detailDungeon and detailDungeon.id == "babel_tower") and "三军攻坚" or "挑战"
+    nvgText(vg, DT.FIGHT_CX, DT.FIGHT_CY, fightLabel, nil)
 
     -- 22. 挂机宝箱（面板正下方）
     local idleAmount = 0
@@ -1011,8 +1043,15 @@ function DungeonPage.handleInput(dx, dy)
                 pendingChallengeTime = 0
                 local dId = detailDungeon.id
                 if dId == "babel_tower" then
-                    -- 通天塔走专用协议
-                    print("[DungeonPage] sending TOWER_CHALLENGE floor=" .. currentFloor)
+                    local teams, err = collectTowerTeams()
+                    if not teams then
+                        pendingChallenge = false
+                        pendingChallengeTime = 0
+                        toast(err or "三军攻坚条件未满足")
+                        return true
+                    end
+                    print("[DungeonPage] sending TOWER_CHALLENGE floor=" .. currentFloor
+                        .. " teams=" .. #teams[1] .. "/" .. #teams[2] .. "/" .. #teams[3])
                     require("network.Client").sendAction(
                         Protocol.ACTION_TYPES.TOWER_CHALLENGE, {}
                     )
@@ -1179,13 +1218,14 @@ function DungeonPage.onActionResult(data)
             detailOpen = false
             detailDungeon = nil
             local TowerBattleScene = require("ui.TowerBattleScene")
-            local TowerBuffPick    = require("ui.TowerBuffPick")
-            local CharacterPanel   = require("ui.CharacterPanel")
-            local allies = CharacterPanel.getDeployedTeam()
-            -- 初始化三选一面板（如尚未 init）
-            -- TowerBuffPick.init 在主场景 init 时已调用
+            local teamAllies, err = collectTowerTeams()
+            if not teamAllies then
+                toast(err or "三军攻坚条件未满足")
+                return
+            end
             TowerBattleScene.open({
-                allies     = allies,
+                teamAllies = teamAllies,
+                allies     = teamAllies[1],
                 data       = data,
                 sendAction = function(act, params)
                     require("network.Client").sendAction(act, params)

@@ -157,6 +157,15 @@ function BattleTriPage.getInteriorRect(row)
     return interiorRect(row, region.w, region.h)
 end
 
+--- 按指定窗口尺寸取行内矩形（通天塔攻坚等独立宿主）
+---@param row number
+---@param logicalW number
+---@param logicalH number
+---@return number x number y number w number h
+function BattleTriPage.getInteriorRectFor(row, logicalW, logicalH)
+    return interiorRect(row, logicalW, logicalH)
+end
+
 --- L0 整套大背景铺满窗口（透明框内将由 L1 垫底透出）
 function BattleTriPage.drawL0(vg, logicalW, logicalH)
     BattleTriPage.init(vg)

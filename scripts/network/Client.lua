@@ -1561,7 +1561,15 @@ function HandleNanoVGRender_Client(eventType, eventData)
         local dungeonBattleOpen = DungeonBattleScene.isOpen()
         local towerBattleOpen = TowerBattleScene.isActive()
         if towerBattleOpen then
-            TowerBattleScene.draw(vg)
+            local lw = graphics:GetWidth() / (graphics:GetDPR() or 1)
+            local lh = graphics:GetHeight() / (graphics:GetDPR() or 1)
+            nvgRestore(vg)
+            nvgSave(vg)
+            nvgScissor(vg, 0, 0, lw, lh)
+            TowerBattleScene.draw(vg, lw, lh)
+            nvgRestore(vg)
+            nvgSave(vg)
+            nvgTranslate(vg, designOffsetX, designOffsetY)
             -- 不绘制TopBar/BottomNav
         elseif dungeonBattleOpen then
             DungeonBattleScene.draw(vg)
@@ -1706,6 +1714,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
             end
         end
 
+        if not towerBattleOpen then
         HeroRosterPanel.draw(vg)
 
         -- 玩家信息弹窗（头像点击打开）
@@ -1745,6 +1754,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
         if TutorialManager.isActive() then
             TutorialManager.draw()
         end
+        end -- not towerBattleOpen
 
         nvgRestore(vg)
       end) -- pcall end (render)

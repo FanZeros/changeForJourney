@@ -176,6 +176,13 @@ function BottomNav.setBadge(tabIndex, show, style)
     tabBadgeStyle[tabIndex] = style  -- nil 时恢复为默认箭头样式
 end
 
+--- 读取指定标签的角标状态（TopBar 页面入口角标用）
+---@param tabIndex number 标签索引 (1~5)
+---@return boolean show, string|nil style
+function BottomNav.getBadge(tabIndex)
+    return tabBadges[tabIndex] == true, tabBadgeStyle[tabIndex]
+end
+
 --- 刷新城镇标签(Tab 4)角标：合并教堂(天赋/转职) + 铁匠铺(可强化)
 function BottomNav.refreshTownBadge()
     -- 教堂角标（优先级高：天赋→箭头，转职→红点）

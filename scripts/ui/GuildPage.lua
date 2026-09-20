@@ -640,7 +640,7 @@ function GuildPage.draw(vg)
         nvgFontFace(vg, "sans"); nvgFontSize(vg, NAME.FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-        nvgText(vg, NAME.TEXT_CX, NAME.TEXT_CY, "冒险者公会", nil)
+        nvgText(vg, NAME.TEXT_CX, NAME.TEXT_CY, "亡誓公会", nil)
         nvgRestore(vg)
     end
 

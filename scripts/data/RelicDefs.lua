@@ -36,16 +36,19 @@ RelicDefs.TYPES = {
 ---@field strength number 强度系数
 ---@field reforgeCost number 洗练消耗（0=不可洗练）
 ---@field canReforge boolean 是否可洗练
+---@field upgradeCost number 升级基础消耗
 
 ---@type table<number, RelicQualityDef>
 RelicDefs.QUALITIES = {
-    [1] = { name = "普通", color = "b5b5b5", strength = 12,   reforgeCost = 0,    canReforge = false },
-    [2] = { name = "优质", color = "a2ff94", strength = 18,   reforgeCost = 0,    canReforge = false },
-    [3] = { name = "稀有", color = "72f2f5", strength = 23.4, reforgeCost = 40,   canReforge = true },
-    [4] = { name = "史诗", color = "ef79ff", strength = 29.3, reforgeCost = 200,  canReforge = true },
-    [5] = { name = "传说", color = "ffed00", strength = 36.3, reforgeCost = 1200, canReforge = true },
-    [6] = { name = "至臻", color = "ff0000", strength = 45.7, reforgeCost = 2400, canReforge = true },
+    [1] = { name = "普通", color = "b5b5b5", strength = 12,   reforgeCost = 0,    canReforge = false, upgradeCost = 20 },
+    [2] = { name = "优质", color = "a2ff94", strength = 18,   reforgeCost = 0,    canReforge = false, upgradeCost = 40 },
+    [3] = { name = "稀有", color = "72f2f5", strength = 23.4, reforgeCost = 40,   canReforge = true,  upgradeCost = 80 },
+    [4] = { name = "史诗", color = "ef79ff", strength = 29.3, reforgeCost = 200,  canReforge = true,  upgradeCost = 200 },
+    [5] = { name = "传说", color = "ffed00", strength = 36.3, reforgeCost = 1200, canReforge = true,  upgradeCost = 480 },
+    [6] = { name = "至臻", color = "ff0000", strength = 45.7, reforgeCost = 2400, canReforge = true,  upgradeCost = 960 },
 }
+
+RelicDefs.MAX_LEVEL = 5
 
 -- ======================== 词缀定义 ========================
 
@@ -64,7 +67,7 @@ local TYPE_NAME_TO_ID = {
 RelicDefs.AFFIXES = {
     [1]  = { types = {1,2,3,4,5}, minLevel = 1, weight = 100, values = {"全体生命加成+4%","全体生命加成+6%","全体生命加成+8%","全体生命加成+10%","全体生命加成+12%","全体生命加成+15%"} },
     [2]  = { types = {1,2,3,4,5}, minLevel = 1, weight = 100, values = {"全体护甲加成+4%","全体护甲加成+6%","全体护甲加成+8%","全体护甲加成+9%","全体护甲加成+12%","全体护甲加成+15%"} },
-    [3]  = { types = {1,2,3,4,5}, minLevel = 1, weight = 100, values = {"全体护盾加成+4%","全体护盾加成+6%","全体护盾加成+8%","全体护盾加成+9%","全体护盾加成+12%","全体护盾加成+15%"} },
+    [3]  = { types = {1,2,3,4,5}, minLevel = 1, weight = 100, values = {"全体能量护盾加成+4%","全体能量护盾加成+6%","全体能量护盾加成+8%","全体能量护盾加成+9%","全体能量护盾加成+12%","全体能量护盾加成+15%"} },
     [4]  = { types = {1,2,3,4,5}, minLevel = 1, weight = 100, values = {"全体每秒回血+8","全体每秒回血+12","全体每秒回血+16","全体每秒回血+20","全体每秒回血+24","全体每秒回血+30"} },
     [5]  = { types = {1,2,3,4,5}, minLevel = 1, weight = 80,  values = {"骑士伤害加成+15%","骑士伤害加成+23%","骑士伤害加成+29%","骑士伤害加成+37%","骑士伤害加成+46%","骑士伤害加成+57%"} },
     [6]  = { types = {1,2,3,4,5}, minLevel = 1, weight = 80,  values = {"战士伤害加成+15%","战士伤害加成+23%","战士伤害加成+29%","战士伤害加成+37%","战士伤害加成+46%","战士伤害加成+57%"} },
@@ -191,6 +194,19 @@ function RelicDefs.getReforgeCost(quality)
     local q = RelicDefs.QUALITIES[quality]
     if not q or not q.canReforge then return 0 end
     return q.reforgeCost
+end
+
+--- 升级到下一级的奥术粉尘消耗
+---@param quality number
+---@param level number 当前等级
+---@return number
+function RelicDefs.getUpgradeCost(quality, level)
+    local q = RelicDefs.QUALITIES[quality]
+    if not q then return 0 end
+    level = math.max(1, math.floor(tonumber(level) or 1))
+    if level >= RelicDefs.MAX_LEVEL then return 0 end
+    local base = q.upgradeCost or 40
+    return math.floor(base * (1.0 + (level - 1) * 0.55))
 end
 
 --- 获取类型的所有格子偏移

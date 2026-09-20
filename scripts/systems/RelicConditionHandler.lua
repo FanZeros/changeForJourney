@@ -6,6 +6,7 @@
 local AD = require("systems.AttributeDef")
 local TM = require("systems.ThreatManager")
 
+---@class RelicConditionHandler
 local RCH = {}
 
 -- 百分比加成类属性：词条文本带 %，但应写入 flat 而非 pct（与 RelicBridge 常驻词条一致）
@@ -40,6 +41,12 @@ local function newUnitState(unit)
         firstAttackBonus = 0,
         firstAttackUsed = false,
         timedBuffs = {},
+        stealthChance = 0,      -- 蛇阵：造成伤害不加仇恨概率
+        overhealShieldPct = 0,  -- 鹿阵：过量治疗转护盾比例
+        lifeGate = false,       -- 生门：过量治疗转全队护盾
+        aegisCharges = 0,       -- 大成：致命免死次数
+        yinYang = false,        -- 阴阳：输出不抢嘲讽
+        openGuard = 0,          -- 天地：开场减伤百分比
     }
 end
 
@@ -79,20 +86,39 @@ function RCH.initBattle(allies)
     end
 end
 
+local function addTempShield(unit, amount)
+    amount = tonumber(amount) or 0
+    if amount <= 0 or not unit or not unit.attrs then return end
+    unit.attrs.tempEnergyShield = (unit.attrs.tempEnergyShield or 0) + amount
+end
+
 --- 处理"战斗开始时"类一次性效果
 function RCH._applyBattleStartEffects(unit, state)
     for _, cond in ipairs(state.conditions) do
-        if cond.condition then
+        if cond.kind == "gui_open_threat" then
+            TM.addThreat(unit, cond.value or 0)
+        elseif cond.kind == "she_stealth" then
+            state.stealthChance = state.stealthChance + ((cond.value or 0) / 100)
+        elseif cond.kind == "lu_overheal_shield" then
+            state.overhealShieldPct = state.overhealShieldPct + ((cond.value or 0) / 100)
+        elseif cond.kind == "life_gate" then
+            -- 治疗加成已由 RelicBridge 写入，这里只开过量治疗转全队护盾
+            state.lifeGate = true
+        elseif cond.kind == "heaven_earth" then
+            state.openGuard = state.openGuard + (cond.value or 0)
+        elseif cond.kind == "perfect_shield" then
+            local maxHp = unit.maxHp or (unit.attrs and unit.attrs.final[AD.MAX_HP]) or 0
+            addTempShield(unit, math.floor(maxHp * 0.08 + 0.5))
+        elseif cond.kind == "great_aegis" then
+            state.aegisCharges = state.aegisCharges + (cond.value or 1)
+        elseif cond.kind == "yin_yang" then
+            state.yinYang = true
+        elseif cond.condition then
             local condText = cond.condition
 
             -- "战斗开始时仇恨值+N" (affix 61)
             if condText:find("战斗开始") and cond.adKey == AD.THREAT then
-                if cond.isPercent then
-                    -- 百分比仇恨不太合理，但防御性处理
-                    TM.addThreat(unit, cond.value)
-                else
-                    TM.addThreat(unit, cond.value)
-                end
+                TM.addThreat(unit, cond.value)
                 state.triggered["battleStart_threat"] = true
             end
 
@@ -271,7 +297,62 @@ function RCH.onBeforeTakeDamage(target, damage)
     end
     state.immunityCount = 0
 
+    -- 天地对位：开场减伤（首次受击后衰减）
+    if (state.openGuard or 0) > 0 then
+        damage = math.floor(damage * (1 - math.min(state.openGuard, 30) / 100))
+        state.openGuard = math.max(0, state.openGuard - 2)
+    end
+
+    -- 大成免死：致命伤害改为留 1 点生命
+    local hp = tonumber(target.hp) or 0
+    if (state.aegisCharges or 0) > 0 and hp > 1 and damage >= hp then
+        state.aegisCharges = state.aegisCharges - 1
+        return math.max(0, hp - 1)
+    end
+
     return damage
+end
+
+--- 蛇阵 / 阴阳：本次伤害是否不产生仇恨
+---@param attacker table
+---@return boolean
+function RCH.shouldSkipThreat(attacker)
+    local state = unitStates[attacker]
+    if not state then return false end
+    if state.yinYang then
+        local cid = attacker.classId
+        if cid == "assassin" or cid == "mage" then
+            return true
+        end
+    end
+    if (state.stealthChance or 0) > 0 and math.random() < state.stealthChance then
+        return true
+    end
+    return false
+end
+
+--- 过量治疗转护盾（鹿阵 / 生门）
+---@param healer table
+---@param target table
+---@param overheal number
+---@param allies table[]|nil
+function RCH.onOverheal(healer, target, overheal, allies)
+    overheal = tonumber(overheal) or 0
+    if overheal <= 0 then return end
+    local state = unitStates[healer] or unitStates[target]
+    if not state then return end
+
+    if (state.overhealShieldPct or 0) > 0 then
+        addTempShield(target, math.floor(overheal * state.overhealShieldPct + 0.5))
+    end
+    if state.lifeGate and type(allies) == "table" then
+        local share = math.floor(overheal * 0.25 / math.max(1, #allies) + 0.5)
+        if share > 0 then
+            for _, ally in ipairs(allies) do
+                addTempShield(ally, share)
+            end
+        end
+    end
 end
 
 --- 攻击命中后回调：处理终结机制（affix 89）
@@ -283,14 +364,14 @@ function RCH.onAfterHit(attacker, target)
     if not state then return false end
 
     for _, cond in ipairs(state.conditions) do
-        if cond.special and cond.special == "execute" then
-            -- "[刺客]进行攻击时，有50%概率终结血量低于X%的敌人"
+        local isExecute = (cond.special and cond.special == "execute") or cond.kind == "execute"
+        if isExecute then
             local threshold = cond.executeThreshold or 0.15
             local chance = cond.executeChance or 0.5
             if target.hp > 0 then
                 local tgtPct = target.hp / math.max(1, target.maxHp)
                 if tgtPct < threshold and math.random() < chance then
-                    return true  -- 触发终结
+                    return true
                 end
             end
         end

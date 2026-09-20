@@ -7,15 +7,13 @@
 local DrawUtil          = require("core.DrawUtil")
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 local hitTest           = DrawUtil.hitTest
 local BF                = require("systems.ButtonFeedback")
 local RelicSystem       = require("systems.RelicSystem")
 local RelicAffix        = require("systems.RelicAffix")
 local RelicDefs         = require("data.RelicDefs")
-local ImageCache        = require("ui.ImageCache")
 local PlayerStore       = require("client.data.PlayerStore")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local DarkIcon          = require("core.DarkIcon")
 
 local RelicReforgePanel = {}
 
@@ -107,7 +105,7 @@ local BTN_REPLACE = {
     NP_T = 15, NP_R = 60, NP_B = 15, NP_L = 60,
     FONT = 38,
     TEXT_CX = 298, TEXT_CY = 1542,
-    TEXT_R = 0, TEXT_G = 0, TEXT_B = 0, TEXT_A = 191,
+    TEXT_R = 0xD8, TEXT_G = 0xC9, TEXT_B = 0xA3, TEXT_A = 255,
 }
 
 -- "洗练"按钮 UI_AN_LV X780 Y1543 410*100
@@ -117,7 +115,7 @@ local BTN_REFORGE = {
     NP_T = 15, NP_R = 60, NP_B = 15, NP_L = 60,
     FONT = 38,
     TEXT_CX = 778, TEXT_CY = 1542,
-    TEXT_R = 0, TEXT_G = 0, TEXT_B = 0, TEXT_A = 191,
+    TEXT_R = 0xD8, TEXT_G = 0xC9, TEXT_B = 0xA3, TEXT_A = 255,
 }
 
 -- 可洗练词缀说明（感叹号，标题行右侧）
@@ -153,15 +151,11 @@ local COST_AREA = {
 
 -- ======================== 图片资源 ========================
 
-local imgBg         = -1  -- UI_MXZGH_YW_0.png
 local imgBeforeBg   = -1  -- UI_TJP_XL_2.png
 local imgAfterBg    = -1  -- UI_TJP_XL_1.png
 local imgArrow      = -1  -- UI_TJP_JIANTOU.png
-
-
 local imgDustIcon   = -1  -- UI_icon_ASFC_X.png
 local imgInfoIcon   = -1  -- UI_icon_TS.png
-local imgPoolBg     = -1  -- UI_TY_EJQRK.png
 local imgRelicIcon  = {}  -- [1..5] 遗物图标 (ICON_YWX_*)
 
 -- ======================== 状态 ========================
@@ -260,9 +254,9 @@ local function drawPoolPopup(vg)
     nvgTranslate(vg, -POOL_POPUP.bgCX, -POOL_POPUP.bgCY)
     nvgGlobalAlpha(vg, alpha / 255)
 
-    if imgPoolBg >= 0 then
-        DarkIcon.drawNine(vg, "panel", POOL_POPUP.bgCX - POOL_POPUP.bgW * 0.5, POOL_POPUP.bgCY - POOL_POPUP.bgH * 0.5, POOL_POPUP.bgW, POOL_POPUP.bgH, { titleH = POOL_POPUP.bgNsT })
-    end
+    DarkIcon.drawNine(vg, "panel",
+        POOL_POPUP.bgCX - POOL_POPUP.bgW * 0.5, POOL_POPUP.bgCY - POOL_POPUP.bgH * 0.5,
+        POOL_POPUP.bgW, POOL_POPUP.bgH, { titleH = POOL_POPUP.bgNsT })
 
     drawTextStroke(vg, POOL_POPUP.bgCX, POOL_POPUP.titleCY, "可洗练词缀",
         POOL_POPUP.titleFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -313,20 +307,16 @@ end
 -- ======================== 初始化 ========================
 
 function RelicReforgePanel.init(vg)
-    imgBg       = nvgCreateImage(vg, "image/界面底板/遗物神器/UI_MXZGH_YW_0.png", 0)
     imgBeforeBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_XL_2.png", 0)
     imgAfterBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_XL_1.png", 0)
     imgArrow    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
-    imgBtnHuang = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
-    imgBtnLv    = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    imgPoolBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    imgDustIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_ASFC_X.png", 0)
+    imgInfoIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
 
     -- 遗物图标 (ICON_YWX_*)
     local iconKeys = { "GUI", "SHE", "LU", "LANG", "YING" }
     for i, key in ipairs(iconKeys) do
-        imgRelicIcon[i] = nvgCreateImage(vg, "image/遗物图标/ICON_YWX_" .. key .. ".png", 0)
+        imgRelicIcon[i] = nvgCreateImage(vg, "image/ICON_YWX_" .. key .. ".png", 0)
     end
 
     if not storeSubscribed_ then
@@ -469,16 +459,12 @@ function RelicReforgePanel.draw(vg)
     nvgTranslate(vg, -BG.CX, -BG.CY)
     nvgGlobalAlpha(vg, progress)
 
-    -- 1) 背景框 UI_MXZGH_YW_0
-    if imgBg >= 0 then
-        drawImageCentered(vg, imgBg, BG.CX, BG.CY, BG.W, BG.H, 1.0)
-    end
+    -- 1) 暗黑矢量底板
+    DarkIcon.drawNine(vg, "plain",
+        BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5, BG.W, BG.H)
 
-    -- 2) 遗物图标 X540 Y564 160*160（品质背景 + 图标，与背包相同）
-    local qualBg = ImageCache.getQualityBg(relic.quality)
-    if qualBg and qualBg >= 0 then
-        drawImageCentered(vg, qualBg, ICON.CX, ICON.CY, ICON.SIZE, ICON.SIZE, 1.0)
-    end
+    -- 2) 遗物图标 X540 Y564（暗黑品质框 + 图标）
+    DarkIcon.drawQualityFrame(vg, relic.quality or 1, ICON.CX, ICON.CY, ICON.SIZE, ICON.SIZE, 1.0)
     local relicImg = imgRelicIcon[relic.type] or imgRelicIcon[1]
     if relicImg and relicImg >= 0 then
         drawImageCentered(vg, relicImg, ICON.CX, ICON.CY, ICON.SIZE - 20, ICON.SIZE - 20, 1.0)
@@ -559,7 +545,9 @@ function RelicReforgePanel.draw(vg)
 
     -- 11) "替换"按钮 UI_AN_HUANG X300 Y1543 410*100
     local _bfReplace = BF.begin(vg, "relic_reforge_replace", BTN_REPLACE.CX, BTN_REPLACE.CY, BTN_REPLACE.W, BTN_REPLACE.H)
-    DarkIcon.drawNine(vg, "btn", BTN_REPLACE.CX - BTN_REPLACE.W * 0.5, BTN_REPLACE.CY - BTN_REPLACE.H * 0.5, BTN_REPLACE.W, BTN_REPLACE.H, { accent = "gold" })
+    DarkIcon.drawNine(vg, "btn",
+        BTN_REPLACE.CX - BTN_REPLACE.W * 0.5, BTN_REPLACE.CY - BTN_REPLACE.H * 0.5,
+        BTN_REPLACE.W, BTN_REPLACE.H, { accent = "gold" })
     BF.finish(vg, _bfReplace)
 
     -- 12) 文本"替换" X298 Y1542 纯黑不透明度75%
@@ -571,7 +559,9 @@ function RelicReforgePanel.draw(vg)
 
     -- 13) "洗练"按钮 UI_AN_LV X780 Y1543 410*100
     local _bfReforge = BF.begin(vg, "relic_reforge_do", BTN_REFORGE.CX, BTN_REFORGE.CY, BTN_REFORGE.W, BTN_REFORGE.H)
-    DarkIcon.drawNine(vg, "btn", BTN_REFORGE.CX - BTN_REFORGE.W * 0.5, BTN_REFORGE.CY - BTN_REFORGE.H * 0.5, BTN_REFORGE.W, BTN_REFORGE.H, { accent = "green" })
+    DarkIcon.drawNine(vg, "btn",
+        BTN_REFORGE.CX - BTN_REFORGE.W * 0.5, BTN_REFORGE.CY - BTN_REFORGE.H * 0.5,
+        BTN_REFORGE.W, BTN_REFORGE.H, { accent = "green" })
     BF.finish(vg, _bfReforge)
 
     -- 14) 文本"洗练"/"继续洗练" X778 Y1542 纯黑不透明度75%

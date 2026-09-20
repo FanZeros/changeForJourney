@@ -7,12 +7,12 @@
 local DrawUtil          = require("core.DrawUtil")
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 local hitTest           = DrawUtil.hitTest
 local BF                = require("systems.ButtonFeedback")
 local RelicSystem       = require("systems.RelicSystem")
 local RelicDefs         = require("data.RelicDefs")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local RelicAltar        = require("systems.RelicAltar")
+local DarkIcon          = require("core.DarkIcon")
 
 local RelicDetailPanel = {}
 
@@ -110,7 +110,7 @@ local BTN_REFORGE = {
     W = 210, H = 100,
     NP_T = 15, NP_R = 60, NP_B = 15, NP_L = 60,
     FONT = 38,
-    TEXT_R = 0, TEXT_G = 0, TEXT_B = 0, TEXT_A = 191,
+    TEXT_R = 0xD8, TEXT_G = 0xC9, TEXT_B = 0xA3, TEXT_A = 255,
 }
 
 -- "装备"按钮（九宫格参数同角色详情面板：上下15 左右60）
@@ -119,13 +119,10 @@ local BTN_EQUIP = {
     W = 210, H = 100,
     NP_T = 15, NP_R = 60, NP_B = 15, NP_L = 60,
     FONT = 38,
-    TEXT_R = 0, TEXT_G = 0, TEXT_B = 0, TEXT_A = 191,
+    TEXT_R = 0xD8, TEXT_G = 0xC9, TEXT_B = 0xA3, TEXT_A = 255,
 }
 
 -- ======================== 图片资源 ========================
-
-local imgBg        = {}  -- [1..5] 品质背景
-
 
 local imgPowerIcon = -1  -- ICON_ZDL.png（战力图标）
 local imgUpBig     = -1  -- ICON_UP_big.png（可提升角标）
@@ -162,13 +159,6 @@ end
 -- ======================== 初始化 ========================
 
 function RelicDetailPanel.init(vg)
-    -- 品质背景 (UI_ZBTS_1~6)
-    for i = 1, 6 do
-        imgBg[i] = nvgCreateImage(vg, "image/品质框/UI_ZBTS_" .. i .. ".png", 0)
-    end
-    -- 按钮
-    -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    imgBtnLv    = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     -- 战力图标 + 可提升角标
     imgPowerIcon = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
     imgUpBig     = nvgCreateImage(vg, "image/通用图标/ICON_UP_big.png", 0)
@@ -176,7 +166,7 @@ function RelicDetailPanel.init(vg)
     -- 遗物图标 (ICON_YWX_*)
     local iconKeys = { "GUI", "SHE", "LU", "LANG", "YING" }
     for i, key in ipairs(iconKeys) do
-        imgRelicIcon[i] = nvgCreateImage(vg, "image/遗物图标/ICON_YWX_" .. key .. ".png", 0)
+        imgRelicIcon[i] = nvgCreateImage(vg, "image/ICON_YWX_" .. key .. ".png", 0)
     end
     print("[RelicDetailPanel] init OK")
 end
@@ -288,8 +278,8 @@ function RelicDetailPanel.draw(vg)
     nvgTranslate(vg, -BG.CX, -BG.CY)
     nvgGlobalAlpha(vg, progress)
 
-    -- 1) 背景 [暗黑化 P1-B5] 矢量纯底板 + 品质语义描边
-    local q = math.min(relic.quality or 1, 5)
+    -- 1) 暗黑矢量底板（按品质饰边）
+    local q = math.min(relic.quality or 1, 6)
     DarkIcon.drawNine(vg, "plain",
         BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
         BG.W, BG.H,
@@ -333,7 +323,19 @@ function RelicDetailPanel.draw(vg)
     nvgFontSize(vg, TYPE_LABEL.FONT)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, TYPE_LABEL.X, TYPE_LABEL.Y, "遗物", nil)
+    local level = tonumber(relic.level) or 1
+    local typeLine = "遗物  Lv." .. tostring(level)
+    if relic.slot and RelicAltar.SLOTS[relic.slot] then
+        local native = RelicAltar.isNative(relic, relic.slot)
+        if relic.slot == RelicAltar.SLOT_CORE then
+            typeLine = typeLine .. "  阵眼"
+        elseif native then
+            typeLine = typeLine .. "  本座"
+        else
+            typeLine = typeLine .. "  错座50%"
+        end
+    end
+    nvgText(vg, TYPE_LABEL.X, TYPE_LABEL.Y, typeLine, nil)
 
     -- 4) 品质文本 - 左对齐 X316 Y995 字号30 颜色fff600 描边282828大小4
     local qualityName = qualityDef and qualityDef.name or "普通"
@@ -409,7 +411,9 @@ function RelicDetailPanel.draw(vg)
         ---@diagnostic disable-next-line: assign-type-mismatch
         local btnCX = BG.CX  -- 540 居中
         local _bfEq = BF.begin(vg, "relic_detail_equip", btnCX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H)
-        DarkIcon.drawNine(vg, "btn", btnCX - BTN_EQUIP.W * 0.5, BTN_EQUIP.CY - BTN_EQUIP.H * 0.5, BTN_EQUIP.W, BTN_EQUIP.H, { accent = "green" })
+        DarkIcon.drawNine(vg, "btn",
+            btnCX - BTN_EQUIP.W * 0.5, BTN_EQUIP.CY - BTN_EQUIP.H * 0.5,
+            BTN_EQUIP.W, BTN_EQUIP.H, { accent = "green" })
         BF.finish(vg, _bfEq)
 
         nvgFontFace(vg, "sans")
@@ -417,6 +421,14 @@ function RelicDetailPanel.draw(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(BTN_EQUIP.TEXT_R, BTN_EQUIP.TEXT_G, BTN_EQUIP.TEXT_B, BTN_EQUIP.TEXT_A))
         nvgText(vg, btnCX, BTN_EQUIP.CY, "取下", nil)
+
+        local lv = tonumber(relic.level) or 1
+        if lv < (RelicDefs.MAX_LEVEL or 5) then
+            local cost = RelicDefs.getUpgradeCost(relic.quality, lv)
+            nvgFontSize(vg, 24)
+            nvgFillColor(vg, nvgRGBA(255, 230, 160, 230))
+            nvgText(vg, btnCX, BTN_EQUIP.CY + 70, "点击品质升级  " .. cost .. "粉尘", nil)
+        end
     else
         -- 背包遗物：显示"洗练"+"装备/替换"双按钮
         local canReforge, _ = RelicSystem.canReforge(relic)
@@ -424,7 +436,9 @@ function RelicDetailPanel.draw(vg)
 
         nvgGlobalAlpha(vg, progress * (reforgeAlpha / 255))
         local _bfRef = BF.begin(vg, "relic_detail_reforge", BTN_REFORGE.CX, BTN_REFORGE.CY, BTN_REFORGE.W, BTN_REFORGE.H)
-        DarkIcon.drawNine(vg, "btn", BTN_REFORGE.CX - BTN_REFORGE.W * 0.5, BTN_REFORGE.CY - BTN_REFORGE.H * 0.5, BTN_REFORGE.W, BTN_REFORGE.H, { accent = "gold" })
+        DarkIcon.drawNine(vg, "btn",
+            BTN_REFORGE.CX - BTN_REFORGE.W * 0.5, BTN_REFORGE.CY - BTN_REFORGE.H * 0.5,
+            BTN_REFORGE.W, BTN_REFORGE.H, { accent = "gold" })
         BF.finish(vg, _bfRef)
         nvgGlobalAlpha(vg, progress)
 
@@ -439,7 +453,9 @@ function RelicDetailPanel.draw(vg)
         local equipLabel = replaceTarget and "替换" or "装备"
 
         local _bfEq = BF.begin(vg, "relic_detail_equip", BTN_EQUIP.CX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H)
-        DarkIcon.drawNine(vg, "btn", BTN_EQUIP.CX - BTN_EQUIP.W * 0.5, BTN_EQUIP.CY - BTN_EQUIP.H * 0.5, BTN_EQUIP.W, BTN_EQUIP.H, { accent = "green" })
+        DarkIcon.drawNine(vg, "btn",
+            BTN_EQUIP.CX - BTN_EQUIP.W * 0.5, BTN_EQUIP.CY - BTN_EQUIP.H * 0.5,
+            BTN_EQUIP.W, BTN_EQUIP.H, { accent = "green" })
         BF.finish(vg, _bfEq)
 
         nvgFontFace(vg, "sans")
@@ -447,6 +463,14 @@ function RelicDetailPanel.draw(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(BTN_EQUIP.TEXT_R, BTN_EQUIP.TEXT_G, BTN_EQUIP.TEXT_B, BTN_EQUIP.TEXT_A))
         nvgText(vg, BTN_EQUIP.CX, BTN_EQUIP.CY, equipLabel, nil)
+
+        local lv = tonumber(relic.level) or 1
+        if lv < (RelicDefs.MAX_LEVEL or 5) then
+            local cost = RelicDefs.getUpgradeCost(relic.quality, lv)
+            nvgFontSize(vg, 24)
+            nvgFillColor(vg, nvgRGBA(255, 230, 160, 230))
+            nvgText(vg, BG.CX, BTN_EQUIP.CY + 70, "点击品质条升级  " .. cost .. "粉尘", nil)
+        end
     end
 
     nvgRestore(vg)
@@ -477,6 +501,13 @@ function RelicDetailPanel.handleTap(tx, ty)
         end
         print("[RelicDetailPanel] toggle lock relicId=" .. tostring(relic.id)
             .. " locked=" .. tostring(willLock))
+        return true
+    end
+
+    local lv = tonumber(relic.level) or 1
+    if lv < (RelicDefs.MAX_LEVEL or 5)
+       and hitTest(tx, ty, QUALITY.X + 80, QUALITY.Y, 280, 70) then
+        RelicSystem.requestUpgrade(relic.id)
         return true
     end
 

@@ -158,6 +158,15 @@ function BottomNav.setSelectedIndex(index)
     end
 end
 
+--- 查询指定页签是否锁定（TopBar 页面入口置灰用）
+---@param index number 标签索引 (1~5)
+---@return boolean
+function BottomNav.isTabLocked(index)
+    local tab = tabs[index]
+    if not tab then return false end
+    return tab.locked and true or false
+end
+
 --- 设置指定标签的角标显示状态
 ---@param tabIndex number 标签索引 (1~5)
 ---@param show boolean 是否显示角标

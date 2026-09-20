@@ -341,7 +341,8 @@ function DrawUtil.easeOutBack(t)
     return t * t * ((s + 1) * t + s) + 1
 end
 
---- 二级页返回键（三队并行）：暗黑圆角底 + 方向箭头，dir="left" 为左关箭头 ‹，dir="right" 为右关箭头 ›
+--- 立体"门柱"返回键：投影 + 铁框 + 内陷面板 + 四角铆钉 + 三层立体箭头
+--- 左右镜像复用（dir="right" 时箭头水平翻转）
 ---@param vg any NanoVG 上下文
 ---@param cx number 按钮中心 X（设计空间）
 ---@param cy number 按钮中心 Y
@@ -349,21 +350,89 @@ end
 ---@param h number 高
 ---@param dir string "left" 或 "right"
 function DrawUtil.drawBackChevron(vg, cx, cy, w, h, dir)
-    DrawUtil.drawRoundedRectCentered(vg, cx, cy, w, h, h * 0.18, 60, 42, 31, 210)
+    local r = math.min(w, h) * 0.20
+
+    -- 1) 投影（向下偏移，让按钮"立"在页面上）
     nvgBeginPath(vg)
-    nvgRoundedRect(vg, cx - w * 0.5, cy - h * 0.5, w, h, h * 0.18)
-    nvgStrokeColor(vg, nvgRGBA(255, 210, 115, 220))
+    nvgRoundedRect(vg, cx - w * 0.5, cy - h * 0.5 + 5, w, h, r)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 110))
+    nvgFill(vg)
+
+    -- 2) 外框：深铁底 + 亮金描边
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cx - w * 0.5, cy - h * 0.5, w, h, r)
+    nvgFillColor(vg, nvgRGBA(52, 36, 26, 250))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(255, 210, 115, 235))
     nvgStrokeWidth(vg, 3)
     nvgStroke(vg)
-    local s = (dir == "left") and 1 or -1
+
+    -- 3) 内陷面板：更深底色
+    local inset = math.max(6, w * 0.075)
+    local iw, ih = w - inset * 2, h - inset * 2
+    local ir = r * 0.72
     nvgBeginPath(vg)
-    nvgMoveTo(vg, cx + s * w * 0.11, cy - h * 0.17)
-    nvgLineTo(vg, cx - s * w * 0.11, cy)
-    nvgLineTo(vg, cx + s * w * 0.11, cy + h * 0.17)
-    nvgStrokeColor(vg, nvgRGBA(255, 235, 170, 255))
-    nvgStrokeWidth(vg, math.max(8, w * 0.07))
-    nvgLineCap(vg, NVG_ROUND)
-    nvgLineJoin(vg, NVG_ROUND)
+    nvgRoundedRect(vg, cx - iw * 0.5, cy - ih * 0.5, iw, ih, ir)
+    nvgFillColor(vg, nvgRGBA(28, 19, 13, 255))
+    nvgFill(vg)
+
+    -- 3a) 内面板上缘高光 / 下缘阴影 → 凹陷感
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, cx - iw * 0.5 + ir, cy - ih * 0.5 + 1.5)
+    nvgLineTo(vg, cx + iw * 0.5 - ir, cy - ih * 0.5 + 1.5)
+    nvgStrokeColor(vg, nvgRGBA(255, 226, 170, 55))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, cx - iw * 0.5 + ir, cy + ih * 0.5 - 1.5)
+    nvgLineTo(vg, cx + iw * 0.5 - ir, cy + ih * 0.5 - 1.5)
+    nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 120))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    -- 4) 四角铆钉（金属圆点：暗边 + 高光点）
+    local rivR = math.max(3, math.min(w, h) * 0.045)
+    local rvx, rvy = w * 0.5 - inset * 0.55, h * 0.5 - inset * 0.55
+    for _, sx in ipairs({ -1, 1 }) do
+        for _, sy in ipairs({ -1, 1 }) do
+            local px, py = cx + sx * rvx, cy + sy * rvy
+            nvgBeginPath(vg)
+            nvgCircle(vg, px, py, rivR)
+            nvgFillColor(vg, nvgRGBA(96, 74, 48, 255))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(255, 214, 130, 180))
+            nvgStrokeWidth(vg, 1.5)
+            nvgStroke(vg)
+            nvgBeginPath(vg)
+            nvgCircle(vg, px - rivR * 0.3, py - rivR * 0.3, rivR * 0.32)
+            nvgFillColor(vg, nvgRGBA(255, 238, 190, 200))
+            nvgFill(vg)
+        end
+    end
+
+    -- 5) 三层立体箭头：暗影层 → 深金层 → 亮金主体
+    local s = (dir == "left") and 1 or -1
+    local ax, ay = w * 0.13, h * 0.20
+    local lw = math.max(8, w * 0.085)
+    local function arrowPath(oy)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, cx + s * ax, cy - ay + oy)
+        nvgLineTo(vg, cx - s * ax, cy + oy)
+        nvgLineTo(vg, cx + s * ax, cy + ay + oy)
+        nvgLineCap(vg, NVG_ROUND)
+        nvgLineJoin(vg, NVG_ROUND)
+    end
+    arrowPath(3)
+    nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 130))
+    nvgStrokeWidth(vg, lw)
+    nvgStroke(vg)
+    arrowPath(0)
+    nvgStrokeColor(vg, nvgRGBA(150, 105, 45, 255))
+    nvgStrokeWidth(vg, lw + 4)
+    nvgStroke(vg)
+    arrowPath(0)
+    nvgStrokeColor(vg, nvgRGBA(255, 232, 168, 255))
+    nvgStrokeWidth(vg, lw)
     nvgStroke(vg)
 end
 

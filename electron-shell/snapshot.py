@@ -11,7 +11,7 @@
 #   python electron-shell/snapshot.py --proxy http://127.0.0.1:7890
 #
 # 设计要点:
-#   - 分片 16MB/片: 单连接大 POST 会被代理劣化卡死，16MB 实测稳定
+#   - 分片 50MB/片（实测上限 ~56MB 开始劣化，50 留余量；片失败自动重试 3 次）
 #   - 幂等: 已存在且大小一致的片跳过 → 反复重跑即断点续传
 #   - 传完自动删除其它 commit 的旧片（防下载端混片）
 #   - 产物: dist-{version}-{commit7}.zip.part00..NN（下载端 pack_release 按 sorted 合并）
@@ -35,7 +35,7 @@ ROOT = SHELL.parent
 sys.path.insert(0, str(SHELL))
 import pack_release as P  # noqa: E402  复用 log/die/github_token/git_remote_repo/Release 原语
 
-CHUNK = 16 * 1024 * 1024
+CHUNK = 50 * 1024 * 1024
 SEND_TIMEOUT = 25
 
 

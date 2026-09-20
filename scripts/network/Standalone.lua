@@ -63,6 +63,7 @@ local ScenarioDialogue   = require("ui.ScenarioDialogue")     -- [LetterIntro] �
 local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig") -- [LetterIntro] 情景配置
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库 + 画廊验收页
+local StandaloneSave     = require("network.StandaloneSave") -- [单机存档] 本地快照/恢复（无联网）
 local ClientMsgHandler   = require("network.ClientMessageHandler")
 local LocalActionBridge  = require("network.LocalActionBridge")
 local TaskPanel          = require("ui.TaskPanel")
@@ -782,6 +783,10 @@ function Standalone.Start()
     -- 4.5 碎片角标（头像按需加载）
     DrawUtil.initShardAssets(vg)
 
+    -- 4.8 [单机存档] 恢复本地存档（GameState + Dispatcher 各模块）
+    -- ⚠️ 须在一切 UI/数据初始化之前：各系统初始化均为 "if not get(x)" 守卫
+    StandaloneSave.RestoreData()
+
     -- 5. 先出标题：只加载标题必要贴图，其余模块分帧补 init，避免预览首帧卡死
     StartScreen.init(vg, scene)
     DarkTitleScreen.init(vg)
@@ -805,6 +810,9 @@ function Standalone.Start()
         { "firstStage", function()
             -- [启动优化] 初始阵容同步 + 关卡重载：独立一帧执行
             -- （loadStage 生成敌人/重置战斗较重，原挤在 bootWiring 同帧导致 97-98% 卡死）
+            -- [单机存档] 回灌战斗进度（须在阵容同步前：setBattleData 先切到存档关卡，
+            -- 随后 setAllies + reloadStage 用恢复出的阵容重载同一关卡）
+            StandaloneSave.ApplyBattleProgress()
             TopBar.markAvatarViewed()
             TopBar.setTotalPower(CharacterPanel.getTotalPower())
             local initialTeam = CharacterPanel.getDeployedTeam()
@@ -870,6 +878,7 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
     if vg then
         nvgDelete(vg)
@@ -1020,160 +1029,7 @@ end
 -- ============================================================================
 
 function HandleNanoVGRender(eventType, eventData)
-    if HORIZON_MODE then return HandleNanoVGRenderHorizon(eventType, eventData) end
-    if not vg then return end
-
-    nvgBeginFrame(vg, logicalW, logicalH, dpr)
-    if not bootReady_ then
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, logicalW, logicalH)
-        nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
-        nvgFill(vg)
-        nvgScale(vg, scale, scale)
-        nvgTranslate(vg, designOffsetX, designOffsetY)
-        if StartScreen.isOpen() then
-            StartScreen.draw(vg)
-        end
-        nvgEndFrame(vg)
-        return
-    end
-    nvgScale(vg, scale, scale)
-
-    -- 背景（screen space，填满可见区域）
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, screenDesignW, screenDesignH)
-    nvgFillColor(vg, nvgRGBA(25, 25, 35, 255))
-    nvgFill(vg)
-
-    -- 调试面板（screen space，设计区域右侧）
-    DebugPanel.draw(vg, designOffsetX, screenDesignW)
-
-    -- 进入设计空间 (1080x2400)
-    nvgTranslate(vg, designOffsetX, designOffsetY)
-
-    -- 开始界面（最高优先级，覆盖一切）
-    if StartScreen.isOpen() then
-        StartScreen.draw(vg)
-        nvgEndFrame(vg)
-        return
-    end
-
-    -- [LetterIntro] 先祖来信（最高优先级，覆盖一切；竖屏路径也全窗口）
-    if LetterIntro.isOpen() then
-        nvgResetTransform(vg)
-        ---@diagnostic disable-next-line: missing-parameter
-        LetterIntro.draw(vg, logicalW, logicalH)
-        nvgEndFrame(vg)
-        return
-    end
-
-    -- 副本/通天塔全屏优先（覆盖所有其他界面）
-    if TowerBattleScene.isActive() then
-        TowerBattleScene.draw(vg, 1080, 2400)
-    elseif DungeonBattleScene.isOpen() then
-        DungeonBattleScene.draw(vg)
-        -- 不绘制 TopBar/BottomNav
-    else
-        -- 根据当前标签绘制对应场景内容
-        local tabIndex = BottomNav.getSelectedIndex()
-        if tabIndex == 1 then
-            -- "角色"标签 → 角色界面
-            CharacterPanel.draw(vg)
-        elseif tabIndex == 2 then
-            -- "日志"标签 → 日志页面
-            DiaryPage.draw(vg)
-        elseif tabIndex == 3 then
-            -- "战斗"标签 → 战斗场景
-            BattleScene.draw(vg)
-        elseif tabIndex == 4 then
-            -- "城镇"标签 → 城镇场景
-            TownScene.draw(vg)
-            -- 铁匠铺二级界面（覆盖在城镇之上）
-            BlacksmithPage.draw(vg)
-            -- 教堂二级界面（覆盖在城镇之上）
-            ChurchPage.draw(vg)
-            -- 酒馆二级界面（覆盖在城镇之上）
-            TavernPage.draw(vg)
-            -- 市场二级界面（覆盖在城镇之上）
-            MarketPage.draw(vg)
-        elseif tabIndex == 5 then
-            DungeonPage.draw(vg)
-        end
-
-        -- 绘制顶部信息栏和底部导航栏（二级界面打开时隐藏）
-        local detailOpen = CharacterPanel.isDetailOpen()
-        local smithOpen = BlacksmithPage.isOpen()
-        local tavernOpen = TavernPage.isOpen()
-        local marketOpen = MarketPage.isOpen()
-        local churchOpen = ChurchPage.isOpen()
-        if not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not marketOpen then
-            TopBar.draw(vg)
-            BottomNav.draw(vg)
-        elseif tavernOpen and not detailOpen and not smithOpen then
-            local animP = TavernPage.getAnimProgress()
-            if animP < 1.0 then
-                local fadeAlpha = 1.0 - animP
-                nvgSave(vg)
-                nvgGlobalAlpha(vg, fadeAlpha)
-                TopBar.draw(vg)
-                BottomNav.draw(vg)
-                nvgRestore(vg)
-            end
-        elseif marketOpen and not detailOpen and not smithOpen and not tavernOpen then
-            local animP = MarketPage.getAnimProgress()
-            if animP < 1.0 then
-                local fadeAlpha = 1.0 - animP
-                nvgSave(vg)
-                nvgGlobalAlpha(vg, fadeAlpha)
-                TopBar.draw(vg)
-                BottomNav.draw(vg)
-                nvgRestore(vg)
-            end
-        end
-    end
-
-    -- 全屏覆盖面板（最顶层）
-    HeroRosterPanel.draw(vg)
-
-    -- 玩家信息面板
-    PlayerInfoPanel.draw(vg)
-
-    -- 战利品管理页面（在奖励弹窗之下）
-    LootBox.drawPage(vg)
-
-    -- 奖励弹窗
-    RewardPopup.draw(vg)
-
-    -- 离线收益面板
-    OfflineRewardPanel.draw(vg)
-
-    -- 战斗力提升特效
-    SpinePowerUpEffect.draw(vg)
-
-    -- 冒险等级提升弹窗（最顶层）
-    LevelUpPopup.draw(vg)
-
-    -- 轮回开场动画（覆盖所有游戏 UI）
-    if IntroCutscene.isActive() then
-        IntroCutscene.draw(vg)
-    end
-
-    -- [LetterIntro] 情景对话（large 全屏覆盖 / small 叠加弹窗）
-    if ScenarioDialogue.isActive() then
-        ScenarioDialogue.draw()
-    end
-
-    -- [暗黑化 P0] 图标画廊验收页（竖屏路径）
-    if DarkIcon.SHOWCASE then
-        DarkIcon.drawShowcase(vg)
-    end
-
-    -- [一次性加载] 预载进度遮罩（竖屏路径，设计空间坐标）
-    if preload_.active and not DarkTitleScreen.isOpen() and not StartScreen.isOpen() then
-        DrawPreloadOverlay(vg, DESIGN_W, DESIGN_H)
-    end
-
-    nvgEndFrame(vg)
+    return HandleNanoVGRenderHorizon(eventType, eventData)
 end
 
 ---@param eventType string
@@ -1233,6 +1089,9 @@ function HandleUpdate(eventType, eventData)
 
     -- [Standalone] battle 状态本地同步（建筑/页签解锁判定依赖）
     SyncBattleState(dt)
+
+    -- [单机存档] 变更检测 + 防抖落盘
+    StandaloneSave.Update(dt)
 
     -- 开始界面打开时只更新它
     if StartScreen.isOpen() then
@@ -1310,8 +1169,8 @@ function HandleUpdate(eventType, eventData)
         end
     end
 
-    -- [三行并行] 模式守卫: 战斗区打开=strip，否则 classic；exclusive 场景打开时收起战斗区
-    BattleLayout.setMode(BattleTriPage.isOpen() and "strip" or "classic")
+    -- [三行并行] 横屏专用: 战斗布局恒为 strip（竖屏 classic 已移除）
+    BattleLayout.setMode("strip")
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)
@@ -1334,13 +1193,13 @@ function HandleUpdate(eventType, eventData)
 
     local tabIndex = BottomNav.getSelectedIndex()
     -- [三行并行] 三行战斗区常驻: tab3 下恒开（Dungeon 独占时由守卫暂收, 关闭后自动重开）
-    if HORIZON_MODE and tabIndex == 3 and not BattleTriPage.isOpen()
+    if tabIndex == 3 and not BattleTriPage.isOpen()
         and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive() then
         BattleTriPage.open()
     end
     -- 临时验证钩子: 无输入环境强制打开三栏页（仅 _validate_entry.lua 置位时生效）
     ---@diagnostic disable-next-line: undefined-global
-    if H_AUTO_OPEN_TRI and HORIZON_MODE and H_skipDone and not BattleTriPage.isOpen() then
+    if H_AUTO_OPEN_TRI and H_skipDone and not BattleTriPage.isOpen() then
         BattleTriPage.open()
     end
     -- 临时验证钩子: 无输入环境强制打开任意 ui 面板（仅 _validate_entry.lua 置位时生效，B3/B5 截图验收用）
@@ -1400,524 +1259,28 @@ local lastTapTime = 0
 
 function HandleMouseButtonDown(eventType, eventData)
     if not bootReady_ then return end
-    if HORIZON_MODE then return HandleMouseButtonDownHorizon(eventType, eventData) end
-    local button = eventData["Button"]:GetInt()
-    if button ~= MOUSEB_LEFT then return end
-    local mousePos = input:GetMousePosition()
-    local sx = mousePos.x / dpr / scale
-    local sy = mousePos.y / dpr / scale
-    local dx = sx - designOffsetX
-    local dy = sy - designOffsetY
-    pressStartDX, pressStartDY = dx, dy
-    pressValid = true
-    -- 副本/测试木桩全屏拦截
-    if DungeonBattleScene.isOpen() then
-        DungeonBattleScene.handleDragBegin(dx, dy)
-        return
-    end
-    -- 冒险等级提升弹窗拦截（吞掉所有输入）
-    if LevelUpPopup.isOpen() then return end
-    -- 玩家信息面板拦截（转发拖拽给 AvatarSelectPanel）
-    if PlayerInfoPanel.isOpen() then
-        PlayerInfoPanel.handleDragBegin(dx, dy)
-        return
-    end
-    -- 离线收益面板拦截
-    if OfflineRewardPanel.isOpen() then
-        OfflineRewardPanel.handleDragBegin(dx, dy)
-        return
-    end
-    -- 奖励弹窗拦截
-    if RewardPopup.handleDragBegin(dx, dy) then return end
-    -- 战利品页面拖拽拦截
-    if LootBox.handleDragBegin(dx, dy) then return end
-    local tabIndex = BottomNav.getSelectedIndex()
-    if tabIndex == 4 and BlacksmithPage.isOpen() then
-        BlacksmithPage.handleDragBegin(dx, dy)
-        return
-    end
-    if tabIndex == 4 and ChurchPage.isOpen() then
-        ChurchPage.handleDragBegin(dx, dy)
-        return
-    end
-    if tabIndex == 4 and TavernPage.isOpen() then
-        TavernPage.handleDragBegin(dx, dy)
-        return
-    end
-    if tabIndex == 1 then
-        CharacterPanel.handleDragBegin(dx, dy)
-    end
+    return HandleMouseButtonDownHorizon(eventType, eventData)
 end
 
 function HandleMouseMove(eventType, eventData)
-    if HORIZON_MODE then return HandleMouseMoveHorizon(eventType, eventData) end
-    local mousePos = input:GetMousePosition()
-    local sx = mousePos.x / dpr / scale
-    local sy = mousePos.y / dpr / scale
-    local dx = sx - designOffsetX
-    local dy = sy - designOffsetY
-    -- 副本/测试木桩全屏拦截
-    if DungeonBattleScene.isOpen() then
-        DungeonBattleScene.handleDragMove(dx, dy)
-        return
-    end
-    -- 冒险等级提升弹窗拦截（吞掉所有输入）
-    if LevelUpPopup.isOpen() then return end
-    -- 玩家信息面板拦截（转发拖拽移动给 AvatarSelectPanel）
-    if PlayerInfoPanel.isOpen() then
-        PlayerInfoPanel.handleDragMove(dx, dy)
-        return
-    end
-    -- 离线收益面板拦截
-    if OfflineRewardPanel.isOpen() then
-        OfflineRewardPanel.handleDragMove(dx, dy)
-        return
-    end
-    -- 奖励弹窗拦截
-    if RewardPopup.handleDragMove(dx, dy) then return end
-    -- 战利品页面拖拽拦截
-    if LootBox.handleDragMove(dx, dy) then return end
-    local tabIndex = BottomNav.getSelectedIndex()
-    if tabIndex == 4 and BlacksmithPage.isOpen() then
-        BlacksmithPage.handleDragMove(dx, dy)
-        return
-    end
-    if tabIndex == 4 and ChurchPage.isOpen() then
-        ChurchPage.handleDragMove(dx, dy)
-        return
-    end
-    if tabIndex == 4 and TavernPage.isOpen() then
-        TavernPage.handleDragMove(dx, dy)
-        return
-    end
-    if tabIndex == 1 then
-        CharacterPanel.handleDragMove(dx, dy)
-    end
+    return HandleMouseMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseButtonUp(eventType, eventData)
     if not bootReady_ then return end
-    if HORIZON_MODE then return HandleMouseButtonUpHorizon(eventType, eventData) end
-    local button = eventData["Button"]:GetInt()
-    if button ~= MOUSEB_LEFT then return end
-    local mousePos = input:GetMousePosition()
-    local sx = mousePos.x / dpr / scale   -- screen space
-    local sy = mousePos.y / dpr / scale
-    -- 设计空间
-    local dx = sx - designOffsetX
-    local dy = sy - designOffsetY
-    -- 判断是否为有效点击（按下→松开位移小于阈值）
-    local isTap = false
-    if pressValid then
-        local dist = math.abs(dx - pressStartDX) + math.abs(dy - pressStartDY)
-        isTap = dist < TAP_THRESHOLD
-    end
-    pressValid = false
-    -- 最小点击间隔保护（防止移动端单击误触发双击）
-    if isTap then
-        local now = time.elapsedTime
-        if now - lastTapTime < MIN_TAP_INTERVAL then
-            isTap = false
-        else
-            lastTapTime = now
-        end
-    end
-    print(string.format("[Standalone][MouseUp] dx=%.0f dy=%.0f isTap=%s", dx, dy, tostring(isTap)))
-    -- 开始界面拦截
-    if StartScreen.isOpen() then
-        if isTap then StartScreen.handleClick(dx, dy) end
-        return
-    end
-    -- [LetterIntro] 信件期：任意释放 = 轻触翻段（不依赖 isTap）
-    if LetterIntro.isOpen() then
-        LetterIntro.handleTap()
-        return
-    end
-    -- [LetterIntro] 过场期吞输入（时间轴自动推进）
-    if IntroCutscene.isActive() then
-        return
-    end
-    -- [LetterIntro] 情景对话期：点击推进
-    if ScenarioDialogue.isActive() then
-        if isTap then ScenarioDialogue.advance() end
-        return
-    end
-    -- 副本/通天塔全屏拦截（拖拽结束 + 点击）
-    if TowerBattleScene.isActive() then
-        if isTap then TowerBattleScene.handleClick(dx, dy, 1080, 2400) end
-        return
-    end
-    if DungeonBattleScene.isOpen() then
-        DungeonBattleScene.handleDragEnd(dx, dy)
-        if isTap then DungeonBattleScene.handleInput(dx, dy) end
-        return
-    end
-    -- 冒险等级提升弹窗拦截（点击关闭）
-    if LevelUpPopup.isOpen() then
-        if isTap then LevelUpPopup.handleInput(dx, dy) end
-        return
-    end
-    -- 玩家信息面板拦截（拖拽结束 + 点击处理）
-    if PlayerInfoPanel.isOpen() then
-        PlayerInfoPanel.handleDragEnd(dx, dy)
-        if isTap then PlayerInfoPanel.handleInput(dx, dy) end
-        return
-    end
-    -- 离线收益面板拦截（拖拽结束 + 点击）
-    if OfflineRewardPanel.isOpen() then
-        OfflineRewardPanel.handleDragEnd(dx, dy)
-        if isTap then OfflineRewardPanel.handleInput(dx, dy) end
-        return
-    end
-    -- 奖励弹窗拦截（拖拽结束 + 点击关闭）
-    if RewardPopup.isOpen() then
-        RewardPopup.handleDragEnd(dx, dy)
-        if isTap then RewardPopup.handleInput(dx, dy) end
-        return
-    end
-    -- 战利品页面拦截（拖拽结束 + 点击）
-    if LootBox.isPageOpen() then
-        LootBox.handleDragEnd(dx, dy)
-        if isTap then LootBox.handleInput(dx, dy) end
-        return
-    end
-    local tabIndex = BottomNav.getSelectedIndex()
-    -- 铁匠铺：拖拽结束转发（与 TouchEnd 对齐）
-    if tabIndex == 4 and BlacksmithPage.isOpen() then
-        BlacksmithPage.handleDragEnd(dx, dy)
-        if not isTap then return end
-        BlacksmithPage.handleInput(dx, dy)
-        return
-    end
-    if tabIndex == 4 and ChurchPage.isOpen() then
-        ChurchPage.handleDragEnd(dx, dy)
-        if not isTap then return end
-        ChurchPage.handleInput(dx, dy)
-        return
-    end
-    -- 酒馆：拖拽结束转发
-    if tabIndex == 4 and TavernPage.isOpen() then
-        TavernPage.handleDragEnd(dx, dy)
-        if not isTap then return end
-        TavernPage.handleInput(dx, dy)
-        return
-    end
-    -- 角色界面：卡片拖拽落点始终处理，滚动惯性始终结算
-    if tabIndex == 1 then
-        if CharacterPanel.isDraggingCard() then
-            CharacterPanel.handleInput(dx, dy)
-            CharacterPanel.handleDragEnd(dx, dy)
-            return
-        end
-        CharacterPanel.handleDragEnd(dx, dy)
-    end
-    -- 滑动操作不触发任何点击（防止滚动列表时误触）
-    if not isTap then return end
-    -- 以下全部是点击事件分发
-    if DebugPanel.handleInput(sx, sy) then return end
-    if HeroRosterPanel.handleInput(dx, dy) then return end
-    -- 头像点击 → 打开玩家信息面板（TopBar 可见时生效）
-    local detailOpen = CharacterPanel.isDetailOpen()
-    local smithOpen = BlacksmithPage.isOpen()
-    local tavernOpen = TavernPage.isOpen()
-    local diaryOverlay = DiaryPage.hasOverlayOpen()
-    if not detailOpen and not smithOpen and not ChurchPage.isOpen() and not tavernOpen
-        and not DungeonBattleScene.isOpen() and not diaryOverlay then
-        if TopBar.handleInput(dx, dy) then
-            return
-        end
-        if TopBar.hitTestAvatar(dx, dy, 0) then
-            PlayerInfoPanel.open()
-            return
-        end
-    end
-    if tabIndex == 1 then
-        if CharacterPanel.handleInput(dx, dy) then return end
-    elseif tabIndex == 2 then
-        if DiaryPage.handleInput(dx, dy) then return end
-    elseif tabIndex == 3 then
-        if BattleScene.handleInput(dx, dy) then return end
-    elseif tabIndex == 5 then
-        if DungeonPage.handleInput(dx, dy) then return end
-    elseif tabIndex == 4 then
-        if BlacksmithPage.isOpen() then
-            BlacksmithPage.handleInput(dx, dy)
-            return
-        end
-        if ChurchPage.isOpen() then
-            ChurchPage.handleInput(dx, dy)
-            return
-        end
-        if TavernPage.isOpen() then
-            TavernPage.handleInput(dx, dy)
-            return
-        end
-        if TownScene.handleInput(dx, dy) then return end
-    end
-    BottomNav.handleInput(dx, dy)
+    return HandleMouseButtonUpHorizon(eventType, eventData)
 end
 
 function HandleTouchBegin(eventType, eventData)
-    if HORIZON_MODE then return HandleTouchBeginHorizon(eventType, eventData) end
-    local tx = eventData["X"]:GetInt()
-    local ty = eventData["Y"]:GetInt()
-    local sx = tx / dpr / scale
-    local sy = ty / dpr / scale
-    local dx = sx - designOffsetX
-    local dy = sy - designOffsetY
-    pressStartDX, pressStartDY = dx, dy
-    pressValid = true
-    -- 副本/测试木桩全屏拦截
-    if DungeonBattleScene.isOpen() then
-        DungeonBattleScene.handleDragBegin(dx, dy)
-        return
-    end
-    -- 冒险等级提升弹窗拦截（吞掉所有输入）
-    if LevelUpPopup.isOpen() then return end
-    -- 玩家信息面板拦截（转发拖拽给 AvatarSelectPanel）
-    if PlayerInfoPanel.isOpen() then
-        PlayerInfoPanel.handleDragBegin(dx, dy)
-        return
-    end
-    -- 离线收益面板拦截
-    if OfflineRewardPanel.isOpen() then
-        OfflineRewardPanel.handleDragBegin(dx, dy)
-        return
-    end
-    -- 奖励弹窗拦截
-    if RewardPopup.handleDragBegin(dx, dy) then return end
-    -- 战利品页面拦截
-    if LootBox.handleDragBegin(dx, dy) then return end
-    local tabIndex = BottomNav.getSelectedIndex()
-    if tabIndex == 4 and BlacksmithPage.isOpen() then
-        BlacksmithPage.handleDragBegin(dx, dy)
-        return
-    end
-    if tabIndex == 4 and ChurchPage.isOpen() then
-        ChurchPage.handleDragBegin(dx, dy)
-        return
-    end
-    if tabIndex == 4 and TavernPage.isOpen() then
-        TavernPage.handleDragBegin(dx, dy)
-        return
-    end
-    if tabIndex == 1 then
-        CharacterPanel.handleDragBegin(dx, dy)
-    end
+    return HandleTouchBeginHorizon(eventType, eventData)
 end
 
 function HandleTouchMove(eventType, eventData)
-    if HORIZON_MODE then return HandleTouchMoveHorizon(eventType, eventData) end
-    local tx = eventData["X"]:GetInt()
-    local ty = eventData["Y"]:GetInt()
-    local sx = tx / dpr / scale
-    local sy = ty / dpr / scale
-    local dx = sx - designOffsetX
-    local dy = sy - designOffsetY
-    -- 副本/测试木桩全屏拦截
-    if DungeonBattleScene.isOpen() then
-        DungeonBattleScene.handleDragMove(dx, dy)
-        return
-    end
-    -- 冒险等级提升弹窗拦截（吞掉所有输入）
-    if LevelUpPopup.isOpen() then return end
-    -- 玩家信息面板拦截（转发拖拽移动给 AvatarSelectPanel）
-    if PlayerInfoPanel.isOpen() then
-        PlayerInfoPanel.handleDragMove(dx, dy)
-        return
-    end
-    -- 离线收益面板拦截
-    if OfflineRewardPanel.isOpen() then
-        OfflineRewardPanel.handleDragMove(dx, dy)
-        return
-    end
-    -- 奖励弹窗拦截
-    if RewardPopup.handleDragMove(dx, dy) then return end
-    -- 战利品页面拦截
-    if LootBox.handleDragMove(dx, dy) then return end
-    local tabIndex = BottomNav.getSelectedIndex()
-    if tabIndex == 4 and BlacksmithPage.isOpen() then
-        BlacksmithPage.handleDragMove(dx, dy)
-        return
-    end
-    if tabIndex == 4 and ChurchPage.isOpen() then
-        ChurchPage.handleDragMove(dx, dy)
-        return
-    end
-    if tabIndex == 4 and TavernPage.isOpen() then
-        TavernPage.handleDragMove(dx, dy)
-        return
-    end
-    if tabIndex == 1 then
-        CharacterPanel.handleDragMove(dx, dy)
-    end
+    return HandleTouchMoveHorizon(eventType, eventData)
 end
 
 function HandleTouchEnd(eventType, eventData)
-    if HORIZON_MODE then return HandleTouchEndHorizon(eventType, eventData) end
-    local tx = eventData["X"]:GetInt()
-    local ty = eventData["Y"]:GetInt()
-    local sx = tx / dpr / scale
-    local sy = ty / dpr / scale
-    local dx = sx - designOffsetX
-    local dy = sy - designOffsetY
-    -- 判断是否为有效点击
-    local isTap = false
-    if pressValid then
-        local dist = math.abs(dx - pressStartDX) + math.abs(dy - pressStartDY)
-        isTap = dist < TAP_THRESHOLD
-    end
-    pressValid = false
-    -- 最小点击间隔保护（防止移动端单击误触发双击）
-    if isTap then
-        local now = time.elapsedTime
-        if now - lastTapTime < MIN_TAP_INTERVAL then
-            isTap = false
-        else
-            lastTapTime = now
-        end
-    end
-    print(string.format("[Standalone][TouchEnd] dx=%.0f dy=%.0f isTap=%s start=%s lv=%s pi=%s off=%s rew=%s loot=%s",
-        dx, dy, tostring(isTap),
-        tostring(StartScreen.isOpen()), tostring(LevelUpPopup.isOpen()),
-        tostring(PlayerInfoPanel.isOpen()), tostring(OfflineRewardPanel.isOpen()),
-        tostring(RewardPopup.isOpen()), tostring(LootBox.isPageOpen())))
-    -- 开始界面拦截
-    if StartScreen.isOpen() then
-        if isTap then StartScreen.handleClick(dx, dy) end
-        return
-    end
-    -- [LetterIntro] 信件期：任意释放 = 轻触翻段（不依赖 isTap）
-    if LetterIntro.isOpen() then
-        LetterIntro.handleTap()
-        return
-    end
-    -- [LetterIntro] 过场期吞输入（时间轴自动推进）
-    if IntroCutscene.isActive() then
-        return
-    end
-    -- [LetterIntro] 情景对话期：点击推进
-    if ScenarioDialogue.isActive() then
-        if isTap then ScenarioDialogue.advance() end
-        return
-    end
-    -- 副本/通天塔全屏拦截（拖拽结束 + 点击）
-    if TowerBattleScene.isActive() then
-        if isTap then TowerBattleScene.handleClick(dx, dy, 1080, 2400) end
-        return
-    end
-    if DungeonBattleScene.isOpen() then
-        DungeonBattleScene.handleDragEnd(dx, dy)
-        if isTap then DungeonBattleScene.handleInput(dx, dy) end
-        return
-    end
-    -- 冒险等级提升弹窗拦截（点击关闭）
-    if LevelUpPopup.isOpen() then
-        if isTap then LevelUpPopup.handleInput(dx, dy) end
-        return
-    end
-    -- 玩家信息面板拦截（拖拽结束 + 点击处理）
-    if PlayerInfoPanel.isOpen() then
-        PlayerInfoPanel.handleDragEnd(dx, dy)
-        if isTap then PlayerInfoPanel.handleInput(dx, dy) end
-        return
-    end
-    -- 离线收益面板拦截（拖拽结束 + 点击）
-    if OfflineRewardPanel.isOpen() then
-        OfflineRewardPanel.handleDragEnd(dx, dy)
-        if isTap then OfflineRewardPanel.handleInput(dx, dy) end
-        return
-    end
-    -- 奖励弹窗拦截（拖拽结束 + 点击关闭）
-    if RewardPopup.isOpen() then
-        RewardPopup.handleDragEnd(dx, dy)
-        if isTap then RewardPopup.handleInput(dx, dy) end
-        return
-    end
-    -- 战利品页面拦截（拖拽结束 + 点击）
-    if LootBox.isPageOpen() then
-        LootBox.handleDragEnd(dx, dy)
-        if isTap then LootBox.handleInput(dx, dy) end
-        return
-    end
-    local tabIndex = BottomNav.getSelectedIndex()
-    -- 铁匠铺：拖拽结束转发
-    if tabIndex == 4 and BlacksmithPage.isOpen() then
-        BlacksmithPage.handleDragEnd(dx, dy)
-        if not isTap then return end
-        BlacksmithPage.handleInput(dx, dy)
-        return
-    end
-    if tabIndex == 4 and ChurchPage.isOpen() then
-        ChurchPage.handleDragEnd(dx, dy)
-        if not isTap then return end
-        ChurchPage.handleInput(dx, dy)
-        return
-    end
-    -- 酒馆：拖拽结束转发
-    if tabIndex == 4 and TavernPage.isOpen() then
-        TavernPage.handleDragEnd(dx, dy)
-        if not isTap then return end
-        TavernPage.handleInput(dx, dy)
-        return
-    end
-    -- 角色界面：卡片拖拽落点始终处理，滚动惯性始终结算
-    if tabIndex == 1 then
-        if CharacterPanel.isDraggingCard() then
-            CharacterPanel.handleInput(dx, dy)
-            CharacterPanel.handleDragEnd(dx, dy)
-            return
-        end
-        CharacterPanel.handleDragEnd(dx, dy)
-    end
-    -- 滑动操作不触发任何点击
-    if not isTap then return end
-    -- 以下全部是点击事件分发
-    if DebugPanel.handleInput(sx, sy) then return end
-    if HeroRosterPanel.handleInput(dx, dy) then return end
-    -- 头像点击 → 打开玩家信息面板（TopBar 可见时生效）
-    do
-        local detailOpen2 = CharacterPanel.isDetailOpen()
-        local smithOpen2 = BlacksmithPage.isOpen()
-        local tavernOpen2 = TavernPage.isOpen()
-        local diaryOverlay2 = DiaryPage.hasOverlayOpen()
-        if not detailOpen2 and not smithOpen2 and not ChurchPage.isOpen() and not tavernOpen2
-            and not DungeonBattleScene.isOpen() and not diaryOverlay2 then
-            if TopBar.handleInput(dx, dy) then
-                return
-            end
-            if TopBar.hitTestAvatar(dx, dy, 0) then
-                PlayerInfoPanel.open()
-                return
-            end
-        end
-    end
-    if tabIndex == 1 then
-        if CharacterPanel.handleInput(dx, dy) then return end
-    elseif tabIndex == 2 then
-        if DiaryPage.handleInput(dx, dy) then return end
-    elseif tabIndex == 3 then
-        if BattleScene.handleInput(dx, dy) then return end
-    elseif tabIndex == 5 then
-        if DungeonPage.handleInput(dx, dy) then return end
-    elseif tabIndex == 4 then
-        -- 铁匠铺二级界面优先拦截
-        if BlacksmithPage.isOpen() then
-            BlacksmithPage.handleInput(dx, dy)
-            return
-        end
-        if ChurchPage.isOpen() then
-            ChurchPage.handleInput(dx, dy)
-            return
-        end
-        -- 酒馆二级界面拦截
-        if TavernPage.isOpen() then
-            TavernPage.handleInput(dx, dy)
-            return
-        end
-        if TownScene.handleInput(dx, dy) then return end
-    end
-    BottomNav.handleInput(dx, dy)
+    return HandleTouchEndHorizon(eventType, eventData)
 end
 
 function HandleScreenMode(eventType, eventData)
@@ -1926,52 +1289,7 @@ function HandleScreenMode(eventType, eventData)
 end
 
 function HandleMouseWheel(eventType, eventData)
-    if HORIZON_MODE then return HandleMouseWheelHorizon(eventType, eventData) end
-    local wheel = eventData["Wheel"]:GetInt()
-    -- 副本/测试木桩全屏拦截
-    if DungeonBattleScene.isOpen() then
-        DungeonBattleScene.handleScroll(wheel)
-        return
-    end
-    -- 冒险等级提升弹窗拦截（吞掉所有输入）
-    if LevelUpPopup.isOpen() then return end
-    -- 玩家信息面板拦截（转发滚轮）
-    if PlayerInfoPanel.isOpen() then
-        PlayerInfoPanel.handleScroll(wheel)
-        return
-    end
-    -- 离线收益面板拦截
-    if OfflineRewardPanel.isOpen() then
-        OfflineRewardPanel.handleScroll(wheel)
-        return
-    end
-    -- 奖励弹窗拦截
-    if RewardPopup.isOpen() then
-        RewardPopup.handleScroll(wheel)
-        return
-    end
-    -- 战利品页面拦截
-    if LootBox.isPageOpen() then
-        LootBox.handleScroll(wheel)
-        return
-    end
-    local tabIndex = BottomNav.getSelectedIndex()
-    if tabIndex == 4 and BlacksmithPage.isOpen() then
-        BlacksmithPage.handleScroll(wheel)
-        return
-    end
-    if tabIndex == 4 and ChurchPage.isOpen() then
-        ChurchPage.handleScroll(wheel)
-        return
-    end
-    if tabIndex == 4 and TavernPage.isOpen() then
-        TavernPage.handleScroll(wheel)
-        return
-    end
-    if tabIndex == 1 then
-        CharacterPanel.handleScroll(wheel)
-    end
-    HeroRosterPanel.handleScroll(wheel * 60)
+    return HandleMouseWheelHorizon(eventType, eventData)
 end
 
 
@@ -1984,7 +1302,6 @@ end
 -- 一期限制：弹窗为模态（绘制于中面板空间）；同一页面只在一个面板
 -- ============================================================================
 local Viewport = require("core.Viewport")
-HORIZON_MODE = true
 H_SKIP_START = true   -- 调试：跳过开始画面直接进主界面
 H_skipDone = false
 H_AUTO_DISMISS_TITLE = false  -- DarkTitleScreen 验收已通过：关闭无输入环境自动淡出钩子
@@ -1998,7 +1315,7 @@ H_SEAM_BACK = false      -- [三队并行] 三行模式=true：返回键由中�
 
 local function HorizonUpdateTransform()
     H_ox, H_oy, H_s = Viewport.layout(logicalW, logicalH)
-    BattleLayout.setMode(BattleTriPage.isOpen() and "strip" or "classic")
+    BattleLayout.setMode("strip")
     H_TRI_L0 = BattleTriPage.isOpen()  -- [暗黑替换] 面板透明底开关（L0 已铺营地/英灵墙）
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
@@ -2257,7 +1574,7 @@ function HandleNanoVGRenderHorizon()
         TavernPage.draw(vg)
         MarketPage.draw(vg)
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
-        -- oy=-30：头像/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
+        -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
         if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
             or MarketPage.isOpen()) then
             TopBar.draw(vg, -30)
@@ -2539,9 +1856,6 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
         if isTap and not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
             or MarketPage.isOpen()) then
-            if TopBar.handleInput(dx, dy, -30) then
-                return
-            end
             if TopBar.hitTestAvatar(dx, dy, -30) then
                 PlayerInfoPanel.open()
                 return
@@ -2607,9 +1921,6 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     -- 横屏模式无调试面板（DebugPanel 仅竖屏 screen-space）
     local detailOpen = CharacterPanel.isDetailOpen()
     if not detailOpen then
-        if TopBar.handleInput(dx, dy) then
-            return
-        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return

@@ -48,18 +48,21 @@ local PLUS_ICON_H   = 64
 local TAG_SIZE        = 60
 local TAG_OFFSET_Y    = -172   -- [卡高4/5] 原-215, 相对卡片中心的 Y 偏移
 
--- 战斗力图标+数值 Y 位置
-local POWER_Y       = 680
+-- 卡半高（卡底相对卡中心的偏移，下方元素随卡高联动，避免改 CARD_H 后错位）
+local CARD_HALF_H = CARD_H * 0.5
+
+-- 战斗力图标+数值 Y 位置（卡底上方 83，与原卡高438布局一致，随卡高联动）
+local POWER_Y       = CARD_CY + CARD_HALF_H - 83
 local POWER_ICON_SIZE = 36
 
--- 等级徽章（以最中心卡牌为基准的相对偏移）
+-- 等级徽章（以最中心卡牌为基准的相对偏移，卡底上方 38）
 local LVL_BADGE_SIZE  = 56
 local LVL_BADGE_DX    = 477 - 540    -- -63
-local LVL_BADGE_DY    = 725 - CARD_CY -- 181
+local LVL_BADGE_DY    = CARD_HALF_H - 38
 
--- 经验条
+-- 经验条（卡底上方 36，随卡高联动）
 local EXP_BAR_DX      = 552 - 540    -- 12（相对卡牌中心）
-local EXP_BAR_DY      = 727 - CARD_CY -- 183
+local EXP_BAR_DY      = CARD_HALF_H - 36
 local EXP_BAR_BG_W    = 148
 local EXP_BAR_BG_H    = 28
 local EXP_BAR_PADDING = 4
@@ -334,20 +337,14 @@ function M.draw(vg, scrollY)
     local selectSlotState = getSelectSlotState()
 
     -- 1) 面板背景（裁剪到设计宽度内，防止两侧超出）
-    --    [横屏三联] 共享大背景右半，与左侧城镇构成同一连续世界；竖屏保持原版
+    --    [横屏三联] 共享大背景右半，与左侧城镇构成同一连续世界
     nvgSave(vg)
     nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
     ---@diagnostic disable-next-line: undefined-global
     if H_TRI_L0 then
         -- [三行并行] L0 整套大背景已铺英灵墙, 不再叠画
-    elseif HORIZON_MODE then
-        require("core.HorizonBg").draw(vg, 1, 1.0)
     else
-        if (not img.panelBg or img.panelBg < 0) and img.vg then
-            img.panelBg = nvgCreateImage(img.vg, "image/界面底板/角色与觉醒/UI_JSJM_BJ.png", 0)
-        end
-        ---@diagnostic disable-next-line: param-type-mismatch  -- img.panelBg 哨兵 -1 由 drawImageCentered 内部判空
-        drawImageCentered(vg, img.panelBg, PANEL_BG_CX, PANEL_BG_CY, PANEL_BG_W, PANEL_BG_H, 1.0)
+        require("core.HorizonBg").draw(vg, 1, 1.0)
     end
     nvgResetScissor(vg)
     nvgRestore(vg)

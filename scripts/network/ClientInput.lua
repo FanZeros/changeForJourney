@@ -70,7 +70,7 @@ end
 --- 物理像素 → 设计坐标
 local function toDesign(px, py)
     -- 信件/选角全窗口覆盖：按 1080×2400 letterbox 映射，不走中栏面板
-    if HORIZON_MODE and (LetterIntro.isOpen() or CharacterSelect.isActive()) then
+    if LetterIntro.isOpen() or CharacterSelect.isActive() then
         local lw = graphics:GetWidth() / (graphics:GetDPR() or 1)
         local lh = graphics:GetHeight() / (graphics:GetDPR() or 1)
         local ss = math.min(lw / 1080, lh / 2400)
@@ -82,7 +82,7 @@ local function toDesign(px, py)
     end
     local sx = px / dpr / scale
     local sy = py / dpr / scale
-    if HORIZON_MODE and currentStateFn and currentStateFn() == STATE_IN_GAME
+    if currentStateFn and currentStateFn() == STATE_IN_GAME
         and not StartScreen.isOpen() then
         local lw, lh = graphics:GetWidth() / (graphics:GetDPR() or 1), graphics:GetHeight() / (graphics:GetDPR() or 1)
         local vox, voy, vs = ViewportI.layout(lw, lh)
@@ -459,9 +459,6 @@ local function dispatchDragEndAndTap(dx, dy)
                     or CharacterPanel.isDetailOpen()
                     or DiaryPage.hasOverlayOpen()
     if not detailOpen and not DungeonBattleScene.isOpen() then
-        if TopBar.handleInput(dx, dy) then
-            return
-        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
@@ -701,12 +698,10 @@ end
 -- 横屏 PC 多面板（changeForJourney）：输入面板路由
 -- ============================================================================
 ViewportI = require("core.Viewport")
-HORIZON_MODE = true
 H_panel = 'center'
 
 -- [fix] 赋值给文件头部前向声明的 local（不可再加 local，否则上方闭包捕获的仍是 nil）
 function effectiveTab()
-    if not HORIZON_MODE then return BottomNav.getSelectedIndex() end
     if H_panel == 'left' then return 4 end
     if H_panel == 'right' then return 1 end
     return BottomNav.getSelectedIndex()

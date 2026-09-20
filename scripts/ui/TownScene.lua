@@ -365,14 +365,12 @@ function TownScene.draw(vg)
     local _TM = require("systems.TutorialManager")
     local _tmActive = _TM.isActive()
 
-    -- 1) 背景 [横屏三联：共享大背景左半；竖屏保持原版（用户已专门制作暗黑背景，P3-12a 回退）]
+    -- 1) 背景 [横屏三联：共享大背景左半]
     ---@diagnostic disable-next-line: undefined-global
     if H_TRI_L0 then
         -- [三行并行] L0 整套大背景已铺营地场景, 不再叠画
-    elseif HORIZON_MODE then
-        HorizonBg.draw(vg, 0, 1.0)
     else
-        drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
+        HorizonBg.draw(vg, 0, 1.0)
     end
 
     -- ---- 上方建筑（从后到前，带点击缩放动画）----

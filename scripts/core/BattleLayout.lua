@@ -14,7 +14,7 @@
 local BattleLayout = {}
 
 -- ---- 模式 ----
-BattleLayout.MODE = "classic"   -- "classic" | "strip"
+BattleLayout.MODE = "strip"   -- 横屏专用（竖屏 classic 布局已移除；保留 setMode 以兼容存量调用）
 function BattleLayout.setMode(m)
     if m == "strip" or m == "classic" then
         BattleLayout.MODE = m

@@ -1469,64 +1469,52 @@ function HandleNanoVGRender_Client(eventType, eventData)
     if not vg then return end
 
     -- 横屏 PC 多面板（changeForJourney）：状态感知 letterbox
-    if HORIZON_MODE then
-        if not H_skipDone and StartScreen.isOpen() then
-            H_skipDone = true
-            StartScreen.skipForReconnect()
-            DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
-            DarkTitleScreen.setReady(not LoadingScreen.isOpen())
-        end
-        if StartScreen.isOpen() or LoadingScreen.isOpen() or LetterIntro.isOpen() or CharacterSelect.isActive() then
-            local ss = math.min(logicalW / 1080, logicalH / 2400)
-            scale = ss
-            -- 外层 nvgScale(scale) 会缩放 translate 值：偏移需除以 scale（缩放空间语义）
-            designOffsetX = (logicalW - 1080 * ss) / (2 * ss)
-            designOffsetY = (logicalH - 2400 * ss) / (2 * ss)
-        else
-            local vox, voy, vs = ViewportH.layout(logicalW, logicalH)
-            H_ox, H_oy, H_s = vox, voy, vs
-            scale = vs
-            designOffsetX = (vox + ViewportH.PANELS.center.bx * vs) / vs
-            designOffsetY = voy / vs
-        end
+    if not H_skipDone and StartScreen.isOpen() then
+        H_skipDone = true
+        StartScreen.skipForReconnect()
+        DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
+        DarkTitleScreen.setReady(not LoadingScreen.isOpen())
+    end
+    if StartScreen.isOpen() or LoadingScreen.isOpen() or LetterIntro.isOpen() or CharacterSelect.isActive() then
+        local ss = math.min(logicalW / 1080, logicalH / 2400)
+        scale = ss
+        -- 外层 nvgScale(scale) 会缩放 translate 值：偏移需除以 scale（缩放空间语义）
+        designOffsetX = (logicalW - 1080 * ss) / (2 * ss)
+        designOffsetY = (logicalH - 2400 * ss) / (2 * ss)
+    else
+        local vox, voy, vs = ViewportH.layout(logicalW, logicalH)
+        H_ox, H_oy, H_s = vox, voy, vs
+        scale = vs
+        designOffsetX = (vox + ViewportH.PANELS.center.bx * vs) / vs
+        designOffsetY = voy / vs
     end
 
     nvgBeginFrame(vg, logicalW, logicalH, dpr)
 
-    if HORIZON_MODE then
-        -- 全窗口底色
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, logicalW, logicalH)
-        nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
-        nvgFill(vg)
-        -- 左右面板（独立变换，主渲染缩进中面板）
-        if currentState == STATE_IN_GAME and not StartScreen.isOpen() and not LoadingScreen.isOpen() and not LetterIntro.isOpen() then
-            nvgSave(vg)
-            nvgResetTransform(vg)
-            ViewportH.begin(vg, ViewportH.PANELS.left, H_ox, H_oy, H_s)
-            TownScene.draw(vg)
-            BlacksmithPage.draw(vg)
-            ChurchPage.draw(vg)
-            TavernPage.draw(vg)
-            MarketPage.draw(vg)
-            GuildPage.draw(vg)
-            ViewportH.finish(vg)
-            ViewportH.begin(vg, ViewportH.PANELS.right, H_ox, H_oy, H_s)
-            CharacterPanel.draw(vg)
-            ViewportH.finish(vg)
-            nvgRestore(vg)
-        end
+    -- 全窗口底色
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, logicalW, logicalH)
+    nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
+    nvgFill(vg)
+    -- 左右面板（独立变换，主渲染缩进中面板）
+    if currentState == STATE_IN_GAME and not StartScreen.isOpen() and not LoadingScreen.isOpen() and not LetterIntro.isOpen() then
+        nvgSave(vg)
+        nvgResetTransform(vg)
+        ViewportH.begin(vg, ViewportH.PANELS.left, H_ox, H_oy, H_s)
+        TownScene.draw(vg)
+        BlacksmithPage.draw(vg)
+        ChurchPage.draw(vg)
+        TavernPage.draw(vg)
+        MarketPage.draw(vg)
+        GuildPage.draw(vg)
+        ViewportH.finish(vg)
+        ViewportH.begin(vg, ViewportH.PANELS.right, H_ox, H_oy, H_s)
+        CharacterPanel.draw(vg)
+        ViewportH.finish(vg)
+        nvgRestore(vg)
     end
 
     nvgScale(vg, scale, scale)
-
-    if not HORIZON_MODE then
-    -- 背景
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, screenDesignW, screenDesignH)
-    nvgFillColor(vg, nvgRGBA(25, 25, 35, 255))
-    nvgFill(vg)
-    end
 
     -- 开始界面（最高优先级，覆盖所有内容）
     if StartScreen.isOpen() then
@@ -1637,7 +1625,9 @@ function HandleNanoVGRender_Client(eventType, eventData)
             local backpackOpen = BackpackPanel.isOpen()
             local taskOpen   = TaskPanel.isOpen()
             if not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not marketOpen and not guildOpen and not signInOpen and not backpackOpen and not taskOpen then
-                TopBar.draw(vg)
+                if tabIndex ~= 5 then
+                    TopBar.draw(vg)
+                end
                 BottomNav.draw(vg)
             elseif taskOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not guildOpen and not signInOpen and not backpackOpen then
                 local animP = TaskPanel.getAnimProgress()
@@ -1744,9 +1734,6 @@ function HandleNanoVGRender_Client(eventType, eventData)
         end
 
         -- 选择初始角色：横屏改由全窗口 letterbox 绘制（见 HandleNanoVGRender_Client 尾部）
-        if CharacterSelect.isActive() and not HORIZON_MODE then
-            CharacterSelect.draw()
-        end
 
         -- 新手引导蒙层（覆盖在所有游戏UI 之上，情景对话之后）
         if TutorialManager.isActive() then
@@ -1781,7 +1768,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
 
 
     -- [DarkTitleScreen] 横屏标题（全窗口逻辑坐标，覆盖一切直至点击淡出）
-    if HORIZON_MODE and DarkTitleScreen.isOpen() then
+    if DarkTitleScreen.isOpen() then
         nvgResetTransform(vg)
         DarkTitleScreen.draw(vg, logicalW, logicalH)
     end
@@ -2472,7 +2459,6 @@ end
 -- 左面板：城镇功能页组；中面板：BottomNav 主视图 + 全屏战斗 + 弹窗层；右面板：角色
 -- ============================================================================
 ViewportH = require("core.Viewport")
-HORIZON_MODE = true
 H_SKIP_START = true
 H_skipDone = false
 H_ox, H_oy, H_s = 0, 0, 1

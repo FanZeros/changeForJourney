@@ -16,10 +16,10 @@ SCRIPTS = os.path.join(REPO, 'scripts-src')
 ASSETS = os.path.join(REPO, 'assets')
 
 MANIFESTS = [
-    '1.0.0/manifest-455bc44a.json', '1.0.0/manifest-a1b65461.json',
-    '1.0.0/manifest-origin.json',   '1.0.0/manifest-origin.b4.json',
-    '1.0.1/manifest-04bc0cdf.json', '1.0.1/manifest-ff073c70.json',
-    '1.0.1/manifest-origin.json',   '1.0.1/manifest-origin.b1.json',
+    '1.0.7/manifest-35b07c52.json',  # client 分发
+    '1.0.7/manifest-9908d802.json',  # server 分发
+    '1.0.7/manifest-origin.json',
+    '1.0.7/manifest-origin.b1.json',
 ]
 
 def crc8(content: bytes) -> str:
@@ -131,9 +131,9 @@ def apply(data, new_uuid_of, new_scripts=frozenset()):
         with open(os.path.join(ASSETS, f'{uuid}-{newhash}{ext}'), 'wb') as fh:
             fh.write(content)
 
-    # 写 manifest（紧凑单行，与原格式字节级一致的序列化）
+    # 写 manifest：保持 1.0.7 现有 pretty-print（2 空格缩进）
     for rel, d in data.items():
-        raw = json.dumps(d, ensure_ascii=False).encode('utf-8')
+        raw = json.dumps(d, ensure_ascii=False, indent=2).encode('utf-8') + b'\n'
         with open(os.path.join(REPO, rel), 'wb') as fh:
             fh.write(raw)
 

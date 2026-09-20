@@ -62,8 +62,8 @@
     {
       "uuid": "A1QxWUNMDtR2quQEToMltyuu",
       "ext": ".lua",
-      "hash": "0a7bd7a4",
-      "size": 18192,
+      "hash": "2cf04cee",
+      "size": 18138,
       "fs_path": "ui/BattleDraw.lua",
       "prefix": "../scripts"
     },
@@ -286,8 +286,8 @@
     {
       "uuid": "AGSGgQRMunkSObt80_sktK7E",
       "ext": ".lua",
-      "hash": "66b136c1",
-      "size": 25548,
+      "hash": "0b182e4b",
+      "size": 25538,
       "fs_path": "config/EquipmentConfig.lua",
       "prefix": "../scripts"
     },
@@ -334,8 +334,8 @@
     {
       "uuid": "AJJ_MZlOP36gpYi7O8xKw770",
       "ext": ".lua",
-      "hash": "00710ca0",
-      "size": 141851,
+      "hash": "22279921",
+      "size": 141645,
       "fs_path": "ui/BattleScene.lua",
       "prefix": "../scripts"
     },
@@ -350,8 +350,8 @@
     {
       "uuid": "AL-0md5uJlw0F_QUq9Tigimz",
       "ext": ".lua",
-      "hash": "43db8955",
-      "size": 22626,
+      "hash": "2cd5298b",
+      "size": 22548,
       "fs_path": "ui/StartScreen.lua",
       "prefix": "../scripts"
     },
@@ -526,8 +526,8 @@
     {
       "uuid": "AUmhiab-d-W3dMPsn-7qG41R",
       "ext": ".lua",
-      "hash": "e0756f56",
-      "size": 18488,
+      "hash": "7ada04be",
+      "size": 18423,
       "fs_path": "ui/ArenaRankPage.lua",
       "prefix": "../scripts"
     },
@@ -750,8 +750,8 @@
     {
       "uuid": "AfODWb7Lftg5_JJ0pBdHvDkP",
       "ext": ".lua",
-      "hash": "b66cd528",
-      "size": 10955,
+      "hash": "0c99b236",
+      "size": 10903,
       "fs_path": "ui/LetterIntro.lua",
       "prefix": "../scripts"
     },
@@ -1086,8 +1086,8 @@
     {
       "uuid": "B2GB4WqpZPfH4lSTl5BPdudk",
       "ext": ".lua",
-      "hash": "3505096b",
-      "size": 21777,
+      "hash": "08275cc2",
+      "size": 21764,
       "fs_path": "ui/ArtifactDetailPanel.lua",
       "prefix": "../scripts"
     },
@@ -1198,8 +1198,8 @@
     {
       "uuid": "B89ekX6I6-LhOwranquBghUC",
       "ext": ".lua",
-      "hash": "8144b5bd",
-      "size": 17721,
+      "hash": "294217bd",
+      "size": 8946,
       "fs_path": "ui/BottomNav.lua",
       "prefix": "../scripts"
     },
@@ -1414,8 +1414,8 @@
     {
       "uuid": "BKjOYbXytDPmNQm37dkGQqbo",
       "ext": ".lua",
-      "hash": "72c07002",
-      "size": 32810,
+      "hash": "a39dc437",
+      "size": 32640,
       "fs_path": "ui/ArenaShopPage.lua",
       "prefix": "../scripts"
     },
@@ -1518,8 +1518,8 @@
     {
       "uuid": "BTYRcRd9ARwUwvY9UqdP72PM",
       "ext": ".lua",
-      "hash": "d4372c35",
-      "size": 19805,
+      "hash": "0a19c2a1",
+      "size": 18791,
       "fs_path": "config/TaskConfig.lua",
       "prefix": "../scripts"
     },
@@ -1598,8 +1598,8 @@
     {
       "uuid": "BY9FMSqEaBoLYmJAjxP2uxNc",
       "ext": ".lua",
-      "hash": "153718e3",
-      "size": 39669,
+      "hash": "112b44f9",
+      "size": 39630,
       "fs_path": "ui/EquipmentBag.lua",
       "prefix": "../scripts"
     },
@@ -1846,8 +1846,8 @@
     {
       "uuid": "BmMSqcFB0VKUdMYIkTDDUFSj",
       "ext": ".lua",
-      "hash": "86ab7e94",
-      "size": 16730,
+      "hash": "6cad102b",
+      "size": 16704,
       "fs_path": "ui/LevelUpPopup.lua",
       "prefix": "../scripts"
     },
@@ -1966,8 +1966,8 @@
     {
       "uuid": "Br8TIVm4jB2hZO8eJjjCOA-j",
       "ext": ".lua",
-      "hash": "59345f0c",
-      "size": 36129,
+      "hash": "bd3c9907",
+      "size": 36027,
       "fs_path": "ui/GuildPage.lua",
       "prefix": "../scripts"
     },
@@ -2030,8 +2030,8 @@
     {
       "uuid": "BsH6uY4Mwo9cfR3cp8Vpr9uo",
       "ext": ".lua",
-      "hash": "997854da",
-      "size": 21456,
+      "hash": "9b0b5d6c",
+      "size": 21420,
       "fs_path": "ui/ScenarioDialogue.lua",
       "prefix": "../scripts"
     },
@@ -2062,8 +2062,8 @@
     {
       "uuid": "BudPESnPf6NyN6bW_wnN51_9",
       "ext": ".lua",
-      "hash": "a3828243",
-      "size": 29987,
+      "hash": "9bedea6b",
+      "size": 29974,
       "fs_path": "ui/CharacterDetail.lua",
       "prefix": "../scripts"
     },
@@ -2486,8 +2486,8 @@
     {
       "uuid": "CEv1uVUypEG5FKlB5oNGFI75",
       "ext": ".lua",
-      "hash": "231dd492",
-      "size": 22585,
+      "hash": "1e28cc2e",
+      "size": 23133,
       "fs_path": "systems/RelicSystem.lua",
       "prefix": "../scripts"
     },
@@ -2662,8 +2662,8 @@
     {
       "uuid": "CNcecXh0uZ8o0pH4oHVwuE-5",
       "ext": ".lua",
-      "hash": "31cd4381",
-      "size": 14885,
+      "hash": "d10f09c8",
+      "size": 14820,
       "fs_path": "ui/BattleResultPanel.lua",
       "prefix": "../scripts"
     },
@@ -3110,8 +3110,8 @@
     {
       "uuid": "ClYrISU3srRkB6qhUcFSEhgE",
       "ext": ".lua",
-      "hash": "8005cbf9",
-      "size": 15147,
+      "hash": "7b6a7095",
+      "size": 15127,
       "fs_path": "ui/RedeemCodePanel.lua",
       "prefix": "../scripts"
     },
@@ -3174,8 +3174,8 @@
     {
       "uuid": "CqPzUYwWJKz4APx64hUZu_Tr",
       "ext": ".lua",
-      "hash": "d0e0733d",
-      "size": 21982,
+      "hash": "49e83cce",
+      "size": 21897,
       "fs_path": "ui/SweepDialog.lua",
       "prefix": "../scripts"
     },
@@ -3550,8 +3550,8 @@
     {
       "uuid": "DBQiwawlqx1Fh96sJ8h11JrG",
       "ext": ".lua",
-      "hash": "0cf35966",
-      "size": 4936,
+      "hash": "bf33dae0",
+      "size": 4912,
       "fs_path": "_proc/card_preview.lua",
       "prefix": "../scripts"
     },
@@ -3614,8 +3614,8 @@
     {
       "uuid": "DDyWcWEAwAwuncxpk0ulqio6",
       "ext": ".lua",
-      "hash": "298b1948",
-      "size": 114389,
+      "hash": "7cab8fee",
+      "size": 114327,
       "fs_path": "network/Client.lua",
       "prefix": "../scripts"
     },
@@ -3678,8 +3678,8 @@
     {
       "uuid": "DHhzgTGgVkTNFHGUJyCxrW5L",
       "ext": ".lua",
-      "hash": "d81e768d",
-      "size": 3502,
+      "hash": "02addb60",
+      "size": 3476,
       "fs_path": "ui/BattleView.lua",
       "prefix": "../scripts"
     },
@@ -3758,8 +3758,8 @@
     {
       "uuid": "DM6hGRnGw-AKr_WXREa3wuuw",
       "ext": ".lua",
-      "hash": "e7ff6560",
-      "size": 112069,
+      "hash": "940d3c05",
+      "size": 112286,
       "fs_path": "network/Standalone.lua",
       "prefix": "../scripts"
     },
@@ -3934,7 +3934,7 @@
     {
       "uuid": "DVWoCR5qt80b2sVt3fqJ58jy",
       "ext": ".lua",
-      "hash": "deec3ad1",
+      "hash": "9c2667e5",
       "size": 11407,
       "fs_path": "config/TutorialConfig.lua",
       "prefix": "../scripts"
@@ -3950,8 +3950,8 @@
     {
       "uuid": "DWukWVNAMKQjVm2znW-I3Tyz",
       "ext": ".lua",
-      "hash": "d6c28938",
-      "size": 28822,
+      "hash": "e269074f",
+      "size": 28725,
       "fs_path": "ui/RecruitAnim.lua",
       "prefix": "../scripts"
     },
@@ -4086,8 +4086,8 @@
     {
       "uuid": "De9mgSZQbylAbmWzPbK4Orz1",
       "ext": ".lua",
-      "hash": "4c9bf9a5",
-      "size": 30050,
+      "hash": "124d5314",
+      "size": 30023,
       "fs_path": "ui/MailPanel.lua",
       "prefix": "../scripts"
     },
@@ -4222,8 +4222,8 @@
     {
       "uuid": "Dn2DoRTv9Dj6ENfFcD6CAmzF",
       "ext": ".lua",
-      "hash": "c35523e9",
-      "size": 41082,
+      "hash": "51c9e818",
+      "size": 40983,
       "fs_path": "ui/TavernPopups.lua",
       "prefix": "../scripts"
     },
@@ -4342,8 +4342,8 @@
     {
       "uuid": "DvxkIWjwkEoZjmdXfizP7y3j",
       "ext": ".lua",
-      "hash": "bf1c0ecc",
-      "size": 24539,
+      "hash": "06e50aa5",
+      "size": 23033,
       "fs_path": "ui/RelicBagPanel.lua",
       "prefix": "../scripts"
     },
@@ -4358,8 +4358,8 @@
     {
       "uuid": "Dxk0gfatODZFQcFFO7GsLNiN",
       "ext": ".lua",
-      "hash": "0cdbecd1",
-      "size": 54506,
+      "hash": "e30da81b",
+      "size": 54389,
       "fs_path": "core/DarkIcon.lua",
       "prefix": "../scripts"
     },
@@ -4382,8 +4382,8 @@
     {
       "uuid": "DyexebTbI286cWT1KSPjIO6E",
       "ext": ".lua",
-      "hash": "86225544",
-      "size": 34265,
+      "hash": "cad620a0",
+      "size": 34185,
       "fs_path": "ui/OfflineRewardPanel.lua",
       "prefix": "../scripts"
     },
@@ -4454,8 +4454,8 @@
     {
       "uuid": "E39ksd6KlA2mMB4wvZf5ZL99",
       "ext": ".lua",
-      "hash": "759e2b8d",
-      "size": 46356,
+      "hash": "894a467b",
+      "size": 46144,
       "fs_path": "ui/SignInPanel.lua",
       "prefix": "../scripts"
     },
@@ -4502,8 +4502,8 @@
     {
       "uuid": "E4eVIf5WG2ugYpUmr2hbrrLZ",
       "ext": ".lua",
-      "hash": "2f012b9a",
-      "size": 51146,
+      "hash": "dbc28092",
+      "size": 50982,
       "fs_path": "ui/DungeonBattleScene.lua",
       "prefix": "../scripts"
     },
@@ -4526,8 +4526,8 @@
     {
       "uuid": "E5L90UK8JQ-pgLmVV4aClWc5",
       "ext": ".lua",
-      "hash": "09c2f35d",
-      "size": 75760,
+      "hash": "e2a3f87c",
+      "size": 75379,
       "fs_path": "ui/BlacksmithPage.lua",
       "prefix": "../scripts"
     },
@@ -4582,8 +4582,8 @@
     {
       "uuid": "E7elCUMOPt-KfPzq33J2kYFQ",
       "ext": ".lua",
-      "hash": "1771c7c8",
-      "size": 14686,
+      "hash": "1fac01ef",
+      "size": 14604,
       "fs_path": "ui/CharacterSelect.lua",
       "prefix": "../scripts"
     },
@@ -4638,8 +4638,8 @@
     {
       "uuid": "EAe6YXwQY25MlcQ64g70MLmj",
       "ext": ".lua",
-      "hash": "7321df45",
-      "size": 36701,
+      "hash": "9e35e3b9",
+      "size": 36649,
       "fs_path": "ui/BlacksmithDecompose.lua",
       "prefix": "../scripts"
     },
@@ -4662,8 +4662,8 @@
     {
       "uuid": "EAtFYY7LjVfvdjmRh1LN-Wbg",
       "ext": ".lua",
-      "hash": "220d3592",
-      "size": 27046,
+      "hash": "1378ccbf",
+      "size": 26906,
       "fs_path": "ui/TaskPanel.lua",
       "prefix": "../scripts"
     },
@@ -4702,8 +4702,8 @@
     {
       "uuid": "ECYjievsmoKpeszGatZfnvu6",
       "ext": ".lua",
-      "hash": "8b536877",
-      "size": 17663,
+      "hash": "182ead65",
+      "size": 17572,
       "fs_path": "ui/DiaryPage.lua",
       "prefix": "../scripts"
     },
@@ -4718,8 +4718,8 @@
     {
       "uuid": "EDl5gZl8uS-mZj67cDLbyw8q",
       "ext": ".lua",
-      "hash": "39e1860a",
-      "size": 10204,
+      "hash": "a8b621ef",
+      "size": 10161,
       "fs_path": "ui/HeroRosterPanel.lua",
       "prefix": "../scripts"
     },
@@ -4830,8 +4830,8 @@
     {
       "uuid": "EJ0AieAjNBl0b3-OP9SIZfh1",
       "ext": ".lua",
-      "hash": "37b7c8d9",
-      "size": 7275,
+      "hash": "5014a430",
+      "size": 7197,
       "fs_path": "ui/DarkTitleScreenGate.lua",
       "prefix": "../scripts"
     },
@@ -4918,16 +4918,16 @@
     {
       "uuid": "EON5OQq9cIgr9WmzE8FXX5li",
       "ext": ".lua",
-      "hash": "a93d478d",
-      "size": 25843,
+      "hash": "3e3c85a0",
+      "size": 25791,
       "fs_path": "ui/ServerSelectPanel.lua",
       "prefix": "../scripts"
     },
     {
       "uuid": "EOwR4ROkUZYDWFS-3V5Wd4HV",
       "ext": ".lua",
-      "hash": "d20378c6",
-      "size": 8172,
+      "hash": "43478063",
+      "size": 8120,
       "fs_path": "config/UrGachaConfig.lua",
       "prefix": "../scripts"
     },
@@ -4982,16 +4982,16 @@
     {
       "uuid": "ESqaGRknZbNw-xcQk6cU4m-0",
       "ext": ".lua",
-      "hash": "4fd91634",
-      "size": 4985,
+      "hash": "4b9670b8",
+      "size": 5290,
       "fs_path": "server/relic/RelicHandler.lua",
       "prefix": "../scripts"
     },
     {
       "uuid": "ESr3oWmZRPV4i2Hq2MeQWdlE",
       "ext": ".lua",
-      "hash": "ee8c6b1f",
-      "size": 17885,
+      "hash": "32b114ac",
+      "size": 17865,
       "fs_path": "ui/SettingsPanel.lua",
       "prefix": "../scripts"
     },
@@ -5006,8 +5006,8 @@
     {
       "uuid": "EVWMiQC3TRbfOzM2OYLWTo18",
       "ext": ".lua",
-      "hash": "1c690a6e",
-      "size": 18730,
+      "hash": "a49a8a25",
+      "size": 18704,
       "fs_path": "ui/AnnouncementPanel.lua",
       "prefix": "../scripts"
     },
@@ -5278,8 +5278,8 @@
     {
       "uuid": "Ej_EaeJ0w8NFiK2zGtQ5okJG",
       "ext": ".lua",
-      "hash": "7a9e5733",
-      "size": 64935,
+      "hash": "306c2f15",
+      "size": 64883,
       "fs_path": "ui/BlacksmithRefine.lua",
       "prefix": "../scripts"
     },
@@ -5302,8 +5302,8 @@
     {
       "uuid": "Ek4NgbsF6A8SdiMV6j2gdEfN",
       "ext": ".lua",
-      "hash": "16ceb45f",
-      "size": 12864,
+      "hash": "b197077f",
+      "size": 12831,
       "fs_path": "ui/LoadingScreen.lua",
       "prefix": "../scripts"
     },
@@ -5342,8 +5342,8 @@
     {
       "uuid": "Em784bRcJ8C_aRiM7yAwIuub",
       "ext": ".lua",
-      "hash": "b86eede5",
-      "size": 27800,
+      "hash": "ed2a2eb5",
+      "size": 27741,
       "fs_path": "ui/AvatarSelectPanel.lua",
       "prefix": "../scripts"
     },
@@ -5374,8 +5374,8 @@
     {
       "uuid": "EnL3Mdl_6YYGbxri-u6WgJZp",
       "ext": ".lua",
-      "hash": "b07e1f3a",
-      "size": 46539,
+      "hash": "b148b39c",
+      "size": 46121,
       "fs_path": "ui/TavernShopPage.lua",
       "prefix": "../scripts"
     },
@@ -5422,8 +5422,8 @@
     {
       "uuid": "Ep9SERYYQDSVQKbtRlcXTfnF",
       "ext": ".lua",
-      "hash": "4f2a6a19",
-      "size": 27096,
+      "hash": "4dc3a220",
+      "size": 26870,
       "fs_path": "network/ClientInput.lua",
       "prefix": "../scripts"
     },
@@ -5438,8 +5438,8 @@
     {
       "uuid": "Epre2SZzZXwUxqhIyXSCQzVi",
       "ext": ".lua",
-      "hash": "c5a615c4",
-      "size": 18979,
+      "hash": "6094b4aa",
+      "size": 20015,
       "fs_path": "ui/RelicDetailPanel.lua",
       "prefix": "../scripts"
     },
@@ -5590,16 +5590,16 @@
     {
       "uuid": "EvwUsdWRwJI9BqXh1U4Dyv4B",
       "ext": ".lua",
-      "hash": "23bb189d",
-      "size": 13240,
+      "hash": "52dfb597",
+      "size": 13347,
       "fs_path": "shared/Protocol.lua",
       "prefix": "../scripts"
     },
     {
       "uuid": "Ew0N-dEZmFsvbIBAuLWyp6Io",
       "ext": ".lua",
-      "hash": "f477f123",
-      "size": 14969,
+      "hash": "355c10b0",
+      "size": 14943,
       "fs_path": "ui/DamageStatsPanel.lua",
       "prefix": "../scripts"
     },
@@ -5654,8 +5654,8 @@
     {
       "uuid": "EyyPSc-LhGVo6vBNPF_jbYLv",
       "ext": ".lua",
-      "hash": "c93a1af9",
-      "size": 13802,
+      "hash": "6d01cb34",
+      "size": 13769,
       "fs_path": "ui/StageSelectDialog.lua",
       "prefix": "../scripts"
     },
@@ -5702,8 +5702,8 @@
     {
       "uuid": "F1dkwZMiCE_V4UIMRHKzI_ZC",
       "ext": ".lua",
-      "hash": "be45c152",
-      "size": 26475,
+      "hash": "300615ef",
+      "size": 26293,
       "fs_path": "ui/TownScene.lua",
       "prefix": "../scripts"
     },
@@ -5902,8 +5902,8 @@
     {
       "uuid": "FBE-sfhx4pLEep5zPejZlxvi",
       "ext": ".lua",
-      "hash": "b841c583",
-      "size": 35253,
+      "hash": "4179b97b",
+      "size": 35162,
       "fs_path": "ui/RewardPopup.lua",
       "prefix": "../scripts"
     },
@@ -6094,8 +6094,8 @@
     {
       "uuid": "FJzSUaBQxhzctylo8Wvcn2ow",
       "ext": ".lua",
-      "hash": "56216243",
-      "size": 9254,
+      "hash": "5fdc3b9b",
+      "size": 9228,
       "fs_path": "ui/LootBox.lua",
       "prefix": "../scripts"
     },
@@ -6222,8 +6222,8 @@
     {
       "uuid": "FSPjmRDn3jAA2Eqtp2P1UHxy",
       "ext": ".lua",
-      "hash": "3e603d58",
-      "size": 50224,
+      "hash": "d8c8c035",
+      "size": 50057,
       "fs_path": "ui/DungeonPage.lua",
       "prefix": "../scripts"
     },
@@ -6246,8 +6246,8 @@
     {
       "uuid": "FTetmQ7084AYK76ftgZ9leYk",
       "ext": ".lua",
-      "hash": "f6b22139",
-      "size": 75965,
+      "hash": "0704b705",
+      "size": 75612,
       "fs_path": "ui/ChurchPage.lua",
       "prefix": "../scripts"
     },
@@ -6342,8 +6342,8 @@
     {
       "uuid": "FYs5qWL4z9hdOD7GzuZ9RFKN",
       "ext": ".lua",
-      "hash": "84f31014",
-      "size": 74589,
+      "hash": "c5a7b8cc",
+      "size": 74216,
       "fs_path": "ui/BackpackPanel.lua",
       "prefix": "../scripts"
     },
@@ -6454,8 +6454,8 @@
     {
       "uuid": "Fg7JsYL5dS6bWx8op2BQiOp5",
       "ext": ".lua",
-      "hash": "e253952e",
-      "size": 12880,
+      "hash": "ad8b83cb",
+      "size": 16187,
       "fs_path": "systems/RelicConditionHandler.lua",
       "prefix": "../scripts"
     },
@@ -6622,16 +6622,16 @@
     {
       "uuid": "Fo3rqWOuFE2SfYBxmPPfKvfY",
       "ext": ".lua",
-      "hash": "1bc97eec",
-      "size": 25315,
+      "hash": "58cd6fb0",
+      "size": 25961,
       "fs_path": "data/RelicDefs.lua",
       "prefix": "../scripts"
     },
     {
       "uuid": "Fo76iW4dsMxq6EF-b7SjV-JP",
       "ext": ".lua",
-      "hash": "fdaf3c97",
-      "size": 108439,
+      "hash": "7398c5fa",
+      "size": 107394,
       "fs_path": "ui/MarketPage.lua",
       "prefix": "../scripts"
     },
@@ -6758,8 +6758,8 @@
     {
       "uuid": "FuYYged9CNpGHDbY6ZmfaO__",
       "ext": ".lua",
-      "hash": "e20c3a0b",
-      "size": 8091,
+      "hash": "99742918",
+      "size": 8078,
       "fs_path": "ui/TowerBuffPick.lua",
       "prefix": "../scripts"
     },
@@ -6854,8 +6854,8 @@
     {
       "uuid": "FxSAKe2nO1msTPvJBBEIK3gh",
       "ext": ".lua",
-      "hash": "a8640902",
-      "size": 18188,
+      "hash": "5c1ccd15",
+      "size": 18047,
       "fs_path": "ui/AwakeningPanel.lua",
       "prefix": "../scripts"
     },
@@ -6878,8 +6878,8 @@
     {
       "uuid": "FySlgTwkQP0dT3v5CBabkC-b",
       "ext": ".lua",
-      "hash": "2d3102f5",
-      "size": 53538,
+      "hash": "3b28c7ff",
+      "size": 53442,
       "fs_path": "ui/EquipmentDetail.lua",
       "prefix": "../scripts"
     },
@@ -6934,8 +6934,8 @@
     {
       "uuid": "G-a1MZSFzYo6Qg2JxcX97OsZ",
       "ext": ".lua",
-      "hash": "e583503e",
-      "size": 26150,
+      "hash": "b7260f30",
+      "size": 25410,
       "fs_path": "ui/RelicReforgePanel.lua",
       "prefix": "../scripts"
     },
@@ -6974,8 +6974,8 @@
     {
       "uuid": "G0y4KXC5wKzkcbLWbe8SVfOo",
       "ext": ".lua",
-      "hash": "64997463",
-      "size": 1949,
+      "hash": "3314e353",
+      "size": 1936,
       "fs_path": "core/HorizonBg.lua",
       "prefix": "../scripts"
     },
@@ -7014,8 +7014,8 @@
     {
       "uuid": "G4GXER4YwfLdZe0vMhJfudZ3",
       "ext": ".lua",
-      "hash": "00192dcf",
-      "size": 15645,
+      "hash": "3be15d79",
+      "size": 14139,
       "fs_path": "core/DrawUtil.lua",
       "prefix": "../scripts"
     },
@@ -7142,8 +7142,8 @@
     {
       "uuid": "GCnKaTDm_Ns4omCNmkleKUSq",
       "ext": ".lua",
-      "hash": "6c8d10e3",
-      "size": 26762,
+      "hash": "81108ded",
+      "size": 22523,
       "fs_path": "server/relic/RelicService.lua",
       "prefix": "../scripts"
     },
@@ -7230,8 +7230,8 @@
     {
       "uuid": "GJH0AbYzoDLr1Kk_nVA2DoxT",
       "ext": ".lua",
-      "hash": "55bb7bda",
-      "size": 33751,
+      "hash": "b9c84643",
+      "size": 33659,
       "fs_path": "ui/ArenaOpponentDialog.lua",
       "prefix": "../scripts"
     },
@@ -7422,8 +7422,8 @@
     {
       "uuid": "G_5n2byMDg7lgOgh78TiMqVx",
       "ext": ".lua",
-      "hash": "52f0d385",
-      "size": 52695,
+      "hash": "170129bc",
+      "size": 52438,
       "fs_path": "ui/CharacterDetailDraw.lua",
       "prefix": "../scripts"
     },
@@ -7462,8 +7462,8 @@
     {
       "uuid": "GblNUWDnEh1CRcxakuH0rcBb",
       "ext": ".lua",
-      "hash": "ec18628e",
-      "size": 39970,
+      "hash": "4892a2ee",
+      "size": 39839,
       "fs_path": "ui/PlayerInfoPanel.lua",
       "prefix": "../scripts"
     },
@@ -7526,16 +7526,16 @@
     {
       "uuid": "GhPBeXof2K5FtbqIt3RT2If7",
       "ext": ".lua",
-      "hash": "79d7d699",
-      "size": 23297,
+      "hash": "0d384b0b",
+      "size": 23219,
       "fs_path": "ui/ArenaRankRewardDialog.lua",
       "prefix": "../scripts"
     },
     {
       "uuid": "GhvPwauatX6PhA93mNNNXyfq",
       "ext": ".lua",
-      "hash": "b2a5a9f5",
-      "size": 16505,
+      "hash": "910a9231",
+      "size": 15933,
       "fs_path": "systems/RelicBridge.lua",
       "prefix": "../scripts"
     },
@@ -7814,8 +7814,8 @@
     {
       "uuid": "GyjlAVeTWyj-j42u9exKP3vO",
       "ext": ".lua",
-      "hash": "5863320b",
-      "size": 24712,
+      "hash": "4ee5a782",
+      "size": 24686,
       "fs_path": "ui/IntroCutscene.lua",
       "prefix": "../scripts"
     },
@@ -7846,8 +7846,8 @@
     {
       "uuid": "GzgmeazebCFoi7xBLDUXNx8V",
       "ext": ".lua",
-      "hash": "9cc972c8",
-      "size": 36189,
+      "hash": "7746ce51",
+      "size": 36090,
       "fs_path": "ui/ArenaBattleScene.lua",
       "prefix": "../scripts"
     },
@@ -8070,8 +8070,8 @@
     {
       "uuid": "H9Bl0dp2Glav3wWpPQ9dbnNe",
       "ext": ".lua",
-      "hash": "b3d12db8",
-      "size": 26816,
+      "hash": "07832b34",
+      "size": 26775,
       "fs_path": "ui/LootBoxPage.lua",
       "prefix": "../scripts"
     },
@@ -8198,8 +8198,8 @@
     {
       "uuid": "HEQ66e4DGvpLQSQx3OUKyKwk",
       "ext": ".lua",
-      "hash": "d86a184e",
-      "size": 16631,
+      "hash": "134bd8e8",
+      "size": 16584,
       "fs_path": "ui/TargetRecruitPanel.lua",
       "prefix": "../scripts"
     },
@@ -8358,8 +8358,8 @@
     {
       "uuid": "HJNpSdnj91Wk3mvyVTBpyPy4",
       "ext": ".lua",
-      "hash": "10fd6b88",
-      "size": 31341,
+      "hash": "38d94028",
+      "size": 31262,
       "fs_path": "ui/ChurchArtifactPanel.lua",
       "prefix": "../scripts"
     },
@@ -8374,8 +8374,8 @@
     {
       "uuid": "HKDCmT1WL_35-iYImDebxcqa",
       "ext": ".lua",
-      "hash": "bc577915",
-      "size": 12986,
+      "hash": "b07b904a",
+      "size": 12661,
       "fs_path": "config/ResourceDefs.lua",
       "prefix": "../scripts"
     },
@@ -8438,8 +8438,8 @@
     {
       "uuid": "HLonQdWcH3Hhd8Tl9mJRV-u6",
       "ext": ".lua",
-      "hash": "a2d7d17e",
-      "size": 45458,
+      "hash": "b474d57e",
+      "size": 45396,
       "fs_path": "ui/BlacksmithEnhance.lua",
       "prefix": "../scripts"
     },
@@ -8502,8 +8502,8 @@
     {
       "uuid": "HP55gRS03VZZLtoNq8BNSwCU",
       "ext": ".lua",
-      "hash": "3dfe3d64",
-      "size": 4755,
+      "hash": "6f01233a",
+      "size": 4685,
       "fs_path": "config/AvatarFrameConfig.lua",
       "prefix": "../scripts"
     },
@@ -8550,8 +8550,8 @@
     {
       "uuid": "HSyQwXms47UPcMGXdcO2r3kV",
       "ext": ".lua",
-      "hash": "d56c5e3e",
-      "size": 11426,
+      "hash": "e07b3efc",
+      "size": 11413,
       "fs_path": "ui/ArenaLogDialog.lua",
       "prefix": "../scripts"
     },
@@ -8718,8 +8718,8 @@
     {
       "uuid": "HbWMKUHZ1DqGGzhUe0wgnu21",
       "ext": ".lua",
-      "hash": "496788f8",
-      "size": 92808,
+      "hash": "1c933f6d",
+      "size": 93152,
       "fs_path": "ui/BattleCombat.lua",
       "prefix": "../scripts"
     },
@@ -8838,8 +8838,8 @@
     {
       "uuid": "HgwYSdeUYIhzqA_uE-MmwsX7",
       "ext": ".lua",
-      "hash": "6aed4114",
-      "size": 68432,
+      "hash": "026ce40b",
+      "size": 24210,
       "fs_path": "ui/RelicPanel.lua",
       "prefix": "../scripts"
     },
@@ -8862,8 +8862,8 @@
     {
       "uuid": "HhLQicpl5QkyWJppu82H8Jgr",
       "ext": ".lua",
-      "hash": "6d9ded75",
-      "size": 51508,
+      "hash": "5e620b8e",
+      "size": 51318,
       "fs_path": "ui/ArenaPage.lua",
       "prefix": "../scripts"
     },
@@ -8974,8 +8974,8 @@
     {
       "uuid": "HnG46Qz-VO7sI5UOEwT73FAn",
       "ext": ".lua",
-      "hash": "74238f27",
-      "size": 12855,
+      "hash": "b5ecf7a5",
+      "size": 16300,
       "fs_path": "ui/TopBar.lua",
       "prefix": "../scripts"
     },
@@ -9022,16 +9022,16 @@
     {
       "uuid": "Hoz4YUUNdHXLjk6GsOTby_qY",
       "ext": ".lua",
-      "hash": "65cca81c",
-      "size": 2584,
+      "hash": "0c7f8de6",
+      "size": 2794,
       "fs_path": "shared/relic/RelicSchema.lua",
       "prefix": "../scripts"
     },
     {
       "uuid": "HpLWqQXneLYU8k8htIRxHWOk",
       "ext": ".lua",
-      "hash": "83cf0998",
-      "size": 53214,
+      "hash": "a7d176c6",
+      "size": 53042,
       "fs_path": "ui/TavernPage.lua",
       "prefix": "../scripts"
     },
@@ -9054,8 +9054,8 @@
     {
       "uuid": "Hr-lOVhoVYVHwuGZLrTfy-lO",
       "ext": ".lua",
-      "hash": "9e005ca1",
-      "size": 37871,
+      "hash": "5dfecadc",
+      "size": 33443,
       "fs_path": "config/AssetManifest.lua",
       "prefix": "../scripts"
     },
@@ -9142,8 +9142,8 @@
     {
       "uuid": "HxGFGYrFZv0dhaJRiSlsH6Ee",
       "ext": ".lua",
-      "hash": "0a380f33",
-      "size": 33282,
+      "hash": "16c0b699",
+      "size": 33090,
       "fs_path": "ui/CharacterPanelDraw2.lua",
       "prefix": "../scripts"
     },
@@ -9170,6 +9170,14 @@
       "size": 135,
       "fs_path": "resources.json",
       "prefix": "."
+    },
+    {
+      "uuid": "1ZKC2BzJ4ZmqxYULLi-D1A",
+      "ext": ".lua",
+      "hash": "06c33b43",
+      "size": 18558,
+      "fs_path": "systems/RelicAltar.lua",
+      "prefix": "../scripts"
     }
   ],
   "metadata": {

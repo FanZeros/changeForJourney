@@ -24,6 +24,7 @@ local VALID_RESOURCE_KEYS = {
     sweepTicket = true, tavernCoin = true,
     weaponScroll = true, offhandScroll = true,
     armorScroll = true, accessoryScroll = true,
+    helmetScroll = true, shoesScroll = true,
     arcaneDust = true, corruptStone = true, sacredStone = true,
     speedCardExpireAt = true,
 }

@@ -13,7 +13,7 @@ SlotEnhanceSchema.Fields = {
             return {
                 -- levels[partySlot][equipSlot] = enhanceLevel
                 -- partySlot: 1~5（出战槽位索引）
-                -- equipSlot: "weapon"/"offhand"/"armor"/"accessory"
+                -- equipSlot: "weapon"/"offhand"/"armor"/"helmet"/"shoes"/"accessory"
                 -- enhanceLevel: 0~100
                 levels = {},
             }

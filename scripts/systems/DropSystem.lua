@@ -175,8 +175,8 @@ end
 -- 卷轴掉落
 ------------------------------------------------------------------------
 
---- 四种卷轴类型
-local SCROLL_TYPES = { "weaponScroll", "offhandScroll", "armorScroll", "accessoryScroll" }
+--- 六种卷轴类型
+local SCROLL_TYPES = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
 
 --- 随机选取一种卷轴类型
 ---@return string scrollType

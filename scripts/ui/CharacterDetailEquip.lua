@@ -181,17 +181,8 @@ local function buildWearableSet(heroId, slot)
         return set, nil
     end
 
-    if slot == "armor" then
-        local classCfg = ClassConfig.get(heroCfg.classId)
-        if not classCfg or not classCfg.armorTypes or #classCfg.armorTypes == 0 then
-            return nil, nil
-        end
-        local set = {}
-        for _, armorEnum in ipairs(classCfg.armorTypes) do
-            local name = AD.ARMOR_TYPE_NAME[armorEnum]
-            if name then set[name] = true end
-        end
-        return set, nil
+    if slot == "armor" or slot == "helmet" or slot == "shoes" then
+        return EquipmentSystem.getWearableTypeSet(heroId, slot), nil
     end
 
     return nil, nil

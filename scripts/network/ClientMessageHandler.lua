@@ -548,7 +548,8 @@ local ClientDispatcher = require("network.ClientDispatcher")
          if fcr.scroll then
              local SCROLL_TO_REWARD = {
                  weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll",
-                 armorScroll = "armor_scroll", accessaryScroll = "accessory_scroll",
+                 armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll",
+                 helmetScroll = "helmet_scroll", shoesScroll = "shoes_scroll",
              }
              if fcr.scroll.scrolls then
                  for st, n in pairs(fcr.scroll.scrolls) do
@@ -738,7 +739,8 @@ local ClientDispatcher = require("network.ClientDispatcher")
                  goldenKey = "golden_key", corruptStone = "corrupt_stone", sacredStone = "sacred_stone",
                  gems = "diamond", gold = "gold", essence = "essence",
                  weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll",
-                 armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll", randomScroll = "random_scroll",
+                 armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll",
+                 helmetScroll = "helmet_scroll", shoesScroll = "shoes_scroll", randomScroll = "random_scroll",
              }
              local key = data.reward.currencyKey; local amount = data.reward.amount or 0
              local popupType = CURRENCY_KEY_TO_POPUP_TYPE[key] or key
@@ -797,7 +799,7 @@ local ClientDispatcher = require("network.ClientDispatcher")
          end
          if (data.equipCount or 0) > 0 then LootBox.refreshPage() end
          for scrollField, count in pairs(data.scrollDrops or {}) do
-             local SCROLL_MAP = { weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll", armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll" }
+             local SCROLL_MAP = { weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll", armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll", helmetScroll = "helmet_scroll", shoesScroll = "shoes_scroll" }
              local rk = SCROLL_MAP[scrollField]
              if rk and count > 0 then rewards[#rewards + 1] = { type = rk, amount = count } end
          end

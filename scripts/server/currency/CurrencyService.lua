@@ -32,6 +32,8 @@ CurrencyService.REWARD_TO_CURRENCY = {
     offhand_scroll   = "offhandScroll",  -- 副手卷轴
     armor_scroll     = "armorScroll",    -- 护甲卷轴
     accessory_scroll = "accessoryScroll",-- 饰品卷轴
+    helmet_scroll    = "helmetScroll",   -- 头盔卷轴
+    shoes_scroll     = "shoesScroll",    -- 鞋子卷轴
     random_scroll    = "weaponScroll",   -- 随机卷轴（发放时由业务层随机选一种）
     privilege_card   = "privilegeCardOwned", -- 特权卡（激活型，非累加）
 }

@@ -110,7 +110,7 @@ end
 
 --- 检查指定槽位是否有可提升装备（背包中存在战斗力更高的可穿戴装备）
 ---@param heroId number
----@param slotName string "weapon"|"offhand"|"armor"|"accessory"
+---@param slotName string "weapon"|"offhand"|"armor"|"helmet"|"shoes"|"accessory"
 ---@param equipData table PlayerStore.Get("equipment") 返回的数据
 ---@return boolean
 function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData)
@@ -174,15 +174,8 @@ function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData)
                 wearableSet = {}
                 for _, t in ipairs(types) do wearableSet[t] = true end
             end
-        elseif slotName == "armor" then
-            local classCfg = CC.get(heroCfg.classId)
-            if classCfg and classCfg.armorTypes and #classCfg.armorTypes > 0 then
-                wearableSet = {}
-                for _, armorEnum in ipairs(classCfg.armorTypes) do
-                    local name = AD.ARMOR_TYPE_NAME[armorEnum]
-                    if name then wearableSet[name] = true end
-                end
-            end
+        elseif slotName == "armor" or slotName == "helmet" or slotName == "shoes" then
+            wearableSet = EquipmentSystem.getWearableTypeSet(heroId, slotName)
         end
         -- accessory: wearableSet 保持 nil，不限制
     end
@@ -319,7 +312,8 @@ function CharacterDetail.setContext(ctx)
         imgExpBarFill     = ctx.imgExpBarFill,
     })
     -- 配装面板绘制函数注入 Draw 模块
-    Draw._drawEquipPanel = CharacterDetail._EquipPanel.draw
+    local drawEquipPanel = CharacterDetail._EquipPanel.draw
+    Draw._drawEquipPanel = drawEquipPanel
     -- 觉醒面板注入职业图标和数据获取
     AwakeningPanel.setClassIcons(ctx.imgClassIcons)
     AwakeningPanel.setOwnedDataGetter(ctx.getOwnedData)

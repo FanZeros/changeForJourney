@@ -478,7 +478,7 @@ function EquipmentSystem.generate(templateId, level, quality)
 end
 
 --- 根据槽位随机生成装备
----@param slot string "weapon"/"offhand"/"armor"/"accessory"
+---@param slot string "weapon"/"offhand"/"armor"/"helmet"/"shoes"/"accessory"
 ---@param level number
 ---@param quality number|nil
 ---@return table|nil
@@ -522,7 +522,7 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 --- 双手武器同时享受主手(weapon) + 副手(offhand)加成，但各只享受 50%
 ---@param slotEnhanceData table|nil slotEnhance 模块数据 { levels = { [partySlot] = { [equipSlot] = lv } } }
 ---@param partySlot number 出战槽位索引 (1~5)
----@param equipSlot string 装备位置 ("weapon"/"offhand"/"armor"/"accessory")
+---@param equipSlot string 装备位置 ("weapon"/"offhand"/"armor"/"helmet"/"shoes"/"accessory")
 ---@param grip string|nil 装备握持类型 ("onehand"/"twohand"/nil)
 ---@return number 加成百分比（如 0.05 = 5%）
 function EquipmentSystem.calcSlotBoost(slotEnhanceData, partySlot, equipSlot, grip)
@@ -691,6 +691,53 @@ function EquipmentSystem.removeFromInventory(equipData, seq)
         equipData.inventory[key] = nil
     end
     return equip
+end
+
+--- 英雄在指定槽位可穿戴的子类型集合
+--- nil = 不限制（饰品 / 未知英雄）
+---@param heroId number|string
+---@param slotName string
+---@return table|nil set { [typeName]=true }
+function EquipmentSystem.getWearableTypeSet(heroId, slotName)
+    if slotName == "accessory" then return nil end
+    local HC = require("config.HeroConfig")
+    local hid = tonumber(heroId)
+    if not hid then return nil end
+    local heroCfg = HC.get(hid)
+    if not heroCfg then return nil end
+
+    if slotName == "weapon" then
+        local types = heroCfg.weaponTypes
+        if not types or #types == 0 then return nil end
+        local set = {}
+        for _, t in ipairs(types) do set[t] = true end
+        return set
+    end
+
+    if slotName == "offhand" then
+        local types = heroCfg.offhandTypes
+        if not types or #types == 0 then return nil end
+        local set = {}
+        for _, t in ipairs(types) do set[t] = true end
+        return set
+    end
+
+    -- 护甲 / 头盔 / 鞋子共用职业护甲类型
+    if slotName == "armor" or slotName == "helmet" or slotName == "shoes" then
+        local CC = require("config.ClassConfig")
+        local classCfg = CC.get(heroCfg.classId)
+        if not classCfg or not classCfg.armorTypes or #classCfg.armorTypes == 0 then
+            return nil
+        end
+        local set = {}
+        for _, armorEnum in ipairs(classCfg.armorTypes) do
+            local name = AD.ARMOR_TYPE_NAME[armorEnum]
+            if name then set[name] = true end
+        end
+        return set
+    end
+
+    return nil
 end
 
 --- 获取背包中的装备

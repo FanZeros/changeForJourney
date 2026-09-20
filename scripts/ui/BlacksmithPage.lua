@@ -91,16 +91,19 @@ local CARD_POWER_ICON_SIZE = 36
 local CARD_LOCK_ICON_SIZE  = 64
 local CARD_PLUS_ICON_SIZE  = 64
 
--- 5. 装备槽位区域（4 个装备槽，在卡片下方）
-local EQUIP_SLOT_FIRST_X = 227  -- 第一个槽位中心 X
-local EQUIP_SLOT_Y       = 967  -- 槽位中心 Y
-local EQUIP_SLOT_SIZE    = 160  -- 槽位尺寸
-local EQUIP_SLOT_SPACING = 49   -- 槽位间距
+-- 5. 装备槽位区域（2 行 × 3 槽）
+local EQUIP_SLOT_SIZE    = 160
+local EQUIP_SLOT_SPACING = 40
 local EQUIP_SLOT_RADIUS  = 24
-local EQUIP_LV_X_OFFSET  = 3   -- 强化等级文本相对槽位中心的 X 偏移（230-227=3）
-local EQUIP_LV_Y_OFFSET  = -78 -- 强化等级文本相对槽位中心的 Y 偏移（889-967=-78）
+local EQUIP_ROW1_Y       = 900
+local EQUIP_ROW2_Y       = 1080
+local EQUIP_LV_X_OFFSET  = 3
+local EQUIP_LV_Y_OFFSET  = -78
 local EQUIP_LV_FONT_SIZE = 38
-local EQUIP_SLOT_ORDER   = { "weapon", "offhand", "armor", "accessory" }
+local EQUIP_SLOT_ORDER   = { "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }
+local EQUIP_ROW_COUNT    = 3
+local EQUIP_ROW_W        = EQUIP_ROW_COUNT * EQUIP_SLOT_SIZE + (EQUIP_ROW_COUNT - 1) * EQUIP_SLOT_SPACING
+local EQUIP_SLOT_FIRST_X = 540 - EQUIP_ROW_W * 0.5 + EQUIP_SLOT_SIZE * 0.5
 
 -- 7. 下方背景板
 local LOWER_BG_CX, LOWER_BG_W, LOWER_BG_H = 540, 1080, 1670
@@ -439,9 +442,17 @@ local function getCardSlotCX(index)
     return startCX + (index - 1) * (CARD_W + CARD_SPACING)
 end
 
---- 计算第 index 个装备槽的中心 X 坐标（1-based, index=1..4）
+--- 计算第 index 个装备槽的中心坐标（1-based, 2 行 × 3 列）
 local function getEquipSlotCX(index)
-    return EQUIP_SLOT_FIRST_X + (index - 1) * (EQUIP_SLOT_SIZE + EQUIP_SLOT_SPACING)
+    local col = ((index - 1) % EQUIP_ROW_COUNT) + 1
+    return EQUIP_SLOT_FIRST_X + (col - 1) * (EQUIP_SLOT_SIZE + EQUIP_SLOT_SPACING)
+end
+
+local function getEquipSlotCY(index)
+    if index <= EQUIP_ROW_COUNT then
+        return EQUIP_ROW1_Y
+    end
+    return EQUIP_ROW2_Y
 end
 
 --- 根据当前 selectedPartySlot + selectedEquipSlot 自动推导 selectedEquip
@@ -892,7 +903,7 @@ local function drawEquipSlots(vg)
 
     for i, slotKey in ipairs(EQUIP_SLOT_ORDER) do
         local cx = getEquipSlotCX(i)
-        local cy = EQUIP_SLOT_Y
+        local cy = getEquipSlotCY(i)
         local isSelected = (slotKey == state.selectedEquipSlot)
 
         -- 选中底图（在槽位背景图后方）
@@ -1073,6 +1084,8 @@ function BlacksmithPage.init(vg)
     imgSlotBg.weapon    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_WQ.png", 0)
     imgSlotBg.offhand   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_FS.png", 0)
     imgSlotBg.armor     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_HJ.png", 0)
+    imgSlotBg.helmet    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_TK.png", 0)
+    imgSlotBg.shoes     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_XZ.png", 0)
     imgSlotBg.accessory = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_SP.png", 0)
     imgSlotSelected     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJPXZTBBJ.png", 0)
 
@@ -1463,10 +1476,11 @@ function BlacksmithPage.handleInput(dx, dy)
                 return true
             end
         end
-        -- 4 个装备槽点击
+        -- 6 个装备槽点击
         for i, slotKey in ipairs(EQUIP_SLOT_ORDER) do
             local cx = getEquipSlotCX(i)
-            if hitTest(dx, dy, cx, EQUIP_SLOT_Y, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE) then
+            local cy = getEquipSlotCY(i)
+            if hitTest(dx, dy, cx, cy, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE) then
                 if slotKey ~= state.selectedEquipSlot then
                     state.selectedEquipSlot = slotKey
                     deriveSelectedEquip()
@@ -1674,7 +1688,7 @@ function BlacksmithPage.draw(vg)
                     for i, k in ipairs(EQUIP_SLOT_ORDER) do
                         if k == state.selectedEquipSlot then eqIdx = i; break end
                     end
-                    SpineResultEffect.draw(vg, getEquipSlotCX(eqIdx), EQUIP_SLOT_Y)
+                    SpineResultEffect.draw(vg, getEquipSlotCX(eqIdx), getEquipSlotCY(eqIdx))
                 end
                 nvgRestore(vg)
             end
@@ -1688,7 +1702,7 @@ function BlacksmithPage.draw(vg)
                 for i, k in ipairs(EQUIP_SLOT_ORDER) do
                     if k == state.selectedEquipSlot then eqIdx = i; break end
                 end
-                SpineResultEffect.draw(vg, getEquipSlotCX(eqIdx), EQUIP_SLOT_Y)
+                SpineResultEffect.draw(vg, getEquipSlotCX(eqIdx), getEquipSlotCY(eqIdx))
             end
         end
     end

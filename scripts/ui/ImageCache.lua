@@ -8,7 +8,7 @@ local ImageCache = {}
 
 -- ======================== 配置 ========================
 
-local MAX_EQUIP_ICONS = 200  -- 装备图标缓存上限（覆盖全部198种模板，避免FIFO抖动）
+local MAX_EQUIP_ICONS = 360  -- 覆盖武器/副手/护甲/头盔/鞋子/饰品模板
 
 -- ======================== 内部状态 ========================
 
@@ -46,6 +46,18 @@ function ImageCache.getEquipIcon(templateId)
     if not vg_ then return -1 end
     local path = EquipmentConfig.getIconPath(templateId)
     local handle = nvgCreateImage(vg_, path, 0)
+    -- 组内 6 阶共用组首图（H1/H7/...、S1/S7/...，与胸甲 A1/A7 相同）
+    if handle < 0 and type(templateId) == "string" then
+        local prefix = string.match(templateId, "^(%a+)")
+        local num = tonumber(string.match(templateId, "(%d+)$") or "")
+        if prefix and num and num > 1 then
+            local groupStart = math.floor((num - 1) / 6) * 6 + 1
+            local fallbackId = prefix .. tostring(groupStart)
+            if fallbackId ~= templateId then
+                handle = nvgCreateImage(vg_, EquipmentConfig.getIconPath(fallbackId), 0)
+            end
+        end
+    end
     if handle < 0 then
         equipCache[templateId] = -1  -- 缓存失败结果，避免每帧重试
         return -1

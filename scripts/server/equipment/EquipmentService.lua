@@ -6,6 +6,7 @@
 
 local PDM             = require("server.character.PlayerDataManager")
 local EquipmentSystem  = require("systems.EquipmentSystem")
+local EquipmentConfig  = require("config.EquipmentConfig")
 local BlacksmithConfig = require("config.BlacksmithConfig")
 local AVC             = require("config.AdvancementConfig")
 local HC              = require("config.HeroConfig")
@@ -282,34 +283,10 @@ function EquipmentService.EquipAllBest(uid, heroId)
         end
     end
 
-    -- 构建各槽位的可穿戴子类型集合
     local wearableSets = {}
-
-    -- weapon
-    local weaponTypes = heroCfg.weaponTypes
-    if weaponTypes and #weaponTypes > 0 then
-        wearableSets["weapon"] = {}
-        for _, t in ipairs(weaponTypes) do wearableSets["weapon"][t] = true end
+    for _, slotKey in ipairs(EquipmentConfig.SLOTS) do
+        wearableSets[slotKey] = EquipmentSystem.getWearableTypeSet(heroId, slotKey)
     end
-
-    -- offhand
-    local offhandTypes = heroCfg.offhandTypes
-    if offhandTypes and #offhandTypes > 0 then
-        wearableSets["offhand"] = {}
-        for _, t in ipairs(offhandTypes) do wearableSets["offhand"][t] = true end
-    end
-
-    -- armor
-    local classCfg = CC.get(heroCfg.classId)
-    if classCfg and classCfg.armorTypes and #classCfg.armorTypes > 0 then
-        wearableSets["armor"] = {}
-        for _, armorEnum in ipairs(classCfg.armorTypes) do
-            local name = AD.ARMOR_TYPE_NAME[armorEnum]
-            if name then wearableSets["armor"][name] = true end
-        end
-    end
-
-    -- accessory: nil = 不限制
 
     -- 双持模式检测
     local heroesData = PDM.GetModule(uid, "heroes")
@@ -317,8 +294,8 @@ function EquipmentService.EquipAllBest(uid, heroId)
     local advBranch = hd and hd.advBranch
     local dualMode = AVC.getDualWieldMode(advBranch)
 
-    -- 按顺序处理：weapon → armor → accessory → offhand
-    local SLOT_ORDER = { "weapon", "armor", "accessory", "offhand" }
+    -- 按顺序处理：weapon → armor → helmet → shoes → accessory → offhand
+    local SLOT_ORDER = { "weapon", "armor", "helmet", "shoes", "accessory", "offhand" }
     local changed = 0
     local heroSlots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
 

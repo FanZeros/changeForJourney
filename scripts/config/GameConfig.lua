@@ -43,6 +43,8 @@ GameConfig.Currency = {
     START_OFFHAND_SCROLL = 0,  -- 副手卷轴
     START_ARMOR_SCROLL = 0,    -- 护甲卷轴
     START_ACCESSORY_SCROLL = 0,-- 饰品卷轴
+    START_HELMET_SCROLL = 0,   -- 头盔卷轴
+    START_SHOES_SCROLL = 0,    -- 鞋子卷轴
     START_RECRUIT_TICKET = 0,
     START_SWEEP_TICKET = 0,
     START_TAVERN_COIN = 0,
@@ -64,6 +66,8 @@ GameConfig.Resources = {
     { key = "offhandScroll",   name = "副手卷轴",   giveAmount = 5    },
     { key = "armorScroll",     name = "护甲卷轴",   giveAmount = 5    },
     { key = "accessoryScroll", name = "饰品卷轴",   giveAmount = 5    },
+    { key = "helmetScroll",    name = "头盔卷轴",   giveAmount = 5    },
+    { key = "shoesScroll",     name = "鞋子卷轴",   giveAmount = 5    },
     { key = "recruitTicket", name = "冒险招募券", giveAmount = 10   },
     { key = "stellarRecruitTicket", name = "星辉招募券", giveAmount = 10 },
     { key = "sweepTicket",   name = "扫荡券",     giveAmount = 10   },

@@ -484,9 +484,8 @@ function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
     end
 
     if seamBarImg and seamBarImg > 0 then
-        -- 宽度按"设计宽 ≈ 页面宽 9%(96px)"反推:窗口比例 = 96*0.45/1080 ≈ 0.04×h
-        -- 只压页面金框边距,不盖内容
-        local w = h * 0.04
+        -- 宽度 = 素材等比(158/1425)×0.8,与 Standalone.seamBackList 一致;条中心骑在页面分界线上
+        local w = h * 0.0888
         local halfW = w * 0.5
         nvgSave(vg)
         if dir == "left" then

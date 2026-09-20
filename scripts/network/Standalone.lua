@@ -2061,14 +2061,14 @@ local function seamBackList()
     local list = {}
     local psL = logicalH / 1080
     local cs = psL * 0.45                    -- 面板内容缩放(设计→窗口),与 Viewport.DS 一致
-    local barW = logicalH * 0.04             -- ≈96 设计宽(页面宽 9%),只压金框边距
+    local barW = logicalH * 0.0888           -- 素材等比(158/1425)×0.8,条中心骑在页面分界线上
     local DIST = 1080                         -- 页面设计宽:滑入全程
     -- 右框柱 ›：角色详情——条贴详情页"前缘"(页面左缘),像抽屉把手随页面一起推进
     if CharacterDetail.isOpen() then
         local ot, ct, od, cd = CharacterDetail.getSeamAnim()
         local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
         list[#list + 1] = {
-            cx = (logicalW - 486 * psL) + oxWin + barW * 0.5,
+            cx = (logicalW - 486 * psL) + oxWin,
             sw = barW, sh = logicalH, bw = 0, bh = 0, dir = "right",
             close = function() CharacterDetail.close() end,
         }
@@ -2087,7 +2087,7 @@ local function seamBackList()
     if leftClose then
         local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], DIST) * cs
         list[#list + 1] = {
-            cx = 486 * psL + oxWin - barW * 0.5,
+            cx = 486 * psL + oxWin,
             sw = barW, sh = logicalH, bw = 0, bh = 0, dir = "left",
             close = leftClose,
         }

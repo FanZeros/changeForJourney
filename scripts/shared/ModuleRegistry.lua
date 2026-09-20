@@ -62,8 +62,7 @@ ModuleRegistry.modules = {
                 exp          = 0,
                 maxExp       = 50,   -- 冒险等级1级升2级所需经验（来自 ExpTable）
                 power        = 1000,
-                avatarHeroId  = 1,
-                avatarFrameId = 1,
+                avatarHeroId = 1,
             }
         end,
         onLoad = function(data)

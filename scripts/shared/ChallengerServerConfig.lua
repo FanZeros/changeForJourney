@@ -24,7 +24,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 1205,
                 rewardTier = 1,
                 tierName = "青铜挑战者",
-                avatarFrameId = nil,
                 rewards = {
                     { type = "diamond", amount = 200 },
                 },
@@ -33,7 +32,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 2305,
                 rewardTier = 2,
                 tierName = "青铜挑战者 II",
-                avatarFrameId = 2,
                 rewards = {
                     { type = "diamond", amount = 500 },
                 },
@@ -42,7 +40,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 3505,
                 rewardTier = 3,
                 tierName = "白银挑战者",
-                avatarFrameId = nil,
                 rewards = {
                     { type = "diamond", amount = 800 },
                     { type = "adventure_ticket", amount = 5 },
@@ -52,7 +49,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 4605,
                 rewardTier = 4,
                 tierName = "白银挑战者 II",
-                avatarFrameId = 3,
                 rewards = {
                     { type = "diamond", amount = 1200 },
                     { type = "adventure_ticket", amount = 8 },
@@ -63,7 +59,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 5805,
                 rewardTier = 5,
                 tierName = "黄金挑战者",
-                avatarFrameId = nil,
                 rewards = {
                     { type = "diamond", amount = 1500 },
                     { type = "adventure_ticket", amount = 10 },
@@ -74,7 +69,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 6905,
                 rewardTier = 6,
                 tierName = "黄金挑战者 II",
-                avatarFrameId = 4,
                 rewards = {
                     { type = "diamond", amount = 1800 },
                     { type = "golden_key", amount = 3 },
@@ -85,7 +79,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 8105,
                 rewardTier = 7,
                 tierName = "铂金挑战者",
-                avatarFrameId = nil,
                 rewards = {
                     { type = "diamond", amount = 2000 },
                     { type = "golden_key", amount = 5 },
@@ -96,7 +89,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 9205,
                 rewardTier = 8,
                 tierName = "铂金挑战者 II",
-                avatarFrameId = 5,
                 rewards = {
                     { type = "diamond", amount = 2200 },
                     { type = "golden_key", amount = 6 },
@@ -108,7 +100,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 10405,
                 rewardTier = 9,
                 tierName = "钻石挑战者",
-                avatarFrameId = nil,
                 rewards = {
                     { type = "diamond", amount = 2500 },
                     { type = "golden_key", amount = 8 },
@@ -120,7 +111,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 11505,
                 rewardTier = 10,
                 tierName = "钻石挑战者 II",
-                avatarFrameId = 6,
                 rewards = {
                     { type = "diamond", amount = 3000 },
                     { type = "golden_key", amount = 10 },
@@ -154,8 +144,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 2305,
                 rewardTier = 2,
                 tierName = "青铜挑战者 II",
-                avatarFrameId = 2,
-                avatarFrameIncrement = 1,
                 rewards = {
                     { type = "diamond", amount = 500 },
                 },
@@ -173,8 +161,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 4605,
                 rewardTier = 4,
                 tierName = "白银挑战者 II",
-                avatarFrameId = 3,
-                avatarFrameIncrement = 1,
                 rewards = {
                     { type = "diamond", amount = 1200 },
                     { type = "adventure_ticket", amount = 8 },
@@ -195,8 +181,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 6905,
                 rewardTier = 6,
                 tierName = "黄金挑战者 II",
-                avatarFrameId = 4,
-                avatarFrameIncrement = 1,
                 rewards = {
                     { type = "diamond", amount = 1800 },
                     { type = "golden_key", amount = 3 },
@@ -217,8 +201,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 9205,
                 rewardTier = 8,
                 tierName = "铂金挑战者 II",
-                avatarFrameId = 5,
-                avatarFrameIncrement = 1,
                 rewards = {
                     { type = "diamond", amount = 2200 },
                     { type = "golden_key", amount = 6 },
@@ -240,8 +222,6 @@ C.CHALLENGER_SERVERS = {
                 minStageId = 11505,
                 rewardTier = 10,
                 tierName = "钻石挑战者 II",
-                avatarFrameId = 6,
-                avatarFrameIncrement = 1,
                 rewards = {
                     { type = "diamond", amount = 3000 },
                     { type = "golden_key", amount = 10 },

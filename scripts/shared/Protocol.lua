@@ -149,8 +149,7 @@ Protocol.ACTION_TYPES = {
     DELETE_READ    = "delete_read",      -- 删除已读邮件
 
     -- 头像
-    SET_AVATAR       = "set_avatar",        -- 设置头像
-    SET_AVATAR_FRAME = "set_avatar_frame",  -- 设置头像框
+    SET_AVATAR = "set_avatar",  -- 设置头像
 
     -- 初始角色选择
     SELECT_INITIAL_HERO = "select_initial_hero",  -- 新玩家选择初始英雄

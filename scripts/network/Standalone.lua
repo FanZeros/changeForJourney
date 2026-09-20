@@ -2166,7 +2166,7 @@ function HandleNanoVGRenderHorizon()
         TavernPage.draw(vg)
         MarketPage.draw(vg)
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
-        -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
+        -- oy=-30：头像/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
         if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
             or MarketPage.isOpen()) then
             TopBar.draw(vg, -30)

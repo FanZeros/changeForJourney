@@ -7,8 +7,6 @@
 local DrawUtil       = require("core.DrawUtil")
 local HeroConfig        = require("config.HeroConfig")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
-local AvatarFrameConfig = require("config.AvatarFrameConfig")
-local AvatarFrameUtil   = require("config.AvatarFrameUtil")
 local CharacterPanel = require("ui.CharacterPanel")
 local BF             = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
@@ -20,26 +18,6 @@ local hitTest           = DrawUtil.hitTest
 
 local AvatarSelectPanel = {}
 
--- ======================== 解锁状态 ========================
-
-local function getUnlockedAvatarFrames()
-    local ok, PlayerStore = pcall(require, "client.data.PlayerStore")
-    if ok and PlayerStore.IsReady and PlayerStore.IsReady() then
-        local challenger = PlayerStore.Get("challenger")
-        return challenger and challenger.unlockedAvatarFrames
-    end
-    return nil
-end
-
-local function getFrameLevel(frameId)
-    local unlockedAvatarFrames = getUnlockedAvatarFrames()
-    return AvatarFrameConfig.getLevel(frameId, unlockedAvatarFrames)
-end
-
-local function isFrameUnlocked(frameId)
-    return AvatarFrameConfig.isUnlocked(frameId, getUnlockedAvatarFrames())
-end
-
 -- ======================== 状态 ========================
 
 local state = {
@@ -47,11 +25,8 @@ local state = {
     animTime  = 0,
     closing   = false,
     closeTime = 0,
-    selectedTab         = 1,    -- 1 = "头像", 2 = "头像框"
     selectedHeroId      = 1,    -- 当前选中预览的英雄 ID
     confirmedHeroId     = 1,    -- 已确认使用的头像英雄 ID
-    selectedFrameId     = 1,    -- 当前选中预览的头像框 ID
-    confirmedFrameId    = 1,    -- 已确认使用的头像框 ID
     -- 网格滚动
     scrollY      = 0,      -- 当前滚动偏移（像素）
     scrollMaxY   = 0,      -- 最大滚动量
@@ -65,9 +40,6 @@ local state = {
 local img = {
     bg           = -1,   -- UI_TY_EJQRK.png 九宫格弹窗背景
     heroIcons    = {},    -- [heroId] 角色头像图标
-    frameIcons   = {},    -- [frameId] 头像框图标
-    tabSelBg     = -1,   -- UI_FXAN_1.png 选中 tab 背景
-    tabUnselBg   = -1,   -- UI_FXAN_2.png 未选中 tab 背景（可选）
     wearBtn      = -1,   -- UI_AN_LV.png 穿戴按钮
     lockIcon     = -1,   -- UI_ICON_SUO.png 上锁图标
 }
@@ -105,11 +77,6 @@ local AVATAR = {
     CX = 261, CY = 477, W = 160, H = 160,
 }
 
--- 6. 头像框
-local FRAME = {
-    CX = 261, CY = 477, W = 160, H = 160,
-}
-
 -- 7. 角色名称
 local HERO_NAME = {
     X = 380, Y = 424, FONT = 42,
@@ -130,41 +97,15 @@ local ACQ_DESC = {
     R = 0x8d, G = 0x73, B = 0x62,
 }
 
--- 头像框属性与永久累计规则（沿用上方信息区，不改变全局布局模式）
-local FRAME_ATTR = {
-    X = 648, Y = 478, W = 534, FONT = 32,
-    R = 0x1b, G = 0xa7, B = 0x14,
-}
-local FRAME_RULE = {
-    X = 648, Y = 516, W = 534, FONT = 26,
-    R = 0x8d, G = 0x5f, B = 0x41,
-}
-local FRAME_ACQ = {
-    X = 648, Y = 544, W = 534, H = 38, FONT = 24,
-    R = 0x8d, G = 0x73, B = 0x62,
-}
-
 -- 10. 内容区域背景
 local CONTENT_BG = {
     CX = 540, CY = 1020, W = 800, H = 810, R = 16,
     A = 13,  -- 黑色 5%
 }
 
--- 11~14. Tab 系统
-local TAB = {
-    TAB1_CX = 354, TAB2_CX = 726, CY = 701,
-    W = 330, H = 113,
-    TEXT_DY = -6,   -- 文字相对 tab 中心 Y 偏移
-    FONT = 42,
-    -- 选中状态颜色
-    SEL_R = 0x8d, SEL_G = 0x5f, SEL_B = 0x41,
-    -- 未选中状态颜色
-    UNSEL_R = 255, UNSEL_G = 255, UNSEL_B = 255,
-}
-
--- 下半部分：头像/头像框排列区域
+-- 下半部分：头像排列区域
 local GRID_AREA = {
-    CX = 540, CY = 1086, W = 720, H = 586,
+    CX = 540, CY = 1020, W = 720, H = 720,
 }
 
 -- 每个格子
@@ -187,8 +128,6 @@ local WEAR_BTN = {
 
 ---@type fun(heroId: number)|nil
 local onAvatarConfirmed = nil
----@type fun(frameId: number)|nil
-local onFrameConfirmed = nil
 
 -- ============================================================================
 -- Public API
@@ -200,10 +139,6 @@ function AvatarSelectPanel.init(vg)
     img.bg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     -- 角色头像图标
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)
-    AvatarFrameUtil.preloadFrames(vg, img.frameIcons)
-    -- Tab 背景
-    img.tabSelBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_FXAN_1.png", 0)
-    img.tabUnselBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_FXAN_2.png", 0)
     -- 穿戴按钮
     img.wearBtn = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     img.lockIcon = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
@@ -218,15 +153,11 @@ function AvatarSelectPanel.open(opts, callback)
     if state.open then return end
 
     local avatarHeroId = 1
-    local avatarFrameId = 1
     onAvatarConfirmed = nil
-    onFrameConfirmed = nil
 
     if type(opts) == "table" then
         avatarHeroId = opts.avatarHeroId or 1
-        avatarFrameId = opts.avatarFrameId or 1
         onAvatarConfirmed = opts.onAvatarConfirmed
-        onFrameConfirmed = opts.onFrameConfirmed
     else
         avatarHeroId = opts or 1
         onAvatarConfirmed = callback
@@ -235,16 +166,12 @@ function AvatarSelectPanel.open(opts, callback)
     state.open = true
     state.closing = false
     state.animTime = time.elapsedTime
-    state.selectedTab = 1
     state.selectedHeroId = avatarHeroId
     state.confirmedHeroId = avatarHeroId
-    state.selectedFrameId = avatarFrameId
-    state.confirmedFrameId = avatarFrameId
     state.scrollY = 0
     state.scrollMaxY = 0
     state.dragging = false
-    print("[AvatarSelectPanel] 打开, 当前头像: hero_" .. state.selectedHeroId
-        .. " 头像框: " .. tostring(state.selectedFrameId))
+    print("[AvatarSelectPanel] 打开, 当前头像: hero_" .. state.selectedHeroId)
 end
 
 --- 关闭面板
@@ -265,16 +192,9 @@ function AvatarSelectPanel.getConfirmedHeroId()
     return state.confirmedHeroId
 end
 
---- 获取当前确认的头像框 ID
-function AvatarSelectPanel.getConfirmedFrameId()
-    return state.confirmedFrameId
-end
-
 --- 计算网格内容总高度和最大滚动量
 local function updateScrollMax()
-    local count = (state.selectedTab == 1)
-        and #HeroConfig.getAllIds()
-        or #AvatarFrameConfig.getAllIds()
+    local count = #HeroConfig.getAllIds()
     local rows = math.ceil(count / CELL.COLS)
     local contentH = rows * CELL.SIZE + (rows - 1) * CELL.SPACING_Y
     state.scrollMaxY = math.max(0, contentH - GRID_AREA.H)
@@ -330,51 +250,19 @@ function AvatarSelectPanel.handleInput(dx, dy)
         return true
     end
 
-    -- Tab 1 点击: "头像"
-    if hitTest(dx, dy, TAB.TAB1_CX, TAB.CY, TAB.W, TAB.H) then
-        if state.selectedTab ~= 1 then
-            state.selectedTab = 1
-            state.scrollY = 0
-            print("[AvatarSelectPanel] 切换到 头像 tab")
-        end
-        return true
-    end
-
-    -- Tab 2 点击: "头像框"
-    if hitTest(dx, dy, TAB.TAB2_CX, TAB.CY, TAB.W, TAB.H) then
-        if state.selectedTab ~= 2 then
-            state.selectedTab = 2
-            state.scrollY = 0
-            print("[AvatarSelectPanel] 切换到 头像框 tab")
-        end
-        return true
-    end
-
     -- 穿戴按钮点击
     if hitTest(dx, dy, WEAR_BTN.CX, WEAR_BTN.CY, WEAR_BTN.W, WEAR_BTN.H) then
         BF.trigger("asp_wear")
-        if state.selectedTab == 1 then
-            state.confirmedHeroId = state.selectedHeroId
-            if onAvatarConfirmed then
-                onAvatarConfirmed(state.confirmedHeroId)
-            end
-            print("[AvatarSelectPanel] 穿戴确认: hero_" .. state.confirmedHeroId)
-        else
-            if not isFrameUnlocked(state.selectedFrameId) then
-                print("[AvatarSelectPanel] 头像框未解锁: " .. tostring(state.selectedFrameId))
-                return true
-            end
-            state.confirmedFrameId = state.selectedFrameId
-            if onFrameConfirmed then
-                onFrameConfirmed(state.confirmedFrameId)
-            end
-            print("[AvatarSelectPanel] 穿戴确认: frame_" .. state.confirmedFrameId)
+        state.confirmedHeroId = state.selectedHeroId
+        if onAvatarConfirmed then
+            onAvatarConfirmed(state.confirmedHeroId)
         end
+        print("[AvatarSelectPanel] 穿戴确认: hero_" .. state.confirmedHeroId)
         AvatarSelectPanel.close()
         return true
     end
 
-    -- 头像/头像框网格点击（考虑滚动偏移）
+    -- 头像网格点击（考虑滚动偏移）
     local cols = CELL.COLS
     local areaLeft = GRID_AREA.CX - GRID_AREA.W * 0.5
     local areaTop  = GRID_AREA.CY - GRID_AREA.H * 0.5
@@ -382,38 +270,17 @@ function AvatarSelectPanel.handleInput(dx, dy)
 
     -- 先检查点击是否在网格区域内
     if hitTest(dx, dy, GRID_AREA.CX, GRID_AREA.CY, GRID_AREA.W, GRID_AREA.H) then
-        if state.selectedTab == 1 then
-            local allIds = HeroConfig.getAllIds()
-
-            for idx, heroId in ipairs(allIds) do
-                local row = math.ceil(idx / cols)
-                local col = ((idx - 1) % cols) + 1
-                local cx = areaLeft + (col - 1) * (CELL.SIZE + spacingX) + CELL.SIZE * 0.5
-                local cy = areaTop  + (row - 1) * (CELL.SIZE + CELL.SPACING_Y) + CELL.SIZE * 0.5 - state.scrollY
-
-                -- 跳过不在可见区域内的格子
-                if cy + CELL.SIZE * 0.5 >= areaTop and cy - CELL.SIZE * 0.5 <= areaTop + GRID_AREA.H then
-                    if hitTest(dx, dy, cx, cy, CELL.SIZE, CELL.SIZE) then
-                        state.selectedHeroId = heroId
-                        print("[AvatarSelectPanel] 选中头像: hero_" .. heroId)
-                        return true
-                    end
-                end
-            end
-        else
-            local frameIds = AvatarFrameConfig.getAllIds()
-            for idx, frameId in ipairs(frameIds) do
-                local row = math.ceil(idx / cols)
-                local col = ((idx - 1) % cols) + 1
-                local cx = areaLeft + (col - 1) * (CELL.SIZE + spacingX) + CELL.SIZE * 0.5
-                local cy = areaTop  + (row - 1) * (CELL.SIZE + CELL.SPACING_Y) + CELL.SIZE * 0.5 - state.scrollY
-
-                if cy + CELL.SIZE * 0.5 >= areaTop and cy - CELL.SIZE * 0.5 <= areaTop + GRID_AREA.H then
-                    if hitTest(dx, dy, cx, cy, CELL.SIZE, CELL.SIZE) then
-                        state.selectedFrameId = frameId
-                        print("[AvatarSelectPanel] 选中头像框: " .. tostring(frameId))
-                        return true
-                    end
+        local allIds = HeroConfig.getAllIds()
+        for idx, heroId in ipairs(allIds) do
+            local row = math.ceil(idx / cols)
+            local col = ((idx - 1) % cols) + 1
+            local cx = areaLeft + (col - 1) * (CELL.SIZE + spacingX) + CELL.SIZE * 0.5
+            local cy = areaTop  + (row - 1) * (CELL.SIZE + CELL.SPACING_Y) + CELL.SIZE * 0.5 - state.scrollY
+            if cy + CELL.SIZE * 0.5 >= areaTop and cy - CELL.SIZE * 0.5 <= areaTop + GRID_AREA.H then
+                if hitTest(dx, dy, cx, cy, CELL.SIZE, CELL.SIZE) then
+                    state.selectedHeroId = heroId
+                    print("[AvatarSelectPanel] 选中头像: hero_" .. heroId)
+                    return true
                 end
             end
         end
@@ -477,13 +344,10 @@ function AvatarSelectPanel.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, INFO_BG.A))
     nvgFill(vg)
 
-    -- 获取选中英雄/头像框的数据
+    -- 获取选中英雄数据
     local selHeroId = state.selectedHeroId
     local heroCfg = HeroConfig.get(selHeroId)
     local isOwned = CharacterPanel.isOwned(selHeroId)
-    local selFrameId = state.selectedFrameId
-    local frameCfg = AvatarFrameConfig.get(selFrameId)
-    local frameUnlocked = isFrameUnlocked(selFrameId)
 
     -- ── 5. 头像 ──
     local avatarImg = img.heroIcons[selHeroId]
@@ -491,22 +355,9 @@ function AvatarSelectPanel.draw(vg)
         drawImageCentered(vg, avatarImg, AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H, 1.0)
     end
 
-    -- ── 6. 头像框 ──
-    local previewFrame = AvatarFrameUtil.getIconHandle(img.frameIcons, selFrameId)
-    if previewFrame >= 0 then
-        drawImageCentered(vg, previewFrame, FRAME.CX, FRAME.CY, FRAME.W, FRAME.H, 1.0)
-    end
-
     -- ── 7. 名称（左对齐）──
-    local displayName
-    local showUnlockState
-    if state.selectedTab == 1 then
-        displayName = heroCfg and heroCfg.name or "未知"
-        showUnlockState = isOwned
-    else
-        displayName = frameCfg and frameCfg.name or "未知"
-        showUnlockState = frameUnlocked
-    end
+    local displayName = heroCfg and heroCfg.name or "未知"
+    local showUnlockState = isOwned
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, HERO_NAME.FONT)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -531,59 +382,19 @@ function AvatarSelectPanel.draw(vg)
     nvgFillColor(vg, nvgRGBA(ur, ug, ub, 255))
     nvgText(vg, nameEndX + UNLOCK_TEXT.DX, UNLOCK_TEXT.Y, unlockStr, nil)
 
-    -- ── 9. 获取途径 / 头像框收藏属性 ──
+    -- ── 9. 获取途径 ──
     nvgFontFace(vg, "sans")
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-    if state.selectedTab == 1 then
-        nvgFontSize(vg, ACQ_DESC.FONT)
-        nvgFillColor(vg, nvgRGBA(ACQ_DESC.R, ACQ_DESC.G, ACQ_DESC.B, 255))
-        nvgTextBox(
-            vg,
-            ACQ_DESC.X - ACQ_DESC.W * 0.5,
-            ACQ_DESC.Y - ACQ_DESC.H * 0.5,
-            ACQ_DESC.W,
-            "获取途径：获取该冒险家",
-            nil
-        )
-    else
-        nvgFontSize(vg, FRAME_ATTR.FONT)
-        nvgFillColor(vg, nvgRGBA(FRAME_ATTR.R, FRAME_ATTR.G, FRAME_ATTR.B, 255))
-        local frameLevel = getFrameLevel(selFrameId)
-        local attrDesc = AvatarFrameConfig.getAttributeDesc(selFrameId)
-        if frameLevel > 1 then
-            attrDesc = attrDesc .. "（II阶，属性翻倍）"
-        end
-        nvgTextBox(
-            vg,
-            FRAME_ATTR.X - FRAME_ATTR.W * 0.5,
-            FRAME_ATTR.Y,
-            FRAME_ATTR.W,
-            "属性：" .. attrDesc,
-            nil
-        )
-
-        nvgFontSize(vg, FRAME_RULE.FONT)
-        nvgFillColor(vg, nvgRGBA(FRAME_RULE.R, FRAME_RULE.G, FRAME_RULE.B, 255))
-        nvgTextBox(
-            vg,
-            FRAME_RULE.X - FRAME_RULE.W * 0.5,
-            FRAME_RULE.Y,
-            FRAME_RULE.W,
-            "解锁后永久生效，可与其他头像框属性累计",
-            nil
-        )
-
-        nvgFontSize(vg, FRAME_ACQ.FONT)
-        nvgFillColor(vg, nvgRGBA(FRAME_ACQ.R, FRAME_ACQ.G, FRAME_ACQ.B, 255))
-        nvgTextBox(
-            vg,
-            FRAME_ACQ.X - FRAME_ACQ.W * 0.5,
-            FRAME_ACQ.Y,
-            FRAME_ACQ.W,
-            AvatarFrameConfig.getUnlockDesc(selFrameId),
-            nil
-        )
-    end
+    nvgFontSize(vg, ACQ_DESC.FONT)
+    nvgFillColor(vg, nvgRGBA(ACQ_DESC.R, ACQ_DESC.G, ACQ_DESC.B, 255))
+    nvgTextBox(
+        vg,
+        ACQ_DESC.X - ACQ_DESC.W * 0.5,
+        ACQ_DESC.Y - ACQ_DESC.H * 0.5,
+        ACQ_DESC.W,
+        "获取途径：获取该冒险家",
+        nil
+    )
 
     -- ── 10. 内容区域背景 ──
     nvgBeginPath(vg)
@@ -593,56 +404,7 @@ function AvatarSelectPanel.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, CONTENT_BG.A))
     nvgFill(vg)
 
-    -- ── 11~14. Tab 系统 ──
-    local tab1Sel = (state.selectedTab == 1)
-    local tab2Sel = (state.selectedTab == 2)
-
-    -- Tab 1: "头像"
-    if tab1Sel then
-        -- 选中背景
-        if img.tabSelBg >= 0 then
-            drawImageCentered(vg, img.tabSelBg, TAB.TAB1_CX, TAB.CY, TAB.W, TAB.H, 1.0)
-        end
-        -- 选中文本颜色
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, TAB.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(TAB.SEL_R, TAB.SEL_G, TAB.SEL_B, 255))
-        nvgText(vg, TAB.TAB1_CX, TAB.CY + TAB.TEXT_DY, "头像", nil)
-    else
-        -- 未选中（无背景图或使用 UI_FXAN_2）
-        if img.tabUnselBg >= 0 then
-            drawImageCentered(vg, img.tabUnselBg, TAB.TAB1_CX, TAB.CY, TAB.W, TAB.H, 1.0)
-        end
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, TAB.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(TAB.UNSEL_R, TAB.UNSEL_G, TAB.UNSEL_B, 255))
-        nvgText(vg, TAB.TAB1_CX, TAB.CY + TAB.TEXT_DY, "头像", nil)
-    end
-
-    -- Tab 2: "头像框"
-    if tab2Sel then
-        if img.tabSelBg >= 0 then
-            drawImageCentered(vg, img.tabSelBg, TAB.TAB2_CX, TAB.CY, TAB.W, TAB.H, 1.0)
-        end
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, TAB.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(TAB.SEL_R, TAB.SEL_G, TAB.SEL_B, 255))
-        nvgText(vg, TAB.TAB2_CX, TAB.CY + TAB.TEXT_DY, "头像框", nil)
-    else
-        if img.tabUnselBg >= 0 then
-            drawImageCentered(vg, img.tabUnselBg, TAB.TAB2_CX, TAB.CY, TAB.W, TAB.H, 1.0)
-        end
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, TAB.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(TAB.UNSEL_R, TAB.UNSEL_G, TAB.UNSEL_B, 255))
-        nvgText(vg, TAB.TAB2_CX, TAB.CY + TAB.TEXT_DY, "头像框", nil)
-    end
-
-    -- ── 下半部分：头像/头像框网格 ──
+    -- ── 下半部分：头像网格 ──
     local cols = CELL.COLS
     local areaLeft = GRID_AREA.CX - GRID_AREA.W * 0.5
     local areaTop  = GRID_AREA.CY - GRID_AREA.H * 0.5
@@ -652,8 +414,7 @@ function AvatarSelectPanel.draw(vg)
     nvgSave(vg)
     nvgScissor(vg, areaLeft, areaTop, GRID_AREA.W, GRID_AREA.H)
 
-    if state.selectedTab == 1 then
-        -- 头像 tab（固定行间距 + 滚动）
+    do
         local allIds = HeroConfig.getAllIds()
         updateScrollMax()
 
@@ -709,57 +470,6 @@ function AvatarSelectPanel.draw(vg)
             end
 
             ::continue_cell::
-        end
-    else
-        local frameIds = AvatarFrameConfig.getAllIds()
-        updateScrollMax()
-
-        for idx, frameId in ipairs(frameIds) do
-            local row = math.ceil(idx / cols)
-            local col = ((idx - 1) % cols) + 1
-            local cx = areaLeft + (col - 1) * (CELL.SIZE + spacingX) + CELL.SIZE * 0.5
-            local cy = areaTop  + (row - 1) * (CELL.SIZE + CELL.SPACING_Y) + CELL.SIZE * 0.5 - state.scrollY
-            local cellLeft = cx - CELL.SIZE * 0.5
-            local cellTop  = cy - CELL.SIZE * 0.5
-
-            if cy + CELL.SIZE * 0.5 < areaTop or cy - CELL.SIZE * 0.5 > areaTop + GRID_AREA.H then
-                goto continue_frame_cell
-            end
-
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cellLeft, cellTop, CELL.SIZE, CELL.SIZE, CELL.RADIUS)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, CELL.BG_A))
-            nvgFill(vg)
-
-            local frameImg = AvatarFrameUtil.getIconHandle(img.frameIcons, frameId)
-            local frameOwned = isFrameUnlocked(frameId)
-            if frameImg >= 0 then
-                local iconAlpha = frameOwned and 1.0 or 0.4
-                drawImageCentered(vg, frameImg, cx, cy, CELL.SIZE, CELL.SIZE, iconAlpha)
-            end
-
-            if not frameOwned then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cellLeft, cellTop, CELL.SIZE, CELL.SIZE, CELL.RADIUS)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 100))
-                nvgFill(vg)
-
-                if img.lockIcon >= 0 then
-                    local lockSize = 40
-                    drawImageCentered(vg, img.lockIcon, cx, cy, lockSize, lockSize, 0.9)
-                end
-            end
-
-            if frameId == state.selectedFrameId then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cellLeft - 4, cellTop - 4,
-                    CELL.SIZE + 8, CELL.SIZE + 8, CELL.RADIUS + 2)
-                nvgStrokeColor(vg, nvgRGBA(0xFF, 0xD7, 0x00, 255))
-                nvgStrokeWidth(vg, 4)
-                nvgStroke(vg)
-            end
-
-            ::continue_frame_cell::
         end
     end
 

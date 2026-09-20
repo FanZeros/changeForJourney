@@ -135,53 +135,6 @@ local function selectRewardTier(cfg, bestStageId)
     return selected
 end
 
-local function mergeUnlockedAvatarFrames(root, cfg, bestStageId)
-    if not root then return false end
-    if type(root.unlockedAvatarFrames) ~= "table" then
-        root.unlockedAvatarFrames = {}
-    end
-    if type(root.avatarFrameGrants) ~= "table" then
-        root.avatarFrameGrants = {}
-    end
-
-    local changed = false
-    local activityId = tostring(cfg.activityId or ChallengerConsts.ACTIVITY_ID)
-    if type(root.avatarFrameGrants[activityId]) ~= "table" then
-        root.avatarFrameGrants[activityId] = {}
-        changed = true
-    end
-    local granted = root.avatarFrameGrants[activityId]
-
-    for _, tier in ipairs(cfg.rewardTable or {}) do
-        if bestStageId >= (tonumber(tier.minStageId) or 0) then
-            local frameId = tonumber(tier.avatarFrameId)
-            if frameId then
-                local frameKey = tostring(frameId)
-                local grantKey = tierKey(tier)
-                if not granted[grantKey] then
-                    local currentLevel = tonumber(root.unlockedAvatarFrames[frameKey]) or 0
-                    local incrementValue = tier.avatarFrameIncrement
-                    if type(incrementValue) == "number" then
-                        root.unlockedAvatarFrames[frameKey] = math.min(
-                            2,
-                            currentLevel + math.max(1, incrementValue)
-                        )
-                    else
-                        root.unlockedAvatarFrames[frameKey] = math.max(1, currentLevel)
-                    end
-                    granted[grantKey] = true
-                    changed = true
-                    print("[ChallengerService] avatar frame grant activity=" .. activityId
-                        .. " tier=" .. grantKey
-                        .. " frame=" .. frameKey
-                        .. " level=" .. tostring(root.unlockedAvatarFrames[frameKey]))
-                end
-            end
-        end
-    end
-    return changed
-end
-
 local function syncActivitySummary(activity, cfg, bestStageId)
     local selectedTier = selectRewardTier(cfg, bestStageId)
     activity.rewardTier = selectedTier and (tonumber(selectedTier.rewardTier) or tonumber(selectedTier.minStageId) or 0) or 0
@@ -501,7 +454,6 @@ local function deliverPendingRewards(uid, root, cfg, activity, currentServerId)
 
     migrateLegacyDelivered(activity, cfg)
     syncActivitySummary(activity, cfg, bestStageId)
-    local avatarFramesChanged = mergeUnlockedAvatarFrames(root, cfg, bestStageId)
 
     local serverKey = tostring(currentServerId)
     local isChallengerServer = ServerListConfig.isChallengerServer(currentServerId)
@@ -512,13 +464,10 @@ local function deliverPendingRewards(uid, root, cfg, activity, currentServerId)
 
     local undelivered = collectUndeliveredTiers(cfg, activity, bestStageId, serverKey)
     if #undelivered <= 0 then
-        if avatarFramesChanged then
-            PDM.MarkDirty(uid, "challenger")
-        end
-        return avatarFramesChanged
+        return false
     end
 
-    local changed = avatarFramesChanged
+    local changed = false
     if #undelivered >= MERGE_THRESHOLD then
         if sendMergedTierMail(uid, cfg, activity, undelivered, serverKey, bestStageId) then
             changed = true

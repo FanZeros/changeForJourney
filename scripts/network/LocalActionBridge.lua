@@ -192,7 +192,6 @@ local function localGuildEnter()
         stageId = stageId,
         progress = progressName,
         avatarHeroId = player.avatarHeroId or 1,
-        avatarFrameId = player.avatarFrameId or 1,
         rank = 1,
     }
     return {

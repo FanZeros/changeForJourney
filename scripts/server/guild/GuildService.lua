@@ -40,14 +40,6 @@ local function getAvatarHeroId(uid)
     return 1
 end
 
-local function getAvatarFrameId(uid)
-    local player = PDM.GetModule(uid, "player")
-    if player and player.avatarFrameId then
-        return player.avatarFrameId
-    end
-    return 1
-end
-
 --- 异步拉取区服关卡进度排行榜
 ---@param uid number
 ---@param onDone function(rankData: table[], myRankData: table|nil)
@@ -60,7 +52,6 @@ local function fetchStageRankings(uid, onDone)
             local results = {}
 
             local liveAvatarHeroId = getAvatarHeroId(uid)  -- 当前玩家 live 头像（用于覆盖自己的过时编码）
-            local liveAvatarFrameId = getAvatarFrameId(uid)
 
             for i, item in ipairs(rankList) do
                 local rawScore = item.iscore[key] or 0
@@ -71,10 +62,6 @@ local function fetchStageRankings(uid, onDone)
                 -- 如果是当前玩家自己的条目，用 live 头像覆盖（cloud 编码可能过时）
                 if item.userId == uid then
                     avatarHeroId = liveAvatarHeroId
-                end
-                local avatarFrameId = 1
-                if item.userId == uid then
-                    avatarFrameId = liveAvatarFrameId
                 end
                 -- 优先从排行榜持久化的 score 字段读取名字（离线玩家也有）
                 local persistedName = item.score and item.score[key]
@@ -89,7 +76,6 @@ local function fetchStageRankings(uid, onDone)
                     _persistedName = persistedName or "",  -- 用于对比是否需要回写
                     progressName   = buildProgressName(stageId),
                     avatarHeroId   = avatarHeroId,
-                    avatarFrameId  = avatarFrameId,
                 }
             end
 
@@ -249,7 +235,6 @@ local function fetchStageRankings(uid, onDone)
                         name         = "",  -- 客户端自己填充
                         progressName = buildProgressName(myStageId),
                         avatarHeroId  = getAvatarHeroId(uid),
-                        avatarFrameId = getAvatarFrameId(uid),
                     }
                     print("[GuildService] rankings fetched: top=" .. #results
                         .. " myRank=" .. tostring(myRank)

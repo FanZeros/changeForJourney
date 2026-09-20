@@ -700,9 +700,6 @@ local function resetAllyUnit(u)
                     if relicConds and #relicConds > 0 then
                         u.relicConditions = relicConds
                     end
-                    if CP.applyAvatarFrameAttributes then
-                        CP.applyAvatarFrameAttributes(newUnit.attrs)
-                    end
                     local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
                     if artifactEffects and #artifactEffects > 0 then
                         u.artifactEffects = artifactEffects

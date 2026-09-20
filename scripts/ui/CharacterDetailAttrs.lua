@@ -12,7 +12,6 @@ local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
-local AvatarFrameBridge = require("systems.AvatarFrameBridge")
 
 local M = {}
 
@@ -128,9 +127,6 @@ local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqD
     end
 
     RelicBridge.applyToUnit(attrs, classId)
-
-    local challenger = ClientDispatcher.get("challenger") or PlayerStore.Get("challenger")
-    AvatarFrameBridge.applyToUnit(attrs, challenger and challenger.unlockedAvatarFrames or nil)
 
     local partySlotForArtifact = EquipmentSystem.findPartySlotInTeams(heroesData, heroId)
     if partySlotForArtifact then

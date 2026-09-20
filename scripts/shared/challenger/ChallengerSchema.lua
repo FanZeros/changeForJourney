@@ -13,39 +13,12 @@ ChallengerSchema.Fields = {
         getDefault = function()
             return {
                 activities = {},
-                unlockedAvatarFrames = {},
-                avatarFrameGrants = {},
             }
         end,
         onLoad = function(data)
             if not data.activities then data.activities = {} end
-            if type(data.unlockedAvatarFrames) ~= "table" then
-                data.unlockedAvatarFrames = {}
-            end
-            local fixedFrames = {}
-            for frameId, unlocked in pairs(data.unlockedAvatarFrames) do
-                local level = tonumber(unlocked)
-                if level and level > 0 then
-                    fixedFrames[tostring(frameId)] = math.min(2, math.max(1, math.floor(level)))
-                elseif unlocked == true then
-                    fixedFrames[tostring(frameId)] = 1
-                end
-            end
-            data.unlockedAvatarFrames = fixedFrames
-            if type(data.avatarFrameGrants) ~= "table" then
-                data.avatarFrameGrants = {}
-            end
-            local fixedGrants = {}
-            for activityId, tierMap in pairs(data.avatarFrameGrants) do
-                if type(tierMap) == "table" then
-                    local tiers = {}
-                    for tierId, granted in pairs(tierMap) do
-                        if granted then tiers[tostring(tierId)] = true end
-                    end
-                    fixedGrants[tostring(activityId)] = tiers
-                end
-            end
-            data.avatarFrameGrants = fixedGrants
+            data.unlockedAvatarFrames = nil
+            data.avatarFrameGrants = nil
             local fixedActivities = {}
             for activityId, activity in pairs(data.activities) do
                 if type(activity) == "table" then

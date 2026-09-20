@@ -11,7 +11,6 @@ local PlayerStore    = require("client.data.PlayerStore")
 local CharacterPanel    = require("ui.CharacterPanel")
 local HeroConfig        = require("config.HeroConfig")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
-local AvatarFrameUtil   = require("config.AvatarFrameUtil")
 local AvatarSelectPanel = require("ui.AvatarSelectPanel")
 local SettingsPanel     = require("ui.SettingsPanel")
 local GMConsolePanel    = require("ui.GMConsolePanel")
@@ -36,7 +35,6 @@ local state = {
     closeTime  = 0,
     cardScrollY = 0,      -- 卡片区域滚动偏移（>0 表示内容上移）
     avatarHeroId  = 1,     -- 当前头像使用的英雄 ID
-    avatarFrameId = 1,     -- 当前头像框 ID
     -- UID 复制提示
     toastText  = nil,     ---@type string|nil  提示文字（非 nil 时显示）
     toastTimer = 0,       -- 提示显示剩余时间
@@ -47,7 +45,6 @@ local state = {
 local img = {
     bg       = -1,  -- UI_TY_EJQRK.png  弹窗九宫格背景
     avatar   = -1,  -- 角色头像
-    frameIcons = {},  -- [frameId] 头像框
     power    = -1,  -- ICON_ZDL.png 战力图标
     expBg    = -1,  -- UI_WJXX_JDT.png  经验进度条背景
     expFill  = -1,  -- UI_WJXX_JDT1.png 经验进度条填充
@@ -64,8 +61,8 @@ local img = {
 
 -- ======================== 布局常量 ========================
 
--- 遮罩
-local MASK_ALPHA = 128  -- 50%
+-- 遮罩（玩家信息页不再铺全屏黑底）
+local MASK_ALPHA = 0
 
 -- 弹窗背景（九宫格）
 local BG = {
@@ -83,16 +80,11 @@ local TTL = {
 -- 玩家简要信息区域背景
 local INFO_BG = {
     CX = 540, CY = 499, W = 800, H = 216, R = 16,
-    A = 13,  -- 纯黑 5% 不透明度 → 255*0.05≈13
+    A = 0,
 }
 
 -- 玩家头像
 local AVATAR = {
-    CX = 245, CY = 499, W = 160, H = 160,
-}
-
--- 玩家头像框
-local FRAME = {
     CX = 245, CY = 499, W = 160, H = 160,
 }
 
@@ -252,12 +244,12 @@ local SETTING_TXT = {
     SW = 5, SR = 0, SG = 0, SB = 0,
 }
 
--- GM 控制台入口按钮（设置按钮右侧）
+-- GM 控制台入口（兑换码下方）
 local GM_BTN = {
-    CX = 700, CY = 1801, W = 130, H = 143,
+    CX = 540, CY = 1380, W = 130, H = 143,
 }
 local GM_TXT = {
-    X = 700, Y = 1861, FONT = 34,
+    X = 540, Y = 1440, FONT = 34,
     FR = 255, FG = 200, FB = 50,
     SW = 5, SR = 0, SG = 0, SB = 0,
 }
@@ -288,7 +280,6 @@ function PlayerInfoPanel.init(vg)
     -- 上半部分
     img.bg      = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     img.avatar  = nvgCreateImage(vg, "image/角色图标/UI_icon_hero_1.png", 0)
-    AvatarFrameUtil.preloadFrames(vg, img.frameIcons)
     img.power   = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
     img.expBg   = nvgCreateImage(vg, "image/进度条/UI_WJXX_JDT.png", 0)
     img.expFill = nvgCreateImage(vg, "image/进度条/UI_WJXX_JDT1.png", 0)
@@ -445,9 +436,10 @@ function PlayerInfoPanel.handleInput(dx, dy)
         return true
     end
 
-    -- SettingsPanel 优先拦截
-    if SettingsPanel.isOpen() then
-        SettingsPanel.handleInput(dx, dy)
+    -- 兑换码子面板优先（由 SettingsPanel 嵌入层接管）
+    local RedeemCodePanel = require("ui.RedeemCodePanel")
+    if RedeemCodePanel.isOpen() then
+        SettingsPanel.handleEmbeddedInput(dx, dy)
         return true
     end
 
@@ -466,26 +458,12 @@ function PlayerInfoPanel.handleInput(dx, dy)
         return true
     end
 
-    -- UID 点击 → 复制到剪贴板
-    if hitTest(dx, dy, UID_HIT.CX, UID_HIT.CY, UID_HIT.W, UID_HIT.H) then
-        local uidStr = cachedUID or ""
-        if #uidStr > 0 then
-            ui.useSystemClipboard = true
-            ui:SetClipboardText(uidStr)
-            state.toastText = "UID 已复制"
-            state.toastTimer = TOAST.DURATION
-            print("[PlayerInfoPanel] UID 已复制: " .. uidStr)
-        end
-        return true
-    end
-
     -- 头像点击 → 打开更换头像面板
     if hitTest(dx, dy, AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H) then
         BF.trigger("pip_avatar")
         TopBar.markAvatarViewed()  -- 消除头像红点
         AvatarSelectPanel.open({
             avatarHeroId = state.avatarHeroId or 1,
-            avatarFrameId = state.avatarFrameId or 1,
             onAvatarConfirmed = function(heroId)
                 state.avatarHeroId = heroId
                 local heroIcon = img.heroIcons[heroId]
@@ -498,23 +476,12 @@ function PlayerInfoPanel.handleInput(dx, dy)
                 Client.sendAction(Protocol.ACTION_TYPES.SET_AVATAR, { avatarHeroId = heroId })
                 print("[PlayerInfoPanel] 头像更换为 hero_" .. heroId .. " (已同步服务器)")
             end,
-            onFrameConfirmed = function(frameId)
-                state.avatarFrameId = frameId
-                TopBar.setAvatarFrameId(frameId)
-                local Client = require("network.Client")
-                local Protocol = require("shared.Protocol")
-                Client.sendAction(Protocol.ACTION_TYPES.SET_AVATAR_FRAME, { avatarFrameId = frameId })
-                print("[PlayerInfoPanel] 头像框更换为 frame_" .. frameId .. " (已同步服务器)")
-            end,
         })
         return true
     end
 
-    -- 设置按钮点击检测
-    if hitTest(dx, dy, SETTING_BTN.CX, SETTING_BTN.CY, SETTING_BTN.W, SETTING_BTN.H) then
-        BF.trigger("pip_setting")
-        print("[PlayerInfoPanel] 设置按钮被点击 → 打开设置面板")
-        SettingsPanel.open()
+    -- 嵌入设置项（音量 / 开关 / 兑换码）
+    if SettingsPanel.handleEmbeddedInput(dx, dy) then
         return true
     end
 
@@ -523,15 +490,6 @@ function PlayerInfoPanel.handleInput(dx, dy)
         BF.trigger("pip_gm")
         print("[PlayerInfoPanel] GM 按钮被点击 → 打开 GM 控制台")
         GMConsolePanel.open()
-        return true
-    end
-
-    -- 队伍角色卡点击 → 打开角色详情（与 CharacterPanel 行为一致）
-    local teamSlot = hitTestTeamCard(dx, dy)
-    if teamSlot then
-        print("[PlayerInfoPanel] 点击队伍卡 → 角色详情 heroId=" .. tostring(teamSlot.heroId))
-        require("systems.GameSFX").play("ui_pick")
-        require("ui.CharacterDetail").open(teamSlot.heroId)
         return true
     end
 
@@ -548,8 +506,8 @@ function PlayerInfoPanel.handleDragBegin(dx, dy)
     if GMConsolePanel.isOpen() then
         return GMConsolePanel.handleDragBegin and GMConsolePanel.handleDragBegin(dx, dy) or true
     end
-    if SettingsPanel.isOpen() then
-        return SettingsPanel.handleDragBegin(dx, dy)
+    if SettingsPanel.handleEmbeddedDragBegin(dx, dy) then
+        return true
     end
     if AvatarSelectPanel.isOpen() then
         return AvatarSelectPanel.handleDragBegin(dx, dy)
@@ -566,8 +524,8 @@ function PlayerInfoPanel.handleDragMove(dx, dy)
     if GMConsolePanel.isOpen() then
         return GMConsolePanel.handleDragMove and GMConsolePanel.handleDragMove(dx, dy) or true
     end
-    if SettingsPanel.isOpen() then
-        return SettingsPanel.handleDragMove(dx, dy)
+    if SettingsPanel.handleDragMove(dx, dy) then
+        return true
     end
     if AvatarSelectPanel.isOpen() then
         return AvatarSelectPanel.handleDragMove(dx, dy)
@@ -585,8 +543,8 @@ function PlayerInfoPanel.handleDragEnd(dx, dy)
         if GMConsolePanel.handleDragEnd then GMConsolePanel.handleDragEnd(dx, dy) end
         return true
     end
-    if SettingsPanel.isOpen() then
-        return SettingsPanel.handleDragEnd()
+    if SettingsPanel.handleDragEnd() then
+        return true
     end
     if AvatarSelectPanel.isOpen() then
         AvatarSelectPanel.handleDragEnd()
@@ -603,28 +561,11 @@ function PlayerInfoPanel.handleScroll(wheel)
     if CharacterDetail.isOpen() then
         return CharacterDetail.handleScroll(wheel)
     end
-    -- SettingsPanel 不需要滚轮，但打开时消费事件
-    if SettingsPanel.isOpen() then return true end
     -- AvatarSelectPanel 优先拦截滚轮
     if AvatarSelectPanel.isOpen() then
         return AvatarSelectPanel.handleWheel(wheel)
     end
-    -- 计算最大滚动量
-    local teamSlots = CharacterPanel.getTeamSlotsData()
-    local occupiedCount = 0
-    for i = 1, 5 do
-        if teamSlots[i] and teamSlots[i].state == "occupied" then
-            occupiedCount = occupiedCount + 1
-        end
-    end
-    local rows = math.ceil(occupiedCount / TEAM_CARDS.MAX_PER_ROW)
-    local contentH = rows * TEAM_CARDS.ROW_SPACING  -- 与 CharacterPanelDraw 一致的行间距
-    local clipH = TEAM_CARDS.CLIP_BOTTOM - TEAM_CARDS.CLIP_TOP
-    local maxScroll = math.max(0, contentH - clipH)
-
-    state.cardScrollY = state.cardScrollY - wheel * 40
-    state.cardScrollY = math.max(0, math.min(maxScroll, state.cardScrollY))
-    return true
+    return false
 end
 
 -- ======================== 辅助绘制 ========================
@@ -770,15 +711,6 @@ function PlayerInfoPanel.draw(vg)
 
     nvgSave(vg)
 
-    -- ── 1. 全屏黑色遮罩 50% ──
-    local maskAlpha = math.floor(MASK_ALPHA * (state.closing
-        and (1.0 - math.min((time.elapsedTime - state.closeTime) / ANIM_CLOSE_DUR, 1.0))
-        or math.min((time.elapsedTime - state.animTime) / ANIM_OPEN_DUR, 1.0)))
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, 1080, 2400)  -- 设计分辨率全覆盖
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, maskAlpha))
-    nvgFill(vg)
-
     -- 弹窗缩放动画（从中心缩放）
     nvgTranslate(vg, BG.CX, BG.CY)
     nvgScale(vg, animProgress, animProgress)
@@ -793,23 +725,11 @@ function PlayerInfoPanel.draw(vg)
         TTL.FR, TTL.FG, TTL.FB, TTL.SW,
         { strokeColor = { TTL.SR, TTL.SG, TTL.SB } })
 
-    -- ── 4. 玩家简要信息区域背景 ──
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        INFO_BG.CX - INFO_BG.W * 0.5, INFO_BG.CY - INFO_BG.H * 0.5,
-        INFO_BG.W, INFO_BG.H, INFO_BG.R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, INFO_BG.A))
-    nvgFill(vg)
-
     -- ── 5. 玩家头像 ──
     local _bf1 = BF.begin(vg, "pip_avatar", AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H)
     drawImageCentered(vg, img.avatar, AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H, 1.0)
 
-    -- ── 6. 玩家头像框 ──
-    local frameImg = AvatarFrameUtil.getIconHandle(img.frameIcons, state.avatarFrameId)
-    drawImageCentered(vg, frameImg, FRAME.CX, FRAME.CY, FRAME.W, FRAME.H, 1.0)
-
-    -- ── 6b. 头像红点（有新头像/新头像框时显示）──
+    -- ── 6b. 头像红点（有新头像时显示）──
     if img.redDot >= 0 and TopBar.hasAvailableAvatar() then
         local RD_SIZE = 50
         local RD_INSET = 10
@@ -836,20 +756,13 @@ function PlayerInfoPanel.draw(vg)
     nvgFillColor(vg, nvgRGBA(DECO1.CR, DECO1.CG, DECO1.CB, DECO1.A))
     nvgFill(vg)
 
-    -- ── 9. 玩家UID ──
-    local displayUID = cachedUID or "---"
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, UID.FONT)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(UID.R, UID.G, UID.B, 255))
-    nvgText(vg, UID.X, UID.Y, "UID: " .. displayUID, nil)
-
-    -- ── 9.5 当前区服名称（右对齐，与装饰线右边缘对齐） ──
+    -- ── 9.5 当前区服名称（UID 已删除，区服名放原 UID 位置）──
     if cachedServerName then
+        nvgFontFace(vg, "sans")
         nvgFontSize(vg, 32)
-        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 200))
-        nvgText(vg, DECO1.CX + DECO1.W * 0.5, UID.Y, cachedServerName, nil)
+        nvgText(vg, UID.X, UID.Y, cachedServerName, nil)
     end
 
     -- ── 10. 装饰线2 ──
@@ -944,106 +857,22 @@ function PlayerInfoPanel.draw(vg)
     end
 
     -- ================================================================
-    -- 下半部分
+    -- 下半部分：设置项（嵌入，无独立设置弹窗）
     -- ================================================================
+    SettingsPanel.drawEmbedded(vg)
 
-
-    -- ── 24. 队伍配置背景框 ──
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        TEAM_BG.CX - TEAM_BG.W * 0.5, TEAM_BG.CY - TEAM_BG.H * 0.5,
-        TEAM_BG.W, TEAM_BG.H, TEAM_BG.R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, TEAM_BG.A))
-    nvgFill(vg)
-
-    -- ── 25. "队伍配置" 标题 ──
-    drawTextStroke(vg, TEAM_TITLE.X, TEAM_TITLE.Y, "队伍配置",
-        TEAM_TITLE.FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        TEAM_TITLE.FR, TEAM_TITLE.FG, TEAM_TITLE.FB, TEAM_TITLE.SW,
-        { strokeColor = { TEAM_TITLE.SR, TEAM_TITLE.SG, TEAM_TITLE.SB } })
-
-    -- ── 26. 队伍卡片（带裁剪和滚动，与 CharacterPanelDraw 一致的尺寸）──
-    local teamSlots, slotPowerCache = CharacterPanel.getTeamSlotsData()
-    if teamSlots then
-        -- 收集出战的角色槽位及其原始索引（用于获取战斗力缓存）
-        local occupiedSlots = {}
-        local occupiedIndices = {}
-        for i = 1, 5 do
-            if teamSlots[i] and teamSlots[i].state == "occupied" and teamSlots[i].heroId then
-                occupiedSlots[#occupiedSlots + 1] = teamSlots[i]
-                occupiedIndices[#occupiedIndices + 1] = i
-            end
-        end
-
-        -- 裁剪区域
-        nvgSave(vg)
-        nvgScissor(vg,
-            TEAM_BG.CX - TEAM_BG.W * 0.5,
-            TEAM_CARDS.CLIP_TOP,
-            TEAM_BG.W,
-            TEAM_CARDS.CLIP_BOTTOM - TEAM_CARDS.CLIP_TOP)
-
-        local cw = TEAM_CARDS.CARD_W
-        local sp = TEAM_CARDS.SPACING
-        local maxPerRow = TEAM_CARDS.MAX_PER_ROW
-        local scrollOff = state.cardScrollY
-
-        for idx, slot in ipairs(occupiedSlots) do
-            local row = math.ceil(idx / maxPerRow)
-            local col = ((idx - 1) % maxPerRow) + 1
-
-            -- 计算该行卡片数量（用于水平居中）
-            local rowStart = (row - 1) * maxPerRow + 1
-            local rowEnd = math.min(row * maxPerRow, #occupiedSlots)
-            local cardsInRow = rowEnd - rowStart + 1
-
-            local rowTotalW = cardsInRow * cw + (cardsInRow - 1) * sp
-            local rowStartX = TEAM_BG.CX - rowTotalW * 0.5
-
-            local cx = rowStartX + (col - 1) * (cw + sp) + cw * 0.5
-            local cy = TEAM_CARDS.FIRST_ROW_CY + (row - 1) * TEAM_CARDS.ROW_SPACING - scrollOff
-
-            local slotIdx = occupiedIndices[idx]
-            local power = slotPowerCache and slotPowerCache[slotIdx] or 0
-            drawTeamCard(vg, cx, cy, slot, power)
-        end
-
-        nvgResetScissor(vg)
-        nvgRestore(vg)
-    end
-
-    -- ── 27. 设置按钮 ──
-    local _bf2 = BF.begin(vg, "pip_setting", SETTING_BTN.CX, SETTING_BTN.CY, SETTING_BTN.W, SETTING_BTN.H)
-    if img.settingBtn >= 0 then
-        drawImageCentered(vg, img.settingBtn,
-            SETTING_BTN.CX, SETTING_BTN.CY,
-            SETTING_BTN.W, SETTING_BTN.H, 1.0)
-    end
-
-    -- ── 28. "设置" 文本 ──
-    drawTextStroke(vg, SETTING_TXT.X, SETTING_TXT.Y, "设置",
-        SETTING_TXT.FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        SETTING_TXT.FR, SETTING_TXT.FG, SETTING_TXT.FB, SETTING_TXT.SW,
-        { strokeColor = { SETTING_TXT.SR, SETTING_TXT.SG, SETTING_TXT.SB } })
-    BF.finish(vg, _bf2)
-
-    -- ── 29. GM 控制台入口按钮（仅白名单可见） ──
+    -- ── GM 控制台入口按钮（仅白名单可见） ──
     if isGM() then
         local _bfGM = BF.begin(vg, "pip_gm", GM_BTN.CX, GM_BTN.CY, GM_BTN.W, GM_BTN.H)
-
-        -- 绘制按钮背景（复用设置按钮图片）
         if img.settingBtn >= 0 then
             drawImageCentered(vg, img.settingBtn,
                 GM_BTN.CX, GM_BTN.CY,
                 GM_BTN.W, GM_BTN.H, 1.0)
         end
-
-        -- GM 标识文本（金色醒目）
         drawTextStroke(vg, GM_TXT.X, GM_TXT.Y, "GM",
             GM_TXT.FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             GM_TXT.FR, GM_TXT.FG, GM_TXT.FB, GM_TXT.SW,
             { strokeColor = { GM_TXT.SR, GM_TXT.SG, GM_TXT.SB } })
-
         BF.finish(vg, _bfGM)
     end
 
@@ -1089,7 +918,6 @@ function PlayerInfoPanel.draw(vg)
     -- 角色详情覆盖在队伍卡之上（从队伍卡点击打开）
     CharacterDetail.draw(vg)
     AvatarSelectPanel.draw(vg)
-    SettingsPanel.draw(vg)
     GMConsolePanel.draw(vg)
 end
 
@@ -1104,14 +932,6 @@ function PlayerInfoPanel.setAvatarHeroId(heroId)
                 img.avatar = heroIcon
             end
         end
-    end
-end
-
---- 服务器推送 player 数据后同步头像框（由 Client.lua 调用）
----@param frameId number
-function PlayerInfoPanel.setAvatarFrameId(frameId)
-    if frameId and frameId >= 1 then
-        state.avatarFrameId = frameId
     end
 end
 

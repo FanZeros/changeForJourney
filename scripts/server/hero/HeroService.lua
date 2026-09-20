@@ -9,7 +9,6 @@ local SaveManager     = require("server.SaveManager")
 local CurrencyService = require("server.currency.CurrencyService")
 local ExpTable        = require("config.ExpTable")
 local HeroConfig        = require("config.HeroConfig")
-local AvatarFrameConfig = require("config.AvatarFrameConfig")
 local UrGachaConfig   = require("config.UrGachaConfig")
 local TaskService     = require("server.task.TaskService")
 local HeroResonance   = require("shared.heroes.HeroResonance")
@@ -409,34 +408,6 @@ function HeroService.SetAvatar(uid, avatarHeroId)
         .. " avatarHeroId=" .. tostring(avatarHeroId))
 
     return true, nil, { avatarHeroId = avatarHeroId }
-end
-
---- 设置头像框
----@param uid number
----@param avatarFrameId number|nil
----@return boolean ok, string? err, table? result
-function HeroService.SetAvatarFrame(uid, avatarFrameId)
-    local player = PDM.GetModule(uid, "player")
-    if not player then return false, "数据未加载" end
-
-    avatarFrameId = tonumber(avatarFrameId)
-    if not AvatarFrameConfig.get(avatarFrameId) then
-        return false, "无效的头像框 ID"
-    end
-
-    local challenger = PDM.GetModule(uid, "challenger")
-    local unlockedFrames = challenger and challenger.unlockedAvatarFrames
-    if not AvatarFrameConfig.isUnlocked(avatarFrameId, unlockedFrames) then
-        return false, "尚未解锁该头像框"
-    end
-
-    player.avatarFrameId = avatarFrameId
-    PDM.MarkDirty(uid, "player")
-
-    print("[HeroService] SET_AVATAR_FRAME uid=" .. tostring(uid)
-        .. " avatarFrameId=" .. tostring(avatarFrameId))
-
-    return true, nil, { avatarFrameId = avatarFrameId }
 end
 
 -- ======================== 碎片合成英雄 ========================

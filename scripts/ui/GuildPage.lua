@@ -20,7 +20,6 @@ local BF                = require("systems.ButtonFeedback")
 local Protocol          = require("shared.Protocol")
 local GameState         = require("core.GameState")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
-local AvatarFrameUtil   = require("config.AvatarFrameUtil")
 local RelicPanel        = require("ui.RelicPanel")
 -- Client 延迟加载，避免循环依赖（Client → GuildPage → Client）
 
@@ -172,7 +171,7 @@ local img = {
     btnBack = -1, tabBg = -1, slider = -1,
     rankBg  = -1, listBg = -1,
     top     = {}, trophy = {},
-    heroIcons = {}, frameIcons = {},
+    heroIcons = {},
 }
 
 -- ======================== 状态 ========================
@@ -225,7 +224,7 @@ local function drawTopCard(vg, layout, rank, data)
         255, 255, 255, CARD.NUM_SW,
         { strokeColor = { 0, 0, 0 } })
 
-    -- 头像（灰色底 → 头像图 → 头像框）
+    -- 头像（灰色底 → 头像图）
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
         layout.AV_CX - CARD.AV_W * 0.5, layout.AV_CY - CARD.AV_H * 0.5,
@@ -247,10 +246,6 @@ local function drawTopCard(vg, layout, rank, data)
         nvgFill(vg)
         nvgRestore(vg)
     end
-    local avatarFrameId = (data and data.avatarFrameId) or 1
-    local frameImg = AvatarFrameUtil.getIconHandle(img.frameIcons, avatarFrameId)
-    drawImageCentered(vg, frameImg, layout.AV_CX, layout.AV_CY, 160, 160, 1.0)
-
     local name = (data and data.name) or "虚位以待"
     nvgFontFace(vg, "sans")
     local nameFit = fitFontSize(vg, name, CARD.NAME_FONT, layout.BG_W - 40, 22)
@@ -276,7 +271,7 @@ end
 
 -- ======================== 列表卡片（第4名起） ========================
 
-local function drawListCard(vg, cy, rankNum, name, tierName, bgW, bgH, scale, isUnranked, avatarHeroId, avatarFrameId)
+local function drawListCard(vg, cy, rankNum, name, tierName, bgW, bgH, scale, isUnranked, avatarHeroId)
     local cx = LIST.BG_CX
     drawImageCentered(vg, img.listBg, cx, cy, bgW, bgH, 1.0)
 
@@ -320,9 +315,6 @@ local function drawListCard(vg, cy, rankNum, name, tierName, bgW, bgH, scale, is
         nvgFill(vg)
         nvgRestore(vg)
     end
-    local frameImg = AvatarFrameUtil.getIconHandle(img.frameIcons, avatarFrameId or 1)
-    drawImageCentered(vg, frameImg, avCX, cy, 160, 160, 1.0)
-
     -- 玩家名称（自适应缩放）
     local nameMaxW = (tierLabelCX - LIST.TIER_BG_W * 0.5 * scale - nameX - 10 * scale)
     nvgFontFace(vg, "sans")
@@ -381,7 +373,6 @@ local function drawRankTabContent(vg, rankData, myRankData, offsetY)
                     name = (r.name ~= "" and r.name) or ("玩家" .. rank),
                     tierName = getProgressDisplayName(r),
                     avatarHeroId = r.avatarHeroId or 1,
-                    avatarFrameId = r.avatarFrameId or 1,
                 }
                 break
             end
@@ -392,8 +383,6 @@ local function drawRankTabContent(vg, rankData, myRankData, offsetY)
                 tierName = getProgressDisplayName(myRankData),
                 avatarHeroId = myRankData.avatarHeroId
                     or (TopBar.getAvatarHeroId and TopBar.getAvatarHeroId() or 1),
-                avatarFrameId = myRankData.avatarFrameId
-                    or (TopBar.getAvatarFrameId and TopBar.getAvatarFrameId() or 1),
             }
         end
         drawTopCard(vg, TOPS[rank], rank, data)
@@ -425,7 +414,7 @@ local function drawRankTabContent(vg, rankData, myRankData, offsetY)
             if screenCY >= CLIP.TOP - LIST.BG_H and screenCY <= CLIP.BOT + LIST.BG_H then
                 local tierName = getProgressDisplayName(r)
                 drawListCard(vg, cy, r.rank, (r.name ~= "" and r.name) or ("玩家" .. r.rank),
-                    tierName, LIST.BG_W, LIST.BG_H, 1.0, false, r.avatarHeroId or 1, r.avatarFrameId or 1)
+                    tierName, LIST.BG_W, LIST.BG_H, 1.0, false, r.avatarHeroId or 1)
             end
         end
 
@@ -441,11 +430,9 @@ local function drawRankTabContent(vg, rankData, myRankData, offsetY)
         local displayRank = isUnranked and UNRANKED.TEXT or myRankData.rank
         local myAvatarId = myRankData.avatarHeroId
             or (TopBar.getAvatarHeroId and TopBar.getAvatarHeroId() or 1)
-        local myFrameId = myRankData.avatarFrameId
-            or (TopBar.getAvatarFrameId and TopBar.getAvatarFrameId() or 1)
         drawListCard(vg, SELF.CY, displayRank,
             (myRankData.name ~= "" and myRankData.name) or GameState.getName() or "我的角色", myProgressName,
-            SELF.W, SELF.H, SELF.SCALE_W, isUnranked, myAvatarId, myFrameId)
+            SELF.W, SELF.H, SELF.SCALE_W, isUnranked, myAvatarId)
     end
 
     nvgRestore(vg)
@@ -479,7 +466,6 @@ function GuildPage.init(vg)
         img.trophy[i] = nvgCreateImage(vg, "image/通用图标/ICON_PHB_TOP" .. i .. ".png", 0)
     end
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)
-    AvatarFrameUtil.preloadFrames(vg, img.frameIcons)
 
     state.rankData = {}
     state.myRankData = nil

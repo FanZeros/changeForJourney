@@ -7,7 +7,6 @@ local GameState      = require("core.GameState")
 local NumberUtil     = require("core.NumberUtil")
 local CharacterPanel = require("ui.CharacterPanel")
 local HeroAssetUtil   = require("config.HeroAssetUtil")
-local AvatarFrameUtil = require("config.AvatarFrameUtil")
 local HeroConfig     = require("config.HeroConfig")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 
@@ -18,7 +17,6 @@ local imgExpBg   = -1
 local imgExpFill = -1
 local imgGoldIcon = -1   -- [三队并行] 金币图标（以角色详情页 UI_icon_JB_X 为准）
 local imgGemIcon  = -1   -- [三队并行] 钻石图标（以角色详情页 UI_icon_SJ_X 为准）
-local imgFrameIcons = {}  -- [frameId] 头像框
 local imgHeroIcons = {}  -- [heroId] 角色头像图标
 -- [暗黑化 P0] 金币/钻石/战力/红点 图标改由 core/DarkIcon.lua 程序化矢量绘制，不再加载贴图
 
@@ -32,7 +30,6 @@ local cachedPower    = nil   ---@type number|nil  队伍总战斗力
 local cachedGold     = nil   ---@type number|nil
 local cachedGems     = nil   ---@type number|nil
 local cachedAvatarHeroId  = 1 ---@type number 当前头像英雄 ID
-local cachedAvatarFrameId = 1 ---@type number 当前头像框 ID
 local lastSeenOwnedCount = nil ---@type number|nil 上次查看头像面板时的已拥有英雄数（nil=未初始化）
 
 -- ============================================================================
@@ -72,8 +69,6 @@ function TopBar.init(vg)
     imgExpFill = nvgCreateImage(vg, "image/进度条/UI_JYT_2.png", 0)
     imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
     imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
-    AvatarFrameUtil.preloadFrames(vg, imgFrameIcons)
-
     -- 加载角色头像图标
     HeroAssetUtil.preloadIcons(vg, imgHeroIcons)
 
@@ -106,18 +101,6 @@ end
 ---@return number
 function TopBar.getAvatarHeroId()
     return cachedAvatarHeroId
-end
-
---- 设置头像框 ID（由 PlayerInfoPanel 更换头像框时调用）
----@param frameId number
-function TopBar.setAvatarFrameId(frameId)
-    cachedAvatarFrameId = frameId or 1
-end
-
---- 获取当前头像框 ID
----@return number
-function TopBar.getAvatarFrameId()
-    return cachedAvatarFrameId
 end
 
 --- 获取当前拥有的英雄数量
@@ -160,9 +143,6 @@ function TopBar.setPlayerData(data)
     if data.avatarHeroId ~= nil then
         cachedAvatarHeroId = data.avatarHeroId
     end
-    if data.avatarFrameId ~= nil then
-        cachedAvatarFrameId = data.avatarFrameId
-    end
 end
 
 --- 设置货币数据（来自服务端 currency 模块推送）
@@ -182,7 +162,6 @@ function TopBar.resetSessionData()
     cachedGold = nil
     cachedGems = nil
     cachedAvatarHeroId = 1
-    cachedAvatarFrameId = 1
     lastSeenOwnedCount = nil
     print("[TopBar] session data reset")
 end
@@ -209,10 +188,6 @@ function TopBar.draw(vg, offsetY)
         nvgFill(vg)
         nvgRestore(vg)
     end
-
-    -- #2b 头像框覆盖层（新头像框素材画布为 300×300，显示尺寸 160×160）
-    local frameImg = AvatarFrameUtil.getIconHandle(imgFrameIcons, cachedAvatarFrameId)
-    drawImageCentered(vg, frameImg, 98, 136 + oy, 160, 160)
 
     -- #2c 红点提示（有可更换头像时显示）[暗黑化 P0: 余烬光点]
     if TopBar.hasAvailableAvatar() then

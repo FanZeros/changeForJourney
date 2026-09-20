@@ -172,9 +172,6 @@ local ClientDispatcher = require("network.ClientDispatcher")
      if data.avatarHeroId ~= nil then
          pcall(PlayerInfoPanel.setAvatarHeroId, data.avatarHeroId)
      end
-     if data.avatarFrameId ~= nil then
-         pcall(PlayerInfoPanel.setAvatarFrameId, data.avatarFrameId)
-     end
 
      -- player 模块到达时刷新槽位解锁（修复全量推送时 heroes 先于 player 分发导致槽位锁定）
      if data.level then

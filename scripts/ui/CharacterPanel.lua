@@ -19,7 +19,6 @@ local AwakeningConfig  = require("config.AwakeningConfig")
 local BottomNav        = require("ui.BottomNav")
 local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
-local AvatarFrameBridge = require("systems.AvatarFrameBridge")
 local Draw             = require("ui.CharacterPanelDraw2")
 local HeroResonance    = require("shared.heroes.HeroResonance")
 
@@ -262,15 +261,6 @@ local function getHeroLevel(heroId)
     return ownData and ownData.level or 1
 end
 
-local function getUnlockedAvatarFrames()
-    local challenger = ClientDispatcher.get("challenger") or PlayerStore.Get("challenger")
-    return challenger and challenger.unlockedAvatarFrames or nil
-end
-
-local function applyAvatarFrameAttributes(attrs)
-    return AvatarFrameBridge.applyToUnit(attrs, getUnlockedAvatarFrames())
-end
-
 local function calcHeroPower(heroId, partySlot)
     if not partySlot then
         for i = 1, MAX_SLOTS do
@@ -294,9 +284,6 @@ local function calcHeroPower(heroId, partySlot)
 
     -- 应用遗物无条件常驻属性（A类），使战斗力反映遗物加成
     RelicBridge.applyToUnit(a, hero.classId)
-
-    -- 头像框收藏属性由解锁状态永久累计，不依赖当前穿戴外观
-    applyAvatarFrameAttributes(a)
 
     -- 应用当前出战槽位的神器属性，使战斗力反映神器加成
     if partySlot then
@@ -649,16 +636,6 @@ function CharacterPanel.init(vg)
     -- 监听神器数据变更 → 装配/卸下后刷新战斗力与战斗待定快照
     PlayerStore.Subscribe("artifacts", function()
         refreshPowerCache()
-        local ok, BS = pcall(require, "ui.BattleScene")
-        if ok and BS and BS.refreshAllyStats then
-            BS.refreshAllyStats()
-        end
-    end)
-
-    -- 监听挑战者头像框解锁 → 刷新永久收藏属性、战力和战斗待定快照
-    PlayerStore.Subscribe("challenger", function()
-        refreshPowerCache()
-        rebuildRoster()
         local ok, BS = pcall(require, "ui.BattleScene")
         if ok and BS and BS.refreshAllyStats then
             BS.refreshAllyStats()
@@ -1346,8 +1323,6 @@ function CharacterPanel.getDeployedTeam(teamIdx)
                     if relicConds and #relicConds > 0 then
                         unit.relicConditions = relicConds
                     end
-                    -- 应用已解锁头像框的永久累计收藏属性
-                    applyAvatarFrameAttributes(unit.attrs)
                     -- 应用神器属性加成与战斗运行时效果
                     local artifactEffects = ArtifactBridge.applyToUnit(unit.attrs, i)
                     if artifactEffects and #artifactEffects > 0 then
@@ -1369,9 +1344,6 @@ end
 
 --- 公开装备属性应用方法，供 BattleScene 等外部模块使用
 CharacterPanel.applyEquippedItems = applyEquippedItems
-
---- 公开当前玩家头像框收藏属性应用方法，供战斗快照刷新与属性展示复用
-CharacterPanel.applyAvatarFrameAttributes = applyAvatarFrameAttributes
 
 --- 注册阵容变更回调（队伍出战变化时自动调用）
 ---@param callback fun() 回调函数

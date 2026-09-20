@@ -97,18 +97,6 @@ handlers[Protocol.ACTION_TYPES.SET_AVATAR] = function(uid, params)
     }
 end
 
---- 设置头像框
-handlers[Protocol.ACTION_TYPES.SET_AVATAR_FRAME] = function(uid, params)
-    local ok, err, result = HeroService.SetAvatarFrame(uid, params and params.avatarFrameId)
-    if not ok then
-        return { success = false, reason = err }
-    end
-    return {
-        success       = true,
-        avatarFrameId = result.avatarFrameId,
-    }
-end
-
 --- 碎片合成英雄
 handlers[Protocol.ACTION_TYPES.SYNTHESIZE_HERO] = function(uid, params)
     local ok, err, result = HeroService.SynthesizeHero(uid, params and params.heroId)

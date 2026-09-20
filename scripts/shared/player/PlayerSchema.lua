@@ -16,8 +16,7 @@ PlayerSchema.Fields = {
                 exp          = 0,
                 maxExp       = 50,
                 power        = 1000,
-                avatarHeroId  = 1,
-                avatarFrameId = 1,
+                avatarHeroId = 1,
             }
         end,
         onLoad = function(data)
@@ -31,7 +30,7 @@ PlayerSchema.Fields = {
             if ExpTable.isPlayerMaxLevel(data.level) then
                 data.exp = 0
             end
-            data.avatarFrameId = tonumber(data.avatarFrameId) or 1
+            data.avatarHeroId = tonumber(data.avatarHeroId) or 1
         end,
         desc = "玩家基础信息",
     },

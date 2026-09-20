@@ -58,12 +58,12 @@ local SFX_DEFS = {
     EF_ATK_13    = { paths = { "audio/battle_sfx/EF_ATK_13.ogg" }, gain = 0.56 },
     EF_ATK_14    = { paths = { "audio/battle_sfx/EF_ATK_14.ogg" }, gain = 0.56 },
     EF_ATK_15    = { paths = { "audio/battle_sfx/EF_ATK_15.ogg" }, gain = 0.56 },
-    -- 16/20/21/22/23 专用音效尚未入库，暂复用相近职业音效（避免加载缺失资源报错）
-    EF_ATK_16    = { paths = { "audio/battle_sfx/EF_ATK_11.ogg" }, gain = 0.56 },  -- 万剑归宗→熬夜冠军斩击
-    EF_ATK_20    = { paths = { "audio/battle_sfx/EF_ATK_13.ogg" }, gain = 0.56 },  -- 摘星星星人→暗影能量
-    EF_ATK_21    = { paths = { "audio/battle_sfx/EF_ATK_6.ogg"  }, gain = 0.56 },  -- 闪电卖鸡→阿姨压闪电
-    EF_ATK_22    = { paths = { "audio/battle_sfx/EF_ATK_6.ogg"  }, gain = 0.56 },  -- 小黑子→阿姨压闪电
-    EF_ATK_23    = { paths = { "audio/battle_sfx/EF_ATK_15.ogg" }, gain = 0.56 },  -- 真布诗人→复活吧爱人圣光
+    -- 16/20/21/22/23 专属音效（暗黑重制版）
+    EF_ATK_16    = { paths = { "audio/battle_sfx/EF_ATK_16.ogg" }, gain = 0.56 },  -- 洛星绘·灵月剑仙
+    EF_ATK_20    = { paths = { "audio/battle_sfx/EF_ATK_20.ogg" }, gain = 0.56 },  -- 梅丽莎·摘星使
+    EF_ATK_21    = { paths = { "audio/battle_sfx/EF_ATK_21.ogg" }, gain = 0.56 },  -- 亚历克斯·银色闪光
+    EF_ATK_22    = { paths = { "audio/battle_sfx/EF_ATK_22.ogg" }, gain = 0.56 },  -- 赛拉·精灵使徒
+    EF_ATK_23    = { paths = { "audio/battle_sfx/EF_ATK_23.ogg" }, gain = 0.56 },  -- 艾尔温·吟游诗人
     -- 怪物攻击
     EF_MS_1      = { paths = { "audio/battle_sfx/EF_MS_1.ogg"   }, gain = 0.56 },
     EF_MS_7      = { paths = { "audio/battle_sfx/EF_MS_7.ogg"   }, gain = 0.56 },
@@ -86,8 +86,8 @@ local SFX_DEFS = {
     EF_ZY_106    = { paths = { "audio/battle_sfx/EF_ZY_106.ogg" }, gain = 0.56 },
     EF_ZY_224    = { paths = { "audio/battle_sfx/EF_ZY_224.ogg" }, gain = 0.56 },
     EF_skill_11  = { paths = { "audio/battle_sfx/EF_skill_11.ogg" }, gain = 0.56 },
-    EF_skill_16  = { paths = { "audio/battle_sfx/EF_skill_11.ogg" }, gain = 0.56 }, -- 灵月飞剑→夜华斩
-    EF_skill_20  = { paths = { "audio/battle_sfx/EF_ATK_13.ogg" }, gain = 0.56 }, -- 星门→能量箭
+    EF_skill_16  = { paths = { "audio/battle_sfx/EF_skill_16.ogg" }, gain = 0.56 }, -- 灵月飞剑·洛星绘
+    EF_skill_20  = { paths = { "audio/battle_sfx/EF_skill_20.ogg" }, gain = 0.56 }, -- 星门·梅丽莎
 }
 
 -- ── 内部状态 ──

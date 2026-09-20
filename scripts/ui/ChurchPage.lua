@@ -1251,7 +1251,7 @@ function ChurchPage.handleScroll(wheel, msx, msy)
 end
 
 --- 绘制教堂界面
-function ChurchPage.draw(vg)
+local function drawPageImpl(vg)
     if not state.open then return end
 
     -- 更新槽位动画
@@ -1891,6 +1891,24 @@ end
 ---@param vg any NanoVG 上下文
 function ChurchPage.preloadSpine(vg)
     TalentPanel.preloadSpine(vg)
+end
+
+--- [水平滑入] 整页从屏幕边缘滑入/滑出(与中缝返回条同步);0=完全展开
+function ChurchPage.getSeamAnim()
+    return state.openTime, state.closeTime, ANIM.OPEN_DUR, ANIM.CLOSE_DUR
+end
+
+function ChurchPage.draw(vg)
+    local ot, ct, od, cd = ChurchPage.getSeamAnim()
+    local ox = DrawUtil.seamSlideX(-1, ot, ct, od, cd, 1080)
+    if ox ~= 0 then
+        nvgSave(vg)
+        nvgTranslate(vg, ox, 0)
+    end
+    drawPageImpl(vg)
+    if ox ~= 0 then
+        nvgRestore(vg)
+    end
 end
 
 return ChurchPage

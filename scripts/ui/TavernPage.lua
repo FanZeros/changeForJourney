@@ -791,7 +791,7 @@ local function drawTargetRecruitText(vg, cx, cy)
 end
 
 --- 绘制酒馆页面
-function TavernPage.draw(vg)
+local function drawPageImpl(vg)
     if not state.open then return end
 
     -- 计算打开/关闭动画偏移
@@ -1440,6 +1440,24 @@ function TavernPage.onServerDisconnect()
         if state.open then
             TavernPopups.showFloatText("网络断开，如已招募请查看背包", DESIGN_W * 0.5, DESIGN_H * 0.42)
         end
+    end
+end
+
+--- [水平滑入] 整页从屏幕边缘滑入/滑出(与中缝返回条同步);0=完全展开
+function TavernPage.getSeamAnim()
+    return state.openTime, state.closeTime, ANIM_DURATION, CLOSE_ANIM_DURATION
+end
+
+function TavernPage.draw(vg)
+    local ot, ct, od, cd = TavernPage.getSeamAnim()
+    local ox = DrawUtil.seamSlideX(-1, ot, ct, od, cd, 1080)
+    if ox ~= 0 then
+        nvgSave(vg)
+        nvgTranslate(vg, ox, 0)
+    end
+    drawPageImpl(vg)
+    if ox ~= 0 then
+        nvgRestore(vg)
     end
 end
 

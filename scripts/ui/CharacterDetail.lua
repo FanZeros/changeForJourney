@@ -329,6 +329,7 @@ function CharacterDetail.open(heroId)
     detailState.tabFrom = "attr"
     detailState.tabSwitchTime = 0
     detailState.openTime = time.elapsedTime
+    detailState.seamOpenTime = time.elapsedTime  -- [水平滑入] 页面滑入基准(切换英雄不重置)
     detailState.switchDir = nil  -- 普通打开：使用垂直滑入动画
     detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0
@@ -722,9 +723,24 @@ function CharacterDetail.handleScroll(wheel)
 end
 
 --- 绘制角色详情二级界面
+--- [水平滑入] 详情整页从右缘滑入/滑出(与中缝返回条同步);0=完全展开
+---@return number openTime, number closeTime, number openDur, number closeDur
+function CharacterDetail.getSeamAnim()
+    return detailState.seamOpenTime or 0, detailState.closeTime, 0.45, 0.38
+end
+
 function CharacterDetail.draw(vg)
     if not detailState.open then return end
+    local ot, ct, od, cd = CharacterDetail.getSeamAnim()
+    local ox = require("core.DrawUtil").seamSlideX(1, ot, ct, od, cd, 1080)
+    if ox ~= 0 then
+        nvgSave(vg)
+        nvgTranslate(vg, ox, 0)
+    end
     Draw.draw(vg)
+    if ox ~= 0 then
+        nvgRestore(vg)
+    end
 end
 
 return CharacterDetail

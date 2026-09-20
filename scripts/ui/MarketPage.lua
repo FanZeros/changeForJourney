@@ -1289,7 +1289,7 @@ end
 
 -- ======================== 主绘制========================
 
-function MarketPage.draw(vg)
+local function drawPageImpl(vg)
     if not state.open then return end
 
     local rawT, progress, lowerProgress
@@ -1897,6 +1897,24 @@ function MarketPage.resetSessionData()
     state.keyConfirmVisible = false
     state.keyConfirmClosing = false
     print("[MarketPage] session data reset")
+end
+
+--- [水平滑入] 整页从屏幕边缘滑入/滑出(与中缝返回条同步);0=完全展开
+function MarketPage.getSeamAnim()
+    return state.openTime, state.closeTime, ANIM_DUR, CLOSE_DUR
+end
+
+function MarketPage.draw(vg)
+    local ot, ct, od, cd = MarketPage.getSeamAnim()
+    local ox = DrawUtil.seamSlideX(-1, ot, ct, od, cd, 1080)
+    if ox ~= 0 then
+        nvgSave(vg)
+        nvgTranslate(vg, ox, 0)
+    end
+    drawPageImpl(vg)
+    if ox ~= 0 then
+        nvgRestore(vg)
+    end
 end
 
 return MarketPage

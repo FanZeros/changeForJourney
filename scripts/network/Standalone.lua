@@ -2059,30 +2059,35 @@ end
 --- 各占一个框柱位，互不竞争（此前 if/else 单按钮，左右同开时只能活一个）
 local function seamBackList()
     local list = {}
-    local psL = logicalH / 1080
-    -- 全高门柱条（UI_SEAMBAR 图片条，宽随高度按素材比例 158/1425×0.8 自适应；热区同步）
+    local cs = (logicalH / 1080) * 0.45      -- 面板内容缩放(设计→窗口),与 Viewport.DS 一致
     local barW = logicalH * (158 / 1425) * 0.8
-    local btnW, btnH = 184 * psL * 0.58, 143 * psL * 0.58
-    local ix, iy, iw, ih = BattleTriPage.getInteriorRect(1)
-    -- 右框柱 ›：角色详情页
+    local DIST = 1080                         -- 页面设计宽:滑入全程
+    -- 右框柱 ›：角色详情——条贴页面右缘,随页面水平滑入同步
     if CharacterDetail.isOpen() then
+        local ot, ct, od, cd = CharacterDetail.getSeamAnim()
+        local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
         list[#list + 1] = {
-            cx = ((ix + iw) + (logicalW - 486 * psL)) * 0.5,
-            sw = barW, sh = logicalH, bw = btnW, bh = btnH, dir = "right",
+            cx = logicalW + oxWin - barW * 0.5,
+            sw = barW, sh = logicalH, bw = 0, bh = 0, dir = "right",
             close = function() CharacterDetail.close() end,
         }
     end
-    -- 左框柱 ‹：左栏二级页（教堂/铁匠/酒馆/竞技场/市场）
-    local leftClose
-    if     ChurchPage.isOpen()      then leftClose = function() ChurchPage.close() end
+    -- 左框柱 ‹：左栏二级页（教堂/铁匠/酒馆/市场）——条贴页面左缘,随页面滑入同步
+    local leftClose, leftAnim
+    if     ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
+        leftAnim = { ChurchPage.getSeamAnim() }
     elseif BlacksmithPage.isOpen()  then leftClose = function() BlacksmithPage.close() end
+        leftAnim = { BlacksmithPage.getSeamAnim() }
     elseif TavernPage.isOpen()      then leftClose = function() TavernPage.close() end
+        leftAnim = { TavernPage.getSeamAnim() }
     elseif MarketPage.isOpen()      then leftClose = function() MarketPage.close() end
+        leftAnim = { MarketPage.getSeamAnim() }
     end
     if leftClose then
+        local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], DIST) * cs
         list[#list + 1] = {
-            cx = (486 * psL + ix) * 0.5,
-            sw = barW, sh = logicalH, bw = btnW, bh = btnH, dir = "left",
+            cx = oxWin + barW * 0.5,
+            sw = barW, sh = logicalH, bw = 0, bh = 0, dir = "left",
             close = leftClose,
         }
     end

@@ -439,6 +439,35 @@ end
 local seamBarImg = nil       ---@type integer|nil nil=未尝试, -1=加载失败
 local SEAMBAR_RATIO = 158 / 1425   -- 素材宽高比
 
+--- 二级页水平滑入偏移（设计坐标）：打开期从屏幕边缘滑到 0，关闭期滑回边缘。
+--- 左页 dirSign=-1（从左缘入，ox 为负→0），右页 dirSign=+1（从右缘入，ox 为正→0）。
+---@param dirSign number -1=左页 / +1=右页
+---@param openTime number 打开时刻（time.elapsedTime，未打开传 0）
+---@param closeTime number 关闭时刻（无关闭动画传 0）
+---@param openDur number 打开动画时长
+---@param closeDur number 关闭动画时长
+---@param dist number 滑动距离（一般 = 页面设计宽 1080）
+---@return number ox 水平偏移（设计坐标，页面 draw 外层 nvgTranslate 用）
+function DrawUtil.seamSlideX(dirSign, openTime, closeTime, openDur, closeDur, dist)
+    local now = time.elapsedTime
+    -- 仅当关闭发生在最近一次打开之后才视为"正在关闭"(closeTime 关闭完成后不清零)
+    if closeTime and closeTime > 0 and (openTime or 0) <= closeTime then
+        local t = (now - closeTime) / (closeDur > 0 and closeDur or 0.3)
+        if t < 0 then return 0 end
+        if t >= 1 then return dirSign * dist end
+        local e = t * t * t  -- easeInCubic：加速滑出
+        return dirSign * dist * e
+    end
+    if openTime and openTime > 0 then
+        local t = (now - openTime) / (openDur > 0 and openDur or 0.3)
+        if t <= 0 then return dirSign * dist end
+        if t >= 1 then return 0 end
+        local e = 1 - (1 - t) * (1 - t) * (1 - t)  -- easeOutCubic：减速到位
+        return dirSign * dist * (1 - e)
+    end
+    return 0
+end
+
 --- 全高"门柱"返回条（三行模式中缝）：UI_SEAMBAR.png 图片条等比铺满逻辑高度，
 --- dir="left" 时水平镜像（素材箭头朝右，左条翻成 ‹）。素材自带中央 ">" 按钮。
 ---@param vg any NanoVG 上下文（窗口坐标）
@@ -468,11 +497,6 @@ function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
         nvgBeginPath(vg)
         nvgRect(vg, cx - halfW, cy - h * 0.5, w, h)
         nvgFillPaint(vg, paint)
-        nvgFill(vg)
-        -- 压暗：素材金饰偏亮，叠一层暗色退到页面底层
-        nvgBeginPath(vg)
-        nvgRect(vg, cx - halfW, cy - h * 0.5, w, h)
-        nvgFillColor(vg, nvgRGBA(12, 9, 6, 110))
         nvgFill(vg)
         nvgRestore(vg)
         return

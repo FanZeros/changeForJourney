@@ -1552,7 +1552,7 @@ function BlacksmithPage.handleInput(dx, dy)
 end
 
 --- 绘制铁匠铺界面
-function BlacksmithPage.draw(vg)
+local function drawPageImpl(vg)
     if not state.open then return end
 
     -- === 弹出/关闭动画 ===
@@ -1885,6 +1885,24 @@ end
 function BlacksmithPage.handleAutoDecomposePopupStandaloneInput(dx, dy)
     if BlacksmithPage.isOpen() then return false end  -- 已由 handleInput() 内部处理
     return BlacksmithDecompose.handlePopupInput(dx, dy)
+end
+
+--- [水平滑入] 整页从屏幕边缘滑入/滑出(与中缝返回条同步);0=完全展开
+function BlacksmithPage.getSeamAnim()
+    return state.openTime, state.closeTime, ANIM_DURATION, CLOSE_ANIM_DURATION
+end
+
+function BlacksmithPage.draw(vg)
+    local ot, ct, od, cd = BlacksmithPage.getSeamAnim()
+    local ox = DrawUtil.seamSlideX(-1, ot, ct, od, cd, 1080)
+    if ox ~= 0 then
+        nvgSave(vg)
+        nvgTranslate(vg, ox, 0)
+    end
+    drawPageImpl(vg)
+    if ox ~= 0 then
+        nvgRestore(vg)
+    end
 end
 
 return BlacksmithPage

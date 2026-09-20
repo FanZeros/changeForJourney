@@ -228,7 +228,7 @@ return {
     { "image/品质框/KP_TY_SR.png", 43740 },
     { "image/货币道具/ICON_SJYW.png", 145655 },
     { "image/品质框/KP_TY_N.png", 43868 },
-    { "image/界面底板/角色与觉醒/UI_JSJM_0.png", 3223714634 },
+    { "image/界面底板/角色与觉醒/UI_JSJM_0.png", 356950697 },
     { "image/通用图标/ICON_UP_big.png", 44573 },
     { "image/特效投射物/EF_ATK_1.png", 13201 },
     { "image/特效投射物/EF_ATK_10.png", 15527 },

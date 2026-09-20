@@ -243,12 +243,12 @@ M.SWITCH_SLIDE_DIST    = 180                 -- 水平滑动距离（适中，�
 local CARD = {
     W=136, H=300, CY=544,
     TAG_SIZE=60, TAG_OFFSET_Y=-160,
-    -- [立绘 362→300] 下方 UI 同步上移:战力/等级徽章/经验条收拢到立绘底(597)之下 10~48px
+    -- [立绘 362→300] 战力贴立绘底(617)；等级徽章/经验条叠放立绘下沿两侧
+    -- （旧位 645/647 被鞋子槽位贴图 629+ 盖住，名牌 822 被"角色详情"标题栏压住，均已调整）
     POWER_Y=714, POWER_ICON_SIZE=36,
-    LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BADGE_DY=742-544,
-    EXP_BAR_DX=552-540, EXP_BAR_DY=744-544,
+    LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BADGE_DY=111,
+    EXP_BAR_DX=60, EXP_BAR_DY=113,
     EXP_BAR_BG_W=148, EXP_BAR_BG_H=28, EXP_BAR_PADDING=4,
-    NAME_BG_DY=375, NAME_BG_W=193, NAME_BG_H=48, NAME_BG_RADIUS=24,
 }
 
 -- 职业图标映射
@@ -625,16 +625,6 @@ function M.draw(vg)
             28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 4)
 
-        -- 角色名背景 + 文字
-        local nameBgCY = cy + CARD.NAME_BG_DY
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, cx - CARD.NAME_BG_W * 0.5, nameBgCY - CARD.NAME_BG_H * 0.5,
-            CARD.NAME_BG_W, CARD.NAME_BG_H, CARD.NAME_BG_RADIUS)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-        nvgFill(vg)
-        drawTextStroke(vg, cx, nameBgCY, heroCfg.name,
-            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4)
     end
 
     -- === 5) 装备槽位 ===
@@ -865,15 +855,17 @@ function M.draw(vg)
     nvgTranslate(vg, switchOX, 0)
     nvgGlobalAlpha(vg, switchAlpha)
 
-    -- === 8~17) 名称/经验/品质/职业/分割线：配装tab下隐藏 ===
-    if detailState.tab ~= "equip" and not isAwakenTab then
-
-    -- === 8) 角色名称 ===
+    -- === 8) 角色名称（配装页也显示：卡片名牌已移除） ===
+    if not isAwakenTab then
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 42)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0x7b, 0x53, 0x39, 255))
     nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name, nil)
+    end
+
+    -- === 9~17) 经验/品质/职业/分割线：属性页专属 ===
+    if detailState.tab == "attr" then
 
     -- === 9) 大经验条 ===
     drawImageCentered(vg, img.midExpBg, MID_EXP_CX, MID_EXP_CY, MID_EXP_W, MID_EXP_H, 1.0)

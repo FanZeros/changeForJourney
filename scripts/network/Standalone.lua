@@ -2060,7 +2060,7 @@ end
 local function seamBackList()
     local list = {}
     local psL = logicalH / 1080
-    local sw, sh = 184 * psL * 0.45, 143 * psL * 0.45
+    local sw, sh = 184 * psL * 0.58, 143 * psL * 0.58
     local ix, iy, iw, ih = BattleTriPage.getInteriorRect(1)
     -- 右框柱 ›：角色详情页
     if CharacterDetail.isOpen() then

@@ -354,66 +354,66 @@ function DrawUtil.drawBackChevron(vg, cx, cy, w, h, dir)
 
     -- 1) 投影（向下偏移，让按钮"立"在页面上）
     nvgBeginPath(vg)
-    nvgRoundedRect(vg, cx - w * 0.5, cy - h * 0.5 + 5, w, h, r)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 110))
+    nvgRoundedRect(vg, cx - w * 0.5, cy - h * 0.5 + 6, w, h, r)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 130))
     nvgFill(vg)
 
-    -- 2) 外框：深铁底 + 亮金描边
+    -- 2) 外框：铁底（提亮以保证深色框柱上的对比）+ 亮金描边
     nvgBeginPath(vg)
     nvgRoundedRect(vg, cx - w * 0.5, cy - h * 0.5, w, h, r)
-    nvgFillColor(vg, nvgRGBA(52, 36, 26, 250))
+    nvgFillColor(vg, nvgRGBA(66, 47, 33, 252))
     nvgFill(vg)
-    nvgStrokeColor(vg, nvgRGBA(255, 210, 115, 235))
-    nvgStrokeWidth(vg, 3)
+    nvgStrokeColor(vg, nvgRGBA(255, 216, 128, 255))
+    nvgStrokeWidth(vg, math.max(2.5, math.min(w, h) * 0.028))
     nvgStroke(vg)
 
     -- 3) 内陷面板：更深底色
-    local inset = math.max(6, w * 0.075)
+    local inset = math.max(9, w * 0.085)
     local iw, ih = w - inset * 2, h - inset * 2
     local ir = r * 0.72
     nvgBeginPath(vg)
     nvgRoundedRect(vg, cx - iw * 0.5, cy - ih * 0.5, iw, ih, ir)
-    nvgFillColor(vg, nvgRGBA(28, 19, 13, 255))
+    nvgFillColor(vg, nvgRGBA(20, 14, 10, 255))
     nvgFill(vg)
 
     -- 3a) 内面板上缘高光 / 下缘阴影 → 凹陷感
     nvgBeginPath(vg)
     nvgMoveTo(vg, cx - iw * 0.5 + ir, cy - ih * 0.5 + 1.5)
     nvgLineTo(vg, cx + iw * 0.5 - ir, cy - ih * 0.5 + 1.5)
-    nvgStrokeColor(vg, nvgRGBA(255, 226, 170, 55))
+    nvgStrokeColor(vg, nvgRGBA(255, 226, 170, 65))
     nvgStrokeWidth(vg, 2)
     nvgStroke(vg)
     nvgBeginPath(vg)
     nvgMoveTo(vg, cx - iw * 0.5 + ir, cy + ih * 0.5 - 1.5)
     nvgLineTo(vg, cx + iw * 0.5 - ir, cy + ih * 0.5 - 1.5)
-    nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 120))
+    nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 130))
     nvgStrokeWidth(vg, 2)
     nvgStroke(vg)
 
     -- 4) 四角铆钉（金属圆点：暗边 + 高光点）
-    local rivR = math.max(3, math.min(w, h) * 0.045)
+    local rivR = math.max(4, math.min(w, h) * 0.05)
     local rvx, rvy = w * 0.5 - inset * 0.55, h * 0.5 - inset * 0.55
     for _, sx in ipairs({ -1, 1 }) do
         for _, sy in ipairs({ -1, 1 }) do
             local px, py = cx + sx * rvx, cy + sy * rvy
             nvgBeginPath(vg)
             nvgCircle(vg, px, py, rivR)
-            nvgFillColor(vg, nvgRGBA(96, 74, 48, 255))
+            nvgFillColor(vg, nvgRGBA(104, 80, 52, 255))
             nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(255, 214, 130, 180))
+            nvgStrokeColor(vg, nvgRGBA(255, 218, 136, 200))
             nvgStrokeWidth(vg, 1.5)
             nvgStroke(vg)
             nvgBeginPath(vg)
             nvgCircle(vg, px - rivR * 0.3, py - rivR * 0.3, rivR * 0.32)
-            nvgFillColor(vg, nvgRGBA(255, 238, 190, 200))
+            nvgFillColor(vg, nvgRGBA(255, 240, 196, 220))
             nvgFill(vg)
         end
     end
 
     -- 5) 三层立体箭头：暗影层 → 深金层 → 亮金主体
     local s = (dir == "left") and 1 or -1
-    local ax, ay = w * 0.13, h * 0.20
-    local lw = math.max(8, w * 0.085)
+    local ax, ay = w * 0.16, h * 0.24
+    local lw = math.max(9, w * 0.095)
     local function arrowPath(oy)
         nvgBeginPath(vg)
         nvgMoveTo(vg, cx + s * ax, cy - ay + oy)
@@ -423,7 +423,7 @@ function DrawUtil.drawBackChevron(vg, cx, cy, w, h, dir)
         nvgLineJoin(vg, NVG_ROUND)
     end
     arrowPath(3)
-    nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 130))
+    nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 140))
     nvgStrokeWidth(vg, lw)
     nvgStroke(vg)
     arrowPath(0)
@@ -431,7 +431,7 @@ function DrawUtil.drawBackChevron(vg, cx, cy, w, h, dir)
     nvgStrokeWidth(vg, lw + 4)
     nvgStroke(vg)
     arrowPath(0)
-    nvgStrokeColor(vg, nvgRGBA(255, 232, 168, 255))
+    nvgStrokeColor(vg, nvgRGBA(255, 236, 176, 255))
     nvgStrokeWidth(vg, lw)
     nvgStroke(vg)
 end

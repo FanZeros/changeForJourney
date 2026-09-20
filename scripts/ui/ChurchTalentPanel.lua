@@ -143,6 +143,14 @@ local function ensureSpineTfBgLoaded(vg)
     inst:SetAnimation(0, "1", true)
     inst:SetSpeed(1.0)
 
+    -- 动态读取真实骨架包围盒（美术导出值，勿手填假设）
+    spineTfBg.dataX = inst:GetDataX()
+    spineTfBg.dataY = inst:GetDataY()
+    spineTfBg.dataW = inst:GetDataWidth()
+    spineTfBg.dataH = inst:GetDataHeight()
+    print(string.format("[ChurchTalentPanel] tfBg bounds: x=%.0f y=%.0f w=%.0f h=%.0f",
+        spineTfBg.dataX, spineTfBg.dataY, spineTfBg.dataW, spineTfBg.dataH))
+
     spineTfBg.inst   = inst
     spineTfBg.loaded = true
     spineTfBg.lastT  = time.elapsedTime

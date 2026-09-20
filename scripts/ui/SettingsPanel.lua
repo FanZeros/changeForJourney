@@ -64,9 +64,10 @@ local TTL = {
 }
 
 -- 4. 设置条目1 背景框 (背景音乐)
+-- A=0：嵌入玩家信息页时不再画条目黑底
 local ITEM1_BG = {
     CX = 540, CY = 1040, W = 800, H = 90, R = 16,
-    A = 13,  -- 纯黑 5%
+    A = 0,
 }
 
 -- 5. 设置条目文本1 "背景音乐"
@@ -76,10 +77,10 @@ local ITEM1_TEXT = {
     SW = 6, SR = 0x44, SG = 0x2d, SB = 0x19,
 }
 
--- 6. 滑块背景条
+-- 6. 滑块背景条（嵌入页用浅描边，不再铺黑底）
 local SLIDER = {
     CX = 651, W = 504, H = 24, R = 12,
-    A = 51,  -- 纯黑 20%
+    A = 0,
     -- 7. 滑块圆形旋钮
     KNOB_SIZE = 36,  -- 直径
     KNOB_SW = 6,
@@ -385,13 +386,15 @@ end
 ---@param label string 条目标签
 ---@param volume number 当前音量 0~1
 local function drawSettingsItem(vg, itemCY, label, volume)
-    -- 4. 背景框
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        ITEM1_BG.CX - ITEM1_BG.W * 0.5, itemCY - ITEM1_BG.H * 0.5,
-        ITEM1_BG.W, ITEM1_BG.H, ITEM1_BG.R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, ITEM1_BG.A))
-    nvgFill(vg)
+    -- 4. 背景框（A=0 时不画黑底）
+    if ITEM1_BG.A > 0 then
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg,
+            ITEM1_BG.CX - ITEM1_BG.W * 0.5, itemCY - ITEM1_BG.H * 0.5,
+            ITEM1_BG.W, ITEM1_BG.H, ITEM1_BG.R)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, ITEM1_BG.A))
+        nvgFill(vg)
+    end
 
     -- 5. 条目文本（左对齐）
     drawTextStroke(vg, ITEM1_TEXT.X, itemCY, label,
@@ -399,14 +402,15 @@ local function drawSettingsItem(vg, itemCY, label, volume)
         ITEM1_TEXT.FR, ITEM1_TEXT.FG, ITEM1_TEXT.FB, ITEM1_TEXT.SW,
         { strokeColor = { ITEM1_TEXT.SR, ITEM1_TEXT.SG, ITEM1_TEXT.SB } })
 
-    -- 6. 滑块背景条
+    -- 6. 滑块背景条（浅描边轨道，无黑底）
     local sliderLeft = SLIDER.CX - SLIDER.W * 0.5
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
         sliderLeft, itemCY - SLIDER.H * 0.5,
         SLIDER.W, SLIDER.H, SLIDER.R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, SLIDER.A))
-    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 180))
+    nvgStrokeWidth(vg, 3)
+    nvgStroke(vg)
 
     -- 滑块已填充部分（白色 30% 透明度，视觉反馈）
     local fillW = SLIDER.W * volume
@@ -440,12 +444,14 @@ end
 ---@param label string 条目标签
 ---@param enabled boolean 是否开启
 local function drawToggleItem(vg, itemCY, label, enabled)
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        ITEM1_BG.CX - ITEM1_BG.W * 0.5, itemCY - ITEM1_BG.H * 0.5,
-        ITEM1_BG.W, ITEM1_BG.H, ITEM1_BG.R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, ITEM1_BG.A))
-    nvgFill(vg)
+    if ITEM1_BG.A > 0 then
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg,
+            ITEM1_BG.CX - ITEM1_BG.W * 0.5, itemCY - ITEM1_BG.H * 0.5,
+            ITEM1_BG.W, ITEM1_BG.H, ITEM1_BG.R)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, ITEM1_BG.A))
+        nvgFill(vg)
+    end
 
     drawTextStroke(vg, ITEM1_TEXT.X, itemCY, label,
         ITEM1_TEXT.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
@@ -558,6 +564,104 @@ function SettingsPanel.draw(vg)
 
     -- ── RedeemCodePanel 叠加绘制 ──
     RedeemCodePanel.draw(vg)
+end
+
+--- 嵌入玩家信息页：设置项 Y 偏移（相对独立设置弹窗）
+--- 独立页 ITEM1_CY=1040，经验条在 699，下移到约 820 起排
+local EMBED_Y_OFFSET = -220
+
+--- 嵌入绘制：无遮罩、无独立弹窗，仅绘制设置条目 + 兑换码
+---@param vg any
+---@param yOffset number|nil
+function SettingsPanel.drawEmbedded(vg, yOffset)
+    local oy = yOffset or EMBED_Y_OFFSET
+    nvgSave(vg)
+    nvgTranslate(vg, 0, oy)
+    drawSettingsItem(vg, ITEM1_BG.CY, "背景音乐", state.bgmVolume)
+    drawSettingsItem(vg, ITEM2_CY, "音效", state.sfxVolume)
+    drawToggleItem(vg, ITEM3_CY, "伤害数字显示", state.showDamageNumbers ~= false)
+    drawToggleItem(vg, ITEM4_CY, "特效显示", state.showEffects ~= false)
+    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + oy, CODE_BTN.W, CODE_BTN.H)
+    if img.codeBtn >= 0 then
+        drawImageCentered(vg, img.codeBtn, CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H, 1.0)
+    end
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, CODE_TXT.FONT)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, 230))
+    nvgText(vg, CODE_TXT.X, CODE_TXT.Y, "兑换码", nil)
+    BF.finish(vg, _bf1)
+    nvgRestore(vg)
+    RedeemCodePanel.draw(vg)
+end
+
+--- 嵌入点击（坐标已是设计分辨率，内部按 yOffset 对齐）
+---@param dx number
+---@param dy number
+---@param yOffset number|nil
+---@return boolean consumed
+function SettingsPanel.handleEmbeddedInput(dx, dy, yOffset)
+    if RedeemCodePanel.isOpen() then
+        RedeemCodePanel.handleInput(dx, dy)
+        return true
+    end
+    local oy = yOffset or EMBED_Y_OFFSET
+    local ly = dy - oy
+    if hitSlider(dx, ly, ITEM1_BG.CY) then
+        state.bgmVolume = xToVolume(dx)
+        state.draggingSlider = "bgm"
+        applyBgmVolume(state.bgmVolume)
+        saveSettings()
+        return true
+    end
+    if hitSlider(dx, ly, ITEM2_CY) then
+        state.sfxVolume = xToVolume(dx)
+        state.draggingSlider = "sfx"
+        applySfxVolume(state.sfxVolume)
+        saveSettings()
+        return true
+    end
+    if hitToggle(dx, ly, ITEM3_CY) then
+        toggleDamageNumbers()
+        return true
+    end
+    if hitToggle(dx, ly, ITEM4_CY) then
+        toggleEffects()
+        return true
+    end
+    if hitTest(dx, ly, CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H) then
+        BF.trigger("set_code")
+        RedeemCodePanel.open()
+        return true
+    end
+    return false
+end
+
+---@param dx number
+---@param dy number
+---@param yOffset number|nil
+---@return boolean
+function SettingsPanel.handleEmbeddedDragBegin(dx, dy, yOffset)
+    if RedeemCodePanel.isOpen() then return true end
+    local oy = yOffset or EMBED_Y_OFFSET
+    local ly = dy - oy
+    if hitSlider(dx, ly, ITEM1_BG.CY) then
+        state.draggingSlider = "bgm"
+        state.bgmVolume = xToVolume(dx)
+        applyBgmVolume(state.bgmVolume)
+        return true
+    end
+    if hitSlider(dx, ly, ITEM2_CY) then
+        state.draggingSlider = "sfx"
+        state.sfxVolume = xToVolume(dx)
+        applySfxVolume(state.sfxVolume)
+        return true
+    end
+    return false
+end
+
+function SettingsPanel.getEmbedYOffset()
+    return EMBED_Y_OFFSET
 end
 
 return SettingsPanel

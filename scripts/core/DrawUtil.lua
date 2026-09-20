@@ -436,17 +436,44 @@ function DrawUtil.drawBackChevron(vg, cx, cy, w, h, dir)
     nvgStroke(vg)
 end
 
---- 全高"门柱"返回条（三行模式中缝）：贯穿整个逻辑高度的竖向边条，贴住页面边缘，
---- 中央嵌一枚门柱按钮（drawBackChevron）。dir 同 drawBackChevron（箭头方向）。
+local seamBarImg = nil       ---@type integer|nil nil=未尝试, -1=加载失败
+local SEAMBAR_RATIO = 158 / 1425   -- 素材宽高比
+
+--- 全高"门柱"返回条（三行模式中缝）：UI_SEAMBAR.png 图片条等比铺满逻辑高度，
+--- dir="left" 时水平镜像（素材箭头朝右，左条翻成 ‹）。素材自带中央 ">" 按钮。
 ---@param vg any NanoVG 上下文（窗口坐标）
 ---@param cx number 条中心 X
 ---@param cy number 条中心 Y（一般 logicalH*0.5）
----@param barW number 条宽
+---@param barW number 条宽（仅作 fallback 矢量条宽度；图片条宽按素材比例随高度自适应）
 ---@param h number 条高（全高）
 ---@param dir string "left"/"right"
----@param btnW number 中央按钮宽
----@param btnH number 中央按钮高
+---@param btnW number 兼容参数（图片条自带箭头，不再叠按钮）
+---@param btnH number 兼容参数
 function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
+    if seamBarImg == nil then
+        local handle = nvgCreateImage(vg, "image/界面底板/通用面板/UI_SEAMBAR.png", 0)
+        seamBarImg = (handle and handle > 0) and math.floor(handle) or -1
+    end
+
+    if seamBarImg and seamBarImg > 0 then
+        local w = h * SEAMBAR_RATIO
+        local halfW = w * 0.5
+        nvgSave(vg)
+        if dir == "left" then
+            nvgTranslate(vg, cx, cy)
+            nvgScale(vg, -1, 1)
+            nvgTranslate(vg, -cx, -cy)
+        end
+        local paint = nvgImagePattern(vg, cx - halfW, cy - h * 0.5, w, h, 0, seamBarImg, 1.0)
+        nvgBeginPath(vg)
+        nvgRect(vg, cx - halfW, cy - h * 0.5, w, h)
+        nvgFillPaint(vg, paint)
+        nvgFill(vg)
+        nvgRestore(vg)
+        return
+    end
+
+    -- fallback: 矢量门柱条（图片加载失败时）
     local halfW = barW * 0.5
 
     -- 1) 条体：垂直渐变深铁（上亮下暗），两端到屏幕边

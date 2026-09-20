@@ -2060,8 +2060,8 @@ end
 local function seamBackList()
     local list = {}
     local psL = logicalH / 1080
-    -- 全高门柱条 + 中央凸出按钮（按钮跨出条宽形成把手）
-    local barW = 56 * psL
+    -- 全高门柱条（UI_SEAMBAR 图片条，宽随高度按素材比例 158/1425 自适应；热区同步）
+    local barW = logicalH * (158 / 1425)
     local btnW, btnH = 184 * psL * 0.58, 143 * psL * 0.58
     local ix, iy, iw, ih = BattleTriPage.getInteriorRect(1)
     -- 右框柱 ›：角色详情页

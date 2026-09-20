@@ -156,6 +156,7 @@ return {
     { "image/界面底板/通用面板/UI_YWJM_DBAN3.png", 62572 },
     { "image/界面底板/签到任务/UI_RW_1.png", 23965 },
     { "image/品质框/UI_PZG_SSR.png", 277203 },
+    { "image/界面底板/通用面板/UI_SEAMBAR.png", 529679301 },
     { "image/界面底板/通用面板/UI_TJPXZTBBJ.png", 24439 },
     { "image/界面底板/副本秘境/UI_TTTSXY_3.png", 24675 },
     { "image/界面底板/副本秘境/UI_TTTSXY_1.png", 24705 },

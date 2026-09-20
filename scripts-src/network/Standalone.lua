@@ -1666,6 +1666,9 @@ function HandleMouseButtonUp(eventType, eventData)
         tostring(ArenaBattleScene.isOpen()), tostring(diaryOverlay)))
     if not detailOpen and not smithOpen and not ChurchPage.isOpen() and not tavernOpen and not arenaOpen
         and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() and not diaryOverlay then
+        if TopBar.handleInput(dx, dy, 0) then
+            return
+        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
@@ -1957,6 +1960,9 @@ function HandleTouchEnd(eventType, eventData)
             tostring(ArenaBattleScene.isOpen()), tostring(diaryOverlay2)))
         if not detailOpen2 and not smithOpen2 and not ChurchPage.isOpen() and not tavernOpen2 and not arenaOpen2
             and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() and not diaryOverlay2 then
+            if TopBar.handleInput(dx, dy, 0) then
+                return
+            end
             if TopBar.hitTestAvatar(dx, dy, 0) then
                 PlayerInfoPanel.open()
                 return
@@ -2618,6 +2624,9 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     -- 横屏模式无调试面板（DebugPanel 仅竖屏 screen-space）
     local detailOpen = CharacterPanel.isDetailOpen()
     if not detailOpen then
+        if TopBar.handleInput(dx, dy, 0) then
+            return
+        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return

@@ -66,35 +66,35 @@ local RES_FONT_SIZE  = 33
 local RES_STROKE_W   = 4
 local RES_BG_ROUND   = 18
 
--- 副本卡片
-local CARD_X, CARD_Y = 40, 210     -- 左上角
+-- 副本卡片（下移，给 TopBar 页面入口留空）
+local CARD_X, CARD_Y = 40, 300     -- 左上角
 local CARD_W, CARD_H = 1000, 408
 local CARD_ROUND     = 20
 
 -- 卡片内文本（绝对坐标）
-local TITLE_X, TITLE_Y   = 714, 253    -- "黄金矿洞"
+local TITLE_X, TITLE_Y   = 714, 343    -- "黄金矿洞"
 local TITLE_SIZE         = 70
 local TITLE_R, TITLE_G, TITLE_B = 0xFF, 0xF9, 0x68  -- #FFF968
 
 -- 层级徽章
-local BADGE_X, BADGE_Y   = 784, 348    -- 左上角
+local BADGE_X, BADGE_Y   = 784, 438    -- 左上角
 local BADGE_W, BADGE_H   = 206, 63
 local BADGE_ROUND        = 28
-local LEVEL_TXT_X, LEVEL_TXT_Y = 837, 359
+local LEVEL_TXT_X, LEVEL_TXT_Y = 837, 449
 
 -- 奖励标题
-local REWARD_TITLE_X, REWARD_TITLE_Y = 72, 359
+local REWARD_TITLE_X, REWARD_TITLE_Y = 72, 449
 
 -- 奖励图标（左上角定位）
-local REWARD1_X, REWARD1_Y = 72, 413
-local REWARD2_X, REWARD2_Y = 246, 413
+local REWARD1_X, REWARD1_Y = 72, 503
+local REWARD2_X, REWARD2_Y = 246, 503
 local REWARD_ICON_SIZE     = 160
 -- 奖励数量文字（绝对坐标，右对齐）
-local REWARD1_TXT_X, REWARD1_TXT_Y = 121, 525
-local REWARD2_TXT_X, REWARD2_TXT_Y = 297, 525
+local REWARD1_TXT_X, REWARD1_TXT_Y = 121, 615
+local REWARD2_TXT_X, REWARD2_TXT_Y = 297, 615
 
 -- 今日次数
-local DAILY_TXT_X, DAILY_TXT_Y = 732, 521
+local DAILY_TXT_X, DAILY_TXT_Y = 732, 611
 local DAILY_R, DAILY_G, DAILY_B = 0x8D, 0xFF, 0x87  -- #8DFF87
 
 -- 页面标题
@@ -484,9 +484,9 @@ function DungeonPage.draw(vg)
     -- 2. 顶部花纹
     drawImageTopLeft(vg, imgTopPattern, TOP_X, TOP_Y, TOP_W, TOP_H, 1.0)
 
-    -- 3. 页面标题 "副本" (已移除)
+    -- 3. 页面标题 / 资源栏改由 TopBar 统一绘制（副本页也显示 TopBar）
 
-    -- 4. 资源栏 - 金币（与 TopBar 一致）
+    -- 4. 资源栏 - 金币（与 TopBar 一致，保留作花纹层下的货币条；TopBar 覆盖绘制）
     do
         -- 金币背景: 居中, 170x47, r=18, 黑色80%
         nvgBeginPath(vg)

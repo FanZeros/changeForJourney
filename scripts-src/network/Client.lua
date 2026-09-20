@@ -1659,9 +1659,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
             local backpackOpen = BackpackPanel.isOpen()
             local taskOpen   = TaskPanel.isOpen()
             if not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not arenaOpen and not marketOpen and not guildOpen and not signInOpen and not backpackOpen and not taskOpen then
-                if tabIndex ~= 5 then
-                    TopBar.draw(vg)
-                end
+                TopBar.draw(vg)
                 BottomNav.draw(vg)
             elseif taskOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not arenaOpen and not guildOpen and not signInOpen and not backpackOpen then
                 local animP = TaskPanel.getAnimProgress()

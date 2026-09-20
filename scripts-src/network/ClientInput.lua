@@ -490,6 +490,9 @@ local function dispatchDragEndAndTap(dx, dy)
                     or CharacterPanel.isDetailOpen()
                     or DiaryPage.hasOverlayOpen()
     if not detailOpen and not ArenaBattleScene.isOpen() and not DungeonBattleScene.isOpen() then
+        if TopBar.handleInput(dx, dy, 0) then
+            return
+        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
@@ -531,14 +534,8 @@ local function dispatchDragEndAndTap(dx, dy)
     elseif tabIndex == 5 then
         if DungeonPage.handleInput(dx, dy) then return end
     end
-    if isTap then print("[INPUT_DEBUG] >>> 到达 BottomNav（未被任何弹窗/页面拦截）") end
-    local navHit = BottomNav.handleInput(dx, dy)
     if isTap then
-        if navHit then
-            GameSFX.playUIClick(2)  -- 命中了 BottomNav Tab
-        else
-            GameSFX.play("click")   -- 未命中任何可交互区域
-        end
+        GameSFX.play("click")
     end
 end
 

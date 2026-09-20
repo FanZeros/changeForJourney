@@ -752,7 +752,7 @@ function GuildPage.draw(vg)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then
             local relicTab = TAB_ITEMS[2]
-            _TM.registerHotspot("relic_tab", relicTab.cx, relicTab.cy, TAB.SLIDER_W, TAB.SLIDER_H)
+            _TM.registerHotspot("relic_tab", relicTab.cx, relicTab.cy, TAB.SLIDER_W, TAB.SLIDER_H, "left")
         end
     end
 

@@ -980,7 +980,7 @@ local function drawPageImpl(vg)
         nvgText(vg, BTN_10_CX, BTN_10_CY, "招募10次", nil)
         BF.finish(vg, _s4)
         local _TM = require("systems.TutorialManager")
-        if _TM.isActive() then _TM.registerHotspot("tavern_btn_gacha10", BTN_10_CX, BTN_10_CY, BTN_10_W, BTN_10_H) end
+        if _TM.isActive() then _TM.registerHotspot("tavern_btn_gacha10", BTN_10_CX, BTN_10_CY, BTN_10_W, BTN_10_H, "left") end
 
         -- ============ 20.5 指定招募 / 指定UP角色按钮 ==========
         local _s6 = BF.begin(vg, "tavern_target", BTN_TARGET_CX, BTN_TARGET_CY, BTN_TARGET_W, BTN_TARGET_H)

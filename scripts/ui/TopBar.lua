@@ -170,22 +170,21 @@ end
 --- 每帧绘制（在设计空间 1080x2400 内调用）
 
 -- 页面入口（替代底栏五键）。通栏放在头像行正下方，避开金币/钻石。
+-- 页面入口：横屏三栏下 角色常驻右栏 / 城镇常驻左栏，入口键冗余已删；
+-- 仅保留中栏页面：日志 / 战斗 / 副本
 local PAGE_TABS = {
-    { index = 1, name = "角色", icon = "nav_hero",    hotspot = "tab_character" },
-    { index = 2, name = "日志", icon = "nav_log",     hotspot = "tab_log" },
-    { index = 3, name = "战斗", icon = "nav_battle",  hotspot = "tab_battle" },
-    { index = 4, name = "城镇", icon = "nav_town",    hotspot = "tab_town" },
-    { index = 5, name = "副本", icon = "nav_dungeon", hotspot = "tab_dungeon" },
+    [2] = { index = 2, name = "日志", icon = "nav_log",     hotspot = "tab_log" },
+    [3] = { index = 3, name = "战斗", icon = "nav_battle",  hotspot = "tab_battle" },
+    [5] = { index = 5, name = "副本", icon = "nav_dungeon", hotspot = "tab_dungeon" },
 }
+local PAGE_TAB_ORDER = { 2, 3, 5 }
 local PAGE_BTN_W, PAGE_BTN_H = 196, 64
 local PAGE_BTN_GAP = 12
 local PAGE_BTN_CY = 244
 local PAGE_BTN_START_CX = 108
 local PAGE_HOTSPOT_KEYS = {
-    tab_character = 1,
     tab_log = 2,
     tab_battle = 3,
-    tab_town = 4,
     tab_dungeon = 5,
 }
 
@@ -265,7 +264,7 @@ function TopBar.draw(vg, offsetY)
             end
         end
     else
-    for i, tab in ipairs(PAGE_TABS) do
+    for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
         local cx = pageBtnCenterX(i)
         local cy = PAGE_BTN_CY + oy
         local x = cx - PAGE_BTN_W * 0.5
@@ -302,7 +301,7 @@ function TopBar.draw(vg, offsetY)
                 TM.registerHotspot(PAGE_TABS[idx].hotspot, compactBtnCenter(idx), COMPACT_CY + oy, COMPACT_SZ, COMPACT_SZ)
             end
         else
-            for i, tab in ipairs(PAGE_TABS) do
+            for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
                 TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H)
             end
         end
@@ -434,7 +433,7 @@ function TopBar.handleInput(x, y, offsetY)
         return false
     end
     local cy = PAGE_BTN_CY + oy2
-    for i, tab in ipairs(PAGE_TABS) do
+    for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
         local cx = pageBtnCenterX(i)
         local halfW, halfH = PAGE_BTN_W * 0.5, PAGE_BTN_H * 0.5
         if x >= cx - halfW and x <= cx + halfW

@@ -443,7 +443,7 @@ local function drawEquipGrid(vg)
         if idx == 1 then
             local _TM = require("systems.TutorialManager")
             if _TM.isActive() then
-                _TM.registerHotspot("equip_item_gifted", cx, screenY, GRID.CELL_SIZE, GRID.CELL_SIZE)
+                _TM.registerHotspot("equip_item_gifted", cx, screenY, GRID.CELL_SIZE, GRID.CELL_SIZE, "right")
             end
         end
 

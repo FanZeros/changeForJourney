@@ -594,7 +594,7 @@ function M.drawPanelBottom(vg)
     nvgText(vg, EB.ENH_BTN_CX, EB.ENH_BTN_CY, "强化", nil)
     BF.finish(vg, didScale)
     local _TM = require("systems.TutorialManager")
-    if _TM.isActive() then _TM.registerHotspot("smith_btn_enhance", EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H) end
+    if _TM.isActive() then _TM.registerHotspot("smith_btn_enhance", EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H, "left") end
 
     -- 一键强化按钮（右侧）
     local maxReachLevel = calcMaxAffordableLevel(data.curLevel, data.ownedGold, data.ownedScroll)

@@ -530,7 +530,7 @@ function M.draw(vg, scrollY)
         -- 新手引导热点：槽位3（引导组9目标槽位）
         if i == 3 then
             if TutorialManager.isActive() then
-                TutorialManager.registerHotspot("character_slot_3", cx, CARD_CY, CARD_W, CARD_H)
+                TutorialManager.registerHotspot("character_slot_3", cx, CARD_CY, CARD_W, CARD_H, "right")
             end
         end
 
@@ -772,11 +772,11 @@ function M.draw(vg, scrollY)
         -- 新手引导热点：第一个 roster 卡片槽 / 新获得英雄卡片
         if TutorialManager.isActive() then
             if idx == 1 then
-                TutorialManager.registerHotspot("character_slot_1", cx, cy, CARD_W, CARD_H)
+                TutorialManager.registerHotspot("character_slot_1", cx, cy, CARD_W, CARD_H, "right")
             end
             local _newId = TutorialManager.getNewHeroId()
             if _newId and entry.heroId == _newId then
-                TutorialManager.registerHotspot("character_new_hero", cx, cy, CARD_W, CARD_H)
+                TutorialManager.registerHotspot("character_new_hero", cx, cy, CARD_W, CARD_H, "right")
             end
         end
 

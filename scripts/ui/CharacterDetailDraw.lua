@@ -776,7 +776,7 @@ function M.draw(vg)
         -- 新手引导热点：主武器槽
         if slot.slot == "weapon" then
             local _TM = require("systems.TutorialManager")
-            if _TM.isActive() then _TM.registerHotspot("equip_slot_weapon", slot.cx, slot.cy, DT_SLOT_SIZE, DT_SLOT_SIZE) end
+            if _TM.isActive() then _TM.registerHotspot("equip_slot_weapon", slot.cx, slot.cy, DT_SLOT_SIZE, DT_SLOT_SIZE, "right") end
         end
     end
 
@@ -803,7 +803,7 @@ function M.draw(vg)
         nvgText(vg, BTN_EQUIP_CX, BTN_EQUIP_CY, "一键装备", nil)
         BF.finish(vg, _ds)
         local _TM = require("systems.TutorialManager")
-        if _TM.isActive() then _TM.registerHotspot("equip_btn_auto", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H) end
+        if _TM.isActive() then _TM.registerHotspot("equip_btn_auto", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H, "right") end
     end
     end  -- if not isAwakenTab（4~6 节）
 

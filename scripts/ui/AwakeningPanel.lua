@@ -1,7 +1,7 @@
 -- ============================================================================
--- AwakeningPanel - 觉醒面板
--- 绝区零影画式：三块六边形拼图咬合角色核（粗暴 / 机制 / 进化）
--- 立绘铺满三块，嵌合后拼出完整角色
+-- AwakeningPanel - 觉醒面板（绝区零影画式）
+-- 角色 CG 切成三竖条错位排布：未解锁灰度渲染，解锁显示原色
+-- Ⅰ 粗暴 / Ⅱ 机制 / Ⅲ 进化；点切片查看，底部嵌合
 -- ============================================================================
 
 local HC         = require("config.HeroConfig")
@@ -31,15 +31,16 @@ local NODE_COUNT = AKC.NODE_COUNT
 local NODE_NAMES  = { "粗暴", "机制", "进化" }
 local NODE_ROMANS = { "Ⅰ", "Ⅱ", "Ⅲ" }
 
--- 三块点顶六边形 120° 围核；立绘铺满三块，嵌合后拼出完整角色
-local PUZZLE = {
-    cx     = 540,
-    cy     = 1048,
-    pieceR = 210,
-    dist   = 182,
-    coreR  = 96,
-    -- 上 / 左下 / 右下
-    angles = { -90, 150, 30 },
+-- 影画切片：CG 三竖条，边缘斜切，中条上移错位
+local SLICES = {
+    W     = 312,     -- 单条宽
+    H     = 700,     -- 单条高
+    GAP   = 14,      -- 条间距
+    SX    = 58,      -- 左缘（(1080-3*312-2*14)/2）
+    SY    = 480,     -- 基准顶
+    SLANT = 26,      -- 顶边相对底边右移量（斜切）
+    STAG  = { 40, 0, 40 }, -- 每条纵向错位：中条上移
+    V_BIAS = 0.22,   -- CG 纵向取窗偏上（保脸）
 }
 
 local NODE_FILL = {
@@ -77,11 +78,11 @@ local imgTitleBg       = -1
 local imgSubTitleBg    = -1
 local imgActivateBtn   = -1
 local imgSelectArrow   = -1
-local imgNodesA        = {}
-local imgNodesB        = {}
 local imgBadges        = {}
-local imgPortraits     = {}
 local imgClassIcons    = {}
+
+---@type table<number, table>
+local cgCache = {}
 
 local selectedNode = 1
 local getOwnedData_ = nil
@@ -90,81 +91,94 @@ local ARROW_W, ARROW_H = 98, 127
 local ARROW_FLOAT_AMP  = 10
 local ARROW_FLOAT_SPEED = 3.0
 
-local SQRT3 = 1.73205080757
-
 -- ======================== 几何 ========================
 
-local function pieceCenter(i)
-    local a = math.rad(PUZZLE.angles[i] or -90)
-    return PUZZLE.cx + PUZZLE.dist * math.cos(a),
-           PUZZLE.cy + PUZZLE.dist * math.sin(a)
+--- 第 i 条底边左缘 X
+local function sliceX(i)
+    return SLICES.SX + (i - 1) * (SLICES.W + SLICES.GAP)
 end
 
---- 点顶六边形：max(|dy|, |dy|/2 + |dx|√3/2) ≤ r
-local function pointInHex(px, py, cx, cy, r)
-    local dx = math.abs(px - cx)
-    local dy = math.abs(py - cy)
-    return math.max(dy, dy * 0.5 + dx * SQRT3 * 0.5) <= r
+--- 第 i 条顶边 Y（含错位）
+local function sliceY(i)
+    return SLICES.SY + (SLICES.STAG[i] or 0)
 end
 
-local function hexPath(vg, cx, cy, r)
+--- 平行四边形路径：顶边相对底边右移 SLANT
+local function slicePath(vg, i, expand)
+    local e = expand or 0
+    local x0 = sliceX(i) - e
+    local x1 = sliceX(i) + SLICES.W + e
+    local y0 = sliceY(i) - e
+    local y1 = sliceY(i) + SLICES.H + e
+    local s = SLICES.SLANT
     nvgBeginPath(vg)
-    for i = 0, 5 do
-        local a = math.rad(-90 + i * 60)
-        local x = cx + r * math.cos(a)
-        local y = cy + r * math.sin(a)
-        if i == 0 then
-            nvgMoveTo(vg, x, y)
-        else
-            nvgLineTo(vg, x, y)
-        end
-    end
+    nvgMoveTo(vg, x0 + s, y0)
+    nvgLineTo(vg, x1 + s, y0)
+    nvgLineTo(vg, x1, y1)
+    nvgLineTo(vg, x0, y1)
     nvgClosePath(vg)
 end
 
-local function strokeHex(vg, cx, cy, r, cr, cg, cb, ca, width)
-    hexPath(vg, cx, cy, r)
-    nvgStrokeColor(vg, nvgRGBA(cr, cg, cb, ca))
-    nvgStrokeWidth(vg, width)
-    nvgLineJoin(vg, NVG_ROUND)
-    nvgStroke(vg)
+---@param px number
+---@param py number
+---@return boolean
+local function pointInSlice(px, py, i)
+    local x0 = sliceX(i)
+    local x1 = x0 + SLICES.W
+    local y0 = sliceY(i)
+    local y1 = y0 + SLICES.H
+    if py < y0 or py > y1 then return false end
+    local t = (py - y0) / SLICES.H
+    local s = SLICES.SLANT * (1 - t)
+    local pad = 8
+    return px >= x0 + s - pad and px <= x1 + s + pad
 end
 
-local function fillHex(vg, cx, cy, r, cr, cg, cb, ca)
-    hexPath(vg, cx, cy, r)
-    nvgFillColor(vg, nvgRGBA(cr, cg, cb, ca))
-    nvgFill(vg)
-end
+-- ======================== CG 资源 ========================
 
---- 立绘 cover 到拼图外接圆，三块共用同一张图所以能对上缝
-local function portraitPattern(vg, img, alpha)
-    if not img or img < 0 or alpha <= 0.01 then return nil end
-    local srcW, srcH = nvgImageSize(vg, img)
-    if not srcW or srcW <= 0 or not srcH or srcH <= 0 then return nil end
-    local cover = (PUZZLE.dist + PUZZLE.pieceR) * 2.08
-    local scale = math.max(cover / srcW, cover / srcH)
-    local dw, dh = srcW * scale, srcH * scale
-    local x = PUZZLE.cx - dw * 0.5
-    -- 立绘偏上，让脸落在上块
-    local y = PUZZLE.cy - dh * 0.58
-    return nvgImagePattern(vg, x, y, dw, dh, 0, img, alpha)
-end
-
-local function fillHexPaint(vg, cx, cy, r, paint)
-    hexPath(vg, cx, cy, r)
-    nvgFillPaint(vg, paint)
-    nvgFill(vg)
-end
-
-local function getPortrait(vg, heroId)
-    local cached = imgPortraits[heroId]
-    if cached ~= nil then return cached end
-    local img = nvgCreateImage(vg, HeroAssetUtil.getPortraitPath(heroId), 0)
-    if img < 0 then
-        img = nvgCreateImage(vg, HeroAssetUtil.getCardPath(heroId), 0)
+--- 解析角色 CG：正式 CG -> 立绘 -> 卡牌；同时取对应灰度版
+---@return integer colorHandle 彩色句柄，缺失为 -1
+---@return integer grayHandle 灰度句柄，缺失为 -1
+local function resolveCG(vg, heroId)
+    local cached = cgCache[heroId]
+    if cached then return cached.color, cached.gray end
+    local color = nvgCreateImage(vg, string.format("image/角色CG/CG_H%d.png", heroId), 0) or -1
+    local gray = -1
+    if color >= 0 then
+        gray = nvgCreateImage(vg, string.format("image/角色CG/CG_H%d_gray.png", heroId), 0) or -1
+    else
+        color = nvgCreateImage(vg, HeroAssetUtil.getPortraitPath(heroId), 0) or -1
+        if color >= 0 then
+            gray = nvgCreateImage(vg, string.format("image/角色CG/FALLBACK_H%d_gray.png", heroId), 0) or -1
+        else
+            color = nvgCreateImage(vg, HeroAssetUtil.getCardPath(heroId), 0) or -1
+        end
     end
-    imgPortraits[heroId] = img
-    return img
+    cgCache[heroId] = { color = color, gray = gray }
+    return color, gray
+end
+
+--- CG cover 到切片总幅，返回 (dw, dh, v0)
+---@return number|nil dw
+---@return number|nil dh
+---@return number|nil v0
+local function cgLayout(vg, img)
+    local sw, sh = nvgImageSize(vg, img)
+    if not sw or sw <= 0 or not sh or sh <= 0 then return nil end
+    local totalW = SLICES.W * NODE_COUNT + SLICES.GAP * (NODE_COUNT - 1)
+    local scale = math.max(totalW / sw, SLICES.H / sh)
+    local dw, dh = sw * scale, sh * scale
+    local v0 = (dh - SLICES.H) * SLICES.V_BIAS
+    if v0 < 0 then v0 = (dh - SLICES.H) * 0.5 end
+    return dw, dh, v0
+end
+
+--- 第 i 条的取样 paint：显示 CG 第 i 列，竖向公共窗 v0
+local function slicePaint(vg, img, i, dw, dh, v0, alpha)
+    if not img or img < 0 or alpha <= 0.01 then return nil end
+    local ox = sliceX(i) - dw * (i - 1) / NODE_COUNT
+    local oy = sliceY(i) - v0
+    return nvgImagePattern(vg, ox, oy, dw, dh, 0, img, alpha)
 end
 
 -- ======================== 初始化 ========================
@@ -176,16 +190,12 @@ function M.initImages(vg)
     imgActivateBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgSelectArrow = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_JT.png", 0)
 
-    for i = 1, NODE_COUNT do
-        imgNodesA[i] = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JXICON_A" .. i .. ".png", 0)
-        imgNodesB[i] = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JXICON_B" .. i .. ".png", 0)
-    end
-
     imgBadges["R"]   = nvgCreateImage(vg, "image/品质框/UI_PZBZ_R.png", 0)
     imgBadges["SR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SR.png", 0)
     imgBadges["SSR"] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SSR.png", 0)
 
-    print("[AwakeningPanel] initImages OK (puzzle)")
+    cgCache = {}
+    print("[AwakeningPanel] initImages OK (mindscape slices)")
 end
 
 function M.setClassIcons(icons)
@@ -237,154 +247,114 @@ local function getNodeInfo(nodeIndex, heroCfg, heroId)
     return title, effect
 end
 
--- ======================== 拼图绘制 ========================
+-- ======================== 影画切片绘制 ========================
 
-local function drawPuzzleFrame(vg)
-    local outerR = PUZZLE.dist + PUZZLE.pieceR * 0.72
-    for layer = 4, 1, -1 do
-        local t = layer / 4
-        strokeHex(vg, PUZZLE.cx, PUZZLE.cy, outerR + layer * 3,
-            0xd4, 0xb4, 0x5a,
-            math.floor(18 * t), 2 + layer)
-    end
-    strokeHex(vg, PUZZLE.cx, PUZZLE.cy, outerR, 0xe8, 0xc9, 0x6a, 90, 3)
-end
-
----@param paint any
-local function drawPiece(vg, i, isActive, isSelected, isNext, canClick, paint)
-    local cx, cy = pieceCenter(i)
-    local r = PUZZLE.pieceR
+--- 单条切片
+---@param i number 1~3
+---@param state string "active" 已嵌合 | "next" 可嵌合 | "locked" 未解锁
+---@param isSelected boolean
+local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
     local col = NODE_FILL[i] or { 180, 180, 180 }
     local t = time.elapsedTime
     local breathe = (math.sin(t * 2.4 + i * 0.9) + 1.0) * 0.5
 
-    if isActive then
-        for g = 5, 1, -1 do
-            strokeHex(vg, cx, cy, r + g * 7,
-                col[1], col[2], col[3],
-                math.floor(16 + breathe * 14), 4)
-        end
-        fillHex(vg, cx, cy, r, 8, 10, 22, 230)
-        if paint then
-            fillHexPaint(vg, cx, cy, r, paint)
-        end
-        fillHex(vg, cx, cy, r, col[1], col[2], col[3], 28)
-        strokeHex(vg, cx, cy, r, col[1], col[2], col[3], 230, 5)
-        strokeHex(vg, cx, cy, r * 0.92, 255, 255, 255, 50, 2)
-    elseif isNext then
-        fillHex(vg, cx, cy, r, 10, 14, 28, 230)
-        if paint then
-            fillHexPaint(vg, cx, cy, r, paint)
-            fillHex(vg, cx, cy, r, 8, 12, 28, 150)
-        end
-        local pulse = 90 + math.floor(breathe * 120)
-        strokeHex(vg, cx, cy, r + 4 + breathe * 6, 0x72, 0xe9, 0xff, pulse, 4)
-        strokeHex(vg, cx, cy, r, 0x72, 0xe9, 0xff, 200, 3)
-    else
-        fillHex(vg, cx, cy, r, 6, 8, 16, 230)
-        if paint then
-            fillHexPaint(vg, cx, cy, r, paint)
-            fillHex(vg, cx, cy, r, 4, 6, 14, 175)
-        end
-        strokeHex(vg, cx, cy, r, 70, 78, 98, 140, 3)
-    end
-
-    if isSelected then
-        strokeHex(vg, cx, cy, r + 8, 0xff, 0xef, 0x67, 230, 4)
-    end
-
-    -- 朝核的咬合榫
-    local ang = math.rad(PUZZLE.angles[i])
-    local tabX = PUZZLE.cx + (PUZZLE.coreR + 10) * math.cos(ang)
-    local tabY = PUZZLE.cy + (PUZZLE.coreR + 10) * math.sin(ang)
-    nvgBeginPath(vg)
-    nvgCircle(vg, tabX, tabY, isActive and 14 or 11)
-    if isActive then
-        nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 220))
-    elseif isNext then
-        nvgFillColor(vg, nvgRGBA(0x72, 0xe9, 0xff, 160))
-    else
-        nvgFillColor(vg, nvgRGBA(40, 46, 62, 220))
-    end
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgCircle(vg, tabX, tabY, isActive and 14 or 11)
-    nvgStrokeColor(vg, nvgRGBA(255, 255, 255, isActive and 160 or 60))
-    nvgStrokeWidth(vg, 2)
-    nvgStroke(vg)
-
-    -- 罗马数字章压在块外缘，不挡立绘脸
-    local badgeX = cx + r * 0.62 * math.cos(ang)
-    local badgeY = cy + r * 0.62 * math.sin(ang)
-    local iconImg = isActive and imgNodesB[i] or imgNodesA[i]
-    local iconAlpha = isActive and 1.0 or (isNext and 0.9 or 0.45)
-    if iconImg and iconImg >= 0 then
-        drawImageCentered(vg, iconImg, badgeX, badgeY, 72, 72, iconAlpha)
-    end
-
-    local label = NODE_NAMES[i] or ""
-    local lr, lg, lb = 170, 176, 190
-    if isActive then
-        lr, lg, lb = 255, 255, 255
-    elseif isNext then
-        lr, lg, lb = 0x72, 0xe9, 0xff
-    end
-    drawTextStroke(vg, badgeX, badgeY + 44, label,
-        26, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        lr, lg, lb, 4,
-        { strokeColor = { 0x18, 0x14, 0x22 } })
-
-    if isActive then
-        drawTextStroke(vg, badgeX, badgeY + 68, "已嵌合",
-            20, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            col[1], col[2], col[3], 3)
-    elseif not isNext and not canClick then
-        drawTextStroke(vg, badgeX, badgeY + 68, "未解锁",
-            20, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            110, 114, 128, 3)
-    elseif isNext then
-        drawTextStroke(vg, badgeX, badgeY + 68, "可嵌合",
-            20, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            0x72, 0xe9, 0xff, 3)
-    end
-end
-
-local function drawCore(vg, activatedCount, paint)
-    local cx, cy, r = PUZZLE.cx, PUZZLE.cy, PUZZLE.coreR
-    nvgBeginPath(vg)
-    nvgCircle(vg, cx, cy, r + 6)
-    nvgFillColor(vg, nvgRGBA(6, 8, 18, 240))
+    -- 1) 深底
+    slicePath(vg, i)
+    nvgFillColor(vg, nvgRGBA(8, 10, 18, 235))
     nvgFill(vg)
 
+    -- 2) CG 片：解锁=彩色，未解锁=灰度
+    local img = (state == "active") and cgImg or (grayImg >= 0 and grayImg or cgImg)
+    local paint = slicePaint(vg, img, i, dw, dh, v0, 1.0)
     if paint then
-        nvgBeginPath(vg)
-        nvgCircle(vg, cx, cy, r - 2)
+        slicePath(vg, i)
         nvgFillPaint(vg, paint)
         nvgFill(vg)
     end
 
-    local allOn = activatedCount >= NODE_COUNT
-    if not allOn then
-        nvgBeginPath(vg)
-        nvgCircle(vg, cx, cy, r - 2)
-        nvgFillColor(vg, nvgRGBA(4, 6, 16, 80))
+    if state == "active" then
+        slicePath(vg, i)
+        nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 22))
+        nvgFill(vg)
+    else
+        -- 未解锁：压暗 + 轻灰罩，保证灰片可读
+        slicePath(vg, i)
+        if grayImg >= 0 then
+            nvgFillColor(vg, nvgRGBA(8, 10, 20, 110))
+        else
+            nvgFillColor(vg, nvgRGBA(14, 14, 18, 200))
+        end
         nvgFill(vg)
     end
 
-    nvgBeginPath(vg)
-    nvgCircle(vg, cx, cy, r)
-    nvgStrokeColor(vg, nvgRGBA(0xe8, 0xc9, 0x6a, 220))
-    nvgStrokeWidth(vg, 5)
-    nvgStroke(vg)
-    nvgBeginPath(vg)
-    nvgCircle(vg, cx, cy, r - 8)
-    nvgStrokeColor(vg, nvgRGBA(0x72, 0xe9, 0xff, allOn and 180 or 70))
-    nvgStrokeWidth(vg, 2)
-    nvgStroke(vg)
+    -- 3) 边框
+    if isSelected then
+        if state == "active" then
+            for g = 3, 1, -1 do
+                slicePath(vg, i, g * 5)
+                nvgStrokeColor(vg, nvgRGBA(0xe8, 0xc9, 0x6a, math.floor(40 + breathe * 40)))
+                nvgStrokeWidth(vg, 3)
+                nvgStroke(vg)
+            end
+        end
+        slicePath(vg, i, 4)
+        nvgStrokeColor(vg, nvgRGBA(0xff, 0xef, 0x67, 235))
+        nvgStrokeWidth(vg, 4)
+        nvgStroke(vg)
+    elseif state == "active" then
+        slicePath(vg, i)
+        nvgStrokeColor(vg, nvgRGBA(0xe8, 0xc9, 0x6a, 210))
+        nvgStrokeWidth(vg, 3)
+        nvgStroke(vg)
+    elseif state == "next" then
+        slicePath(vg, i, 3 + breathe * 5)
+        nvgStrokeColor(vg, nvgRGBA(0x72, 0xe9, 0xff, math.floor(70 + breathe * 110)))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
+        slicePath(vg, i)
+        nvgStrokeColor(vg, nvgRGBA(0x72, 0xe9, 0xff, 190))
+        nvgStrokeWidth(vg, 3)
+        nvgStroke(vg)
+    else
+        slicePath(vg, i)
+        nvgStrokeColor(vg, nvgRGBA(70, 78, 98, 140))
+        nvgStrokeWidth(vg, 3)
+        nvgStroke(vg)
+    end
 
-    drawTextStroke(vg, cx, cy + r + 26, activatedCount .. " / " .. NODE_COUNT,
+    -- 4) 顶部阶段铭牌：罗马数字 + 名称
+    local cx = sliceX(i) + SLICES.W * 0.5 + SLICES.SLANT * 0.5
+    local topY = sliceY(i)
+    local nr, ng, nb = 150, 156, 172
+    if state == "active" then
+        nr, ng, nb = 255, 255, 255
+    elseif state == "next" then
+        nr, ng, nb = 0x72, 0xe9, 0xff
+    end
+    drawTextStroke(vg, cx, topY + 56, NODE_ROMANS[i] or "",
+        56, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        nr, ng, nb, 5,
+        { strokeColor = { 0x10, 0x0c, 0x18 } })
+    drawTextStroke(vg, cx, topY + 96, NODE_NAMES[i] or "",
         26, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        0xff, 0xef, 0x67, 4)
+        nr, ng, nb, 4,
+        { strokeColor = { 0x10, 0x0c, 0x18 } })
+
+    -- 5) 底部状态
+    local by = sliceY(i) + SLICES.H - 30
+    if state == "active" then
+        drawTextStroke(vg, cx, by, "已嵌合",
+            22, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            col[1], col[2], col[3], 3)
+    elseif state == "next" then
+        drawTextStroke(vg, cx, by, "可嵌合",
+            22, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            0x72, 0xe9, 0xff, 3)
+    else
+        drawTextStroke(vg, cx, by, "未解锁",
+            22, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            110, 116, 132, 3)
+    end
 end
 
 -- ======================== 绘制 ========================
@@ -428,28 +398,39 @@ function M.draw(vg, heroId)
         255, 255, 255, 5,
         { strokeColor = { 0x31, 0x24, 0x24 } })
 
-    local portrait = getPortrait(vg, heroId)
-    local paint = portraitPattern(vg, portrait, 1.0)
+    -- 影画切片
+    local cgImg, grayImg = resolveCG(vg, heroId)
+    local dw, dh, v0
+    if cgImg and cgImg >= 0 then
+        dw, dh, v0 = cgLayout(vg, cgImg)
+    end
 
-    drawPuzzleFrame(vg)
+    -- 进度角标
+    drawTextStroke(vg, 1030, 462, "觉醒 " .. activatedCount .. "/" .. NODE_COUNT,
+        30, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
+        0xff, 0xef, 0x67, 4,
+        { strokeColor = { 0x1a, 0x14, 0x22 } })
 
-    -- 拼图块先画，角色核盖住咬合处
     for i = 1, NODE_COUNT do
+        local state = activated[i] and "active" or (i == nextNode and "next" or "locked")
         if i ~= selectedNode then
-            drawPiece(vg, i, activated[i] == true, false, i == nextNode, i <= nextNode, paint)
+            drawSlice(vg, i, state, false, cgImg, grayImg, dw, dh, v0)
         end
     end
-    drawPiece(vg, selectedNode, activated[selectedNode] == true, true,
-        selectedNode == nextNode, selectedNode <= nextNode, paint)
-    drawCore(vg, activatedCount, paint)
+    local selState = activated[selectedNode] and "active"
+        or (selectedNode == nextNode and "next" or "locked")
+    drawSlice(vg, selectedNode, selState, true, cgImg, grayImg, dw, dh, v0)
 
-    local selCx, selCy = pieceCenter(selectedNode)
+    -- 选中切片上浮箭头
+    local selX = sliceX(selectedNode) + SLICES.W * 0.5 + SLICES.SLANT * 0.5
+    local selTop = sliceY(selectedNode)
     if imgSelectArrow >= 0 then
         local arrowFloatY = math.sin(time.elapsedTime * ARROW_FLOAT_SPEED) * ARROW_FLOAT_AMP
-        local arrowY = selCy + PUZZLE.pieceR * 0.92 + ARROW_H * 0.22 + arrowFloatY
-        drawImageCentered(vg, imgSelectArrow, selCx, arrowY, ARROW_W, ARROW_H, 1.0)
+        drawImageCentered(vg, imgSelectArrow, selX, selTop - ARROW_H * 0.3 - 6 + arrowFloatY,
+            ARROW_W, ARROW_H, 1.0)
     end
 
+    -- 底栏（保持原交互）
     local nodeTitle, nodeEffect = getNodeInfo(selectedNode, heroCfg, heroId)
     drawImageCentered(vg, imgSubTitleBg, SUB_TITLE_CX, SUB_TITLE_CY, SUB_TITLE_W, SUB_TITLE_H, 1.0)
     nvgFontFace(vg, "sans")
@@ -513,11 +494,10 @@ function M.draw(vg, heroId)
 end
 
 function M.handleInput(dx, dy, heroId)
-    -- 核不抢点击；六边形重叠处优先当前选中
+    -- 切片命中（斜切平行四边形），重叠处优先当前选中
     local hits = {}
     for i = 1, NODE_COUNT do
-        local cx, cy = pieceCenter(i)
-        if pointInHex(dx, dy, cx, cy, PUZZLE.pieceR) then
+        if pointInSlice(dx, dy, i) then
             hits[#hits + 1] = i
         end
     end
@@ -529,8 +509,10 @@ function M.handleInput(dx, dy, heroId)
                 break
             end
         end
-        selectedNode = pick
-        print("[AwakeningPanel] 选中拼图 " .. pick)
+        if selectedNode ~= pick then
+            selectedNode = pick
+            print("[AwakeningPanel] 选中切片 " .. pick)
+        end
         return true
     end
 
@@ -568,7 +550,7 @@ function M.handleInput(dx, dy, heroId)
                 end
             end
         else
-            print("[AwakeningPanel] 拼图 " .. selectedNode .. " 已嵌合")
+            print("[AwakeningPanel] 切片 " .. selectedNode .. " 已嵌合")
         end
         return true
     end

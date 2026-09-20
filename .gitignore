@@ -44,3 +44,4 @@ electron-shell/game/
 electron-shell/node_modules/
 electron-shell/release/
 electron-shell/game_engine/
+.tmp-headless/

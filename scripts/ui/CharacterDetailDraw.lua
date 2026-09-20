@@ -544,12 +544,19 @@ function M.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, upperOX, 0)
 
+    -- 觉醒页由 AwakeningPanel 整页接管，以下 1~7 节/8~17 节全部被其背景遮挡，
+    -- 统一跳过绘制（含装备槽引导热点注册），避免无效绘制与幽灵热点
+    local isAwakenTab = (detailState.tab == "awaken")
+    local stepAngle = math.pi * 2 / 16  -- 16向描边步进角（7节标题/10节等级共用）
+
     -- === 1) 背景图 ===
-    nvgSave(vg)
-    nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-    drawImageCentered(vg, img.detailBg, DT_BG_CX, DT_BG_CY, DT_BG_W, DT_BG_H, 1.0)
-    nvgResetScissor(vg)
-    nvgRestore(vg)
+    if not isAwakenTab then
+        nvgSave(vg)
+        nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
+        drawImageCentered(vg, img.detailBg, DT_BG_CX, DT_BG_CY, DT_BG_W, DT_BG_H, 1.0)
+        nvgResetScissor(vg)
+        nvgRestore(vg)
+    end
 
     -- === 2) [三队并行] 金币/钻石资源栏已移除——货币显示统一在左侧 TopBar ===
 
@@ -558,6 +565,7 @@ function M.draw(vg)
     nvgTranslate(vg, switchOX, 0)
     nvgGlobalAlpha(vg, switchAlpha)
 
+    if not isAwakenTab then
     -- === 4) 角色卡片 ===
     local cx, cy = DT_CARD_CX, DT_CARD_CY
     local cardImg = imgHeroCards[heroId] or imgHeroCards[1]
@@ -797,10 +805,12 @@ function M.draw(vg)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("equip_btn_auto", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H) end
     end
+    end  -- if not isAwakenTab（4~6 节）
 
     nvgRestore(vg)  -- 结束动态内容偏移（switchOX/switchAlpha）
 
-    -- === 左右切换箭头按钮（静态，不参与切换动画） ===
+    -- === 左右切换箭头按钮（静态，不参与切换动画；觉醒页被面板遮挡不画） ===
+    if not isAwakenTab then
     if img.arrowBg >= 0 then
         -- 左箭头背景（翻转绘制，对齐屏幕左边缘）
         nvgSave(vg)
@@ -824,6 +834,7 @@ function M.draw(vg)
             drawImageCentered(vg, img.arrowIcon, M.ARROW_RIGHT_CX - M.ARROW_ICON_INSET, M.ARROW_CY, M.ARROW_ICON_W, M.ARROW_ICON_H, 1.0)
         end
     end
+    end  -- if not isAwakenTab（切换箭头）
 
     nvgRestore(vg)  -- 结束上半部分偏移
 
@@ -831,6 +842,7 @@ function M.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, lowerOX, 0)
 
+    if not isAwakenTab then
     -- === 6) 角色详情属性背景图（静态，不参与切换动画） ===
     drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
 
@@ -840,13 +852,13 @@ function M.draw(vg)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     local titleSW = 4
     nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 255))
-    local stepAngle = math.pi * 2 / 16
     for i = 0, 15 do
         local a = i * stepAngle
         nvgText(vg, MID_TITLE_CX + math.cos(a) * titleSW, MID_TITLE_CY + math.sin(a) * titleSW, "角色详情", nil)
     end
     nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
     nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, "角色详情", nil)
+    end  -- if not isAwakenTab（6b~7 节）
 
     -- === 动态内容开始（箭头切换时水平滑入+淡入） ===
     nvgSave(vg)
@@ -854,7 +866,7 @@ function M.draw(vg)
     nvgGlobalAlpha(vg, switchAlpha)
 
     -- === 8~17) 名称/经验/品质/职业/分割线：配装tab下隐藏 ===
-    if detailState.tab ~= "equip" then
+    if detailState.tab ~= "equip" and not isAwakenTab then
 
     -- === 8) 角色名称 ===
     nvgFontFace(vg, "sans")

@@ -443,7 +443,7 @@ local function drawEquipGrid(vg)
         if idx == 1 then
             local _TM = require("systems.TutorialManager")
             if _TM.isActive() then
-                _TM.registerHotspot("equip_item_gifted", cx, screenY, GRID.CELL_SIZE, GRID.CELL_SIZE)
+                _TM.registerHotspot("equip_item_gifted", cx, screenY, GRID.CELL_SIZE, GRID.CELL_SIZE, "right")
             end
         end
 
@@ -1324,36 +1324,47 @@ function Panel.draw(vg)
     drawBody(vg)
 end
 
---- [横屏] 全窗居中模态绘制：压暗 + 竖版画布等比缩放居中（子弹窗 EquipmentDetail/itemDetail 自动跟随）
+--- [横屏] 模态绘制：限定矩形内压暗 + 竖版画布等比缩放居中（子弹窗 EquipmentDetail/itemDetail 自动跟随）
+--- 三联布局下宿主传中栏矩形，左右栏保持亮且可点；不传 rect = 全窗（竖屏）
 ---@param vg any
 ---@param logicalW number 窗口逻辑宽
 ---@param logicalH number 窗口逻辑高
-function Panel.drawWindow(vg, logicalW, logicalH)
+---@param rect table|nil { x, y, w, h } 限定矩形（窗口坐标）
+function Panel.drawWindow(vg, logicalW, logicalH, rect)
     if not state.open then return end
     if hostMode_ ~= "window" then return end
+    local rx = rect and rect.x or 0
+    local ry = rect and rect.y or 0
+    local rw = rect and rect.w or logicalW
+    local rh = rect and rect.h or logicalH
     nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, logicalW, logicalH)
+    nvgRect(vg, rx, ry, rw, rh)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 160))
     nvgFill(vg)
-    local fit = math.min(logicalW / DESIGN_W, logicalH / DESIGN_H)
+    local fit = math.min(rw / DESIGN_W, rh / DESIGN_H)
     local dw, dh = DESIGN_W * fit, DESIGN_H * fit
     nvgSave(vg)
-    nvgTranslate(vg, (logicalW - dw) * 0.5, (logicalH - dh) * 0.5)
+    nvgTranslate(vg, rx + (rw - dw) * 0.5, ry + (rh - dh) * 0.5)
     nvgScale(vg, fit, fit)
     drawBody(vg)
     nvgRestore(vg)
 end
 
---- [横屏] 窗口坐标 → 竖版设计坐标
+--- [横屏] 窗口坐标 → 竖版设计坐标（rect 与 drawWindow 一致）
 ---@param wx number
 ---@param wy number
 ---@param logicalW number
 ---@param logicalH number
+---@param rect table|nil { x, y, w, h }
 ---@return number dx number dy
-function Panel.toDesignCoords(wx, wy, logicalW, logicalH)
-    local fit = math.min(logicalW / DESIGN_W, logicalH / DESIGN_H)
+function Panel.toDesignCoords(wx, wy, logicalW, logicalH, rect)
+    local rx = rect and rect.x or 0
+    local ry = rect and rect.y or 0
+    local rw = rect and rect.w or logicalW
+    local rh = rect and rect.h or logicalH
+    local fit = math.min(rw / DESIGN_W, rh / DESIGN_H)
     local dw, dh = DESIGN_W * fit, DESIGN_H * fit
-    return (wx - (logicalW - dw) * 0.5) / fit, (wy - (logicalH - dh) * 0.5) / fit
+    return (wx - (rx + (rw - dw) * 0.5)) / fit, (wy - (ry + (rh - dh) * 0.5)) / fit
 end
 
 -- ======================== 输入处理 ========================

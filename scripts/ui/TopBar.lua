@@ -170,45 +170,26 @@ end
 --- 每帧绘制（在设计空间 1080x2400 内调用）
 
 -- 页面入口（替代底栏五键）。通栏放在头像行正下方，避开金币/钻石。
+-- 页面入口：横屏三栏下 角色常驻右栏 / 城镇常驻左栏，入口键冗余已删；
+-- 仅保留中栏页面：日志 / 战斗 / 副本
 local PAGE_TABS = {
-    { index = 1, name = "角色", icon = "nav_hero",    hotspot = "tab_character" },
-    { index = 2, name = "日志", icon = "nav_log",     hotspot = "tab_log" },
-    { index = 3, name = "战斗", icon = "nav_battle",  hotspot = "tab_battle" },
-    { index = 4, name = "城镇", icon = "nav_town",    hotspot = "tab_town" },
-    { index = 5, name = "副本", icon = "nav_dungeon", hotspot = "tab_dungeon" },
+    [2] = { index = 2, name = "日志", icon = "nav_log",     hotspot = "tab_log" },
+    [3] = { index = 3, name = "战斗", icon = "nav_battle",  hotspot = "tab_battle" },
+    [5] = { index = 5, name = "副本", icon = "nav_dungeon", hotspot = "tab_dungeon" },
 }
+local PAGE_TAB_ORDER = { 2, 3, 5 }
 local PAGE_BTN_W, PAGE_BTN_H = 196, 64
 local PAGE_BTN_GAP = 12
 local PAGE_BTN_CY = 244
 local PAGE_BTN_START_CX = 108
 local PAGE_HOTSPOT_KEYS = {
-    tab_character = 1,
     tab_log = 2,
     tab_battle = 3,
-    tab_town = 4,
     tab_dungeon = 5,
 }
 
 local function pageBtnCenterX(i)
     return PAGE_BTN_START_CX + (i - 1) * (PAGE_BTN_W + PAGE_BTN_GAP)
-end
-
--- [横屏] 紧凑模式：三联布局下三大页面常驻，五键页签条冗余 → 只留 日志/副本 两枚图标入口
-local compactMode_ = false
-local COMPACT_TABS = { 2, 5 }
-local COMPACT_SZ   = 72
-local COMPACT_GAP  = 16
-local COMPACT_CY   = 210   -- 货币行(Y≈100)下方、旧页签条(Y=244)上方，避开头像框
-
-function TopBar.setCompactMode(on)
-    compactMode_ = on and true or false
-end
-
-local function compactBtnCenter(i)
-    -- 左栏右缘向左排：副本最右，日志其左
-    local cx2 = 486 - 16 - COMPACT_SZ * 0.5
-    local cx1 = cx2 - COMPACT_SZ - COMPACT_GAP
-    return (i == 5) and cx2 or cx1
 end
 
 function TopBar.draw(vg, offsetY)
@@ -242,30 +223,10 @@ function TopBar.draw(vg, offsetY)
         DarkIcon.draw(vg, "reddot", 160, 74, 74, 1)
     end
 
-    -- #2e 页面入口（替代底栏五键）；[横屏] 紧凑模式只留 日志/副本 两枚图标
+    -- #2e 页面入口：横屏三栏下只留 日志/战斗/副本 三键（角色/城镇常驻左右栏）
     local selectedTab = BottomNav.getSelectedIndex()
     local allLocked = BottomNav.isAllLocked()
-    if compactMode_ then
-        for _, idx in ipairs(COMPACT_TABS) do
-            local tab = PAGE_TABS[idx]
-            local cx = compactBtnCenter(idx)
-            local cy = COMPACT_CY + oy
-            local locked = allLocked or BottomNav.isTabLocked(tab.index)
-            local isSel = (tab.index == selectedTab)
-            local alpha = locked and 0.38 or 1.0
-            if isSel then
-                DarkIcon.drawNine(vg, "btn", cx - COMPACT_SZ * 0.5, cy - COMPACT_SZ * 0.5, COMPACT_SZ, COMPACT_SZ, { accent = "gold", alpha = alpha })
-            else
-                DarkIcon.drawNine(vg, "plain", cx - COMPACT_SZ * 0.5, cy - COMPACT_SZ * 0.5, COMPACT_SZ, COMPACT_SZ, { alpha = alpha })
-            end
-            DarkIcon.draw(vg, tab.icon, cx, cy, 40, alpha)
-            local showBadge = BottomNav.getBadge(tab.index)
-            if showBadge and not locked then
-                DarkIcon.draw(vg, "reddot", cx + COMPACT_SZ * 0.36, cy - COMPACT_SZ * 0.36, 24, 1)
-            end
-        end
-    else
-    for i, tab in ipairs(PAGE_TABS) do
+    for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
         local cx = pageBtnCenterX(i)
         local cy = PAGE_BTN_CY + oy
         local x = cx - PAGE_BTN_W * 0.5
@@ -293,18 +254,11 @@ function TopBar.draw(vg, offsetY)
             DarkIcon.draw(vg, "reddot", cx + PAGE_BTN_W * 0.38, cy - PAGE_BTN_H * 0.38, 28, 1)
         end
     end
-    end
 
     local TM = require("systems.TutorialManager")
     if TM.isActive() then
-        if compactMode_ then
-            for _, idx in ipairs(COMPACT_TABS) do
-                TM.registerHotspot(PAGE_TABS[idx].hotspot, compactBtnCenter(idx), COMPACT_CY + oy, COMPACT_SZ, COMPACT_SZ)
-            end
-        else
-            for i, tab in ipairs(PAGE_TABS) do
-                TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H)
-            end
+        for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
+            TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H)
         end
     end
 
@@ -412,29 +366,8 @@ end
 function TopBar.handleInput(x, y, offsetY)
     if BottomNav.isAllLocked() then return false end
     local oy2 = tonumber(offsetY) or 0
-    if compactMode_ then
-        for _, idx in ipairs(COMPACT_TABS) do
-            local tab = PAGE_TABS[idx]
-            local cx = compactBtnCenter(idx)
-            local cy = COMPACT_CY + oy2
-            local half = COMPACT_SZ * 0.5
-            if x >= cx - half and x <= cx + half and y >= cy - half and y <= cy + half then
-                if BottomNav.isTabLocked(tab.index) then
-                    print("[TopBar] tab locked: " .. tab.name)
-                    return true
-                end
-                if BottomNav.getSelectedIndex() ~= tab.index then
-                    BottomNav.setSelectedIndex(tab.index)
-                    local GameSFX = require("systems.GameSFX")
-                    GameSFX.playUIMove(2)
-                end
-                return true
-            end
-        end
-        return false
-    end
     local cy = PAGE_BTN_CY + oy2
-    for i, tab in ipairs(PAGE_TABS) do
+    for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
         local cx = pageBtnCenterX(i)
         local halfW, halfH = PAGE_BTN_W * 0.5, PAGE_BTN_H * 0.5
         if x >= cx - halfW and x <= cx + halfW

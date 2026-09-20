@@ -1656,8 +1656,7 @@ function BattleScene.draw(vg)
     -- 15.2 台词气泡（在浮动文字之上、战利品之下）
     SpeechBubble.draw(vg)
 
-    -- 15.5 战利品箱子（图标 + 飞行动画 + 红点）
-    LootBox.draw(vg)
+    -- 15.5 战利品箱子已迁至全局左下角（Client 左栏层绘制），此处不再绘制
 
     -- 15.5.1 扫荡按钮入口（与战利品箱子对称）
     SweepDialog.drawButton(vg)
@@ -1665,19 +1664,11 @@ function BattleScene.draw(vg)
     -- 15.5.2 战斗统计按钮入口（扫荡按钮左侧）
     DamageStatsPanel.drawButton(vg)
 
-    -- 15.6 挂机收益显示（在 LootBox 之上绘制，避免被遮挡）
+    -- 15.6 挂机收益率 → 推送给全局战利品箱（整页左下角）绘制
     local speedCardActive = BattleScene.GameState.getSpeedCardRemainSecs() > 0
-    local speedBonusText = speedCardActive and "（+20%）" or ""
-    if cachedGoldPerMin > 0 then
-        local displayGoldPerMin = speedCardActive and math.floor(cachedGoldPerMin * 1.2 + 0.5) or cachedGoldPerMin
-        drawTextStroke(vg, 221, 2104, "金币+" .. formatNumber(displayGoldPerMin) .. "/分钟" .. speedBonusText, 30,
-            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 243, 105, 3)
-    end
-    if cachedExpPerMin > 0 then
-        local displayExpPerMin = speedCardActive and math.floor(cachedExpPerMin * 1.2 + 0.5) or cachedExpPerMin
-        drawTextStroke(vg, 221, 2153, "经验+" .. formatNumber(displayExpPerMin) .. "/分钟" .. speedBonusText, 30,
-            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 73, 255, 244, 3)
-    end
+    local displayGoldPerMin = speedCardActive and math.floor(cachedGoldPerMin * 1.2 + 0.5) or cachedGoldPerMin
+    local displayExpPerMin = speedCardActive and math.floor(cachedExpPerMin * 1.2 + 0.5) or cachedExpPerMin
+    LootBox.setRates(displayGoldPerMin, displayExpPerMin)
 
     -- 首通狂暴提示横幅（战斗进行中触发时弹出并淡出）
     if StageBerserk.isActive() then
@@ -1798,9 +1789,6 @@ function BattleScene.update(dt)
             confirmDialog.pendingNextId = nil
         end
     end
-
-    -- ---- 战利品箱子始终更新（飞行动画 + 领取检测，不受战斗状态影响） ----
-    LootBox.update(dt)
 
     -- 暂停时只更新动画/浮字（保持视觉流畅），不推进战斗逻辑
     if isPaused then
@@ -2802,9 +2790,6 @@ function BattleScene.handleInput(dx, dy)
     if DamageStatsPanel.handleInput(dx, dy) then return true end
     if SweepDialog.handleButtonInput(dx, dy) then return true end
     if DamageStatsPanel.handleButtonInput(dx, dy) then return true end
-
-    -- 战利品箱子点击（优先于导航按钮）
-    if LootBox.handleInput(dx, dy) then return true end
 
     -- 首通战斗倍速按钮
     if BattleScene.handleSpeedButtonInput(dx, dy) then return true end

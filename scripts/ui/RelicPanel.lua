@@ -378,7 +378,7 @@ function RelicPanel.draw(vg)
 
         local TM = require("systems.TutorialManager")
         if TM.isActive() then
-            TM.registerHotspot("relic_bag_btn", BTN_BAG.CX, BTN_BAG.CY, BTN_BAG.W, BTN_BAG.H)
+            TM.registerHotspot("relic_bag_btn", BTN_BAG.CX, BTN_BAG.CY, BTN_BAG.W, BTN_BAG.H, "left")
         end
     end
 

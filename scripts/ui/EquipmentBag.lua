@@ -916,7 +916,7 @@ function EquipmentBag.draw(vg, opts)
             if idx == 1 then
                 local _TM = require("systems.TutorialManager")
                 if _TM.isActive() then
-                    _TM.registerHotspot("equip_item_gifted", cx, cy, CELL_SIZE, CELL_SIZE)
+                    _TM.registerHotspot("equip_item_gifted", cx, cy, CELL_SIZE, CELL_SIZE, "right")
                 end
             end
 

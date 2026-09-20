@@ -26,6 +26,23 @@ local DOT_CY = BOX_CY - BOX_SIZE * 0.5 + DOT_SIZE * 0.3
 -- 点击判定半径
 local TAP_RADIUS = BOX_SIZE * 0.5 + 20
 
+-- 挂机收益率（战斗场景每帧经 setRates 推送；箱子已迁至全局左下角，跨主线/通天塔/副本共用一份）
+local rateGoldText, rateExpText = nil, nil
+
+local function formatNumber(n)
+    n = math.floor(n + 0.5)
+    local s = tostring(n)
+    local out = s:reverse():gsub("(%d%d%d)", "%1,")
+    out = tostring(out):reverse():gsub("^,", "")
+    return out
+end
+
+--- 推送挂机收益率（0/nil 表示不显示）
+function LootBox.setRates(goldPerMin, expPerMin)
+    rateGoldText = (goldPerMin and goldPerMin > 0) and ("金币+" .. formatNumber(goldPerMin) .. "/分钟") or nil
+    rateExpText = (expPerMin and expPerMin > 0) and ("经验+" .. formatNumber(expPerMin) .. "/分钟") or nil
+end
+
 -- ======================== 状态 ========================
 
 local seedCount = 0     -- 当前种子总件数（来自 lootbox 数据的 count 之和）
@@ -286,6 +303,16 @@ function LootBox.draw(vg)
     -- 3. 红点（有物品时，跟随抖动）
     if seedCount > 0 then
         drawImageCentered(vg, imgRedDot, DOT_CX + offsetX, DOT_CY, DOT_SIZE, DOT_SIZE, 1.0)
+    end
+
+    -- 4. 挂机收益率（箱子下方，随箱迁移到全局左下角）
+    if rateGoldText then
+        drawTextStroke(vg, TEXT_X + offsetX, TEXT_Y + 44, rateGoldText, 28,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 243, 105, 3)
+    end
+    if rateExpText then
+        drawTextStroke(vg, TEXT_X + offsetX, TEXT_Y + 90, rateExpText, 28,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 73, 255, 244, 3)
     end
 end
 

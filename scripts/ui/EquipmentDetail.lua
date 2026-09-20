@@ -809,7 +809,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             nvgText(vg, REF_BTN_CX + offsetX, btnCY, btnText, nil)
             BF.finish(vg, _bf1)
             local _TM = require("systems.TutorialManager")
-            if _TM.isActive() then _TM.registerHotspot("equip_btn_equip", REF_BTN_CX + offsetX, btnCY, REF_BTN_W, REF_BTN_H) end
+            if _TM.isActive() then _TM.registerHotspot("equip_btn_equip", REF_BTN_CX + offsetX, btnCY, REF_BTN_W, REF_BTN_H, "right") end
         end
 
         -- 21-22) 前往洗练按钮（仅铁匠铺已解锁时显示）
@@ -1072,12 +1072,9 @@ function EquipmentDetail.handleInput(dx, dy)
             CharacterDetail.forceClose()
         end
 
-        -- 4) 切换底部标签栏到"城镇"（index=4），铁匠铺在城镇页内绘制
-        BottomNav.setSelectedIndex(4)
-
-        -- 5) 打开铁匠铺洗练面板并预选装备
+        -- 4) 打开铁匠铺洗练面板并预选装备（铁匠铺常驻左栏，无需切换中栏页）
         BlacksmithPage.open(newEquip, "xilian")
-        print("[EquipmentDetail] 前往洗练 → 切换城镇 + 打开铁匠铺洗练面板，装备: " .. (newEquip.name or "?"))
+        print("[EquipmentDetail] 前往洗练 → 打开铁匠铺洗练面板，装备: " .. (newEquip.name or "?"))
         return true
     end
 

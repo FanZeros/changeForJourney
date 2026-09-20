@@ -187,8 +187,6 @@ local function RecalcLayout()
     screenDesignH = logicalH / scale
     designOffsetX = (screenDesignW - DESIGN_W) / 2
     designOffsetY = (screenDesignH - DESIGN_H) / 2
-    -- [底栏移除] 横屏三联：TopBar 页签条收为 日志/副本 两枚图标
-    TopBar.setCompactMode(logicalW > logicalH)
 end
 
 -- ======================== GM 权限标记（服务端推送） ========================
@@ -1513,6 +1511,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
         TavernPage.draw(vg)
         MarketPage.draw(vg)
         GuildPage.draw(vg)
+        LootBox.draw(vg)   -- 全局战利品箱（整页左下角，主线/通天塔/副本共用一份）
         ViewportH.finish(vg)
         ViewportH.begin(vg, ViewportH.PANELS.right, H_ox, H_oy, H_s)
         CharacterPanel.draw(vg)
@@ -2209,10 +2208,8 @@ function HandleUpdate_Client(eventType, eventData)
         -- 通知引导系统当前所在的面板（enter_panel_* 类步骤推进）
         -- 放在 tab 切换块之外，确保玩家已在该tab 上时引导也能推进
         local TAB_PANEL_EVENTS = {
-            [1] = "enter_panel_character",
             [2] = "enter_panel_diary",
             [3] = "enter_panel_battle",
-            [4] = "enter_panel_town",
             [5] = "enter_panel_dungeon",
         }
         if TAB_PANEL_EVENTS[tabIndex] then
@@ -2287,6 +2284,7 @@ function HandleUpdate_Client(eventType, eventData)
         else
             BattleScene.update(dt)
         end
+        LootBox.update(dt)   -- 战利品箱全局更新（飞入动画/领取检测），独立于战斗场景
         if tabIndex == 1 then
             CharacterPanel.update(dt)
         elseif tabIndex == 2 then

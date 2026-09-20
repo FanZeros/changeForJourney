@@ -348,7 +348,7 @@ function M.drawContent(vg)
     -- 新手引导热点：整个天赋星图区域
     local _TM = require("systems.TutorialManager")
     if _TM.isActive() then
-        _TM.registerHotspot("talent_node_area", DESIGN_W * 0.5, mapTop + mapH * 0.5, DESIGN_W, mapH)
+        _TM.registerHotspot("talent_node_area", DESIGN_W * 0.5, mapTop + mapH * 0.5, DESIGN_W, mapH, "left")
     end
 
     -- 3. 天赋点背景光晕 UI_JTTF_HG.png（绘制在星图上方）

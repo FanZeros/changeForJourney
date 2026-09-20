@@ -17,9 +17,7 @@
 --   }
 --
 -- highlight key 对照表（由各 UI 模块调用 TutorialOverlay.registerHotspot() 注册）：
---   "tab_character"          — 顶部页面入口：角色
 --   "tab_log"                — 顶部页面入口：日志
---   "tab_town"               — 顶部页面入口：城镇
 --   "character_slot_1"       — 角色面板第一个槽位中的角色
 --   "equip_slot_weapon"      — 角色详情武器槽位
 --   "equip_btn_equip"        — 装备详情「装备」按钮
@@ -47,12 +45,7 @@ TutorialConfig[1] = {
     unlocks = { "character_panel" },
     steps = {
         {
-            text      = "前往角色页面查看角色",
-            highlight = "tab_character",
-            advanceOn = "enter_panel_character",
-        },
-        {
-            text      = "点击角色查看详情",
+            text      = "点击右侧队伍中的角色查看详情",
             highlight = "character_slot_1",
             advanceOn = "click_highlight",
         },
@@ -80,12 +73,7 @@ TutorialConfig[2] = {
     triggerScenarios = { 8, 9, 10 },
     steps = {
         {
-            text      = "又掉落了新装备",
-            highlight = "tab_character",
-            advanceOn = "enter_panel_character",
-        },
-        {
-            text      = "点击角色查看详情",
+            text      = "又掉落了新装备，点击右侧角色查看详情",
             highlight = "character_slot_1",
             advanceOn = "click_highlight",
         },
@@ -120,9 +108,9 @@ TutorialConfig[4] = {
     unlocks = { "town_panel" },
     steps = {
         {
-            text      = "来看看城镇都有些什么吧！",
-            highlight = "tab_town",
-            advanceOn = "enter_panel_town",
+            text      = "左侧就是城镇，各类功能建筑都在这里，点击空白处继续",
+            highlight = "town_overview",
+            advanceOn = "click_highlight",
         },
     },
 }
@@ -201,12 +189,7 @@ TutorialConfig[9] = {
     triggerScenarios = { 32, 33, 34 },
     steps = {
         {
-            text      = "前往角色页面",
-            highlight = "tab_character",
-            advanceOn = "enter_panel_character",
-        },
-        {
-            text      = "将新角色拖入槽位3上阵吧",
+            text      = "将新角色拖入右侧队伍的槽位3上阵吧",
             highlight = "character_new_hero",
             advanceOn = "drag_to_slot_3",
         },
@@ -220,11 +203,6 @@ TutorialConfig[10] = {
     triggerScenarios = { 44, 45, 46 },
     unlocks = { "smith" },
     steps = {
-        {
-            text      = "前往城镇",
-            highlight = "tab_town",
-            advanceOn = "enter_panel_town",
-        },
         {
             text      = "前往铁匠铺",
             highlight = "building_smith",
@@ -254,11 +232,6 @@ TutorialConfig[14] = {
     triggerScenarios = { 55, 56, 57 },
     unlocks = { "guild" },
     steps = {
-        {
-            text      = "前往城镇",
-            highlight = "tab_town",
-            advanceOn = "enter_panel_town",
-        },
         {
             text      = "进入冒险者公会",
             highlight = "building_guild",

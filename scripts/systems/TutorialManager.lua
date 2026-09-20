@@ -12,6 +12,7 @@ local TutorialConfig     = require("config.TutorialConfig")
 local DrawUtil           = require("core.DrawUtil")
 local GameConfig         = require("config.GameConfig")
 local ScenarioDialogue   = require("ui.ScenarioDialogue")
+local ViewportH          = require("core.Viewport")  -- 面板偏移换算（侧栏热点）
 
 local TutorialManager = {}
 
@@ -329,7 +330,13 @@ end
 ---@param cy number  中心 Y（设计坐标）
 ---@param w  number  宽度
 ---@param h  number  高度
-function TutorialManager.registerHotspot(key, cx, cy, w, h)
+---@param panelId? string 注册方所在面板 'left'|'right'|nil(=center 主渲染)
+---   两个空间同为 DS 缩放：侧栏设计坐标只需平移面板 base 偏移差（486/栏）
+function TutorialManager.registerHotspot(key, cx, cy, w, h, panelId)
+    if panelId == 'left' or panelId == 'right' then
+        local V = ViewportH
+        cx = cx + (V.PANELS[panelId].bx - V.PANELS.center.bx)
+    end
     hotspots_[key] = { cx = cx, cy = cy, w = w, h = h }
 end
 

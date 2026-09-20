@@ -1693,7 +1693,7 @@ local function drawPageImpl(vg)
     local _TM = require("systems.TutorialManager")
     if _TM.isActive() then
         local ti2 = TAB_ITEMS[2]
-        _TM.registerHotspot("talent_toggle", ti2.cx + lowerOX, ti2.cy, TAB.SLIDER_W, TAB.SLIDER_H)
+        _TM.registerHotspot("talent_toggle", ti2.cx + lowerOX, ti2.cy, TAB.SLIDER_W, TAB.SLIDER_H, "left")
     end
 
     nvgRestore(vg)  -- 结束下半部分偏移

@@ -421,7 +421,7 @@ function TownScene.draw(vg)
         end
     end
     BF.finish(vg, _bfSmith)
-    if _tmActive and not smithLocked then _TM.registerHotspot("building_smith", SMITH_CX, SMITH_CY, SMITH_W, SMITH_H) end
+    if _tmActive and not smithLocked then _TM.registerHotspot("building_smith", SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, "left") end
 
     -- [公会功能已移除] 城镇不再渲染冒险者公会建筑（单机版无公会玩法）
 
@@ -480,7 +480,7 @@ function TownScene.draw(vg)
         drawImageCentered(vg, imgIconUp, upX, upY, upSize, upSize, 1.0)
     end
     BF.finish(vg, _bfChurch)
-    if _tmActive and not churchLocked then _TM.registerHotspot("building_church", CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H) end
+    if _tmActive and not churchLocked then _TM.registerHotspot("building_church", CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, "left") end
 
     -- 7) 酒馆建筑（前层）
     local tavernLocked = not _TM.isBuildingUnlocked("tavern")
@@ -499,7 +499,9 @@ function TownScene.draw(vg)
         drawBuildingLockOverlay(vg, TAVERN_CX, TAVERN_CY, "tavern", true)
     end
     BF.finish(vg, _bfTavern)
-    if _tmActive and not tavernLocked then _TM.registerHotspot("building_tavern", TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H) end
+    if _tmActive and not tavernLocked then _TM.registerHotspot("building_tavern", TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, "left") end
+    -- 城镇总览热点（引导组4）：左栏顶部空白带，不与建筑点击重叠
+    if _tmActive then _TM.registerHotspot("town_overview", 540, 150, 900, 220, "left") end
 end
 
 --- 回调：点击铁匠铺
@@ -546,6 +548,8 @@ function TownScene.setOnGuildClick(fn)
 end
 
 function TownScene.handleInput(dx, dy)
+    -- 全局战利品箱（左下角）点击优先；LootBoxPage 打开时整栏输入交给页面
+    if require("ui.LootBox").handleInput(dx, dy) then return true end
     local _TM = require("systems.TutorialManager")
     -- 铁匠铺点击检测
     if dx >= SMITH_CX - SMITH_W * 0.5 and dx <= SMITH_CX + SMITH_W * 0.5

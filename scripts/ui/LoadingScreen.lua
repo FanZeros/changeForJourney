@@ -4,10 +4,6 @@
 -- ============================================================================
 
 local GameConfig = require("config.GameConfig")
-local SpineResultEffect = require("ui.SpineResultEffect")
-local SpineCardEffect   = require("ui.SpineCardEffect")
-local ChurchPage        = require("ui.ChurchPage")
-local LevelUpPopup      = require("ui.LevelUpPopup")
 
 local LoadingScreen = {}
 
@@ -108,33 +104,9 @@ function LoadingScreen.open(opts)
         bgmSource_.gain = bgmVolume_  -- 恢复音量
     end
 
-    -- Spine 预加载（资源文件已由 resources.json 预下载组在引擎启动时就绪）
-    if vg_ and not spinePreloaded_ then
-        if type(nvgSpineCreate) ~= "function" then ---@diagnostic disable-line: undefined-global
-            spineNotSupported_ = true
-            print("[LoadingScreen] nvgSpineCreate not available — Spine preload skipped, need client update")
-        else
-            print("[LoadingScreen] Spine preloading...")
-            SpineResultEffect.preload(vg_)
-            SpineCardEffect.preload(vg_)
-            ChurchPage.preloadSpine(vg_)
-            LevelUpPopup.preload(vg_)
-            print("[LoadingScreen] Spine preload complete")
-        end
-        spinePreloaded_ = true
-    end
-
-    -- 情景立绘预加载（所有情景中出现过的 characterId，避免首次显示时卡顿）
-    if vg_ and not portraitPreloaded_ then
-        local portraitIds = { 1, 2, 3, 5, 9, 10, 11, 13, 20, 21 }
-        print("[LoadingScreen] Portrait preloading...")
-        for _, cid in ipairs(portraitIds) do
-            local path = string.format("image/角色立绘/UI_DLH_%d.png", cid)
-            nvgCreateImage(vg_, path, 0)  ---@diagnostic disable-line: undefined-global
-        end
-        print("[LoadingScreen] Portrait preload complete (" .. #portraitIds .. " images)")
-        portraitPreloaded_ = true
-    end
+    -- Spine / 立绘改到首次使用时加载，避免打开加载屏时同步解码卡死预览
+    spinePreloaded_ = true
+    portraitPreloaded_ = true
 end
 
 --- 设置加载完成后的回调

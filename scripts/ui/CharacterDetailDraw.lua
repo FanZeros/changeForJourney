@@ -204,9 +204,9 @@ local BTN_TAB_ATTR_CX, BTN_TAB_ATTR_CY     = 274, 2308
 local BTN_TAB_EQUIP_CX, BTN_TAB_EQUIP_CY   = 540, 2308
 local BTN_TAB_AWAKEN_CX, BTN_TAB_AWAKEN_CY = 806, 2308
 
-local TEXT_ATTR_CX, TEXT_ATTR_CY     = 372, 2302
-local TEXT_EQUIP_CX, TEXT_EQUIP_CY   = 638, 2302
-local TEXT_AWAKEN_CX, TEXT_AWAKEN_CY = 905, 2302
+local TEXT_ATTR_CX, TEXT_ATTR_CY     = 274, 2302
+local TEXT_EQUIP_CX, TEXT_EQUIP_CY   = 540, 2302
+local TEXT_AWAKEN_CX, TEXT_AWAKEN_CY = 806, 2302
 
 -- 导出给 handleInput 使用
 M.BTN_BACK_CX  = BTN_BACK_CX
@@ -1197,7 +1197,8 @@ function M.draw(vg)
     nvgFontSize(vg, 40)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
 
-    local activeColor   = nvgRGBA(0x81, 0x57, 0x3c, 255)
+    -- [fix] 选中态文字画在 DarkIcon btn 深色滑块上，深棕不可读 → 改骨白（DarkIcon 铭刻色）
+    local activeColor   = nvgRGBA(0xD8, 0xC9, 0xA3, 255)
     local inactiveColor = nvgRGBA(255, 255, 255, 255)
     local curTab = detailState.tab
 

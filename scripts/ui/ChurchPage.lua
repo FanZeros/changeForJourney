@@ -75,7 +75,7 @@ local TAB = {
     SLIDER_W = 277, SLIDER_H = 143,
     INSET_TOP = 10, INSET_BOTTOM = 10, INSET_LEFT = 70, INSET_RIGHT = 70,
     FONT_SIZE = 40,
-    ACTIVE_R = 0x81, ACTIVE_G = 0x57, ACTIVE_B = 0x3c,
+    ACTIVE_R = 0xD8, ACTIVE_G = 0xC9, ACTIVE_B = 0xA3,  -- [fix] 深色滑块上深棕不可读 → 骨白
     INACTIVE_R = 255, INACTIVE_G = 255, INACTIVE_B = 255,
     ANIM_DUR = 0.35,
 }

@@ -431,6 +431,12 @@ function BattleTriPage.handleInput(wx, wy)
 
     -- 装备背包覆盖战斗区：窗口坐标映射到背包设计空间
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
+        -- 装备详情弹窗按竖版设计空间铺在覆盖矩形内，需单独换算
+        local EquipmentDetail = require("ui.EquipmentDetail")
+        if EquipmentDetail.isOpen() then
+            local dx, dy = EquipmentBag.overlayToDetail(wx, wy)
+            return EquipmentDetail.handleInput(dx, dy)
+        end
         local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
         return EquipmentBag.handleInput(dx, dy)
     end

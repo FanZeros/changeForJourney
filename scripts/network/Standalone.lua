@@ -2059,20 +2059,21 @@ end
 --- 各占一个框柱位，互不竞争（此前 if/else 单按钮，左右同开时只能活一个）
 local function seamBackList()
     local list = {}
-    local cs = (logicalH / 1080) * 0.45      -- 面板内容缩放(设计→窗口),与 Viewport.DS 一致
+    local psL = logicalH / 1080
+    local cs = psL * 0.45                    -- 面板内容缩放(设计→窗口),与 Viewport.DS 一致
     local barW = logicalH * 0.04             -- ≈96 设计宽(页面宽 9%),只压金框边距
     local DIST = 1080                         -- 页面设计宽:滑入全程
-    -- 右框柱 ›：角色详情——条贴页面右缘,随页面水平滑入同步
+    -- 右框柱 ›：角色详情——条贴详情页"前缘"(页面左缘),像抽屉把手随页面一起推进
     if CharacterDetail.isOpen() then
         local ot, ct, od, cd = CharacterDetail.getSeamAnim()
         local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
         list[#list + 1] = {
-            cx = logicalW + oxWin - barW * 0.5,
+            cx = (logicalW - 486 * psL) + oxWin + barW * 0.5,
             sw = barW, sh = logicalH, bw = 0, bh = 0, dir = "right",
             close = function() CharacterDetail.close() end,
         }
     end
-    -- 左框柱 ‹：左栏二级页（教堂/铁匠/酒馆/市场）——条贴页面左缘,随页面滑入同步
+    -- 左框柱 ‹：左栏二级页（教堂/铁匠/酒馆/市场）——条贴页面右缘(前缘),同步推进
     local leftClose, leftAnim
     if     ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
         leftAnim = { ChurchPage.getSeamAnim() }
@@ -2086,7 +2087,7 @@ local function seamBackList()
     if leftClose then
         local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], DIST) * cs
         list[#list + 1] = {
-            cx = oxWin + barW * 0.5,
+            cx = 486 * psL + oxWin - barW * 0.5,
             sw = barW, sh = logicalH, bw = 0, bh = 0, dir = "left",
             close = leftClose,
         }

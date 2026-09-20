@@ -142,14 +142,16 @@ local function cycleSelectedHero(delta)
 end
 
 -- 装备生成参数（4 个槽位独立编号选择器）
-local EQUIP_SLOTS = { "weapon", "offhand", "armor", "accessory" }
+local EQUIP_SLOTS = { "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }
 local EQUIP_SLOT_LABELS = {
     weapon    = "武器",
     offhand   = "副手",
     armor     = "防具",
+    helmet    = "头盔",
+    shoes     = "鞋子",
     accessory = "饰品",
 }
-local equipNums = { weapon = 1, offhand = 1, armor = 1, accessory = 1 }
+local equipNums = { weapon = 1, offhand = 1, armor = 1, helmet = 1, shoes = 1, accessory = 1 }
 local equipQuality    = 1    -- 1~5
 local equipLevel      = 1    -- 1~99
 local MAX_EQUIP_QUALITY  = 5
@@ -1037,7 +1039,7 @@ function DebugPanel.handleInput(sx, sy)
                 allies = {}
                 debugAllyLevel = 1
                 selectedHeroIdx = 1
-                equipNums = { weapon = 1, offhand = 1, armor = 1, accessory = 1 }
+                equipNums = { weapon = 1, offhand = 1, armor = 1, helmet = 1, shoes = 1, accessory = 1 }
                 equipQuality = 1
                 equipLevel = 1
                 relicType = 1

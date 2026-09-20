@@ -159,6 +159,8 @@ local SCROLL_GETTER = {
     offhandScroll   = "getOffhandScroll",
     armorScroll     = "getArmorScroll",
     accessoryScroll = "getAccessoryScroll",
+    helmetScroll    = "getHelmetScroll",
+    shoesScroll     = "getShoesScroll",
 }
 
 --- 注入共享上下文
@@ -189,6 +191,8 @@ function M.init(vg)
     imgScrollIcon.weapon    = nvgCreateImage(vg, "image/货币道具/UI_icon_JZ_WQ.png", 0)
     imgScrollIcon.offhand   = nvgCreateImage(vg, "image/货币道具/UI_icon_JZ_FS.png", 0)
     imgScrollIcon.armor     = nvgCreateImage(vg, "image/货币道具/UI_icon_JZ_HJ.png", 0)
+    imgScrollIcon.helmet    = nvgCreateImage(vg, "image/货币道具/UI_icon_JZ_TK.png", 0)
+    imgScrollIcon.shoes     = nvgCreateImage(vg, "image/货币道具/UI_icon_JZ_XZ.png", 0)
     imgScrollIcon.accessory = nvgCreateImage(vg, "image/货币道具/UI_icon_JZ_SP.png", 0)
     -- 卷轴品质背景（quality=3，绿色品质）
     imgScrollQBg = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_3.png", 0)

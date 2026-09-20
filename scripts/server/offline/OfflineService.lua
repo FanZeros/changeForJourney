@@ -29,6 +29,8 @@ local SCROLL_TO_REWARD = {
     offhandScroll   = "offhand_scroll",
     armorScroll     = "armor_scroll",
     accessoryScroll = "accessory_scroll",
+    helmetScroll    = "helmet_scroll",
+    shoesScroll     = "shoes_scroll",
 }
 
 local function appendEquipPreviewItems(list, equipSeeds)

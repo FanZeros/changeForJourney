@@ -23,6 +23,9 @@ local drawTextStroke = DrawUtil.drawTextStroke
 
 local M = {}
 
+---@type fun(vg: any, heroId: number, detailState: table)|nil
+M._drawEquipPanel = nil
+
 -- ======================== 设计分辨率 ========================
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
@@ -40,11 +43,14 @@ local DT_CARD_CX, DT_CARD_CY = 540, 497
 -- 装备槽位
 local DT_SLOT_SIZE = 160
 M.DT_SLOT_SIZE = DT_SLOT_SIZE  -- handleInput 需要
+-- 六边形围立绘（中心 540,497，R=248，顶点朝上）
 local DT_SLOTS = {
-    { name = "主武器",   cx = 259, cy = 592, img = "weapon",    slot = "weapon" },
-    { name = "副武器",   cx = 810, cy = 592, img = "offhand",   slot = "offhand" },
-    { name = "护甲",     cx = 259, cy = 382, img = "armor",     slot = "armor" },
-    { name = "饰品",     cx = 810, cy = 382, img = "accessory", slot = "accessory" },
+    { name = "头盔",   cx = 540, cy = 249, img = "helmet",    slot = "helmet" },
+    { name = "饰品",   cx = 755, cy = 373, img = "accessory", slot = "accessory" },
+    { name = "副武器", cx = 755, cy = 621, img = "offhand",   slot = "offhand" },
+    { name = "鞋子",   cx = 540, cy = 745, img = "shoes",     slot = "shoes" },
+    { name = "主武器", cx = 325, cy = 621, img = "weapon",    slot = "weapon" },
+    { name = "护甲",   cx = 325, cy = 373, img = "armor",     slot = "armor" },
 }
 M.DT_SLOTS = DT_SLOTS  -- handleInput 需要
 
@@ -241,7 +247,7 @@ local CARD = {
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BADGE_DY=725-544,
     EXP_BAR_DX=552-540, EXP_BAR_DY=727-544,
     EXP_BAR_BG_W=148, EXP_BAR_BG_H=28, EXP_BAR_PADDING=4,
-    NAME_BG_DY=253, NAME_BG_W=193, NAME_BG_H=48, NAME_BG_RADIUS=24,
+    NAME_BG_DY=290, NAME_BG_W=193, NAME_BG_H=48, NAME_BG_RADIUS=24,
 }
 
 -- 职业图标映射
@@ -307,6 +313,8 @@ local img = {
     slotWeapon    = -1,
     slotOffhand   = -1,
     slotArmor     = -1,
+    slotHelmet    = -1,
+    slotShoes     = -1,
     slotAccessory = -1,
     midBg         = -1,
     midExpBg      = -1,
@@ -375,10 +383,10 @@ local function getCachedUpgrade(heroId, slotName, equipData)
     if _upgradeCache.heroId == heroId and not _upgradeCache.dirty then
         return _upgradeCache.results[slotName]
     end
-    -- 脏了或 heroId 变了，全部重算4个槽位（一次性算完）
+    -- 脏了或 heroId 变了，全部重算 6 个槽位（一次性算完）
     _upgradeCache.heroId = heroId
     _upgradeCache.results = {}
-    local SLOTS = { "weapon", "offhand", "armor", "accessory" }
+    local SLOTS = { "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }
     for _, s in ipairs(SLOTS) do
         _upgradeCache.results[s] = CharacterDetailRef._hasUpgradeForSlot(heroId, s, equipData)
     end
@@ -410,6 +418,8 @@ function M.initImages(vg)
     img.slotWeapon    = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_KGZ_WQ.png", 0)
     img.slotOffhand   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_KGZ_FS.png", 0)
     img.slotArmor     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_KGZ_HJ.png", 0)
+    img.slotHelmet    = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_KGZ_TK.png", 0)
+    img.slotShoes     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_KGZ_XZ.png", 0)
     img.slotAccessory = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_KGZ_SS.png", 0)
 
     img.midBg      = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_0.png", 0)
@@ -648,6 +658,10 @@ function M.draw(vg)
             slotImg = img.slotOffhand
         elseif slot.img == "armor" then
             slotImg = img.slotArmor
+        elseif slot.img == "helmet" then
+            slotImg = img.slotHelmet
+        elseif slot.img == "shoes" then
+            slotImg = img.slotShoes
         else
             slotImg = img.slotAccessory
         end

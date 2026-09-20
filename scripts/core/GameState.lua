@@ -33,6 +33,8 @@ local state = {
     offhandScroll   = GameConfig.Currency.START_OFFHAND_SCROLL,   -- 副手卷轴
     armorScroll     = GameConfig.Currency.START_ARMOR_SCROLL,     -- 护甲卷轴
     accessoryScroll = GameConfig.Currency.START_ACCESSORY_SCROLL, -- 饰品卷轴
+    helmetScroll    = GameConfig.Currency.START_HELMET_SCROLL,    -- 头盔卷轴
+    shoesScroll     = GameConfig.Currency.START_SHOES_SCROLL,     -- 鞋子卷轴
     recruitTicket        = GameConfig.Currency.START_RECRUIT_TICKET,
     stellarRecruitTicket = 0,
     goldenKey            = 0,
@@ -223,6 +225,20 @@ function GameState.getAccessoryScroll()
     return state.accessoryScroll
 end
 
+function GameState.getHelmetScroll()
+    if isMultiplayer() then
+        return getPS().GetField("currency", "helmetScroll") or 0
+    end
+    return state.helmetScroll or 0
+end
+
+function GameState.getShoesScroll()
+    if isMultiplayer() then
+        return getPS().GetField("currency", "shoesScroll") or 0
+    end
+    return state.shoesScroll or 0
+end
+
 function GameState.getRecruitTicket()
     if isMultiplayer() then
         return getPS().GetField("currency", "recruitTicket") or 0
@@ -365,6 +381,8 @@ GameState.setWeaponScroll    = makeSetter("weaponScroll",    "weaponScroll",    
 GameState.setOffhandScroll   = makeSetter("offhandScroll",   "offhandScroll",   GameEvents.CURRENCY_CHANGED)
 GameState.setArmorScroll     = makeSetter("armorScroll",     "armorScroll",     GameEvents.CURRENCY_CHANGED)
 GameState.setAccessoryScroll = makeSetter("accessoryScroll", "accessoryScroll", GameEvents.CURRENCY_CHANGED)
+GameState.setHelmetScroll    = makeSetter("helmetScroll",    "helmetScroll",    GameEvents.CURRENCY_CHANGED)
+GameState.setShoesScroll     = makeSetter("shoesScroll",     "shoesScroll",     GameEvents.CURRENCY_CHANGED)
 GameState.setRecruitTicket = makeSetter("recruitTicket", "recruitTicket", GameEvents.CURRENCY_CHANGED)
 GameState.setStellarRecruitTicket = makeSetter("stellarRecruitTicket", "stellarRecruitTicket", GameEvents.CURRENCY_CHANGED)
 GameState.setGoldenKey            = makeSetter("goldenKey",            "goldenKey",            GameEvents.CURRENCY_CHANGED)
@@ -436,6 +454,8 @@ function GameState.syncFromCurrency(data)
         offhandScroll = "setOffhandScroll",
         armorScroll = "setArmorScroll",
         accessoryScroll = "setAccessoryScroll",
+        helmetScroll = "setHelmetScroll",
+        shoesScroll = "setShoesScroll",
         recruitTicket = "setRecruitTicket",
         stellarRecruitTicket = "setStellarRecruitTicket",
         goldenKey = "setGoldenKey",
@@ -478,6 +498,8 @@ function GameState.reset()
     state.offhandScroll   = GameConfig.Currency.START_OFFHAND_SCROLL
     state.armorScroll     = GameConfig.Currency.START_ARMOR_SCROLL
     state.accessoryScroll = GameConfig.Currency.START_ACCESSORY_SCROLL
+    state.helmetScroll    = GameConfig.Currency.START_HELMET_SCROLL
+    state.shoesScroll     = GameConfig.Currency.START_SHOES_SCROLL
     state.recruitTicket = GameConfig.Currency.START_RECRUIT_TICKET
     state.sweepTicket   = GameConfig.Currency.START_SWEEP_TICKET
     state.tavernCoin    = GameConfig.Currency.START_TAVERN_COIN
@@ -491,6 +513,7 @@ function GameState.reset()
         destroyStone = state.destroyStone,
         weaponScroll = state.weaponScroll, offhandScroll = state.offhandScroll,
         armorScroll = state.armorScroll, accessoryScroll = state.accessoryScroll,
+        helmetScroll = state.helmetScroll, shoesScroll = state.shoesScroll,
         recruitTicket = state.recruitTicket,
         sweepTicket = state.sweepTicket,
         tavernCoin = state.tavernCoin,

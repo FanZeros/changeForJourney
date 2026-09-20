@@ -50,13 +50,15 @@ local SHOP_ITEMS = {
 }
 
 -- 随机卷轴的具体类型列表
-local SCROLL_TYPES = { "weaponScroll", "offhandScroll", "armorScroll", "accessoryScroll" }
+local SCROLL_TYPES = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
 -- camelCase → snake_case 映射（用于 rewardDetail 返回给客户端）
 local SCROLL_TO_SNAKE = {
     weaponScroll    = "weapon_scroll",
     offhandScroll   = "offhand_scroll",
     armorScroll     = "armor_scroll",
     accessoryScroll = "accessory_scroll",
+    helmetScroll    = "helmet_scroll",
+    shoesScroll     = "shoes_scroll",
 }
 
 -- ======================== 内部工具 ========================

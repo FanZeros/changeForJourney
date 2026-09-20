@@ -709,6 +709,8 @@ function Standalone.Start()
                 offhandScroll   = "offhand_scroll",
                 armorScroll     = "armor_scroll",
                 accessoryScroll = "accessory_scroll",
+                helmetScroll    = "helmet_scroll",
+                shoesScroll     = "shoes_scroll",
             }
             for field, amount in pairs(scrollReward.scrolls) do
                 local getter = GameState["get" .. field:sub(1,1):upper() .. field:sub(2)]

@@ -697,6 +697,7 @@ return {
     { "image/界面底板/教堂转职/UI_JTSQ_BJ.png", 1945288 },
     { "image/界面底板/角色与觉醒/UI_JSJM_BJ.png", 2278443 },
     { "image/界面底板/角色与觉醒/UI_JSXQ_BJ.png", 2303758 },
+    { "image/界面底板/角色与觉醒/UI_JSXQ_BJ_dark.png", 2253104 },
     { "image/spine/UI_SPINE_JGZM_2.png", 6926041 },
     { "image/界面底板/剧情日记/JQBJ_1.png", 1719504 },
     { "image/界面底板/竞技场排行/MAP_JJC.png", 2500186 },

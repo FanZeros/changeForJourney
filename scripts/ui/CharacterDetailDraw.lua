@@ -43,14 +43,14 @@ local DT_CARD_CX, DT_CARD_CY = 540, 447
 -- 装备槽位
 local DT_SLOT_SIZE = 160
 M.DT_SLOT_SIZE = DT_SLOT_SIZE  -- handleInput 需要
--- 六边形围立绘（中心 540,447，R=248，顶点朝上）
+-- 六边形围立绘（中心 540,447，垂直半径 262/水平 ±215，顶点朝上；立绘缩至 362 高避开上下槽）
 local DT_SLOTS = {
-    { name = "头盔",   cx = 540, cy = 199, img = "helmet",    slot = "helmet" },
-    { name = "饰品",   cx = 755, cy = 323, img = "accessory", slot = "accessory" },
-    { name = "副武器", cx = 755, cy = 571, img = "offhand",   slot = "offhand" },
-    { name = "鞋子",   cx = 540, cy = 695, img = "shoes",     slot = "shoes" },
-    { name = "主武器", cx = 325, cy = 571, img = "weapon",    slot = "weapon" },
-    { name = "护甲",   cx = 325, cy = 323, img = "armor",     slot = "armor" },
+    { name = "头盔",   cx = 540, cy = 185, img = "helmet",    slot = "helmet" },
+    { name = "饰品",   cx = 755, cy = 316, img = "accessory", slot = "accessory" },
+    { name = "副武器", cx = 755, cy = 578, img = "offhand",   slot = "offhand" },
+    { name = "鞋子",   cx = 540, cy = 709, img = "shoes",     slot = "shoes" },
+    { name = "主武器", cx = 325, cy = 578, img = "weapon",    slot = "weapon" },
+    { name = "护甲",   cx = 325, cy = 316, img = "armor",     slot = "armor" },
 }
 M.DT_SLOTS = DT_SLOTS  -- handleInput 需要
 
@@ -241,13 +241,13 @@ M.SWITCH_SLIDE_DIST    = 180                 -- 水平滑动距离（适中，�
 
 -- 卡片渲染常量（打包为 table，节省 local 变量槽位）
 local CARD = {
-    W=198, H=438, CY=544,
-    TAG_SIZE=60, TAG_OFFSET_Y=-215,
+    W=164, H=362, CY=544,
+    TAG_SIZE=60, TAG_OFFSET_Y=-160,
     POWER_Y=680, POWER_ICON_SIZE=36,
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BADGE_DY=725-544,
     EXP_BAR_DX=552-540, EXP_BAR_DY=727-544,
     EXP_BAR_BG_W=148, EXP_BAR_BG_H=28, EXP_BAR_PADDING=4,
-    NAME_BG_DY=290, NAME_BG_W=193, NAME_BG_H=48, NAME_BG_RADIUS=24,
+    NAME_BG_DY=375, NAME_BG_W=193, NAME_BG_H=48, NAME_BG_RADIUS=24,
 }
 
 -- 职业图标映射
@@ -414,7 +414,7 @@ end
 
 --- 初始化图片（在 CharacterDetail.init 中调用）
 function M.initImages(vg)
-    img.detailBg      = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_BJ.png", 0)
+    img.detailBg      = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_BJ_dark.png", 0)
     -- 空槽底图与铁匠铺共用 TJP_ZBL，避免 JSXQ 新画头盔/鞋子风格不一致
     img.slotWeapon    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_WQ.png", 0)
     img.slotOffhand   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_FS.png", 0)

@@ -456,7 +456,7 @@ function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
     end
 
     if seamBarImg and seamBarImg > 0 then
-        local w = h * SEAMBAR_RATIO
+        local w = h * SEAMBAR_RATIO * 0.8   -- 视觉缩窄，避免与页面金框争宽
         local halfW = w * 0.5
         nvgSave(vg)
         if dir == "left" then
@@ -464,10 +464,15 @@ function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
             nvgScale(vg, -1, 1)
             nvgTranslate(vg, -cx, -cy)
         end
-        local paint = nvgImagePattern(vg, cx - halfW, cy - h * 0.5, w, h, 0, seamBarImg, 1.0)
+        local paint = nvgImagePattern(vg, cx - halfW, cy - h * 0.5, w, h, 0, seamBarImg, 0.92)
         nvgBeginPath(vg)
         nvgRect(vg, cx - halfW, cy - h * 0.5, w, h)
         nvgFillPaint(vg, paint)
+        nvgFill(vg)
+        -- 压暗：素材金饰偏亮，叠一层暗色退到页面底层
+        nvgBeginPath(vg)
+        nvgRect(vg, cx - halfW, cy - h * 0.5, w, h)
+        nvgFillColor(vg, nvgRGBA(12, 9, 6, 110))
         nvgFill(vg)
         nvgRestore(vg)
         return

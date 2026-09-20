@@ -241,7 +241,7 @@ M.SWITCH_SLIDE_DIST    = 180                 -- 水平滑动距离（适中，�
 
 -- 卡片渲染常量（打包为 table，节省 local 变量槽位）
 local CARD = {
-    W=164, H=362, CY=544,
+    W=136, H=300, CY=544,
     TAG_SIZE=60, TAG_OFFSET_Y=-160,
     POWER_Y=680, POWER_ICON_SIZE=36,
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BADGE_DY=725-544,

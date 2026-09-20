@@ -48,8 +48,18 @@ python pack_release.py --upload-only  # 已有 zip 只上传
 
 **本机没有 dist/？** 脚本会自动从 GitHub Release `dist-snapshot` 拉取最新快照
 （文件名 `dist-{version}-{commit短hash}.zip`，脚本列资产自动选最新，天然避开旧缓存；
-需本机 GitHub 凭据/token 仅用于上传，下载匿名）。该快照由云端会话在 Build 后执行
-`python pack_release.py --dist-only` 上传维护——**云端每次 build 后都要重传**，否则本机拉到旧快照。
+需本机 GitHub 凭据/token 仅用于上传，下载匿名）。**云端每次 build 后都要重传**，否则本机拉到旧快照。
+
+**云端维护快照**（Build 之后跑一次）：
+
+```bash
+python electron-shell/snapshot.py                      # 压缩+分片上传+清旧，一条命令
+python electron-shell/snapshot.py --max-seconds 80     # 沙箱/弱网限时分批，反复重跑即断点续传
+```
+
+- 分片 16MB/片（单连接大 POST 会被代理劣化卡死）；幂等：已传片秒跳过，可随时中断重跑
+- 传完自动删除其它 commit 的旧片防混片；产物 `dist-{version}-{commit7}.zip.partNN`
+- 直连 GitHub 失败加 `--proxy http://127.0.0.1:7890`（pack_release 拉取端同样支持并会自动探测常见端口）
 
 ## 构筑（手动）
 

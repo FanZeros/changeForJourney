@@ -1,6 +1,6 @@
 -- ============================================================================
 -- LoadingScreen - 加载界面
--- 全屏背景视频 + 底部渐变遮罩 + "载入中" + 进度条
+-- 静态背景图 + 底部渐变遮罩 + "载入中" + 进度条
 -- ============================================================================
 
 local GameConfig = require("config.GameConfig")
@@ -19,8 +19,7 @@ local vg_           = nil
 local imgMask_      = -1   -- 底部渐变遮罩
 local imgBarBg_     = -1   -- 进度条背景
 local imgBarFill_   = -1   -- 进度条填充
-local videoPlayer_  = nil
-local videoHandle_  = nil
+local imgBg_        = -1   -- 静态背景图
 
 -- ── BGM（从 StartScreen 接管） ──
 local bgmSource_    = nil   ---@type SoundSource
@@ -82,12 +81,13 @@ function LoadingScreen.init(nvgCtx)
     imgMask_    = nvgCreateImage(vg_, "image/界面底板/标题与加载/UI_ZRJM_HD.png", 0)
     imgBarBg_   = nvgCreateImage(vg_, "image/进度条/UI_ZRJM_JDT2.png", 0)
     imgBarFill_ = nvgCreateImage(vg_, "image/进度条/UI_ZRJM_JDT1.png", 0)
+    imgBg_      = nvgCreateImage(vg_, "image/界面底板/标题与加载/UI_DLJMBJ_FRAME1.jpg", 0)
     print("[LoadingScreen] images OK")
     print("[LoadingScreen] init complete (Spine preload deferred to loading phase)")
 end
 
 --- 打开加载界面
---- @param opts? { videoPlayer: any, videoHandle: any, bgmSource: SoundSource, bgmNode: Node } 可选，从 StartScreen 传入已有的视频播放器和 BGM
+--- @param opts? { bgmSource: SoundSource, bgmNode: Node } 可选，从 StartScreen 传入 BGM
 function LoadingScreen.open(opts)
     isOpen_         = true
     progress_       = 0
@@ -101,31 +101,11 @@ function LoadingScreen.open(opts)
     statusText_       = ""
     tapToRetryCallback_ = nil
 
-    -- 优先复用外部传入的视频播放器（避免重建导致黑屏闪烁）
-    if opts and opts.videoPlayer then
-        videoPlayer_ = opts.videoPlayer
-        videoHandle_ = opts.videoHandle  -- 可能为 nil，draw 时会自动创建
-    end
-
     -- 接管 BGM（从 StartScreen 延续播放）
     if opts and opts.bgmSource then
         bgmSource_ = opts.bgmSource
         bgmNode_   = opts.bgmNode
         bgmSource_.gain = bgmVolume_  -- 恢复音量
-    end
-
-    -- 没有可复用的播放器时才新建
-    if not videoPlayer_ then
-        videoPlayer_ = VideoPlayer:new()
-        if videoPlayer_ then
-            local ok = videoPlayer_:Load("video/UI_DLJMBJ_Compat.mp4", 1080, 2400)
-            if ok then
-                videoPlayer_:SetLoop(true)
-                videoPlayer_:SetVolume(0)
-                videoPlayer_:Play()
-            end
-        end
-        videoHandle_ = nil
     end
 
     -- Spine 预加载（资源文件已由 resources.json 预下载组在引擎启动时就绪）
@@ -191,11 +171,6 @@ end
 function LoadingScreen.update(dt)
     if not isOpen_ then return end
 
-    -- 视频帧更新
-    if videoPlayer_ then
-        videoPlayer_:Update()
-    end
-
     -- "载入中..." 动画计时
     dotTimer_ = dotTimer_ + dt
 
@@ -239,12 +214,6 @@ function LoadingScreen.update(dt)
             fadeAlpha_ = 0
             isOpen_ = false
             fadeOut_ = false
-            -- 释放视频资源
-            if videoPlayer_ then
-                videoPlayer_:Stop()
-                videoPlayer_ = nil
-            end
-            videoHandle_ = nil
             -- 停止 BGM 并清理节点
             if bgmSource_ then bgmSource_:Stop() end
             if bgmNode_ then bgmNode_:Remove() end
@@ -267,17 +236,9 @@ function LoadingScreen.draw(vg)
         nvgGlobalAlpha(vg, math.max(fadeAlpha_, 0))
     end
 
-    -- 1. 全屏背景视频
-    -- 尝试创建 videoHandle（仅首次）
-    if not videoHandle_ and videoPlayer_ and videoPlayer_:IsReady() then
-        local texture = videoPlayer_:GetTexture()
-        if texture and nvgCreateVideo then
-            videoHandle_ = nvgCreateVideo(vg, texture)
-        end
-    end
-    -- 已有 handle 就直接绘制，避免循环衔接时闪黑
-    if videoHandle_ and videoHandle_ > 0 then
-        drawImg(vg, videoHandle_, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
+    -- 1. 静态背景图
+    if imgBg_ >= 0 then
+        drawImg(vg, imgBg_, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
     else
         nvgBeginPath(vg)
         nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)

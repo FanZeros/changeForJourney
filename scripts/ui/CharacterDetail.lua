@@ -440,7 +440,8 @@ function CharacterDetail.handleInput(dx, dy)
         return EquipmentBag.handleInput(dx, dy)
     end
 
-    -- 装备槽位点击
+    -- 装备槽位点击（觉醒页槽位不绘制也不响应）
+    if detailState.tab ~= "awaken" then
     for _, s in ipairs(DT_SLOTS) do
         if hitTest(dx, dy, s.cx, s.cy, DT_SLOT_SIZE, DT_SLOT_SIZE) then
             if detailState.tab == "equip" then
@@ -456,9 +457,11 @@ function CharacterDetail.handleInput(dx, dy)
             return true
         end
     end
+    end  -- if not awaken
 
-    -- 一键卸下按钮
-    if math.abs(dx - Draw.BTN_UNEQUIP_CX) <= Draw.BTN_BATCH_W * 0.5
+    -- 一键卸下按钮（觉醒页不绘制不响应）
+    if detailState.tab ~= "awaken"
+       and math.abs(dx - Draw.BTN_UNEQUIP_CX) <= Draw.BTN_BATCH_W * 0.5
        and math.abs(dy - Draw.BTN_UNEQUIP_CY) <= Draw.BTN_BATCH_H * 0.5 then
         BF.trigger("unequip_all")
         print("[CharacterDetail] 一键卸下: heroId=" .. tostring(detailState.heroId))
@@ -469,8 +472,9 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- 一键装备按钮
-    if math.abs(dx - Draw.BTN_EQUIP_CX) <= Draw.BTN_BATCH_W * 0.5
+    -- 一键装备按钮（觉醒页不绘制不响应）
+    if detailState.tab ~= "awaken"
+       and math.abs(dx - Draw.BTN_EQUIP_CX) <= Draw.BTN_BATCH_W * 0.5
        and math.abs(dy - Draw.BTN_EQUIP_CY) <= Draw.BTN_BATCH_H * 0.5 then
         BF.trigger("equip_all")
         print("[CharacterDetail] 一键装备: heroId=" .. tostring(detailState.heroId))
@@ -489,14 +493,14 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- 左箭头切换上一个角色（热区覆盖整个背景）
-    if hitTest(dx, dy, ARROW_BG_LEFT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
+    -- 左箭头切换上一个角色（热区覆盖整个背景；觉醒页箭头不绘制也不响应）
+    if detailState.tab ~= "awaken" and hitTest(dx, dy, ARROW_BG_LEFT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
         CharacterDetail._switchHero(-1)
         return true
     end
 
     -- 右箭头切换下一个角色（热区覆盖整个背景）
-    if hitTest(dx, dy, ARROW_BG_RIGHT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
+    if detailState.tab ~= "awaken" and hitTest(dx, dy, ARROW_BG_RIGHT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
         CharacterDetail._switchHero(1)
         return true
     end

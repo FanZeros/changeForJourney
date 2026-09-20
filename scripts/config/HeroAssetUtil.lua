@@ -25,6 +25,10 @@ end
 ---@param heroId number
 ---@return string
 function HeroAssetUtil.getPortraitPath(heroId)
+    local cfg = HC.get(heroId)
+    if cfg and cfg.name then
+        return "image/角色立绘/" .. cfg.name .. "_透明立绘.png"
+    end
     return string.format("image/角色立绘/UI_DLH_%d.png", heroId)
 end
 

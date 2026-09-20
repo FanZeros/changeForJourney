@@ -479,6 +479,31 @@ function GameState.syncFromCurrency(data)
     end
 end
 
+--- 导出单机本地 state 快照（Standalone 本地存档用）
+---@return table  state 浅拷贝
+function GameState.exportSave()
+    local copy = {}
+    for k, v in pairs(state) do copy[k] = v end
+    return copy
+end
+
+--- 从存档恢复单机本地 state（仅单机模式生效；恢复后广播货币变化）
+---@param data table|nil  exportSave 导出的快照
+function GameState.importSave(data)
+    if isMultiplayer() then return end
+    if type(data) ~= "table" then return end
+    for k, v in pairs(data) do
+        state[k] = v
+    end
+    EventBus.emit(GameEvents.CURRENCY_CHANGED, {
+        gold = state.gold, gems = state.gems, essence = state.essence,
+        enhanceStone = state.enhanceStone, degradeStone = state.degradeStone,
+        destroyStone = state.destroyStone,
+    })
+    print("[GameState] importSave 完成 level=" .. tostring(state.level)
+        .. " gold=" .. tostring(state.gold))
+end
+
 --- 重置所有缓存状态到初始默认值（仅单机模式使用）
 function GameState.reset()
     if isMultiplayer() then return end

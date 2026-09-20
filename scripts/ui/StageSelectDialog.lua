@@ -4,7 +4,7 @@
 --   左栏: 大关卡（章节）竖排列表，各章色调横幅 + 章名，>9 章上下滚动
 --   中栏: 章节地图预览（MAP_{rel}.png cover）+ 该章小关卡网格（5 列）
 --         当前关金框 / Boss 关红字 / 终焉神殿独立章组
---   底部: 当前关卡条；点击空白关闭
+--   点击空白关闭
 -- 入口：战斗界面 HUD「选关」按钮（与扫荡/统计同套图标按钮）
 -- ============================================================================
 
@@ -60,11 +60,6 @@ local D = {
     CELL_GAP  = 8,
     GRID_COLS = 5,
 
-    -- 当前关卡条
-    CUR_BG_CY = 1652,
-    CUR_BG_W  = 580,  CUR_BG_H = 64, CUR_BG_R = 14, CUR_BG_A = 18,
-    CUR_LBL_X = 335,  CUR_VAL_X = 875,
-    CUR_FONT  = 32,
 }
 
 local ANIM_OPEN_DUR = 0.18
@@ -84,6 +79,12 @@ local state = {
     openTime  = 0,
     selKey    = nil,   -- 选中章节 key（chapter number 或 "T"=终焉神殿组）
     chScroll  = 0,     -- 左栏滚动起点（0-based）
+
+    -- [选关 v3] 全链数据缓存（ensureCache 维护, 随 maxStage 变化重建）
+    cacheGroups   = nil,  ---@type table[] 章节组列表
+    cacheOrder    = nil,  ---@type table<number, number> id→链序
+    cacheMaxStage = nil,  ---@type number 构建时的 maxStageId
+    cacheMaxOrder = nil,  ---@type number 解锁基准链序
 }
 
 local function hitTestRect(dx, dy, cx, cy, w, h)
@@ -97,34 +98,31 @@ local function getAnimScale()
     return t * (1.0 + 0.08 * math.sin(t * math.pi))
 end
 
---- 沿官方关卡链收集至 maxStage（含终焉神殿，不用数值比较截断）
-local function collectExistIds(maxStage)
+--- 沿官方关卡链收集全链（不随进度截断；不跟随转生跨难度回环）
+--- 返回 ids 与链序表 order[id]=序号
+local function collectAllIds()
     local ids = {}
-    ---@type table<number, boolean>
-    local seen = {}
+    ---@type table<number, number>
+    local order = {}
     local cur = SC.NORMAL_FIRST_STAGE or 101
     local guard = 0
     while cur and guard < 2000 do
         guard = guard + 1
-        if seen[cur] then break end
-        seen[cur] = true
+        if order[cur] then break end
         if SC.getStage(cur) then
             ids[#ids + 1] = cur
+            order[cur] = #ids
         end
-        if cur == maxStage then break end
         local nxt = SC.getNextStageId(cur)
-        if not nxt and SC.isTerminalTemple(cur) then
-            nxt = SC.getReincarnationTarget(SC.getDifficulty(cur))
-        end
         if not nxt then break end
         cur = nxt
     end
-    return ids
+    return ids, order
 end
 
 --- 章节组：{{ key=chapter|"T", name=, ids={} } 按进度顺序}
-local function collectChapterGroups(maxStage)
-    local ids = collectExistIds(maxStage)
+local function collectChapterGroups()
+    local ids, order = collectAllIds()
     local groups = {}
     ---@type table<any, number>
     local indexOf = {}
@@ -150,7 +148,32 @@ local function collectChapterGroups(maxStage)
         local g = groups[gi]
         g.ids[#g.ids + 1] = id
     end
-    return groups
+    return groups, order
+end
+
+--- 全链总关数
+local function ids_of(groups)
+    local n = 0
+    for _, g in ipairs(groups) do n = n + #g.ids end
+    return n
+end
+
+--- 弹窗数据缓存：全链列表随 maxStage 变化重建
+local function ensureCache()
+    local BS = require("ui.BattleScene")
+    local maxStage = BS.getMaxStageId()
+    if not maxStage or maxStage < 1 then
+        maxStage = SC.NORMAL_FIRST_STAGE or 101
+    end
+    if not state.cacheGroups or state.cacheMaxStage ~= maxStage then
+        local groups, order = collectChapterGroups()
+        state.cacheGroups = groups
+        state.cacheOrder = order
+        state.cacheMaxStage = maxStage
+        -- 解锁基准: maxStage 的链序; 链上找不到(如转生后 id)则视为全解锁
+        state.cacheMaxOrder = (maxStage and order[maxStage]) or ids_of(groups)
+    end
+    return state.cacheGroups, state.cacheMaxOrder
 end
 
 local function chapterHue(key)
@@ -216,21 +239,18 @@ function StageSelectDialog.open()
     state.open     = true
     state.openTime = time.elapsedTime
     local BS = require("ui.BattleScene")
-    local maxStage = BS.getMaxStageId()
-    if not maxStage or maxStage < 1 then
-        maxStage = SC.NORMAL_FIRST_STAGE or 101
-    end
-    local curStage = BS.getStageId() or maxStage
+    local curStage = BS.getStageId()
     -- 定位到当前关所在章节
     local curKey
-    if SC.isTerminalTemple(curStage) then
+    if curStage and SC.isTerminalTemple(curStage) then
         curKey = "T"
-    else
+    elseif curStage then
         curKey = math.floor(curStage / 100)
     end
+    ensureCache()
     state.selKey = curKey
     -- 滚动让当前章可见
-    local groups = collectChapterGroups(maxStage)
+    local groups = state.cacheGroups or {}
     local gi = 1
     for i, g in ipairs(groups) do
         if tostring(g.key) == tostring(curKey) then gi = i; break end
@@ -282,12 +302,8 @@ function StageSelectDialog.draw(vg)
     if scale <= 0.01 then return end
 
     local BS = require("ui.BattleScene")
-    local maxStage = BS.getMaxStageId()
-    if not maxStage or maxStage < 1 then
-        maxStage = SC.NORMAL_FIRST_STAGE or 101
-    end
-    local curStage = BS.getStageId() or maxStage
-    local groups = collectChapterGroups(maxStage)
+    local groups, maxOrder = ensureCache()
+    local curStage = BS.getStageId()
     local sel = selectedGroup(groups)
     if not sel then return end
 
@@ -421,13 +437,16 @@ function StageSelectDialog.draw(vg)
         local cx, cy = x + cellW * 0.5, y + cellH * 0.5
         local isCur = (id == curStage)
         local isBoss = SC.hasBoss(id) or SC.isTerminalTemple(id)
+        -- 未解锁: 链序超过玩家解锁进度
+        local ord = state.cacheOrder and state.cacheOrder[id] or nil
+        local locked = (ord == nil) or (maxOrder == nil) or (ord > maxOrder)
 
         nvgBeginPath(vg)
         nvgRoundedRect(vg, x, y, cellW, cellH, 12)
         if isCur then
             nvgFillColor(vg, nvgRGBA(201, 151, 59, 48))
         else
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, locked and 60 or 26))
         end
         nvgFill(vg)
         if isCur then
@@ -445,13 +464,16 @@ function StageSelectDialog.draw(vg)
         elseif isBoss then
             fr, fg, fb = 0xA6, 0x1E, 0x1E
         end
+        local txtA = locked and 150 or 255
         drawTextStroke(vg, cx, cy - 12, label, 28,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4, { strokeColor = { fr, fg, fb } })
+            txtA, txtA, txtA, 4, { strokeColor = { fr, fg, fb } })
 
         local sub
         if isCur then
             sub = "当前"
+        elseif locked then
+            sub = "未解锁"
         elseif SC.isTerminalTemple(id) then
             sub = "神殿"
         elseif isBoss then
@@ -464,27 +486,13 @@ function StageSelectDialog.draw(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         if isCur then
             nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 255))
+        elseif locked then
+            nvgFillColor(vg, nvgRGBA(0x8a, 0x84, 0x74, 220))
         else
             nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
         end
         nvgText(vg, cx, cy + 20, sub, nil)
     end
-
-    -- 当前关卡条（中栏底部）
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        pvX, D.CUR_BG_CY - D.CUR_BG_H * 0.5, D.CUR_BG_W, D.CUR_BG_H, D.CUR_BG_R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, D.CUR_BG_A))
-    nvgFill(vg)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, D.CUR_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xd8, 0xc9, 0xa3, 255))
-    nvgText(vg, D.CUR_LBL_X, D.CUR_BG_CY, "当前", nil)
-    local curName = SC.formatProgressDisplay(curStage)
-    drawTextStroke(vg, D.CUR_VAL_X, D.CUR_BG_CY, curName,
-        D.CUR_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-        0x63, 0xff, 0x84, 5, { strokeColor = { 0, 0, 0 } })
 
     nvgRestore(vg)
 end
@@ -498,11 +506,7 @@ function StageSelectDialog.handleInput(x, y)
     if not state.open then return false end
 
     local BS = require("ui.BattleScene")
-    local maxStage = BS.getMaxStageId()
-    if not maxStage or maxStage < 1 then
-        maxStage = SC.NORMAL_FIRST_STAGE or 101
-    end
-    local groups = collectChapterGroups(maxStage)
+    local groups, maxOrder = ensureCache()
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
     local needScroll = maxScroll > 0
 
@@ -549,6 +553,11 @@ function StageSelectDialog.handleInput(x, y)
             local y0 = D.GRID_Y0 + row * (D.CELL_H + D.CELL_GAP)
             if x >= x0 and x <= x0 + D.CELL_W and y >= y0 and y <= y0 + D.CELL_H then
                 BF.trigger("stage_sel_cell")
+                -- 未解锁: 吞掉点击不跳转
+                local ord = state.cacheOrder and state.cacheOrder[id] or nil
+                if (ord == nil) or (maxOrder == nil) or (ord > maxOrder) then
+                    return true
+                end
                 local ok = BS.gotoStage(id)
                 if ok then StageSelectDialog.close() end
                 return true

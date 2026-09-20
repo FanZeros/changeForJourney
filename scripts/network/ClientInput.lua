@@ -29,6 +29,7 @@ local UpdateNoticePopup = require("ui.UpdateNoticePopup")
 local VersionMismatchPopup = require("ui.VersionMismatchPopup")
 local PlayerInfoPanel  = require("ui.PlayerInfoPanel")
 local DiaryPage        = require("ui.DiaryPage")
+local BackpackPanel    = require("ui.BackpackPanel")
 local DrawUtil         = require("core.DrawUtil")
 local ScenarioDialogue = require("ui.ScenarioDialogue")
 local DungeonPage      = require("ui.DungeonPage")
@@ -70,7 +71,7 @@ end
 --- 物理像素 → 设计坐标
 local function toDesign(px, py)
     -- 信件/选角全窗口覆盖：按 1080×2400 letterbox 映射，不走中栏面板
-    if HORIZON_MODE and (LetterIntro.isOpen() or CharacterSelect.isActive()) then
+    if LetterIntro.isOpen() or CharacterSelect.isActive() then
         local lw = graphics:GetWidth() / (graphics:GetDPR() or 1)
         local lh = graphics:GetHeight() / (graphics:GetDPR() or 1)
         local ss = math.min(lw / 1080, lh / 2400)
@@ -82,7 +83,7 @@ local function toDesign(px, py)
     end
     local sx = px / dpr / scale
     local sy = py / dpr / scale
-    if HORIZON_MODE and currentStateFn and currentStateFn() == STATE_IN_GAME
+    if currentStateFn and currentStateFn() == STATE_IN_GAME
         and not StartScreen.isOpen() then
         local lw, lh = graphics:GetWidth() / (graphics:GetDPR() or 1), graphics:GetHeight() / (graphics:GetDPR() or 1)
         local vox, voy, vs = ViewportI.layout(lw, lh)
@@ -129,6 +130,12 @@ local function dispatchDragBegin(dx, dy)
 
     -- 情景对话拦截（全屏，吞掉所有输入）
     if ScenarioDialogue.isActive() then return end
+
+    -- [仓库入口] 背包全窗模态（竖屏也从城镇开）：最顶层拦截
+    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+        BackpackPanel.handleDragBegin(dx, dy)
+        return
+    end
 
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragBegin(dx, dy)
@@ -193,6 +200,12 @@ local function dispatchDragMove(dx, dy)
 
     -- 情景对话拦截
     if ScenarioDialogue.isActive() then return end
+
+    -- [仓库入口] 背包全窗模态：最顶层拦截
+    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+        BackpackPanel.handleDragMove(dx, dy)
+        return
+    end
 
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragMove(dx, dy)
@@ -323,6 +336,12 @@ local function dispatchDragEndAndTap(dx, dy)
         end
     end
 
+    -- [仓库入口] 背包全窗模态：最顶层拦截
+    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+        BackpackPanel.handleDragEnd(dx, dy)
+        if isTap then BackpackPanel.handleInput(dx, dy) end
+        return
+    end
     if TowerBattleScene.isActive() then
         local mousePos = input:GetMousePosition()
         local dprNow = graphics:GetDPR() or 1
@@ -459,9 +478,6 @@ local function dispatchDragEndAndTap(dx, dy)
                     or CharacterPanel.isDetailOpen()
                     or DiaryPage.hasOverlayOpen()
     if not detailOpen and not DungeonBattleScene.isOpen() then
-        if TopBar.handleInput(dx, dy) then
-            return
-        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
@@ -518,6 +534,10 @@ function M.dispatchScroll(wheel, msx, msy)
     if LetterIntro.isOpen() then return end
     if CharacterSelect.isActive() then return end
     if ScenarioDialogue.isActive() then return end
+    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+        BackpackPanel.handleScroll(wheel)
+        return
+    end
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleScroll(wheel)
         return
@@ -701,12 +721,10 @@ end
 -- 横屏 PC 多面板（changeForJourney）：输入面板路由
 -- ============================================================================
 ViewportI = require("core.Viewport")
-HORIZON_MODE = true
 H_panel = 'center'
 
 -- [fix] 赋值给文件头部前向声明的 local（不可再加 local，否则上方闭包捕获的仍是 nil）
 function effectiveTab()
-    if not HORIZON_MODE then return BottomNav.getSelectedIndex() end
     if H_panel == 'left' then return 4 end
     if H_panel == 'right' then return 1 end
     return BottomNav.getSelectedIndex()

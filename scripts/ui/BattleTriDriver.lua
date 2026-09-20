@@ -109,6 +109,38 @@ function BattleTriDriver.new(teamIdx)
             getEnemies = function() return drv.enemies end,
             ALLY_CARD_CY  = BattleLayout.FIELD_CY,
             ENEMY_CARD_CY = BattleLayout.FIELD_CY,
+            -- [三战场独立发音] 攻击命中回调：投射物表现 + 音效（与行1 BattleScene 同逻辑；
+            -- spawn 落到本行 mount 的 psState，各行互不干扰）
+            onAttackHit = function(attacker, target, atkCX, atkCY, tgtCX, tgtCY, result, applyHit)
+                local hasHeroEffect = attacker.heroId
+                                      and ProjectileSystem.hasHeroEffect(attacker.heroId)
+                local hasMonsterEffect = attacker.atkEffect
+                                         and ProjectileSystem.hasMonsterProjectile(attacker.atkEffect)
+
+                local hitCallback = function()
+                    if applyHit then
+                        local ok, err = pcall(applyHit)
+                        if not ok then
+                            print("[TriDriver] applyHit ERROR: " .. tostring(err))
+                        end
+                    end
+                    if result.category ~= "healing" and target.attrs then
+                        local armorType = target.attrs.armorType or 1
+                        BattleEffects.spawn(armorType, tgtCX, tgtCY)
+                    end
+                end
+
+                local projOpts = result.category == "healing" and { target = target, forceBezier = true } or nil
+
+                if hasHeroEffect then
+                    ProjectileSystem.spawn(attacker.heroId, atkCX, atkCY, tgtCX, tgtCY, hitCallback, projOpts)
+                elseif hasMonsterEffect then
+                    local isMelee = (attacker.isRanged ~= true)
+                    ProjectileSystem.spawnByKey(attacker.atkEffect, atkCX, atkCY, tgtCX, tgtCY, hitCallback, isMelee, projOpts)
+                else
+                    hitCallback()
+                end
+            end,
         })
     end
 

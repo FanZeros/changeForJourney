@@ -1,7 +1,7 @@
 -- ============================================================================
 -- ScenarioDialogueConfig.lua — 情景对话数据配置（玩梗版 v2.1 · 全剧情梗味统一）
 -- 对应策划配置: docs/配置文件/剧情-情景对话.txt
--- characterId: 立绘编号 (UI_DLH_X.png 中的 X)
+-- characterId: HeroConfig 英雄ID（立绘 = image/角色立绘/{角色名}_透明立绘.png）
 -- mode: "large" = 大情景(全屏覆盖), "small" = 小情景(弹窗)
 -- 人设规则: 主角贴合 DialogueConfig v2.0 玩梗人设; NPC/黑暗镜像台词同步玩梗化;
 --           怪物名与 MonsterConfig(山海经版) 对齐(雷神/天狗/山膏/毕方/金乌…)

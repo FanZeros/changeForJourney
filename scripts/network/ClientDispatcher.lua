@@ -100,6 +100,12 @@ function ClientDispatcher.get(moduleName)
     return moduleData[moduleName]
 end
 
+--- [Standalone 存档] 返回全部模块数据的只读引用（供序列化快照遍历，调用方勿修改）
+---@return table<string, table>
+function ClientDispatcher.snapshotAll()
+    return moduleData
+end
+
 --- 读取全部模块（单机本地桥把同一份表喂给 PDM）
 ---@return table<string, table>
 function ClientDispatcher.getAll()

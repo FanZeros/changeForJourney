@@ -23,6 +23,9 @@ local BF               = require("systems.ButtonFeedback")
 
 local Panel = {}
 
+--- [横屏] 宿主模式："inline"=随 DiaryPage 内嵌绘制（竖屏）；"window"=全窗居中模态（横屏仓库入口）
+local hostMode_ = "inline"
+
 -- ======================== 设计分辨率 ========================
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
@@ -1062,7 +1065,9 @@ function Panel.init(vg)
 end
 
 --- 打开面板
-function Panel.open()
+---@param windowMode? boolean true=全窗居中模态(横屏仓库入口)；nil/false=内嵌(竖屏/日志页内)
+function Panel.open(windowMode)
+    hostMode_ = windowMode and "window" or "inline"
     state.open = true
     state.closing = false
     state.openTime = time.elapsedTime
@@ -1137,9 +1142,11 @@ function Panel.update(dt)
 end
 
 --- 绘制
-function Panel.draw(vg)
-    if not state.open then return end
+function Panel.isWindowMode()
+    return hostMode_ == "window"
+end
 
+local function drawBody(vg)
     -- === 动画进度计算（与 BlacksmithPage 一致） ===
     local progress, lowerProgress
     if state.closing then
@@ -1309,6 +1316,44 @@ function Panel.draw(vg)
 
     -- 道具详情弹窗（覆盖在最上层）
     drawItemDetail(vg)
+end
+
+function Panel.draw(vg)
+    if not state.open then return end
+    if hostMode_ == "window" then return end  -- 横屏由 drawWindow 全窗绘制
+    drawBody(vg)
+end
+
+--- [横屏] 全窗居中模态绘制：压暗 + 竖版画布等比缩放居中（子弹窗 EquipmentDetail/itemDetail 自动跟随）
+---@param vg any
+---@param logicalW number 窗口逻辑宽
+---@param logicalH number 窗口逻辑高
+function Panel.drawWindow(vg, logicalW, logicalH)
+    if not state.open then return end
+    if hostMode_ ~= "window" then return end
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, logicalW, logicalH)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 160))
+    nvgFill(vg)
+    local fit = math.min(logicalW / DESIGN_W, logicalH / DESIGN_H)
+    local dw, dh = DESIGN_W * fit, DESIGN_H * fit
+    nvgSave(vg)
+    nvgTranslate(vg, (logicalW - dw) * 0.5, (logicalH - dh) * 0.5)
+    nvgScale(vg, fit, fit)
+    drawBody(vg)
+    nvgRestore(vg)
+end
+
+--- [横屏] 窗口坐标 → 竖版设计坐标
+---@param wx number
+---@param wy number
+---@param logicalW number
+---@param logicalH number
+---@return number dx number dy
+function Panel.toDesignCoords(wx, wy, logicalW, logicalH)
+    local fit = math.min(logicalW / DESIGN_W, logicalH / DESIGN_H)
+    local dw, dh = DESIGN_W * fit, DESIGN_H * fit
+    return (wx - (logicalW - dw) * 0.5) / fit, (wy - (logicalH - dh) * 0.5) / fit
 end
 
 -- ======================== 输入处理 ========================

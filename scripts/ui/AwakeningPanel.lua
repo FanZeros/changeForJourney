@@ -32,15 +32,16 @@ local NODE_NAMES  = { "粗暴", "机制", "进化" }
 local NODE_ROMANS = { "Ⅰ", "Ⅱ", "Ⅲ" }
 
 -- 影画切片：CG 三竖条，边缘斜切，中条上移错位
+-- 面板为 1080x2400 设计页；切片区拉高让竖版 CG 尽量少裁
 local SLICES = {
-    W     = 312,     -- 单条宽
-    H     = 700,     -- 单条高
-    GAP   = 14,      -- 条间距
-    SX    = 58,      -- 左缘（(1080-3*312-2*14)/2）
-    SY    = 480,     -- 基准顶
-    SLANT = 26,      -- 顶边相对底边右移量（斜切）
-    STAG  = { 40, 0, 40 }, -- 每条纵向错位：中条上移
-    V_BIAS = 0.22,   -- CG 纵向取窗偏上（保脸）
+    W     = 336,     -- 单条宽
+    H     = 1150,    -- 单条高
+    GAP   = 12,      -- 条间距
+    SX    = 24,      -- 左缘（(1080-3*336-2*12)/2）
+    SY    = 396,     -- 基准顶（标题栏 y~384 之下）
+    SLANT = 30,      -- 顶边相对底边右移量（斜切）
+    STAG  = { 36, 0, 36 }, -- 每条纵向错位：中条上移
+    V_BIAS = 0.18,   -- CG 纵向取窗偏上（保脸）
 }
 
 local NODE_FILL = {
@@ -50,12 +51,12 @@ local NODE_FILL = {
 }
 
 -- 底栏
-local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1792
+local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1690
 local SUB_TITLE_W, SUB_TITLE_H   = 660, 60
-local EFFECT_CX, EFFECT_CY = 540, 1930
+local EFFECT_CX, EFFECT_CY = 540, 1830
 local EFFECT_W, EFFECT_H   = 910, 139
 local EFFECT_FONT           = 36
-local BTN_CX, BTN_CY = 540, 2079
+local BTN_CX, BTN_CY = 540, 2110
 local BTN_W, BTN_H   = 410, 100
 local BTN_TEXT_FONT  = 40
 
@@ -406,7 +407,7 @@ function M.draw(vg, heroId)
     end
 
     -- 进度角标
-    drawTextStroke(vg, 1030, 462, "觉醒 " .. activatedCount .. "/" .. NODE_COUNT,
+    drawTextStroke(vg, 1030, 330, "觉醒 " .. activatedCount .. "/" .. NODE_COUNT,
         30, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         0xff, 0xef, 0x67, 4,
         { strokeColor = { 0x1a, 0x14, 0x22 } })

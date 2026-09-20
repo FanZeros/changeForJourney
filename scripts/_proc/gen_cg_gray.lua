@@ -8,6 +8,14 @@
 -- 正式 CG 画好后放进 角色CG/ 再重跑本脚本即可刷新灰度版。
 -- ============================================================================
 
+local HC = require("config.HeroConfig")
+local function portraitPath(id)
+    local cfg = HC.get and HC.get(id) or nil
+    if cfg and cfg.name then
+        return "image/角色立绘/" .. cfg.name .. "_透明立绘.png"
+    end
+    return string.format("image/角色立绘/UI_DLH_%d.png", id)
+end
 local HERO_IDS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23 }
 
 local OUT_DIR = "/workspace/assets/image/角色CG"
@@ -16,7 +24,7 @@ local OUT_DIR = "/workspace/assets/image/角色CG"
 local function resolveSource(id)
     local tries = {
         { string.format("image/角色CG/CG_H%d.png", id),        "CG" },
-        { string.format("image/角色立绘/UI_DLH_%d.png", id),   "FALLBACK" },
+        { portraitPath(id), "FALLBACK" },
         { string.format("image/角色卡牌/KP_YX_%d.png", id),    "FALLBACK" },
     }
     for _, t in ipairs(tries) do

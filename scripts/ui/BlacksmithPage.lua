@@ -138,7 +138,7 @@ local SLIDER_INSET_RIGHT  = 70
 -- Tab 文本样式
 local TAB_TEXT_Y          = 2302
 local TAB_FONT_SIZE       = 40
-local TAB_ACTIVE_R, TAB_ACTIVE_G, TAB_ACTIVE_B = 0x81, 0x57, 0x3c
+local TAB_ACTIVE_R, TAB_ACTIVE_G, TAB_ACTIVE_B = 0xD8, 0xC9, 0xA3  -- [fix] 深色滑块上深棕不可读 → 骨白
 local TAB_INACTIVE_R, TAB_INACTIVE_G, TAB_INACTIVE_B = 255, 255, 255
 
 -- 动画

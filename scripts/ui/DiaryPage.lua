@@ -358,7 +358,10 @@ function DiaryPage.update(dt)
     AnnouncementPanel.update(dt)
     MailPanel.update(dt)
     SignInPanel.update(dt)
-    BackpackPanel.update(dt)
+    -- [仓库入口] 全窗模态由宿主驱动，避免双 update
+    if not BackpackPanel.isWindowMode() then
+        BackpackPanel.update(dt)
+    end
     TaskPanel.update(dt)
 end
 

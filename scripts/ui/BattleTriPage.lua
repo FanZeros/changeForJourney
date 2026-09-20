@@ -21,6 +21,7 @@ local RewardPopup  = require("ui.RewardPopup")
 local SweepDialog       = require("ui.SweepDialog")
 local DamageStatsPanel  = require("ui.DamageStatsPanel")
 local StageSelectDialog = require("ui.StageSelectDialog")
+local SoundToggle       = require("ui.SoundToggle")  -- [音效开关] 行1 HUD 快捷按钮
 local EquipmentBag      = require("ui.EquipmentBag")
 local StageConfig       = require("config.StageConfig")
 
@@ -107,6 +108,7 @@ function BattleTriPage.init(vg)
     imgL1[2]   = nvgCreateImage(vg, "image/暗黑/L1_row2_bonefield.png", 0)
     imgL1[3]   = nvgCreateImage(vg, "image/暗黑/L1_row3_abyss.png", 0)
     StageSelectDialog.init(vg)
+    SoundToggle.initImages(vg)
 end
 
 --- [三行并行] L0 整套大背景铺满窗口（左右面板 + 中段框体同源）
@@ -366,7 +368,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
     local hudGap = 72
     local showSpeed = BattleScene.isSpeedButtonVisible()
     local cursorX = ix1 + iw1 - hudPad - hudHalf
-    local hudSpeedX, hudSweepX, hudStatsX, hudStageX
+    local hudSpeedX, hudSweepX, hudStatsX, hudStageX, hudSoundX
     if showSpeed then
         hudSpeedX = cursorX
         cursorX = cursorX - hudGap
@@ -376,6 +378,8 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
     hudStatsX = cursorX
     cursorX = cursorX - hudGap
     hudStageX = cursorX
+    cursorX = cursorX - hudGap
+    hudSoundX = cursorX
     if showSpeed then
         nvgSave(vg)
         nvgTranslate(vg, hudSpeedX, hudY)
@@ -408,6 +412,14 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         StageSelectDialog.drawButton(vg)
         nvgRestore(vg)
     end
+    do
+        nvgSave(vg)
+        nvgTranslate(vg, hudSoundX, hudY)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -503, -2115)
+        SoundToggle.drawButton(vg)
+        nvgRestore(vg)
+    end
 end
 
 --- 输入（窗口坐标）；返回 true 表示消费
@@ -419,6 +431,12 @@ function BattleTriPage.handleInput(wx, wy)
 
     -- 装备背包覆盖战斗区：窗口坐标映射到背包设计空间
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
+        -- 装备详情弹窗按竖版设计空间铺在覆盖矩形内，需单独换算
+        local EquipmentDetail = require("ui.EquipmentDetail")
+        if EquipmentDetail.isOpen() then
+            local dx, dy = EquipmentBag.overlayToDetail(wx, wy)
+            return EquipmentDetail.handleInput(dx, dy)
+        end
         local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
         return EquipmentBag.handleInput(dx, dy)
     end
@@ -452,7 +470,7 @@ function BattleTriPage.handleInput(wx, wy)
     local hudGap = 72
     local showSpeed = bs.isSpeedButtonVisible()
     local cursorX = ix1 + iw1 - hudPad - hudHalf
-    local hudSpeedX, hudSweepX, hudStatsX, hudStageX
+    local hudSpeedX, hudSweepX, hudStatsX, hudStageX, hudSoundX
     if showSpeed then
         hudSpeedX = cursorX
         cursorX = cursorX - hudGap
@@ -462,6 +480,8 @@ function BattleTriPage.handleInput(wx, wy)
     hudStatsX = cursorX
     cursorX = cursorX - hudGap
     hudStageX = cursorX
+    cursorX = cursorX - hudGap
+    hudSoundX = cursorX
     local hitW, hitH = 65 * hudScale, 72 * hudScale
     if showSpeed and math.abs(wx - hudSpeedX) <= hitW and math.abs(wy - hudY) <= hitH then
         bs.handleSpeedButtonInput(987 + (wx - hudSpeedX) / hudScale, 311 + (wy - hudY) / hudScale)
@@ -477,6 +497,10 @@ function BattleTriPage.handleInput(wx, wy)
     end
     if math.abs(wx - hudStageX) <= hitW and math.abs(wy - hudY) <= hitH then
         StageSelectDialog.handleButtonInput(659 + (wx - hudStageX) / hudScale, 2115 + (wy - hudY) / hudScale)
+        return true
+    end
+    if math.abs(wx - hudSoundX) <= hitW and math.abs(wy - hudY) <= hitH then
+        SoundToggle.handleButtonInput()
         return true
     end
 

@@ -7,6 +7,14 @@ local nvg = nil
 local fontId = nil
 local cardImgs, portImgs = {}, {}
 
+local HC = require("config.HeroConfig")
+local function portraitPath(id)
+    local cfg = HC.get and HC.get(id) or nil
+    if cfg and cfg.name then
+        return "image/角色立绘/" .. cfg.name .. "_透明立绘.png"
+    end
+    return string.format("image/角色立绘/UI_DLH_%d.png", id)
+end
 function Start()
     nvg = nvgCreate(1)
     if nvg == nil then
@@ -20,7 +28,7 @@ function Start()
     end
     for _, id in ipairs(IDS) do
         local cp = string.format("image/角色卡牌/KP_YX_%d.png", id)
-        local pp = string.format("image/角色立绘/UI_DLH_%d.png", id)
+        local pp = portraitPath(id)
         cardImgs[id] = nvgCreateImage(nvg, cp, 0)
         portImgs[id] = nvgCreateImage(nvg, pp, 0)
         print(string.format("[implcheck] %d card=%s portrait=%s", id,
@@ -79,10 +87,10 @@ function HandleRender(eventType, eventData)
     nvgTextAlign(nvg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFontSize(nvg, 38)
     nvgFillColor(nvg, nvgRGBA(255, 255, 255, 255))
-    nvgText(nvg, W * 0.5, 60, "实装验收 · 已替换 KP_YX 卡面 + UI_DLH 立绘", nil)
+    nvgText(nvg, W * 0.5, 60, "实装验收 · 已替换 KP_YX 卡面 + 角色透明立绘", nil)
     nvgFontSize(nvg, 20)
     nvgFillColor(nvg, nvgRGBA(160, 160, 190, 255))
-    nvgText(nvg, W * 0.5, 105, "左:游戏卡牌显示场景(KP_YX) · 右:剧情对话立绘显示场景(UI_DLH)", nil)
+    nvgText(nvg, W * 0.5, 105, "左:游戏卡牌显示场景(KP_YX) · 右:剧情对话立绘显示场景(透明立绘)", nil)
 
     local slotW = 400
     local x0 = (W - 3 * slotW) * 0.5 + 20

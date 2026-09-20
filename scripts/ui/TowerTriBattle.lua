@@ -548,7 +548,7 @@ function TowerTriBattle.close()
     TAL.mount(nil)
     BattleEffects.mount(nil)
     SEM.mount(nil)
-    BattleLayout.setMode("classic")
+    BattleLayout.setMode("strip")
     local cb = state.onClose
     state.onClose = nil
     if cb then cb() end

@@ -28,6 +28,8 @@ local state = {
     -- 音量 0~1
     bgmVolume = 0.8,
     sfxVolume = 0.8,
+    -- 音效开关（战斗页 HUD 快捷按钮与设置面板共用；仅静音 SFX，不影响 BGM）
+    muted = false,
     showDamageNumbers = true,
     showEffects = true,
     -- 滑块拖拽
@@ -124,6 +126,7 @@ local function saveSettings()
         local ok, str = pcall(cjson.encode, {
             bgmVolume = state.bgmVolume,
             sfxVolume = state.sfxVolume,
+            muted = state.muted == true,
             showDamageNumbers = state.showDamageNumbers ~= false,
             showEffects = state.showEffects ~= false,
         })
@@ -149,6 +152,9 @@ local function loadSettings()
         if type(data.sfxVolume) == "number" then
             state.sfxVolume = math.max(0, math.min(1, data.sfxVolume))
         end
+        if type(data.muted) == "boolean" then
+            state.muted = data.muted
+        end
         if type(data.showDamageNumbers) == "boolean" then
             state.showDamageNumbers = data.showDamageNumbers
         end
@@ -173,9 +179,36 @@ local function applySfxVolume(vol)
     audio:SetMasterGain("Effect", vol)
 end
 
+--- 应用当前音频状态到引擎（muted 仅静音音效 SFX，BGM 不受影响）
+local function applyVolumes()
+    if state.muted then
+        audio:SetMasterGain("Effect", 0)
+    else
+        applyBgmVolume(state.bgmVolume)
+        applySfxVolume(state.sfxVolume)
+    end
+end
+
 -- ============================================================================
 -- Public API
 -- ============================================================================
+
+--- 音效开关状态（战斗页 HUD 快捷按钮使用；与设置面板共用同一状态）
+---@return boolean  true = 音效开启
+function SettingsPanel.isSoundOn()
+    return not (state.muted == true)
+end
+
+--- 设置音效开关（仅静音 SFX，BGM 不受影响；持久化到本地设置）
+---@param on boolean
+function SettingsPanel.setSoundOn(on)
+    local newMuted = not on
+    if state.muted == newMuted then return end
+    state.muted = newMuted
+    applyVolumes()
+    saveSettings()
+    print("[SettingsPanel] 音效开关: " .. (on and "开" or "关") .. "（BGM 不受影响）")
+end
 
 --- 初始化（加载图片资源，仅调用一次）
 function SettingsPanel.init(vg)
@@ -187,10 +220,9 @@ function SettingsPanel.init(vg)
 
     RedeemCodePanel.init(vg)
 
-    -- 加载本地保存的设置并应用
+    -- 加载本地保存的设置并应用（含静音标志）
     loadSettings()
-    applyBgmVolume(state.bgmVolume)
-    applySfxVolume(state.sfxVolume)
+    applyVolumes()
 
     print("[SettingsPanel] init OK")
 end
@@ -287,7 +319,7 @@ function SettingsPanel.handleInput(dx, dy)
     if hitSlider(dx, dy, ITEM1_BG.CY) then
         state.bgmVolume = xToVolume(dx)
         state.draggingSlider = "bgm"
-        applyBgmVolume(state.bgmVolume)
+        applyVolumes()
         saveSettings()
         print("[SettingsPanel] BGM 音量: " .. string.format("%.0f%%", state.bgmVolume * 100))
         return true
@@ -297,7 +329,7 @@ function SettingsPanel.handleInput(dx, dy)
     if hitSlider(dx, dy, ITEM2_CY) then
         state.sfxVolume = xToVolume(dx)
         state.draggingSlider = "sfx"
-        applySfxVolume(state.sfxVolume)
+        applyVolumes()
         saveSettings()
         print("[SettingsPanel] SFX 音量: " .. string.format("%.0f%%", state.sfxVolume * 100))
         return true
@@ -335,7 +367,7 @@ function SettingsPanel.handleDragBegin(dx, dy)
     if hitSlider(dx, dy, ITEM1_BG.CY) then
         state.draggingSlider = "bgm"
         state.bgmVolume = xToVolume(dx)
-        applyBgmVolume(state.bgmVolume)
+        applyVolumes()
         return true
     end
 
@@ -343,7 +375,7 @@ function SettingsPanel.handleDragBegin(dx, dy)
     if hitSlider(dx, dy, ITEM2_CY) then
         state.draggingSlider = "sfx"
         state.sfxVolume = xToVolume(dx)
-        applySfxVolume(state.sfxVolume)
+        applyVolumes()
         return true
     end
 
@@ -356,10 +388,10 @@ function SettingsPanel.handleDragMove(dx, dy)
 
     if state.draggingSlider == "bgm" then
         state.bgmVolume = xToVolume(dx)
-        applyBgmVolume(state.bgmVolume)
+        applyVolumes()
     elseif state.draggingSlider == "sfx" then
         state.sfxVolume = xToVolume(dx)
-        applySfxVolume(state.sfxVolume)
+        applyVolumes()
     end
     return true
 end

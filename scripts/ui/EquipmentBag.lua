@@ -106,6 +106,28 @@ local function tabRect(i)
     return x, TAB_Y2 - TAB_H * 0.5, TAB_W, TAB_H
 end
 
+-- [横屏 overlay] 横版布局常量：仅战斗区覆盖层使用（竖版/铁匠铺走原布局）
+-- 背景 2000x1020 矢量九宫格 panel；页签单行 7 个；网格 8 列
+local LAND = {
+    BG_W = 2000, BG_H = 1020,
+    TITLE_CY = 78,
+    TAB_Y = 158, TAB_W = 140, TAB_H = 46, TAB_GAP = 12, TAB_FONT = 30,
+    COLS = 8, CELL = 150, GAP = 18,
+    GRID_TOP = 214, GRID_BOTTOM = 968,
+}
+local LAND_COL_CX = {}
+for c = 1, LAND.COLS do
+    LAND_COL_CX[c] = 540 - (LAND.COLS * LAND.CELL + (LAND.COLS - 1) * LAND.GAP) * 0.5
+        + (c - 1) * (LAND.CELL + LAND.GAP) + LAND.CELL * 0.5
+end
+
+--- 横版单行页签矩形（设计坐标：背景中心 = 540, LAND.BG_H*0.5）
+local function tabRectH(i)
+    local totalW = #FILTER_TABS * LAND.TAB_W + (#FILTER_TABS - 1) * LAND.TAB_GAP
+    local x = 540 - totalW * 0.5 + (i - 1) * (LAND.TAB_W + LAND.TAB_GAP)
+    return x, LAND.TAB_Y - LAND.TAB_H * 0.5, LAND.TAB_W, LAND.TAB_H
+end
+
 local function sameFilter(a, b)
     if a == nil and b == nil then return true end
     return a == b
@@ -178,10 +200,10 @@ local overlayRegion = nil  -- { x, y, w, h } 窗口坐标，nil = 不覆盖
 
 local function overlayFit()
     if not overlayRegion then return 1 end
-    return math.min(overlayRegion.w / BAG_BG_W, overlayRegion.h / BAG_BG_H)
+    return math.min(overlayRegion.w / LAND.BG_W, overlayRegion.h / LAND.BG_H)
 end
 
---- 窗口坐标 → 背包设计坐标（覆盖层开启时）
+--- 窗口坐标 → 背包设计坐标（覆盖层开启时；横版布局中心 540, LAND.BG_H/2）
 ---@param wx number
 ---@param wy number
 ---@return number dx
@@ -190,8 +212,21 @@ function EquipmentBag.overlayToDesign(wx, wy)
     local R = overlayRegion
     if not R then return wx, wy end
     local fit = overlayFit()
-    return (wx - R.x - R.w * 0.5) / fit + BAG_BG_CX,
-           (wy - R.y - R.h * 0.5) / fit + BAG_BG_CY
+    return (wx - R.x - R.w * 0.5) / fit + 540,
+           (wy - R.y - R.h * 0.5) / fit + LAND.BG_H * 0.5
+end
+
+--- 窗口坐标 → 装备详情设计坐标（详情弹窗按竖版 1080x2400 铺满覆盖矩形）
+---@param wx number
+---@param wy number
+---@return number dx
+---@return number dy
+function EquipmentBag.overlayToDetail(wx, wy)
+    local R = overlayRegion
+    if not R then return wx, wy end
+    local fit = math.min(R.w / DESIGN_W, R.h / DESIGN_H)
+    return (wx - R.x - R.w * 0.5) / fit + DESIGN_W * 0.5,
+           (wy - R.y - R.h * 0.5) / fit + DESIGN_H * 0.5
 end
 
 --- 设置/清除战斗区覆盖矩形
@@ -226,7 +261,7 @@ function EquipmentBag.drawOverlay(vg)
     nvgIntersectScissor(vg, R.x, R.y, R.w, R.h)
     nvgTranslate(vg, R.x + R.w * 0.5, R.y + R.h * 0.5)
     nvgScale(vg, fit, fit)
-    nvgTranslate(vg, -BAG_BG_CX, -BAG_BG_CY)
+    nvgTranslate(vg, -540, -LAND.BG_H * 0.5)
     EquipmentBag.draw(vg, { skipOverlay = true })
     nvgRestore(vg)
 end
@@ -519,8 +554,14 @@ end
 --- 获取格子行列位置中心坐标
 ---@param row number 行号（从1开始）
 ---@param col number 列号（从1开始）
+---@param land boolean|nil 横版 overlay 布局
 ---@return number|nil cx, number cy
-local function getCellCenter(row, col)
+local function getCellCenter(row, col, land)
+    if land then
+        local cx = LAND_COL_CX[col]
+        local cy = LAND.GRID_TOP + LAND.CELL * 0.5 + (row - 1) * (LAND.CELL + LAND.GAP)
+        return cx, cy
+    end
     local cx = CELL_COL_CX[col]
     local cy = CELL_FIRST_ROW_TOP + CELL_SIZE * 0.5 + (row - 1) * (CELL_SIZE + CELL_GAP)
     return cx, cy
@@ -544,9 +585,23 @@ function EquipmentBag.handleInput(dx, dy)
     -- 同帧保护：防止 open() 同帧的点击事件立即关闭弹窗
     if time.elapsedTime - bagState.openTime < 0.05 then return true end
 
+    -- [横屏 overlay] 横版布局参数
+    local land = overlayRegion ~= nil
+    local cols      = land and LAND.COLS or CELL_COLS
+    local cellSize  = land and LAND.CELL or CELL_SIZE
+    local clipTop   = land and LAND.GRID_TOP or GRID_CLIP_TOP
+    local clipBot   = land and LAND.GRID_BOTTOM or GRID_CLIP_BOTTOM
+    local bgCX, bgCY, bgW, bgH
+    if land then
+        bgCX, bgCY, bgW, bgH = 540, LAND.BG_H * 0.5, LAND.BG_W, LAND.BG_H
+    else
+        bgCX, bgCY, bgW, bgH = BAG_BG_CX, BAG_BG_CY, BAG_BG_W, BAG_BG_H
+    end
+
     -- 部位页签
     for i, tab in ipairs(FILTER_TABS) do
-        local tx, ty, tw, th = tabRect(i)
+        local tx, ty, tw, th
+        if land then tx, ty, tw, th = tabRectH(i) else tx, ty, tw, th = tabRect(i) end
         if dx >= tx and dx <= tx + tw and dy >= ty and dy <= ty + th then
             if not sameFilter(bagState.filter, tab.key) then
                 bagState.filter   = tab.key
@@ -560,28 +615,28 @@ function EquipmentBag.handleInput(dx, dy)
     end
 
     -- 点击背包背景外部 → 关闭
-    if not hitTest(dx, dy, BAG_BG_CX, BAG_BG_CY, BAG_BG_W, BAG_BG_H) then
+    if not hitTest(dx, dy, bgCX, bgCY, bgW, bgH) then
         EquipmentBag.close()
         return true
     end
 
     -- 格子区域点击检测
-    if dy >= GRID_CLIP_TOP and dy <= GRID_CLIP_BOTTOM then
+    if dy >= clipTop and dy <= clipBot then
         local equips = getFilteredEquips()
-        local totalRows = math.ceil(math.max(#equips, CELL_COLS) / CELL_COLS)
+        local totalRows = math.ceil(math.max(#equips, cols) / cols)
 
         for row = 1, totalRows do
-            for col = 1, CELL_COLS do
-                local idx = (row - 1) * CELL_COLS + col
+            for col = 1, cols do
+                local idx = (row - 1) * cols + col
                 ---@type table?
                 local entry = equips[idx]
                 if entry then
-                    local cx, rawCY = getCellCenter(row, col)
+                    local cx, rawCY = getCellCenter(row, col, land)
                     local cy = rawCY - bagState.scrollY
                     -- 检查点击在可见区域内且命中格子
-                    if cy >= GRID_CLIP_TOP - CELL_SIZE * 0.5
-                       and cy <= GRID_CLIP_BOTTOM + CELL_SIZE * 0.5
-                       and hitTest(dx, dy, cx, cy, CELL_SIZE, CELL_SIZE) then
+                    if cy >= clipTop - cellSize * 0.5
+                       and cy <= clipBot + cellSize * 0.5
+                       and hitTest(dx, dy, cx, cy, cellSize, cellSize) then
                         if bagState.onSelect then
                             -- 选择模式：直接回调并关闭背包
                             bagState.onSelect(entry.seq, entry.equip)
@@ -610,6 +665,16 @@ function EquipmentBag.handleDragBegin(dx, dy)
     if bagState.closing then return true end
 
     -- 在格子区域内开始拖拽 → 启动滚动
+    if overlayRegion then
+        if dy >= LAND.GRID_TOP and dy <= LAND.GRID_BOTTOM
+           and dx >= LAND_COL_CX[1] - LAND.CELL * 0.5
+           and dx <= LAND_COL_CX[LAND.COLS] + LAND.CELL * 0.5 then
+            bagState.dragging  = true
+            bagState.dragLastY = dy
+            bagState.scrollVel = 0
+        end
+        return true
+    end
     if dy >= GRID_CLIP_TOP and dy <= GRID_CLIP_TOP + GRID_CLIP_H
        and dx >= CELL_MARGIN_LEFT and dx <= CELL_MARGIN_LEFT + CELL_COLS * CELL_SIZE + (CELL_COLS - 1) * CELL_GAP then
         bagState.dragging  = true
@@ -717,9 +782,21 @@ function EquipmentBag.draw(vg, opts)
         bagState.scrollVel = 0
     end
 
+    -- [横屏 overlay] overlay 模式下布局常量遮蔽为横版（仅本函数内生效）
+    local land = overlayRegion ~= nil
+    local CELL_COLS   = land and LAND.COLS or CELL_COLS
+    local CELL_SIZE   = land and LAND.CELL or CELL_SIZE
+    local CELL_GAP    = land and LAND.GAP or CELL_GAP
+    local GRID_CLIP_TOP = land and LAND.GRID_TOP or GRID_CLIP_TOP
+    local GRID_CLIP_H = land and (LAND.GRID_BOTTOM - LAND.GRID_TOP) or GRID_CLIP_H
+    local VISIBLE_CONTENT_H = GRID_CLIP_H
+    local TAB_FONT    = land and LAND.TAB_FONT or TAB_FONT
+    local BAG_TITLE_CY = land and LAND.TITLE_CY or BAG_TITLE_CY
+
     -- === 获取装备数据 ===
     local equips = getFilteredEquips()
-    local totalCells = math.max(#equips, CELL_COLS * 8)  -- 至少显示 8 行空格子
+    local minRows = land and 3 or 8
+    local totalCells = math.max(#equips, CELL_COLS * minRows)
     local totalRows = math.ceil(totalCells / CELL_COLS)
 
     -- === 计算当前已装备装备的战斗力（用于 ICON_UP 角标判断）===
@@ -781,19 +858,30 @@ function EquipmentBag.draw(vg, opts)
     nvgSave(vg)
     nvgTranslate(vg, 0, slideOY)
 
-    -- === 2) 背包背景图 ===
-    drawImageCentered(vg, imgBagBg, BAG_BG_CX, BAG_BG_CY, BAG_BG_W, BAG_BG_H, 1.0)
+    -- === 2) 背包背景 ===
+    if land then
+        -- 横版：矢量九宫格面板（贴图背景是竖版比例，横版拉伸会糊）
+        DarkIcon.drawNine(vg, "panel", 540 - LAND.BG_W * 0.5, LAND.BG_H * 0.5 - LAND.BG_H * 0.5,
+            LAND.BG_W, LAND.BG_H)
+    else
+        drawImageCentered(vg, imgBagBg, BAG_BG_CX, BAG_BG_CY, BAG_BG_W, BAG_BG_H, 1.0)
+    end
 
     -- === 3) 标题 "背包" ===
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, BAG_TITLE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(BAG_TITLE_R, BAG_TITLE_G, BAG_TITLE_B, 255))
+    if land then
+        nvgFillColor(vg, nvgRGBA(0xe8, 0xe0, 0xd4, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(BAG_TITLE_R, BAG_TITLE_G, BAG_TITLE_B, 255))
+    end
     nvgText(vg, BAG_TITLE_CX, BAG_TITLE_CY, "背包", nil)
 
     -- === 4) 部位页签（所有 / 主武器 / 副武器 / 护甲 / 饰品）===
     for i, tab in ipairs(FILTER_TABS) do
-        local tx, ty, tw, th = tabRect(i)
+        local tx, ty, tw, th
+        if land then tx, ty, tw, th = tabRectH(i) else tx, ty, tw, th = tabRect(i) end
         local selected = sameFilter(bagState.filter, tab.key)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, tx, ty, tw, th, 10)
@@ -821,7 +909,7 @@ function EquipmentBag.draw(vg, opts)
     for row = 1, totalRows do
         for col = 1, CELL_COLS do
             local idx = (row - 1) * CELL_COLS + col
-            local cx, rawCY = getCellCenter(row, col)
+            local cx, rawCY = getCellCenter(row, col, land)
             local cy = rawCY - bagState.scrollY
 
             -- 新手引导热点：第一个装备格子（在可见性裁剪前注册，确保不被 goto 跳过）
@@ -1003,7 +1091,20 @@ function EquipmentBag.draw(vg, opts)
     nvgRestore(vg)
 
     -- 装备详情面板（绘制在背包之上）
-    EquipmentDetail.draw(vg)
+    if land then
+        -- 横屏 overlay：详情按竖版设计空间居中铺进覆盖矩形（带自身遮罩）
+        local R = overlayRegion
+        local fit = math.min(R.w / DESIGN_W, R.h / DESIGN_H)
+        nvgSave(vg)
+        nvgIntersectScissor(vg, R.x, R.y, R.w, R.h)
+        nvgTranslate(vg, R.x + R.w * 0.5 - DESIGN_W * fit * 0.5,
+                         R.y + R.h * 0.5 - DESIGN_H * fit * 0.5)
+        nvgScale(vg, fit, fit)
+        EquipmentDetail.draw(vg)
+        nvgRestore(vg)
+    else
+        EquipmentDetail.draw(vg)
+    end
 end
 
 return EquipmentBag

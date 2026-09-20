@@ -1,10 +1,9 @@
 -- ============================================================================
 -- TowerBattleScene - 通天塔战斗场景（状态管理器）
--- 复用 DungeonBattleScene 做渲染和战斗，管理10波流程+波间强化选择
--- 不直接渲染，通过 DungeonBattleScene 显示战斗画面
+-- 三行攻坚：复用 TowerTriBattle 渲染三队同波，管理 10 波 + 波间强化
 -- ============================================================================
 
-local DungeonBattleScene = require("ui.DungeonBattleScene")
+local TowerTriBattle     = require("ui.TowerTriBattle")
 local DungeonBattle      = require("ui.DungeonBattle")
 local TowerBuffPick      = require("ui.TowerBuffPick")
 local TowerBuffRuntime   = require("systems.TowerBuffRuntime")
@@ -14,6 +13,7 @@ local BattleResultPanel  = require("ui.BattleResultPanel")
 local BattleDraw         = require("ui.BattleDraw")
 local BattleStats        = require("systems.BattleStats")
 local HeroConfig         = require("config.HeroConfig")
+local AD                 = require("systems.AttributeDef")
 
 local drawTextStroke = BattleDraw.drawTextStroke
 
@@ -43,7 +43,8 @@ local state = {
     -- 回调
     onClose    = nil,
     sendAction = nil,
-    allies     = nil,   -- 己方单位引用（跨波保持）
+    allies     = nil,   -- 三队合并引用（跨波保持）
+    teamAllies = nil,   -- { [1]=table[], [2]=table[], [3]=table[] }
 
     -- 服务端结果
     serverFloorResult = nil,
@@ -56,8 +57,19 @@ local function resetFloorStats()
     state.floorHeroDamage = {}
 end
 
+local function flattenTeamAllies()
+    local list = {}
+    local teams = state.teamAllies or {}
+    for t = 1, 3 do
+        for _, unit in ipairs(teams[t] or {}) do
+            list[#list + 1] = unit
+        end
+    end
+    return list
+end
+
 local function accumulateCurrentWaveStats()
-    local waveStats = BattleStats.buildHeroDamageStats(state.allies, HeroConfig.HEROES)
+    local waveStats = BattleStats.buildHeroDamageStats(flattenTeamAllies(), HeroConfig.HEROES)
     for _, hero in ipairs(waveStats) do
         local heroId = hero.heroId
         if heroId then
@@ -68,7 +80,7 @@ end
 
 local function buildFloorHeroStats()
     local heroStats = {}
-    for _, unit in ipairs(state.allies or {}) do
+    for _, unit in ipairs(flattenTeamAllies()) do
         if unit.heroId then
             local hConf = HeroConfig.HEROES[unit.heroId]
             heroStats[#heroStats + 1] = {
@@ -82,6 +94,13 @@ local function buildFloorHeroStats()
     return heroStats
 end
 
+local function applyBuffsToAllTeams(buffIds)
+    local teams = state.teamAllies or {}
+    for t = 1, 3 do
+        TowerBuffRuntime.applyStatBuffs(teams[t] or {}, buffIds)
+    end
+end
+
 -- ======================== Public API ========================
 
 function TowerScene.isActive()
@@ -89,7 +108,7 @@ function TowerScene.isActive()
 end
 
 --- 打开通天塔战斗（由 DungeonPage 在 TOWER_CHALLENGE 成功后调用）
----@param opts table { allies, data, sendAction, onClose }
+---@param opts table { teamAllies, allies, data, sendAction, onClose }
 function TowerScene.open(opts)
     state.active = true
     state.phase  = "battle"
@@ -99,7 +118,11 @@ function TowerScene.open(opts)
     state.buffIds = opts.data.buffs or {}
     state.onClose = opts.onClose
     state.sendAction = opts.sendAction
-    state.allies = opts.allies
+    state.teamAllies = opts.teamAllies
+    if type(state.teamAllies) ~= "table" then
+        state.teamAllies = { [1] = opts.allies or {}, [2] = {}, [3] = {} }
+    end
+    state.allies = flattenTeamAllies()
     state.pendingBuffChoices = nil
     state.serverFloorResult = nil
     state.totalElapsedSecs = 0
@@ -108,12 +131,10 @@ function TowerScene.open(opts)
     state.errorMessage = nil
     state.errorLogged = false
 
-    -- 连接 sendAction 到 TowerBuffPick（用于选强化时通知服务端去重）
     TowerBuffPick.setSendAction(state.sendAction)
 
     local okBuff, buffErr = pcall(function()
-        -- 初始化强化运行时
-        TowerBuffRuntime.applyStatBuffs(state.allies, state.buffIds)
+        applyBuffsToAllTeams(state.buffIds)
         TowerBuffRuntime.initMechanics(state.buffIds)
     end)
     if not okBuff then
@@ -123,13 +144,15 @@ function TowerScene.open(opts)
         return
     end
 
-    -- 打开 DungeonBattleScene 进行第一波战斗
     local okOpen = TowerScene._openWaveBattle(opts.data.monsters)
     if not okOpen then
         return
     end
 
-    print("[TowerBattleScene] open floor=" .. state.floor .. " wave=" .. state.wave)
+    print("[TowerBattleScene] open floor=" .. state.floor .. " wave=" .. state.wave
+        .. " teams=" .. tostring(#(state.teamAllies[1] or {})) .. "/"
+        .. tostring(#(state.teamAllies[2] or {})) .. "/"
+        .. tostring(#(state.teamAllies[3] or {})))
 end
 
 function TowerScene.close()
@@ -137,6 +160,7 @@ function TowerScene.close()
     state.phase = "idle"
     state.errorMessage = nil
     state.errorLogged = false
+    pcall(TowerTriBattle.forceClose)
     TowerBuffRuntime.cleanup()
     if state.onClose then
         state.onClose()
@@ -164,37 +188,38 @@ function TowerScene._openWaveBattle(monsters)
         allySuperRageDmgBonus = 0.30,
     }
 
-    print("[TowerBattleScene] _openWaveBattle: allies=" .. tostring(state.allies and #state.allies)
+    print("[TowerBattleScene] _openWaveBattle: teams allies="
+        .. tostring(#(state.teamAllies[1] or {})) .. "/"
+        .. tostring(#(state.teamAllies[2] or {})) .. "/"
+        .. tostring(#(state.teamAllies[3] or {}))
         .. " monsters=" .. tostring(monsters and #monsters or 0))
 
     local ok, err = pcall(function()
-        DungeonBattleScene.open({
-            allies = state.allies,
-            data   = data,
-            dungeonId = "babel_tower",
-            onClose = function()
-                -- DungeonBattleScene 正常关闭（非 forceClose）时，关闭通天塔
-                -- 触发场景：用户撤退 / 己方全灭 / 意外关闭
-                -- forceClose（波次切换）不会触发此回调
+        TowerTriBattle.open({
+            teamAllies = state.teamAllies,
+            data       = data,
+            onClose    = function()
                 print("[TowerBattleScene] onClose triggered, phase=" .. tostring(state.phase))
-                TowerScene.close()
+                if state.phase == "battle" or state.phase == "error" then
+                    TowerScene.close()
+                end
             end,
         })
     end)
     if not ok then
-        print("[TowerBattleScene] ERROR opening DungeonBattleScene: " .. tostring(err))
-        pcall(DungeonBattleScene.forceClose)
+        print("[TowerBattleScene] ERROR opening TowerTriBattle: " .. tostring(err))
+        pcall(TowerTriBattle.forceClose)
         state.phase = "error"
         state.errorMessage = "通天塔战斗初始化失败，请退出后重试"
         return false
     end
-    if not DungeonBattleScene.isOpen() then
-        print("[TowerBattleScene] ERROR DungeonBattleScene stayed closed after open")
+    if not TowerTriBattle.isOpen() then
+        print("[TowerBattleScene] ERROR TowerTriBattle stayed closed after open")
         state.phase = "error"
         state.errorMessage = "通天塔战斗场景未能打开，请退出后重试"
         return false
     end
-    print("[TowerBattleScene] _openWaveBattle done, DungeonBattleScene.isOpen=" .. tostring(DungeonBattleScene.isOpen()))
+    print("[TowerBattleScene] _openWaveBattle done, TowerTriBattle.isOpen=" .. tostring(TowerTriBattle.isOpen()))
     return true
 end
 
@@ -221,23 +246,18 @@ function TowerScene.onWaveWinResult(data)
     state.pendingBuffChoices = data.buffChoices
 
     if data.floorCleared then
-        -- 最后一波：整层通关，直接结算，不再弹三选一强化
-        DungeonBattleScene.forceClose()
-        -- 报告整层通关
+        TowerTriBattle.forceClose()
         if state.sendAction then
             state.sendAction(Protocol.ACTION_TYPES.TOWER_FLOOR_WIN, { floor = state.floor })
         end
         state.phase = "floor_win"
     else
-        -- 非最后波：选强化后进入下一波（不 forceClose，保留背景）
         state.phase = "buff_pick"
         TowerBuffPick.open(state.floor, data.buffChoices, function(buffId)
             state.buffIds[#state.buffIds + 1] = buffId
-            -- 关闭当前波次战斗
-            DungeonBattleScene.forceClose()
+            TowerTriBattle.forceClose()
             local okBuff, buffErr = pcall(function()
-                -- 应用新强化
-                TowerBuffRuntime.applyStatBuffs(state.allies, { buffId })
+                applyBuffsToAllTeams({ buffId })
                 TowerBuffRuntime.initMechanics(state.buffIds)
             end)
             if not okBuff then
@@ -246,16 +266,14 @@ function TowerScene.onWaveWinResult(data)
                 state.errorMessage = "通天塔强化生效失败，请退出后重试"
                 return
             end
-            -- 波间回复10% HP
-            for _, unit in ipairs(state.allies) do
+            for _, unit in ipairs(flattenTeamAllies()) do
                 if unit.hp > 0 and unit.attrs then
-                    local heal = math.floor(unit.maxHp * 0.10)
+                    local heal = math.floor((unit.maxHp or unit.attrs:get(AD.MAX_HP) or 0) * 0.10)
                     unit.attrs:heal(heal)
-                    unit.hp = unit.attrs:get(require("systems.AttributeDef").HP)
-                    if unit.hp > unit.maxHp then unit.hp = unit.maxHp end
+                    unit.hp = unit.attrs:get(AD.HP)
+                    if unit.maxHp and unit.hp > unit.maxHp then unit.hp = unit.maxHp end
                 end
             end
-            -- 开始下一波
             state.wave = data.nextWave
             state.phase = "battle"
             local okOpen = TowerScene._openWaveBattle(data.monsters)
@@ -314,31 +332,42 @@ local function drawErrorFallback(vg)
         { strokeColor = { 40, 20, 20 } })
 end
 
-function TowerScene.draw(vg)
-    if not state.active then return end
+local function drawPortraitOverlay(vg, logicalW, logicalH, drawFn)
+    logicalW = logicalW or 1080
+    logicalH = logicalH or 2400
+    local fit = math.min(logicalW / 1080, logicalH / 2400)
+    nvgSave(vg)
+    nvgTranslate(vg, (logicalW - 1080 * fit) * 0.5, (logicalH - 2400 * fit) * 0.5)
+    nvgScale(vg, fit, fit)
+    drawFn()
+    nvgRestore(vg)
+end
 
-    local dungeonOpen = DungeonBattleScene.isOpen()
-    -- 渲染 DungeonBattleScene 作为背景（战斗中实时/选强化时冻结）
-    if dungeonOpen then
+function TowerScene.draw(vg, logicalW, logicalH)
+    if not state.active then return end
+    logicalW = logicalW or 1080
+    logicalH = logicalH or 2400
+
+    local triOpen = TowerTriBattle.isOpen()
+    if triOpen then
         local okDraw, drawErr = xpcall(function()
-            DungeonBattleScene.draw(vg)
+            TowerTriBattle.draw(vg, logicalW, logicalH)
         end, debug.traceback)
         if not okDraw then
-            print("[TowerBattleScene] ERROR DungeonBattleScene.draw failed floor=" .. tostring(state.floor)
+            print("[TowerBattleScene] ERROR TowerTriBattle.draw failed floor=" .. tostring(state.floor)
                 .. " wave=" .. tostring(state.wave)
-                .. " buffs=" .. tostring(table.concat(state.buffIds or {}, ","))
                 .. " err=" .. tostring(drawErr))
             state.phase = "error"
             state.errorMessage = "通天塔战斗绘制异常，请退出后重试"
             state.errorLogged = true
-            dungeonOpen = false
+            triOpen = false
         end
     end
 
     if state.phase == "battle" then
-        if not dungeonOpen then
+        if not triOpen then
             if not state.errorLogged then
-                print("[TowerBattleScene] ERROR battle phase but DungeonBattleScene is closed floor=" .. tostring(state.floor)
+                print("[TowerBattleScene] ERROR battle phase but TowerTriBattle is closed floor=" .. tostring(state.floor)
                     .. " wave=" .. tostring(state.wave))
                 state.errorLogged = true
             end
@@ -347,11 +376,13 @@ function TowerScene.draw(vg)
             drawErrorFallback(vg)
         end
     elseif state.phase == "buff_pick" then
-        -- 强化选择：DungeonBattleScene 作为冻结背景 + 三选一面板叠加
-        TowerBuffPick.draw(vg)
+        drawPortraitOverlay(vg, logicalW, logicalH, function()
+            TowerBuffPick.draw(vg)
+        end)
     elseif state.phase == "floor_win" then
-        -- 整层通关结算面板（DungeonBattleScene 已关闭，需手动绘制）
-        BattleResultPanel.draw(vg)
+        drawPortraitOverlay(vg, logicalW, logicalH, function()
+            BattleResultPanel.draw(vg)
+        end)
     elseif state.phase == "error" then
         drawErrorFallback(vg)
     end
@@ -363,9 +394,9 @@ function TowerScene.update(dt)
     if not state.active then return end
 
     if state.phase == "battle" then
-        if not DungeonBattleScene.isOpen() then
+        if not TowerTriBattle.isOpen() then
             if not state.errorLogged then
-                print("[TowerBattleScene] ERROR update found battle phase but DungeonBattleScene is closed floor=" .. tostring(state.floor)
+                print("[TowerBattleScene] ERROR update found battle phase but TowerTriBattle is closed floor=" .. tostring(state.floor)
                     .. " wave=" .. tostring(state.wave))
                 state.errorLogged = true
             end
@@ -374,38 +405,45 @@ function TowerScene.update(dt)
             return
         end
         local ok, err = xpcall(function()
-            DungeonBattleScene.update(dt)
+            TowerTriBattle.update(dt)
         end, debug.traceback)
         if not ok then
-            print("[TowerBattleScene] ERROR DungeonBattleScene.update failed floor=" .. tostring(state.floor)
+            print("[TowerBattleScene] ERROR TowerTriBattle.update failed floor=" .. tostring(state.floor)
                 .. " wave=" .. tostring(state.wave)
                 .. " buffs=" .. tostring(table.concat(state.buffIds or {}, ","))
                 .. " err=" .. tostring(err))
             state.phase = "error"
             state.errorMessage = "通天塔战斗逻辑异常，请退出后重试"
-            DungeonBattleScene.forceClose()
+            TowerTriBattle.forceClose()
         end
     elseif state.phase == "floor_win" then
-        -- 更新结算面板动画和输入
         BattleResultPanel.update(dt)
     end
 end
 
 -- ======================== 输入 ========================
 
-function TowerScene.handleClick(dx, dy)
+function TowerScene.handleClick(dx, dy, logicalW, logicalH)
     if not state.active then return false end
+    logicalW = logicalW or 1080
+    logicalH = logicalH or 2400
 
     if state.phase == "floor_win" and BattleResultPanel.isOpen() then
-        BattleResultPanel.handleInput(dx, dy)
+        local fit = math.min(logicalW / 1080, logicalH / 2400)
+        local px = (dx - (logicalW - 1080 * fit) * 0.5) / fit
+        local py = (dy - (logicalH - 2400 * fit) * 0.5) / fit
+        BattleResultPanel.handleInput(px, py)
         return true
     elseif state.phase == "error" then
         TowerScene.close()
         return true
     elseif state.phase == "buff_pick" and TowerBuffPick.isOpen() then
-        return TowerBuffPick.handleClick(dx, dy)
+        local fit = math.min(logicalW / 1080, logicalH / 2400)
+        local px = (dx - (logicalW - 1080 * fit) * 0.5) / fit
+        local py = (dy - (logicalH - 2400 * fit) * 0.5) / fit
+        return TowerBuffPick.handleClick(px, py)
     elseif state.phase == "battle" then
-        DungeonBattleScene.handleInput(dx, dy)
+        TowerTriBattle.handleClick(dx, dy)
         return true
     end
 

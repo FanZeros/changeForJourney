@@ -324,7 +324,13 @@ local function dispatchDragEndAndTap(dx, dy)
     end
 
     if TowerBattleScene.isActive() then
-        if isTap then TowerBattleScene.handleClick(dx, dy) end
+        local mousePos = input:GetMousePosition()
+        local dprNow = graphics:GetDPR() or 1
+        local lw = graphics:GetWidth() / dprNow
+        local lh = graphics:GetHeight() / dprNow
+        local wx = mousePos.x / dprNow
+        local wy = mousePos.y / dprNow
+        if isTap then TowerBattleScene.handleClick(wx, wy, lw, lh) end
         return
     end
     if DungeonBattleScene.isOpen() then

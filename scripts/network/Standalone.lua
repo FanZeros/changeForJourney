@@ -27,10 +27,13 @@ local ChurchPage        = require("ui.ChurchPage")
 local TavernPage        = require("ui.TavernPage")
 local MarketPage        = require("ui.MarketPage")
 local DungeonBattleScene = require("ui.DungeonBattleScene")
+local TowerBattleScene   = require("ui.TowerBattleScene")
+local TowerBuffPick      = require("ui.TowerBuffPick")
+local DungeonPage        = require("ui.DungeonPage")
 local LootBox           = require("ui.LootBox")
 local LootBoxPage       = require("ui.LootBoxPage")
 local LevelUpPopup      = require("ui.LevelUpPopup")
-        local BattleCombat     = require("ui.BattleCombat")
+local BattleCombat      = require("ui.BattleCombat")
 local OfflineRewardPanel = require("ui.OfflineRewardPanel")
 local PlayerInfoPanel   = require("ui.PlayerInfoPanel")
 local RedeemCodePanel   = require("ui.RedeemCodePanel")
@@ -54,7 +57,6 @@ local GameSFX           = require("systems.GameSFX")
 local BattleEffects     = require("ui.BattleEffects")    -- [三行并行] 渲染缩放
 local SpinePowerUpEffect = require("ui.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.IntroCutscene")
-local SamsaraCG          = require("ui.SamsaraCG")
 local LetterIntro        = require("ui.LetterIntro")          -- [LetterIntro] 先祖来信（新档开场）
 local CharacterDetail    = require("ui.CharacterDetail")  -- [三队并行] 中缝返回键目标
 local ScenarioDialogue   = require("ui.ScenarioDialogue")     -- [LetterIntro] 情景对话
@@ -253,6 +255,8 @@ function Standalone.Start()
     BlacksmithPage.init(vg)
     ChurchPage.init(vg)
     TavernPage.init(vg)
+    DungeonPage.init(vg)
+    TowerBuffPick.init(vg)
     DebugPanel.init(vg)
     HeroRosterPanel.init(vg)
     RewardPopup.init(vg)
@@ -367,8 +371,9 @@ function Standalone.Start()
     TownScene.setOnTavernClick(function()
         TavernPage.open()
     end)
-    -- 5.17 城镇副本入口
+    -- 5.17 城镇副本入口（横屏走 BottomNav 标签5）
     DungeonBattleScene.init(vg)
+    require("ui.TowerTriBattle").init(vg)
     -- 5.18 城镇市场点击 → 打开市场界面
     MarketPage.init(vg)
     TownScene.setOnMarketClick(function()
@@ -636,19 +641,14 @@ function Standalone.Start()
         BlacksmithPage.openToAutoDecompose()
     end)
 
-    -- 5.24 轮回回调：倒计时结束 → 播放 CG 视频 → 播放开场动画 → 完成关卡加载
+    -- 5.24 轮回回调：倒计时结束 → 播放开场动画 → 完成关卡加载
     BattleScene.setOnReincarnate(function(data)
-        print("[Standalone] reincarnation triggered, playing CG video then intro cutscene (difficulty "
+        print("[Standalone] reincarnation triggered, starting intro cutscene (difficulty "
             .. tostring(data.fromDifficulty) .. " → " .. tostring(data.toDifficulty) .. ")")
-        -- 先播放轮回 CG 视频（BGM 在视频模块内部静音/恢复）
-        SamsaraCG.start(function()
-            -- CG 视频结束后，播放开场动画
-            print("[Standalone] CG video finished, starting intro cutscene")
-            IntroCutscene.reset()
-            IntroCutscene.start(function()
-                print("[Standalone] reincarnation intro finished, completing stage load")
-                BattleScene.completeReincarnation()
-            end)
+        IntroCutscene.reset()
+        IntroCutscene.start(function()
+            print("[Standalone] reincarnation intro finished, completing stage load")
+            BattleScene.completeReincarnation()
         end)
     end)
 
@@ -1026,8 +1026,10 @@ function HandleNanoVGRender(eventType, eventData)
         return
     end
 
-    -- 副本对战全屏优先（覆盖所有其他界面）
-    if DungeonBattleScene.isOpen() then
+    -- 副本/通天塔全屏优先（覆盖所有其他界面）
+    if TowerBattleScene.isActive() then
+        TowerBattleScene.draw(vg, 1080, 2400)
+    elseif DungeonBattleScene.isOpen() then
         DungeonBattleScene.draw(vg)
         -- 不绘制 TopBar/BottomNav
     else
@@ -1053,6 +1055,8 @@ function HandleNanoVGRender(eventType, eventData)
             TavernPage.draw(vg)
             -- 市场二级界面（覆盖在城镇之上）
             MarketPage.draw(vg)
+        elseif tabIndex == 5 then
+            DungeonPage.draw(vg)
         end
 
         -- 绘制顶部信息栏和底部导航栏（二级界面打开时隐藏）
@@ -1107,11 +1111,6 @@ function HandleNanoVGRender(eventType, eventData)
 
     -- 冒险等级提升弹窗（最顶层）
     LevelUpPopup.draw(vg)
-
-    -- 轮回 CG 视频（覆盖所有游戏 UI）
-    if SamsaraCG.isActive() then
-        SamsaraCG.draw(vg)
-    end
 
     -- 轮回开场动画（覆盖所有游戏 UI）
     if IntroCutscene.isActive() then
@@ -1247,12 +1246,6 @@ function HandleUpdate(eventType, eventData)
         return
     end
 
-    -- 轮回 CG 视频更新（播放期间阻止其他 UI 更新和 BGM 切换）
-    if SamsaraCG.isActive() then
-        SamsaraCG.update(dt)
-        return
-    end
-
     -- 轮回开场动画更新（播放期间阻止其他 UI 更新和 BGM 切换）
     if IntroCutscene.isActive() then
         IntroCutscene.update(dt)
@@ -1272,12 +1265,14 @@ function HandleUpdate(eventType, eventData)
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)
-    if BattleTriPage.isOpen() and DungeonBattleScene.isOpen() then
+    if BattleTriPage.isOpen() and (DungeonBattleScene.isOpen() or TowerBattleScene.isActive()) then
         BattleTriPage.close()
     end
 
-    -- 副本对战更新（打开时独占）
-    if DungeonBattleScene.isOpen() then
+    -- 副本/通天塔对战更新（打开时独占）
+    if TowerBattleScene.isActive() then
+        TowerBattleScene.update(dt)
+    elseif DungeonBattleScene.isOpen() then
         DungeonBattleScene.update(dt)
     elseif BattleTriPage.isOpen() then
         -- [三栏并行] 三栏页内部会以 default 状态驱动 BattleScene.update（栏1 引擎）
@@ -1290,7 +1285,7 @@ function HandleUpdate(eventType, eventData)
     local tabIndex = BottomNav.getSelectedIndex()
     -- [三行并行] 三行战斗区常驻: tab3 下恒开（Dungeon 独占时由守卫暂收, 关闭后自动重开）
     if HORIZON_MODE and tabIndex == 3 and not BattleTriPage.isOpen()
-        and not DungeonBattleScene.isOpen() then
+        and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive() then
         BattleTriPage.open()
     end
     -- 临时验证钩子: 无输入环境强制打开三栏页（仅 _validate_entry.lua 置位时生效）
@@ -1321,6 +1316,8 @@ function HandleUpdate(eventType, eventData)
         CharacterPanel.update(dt)
     elseif tabIndex == 2 then
         DiaryPage.update(dt)
+    elseif tabIndex == 5 then
+        DungeonPage.update(dt)
     end
 
     -- 角标刷新（始终执行，不受当前 tab 限制）
@@ -1493,7 +1490,11 @@ function HandleMouseButtonUp(eventType, eventData)
         if isTap then ScenarioDialogue.advance() end
         return
     end
-    -- 副本/测试木桩全屏拦截（拖拽结束 + 点击）
+    -- 副本/通天塔全屏拦截（拖拽结束 + 点击）
+    if TowerBattleScene.isActive() then
+        if isTap then TowerBattleScene.handleClick(dx, dy, 1080, 2400) end
+        return
+    end
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragEnd(dx, dy)
         if isTap then DungeonBattleScene.handleInput(dx, dy) end
@@ -1581,6 +1582,8 @@ function HandleMouseButtonUp(eventType, eventData)
         if DiaryPage.handleInput(dx, dy) then return end
     elseif tabIndex == 3 then
         if BattleScene.handleInput(dx, dy) then return end
+    elseif tabIndex == 5 then
+        if DungeonPage.handleInput(dx, dy) then return end
     elseif tabIndex == 4 then
         if BlacksmithPage.isOpen() then
             BlacksmithPage.handleInput(dx, dy)
@@ -1743,7 +1746,11 @@ function HandleTouchEnd(eventType, eventData)
         if isTap then ScenarioDialogue.advance() end
         return
     end
-    -- 副本/测试木桩全屏拦截（拖拽结束 + 点击）
+    -- 副本/通天塔全屏拦截（拖拽结束 + 点击）
+    if TowerBattleScene.isActive() then
+        if isTap then TowerBattleScene.handleClick(dx, dy, 1080, 2400) end
+        return
+    end
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragEnd(dx, dy)
         if isTap then DungeonBattleScene.handleInput(dx, dy) end
@@ -1833,6 +1840,8 @@ function HandleTouchEnd(eventType, eventData)
         if DiaryPage.handleInput(dx, dy) then return end
     elseif tabIndex == 3 then
         if BattleScene.handleInput(dx, dy) then return end
+    elseif tabIndex == 5 then
+        if DungeonPage.handleInput(dx, dy) then return end
     elseif tabIndex == 4 then
         -- 铁匠铺二级界面优先拦截
         if BlacksmithPage.isOpen() then
@@ -1976,8 +1985,7 @@ local function HorizonDimSidePanels()
         HeroRosterPanel.isVisible() or PlayerInfoPanel.isOpen() or
         LootBox.isPageOpen() or RewardPopup.isOpen() or
         OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() or
-        SpinePowerUpEffect.isPlaying() or
-        SamsaraCG.isActive() or IntroCutscene.isActive()
+        SpinePowerUpEffect.isPlaying() or IntroCutscene.isActive()
     if not modalOpen then return end
 
     local w = Viewport.PW * H_s
@@ -2109,7 +2117,10 @@ function HandleNanoVGRenderHorizon()
     -- 中面板：BottomNav 主视图 + 全屏战斗页
     Viewport.begin(vg, Viewport.PANELS.center, H_ox, H_oy, H_s)
     local dungeonBattleOpen = DungeonBattleScene.isOpen()
-    if dungeonBattleOpen then
+    local towerBattleOpen = TowerBattleScene.isActive()
+    if towerBattleOpen then
+        -- 通天塔三行攻坚铺满窗口，见 Viewport.finish 之后
+    elseif dungeonBattleOpen then
         DungeonBattleScene.draw(vg)
     else
         local tabIndex = BottomNav.getSelectedIndex()
@@ -2122,6 +2133,8 @@ function HandleNanoVGRenderHorizon()
                 BattleScene.draw(vg)
             end
             -- [三栏并行] 三栏页打开时中面板留空，全窗绘制见 Viewport.finish 之后
+        elseif tabIndex == 5 then
+            DungeonPage.draw(vg)
         else
             TownScene.draw(vg)
         end
@@ -2132,6 +2145,12 @@ function HandleNanoVGRenderHorizon()
         end
     end
     Viewport.finish(vg)
+
+    if towerBattleOpen then
+        TowerBattleScene.draw(vg, logicalW, logicalH)
+        nvgEndFrame(vg)
+        return
+    end
 
     -- [三行并行] 战斗模式布局: 经营(左) | 三行战斗(中段) | 角色(右) 铺满窗口
     if BattleTriPage.isOpen() then
@@ -2166,6 +2185,16 @@ function HandleNanoVGRenderHorizon()
             DrawUtil.drawBackChevron(vg, seamBtn.cx, logicalH * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir)
         end
+        -- [修复] 玩家信息面板（点头像打开）——横屏此前从未绘制，open 成功但不可见
+        if PlayerInfoPanel.isOpen() then
+            local fit = math.min(logicalW / 1080, logicalH / 2400)
+            nvgSave(vg)
+            nvgScissor(vg, 0, 0, logicalW, logicalH)
+            nvgTranslate(vg, (logicalW - 1080 * fit) * 0.5, (logicalH - 2400 * fit) * 0.5)
+            nvgScale(vg, fit, fit)
+            PlayerInfoPanel.draw(vg)
+            nvgRestore(vg)
+        end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面
         if DarkTitleScreen.isOpen() then
@@ -2188,7 +2217,6 @@ function HandleNanoVGRenderHorizon()
     OfflineRewardPanel.draw(vg)
     SpinePowerUpEffect.draw(vg)
     LevelUpPopup.draw(vg)
-    if SamsaraCG.isActive() then SamsaraCG.draw(vg) end
     Viewport.finish(vg)
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
@@ -2202,6 +2230,16 @@ function HandleNanoVGRenderHorizon()
         nvgRestore(vg)
     end
 
+    -- [修复] 玩家信息面板（非三行横屏路径同样漏画）
+    if PlayerInfoPanel.isOpen() then
+        local fit = math.min(logicalW / 1080, logicalH / 2400)
+        nvgSave(vg)
+        nvgScissor(vg, 0, 0, logicalW, logicalH)
+        nvgTranslate(vg, (logicalW - 1080 * fit) * 0.5, (logicalH - 2400 * fit) * 0.5)
+        nvgScale(vg, fit, fit)
+        PlayerInfoPanel.draw(vg)
+        nvgRestore(vg)
+    end
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.draw(vg, logicalW, logicalH)
@@ -2233,6 +2271,9 @@ local function HorizonResolveMouse()
             return 'right', (sx - (logicalW - 486 * ps)) / (ps * 0.45), sy / (ps * 0.45)
         end
         return 'tri', sx, sy
+    end
+    if TowerBattleScene.isActive() then
+        return 'modal', sx, sy
     end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
@@ -2329,6 +2370,15 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if now - lastTapTime < MIN_TAP_INTERVAL then isTap = false
         else lastTapTime = now end
     end
+    -- [三行并行][修复] 玩家信息面板全窗模态（面板横屏绘制为 fit 居中，命中同变换）
+    if BattleTriPage.isOpen() and PlayerInfoPanel.isOpen() then
+        local fit = math.min(logicalW / 1080, logicalH / 2400)
+        local pdx = (dx - (logicalW - 1080 * fit) * 0.5) / fit
+        local pdy = (dy - (logicalH - 2400 * fit) * 0.5) / fit
+        PlayerInfoPanel.handleDragEnd(pdx, pdy)
+        if isTap then PlayerInfoPanel.handleInput(pdx, pdy) end
+        return
+    end
     -- [LetterIntro] 开场链输入：信件任意释放即翻段（不依赖 isTap，避免 pressValid 丢失）
     if LetterIntro.isOpen() then
         LetterIntro.handleTap()
@@ -2356,6 +2406,10 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     if pid == 'modal' then
+        if TowerBattleScene.isActive() then
+            if isTap then TowerBattleScene.handleClick(dx, dy, logicalW, logicalH) end
+            return
+        end
         if DungeonBattleScene.isOpen() then
             DungeonBattleScene.handleDragEnd(dx, dy)
             if isTap then DungeonBattleScene.handleInput(dx, dy) end
@@ -2436,7 +2490,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     -- 中面板：主视图链
-    if DungeonBattleScene.isOpen() then return end
+    if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
     local tabIndex = BottomNav.getSelectedIndex()
     if tabIndex == 1 then
         if CharacterPanel.isDraggingCard() then
@@ -2450,6 +2504,8 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if isTap and DiaryPage.handleInput(dx, dy) then return end
     elseif tabIndex == 3 then
         if isTap and BattleScene.handleInput(dx, dy) then return end
+    elseif tabIndex == 5 then
+        if isTap and DungeonPage.handleInput(dx, dy) then return end
     end
     if not isTap then return end
     -- 横屏模式无调试面板（DebugPanel 仅竖屏 screen-space）

@@ -386,7 +386,10 @@ def download_dist_snapshot(ver: str) -> None:
     # 匿名列 Release 资产，选 dist-{ver}-* 最新（带 commit hash 的文件名天然防旧缓存）
     assets = list_release_assets()
     snap_name, _remote = fetch_latest_snapshot_info(ver)
-    name = snap_name or dist_snapshot_name(ver)
+    if not snap_name:
+        die("无法获取云端快照列表（api.github.com 与 github.com 均不可达）。\n"
+            "  请检查本机网络（可先在浏览器打开 https://github.com/%s/releases/tag/%s 验证）后重跑。" % (repo, DIST_SNAPSHOT_TAG))
+    name = snap_name
     url = "https://github.com/%s/releases/download/%s/%s" % (repo, DIST_SNAPSHOT_TAG, name)
     tmp = RELEASE / name
     tmp.parent.mkdir(parents=True, exist_ok=True)
@@ -396,7 +399,7 @@ def download_dist_snapshot(ver: str) -> None:
                         if a.get("name", "").startswith(name + ".part"))
     if part_names:  # 分片模式：下方逐片下载合并，跳过完整包下载
         log("云端为分片快照（%d 片），逐片下载合并…" % len(part_names))
-        tmp.unlink()
+        tmp.unlink(missing_ok=True)
         parts_dir = RELEASE / "snapshot_parts"
         parts_dir.mkdir(parents=True, exist_ok=True)
         with tmp.open("wb") as out:
@@ -420,7 +423,7 @@ def download_dist_snapshot(ver: str) -> None:
         with zipfile.ZipFile(tmp) as zf:
             n = len(zf.namelist())
     except zipfile.BadZipFile:
-        tmp.unlink()
+        tmp.unlink(missing_ok=True)
         die("下载内容不是有效 zip（可能截断/被网关污染），已删除，请重跑本脚本。")
     log("下载完成 %.0f MB（%d 条目），解压到 dist/ …" % (tmp.stat().st_size / 1048576, n))
     # 统一走 staging：无论 zip 布局（有/无单层根目录）都正确落到 dist/
@@ -440,7 +443,7 @@ def download_dist_snapshot(ver: str) -> None:
             log("WARN 旧 dist/ 无法完全删除（权限/占用），已改名 %s（确认无用后可手动删）" % backup.name)
     shutil.move(str(src), str(target))
     shutil.rmtree(stage, ignore_errors=True)
-    tmp.unlink()
+    tmp.unlink(missing_ok=True)
     if not (target / "index.html").exists():
         die("dist 快照解压后没有 index.html，内容异常")
     # 写来源指纹（供 ensure_dist 下次比对云端是否更新）
@@ -461,18 +464,35 @@ def download_dist_snapshot(ver: str) -> None:
 
 
 def fetch_latest_snapshot_info(ver: str):
-    """匿名列 Release 资产，返回 (最新资产名, commit短hash|None)；不可达返回 (None, None)。"""
-    api = "https://api.github.com/repos/%s/releases/tags/%s" % (git_remote_repo(), DIST_SNAPSHOT_TAG)
-    try:
-        with urlopen(Request(api, headers={"User-Agent": "zyjm-pack-release"}), timeout=60) as resp:
+    """返回 (最新资产名, commit短hash|None)；两路都不可达返回 (None, None)。
+    路径1: api.github.com 列资产（需可达）；路径2: github.com/expanded_assets HTML
+    （国内对 api.github.com 常不可达而主站可达，作为回退）。"""
+    def from_api():
+        api = "https://api.github.com/repos/%s/releases/tags/%s" % (git_remote_repo(), DIST_SNAPSHOT_TAG)
+        with urlopen(Request(api, headers={"User-Agent": "zyjm-pack-release"}), timeout=45) as resp:
             rel = json.loads(resp.read().decode())
-        name = pick_latest_snapshot_asset(rel.get("assets"), ver)
-        if not name:
-            return None, None
-        m = re.match(r"^dist-%s-([0-9a-f]{7,})\.zip$" % re.escape(ver), name)
-        return name, (m.group(1) if m else None)
-    except Exception:
+        return pick_latest_snapshot_asset(rel.get("assets"), ver)
+
+    def from_expanded_assets():
+        url = "https://github.com/%s/releases/expanded_assets/%s" % (git_remote_repo(), DIST_SNAPSHOT_TAG)
+        with urlopen(Request(url, headers={"User-Agent": "zyjm-pack-release"}), timeout=45) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+        names = re.findall(r"dist-%s-[0-9a-f]{7,}\.zip" % re.escape(ver), html)
+        # expanded_assets 列表最新在前（含重复引用），取第一个
+        return names[0] if names else ""
+
+    name = ""
+    for attempt, fetcher in enumerate((from_api, from_expanded_assets), 1):
+        try:
+            name = fetcher() or ""
+            if name:
+                break
+        except Exception as e:
+            log("WARN 快照列表获取失败（路径%d: %s），尝试下一路径…" % (attempt, e))
+    if not name:
         return None, None
+    m = re.match(r"^dist-%s-([0-9a-f]{7,})\.zip$" % re.escape(ver), name)
+    return name, (m.group(1) if m else None)
 
 
 def read_local_snapshot_commit() -> "str | None":

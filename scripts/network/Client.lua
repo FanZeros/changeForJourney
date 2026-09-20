@@ -59,7 +59,6 @@ local GameSFX          = require("systems.GameSFX")
 local ServerListConfig = require("shared.ServerListConfig")
 local SpinePowerUpEffect = require("ui.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.IntroCutscene")
-local SamsaraCG          = require("ui.SamsaraCG")
 local ScenarioDialogue   = require("ui.ScenarioDialogue")
 local DungeonPage        = require("ui.DungeonPage")
 local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig")
@@ -673,9 +672,9 @@ function Client.Start()
     LoadingScreen.init(vg)
     DarkTitleScreen.init(vg)  -- [DarkTitleScreen] 横屏标题资源
     LetterIntro.init(vg)      -- [LetterIntro] 书斋/火漆全窗口素材
-    -- StartScreen 关闭后→打开 LoadingScreen（复用视频播放器，避免黑屏闪烁）
-    StartScreen.setOnStart(function(vp, vh, bs, bn)
-        LoadingScreen.open({ videoPlayer = vp, videoHandle = vh, bgmSource = bs, bgmNode = bn })
+    -- StartScreen 关闭后→打开 LoadingScreen（静态背景，接管 BGM）
+    StartScreen.setOnStart(function(bs, bn)
+        LoadingScreen.open({ bgmSource = bs, bgmNode = bn })
         -- 页面可能被浏览器后台回收后重载：此时连接可能已失效超时，
         -- 但StartScreen 还在显示（用户尚未点击），导致LoadingScreen
         -- 打开时currentState 已经是DISCONNECTED，无重试路径 →卡死。
@@ -906,9 +905,9 @@ function Client.Start()
         BlacksmithPage.openAutoDecomposePopupStandalone()
     end)
 
-    -- 5.3 轮回回调：倒计时结束→播放轮回前对话→CG 视频 →开场动画→完成关卡加载
+    -- 5.3 轮回回调：倒计时结束→播放轮回前对话→开场动画→完成关卡加载
     BattleScene.setOnReincarnate(function(data)
-        print("[Client] reincarnation triggered, playing CG video then intro cutscene (difficulty "
+        print("[Client] reincarnation triggered, starting intro cutscene (difficulty "
             .. tostring(data.fromDifficulty) .. " →" .. tostring(data.toDifficulty) .. ")")
 
         -- 轮回前情景对话（普通终点→62，困难终点→69）
@@ -919,26 +918,21 @@ function Client.Start()
             preReincarnateScenarioId = 69
         end
 
-        local function proceedWithCG()
-            -- 先播放轮回CG 视频（BGM 在视频模块内部静音恢复）
-            SamsaraCG.start(function()
-                -- CG 视频结束后，播放开场动画
-                print("[Client] CG video finished, starting intro cutscene")
-                IntroCutscene.reset()
-                IntroCutscene.start(function()
-                    print("[Client] reincarnation intro finished, completing stage load")
-                    BattleScene.completeReincarnation()
-                    -- completeReincarnation 会同步 NEXT_STAGE，服务端可能标记 hasReincarnated；
-                    -- 入场动画已在本次轮回流程播放完毕，清除标记避免重启后重复播放
-                    Client.sendAction(Protocol.ACTION_TYPES.CLEAR_REINCARNATION, {})
-                end)
+        local function proceedWithIntro()
+            IntroCutscene.reset()
+            IntroCutscene.start(function()
+                print("[Client] reincarnation intro finished, completing stage load")
+                BattleScene.completeReincarnation()
+                -- completeReincarnation 会同步 NEXT_STAGE，服务端可能标记 hasReincarnated；
+                -- 入场动画已在本次轮回流程播放完毕，清除标记避免重启后重复播放
+                Client.sendAction(Protocol.ACTION_TYPES.CLEAR_REINCARNATION, {})
             end)
         end
 
         if preReincarnateScenarioId and not ClientScenario.isClaimed(preReincarnateScenarioId) then
-            ClientScenario.playFirstVisit(preReincarnateScenarioId, nil, proceedWithCG)
+            ClientScenario.playFirstVisit(preReincarnateScenarioId, nil, proceedWithIntro)
         else
-            proceedWithCG()
+            proceedWithIntro()
         end
     end)
 
@@ -1567,7 +1561,15 @@ function HandleNanoVGRender_Client(eventType, eventData)
         local dungeonBattleOpen = DungeonBattleScene.isOpen()
         local towerBattleOpen = TowerBattleScene.isActive()
         if towerBattleOpen then
-            TowerBattleScene.draw(vg)
+            local lw = graphics:GetWidth() / (graphics:GetDPR() or 1)
+            local lh = graphics:GetHeight() / (graphics:GetDPR() or 1)
+            nvgRestore(vg)
+            nvgSave(vg)
+            nvgScissor(vg, 0, 0, lw, lh)
+            TowerBattleScene.draw(vg, lw, lh)
+            nvgRestore(vg)
+            nvgSave(vg)
+            nvgTranslate(vg, designOffsetX, designOffsetY)
             -- 不绘制TopBar/BottomNav
         elseif dungeonBattleOpen then
             DungeonBattleScene.draw(vg)
@@ -1712,6 +1714,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
             end
         end
 
+        if not towerBattleOpen then
         HeroRosterPanel.draw(vg)
 
         -- 玩家信息弹窗（头像点击打开）
@@ -1732,11 +1735,6 @@ function HandleNanoVGRender_Client(eventType, eventData)
         -- 更新提醒弹窗（最最顶层）
         UpdateNoticePopup.draw(vg)
 
-        -- 轮回 CG 视频（覆盖所有游戏UI）
-        if SamsaraCG.isActive() then
-            SamsaraCG.draw(vg)
-        end
-
         -- 新手过场动画（覆盖所有游戏UI）
         if IntroCutscene.isActive() then
             IntroCutscene.draw(vg)
@@ -1756,6 +1754,7 @@ function HandleNanoVGRender_Client(eventType, eventData)
         if TutorialManager.isActive() then
             TutorialManager.draw()
         end
+        end -- not towerBattleOpen
 
         nvgRestore(vg)
       end) -- pcall end (render)
@@ -2111,12 +2110,6 @@ function HandleUpdate_Client(eventType, eventData)
                 updateNoticeShown_ = true
                 UpdateNoticePopup.show()
             end
-        end
-
-        -- 轮回 CG 视频更新（播放期间阻止其他UI 更新和BGM 切换）
-        if SamsaraCG.isActive() then
-            SamsaraCG.update(dt)
-            return  -- CG 视频期间不处理游戏UI / BGM
         end
 
         -- 新手过场动画更新（播放期间阻止其他UI 更新）BGM 切换）

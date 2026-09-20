@@ -1,6 +1,6 @@
 -- ============================================================================
 -- StartScreen  - 开始游戏界面
--- 全屏背景视频 + LOGO + "开始游戏按钮，点击任意位置进入游戏
+-- 静态背景图 + LOGO + 开始游戏按钮，点击任意位置进入游戏
 -- ============================================================================
 
 local GameConfig         = require("config.GameConfig")
@@ -19,9 +19,7 @@ local imgGlow_     = -1
 local imgDeco_     = -1
 local imgFwq_      = { -1, -1, -1 }   -- ICON_FWQ_1=通畅 2=繁忙 3=满
 local imgMask_     = -1                -- 底部渐变遮罩
-local imgBgFallback_ = -1             -- 视频首帧静态图（视频未就绪时显示）
-local videoPlayer_ = nil
-local videoHandle_ = nil
+local imgBgFallback_ = -1             -- 静态背景图
 
 -- ── BGM ──
 local bgmNode_     = nil   ---@type Node
@@ -114,17 +112,6 @@ function StartScreen.init(nvgCtx, scene)
 
     -- 选服面板初始化（数据由 setServerListData 注入）
     ServerSelectPanel.init(vg_)
-
-    -- 背景视频（循环、静音）
-    videoPlayer_ = VideoPlayer:new()
-    if videoPlayer_ then
-        local ok = videoPlayer_:Load("video/UI_DLJMBJ_Compat.mp4", 1080, 2400)
-        if ok then
-            videoPlayer_:SetLoop(true)
-            videoPlayer_:SetVolume(0)
-            videoPlayer_:Play()
-        end
-    end
 
     -- BGM（预加载资源，延迟到首次 update 时播放，避免初始化期间音乐空转）
     if scene then
@@ -261,11 +248,6 @@ function StartScreen.update(dt)
         end
     end
 
-    -- 视频帧更新
-    if videoPlayer_ then
-        videoPlayer_:Update()
-    end
-
     -- 发光呼吸计时
     glowTimer_ = glowTimer_ + dt
 
@@ -276,18 +258,13 @@ function StartScreen.update(dt)
             fadeAlpha_ = 0
             isOpen_ = false
             fadeOut_ = false
-            -- 将视频播放器和 BGM 一起传递给回调（LoadingScreen 复用）
-            local vp = videoPlayer_
-            local vh = videoHandle_
             local bn = bgmNode_
             local bs = bgmSource_
-            videoPlayer_ = nil
-            videoHandle_ = nil
             bgmNode_ = nil
             bgmSource_ = nil
-            -- 触发回调，传递视频和 BGM 资源
+            -- 触发回调，传递 BGM 资源
             if onStartCallback_ then
-                onStartCallback_(vp, vh, bs, bn)
+                onStartCallback_(bs, bn)
             end
             -- 淡出完成后，触发暂存的选服回调（发送 SELECT_SERVER）
             if pendingServerId_ and onServerSelectCallback_ then
@@ -305,16 +282,8 @@ function StartScreen.draw(vg)
 
     nvgSave(vg)
 
-    -- 1. 背景视频（全屏）/ 始终全不透明，不参与淡出
-    if not videoHandle_ and videoPlayer_ and videoPlayer_:IsReady() then
-        local texture = videoPlayer_:GetTexture()
-        if texture and nvgCreateVideo then
-            videoHandle_ = nvgCreateVideo(vg, texture)
-        end
-    end
-    if videoHandle_ and videoHandle_ > 0 then
-        drawImg(vg, videoHandle_, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
-    elseif imgBgFallback_ >= 0 then
+    -- 1. 静态背景图
+    if imgBgFallback_ >= 0 then
         drawImg(vg, imgBgFallback_, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
     else
         nvgBeginPath(vg)
@@ -332,7 +301,7 @@ function StartScreen.draw(vg)
         nvgRestore(vg)
     end
 
-    -- 淡出仅作用于 UI 叠加元素（LOGO、发光、文字），视频背景保持全屏
+    -- 淡出仅作用于 UI 叠加元素（LOGO、发光、文字），静态背景保持全屏
     if fadeOut_ then
         nvgGlobalAlpha(vg, math.max(fadeAlpha_, 0))
     end
@@ -567,7 +536,7 @@ function StartScreen.getServerInfo()
 end
 
 --- 重连时强制跳过开始界面（不走淡出动画，直接关闭并触发回调）
---- 将视频播放器和 BGM 资源传递给 LoadingScreen 复用
+--- 将 BGM 资源传递给 LoadingScreen
 function StartScreen.skipForReconnect()
     if not isOpen_ then return end
 
@@ -575,18 +544,14 @@ function StartScreen.skipForReconnect()
     fadeOut_  = false
     fadeAlpha_ = 0
 
-    -- 将视频和 BGM 资源传递给回调（LoadingScreen 复用），与正常淡出完成时的行为一致
-    local vp = videoPlayer_
-    local vh = videoHandle_
+    -- 仅传递 BGM 资源给加载界面
     local bn = bgmNode_
     local bs = bgmSource_
-    videoPlayer_ = nil
-    videoHandle_ = nil
     bgmNode_     = nil
     bgmSource_   = nil
 
     if onStartCallback_ then
-        onStartCallback_(vp, vh, bs, bn)
+        onStartCallback_(bs, bn)
     end
 
     -- 重连不需要触发选服回调（pendingServerId_ 保持 nil）
@@ -594,7 +559,7 @@ function StartScreen.skipForReconnect()
 end
 
 --- 重新打开开始界面（清除存档后调用）
---- 重置内部状态并重新创建视频和 BGM 资源
+--- 重置内部状态并重新创建 BGM
 ---@param scene Scene 场景节点（用于创建 BGM）
 function StartScreen.reopen(scene)
     -- 重置状态
@@ -607,29 +572,6 @@ function StartScreen.reopen(scene)
     serverListData_   = nil
     serverInfo_.name  = "选择服务器"
     serverInfo_.isNew = false
-
-    -- 清理旧资源（如果有残留）
-    if videoPlayer_ then
-        videoPlayer_ = nil
-    end
-    videoHandle_ = nil
-
-    if bgmNode_ then
-        bgmNode_:Remove()
-        bgmNode_ = nil
-        bgmSource_ = nil
-    end
-
-    -- 重新创建视频播放器
-    videoPlayer_ = VideoPlayer:new()
-    if videoPlayer_ then
-        local ok = videoPlayer_:Load("video/UI_DLJMBJ_Compat.mp4", 1080, 2400)
-        if ok then
-            videoPlayer_:SetLoop(true)
-            videoPlayer_:SetVolume(0)
-            videoPlayer_:Play()
-        end
-    end
 
     -- 重新创建 BGM（延迟到首次 update 时播放）
     if scene then

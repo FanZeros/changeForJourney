@@ -575,7 +575,8 @@ function DarkIcon.draw(vg, name, cx, cy, size, alpha, opts)
     p(vg, cx, cy, size, a, opts)
 end
 
---- 绘制装备品质框（暗黑金属边框 + 品质饰色 + 角铆钉）
+--- 绘制装备品质框
+--- 参考像素风背包：灰外框 + 更灰的内框；品质色只作轻点缀（高品质外辉光）
 ---@param vg any
 ---@param quality number 品质 1-6
 ---@param cx number 中心 X
@@ -590,67 +591,54 @@ function DarkIcon.drawQualityFrame(vg, quality, cx, cy, w, h, alpha)
     local trim = QUALITY_TRIM[q]
     local u = math.min(w, h)
     local x, y = cx - w * 0.5, cy - h * 0.5
-    local r = u * 0.10
+    local r = math.max(2, u * 0.04)
 
-    -- 高品质外辉光
+    -- 外框灰（参考截图格子外圈）
+    local OUTER = { 92, 96, 88 }
+    -- 中间框更灰（参考截图图标内圈）
+    local INNER = { 52, 54, 50 }
+    local WELL  = { 22, 22, 20 }
+
+    -- 高品质外辉光（保留稀有度可读，不抢灰框）
     if q >= 3 then
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, x - 3, y - 3, w + 6, h + 6, r + 2)
-        strokeC(vg, a, trim[1], trim[2], trim[3], q >= 5 and 0.22 or 0.12)
-        nvgStrokeWidth(vg, u * 0.045)
-        nvgStroke(vg)
-    end
-    if q >= 5 then
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, x - 7, y - 7, w + 14, h + 14, r + 5)
-        strokeC(vg, a, trim[1], trim[2], trim[3], 0.10)
-        nvgStrokeWidth(vg, u * 0.05)
+        nvgRoundedRect(vg, x - 2, y - 2, w + 4, h + 4, r + 1)
+        strokeC(vg, a, trim[1], trim[2], trim[3], q >= 5 and 0.28 or 0.16)
+        nvgStrokeWidth(vg, math.max(1.5, u * 0.028))
         nvgStroke(vg)
     end
 
-    -- 底体
+    -- 底井（更暗，衬出双框）
     nvgBeginPath(vg)
     nvgRoundedRect(vg, x, y, w, h, r)
-    nvgFillPaint(vg, vGrad(vg, y, y + h, { 32, 27, 21 }, { 16, 13, 10 }, a))
+    fillC(vg, a, WELL[1], WELL[2], WELL[3], 1)
     nvgFill(vg)
-    -- 外描边
+
+    -- 外灰框
+    local outerW = math.max(2.0, u * 0.055)
     nvgBeginPath(vg)
-    nvgRoundedRect(vg, x, y, w, h, r)
-    strokeC(vg, a, 0, 0, 0, 0.6)
-    nvgStrokeWidth(vg, math.max(1.5, u * 0.018))
+    nvgRoundedRect(vg, x + outerW * 0.5, y + outerW * 0.5, w - outerW, h - outerW, r)
+    strokeC(vg, a, OUTER[1], OUTER[2], OUTER[3], 1)
+    nvgStrokeWidth(vg, outerW)
     nvgStroke(vg)
-    -- 金属倒角（上亮下暗渐变描边）
+
+    -- 中间更灰框（贴近图标）
+    local inset = math.max(4, u * 0.12)
+    local innerW = math.max(1.6, u * 0.040)
     nvgBeginPath(vg)
-    nvgRoundedRect(vg, x + u * 0.015, y + u * 0.015, w - u * 0.03, h - u * 0.03, r * 0.85)
-    nvgStrokePaint(vg, vGrad(vg, y, y + h, DarkIcon.Palette.METAL_L, { 12, 10, 8 }, a))
-    nvgStrokeWidth(vg, math.max(1, u * 0.03))
+    nvgRoundedRect(vg, x + inset, y + inset, w - inset * 2, h - inset * 2, math.max(1, r * 0.55))
+    strokeC(vg, a, INNER[1], INNER[2], INNER[3], 1)
+    nvgStrokeWidth(vg, innerW)
     nvgStroke(vg)
-    -- 品质饰边
+
+    -- 品质色只在内框内侧极细一圈，低品几乎看不见
+    local trimA = 0.10 + q * 0.06
     nvgBeginPath(vg)
-    nvgRoundedRect(vg, x + u * 0.07, y + u * 0.07, w - u * 0.14, h - u * 0.14, r * 0.6)
-    strokeC(vg, a, trim[1], trim[2], trim[3], 0.9)
-    nvgStrokeWidth(vg, math.max(1, u * 0.025))
+    nvgRoundedRect(vg, x + inset + innerW, y + inset + innerW,
+        w - (inset + innerW) * 2, h - (inset + innerW) * 2, math.max(1, r * 0.4))
+    strokeC(vg, a, trim[1], trim[2], trim[3], trimA)
+    nvgStrokeWidth(vg, math.max(1, u * 0.012))
     nvgStroke(vg)
-    -- 角铆钉
-    local inset = u * 0.07
-    local studR = u * 0.040
-    for _, sx in ipairs({ x + inset, x + w - inset }) do
-        for _, sy in ipairs({ y + inset, y + h - inset }) do
-            nvgBeginPath(vg)
-            nvgCircle(vg, sx, sy, studR)
-            fillC(vg, a, trim[1], trim[2], trim[3], 1)
-            nvgFill(vg)
-            nvgBeginPath(vg)
-            nvgCircle(vg, sx, sy, studR)
-            strokeC(vg, a, 0, 0, 0, 0.55)
-            nvgStrokeWidth(vg, math.max(1, u * 0.012))
-            nvgStroke(vg)
-            nvgBeginPath(vg)
-            nvgCircle(vg, sx - studR * 0.3, sy - studR * 0.3, studR * 0.3)
-            fillC(vg, a, 255, 250, 230, 0.75)
-            nvgFill(vg)
-        end
-    end
 end
 
 --- 品质底框统一入口（P2-A）：替代 UI_icon_ZBBJ_1~6 / KP_TY_N~UR 贴图

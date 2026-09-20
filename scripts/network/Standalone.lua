@@ -1623,6 +1623,9 @@ function HandleMouseButtonUp(eventType, eventData)
     local diaryOverlay = DiaryPage.hasOverlayOpen()
     if not detailOpen and not smithOpen and not ChurchPage.isOpen() and not tavernOpen
         and not DungeonBattleScene.isOpen() and not diaryOverlay then
+        if TopBar.handleInput(dx, dy) then
+            return
+        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
@@ -1880,6 +1883,9 @@ function HandleTouchEnd(eventType, eventData)
         local diaryOverlay2 = DiaryPage.hasOverlayOpen()
         if not detailOpen2 and not smithOpen2 and not ChurchPage.isOpen() and not tavernOpen2
             and not DungeonBattleScene.isOpen() and not diaryOverlay2 then
+            if TopBar.handleInput(dx, dy) then
+                return
+            end
             if TopBar.hitTestAvatar(dx, dy, 0) then
                 PlayerInfoPanel.open()
                 return
@@ -2525,6 +2531,9 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
         if isTap and not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
             or MarketPage.isOpen()) then
+            if TopBar.handleInput(dx, dy, -30) then
+                return
+            end
             if TopBar.hitTestAvatar(dx, dy, -30) then
                 PlayerInfoPanel.open()
                 return
@@ -2590,6 +2599,9 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     -- 横屏模式无调试面板（DebugPanel 仅竖屏 screen-space）
     local detailOpen = CharacterPanel.isDetailOpen()
     if not detailOpen then
+        if TopBar.handleInput(dx, dy) then
+            return
+        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return

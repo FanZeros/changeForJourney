@@ -134,137 +134,18 @@ function BottomNav.update(dt)
 end
 
 --- 每帧绘制
+-- 底栏视觉已全局移除，页面入口迁到 TopBar（本模块仅保留页码/锁定/角标状态）
 function BottomNav.draw(vg)
-    -- 导航栏背景
-    drawImageCentered(vg, imgNavBg, NAV_CX, NAV_CY, NAV_W, NAV_H, 1.0)
-
-    -- 未选中图标的 Y 中心（背景中心 + 上偏移）
-    local unselIconCY = UNSEL_BG_CY + UNSEL_ICON_Y_OFFSET
-
-    -- 先绘制非选中标签（底层），再绘制选中标签（顶层弹出）
-    -- 第一遍：所有 t < 0.5 的标签（偏未选中）
-    for pass = 1, 2 do
-        for i = 1, TAB_COUNT do
-            local cx = TAB_SPACING * (i - 0.5)
-            local tab = tabs[i]
-            local t = tabActivation[i]
-
-            -- pass 1: 画未选中和锁定的（t < 0.5）
-            -- pass 2: 画选中/正在选中的（t >= 0.5）
-            local isTopLayer = (t >= 0.5)
-            if (pass == 1 and isTopLayer) or (pass == 2 and not isTopLayer) then
-                goto continue
-            end
-
-            if tab.locked then
-                -- ===== 锁定态（无动画）[暗黑化 P0: 矢量图标 45% 透明表示锁定] =====
-                drawImageCentered(vg, imgTabBg3, cx, UNSEL_BG_CY, UNSEL_W, UNSEL_H, 1.0)
-                DarkIcon.draw(vg, DarkIcon.NAV_NAMES[i], cx, unselIconCY,
-                    UNSEL_ICON_SIZE, 0.45)
-            else
-                -- ===== 动画态 =====
-                -- 插值：位置、大小
-                local bgCY   = lerp(UNSEL_BG_CY, SEL_BG_CY, t)
-                local bgW    = lerp(UNSEL_W, SEL_W, t)
-                local bgH    = lerp(UNSEL_H, SEL_H, t)
-                local iconSz = lerp(UNSEL_ICON_SIZE, SEL_ICON_SIZE, t)
-                local iconCY = lerp(unselIconCY, SEL_ICON_CY, t)
-
-                -- 背景：交叉淡入淡出
-                drawImageCentered(vg, imgTabBg1, cx, bgCY, bgW, bgH, 1 - t)
-                drawImageCentered(vg, imgTabBg2, cx, bgCY, bgW, bgH, t)
-
-                -- 图标（始终可见，位置和大小插值）[暗黑化 P0: 矢量图标]
-                DarkIcon.draw(vg, DarkIcon.NAV_NAMES[i], cx, iconCY, iconSz, 1.0)
-
-                -- 角标（右上角，跟随图标位置和大小动画）
-                if tabBadges[i] then
-                    local BADGE_SM = 64   -- 未选中态角标尺寸
-                    local BADGE_LG = 74   -- 选中态角标尺寸（与战利品红点一致）
-                    local badgeSz = lerp(BADGE_SM, BADGE_LG, t)
-                    -- 位置：贴近图标右上角
-                    local badgeX = cx + iconSz * 0.5 - badgeSz * 0.3
-                    local badgeY = iconCY - iconSz * 0.5 + badgeSz * 0.3
-                    if tabBadgeStyle[i] == "redDot" then
-                        -- 红点样式 [暗黑化 P0: 余烬光点]
-                        DarkIcon.draw(vg, "reddot", badgeX, badgeY, badgeSz, 1.0)
-                    else
-                        -- 默认强化箭头样式：选中/未选中切换大小，始终可见
-                        local badgeImg = (t >= 0.5) and imgIconUpBig or imgIconUp
-                        if badgeImg >= 0 then
-                            drawImageCentered(vg, badgeImg, badgeX, badgeY, badgeSz, badgeSz, 1.0)
-                        end
-                    end
-                end
-
-                -- 标签名文字（随选中淡入）
-                if t > 0.05 then
-                    drawTextStroke(vg, cx, SEL_TEXT_CY, tab.name,
-                        SEL_TEXT_SIZE, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                        255, 255, 255, SEL_STROKE_WIDTH, t)
-                end
-            end
-
-            ::continue::
-        end
-    end
-
-   -- 新手引导热点注册
-   local TM = require("systems.TutorialManager")
-   if TM.isActive() then
-        print("[BottomNav][DIAG] TM active, registering hotspots")
-       TM.registerHotspot("tab_character", 108,  2352, 216, 207)
-       TM.registerHotspot("tab_log",       324,  2352, 216, 207)
-       TM.registerHotspot("tab_town",      756,  2352, 216, 207)
-       TM.registerHotspot("tab_dungeon",   972,  2352, 216, 207)
-   else
-        print("[BottomNav][DIAG] TM NOT active")
-   end
 end
 
---- 处理点击输入（接收设计空间坐标）
+--- 底栏已隐藏，保留空实现避免旧调用报错
 function BottomNav.handleInput(designX, designY)
-    -- 全局锁定时不响应任何点击
-    if allLocked_ then return end
-
-    local touchBottom = NAV_CY + NAV_H * 0.5
-    if designY > touchBottom then return end
-    if designX < 0 or designX > NAV_W then return end
-
-    -- 判断点击了哪个标签列
-    local tabIndex = math.floor(designX / TAB_SPACING) + 1
-    tabIndex = math.max(1, math.min(TAB_COUNT, tabIndex))
-
-    -- 按列区分点击区域顶部：选中列使用弹出高度，其他列使用未选中高度
-    local touchTop
-    if tabIndex == selectedIndex then
-        touchTop = SEL_BG_CY - SEL_H * 0.5
-    else
-        touchTop = UNSEL_BG_CY - UNSEL_H * 0.5
-    end
-    if designY < touchTop then return end
-
-    -- 锁定标签不可点击
-    if tabs[tabIndex].locked then return end
-
-    if tabIndex ~= selectedIndex then
-        selectedIndex = tabIndex
-        print("[BottomNav] Selected: " .. tabs[tabIndex].name)
-        local GameSFX = require("systems.GameSFX")
-        GameSFX.playUIMove(2)  -- Tab 切换
-    end
-    return true  -- 命中了 BottomNav 区域
+    return nil
 end
 
---- 检测坐标是否在标签栏点击区域内（设计空间坐标）
+--- 底栏已隐藏
 function BottomNav.hitTest(designX, designY)
-    local touchBottom = NAV_CY + NAV_H * 0.5
-    if designY > touchBottom then return false end
-    if designX < 0 or designX > NAV_W then return false end
-    -- 使用未选中标签的顶部作为保守判定
-    local touchTop = UNSEL_BG_CY - UNSEL_H * 0.5
-    if designY < touchTop then return false end
-    return true
+    return false
 end
 
 function BottomNav.getSelectedIndex()

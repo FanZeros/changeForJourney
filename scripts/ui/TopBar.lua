@@ -10,6 +10,7 @@ local HeroAssetUtil   = require("config.HeroAssetUtil")
 local AvatarFrameUtil = require("config.AvatarFrameUtil")
 local HeroConfig     = require("config.HeroConfig")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
+local BottomNav      = require("ui.BottomNav")
 
 local TopBar = {}
 
@@ -187,6 +188,31 @@ function TopBar.resetSessionData()
 end
 
 --- 每帧绘制（在设计空间 1080x2400 内调用）
+
+-- 页面入口（替代底栏五键）。通栏放在头像行正下方，避开金币/钻石。
+local PAGE_TABS = {
+    { index = 1, name = "角色", icon = "nav_hero",    hotspot = "tab_character" },
+    { index = 2, name = "日志", icon = "nav_log",     hotspot = "tab_log" },
+    { index = 3, name = "战斗", icon = "nav_battle",  hotspot = "tab_battle" },
+    { index = 4, name = "城镇", icon = "nav_town",    hotspot = "tab_town" },
+    { index = 5, name = "副本", icon = "nav_dungeon", hotspot = "tab_dungeon" },
+}
+local PAGE_BTN_W, PAGE_BTN_H = 196, 64
+local PAGE_BTN_GAP = 12
+local PAGE_BTN_CY = 244
+local PAGE_BTN_START_CX = 108
+local PAGE_HOTSPOT_KEYS = {
+    tab_character = 1,
+    tab_log = 2,
+    tab_battle = 3,
+    tab_town = 4,
+    tab_dungeon = 5,
+}
+
+local function pageBtnCenterX(i)
+    return PAGE_BTN_START_CX + (i - 1) * (PAGE_BTN_W + PAGE_BTN_GAP)
+end
+
 function TopBar.draw(vg, offsetY)
     -- 可选纵向偏移：三行并行左面板调用时上移头像区（热区同步用 TopBar.hitTestAvatar）
     local oy = tonumber(offsetY) or 0
@@ -220,6 +246,45 @@ function TopBar.draw(vg, offsetY)
     -- #2c 红点提示（有可更换头像时显示）[暗黑化 P0: 余烬光点]
     if TopBar.hasAvailableAvatar() then
         DarkIcon.draw(vg, "reddot", 160, 74, 74, 1)
+    end
+
+    -- #2e 页面入口（替代底栏五键）
+    local selectedTab = BottomNav.getSelectedIndex()
+    local allLocked = BottomNav.isAllLocked()
+    for i, tab in ipairs(PAGE_TABS) do
+        local cx = pageBtnCenterX(i)
+        local cy = PAGE_BTN_CY + oy
+        local x = cx - PAGE_BTN_W * 0.5
+        local y = cy - PAGE_BTN_H * 0.5
+        local locked = allLocked or BottomNav.isTabLocked(tab.index)
+        local isSel = (tab.index == selectedTab)
+        local alpha = locked and 0.38 or 1.0
+        if isSel then
+            DarkIcon.drawNine(vg, "btn", x, y, PAGE_BTN_W, PAGE_BTN_H, { accent = "gold", alpha = alpha })
+        else
+            DarkIcon.drawNine(vg, "plain", x, y, PAGE_BTN_W, PAGE_BTN_H, { alpha = alpha })
+        end
+        DarkIcon.draw(vg, tab.icon, cx, cy - 8, 36, alpha)
+        local tr, tg, tb = 216, 201, 163
+        if isSel then
+            tr, tg, tb = 240, 199, 94
+        elseif locked then
+            tr, tg, tb = 110, 100, 80
+        end
+        drawTextStroke(vg, cx, cy + 20, tab.name, 20,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 3,
+            { strokeColor = { 0x1a, 0x12, 0x0a } })
+        local showBadge, badgeStyle = BottomNav.getBadge(tab.index)
+        if showBadge and not locked then
+            DarkIcon.draw(vg, "reddot", cx + PAGE_BTN_W * 0.38, cy - PAGE_BTN_H * 0.38, 28, 1)
+        end
+    end
+
+    local TM = require("systems.TutorialManager")
+    if TM.isActive() then
+        for i, tab in ipairs(PAGE_TABS) do
+            TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H)
+        end
     end
 
     -- #3 等级背景框: center(98,200+oy), 66x38, black, r=14
@@ -318,6 +383,46 @@ end
 ---@param y number
 ---@param offsetY number|nil  与 draw 调用传入的 offsetY 一致
 ---@return boolean
+--- 页面入口点击（替代底栏）
+---@param x number
+---@param y number
+---@param offsetY number|nil 面板纵向偏移（横屏三联时与绘制一致）
+---@return boolean
+function TopBar.handleInput(x, y, offsetY)
+    if BottomNav.isAllLocked() then return false end
+    local cy = PAGE_BTN_CY + (tonumber(offsetY) or 0)
+    for i, tab in ipairs(PAGE_TABS) do
+        local cx = pageBtnCenterX(i)
+        local halfW, halfH = PAGE_BTN_W * 0.5, PAGE_BTN_H * 0.5
+        if x >= cx - halfW and x <= cx + halfW
+           and y >= cy - halfH and y <= cy + halfH then
+            if BottomNav.isTabLocked(tab.index) then
+                print("[TopBar] tab locked: " .. tab.name)
+                return true
+            end
+            if BottomNav.getSelectedIndex() ~= tab.index then
+                BottomNav.setSelectedIndex(tab.index)
+                local GameSFX = require("systems.GameSFX")
+                GameSFX.playUIMove(2)
+            end
+            return true
+        end
+    end
+    return false
+end
+
+--- 引导热点矩形（供外部查询）
+---@param key string
+---@return number|nil cx
+---@return number|nil cy
+---@return number|nil w
+---@return number|nil h
+function TopBar.getPageTabHotspot(key)
+    local i = PAGE_HOTSPOT_KEYS[key]
+    if not i then return nil end
+    return pageBtnCenterX(i), PAGE_BTN_CY, PAGE_BTN_W, PAGE_BTN_H
+end
+
 function TopBar.hitTestAvatar(x, y, offsetY)
     local oy = tonumber(offsetY) or 0
     return x >= 98 - 75 and x <= 98 + 75

@@ -516,13 +516,13 @@ function M.draw(vg)
     end
 
     local upperOX = UPPER_SLIDE_DIST * (1 - progress)  -- [横向] 右面板页从右侧滑入/滑出
-    local lowerOY =  LOWER_SLIDE_DIST * (1 - lowerProgress)
+    local lowerOX =  LOWER_SLIDE_DIST * (1 - lowerProgress)  -- [横向] 与整页同向:从右侧滑入/滑出
     local overlayAlpha = math.floor(180 * progress)
 
     -- 箭头切换时不做垂直滑入
     if detailState.switchDir then
         upperOX = 0
-        lowerOY = 0
+        lowerOX = 0
     end
 
     -- === 属性区域惯性滚动更新 ===
@@ -829,7 +829,7 @@ function M.draw(vg)
 
     -- ================== 下半部分（从下方滑入） ==================
     nvgSave(vg)
-    nvgTranslate(vg, 0, lowerOY)
+    nvgTranslate(vg, lowerOX, 0)
 
     -- === 6) 角色详情属性背景图（静态，不参与切换动画） ===
     drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)

@@ -1310,7 +1310,7 @@ local function drawPageImpl(vg)
 
     local upperDist = state.closing and ANIM.UPPER_SLIDE_OUT or ANIM.UPPER_SLIDE_IN
     local upperOX = -upperDist * (1 - progress)  -- [横向] 从左侧滑入/滑出
-    local lowerOY =  ANIM.LOWER_SLIDE_DIST * (1 - lowerProgress)
+    local lowerOX = -ANIM.LOWER_SLIDE_DIST * (1 - lowerProgress)  -- [横向] 与整页同向:从左侧滑入/滑出
     local overlayAlpha = math.floor(180 * progress)
 
     -- === 全屏遮罩 ===
@@ -1556,7 +1556,7 @@ local function drawPageImpl(vg)
 
     -- === Tab 全屏背景（上半部分之后绘制，覆盖教堂室内背景） ===
     nvgSave(vg)
-    nvgTranslate(vg, 0, lowerOY)
+    nvgTranslate(vg, lowerOX, 0)
     if isAnimating then
         -- 旧 tab 背景（垂直滑出）：先裁剪到屏幕可见区域，再纵向平移
         local oVisTop = math.max(0, oldOY_tab)
@@ -1593,7 +1593,7 @@ local function drawPageImpl(vg)
 
     -- ================== 下半部分（从下方滑入） ==================
     nvgSave(vg)
-    nvgTranslate(vg, 0, lowerOY)
+    nvgTranslate(vg, lowerOX, 0)
 
     -- Tab 内容剪裁区域（延伸到屏幕底部，让星图显示在底部按钮后方）
     local clipTop = 0
@@ -1693,7 +1693,7 @@ local function drawPageImpl(vg)
     local _TM = require("systems.TutorialManager")
     if _TM.isActive() then
         local ti2 = TAB_ITEMS[2]
-        _TM.registerHotspot("talent_toggle", ti2.cx, ti2.cy + lowerOY, TAB.SLIDER_W, TAB.SLIDER_H)
+        _TM.registerHotspot("talent_toggle", ti2.cx + lowerOX, ti2.cy, TAB.SLIDER_W, TAB.SLIDER_H)
     end
 
     nvgRestore(vg)  -- 结束下半部分偏移

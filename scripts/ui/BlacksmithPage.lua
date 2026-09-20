@@ -1585,7 +1585,7 @@ local function drawPageImpl(vg)
     end
 
     local upperOX = -UPPER_SLIDE_DIST * (1 - progress)  -- [横向] 从左侧滑入/滑出
-    local lowerOY =  LOWER_SLIDE_DIST * (1 - lowerProgress)
+    local lowerOX = -LOWER_SLIDE_DIST * (1 - lowerProgress)  -- [横向] 与整页同向:从左侧滑入/滑出
     local overlayAlpha = math.floor(180 * progress)
 
     -- === 全屏遮罩 ===
@@ -1659,7 +1659,7 @@ local function drawPageImpl(vg)
 
     -- ================== 下半部分（从下方滑入） ==================
     nvgSave(vg)
-    nvgTranslate(vg, 0, lowerOY)
+    nvgTranslate(vg, lowerOX, 0)
 
     -- 7. 下方背景板
     drawImageCentered(vg, imgLowerBg, LOWER_BG_CX, LOWER_BG_CY, LOWER_BG_W, LOWER_BG_H, 1.0)

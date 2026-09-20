@@ -1310,7 +1310,7 @@ local function drawPageImpl(vg)
     end
 
     local upperOX = -UPPER_DIST * (1 - progress)  -- [横向] 从左侧滑入/滑出
-    local lowerOY =  LOWER_DIST * (1 - lowerProgress)
+    local lowerOX = -LOWER_DIST * (1 - lowerProgress)  -- [横向] 与整页同向:从左侧滑入/滑出
     local overlayAlpha = math.floor(180 * progress)
 
     -- Tab 切换进度
@@ -1386,7 +1386,7 @@ local function drawPageImpl(vg)
 
     -- ========== 下半部分（从下方滑入） ==========
     nvgSave(vg)
-    nvgTranslate(vg, 0, lowerOY)
+    nvgTranslate(vg, lowerOX, 0)
 
     -- 下方背景框（封装为函数以支持水平滑动动画）
     local function drawLowerBg(tabKey)
@@ -1407,7 +1407,7 @@ local function drawPageImpl(vg)
 
     -- ========== Tab 内容 ==========
     local contentClipTop = 430
-    local contentClipBot = math.min(DESIGN_H - lowerOY, 2300)
+    local contentClipBot = math.min(DESIGN_H, 2300)  -- [横向] 下半无 Y 偏移,裁剪固定
     -- isAnimating 已在函数顶部计算，此处直接复用
 
     if isAnimating then

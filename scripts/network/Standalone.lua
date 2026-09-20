@@ -30,6 +30,7 @@ local DungeonBattleScene = require("ui.DungeonBattleScene")
 local TowerBattleScene   = require("ui.TowerBattleScene")
 local TowerBuffPick      = require("ui.TowerBuffPick")
 local DungeonPage        = require("ui.DungeonPage")
+local BackpackPanel      = require("ui.BackpackPanel")
 local LootBox           = require("ui.LootBox")
 local LootBoxPage       = require("ui.LootBoxPage")
 local LevelUpPopup      = require("ui.LevelUpPopup")
@@ -234,6 +235,8 @@ local function RecalcLayout()
     screenDesignH = logicalH / scale
     designOffsetX = (screenDesignW - DESIGN_W) / 2
     designOffsetY = (screenDesignH - DESIGN_H) / 2
+    -- [底栏移除] 横屏三联：三大页面常驻，TopBar 页签条收为 日志/副本 两枚图标
+    TopBar.setCompactMode(logicalW > logicalH)
 end
 
 -- ============================================================================
@@ -329,6 +332,10 @@ function Standalone._bootWiring()
     TownScene.setOnMarketClick(function()
         MarketPage.init(vg)
         MarketPage.open()
+    end)
+    -- 5.25 城镇仓库点击 → 打开背包（横屏全窗模态）
+    TownScene.setOnWarehouseClick(function()
+        BackpackPanel.open(true)
     end)
 
     -- 5.24 装备数据初始化（Standalone 模式下 ClientDispatcher 不会收到 Server 推送）
@@ -1228,6 +1235,10 @@ function HandleUpdate(eventType, eventData)
     elseif tabIndex == 5 then
         DungeonPage.update(dt)
     end
+    -- [仓库入口] 背包全窗模态动画由宿主驱动（DiaryPage 已让位）
+    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+        BackpackPanel.update(dt)
+    end
 
     -- 角标刷新（始终执行，不受当前 tab 限制）
     BottomNav.setBadge(2, DiaryPage.hasAnyClaimable(), "redDot")
@@ -1327,6 +1338,28 @@ local function HorizonUpdateTransform()
         H_lastTopBarPower = curPower
         TopBar.setTotalPower(curPower)
     end
+end
+
+-- [底栏移除] 横屏日志(2)/副本(5)页：竖版设计全窗等比铺（模态层）
+-- 全屏弹窗/战斗覆盖打开时不画（它们自带层级与让位逻辑）
+local function HorizonDrawPageModal(vg)
+    local tabIndex = BottomNav.getSelectedIndex()
+    if tabIndex ~= 2 and tabIndex ~= 5 then return end
+    if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
+    local fit = math.min(logicalW / DESIGN_W, logicalH / DESIGN_H)
+    local ox = (logicalW - DESIGN_W * fit) * 0.5
+    local oy = (logicalH - DESIGN_H * fit) * 0.5
+    nvgSave(vg)
+    nvgScissor(vg, 0, 0, logicalW, logicalH)
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, logicalW, logicalH)
+    nvgFillColor(vg, nvgRGBA(8, 8, 10, 235))
+    nvgFill(vg)
+    nvgScissor(vg, ox, oy, DESIGN_W * fit, DESIGN_H * fit)
+    nvgTranslate(vg, ox, oy)
+    nvgScale(vg, fit, fit)
+    if tabIndex == 2 then DiaryPage.draw(vg) else DungeonPage.draw(vg) end
+    nvgRestore(vg)
 end
 
 --- [LetterIntro] 开场链全窗口覆盖：信件铺满窗口；过场/情景仍用 1080×2400 letterbox
@@ -1535,21 +1568,21 @@ function HandleNanoVGRenderHorizon()
         if tabIndex == 1 then
             CharacterPanel.draw(vg)
         elseif tabIndex == 2 then
-            DiaryPage.draw(vg)
+            -- [底栏移除] 日志页横屏全窗绘制，见 Viewport.finish 之后
         elseif tabIndex == 3 then
             if not BattleTriPage.isOpen() then
                 BattleScene.draw(vg)
             end
             -- [三栏并行] 三栏页打开时中面板留空，全窗绘制见 Viewport.finish 之后
         elseif tabIndex == 5 then
-            DungeonPage.draw(vg)
+            -- [底栏移除] 副本页横屏全窗绘制，见 Viewport.finish 之后
         else
             TownScene.draw(vg)
         end
+        -- [底栏移除] 三行布局 TopBar 只画左栏；非三行旧布局仍画中栏顶部
         local detailOpen = CharacterPanel.isDetailOpen()
-        if not detailOpen then
+        if not detailOpen and not BattleTriPage.isOpen() then
             TopBar.draw(vg)
-            BottomNav.draw(vg)
         end
     end
     Viewport.finish(vg)
@@ -1603,6 +1636,10 @@ function HandleNanoVGRenderHorizon()
             PlayerInfoPanel.draw(vg)
             nvgRestore(vg)
         end
+        -- [底栏移除] 日志/副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
+        HorizonDrawPageModal(vg)
+        -- [仓库入口] 背包全窗模态（最顶层业务弹窗，标题/开场之下）
+        BackpackPanel.drawWindow(vg, logicalW, logicalH)
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面
         if DarkTitleScreen.isOpen() then
@@ -1648,6 +1685,10 @@ function HandleNanoVGRenderHorizon()
         PlayerInfoPanel.draw(vg)
         nvgRestore(vg)
     end
+    -- [底栏移除] 日志/副本页全窗竖版模态
+    HorizonDrawPageModal(vg)
+    -- [仓库入口] 背包全窗模态（最顶层业务弹窗，标题/开场之下）
+    BackpackPanel.drawWindow(vg, logicalW, logicalH)
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.draw(vg, logicalW, logicalH)
@@ -1660,11 +1701,34 @@ function HandleNanoVGRenderHorizon()
     nvgEndFrame(vg)
 end
 
+-- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态是否激活（全屏弹窗打开时让位）
+local function HorizonPageModalActive()
+    local tabIndex = BottomNav.getSelectedIndex()
+    if tabIndex ~= 2 and tabIndex ~= 5 then return false end
+    if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return false end
+    if PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen()
+        or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() or LootBox.isPageOpen() then
+        return false
+    end
+    return true
+end
+
 -- 事件坐标 -> 面板命中；全局模态返回 ('modal', dx, dy)
 local function HorizonResolveMouse()
     local mousePos = input:GetMousePosition()
     local sx = mousePos.x / dpr
     local sy = mousePos.y / dpr
+    -- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态：中段命中映射到设计坐标；
+    -- 左右栏让出（TopBar 页签/角色面板仍可点），全屏弹窗打开时让位
+    if HorizonPageModalActive() then
+        local ps = logicalH / 1080
+        local leftW = 486 * ps
+        if sx >= leftW and sx <= logicalW - leftW then
+            local fit = math.min(logicalW / DESIGN_W, logicalH / DESIGN_H)
+            return 'modal', (sx - (logicalW - DESIGN_W * fit) * 0.5) / fit,
+                            (sy - (logicalH - DESIGN_H * fit) * 0.5) / fit
+        end
+    end
     -- [三行并行] 战斗模式命中: 面板按战斗布局定位，中段为三行战斗区
     if BattleTriPage.isOpen() then
         -- [全窗模态] 选关/扫荡/统计弹窗打开时，全窗口点击直通三行页弹窗层（含左右面板区）
@@ -1683,6 +1747,10 @@ local function HorizonResolveMouse()
     if TowerBattleScene.isActive() then
         return 'modal', sx, sy
     end
+    -- [仓库入口] 背包全窗模态：最顶层，窗口坐标直通（内部自换算设计坐标）
+    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+        return 'backpack', sx, sy
+    end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
     if DungeonBattleScene.isOpen()
@@ -1694,6 +1762,11 @@ local function HorizonResolveMouse()
     if not pid then return 'none', 0, 0 end
     H_lastPanel = pid
     return pid, dx, dy
+end
+
+--- [仓库入口] 窗口坐标 → 背包竖版设计坐标
+local function backpackCoords(wx, wy)
+    return BackpackPanel.toDesignCoords(wx, wy, logicalW, logicalH)
 end
 
 function HandleMouseButtonDownHorizon(eventType, eventData)
@@ -1709,6 +1782,14 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()
+    -- [仓库入口] 背包全窗模态按下
+    if pid == 'backpack' then
+        pressStartDX, pressStartDY = dx or 0, dy or 0
+        pressValid = true
+        local bdx, bdy = backpackCoords(dx, dy)
+        BackpackPanel.handleDragBegin(bdx, bdy)
+        return
+    end
     -- [三栏并行] 三栏页自管输入（返回按钮等）
     if pid == 'tri' then
         pressStartDX, pressStartDY = dx or 0, dy or 0
@@ -1718,7 +1799,14 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     end
     pressStartDX, pressStartDY = dx or 0, dy or 0
     pressValid = (pid ~= 'none')
-    if pid == 'none' or pid == 'modal' then return end
+    if pid == 'modal' and HorizonPageModalActive() then
+        -- [底栏移除] 日志页全窗模态：拖拽起点（列表滚动）
+        if BottomNav.getSelectedIndex() == 2 then
+            DiaryPage.handleDragBegin(dx, dy)
+        end
+        return
+    end
+    if pid == 'none' then return end
     if pid == 'left' then
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
@@ -1736,6 +1824,18 @@ function HandleMouseMoveHorizon(eventType, eventData)
     if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local pid, dx, dy = HorizonResolveMouse()
     if pid == 'none' then return end
+    if pid == 'backpack' then
+        local bdx, bdy = backpackCoords(dx, dy)
+        BackpackPanel.handleDragMove(bdx, bdy)
+        return
+    end
+    if pid == 'modal' and HorizonPageModalActive() then
+        -- [底栏移除] 日志页全窗模态：拖拽滚动
+        if BottomNav.getSelectedIndex() == 2 then
+            DiaryPage.handleDragMove(dx, dy)
+        end
+        return
+    end
     if pid == 'modal' then
         if DungeonBattleScene.isOpen() then DungeonBattleScene.handleDragMove(dx, dy) return end
         if LevelUpPopup.isOpen() then return end
@@ -1802,6 +1902,13 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     if pid == 'none' then return end
+    -- [仓库入口] 背包全窗模态优先
+    if pid == 'backpack' then
+        local bdx, bdy = backpackCoords(dx, dy)
+        BackpackPanel.handleDragEnd(bdx, bdy)
+        if isTap then BackpackPanel.handleInput(bdx, bdy) end
+        return
+    end
     -- [三队并行] 中缝返回键优先命中（条贴页面运动前缘,可能落在 tri 缝隙也可能落在面板区内;左右两级各自独立命中）
     for _, seamBtn in ipairs(seamBackList()) do
         if math.abs(dx - seamBtn.cx) <= seamBtn.sw * 0.5
@@ -1816,6 +1923,17 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     if pid == 'modal' then
+        -- [底栏移除] 日志/副本页全窗模态点击（设计坐标）
+        if HorizonPageModalActive() then
+            local tab = BottomNav.getSelectedIndex()
+            if tab == 2 then
+                DiaryPage.handleDragEnd(dx, dy)
+                if isTap then DiaryPage.handleInput(dx, dy) end
+            elseif tab == 5 then
+                if isTap then DungeonPage.handleInput(dx, dy) end
+            end
+            return
+        end
         if TowerBattleScene.isActive() then
             if isTap then TowerBattleScene.handleClick(dx, dy, logicalW, logicalH) end
             return
@@ -1860,6 +1978,10 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
                 PlayerInfoPanel.open()
                 return
             end
+            -- [底栏移除] 页面入口在 TopBar（812ddc7）：左栏链补接其输入
+            if TopBar.handleInput(dx, dy, -30) then
+                return
+            end
         end
         if BlacksmithPage.isOpen() then
             BlacksmithPage.handleDragEnd(dx, dy)
@@ -1902,6 +2024,12 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     -- 中面板：主视图链
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
     local tabIndex = BottomNav.getSelectedIndex()
+    -- [底栏移除] 非三行旧布局：中栏顶部 TopBar 页签入口（三行布局画左栏、走左栏链）
+    if isTap and not BattleTriPage.isOpen()
+        and not CharacterPanel.isDetailOpen()
+        and TopBar.handleInput(dx, dy, 0) then
+        return
+    end
     if tabIndex == 1 then
         if CharacterPanel.isDraggingCard() then
             CharacterPanel.handleInput(dx, dy)
@@ -1910,13 +2038,10 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         end
         CharacterPanel.handleDragEnd(dx, dy)
         if isTap and CharacterPanel.handleInput(dx, dy) then return end
-    elseif tabIndex == 2 then
-        if isTap and DiaryPage.handleInput(dx, dy) then return end
     elseif tabIndex == 3 then
         if isTap and BattleScene.handleInput(dx, dy) then return end
-    elseif tabIndex == 5 then
-        if isTap and DungeonPage.handleInput(dx, dy) then return end
     end
+    -- [底栏移除] tab2/5 走全窗模态链（resolve 'modal'），此处不再以中栏坐标误投
     if not isTap then return end
     -- 横屏模式无调试面板（DebugPanel 仅竖屏 screen-space）
     local detailOpen = CharacterPanel.isDetailOpen()
@@ -1926,7 +2051,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
             return
         end
     end
-    BottomNav.handleInput(dx, dy)
+    -- [底栏移除] BottomNav 已收为纯状态模块，无命中逻辑
 end
 
 function HandleTouchBeginHorizon(eventType, eventData)
@@ -1961,6 +2086,17 @@ function HandleMouseWheelHorizon(eventType, eventData)
     -- [按鼠标位置路由] 滚轮作用于鼠标所在的面板（左右面板可同开二级页，
     -- 不再依赖"最近点击面板"记录；滚到哪边就滚哪边的列表）
     local pid = select(1, HorizonResolveMouse())
+
+    -- [仓库入口] 背包全窗模态：网格滚动
+    if pid == 'backpack' then
+        BackpackPanel.handleScroll(wheel)
+        return
+    end
+    -- [底栏移除] 日志页全窗模态：列表滚动
+    if pid == 'modal' and HorizonPageModalActive() then
+        if BottomNav.getSelectedIndex() == 2 then DiaryPage.handleScroll(wheel) end
+        return
+    end
 
     if pid == 'modal' then
         PlayerInfoPanel.handleScroll(wheel)

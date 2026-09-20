@@ -29,6 +29,7 @@ local UpdateNoticePopup = require("ui.UpdateNoticePopup")
 local VersionMismatchPopup = require("ui.VersionMismatchPopup")
 local PlayerInfoPanel  = require("ui.PlayerInfoPanel")
 local DiaryPage        = require("ui.DiaryPage")
+local BackpackPanel    = require("ui.BackpackPanel")
 local DrawUtil         = require("core.DrawUtil")
 local ScenarioDialogue = require("ui.ScenarioDialogue")
 local DungeonPage      = require("ui.DungeonPage")
@@ -130,6 +131,12 @@ local function dispatchDragBegin(dx, dy)
     -- 情景对话拦截（全屏，吞掉所有输入）
     if ScenarioDialogue.isActive() then return end
 
+    -- [仓库入口] 背包全窗模态（竖屏也从城镇开）：最顶层拦截
+    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+        BackpackPanel.handleDragBegin(dx, dy)
+        return
+    end
+
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragBegin(dx, dy)
         return
@@ -193,6 +200,12 @@ local function dispatchDragMove(dx, dy)
 
     -- 情景对话拦截
     if ScenarioDialogue.isActive() then return end
+
+    -- [仓库入口] 背包全窗模态：最顶层拦截
+    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+        BackpackPanel.handleDragMove(dx, dy)
+        return
+    end
 
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleDragMove(dx, dy)
@@ -323,6 +336,12 @@ local function dispatchDragEndAndTap(dx, dy)
         end
     end
 
+    -- [仓库入口] 背包全窗模态：最顶层拦截
+    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+        BackpackPanel.handleDragEnd(dx, dy)
+        if isTap then BackpackPanel.handleInput(dx, dy) end
+        return
+    end
     if TowerBattleScene.isActive() then
         local mousePos = input:GetMousePosition()
         local dprNow = graphics:GetDPR() or 1
@@ -515,6 +534,10 @@ function M.dispatchScroll(wheel, msx, msy)
     if LetterIntro.isOpen() then return end
     if CharacterSelect.isActive() then return end
     if ScenarioDialogue.isActive() then return end
+    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+        BackpackPanel.handleScroll(wheel)
+        return
+    end
     if DungeonBattleScene.isOpen() then
         DungeonBattleScene.handleScroll(wheel)
         return

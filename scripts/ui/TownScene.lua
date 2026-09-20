@@ -17,6 +17,8 @@ local imgBg       = -1   -- 城镇背景
 local imgChurch   = -1   -- 教堂建筑
 local imgTavern   = -1   -- 酒馆建筑
 local imgMarket   = -1   -- 市场建筑
+local imgWarehouse = -1  -- 仓库建筑（背包入口）
+local imgIconWarehouse = -1 -- 仓库图标
 
 local imgIconChurch = -1 -- 教堂图标
 local imgIconTavern = -1 -- 酒馆图标
@@ -78,6 +80,15 @@ local TAVERN_LBL_W,  TAVERN_LBL_H  = 361, 113
 local TAVERN_ICON_CX, TAVERN_ICON_CY = 764, 1524
 local TAVERN_ICON_SZ = 64
 local TAVERN_TEXT_X,  TAVERN_TEXT_Y  = 871, 1524
+
+-- 仓库（背包入口）—— 右中空位：酒馆正上方，与左侧月蚀黑市同高对称
+local WAREHOUSE_CX,  WAREHOUSE_CY  = 832,  720
+local WAREHOUSE_W,   WAREHOUSE_H   = 360,  430
+local WAREHOUSE_LBL_CX, WAREHOUSE_LBL_CY = 837,  870
+local WAREHOUSE_LBL_W,  WAREHOUSE_LBL_H  = 361, 113
+local WAREHOUSE_ICON_CX, WAREHOUSE_ICON_CY = 764, 864
+local WAREHOUSE_ICON_SZ = 64
+local WAREHOUSE_TEXT_X,  WAREHOUSE_TEXT_Y  = 871, 864
 
 -- 市场（月蚀黑市）—— 布局重排：移至左侧，与右侧竞技场同高对称
 local MARKET_CX,  MARKET_CY  = 171,  720
@@ -349,6 +360,8 @@ local function ensureTownImages(vg)
     imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
     imgTavern      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JG.png", 0)
     imgMarket      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_SJ.png", 0)
+    imgWarehouse   = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_CK.png", 0)
+    imgIconWarehouse = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_CK.png", 0)
     imgIconChurch  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_JT.png", 0)
     imgIconTavern  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_JG.png", 0)
     imgIconMarket  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_SC.png", 0)
@@ -433,6 +446,16 @@ function TownScene.draw(vg)
     end
     BF.finish(vg, _bfMarket)
 
+    -- 5b) 仓库建筑（背包入口，与市场同层；无解锁门槛）
+    local _bfWarehouse = BF.begin(vg, "town_warehouse", WAREHOUSE_CX, WAREHOUSE_CY, WAREHOUSE_W, WAREHOUSE_H)
+    drawImageDarkTint(vg, imgWarehouse, WAREHOUSE_CX, WAREHOUSE_CY, WAREHOUSE_W, WAREHOUSE_H, 1.0)
+    drawFlashOverlay(vg, imgWarehouse, WAREHOUSE_CX, WAREHOUSE_CY, WAREHOUSE_W, WAREHOUSE_H, getClickFlashAlpha("warehouse"))
+    drawBuildingLabel(vg,
+        WAREHOUSE_LBL_CX, WAREHOUSE_LBL_CY, WAREHOUSE_LBL_W, WAREHOUSE_LBL_H,
+        WAREHOUSE_ICON_CX, WAREHOUSE_ICON_CY, WAREHOUSE_ICON_SZ, imgIconWarehouse,
+        WAREHOUSE_TEXT_X, WAREHOUSE_TEXT_Y, "尘封仓库")
+    BF.finish(vg, _bfWarehouse)
+
     -- 6) 教堂建筑
     local churchLocked = not _TM.isBuildingUnlocked("church")
     local _bfChurch = (not churchLocked) and BF.begin(vg, "town_church", CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H) or false
@@ -508,6 +531,13 @@ function TownScene.setOnMarketClick(fn)
     onMarketClick = fn
 end
 
+--- 回调：点击仓库（背包入口）
+local onWarehouseClick = nil
+
+function TownScene.setOnWarehouseClick(fn)
+    onWarehouseClick = fn
+end
+
 --- 回调：点击冒险者公会
 local onGuildClick = nil
 
@@ -557,6 +587,16 @@ function TownScene.handleInput(dx, dy)
         BF.trigger("town_market")
         triggerClickAnim("market")
         if onMarketClick then deferAction(CLICK_CALLBACK_DELAY, onMarketClick) end
+        return true
+    end
+
+    -- 仓库点击检测（背包入口，无解锁门槛）
+    if dx >= WAREHOUSE_CX - WAREHOUSE_W * 0.5 and dx <= WAREHOUSE_CX + WAREHOUSE_W * 0.5
+       and dy >= WAREHOUSE_CY - WAREHOUSE_H * 0.5 and dy <= WAREHOUSE_CY + WAREHOUSE_H * 0.5 then
+        print("[TownScene] 点击仓库")
+        BF.trigger("town_warehouse")
+        triggerClickAnim("warehouse")
+        if onWarehouseClick then deferAction(CLICK_CALLBACK_DELAY, onWarehouseClick) end
         return true
     end
 

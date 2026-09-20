@@ -187,6 +187,8 @@ local function RecalcLayout()
     screenDesignH = logicalH / scale
     designOffsetX = (screenDesignW - DESIGN_W) / 2
     designOffsetY = (screenDesignH - DESIGN_H) / 2
+    -- [底栏移除] 横屏三联：TopBar 页签条收为 日志/副本 两枚图标
+    TopBar.setCompactMode(logicalW > logicalH)
 end
 
 -- ======================== GM 权限标记（服务端推送） ========================
@@ -827,6 +829,10 @@ function Client.Start()
     end)
     TownScene.setOnMarketClick(function()
         MarketPage.open()
+    end)
+    -- [仓库入口] 城镇仓库点击 → 打开背包（全窗模态）
+    TownScene.setOnWarehouseClick(function()
+        BackpackPanel.open(true)
     end)
     print("[Client][LOAD]   GuildPage.init...")
     GuildPage.init(vg)
@@ -1710,6 +1716,10 @@ function HandleNanoVGRender_Client(eventType, eventData)
 
         -- 战利品全屏页面（在RewardPopup 之前，覆盖游戏画面）
         LootBox.drawPage(vg)
+        -- [仓库入口] 背包全窗模态（竖屏：设计空间=窗口空间，fit=1 等价内嵌绘制）
+        if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+            BackpackPanel.drawWindow(vg, 1080, 2400)
+        end
         -- 自动分解设置弹窗（standalone 模式：从战利品面板直接调起，不打开铁匠铺）
         BlacksmithPage.drawAutoDecomposePopupStandalone(vg)
         -- 奖励弹窗（最顶层）
@@ -2283,6 +2293,10 @@ function HandleUpdate_Client(eventType, eventData)
             DiaryPage.update(dt)
         elseif tabIndex == 5 then
             DungeonPage.update(dt)
+        end
+        -- [仓库入口] 背包全窗模态动画由宿主驱动（DiaryPage 已让位）
+        if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+            BackpackPanel.update(dt)
         end
 
         -- 角标刷新（始终执行，不受当前 tab 限制）

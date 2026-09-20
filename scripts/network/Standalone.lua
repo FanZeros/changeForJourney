@@ -235,8 +235,6 @@ local function RecalcLayout()
     screenDesignH = logicalH / scale
     designOffsetX = (screenDesignW - DESIGN_W) / 2
     designOffsetY = (screenDesignH - DESIGN_H) / 2
-    -- [底栏移除] 横屏三联：三大页面常驻，TopBar 页签条收为 日志/副本 两枚图标
-    TopBar.setCompactMode(logicalW > logicalH)
 end
 
 -- ============================================================================

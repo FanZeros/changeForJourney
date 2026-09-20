@@ -2060,13 +2060,15 @@ end
 local function seamBackList()
     local list = {}
     local psL = logicalH / 1080
-    local sw, sh = 184 * psL * 0.58, 143 * psL * 0.58
+    -- 全高门柱条 + 中央凸出按钮（按钮跨出条宽形成把手）
+    local barW = 56 * psL
+    local btnW, btnH = 184 * psL * 0.58, 143 * psL * 0.58
     local ix, iy, iw, ih = BattleTriPage.getInteriorRect(1)
     -- 右框柱 ›：角色详情页
     if CharacterDetail.isOpen() then
         list[#list + 1] = {
             cx = ((ix + iw) + (logicalW - 486 * psL)) * 0.5,
-            sw = sw, sh = sh, dir = "right",
+            sw = barW, sh = logicalH, bw = btnW, bh = btnH, dir = "right",
             close = function() CharacterDetail.close() end,
         }
     end
@@ -2080,7 +2082,7 @@ local function seamBackList()
     if leftClose then
         list[#list + 1] = {
             cx = (486 * psL + ix) * 0.5,
-            sw = sw, sh = sh, dir = "left",
+            sw = barW, sh = logicalH, bw = btnW, bh = btnH, dir = "left",
             close = leftClose,
         }
     end
@@ -2263,10 +2265,10 @@ function HandleNanoVGRenderHorizon()
         -- [行1 HUD] 宿主最终层级绘制：速度/扫荡/统计/选关按钮——
         -- 确保位于一切战斗行背景与框柱之上（用户实测按钮被行1背景穿帮）
         BattleTriPage.drawHud(vg, logicalW, logicalH)
-        -- [三队并行] 中缝返回键（窗口坐标，页面视口之外）：左页‹ / 详情›，两级并存各自绘制
+        -- [三队并行] 中缝返回条（窗口坐标，页面视口之外）：全高门柱边条，左页‹ / 详情›，两级并存各自绘制
         for _, seamBtn in ipairs(seamBackList()) do
-            DrawUtil.drawBackChevron(vg, seamBtn.cx, logicalH * 0.5,
-                seamBtn.sw, seamBtn.sh, seamBtn.dir)
+            DrawUtil.drawBackSeamBar(vg, seamBtn.cx, logicalH * 0.5,
+                seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
         -- [修复] 玩家信息面板（点头像打开）——横屏此前从未绘制，open 成功但不可见
         if PlayerInfoPanel.isOpen() then

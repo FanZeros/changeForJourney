@@ -436,6 +436,69 @@ function DrawUtil.drawBackChevron(vg, cx, cy, w, h, dir)
     nvgStroke(vg)
 end
 
+--- 全高"门柱"返回条（三行模式中缝）：贯穿整个逻辑高度的竖向边条，贴住页面边缘，
+--- 中央嵌一枚门柱按钮（drawBackChevron）。dir 同 drawBackChevron（箭头方向）。
+---@param vg any NanoVG 上下文（窗口坐标）
+---@param cx number 条中心 X
+---@param cy number 条中心 Y（一般 logicalH*0.5）
+---@param barW number 条宽
+---@param h number 条高（全高）
+---@param dir string "left"/"right"
+---@param btnW number 中央按钮宽
+---@param btnH number 中央按钮高
+function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
+    local halfW = barW * 0.5
+
+    -- 1) 条体：垂直渐变深铁（上亮下暗），两端到屏幕边
+    local paint = nvgLinearGradient(vg, cx, cy - h * 0.5, cx, cy + h * 0.5,
+        nvgRGBA(72, 52, 37, 255), nvgRGBA(28, 20, 14, 255))
+    nvgBeginPath(vg)
+    nvgRect(vg, cx - halfW, cy - h * 0.5, barW, h)
+    nvgFillPaint(vg, paint)
+    nvgFill(vg)
+
+    -- 2) 两侧亮金描边（贴页面的承载边）
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, cx - halfW + 1.5, cy - h * 0.5)
+    nvgLineTo(vg, cx - halfW + 1.5, cy + h * 0.5)
+    nvgMoveTo(vg, cx + halfW - 1.5, cy - h * 0.5)
+    nvgLineTo(vg, cx + halfW - 1.5, cy + h * 0.5)
+    nvgStrokeColor(vg, nvgRGBA(255, 214, 128, 210))
+    nvgStrokeWidth(vg, 3)
+    nvgStroke(vg)
+
+    -- 3) 中缝凹槽暗线
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, cx, cy - h * 0.5 + 8)
+    nvgLineTo(vg, cx, cy + h * 0.5 - 8)
+    nvgStrokeColor(vg, nvgRGBA(0, 0, 0, 120))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    -- 4) 上下端铆钉（各 2 枚，避开屏幕圆角）
+    local rivR = math.max(4, barW * 0.10)
+    local edgeY = h * 0.5 - barW * 0.55
+    for _, sx in ipairs({ -1, 1 }) do
+        for _, sy in ipairs({ -1, 1 }) do
+            local px, py = cx + sx * halfW * 0.5, cy + sy * edgeY
+            nvgBeginPath(vg)
+            nvgCircle(vg, px, py, rivR)
+            nvgFillColor(vg, nvgRGBA(104, 80, 52, 255))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(255, 218, 136, 200))
+            nvgStrokeWidth(vg, 1.5)
+            nvgStroke(vg)
+            nvgBeginPath(vg)
+            nvgCircle(vg, px - rivR * 0.3, py - rivR * 0.3, rivR * 0.32)
+            nvgFillColor(vg, nvgRGBA(255, 240, 196, 220))
+            nvgFill(vg)
+        end
+    end
+
+    -- 5) 中央嵌门柱按钮（跨出条宽，形成凸出把手）
+    DrawUtil.drawBackChevron(vg, cx, cy, btnW, btnH, dir)
+end
+
 -- ============================================================================
 -- drawResonanceMark  —— 共鸣加成小标识（等级徽章右下角）
 -- ============================================================================

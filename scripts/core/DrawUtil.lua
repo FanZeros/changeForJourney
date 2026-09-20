@@ -437,7 +437,6 @@ function DrawUtil.drawBackChevron(vg, cx, cy, w, h, dir)
 end
 
 local seamBarImg = nil       ---@type integer|nil nil=未尝试, -1=加载失败
-local SEAMBAR_RATIO = 158 / 1425   -- 素材宽高比
 
 --- 二级页水平滑入偏移（设计坐标）：打开期从屏幕边缘滑到 0，关闭期滑回边缘。
 --- 左页 dirSign=-1（从左缘入，ox 为负→0），右页 dirSign=+1（从右缘入，ox 为正→0）。
@@ -485,7 +484,9 @@ function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
     end
 
     if seamBarImg and seamBarImg > 0 then
-        local w = h * SEAMBAR_RATIO * 0.8   -- 视觉缩窄，避免与页面金框争宽
+        -- 宽度按"设计宽 ≈ 页面宽 9%(96px)"反推:窗口比例 = 96*0.45/1080 ≈ 0.04×h
+        -- 只压页面金框边距,不盖内容
+        local w = h * 0.04
         local halfW = w * 0.5
         nvgSave(vg)
         if dir == "left" then

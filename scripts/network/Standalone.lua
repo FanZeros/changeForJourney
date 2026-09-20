@@ -2060,7 +2060,7 @@ end
 local function seamBackList()
     local list = {}
     local cs = (logicalH / 1080) * 0.45      -- 面板内容缩放(设计→窗口),与 Viewport.DS 一致
-    local barW = logicalH * (158 / 1425) * 0.8
+    local barW = logicalH * 0.04             -- ≈96 设计宽(页面宽 9%),只压金框边距
     local DIST = 1080                         -- 页面设计宽:滑入全程
     -- 右框柱 ›：角色详情——条贴页面右缘,随页面水平滑入同步
     if CharacterDetail.isOpen() then

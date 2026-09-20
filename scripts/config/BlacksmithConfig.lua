@@ -121,6 +121,8 @@ BlacksmithConfig.SLOT_SCROLL_MAP = {
     weapon    = "weaponScroll",
     offhand   = "offhandScroll",
     armor     = "armorScroll",
+    helmet    = "helmetScroll",
+    shoes     = "shoesScroll",
     accessory = "accessoryScroll",
 }
 

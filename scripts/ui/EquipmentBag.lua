@@ -77,22 +77,33 @@ local BAG_SLOT_R, BAG_SLOT_G, BAG_SLOT_B = 0xb6, 0xb0, 0x9d
 
 local FILTER_TABS = {
     { key = nil,        label = "所有",   slotName = "全部装备" },
-    { key = "weapon",   label = "主武器", slotName = "主武器" },
-    { key = "offhand",  label = "副武器", slotName = "副武器" },
+    { key = "weapon",   label = "主手",   slotName = "主武器" },
+    { key = "offhand",  label = "副手",   slotName = "副武器" },
     { key = "armor",    label = "护甲",   slotName = "护甲" },
+    { key = "helmet",   label = "头盔",   slotName = "头盔" },
+    { key = "shoes",    label = "鞋子",   slotName = "鞋子" },
     { key = "accessory",label = "饰品",   slotName = "饰品" },
 }
-local TAB_Y    = 585
-local TAB_H    = 44
+local TAB_ROW1 = 4
+local TAB_Y1   = 568
+local TAB_Y2   = 612
+local TAB_H    = 40
 local TAB_W    = 140
 local TAB_GAP  = 10
-local TAB_FONT = 26
-local TAB_TOTAL_W = #FILTER_TABS * TAB_W + (#FILTER_TABS - 1) * TAB_GAP
-local TAB_X0   = BAG_BG_CX - TAB_TOTAL_W * 0.5
+local TAB_FONT = 24
+local TAB_ROW1_W = TAB_ROW1 * TAB_W + (TAB_ROW1 - 1) * TAB_GAP
+local TAB_ROW2_N = #FILTER_TABS - TAB_ROW1
+local TAB_ROW2_W = TAB_ROW2_N * TAB_W + (TAB_ROW2_N - 1) * TAB_GAP
+local TAB_X1     = BAG_BG_CX - TAB_ROW1_W * 0.5
+local TAB_X2     = BAG_BG_CX - TAB_ROW2_W * 0.5
 
 local function tabRect(i)
-    local x = TAB_X0 + (i - 1) * (TAB_W + TAB_GAP)
-    return x, TAB_Y - TAB_H * 0.5, TAB_W, TAB_H
+    if i <= TAB_ROW1 then
+        local x = TAB_X1 + (i - 1) * (TAB_W + TAB_GAP)
+        return x, TAB_Y1 - TAB_H * 0.5, TAB_W, TAB_H
+    end
+    local x = TAB_X2 + (i - TAB_ROW1 - 1) * (TAB_W + TAB_GAP)
+    return x, TAB_Y2 - TAB_H * 0.5, TAB_W, TAB_H
 end
 
 local function sameFilter(a, b)
@@ -378,17 +389,8 @@ local function buildWearableSet(heroId, slot)
         return set, nil
     end
 
-    if slot == "armor" then
-        local classCfg = ClassConfig.get(heroCfg.classId)
-        if not classCfg or not classCfg.armorTypes or #classCfg.armorTypes == 0 then
-            return nil, nil
-        end
-        local set = {}
-        for _, armorEnum in ipairs(classCfg.armorTypes) do
-            local name = AD.ARMOR_TYPE_NAME[armorEnum]
-            if name then set[name] = true end
-        end
-        return set, nil
+    if slot == "armor" or slot == "helmet" or slot == "shoes" then
+        return EquipmentSystem.getWearableTypeSet(heroId, slot), nil
     end
 
     return nil, nil

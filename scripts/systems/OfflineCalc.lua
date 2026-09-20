@@ -282,7 +282,7 @@ function OfflineCalc.calcRewardsFromKills(kills, stageEntry, heroCount, stageCon
     local scrollDropRate = stageEntry.scrollDropRate or 0
     local scrollDrops = {}
     if scrollDropRate > 0 then
-        local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "accessoryScroll" }
+        local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
         local rawScrollCount = kills * scrollDropRate
         local totalScrolls = math.floor(rawScrollCount)
         local scrollFrac = rawScrollCount - totalScrolls
@@ -397,7 +397,7 @@ function OfflineCalc.buildScrollDrops(kills, stageEntry)
     local scrollDropRate = stageEntry.scrollDropRate or 0
     if scrollDropRate <= 0 then return {} end
 
-    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "accessoryScroll" }
+    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
     local rawCount = kills * scrollDropRate
     local totalScrolls = math.floor(rawCount)
     local frac = rawCount - totalScrolls

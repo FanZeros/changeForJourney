@@ -203,8 +203,8 @@ function SweepService.Sweep(uid)
     end
     PDM.MarkDirty(uid, "lootbox")
 
-    -- 5) 卷轴掉落：固定 10 个，随机分配到 4 种类型
-    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "accessoryScroll" }
+    -- 5) 卷轴掉落：固定数量，随机分配到 6 种类型
+    local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
     local scrollDrops = {}
     for _ = 1, SweepService.SCROLL_DROP_COUNT do
         local st = scrollTypes[math.random(1, #scrollTypes)]

@@ -22,7 +22,7 @@ local CHARACTERS = {
         title    = "疾风之箭",
         intro    = "擅长远程射击的射手",
         icon     = "image/通用图标/ICON_ZY_4.png",
-        portrait = "image/角色立绘/UI_DLH_3.png",
+        portrait = "image/角色立绘/叮咚鸡_透明立绘.png",
         classColor = { 0x8e, 0xff, 0x78 },  -- #8eff78
         titleColor = { 0xc2, 0xff, 0xb6 },  -- #c2ffb6
     },
@@ -33,7 +33,7 @@ local CHARACTERS = {
         title    = "汪卫先锋",
         intro    = "擅长快速打击的战士",
         icon     = "image/通用图标/ICON_ZY_2.png",
-        portrait = "image/角色立绘/UI_DLH_1.png",
+        portrait = "image/角色立绘/大狗嚼_透明立绘.png",
         classColor = { 0xff, 0xb4, 0x00 },  -- #ffb400
         titleColor = { 0xff, 0xd9, 0x7e },  -- #ffd97e
     },
@@ -44,7 +44,7 @@ local CHARACTERS = {
         title    = "炽焰之心",
         intro    = "擅长火焰魔法的法师",
         icon     = "image/通用图标/ICON_ZY_3.png",
-        portrait = "image/角色立绘/UI_DLH_2.png",
+        portrait = "image/角色立绘/黄桃龙_透明立绘.png",
         classColor = { 0x2b, 0xed, 0xff },  -- #2bedff
         titleColor = { 0xa4, 0xfc, 0xff },  -- #a4fcff
     },

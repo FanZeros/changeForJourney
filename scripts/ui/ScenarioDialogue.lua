@@ -164,7 +164,7 @@ local function getPortraitImage(characterId)
     local cached = portraitCache_[characterId]
     if cached then return cached end
 
-    local path = string.format("image/角色立绘/UI_DLH_%d.png", characterId)
+    local path = require("config.HeroAssetUtil").getPortraitPath(characterId) or ""
     local handle = nvgCreateImage(vg_, path, 0)
     portraitCache_[characterId] = handle
     print("[ScenarioDialogue] loadPortrait: id=" .. characterId .. " handle=" .. handle)

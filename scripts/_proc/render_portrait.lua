@@ -6,13 +6,21 @@ local nvg = nil
 local img = -1
 local imgW, imgH = 0, 0
 
+local HC = require("config.HeroConfig")
+local function portraitPath(id)
+    local cfg = HC.get and HC.get(id) or nil
+    if cfg and cfg.name then
+        return "image/角色立绘/" .. cfg.name .. "_透明立绘.png"
+    end
+    return string.format("image/角色立绘/UI_DLH_%d.png", id)
+end
 function Start()
     nvg = nvgCreate(1)
     if nvg == nil then
         print("[portrait] ERROR: nvgCreate failed")
         return
     end
-    local path = string.format("image/角色立绘/UI_DLH_%d.png", PORT_ID)
+    local path = portraitPath(PORT_ID)
     img = nvgCreateImage(nvg, path, 0)
     if img and img >= 0 then
         imgW, imgH = nvgImageSize(nvg, img)

@@ -1,10 +1,18 @@
 -- 离线导出:把 KTX 私有格式的角色图标/卡牌/立绘解码为真 PNG
+local HC = require("config.HeroConfig")
+local function portraitPath(id)
+    local cfg = HC.get and HC.get(id) or nil
+    if cfg and cfg.name then
+        return "image/角色立绘/" .. cfg.name .. "_透明立绘.png"
+    end
+    return string.format("image/角色立绘/UI_DLH_%d.png", id)
+end
 function Start()
     local ok, err = pcall(function()
         local outDir = "/workspace/.tmp/roster_export"
         local ids = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,20,21,22,23}
-        local hasPortrait = { [1]=true,[2]=true,[3]=true,[5]=true,[9]=true,
-                              [10]=true,[11]=true,[13]=true,[20]=true,[21]=true }
+        local hasPortrait = {}
+        for _, hid in ipairs(ids) do hasPortrait[hid] = true end
 
         local function exportOne(kind, srcPath, dstPath)
             local tex = cache:GetResource("Texture2D", srcPath)
@@ -34,7 +42,7 @@ function Start()
                 outDir .. "/cards/" .. id .. ".png")
             if hasPortrait[id] then
                 exportOne("portrait",
-                    string.format("image/角色立绘/UI_DLH_%d.png", id),
+                    portraitPath(id),
                     outDir .. "/portraits/" .. id .. ".png")
             end
         end

@@ -430,7 +430,11 @@ end
 -- ======================== 公开接口 ========================
 
 --- 初始化（加载图片资源，仅调用一次）
+local tavernInited_ = false
+
 function TavernPage.init(vg)
+    if tavernInited_ then return end
+    tavernInited_ = true
     vg_ = vg
     -- 上半部分
     img.bgStandard      = loadImage(vg, "image/界面底板/酒馆抽卡/UI_KCBJ_1.png")
@@ -486,6 +490,13 @@ local GACHA_PULL_TIMEOUT   = 8       -- 超时秒数（缩短至8秒，更快恢
 
 --- 打开酒馆
 function TavernPage.open()
+    if not tavernInited_ and vg_ then
+        TavernPage.init(vg_)
+    end
+    if not tavernInited_ then
+        print("[TavernPage] open before init, skip")
+        return
+    end
     -- 打开时检查是否有遗留的僵尸锁（WiFi 僵尸连接场景：请求发出但无响应，无断线事件）
     -- 若已超过超时时长，说明上次请求已死，直接清除避免玩家进来就看到锁死状态
     if pendingGachaPull and (time.elapsedTime - pendingGachaPullTime) >= GACHA_PULL_TIMEOUT then

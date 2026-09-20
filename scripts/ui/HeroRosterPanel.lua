@@ -66,8 +66,7 @@ function Panel.init(vg)
     isOpen = false
     scrollY = 0
     heroIds = HC.getAllIds()
-    -- 加载英雄卡片背景 (1~15)
-    HeroAssetUtil.preloadCards(vg, imgHeroCards)
+    imgHeroCards.vg = vg
 end
 
 function Panel.isVisible()
@@ -98,6 +97,7 @@ end
 
 function Panel.draw(vg)
     if not isOpen then return end
+    if vg then imgHeroCards.vg = vg end
 
     -- 全屏半透明遮罩
     nvgBeginPath(vg)
@@ -149,7 +149,12 @@ function Panel.draw(vg)
         local qc = QUALITY_COLORS[hero.quality] or { 200, 200, 200 }
 
         -- 卡片背景（使用对应英雄卡片图片，等比裁切不拉伸）
-        local cardImg = imgHeroCards[id] or imgHeroCards[1]
+        ---@diagnostic disable-next-line: param-type-mismatch  -- imgHeroCards 额外存 .vg 上下文（init 写入）
+        local cardImg = HeroAssetUtil.ensureCard(imgHeroCards.vg or vg, imgHeroCards, id)
+        if (not cardImg or cardImg < 0) and id ~= 1 then
+            ---@diagnostic disable-next-line: param-type-mismatch
+            cardImg = HeroAssetUtil.ensureCard(imgHeroCards.vg or vg, imgHeroCards, 1)
+        end
         if cardImg and cardImg > 0 then
             nvgSave(vg)
             nvgIntersectScissor(vg, MARGIN, cardY, cardW, CARD_H)

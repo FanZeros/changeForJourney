@@ -194,7 +194,7 @@ end
 
 function M.initImages(vg)
     img.vg = vg
-    img.panelBg    = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_BJ.png", 0)
+    -- panelBg 2MB+，首次绘制再加载
     img.listBg     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_0.png", 0)
     img.deployed   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_CZZ.png", 0)
     img.lock       = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
@@ -343,6 +343,10 @@ function M.draw(vg, scrollY)
     elseif HORIZON_MODE then
         require("core.HorizonBg").draw(vg, 1, 1.0)
     else
+        if (not img.panelBg or img.panelBg < 0) and img.vg then
+            img.panelBg = nvgCreateImage(img.vg, "image/界面底板/角色与觉醒/UI_JSJM_BJ.png", 0)
+        end
+        ---@diagnostic disable-next-line: param-type-mismatch  -- img.panelBg 哨兵 -1 由 drawImageCentered 内部判空
         drawImageCentered(vg, img.panelBg, PANEL_BG_CX, PANEL_BG_CY, PANEL_BG_W, PANEL_BG_H, 1.0)
     end
     nvgResetScissor(vg)

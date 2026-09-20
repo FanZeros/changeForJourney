@@ -473,7 +473,13 @@ end
 
 -- ======================== Public API ========================
 
+local dungeonBattleInited_ = false
+local dungeonBattleVg_ = nil
+
 function DungeonScene.init(vg)
+    if dungeonBattleInited_ then return end
+    dungeonBattleInited_ = true
+    dungeonBattleVg_ = vg
     imgMapGoldMine   = nvgCreateImage(vg, "image/关卡地图/MAP_FB1.png", 0)
     imgMapAncientRuin = nvgCreateImage(vg, "image/关卡地图/MAP_FB2.png", 0)
     imgMapBabelTower = nvgCreateImage(vg, "image/关卡地图/MAP_FB3.png", 0)
@@ -498,6 +504,9 @@ end
 --- 打开副本战斗
 ---@param opts table { allies, data, onClose }
 function DungeonScene.open(opts)
+    if not dungeonBattleInited_ and dungeonBattleVg_ then
+        DungeonScene.init(dungeonBattleVg_)
+    end
     MapAffixSystem.reset(opts and opts.allies)
     print("[DungeonBattleScene] open() called, opts=" .. tostring(opts))
     opts = opts or {}

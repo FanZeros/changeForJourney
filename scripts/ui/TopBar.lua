@@ -74,8 +74,7 @@ function TopBar.init(vg)
     imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
     AvatarFrameUtil.preloadFrames(vg, imgFrameIcons)
 
-    -- 加载角色头像图标
-    HeroAssetUtil.preloadIcons(vg, imgHeroIcons)
+    -- 角色头像按需加载
 
     if imgExpBg   < 0 then print("[TopBar] WARN: UI_JYT_1.png load failed") end
     if imgExpFill < 0 then print("[TopBar] WARN: UI_JYT_2.png load failed") end
@@ -197,7 +196,11 @@ function TopBar.draw(vg, offsetY)
     -- #2 玩家头像: center(98,136+oy), 150x150（裁剪为圆角矩形）
     -- 始终先画灰色底作为底层背景
     drawRoundedRectCentered(vg, 98, 136 + oy, 150, 150, 20, 80, 80, 100, 255)
-    local avatarImg = imgHeroIcons[cachedAvatarHeroId] or imgHeroIcons[1]
+    local avatarId = cachedAvatarHeroId or 1
+    local avatarImg = HeroAssetUtil.ensureIcon(vg, imgHeroIcons, avatarId)
+    if (not avatarImg or avatarImg < 0) and avatarId ~= 1 then
+        avatarImg = HeroAssetUtil.ensureIcon(vg, imgHeroIcons, 1)
+    end
     if avatarImg and avatarImg >= 0 then
         -- 用圆角裁剪绘制头像（覆盖在灰色底上）
         local avCX, avCY, avW, avH = 98, 136 + oy, 150, 150

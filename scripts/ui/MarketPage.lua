@@ -1151,7 +1151,13 @@ local TAB_DRAW = { collection = drawCollectionContent, items = drawItemsContent 
 
 -- ======================== Public API ========================
 
+local marketInited_ = false
+local marketVg_ = nil
+
 function MarketPage.init(vg)
+    if marketInited_ then return end
+    marketInited_ = true
+    marketVg_ = vg
     img.bg       = nvgCreateImage(vg, "image/界面底板/商店/UI_SCBJ.png", 0)
     img.nameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     img.lowerBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
@@ -1199,6 +1205,13 @@ function MarketPage.init(vg)
 end
 
 function MarketPage.open()
+    if not marketInited_ and marketVg_ then
+        MarketPage.init(marketVg_)
+    end
+    if not marketInited_ then
+        print("[MarketPage] open before init, skip")
+        return
+    end
     -- 打开时从 PlayerStore 刷新限购状态，避免热更/重连后会话内 purchased 过期
     local marketData = PlayerStore.Get("market")
     if marketData then

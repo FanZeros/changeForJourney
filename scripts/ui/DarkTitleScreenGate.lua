@@ -157,7 +157,16 @@ function DarkTitleScreen.draw(vg, w, h)
         local total = DarkTitleScreen.loadTotal or 0
         nvgFontSize(vg, math.max(18, math.min(w * 0.022, 28)))
         nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 220 * A))
-        nvgText(vg, w * 0.5, h * 0.78, string.format("资源加载中  %d%%", pct), nil)
+        -- [启动诊断] 附带当前步骤名/耗时（有值时），定位超帧预算的 init
+        local stepName = DarkTitleScreen.loadStep
+        local stepMs = DarkTitleScreen.loadStepMs
+        local pctText
+        if stepName and stepMs then
+            pctText = string.format("资源加载中  %d%%  [%s %dms]", pct, tostring(stepName), stepMs)
+        else
+            pctText = string.format("资源加载中  %d%%", pct)
+        end
+        nvgText(vg, w * 0.5, h * 0.78, pctText, nil)
         local bw = w * 0.36
         local bh = math.max(8, h * 0.01)
         local bx = (w - bw) * 0.5

@@ -96,33 +96,51 @@ local fontNormal = -1
 local bootQueue_ = nil
 local bootIdx_ = 0
 local bootReady_ = false
+-- [启动优化] 标题提前解锁：核心 UI（到 TownScene 为止）完成后即可点击进入，
+-- 弹窗类 init / 接线 / firstStage 在标题后的后台帧继续分步消化。
+-- 用户反馈的 64~66% 卡死均为旧包行为；提前解锁可把剩余重活彻底移出"进游戏前"。
+local TITLE_UNLOCK_STEP = 9
 
 local function pumpBootQueue_()
-    if bootReady_ or not bootQueue_ then return end
-    bootIdx_ = bootIdx_ + 1
-    local step = bootQueue_[bootIdx_]
-    if not step then
-        bootQueue_ = nil
-        bootReady_ = true
-        DarkTitleScreen.setReady(true)
-        print("[Standalone] boot queue complete, title unlocked")
-        return
-    end
-    local name, fn = step[1], step[2]
-    local t0 = time.elapsedTime
-    local ok, err = pcall(fn)
-    local dt = time.elapsedTime - t0
-    if not ok then
-        print("[Standalone] boot step FAIL " .. tostring(name) .. ": " .. tostring(err))
-    else
-        local total = #bootQueue_
-        print(string.format("[Standalone] boot step %d/%d %s (%.0fms)",
-            bootIdx_, total, name, dt * 1000))
+    if not bootQueue_ then return end
+    -- 每帧最多消化 8ms，避免单步解码把预览判定成引擎异常
+    local tFrame = time.elapsedTime
+    while bootQueue_ and (time.elapsedTime - tFrame) < 0.008 do
+        bootIdx_ = bootIdx_ + 1
+        local step = bootQueue_[bootIdx_]
+        if not step then
+            bootQueue_ = nil
+            bootReady_ = true
+            DarkTitleScreen.setReady(true)
+            print("[Standalone] boot queue complete, title unlocked")
+            return
+        end
+        local name, fn = step[1], step[2]
+        local t0 = time.elapsedTime
+        local ok, err = pcall(fn)
+        local dt = time.elapsedTime - t0
+        local total = bootQueue_ and #bootQueue_ or bootIdx_
+        if not ok then
+            print("[Standalone] boot step FAIL " .. tostring(name) .. ": " .. tostring(err))
+        else
+            print(string.format("[Standalone] boot step %d/%d %s (%.0fms)",
+                bootIdx_, total, name, dt * 1000))
+        end
         DarkTitleScreen.loadDone = bootIdx_
         DarkTitleScreen.loadTotal = total
         DarkTitleScreen.loadPercent = math.floor(bootIdx_ * 100 / math.max(1, total))
+        -- [启动诊断] 加载条上直接显示步骤名与耗时，便于真机定位哪一步超帧预算
+        DarkTitleScreen.loadStep = name
+        DarkTitleScreen.loadStepMs = math.floor(dt * 1000)
+        if bootIdx_ >= TITLE_UNLOCK_STEP then
+            -- 核心步骤完成：解锁标题（后台继续泵完剩余步骤）
+            bootReady_ = true
+            DarkTitleScreen.setReady(true)
+        else
+            DarkTitleScreen.setReady(false)
+        end
+        if dt >= 0.008 then break end
     end
-    DarkTitleScreen.setReady(false)
 end
 
 -- [一次性加载] 三段式加载：
@@ -293,18 +311,22 @@ function Standalone._bootWiring()
 
     -- 5.15 城镇铁匠铺点击 → 打开铁匠铺界面
     TownScene.setOnSmithClick(function()
+        BlacksmithPage.init(vg)
         BlacksmithPage.open()
     end)
     -- 城郊礼拜堂点击 → 打开教堂界面（转职/天赋/祈祷）
     TownScene.setOnChurchClick(function()
+        ChurchPage.init(vg)
         ChurchPage.open()
     end)
     -- 5.16 城镇酒馆点击 → 打开酒馆界面
     TownScene.setOnTavernClick(function()
+        TavernPage.init(vg)
         TavernPage.open()
     end)
     -- 5.18 城镇市场点击 → 打开市场界面
     TownScene.setOnMarketClick(function()
+        MarketPage.init(vg)
         MarketPage.open()
     end)
 
@@ -681,16 +703,8 @@ function Standalone._bootWiring()
         end
     end)
 
-    -- 5.3 初始阵容同步到战斗画面 + TopBar 战力
-    TopBar.markAvatarViewed()
-    local initialTeam = CharacterPanel.getDeployedTeam()
-    TopBar.setTotalPower(CharacterPanel.getTotalPower())
-    if #initialTeam > 0 then
-        BattleScene.setAllies(initialTeam)
-        -- 首次进入以"寻怪中"模式启动，等待服务端数据（装备/天赋/职业）同步完毕后再开战
-        BattleScene.reloadStage({ startSearching = true })
-        print("[Standalone] 初始阵容同步: " .. #initialTeam .. " 个英雄（寻怪模式）")
-    end
+    -- 5.3 初始阵容同步/关卡重载已拆到 boot 队列独立步 firstStage
+    --     （loadStage 内生成敌人+重置战斗，原与全部接线同帧执行会撑爆帧预算）
 
     -- 5.3 获取玩家昵称（TapTap 账号系统）
     ---@diagnostic disable-next-line: undefined-global
@@ -780,22 +794,25 @@ function Standalone.Start()
         { "CharacterPanel", function() CharacterPanel.init(vg) end },
         { "DiaryPage", function() DiaryPage.init(vg) end },
         { "TownScene", function() TownScene.init(vg) end },
-        { "BlacksmithPage", function() BlacksmithPage.init(vg) end },
-        { "ChurchPage", function() ChurchPage.init(vg) end },
-        { "TavernPage", function() TavernPage.init(vg) end },
-        { "DungeonPage", function() DungeonPage.init(vg) end },
-        { "TowerBuffPick", function() TowerBuffPick.init(vg) end },
-        { "DebugPanel", function() DebugPanel.init(vg) end },
-        { "HeroRosterPanel", function() HeroRosterPanel.init(vg) end },
         { "RewardPopup", function() RewardPopup.init(vg) end },
         { "OfflineRewardPanel", function() OfflineRewardPanel.init(vg) end },
         { "LevelUpPopup", function() LevelUpPopup.init(vg) end },
         { "PlayerInfoPanel", function() PlayerInfoPanel.init(vg) end },
         { "SpinePowerUp", function() SpinePowerUpEffect.init() end },
-        { "DungeonBattle", function() DungeonBattleScene.init(vg) end },
-        { "TowerTriBattle", function() require("ui.TowerTriBattle").init(vg) end },
-        { "MarketPage", function() MarketPage.init(vg) end },
         { "bootWiring", function() Standalone._bootWiring() end },
+        { "firstStage", function()
+            -- [启动优化] 初始阵容同步 + 关卡重载：独立一帧执行
+            -- （loadStage 生成敌人/重置战斗较重，原挤在 bootWiring 同帧导致 97-98% 卡死）
+            TopBar.markAvatarViewed()
+            TopBar.setTotalPower(CharacterPanel.getTotalPower())
+            local initialTeam = CharacterPanel.getDeployedTeam()
+            if #initialTeam > 0 then
+                BattleScene.setAllies(initialTeam)
+                -- 首次进入以"寻怪中"模式启动，等待服务端数据（装备/天赋/职业）同步完毕后再开战
+                BattleScene.reloadStage({ startSearching = true })
+                print("[Standalone] 初始阵容同步: " .. #initialTeam .. " 个英雄（寻怪模式）")
+            end
+        end },
     }
     bootIdx_ = 0
     print("[Standalone] boot queue " .. #bootQueue_ .. " steps (title first)")

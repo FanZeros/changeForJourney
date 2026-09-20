@@ -474,7 +474,13 @@ end
 
 -- ======================== Public API ========================
 
+local dungeonInited_ = false
+local dungeonVg_ = nil
+
 function DungeonPage.init(vg)
+    if dungeonInited_ then return end
+    dungeonInited_ = true
+    dungeonVg_ = vg
     imgTopPattern = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FB_BJ.png", 0)
     imgCard1      = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FBRK_1.png", 0)
     imgCard2      = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_FBRK_2.png", 0)
@@ -503,6 +509,10 @@ function DungeonPage.init(vg)
 end
 
 function DungeonPage.draw(vg)
+    if not dungeonInited_ then
+        DungeonPage.init(vg)
+    end
+    if not dungeonInited_ then return end
     -- 刷新数据
     getDungeonData()
 
@@ -972,6 +982,10 @@ function DungeonPage.update(dt)
 end
 
 function DungeonPage.handleInput(dx, dy)
+    if not dungeonInited_ and dungeonVg_ then
+        DungeonPage.init(dungeonVg_)
+    end
+    if not dungeonInited_ then return true end
     -- 详情面板打开时，优先处理面板内交互
     if detailOpen then
         -- 挂机宝箱绘制在详情面板外侧，必须先于“点击背景外关闭面板”处理
@@ -1191,6 +1205,7 @@ function DungeonPage.onActionResult(data)
             -- 打开独立副本战斗场景（类似竞技场）
             local DungeonBattleScene = require("ui.DungeonBattleScene")
             local CharacterPanel = require("ui.CharacterPanel")
+            if dungeonVg_ then DungeonBattleScene.init(dungeonVg_) end
             local allies = CharacterPanel.getDeployedTeam()
             print("[DungeonPage] opening DungeonBattleScene with " .. #allies .. " allies, dungeon=" .. tostring(openedDungeonId))
             DungeonBattleScene.open({
@@ -1218,6 +1233,10 @@ function DungeonPage.onActionResult(data)
             detailOpen = false
             detailDungeon = nil
             local TowerBattleScene = require("ui.TowerBattleScene")
+            if dungeonVg_ then
+                require("ui.TowerTriBattle").init(dungeonVg_)
+                require("ui.TowerBuffPick").init(dungeonVg_)
+            end
             local teamAllies, err = collectTowerTeams()
             if not teamAllies then
                 toast(err or "三军攻坚条件未满足")

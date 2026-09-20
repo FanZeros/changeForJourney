@@ -82,8 +82,12 @@ end
 
 -- ======================== Public API ========================
 
+local towerBuffInited_ = false
+
 function Panel.init(vg)
     vg_ = vg
+    if towerBuffInited_ then return end
+    towerBuffInited_ = true
     for i = 1, 3 do
         imgCardBg[i] = nvgCreateImage(vg, "image/界面底板/副本秘境/UI_TTTSXY_" .. i .. ".png", 0)
     end
@@ -94,6 +98,9 @@ end
 ---@param choices table[] 强化选项列表 { {id, quality, name, desc}, ... }
 ---@param onPick function|nil 选择后的回调 function(buffId)
 function Panel.open(floor, choices, onPick)
+    if not towerBuffInited_ and vg_ then
+        Panel.init(vg_)
+    end
     state.open = true
     state.floor = floor or 1
     state.choices = choices or {}

@@ -79,8 +79,12 @@ end
 ---@param vg userdata
 function LetterIntro.init(vg)
     vg_ = vg
+end
+
+local function ensureLetterImages()
+    if not vg_ then return end
     if imgDesk_ < 0 then
-        imgDesk_ = nvgCreateImage(vg, "image/界面底板/剧情日记/GF_KF06.png", 0)
+        imgDesk_ = nvgCreateImage(vg_, "image/界面底板/剧情日记/GF_KF06.png", 0)
         if imgDesk_ < 0 then
             print("[LetterIntro] WARN: GF_KF06 load failed")
         else
@@ -88,7 +92,7 @@ function LetterIntro.init(vg)
         end
     end
     if imgSeal_ < 0 then
-        imgSeal_ = nvgCreateImage(vg, "image/界面底板/剧情日记/GF_KF07.png", 0)
+        imgSeal_ = nvgCreateImage(vg_, "image/界面底板/剧情日记/GF_KF07.png", 0)
         if imgSeal_ < 0 then
             print("[LetterIntro] WARN: GF_KF07 load failed")
         else
@@ -98,6 +102,7 @@ function LetterIntro.init(vg)
 end
 
 function LetterIntro.start(onFinish)
+    ensureLetterImages()
     if active then return end
     active      = true
     state       = "reveal"
@@ -190,6 +195,7 @@ end
 local function drawLetter(vg, w, h)
     if not active then return end
     if w <= 0 or h <= 0 then return end
+    ensureLetterImages()
 
     local fade = 1.0
     if state == "fading" then fade = 1.0 - fadeT / FADE_DUR end

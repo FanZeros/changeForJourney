@@ -67,12 +67,13 @@ Protocol.ACTION_TYPES = {
     -- 遗物操作
     RELIC_REFORGE  = "relic_reforge",   -- 遗物洗练（消耗奥术粉尘，生成候选词缀）
     RELIC_REFORGE_CONFIRM = "relic_reforge_confirm", -- 确认替换洗练候选词缀
-    RELIC_PLACE    = "relic_place",     -- 遗物镶嵌到石板网�?
-    RELIC_REMOVE   = "relic_remove",    -- 从石板网格取下遗�?
-    RELIC_BATCH_ADJUST = "relic_batch_adjust", -- 调整模式批量移动（原子化 REMOVE+PLACE�?
-    RELIC_MERGE    = "relic_merge",      -- 遗物合成（3个同类型同品质→1个高品质）
+    RELIC_PLACE    = "relic_place",     -- 遗物镶嵌到祭阵座位
+    RELIC_REMOVE   = "relic_remove",    -- 从祭阵取下遗物
+    RELIC_BATCH_ADJUST = "relic_batch_adjust", -- 调整模式批量移动（原子化 REMOVE+PLACE）
+    RELIC_MERGE    = "relic_merge",      -- 遗物合成（3个同类型同品质→1个高品质，可指定保留词缀）
     RELIC_REPLACE  = "relic_replace",
     RELIC_LOCK     = "relic_lock",       -- 切换遗物锁定（锁定后无法参与合成）
+    RELIC_UPGRADE  = "relic_upgrade",   -- 遗物升级（消耗奥术粉尘提升等级）
 
     -- 神器操作
     ARTIFACT_DRAW    = "artifact_draw",    -- 神器宝箱抽取（params: { count = 1|10 }）

@@ -7,13 +7,11 @@
 
 local GameConfig   = require("config.GameConfig")
 local DrawUtil     = require("core.DrawUtil")
-local ImageCache   = require("ui.ImageCache")
+local DarkIcon     = require("core.DarkIcon")
 local BF           = require("systems.ButtonFeedback")
 local RelicSystem  = require("systems.RelicSystem")
-local RelicDefs    = require("data.RelicDefs")
 local RelicDetailPanel = require("ui.RelicDetailPanel")
 local EventBus     = require("core.EventBus")
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 
 local RelicBagPanel = {}
@@ -58,7 +56,7 @@ local DECO = {
 -- 标题文字
 local GRID_TITLE = {
     FONT_SIZE = 40,
-    R = 0x45, G = 0x45, B = 0x45,
+    R = 0xD8, G = 0xC9, B = 0xA3,
     TEXT = "遗物背包",
 }
 
@@ -89,16 +87,11 @@ local FILTER_ITEMS = {
 -- 网格（与 BackpackPanel 一致：160px 格子，5列）
 local GRID = {
     CELL_SIZE = 160,
-    CELL_RADIUS = 16,  -- [B-方案] 圆角收紧，贴合古卷硬朗感
+    CELL_RADIUS = 24,
     GAP = 30,
     COLS = 5,
     MARGIN_LEFT = 80,  -- (1080 - 5*160 - 4*30) / 2 = 80
 }
-
--- 品质边框颜色：[B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表
-local QUALITY_BORDER = DarkIcon.QUALITY_TRIM
-
--- [B-方案] 原空格平涂常量已废弃（空格子改用 DarkIcon.drawNine "slot" 暗铁凹槽）
 
 -- 遗物类型小图标映射（使用 ICON_YWX 小图标）
 local TYPE_ICONS = {
@@ -151,9 +144,7 @@ local BAG_MAX_DISPLAY = 20  -- 固定显示 20 格（4行×5列）
 
 -- ======================== 图片句柄 ========================
 
-
 local imgDeco    = -1  -- UI_JJC_BTBJ.png（标题装饰条）
-
 local imgIconUp  = -1  -- ICON_UP.png（可提升角标）
 local imgLock    = -1  -- UI_ICON_SUO.png（锁定角标）
 
@@ -214,9 +205,7 @@ end
 
 function RelicBagPanel.init(vg)
     vg_ = vg
-    imgPanel    = nvgCreateImage(vg, "image/UI_TJP_1.png", 0)
-    -- [暗黑化 P1-B5] 原 image/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
-    imgMergeBtn = nvgCreateImage(vg, "image/UI_AN_LV.png", 0)
+    imgDeco     = nvgCreateImage(vg, "image/UI_JJC_BTBJ.png", 0)
     imgIconUp   = nvgCreateImage(vg, "image/ICON_UP.png", 0)
     imgLock     = nvgCreateImage(vg, "image/UI_ICON_SUO.png", 0)
 
@@ -224,7 +213,6 @@ function RelicBagPanel.init(vg)
         imgTypeIcons[t] = nvgCreateImage(vg, path, 0)
     end
 
-    ImageCache.init(vg)
     print("[RelicBagPanel] init OK")
 end
 
@@ -364,7 +352,7 @@ function RelicBagPanel.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, 0, slideOY)
 
-    -- 九宫格背景面板
+    -- 暗黑矢量底板
     DarkIcon.drawNine(vg, "plain", 0, PANEL_TOP - 40, DESIGN_W, PANEL_H + 80)
 
     -- 标题装饰条
@@ -440,21 +428,7 @@ function RelicBagPanel.draw(vg)
 
         if relic then
             -- 有遗物的格子：品质背景 + 图标 + 品质文字 + 词缀指示
-            local qualBg = ImageCache.getQualityBg(relic.quality)
-            if qualBg and qualBg >= 0 then
-                DrawUtil.drawImageCentered(vg, qualBg, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
-            else
-                -- fallback: 品质色圆角矩形
-                local qc = QUALITY_BORDER[relic.quality] or QUALITY_BORDER[1]
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                    GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS)
-                nvgFillColor(vg, nvgRGBA(qc[1], qc[2], qc[3], 40))
-                nvgFill(vg)
-                nvgStrokeColor(vg, nvgRGBA(qc[1], qc[2], qc[3], 200))
-                nvgStrokeWidth(vg, 3)
-                nvgStroke(vg)
-            end
+            DarkIcon.drawQualityFrame(vg, relic.quality or 1, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
 
             -- 遗物类型图标
             local iconImg = imgTypeIcons[relic.type]
@@ -484,7 +458,7 @@ function RelicBagPanel.draw(vg)
                         local sa = si * msStep
                         nvgText(vg, mTxtX + math.cos(sa) * 2, mTxtY + math.sin(sa) * 2, "可合成", nil)
                     end
-                    nvgFillColor(vg, nvgRGBA(0x4c, 0xfa, 0x4c, 255))
+                    nvgFillColor(vg, nvgRGBA(95, 158, 62, 255))
                     nvgText(vg, mTxtX, mTxtY, "可合成", nil)
                 end
             end
@@ -535,8 +509,8 @@ function RelicBagPanel.draw(vg)
                 nvgStroke(vg)
             end
         else
-            -- 空格子：暗铁凹槽底（[B-方案] 古卷化，与 BackpackPanel/EquipmentBag 一致）
-            DarkIcon.drawNine(vg, "slot", cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
+            DarkIcon.drawNine(vg, "slot",
+                cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
                 GRID.CELL_SIZE, GRID.CELL_SIZE, { radius = GRID.CELL_RADIUS })
         end
 
@@ -565,7 +539,7 @@ function RelicBagPanel.draw(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, MERGE_BTN.FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
+        nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
         nvgText(vg, MERGE_BTN.CX, MERGE_BTN.CY, "一键合成(" .. mergeCount .. ")", nil)
         BF.finish(vg, _bfMerge)
     end

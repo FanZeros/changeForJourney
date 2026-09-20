@@ -27,11 +27,12 @@ RelicSystem.ACTIONS = {
     RELIC_REFORGE = "relic_reforge",     -- 洗练
     RELIC_REFORGE_CONFIRM = "relic_reforge_confirm", -- 确认洗练替换
     RELIC_MERGE   = "relic_merge",       -- 合成
-    RELIC_PLACE   = "relic_place",       -- 镶嵌到网格
-    RELIC_REMOVE  = "relic_remove",      -- 从网格取下
+    RELIC_PLACE   = "relic_place",       -- 镶嵌到祭阵座位
+    RELIC_REMOVE  = "relic_remove",      -- 从祭阵取下
     RELIC_LOCK    = "relic_lock",        -- 锁定/解锁
-    RELIC_BATCH_ADJUST = "relic_batch_adjust", -- 调整模式批量移动
+    RELIC_BATCH_ADJUST = "relic_batch_adjust", -- 调整模式批量换座
     RELIC_REPLACE   = "relic_replace",
+    RELIC_UPGRADE = "relic_upgrade",
 }
 
 -- ======================== 数据访问 ========================
@@ -144,6 +145,8 @@ end
 ---@return table[] lines { kind="header"|"text", text=string, muted?=boolean }
 function RelicSystem.buildEquippedOverview(gridRelics)
     gridRelics = gridRelics or RelicSystem.getGrid()
+    local RelicAltar = require("systems.RelicAltar")
+    local altar = RelicAltar.evaluate(gridRelics)
 
     local equipped = {}
     for _, r in ipairs(gridRelics) do
@@ -154,10 +157,20 @@ function RelicSystem.buildEquippedOverview(gridRelics)
     end
 
     if #equipped == 0 then
-        return { { kind = "text", text = "暂无已安装遗物", muted = true } }
+        return { { kind = "text", text = "暂无已祭阵遗物", muted = true } }
     end
 
     local lines = {}
+    lines[#lines + 1] = { kind = "header", text = "祭阵状态" }
+    for _, text in ipairs(RelicAltar.describe(altar)) do
+        lines[#lines + 1] = { kind = "text", text = "· " .. text }
+    end
+    for _, entry in ipairs(RelicAltar.buildFormationEntries(altar, nil)) do
+        if entry.raw and entry.raw ~= "" then
+            lines[#lines + 1] = { kind = "text", text = "· " .. entry.raw }
+        end
+    end
+
     local summary = RelicAffix.summarizeStats(equipped)
 
     local statRows = {}
@@ -194,7 +207,7 @@ function RelicSystem.buildEquippedOverview(gridRelics)
         end
     end
 
-    lines[#lines + 1] = { kind = "header", text = "已安装遗物" }
+    lines[#lines + 1] = { kind = "header", text = "已祭阵遗物" }
     table.sort(equipped, function(a, b)
         local qa = a.quality or 0
         local qb = b.quality or 0
@@ -367,7 +380,8 @@ end
 --- 请求合成遗物
 ---@param relicIds string[] 3个遗物ID
 ---@param onResult function|nil 回调 function(success, reason)
-function RelicSystem.requestMerge(relicIds, onResult)
+---@param keepAffixId number|nil 保留三件之一的词缀
+function RelicSystem.requestMerge(relicIds, onResult, keepAffixId)
     local canDo, reason = RelicSystem.canMerge(relicIds)
     if not canDo then
         if onResult then onResult(false, reason) end
@@ -377,18 +391,17 @@ function RelicSystem.requestMerge(relicIds, onResult)
     local Client = require("network.Client")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_MERGE, {
         relicIds = relicIds,
+        keepAffixId = keepAffixId,
     })
 
     if onResult then onResult(true, nil) end
 end
 
---- 请求镶嵌遗物到网格
+--- 请求镶嵌遗物到祭阵座位
 ---@param relicId string
----@param row number
----@param col number
----@param rotation number|nil 旋转方向 0-3（0=默认，1=90°顺时针…）
+---@param slotId string
 ---@param onResult function|nil
-function RelicSystem.requestPlace(relicId, row, col, rotation, onResult)
+function RelicSystem.requestPlace(relicId, slotId, onResult)
     local relic, loc = RelicSystem.findById(relicId)
     if not relic then
         if onResult then onResult(false, "遗物不存在") end
@@ -398,13 +411,15 @@ function RelicSystem.requestPlace(relicId, row, col, rotation, onResult)
         if onResult then onResult(false, "遗物不在背包中") end
         return
     end
+    if not slotId then
+        if onResult then onResult(false, "缺少祭位") end
+        return
+    end
 
     local Client = require("network.Client")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_PLACE, {
         relicId = relicId,
-        row = row,
-        col = col,
-        rotation = rotation or 0,
+        slot = slotId,
     })
 
     if onResult then onResult(true, nil) end
@@ -432,37 +447,42 @@ function RelicSystem.requestRemoveFromGrid(relicId, onResult)
     if onResult then onResult(true, nil) end
 end
 
---- 请求移动网格中的遗物到新位置（调整模式用）
---- 实现: 发送 REMOVE + PLACE 两步操作
+--- 请求把祭阵遗物换到新座位
 ---@param relicId string
----@param newRow number
----@param newCol number
----@param newRotation number
+---@param slotId string
 ---@param onResult function|nil
-function RelicSystem.requestMoveOnGrid(relicId, newRow, newCol, newRotation, onResult)
+function RelicSystem.requestMoveOnGrid(relicId, slotId, onResult)
     local relic, loc = RelicSystem.findById(relicId)
     if not relic then
         if onResult then onResult(false, "遗物不存在") end
         return
     end
     if loc ~= "grid" then
-        if onResult then onResult(false, "遗物不在网格上") end
+        if onResult then onResult(false, "遗物不在祭阵上") end
         return
     end
 
     local Client = require("network.Client")
-    -- 先移除
-    Client.sendAction(RelicSystem.ACTIONS.RELIC_REMOVE, {
-        relicId = relicId,
-    })
-    -- 再放置到新位置
-    Client.sendAction(RelicSystem.ACTIONS.RELIC_PLACE, {
-        relicId = relicId,
-        row = newRow,
-        col = newCol,
-        rotation = newRotation or 0,
+    Client.sendAction(RelicSystem.ACTIONS.RELIC_BATCH_ADJUST, {
+        moves = { { relicId = relicId, slot = slotId } },
     })
 
+    if onResult then onResult(true, nil) end
+end
+
+--- 请求升级遗物
+---@param relicId string
+---@param onResult function|nil
+function RelicSystem.requestUpgrade(relicId, onResult)
+    local relic = RelicSystem.findById(relicId)
+    if not relic then
+        if onResult then onResult(false, "遗物不存在") end
+        return
+    end
+    local Client = require("network.Client")
+    Client.sendAction(RelicSystem.ACTIONS.RELIC_UPGRADE, {
+        relicId = relicId,
+    })
     if onResult then onResult(true, nil) end
 end
 
@@ -591,26 +611,19 @@ function RelicSystem.requestReplace(newRelicId, oldRelicId, onResult)
     end
     local oldRelic, oldLoc = RelicSystem.findById(oldRelicId)
     if not oldRelic or oldLoc ~= "grid" then
-        if onResult then onResult(false, "旧遗物不在网格上") end
+        if onResult then onResult(false, "旧遗物不在祭阵上") end
         return
     end
-
-    local row = oldRelic.row
-    local col = oldRelic.col
-    local rotation = oldRelic.rotation or 0
-    if not row or not col then
-        if onResult then onResult(false, "旧遗物网格位置异常") end
+    if not oldRelic.slot then
+        if onResult then onResult(false, "旧遗物祭位异常") end
         return
     end
 
     local Client = require("network.Client")
-    -- 使用原子化替换接口（服务端单次操作，避免中间状态）
     Client.sendAction(RelicSystem.ACTIONS.RELIC_REPLACE, {
         oldRelicId = oldRelicId,
         newRelicId = newRelicId,
-        row = row,
-        col = col,
-        rotation = rotation,
+        slot = oldRelic.slot,
     })
 
     if onResult then onResult(true, nil) end

@@ -55,17 +55,40 @@ function HeroAssetUtil.getMaxAssetId()
     return ids[#ids] or 15
 end
 
+--- 按需加载单张角色头像（启动时不要全量同步解码）
+---@param vg any
+---@param cache table<number, number>
+---@param heroId number
+---@return number
+function HeroAssetUtil.ensureIcon(vg, cache, heroId)
+    local h = cache[heroId]
+    if h ~= nil then return h end
+    if not vg or not heroId then return -1 end
+    local img = nvgCreateImage(vg, HeroAssetUtil.getIconPath(heroId), 0)
+    cache[heroId] = img or -1
+    return cache[heroId]
+end
+
+--- 按需加载单张角色卡牌
+---@param vg any
+---@param cache table<number, number>
+---@param heroId number
+---@return number
+function HeroAssetUtil.ensureCard(vg, cache, heroId)
+    local h = cache[heroId]
+    if h ~= nil then return h end
+    if not vg or not heroId then return -1 end
+    local img = nvgCreateImage(vg, HeroAssetUtil.getCardPath(heroId), 0)
+    cache[heroId] = img or -1
+    return cache[heroId]
+end
+
 --- 预加载角色头像到 cache 表（就地写入 cache[heroId]）
 ---@param vg any
 ---@param cache table<number, number>
 function HeroAssetUtil.preloadIcons(vg, cache)
     for _, id in ipairs(HeroAssetUtil.getAssetIds()) do
-        if not cache[id] or cache[id] < 0 then
-            local img = nvgCreateImage(vg, HeroAssetUtil.getIconPath(id), 0)
-            if img >= 0 then
-                cache[id] = img
-            end
-        end
+        HeroAssetUtil.ensureIcon(vg, cache, id)
     end
 end
 
@@ -74,12 +97,7 @@ end
 ---@param cache table<number, number>
 function HeroAssetUtil.preloadCards(vg, cache)
     for _, id in ipairs(HeroAssetUtil.getAssetIds()) do
-        if not cache[id] or cache[id] < 0 then
-            local img = nvgCreateImage(vg, HeroAssetUtil.getCardPath(id), 0)
-            if img >= 0 then
-                cache[id] = img
-            end
-        end
+        HeroAssetUtil.ensureCard(vg, cache, id)
     end
 end
 

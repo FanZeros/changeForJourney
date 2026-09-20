@@ -673,14 +673,22 @@ local phaseDrawers = {
 function IntroCutscene.init(vg, sceneRef)
     vg_ = vg
     scene_ = sceneRef
-    imgBG1 = nvgCreateImage(vg, "image/界面底板/剧情日记/JQBJ_1.png", 0)
-    imgBG2 = nvgCreateImage(vg, "image/界面底板/剧情日记/JQBJ_2.png", 0)
-    print("[IntroCutscene] init: BG1=" .. imgBG1 .. " BG2=" .. imgBG2)
+end
+
+local function ensureIntroImages()
+    if not vg_ then return end
+    if imgBG1 < 0 then
+        imgBG1 = nvgCreateImage(vg_, "image/界面底板/剧情日记/JQBJ_1.png", 0)
+    end
+    if imgBG2 < 0 then
+        imgBG2 = nvgCreateImage(vg_, "image/界面底板/剧情日记/JQBJ_2.png", 0)
+    end
 end
 
 --- 开始播放过场动画
 ---@param onFinish function|nil 播放完成后的回调
 function IntroCutscene.start(onFinish)
+    ensureIntroImages()
     active = true
     finished = false
     phase = 1

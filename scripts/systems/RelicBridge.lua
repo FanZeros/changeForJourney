@@ -13,6 +13,7 @@
 
 local RelicDefs  = require("data.RelicDefs")
 local RelicAffix = require("systems.RelicAffix")
+local RelicAltar = require("systems.RelicAltar")
 local AD         = require("systems.AttributeDef")
 
 ---@class RelicBridge
@@ -25,7 +26,6 @@ local ATTR_NAME_MAP = {
     ["生命值"]       = AD.MAX_HP,
     ["护甲"]         = AD.PHYS_ARMOR,
     ["能量护盾"]     = AD.MAG_ARMOR,
-    ["护盾"]         = AD.MAG_ARMOR,
     ["物理护甲"]     = AD.PHYS_ARMOR,   -- [兼容旧文本]
     ["魔法护甲"]     = AD.MAG_ARMOR,    -- [兼容旧文本]
     ["每秒回血"]     = AD.HP_REGEN,
@@ -40,7 +40,6 @@ local ATTR_NAME_MAP = {
     ["生命加成"]     = AD.HP_BONUS,
     ["护甲加成"]     = AD.ARMOR_BONUS,
     ["能量护盾加成"] = AD.ES_BONUS,
-    ["护盾加成"]     = AD.ES_BONUS,
     -- 攻击属性
     ["物理攻击力"]   = AD.PHYS_ATK,
     ["魔法攻击力"]   = AD.MAG_ATK,
@@ -297,29 +296,30 @@ end
 
 --- 将已镶嵌遗物的无条件常驻属性应用到单位属性中
 --- 在 CharacterPanel.getDeployedTeam() 中调用
----@param attrs table 单位属性对象（含 addModifier 方法）
----@param classId string 英雄职业ID (如 "knight", "warrior")
+---@param attrs table|nil 单位属性对象（含 addModifier 方法）
+---@param classId string|nil 英雄职业ID (如 "knight", "warrior")
+---@param grid table[]|nil
 ---@return table[] conditionalEntries 条件/特殊词条（供战斗运行时使用）
-function RelicBridge.applyToUnit(attrs, classId)
-    local RelicSystem = require("systems.RelicSystem")
-    local grid = RelicSystem.getGrid()
+local function collectFromGrid(attrs, classId, grid)
     if not grid or #grid == 0 then return {} end
 
-    local modEntries = {}      -- 无条件常驻属性 → addModifier
-    local conditionalEntries = {} -- 条件类/特殊机制 → 返回给战斗系统
+    local modEntries = {}
+    local conditionalEntries = {}
+    local altar = RelicAltar.evaluate(grid)
 
     for _, relic in ipairs(grid) do
         if relic.affixId then
+            local scale = RelicAltar.affixScaleFor(relic)
             local parsed = RelicBridge.parseAffix(relic.affixId, relic.quality)
             for _, entry in ipairs(parsed) do
+                if entry.value then
+                    entry.value = entry.value * scale
+                end
                 if entry.special then
-                    -- C类特殊机制
                     conditionalEntries[#conditionalEntries + 1] = entry
                 elseif entry.condition then
-                    -- B类条件触发
                     conditionalEntries[#conditionalEntries + 1] = entry
                 else
-                    -- A类无条件常驻 → 检查职业匹配
                     local classMatch = true
                     if entry.targetClasses then
                         classMatch = false
@@ -330,7 +330,6 @@ function RelicBridge.applyToUnit(attrs, classId)
                             end
                         end
                     end
-
                     if classMatch and entry.adKey and entry.value ~= 0 then
                         modEntries[#modEntries + 1] = { key = entry.adKey, flat = entry.value }
                     end
@@ -339,12 +338,39 @@ function RelicBridge.applyToUnit(attrs, classId)
         end
     end
 
-    -- 应用无条件常驻加成
-    if #modEntries > 0 then
-        attrs:addModifier("relic_affix", modEntries)
+    for _, entry in ipairs(RelicAltar.buildFormationEntries(altar, classId)) do
+        local classMatch = true
+        if entry.targetClasses then
+            classMatch = false
+            for _, tc in ipairs(entry.targetClasses) do
+                if tc == classId or tc == "adventurer" then
+                    classMatch = true
+                    break
+                end
+            end
+        end
+        if classMatch and entry.adKey and entry.value and entry.value ~= 0 then
+            modEntries[#modEntries + 1] = { key = entry.adKey, flat = entry.value }
+        end
+        if entry.special or entry.condition then
+            conditionalEntries[#conditionalEntries + 1] = entry
+        end
     end
 
+    if attrs and #modEntries > 0 then
+        attrs:addModifier("relic_affix", modEntries)
+    end
     return conditionalEntries
+end
+
+--- 将已镶嵌遗物的无条件常驻属性应用到单位属性中
+--- 在 CharacterPanel.getDeployedTeam() 中调用
+---@param attrs table 单位属性对象（含 addModifier 方法）
+---@param classId string 英雄职业ID (如 "knight", "warrior")
+---@return table[] conditionalEntries 条件/特殊词条（供战斗运行时使用）
+function RelicBridge.applyToUnit(attrs, classId)
+    local RelicSystem = require("systems.RelicSystem")
+    return collectFromGrid(attrs, classId, RelicSystem.getGrid())
 end
 
 --- 从外部提供的 grid 数据应用遗物效果到单位（竞技场对手快照用）
@@ -354,44 +380,7 @@ end
 ---@param grid table[] 遗物 grid 数组 { {affixId, quality, ...}, ... }
 ---@return table[] conditionalEntries B/C类条件词条
 function RelicBridge.applyFromGrid(attrs, classId, grid)
-    if not grid or #grid == 0 then return {} end
-
-    local modEntries = {}
-    local conditionalEntries = {}
-
-    for _, relic in ipairs(grid) do
-        if relic.affixId then
-            local parsed = RelicBridge.parseAffix(relic.affixId, relic.quality)
-            for _, entry in ipairs(parsed) do
-                if entry.special then
-                    conditionalEntries[#conditionalEntries + 1] = entry
-                elseif entry.condition then
-                    conditionalEntries[#conditionalEntries + 1] = entry
-                else
-                    local classMatch = true
-                    if entry.targetClasses then
-                        classMatch = false
-                        for _, tc in ipairs(entry.targetClasses) do
-                            if tc == classId or tc == "adventurer" then
-                                classMatch = true
-                                break
-                            end
-                        end
-                    end
-
-                    if classMatch and entry.adKey and entry.value ~= 0 then
-                        modEntries[#modEntries + 1] = { key = entry.adKey, flat = entry.value }
-                    end
-                end
-            end
-        end
-    end
-
-    if #modEntries > 0 then
-        attrs:addModifier("relic_affix", modEntries)
-    end
-
-    return conditionalEntries
+    return collectFromGrid(attrs, classId, grid)
 end
 
 --- 获取所有已镶嵌遗物的条件/特殊词条（供战斗运行时初始化用）
@@ -399,21 +388,7 @@ end
 ---@return table[] 条件/特殊词条列表
 function RelicBridge.getConditionalAffixes()
     local RelicSystem = require("systems.RelicSystem")
-    local grid = RelicSystem.getGrid()
-    if not grid or #grid == 0 then return {} end
-
-    local result = {}
-    for _, relic in ipairs(grid) do
-        if relic.affixId then
-            local parsed = RelicBridge.parseAffix(relic.affixId, relic.quality)
-            for _, entry in ipairs(parsed) do
-                if entry.special or entry.condition then
-                    result[#result + 1] = entry
-                end
-            end
-        end
-    end
-    return result
+    return collectFromGrid(nil, nil, RelicSystem.getGrid())
 end
 
 return RelicBridge

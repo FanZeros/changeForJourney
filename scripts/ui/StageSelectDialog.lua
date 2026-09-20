@@ -1,7 +1,11 @@
 -- ============================================================================
--- StageSelectDialog - 主线选关弹窗
+-- StageSelectDialog - 主线选关弹窗（v2 章节两栏版）
+-- 布局（参考暗黑地牢选关图）:
+--   左栏: 大关卡（章节）竖排列表，各章色调横幅 + 章名，>9 章上下滚动
+--   中栏: 章节地图预览（MAP_{rel}.png cover）+ 该章小关卡网格（5 列）
+--         当前关金框 / Boss 关红字 / 终焉神殿独立章组
+--   底部: 当前关卡条；点击空白关闭
 -- 入口：战斗界面 HUD「选关」按钮（与扫荡/统计同套图标按钮）
--- 面板：复用 SweepDialog 九宫格 + 弹性缩放 + 点击空白关闭
 -- ============================================================================
 
 local GameConfig        = require("config.GameConfig")
@@ -12,6 +16,7 @@ local BF                = require("systems.ButtonFeedback")
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
 local drawNineSlice     = DrawUtil.drawNineSlice
+local drawImageCover    = DrawUtil.drawImageCover
 
 local StageSelectDialog = {}
 
@@ -19,10 +24,8 @@ local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 -- 入口按钮（设计坐标，与扫荡/统计同一套尺寸）
--- 扫荡 (971, 2115) / 统计 (815, 2115) / 选关放统计左侧
 local BTN_CX = 659
 local BTN_CY = 2115
--- 与扫荡/统计同一套圆钮画布，按素材原比例绘制避免压扁
 local BTN_W  = 130
 local BTN_H  = 144
 local ICON_W = 130
@@ -35,48 +38,52 @@ local D = {
     BG_W    = 950,  BG_H   = 1117,
     BG_IT   = 180,  BG_IR  = 40,  BG_IB = 50,  BG_IL = 40,
 
-    TT_Y    = 705,  TT_FONT = 60,  TT_SW = 6,
+    TT_Y    = 690,  TT_FONT = 50,  TT_SW = 6,
     TT_SR   = 0x00, TT_SG  = 0x00, TT_SB = 0x00,
 
-    SUB_Y   = 800,  SUB_FONT = 34,
-    SUB_R   = 0xd8, SUB_G  = 0xc9, SUB_B = 0xa3,
+    -- 左栏: 章节列表
+    CH_X      = 105,     -- 左栏左缘
+    CH_W      = 190,
+    CH_BTN_H  = 84,
+    CH_GAP    = 10,
+    CH_Y0     = 756,     -- 第一个章节按钮顶边
+    CH_VISIBLE = 8,      -- 可视章节数（超出滚动）
 
-    -- 当前关卡信息条
-    CUR_BG_CX = 540, CUR_BG_CY = 888,
-    CUR_BG_W  = 800, CUR_BG_H  = 72, CUR_BG_R = 16, CUR_BG_A = 18,
-    CUR_LBL_X = 169, CUR_VAL_X = 904,
-    CUR_FONT  = 36,
-    CUR_LBL_R = 0xd8, CUR_LBL_G = 0xc9, CUR_LBL_B = 0xa3,
-
-    -- 关卡网格
-    COLS      = 4,
-    ROWS      = 4,
-    CELL_W    = 186,
+    -- 中栏
+    MID_X     = 315,
+    MID_W     = 580,
+    PREV_Y    = 756,     -- 预览图顶边
+    PREV_H    = 232,
+    GRID_Y0   = 1020,    -- 网格顶边
+    CELL_W    = 106,
     CELL_H    = 92,
-    CELL_GAPX = 14,
-    CELL_GAPY = 12,
-    GRID_CX   = 540,
-    GRID_Y0   = 948,   -- 第一行顶边
+    CELL_GAP  = 8,
+    GRID_COLS = 5,
 
-    -- 翻页
-    PAGE_Y    = 1608,
-    PAGE_FONT = 32,
-    ARROW_W   = 160,
-    ARROW_H   = 64,
+    -- 当前关卡条
+    CUR_BG_CY = 1652,
+    CUR_BG_W  = 580,  CUR_BG_H = 64, CUR_BG_R = 14, CUR_BG_A = 18,
+    CUR_LBL_X = 335,  CUR_VAL_X = 875,
+    CUR_FONT  = 32,
 }
 
-local PER_PAGE = D.COLS * D.ROWS
-
 local ANIM_OPEN_DUR = 0.18
+
+-- 章节横幅色调（8 色循环，参考图每章一色的效果）
+local CH_HUES = {
+    { 0x3e, 0x5a, 0x40 }, { 0x6b, 0x46, 0x2f }, { 0x33, 0x4a, 0x63 }, { 0x2f, 0x5a, 0x5c },
+    { 0x4a, 0x3f, 0x63 }, { 0x5a, 0x30, 0x33 }, { 0x3d, 0x53, 0x3a }, { 0x59, 0x4d, 0x2e },
+}
 
 local imgBtn = -1
 local imgBg  = -1
 local imgAct = -1
 
 local state = {
-    open     = false,
-    openTime = 0,
-    page     = 0,
+    open      = false,
+    openTime  = 0,
+    selKey    = nil,   -- 选中章节 key（chapter number 或 "T"=终焉神殿组）
+    chScroll  = 0,     -- 左栏滚动起点（0-based）
 }
 
 local function hitTestRect(dx, dy, cx, cy, w, h)
@@ -115,6 +122,42 @@ local function collectExistIds(maxStage)
     return ids
 end
 
+--- 章节组：{{ key=chapter|"T", name=, ids={} } 按进度顺序}
+local function collectChapterGroups(maxStage)
+    local ids = collectExistIds(maxStage)
+    local groups = {}
+    ---@type table<any, number>
+    local indexOf = {}
+    for _, id in ipairs(ids) do
+        local key
+        if SC.isTerminalTemple(id) then
+            key = "T"
+        else
+            key = math.floor(id / 100)
+        end
+        local gi = indexOf[key]
+        if not gi then
+            gi = #groups + 1
+            indexOf[key] = gi
+            local name
+            if key == "T" then
+                name = "终焉"
+            else
+                name = SC.getChapterName(key)
+            end
+            groups[gi] = { key = key, name = name, ids = {} }
+        end
+        local g = groups[gi]
+        g.ids[#g.ids + 1] = id
+    end
+    return groups
+end
+
+local function chapterHue(key)
+    local n = (type(key) == "number") and key or 23
+    return CH_HUES[((n - 1) % #CH_HUES) + 1]
+end
+
 local function shortStageLabel(id)
     if SC.isTerminalTemple(id) then
         local entry = SC.getStage(id)
@@ -126,19 +169,36 @@ local function shortStageLabel(id)
     return string.format("%d-%d", rel, entry.stage)
 end
 
-local function gridOrigin()
-    local totalW = D.COLS * D.CELL_W + (D.COLS - 1) * D.CELL_GAPX
-    local x0 = D.GRID_CX - totalW * 0.5
-    return x0, D.GRID_Y0
+--- 预览图句柄缓存（懒加载，键=相对章节号或 mapBg 文件名）
+---@type table<any, integer>
+local mapImgs = {}
+
+local function ensureMapImg(vg, group)
+    local firstId = group.ids[1]
+    local entry = firstId and SC.getStage(firstId)
+    if entry and entry.mapBg then
+        local img = mapImgs[entry.mapBg]
+        if img == nil then
+            img = nvgCreateImage(vg, "image/关卡地图/" .. entry.mapBg, 0)
+            mapImgs[entry.mapBg] = img
+        end
+        return img
+    end
+    local chapter = (group.key ~= "T") and group.key or 23
+    local n = ((chapter - 1) % 23) + 1
+    local img = mapImgs[n]
+    if img == nil then
+        img = nvgCreateImage(vg, "image/关卡地图/MAP_" .. n .. ".png", 0)
+        mapImgs[n] = img
+    end
+    return img
 end
 
-local function cellRect(indexOnPage)
-    local col = (indexOnPage - 1) % D.COLS
-    local row = math.floor((indexOnPage - 1) / D.COLS)
-    local x0, y0 = gridOrigin()
-    local x = x0 + col * (D.CELL_W + D.CELL_GAPX)
-    local y = y0 + row * (D.CELL_H + D.CELL_GAPY)
-    return x, y, D.CELL_W, D.CELL_H
+local function selectedGroup(groups)
+    for _, g in ipairs(groups) do
+        if tostring(g.key) == tostring(state.selKey) then return g end
+    end
+    return groups[1]
 end
 
 -- ======================== Public API ========================
@@ -155,19 +215,28 @@ function StageSelectDialog.open()
     if state.open then return end
     state.open     = true
     state.openTime = time.elapsedTime
-    -- 打开时定位到当前关卡所在页
     local BS = require("ui.BattleScene")
     local maxStage = BS.getMaxStageId()
     if not maxStage or maxStage < 1 then
         maxStage = SC.NORMAL_FIRST_STAGE or 101
     end
     local curStage = BS.getStageId() or maxStage
-    local ids = collectExistIds(maxStage)
-    local idx = 1
-    for i = 1, #ids do
-        if ids[i] == curStage then idx = i; break end
+    -- 定位到当前关所在章节
+    local curKey
+    if SC.isTerminalTemple(curStage) then
+        curKey = "T"
+    else
+        curKey = math.floor(curStage / 100)
     end
-    state.page = math.max(0, math.floor((idx - 1) / PER_PAGE))
+    state.selKey = curKey
+    -- 滚动让当前章可见
+    local groups = collectChapterGroups(maxStage)
+    local gi = 1
+    for i, g in ipairs(groups) do
+        if tostring(g.key) == tostring(curKey) then gi = i; break end
+    end
+    local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
+    state.chScroll = math.max(0, math.min(gi - 1, maxScroll))
 end
 
 function StageSelectDialog.close()
@@ -218,10 +287,9 @@ function StageSelectDialog.draw(vg)
         maxStage = SC.NORMAL_FIRST_STAGE or 101
     end
     local curStage = BS.getStageId() or maxStage
-    local ids = collectExistIds(maxStage)
-    local maxPage = math.max(0, math.ceil(#ids / PER_PAGE) - 1)
-    if state.page > maxPage then state.page = maxPage end
-    if state.page < 0 then state.page = 0 end
+    local groups = collectChapterGroups(maxStage)
+    local sel = selectedGroup(groups)
+    if not sel then return end
 
     local ovlAlpha = math.floor(D.OVL_A * math.min(scale * 2, 1.0))
     nvgBeginPath(vg)
@@ -245,116 +313,178 @@ function StageSelectDialog.draw(vg)
         255, 255, 255, D.TT_SW,
         { strokeColor = { D.TT_SR, D.TT_SG, D.TT_SB } })
 
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, D.SUB_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(D.SUB_R, D.SUB_G, D.SUB_B, 255))
-    nvgText(vg, D.BG_CX, D.SUB_Y, "点击已解锁关卡即可切换", nil)
+    -- ===================== 左栏：章节列表 =====================
+    local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
+    if state.chScroll > maxScroll then state.chScroll = maxScroll end
+    if state.chScroll < 0 then state.chScroll = 0 end
 
-    -- 当前关卡条
+    local needScroll = maxScroll > 0
+    local arrowCX = D.CH_X + D.CH_W * 0.5
+    local listTop = D.CH_Y0
+    if needScroll then
+        -- 上箭头
+        if state.chScroll > 0 then
+            drawImageCentered(vg, imgAct, arrowCX, D.CH_Y0 - 26, 64, 40, 1.0)
+            drawTextStroke(vg, arrowCX, D.CH_Y0 - 26, "▲", 24,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+        end
+        listTop = D.CH_Y0 + 30
+        -- 下箭头位置在列表底部之后
+    end
+
+    for vi = 1, D.CH_VISIBLE do
+        local gi = state.chScroll + vi
+        local g = groups[gi]
+        if not g then break end
+        local x = D.CH_X
+        local y = listTop + (vi - 1) * (D.CH_BTN_H + D.CH_GAP)
+        local isSel = (tostring(g.key) == tostring(sel.key))
+        local hue = chapterHue(g.key)
+
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
+        if isSel then
+            nvgFillColor(vg, nvgRGBA(hue[1] + 24, hue[2] + 24, hue[3] + 18, 235))
+        else
+            nvgFillColor(vg, nvgRGBA(hue[1], hue[2], hue[3], 170))
+        end
+        nvgFill(vg)
+        if isSel then
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
+            nvgStrokeColor(vg, nvgRGBA(201, 151, 59, 235))
+            nvgStrokeWidth(vg, 3)
+            nvgStroke(vg)
+        end
+
+        local cx = x + D.CH_W * 0.5
+        drawTextStroke(vg, cx, y + D.CH_BTN_H * 0.36, g.name, 28,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, 230, 210, 3)
+        local rel
+        if g.key == "T" then
+            rel = "终焉"
+        else
+            rel = tostring(SC.getRelativeChapter(g.key)) .. " 章"
+        end
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 20)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(0xc9, 0x97, 0x3B, 220))
+        nvgText(vg, cx, y + D.CH_BTN_H * 0.74, rel, nil)
+    end
+
+    if needScroll then
+        local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
+        if state.chScroll < maxScroll then
+            drawImageCentered(vg, imgAct, arrowCX, listBottom + 26, 64, 40, 1.0)
+            drawTextStroke(vg, arrowCX, listBottom + 26, "▼", 24,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+        end
+    end
+
+    -- ===================== 中栏：预览图 + 关卡网格 =====================
+    -- 章节预览图（cover 填充，圆角裁切由 ImagePattern 矩形保证）
+    local pvX = D.MID_X
+    local pvY = D.PREV_Y
+    local mapImg = ensureMapImg(vg, sel)
+    if mapImg and mapImg >= 0 then
+        drawImageCover(vg, mapImg, pvX + D.MID_W * 0.5, pvY + D.PREV_H * 0.5,
+            D.MID_W, D.PREV_H, 1.0)
+    else
+        nvgBeginPath(vg)
+        nvgRect(vg, pvX, pvY, D.MID_W, D.PREV_H)
+        nvgFillColor(vg, nvgRGBA(18, 18, 24, 255))
+        nvgFill(vg)
+    end
+    -- 预览图压暗遮罩 + 章名
+    nvgBeginPath(vg)
+    nvgRect(vg, pvX, pvY, D.MID_W, D.PREV_H)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 70))
+    nvgFill(vg)
+    drawTextStroke(vg, pvX + D.MID_W * 0.5, pvY + D.PREV_H * 0.5 - 12, sel.name, 44,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 240, 232, 208, 5)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 24)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(0xd8, 0xc9, 0xa3, 255))
+    nvgText(vg, pvX + D.MID_W * 0.5, pvY + D.PREV_H * 0.5 + 28,
+        string.format("%d 个关卡 · 点击下方小关切换", #sel.ids), nil)
+
+    -- 关卡网格（5 列）
+    local cols = D.GRID_COLS
+    local cellW, cellH, gap = D.CELL_W, D.CELL_H, D.CELL_GAP
+    for i, id in ipairs(sel.ids) do
+        local col = (i - 1) % cols
+        local row = math.floor((i - 1) / cols)
+        local x = pvX + col * (cellW + gap)
+        local y = D.GRID_Y0 + row * (cellH + gap)
+        local cx, cy = x + cellW * 0.5, y + cellH * 0.5
+        local isCur = (id == curStage)
+        local isBoss = SC.hasBoss(id) or SC.isTerminalTemple(id)
+
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, cellW, cellH, 12)
+        if isCur then
+            nvgFillColor(vg, nvgRGBA(201, 151, 59, 48))
+        else
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
+        end
+        nvgFill(vg)
+        if isCur then
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, x, y, cellW, cellH, 12)
+            nvgStrokeColor(vg, nvgRGBA(201, 151, 59, 235))
+            nvgStrokeWidth(vg, 3)
+            nvgStroke(vg)
+        end
+
+        local label = shortStageLabel(id)
+        local fr, fg, fb = 0, 0, 0
+        if isCur then
+            fr, fg, fb = 0, 0, 0
+        elseif isBoss then
+            fr, fg, fb = 0xA6, 0x1E, 0x1E
+        end
+        drawTextStroke(vg, cx, cy - 12, label, 28,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            255, 255, 255, 4, { strokeColor = { fr, fg, fb } })
+
+        local sub
+        if isCur then
+            sub = "当前"
+        elseif SC.isTerminalTemple(id) then
+            sub = "神殿"
+        elseif isBoss then
+            sub = "首领"
+        else
+            sub = SC.getDifficultyDisplayName(SC.getDifficulty(id))
+        end
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 20)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        if isCur then
+            nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 255))
+        else
+            nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
+        end
+        nvgText(vg, cx, cy + 20, sub, nil)
+    end
+
+    -- 当前关卡条（中栏底部）
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
-        D.CUR_BG_CX - D.CUR_BG_W * 0.5, D.CUR_BG_CY - D.CUR_BG_H * 0.5,
-        D.CUR_BG_W, D.CUR_BG_H, D.CUR_BG_R)
+        pvX, D.CUR_BG_CY - D.CUR_BG_H * 0.5, D.CUR_BG_W, D.CUR_BG_H, D.CUR_BG_R)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, D.CUR_BG_A))
     nvgFill(vg)
-
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, D.CUR_FONT)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(D.CUR_LBL_R, D.CUR_LBL_G, D.CUR_LBL_B, 255))
-    nvgText(vg, D.CUR_LBL_X, D.CUR_BG_CY, "当前关卡", nil)
-
+    nvgFillColor(vg, nvgRGBA(0xd8, 0xc9, 0xa3, 255))
+    nvgText(vg, D.CUR_LBL_X, D.CUR_BG_CY, "当前", nil)
     local curName = SC.formatProgressDisplay(curStage)
     drawTextStroke(vg, D.CUR_VAL_X, D.CUR_BG_CY, curName,
         D.CUR_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         0x63, 0xff, 0x84, 5, { strokeColor = { 0, 0, 0 } })
-
-    -- 关卡格子
-    local startIdx = state.page * PER_PAGE
-    for i = 1, PER_PAGE do
-        local id = ids[startIdx + i]
-        if id then
-            local x, y, w, h = cellRect(i)
-            local cx, cy = x + w * 0.5, y + h * 0.5
-            local isCur = (id == curStage)
-            local isBoss = SC.hasBoss(id) or SC.isTerminalTemple(id)
-
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, x, y, w, h, 14)
-            if isCur then
-                nvgFillColor(vg, nvgRGBA(201, 151, 59, 48))
-            else
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 22))
-            end
-            nvgFill(vg)
-            if isCur then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, x, y, w, h, 14)
-                nvgStrokeColor(vg, nvgRGBA(201, 151, 59, 230))
-                nvgStrokeWidth(vg, 3)
-                nvgStroke(vg)
-            end
-
-            local label = shortStageLabel(id)
-            local fr, fg, fb = 0, 0, 0
-            if isCur then
-                fr, fg, fb = 0, 0, 0
-            elseif isBoss then
-                fr, fg, fb = 0xA6, 0x1E, 0x1E
-            end
-            drawTextStroke(vg, cx, cy - 12, label, 30,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                255, 255, 255, 4, { strokeColor = { fr, fg, fb } })
-
-            local sub
-            if isCur then
-                sub = "当前"
-            elseif SC.isTerminalTemple(id) then
-                sub = "神殿"
-            elseif isBoss then
-                sub = "首领"
-            else
-                sub = SC.getDifficultyDisplayName(SC.getDifficulty(id))
-            end
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 22)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            if isCur then
-                nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 255))
-            else
-                nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
-            end
-            nvgText(vg, cx, cy + 22, sub, nil)
-        end
-    end
-
-    -- 翻页
-    local pageStr = string.format("%d / %d", state.page + 1, maxPage + 1)
-    drawTextStroke(vg, D.BG_CX, D.PAGE_Y, pageStr, D.PAGE_FONT,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
-
-    if imgAct >= 0 then
-        if state.page > 0 then
-            drawImageCentered(vg, imgAct, D.BG_CX - 280, D.PAGE_Y, D.ARROW_W, D.ARROW_H, 1.0)
-            drawTextStroke(vg, D.BG_CX - 280, D.PAGE_Y, "上一页", 28,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4,
-                { strokeColor = { 0, 0, 0 } })
-        end
-        if state.page < maxPage then
-            drawImageCentered(vg, imgAct, D.BG_CX + 280, D.PAGE_Y, D.ARROW_W, D.ARROW_H, 1.0)
-            drawTextStroke(vg, D.BG_CX + 280, D.PAGE_Y, "下一页", 28,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4,
-                { strokeColor = { 0, 0, 0 } })
-        end
-    else
-        nvgFontFace(vg, "sans"); nvgFontSize(vg, 28)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(255, 255, 255, 220))
-        if state.page > 0 then nvgText(vg, D.BG_CX - 280, D.PAGE_Y, "上一页", nil) end
-        if state.page < maxPage then nvgText(vg, D.BG_CX + 280, D.PAGE_Y, "下一页", nil) end
-    end
 
     nvgRestore(vg)
 end
@@ -372,28 +502,52 @@ function StageSelectDialog.handleInput(x, y)
     if not maxStage or maxStage < 1 then
         maxStage = SC.NORMAL_FIRST_STAGE or 101
     end
-    local ids = collectExistIds(maxStage)
-    local maxPage = math.max(0, math.ceil(#ids / PER_PAGE) - 1)
+    local groups = collectChapterGroups(maxStage)
+    local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
+    local needScroll = maxScroll > 0
 
-    -- 翻页
-    if state.page > 0 and hitTestRect(x, y, D.BG_CX - 280, D.PAGE_Y, D.ARROW_W, D.ARROW_H) then
-        BF.trigger("stage_sel_prev")
-        state.page = state.page - 1
+    local listTop = D.CH_Y0 + (needScroll and 30 or 0)
+    local arrowCX = D.CH_X + D.CH_W * 0.5
+    local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
+
+    -- 左栏滚动箭头
+    if needScroll and state.chScroll > 0
+        and hitTestRect(x, y, arrowCX, D.CH_Y0 - 26, 72, 44) then
+        BF.trigger("stage_sel_chup")
+        state.chScroll = state.chScroll - 1
         return true
     end
-    if state.page < maxPage and hitTestRect(x, y, D.BG_CX + 280, D.PAGE_Y, D.ARROW_W, D.ARROW_H) then
-        BF.trigger("stage_sel_next")
-        state.page = state.page + 1
+    if needScroll and state.chScroll < maxScroll
+        and hitTestRect(x, y, arrowCX, listBottom + 26, 72, 44) then
+        BF.trigger("stage_sel_chdown")
+        state.chScroll = state.chScroll + 1
         return true
     end
 
-    -- 关卡格子
-    local startIdx = state.page * PER_PAGE
-    for i = 1, PER_PAGE do
-        local id = ids[startIdx + i]
-        if id then
-            local cx0, cy0, w, h = cellRect(i)
-            if x >= cx0 and x <= cx0 + w and y >= cy0 and y <= cy0 + h then
+    -- 章节按钮
+    for vi = 1, D.CH_VISIBLE do
+        local gi = state.chScroll + vi
+        local g = groups[gi]
+        if not g then break end
+        local bx = D.CH_X
+        local by = listTop + (vi - 1) * (D.CH_BTN_H + D.CH_GAP)
+        if x >= bx and x <= bx + D.CH_W and y >= by and y <= by + D.CH_BTN_H then
+            BF.trigger("stage_sel_ch")
+            state.selKey = g.key
+            return true
+        end
+    end
+
+    -- 关卡网格
+    local sel = selectedGroup(groups)
+    if sel then
+        local cols = D.GRID_COLS
+        for i, id in ipairs(sel.ids) do
+            local col = (i - 1) % cols
+            local row = math.floor((i - 1) / cols)
+            local x0 = D.MID_X + col * (D.CELL_W + D.CELL_GAP)
+            local y0 = D.GRID_Y0 + row * (D.CELL_H + D.CELL_GAP)
+            if x >= x0 and x <= x0 + D.CELL_W and y >= y0 and y <= y0 + D.CELL_H then
                 BF.trigger("stage_sel_cell")
                 local ok = BS.gotoStage(id)
                 if ok then StageSelectDialog.close() end

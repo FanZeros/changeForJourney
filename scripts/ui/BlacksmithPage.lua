@@ -773,8 +773,9 @@ local function drawUpperSlotContent(vg, tabName)
             local heroId = slotData.heroId
             local heroInfo = HeroConfig.get(heroId)
             local cardIdx = heroId or 1
-            if imgHeroCards[cardIdx] and imgHeroCards[cardIdx] >= 0 then
-                DrawUtil.drawImageCover(vg, imgHeroCards[cardIdx], cx, cy, CARD_W, CARD_H, 1.0)
+            local cardImg = HeroAssetUtil.ensureCard(vg, imgHeroCards, cardIdx)
+            if cardImg and cardImg >= 0 then
+                DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
             end
 
             -- 职业图标（卡片顶部）
@@ -1029,8 +1030,14 @@ end
 
 -- ======================== Public API ========================
 
+local blacksmithInited_ = false
+local blacksmithVg_ = nil
+
 --- 初始化（加载图片资源）
 function BlacksmithPage.init(vg)
+    if blacksmithInited_ then return end
+    blacksmithInited_ = true
+    blacksmithVg_ = vg
     -- 共享图片
     imgBg       = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_CH_1.png", 0)
     imgNameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
@@ -1063,8 +1070,7 @@ function BlacksmithPage.init(vg)
         imgGrade[g] = nvgCreateImage(vg, "image/通用图标/ICON_CZBZ_" .. g .. ".png", 0)
     end
 
-    -- 编队卡片图片
-    HeroAssetUtil.preloadCards(vg, imgHeroCards)
+    -- 编队卡片图片：按需加载，避免启动同步解码全部 KP_YX
     for i = 1, 6 do
         imgClassIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
@@ -1149,6 +1155,13 @@ end
 ---@param preSelectEquip table|nil 预选装备（从装备详情跳转时传入）
 ---@param initialTab string|nil 初始 tab："qianghua"|"xilian"|"fenjie"，默认 "qianghua"
 function BlacksmithPage.open(preSelectEquip, initialTab)
+    if not blacksmithInited_ and blacksmithVg_ then
+        BlacksmithPage.init(blacksmithVg_)
+    end
+    if not blacksmithInited_ then
+        print("[BlacksmithPage] open before init, skip")
+        return
+    end
     state.open = true
     state.closing = false
     state.openTime = time.elapsedTime

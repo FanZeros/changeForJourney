@@ -22,6 +22,7 @@ local function normalizeRelicList(list)
             if r.row then r.row = tonumber(r.row) end
             if r.col then r.col = tonumber(r.col) end
             if r.rotation then r.rotation = tonumber(r.rotation) end
+            if r.slot ~= nil then r.slot = tostring(r.slot) end
             -- locked 仅持久化 true；false/0/"true" 等一律归一为 nil/false
             if r.locked == true then
                 r.locked = true
@@ -46,6 +47,9 @@ function RelicSchema.normalizeModule(data)
     data.nextId = math.floor(tonumber(data.nextId) or 1)
     data.bag = normalizeRelicList(data.bag)
     data.grid = normalizeRelicList(data.grid)
+    -- 旧档 8×10 拼图一次性迁到祭阵座位
+    local RelicAltar = require("systems.RelicAltar")
+    RelicAltar.migrateLegacyGrid(data)
 end
 
 RelicSchema.Fields = {

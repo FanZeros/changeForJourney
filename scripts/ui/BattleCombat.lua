@@ -1231,6 +1231,10 @@ local function performAttack(attacker, targetList, isAlly)
                         local actual = curTgt.attrs:heal(healAmt)
                         result.appliedHealAmount = actual
                         result.overhealAmount = math.max(0, healAmt - actual)
+                        if (result.overhealAmount or 0) > 0 then
+                            local allyListForShield = isAlly and BCS.ctx.getAllies() or BCS.ctx.getEnemies()
+                            RCH.onOverheal(attacker, curTgt, result.overhealAmount, allyListForShield)
+                        end
                         if Diag.logEnabled then
                             print(string.format(
                                 "[HealDiag2] HEAL healer=%s(id%s) target=%s healAmt=%.0f actual=%.0f"
@@ -1445,7 +1449,7 @@ local function performAttack(attacker, targetList, isAlly)
                         setHitFlash(curTgt)
                         if actual > 0 then require("systems.GameSFX").play("hit") end
 
-                        if isAlly then
+                        if isAlly and not RCH.shouldSkipThreat(attacker) then
                             local includeBaseThreat = not baseThreatCounted
                             TM.onDamageDealt(attacker, result.totalDamage, includeBaseThreat)
                             if includeBaseThreat then baseThreatCounted = true end

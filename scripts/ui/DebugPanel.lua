@@ -232,6 +232,10 @@ end
 -- ======================== Public API ========================
 
 function DebugPanel.init(vg)
+    if vgRef then
+        vgRef = vg
+        return
+    end
     vgRef = vg
     -- 从 CharacterPanel 获取已出战阵容（不再硬编码）
     allies = CharacterPanel.getDeployedTeam()
@@ -248,6 +252,7 @@ end
 ---@param designOffsetX number 设计区域左边距（screen space）
 ---@param screenDesignW number 屏幕设计宽度（screen space）
 function DebugPanel.draw(vg, designOffsetX, screenDesignW)
+    if not vgRef then DebugPanel.init(vg) end
     if not isDebugAllowed() then return end
     buttons = {}
 

@@ -55,19 +55,17 @@ handlers[Protocol.ACTION_TYPES.RELIC_REFORGE_CONFIRM] = function(uid, params)
     }
 end
 
---- 遗物镶嵌到石板网�?
+--- 遗物镶嵌到祭阵座位
 handlers[Protocol.ACTION_TYPES.RELIC_PLACE] = function(uid, params)
     local ok, err, result = RelicService.PlaceOnGrid(
         uid,
         params and params.relicId,
-        params and params.row,
-        params and params.col,
-        params and params.rotation
+        params and (params.slot or params.slotId)
     )
     if not ok then
         return { success = false, reason = err }
     end
-    return { success = true, relicId = result.relicId, row = result.row, col = result.col, rotation = result.rotation }
+    return { success = true, relicId = result.relicId, slot = result.slot }
 end
 
 --- 从石板网格取下遗�?
@@ -88,9 +86,13 @@ handlers[Protocol.ACTION_TYPES.RELIC_BATCH_ADJUST] = function(uid, params)
     return { success = true, moved = result.moved }
 end
 
---- 遗物合成�?个同类型同品质→1个高品质�?
+--- 遗物合成：3 个同类型同品质 → 1 个高品质（可指定保留词缀）
 handlers[Protocol.ACTION_TYPES.RELIC_MERGE] = function(uid, params)
-    local ok, err, result = RelicService.Merge(uid, params and params.relicIds)
+    local ok, err, result = RelicService.Merge(
+        uid,
+        params and params.relicIds,
+        params and params.keepAffixId
+    )
     if not ok then
         return { success = false, reason = err }
     end
@@ -98,20 +100,18 @@ handlers[Protocol.ACTION_TYPES.RELIC_MERGE] = function(uid, params)
 end
 
 
---- ԭ�ӻ��滻��������ȡ�¾����� + �������е�������ŵ���λ�ã������ύ������ REMOVE+PLACE �������͵ľ�̬��
+--- 原子替换：背包新遗物替换祭阵旧遗物
 handlers[Protocol.ACTION_TYPES.RELIC_REPLACE] = function(uid, params)
     local ok, err, result = RelicService.ReplaceOnGrid(
         uid,
         params and params.oldRelicId,
         params and params.newRelicId,
-        params and params.row,
-        params and params.col,
-        params and params.rotation
+        params and (params.slot or params.slotId)
     )
     if not ok then
         return { success = false, reason = err }
     end
-    return { success = true }
+    return { success = true, slot = result and result.slot }
 end
 
 --- 切换遗物锁定状态
@@ -125,6 +125,21 @@ handlers[Protocol.ACTION_TYPES.RELIC_LOCK] = function(uid, params)
         action   = Protocol.ACTION_TYPES.RELIC_LOCK,
         relicId  = result.relicId,
         locked   = result.locked,
+    }
+end
+
+--- 遗物升级
+handlers[Protocol.ACTION_TYPES.RELIC_UPGRADE] = function(uid, params)
+    local ok, err, result = RelicService.Upgrade(uid, params and params.relicId)
+    if not ok then
+        return { success = false, reason = err, action = Protocol.ACTION_TYPES.RELIC_UPGRADE }
+    end
+    return {
+        success = true,
+        action  = Protocol.ACTION_TYPES.RELIC_UPGRADE,
+        relicId = result.relicId,
+        level   = result.level,
+        cost    = result.cost,
     }
 end
 

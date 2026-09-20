@@ -459,6 +459,9 @@ local function dispatchDragEndAndTap(dx, dy)
                     or CharacterPanel.isDetailOpen()
                     or DiaryPage.hasOverlayOpen()
     if not detailOpen and not DungeonBattleScene.isOpen() then
+        if TopBar.handleInput(dx, dy) then
+            return
+        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return

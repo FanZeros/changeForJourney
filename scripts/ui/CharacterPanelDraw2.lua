@@ -193,7 +193,8 @@ end
 -- ======================== 图片初始化 ========================
 
 function M.initImages(vg)
-    img.panelBg    = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_BJ.png", 0)
+    img.vg = vg
+    -- panelBg 2MB+，首次绘制再加载
     img.listBg     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_0.png", 0)
     img.deployed   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_CZZ.png", 0)
     img.lock       = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
@@ -205,8 +206,7 @@ function M.initImages(vg)
     img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     img.shardSp    = nvgCreateImage(vg, "image/货币道具/ICON_SP.png", 0)
 
-    -- 英雄卡片背景
-    HeroAssetUtil.preloadCards(vg, img.heroCards)
+    -- 英雄卡片背景：按需加载，避免启动同步解码全部 KP_YX
 
     -- 职业图标 (1~6)
     for i = 1, 6 do
@@ -343,6 +343,10 @@ function M.draw(vg, scrollY)
     elseif HORIZON_MODE then
         require("core.HorizonBg").draw(vg, 1, 1.0)
     else
+        if (not img.panelBg or img.panelBg < 0) and img.vg then
+            img.panelBg = nvgCreateImage(img.vg, "image/界面底板/角色与觉醒/UI_JSJM_BJ.png", 0)
+        end
+        ---@diagnostic disable-next-line: param-type-mismatch  -- img.panelBg 哨兵 -1 由 drawImageCentered 内部判空
         drawImageCentered(vg, img.panelBg, PANEL_BG_CX, PANEL_BG_CY, PANEL_BG_W, PANEL_BG_H, 1.0)
     end
     nvgResetScissor(vg)
@@ -443,7 +447,11 @@ function M.draw(vg, scrollY)
             if not heroCfg then goto continue end
 
             -- a) 角色卡片背景
-            local cardImg = img.heroCards[heroId] or img.heroCards[1]
+            local cardVg = img.vg or vg
+            local cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, heroId)
+            if (not cardImg or cardImg < 0) and heroId ~= 1 then
+                cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, 1)
+            end
             drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
 
             -- b) 职业标志图标（偏移与战斗界面一致）
@@ -608,7 +616,11 @@ function M.draw(vg, scrollY)
         local cy = rowCY
 
         -- a) 角色卡片背景
-        local cardImg = img.heroCards[entry.heroId] or img.heroCards[1]
+        local cardVg = img.vg or vg
+        local cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, entry.heroId)
+        if (not cardImg or cardImg < 0) and entry.heroId ~= 1 then
+            cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, 1)
+        end
         local isOwned = entry.owned
         drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
 
@@ -782,7 +794,11 @@ function M.draw(vg, scrollY)
 
     -- 7) 拖拽中的浮动卡片（绘制在最上层）
     if dragState.active and dragState.heroId then
-        local cardImg = img.heroCards[dragState.heroId] or img.heroCards[1]
+        local cardVg = img.vg or vg
+        local cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, dragState.heroId)
+        if (not cardImg or cardImg < 0) and dragState.heroId ~= 1 then
+            cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, 1)
+        end
         -- 半透明浮动卡片
         drawImageCover(vg, cardImg, dragState.cx, dragState.cy, CARD_W * 1.05, CARD_H * 1.05, 0.8)
         -- 高亮边框

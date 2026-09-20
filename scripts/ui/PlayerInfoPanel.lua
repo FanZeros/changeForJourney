@@ -264,6 +264,7 @@ local cachedUID        = nil  ---@type string|nil
 local cachedName       = nil  ---@type string|nil
 local cachedServerName = nil  ---@type string|nil  当前区服名称
 local cachedServerId = nil    ---@type number|nil    当前区服 id
+local cachedVg         = nil  ---@type any
 
 --- 判断当前玩家是否为 GM（完全由服务端鉴权，客户端无白名单）
 local function isGM()
@@ -277,6 +278,7 @@ end
 
 --- 初始化（加载图片资源，仅调用一次）
 function PlayerInfoPanel.init(vg)
+    cachedVg = vg
     -- 上半部分
     img.bg      = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     img.avatar  = nvgCreateImage(vg, "image/角色图标/UI_icon_hero_1.png", 0)
@@ -285,11 +287,7 @@ function PlayerInfoPanel.init(vg)
     img.expFill = nvgCreateImage(vg, "image/进度条/UI_WJXX_JDT1.png", 0)
 
 
-    -- 下半部分：角色卡牌
-    HeroAssetUtil.preloadCards(vg, img.heroCards)
-
-    -- 角色头像图标（供更换头像面板使用）
-    HeroAssetUtil.preloadIcons(vg, img.heroIcons)
+    -- 角色卡牌/头像按需加载
 
     -- 下半部分：职业图标 (1~6)
     for i = 1, 6 do
@@ -466,7 +464,7 @@ function PlayerInfoPanel.handleInput(dx, dy)
             avatarHeroId = state.avatarHeroId or 1,
             onAvatarConfirmed = function(heroId)
                 state.avatarHeroId = heroId
-                local heroIcon = img.heroIcons[heroId]
+                local heroIcon = HeroAssetUtil.ensureIcon(cachedVg, img.heroIcons, heroId)
                 if heroIcon and heroIcon >= 0 then
                     img.avatar = heroIcon
                 end
@@ -598,7 +596,10 @@ local function drawTeamCard(vg, cx, cy, slot, power)
     local ch = TEAM_CARDS.CARD_H
 
     -- a) 角色卡片背景
-    local cardImg = img.heroCards[heroId] or img.heroCards[1]
+    local cardImg = HeroAssetUtil.ensureCard(vg, img.heroCards, heroId)
+    if (not cardImg or cardImg < 0) and heroId ~= 1 then
+        cardImg = HeroAssetUtil.ensureCard(vg, img.heroCards, 1)
+    end
     if cardImg and cardImg >= 0 then
         DrawUtil.drawImageCover(vg, cardImg, cx, cy, cw, ch, 1.0)
     end
@@ -927,7 +928,7 @@ function PlayerInfoPanel.setAvatarHeroId(heroId)
     if heroId and heroId >= 1 then
         state.avatarHeroId = heroId
         if img.heroIcons then
-            local heroIcon = img.heroIcons[heroId]
+            local heroIcon = HeroAssetUtil.ensureIcon(cachedVg, img.heroIcons, heroId)
             if heroIcon and heroIcon >= 0 then
                 img.avatar = heroIcon
             end

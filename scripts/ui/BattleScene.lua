@@ -106,6 +106,7 @@ local vg_         = nil   -- 缓存 nvg context（init 赋值，loadStage 中切
 local currentChapter = 0  -- 当前章节号（用于检测章节变化、切换地图背景）
 
 local imgMap      = -1
+local pendingMapBgPath_ = nil  -- [启动优化] 地图背景惰性解码：loadStage 只记路径，首次 draw 前再解码
 local imgShadow   = -1
 local imgHeroCards   = {}   -- imgHeroCards[heroId] = nvg image handle
 local imgMonsterCards = {}  -- imgMonsterCards[monsterId] = nvg image handle
@@ -1379,14 +1380,13 @@ end
 
 function BattleScene.init(vg)
     vg_ = vg  -- 缓存，供 loadStage 切换地图背景
-    -- 地图背景（loadStage 会根据章节自动切换）
-    imgMap      = nvgCreateImage(vg, "image/关卡地图/MAP_1.png", 0)
+    -- 地图背景延后到 loadStage / 首次绘制，避免启动解码 1MB+ MAP_1
     currentChapter = 1
     imgShadow   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY.png", 0)
     -- [卡牌惰性加载] 英雄卡/怪物卡大图改为首次进战斗时加载（ensureBattleCards）
     -- ⚠️ 新增怪物 ID 时必须补充到 ensureBattleCards 的加载清单！
     -- 否则 BattleDraw 会 fallback 到 imgMonsterCards[1]（怪物1的贴图）。
-    ensureBattleCards(vg)
+    -- 战斗卡牌改到首次进战斗时分帧加载（见 loadStage → ensureBattleCards）
     imgHpBg     = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HP1.png", 0)
     imgHpFill   = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HPT2.png", 0)
     imgEsFill   = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HPT3.png", 0)
@@ -1462,6 +1462,13 @@ function BattleScene.init(vg)
 end
 
 function BattleScene.draw(vg)
+    -- [启动优化] 地图背景惰性解码：首次 draw 前再创建（单帧只解一张）
+    if pendingMapBgPath_ and vg then
+        local t0 = time.elapsedTime
+        imgMap = nvgCreateImage(vg, pendingMapBgPath_, 0)
+        pendingMapBgPath_ = nil
+        print(string.format("[BattleScene] 地图背景解码 %.0fms（惰性）", (time.elapsedTime - t0) * 1000))
+    end
     -- 1. 地图背景（上下漂移 + 场景切换过渡）
     -- 只向上漂移：0 → -8 → 0，不会向下露出黑底
     local driftY = -BG_DRIFT_Y_AMP * (1.0 - math.cos(bgAnimTimer * 2 * math.pi / BG_DRIFT_Y_PERIOD)) * 0.5
@@ -2451,8 +2458,11 @@ end
 function BattleScene.setMapBackground(vg, path)
     if imgMap >= 0 then
         nvgDeleteImage(vg, imgMap)
+        imgMap = -1
     end
-    imgMap = nvgCreateImage(vg, path, 0)
+    -- [启动优化] 只记路径，首次 draw 前再解码：loadStage 在启动队列内执行，
+    -- 同步解码数 MB 关卡地图会撑爆单帧预算（预览判引擎异常，加载条 97-98% 卡死）
+    pendingMapBgPath_ = path
 end
 
 --- 重置战斗状态（新单位加入时调用）

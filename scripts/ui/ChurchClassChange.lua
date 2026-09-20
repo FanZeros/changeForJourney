@@ -328,6 +328,7 @@ M.SECOND_ADV_BRANCHES  = SECOND_ADV_BRANCHES
 ---@type table
 local state           -- ChurchPage 主 state 表
 local img             -- ChurchPage 主 img 表
+local getClassIcon2   -- 转职职业图标按需加载
 local easeOutCubic    -- easing 函数
 local easeInCubic     -- easing 函数
 local POPUP_ANIM_DUR  -- 弹窗动画时长
@@ -348,6 +349,7 @@ function M.setContext(ctx)
     getClient       = ctx.getClient
     getProtocol     = ctx.getProtocol
     getDispatcher   = ctx.getDispatcher
+    getClassIcon2   = ctx.getClassIcon2
 end
 
 -- ======================== 内部函数 ========================
@@ -431,7 +433,7 @@ function M.drawContent(vg)
 
     -- 初始职业图标
     local initIconId = CLASS_NUM[classId] or 1
-    drawImageCentered(vg, img.classIcons2[initIconId] or -1, INIT_ICON_CX, INIT_ICON_CY,
+    drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, initIconId) or -1, INIT_ICON_CX, INIT_ICON_CY,
         INIT_ICON_W, INIT_ICON_H, 1.0)
 
     -- 初始职业名称
@@ -449,7 +451,7 @@ function M.drawContent(vg)
             ADV2.lineW, ADV2.lineH, 1.0)
 
         -- 分支1
-        drawImageCentered(vg, img.classIcons2[branches[1].id] or -1, BR1_ICON_CX, BR1_ICON_CY,
+        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[1].id) or -1, BR1_ICON_CX, BR1_ICON_CY,
             BR1_ICON_W, BR1_ICON_H, 1.0)
         if heroLevel >= ADV2.firstLevel then
             if advBranch and advBranch.first == branches[1].id then
@@ -466,7 +468,7 @@ function M.drawContent(vg)
             255, 255, 255, 6)
 
         -- 分支2
-        drawImageCentered(vg, img.classIcons2[branches[2].id] or -1, BR2_ICON_CX, BR2_ICON_CY,
+        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[2].id) or -1, BR2_ICON_CX, BR2_ICON_CY,
             BR2_ICON_W, BR2_ICON_H, 1.0)
         if heroLevel >= ADV2.firstLevel then
             if advBranch and advBranch.first == branches[2].id then
@@ -503,7 +505,7 @@ function M.drawContent(vg)
             local sb = secBranches[i]
             local pos = ADV2.pos[i]
             if sb and pos then
-                drawImageCentered(vg, img.classIcons2[sb.id] or -1, pos.iconCX, pos.iconCY,
+                drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, sb.id) or -1, pos.iconCX, pos.iconCY,
                     ADV2.iconW, ADV2.iconH, 1.0)
                 if heroLevel >= ADV2.secondLevel then
                     local parentFirstId = (i <= 2) and branches[1].id or branches[2].id
@@ -666,7 +668,7 @@ function M.drawConfirmPopup(vg)
         { strokeColor = { 0x28, 0x28, 0x28 } })
 
     -- 职业图标
-    drawImageCentered(vg, img.classIcons2[branchId] or -1, C.iconCX, C.iconCY, C.iconW, C.iconH, 1.0)
+    drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branchId) or -1, C.iconCX, C.iconCY, C.iconW, C.iconH, 1.0)
 
     -- 转职阶段
     local stageText = advLevel == 0 and "基础职业" or (advLevel == 1 and "一转" or "二转")

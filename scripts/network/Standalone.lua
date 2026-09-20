@@ -93,6 +93,55 @@ local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen �
 local startScreenWasOpen_ = false
 local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发一次（等标题关闭）
 local fontNormal = -1
+local bootQueue_ = nil
+local bootIdx_ = 0
+local bootReady_ = false
+-- [启动优化] 标题提前解锁：核心 UI（到 TownScene 为止）完成后即可点击进入，
+-- 弹窗类 init / 接线 / firstStage 在标题后的后台帧继续分步消化。
+-- 用户反馈的 64~66% 卡死均为旧包行为；提前解锁可把剩余重活彻底移出"进游戏前"。
+local TITLE_UNLOCK_STEP = 9
+
+local function pumpBootQueue_()
+    if not bootQueue_ then return end
+    -- 每帧最多消化 8ms，避免单步解码把预览判定成引擎异常
+    local tFrame = time.elapsedTime
+    while bootQueue_ and (time.elapsedTime - tFrame) < 0.008 do
+        bootIdx_ = bootIdx_ + 1
+        local step = bootQueue_[bootIdx_]
+        if not step then
+            bootQueue_ = nil
+            bootReady_ = true
+            DarkTitleScreen.setReady(true)
+            print("[Standalone] boot queue complete, title unlocked")
+            return
+        end
+        local name, fn = step[1], step[2]
+        local t0 = time.elapsedTime
+        local ok, err = pcall(fn)
+        local dt = time.elapsedTime - t0
+        local total = bootQueue_ and #bootQueue_ or bootIdx_
+        if not ok then
+            print("[Standalone] boot step FAIL " .. tostring(name) .. ": " .. tostring(err))
+        else
+            print(string.format("[Standalone] boot step %d/%d %s (%.0fms)",
+                bootIdx_, total, name, dt * 1000))
+        end
+        DarkTitleScreen.loadDone = bootIdx_
+        DarkTitleScreen.loadTotal = total
+        DarkTitleScreen.loadPercent = math.floor(bootIdx_ * 100 / math.max(1, total))
+        -- [启动诊断] 加载条上直接显示步骤名与耗时，便于真机定位哪一步超帧预算
+        DarkTitleScreen.loadStep = name
+        DarkTitleScreen.loadStepMs = math.floor(dt * 1000)
+        if bootIdx_ >= TITLE_UNLOCK_STEP then
+            -- 核心步骤完成：解锁标题（后台继续泵完剩余步骤）
+            bootReady_ = true
+            DarkTitleScreen.setReady(true)
+        else
+            DarkTitleScreen.setReady(false)
+        end
+        if dt >= 0.008 then break end
+    end
+end
 
 -- [一次性加载] 三段式加载：
 --   FG 前台预载：进游戏前只载 80MB 核心 UI（小图优先，进度遮罩），快进游戏
@@ -190,107 +239,8 @@ end
 -- Module API
 -- ============================================================================
 
-function Standalone.Start()
-    -- 0. PlayerStore 初始化：单机模式下此前从未调用（仅多人 Client.lua 调），
-    --    导致 SyncBattleState 写入的 battle 模块不会落到 PlayerStore 缓存，
-    --    扫荡/选关弹窗读 PlayerStore.Get("battle") 恒为 nil → "未知关卡"
-    PlayerStore.Init()
-
-    -- 1. Minimal scene (renderer needs a viewport)
-    local scene = Scene()
-    sceneRef_ = scene  -- 保存引用
-    scene:CreateComponent("Octree")
-    local camNode = scene:CreateChild("Camera")
-    local camera = camNode:CreateComponent("Camera")
-    renderer:SetViewport(0, Viewport:new(scene, camera))
-
-    -- 1.5 BGM & SFX
-    GameBGM.init(scene)
-    GameSFX.init(scene)
-
-    -- 2. NanoVG context
-    vg = nvgCreate(1)
-    if not vg then
-        print("[Standalone] ERROR: nvgCreate failed")
-        return
-    end
-
-    -- 2.5 [一次性加载] 全局贴图去重：同一路径全生命周期只加载一次，
-    -- 启动预载与各模块 init 共用同一句柄，避免重复占用显存与二次解码
-    local handleCache = {}
-    local origNvgCreateImage = nvgCreateImage
-    nvgCreateImage = function(ctx, path, flags)
-        local cached = handleCache[path]
-        if cached then return cached end
-        local handle = origNvgCreateImage(ctx, path, flags)
-        if handle and handle >= 0 then handleCache[path] = handle end
-        return handle
-    end
-
-    -- 3. Font
-    fontNormal = nvgCreateFont(vg, "sans", "Fonts/ResourceHanRoundedCN-Heavy.ttf")
-    if fontNormal < 0 then
-        print("[Standalone] ERROR: font load failed")
-    end
-
-    -- 4. Layout
-    RecalcLayout()
-
-    -- 4.5 碎片图标资源初始化
-    DrawUtil.initShardAssets(vg)
-
-    -- 5. Sub-modules
-    StartScreen.init(vg, scene)
-    DarkTitleScreen.init(vg)  -- [DarkTitleScreen] 横屏标题资源
-    LetterIntro.init(vg)      -- [LetterIntro] 书斋/火漆全窗口素材
-    TopBar.init(vg)
-    BottomNav.init(vg)
-    BattleScene.init(vg)
-    IntroCutscene.init(vg, scene)
-    ScenarioDialogue.init(vg, scene)  -- [LetterIntro] 情景对话（新档链）
-    CharacterPanel.init(vg)
-    DiaryPage.init(vg)
-    TopBar.markAvatarViewed()  -- 初始化头像红点基准
-    TownScene.init(vg)
-    BlacksmithPage.init(vg)
-    ChurchPage.init(vg)
-    TavernPage.init(vg)
-    DungeonPage.init(vg)
-    TowerBuffPick.init(vg)
-    DebugPanel.init(vg)
-    HeroRosterPanel.init(vg)
-    RewardPopup.init(vg)
-    OfflineRewardPanel.init(vg)
-    LevelUpPopup.init(vg)
-    PlayerInfoPanel.init(vg)
-    SpinePowerUpEffect.init()
-
-    ClientMsgHandler.setup({ sendAction = localSendAction })
-    ClientMsgHandler.setupDataSubscriptions()
-    AnnouncementPanel.setAnnouncementData(AnnouncementConfig.buildWithDates(0))
-
-    RedeemCodePanel.setSendAction(function(action, params)
-        local sent = localSendAction(action, params)
-        if not sent then
-            RedeemCodePanel.onActionResult({ success = false, reason = "本地处理失败", redeemAction = true })
-        end
-    end)
-    MailPanel.setSendAction(localSendAction)
-    SignInPanel.setSendAction(localSendAction)
-    TaskPanel.setSendAction(localSendAction)
-    TavernPage.setSendAction(localSendAction)
-    MarketPage.setSendAction(localSendAction)
-
-    -- 5.05 冒险等级提升弹窗：监听 PLAYER_LEVEL_UP 事件，并刷新解锁状态
-    EventBus.on(GameEvents.PLAYER_LEVEL_UP, function(data)
-        local newLevel = data.level
-        local unlocks = ExpTable.getLevelUnlocks(newLevel)
-        LevelUpPopup.show(newLevel, unlocks)
-        -- 刷新各模块解锁状态
-        CharacterPanel.refreshSlotUnlocks()
-        BottomNav.refreshUnlockState(vg)
-    end)
-
+--- 分帧启动完成后的接线（必须在 CharacterPanel/BattleScene/TownScene init 之后）
+function Standalone._bootWiring()
     -- 5.1 阵容变更回调：角色面板出战变动 → 同步战斗画面 → 重载关卡 → 更新 TopBar 战力
     -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 编队先本地生效（并行战斗 Phase 3 接入）
     CharacterPanel.setOnTeamChanged(function(teamIdx)
@@ -361,22 +311,22 @@ function Standalone.Start()
 
     -- 5.15 城镇铁匠铺点击 → 打开铁匠铺界面
     TownScene.setOnSmithClick(function()
+        BlacksmithPage.init(vg)
         BlacksmithPage.open()
     end)
     -- 城郊礼拜堂点击 → 打开教堂界面（转职/天赋/祈祷）
     TownScene.setOnChurchClick(function()
+        ChurchPage.init(vg)
         ChurchPage.open()
     end)
     -- 5.16 城镇酒馆点击 → 打开酒馆界面
     TownScene.setOnTavernClick(function()
+        TavernPage.init(vg)
         TavernPage.open()
     end)
-    -- 5.17 城镇副本入口（横屏走 BottomNav 标签5）
-    DungeonBattleScene.init(vg)
-    require("ui.TowerTriBattle").init(vg)
     -- 5.18 城镇市场点击 → 打开市场界面
-    MarketPage.init(vg)
     TownScene.setOnMarketClick(function()
+        MarketPage.init(vg)
         MarketPage.open()
     end)
 
@@ -755,15 +705,8 @@ function Standalone.Start()
         end
     end)
 
-    -- 5.3 初始阵容同步到战斗画面 + TopBar 战力
-    local initialTeam = CharacterPanel.getDeployedTeam()
-    TopBar.setTotalPower(CharacterPanel.getTotalPower())
-    if #initialTeam > 0 then
-        BattleScene.setAllies(initialTeam)
-        -- 首次进入以"寻怪中"模式启动，等待服务端数据（装备/天赋/职业）同步完毕后再开战
-        BattleScene.reloadStage({ startSearching = true })
-        print("[Standalone] 初始阵容同步: " .. #initialTeam .. " 个英雄（寻怪模式）")
-    end
+    -- 5.3 初始阵容同步/关卡重载已拆到 boot 队列独立步 firstStage
+    --     （loadStage 内生成敌人+重置战斗，原与全部接线同帧执行会撑爆帧预算）
 
     -- 5.3 获取玩家昵称（TapTap 账号系统）
     ---@diagnostic disable-next-line: undefined-global
@@ -787,48 +730,133 @@ function Standalone.Start()
         print("[Standalone] lobby 不可用，UID 设置为预览模式")
     end
 
+    print("[Standalone] boot wiring done")
+end
+
+function Standalone.Start()
+    -- 0. PlayerStore 初始化：单机模式下此前从未调用（仅多人 Client.lua 调），
+    --    导致 SyncBattleState 写入的 battle 模块不会落到 PlayerStore 缓存，
+    --    扫荡/选关弹窗读 PlayerStore.Get("battle") 恒为 nil → "未知关卡"
+    PlayerStore.Init()
+
+    -- 1. Minimal scene (renderer needs a viewport)
+    local scene = Scene()
+    sceneRef_ = scene  -- 保存引用
+    scene:CreateComponent("Octree")
+    local camNode = scene:CreateChild("Camera")
+    local camera = camNode:CreateComponent("Camera")
+    renderer:SetViewport(0, Viewport:new(scene, camera))
+
+    -- 1.5 BGM & SFX
+    GameBGM.init(scene)
+    GameSFX.init(scene)
+
+    -- 2. NanoVG context
+    vg = nvgCreate(1)
+    if not vg then
+        print("[Standalone] ERROR: nvgCreate failed")
+        return
+    end
+
+    -- 2.5 [一次性加载] 全局贴图去重：同一路径全生命周期只加载一次，
+    -- 启动预载与各模块 init 共用同一句柄，避免重复占用显存与二次解码
+    local handleCache = {}
+    local origNvgCreateImage = nvgCreateImage
+    nvgCreateImage = function(ctx, path, flags)
+        local cached = handleCache[path]
+        if cached then return cached end
+        local handle = origNvgCreateImage(ctx, path, flags)
+        if handle and handle >= 0 then handleCache[path] = handle end
+        return handle
+    end
+
+    -- 3. Font
+    fontNormal = nvgCreateFont(vg, "sans", "Fonts/ResourceHanRoundedCN-Heavy.ttf")
+    if fontNormal < 0 then
+        print("[Standalone] ERROR: font load failed")
+    end
+
+    -- 4. Layout
+    RecalcLayout()
+
+    -- 4.5 碎片角标（头像按需加载）
+    DrawUtil.initShardAssets(vg)
+
+    -- 5. 先出标题：只加载标题必要贴图，其余模块分帧补 init，避免预览首帧卡死
+    StartScreen.init(vg, scene)
+    DarkTitleScreen.init(vg)
+    DarkTitleScreen.setReady(false)
+    bootQueue_ = {
+        { "LetterIntro", function() LetterIntro.init(vg) end },
+        { "TopBar", function() TopBar.init(vg) end },
+        { "BottomNav", function() BottomNav.init(vg) end },
+        { "BattleScene", function() BattleScene.init(vg) end },
+        { "IntroCutscene", function() IntroCutscene.init(vg, scene) end },
+        { "ScenarioDialogue", function() ScenarioDialogue.init(vg, scene) end },
+        { "CharacterPanel", function() CharacterPanel.init(vg) end },
+        { "DiaryPage", function() DiaryPage.init(vg) end },
+        { "TownScene", function() TownScene.init(vg) end },
+        { "RewardPopup", function() RewardPopup.init(vg) end },
+        { "OfflineRewardPanel", function() OfflineRewardPanel.init(vg) end },
+        { "LevelUpPopup", function() LevelUpPopup.init(vg) end },
+        { "PlayerInfoPanel", function() PlayerInfoPanel.init(vg) end },
+        { "SpinePowerUp", function() SpinePowerUpEffect.init() end },
+        { "bootWiring", function() Standalone._bootWiring() end },
+        { "firstStage", function()
+            -- [启动优化] 初始阵容同步 + 关卡重载：独立一帧执行
+            -- （loadStage 生成敌人/重置战斗较重，原挤在 bootWiring 同帧导致 97-98% 卡死）
+            TopBar.markAvatarViewed()
+            TopBar.setTotalPower(CharacterPanel.getTotalPower())
+            local initialTeam = CharacterPanel.getDeployedTeam()
+            if #initialTeam > 0 then
+                BattleScene.setAllies(initialTeam)
+                -- 首次进入以"寻怪中"模式启动，等待服务端数据（装备/天赋/职业）同步完毕后再开战
+                BattleScene.reloadStage({ startSearching = true })
+                print("[Standalone] 初始阵容同步: " .. #initialTeam .. " 个英雄（寻怪模式）")
+            end
+        end },
+    }
+    bootIdx_ = 0
+    print("[Standalone] boot queue " .. #bootQueue_ .. " steps (title first)")
+
+    -- 轻量接线（不解码贴图，可在首帧完成）
+    ClientMsgHandler.setup({ sendAction = localSendAction })
+    ClientMsgHandler.setupDataSubscriptions()
+    AnnouncementPanel.setAnnouncementData(AnnouncementConfig.buildWithDates(0))
+
+    RedeemCodePanel.setSendAction(function(action, params)
+        local sent = localSendAction(action, params)
+        if not sent then
+            RedeemCodePanel.onActionResult({ success = false, reason = "本地处理失败", redeemAction = true })
+        end
+    end)
+    MailPanel.setSendAction(localSendAction)
+    SignInPanel.setSendAction(localSendAction)
+    TaskPanel.setSendAction(localSendAction)
+    TavernPage.setSendAction(localSendAction)
+    MarketPage.setSendAction(localSendAction)
+
+    -- 5.05 冒险等级提升弹窗：监听 PLAYER_LEVEL_UP 事件，并刷新解锁状态
+    EventBus.on(GameEvents.PLAYER_LEVEL_UP, function(data)
+        local newLevel = data.level
+        local unlocks = ExpTable.getLevelUnlocks(newLevel)
+        LevelUpPopup.show(newLevel, unlocks)
+        -- 刷新各模块解锁状态
+        CharacterPanel.refreshSlotUnlocks()
+        BottomNav.refreshUnlockState(vg)
+    end)
+
+    -- 5.1~5.3 接线延后到 bootWiring
+
     -- 6. Events
     SubscribeToEvent(vg, "NanoVGRender", "HandleNanoVGRender")
     SubscribeToEvent("Update", "HandleUpdate")
 
-    -- 7. [DWP 异步预下载] Web/WASM 端同步 nvgCreateImage 单张 0.3-0.5s，711 张全量
-    --    同步解码会冻结主线程数分钟（玩家感知为卡死）。改为引擎异步批量下载：
-    --    仅落盘缓存（不解码/不上传 GPU/不阻塞主线程），首用 nvgCreateImage 命中本地
-    --    缓存后只剩快速本地解码。桌面端本地文件瞬时完成，行为不变。
-    local manifestOk, manifest = pcall(require, "config.AssetManifest")
-    if manifestOk and type(manifest) == "table" and #manifest > 0 then
-        preload_.list = manifest
-        preload_.idx = 0
-        preload_.dwpActive = true
-        preload_.active = true
-        local paths = {}
-        for _, e in ipairs(manifest) do paths[#paths + 1] = e[1] end
-        local okDWP, err = pcall(function()
-            GetCache():DownloadResources(paths,
-                function(success, failedCount)
-                    preload_.dwpActive = false
-                    print(string.format(
-                        "[Standalone] DWP 全量预下载完成: success=%s failed=%s",
-                        tostring(success), tostring(failedCount)))
-                end,
-                function(done, total, bytes, totalBytes)
-                    preload_.dwpDone = done
-                    preload_.dwpTotal = total
-                end)
-        end)
-        if not okDWP then
-            preload_.dwpActive = false
-            preload_.active = false
-            DarkTitleScreen.setReady(true)
-            print("[Standalone] DownloadResources 不可用，跳过预下载: " .. tostring(err))
-        else
-            DarkTitleScreen.setReady(false)
-            print("[Standalone] DWP 全量预下载启动: " .. #manifest .. " 项")
-        end
-    else
-        DarkTitleScreen.setReady(true)
-        print("[Standalone] AssetManifest 缺失，跳过全量预载")
-    end
+    -- 7. 不再全量 DownloadResources(711 张/250MB)：预览/Web 会卡死在标题。
+    --    图片按需 DWP + nvgCreateImage 去重缓存；标题可立即点击。
+    DarkTitleScreen.setReady(false)  -- 等 boot 队列完成再解锁
+    print("[Standalone] skip full AssetManifest DWP wait")
+
     SubscribeToEvent("ScreenMode", "HandleScreenMode")
     SubscribeToEvent("MouseButtonDown", "HandleMouseButtonDown")
     SubscribeToEvent("MouseButtonUp", "HandleMouseButtonUp")
@@ -996,6 +1024,19 @@ function HandleNanoVGRender(eventType, eventData)
     if not vg then return end
 
     nvgBeginFrame(vg, logicalW, logicalH, dpr)
+    if not bootReady_ then
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, logicalW, logicalH)
+        nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
+        nvgFill(vg)
+        nvgScale(vg, scale, scale)
+        nvgTranslate(vg, designOffsetX, designOffsetY)
+        if StartScreen.isOpen() then
+            StartScreen.draw(vg)
+        end
+        nvgEndFrame(vg)
+        return
+    end
     nvgScale(vg, scale, scale)
 
     -- 背景（screen space，填满可见区域）
@@ -1138,6 +1179,15 @@ end
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
+    -- 分帧启动：每帧 1 个模块 init，标题可先画出来
+    pumpBootQueue_()
+    if not bootReady_ then
+        local dt = eventData["TimeStep"]:GetFloat()
+        if StartScreen.isOpen() then StartScreen.update(dt) end
+        if DarkTitleScreen.isOpen() then DarkTitleScreen.update(dt) end
+        return
+    end
+
     -- [DWP 异步预下载] 等待期：
     --   1) 标题画面可显示，但资源未完成前不允许进入（避免无背景界面）
     --   2) 下载完成后解锁标题点击；超时后仍解锁，避免永久卡死
@@ -1349,6 +1399,7 @@ local MIN_TAP_INTERVAL = 0.12  -- 秒（120ms）
 local lastTapTime = 0
 
 function HandleMouseButtonDown(eventType, eventData)
+    if not bootReady_ then return end
     if HORIZON_MODE then return HandleMouseButtonDownHorizon(eventType, eventData) end
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
@@ -1445,6 +1496,7 @@ function HandleMouseMove(eventType, eventData)
 end
 
 function HandleMouseButtonUp(eventType, eventData)
+    if not bootReady_ then return end
     if HORIZON_MODE then return HandleMouseButtonUpHorizon(eventType, eventData) end
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
@@ -1571,6 +1623,9 @@ function HandleMouseButtonUp(eventType, eventData)
     local diaryOverlay = DiaryPage.hasOverlayOpen()
     if not detailOpen and not smithOpen and not ChurchPage.isOpen() and not tavernOpen
         and not DungeonBattleScene.isOpen() and not diaryOverlay then
+        if TopBar.handleInput(dx, dy) then
+            return
+        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return
@@ -1828,6 +1883,9 @@ function HandleTouchEnd(eventType, eventData)
         local diaryOverlay2 = DiaryPage.hasOverlayOpen()
         if not detailOpen2 and not smithOpen2 and not ChurchPage.isOpen() and not tavernOpen2
             and not DungeonBattleScene.isOpen() and not diaryOverlay2 then
+            if TopBar.handleInput(dx, dy) then
+                return
+            end
             if TopBar.hitTestAvatar(dx, dy, 0) then
                 PlayerInfoPanel.open()
                 return
@@ -2033,6 +2091,31 @@ function HandleNanoVGRenderHorizon()
     if not vg then return end
     HorizonUpdateTransform()
     nvgBeginFrame(vg, logicalW, logicalH, dpr)
+
+    -- 分帧启动中：只画标题，避免未 init 的城镇/战斗模块被绘制
+    if not bootReady_ then
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, logicalW, logicalH)
+        nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
+        nvgFill(vg)
+        if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
+            H_skipDone = true
+            StartScreen.skipForReconnect()
+            DarkTitleScreen.open()
+        end
+        if DarkTitleScreen.isOpen() then
+            DarkTitleScreen.draw(vg, logicalW, logicalH)
+        elseif StartScreen.isOpen() then
+            local ss = math.min(logicalW / 1080, logicalH / 2400)
+            nvgSave(vg)
+            nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
+            nvgScale(vg, ss, ss)
+            StartScreen.draw(vg)
+            nvgRestore(vg)
+        end
+        nvgEndFrame(vg)
+        return
+    end
 
     -- 横屏背景：世界大背景图（cover 铺满；战斗页/标题页自带背景会覆盖此处）
     -- [fix] 只尝试一次：缺图时每帧重试会刷屏报错；缺图回退城镇大图，再失败走下方纯色兜底
@@ -2289,6 +2372,7 @@ local function HorizonResolveMouse()
 end
 
 function HandleMouseButtonDownHorizon(eventType, eventData)
+    if not bootReady_ then return end
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
     if DarkTitleScreen.isOpen() then return end
     -- [LetterIntro] 开场期也要记 pressValid，否则抬起被当成无效点击
@@ -2354,6 +2438,7 @@ function HandleMouseMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseButtonUpHorizon(eventType, eventData)
+    if not bootReady_ then return end
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续
     if DarkTitleScreen.isOpen() then DarkTitleScreen.handleTap() return end
     local button = eventData["Button"]:GetInt()
@@ -2446,6 +2531,9 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
         if isTap and not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
             or MarketPage.isOpen()) then
+            if TopBar.handleInput(dx, dy, -30) then
+                return
+            end
             if TopBar.hitTestAvatar(dx, dy, -30) then
                 PlayerInfoPanel.open()
                 return
@@ -2511,6 +2599,9 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     -- 横屏模式无调试面板（DebugPanel 仅竖屏 screen-space）
     local detailOpen = CharacterPanel.isDetailOpen()
     if not detailOpen then
+        if TopBar.handleInput(dx, dy) then
+            return
+        end
         if TopBar.hitTestAvatar(dx, dy, 0) then
             PlayerInfoPanel.open()
             return

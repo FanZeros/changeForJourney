@@ -17,9 +17,9 @@
 --   }
 --
 -- highlight key 对照表（由各 UI 模块调用 TutorialOverlay.registerHotspot() 注册）：
---   "tab_character"          — 底部导航栏角色按钮
---   "tab_log"                — 底部导航栏日志按钮
---   "tab_town"               — 底部导航栏城镇按钮
+--   "tab_character"          — 顶部页面入口：角色
+--   "tab_log"                — 顶部页面入口：日志
+--   "tab_town"               — 顶部页面入口：城镇
 --   "character_slot_1"       — 角色面板第一个槽位中的角色
 --   "equip_slot_weapon"      — 角色详情武器槽位
 --   "equip_btn_equip"        — 装备详情「装备」按钮

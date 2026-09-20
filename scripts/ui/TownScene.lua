@@ -330,27 +330,34 @@ end
 
 -- ======================== Public API ========================
 
+local townVg_ = nil
+local townImgsLoaded_ = false
+
 function TownScene.init(vg)
-    imgBg          = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
-    imgLabelBg     = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_BQ.png", 0)
+    townVg_ = vg
+end
 
-    -- 上方建筑
-    imgSmith       = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
-    imgIconSmith   = nvgCreateImage(vg, "image/通用图标/ICON_CZ_TJP.png", 0)
-
-    -- 下方建筑
-    imgChurch      = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
-    imgTavern      = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_JG.png", 0)
-    imgMarket      = nvgCreateImage(vg, "image/界面底板/城镇世界/UI_CZ_SJ.png", 0)
-    imgIconChurch  = nvgCreateImage(vg, "image/通用图标/ICON_CZ_JT.png", 0)
-    imgIconTavern  = nvgCreateImage(vg, "image/通用图标/ICON_CZ_JG.png", 0)
-    imgIconMarket  = nvgCreateImage(vg, "image/通用图标/ICON_CZ_SC.png", 0)
-
-    imgIconUp      = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
-    imgLock        = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+local function ensureTownImages(vg)
+    if townImgsLoaded_ then return end
+    local ctx = vg or townVg_
+    if not ctx then return end
+    townImgsLoaded_ = true
+    imgBg          = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
+    imgLabelBg     = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BQ.png", 0)
+    imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
+    imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)
+    imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
+    imgTavern      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JG.png", 0)
+    imgMarket      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_SJ.png", 0)
+    imgIconChurch  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_JT.png", 0)
+    imgIconTavern  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_JG.png", 0)
+    imgIconMarket  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_SC.png", 0)
+    imgIconUp      = nvgCreateImage(ctx, "image/通用图标/ICON_UP.png", 0)
+    imgLock        = nvgCreateImage(ctx, "image/通用图标/UI_ICON_SUO.png", 0)
 end
 
 function TownScene.draw(vg)
+    ensureTownImages(vg)
     -- 0) 处理延迟回调
     processDeferredActions()
 

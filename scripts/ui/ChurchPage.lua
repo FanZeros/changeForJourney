@@ -319,6 +319,19 @@ local function getHeroCardImage(vg, heroId)
     return cardImg
 end
 
+--- 获取转职职业图标（延迟加载）
+local function getClassIcon2(vg, classId)
+    local h = img.classIcons2[classId]
+    if h ~= nil then return h end
+    if not vg or not classId then
+        img.classIcons2[classId] = -1
+        return -1
+    end
+    local icon = nvgCreateImage(vg, "image/职业图标/UI_icon_ZY_" .. classId .. ".png", 0)
+    img.classIcons2[classId] = icon or -1
+    return img.classIcons2[classId]
+end
+
 --- 检查指定英雄是否有可用转职（用于入口链路角标）
 --- 一转条件：level >= firstLevel 且尚未一转 且金币足够
 --- 二转条件：level >= secondLevel 且已一转但尚未二转 且金币足够
@@ -671,8 +684,14 @@ function ChurchPage.syncTalentFromStore()
     syncTalentLitNodes()
 end
 
+local churchInited_ = false
+local churchVg_ = nil
+
 --- 初始化（加载图片资源，仅调用一次）
 function ChurchPage.init(vg)
+    if churchInited_ then return end
+    churchInited_ = true
+    churchVg_ = vg
     img.bg       = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTZZBJ.png", 0)
     img.nameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     img.btnBack  = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
@@ -687,16 +706,7 @@ function ChurchPage.init(vg)
     img.titleBg    = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
     img.branchLine  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
     img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
-    -- 加载所有职业图标（基础1~6、一转101~112、二转201~224）
-    local classIconIds = {
-        1, 2, 3, 4, 5, 6,                                         -- 基础职业
-        101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, -- 一转
-        201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, -- 二转
-        213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224,
-    }
-    for _, cid in ipairs(classIconIds) do
-        img.classIcons2[cid] = nvgCreateImage(vg, "image/职业图标/UI_icon_ZY_" .. cid .. ".png", 0)
-    end
+    -- 职业图标（基础/一转/二转）按需加载，避免启动同步解码 42 张
 
     -- 角色列表背景（与角色面板相同）
     img.listBg = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_0.png", 0)
@@ -781,6 +791,7 @@ function ChurchPage.init(vg)
         getDispatcher    = getDispatcher,
     }
     TalentPanel.setContext(ctx)
+    ctx.getClassIcon2 = getClassIcon2
     ClassChange.setContext(ctx)
     ArtifactPanel.setContext(ctx)
     ArtifactPanel.init(vg)
@@ -790,6 +801,13 @@ end
 
 --- 打开教堂
 function ChurchPage.open()
+    if not churchInited_ and churchVg_ then
+        ChurchPage.init(churchVg_)
+    end
+    if not churchInited_ then
+        print("[ChurchPage] open before init, skip")
+        return
+    end
     state.open = true
     state.closing = false
     state.openTime = time.elapsedTime

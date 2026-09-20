@@ -9,6 +9,7 @@ local cjson = cjson
 local DrawUtil        = require("core.DrawUtil")
 local BF              = require("systems.ButtonFeedback")
 local ResourceDefs    = require("config.ResourceDefs")
+---@diagnostic disable-next-line: assign-type-mismatch  -- DrawUtil.hitTest 注解宽松，签名一致
 local hitTest         = DrawUtil.hitTest
 
 local Protocol = require("shared.Protocol")

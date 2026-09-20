@@ -29,7 +29,7 @@ import zipfile
 import zlib
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
-from urllib.request import Request, urlopen
+from urllib.request import Request, urlopen, build_opener, install_opener, ProxyHandler
 from urllib.error import HTTPError, URLError
 
 SHELL = Path(__file__).resolve().parent
@@ -466,7 +466,8 @@ def download_dist_snapshot(ver: str) -> None:
 def fetch_latest_snapshot_info(ver: str):
     """返回 (最新资产名, commit短hash|None)；两路都不可达返回 (None, None)。
     路径1: api.github.com 列资产（需可达）；路径2: github.com/expanded_assets HTML
-    （国内对 api.github.com 常不可达而主站可达，作为回退）。"""
+    （国内对 api.github.com 常不可达而主站可达，作为回退）。
+    两路都失败时自动探测本机常见代理端口（浏览器能开而脚本不通=没走代理），探测成功重试一轮。"""
     def from_api():
         api = "https://api.github.com/repos/%s/releases/tags/%s" % (git_remote_repo(), DIST_SNAPSHOT_TAG)
         with urlopen(Request(api, headers={"User-Agent": "zyjm-pack-release"}), timeout=45) as resp:
@@ -481,18 +482,69 @@ def fetch_latest_snapshot_info(ver: str):
         # expanded_assets 列表最新在前（含重复引用），取第一个
         return names[0] if names else ""
 
-    name = ""
-    for attempt, fetcher in enumerate((from_api, from_expanded_assets), 1):
-        try:
-            name = fetcher() or ""
-            if name:
-                break
-        except Exception as e:
-            log("WARN 快照列表获取失败（路径%d: %s），尝试下一路径…" % (attempt, e))
+    def try_both():
+        """返回 (name, saw_list)：saw_list=至少一路网络可达（区别"网络不通"与"列表为空"）。"""
+        saw_list = False
+        for attempt, fetcher in enumerate((from_api, from_expanded_assets), 1):
+            try:
+                name = fetcher()
+                saw_list = True
+                if name:
+                    return name, True
+            except Exception as e:
+                log("WARN 快照列表获取失败（路径%d: %s），尝试下一路径…" % (attempt, e))
+        return "", saw_list
+
+    name, saw_list = try_both()
+    if not saw_list and probe_and_install_proxy():
+        log("代理已启用，重试快照列表获取…")
+        name, saw_list = try_both()
     if not name:
-        return None, None
+        if saw_list:
+            die("云端 Release %s 可达，但没有任何 dist-%s-*.zip 快照资产。\n"
+                "  请让云端会话执行 python pack_release.py --dist-only 上传最新快照。" % (DIST_SNAPSHOT_TAG, ver))
+        die("无法获取云端快照列表（api.github.com 与 github.com 均不可达）。\n"
+            "  浏览器能打开而本脚不行 → 你开着系统代理而脚本直连。\n"
+            "  处理：python pack_release.py --proxy http://127.0.0.1:7890 （换成你的代理端口）\n"
+            "  或先在浏览器打开 https://github.com/FanZeros/changeForJourney/releases/tag/dist-snapshot 验证网络。")
     m = re.match(r"^dist-%s-([0-9a-f]{7,})\.zip$" % re.escape(ver), name)
     return name, (m.group(1) if m else None)
+
+
+PROXY_CLI = None  # --proxy 参数（main 设置）
+PROXY_CANDIDATES = (
+    "http://127.0.0.1:7890",   # Clash
+    "http://127.0.0.1:7897",   # Clash Verge Rev
+    "http://127.0.0.1:10809",  # v2rayN http
+    "http://127.0.0.1:1080",   # 通用 socks/http
+    "http://127.0.0.1:8118",   # privoxy
+    "http://127.0.0.1:8888",   # mitm/fiddler 常用
+)
+
+
+def probe_and_install_proxy() -> bool:
+    """直连失败后探测可用代理（--proxy > 环境变量 > 常见端口），成功则安装全局 opener。"""
+    tried = []
+    if PROXY_CLI:
+        tried.append(PROXY_CLI)
+    else:
+        envp = os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy") \
+            or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+        if envp:
+            tried.append(envp.strip())
+        tried.extend(PROXY_CANDIDATES)
+    for px in tried:
+        try:
+            op = build_opener(ProxyHandler({"http": px, "https": px}))
+            with op.open(Request("https://github.com/", headers={"User-Agent": "zyjm-pack-release"}), timeout=6) as r:
+                if r.status in (200, 301, 302):
+                    install_opener(op)
+                    log("检测到可用代理 %s，后续请求已切换走代理" % px)
+                    return True
+        except Exception:
+            continue
+    log("WARN 常见本地代理端口均不可用，仍为直连")
+    return False
 
 
 def read_local_snapshot_commit() -> "str | None":
@@ -515,11 +567,8 @@ def ensure_dist(ver: str) -> None:
     if not (ROOT / "dist" / "index.html").exists():
         download_dist_snapshot(ver)
         return
-    snap_name, remote_commit = fetch_latest_snapshot_info(ver)
+    snap_name, remote_commit = fetch_latest_snapshot_info(ver)  # 失败会 die（避免静默用过期 dist）
     local_commit = read_local_snapshot_commit()
-    if not snap_name:
-        log("WARN 无法获取云端快照信息，沿用本机现有 dist/")
-        return
     if local_commit and remote_commit and local_commit == remote_commit:
         log("dist/ 已是云端最新快照（commit %s）" % local_commit)
         return
@@ -998,11 +1047,16 @@ def parse_args() -> argparse.Namespace:
                    help="云端用：把 dist/ 打成快照上传 Release dist-snapshot（供本机自动拉取）")
     p.add_argument("--no-fetch-dist", action="store_true",
                    help="本机缺 dist/ 时不自动从 Release 拉快照（直接报错）")
+    p.add_argument("--proxy", default=None, metavar="URL",
+                   help="访问 GitHub 用的 HTTP 代理（如 http://127.0.0.1:7890）；"
+                        "不指定时直连失败会自动探测常见本地代理端口（7890/7897/10809/1080…）")
     return p.parse_args()
 
 
 def main() -> int:
+    global PROXY_CLI
     args = parse_args()
+    PROXY_CLI = (args.proxy or "").strip() or None
     ver = read_version()
     log("version %s" % ver)
     log("shell %s" % SHELL)

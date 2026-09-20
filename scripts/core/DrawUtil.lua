@@ -293,15 +293,9 @@ DrawUtil._heroIconImgs = {}
 --- 初始化碎片图标资源（在主初始化时调用一次）
 ---@param vg any NanoVG context
 function DrawUtil.initShardAssets(vg)
-    if DrawUtil._shardBadgeImg >= 0 then return end  -- 已初始化
-    DrawUtil._shardBadgeImg = nvgCreateImage(vg, "image/货币道具/ICON_SP.png", 0)
-    local HeroAssetUtil = require("config.HeroAssetUtil")
-    for _, i in ipairs(HeroAssetUtil.getAssetIds()) do
-        local path = HeroAssetUtil.getIconPath(i)
-        local img = nvgCreateImage(vg, path, 0)
-        if img >= 0 then
-            DrawUtil._heroIconImgs[i] = img
-        end
+    DrawUtil._shardVg = vg
+    if DrawUtil._shardBadgeImg < 0 then
+        DrawUtil._shardBadgeImg = nvgCreateImage(vg, "image/货币道具/ICON_SP.png", 0)
     end
 end
 
@@ -316,8 +310,9 @@ end
 function DrawUtil.drawShardIcon(vg, heroId, cx, cy, size, alpha)
     if alpha <= 0.01 then return end
 
-    -- 1) 主图标：英雄头像
-    local heroImg = DrawUtil._heroIconImgs[heroId]
+    -- 1) 主图标：英雄头像（按需加载，避免启动同步解码全部头像）
+    local HeroAssetUtil = require("config.HeroAssetUtil")
+    local heroImg = HeroAssetUtil.ensureIcon(DrawUtil._shardVg or vg, DrawUtil._heroIconImgs, heroId)
     if heroImg and heroImg >= 0 then
         DrawUtil.drawImageCentered(vg, heroImg, cx, cy, size, size, alpha)
     end

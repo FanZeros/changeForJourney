@@ -57,7 +57,7 @@ return {
     { "image/通用图标/ICON_LXBJ_1.png", 4051 },
     { "image/通用图标/ICON_LXBJ_2.png", 4109 },
     { "image/界面底板/通用面板/UI_TJP_XL_2.png", 4259 },
-    { "image/界面底板/角色与觉醒/UI_JSJM_DJ.png", 2505 },
+    { "image/界面底板/角色与觉醒/UI_JSJM_DJ.png", 2020743563 },
     { "image/界面底板/角色与觉醒/UI_JX_JT.png", 4432 },
     { "image/界面底板/通用面板/UI_TJP_XL_1.png", 4585 },
     { "image/界面底板/剧情日记/UI_QJDH_BJ1.png", 4597 },

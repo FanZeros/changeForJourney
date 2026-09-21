@@ -56,8 +56,8 @@ local EFFECT_CX, EFFECT_CY = 540, 1830
 local EFFECT_W, EFFECT_H   = 910, 139
 local EFFECT_FONT           = 36
 -- 底栏操作：碎片标识在左、嵌合按钮在右（放大）
-local SHARD_ICON_SIZE = 76
-local SHARD_ICON_CX   = 168
+local SHARD_ICON_SIZE = 114
+local SHARD_ICON_CX   = 196
 local SHARD_ROW_CY    = 2110
 local BTN_CX, BTN_CY = 720, 2110
 local BTN_W, BTN_H   = 520, 128
@@ -448,10 +448,10 @@ function M.draw(vg, heroId)
     DrawUtil.drawShardIcon(vg, heroId, SHARD_ICON_CX, SHARD_ROW_CY, SHARD_ICON_SIZE, 1.0)
     local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0xaa, 0xaa, 0xaa }
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 44)
+    nvgFontSize(vg, 66)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(shardColor[1], shardColor[2], shardColor[3], 255))
-    nvgText(vg, SHARD_ICON_CX + SHARD_ICON_SIZE * 0.5 + 14, SHARD_ROW_CY, fullText, nil)
+    nvgText(vg, SHARD_ICON_CX + SHARD_ICON_SIZE * 0.5 + 18, SHARD_ROW_CY, fullText, nil)
 
     local currentNodeActive = activated[selectedNode]
     local btnText, btnAlpha, btnTextAlpha

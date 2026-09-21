@@ -666,7 +666,38 @@ function M.draw(vg)
         else
             slotImg = img.slotAccessory
         end
-        drawImageCentered(vg, slotImg, slot.cx, slot.cy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)
+        -- 空槽先铺浅金底板，再叠亮色图标，暗背景上才能看见位置
+        local hasEquip = false
+        if heroEquipped and heroInventory then
+            local seqPre = heroEquipped[slot.slot]
+            if seqPre and heroInventory[tostring(seqPre)] then hasEquip = true end
+        end
+        if not hasEquip then
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg,
+                slot.cx - DT_SLOT_SIZE * 0.5,
+                slot.cy - DT_SLOT_SIZE * 0.5,
+                DT_SLOT_SIZE, DT_SLOT_SIZE, 22)
+            nvgFillColor(vg, nvgRGBA(210, 186, 140, 70))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(232, 204, 140, 210))
+            nvgStrokeWidth(vg, 3)
+            nvgStroke(vg)
+        end
+        if slotImg and slotImg >= 0 then
+            if not hasEquip then
+                local x = slot.cx - DT_SLOT_SIZE * 0.5
+                local y = slot.cy - DT_SLOT_SIZE * 0.5
+                local paint = nvgImagePatternTinted(vg, x, y, DT_SLOT_SIZE, DT_SLOT_SIZE, 0, slotImg,
+                    nvgRGBA(255, 236, 196, 255))
+                nvgBeginPath(vg)
+                nvgRect(vg, x, y, DT_SLOT_SIZE, DT_SLOT_SIZE)
+                nvgFillPaint(vg, paint)
+                nvgFill(vg)
+            else
+                drawImageCentered(vg, slotImg, slot.cx, slot.cy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)
+            end
+        end
 
         local equippedEquip = nil
         local isTwohandOccupied = false
@@ -837,18 +868,20 @@ function M.draw(vg)
     -- === 6) 角色详情属性背景图（静态，不参与切换动画） ===
     drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
 
-    -- === 7) "角色详情" 标题文本（静态） ===
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 30)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    local titleSW = 4
-    nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 255))
-    for i = 0, 15 do
-        local a = i * stepAngle
-        nvgText(vg, MID_TITLE_CX + math.cos(a) * titleSW, MID_TITLE_CY + math.sin(a) * titleSW, "角色详情", nil)
+    -- === 7) "角色详情" 标题：配装页改画槽位名，避免和「主武器」叠在同一条上 ===
+    if detailState.tab ~= "equip" then
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 30)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        local titleSW = 4
+        nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 255))
+        for i = 0, 15 do
+            local a = i * stepAngle
+            nvgText(vg, MID_TITLE_CX + math.cos(a) * titleSW, MID_TITLE_CY + math.sin(a) * titleSW, "角色详情", nil)
+        end
+        nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
+        nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, "角色详情", nil)
     end
-    nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
-    nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, "角色详情", nil)
     end  -- if not isAwakenTab（6b~7 节）
 
     -- === 动态内容开始（箭头切换时水平滑入+淡入） ===
@@ -856,8 +889,8 @@ function M.draw(vg)
     nvgTranslate(vg, switchOX, 0)
     nvgGlobalAlpha(vg, switchAlpha)
 
-    -- === 8) 角色名称（配装页也显示：卡片名牌已移除） ===
-    if not isAwakenTab then
+    -- === 8) 角色名称（配装页顶栏改画槽位名，这里不再画） ===
+    if not isAwakenTab and detailState.tab ~= "equip" then
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 42)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)

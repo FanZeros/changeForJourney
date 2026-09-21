@@ -484,14 +484,24 @@ function M.draw(vg, heroId, detailState)
 
     nvgRestore(vg)
 
-    -- 槽位名称（与卡片角色名相同样式，位于格子区域上方）
-    local slotNames = { weapon = "主武器", offhand = "副武器", armor = "护甲", accessory = "饰品" }
+    -- 槽位名称画在底板顶栏（原「角色详情」位置），不再和标题叠字
+    local slotNames = {
+        weapon = "主武器", offhand = "副武器", armor = "护甲",
+        helmet = "头盔", shoes = "鞋子", accessory = "饰品",
+    }
     local slotLabel = slotNames[panelState.slot] or "装备"
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 42)
+    nvgFontSize(vg, 30)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x7b, 0x53, 0x39, 255))
-    nvgText(vg, DESIGN_W * 0.5, 995, slotLabel, nil)
+    local titleSW = 4
+    local stepAngle = math.pi * 2 / 16
+    nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 255))
+    for i = 0, 15 do
+        local a = i * stepAngle
+        nvgText(vg, DESIGN_W * 0.5 + math.cos(a) * titleSW, 860 + math.sin(a) * titleSW, slotLabel, nil)
+    end
+    nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
+    nvgText(vg, DESIGN_W * 0.5, 860, slotLabel, nil)
 end
 
 --- 处理输入（格子点击+滚动）

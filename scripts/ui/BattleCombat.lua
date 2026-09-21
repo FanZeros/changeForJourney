@@ -439,7 +439,7 @@ BattleCombat.syncUnitHp = syncUnitHp
 ---@param fontSize number|nil
 local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred)
     -- [伤害排队] deferred=true 时先入待显示队列，由 updateFloatingTexts 按间隔放出
-    -- （多个伤害同帧产生时依次显示：队列>3 间隔 0.1s，否则 0.2s）
+    -- （多个伤害同帧产生时依次显示，间隔统一 0.1s）
     if deferred then
         if #BCS.pendingFt >= 20 then
             table.remove(BCS.pendingFt, 1)  -- 防极端积累：丢弃最老
@@ -449,7 +449,7 @@ local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred)
             color = color, isCrit = isCrit or false, fontSize = fontSize,
         }
         if #BCS.pendingFt == 1 then
-            BCS.ftSpawnCd = 0  -- [伤害排队] 首条立即显示；后续才相对上一条间隔 0.2/0.1s
+            BCS.ftSpawnCd = 0  -- [伤害排队] 首条立即显示；后续相对上一条间隔 0.1s
         end
         return
     end
@@ -2104,13 +2104,13 @@ end
 -- ======================== 浮动文字更新 ========================
 
 function BattleCombat.updateFloatingTexts(dt)
-    -- [伤害排队] 待显示伤害飘字按间隔放出（剩余>3 时 0.1s，否则 0.2s）
+    -- [伤害排队] 待显示伤害飘字按间隔放出（统一 0.1s）
     if #BCS.pendingFt > 0 then
         BCS.ftSpawnCd = BCS.ftSpawnCd - dt
         if BCS.ftSpawnCd <= 0 then
             local p = table.remove(BCS.pendingFt, 1)
             addFloatingText(p.text, p.cx, p.cy, p.color, p.isCrit, p.fontSize, false)
-            BCS.ftSpawnCd = (#BCS.pendingFt > 3) and 0.1 or 0.2
+            BCS.ftSpawnCd = 0.1
         end
     end
     local i = 1

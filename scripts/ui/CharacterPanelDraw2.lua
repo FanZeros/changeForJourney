@@ -539,12 +539,12 @@ function M.draw(vg, scrollY)
         totalPowerStr, 30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         247, 254, 119, 4)
 
-    -- 5) "我的冒险家"标题
+    -- 5) "远征团"标题
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 42)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0x7b, 0x53, 0x39, 255))
-    nvgText(vg, MY_HEROES_CX, MY_HEROES_CY, "我的冒险家", nil)
+    nvgText(vg, MY_HEROES_CX, MY_HEROES_CY, "远征团", nil)
 
     -- 6) 角色卡片行（可滚动区域，裁剪到可视范围）
     nvgSave(vg)

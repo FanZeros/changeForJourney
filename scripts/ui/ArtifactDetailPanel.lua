@@ -464,7 +464,7 @@ function ArtifactDetailPanel.draw(vg)
     DarkIcon.drawNine(vg, "panel",
         BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
         BG.W, BG.H,
-        { titleH = BG.IT, accent = DarkIcon.QUALITY_ACCENTS[q] })
+        { titleH = BG.IT, accent = DarkIcon.QUALITY_TRIM[q] })
 
     drawArtifactIcon(vg, artifact, ARTIFACT_ICON.CX, ARTIFACT_ICON.CY, ARTIFACT_ICON.W)
 

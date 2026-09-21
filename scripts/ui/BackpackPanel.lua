@@ -113,6 +113,41 @@ local CAP_TEXT = {
 }
 local BAG_MAX = EquipmentSystem.MAX_INVENTORY
 
+-- ======================== [横屏左栏] 紧凑布局 ========================
+-- 窗口模态（横屏左栏）下：隐藏顶部大图、面板/网格上移，一屏显示更多装备格。
+-- 采用 open 时改写常量表的方式，绘制与输入共用同一套常量，避免双份布局代码。
+-- ⚠️ 必须放在全部布局常量（含 CAP_TEXT/BTN_*）定义之后：Lua 词法作用域。
+local LAYOUT_ORIG = nil
+local function isCompact()
+    return hostMode_ == "window"
+end
+local function applyLayout(compact)
+    if not LAYOUT_ORIG then
+        LAYOUT_ORIG = {
+            lowerCY = LOWER_PANEL.CY, lowerH = LOWER_PANEL.H,
+            firstRow = GRID.FIRST_ROW_TOP, clipBottom = GRID.CLIP_BOTTOM,
+            titleY = GRID_TITLE.Y, pzCy = PZSX.CY,
+            btnDecY = BTN_CONFIRM_DEC.CY, btnBatchY = BTN_BATCH_DEC.CY,
+            capY = CAP_TEXT.Y,
+        }
+    end
+    if compact then
+        LOWER_PANEL.CY, LOWER_PANEL.H = 1300, 2100
+        GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 430, 2060
+        GRID_TITLE.Y, PZSX.CY = 380, 375
+        BTN_CONFIRM_DEC.CY, BTN_BATCH_DEC.CY = 2160, 2160
+        CAP_TEXT.Y = 2230
+    else
+        LOWER_PANEL.CY, LOWER_PANEL.H = LAYOUT_ORIG.lowerCY, LAYOUT_ORIG.lowerH
+        GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = LAYOUT_ORIG.firstRow, LAYOUT_ORIG.clipBottom
+        GRID_TITLE.Y, PZSX.CY = LAYOUT_ORIG.titleY, LAYOUT_ORIG.pzCy
+        BTN_CONFIRM_DEC.CY, BTN_BATCH_DEC.CY = LAYOUT_ORIG.btnDecY, LAYOUT_ORIG.btnBatchY
+        CAP_TEXT.Y = LAYOUT_ORIG.capY
+    end
+    CLIP_TOP = GRID.FIRST_ROW_TOP
+    CLIP_H   = GRID.CLIP_BOTTOM - CLIP_TOP
+end
+
 -- 8. 返回按钮（与签到面板一致）
 local BTN_BACK = {
     CX = 122, CY = 2308, W = 184, H = 143,
@@ -893,7 +928,7 @@ local function drawItemDetail(vg)
     local q = math.min(def.quality or 1, 6)
     DarkIcon.drawNine(vg, "panel",
         540 - 530 * 0.5, 1158 - 650 * 0.5, 530, 650,
-        { titleH = 400, accent = DarkIcon.QUALITY_ACCENTS[q] })
+        { titleH = 400, accent = DarkIcon.QUALITY_TRIM[q] })
 
     -- 2. 道具名称 X左对齐317 Y893 字号40 白色 黑色描边4
     local itemName = def.name or ""
@@ -1068,6 +1103,7 @@ end
 ---@param windowMode? boolean true=全窗居中模态(横屏仓库入口)；nil/false=内嵌(竖屏/日志页内)
 function Panel.open(windowMode)
     hostMode_ = windowMode and "window" or "inline"
+    applyLayout(isCompact())
     state.open = true
     state.closing = false
     state.openTime = time.elapsedTime
@@ -1128,6 +1164,7 @@ function Panel.update(dt)
         if elapsed >= ANIM_CLOSE_DUR then
             state.open = false
             state.closing = false
+            applyLayout(false)  -- 恢复竖版原布局
             print("[BackpackPanel] closed (anim done)")
         end
         return
@@ -1172,6 +1209,8 @@ local function drawBody(vg)
     nvgFill(vg)
 
     -- === 上半部分（从屏幕上方滑入）：顶部背景 + 标题 ===
+    -- [横屏左栏紧凑] 窗口模式不画顶部大图，网格从面板顶部开始
+    if not isCompact() then
     nvgSave(vg)
     nvgTranslate(vg, 0, upperOY)
 
@@ -1187,6 +1226,7 @@ local function drawBody(vg)
     nvgText(vg, TITLE.TEXT_CX, TITLE.TEXT_CY, TITLE.TEXT, nil)
 
     nvgRestore(vg)
+    end
 
     -- === 下半部分（从屏幕下方滑入）：面板 + 内容 + Tab ===
     nvgSave(vg)

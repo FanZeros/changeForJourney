@@ -1338,13 +1338,13 @@ local function HorizonUpdateTransform()
     end
 end
 
---- [仓库入口] 背包模态限定矩形：三行布局=中栏，左右栏保持亮且可点
-local function horizonCenterRect()
+--- [仓库入口] 背包模态限定矩形：左栏（与教堂/酒馆同侧），中/右栏保持亮且可点
+local function horizonBackpackRect()
     if BattleTriPage.isOpen() then
         local ps = logicalH / 1080
-        return { x = 486 * ps, y = 0, w = logicalW - 1458 * ps, h = logicalH }
+        return { x = 0, y = 0, w = 486 * ps, h = logicalH }
     end
-    return { x = H_ox, y = H_oy, w = 972 * H_s, h = 1080 * H_s }
+    return { x = H_ox, y = H_oy, w = 486 * H_s, h = 1080 * H_s }
 end
 
 -- [底栏移除] 横屏日志(2)/副本(5)页：竖版设计全窗等比铺（模态层）
@@ -1646,7 +1646,7 @@ function HandleNanoVGRenderHorizon()
         -- [底栏移除] 日志/副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
         HorizonDrawPageModal(vg)
         -- [仓库入口] 背包模态限定中栏（左右栏保持亮且可点）
-        BackpackPanel.drawWindow(vg, logicalW, logicalH, horizonCenterRect())
+        BackpackPanel.drawWindow(vg, logicalW, logicalH, horizonBackpackRect())
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面
         if DarkTitleScreen.isOpen() then
@@ -1695,7 +1695,7 @@ function HandleNanoVGRenderHorizon()
     -- [底栏移除] 日志/副本页全窗竖版模态
     HorizonDrawPageModal(vg)
     -- [仓库入口] 背包模态限定中栏（左右栏保持亮且可点）
-    BackpackPanel.drawWindow(vg, logicalW, logicalH, horizonCenterRect())
+    BackpackPanel.drawWindow(vg, logicalW, logicalH, horizonBackpackRect())
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.draw(vg, logicalW, logicalH)
@@ -1768,7 +1768,7 @@ local function HorizonResolveMouse()
     end
     -- [仓库入口] 背包模态：仅中栏矩形内吞输入；左右栏保持可点（仓库/黑市/教堂等照常）
     if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
-        local R = horizonCenterRect()
+        local R = horizonBackpackRect()
         if sx >= R.x and sx <= R.x + R.w and sy >= R.y and sy <= R.y + R.h then
             return 'backpack', sx, sy
         end
@@ -1788,7 +1788,7 @@ end
 
 --- [仓库入口] 窗口坐标 → 背包竖版设计坐标（中栏矩形内）
 local function backpackCoords(wx, wy)
-    return BackpackPanel.toDesignCoords(wx, wy, logicalW, logicalH, horizonCenterRect())
+    return BackpackPanel.toDesignCoords(wx, wy, logicalW, logicalH, horizonBackpackRect())
 end
 
 function HandleMouseButtonDownHorizon(eventType, eventData)

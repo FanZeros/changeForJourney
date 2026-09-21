@@ -52,13 +52,16 @@ local NODE_FILL = {
 
 -- 底栏
 local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1690
-local SUB_TITLE_W, SUB_TITLE_H   = 660, 60
 local EFFECT_CX, EFFECT_CY = 540, 1830
 local EFFECT_W, EFFECT_H   = 910, 139
 local EFFECT_FONT           = 36
-local BTN_CX, BTN_CY = 540, 2110
-local BTN_W, BTN_H   = 410, 100
-local BTN_TEXT_FONT  = 40
+-- 底栏操作：碎片标识在左、嵌合按钮在右（放大）
+local SHARD_ICON_SIZE = 76
+local SHARD_ICON_CX   = 168
+local SHARD_ROW_CY    = 2110
+local BTN_CX, BTN_CY = 720, 2110
+local BTN_W, BTN_H   = 520, 128
+local BTN_TEXT_FONT  = 46
 
 M.BTN_CX = BTN_CX
 M.BTN_CY = BTN_CY
@@ -76,7 +79,6 @@ local CLASS_ICON_MAP = {
 
 local imgBg            = -1
 local imgTitleBg       = -1
-local imgSubTitleBg    = -1
 local imgActivateBtn   = -1
 local imgSelectArrow   = -1
 local imgBadges        = {}
@@ -187,7 +189,6 @@ end
 function M.initImages(vg)
     imgBg          = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_BJ.png", 0)
     imgTitleBg     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_1.png", 0)
-    imgSubTitleBg  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
     imgActivateBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgSelectArrow = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_JT.png", 0)
 
@@ -406,12 +407,6 @@ function M.draw(vg, heroId)
         dw, dh, v0 = cgLayout(vg, cgImg)
     end
 
-    -- 进度角标
-    drawTextStroke(vg, 1030, 330, "觉醒 " .. activatedCount .. "/" .. NODE_COUNT,
-        30, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-        0xff, 0xef, 0x67, 4,
-        { strokeColor = { 0x1a, 0x14, 0x22 } })
-
     for i = 1, NODE_COUNT do
         local state = activated[i] and "active" or (i == nextNode and "next" or "locked")
         if i ~= selectedNode then
@@ -431,11 +426,10 @@ function M.draw(vg, heroId)
             ARROW_W, ARROW_H, 1.0)
     end
 
-    -- 底栏（保持原交互）
+    -- 底栏标题（去掉两侧花纹底板，只留文字）
     local nodeTitle, nodeEffect = getNodeInfo(selectedNode, heroCfg, heroId)
-    drawImageCentered(vg, imgSubTitleBg, SUB_TITLE_CX, SUB_TITLE_CY, SUB_TITLE_W, SUB_TITLE_H, 1.0)
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 38)
+    nvgFontSize(vg, 42)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xff, 0xef, 0x67, 255))
     nvgText(vg, SUB_TITLE_CX, SUB_TITLE_CY, nodeTitle, nil)
@@ -448,21 +442,16 @@ function M.draw(vg, heroId)
 
     local selectedCost = AKC.getShardCost(selectedNode)
     local shardSufficient = currentShards >= selectedCost and selectedCost > 0
-    local shardRowY = BTN_CY - BTN_H * 0.5 - 28
-    local SHARD_ICON_SIZE = 44
     local shardNumText = tostring(currentShards)
     local costText = selectedCost > 0 and ("/" .. selectedCost) or ""
     local fullText = shardNumText .. costText
-    local textW = 120
-    local totalW = SHARD_ICON_SIZE + 8 + textW
-    local startX = BTN_CX - totalW * 0.5
-    DrawUtil.drawShardIcon(vg, heroId, startX + SHARD_ICON_SIZE * 0.5, shardRowY, SHARD_ICON_SIZE, 1.0)
+    DrawUtil.drawShardIcon(vg, heroId, SHARD_ICON_CX, SHARD_ROW_CY, SHARD_ICON_SIZE, 1.0)
     local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0xaa, 0xaa, 0xaa }
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 34)
+    nvgFontSize(vg, 44)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(shardColor[1], shardColor[2], shardColor[3], 255))
-    nvgText(vg, startX + SHARD_ICON_SIZE + 8, shardRowY, fullText, nil)
+    nvgText(vg, SHARD_ICON_CX + SHARD_ICON_SIZE * 0.5 + 14, SHARD_ROW_CY, fullText, nil)
 
     local currentNodeActive = activated[selectedNode]
     local btnText, btnAlpha, btnTextAlpha

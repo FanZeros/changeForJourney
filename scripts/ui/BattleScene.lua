@@ -30,6 +30,8 @@ local DarkIcon = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
 
 local BattleResultPanel = require("ui.BattleResultPanel")
 local OfflineCalc = require("systems.OfflineCalc")
+local TerminalConfirmDialog = require("ui.TerminalConfirmDialog")
+local MonsterInfoPopup = require("ui.MonsterInfoPopup")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -133,32 +135,6 @@ local idleRangeText_ = nil  -- 挂机范围显示文本缓存
 -- 默认攻击间隔（秒）
 local DEFAULT_ALLY_INTERVAL  = 1.0
 local DEFAULT_ENEMY_INTERVAL = 1.5
-
--- ======================== 长按怪物信息弹窗 ========================
-local LONG_PRESS_THRESHOLD = 0.4  -- 秒
-local longPress = {
-    active = false,       -- 是否正在检测
-    fired = false,        -- 是否已触发弹窗
-    startTime = 0,
-    startX = 0,
-    startY = 0,
-    showPopup = false,    -- 弹窗是否显示
-    unit = nil,           -- 命中的怪物 unit
-}
-
--- 攻击类型名称
-local ATK_TYPE_NAMES = {
-    [1] = "斩击", [2] = "粉碎", [3] = "穿刺", [4] = "业火",
-    [5] = "冥霜", [6] = "雷殛", [7] = "暗影", [8] = "烛照",
-}
--- 护甲类型名称
-local ARMOR_TYPE_NAMES = {
-    [1] = "皮甲", [2] = "轻甲", [3] = "重甲", [4] = "板甲", [5] = "布甲",
-}
-
--- 前向声明（实现在文件末尾）
-local updateLongPress
-local drawMonsterInfoPopup
 
 -- 敌方单位列表（场上）
 local enemies = {}
@@ -293,185 +269,9 @@ local BG_FADE_OUT_RATIO   = 0.45  -- 前 45% 为缩放淡出，后 55% 为淡入
 local BG_ZOOM_FWD_TARGET  = 1.3   -- 前进：放大淡出
 local BG_ZOOM_BACK_TARGET = 0.7   -- 后退：缩小淡出
 
--- ======================== 终焉神殿确认弹窗 ========================
-
-
-
-
--- 弹窗状态
-local confirmDialog = {
-    open     = false,
-    closing  = false,
-    openTime = 0,
-    closeTime = 0,
-    pendingNextId = nil,  -- 待进入的终焉神殿关卡 ID
-}
-
--- 弹窗动画参数
-local CONFIRM_OPEN_DUR  = 0.25
-local CONFIRM_CLOSE_DUR = 0.20
-local CONFIRM_SCALE_FROM = 0.8
-local CONFIRM_SCALE_TO   = 1.0
-
--- 弹窗布局常量（设计分辨率 1080×2400，对齐购买道具弹窗样式）
-local CDL = {
-    BG_CX = 540, BG_CY = 1100, BG_W = 950, BG_H = 647,
-    -- 标题（白色 + 棕色描边，位于卡片顶部边缘）
-    TITLE_CY  = 847,  TITLE_FONT = 60, TITLE_SW = 6,
-    TITLE_SR = 0x46, TITLE_SG = 0x2f, TITLE_SB = 0x20,
-    -- 副标题（#725850）
-    SUB_CY = 960, SUB_FONT = 40,
-    -- 正文行（#725850）
-    LINE1_CY  = 1060, LINE_FONT  = 38,
-    LINE2_CY  = 1120,
-    LINE3_CY  = 1180, LINE3_FONT = 32,
-    -- 确认按钮（九宫格绿色按钮）
-    OK_CX = 340, OK_CY = 1310, OK_W = 310, OK_H = 100, OK_FONT = 40,
-    OK_TR = 0x2a, OK_TG = 0x52, OK_TB = 0x18,  -- 按钮文字颜色
-    -- 取消按钮（九宫格灰色按钮）
-    CANCEL_CX = 740, CANCEL_CY = 1310, CANCEL_W = 310, CANCEL_H = 100, CANCEL_FONT = 40,
-    CANCEL_TR = 0x50, CANCEL_TG = 0x46, CANCEL_TB = 0x3c,
-}
-
 --- 全局章节号转难度内相对章节号
 local function getRelativeChapter(chapter)
     return SC.getRelativeChapter(chapter)
-end
-
---- 九宫格绘制（局部函数，与其他页面一致）
-local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLeft)
-    if img < 0 then return end
-    local iw, ih = nvgImageSize(vg, img)
-    if iw <= 0 or ih <= 0 then return end
-    -- 九个区域的源/目标坐标
-    local sx = { 0, iLeft, iw - iRight }
-    local sy = { 0, iTop, ih - iBottom }
-    local sw = { iLeft, iw - iLeft - iRight, iRight }
-    local sh = { iTop, ih - iTop - iBottom, iBottom }
-    local ddx = { dx, dx + iLeft, dx + dw - iRight }
-    local ddy = { dy, dy + iTop, dy + dh - iBottom }
-    local ddw = { iLeft, dw - iLeft - iRight, iRight }
-    local ddh = { iTop, dh - iTop - iBottom, iBottom }
-    for row = 1, 3 do
-        for col = 1, 3 do
-            if ddw[col] > 0 and ddh[row] > 0 then
-                local scaleX = ddw[col] / sw[col]
-                local scaleY = ddh[row] / sh[row]
-                nvgSave(vg)
-                nvgTranslate(vg, ddx[col], ddy[row])
-                nvgScale(vg, scaleX, scaleY)
-                nvgBeginPath(vg)
-                nvgRect(vg, 0, 0, sw[col], sh[row])
-                local pat = nvgImagePattern(vg, -sx[col], -sy[row], iw, ih, 0, img, 1.0)
-                nvgFillPaint(vg, pat)
-                nvgFill(vg)
-                nvgRestore(vg)
-            end
-        end
-    end
-end
-
---- 弹窗缓动函数
-local function easeOutCubic(t)
-    local t1 = 1 - t
-    return 1 - t1 * t1 * t1
-end
-local function easeInCubic(t)
-    return t * t * t
-end
-
---- 获取确认弹窗动画状态
----@return number scale, number alpha, boolean done
-local function getConfirmAnim()
-    if confirmDialog.closing then
-        local t = math.min(1.0, (time.elapsedTime - confirmDialog.closeTime) / CONFIRM_CLOSE_DUR)
-        local e = easeInCubic(t)
-        local scale = CONFIRM_SCALE_TO + (CONFIRM_SCALE_FROM - CONFIRM_SCALE_TO) * e
-        return scale, 1.0 - e, (t >= 1.0)
-    else
-        local t = math.min(1.0, (time.elapsedTime - confirmDialog.openTime) / CONFIRM_OPEN_DUR)
-        local e = easeOutCubic(t)
-        local scale = CONFIRM_SCALE_FROM + (CONFIRM_SCALE_TO - CONFIRM_SCALE_FROM) * e
-        return scale, e, false
-    end
-end
-
---- 获取轮回后的难度中文名
-local function getDifficultyDisplayName(diff)
-    return getStageConfig().getDifficultyDisplayName(diff)
-end
-
---- 绘制终焉神殿确认弹窗（样式对齐购买道具弹窗）
-local function drawConfirmDialog(vg)
-    if not confirmDialog.open and not confirmDialog.closing then return end
-
-    local pScale, pAlpha, done = getConfirmAnim()
-    if confirmDialog.closing and done then
-        confirmDialog.closing = false
-        confirmDialog.open = false
-        confirmDialog.pendingNextId = nil
-        return
-    end
-
-    -- 获取当前难度和轮回后难度名
-    local stageConfig = getStageConfig()
-    local currentDiff = stageConfig.getDifficulty(currentStageId)
-    local nextDiff = stageConfig.getNextDifficulty(currentDiff)
-    local nextDiffName = getDifficultyDisplayName(nextDiff)
-
-    -- 1) 黑色遮罩
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, 2400)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(128 * pAlpha)))
-    nvgFill(vg)
-
-    -- 2) 缩放+淡入变换
-    nvgSave(vg)
-    nvgTranslate(vg, CDL.BG_CX, CDL.BG_CY)
-    nvgScale(vg, pScale, pScale)
-    nvgTranslate(vg, -CDL.BG_CX, -CDL.BG_CY)
-    nvgGlobalAlpha(vg, pAlpha)
-
-    -- 3) 九宫格背景
-    DarkIcon.drawNine(vg, "panel", CDL.BG_CX - CDL.BG_W * 0.5, CDL.BG_CY - CDL.BG_H * 0.5, CDL.BG_W, CDL.BG_H, { titleH = 40 })
-
-    -- 4) 标题（白色 + 棕色描边，与购买弹窗一致）
-    BattleDraw.drawTextStroke(vg, CDL.BG_CX, CDL.TITLE_CY, "⚠ 终焉神殿", CDL.TITLE_FONT,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, CDL.TITLE_SW,
-        { strokeColor = { CDL.TITLE_SR, CDL.TITLE_SG, CDL.TITLE_SB } })
-
-    -- 5) 副标题（与购买弹窗 "是否购买此道具" 同位置同风格）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, CDL.SUB_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
-    nvgText(vg, CDL.BG_CX, CDL.SUB_CY, "确认进入终焉神殿？", nil)
-
-    -- 6) 说明文本（#725850）
-    nvgFontSize(vg, CDL.LINE_FONT)
-    nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-    nvgText(vg, CDL.BG_CX, CDL.LINE1_CY, "进入后将无法退出", nil)
-    nvgText(vg, CDL.BG_CX, CDL.LINE2_CY, "通关后进入「" .. nextDiffName .. "」轮回", nil)
-
-    nvgFontSize(vg, CDL.LINE3_FONT)
-    nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 200))
-    nvgText(vg, CDL.BG_CX, CDL.LINE3_CY, "（挑战失败将回退到上一关）", nil)
-
-    -- 7) 确认按钮（九宫格绿色按钮）
-    DarkIcon.drawNine(vg, "btn", CDL.OK_CX - CDL.OK_W * 0.5, CDL.OK_CY - CDL.OK_H * 0.5, CDL.OK_W, CDL.OK_H, { accent = "green" })
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, CDL.OK_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(CDL.OK_TR, CDL.OK_TG, CDL.OK_TB, 255))
-    nvgText(vg, CDL.OK_CX, CDL.OK_CY, "进入", nil)
-
-    -- 8) 取消按钮（九宫格灰色按钮）
-    DarkIcon.drawNine(vg, "btn", CDL.CANCEL_CX - CDL.CANCEL_W * 0.5, CDL.CANCEL_CY - CDL.CANCEL_H * 0.5, CDL.CANCEL_W, CDL.CANCEL_H, { accent = "green" })
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, CDL.CANCEL_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(CDL.CANCEL_TR, CDL.CANCEL_TG, CDL.CANCEL_TB, 255))
-    nvgText(vg, CDL.CANCEL_CX, CDL.CANCEL_CY, "取消", nil)
-
-    nvgRestore(vg)
 end
 
 -- 背景持续动效：上下缓慢漂移
@@ -530,7 +330,7 @@ function BattleScene.isSpeedButtonVisible()
     return isFirstClear and battleActive and not isPaused
         and BattleScene.getMaxUnlockedBattleSpeed() > 1.0
         and not BattleResultPanel.isOpen()
-        and not confirmDialog.open and not confirmDialog.closing
+        and not TerminalConfirmDialog.isOpen()
         and not SweepDialog.isOpen() and not DamageStatsPanel.isOpen()
         and searchingTimer == nil and defeatTimer == nil and reincarnationTimer == nil
 end
@@ -1754,13 +1554,13 @@ function BattleScene.draw(vg)
     DamageStatsPanel.draw(vg)
 
     -- ---- 终焉神殿确认弹窗（最上层绘制） ----
-    drawConfirmDialog(vg)
+    TerminalConfirmDialog.draw(vg, currentStageId, getStageConfig)
 
     -- ---- 副本结算面板（最顶层） ----
     BattleResultPanel.draw(vg)
 
     -- ---- 长按怪物属性弹窗（最最顶层） ----
-    drawMonsterInfoPopup(vg)
+    MonsterInfoPopup.draw(vg)
 end
 
 function BattleScene.update(dt)
@@ -1778,17 +1578,10 @@ function BattleScene.update(dt)
     end
 
     -- ---- 长按怪物检测 ----
-    updateLongPress()
+    MonsterInfoPopup.update(enemies)
 
     -- ---- 终焉神殿确认弹窗关闭动画更新 ----
-    if confirmDialog.closing then
-        local _, _, done = getConfirmAnim()
-        if done then
-            confirmDialog.closing = false
-            confirmDialog.open = false
-            confirmDialog.pendingNextId = nil
-        end
-    end
+    TerminalConfirmDialog.update()
 
     -- 暂停时只更新动画/浮字（保持视觉流畅），不推进战斗逻辑
     if isPaused then
@@ -2688,11 +2481,7 @@ function BattleScene.nextStage()
                 nextId = skipToId
             else
                 -- 未通关：弹出确认弹窗
-                confirmDialog.open = true
-                confirmDialog.closing = false
-                confirmDialog.openTime = time.elapsedTime
-                confirmDialog.pendingNextId = nextId
-                print("[BattleScene] 终焉神殿确认弹窗打开, nextId=" .. tostring(nextId))
+                TerminalConfirmDialog.open(nextId)
                 return
             end
         end
@@ -2753,35 +2542,8 @@ function BattleScene.handleInput(dx, dy)
     end
 
     -- 确认弹窗打开时，拦截所有输入
-    if confirmDialog.open or confirmDialog.closing then
-        if confirmDialog.closing then return true end
-        -- 打开动画未完成时不响应按钮（但消费事件防穿透）
-        if (time.elapsedTime - confirmDialog.openTime) < CONFIRM_OPEN_DUR then return true end
-        -- 确认按钮「进入」
-        if dx >= CDL.OK_CX - CDL.OK_W * 0.5 and dx <= CDL.OK_CX + CDL.OK_W * 0.5
-           and dy >= CDL.OK_CY - CDL.OK_H * 0.5 and dy <= CDL.OK_CY + CDL.OK_H * 0.5 then
-            local nextId = confirmDialog.pendingNextId
-            confirmDialog.open = false
-            confirmDialog.pendingNextId = nil
-            if nextId then
-                doEnterTerminalTemple(nextId)
-            end
-            return true
-        end
-        -- 取消按钮
-        if dx >= CDL.CANCEL_CX - CDL.CANCEL_W * 0.5 and dx <= CDL.CANCEL_CX + CDL.CANCEL_W * 0.5
-           and dy >= CDL.CANCEL_CY - CDL.CANCEL_H * 0.5 and dy <= CDL.CANCEL_CY + CDL.CANCEL_H * 0.5 then
-            confirmDialog.closing = true
-            confirmDialog.closeTime = time.elapsedTime
-            return true
-        end
-        -- 点击弹窗外区域 → 取消
-        if dx < CDL.BG_CX - CDL.BG_W * 0.5 or dx > CDL.BG_CX + CDL.BG_W * 0.5
-           or dy < CDL.BG_CY - CDL.BG_H * 0.5 or dy > CDL.BG_CY + CDL.BG_H * 0.5 then
-            confirmDialog.closing = true
-            confirmDialog.closeTime = time.elapsedTime
-        end
-        return true  -- 消费所有点击，阻止穿透
+    if TerminalConfirmDialog.handleInput(dx, dy, doEnterTerminalTemple) then
+        return true
     end
 
     -- 扫荡弹窗（已打开时拦截所有输入；入口按钮点击）
@@ -3230,205 +2992,16 @@ function BattleScene.isPaused()
     return isPaused
 end
 
--- ======================== 长按怪物信息 ========================
+-- ======================== 长按怪物信息（委托 MonsterInfoPopup） ========================
 
 --- 按下开始（由 ClientInput dispatchDragBegin 调用）
 function BattleScene.handlePressBegin(dx, dy)
-    longPress.active = true
-    longPress.fired = false
-    longPress.startTime = time.elapsedTime
-    longPress.startX = dx
-    longPress.startY = dy
-    longPress.showPopup = false
-    longPress.unit = nil
+    MonsterInfoPopup.handlePressBegin(dx, dy)
 end
 
 --- 按下结束（由 ClientInput dispatchDragEnd 调用）
 function BattleScene.handlePressEnd()
-    longPress.active = false
-    longPress.fired = false
-    -- 松开时关闭弹窗
-    if longPress.showPopup then
-        longPress.showPopup = false
-        longPress.unit = nil
-    end
-end
-
---- 长按检测（在 BattleScene.update 中调用）
-updateLongPress = function()
-    if not longPress.active or longPress.fired then return end
-    local elapsed = time.elapsedTime - longPress.startTime
-    if elapsed < LONG_PRESS_THRESHOLD then return end
-
-    -- 到达长按阈值，检测命中哪个怪物
-    longPress.fired = true
-    local dx, dy = longPress.startX, longPress.startY
-
-    for i, u in ipairs(enemies) do
-        if u.hp and u.hp > 0 then
-            local cx = getCardCX(enemies, i)
-            local cy = ENEMY_CARD_CY
-            if math.abs(dx - cx) <= CARD_W * 0.5 and math.abs(dy - cy) <= CARD_H * 0.5 then
-                longPress.unit = u
-                longPress.showPopup = true
-                print("[BattleScene] 长按命中怪物: " .. tostring(u.name))
-                return
-            end
-        end
-    end
-end
-
---- 绘制怪物属性弹窗
-drawMonsterInfoPopup = function(vg)
-    if not longPress.showPopup or not longPress.unit then return end
-    local u = longPress.unit
-    local monCfg = u.monsterId and MC.MONSTERS[u.monsterId]
-
-    -- 预估行数来动态计算高度
-    local lineCount = 4  -- 攻击类型+护甲+目标+间隔
-    if u.attrs and u.attrs.final then lineCount = lineCount + 1 end  -- 攻击力
-    if monCfg and monCfg.attrs then
-        for _ in pairs(monCfg.attrs) do lineCount = lineCount + 1 end
-    end
-    lineCount = lineCount + 1  -- 当前HP
-
-    -- 弹窗位置（怪物卡片上方，高度自适应）
-    local popCX = 540
-    local popH = 100 + lineCount * 48
-    local popCY = ENEMY_CARD_CY - CARD_H * 0.5 - popH * 0.5 - 10
-    local popW = 600
-    local popR = 16
-
-    -- 背景
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, popCX - popW * 0.5, popCY - popH * 0.5, popW, popH, popR)
-    nvgFillColor(vg, nvgRGBA(20, 15, 10, 235))
-    nvgFill(vg)
-    -- 边框
-    nvgStrokeColor(vg, nvgRGBA(180, 150, 80, 200))
-    nvgStrokeWidth(vg, 3)
-    nvgStroke(vg)
-
-    -- 标题：怪物名字
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 42)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 220, 100, 255))
-    nvgText(vg, popCX, popCY - popH * 0.5 + 40, u.name or "未知", nil)
-
-    -- 分割线
-    nvgBeginPath(vg)
-    nvgMoveTo(vg, popCX - popW * 0.4, popCY - popH * 0.5 + 68)
-    nvgLineTo(vg, popCX + popW * 0.4, popCY - popH * 0.5 + 68)
-    nvgStrokeColor(vg, nvgRGBA(180, 150, 80, 100))
-    nvgStrokeWidth(vg, 1)
-    nvgStroke(vg)
-
-    -- 属性列表
-    nvgFontSize(vg, 34)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(230, 225, 210, 255))
-
-    local startY = popCY - popH * 0.5 + 100
-    local lineH = 48
-    local labelX = popCX - popW * 0.4
-    local valueX = popCX + 40
-    local line = 0
-
-    -- 攻击类型
-    local atkTypeName = "未知"
-    if monCfg and monCfg.atkType then
-        atkTypeName = ATK_TYPE_NAMES[monCfg.atkType] or ("类型" .. monCfg.atkType)
-    end
-    nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-    nvgText(vg, labelX, startY + line * lineH, "攻击类型", nil)
-    nvgFillColor(vg, nvgRGBA(255, 200, 100, 255))
-    nvgText(vg, valueX, startY + line * lineH, atkTypeName, nil)
-    line = line + 1
-
-    -- 护甲类型
-    local armorName = "未知"
-    if monCfg and monCfg.armorType then
-        armorName = ARMOR_TYPE_NAMES[monCfg.armorType] or ("类型" .. monCfg.armorType)
-    end
-    nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-    nvgText(vg, labelX, startY + line * lineH, "护甲类型", nil)
-    nvgFillColor(vg, nvgRGBA(100, 200, 255, 255))
-    nvgText(vg, valueX, startY + line * lineH, armorName, nil)
-    line = line + 1
-
-    -- 攻击目标数
-    if monCfg and monCfg.atkTargets then
-        nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-        nvgText(vg, labelX, startY + line * lineH, "攻击目标", nil)
-        nvgFillColor(vg, nvgRGBA(230, 225, 210, 255))
-        nvgText(vg, valueX, startY + line * lineH, tostring(monCfg.atkTargets) .. "个", nil)
-        line = line + 1
-    end
-
-    -- 攻击间隔
-    if monCfg and monCfg.atkInterval then
-        nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-        nvgText(vg, labelX, startY + line * lineH, "攻击间隔", nil)
-        nvgFillColor(vg, nvgRGBA(230, 225, 210, 255))
-        nvgText(vg, valueX, startY + line * lineH, string.format("%.1f秒", monCfg.atkInterval), nil)
-        line = line + 1
-    end
-
-    -- 攻击力（根据攻击类型显示物攻或魔攻）
-    if u.attrs and u.attrs.final then
-        local atkCategory = monCfg and AD.getAtkCategory(monCfg.atkType) or "physical"
-        local atkKey = (atkCategory == "magical") and AD.MAG_ATK or AD.PHYS_ATK
-        local atkLabel = (atkCategory == "magical") and "魔法攻击" or "物理攻击"
-        local atkVal = u.attrs.final[atkKey] or 0
-        if atkVal > 0 then
-            nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-            nvgText(vg, labelX, startY + line * lineH, atkLabel, nil)
-            nvgFillColor(vg, nvgRGBA(255, 130, 80, 255))
-            nvgText(vg, valueX, startY + line * lineH, tostring(math.floor(atkVal)), nil)
-            line = line + 1
-        end
-    end
-
-    -- 特殊属性（每条换行，读取实际战斗值，含等级/品质加成）
-    if monCfg and monCfg.attrs and next(monCfg.attrs) then
-        for key, _ in pairs(monCfg.attrs) do
-            if not (u.monsterId == 1007 and key == AD.COMBO_RATE) then
-                local meta = AD.META and AD.META[key]
-                local cnName = meta and meta.name or key
-                local dataType = meta and meta.dataType or AD.TYPE_FLOAT
-                -- 从实际属性容器读取计算后的值
-                local val = (u.attrs and u.attrs.final and u.attrs.final[key]) or 0
-                local valStr
-                if dataType == AD.TYPE_PCT then
-                    valStr = tostring(math.floor(val)) .. "%"
-                elseif dataType == AD.TYPE_INT then
-                    valStr = tostring(math.floor(val))
-                else
-                    valStr = string.format("%.1f", val)
-                end
-                nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-                nvgText(vg, labelX, startY + line * lineH, "特殊", nil)
-                nvgFillColor(vg, nvgRGBA(200, 100, 255, 255))
-                nvgText(vg, valueX, startY + line * lineH, cnName .. " " .. valStr, nil)
-                line = line + 1
-            end
-        end
-    end
-
-    -- 当前HP
-    if u.hp then
-        nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-        nvgText(vg, labelX, startY + line * lineH, "当前生命", nil)
-        nvgFillColor(vg, nvgRGBA(100, 255, 100, 255))
-        nvgText(vg, valueX, startY + line * lineH, tostring(math.floor(u.hp)), nil)
-    end
-
-    -- 提示
-    nvgFontSize(vg, 26)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(150, 140, 120, 180))
-    nvgText(vg, popCX, popCY + popH * 0.5 - 24, "松开关闭", nil)
+    MonsterInfoPopup.handlePressEnd()
 end
 
 return BattleScene

@@ -1720,11 +1720,23 @@ local function HorizonPageModalActive()
     return true
 end
 
+--- 玩家信息面板横屏 letterbox：窗口坐标 → 1080×2400 设计坐标
+local function playerInfoDesignCoords(sx, sy)
+    local fit = math.min(logicalW / 1080, logicalH / 2400)
+    return (sx - (logicalW - 1080 * fit) * 0.5) / fit,
+           (sy - (logicalH - 2400 * fit) * 0.5) / fit
+end
+
 -- 事件坐标 -> 面板命中；全局模态返回 ('modal', dx, dy)
 local function HorizonResolveMouse()
     local mousePos = input:GetMousePosition()
     local sx = mousePos.x / dpr
     local sy = mousePos.y / dpr
+    -- 玩家信息是全窗 letterbox，不能走左/中/右栏换算，否则点面板中部会被当成点外面
+    if PlayerInfoPanel.isOpen() then
+        local pdx, pdy = playerInfoDesignCoords(sx, sy)
+        return 'playerinfo', pdx, pdy
+    end
     -- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态：中段命中映射到设计坐标；
     -- 左右栏让出（TopBar 页签/角色面板仍可点），全屏弹窗打开时让位
     if HorizonPageModalActive() then
@@ -1792,6 +1804,13 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()
+    -- 玩家信息全窗模态：按下也走设计坐标，避免抬起位移判定串栏
+    if pid == 'playerinfo' then
+        pressStartDX, pressStartDY = dx or 0, dy or 0
+        pressValid = true
+        PlayerInfoPanel.handleDragBegin(dx, dy)
+        return
+    end
     -- [仓库入口] 背包全窗模态按下
     if pid == 'backpack' then
         pressStartDX, pressStartDY = dx or 0, dy or 0
@@ -1834,6 +1853,10 @@ function HandleMouseMoveHorizon(eventType, eventData)
     if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local pid, dx, dy = HorizonResolveMouse()
     if pid == 'none' then return end
+    if pid == 'playerinfo' then
+        PlayerInfoPanel.handleDragMove(dx, dy)
+        return
+    end
     if pid == 'backpack' then
         local bdx, bdy = backpackCoords(dx, dy)
         BackpackPanel.handleDragMove(bdx, bdy)
@@ -1890,13 +1913,10 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if now - lastTapTime < MIN_TAP_INTERVAL then isTap = false
         else lastTapTime = now end
     end
-    -- [三行并行][修复] 玩家信息面板全窗模态（面板横屏绘制为 fit 居中，命中同变换）
-    if BattleTriPage.isOpen() and PlayerInfoPanel.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 2400)
-        local pdx = (dx - (logicalW - 1080 * fit) * 0.5) / fit
-        local pdy = (dy - (logicalH - 2400 * fit) * 0.5) / fit
-        PlayerInfoPanel.handleDragEnd(pdx, pdy)
-        if isTap then PlayerInfoPanel.handleInput(pdx, pdy) end
+    -- 玩家信息全窗模态：坐标已是 1080×2400 设计空间
+    if pid == 'playerinfo' then
+        PlayerInfoPanel.handleDragEnd(dx, dy)
+        if isTap then PlayerInfoPanel.handleInput(dx, dy) end
         return
     end
     -- [LetterIntro] 开场链输入：信件任意释放即翻段（不依赖 isTap，避免 pressValid 丢失）
@@ -2096,6 +2116,10 @@ function HandleMouseWheelHorizon(eventType, eventData)
     -- [按鼠标位置路由] 滚轮作用于鼠标所在的面板（左右面板可同开二级页，
     -- 不再依赖"最近点击面板"记录；滚到哪边就滚哪边的列表）
     local pid = select(1, HorizonResolveMouse())
+    if pid == 'playerinfo' then
+        PlayerInfoPanel.handleScroll(wheel)
+        return
+    end
 
     -- [仓库入口] 背包全窗模态：网格滚动
     if pid == 'backpack' then

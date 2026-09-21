@@ -72,6 +72,10 @@ function DarkTitleScreen.isReady()
     return ready_
 end
 
+function DarkTitleScreen.isFading()
+    return isOpen_ and fadeOut_
+end
+
 --- 点击任意位置 → 开始淡出（资源未就绪时忽略）
 function DarkTitleScreen.handleTap()
     if not isOpen_ or fadeOut_ then return end

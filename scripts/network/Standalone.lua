@@ -1105,16 +1105,25 @@ function HandleUpdate(eventType, eventData)
         return
     end
 
-    -- [DarkTitleScreen] 横屏标题动画（预载/游戏在标题下方继续进行）
+    -- [DarkTitleScreen] 横屏标题动画。未淡出时不跑游戏逻辑；淡出期间放行，
+    -- 让三行战斗先 open，避免标题揭开时底下还是竖屏 BattleScene。
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.update(dt)
         startScreenWasOpen_ = true
-        return
+        if not DarkTitleScreen.isFading() then
+            return
+        end
+        if BottomNav.getSelectedIndex() == 3
+            and not BattleTriPage.isOpen()
+            and not DungeonBattleScene.isOpen()
+            and not TowerBattleScene.isActive() then
+            BattleTriPage.open()
+        end
     end
 
     -- 开始页/标题刚关闭 → 老档弹离线收益；新档走开场链（先祖来信→过场→情景1）
     -- 必须等 DarkTitleScreen 关闭后再播，否则信件会被标题盖住且点击被吞
-    if not postStartFlowDone_ then
+    if not postStartFlowDone_ and not DarkTitleScreen.isOpen() then
         postStartFlowDone_ = true
         startScreenWasOpen_ = false
         GameBGM.start()
@@ -1471,6 +1480,25 @@ function HandleNanoVGRenderHorizon()
             nvgScale(vg, ss, ss)
             StartScreen.draw(vg)
             nvgRestore(vg)
+        end
+        nvgEndFrame(vg)
+        return
+    end
+
+    -- 标题未淡出：只画标题。bootReady_ 提前解锁后默认 tab 仍是战斗，
+    -- 但 BattleTriPage 要等标题关闭才 open；若此时画中栏会闪一帧竖屏 BattleScene。
+    if DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading() then
+        if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
+            H_skipDone = true
+            StartScreen.skipForReconnect()
+            DarkTitleScreen.open()
+        end
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, logicalW, logicalH)
+        nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
+        nvgFill(vg)
+        if DarkTitleScreen.isOpen() then
+            DarkTitleScreen.draw(vg, logicalW, logicalH)
         end
         nvgEndFrame(vg)
         return
@@ -1867,7 +1895,17 @@ end
 function HandleMouseButtonUpHorizon(eventType, eventData)
     if not bootReady_ then return end
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续
-    if DarkTitleScreen.isOpen() then DarkTitleScreen.handleTap() return end
+    if DarkTitleScreen.isOpen() then
+        if DarkTitleScreen.isReady() and not DarkTitleScreen.isFading()
+            and BottomNav.getSelectedIndex() == 3
+            and not BattleTriPage.isOpen()
+            and not DungeonBattleScene.isOpen()
+            and not TowerBattleScene.isActive() then
+            BattleTriPage.open()
+        end
+        DarkTitleScreen.handleTap()
+        return
+    end
     local button = eventData["Button"]:GetInt()
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()

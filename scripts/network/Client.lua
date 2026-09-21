@@ -1501,7 +1501,9 @@ function HandleNanoVGRender_Client(eventType, eventData)
     nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
     nvgFill(vg)
     -- 左右面板（独立变换，主渲染缩进中面板）
-    if currentState == STATE_IN_GAME and not StartScreen.isOpen() and not LoadingScreen.isOpen() and not LetterIntro.isOpen() then
+    -- 标题未淡出时不画侧栏，避免标题底下先露出竖屏战斗/城镇
+    if currentState == STATE_IN_GAME and not StartScreen.isOpen() and not LoadingScreen.isOpen() and not LetterIntro.isOpen()
+        and not (DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading()) then
         nvgSave(vg)
         nvgResetTransform(vg)
         ViewportH.begin(vg, ViewportH.PANELS.left, H_ox, H_oy, H_s)
@@ -1538,6 +1540,13 @@ function HandleNanoVGRender_Client(eventType, eventData)
         nvgTranslate(vg, designOffsetX, designOffsetY)
         LoadingScreen.draw(vg)
         nvgRestore(vg)
+        nvgEndFrame(vg)
+        return
+    end
+
+    -- 标题未淡出：只画标题，避免底下竖屏 BattleScene 先闪一帧
+    if DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading() then
+        DarkTitleScreen.draw(vg, logicalW, logicalH)
         nvgEndFrame(vg)
         return
     end

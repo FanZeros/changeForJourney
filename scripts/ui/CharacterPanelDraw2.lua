@@ -44,9 +44,10 @@ local LOCK_ICON_H   = 64
 local PLUS_ICON_W   = 64
 local PLUS_ICON_H   = 64
 
--- 职业标签（与战斗界面一致：偏移 -215）
+-- 职业标签（已拥有卡:右下角与等级徽章左右对应; 未拥有卡:顶部）
 local TAG_SIZE        = 60
-local TAG_OFFSET_Y    = -172   -- [卡高4/5] 原-215, 相对卡片中心的 Y 偏移
+local TAG_OFFSET_Y    = -172   -- 未拥有卡顶部, 相对卡片中心的 Y 偏移
+local TAG_DX          = 63     -- 与等级徽章(-63)左右镜像
 
 -- 卡半高（卡底相对卡中心的偏移，下方元素随卡高联动，避免改 CARD_H 后错位）
 local CARD_HALF_H = CARD_H * 0.5
@@ -451,10 +452,10 @@ function M.draw(vg, scrollY)
             end
             drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
 
-            -- b) 职业标志图标（偏移与战斗界面一致）
+            -- b) 职业标志图标（右下角，与等级徽章左右对应）
             local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
             if iconIdx and img.classIcons[iconIdx] then
-                drawImageCentered(vg, img.classIcons[iconIdx], cx, cy + TAG_OFFSET_Y, TAG_SIZE, TAG_SIZE, 1.0)
+                drawImageCentered(vg, img.classIcons[iconIdx], cx + TAG_DX, cy + LVL_BADGE_DY, TAG_SIZE, TAG_SIZE, 1.0)
             end
 
             -- c) 战斗力图标 + 数值 (Y=680)，整体水平居中于卡片
@@ -473,30 +474,7 @@ function M.draw(vg, scrollY)
                 30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
                 247, 254, 119, 4)
 
-            -- d) 经验进度条（先绘制，在等级徽章下方）
-            local expBarCX = cx + EXP_BAR_DX
-            local expBarCY = cy + EXP_BAR_DY
-            drawImageCentered(vg, img.expBarBg, expBarCX, expBarCY, EXP_BAR_BG_W, EXP_BAR_BG_H, 1.0)
-            local expProgress = (slot.maxExp > 0) and (slot.exp / slot.maxExp) or 0
-            expProgress = math.max(0, math.min(1, expProgress))
-            local fillW = EXP_BAR_BG_W - EXP_BAR_PADDING * 2 - EXP_FILL_LEFT_INSET
-            local fillH = EXP_BAR_BG_H - EXP_BAR_PADDING * 2
-            local fillX = expBarCX - EXP_BAR_BG_W * 0.5 + EXP_BAR_PADDING + EXP_FILL_LEFT_INSET
-            local fillY = expBarCY - EXP_BAR_BG_H * 0.5 + EXP_BAR_PADDING
-            local clipW = fillW * expProgress
-            if clipW > 0 and img.expBarFill >= 0 then
-                nvgSave(vg)
-                nvgScissor(vg, fillX, fillY, clipW, fillH)
-                local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, img.expBarFill, 1.0)
-                nvgBeginPath(vg)
-                nvgRect(vg, fillX, fillY, fillW, fillH)
-                nvgFillPaint(vg, paint)
-                nvgFill(vg)
-                nvgResetScissor(vg)
-                nvgRestore(vg)
-            end
-
-            -- e) 等级徽章（绘制在经验条上方层级）
+            -- e) 等级徽章
             local badgeCX = cx + LVL_BADGE_DX
             local badgeCY = cy + LVL_BADGE_DY
             drawImageCentered(vg, img.lvlBadge, badgeCX, badgeCY, LVL_BADGE_SIZE, LVL_BADGE_SIZE, 1.0)
@@ -629,10 +607,12 @@ function M.draw(vg, scrollY)
             nvgFill(vg)
         end
 
-        -- b) 职业标志图标
+        -- b) 职业标志图标（拥有:右下角与等级徽章对应; 未拥有:顶部避开碎片条）
         local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
         if iconIdx and img.classIcons[iconIdx] then
-            drawImageCentered(vg, img.classIcons[iconIdx], cx, cy + TAG_OFFSET_Y, TAG_SIZE, TAG_SIZE, isOwned and 1.0 or 0.3)
+            local tagY = isOwned and (cy + LVL_BADGE_DY) or (cy + TAG_OFFSET_Y)
+            local tagX = isOwned and (cx + TAG_DX) or cx
+            drawImageCentered(vg, img.classIcons[iconIdx], tagX, tagY, TAG_SIZE, TAG_SIZE, isOwned and 1.0 or 0.3)
         end
 
         -- c-shard) 未拥有角色：碎片进度条（复用经验条素材，ICON_SP 替代等级徽章）
@@ -685,7 +665,7 @@ function M.draw(vg, scrollY)
             end
         end
 
-        -- c/d/e 仅已拥有角色显示战斗力、经验条、等级
+        -- c/e 仅已拥有角色显示战斗力、等级（经验条已删）
         if isOwned then
             -- c) 战斗力图标+数值
             local power = rosterPowerCache[idx] or 0
@@ -703,27 +683,6 @@ function M.draw(vg, scrollY)
                 30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
                 247, 254, 119, 4)
 
-            -- d) 经验条
-            local expBarCX = cx + EXP_BAR_DX
-            local expBarCY = cy + EXP_BAR_DY
-            drawImageCentered(vg, img.expBarBg, expBarCX, expBarCY, EXP_BAR_BG_W, EXP_BAR_BG_H, 1.0)
-            local expProgress = (entry.maxExp > 0) and (entry.exp / entry.maxExp) or 0
-            expProgress = math.max(0, math.min(1, expProgress))
-            local fillW = EXP_BAR_BG_W - EXP_BAR_PADDING * 2 - EXP_FILL_LEFT_INSET
-            local fillH = EXP_BAR_BG_H - EXP_BAR_PADDING * 2
-            local fillX = expBarCX - EXP_BAR_BG_W * 0.5 + EXP_BAR_PADDING + EXP_FILL_LEFT_INSET
-            local fillY = expBarCY - EXP_BAR_BG_H * 0.5 + EXP_BAR_PADDING
-            local clipW = fillW * expProgress
-            if clipW > 0 and img.expBarFill >= 0 then
-                nvgSave(vg)
-                nvgIntersectScissor(vg, fillX, fillY, clipW, fillH)
-                local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, img.expBarFill, 1.0)
-                nvgBeginPath(vg)
-                nvgRect(vg, fillX, fillY, fillW, fillH)
-                nvgFillPaint(vg, paint)
-                nvgFill(vg)
-                nvgRestore(vg)
-            end
 
             -- e) 等级徽章
             local badgeCX = cx + LVL_BADGE_DX

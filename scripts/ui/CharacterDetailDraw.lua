@@ -244,7 +244,7 @@ local CARD = {
     -- [复用角色展示/编队页卡片] 同尺寸 198x350 + 卡底锚定（战力上83/等级38/经验36），随卡高联动
     -- （卡 272..622：头盔槽底 265 / 鞋子槽顶 629，各留 7px；名牌不画——MID 名称行两页均显示）
     W=198, H=350, CY=544,
-    TAG_SIZE=60, TAG_OFFSET_Y=-138,  -- 职业标识下移进卡内，避开头盔槽位
+    TAG_SIZE=60, TAG_DX=63,  -- 职业标识右下角，与等级徽章(-63)左右对应
     POWER_BOTTOM_UP=83, POWER_ICON_SIZE=36,
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BOTTOM_UP=38,
 }
@@ -568,7 +568,8 @@ function M.draw(vg)
     -- 职业标志图标
     local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
     if iconIdx and imgClassIcons[iconIdx] then
-        drawImageCentered(vg, imgClassIcons[iconIdx], cx, cy + CARD.TAG_OFFSET_Y, CARD.TAG_SIZE, CARD.TAG_SIZE, 1.0)
+        drawImageCentered(vg, imgClassIcons[iconIdx], cx + CARD.TAG_DX,
+            cy + (CARD.H * 0.5 - CARD.LVL_BOTTOM_UP), CARD.TAG_SIZE, CARD.TAG_SIZE, 1.0)
     end
 
     -- 战斗力图标+数值（使用缓存，避免每帧重算）

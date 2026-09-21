@@ -241,14 +241,15 @@ M.SWITCH_SLIDE_DIST    = 180                 -- 水平滑动距离（适中，�
 
 -- 卡片渲染常量（打包为 table，节省 local 变量槽位）
 local CARD = {
-    W=136, H=300, CY=544,
-    TAG_SIZE=60, TAG_OFFSET_Y=-160,
-    -- [立绘 362→300] 战力贴立绘底(617)；等级徽章/经验条叠放立绘下沿两侧
-    -- （旧位 645/647 被鞋子槽位贴图 629+ 盖住，名牌 822 被"角色详情"标题栏压住，均已调整）
-    POWER_Y=714, POWER_ICON_SIZE=36,
-    LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BADGE_DY=111,
-    EXP_BAR_DX=60, EXP_BAR_DY=113,
+    -- [复用角色展示/编队页卡片] 同尺寸 198x350 + 卡底锚定（战力上83/等级38/经验36），随卡高联动
+    -- （卡 272..622：头盔槽底 265 / 鞋子槽顶 629，各留 7px；名牌不画——MID 名称行两页均显示）
+    W=198, H=350, CY=544,
+    TAG_SIZE=60, TAG_OFFSET_Y=-172,
+    POWER_BOTTOM_UP=83, POWER_ICON_SIZE=36,
+    LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BOTTOM_UP=38,
+    EXP_DX=552-540, EXP_BOTTOM_UP=36,
     EXP_BAR_BG_W=148, EXP_BAR_BG_H=28, EXP_BAR_PADDING=4,
+    EXP_FILL_LEFT_INSET=15,
 }
 
 -- 职业图标映射
@@ -587,22 +588,22 @@ function M.draw(vg)
     local pcW = CARD.POWER_ICON_SIZE + POWER_GAP + ptW
     local pcX = cx - pcW * 0.5
     drawImageCentered(vg, imgPower, pcX + CARD.POWER_ICON_SIZE * 0.5,
-        cy + (CARD.POWER_Y - CARD.CY), CARD.POWER_ICON_SIZE, CARD.POWER_ICON_SIZE, 1.0)
+        cy + (CARD.H * 0.5 - CARD.POWER_BOTTOM_UP), CARD.POWER_ICON_SIZE, CARD.POWER_ICON_SIZE, 1.0)
     drawTextStroke(vg, pcX + CARD.POWER_ICON_SIZE + POWER_GAP,
-        cy + (CARD.POWER_Y - CARD.CY), powerStr,
+        cy + (CARD.H * 0.5 - CARD.POWER_BOTTOM_UP), powerStr,
         30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         247, 254, 119, 4)
 
     -- 经验条 / 等级徽章 / 角色名
     do
-        local expBarCX = cx + CARD.EXP_BAR_DX
-        local expBarCY = cy + CARD.EXP_BAR_DY
+        local expBarCX = cx + CARD.EXP_DX
+        local expBarCY = cy + (CARD.H * 0.5 - CARD.EXP_BOTTOM_UP)
         drawImageCentered(vg, imgExpBarBg, expBarCX, expBarCY, CARD.EXP_BAR_BG_W, CARD.EXP_BAR_BG_H, 1.0)
         local expProgress = (maxExp > 0) and (exp / maxExp) or 0
         expProgress = math.max(0, math.min(1, expProgress))
-        local fillW = CARD.EXP_BAR_BG_W - CARD.EXP_BAR_PADDING * 2
+        local fillW = CARD.EXP_BAR_BG_W - CARD.EXP_BAR_PADDING * 2 - CARD.EXP_FILL_LEFT_INSET
         local fillH = CARD.EXP_BAR_BG_H - CARD.EXP_BAR_PADDING * 2
-        local fillX = expBarCX - CARD.EXP_BAR_BG_W * 0.5 + CARD.EXP_BAR_PADDING
+        local fillX = expBarCX - CARD.EXP_BAR_BG_W * 0.5 + CARD.EXP_BAR_PADDING + CARD.EXP_FILL_LEFT_INSET
         local fillY = expBarCY - CARD.EXP_BAR_BG_H * 0.5 + CARD.EXP_BAR_PADDING
         local clipW = fillW * expProgress
         if clipW > 0 and imgExpBarFill >= 0 then
@@ -619,7 +620,7 @@ function M.draw(vg)
 
         -- 等级徽章
         local badgeCX = cx + CARD.LVL_BADGE_DX
-        local badgeCY = cy + CARD.LVL_BADGE_DY
+        local badgeCY = cy + (CARD.H * 0.5 - CARD.LVL_BOTTOM_UP)
         drawImageCentered(vg, imgLvlBadge, badgeCX, badgeCY, CARD.LVL_BADGE_SIZE, CARD.LVL_BADGE_SIZE, 1.0)
         drawTextStroke(vg, badgeCX, badgeCY, tostring(heroLevel),
             28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,

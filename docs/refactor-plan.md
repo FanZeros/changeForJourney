@@ -19,8 +19,8 @@
 
 | 步 | 目标 | 风险 | 状态 |
 |----|------|------|------|
-| 1 | 从 BattleScene 抽出终焉确认弹窗 + 长按怪物信息 | 低：纯 UI，对外 API 不变 | **本提交完成** |
-| 2 | 继续拆 BattleScene：关卡加载 / 倍速 / 寻怪与战败 HUD | 中 | 待做 |
+| 1 | 从 BattleScene 抽出终焉确认弹窗 + 长按怪物信息 | 低：纯 UI，对外 API 不变 | **已完成** |
+| 2 | 继续拆 BattleScene：关卡加载 / 倍速 / 寻怪与战败 HUD | 中 | **本提交完成** |
 | 3 | 拆 BattleCombat（攻击结算 / 连击 / 飘字） | 中高：战斗手感 | 待做 |
 | 4 | 按英雄拆 TalentManager（核心 API 留壳，角色天赋分文件） | 高：战斗正确性 | 待做 |
 | 5 | Standalone `_bootWiring` / 横屏输入拆模块 | 中：入口接线 | 待做 |
@@ -40,3 +40,13 @@
 - 首通推进到终焉神殿弹出确认，进入/取消/点窗外与原来一致
 - 战斗中长按敌方卡弹出属性，松开消失
 - 倍速按钮在确认弹窗打开时仍隐藏
+
+
+## 第 2 步改动
+
+- 新增 `scripts/ui/BattleSpeed.lua`：倍速解锁 / 循环 / 绘制 / 点击判定
+- 新增 `scripts/ui/BattleEnemySpawn.lua`：首通出怪、挂机混合出怪、上场分配
+- 新增 `scripts/ui/BattleTransitionHud.lua`：寻怪 / 战败 / 轮回 / 胜利 HUD
+- `BattleScene` 对外倍速 API 签名不变（`BattleTriPage` 仍走 BattleScene）
+- 删除已无引用的终焉确认弹窗贴图加载（`imgConfirmBg` / `imgBtnGreen` / `imgBtnGray`）
+- `BattleScene` 约 3435 → 3008 → 2722 行

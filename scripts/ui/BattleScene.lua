@@ -32,6 +32,9 @@ local BattleResultPanel = require("ui.BattleResultPanel")
 local OfflineCalc = require("systems.OfflineCalc")
 local TerminalConfirmDialog = require("ui.TerminalConfirmDialog")
 local MonsterInfoPopup = require("ui.MonsterInfoPopup")
+local BattleSpeed = require("ui.BattleSpeed")
+local BattleEnemySpawn = require("ui.BattleEnemySpawn")
+local BattleTransitionHud = require("ui.BattleTransitionHud")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -311,19 +314,7 @@ local updateHitFlashes    = BattleCombat.updateHitFlashes
 local updateComboQueue    = BattleCombat.updateComboQueue
 
 function BattleScene.getMaxUnlockedBattleSpeed()
-    local diff = getStageConfig().getDifficulty(currentStageId)
-    if diff == SC.DIFFICULTY_HELL or diff == SC.DIFFICULTY_NIGHTMARE
-        or diff == SC.DIFFICULTY_PURGATORY or diff == SC.DIFFICULTY_TORMENT
-        or diff == SC.DIFFICULTY_TORMENT2 or diff == SC.DIFFICULTY_TORMENT3
-        or diff == SC.DIFFICULTY_TORMENT4 or diff == SC.DIFFICULTY_TORMENT5
-        or diff == SC.DIFFICULTY_ANNIHILATION or diff == SC.DIFFICULTY_ANNIHILATION2
-        or diff == SC.DIFFICULTY_ANNIHILATION3 or diff == SC.DIFFICULTY_ANNIHILATION4
-        or diff == SC.DIFFICULTY_ANNIHILATION5 then
-        return 2.0
-    elseif diff == SC.DIFFICULTY_HARD then
-        return 1.5
-    end
-    return 1.0
+    return BattleSpeed.getMaxUnlocked(getStageConfig().getDifficulty(currentStageId))
 end
 
 function BattleScene.isSpeedButtonVisible()
@@ -336,14 +327,11 @@ function BattleScene.isSpeedButtonVisible()
 end
 
 function BattleScene.getBattleLogicDt(dt)
-    local maxSpeed = BattleScene.getMaxUnlockedBattleSpeed()
-    if BattleScene.battleSpeed > maxSpeed then
-        BattleScene.battleSpeed = maxSpeed
-    end
-    if BattleScene.isSpeedButtonVisible() then
-        return dt * BattleScene.battleSpeed
-    end
-    return dt
+    local logicDt, speed = BattleSpeed.getLogicDt(
+        dt, BattleScene.battleSpeed, BattleScene.getMaxUnlockedBattleSpeed(),
+        BattleScene.isSpeedButtonVisible())
+    BattleScene.battleSpeed = speed
+    return logicDt
 end
 
 local function getLiveAttackInterval(unit, fallback)
@@ -361,39 +349,19 @@ local function getLiveAttackInterval(unit, fallback)
 end
 
 function BattleScene.getSpeedText()
-    if BattleScene.battleSpeed == 1.5 then
-        return "X1.5"
-    elseif BattleScene.battleSpeed >= 2.0 then
-        return "X2"
-    end
-    return "X1"
+    return BattleSpeed.getSpeedText(BattleScene.battleSpeed)
 end
 
 function BattleScene.drawSpeedButton(vg)
-    if not BattleScene.isSpeedButtonVisible() then return end
-    local alpha = BattleScene.battleSpeed > 1.0 and 1.0 or 0.82
-    drawImageCentered(vg, BattleScene.imgSpeedIcon, 987, 311, 130, 143, alpha)
-    drawTextStroke(vg, 987, 305,
-        BattleScene.getSpeedText(), 52,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 6,
-        { strokeColor = { 0x36, 0x77, 0x78 } })
+    BattleSpeed.draw(vg, BattleScene.imgSpeedIcon, BattleScene.battleSpeed, BattleScene.isSpeedButtonVisible())
 end
 
 function BattleScene.handleSpeedButtonInput(dx, dy)
     if not BattleScene.isSpeedButtonVisible() then return false end
-    if math.abs(dx - 987) <= 65 and math.abs(dy - 311) <= 71.5 then
-        local maxSpeed = BattleScene.getMaxUnlockedBattleSpeed()
-        if BattleScene.battleSpeed < 1.5 and maxSpeed >= 1.5 then
-            BattleScene.battleSpeed = 1.5
-        elseif BattleScene.battleSpeed < 2.0 and maxSpeed >= 2.0 then
-            BattleScene.battleSpeed = 2.0
-        else
-            BattleScene.battleSpeed = 1.0
-        end
-        print("[BattleScene] 首通战斗倍速切换: " .. BattleScene.getSpeedText())
-        return true
-    end
-    return false
+    if not BattleSpeed.hitTest(dx, dy) then return false end
+    BattleScene.battleSpeed = BattleSpeed.cycle(BattleScene.battleSpeed, BattleScene.getMaxUnlockedBattleSpeed())
+    print("[BattleScene] 首通战斗倍速切换: " .. BattleScene.getSpeedText())
+    return true
 end
 
 -- ======================== 属性快照隔离 ========================
@@ -555,14 +523,6 @@ local drawProgressBar     = BattleDraw.drawProgressBar
 
 -- ======================== 关卡系统 ========================
 
---- 根据关卡配置生成全部敌人列表
---- 格式化数字：超过4位数转换为k
----@param n number
----@return string
-local function formatNumber(n)
-    return require("core.NumberUtil").format(n)
-end
-
 --- 重新计算挂机收益（每分钟金币/经验）
 --- 直接调用 OfflineCalc 统一公式：固定杀怪效率 × 60秒 → 每分钟收益
 local function recalcIdleIncome()
@@ -614,205 +574,16 @@ local function resetWaveTimers()
     waveExpEarned = 0
 end
 
---- 解析首通附加特殊怪 ID 列表（兼容 firstClearBonusMonster 单值）
----@param stageEntry StageEntry
----@return number[]|nil
-local function getFirstClearBonusMonsterIds(stageEntry)
-    local ids = stageEntry.firstClearBonusMonsters
-    if ids and #ids > 0 then
-        return ids
-    end
-    if stageEntry.firstClearBonusMonster then
-        return { stageEntry.firstClearBonusMonster }
-    end
-    return nil
-end
-
---- 标记首通附加特殊怪出场阶段：
---- 1 个：开场；2 个：开场 + 最后；3 个及以上：开场 + 中间若干 + 最后。
----@param bonusUnit table
----@param index number
----@param count number
-local function markFirstClearBonusSpawnPhase(bonusUnit, index, count)
-    bonusUnit._isBonusMonster = true
-    if index == 1 then
-        bonusUnit._bonusSpawnPhase = "start"
-    elseif index == count then
-        bonusUnit._bonusSpawnPhase = "end"
-    else
-        bonusUnit._bonusSpawnPhase = "middle"
-    end
-end
-
----@param queue table[]
----@param unit table
-local function insertBonusMonsterIntoQueue(queue, unit)
-    if unit._bonusSpawnPhase == "middle" then
-        local insertPos = math.floor(#queue / 2) + 1
-        table.insert(queue, insertPos, unit)
-    else
-        queue[#queue + 1] = unit
-    end
-end
-
----@param stageEntry StageEntry
----@return table[] allEnemies
 local function generateEnemyList(stageEntry)
-    local totalCount = isFirstClear and stageEntry.firstCount or stageEntry.idleCount
-    local monsterTypes = stageEntry.monsters  -- {type1, type2, type3}
-    local level = stageEntry.monsterLevel
-    local list = {}
-
-    -- 如果有 Boss，最后一只是 Boss
-    local normalCount = totalCount
-    if stageEntry.bossId > 0 then
-        normalCount = totalCount - 1
-    end
-
-    -- 普通怪：从 3 种类型中轮流选择
-    for i = 1, normalCount do
-        local typeIdx = ((i - 1) % #monsterTypes) + 1
-        local monsterId = monsterTypes[typeIdx]
-        local unit = MC.createMonster(monsterId, level)
-        if unit then
-            list[#list + 1] = unit
-        end
-    end
-
-    -- Boss（插入到普通怪剩余一半的位置，即列表中间）
-    if stageEntry.bossId > 0 then
-        local bossUnit = MC.createMonster(stageEntry.bossId, level)
-        if bossUnit then
-            bossUnit.isBoss = true  -- [Boss 标识] 卡顶骷髅头仅 Boss 显示
-            local insertPos = math.ceil(#list / 2) + 1
-            table.insert(list, insertPos, bossUnit)
-        end
-    end
-
-    -- 首通附加特殊怪物：旅程19服及以上按阶段分批出场（开场/中间/最后）
-    if isFirstClear then
-        local bonusIds = getFirstClearBonusMonsterIds(stageEntry)
-        if bonusIds then
-            local bonusAtStart = require("shared.ServerListConfig").isFirstClearBonusAtStart(require("ui.PlayerInfoPanel").getServerId())
-            local bonusCount = #bonusIds
-            for i, monsterId in ipairs(bonusIds) do
-                local bonusUnit = MC.createMonster(monsterId, level)
-                if bonusUnit then
-                    if bonusAtStart then
-                        markFirstClearBonusSpawnPhase(bonusUnit, i, bonusCount)
-                    end
-                    list[#list + 1] = bonusUnit
-                end
-            end
-        end
-    end
-
-    return list
+    return BattleEnemySpawn.generateEnemyList(stageEntry, isFirstClear)
 end
 
---- 分配敌人到场上与队列；首通特殊怪按阶段出场（开场/中间/最后）
----@param allEnemies table[]
----@param maxField number
----@return table[] fieldEnemies, table[] queueEnemies
 local function assignEnemiesToField(allEnemies, maxField)
-    local field = {}
-    local queue = {}
-    local fieldCount = 0
-    for _, u in ipairs(allEnemies) do
-        if not u._isBonusMonster then
-            if fieldCount < maxField then
-                field[#field + 1] = u
-                fieldCount = fieldCount + 1
-            else
-                queue[#queue + 1] = u
-            end
-        end
-    end
-    for _, u in ipairs(allEnemies) do
-        if u._isBonusMonster then
-            if u._bonusSpawnPhase == "start" then
-                if fieldCount >= maxField and #field > 0 then
-                    local bumped = table.remove(field, #field)
-                    table.insert(queue, 1, bumped)
-                else
-                    fieldCount = fieldCount + 1
-                end
-                field[#field + 1] = u
-            else
-                insertBonusMonsterIntoQueue(queue, u)
-            end
-        end
-    end
-    return field, queue
+    return BattleEnemySpawn.assignEnemiesToField(allEnemies, maxField)
 end
 
---- 挂机模式：从 maxStageId_ 前 5 关混合生成怪物（不同等级）
---- 每关按 idleCount 取怪，等级各自不同，模拟玩家在这 5 关范围内挂机
----@return table[] allEnemies, number maxField
 local function generateIdleEnemyList()
-    local IDLE_STAGE_COUNT = 5
-    local stageConfig = getStageConfig()
-    local stages = require("shared.StageUtils").collectPrevStages(maxStageId_, IDLE_STAGE_COUNT, stageConfig)
-    -- 新玩家可能不足 5 关，有多少用多少
-    if #stages == 0 then
-        -- fallback: 用当前关卡（极端情况）
-        local entry = stageConfig.getStage(currentStageId)
-        if entry then
-            return generateEnemyList(entry), entry.maxFieldEnemies or 5
-        end
-        return {}, 5
-    end
-
-    local allEnemies = {}
-    local maxField = 0
-
-    -- 平均分配每关出怪数量：取各关 idleCount 中最小的（保持战斗节奏一致）
-    -- 每关各出 2 只（总计 10 只一波，5 只上场 5 只队列），保持场面丰富但不过于拥挤
-    local perStage = 2
-
-    for _, entry in ipairs(stages) do
-        local monsterTypes = entry.monsters
-        local level = entry.monsterLevel
-        -- 取各关 maxFieldEnemies 的最大值作为场地上限
-        if (entry.maxFieldEnemies or 5) > maxField then
-            maxField = entry.maxFieldEnemies or 5
-        end
-
-        local hasBoss = entry.bossId and entry.bossId > 0
-
-        if hasBoss then
-            -- Boss 关：1 只普通怪 + 1 只 Boss
-            local monsterId = monsterTypes[1]
-            local unit = MC.createMonster(monsterId, level)
-            if unit then
-                unit._idleStageId = entry.id
-                allEnemies[#allEnemies + 1] = unit
-            end
-            local bossUnit = MC.createMonster(entry.bossId, level)
-            if bossUnit then
-                bossUnit._idleStageId = entry.id
-                allEnemies[#allEnemies + 1] = bossUnit
-            end
-        else
-            -- 非 Boss 关：perStage 只普通怪，从怪物类型中轮流选取
-            for i = 1, perStage do
-                local typeIdx = ((i - 1) % #monsterTypes) + 1
-                local monsterId = monsterTypes[typeIdx]
-                local unit = MC.createMonster(monsterId, level)
-                if unit then
-                    unit._idleStageId = entry.id
-                    allEnemies[#allEnemies + 1] = unit
-                end
-            end
-        end
-    end
-
-    -- 保证场地上限至少 5
-    if maxField < 5 then maxField = 5 end
-
-    print(string.format("[BattleScene] 挂机混合出怪: %d只来自%d关 (maxField=%d)",
-        #allEnemies, #stages, maxField))
-    return allEnemies, maxField
+    return BattleEnemySpawn.generateIdleEnemyList(getStageConfig(), maxStageId_, currentStageId)
 end
 
 --- 从等待队列补充敌人到场上（填补空位）
@@ -1203,10 +974,6 @@ function BattleScene.init(vg)
     end
     imgDeath    = nvgCreateImage(vg, "image/品质框/KP_Death.png", 0)
 
-    -- 终焉神殿确认弹窗
-    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
-    imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    imgBtnGray   = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
 
     -- 初始化攻击特效模块
     BattleEffects.init(vg)
@@ -1482,70 +1249,17 @@ function BattleScene.draw(vg)
     end
 
     -- 16. 战斗结束提示 / 寻怪中进度条 / 失败倒计时
-    if not battleActive then
-        if reincarnationTimer ~= nil then
-            -- ---- 轮回过渡提示 ----
-            local progress = math.min(1, reincarnationTimer / REINCARNATION_DELAY)
-            -- 轮回光环效果（脉冲发光）
-            local pulse = 0.6 + 0.4 * math.sin(reincarnationTimer * 4)
-            local alpha = math.floor(180 * pulse)
-            drawTextStroke(vg, 540, 1170, "轮回", 80,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 160, 255, 6)
-            -- 进度条
-            local BAR_W, BAR_H = 360, 28
-            local BAR_X = 540 - BAR_W * 0.5
-            local BAR_Y = 1230
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, BAR_X, BAR_Y, BAR_W, BAR_H, 6)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
-            nvgFill(vg)
-            if progress > 0 then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, BAR_X + 2, BAR_Y + 2, (BAR_W - 4) * progress, BAR_H - 4, 5)
-                nvgFillColor(vg, nvgRGBA(180, 140, 255, alpha))
-                nvgFill(vg)
-            end
-            local nextTargetId = getStageConfig().getReincarnationTarget(getStageConfig().getDifficulty(currentStageId))
-            local nextDiff = nextTargetId and getStageConfig().getDifficulty(nextTargetId) or nil
-            local diffName = nextDiff and getStageConfig().getDifficultyDisplayName(nextDiff) or "未知"
-            drawTextStroke(vg, 540, BAR_Y + BAR_H + 20, "即将进入" .. diffName .. "难度...", 30,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 200, 255, 3)
-        elseif searchingTimer ~= nil then
-            -- ---- 寻怪中进度条 ----
-            local progress = math.min(1, searchingTimer / SEARCH_ENEMY_DURATION)
-            local BAR_W, BAR_H = 400, 36
-            local BAR_X = 540 - BAR_W * 0.5
-            local BAR_Y = 1190
-            -- 背景
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, BAR_X, BAR_Y, BAR_W, BAR_H, 8)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
-            nvgFill(vg)
-            -- 填充
-            if progress > 0 then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, BAR_X + 3, BAR_Y + 3, (BAR_W - 6) * progress, BAR_H - 6, 6)
-                nvgFillColor(vg, nvgRGBA(100, 200, 255, 220))
-                nvgFill(vg)
-            end
-            -- 文本
-            drawTextStroke(vg, 540, BAR_Y + BAR_H * 0.5, "寻怪中...", 32,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-        elseif defeatTimer ~= nil then
-            -- ---- 战败提示 ----
-            local failText = defeatByTimeout and "时间到!" or "失败..."
-            drawTextStroke(vg, 540, 1190, failText, 72,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 80, 80, 6)
-            drawTextStroke(vg, 540, 1250, stageName, 36,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 220, 220, 220, 4)
-        else
-            -- ---- 首通胜利提示 ----
-            drawTextStroke(vg, 540, 1190, "胜利!", 72,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 220, 50, 6)
-            drawTextStroke(vg, 540, 1250, stageName, 36,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 220, 220, 220, 4)
-        end
-    end
+    BattleTransitionHud.draw(vg, {
+        battleActive = battleActive,
+        reincarnationTimer = reincarnationTimer,
+        searchingTimer = searchingTimer,
+        defeatTimer = defeatTimer,
+        defeatByTimeout = defeatByTimeout,
+        stageName = stageName,
+        currentStageId = currentStageId,
+        getStageConfig = getStageConfig,
+        drawTextStroke = drawTextStroke,
+    })
 
     -- ---- 扫荡弹窗（在寻怪进度条之上、终焉确认弹窗之下） ----
     SweepDialog.draw(vg)

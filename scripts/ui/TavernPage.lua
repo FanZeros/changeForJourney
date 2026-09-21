@@ -202,7 +202,7 @@ local state = {
     tabSwitchTime = 0,
     -- 保底数据（从 GachaSystem 实时读取）
     pityRemain = GachaConfig.Pity.SSR_THRESHOLD,
-    pityRank   = "SSR",
+    pityRank   = "史诗",
     -- 指定招募数据（从服务端 currency 模块同步）
     targetRecruitHeroId = nil,   -- 指定的SSR英雄ID（nil=未指定）
     targetRecruitRemain = 0,     -- 剩余SSR保底次数
@@ -410,7 +410,7 @@ local function syncDisplayData()
     end
 
     state.pityRemain   = GachaSystem.getSSRPityRemain()
-    state.pityRank     = "SSR"
+    state.pityRank     = "史诗"
     if isStellarPoolSelected() then
         local currencyData = ClientDispatcher.get("currency")
         local sinceUR = currencyData and currencyData.urPityUR
@@ -423,7 +423,7 @@ local function syncDisplayData()
         else
             state.pityRemain = threshold
         end
-        state.pityRank = "UR"
+        state.pityRank = "传说"
     end
 end
 

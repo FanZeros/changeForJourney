@@ -36,10 +36,11 @@ HC.QUALITY_SSR = 3
 HC.QUALITY_UR  = 4
 
 HC.QUALITY_INFO = {
-    [1] = { name = "R",   color = "a0a0a0" },    -- 灰色
-    [2] = { name = "SR",  color = "a2a0ff" },     -- 紫蓝
-    [3] = { name = "SSR", color = "ffed00" },     -- 金色
-    [4] = { name = "UR",  color = "ff6a00" },     -- 橙红
+    -- [稀有度显示名] 机制值 1~4 保留（概率/保底/战力不变），仅显示名去字母化
+    [1] = { name = "普通", color = "a0a0a0" },    -- 原 R   灰色
+    [2] = { name = "精英", color = "a2a0ff" },     -- 原 SR  紫蓝
+    [3] = { name = "史诗", color = "ffed00" },     -- 原 SSR 金色
+    [4] = { name = "传说", color = "ff6a00" },     -- 原 UR  橙红
 }
 
 -- ======================== 伤害类型常量 ========================

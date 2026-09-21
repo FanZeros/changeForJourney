@@ -396,12 +396,8 @@ local function drawResourceCard(vg, cx, cy, item, alpha)
         { strokeColor = { 0, 0, 0 } }
     )
 
-    -- 品质图标（卡底居中）
-    local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
-    if badgeImg and badgeImg >= 0 then
-        local badgeCY = cy + CARD_H * 0.5
-        drawImageCentered(vg, badgeImg, cx, badgeCY, QUALITY_BADGE_W, QUALITY_BADGE_H, alpha)
-    end
+    -- [稀有度显示] 烧字徽章（R/SR/SSR/UR 图）不再显示；保留品质色卡边作隐晦标识
+    -- local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
 
     -- 资源名称（上移25px：OFFSET从44增到69）
     local resName = def and def.name or "未知"
@@ -452,12 +448,7 @@ local function drawShardCard(vg, cx, cy, item, alpha)
         { strokeColor = { 0, 0, 0 } }
     )
 
-    -- 品质角标（卡底居中）
-    local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
-    if badgeImg and badgeImg >= 0 then
-        local badgeCY = cy + CARD_H * 0.5
-        drawImageCentered(vg, badgeImg, cx, badgeCY, QUALITY_BADGE_W, QUALITY_BADGE_H, alpha)
-    end
+    -- [稀有度显示] 烧字徽章不再显示；保留品质色卡边作隐晦标识
 
     -- 英雄名 + "碎片"
     local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
@@ -485,11 +476,7 @@ local function drawDupeToShardCard(vg, cx, cy, item, alpha)
     drawCardBg(vg, qTag, cx, cy, CARD_W, CARD_H, alpha)
     DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
 
-    -- 品质角标
-    local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
-    if badgeImg and badgeImg >= 0 then
-        drawImageCentered(vg, badgeImg, cx, cy + CARD_H * 0.5, QUALITY_BADGE_W, QUALITY_BADGE_H, alpha)
-    end
+    -- [稀有度显示] 烧字徽章不再显示
 
     local combinedAlpha = alpha * _fadeAlpha
     nvgSave(vg)
@@ -537,11 +524,7 @@ local function drawDecomposeCard(vg, cx, cy, item, alpha)
     drawImageCentered(vg, bgImg, cx, cy, CARD_W, CARD_H, alpha)
     DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
 
-    -- 品质角标
-    local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
-    if badgeImg and badgeImg >= 0 then
-        drawImageCentered(vg, badgeImg, cx, cy + CARD_H * 0.5, QUALITY_BADGE_W, QUALITY_BADGE_H, alpha)
-    end
+    -- [稀有度显示] 烧字徽章不再显示
 
     local combinedAlpha = alpha * _fadeAlpha
     nvgSave(vg)

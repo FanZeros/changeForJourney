@@ -225,8 +225,9 @@ local RES_NAME_MAP = {
     break_protect  = "损毁保护石",
 }
 
-local QUALITY_TAG = { [0] = "N", [1] = "R", [2] = "SR", [3] = "SSR" }
-local STELLAR_QUALITY_TAG = { [1] = "R", [2] = "SR", [3] = "SSR", [4] = "UR" }
+-- [稀有度显示名] 与 HeroConfig.QUALITY_INFO 一致；机制值不变
+local QUALITY_TAG = { [0] = "杂项", [1] = "普通", [2] = "精英", [3] = "史诗" }
+local STELLAR_QUALITY_TAG = { [1] = "普通", [2] = "精英", [3] = "史诗", [4] = "传说" }
 
 local historyData = {
     standard = {},
@@ -525,30 +526,30 @@ local function drawInfoRuleText(vg, poolId)
             { { text = "每", r = tr, g = tg, b = tb },
               { text = tostring(pity.SR_THRESHOLD), r = hr, g = hg, b = hb },
               { text = "次招募必定获得", r = tr, g = tg, b = tb },
-              { text = "SR", r = hr, g = hg, b = hb },
+              { text = "精英", r = hr, g = hg, b = hb },
               { text = "级冒险家", r = tr, g = tg, b = tb } },
             { { text = "每", r = tr, g = tg, b = tb },
               { text = tostring(pity.SSR_THRESHOLD), r = hr, g = hg, b = hb },
               { text = "次招募必定获得", r = tr, g = tg, b = tb },
-              { text = "SSR", r = hr, g = hg, b = hb },
+              { text = "史诗", r = hr, g = hg, b = hb },
               { text = "级冒险家", r = tr, g = tg, b = tb } },
             { { text = "每", r = tr, g = tg, b = tb },
               { text = tostring(pity.UR_THRESHOLD), r = hr, g = hg, b = hb },
               { text = "次招募必定获得", r = tr, g = tg, b = tb },
-              { text = "UR", r = hr, g = hg, b = hb },
+              { text = "传说", r = hr, g = hg, b = hb },
               { text = "级冒险家", r = tr, g = tg, b = tb } },
             {},
             { { text = "各品质基础概率：", r = tr, g = tg, b = tb } },
-            { { text = "R  : ", r = tr, g = tg, b = tb },
+            { { text = "普通: ", r = tr, g = tg, b = tb },
               { text = string.format("%.0f%%", UrGachaConfig.Probability[UrGachaConfig.QUALITY_R] or 0),
                 r = hr, g = hg, b = hb } },
-            { { text = "SR : ", r = tr, g = tg, b = tb },
+            { { text = "精英: ", r = tr, g = tg, b = tb },
               { text = string.format("%.0f%%", UrGachaConfig.Probability[UrGachaConfig.QUALITY_SR] or 0),
                 r = hr, g = hg, b = hb } },
-            { { text = "SSR: ", r = tr, g = tg, b = tb },
+            { { text = "史诗: ", r = tr, g = tg, b = tb },
               { text = string.format("%.0f%%", UrGachaConfig.Probability[UrGachaConfig.QUALITY_SSR] or 0),
                 r = hr, g = hg, b = hb } },
-            { { text = "UR : ", r = tr, g = tg, b = tb },
+            { { text = "传说: ", r = tr, g = tg, b = tb },
               { text = string.format("%.0f%%", UrGachaConfig.Probability[UrGachaConfig.QUALITY_UR] or 0),
                 r = hr, g = hg, b = hb } },
         }
@@ -557,20 +558,20 @@ local function drawInfoRuleText(vg, poolId)
             { { text = "每", r = tr, g = tg, b = tb },
               { text = "80", r = hr, g = hg, b = hb },
               { text = "次招募必定获得", r = tr, g = tg, b = tb },
-              { text = "SSR", r = hr, g = hg, b = hb },
+              { text = "史诗", r = hr, g = hg, b = hb },
               { text = "级冒险家", r = tr, g = tg, b = tb } },
             { { text = "第", r = tr, g = tg, b = tb },
               { text = "61", r = hr, g = hg, b = hb },
-              { text = "抽起SSR概率逐抽提升", r = tr, g = tg, b = tb } },
+              { text = "抽起史诗概率逐抽提升", r = tr, g = tg, b = tb } },
             {},
             { { text = "各品质基础概率：", r = tr, g = tg, b = tb } },
-            { { text = "N  : ", r = tr, g = tg, b = tb },
+            { { text = "杂项: ", r = tr, g = tg, b = tb },
               { text = "71%", r = hr, g = hg, b = hb } },
-            { { text = "R  : ", r = tr, g = tg, b = tb },
+            { { text = "普通: ", r = tr, g = tg, b = tb },
               { text = "18%", r = hr, g = hg, b = hb } },
-            { { text = "SR : ", r = tr, g = tg, b = tb },
+            { { text = "精英: ", r = tr, g = tg, b = tb },
               { text = "10%", r = hr, g = hg, b = hb } },
-            { { text = "SSR: ", r = tr, g = tg, b = tb },
+            { { text = "史诗: ", r = tr, g = tg, b = tb },
               { text = "1%", r = hr, g = hg, b = hb } },
         }
     end

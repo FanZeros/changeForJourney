@@ -781,7 +781,7 @@ function M.draw(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 38)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
         local _ds1 = BF.begin(vg, "unequip_all", BTN_UNEQUIP_CX, BTN_UNEQUIP_CY, BTN_BATCH_W, BTN_BATCH_H)
         nvgText(vg, BTN_UNEQUIP_CX, BTN_UNEQUIP_CY, "一键卸下", nil)
         BF.finish(vg, _ds1)
@@ -792,7 +792,7 @@ function M.draw(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 38)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
         local _ds = BF.begin(vg, "equip_all", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H)
         nvgText(vg, BTN_EQUIP_CX, BTN_EQUIP_CY, "一键装备", nil)
         BF.finish(vg, _ds)
@@ -866,7 +866,7 @@ function M.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 42)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x7b, 0x53, 0x39, 255))
+    nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 255))
     nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name, nil)
     end
 
@@ -921,7 +921,7 @@ function M.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 35)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
     nvgText(vg, MID_QUALITY_LABEL_X, MID_QUALITY_LABEL_Y, "品质", nil)
 
     -- === 13) 品质文字图标 ===
@@ -947,7 +947,7 @@ function M.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 35)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
     nvgText(vg, MID_CLASS_LABEL_X, MID_CLASS_LABEL_Y, "职业", nil)
 
     -- === 16) 职业图标 + 文字组合 ===
@@ -1049,7 +1049,7 @@ function M.draw(vg)
                     nvgFontSize(vg, nameFontSize)
                 end
                 nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+                nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
                 nvgText(vg, ATTR_NAME_LEFT_X, rowY, attr.name, nil)
 
                 drawTextStroke(vg, ATTR_VAL_RIGHT_X, rowY, attr.value,
@@ -1085,7 +1085,7 @@ function M.draw(vg)
                     nvgFontSize(vg, rNameFS)
                 end
                 nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+                nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
                 nvgText(vg, ATTR_NAME_LEFT_X + ATTR_DECO_DX, rowY, attr.name, nil)
 
                 drawTextStroke(vg, ATTR_VAL_RIGHT_X + ATTR_DECO_DX, rowY, attr.value,
@@ -1139,7 +1139,7 @@ function M.draw(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 35)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+        nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
         nvgText(vg, nmX, nmY, st.name, nil)
 
         local valY = boxCY + STAT_VAL_DY
@@ -1173,7 +1173,7 @@ function M.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, extraLine ~= "" and 28 or 34)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-    nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
     nvgTextBox(vg, TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH, talentDesc, nil)
 
     end -- if detailState.tab == "awaken" / "attr"

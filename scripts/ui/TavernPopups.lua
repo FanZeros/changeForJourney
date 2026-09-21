@@ -226,8 +226,8 @@ local RES_NAME_MAP = {
 }
 
 -- [稀有度显示名] 与 HeroConfig.QUALITY_INFO 一致；机制值不变
-local QUALITY_TAG = { [0] = "杂项", [1] = "普通", [2] = "精英", [3] = "史诗" }
-local STELLAR_QUALITY_TAG = { [1] = "普通", [2] = "精英", [3] = "史诗", [4] = "传说" }
+local QUALITY_TAG = { [0] = "杂项", [1] = "普通", [2] = "稀有", [3] = "史诗" }
+local STELLAR_QUALITY_TAG = { [1] = "普通", [2] = "稀有", [3] = "史诗", [4] = "传说" }
 
 local historyData = {
     standard = {},
@@ -526,7 +526,7 @@ local function drawInfoRuleText(vg, poolId)
             { { text = "每", r = tr, g = tg, b = tb },
               { text = tostring(pity.SR_THRESHOLD), r = hr, g = hg, b = hb },
               { text = "次招募必定获得", r = tr, g = tg, b = tb },
-              { text = "精英", r = hr, g = hg, b = hb },
+              { text = "稀有", r = hr, g = hg, b = hb },
               { text = "级冒险家", r = tr, g = tg, b = tb } },
             { { text = "每", r = tr, g = tg, b = tb },
               { text = tostring(pity.SSR_THRESHOLD), r = hr, g = hg, b = hb },
@@ -543,7 +543,7 @@ local function drawInfoRuleText(vg, poolId)
             { { text = "普通: ", r = tr, g = tg, b = tb },
               { text = string.format("%.0f%%", UrGachaConfig.Probability[UrGachaConfig.QUALITY_R] or 0),
                 r = hr, g = hg, b = hb } },
-            { { text = "精英: ", r = tr, g = tg, b = tb },
+            { { text = "稀有: ", r = tr, g = tg, b = tb },
               { text = string.format("%.0f%%", UrGachaConfig.Probability[UrGachaConfig.QUALITY_SR] or 0),
                 r = hr, g = hg, b = hb } },
             { { text = "史诗: ", r = tr, g = tg, b = tb },
@@ -569,7 +569,7 @@ local function drawInfoRuleText(vg, poolId)
               { text = "71%", r = hr, g = hg, b = hb } },
             { { text = "普通: ", r = tr, g = tg, b = tb },
               { text = "18%", r = hr, g = hg, b = hb } },
-            { { text = "精英: ", r = tr, g = tg, b = tb },
+            { { text = "稀有: ", r = tr, g = tg, b = tb },
               { text = "10%", r = hr, g = hg, b = hb } },
             { { text = "史诗: ", r = tr, g = tg, b = tb },
               { text = "1%", r = hr, g = hg, b = hb } },

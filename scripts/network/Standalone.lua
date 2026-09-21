@@ -333,7 +333,7 @@ function Standalone._bootWiring()
     end)
     -- 5.25 城镇仓库点击 → 打开背包（横屏全窗模态）
     TownScene.setOnWarehouseClick(function()
-        BackpackPanel.open(true)
+        BackpackPanel.open("left")
     end)
 
     -- 5.24 装备数据初始化（Standalone 模式下 ClientDispatcher 不会收到 Server 推送）
@@ -1233,8 +1233,8 @@ function HandleUpdate(eventType, eventData)
     elseif tabIndex == 5 then
         DungeonPage.update(dt)
     end
-    -- [仓库入口] 背包全窗模态动画由宿主驱动（DiaryPage 已让位）
-    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
+    -- [仓库入口] 背包左栏页动画由宿主驱动（DiaryPage 已让位）
+    if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
         BackpackPanel.update(dt)
     end
 
@@ -1338,15 +1338,6 @@ local function HorizonUpdateTransform()
     end
 end
 
---- [仓库入口] 背包模态限定矩形：左栏（与教堂/酒馆同侧），中/右栏保持亮且可点
-local function horizonBackpackRect()
-    if BattleTriPage.isOpen() then
-        local ps = logicalH / 1080
-        return { x = 0, y = 0, w = 486 * ps, h = logicalH }
-    end
-    return { x = H_ox, y = H_oy, w = 486 * H_s, h = 1080 * H_s }
-end
-
 -- [底栏移除] 横屏日志(2)/副本(5)页：竖版设计全窗等比铺（模态层）
 -- 全屏弹窗/战斗覆盖打开时不画（它们自带层级与让位逻辑）
 local function HorizonDrawPageModal(vg)
@@ -1430,9 +1421,12 @@ local function seamBackList()
             close = function() CharacterDetail.close() end,
         }
     end
-    -- 左框柱 ‹：左栏二级页（教堂/铁匠/酒馆/市场）——条贴页面右缘(前缘),同步推进
+    -- 左框柱 ‹：左栏二级页（背包/教堂/铁匠/酒馆/市场）——条贴页面右缘(前缘),同步推进
     local leftClose, leftAnim
-    if     ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
+    if     BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
+        leftClose = function() BackpackPanel.close() end
+        leftAnim = { BackpackPanel.getSeamAnim() }
+    elseif ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
         leftAnim = { ChurchPage.getSeamAnim() }
     elseif BlacksmithPage.isOpen()  then leftClose = function() BlacksmithPage.close() end
         leftAnim = { BlacksmithPage.getSeamAnim() }
@@ -1551,6 +1545,7 @@ function HandleNanoVGRenderHorizon()
         ChurchPage.draw(vg)
         TavernPage.draw(vg)
         MarketPage.draw(vg)
+        BackpackPanel.draw(vg)
         Viewport.finish(vg)
 
         -- 右面板：角色固定（先于中面板绘制，便于弹窗时统一压暗侧栏）
@@ -1613,6 +1608,7 @@ function HandleNanoVGRenderHorizon()
         ChurchPage.draw(vg)
         TavernPage.draw(vg)
         MarketPage.draw(vg)
+        BackpackPanel.draw(vg)
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
         -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
         if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
@@ -1645,8 +1641,6 @@ function HandleNanoVGRenderHorizon()
         end
         -- [底栏移除] 日志/副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
         HorizonDrawPageModal(vg)
-        -- [仓库入口] 背包模态限定中栏（左右栏保持亮且可点）
-        BackpackPanel.drawWindow(vg, logicalW, logicalH, horizonBackpackRect())
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面
         if DarkTitleScreen.isOpen() then
@@ -1694,8 +1688,6 @@ function HandleNanoVGRenderHorizon()
     end
     -- [底栏移除] 日志/副本页全窗竖版模态
     HorizonDrawPageModal(vg)
-    -- [仓库入口] 背包模态限定中栏（左右栏保持亮且可点）
-    BackpackPanel.drawWindow(vg, logicalW, logicalH, horizonBackpackRect())
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.draw(vg, logicalW, logicalH)
@@ -1766,13 +1758,6 @@ local function HorizonResolveMouse()
     if TowerBattleScene.isActive() then
         return 'modal', sx, sy
     end
-    -- [仓库入口] 背包模态：仅中栏矩形内吞输入；左右栏保持可点（仓库/黑市/教堂等照常）
-    if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
-        local R = horizonBackpackRect()
-        if sx >= R.x and sx <= R.x + R.w and sy >= R.y and sy <= R.y + R.h then
-            return 'backpack', sx, sy
-        end
-    end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
     if DungeonBattleScene.isOpen()
@@ -1784,11 +1769,6 @@ local function HorizonResolveMouse()
     if not pid then return 'none', 0, 0 end
     H_lastPanel = pid
     return pid, dx, dy
-end
-
---- [仓库入口] 窗口坐标 → 背包竖版设计坐标（中栏矩形内）
-local function backpackCoords(wx, wy)
-    return BackpackPanel.toDesignCoords(wx, wy, logicalW, logicalH, horizonBackpackRect())
 end
 
 function HandleMouseButtonDownHorizon(eventType, eventData)
@@ -1811,14 +1791,6 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         PlayerInfoPanel.handleDragBegin(dx, dy)
         return
     end
-    -- [仓库入口] 背包全窗模态按下
-    if pid == 'backpack' then
-        pressStartDX, pressStartDY = dx or 0, dy or 0
-        pressValid = true
-        local bdx, bdy = backpackCoords(dx, dy)
-        BackpackPanel.handleDragBegin(bdx, bdy)
-        return
-    end
     -- [三栏并行] 三栏页自管输入（返回按钮等）
     if pid == 'tri' then
         pressStartDX, pressStartDY = dx or 0, dy or 0
@@ -1837,6 +1809,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     end
     if pid == 'none' then return end
     if pid == 'left' then
+        if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragBegin(dx, dy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
@@ -1855,11 +1828,6 @@ function HandleMouseMoveHorizon(eventType, eventData)
     if pid == 'none' then return end
     if pid == 'playerinfo' then
         PlayerInfoPanel.handleDragMove(dx, dy)
-        return
-    end
-    if pid == 'backpack' then
-        local bdx, bdy = backpackCoords(dx, dy)
-        BackpackPanel.handleDragMove(bdx, bdy)
         return
     end
     if pid == 'modal' and HorizonPageModalActive() then
@@ -1884,6 +1852,7 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if pid == 'left' then
+        if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragMove(dx, dy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragMove(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragMove(dx, dy) return end
@@ -1932,14 +1901,8 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     if pid == 'none' then return end
-    -- [仓库入口] 背包全窗模态优先
-    if pid == 'backpack' then
-        local bdx, bdy = backpackCoords(dx, dy)
-        BackpackPanel.handleDragEnd(bdx, bdy)
-        if isTap then BackpackPanel.handleInput(bdx, bdy) end
-        return
-    end
     -- [三队并行] 中缝返回键优先命中（条贴页面运动前缘,可能落在 tri 缝隙也可能落在面板区内;左右两级各自独立命中）
+    -- ⚠️ 必须在 backpack 分支之前：返回条骑在左栏右缘，属背包矩形内，晚判会被背包吞掉
     for _, seamBtn in ipairs(seamBackList()) do
         if math.abs(dx - seamBtn.cx) <= seamBtn.sw * 0.5
             and math.abs(dy - logicalH * 0.5) <= seamBtn.sh * 0.5 then
@@ -2002,8 +1965,8 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     -- 左面板：功能页组点击链
     if pid == 'left' then
         -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
-        if isTap and not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
-            or MarketPage.isOpen()) then
+        if isTap and not (BackpackPanel.isOpen() or BlacksmithPage.isOpen() or ChurchPage.isOpen()
+            or TavernPage.isOpen() or MarketPage.isOpen()) then
             if TopBar.hitTestAvatar(dx, dy, -30) then
                 PlayerInfoPanel.open()
                 return
@@ -2012,6 +1975,13 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
             if TopBar.handleInput(dx, dy, -30) then
                 return
             end
+        end
+        -- [仓库入口] 背包左栏页（与黑市/教堂同链）
+        if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
+            BackpackPanel.handleDragEnd(dx, dy)
+            if not isTap then return end
+            BackpackPanel.handleInput(dx, dy)
+            return
         end
         if BlacksmithPage.isOpen() then
             BlacksmithPage.handleDragEnd(dx, dy)
@@ -2121,11 +2091,6 @@ function HandleMouseWheelHorizon(eventType, eventData)
         return
     end
 
-    -- [仓库入口] 背包全窗模态：网格滚动
-    if pid == 'backpack' then
-        BackpackPanel.handleScroll(wheel)
-        return
-    end
     -- [底栏移除] 日志页全窗模态：列表滚动
     if pid == 'modal' and HorizonPageModalActive() then
         if BottomNav.getSelectedIndex() == 2 then DiaryPage.handleScroll(wheel) end
@@ -2138,6 +2103,7 @@ function HandleMouseWheelHorizon(eventType, eventData)
     end
 
     if pid == 'left' then
+        if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleScroll(wheel) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel) return end
         if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel) return end
         if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end

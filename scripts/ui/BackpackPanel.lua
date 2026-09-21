@@ -119,7 +119,7 @@ local BAG_MAX = EquipmentSystem.MAX_INVENTORY
 -- ⚠️ 必须放在全部布局常量（含 CAP_TEXT/BTN_*）定义之后：Lua 词法作用域。
 local LAYOUT_ORIG = nil
 local function isCompact()
-    return hostMode_ == "window"
+    return hostMode_ == "window" or hostMode_ == "left"
 end
 local function applyLayout(compact)
     if not LAYOUT_ORIG then
@@ -1100,9 +1100,15 @@ function Panel.init(vg)
 end
 
 --- 打开面板
----@param windowMode? boolean true=全窗居中模态(横屏仓库入口)；nil/false=内嵌(竖屏/日志页内)
-function Panel.open(windowMode)
-    hostMode_ = windowMode and "window" or "inline"
+---@param mode? boolean|"left" true=全窗居中模态(旧)；"left"=横屏左栏页(同铁匠铺/教堂模板)；nil/false=内嵌(竖屏/日志页内)
+function Panel.open(mode)
+    if mode == "left" then
+        hostMode_ = "left"
+    elseif mode then
+        hostMode_ = "window"
+    else
+        hostMode_ = "inline"
+    end
     applyLayout(isCompact())
     state.open = true
     state.closing = false
@@ -1183,6 +1189,12 @@ function Panel.isWindowMode()
     return hostMode_ == "window"
 end
 
+--- [横屏左栏页] 是否以左栏页模式打开（宿主 Viewport(left) 内绘制/输入/中缝返回）
+---@return boolean
+function Panel.isLeftMode()
+    return hostMode_ == "left"
+end
+
 local function drawBody(vg)
     -- === 动画进度计算（与 BlacksmithPage 一致） ===
     local progress, lowerProgress
@@ -1202,11 +1214,13 @@ local function drawBody(vg)
     local lowerOY =  LOWER_SLIDE_DIST * (1 - lowerProgress)
     local overlayAlpha = math.floor(180 * progress)
 
-    -- === 全屏暗色遮罩 ===
+    -- === 全屏暗色遮罩 ===（[横屏左栏] 页面自带不透明底，不再叠暗罩）
+    if not isCompact() then
     nvgBeginPath(vg)
     nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, overlayAlpha))
     nvgFill(vg)
+    end
 
     -- === 上半部分（从屏幕上方滑入）：顶部背景 + 标题 ===
     -- [横屏左栏紧凑] 窗口模式不画顶部大图，网格从面板顶部开始
@@ -1315,8 +1329,10 @@ local function drawBody(vg)
         end
     end
 
-    -- 8. 返回按钮
-    DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
+    -- 8. 返回按钮（[横屏左栏] 窗口模式由宿主中缝侧边返回条接管，页内不画）
+    if not isCompact() then
+        DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
+    end
 
     -- 9. Tab 背景
     DrawUtil.drawImageCentered(vg, imgTabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
@@ -1360,8 +1376,32 @@ end
 
 function Panel.draw(vg)
     if not state.open then return end
-    if hostMode_ == "window" then return end  -- 横屏由 drawWindow 全窗绘制
+    if hostMode_ == "window" then return end  -- 旧全窗模态由 drawWindow 绘制
+    if hostMode_ == "left" then
+        -- [横屏左栏页模板] 与铁匠铺/教堂一致：seam 滑入 + 不透明底，宿主在 Viewport(left) 内调用
+        local ot, ct, od, cd = Panel.getSeamAnim()
+        local ox = DrawUtil.seamSlideX(-1, ot, ct, od, cd, 1080)
+        if ox ~= 0 then
+            nvgSave(vg)
+            nvgTranslate(vg, ox, 0)
+        end
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+        nvgFillColor(vg, nvgRGBA(0x14, 0x12, 0x10, 255))
+        nvgFill(vg)
+        drawBody(vg)
+        if ox ~= 0 then
+            nvgRestore(vg)
+        end
+        return
+    end
     drawBody(vg)
+end
+
+--- [横屏中缝] 开合动画四元组（与 BlacksmithPage 等左栏页一致，供宿主中缝返回条同步滑动）
+---@return number openTime number closeTime number openDur number closeDur
+function Panel.getSeamAnim()
+    return state.openTime, state.closeTime, ANIM_OPEN_DUR, ANIM_CLOSE_DUR
 end
 
 --- [横屏] 模态绘制：限定矩形内压暗 + 竖版画布等比缩放居中（子弹窗 EquipmentDetail/itemDetail 自动跟随）
@@ -1555,8 +1595,9 @@ function Panel.handleInput(dx, dy)
         return EquipmentDetail.handleInput(dx, dy)
     end
 
-    -- 返回按钮
-    if DrawUtil.hitTest(dx, dy, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H) then
+    -- 返回按钮（[横屏左栏] 窗口/左栏模式由宿主中缝侧边返回条接管）
+    if not isCompact()
+       and DrawUtil.hitTest(dx, dy, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H) then
         Panel.close()
         return true
     end

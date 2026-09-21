@@ -444,15 +444,11 @@ function CharacterDetail.handleInput(dx, dy)
     if detailState.tab ~= "awaken" then
     for _, s in ipairs(DT_SLOTS) do
         if hitTest(dx, dy, s.cx, s.cy, DT_SLOT_SIZE, DT_SLOT_SIZE) then
-            if detailState.tab == "equip" then
-                -- 配装Tab：切换选中槽位，触发背包重新排序
-                detailState.equipSlot = s.slot
-                if CharacterDetail._EquipPanel then
-                    CharacterDetail._EquipPanel.onSlotChanged(s.slot, detailState.heroId)
-                end
-            else
-                -- 其他Tab：打开装备背包
-                EquipmentBag.open(s.slot, s.name, detailState.heroId)
+            -- [交互] 属性/任意页点装备槽：自动跳配装 Tab 并选中该槽（不再另开装备背包）
+            detailState.tab = "equip"
+            detailState.equipSlot = s.slot
+            if CharacterDetail._EquipPanel then
+                CharacterDetail._EquipPanel.onSlotChanged(s.slot, detailState.heroId)
             end
             return true
         end

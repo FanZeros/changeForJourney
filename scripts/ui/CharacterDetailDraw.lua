@@ -882,15 +882,15 @@ function M.draw(vg)
     local meFillX = MID_EXP_CX - MID_EXP_W * 0.5 + MID_EXP_PADDING
     local meFillY = MID_EXP_CY - MID_EXP_H * 0.5 + MID_EXP_PADDING
     local meClipW = meFillW * midExpProgress
-    if meClipW > 0 and img.midExpFill >= 0 then
+    if meClipW > 0 then
         nvgSave(vg)
         nvgScissor(vg, meFillX, meFillY, meClipW, meFillH)
-        -- [配色] 经验条填充改金色（暗金主题），原青色贴图 tint 为暖金
-        local paint = nvgImagePatternTinted(vg, meFillX, meFillY, meFillW, meFillH, 0, img.midExpFill,
-            nvgRGBA(255, 205, 100, 255))
+        -- [配色] 经验条填充=金色竖向渐变（暗金主题；原青色贴图 tint 为乘法会偏绿，弃用）
+        local grad = nvgLinearGradient(vg, meFillX, meFillY, meFillX, meFillY + meFillH,
+            nvgRGBA(255, 226, 140, 255), nvgRGBA(196, 148, 44, 255))
         nvgBeginPath(vg)
         nvgRect(vg, meFillX, meFillY, meFillW, meFillH)
-        nvgFillPaint(vg, paint)
+        nvgFillPaint(vg, grad)
         nvgFill(vg)
         nvgResetScissor(vg)
         nvgRestore(vg)

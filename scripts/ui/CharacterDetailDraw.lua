@@ -885,7 +885,9 @@ function M.draw(vg)
     if meClipW > 0 and img.midExpFill >= 0 then
         nvgSave(vg)
         nvgScissor(vg, meFillX, meFillY, meClipW, meFillH)
-        local paint = nvgImagePattern(vg, meFillX, meFillY, meFillW, meFillH, 0, img.midExpFill, 1.0)
+        -- [配色] 经验条填充改金色（暗金主题），原青色贴图 tint 为暖金
+        local paint = nvgImagePatternTinted(vg, meFillX, meFillY, meFillW, meFillH, 0, img.midExpFill,
+            nvgRGBA(255, 205, 100, 255))
         nvgBeginPath(vg)
         nvgRect(vg, meFillX, meFillY, meFillW, meFillH)
         nvgFillPaint(vg, paint)

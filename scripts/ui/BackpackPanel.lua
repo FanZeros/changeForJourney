@@ -586,9 +586,16 @@ local function drawEquipGrid(vg)
                 DrawUtil.drawImageCentered(vg, imgLock, lockX, lockY, lockSize, lockSize, 1.0)
             end
         else
-            -- 空格子：暗铁凹槽底（[B-方案] 古卷化，顶部高光+描边材质感）
-            DarkIcon.drawNine(vg, "slot", cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                GRID.CELL_SIZE, GRID.CELL_SIZE, { radius = GRID.CELL_RADIUS })
+            -- 空格子：[规范化] 与右栏装备空槽同款——浅金底板+金描边圆角（暗底上可辨认位置）
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg,
+                cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
+                GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS + 6)
+            nvgFillColor(vg, nvgRGBA(210, 186, 140, 70))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(232, 204, 140, 210))
+            nvgStrokeWidth(vg, 3)
+            nvgStroke(vg)
         end
         ::continue_equip::
     end

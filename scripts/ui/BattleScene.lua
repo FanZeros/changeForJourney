@@ -85,9 +85,6 @@ local NAV = BattleStageNav.NAV
 
 -- (职业标签 TAG_SIZE / HP_BAR / ATK_BAR 已移至 BattleDraw)
 
--- 墓碑复活间隔（秒）
-local TOMBSTONE_REVIVE_TIME = 2.0
-
 -- 死亡即补位：退场+空位总时长（秒），期满新怪从右补入
 local RESPAWN_DELAY = 1.0
 
@@ -434,10 +431,6 @@ end
 
 local function generateIdleEnemyList()
     return BattleEnemySpawn.generateIdleEnemyList(getStageConfig(), maxStageId_, currentStageId)
-end
-
-local function refillEnemies()
-    enemies, enemyQueue = BattleStageFlow.refillEnemies(enemies, enemyQueue, getStageMaxFieldEnemies())
 end
 
 local function startBattleTalents()

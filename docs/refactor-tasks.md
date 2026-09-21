@@ -18,8 +18,8 @@
 - [x] **T6** BattleCombat：抽出飘字 / 受击闪 / 连击队列到 `BattleCombatFx.lua`，BattleCombat 只保留攻击结算。目标：BattleCombat < 1800 行。
 - [x] **T7** TalentManager：核心 API 留壳，按英雄把最长的本地函数块拆到 `systems/talents/`（至少拆 Melissa / Luoxing / Ayane 三块）。目标：TalentManager.lua < 3000 行。
 - [x] **T8** Standalone：抽出 `_bootWiring` 到 `network/StandaloneBoot.lua`，抽出横屏输入到 `network/StandaloneHorizonInput.lua`。目标：Standalone.lua < 1600 行。
-- [ ] **T9** 死代码与重复清理：确认弹窗残留、重复九宫格/缓动、无引用 local。更新 `docs/refactor-plan.md` 进度。
-- [ ] **T10** 汇总：更新本清单全部勾选、最终行数统计、push。完成后才向用户 AskUserQuestion。
+- [x] **T9** 死代码与重复清理：确认弹窗残留、重复九宫格/缓动、无引用 local。更新 `docs/refactor-plan.md` 进度。
+- [x] **T10** 汇总：更新本清单全部勾选、最终行数统计、push。完成后才向用户 AskUserQuestion。
 
 ## 验收底线
 

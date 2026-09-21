@@ -20,13 +20,13 @@
 | 步 | 目标 | 风险 | 状态 |
 |----|------|------|------|
 | 1 | 从 BattleScene 抽出终焉确认弹窗 + 长按怪物信息 | 低：纯 UI，对外 API 不变 | **已完成** |
-| 2 | 继续拆 BattleScene：关卡加载 / 倍速 / 寻怪与战败 HUD | 中 | **本提交完成** |
-| 3 | 拆 BattleCombat（攻击结算 / 连击 / 飘字） | 中高：战斗手感 | 待做 |
-| 4 | 按英雄拆 TalentManager（核心 API 留壳，角色天赋分文件） | 高：战斗正确性 | 待做 |
-| 5 | Standalone `_bootWiring` / 横屏输入拆模块 | 中：入口接线 | 待做 |
-| 6 | Client/Server 启动与 overlay 拆模块 | 中 | 待做 |
-| 7 | 城镇页（铁匠/教堂/酒馆/市场/背包）抽共用页壳 | 中 | 待做 |
-| 8 | 删死代码、统一重复九宫格/缓动 | 低 | 待做 |
+| 2 | 继续拆 BattleScene：关卡加载 / 倍速 / 寻怪与战败 HUD | 中 | **已完成** |
+| 3 | 拆 BattleCombat（攻击结算 / 连击 / 飘字） | 中高：战斗手感 | **飘字/闪烁已完成；卡牌动画/连击仍在 BattleCombat** |
+| 4 | 按英雄拆 TalentManager（核心 API 留壳，角色天赋分文件） | 高：战斗正确性 | **Ayane/Luoxing/Melissa 已完成** |
+| 5 | Standalone `_bootWiring` / 横屏输入拆模块 | 中：入口接线 | **已完成** |
+| 6 | Client/Server 启动与 overlay 拆模块 | 中 | 未做（清单外） |
+| 7 | 城镇页（铁匠/教堂/酒馆/市场/背包）抽共用页壳 | 中 | 未做（清单外） |
+| 8 | 删死代码、统一重复九宫格/缓动 | 低 | **部分完成（确认弹窗贴图/墓碑常量/重复 boot 回调）** |
 
 ## 第 1 步改动
 
@@ -50,3 +50,17 @@
 - `BattleScene` 对外倍速 API 签名不变（`BattleTriPage` 仍走 BattleScene）
 - 删除已无引用的终焉确认弹窗贴图加载（`imgConfirmBg` / `imgBtnGreen` / `imgBtnGray`）
 - `BattleScene` 约 3435 → 3008 → 2722 行
+
+
+## 本轮最终行数（相对 workspace @ 973f0ed）
+
+| 文件 | 重构前 | 重构后 |
+|------|--------|--------|
+| ui/BattleScene.lua | 3435 | 2384 |
+| ui/BattleCombat.lua | 2203 | 2101 |
+| systems/TalentManager.lua | 4197 | 3570 |
+| network/Standalone.lua | 2168 | 841 |
+| network/Client.lua | 2487 | 2487（未拆） |
+| network/Server.lua | 2068 | 2068（未拆） |
+
+分支：`refactor/extract-battle-overlays`。禁止推 `workspace`。

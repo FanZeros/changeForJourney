@@ -536,9 +536,6 @@ function M.run(rt)
 
     print("[Standalone] boot wiring done")
 
-    if rt.setLocalBridgeReady then
-        rt.setLocalBridgeReady()
-    end
 end
 
 return M

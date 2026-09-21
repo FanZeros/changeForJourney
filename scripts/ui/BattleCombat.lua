@@ -18,6 +18,7 @@ local DungeonBattle = require("ui.DungeonBattle")
 local NumberUtil = require("core.NumberUtil")
 local BattleStats = require("systems.BattleStats")
 local SettingsPanel = require("ui.SettingsPanel")
+local BattleCombatFx = require("ui.BattleCombatFx")
 
 local BattleCombat = {}
 -- ======================== [多实例] 战斗状态容器 ========================
@@ -55,13 +56,6 @@ local DESIGN_W = 1080
 local CARD_W     = 198
 local CARD_SPACING = 7
 
--- 浮动文字
-local FLOAT_TOTAL_FRAMES = 20
-local FLOAT_FPS          = 30
-local FLOAT_DURATION     = FLOAT_TOTAL_FRAMES / FLOAT_FPS
-local FLOAT_MOVE_DIST    = 240
-local MAX_FLOATING_TEXTS = 15            -- 同时存在的飘字上�?
-local FLOAT_FAST_FADE    = 17 / FLOAT_FPS -- 强制进入最�?帧快速消�?
 
 -- 攻击动画
 local LUNGE_DISTANCE   = 60
@@ -95,8 +89,6 @@ local ENTER_STAGGER        = 0.06
 -- 血条缓�?
 local HP_BUFFER_SPEED = 1.2
 
--- 受击闪烁
-local HIT_FLASH_DURATION = 0.3
 
 -- 远程角色缩放攻击动画
 local RANGED_CHARGE_SCALE  = 0.85   -- 蓄力时缩小到 85%
@@ -145,21 +137,7 @@ local function playAttackCardAnim(attacker, isAlly)
     }
 end
 
--- 浮动文字对象池（减少 GC 压力�?
-local function acquireFt()
-    local n = #BCS.ftPool
-    if n > 0 then
-        local ft = BCS.ftPool[n]
-        BCS.ftPool[n] = nil
-        return ft
-    end
-    return {}
-end
-local function releaseFt(ft)
-    ft.text = nil
-    ft.color = nil
-    BCS.ftPool[#BCS.ftPool + 1] = ft
-end
+-- 浮动文字对象池 / 飘字逻辑已移至 BattleCombatFx
 
 -- 连击队列：{ attacker, isAlly, targetIsAlly, comboHitIndex, targetIndex, delay, timer, atkStableId, targetRef, tgtStableId }
 
@@ -438,50 +416,7 @@ BattleCombat.syncUnitHp = syncUnitHp
 ---@param isCrit boolean
 ---@param fontSize number|nil
 local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred)
-    -- [伤害排队] deferred=true 时先入待显示队列，由 updateFloatingTexts 按间隔放出
-    -- （多个伤害同帧产生时依次显示，间隔统一 0.1s）
-    if deferred then
-        if #BCS.pendingFt >= 20 then
-            table.remove(BCS.pendingFt, 1)  -- 防极端积累：丢弃最老
-        end
-        BCS.pendingFt[#BCS.pendingFt + 1] = {
-            text = text, cx = cx, cy = cy,
-            color = color, isCrit = isCrit or false, fontSize = fontSize,
-        }
-        if #BCS.pendingFt == 1 then
-            BCS.ftSpawnCd = 0  -- [伤害排队] 首条立即显示；后续相对上一条间隔 0.1s
-        end
-        return
-    end
-    -- 飘字上限：超出时将最早的飘字跳到快速淡出阶�?
-    while #BCS.floatingTexts >= MAX_FLOATING_TEXTS do
-        local oldest = BCS.floatingTexts[1]
-        if oldest.timer < FLOAT_FAST_FADE then
-            oldest.timer = FLOAT_FAST_FADE  -- 跳到最�?帧淡�?
-        else
-            -- 已在淡出中，直接移除
-            releaseFt(oldest)
-            table.remove(BCS.floatingTexts, 1)
-        end
-        -- 只强制一个后跳出，留�?update 自然清理
-        break
-    end
-
-    local angle = -math.pi * 0.5 + (math.random() - 0.5) * math.pi * 0.5
-    local baseSize = fontSize or 80
-    if isCrit then baseSize = baseSize * 2 end
-    local entry = acquireFt()
-    entry.text     = text
-    entry.x        = cx
-    entry.y        = cy
-    entry.dirX     = math.cos(angle)
-    entry.dirY     = math.sin(angle)
-    entry.timer    = 0
-    entry.duration = FLOAT_DURATION
-    entry.color    = color
-    entry.isCrit   = isCrit or false
-    entry.fontSize = baseSize
-    BCS.floatingTexts[#BCS.floatingTexts + 1] = entry
+    BattleCombatFx.addFloatingText(BCS, text, cx, cy, color, isCrit, fontSize, deferred)
 end
 BattleCombat.addFloatingText = addFloatingText
 
@@ -495,8 +430,7 @@ end
 
 --- 设置受击闪烁（跟随设置「特效显示」开关）
 local function setHitFlash(target)
-    if not SettingsPanel.isEffectsEnabled() then return end
-    BCS.hitFlashes[target] = { timer = 0 }
+    BattleCombatFx.setHitFlash(BCS, target)
 end
 
 --- 应用全局伤害乘数（如竞技场全体减伤），BCS.ctx.globalDmgMult 默认 1.0
@@ -2083,9 +2017,6 @@ function BattleCombat.clearCardAnim(unit)
 end
 
 --- 清除受击闪烁
-function BattleCombat.clearHitFlash(unit)
-    BCS.hitFlashes[unit] = nil
-end
 
 --- 播放入场动画（交错滑�?+ 淡入�?
 ---@param units table  单位列表
@@ -2104,54 +2035,21 @@ end
 -- ======================== 浮动文字更新 ========================
 
 function BattleCombat.updateFloatingTexts(dt)
-    -- [伤害排队] 待显示伤害飘字按间隔放出（统一 0.1s）
-    if #BCS.pendingFt > 0 then
-        BCS.ftSpawnCd = BCS.ftSpawnCd - dt
-        if BCS.ftSpawnCd <= 0 then
-            local p = table.remove(BCS.pendingFt, 1)
-            addFloatingText(p.text, p.cx, p.cy, p.color, p.isCrit, p.fontSize, false)
-            BCS.ftSpawnCd = 0.1
-        end
-    end
-    local i = 1
-    while i <= #BCS.floatingTexts do
-        local ft = BCS.floatingTexts[i]
-        ft.timer = ft.timer + dt
-        if ft.timer >= ft.duration then
-            releaseFt(ft)
-            table.remove(BCS.floatingTexts, i)
-        else
-            i = i + 1
-        end
-    end
+    BattleCombatFx.updateFloatingTexts(BCS, dt, addFloatingText)
 end
 
 -- ======================== 受击闪烁更新 ========================
 
 function BattleCombat.updateHitFlashes(dt)
-    local toRemove = {}
-    for unit, flash in pairs(BCS.hitFlashes) do
-        flash.timer = flash.timer + dt
-        if flash.timer >= HIT_FLASH_DURATION then
-            toRemove[#toRemove + 1] = unit
-        end
-    end
-    for _, unit in ipairs(toRemove) do
-        BCS.hitFlashes[unit] = nil
-    end
+    BattleCombatFx.updateHitFlashes(BCS, dt)
 end
 
---- 获取受击闪烁 alpha（0~255；特效关闭时不绘制）
 function BattleCombat.getHitFlashAlpha(unit)
-    if not SettingsPanel.isEffectsEnabled() then return 0 end
-    local flash = BCS.hitFlashes[unit]
-    if not flash then return 0 end
-    local t = flash.timer / HIT_FLASH_DURATION
-    local alpha = (1 - t) * 180
-    if t < 0.3 then
-        alpha = 200
-    end
-    return math.max(0, math.floor(alpha))
+    return BattleCombatFx.getHitFlashAlpha(BCS, unit)
+end
+
+function BattleCombat.clearHitFlash(unit)
+    BattleCombatFx.clearHitFlash(BCS, unit)
 end
 
 -- ======================== 血条缓�?========================

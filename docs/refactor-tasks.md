@@ -12,9 +12,9 @@
 
 ## 待完成（按顺序）
 
-- [ ] **T3** BattleScene：抽出 `refillEnemies` / `startBattleTalents` / `setupBattleCombatContext` / `resetBattle` 到 `BattleStageFlow.lua`。`loadStage` 仍留在 BattleScene 作编排。
-- [ ] **T4** BattleScene：抽出属性快照与己方重置（`createSnapshot` / `restoreFromSnapshot` / `resetAllyUnit`）到 `BattleAllyReset.lua`。
-- [ ] **T5** BattleScene：抽出关卡名/前进后退导航绘制到 `BattleStageNav.lua`；清死代码。目标：BattleScene < 2200 行。
+- [x] **T3** BattleScene：抽出 `refillEnemies` / `startBattleTalents` / `setupBattleCombatContext` / `resetBattle` 到 `BattleStageFlow.lua`。`loadStage` 仍留在 BattleScene 作编排。
+- [x] **T4** BattleScene：抽出属性快照与己方重置（`createSnapshot` / `restoreFromSnapshot` / `resetAllyUnit`）到 `BattleAllyReset.lua`。
+- [x] **T5** BattleScene：抽出关卡名/前进后退导航绘制到 `BattleStageNav.lua`；清死代码。目标：BattleScene < 2200 行。
 - [ ] **T6** BattleCombat：抽出飘字 / 受击闪 / 连击队列到 `BattleCombatFx.lua`，BattleCombat 只保留攻击结算。目标：BattleCombat < 1800 行。
 - [ ] **T7** TalentManager：核心 API 留壳，按英雄把最长的本地函数块拆到 `systems/talents/`（至少拆 Melissa / Luoxing / Ayane 三块）。目标：TalentManager.lua < 3000 行。
 - [ ] **T8** Standalone：抽出 `_bootWiring` 到 `network/StandaloneBoot.lua`，抽出横屏输入到 `network/StandaloneHorizonInput.lua`。目标：Standalone.lua < 1600 行。

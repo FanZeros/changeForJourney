@@ -11,8 +11,6 @@ local RCH = require("systems.RelicConditionHandler")
 local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
 local SC  = require("config.StageConfig")
-local MC  = require("config.MonsterConfig")
-local HeroAssetUtil = require("config.HeroAssetUtil")
 
 local BattleCombat      = require("ui.BattleCombat")
 local StageBerserk     = require("ui.StageBerserk")
@@ -35,6 +33,9 @@ local MonsterInfoPopup = require("ui.MonsterInfoPopup")
 local BattleSpeed = require("ui.BattleSpeed")
 local BattleEnemySpawn = require("ui.BattleEnemySpawn")
 local BattleTransitionHud = require("ui.BattleTransitionHud")
+local BattleStageFlow = require("ui.BattleStageFlow")
+local BattleAllyReset = require("ui.BattleAllyReset")
+local BattleStageNav = require("ui.BattleStageNav")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -80,15 +81,7 @@ local ALLY_ATK_BG_OFFSET_Y = 181
 local ALLY_LVL_OFFSET_Y  = 215
 
 -- 关卡名 / 按钮坐标（合并到 table 减少 local 占用）
-local NAV = {
-    STAGE_CX = 540, STAGE_CY = 1276,
-    BACK_BG_CX = 116, BACK_BG_CY = 1277, BACK_BG_W = 232, BACK_BG_H = 226,
-    BACK_ICON_CX = 81, BACK_ICON_CY = 1258, BACK_ICON_W = 53, BACK_ICON_H = 81,
-    BACK_TEXT_CX = 88, BACK_TEXT_CY = 1326,
-    FWD_BG_CX = 964, FWD_BG_CY = 1277, FWD_BG_W = 232, FWD_BG_H = 226,
-    FWD_ICON_CX = 998, FWD_ICON_CY = 1258, FWD_ICON_W = 53, FWD_ICON_H = 81,
-    FWD_TEXT_CX = 991, FWD_TEXT_CY = 1325,
-}
+local NAV = BattleStageNav.NAV
 
 -- (职业标签 TAG_SIZE / HP_BAR / ATK_BAR 已移至 BattleDraw)
 
@@ -364,156 +357,13 @@ function BattleScene.handleSpeedButtonInput(dx, dy)
     return true
 end
 
--- ======================== 属性快照隔离 ========================
-
---- 为单位创建基线快照（调用时机：setAllies / fallback 重建后）
---- 快照 = attrs 的深拷贝，包含全部持久性 modifier（职业/转职/星图/装备）
----@param u table battle unit
+-- ======================== 属性快照隔离（委托 BattleAllyReset） ========================
 local function createSnapshot(u)
-    if u.attrs then
-        u._baseSnapshot = u.attrs:clone()
-    end
-    u._baseArmorType = u.armorType  -- 记录当前护甲类型
-    u._pendingSnapshot = nil  -- 清除待应用快照
-    u._pendingArmorType = nil
+    BattleAllyReset.createSnapshot(u)
 end
 
---- 从快照恢复单位属性
---- 如有 pendingSnapshot（战斗中的升级/换装），提升为新的 baseSnapshot
---- 然后从 baseSnapshot clone 出干净的 live attrs
----@param u table battle unit
----@return boolean 是否成功恢复
-local function restoreFromSnapshot(u)
-    -- 消费 pending（升级/换装产生的待应用数据）
-    if u._pendingSnapshot then
-        u._hadPendingSnapshot = true  -- [HealDiag3] 标记曾消费 pending
-        u._baseSnapshot = u._pendingSnapshot
-        u._pendingSnapshot = nil
-    else
-        u._hadPendingSnapshot = false
-    end
-    -- 同步待定等级
-    if u._pendingLevel then
-        u.level = u._pendingLevel
-        u._pendingLevel = nil
-    end
-    -- 同步待定护甲类型（换装导致护甲类型变化）
-    if u._pendingArmorType then
-        u._baseArmorType = u._pendingArmorType
-        u._pendingArmorType = nil
-    end
-    if u._baseArmorType then
-        u.armorType = u._baseArmorType
-    end
-    -- 从 base 快照 clone 出干净 attrs（不含运行时 buff）
-    if u._baseSnapshot then
-        u.attrs = u._baseSnapshot:clone()
-        -- [HealDiag3] 恢复快照时检查治疗者的 HEAL_AMOUNT 是否正常
-        if u.attrs and AD.getAtkCategory(u.attrs.atkType) == "healing" then
-            local snapHeal = u._baseSnapshot:get(AD.HEAL_AMOUNT)
-            local clonedHeal = u.attrs:get(AD.HEAL_AMOUNT)
-            if snapHeal <= 0 or clonedHeal <= 0 then
-                print(string.format(
-                    "[HealDiag3] RESTORE_SNAP_ZERO name=%s id=%s snapHeal=%.1f clonedHeal=%.1f"
-                    .. " hadPending=%s atkType=%d",
-                    tostring(u.name), tostring(u.heroId or "?"),
-                    snapHeal, clonedHeal,
-                    tostring(u._hadPendingSnapshot or false),
-                    u.attrs.atkType or -1
-                ))
-            end
-        end
-        return true
-    end
-    return false
-end
-
---- 重置单个己方单位状态（从快照恢复干净属性 → 填满血 → 同步 flat 字段）
---- 如有 pendingSnapshot（战斗中的升级/换装），在此时消费并生效
 local function resetAllyUnit(u)
-    u.atkProgress = 0
-    u.reviveTimer = nil
-    u._fallen = nil
-    u._fallenPending = nil
-    BattleCombat.clearCardAnim(u)  -- 清残留死亡/退场动画（gone 状态会导致重置后不渲染）
-    if u.attrs then
-        local restored = restoreFromSnapshot(u)
-        if not restored then
-            -- fallback: 无快照时全量重建（首次加载或异常情况）
-            if u.heroId then
-                local HC = require("config.HeroConfig")
-                local CP = require("ui.CharacterPanel")
-                local owned = CP.getOwnedHero and CP.getOwnedHero(u.heroId)
-                local heroLevel = (CP.getEffectiveLevel and CP.getEffectiveLevel(u.heroId))
-                    or (owned and owned.level) or u.level
-                local newUnit = HC.createHero(u.heroId,
-                    heroLevel,
-                    (owned and owned.advBranch) or u.advBranch,
-                    owned and owned.awakening,
-                    owned and owned.extraTalent)
-                if newUnit and newUnit.attrs then
-                    local partySlot = nil
-                    for ai, a in ipairs(allies) do
-                        if a == u then partySlot = ai; break end
-                    end
-                    if CP.applyEquippedItems then
-                        -- 查找出战槽位索引，确保槽位强化加成正确计算
-                        local eqArmorType = CP.applyEquippedItems(newUnit.attrs, u.heroId, partySlot)
-                        if eqArmorType then
-                            newUnit.armorType = eqArmorType
-                        end
-                    end
-                    -- 遗物词条属性加成（与 CharacterPanel.getDeployedTeam 一致）
-                    local RelicBridge = require("systems.RelicBridge")
-                    local relicConds = RelicBridge.applyToUnit(newUnit.attrs, newUnit.classId or u.classId)
-                    if relicConds and #relicConds > 0 then
-                        u.relicConditions = relicConds
-                    end
-                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
-                    if artifactEffects and #artifactEffects > 0 then
-                        u.artifactEffects = artifactEffects
-                    else
-                        u.artifactEffects = nil
-                    end
-                    u.attrs = newUnit.attrs
-                    u.armorType = newUnit.armorType
-                    u.level = newUnit.level
-                    u.advBranch = newUnit.advBranch
-                    u.advTalentIds = newUnit.advTalentIds
-                    u.awakeningNodes = newUnit.awakeningNodes
-                end
-            end
-            createSnapshot(u)
-        end
-        u.attrs:fillHp()
-        u.maxHp       = u.attrs.final[AD.MAX_HP]
-        u.hp          = u.attrs.final[AD.HP]
-        u.atkInterval = u.attrs:getActualInterval()
-        u._lastAttrInterval = u.atkInterval
-    else
-        -- [诊断] attrs 为 nil 时无法正确重置，记录此异常
-        print("[BattleDiag] RESET_NO_ATTRS name=" .. tostring(u.name)
-            .. " id=" .. tostring(u.heroId or u.instanceId or "?")
-            .. " hp=" .. tostring(u.hp) .. "/" .. tostring(u.maxHp)
-            .. " sentinel=" .. tostring(u._sentinelInstalled or false)
-            .. " trace=" .. tostring(u._attrsSetNilTrace or "none"))
-        u.hp = u.maxHp
-    end
-    syncUnitHp(u)
-    -- [HealDiag2] resetAllyUnit后检查治疗者属性是否正确恢复
-    if u.attrs and AD.getAtkCategory(u.attrs.atkType) == "healing" then
-        local healAmt = u.attrs:get(AD.HEAL_AMOUNT)
-        if healAmt <= 0 then
-            local baseH = u.attrs:getBase(AD.HEAL_AMOUNT)
-            local snapH = u._baseSnapshot and u._baseSnapshot:get(AD.HEAL_AMOUNT) or -1
-            print(string.format(
-                "[HealDiag2] RESET_HEALER_ZERO name=%s id=%s healAmt_final=%.1f"
-                .. " healAmt_base=%.1f snap_healAmt=%.1f hp=%d/%d",
-                tostring(u.name), tostring(u.heroId),
-                healAmt, baseH, snapH, u.hp, u.maxHp or 0
-            ))
-        end
-    end
+    BattleAllyReset.resetAllyUnit(u, allies, syncUnitHp)
 end
 
 -- BattleDraw 本地别名
@@ -586,46 +436,12 @@ local function generateIdleEnemyList()
     return BattleEnemySpawn.generateIdleEnemyList(getStageConfig(), maxStageId_, currentStageId)
 end
 
---- 从等待队列补充敌人到场上（填补空位）
 local function refillEnemies()
-    -- 移除场上已死亡的单位，同时清理其仇恨记录
-    local alive = {}
-    for _, u in ipairs(enemies) do
-        if u.hp > 0 then
-            alive[#alive + 1] = u
-        else
-            TM.removeUnit(u)
-            SEM.removeUnit(u)
-        end
-    end
-
-    -- 计算需要补充的数量（使用当前关卡的敌方场地上限）
-    local slotsAvail = getStageMaxFieldEnemies() - #alive
-    local toAdd = math.min(slotsAvail, #enemyQueue)
-
-    for _ = 1, toAdd do
-        local unit = table.remove(enemyQueue, 1)
-        alive[#alive + 1] = unit
-    end
-
-    enemies = alive
+    enemies, enemyQueue = BattleStageFlow.refillEnemies(enemies, enemyQueue, getStageMaxFieldEnemies())
 end
 
---- 初始化天赋/仇恨的战斗启动序列（必须在 resetAllyUnit 之后调用）
 local function startBattleTalents()
-    RCH.reset()
-    RCH.initBattle(allies)
-    ART.reset()
-    ART.initBattle(allies)
-    TAL.reset()
-    for _, u in ipairs(allies) do
-        TAL.initUnit(u)
-    end
-    for _, u in ipairs(enemies) do
-        TAL.initUnit(u)
-    end
-    TM.onBattleStart(allies, enemies)
-    TAL.onBattleStart(allies, enemies)
+    BattleStageFlow.startBattleTalents(allies, enemies)
 end
 
 --- 恢复主战斗的 BattleCombat 上下文（副本/竞技场关闭后必须调用）
@@ -683,88 +499,17 @@ local function setupBattleCombatContext()
 end
 
 -- [卡牌分帧加载] 英雄卡/怪物卡/投射物图，首次进战斗时构建队列，由 update 分帧消化
--- 背景: KP_GW 水墨新卡为 572x1024 PNG（64 张 ~90MB），
--- Web/WASM 端单张解码 ~0.3s，同步一次性加载会冻结主线程 30-60s（表现为卡死）。
--- 分帧策略: 每帧预算 8ms，Web 端实际每帧消化 1 张，卡面渐进出现，战斗逻辑全程不冻结。
-local battleCardQueue = nil   -- nil=未构建; table=加载中
+local battleCardQueue = nil
 local function ensureBattleCards(vg)
-    if battleCardQueue then return end
-    battleCardQueue = {}
-    local q = battleCardQueue
-    -- 预填 -1（对齐原 init 语义: 表始终有值，加载完成后覆盖；BattleDraw 依赖 img < 0 判空）
-    for _, id in ipairs(HeroAssetUtil.getAssetIds()) do
-        if imgHeroCards[id] == nil then imgHeroCards[id] = -1 end
-    end
-    for _, id in ipairs({1001, 1002, 1003, 1004, 1005, 1006, 1007, 201, 202, 203, 204, 205, 206}) do
-        if imgMonsterCards[id] == nil then imgMonsterCards[id] = -1 end
-    end
-    for id = 1, 54 do
-        if imgMonsterCards[id] == nil then imgMonsterCards[id] = -1 end
-    end
-    -- 英雄卡（编队卡面优先出现）
-    for _, id in ipairs(HeroAssetUtil.getAssetIds()) do
-        q[#q + 1] = {
-            path = HeroAssetUtil.getCardPath(id),
-            apply = function(h)
-                if h and h >= 0 then imgHeroCards[id] = h end
-            end,
-        }
-    end
-    -- 怪物卡 (1~54 / 1001~1007 / 201~206)
-    local monsterIds = {}
-    for id = 1, 54 do monsterIds[#monsterIds + 1] = id end
-    for _, id in ipairs({1001, 1002, 1003, 1004, 1005, 1006, 1007}) do
-        monsterIds[#monsterIds + 1] = id
-    end
-    for id = 201, 206 do monsterIds[#monsterIds + 1] = id end
-    for _, id in ipairs(monsterIds) do
-        q[#q + 1] = {
-            path = string.format("image/怪物卡牌/KP_GW_%d.png", id),
-            apply = function(h) imgMonsterCards[id] = h end,
-        }
-    end
-    -- 投射物/特效图（战斗中弹道首用会卡顿，一并预热）
-    for _, key in ipairs(ProjectileSystem.getImageKeys()) do
-        q[#q + 1] = {
-            path = "image/特效投射物/" .. key .. ".png",
-            fn = function() ProjectileSystem.prewarmOne(key) end,
-        }
-    end
-    print("[BattleScene] 战斗卡牌分帧加载启动: " .. #q .. " 项")
+    battleCardQueue = BattleStageFlow.ensureBattleCards({
+        imgHeroCards = imgHeroCards,
+        imgMonsterCards = imgMonsterCards,
+        vg = vg,
+    }, battleCardQueue)
 end
 
---- 每帧消化加载队列；仅消化 DWP 已下载完成的项（未完成的跳过下一帧重试，
---- 杜绝泵内同步等待下载），时间预算内尽量多载
 local function pumpBattleCards()
-    if not battleCardQueue then return end
-    local cache = GetCache()
-    local t0 = time.elapsedTime
-    local i = 1
-    while i <= #battleCardQueue and time.elapsedTime - t0 < 0.008 do
-        local job = battleCardQueue[i]
-        local st = cache:GetDownloadState(job.path)
-        if st == DOWNLOAD_COMPLETED or st == DOWNLOAD_FAILED or job.downloadSkip then
-            -- 已就绪（或下载失败/未入清单，直接解码兜底）
-            if st == DOWNLOAD_FAILED and not job.downloadSkip then
-                job.downloadSkip = true   -- 失败项重试一次（不无限卡队列）
-                i = i + 1
-            else
-                table.remove(battleCardQueue, i)
-                if job.fn then
-                    job.fn()
-                else
-                    local h = nvgCreateImage(vg_, job.path, 0)
-                    if job.apply then job.apply(h) end
-                end
-            end
-        else
-            i = i + 1   -- 下载中：跳过，下一帧再试
-        end
-    end
-    if #battleCardQueue == 0 then
-        print("[BattleScene] 战斗卡牌分帧加载完成")
-        battleCardQueue = nil
-    end
+    battleCardQueue = BattleStageFlow.pumpBattleCards(battleCardQueue, vg_)
 end
 
 --- 加载关卡
@@ -1075,10 +820,7 @@ function BattleScene.draw(vg)
     end
 
     -- 3b. "剩余敌人 X" 文本
-    local remainCount = #enemyQueue
-    local remainText = "剩余敌人 " .. tostring(remainCount)
-    drawTextStroke(vg, 540, 525, remainText, 40,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+    BattleStageNav.drawRemainEnemies(vg, #enemyQueue)
 
     -- 4. 敌方卡片组
     drawCardGroup(vg, enemies, ENEMY_CARD_CY,
@@ -1087,108 +829,35 @@ function BattleScene.draw(vg)
         ENEMY_ATK_BG_OFFSET_Y, ENEMY_LVL_OFFSET_Y, imgEnemyTag, false)
     require("systems.ExtraTalentSystem").drawIceStatues(vg)
 
-    -- 5. 关卡名（挂机模式显示范围文本，首通模式显示关卡名）
-    if not isFirstClear then
-        if not idleRangeText_ then
-            -- 缓存挂机范围文本，避免每帧重算
-            local stageConfig = getStageConfig()
-            local stages = require("shared.StageUtils").collectPrevStages(maxStageId_, 5, stageConfig)
-            if #stages > 0 then
-                local last = stages[#stages]  -- 最低关（起始）
-                local first = stages[1]       -- 最高关（结束）
-                local diffName = getStageConfig().getDifficultyDisplayName(getStageConfig().getDifficulty(first.id))
-                idleRangeText_ = string.format("%s %d-%d 至 %d-%d",
-                    diffName, getRelativeChapter(last.chapter), last.stage,
-                    getRelativeChapter(first.chapter), first.stage)
-            else
-                idleRangeText_ = "挂机中"
-            end
-        end
-        drawTextStroke(vg, NAV.STAGE_CX, NAV.STAGE_CY, idleRangeText_, 40,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-        -- 挂机状态提示
-        drawTextStroke(vg, NAV.STAGE_CX, NAV.STAGE_CY + 44, "挂机中...", 30,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 220, 255, 3)
-    else
-        drawTextStroke(vg, NAV.STAGE_CX, NAV.STAGE_CY, stageName, 40,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-        if battleActive and firstClearTimeLeft then
-            local secs = math.max(0, math.ceil(firstClearTimeLeft))
-            local urgent = secs <= 30
-            drawTextStroke(vg, NAV.STAGE_CX, NAV.STAGE_CY + 48,
-                string.format("剩余 %d 秒", secs), 34,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                urgent and 255 or 255, urgent and 144 or 255, urgent and 144 or 255, 4,
-                { strokeColor = { 0x31, 0x24, 0x24 } })
-        end
-        -- 首通狂暴读秒（与副本一致：常驻显示战斗用时，随狂暴阶段变文案/变色）
-        if StageBerserk.isActive() then
-            local bElapsed = StageBerserk.getElapsed()
-            local bPhase   = StageBerserk.getRagePhase()
-            local tText, tR, tG, tB
-            if bPhase == 2 then
-                tText = string.format("超级狂暴! %.0fs", bElapsed)
-                tR, tG, tB = 255, 34, 34
-            elseif bPhase == 1 then
-                tText = string.format("狂暴中 %.0fs", bElapsed)
-                tR, tG, tB = 255, 102, 0
-            else
-                tText = string.format("已用时 %.0fs", bElapsed)
-                tR, tG, tB = 255, 255, 255
-            end
-            local subY = (battleActive and firstClearTimeLeft) and (NAV.STAGE_CY + 92) or (NAV.STAGE_CY + 48)
-            drawTextStroke(vg, NAV.STAGE_CX, subY, tText, 34,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tR, tG, tB, 4,
-                { strokeColor = { 0x31, 0x24, 0x24 } })
-        end
-    end
-    -- 6. 后退按钮（挂机模式隐藏，终焉神殿变暗）
-    local isTerminal = getStageConfig().isTerminalTemple(currentStageId)
-    if isFirstClear then
-        local backAlpha = isTerminal and 0.3 or 1.0
-        drawImageMirrored(vg, imgBtnBack, NAV.BACK_BG_CX, NAV.BACK_BG_CY, NAV.BACK_BG_W, NAV.BACK_BG_H, backAlpha)
-        -- 7. 后退图标（水平镜像）
-        drawImageMirrored(vg, imgBtnIcon, NAV.BACK_ICON_CX, NAV.BACK_ICON_CY, NAV.BACK_ICON_W, NAV.BACK_ICON_H, backAlpha)
-        -- 8. 后退文本
-        local backC = isTerminal and 100 or 255
-        drawTextStroke(vg, NAV.BACK_TEXT_CX, NAV.BACK_TEXT_CY, "后退", 40,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, backC, backC, backC, 4)
-    end
-
-    -- 9. 前进按钮（仅挂机模式显示，终焉神殿时不可用）
-    if not isFirstClear then
-        local canAdvance = not isTerminal
-        local fwdImg = canAdvance and imgBtnFwd or imgBtnFwdGrey
-        drawImageCentered(vg, fwdImg, NAV.FWD_BG_CX, NAV.FWD_BG_CY, NAV.FWD_BG_W, NAV.FWD_BG_H, 1.0)
-        -- 10. 前进图标（未首通时暗化）+ 可前进且下一关未进入时左右漂浮 + 闪烁动画
-        local fwdAlpha = canAdvance and 1.0 or 0.4
-        local stageConfig = getStageConfig()
-        local nextId = stageConfig.getNextStageId(currentStageId)
-        -- 仅当下一关超出玩家累计抵达记录时才播放提示动画（首通引导）
-        -- 终焉神殿 ID 可能小于末关 ID（3999 < 9205），需单独高亮
-        local fwdFloating = canAdvance and nextId ~= nil
-            and (nextId > maxStageId_ or stageConfig.isTerminalTemple(nextId))
-        local fwdFloatX = fwdFloating and math.sin(time.elapsedTime * 3.0) * 10 or 0
-        -- 闪烁：用较快频率（5Hz）的 sin 波驱动，与摇摆同步
-        local fwdBlink = fwdFloating and (0.5 + 0.5 * math.sin(time.elapsedTime * 10.0)) or 1.0
-        -- 图标：alpha 在 0.55~1.0 之间脉冲
-        local fwdIconAlpha = fwdAlpha * (fwdFloating and (0.55 + 0.45 * fwdBlink) or 1.0)
-        drawImageCentered(vg, imgBtnIcon, NAV.FWD_ICON_CX + fwdFloatX, NAV.FWD_ICON_CY, NAV.FWD_ICON_W, NAV.FWD_ICON_H, fwdIconAlpha)
-        -- 11. 前进文本 + 可前进时漂浮；文字颜色在白色与金黄之间闪烁
-        local fwdCBase = canAdvance and 255 or 150
-        local fwdCg = fwdFloating and math.floor(220 + (255 - 220) * fwdBlink) or fwdCBase
-        local fwdCb = fwdFloating and math.floor(60  + (255 - 60)  * fwdBlink) or fwdCBase
-        drawTextStroke(vg, NAV.FWD_TEXT_CX + fwdFloatX, NAV.FWD_TEXT_CY, "前进", 40,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, fwdCBase, fwdCg, fwdCb, 4)
-    end
+    -- 5~11. 关卡名 / 前进后退
+    idleRangeText_ = BattleStageNav.drawStageTitle(vg, {
+        isFirstClear = isFirstClear,
+        idleRangeText = idleRangeText_,
+        maxStageId = maxStageId_,
+        getStageConfig = getStageConfig,
+        getRelativeChapter = getRelativeChapter,
+        stageName = stageName,
+        battleActive = battleActive,
+        firstClearTimeLeft = firstClearTimeLeft,
+    })
+    BattleStageNav.drawNavButtons(vg, {
+        isFirstClear = isFirstClear,
+        isTerminal = getStageConfig().isTerminalTemple(currentStageId),
+        currentStageId = currentStageId,
+        maxStageId = maxStageId_,
+        getStageConfig = getStageConfig,
+        imgBtnBack = imgBtnBack,
+        imgBtnIcon = imgBtnIcon,
+        imgBtnFwd = imgBtnFwd,
+        imgBtnFwdGrey = imgBtnFwdGrey,
+    })
 
     -- 12. 己方战场阴影
     drawImageCentered(vg, imgShadow, ALLY_SHADOW_CX, ALLY_SHADOW_CY,
         ALLY_SHADOW_W, ALLY_SHADOW_H, 1.0)
 
     -- 13. "我的队伍" 文本
-    drawTextStroke(vg, 540, 2046, "我的队伍", 40,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+    BattleStageNav.drawTeamLabel(vg)
 
     -- 14. 己方卡片组
     drawCardGroup(vg, allies, ALLY_CARD_CY,

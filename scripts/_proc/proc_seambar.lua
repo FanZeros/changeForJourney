@@ -21,7 +21,7 @@ function Start()
         local n = w * h
 
         -- 1) 预计算亮度表
-        local lum = table.create and table.create(n) or {}
+        local lum = {}
         for y = 0, h - 1 do
             for x = 0, w - 1 do
                 local c = img:GetPixel(x, y)

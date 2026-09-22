@@ -23,6 +23,7 @@ local Draw             = require("ui.CharacterPanelDraw2")
 local HeroResonance    = require("shared.heroes.HeroResonance")
 local CharacterDeploy  = require("ui.CharacterDeploy")
 local CharacterInput   = require("ui.CharacterInput")
+local CharacterHeroSync = require("ui.CharacterHeroSync")
 
 local CharacterPanel = {}
 
@@ -1176,207 +1177,55 @@ function CharacterPanel.refreshSlotUnlocks()
     rebuildRoster()
 end
 
---- 服务端推送英雄数据时调用（多人模式）
---- 将服务端的 roster/deployed 同步到客户端 ownedSet/teamSlots
----@param data table { roster = { [heroId] = {level,exp,...} }, deployed = { heroId, ... } }
-function CharacterPanel.setHeroesData(data)
-    if not data then return end
-
-    -- [DIAG-HERO] 入口日志：打印原始 deployed 数组
-    do
-        local deployedStr = "nil"
-        if data.deployed and type(data.deployed) == "table" then
-            local ids = {}
-            for i, v in ipairs(data.deployed) do ids[i] = tostring(v) end
-            deployedStr = "[" .. table.concat(ids, ",") .. "]"
-        end
-        local rosterCount = 0
-        if data.roster then
-            for _ in pairs(data.roster) do rosterCount = rosterCount + 1 end
-        end
-        print(string.format("[DIAG-HERO] setHeroesData ENTER deployed=%s rosterFieldCount=%d",
-            deployedStr, rosterCount))
-    end
-
-    -- 同步 roster → ownedSet + shardMap。服务端 heroes 是权威源，必须先清空旧区缓存；
-    -- 否则特权卡转区后，新区 roster 为空时会继续显示旧区角色。
-    ownedSet = {}
-    shardMap = {}
-    if data.roster then
-        for heroId, heroData in pairs(data.roster) do
-            local numId = tonumber(heroId) or heroId
-            -- 同步碎片（无论是否拥有英雄）
-            shardMap[numId] = heroData.shards or 0
-
-            -- 有 level 字段的才是已拥有英雄
-            if heroData.level then
-                local level = heroData.level
-                local exp   = heroData.exp or 0
-                local maxExp = heroData.maxExp
-                if not maxExp or maxExp == 0 then
-                    maxExp = ExpTable.getHeroExpForLevel(level) or 5
-                end
-                ownedSet[numId] = {
-                    level  = level,
-                    exp    = exp,
-                    maxExp = maxExp,
-                    advBranch = heroData.advBranch,
-                    awakening = heroData.awakening,
-                    dupeCount = heroData.dupeCount or 0,
-                    shards = heroData.shards or 0,
-                    extraTalent = require("systems.ExtraTalentSystem").normalize(heroData.extraTalent),
-                }
+local _heroSync
+local function bindHeroSync()
+    _heroSync = CharacterHeroSync.bind({
+        ExpTable = ExpTable,
+        GameState = GameState,
+        MAX_SLOTS = MAX_SLOTS,
+        TEAM_COUNT = TEAM_COUNT,
+        get = function(k)
+            if k == "teams" then return teams
+            elseif k == "teamPowerCaches" then return teamPowerCaches
+            elseif k == "activeTeamIdx" then return activeTeamIdx
+            elseif k == "dragState" then return dragState
+            elseif k == "selectSlotState" then return selectSlotState
             end
-        end
-    end
-
-    -- [DIAG-HERO] roster同步后，打印 ownedSet 所有key
-    do
-        local ownedKeys = {}
-        for k, v in pairs(ownedSet) do
-            ownedKeys[#ownedKeys + 1] = tostring(k) .. "(lv" .. tostring(v.level) .. ")"
-        end
-        print(string.format("[DIAG-HERO] setHeroesData AFTER_ROSTER ownedSet={%s}",
-            table.concat(ownedKeys, ",")))
-    end
-
-    -- [三队并行] 同步 deployed/teams → teams[1..3].slots
-    -- 队1 以 deployed 为源（兼容镜像）；队2/3 以 data.teams[2..3].slots 为源
-    ---@param ids table? heroId 数组（可为 nil）
-    ---@return table slots
-    local function buildSlotsFromIds(ids)
-        local unlocked = ExpTable.getUnlockedSlotCountForTeam(GameState.getLevel())
-        -- 🔴 防竞态：全量推送时 player 模块可能尚未分发，getLevel() 返回默认值 1
-        -- 此时 unlocked 会偏小。用已部署长度作为下限保证已部署槽位不被锁定
-        local cnt = ids and #ids or 0
-        if cnt > unlocked then
-            unlocked = cnt
-        end
-        local slots = {}
-        for i = 1, MAX_SLOTS do
-            slots[i] = { state = (i <= unlocked) and "empty" or "locked" }
-        end
-        for idx, heroId in ipairs(ids or {}) do
-            local numId = tonumber(heroId) or heroId
-            if idx <= MAX_SLOTS then
-                local ownData = ownedSet[numId]
-                if ownData then
-                    slots[idx] = {
-                        state  = "occupied",
-                        heroId = numId,
-                        level  = ownData.level,
-                        exp    = ownData.exp,
-                        maxExp = ownData.maxExp,
-                    }
-                else
-                    -- [DIAG-HERO] 关键：阵容里的英雄不在 ownedSet 中！
-                    print(string.format("[DIAG-HERO] WARNING: slots[%d]=%s NOT in ownedSet! Slot stays empty.",
-                        idx, tostring(numId)))
-                end
+            return nil
+        end,
+        set = function(k, v)
+            if k == "ownedSet" then ownedSet = v
+            elseif k == "shardMap" then shardMap = v
+            elseif k == "teamSlots" then teamSlots = v
+            elseif k == "slotPowerCache" then slotPowerCache = v
+            elseif k == "activeTeamIdx" then activeTeamIdx = v
+            elseif k == "runtimeOnlyPowerCache" then runtimeOnlyPowerCache = v
+            elseif k == "heroRoster" then heroRoster = v
+            elseif k == "rosterPowerCache" then rosterPowerCache = v
+            elseif k == "upgradeBadgeCache" then upgradeBadgeCache = v
+            elseif k == "scrollY" then scrollY = v
+            elseif k == "scrollVelocity" then scrollVelocity = v
+            elseif k == "isDragging" then isDragging = v
             end
-        end
-        return slots
-    end
-
-    if data.deployed then
-        teams[1].slots = buildSlotsFromIds(data.deployed)
-    end
-    if data.teams and type(data.teams) == "table" then
-        for t = 2, TEAM_COUNT do
-            local tdata = data.teams[t]
-            if type(tdata) == "table" and type(tdata.slots) == "table" then
-                teams[t].slots = buildSlotsFromIds(tdata.slots)
-            end
-        end
-    end
-
-    -- [三队并行] 跨队去重（队1 优先保留）：同一英雄只允许出现在一个队伍
-    -- 老存档/旧版本服务端可能写入过跨队重复数据，加载时统一修正
-    do
-        local seenHero = {}
-        for t = 1, TEAM_COUNT do
-            local slots = teams[t] and teams[t].slots
-            if slots then
-                for i = 1, #slots do
-                    local s = slots[i]
-                    if s.state == "occupied" and s.heroId then
-                        if seenHero[s.heroId] then
-                            print(string.format("[CharacterPanel] 去重: 英雄%d 重复编队，移出队伍%d", s.heroId, t))
-                            slots[i] = { state = "empty" }
-                        else
-                            seenHero[s.heroId] = true
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- 重算三队战力缓存 + 重指向当前激活队
-    for t = 1, TEAM_COUNT do
-        ---@type table
-        local cache = teamPowerCaches[t]
-        for k in pairs(cache) do cache[k] = nil end
-        local slots = teams[t].slots
-        for i = 1, #slots do
-            if slots[i].state == "occupied" and slots[i].heroId then
-                cache[i] = calcHeroPower(slots[i].heroId, i)
-            end
-        end
-    end
-    teamSlots = teams[activeTeamIdx].slots
-    slotPowerCache = teamPowerCaches[activeTeamIdx]
-    -- [DIAG-HERO] 填充后的三队状态
-    do
-        local teamsInfo = {}
-        for t = 1, TEAM_COUNT do
-            local ids = {}
-            local slots = teams[t].slots
-            for i = 1, #slots do
-                ids[i] = tostring(slots[i].heroId or (slots[i].state == "locked" and "L" or "-"))
-            end
-            teamsInfo[t] = "T" .. t .. "[" .. table.concat(ids, ",") .. "]"
-        end
-        print(string.format("[DIAG-HERO] setHeroesData AFTER_TEAMS active=%d %s",
-            activeTeamIdx, table.concat(teamsInfo, " ")))
-    end
-
-    -- 重建显示列表
-    rebuildRoster()
-    refreshPowerCache()
-    refreshNavBadge()
+        end,
+        buildDefaultSlots = buildDefaultSlots,
+        calcHeroPower = calcHeroPower,
+        rebuildRoster = rebuildRoster,
+        refreshPowerCache = refreshPowerCache,
+        refreshNavBadge = refreshNavBadge,
+    })
+end
+local function ensureHeroSync()
+    if not _heroSync then bindHeroSync() end
+    return _heroSync
 end
 
---- 重置本地角色会话缓存（切区/返回选服时调用）
---- 服务端数据到达前不保留旧区角色，避免新区空 roster 继续显示旧角色。
+function CharacterPanel.setHeroesData(data)
+    return ensureHeroSync().setHeroesData(data)
+end
+
 function CharacterPanel.resetSessionData()
-    -- [三队并行] 重置全部队伍
-    for t = 1, TEAM_COUNT do
-        teams[t].slots = buildDefaultSlots(t)
-        teamPowerCaches[t] = {}
-    end
-    activeTeamIdx = 1
-    teamSlots = teams[1].slots
-    slotPowerCache = teamPowerCaches[1]
-    runtimeOnlyPowerCache = 0
-    ownedSet = {}
-    shardMap = {}
-    heroRoster = {}
-    rosterPowerCache = {}
-    upgradeBadgeCache = {}
-    scrollY = 0
-    scrollVelocity = 0
-    isDragging = false
-    dragState.active = false
-    dragState.heroId = nil
-    dragState.rosterIdx = nil
-    dragState.fromSlot = nil
-    selectSlotState.active = false
-    selectSlotState.slotIndex = nil
-    rebuildRoster()
-    refreshPowerCache()
-    refreshNavBadge()
-    print("[CharacterPanel] session data reset")
+    return ensureHeroSync().resetSessionData()
 end
 
 --- 获取当前共鸣等级（全队前 5 高等级中的最低值）

@@ -93,9 +93,9 @@ local TOTAL_POWER_CY = 860
 local TOTAL_POWER_ICON_SIZE = 36
 local TOTAL_POWER_GAP = 4
 
--- "我的冒险家"标题
+-- "远征团"标题（列表背景顶边约 821，标题落在顶边下方）
 local MY_HEROES_CX   = 540
-local MY_HEROES_CY   = 996
+local MY_HEROES_CY   = 868
 
 -- 角色卡片行
 local ROW1_CY        = 1291    -- 第一排 Y 中心
@@ -539,12 +539,10 @@ function M.draw(vg, scrollY)
         totalPowerStr, 30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         247, 254, 119, 4)
 
-    -- 5) "远征团"标题
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 42)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x7b, 0x53, 0x39, 255))
-    nvgText(vg, MY_HEROES_CX, MY_HEROES_CY, "远征团", nil)
+    -- 5) "远征团"标题（白色描边，贴列表背景顶边下方）
+    drawTextStroke(vg, MY_HEROES_CX, MY_HEROES_CY, "远征团",
+        42, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 255, 255, 4)
 
     -- 6) 角色卡片行（可滚动区域，裁剪到可视范围）
     nvgSave(vg)

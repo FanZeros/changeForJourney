@@ -38,12 +38,10 @@ function M.bind(deps)
         local listTopY = ROSTER.LIST_BG_CY - ROSTER.LIST_BG_H * 0.5
         nvgText(vg, ROSTER.MY_HEROES_CX, listTopY + 36, "选择", nil)
 
-        -- 3) "远征团"标题（42px 棕色 0x7b5339）
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 42)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x7b, 0x53, 0x39, 255))
-        nvgText(vg, ROSTER.MY_HEROES_CX, ROSTER.MY_HEROES_CY, "远征团", nil)
+        -- 3) "远征团"标题（白色描边）
+        drawTextStroke(vg, ROSTER.MY_HEROES_CX, ROSTER.MY_HEROES_CY, "远征团",
+            42, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            255, 255, 255, 4)
 
         if rosterCount == 0 then
             nvgFontFace(vg, "sans")

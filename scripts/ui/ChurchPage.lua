@@ -116,7 +116,7 @@ local ANIM = {
 -- 7. 角色列表区域（复刻 CharacterPanel 冒险家列表）
 local ROSTER = {
     LIST_BG_CX = 540, LIST_BG_W = 1080, LIST_BG_H = 1579,
-    MY_HEROES_CX = 540, MY_HEROES_CY = 996,
+    MY_HEROES_CX = 540, MY_HEROES_CY = 868,
     CARD_W = 198, CARD_H = 438, CARD_SPACING = 7, MAX_PER_ROW = 5,
     ROW1_CY = 1291, ROW_SPACING = 543,
     NAME_BG_DY = 253, NAME_BG_W2 = 193, NAME_BG_H2 = 48, NAME_BG_RADIUS = 24,

@@ -44,7 +44,6 @@ local function loadHandlers()
         { "server.gm.GMHandler", "actionHandlers" },
         { "server.market.MarketHandler", nil },
         { "server.loot.LootHandler", nil },
-        { "server.guild.GuildHandler", "actionHandlers" },
         { "server.sweep.SweepHandler", "actionHandlers" },
         { "server.relic.RelicHandler", "actionHandlers" },
         { "server.artifact.ArtifactHandler", "actionHandlers" },

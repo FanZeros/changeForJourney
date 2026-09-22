@@ -278,7 +278,7 @@ function SpinePowerUpEffect.isPlaying()
     return playing
 end
 
---- 预加载（可在 LoadingScreen 阶段调用）
+--- 预加载（启动时调用）
 ---@param vg any
 function SpinePowerUpEffect.preload(vg)
     ensureLoaded(vg)

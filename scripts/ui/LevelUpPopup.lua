@@ -229,7 +229,7 @@ end
 
 -- ======================== Public API ========================
 
---- 预加载 Spine 资源（在 LoadingScreen.init 中调用，提前解析 JSON/atlas + 上传 GPU 纹理）
+--- 预加载 Spine 资源（启动时调用，提前解析 JSON/atlas + 上传 GPU 纹理）
 ---@param vg any NanoVG 上下文
 function LevelUpPopup.preload(vg)
     if state.spineLoaded then return end

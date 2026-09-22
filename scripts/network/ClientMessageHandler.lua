@@ -498,7 +498,7 @@ local ClientDispatcher = require("network.ClientDispatcher")
          return
      end
 
-     -- 登录补发等延迟弹窗（等 LoadingScreen / 离线收益面板关闭后再展示）
+     -- 登录补发等延迟弹窗（等离线收益面板关闭后再展示）
      if data.deferredRewardPopup and data.rewards and #data.rewards > 0 then
          pendingDeferredRewardPopup_ = {
              title    = data.popupTitle or "奖励",

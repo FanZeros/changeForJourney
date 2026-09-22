@@ -158,7 +158,7 @@ function SpineResultEffect.draw(vg, cx, cy)
     nvgSpineRender(vg, spineInstance)
 end
 
---- 预加载 Spine 实例（在 LoadingScreen 阶段调用，避免首次播放卡顿）
+--- 预加载 Spine 实例（启动时调用，避免首次播放卡顿）
 ---@param vg any NanoVG 上下文
 function SpineResultEffect.preload(vg)
     ensureLoaded(vg)

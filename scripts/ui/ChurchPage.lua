@@ -1846,7 +1846,7 @@ function ChurchPage.onActionResult(data)
     end
 end
 
---- 预加载天赋背景 Spine（在 LoadingScreen 阶段调用，避免进入教堂时卡顿）
+--- 预加载天赋背景 Spine（启动时调用，避免进入教堂时卡顿）
 ---@param vg any NanoVG 上下文
 function ChurchPage.preloadSpine(vg)
     TalentPanel.preloadSpine(vg)

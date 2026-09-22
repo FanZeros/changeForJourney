@@ -117,7 +117,7 @@ function BottomNav.refreshTownBadge()
             return
         end
     end
-    -- 公会遗物角标（可强化→箭头，新遗物→红点）
+    -- 遗物角标（可强化→箭头，新遗物→红点）
     local okRS, RS = pcall(require, "systems.RelicSystem")
     if okRS and RS and RS.getRelicBadgeInfo then
         local show, style = RS.getRelicBadgeInfo()

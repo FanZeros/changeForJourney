@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.22-drop-guild-shell | 2026-09-22 | 删版本不一致弹窗与公会 Handler/Service；城镇卸空回调。GuildConfig 排行保留。 |
 | v2.21-drop-server-select | 2026-09-22 | 卸掉 StartScreen 选服条与 ServerSelectPanel；点击直接进游戏。 |
 | v2.20-drop-mp-ui | 2026-09-22 | 删除公会页/选角/加载页等仅多人 UI；消息处理器解绑。 |
 | v2.19-drop-multiplayer-shell | 2026-09-22 | 去掉多人入口，删除 Client/Server 联网壳；单机仍用 LocalActionBridge+server Handler。 |

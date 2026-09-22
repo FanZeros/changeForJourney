@@ -187,9 +187,6 @@ Protocol.ACTION_TYPES = {
     CLAIM_PRIVILEGE_REWARD  = "claim_privilege_reward",  -- 领取特权观看奖励（params: { threshold = number }�?
     WATCH_PRIVILEGE_AD      = "watch_privilege_ad",      -- 观看特权广告完成（客户端广告成功后发送，服务端扣除存储、增�?watchCount 和特权点�?
 
-    -- 冒险者公�?
-    GUILD_ENTER = "guild_enter",  -- 进入公会（返回关卡排行榜数据�?
-
     -- 扫荡
     SWEEP = "sweep",  -- 消耗扫荡券，立即获�?0分钟挂机收益
 

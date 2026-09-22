@@ -49,8 +49,6 @@ local LABEL_INSET_LEFT   = 100
 
 -- ---- 上方建筑 ----
 
--- 冒险者公会
-
 -- 铁匠铺
 local SMITH_CX,  SMITH_CY  = 525,  477
 local SMITH_W,   SMITH_H   = 366,  405
@@ -423,9 +421,6 @@ function TownScene.draw(vg)
     BF.finish(vg, _bfSmith)
     if _tmActive and not smithLocked then _TM.registerHotspot("building_smith", SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, "left") end
 
-    -- [公会功能已移除] 城镇不再渲染冒险者公会建筑（单机版无公会玩法）
-
-
     -- ---- 下方建筑 ----
 
     -- 5) 市场建筑（后层）
@@ -540,13 +535,6 @@ function TownScene.setOnWarehouseClick(fn)
     onWarehouseClick = fn
 end
 
---- 回调：点击冒险者公会
-local onGuildClick = nil
-
-function TownScene.setOnGuildClick(fn)
-    onGuildClick = fn
-end
-
 function TownScene.handleInput(dx, dy)
     -- 全局战利品箱（左下角）点击优先；LootBoxPage 打开时整栏输入交给页面
     if require("ui.LootBox").handleInput(dx, dy) then return true end
@@ -627,12 +615,5 @@ function TownScene.setSmithRedDot(show)
     smithDecomposeRedDot = show
 end
 
-
---- 设置公会遗物角标（公会功能已移除，保留空实现兼容旧调用）
----@param show boolean
----@param style string|nil 忽略
-function TownScene.setGuildRelicBadge(show, style)
-    -- no-op: 公会功能已从城镇移除
-end
 
 return TownScene

@@ -60,7 +60,7 @@ local function getDungeonBattleScene()
     return DungeonBattleScene_
 end
 
--- IntroCutscene / ScenarioDialogue / CharacterSelect 延迟加载
+-- IntroCutscene / ScenarioDialogue 延迟加载
 ---@type table
 local IntroCutscene_
 local function getIntroCutscene()

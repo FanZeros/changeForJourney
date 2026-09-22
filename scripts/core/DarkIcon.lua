@@ -585,64 +585,11 @@ end
 ---@param h number 高
 ---@param alpha number 透明度 0-1
 function DarkIcon.drawQualityFrame(vg, quality, cx, cy, w, h, alpha)
-    local a = alpha or 1
-    if a <= 0.01 then return end
-    local q = math.max(1, math.min(6, math.floor(quality or 1)))
-    local trim = QUALITY_TRIM[q]
-    local u = math.min(w, h)
-    local x, y = cx - w * 0.5, cy - h * 0.5
-    local r = math.max(2, u * 0.04)
-
-    -- 外框灰（参考截图格子外圈）
-    local OUTER = { 92, 96, 88 }
-    -- 中间框更灰（参考截图图标内圈）
-    local INNER = { 52, 54, 50 }
-    local WELL  = { 22, 22, 20 }
-
-    -- 高品质外辉光（保留稀有度可读，不抢灰框）
-    if q >= 3 then
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, x - 2, y - 2, w + 4, h + 4, r + 1)
-        strokeC(vg, a, trim[1], trim[2], trim[3], q >= 5 and 0.28 or 0.16)
-        nvgStrokeWidth(vg, math.max(1.5, u * 0.028))
-        nvgStroke(vg)
-    end
-
-    -- 底井（更暗，衬出双框）
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, x, y, w, h, r)
-    fillC(vg, a, WELL[1], WELL[2], WELL[3], 1)
-    nvgFill(vg)
-
-    -- 外灰框
-    local outerW = math.max(2.0, u * 0.055)
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, x + outerW * 0.5, y + outerW * 0.5, w - outerW, h - outerW, r)
-    strokeC(vg, a, OUTER[1], OUTER[2], OUTER[3], 1)
-    nvgStrokeWidth(vg, outerW)
-    nvgStroke(vg)
-
-    -- 中间更灰框（贴近图标）
-    local inset = math.max(4, u * 0.12)
-    local innerW = math.max(1.6, u * 0.040)
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, x + inset, y + inset, w - inset * 2, h - inset * 2, math.max(1, r * 0.55))
-    strokeC(vg, a, INNER[1], INNER[2], INNER[3], 1)
-    nvgStrokeWidth(vg, innerW)
-    nvgStroke(vg)
-
-    -- 品质色只在内框内侧极细一圈，低品几乎看不见
-    local trimA = 0.10 + q * 0.06
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, x + inset + innerW, y + inset + innerW,
-        w - (inset + innerW) * 2, h - (inset + innerW) * 2, math.max(1, r * 0.4))
-    strokeC(vg, a, trim[1], trim[2], trim[3], trimA)
-    nvgStrokeWidth(vg, math.max(1, u * 0.012))
-    nvgStroke(vg)
+    -- 不再画程序化灰底/灰框；品质外观走原图
+    DarkIcon.drawQualityBg(vg, quality, cx, cy, w, h, alpha)
 end
 
---- 品质底框统一入口（P2-A）：替代 UI_icon_ZBBJ_1~6 / KP_TY_N~UR 贴图
---- 与 drawImageCentered 同参风格（中心点定位），quality 自动 clamp 1-6
+--- 品质底框：只用 UI_icon_ZBBJ_1~6 原图，不叠灰色图层
 ---@param vg any
 ---@param quality number 品质（1粗铁 2青铜 3秘银 4符文 5黄金 6血钻）
 ---@param cx number 中心 X
@@ -651,16 +598,23 @@ end
 ---@param h number 高
 ---@param alpha number|nil 透明度 0-1（默认 1）
 function DarkIcon.drawQualityBg(vg, quality, cx, cy, w, h, alpha)
-    local q = math.floor(tonumber(quality) or 1)
-    DarkIcon.drawQualityFrame(vg, math.max(1, math.min(6, q)), cx, cy, w, h, alpha or 1)
+    local a = alpha or 1
+    if a <= 0.01 then return end
+    local ImageCache = require("ui.ImageCache")
+    local img = ImageCache.getQualityBg(quality)
+    if not img or img < 0 then return end
+    local x, y = cx - w * 0.5, cy - h * 0.5
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, a)
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, w, h)
+    nvgFillPaint(vg, paint)
+    nvgFill(vg)
 end
 
---- 明显压暗档 tint（P2-B）：装备/神器等彩色图标整体压至约 28% 亮度（乘法叠色，保留透明底）
---- 可调档：数值越低越暗；白 (255,255,255) = 原样
-DarkIcon.ICON_TINT_DARK = { 72, 64, 54 }
+--- 装备/神器图标：原图直出，不叠灰色 tint
+DarkIcon.ICON_TINT_DARK = { 255, 255, 255 }
 
---- 图标压暗绘制（P2-B）：装备/神器/天赋等亮色卡通风图标的暗黑化
---- 与 drawImageCentered 同参风格（中心点定位）；乘法叠色保留源图透明通道
+--- 装备/神器图标绘制：原图直出，不叠灰色图层
 ---@param vg any
 ---@param img number nvgCreateImage 句柄
 ---@param cx number 中心 X
@@ -671,10 +625,8 @@ DarkIcon.ICON_TINT_DARK = { 72, 64, 54 }
 function DarkIcon.drawIconDark(vg, img, cx, cy, w, h, alpha)
     local a = alpha or 1
     if a <= 0.01 or not img or img < 0 then return end
-    local t = DarkIcon.ICON_TINT_DARK
     local x, y = cx - w * 0.5, cy - h * 0.5
-    local tint = nvgRGBA(t[1], t[2], t[3], math.floor(a * 255 + 0.5))
-    local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img, tint)
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, a)
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)

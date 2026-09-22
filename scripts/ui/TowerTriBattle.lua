@@ -713,10 +713,6 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
             else
                 tag = string.format("【小队%d】剩余%d", row, remain)
             end
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, ix + 14, iy + 8, 280, 34, 8)
-            nvgFillColor(vg, nvgRGBA(16, 18, 28, 200))
-            nvgFill(vg)
             if lane.wiped then
                 nvgFillColor(vg, nvgRGBA(255, 120, 110, 255))
             elseif lane.cleared then

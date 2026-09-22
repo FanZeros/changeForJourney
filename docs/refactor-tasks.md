@@ -32,3 +32,7 @@
 
 - [x] 新增 `scripts/ui/TownPageChrome.lua`：名称牌 / 返回 / 底栏 Tab / 开闭缓动
 - [x] 铁匠铺、教堂、酒馆、市场、背包接入共用壳；玩法内容未改
+
+## 追加：继续拆 BattleCombat（用户 2026-09-22）
+
+- [x] **T11** 抽出卡牌动画状态机到 `BattleCombatAnim.lua`（攻击前摇/受击/入场/死亡/补位）。`BattleCombat` 对外 API 不变。目标：BattleCombat < 1850 行。

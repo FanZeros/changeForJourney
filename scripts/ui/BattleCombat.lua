@@ -17,8 +17,8 @@ local MAS = require("systems.MapAffixSystem")
 local DungeonBattle = require("ui.DungeonBattle")
 local NumberUtil = require("core.NumberUtil")
 local BattleStats = require("systems.BattleStats")
-local SettingsPanel = require("ui.SettingsPanel")
 local BattleCombatFx = require("ui.BattleCombatFx")
+local BattleCombatAnim = require("ui.BattleCombatAnim")
 
 local BattleCombat = {}
 -- ======================== [多实例] 战斗状态容器 ========================
@@ -50,91 +50,17 @@ function BattleCombat.mountedState() return BCS end
 
 -- ======================== 常量 ========================
 
-local DESIGN_W = 1080
-
--- 卡片尺寸（用于坐标计算）
-local CARD_W     = 198
-local CARD_SPACING = 7
-
-
--- 攻击动画
-local LUNGE_DISTANCE   = 60
-local LUNGE_DURATION   = 0.12
-local RETURN_DURATION  = 0.15
-local RECOIL_DURATION  = 0.08
-local RECOIL_RETURN    = 0.12
-local RECOIL_DISTANCE  = 30
-local CHARGE_START     = 0.7
-local CHARGE_DISTANCE  = 25
-
--- 死亡/复活动画（从 BattleScene 引入常量�?
-local DEATH_HITSTOP        = 0.06
-local DEATH_BURST_DUR      = 0.22
-local DEATH_SETTLE_DUR     = 0.12
-local DEATH_ANIM_DURATION  = DEATH_HITSTOP + DEATH_BURST_DUR + DEATH_SETTLE_DUR
-local DEATH_ANIM_DISTANCE  = 80
-local DEATH_OVERSHOOT      = 1.15
-local REVIVE_ANIM_DURATION = 0.35
-local REVIVE_ANIM_DISTANCE = 80
-local TOMBSTONE_FADEIN     = 0.25
-
--- 队列前移补位（条带布局：敌人死亡后，后方敌人前移一格填入空位）
-local ADVANCE_DURATION     = 0.28
-
--- 入场动画
-local ENTER_ANIM_DURATION  = 0.30
-local ENTER_ANIM_DISTANCE  = 100
-local ENTER_STAGGER        = 0.06
-
--- 血条缓�?
+-- 血条缓冲
 local HP_BUFFER_SPEED = 1.2
 
-
--- 远程角色缩放攻击动画
-local RANGED_CHARGE_SCALE  = 0.85   -- 蓄力时缩小到 85%
-local RANGED_LUNGE_SCALE   = 1.15   -- 攻击时放大到 115%
-
---- 判断是否远程/治疗单位
---- 英雄：按投射物配置判断；怪物：按 isRanged 标志判断（所有怪物都有特效但不都是远程�?
-local function isRangedUnit(unit)
-    if unit.heroId and PS.hasProjectile(unit.heroId) then
-        return true
-    end
-    if unit.monsterId then
-        return unit.isRanged == true
-    end
-    return false
-end
+-- 卡牌动画常量 / 状态机已移至 BattleCombatAnim
 
 -- ======================== 共享状�?========================
 -- 这些表通过 setContext 注入外部引用，但动画/浮动文字/闪烁是本模块自有状�?
 
 
---- 可随「特效显示」开关屏蔽的战斗卡牌动画（攻击前摇/后摇、受击后退）
-local COMBAT_CARD_ANIM_STATES = {
-    lunge = true,
-    ["return"] = true,
-    recoil = true,
-    recoil_return = true,
-}
-
-local function isCombatCardAnimEnabled()
-    return SettingsPanel.isEffectsEnabled()
-end
-
-local function isCombatCardAnimState(state)
-    return state ~= nil and COMBAT_CARD_ANIM_STATES[state] == true
-end
-
 local function playAttackCardAnim(attacker, isAlly)
-    if not isCombatCardAnimEnabled() then return end
-    BCS.cardAnims[attacker] = {
-        state    = "lunge",
-        timer    = 0,
-        isAlly   = isAlly,
-        lungeDir = isAlly and -1 or 1,
-        isRanged = isRangedUnit(attacker),
-    }
+    BattleCombatAnim.playAttack(BCS, attacker, isAlly)
 end
 
 -- 浮动文字对象池 / 飘字逻辑已移至 BattleCombatFx
@@ -147,12 +73,12 @@ end
 
 -- ======================== 公共常量导出 ========================
 
-BattleCombat.DEATH_ANIM_DURATION  = DEATH_ANIM_DURATION
-BattleCombat.REVIVE_ANIM_DURATION = REVIVE_ANIM_DURATION
-BattleCombat.REVIVE_ANIM_DISTANCE = REVIVE_ANIM_DISTANCE
-BattleCombat.TOMBSTONE_FADEIN     = TOMBSTONE_FADEIN
-BattleCombat.CHARGE_START         = CHARGE_START
-BattleCombat.CHARGE_DISTANCE      = CHARGE_DISTANCE
+BattleCombat.DEATH_ANIM_DURATION  = BattleCombatAnim.DEATH_ANIM_DURATION
+BattleCombat.REVIVE_ANIM_DURATION = BattleCombatAnim.REVIVE_ANIM_DURATION
+BattleCombat.REVIVE_ANIM_DISTANCE = BattleCombatAnim.REVIVE_ANIM_DISTANCE
+BattleCombat.TOMBSTONE_FADEIN     = BattleCombatAnim.TOMBSTONE_FADEIN
+BattleCombat.CHARGE_START         = BattleCombatAnim.CHARGE_START
+BattleCombat.CHARGE_DISTANCE      = BattleCombatAnim.CHARGE_DISTANCE
 
 -- ======================== 注入上下�?========================
 
@@ -422,10 +348,7 @@ BattleCombat.addFloatingText = addFloatingText
 
 --- 设置受击后退（跟随设置「特效显示」开关）
 local function setRecoil(target, lungeDir)
-    if not isCombatCardAnimEnabled() then return end
-    -- 已死亡的单位不设置 recoil，防止覆盖死亡动画
-    if target.hp <= 0 then return end
-    BCS.cardAnims[target] = { state = "recoil", timer = 0, lungeDir = lungeDir }
+    BattleCombatAnim.setRecoil(BCS, target, lungeDir)
 end
 
 --- 设置受击闪烁（跟随设置「特效显示」开关）
@@ -1033,7 +956,7 @@ local function performAttack(attacker, targetList, isAlly)
     end
 
     -- 连击必须在主伤害 applyHit 落地后再排队（避免投射物未到时连击先触发，与弹射叠在一起像误触发）
-    local comboDelayStep = LUNGE_DURATION + RETURN_DURATION + 0.05
+    local comboDelayStep = BattleCombatAnim.LUNGE_DURATION + BattleCombatAnim.RETURN_DURATION + 0.05
     local function queueComboAfterHit(curIndex, curTarget, comboCount)
         if isHealer or not comboCount or comboCount <= 0 or not curTarget then return end
         for chi = 1, comboCount do
@@ -1792,244 +1715,42 @@ function BattleCombat.updateComboQueue(dt)
     end
 end
 
--- ======================== 动画状态机 ========================
+-- ======================== 动画状态机（委托 BattleCombatAnim） ========================
 
---- 更新卡片攻击动画
 function BattleCombat.updateCardAnims(dt)
-    local toRemove = {}
-    for unit, anim in pairs(BCS.cardAnims) do
-        if not isCombatCardAnimEnabled() and isCombatCardAnimState(anim.state) then
-            toRemove[#toRemove + 1] = unit
-            goto continue
-        end
-        -- delay 处理（入场交错延迟）
-        if anim.delay and anim.delay > 0 then
-            anim.delay = anim.delay - dt
-            if anim.delay > 0 then
-                goto continue
-            end
-            -- delay 刚结束，把超出的时间加到 timer
-            anim.timer = anim.timer + (-anim.delay)
-            anim.delay = 0
-            goto skip_timer
-        end
-        anim.timer = anim.timer + dt
-        ::skip_timer::
-        if anim.state == "entering" then
-            if anim.timer >= ENTER_ANIM_DURATION then
-                toRemove[#toRemove + 1] = unit
-            end
-        elseif anim.state == "lunge" then
-            if anim.timer >= LUNGE_DURATION then
-                anim.state = "return"
-                anim.timer = 0
-            end
-        elseif anim.state == "return" then
-            if anim.timer >= RETURN_DURATION then
-                toRemove[#toRemove + 1] = unit
-            end
-        elseif anim.state == "recoil" then
-            if anim.timer >= RECOIL_DURATION then
-                anim.state = "recoil_return"
-                anim.timer = 0
-            end
-        elseif anim.state == "recoil_return" then
-            if anim.timer >= RECOIL_RETURN then
-                toRemove[#toRemove + 1] = unit
-            end
-        elseif anim.state == "dying" then
-            if anim.timer >= DEATH_ANIM_DURATION then
-                if anim.noTombstone then
-                    anim.state = "gone"   -- [死亡即补位] 退场完成 → 空位期（完全隐藏，等待新怪从右补入）
-                else
-                    anim.state = "tombstone_in"
-                end
-                anim.timer = 0
-            end
-        elseif anim.state == "gone" then
-            -- 空位期：停留至被替换（不渲染，无过渡）
-        elseif anim.state == "tombstone_in" then
-            if anim.timer >= TOMBSTONE_FADEIN then
-                anim.state = "dead_done"
-            end
-        elseif anim.state == "reviving" then
-            if anim.timer >= REVIVE_ANIM_DURATION then
-                toRemove[#toRemove + 1] = unit
-            end
-        elseif anim.state == "advance" then
-            if anim.timer >= ADVANCE_DURATION then
-                toRemove[#toRemove + 1] = unit
-            end
-        end
-        ::continue::
-    end
-    for _, unit in ipairs(toRemove) do
-        BCS.cardAnims[unit] = nil
-    end
+    BattleCombatAnim.update(BCS, dt)
 end
 
---- 获取卡片动画 Y 偏移
 function BattleCombat.getCardAnimOffsetY(unit)
-    local anim = BCS.cardAnims[unit]
-    if anim and not isCombatCardAnimEnabled() and isCombatCardAnimState(anim.state) then
-        return 0
-    end
-    if not anim then return 0 end
-
-    if anim.state == "lunge" then
-        if anim.isRanged then return 0 end  -- 远程角色用缩放，不位�?
-        local t = math.min(1, anim.timer / LUNGE_DURATION)
-        t = 1 - (1 - t) * (1 - t)  -- ease-out
-        return anim.lungeDir * LUNGE_DISTANCE * t
-    elseif anim.state == "return" then
-        if anim.isRanged then return 0 end  -- 远程角色用缩放，不位�?
-        local t = math.min(1, anim.timer / RETURN_DURATION)
-        t = t * t  -- ease-in
-        return anim.lungeDir * LUNGE_DISTANCE * (1 - t)
-    elseif anim.state == "recoil" then
-        local t = math.min(1, anim.timer / RECOIL_DURATION)
-        t = 1 - (1 - t) * (1 - t)
-        return anim.lungeDir * RECOIL_DISTANCE * t
-    elseif anim.state == "recoil_return" then
-        local t = math.min(1, anim.timer / RECOIL_RETURN)
-        t = 1 - (1 - t) * (1 - t)
-        return anim.lungeDir * RECOIL_DISTANCE * (1 - t)
-    elseif anim.state == "dying" then
-        local elapsed = anim.timer
-        local mult = anim.knockbackMult or 1.0
-        local dist = DEATH_ANIM_DISTANCE * mult
-        if elapsed < DEATH_HITSTOP then
-            return 0
-        elseif elapsed < DEATH_HITSTOP + DEATH_BURST_DUR then
-            local t = (elapsed - DEATH_HITSTOP) / DEATH_BURST_DUR
-            t = 1 - (1 - t) * (1 - t) * (1 - t)
-            return anim.lungeDir * dist * DEATH_OVERSHOOT * t
-        else
-            local t = math.min(1, (elapsed - DEATH_HITSTOP - DEATH_BURST_DUR) / DEATH_SETTLE_DUR)
-            t = 1 - (1 - t) * (1 - t)
-            local ratio = DEATH_OVERSHOOT + (1.0 - DEATH_OVERSHOOT) * t
-            return anim.lungeDir * dist * ratio
-        end
-    elseif anim.state == "reviving" then
-        local t = math.min(1, anim.timer / REVIVE_ANIM_DURATION)
-        t = 1 - (1 - t) * (1 - t)
-        return anim.lungeDir * REVIVE_ANIM_DISTANCE * (1 - t)
-    elseif anim.state == "entering" then
-        if anim.delay and anim.delay > 0 then
-            return anim.lungeDir * ENTER_ANIM_DISTANCE
-        end
-        local t = math.min(1, anim.timer / ENTER_ANIM_DURATION)
-        t = 1 - (1 - t) * (1 - t)  -- ease-out
-        return anim.lungeDir * ENTER_ANIM_DISTANCE * (1 - t)
-    elseif anim.state == "advance" then
-        -- [队列前移] 从旧槽位（右移一格处）平滑滑向新槽位；仅条带布局生效（classic 下不位移）
-        if BattleLayout.MODE ~= "strip" then return 0 end
-        local dist = anim.advanceDist or 0
-        if dist <= 0 then return 0 end
-        local t = math.min(1, anim.timer / ADVANCE_DURATION)
-        t = 1 - (1 - t) * (1 - t)  -- ease-out
-        return anim.lungeDir * dist * (1 - t)
-    end
-    return 0
+    return BattleCombatAnim.getOffsetY(BCS, unit)
 end
 
---- 获取过渡动画 alpha（死亡淡�?复活淡入/墓碑淡入�?
 function BattleCombat.getTransitionAlpha(unit)
-    local anim = BCS.cardAnims[unit]
-    if not anim then return 1.0 end
-    if anim.state == "dying" then
-        if anim.timer < DEATH_HITSTOP then
-            return 1.0  -- 停顿期间完全不透明
-        end
-        local fadeT = math.min(1, (anim.timer - DEATH_HITSTOP) / (DEATH_ANIM_DURATION - DEATH_HITSTOP))
-        return 1.0 - fadeT
-    elseif anim.state == "tombstone_in" then
-        return math.min(1, anim.timer / TOMBSTONE_FADEIN)
-    elseif anim.state == "gone" then
-        return 0   -- 空位期：完全隐藏
-    elseif anim.state == "reviving" then
-        return math.min(1, anim.timer / REVIVE_ANIM_DURATION)
-    elseif anim.state == "entering" then
-        if anim.delay and anim.delay > 0 then
-            return 0
-        end
-        return math.min(1, anim.timer / ENTER_ANIM_DURATION)
-    end
-    return 1.0
+    return BattleCombatAnim.getTransitionAlpha(BCS, unit)
 end
 
---- 获取蓄力后退偏移（远程角色返�?，用缩放代替�?
 function BattleCombat.getChargeOffsetY(unit, isAllyGroup)
-    if not isCombatCardAnimEnabled() then return 0 end
-    if unit.hp <= 0 then return 0 end
-    if BCS.cardAnims[unit] then return 0 end
-    if isRangedUnit(unit) then return 0 end  -- 远程角色用缩放，不用位移
-    local p = unit.atkProgress or 0
-    if p < CHARGE_START then return 0 end
-    local t = (p - CHARGE_START) / (1.0 - CHARGE_START)
-    local dir = isAllyGroup and 1 or -1
-    return dir * CHARGE_DISTANCE * t
+    return BattleCombatAnim.getChargeOffsetY(BCS, unit, isAllyGroup)
 end
 
---- 获取远程角色的卡片缩放（蓄力缩小 + 攻击放大�?
---- 近战角色始终返回 1.0
 function BattleCombat.getCardScale(unit, isAllyGroup)
-    if not isCombatCardAnimEnabled() then return 1.0 end
-    if not isRangedUnit(unit) then return 1.0 end
-    if unit.hp <= 0 then return 1.0 end
-
-    -- 攻击动画缩放（lunge 放大, return 回弹�?
-    local anim = BCS.cardAnims[unit]
-    if anim then
-        if anim.state == "lunge" and anim.isRanged then
-            local t = math.min(1, anim.timer / LUNGE_DURATION)
-            t = 1 - (1 - t) * (1 - t)  -- ease-out
-            return RANGED_CHARGE_SCALE + (RANGED_LUNGE_SCALE - RANGED_CHARGE_SCALE) * t
-        elseif anim.state == "return" and anim.isRanged then
-            local t = math.min(1, anim.timer / RETURN_DURATION)
-            t = t * t  -- ease-in
-            return RANGED_LUNGE_SCALE + (1.0 - RANGED_LUNGE_SCALE) * t
-        end
-        return 1.0  -- 其他动画状态（recoil/dying等）不缩�?
-    end
-
-    -- 蓄力阶段缩放（进度条 70%�?00% 时逐渐缩小�?
-    local p = unit.atkProgress or 0
-    if p < CHARGE_START then return 1.0 end
-    local t = (p - CHARGE_START) / (1.0 - CHARGE_START)
-    return 1.0 + (RANGED_CHARGE_SCALE - 1.0) * t
+    return BattleCombatAnim.getCardScale(BCS, unit, isAllyGroup)
 end
 
---- 获取卡片动画状态名
 function BattleCombat.getAnimState(unit)
-    local anim = BCS.cardAnims[unit]
-    return anim and anim.state or nil
+    return BattleCombatAnim.getState(BCS, unit)
 end
 
---- 设置卡片动画
 function BattleCombat.setCardAnim(unit, animData)
-    BCS.cardAnims[unit] = animData
+    BattleCombatAnim.set(BCS, unit, animData)
 end
 
---- 清除卡片动画
 function BattleCombat.clearCardAnim(unit)
-    BCS.cardAnims[unit] = nil
+    BattleCombatAnim.clear(BCS, unit)
 end
 
---- 清除受击闪烁
-
---- 播放入场动画（交错滑�?+ 淡入�?
----@param units table  单位列表
----@param lungeDir number  -1=从上方滑入（敌方），1=从下方滑入（己方�?
 function BattleCombat.playEnterAnims(units, lungeDir)
-    for i, unit in ipairs(units) do
-        BCS.cardAnims[unit] = {
-            state    = "entering",
-            timer    = 0,
-            lungeDir = lungeDir,
-            delay    = (i - 1) * ENTER_STAGGER,
-        }
-    end
+    BattleCombatAnim.playEnter(BCS, units, lungeDir)
 end
 
 -- ======================== 浮动文字更新 ========================

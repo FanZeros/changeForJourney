@@ -21,7 +21,7 @@
 |----|------|------|------|
 | 1 | 从 BattleScene 抽出终焉确认弹窗 + 长按怪物信息 | 低：纯 UI，对外 API 不变 | **已完成** |
 | 2 | 继续拆 BattleScene：关卡加载 / 倍速 / 寻怪与战败 HUD | 中 | **已完成** |
-| 3 | 拆 BattleCombat（攻击结算 / 连击 / 飘字） | 中高：战斗手感 | **飘字/闪烁已完成；卡牌动画/连击仍在 BattleCombat** |
+| 3 | 拆 BattleCombat（攻击结算 / 连击 / 飘字） | 中高：战斗手感 | **飘字/闪烁/卡牌动画已完成；连击结算仍在 BattleCombat** |
 | 4 | 按英雄拆 TalentManager（核心 API 留壳，角色天赋分文件） | 高：战斗正确性 | **Ayane/Luoxing/Melissa 已完成** |
 | 5 | Standalone `_bootWiring` / 横屏输入拆模块 | 中：入口接线 | **已完成** |
 | 6 | Client/Server 启动与 overlay 拆模块 | 中 | 未做（清单外） |
@@ -57,7 +57,7 @@
 | 文件 | 重构前 | 重构后 |
 |------|--------|--------|
 | ui/BattleScene.lua | 3435 | 2384 |
-| ui/BattleCombat.lua | 2203 | 2101 |
+| ui/BattleCombat.lua | 2203 | 1821（卡牌动画抽出 BattleCombatAnim） |
 | systems/TalentManager.lua | 4197 | 3570 |
 | network/Standalone.lua | 2168 | 841 |
 | network/Client.lua | 2487 | 2487（未拆） |

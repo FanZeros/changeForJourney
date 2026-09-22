@@ -5,7 +5,7 @@
 ## 恢复指令
 
 1. 读 `docs/memory-index.md`（项目详细上下文）
-2. 读 `docs/山海经怪兽替换交接.md`（挂起任务交接）
+2. 读 `docs/refactor-plan.md` + `docs/refactor-tasks.md`（重构进度）
 3. 自测：这是什么项目？上次做了什么？下一步做什么？
 4. 告知用户记忆恢复状态，开始工作
 
@@ -13,21 +13,38 @@
 
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua`，单机 `network/Standalone.lua`
-- GitHub：`FanZeros/changeForJourney` 分支 `workspace`
+- GitHub：`FanZeros/changeForJourney`
+- **当前开发分支**：`refactor/extract-battle-overlays`（禁止推 `workspace`）
 
-## 上次做了什么（截至 2026-09-19）
+## 上次做了什么（截至 2026-09-22）
 
-竞技场功能彻底删除（d1d36e5）：13 个 Arena 文件删净，Standalone/Client/LocalActionBridge/TownScene/任务/引导/剧情(情景54)/货币(竞技券/币)/Protocol 全链清理。特权点保留现状（无获取渠道，洗练/UR恢复锁死，用户已拍板不动）。
+- 部署该重构分支并预览；修了 Lua 5.4 `\!` 启动崩溃 + TalentMelissa/Luoxing 丢失 ETS 依赖（`d4914f8`）
+- T11：从 BattleCombat 抽出卡牌动画状态机到 `scripts/ui/BattleCombatAnim.lua`（`a3f6930` 已 push）
+- BattleCombat 2101 → 1822 行；对外 API（`updateCardAnims` / `playEnterAnims` / `setCardAnim` 等）保持委托
 
 ## likely_next_task
 
-- 素材清理二轮：竞技场图（竞技场排行/ 目录、UI_CZ_JJC、ICON_CZ_JJC、UI_icon_JJCQ/JJB）现已无引用，可删（UI_JJC_BTBJ 仍被 TaskPanel/TavernShopPage 共用需保留）
-- 特权点后续：若做获取渠道或改计价再动 ArtifactService/HeroService
+- 继续拆超 1500 行文件（用户以选项指定）：
+  - BattleCombat 连击结算（`performComboAttack` 仍在主文件）
+  - TalentManager 再拆英雄块（仍 3570）
+  - Client.lua overlay/启动（2487）
+  - BattleScene 再拆（2384）
+  - Server.lua（2068）
+  - 城镇页（Market/Church/Blacksmith 仍 ~1800+，共用壳已接）
+
+## 用户硬性流程（必须遵守）
+
+- **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
+- 以 `refactor/extract-battle-overlays` 继续开发，完成后每次 push 该分支，**禁止推 workspace**
+- 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
 
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
-- ~~竞技场~~已删除；BattleResultPanel 的 arenaMode 是通用参数（Dungeon 传 false），别误删
-- 追加技层数跟角色走（roster.extraTalent），对手 createHero(..., false) 不要套本地层
+- BattleResultPanel 的 arenaMode 是通用参数（Dungeon 传 false），别误删
+- 追加技层数跟角色走（roster.extraTalent）；对手 createHero(..., false) 不要套本地层
 - 击杀认定用 `_killedBy`；弹射击杀用 `_killedByRicochet`
 - `/workspace/assets/**/*.meta` 绝不动
+- Lua 5.4 字符串里不要写 `\!`（非法转义，启动即崩）
+- 抽取英雄天赋模块必须 `require("systems.ExtraTalentSystem")`，悬空 `---@param` 会挡 LSP 构建
+- LSP 冷启动会漏检：首次 build 放行、二次才报 Error

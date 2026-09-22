@@ -55,3 +55,4 @@
 - [x] **T28** Market 点击/拖拽/滚轮 → `MarketInput.lua`。Market 1402。
 - [x] **T29** 单机 `sendAction` 改走 `network.GameAction` 门面（本地 LocalActionBridge）；UI 不再 `require("network.Client")`。联网仍转发 Client。validate 确认未加载 Client 模块。
 - [x] **T30** 去掉多人入口：`main.lua` 只加载 Standalone；删除 Client/ClientBoot/ClientRender/ClientUpdate/ClientInput/ClientScenarioHelper/Server/ServerEnterGame。`server/` Handler 与 ClientDispatcher 保留（单机本地桥仍用）。
+- [x] **T31** 清仅多人 UI 残留：删除 GuildPage / CharacterSelect / LoadingScreen；ClientMessageHandler 与 Debug 面板解绑。选服面板仍挂在 StartScreen，本轮未动标题流程。

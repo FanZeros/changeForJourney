@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-22 | 版本:v2.19-drop-multiplayer-shell
+> 更新时间:2026-09-22 | 版本:v2.20-drop-mp-ui
 >
-> **本会话(2026-09-22)**：T30 去掉多人入口，删除 Client/Server 联网壳。main.lua 只加载 Standalone。禁止推 workspace。
+> **本会话(2026-09-22)**：T31 删除公会页/选角/加载页。选服面板仍挂 StartScreen。禁止推 workspace。
 
 ---
 

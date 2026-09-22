@@ -23,7 +23,8 @@
 - T27：Market/Blacksmith `drawPageImpl` → `MarketDraw` / `BlacksmithDraw`
 - T28：Market 输入 → `MarketInput`（1402 行）
 - T29：单机 `sendAction` 走 `network.GameAction` → LocalActionBridge
-- T30：去掉多人入口。已删 Client/Server 联网壳；`main.lua` 只加载 Standalone。`server/` Handler 与 ClientDispatcher 仍留给本地桥。
+- T30：去掉多人入口。已删 Client/Server 联网壳
+- T31：删除 GuildPage / CharacterSelect / LoadingScreen；消息处理器与 Debug 解绑。选服面板仍在 StartScreen。
 
 ## likely_next_task
 

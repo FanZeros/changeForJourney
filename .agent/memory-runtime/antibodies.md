@@ -22,3 +22,4 @@
 - [scope:project] 抽取模块读 `TAL_BCS` 必须 `getTAL_BCS()`，bind 快照会在 `TAL.mount` 后过期
 - [scope:project] 大页不要用 `_ENV = E` 注入闭包：LSP 会把里面的名字打成 undefined-global Error 挡 build。用 bind(deps) 具名局部
 - [scope:project] 已去掉多人入口：`main.lua` 只加载 Standalone。玩法 `sendAction` 走 `network.GameAction`→LocalActionBridge。`network/Client.lua` / `Server.lua` 已删；`ClientDispatcher` 与 `server/` Handler 仍给单机本地桥用，勿当死代码删
+- [scope:project] 已删 GuildPage / CharacterSelect / LoadingScreen。选服 ServerSelectPanel 仍被 StartScreen require，动标题流程前别删

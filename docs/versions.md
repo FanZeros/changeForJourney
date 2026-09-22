@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.11-refactor-casualty | 2026-09-22 | BattleScene 抽出死亡补位/胜负到 BattleCasualty；2384→2154。分支 refactor/extract-battle-overlays @ ebc1db4 |
 | v2.10-refactor-clientboot | 2026-09-22 | Client 抽出启动接线到 ClientBoot；2487→2143。分支 refactor/extract-battle-overlays @ a9c2566 |
 | v2.9-refactor-talents | 2026-09-22 | TalentManager 再抽 Alex/Elwyn/Sera/Suhua；3276 行。分支 refactor/extract-battle-overlays @ 3e9920f |
 | v2.8-refactor-anim | 2026-09-22 | BattleCombat 抽出卡牌动画到 BattleCombatAnim；修 Lua5.4 `\!` 启动崩 + ETS 依赖。分支 refactor/extract-battle-overlays @ a3f6930 |

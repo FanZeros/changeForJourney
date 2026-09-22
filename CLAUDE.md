@@ -12,7 +12,7 @@
 ## 项目是什么
 
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
-- 入口 `scripts/main.lua`，单机 `network/Standalone.lua`
+- 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
 - **当前开发分支**：`refactor/extract-battle-overlays`（禁止推 `workspace`）
 
@@ -22,7 +22,8 @@
 - T23–T26 四块抽取（LSP 0 Error / build 过 / validate lua_errors=0）
 - T27：Market/Blacksmith `drawPageImpl` → `MarketDraw` / `BlacksmithDraw`
 - T28：Market 输入 → `MarketInput`（1402 行）
-- T29：单机 `sendAction` 走 `network.GameAction` → LocalActionBridge；UI 不再加载 Client。联网仍转发 Client。不能删 Client.lua。
+- T29：单机 `sendAction` 走 `network.GameAction` → LocalActionBridge
+- T30：去掉多人入口。已删 Client/Server 联网壳；`main.lua` 只加载 Standalone。`server/` Handler 与 ClientDispatcher 仍留给本地桥。
 
 ## likely_next_task
 

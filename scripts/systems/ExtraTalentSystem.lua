@@ -486,10 +486,10 @@ local function persistNow(heroId, extra)
     if ok and CP and CP.patchExtraTalent then
         CP.patchExtraTalent(heroId, extra)
     end
-    local sentOk, Client = pcall(require, "network.Client")
-    if sentOk and Client and Client.sendAction then
+    local sentOk, GameAction = pcall(require, "network.GameAction")
+    if sentOk and GameAction and GameAction.sendAction then
         pcall(function()
-            Client.sendAction(Protocol.ACTION_TYPES.SYNC_EXTRA_TALENT, {
+            GameAction.sendAction(Protocol.ACTION_TYPES.SYNC_EXTRA_TALENT, {
                 heroId = heroId,
                 extraTalent = extra,
             })

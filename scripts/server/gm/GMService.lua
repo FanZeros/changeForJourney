@@ -322,7 +322,10 @@ function GMService.KickPlayer(targetUid, reason)
     end
 
     -- 延迟 require 避免循环依赖（Server → GMHandler → GMService → Server）
-    local Server = require("network.Server")
+    local okServer, Server = pcall(require, "network.Server")
+    if not okServer or type(Server) ~= "table" then
+        return false, "单机无在线玩家"
+    end
 
     if not Server.IsPlayerOnline(targetUid) then
         return false, "目标玩家不在线"
@@ -374,7 +377,15 @@ end
 ---@return table status
 function GMService.GetServerStatus()
     -- 延迟 require 避免循环依赖
-    local Server = require("network.Server")
+    local okServer, Server = pcall(require, "network.Server")
+    if not okServer or type(Server) ~= "table" then
+        local now = os.time()
+        return {
+            serverTime = now, startTime = now, uptimeSeconds = 0,
+            onlineCount = 0, onlineUIDs = {}, onlinePlayers = {},
+            maintenanceMode = false,
+        }
+    end
 
     local now = os.time()
     local startTime = Server.GetStartTime()
@@ -401,7 +412,18 @@ end
 --- 结果通过回调返回
 ---@param callback fun(status: table)
 function GMService.GetServerStatusAsync(callback)
-    local Server = require("network.Server")
+    local okServer, Server = pcall(require, "network.Server")
+    if not okServer or type(Server) ~= "table" then
+        if callback then
+            local now = os.time()
+            callback({
+                serverTime = now, startTime = now, uptimeSeconds = 0,
+                onlineCount = 0, onlineUIDs = {}, allOnlinePlayers = {},
+                maintenanceMode = false,
+            })
+        end
+        return
+    end
 
     local now = os.time()
     local startTime = Server.GetStartTime()
@@ -508,7 +530,10 @@ function GMService.BanPlayer(targetUid, duration, reason, operatorUid)
     local banExpireTime = banInfo and banInfo.banExpireTime or 0
 
     -- 如果目标在线，通过 KickPlayer 推送弹窗 + 3 秒后强制断开
-    local Server = require("network.Server")
+    local okServer, Server = pcall(require, "network.Server")
+    if not okServer or type(Server) ~= "table" then
+        return false, "单机无在线玩家"
+    end
     if Server.IsPlayerOnline(targetUid) then
         Server.KickPlayer(targetUid, "账号已封禁: " .. (reason or "违规操作"))
     end
@@ -548,7 +573,10 @@ end
 ---@return string|nil reason
 ---@return table|nil result { maintenanceMode, kickedCount }
 function GMService.SetMaintenanceMode(enabled)
-    local Server = require("network.Server")
+    local okServer, Server = pcall(require, "network.Server")
+    if not okServer or type(Server) ~= "table" then
+        return false, "单机无在线玩家"
+    end
     local GMHandler = require("server.gm.GMHandler")
 
     local currentMode = Server.GetMaintenanceMode()

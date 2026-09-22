@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.19-drop-multiplayer-shell | 2026-09-22 | 去掉多人入口，删除 Client/Server 联网壳；单机仍用 LocalActionBridge+server Handler。 |
 | v2.18-gameaction-local | 2026-09-22 | 单机 sendAction 走 GameAction→LocalActionBridge，UI 不再加载 Client。 |
 | v2.17-refactor-market-input | 2026-09-22 | Market 点击/拖拽/滚轮抽到 MarketInput。Market 1402。 |
 | v2.16-refactor-town-draw | 2026-09-22 | Market/Blacksmith drawPageImpl 抽到 MarketDraw/BlacksmithDraw。Market 1589 / Blacksmith 1533。 |

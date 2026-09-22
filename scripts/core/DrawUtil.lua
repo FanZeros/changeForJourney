@@ -467,6 +467,9 @@ function DrawUtil.seamSlideX(dirSign, openTime, closeTime, openDur, closeDur, di
     return 0
 end
 
+--- 中缝返回条素材等比（108/1365,随 UI_SEAMBAR.png 实际比例同步更新;Standalone.seamBackList 点击宽共用）
+DrawUtil.SEAMBAR_ASPECT = 0.0791
+
 --- 全高"门柱"返回条（三行模式中缝）：UI_SEAMBAR.png 图片条等比铺满逻辑高度，
 --- dir="left" 时水平镜像（素材箭头朝右，左条翻成 ‹）。素材自带中央 ">" 按钮。
 ---@param vg any NanoVG 上下文（窗口坐标）
@@ -484,8 +487,8 @@ function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
     end
 
     if seamBarImg and seamBarImg > 0 then
-        -- 宽度 = 素材等比(158/1425)×0.8,与 Standalone.seamBackList 一致;条中心骑在页面分界线上
-        local w = h * 0.0888
+        -- 宽度 = 素材实际等比,与 Standalone.seamBackList 共用 SEAMBAR_ASPECT;条中心骑在页面分界线上
+        local w = h * DrawUtil.SEAMBAR_ASPECT
         local halfW = w * 0.5
         nvgSave(vg)
         if dir == "left" then
@@ -493,7 +496,7 @@ function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
             nvgScale(vg, -1, 1)
             nvgTranslate(vg, -cx, -cy)
         end
-        local paint = nvgImagePattern(vg, cx - halfW, cy - h * 0.5, w, h, 0, seamBarImg, 0.92)
+        local paint = nvgImagePattern(vg, cx - halfW, cy - h * 0.5, w, h, 0, seamBarImg, 1.0)
         nvgBeginPath(vg)
         nvgRect(vg, cx - halfW, cy - h * 0.5, w, h)
         nvgFillPaint(vg, paint)

@@ -39,3 +39,7 @@
 - [x] **T12** TalentManager 再拆英雄：Alex / Elwyn / Sera / Suhua 到 `systems/talents/`。目标：TalentManager < 3300 行。
 - [x] **T13** Client：抽出启动接线到 `network/ClientBoot.lua`（击杀缓冲/城镇情景/轮回关卡/阵亡/阵容）。对外 `Client.Start` 签名不变。
 - [x] **T14** BattleScene：抽出死亡补位/阵亡紧凑/胜负判定到 `BattleCasualty.lua`。目标：BattleScene < 2200 行。
+- [x] **T15** BattleCombat：抽出连击结算到 `BattleCombatCombo.lua`。
+- [x] **T16** BattleScene：抽出 `loadStage` 到 `BattleStageLoad.lua`。
+- [x] **T17** TalentManager：抽出 `TAL.update` 到 `systems/talents/TalentUpdate.lua`。目标：TalentManager < 3000。
+- [x] **T18** Client：抽出主渲染到 `network/ClientRender.lua`。

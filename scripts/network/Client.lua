@@ -69,6 +69,7 @@ local TutorialConfig   = require("config.TutorialConfig")
 local ClientMsgHandler = require("network.ClientMessageHandler")
 local ClientScenario   = require("network.ClientScenarioHelper")
 local ClientBoot       = require("network.ClientBoot")
+local ClientRender     = require("network.ClientRender")
 local GameAlgoService  = require("client.GameAlgoService")
 
 local Client = {}
@@ -1126,343 +1127,43 @@ local function drawOverlay()
 end
 
 function HandleNanoVGRender_Client(eventType, eventData)
-    if not vg then return end
-
-    -- 横屏 PC 多面板（changeForJourney）：状态感知 letterbox
-    if not H_skipDone and StartScreen.isOpen() then
-        H_skipDone = true
-        StartScreen.skipForReconnect()
-        DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
-        DarkTitleScreen.setReady(not LoadingScreen.isOpen())
+    ClientRender.bind({
+        vg = vg,
+        logicalW = logicalW,
+        logicalH = logicalH,
+        dpr = dpr,
+        scale = scale,
+        designOffsetX = designOffsetX,
+        designOffsetY = designOffsetY,
+        screenDesignW = screenDesignW,
+        screenDesignH = screenDesignH,
+        H_skipDone = H_skipDone,
+        H_ox = H_ox, H_oy = H_oy, H_s = H_s,
+        currentState = currentState,
+        STATE_IN_GAME = STATE_IN_GAME,
+        pageTrans = pageTrans,
+        drawOverlay = drawOverlay,
+        easeOutBack = easeOutBack,
+        _diag_updateFrameNum = _diag_updateFrameNum,
+        _diag_renderLastSeenFrame = _diag_renderLastSeenFrame,
+        _diag_renderStallCount = _diag_renderStallCount,
+        setHSkipDone = function(v) H_skipDone = v end,
+        setScale = function(v) scale = v end,
+        setDesignOffset = function(x, y) designOffsetX, designOffsetY = x, y end,
+        setHLayout = function(ox, oy, s) H_ox, H_oy, H_s = ox, oy, s end,
+    })
+    ClientRender.HandleNanoVGRender(eventType, eventData)
+    if ClientRender.D then
+        H_skipDone = ClientRender.D.H_skipDone
+        scale = ClientRender.D.scale
+        designOffsetX = ClientRender.D.designOffsetX
+        designOffsetY = ClientRender.D.designOffsetY
+        H_ox = ClientRender.D.H_ox
+        H_oy = ClientRender.D.H_oy
+        H_s = ClientRender.D.H_s
+        _diag_renderLastSeenFrame = ClientRender.D._diag_renderLastSeenFrame
+        _diag_renderStallCount = ClientRender.D._diag_renderStallCount
     end
-    if StartScreen.isOpen() or LoadingScreen.isOpen() or LetterIntro.isOpen() or CharacterSelect.isActive() then
-        local ss = math.min(logicalW / 1080, logicalH / 2400)
-        scale = ss
-        -- 外层 nvgScale(scale) 会缩放 translate 值：偏移需除以 scale（缩放空间语义）
-        designOffsetX = (logicalW - 1080 * ss) / (2 * ss)
-        designOffsetY = (logicalH - 2400 * ss) / (2 * ss)
-    else
-        local vox, voy, vs = ViewportH.layout(logicalW, logicalH)
-        H_ox, H_oy, H_s = vox, voy, vs
-        scale = vs
-        designOffsetX = (vox + ViewportH.PANELS.center.bx * vs) / vs
-        designOffsetY = voy / vs
-    end
-
-    nvgBeginFrame(vg, logicalW, logicalH, dpr)
-
-    -- 全窗口底色
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, logicalW, logicalH)
-    nvgFillColor(vg, nvgRGBA(14, 14, 22, 255))
-    nvgFill(vg)
-    -- 左右面板（独立变换，主渲染缩进中面板）
-    -- 标题未淡出时不画侧栏，避免标题底下先露出竖屏战斗/城镇
-    if currentState == STATE_IN_GAME and not StartScreen.isOpen() and not LoadingScreen.isOpen() and not LetterIntro.isOpen()
-        and not (DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading()) then
-        nvgSave(vg)
-        nvgResetTransform(vg)
-        ViewportH.begin(vg, ViewportH.PANELS.left, H_ox, H_oy, H_s)
-        TownScene.draw(vg)
-        BlacksmithPage.draw(vg)
-        ChurchPage.draw(vg)
-        TavernPage.draw(vg)
-        MarketPage.draw(vg)
-        GuildPage.draw(vg)
-        LootBox.draw(vg)   -- 全局战利品箱（整页左下角，主线/通天塔/副本共用一份）
-        ViewportH.finish(vg)
-        ViewportH.begin(vg, ViewportH.PANELS.right, H_ox, H_oy, H_s)
-        CharacterPanel.draw(vg)
-        ViewportH.finish(vg)
-        nvgRestore(vg)
-    end
-
-    nvgScale(vg, scale, scale)
-
-    -- 开始界面（最高优先级，覆盖所有内容）
-    if StartScreen.isOpen() then
-        nvgSave(vg)
-        nvgTranslate(vg, designOffsetX, designOffsetY)
-        StartScreen.draw(vg)
-        VersionMismatchPopup.draw(vg)
-        nvgRestore(vg)
-        nvgEndFrame(vg)
-        return
-    end
-
-    -- 加载界面（第二优先级）
-    if LoadingScreen.isOpen() then
-        nvgSave(vg)
-        nvgTranslate(vg, designOffsetX, designOffsetY)
-        LoadingScreen.draw(vg)
-        nvgRestore(vg)
-        nvgEndFrame(vg)
-        return
-    end
-
-    -- 标题未淡出：只画标题，避免底下竖屏 BattleScene 先闪一帧
-    if DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading() then
-        DarkTitleScreen.draw(vg, logicalW, logicalH)
-        nvgEndFrame(vg)
-        return
-    end
-
-    if currentState == STATE_IN_GAME then
-      local _rok, _rerr = pcall(function()
-        -- 调试面板
-        DebugPanel.draw(vg, designOffsetX, screenDesignW)
-
-        -- 进入设计空间
-        nvgSave(vg)
-        nvgTranslate(vg, designOffsetX, designOffsetY)
-
-        local dungeonBattleOpen = DungeonBattleScene.isOpen()
-        local towerBattleOpen = TowerBattleScene.isActive()
-        if towerBattleOpen then
-            local lw = graphics:GetWidth() / (graphics:GetDPR() or 1)
-            local lh = graphics:GetHeight() / (graphics:GetDPR() or 1)
-            nvgRestore(vg)
-            nvgSave(vg)
-            nvgScissor(vg, 0, 0, lw, lh)
-            TowerBattleScene.draw(vg, lw, lh)
-            nvgRestore(vg)
-            nvgSave(vg)
-            nvgTranslate(vg, designOffsetX, designOffsetY)
-            -- 不绘制TopBar/BottomNav
-        elseif dungeonBattleOpen then
-            DungeonBattleScene.draw(vg)
-            -- 不绘制TopBar/BottomNav
-        else
-            local tabIndex = BottomNav.getSelectedIndex()
-
-            --- 绘制指定 tab 的页面内容
-            local function drawTabPage(idx)
-                if idx == 1 then
-                    CharacterPanel.draw(vg)
-                elseif idx == 2 then
-                    DiaryPage.draw(vg)
-                elseif idx == 3 then
-                    BattleScene.draw(vg)
-                elseif idx == 4 then
-                    TownScene.draw(vg)
-                    BlacksmithPage.draw(vg)
-                    ChurchPage.draw(vg)
-                    TavernPage.draw(vg)
-                    MarketPage.draw(vg)
-                    GuildPage.draw(vg)
-                elseif idx == 5 then
-                    DungeonPage.draw(vg)
-                end
-            end
-
-            if pageTrans.active then
-                -- 过渡动画：旧页面淡出，新页面从下方弹起淡入
-                local t = easeOutBack(pageTrans.progress)   -- easeOutBack 回弹，呼应标签弹起感
-                local RISE_DIST = 80  -- 新页面起始偏移量（设计像素）
-                local cx = screenDesignW * 0.5
-                local cy = screenDesignH * 0.5
-
-                -- 旧页面：快速淡出（前半段结束）
-                local oldAlpha = math.max(0, 1 - pageTrans.progress * 2)
-                nvgSave(vg)
-                nvgGlobalAlpha(vg, oldAlpha)
-                drawTabPage(pageTrans.fromIndex)
-                nvgRestore(vg)
-
-                -- 新页面：从下方RISE_DIST px 处上升+ 从0.96 缩放到1.0 + 淡入
-                local newAlpha  = math.min(1, pageTrans.progress * 1.5)
-                local offsetY   = RISE_DIST * (1 - t)                 -- 从下方升起
-                local pageScale = 0.96 + 0.04 * t                     -- 0.96 →1.0
-
-                nvgSave(vg)
-                nvgGlobalAlpha(vg, newAlpha)
-                nvgTranslate(vg, cx, cy + offsetY)
-                nvgScale(vg, pageScale, pageScale)
-                nvgTranslate(vg, -cx, -cy)
-                drawTabPage(pageTrans.toIndex)
-                nvgRestore(vg)
-            else
-                drawTabPage(tabIndex)
-            end
-
-            local detailOpen = CharacterPanel.isDetailOpen()
-            local smithOpen  = BlacksmithPage.isOpen()
-            local churchOpen = ChurchPage.isOpen()
-            local tavernOpen = TavernPage.isOpen()
-            local marketOpen = MarketPage.isOpen()
-            local guildOpen  = GuildPage.isOpen()
-            local signInOpen = SignInPanel.isOpen()
-            local backpackOpen = BackpackPanel.isOpen()
-            local taskOpen   = TaskPanel.isOpen()
-            if not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not marketOpen and not guildOpen and not signInOpen and not backpackOpen and not taskOpen then
-                if tabIndex ~= 5 then
-                    TopBar.draw(vg)
-                end
-                BottomNav.draw(vg)
-            elseif taskOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not guildOpen and not signInOpen and not backpackOpen then
-                local animP = TaskPanel.getAnimProgress()
-                if animP < 1.0 then
-                    local fadeAlpha = 1.0 - animP
-                    nvgSave(vg)
-                    nvgGlobalAlpha(vg, fadeAlpha)
-                    TopBar.draw(vg)
-                    BottomNav.draw(vg)
-                    nvgRestore(vg)
-                end
-            elseif backpackOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not guildOpen and not signInOpen then
-                local animP = BackpackPanel.getAnimProgress()
-                if animP < 1.0 then
-                    local fadeAlpha = 1.0 - animP
-                    nvgSave(vg)
-                    nvgGlobalAlpha(vg, fadeAlpha)
-                    TopBar.draw(vg)
-                    BottomNav.draw(vg)
-                    nvgRestore(vg)
-                end
-            elseif signInOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not guildOpen then
-                local animP = SignInPanel.getAnimProgress()
-                if animP < 1.0 then
-                    local fadeAlpha = 1.0 - animP
-                    nvgSave(vg)
-                    nvgGlobalAlpha(vg, fadeAlpha)
-                    TopBar.draw(vg)
-                    BottomNav.draw(vg)
-                    nvgRestore(vg)
-                end
-            elseif marketOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not guildOpen then
-                local animP = MarketPage.getAnimProgress()
-                if animP < 1.0 then
-                    local fadeAlpha = 1.0 - animP
-                    nvgSave(vg)
-                    nvgGlobalAlpha(vg, fadeAlpha)
-                    TopBar.draw(vg)
-                    BottomNav.draw(vg)
-                    nvgRestore(vg)
-                end
-            elseif guildOpen and not detailOpen and not smithOpen and not churchOpen and not tavernOpen and not marketOpen then
-                local animP = GuildPage.getAnimProgress()
-                if animP < 1.0 then
-                    local fadeAlpha = 1.0 - animP
-                    nvgSave(vg)
-                    nvgGlobalAlpha(vg, fadeAlpha)
-                    TopBar.draw(vg)
-                    BottomNav.draw(vg)
-                    nvgRestore(vg)
-                end
-            elseif tavernOpen and not detailOpen and not smithOpen and not churchOpen then
-                local animP = TavernPage.getAnimProgress()
-                if animP < 1.0 then
-                    local fadeAlpha = 1.0 - animP
-                    nvgSave(vg)
-                    nvgGlobalAlpha(vg, fadeAlpha)
-                    TopBar.draw(vg)
-                    BottomNav.draw(vg)
-                    nvgRestore(vg)
-                end
-            elseif churchOpen and not detailOpen and not smithOpen then
-                local animP = ChurchPage.getAnimProgress()
-                if animP < 1.0 then
-                    local fadeAlpha = 1.0 - animP
-                    nvgSave(vg)
-                    nvgGlobalAlpha(vg, fadeAlpha)
-                    TopBar.draw(vg)
-                    BottomNav.draw(vg)
-                    nvgRestore(vg)
-                end
-            end
-        end
-
-        if not towerBattleOpen then
-        HeroRosterPanel.draw(vg)
-
-        -- 玩家信息弹窗（头像点击打开）
-        PlayerInfoPanel.draw(vg)
-
-        -- 战利品全屏页面（在RewardPopup 之前，覆盖游戏画面）
-        LootBox.drawPage(vg)
-        -- [仓库入口] 背包全窗模态（竖屏：设计空间=窗口空间，fit=1 等价内嵌绘制）
-        if BackpackPanel.isOpen() and BackpackPanel.isWindowMode() then
-            BackpackPanel.drawWindow(vg, 1080, 2400)
-        end
-        -- 自动分解设置弹窗（standalone 模式：从战利品面板直接调起，不打开铁匠铺）
-        BlacksmithPage.drawAutoDecomposePopupStandalone(vg)
-        -- 奖励弹窗（最顶层）
-        RewardPopup.draw(vg)
-        -- 冒险等级提升弹窗（最顶层）
-        LevelUpPopup.draw(vg)
-        -- 离线收益面板（最顶层弹窗）
-        OfflineRewardPanel.draw(vg)
-        -- 战斗力提升特效（叠加在弹窗之上）
-        SpinePowerUpEffect.draw(vg)
-        -- 更新提醒弹窗（最最顶层）
-        UpdateNoticePopup.draw(vg)
-
-        -- 新手过场动画（覆盖所有游戏UI）
-        if IntroCutscene.isActive() then
-            IntroCutscene.draw(vg)
-        end
-
-        -- 情景对话（覆盖所有游戏UI，紧接在过场动画之后）
-        if ScenarioDialogue.isActive() then
-            ScenarioDialogue.draw()
-        end
-
-        -- 选择初始角色：横屏改由全窗口 letterbox 绘制（见 HandleNanoVGRender_Client 尾部）
-
-        -- 新手引导蒙层（覆盖在所有游戏UI 之上，情景对话之后）
-        if TutorialManager.isActive() then
-            TutorialManager.draw()
-        end
-        end -- not towerBattleOpen
-
-        nvgRestore(vg)
-      end) -- pcall end (render)
-      if not _rok then
-        print("[Client] render error: " .. tostring(_rerr))
-      end
-    end
-
-    -- 遮罩层（最顶层）
-    drawOverlay()
-
-    -- Update 安全网：检测update handler 是否存活，停滞时自动重新订阅
-    do
-        if _diag_updateFrameNum == _diag_renderLastSeenFrame then
-            _diag_renderStallCount = _diag_renderStallCount + 1
-        else
-            _diag_renderStallCount = 0
-            _diag_renderLastSeenFrame = _diag_updateFrameNum
-        end
-        -- 连续 ~2秒未更新→重新订阅 Update 事件
-        if _diag_renderStallCount == 120 then
-            print("[Client] Update handler stalled, re-subscribing...")
-            SubscribeToEvent("Update", "HandleUpdate_Client")
-        end
-    end
-
-
-    -- [DarkTitleScreen] 横屏标题（全窗口逻辑坐标，覆盖一切直至点击淡出）
-    if DarkTitleScreen.isOpen() then
-        nvgResetTransform(vg)
-        DarkTitleScreen.draw(vg, logicalW, logicalH)
-    end
-
-    -- [LetterIntro] 先祖来信（全窗口 16:9 cover，盖住三联面板）
-    if LetterIntro.isOpen() then
-        nvgResetTransform(vg)
-        ---@diagnostic disable-next-line: missing-parameter
-        LetterIntro.draw(vg, logicalW, logicalH)
-    end
-    -- 选角：竖屏 1080×2400 letterbox 全窗口覆盖（不再缩进中栏）
-    if CharacterSelect.isActive() then
-        nvgResetTransform(vg)
-        local ss = math.min(logicalW / 1080, logicalH / 2400)
-        nvgTranslate(vg, (logicalW - 1080 * ss) * 0.5, (logicalH - 2400 * ss) * 0.5)
-        nvgScale(vg, ss, ss)
-        CharacterSelect.draw()
-    end
-
-    nvgEndFrame(vg)
 end
 
 -- ======================== 更新 ========================

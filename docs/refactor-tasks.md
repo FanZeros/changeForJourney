@@ -65,3 +65,4 @@
 - [x] **T37** ChurchPage.init → `ChurchInit`；Talent `onEnemyDeath`/`checkMarkTarget` → `TalentEnemyDeath`。Church 918 / Talent 1032。
 - [x] **T38** Church 角标 → `ChurchBadge`；Talent `onComboAttack` → `TalentComboAttack`；Blacksmith 强化缓存 → `BlacksmithEnhanceCache`；Market 典藏 → `MarketCollection`。Church 893 / Talent 1030 / Blacksmith 1244 / Market 1173。
 - [x] **T39** BattleScene 前进/后退/终焉/轮回 → `BattleStageNavLogic`；`setBattleData` → `BattleDataRestore`。BattleScene 1764→1605。
+- [x] **T40** Church `onActionResult` → `ChurchResults`；Market 购买/抽卡结果与限购同步 → `MarketResults`。Church 812 / Market 1045。铁匠上半绘制本轮未抽。

@@ -31,6 +31,7 @@ local ChurchRosterDraw = require("ui.ChurchRosterDraw")
 local ChurchSlotAnim   = require("ui.ChurchSlotAnim")
 local ChurchInit       = require("ui.ChurchInit")
 local ChurchBadge      = require("ui.ChurchBadge")
+local ChurchResults    = require("ui.ChurchResults")
 
 -- 懒加载网络模块（避免循环依赖）
 local Client_
@@ -764,106 +765,24 @@ local function drawPageImpl(vg)
 end
 
 
+local _results
+local function bindChurchResults()
+    _results = ChurchResults.bind({
+        state = state,
+        ANIM = ANIM,
+        CHAR_SLOT = CHAR_SLOT,
+        getProtocol = getProtocol,
+        ArtifactPanel = ArtifactPanel,
+        CharacterPanel = CharacterPanel,
+        SpineCardEffect = SpineCardEffect,
+        clearPowerCache = clearPowerCache,
+    })
+end
+
 --- 处理服务端转职操作结果
 function ChurchPage.onActionResult(data)
-    if not state.open then return end
-
-    -- 神器装配结果
-    local Protocol = getProtocol()
-    if data.action == Protocol.ACTION_TYPES.ARTIFACT_EQUIP and data.success then
-        state.floatText = "神器安装成功，下波战斗生效"
-        state.floatTextX = 540
-        state.floatTextY = 980
-        state.floatTextTime = time.elapsedTime
-        ArtifactPanel.onArtifactEquipResult(true)
-    elseif data.action == Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP and data.success then
-        state.floatText = "神器已卸下，下波战斗生效"
-        state.floatTextX = 540
-        state.floatTextY = 980
-        state.floatTextTime = time.elapsedTime
-    elseif data.action == Protocol.ACTION_TYPES.ARTIFACT_MERGE and data.success then
-        state.floatText = "神器合成成功"
-        state.floatTextX = 540
-        state.floatTextY = 980
-        state.floatTextTime = time.elapsedTime
-    elseif data.action == Protocol.ACTION_TYPES.ARTIFACT_REROLL and data.success then
-        state.floatText = "神器置换成功"
-        state.floatTextX = 540
-        state.floatTextY = 980
-        state.floatTextTime = time.elapsedTime
-        local okPanel, ArtifactPanel = pcall(require, "ui.ChurchArtifactPanel")
-        if okPanel and ArtifactPanel and ArtifactPanel.onArtifactRerollResult then
-            ArtifactPanel.onArtifactRerollResult(true)
-        end
-    elseif data.action == Protocol.ACTION_TYPES.ARTIFACT_REFINE_VALUE and data.success then
-        state.floatText = "神器洗练成功"
-        state.floatTextX = 540
-        state.floatTextY = 980
-        state.floatTextTime = time.elapsedTime
-        local okPanel, ArtifactPanel = pcall(require, "ui.ChurchArtifactPanel")
-        if okPanel and ArtifactPanel and ArtifactPanel.onArtifactRefineValueResult then
-            ArtifactPanel.onArtifactRefineValueResult(true, data.artifactId)
-        end
-    elseif (data.action == Protocol.ACTION_TYPES.ARTIFACT_EQUIP
-        or data.action == Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP
-        or data.action == Protocol.ACTION_TYPES.ARTIFACT_MERGE
-        or data.action == Protocol.ACTION_TYPES.ARTIFACT_REROLL
-        or data.action == Protocol.ACTION_TYPES.ARTIFACT_REFINE_VALUE) and not data.success then
-        if data.action == Protocol.ACTION_TYPES.ARTIFACT_EQUIP then
-            ArtifactPanel.onArtifactEquipResult(false)
-        end
-        state.floatText = data.reason or "神器操作失败"
-        state.floatTextX = 540
-        state.floatTextY = 980
-        state.floatTextTime = time.elapsedTime
-    end
-
-    if data.action == Protocol.ACTION_TYPES.ARTIFACT_DRAW
-        or data.action == Protocol.ACTION_TYPES.ARTIFACT_EQUIP
-        or data.action == Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP
-        or data.action == Protocol.ACTION_TYPES.ARTIFACT_MERGE
-        or data.action == Protocol.ACTION_TYPES.ARTIFACT_REROLL
-        or data.action == Protocol.ACTION_TYPES.ARTIFACT_REFINE_VALUE then
-        local okBN, BN = pcall(require, "ui.BottomNav")
-        if okBN and BN and BN.refreshTownBadge then
-            BN.refreshTownBadge()
-        end
-    end
-
-    -- 转职成功结果（由 ADVANCE_CLASS handler 返回，含 branchId + advLevel + branchName）
-    if data.branchId and data.advLevel then
-        print("[ChurchPage] 转职成功: " .. tostring(data.branchName)
-            .. " heroId=" .. tostring(data.heroId)
-            .. " advLevel=" .. tostring(data.advLevel))
-        -- 同步 advBranch 到 CharacterPanel，使转职天赋在当前会话立即生效
-        if data.heroId then
-            CharacterPanel.setHeroAdvBranch(data.heroId, data.branchId, data.advLevel)
-        end
-        -- 清除战斗力缓存，下次绘制会重新计算
-        clearPowerCache()
-        -- 刷新城镇Tab角标（转职后可能不再有可转职英雄）
-        local okBN, BN = pcall(require, "ui.BottomNav")
-        if okBN and BN and BN.refreshTownBadge then
-            BN.refreshTownBadge()
-        end
-        -- 转职成功 Spine 特效：在角色卡片当前位置播放（卡片已上移 ANIM.SLOT_LIFT）
-        local cardActualCY = CHAR_SLOT.CY - ANIM.SLOT_LIFT * state.slotLiftProgress
-        SpineCardEffect.playJobChange(CHAR_SLOT.CX, cardActualCY)
-    end
-
-    -- 重置转职成功结果（由 RESET_CLASS handler 返回）
-    if data.action == getProtocol().ACTION_TYPES.RESET_CLASS and data.success and data.heroId then
-        print("[ChurchPage] 重置转职成功 heroId=" .. tostring(data.heroId)
-            .. " removedOffhand=" .. tostring(data.removedOffhandSeq))
-        CharacterPanel.resetHeroAdvBranch(data.heroId)
-        -- 清除战斗力缓存
-        clearPowerCache()
-        -- 刷新城镇Tab角标
-        local okBN, BN = pcall(require, "ui.BottomNav")
-        if okBN and BN and BN.refreshTownBadge then
-            BN.refreshTownBadge()
-        end
-    end
+    if not _results then bindChurchResults() end
+    return _results.onActionResult(data)
 end
 
 --- 预加载天赋背景 Spine（启动时调用，避免进入教堂时卡顿）

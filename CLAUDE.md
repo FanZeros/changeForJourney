@@ -34,14 +34,15 @@
 - T37：ChurchPage.init → ChurchInit；Talent onEnemyDeath/checkMarkTarget → TalentEnemyDeath。Church 918 / Talent 1032
 - T38：ChurchBadge + TalentComboAttack + BlacksmithEnhanceCache + MarketCollection。Church 893 / Talent 1030 / Blacksmith 1244 / Market 1173
 - T39：BattleScene 导航/轮回 → BattleStageNavLogic；setBattleData → BattleDataRestore。BattleScene 1605
+- T40：ChurchResults + MarketResults。Church 812 / Market 1045
 
 ## likely_next_task
 
 - BattleScene 1605，可再抽 init/draw/handleInput
-- ChurchPage 893，可再抽 open/close / onActionResult
+- ChurchPage 812，可再抽 open/close
 - TalentManager 1030，核心壳已较瘦，再拆收益低
 - BlacksmithPage 1244 上半绘制依赖局部图太多，勿盲目抽 init
-- MarketPage 1173，可再抽 init 或商店道具网格
+- MarketPage 1045，可再抽 init 或商店道具网格
 - ServerListConfig / GuildConfig 仍被存档与云排行使用，勿当死代码删
 
 ## 用户硬性流程（必须遵守）

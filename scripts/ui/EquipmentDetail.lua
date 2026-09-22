@@ -41,6 +41,7 @@ local detState = {
     heroId    = nil,    -- 当前角色 ID
     openTime  = 0,
     closeTime = 0,
+    compactCorner = false, -- 配装页单击：右栏左上角小窗，无阴影
     -- 关闭动画快照（close() 时冻结，防止 server 推送导致面板内容跳变）
     snapshot  = nil,    -- { newEquip, isEquipped, curEquip, hasCurrent, btnText, powerDiff }
 }
@@ -474,6 +475,16 @@ local CUR_BG_CY = math.floor(REF_BG_CY - REF_BG_H * 0.5 + CUR_BG_H * 0.5)
 -- 单面板居中
 local SINGLE_BG_CX = 540
 
+-- 配装页小窗：贴在当前面板左上角，无遮罩
+local COMPACT_LEFT = 16
+local COMPACT_TOP  = 16
+
+local function compactOffset()
+    local refLeft = REF_BG_CX - REF_BG_W * 0.5
+    local refTop  = REF_BG_CY - REF_BG_H * 0.5
+    return COMPACT_LEFT - refLeft, COMPACT_TOP - refTop
+end
+
 -- ======================== 面板绘制（绝对坐标 + X偏移） ========================
 
 --- 获取装备图标（委托 ImageCache 共享缓存）
@@ -879,18 +890,27 @@ end
 ---@param seq string|number 装备序列号
 ---@param slot string 槽位
 ---@param heroId number 角色ID
-function EquipmentDetail.open(seq, slot, heroId)
+function EquipmentDetail.open(seq, slot, heroId, compactCorner)
     detState.open      = true
     detState.closing   = false
     detState.equipSeq  = tostring(seq)
     detState.slot      = slot
     detState.heroId    = heroId
     detState.openTime  = time.elapsedTime
-    print("[EquipmentDetail] open seq=" .. tostring(seq) .. " slot=" .. tostring(slot) .. " heroId=" .. tostring(heroId))
+    detState.compactCorner = compactCorner == true
+    print("[EquipmentDetail] open seq=" .. tostring(seq) .. " slot=" .. tostring(slot)
+        .. " heroId=" .. tostring(heroId) .. " compact=" .. tostring(detState.compactCorner))
 end
 
 --- 关闭（冻结当前面板内容用于关闭动画）
 function EquipmentDetail.close()
+    if detState.compactCorner then
+        detState.open = false
+        detState.closing = false
+        detState.compactCorner = false
+        detState.snapshot = nil
+        return
+    end
     if detState.closing then return end
     -- 快照当前渲染数据，动画期间不再读实时数据
     local equipData = PlayerStore.Get("equipment")
@@ -918,6 +938,10 @@ end
 ---@return boolean
 function EquipmentDetail.isOpen()
     return detState.open
+end
+
+function EquipmentDetail.isCompactCorner()
+    return detState.open and detState.compactCorner == true
 end
 
 --- 判断当前点击的装备是否已穿戴
@@ -985,6 +1009,11 @@ end
 function EquipmentDetail.handleInput(dx, dy)
     if not detState.open then return false end
     if detState.closing then return true end
+    if detState.compactCorner then
+        local ox, oy = compactOffset()
+        dx = dx - ox
+        dy = dy - oy
+    end
 
     local equipData = PlayerStore.Get("equipment")
     if not equipData then return true end
@@ -1169,7 +1198,11 @@ function EquipmentDetail.handleInput(dx, dy)
 
     -- 点击面板外部 → 关闭
     local inPanel = false
-    if hasCurrent then
+    if detState.compactCorner then
+        if hitTest(dx, dy, REF_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H) then
+            inPanel = true
+        end
+    elseif hasCurrent then
         if hitTest(dx, dy, CUR_BG_CX, CUR_BG_CY, CUR_BG_W, CUR_BG_H)
            or hitTest(dx, dy, REF_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H) then
             inPanel = true
@@ -1251,17 +1284,35 @@ function EquipmentDetail.draw(vg)
 
     if not newEquip then return end
 
-    -- 半透明遮罩
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, overlayAlpha))
-    nvgFill(vg)
+    local compact = detState.compactCorner == true
+    if not compact then
+        -- 半透明遮罩
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, overlayAlpha))
+        nvgFill(vg)
+    end
 
-    -- 应用滑入偏移
+    -- 应用滑入偏移（小窗不滑入，贴右栏左上角）
     nvgSave(vg)
-    nvgTranslate(vg, 0, slideOY)
+    if compact then
+        local ox, oy = compactOffset()
+        nvgTranslate(vg, ox, oy)
+    else
+        nvgTranslate(vg, 0, slideOY)
+    end
 
     local enhOnly = (detState.slot == nil)  -- 背包模式：无穿戴按钮，仅前往洗练
+
+    if compact then
+        -- 配装页单击：单面板贴左上角，无对比、无阴影
+        local compactBtn = not enhOnly
+        drawEquipPanel(vg, newEquip, 0,
+            REF_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
+            nil, compactBtn, btnText, enhOnly, true, false)
+        nvgRestore(vg)
+        return
+    end
 
     if hasCurrent then
         -- ===== 双面板布局（有对比装备） =====

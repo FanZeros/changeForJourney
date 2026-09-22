@@ -192,9 +192,19 @@ local function pageBtnCenterX(i)
     return PAGE_BTN_START_CX + (i - 1) * (PAGE_BTN_W + PAGE_BTN_GAP)
 end
 
-function TopBar.draw(vg, offsetY)
+--- 横屏三联已常驻城镇/战斗/角色，页签条（日志/战斗/副本）不再显示
+local function shouldHidePageTabs(hidePageTabs)
+    if hidePageTabs then return true end
+    local ok, BTP = pcall(require, "ui.BattleTriPage")
+    if not ok or not BTP or not BTP.isOpen then return false end
+    return BTP.isOpen() == true
+end
+
+function TopBar.draw(vg, offsetY, hidePageTabs)
     -- 可选纵向偏移：三行并行左面板调用时上移头像区（热区同步用 TopBar.hitTestAvatar）
+    -- hidePageTabs：横屏三联布局下城镇/战斗/角色已常驻，不再画日志/战斗/副本页签
     local oy = tonumber(offsetY) or 0
+    hidePageTabs = shouldHidePageTabs(hidePageTabs)
     -- #1 头像背景框: center(239,139+oy), 382x136, black 70%, r=36
     drawRoundedRectCentered(vg, 239, 139 + oy, 382, 136, 36, 0, 0, 0, 178)
 
@@ -223,42 +233,44 @@ function TopBar.draw(vg, offsetY)
         DarkIcon.draw(vg, "reddot", 160, 74, 74, 1)
     end
 
-    -- #2e 页面入口：横屏三栏下只留 日志/战斗/副本 三键（角色/城镇常驻左右栏）
-    local selectedTab = BottomNav.getSelectedIndex()
-    local allLocked = BottomNav.isAllLocked()
-    for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
-        local cx = pageBtnCenterX(i)
-        local cy = PAGE_BTN_CY + oy
-        local x = cx - PAGE_BTN_W * 0.5
-        local y = cy - PAGE_BTN_H * 0.5
-        local locked = allLocked or BottomNav.isTabLocked(tab.index)
-        local isSel = (tab.index == selectedTab)
-        local alpha = locked and 0.38 or 1.0
-        if isSel then
-            DarkIcon.drawNine(vg, "btn", x, y, PAGE_BTN_W, PAGE_BTN_H, { accent = "gold", alpha = alpha })
-        else
-            DarkIcon.drawNine(vg, "plain", x, y, PAGE_BTN_W, PAGE_BTN_H, { alpha = alpha })
-        end
-        DarkIcon.draw(vg, tab.icon, cx, cy - 8, 36, alpha)
-        local tr, tg, tb = 216, 201, 163
-        if isSel then
-            tr, tg, tb = 240, 199, 94
-        elseif locked then
-            tr, tg, tb = 110, 100, 80
-        end
-        drawTextStroke(vg, cx, cy + 20, tab.name, 20,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 3,
-            { strokeColor = { 0x1a, 0x12, 0x0a } })
-        local showBadge, badgeStyle = BottomNav.getBadge(tab.index)
-        if showBadge and not locked then
-            DarkIcon.draw(vg, "reddot", cx + PAGE_BTN_W * 0.38, cy - PAGE_BTN_H * 0.38, 28, 1)
-        end
-    end
-
-    local TM = require("systems.TutorialManager")
-    if TM.isActive() then
+    -- #2e 页面入口：非三联旧布局才画日志/战斗/副本；横屏三联已常驻，不再画
+    if not hidePageTabs then
+        local selectedTab = BottomNav.getSelectedIndex()
+        local allLocked = BottomNav.isAllLocked()
         for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
-            TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H)
+            local cx = pageBtnCenterX(i)
+            local cy = PAGE_BTN_CY + oy
+            local x = cx - PAGE_BTN_W * 0.5
+            local y = cy - PAGE_BTN_H * 0.5
+            local locked = allLocked or BottomNav.isTabLocked(tab.index)
+            local isSel = (tab.index == selectedTab)
+            local alpha = locked and 0.38 or 1.0
+            if isSel then
+                DarkIcon.drawNine(vg, "btn", x, y, PAGE_BTN_W, PAGE_BTN_H, { accent = "gold", alpha = alpha })
+            else
+                DarkIcon.drawNine(vg, "plain", x, y, PAGE_BTN_W, PAGE_BTN_H, { alpha = alpha })
+            end
+            DarkIcon.draw(vg, tab.icon, cx, cy - 8, 36, alpha)
+            local tr, tg, tb = 216, 201, 163
+            if isSel then
+                tr, tg, tb = 240, 199, 94
+            elseif locked then
+                tr, tg, tb = 110, 100, 80
+            end
+            drawTextStroke(vg, cx, cy + 20, tab.name, 20,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 3,
+                { strokeColor = { 0x1a, 0x12, 0x0a } })
+            local showBadge, badgeStyle = BottomNav.getBadge(tab.index)
+            if showBadge and not locked then
+                DarkIcon.draw(vg, "reddot", cx + PAGE_BTN_W * 0.38, cy - PAGE_BTN_H * 0.38, 28, 1)
+            end
+        end
+
+        local TM = require("systems.TutorialManager")
+        if TM.isActive() then
+            for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
+                TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H)
+            end
         end
     end
 
@@ -363,7 +375,8 @@ end
 ---@param y number
 ---@param offsetY number|nil 面板纵向偏移（横屏三联时与绘制一致）
 ---@return boolean
-function TopBar.handleInput(x, y, offsetY)
+function TopBar.handleInput(x, y, offsetY, hidePageTabs)
+    if shouldHidePageTabs(hidePageTabs) then return false end
     if BottomNav.isAllLocked() then return false end
     local oy2 = tonumber(offsetY) or 0
     local cy = PAGE_BTN_CY + oy2

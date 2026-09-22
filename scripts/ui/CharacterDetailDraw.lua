@@ -638,37 +638,8 @@ function M.draw(vg)
         else
             slotImg = img.slotAccessory
         end
-        -- 空槽先铺浅金底板，再叠亮色图标，暗背景上才能看见位置
-        local hasEquip = false
-        if heroEquipped and heroInventory then
-            local seqPre = heroEquipped[slot.slot]
-            if seqPre and heroInventory[tostring(seqPre)] then hasEquip = true end
-        end
-        if not hasEquip then
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg,
-                slot.cx - DT_SLOT_SIZE * 0.5,
-                slot.cy - DT_SLOT_SIZE * 0.5,
-                DT_SLOT_SIZE, DT_SLOT_SIZE, 22)
-            nvgFillColor(vg, nvgRGBA(210, 186, 140, 70))
-            nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(232, 204, 140, 210))
-            nvgStrokeWidth(vg, 3)
-            nvgStroke(vg)
-        end
         if slotImg and slotImg >= 0 then
-            if not hasEquip then
-                local x = slot.cx - DT_SLOT_SIZE * 0.5
-                local y = slot.cy - DT_SLOT_SIZE * 0.5
-                local paint = nvgImagePatternTinted(vg, x, y, DT_SLOT_SIZE, DT_SLOT_SIZE, 0, slotImg,
-                    nvgRGBA(255, 236, 196, 255))
-                nvgBeginPath(vg)
-                nvgRect(vg, x, y, DT_SLOT_SIZE, DT_SLOT_SIZE)
-                nvgFillPaint(vg, paint)
-                nvgFill(vg)
-            else
-                drawImageCentered(vg, slotImg, slot.cx, slot.cy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)
-            end
+            drawImageCentered(vg, slotImg, slot.cx, slot.cy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)
         end
 
         local equippedEquip = nil
@@ -838,7 +809,15 @@ function M.draw(vg)
 
     if not isAwakenTab then
     -- === 6) 角色详情属性背景图（静态，不参与切换动画） ===
-    drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
+    -- 配装页裁掉底板顶部装饰条（菱形金饰横条），只留下方皮革底给装备格
+    if detailState.tab == "equip" then
+        nvgSave(vg)
+        nvgIntersectScissor(vg, 0, 1040, DESIGN_W, DESIGN_H)
+        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
+        nvgRestore(vg)
+    else
+        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
+    end
 
     -- === 7) "角色详情" 标题：配装页改画槽位名，避免和「主武器」叠在同一条上 ===
     if detailState.tab ~= "equip" then

@@ -78,7 +78,16 @@ local panelState = {
     items      = {},        -- 排序后的装备列表
     dirty      = true,      -- 需要刷新列表
     edWasOpen  = false,     -- 上帧装备详情弹窗是否打开
+    lastClickSeq  = nil,
+    lastClickTime = 0,
+    dragItem      = nil,    -- 拖拽中的装备 item
+    dragStartX    = 0,
+    dragStartY    = 0,
+    itemDragging  = false,
 }
+
+local DOUBLE_CLICK_SEC = 0.35
+local ITEM_DRAG_PX     = 28
 
 -- ======================== 工具函数 ========================
 
@@ -100,6 +109,46 @@ end
 
 local function clampScroll()
     panelState.scrollY = math.max(0, math.min(panelState.scrollMax, panelState.scrollY))
+end
+
+---@type fun()
+local refreshItems
+
+local function findItemAt(dx, dy)
+    if panelState.dirty then refreshItems() end
+    local items = panelState.items
+    for idx = 1, #items do
+        local row = math.ceil(idx / GRID_COLS)
+        local col = ((idx - 1) % GRID_COLS) + 1
+        local cx = GRID_FIRST_CX + (col - 1) * GRID_COL_STEP
+        local cy = GRID_TOP_Y + (row - 1) * GRID_ROW_STEP - panelState.scrollY
+        if hitTest(dx, dy, cx, cy, GRID_CELL, GRID_CELL) then
+            return items[idx]
+        end
+    end
+    return nil
+end
+
+local function equipItemNow(item, heroId, slot)
+    if not item or not heroId then return false end
+    if not item.canWear then
+        print("[EquipPanel] 不可穿戴 seq=" .. tostring(item.seq))
+        return false
+    end
+    if item.equipped then
+        return true
+    end
+    local Client = require("network.Client")
+    local Protocol = require("shared.Protocol")
+    Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {
+        seq    = tonumber(item.seq),
+        heroId = heroId,
+        slot   = slot or panelState.slot,
+    })
+    require("systems.GameSFX").play("install")
+    panelState.dirty = true
+    print("[EquipPanel] 穿戴 seq=" .. tostring(item.seq) .. " slot=" .. tostring(slot or panelState.slot))
+    return true
 end
 
 -- ======================== 数据逻辑 ========================
@@ -189,7 +238,7 @@ local function buildWearableSet(heroId, slot)
 end
 
 --- 刷新背包列表（过滤+排序）
-local function refreshItems()
+refreshItems = function()
     local heroId = panelState.heroId
     local slot   = panelState.slot
     if not heroId then
@@ -414,14 +463,7 @@ function M.draw(vg, heroId, detailState)
                 nvgText(vg, lvlX, lvlY, lvlText, nil)
             end
 
-            -- 不可装备遮罩（变暗）
-            if not canWear then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cx - GRID_CELL * 0.5, cy - GRID_CELL * 0.5,
-                    GRID_CELL, GRID_CELL, GRID_RADIUS)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, DIM_ALPHA))
-                nvgFill(vg)
-            end
+            -- 不可装备不再叠灰色遮罩，靠原图本身区分
 
             -- 左上角角标（与临时背包相同逻辑）
             if item.equipped then
@@ -483,35 +525,15 @@ function M.draw(vg, heroId, detailState)
     end
 
     nvgRestore(vg)
-
-    -- 槽位名称画在底板顶栏（原「角色详情」位置），不再和标题叠字
-    local slotNames = {
-        weapon = "主武器", offhand = "副武器", armor = "护甲",
-        helmet = "头盔", shoes = "鞋子", accessory = "饰品",
-    }
-    local slotLabel = slotNames[panelState.slot] or "装备"
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 30)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    local titleSW = 4
-    local stepAngle = math.pi * 2 / 16
-    nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 255))
-    for i = 0, 15 do
-        local a = i * stepAngle
-        nvgText(vg, DESIGN_W * 0.5 + math.cos(a) * titleSW, 860 + math.sin(a) * titleSW, slotLabel, nil)
-    end
-    nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
-    nvgText(vg, DESIGN_W * 0.5, 860, slotLabel, nil)
 end
 
---- 处理输入（格子点击+滚动）
+--- 处理输入（单击详情 / 双击穿戴）
 ---@param dx number 设计空间 X
 ---@param dy number 设计空间 Y
 ---@param heroId number
 ---@param detailState table
 ---@return boolean
 function M.handleInput(dx, dy, heroId, detailState)
-    -- 仅处理格子区域内的点击
     if dy < CLIP_TOP or dy > CLIP_TOP + CLIP_HEIGHT then
         return false
     end
@@ -519,39 +541,34 @@ function M.handleInput(dx, dy, heroId, detailState)
         return false
     end
 
-    -- 确保数据已刷新
-    if panelState.dirty then
-        refreshItems()
-    end
-
-    local items = panelState.items
-    local itemCount = #items
-
-    -- 查找点中的格子
-    for idx = 1, itemCount do
-        local row = math.ceil(idx / GRID_COLS)
-        local col = ((idx - 1) % GRID_COLS) + 1
-        local cx = GRID_FIRST_CX + (col - 1) * GRID_COL_STEP
-        local cy = GRID_TOP_Y + (row - 1) * GRID_ROW_STEP - panelState.scrollY
-
-        if hitTest(dx, dy, cx, cy, GRID_CELL, GRID_CELL) then
-            local item = items[idx]
-            if not item then return true end
-
-            -- 不可穿戴的装备（黑色遮罩）禁止点击
-            if not item.canWear then
-                return true
-            end
-
-            -- 打开装备详情弹窗（同临时背包逻辑）
-            local EquipmentDetail = require("ui.EquipmentDetail")
-            EquipmentDetail.open(item.seq, panelState.slot, heroId)
-            print("[EquipPanel] 打开装备详情 seq=" .. tostring(item.seq) .. " slot=" .. panelState.slot)
-            return true
+    local item = findItemAt(dx, dy)
+    if not item then
+        local EquipmentDetail = require("ui.EquipmentDetail")
+        if EquipmentDetail.isCompactCorner and EquipmentDetail.isCompactCorner() then
+            EquipmentDetail.close()
         end
+        return true
     end
 
-    return true  -- 在格子区域内消费事件（防穿透）
+    local now = time.elapsedTime
+    local seqStr = tostring(item.seq)
+    local isDouble = panelState.lastClickSeq == seqStr
+        and (now - (panelState.lastClickTime or 0)) <= DOUBLE_CLICK_SEC
+    panelState.lastClickSeq = seqStr
+    panelState.lastClickTime = now
+
+    if isDouble then
+        equipItemNow(item, heroId, panelState.slot)
+        local EquipmentDetail = require("ui.EquipmentDetail")
+        if EquipmentDetail.isOpen() then EquipmentDetail.close() end
+        return true
+    end
+
+    -- 单击：右栏左上角小详情（无阴影）
+    local EquipmentDetail = require("ui.EquipmentDetail")
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true)
+    print("[EquipPanel] 单击详情 seq=" .. seqStr)
+    return true
 end
 
 --- 处理滚动输入（由外层 drag handler 调用）
@@ -569,6 +586,46 @@ function M.onDragStart(dy)
     panelState.scrollVel = 0
 end
 
+function M.beginPointer(dx, dy)
+    panelState.dragItem = findItemAt(dx, dy)
+    panelState.dragStartX = dx
+    panelState.dragStartY = dy
+    panelState.itemDragging = false
+    panelState.dragging = true
+    panelState.dragLastY = dy
+    panelState.scrollVel = 0
+end
+
+function M.onPointerMove(dx, dy)
+    if panelState.dragItem and not panelState.itemDragging then
+        local dist = math.abs(dx - panelState.dragStartX) + math.abs(dy - panelState.dragStartY)
+        if dist >= ITEM_DRAG_PX then
+            panelState.itemDragging = true
+            panelState.dragging = false
+            panelState.scrollVel = 0
+        end
+    end
+    return panelState.itemDragging
+end
+
+function M.isItemDragging()
+    return panelState.itemDragging == true
+end
+
+function M.getDragItem()
+    return panelState.dragItem
+end
+
+function M.equipDragged(heroId, slot)
+    local item = panelState.dragItem
+    panelState.itemDragging = false
+    panelState.dragItem = nil
+    if item then
+        return equipItemNow(item, heroId, slot or panelState.slot)
+    end
+    return false
+end
+
 --- 获取上次拖拽Y坐标
 function M.getDragLastY()
     return panelState.dragLastY or 0
@@ -582,6 +639,8 @@ end
 --- 结束拖拽
 function M.onDragEnd()
     panelState.dragging = false
+    panelState.itemDragging = false
+    panelState.dragItem = nil
 end
 
 --- 判断触摸点是否在格子区域内

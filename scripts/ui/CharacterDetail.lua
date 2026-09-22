@@ -312,8 +312,7 @@ function CharacterDetail.setContext(ctx)
         imgExpBarFill     = ctx.imgExpBarFill,
     })
     -- 配装面板绘制函数注入 Draw 模块
-    local drawEquipPanel = CharacterDetail._EquipPanel.draw
-    Draw._drawEquipPanel = drawEquipPanel
+    Draw._drawEquipPanel = CharacterDetail._EquipPanel.draw --[[@as fun(vg: any, heroId: number, detailState: table)|nil]]
     -- 觉醒面板注入职业图标和数据获取
     AwakeningPanel.setClassIcons(ctx.imgClassIcons)
     AwakeningPanel.setOwnedDataGetter(ctx.getOwnedData)
@@ -430,8 +429,13 @@ function CharacterDetail.handleInput(dx, dy)
     if not detailState.open then return false end
     if detailState.closing then return true end  -- 关闭动画中，消费事件但不处理
 
-    -- 装备详情弹窗优先处理
+    -- 配装页小详情：格子点击优先（单击换一件 / 双击装备），再交给详情面板
     if CharacterDetail._EquipDetail.isOpen() then
+        if detailState.tab == "equip" and CharacterDetail._EquipPanel then
+            if CharacterDetail._EquipPanel.handleInput(dx, dy, detailState.heroId, detailState) then
+                return true
+            end
+        end
         return CharacterDetail._EquipDetail.handleInput(dx, dy)
     end
 
@@ -630,16 +634,18 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragBegin(dx, dy)
     if not detailState.open or detailState.closing then return true end
-    if CharacterDetail._EquipDetail.isOpen() then return true end
+    if CharacterDetail._EquipDetail.isOpen() and not CharacterDetail._EquipDetail.isCompactCorner() then
+        return true
+    end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleDragBegin(dx, dy)
     end
     detailState.attrTip = nil  -- 拖拽时关闭气泡
-    -- 配装面板滚动（只在格子区域内启动）
+    -- 配装面板：按下格子可滚动，位移够大则改成拖装备
     if detailState.tab == "equip" and CharacterDetail._EquipPanel then
         if CharacterDetail._EquipPanel.isInGridArea(dy) then
             detailState.equipDragging = true
-            CharacterDetail._EquipPanel.onDragStart(dy)
+            CharacterDetail._EquipPanel.beginPointer(dx, dy)
             return true
         end
     end
@@ -658,13 +664,18 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragMove(dx, dy)
     if not detailState.open or detailState.closing then return true end
-    if CharacterDetail._EquipDetail.isOpen() then return true end
+    if CharacterDetail._EquipDetail.isOpen() and not CharacterDetail._EquipDetail.isCompactCorner() then
+        return true
+    end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleDragMove(dx, dy)
     end
-    -- 配装面板滚动
+    -- 配装面板：拖装备或滚动列表
     if detailState.equipDragging and CharacterDetail._EquipPanel then
         local panel = CharacterDetail._EquipPanel
+        if panel.onPointerMove(dx, dy) then
+            return true
+        end
         local delta = panel.getDragLastY() - dy
         panel.onDrag(delta)
         panel.setDragLastY(dy)
@@ -686,14 +697,36 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragEnd(dx, dy)
     if not detailState.open then return false end
-    if CharacterDetail._EquipDetail.isOpen() then return true end
+    if CharacterDetail._EquipDetail.isOpen() and not CharacterDetail._EquipDetail.isCompactCorner() then
+        return true
+    end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleDragEnd(dx, dy)
     end
-    -- 配装面板滚动结束
+    -- 配装面板：拖到槽位则装备，否则结束滚动
     if detailState.equipDragging and CharacterDetail._EquipPanel then
+        local panel = CharacterDetail._EquipPanel
+        if panel.isItemDragging() then
+            local dropSlot = nil
+            for _, s in ipairs(DT_SLOTS) do
+                if hitTest(dx, dy, s.cx, s.cy, DT_SLOT_SIZE, DT_SLOT_SIZE) then
+                    dropSlot = s.slot
+                    break
+                end
+            end
+            if dropSlot then
+                panel.equipDragged(detailState.heroId, dropSlot)
+                if CharacterDetail._EquipDetail.isOpen() then
+                    CharacterDetail._EquipDetail.close()
+                end
+            else
+                panel.onDragEnd()
+            end
+            detailState.equipDragging = false
+            return true
+        end
         detailState.equipDragging = false
-        CharacterDetail._EquipPanel.onDragEnd()
+        panel.onDragEnd()
         return true
     end
     if detailState.attrDragging then

@@ -27,10 +27,11 @@
 - T31：删除 GuildPage / CharacterSelect / LoadingScreen；消息处理器与 Debug 解绑
 - T32：卸掉 StartScreen 选服并删除 ServerSelectPanel；点击直接进游戏。横屏仍 DarkTitleScreen
 - T33：删除 VersionMismatchPopup、GuildHandler/GuildService；城镇卸空公会回调。GuildConfig 排行保留
+- T34：ChurchPage `drawPageImpl` → ChurchDraw（bind 具名注入）。ChurchPage 1416
 
 ## likely_next_task
 
-- ChurchPage 仍 1873，勿用 `_ENV`，可抽具名 bind 助手
+- ChurchPage 仍 1416，可再抽输入/名单绘制
 - TalentManager 1728 可再拆 onBeforeAttack / onDamageTaken
 - Blacksmith 输入可对称 MarketInput
 - ServerListConfig / GuildConfig 仍被存档与云排行使用，勿当死代码删

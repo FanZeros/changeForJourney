@@ -58,3 +58,4 @@
 - [x] **T31** 清仅多人 UI 残留：删除 GuildPage / CharacterSelect / LoadingScreen；ClientMessageHandler 与 Debug 面板解绑。选服面板仍挂在 StartScreen，本轮未动标题流程。
 - [x] **T32** 卸掉 StartScreen 选服：删除区服条/`setServerListData`/`ServerSelectPanel`；点击直接 `startGame()`。横屏仍 `skipForReconnect` → DarkTitleScreen。`ServerListConfig` 留给存档/公会配置，未删。
 - [x] **T33** 再清仅多人残留：删除 VersionMismatchPopup、GuildHandler/GuildService；桥不再注册公会；城镇卸空回调。`GuildConfig`/`writeGuildStageRank` 保留（云排行）。
+- [x] **T34** ChurchPage `drawPageImpl` → `ChurchDraw.lua`（bind 具名注入，开关回调用 getter/setter）。ChurchPage 1873→1416，ChurchDraw 568。

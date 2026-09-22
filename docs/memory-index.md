@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-22 | 版本:v2.22-drop-guild-shell
+> 更新时间:2026-09-22 | 版本:v2.23-refactor-church-draw
 >
-> **本会话(2026-09-22)**：T33 清公会 Handler/版本不一致弹窗。禁止推 workspace。
+> **本会话(2026-09-22)**：T34 ChurchPage 主绘制抽到 ChurchDraw。禁止推 workspace。
 
 ---
 

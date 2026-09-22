@@ -23,3 +23,4 @@
 - [scope:project] 大页不要用 `_ENV = E` 注入闭包：LSP 会把里面的名字打成 undefined-global Error 挡 build。用 bind(deps) 具名局部
 - [scope:project] 已去掉多人入口：`main.lua` 只加载 Standalone。玩法 `sendAction` 走 `network.GameAction`→LocalActionBridge。`network/Client.lua` / `Server.lua` 已删；`ClientDispatcher` 与 `server/` Handler 仍给单机本地桥用，勿当死代码删
 - [scope:project] 已删 GuildPage / CharacterSelect / LoadingScreen / ServerSelectPanel / VersionMismatchPopup / GuildHandler / GuildService。StartScreen 不再选服；横屏仍 skipForReconnect → DarkTitleScreen。`shared/ServerListConfig` 与 `config/GuildConfig` 仍被存档/云排行使用，勿当死代码删
+- [scope:project] ChurchPage 主绘制已抽到 `ui.ChurchDraw`（bind 具名注入，开关回调用 getter/setter）。大页继续禁止 `_ENV = E`

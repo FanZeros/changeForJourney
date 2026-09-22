@@ -19,3 +19,5 @@
 - [scope:project] merge workspace 前必须干净工作区：还原 `.project/project.json` / `.agent` 改动，删除未跟踪 `*.meta`。脏树会让 `git merge` 直接失败且不建 MERGE_HEAD
 - [scope:project] `Standalone.lua` 横屏输入/中缝已抽到 `network/StandaloneHorizon.lua`；workspace 改中缝条宽要打到 Horizon 的 `seamBackList`，用 `DrawUtil.SEAMBAR_ASPECT`
 - [scope:project] workspace 已入库 791 个资源 `.meta`；本地引擎再生成的未跟踪 meta 不要提交，merge 前清掉以免挡住 checkout
+- [scope:project] 抽取模块读 `TAL_BCS` 必须 `getTAL_BCS()`，bind 快照会在 `TAL.mount` 后过期
+- [scope:project] 大页不要用 `_ENV = E` 注入闭包：LSP 会把里面的名字打成 undefined-global Error 挡 build。用 bind(deps) 具名局部

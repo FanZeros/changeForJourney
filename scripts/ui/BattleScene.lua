@@ -39,6 +39,7 @@ local BattleStageNav = require("ui.BattleStageNav")
 local BattleCasualty = require("ui.BattleCasualty")
 local BattleStageLoad = require("ui.BattleStageLoad")
 local BattleSceneTick = require("ui.BattleSceneTick")
+local BattleScenePhases = require("ui.BattleScenePhases")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -821,183 +822,57 @@ function BattleScene.update(dt)
     -- ---- 终焉神殿确认弹窗关闭动画更新 ----
     TerminalConfirmDialog.update()
 
-    -- 暂停时只更新动画/浮字（保持视觉流畅），不推进战斗逻辑
-    if isPaused then
-        ProjectileSystem.update(dt)
-        BattleEffects.update(dt)
-        updateCardAnims(dt)
-        updateFloatingTexts(dt)
-        updateHitFlashes(dt)
-        updateComboQueue(dt)
-        SpeechBubble.update(dt)
+    -- ---- 暂停 / 失败延迟 / 轮回 / 寻怪（委托 BattleScenePhases） ----
+    local _phCtx = {
+        isPaused = isPaused, defeatTimer = defeatTimer, reincarnationTimer = reincarnationTimer,
+        searchingTimer = searchingTimer, terminalDefeatPending = terminalDefeatPending,
+        defeatByTimeout = defeatByTimeout, isFirstClear = isFirstClear,
+        currentStageId = currentStageId, maxStageId_ = maxStageId_,
+        battleActive = battleActive, enemies = enemies, enemyQueue = enemyQueue, allies = allies,
+        clearedStages = clearedStages, stageName = stageName,
+        pendingReincarnation = pendingReincarnation, bgTransAnim = bgTransAnim, regenAccum = regenAccum,
+        DEFEAT_DELAY = DEFEAT_DELAY, REINCARNATION_DELAY = REINCARNATION_DELAY,
+        SEARCH_ENEMY_DURATION = SEARCH_ENEMY_DURATION,
+        BG_ZOOM_BACK_TARGET = BG_ZOOM_BACK_TARGET, BG_ZOOM_FWD_TARGET = BG_ZOOM_FWD_TARGET,
+        updateCardAnims = updateCardAnims, updateFloatingTexts = updateFloatingTexts,
+        updateHitFlashes = updateHitFlashes, updateComboQueue = updateComboQueue,
+        getStageConfig = getStageConfig, loadStage = loadStage, resetAllyUnit = resetAllyUnit,
+        startBattleTalents = startBattleTalents, onStageChangedCallback = onStageChangedCallback,
+        onReincarnateCallback = onReincarnateCallback, recalcIdleIncome = recalcIdleIncome,
+        generateIdleEnemyList = generateIdleEnemyList, assignEnemiesToField = assignEnemiesToField,
+        BattleScene = BattleScene,
+    }
+    if BattleScenePhases.process(_phCtx, dt) then
+        defeatTimer = _phCtx.defeatTimer
+        reincarnationTimer = _phCtx.reincarnationTimer
+        searchingTimer = _phCtx.searchingTimer
+        terminalDefeatPending = _phCtx.terminalDefeatPending
+        defeatByTimeout = _phCtx.defeatByTimeout
+        battleActive = _phCtx.battleActive
+        pendingReincarnation = _phCtx.pendingReincarnation
+        bgTransAnim = _phCtx.bgTransAnim
+        regenAccum = _phCtx.regenAccum
+        enemies = _phCtx.enemies
+        enemyQueue = _phCtx.enemyQueue
+        maxStageId_ = _phCtx.maxStageId_
+        stageName = _phCtx.stageName
+        isFirstClear = _phCtx.isFirstClear
+        currentStageId = _phCtx.currentStageId
         return
     end
-
-
-    -- ---- 失败延迟后退 ----
-    if defeatTimer ~= nil then
-        defeatTimer = defeatTimer + dt
-        ProjectileSystem.update(dt)
-        BattleEffects.update(dt)
-        updateCardAnims(dt)
-        updateFloatingTexts(dt)
-        updateHitFlashes(dt)
-        updateComboQueue(dt)
-        SpeechBubble.update(dt)
-        if defeatTimer >= DEFEAT_DELAY then
-            defeatTimer = nil
-            defeatByTimeout = false
-            local targetId
-            if terminalDefeatPending then
-                -- 终焉神殿失败：回退到该难度最后一关
-                terminalDefeatPending = false
-                targetId = getStageConfig().getTerminalPrevStageId(currentStageId) or currentStageId
-                -- 解锁导航（终焉神殿中导航被锁定）
-                BottomNav.setAllLocked(false)
-                -- 恢复战斗 BGM（终焉神殿使用 samsara BGM）
-                require("systems.GameBGM").setScene("battle")
-                print("[BattleScene] 终焉神殿失败，回退 → " .. tostring(targetId))
-            elseif not isFirstClear then
-                -- 挂机模式：阵亡不回退，重新加载当前关卡继续战斗
-                targetId = currentStageId
-                print("[BattleScene] 挂机模式阵亡，重新加载当前关 → " .. tostring(targetId))
-            else
-                targetId = getStageConfig().getPrevStageId(currentStageId) or currentStageId
-                print("[BattleScene] 战斗失败，自动后退 → " .. tostring(targetId))
-            end
-            bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_BACK_TARGET }
-            loadStage(targetId, true)  -- skipBattleStart
-            regenAccum = 0
-            for _, u in ipairs(allies) do resetAllyUnit(u) end
-            startBattleTalents()
-            if onStageChangedCallback then
-                onStageChangedCallback(targetId)
-            end
-        end
-        return
-    end
-
-    -- ---- 轮回计时（终焉神殿专用） ----
-    if reincarnationTimer ~= nil then
-        reincarnationTimer = reincarnationTimer + dt
-        ProjectileSystem.update(dt)
-        BattleEffects.update(dt)
-        updateCardAnims(dt)
-        updateFloatingTexts(dt)
-        updateHitFlashes(dt)
-        updateComboQueue(dt)
-        SpeechBubble.update(dt)
-        if reincarnationTimer >= REINCARNATION_DELAY then
-            reincarnationTimer = nil
-            -- 解锁导航
-            BottomNav.setAllLocked(false)
-            -- 确定轮回目标
-            local currentDiff = getStageConfig().getDifficulty(currentStageId)
-            local targetStageId = getStageConfig().getReincarnationTarget(currentDiff)
-            if not targetStageId then
-                print("[BattleScene] 轮回目标无效，当前难度: " .. tostring(currentDiff))
-                return
-            end
-            local targetDiff = getStageConfig().getDifficulty(targetStageId)
-
-            if onReincarnateCallback then
-                -- 有外部回调（Client/Standalone）：先播放开场动画，延迟加载关卡
-                ---@diagnostic disable-next-line: assign-type-mismatch
-                pendingReincarnation = {
-                    targetStageId = targetStageId,
-                    terminalStageId = currentStageId,
-                    fromDifficulty = currentDiff,
-                    toDifficulty = targetDiff,
-                }
-                print("[BattleScene] 轮回倒计时结束，等待外部动画完成后调用 completeReincarnation")
-                onReincarnateCallback({
-                    fromDifficulty = currentDiff,
-                    toDifficulty = targetDiff,
-                    newStageId = targetStageId,
-                })
-            else
-                -- 无回调（安全回退）：直接加载关卡
-                clearedStages[currentStageId] = true
-                if targetStageId > maxStageId_ then
-                    maxStageId_ = targetStageId
-                    recalcIdleIncome()
-                end
-                require("systems.GameBGM").setScene("battle")
-                bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
-                loadStage(targetStageId, true)
-                regenAccum = 0
-                for _, u in ipairs(allies) do resetAllyUnit(u) end
-                startBattleTalents()
-                if onStageChangedCallback then
-                    onStageChangedCallback(targetStageId)
-                end
-                print("[BattleScene] 轮回完成（无回调）→ " .. stageName .. " (难度: " .. tostring(targetDiff) .. ")")
-            end
-        end
-        return
-    end
-
-    -- ---- 挂机寻怪倒计时 ----
-    if searchingTimer ~= nil then
-        searchingTimer = searchingTimer + dt
-        ProjectileSystem.update(dt)
-        BattleEffects.update(dt)
-        updateCardAnims(dt)
-        updateFloatingTexts(dt)
-        updateHitFlashes(dt)
-        updateComboQueue(dt)
-        SpeechBubble.update(dt)
-        if searchingTimer >= SEARCH_ENEMY_DURATION then
-            searchingTimer = nil
-            regenAccum = 0
-            -- 开战前刷新属性（装备/槽位强化等可能在寻怪期间才同步完成）
-            BattleScene.refreshAllyStats()
-            for _, u in ipairs(allies) do resetAllyUnit(u) end
-            -- 生成新一波敌人（挂机用5关混合；首通保留 loadStage 已生成的阵容）
-            do
-                if not isFirstClear then
-                    local allEnemies, maxField = generateIdleEnemyList()
-                    enemies, enemyQueue = assignEnemiesToField(allEnemies, maxField)
-                else
-                    -- 首通：loadStage 已按 assignEnemiesToField 放置特殊怪，寻怪结束后勿重新生成
-                    for _, u in ipairs(enemies) do
-                        u.atkProgress = 0
-                    end
-                end
-                battleActive = true
-                BattleCombat.reset()
-                BattleEffects.reset()
-                ProjectileSystem.reset()
-                TM.reset()
-                SEM.reset()
-                TAL.reset()
-                RCH.reset()
-                ART.reset()
-                RCH.initBattle(allies)
-                ART.initBattle(allies)
-                for _, u in ipairs(allies) do
-                    Diag.installSentinel(u)
-                    TAL.initUnit(u)
-                end
-                for _, u in ipairs(enemies) do
-                    Diag.installSentinel(u)
-                    u.atkProgress = 0
-                    TAL.initUnit(u)
-                end
-                for _, u in ipairs(enemyQueue) do
-                    Diag.installSentinel(u)
-                end
-                -- 新波次敌人入场动画
-                BattleCombat.playEnterAnims(enemies, -1)
-                TM.onBattleStart(allies, enemies)
-                TAL.onBattleStart(allies, enemies)
-                -- [诊断] 搜索完成后即时扫描
-                Diag.scanNow(allies, enemies, "searchTimer_newWave")
-                print("[BattleScene] " .. (isFirstClear and "首通寻怪完成，开战" or "挂机新波次开始"))
-            end
-        end
-        return
-    end
+    defeatTimer = _phCtx.defeatTimer
+    reincarnationTimer = _phCtx.reincarnationTimer
+    searchingTimer = _phCtx.searchingTimer
+    terminalDefeatPending = _phCtx.terminalDefeatPending
+    defeatByTimeout = _phCtx.defeatByTimeout
+    battleActive = _phCtx.battleActive
+    pendingReincarnation = _phCtx.pendingReincarnation
+    bgTransAnim = _phCtx.bgTransAnim
+    regenAccum = _phCtx.regenAccum
+    enemies = _phCtx.enemies
+    enemyQueue = _phCtx.enemyQueue
+    maxStageId_ = _phCtx.maxStageId_
+    stageName = _phCtx.stageName
 
     if not battleActive then return end
 

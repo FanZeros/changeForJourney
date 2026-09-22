@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-22 | 版本:v2.14-merge-workspace
+> 更新时间:2026-09-22 | 版本:v2.15-refactor-four
 >
-> **本会话(2026-09-22)**：把 `origin/workspace` 最新 4 提交合进 `refactor/extract-battle-overlays`（`fa7a775`）。唯一冲突 `Standalone.lua`：保留 Horizon 抽取，并把 `SEAMBAR_ASPECT` 补进 `StandaloneHorizon`。LSP 0 Error / build 过 / validate lua_errors=0。禁止推 workspace。
+> **本会话(2026-09-22)**：T23–T26 抽出 onAfterAttack / ClientUpdate / BattleScenePhases / 市场商品卡+铁匠装备槽。Church `_ENV` 抽取因 LSP 回退。TalentManager 1728 / Client 1348 / BattleScene 1765。禁止推 workspace。
 
 ---
 

@@ -19,6 +19,7 @@ local NumberUtil   = require("core.NumberUtil")
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 local PlayerStore  = require("client.data.PlayerStore")
 local StageConfig  = require("config.StageConfig")
+local MarketShopCard = require("ui.MarketShopCard")
 
 local MarketPage = {}
 
@@ -478,134 +479,21 @@ end
 
 -- ======================== 商品卡片绘制 ========================
 
+
+local _shopCard
+local function bindShopCard()
+    _shopCard = MarketShopCard.bind({
+        SL = SL, DLG = DLG, P1 = P1, DESIGN_W = DESIGN_W, SHOP_ITEMS = SHOP_ITEMS,
+        BF = BF, img = img, state = state,
+        drawImageCentered = drawImageCentered, drawTextStroke = drawTextStroke,
+        getActualPrice = getActualPrice, getCooldownRemaining = getCooldownRemaining,
+        getPopupAnim = getPopupAnim, getPurchased = getPurchased, isSoldOut = isSoldOut,
+    })
+end
+
 local function drawShopCard(vg, idx, item, cx, cy)
-    -- [暗黑化 P1-B5] 矢量卡底 + 品质语义描边
-    local q = item.quality or 1
-    DarkIcon.drawNine(vg, "plain",
-        cx - SL.CARD_W * 0.5, cy - SL.CARD_H * 0.5,
-        SL.CARD_W, SL.CARD_H,
-        { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
-
-    local bought = getPurchased(item.id)
-    local soldOut = isSoldOut(item)
-
-    -- 商品区
-    drawTextStroke(vg, cx, cy + SL.NAME_OY, item.name,
-        SL.NAME_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, SL.NAME_SW, { strokeColor = { 0, 0, 0 } })
-
-    -- 商品图标
-    local iconImg = img.itemIcons[idx]
-    if iconImg and iconImg >= 0 then
-        drawImageCentered(vg, iconImg, cx, cy + SL.ICON_OY, SL.ICON_W, SL.ICON_H, soldOut and 0.4 or 1.0)
-    end
-
-    -- 数量角标
-    drawTextStroke(vg, cx + SL.COUNT_OX, cy + SL.COUNT_OY, tostring(item.rewardCount or 1),
-        SL.COUNT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-        255, 255, 255, SL.COUNT_SW, { strokeColor = { 0, 0, 0 } })
-
-    -- 限购文本（仅限购商品显示；不限购不显示）
-    if item.limitCount ~= -1 then
-        local remaining = item.limitCount - bought
-        if remaining < 0 then remaining = 0 end
-        local limitText
-        if item.restockType == "cooldown" then
-            local cdLeft = getCooldownRemaining(item)
-            local cdStr
-            if cdLeft > 0 then
-                local h = math.floor(cdLeft / 3600)
-                local m = math.floor((cdLeft % 3600) / 60)
-                local s = cdLeft % 60
-                cdStr = string.format("%d:%02d:%02d", h, m, s)
-            else
-                cdStr = item.restockPeriod or "2h"
-            end
-            limitText = "限购" .. remaining .. "分" .. cdStr
-        elseif item.restockType == "daily" then
-            limitText = "限购" .. remaining .. "份/日"
-        else
-            limitText = "限购" .. remaining .. "份"
-        end
-        nvgFontFace(vg, "sans"); nvgFontSize(vg, SL.LIMIT_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(SL.LIMIT_R, SL.LIMIT_G, SL.LIMIT_B, 255))
-        nvgText(vg, cx, cy + SL.LIMIT_OY, limitText, nil)
-    end
-
-    -- 购买按钮
-    ---@diagnostic disable-next-line: assign-type-mismatch
-    local btnCY = cy + SL.BTN_OY
-    ---@diagnostic disable-next-line: assign-type-mismatch
-    local _sc = BF.begin(vg, "market_buy_" .. idx, cx, btnCY, SL.BTN_W, SL.BTN_H)
-    if soldOut then
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, cx - SL.BTN_W * 0.5, btnCY - SL.BTN_H * 0.5, SL.BTN_W, SL.BTN_H, 12)
-        nvgFillColor(vg, nvgRGBA(80, 80, 80, 200))
-        nvgFill(vg)
-        nvgFontFace(vg, "sans"); nvgFontSize(vg, SL.BTN_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(180, 180, 180, 255))
-        nvgText(vg, cx, btnCY, "已售罄", nil)
-    else
-        DarkIcon.drawNine(vg, "btn", cx - SL.BTN_W * 0.5, btnCY - SL.BTN_H * 0.5, SL.BTN_W, SL.BTN_H, { accent = "gold" })
-
-        local actualPrice = getActualPrice(item)
-        local priceStr = tostring(actualPrice)
-        nvgFontFace(vg, "sans"); nvgFontSize(vg, SL.BTN_FONT)
-        local bounds = {}
-        local textW = nvgTextBounds(vg, 0, 0, priceStr, nil, bounds)
-        local iconW = SL.BTN_ICON_W
-        local iconH = SL.BTN_ICON_H
-        local gap = 4
-
-        if item.discount then
-            -- 折扣模式：图标+ 折扣价主体) + 原价(划线，偏移
-            local origStr = tostring(item.price)
-            nvgFontSize(vg, 26)
-            local origW = nvgTextBounds(vg, 0, 0, origStr, nil, bounds)
-            nvgFontSize(vg, SL.BTN_FONT)
-            local discGap = 6
-            local totalW = iconW + gap + textW + discGap + origW
-            local startX = cx - totalW * 0.5
-
-            local costImg = img.costIcons[idx]
-            if costImg and costImg >= 0 then
-                drawImageCentered(vg, costImg, startX + iconW * 0.5, btnCY, iconW, iconH, 1.0)
-            end
-            -- 折扣价（主体，白色）
-            local discX = startX + iconW + gap
-            drawTextStroke(vg, discX, btnCY, priceStr,
-                SL.BTN_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                255, 255, 255, SL.BTN_SW, { strokeColor = { 0, 0, 0 } })
-            -- 原价（小字 + 划线 + 描边，灰红色更醒目）
-            local origX = discX + textW + discGap
-            drawTextStroke(vg, origX, btnCY, origStr,
-                26, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                255, 160, 140, 3,
-                { alpha = 220 / 255, strokeColor = { 0, 0, 0 } })
-            -- 划线
-            nvgBeginPath(vg)
-            nvgMoveTo(vg, origX - 2, btnCY)
-            nvgLineTo(vg, origX + origW + 2, btnCY)
-            nvgStrokeColor(vg, nvgRGBA(255, 160, 140, 220))
-            nvgStrokeWidth(vg, 2)
-            nvgStroke(vg)
-        else
-            -- 普通模式
-            local totalW = iconW + gap + textW
-            local startX = cx - totalW * 0.5
-
-            local costImg = img.costIcons[idx]
-            if costImg and costImg >= 0 then
-                drawImageCentered(vg, costImg, startX + iconW * 0.5, btnCY, iconW, iconH, 1.0)
-            end
-            drawTextStroke(vg, startX + iconW + gap, btnCY, priceStr,
-                SL.BTN_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                255, 255, 255, SL.BTN_SW, { strokeColor = { 0, 0, 0 } })
-        end
-    end
-    BF.finish(vg, _sc)
+    bindShopCard()
+    return _shopCard.drawShopCard(vg, idx, item, cx, cy)
 end
 
 -- ======================== 二级弹窗绘制（前向声明） ========================

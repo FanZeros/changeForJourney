@@ -15,7 +15,7 @@ function M.bind(deps)
     local hasAwaken = deps.hasAwaken
     local talentLog = deps.talentLog
     local calcDragonBloodThreatLead = deps.calcDragonBloodThreatLead
-    local TAL_BCS = deps.TAL_BCS
+    local getTAL_BCS = deps.getTAL_BCS or function() return deps.TAL_BCS end
     local fireLuoxingFlyingSwords = deps.fireLuoxingFlyingSwords
     local getLuoxingFlyingSwordInterval = deps.getLuoxingFlyingSwordInterval
     local resetLuoxingFlyingSwordWindow = deps.resetLuoxingFlyingSwordWindow
@@ -27,6 +27,7 @@ function M.bind(deps)
     local tryElwynInvulnOnEsBreak = deps.tryElwynInvulnOnEsBreak
 
     local function update(dt, allies, enemies, ctx)
+    local TAL_BCS = getTAL_BCS()
     local TM = require("systems.ThreatManager")
     TAL_BCS.dealDamage = ctx and ctx.dealDamage
     ETS.update(dt)

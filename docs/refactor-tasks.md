@@ -47,3 +47,7 @@
 - [x] **T20** BattleScene：抽出攻击进度/tick 到 `BattleSceneTick.lua`。
 - [x] **T21** 城镇页：Blacksmith/Market/TavernShop 九宫格绘制委托 `DrawUtil`。
 - [x] **T22** TalentManager：抽出弹射(#13 Rosa)与信光机兵(#7 Xin) after-attack。2691 行。
+- [x] **T23** TalentManager：抽出 `TAL.onAfterAttack` 到 `systems/talents/TalentAfterAttack.lua`（`getTAL_BCS()` 避免 mount 过期）。1728 行。
+- [x] **T24** Client：抽出 `HandleUpdate_Client` 到 `network/ClientUpdate.lua`。1348 行。
+- [x] **T25** BattleScene：抽出暂停/失败延迟/轮回/寻怪到 `BattleScenePhases.lua`。1765 行。
+- [x] **T26** 城镇页：Market 商品卡 → `MarketShopCard.lua`；Blacksmith 装备槽 → `BlacksmithEquipSlots.lua`。Church `drawPageImpl` 因 LSP `_ENV` undefined-global 回退。

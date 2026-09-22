@@ -18,18 +18,18 @@
 
 ## 上次做了什么（截至 2026-09-22）
 
-- 合并 `origin/workspace` 进重构分支：`fa7a775`（已 push）
-  - workspace 4 提交：中缝条 C 款 + ICON_UP、礼拜堂标签偏移、ZBBJ 暗黑框、791 资源 meta
-  - 唯一冲突：`scripts/network/Standalone.lua`（重构已抽出 `StandaloneHorizon`）
-  - 保留重构侧 `require("network.StandaloneHorizon")`，并把 workspace 的 `SEAMBAR_ASPECT` 补进 `StandaloneHorizon.seamBackList`
-- LSP Error=0；build 成功；validate `lua_errors=0`（engine shader/spike 噪音忽略）
-- TalentManager 仍 2691，是唯一 >2500 的脚本
+- 已合并 `origin/workspace`（`fa7a775`）
+- T23–T26 四块抽取（LSP 0 Error / build 过 / validate lua_errors=0）：
+  - TalentAfterAttack：TalentManager 2691→1728
+  - ClientUpdate：Client 1844→1348
+  - BattleScenePhases：BattleScene 1890→1765
+  - MarketShopCard + BlacksmithEquipSlots；Church `_ENV` 抽取因 LSP undefined-global 回退
 
 ## likely_next_task
 
-- 继续压 TalentManager（唯一仍超 2500）
-- 城镇页 Market / Church / Blacksmith 可继续抽玩法子页
-- Client HandleUpdate（仍 ~1844）
+- ChurchPage 仍 1873，勿用 `_ENV`，可抽具名 bind 助手
+- Market 1741 / Blacksmith 1678 可继续抽 drawPageImpl
+- TalentManager 1728 可再拆 onBeforeAttack / onDamageTaken
 
 ## 用户硬性流程（必须遵守）
 
@@ -39,12 +39,9 @@
 
 ## 避雷清单（摘要）
 
+- 抽取模块读 `TAL_BCS` 必须 `getTAL_BCS()`，bind 时快照会在 `TAL.mount` 后过期
+- Church/大页 `_ENV = E` 会让 LSP 报满屏 undefined-global Error，挡 build；用 bind(deps) 具名注入
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
-- BattleResultPanel 的 arenaMode 是通用参数（Dungeon 传 false），别误删
-- 追加技层数跟角色走（roster.extraTalent）；对手 createHero(..., false) 不要套本地层
-- 击杀认定用 `_killedBy`；弹射击杀用 `_killedByRicochet`
-- 本地不要再生成/提交额外 `assets/**/*.meta`（workspace 已入库 791 个；merge 前清掉未跟踪 meta）
-- 脏工作区（`.agent` / `project.json` / 未跟踪 meta）会让 `git merge` 直接失败且不建 MERGE_HEAD
-- Lua 5.4 字符串里不要写 `\!`（非法转义，启动即崩）
-- 抽取英雄天赋模块必须 `require("systems.ExtraTalentSystem")`，悬空 `---@param` 会挡 LSP 构建
-- LSP 冷启动会漏检：首次 build 放行、二次才报 Error
+- Lua 5.4 字符串里不要写 `\!`
+- 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
+- 禁止推 `workspace`

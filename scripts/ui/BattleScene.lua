@@ -37,6 +37,7 @@ local BattleStageFlow = require("ui.BattleStageFlow")
 local BattleAllyReset = require("ui.BattleAllyReset")
 local BattleStageNav = require("ui.BattleStageNav")
 local BattleCasualty = require("ui.BattleCasualty")
+local BattleStageLoad = require("ui.BattleStageLoad")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -510,180 +511,39 @@ end
 ---@param stageId number 4位关卡ID, 如 0101
 ---@param skipBattleStart? boolean 跳过 TAL/TM 战斗启动（调用方自行在 resetAllyUnit 后调用 startBattleTalents）
 local function loadStage(stageId, skipBattleStart)
-    ensureBattleCards(vg_)
-    local stageConfig = getStageConfig()
-    local entry = stageConfig.getStage(stageId)
-    if not entry then
-        print("[BattleScene] 关卡不存在: " .. tostring(stageId))
-        return
-    end
-
-    currentStageId = stageId
-    stageName = entry.name
-    -- 解锁进度兜底：能被加载的关卡必然已解锁。此前手动"前进"按钮在未通关时
-    -- 直接 loadStage(nextId) 不推进 maxStageId_，导致当前关进度与解锁进度脱节
-    -- （选关列表只显示到旧进度、扫荡弹窗识别不了当前关卡）
-    if stageId > maxStageId_ then
-        maxStageId_ = stageId
-        recalcIdleIncome()
-    end
-    isFirstClear = not clearedStages[stageId]
-    idleRangeText_ = nil  -- 关卡变化时重新计算挂机范围文本
-
-    searchingTimer = nil
-    defeatTimer = nil
-    reincarnationTimer = nil
-
-    -- 切关时重置波次计时（丢弃未完成波次数据）
-    resetWaveTimers()
-
-    -- 章节变化时切换地图背景
-    -- 挂机模式：使用范围内最早（最低）章节的背景素材
-    local bgChapter = entry.chapter
-    if not isFirstClear then
-        local stages = require("shared.StageUtils").collectPrevStages(maxStageId_, 5, stageConfig)
-        if #stages > 0 then
-            bgChapter = stages[#stages].chapter  -- 最低关的章节
-        end
-    end
-    if bgChapter ~= currentChapter and vg_ then
-        currentChapter = bgChapter
-        if isFirstClear and entry.mapBg then
-            -- 终焉神殿使用自定义地图背景
-            BattleScene.setMapBackground(vg_, "image/关卡地图/" .. entry.mapBg)
-        else
-            -- 困难/噩梦/地狱复用普通难度地图：chapter 24+ 按 23 章循环映射
-            local mapChapter = ((currentChapter - 1) % 23) + 1
-            BattleScene.setMapBackground(vg_, "image/关卡地图/MAP_" .. mapChapter .. ".png")
-        end
-    end
-
-    -- 生成全部敌人（挂机模式用5关混合，首通用单关卡）
-    local allEnemies, maxField
-    if not isFirstClear then
-        allEnemies, maxField = generateIdleEnemyList()
-    else
-        allEnemies = generateEnemyList(entry)
-        maxField = entry.maxFieldEnemies or 5
-    end
-
-    -- 前 maxField 个上场，其余入队列
-    -- 特殊怪物（_isBonusMonster）占用 maxField 名额（避免超出屏幕），替换末位普通怪物
-    -- [三行并行] 条带布局每侧最多 MAX_PER_SIDE(4) 张卡——挂机混合 maxField 保底 5，
-    -- 超出槽位的怪 clamp 后会同槽叠卡（视觉上"两个敌人重叠"）；
-    -- 上场数按布局槽位收缩，多余的留队列，由击杀补位机制（enemies[#enemies]=newUnit）进场
-    if require("core.BattleLayout").MODE == "strip" then
-        maxField = math.min(maxField, require("core.BattleLayout").MAX_PER_SIDE)
-    end
-    enemies, enemyQueue = assignEnemiesToField(allEnemies, maxField)
-    stageEnemyTotal_ = #allEnemies
-    stageKillCount_ = 0
-
-    -- ---- 地图词缀：仅首通模式生效，挂机模式不应用 ----
-    if isFirstClear then
-        local affixConfig = require("shared.ChallengerServerConfig").GetByServerId(require("ui.PlayerInfoPanel").getServerId())
-        if affixConfig and affixConfig.seasonAffixMode == "difficulty_count" then
-            MAS.onStageLoad(entry.chapter, allies, "challenger_s1")
-        else
-            MAS.onStageLoad(entry.chapter, allies)
-        end
-        if MAS.hasAffixes() then
-            local allEnemiesToBuff = {}
-            for _, u in ipairs(enemies) do allEnemiesToBuff[#allEnemiesToBuff+1] = u end
-            for _, u in ipairs(enemyQueue) do allEnemiesToBuff[#allEnemiesToBuff+1] = u end
-            MAS.applyStaticAffixes(allEnemiesToBuff)
-        end
-    else
-        MAS.onStageLoad(0, allies)  -- 挂机模式：清除词缀
-    end
-
-    -- [EnemyGuard] loadStage 重置 guard（每次加载新关都允许再次报警）
-    _enemyGuardFired = false
-    -- [EnemyGuard] loadStage 完成后验证 enemies 内容
-    print(string.format("[EnemyGuard] loadStage stageId=%s enemies_len=%d enemies_ref=%s allies_len=%d",
-        tostring(stageId), #enemies, tostring(enemies), #allies))
-    for i, u in ipairs(enemies) do
-        print(string.format("[EnemyGuard]   enemy[%d] monsterId=%s instanceId=%s heroId=%s hp=%s name=%s",
-            i, tostring(u.monsterId), tostring(u.instanceId), tostring(u.heroId), tostring(u.hp), tostring(u.name)))
-    end
-
-    -- 安装哨兵（loadStage 路径，与 resetBattle 对齐）
-    for _, u in ipairs(allies) do
-        Diag.installSentinel(u)
-    end
-    for _, u in ipairs(enemies) do
-        Diag.installSentinel(u)
-    end
-    for _, u in ipairs(enemyQueue) do
-        Diag.installSentinel(u)
-    end
-
-    -- 重置战斗状态
-    battleActive = true
-    if isFirstClear then
-        firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
-    else
-        firstClearTimeLeft = nil
-    end
-    BattleCombat.reset()
-    BattleEffects.reset()
-    ProjectileSystem.reset()
-    TM.reset()   -- 清空仇恨表
-    SEM.reset()  -- 清空状态效果
-    RCH.initBattle(allies)  -- 初始化遗物条件词条（战斗开始时效果在此触发）
-    ART.initBattle(allies)  -- 初始化神器战斗运行时效果
-    for _, u in ipairs(allies) do
-        u.atkProgress = 0
-    end
-    for _, u in ipairs(enemies) do
-        u.atkProgress = 0
-    end
-
-    -- 入场动画（交错滑入）
-    BattleCombat.playEnterAnims(enemies, -1)  -- 敌方从上方滑入
-    BattleCombat.playEnterAnims(allies, 1)    -- 己方从下方滑入
-
-    -- 重置台词气泡
-    SpeechBubble.reset()
-
-    if not skipBattleStart then
-        -- 完整战斗启动：TAL/TM 初始化 + 入场台词
-        startBattleTalents()
-
-        -- [诊断] 战斗开始后即时完整性扫描
-        Diag.scanNow(allies, enemies, "loadStage_postInit_s" .. tostring(stageId))
-
-        local aliveHeroes = {}
-        for _, u in ipairs(allies) do
-            if u.hp > 0 and u.heroId then
-                aliveHeroes[#aliveHeroes + 1] = u
-            end
-        end
-        if #aliveHeroes > 0 then
-            local speaker = aliveHeroes[math.random(#aliveHeroes)]
-            SpeechBubble.trigger(speaker, "entry")
-        end
-    end
-
-    -- 首通狂暴属于关卡加载状态，不应依赖 skipBattleStart。
-    -- nextStage/reload/失败重进等路径会用 skipBattleStart=true 延后天赋启动，
-    -- 但首通狂暴计时必须仍然在战斗恢复后正常推进。
-    if isFirstClear then
-        StageBerserk.enter(enemies, allies)
-    else
-        StageBerserk.exit()
-    end
-
-    recalcIdleIncome()
-
-    print("[BattleScene] 加载关卡: " .. entry.name
-        .. " | 场上: " .. #enemies
-        .. " | 队列: " .. #enemyQueue
-        .. " | 等级: " .. entry.monsterLevel)
-
-    if onStageLoadedCallback then
-        onStageLoadedCallback(stageId, isFirstClear)
-    end
+    local ctx = {
+        currentStageId = currentStageId, stageName = stageName, maxStageId_ = maxStageId_,
+        isFirstClear = isFirstClear, idleRangeText_ = idleRangeText_,
+        searchingTimer = searchingTimer, defeatTimer = defeatTimer, reincarnationTimer = reincarnationTimer,
+        currentChapter = currentChapter, vg_ = vg_,
+        enemies = enemies, enemyQueue = enemyQueue, allies = allies,
+        stageEnemyTotal_ = stageEnemyTotal_, stageKillCount_ = stageKillCount_,
+        _enemyGuardFired = _enemyGuardFired, battleActive = battleActive,
+        firstClearTimeLeft = firstClearTimeLeft, onStageLoadedCallback = onStageLoadedCallback,
+        clearedStages = clearedStages,
+        ensureBattleCards = ensureBattleCards, getStageConfig = getStageConfig,
+        recalcIdleIncome = recalcIdleIncome, resetWaveTimers = resetWaveTimers,
+        generateIdleEnemyList = generateIdleEnemyList, generateEnemyList = generateEnemyList,
+        assignEnemiesToField = assignEnemiesToField, startBattleTalents = startBattleTalents,
+        setMapBackground = BattleScene.setMapBackground,
+    }
+    BattleStageLoad.load(ctx, stageId, skipBattleStart)
+    currentStageId = ctx.currentStageId
+    stageName = ctx.stageName
+    maxStageId_ = ctx.maxStageId_
+    isFirstClear = ctx.isFirstClear
+    idleRangeText_ = ctx.idleRangeText_
+    searchingTimer = ctx.searchingTimer
+    defeatTimer = ctx.defeatTimer
+    reincarnationTimer = ctx.reincarnationTimer
+    currentChapter = ctx.currentChapter
+    enemies = ctx.enemies
+    enemyQueue = ctx.enemyQueue
+    stageEnemyTotal_ = ctx.stageEnemyTotal_
+    stageKillCount_ = ctx.stageKillCount_
+    _enemyGuardFired = ctx._enemyGuardFired
+    battleActive = ctx.battleActive
+    firstClearTimeLeft = ctx.firstClearTimeLeft
 end
 
 -- ======================== Public API ========================

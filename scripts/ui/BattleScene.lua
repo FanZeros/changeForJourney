@@ -38,6 +38,7 @@ local BattleAllyReset = require("ui.BattleAllyReset")
 local BattleStageNav = require("ui.BattleStageNav")
 local BattleCasualty = require("ui.BattleCasualty")
 local BattleStageLoad = require("ui.BattleStageLoad")
+local BattleSceneTick = require("ui.BattleSceneTick")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -1065,148 +1066,23 @@ function BattleScene.update(dt)
     defeatByTimeout = _casCtx.defeatByTimeout
     if _casConsumed then return end
 
-    -- ---- 更新攻击进度 ----
-    -- 预先统计双方存活数，无目标时进度条停在满格等待
-    local hasAliveEnemy = false
-    for _, u in ipairs(enemies) do
-        if u.hp > 0 then hasAliveEnemy = true; break end
-    end
-    local hasAliveAlly = false
-    for _, u in ipairs(allies) do
-        if u.hp > 0 then hasAliveAlly = true; break end
-    end
-
-    for _, unit in ipairs(allies) do
-        if unit.hp > 0 and not SEM.isFrozen(unit) then
-            local interval = getLiveAttackInterval(unit, DEFAULT_ALLY_INTERVAL)
-            BattleCombat.advanceAttackProgress(unit, logicDt, interval, hasAliveEnemy, function()
-                performAttack(unit, enemies, true)
-            end)
-        end
-    end
-
-    -- [EnemyGuard] 每帧检查 enemies 是否被污染（仅首次触发）
-    checkEnemiesCorruption("UPDATE_LOOP")
-
-    for _, unit in ipairs(enemies) do
-        if unit.hp > 0 and not SEM.isFrozen(unit) then
-            local interval = getLiveAttackInterval(unit, DEFAULT_ENEMY_INTERVAL)
-            BattleCombat.advanceAttackProgress(unit, logicDt, interval, hasAliveAlly, function()
-                performAttack(unit, allies, false)
-            end)
-        end
-    end
-
-    -- ---- 遗物条件词条每帧检查（HP阈值、限时buff到期等） ----
-    RCH.update(allies, 0)
-
-    -- ---- 更新血条缓冲（白色拖尾） ----
-    BattleCombat.updateHpBuffers(allies, logicDt)
-    BattleCombat.updateHpBuffers(enemies, logicDt)
-
-    -- ---- 更新仇恨衰减 ----
-    TM.update(logicDt)
-
-    -- ---- 更新状态效果（DOT/HOT tick） ----
-    SEM.update(logicDt, {
-        onDot = function(unit, source, dmg)
-            -- 判断目标是否为己方
-            local isUnitAlly = false
-            for _, u in ipairs(allies) do
-                if u == unit then isUnitAlly = true; break end
-            end
-            dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", {255, 120, 30}, source, { isDot = true })
-        end,
-        onHot = function(unit, source, heal)
-            if unit.attrs and unit.hp > 0 then
-                local actual = unit.attrs:heal(heal)
-                syncUnitHp(unit)
-                if actual > 0 then
-                    local isUnitAlly = false
-                    for _, u in ipairs(allies) do
-                        if u == unit then isUnitAlly = true; break end
-                    end
-                    local cy = isUnitAlly and ALLY_CARD_CY or ENEMY_CARD_CY
-                    local list = isUnitAlly and allies or enemies
-                    local cx = DESIGN_W * 0.5
-                    for ii, u in ipairs(list) do
-                        if u == unit then cx = getCardCX(list, ii); break end
-                    end
-                    addFloatingText("恢复 +" .. require("core.NumberUtil").format(actual), cx, cy, {0, 255, 82}, false)
-                    -- 战斗统计：HOT 持续治疗输出（来源为己方英雄时归因）
-                    if source and source.heroId then
-                        require("systems.BattleStats").recordHeal(source, actual, true)
-                    end
-                end
-            end
-        end,
-    })
-
-    -- ---- 更新天赋计时器（转职天赋: 10秒周期/巡游射击延迟/暗影倒计时等） ----
-    TAL.update(logicDt, allies, enemies, {
-        healUnit = function(unit, amount)
-            if unit.attrs and unit.hp > 0 then
-                local actual = unit.attrs:heal(amount)
-                syncUnitHp(unit)
-                return actual
-            end
-            return 0
-        end,
-        dealDamage = function(target, damage, isTargetAlly, prefix, color, source)
-            return dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source)
-        end,
-        dealTalentDamage = function(attacker, target, damage, isTargetAlly, prefix, color, projOpts)
-            return BattleCombat.dealTalentDamage(attacker, target, damage, isTargetAlly, prefix, color, projOpts, allies, enemies)
-        end,
-        syncHp = function(unit)
-            syncUnitHp(unit)
-        end,
-        performAttack = function(attacker, targetList, isAlly)
-            performAttack(attacker, targetList, isAlly)
-        end,
-    })
-
-    -- ---- 地图词缀动态 tick（仅首通模式） ----
-    if isFirstClear and MAS.hasAffixes() then
-        MAS.tick(logicDt, allies, enemies)
-    end
-
-    -- ---- 能量护盾恢复 tick ----
-    for _, u in ipairs(allies) do
-        if u.hp > 0 and u.attrs then u.attrs:tickEnergyShield(logicDt) end
-    end
-    for _, u in ipairs(enemies) do
-        if u.hp > 0 and u.attrs then u.attrs:tickEnergyShield(logicDt) end
-    end
-
-    -- ---- 每秒回血（HP_REGEN 属性） ----
-    regenAccum = regenAccum + logicDt
-    while regenAccum >= 1.0 do
-        regenAccum = regenAccum - 1.0
-        local allUnits = {}
-        for _, u in ipairs(allies)  do allUnits[#allUnits + 1] = { unit = u, isAlly = true  } end
-        for _, u in ipairs(enemies) do allUnits[#allUnits + 1] = { unit = u, isAlly = false } end
-        for _, entry in ipairs(allUnits) do
-            local u = entry.unit
-            if u.hp > 0 and u.attrs then
-                local regenAmt = require("systems.CombatFormula").calcHpRegen(u.attrs)
-                if regenAmt > 0 then
-                    local actual = u.attrs:heal(regenAmt)
-                    if actual > 0 then
-                        syncUnitHp(u)
-                        -- 显示回血浮字，让玩家看到 HP_REGEN 的实际回复量
-                        local list = entry.isAlly and allies or enemies
-                        local cy = entry.isAlly and ALLY_CARD_CY or ENEMY_CARD_CY
-                        local cx = DESIGN_W * 0.5
-                        for ii, uu in ipairs(list) do
-                            if uu == u then cx = getCardCX(list, ii); break end
-                        end
-                        addFloatingText("回复 +" .. require("core.NumberUtil").format(actual), cx, cy, {0, 255, 82}, false)
-                    end
-                end
-            end
-        end
-    end
+    -- ---- 攻击进度 / DOT HOT / 天赋计时 / 护盾回血（委托 BattleSceneTick） ----
+    local _tickCtx = {
+        enemies = enemies, allies = allies, isFirstClear = isFirstClear,
+        regenAccum = regenAccum,
+        DEFAULT_ALLY_INTERVAL = DEFAULT_ALLY_INTERVAL,
+        DEFAULT_ENEMY_INTERVAL = DEFAULT_ENEMY_INTERVAL,
+        ALLY_CARD_CY = ALLY_CARD_CY, ENEMY_CARD_CY = ENEMY_CARD_CY, DESIGN_W = DESIGN_W,
+        getLiveAttackInterval = getLiveAttackInterval,
+        performAttack = performAttack,
+        checkEnemiesCorruption = checkEnemiesCorruption,
+        dealDamageToUnit = dealDamageToUnit,
+        syncUnitHp = syncUnitHp,
+        getCardCX = getCardCX,
+        addFloatingText = addFloatingText,
+    }
+    BattleSceneTick.tick(_tickCtx, logicDt)
+    regenAccum = _tickCtx.regenAccum
 
     -- ---- 投射物 / 连击：与伤害时机绑定，必须跟随 logicDt ----
     ProjectileSystem.update(logicDt)

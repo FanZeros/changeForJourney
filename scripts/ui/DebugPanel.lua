@@ -20,7 +20,7 @@ local Client_
 ---@type table
 local Protocol_
 local function getClient()
-    if not Client_ then Client_ = require("network.Client") end
+    if not Client_ then Client_ = require("network.GameAction") end
     return Client_
 end
 local function getProtocol()

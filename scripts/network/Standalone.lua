@@ -77,7 +77,7 @@ local Standalone = {}
 local localBridgeReady_ = false
 
 local function localSendAction(action, params)
-    return require("network.Client").sendAction(action, params)
+    return require("network.GameAction").sendAction(action, params)
 end
 
 --- 单机无服务器：所有 Client.sendAction 落到本地 Handler

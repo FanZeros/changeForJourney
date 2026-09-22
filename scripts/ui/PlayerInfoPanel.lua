@@ -268,7 +268,7 @@ local cachedVg         = nil  ---@type any
 
 --- 判断当前玩家是否为 GM（完全由服务端鉴权，客户端无白名单）
 local function isGM()
-    local Client = require("network.Client")
+    local Client = require("network.GameAction")
     return Client.isGM()
 end
 
@@ -469,7 +469,7 @@ function PlayerInfoPanel.handleInput(dx, dy)
                     img.avatar = heroIcon
                 end
                 TopBar.setAvatarHeroId(heroId)
-                local Client = require("network.Client")
+                local Client = require("network.GameAction")
                 local Protocol = require("shared.Protocol")
                 Client.sendAction(Protocol.ACTION_TYPES.SET_AVATAR, { avatarHeroId = heroId })
                 print("[PlayerInfoPanel] 头像更换为 hero_" .. heroId .. " (已同步服务器)")

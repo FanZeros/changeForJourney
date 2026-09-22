@@ -486,7 +486,7 @@ function GuildPage.open()
     state.tabSwitchTime = 0
     resetScroll()
     -- 向服务端请求排行榜数据（延迟 require 避免循环依赖）
-    require("network.Client").sendAction(Protocol.ACTION_TYPES.GUILD_ENTER, {})
+    require("network.GameAction").sendAction(Protocol.ACTION_TYPES.GUILD_ENTER, {})
     -- 通知引导系统进入公会面板
     require("systems.TutorialManager").notifyEvent("enter_panel_guild")
     print("[GuildPage] open → sent GUILD_ENTER")

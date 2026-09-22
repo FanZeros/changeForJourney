@@ -31,7 +31,7 @@ local Client_
 local Protocol_
 local ClientDispatcher_
 local function getClient()
-    if not Client_ then Client_ = require("network.Client") end
+    if not Client_ then Client_ = require("network.GameAction") end
     return Client_
 end
 local function getProtocol()

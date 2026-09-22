@@ -21,3 +21,4 @@
 - [scope:project] workspace 已入库 791 个资源 `.meta`；本地引擎再生成的未跟踪 meta 不要提交，merge 前清掉以免挡住 checkout
 - [scope:project] 抽取模块读 `TAL_BCS` 必须 `getTAL_BCS()`，bind 快照会在 `TAL.mount` 后过期
 - [scope:project] 大页不要用 `_ENV = E` 注入闭包：LSP 会把里面的名字打成 undefined-global Error 挡 build。用 bind(deps) 具名局部
+- [scope:project] 单机不能删 `network/Client.lua`：多人入口仍在 main.lua。玩法 `sendAction` 必须走 `network.GameAction`（单机 LocalActionBridge / 联网 Client），UI 禁止再 `require("network.Client")`

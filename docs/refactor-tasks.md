@@ -53,3 +53,4 @@
 - [x] **T26** 城镇页：Market 商品卡 → `MarketShopCard.lua`；Blacksmith 装备槽 → `BlacksmithEquipSlots.lua`。Church `drawPageImpl` 因 LSP `_ENV` undefined-global 回退。
 - [x] **T27** Market/Blacksmith `drawPageImpl` → `MarketDraw.lua` / `BlacksmithDraw.lua`（bind 具名注入；铁匠开关回调用 getter/setter 写回）。Market 1589 / Blacksmith 1533。
 - [x] **T28** Market 点击/拖拽/滚轮 → `MarketInput.lua`。Market 1402。
+- [x] **T29** 单机 `sendAction` 改走 `network.GameAction` 门面（本地 LocalActionBridge）；UI 不再 `require("network.Client")`。联网仍转发 Client。validate 确认未加载 Client 模块。

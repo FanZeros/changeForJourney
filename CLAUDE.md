@@ -22,12 +22,13 @@
 - T23–T26 四块抽取（LSP 0 Error / build 过 / validate lua_errors=0）
 - T27：Market/Blacksmith `drawPageImpl` → `MarketDraw` / `BlacksmithDraw`
 - T28：Market 输入 → `MarketInput`（1402 行）
+- T29：单机 `sendAction` 走 `network.GameAction` → LocalActionBridge；UI 不再加载 Client。联网仍转发 Client。不能删 Client.lua。
 
 ## likely_next_task
 
 - ChurchPage 仍 1873，勿用 `_ENV`，可抽具名 bind 助手
 - TalentManager 1728 可再拆 onBeforeAttack / onDamageTaken
-- Client 1348 可再拆连接状态机
+- Blacksmith 输入可对称 MarketInput
 
 ## 用户硬性流程（必须遵守）
 

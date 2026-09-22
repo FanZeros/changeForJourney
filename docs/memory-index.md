@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-22 | 版本:v2.17-refactor-market-input
+> 更新时间:2026-09-22 | 版本:v2.18-gameaction-local
 >
-> **本会话(2026-09-22)**：T28 Market 输入抽到 MarketInput。Market 1402。禁止推 workspace。
+> **本会话(2026-09-22)**：T29 单机 sendAction 走 GameAction→LocalActionBridge，UI 不再 require Client。不能删 Client.lua（多人入口仍在 main.lua）。禁止推 workspace。
 
 ---
 

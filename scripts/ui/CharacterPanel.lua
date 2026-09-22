@@ -949,7 +949,7 @@ function CharacterPanel.requestSynthesizeHero(heroId)
     end
     print("[CharacterPanel] 发送合成请求 - heroId=" .. heroId
         .. " 消耗碎片: " .. HC.SHARD_SYNTHESIZE_COST .. " / " .. shards)
-    local Client   = require("network.Client")
+    local Client   = require("network.GameAction")
     local Protocol = require("shared.Protocol")
     Client.sendAction(Protocol.ACTION_TYPES.SYNTHESIZE_HERO, {
         heroId = heroId,

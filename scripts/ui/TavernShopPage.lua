@@ -896,7 +896,7 @@ function TavernShopPage.handleInput(dx, dy)
                 elseif isLockedByOwnership(item) then
                     showFloatText("拥有该角色后可购买碎片", DLG.BUY_CX, DLG.BUY_CY)
                 else
-                    local sent = require("network.Client").sendAction(
+                    local sent = require("network.GameAction").sendAction(
                         Protocol.ACTION_TYPES.TAVERN_SHOP_BUY, {
                             itemId   = item.id,
                             quantity = shopState.buyQuantity,

@@ -164,7 +164,7 @@ local function seamBackList()
     local list = {}
     local psL = logicalH() / 1080
     local cs = psL * 0.45                    -- 面板内容缩放(设计→窗口),与 Viewport.DS 一致
-    local barW = logicalH() * 0.0888           -- 素材等比(158/1425)×0.8,条中心骑在页面分界线上
+    local barW = logicalH() * DrawUtil.SEAMBAR_ASPECT  -- 素材实际等比,与绘制共用;条中心骑在页面分界线上
     local DIST = 1080                         -- 页面设计宽:滑入全程
     -- 右框柱 ›：角色详情——条整体让出页面:中心在分界线左侧(中缝侧),条右缘贴详情页左缘
     if CharacterDetail.isOpen() then

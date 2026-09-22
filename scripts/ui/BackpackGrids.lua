@@ -228,7 +228,7 @@ function M.bind(deps)
                     quality = gridQuality,
                     name = heroName .. "碎片",
                     source = "抽卡获得",
-                    desc = "用于激活冒险家或进行冒险家觉醒",
+                    desc = "用于激活远征队员或进行远征队员觉醒",
                     isShard = true,
                     heroId = heroId,
                     getter = function() return CharacterPanel.getShards(hid) end,

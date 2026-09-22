@@ -3,8 +3,8 @@
 -- 来源: docs/配置文件/经验表配置.txt
 -- ============================================================================
 --
--- 冒险家 = 英雄（hero），最高 200 级封顶
--- 冒险等级 = 玩家等级（player），最高 200 级
+-- 远征队员 = 英雄（hero），最高 200 级封顶
+-- 远征等级 = 玩家等级（player），最高 200 级
 --
 -- 每条记录: { 当级所需经验 }
 -- 索引 = 等级（Lua 从 1 开始）
@@ -12,7 +12,7 @@
 
 local ExpTable = {}
 
---- 冒险家（英雄）升级所需经验表
+--- 远征队员（英雄）升级所需经验表
 --- hero[lv] = 从 lv 升到 lv+1 所需经验
 --- 最大可升至 199→200，hero[200] 不存在表示满级
 ExpTable.hero = {
@@ -58,7 +58,7 @@ ExpTable.hero = {
     [196] = 2108270080, [197] = 2146158472, [198] = 2184530746, [199] = 2223390589,
 }
 
---- 冒险等级（玩家）升级所需经验表
+--- 远征等级（玩家）升级所需经验表
 --- player[lv] = 从 lv 升到 lv+1 所需经验
 --- 最大可升至 199→200，player[200] 不存在表示满级
 ExpTable.player = {
@@ -104,10 +104,10 @@ ExpTable.player = {
     [195] = 10354309439, [196] = 10541350400, [197] = 10730792364, [198] = 10922653731, [199] = 11116952945,
 }
 
---- 冒险家 HP 成长全局系数（生命 = 累计 hp 成长 × 此系数）
+--- 远征队员 HP 成长全局系数（生命 = 累计 hp 成长 × 此系数）
 ExpTable.HERO_HP_GROWTH_MULT = 1.2
 
---- 冒险家每级基础战斗属性成长（等级段见 docs/配置文件/经验表配置.txt）
+--- 远征队员每级基础战斗属性成长（等级段见 docs/配置文件/经验表配置.txt）
 --- heroBaseGrowth[lv] = 从 lv 升到 lv+1 每级获得的 {hp, atk}（hp 再乘 HERO_HP_GROWTH_MULT）
 ExpTable.heroBaseGrowth = {
     [1] = { hp = 60, atk = 3.0 }, [2] = { hp = 60, atk = 3.0 }, [3] = { hp = 60, atk = 3.0 }, [4] = { hp = 60, atk = 3.0 }, [5] = { hp = 60, atk = 3.0 },
@@ -154,10 +154,10 @@ ExpTable.heroCountExpMult = {
     [5] = 3.00,
 }
 
---- 冒险等级解锁内容表（按等级）
+--- 远征等级解锁内容表（按等级）
 --- 仅保留槽位解锁；建筑解锁由新手引导系统管理，不再在此处配置
 --- unlockName = 解锁内容名称
---- 每个冒险等级（2~200）提升后，装备槽位强化等级上限 +1
+--- 每个远征等级（2~200）提升后，装备槽位强化等级上限 +1
 ExpTable.levelUnlocks = {
     [2]  = { { unlockName = "出战槽位+1" },   { unlockName = "装备强化上限+1" } },
     [3]  = { { unlockName = "装备强化上限+1" } },
@@ -315,7 +315,7 @@ for lv = 151, 200 do
 end
 
 --- 获取指定等级的解锁内容列表
----@param level number 冒险等级
+---@param level number 远征等级
 ---@return table[]|nil 解锁内容列表，无解锁内容返回 nil
 function ExpTable.getLevelUnlocks(level)
     return ExpTable.levelUnlocks[level]
@@ -327,12 +327,12 @@ ExpTable.BUILDING_KEY_MAP = {
     ["铁匠铺"] = "smith",
     ["酒馆"]   = "tavern",
     ["市场"]   = "market",
-    ["冒险者公会"] = "guild",
+    ["亡誓公会"] = "guild",
 }
 
---- 判断指定建筑在当前冒险等级是否已解锁
+--- 判断指定建筑在当前远征等级是否已解锁
 ---@param buildingKey string 建筑 key（"church"/"smith"/"tavern"/"market"/"guild"）
----@param playerLevel number 当前冒险等级
+---@param playerLevel number 当前远征等级
 ---@return boolean
 function ExpTable.isBuildingUnlocked(buildingKey, playerLevel)
     for lv, unlocks in pairs(ExpTable.levelUnlocks) do
@@ -364,7 +364,7 @@ end
 --- 获取指定编队槽位的解锁等级
 --- 槽位 1~2 为基础槽位（始终解锁），槽位 3/4/5 分别在 Lv2/Lv6/Lv10 解锁
 ---@param slotIndex number 槽位索引（1~5）
----@return number|nil 解锁所需冒险等级，基础槽位返回 nil
+---@return number|nil 解锁所需远征等级，基础槽位返回 nil
 function ExpTable.getSlotUnlockLevel(slotIndex)
     -- 基础槽位无需解锁
     if slotIndex <= 2 then return nil end
@@ -383,9 +383,9 @@ function ExpTable.getSlotUnlockLevel(slotIndex)
     return levels[idx]
 end
 
---- 根据冒险等级计算已解锁的出战槽位数量
+--- 根据远征等级计算已解锁的出战槽位数量
 --- 基础 2 个槽位，Lv2/Lv6/Lv10 各 +1
----@param playerLevel number 当前冒险等级
+---@param playerLevel number 当前远征等级
 ---@return number 已解锁槽位总数（2~5，受 MAX_SLOTS 限制）
 function ExpTable.getUnlockedSlotCount(playerLevel)
     local base = 2
@@ -403,13 +403,13 @@ function ExpTable.getUnlockedSlotCount(playerLevel)
 end
 
 -- ======================== 多队伍（三队并行战斗）解锁规则 ========================
--- 队1 开局解锁；队2/队3 达到冒险等级阈值解锁（阈值可调）
+-- 队1 开局解锁；队2/队3 达到远征等级阈值解锁（阈值可调）
 ExpTable.TEAM_COUNT = 3
 ExpTable.TEAM_UNLOCK_LEVELS = { 10, 20 }  -- [i] = 解锁第 (i+1) 队所需等级
 ExpTable.TEAM_MAX_SLOTS = 4               -- 每队最多上阵人数（左4角色 vs 右4敌人）
 
---- 根据冒险等级计算已解锁的队伍数量
----@param playerLevel number 当前冒险等级
+--- 根据远征等级计算已解锁的队伍数量
+---@param playerLevel number 当前远征等级
 ---@return number 已解锁队伍数（1~TEAM_COUNT）
 function ExpTable.getUnlockedTeamCount(playerLevel)
     local count = 1
@@ -421,7 +421,7 @@ function ExpTable.getUnlockedTeamCount(playerLevel)
     return math.min(count, ExpTable.TEAM_COUNT)
 end
 
---- 获取解锁指定队伍所需的冒险等级
+--- 获取解锁指定队伍所需的远征等级
 ---@param teamIdx number 队伍索引（1~TEAM_COUNT）
 ---@return number|nil 解锁等级；队1 无需解锁返回 nil
 function ExpTable.getTeamUnlockLevel(teamIdx)
@@ -429,24 +429,24 @@ function ExpTable.getTeamUnlockLevel(teamIdx)
 end
 
 --- 每队出战槽位数（复用"出战槽位+1"节奏 Lv2/Lv6/Lv10，上限 4）
----@param playerLevel number 当前冒险等级
+---@param playerLevel number 当前远征等级
 ---@return number 该队已解锁槽位数（2~TEAM_MAX_SLOTS）
 function ExpTable.getUnlockedSlotCountForTeam(playerLevel)
     return math.min(ExpTable.getUnlockedSlotCount(playerLevel), ExpTable.TEAM_MAX_SLOTS)
 end
 
---- 装备槽位强化等级上限（初始 1，每升一级冒险等级 +1）
---- 规则: 上限 = 冒险等级（Lv.1→上限1, Lv.2→上限2, ..., Lv.200→上限200）
----@param playerLevel number 当前冒险等级
+--- 装备槽位强化等级上限（初始 1，每升一级远征等级 +1）
+--- 规则: 上限 = 远征等级（Lv.1→上限1, Lv.2→上限2, ..., Lv.200→上限200）
+---@param playerLevel number 当前远征等级
 ---@return number 当前强化等级上限
 function ExpTable.getEnhanceLevelCap(playerLevel)
     return math.max(1, playerLevel or 1)
 end
 
---- 冒险家最大等级（200 级封顶）
+--- 远征队员最大等级（200 级封顶）
 ExpTable.HERO_MAX_LEVEL = 200
 
---- 冒险等级最大等级（200 级封顶）
+--- 远征等级最大等级（200 级封顶）
 ExpTable.PLAYER_MAX_LEVEL = 200
 
 --- 查询英雄从 lv 升到 lv+1 所需经验，满级返回 nil
@@ -477,8 +477,8 @@ function ExpTable.isPlayerMaxLevel(lv)
     return lv >= ExpTable.PLAYER_MAX_LEVEL
 end
 
---- 根据上场冒险家数量获取经验倍率
----@param count number 上场冒险家数量（1~5）
+--- 根据上场远征队员数量获取经验倍率
+---@param count number 上场远征队员数量（1~5）
 ---@return number 倍率（默认 1.0）
 function ExpTable.getHeroCountExpMult(count)
     return ExpTable.heroCountExpMult[count] or 1.0

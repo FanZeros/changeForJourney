@@ -90,6 +90,7 @@ local CLASS_NAME_MAP = {
     ["封门人"] = CC.SEAL, ["拾骸者"] = CC.SPOIL, ["裂隙使"] = CC.RIFT,
     ["回响客"] = CC.ECHO, ["换面人"] = CC.MASK, ["司仪"] = CC.DEBT,
     ["冒险家"] = "adventurer",
+    ["远征队员"] = "adventurer",  -- 特殊：所有英雄都属于远征队员
 }
 
 -- ======================== 特殊机制词缀ID（C类，需战斗运行时处理） ========================
@@ -98,7 +99,7 @@ local CLASS_NAME_MAP = {
 local SPECIAL_MECHANIC_AFFIXES = {
     [66] = true,   -- 攻击与造成伤害有X%概率不获得仇恨
     [67] = true,   -- 战斗开始时免疫伤害次数
-    [70] = true,   -- 冒险家触发闪避时仇恨值-N
+    [70] = true,   -- 远征队员触发闪避时仇恨值-N
     [75] = true,   -- 造成的攻击伤害将在80%-140%之间浮动
     [78] = true,   -- 受到治疗时仇恨值-N
     [79] = true,   -- 对非[骑士]职业进行治疗时，使其仇恨值-N
@@ -149,7 +150,7 @@ function RelicBridge.parseAffix(affixId, quality)
                             text:match("^(骑士)") or text:match("^(战士)") or
                             text:match("^(法师)") or text:match("^(射手)") or
                             text:match("^(刺客)") or text:match("^(牧师)") or
-                            text:match("^(冒险家)")
+                            text:match("^(远征队员)") or text:match("^(冒险家)")
         if prefixClass then
             targetClasses = { CLASS_NAME_MAP[prefixClass] }
         end
@@ -188,7 +189,7 @@ function RelicBridge.parseAffix(affixId, quality)
     -- 移除无括号的职业前缀
     workText = workText:gsub("^骑士", ""):gsub("^战士", ""):gsub("^法师", "")
                        :gsub("^射手", ""):gsub("^刺客", ""):gsub("^牧师", "")
-                       :gsub("^冒险家", "")
+                       :gsub("^远征队员", ""):gsub("^冒险家", "")
 
     -- 分割
     -- 先尝试"且"分割

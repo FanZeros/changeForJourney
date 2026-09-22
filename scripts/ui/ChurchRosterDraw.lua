@@ -30,7 +30,7 @@ function M.bind(deps)
         -- 1) 列表背景图（与角色面板相同的 UI_JSJM_0.png）
         drawImageCentered(vg, img.listBg, ROSTER.LIST_BG_CX, ROSTER.LIST_BG_CY, ROSTER.LIST_BG_W, ROSTER.LIST_BG_H, 1.0)
 
-        -- 2) "选择冒险家"提示（原战斗力位置，标题上方）
+        -- 2) "选择远征队员"提示（原战斗力位置，标题上方）
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 42)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -48,7 +48,7 @@ function M.bind(deps)
             nvgFontSize(vg, 32)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(180, 180, 180, 255))
-            nvgText(vg, 540, ROSTER.ROW1_CY, "暂无冒险家", nil)
+            nvgText(vg, 540, ROSTER.ROW1_CY, "暂无远征队员", nil)
             return
         end
 

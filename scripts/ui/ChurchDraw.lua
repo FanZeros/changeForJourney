@@ -458,7 +458,7 @@ function M.bind(deps)
         nvgRestore(vg)
 
         -- ================== 角色列表浮层（独立绘制，不被下半部分遮盖） ==================
-        -- 仅在展开状态（slotExpanded）时绘制；选中冒险家后 slotExpanded=false 但 slotLiftProgress 保持1.0
+        -- 仅在展开状态（slotExpanded）时绘制；选中远征队员后 slotExpanded=false 但 slotLiftProgress 保持1.0
         if (state.slotExpanded or state.rosterSlideProgress > 0.01) and state.slotLiftProgress > 0.01 and state.tab == "zhuanzhi" then
             local rosterAlpha = state.slotLiftProgress * state.rosterSlideProgress
             nvgSave(vg)

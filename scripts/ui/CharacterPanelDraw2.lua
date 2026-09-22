@@ -408,7 +408,7 @@ function M.draw(vg, scrollY)
                 nvgFontSize(vg, 22)
                 nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
                 nvgFillColor(vg, nvgRGBA(200, 200, 200, 220))
-                nvgText(vg, cx, cy + LOCK_ICON_H * 0.5 - 2, "冒险等级" .. unlockLv .. "解锁", nil)
+                nvgText(vg, cx, cy + LOCK_ICON_H * 0.5 - 2, "远征等级" .. unlockLv .. "解锁", nil)
             end
 
         elseif slot.state == "empty" then

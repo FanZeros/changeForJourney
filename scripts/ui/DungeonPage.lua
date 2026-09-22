@@ -459,7 +459,7 @@ local function collectTowerTeams()
     local needLv = ExpTable.getTeamUnlockLevel(3) or 20
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
     if unlocked < 3 then
-        return nil, "三军攻坚需冒险等级" .. tostring(needLv) .. "解锁三队"
+        return nil, "三军攻坚需远征等级" .. tostring(needLv) .. "解锁三队"
     end
     local teams = {}
     for t = 1, 3 do

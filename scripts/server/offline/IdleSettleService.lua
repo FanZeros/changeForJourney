@@ -70,7 +70,7 @@ local function grantIdleRewards(uid, rewards)
         end
     end
 
-    -- 3) 冒险经验（玩家升级）
+    -- 3) 远征经验（玩家升级）
     local playerExp = math.floor(rewards.adventureExp or 0)
     if playerExp > 0 then
         local oldLv = playerData.level or 1

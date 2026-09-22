@@ -19,7 +19,7 @@ TavernConfig.DAY_SECONDS   = 86400
 
 TavernConfig.SHOP_ITEMS = {
     -- 每日购买（limitCycle="daily"）
-    { id = 1,  name = "冒险招募券",   limitCycle = "daily",  limitCount = -1,  price = 40,  rewardType = "recruitTicket", rewardCount = 1 },
+    { id = 1,  name = "远征招募券",   limitCycle = "daily",  limitCount = -1,  price = 40,  rewardType = "recruitTicket", rewardCount = 1 },
     { id = 102, name = "星辉招募券",   limitCycle = "daily",  limitCount = -1,  price = 160, rewardType = "stellarRecruitTicket", rewardCount = 1 },
     -- 每日购买（limitCycle="daily"）—— N 碎片（品质3）
     { id = 2,  name = "大狗嚼-碎片",    limitCycle = "daily", limitCount = -1, price = 15,  rewardType = "shard", rewardHeroId = 1,  rewardCount = 1 },

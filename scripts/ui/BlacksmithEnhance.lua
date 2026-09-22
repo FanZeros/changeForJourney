@@ -700,7 +700,7 @@ local function refreshDlgTarget()
     local enhanceCap = ExpTable.getEnhanceLevelCap(GameState.getLevel())
     local capLv      = math.min(hardMax, enhanceCap)
     local maxReach   = calcMaxAffordableLevel(data.curLevel, data.ownedGold, data.ownedScroll)
-    -- dlg.maxLevel = 资源可达上限，但不超过冒险等级上限
+    -- dlg.maxLevel = 资源可达上限，但不超过远征等级上限
     dlg.maxLevel    = math.min(capLv, math.max(data.curLevel + 1, maxReach))
     dlg.targetLevel = maxReach > data.curLevel and maxReach or (data.curLevel + 1)
     -- 钳位到合法范围

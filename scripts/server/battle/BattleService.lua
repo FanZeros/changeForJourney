@@ -1060,7 +1060,7 @@ local SCENARIO_REWARDS = {
     [47] = { type = "currency", currencyKey = "weaponScroll", amount = 20 },  -- 铁匠铺入场：武器卷轴×20
     [54] = { type = "none" },   -- 竞技场入场
 
-    -- 酒馆入场情景：奖励冒险招募券×10
+    -- 酒馆入场情景：奖励远征招募券×10
     [31] = { type = "currency", currencyKey = "recruitTicket", amount = 10 },
 
     -- 建筑离场情景（英雄分支）：纯对话，仅标记已播放防止重复触发
@@ -1079,7 +1079,7 @@ local SCENARIO_REWARDS = {
     [39] = { type = "none" },   -- 首次全体阵亡·黄桃龙
     [40] = { type = "none" },   -- 首次全体阵亡·叮咚鸡
 
-    -- 冒险者公会解锁情景（首通 305）：奖励随机品质1遗物
+    -- 亡誓公会解锁情景（首通 305）：奖励随机品质1遗物
     [55] = { type = "relic", quality = 1, requiredHeroId = 1, requiredStageId = 1305 },
     [56] = { type = "relic", quality = 1, requiredHeroId = 2, requiredStageId = 1305 },
     [57] = { type = "relic", quality = 1, requiredHeroId = 3, requiredStageId = 1305 },
@@ -1139,7 +1139,7 @@ function BattleService.ClaimScenarioReward(uid, scenarioId)
         return true, nil, { rewardType = "none" }
     end
 
-    -- 货币奖励情景（如酒馆入场：冒险招募券×10）
+    -- 货币奖励情景（如酒馆入场：远征招募券×10）
     if rewardDef.type == "currency" then
         local currency = PDM.GetModule(uid, "currency")
         if not currency then

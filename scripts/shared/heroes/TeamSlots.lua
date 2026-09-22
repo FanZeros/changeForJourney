@@ -97,7 +97,7 @@ end
 ---@param heroes table heroes 模块数据
 ---@param teamIdx number 目标队伍（1~3）
 ---@param heroIds table|nil 目标槽位（允许 nil/空 = 清空队2/3；队1 不允许空）
----@param playerLevel number 冒险等级（用于解锁校验）
+---@param playerLevel number 远征等级（用于解锁校验）
 ---@return boolean ok
 ---@return string? err
 function TeamSlots.validate(heroes, teamIdx, heroIds, playerLevel)
@@ -109,7 +109,7 @@ function TeamSlots.validate(heroes, teamIdx, heroIds, playerLevel)
     local unlockedTeams = ExpTable.getUnlockedTeamCount(playerLevel or 1)
     if teamIdx > unlockedTeams then
         local needLv = ExpTable.getTeamUnlockLevel(teamIdx)
-        return false, string.format("队伍%d尚未解锁（需要冒险等级%d）", teamIdx, needLv or 0)
+        return false, string.format("队伍%d尚未解锁（需要远征等级%d）", teamIdx, needLv or 0)
     end
 
     if type(heroIds) ~= "table" or #heroIds == 0 then

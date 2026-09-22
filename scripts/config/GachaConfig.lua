@@ -10,8 +10,8 @@ local GachaConfig = {}
 -- ======================== 消耗配置 ========================
 
 GachaConfig.Cost = {
-    SINGLE_TICKET  = 1,      -- 单抽消耗冒险招募券
-    TEN_TICKET     = 10,     -- 十连消耗冒险招募券
+    SINGLE_TICKET  = 1,      -- 单抽消耗远征招募券
+    TEN_TICKET     = 10,     -- 十连消耗远征招募券
     SINGLE_DIAMOND = 180,    -- 单抽钻石替代价格
     TEN_DIAMOND    = 1800,   -- 十连钻石替代价格
 }

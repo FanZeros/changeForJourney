@@ -53,7 +53,7 @@ function M.bind(deps)
         state.rosterSlideProgress = 1.0
 
         local heroCfg = HC.get(heroId)
-        print("[ChurchPage] 选择冒险家: " .. (heroCfg and heroCfg.name or ("ID:" .. heroId)))
+        print("[ChurchPage] 选择远征队员: " .. (heroCfg and heroCfg.name or ("ID:" .. heroId)))
     end
 
     --- 更新槽位动画进度

@@ -155,14 +155,14 @@ local STG = {
     SW = 4, SR = 0x23, SG = 0x23, SB = 0x23,
 }
 
--- 冒险等级文本
+-- 远征等级文本
 local ADV_LV = {
     X = 143, Y = 655, FONT = 38,
     FR = 255, FG = 255, FB = 255,
     SW = 5, SR = 0, SG = 0, SB = 0,
 }
 
--- 冒险等级经验数值
+-- 远征等级经验数值
 local ADV_EXP = {
     X = 940, Y = 656, FONT = 38,
     FR = 255, FG = 255, FB = 255,
@@ -818,14 +818,14 @@ function PlayerInfoPanel.draw(vg)
         STG.FR, STG.FG, STG.FB, STG.SW,
         { strokeColor = { STG.SR, STG.SG, STG.SB } })
 
-    -- ── 15. 冒险等级文本 ──
+    -- ── 15. 远征等级文本 ──
     local advLevel = GameState.getLevel()
-    drawTextStroke(vg, ADV_LV.X, ADV_LV.Y, "冒险等级LV." .. advLevel,
+    drawTextStroke(vg, ADV_LV.X, ADV_LV.Y, "远征等级LV." .. advLevel,
         ADV_LV.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         ADV_LV.FR, ADV_LV.FG, ADV_LV.FB, ADV_LV.SW,
         { strokeColor = { ADV_LV.SR, ADV_LV.SG, ADV_LV.SB } })
 
-    -- ── 16. 冒险等级经验进度数值 ──
+    -- ── 16. 远征等级经验进度数值 ──
     local advExp    = GameState.getExp()
     local advMaxExp = GameState.getMaxExp()
     local expText = tostring(advExp) .. "/" .. tostring(advMaxExp)
@@ -834,10 +834,10 @@ function PlayerInfoPanel.draw(vg)
         ADV_EXP.FR, ADV_EXP.FG, ADV_EXP.FB, ADV_EXP.SW,
         { strokeColor = { ADV_EXP.SR, ADV_EXP.SG, ADV_EXP.SB } })
 
-    -- ── 17. 冒险经验进度条背景 ──
+    -- ── 17. 远征经验进度条背景 ──
     drawImageCentered(vg, img.expBg, EXP_BAR.CX, EXP_BAR.CY, EXP_BAR.W, EXP_BAR.H, 1.0)
 
-    -- ── 18. 冒险经验进度条填充 ──
+    -- ── 18. 远征经验进度条填充 ──
     local progress = advMaxExp > 0 and math.min(advExp / advMaxExp, 1.0) or 0
     local pad = EXP_BAR.PAD
     local barLeft = EXP_BAR.CX - EXP_BAR.W * 0.5 + pad

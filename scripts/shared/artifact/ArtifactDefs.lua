@@ -81,12 +81,12 @@ ArtifactDefs.ARTIFACTS = {
     },
     [7] = {
         name = "左誓战旗", minQuality = 1, weight = 100, effectType = "left_phys_atk_bonus",
-        desc = "使左槽位的友方冒险家物理攻击加成+X%",
+        desc = "使左槽位的友方远征队员物理攻击加成+X%",
         ranges = { [1]={8,12}, [2]={12,18}, [3]={18,26}, [4]={28,40}, [5]={42,58}, [6]={60,80} },
     },
     [8] = {
         name = "右誓法典", minQuality = 1, weight = 100, effectType = "right_mag_atk_bonus",
-        desc = "使右槽位的友方冒险家魔法攻击加成+X%",
+        desc = "使右槽位的友方远征队员魔法攻击加成+X%",
         ranges = { [1]={8,12}, [2]={12,18}, [3]={18,26}, [4]={28,40}, [5]={42,58}, [6]={60,80} },
     },
     [9] = {

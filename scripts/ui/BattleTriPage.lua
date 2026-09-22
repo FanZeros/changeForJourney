@@ -299,7 +299,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgFontSize(vg, 44)
             nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
             nvgText(vg, ix + iw * 0.5, iy + ih * 0.5,
-                string.format("冒险等级达到 %s 解锁", tostring(needLv or "?")), nil)
+                string.format("远征等级达到 %s 解锁", tostring(needLv or "?")), nil)
         end
     end
 

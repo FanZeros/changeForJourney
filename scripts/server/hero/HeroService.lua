@@ -336,7 +336,7 @@ function HeroService.SelectInitialHero(uid, heroId)
         end
     end
 
-    -- 替换 roster：只保留选中的英雄（起始等级 = 冒险等级）
+    -- 替换 roster：只保留选中的英雄（起始等级 = 远征等级）
     local cfg = HeroConfig.get(heroId)
     local startLv = HeroService.GetNewHeroStartLevel(uid)
     heroes.roster = {
@@ -653,12 +653,12 @@ function HeroService.RestoreUrShardConvertLimit(uid)
     }
 end
 
--- ======================== 冒险等级同步英雄最低等级 ========================
+-- ======================== 远征等级同步英雄最低等级 ========================
 
---- 当冒险等级提升后，将所有低于该等级的英雄自动拉升到冒险等级
+--- 当远征等级提升后，将所有低于该等级的英雄自动拉升到远征等级
 --- 用于：战斗/扫荡/离线经验导致玩家升级时调用
 ---@param uid number
----@param newPlayerLevel number 提升后的冒险等级
+---@param newPlayerLevel number 提升后的远征等级
 ---@return number boostedCount 被提升的英雄数量
 function HeroService.SyncHeroLevelsToPlayerLevel(uid, newPlayerLevel)
     local heroes = PDM.GetModule(uid, "heroes")
@@ -706,7 +706,7 @@ function HeroService.ApplyResonanceSync(uid)
     return boosted, resonance
 end
 
---- 获取新英雄的起始等级（取冒险等级和 1 的较大值）
+--- 获取新英雄的起始等级（取远征等级和 1 的较大值）
 ---@param uid number
 ---@return number startLevel
 function HeroService.GetNewHeroStartLevel(uid)

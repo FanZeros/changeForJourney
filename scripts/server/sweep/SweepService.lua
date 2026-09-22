@@ -58,7 +58,7 @@ function SweepService.Sweep(uid)
     local stageConfig = StageProvider.GetForServer(PDM.GetServerId(uid))
     local maxStageId = battleData.maxStageId or battleData.currentStageId
     if not maxStageId then
-        return false, "尚未开始冒险"
+        return false, "尚未开始远征"
     end
 
     -- 收集前 5 关（从最高进度关卡往回数）
@@ -126,7 +126,7 @@ function SweepService.Sweep(uid)
         HeroService.ApplyResonanceSync(uid)
     end
 
-    -- 3) 冒险经验
+    -- 3) 远征经验
     if baseExp > 0 then
         local oldLv = playerData.level or 1
         playerData.exp = (playerData.exp or 0) + baseExp

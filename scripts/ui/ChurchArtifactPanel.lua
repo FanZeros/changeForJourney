@@ -719,10 +719,10 @@ function M.handleTabInput(dx, dy)
                 local locked = subSlot > unlockedSubSlots
                 if locked and pendingArtifact then
                     local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
-                    showFloat("冒险等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 80)
+                    showFloat("远征等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 80)
                 elseif locked and not equipped then
                     local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
-                    showFloat("冒险等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 80)
+                    showFloat("远征等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 80)
                 elseif pendingArtifact and hasSameTypeInSlot(i, pendingArtifact, subSlot) then
                     showFloat("同一槽位不能佩戴相同类型神器", cx, cy - 80)
                 elseif pendingArtifact and Protocol then

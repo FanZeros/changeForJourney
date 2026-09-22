@@ -146,7 +146,7 @@ function GMService.ActivateAwakening(uid, heroId)
     return true, nil, { heroId = heroId, nodeIndex = nodeIndex, awakeLevel = nodeIndex }
 end
 
--- ======================== GM: 获得冒险家 ========================
+-- ======================== GM: 获得远征队员 ========================
 
 ---@param uid number
 ---@param heroId number
@@ -202,7 +202,7 @@ function GMService.GiveHero(uid, heroId, level)
     return true, nil, { heroId = heroId, level = level }
 end
 
--- ======================== GM: 冒险等级提升 ========================
+-- ======================== GM: 远征等级提升 ========================
 
 ---@param uid number
 ---@return boolean ok

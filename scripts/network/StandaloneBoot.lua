@@ -71,7 +71,7 @@ function M.run(rt)
         end
     end)
 
-    -- 5.2 击杀奖励回调：经验平分给每个上场冒险家，金币/冒险等级经验照常
+    -- 5.2 击杀奖励回调：经验平分给每个上场远征队员，金币/远征等级经验照常
     -- [三栏并行] 提取为局部函数，BattleScene（栏1）与 BattleTriPage（栏2/3）共用
     local handleKillRewards = function(data)
         local baseExp  = data.expReward  or 0
@@ -84,12 +84,12 @@ function M.run(rt)
             GameState.setGold(GameState.getGold() + baseGold)
         end
 
-        -- 玩家（冒险等级）经验 = 怪物基础经验（不乘倍率）
+        -- 玩家（远征等级）经验 = 怪物基础经验（不乘倍率）
         if baseExp > 0 then
             GameState.addExp(baseExp)
         end
 
-        -- 冒险家经验：总池 = 基础经验 × 倍率，平分给每个上场英雄
+        -- 远征队员经验：总池 = 基础经验 × 倍率，平分给每个上场英雄
         if baseExp > 0 and #heroIds > 0 then
             local expMult = ExpTable.getHeroCountExpMult(allyCount)
             local totalExp = baseExp * expMult
@@ -160,7 +160,7 @@ function M.run(rt)
         print("[Standalone] 初始化 lootbox 数据")
     end
 
-    -- 5.242 heroes 初始状态注入：Standalone 模式无 Server 推送，右面板"我的冒险家"
+    -- 5.242 heroes 初始状态注入：Standalone 模式无 Server 推送，右面板"我的远征队员"
     -- （CharacterPanel.ownedSet）依赖 heroes 模块状态；默认大狗嚼 Lv1 已部署
     if not ClientDispatcher.get("heroes") then
         local cjson = cjson

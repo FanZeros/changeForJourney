@@ -30,7 +30,7 @@
 --   "tavern_btn_gacha10"     — 酒馆十连抽按钮
 --   "character_new_hero"     — 角色面板新角色位置
 --   "smith_btn_enhance"      — 铁匠铺强化按钮
---   "building_guild"         — 城镇冒险者公会建筑
+--   "building_guild"         — 城镇亡誓公会建筑
 --   "relic_tab"              — 公会页面遗物标签按钮
 --   "relic_bag_btn"          — 遗物面板背包按钮
 -- ============================================================================
@@ -170,7 +170,7 @@ TutorialConfig[8] = {
     triggerScenarios = { 31 },
     steps = {
         {
-            text      = "来试试能否招募到其他冒险伙伴吧",
+            text      = "来试试能否招募到其他远征伙伴吧",
             highlight = "tavern_btn_gacha10",
             advanceOn = "click_highlight",
         },
@@ -227,13 +227,13 @@ TutorialConfig[11] = {
 
 -- ─── 引导组 14 ───
 -- 触发：情景55/56/57（首通1305）结束后
--- 解锁：冒险者公会
+-- 解锁：亡誓公会
 TutorialConfig[14] = {
     triggerScenarios = { 55, 56, 57 },
     unlocks = { "guild" },
     steps = {
         {
-            text      = "进入冒险者公会",
+            text      = "进入亡誓公会",
             highlight = "building_guild",
             advanceOn = "enter_panel_guild",
         },

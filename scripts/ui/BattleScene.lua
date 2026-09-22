@@ -1327,9 +1327,9 @@ end
 --- callback(data): data = { expReward, goldReward, allyCount, expMult, heroIds }
 ---   expReward  = 怪物基础经验（已含品质倍率）
 ---   goldReward = 怪物基础金币（已含品质倍率）
----   allyCount  = 当前上场冒险家数量
----   expMult    = 冒险家数量经验倍率
----   heroIds    = 上场冒险家 heroId 列表
+---   allyCount  = 当前上场远征队员数量
+---   expMult    = 远征队员数量经验倍率
+---   heroIds    = 上场远征队员 heroId 列表
 ---@param callback function|nil
 function BattleScene.setOnEnemyKill(callback)
     onEnemyKillCallback = callback

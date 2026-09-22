@@ -643,7 +643,7 @@ function TownScene.handleInput(dx, dy)
     if dx >= MARKET_CX - MARKET_W * 0.5 and dx <= MARKET_CX + MARKET_W * 0.5
        and dy >= MARKET_CY - MARKET_H * 0.5 and dy <= MARKET_CY + MARKET_H * 0.5 then
         if not ExpTable.isBuildingUnlocked("market", GameState.getLevel()) then
-            print("[TownScene] 市场未解锁，需要冒险等级 Lv." .. ExpTable.getBuildingUnlockLevel("market"))
+            print("[TownScene] 市场未解锁，需要远征等级 Lv." .. ExpTable.getBuildingUnlockLevel("market"))
             return true
         end
         print("[TownScene] 点击市场")

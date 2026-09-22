@@ -68,7 +68,7 @@ GameConfig.Resources = {
     { key = "accessoryScroll", name = "饰品卷轴",   giveAmount = 5    },
     { key = "helmetScroll",    name = "头盔卷轴",   giveAmount = 5    },
     { key = "shoesScroll",     name = "鞋子卷轴",   giveAmount = 5    },
-    { key = "recruitTicket", name = "冒险招募券", giveAmount = 10   },
+    { key = "recruitTicket", name = "远征招募券", giveAmount = 10   },
     { key = "stellarRecruitTicket", name = "星辉招募券", giveAmount = 10 },
     { key = "sweepTicket",   name = "扫荡券",     giveAmount = 10   },
     { key = "tavernCoin",    name = "酒馆币",     giveAmount = 50   },
@@ -83,7 +83,7 @@ GameConfig.Player = {
     DEFAULT_NAME = "玩家",
     DEFAULT_LEVEL = 1,
     DEFAULT_EXP = 0,
-    DEFAULT_MAX_EXP = 50,   -- 冒险等级1级升2级所需经验（来自 ExpTable）
+    DEFAULT_MAX_EXP = 50,   -- 远征等级1级升2级所需经验（来自 ExpTable）
     DEFAULT_POWER = 1000,
 }
 

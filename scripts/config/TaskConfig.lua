@@ -198,15 +198,15 @@ TaskConfig.ACHIEVEMENT = {
     { id = "a_adv2_4", name = "4名角色进行4转",   condKey = "adv2_count", target = 4, reward = { type = "diamond", amount = 888,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
     { id = "a_adv2_5", name = "5名角色进行5转",   condKey = "adv2_count", target = 5, reward = { type = "diamond", amount = 1288, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
 
-    -- -------- 冒险等级成就 (11-18) --------
-    { id = "a_plv_5",  name = "冒险等级达到5",    condKey = "player_level", target = 5,  reward = { type = "diamond", amount = 50,   icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_10", name = "冒险等级达到10",   condKey = "player_level", target = 10, reward = { type = "diamond", amount = 100,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_15", name = "冒险等级达到15",   condKey = "player_level", target = 15, reward = { type = "diamond", amount = 150,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_20", name = "冒险等级达到20",   condKey = "player_level", target = 20, reward = { type = "diamond", amount = 200,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_30", name = "冒险等级达到30",   condKey = "player_level", target = 30, reward = { type = "diamond", amount = 400,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_40", name = "冒险等级达到40",   condKey = "player_level", target = 40, reward = { type = "diamond", amount = 600,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_50", name = "冒险等级达到50",   condKey = "player_level", target = 50, reward = { type = "diamond", amount = 888,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_60", name = "冒险等级达到60",   condKey = "player_level", target = 60, reward = { type = "diamond", amount = 1288, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    -- -------- 远征等级成就 (11-18) --------
+    { id = "a_plv_5",  name = "远征等级达到5",    condKey = "player_level", target = 5,  reward = { type = "diamond", amount = 50,   icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_plv_10", name = "远征等级达到10",   condKey = "player_level", target = 10, reward = { type = "diamond", amount = 100,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_plv_15", name = "远征等级达到15",   condKey = "player_level", target = 15, reward = { type = "diamond", amount = 150,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_plv_20", name = "远征等级达到20",   condKey = "player_level", target = 20, reward = { type = "diamond", amount = 200,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_plv_30", name = "远征等级达到30",   condKey = "player_level", target = 30, reward = { type = "diamond", amount = 400,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_plv_40", name = "远征等级达到40",   condKey = "player_level", target = 40, reward = { type = "diamond", amount = 600,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_plv_50", name = "远征等级达到50",   condKey = "player_level", target = 50, reward = { type = "diamond", amount = 888,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_plv_60", name = "远征等级达到60",   condKey = "player_level", target = 60, reward = { type = "diamond", amount = 1288, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
 
     -- -------- 拥有 SR 角色 (19-23) --------
     { id = "a_sr_1",  name = "拥有1个SR角色",   condKey = "sr_count",  target = 1, reward = { type = "diamond", amount = 100, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },

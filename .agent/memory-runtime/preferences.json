@@ -6,7 +6,7 @@
   "never_push_workspace": true,
   "always_askuserquestion": true,
   "never_cancel_task": true,
-  "dev_branch": "refactor/extract-battle-overlays",
+  "dev_branch": "feat/rename-adventure-to-expedition",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",
@@ -18,6 +18,9 @@
       "game_name": "终焉之门 Gate of Finality(原宿命旅途)",
       "player_title": "远征长",
       "team_name": "远征队",
+      "player_level_name": "远征等级",
+      "hero_unit_name": "远征队员",
+      "recruit_ticket_name": "远征招募券",
       "parallel_sessions": "用户开多 agent 会话并行,注意文件覆盖"
     }
   }

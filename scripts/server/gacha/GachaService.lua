@@ -310,7 +310,7 @@ function GachaService.GachaPull(uid, count, payType, poolId)
             local isNew = not heroEntry or not heroEntry.level
             if isNew then
                 -- 新英雄：解锁（保留已有碎片数量，若存根已存在）
-                -- 起始等级 = 冒险等级（确保新招募的英雄不低于冒险等级）
+                -- 起始等级 = 远征等级（确保新招募的英雄不低于远征等级）
                 local existingShards = heroEntry and heroEntry.shards or 0
                 local cfg = HeroConfig.get(heroId)
                 local startLv = HeroService.GetNewHeroStartLevel(uid)

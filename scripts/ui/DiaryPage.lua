@@ -1,5 +1,5 @@
 -- ============================================================================
--- DiaryPage - 日志页面（标签2：冒险日志）
+-- DiaryPage - 日志页面（标签2：远征日志）
 -- 坐标系: 设计分辨率 1080x2400，所有位置为中心点坐标
 -- ============================================================================
 
@@ -136,7 +136,7 @@ function DiaryPage.draw(vg)
     -- 1. 背景
     drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
 
-    -- 2. 标题 "冒险日志" (斜体, 黑色, 50% 透明度, 无描边)
+    -- 2. 标题 "远征日志" (斜体, 黑色, 50% 透明度, 无描边)
     nvgSave(vg)
     nvgTranslate(vg, TITLE_CN_X, TITLE_CN_Y)
     nvgSkewX(vg, -math.tan(math.rad(12)))
@@ -145,7 +145,7 @@ function DiaryPage.draw(vg)
     nvgFontSize(vg, TITLE_CN_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-    nvgText(vg, TITLE_CN_X, TITLE_CN_Y, "冒险日志", nil)
+    nvgText(vg, TITLE_CN_X, TITLE_CN_Y, "远征日志", nil)
     nvgRestore(vg)
 
     -- 3. 标题 "Adventure Diary" (斜体, 黑色, 50% 透明度, 无描边)

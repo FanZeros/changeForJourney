@@ -1,6 +1,6 @@
 -- ============================================================================
 -- TalentPage - 终焉古树：独立天赋星图页（从教堂分离）
--- 设计坐标 1080×2400；星图视口 1:1（1080×1080）居中
+-- 设计坐标 1080×2400；星图视口 1080×1080 居中；世界约 1.5 竖屏、默认 zoom=1
 -- ============================================================================
 
 local GameConfig     = require("config.GameConfig")
@@ -49,7 +49,7 @@ local state = {
     tabFrom    = "tianfu",
     tabSwitchTime = 0,
 
-    tfZoomSliderValue   = 0,
+    tfZoomSliderValue   = TalentStarMap.getDefaultSliderValue(),
     tfSliderDragging    = false,
     tfMapDragging       = false,
     tfLastDragX         = 0,
@@ -182,7 +182,7 @@ function TalentPage.open()
     state.openTime = time.elapsedTime
     require("systems.GameSFX").playUIMove(1)
     state.tab = "tianfu"
-    state.tfZoomSliderValue = 0
+    state.tfZoomSliderValue = TalentStarMap.getDefaultSliderValue()
     state.tfSliderDragging = false
     state.tfMapDragging = false
     state.tfLastDragTime = 0

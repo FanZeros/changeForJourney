@@ -46,7 +46,7 @@ function M.bind(deps)
         state.rosterScrollY = 0
         resetRosterScrollState()
         -- 天赋面板状态重置
-        state.tfZoomSliderValue = 0
+        state.tfZoomSliderValue = TalentStarMap.getDefaultSliderValue()
         state.tfSliderDragging = false
         state.tfMapDragging = false
         state.tfLastDragTime = 0

@@ -1,8 +1,9 @@
 -- TalentStarMap.lua
 -- 天赋星图渲染与交互模块
--- 坐标系: 网格中心 (0,0), 五角星布局约 ±21, 格间距 360px
+-- 坐标系: 网格中心 (0,0), 五角星布局约 ±21
+-- 世界尺寸按约 1.5 个竖屏（1080×2400）铺开，默认 zoom=1 为 1:1，拖拽浏览，不缩进单栏
 -- 天赋节点尺寸: 小(100%), 中(120%), 大(150%)
--- 连接线: 12px 宽, 3种状态 (未激活/已激活/可激活闪烁)
+-- 连接线: 随格距缩放, 3种状态 (未激活/已激活/可激活闪烁)
 
 local TalentStarMap = {}
 
@@ -13,21 +14,23 @@ local ICON_TINT_DARK = { 72, 64, 54 }
 
 -- ======================== 常量 ========================
 
-local GRID_SPACING  = 360   -- 坐标点间距 (px)
-local LINE_WIDTH    = 12    -- 连接线宽度
+-- 原格距 360、图标 280/300。世界约 ±19.4×±20.4 格。
+-- 竖屏 2400 高 × 1.5 ≈ 3600，按高度定格距，默认 1:1 铺开约 1.5 屏，横向拖拽浏览。
+local GRID_SPACING  = 100   -- 坐标点间距 (px)；3600/36.9≈97.6
+local LINE_WIDTH    = 5     -- 连接线宽度（随格距从 12 比例缩小）
 local NODE_MAX      = 208   -- 当前最大天赋节点 ID（201-208 为终焉环占位，待填内容）
 
--- 缩放范围
-local ZOOM_MIN      = 0.20
-local ZOOM_MAX      = 0.45
-local ZOOM_DEFAULT  = 0.45  -- 默认最大（展示图标原始尺寸）
+-- 缩放范围：1.0 = 世界 1:1（约 1.5 竖屏画布）；可略缩小总览 / 放大看节点
+local ZOOM_MIN      = 0.55
+local ZOOM_MAX      = 1.80
+local ZOOM_DEFAULT  = 1.00
 
 -- 各类型原图尺寸 (px) 和缩放倍率
--- 小型: 原图280, 显示100%;  中型: 原图300, 显示120%;  大型: 原图300, 显示150%
+-- 随格距 360→100 同比：小 280→78，中/大 300→83
 local ICON_BASE = {
-    small  = 280,
-    medium = 300,
-    large  = 300,
+    small  = 78,
+    medium = 83,
+    large  = 83,
 }
 local SIZE_SCALE = {
     small  = 1.0,
@@ -725,7 +728,9 @@ function TalentStarMap.init(vg)
     litNodes = { [0] = true }
     -- 清空图标缓存
     iconImages = {}
-    print("[TalentStarMap] init OK, nodes=" .. tostring(NODE_MAX + 1) .. ", edges=" .. #EDGES)
+    print(string.format("[TalentStarMap] init OK, nodes=%s edges=%d spacing=%d zoom=%.2f~%.2f default=%.2f (~%.2f竖屏)",
+        tostring(NODE_MAX + 1), #EDGES, GRID_SPACING, ZOOM_MIN, ZOOM_MAX, ZOOM_DEFAULT,
+        36.9 * GRID_SPACING / 2400))
 end
 
 --- 绘制星图
@@ -764,6 +769,12 @@ end
 ---@return number
 function TalentStarMap.getZoom()
     return zoom
+end
+
+--- 默认视角对应的滑块值（0=最大缩放, 1=最小缩放）
+---@return number
+function TalentStarMap.getDefaultSliderValue()
+    return (ZOOM_MAX - ZOOM_DEFAULT) / (ZOOM_MAX - ZOOM_MIN)
 end
 
 --- 将相机限制在边界内

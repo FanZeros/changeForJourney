@@ -1286,6 +1286,9 @@ local function performAttack(attacker, targetList, isAlly)
                         end
                         if hit.isBlocked then
                             prefix = prefix .. "格挡 "
+                            local blockedAmt = (hit.preBlockDamage or hit.rawDamage or takenForStats or 0) - (actual or 0)
+                            if blockedAmt < 0 then blockedAmt = takenForStats or 0 end
+                            EquipmentSetRuntime.onBlocked(curTgt, attacker, blockedAmt, dealDamageToUnit)
                         end
 
                         -- 护盾吸收灰色飘字（完全吸收时不显示 -0）

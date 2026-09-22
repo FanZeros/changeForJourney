@@ -254,16 +254,17 @@ function RecruitAnim.start(results, onClose)
         if q > state.highestQ then state.highestQ = q end
     end
 
-    -- 单例模式：不再 Dispose，仅重置播放状态标志
-    -- 实例由 draw 懒加载并永久保留，通过 SetAnimation 切换动画
-    spinePendingAnim_ = qualityToSpineAnim(state.highestQ)
-    spineAnimStarted_ = false  -- 等 draw() 中 SetAnimation 后才允许检测完成
-    spineCompleted_   = false
+    -- 跳过 Spine 开场动画，直接展示抽卡结果
+    spinePendingAnim_ = nil
+    spineAnimStarted_ = false
+    spineCompleted_   = true
     spineLastT_       = time.elapsedTime
     state.fadeOutStartT = 0
-
-    state.phase = "video"
-    print("[RecruitAnim] start anim=" .. spinePendingAnim_)
+    state.fadeStartT = time.elapsedTime
+    state.cardStartT = time.elapsedTime
+    state.glowStartT = time.elapsedTime
+    state.phase = "cards"
+    print("[RecruitAnim] start skip video, cards=" .. tostring(#state.results))
 end
 
 function RecruitAnim.isPlaying()
@@ -331,9 +332,12 @@ end
 function RecruitAnim.handleInput(dx, dy)
     if state.phase == "idle" then return false end
 
-    -- 视频阶段：不响应点击，不允许跳过
+    -- 视频阶段已跳过；若残留则直接进结果
     if state.phase == "video" then
-        return true  -- 消费事件但不操作
+        state.phase = "cards"
+        state.cardStartT = time.elapsedTime
+        state.glowStartT = time.elapsedTime
+        return true
     end
 
     if state.phase == "cards" then

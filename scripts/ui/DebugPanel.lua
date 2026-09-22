@@ -20,7 +20,7 @@ local Client_
 ---@type table
 local Protocol_
 local function getClient()
-    if not Client_ then Client_ = require("network.Client") end
+    if not Client_ then Client_ = require("network.GameAction") end
     return Client_
 end
 local function getProtocol()
@@ -60,7 +60,7 @@ local function getDungeonBattleScene()
     return DungeonBattleScene_
 end
 
--- IntroCutscene / ScenarioDialogue / CharacterSelect 延迟加载
+-- IntroCutscene / ScenarioDialogue 延迟加载
 ---@type table
 local IntroCutscene_
 local function getIntroCutscene()
@@ -77,11 +77,7 @@ local function getScenarioDialogueConfig()
     if not ScenarioDialogueConfig_ then ScenarioDialogueConfig_ = require("config.ScenarioDialogueConfig") end
     return ScenarioDialogueConfig_
 end
-local CharacterSelect_
-local function getCharacterSelect()
-    if not CharacterSelect_ then CharacterSelect_ = require("ui.CharacterSelect") end
-    return CharacterSelect_
-end
+
 
 local DebugPanel = {}
 
@@ -1057,9 +1053,7 @@ function DebugPanel.handleInput(sx, sy)
                 -- 4. 重置 Client 一次性标志（让开场动画等可重新触发）
                 getClient().resetForNewSession()
                 print(string.format("[Debug][DIAG-RESET] step4: resetForNewSession done clock=%.4f", os.clock()))
-                -- 5. 请求服务端"返回大厅"：清理旧会话 + 重推区服列表
-                --    修复：不加这步会导致 StartScreen.serverListData_ 永远为 nil，
-                --    玩家点击无响应（"无限重开"现象）
+                -- 5. 单机无大厅，GameAction.requestReturnToLobby 为空操作
                 getClient().requestReturnToLobby()
                 print(string.format("[Debug][DIAG-RESET] step5: requestReturnToLobby done clock=%.4f — COMPLETE", os.clock()))
             elseif btn.id == "test_intro_cutscene" then
@@ -1072,50 +1066,13 @@ function DebugPanel.handleInput(sx, sy)
                         print("[Debug] 开场剧情结束，启动情景对话 1")
                         local cfg = getScenarioDialogueConfig().SCENARIO_1
                         cfg.onFinish = function()
-                            print("[Debug] 情景对话1结束，打开角色选择")
-                            getCharacterSelect().show({
-                                background = cfg.background,
-                                onFinish = function(heroId)
-                                    print("[Debug] 角色选择完成: heroId=" .. heroId)
-                                    local postMap = {
-                                        [1] = getScenarioDialogueConfig().SCENARIO_2,
-                                        [2] = getScenarioDialogueConfig().SCENARIO_3,
-                                        [3] = getScenarioDialogueConfig().SCENARIO_4,
-                                    }
-                                    local postScenario = postMap[heroId]
-                                    if postScenario then
-                                        getScenarioDialogue().show(postScenario)
-                                    end
-                                end,
-                            })
+                            print("[Debug] 情景对话1结束")
                         end
                         getScenarioDialogue().show(cfg)
                     end)
                     print("[Debug] 开始测试开场剧情，BGM 已切换")
                 else
                     print("[Debug] 开场剧情已在播放中")
-                end
-            elseif btn.id == "test_char_select" then
-                local cs = getCharacterSelect()
-                if not cs.isActive() then
-                    cs.show({
-                        background = "image/关卡地图/MAP_1.png",
-                        onFinish = function(heroId)
-                            print("[Debug] 角色选择完成: heroId=" .. heroId)
-                            local postMap = {
-                                [1] = getScenarioDialogueConfig().SCENARIO_2,
-                                [2] = getScenarioDialogueConfig().SCENARIO_3,
-                                [3] = getScenarioDialogueConfig().SCENARIO_4,
-                            }
-                            local postScenario = postMap[heroId]
-                            if postScenario then
-                                getScenarioDialogue().show(postScenario)
-                            end
-                        end,
-                    })
-                    print("[Debug] 打开角色选择界面")
-                else
-                    print("[Debug] 角色选择界面已在显示中")
                 end
             else
                 -- 动态匹配 4 个槽位的 dec/inc/gen 按钮

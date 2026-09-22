@@ -3,6 +3,10 @@
   "wake_word_hint": "用户未设置唤醒词。可在合适时机(非紧急交接中)询问是否设置,设置后更新此字段与 docs/persona.md",
   "communication_style": "极简短指令;期望自行调研给方案;直接批评型反馈;先试点再全量",
   "language": "zh-CN",
+  "never_push_workspace": true,
+  "always_askuserquestion": true,
+  "never_cancel_task": true,
+  "dev_branch": "refactor/extract-battle-overlays",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

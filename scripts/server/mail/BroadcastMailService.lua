@@ -393,7 +393,10 @@ end
 ---@param serverIds number[]|nil  目标区服ID列表，nil 表示全部在线玩家
 function BroadcastMailService.NotifyOnlinePlayers(serverIds)
     -- 延迟 require 避免循环依赖
-    local Server = require("network.Server")
+    local okServer, Server = pcall(require, "network.Server")
+    if not okServer or type(Server) ~= "table" then
+        return
+    end
     local ServerDispatcher = require("network.ServerDispatcher")
     local MailService = require("server.mail.MailService")
     local Protocol = require("shared.Protocol")

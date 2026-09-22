@@ -45,6 +45,7 @@ end
 ---@param eventType string
 ---@param eventData any
 function HandleRender(eventType, eventData)
+    ---@diagnostic disable-next-line: assign-type-mismatch
     local graphics = GetGraphics()
     if not graphics then return end
     local width = graphics:GetWidth()

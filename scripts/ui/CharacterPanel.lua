@@ -21,6 +21,9 @@ local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
 local Draw             = require("ui.CharacterPanelDraw2")
 local HeroResonance    = require("shared.heroes.HeroResonance")
+local CharacterDeploy  = require("ui.CharacterDeploy")
+local CharacterInput   = require("ui.CharacterInput")
+local CharacterHeroSync = require("ui.CharacterHeroSync")
 
 local CharacterPanel = {}
 
@@ -674,267 +677,91 @@ end
 
 -- ======================== 出战操作 ========================
 
---- 查询英雄所在队伍索引（不在任何队返回 nil）
----@param heroId number
----@return number|nil
+local _deploy
+local function bindDeploy()
+    _deploy = CharacterDeploy.bind({
+        HC = HC,
+        MAX_SLOTS = MAX_SLOTS,
+        TEAM_COUNT = TEAM_COUNT,
+        getTeams = function() return teams end,
+        getTeamSlots = function() return teamSlots end,
+        getActiveTeamIdx = function() return activeTeamIdx end,
+        getOwnedSet = function() return ownedSet end,
+        getTeamPowerCaches = function() return teamPowerCaches end,
+        getSlotPowerCache = function() return slotPowerCache end,
+        calcHeroPower = calcHeroPower,
+        rebuildRoster = rebuildRoster,
+        refreshPowerCache = refreshPowerCache,
+        refreshNavBadge = refreshNavBadge,
+        getOnTeamChanged = function() return onTeamChangedCallback end,
+    })
+end
+
 local function findHeroTeamIdx(heroId)
-    for t = 1, TEAM_COUNT do
-        local slots = teams[t] and teams[t].slots
-        if slots then
-            for i = 1, #slots do
-                local slot = slots[i]
-                if slot.state == "occupied" and slot.heroId == heroId then
-                    return t
-                end
-            end
-        end
-    end
-    return nil
+    if not _deploy then bindDeploy() end
+    return _deploy.findHeroTeamIdx(heroId)
 end
 
---- 将英雄部署到指定槽位
----@param heroId number 英雄 ID
----@param slotIdx number 槽位索引（1~MAX_SLOTS）
----@return boolean 是否成功
 local function deployHeroToSlot(heroId, slotIdx)
-    local slot = teamSlots[slotIdx]
-    if not slot then return false end
-    if slot.state == "locked" then return false end
-
-    local ownData = ownedSet[heroId]
-    if not ownData then
-        print("[CharacterPanel] 英雄 " .. heroId .. " 未拥有，无法出战")
-        return false
-    end
-
-    -- [三队并行] 跨队唯一性: 已在其他队 → 先从原队移出（同一英雄全局只能在一队）
-    local otherTeam = findHeroTeamIdx(heroId)
-    if otherTeam and otherTeam ~= activeTeamIdx then
-        local otherSlots = teams[otherTeam].slots
-        for i = 1, #otherSlots do
-            if otherSlots[i].state == "occupied" and otherSlots[i].heroId == heroId then
-                otherSlots[i] = { state = "empty" }
-                if teamPowerCaches[otherTeam] then teamPowerCaches[otherTeam][i] = 0 end
-                print(string.format("[CharacterPanel] 英雄%d 从队伍%d 移出，编入当前队伍%d", heroId, otherTeam, activeTeamIdx))
-                -- 先同步原队（单机: 队1 需刷新战斗画面；联机: 先提交原队再提交当前队，避免服务端唯一性校验拒绝）
-                if onTeamChangedCallback then onTeamChangedCallback(otherTeam) end
-                break
-            end
-        end
-    end
-
-    -- 如果该英雄已在其他槽位，先移除
-    for i = 1, MAX_SLOTS do
-        if teamSlots[i].state == "occupied" and teamSlots[i].heroId == heroId then
-            teamSlots[i] = { state = "empty" }
-            slotPowerCache[i] = 0
-            break
-        end
-    end
-
-    -- 如果目标槽位已有角色，先取消（回到列表）
-    if slot.state == "occupied" and slot.heroId then
-        print("[CharacterPanel] 槽位 " .. slotIdx .. " 原角色 " .. slot.heroId .. " 被替换")
-    end
-
-    -- 部署
-    teamSlots[slotIdx] = {
-        state  = "occupied",
-        heroId = heroId,
-        level  = ownData.level,
-        exp    = ownData.exp,
-        maxExp = ownData.maxExp,
-    }
-    slotPowerCache[slotIdx] = calcHeroPower(heroId, slotIdx)
-
-    local heroCfg = HC.get(heroId)
-    print("[CharacterPanel] 部署 " .. (heroCfg and heroCfg.name or "?") .. " 到槽位 " .. slotIdx)
-
-    -- 重建列表（排序会变化）
-    rebuildRoster()
-    refreshPowerCache()
-    refreshNavBadge()
-
-    -- 通知阵容变更
-    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-
-    require("systems.GameSFX").play("ui_loosen")
-
-    -- 新手引导：若拖拽的是引导高亮的新英雄，触发 drag_to_slot_3 推进
-    do
-        local _TM = require("systems.TutorialManager")
-        if _TM.isActive() and _TM.getNewHeroId() == heroId and slotIdx == 3 then
-            _TM.notifyEvent("drag_to_slot_3")
-        end
-    end
-
-    return true
+    if not _deploy then bindDeploy() end
+    return _deploy.deployHeroToSlot(heroId, slotIdx)
 end
 
---- 查找第一个可用的空槽位
----@return number|nil 空槽位索引
 local function findFirstEmptySlot()
-    for i = 1, MAX_SLOTS do
-        if teamSlots[i].state == "empty" then
-            return i
-        end
-    end
-    return nil
+    if not _deploy then bindDeploy() end
+    return _deploy.findFirstEmptySlot()
 end
 
 -- ======================== 输入处理 ========================
 
---- 处理点击释放（设计空间坐标）— MouseUp / TouchEnd 时调用
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
----@return boolean 是否消费了该事件
+local function isInScrollArea(dx, dy)
+    return dx >= SCROLL_LEFT and dx <= SCROLL_RIGHT
+       and dy >= SCROLL_TOP  and dy <= SCROLL_BOTTOM
+end
+
+local _input
+local function bindInput()
+    _input = CharacterInput.bind({
+        CharacterDetail = CharacterDetail,
+        Draw = Draw,
+        CharacterPanel = CharacterPanel,
+        hitTestTeamSlot = hitTestTeamSlot,
+        hitTestRosterCard = hitTestRosterCard,
+        getTeamSlots = function() return teamSlots end,
+        getSlotPowerCache = function() return slotPowerCache end,
+        getDragState = function() return dragState end,
+        getSelectSlotState = function() return selectSlotState end,
+        getHeroRoster = function() return heroRoster end,
+        getShardMap = function() return shardMap end,
+        getActiveTeamIdx = function() return activeTeamIdx end,
+        getOnTeamChanged = function() return onTeamChangedCallback end,
+        deployHeroToSlot = deployHeroToSlot,
+        rebuildRoster = rebuildRoster,
+        refreshPowerCache = refreshPowerCache,
+        refreshNavBadge = refreshNavBadge,
+        isHeroDeployed = isHeroDeployed,
+        isInScrollArea = isInScrollArea,
+        clampScroll = clampScroll,
+        getScroll = function() return scrollY end,
+        setScroll = function(v) scrollY = v end,
+        getIsDragging = function() return isDragging end,
+        setIsDragging = function(v) isDragging = v end,
+        getDragLastY = function() return dragLastY end,
+        setDragLastY = function(v) dragLastY = v end,
+        getDragDeltaY = function() return dragDeltaY end,
+        setDragDeltaY = function(v) dragDeltaY = v end,
+        setScrollVelocity = function(v) scrollVelocity = v end,
+        SCROLL_WHEEL_STEP = SCROLL_WHEEL_STEP,
+        HC = HC,
+    })
+end
+local function ensureInput()
+    if not _input then bindInput() end
+    return _input
+end
+
 function CharacterPanel.handleInput(dx, dy)
-    -- 0) 详情界面打开时委托给 CharacterDetail
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleInput(dx, dy)
-    end
-
-    -- 0.5) [三队并行] 队伍页签点击（释放拖拽到页签上会取消拖拽并切队）
-    local tabIdx = Draw.hitTestTeamTabs(dx, dy)
-    if tabIdx then
-        CharacterPanel.setActiveTeam(tabIdx)
-        return true
-    end
-
-    -- A) 如果正在拖拽卡片，释放时检测目标槽位
-    if dragState.active then
-        local slotIdx = hitTestTeamSlot(dx, dy)
-        if slotIdx and dragState.fromSlot then
-            -- 从出战槽位拖拽到另一个槽位：执行交换
-            local srcIdx = dragState.fromSlot
-            if slotIdx ~= srcIdx then
-                local srcSlot = teamSlots[srcIdx]
-                local dstSlot = teamSlots[slotIdx]
-                if dstSlot.state == "locked" then
-                    print("[CharacterPanel] 目标槽位 " .. slotIdx .. " 未解锁，无法交换")
-                elseif dstSlot.state == "empty" then
-                    -- 移动到空槽位
-                    teamSlots[slotIdx] = srcSlot
-                    teamSlots[srcIdx] = { state = "empty" }
-                    slotPowerCache[slotIdx] = slotPowerCache[srcIdx] or 0
-                    slotPowerCache[srcIdx] = 0
-                    print("[CharacterPanel] 移动槽位 " .. srcIdx .. " → " .. slotIdx)
-                    rebuildRoster()
-                    refreshNavBadge()
-                    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-                else
-                    -- 两个都有角色，交换
-                    teamSlots[srcIdx], teamSlots[slotIdx] = teamSlots[slotIdx], teamSlots[srcIdx]
-                    slotPowerCache[srcIdx], slotPowerCache[slotIdx] = slotPowerCache[slotIdx], slotPowerCache[srcIdx]
-                    print("[CharacterPanel] 交换槽位 " .. srcIdx .. " ↔ " .. slotIdx)
-                    rebuildRoster()
-                    refreshNavBadge()
-                    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-                end
-            end
-        elseif slotIdx and not dragState.fromSlot then
-            -- 从角色列表拖拽到槽位：部署
-            local slot = teamSlots[slotIdx]
-            if slot.state == "empty" or slot.state == "occupied" then
-                deployHeroToSlot(dragState.heroId, slotIdx)
-            end
-        elseif not slotIdx and dragState.fromSlot then
-            -- 从出战槽位拖拽到非槽位区域：解除出战
-            local srcIdx = dragState.fromSlot
-            local srcSlot = teamSlots[srcIdx]
-            if srcSlot.state == "occupied" then
-                print("[CharacterPanel] 解除出战 槽位 " .. srcIdx .. " 英雄 " .. (srcSlot.heroId or "?"))
-                teamSlots[srcIdx] = { state = "empty" }
-                slotPowerCache[srcIdx] = 0
-                rebuildRoster()
-                refreshPowerCache()
-                refreshNavBadge()
-                if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-            end
-        end
-        -- 取消拖拽
-        dragState.active = false
-        dragState.heroId = nil
-        dragState.rosterIdx = nil
-        dragState.fromSlot = nil
-        return true
-    end
-
-    -- B) "选择角色"模式下，点击 roster 卡片进行部署
-    if selectSlotState.active then
-        local rosterIdx = hitTestRosterCard(dx, dy)
-        if rosterIdx then
-            local entry = heroRoster[rosterIdx]
-            if entry and entry.owned and not isHeroDeployed(entry.heroId) then
-                deployHeroToSlot(entry.heroId, selectSlotState.slotIndex)
-                selectSlotState.active = false
-                selectSlotState.slotIndex = nil
-                return true
-            elseif entry and entry.owned and isHeroDeployed(entry.heroId) then
-                print("[CharacterPanel] 该角色已在出战中")
-                return true
-            elseif entry and not entry.owned then
-                print("[CharacterPanel] 该角色未拥有")
-                return true
-            end
-        end
-        -- 点击其他区域取消选择模式
-        selectSlotState.active = false
-        selectSlotState.slotIndex = nil
-        -- 继续后续判断
-    end
-
-    -- C) 点击编队槽位
-    local slotIdx = hitTestTeamSlot(dx, dy)
-    if slotIdx then
-        local slot = teamSlots[slotIdx]
-        if slot.state == "locked" then
-            print("[CharacterPanel] 槽位 " .. slotIdx .. " 未解锁")
-        elseif slot.state == "empty" then
-            -- 进入"选择角色"模式
-            selectSlotState.active = true
-            selectSlotState.slotIndex = slotIdx
-            print("[CharacterPanel] 槽位 " .. slotIdx .. " 已选中，请点击下方角色出战")
-        elseif slot.state == "occupied" then
-            -- 点击已出战角色 → 打开角色详情
-            print("[CharacterPanel] 查看已出战角色详情: heroId=" .. tostring(slot.heroId))
-            require("systems.GameSFX").play("ui_pick")
-            CharacterDetail.open(slot.heroId)
-        end
-        return true
-    end
-
-    -- D) 点击角色列表卡片 → 打开角色详情 / 碎片合成
-    local rosterIdx = hitTestRosterCard(dx, dy)
-    if rosterIdx then
-        local entry = heroRoster[rosterIdx]
-        if entry and entry.owned then
-            -- 引导组9第2步（拖动上阵）：禁止点击打开详情，引导玩家通过拖拽操作上阵
-            local _TM = require("systems.TutorialManager")
-            if _TM.isActive() and _TM.getCurrentHighlight() == "character_new_hero" then
-                print("[CharacterPanel] 引导中：禁止点击打开详情，请拖拽将角色上阵")
-                return true
-            end
-            require("systems.GameSFX").play("ui_pick")
-            CharacterDetail.open(entry.heroId)
-            return true
-        elseif entry and not entry.owned then
-            -- 未拥有英雄：检查碎片是否足够合成
-            local shards = shardMap[entry.heroId] or 0
-            if shards >= HC.SHARD_SYNTHESIZE_COST then
-                CharacterPanel.requestSynthesizeHero(entry.heroId)
-                return true
-            else
-                local heroCfg = HC.get(entry.heroId)
-                print("[CharacterPanel] " .. (heroCfg and heroCfg.name or "?")
-                    .. " 碎片不足，需要 " .. HC.SHARD_SYNTHESIZE_COST
-                    .. " 个，当前 " .. shards .. " 个")
-            end
-            return true
-        end
-    end
-
-    return false
+    return ensureInput().handleInput(dx, dy)
 end
 
 --- 请求合成英雄（碎片→解锁）
@@ -949,175 +776,27 @@ function CharacterPanel.requestSynthesizeHero(heroId)
     end
     print("[CharacterPanel] 发送合成请求 - heroId=" .. heroId
         .. " 消耗碎片: " .. HC.SHARD_SYNTHESIZE_COST .. " / " .. shards)
-    local Client   = require("network.Client")
+    local Client   = require("network.GameAction")
     local Protocol = require("shared.Protocol")
     Client.sendAction(Protocol.ACTION_TYPES.SYNTHESIZE_HERO, {
         heroId = heroId,
     })
 end
 
---- 判断坐标是否在滚动区域内
-local function isInScrollArea(dx, dy)
-    return dx >= SCROLL_LEFT and dx <= SCROLL_RIGHT
-       and dy >= SCROLL_TOP  and dy <= SCROLL_BOTTOM
-end
-
---- 拖拽开始（鼠标按下/触摸开始）
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
 function CharacterPanel.handleDragBegin(dx, dy)
-    -- 详情界面打开时委托给 CharacterDetail
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleDragBegin(dx, dy)
-    end
-
-    -- 检测是否点中了已占用的出战槽位（用于槽位间拖拽换位）
-    local slotIdx = hitTestTeamSlot(dx, dy)
-    if slotIdx then
-        local slot = teamSlots[slotIdx]
-        if slot.state == "occupied" and slot.heroId then
-            dragState.startX = dx
-            dragState.startY = dy
-            dragState.cx = dx
-            dragState.cy = dy
-            dragState.heroId = slot.heroId
-            dragState.fromSlot = slotIdx
-            dragState.rosterIdx = nil
-            dragState.active = false
-            dragState.moved = false
-            return true
-        end
-    end
-
-    -- 在滚动区域内检测是否点中了拥有的角色卡片
-    if isInScrollArea(dx, dy) then
-        local rosterIdx = hitTestRosterCard(dx, dy)
-        if rosterIdx then
-            local entry = heroRoster[rosterIdx]
-            if entry and entry.owned then
-                -- 记录起始位置，但不立即进入拖拽模式（等 move 时判断距离）
-                dragState.startX = dx
-                dragState.startY = dy
-                dragState.cx = dx
-                dragState.cy = dy
-                dragState.heroId = entry.heroId
-                dragState.rosterIdx = rosterIdx
-                dragState.fromSlot = nil
-                dragState.active = false
-                dragState.moved = false
-            end
-        end
-    end
-
-    -- 同时开始滚动拖拽
-    if isInScrollArea(dx, dy) then
-        isDragging = true
-        dragLastY = dy
-        dragDeltaY = 0
-        scrollVelocity = 0
-        return true
-    end
-    return false
+    return ensureInput().handleDragBegin(dx, dy)
 end
 
-local DRAG_THRESHOLD = 30  -- 拖动距离超过此值才进入卡片拖拽模式
-
---- 拖拽移动（鼠标移动/触摸移动）
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
 function CharacterPanel.handleDragMove(dx, dy)
-    -- 详情界面打开时委托给 CharacterDetail
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleDragMove(dx, dy)
-    end
-
-    -- 卡片拖拽检测
-    if dragState.heroId and not dragState.active then
-        local distX = math.abs(dx - dragState.startX)
-        local distY = math.abs(dy - dragState.startY)
-
-        if dragState.fromSlot then
-            -- 从出战槽位拖拽：任意方向超过阈值即可
-            if distX > DRAG_THRESHOLD or distY > DRAG_THRESHOLD then
-                dragState.active = true
-                dragState.moved = true
-                require("systems.GameSFX").play("ui_pick")
-            end
-        else
-            -- 从角色列表拖拽：向上拖动超过阈值
-            if distY > DRAG_THRESHOLD and (dragState.startY - dy) > DRAG_THRESHOLD then
-                dragState.active = true
-                dragState.moved = true
-                require("systems.GameSFX").play("ui_pick")
-                -- 停止滚动拖拽
-                isDragging = false
-                scrollVelocity = 0
-            end
-        end
-    end
-
-    -- 卡片拖拽模式
-    if dragState.active then
-        dragState.cx = dx
-        dragState.cy = dy
-        return true
-    end
-
-    -- 普通滚动拖拽
-    if isDragging then
-        dragDeltaY = dragLastY - dy
-        scrollY = scrollY + dragDeltaY
-        clampScroll()
-        dragLastY = dy
-        return true
-    end
-
-    return false
+    return ensureInput().handleDragMove(dx, dy)
 end
 
---- 拖拽结束（鼠标释放/触摸结束）
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
 function CharacterPanel.handleDragEnd(dx, dy)
-    -- 详情界面打开时：清除本面板拖拽状态 + 委托给 CharacterDetail
-    if CharacterDetail.isOpen() then
-        isDragging = false
-        dragState.active = false
-        dragState.heroId = nil
-        dragState.rosterIdx = nil
-        dragState.fromSlot = nil
-        CharacterDetail.handleDragEnd(dx, dy)
-        return true
-    end
-
-    -- 如果有待定的卡片拖拽但没真正移动，清除
-    if dragState.heroId and not dragState.active then
-        dragState.heroId = nil
-        dragState.rosterIdx = nil
-        dragState.fromSlot = nil
-    end
-
-    -- 普通滚动惯性
-    if isDragging then
-        isDragging = false
-        scrollVelocity = -dragDeltaY
-    end
-
-    return true
+    return ensureInput().handleDragEnd(dx, dy)
 end
 
---- 鼠标滚轮滚动
----@param wheel number 滚轮值（正=向上，负=向下）
 function CharacterPanel.handleScroll(wheel)
-    -- 详情界面打开时委托给 CharacterDetail
-    if CharacterDetail.isOpen() then
-        CharacterDetail.handleScroll(wheel)
-        return
-    end
-
-    scrollY = scrollY - wheel * SCROLL_WHEEL_STEP
-    clampScroll()
-    scrollVelocity = 0
+    return ensureInput().handleScroll(wheel)
 end
 
 --- 是否正在进行卡片拖拽（用于输入层判断拖拽落点）
@@ -1498,207 +1177,55 @@ function CharacterPanel.refreshSlotUnlocks()
     rebuildRoster()
 end
 
---- 服务端推送英雄数据时调用（多人模式）
---- 将服务端的 roster/deployed 同步到客户端 ownedSet/teamSlots
----@param data table { roster = { [heroId] = {level,exp,...} }, deployed = { heroId, ... } }
-function CharacterPanel.setHeroesData(data)
-    if not data then return end
-
-    -- [DIAG-HERO] 入口日志：打印原始 deployed 数组
-    do
-        local deployedStr = "nil"
-        if data.deployed and type(data.deployed) == "table" then
-            local ids = {}
-            for i, v in ipairs(data.deployed) do ids[i] = tostring(v) end
-            deployedStr = "[" .. table.concat(ids, ",") .. "]"
-        end
-        local rosterCount = 0
-        if data.roster then
-            for _ in pairs(data.roster) do rosterCount = rosterCount + 1 end
-        end
-        print(string.format("[DIAG-HERO] setHeroesData ENTER deployed=%s rosterFieldCount=%d",
-            deployedStr, rosterCount))
-    end
-
-    -- 同步 roster → ownedSet + shardMap。服务端 heroes 是权威源，必须先清空旧区缓存；
-    -- 否则特权卡转区后，新区 roster 为空时会继续显示旧区角色。
-    ownedSet = {}
-    shardMap = {}
-    if data.roster then
-        for heroId, heroData in pairs(data.roster) do
-            local numId = tonumber(heroId) or heroId
-            -- 同步碎片（无论是否拥有英雄）
-            shardMap[numId] = heroData.shards or 0
-
-            -- 有 level 字段的才是已拥有英雄
-            if heroData.level then
-                local level = heroData.level
-                local exp   = heroData.exp or 0
-                local maxExp = heroData.maxExp
-                if not maxExp or maxExp == 0 then
-                    maxExp = ExpTable.getHeroExpForLevel(level) or 5
-                end
-                ownedSet[numId] = {
-                    level  = level,
-                    exp    = exp,
-                    maxExp = maxExp,
-                    advBranch = heroData.advBranch,
-                    awakening = heroData.awakening,
-                    dupeCount = heroData.dupeCount or 0,
-                    shards = heroData.shards or 0,
-                    extraTalent = require("systems.ExtraTalentSystem").normalize(heroData.extraTalent),
-                }
+local _heroSync
+local function bindHeroSync()
+    _heroSync = CharacterHeroSync.bind({
+        ExpTable = ExpTable,
+        GameState = GameState,
+        MAX_SLOTS = MAX_SLOTS,
+        TEAM_COUNT = TEAM_COUNT,
+        get = function(k)
+            if k == "teams" then return teams
+            elseif k == "teamPowerCaches" then return teamPowerCaches
+            elseif k == "activeTeamIdx" then return activeTeamIdx
+            elseif k == "dragState" then return dragState
+            elseif k == "selectSlotState" then return selectSlotState
             end
-        end
-    end
-
-    -- [DIAG-HERO] roster同步后，打印 ownedSet 所有key
-    do
-        local ownedKeys = {}
-        for k, v in pairs(ownedSet) do
-            ownedKeys[#ownedKeys + 1] = tostring(k) .. "(lv" .. tostring(v.level) .. ")"
-        end
-        print(string.format("[DIAG-HERO] setHeroesData AFTER_ROSTER ownedSet={%s}",
-            table.concat(ownedKeys, ",")))
-    end
-
-    -- [三队并行] 同步 deployed/teams → teams[1..3].slots
-    -- 队1 以 deployed 为源（兼容镜像）；队2/3 以 data.teams[2..3].slots 为源
-    ---@param ids table? heroId 数组（可为 nil）
-    ---@return table slots
-    local function buildSlotsFromIds(ids)
-        local unlocked = ExpTable.getUnlockedSlotCountForTeam(GameState.getLevel())
-        -- 🔴 防竞态：全量推送时 player 模块可能尚未分发，getLevel() 返回默认值 1
-        -- 此时 unlocked 会偏小。用已部署长度作为下限保证已部署槽位不被锁定
-        local cnt = ids and #ids or 0
-        if cnt > unlocked then
-            unlocked = cnt
-        end
-        local slots = {}
-        for i = 1, MAX_SLOTS do
-            slots[i] = { state = (i <= unlocked) and "empty" or "locked" }
-        end
-        for idx, heroId in ipairs(ids or {}) do
-            local numId = tonumber(heroId) or heroId
-            if idx <= MAX_SLOTS then
-                local ownData = ownedSet[numId]
-                if ownData then
-                    slots[idx] = {
-                        state  = "occupied",
-                        heroId = numId,
-                        level  = ownData.level,
-                        exp    = ownData.exp,
-                        maxExp = ownData.maxExp,
-                    }
-                else
-                    -- [DIAG-HERO] 关键：阵容里的英雄不在 ownedSet 中！
-                    print(string.format("[DIAG-HERO] WARNING: slots[%d]=%s NOT in ownedSet! Slot stays empty.",
-                        idx, tostring(numId)))
-                end
+            return nil
+        end,
+        set = function(k, v)
+            if k == "ownedSet" then ownedSet = v
+            elseif k == "shardMap" then shardMap = v
+            elseif k == "teamSlots" then teamSlots = v
+            elseif k == "slotPowerCache" then slotPowerCache = v
+            elseif k == "activeTeamIdx" then activeTeamIdx = v
+            elseif k == "runtimeOnlyPowerCache" then runtimeOnlyPowerCache = v
+            elseif k == "heroRoster" then heroRoster = v
+            elseif k == "rosterPowerCache" then rosterPowerCache = v
+            elseif k == "upgradeBadgeCache" then upgradeBadgeCache = v
+            elseif k == "scrollY" then scrollY = v
+            elseif k == "scrollVelocity" then scrollVelocity = v
+            elseif k == "isDragging" then isDragging = v
             end
-        end
-        return slots
-    end
-
-    if data.deployed then
-        teams[1].slots = buildSlotsFromIds(data.deployed)
-    end
-    if data.teams and type(data.teams) == "table" then
-        for t = 2, TEAM_COUNT do
-            local tdata = data.teams[t]
-            if type(tdata) == "table" and type(tdata.slots) == "table" then
-                teams[t].slots = buildSlotsFromIds(tdata.slots)
-            end
-        end
-    end
-
-    -- [三队并行] 跨队去重（队1 优先保留）：同一英雄只允许出现在一个队伍
-    -- 老存档/旧版本服务端可能写入过跨队重复数据，加载时统一修正
-    do
-        local seenHero = {}
-        for t = 1, TEAM_COUNT do
-            local slots = teams[t] and teams[t].slots
-            if slots then
-                for i = 1, #slots do
-                    local s = slots[i]
-                    if s.state == "occupied" and s.heroId then
-                        if seenHero[s.heroId] then
-                            print(string.format("[CharacterPanel] 去重: 英雄%d 重复编队，移出队伍%d", s.heroId, t))
-                            slots[i] = { state = "empty" }
-                        else
-                            seenHero[s.heroId] = true
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- 重算三队战力缓存 + 重指向当前激活队
-    for t = 1, TEAM_COUNT do
-        ---@type table
-        local cache = teamPowerCaches[t]
-        for k in pairs(cache) do cache[k] = nil end
-        local slots = teams[t].slots
-        for i = 1, #slots do
-            if slots[i].state == "occupied" and slots[i].heroId then
-                cache[i] = calcHeroPower(slots[i].heroId, i)
-            end
-        end
-    end
-    teamSlots = teams[activeTeamIdx].slots
-    slotPowerCache = teamPowerCaches[activeTeamIdx]
-    -- [DIAG-HERO] 填充后的三队状态
-    do
-        local teamsInfo = {}
-        for t = 1, TEAM_COUNT do
-            local ids = {}
-            local slots = teams[t].slots
-            for i = 1, #slots do
-                ids[i] = tostring(slots[i].heroId or (slots[i].state == "locked" and "L" or "-"))
-            end
-            teamsInfo[t] = "T" .. t .. "[" .. table.concat(ids, ",") .. "]"
-        end
-        print(string.format("[DIAG-HERO] setHeroesData AFTER_TEAMS active=%d %s",
-            activeTeamIdx, table.concat(teamsInfo, " ")))
-    end
-
-    -- 重建显示列表
-    rebuildRoster()
-    refreshPowerCache()
-    refreshNavBadge()
+        end,
+        buildDefaultSlots = buildDefaultSlots,
+        calcHeroPower = calcHeroPower,
+        rebuildRoster = rebuildRoster,
+        refreshPowerCache = refreshPowerCache,
+        refreshNavBadge = refreshNavBadge,
+    })
+end
+local function ensureHeroSync()
+    if not _heroSync then bindHeroSync() end
+    return _heroSync
 end
 
---- 重置本地角色会话缓存（切区/返回选服时调用）
---- 服务端数据到达前不保留旧区角色，避免新区空 roster 继续显示旧角色。
+function CharacterPanel.setHeroesData(data)
+    return ensureHeroSync().setHeroesData(data)
+end
+
 function CharacterPanel.resetSessionData()
-    -- [三队并行] 重置全部队伍
-    for t = 1, TEAM_COUNT do
-        teams[t].slots = buildDefaultSlots(t)
-        teamPowerCaches[t] = {}
-    end
-    activeTeamIdx = 1
-    teamSlots = teams[1].slots
-    slotPowerCache = teamPowerCaches[1]
-    runtimeOnlyPowerCache = 0
-    ownedSet = {}
-    shardMap = {}
-    heroRoster = {}
-    rosterPowerCache = {}
-    upgradeBadgeCache = {}
-    scrollY = 0
-    scrollVelocity = 0
-    isDragging = false
-    dragState.active = false
-    dragState.heroId = nil
-    dragState.rosterIdx = nil
-    dragState.fromSlot = nil
-    selectSlotState.active = false
-    selectSlotState.slotIndex = nil
-    rebuildRoster()
-    refreshPowerCache()
-    refreshNavBadge()
-    print("[CharacterPanel] session data reset")
+    return ensureHeroSync().resetSessionData()
 end
 
 --- 获取当前共鸣等级（全队前 5 高等级中的最低值）

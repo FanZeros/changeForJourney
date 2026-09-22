@@ -25,28 +25,20 @@ local COOLDOWN_SECONDS = {
 }
 
 --- 商品配置版本号：每次调整 SHOP_ITEMS 序号时递增，登录时对比此版本号清除旧购买记录
-local SHOP_CONFIG_VERSION = 6  -- 单机版移除特权点商品（序号 1-7/19/23 下线）
+local SHOP_CONFIG_VERSION = 7  -- 去掉每日折扣货，永久商品定价 /2
 
 --- 服务端商品表
 --- rewardType 统一使用 CurrencyService.REWARD_TO_CURRENCY 的 key（canonical 名称），特殊奖励在 Buy 内分支处理
 local SHOP_ITEMS = {
-    -- 钻石商品（每日刷新，40% 折扣）
-    [8]  = { name = "冒险招募券",   rewardType = "adventure_ticket",      currency = "diamond", price = 180, discount = 0.4, rewardCount = 1,  restockType = "daily", limitCount = -1 },
-    [9]  = { name = "洗练石",       rewardType = "enhance_star",          currency = "diamond", price = 180, discount = 0.4, rewardCount = 2,  restockType = "daily", limitCount = -1 },
-    [10] = { name = "随机卷轴",     rewardType = "random_scroll",         currency = "diamond", price = 180, discount = 0.4, rewardCount = 10, restockType = "daily", limitCount = -1 },
-    [11] = { name = "点金石",       rewardType = "break_protect",         currency = "diamond", price = 500, discount = 0.4, rewardCount = 1,  restockType = "daily", limitCount = -1 },
-    [21] = { name = "腐化石",       rewardType = "corrupt_stone",         currency = "diamond", price = 500, discount = 0.4, rewardCount = 1,  restockType = "daily", limitCount = -1 },
-    -- 钻石商品（永久，不限购）
-    [12] = { name = "冒险招募券",   rewardType = "adventure_ticket",      currency = "diamond", price = 180, rewardCount = 1,   restockType = "permanent", limitCount = -1 },
-    [13] = { name = "洗练石",       rewardType = "enhance_star",          currency = "diamond", price = 180, rewardCount = 2,   restockType = "permanent", limitCount = -1 },
-    [14] = { name = "点金石",       rewardType = "break_protect",         currency = "diamond", price = 500, rewardCount = 1,   restockType = "permanent", limitCount = -1 },
-    [22] = { name = "腐化石",       rewardType = "corrupt_stone",         currency = "diamond", price = 500, rewardCount = 1,   restockType = "permanent", limitCount = -1 },
-    [15] = { name = "奥术粉尘",     rewardType = "arcane_dust",           currency = "diamond", price = 180, rewardCount = 288, restockType = "permanent", limitCount = -1 },
-    [16] = { name = "金币",         rewardType = "gold",                  currency = "diamond", price = 188, rewardCount = 6666, restockType = "permanent", limitCount = -1 },
-    [17] = { name = "精粹",         rewardType = "essence",               currency = "diamond", price = 188, rewardCount = 666,  restockType = "permanent", limitCount = -1 },
-    -- 星辉招募券（每日刷新）
-    [18] = { name = "星辉招募券",   rewardType = "stellar_ticket",      currency = "diamond", price = 900, discount = 0.8, rewardCount = 1,   restockType = "daily", limitCount = -1 },
-    [20] = { name = "黄金钥匙",     rewardType = "golden_key",          currency = "diamond", price = 600, rewardCount = 1,   restockType = "permanent", limitCount = -1 },
+    -- 钻石商品（永久，不限购；定价已 /2）
+    [12] = { name = "冒险招募券",   rewardType = "adventure_ticket",      currency = "diamond", price = 90,  rewardCount = 1,    restockType = "permanent", limitCount = -1 },
+    [13] = { name = "洗练石",       rewardType = "enhance_star",          currency = "diamond", price = 90,  rewardCount = 2,    restockType = "permanent", limitCount = -1 },
+    [14] = { name = "点金石",       rewardType = "break_protect",         currency = "diamond", price = 250, rewardCount = 1,    restockType = "permanent", limitCount = -1 },
+    [22] = { name = "腐化石",       rewardType = "corrupt_stone",         currency = "diamond", price = 250, rewardCount = 1,    restockType = "permanent", limitCount = -1 },
+    [15] = { name = "奥术粉尘",     rewardType = "arcane_dust",           currency = "diamond", price = 90,  rewardCount = 288,  restockType = "permanent", limitCount = -1 },
+    [16] = { name = "金币",         rewardType = "gold",                  currency = "diamond", price = 94,  rewardCount = 6666, restockType = "permanent", limitCount = -1 },
+    [17] = { name = "精粹",         rewardType = "essence",               currency = "diamond", price = 94,  rewardCount = 666,  restockType = "permanent", limitCount = -1 },
+    [20] = { name = "黄金钥匙",     rewardType = "golden_key",            currency = "diamond", price = 300, rewardCount = 1,    restockType = "permanent", limitCount = -1 },
 }
 
 -- 随机卷轴的具体类型列表
@@ -64,9 +56,6 @@ local SCROLL_TO_SNAKE = {
 -- ======================== 内部工具 ========================
 
 local function getActualPrice(item)
-    if item.discount then
-        return math.floor(item.price * item.discount)
-    end
     return item.price
 end
 

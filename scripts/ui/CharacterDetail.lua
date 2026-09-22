@@ -465,7 +465,7 @@ function CharacterDetail.handleInput(dx, dy)
        and math.abs(dy - Draw.BTN_UNEQUIP_CY) <= Draw.BTN_BATCH_H * 0.5 then
         BF.trigger("unequip_all")
         print("[CharacterDetail] 一键卸下: heroId=" .. tostring(detailState.heroId))
-        require("network.Client").sendAction(
+        require("network.GameAction").sendAction(
             require("shared.Protocol").ACTION_TYPES.UNEQUIP_ALL,
             { heroId = detailState.heroId }
         )
@@ -478,7 +478,7 @@ function CharacterDetail.handleInput(dx, dy)
        and math.abs(dy - Draw.BTN_EQUIP_CY) <= Draw.BTN_BATCH_H * 0.5 then
         BF.trigger("equip_all")
         print("[CharacterDetail] 一键装备: heroId=" .. tostring(detailState.heroId))
-        require("network.Client").sendAction(
+        require("network.GameAction").sendAction(
             require("shared.Protocol").ACTION_TYPES.EQUIP_ALL_BEST,
             { heroId = detailState.heroId }
         )

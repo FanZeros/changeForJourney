@@ -221,6 +221,7 @@ local function tickTombstones(lane, dt)
                     state = "dying", timer = 0,
                     lungeDir = -1,
                     knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
+                    noTombstone = true,
                 })
             end
             unit.reviveTimer = unit.reviveTimer + dt

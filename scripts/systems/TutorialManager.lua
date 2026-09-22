@@ -730,7 +730,7 @@ local function drawSkipButton(alpha)
 end
 
 --- 绘制引导蒙层（在 NanoVGRender 回调中调用）
---- 应在 ScenarioDialogue.draw() 和 CharacterSelect.draw() 之后调用
+--- 应在 ScenarioDialogue.draw() 之后调用
 function TutorialManager.draw()
     if not activeGroup_ then return end
     -- 情景对话播放时隐藏教程遮罩，避免与对话框同时出现产生冲突

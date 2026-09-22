@@ -173,7 +173,7 @@ function SpineCardEffect.draw(vg)
     end
 end
 
---- 预加载 Spine 实例（在 LoadingScreen 阶段调用，避免首次播放卡顿）
+--- 预加载 Spine 实例（启动时调用，避免首次播放卡顿）
 --- 创建一个隐藏实例，触发 JSON/atlas/纹理的解析和 GPU 上传
 local preloadInst = nil
 ---@param vg any NanoVG 上下文

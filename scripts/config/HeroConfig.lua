@@ -247,6 +247,17 @@ HC.HEROES = {
         baseStats  = { str = 4.25,  agi = 8.50,  int = 12.75, vit = 8.50,  luk = 12.75, spi = 21.25 },
         growthStats = { str = 0.00,  agi = 0.00,  int = 0.63,  vit = 0.00,  luk = 0.63,  spi = 1.25 },
     },
+    [17] = {
+        quality = 2, classId = CC.MAGE,
+        title = "爱吃白饭的摸鱼员", name = "蓝色大肥鱼",
+        talentName = "高压水枪", talentDesc = "攻击喷出高压水柱：主目标受潮2秒（受伤+20%），并溅到另一名敌人，造成魔法攻击力40%的冰霜伤害。",
+        talentId = "fatfish_water_gun",
+        gender = "female",
+        atkType = AD.ATK_ICE, atkInterval = 2.4, atkTargets = 1,
+        dmgSpread = 0.20, atkCoeff = 1.8,
+        baseStats  = { str = 3.25,  agi = 6.50,  int = 16.25, vit = 9.75,  luk = 6.50,  spi = 9.75 },
+        growthStats = { str = 0.00,  agi = 0.00,  int = 1.00,  vit = 0.50,  luk = 0.00,  spi = 0.50 },
+    },
     [16] = {
         quality = 4, classId = CC.WARRIOR,
         title = "御剑飞行家", name = "万剑归宗",
@@ -325,6 +336,7 @@ local DMG_TYPE_DATA = {
     [14] = { HC.DMG_MAGICAL,  "暗影" },   -- 内鬼
     [15] = { HC.DMG_HEALING,  "神圣" },   -- 复活吧爱人
     [16] = { HC.DMG_PHYSICAL, "穿刺" },   -- 万剑归宗
+    [17] = { HC.DMG_MAGICAL,  "冰霜" },   -- 蓝色大肥鱼
     [20] = { HC.DMG_MAGICAL,  "暗影" },   -- 摘星星星人
     [21] = { HC.DMG_PHYSICAL, "斩击" },   -- 闪电卖鸡
     [22] = { HC.DMG_MAGICAL,  "闪电" },   -- 小黑子
@@ -359,6 +371,7 @@ local WEARABLE_DATA = {
     [14] = { w = {"手铳","匕首","魔杖"},                      o = {"魔典","法珠"} },       -- 内鬼(刺客)
     [15] = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 复活吧爱人(牧师)
     [16] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 万剑归宗(战士)
+    [17] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 蓝色大肥鱼(法师)
     [20] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 摘星星星人(法师)
     [21] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 闪电卖鸡(战士)
     [22] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 小黑子(法师)

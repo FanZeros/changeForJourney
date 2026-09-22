@@ -68,7 +68,10 @@ function CrossInstanceService.HeartbeatUpload()
     lastHeartbeatTime_ = now
 
     -- 收集本实例在线信息
-    local Server = require("network.Server")
+    local okServer, Server = pcall(require, "network.Server")
+    if not okServer or type(Server) ~= "table" then
+        return
+    end
     local ServerListConfig = require("shared.ServerListConfig")
     local onlineUIDs = Server.GetOnlineUIDs()
 
@@ -112,9 +115,11 @@ end
 ---@return string
 function CrossInstanceService.GetInstanceId()
     if not CrossInstanceService._instanceId then
-        local Server = require("network.Server")
-        local startTime = Server.GetStartTime() or os.time()
-        -- 使用启动时间作为简单的实例标识
+        local okServer, Server = pcall(require, "network.Server")
+        local startTime = os.time()
+        if okServer and type(Server) == "table" and Server.GetStartTime then
+            startTime = Server.GetStartTime() or startTime
+        end
         CrossInstanceService._instanceId = "inst_" .. tostring(startTime)
     end
     return CrossInstanceService._instanceId
@@ -228,7 +233,10 @@ end
 --- 获取本实例在线玩家列表（同步，无网络 IO）
 ---@return table[]
 function CrossInstanceService.GetLocalOnlinePlayers()
-    local Server = require("network.Server")
+    local okServer, Server = pcall(require, "network.Server")
+    if not okServer or type(Server) ~= "table" then
+        return {}
+    end
     local ServerListConfig = require("shared.ServerListConfig")
     local onlineUIDs = Server.GetOnlineUIDs()
     local players = {}
@@ -497,7 +505,10 @@ local isPollingSinceLock_ = false
 function CrossInstanceService.PollPendingForOnlinePlayers()
     if isPollingSinceLock_ then return end
 
-    local Server = require("network.Server")
+    local okServer, Server = pcall(require, "network.Server")
+    if not okServer or type(Server) ~= "table" then
+        return
+    end
     local onlineUIDs = Server.GetOnlineUIDs()
     if #onlineUIDs == 0 then return end
 
@@ -649,7 +660,10 @@ end
 
 --- 轮询并执行发给本实例在线玩家的远程修复命令
 function CrossInstanceService.PollRemoteRepairs()
-    local Server = require("network.Server")
+    local okServer, Server = pcall(require, "network.Server")
+    if not okServer or type(Server) ~= "table" then
+        return
+    end
     local onlineUIDs = Server.GetOnlineUIDs()
     if #onlineUIDs == 0 then return end
     local idx = 0

@@ -5,29 +5,61 @@
 ## 恢复指令
 
 1. 读 `docs/memory-index.md`（项目详细上下文）
-2. 读 `docs/山海经怪兽替换交接.md`（挂起任务交接）
+2. 读 `docs/refactor-plan.md` + `docs/refactor-tasks.md`（重构进度）
 3. 自测：这是什么项目？上次做了什么？下一步做什么？
 4. 告知用户记忆恢复状态，开始工作
 
 ## 项目是什么
 
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
-- 入口 `scripts/main.lua`，单机 `network/Standalone.lua`
-- GitHub：`FanZeros/changeForJourney` 分支 `workspace`
+- 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
+- GitHub：`FanZeros/changeForJourney`
+- **当前开发分支**：`refactor/extract-battle-overlays`（禁止推 `workspace`）
 
-## 上次做了什么（截至 2026-09-19）
+## 上次做了什么（截至 2026-09-22 古树天赋）
 
-竞技场功能彻底删除（d1d36e5）：13 个 Arena 文件删净，Standalone/Client/LocalActionBridge/TownScene/任务/引导/剧情(情景54)/货币(竞技券/币)/Protocol 全链清理。特权点保留现状（无获取渠道，洗练/UR恢复锁死，用户已拍板不动）。
+- 已合并 `origin/workspace`（`fa7a775`）
+- T23–T26 四块抽取（LSP 0 Error / build 过 / validate lua_errors=0）
+- T27：Market/Blacksmith `drawPageImpl` → `MarketDraw` / `BlacksmithDraw`
+- T28：Market 输入 → `MarketInput`（1402 行）
+- T29：单机 `sendAction` 走 `network.GameAction` → LocalActionBridge
+- T30：去掉多人入口。已删 Client/Server 联网壳
+- T31：删除 GuildPage / CharacterSelect / LoadingScreen；消息处理器与 Debug 解绑
+- T32：卸掉 StartScreen 选服并删除 ServerSelectPanel；点击直接进游戏。横屏仍 DarkTitleScreen
+- T33：删除 VersionMismatchPopup、GuildHandler/GuildService；城镇卸空公会回调。GuildConfig 排行保留
+- T34：ChurchPage `drawPageImpl` → ChurchDraw（bind 具名注入）。ChurchPage 1416
+- T35：Church 输入/名单 + Talent 攻前/受伤 + Blacksmith 输入。Church 1060 / Talent 1315 / Blacksmith 1384
+- T36：Talent 减伤/复活 + Church 槽位动画 + Blacksmith 结果转发。Talent 1116 / Church 1004 / Blacksmith 1337
+- hotfix：敌人死亡误变墓碑。根因 BattleCasualty 写 `stageKillCount_`，BattleScene 注入 `stageKillCount`。`8a41499`
+- T37：ChurchPage.init → ChurchInit；Talent onEnemyDeath/checkMarkTarget → TalentEnemyDeath。Church 918 / Talent 1032
+- T38：ChurchBadge + TalentComboAttack + BlacksmithEnhanceCache + MarketCollection。Church 893 / Talent 1030 / Blacksmith 1244 / Market 1173
+- T39：BattleScene 导航/轮回 → BattleStageNavLogic；setBattleData → BattleDataRestore。BattleScene 1605
+- T40：ChurchResults + MarketResults。Church 812 / Market 1045
+- T41：ChurchLifecycle + MarketInit。Church 790 / Market 1008
+- T42：CharacterDeploy + BackpackDialogs。Character 1733 / Backpack 1737
+- 天赋从教堂拆出：城镇中轴新建筑「终焉古树」打开 `TalentPage`；教堂只留转职/神器两 Tab
+- 星图视口改为 1:1（1080×1080 居中）；滚轮带鼠标坐标直接缩放
 
 ## likely_next_task
 
-- 素材清理二轮：竞技场图（竞技场排行/ 目录、UI_CZ_JJC、ICON_CZ_JJC、UI_icon_JJCQ/JJB）现已无引用，可删（UI_JJC_BTBJ 仍被 TaskPanel/TavernShopPage 共用需保留）
-- 特权点后续：若做获取渠道或改计价再动 ArtifactService/HeroService
+- BattleScene 1605，可再抽 init/draw/handleInput
+- ChurchPage 790，主壳已较瘦
+- MarketPage 1008，可再抽商店道具网格
+- CharacterPanel 1733 / BackpackPanel 1737 仍是最大页，可再抽详情绘制/输入
+- BlacksmithPage 1244 上半绘制依赖局部图太多，勿盲目抽 init
+- ServerListConfig / GuildConfig 仍被存档与云排行使用，勿当死代码删
+
+## 用户硬性流程（必须遵守）
+
+- **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
+- 以 `refactor/extract-battle-overlays` 继续开发，完成后每次 push 该分支，**禁止推 workspace**
+- 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
 
+- 抽取模块读 `TAL_BCS` 必须 `getTAL_BCS()`，bind 时快照会在 `TAL.mount` 后过期
+- Church/大页 `_ENV = E` 会让 LSP 报满屏 undefined-global Error，挡 build；用 bind(deps) 具名注入
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
-- ~~竞技场~~已删除；BattleResultPanel 的 arenaMode 是通用参数（Dungeon 传 false），别误删
-- 追加技层数跟角色走（roster.extraTalent），对手 createHero(..., false) 不要套本地层
-- 击杀认定用 `_killedBy`；弹射击杀用 `_killedByRicochet`
-- `/workspace/assets/**/*.meta` 绝不动
+- Lua 5.4 字符串里不要写 `\!`
+- 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
+- 禁止推 `workspace`

@@ -973,7 +973,7 @@ function DungeonPage.handleInput(dx, dy)
             pendingIdleClaim = true
             pendingIdleClaimTime = 0
             print("[DungeonPage] sending DUNGEON_IDLE_CLAIM dungeon=" .. dId)
-            require("network.Client").sendAction(
+            require("network.GameAction").sendAction(
                 Protocol.ACTION_TYPES.DUNGEON_IDLE_CLAIM,
                 { dungeonId = dId }
             )
@@ -1001,12 +1001,12 @@ function DungeonPage.handleInput(dx, dy)
                 local dId = detailDungeon.id
                 if dId == "babel_tower" then
                     print("[DungeonPage] sending TOWER_SWEEP")
-                    require("network.Client").sendAction(
+                    require("network.GameAction").sendAction(
                         Protocol.ACTION_TYPES.TOWER_SWEEP, {}
                     )
                 else
                     print("[DungeonPage] sending DUNGEON_SWEEP dungeon=" .. dId .. " floor=" .. (currentFloor - 1))
-                    require("network.Client").sendAction(
+                    require("network.GameAction").sendAction(
                         Protocol.ACTION_TYPES.DUNGEON_SWEEP,
                         { dungeonId = dId }
                     )
@@ -1034,12 +1034,12 @@ function DungeonPage.handleInput(dx, dy)
                     end
                     print("[DungeonPage] sending TOWER_CHALLENGE floor=" .. currentFloor
                         .. " teams=" .. #teams[1] .. "/" .. #teams[2] .. "/" .. #teams[3])
-                    require("network.Client").sendAction(
+                    require("network.GameAction").sendAction(
                         Protocol.ACTION_TYPES.TOWER_CHALLENGE, {}
                     )
                 else
                     print("[DungeonPage] sending DUNGEON_CHALLENGE dungeon=" .. dId .. " floor=" .. currentFloor)
-                    require("network.Client").sendAction(
+                    require("network.GameAction").sendAction(
                         Protocol.ACTION_TYPES.DUNGEON_CHALLENGE,
                         { dungeonId = dId, floor = currentFloor }
                     )
@@ -1215,7 +1215,7 @@ function DungeonPage.onActionResult(data)
                 allies     = teamAllies[1],
                 data       = data,
                 sendAction = function(act, params)
-                    require("network.Client").sendAction(act, params)
+                    require("network.GameAction").sendAction(act, params)
                 end,
                 onClose    = function()
                     print("[DungeonPage] TowerBattleScene closed")

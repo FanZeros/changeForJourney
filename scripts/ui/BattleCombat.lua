@@ -17,7 +17,9 @@ local MAS = require("systems.MapAffixSystem")
 local DungeonBattle = require("ui.DungeonBattle")
 local NumberUtil = require("core.NumberUtil")
 local BattleStats = require("systems.BattleStats")
-local SettingsPanel = require("ui.SettingsPanel")
+local BattleCombatFx = require("ui.BattleCombatFx")
+local BattleCombatAnim = require("ui.BattleCombatAnim")
+local BattleCombatCombo = require("ui.BattleCombatCombo")
 
 local BattleCombat = {}
 -- ======================== [多实例] 战斗状态容器 ========================
@@ -49,117 +51,20 @@ function BattleCombat.mountedState() return BCS end
 
 -- ======================== 常量 ========================
 
-local DESIGN_W = 1080
-
--- 卡片尺寸（用于坐标计算）
-local CARD_W     = 198
-local CARD_SPACING = 7
-
--- 浮动文字
-local FLOAT_TOTAL_FRAMES = 20
-local FLOAT_FPS          = 30
-local FLOAT_DURATION     = FLOAT_TOTAL_FRAMES / FLOAT_FPS
-local FLOAT_MOVE_DIST    = 240
-local MAX_FLOATING_TEXTS = 15            -- 同时存在的飘字上�?
-local FLOAT_FAST_FADE    = 17 / FLOAT_FPS -- 强制进入最�?帧快速消�?
-
--- 攻击动画
-local LUNGE_DISTANCE   = 60
-local LUNGE_DURATION   = 0.12
-local RETURN_DURATION  = 0.15
-local RECOIL_DURATION  = 0.08
-local RECOIL_RETURN    = 0.12
-local RECOIL_DISTANCE  = 30
-local CHARGE_START     = 0.7
-local CHARGE_DISTANCE  = 25
-
--- 死亡/复活动画（从 BattleScene 引入常量�?
-local DEATH_HITSTOP        = 0.06
-local DEATH_BURST_DUR      = 0.22
-local DEATH_SETTLE_DUR     = 0.12
-local DEATH_ANIM_DURATION  = DEATH_HITSTOP + DEATH_BURST_DUR + DEATH_SETTLE_DUR
-local DEATH_ANIM_DISTANCE  = 80
-local DEATH_OVERSHOOT      = 1.15
-local REVIVE_ANIM_DURATION = 0.35
-local REVIVE_ANIM_DISTANCE = 80
-local TOMBSTONE_FADEIN     = 0.25
-
--- 队列前移补位（条带布局：敌人死亡后，后方敌人前移一格填入空位）
-local ADVANCE_DURATION     = 0.28
-
--- 入场动画
-local ENTER_ANIM_DURATION  = 0.30
-local ENTER_ANIM_DISTANCE  = 100
-local ENTER_STAGGER        = 0.06
-
--- 血条缓�?
+-- 血条缓冲
 local HP_BUFFER_SPEED = 1.2
 
--- 受击闪烁
-local HIT_FLASH_DURATION = 0.3
-
--- 远程角色缩放攻击动画
-local RANGED_CHARGE_SCALE  = 0.85   -- 蓄力时缩小到 85%
-local RANGED_LUNGE_SCALE   = 1.15   -- 攻击时放大到 115%
-
---- 判断是否远程/治疗单位
---- 英雄：按投射物配置判断；怪物：按 isRanged 标志判断（所有怪物都有特效但不都是远程�?
-local function isRangedUnit(unit)
-    if unit.heroId and PS.hasProjectile(unit.heroId) then
-        return true
-    end
-    if unit.monsterId then
-        return unit.isRanged == true
-    end
-    return false
-end
+-- 卡牌动画常量 / 状态机已移至 BattleCombatAnim
 
 -- ======================== 共享状�?========================
 -- 这些表通过 setContext 注入外部引用，但动画/浮动文字/闪烁是本模块自有状�?
 
 
---- 可随「特效显示」开关屏蔽的战斗卡牌动画（攻击前摇/后摇、受击后退）
-local COMBAT_CARD_ANIM_STATES = {
-    lunge = true,
-    ["return"] = true,
-    recoil = true,
-    recoil_return = true,
-}
-
-local function isCombatCardAnimEnabled()
-    return SettingsPanel.isEffectsEnabled()
-end
-
-local function isCombatCardAnimState(state)
-    return state ~= nil and COMBAT_CARD_ANIM_STATES[state] == true
-end
-
 local function playAttackCardAnim(attacker, isAlly)
-    if not isCombatCardAnimEnabled() then return end
-    BCS.cardAnims[attacker] = {
-        state    = "lunge",
-        timer    = 0,
-        isAlly   = isAlly,
-        lungeDir = isAlly and -1 or 1,
-        isRanged = isRangedUnit(attacker),
-    }
+    BattleCombatAnim.playAttack(BCS, attacker, isAlly)
 end
 
--- 浮动文字对象池（减少 GC 压力�?
-local function acquireFt()
-    local n = #BCS.ftPool
-    if n > 0 then
-        local ft = BCS.ftPool[n]
-        BCS.ftPool[n] = nil
-        return ft
-    end
-    return {}
-end
-local function releaseFt(ft)
-    ft.text = nil
-    ft.color = nil
-    BCS.ftPool[#BCS.ftPool + 1] = ft
-end
+-- 浮动文字对象池 / 飘字逻辑已移至 BattleCombatFx
 
 -- 连击队列：{ attacker, isAlly, targetIsAlly, comboHitIndex, targetIndex, delay, timer, atkStableId, targetRef, tgtStableId }
 
@@ -169,12 +74,12 @@ end
 
 -- ======================== 公共常量导出 ========================
 
-BattleCombat.DEATH_ANIM_DURATION  = DEATH_ANIM_DURATION
-BattleCombat.REVIVE_ANIM_DURATION = REVIVE_ANIM_DURATION
-BattleCombat.REVIVE_ANIM_DISTANCE = REVIVE_ANIM_DISTANCE
-BattleCombat.TOMBSTONE_FADEIN     = TOMBSTONE_FADEIN
-BattleCombat.CHARGE_START         = CHARGE_START
-BattleCombat.CHARGE_DISTANCE      = CHARGE_DISTANCE
+BattleCombat.DEATH_ANIM_DURATION  = BattleCombatAnim.DEATH_ANIM_DURATION
+BattleCombat.REVIVE_ANIM_DURATION = BattleCombatAnim.REVIVE_ANIM_DURATION
+BattleCombat.REVIVE_ANIM_DISTANCE = BattleCombatAnim.REVIVE_ANIM_DISTANCE
+BattleCombat.TOMBSTONE_FADEIN     = BattleCombatAnim.TOMBSTONE_FADEIN
+BattleCombat.CHARGE_START         = BattleCombatAnim.CHARGE_START
+BattleCombat.CHARGE_DISTANCE      = BattleCombatAnim.CHARGE_DISTANCE
 
 -- ======================== 注入上下�?========================
 
@@ -438,65 +343,18 @@ BattleCombat.syncUnitHp = syncUnitHp
 ---@param isCrit boolean
 ---@param fontSize number|nil
 local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred)
-    -- [伤害排队] deferred=true 时先入待显示队列，由 updateFloatingTexts 按间隔放出
-    -- （多个伤害同帧产生时依次显示，间隔统一 0.1s）
-    if deferred then
-        if #BCS.pendingFt >= 20 then
-            table.remove(BCS.pendingFt, 1)  -- 防极端积累：丢弃最老
-        end
-        BCS.pendingFt[#BCS.pendingFt + 1] = {
-            text = text, cx = cx, cy = cy,
-            color = color, isCrit = isCrit or false, fontSize = fontSize,
-        }
-        if #BCS.pendingFt == 1 then
-            BCS.ftSpawnCd = 0  -- [伤害排队] 首条立即显示；后续相对上一条间隔 0.1s
-        end
-        return
-    end
-    -- 飘字上限：超出时将最早的飘字跳到快速淡出阶�?
-    while #BCS.floatingTexts >= MAX_FLOATING_TEXTS do
-        local oldest = BCS.floatingTexts[1]
-        if oldest.timer < FLOAT_FAST_FADE then
-            oldest.timer = FLOAT_FAST_FADE  -- 跳到最�?帧淡�?
-        else
-            -- 已在淡出中，直接移除
-            releaseFt(oldest)
-            table.remove(BCS.floatingTexts, 1)
-        end
-        -- 只强制一个后跳出，留�?update 自然清理
-        break
-    end
-
-    local angle = -math.pi * 0.5 + (math.random() - 0.5) * math.pi * 0.5
-    local baseSize = fontSize or 80
-    if isCrit then baseSize = baseSize * 2 end
-    local entry = acquireFt()
-    entry.text     = text
-    entry.x        = cx
-    entry.y        = cy
-    entry.dirX     = math.cos(angle)
-    entry.dirY     = math.sin(angle)
-    entry.timer    = 0
-    entry.duration = FLOAT_DURATION
-    entry.color    = color
-    entry.isCrit   = isCrit or false
-    entry.fontSize = baseSize
-    BCS.floatingTexts[#BCS.floatingTexts + 1] = entry
+    BattleCombatFx.addFloatingText(BCS, text, cx, cy, color, isCrit, fontSize, deferred)
 end
 BattleCombat.addFloatingText = addFloatingText
 
 --- 设置受击后退（跟随设置「特效显示」开关）
 local function setRecoil(target, lungeDir)
-    if not isCombatCardAnimEnabled() then return end
-    -- 已死亡的单位不设置 recoil，防止覆盖死亡动画
-    if target.hp <= 0 then return end
-    BCS.cardAnims[target] = { state = "recoil", timer = 0, lungeDir = lungeDir }
+    BattleCombatAnim.setRecoil(BCS, target, lungeDir)
 end
 
 --- 设置受击闪烁（跟随设置「特效显示」开关）
 local function setHitFlash(target)
-    if not SettingsPanel.isEffectsEnabled() then return end
-    BCS.hitFlashes[target] = { timer = 0 }
+    BattleCombatFx.setHitFlash(BCS, target)
 end
 
 --- 应用全局伤害乘数（如竞技场全体减伤），BCS.ctx.globalDmgMult 默认 1.0
@@ -1099,7 +957,7 @@ local function performAttack(attacker, targetList, isAlly)
     end
 
     -- 连击必须在主伤害 applyHit 落地后再排队（避免投射物未到时连击先触发，与弹射叠在一起像误触发）
-    local comboDelayStep = LUNGE_DURATION + RETURN_DURATION + 0.05
+    local comboDelayStep = BattleCombatAnim.LUNGE_DURATION + BattleCombatAnim.RETURN_DURATION + 0.05
     local function queueComboAfterHit(curIndex, curTarget, comboCount)
         if isHealer or not comboCount or comboCount <= 0 or not curTarget then return end
         for chi = 1, comboCount do
@@ -1652,506 +1510,82 @@ local function performAttack(attacker, targetList, isAlly)
 end
 BattleCombat.performAttack = performAttack
 
--- ======================== 连击额外攻击 ========================
-
---- 执行一次连击额外攻击（完整动画+投射�?伤害�?
----@param entry table 连击队列条目
-local function performComboAttack(entry)
-    local isAlly        = entry.isAlly
-    local comboHitIndex = entry.comboHitIndex
-
-    -- ══�?从当前上下文重新获取列表 ══�?
-    local allies  = BCS.ctx.getAllies()
-    local enemies = BCS.ctx.getEnemies()
-    local allyList = isAlly and allies or enemies
-
-    -- 使用 targetIsAlly 确定目标列表（支持治疗扩展）
-    local tgtIsAlly  = entry.targetIsAlly
-    if tgtIsAlly == nil then tgtIsAlly = not isAlly end  -- 兼容旧格式队列条�?
-    local targetList = tgtIsAlly and allies or enemies
-
-    -- ══�?重新解析攻击�?══�?
-    local attacker, atkIdx = resolveUnitInList(
-        allyList, entry.attacker, entry.atkStableId
-    )
-    if not attacker or attacker.hp <= 0 then
-        return  -- 攻击者已死或已不在场，取消连�?
-    end
-
-    -- ══�?重新解析目标 ══�?
-    local curTarget, tgtIdx = resolveDamageTarget(
-        targetList, entry.targetRef, entry.tgtStableId, attacker, isAlly
-    )
-    if not curTarget then
-        return  -- 没有可命中的目标，取消连击
-    end
-
-    -- ══�?校验 attrs（连击必须走公式路径�?══�?
-    if not attacker.attrs or not curTarget.attrs then
-        return
-    end
-
-    -- ══�?计算位置（使用实际索引，resolveUnitInList 成功时保证非 nil�?══�?
-    local atkCX, atkCY = getCardPos(allyList, atkIdx)    local tgtCX, tgtCY = getCardPos(targetList, tgtIdx)
-
-    -- 播放攻击动画（lunge + return�?
-    playAttackCardAnim(attacker, isAlly)
-
-    -- 计算伤害（带连击增伤�?
-    local result = CF.calcAttack(attacker.attrs, curTarget.attrs, nil, comboHitIndex)
-
-    if result.isMiss then
-        addFloatingText("MISS", tgtCX, tgtCY, { 255, 122, 122 }, false)
-        setRecoil(curTarget, isAlly and -1 or 1)
-        ART.onDodge(curTarget)
-        return
-    end
-
-    -- ══�?applyComboHit 闭包变量映射 ══�?
-    -- curTgt     = curTarget  (解析后的最新引用，�?BCS.cardAnims key 一�?
-    -- curTgtCX   = tgtCX      (当前帧位�?
-    -- curTgtCY   = tgtCY
-    -- attacker   = attacker   (解析后的最新引�?
-    -- allyList   = allyList   (当前帧列表，用于吸血位置计算)
-    -- atkIdx     = atkIdx     (解析返回的索引，用于吸血浮字位置)
-    -- result     = result     (本次攻击计算结果)
-    local curTgt = curTarget
-    local curTgtCX, curTgtCY = tgtCX, tgtCY
-
-    local function applyComboHit()
-        local liveTargetList
-        if tgtIsAlly then
-            liveTargetList = BCS.ctx.getAllies and BCS.ctx.getAllies() or targetList
-        else
-            liveTargetList = BCS.ctx.getEnemies and BCS.ctx.getEnemies() or targetList
-        end
-        targetList = liveTargetList
-        local resolved, resolvedIdx = resolveDamageTarget(liveTargetList, curTgt, entry.tgtStableId, attacker, isAlly)
-        if not resolved then return end
-        curTgt = resolved
-        curTgtCX, curTgtCY = getCardPos(liveTargetList, resolvedIdx)
-        if not result.hits or not result.hits[1] then return end
-        local semMult = SEM.getDamageTakenMult(curTgt)
-        local hpBefore = curTgt.hp
-        local hit = result.hits[1]
-        local finalDmg = (semMult ~= 1.0) and math.floor(hit.damage * semMult) or hit.damage
-        finalDmg = applyGlobalDmgMult(finalDmg)
-        -- 铁憨憨帝国铁壁：拦截队友伤害（连击目标与主攻击一致）
-        local comboTgtIsAlly = not isAlly
-        finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, comboTgtIsAlly, syncUnitHp, result.category)
-        result.damageDealt = finalDmg
-        local shieldBefore = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
-        local actual = curTgt.attrs:takeDamage(finalDmg)
-        local shieldAfter = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
-        local takenForStats = actual + math.max(0, shieldBefore - shieldAfter)
-        ART.checkShieldBreak(curTgt, shieldBefore)
-        syncUnitHp(curTgt)
-
-        local baseColor = (result.category == "magical")
-            and { 113, 253, 255 } or { 255, 238, 96 }
-        local prefix = ""
-        local color  = baseColor
-        if hit.isCrit then
-            prefix = "暴击 "
-        end
-        if hit.isBlocked then
-            prefix = prefix .. "格挡 "
-            color  = { 180, 180, 180 }
-        end
-
-        -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
-        local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
-        if actual > 0 then
-            addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit, nil, true)
-            if shieldAbsorb > 0 then
-                addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                    { 168, 168, 168 }, false, nil, true)
-            end
-        elseif shieldAbsorb > 0 then
-            addFloatingText(prefix .. "-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                { 168, 168, 168 }, false, nil, true)
-        end
-
-        if curTgt.hp <= 0 and hpBefore > 0 then
-            local overkill = math.max(0, finalDmg - hpBefore)
-            curTgt._overkillRatio = math.min(1.0, overkill / (curTgt.maxHp or hpBefore))
-        end
-
-        setRecoil(curTgt, isAlly and -1 or 1)
-        setHitFlash(curTgt)
-        if actual > 0 then require("systems.GameSFX").play("hit") end
-        -- 累计伤害统计（结算面板用�?
-        BCS.unitDamageAccum[attacker] = (BCS.unitDamageAccum[attacker] or 0) + takenForStats
-
-        -- 战斗统计面板：己方输出 / 己方承伤
-        if isAlly then
-            BattleStats.recordDamage(attacker, takenForStats, result.category, hit.isCrit)
-        else
-            BattleStats.recordTaken(curTgt, takenForStats)
-        end
-
-        if isAlly then
-            TM.onDamageDealt(attacker, result.totalDamage)
-        end
-
-        -- 攻击吸血
-        if actual > 0 and attacker.hp > 0 and attacker.attrs and ART.canHeal(attacker) then
-            local atkHeal = CF.calcAtkHeal(attacker.attrs)
-            if atkHeal > 0 then
-                local healActual = attacker.attrs:heal(atkHeal)
-                syncUnitHp(attacker)
-                if healActual > 0 then
-                    local aCX, aCY = getCardPos(allyList, atkIdx)
-                    addFloatingText("+" .. NumberUtil.format(math.floor(healActual)), aCX, aCY, { 0, 255, 82 }, false)
-                end
-            end
-        end
-
-        -- 连击命中后：让按攻击计数触发的天赋（如熬夜冠军夜华斩）也能被连击推进/触发（仅对应英雄生效）
-        TAL.onComboAttack(attacker, curTgt, isAlly, targetList, function(tgt, dmg, isTgtAlly, pfx, clr, projOpts)
-            local meta = statMetaFromProjOpts(projOpts)
-            local function doTalentDamage()
-                local sourceAttacker = (projOpts and projOpts.sourceAttacker) or attacker
-                dealDamageToUnit(tgt, dmg, isTgtAlly, pfx or "", clr or { 255, 238, 96 }, sourceAttacker, meta)
-            end
-            if BCS.ctx.onTalentDealDamage then
-                local lookupList = (isAlly == isTgtAlly) and allyList or targetList
-                for li, lu in ipairs(lookupList) do
-                    if lu == tgt then
-                        local tdCX, tdCY = getCardPos(lookupList, li)
-                        local sourceAttacker = (projOpts and projOpts.sourceAttacker) or attacker
-                        BCS.ctx.onTalentDealDamage(sourceAttacker, tgt, tdCX, tdCY, pfx, doTalentDamage, projOpts)
-                        break
-                    end
-                end
-            else
-                doTalentDamage()
-            end
-        end, {
-            damageDealt = finalDmg,
-            totalDamage = actual,
-            category = result.category,
-            isCrit = hit.isCrit,
-        })
-    end
-
-    -- 通知 BattleScene（投射物/受击特效�?
-    if BCS.ctx.onAttackHit then
-        BCS.ctx.onAttackHit(attacker, curTgt, atkCX, atkCY, curTgtCX, curTgtCY, result, applyComboHit)
-    else
-        applyComboHit()
-    end
-end
-
---- 更新连击队列（每帧调用）
+-- ======================== 连击额外攻击（委托 BattleCombatCombo） ========================
+local _combo = BattleCombatCombo.bind({
+    getBCS = function() return BCS end,
+    resolveUnitInList = resolveUnitInList,
+    resolveDamageTarget = resolveDamageTarget,
+    getCardPos = getCardPos,
+    playAttackCardAnim = playAttackCardAnim,
+    addFloatingText = addFloatingText,
+    setRecoil = setRecoil,
+    setHitFlash = setHitFlash,
+    applyGlobalDmgMult = applyGlobalDmgMult,
+    syncUnitHp = syncUnitHp,
+    statMetaFromProjOpts = statMetaFromProjOpts,
+    dealDamageToUnit = dealDamageToUnit,
+})
+local performComboAttack = _combo.performComboAttack
 function BattleCombat.updateComboQueue(dt)
-    local i = 1
-    while i <= #BCS.comboQueue do
-        local entry = BCS.comboQueue[i]
-        entry.timer = entry.timer + dt
-        if entry.timer >= entry.delay then
-            performComboAttack(entry)
-            table.remove(BCS.comboQueue, i)
-        else
-            i = i + 1
-        end
-    end
+    return _combo.updateComboQueue(dt)
 end
 
--- ======================== 动画状态机 ========================
+-- ======================== 动画状态机（委托 BattleCombatAnim） ========================
 
---- 更新卡片攻击动画
 function BattleCombat.updateCardAnims(dt)
-    local toRemove = {}
-    for unit, anim in pairs(BCS.cardAnims) do
-        if not isCombatCardAnimEnabled() and isCombatCardAnimState(anim.state) then
-            toRemove[#toRemove + 1] = unit
-            goto continue
-        end
-        -- delay 处理（入场交错延迟）
-        if anim.delay and anim.delay > 0 then
-            anim.delay = anim.delay - dt
-            if anim.delay > 0 then
-                goto continue
-            end
-            -- delay 刚结束，把超出的时间加到 timer
-            anim.timer = anim.timer + (-anim.delay)
-            anim.delay = 0
-            goto skip_timer
-        end
-        anim.timer = anim.timer + dt
-        ::skip_timer::
-        if anim.state == "entering" then
-            if anim.timer >= ENTER_ANIM_DURATION then
-                toRemove[#toRemove + 1] = unit
-            end
-        elseif anim.state == "lunge" then
-            if anim.timer >= LUNGE_DURATION then
-                anim.state = "return"
-                anim.timer = 0
-            end
-        elseif anim.state == "return" then
-            if anim.timer >= RETURN_DURATION then
-                toRemove[#toRemove + 1] = unit
-            end
-        elseif anim.state == "recoil" then
-            if anim.timer >= RECOIL_DURATION then
-                anim.state = "recoil_return"
-                anim.timer = 0
-            end
-        elseif anim.state == "recoil_return" then
-            if anim.timer >= RECOIL_RETURN then
-                toRemove[#toRemove + 1] = unit
-            end
-        elseif anim.state == "dying" then
-            if anim.timer >= DEATH_ANIM_DURATION then
-                if anim.noTombstone then
-                    anim.state = "gone"   -- [死亡即补位] 退场完成 → 空位期（完全隐藏，等待新怪从右补入）
-                else
-                    anim.state = "tombstone_in"
-                end
-                anim.timer = 0
-            end
-        elseif anim.state == "gone" then
-            -- 空位期：停留至被替换（不渲染，无过渡）
-        elseif anim.state == "tombstone_in" then
-            if anim.timer >= TOMBSTONE_FADEIN then
-                anim.state = "dead_done"
-            end
-        elseif anim.state == "reviving" then
-            if anim.timer >= REVIVE_ANIM_DURATION then
-                toRemove[#toRemove + 1] = unit
-            end
-        elseif anim.state == "advance" then
-            if anim.timer >= ADVANCE_DURATION then
-                toRemove[#toRemove + 1] = unit
-            end
-        end
-        ::continue::
-    end
-    for _, unit in ipairs(toRemove) do
-        BCS.cardAnims[unit] = nil
-    end
+    BattleCombatAnim.update(BCS, dt)
 end
 
---- 获取卡片动画 Y 偏移
 function BattleCombat.getCardAnimOffsetY(unit)
-    local anim = BCS.cardAnims[unit]
-    if anim and not isCombatCardAnimEnabled() and isCombatCardAnimState(anim.state) then
-        return 0
-    end
-    if not anim then return 0 end
-
-    if anim.state == "lunge" then
-        if anim.isRanged then return 0 end  -- 远程角色用缩放，不位�?
-        local t = math.min(1, anim.timer / LUNGE_DURATION)
-        t = 1 - (1 - t) * (1 - t)  -- ease-out
-        return anim.lungeDir * LUNGE_DISTANCE * t
-    elseif anim.state == "return" then
-        if anim.isRanged then return 0 end  -- 远程角色用缩放，不位�?
-        local t = math.min(1, anim.timer / RETURN_DURATION)
-        t = t * t  -- ease-in
-        return anim.lungeDir * LUNGE_DISTANCE * (1 - t)
-    elseif anim.state == "recoil" then
-        local t = math.min(1, anim.timer / RECOIL_DURATION)
-        t = 1 - (1 - t) * (1 - t)
-        return anim.lungeDir * RECOIL_DISTANCE * t
-    elseif anim.state == "recoil_return" then
-        local t = math.min(1, anim.timer / RECOIL_RETURN)
-        t = 1 - (1 - t) * (1 - t)
-        return anim.lungeDir * RECOIL_DISTANCE * (1 - t)
-    elseif anim.state == "dying" then
-        local elapsed = anim.timer
-        local mult = anim.knockbackMult or 1.0
-        local dist = DEATH_ANIM_DISTANCE * mult
-        if elapsed < DEATH_HITSTOP then
-            return 0
-        elseif elapsed < DEATH_HITSTOP + DEATH_BURST_DUR then
-            local t = (elapsed - DEATH_HITSTOP) / DEATH_BURST_DUR
-            t = 1 - (1 - t) * (1 - t) * (1 - t)
-            return anim.lungeDir * dist * DEATH_OVERSHOOT * t
-        else
-            local t = math.min(1, (elapsed - DEATH_HITSTOP - DEATH_BURST_DUR) / DEATH_SETTLE_DUR)
-            t = 1 - (1 - t) * (1 - t)
-            local ratio = DEATH_OVERSHOOT + (1.0 - DEATH_OVERSHOOT) * t
-            return anim.lungeDir * dist * ratio
-        end
-    elseif anim.state == "reviving" then
-        local t = math.min(1, anim.timer / REVIVE_ANIM_DURATION)
-        t = 1 - (1 - t) * (1 - t)
-        return anim.lungeDir * REVIVE_ANIM_DISTANCE * (1 - t)
-    elseif anim.state == "entering" then
-        if anim.delay and anim.delay > 0 then
-            return anim.lungeDir * ENTER_ANIM_DISTANCE
-        end
-        local t = math.min(1, anim.timer / ENTER_ANIM_DURATION)
-        t = 1 - (1 - t) * (1 - t)  -- ease-out
-        return anim.lungeDir * ENTER_ANIM_DISTANCE * (1 - t)
-    elseif anim.state == "advance" then
-        -- [队列前移] 从旧槽位（右移一格处）平滑滑向新槽位；仅条带布局生效（classic 下不位移）
-        if BattleLayout.MODE ~= "strip" then return 0 end
-        local dist = anim.advanceDist or 0
-        if dist <= 0 then return 0 end
-        local t = math.min(1, anim.timer / ADVANCE_DURATION)
-        t = 1 - (1 - t) * (1 - t)  -- ease-out
-        return anim.lungeDir * dist * (1 - t)
-    end
-    return 0
+    return BattleCombatAnim.getOffsetY(BCS, unit)
 end
 
---- 获取过渡动画 alpha（死亡淡�?复活淡入/墓碑淡入�?
 function BattleCombat.getTransitionAlpha(unit)
-    local anim = BCS.cardAnims[unit]
-    if not anim then return 1.0 end
-    if anim.state == "dying" then
-        if anim.timer < DEATH_HITSTOP then
-            return 1.0  -- 停顿期间完全不透明
-        end
-        local fadeT = math.min(1, (anim.timer - DEATH_HITSTOP) / (DEATH_ANIM_DURATION - DEATH_HITSTOP))
-        return 1.0 - fadeT
-    elseif anim.state == "tombstone_in" then
-        return math.min(1, anim.timer / TOMBSTONE_FADEIN)
-    elseif anim.state == "gone" then
-        return 0   -- 空位期：完全隐藏
-    elseif anim.state == "reviving" then
-        return math.min(1, anim.timer / REVIVE_ANIM_DURATION)
-    elseif anim.state == "entering" then
-        if anim.delay and anim.delay > 0 then
-            return 0
-        end
-        return math.min(1, anim.timer / ENTER_ANIM_DURATION)
-    end
-    return 1.0
+    return BattleCombatAnim.getTransitionAlpha(BCS, unit)
 end
 
---- 获取蓄力后退偏移（远程角色返�?，用缩放代替�?
 function BattleCombat.getChargeOffsetY(unit, isAllyGroup)
-    if not isCombatCardAnimEnabled() then return 0 end
-    if unit.hp <= 0 then return 0 end
-    if BCS.cardAnims[unit] then return 0 end
-    if isRangedUnit(unit) then return 0 end  -- 远程角色用缩放，不用位移
-    local p = unit.atkProgress or 0
-    if p < CHARGE_START then return 0 end
-    local t = (p - CHARGE_START) / (1.0 - CHARGE_START)
-    local dir = isAllyGroup and 1 or -1
-    return dir * CHARGE_DISTANCE * t
+    return BattleCombatAnim.getChargeOffsetY(BCS, unit, isAllyGroup)
 end
 
---- 获取远程角色的卡片缩放（蓄力缩小 + 攻击放大�?
---- 近战角色始终返回 1.0
 function BattleCombat.getCardScale(unit, isAllyGroup)
-    if not isCombatCardAnimEnabled() then return 1.0 end
-    if not isRangedUnit(unit) then return 1.0 end
-    if unit.hp <= 0 then return 1.0 end
-
-    -- 攻击动画缩放（lunge 放大, return 回弹�?
-    local anim = BCS.cardAnims[unit]
-    if anim then
-        if anim.state == "lunge" and anim.isRanged then
-            local t = math.min(1, anim.timer / LUNGE_DURATION)
-            t = 1 - (1 - t) * (1 - t)  -- ease-out
-            return RANGED_CHARGE_SCALE + (RANGED_LUNGE_SCALE - RANGED_CHARGE_SCALE) * t
-        elseif anim.state == "return" and anim.isRanged then
-            local t = math.min(1, anim.timer / RETURN_DURATION)
-            t = t * t  -- ease-in
-            return RANGED_LUNGE_SCALE + (1.0 - RANGED_LUNGE_SCALE) * t
-        end
-        return 1.0  -- 其他动画状态（recoil/dying等）不缩�?
-    end
-
-    -- 蓄力阶段缩放（进度条 70%�?00% 时逐渐缩小�?
-    local p = unit.atkProgress or 0
-    if p < CHARGE_START then return 1.0 end
-    local t = (p - CHARGE_START) / (1.0 - CHARGE_START)
-    return 1.0 + (RANGED_CHARGE_SCALE - 1.0) * t
+    return BattleCombatAnim.getCardScale(BCS, unit, isAllyGroup)
 end
 
---- 获取卡片动画状态名
 function BattleCombat.getAnimState(unit)
-    local anim = BCS.cardAnims[unit]
-    return anim and anim.state or nil
+    return BattleCombatAnim.getState(BCS, unit)
 end
 
---- 设置卡片动画
 function BattleCombat.setCardAnim(unit, animData)
-    BCS.cardAnims[unit] = animData
+    BattleCombatAnim.set(BCS, unit, animData)
 end
 
---- 清除卡片动画
 function BattleCombat.clearCardAnim(unit)
-    BCS.cardAnims[unit] = nil
+    BattleCombatAnim.clear(BCS, unit)
 end
 
---- 清除受击闪烁
-function BattleCombat.clearHitFlash(unit)
-    BCS.hitFlashes[unit] = nil
-end
-
---- 播放入场动画（交错滑�?+ 淡入�?
----@param units table  单位列表
----@param lungeDir number  -1=从上方滑入（敌方），1=从下方滑入（己方�?
 function BattleCombat.playEnterAnims(units, lungeDir)
-    for i, unit in ipairs(units) do
-        BCS.cardAnims[unit] = {
-            state    = "entering",
-            timer    = 0,
-            lungeDir = lungeDir,
-            delay    = (i - 1) * ENTER_STAGGER,
-        }
-    end
+    BattleCombatAnim.playEnter(BCS, units, lungeDir)
 end
 
 -- ======================== 浮动文字更新 ========================
 
 function BattleCombat.updateFloatingTexts(dt)
-    -- [伤害排队] 待显示伤害飘字按间隔放出（统一 0.1s）
-    if #BCS.pendingFt > 0 then
-        BCS.ftSpawnCd = BCS.ftSpawnCd - dt
-        if BCS.ftSpawnCd <= 0 then
-            local p = table.remove(BCS.pendingFt, 1)
-            addFloatingText(p.text, p.cx, p.cy, p.color, p.isCrit, p.fontSize, false)
-            BCS.ftSpawnCd = 0.1
-        end
-    end
-    local i = 1
-    while i <= #BCS.floatingTexts do
-        local ft = BCS.floatingTexts[i]
-        ft.timer = ft.timer + dt
-        if ft.timer >= ft.duration then
-            releaseFt(ft)
-            table.remove(BCS.floatingTexts, i)
-        else
-            i = i + 1
-        end
-    end
+    BattleCombatFx.updateFloatingTexts(BCS, dt, addFloatingText)
 end
 
 -- ======================== 受击闪烁更新 ========================
 
 function BattleCombat.updateHitFlashes(dt)
-    local toRemove = {}
-    for unit, flash in pairs(BCS.hitFlashes) do
-        flash.timer = flash.timer + dt
-        if flash.timer >= HIT_FLASH_DURATION then
-            toRemove[#toRemove + 1] = unit
-        end
-    end
-    for _, unit in ipairs(toRemove) do
-        BCS.hitFlashes[unit] = nil
-    end
+    BattleCombatFx.updateHitFlashes(BCS, dt)
 end
 
---- 获取受击闪烁 alpha（0~255；特效关闭时不绘制）
 function BattleCombat.getHitFlashAlpha(unit)
-    if not SettingsPanel.isEffectsEnabled() then return 0 end
-    local flash = BCS.hitFlashes[unit]
-    if not flash then return 0 end
-    local t = flash.timer / HIT_FLASH_DURATION
-    local alpha = (1 - t) * 180
-    if t < 0.3 then
-        alpha = 200
-    end
-    return math.max(0, math.floor(alpha))
+    return BattleCombatFx.getHitFlashAlpha(BCS, unit)
+end
+
+function BattleCombat.clearHitFlash(unit)
+    BattleCombatFx.clearHitFlash(BCS, unit)
 end
 
 -- ======================== 血条缓�?========================

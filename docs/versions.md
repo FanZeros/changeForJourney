@@ -4,6 +4,24 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.25-refactor-three-more | 2026-09-22 | Talent 减伤/复活、Church 槽位动画、Blacksmith 结果转发。Talent 1116 / Church 1004 / Blacksmith 1337。 |
+| v2.24-refactor-four-extracts | 2026-09-22 | Church 输入/名单 + Talent 攻前/受伤 + Blacksmith 输入。Church 1060 / Talent 1315 / Blacksmith 1384。 |
+| v2.23-refactor-church-draw | 2026-09-22 | ChurchPage drawPageImpl 抽到 ChurchDraw。ChurchPage 1416 / ChurchDraw 568。 |
+| v2.22-drop-guild-shell | 2026-09-22 | 删版本不一致弹窗与公会 Handler/Service；城镇卸空回调。GuildConfig 排行保留。 |
+| v2.21-drop-server-select | 2026-09-22 | 卸掉 StartScreen 选服条与 ServerSelectPanel；点击直接进游戏。 |
+| v2.20-drop-mp-ui | 2026-09-22 | 删除公会页/选角/加载页等仅多人 UI；消息处理器解绑。 |
+| v2.19-drop-multiplayer-shell | 2026-09-22 | 去掉多人入口，删除 Client/Server 联网壳；单机仍用 LocalActionBridge+server Handler。 |
+| v2.18-gameaction-local | 2026-09-22 | 单机 sendAction 走 GameAction→LocalActionBridge，UI 不再加载 Client。 |
+| v2.17-refactor-market-input | 2026-09-22 | Market 点击/拖拽/滚轮抽到 MarketInput。Market 1402。 |
+| v2.16-refactor-town-draw | 2026-09-22 | Market/Blacksmith drawPageImpl 抽到 MarketDraw/BlacksmithDraw。Market 1589 / Blacksmith 1533。 |
+| v2.15-refactor-four | 2026-09-22 | onAfterAttack/ClientUpdate/BattleScenePhases + 市场商品卡/铁匠装备槽。TalentManager 1728 / Client 1348 / BattleScene 1765。 |
+| v2.14-merge-workspace | 2026-09-22 | 合并 origin/workspace（中缝C款/ICON_UP/礼拜堂标签/ZBBJ/791 meta）。冲突仅 Standalone.lua，SEAMBAR_ASPECT 补进 Horizon。@ fa7a775 |
+| v2.13-refactor-server-town | 2026-09-22 | ServerEnterGame + BattleSceneTick + 城镇页 DrawUtil 委托。Server 1693 / BattleScene 1890。@ 24eb755 |
+| v2.12-refactor-four | 2026-09-22 | 连击Combo + loadStage + TAL.update + ClientRender。TalentManager 2838 / Client 1844 / BattleScene 2014 / BattleCombat 1637。@ 88ccd19 |
+| v2.11-refactor-casualty | 2026-09-22 | BattleScene 抽出死亡补位/胜负到 BattleCasualty；2384→2154。分支 refactor/extract-battle-overlays @ ebc1db4 |
+| v2.10-refactor-clientboot | 2026-09-22 | Client 抽出启动接线到 ClientBoot；2487→2143。分支 refactor/extract-battle-overlays @ a9c2566 |
+| v2.9-refactor-talents | 2026-09-22 | TalentManager 再抽 Alex/Elwyn/Sera/Suhua；3276 行。分支 refactor/extract-battle-overlays @ 3e9920f |
+| v2.8-refactor-anim | 2026-09-22 | BattleCombat 抽出卡牌动画到 BattleCombatAnim；修 Lua5.4 `\!` 启动崩 + ETS 依赖。分支 refactor/extract-battle-overlays @ a3f6930 |
 | v2.7-awk3 | 2026-09-18 | 觉醒 7 阶压成 3 阶：粗暴/机制/进化，旧档 1–3→1、4–6→2、7→3 |
 | v2.6-awk-extra | 2026-09-18 | 超模技改成觉醒1/4/7解锁，不再默认自带 |
 | v2.5-talent-rework | 2026-09-18 | 8 个主技能按梗人设整段换机制 |

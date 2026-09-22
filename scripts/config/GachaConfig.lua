@@ -69,6 +69,7 @@ GachaConfig.Pool = {
     { quality = 1, type = "shard", heroId = 7,  amount = 1, weight = 100, stardustValue = 25 },  -- 信光机兵碎片
     { quality = 1, type = "shard", heroId = 8,  amount = 1, weight = 100, stardustValue = 25 },  -- 愤怒的小雀碎片
     { quality = 1, type = "shard", heroId = 9,  amount = 1, weight = 100, stardustValue = 25 },  -- 卡皮巴拉碎片
+    { quality = 1, type = "shard", heroId = 17, amount = 1, weight = 100, stardustValue = 25 },  -- 蓝色大肥鱼碎片
 
     -- SR 品质（6 角色 + 6 碎片 = 12 项）
     { quality = 2, type = "hero",  heroId = 4,  weight = 100, stardustValue = 250 },  -- 接化发掌门
@@ -77,6 +78,7 @@ GachaConfig.Pool = {
     { quality = 2, type = "hero",  heroId = 7,  weight = 100, stardustValue = 250 },  -- 信光机兵
     { quality = 2, type = "hero",  heroId = 8,  weight = 100, stardustValue = 250 },  -- 愤怒的小雀
     { quality = 2, type = "hero",  heroId = 9,  weight = 100, stardustValue = 250 },  -- 卡皮巴拉
+    { quality = 2, type = "hero",  heroId = 17, weight = 100, stardustValue = 250 },  -- 蓝色大肥鱼
     { quality = 2, type = "shard", heroId = 10, amount = 1, weight = 100, stardustValue = 100 },  -- 铁憨憨碎片
     { quality = 2, type = "shard", heroId = 11, amount = 1, weight = 100, stardustValue = 100 },  -- 熬夜冠军碎片
     { quality = 2, type = "shard", heroId = 12, amount = 1, weight = 100, stardustValue = 100 },  -- 雪皇碎片

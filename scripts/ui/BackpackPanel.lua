@@ -7,6 +7,7 @@
 local GameConfig       = require("config.GameConfig")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local DrawUtil         = require("core.DrawUtil")
+local TownPageChrome   = require("ui.TownPageChrome")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1] 矢量九宫格
 local GameState        = require("core.GameState")
 local PlayerStore      = require("client.data.PlayerStore")
@@ -20,6 +21,8 @@ local UrGachaConfig    = require("config.UrGachaConfig")
 local CharacterPanel   = require("ui.CharacterPanel")
 local Protocol         = require("shared.Protocol")
 local BF               = require("systems.ButtonFeedback")
+local BackpackDialogs  = require("ui.BackpackDialogs")
+local BackpackGrids    = require("ui.BackpackGrids")
 
 local Panel = {}
 
@@ -179,12 +182,8 @@ local SCROLL_FRICTION  = 0.90
 local SCROLL_MIN_VEL   = 0.5
 local SCROLL_WHEEL_STEP = 60
 
--- ======================== 缓动函数 ========================
-
-local function easeInOutCubic(t)
-    if t < 0.5 then return 4 * t * t * t end
-    local f = 2 * t - 2; return 0.5 * f * f * f + 1
-end
+-- ======================== 缓动函数（TownPageChrome） ========================
+local easeInOutCubic = TownPageChrome.easeInOutCubic
 
 -- ======================== 资源道具定义 ========================
 
@@ -361,22 +360,10 @@ local ANIM_CLOSE_DUR = 0.38
 local UPPER_SLIDE_DIST = 1200   -- 上半部分从屏幕上方滑入的距离
 local LOWER_SLIDE_DIST = 1600   -- 下半部分从屏幕下方滑入的距离
 
-local function easeOutCubic(t)
-    local u = 1 - t; return 1 - u * u * u
-end
-
-local function easeInCubic(t)
-    return t * t * t
-end
+local easeOutCubic = TownPageChrome.easeOutCubic
+local easeInCubic  = TownPageChrome.easeInCubic
 
 -- ======================== 辅助函数 ========================
-
-local function getTabIndex(key)
-    for i, item in ipairs(TAB_ITEMS) do
-        if item.key == key then return i end
-    end
-    return 1
-end
 
 --- 获取道具图标（缓存）
 local function getItemIcon(def)
@@ -386,50 +373,6 @@ local function getItemIcon(def)
     local handle = nvgCreateImage(vg_, def.iconPath, 0)
     itemIconCache[def.key] = handle
     return handle
-end
---- 获取背包装备列表（排序: 品质降→等级降）
---- 包含 equippedByHeroId 和 enhanceLevel 字段（与 EquipmentBag 一致）
-local function getEquipList()
-    local equipData = PlayerStore.Get("equipment")
-    if not equipData or not equipData.inventory then return {} end
-
-    -- 构建全局归属映射: seq → heroId
-    local equippedByHero = {}  -- [seqStr] = heroId
-    if equipData.equipped then
-        for hid, heroSlots in pairs(equipData.equipped) do
-            if type(heroSlots) == "table" then
-                for _, eqSeq in pairs(heroSlots) do
-                    equippedByHero[tostring(eqSeq)] = hid
-                end
-            end
-        end
-    end
-
-    local list = {}
-    for seqStr, equip in pairs(equipData.inventory) do
-        local tpl = EquipmentConfig.ITEMS[equip.templateId]
-        if tpl then
-            list[#list + 1] = {
-                seq = tonumber(seqStr) or 0,
-                templateId = equip.templateId,
-                level = equip.level or 1,
-                quality = equip.quality or tpl.quality or 1,
-                name = tpl.name or "",
-                type = equip.type or tpl.type or "",
-                enhanceLevel = equip.enhanceLevel or 0,
-                equippedByHeroId = equippedByHero[seqStr] or nil,
-                locked = equip.locked or nil,
-            }
-        end
-    end
-
-    -- 排序: 品质降 → 等级降
-    table.sort(list, function(a, b)
-        if a.quality ~= b.quality then return a.quality > b.quality end
-        return a.level > b.level
-    end)
-
-    return list
 end
 
 --- 获取背包物品数量（装备数）
@@ -453,372 +396,89 @@ local function clampScroll()
     state.scrollY = math.max(0, math.min(state.scrollMax, state.scrollY))
 end
 
--- ======================== 绘制: 装备 tab ========================
-
-local function drawEquipGrid(vg)
-    local equipList = getEquipList()
-    local totalSlots = math.max(#equipList, 10)  -- 至少显示 10 个格子
-    state.scrollMax = calcScrollMax(totalSlots)
-    clampScroll()
-
-    nvgSave(vg)
-    nvgScissor(vg, 0, CLIP_TOP, DESIGN_W, CLIP_H)
-    nvgTranslate(vg, 0, -state.scrollY)
-
-    for idx = 1, totalSlots do
-        local col = ((idx - 1) % GRID.COLS) + 1
-        local row = math.floor((idx - 1) / GRID.COLS)
-        local cx = CELL_COL_CX[col]
-        local cy = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5
-
-        -- 跳过不可见区域（cy 是 translate 前的坐标，减去 scrollY 得到屏幕坐标）
-        local screenY = cy - state.scrollY
-
-        -- 新手引导热点：第一个有装备的格子（在可见性裁剪前注册，确保不被 goto 跳过）
-        if idx == 1 then
-            local _TM = require("systems.TutorialManager")
-            if _TM.isActive() then
-                _TM.registerHotspot("equip_item_gifted", cx, screenY, GRID.CELL_SIZE, GRID.CELL_SIZE, "right")
-            end
-        end
-
-        if screenY < CLIP_TOP - GRID.CELL_SIZE then
-            goto continue_equip
-        end
-        if screenY > GRID.CLIP_BOTTOM + GRID.CELL_SIZE then
-            break  -- 后续行更远，全部不可见
-        end
-
-        local equip = equipList[idx]
-        if equip then
-            -- 品质背景 [暗黑化 P2-A] 矢量品质框（原 ZBBJ 贴图+fallback 已废弃）
-            DarkIcon.drawQualityBg(vg, equip.quality, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
-
-            -- 装备图标
-            local icon = ImageCache.getEquipIcon(equip.templateId)
-            if icon and icon >= 0 then
-                DarkIcon.drawIconDark(vg, icon, cx, cy, GRID.CELL_SIZE - 10, GRID.CELL_SIZE - 10, 1.0)  -- [暗黑化 P2-B]
-            end
-
-            -- 等级角标（右下角，16方向描边，与 EquipmentBag 一致）
-            do
-                local lvlText = "Lv." .. (equip.level or 1)
-                local lvlX = cx + GRID.CELL_SIZE * 0.5 - 8
-                local lvlY = cy + GRID.CELL_SIZE * 0.5 - 6
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 40)
-                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
-                -- 黑色描边 16方向
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-                local sStep = math.pi * 2 / 16
-                for si = 0, 15 do
-                    local sa = si * sStep
-                    nvgText(vg, lvlX + math.cos(sa) * 4, lvlY + math.sin(sa) * 4, lvlText, nil)
-                end
-                -- 白色填充
-                nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
-                nvgText(vg, lvlX, lvlY, lvlText, nil)
-            end
-
-            -- 强化角标（右上角，+X，与 EquipmentBag 一致）
-            if equip.enhanceLevel and equip.enhanceLevel > 0 then
-                local enhText = "+" .. equip.enhanceLevel
-                local enhX = cx + GRID.CELL_SIZE * 0.5 - 8
-                local enhY = cy - GRID.CELL_SIZE * 0.5 + 8
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 36)
-                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
-                -- 黑色描边 16方向
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-                local sStep = math.pi * 2 / 16
-                for si = 0, 15 do
-                    local sa = si * sStep
-                    nvgText(vg, enhX + math.cos(sa) * 3, enhY + math.sin(sa) * 3, enhText, nil)
-                end
-                -- 绿色填充
-                nvgFillColor(vg, nvgRGBA(0x00, 0xff, 0x60, 255))
-                nvgText(vg, enhX, enhY, enhText, nil)
-            end
-
-            -- 左上角英雄头像角标（与 EquipmentBag 一致）
-            if equip.equippedByHeroId then
-                local ownerIcon = imgHeroIcons[equip.equippedByHeroId]
-                if ownerIcon and ownerIcon >= 0 then
-                    local badgeSize = 66
-                    local badgeX = cx - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
-                    local badgeY = cy - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
-                    -- 圆形裁剪绘制头像
-                    nvgSave(vg)
-                    nvgBeginPath(vg)
-                    nvgCircle(vg, badgeX, badgeY, badgeSize * 0.5)
-                    nvgFillPaint(vg, nvgImagePattern(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 0, ownerIcon, 1.0))
-                    nvgFill(vg)
-                    -- 白色圆形描边
-                    nvgBeginPath(vg)
-                    nvgCircle(vg, badgeX, badgeY, badgeSize * 0.5)
-                    nvgStrokeColor(vg, nvgRGBA(0xff, 0xff, 0xff, 200))
-                    nvgStrokeWidth(vg, 2)
-                    nvgStroke(vg)
-                    nvgRestore(vg)
-                end
-            end
-
-            -- 分解选中遮罩（与铁匠铺分解面板一致：黑色半透明 + 勾选图标）
-            if decomposeState.active and decomposeState.selectedItems[idx] then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                    GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-                nvgFill(vg)
-                DrawUtil.drawImageCentered(vg, imgCheckmark, cx, cy, 80, 80, 1.0)
-            end
-
-            -- 锁定角标：未装备→左上角（与铁匠铺一致）；已装备→左下角避让头像角标
-            if equip.locked and imgLock >= 0 then
-                local lockSize = 56
-                local lockX = cx - GRID.CELL_SIZE * 0.5 + lockSize * 0.5 + 4
-                local lockY
-                if equip.equippedByHeroId then
-                    lockY = cy + GRID.CELL_SIZE * 0.5 - lockSize * 0.5 - 4
-                else
-                    lockY = cy - GRID.CELL_SIZE * 0.5 + lockSize * 0.5 + 4
-                end
-                DrawUtil.drawImageCentered(vg, imgLock, lockX, lockY, lockSize, lockSize, 1.0)
-            end
-        else
-            -- 空格子：[规范化] 与右栏装备空槽同款——浅金底板+金描边圆角（暗底上可辨认位置）
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg,
-                cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS + 6)
-            nvgFillColor(vg, nvgRGBA(210, 186, 140, 70))
-            nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(232, 204, 140, 210))
-            nvgStrokeWidth(vg, 3)
-            nvgStroke(vg)
-        end
-        ::continue_equip::
-    end
-
-    nvgRestore(vg)
+---@type table|nil
+local _grids = nil
+local function bindBackpackGrids()
+    _grids = BackpackGrids.bind({
+        GRID = GRID,
+        CELL_COL_CX = CELL_COL_CX,
+        CLIP_TOP = CLIP_TOP,
+        CLIP_H = CLIP_H,
+        DESIGN_W = DESIGN_W,
+        DarkIcon = DarkIcon,
+        DrawUtil = DrawUtil,
+        state = state,
+        decomposeState = decomposeState,
+        ITEM_DEFS = ITEM_DEFS,
+        getItemIcon = getItemIcon,
+        getImgCheckmark = function() return imgCheckmark end,
+        getImgLock = function() return imgLock end,
+        getImgHeroIcons = function() return imgHeroIcons end,
+        calcScrollMax = calcScrollMax,
+        clampScroll = clampScroll,
+    })
+end
+---@return table
+local function ensureGrids()
+    if not _grids then bindBackpackGrids() end
+    ---@type table
+    local g = _grids
+    return g
 end
 
--- ======================== 绘制: 道具 tab ========================
+--- 获取背包装备列表（排序: 品质降→等级降）
+---@return table
+local function getEquipList()
+    return ensureGrids().getEquipList()
+end
 
---- 构建道具列表（静态资源 + 动态碎片）
+-- ======================== 绘制: 装备 / 道具 tab ========================
+
+local function drawEquipGrid(vg)
+    ensureGrids().drawEquipGrid(vg)
+end
+
 local function buildItemList()
-    -- 先复制静态道具（跳过持有量为 0 的）
-    local list = {}
-    for _, def in ipairs(ITEM_DEFS) do
-        local count = def.getter and def.getter() or 0
-        if count > 0 then
-            list[#list + 1] = def
-        end
-    end
-    -- 追加拥有碎片的英雄碎片条目
-    local HC = HeroConfig
-    local qualityToGridQuality = { [1] = 1, [2] = 3, [3] = 5, [4] = 6 }
-    for _, heroId in ipairs(HC.getAllIds()) do
-        local shards = CharacterPanel.getShards(heroId)
-        if shards > 0 then
-            local heroCfg = HC.get(heroId)
-            local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
-            local heroQuality = heroCfg and heroCfg.quality or 1
-            local gridQuality = qualityToGridQuality[heroQuality] or 1
-            local hid = heroId  -- 闭包捕获
-            list[#list + 1] = {
-                key = "shard_" .. heroId,
-                quality = gridQuality,
-                name = heroName .. "碎片",
-                source = "抽卡获得",
-                desc = "用于激活冒险家或进行冒险家觉醒",
-                isShard = true,
-                heroId = heroId,
-                getter = function() return CharacterPanel.getShards(hid) end,
-            }
-        end
-    end
-    return list
+    return ensureGrids().buildItemList()
 end
 
 local function drawItemGrid(vg)
-    local itemList = buildItemList()
-    local totalSlots = #itemList
-    state.scrollMax = calcScrollMax(totalSlots)
-    clampScroll()
-
-    nvgSave(vg)
-    nvgScissor(vg, 0, CLIP_TOP, DESIGN_W, CLIP_H)
-    nvgTranslate(vg, 0, -state.scrollY)
-
-    for idx, def in ipairs(itemList) do
-        local col = ((idx - 1) % GRID.COLS) + 1
-        local row = math.floor((idx - 1) / GRID.COLS)
-        local cx = CELL_COL_CX[col]
-        local cy = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5
-
-        -- 品质背景 [暗黑化 P2-A] 矢量品质框
-        DarkIcon.drawQualityBg(vg, def.quality, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
-
-        -- 道具图标
-        if def.isShard and def.heroId then
-            -- 碎片条目：英雄头像主图标 + 碎片角标（统一框架）
-            DrawUtil.drawShardIcon(vg, def.heroId, cx, cy, GRID.CELL_SIZE - 10, 1.0)
-        else
-            local icon = getItemIcon(def)
-            if icon and icon >= 0 then
-                DrawUtil.drawImageCentered(vg, icon, cx, cy, GRID.CELL_SIZE - 10, GRID.CELL_SIZE - 10, 1.0)
-            end
-        end
-
-        -- 数量角标（右下角，16方向描边，与奖励面板一致）
-        local amount = def.getter()
-        if amount and amount > 0 then
-            local amtText = def.amountTextGetter and def.amountTextGetter() or ("×" .. NumberUtil.format(amount))
-            local amtX = cx + GRID.CELL_SIZE * 0.5 - 8
-            local amtY = cy + GRID.CELL_SIZE * 0.5 - 8
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 40)
-            nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-            local sStep = math.pi * 2 / 16
-            for si = 0, 15 do
-                local sa = si * sStep
-                nvgText(vg, amtX + math.cos(sa) * 4, amtY + math.sin(sa) * 4, amtText, nil)
-            end
-            nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
-            nvgText(vg, amtX, amtY, amtText, nil)
-        end
-    end
-
-    nvgRestore(vg)
+    ensureGrids().drawItemGrid(vg)
 end
 
 -- ======================== 道具详情弹窗 ========================
 
---- NanoVG 手动换行绘制文本（nvgTextBox 对中文支持不稳定，手动逐字测量换行）
----@param vg any
----@param x number 左边距 X
----@param y number 首行 Y（基线 ALIGN_TOP）
----@param maxW number 最大行宽
----@param text string
----@param fontSize number
----@param r number 0-255
----@param g number 0-255
----@param b number 0-255
+local _bpDialogs
+local function bindBackpackDialogs()
+    _bpDialogs = BackpackDialogs.bind({
+        DESIGN_W = DESIGN_W,
+        DESIGN_H = DESIGN_H,
+        TRANSFER_CONFIRM = TRANSFER_CONFIRM,
+        itemDetState = itemDetState,
+        getImgBtnYellow = function() return imgBtnYellow end,
+        getImgBtnGreen = function() return imgBtnGreen end,
+    })
+end
+
+local function ensureBpDialogs()
+    if not _bpDialogs then bindBackpackDialogs() end
+    return _bpDialogs
+end
+
 local function drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, fontSize)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-    nvgFillColor(vg, nvgRGBA(r, g, b, 255))
-
-    -- 逐字符分割 UTF-8
-    local chars = {}
-    local i = 1
-    local len = #text
-    while i <= len do
-        local b0 = string.byte(text, i)
-        local charLen = 1
-        if b0 >= 0xF0 then charLen = 4
-        elseif b0 >= 0xE0 then charLen = 3
-        elseif b0 >= 0xC0 then charLen = 2
-        end
-        chars[#chars + 1] = string.sub(text, i, i + charLen - 1)
-        i = i + charLen
-    end
-
-    local lineY = y
-    local lineHeight = fontSize * 1.4
-    local lineStart = 1
-    while lineStart <= #chars do
-        -- 遇到换行符：直接换行
-        if chars[lineStart] == "\n" then
-            lineY = lineY + lineHeight
-            lineStart = lineStart + 1
-        else
-            -- 尽可能多地放字符到一行（遇到 \n 也截断）
-            local lineEnd = lineStart
-            for ci = lineStart, #chars do
-                if chars[ci] == "\n" then
-                    lineEnd = ci - 1
-                    break
-                end
-                local sub = table.concat(chars, "", lineStart, ci)
-                local tw = nvgTextBounds(vg, 0, 0, sub)
-                if tw > maxW and ci > lineStart then
-                    lineEnd = ci - 1
-                    break
-                end
-                lineEnd = ci
-            end
-            if lineEnd >= lineStart then
-                local lineStr = table.concat(chars, "", lineStart, lineEnd)
-                nvgText(vg, x, lineY, lineStr, nil)
-            end
-            lineY = lineY + lineHeight
-            lineStart = lineEnd + 1
-        end
-    end
+    return ensureBpDialogs().drawWrappedText(vg, x, y, maxW, text, fontSize, r, g, b)
 end
 
---- 是否显示特权卡转区按钮（多人模式且已激活特权卡）
----@param def table|nil
----@return boolean
 local function shouldShowTransferBtn(def)
-    if not def or def.key ~= "privilegeCard" then return false end
-    if not PlayerStore.IsReady() then return false end
-    return GameState.isPrivilegeCardOwned()
+    return ensureBpDialogs().shouldShowTransferBtn(def)
 end
 
---- 绘制转区二次确认弹窗（step=1 或 2）
 local function drawTransferConfirm(vg)
-    local step = itemDetState.transferConfirmStep
-    if step <= 0 then return end
-
-    local C = TRANSFER_CONFIRM
-    local title = step == 1 and "转区确认" or "再次确认"
-    local body = step == 1
-        and "确定要将特权卡转至其他区服吗？\n转区后您将立即退出当前区服。"
-        or "特权卡将在您进入其他区服后生效（含挑战者服）。\n请勿选回原区服，否则将自动撤销转区。\n是否继续？"
-
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-    nvgFill(vg)
-
-    DarkIcon.drawNine(vg, "plain",
-        C.BG_CX - C.BG_W * 0.5, C.BG_CY - C.BG_H * 0.5,
-        C.BG_W, C.BG_H)
-
-    DrawUtil.drawTextStroke(vg, C.TITLE_CX, C.TITLE_CY, title,
-        C.TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, C.TITLE_SW,
-        { strokeColor = { C.TITLE_SR, C.TITLE_SG, C.TITLE_SB } })
-
-    local bodyX = C.BODY_CX - C.BODY_W * 0.5
-    local bodyY = C.BODY_CY - 60
-    drawWrappedText(vg, bodyX, bodyY, C.BODY_W, body, C.BODY_FONT, C.BODY_R, C.BODY_G, C.BODY_B)
-
-    if imgBtnYellow >= 0 then
-        DrawUtil.drawImageCentered(vg, imgBtnYellow, C.BTN_OK_CX, C.BTN_CY, C.BTN_W, C.BTN_H, 1.0)
-    end
-    if imgBtnGreen >= 0 then
-        DrawUtil.drawImageCentered(vg, imgBtnGreen, C.BTN_CANCEL_CX, C.BTN_CY, C.BTN_W, C.BTN_H, 1.0)
-    end
-
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, C.BTN_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(C.BTN_OK_R, C.BTN_OK_G, C.BTN_OK_B, 255))
-    nvgText(vg, C.BTN_OK_CX, C.BTN_CY, "确认", nil)
-    nvgFillColor(vg, nvgRGBA(C.BTN_CANCEL_R, C.BTN_CANCEL_G, C.BTN_CANCEL_B, 255))
-    nvgText(vg, C.BTN_CANCEL_CX, C.BTN_CY, "取消", nil)
+    return ensureBpDialogs().drawTransferConfirm(vg)
 end
 
---- 关闭转区确认弹窗
 local function closeTransferConfirm()
-    itemDetState.transferConfirmStep = 0
-    itemDetState.transferConfirmOpenTime = 0
+    return ensureBpDialogs().closeTransferConfirm()
 end
 
 local function closeUrConvertDialog()
@@ -1238,13 +898,10 @@ local function drawBody(vg)
     -- 1. 顶部背景图（顶端对齐）
     DrawUtil.drawImageCentered(vg, imgTopBg, TOP_BG.CX, TOP_BG.CY, TOP_BG.W, TOP_BG.H, 1.0)
 
-    -- 3. 标题（与教堂左上角一致：背景图 + 白色文字，无描边）
-    DrawUtil.drawImageCentered(vg, imgTitleBg, TITLE.BG_CX, TITLE.BG_CY, TITLE.BG_W, TITLE.BG_H, 1.0)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, TITLE.FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, TITLE.TEXT_CX, TITLE.TEXT_CY, TITLE.TEXT, nil)
+    -- 3. 标题（与教堂左上角一致）
+    TownPageChrome.drawNamePlate(vg, imgTitleBg, TITLE.TEXT, {
+        textCX = TITLE.TEXT_CX, textCY = TITLE.TEXT_CY, font = TITLE.FONT_SIZE,
+    })
 
     nvgRestore(vg)
     end
@@ -1337,40 +994,22 @@ local function drawBody(vg)
     end
 
     -- 8. 返回按钮（[横屏左栏] 窗口模式由宿主中缝侧边返回条接管，页内不画）
-    if not isCompact() then
-        DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
-    end
+    TownPageChrome.drawBack(vg, { skip = isCompact(), cx = BTN_BACK.CX, cy = BTN_BACK.CY, w = BTN_BACK.W, h = BTN_BACK.H })
 
-    -- 9. Tab 背景
-    DrawUtil.drawImageCentered(vg, imgTabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
-
-    -- 10. Tab 滑块（带动画）
-    local tabIdx = getTabIndex(state.tab)
-    local fromIdx = getTabIndex(state.tabFrom)
-    local tabElapsed = time.elapsedTime - state.tabSwitchTime
-    local tabT = math.min(1.0, tabElapsed / TAB.ANIM_DUR)
-    local tabEased = easeInOutCubic(tabT)
-
-    local targetItem = TAB_ITEMS[tabIdx]
-    local fromItem = TAB_ITEMS[fromIdx]
-    local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
-    local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
-
-    DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
-
-    -- 11. Tab 文字
-    for i, item in ipairs(TAB_ITEMS) do
-        local isActive = (state.tab == item.key)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, TAB.FONT_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        if isActive then
-            nvgFillColor(vg, nvgRGBA(TAB.ACTIVE_R, TAB.ACTIVE_G, TAB.ACTIVE_B, 255))
-        else
-            nvgFillColor(vg, nvgRGBA(TAB.INACTIVE_R, TAB.INACTIVE_G, TAB.INACTIVE_B, 255))
-        end
-        nvgText(vg, item.textX, item.textY, item.name, nil)
-    end
+    -- 9-11. 底栏 Tab
+    local tabIdx, fromIdx, tabEased = TownPageChrome.tabSlide(state, {
+        equip = 1, item = 2,
+    }, TAB.ANIM_DUR)
+    TownPageChrome.drawTabBar(vg, imgTabBg, {
+        items = TAB_ITEMS,
+        tabIdx = tabIdx, fromIdx = fromIdx, eased = tabEased,
+        sliderW = TAB.SLIDER_W, sliderH = TAB.SLIDER_H,
+        bgCX = TAB.BG_CX, bgCY = TAB.BG_CY, bgW = TAB.BG_W, bgH = TAB.BG_H,
+        font = TAB.FONT_SIZE,
+        active = { r = TAB.ACTIVE_R, g = TAB.ACTIVE_G, b = TAB.ACTIVE_B },
+        inactive = { r = TAB.INACTIVE_R, g = TAB.INACTIVE_G, b = TAB.INACTIVE_B },
+        activePred = function(_, item) return state.tab == item.key end,
+    })
 
     nvgRestore(vg)
 
@@ -1493,7 +1132,7 @@ function Panel.handleInput(dx, dy)
                 if DrawUtil.hitTest(dx, dy, cx, cy, U.CELL_SIZE, U.CELL_SIZE) then
                     BF.trigger("bp_ur_convert_" .. tostring(item.heroId))
                     itemDetState.urConvertPending = true
-                    local Client = require("network.Client")
+                    local Client = require("network.GameAction")
                     Client.sendAction(Protocol.ACTION_TYPES.CONVERT_UR_SHARD, {
                         fromHeroId = def.heroId,
                         toHeroId = item.heroId,
@@ -1525,7 +1164,7 @@ function Panel.handleInput(dx, dy)
                 else
                     closeTransferConfirm()
                     itemDetState.transferPending = true
-                    local Client = require("network.Client")
+                    local Client = require("network.GameAction")
                     Client.sendAction(Protocol.ACTION_TYPES.TRANSFER_PRIVILEGE_CARD, {})
                     print("[BackpackPanel] 发送特权卡转区请求")
                 end
@@ -1562,7 +1201,7 @@ function Panel.handleInput(dx, dy)
                 else
                     BF.trigger("bp_ur_convert_restore")
                     itemDetState.urConvertPending = true
-                    local Client = require("network.Client")
+                    local Client = require("network.GameAction")
                     Client.sendAction(Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT, {})
                     print("[BackpackPanel] 发送UR碎片转化次数恢复请求 cost=" .. tostring(UR_CONVERT_RESTORE_COST))
                 end
@@ -1575,7 +1214,7 @@ function Panel.handleInput(dx, dy)
             local coinValue = getShardCoinValue(def.heroId)
             if coinValue > 0 and DrawUtil.hitTest(dx, dy, CONVERT_BTN.CX, CONVERT_BTN.CY, CONVERT_BTN.W, CONVERT_BTN.H) then
                 -- 发送批量转化请求（服务端会一次性转化所有碎片）
-                local Client = require("network.Client")
+                local Client = require("network.GameAction")
                 Client.sendAction(Protocol.ACTION_TYPES.CONVERT_SHARD_TO_COIN, { heroId = def.heroId })
                 local shardCount = 0
                 if def.getter then shardCount = def.getter() or 0 end
@@ -1603,15 +1242,16 @@ function Panel.handleInput(dx, dy)
     end
 
     -- 返回按钮（[横屏左栏] 窗口/左栏模式由宿主中缝侧边返回条接管）
-    if not isCompact()
-       and DrawUtil.hitTest(dx, dy, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H) then
+    if TownPageChrome.hitBack(dx, dy, { skip = isCompact(), cx = BTN_BACK.CX, cy = BTN_BACK.CY, w = BTN_BACK.W, h = BTN_BACK.H }) then
         Panel.close()
         return true
     end
 
     -- Tab 切换
-    for i, item in ipairs(TAB_ITEMS) do
-        if DrawUtil.hitTest(dx, dy, item.cx, item.cy, TAB.SLIDER_W, TAB.SLIDER_H) then
+    do
+        local i = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
+        if i then
+            local item = TAB_ITEMS[i]
             if state.tab ~= item.key then
                 state.tabFrom = state.tab
                 state.tabSwitchTime = time.elapsedTime
@@ -1656,7 +1296,7 @@ function Panel.handleInput(dx, dy)
                     end
                 end
                 if #selectedSeqs > 0 then
-                    local Client = require("network.Client")
+                    local Client = require("network.GameAction")
                     decomposeState.pending = true
                     Client.sendAction(Protocol.ACTION_TYPES.DECOMPOSE_EQUIP, { seqs = selectedSeqs })
                     print("[BackpackPanel] 确认分解 " .. #selectedSeqs .. " 件装备")

@@ -1138,7 +1138,7 @@ function ProjectileSystem.update(dt)
         end
 
         -- 目标死亡检测：如果投射物跟踪的目标已死亡，立即触发到达并快速消失
-        -- 防止治疗投射物飞向墓碑的视觉问题
+        -- 防止治疗投射物飞向已死亡目标的视觉问题
         if not proj.arrived and not proj.hitResolved and proj.target and proj.target.hp and proj.target.hp <= 0 then
             proj.hitResolved = true
             proj.arrived = true

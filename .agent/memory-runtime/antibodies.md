@@ -14,3 +14,15 @@
 - [scope:project] 真人梗高风险:"牢大"(科比逝者恶搞)不可直接实装;活人梗(ikun)用软化变体;方案先给用户过目
 - [通用] 用户短指令常有笔误("例会"=立绘、"该名字"=改名字),按语境理解意图
 - [通用] 用户验收是逐张看图的严格模式,交付前先自查(引擎实拍 > 自述"完成")
+- [scope:project] 禁止推 `workspace`；开发与 push 只走 `refactor/extract-battle-overlays`
+- [scope:project] 每步交付后必须用 AskUserQuestion 给下一步选项，禁止纯文字中断
+- [scope:project] merge workspace 前必须干净工作区：还原 `.project/project.json` / `.agent` 改动，删除未跟踪 `*.meta`。脏树会让 `git merge` 直接失败且不建 MERGE_HEAD
+- [scope:project] `Standalone.lua` 横屏输入/中缝已抽到 `network/StandaloneHorizon.lua`；workspace 改中缝条宽要打到 Horizon 的 `seamBackList`，用 `DrawUtil.SEAMBAR_ASPECT`
+- [scope:project] workspace 已入库 791 个资源 `.meta`；本地引擎再生成的未跟踪 meta 不要提交，merge 前清掉以免挡住 checkout
+- [scope:project] 抽取模块读 `TAL_BCS` 必须 `getTAL_BCS()`，bind 快照会在 `TAL.mount` 后过期
+- [scope:project] 大页不要用 `_ENV = E` 注入闭包：LSP 会把里面的名字打成 undefined-global Error 挡 build。用 bind(deps) 具名局部
+- [scope:project] 已去掉多人入口：`main.lua` 只加载 Standalone。玩法 `sendAction` 走 `network.GameAction`→LocalActionBridge。`network/Client.lua` / `Server.lua` 已删；`ClientDispatcher` 与 `server/` Handler 仍给单机本地桥用，勿当死代码删
+- [scope:project] 已删 GuildPage / CharacterSelect / LoadingScreen / ServerSelectPanel / VersionMismatchPopup / GuildHandler / GuildService。StartScreen 不再选服；横屏仍 skipForReconnect → DarkTitleScreen。`shared/ServerListConfig` 与 `config/GuildConfig` 仍被存档/云排行使用，勿当死代码删
+- [scope:project] ChurchPage 主绘制已抽到 `ui.ChurchDraw`（bind 具名注入，开关回调用 getter/setter）。大页继续禁止 `_ENV = E`
+- [scope:project] Church 输入/名单、Blacksmith 输入、Talent onBeforeAttack/onDamageTaken 已抽成 bind 模块。TAL_BCS 必须 `getTAL_BCS()`
+- [scope:project] Blacksmith 上半绘制依赖大量局部 img/CARD 常量，勿盲目整段抽；结果转发可抽 `BlacksmithResults`

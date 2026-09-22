@@ -20,6 +20,7 @@ local RewardPopup      = require("ui.RewardPopup")
 local SpineResultEffect = require("ui.SpineResultEffect")
 local DrawUtil         = require("core.DrawUtil")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
+local TownPageChrome   = require("ui.TownPageChrome")
 local HeroAssetUtil    = require("config.HeroAssetUtil")
 local CharacterPanel   = require("ui.CharacterPanel")
 local HeroConfig       = require("config.HeroConfig")
@@ -29,12 +30,13 @@ local ExpTable         = require("config.ExpTable")
 local BlacksmithEnhance   = require("ui.BlacksmithEnhance")
 local BlacksmithRefine    = require("ui.BlacksmithRefine")
 local BlacksmithDecompose = require("ui.BlacksmithDecompose")
+local BlacksmithEnhanceCache = require("ui.BlacksmithEnhanceCache")
 
 -- 延迟加载网络模块（避免循环依赖）
 local Client_
 local Protocol_
 local function getClient()
-    if not Client_ then Client_ = require("network.Client") end
+    if not Client_ then Client_ = require("network.GameAction") end
     return Client_
 end
 local function getProtocol()
@@ -236,6 +238,10 @@ local function formatCompact(n)
 end
 
 local EquipmentSystem = require("systems.EquipmentSystem")
+local BlacksmithEquipSlots = require("ui.BlacksmithEquipSlots")
+local BlacksmithDraw = require("ui.BlacksmithDraw")
+local BlacksmithInput = require("ui.BlacksmithInput")
+local BlacksmithResults = require("ui.BlacksmithResults")
 
 local function formatAffixValue(key, value, affixId)
     local numeric = EquipmentSystem.normalizeAffixNumericValue(value)
@@ -320,117 +326,24 @@ local imgQualityBg = {}   -- UI_icon_ZBBJ_1~5（品质背景框，按品质索�
 -- 词缀等级图标 D/C/B/A/S
 local imgGrade = {}      -- imgGrade["D"], imgGrade["C"], ...
 
--- ======================== 缓动函数 ========================
-
-local function easeOutCubic(t)
-    t = t - 1
-    return t * t * t + 1
-end
-
-local function easeInCubic(t)
-    return t * t * t
-end
-
-local function easeInOutCubic(t)
-    if t < 0.5 then
-        return 4 * t * t * t
-    else
-        local f = 2 * t - 2
-        return 0.5 * f * f * f + 1
-    end
-end
+-- ======================== 缓动函数（TownPageChrome） ========================
+local easeOutCubic   = TownPageChrome.easeOutCubic
+local easeInCubic    = TownPageChrome.easeInCubic
+local easeInOutCubic = TownPageChrome.easeInOutCubic
 
 -- ======================== 工具函数 ========================
 
 --- 居中绘制图片
-local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
-    if img < 0 or alpha <= 0.01 then return end
-    local x = cx - w * 0.5
-    local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, h)
-    nvgFillPaint(vg, paint)
-    nvgFill(vg)
-end
+local drawImageCentered = DrawUtil.drawImageCentered
 
 --- 描边文字
 local drawTextStroke = DrawUtil.drawTextStroke
 
 --- 九宫格绘制
-local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLeft)
-    if img < 0 then return end
-
-    local srcW, srcH = nvgImageSize(vg, img)
-    if srcW <= 0 or srcH <= 0 then return end
-
-    local sL, sR, sT, sB = iLeft, iRight, iTop, iBottom
-    local sMW = srcW - sL - sR
-    local sMH = srcH - sT - sB
-
-    local dL = math.min(iLeft, dw * 0.5)
-    local dR = math.min(iRight, dw * 0.5)
-    local dT = math.min(iTop, dh * 0.5)
-    local dB = math.min(iBottom, dh * 0.5)
-
-    if sMW <= 0 or sMH <= 0 then
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, img, 1.0)
-        nvgBeginPath(vg)
-        nvgRect(vg, dx, dy, dw, dh)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-        return
-    end
-
-    local ix0 = math.floor(dx + 0.5)
-    local iy0 = math.floor(dy + 0.5)
-    local ix1 = math.floor(dx + dL + 0.5)
-    local iy1 = math.floor(dy + dT + 0.5)
-    local ix2 = math.floor(dx + dw - dR + 0.5)
-    local iy2 = math.floor(dy + dh - dB + 0.5)
-    local ix3 = math.floor(dx + dw + 0.5)
-    local iy3 = math.floor(dy + dh + 0.5)
-
-    local OV = 1
-    local patches = {
-        { ix1 - OV, iy1 - OV, ix2 - ix1 + OV * 2, iy2 - iy1 + OV * 2, sL, sT, sMW, sMH },
-        { ix1 - OV, iy0,      ix2 - ix1 + OV * 2, iy1 - iy0 + OV,     sL,       0,        sMW, sT  },
-        { ix1 - OV, iy2 - OV, ix2 - ix1 + OV * 2, iy3 - iy2 + OV,     sL,       sT + sMH, sMW, sB  },
-        { ix0,      iy1 - OV, ix1 - ix0 + OV,     iy2 - iy1 + OV * 2, 0,        sT,       sL,  sMH },
-        { ix2 - OV, iy1 - OV, ix3 - ix2 + OV,     iy2 - iy1 + OV * 2, sL + sMW, sT,       sR,  sMH },
-        { ix0,      iy0,      ix1 - ix0 + OV, iy1 - iy0 + OV, 0,        0,        sL, sT  },
-        { ix2 - OV, iy0,      ix3 - ix2 + OV, iy1 - iy0 + OV, sL + sMW, 0,        sR, sT  },
-        { ix0,      iy2 - OV, ix1 - ix0 + OV, iy3 - iy2 + OV, 0,        sT + sMH, sL, sB  },
-        { ix2 - OV, iy2 - OV, ix3 - ix2 + OV, iy3 - iy2 + OV, sL + sMW, sT + sMH, sR, sB  },
-    }
-
-    nvgShapeAntiAlias(vg, 0)
-    for _, p in ipairs(patches) do
-        local px, py, pw, ph = p[1], p[2], p[3], p[4]
-        local sx, sy, sw, sh = p[5], p[6], p[7], p[8]
-        if pw > 0 and ph > 0 and sw > 0 and sh > 0 then
-            local scaleX = pw / sw
-            local scaleY = ph / sh
-            local paint = nvgImagePattern(vg,
-                px - sx * scaleX,
-                py - sy * scaleY,
-                srcW * scaleX,
-                srcH * scaleY,
-                0, img, 1.0)
-            nvgBeginPath(vg)
-            nvgRect(vg, px, py, pw, ph)
-            nvgFillPaint(vg, paint)
-            nvgFill(vg)
-        end
-    end
-    nvgShapeAntiAlias(vg, 1)
-end
+local drawNineSlice = DrawUtil.drawNineSlice
 
 --- hitTest（中心坐标 + 尺寸）
-local function hitTest(dx, dy, cx, cy, w, h)
-    return dx >= cx - w * 0.5 and dx <= cx + w * 0.5
-       and dy >= cy - h * 0.5 and dy <= cy + h * 0.5
-end
+local hitTest = DrawUtil.hitTest
 
 -- ======================== 编队卡片辅助函数 ========================
 
@@ -521,107 +434,49 @@ local _enhanceCache = {
     slotCanEnhance  = {},
 }
 
+local _enhCache
+local function bindEnhanceCache()
+    _enhCache = BlacksmithEnhanceCache.bind({
+        ClientDispatcher = ClientDispatcher,
+        PlayerStore = PlayerStore,
+        GameState = GameState,
+        CharacterPanel = CharacterPanel,
+        ExpTable = ExpTable,
+        BlacksmithEnhance = BlacksmithEnhance,
+        EQUIP_SLOT_ORDER = EQUIP_SLOT_ORDER,
+        MAX_PARTY = MAX_PARTY,
+        cache = _enhanceCache,
+    })
+end
+
 --- 标记可强化缓存为脏（数据变化时调用）
 function BlacksmithPage.markEnhanceDirty()
     _enhanceCache.dirty = true
 end
 
---- 检查指定出战位的指定装备槽位是否满足强化条件
----@param partySlot number 出战位索引 (1~5)
----@param equipSlot string 装备槽位 key ("weapon"|"offhand"|"armor"|"accessory")
----@param slotEnhanceData table|nil 预取的 slotEnhance 数据（可选，避免重复读取）
----@param gold number|nil 预取的金币数量（可选）
----@return boolean
 local function canEnhanceSlot(partySlot, equipSlot, slotEnhanceData, gold)
-    local BlacksmithConfig = require("config.BlacksmithConfig")
-    ---@diagnostic disable-next-line: assign-type-mismatch
-    slotEnhanceData = slotEnhanceData or ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-    if not slotEnhanceData or not slotEnhanceData.levels then return false end
-    gold = gold or GameState.getGold()
-
-    local partyLevels = slotEnhanceData.levels[tostring(partySlot)]
-        or slotEnhanceData.levels[partySlot]
-    -- partyLevels 为 nil 表示该出战位从未强化过，所有槽位等级视为 0
-    local curLevel = (partyLevels and partyLevels[equipSlot]) or 0
-    -- 动态上限 = min(硬上限, 玩家等级限制)
-    local maxLv = math.min(BlacksmithConfig.MAX_ENHANCE_LEVEL,
-        ExpTable.getEnhanceLevelCap(GameState.getLevel()))
-    if curLevel >= maxLv then return false end
-
-    local nextLevel = curLevel + 1
-    local cost = BlacksmithConfig.getEnhanceCost(nextLevel)
-    if not cost then return false end
-
-    local scrollField = BlacksmithConfig.SLOT_SCROLL_MAP[equipSlot]
-    local scrollGetter = scrollField and BlacksmithEnhance.getScrollGetter(scrollField)
-    local ownedScroll = 0
-    if scrollGetter and GameState[scrollGetter] then
-    ---@diagnostic disable-next-line: assign-type-mismatch
-        ownedScroll = GameState[scrollGetter]()
-    end
-    return gold >= cost.gold and ownedScroll >= cost.scroll
+    if not _enhCache then bindEnhanceCache() end
+    return _enhCache.canEnhanceSlot(partySlot, equipSlot, slotEnhanceData, gold)
 end
 
---- 检查指定出战位是否有任意装备槽位满足强化条件
----@param partySlot number 出战位索引 (1~5)
----@param slotEnhanceData table|nil 预取的 slotEnhance 数据（可选）
----@param gold number|nil 预取的金币数量（可选）
----@return boolean
 local function canEnhancePartySlot(partySlot, slotEnhanceData, gold)
-    -- 只有已上阵角色的出战位才能强化，空槽位/未解锁槽位不算
-    local teamSlots = CharacterPanel.getTeamSlotsData()
-    local slot = teamSlots and teamSlots[partySlot]
-    if not slot or slot.state ~= "occupied" then return false end
-
-    for _, equipSlot in ipairs(EQUIP_SLOT_ORDER) do
-        if canEnhanceSlot(partySlot, equipSlot, slotEnhanceData, gold) then
-            return true
-        end
-    end
-    return false
+    if not _enhCache then bindEnhanceCache() end
+    return _enhCache.canEnhancePartySlot(partySlot, slotEnhanceData, gold)
 end
 
---- 刷新可强化缓存（仅在 dirty 时调用，一次性算完所有槽位）
 local function refreshEnhanceCache()
-    if not _enhanceCache.dirty then return end
-    _enhanceCache.dirty = false
-
-    -- 预取共享数据，避免 canEnhanceSlot 内部重复读取
-    local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-    local gold = GameState.getGold()
-
-    for i = 1, MAX_PARTY do
-        _enhanceCache.slotCanEnhance[i] = _enhanceCache.slotCanEnhance[i] or {}
-        local anyCanEnhance = false
-        -- 只有已上阵角色的出战位才能强化
-        local teamSlots = CharacterPanel.getTeamSlotsData()
-        local slot = teamSlots and teamSlots[i]
-        if slot and slot.state == "occupied" then
-            for _, equipSlot in ipairs(EQUIP_SLOT_ORDER) do
-                local can = canEnhanceSlot(i, equipSlot, slotEnhanceData, gold)
-                _enhanceCache.slotCanEnhance[i][equipSlot] = can
-                if can then anyCanEnhance = true end
-            end
-        else
-            for _, equipSlot in ipairs(EQUIP_SLOT_ORDER) do
-                _enhanceCache.slotCanEnhance[i][equipSlot] = false
-            end
-        end
-        _enhanceCache.partyCanEnhance[i] = anyCanEnhance
-    end
+    if not _enhCache then bindEnhanceCache() end
+    return _enhCache.refreshEnhanceCache()
 end
 
---- 从缓存获取：出战位是否有任意槽可强化（draw 路径用）
 local function getCachedPartyCanEnhance(partySlot)
-    refreshEnhanceCache()
-    return _enhanceCache.partyCanEnhance[partySlot] or false
+    if not _enhCache then bindEnhanceCache() end
+    return _enhCache.getCachedPartyCanEnhance(partySlot)
 end
 
---- 从缓存获取：指定槽位是否可强化（draw 路径用）
 local function getCachedSlotCanEnhance(partySlot, equipSlot)
-    refreshEnhanceCache()
-    local ps = _enhanceCache.slotCanEnhance[partySlot]
-    return ps and ps[equipSlot] or false
+    if not _enhCache then bindEnhanceCache() end
+    return _enhCache.getCachedSlotCanEnhance(partySlot, equipSlot)
 end
 
 -- ======================== 上半部分绘制 ========================
@@ -869,138 +724,35 @@ local function drawUpperSlotContent(vg, tabName)
 end
 
 --- 绘制 4 个装备槽位（强化 tab 专用，放在下半部分避免被 lower BG 覆盖）
-local _equipSlotDbgTimer = 0
+local _eqSlots
+local function bindEquipSlots()
+    _eqSlots = BlacksmithEquipSlots.bind({
+        CharacterPanel = CharacterPanel,
+        ClientDispatcher = ClientDispatcher,
+        DarkIcon = DarkIcon,
+        DrawUtil = DrawUtil,
+        EQUIP_LV_FONT_SIZE = EQUIP_LV_FONT_SIZE,
+        EQUIP_LV_Y_OFFSET = EQUIP_LV_Y_OFFSET,
+        EQUIP_SLOT_ORDER = EQUIP_SLOT_ORDER,
+        EQUIP_SLOT_SIZE = EQUIP_SLOT_SIZE,
+        EquipmentSystem = EquipmentSystem,
+        PlayerStore = PlayerStore,
+        drawImageCentered = drawImageCentered,
+        drawTextStroke = drawTextStroke,
+        getCachedSlotCanEnhance = getCachedSlotCanEnhance,
+        getEquipIconCached = getEquipIconCached,
+        getEquipSlotCX = getEquipSlotCX,
+        getEquipSlotCY = getEquipSlotCY,
+        imgIconUp = imgIconUp,
+        imgSlotBg = imgSlotBg,
+        imgSlotSelected = imgSlotSelected,
+        state = state
+    })
+end
+
 local function drawEquipSlots(vg)
-    local teamSlots = CharacterPanel.getTeamSlotsData()
-    local selectedSlot = teamSlots and teamSlots[state.selectedPartySlot]
-    local heroId = selectedSlot and selectedSlot.heroId
-    local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-    local heroEquipped = nil
-    if heroId and eqData and eqData.equipped then
-        -- 尝试字符串和数字两种 key
-        heroEquipped = EquipmentSystem.getHeroSlots(eqData, heroId)
-    end
-
-    -- 诊断日志（每 3 秒打印一次）
-    local now = time.elapsedTime or 0
-    if now - _equipSlotDbgTimer > 3 then
-        _equipSlotDbgTimer = now
-        print("[drawEquipSlots] heroId=" .. tostring(heroId)
-            .. " eqData=" .. tostring(eqData ~= nil)
-            .. " equipped=" .. tostring(eqData and eqData.equipped ~= nil)
-            .. " heroEquipped=" .. tostring(heroEquipped ~= nil))
-        if eqData and eqData.equipped then
-            local keys = {}
-            for k, _ in pairs(eqData.equipped) do keys[#keys+1] = tostring(k) .. "(" .. type(k) .. ")" end
-            print("[drawEquipSlots] equipped keys: " .. table.concat(keys, ", "))
-        end
-        if heroEquipped then
-            local slots = {}
-            for k, v in pairs(heroEquipped) do slots[#slots+1] = k .. "=" .. tostring(v) end
-            print("[drawEquipSlots] heroEquipped: " .. table.concat(slots, ", "))
-        end
-    end
-
-    for i, slotKey in ipairs(EQUIP_SLOT_ORDER) do
-        local cx = getEquipSlotCX(i)
-        local cy = getEquipSlotCY(i)
-        local isSelected = (slotKey == state.selectedEquipSlot)
-
-        -- 选中底图（在槽位背景图后方）
-        if isSelected and imgSlotSelected >= 0 then
-            drawImageCentered(vg, imgSlotSelected, cx, cy, 234, 234, 1.0)
-        end
-
-        -- 槽位背景图
-        local bgImg = imgSlotBg[slotKey]
-        if bgImg and bgImg >= 0 then
-            drawImageCentered(vg, bgImg, cx, cy, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, 1.0)
-        end
-
-        -- 如果该英雄该槽位有装备，绘制品质底框 + 装备图标
-        local seq = heroEquipped and heroEquipped[slotKey]
-        local equip = nil
-        if seq and eqData and eqData.inventory then
-            equip = eqData.inventory[tostring(seq)]
-        end
-        -- 双手武器镜像：offhand 无装备时检查 weapon 是否双手
-        local isTwohandOccupied = false
-        if not equip and slotKey == "offhand" and heroEquipped and eqData and eqData.inventory then
-            local weaponSeq = heroEquipped["weapon"]
-            if weaponSeq then
-                local weaponEquip = eqData.inventory[tostring(weaponSeq)]
-                if weaponEquip and weaponEquip.grip == "twohand" then
-                    equip = weaponEquip
-                    isTwohandOccupied = true
-                end
-            end
-        end
-        if equip then
-            local qIdx = math.max(1, math.min(6, equip.quality or 1))
-            DarkIcon.drawQualityBg(vg, qIdx, cx, cy, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, 1.0)  -- [暗黑化 P2-A]
-            local eqIcon = getEquipIconCached(equip.templateId)
-            if eqIcon and eqIcon > 0 then
-                DarkIcon.drawIconDark(vg, eqIcon, cx, cy, EQUIP_SLOT_SIZE - 16, EQUIP_SLOT_SIZE - 16, 1.0)  -- [暗黑化 P2-B]
-            end
-            -- 装备等级角标 "Lv.X"（右下角，16方向描边）
-            local eqLv = equip.level or 1
-            if eqLv >= 1 then
-                local lvlText = "Lv." .. eqLv
-                local lvlX = cx + EQUIP_SLOT_SIZE * 0.5 - 8
-                local lvlY = cy + EQUIP_SLOT_SIZE * 0.5 - 6
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 40)
-                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-                local sStep = math.pi * 2 / 16
-                for si = 0, 15 do
-                    local sa = si * sStep
-                    nvgText(vg, lvlX + math.cos(sa) * 4, lvlY + math.sin(sa) * 4, lvlText, nil)
-                end
-                nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
-                nvgText(vg, lvlX, lvlY, lvlText, nil)
-            end
-
-            -- 双手武器占用副手槽位时绘制半透明黑色遮罩
-            if isTwohandOccupied then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg,
-                    cx - EQUIP_SLOT_SIZE * 0.5,
-                    cy - EQUIP_SLOT_SIZE * 0.5,
-                    EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE, 24)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-                nvgFill(vg)
-            end
-        end
-
-        -- 槽位强化等级文本（来自 slotEnhance，与装备无关）
-        do
-            local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-            local enhLv = 0
-            if slotEnhanceData and slotEnhanceData.levels then
-                local partyLevels = slotEnhanceData.levels[tostring(state.selectedPartySlot)]
-                    or slotEnhanceData.levels[state.selectedPartySlot]
-                if partyLevels then
-                    enhLv = partyLevels[slotKey] or 0
-                end
-            end
-            if enhLv > 0 then
-                local lvX = cx
-                local lvY = cy + EQUIP_LV_Y_OFFSET
-                drawTextStroke(vg, lvX, lvY, "+" .. enhLv,
-                    EQUIP_LV_FONT_SIZE, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                    0x67, 0xff, 0x75, 5, { italic = true })
-            end
-        end
-
-        -- 可强化角标（右上角，该装备槽位满足强化条件时显示）
-        if imgIconUp >= 0 and getCachedSlotCanEnhance(state.selectedPartySlot, slotKey) then
-            local upSize = 36
-            local upX = cx + EQUIP_SLOT_SIZE * 0.5 - upSize * 0.25
-            local upY = cy - EQUIP_SLOT_SIZE * 0.5 + upSize * 0.25
-            DrawUtil.drawImageCentered(vg, imgIconUp, upX, upY, upSize, upSize, 1.0)
-        end
-    end
+    bindEquipSlots()
+    return _eqSlots.drawEquipSlots(vg)
 end
 
 --- 绘制下半部分 Tab 面板内容（按 tab 类型）
@@ -1269,543 +1021,161 @@ function BlacksmithPage.openToAutoDecompose()
     print("[BlacksmithPage] openToAutoDecompose")
 end
 
---- 当装备数据从服务端推送更新时，刷新 selectedEquip
----@param equipmentData table 完整的装备模块数据
+local _results
+local function bindResults()
+    _results = BlacksmithResults.bind({
+        state = state,
+        BlacksmithDecompose = BlacksmithDecompose,
+        BlacksmithEnhance = BlacksmithEnhance,
+        BlacksmithRefine = BlacksmithRefine,
+        ClientDispatcher = ClientDispatcher,
+        PlayerStore = PlayerStore,
+        deriveSelectedEquip = deriveSelectedEquip,
+        enhanceCache = _enhanceCache,
+    })
+end
+
 function BlacksmithPage.onEquipmentDataUpdate(equipmentData)
-    if not state.open then return end
-
-    -- 刷新分解页面背包数据
-    BlacksmithDecompose.refreshBackpackItems()
-
-    -- 洗练 tab 下：按 seq 从最新 inventory 中刷新独立选中的装备，不走 deriveSelectedEquip
-    if state.tab == "xilian" and state.selectedEquip then
-        local seq = state.selectedEquip.seq
-        if seq then
-            local eqData = equipmentData or ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-            if eqData and eqData.inventory then
-                local refreshed = eqData.inventory[tostring(seq)]
-                if refreshed then
-                    state.selectedEquip = refreshed
-                    if BlacksmithRefine.hasPreview() then
-                        -- 有洗练预览时仅重算消耗，避免覆盖预览/动画状态
-                        BlacksmithRefine.refreshCostOnly()
-                    else
-                        BlacksmithRefine.updateRefineData(refreshed)
-                    end
-                    print("[BlacksmithPage] 洗练tab: 按seq=" .. tostring(seq) .. "刷新装备数据+消耗")
-                else
-                    -- 装备可能已被分解/删除
-                    state.selectedEquip = nil
-                    BlacksmithRefine.updateRefineData(nil)
-                    print("[BlacksmithPage] 洗练tab: seq=" .. tostring(seq) .. "装备已不存在，重置")
-                end
-            end
-        end
-        return
-    end
-
-    -- 强化/分解 tab：重新推导当前选中装备（服务端推送后英雄装备可能变化）
-    deriveSelectedEquip()
-    print("[BlacksmithPage] 装备数据已刷新（deriveSelectedEquip）")
+    if not _results then bindResults() end
+    return _results.onEquipmentDataUpdate(equipmentData)
 end
 
---- 当服务端返回 action result 时处理强化/洗练特有数据
----@param data table action result 数据
 function BlacksmithPage.onActionResult(data)
-    if not state.open then return end
-
-    -- 任何操作结果都可能影响金币/卷轴/强化等级 → 标脏角标缓存
-    _enhanceCache.dirty = true
-
-    -- 失败响应（无特定字段）→ 按当前 Tab 转发到对应子模块以释放门控
-    if not data.enhanceOutcome and not data.refinePreview and not data.decomposed and not data.refineReplaced then
-        if state.tab == "qianghua" then
-            BlacksmithEnhance.onActionResult(data)
-        elseif state.tab == "xilian" then
-            BlacksmithRefine.onActionResult(data)
-        elseif state.tab == "fenjie" then
-            BlacksmithDecompose.onActionResult(data)
-        end
-        return
-    end
-
-    -- 强化结果 → 委托给 Enhance 子模块
-    if data.enhanceOutcome then
-        BlacksmithEnhance.onActionResult(data)
-    end
-
-    -- 洗练结果预览 → 委托给 Refine 子模块
-    if data.refinePreview then
-        BlacksmithRefine.onActionResult(data)
-    end
-
-    -- 分解结果处理 → 委托给 Decompose 子模块
-    if data.decomposed then
-        BlacksmithDecompose.onActionResult(data)
-    end
-
-    -- 替换成功 → 委托给 Refine 子模块
-    if data.refineReplaced then
-        BlacksmithRefine.onActionResult(data)
-    end
+    if not _results then bindResults() end
+    return _results.onActionResult(data)
 end
 
---- 拖拽开始（由 Standalone/Client 委托转发）
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
----@return boolean 是否消费事件
+--- 点击/拖拽/滚轮
+local _input
+local function bindInput()
+    _input = BlacksmithInput.bind({
+        EquipmentBag = EquipmentBag,
+        BlacksmithEnhance = BlacksmithEnhance,
+        BlacksmithDecompose = BlacksmithDecompose,
+        BlacksmithRefine = BlacksmithRefine,
+        TownPageChrome = TownPageChrome,
+        TAB_ITEMS = TAB_ITEMS,
+        state = state,
+        forceClose = BlacksmithPage.forceClose,
+        closePage = BlacksmithPage.close,
+        BlacksmithPage = BlacksmithPage,
+        CharacterPanel = CharacterPanel,
+        EquipmentDetail = EquipmentDetail,
+        getEquipSlotCX = getEquipSlotCX,
+        getEquipSlotCY = getEquipSlotCY,
+        EQUIP_SLOT_ORDER = EQUIP_SLOT_ORDER,
+        SLIDER_W = SLIDER_W,
+        SLIDER_H = SLIDER_H,
+        hitTest = hitTest,
+        CARD_CY = CARD_CY,
+        CARD_W = CARD_W,
+        CARD_H = CARD_H,
+        EQUIP_SLOT_SIZE = EQUIP_SLOT_SIZE,
+        MAX_PARTY = MAX_PARTY,
+        getCardSlotCX = getCardSlotCX,
+        deriveSelectedEquip = deriveSelectedEquip,
+    })
+end
+
 function BlacksmithPage.handleDragBegin(dx, dy)
-    if not state.open or state.closing then return true end
-    if EquipmentBag.isOpen() then return EquipmentBag.handleDragBegin(dx, dy) end
-    -- 一键强化确认弹窗滑块
-    if state.tab == "qianghua" and BlacksmithEnhance.isDialogOpen() then
-        BlacksmithEnhance.handleDialogDragBegin(dx, dy)
-        return true
-    end
-    -- 分解 tab：记录触摸起点用于滚动
-    if state.tab == "fenjie" then
-        BlacksmithDecompose.handleDragBegin(dx, dy)
-    end
-    return true  -- 铁匠铺打开时消费所有拖拽
+    if not _input then bindInput() end
+    return _input.handleDragBegin(dx, dy)
 end
 
---- 拖拽移动
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
----@return boolean 是否消费事件
 function BlacksmithPage.handleDragMove(dx, dy)
-    if not state.open or state.closing then return true end
-    if EquipmentBag.isOpen() then return EquipmentBag.handleDragMove(dx, dy) end
-    -- 一键强化确认弹窗滑块
-    if state.tab == "qianghua" and BlacksmithEnhance.isDialogOpen() then
-        BlacksmithEnhance.handleDialogDragMove(dx, dy)
-        return true
-    end
-    -- 分解 tab：滑动滚动背包列表
-    if state.tab == "fenjie" then
-        BlacksmithDecompose.handleDragMove(dx, dy)
-    end
-    return true
+    if not _input then bindInput() end
+    return _input.handleDragMove(dx, dy)
 end
 
---- 拖拽结束
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
----@return boolean 是否消费事件
 function BlacksmithPage.handleDragEnd(dx, dy)
-    if not state.open then return false end
-    if EquipmentBag.isOpen() then return EquipmentBag.handleDragEnd(dx, dy) end
-    -- 一键强化确认弹窗滑块释放
-    if state.tab == "qianghua" and BlacksmithEnhance.isDialogOpen() then
-        BlacksmithEnhance.handleDialogDragEnd()
-        return true
-    end
-    -- 分解 tab：清除触摸状态
-    if state.tab == "fenjie" then
-        BlacksmithDecompose.handleDragEnd(dx, dy)
-    end
-    return true
+    if not _input then bindInput() end
+    return _input.handleDragEnd(dx, dy)
 end
 
---- 鼠标滚轮滚动
----@param wheel number 滚轮值
 function BlacksmithPage.handleScroll(wheel)
-    if not state.open or state.closing then return end
-    if EquipmentBag.isOpen() then EquipmentBag.handleScroll(wheel); return end
-    -- 分解 tab：滚轮滚动背包列表
-    if state.tab == "fenjie" then
-        BlacksmithDecompose.handleScroll(wheel)
-    end
+    if not _input then bindInput() end
+    return _input.handleScroll(wheel)
 end
 
---- 处理输入
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
----@return boolean 是否消费事件
 function BlacksmithPage.handleInput(dx, dy)
-    if not state.open then return false end
-    if state.closing then
-        -- 安全保护：如果关闭动画超过 1 秒仍未完成，强制关闭
-        local closingElapsed = time.elapsedTime - state.closeTime
-        if closingElapsed > 1.0 then
-            print("[BlacksmithPage] handleInput: 关闭动画超时(" .. string.format("%.2f", closingElapsed) .. "s)，强制关闭")
-            BlacksmithPage.forceClose()
-            return false
-        end
-        return true
-    end
-
-    -- 装备背包优先处理
-    if EquipmentBag.isOpen() then
-        return EquipmentBag.handleInput(dx, dy)
-    end
-
-    -- 装备详情面板交互（长按触发，优先级最高）
-    if state.tab == "fenjie" and EquipmentDetail.isOpen() then
-        return EquipmentDetail.handleInput(dx, dy)
-    end
-
-    -- 自动分解弹窗交互（优先级最高）
-    if state.tab == "fenjie" and BlacksmithDecompose.isPopupOpen() then
-        return BlacksmithDecompose.handlePopupInput(dx, dy)
-    end
-
-    -- 一键强化确认弹窗（强化 tab，优先级最高）
-    if state.tab == "qianghua" and BlacksmithEnhance.isDialogOpen() then
-        return BlacksmithEnhance.handleDialogInput(dx, dy)
-    end
-
-    -- 返回按钮（三行模式由中缝层接管）
-    ---@diagnostic disable-next-line: undefined-global
-    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
-        BlacksmithPage.close()
-        return true
-    end
-
-    -- 编队卡片 + 装备槽点击（仅强化 tab）
-    if state.tab == "qianghua" then
-        -- 5 张编队卡片点击
-        for i = 1, MAX_PARTY do
-            local cx = getCardSlotCX(i)
-            if hitTest(dx, dy, cx, CARD_CY, CARD_W, CARD_H) then
-                if i ~= state.selectedPartySlot then
-                    state.selectedPartySlot = i
-                    deriveSelectedEquip()
-                    print("[BlacksmithPage] 选中编队槽位: " .. i)
-                end
-                return true
-            end
-        end
-        -- 6 个装备槽点击
-        for i, slotKey in ipairs(EQUIP_SLOT_ORDER) do
-            local cx = getEquipSlotCX(i)
-            local cy = getEquipSlotCY(i)
-            if hitTest(dx, dy, cx, cy, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE) then
-                if slotKey ~= state.selectedEquipSlot then
-                    state.selectedEquipSlot = slotKey
-                    deriveSelectedEquip()
-                    print("[BlacksmithPage] 选中装备槽: " .. slotKey)
-                end
-                return true
-            end
-        end
-    end
-
-    -- 洗练 tab：单个装备槽点击（打开装备背包选择）
-    if state.tab == "xilian" then
-        local slotCX, slotCY, slotSize = 540, 431, 160
-        if hitTest(dx, dy, slotCX, slotCY, slotSize, slotSize) then
-            -- 洗练独立板块：slot=nil 显示全部装备（已装备+未装备），heroId=nil 不限英雄
-            EquipmentBag.open(nil, "全部装备", nil, function(seq, equip)
-                if equip then
-                    state.selectedEquip = equip
-                    BlacksmithRefine.updateRefineData(equip)
-                    print("[BlacksmithPage] 洗练选择装备: seq=" .. tostring(seq) .. " name=" .. (equip.name or "?"))
-                end
-            end)
-            return true
-        end
-    end
-
-    -- Tab 切换检测
-    for i, item in ipairs(TAB_ITEMS) do
-        -- 每个 tab 使用 SLIDER_W x SLIDER_H 的点击区域
-        if hitTest(dx, dy, item.cx, item.cy, SLIDER_W, SLIDER_H) then
-            local tabKeys = { "qianghua", "xilian", "fenjie" }
-            local newTab = tabKeys[i]
-            if state.tab ~= newTab then
-                state.tabFrom = state.tab
-                state.tabSwitchTime = time.elapsedTime
-                state.tab = newTab
-                require("systems.GameSFX").playUIMove(2)
-                -- 切换到强化 tab 时恢复装备选择（洗练 tab 会清空 selectedEquip）
-                if newTab == "qianghua" then
-                    deriveSelectedEquip()
-                end
-                -- 切换到洗练 tab 时重置装备选择（洗练槽位独立选择，不继承强化面板）
-                if newTab == "xilian" then
-                    state.selectedEquip = nil
-                    BlacksmithRefine.updateRefineData(nil)
-                end
-                -- 切换到分解 tab 时重置分解状态
-                if newTab == "fenjie" then
-                    BlacksmithDecompose.onTabSwitch()
-                    BlacksmithDecompose.refreshBackpackItems()
-                end
-                print("[BlacksmithPage] 切换到: " .. item.name)
-            end
-            return true
-        end
-    end
-
-    -- Tab 内部输入：委托给对应子模块
-    if state.tab == "qianghua" and state.selectedEquip then
-        return BlacksmithEnhance.handleInput(dx, dy)
-    elseif state.tab == "xilian" and state.selectedEquip then
-        return BlacksmithRefine.handleInput(dx, dy)
-    elseif state.tab == "fenjie" then
-        return BlacksmithDecompose.handleInput(dx, dy)
-    end
-
-    -- 面板内其他区域，消费事件不关闭
-    return true
+    if not _input then bindInput() end
+    return _input.handleInput(dx, dy)
 end
 
 --- 绘制铁匠铺界面
+local _pageDraw
+local function bindPageDraw()
+    _pageDraw = BlacksmithDraw.bind({
+        ANIM_DURATION = ANIM_DURATION,
+        BG_CX = BG_CX,
+        BG_CY = BG_CY,
+        BG_H = BG_H,
+        BG_W = BG_W,
+        BlacksmithDecompose = BlacksmithDecompose,
+        BlacksmithEnhance = BlacksmithEnhance,
+        BlacksmithPage = BlacksmithPage,
+        CLOSE_ANIM_DURATION = CLOSE_ANIM_DURATION,
+        DESIGN_H = DESIGN_H,
+        DESIGN_W = DESIGN_W,
+        DarkIcon = DarkIcon,
+        DrawUtil = DrawUtil,
+        EQUIP_SLOT_ORDER = EQUIP_SLOT_ORDER,
+        EquipmentBag = EquipmentBag,
+        EquipmentDetail = EquipmentDetail,
+        LOWER_BG_CX = LOWER_BG_CX,
+        LOWER_BG_CY = LOWER_BG_CY,
+        LOWER_BG_H = LOWER_BG_H,
+        LOWER_BG_W = LOWER_BG_W,
+        LOWER_SLIDE_DIST = LOWER_SLIDE_DIST,
+        NAME_FONT_SIZE = NAME_FONT_SIZE,
+        NAME_TEXT_CX = NAME_TEXT_CX,
+        NAME_TEXT_CY = NAME_TEXT_CY,
+        SLIDER_H = SLIDER_H,
+        SLIDER_W = SLIDER_W,
+        SpineResultEffect = SpineResultEffect,
+        TAB_ACTIVE_B = TAB_ACTIVE_B,
+        TAB_ACTIVE_G = TAB_ACTIVE_G,
+        TAB_ACTIVE_R = TAB_ACTIVE_R,
+        TAB_ANIM_DURATION = TAB_ANIM_DURATION,
+        TAB_BG_CX = TAB_BG_CX,
+        TAB_BG_CY = TAB_BG_CY,
+        TAB_BG_H = TAB_BG_H,
+        TAB_BG_W = TAB_BG_W,
+        TAB_FONT_SIZE = TAB_FONT_SIZE,
+        TAB_INACTIVE_B = TAB_INACTIVE_B,
+        TAB_INACTIVE_G = TAB_INACTIVE_G,
+        TAB_INACTIVE_R = TAB_INACTIVE_R,
+        TAB_ITEMS = TAB_ITEMS,
+        TAB_MAP = TAB_MAP,
+        TAB_TEXT_Y = TAB_TEXT_Y,
+        TownPageChrome = TownPageChrome,
+        UPPER_SLIDE_DIST = UPPER_SLIDE_DIST,
+        decomposeRedDot = decomposeRedDot,
+        drawEquipSlots = drawEquipSlots,
+        drawImageCentered = drawImageCentered,
+        drawTabContent = drawTabContent,
+        drawUpperSlotContent = drawUpperSlotContent,
+        easeInCubic = easeInCubic,
+        easeInOutCubic = easeInOutCubic,
+        easeOutCubic = easeOutCubic,
+        getEquipSlotCX = getEquipSlotCX,
+        getEquipSlotCY = getEquipSlotCY,
+        imgBg = imgBg,
+        imgIconUp = imgIconUp,
+        imgLowerBg = imgLowerBg,
+        imgNameBg = imgNameBg,
+        imgTabBg = imgTabBg,
+        getOnCloseCallback = function() return onCloseCallback_ end,
+        setOnCloseCallback = function(v) onCloseCallback_ = v end,
+        getOnOpenCallback = function() return onOpenCallback_ end,
+        setOnOpenCallback = function(v) onOpenCallback_ = v end,
+        state = state
+    })
+end
+
 local function drawPageImpl(vg)
-    if not state.open then return end
-
-    -- === 弹出/关闭动画 ===
-    local rawT, progress, lowerProgress
-
-    if state.closing then
-        local elapsed = time.elapsedTime - state.closeTime
-        rawT = math.min(1.0, elapsed / CLOSE_ANIM_DURATION)
-        progress      = 1 - easeInCubic(rawT)
-        lowerProgress = progress
-        if rawT >= 1.0 then
-            print("[BlacksmithPage] draw: 关闭动画完成，state.open → false")
-            state.open = false
-            state.closing = false
-            local cb = onCloseCallback_
-            onCloseCallback_ = nil
-            if cb then cb() end
-            return
-        end
-    else
-        local elapsed = time.elapsedTime - state.openTime
-        rawT = math.min(1.0, elapsed / ANIM_DURATION)
-        progress      = easeOutCubic(rawT)
-        lowerProgress = easeOutCubic(rawT)
-        if rawT >= 1.0 and onOpenCallback_ then
-            local cb = onOpenCallback_
-            onOpenCallback_ = nil
-            cb()
-        end
-    end
-
-    local upperOX = -UPPER_SLIDE_DIST * (1 - progress)  -- [横向] 从左侧滑入/滑出
-    local lowerOX = -LOWER_SLIDE_DIST * (1 - lowerProgress)  -- [横向] 与整页同向:从左侧滑入/滑出
-    local overlayAlpha = math.floor(180 * progress)
-
-    -- === 全屏遮罩 ===
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, overlayAlpha))
-    nvgFill(vg)
-
-    -- ================== 上半部分（从上方滑入） ==================
-    nvgSave(vg)
-    nvgTranslate(vg, upperOX, 0)
-
-    -- 1. 铁匠铺背景图（裁剪到设计宽度）
-    nvgSave(vg)
-    nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-    drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
-    nvgResetScissor(vg)
-    nvgRestore(vg)
-
-    -- 2. 铁匠铺名称背景（中心点绘制）
-    drawImageCentered(vg, imgNameBg, NAME_BG_CX, NAME_BG_CY, NAME_BG_W, NAME_BG_H, 1.0)
-
-    -- 3. 文本"铁匠铺"（中心点坐标，无描边）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, NAME_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, NAME_TEXT_CX, NAME_TEXT_CY, "铁匠铺", nil)
-
-    -- 4-6. 上半部分槽位区域 + 下半部分面板内容（带 Tab 切换滑动动画）
-    local tabIdx = TAB_MAP[state.tab] or 3
-    local fromIdx = TAB_MAP[state.tabFrom] or 3
-    local tabElapsed = time.elapsedTime - state.tabSwitchTime
-    local tabT = math.min(1.0, tabElapsed / TAB_ANIM_DURATION)
-    local tabEased = easeInOutCubic(tabT)
-
-    -- 滑动方向：新 tab 在旧 tab 左侧 -> 内容从左滑入（direction = -1）
-    local direction = 0
-    if tabIdx ~= fromIdx then
-        direction = (tabIdx < fromIdx) and -1 or 1
-    end
-    -- 新面板偏移：从 direction*DESIGN_W 滑到 0
-    local newOX = DESIGN_W * direction * (1 - tabEased)
-    -- 旧面板偏移：从 0 滑到 -direction*DESIGN_W
-    local oldOX = -DESIGN_W * direction * tabEased
-    local isAnimating = (tabT < 1.0 and tabIdx ~= fromIdx)
-
-    -- 上半部分：三种 tab 内容各不相同，任意两种之间切换都需要滑动
-    local upperNeedSlide = isAnimating and (state.tab ~= state.tabFrom)
-
-    if upperNeedSlide then
-        -- 涉及分解切换：新旧槽位都带水平滑动 + 屏幕范围剪裁
-        nvgSave(vg)
-        nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-        nvgSave(vg)
-        nvgTranslate(vg, oldOX, 0)
-        drawUpperSlotContent(vg, state.tabFrom)
-        nvgRestore(vg)
-        nvgSave(vg)
-        nvgTranslate(vg, newOX, 0)
-        drawUpperSlotContent(vg, state.tab)
-        nvgRestore(vg)
-        nvgResetScissor(vg)
-        nvgRestore(vg)
-    else
-        -- 强化<->洗练：上半部分不动，直接绘制当前 tab
-        drawUpperSlotContent(vg, state.tab)
-    end
-
-    nvgRestore(vg)  -- 结束上半部分偏移
-
-    -- ================== 下半部分（从下方滑入） ==================
-    nvgSave(vg)
-    nvgTranslate(vg, lowerOX, 0)
-
-    -- 7. 下方背景板
-    drawImageCentered(vg, imgLowerBg, LOWER_BG_CX, LOWER_BG_CY, LOWER_BG_W, LOWER_BG_H, 1.0)
-
-    -- 7.5 装备槽位（仅强化 tab，带滑动动画，绘制在 lower BG 之上避免被覆盖）
-    do
-        local curIsQH = (state.tab == "qianghua")
-        local oldIsQH = (state.tabFrom == "qianghua")
-        if isAnimating and (curIsQH or oldIsQH) then
-            -- 动画中：旧/新面板分别绘制装备槽位并带滑动
-            nvgSave(vg)
-            nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-            if oldIsQH then
-                nvgSave(vg)
-                nvgTranslate(vg, oldOX, 0)
-                drawEquipSlots(vg)
-                nvgRestore(vg)
-            end
-            if curIsQH then
-                nvgSave(vg)
-                nvgTranslate(vg, newOX, 0)
-                drawEquipSlots(vg)
-                -- Spine 强化结果特效
-                if SpineResultEffect.isPlaying() then
-                    local eqIdx = 1
-                    for i, k in ipairs(EQUIP_SLOT_ORDER) do
-                        if k == state.selectedEquipSlot then eqIdx = i; break end
-                    end
-                    SpineResultEffect.draw(vg, getEquipSlotCX(eqIdx), getEquipSlotCY(eqIdx))
-                end
-                nvgRestore(vg)
-            end
-            nvgResetScissor(vg)
-            nvgRestore(vg)
-        elseif curIsQH then
-            -- 非动画：直接绘制
-            drawEquipSlots(vg)
-            if SpineResultEffect.isPlaying() then
-                local eqIdx = 1
-                for i, k in ipairs(EQUIP_SLOT_ORDER) do
-                    if k == state.selectedEquipSlot then eqIdx = i; break end
-                end
-                SpineResultEffect.draw(vg, getEquipSlotCX(eqIdx), getEquipSlotCY(eqIdx))
-            end
-        end
-    end
-
-    -- 下方内容剪裁区域（背景板范围内，Tab 栏以上）
-    local clipTop = LOWER_BG_CY - LOWER_BG_H * 0.5
-    local clipBottom = TAB_BG_CY - TAB_BG_H * 0.5
-    local clipH = clipBottom - clipTop
-
-    -- === 绘制旧面板内容（滑出，仅动画中绘制） ===
-    if isAnimating then
-        nvgSave(vg)
-        nvgScissor(vg, 0, clipTop, DESIGN_W, clipH)
-        nvgTranslate(vg, oldOX, 0)
-        drawTabContent(vg, state.tabFrom)
-        nvgResetScissor(vg)
-        nvgRestore(vg)
-    end
-
-    -- === 绘制新面板内容（当前 tab） ===
-    nvgSave(vg)
-    nvgScissor(vg, 0, clipTop, DESIGN_W, clipH)
-    if isAnimating then nvgTranslate(vg, newOX, 0) end
-    drawTabContent(vg, state.tab)
-    nvgResetScissor(vg)
-    nvgRestore(vg)
-
-    -- 8. 返回按钮（三行模式由中缝层绘制）
-    ---@diagnostic disable-next-line: undefined-global
-    if not H_SEAM_BACK then
-        DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
-    end
-
-    -- 9. 页面选项滑块背景
-    drawImageCentered(vg, imgTabBg, TAB_BG_CX, TAB_BG_CY, TAB_BG_W, TAB_BG_H, 1.0)
-
-    -- 10-11. 滑块按钮（带平移动画，与角色详情完全一致）
-    local targetItem = TAB_ITEMS[tabIdx]
-    local fromItem = TAB_ITEMS[fromIdx]
-
-    local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
-    local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
-
-    -- 使用九宫格绘制滑块
-    DarkIcon.drawNine(vg, "btn", sliderCX - SLIDER_W * 0.5, sliderCY - SLIDER_H * 0.5, SLIDER_W, SLIDER_H, { accent = "gold" })
-
-    -- Tab 文本
-    for i, item in ipairs(TAB_ITEMS) do
-        local tabKeys = { "qianghua", "xilian", "fenjie" }
-        local isActive = (state.tab == tabKeys[i])
-
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, TAB_FONT_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        if isActive then
-            nvgFillColor(vg, nvgRGBA(TAB_ACTIVE_R, TAB_ACTIVE_G, TAB_ACTIVE_B, 255))
-        else
-            nvgFillColor(vg, nvgRGBA(TAB_INACTIVE_R, TAB_INACTIVE_G, TAB_INACTIVE_B, 255))
-        end
-        nvgText(vg, item.cx, TAB_TEXT_Y, item.name, nil)
-    end
-
-    -- 分解标签红点（背包满时，选中也保留）
-    if decomposeRedDot then
-        local fenjieTab = TAB_ITEMS[3]  -- "分解"
-        nvgFontFace(vg, "sans"); nvgFontSize(vg, TAB_FONT_SIZE)
-        local upSize = 30
-        local textHalfW = nvgTextBounds(vg, 0, 0, fenjieTab.name) * 0.5
-        local upX = fenjieTab.cx + textHalfW + 10
-        local upY = TAB_TEXT_Y - 18
-        DarkIcon.draw(vg, "reddot", upX, upY, upSize, 1.0)
-    end
-
-    -- 强化标签可强化角标（有任意槽位满足强化条件时显示）
-    if imgIconUp >= 0 and BlacksmithPage.canEnhanceAny() then
-        local qhTab = TAB_ITEMS[1]  -- "强化"
-        nvgFontFace(vg, "sans"); nvgFontSize(vg, TAB_FONT_SIZE)
-        local upSize = 30
-        local textHalfW = nvgTextBounds(vg, 0, 0, qhTab.name) * 0.5
-        local upX = qhTab.cx + textHalfW + 10
-        local upY = TAB_TEXT_Y - 18
-        DrawUtil.drawImageCentered(vg, imgIconUp, upX, upY, upSize, upSize, 1.0)
-    end
-
-    nvgRestore(vg)  -- 结束下半部分偏移
-
-    -- 自动分解弹窗（最顶层，不受滑动偏移影响）
-    if state.tab == "fenjie" then
-        BlacksmithDecompose.drawAutoDecomposePopup(vg)
-    end
-
-    -- 装备详情面板（最顶层，长按触发）
-    if state.tab == "fenjie" then
-        EquipmentDetail.draw(vg)
-    end
-
-    -- 一键强化确认弹窗（强化 tab，最顶层）
-    if state.tab == "qianghua" then
-        BlacksmithEnhance.drawConfirmDialog(vg)
-    end
-
-    -- 装备背包覆盖层（最顶层）
-    EquipmentBag.draw(vg)
+    bindPageDraw()
+    return _pageDraw.drawPageImpl(vg)
 end
 
 --- 设置分解标签红点（背包满时由外部驱动）
@@ -1818,42 +1188,8 @@ end
 --- 遍历 5 个出战位 × 4 个装备槽，只要有一个当前金币+卷轴足够升级就返回 true
 ---@return boolean
 function BlacksmithPage.canEnhanceAny()
-    local BlacksmithConfig = require("config.BlacksmithConfig")
-    local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-    if not slotEnhanceData or not slotEnhanceData.levels then return false end
-
-    local gold = GameState.getGold()
-    local teamSlots = CharacterPanel.getTeamSlotsData()
-
-    for partySlot = 1, MAX_PARTY do
-        -- 跳过空槽位和未解锁槽位：只有已上阵角色的装备槽才算可强化
-        local slot = teamSlots and teamSlots[partySlot]
-        if not slot or slot.state ~= "occupied" then goto continueParty end
-
-        local partyLevels = slotEnhanceData.levels[tostring(partySlot)]
-            or slotEnhanceData.levels[partySlot]
-        for _, equipSlot in ipairs(EQUIP_SLOT_ORDER) do
-            local curLevel = (partyLevels and partyLevels[equipSlot]) or 0
-            if curLevel < BlacksmithConfig.MAX_ENHANCE_LEVEL then
-                local nextLevel = curLevel + 1
-                local cost = BlacksmithConfig.getEnhanceCost(nextLevel)
-                if cost then
-                    local scrollField = BlacksmithConfig.SLOT_SCROLL_MAP[equipSlot]
-                    local scrollGetter = scrollField and BlacksmithEnhance.getScrollGetter(scrollField)
-                    local ownedScroll = 0
-                    if scrollGetter and GameState[scrollGetter] then
-                    ---@diagnostic disable-next-line: assign-type-mismatch
-                        ownedScroll = GameState[scrollGetter]()
-                    end
-                    if gold >= cost.gold and ownedScroll >= cost.scroll then
-                        return true
-                    end
-                end
-            end
-        end
-        ::continueParty::
-    end
-    return false
+    if not _enhCache then bindEnhanceCache() end
+    return _enhCache.canEnhanceAny()
 end
 
 -- ============================================================================

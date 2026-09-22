@@ -99,7 +99,7 @@ local _cachedClient = nil
 
 local function getClient()
     if not _cachedClient then
-        _cachedClient = require("network.Client")
+        _cachedClient = require("network.GameAction")
     end
     return _cachedClient
 end

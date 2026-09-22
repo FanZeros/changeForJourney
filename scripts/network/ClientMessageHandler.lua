@@ -19,11 +19,10 @@ local ClientDispatcher = require("network.ClientDispatcher")
  --= UI 模块（lazy require，在 setup 中注入以避免循环依赖）
  local RewardPopup
  local LootBox, LootBoxPage
- local BlacksmithPage, ChurchPage, TavernPage
- local MarketPage, GuildPage, DungeonPage, DungeonBattleScene
+ local BlacksmithPage, ChurchPage, TalentPage, TavernPage
+ local MarketPage, DungeonPage, DungeonBattleScene
  local GMConsolePanel, RelicReforgePanel, MailPanel, AnnouncementPanel
  local TopBar, BattleScene, CharacterPanel
- local CharacterSelect
  local EquipmentDetail
  local RedeemCodePanel, SignInPanel, LootBoxSystem
  local TutorialManager
@@ -70,9 +69,9 @@ local ClientDispatcher = require("network.ClientDispatcher")
      BlacksmithPage      = require("ui.BlacksmithPage")
      BackpackPanel       = require("ui.BackpackPanel")
      ChurchPage          = require("ui.ChurchPage")
+     TalentPage          = require("ui.TalentPage")
      TavernPage          = require("ui.TavernPage")
      MarketPage          = require("ui.MarketPage")
-     GuildPage           = require("ui.GuildPage")
      DungeonPage         = require("ui.DungeonPage")
      DungeonBattleScene  = require("ui.DungeonBattleScene")
      GMConsolePanel      = require("ui.GMConsolePanel")
@@ -81,7 +80,6 @@ local ClientDispatcher = require("network.ClientDispatcher")
      TopBar              = require("ui.TopBar")
      BattleScene         = require("ui.BattleScene")
      CharacterPanel      = require("ui.CharacterPanel")
-     CharacterSelect     = require("ui.CharacterSelect")
      EquipmentDetail     = require("ui.EquipmentDetail")
      RedeemCodePanel     = require("ui.RedeemCodePanel")
      SignInPanel         = require("ui.SignInPanel")
@@ -409,7 +407,9 @@ local ClientDispatcher = require("network.ClientDispatcher")
      end
 
      local function apply()
-         if ChurchPage and ChurchPage.syncTalentFromStore then
+         if TalentPage and TalentPage.syncTalentFromStore then
+             pcall(TalentPage.syncTalentFromStore)
+         elseif ChurchPage and ChurchPage.syncTalentFromStore then
              pcall(ChurchPage.syncTalentFromStore)
          end
      end
@@ -463,7 +463,6 @@ local ClientDispatcher = require("network.ClientDispatcher")
              .. " reason=" .. tostring(data.reason))
          if data.action == Protocol.ACTION_TYPES.SELECT_INITIAL_HERO then
              print("[Client][SAVE-BROKEN] initial hero selection blocked: " .. tostring(data.reason))
-             if CharacterSelect and CharacterSelect.close then CharacterSelect.close() end
              if LootBoxPage and LootBoxPage.showToast then LootBoxPage.showToast(data.reason or "存档异常，请联系客服") end
              return
          end
@@ -477,7 +476,6 @@ local ClientDispatcher = require("network.ClientDispatcher")
          if BlacksmithPage.onActionResult then BlacksmithPage.onActionResult(data) end
          if EquipmentDetail.onActionResult then EquipmentDetail.onActionResult(data) end
          if ChurchPage.onActionResult then ChurchPage.onActionResult(data) end
-         if GuildPage.onActionResult then GuildPage.onActionResult(data) end
          if DungeonPage.onActionResult then DungeonPage.onActionResult(data) end
          if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE then
              pcall(RelicReforgePanel.setReforgeResult, nil)
@@ -488,7 +486,9 @@ local ClientDispatcher = require("network.ClientDispatcher")
          if data.action == Protocol.ACTION_TYPES.ACTIVATE_TALENT
              or data.action == Protocol.ACTION_TYPES.RESET_SINGLE_TALENT
              or data.action == Protocol.ACTION_TYPES.RESET_TALENTS then
-             if ChurchPage and ChurchPage.syncTalentFromStore then
+             if TalentPage and TalentPage.syncTalentFromStore then
+                 pcall(TalentPage.syncTalentFromStore)
+             elseif ChurchPage and ChurchPage.syncTalentFromStore then
                  pcall(ChurchPage.syncTalentFromStore)
              end
              if LootBoxPage and LootBoxPage.showToast then
@@ -503,7 +503,7 @@ local ClientDispatcher = require("network.ClientDispatcher")
          return
      end
 
-     -- 登录补发等延迟弹窗（等 LoadingScreen / 离线收益面板关闭后再展示）
+     -- 登录补发等延迟弹窗（等离线收益面板关闭后再展示）
      if data.deferredRewardPopup and data.rewards and #data.rewards > 0 then
          pendingDeferredRewardPopup_ = {
              title    = data.popupTitle or "奖励",
@@ -622,7 +622,6 @@ local ClientDispatcher = require("network.ClientDispatcher")
      if TavernPage.onActionResult then pcall(TavernPage.onActionResult, data) end
      if DungeonBattleScene.onActionResult then pcall(DungeonBattleScene.onActionResult, data) end
      if MarketPage.onActionResult then pcall(MarketPage.onActionResult, data) end
-     if GuildPage.onActionResult then pcall(GuildPage.onActionResult, data) end
      if GMConsolePanel.onActionResult then pcall(GMConsolePanel.onActionResult, data) end
      if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE and data.newAffixId then
          pcall(RelicReforgePanel.setReforgeResult, data.newAffixId)

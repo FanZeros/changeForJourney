@@ -11,8 +11,6 @@ local RCH = require("systems.RelicConditionHandler")
 local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
 local SC  = require("config.StageConfig")
-local MC  = require("config.MonsterConfig")
-local HeroAssetUtil = require("config.HeroAssetUtil")
 
 local BattleCombat      = require("ui.BattleCombat")
 local StageBerserk     = require("ui.StageBerserk")
@@ -30,6 +28,20 @@ local DarkIcon = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
 
 local BattleResultPanel = require("ui.BattleResultPanel")
 local OfflineCalc = require("systems.OfflineCalc")
+local TerminalConfirmDialog = require("ui.TerminalConfirmDialog")
+local MonsterInfoPopup = require("ui.MonsterInfoPopup")
+local BattleSpeed = require("ui.BattleSpeed")
+local BattleEnemySpawn = require("ui.BattleEnemySpawn")
+local BattleTransitionHud = require("ui.BattleTransitionHud")
+local BattleStageFlow = require("ui.BattleStageFlow")
+local BattleAllyReset = require("ui.BattleAllyReset")
+local BattleStageNav = require("ui.BattleStageNav")
+local BattleCasualty = require("ui.BattleCasualty")
+local BattleStageLoad = require("ui.BattleStageLoad")
+local BattleSceneTick = require("ui.BattleSceneTick")
+local BattleScenePhases = require("ui.BattleScenePhases")
+local BattleStageNavLogic = require("ui.BattleStageNavLogic")
+local BattleDataRestore = require("ui.BattleDataRestore")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -75,20 +87,9 @@ local ALLY_ATK_BG_OFFSET_Y = 181
 local ALLY_LVL_OFFSET_Y  = 215
 
 -- 关卡名 / 按钮坐标（合并到 table 减少 local 占用）
-local NAV = {
-    STAGE_CX = 540, STAGE_CY = 1276,
-    BACK_BG_CX = 116, BACK_BG_CY = 1277, BACK_BG_W = 232, BACK_BG_H = 226,
-    BACK_ICON_CX = 81, BACK_ICON_CY = 1258, BACK_ICON_W = 53, BACK_ICON_H = 81,
-    BACK_TEXT_CX = 88, BACK_TEXT_CY = 1326,
-    FWD_BG_CX = 964, FWD_BG_CY = 1277, FWD_BG_W = 232, FWD_BG_H = 226,
-    FWD_ICON_CX = 998, FWD_ICON_CY = 1258, FWD_ICON_W = 53, FWD_ICON_H = 81,
-    FWD_TEXT_CX = 991, FWD_TEXT_CY = 1325,
-}
+local NAV = BattleStageNav.NAV
 
 -- (职业标签 TAG_SIZE / HP_BAR / ATK_BAR 已移至 BattleDraw)
-
--- 墓碑复活间隔（秒）
-local TOMBSTONE_REVIVE_TIME = 2.0
 
 -- 死亡即补位：退场+空位总时长（秒），期满新怪从右补入
 local RESPAWN_DELAY = 1.0
@@ -121,9 +122,6 @@ local imgBtnIcon  = -1
 local imgEnemyTag = -1
 local imgAllyTags = {}   -- classId(字符串) → 职业图标句柄
 -- (CLASS_ICON_MAP 已移至 BattleDraw)
-local imgDeath    = -1    -- 墓碑图片
-
-
 
 -- ======================== 数据 ========================
 
@@ -133,32 +131,6 @@ local idleRangeText_ = nil  -- 挂机范围显示文本缓存
 -- 默认攻击间隔（秒）
 local DEFAULT_ALLY_INTERVAL  = 1.0
 local DEFAULT_ENEMY_INTERVAL = 1.5
-
--- ======================== 长按怪物信息弹窗 ========================
-local LONG_PRESS_THRESHOLD = 0.4  -- 秒
-local longPress = {
-    active = false,       -- 是否正在检测
-    fired = false,        -- 是否已触发弹窗
-    startTime = 0,
-    startX = 0,
-    startY = 0,
-    showPopup = false,    -- 弹窗是否显示
-    unit = nil,           -- 命中的怪物 unit
-}
-
--- 攻击类型名称
-local ATK_TYPE_NAMES = {
-    [1] = "斩击", [2] = "粉碎", [3] = "穿刺", [4] = "业火",
-    [5] = "冥霜", [6] = "雷殛", [7] = "暗影", [8] = "烛照",
-}
--- 护甲类型名称
-local ARMOR_TYPE_NAMES = {
-    [1] = "皮甲", [2] = "轻甲", [3] = "重甲", [4] = "板甲", [5] = "布甲",
-}
-
--- 前向声明（实现在文件末尾）
-local updateLongPress
-local drawMonsterInfoPopup
 
 -- 敌方单位列表（场上）
 local enemies = {}
@@ -293,185 +265,9 @@ local BG_FADE_OUT_RATIO   = 0.45  -- 前 45% 为缩放淡出，后 55% 为淡入
 local BG_ZOOM_FWD_TARGET  = 1.3   -- 前进：放大淡出
 local BG_ZOOM_BACK_TARGET = 0.7   -- 后退：缩小淡出
 
--- ======================== 终焉神殿确认弹窗 ========================
-
-
-
-
--- 弹窗状态
-local confirmDialog = {
-    open     = false,
-    closing  = false,
-    openTime = 0,
-    closeTime = 0,
-    pendingNextId = nil,  -- 待进入的终焉神殿关卡 ID
-}
-
--- 弹窗动画参数
-local CONFIRM_OPEN_DUR  = 0.25
-local CONFIRM_CLOSE_DUR = 0.20
-local CONFIRM_SCALE_FROM = 0.8
-local CONFIRM_SCALE_TO   = 1.0
-
--- 弹窗布局常量（设计分辨率 1080×2400，对齐购买道具弹窗样式）
-local CDL = {
-    BG_CX = 540, BG_CY = 1100, BG_W = 950, BG_H = 647,
-    -- 标题（白色 + 棕色描边，位于卡片顶部边缘）
-    TITLE_CY  = 847,  TITLE_FONT = 60, TITLE_SW = 6,
-    TITLE_SR = 0x46, TITLE_SG = 0x2f, TITLE_SB = 0x20,
-    -- 副标题（#725850）
-    SUB_CY = 960, SUB_FONT = 40,
-    -- 正文行（#725850）
-    LINE1_CY  = 1060, LINE_FONT  = 38,
-    LINE2_CY  = 1120,
-    LINE3_CY  = 1180, LINE3_FONT = 32,
-    -- 确认按钮（九宫格绿色按钮）
-    OK_CX = 340, OK_CY = 1310, OK_W = 310, OK_H = 100, OK_FONT = 40,
-    OK_TR = 0x2a, OK_TG = 0x52, OK_TB = 0x18,  -- 按钮文字颜色
-    -- 取消按钮（九宫格灰色按钮）
-    CANCEL_CX = 740, CANCEL_CY = 1310, CANCEL_W = 310, CANCEL_H = 100, CANCEL_FONT = 40,
-    CANCEL_TR = 0x50, CANCEL_TG = 0x46, CANCEL_TB = 0x3c,
-}
-
 --- 全局章节号转难度内相对章节号
 local function getRelativeChapter(chapter)
     return SC.getRelativeChapter(chapter)
-end
-
---- 九宫格绘制（局部函数，与其他页面一致）
-local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLeft)
-    if img < 0 then return end
-    local iw, ih = nvgImageSize(vg, img)
-    if iw <= 0 or ih <= 0 then return end
-    -- 九个区域的源/目标坐标
-    local sx = { 0, iLeft, iw - iRight }
-    local sy = { 0, iTop, ih - iBottom }
-    local sw = { iLeft, iw - iLeft - iRight, iRight }
-    local sh = { iTop, ih - iTop - iBottom, iBottom }
-    local ddx = { dx, dx + iLeft, dx + dw - iRight }
-    local ddy = { dy, dy + iTop, dy + dh - iBottom }
-    local ddw = { iLeft, dw - iLeft - iRight, iRight }
-    local ddh = { iTop, dh - iTop - iBottom, iBottom }
-    for row = 1, 3 do
-        for col = 1, 3 do
-            if ddw[col] > 0 and ddh[row] > 0 then
-                local scaleX = ddw[col] / sw[col]
-                local scaleY = ddh[row] / sh[row]
-                nvgSave(vg)
-                nvgTranslate(vg, ddx[col], ddy[row])
-                nvgScale(vg, scaleX, scaleY)
-                nvgBeginPath(vg)
-                nvgRect(vg, 0, 0, sw[col], sh[row])
-                local pat = nvgImagePattern(vg, -sx[col], -sy[row], iw, ih, 0, img, 1.0)
-                nvgFillPaint(vg, pat)
-                nvgFill(vg)
-                nvgRestore(vg)
-            end
-        end
-    end
-end
-
---- 弹窗缓动函数
-local function easeOutCubic(t)
-    local t1 = 1 - t
-    return 1 - t1 * t1 * t1
-end
-local function easeInCubic(t)
-    return t * t * t
-end
-
---- 获取确认弹窗动画状态
----@return number scale, number alpha, boolean done
-local function getConfirmAnim()
-    if confirmDialog.closing then
-        local t = math.min(1.0, (time.elapsedTime - confirmDialog.closeTime) / CONFIRM_CLOSE_DUR)
-        local e = easeInCubic(t)
-        local scale = CONFIRM_SCALE_TO + (CONFIRM_SCALE_FROM - CONFIRM_SCALE_TO) * e
-        return scale, 1.0 - e, (t >= 1.0)
-    else
-        local t = math.min(1.0, (time.elapsedTime - confirmDialog.openTime) / CONFIRM_OPEN_DUR)
-        local e = easeOutCubic(t)
-        local scale = CONFIRM_SCALE_FROM + (CONFIRM_SCALE_TO - CONFIRM_SCALE_FROM) * e
-        return scale, e, false
-    end
-end
-
---- 获取轮回后的难度中文名
-local function getDifficultyDisplayName(diff)
-    return getStageConfig().getDifficultyDisplayName(diff)
-end
-
---- 绘制终焉神殿确认弹窗（样式对齐购买道具弹窗）
-local function drawConfirmDialog(vg)
-    if not confirmDialog.open and not confirmDialog.closing then return end
-
-    local pScale, pAlpha, done = getConfirmAnim()
-    if confirmDialog.closing and done then
-        confirmDialog.closing = false
-        confirmDialog.open = false
-        confirmDialog.pendingNextId = nil
-        return
-    end
-
-    -- 获取当前难度和轮回后难度名
-    local stageConfig = getStageConfig()
-    local currentDiff = stageConfig.getDifficulty(currentStageId)
-    local nextDiff = stageConfig.getNextDifficulty(currentDiff)
-    local nextDiffName = getDifficultyDisplayName(nextDiff)
-
-    -- 1) 黑色遮罩
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, 2400)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(128 * pAlpha)))
-    nvgFill(vg)
-
-    -- 2) 缩放+淡入变换
-    nvgSave(vg)
-    nvgTranslate(vg, CDL.BG_CX, CDL.BG_CY)
-    nvgScale(vg, pScale, pScale)
-    nvgTranslate(vg, -CDL.BG_CX, -CDL.BG_CY)
-    nvgGlobalAlpha(vg, pAlpha)
-
-    -- 3) 九宫格背景
-    DarkIcon.drawNine(vg, "panel", CDL.BG_CX - CDL.BG_W * 0.5, CDL.BG_CY - CDL.BG_H * 0.5, CDL.BG_W, CDL.BG_H, { titleH = 40 })
-
-    -- 4) 标题（白色 + 棕色描边，与购买弹窗一致）
-    BattleDraw.drawTextStroke(vg, CDL.BG_CX, CDL.TITLE_CY, "⚠ 终焉神殿", CDL.TITLE_FONT,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, CDL.TITLE_SW,
-        { strokeColor = { CDL.TITLE_SR, CDL.TITLE_SG, CDL.TITLE_SB } })
-
-    -- 5) 副标题（与购买弹窗 "是否购买此道具" 同位置同风格）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, CDL.SUB_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
-    nvgText(vg, CDL.BG_CX, CDL.SUB_CY, "确认进入终焉神殿？", nil)
-
-    -- 6) 说明文本（#725850）
-    nvgFontSize(vg, CDL.LINE_FONT)
-    nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-    nvgText(vg, CDL.BG_CX, CDL.LINE1_CY, "进入后将无法退出", nil)
-    nvgText(vg, CDL.BG_CX, CDL.LINE2_CY, "通关后进入「" .. nextDiffName .. "」轮回", nil)
-
-    nvgFontSize(vg, CDL.LINE3_FONT)
-    nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 200))
-    nvgText(vg, CDL.BG_CX, CDL.LINE3_CY, "（挑战失败将回退到上一关）", nil)
-
-    -- 7) 确认按钮（九宫格绿色按钮）
-    DarkIcon.drawNine(vg, "btn", CDL.OK_CX - CDL.OK_W * 0.5, CDL.OK_CY - CDL.OK_H * 0.5, CDL.OK_W, CDL.OK_H, { accent = "green" })
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, CDL.OK_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(CDL.OK_TR, CDL.OK_TG, CDL.OK_TB, 255))
-    nvgText(vg, CDL.OK_CX, CDL.OK_CY, "进入", nil)
-
-    -- 8) 取消按钮（九宫格灰色按钮）
-    DarkIcon.drawNine(vg, "btn", CDL.CANCEL_CX - CDL.CANCEL_W * 0.5, CDL.CANCEL_CY - CDL.CANCEL_H * 0.5, CDL.CANCEL_W, CDL.CANCEL_H, { accent = "green" })
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, CDL.CANCEL_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(CDL.CANCEL_TR, CDL.CANCEL_TG, CDL.CANCEL_TB, 255))
-    nvgText(vg, CDL.CANCEL_CX, CDL.CANCEL_CY, "取消", nil)
-
-    nvgRestore(vg)
 end
 
 -- 背景持续动效：上下缓慢漂移
@@ -493,7 +289,9 @@ local waveGoldEarned = 0       -- 本波次获得金币
 local waveExpEarned = 0        -- 本波次获得经验
 
 -- (工具绘制函数 drawImageCentered/drawImageMirrored/drawTextStroke/drawProgressBar 已移至 BattleDraw)
+---@type fun(vg, img, cx, cy, w, h, alpha)
 local drawImageCentered = BattleDraw.drawImageCentered
+---@type fun(vg, img, cx, cy, w, h, alpha)
 local drawImageMirrored = BattleDraw.drawImageMirrored
 local drawTextStroke    = BattleDraw.drawTextStroke
 
@@ -511,39 +309,24 @@ local updateHitFlashes    = BattleCombat.updateHitFlashes
 local updateComboQueue    = BattleCombat.updateComboQueue
 
 function BattleScene.getMaxUnlockedBattleSpeed()
-    local diff = getStageConfig().getDifficulty(currentStageId)
-    if diff == SC.DIFFICULTY_HELL or diff == SC.DIFFICULTY_NIGHTMARE
-        or diff == SC.DIFFICULTY_PURGATORY or diff == SC.DIFFICULTY_TORMENT
-        or diff == SC.DIFFICULTY_TORMENT2 or diff == SC.DIFFICULTY_TORMENT3
-        or diff == SC.DIFFICULTY_TORMENT4 or diff == SC.DIFFICULTY_TORMENT5
-        or diff == SC.DIFFICULTY_ANNIHILATION or diff == SC.DIFFICULTY_ANNIHILATION2
-        or diff == SC.DIFFICULTY_ANNIHILATION3 or diff == SC.DIFFICULTY_ANNIHILATION4
-        or diff == SC.DIFFICULTY_ANNIHILATION5 then
-        return 2.0
-    elseif diff == SC.DIFFICULTY_HARD then
-        return 1.5
-    end
-    return 1.0
+    return BattleSpeed.getMaxUnlocked(getStageConfig().getDifficulty(currentStageId))
 end
 
 function BattleScene.isSpeedButtonVisible()
     return isFirstClear and battleActive and not isPaused
         and BattleScene.getMaxUnlockedBattleSpeed() > 1.0
         and not BattleResultPanel.isOpen()
-        and not confirmDialog.open and not confirmDialog.closing
+        and not TerminalConfirmDialog.isOpen()
         and not SweepDialog.isOpen() and not DamageStatsPanel.isOpen()
         and searchingTimer == nil and defeatTimer == nil and reincarnationTimer == nil
 end
 
 function BattleScene.getBattleLogicDt(dt)
-    local maxSpeed = BattleScene.getMaxUnlockedBattleSpeed()
-    if BattleScene.battleSpeed > maxSpeed then
-        BattleScene.battleSpeed = maxSpeed
-    end
-    if BattleScene.isSpeedButtonVisible() then
-        return dt * BattleScene.battleSpeed
-    end
-    return dt
+    local logicDt, speed = BattleSpeed.getLogicDt(
+        dt, BattleScene.battleSpeed, BattleScene.getMaxUnlockedBattleSpeed(),
+        BattleScene.isSpeedButtonVisible())
+    BattleScene.battleSpeed = speed
+    return logicDt
 end
 
 local function getLiveAttackInterval(unit, fallback)
@@ -561,207 +344,39 @@ local function getLiveAttackInterval(unit, fallback)
 end
 
 function BattleScene.getSpeedText()
-    if BattleScene.battleSpeed == 1.5 then
-        return "X1.5"
-    elseif BattleScene.battleSpeed >= 2.0 then
-        return "X2"
-    end
-    return "X1"
+    return BattleSpeed.getSpeedText(BattleScene.battleSpeed)
 end
 
 function BattleScene.drawSpeedButton(vg)
-    if not BattleScene.isSpeedButtonVisible() then return end
-    local alpha = BattleScene.battleSpeed > 1.0 and 1.0 or 0.82
-    drawImageCentered(vg, BattleScene.imgSpeedIcon, 987, 311, 130, 143, alpha)
-    drawTextStroke(vg, 987, 305,
-        BattleScene.getSpeedText(), 52,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 6,
-        { strokeColor = { 0x36, 0x77, 0x78 } })
+    BattleSpeed.draw(vg, BattleScene.imgSpeedIcon, BattleScene.battleSpeed, BattleScene.isSpeedButtonVisible())
 end
 
 function BattleScene.handleSpeedButtonInput(dx, dy)
     if not BattleScene.isSpeedButtonVisible() then return false end
-    if math.abs(dx - 987) <= 65 and math.abs(dy - 311) <= 71.5 then
-        local maxSpeed = BattleScene.getMaxUnlockedBattleSpeed()
-        if BattleScene.battleSpeed < 1.5 and maxSpeed >= 1.5 then
-            BattleScene.battleSpeed = 1.5
-        elseif BattleScene.battleSpeed < 2.0 and maxSpeed >= 2.0 then
-            BattleScene.battleSpeed = 2.0
-        else
-            BattleScene.battleSpeed = 1.0
-        end
-        print("[BattleScene] 首通战斗倍速切换: " .. BattleScene.getSpeedText())
-        return true
-    end
-    return false
+    if not BattleSpeed.hitTest(dx, dy) then return false end
+    BattleScene.battleSpeed = BattleSpeed.cycle(BattleScene.battleSpeed, BattleScene.getMaxUnlockedBattleSpeed())
+    print("[BattleScene] 首通战斗倍速切换: " .. BattleScene.getSpeedText())
+    return true
 end
 
--- ======================== 属性快照隔离 ========================
-
---- 为单位创建基线快照（调用时机：setAllies / fallback 重建后）
---- 快照 = attrs 的深拷贝，包含全部持久性 modifier（职业/转职/星图/装备）
----@param u table battle unit
+-- ======================== 属性快照隔离（委托 BattleAllyReset） ========================
 local function createSnapshot(u)
-    if u.attrs then
-        u._baseSnapshot = u.attrs:clone()
-    end
-    u._baseArmorType = u.armorType  -- 记录当前护甲类型
-    u._pendingSnapshot = nil  -- 清除待应用快照
-    u._pendingArmorType = nil
+    BattleAllyReset.createSnapshot(u)
 end
 
---- 从快照恢复单位属性
---- 如有 pendingSnapshot（战斗中的升级/换装），提升为新的 baseSnapshot
---- 然后从 baseSnapshot clone 出干净的 live attrs
----@param u table battle unit
----@return boolean 是否成功恢复
-local function restoreFromSnapshot(u)
-    -- 消费 pending（升级/换装产生的待应用数据）
-    if u._pendingSnapshot then
-        u._hadPendingSnapshot = true  -- [HealDiag3] 标记曾消费 pending
-        u._baseSnapshot = u._pendingSnapshot
-        u._pendingSnapshot = nil
-    else
-        u._hadPendingSnapshot = false
-    end
-    -- 同步待定等级
-    if u._pendingLevel then
-        u.level = u._pendingLevel
-        u._pendingLevel = nil
-    end
-    -- 同步待定护甲类型（换装导致护甲类型变化）
-    if u._pendingArmorType then
-        u._baseArmorType = u._pendingArmorType
-        u._pendingArmorType = nil
-    end
-    if u._baseArmorType then
-        u.armorType = u._baseArmorType
-    end
-    -- 从 base 快照 clone 出干净 attrs（不含运行时 buff）
-    if u._baseSnapshot then
-        u.attrs = u._baseSnapshot:clone()
-        -- [HealDiag3] 恢复快照时检查治疗者的 HEAL_AMOUNT 是否正常
-        if u.attrs and AD.getAtkCategory(u.attrs.atkType) == "healing" then
-            local snapHeal = u._baseSnapshot:get(AD.HEAL_AMOUNT)
-            local clonedHeal = u.attrs:get(AD.HEAL_AMOUNT)
-            if snapHeal <= 0 or clonedHeal <= 0 then
-                print(string.format(
-                    "[HealDiag3] RESTORE_SNAP_ZERO name=%s id=%s snapHeal=%.1f clonedHeal=%.1f"
-                    .. " hadPending=%s atkType=%d",
-                    tostring(u.name), tostring(u.heroId or "?"),
-                    snapHeal, clonedHeal,
-                    tostring(u._hadPendingSnapshot or false),
-                    u.attrs.atkType or -1
-                ))
-            end
-        end
-        return true
-    end
-    return false
-end
-
---- 重置单个己方单位状态（从快照恢复干净属性 → 填满血 → 同步 flat 字段）
---- 如有 pendingSnapshot（战斗中的升级/换装），在此时消费并生效
 local function resetAllyUnit(u)
-    u.atkProgress = 0
-    u.reviveTimer = nil
-    u._fallen = nil
-    u._fallenPending = nil
-    BattleCombat.clearCardAnim(u)  -- 清残留死亡/退场动画（gone 状态会导致重置后不渲染）
-    if u.attrs then
-        local restored = restoreFromSnapshot(u)
-        if not restored then
-            -- fallback: 无快照时全量重建（首次加载或异常情况）
-            if u.heroId then
-                local HC = require("config.HeroConfig")
-                local CP = require("ui.CharacterPanel")
-                local owned = CP.getOwnedHero and CP.getOwnedHero(u.heroId)
-                local heroLevel = (CP.getEffectiveLevel and CP.getEffectiveLevel(u.heroId))
-                    or (owned and owned.level) or u.level
-                local newUnit = HC.createHero(u.heroId,
-                    heroLevel,
-                    (owned and owned.advBranch) or u.advBranch,
-                    owned and owned.awakening,
-                    owned and owned.extraTalent)
-                if newUnit and newUnit.attrs then
-                    local partySlot = nil
-                    for ai, a in ipairs(allies) do
-                        if a == u then partySlot = ai; break end
-                    end
-                    if CP.applyEquippedItems then
-                        -- 查找出战槽位索引，确保槽位强化加成正确计算
-                        local eqArmorType = CP.applyEquippedItems(newUnit.attrs, u.heroId, partySlot)
-                        if eqArmorType then
-                            newUnit.armorType = eqArmorType
-                        end
-                    end
-                    -- 遗物词条属性加成（与 CharacterPanel.getDeployedTeam 一致）
-                    local RelicBridge = require("systems.RelicBridge")
-                    local relicConds = RelicBridge.applyToUnit(newUnit.attrs, newUnit.classId or u.classId)
-                    if relicConds and #relicConds > 0 then
-                        u.relicConditions = relicConds
-                    end
-                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
-                    if artifactEffects and #artifactEffects > 0 then
-                        u.artifactEffects = artifactEffects
-                    else
-                        u.artifactEffects = nil
-                    end
-                    u.attrs = newUnit.attrs
-                    u.armorType = newUnit.armorType
-                    u.level = newUnit.level
-                    u.advBranch = newUnit.advBranch
-                    u.advTalentIds = newUnit.advTalentIds
-                    u.awakeningNodes = newUnit.awakeningNodes
-                end
-            end
-            createSnapshot(u)
-        end
-        u.attrs:fillHp()
-        u.maxHp       = u.attrs.final[AD.MAX_HP]
-        u.hp          = u.attrs.final[AD.HP]
-        u.atkInterval = u.attrs:getActualInterval()
-        u._lastAttrInterval = u.atkInterval
-    else
-        -- [诊断] attrs 为 nil 时无法正确重置，记录此异常
-        print("[BattleDiag] RESET_NO_ATTRS name=" .. tostring(u.name)
-            .. " id=" .. tostring(u.heroId or u.instanceId or "?")
-            .. " hp=" .. tostring(u.hp) .. "/" .. tostring(u.maxHp)
-            .. " sentinel=" .. tostring(u._sentinelInstalled or false)
-            .. " trace=" .. tostring(u._attrsSetNilTrace or "none"))
-        u.hp = u.maxHp
-    end
-    syncUnitHp(u)
-    -- [HealDiag2] resetAllyUnit后检查治疗者属性是否正确恢复
-    if u.attrs and AD.getAtkCategory(u.attrs.atkType) == "healing" then
-        local healAmt = u.attrs:get(AD.HEAL_AMOUNT)
-        if healAmt <= 0 then
-            local baseH = u.attrs:getBase(AD.HEAL_AMOUNT)
-            local snapH = u._baseSnapshot and u._baseSnapshot:get(AD.HEAL_AMOUNT) or -1
-            print(string.format(
-                "[HealDiag2] RESET_HEALER_ZERO name=%s id=%s healAmt_final=%.1f"
-                .. " healAmt_base=%.1f snap_healAmt=%.1f hp=%d/%d",
-                tostring(u.name), tostring(u.heroId),
-                healAmt, baseH, snapH, u.hp, u.maxHp or 0
-            ))
-        end
-    end
+    BattleAllyReset.resetAllyUnit(u, allies, syncUnitHp)
 end
 
 -- BattleDraw 本地别名
+---@type fun(vg, units, baseCY, tagOffY, nameOffY, hpBgOffY, hpValOffY, atkBgOffY, lvlOffY, tagImg, isAllyGroup)
 local drawCardGroup       = BattleDraw.drawCardGroup
+---@type fun(vg)
 local drawFloatingTexts   = BattleDraw.drawFloatingTexts
+---@type fun(vg, imgBg, imgFill, cx, cy, bgW, bgH, padding, progress)
 local drawProgressBar     = BattleDraw.drawProgressBar
 
 -- ======================== 关卡系统 ========================
-
---- 根据关卡配置生成全部敌人列表
---- 格式化数字：超过4位数转换为k
----@param n number
----@return string
-local function formatNumber(n)
-    return require("core.NumberUtil").format(n)
-end
 
 --- 重新计算挂机收益（每分钟金币/经验）
 --- 直接调用 OfflineCalc 统一公式：固定杀怪效率 × 60秒 → 每分钟收益
@@ -814,247 +429,20 @@ local function resetWaveTimers()
     waveExpEarned = 0
 end
 
---- 解析首通附加特殊怪 ID 列表（兼容 firstClearBonusMonster 单值）
----@param stageEntry StageEntry
----@return number[]|nil
-local function getFirstClearBonusMonsterIds(stageEntry)
-    local ids = stageEntry.firstClearBonusMonsters
-    if ids and #ids > 0 then
-        return ids
-    end
-    if stageEntry.firstClearBonusMonster then
-        return { stageEntry.firstClearBonusMonster }
-    end
-    return nil
-end
-
---- 标记首通附加特殊怪出场阶段：
---- 1 个：开场；2 个：开场 + 最后；3 个及以上：开场 + 中间若干 + 最后。
----@param bonusUnit table
----@param index number
----@param count number
-local function markFirstClearBonusSpawnPhase(bonusUnit, index, count)
-    bonusUnit._isBonusMonster = true
-    if index == 1 then
-        bonusUnit._bonusSpawnPhase = "start"
-    elseif index == count then
-        bonusUnit._bonusSpawnPhase = "end"
-    else
-        bonusUnit._bonusSpawnPhase = "middle"
-    end
-end
-
----@param queue table[]
----@param unit table
-local function insertBonusMonsterIntoQueue(queue, unit)
-    if unit._bonusSpawnPhase == "middle" then
-        local insertPos = math.floor(#queue / 2) + 1
-        table.insert(queue, insertPos, unit)
-    else
-        queue[#queue + 1] = unit
-    end
-end
-
----@param stageEntry StageEntry
----@return table[] allEnemies
 local function generateEnemyList(stageEntry)
-    local totalCount = isFirstClear and stageEntry.firstCount or stageEntry.idleCount
-    local monsterTypes = stageEntry.monsters  -- {type1, type2, type3}
-    local level = stageEntry.monsterLevel
-    local list = {}
-
-    -- 如果有 Boss，最后一只是 Boss
-    local normalCount = totalCount
-    if stageEntry.bossId > 0 then
-        normalCount = totalCount - 1
-    end
-
-    -- 普通怪：从 3 种类型中轮流选择
-    for i = 1, normalCount do
-        local typeIdx = ((i - 1) % #monsterTypes) + 1
-        local monsterId = monsterTypes[typeIdx]
-        local unit = MC.createMonster(monsterId, level)
-        if unit then
-            list[#list + 1] = unit
-        end
-    end
-
-    -- Boss（插入到普通怪剩余一半的位置，即列表中间）
-    if stageEntry.bossId > 0 then
-        local bossUnit = MC.createMonster(stageEntry.bossId, level)
-        if bossUnit then
-            bossUnit.isBoss = true  -- [Boss 标识] 卡顶骷髅头仅 Boss 显示
-            local insertPos = math.ceil(#list / 2) + 1
-            table.insert(list, insertPos, bossUnit)
-        end
-    end
-
-    -- 首通附加特殊怪物：旅程19服及以上按阶段分批出场（开场/中间/最后）
-    if isFirstClear then
-        local bonusIds = getFirstClearBonusMonsterIds(stageEntry)
-        if bonusIds then
-            local bonusAtStart = require("shared.ServerListConfig").isFirstClearBonusAtStart(require("ui.PlayerInfoPanel").getServerId())
-            local bonusCount = #bonusIds
-            for i, monsterId in ipairs(bonusIds) do
-                local bonusUnit = MC.createMonster(monsterId, level)
-                if bonusUnit then
-                    if bonusAtStart then
-                        markFirstClearBonusSpawnPhase(bonusUnit, i, bonusCount)
-                    end
-                    list[#list + 1] = bonusUnit
-                end
-            end
-        end
-    end
-
-    return list
+    return BattleEnemySpawn.generateEnemyList(stageEntry, isFirstClear)
 end
 
---- 分配敌人到场上与队列；首通特殊怪按阶段出场（开场/中间/最后）
----@param allEnemies table[]
----@param maxField number
----@return table[] fieldEnemies, table[] queueEnemies
 local function assignEnemiesToField(allEnemies, maxField)
-    local field = {}
-    local queue = {}
-    local fieldCount = 0
-    for _, u in ipairs(allEnemies) do
-        if not u._isBonusMonster then
-            if fieldCount < maxField then
-                field[#field + 1] = u
-                fieldCount = fieldCount + 1
-            else
-                queue[#queue + 1] = u
-            end
-        end
-    end
-    for _, u in ipairs(allEnemies) do
-        if u._isBonusMonster then
-            if u._bonusSpawnPhase == "start" then
-                if fieldCount >= maxField and #field > 0 then
-                    local bumped = table.remove(field, #field)
-                    table.insert(queue, 1, bumped)
-                else
-                    fieldCount = fieldCount + 1
-                end
-                field[#field + 1] = u
-            else
-                insertBonusMonsterIntoQueue(queue, u)
-            end
-        end
-    end
-    return field, queue
+    return BattleEnemySpawn.assignEnemiesToField(allEnemies, maxField)
 end
 
---- 挂机模式：从 maxStageId_ 前 5 关混合生成怪物（不同等级）
---- 每关按 idleCount 取怪，等级各自不同，模拟玩家在这 5 关范围内挂机
----@return table[] allEnemies, number maxField
 local function generateIdleEnemyList()
-    local IDLE_STAGE_COUNT = 5
-    local stageConfig = getStageConfig()
-    local stages = require("shared.StageUtils").collectPrevStages(maxStageId_, IDLE_STAGE_COUNT, stageConfig)
-    -- 新玩家可能不足 5 关，有多少用多少
-    if #stages == 0 then
-        -- fallback: 用当前关卡（极端情况）
-        local entry = stageConfig.getStage(currentStageId)
-        if entry then
-            return generateEnemyList(entry), entry.maxFieldEnemies or 5
-        end
-        return {}, 5
-    end
-
-    local allEnemies = {}
-    local maxField = 0
-
-    -- 平均分配每关出怪数量：取各关 idleCount 中最小的（保持战斗节奏一致）
-    -- 每关各出 2 只（总计 10 只一波，5 只上场 5 只队列），保持场面丰富但不过于拥挤
-    local perStage = 2
-
-    for _, entry in ipairs(stages) do
-        local monsterTypes = entry.monsters
-        local level = entry.monsterLevel
-        -- 取各关 maxFieldEnemies 的最大值作为场地上限
-        if (entry.maxFieldEnemies or 5) > maxField then
-            maxField = entry.maxFieldEnemies or 5
-        end
-
-        local hasBoss = entry.bossId and entry.bossId > 0
-
-        if hasBoss then
-            -- Boss 关：1 只普通怪 + 1 只 Boss
-            local monsterId = monsterTypes[1]
-            local unit = MC.createMonster(monsterId, level)
-            if unit then
-                unit._idleStageId = entry.id
-                allEnemies[#allEnemies + 1] = unit
-            end
-            local bossUnit = MC.createMonster(entry.bossId, level)
-            if bossUnit then
-                bossUnit._idleStageId = entry.id
-                allEnemies[#allEnemies + 1] = bossUnit
-            end
-        else
-            -- 非 Boss 关：perStage 只普通怪，从怪物类型中轮流选取
-            for i = 1, perStage do
-                local typeIdx = ((i - 1) % #monsterTypes) + 1
-                local monsterId = monsterTypes[typeIdx]
-                local unit = MC.createMonster(monsterId, level)
-                if unit then
-                    unit._idleStageId = entry.id
-                    allEnemies[#allEnemies + 1] = unit
-                end
-            end
-        end
-    end
-
-    -- 保证场地上限至少 5
-    if maxField < 5 then maxField = 5 end
-
-    print(string.format("[BattleScene] 挂机混合出怪: %d只来自%d关 (maxField=%d)",
-        #allEnemies, #stages, maxField))
-    return allEnemies, maxField
+    return BattleEnemySpawn.generateIdleEnemyList(getStageConfig(), maxStageId_, currentStageId)
 end
 
---- 从等待队列补充敌人到场上（填补空位）
-local function refillEnemies()
-    -- 移除场上已死亡的单位，同时清理其仇恨记录
-    local alive = {}
-    for _, u in ipairs(enemies) do
-        if u.hp > 0 then
-            alive[#alive + 1] = u
-        else
-            TM.removeUnit(u)
-            SEM.removeUnit(u)
-        end
-    end
-
-    -- 计算需要补充的数量（使用当前关卡的敌方场地上限）
-    local slotsAvail = getStageMaxFieldEnemies() - #alive
-    local toAdd = math.min(slotsAvail, #enemyQueue)
-
-    for _ = 1, toAdd do
-        local unit = table.remove(enemyQueue, 1)
-        alive[#alive + 1] = unit
-    end
-
-    enemies = alive
-end
-
---- 初始化天赋/仇恨的战斗启动序列（必须在 resetAllyUnit 之后调用）
 local function startBattleTalents()
-    RCH.reset()
-    RCH.initBattle(allies)
-    ART.reset()
-    ART.initBattle(allies)
-    TAL.reset()
-    for _, u in ipairs(allies) do
-        TAL.initUnit(u)
-    end
-    for _, u in ipairs(enemies) do
-        TAL.initUnit(u)
-    end
-    TM.onBattleStart(allies, enemies)
-    TAL.onBattleStart(allies, enemies)
+    BattleStageFlow.startBattleTalents(allies, enemies)
 end
 
 --- 恢复主战斗的 BattleCombat 上下文（副本/竞技场关闭后必须调用）
@@ -1112,268 +500,105 @@ local function setupBattleCombatContext()
 end
 
 -- [卡牌分帧加载] 英雄卡/怪物卡/投射物图，首次进战斗时构建队列，由 update 分帧消化
--- 背景: KP_GW 水墨新卡为 572x1024 PNG（64 张 ~90MB），
--- Web/WASM 端单张解码 ~0.3s，同步一次性加载会冻结主线程 30-60s（表现为卡死）。
--- 分帧策略: 每帧预算 8ms，Web 端实际每帧消化 1 张，卡面渐进出现，战斗逻辑全程不冻结。
-local battleCardQueue = nil   -- nil=未构建; table=加载中
+local battleCardQueue = nil
 local function ensureBattleCards(vg)
-    if battleCardQueue then return end
-    battleCardQueue = {}
-    local q = battleCardQueue
-    -- 预填 -1（对齐原 init 语义: 表始终有值，加载完成后覆盖；BattleDraw 依赖 img < 0 判空）
-    for _, id in ipairs(HeroAssetUtil.getAssetIds()) do
-        if imgHeroCards[id] == nil then imgHeroCards[id] = -1 end
-    end
-    for _, id in ipairs({1001, 1002, 1003, 1004, 1005, 1006, 1007, 201, 202, 203, 204, 205, 206}) do
-        if imgMonsterCards[id] == nil then imgMonsterCards[id] = -1 end
-    end
-    for id = 1, 54 do
-        if imgMonsterCards[id] == nil then imgMonsterCards[id] = -1 end
-    end
-    -- 英雄卡（编队卡面优先出现）
-    for _, id in ipairs(HeroAssetUtil.getAssetIds()) do
-        q[#q + 1] = {
-            path = HeroAssetUtil.getCardPath(id),
-            apply = function(h)
-                if h and h >= 0 then imgHeroCards[id] = h end
-            end,
-        }
-    end
-    -- 怪物卡 (1~54 / 1001~1007 / 201~206)
-    local monsterIds = {}
-    for id = 1, 54 do monsterIds[#monsterIds + 1] = id end
-    for _, id in ipairs({1001, 1002, 1003, 1004, 1005, 1006, 1007}) do
-        monsterIds[#monsterIds + 1] = id
-    end
-    for id = 201, 206 do monsterIds[#monsterIds + 1] = id end
-    for _, id in ipairs(monsterIds) do
-        q[#q + 1] = {
-            path = string.format("image/怪物卡牌/KP_GW_%d.png", id),
-            apply = function(h) imgMonsterCards[id] = h end,
-        }
-    end
-    -- 投射物/特效图（战斗中弹道首用会卡顿，一并预热）
-    for _, key in ipairs(ProjectileSystem.getImageKeys()) do
-        q[#q + 1] = {
-            path = "image/特效投射物/" .. key .. ".png",
-            fn = function() ProjectileSystem.prewarmOne(key) end,
-        }
-    end
-    print("[BattleScene] 战斗卡牌分帧加载启动: " .. #q .. " 项")
+    battleCardQueue = BattleStageFlow.ensureBattleCards({
+        imgHeroCards = imgHeroCards,
+        imgMonsterCards = imgMonsterCards,
+        vg = vg,
+    }, battleCardQueue)
 end
 
---- 每帧消化加载队列；仅消化 DWP 已下载完成的项（未完成的跳过下一帧重试，
---- 杜绝泵内同步等待下载），时间预算内尽量多载
 local function pumpBattleCards()
-    if not battleCardQueue then return end
-    local cache = GetCache()
-    local t0 = time.elapsedTime
-    local i = 1
-    while i <= #battleCardQueue and time.elapsedTime - t0 < 0.008 do
-        local job = battleCardQueue[i]
-        local st = cache:GetDownloadState(job.path)
-        if st == DOWNLOAD_COMPLETED or st == DOWNLOAD_FAILED or job.downloadSkip then
-            -- 已就绪（或下载失败/未入清单，直接解码兜底）
-            if st == DOWNLOAD_FAILED and not job.downloadSkip then
-                job.downloadSkip = true   -- 失败项重试一次（不无限卡队列）
-                i = i + 1
-            else
-                table.remove(battleCardQueue, i)
-                if job.fn then
-                    job.fn()
-                else
-                    local h = nvgCreateImage(vg_, job.path, 0)
-                    if job.apply then job.apply(h) end
-                end
-            end
-        else
-            i = i + 1   -- 下载中：跳过，下一帧再试
-        end
-    end
-    if #battleCardQueue == 0 then
-        print("[BattleScene] 战斗卡牌分帧加载完成")
-        battleCardQueue = nil
-    end
+    battleCardQueue = BattleStageFlow.pumpBattleCards(battleCardQueue, vg_)
 end
 
 --- 加载关卡
 ---@param stageId number 4位关卡ID, 如 0101
 ---@param skipBattleStart? boolean 跳过 TAL/TM 战斗启动（调用方自行在 resetAllyUnit 后调用 startBattleTalents）
 local function loadStage(stageId, skipBattleStart)
-    ensureBattleCards(vg_)
-    local stageConfig = getStageConfig()
-    local entry = stageConfig.getStage(stageId)
-    if not entry then
-        print("[BattleScene] 关卡不存在: " .. tostring(stageId))
-        return
+    local ctx = {
+        currentStageId = currentStageId, stageName = stageName, maxStageId_ = maxStageId_,
+        isFirstClear = isFirstClear, idleRangeText_ = idleRangeText_,
+        searchingTimer = searchingTimer, defeatTimer = defeatTimer, reincarnationTimer = reincarnationTimer,
+        currentChapter = currentChapter, vg_ = vg_,
+        enemies = enemies, enemyQueue = enemyQueue, allies = allies,
+        stageEnemyTotal_ = stageEnemyTotal_, stageKillCount_ = stageKillCount_,
+        _enemyGuardFired = _enemyGuardFired, battleActive = battleActive,
+        firstClearTimeLeft = firstClearTimeLeft, onStageLoadedCallback = onStageLoadedCallback,
+        clearedStages = clearedStages,
+        ensureBattleCards = ensureBattleCards, getStageConfig = getStageConfig,
+        recalcIdleIncome = recalcIdleIncome, resetWaveTimers = resetWaveTimers,
+        generateIdleEnemyList = generateIdleEnemyList, generateEnemyList = generateEnemyList,
+        assignEnemiesToField = assignEnemiesToField, startBattleTalents = startBattleTalents,
+        setMapBackground = BattleScene.setMapBackground,
+    }
+    BattleStageLoad.load(ctx, stageId, skipBattleStart)
+    currentStageId = ctx.currentStageId
+    stageName = ctx.stageName
+    maxStageId_ = ctx.maxStageId_
+    isFirstClear = ctx.isFirstClear
+    idleRangeText_ = ctx.idleRangeText_
+    searchingTimer = ctx.searchingTimer
+    defeatTimer = ctx.defeatTimer
+    reincarnationTimer = ctx.reincarnationTimer
+    currentChapter = ctx.currentChapter
+    enemies = ctx.enemies
+    enemyQueue = ctx.enemyQueue
+    stageEnemyTotal_ = ctx.stageEnemyTotal_
+    stageKillCount_ = ctx.stageKillCount_
+    _enemyGuardFired = ctx._enemyGuardFired
+    battleActive = ctx.battleActive
+    firstClearTimeLeft = ctx.firstClearTimeLeft
+end
+
+local _navLogic
+local _dataRestore
+local function bindBattleExtracts()
+    local getters = {
+        currentStageId = function() return currentStageId end,
+        maxStageId_ = function() return maxStageId_ end,
+        clearedStages = function() return clearedStages end,
+        stageName = function() return stageName end,
+        pendingReincarnation = function() return pendingReincarnation end,
+        onStageChangedCallback = function() return onStageChangedCallback end,
+        BG_ZOOM_FWD_TARGET = function() return BG_ZOOM_FWD_TARGET end,
+        BG_ZOOM_BACK_TARGET = function() return BG_ZOOM_BACK_TARGET end,
+        initialBattleDataLoaded = function() return initialBattleDataLoaded end,
+        battleActive = function() return battleActive end,
+        searchingTimer = function() return searchingTimer end,
+        defeatTimer = function() return defeatTimer end,
+        reincarnationTimer = function() return reincarnationTimer end,
+        isFirstClear = function() return isFirstClear end,
+    }
+    local function get(key)
+        return getters[key]()
     end
-
-    currentStageId = stageId
-    stageName = entry.name
-    -- 解锁进度兜底：能被加载的关卡必然已解锁。此前手动"前进"按钮在未通关时
-    -- 直接 loadStage(nextId) 不推进 maxStageId_，导致当前关进度与解锁进度脱节
-    -- （选关列表只显示到旧进度、扫荡弹窗识别不了当前关卡）
-    if stageId > maxStageId_ then
-        maxStageId_ = stageId
-        recalcIdleIncome()
-    end
-    isFirstClear = not clearedStages[stageId]
-    idleRangeText_ = nil  -- 关卡变化时重新计算挂机范围文本
-
-    searchingTimer = nil
-    defeatTimer = nil
-    reincarnationTimer = nil
-
-    -- 切关时重置波次计时（丢弃未完成波次数据）
-    resetWaveTimers()
-
-    -- 章节变化时切换地图背景
-    -- 挂机模式：使用范围内最早（最低）章节的背景素材
-    local bgChapter = entry.chapter
-    if not isFirstClear then
-        local stages = require("shared.StageUtils").collectPrevStages(maxStageId_, 5, stageConfig)
-        if #stages > 0 then
-            bgChapter = stages[#stages].chapter  -- 最低关的章节
+    local function set(key, value)
+        if key == "searchingTimer" then searchingTimer = value
+        elseif key == "defeatTimer" then defeatTimer = value
+        elseif key == "bgTransAnim" then bgTransAnim = value
+        elseif key == "regenAccum" then regenAccum = value
+        elseif key == "pendingReincarnation" then pendingReincarnation = value
+        elseif key == "maxStageId_" then maxStageId_ = value
+        elseif key == "clearedStages" then clearedStages = value
+        elseif key == "battleActive" then battleActive = value
+        elseif key == "initialBattleDataLoaded" then initialBattleDataLoaded = value
+        elseif key == "isFirstClear" then isFirstClear = value
         end
     end
-    if bgChapter ~= currentChapter and vg_ then
-        currentChapter = bgChapter
-        if isFirstClear and entry.mapBg then
-            -- 终焉神殿使用自定义地图背景
-            BattleScene.setMapBackground(vg_, "image/关卡地图/" .. entry.mapBg)
-        else
-            -- 困难/噩梦/地狱复用普通难度地图：chapter 24+ 按 23 章循环映射
-            local mapChapter = ((currentChapter - 1) % 23) + 1
-            BattleScene.setMapBackground(vg_, "image/关卡地图/MAP_" .. mapChapter .. ".png")
-        end
-    end
-
-    -- 生成全部敌人（挂机模式用5关混合，首通用单关卡）
-    local allEnemies, maxField
-    if not isFirstClear then
-        allEnemies, maxField = generateIdleEnemyList()
-    else
-        allEnemies = generateEnemyList(entry)
-        maxField = entry.maxFieldEnemies or 5
-    end
-
-    -- 前 maxField 个上场，其余入队列
-    -- 特殊怪物（_isBonusMonster）占用 maxField 名额（避免超出屏幕），替换末位普通怪物
-    -- [三行并行] 条带布局每侧最多 MAX_PER_SIDE(4) 张卡——挂机混合 maxField 保底 5，
-    -- 超出槽位的怪 clamp 后会同槽叠卡（视觉上"两个敌人重叠"）；
-    -- 上场数按布局槽位收缩，多余的留队列，由击杀补位机制（enemies[#enemies]=newUnit）进场
-    if require("core.BattleLayout").MODE == "strip" then
-        maxField = math.min(maxField, require("core.BattleLayout").MAX_PER_SIDE)
-    end
-    enemies, enemyQueue = assignEnemiesToField(allEnemies, maxField)
-    stageEnemyTotal_ = #allEnemies
-    stageKillCount_ = 0
-
-    -- ---- 地图词缀：仅首通模式生效，挂机模式不应用 ----
-    if isFirstClear then
-        local affixConfig = require("shared.ChallengerServerConfig").GetByServerId(require("ui.PlayerInfoPanel").getServerId())
-        if affixConfig and affixConfig.seasonAffixMode == "difficulty_count" then
-            MAS.onStageLoad(entry.chapter, allies, "challenger_s1")
-        else
-            MAS.onStageLoad(entry.chapter, allies)
-        end
-        if MAS.hasAffixes() then
-            local allEnemiesToBuff = {}
-            for _, u in ipairs(enemies) do allEnemiesToBuff[#allEnemiesToBuff+1] = u end
-            for _, u in ipairs(enemyQueue) do allEnemiesToBuff[#allEnemiesToBuff+1] = u end
-            MAS.applyStaticAffixes(allEnemiesToBuff)
-        end
-    else
-        MAS.onStageLoad(0, allies)  -- 挂机模式：清除词缀
-    end
-
-    -- [EnemyGuard] loadStage 重置 guard（每次加载新关都允许再次报警）
-    _enemyGuardFired = false
-    -- [EnemyGuard] loadStage 完成后验证 enemies 内容
-    print(string.format("[EnemyGuard] loadStage stageId=%s enemies_len=%d enemies_ref=%s allies_len=%d",
-        tostring(stageId), #enemies, tostring(enemies), #allies))
-    for i, u in ipairs(enemies) do
-        print(string.format("[EnemyGuard]   enemy[%d] monsterId=%s instanceId=%s heroId=%s hp=%s name=%s",
-            i, tostring(u.monsterId), tostring(u.instanceId), tostring(u.heroId), tostring(u.hp), tostring(u.name)))
-    end
-
-    -- 安装哨兵（loadStage 路径，与 resetBattle 对齐）
-    for _, u in ipairs(allies) do
-        Diag.installSentinel(u)
-    end
-    for _, u in ipairs(enemies) do
-        Diag.installSentinel(u)
-    end
-    for _, u in ipairs(enemyQueue) do
-        Diag.installSentinel(u)
-    end
-
-    -- 重置战斗状态
-    battleActive = true
-    if isFirstClear then
-        firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
-    else
-        firstClearTimeLeft = nil
-    end
-    BattleCombat.reset()
-    BattleEffects.reset()
-    ProjectileSystem.reset()
-    TM.reset()   -- 清空仇恨表
-    SEM.reset()  -- 清空状态效果
-    RCH.initBattle(allies)  -- 初始化遗物条件词条（战斗开始时效果在此触发）
-    ART.initBattle(allies)  -- 初始化神器战斗运行时效果
-    for _, u in ipairs(allies) do
-        u.atkProgress = 0
-    end
-    for _, u in ipairs(enemies) do
-        u.atkProgress = 0
-    end
-
-    -- 入场动画（交错滑入）
-    BattleCombat.playEnterAnims(enemies, -1)  -- 敌方从上方滑入
-    BattleCombat.playEnterAnims(allies, 1)    -- 己方从下方滑入
-
-    -- 重置台词气泡
-    SpeechBubble.reset()
-
-    if not skipBattleStart then
-        -- 完整战斗启动：TAL/TM 初始化 + 入场台词
-        startBattleTalents()
-
-        -- [诊断] 战斗开始后即时完整性扫描
-        Diag.scanNow(allies, enemies, "loadStage_postInit_s" .. tostring(stageId))
-
-        local aliveHeroes = {}
-        for _, u in ipairs(allies) do
-            if u.hp > 0 and u.heroId then
-                aliveHeroes[#aliveHeroes + 1] = u
-            end
-        end
-        if #aliveHeroes > 0 then
-            local speaker = aliveHeroes[math.random(#aliveHeroes)]
-            SpeechBubble.trigger(speaker, "entry")
-        end
-    end
-
-    -- 首通狂暴属于关卡加载状态，不应依赖 skipBattleStart。
-    -- nextStage/reload/失败重进等路径会用 skipBattleStart=true 延后天赋启动，
-    -- 但首通狂暴计时必须仍然在战斗恢复后正常推进。
-    if isFirstClear then
-        StageBerserk.enter(enemies, allies)
-    else
-        StageBerserk.exit()
-    end
-
-    recalcIdleIncome()
-
-    print("[BattleScene] 加载关卡: " .. entry.name
-        .. " | 场上: " .. #enemies
-        .. " | 队列: " .. #enemyQueue
-        .. " | 等级: " .. entry.monsterLevel)
-
-    if onStageLoadedCallback then
-        onStageLoadedCallback(stageId, isFirstClear)
-    end
+    local shared = {
+        getStageConfig = getStageConfig,
+        loadStage = loadStage,
+        resetAllyUnit = resetAllyUnit,
+        startBattleTalents = startBattleTalents,
+        recalcIdleIncome = recalcIdleIncome,
+        getAllies = function() return allies end,
+        get = get,
+        set = set,
+    }
+    _navLogic = BattleStageNavLogic.bind(shared)
+    _dataRestore = BattleDataRestore.bind(shared)
 end
 
 -- ======================== Public API ========================
@@ -1401,12 +626,6 @@ function BattleScene.init(vg)
     for i = 1, 6 do
         imgAllyTags[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
-    imgDeath    = nvgCreateImage(vg, "image/品质框/KP_Death.png", 0)
-
-    -- 终焉神殿确认弹窗
-    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
-    imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    imgBtnGray   = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
 
     -- 初始化攻击特效模块
     BattleEffects.init(vg)
@@ -1439,7 +658,6 @@ function BattleScene.init(vg)
         imgAtkBg        = imgAtkBg,
         imgAtkFill      = imgAtkFill,
         imgAllyTags     = imgAllyTags,
-        imgDeath        = imgDeath,
     })
 
     -- 初始化战利品箱子
@@ -1448,7 +666,7 @@ function BattleScene.init(vg)
     -- 初始化扫荡弹窗
     SweepDialog.init(vg)
     SweepDialog.onSweep = function()
-        require("network.Client").sendAction(
+        require("network.GameAction").sendAction(
             require("shared.Protocol").ACTION_TYPES.SWEEP, {})
     end
 
@@ -1508,10 +726,7 @@ function BattleScene.draw(vg)
     end
 
     -- 3b. "剩余敌人 X" 文本
-    local remainCount = #enemyQueue
-    local remainText = "剩余敌人 " .. tostring(remainCount)
-    drawTextStroke(vg, 540, 525, remainText, 40,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+    BattleStageNav.drawRemainEnemies(vg, #enemyQueue)
 
     -- 4. 敌方卡片组
     drawCardGroup(vg, enemies, ENEMY_CARD_CY,
@@ -1520,108 +735,35 @@ function BattleScene.draw(vg)
         ENEMY_ATK_BG_OFFSET_Y, ENEMY_LVL_OFFSET_Y, imgEnemyTag, false)
     require("systems.ExtraTalentSystem").drawIceStatues(vg)
 
-    -- 5. 关卡名（挂机模式显示范围文本，首通模式显示关卡名）
-    if not isFirstClear then
-        if not idleRangeText_ then
-            -- 缓存挂机范围文本，避免每帧重算
-            local stageConfig = getStageConfig()
-            local stages = require("shared.StageUtils").collectPrevStages(maxStageId_, 5, stageConfig)
-            if #stages > 0 then
-                local last = stages[#stages]  -- 最低关（起始）
-                local first = stages[1]       -- 最高关（结束）
-                local diffName = getStageConfig().getDifficultyDisplayName(getStageConfig().getDifficulty(first.id))
-                idleRangeText_ = string.format("%s %d-%d 至 %d-%d",
-                    diffName, getRelativeChapter(last.chapter), last.stage,
-                    getRelativeChapter(first.chapter), first.stage)
-            else
-                idleRangeText_ = "挂机中"
-            end
-        end
-        drawTextStroke(vg, NAV.STAGE_CX, NAV.STAGE_CY, idleRangeText_, 40,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-        -- 挂机状态提示
-        drawTextStroke(vg, NAV.STAGE_CX, NAV.STAGE_CY + 44, "挂机中...", 30,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 220, 255, 3)
-    else
-        drawTextStroke(vg, NAV.STAGE_CX, NAV.STAGE_CY, stageName, 40,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-        if battleActive and firstClearTimeLeft then
-            local secs = math.max(0, math.ceil(firstClearTimeLeft))
-            local urgent = secs <= 30
-            drawTextStroke(vg, NAV.STAGE_CX, NAV.STAGE_CY + 48,
-                string.format("剩余 %d 秒", secs), 34,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                urgent and 255 or 255, urgent and 144 or 255, urgent and 144 or 255, 4,
-                { strokeColor = { 0x31, 0x24, 0x24 } })
-        end
-        -- 首通狂暴读秒（与副本一致：常驻显示战斗用时，随狂暴阶段变文案/变色）
-        if StageBerserk.isActive() then
-            local bElapsed = StageBerserk.getElapsed()
-            local bPhase   = StageBerserk.getRagePhase()
-            local tText, tR, tG, tB
-            if bPhase == 2 then
-                tText = string.format("超级狂暴! %.0fs", bElapsed)
-                tR, tG, tB = 255, 34, 34
-            elseif bPhase == 1 then
-                tText = string.format("狂暴中 %.0fs", bElapsed)
-                tR, tG, tB = 255, 102, 0
-            else
-                tText = string.format("已用时 %.0fs", bElapsed)
-                tR, tG, tB = 255, 255, 255
-            end
-            local subY = (battleActive and firstClearTimeLeft) and (NAV.STAGE_CY + 92) or (NAV.STAGE_CY + 48)
-            drawTextStroke(vg, NAV.STAGE_CX, subY, tText, 34,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tR, tG, tB, 4,
-                { strokeColor = { 0x31, 0x24, 0x24 } })
-        end
-    end
-    -- 6. 后退按钮（挂机模式隐藏，终焉神殿变暗）
-    local isTerminal = getStageConfig().isTerminalTemple(currentStageId)
-    if isFirstClear then
-        local backAlpha = isTerminal and 0.3 or 1.0
-        drawImageMirrored(vg, imgBtnBack, NAV.BACK_BG_CX, NAV.BACK_BG_CY, NAV.BACK_BG_W, NAV.BACK_BG_H, backAlpha)
-        -- 7. 后退图标（水平镜像）
-        drawImageMirrored(vg, imgBtnIcon, NAV.BACK_ICON_CX, NAV.BACK_ICON_CY, NAV.BACK_ICON_W, NAV.BACK_ICON_H, backAlpha)
-        -- 8. 后退文本
-        local backC = isTerminal and 100 or 255
-        drawTextStroke(vg, NAV.BACK_TEXT_CX, NAV.BACK_TEXT_CY, "后退", 40,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, backC, backC, backC, 4)
-    end
-
-    -- 9. 前进按钮（仅挂机模式显示，终焉神殿时不可用）
-    if not isFirstClear then
-        local canAdvance = not isTerminal
-        local fwdImg = canAdvance and imgBtnFwd or imgBtnFwdGrey
-        drawImageCentered(vg, fwdImg, NAV.FWD_BG_CX, NAV.FWD_BG_CY, NAV.FWD_BG_W, NAV.FWD_BG_H, 1.0)
-        -- 10. 前进图标（未首通时暗化）+ 可前进且下一关未进入时左右漂浮 + 闪烁动画
-        local fwdAlpha = canAdvance and 1.0 or 0.4
-        local stageConfig = getStageConfig()
-        local nextId = stageConfig.getNextStageId(currentStageId)
-        -- 仅当下一关超出玩家累计抵达记录时才播放提示动画（首通引导）
-        -- 终焉神殿 ID 可能小于末关 ID（3999 < 9205），需单独高亮
-        local fwdFloating = canAdvance and nextId ~= nil
-            and (nextId > maxStageId_ or stageConfig.isTerminalTemple(nextId))
-        local fwdFloatX = fwdFloating and math.sin(time.elapsedTime * 3.0) * 10 or 0
-        -- 闪烁：用较快频率（5Hz）的 sin 波驱动，与摇摆同步
-        local fwdBlink = fwdFloating and (0.5 + 0.5 * math.sin(time.elapsedTime * 10.0)) or 1.0
-        -- 图标：alpha 在 0.55~1.0 之间脉冲
-        local fwdIconAlpha = fwdAlpha * (fwdFloating and (0.55 + 0.45 * fwdBlink) or 1.0)
-        drawImageCentered(vg, imgBtnIcon, NAV.FWD_ICON_CX + fwdFloatX, NAV.FWD_ICON_CY, NAV.FWD_ICON_W, NAV.FWD_ICON_H, fwdIconAlpha)
-        -- 11. 前进文本 + 可前进时漂浮；文字颜色在白色与金黄之间闪烁
-        local fwdCBase = canAdvance and 255 or 150
-        local fwdCg = fwdFloating and math.floor(220 + (255 - 220) * fwdBlink) or fwdCBase
-        local fwdCb = fwdFloating and math.floor(60  + (255 - 60)  * fwdBlink) or fwdCBase
-        drawTextStroke(vg, NAV.FWD_TEXT_CX + fwdFloatX, NAV.FWD_TEXT_CY, "前进", 40,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, fwdCBase, fwdCg, fwdCb, 4)
-    end
+    -- 5~11. 关卡名 / 前进后退
+    idleRangeText_ = BattleStageNav.drawStageTitle(vg, {
+        isFirstClear = isFirstClear,
+        idleRangeText = idleRangeText_,
+        maxStageId = maxStageId_,
+        getStageConfig = getStageConfig,
+        getRelativeChapter = getRelativeChapter,
+        stageName = stageName,
+        battleActive = battleActive,
+        firstClearTimeLeft = firstClearTimeLeft,
+    })
+    BattleStageNav.drawNavButtons(vg, {
+        isFirstClear = isFirstClear,
+        isTerminal = getStageConfig().isTerminalTemple(currentStageId),
+        currentStageId = currentStageId,
+        maxStageId = maxStageId_,
+        getStageConfig = getStageConfig,
+        imgBtnBack = imgBtnBack,
+        imgBtnIcon = imgBtnIcon,
+        imgBtnFwd = imgBtnFwd,
+        imgBtnFwdGrey = imgBtnFwdGrey,
+    })
 
     -- 12. 己方战场阴影
     drawImageCentered(vg, imgShadow, ALLY_SHADOW_CX, ALLY_SHADOW_CY,
         ALLY_SHADOW_W, ALLY_SHADOW_H, 1.0)
 
     -- 13. "我的队伍" 文本
-    drawTextStroke(vg, 540, 2046, "我的队伍", 40,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+    BattleStageNav.drawTeamLabel(vg)
 
     -- 14. 己方卡片组
     drawCardGroup(vg, allies, ALLY_CARD_CY,
@@ -1682,70 +824,17 @@ function BattleScene.draw(vg)
     end
 
     -- 16. 战斗结束提示 / 寻怪中进度条 / 失败倒计时
-    if not battleActive then
-        if reincarnationTimer ~= nil then
-            -- ---- 轮回过渡提示 ----
-            local progress = math.min(1, reincarnationTimer / REINCARNATION_DELAY)
-            -- 轮回光环效果（脉冲发光）
-            local pulse = 0.6 + 0.4 * math.sin(reincarnationTimer * 4)
-            local alpha = math.floor(180 * pulse)
-            drawTextStroke(vg, 540, 1170, "轮回", 80,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 160, 255, 6)
-            -- 进度条
-            local BAR_W, BAR_H = 360, 28
-            local BAR_X = 540 - BAR_W * 0.5
-            local BAR_Y = 1230
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, BAR_X, BAR_Y, BAR_W, BAR_H, 6)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
-            nvgFill(vg)
-            if progress > 0 then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, BAR_X + 2, BAR_Y + 2, (BAR_W - 4) * progress, BAR_H - 4, 5)
-                nvgFillColor(vg, nvgRGBA(180, 140, 255, alpha))
-                nvgFill(vg)
-            end
-            local nextTargetId = getStageConfig().getReincarnationTarget(getStageConfig().getDifficulty(currentStageId))
-            local nextDiff = nextTargetId and getStageConfig().getDifficulty(nextTargetId) or nil
-            local diffName = nextDiff and getStageConfig().getDifficultyDisplayName(nextDiff) or "未知"
-            drawTextStroke(vg, 540, BAR_Y + BAR_H + 20, "即将进入" .. diffName .. "难度...", 30,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 200, 255, 3)
-        elseif searchingTimer ~= nil then
-            -- ---- 寻怪中进度条 ----
-            local progress = math.min(1, searchingTimer / SEARCH_ENEMY_DURATION)
-            local BAR_W, BAR_H = 400, 36
-            local BAR_X = 540 - BAR_W * 0.5
-            local BAR_Y = 1190
-            -- 背景
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, BAR_X, BAR_Y, BAR_W, BAR_H, 8)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
-            nvgFill(vg)
-            -- 填充
-            if progress > 0 then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, BAR_X + 3, BAR_Y + 3, (BAR_W - 6) * progress, BAR_H - 6, 6)
-                nvgFillColor(vg, nvgRGBA(100, 200, 255, 220))
-                nvgFill(vg)
-            end
-            -- 文本
-            drawTextStroke(vg, 540, BAR_Y + BAR_H * 0.5, "寻怪中...", 32,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-        elseif defeatTimer ~= nil then
-            -- ---- 战败提示 ----
-            local failText = defeatByTimeout and "时间到!" or "失败..."
-            drawTextStroke(vg, 540, 1190, failText, 72,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 80, 80, 6)
-            drawTextStroke(vg, 540, 1250, stageName, 36,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 220, 220, 220, 4)
-        else
-            -- ---- 首通胜利提示 ----
-            drawTextStroke(vg, 540, 1190, "胜利!", 72,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 220, 50, 6)
-            drawTextStroke(vg, 540, 1250, stageName, 36,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 220, 220, 220, 4)
-        end
-    end
+    BattleTransitionHud.draw(vg, {
+        battleActive = battleActive,
+        reincarnationTimer = reincarnationTimer,
+        searchingTimer = searchingTimer,
+        defeatTimer = defeatTimer,
+        defeatByTimeout = defeatByTimeout,
+        stageName = stageName,
+        currentStageId = currentStageId,
+        getStageConfig = getStageConfig,
+        drawTextStroke = drawTextStroke,
+    })
 
     -- ---- 扫荡弹窗（在寻怪进度条之上、终焉确认弹窗之下） ----
     SweepDialog.draw(vg)
@@ -1754,13 +843,13 @@ function BattleScene.draw(vg)
     DamageStatsPanel.draw(vg)
 
     -- ---- 终焉神殿确认弹窗（最上层绘制） ----
-    drawConfirmDialog(vg)
+    TerminalConfirmDialog.draw(vg, currentStageId, getStageConfig)
 
     -- ---- 副本结算面板（最顶层） ----
     BattleResultPanel.draw(vg)
 
     -- ---- 长按怪物属性弹窗（最最顶层） ----
-    drawMonsterInfoPopup(vg)
+    MonsterInfoPopup.draw(vg)
 end
 
 function BattleScene.update(dt)
@@ -1778,195 +867,62 @@ function BattleScene.update(dt)
     end
 
     -- ---- 长按怪物检测 ----
-    updateLongPress()
+    MonsterInfoPopup.update(enemies)
 
     -- ---- 终焉神殿确认弹窗关闭动画更新 ----
-    if confirmDialog.closing then
-        local _, _, done = getConfirmAnim()
-        if done then
-            confirmDialog.closing = false
-            confirmDialog.open = false
-            confirmDialog.pendingNextId = nil
-        end
-    end
+    TerminalConfirmDialog.update()
 
-    -- 暂停时只更新动画/浮字（保持视觉流畅），不推进战斗逻辑
-    if isPaused then
-        ProjectileSystem.update(dt)
-        BattleEffects.update(dt)
-        updateCardAnims(dt)
-        updateFloatingTexts(dt)
-        updateHitFlashes(dt)
-        updateComboQueue(dt)
-        SpeechBubble.update(dt)
+    -- ---- 暂停 / 失败延迟 / 轮回 / 寻怪（委托 BattleScenePhases） ----
+    local _phCtx = {
+        isPaused = isPaused, defeatTimer = defeatTimer, reincarnationTimer = reincarnationTimer,
+        searchingTimer = searchingTimer, terminalDefeatPending = terminalDefeatPending,
+        defeatByTimeout = defeatByTimeout, isFirstClear = isFirstClear,
+        currentStageId = currentStageId, maxStageId_ = maxStageId_,
+        battleActive = battleActive, enemies = enemies, enemyQueue = enemyQueue, allies = allies,
+        clearedStages = clearedStages, stageName = stageName,
+        pendingReincarnation = pendingReincarnation, bgTransAnim = bgTransAnim, regenAccum = regenAccum,
+        DEFEAT_DELAY = DEFEAT_DELAY, REINCARNATION_DELAY = REINCARNATION_DELAY,
+        SEARCH_ENEMY_DURATION = SEARCH_ENEMY_DURATION,
+        BG_ZOOM_BACK_TARGET = BG_ZOOM_BACK_TARGET, BG_ZOOM_FWD_TARGET = BG_ZOOM_FWD_TARGET,
+        updateCardAnims = updateCardAnims, updateFloatingTexts = updateFloatingTexts,
+        updateHitFlashes = updateHitFlashes, updateComboQueue = updateComboQueue,
+        getStageConfig = getStageConfig, loadStage = loadStage, resetAllyUnit = resetAllyUnit,
+        startBattleTalents = startBattleTalents, onStageChangedCallback = onStageChangedCallback,
+        onReincarnateCallback = onReincarnateCallback, recalcIdleIncome = recalcIdleIncome,
+        generateIdleEnemyList = generateIdleEnemyList, assignEnemiesToField = assignEnemiesToField,
+        BattleScene = BattleScene,
+    }
+    if BattleScenePhases.process(_phCtx, dt) then
+        defeatTimer = _phCtx.defeatTimer
+        reincarnationTimer = _phCtx.reincarnationTimer
+        searchingTimer = _phCtx.searchingTimer
+        terminalDefeatPending = _phCtx.terminalDefeatPending
+        defeatByTimeout = _phCtx.defeatByTimeout
+        battleActive = _phCtx.battleActive
+        pendingReincarnation = _phCtx.pendingReincarnation
+        bgTransAnim = _phCtx.bgTransAnim
+        regenAccum = _phCtx.regenAccum
+        enemies = _phCtx.enemies
+        enemyQueue = _phCtx.enemyQueue
+        maxStageId_ = _phCtx.maxStageId_
+        stageName = _phCtx.stageName
+        isFirstClear = _phCtx.isFirstClear
+        currentStageId = _phCtx.currentStageId
         return
     end
-
-
-    -- ---- 失败延迟后退 ----
-    if defeatTimer ~= nil then
-        defeatTimer = defeatTimer + dt
-        ProjectileSystem.update(dt)
-        BattleEffects.update(dt)
-        updateCardAnims(dt)
-        updateFloatingTexts(dt)
-        updateHitFlashes(dt)
-        updateComboQueue(dt)
-        SpeechBubble.update(dt)
-        if defeatTimer >= DEFEAT_DELAY then
-            defeatTimer = nil
-            defeatByTimeout = false
-            local targetId
-            if terminalDefeatPending then
-                -- 终焉神殿失败：回退到该难度最后一关
-                terminalDefeatPending = false
-                targetId = getStageConfig().getTerminalPrevStageId(currentStageId) or currentStageId
-                -- 解锁导航（终焉神殿中导航被锁定）
-                BottomNav.setAllLocked(false)
-                -- 恢复战斗 BGM（终焉神殿使用 samsara BGM）
-                require("systems.GameBGM").setScene("battle")
-                print("[BattleScene] 终焉神殿失败，回退 → " .. tostring(targetId))
-            elseif not isFirstClear then
-                -- 挂机模式：阵亡不回退，重新加载当前关卡继续战斗
-                targetId = currentStageId
-                print("[BattleScene] 挂机模式阵亡，重新加载当前关 → " .. tostring(targetId))
-            else
-                targetId = getStageConfig().getPrevStageId(currentStageId) or currentStageId
-                print("[BattleScene] 战斗失败，自动后退 → " .. tostring(targetId))
-            end
-            bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_BACK_TARGET }
-            loadStage(targetId, true)  -- skipBattleStart
-            regenAccum = 0
-            for _, u in ipairs(allies) do resetAllyUnit(u) end
-            startBattleTalents()
-            if onStageChangedCallback then
-                onStageChangedCallback(targetId)
-            end
-        end
-        return
-    end
-
-    -- ---- 轮回计时（终焉神殿专用） ----
-    if reincarnationTimer ~= nil then
-        reincarnationTimer = reincarnationTimer + dt
-        ProjectileSystem.update(dt)
-        BattleEffects.update(dt)
-        updateCardAnims(dt)
-        updateFloatingTexts(dt)
-        updateHitFlashes(dt)
-        updateComboQueue(dt)
-        SpeechBubble.update(dt)
-        if reincarnationTimer >= REINCARNATION_DELAY then
-            reincarnationTimer = nil
-            -- 解锁导航
-            BottomNav.setAllLocked(false)
-            -- 确定轮回目标
-            local currentDiff = getStageConfig().getDifficulty(currentStageId)
-            local targetStageId = getStageConfig().getReincarnationTarget(currentDiff)
-            if not targetStageId then
-                print("[BattleScene] 轮回目标无效，当前难度: " .. tostring(currentDiff))
-                return
-            end
-            local targetDiff = getStageConfig().getDifficulty(targetStageId)
-
-            if onReincarnateCallback then
-                -- 有外部回调（Client/Standalone）：先播放开场动画，延迟加载关卡
-                ---@diagnostic disable-next-line: assign-type-mismatch
-                pendingReincarnation = {
-                    targetStageId = targetStageId,
-                    terminalStageId = currentStageId,
-                    fromDifficulty = currentDiff,
-                    toDifficulty = targetDiff,
-                }
-                print("[BattleScene] 轮回倒计时结束，等待外部动画完成后调用 completeReincarnation")
-                onReincarnateCallback({
-                    fromDifficulty = currentDiff,
-                    toDifficulty = targetDiff,
-                    newStageId = targetStageId,
-                })
-            else
-                -- 无回调（安全回退）：直接加载关卡
-                clearedStages[currentStageId] = true
-                if targetStageId > maxStageId_ then
-                    maxStageId_ = targetStageId
-                    recalcIdleIncome()
-                end
-                require("systems.GameBGM").setScene("battle")
-                bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
-                loadStage(targetStageId, true)
-                regenAccum = 0
-                for _, u in ipairs(allies) do resetAllyUnit(u) end
-                startBattleTalents()
-                if onStageChangedCallback then
-                    onStageChangedCallback(targetStageId)
-                end
-                print("[BattleScene] 轮回完成（无回调）→ " .. stageName .. " (难度: " .. tostring(targetDiff) .. ")")
-            end
-        end
-        return
-    end
-
-    -- ---- 挂机寻怪倒计时 ----
-    if searchingTimer ~= nil then
-        searchingTimer = searchingTimer + dt
-        ProjectileSystem.update(dt)
-        BattleEffects.update(dt)
-        updateCardAnims(dt)
-        updateFloatingTexts(dt)
-        updateHitFlashes(dt)
-        updateComboQueue(dt)
-        SpeechBubble.update(dt)
-        if searchingTimer >= SEARCH_ENEMY_DURATION then
-            searchingTimer = nil
-            regenAccum = 0
-            -- 开战前刷新属性（装备/槽位强化等可能在寻怪期间才同步完成）
-            BattleScene.refreshAllyStats()
-            for _, u in ipairs(allies) do resetAllyUnit(u) end
-            -- 生成新一波敌人（挂机用5关混合；首通保留 loadStage 已生成的阵容）
-            do
-                if not isFirstClear then
-                    local allEnemies, maxField = generateIdleEnemyList()
-                    enemies, enemyQueue = assignEnemiesToField(allEnemies, maxField)
-                else
-                    -- 首通：loadStage 已按 assignEnemiesToField 放置特殊怪，寻怪结束后勿重新生成
-                    for _, u in ipairs(enemies) do
-                        u.atkProgress = 0
-                    end
-                end
-                battleActive = true
-                BattleCombat.reset()
-                BattleEffects.reset()
-                ProjectileSystem.reset()
-                TM.reset()
-                SEM.reset()
-                TAL.reset()
-                RCH.reset()
-                ART.reset()
-                RCH.initBattle(allies)
-                ART.initBattle(allies)
-                for _, u in ipairs(allies) do
-                    Diag.installSentinel(u)
-                    TAL.initUnit(u)
-                end
-                for _, u in ipairs(enemies) do
-                    Diag.installSentinel(u)
-                    u.atkProgress = 0
-                    TAL.initUnit(u)
-                end
-                for _, u in ipairs(enemyQueue) do
-                    Diag.installSentinel(u)
-                end
-                -- 新波次敌人入场动画
-                BattleCombat.playEnterAnims(enemies, -1)
-                TM.onBattleStart(allies, enemies)
-                TAL.onBattleStart(allies, enemies)
-                -- [诊断] 搜索完成后即时扫描
-                Diag.scanNow(allies, enemies, "searchTimer_newWave")
-                print("[BattleScene] " .. (isFirstClear and "首通寻怪完成，开战" or "挂机新波次开始"))
-            end
-        end
-        return
-    end
+    defeatTimer = _phCtx.defeatTimer
+    reincarnationTimer = _phCtx.reincarnationTimer
+    searchingTimer = _phCtx.searchingTimer
+    terminalDefeatPending = _phCtx.terminalDefeatPending
+    defeatByTimeout = _phCtx.defeatByTimeout
+    battleActive = _phCtx.battleActive
+    pendingReincarnation = _phCtx.pendingReincarnation
+    bgTransAnim = _phCtx.bgTransAnim
+    regenAccum = _phCtx.regenAccum
+    enemies = _phCtx.enemies
+    enemyQueue = _phCtx.enemyQueue
+    maxStageId_ = _phCtx.maxStageId_
+    stageName = _phCtx.stageName
 
     if not battleActive then return end
 
@@ -2004,410 +960,54 @@ function BattleScene.update(dt)
     ART.update(logicDt)
 
 
-    -- ---- 敌人死亡处理（死亡即补位：怪物池有剩余立刻替换新怪，不播墓碑动画） ----
-    -- [补位节流] 多只敌人同帧死亡时，补位/收缩按 0.4s 间隔逐只进行
-    --（首只按 RESPAWN_DELAY 1s，其后每只 +0.4s：AOE 杀 3 只 ≈1.8s 补全
-    --；冷却按 enemies 引用隔离存 weak-key 表，三行多场战斗互不干扰）
-    local REINFORCE_INTERVAL = 0.4
-    local reinforceCd = (reinforceCdByList[enemies] or 0) - logicDt
-    if reinforceCd < 0 then reinforceCd = 0 end
-    reinforceCdByList[enemies] = reinforceCd
-    for i, unit in ipairs(enemies) do
-        if unit.hp <= 0 then
-            -- 首次检测到死亡：发放击杀奖励（替换与墓碑共用，仅一次）
-            if not unit.reviveTimer then
-                unit.reviveTimer = 0  -- 标记已处理
-                unit.atkProgress = 0
-                TM.removeUnit(unit)   -- 清除仇恨记录（仅一次）
-                TAL.onEnemyDeath(unit, allies, enemies)  -- 转职天赋: 敌人死亡钩子（影袭等）
-                SEM.removeUnit(unit)  -- 清除状态效果
+    -- ---- 敌人死亡处理 / 己方阵亡紧凑 / 胜负判定（委托 BattleCasualty） ----
+    local _casCtx = {
+        enemies = enemies, allies = allies, enemyQueue = enemyQueue,
+        getCardCX = getCardCX, getAliveUnits = getAliveUnits, syncUnitHp = syncUnitHp,
+        RESPAWN_DELAY = RESPAWN_DELAY, reinforceCdByList = reinforceCdByList,
+        ENEMY_CARD_CY = ENEMY_CARD_CY, ALLY_CARD_CY = ALLY_CARD_CY,
+        currentStageId = currentStageId, stageName = stageName, getStageConfig = getStageConfig,
+        waveKillCount = waveKillCount, waveGoldEarned = waveGoldEarned, waveExpEarned = waveExpEarned,
+        onEnemyKillCallback = onEnemyKillCallback, onEnemyDropCallback = onEnemyDropCallback,
+        onFirstClearCallback = onFirstClearCallback, onAllDeadCallback = onAllDeadCallback,
+        stageKillCount = stageKillCount_, isFirstClear = isFirstClear, clearedStages = clearedStages,
+        reincarnationTimer = reincarnationTimer, battleActive = battleActive,
+        searchingTimer = searchingTimer, defeatTimer = defeatTimer,
+        terminalDefeatPending = terminalDefeatPending, defeatByTimeout = defeatByTimeout,
+        settleWaveEfficiency = settleWaveEfficiency, resetWaveTimers = resetWaveTimers,
+        nextStage = BattleScene.nextStage,
+    }
+    local _casConsumed = BattleCasualty.process(_casCtx, logicDt)
+    waveKillCount = _casCtx.waveKillCount
+    waveGoldEarned = _casCtx.waveGoldEarned
+    waveExpEarned = _casCtx.waveExpEarned
+    stageKillCount_ = _casCtx.stageKillCount
+    isFirstClear = _casCtx.isFirstClear
+    reincarnationTimer = _casCtx.reincarnationTimer
+    battleActive = _casCtx.battleActive
+    searchingTimer = _casCtx.searchingTimer
+    defeatTimer = _casCtx.defeatTimer
+    terminalDefeatPending = _casCtx.terminalDefeatPending
+    defeatByTimeout = _casCtx.defeatByTimeout
+    if _casConsumed then return end
 
-                -- 波次效率累计（本地 UI 统计）
-                waveKillCount = waveKillCount + 1
-                waveGoldEarned = waveGoldEarned + (unit.goldReward or 0)
-                waveExpEarned  = waveExpEarned + (unit.expReward or 0)
-
-                -- 发放击杀奖励（经验 + 金币）
-                if onEnemyKillCallback and (unit.expReward or unit.goldReward) then
-                    local allyCount = #allies
-                    local expMult = require("config.ExpTable").getHeroCountExpMult(allyCount)
-                    -- 收集上场冒险家 heroId 列表
-                    local heroIds = {}
-                    for _, ally in ipairs(allies) do
-                        if ally.heroId then
-                            heroIds[#heroIds + 1] = ally.heroId
-                        end
-                    end
-                    onEnemyKillCallback({
-                        expReward  = unit.expReward or 0,
-                        goldReward = unit.goldReward or 0,
-                        allyCount  = allyCount,
-                        expMult    = expMult,
-                        heroIds    = heroIds,
-                        stageId    = currentStageId,
-                    })
-                end
-
-                -- 掉落回调（通知外部生成装备掉落）
-                if onEnemyDropCallback then
-                    local enemyCX = getCardCX(enemies, i)
-                    print("[BattleScene] enemy died, calling dropCallback stageId=" .. tostring(currentStageId))
-                    onEnemyDropCallback({
-                        stageId = currentStageId,
-                        enemyCX = enemyCX,
-                        enemyCY = ENEMY_CARD_CY,
-                    })
-                else
-                    print("[BattleScene] enemy died, but onEnemyDropCallback is nil!")
-                end
-
-                -- 击杀台词触发（击杀者说台词）
-                if unit._killedBy and unit._killedBy.heroId then
-                    SpeechBubble.trigger(unit._killedBy, "kill")
-                end
-
-                stageKillCount_ = stageKillCount_ + 1
-                -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空不再显示墓碑（完全隐藏空位）
-                local okRatio = unit._overkillRatio or 0
-                BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1,
-                    knockbackMult = 1.0 + okRatio * 2.0, noTombstone = true })
-            end
-
-            unit.reviveTimer = unit.reviveTimer + logicDt
-
-            if #enemyQueue > 0 then
-                -- [死亡即补位 v2] 退场(向右滑出0.4s) → 1s 空位 → 新怪从右滑入补位
-                -- [补位节流] 同帧多只待补位时按 REINFORCE_INTERVAL 逐只补入
-                if unit.reviveTimer >= RESPAWN_DELAY and reinforceCd <= 0 then
-                    reinforceCd = REINFORCE_INTERVAL
-                    reinforceCdByList[enemies] = reinforceCd
-                    -- [队列前移补位] 死亡槽位 i 由后方敌人依次前移一格填入，
-                    -- 新怪从怪物池进入队尾淡入补齐（保持敌我阵列紧凑）
-                    for j = i, #enemies - 1 do
-                        local moved = enemies[j + 1]
-                        enemies[j] = moved
-                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
-                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
-                    end
-                    local newUnit = table.remove(enemyQueue, 1)
-                    Diag.installSentinel(newUnit)
-                    TAL.initUnit(newUnit)
-                    TAL.checkMarkTarget(allies, enemies)
-                    newUnit.atkProgress = 0
-                    enemies[#enemies] = newUnit
-                    -- 清理旧单位残留的动画状态
-                    BattleCombat.clearCardAnim(unit)
-                    BattleCombat.clearHitFlash(unit)
-                    -- 新怪从右侧滑入淡入补位（队尾）
-                    BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
-                end
-            else
-                -- [池空前移] 无后续敌人：死亡槽位仍由后方敌人前移填位（队列收缩，共享补位节流）
-                if unit.reviveTimer >= RESPAWN_DELAY and reinforceCd <= 0 then
-                    reinforceCd = REINFORCE_INTERVAL
-                    reinforceCdByList[enemies] = reinforceCd
-                    for j = i, #enemies - 1 do
-                        local moved = enemies[j + 1]
-                        enemies[j] = moved
-                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
-                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
-                    end
-                    table.remove(enemies)
-                    BattleCombat.clearCardAnim(unit)
-                    BattleCombat.clearHitFlash(unit)
-                end
-            end
-        end
-    end
-
-    -- ---- 墓碑处理（己方）：死亡淡出动画，不复活 ----
-    for _, unit in ipairs(allies) do
-        if unit.hp <= 0 and not unit.reviveTimer then
-            -- 神器: 死亡拦截（神圣十架复活 / 亡魂之祭）
-            local artifactRevived = ART.onAllyDeath(unit)
-            if artifactRevived then
-                local idx = 1
-                for ai, a in ipairs(allies) do
-                    if a == unit then idx = ai; break end
-                end
-                local cx = BattleCombat.getCardCX(allies, idx)
-                require("ui.SpineCardEffect").playRevive(cx, ALLY_CARD_CY)
-            else
-                -- 天赋: 死亡拦截（复活吧爱人复活）
-                local revived = TAL.onAllyDeath(unit, allies, syncUnitHp)
-                if revived then
-                    -- 复活成功，跳过死亡处理；播放复活 Spine 特效
-                    local idx = 1
-                    for ai, a in ipairs(allies) do
-                        if a == unit then idx = ai; break end
-                    end
-                    local cx = BattleCombat.getCardCX(allies, idx)
-                    require("ui.SpineCardEffect").playRevive(cx, ALLY_CARD_CY)
-                else
-                    -- 阵亡台词触发
-                    SpeechBubble.trigger(unit, "death")
-
-                    unit.reviveTimer = 0       -- 标记已处理，防止重复调用
-                    unit._fallenPending = true -- [阵亡紧凑] 退场完成后移至队尾
-                    unit.atkProgress = 0
-                    TM.removeUnit(unit)
-                    SEM.removeUnit(unit)
-                    -- 启动死亡动画：角色向下滑出（lungeDir=+1），超额伤害增加击退；完成后直接隐藏
-                    local okRatio = unit._overkillRatio or 0
-                    BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = 1,
-                        knockbackMult = 1.0 + okRatio * 2.0, noTombstone = true })
-                end
-            end
-        end
-    end
-
-    -- [阵亡紧凑] 阵亡英雄退场动画完成后移至队尾，存活英雄前移填位
-    -- （单位对象保留：下一关 resetAllyUnit 全员重置复活）
-    for i = #allies, 1, -1 do
-        local u = allies[i]
-        if u._fallenPending then
-            local st = BattleCombat.getAnimState(u)
-            if st == "gone" or st == nil then
-                u._fallenPending = nil
-                u._fallen = true
-                table.remove(allies, i)
-                table.insert(allies, u)
-                for j = i, #allies - 1 do
-                    local moved = allies[j]
-                    if moved.hp > 0 then
-                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
-                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
-                    end
-                end
-            end
-        end
-    end
-
-    -- 检查是否有存活单位
-    local allyAlive  = getAliveUnits(allies)
-    local enemyAlive = getAliveUnits(enemies)
-
-    -- 胜利条件：场上敌人全灭 + 队列为空
-    if #enemyAlive == 0 and #enemyQueue == 0 then
-        settleWaveEfficiency()
-        resetWaveTimers()
-
-
-
-        local wasFirstClear = isFirstClear
-        if isFirstClear then
-            -- 首通完成：标记关卡已通关，解锁前进按钮
-            clearedStages[currentStageId] = true
-            isFirstClear = false
-            StageBerserk.exit()
-            print("[BattleScene] 首通完成: " .. stageName)
-            -- 通知外部持久化（Client 会发送 NEXT_STAGE 到服务端）
-            if onFirstClearCallback then
-                onFirstClearCallback(currentStageId)
-            end
-        end
-        -- 胜利台词触发（随机选一名存活英雄）
-        local aliveHeroesV = {}
-        for _, u in ipairs(allies) do
-            if u.hp > 0 and u.heroId then
-                aliveHeroesV[#aliveHeroesV + 1] = u
-            end
-        end
-        if #aliveHeroesV > 0 then
-            local speaker = aliveHeroesV[math.random(#aliveHeroesV)]
-            SpeechBubble.trigger(speaker, "victory")
-        end
-
-        -- 终焉神殿：胜利 → 进入轮回计时
-        if getStageConfig().isTerminalTemple(currentStageId) then
-            if reincarnationTimer == nil then
-                reincarnationTimer = 0
-                battleActive = false
-                print("[BattleScene] 终焉神殿胜利，进入轮回倒计时")
-            end
-            return
-        end
-
-        -- 首通成功：自动前进到下一关（不回到寻怪模式）
-        if wasFirstClear then
-            BattleScene.nextStage()
-        elseif searchingTimer == nil then
-            -- 挂机模式：进入寻怪倒计时
-            searchingTimer = 0
-            battleActive = false
-        end
-        return
-    end
-    -- 失败条件：己方全灭
-    if #allyAlive == 0 then
-            StageBerserk.exit()
-        -- 战败也结算已有的效率数据（不完整波次仍有参考价值）
-        settleWaveEfficiency()
-
-        -- 终焉神殿：失败 → 回退到上一关（该难度最后一关）
-        if getStageConfig().isTerminalTemple(currentStageId) then
-            if defeatTimer == nil then
-                defeatTimer = 0
-                battleActive = false
-                terminalDefeatPending = true
-                defeatByTimeout = false
-                print("[BattleScene] 终焉神殿失败，准备回退到上一关")
-            end
-            return
-        end
-        if defeatTimer == nil then
-            defeatTimer = 0
-            battleActive = false
-            defeatByTimeout = false
-            if onAllDeadCallback then onAllDeadCallback() end
-        end
-        return
-    end
-
-
-
-    -- ---- 更新攻击进度 ----
-    -- 预先统计双方存活数，无目标时进度条停在满格等待
-    local hasAliveEnemy = false
-    for _, u in ipairs(enemies) do
-        if u.hp > 0 then hasAliveEnemy = true; break end
-    end
-    local hasAliveAlly = false
-    for _, u in ipairs(allies) do
-        if u.hp > 0 then hasAliveAlly = true; break end
-    end
-
-    for _, unit in ipairs(allies) do
-        if unit.hp > 0 and not SEM.isFrozen(unit) then
-            local interval = getLiveAttackInterval(unit, DEFAULT_ALLY_INTERVAL)
-            BattleCombat.advanceAttackProgress(unit, logicDt, interval, hasAliveEnemy, function()
-                performAttack(unit, enemies, true)
-            end)
-        end
-    end
-
-    -- [EnemyGuard] 每帧检查 enemies 是否被污染（仅首次触发）
-    checkEnemiesCorruption("UPDATE_LOOP")
-
-    for _, unit in ipairs(enemies) do
-        if unit.hp > 0 and not SEM.isFrozen(unit) then
-            local interval = getLiveAttackInterval(unit, DEFAULT_ENEMY_INTERVAL)
-            BattleCombat.advanceAttackProgress(unit, logicDt, interval, hasAliveAlly, function()
-                performAttack(unit, allies, false)
-            end)
-        end
-    end
-
-    -- ---- 遗物条件词条每帧检查（HP阈值、限时buff到期等） ----
-    RCH.update(allies, 0)
-
-    -- ---- 更新血条缓冲（白色拖尾） ----
-    BattleCombat.updateHpBuffers(allies, logicDt)
-    BattleCombat.updateHpBuffers(enemies, logicDt)
-
-    -- ---- 更新仇恨衰减 ----
-    TM.update(logicDt)
-
-    -- ---- 更新状态效果（DOT/HOT tick） ----
-    SEM.update(logicDt, {
-        onDot = function(unit, source, dmg)
-            -- 判断目标是否为己方
-            local isUnitAlly = false
-            for _, u in ipairs(allies) do
-                if u == unit then isUnitAlly = true; break end
-            end
-            dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", {255, 120, 30}, source, { isDot = true })
-        end,
-        onHot = function(unit, source, heal)
-            if unit.attrs and unit.hp > 0 then
-                local actual = unit.attrs:heal(heal)
-                syncUnitHp(unit)
-                if actual > 0 then
-                    local isUnitAlly = false
-                    for _, u in ipairs(allies) do
-                        if u == unit then isUnitAlly = true; break end
-                    end
-                    local cy = isUnitAlly and ALLY_CARD_CY or ENEMY_CARD_CY
-                    local list = isUnitAlly and allies or enemies
-                    local cx = DESIGN_W * 0.5
-                    for ii, u in ipairs(list) do
-                        if u == unit then cx = getCardCX(list, ii); break end
-                    end
-                    addFloatingText("恢复 +" .. require("core.NumberUtil").format(actual), cx, cy, {0, 255, 82}, false)
-                    -- 战斗统计：HOT 持续治疗输出（来源为己方英雄时归因）
-                    if source and source.heroId then
-                        require("systems.BattleStats").recordHeal(source, actual, true)
-                    end
-                end
-            end
-        end,
-    })
-
-    -- ---- 更新天赋计时器（转职天赋: 10秒周期/巡游射击延迟/暗影倒计时等） ----
-    TAL.update(logicDt, allies, enemies, {
-        healUnit = function(unit, amount)
-            if unit.attrs and unit.hp > 0 then
-                local actual = unit.attrs:heal(amount)
-                syncUnitHp(unit)
-                return actual
-            end
-            return 0
-        end,
-        dealDamage = function(target, damage, isTargetAlly, prefix, color, source)
-            return dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source)
-        end,
-        dealTalentDamage = function(attacker, target, damage, isTargetAlly, prefix, color, projOpts)
-            return BattleCombat.dealTalentDamage(attacker, target, damage, isTargetAlly, prefix, color, projOpts, allies, enemies)
-        end,
-        syncHp = function(unit)
-            syncUnitHp(unit)
-        end,
-        performAttack = function(attacker, targetList, isAlly)
-            performAttack(attacker, targetList, isAlly)
-        end,
-    })
-
-    -- ---- 地图词缀动态 tick（仅首通模式） ----
-    if isFirstClear and MAS.hasAffixes() then
-        MAS.tick(logicDt, allies, enemies)
-    end
-
-    -- ---- 能量护盾恢复 tick ----
-    for _, u in ipairs(allies) do
-        if u.hp > 0 and u.attrs then u.attrs:tickEnergyShield(logicDt) end
-    end
-    for _, u in ipairs(enemies) do
-        if u.hp > 0 and u.attrs then u.attrs:tickEnergyShield(logicDt) end
-    end
-
-    -- ---- 每秒回血（HP_REGEN 属性） ----
-    regenAccum = regenAccum + logicDt
-    while regenAccum >= 1.0 do
-        regenAccum = regenAccum - 1.0
-        local allUnits = {}
-        for _, u in ipairs(allies)  do allUnits[#allUnits + 1] = { unit = u, isAlly = true  } end
-        for _, u in ipairs(enemies) do allUnits[#allUnits + 1] = { unit = u, isAlly = false } end
-        for _, entry in ipairs(allUnits) do
-            local u = entry.unit
-            if u.hp > 0 and u.attrs then
-                local regenAmt = require("systems.CombatFormula").calcHpRegen(u.attrs)
-                if regenAmt > 0 then
-                    local actual = u.attrs:heal(regenAmt)
-                    if actual > 0 then
-                        syncUnitHp(u)
-                        -- 显示回血浮字，让玩家看到 HP_REGEN 的实际回复量
-                        local list = entry.isAlly and allies or enemies
-                        local cy = entry.isAlly and ALLY_CARD_CY or ENEMY_CARD_CY
-                        local cx = DESIGN_W * 0.5
-                        for ii, uu in ipairs(list) do
-                            if uu == u then cx = getCardCX(list, ii); break end
-                        end
-                        addFloatingText("回复 +" .. require("core.NumberUtil").format(actual), cx, cy, {0, 255, 82}, false)
-                    end
-                end
-            end
-        end
-    end
+    -- ---- 攻击进度 / DOT HOT / 天赋计时 / 护盾回血（委托 BattleSceneTick） ----
+    local _tickCtx = {
+        enemies = enemies, allies = allies, isFirstClear = isFirstClear,
+        regenAccum = regenAccum,
+        DEFAULT_ALLY_INTERVAL = DEFAULT_ALLY_INTERVAL,
+        DEFAULT_ENEMY_INTERVAL = DEFAULT_ENEMY_INTERVAL,
+        ALLY_CARD_CY = ALLY_CARD_CY, ENEMY_CARD_CY = ENEMY_CARD_CY, DESIGN_W = DESIGN_W,
+        getLiveAttackInterval = getLiveAttackInterval,
+        performAttack = performAttack,
+        checkEnemiesCorruption = checkEnemiesCorruption,
+        dealDamageToUnit = dealDamageToUnit,
+        syncUnitHp = syncUnitHp,
+        getCardCX = getCardCX,
+        addFloatingText = addFloatingText,
+    }
+    BattleSceneTick.tick(_tickCtx, logicDt)
+    regenAccum = _tickCtx.regenAccum
 
     -- ---- 投射物 / 连击：与伤害时机绑定，必须跟随 logicDt ----
     ProjectileSystem.update(logicDt)
@@ -2640,14 +1240,8 @@ end
 
 --- [三行并行] 选关页面: 跳转到指定关卡（仅允许 ≤ 已解锁最大关卡）
 function BattleScene.gotoStage(stageId)
-    stageId = tonumber(stageId)
-    if not stageId or stageId < 1 then return false, "无效关卡" end
-    if stageId > maxStageId_ then return false, "关卡尚未解锁" end
-    loadStage(stageId, true)
-    if onStageChangedCallback then
-        onStageChangedCallback(stageId)
-    end
-    return true
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.gotoStage(stageId)
 end
 
 --- 当前是否处于终焉神殿关卡
@@ -2657,88 +1251,20 @@ end
 
 --- 实际执行进入终焉神殿（确认后调用）
 local function doEnterTerminalTemple(nextId)
-    searchingTimer = nil
-    defeatTimer = nil
-    bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
-    loadStage(nextId, true)
-    regenAccum = 0
-    for _, u in ipairs(allies) do resetAllyUnit(u) end
-    startBattleTalents()
-    BottomNav.setAllLocked(true)
-    require("systems.GameBGM").setScene("samsara", { fromStart = true })
-    if onStageChangedCallback then
-        onStageChangedCallback(nextId)
-    end
-    print("[BattleScene] 确认进入终焉神殿 → " .. stageName)
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.doEnterTerminalTemple(nextId)
 end
 
 --- 前进到下一关
 function BattleScene.nextStage()
-    local stageConfig = getStageConfig()
-    local nextId = stageConfig.getNextStageId(currentStageId)
-    if nextId then
-        -- 终焉神殿：只有历史最高关卡已进入下一难度时才跳过
-        if stageConfig.isTerminalTemple(nextId) then
-            local currentDiff = stageConfig.getDifficulty(currentStageId)
-            local skipToId, shouldSkip = stageConfig.shouldSkipTerminal(currentStageId, maxStageId_, clearedStages)
-            if skipToId and shouldSkip then
-                print("[BattleScene] 终焉神殿已跳过(maxStage=" .. maxStageId_
-                    .. " upper=" .. tostring(stageConfig.getProgressUpperBound(maxStageId_, clearedStages, nil))
-                    .. " skipTo=" .. tostring(skipToId) .. ") → " .. tostring(skipToId))
-                nextId = skipToId
-            else
-                -- 未通关：弹出确认弹窗
-                confirmDialog.open = true
-                confirmDialog.closing = false
-                confirmDialog.openTime = time.elapsedTime
-                confirmDialog.pendingNextId = nextId
-                print("[BattleScene] 终焉神殿确认弹窗打开, nextId=" .. tostring(nextId))
-                return
-            end
-        end
-        searchingTimer = nil
-        defeatTimer = nil
-        -- 背景过渡：放大淡出 → 淡入
-        bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
-        loadStage(nextId, true)  -- skipBattleStart: TAL/TM 延后到 resetAllyUnit 之后
-        regenAccum = 0
-        for _, u in ipairs(allies) do resetAllyUnit(u) end
-        startBattleTalents()  -- 在干净 attrs 上应用天赋 buff
-        -- 通知外部持久化当前关卡进度
-        if onStageChangedCallback then
-            onStageChangedCallback(nextId)
-        end
-        print("[BattleScene] 前进 → " .. stageName)
-    else
-        print("[BattleScene] 已是最后一关")
-    end
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.nextStage()
 end
 
 --- 后退到上一关
 function BattleScene.prevStage()
-    local stageConfig = getStageConfig()
-    local prevId = stageConfig.getPrevStageId(currentStageId)
-    -- 跨难度回退：当前是某难度第一关时，回退到上一难度末关
-    if not prevId then
-        prevId = stageConfig.getLastStageOfPrevDifficulty(currentStageId)
-    end
-    if prevId then
-        searchingTimer = nil
-        defeatTimer = nil
-        -- 背景过渡：缩小淡出 → 淡入
-        bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_BACK_TARGET }
-        loadStage(prevId, true)  -- skipBattleStart: TAL/TM 延后到 resetAllyUnit 之后
-        regenAccum = 0
-        for _, u in ipairs(allies) do resetAllyUnit(u) end
-        startBattleTalents()  -- 在干净 attrs 上应用天赋 buff
-        -- 通知外部持久化当前关卡进度
-        if onStageChangedCallback then
-            onStageChangedCallback(prevId)
-        end
-        print("[BattleScene] 后退 → " .. stageName)
-    else
-        print("[BattleScene] 已是第一关")
-    end
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.prevStage()
 end
 
 --- 处理设计空间内的点击（由 Standalone 调用）
@@ -2753,35 +1279,8 @@ function BattleScene.handleInput(dx, dy)
     end
 
     -- 确认弹窗打开时，拦截所有输入
-    if confirmDialog.open or confirmDialog.closing then
-        if confirmDialog.closing then return true end
-        -- 打开动画未完成时不响应按钮（但消费事件防穿透）
-        if (time.elapsedTime - confirmDialog.openTime) < CONFIRM_OPEN_DUR then return true end
-        -- 确认按钮「进入」
-        if dx >= CDL.OK_CX - CDL.OK_W * 0.5 and dx <= CDL.OK_CX + CDL.OK_W * 0.5
-           and dy >= CDL.OK_CY - CDL.OK_H * 0.5 and dy <= CDL.OK_CY + CDL.OK_H * 0.5 then
-            local nextId = confirmDialog.pendingNextId
-            confirmDialog.open = false
-            confirmDialog.pendingNextId = nil
-            if nextId then
-                doEnterTerminalTemple(nextId)
-            end
-            return true
-        end
-        -- 取消按钮
-        if dx >= CDL.CANCEL_CX - CDL.CANCEL_W * 0.5 and dx <= CDL.CANCEL_CX + CDL.CANCEL_W * 0.5
-           and dy >= CDL.CANCEL_CY - CDL.CANCEL_H * 0.5 and dy <= CDL.CANCEL_CY + CDL.CANCEL_H * 0.5 then
-            confirmDialog.closing = true
-            confirmDialog.closeTime = time.elapsedTime
-            return true
-        end
-        -- 点击弹窗外区域 → 取消
-        if dx < CDL.BG_CX - CDL.BG_W * 0.5 or dx > CDL.BG_CX + CDL.BG_W * 0.5
-           or dy < CDL.BG_CY - CDL.BG_H * 0.5 or dy > CDL.BG_CY + CDL.BG_H * 0.5 then
-            confirmDialog.closing = true
-            confirmDialog.closeTime = time.elapsedTime
-        end
-        return true  -- 消费所有点击，阻止穿透
+    if TerminalConfirmDialog.handleInput(dx, dy, doEnterTerminalTemple) then
+        return true
     end
 
     -- 扫荡弹窗（已打开时拦截所有输入；入口按钮点击）
@@ -2871,155 +1370,15 @@ end
 
 --- 完成轮回：外部动画（IntroCutscene）播放结束后调用，执行实际的关卡加载
 function BattleScene.completeReincarnation()
-    if not pendingReincarnation then
-        print("[BattleScene] completeReincarnation called but no pending data")
-        return
-    end
-    local pr = pendingReincarnation
-    pendingReincarnation = nil
-
-    if pr.terminalStageId then
-        clearedStages[pr.terminalStageId] = true
-    end
-    if pr.targetStageId and pr.targetStageId > maxStageId_ then
-        maxStageId_ = pr.targetStageId
-        recalcIdleIncome()
-    end
-
-    -- 切换 BGM 回战斗
-    require("systems.GameBGM").setScene("battle")
-    -- 背景过渡
-    bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
-    loadStage(pr.targetStageId, true)
-    regenAccum = 0
-    for _, u in ipairs(allies) do resetAllyUnit(u) end
-    startBattleTalents()
-    -- 通知关卡变更
-    if onStageChangedCallback then
-        onStageChangedCallback(pr.targetStageId)
-    end
-    print("[BattleScene] 轮回完成 → " .. stageName .. " (难度: " .. tostring(pr.toDifficulty) .. ")")
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.completeReincarnation()
 end
 
 --- 从服务端推送的战斗数据恢复状态
 ---@param data table  { currentStageId, maxStageId, clearedStages, autoBattle }
 function BattleScene.setBattleData(data)
-    if not data then return end
-
-    -- 恢复已通关关卡集合
-    if data.clearedStages then
-        clearedStages = {}
-        for k, v in pairs(data.clearedStages) do
-            -- 服务端以 tostring(stageId) 为 key 存储，本地以 number 为 key
-            local numKey = tonumber(k)
-            if numKey and v then
-                clearedStages[numKey] = true
-            end
-        end
-    end
-
-    -- 用 maxStageId 补全 clearedStages（后备推断：低于 maxStageId 的关卡必定已通关）
-    local maxSId = data.maxStageId and tonumber(data.maxStageId)
-    if maxSId then
-        -- 与服务端存档对齐（Debug 跳回低进度时需降低 maxStageId_）
-        maxStageId_ = maxSId
-        -- 更新挂机收益显示（maxStageId 变化后立即刷新，不等下一关加载）
-        recalcIdleIncome()
-        local stageConfig = getStageConfig()
-        local sid = stageConfig.getFirstStageId
-            and stageConfig.getFirstStageId(stageConfig.DIFFICULTY_NORMAL)
-            or 0101
-        while sid and sid < maxSId do
-            if not clearedStages[sid] then
-                clearedStages[sid] = true
-            end
-            local nextSid = stageConfig.getNextStageId(sid)
-            if not nextSid and stageConfig.isTerminalTemple(sid) then
-                -- 终焉神殿无 next，跨难度继续填充
-                local diff = stageConfig.getDifficulty(sid)
-                nextSid = stageConfig.getReincarnationTarget(diff)
-            end
-            sid = nextSid
-        end
-    end
-
-    -- 恢复当前关卡（如果与本地不同则切换）
-    local serverStageId = data.currentStageId and tonumber(data.currentStageId)
-
-    -- 🔴 修复中间状态：通关消息已落盘但推进消息未到（两条消息间掉线/存档）
-    -- 表现：currentStageId == maxStageId 且 clearedStages[maxStageId] == true
-    -- 此时客户端误判为挂机模式（isFirstClear=false），实际应为首通模式
-    -- 修复：从本地 clearedStages 中移除该标记，让 isFirstClear 正确计算为 true
-    -- 安全性：服务端 clearedStages 不变，不会重复发放首通奖励
-    -- ⚠️ 守卫：如果 maxStageId 的下一关是终焉神殿，说明玩家已打到难度末关并从神殿
-    --   返回/重连，此时应保持挂机模式（显示前进按钮→进入终焉神殿确认框），不触发修复
-    local stageConfig = getStageConfig()
-    local nextOfMax = maxSId and stageConfig.getNextStageId(maxSId)
-    local isAtTerminalEntrance = nextOfMax and stageConfig.isTerminalTemple(nextOfMax)
-    if maxSId and serverStageId and serverStageId == maxSId and clearedStages[maxSId]
-       and not isAtTerminalEntrance then
-        clearedStages[maxSId] = nil
-        print("[BattleScene] 修复中间状态: 关卡" .. tostring(maxSId)
-            .. "已标记通关但未推进(currentStageId==maxStageId)，恢复为首通模式")
-    end
-
-    -- 首次加载兜底：如果 currentStageId 落后于 maxStageId，
-    -- 说明上次存档异常或版本更新导致进度不同步，以 maxStageId 为准恢复到最新进度
-    if not initialBattleDataLoaded and serverStageId and maxSId then
-        if maxSId > serverStageId then
-            print("[BattleScene] 检测到进度落后: currentStageId=" .. tostring(serverStageId)
-                .. " 但 maxStageId=" .. tostring(maxSId) .. "，使用 maxStageId 恢复")
-            serverStageId = maxSId
-        end
-    end
-
-    if serverStageId and serverStageId ~= currentStageId then
-        -- 首次加载数据时无条件恢复（否则 init 里 loadStage(0101) 已启动战斗，isBusy=true 会拦截）
-        if not initialBattleDataLoaded then
-            loadStage(serverStageId)
-            regenAccum = 0
-            -- 首次加载进入寻怪模式，等服务端装备/天赋数据同步完毕再开战
-            battleActive = false
-            searchingTimer = 0
-            print("[BattleScene] 首次加载，恢复关卡(寻怪模式): " .. tostring(serverStageId))
-        else
-            -- 后续推送：仅在战斗未激活时才接受切换，避免打断进行中的战斗或轮回倒计时
-            local isBusy = battleActive or (searchingTimer ~= nil) or (defeatTimer ~= nil) or (reincarnationTimer ~= nil)
-            if not isBusy then
-                loadStage(serverStageId, true)  -- skipBattleStart
-                regenAccum = 0
-                for _, u in ipairs(allies) do resetAllyUnit(u) end
-                startBattleTalents()
-                print("[BattleScene] 从服务端恢复关卡: " .. tostring(serverStageId))
-            else
-                local reason = battleActive and "battleActive" or (searchingTimer ~= nil) and "searching" or (defeatTimer ~= nil) and "defeat" or "reincarnation"
-                print("[BattleScene] 战斗进行中，忽略服务端关卡切换: server=" .. tostring(serverStageId) .. " local=" .. tostring(currentStageId) .. " reason=" .. reason)
-            end
-        end
-    elseif not initialBattleDataLoaded then
-        -- 首次加载且关卡未切换（serverStageId == currentStageId 或 serverStageId 为 nil）
-        -- init 不再预加载关卡，这里统一触发 loadStage 进入寻怪模式
-        local stageToLoad = serverStageId or currentStageId
-        loadStage(stageToLoad)
-        battleActive = false
-        searchingTimer = 0
-        print("[BattleScene] 首次加载，加载关卡(寻怪模式): " .. tostring(stageToLoad))
-    end
-    -- 首次加载时立即计算收益预估（OfflineCalc 统一公式，无需等待效率积累）
-    if not initialBattleDataLoaded then
-        recalcIdleIncome()
-    end
-
-    initialBattleDataLoaded = true
-
-    -- 无论是否切换关卡，都刷新 isFirstClear（clearedStages 可能已更新）
-    -- 注意：当战斗进行中(isBusy)时关卡切换被忽略，此时应以本地 currentStageId 为准
-    -- 否则 serverStageId（可能是旧值）会导致 isFirstClear 被错误设为 false
-    isFirstClear = not clearedStages[currentStageId]
-    if not isFirstClear and StageBerserk.isActive() then
-        StageBerserk.exit()
-    end
-
+    if not _dataRestore then bindBattleExtracts() end
+    return _dataRestore.setBattleData(data)
 end
 
 --- 轻量级属性刷新：英雄升级后更新场上 ally 的属性，不重置战斗状态
@@ -3230,205 +1589,16 @@ function BattleScene.isPaused()
     return isPaused
 end
 
--- ======================== 长按怪物信息 ========================
+-- ======================== 长按怪物信息（委托 MonsterInfoPopup） ========================
 
 --- 按下开始（由 ClientInput dispatchDragBegin 调用）
 function BattleScene.handlePressBegin(dx, dy)
-    longPress.active = true
-    longPress.fired = false
-    longPress.startTime = time.elapsedTime
-    longPress.startX = dx
-    longPress.startY = dy
-    longPress.showPopup = false
-    longPress.unit = nil
+    MonsterInfoPopup.handlePressBegin(dx, dy)
 end
 
 --- 按下结束（由 ClientInput dispatchDragEnd 调用）
 function BattleScene.handlePressEnd()
-    longPress.active = false
-    longPress.fired = false
-    -- 松开时关闭弹窗
-    if longPress.showPopup then
-        longPress.showPopup = false
-        longPress.unit = nil
-    end
-end
-
---- 长按检测（在 BattleScene.update 中调用）
-updateLongPress = function()
-    if not longPress.active or longPress.fired then return end
-    local elapsed = time.elapsedTime - longPress.startTime
-    if elapsed < LONG_PRESS_THRESHOLD then return end
-
-    -- 到达长按阈值，检测命中哪个怪物
-    longPress.fired = true
-    local dx, dy = longPress.startX, longPress.startY
-
-    for i, u in ipairs(enemies) do
-        if u.hp and u.hp > 0 then
-            local cx = getCardCX(enemies, i)
-            local cy = ENEMY_CARD_CY
-            if math.abs(dx - cx) <= CARD_W * 0.5 and math.abs(dy - cy) <= CARD_H * 0.5 then
-                longPress.unit = u
-                longPress.showPopup = true
-                print("[BattleScene] 长按命中怪物: " .. tostring(u.name))
-                return
-            end
-        end
-    end
-end
-
---- 绘制怪物属性弹窗
-drawMonsterInfoPopup = function(vg)
-    if not longPress.showPopup or not longPress.unit then return end
-    local u = longPress.unit
-    local monCfg = u.monsterId and MC.MONSTERS[u.monsterId]
-
-    -- 预估行数来动态计算高度
-    local lineCount = 4  -- 攻击类型+护甲+目标+间隔
-    if u.attrs and u.attrs.final then lineCount = lineCount + 1 end  -- 攻击力
-    if monCfg and monCfg.attrs then
-        for _ in pairs(monCfg.attrs) do lineCount = lineCount + 1 end
-    end
-    lineCount = lineCount + 1  -- 当前HP
-
-    -- 弹窗位置（怪物卡片上方，高度自适应）
-    local popCX = 540
-    local popH = 100 + lineCount * 48
-    local popCY = ENEMY_CARD_CY - CARD_H * 0.5 - popH * 0.5 - 10
-    local popW = 600
-    local popR = 16
-
-    -- 背景
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, popCX - popW * 0.5, popCY - popH * 0.5, popW, popH, popR)
-    nvgFillColor(vg, nvgRGBA(20, 15, 10, 235))
-    nvgFill(vg)
-    -- 边框
-    nvgStrokeColor(vg, nvgRGBA(180, 150, 80, 200))
-    nvgStrokeWidth(vg, 3)
-    nvgStroke(vg)
-
-    -- 标题：怪物名字
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 42)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 220, 100, 255))
-    nvgText(vg, popCX, popCY - popH * 0.5 + 40, u.name or "未知", nil)
-
-    -- 分割线
-    nvgBeginPath(vg)
-    nvgMoveTo(vg, popCX - popW * 0.4, popCY - popH * 0.5 + 68)
-    nvgLineTo(vg, popCX + popW * 0.4, popCY - popH * 0.5 + 68)
-    nvgStrokeColor(vg, nvgRGBA(180, 150, 80, 100))
-    nvgStrokeWidth(vg, 1)
-    nvgStroke(vg)
-
-    -- 属性列表
-    nvgFontSize(vg, 34)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(230, 225, 210, 255))
-
-    local startY = popCY - popH * 0.5 + 100
-    local lineH = 48
-    local labelX = popCX - popW * 0.4
-    local valueX = popCX + 40
-    local line = 0
-
-    -- 攻击类型
-    local atkTypeName = "未知"
-    if monCfg and monCfg.atkType then
-        atkTypeName = ATK_TYPE_NAMES[monCfg.atkType] or ("类型" .. monCfg.atkType)
-    end
-    nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-    nvgText(vg, labelX, startY + line * lineH, "攻击类型", nil)
-    nvgFillColor(vg, nvgRGBA(255, 200, 100, 255))
-    nvgText(vg, valueX, startY + line * lineH, atkTypeName, nil)
-    line = line + 1
-
-    -- 护甲类型
-    local armorName = "未知"
-    if monCfg and monCfg.armorType then
-        armorName = ARMOR_TYPE_NAMES[monCfg.armorType] or ("类型" .. monCfg.armorType)
-    end
-    nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-    nvgText(vg, labelX, startY + line * lineH, "护甲类型", nil)
-    nvgFillColor(vg, nvgRGBA(100, 200, 255, 255))
-    nvgText(vg, valueX, startY + line * lineH, armorName, nil)
-    line = line + 1
-
-    -- 攻击目标数
-    if monCfg and monCfg.atkTargets then
-        nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-        nvgText(vg, labelX, startY + line * lineH, "攻击目标", nil)
-        nvgFillColor(vg, nvgRGBA(230, 225, 210, 255))
-        nvgText(vg, valueX, startY + line * lineH, tostring(monCfg.atkTargets) .. "个", nil)
-        line = line + 1
-    end
-
-    -- 攻击间隔
-    if monCfg and monCfg.atkInterval then
-        nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-        nvgText(vg, labelX, startY + line * lineH, "攻击间隔", nil)
-        nvgFillColor(vg, nvgRGBA(230, 225, 210, 255))
-        nvgText(vg, valueX, startY + line * lineH, string.format("%.1f秒", monCfg.atkInterval), nil)
-        line = line + 1
-    end
-
-    -- 攻击力（根据攻击类型显示物攻或魔攻）
-    if u.attrs and u.attrs.final then
-        local atkCategory = monCfg and AD.getAtkCategory(monCfg.atkType) or "physical"
-        local atkKey = (atkCategory == "magical") and AD.MAG_ATK or AD.PHYS_ATK
-        local atkLabel = (atkCategory == "magical") and "魔法攻击" or "物理攻击"
-        local atkVal = u.attrs.final[atkKey] or 0
-        if atkVal > 0 then
-            nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-            nvgText(vg, labelX, startY + line * lineH, atkLabel, nil)
-            nvgFillColor(vg, nvgRGBA(255, 130, 80, 255))
-            nvgText(vg, valueX, startY + line * lineH, tostring(math.floor(atkVal)), nil)
-            line = line + 1
-        end
-    end
-
-    -- 特殊属性（每条换行，读取实际战斗值，含等级/品质加成）
-    if monCfg and monCfg.attrs and next(monCfg.attrs) then
-        for key, _ in pairs(monCfg.attrs) do
-            if not (u.monsterId == 1007 and key == AD.COMBO_RATE) then
-                local meta = AD.META and AD.META[key]
-                local cnName = meta and meta.name or key
-                local dataType = meta and meta.dataType or AD.TYPE_FLOAT
-                -- 从实际属性容器读取计算后的值
-                local val = (u.attrs and u.attrs.final and u.attrs.final[key]) or 0
-                local valStr
-                if dataType == AD.TYPE_PCT then
-                    valStr = tostring(math.floor(val)) .. "%"
-                elseif dataType == AD.TYPE_INT then
-                    valStr = tostring(math.floor(val))
-                else
-                    valStr = string.format("%.1f", val)
-                end
-                nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-                nvgText(vg, labelX, startY + line * lineH, "特殊", nil)
-                nvgFillColor(vg, nvgRGBA(200, 100, 255, 255))
-                nvgText(vg, valueX, startY + line * lineH, cnName .. " " .. valStr, nil)
-                line = line + 1
-            end
-        end
-    end
-
-    -- 当前HP
-    if u.hp then
-        nvgFillColor(vg, nvgRGBA(180, 170, 150, 255))
-        nvgText(vg, labelX, startY + line * lineH, "当前生命", nil)
-        nvgFillColor(vg, nvgRGBA(100, 255, 100, 255))
-        nvgText(vg, valueX, startY + line * lineH, tostring(math.floor(u.hp)), nil)
-    end
-
-    -- 提示
-    nvgFontSize(vg, 26)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(150, 140, 120, 180))
-    nvgText(vg, popCX, popCY + popH * 0.5 - 24, "松开关闭", nil)
+    MonsterInfoPopup.handlePressEnd()
 end
 
 return BattleScene

@@ -60,3 +60,4 @@
 - [x] **T33** 再清仅多人残留：删除 VersionMismatchPopup、GuildHandler/GuildService；桥不再注册公会；城镇卸空回调。`GuildConfig`/`writeGuildStageRank` 保留（云排行）。
 - [x] **T34** ChurchPage `drawPageImpl` → `ChurchDraw.lua`（bind 具名注入，开关回调用 getter/setter）。ChurchPage 1873→1416，ChurchDraw 568。
 - [x] **T35** Church 输入 → `ChurchInput`；名单绘制 → `ChurchRosterDraw`；Talent `onBeforeAttack`/`onDamageTaken` → `TalentBeforeAttack`/`TalentDamageTaken`；Blacksmith 输入 → `BlacksmithInput`。ChurchPage 1060 / BlacksmithPage 1384 / TalentManager 1315。
+- [x] **T36** Talent `modifyDamageForTarget`/`onAllyDeath` → `TalentModifyDamage`/`TalentAllyDeath`；Church 槽位动画 → `ChurchSlotAnim`；Blacksmith 结果转发 → `BlacksmithResults`。Talent 1116 / Church 1004 / Blacksmith 1337。

@@ -25,3 +25,4 @@
 - [scope:project] 已删 GuildPage / CharacterSelect / LoadingScreen / ServerSelectPanel / VersionMismatchPopup / GuildHandler / GuildService。StartScreen 不再选服；横屏仍 skipForReconnect → DarkTitleScreen。`shared/ServerListConfig` 与 `config/GuildConfig` 仍被存档/云排行使用，勿当死代码删
 - [scope:project] ChurchPage 主绘制已抽到 `ui.ChurchDraw`（bind 具名注入，开关回调用 getter/setter）。大页继续禁止 `_ENV = E`
 - [scope:project] Church 输入/名单、Blacksmith 输入、Talent onBeforeAttack/onDamageTaken 已抽成 bind 模块。TAL_BCS 必须 `getTAL_BCS()`
+- [scope:project] Blacksmith 上半绘制依赖大量局部 img/CARD 常量，勿盲目整段抽；结果转发可抽 `BlacksmithResults`

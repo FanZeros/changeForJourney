@@ -25,6 +25,8 @@ local TalentXin = require("systems.talents.TalentXin")
 local TalentAfterAttack = require("systems.talents.TalentAfterAttack")
 local TalentBeforeAttack = require("systems.talents.TalentBeforeAttack")
 local TalentDamageTaken = require("systems.talents.TalentDamageTaken")
+local TalentModifyDamage = require("systems.talents.TalentModifyDamage")
+local TalentAllyDeath = require("systems.talents.TalentAllyDeath")
 
 local MAS
 local function getMAS()
@@ -628,6 +630,33 @@ local function bindTalentDamageTaken()
 end
 bindTalentDamageTaken()
 
+local _modDmg
+local function bindTalentModifyDamage()
+    _modDmg = TalentModifyDamage.bind({
+        getState = getState,
+        hasAdv = hasAdv,
+        hasAwaken = hasAwaken,
+        hasStarNode = hasStarNode,
+        talentLog = talentLog,
+        getTAL_BCS = function() return TAL_BCS end,
+        getMAS = getMAS,
+    })
+end
+bindTalentModifyDamage()
+
+local _allyDeath
+local function bindTalentAllyDeath()
+    _allyDeath = TalentAllyDeath.bind({
+        getState = getState,
+        hasAdv = hasAdv,
+        hasAwaken = hasAwaken,
+        hasStarNode = hasStarNode,
+        talentLog = talentLog,
+        getTAL_BCS = function() return TAL_BCS end,
+    })
+end
+bindTalentAllyDeath()
+
 
 
 local _talentUpdate
@@ -934,130 +963,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
 end
 
 function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory)
-    if damage <= 0 then return damage end
-
-    if not isTargetAlly then return damage end
-
-    damage = ETS.absorbWithIceStatue(target, damage, TAL_BCS.bEnemies)
-    if damage <= 0 then return 0 end
-
-    -- 真布诗人觉醒7：无敌期间免疫伤害
-    if target._elwynInvulnTimer and target._elwynInvulnTimer > 0 then
-        return 0
-    end
-
-    -- 受伤者是铁憨憨自己则不触发吸收（避免循环）
-    local targetState = getState(target)
-    if targetState and targetState.heroId == 10 then
-        -- 觉醒7: 铁憨憨自身受伤防秒杀
-        if hasAwaken(target, 7) and targetState.bulwarkDmgCapCd <= 0 and target.attrs then
-            local maxHp = target.attrs.final[AD.MAX_HP] or 1
-            local cap = math.floor(maxHp * 0.30)
-            if damage > cap then
-                damage = cap
-                targetState.bulwarkDmgCapCd = 8.0
-            end
-        end
-        return damage
-    end
-
-    -- 查找存活的铁憨憨
-    local rebecca = nil
-    local rebeccaState = nil
-    for _, ally in ipairs(TAL_BCS.bAllies or {}) do
-        local as = getState(ally)
-        if as and as.heroId == 10 and ally.hp > 0 then
-            rebecca = ally
-            rebeccaState = as
-            break
-        end
-    end
-
-    -- 觉醒7: 全队防秒杀（铁憨憨在场，队友单次受伤不超过自身最大生命30%，8秒CD）
-    if rebecca and rebeccaState and hasAwaken(rebecca, 7)
-       and rebeccaState.bulwarkDmgCapCd <= 0 and target.attrs then
-        local allyMaxHp = target.attrs.final[AD.MAX_HP] or 1
-        local allyCap = math.floor(allyMaxHp * 0.30)
-        if damage > allyCap then
-            damage = allyCap
-            rebeccaState.bulwarkDmgCapCd = 8.0
-        end
-    end
-
-    if not rebecca or not rebecca.attrs then return damage end
-
-    -- 计算吸收比例: 基础15%, 觉醒4→20%
-    local absorbRate = 0.15
-    if hasAwaken(rebecca, 4) then absorbRate = 0.20 end
-
-    local absorbedFromAlly = math.floor(damage * absorbRate + 0.5)
-    if absorbedFromAlly <= 0 then return damage end
-
-    -- 转移伤害走铁憨憨自身护甲和格挡
-    local transferDmg = absorbedFromAlly
-    local CF = require("systems.CombatFormula")
-    local category = dmgCategory or "physical"
-
-    -- 1. 护甲抗性减免（统一护甲；能量护盾由 takeDamage 单独消耗，不再当作魔抗）
-    local effectiveArmor = rebecca.attrs:get(AD.ARMOR)
-    local resistance = CF.armorToResistance(effectiveArmor)
-    transferDmg = math.floor(transferDmg * (1 - resistance) + 0.5)
-
-    -- 2. 格挡（含地图词缀格挡压制；超 100% 部分可抵消 debuff）
-    local blockRate, blockRatio = 0, 0
-    if category == "physical" then
-        blockRate = getMAS().getEffectiveBlockRate(rebecca.attrs, AD.PHYS_BLOCK_RATE)
-        blockRatio = rebecca.attrs:get(AD.PHYS_BLOCK_RATIO)
-    else
-        blockRate = getMAS().getEffectiveBlockRate(rebecca.attrs, AD.MAG_BLOCK_RATE)
-        blockRatio = rebecca.attrs:get(AD.MAG_BLOCK_RATIO)
-    end
-    local isBlocked, blockMult = CF.rollBlock(blockRate, blockRatio)
-    if isBlocked then
-        transferDmg = math.floor(transferDmg * blockMult + 0.5)
-    end
-
-    -- 3. 觉醒4: 额外减免15%
-    if hasAwaken(rebecca, 4) then
-        transferDmg = math.floor(transferDmg * 0.85 + 0.5)
-    end
-
-    if transferDmg <= 0 then transferDmg = 1 end
-    -- 觉醒7: 防秒杀（转移伤害不超过30%最大HP，8秒CD）
-    if hasAwaken(rebecca, 7) and rebeccaState.bulwarkDmgCapCd <= 0 then
-        local maxHp = rebecca.attrs.final[AD.MAX_HP] or 1
-        local cap = math.floor(maxHp * 0.30)
-        if transferDmg > cap then
-            transferDmg = cap
-            rebeccaState.bulwarkDmgCapCd = 8.0
-        end
-    end
-
-    -- 对铁憨憨造成转移伤害
-    local rebHpBefore = rebecca.hp
-    rebecca.attrs:takeDamage(transferDmg)
-    rebecca.hp = rebecca.attrs:get(AD.HP)
-    if rebecca.hp < 0 then rebecca.hp = 0 end
-    if syncHpFn then syncHpFn(rebecca) end
-    -- 转移伤害致死时设置死亡动画标记
-    if rebecca.hp <= 0 and rebHpBefore > 0 then
-        local overkill = math.max(0, transferDmg - rebHpBefore)
-        rebecca._overkillRatio = math.min(1.0, overkill / (rebecca.maxHp or rebHpBefore))
-        ETS.onShareFatal(rebecca)
-    end
-
-    -- 觉醒2: 吸收时回复2%最大HP（3秒CD）
-    if hasAwaken(rebecca, 2) and rebeccaState.bulwarkHealCd <= 0 and rebecca.hp > 0 then
-        local maxHp = rebecca.attrs.final[AD.MAX_HP] or 1
-        local heal = math.floor(maxHp * 0.02 + 0.5)
-        rebecca.attrs:heal(heal)
-        rebecca.hp = rebecca.attrs:get(AD.HP)
-        if syncHpFn then syncHpFn(rebecca) end
-        rebeccaState.bulwarkHealCd = 3.0
-    end
-
-    -- 返回减少后的伤害给目标
-    return damage - absorbedFromAlly
+    return _modDmg.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory)
 end
 
 function TAL.onDamageTaken(unit, attacker, damage, isUnitAlly, performAttackFn, enemyList, result)
@@ -1070,112 +976,7 @@ end
 ---@param syncHpFn function syncUnitHp(unit) 的引用
 ---@return boolean 是否阻止死亡（true=复活）
 function TAL.onAllyDeath(dyingUnit, allies, syncHpFn)
-    if ETS.tryTicketRevive(dyingUnit, allies, syncHpFn) then
-        return true
-    end
-
-    -- ======== 星图节点125 不死鸟之翼 免疫致命伤害 + 3秒恢复0%HP ========
-    if hasStarNode(dyingUnit, 125) then
-        local ds = getState(dyingUnit)
-        if ds and not ds.phoenixUsed then
-            ds.phoenixUsed = true
-            -- 免疫致命伤害：将HP恢复到1
-            if dyingUnit.attrs then
-                dyingUnit.attrs.final[AD.HP] = 1
-                dyingUnit.hp = 1
-                -- 施加3秒持续治疗(总量=20%最大HP, →HOT dps = maxHp*0.2/3)
-                local maxHp = dyingUnit.maxHp or 1
-                local hotDps = math.floor(maxHp * 0.20 / 3.0 + 0.5)
-                SEM.apply(dyingUnit, SEM.HOT, 3.0, dyingUnit, { hps = hotDps })
-                syncHpFn(dyingUnit)
-                talentLog("[Talent] 不死鸟之翼 " .. (dyingUnit.name or "?") .. " 免疫致命伤害! 3秒恢复0%HP (hps=" .. hotDps .. ")")
-            else
-                dyingUnit.hp = 1
-            end
-            return true
-        end
-    end
-
-    -- ======== #15 复活吧爱人 觉醒7: 自身首次死亡必定复活 ========
-    if dyingUnit.heroId == 15 then
-        local selfState = getState(dyingUnit)
-        if selfState and hasAwaken(dyingUnit, 7) and not selfState.selfReviveUsed then
-            selfState.selfReviveUsed = true
-            -- 复活自身 100% HP
-            if dyingUnit.attrs then
-                dyingUnit.attrs:fillHp()
-                syncHpFn(dyingUnit)
-            else
-                dyingUnit.hp = dyingUnit.maxHp
-            end
-            -- 全队回复20%最大生命
-            for _, a in ipairs(allies) do
-                if a.hp > 0 and a.attrs then
-                    local healAmt = math.floor((a.maxHp or 1) * 0.20 + 0.5)
-                    if healAmt > 0 then
-                        a.attrs:heal(healAmt)
-                        a.hp = a.attrs:get(AD.HP)
-                        if a.hp > a.maxHp then a.hp = a.maxHp end
-                    end
-                end
-            end
-            talentLog("[Talent] 复活吧爱人 觉醒7 圣光奇迹: 自身复活! 全队回复20%HP")
-            return true
-        end
-    end
-
-    -- ======== #15 复活吧爱人 圣光复活：在场时其他角色死亡复活 + 觉醒 ========
-    for _, ally in ipairs(allies) do
-        if ally.heroId == 15 and ally.hp > 0 and ally ~= dyingUnit then
-            local elizState = getState(ally)
-            if elizState and not elizState.reviveUsed[dyingUnit] then
-                -- 计算复活概率: 基础25%, 觉醒1→40%, 觉醒5→60%；追加技永久层叠加上限80%
-                local extraRate = ETS.getReviveRateBonus(ETS.getOwned(15), ally)
-                local reviveRate = 0.25 + extraRate
-                if hasAwaken(ally, 1) then reviveRate = 0.40 + extraRate end
-                if hasAwaken(ally, 5) then reviveRate = 0.60 + extraRate end
-                reviveRate = math.min(0.80, reviveRate)
-                -- 觉醒4: 战斗中首次死亡的角色必定复活
-                if hasAwaken(ally, 4) then
-                    reviveRate = 1.0
-                end
-
-                if math.random() < reviveRate then
-                    elizState.reviveUsed[dyingUnit] = true
-                    if dyingUnit.attrs then
-                        dyingUnit.attrs:fillHp()
-                        syncHpFn(dyingUnit)
-                    else
-                        dyingUnit.hp = dyingUnit.maxHp
-                    end
-
-                    -- 觉醒2: 被复活的角色5秒内受治疗效果30%（标记在单位上，任何治疗者都生效果
-                    if hasAwaken(ally, 2) then
-                        elizState.reviveHealBoostTargets[dyingUnit] = 5.0
-                        dyingUnit._reviveHealBoost = true
-                        talentLog("[Talent] 复活吧爱人 觉醒2: " .. (dyingUnit.name or "复活者") .. " 治疗效果+30% (5s)")
-                    end
-
-                    -- 觉醒6: 复活时施加20%最大HP护盾(5s)
-                    if hasAwaken(ally, 6) then
-                        local shieldAmt = math.floor((dyingUnit.maxHp or 1) * 0.20 + 0.5)
-                        dyingUnit.shield = { amount = shieldAmt, timer = 5.0 }
-                        talentLog("[Talent] 复活吧爱人 觉醒6: " .. (dyingUnit.name or "复活者") .. " 获得护盾 " .. shieldAmt)
-                    end
-
-                    talentLog("[Talent] 复活吧爱人 圣光复活: " .. (dyingUnit.name or "?") .. " 被复活！(概率=" .. math.floor(reviveRate * 100) .. "%)")
-                    ETS.onSuccessfulRevive(ally, dyingUnit)
-                    return true
-                else
-                    elizState.reviveUsed[dyingUnit] = true
-                end
-            end
-        end
-    end
-    if dyingUnit.heroId == 15 then
-        ETS.onLoverDeathNuke(dyingUnit, allies, TAL_BCS.bEnemies, TAL_BCS.dealDamage)
-    end
-    return false
+    return _allyDeath.onAllyDeath(dyingUnit, allies, syncHpFn)
 end
 
 --- 敌人死亡钩子（敌方HP≤0时调用）

@@ -120,9 +120,6 @@ local imgBtnIcon  = -1
 local imgEnemyTag = -1
 local imgAllyTags = {}   -- classId(字符串) → 职业图标句柄
 -- (CLASS_ICON_MAP 已移至 BattleDraw)
-local imgDeath    = -1    -- 墓碑图片
-
-
 
 -- ======================== 数据 ========================
 
@@ -290,7 +287,9 @@ local waveGoldEarned = 0       -- 本波次获得金币
 local waveExpEarned = 0        -- 本波次获得经验
 
 -- (工具绘制函数 drawImageCentered/drawImageMirrored/drawTextStroke/drawProgressBar 已移至 BattleDraw)
+---@type fun(vg, img, cx, cy, w, h, alpha)
 local drawImageCentered = BattleDraw.drawImageCentered
+---@type fun(vg, img, cx, cy, w, h, alpha)
 local drawImageMirrored = BattleDraw.drawImageMirrored
 local drawTextStroke    = BattleDraw.drawTextStroke
 
@@ -368,8 +367,11 @@ local function resetAllyUnit(u)
 end
 
 -- BattleDraw 本地别名
+---@type fun(vg, units, baseCY, tagOffY, nameOffY, hpBgOffY, hpValOffY, atkBgOffY, lvlOffY, tagImg, isAllyGroup)
 local drawCardGroup       = BattleDraw.drawCardGroup
+---@type fun(vg)
 local drawFloatingTexts   = BattleDraw.drawFloatingTexts
+---@type fun(vg, imgBg, imgFill, cx, cy, bgW, bgH, padding, progress)
 local drawProgressBar     = BattleDraw.drawProgressBar
 
 -- ======================== 关卡系统 ========================
@@ -573,8 +575,6 @@ function BattleScene.init(vg)
     for i = 1, 6 do
         imgAllyTags[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
-    imgDeath    = nvgCreateImage(vg, "image/品质框/KP_Death.png", 0)
-
 
     -- 初始化攻击特效模块
     BattleEffects.init(vg)
@@ -607,7 +607,6 @@ function BattleScene.init(vg)
         imgAtkBg        = imgAtkBg,
         imgAtkFill      = imgAtkFill,
         imgAllyTags     = imgAllyTags,
-        imgDeath        = imgDeath,
     })
 
     -- 初始化战利品箱子

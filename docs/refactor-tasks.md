@@ -61,3 +61,4 @@
 - [x] **T34** ChurchPage `drawPageImpl` → `ChurchDraw.lua`（bind 具名注入，开关回调用 getter/setter）。ChurchPage 1873→1416，ChurchDraw 568。
 - [x] **T35** Church 输入 → `ChurchInput`；名单绘制 → `ChurchRosterDraw`；Talent `onBeforeAttack`/`onDamageTaken` → `TalentBeforeAttack`/`TalentDamageTaken`；Blacksmith 输入 → `BlacksmithInput`。ChurchPage 1060 / BlacksmithPage 1384 / TalentManager 1315。
 - [x] **T36** Talent `modifyDamageForTarget`/`onAllyDeath` → `TalentModifyDamage`/`TalentAllyDeath`；Church 槽位动画 → `ChurchSlotAnim`；Blacksmith 结果转发 → `BlacksmithResults`。Talent 1116 / Church 1004 / Blacksmith 1337。
+- [x] **hotfix** 敌人死亡误变墓碑：T14 ctx 字段 `stageKillCount`/`stageKillCount_` 不一致，process 在 `setCardAnim(noTombstone)` 前崩溃。`8a41499`

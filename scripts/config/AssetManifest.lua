@@ -523,7 +523,6 @@ return {
     { "image/界面底板/教堂转职/UI_TFWBK_ZI.png", 309840 },
     { "image/界面底板/城镇世界/UI_CZ_JT.png", 404826 },
     { "image/spine/UI_SPINE_JGZM_3.png", 327733 },
-    { "image/品质框/KP_Death.png", 67575 },
     { "image/怪物卡牌/KP_GW_1.png", 1406518 },
     { "image/怪物卡牌/KP_GW_10.png", 1432464 },
     { "image/怪物卡牌/KP_GW_1001.png", 1433762 },

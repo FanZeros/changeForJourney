@@ -119,7 +119,7 @@ local RESULT_DELAY = 1.5
 -- 最大同屏敌人数
 local MAX_FIELD = 5
 
--- 墓碑复活系统常量（通天塔模式）
+-- 通天塔补位等待常量（死亡滑出后空位等待，已删除墓碑图）
 local TOMBSTONE_REVIVE_TIME = 2.0
 local DEATH_ANIM_DURATION   = BattleCombat.DEATH_ANIM_DURATION or 0.40
 local REVIVE_ANIM_DURATION  = BattleCombat.REVIVE_ANIM_DURATION or 0.35
@@ -976,7 +976,7 @@ function DungeonScene.update(dt)
     local isTowerMode = (DungeonBattle.getConfig().dungeonId == "babel_tower")
 
     if isTowerMode then
-        -- ════ 通天塔模式：墓碑复活系统（同主线 BattleScene） ══════
+        -- ════ 通天塔模式：死亡滑出后空位等待补位（已删除墓碑图） ══════
         for i, unit in ipairs(state.enemies) do
             if unit.hp <= 0 then
                 -- 首次检测死亡：启动死亡动画
@@ -988,7 +988,8 @@ function DungeonScene.update(dt)
                     BattleCombat.setCardAnim(unit, {
                         state = "dying", timer = 0,
                         lungeDir = -1,
-                        knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0
+                        knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
+                        noTombstone = true,
                     })
                 end
 
@@ -998,7 +999,7 @@ function DungeonScene.update(dt)
                     -- 死亡动画阶段
                     unit.atkProgress = 0
                 else
-                    -- 墓碑倒计时阶段（进度条填充）
+                    -- 空位等待阶段（进度条填充）
                     unit.atkProgress = math.min(1.0, unit.reviveTimer / TOMBSTONE_REVIVE_TIME)
 
                     -- 倒计时结束 + 队列有替补 → 原地替换
@@ -1018,7 +1019,7 @@ function DungeonScene.update(dt)
             end
         end
 
-        -- 胜利条件：全部敌人死亡（含墓碑状态）且队列为空
+        -- 胜利条件：全部敌人死亡（含空位等待）且队列为空
         if DungeonBattle.isTrainingDummy() then
             return
         end
@@ -1028,14 +1029,14 @@ function DungeonScene.update(dt)
                 anyAliveOrReviving = true
                 break
             end
-            -- 还在墓碑等待中（有队列可替换）
+            -- 还在空位等待中（有队列可替换）
             if u.reviveTimer and u.reviveTimer < TOMBSTONE_REVIVE_TIME and #state.enemyQueue > 0 then
                 anyAliveOrReviving = true
                 break
             end
         end
         if not anyAliveOrReviving and #state.enemyQueue == 0 and #state.enemies > 0 then
-            -- 检查是否所有死亡敌人都已完成墓碑动画（不是正在替换中）
+            -- 检查是否所有死亡敌人都已完成退场（不是正在替换中）
             local allDone = true
             for _, u in ipairs(state.enemies) do
                 if u.hp > 0 then allDone = false; break end

@@ -16,7 +16,7 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前开发分支**：`refactor/extract-battle-overlays`（禁止推 `workspace`）
 
-## 上次做了什么（截至 2026-09-22）
+## 上次做了什么（截至 2026-09-22 hotfix）
 
 - 已合并 `origin/workspace`（`fa7a775`）
 - T23–T26 四块抽取（LSP 0 Error / build 过 / validate lua_errors=0）
@@ -30,6 +30,7 @@
 - T34：ChurchPage `drawPageImpl` → ChurchDraw（bind 具名注入）。ChurchPage 1416
 - T35：Church 输入/名单 + Talent 攻前/受伤 + Blacksmith 输入。Church 1060 / Talent 1315 / Blacksmith 1384
 - T36：Talent 减伤/复活 + Church 槽位动画 + Blacksmith 结果转发。Talent 1116 / Church 1004 / Blacksmith 1337
+- hotfix：敌人死亡误变墓碑。根因 BattleCasualty 写 `stageKillCount_`，BattleScene 注入 `stageKillCount`。`8a41499`
 
 ## likely_next_task
 

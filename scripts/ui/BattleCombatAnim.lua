@@ -141,19 +141,14 @@ function M.update(BCS, dt)
             end
         elseif anim.state == "dying" then
             if anim.timer >= DEATH_ANIM_DURATION then
-                if anim.noTombstone then
-                    anim.state = "gone"   -- [死亡即补位] 退场完成 → 空位期
-                else
-                    anim.state = "tombstone_in"
-                end
+                anim.state = "gone"   -- 退场完成 → 空位期（已删除墓碑）
                 anim.timer = 0
             end
         elseif anim.state == "gone" then
             -- 空位期：停留至被替换（不渲染，无过渡）
-        elseif anim.state == "tombstone_in" then
-            if anim.timer >= TOMBSTONE_FADEIN then
-                anim.state = "dead_done"
-            end
+        elseif anim.state == "tombstone_in" or anim.state == "dead_done" then
+            -- 兼容旧存档/中途状态：视为空位
+            anim.state = "gone"
         elseif anim.state == "reviving" then
             if anim.timer >= REVIVE_ANIM_DURATION then
                 toRemove[#toRemove + 1] = unit
@@ -242,9 +237,7 @@ function M.getTransitionAlpha(BCS, unit)
         end
         local fadeT = math.min(1, (anim.timer - DEATH_HITSTOP) / (DEATH_ANIM_DURATION - DEATH_HITSTOP))
         return 1.0 - fadeT
-    elseif anim.state == "tombstone_in" then
-        return math.min(1, anim.timer / TOMBSTONE_FADEIN)
-    elseif anim.state == "gone" then
+    elseif anim.state == "gone" or anim.state == "tombstone_in" or anim.state == "dead_done" then
         return 0
     elseif anim.state == "reviving" then
         return math.min(1, anim.timer / REVIVE_ANIM_DURATION)

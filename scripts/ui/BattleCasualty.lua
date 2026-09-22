@@ -35,7 +35,7 @@ function M.process(ctx, logicDt)
     local stageName = ctx.stageName
     local getStageConfig = ctx.getStageConfig
 
-    -- ---- 敌人死亡处理（死亡即补位：怪物池有剩余立刻替换新怪，不播墓碑动画） ----
+    -- ---- 敌人死亡处理（死亡即补位：怪物池有剩余立刻替换新怪） ----
     -- [补位节流] 多只敌人同帧死亡时，补位/收缩按 0.4s 间隔逐只进行
     --（首只按 RESPAWN_DELAY 1s，其后每只 +0.4s：AOE 杀 3 只 ≈1.8s 补全
     --；冷却按 enemies 引用隔离存 weak-key 表，三行多场战斗互不干扰）
@@ -44,7 +44,7 @@ function M.process(ctx, logicDt)
     reinforceCdByList[enemies] = reinforceCd
     for i, unit in ipairs(enemies) do
     if unit.hp <= 0 then
-        -- 首次检测到死亡：发放击杀奖励（替换与墓碑共用，仅一次）
+        -- 首次检测到死亡：发放击杀奖励（仅一次）
         if not unit.reviveTimer then
             unit.reviveTimer = 0  -- 标记已处理
             unit.atkProgress = 0
@@ -98,7 +98,7 @@ function M.process(ctx, logicDt)
 
             -- 与 BattleScene 注入字段同名（stageKillCount，不是 stageKillCount_）
             ctx.stageKillCount = (ctx.stageKillCount or 0) + 1
-            -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空不再显示墓碑（完全隐藏空位）
+            -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空隐藏空位
             local okRatio = unit._overkillRatio or 0
             BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1,
                 knockbackMult = 1.0 + okRatio * 2.0, noTombstone = true })
@@ -151,7 +151,7 @@ function M.process(ctx, logicDt)
     end
     end
 
-    -- ---- 墓碑处理（己方）：死亡淡出动画，不复活 ----
+    -- ---- 己方阵亡：死亡淡出动画，不复活 ----
     for _, unit in ipairs(allies) do
     if unit.hp <= 0 and not unit.reviveTimer then
         -- 神器: 死亡拦截（神圣十架复活 / 亡魂之祭）

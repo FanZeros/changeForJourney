@@ -52,7 +52,7 @@ local imgCtx = {}   -- 图片句柄
 -- ======================== 注入上下文 ========================
 
 --- 注入依赖
----@param context table { combat, imgHeroCards, imgMonsterCards, imgHpBg, imgHpFill, imgAtkBg, imgAtkFill, imgAllyTags, imgDeath }
+---@param context table { combat, imgHeroCards, imgMonsterCards, imgHpBg, imgHpFill, imgAtkBg, imgAtkFill, imgAllyTags }
 function BattleDraw.setContext(context)
     combat = context.combat
     imgCtx = context
@@ -163,19 +163,13 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
         local animState = combat.getAnimState(unit)
         local isDying = animState == "dying"
         local isGone = animState == "gone"
-        local isTombstoneIn = animState == "tombstone_in"
         local isDead  = unit.hp <= 0
         local isReviving = animState == "reviving"
         local isEntering = animState == "entering"
         local transAlpha = combat.getTransitionAlpha(unit)
 
-        -- 主线死亡即补位：无 tombstone 动画时 hp<=0 不画墓碑（空位隐藏）。
-        -- 通天塔仍走 tombstone_in / dead_done，不受影响。
-        local hideDeadSlot = isDead and not isDying and not isTombstoneIn
-            and not isReviving and animState ~= "dead_done"
-        if (isAllyGroup and unit._fallen) or isGone or hideDeadSlot then
+        if (isAllyGroup and unit._fallen) then
             -- [阵亡紧凑] 已退场英雄不渲染（保留在队尾供复活/关卡重置）
-            -- [死亡即补位] 空位期：完全隐藏，等待新怪从右补入
         elseif isDying then
             -- 死亡淡出：显示原卡牌向上/向下滑出
             local cardBgImg
@@ -188,14 +182,14 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             end
             DrawUtil.drawImageCover(vg, cardBgImg, cx, cy, CARD_W, CARD_H, transAlpha)
 
-        elseif isDead then
-            -- 墓碑渲染
-            local tombAlpha = isTombstoneIn and transAlpha or 1.0
-            drawImageCentered(vg, imgCtx.imgDeath, cx, cy, CARD_W, CARD_H, tombAlpha)
-            if not isAllyGroup and not isTombstoneIn then
+        elseif isDead or isGone then
+            -- 已删除墓碑图：死亡/空位不画卡面；通天塔补位等待只留进度条
+            if not isAllyGroup then
                 local reviveProg = unit.atkProgress or 0
-                drawProgressBar(vg, imgCtx.imgAtkBg, imgCtx.imgAtkFill, cx, cy + atkBgOffY,
-                    ATK_BAR_W, ATK_BAR_H, ATK_BAR_PADDING, reviveProg)
+                if reviveProg > 0 then
+                    drawProgressBar(vg, imgCtx.imgAtkBg, imgCtx.imgAtkFill, cx, cy + atkBgOffY,
+                        ATK_BAR_W, ATK_BAR_H, ATK_BAR_PADDING, reviveProg)
+                end
             end
         else
             -- 正常存活渲染

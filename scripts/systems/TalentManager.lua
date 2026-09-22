@@ -30,6 +30,7 @@ local TalentAllyDeath = require("systems.talents.TalentAllyDeath")
 local TalentEnemyDeath = require("systems.talents.TalentEnemyDeath")
 local TalentComboAttack = require("systems.talents.TalentComboAttack")
 local TalentFatFish = require("systems.talents.TalentFatFish")
+local TalentFourNew = require("systems.talents.TalentFourNew")
 local ClassGateRuntime = require("systems.ClassGateRuntime")
 local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 
@@ -546,6 +547,14 @@ local _fatFish = TalentFatFish.bind({
 })
 local onFatFishAfterAttack = _fatFish.onAfterAttack
 
+local _fourNew = TalentFourNew.bind({
+    hasAwaken = hasAwaken,
+    getState = getState,
+    talentLog = talentLog,
+    getTAL_BCS = function() return TAL_BCS end,
+    calcTalentFixedDamage = calcTalentFixedDamage,
+})
+
 local _after
 local function bindTalentAfterAttack()
     _after = TalentAfterAttack.bind({
@@ -572,6 +581,7 @@ local function bindTalentAfterAttack()
         tryRosaBounce = tryRosaBounce,
         onXinAfterAttack = onXinAfterAttack,
         onFatFishAfterAttack = onFatFishAfterAttack,
+        onFourNewAfterAttack = _fourNew.onAfterAttack,
         getTAL_BCS = function() return TAL_BCS end,
     })
 end
@@ -607,6 +617,7 @@ local function bindTalentBeforeAttack()
         isHighestThreat = isHighestThreat,
         isMelissaStarGateAttackSourceActive = isMelissaStarGateAttackSourceActive,
         updateMelissaStarGate = updateMelissaStarGate,
+        onFourNewBeforeAttack = _fourNew.onBeforeAttack,
     })
 end
 bindTalentBeforeAttack()
@@ -641,6 +652,7 @@ local function bindTalentDamageTaken()
         isHighestThreat = isHighestThreat,
         isMelissaStarGateAttackSourceActive = isMelissaStarGateAttackSourceActive,
         updateMelissaStarGate = updateMelissaStarGate,
+        onFourNewDamageTaken = _fourNew.onDamageTaken,
     })
 end
 bindTalentDamageTaken()
@@ -722,6 +734,7 @@ local function bindTalentUpdate()
         isHighestThreat = isHighestThreat,
         findLivingElwyn = findLivingElwyn,
         tryElwynInvulnOnEsBreak = tryElwynInvulnOnEsBreak,
+        onFourNewUpdate = _fourNew.update,
     })
 end
 bindTalentUpdate()
@@ -762,6 +775,9 @@ function TAL.onBattleStart(allies, enemies)
     local function applyBattleStartTalents(units, opposingUnits)
         for _, unit in ipairs(units) do
             local s = ensureState(unit)
+            if _fourNew and _fourNew.onBattleStart then
+                _fourNew.onBattleStart(unit, s)
+            end
 
             -- #10 铁憨憨 帝国铁壁：战斗开始时施加被动属性
             if unit.heroId == 10 and unit.hp > 0 and unit.attrs then

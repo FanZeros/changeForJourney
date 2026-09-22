@@ -34,6 +34,7 @@ function M.bind(deps)
     local tryRosaBounce = deps.tryRosaBounce
     local onXinAfterAttack = deps.onXinAfterAttack
     local onFatFishAfterAttack = deps.onFatFishAfterAttack
+    local onFourNewAfterAttack = deps.onFourNewAfterAttack
     local getTAL_BCS = deps.getTAL_BCS
 
     local function onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
@@ -442,6 +443,11 @@ function M.bind(deps)
         -- #17 蓝色大肥鱼 高压水枪：潮湿 + 溅射冰霜
         if heroId == 17 and onFatFishAfterAttack then
             onFatFishAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn)
+        end
+
+        -- #18/#19/#24/#25
+        if onFourNewAfterAttack then
+            onFourNewAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn)
         end
 
         -- #16 万剑归宗 灵月飞剑：累计实际造成伤害（含护盾吸收、暴击与各类增伤）

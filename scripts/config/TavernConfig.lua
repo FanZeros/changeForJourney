@@ -25,6 +25,8 @@ TavernConfig.SHOP_ITEMS = {
     { id = 2,  name = "大狗嚼-碎片",    limitCycle = "daily", limitCount = -1, price = 15,  rewardType = "shard", rewardHeroId = 1,  rewardCount = 1 },
     { id = 3,  name = "黄桃龙-碎片",    limitCycle = "daily", limitCount = -1, price = 15,  rewardType = "shard", rewardHeroId = 2,  rewardCount = 1 },
     { id = 4,  name = "叮咚鸡-碎片",    limitCycle = "daily", limitCount = -1, price = 15,  rewardType = "shard", rewardHeroId = 3,  rewardCount = 1 },
+    { id = 20, name = "老六-碎片",      limitCycle = "daily", limitCount = -1, price = 15,  rewardType = "shard", rewardHeroId = 18, rewardCount = 1 },
+    { id = 21, name = "哈基米-碎片",    limitCycle = "daily", limitCount = -1, price = 15,  rewardType = "shard", rewardHeroId = 19, rewardCount = 1 },
     -- R 碎片（品质4）
     { id = 5,  name = "接化发掌门-碎片", limitCycle = "daily", limitCount = -1, price = 60,  rewardType = "shard", rewardHeroId = 4,  rewardCount = 1 },
     { id = 6,  name = "叠甲怪-碎片", limitCycle = "daily", limitCount = -1, price = 60,  rewardType = "shard", rewardHeroId = 5,  rewardCount = 1 },
@@ -42,8 +44,10 @@ TavernConfig.SHOP_ITEMS = {
     { id = 17, name = "闪电卖鸡-碎片", limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 21, rewardCount = 1 },
     { id = 18, name = "小黑子-碎片",    limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 22, rewardCount = 1 },
     { id = 19, name = "真布诗人-碎片",  limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 23, rewardCount = 1 },
+    { id = 22, name = "加载中-碎片",    limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 24, rewardCount = 1 },
     { id = 101, name = "万剑归宗-碎片", limitCycle = "daily", limitCount = -1, price = 1125, rewardType = "shard", rewardHeroId = 16, rewardCount = 1 },
     { id = 103, name = "摘星星星人-碎片", limitCycle = "daily", limitCount = -1, price = 1125, rewardType = "shard", rewardHeroId = 20, rewardCount = 1 },
+    { id = 104, name = "高ping战士-碎片", limitCycle = "daily", limitCount = -1, price = 1125, rewardType = "shard", rewardHeroId = 25, rewardCount = 1 },
 }
 
 --- 根据 id 查找商品配置

@@ -66,6 +66,7 @@ UrGachaConfig.StardustValue = {
 UrGachaConfig.ShardStardustValue = {
     [16] = 450,
     [20] = 450,
+    [25] = 450,
 }
 
 -- ======================== 卡池（仅整卡，无碎片条目） ========================
@@ -74,6 +75,8 @@ UrGachaConfig.Pool = {
     { quality = 1, type = "hero", heroId = 1,  weight = 100, stardustValue = 50 },
     { quality = 1, type = "hero", heroId = 2,  weight = 100, stardustValue = 50 },
     { quality = 1, type = "hero", heroId = 3,  weight = 100, stardustValue = 50 },
+    { quality = 1, type = "hero", heroId = 18, weight = 100, stardustValue = 50 },
+    { quality = 1, type = "hero", heroId = 19, weight = 100, stardustValue = 50 },
     { quality = 2, type = "hero", heroId = 4,  weight = 100, stardustValue = 250 },
     { quality = 2, type = "hero", heroId = 5,  weight = 100, stardustValue = 250 },
     { quality = 2, type = "hero", heroId = 6,  weight = 100, stardustValue = 250 },
@@ -89,8 +92,10 @@ UrGachaConfig.Pool = {
     { quality = 3, type = "hero", heroId = 21, weight = 100, stardustValue = 1000 },
     { quality = 3, type = "hero", heroId = 22, weight = 100, stardustValue = 1000 },
     { quality = 3, type = "hero", heroId = 23, weight = 100, stardustValue = 1000 },
+    { quality = 3, type = "hero", heroId = 24, weight = 100, stardustValue = 1000 },
     { quality = 4, type = "hero", heroId = 16, weight = 100, stardustValue = 4500 },
     { quality = 4, type = "hero", heroId = 20, weight = 100, stardustValue = 4500 },
+    { quality = 4, type = "hero", heroId = 25, weight = 100, stardustValue = 4500 },
 }
 
 UrGachaConfig._poolByQuality = {}

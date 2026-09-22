@@ -36,6 +36,7 @@ function M.bind(deps)
     local isHighestThreat = deps.isHighestThreat
     local isMelissaStarGateAttackSourceActive = deps.isMelissaStarGateAttackSourceActive
     local updateMelissaStarGate = deps.updateMelissaStarGate
+    local onFourNewDamageTaken = deps.onFourNewDamageTaken
 
     local function onDamageTaken(unit, attacker, damage, isUnitAlly, performAttackFn, enemyList, result)
         local TAL_BCS = getTAL_BCS()
@@ -43,6 +44,9 @@ function M.bind(deps)
         if not s then
             print("[TAL.onDamageTaken] WARNING: getState nil! heroId=" .. tostring(unit.heroId) .. " name=" .. tostring(unit.name) .. " attacker=" .. tostring(attacker.name))
             return
+        end
+        if onFourNewDamageTaken then
+            damage = onFourNewDamageTaken(unit, attacker, damage, isUnitAlly, result) or damage
         end
 
         -- ======== 护盾消耗（觉醒6等提供的护盾优先吸收伤害）=======

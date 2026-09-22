@@ -3,7 +3,7 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > 更新时间:2026-09-22 | 版本:v2.25-refactor-three-more
 >
-> **本会话(2026-09-22)**：T38 ChurchBadge / TalentComboAttack / BlacksmithEnhanceCache / MarketCollection。禁止推 workspace。
+> **本会话(2026-09-22)**：T39 BattleStageNavLogic + BattleDataRestore。禁止推 workspace。
 
 ---
 

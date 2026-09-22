@@ -40,6 +40,8 @@ local BattleCasualty = require("ui.BattleCasualty")
 local BattleStageLoad = require("ui.BattleStageLoad")
 local BattleSceneTick = require("ui.BattleSceneTick")
 local BattleScenePhases = require("ui.BattleScenePhases")
+local BattleStageNavLogic = require("ui.BattleStageNavLogic")
+local BattleDataRestore = require("ui.BattleDataRestore")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -548,6 +550,55 @@ local function loadStage(stageId, skipBattleStart)
     _enemyGuardFired = ctx._enemyGuardFired
     battleActive = ctx.battleActive
     firstClearTimeLeft = ctx.firstClearTimeLeft
+end
+
+local _navLogic
+local _dataRestore
+local function bindBattleExtracts()
+    local getters = {
+        currentStageId = function() return currentStageId end,
+        maxStageId_ = function() return maxStageId_ end,
+        clearedStages = function() return clearedStages end,
+        stageName = function() return stageName end,
+        pendingReincarnation = function() return pendingReincarnation end,
+        onStageChangedCallback = function() return onStageChangedCallback end,
+        BG_ZOOM_FWD_TARGET = function() return BG_ZOOM_FWD_TARGET end,
+        BG_ZOOM_BACK_TARGET = function() return BG_ZOOM_BACK_TARGET end,
+        initialBattleDataLoaded = function() return initialBattleDataLoaded end,
+        battleActive = function() return battleActive end,
+        searchingTimer = function() return searchingTimer end,
+        defeatTimer = function() return defeatTimer end,
+        reincarnationTimer = function() return reincarnationTimer end,
+        isFirstClear = function() return isFirstClear end,
+    }
+    local function get(key)
+        return getters[key]()
+    end
+    local function set(key, value)
+        if key == "searchingTimer" then searchingTimer = value
+        elseif key == "defeatTimer" then defeatTimer = value
+        elseif key == "bgTransAnim" then bgTransAnim = value
+        elseif key == "regenAccum" then regenAccum = value
+        elseif key == "pendingReincarnation" then pendingReincarnation = value
+        elseif key == "maxStageId_" then maxStageId_ = value
+        elseif key == "clearedStages" then clearedStages = value
+        elseif key == "battleActive" then battleActive = value
+        elseif key == "initialBattleDataLoaded" then initialBattleDataLoaded = value
+        elseif key == "isFirstClear" then isFirstClear = value
+        end
+    end
+    local shared = {
+        getStageConfig = getStageConfig,
+        loadStage = loadStage,
+        resetAllyUnit = resetAllyUnit,
+        startBattleTalents = startBattleTalents,
+        recalcIdleIncome = recalcIdleIncome,
+        getAllies = function() return allies end,
+        get = get,
+        set = set,
+    }
+    _navLogic = BattleStageNavLogic.bind(shared)
+    _dataRestore = BattleDataRestore.bind(shared)
 end
 
 -- ======================== Public API ========================
@@ -1189,14 +1240,8 @@ end
 
 --- [三行并行] 选关页面: 跳转到指定关卡（仅允许 ≤ 已解锁最大关卡）
 function BattleScene.gotoStage(stageId)
-    stageId = tonumber(stageId)
-    if not stageId or stageId < 1 then return false, "无效关卡" end
-    if stageId > maxStageId_ then return false, "关卡尚未解锁" end
-    loadStage(stageId, true)
-    if onStageChangedCallback then
-        onStageChangedCallback(stageId)
-    end
-    return true
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.gotoStage(stageId)
 end
 
 --- 当前是否处于终焉神殿关卡
@@ -1206,84 +1251,20 @@ end
 
 --- 实际执行进入终焉神殿（确认后调用）
 local function doEnterTerminalTemple(nextId)
-    searchingTimer = nil
-    defeatTimer = nil
-    bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
-    loadStage(nextId, true)
-    regenAccum = 0
-    for _, u in ipairs(allies) do resetAllyUnit(u) end
-    startBattleTalents()
-    BottomNav.setAllLocked(true)
-    require("systems.GameBGM").setScene("samsara", { fromStart = true })
-    if onStageChangedCallback then
-        onStageChangedCallback(nextId)
-    end
-    print("[BattleScene] 确认进入终焉神殿 → " .. stageName)
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.doEnterTerminalTemple(nextId)
 end
 
 --- 前进到下一关
 function BattleScene.nextStage()
-    local stageConfig = getStageConfig()
-    local nextId = stageConfig.getNextStageId(currentStageId)
-    if nextId then
-        -- 终焉神殿：只有历史最高关卡已进入下一难度时才跳过
-        if stageConfig.isTerminalTemple(nextId) then
-            local currentDiff = stageConfig.getDifficulty(currentStageId)
-            local skipToId, shouldSkip = stageConfig.shouldSkipTerminal(currentStageId, maxStageId_, clearedStages)
-            if skipToId and shouldSkip then
-                print("[BattleScene] 终焉神殿已跳过(maxStage=" .. maxStageId_
-                    .. " upper=" .. tostring(stageConfig.getProgressUpperBound(maxStageId_, clearedStages, nil))
-                    .. " skipTo=" .. tostring(skipToId) .. ") → " .. tostring(skipToId))
-                nextId = skipToId
-            else
-                -- 未通关：弹出确认弹窗
-                TerminalConfirmDialog.open(nextId)
-                return
-            end
-        end
-        searchingTimer = nil
-        defeatTimer = nil
-        -- 背景过渡：放大淡出 → 淡入
-        bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
-        loadStage(nextId, true)  -- skipBattleStart: TAL/TM 延后到 resetAllyUnit 之后
-        regenAccum = 0
-        for _, u in ipairs(allies) do resetAllyUnit(u) end
-        startBattleTalents()  -- 在干净 attrs 上应用天赋 buff
-        -- 通知外部持久化当前关卡进度
-        if onStageChangedCallback then
-            onStageChangedCallback(nextId)
-        end
-        print("[BattleScene] 前进 → " .. stageName)
-    else
-        print("[BattleScene] 已是最后一关")
-    end
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.nextStage()
 end
 
 --- 后退到上一关
 function BattleScene.prevStage()
-    local stageConfig = getStageConfig()
-    local prevId = stageConfig.getPrevStageId(currentStageId)
-    -- 跨难度回退：当前是某难度第一关时，回退到上一难度末关
-    if not prevId then
-        prevId = stageConfig.getLastStageOfPrevDifficulty(currentStageId)
-    end
-    if prevId then
-        searchingTimer = nil
-        defeatTimer = nil
-        -- 背景过渡：缩小淡出 → 淡入
-        bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_BACK_TARGET }
-        loadStage(prevId, true)  -- skipBattleStart: TAL/TM 延后到 resetAllyUnit 之后
-        regenAccum = 0
-        for _, u in ipairs(allies) do resetAllyUnit(u) end
-        startBattleTalents()  -- 在干净 attrs 上应用天赋 buff
-        -- 通知外部持久化当前关卡进度
-        if onStageChangedCallback then
-            onStageChangedCallback(prevId)
-        end
-        print("[BattleScene] 后退 → " .. stageName)
-    else
-        print("[BattleScene] 已是第一关")
-    end
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.prevStage()
 end
 
 --- 处理设计空间内的点击（由 Standalone 调用）
@@ -1389,155 +1370,15 @@ end
 
 --- 完成轮回：外部动画（IntroCutscene）播放结束后调用，执行实际的关卡加载
 function BattleScene.completeReincarnation()
-    if not pendingReincarnation then
-        print("[BattleScene] completeReincarnation called but no pending data")
-        return
-    end
-    local pr = pendingReincarnation
-    pendingReincarnation = nil
-
-    if pr.terminalStageId then
-        clearedStages[pr.terminalStageId] = true
-    end
-    if pr.targetStageId and pr.targetStageId > maxStageId_ then
-        maxStageId_ = pr.targetStageId
-        recalcIdleIncome()
-    end
-
-    -- 切换 BGM 回战斗
-    require("systems.GameBGM").setScene("battle")
-    -- 背景过渡
-    bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
-    loadStage(pr.targetStageId, true)
-    regenAccum = 0
-    for _, u in ipairs(allies) do resetAllyUnit(u) end
-    startBattleTalents()
-    -- 通知关卡变更
-    if onStageChangedCallback then
-        onStageChangedCallback(pr.targetStageId)
-    end
-    print("[BattleScene] 轮回完成 → " .. stageName .. " (难度: " .. tostring(pr.toDifficulty) .. ")")
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.completeReincarnation()
 end
 
 --- 从服务端推送的战斗数据恢复状态
 ---@param data table  { currentStageId, maxStageId, clearedStages, autoBattle }
 function BattleScene.setBattleData(data)
-    if not data then return end
-
-    -- 恢复已通关关卡集合
-    if data.clearedStages then
-        clearedStages = {}
-        for k, v in pairs(data.clearedStages) do
-            -- 服务端以 tostring(stageId) 为 key 存储，本地以 number 为 key
-            local numKey = tonumber(k)
-            if numKey and v then
-                clearedStages[numKey] = true
-            end
-        end
-    end
-
-    -- 用 maxStageId 补全 clearedStages（后备推断：低于 maxStageId 的关卡必定已通关）
-    local maxSId = data.maxStageId and tonumber(data.maxStageId)
-    if maxSId then
-        -- 与服务端存档对齐（Debug 跳回低进度时需降低 maxStageId_）
-        maxStageId_ = maxSId
-        -- 更新挂机收益显示（maxStageId 变化后立即刷新，不等下一关加载）
-        recalcIdleIncome()
-        local stageConfig = getStageConfig()
-        local sid = stageConfig.getFirstStageId
-            and stageConfig.getFirstStageId(stageConfig.DIFFICULTY_NORMAL)
-            or 0101
-        while sid and sid < maxSId do
-            if not clearedStages[sid] then
-                clearedStages[sid] = true
-            end
-            local nextSid = stageConfig.getNextStageId(sid)
-            if not nextSid and stageConfig.isTerminalTemple(sid) then
-                -- 终焉神殿无 next，跨难度继续填充
-                local diff = stageConfig.getDifficulty(sid)
-                nextSid = stageConfig.getReincarnationTarget(diff)
-            end
-            sid = nextSid
-        end
-    end
-
-    -- 恢复当前关卡（如果与本地不同则切换）
-    local serverStageId = data.currentStageId and tonumber(data.currentStageId)
-
-    -- 🔴 修复中间状态：通关消息已落盘但推进消息未到（两条消息间掉线/存档）
-    -- 表现：currentStageId == maxStageId 且 clearedStages[maxStageId] == true
-    -- 此时客户端误判为挂机模式（isFirstClear=false），实际应为首通模式
-    -- 修复：从本地 clearedStages 中移除该标记，让 isFirstClear 正确计算为 true
-    -- 安全性：服务端 clearedStages 不变，不会重复发放首通奖励
-    -- ⚠️ 守卫：如果 maxStageId 的下一关是终焉神殿，说明玩家已打到难度末关并从神殿
-    --   返回/重连，此时应保持挂机模式（显示前进按钮→进入终焉神殿确认框），不触发修复
-    local stageConfig = getStageConfig()
-    local nextOfMax = maxSId and stageConfig.getNextStageId(maxSId)
-    local isAtTerminalEntrance = nextOfMax and stageConfig.isTerminalTemple(nextOfMax)
-    if maxSId and serverStageId and serverStageId == maxSId and clearedStages[maxSId]
-       and not isAtTerminalEntrance then
-        clearedStages[maxSId] = nil
-        print("[BattleScene] 修复中间状态: 关卡" .. tostring(maxSId)
-            .. "已标记通关但未推进(currentStageId==maxStageId)，恢复为首通模式")
-    end
-
-    -- 首次加载兜底：如果 currentStageId 落后于 maxStageId，
-    -- 说明上次存档异常或版本更新导致进度不同步，以 maxStageId 为准恢复到最新进度
-    if not initialBattleDataLoaded and serverStageId and maxSId then
-        if maxSId > serverStageId then
-            print("[BattleScene] 检测到进度落后: currentStageId=" .. tostring(serverStageId)
-                .. " 但 maxStageId=" .. tostring(maxSId) .. "，使用 maxStageId 恢复")
-            serverStageId = maxSId
-        end
-    end
-
-    if serverStageId and serverStageId ~= currentStageId then
-        -- 首次加载数据时无条件恢复（否则 init 里 loadStage(0101) 已启动战斗，isBusy=true 会拦截）
-        if not initialBattleDataLoaded then
-            loadStage(serverStageId)
-            regenAccum = 0
-            -- 首次加载进入寻怪模式，等服务端装备/天赋数据同步完毕再开战
-            battleActive = false
-            searchingTimer = 0
-            print("[BattleScene] 首次加载，恢复关卡(寻怪模式): " .. tostring(serverStageId))
-        else
-            -- 后续推送：仅在战斗未激活时才接受切换，避免打断进行中的战斗或轮回倒计时
-            local isBusy = battleActive or (searchingTimer ~= nil) or (defeatTimer ~= nil) or (reincarnationTimer ~= nil)
-            if not isBusy then
-                loadStage(serverStageId, true)  -- skipBattleStart
-                regenAccum = 0
-                for _, u in ipairs(allies) do resetAllyUnit(u) end
-                startBattleTalents()
-                print("[BattleScene] 从服务端恢复关卡: " .. tostring(serverStageId))
-            else
-                local reason = battleActive and "battleActive" or (searchingTimer ~= nil) and "searching" or (defeatTimer ~= nil) and "defeat" or "reincarnation"
-                print("[BattleScene] 战斗进行中，忽略服务端关卡切换: server=" .. tostring(serverStageId) .. " local=" .. tostring(currentStageId) .. " reason=" .. reason)
-            end
-        end
-    elseif not initialBattleDataLoaded then
-        -- 首次加载且关卡未切换（serverStageId == currentStageId 或 serverStageId 为 nil）
-        -- init 不再预加载关卡，这里统一触发 loadStage 进入寻怪模式
-        local stageToLoad = serverStageId or currentStageId
-        loadStage(stageToLoad)
-        battleActive = false
-        searchingTimer = 0
-        print("[BattleScene] 首次加载，加载关卡(寻怪模式): " .. tostring(stageToLoad))
-    end
-    -- 首次加载时立即计算收益预估（OfflineCalc 统一公式，无需等待效率积累）
-    if not initialBattleDataLoaded then
-        recalcIdleIncome()
-    end
-
-    initialBattleDataLoaded = true
-
-    -- 无论是否切换关卡，都刷新 isFirstClear（clearedStages 可能已更新）
-    -- 注意：当战斗进行中(isBusy)时关卡切换被忽略，此时应以本地 currentStageId 为准
-    -- 否则 serverStageId（可能是旧值）会导致 isFirstClear 被错误设为 false
-    isFirstClear = not clearedStages[currentStageId]
-    if not isFirstClear and StageBerserk.isActive() then
-        StageBerserk.exit()
-    end
-
+    if not _dataRestore then bindBattleExtracts() end
+    return _dataRestore.setBattleData(data)
 end
 
 --- 轻量级属性刷新：英雄升级后更新场上 ally 的属性，不重置战斗状态

@@ -12,6 +12,7 @@ local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
+local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 
 local M = {}
 
@@ -124,6 +125,9 @@ local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqD
                 end
             end
         end
+        EquipmentSetSystem.applyToUnit(
+            attrs, eqData, heroId,
+            EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
     end
 
     RelicBridge.applyToUnit(attrs, classId)

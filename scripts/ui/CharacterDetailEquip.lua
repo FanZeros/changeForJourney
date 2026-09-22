@@ -11,8 +11,10 @@ local HeroAssetUtil   = require("config.HeroAssetUtil")
 local ClassConfig     = require("config.ClassConfig")
 local AD              = require("systems.AttributeDef")
 local PlayerStore     = require("client.data.PlayerStore")
+local ClientDispatcher = require("network.ClientDispatcher")
 local EquipmentConfig = require("config.EquipmentConfig")
 local EquipmentSystem = require("systems.EquipmentSystem")
+local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 local ImageCache      = require("ui.ImageCache")
 local AVC             = require("config.AdvancementConfig")
 local BF              = require("systems.ButtonFeedback")
@@ -502,6 +504,30 @@ function M.draw(vg, heroId, detailState)
     end
     nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
     nvgText(vg, DESIGN_W * 0.5, 860, slotLabel, nil)
+
+    -- 套装进度（P1：2 件可多套同亮）
+    local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
+    if eqData then
+        local counts = EquipmentSetSystem.countSets(
+            eqData, heroId,
+            EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
+        local rows = EquipmentSetSystem.summarize(counts)
+        if #rows > 0 then
+            local parts = {}
+            for i = 1, math.min(3, #rows) do
+                local r = rows[i]
+                parts[#parts + 1] = string.format("%s %d/6", r.name, r.count)
+            end
+            local setLine = table.concat(parts, "  ")
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 22)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 220))
+            nvgText(vg, DESIGN_W * 0.5 + 2, 910 + 2, setLine, nil)
+            nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
+            nvgText(vg, DESIGN_W * 0.5, 910, setLine, nil)
+        end
+    end
 end
 
 --- 处理输入（格子点击+滚动）

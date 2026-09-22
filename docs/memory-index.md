@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-22 | 版本:v2.16-refactor-town-draw
+> 更新时间:2026-09-22 | 版本:v2.17-refactor-market-input
 >
-> **本会话(2026-09-22)**：T27 Market/Blacksmith drawPageImpl 抽到 MarketDraw/BlacksmithDraw。Market 1589 / Blacksmith 1533。禁止推 workspace。
+> **本会话(2026-09-22)**：T28 Market 输入抽到 MarketInput。Market 1402。禁止推 workspace。
 
 ---
 

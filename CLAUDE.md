@@ -20,8 +20,8 @@
 
 - 已合并 `origin/workspace`（`fa7a775`）
 - T23–T26 四块抽取（LSP 0 Error / build 过 / validate lua_errors=0）
-- T27：Market/Blacksmith `drawPageImpl` → `MarketDraw` / `BlacksmithDraw`（bind 具名注入）
-  - Market 1741→1589；Blacksmith 1678→1533
+- T27：Market/Blacksmith `drawPageImpl` → `MarketDraw` / `BlacksmithDraw`
+- T28：Market 输入 → `MarketInput`（1402 行）
 
 ## likely_next_task
 

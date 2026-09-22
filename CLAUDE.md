@@ -22,13 +22,14 @@
 - T11：从 BattleCombat 抽出卡牌动画状态机到 `scripts/ui/BattleCombatAnim.lua`（`a3f6930` 已 push）
 - BattleCombat 2101 → 1822 行；对外 API（`updateCardAnims` / `playEnterAnims` / `setCardAnim` 等）保持委托
 - T12：TalentManager 再拆 Alex/Elwyn/Sera/Suhua 到 `systems/talents/`（`3e9920f` 已 push）；3570 → 3276 行
+- T13：Client 抽出启动接线到 `network/ClientBoot.lua`（`a9c2566` 已 push）；2487 → 2143 行
 
 ## likely_next_task
 
 - 继续拆超 1500 行文件（用户以选项指定）：
+  - Client overlay / HandleNanoVGRender / HandleUpdate（仍 2143）
   - TalentManager 仍 3276，可再抽弹射/转职/update 周期
   - BattleCombat 连击结算（`performComboAttack` 仍在主文件）
-  - Client.lua overlay/启动（2487）
   - BattleScene 再拆（2384）
   - Server.lua（2068）
   - 城镇页（Market/Church/Blacksmith 仍 ~1800+，共用壳已接）

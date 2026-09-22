@@ -104,51 +104,16 @@ function M.bind(deps)
         local iconH = SL.BTN_ICON_H
         local gap = 4
 
-        if item.discount then
-            -- 折扣模式：图标+ 折扣价主体) + 原价(划线，偏移
-            local origStr = tostring(item.price)
-            nvgFontSize(vg, 26)
-            local origW = nvgTextBounds(vg, 0, 0, origStr, nil, bounds)
-            nvgFontSize(vg, SL.BTN_FONT)
-            local discGap = 6
-            local totalW = iconW + gap + textW + discGap + origW
-            local startX = cx - totalW * 0.5
+        local totalW = iconW + gap + textW
+        local startX = cx - totalW * 0.5
 
-            local costImg = img.costIcons[idx]
-            if costImg and costImg >= 0 then
-                drawImageCentered(vg, costImg, startX + iconW * 0.5, btnCY, iconW, iconH, 1.0)
-            end
-            -- 折扣价（主体，白色）
-            local discX = startX + iconW + gap
-            drawTextStroke(vg, discX, btnCY, priceStr,
-                SL.BTN_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                255, 255, 255, SL.BTN_SW, { strokeColor = { 0, 0, 0 } })
-            -- 原价（小字 + 划线 + 描边，灰红色更醒目）
-            local origX = discX + textW + discGap
-            drawTextStroke(vg, origX, btnCY, origStr,
-                26, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                255, 160, 140, 3,
-                { alpha = 220 / 255, strokeColor = { 0, 0, 0 } })
-            -- 划线
-            nvgBeginPath(vg)
-            nvgMoveTo(vg, origX - 2, btnCY)
-            nvgLineTo(vg, origX + origW + 2, btnCY)
-            nvgStrokeColor(vg, nvgRGBA(255, 160, 140, 220))
-            nvgStrokeWidth(vg, 2)
-            nvgStroke(vg)
-        else
-            -- 普通模式
-            local totalW = iconW + gap + textW
-            local startX = cx - totalW * 0.5
-
-            local costImg = img.costIcons[idx]
-            if costImg and costImg >= 0 then
-                drawImageCentered(vg, costImg, startX + iconW * 0.5, btnCY, iconW, iconH, 1.0)
-            end
-            drawTextStroke(vg, startX + iconW + gap, btnCY, priceStr,
-                SL.BTN_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                255, 255, 255, SL.BTN_SW, { strokeColor = { 0, 0, 0 } })
+        local costImg = img.costIcons[idx]
+        if costImg and costImg >= 0 then
+            drawImageCentered(vg, costImg, startX + iconW * 0.5, btnCY, iconW, iconH, 1.0)
         end
+        drawTextStroke(vg, startX + iconW + gap, btnCY, priceStr,
+            SL.BTN_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+            255, 255, 255, SL.BTN_SW, { strokeColor = { 0, 0, 0 } })
     end
     BF.finish(vg, _sc)
     end

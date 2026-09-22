@@ -92,111 +92,67 @@ local TAB = {
 -- ======================== 商品配置 ========================
 
 local SHOP_ITEMS = {
-    -- ===== 钻石商品（每日刷新，40% 折扣价=====
-    {
-        id = 8, name = "冒险招募券", quality = 5, rewardCount = 1,
-        restockType = "daily", limitCount = -1,
-        currency = "diamond", price = 180, discount = 0.4,
-        icon = "image/货币道具/UI_icon_ZMQ_1.png",
-        costIcon = "image/货币道具/UI_icon_SJ_X.png",
-    },
-    {
-        id = 9, name = "洗练石", quality = 3, rewardCount = 2,
-        restockType = "daily", limitCount = -1,
-        currency = "diamond", price = 180, discount = 0.4,
-        icon = "image/货币道具/UI_icon_QH_1.png",
-        costIcon = "image/货币道具/UI_icon_SJ_X.png",
-    },
-    {
-        id = 10, name = "随机卷轴", quality = 3, rewardCount = 10,
-        restockType = "daily", limitCount = -1,
-        currency = "diamond", price = 180, discount = 0.4,
-        icon = "image/货币道具/UI_icon_JZ_SJ.png",
-        costIcon = "image/货币道具/UI_icon_SJ_X.png",
-    },
-    {
-        id = 11, name = "点金石", quality = 5, rewardCount = 1,
-        restockType = "daily", limitCount = -1,
-        currency = "diamond", price = 500, discount = 0.4,
-        icon = "image/货币道具/UI_icon_QH_3.png",
-        costIcon = "image/货币道具/UI_icon_SJ_X.png",
-    },
-    {
-        id = 21, name = "腐化石", quality = 5, rewardCount = 1,
-        restockType = "daily", limitCount = -1,
-        currency = "diamond", price = 500, discount = 0.4,
-        icon = "image/货币道具/UI_icon_FHS.png",
-        costIcon = "image/货币道具/UI_icon_SJ_X.png",
-    },
-    -- ===== 钻石商品（永久，不限购） =====
+    -- ===== 钻石商品（永久，不限购；定价已 /2） =====
     {
         id = 12, name = "冒险招募券", quality = 5, rewardCount = 1,
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 180,
+        currency = "diamond", price = 90,
         icon = "image/货币道具/UI_icon_ZMQ_1.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 13, name = "洗练石", quality = 3, rewardCount = 2,
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 180,
+        currency = "diamond", price = 90,
         icon = "image/货币道具/UI_icon_QH_1.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 14, name = "点金石", quality = 5, rewardCount = 1,
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 500,
+        currency = "diamond", price = 250,
         icon = "image/货币道具/UI_icon_QH_3.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 22, name = "腐化石", quality = 5, rewardCount = 1,
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 500,
+        currency = "diamond", price = 250,
         icon = "image/货币道具/UI_icon_FHS.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 15, name = "奥术粉尘", quality = 3, rewardCount = 288,
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 180,
+        currency = "diamond", price = 90,
         icon = "image/货币道具/UI_icon_ASFC.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 16, name = "金币", quality = 1, rewardCount = 6666,
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 188,
+        currency = "diamond", price = 94,
         icon = "image/货币道具/UI_icon_JB.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 17, name = "精粹", quality = 2, rewardCount = 666,
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 188,
+        currency = "diamond", price = 94,
         icon = "image/货币道具/UI_icon_JC.png",
-        costIcon = "image/货币道具/UI_icon_SJ_X.png",
-    },
-    -- ===== 星辉招募券（每日刷新） =====
-    {
-        id = 18, name = "星辉招募券", quality = 6, rewardCount = 1,
-        restockType = "daily", limitCount = -1,
-        currency = "diamond", price = 900, discount = 0.8,
-        icon = "image/货币道具/UI_icon_ZMQ_2.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 20, name = "黄金钥匙", quality = 6, rewardCount = 1,
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 600,
+        currency = "diamond", price = 300,
         icon = "image/货币道具/UI_icon_HJYS.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
 }
 
 --- 与服务端 MarketService.SHOP_CONFIG_VERSION 保持一致；版本升级时会清空购买记录
-local SHOP_CONFIG_VERSION = 6
+local SHOP_CONFIG_VERSION = 7
 
 --- 按商品 id 索引（SHOP_ITEMS 为展示顺序数组，禁止用 itemId 当下标）
 local SHOP_ITEMS_BY_ID = {}
@@ -208,11 +164,8 @@ local function getShopItemById(itemId)
     return SHOP_ITEMS_BY_ID[itemId]
 end
 
---- 计算实际支付价格（折扣后）
+--- 计算实际支付价格
 local function getActualPrice(item)
-    if item.discount then
-        return math.floor(item.price * item.discount)
-    end
     return item.price
 end
 

@@ -520,6 +520,7 @@ function M.run(rt)
     if myUid then
         PlayerInfoPanel.setUID(myUid)
         GetUserNickname({
+            ---@diagnostic disable-next-line: assign-type-mismatch
             userIds = { myUid },
             onSuccess = function(nicknames)
                 if nicknames and nicknames[1] then

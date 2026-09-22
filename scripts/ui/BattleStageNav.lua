@@ -76,7 +76,7 @@ function M.drawStageTitle(vg, ctx)
             local bPhase   = StageBerserk.getRagePhase()
             local tText, tR, tG, tB
             if bPhase == 2 then
-                tText = string.format("超级狂暴\! %.0fs", bElapsed)
+                tText = string.format("超级狂暴! %.0fs", bElapsed)
                 tR, tG, tB = 255, 34, 34
             elseif bPhase == 1 then
                 tText = string.format("狂暴中 %.0fs", bElapsed)

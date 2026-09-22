@@ -61,6 +61,7 @@ local function writeGuildStageRank(uid, maxStageId)
         serverCloud:SetInt(uid, key, score)
         -- 异步查询平台昵称并补写 name
         GetUserNickname({
+            ---@diagnostic disable-next-line: assign-type-mismatch
             userIds = { uid },
             onSuccess = function(nicknames)
                 if nicknames and nicknames[1] and nicknames[1].nickname

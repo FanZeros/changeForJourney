@@ -3,6 +3,8 @@
 -- Bound via M.bind(deps); original local function names preserved.
 -- ============================================================================
 
+local ETS = require("systems.ExtraTalentSystem")
+
 local M = {}
 
 function M.bind(deps)
@@ -435,14 +437,6 @@ local function updateMelissaStarGate(dt, melissa, s, isAlly, targetList, ctx, te
         s.starGateTimer = s.starGateTimer - interval
     end
 end
-
---- 闪电卖鸡 #21：银光触发
----@param attacker table
----@param s table
----@param target table
----@param isAlly boolean
----@param dealDmgFn function
----@param result table|nil 当次攻击公式结果（银光伤害基于本次物理伤害）
 
     return {
         getMelissaStarGateInterval = getMelissaStarGateInterval,

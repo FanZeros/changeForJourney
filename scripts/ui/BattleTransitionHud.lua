@@ -70,13 +70,13 @@ function M.draw(vg, ctx)
         drawTextStroke(vg, 540, BAR_Y + BAR_H * 0.5, "寻怪中...", 32,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
     elseif ctx.defeatTimer ~= nil then
-        local failText = ctx.defeatByTimeout and "时间到\!" or "失败..."
+        local failText = ctx.defeatByTimeout and "时间到!" or "失败..."
         drawTextStroke(vg, 540, 1190, failText, 72,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 80, 80, 6)
         drawTextStroke(vg, 540, 1250, ctx.stageName, 36,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 220, 220, 220, 4)
     else
-        drawTextStroke(vg, 540, 1190, "胜利\!", 72,
+        drawTextStroke(vg, 540, 1190, "胜利!", 72,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 220, 50, 6)
         drawTextStroke(vg, 540, 1250, ctx.stageName, 36,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 220, 220, 220, 4)

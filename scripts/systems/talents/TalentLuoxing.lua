@@ -3,6 +3,8 @@
 -- Bound via M.bind(deps); original local function names preserved.
 -- ============================================================================
 
+local ETS = require("systems.ExtraTalentSystem")
+
 local M = {}
 
 function M.bind(deps)
@@ -200,10 +202,6 @@ local function fireLuoxingFlyingSwords(attacker, s, targetList, isAlly, dealDmgF
         swordCount, perSwordDmg, getLuoxingFlyingSwordInterval(attacker), swordDmgPct * 100))
     return true, true
 end
-
---- 摘星星星人 #20：星门固定触发间隔；基础2.6秒，觉醒3缩短为2.2秒
----@param melissa table
----@return number
 
     return {
         isFlyingSwordTalentDmg = isFlyingSwordTalentDmg,

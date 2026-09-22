@@ -509,9 +509,12 @@ function M.draw(vg)
         switchAlpha = 0.2 + 0.8 * math.min(1.0, progress * 1.8)
     end
 
-    local upperOX = UPPER_SLIDE_DIST * (1 - progress)  -- [横向] 右面板页从右侧滑入/滑出
-    local lowerOX =  LOWER_SLIDE_DIST * (1 - lowerProgress)  -- [横向] 与整页同向:从右侧滑入/滑出
-    local overlayAlpha = math.floor(180 * progress)
+    -- 整页已由 CharacterDetail.draw 的 seamSlideX 水平滑动并与中缝返回条同步。
+    -- 内部分段滑 + 遮罩淡入会和第二条轨迹打架，横屏中缝模式关掉。
+    local seamMode = H_SEAM_BACK == true
+    local upperOX = seamMode and 0 or (UPPER_SLIDE_DIST * (1 - progress))
+    local lowerOX = seamMode and 0 or (LOWER_SLIDE_DIST * (1 - lowerProgress))
+    local overlayAlpha = seamMode and 0 or math.floor(180 * progress)
 
     -- 箭头切换时不做垂直滑入
     if detailState.switchDir then

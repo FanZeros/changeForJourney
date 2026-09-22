@@ -105,10 +105,12 @@ function M.bind(deps)
             end
         end
 
+        -- 整页已由 ChurchPage.draw 的 seamSlideX 与中缝条同步；内部分段滑/淡入会打架。
+        local seamMode = H_SEAM_BACK == true
         local upperDist = state.closing and ANIM.UPPER_SLIDE_OUT or ANIM.UPPER_SLIDE_IN
-        local upperOX = -upperDist * (1 - progress)  -- [横向] 从左侧滑入/滑出
-        local lowerOX = -ANIM.LOWER_SLIDE_DIST * (1 - lowerProgress)  -- [横向] 与整页同向:从左侧滑入/滑出
-        local overlayAlpha = math.floor(180 * progress)
+        local upperOX = seamMode and 0 or (-upperDist * (1 - progress))
+        local lowerOX = seamMode and 0 or (-ANIM.LOWER_SLIDE_DIST * (1 - lowerProgress))
+        local overlayAlpha = seamMode and 0 or math.floor(180 * progress)
 
         -- === 全屏遮罩 ===
         nvgBeginPath(vg)

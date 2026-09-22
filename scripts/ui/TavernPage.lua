@@ -814,8 +814,8 @@ local function drawPageImpl(vg)
         end
     end
 
-    -- 整体从上方滑入
-    local upperOX = (1 - progress) * (-DESIGN_W)  -- [横向] 从左侧滑入/滑出
+    -- 整页已由 TavernPage.draw 的 seamSlideX 同步中缝条；内部再滑会打架
+    local upperOX = (H_SEAM_BACK == true) and 0 or ((1 - progress) * (-DESIGN_W))
 
     nvgSave(vg)
     nvgTranslate(vg, upperOX, 0)

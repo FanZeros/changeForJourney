@@ -56,11 +56,11 @@
 
 | 文件 | 重构前 | 重构后 |
 |------|--------|--------|
-| ui/BattleScene.lua | 3435 | 2014（Casualty + StageLoad） |
+| ui/BattleScene.lua | 3435 | 1890（Casualty + StageLoad + Tick） |
 | ui/BattleCombat.lua | 2203 | 1637（Anim + Combo） |
 | systems/TalentManager.lua | 4197 | 2838（七英雄 + TalentUpdate） |
 | network/Standalone.lua | 2168 | 841 |
 | network/Client.lua | 2487 | 1844（ClientBoot + ClientRender） |
-| network/Server.lua | 2068 | 2068（未拆） |
+| network/Server.lua | 2068 | 1693（抽出 ServerEnterGame） |
 
 分支：`refactor/extract-battle-overlays`。禁止推 `workspace`。

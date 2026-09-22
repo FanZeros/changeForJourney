@@ -43,3 +43,6 @@
 - [x] **T16** BattleScene：抽出 `loadStage` 到 `BattleStageLoad.lua`。
 - [x] **T17** TalentManager：抽出 `TAL.update` 到 `systems/talents/TalentUpdate.lua`。目标：TalentManager < 3000。
 - [x] **T18** Client：抽出主渲染到 `network/ClientRender.lua`。
+- [x] **T19** Server：抽出进服全量推送到 `network/ServerEnterGame.lua`。
+- [x] **T20** BattleScene：抽出攻击进度/tick 到 `BattleSceneTick.lua`。
+- [x] **T21** 城镇页：Blacksmith/Market/TavernShop 九宫格绘制委托 `DrawUtil`。

@@ -329,94 +329,16 @@ local easeInOutCubic = TownPageChrome.easeInOutCubic
 -- ======================== 工具函数 ========================
 
 --- 居中绘制图片
-local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
-    if img < 0 or alpha <= 0.01 then return end
-    local x = cx - w * 0.5
-    local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, h)
-    nvgFillPaint(vg, paint)
-    nvgFill(vg)
-end
+local drawImageCentered = DrawUtil.drawImageCentered
 
 --- 描边文字
 local drawTextStroke = DrawUtil.drawTextStroke
 
 --- 九宫格绘制
-local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLeft)
-    if img < 0 then return end
-
-    local srcW, srcH = nvgImageSize(vg, img)
-    if srcW <= 0 or srcH <= 0 then return end
-
-    local sL, sR, sT, sB = iLeft, iRight, iTop, iBottom
-    local sMW = srcW - sL - sR
-    local sMH = srcH - sT - sB
-
-    local dL = math.min(iLeft, dw * 0.5)
-    local dR = math.min(iRight, dw * 0.5)
-    local dT = math.min(iTop, dh * 0.5)
-    local dB = math.min(iBottom, dh * 0.5)
-
-    if sMW <= 0 or sMH <= 0 then
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, img, 1.0)
-        nvgBeginPath(vg)
-        nvgRect(vg, dx, dy, dw, dh)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-        return
-    end
-
-    local ix0 = math.floor(dx + 0.5)
-    local iy0 = math.floor(dy + 0.5)
-    local ix1 = math.floor(dx + dL + 0.5)
-    local iy1 = math.floor(dy + dT + 0.5)
-    local ix2 = math.floor(dx + dw - dR + 0.5)
-    local iy2 = math.floor(dy + dh - dB + 0.5)
-    local ix3 = math.floor(dx + dw + 0.5)
-    local iy3 = math.floor(dy + dh + 0.5)
-
-    local OV = 1
-    local patches = {
-        { ix1 - OV, iy1 - OV, ix2 - ix1 + OV * 2, iy2 - iy1 + OV * 2, sL, sT, sMW, sMH },
-        { ix1 - OV, iy0,      ix2 - ix1 + OV * 2, iy1 - iy0 + OV,     sL,       0,        sMW, sT  },
-        { ix1 - OV, iy2 - OV, ix2 - ix1 + OV * 2, iy3 - iy2 + OV,     sL,       sT + sMH, sMW, sB  },
-        { ix0,      iy1 - OV, ix1 - ix0 + OV,     iy2 - iy1 + OV * 2, 0,        sT,       sL,  sMH },
-        { ix2 - OV, iy1 - OV, ix3 - ix2 + OV,     iy2 - iy1 + OV * 2, sL + sMW, sT,       sR,  sMH },
-        { ix0,      iy0,      ix1 - ix0 + OV, iy1 - iy0 + OV, 0,        0,        sL, sT  },
-        { ix2 - OV, iy0,      ix3 - ix2 + OV, iy1 - iy0 + OV, sL + sMW, 0,        sR, sT  },
-        { ix0,      iy2 - OV, ix1 - ix0 + OV, iy3 - iy2 + OV, 0,        sT + sMH, sL, sB  },
-        { ix2 - OV, iy2 - OV, ix3 - ix2 + OV, iy3 - iy2 + OV, sL + sMW, sT + sMH, sR, sB  },
-    }
-
-    nvgShapeAntiAlias(vg, 0)
-    for _, p in ipairs(patches) do
-        local px, py, pw, ph = p[1], p[2], p[3], p[4]
-        local sx, sy, sw, sh = p[5], p[6], p[7], p[8]
-        if pw > 0 and ph > 0 and sw > 0 and sh > 0 then
-            local scaleX = pw / sw
-            local scaleY = ph / sh
-            local paint = nvgImagePattern(vg,
-                px - sx * scaleX,
-                py - sy * scaleY,
-                srcW * scaleX,
-                srcH * scaleY,
-                0, img, 1.0)
-            nvgBeginPath(vg)
-            nvgRect(vg, px, py, pw, ph)
-            nvgFillPaint(vg, paint)
-            nvgFill(vg)
-        end
-    end
-    nvgShapeAntiAlias(vg, 1)
-end
+local drawNineSlice = DrawUtil.drawNineSlice
 
 --- hitTest（中心坐标 + 尺寸）
-local function hitTest(dx, dy, cx, cy, w, h)
-    return dx >= cx - w * 0.5 and dx <= cx + w * 0.5
-       and dy >= cy - h * 0.5 and dy <= cy + h * 0.5
-end
+local hitTest = DrawUtil.hitTest
 
 -- ======================== 编队卡片辅助函数 ========================
 

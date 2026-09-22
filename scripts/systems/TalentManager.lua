@@ -15,6 +15,10 @@ local ETS = require("systems.ExtraTalentSystem")
 local TalentAyane = require("systems.talents.TalentAyane")
 local TalentLuoxing = require("systems.talents.TalentLuoxing")
 local TalentMelissa = require("systems.talents.TalentMelissa")
+local TalentAlex = require("systems.talents.TalentAlex")
+local TalentElwyn = require("systems.talents.TalentElwyn")
+local TalentSera = require("systems.talents.TalentSera")
+local TalentSuhua = require("systems.talents.TalentSuhua")
 
 local MAS
 local function getMAS()
@@ -473,169 +477,41 @@ local fireMelissaStarGate = _melissa.fireMelissaStarGate
 local triggerMelissaStarGates = _melissa.triggerMelissaStarGates
 local updateMelissaStarGate = _melissa.updateMelissaStarGate
 
+local _alex = TalentAlex.bind({
+    hasAwaken = hasAwaken,
+    talentLog = talentLog,
+    AD = AD,
+    SEM = SEM,
+    getBattleRefs = function() return TAL_BCS end,
+})
+local tryAlexSilverFlash = _alex.tryAlexSilverFlash
 
---- 灵月飞剑累计：排除飞剑本体/飞回（避免递归喂池）
-local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result)
-    if not dealDmgFn or not target or target.hp <= 0 or not attacker.attrs or not result then return end
+local _elwyn = TalentElwyn.bind({
+    hasAwaken = hasAwaken,
+    getState = getState,
+    talentLog = talentLog,
+    AD = AD,
+})
+local applyElwynEnergyBlessing = _elwyn.applyElwynEnergyBlessing
+local findLivingElwyn = _elwyn.findLivingElwyn
+local tryElwynInvulnOnEsBreak = _elwyn.tryElwynInvulnOnEsBreak
 
-    local hitVal = attacker.attrs:get(AD.HIT_VALUE)
-    local extraProc = math.min(20, math.floor(hitVal / 80) * 2)
-    local baseProc = hasAwaken(attacker, 1) and 30 or 25
-    local procChance = (baseProc + extraProc) / 100 + ETS.getNitroProcBonus(attacker)
+local _sera = TalentSera.bind({
+    hasAwaken = hasAwaken,
+    talentLog = talentLog,
+    AD = AD,
+})
+local tickSeraMachineGunCount = _sera.tickSeraMachineGunCount
 
-    if math.random() >= procChance then return end
+local _suhua = TalentSuhua.bind({
+    hasAwaken = hasAwaken,
+    talentLog = talentLog,
+    AD = AD,
+    CF = CF,
+})
+local runSuhuaNightSlash = _suhua.runSuhuaNightSlash
 
-    -- 设计：额外造成「本次物理伤害 ×150%/180%」的闪电伤害（已含护甲/暴击，不再二次结算护甲）
-    local dmgMult = hasAwaken(attacker, 3) and 1.8 or 1.5
-    local physDmg = result.totalDamage or 0
-    if physDmg <= 0 then return end
 
-    local bonusDmg = math.floor(physDmg * dmgMult + 0.5)
-    -- 觉醒7：额外享受魔法伤害加成（MAG_DMG_BONUS）
-    if hasAwaken(attacker, 7) then
-        local magDmgBonus = attacker.attrs:get(AD.MAG_DMG_BONUS)
-        if magDmgBonus ~= 0 then
-            bonusDmg = math.floor(bonusDmg * (1 + magDmgBonus / 100) + 0.5)
-        end
-    end
-
-    if bonusDmg > 0 then
-        dealDmgFn(target, bonusDmg, not isAlly, "氮气", { 200, 230, 255 }, {
-            silverFlashVfx = true,
-            instantDamage = true,
-        })
-        -- 氮气贯穿：额外打一名其他存活敌人（对侧）
-        local pierceList = isAlly and TAL_BCS.bEnemies or TAL_BCS.bAllies
-        if pierceList then
-            local others = {}
-            for _, u in ipairs(pierceList) do
-                if u ~= target and (u.hp or 0) > 0 then
-                    others[#others + 1] = u
-                end
-            end
-            if #others > 0 then
-                local pierceTgt = others[math.random(#others)]
-                local pierceDmg = math.floor(bonusDmg * 0.60 + 0.5)
-                if pierceDmg > 0 then
-                    dealDmgFn(pierceTgt, pierceDmg, not isAlly, "超车 ", { 180, 220, 255 }, {
-                        instantDamage = true,
-                    })
-                end
-            end
-        end
-    end
-
-    local paralyzeDur = hasAwaken(attacker, 4) and 0.5 or 0.3
-    SEM.apply(target, SEM.FROZEN, paralyzeDur, attacker, {})
-
-    if hasAwaken(attacker, 5) then
-        s.silverLightProgressBoost = true
-    end
-
-    -- 氮气叠加速：每触发 +8% 攻速，最多 5 层
-    if attacker.attrs then
-        local stacks = math.min(5, (s.nitroStacks or 0) + 1)
-        s.nitroStacks = stacks
-        local nitroSpd = stacks * 8
-        attacker.attrs:removeModifier("talent_nitro_speed")
-        attacker.attrs:addModifier("talent_nitro_speed", {
-            { key = AD.ATK_SPEED, flat = nitroSpd },
-        })
-        attacker.atkInterval = attacker.attrs:getActualInterval()
-        talentLog(string.format("[Talent] 闪电卖鸡 氮气叠速 ×%d (+%d%%)", stacks, nitroSpd))
-        attacker._nitroKill = true
-    end
-
-    talentLog(string.format("[Talent] 闪电卖鸡 氮气 → %s (%.0f伤害, 麻痹%.1fs)",
-        target.name or "?", bonusDmg, paralyzeDur))
-end
-
---- 真布诗人 #23：溢出治疗转能量护盾 + 临时护盾
----@param attacker table
----@param target table
----@param result table
----@return number normalGain, number tempGain
-local function applyElwynEnergyBlessing(attacker, target, result)
-    if not target or not target.attrs or not result then return 0, 0 end
-
-    local overflow = result.overhealAmount
-    if overflow == nil then
-        overflow = math.max(0, (result.healAmount or 0) - (result.appliedHealAmount or 0))
-    end
-    overflow = math.floor(overflow + 0.0001)
-    if overflow <= 0 then return 0, 0 end
-
-    local convertRate = 1.0
-    if hasAwaken(attacker, 2) then convertRate = 1.2 end
-    if hasAwaken(attacker, 6) and result.isCrit then
-        convertRate = convertRate + 0.5
-    end
-
-    local esGain = math.floor(overflow * convertRate + 0.5)
-    if esGain <= 0 then return 0, 0 end
-
-    -- final[ENERGY_SHIELD] 可能为浮点；Lua 5.4 的 string.format %d 不接受非整数
-    local maxES = math.floor((target.attrs.final[AD.ENERGY_SHIELD] or 0) + 0.0001)
-    if maxES <= 0 then return 0, 0 end
-
-    local curES = math.floor(math.min(maxES, target.attrs.energyShield or 0) + 0.0001)
-    local room = math.max(0, maxES - curES)
-    local toNormal = math.min(room, esGain)
-    if toNormal > 0 then
-        target.attrs.energyShield = curES + toNormal
-    end
-
-    local tempGain = 0
-    local remaining = esGain - toNormal
-    if remaining > 0 then
-        local tempCapPct = 0.50
-        if hasAwaken(attacker, 1) then tempCapPct = tempCapPct + 0.10 end
-        if hasAwaken(attacker, 5) then tempCapPct = tempCapPct + 0.20 end
-        local tempCap = math.floor(maxES * tempCapPct + 0.5)
-        local curTemp = math.floor(target.attrs.tempEnergyShield or 0)
-        tempGain = math.min(math.max(0, tempCap - curTemp), remaining)
-        if tempGain > 0 then
-            target.attrs.tempEnergyShield = curTemp + tempGain
-            talentLog(string.format("[Talent] 真布诗人 能量祝福：%s 临时护盾+%.0f (上限%.0f)",
-                target.name or "?", tempGain, tempCap))
-        end
-    end
-
-    if toNormal > 0 then
-        talentLog(string.format("[Talent] 真布诗人 能量祝福：%s 护盾+%.0f", target.name or "?", toNormal))
-    end
-    return toNormal, tempGain
-end
-
---- 查找场上存活的真布诗人（觉醒7用）
----@param units table[]
----@return table|nil unit
----@return table|nil state
-local function findLivingElwyn(units)
-    for _, u in ipairs(units or {}) do
-        if u.heroId == 23 and u.hp > 0 then
-            return u, getState(u)
-        end
-    end
-    return nil, nil
-end
-
---- 真布诗人觉醒7：护盾清零时触发无敌
----@param ally table
----@param elwyn table
----@param elwynState table
-local function tryElwynInvulnOnEsBreak(ally, elwyn, elwynState)
-    if not hasAwaken(elwyn, 7) or not ally or ally.hp <= 0 then return end
-    if ally._elwynInvulnTimer and ally._elwynInvulnTimer > 0 then return end
-
-    local chance = elwynState.elwynInvulnProcChance or 1.0
-    if math.random() >= chance then return end
-
-    ally._elwynInvulnTimer = 2.0
-    elwynState.elwynInvulnProcChance = chance * 0.5
-    talentLog(string.format("[Talent] 真布诗人 觉醒7：%s 无敌2秒 (下次概率%.0f%%)",
-        ally.name or "?", elwynState.elwynInvulnProcChance * 100))
-end
 
 -- ======================== 核心 API ========================
 
@@ -835,35 +711,6 @@ function TAL.onBattleStart(allies, enemies)
     applyBattleStartTalents(allies, enemies)
     applyBattleStartTalents(enemies, allies)
     ETS.onBattleStart(allies, enemies)
-end
-
---- 小黑子「法术机关枪」：推进攻击计数（普攻与连击共用；连射弹在 onBeforeAttack 中排除）
----@param attacker table
----@param s table
-local function tickSeraMachineGunCount(attacker, s)
-    if not attacker.attrs then return end
-    s.machineGunNormalCount = (s.machineGunNormalCount or 0) + 1
-    local interval = 20
-    if hasAwaken(attacker, 1) then interval = 18 end
-    if hasAwaken(attacker, 5) then interval = 15 end
-    interval = math.max(8, interval - ETS.getGatlingCut(attacker))
-    if s.machineGunNormalCount % interval == 0 then
-        s.machineGunShotsLeft = hasAwaken(attacker, 3) and 12 or 10
-        s.machineGunShotTimer = 0
-        s.machineGunInBurst = true
-        if hasAwaken(attacker, 4) then
-            attacker.attrs:addModifier("sera_burst_pen", {
-                { key = AD.MAG_PEN, flat = 9999 },
-            })
-        end
-        if hasAwaken(attacker, 6) then
-            attacker.attrs:addModifier("sera_burst_speed", {
-                { key = AD.ATK_SPEED, flat = 50 },
-            })
-        end
-        talentLog(string.format("[Talent] 小黑子 法术机关枪：第%d次攻击启动连射×%d",
-            s.machineGunNormalCount, s.machineGunShotsLeft))
-    end
 end
 
 --- 攻击前钩子（performAttack开头，目标选择后调用）
@@ -1203,147 +1050,6 @@ function TAL.getLockedTarget(attacker, targetList)
     s.duelTarget = nil
     s.duelCount = 0
     return nil
-end
-
---- 熬夜冠军「夜华斩」核心：推进攻击计数，满间隔时斩出多道斩击。
---- 主攻击（onAfterAttack）与连击（onComboAttack）共用同一逻辑，使连击也能推进/触发该天赋。
----@param attacker table
----@param s table 熬夜冠军天赋状态
----@param target table 当前攻击目标（斩击目标不足时的回退目标）
----@param isAlly boolean 攻击方是否为己方
----@param targetList table 被攻击方的单位列表
----@param dealDmgFn function 伤害回调 dealDmgFn(target, dmg, isTargetAlly, prefix, color, opts)
-local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealDmgFn)
-    -- 觉醒2: 攻击速度+15%（永久，首次添加）
-    if hasAwaken(attacker, 2) and not s.awakSuhuaAtkSpd then
-        s.awakSuhuaAtkSpd = true
-        attacker.attrs:addModifier("awaken_suhua_atkspd", {
-            { key = AD.ATK_SPEED, flat = 15 },
-        })
-    end
-    -- 觉醒5: 物理暴击+10%（永久）
-    if hasAwaken(attacker, 5) and not s.awakSuhuaCrit then
-        s.awakSuhuaCrit = true
-        attacker.attrs:addModifier("awaken_suhua_crit", {
-            { key = AD.PHYS_CRIT_RATE, flat = 10 },
-        })
-    end
-    -- 觉醒6: 物理暴击伤害+35%（永久）
-    if hasAwaken(attacker, 6) and not s.awakSuhuaCritDmg then
-        s.awakSuhuaCritDmg = true
-        attacker.attrs:addModifier("awaken_suhua_critdmg", {
-            { key = AD.CRIT_DMG, flat = 35 },
-        })
-    end
-    s.atkCount = s.atkCount + 1
-    -- 觉醒3: 夜华斩间隔缩短为每3攻
-    local slashInterval = 4
-    if hasAwaken(attacker, 3) then slashInterval = 3 end
-    if s.atkCount % slashInterval ~= 0 then return end
-
-    -- 觉醒1: 伤害系数200%→250%
-    local slashMult = 2.0
-    if hasAwaken(attacker, 1) then slashMult = 2.5 end
-    -- 通宵斩：自身生命越低斩越痛（最多 +50%）
-    local selfHpPct = attacker.hp / math.max(1, attacker.maxHp or 1)
-    slashMult = slashMult * (1.0 + (1.0 - selfHpPct) * 0.50)
-
-    -- 觉醒4: 斩击数从2提升到3
-    local slashCount = 2
-    if hasAwaken(attacker, 4) then slashCount = 3 end
-
-    -- 收集存活敌人（排除当前目标优先）
-    local otherAlive = {}
-    for _, u in ipairs(targetList) do
-        if u.hp > 0 and u ~= target then
-            otherAlive[#otherAlive + 1] = u
-        end
-    end
-
-    -- 选择斩击目标：优先不同敌人，不够时命中当前目标
-    local slashTargets = {}
-    local tempOther = {}
-    for i, u in ipairs(otherAlive) do tempOther[i] = u end
-
-    for si = 1, slashCount do
-        if #tempOther > 0 then
-            local ri = math.random(#tempOther)
-            slashTargets[si] = tempOther[ri]
-            table.remove(tempOther, ri)
-        else
-            slashTargets[si] = target
-        end
-    end
-
-    -- 判断是否所有斩击命中同一目标（用于贝塞尔曲线方向）
-    local allSame = true
-    for si = 2, slashCount do
-        if slashTargets[si] ~= slashTargets[1] then allSame = false; break end
-    end
-
-    -- 计算斩击伤害（走完整战斗公式：伤害加成、暴击、类型倍率、护甲抗性）
-    -- 基础伤害 = physAtk * atkCoeff * slashMult
-    local physAtk = attacker.attrs and attacker.attrs:get(AD.PHYS_ATK) or 0
-    local atkCoeff = attacker.atkCoeff or 1.0
-    local baseSlashDmg = physAtk * atkCoeff * slashMult
-
-    -- 伤害加成%
-    local dmgBonusPct = attacker.attrs:get(AD.DMG_BONUS)
-        + attacker.attrs:get(AD.PHYS_DMG_BONUS)
-
-    -- 暴击参数
-    local critRate = attacker.attrs:get(AD.CRIT_RATE)
-        + attacker.attrs:get(AD.PHYS_CRIT_RATE)
-    local critDmg = attacker.attrs:get(AD.CRIT_DMG)
-        + attacker.attrs:get(AD.PHYS_CRIT_DMG)
-
-    -- 类型倍率（熬夜冠军 ATK_SLASH）
-    local atkType = attacker.atkType or AD.ATK_SLASH
-
-    -- 发射斩击（不检测hp > 0，即使目标被普攻击杀也发射）
-    local sides = { 1, -1, 0.5 }  -- 贝塞尔方向：左、右、微偏
-    for si = 1, slashCount do
-        local st = slashTargets[si]
-
-        -- 针对每个目标独立计算护甲抗性和类型倍率
-        local armorType = st.armorType or AD.ARMOR_LEATHER
-        local effectiveArmor = math.max(0,
-            (st.attrs and st.attrs:get(AD.PHYS_ARMOR) or 0)
-            - attacker.attrs:get(AD.PHYS_PEN))
-        local resistance = CF.armorToResistance(effectiveArmor)
-        local typeMult = AD.getTypeMult(atkType, armorType)
-
-        -- 伤害计算流水线
-        local dmg = baseSlashDmg
-        dmg = dmg * (1 + dmgBonusPct / 100)
-
-        -- 暴击（每道斩击独立判定）
-        local isCrit, critMultiplier = CF.rollCrit(critRate, critDmg)
-        if isCrit then
-            dmg = dmg * critMultiplier
-        end
-
-        dmg = dmg * typeMult
-        if attacker.attrs.artifactExtraDamageMult then
-            dmg = dmg * attacker.attrs.artifactExtraDamageMult
-        end
-        dmg = CF.applyFinalDamageBonus(attacker.attrs, dmg)
-        dmg = dmg * (1 - resistance)
-        dmg = math.max(1, math.floor(dmg + 0.5))
-
-        local opts = {
-            isCrit = isCrit,
-            statCategory = "physical",
-            critEligible = true,
-        }
-        if allSame then
-            opts.bezierSide = sides[si] or (si % 2 == 1 and 1 or -1)
-        end
-        dealDmgFn(st, dmg, not isAlly, "通宵斩", { 255, 50, 80 }, opts)
-        attacker._nightSlashKill = true
-    end
-
-    talentLog("[Talent] 熬夜冠军 通宵斩：" .. slashCount .. "道斩击(基础=" .. math.floor(baseSlashDmg) .. ")")
 end
 
 --- 连击额外攻击的天赋钩子。熬夜冠军「夜华斩」、小黑子「法术机关枪」：连击同样推进攻击计数并可触发被动。

@@ -36,3 +36,4 @@
 ## 追加：继续拆 BattleCombat（用户 2026-09-22）
 
 - [x] **T11** 抽出卡牌动画状态机到 `BattleCombatAnim.lua`（攻击前摇/受击/入场/死亡/补位）。`BattleCombat` 对外 API 不变。目标：BattleCombat < 1850 行。
+- [x] **T12** TalentManager 再拆英雄：Alex / Elwyn / Sera / Suhua 到 `systems/talents/`。目标：TalentManager < 3300 行。

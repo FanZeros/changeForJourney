@@ -22,6 +22,7 @@ local ArtifactBridge   = require("systems.ArtifactBridge")
 local Draw             = require("ui.CharacterPanelDraw2")
 local HeroResonance    = require("shared.heroes.HeroResonance")
 local CharacterDeploy  = require("ui.CharacterDeploy")
+local CharacterInput   = require("ui.CharacterInput")
 
 local CharacterPanel = {}
 
@@ -712,157 +713,54 @@ end
 
 -- ======================== 输入处理 ========================
 
---- 处理点击释放（设计空间坐标）— MouseUp / TouchEnd 时调用
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
----@return boolean 是否消费了该事件
+local function isInScrollArea(dx, dy)
+    return dx >= SCROLL_LEFT and dx <= SCROLL_RIGHT
+       and dy >= SCROLL_TOP  and dy <= SCROLL_BOTTOM
+end
+
+local _input
+local function bindInput()
+    _input = CharacterInput.bind({
+        CharacterDetail = CharacterDetail,
+        Draw = Draw,
+        CharacterPanel = CharacterPanel,
+        hitTestTeamSlot = hitTestTeamSlot,
+        hitTestRosterCard = hitTestRosterCard,
+        getTeamSlots = function() return teamSlots end,
+        getSlotPowerCache = function() return slotPowerCache end,
+        getDragState = function() return dragState end,
+        getSelectSlotState = function() return selectSlotState end,
+        getHeroRoster = function() return heroRoster end,
+        getShardMap = function() return shardMap end,
+        getActiveTeamIdx = function() return activeTeamIdx end,
+        getOnTeamChanged = function() return onTeamChangedCallback end,
+        deployHeroToSlot = deployHeroToSlot,
+        rebuildRoster = rebuildRoster,
+        refreshPowerCache = refreshPowerCache,
+        refreshNavBadge = refreshNavBadge,
+        isHeroDeployed = isHeroDeployed,
+        isInScrollArea = isInScrollArea,
+        clampScroll = clampScroll,
+        getScroll = function() return scrollY end,
+        setScroll = function(v) scrollY = v end,
+        getIsDragging = function() return isDragging end,
+        setIsDragging = function(v) isDragging = v end,
+        getDragLastY = function() return dragLastY end,
+        setDragLastY = function(v) dragLastY = v end,
+        getDragDeltaY = function() return dragDeltaY end,
+        setDragDeltaY = function(v) dragDeltaY = v end,
+        setScrollVelocity = function(v) scrollVelocity = v end,
+        SCROLL_WHEEL_STEP = SCROLL_WHEEL_STEP,
+        HC = HC,
+    })
+end
+local function ensureInput()
+    if not _input then bindInput() end
+    return _input
+end
+
 function CharacterPanel.handleInput(dx, dy)
-    -- 0) 详情界面打开时委托给 CharacterDetail
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleInput(dx, dy)
-    end
-
-    -- 0.5) [三队并行] 队伍页签点击（释放拖拽到页签上会取消拖拽并切队）
-    local tabIdx = Draw.hitTestTeamTabs(dx, dy)
-    if tabIdx then
-        CharacterPanel.setActiveTeam(tabIdx)
-        return true
-    end
-
-    -- A) 如果正在拖拽卡片，释放时检测目标槽位
-    if dragState.active then
-        local slotIdx = hitTestTeamSlot(dx, dy)
-        if slotIdx and dragState.fromSlot then
-            -- 从出战槽位拖拽到另一个槽位：执行交换
-            local srcIdx = dragState.fromSlot
-            if slotIdx ~= srcIdx then
-                local srcSlot = teamSlots[srcIdx]
-                local dstSlot = teamSlots[slotIdx]
-                if dstSlot.state == "locked" then
-                    print("[CharacterPanel] 目标槽位 " .. slotIdx .. " 未解锁，无法交换")
-                elseif dstSlot.state == "empty" then
-                    -- 移动到空槽位
-                    teamSlots[slotIdx] = srcSlot
-                    teamSlots[srcIdx] = { state = "empty" }
-                    slotPowerCache[slotIdx] = slotPowerCache[srcIdx] or 0
-                    slotPowerCache[srcIdx] = 0
-                    print("[CharacterPanel] 移动槽位 " .. srcIdx .. " → " .. slotIdx)
-                    rebuildRoster()
-                    refreshNavBadge()
-                    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-                else
-                    -- 两个都有角色，交换
-                    teamSlots[srcIdx], teamSlots[slotIdx] = teamSlots[slotIdx], teamSlots[srcIdx]
-                    slotPowerCache[srcIdx], slotPowerCache[slotIdx] = slotPowerCache[slotIdx], slotPowerCache[srcIdx]
-                    print("[CharacterPanel] 交换槽位 " .. srcIdx .. " ↔ " .. slotIdx)
-                    rebuildRoster()
-                    refreshNavBadge()
-                    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-                end
-            end
-        elseif slotIdx and not dragState.fromSlot then
-            -- 从角色列表拖拽到槽位：部署
-            local slot = teamSlots[slotIdx]
-            if slot.state == "empty" or slot.state == "occupied" then
-                deployHeroToSlot(dragState.heroId, slotIdx)
-            end
-        elseif not slotIdx and dragState.fromSlot then
-            -- 从出战槽位拖拽到非槽位区域：解除出战
-            local srcIdx = dragState.fromSlot
-            local srcSlot = teamSlots[srcIdx]
-            if srcSlot.state == "occupied" then
-                print("[CharacterPanel] 解除出战 槽位 " .. srcIdx .. " 英雄 " .. (srcSlot.heroId or "?"))
-                teamSlots[srcIdx] = { state = "empty" }
-                slotPowerCache[srcIdx] = 0
-                rebuildRoster()
-                refreshPowerCache()
-                refreshNavBadge()
-                if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-            end
-        end
-        -- 取消拖拽
-        dragState.active = false
-        dragState.heroId = nil
-        dragState.rosterIdx = nil
-        dragState.fromSlot = nil
-        return true
-    end
-
-    -- B) "选择角色"模式下，点击 roster 卡片进行部署
-    if selectSlotState.active then
-        local rosterIdx = hitTestRosterCard(dx, dy)
-        if rosterIdx then
-            local entry = heroRoster[rosterIdx]
-            if entry and entry.owned and not isHeroDeployed(entry.heroId) then
-                deployHeroToSlot(entry.heroId, selectSlotState.slotIndex)
-                selectSlotState.active = false
-                selectSlotState.slotIndex = nil
-                return true
-            elseif entry and entry.owned and isHeroDeployed(entry.heroId) then
-                print("[CharacterPanel] 该角色已在出战中")
-                return true
-            elseif entry and not entry.owned then
-                print("[CharacterPanel] 该角色未拥有")
-                return true
-            end
-        end
-        -- 点击其他区域取消选择模式
-        selectSlotState.active = false
-        selectSlotState.slotIndex = nil
-        -- 继续后续判断
-    end
-
-    -- C) 点击编队槽位
-    local slotIdx = hitTestTeamSlot(dx, dy)
-    if slotIdx then
-        local slot = teamSlots[slotIdx]
-        if slot.state == "locked" then
-            print("[CharacterPanel] 槽位 " .. slotIdx .. " 未解锁")
-        elseif slot.state == "empty" then
-            -- 进入"选择角色"模式
-            selectSlotState.active = true
-            selectSlotState.slotIndex = slotIdx
-            print("[CharacterPanel] 槽位 " .. slotIdx .. " 已选中，请点击下方角色出战")
-        elseif slot.state == "occupied" then
-            -- 点击已出战角色 → 打开角色详情
-            print("[CharacterPanel] 查看已出战角色详情: heroId=" .. tostring(slot.heroId))
-            require("systems.GameSFX").play("ui_pick")
-            CharacterDetail.open(slot.heroId)
-        end
-        return true
-    end
-
-    -- D) 点击角色列表卡片 → 打开角色详情 / 碎片合成
-    local rosterIdx = hitTestRosterCard(dx, dy)
-    if rosterIdx then
-        local entry = heroRoster[rosterIdx]
-        if entry and entry.owned then
-            -- 引导组9第2步（拖动上阵）：禁止点击打开详情，引导玩家通过拖拽操作上阵
-            local _TM = require("systems.TutorialManager")
-            if _TM.isActive() and _TM.getCurrentHighlight() == "character_new_hero" then
-                print("[CharacterPanel] 引导中：禁止点击打开详情，请拖拽将角色上阵")
-                return true
-            end
-            require("systems.GameSFX").play("ui_pick")
-            CharacterDetail.open(entry.heroId)
-            return true
-        elseif entry and not entry.owned then
-            -- 未拥有英雄：检查碎片是否足够合成
-            local shards = shardMap[entry.heroId] or 0
-            if shards >= HC.SHARD_SYNTHESIZE_COST then
-                CharacterPanel.requestSynthesizeHero(entry.heroId)
-                return true
-            else
-                local heroCfg = HC.get(entry.heroId)
-                print("[CharacterPanel] " .. (heroCfg and heroCfg.name or "?")
-                    .. " 碎片不足，需要 " .. HC.SHARD_SYNTHESIZE_COST
-                    .. " 个，当前 " .. shards .. " 个")
-            end
-            return true
-        end
-    end
-
-    return false
+    return ensureInput().handleInput(dx, dy)
 end
 
 --- 请求合成英雄（碎片→解锁）
@@ -884,168 +782,20 @@ function CharacterPanel.requestSynthesizeHero(heroId)
     })
 end
 
---- 判断坐标是否在滚动区域内
-local function isInScrollArea(dx, dy)
-    return dx >= SCROLL_LEFT and dx <= SCROLL_RIGHT
-       and dy >= SCROLL_TOP  and dy <= SCROLL_BOTTOM
-end
-
---- 拖拽开始（鼠标按下/触摸开始）
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
 function CharacterPanel.handleDragBegin(dx, dy)
-    -- 详情界面打开时委托给 CharacterDetail
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleDragBegin(dx, dy)
-    end
-
-    -- 检测是否点中了已占用的出战槽位（用于槽位间拖拽换位）
-    local slotIdx = hitTestTeamSlot(dx, dy)
-    if slotIdx then
-        local slot = teamSlots[slotIdx]
-        if slot.state == "occupied" and slot.heroId then
-            dragState.startX = dx
-            dragState.startY = dy
-            dragState.cx = dx
-            dragState.cy = dy
-            dragState.heroId = slot.heroId
-            dragState.fromSlot = slotIdx
-            dragState.rosterIdx = nil
-            dragState.active = false
-            dragState.moved = false
-            return true
-        end
-    end
-
-    -- 在滚动区域内检测是否点中了拥有的角色卡片
-    if isInScrollArea(dx, dy) then
-        local rosterIdx = hitTestRosterCard(dx, dy)
-        if rosterIdx then
-            local entry = heroRoster[rosterIdx]
-            if entry and entry.owned then
-                -- 记录起始位置，但不立即进入拖拽模式（等 move 时判断距离）
-                dragState.startX = dx
-                dragState.startY = dy
-                dragState.cx = dx
-                dragState.cy = dy
-                dragState.heroId = entry.heroId
-                dragState.rosterIdx = rosterIdx
-                dragState.fromSlot = nil
-                dragState.active = false
-                dragState.moved = false
-            end
-        end
-    end
-
-    -- 同时开始滚动拖拽
-    if isInScrollArea(dx, dy) then
-        isDragging = true
-        dragLastY = dy
-        dragDeltaY = 0
-        scrollVelocity = 0
-        return true
-    end
-    return false
+    return ensureInput().handleDragBegin(dx, dy)
 end
 
-local DRAG_THRESHOLD = 30  -- 拖动距离超过此值才进入卡片拖拽模式
-
---- 拖拽移动（鼠标移动/触摸移动）
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
 function CharacterPanel.handleDragMove(dx, dy)
-    -- 详情界面打开时委托给 CharacterDetail
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleDragMove(dx, dy)
-    end
-
-    -- 卡片拖拽检测
-    if dragState.heroId and not dragState.active then
-        local distX = math.abs(dx - dragState.startX)
-        local distY = math.abs(dy - dragState.startY)
-
-        if dragState.fromSlot then
-            -- 从出战槽位拖拽：任意方向超过阈值即可
-            if distX > DRAG_THRESHOLD or distY > DRAG_THRESHOLD then
-                dragState.active = true
-                dragState.moved = true
-                require("systems.GameSFX").play("ui_pick")
-            end
-        else
-            -- 从角色列表拖拽：向上拖动超过阈值
-            if distY > DRAG_THRESHOLD and (dragState.startY - dy) > DRAG_THRESHOLD then
-                dragState.active = true
-                dragState.moved = true
-                require("systems.GameSFX").play("ui_pick")
-                -- 停止滚动拖拽
-                isDragging = false
-                scrollVelocity = 0
-            end
-        end
-    end
-
-    -- 卡片拖拽模式
-    if dragState.active then
-        dragState.cx = dx
-        dragState.cy = dy
-        return true
-    end
-
-    -- 普通滚动拖拽
-    if isDragging then
-        dragDeltaY = dragLastY - dy
-        scrollY = scrollY + dragDeltaY
-        clampScroll()
-        dragLastY = dy
-        return true
-    end
-
-    return false
+    return ensureInput().handleDragMove(dx, dy)
 end
 
---- 拖拽结束（鼠标释放/触摸结束）
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
 function CharacterPanel.handleDragEnd(dx, dy)
-    -- 详情界面打开时：清除本面板拖拽状态 + 委托给 CharacterDetail
-    if CharacterDetail.isOpen() then
-        isDragging = false
-        dragState.active = false
-        dragState.heroId = nil
-        dragState.rosterIdx = nil
-        dragState.fromSlot = nil
-        CharacterDetail.handleDragEnd(dx, dy)
-        return true
-    end
-
-    -- 如果有待定的卡片拖拽但没真正移动，清除
-    if dragState.heroId and not dragState.active then
-        dragState.heroId = nil
-        dragState.rosterIdx = nil
-        dragState.fromSlot = nil
-    end
-
-    -- 普通滚动惯性
-    if isDragging then
-        isDragging = false
-        scrollVelocity = -dragDeltaY
-    end
-
-    return true
+    return ensureInput().handleDragEnd(dx, dy)
 end
 
---- 鼠标滚轮滚动
----@param wheel number 滚轮值（正=向上，负=向下）
 function CharacterPanel.handleScroll(wheel)
-    -- 详情界面打开时委托给 CharacterDetail
-    if CharacterDetail.isOpen() then
-        CharacterDetail.handleScroll(wheel)
-        return
-    end
-
-    scrollY = scrollY - wheel * SCROLL_WHEEL_STEP
-    clampScroll()
-    scrollVelocity = 0
+    return ensureInput().handleScroll(wheel)
 end
 
 --- 是否正在进行卡片拖拽（用于输入层判断拖拽落点）

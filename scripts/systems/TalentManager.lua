@@ -1024,7 +1024,7 @@ end
 function TAL.onEnemyDeath(deadEnemy, allies, enemies)
     local r = _enemyDeath.onEnemyDeath(deadEnemy, allies, enemies)
     ClassGateRuntime.onEnemyDeath(deadEnemy, allies)
-    EquipmentSetRuntime.onEnemyDeath(deadEnemy, allies)
+    EquipmentSetRuntime.onEnemyDeath(deadEnemy, allies, enemies)
     return r
 end
 

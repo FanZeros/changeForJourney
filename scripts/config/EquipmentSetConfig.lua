@@ -116,6 +116,54 @@ ESC.SETS = {
         desc4 = "魔法穿透+8。",
         desc6 = "每8秒对生命百分比最低的敌人打120%魔攻，不产生仇恨。",
     },
+    ironwall = {
+        id = "ironwall",
+        name = "帝国铁壁",
+        color = { 0xA8, 0xA0, 0x90, 255 },
+        twoPiece = {
+            { key = AD.PHYS_BLOCK_RATE, flat = 4 },
+            { key = AD.HP_BONUS, flat = 4 },
+        },
+        desc2 = "物理格挡+4%，生命+4%。",
+        desc4 = "格挡成功时回复1%最大生命。",
+        desc6 = "格挡成功时把挡掉伤害的30%反给攻击者（暗影，无仇恨）。",
+    },
+    emberscout = {
+        id = "emberscout",
+        name = "巡林余烬",
+        color = { 0xC8, 0x78, 0x3A, 255 },
+        twoPiece = {
+            { key = AD.HIT_VALUE, flat = 5 },
+            { key = AD.PHYS_PEN, flat = 4 },
+        },
+        desc2 = "命中+5，物理穿透+4。",
+        desc4 = "攻击施加余烬2秒：目标受伤+8%。",
+        desc6 = "余烬目标死亡时，余烬弹射到另一名敌人。",
+    },
+    gambler = {
+        id = "gambler",
+        name = "赌徒残响",
+        color = { 0xC4, 0x4A, 0x6A, 255 },
+        twoPiece = {
+            { key = AD.LUK, flat = 4 },
+            { key = AD.MAX_DMG_BONUS, flat = 8 },
+        },
+        desc2 = "命数+4，最大伤害加成+8%。",
+        desc4 = "未暴击时下次暴击率+6%（最多叠3层，暴击清空）。",
+        desc6 = "暴击时额外一段30%伤害；若未暴击则回复1%已损失生命。",
+    },
+    bonehunger = {
+        id = "bonehunger",
+        name = "衔骨饥渴",
+        color = { 0xB0, 0x78, 0x58, 255 },
+        twoPiece = {
+            { key = AD.ATK_SPEED, flat = 5 },
+            { key = AD.ATK_HEAL, flat = 4 },
+        },
+        desc2 = "攻速+5%，攻击回血+4。",
+        desc4 = "生命低于70%时攻速再+8%。",
+        desc6 = "击杀回复3%最大生命。",
+    },
 }
 
 -- 名字子串匹配，先写的规则优先。跨甲水晶放最后，避免把「水晶巨剑」抢走叠甲/万剑。
@@ -127,6 +175,10 @@ local NAME_RULES = {
     { setId = "nitros", needles = { "勇士", "勇者", "风行者", "神射手", "监视者" } },
     { setId = "swordgate", needles = { "斩铁", "黑铁大剑", "生铁重剑", "练习用大剑", "水晶大剑", "叠甲战神巨剑" } },
     { setId = "starless", needles = { "大法师魔典", "奥术魔典", "秘法魔典", "咒文魔典" } },
+    { setId = "ironwall", needles = { "帝国", "圣骑士", "审判官", "元帅", "守卫巨盾", "水晶巨盾" } },
+    { setId = "emberscout", needles = { "巡林客", "追猎者", "狩猎弓", "游侠弓", "镶钉皮" } },
+    { setId = "gambler", needles = { "赌徒", "碎玉", "珊瑚之戒", "海灵吊饰" } },
+    { setId = "bonehunger", needles = { "蛮族", "掠夺者", "伐木斧", "铁手斧" } },
     { setId = "riftcrystal", needles = { "水晶" } },
 }
 
@@ -161,6 +213,13 @@ local ACCESSORY_BY_NAME = {
     ["碎玉之环"] = "starless",
     ["紫晶耳环"] = "starless",
     ["蓝玉挂坠"] = "starless",
+    ["红宝石耳环"] = "ironwall",
+    ["珍珠耳环"] = "ironwall",
+    ["琥珀挂坠"] = "gambler",
+    ["赌徒之环"] = "gambler",
+    ["珊瑚吊饰"] = "bonehunger",
+    ["黄玉挂坠"] = "bonehunger",
+    ["青玉挂坠"] = "emberscout",
 }
 
 --- 模板 → setId（名字规则 + 饰品表 + 副手类型兜底）

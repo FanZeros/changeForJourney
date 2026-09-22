@@ -46,19 +46,45 @@ function ESR.onBattleStart(unit, allies)
     if four(unit) == "starless" and unit.attrs then
         unit.attrs:addModifier("set4_starless", { { key = AD.MAG_PEN, flat = 8 } })
     end
+    unit._setGamble = 0
+    unit._setEmber = nil
 end
 
 --- 叠甲虫壳 4 件减伤
 ---@param target table
 ---@param damage number
 ---@return number
-function ESR.onIncoming(target, damage)
+function ESR.onIncoming(target, damage, source)
     if four(target) == "carapace" then
         target._setShell = math.min(8, (target._setShell or 0) + 1)
         local red = 1 - (target._setShell * 0.015)
         damage = damage * red
     end
+    if target._setEmber then
+        damage = damage * 1.08
+    end
     return damage
+end
+
+--- 格挡后：铁壁 4/6
+---@param target table
+---@param attacker table|nil
+---@param blockedAmount number
+---@param dealDmgFn function|nil
+function ESR.onBlocked(target, attacker, blockedAmount, dealDmgFn)
+    if four(target) ~= "ironwall" then return end
+    if target.attrs then
+        local heal = (target.maxHp or target.attrs:get(AD.MAX_HP) or 0) * 0.01
+        if heal > 0 then
+            target.attrs:heal(heal)
+            target.hp = target.attrs:get(AD.HP)
+        end
+    end
+    if six(target) == "ironwall" and attacker and dealDmgFn and (blockedAmount or 0) > 0 then
+        dealDmgFn(attacker, blockedAmount * 0.30, true, "铁壁 ", { 180, 160, 120 }, {
+            instantDamage = true, noCounter = true,
+        })
+    end
 end
 
 ---@param attacker table
@@ -131,6 +157,43 @@ function ESR.onAfterAttack(attacker, defender, result, isAlly, dealDmgFn, target
         end
     end
 
+    if f == "emberscout" and defender then
+        defender._setEmber = 2
+        defender._setEmberSrc = attacker
+    end
+
+    if f == "gambler" and attacker.attrs then
+        if result.isCrit then
+            attacker._setGamble = 0
+            attacker.attrs:removeModifier("set4_gamble")
+            if s == "gambler" and dealDmgFn and defender then
+                dealDmgFn(defender, (result.totalDamage or 0) * 0.30, not isAlly, "残响 ", { 200, 80, 110 }, {
+                    instantDamage = true,
+                })
+            end
+        else
+            attacker._setGamble = math.min(3, (attacker._setGamble or 0) + 1)
+            attacker.attrs:addModifier("set4_gamble", {
+                { key = AD.CRIT_RATE, flat = 6 * attacker._setGamble },
+            })
+            if s == "gambler" and attacker.attrs then
+                local lost = math.max(0, (attacker.maxHp or 0) - (attacker.hp or 0))
+                attacker.attrs:heal(lost * 0.01)
+                attacker.hp = attacker.attrs:get(AD.HP)
+            end
+        end
+    end
+
+    if f == "bonehunger" and attacker.attrs then
+        local hp = attacker.hp or attacker.attrs:get(AD.HP) or 1
+        local mx = attacker.maxHp or attacker.attrs:get(AD.MAX_HP) or 1
+        if hp / math.max(1, mx) < 0.70 then
+            attacker.attrs:addModifier("set4_bonehunger", { { key = AD.ATK_SPEED, flat = 8 } })
+        else
+            attacker.attrs:removeModifier("set4_bonehunger")
+        end
+    end
+
     if s == "carapace" and (attacker._setShell or 0) >= 8 then
         local layers = attacker._setShell
         attacker._setShell = 0
@@ -156,13 +219,30 @@ end
 
 ---@param deadEnemy table
 ---@param allies table[]
-function ESR.onEnemyDeath(deadEnemy, allies)
+---@param enemies table[]|nil
+function ESR.onEnemyDeath(deadEnemy, allies, enemies)
     for _, a in ipairs(allies or {}) do
         if six(a) == "faceless" then
             a._setFacelessT = 4
             local TM = require("systems.ThreatManager")
             TM.clearThreat(a)
         end
+        if six(a) == "bonehunger" and a.attrs then
+            local mx = a.maxHp or a.attrs:get(AD.MAX_HP) or 0
+            a.attrs:heal(mx * 0.03)
+            a.hp = a.attrs:get(AD.HP)
+        end
+    end
+    if deadEnemy and deadEnemy._setEmber and six(deadEnemy._setEmberSrc) == "emberscout" then
+        local nxt = nil
+        for _, e in ipairs(enemies or {}) do
+            if e ~= deadEnemy and (e.hp or 0) > 0 then nxt = e; break end
+        end
+        if nxt then
+            nxt._setEmber = 2
+            nxt._setEmberSrc = deadEnemy._setEmberSrc
+        end
+        deadEnemy._setEmber = nil
     end
 end
 
@@ -181,6 +261,10 @@ function ESR.update(dt, allies, enemies, ctx)
         end
         if (u._setFacelessT or 0) > 0 then
             u._setFacelessT = u._setFacelessT - dt
+        end
+        if (u._setEmber or 0) > 0 then
+            u._setEmber = u._setEmber - dt
+            if u._setEmber <= 0 then u._setEmber = nil end
         end
         -- 万剑门扉：光环给队友，穿套本人不飞
         if four(u) == "swordgate" then

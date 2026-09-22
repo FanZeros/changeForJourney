@@ -19,12 +19,13 @@ local AwakeningConfig  = require("config.AwakeningConfig")
 local BottomNav        = require("ui.BottomNav")
 local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
-local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 local Draw             = require("ui.CharacterPanelDraw2")
 local HeroResonance    = require("shared.heroes.HeroResonance")
 local CharacterDeploy  = require("ui.CharacterDeploy")
 local CharacterInput   = require("ui.CharacterInput")
 local CharacterHeroSync = require("ui.CharacterHeroSync")
+local CharacterPower    = require("ui.CharacterPower")
+local CharacterProgress = require("ui.CharacterProgress")
 
 local CharacterPanel = {}
 
@@ -202,206 +203,69 @@ local selectSlotState = {
 
 -- ======================== 工具函数 ========================
 
---- 对 UnitAttributes 应用指定英雄已穿戴的装备属性
---- 同时供 BattleScene.refreshAllyStats 等外部调用
----@param attrs table UnitAttributes 实例
----@param heroId number
-local function applyEquippedItems(attrs, heroId, partySlot)
-    -- 优先从 ClientDispatcher 读最新数据（见 refreshPowerCache 注释）
-    local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-    if not eqData or not eqData.inventory then
-        return nil
-    end
-    local heroEq = EquipmentSystem.getHeroSlots(eqData, heroId)
-    if not heroEq then
-        return nil
-    end
-
-    -- 获取槽位强化数据和出战槽位索引
-    local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-    local heroesData = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
-    if partySlot == nil then
-        partySlot = EquipmentSystem.findPartySlot(heroesData and heroesData.deployed, heroId)
-    end
-
-    local appliedSeqs = {}
-    local equippedArmorType = nil  -- 穿戴护甲对应的护甲类型枚举
-    for _, slotKey in ipairs(EquipmentConfig.SLOTS) do
-        local seq = heroEq[slotKey]
-        if seq and not appliedSeqs[seq] then
-            local equip = eqData.inventory[tostring(seq)]
-            if equip then
-                EquipmentSystem.hydrate(equip)
-                -- 计算槽位强化加成
-                local slotBoost = 0
-                if partySlot and slotEnhanceData then
-                    slotBoost = EquipmentSystem.calcSlotBoost(slotEnhanceData, partySlot, slotKey, equip.grip)
-                end
-                EquipmentSystem.applyToUnit(attrs, equip, seq, slotBoost)
-                appliedSeqs[seq] = true
-                -- 护甲槽：根据装备 type 字符串映射护甲类型枚举
-                if slotKey == "armor" and equip.type then
-                    equippedArmorType = AD.ARMOR_TYPE_ENUM[equip.type]
-                end
+local _power
+local function bindPower()
+    _power = CharacterPower.bind({
+        AD = AD,
+        HC = HC,
+        ClientDispatcher = ClientDispatcher,
+        PlayerStore = PlayerStore,
+        EquipmentSystem = EquipmentSystem,
+        EquipmentConfig = EquipmentConfig,
+        RelicBridge = RelicBridge,
+        ArtifactBridge = ArtifactBridge,
+        AwakeningConfig = AwakeningConfig,
+        TalentEffect = TalentEffect,
+        GameState = GameState,
+        CharacterDetail = CharacterDetail,
+        CharacterPanel = CharacterPanel,
+        BottomNav = BottomNav,
+        MAX_SLOTS = MAX_SLOTS,
+        TEAM_COUNT = TEAM_COUNT,
+        get = function(k)
+            if k == "ownedSet" then return ownedSet
+            elseif k == "teamSlots" then return teamSlots
+            elseif k == "teams" then return teams
+            elseif k == "teamPowerCaches" then return teamPowerCaches
             end
-        end
-    end
-    EquipmentSetSystem.applyToUnit(
-        attrs, eqData, heroId,
-        EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
-    return equippedArmorType
+            return nil
+        end,
+        set = function(k, v)
+            if k == "runtimeOnlyPowerCache" then runtimeOnlyPowerCache = v
+            elseif k == "upgradeBadgeCache" then upgradeBadgeCache = v
+            end
+        end,
+    })
+end
+local function ensurePower()
+    if not _power then bindPower() end
+    return _power
 end
 
---- 计算角色战斗力（基于 valueModel 加权求和）
---- 遍历所有属性最终值 × 价值权重，跳过六围（已通过派生反映）和运行时/派生属性
-local POWER_SKIP = {
-    [AD.STR] = true, [AD.AGI] = true, [AD.INT] = true,
-    [AD.VIT] = true, [AD.LUK] = true, [AD.SPI] = true,
-    [AD.HP]           = true,   -- 运行时当前生命
-    [AD.ATK_INTERVAL] = true,   -- 由 atkSpeed 体现
-    [AD.PHYS_RES]     = true,   -- 由护甲派生，valueModel=0
-    [AD.MAG_RES]      = true,   -- 由护甲派生，valueModel=0
-}
+local function applyEquippedItems(attrs, heroId, partySlot)
+    return ensurePower().applyEquippedItems(attrs, heroId, partySlot)
+end
 
 local function getHeroLevel(heroId)
-    local ownData = ownedSet[heroId]
-    return ownData and ownData.level or 1
+    return ensurePower().getHeroLevel(heroId)
 end
 
 local function calcHeroPower(heroId, partySlot)
-    if not partySlot then
-        for i = 1, MAX_SLOTS do
-            local slot = teamSlots[i]
-            if slot.state == "occupied" and slot.heroId == heroId then
-                partySlot = i
-                break
-            end
-        end
-    end
-    local level = getHeroLevel(heroId)
-    local ownData = ownedSet[heroId]
-    local advBranch = ownData and ownData.advBranch or nil
-    local awakening = ownData and ownData.awakening or nil
-    local hero = HC.createHero(heroId, level, advBranch, awakening, ownData and ownData.extraTalent)
-    if not hero or not hero.attrs then return 0 end
-    local a = hero.attrs
-
-    -- 应用已穿戴装备的属性
-    applyEquippedItems(a, heroId, partySlot)
-
-    -- 应用遗物无条件常驻属性（A类），使战斗力反映遗物加成
-    RelicBridge.applyToUnit(a, hero.classId)
-
-    -- 应用当前出战槽位的神器属性，使战斗力反映神器加成
-    if partySlot then
-        ArtifactBridge.applyToUnit(a, partySlot)
-    end
-
-    local total = 0
-    for key, meta in pairs(AD.META) do
-        if not POWER_SKIP[key] and meta.valueModel and meta.valueModel > 0 then
-            local val = a:get(key)
-            if meta.dataType == AD.TYPE_PCT then
-                total = total + val * (meta.valueModel / 100)
-            else
-                total = total + val * meta.valueModel
-            end
-        end
-    end
-    -- 加上觉醒节点的固定战力
-    total = total + AwakeningConfig.calcTotalCombatPower(heroId, awakening)
-    total = total + (a.artifactPowerBonus or 0)
-
-    return math.floor(total + 0.5)
+    return ensurePower().calcHeroPower(heroId, partySlot)
 end
 
---- 刷新所有槽位的战斗力缓存，并同步总战斗力到 GameState（触发 PLAYER_POWER_CHANGED 事件）
 local function refreshPowerCache()
-    -- 确保天赋数据已同步到 HeroConfig（解决重进游戏时缓存早于服务器数据的时序问题）
-    -- 注意: 使用 ClientDispatcher.get() 而非 PlayerStore.Get()，因为本回调的
-    -- 注册顺序早于 PlayerStore，ClientDispatcher 的 moduleData 在分发前已更新，
-    -- 而 PlayerStore 缓存要等自己的回调才刷新，读它会拿到旧值。
-    local talentsData = ClientDispatcher.get("talents") or PlayerStore.Get("talents")
-    local litNodes = talentsData and talentsData.litNodes or nil
-    if litNodes then
-        HC.setDefaultLitNodes(litNodes)
-    end
-
-    -- [三队并行] 刷新全部队伍的战力缓存（队2/3 挂机升级时 active 可能停在队1）
-    local deployedCount = 0
-    for t = 1, TEAM_COUNT do
-        local slots = teams[t] and teams[t].slots
-        local cache = teamPowerCaches[t]
-        if slots and cache then
-            for i = 1, MAX_SLOTS do
-                local slot = slots[i]
-                if slot.state == "occupied" and slot.heroId then
-                    cache[i] = calcHeroPower(slot.heroId, i)
-                    if t == 1 then deployedCount = deployedCount + 1 end
-                else
-                    cache[i] = 0
-                end
-            end
-        end
-    end
-
-    -- 同步总战斗力到 GameState（语义保持=队1主线出战战力，驱动 SpinePowerUpEffect 等）
-    local total = 0
-    do
-        local mainCache = teamPowerCaches[1]
-        for i = 1, MAX_SLOTS do
-            total = total + (mainCache[i] or 0)
-        end
-    end
-
-    -- 加上 RUNTIME_ONLY 天赋节点的固定战力（每个节点 × 上阵角色数）
-    if litNodes and deployedCount > 0 then
-        runtimeOnlyPowerCache = TalentEffect.calcRuntimeOnlyPower(litNodes) * deployedCount
-    else
-        runtimeOnlyPowerCache = 0
-    end
-    total = total + runtimeOnlyPowerCache
-
-    GameState.setPower(total)
-
-    -- 标脏 CharacterDetailDraw 的战斗力/装备升级缓存，下次 draw 时按需重算
-    CharacterDetail.markPowerDirty()
+    return ensurePower().refreshPowerCache()
 end
 
---- 刷新"可提升"角标缓存（仅在数据变更时调用，避免每帧计算）
 local function refreshUpgradeBadgeCache()
-    upgradeBadgeCache = {}
-    for heroId, _ in pairs(ownedSet) do
-        if CharacterPanel.isHeroDeployed(heroId) then
-            upgradeBadgeCache[heroId] = CharacterDetail.hasAnyUpgradeForHero(heroId)
-                or CharacterDetail.hasAwakeningUpgrade(heroId)
-        else
-            upgradeBadgeCache[heroId] = CharacterDetail.hasAwakeningUpgrade(heroId)
-        end
-    end
+    return ensurePower().refreshUpgradeBadgeCache()
 end
 
---- 刷新 BottomNav "角色"标签(Tab 1)的装备可提升角标
---- 同时刷新 "城镇"标签(Tab 4)的转职可提升角标
 local function refreshNavBadge()
-    -- 先刷新角标缓存（供 draw 使用，避免每帧重算）
-    refreshUpgradeBadgeCache()
-
-    -- Tab 1: 直接复用 upgradeBadgeCache
-    local hasUpgrade = false
-    for _, v in pairs(upgradeBadgeCache) do
-        if v then
-            hasUpgrade = true
-            break
-        end
-    end
-    BottomNav.setBadge(1, hasUpgrade)
-
-    -- Tab 4: 城镇角标（教堂天赋/转职 + 铁匠铺可强化）
-    BottomNav.refreshTownBadge()
+    return ensurePower().refreshNavBadge()
 end
 
---- 判断某英雄是否在队伍中出战
 local function isHeroDeployed(heroId)
     for i = 1, MAX_SLOTS do
         local slot = teamSlots[i]
@@ -1244,88 +1108,44 @@ function CharacterPanel.getEffectiveLevel(heroId)
     return getHeroLevel(heroId)
 end
 
---- 为英雄增加经验值（支持自动升级）
----@param heroId number 英雄 ID
----@param amount number 经验值数量
+local _progress
+local function bindProgress()
+    _progress = CharacterProgress.bind({
+        ExpTable = ExpTable,
+        MAX_SLOTS = MAX_SLOTS,
+        get = function(k)
+            if k == "ownedSet" then return ownedSet
+            elseif k == "teamSlots" then return teamSlots
+            elseif k == "onTeamChangedCallback" then return onTeamChangedCallback
+            end
+            return nil
+        end,
+        applyResonanceSync = applyResonanceSync,
+        syncTeamSlotsFromOwned = syncTeamSlotsFromOwned,
+        rebuildRoster = rebuildRoster,
+        refreshPowerCache = refreshPowerCache,
+        refreshNavBadge = refreshNavBadge,
+    })
+end
+local function ensureProgress()
+    if not _progress then bindProgress() end
+    return _progress
+end
+
 function CharacterPanel.addHeroExp(heroId, amount)
-    local ownData = ownedSet[heroId]
-    if not ownData or amount <= 0 then return end
-
-    ownData.exp = (ownData.exp or 0) + amount
-
-    -- 自动升级循环
-    while true do
-        local currentLevel = ownData.level or 1
-        if ExpTable.isHeroMaxLevel(currentLevel) then
-            ownData.exp = 0
-            ownData.maxExp = 0
-            break
-        end
-        local needed = ExpTable.getHeroExpForLevel(currentLevel)
-        ownData.maxExp = needed or 5
-        if not needed or ownData.exp < needed then
-            break
-        end
-        ownData.exp = ownData.exp - needed
-        ownData.level = currentLevel + 1
-    end
-
-    applyResonanceSync()
-    syncTeamSlotsFromOwned()
-    rebuildRoster()
-    refreshPowerCache()
-    refreshNavBadge()
+    return ensureProgress().addHeroExp(heroId, amount)
 end
 
---- 同步英雄等级到出战槽位（供 Debug 调用）
----@param heroId number
----@param newLevel number
 function CharacterPanel.syncSlotLevel(heroId, newLevel)
-    local ownData = ownedSet[heroId]
-    if not ownData then return end
-    for i = 1, MAX_SLOTS do
-        local slot = teamSlots[i]
-        if slot.state == "occupied" and slot.heroId == heroId then
-            slot.level  = newLevel
-            slot.exp    = ownData.exp
-            slot.maxExp = ownData.maxExp
-            break
-        end
-    end
-    rebuildRoster()
-    refreshPowerCache()
-    refreshNavBadge()
+    return ensureProgress().syncSlotLevel(heroId, newLevel)
 end
 
---- 更新英雄的转职分支数据（转职成功后调用，使天赋立即生效）
----@param heroId number 英雄 ID
----@param branchId number 转职分支 ID
----@param advLevel number 转职阶段（1=一转, 2=二转）
 function CharacterPanel.setHeroAdvBranch(heroId, branchId, advLevel)
-    local ownData = ownedSet[heroId]
-    if not ownData then return end
-    if not ownData.advBranch then
-        ownData.advBranch = {}
-    end
-    if advLevel == 1 then
-        ownData.advBranch.first = branchId
-    elseif advLevel == 2 then
-        ownData.advBranch.second = branchId
-    end
-    -- 触发阵容重建，使战斗单元立即获得新的 advTalentIds
-    -- 转职变更影响战斗单元 → 固定重建队1
-    if onTeamChangedCallback then onTeamChangedCallback(1) end
+    return ensureProgress().setHeroAdvBranch(heroId, branchId, advLevel)
 end
 
---- 重置英雄转职（清除 advBranch）
----@param heroId number
 function CharacterPanel.resetHeroAdvBranch(heroId)
-    local ownData = ownedSet[heroId]
-    if not ownData then return end
-    ownData.advBranch = nil
-    -- 触发阵容重建，清除战斗单元上的 advTalentIds
-    -- 转职变更影响战斗单元 → 固定重建队1
-    if onTeamChangedCallback then onTeamChangedCallback(1) end
+    return ensureProgress().resetHeroAdvBranch(heroId)
 end
 
 --- 立即重算并刷新角标（供装备/卸下后即时更新调用）

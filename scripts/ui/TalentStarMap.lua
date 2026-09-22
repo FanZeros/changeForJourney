@@ -566,6 +566,14 @@ do
     EDGES = kept
 end
 
+-- 密集节点列表（跳过空洞 id，避免每帧 0..NODE_MAX 空扫）
+local NODE_LIST = {}
+for id = 0, NODE_MAX do
+    if NODES[id] then
+        NODE_LIST[#NODE_LIST + 1] = NODES[id]
+    end
+end
+
 -- ======================== 运行时状态 ========================
 
 ---@type userdata NanoVG context
@@ -637,16 +645,34 @@ end
 
 -- ======================== 绘制函数 ========================
 
---- 绘制连接线
+--- 绘制连接线（两端都在视口外则跳过）
 local function drawEdges(vg)
     nvgLineCap(vg, NVG_ROUND)
     nvgLineJoin(vg, NVG_ROUND)
+
+    local visL = -80
+    local visR = viewW + viewOffX * 2 + 80
+    local visT = -80
+    local visB = viewH + viewOffY * 2 + 80
+    local flash = (math.sin(time.elapsedTime * 4.0) + 1.0) * 0.5
+    local flashR = math.floor(140 + (240 - 140) * flash)
+    local flashG = math.floor(105 + (200 - 105) * flash)
+    local flashB = math.floor(38 + (80 - 38) * flash)
+    local flashA = math.floor(180 + (255 - 180) * flash)
 
     for _, edge in ipairs(EDGES) do
         local idA, idB = edge[1], edge[2]
         local nodeA = NODES[idA]
         local nodeB = NODES[idB]
         if nodeA and nodeB then
+            local wax, way = gridToWorld(nodeA.gx, nodeA.gy)
+            local wbx, wby = gridToWorld(nodeB.gx, nodeB.gy)
+            local sax, say = worldToScreen(wax, way)
+            local sbx, sby = worldToScreen(wbx, wby)
+            if (sax < visL and sbx < visL) or (sax > visR and sbx > visR)
+                or (say < visT and sby < visT) or (say > visB and sby > visB) then
+                goto continue_edge
+            end
             local litA = litNodes[idA] or false
             local litB = litNodes[idB] or false
 
@@ -655,21 +681,11 @@ local function drawEdges(vg)
             if litA and litB then
                 r, g, b, a = 201, 151, 59, 235
             elseif litA or litB then
-                -- 可激活: 金色闪烁 (在暗金 45% 和亮金之间)
-                local flash = (math.sin(time.elapsedTime * 4.0) + 1.0) * 0.5  -- 0~1
-                r = math.floor(140 + (240 - 140) * flash)
-                g = math.floor(105 + (200 - 105) * flash)
-                b = math.floor(38 + (80 - 38) * flash)
-                a = math.floor(180 + (255 - 180) * flash)
+                r, g, b, a = flashR, flashG, flashB, flashA
             else
                 -- 未激活: 暗棕（在暗底上隐约可见走向）
                 r, g, b, a = 46, 38, 28, 210
             end
-
-            local wax, way = gridToWorld(nodeA.gx, nodeA.gy)
-            local wbx, wby = gridToWorld(nodeB.gx, nodeB.gy)
-            local sax, say = worldToScreen(wax, way)
-            local sbx, sby = worldToScreen(wbx, wby)
 
             nvgBeginPath(vg)
             nvgStrokeWidth(vg, LINE_WIDTH * zoom)
@@ -678,6 +694,7 @@ local function drawEdges(vg)
             nvgLineTo(vg, sbx, sby)
             nvgStroke(vg)
         end
+        ::continue_edge::
     end
 end
 
@@ -706,11 +723,8 @@ end
 
 --- 绘制所有节点
 local function drawNodes(vg)
-    for id = 0, NODE_MAX do
-        local node = NODES[id]
-        if node then
-            drawNode(vg, node)
-        end
+    for i = 1, #NODE_LIST do
+        drawNode(vg, NODE_LIST[i])
     end
 end
 

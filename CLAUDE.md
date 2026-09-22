@@ -14,13 +14,15 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`feat/rename-adventure-to-expedition`（从 `refactor/extract-battle-overlays` 拉出；禁止推 `workspace`）
+- **当前开发分支**：`workspace`（已整合今天的 overlays / docs / rename；后续功能分支从 workspace 拉出）
 
-## 上次做了什么（截至 2026-09-22 关键词替换）
+## 上次做了什么（截至 2026-09-22 晚 整合）
 
-- 玩家可见文案：冒险等级→远征等级、冒险家→远征队员、冒险招募券→远征招募券、冒险日志/奖励→远征日志/奖励
-- 内部键名不变：`adventurer` / `recruitTicket` / `playerLevel` / `guild`
-- RelicBridge / TalentEffect 前缀解析已跟「远征队员」同步
+- 已把今天三线合进 `workspace` 并推送：
+  1. `docs/equip-set-and-class-migration`（套装 P1 + 六契 + 1.5 竖屏天赋树，此前已在 workspace）
+  2. `refactor/extract-battle-overlays` 独有：星图视口剔除 + CharacterPower/Progress 抽取；套装加成补进 CharacterPower
+  3. `feat/rename-adventure-to-expedition`：冒险等级→远征等级等玩家可见文案
+- 冲突处理原则：保留 workspace 六契/套装玩法，只把「冒险*」改成「远征*」；内部键名不变
 
 ## 更早：截至 2026-09-22 古树天赋
 
@@ -58,7 +60,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 以当前功能分支继续开发（现为 `feat/rename-adventure-to-expedition`），完成后每次 push **该分支**，**禁止推 workspace**
+- 以当前功能分支继续开发；完成后每次 push **该分支**。本次用户明确要求合入并推送 `workspace`。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）

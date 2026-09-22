@@ -14,7 +14,7 @@
 - [scope:project] 真人梗高风险:"牢大"(科比逝者恶搞)不可直接实装;活人梗(ikun)用软化变体;方案先给用户过目
 - [通用] 用户短指令常有笔误("例会"=立绘、"该名字"=改名字),按语境理解意图
 - [通用] 用户验收是逐张看图的严格模式,交付前先自查(引擎实拍 > 自述"完成")
-- [scope:project] 禁止推 `workspace`；开发与 push 只走当前功能分支（现为 `feat/rename-adventure-to-expedition`，由其从 `refactor/extract-battle-overlays` 拉出）
+- [scope:project] 默认禁止推 `workspace`；仅当用户**当前轮次明确要求**合入/推送 workspace 时才推。2026-09-22 晚已按用户指令把今天三线合入并推送 workspace。
 - [scope:project] 玩家可见「冒险*」已改为远征世界观（远征等级/远征队员/远征招募券/远征日志）；内部键名 `adventurer`/`recruitTicket`/`playerLevel`/`guild` 不要跟着改，RelicBridge/TalentEffect 前缀解析要跟显示名同步
 - [scope:project] 每步交付后必须用 AskUserQuestion 给下一步选项，禁止纯文字中断
 - [scope:project] merge workspace 前必须干净工作区：还原 `.project/project.json` / `.agent` 改动，删除未跟踪 `*.meta`。脏树会让 `git merge` 直接失败且不建 MERGE_HEAD

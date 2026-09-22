@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-22 | 版本:v2.26-rename-expedition
+> 更新时间:2026-09-22 | 版本:v2.27-workspace-integrate
 >
-> **本会话(2026-09-22)**：从 `refactor/extract-battle-overlays` 新开 `feat/rename-adventure-to-expedition`，做冒险→远征关键词替换。禁止推 workspace。
+> **本会话(2026-09-22)**：整合今天分支到 `workspace` 并推送：overlays 星图剔除+战力抽取、docs 套装/六契/1.5竖屏天赋树、rename 远征文案。
 
 ---
 

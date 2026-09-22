@@ -6,7 +6,7 @@
   "never_push_workspace": true,
   "always_askuserquestion": true,
   "never_cancel_task": true,
-  "dev_branch": "feat/rename-adventure-to-expedition",
+  "dev_branch": "workspace",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

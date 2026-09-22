@@ -24,6 +24,7 @@ local RewardPopup       = require("ui.RewardPopup")
 local TownScene         = require("ui.TownScene")
 local BlacksmithPage    = require("ui.BlacksmithPage")
 local ChurchPage        = require("ui.ChurchPage")
+local TalentPage        = require("ui.TalentPage")
 local TavernPage        = require("ui.TavernPage")
 local MarketPage        = require("ui.MarketPage")
 local DungeonBattleScene = require("ui.DungeonBattleScene")
@@ -497,6 +498,7 @@ function Standalone.requestResetToStartScreen()
     if TavernPage.isOpen()          then TavernPage.close()          end
     if BlacksmithPage.isOpen()      then BlacksmithPage.close()      end
     if ChurchPage.isOpen()          then ChurchPage.close()          end
+    if TalentPage.isOpen()          then TalentPage.close()          end
     if HeroRosterPanel.isVisible()  then HeroRosterPanel.hide()      end
     if RewardPopup.isOpen()         then RewardPopup.close()         end
     if OfflineRewardPanel.isOpen()  then OfflineRewardPanel.close()  end
@@ -683,6 +685,7 @@ function HandleUpdate(eventType, eventData)
         -- 城镇建筑
         if tabIndex == 4 and (BlacksmithPage.isOpen()
             or ChurchPage.isOpen()
+            or TalentPage.isOpen()
             or TavernPage.isOpen()
             or MarketPage.isOpen()) then
             bgmScene = "town_building"

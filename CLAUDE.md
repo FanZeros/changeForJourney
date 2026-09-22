@@ -16,7 +16,7 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前开发分支**：`refactor/extract-battle-overlays`（禁止推 `workspace`）
 
-## 上次做了什么（截至 2026-09-22 hotfix）
+## 上次做了什么（截至 2026-09-22 古树天赋）
 
 - 已合并 `origin/workspace`（`fa7a775`）
 - T23–T26 四块抽取（LSP 0 Error / build 过 / validate lua_errors=0）
@@ -37,6 +37,8 @@
 - T40：ChurchResults + MarketResults。Church 812 / Market 1045
 - T41：ChurchLifecycle + MarketInit。Church 790 / Market 1008
 - T42：CharacterDeploy + BackpackDialogs。Character 1733 / Backpack 1737
+- 天赋从教堂拆出：城镇中轴新建筑「终焉古树」打开 `TalentPage`；教堂只留转职/神器两 Tab
+- 星图视口改为 1:1（1080×1080 居中）；滚轮带鼠标坐标直接缩放
 
 ## likely_next_task
 

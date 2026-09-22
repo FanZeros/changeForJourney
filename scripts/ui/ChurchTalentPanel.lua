@@ -1,6 +1,6 @@
 -- ChurchTalentPanel.lua
--- 教堂天赋面板子模块：天赋星图、天赋详情面板、缩放滑块、拖拽处理
--- 从 ChurchPage.lua 拆分而来
+-- 古树天赋面板：天赋星图、详情、滚轮缩放、拖拽
+-- 星图视口 1:1（1080×1080）居中于 1080×2400 设计坐标
 
 ---@diagnostic disable: undefined-global
 
@@ -26,39 +26,44 @@ local M = {}
 
 -- ======================== 天赋面板布局常量 ========================
 
+-- 星图 1:1 视口（居中）
+local MAP_SIZE = 1080
+local MAP_TOP  = math.floor((DESIGN_H - MAP_SIZE) * 0.5) -- 660
+local MAP_H    = MAP_SIZE
+
 local TF = {
     bgCX = 540, bgCY = 1200, bgW = 1080, bgH = 2400,          -- 背景
-    glowCX = 540, glowCY = 230, glowW = 723, glowH = 729,     -- 天赋点光晕
-    ptCX = 540, ptCY = 202, ptFont = 89, ptStroke = 9,         -- 天赋点数值
-    lblCX = 540, lblCY = 286, lblFont = 54,                    -- "天赋点"文字
-    infoBtnCX = 980, infoBtnCY = 210, infoBtnW = 80, infoBtnH = 80, -- 效果总览感叹号
+    glowCX = 540, glowCY = MAP_TOP + 90, glowW = 723, glowH = 729, -- 天赋点光晕
+    ptCX = 540, ptCY = MAP_TOP + 62, ptFont = 89, ptStroke = 9,    -- 天赋点数值
+    lblCX = 540, lblCY = MAP_TOP + 146, lblFont = 54,               -- "天赋点"文字
+    infoBtnCX = 980, infoBtnCY = MAP_TOP + 70, infoBtnW = 80, infoBtnH = 80,
     infoIconW = 54, infoIconH = 54,
-    rstCX = 200, rstCY = 2122, rstW = 340, rstH = 100,        -- 重置按钮
+    rstCX = 200, rstCY = MAP_TOP + MAP_H + 80, rstW = 340, rstH = 100, -- 重置（正方形下方）
     rstNsL = 55, rstNsR = 55, rstNsT = 10, rstNsB = 10,
     rstFont = 40,
-    slBgCX = 994, slBgCY = 1983, slBgW = 90, slBgH = 368,    -- 缩放滑块背景
-    slBgR = 18,                                                 -- 背景圆角
-    slTrkW = 10, slTrkH = 312, slTrkR = 5,                    -- 滑块轨道
-    slThW = 70, slThH = 30,                                    -- 滑块
+    slBgCX = 994, slBgCY = MAP_TOP + MAP_H * 0.5, slBgW = 90, slBgH = 368,
+    slBgR = 18,
+    slTrkW = 10, slTrkH = 312, slTrkR = 5,
+    slThW = 70, slThH = 30,
 }
 
 -- ======================== 天赋详情面板布局常量 ========================
 
 local TFD = {
-    -- 面板背景 (九宫格)
-    bgCX = 540, bgCY = 1027, bgW = 830, bgH = 930,
+    -- 面板背景 (九宫格) — 落在 1:1 星图中央
+    bgCX = 540, bgCY = 1200, bgW = 830, bgH = 930,
     bgNsT = 180, bgNsR = 40, bgNsB = 50, bgNsL = 40,
     -- 天赋名
-    nameCX = 540, nameCY = 622, nameFont = 40, nameStroke = 4,
+    nameCX = 540, nameCY = 795, nameFont = 40, nameStroke = 4,
     -- 天赋图标
-    iconCX = 540, iconCY = 802, iconW = 166, iconH = 166,
+    iconCX = 540, iconCY = 975, iconW = 166, iconH = 166,
     -- 信息文本背景框
-    infoBgCX = 540, infoBgCY = 1143, infoBgW = 730, infoBgH = 312, infoBgR = 14,
+    infoBgCX = 540, infoBgCY = 1316, infoBgW = 730, infoBgH = 312, infoBgR = 14,
     -- 信息文本内边距 & 样式
     infopad = 35, infoFont = 35,
     infoR = 0x72, infoG = 0x58, infoB = 0x50,
     -- 激活按钮
-    btnCX = 540, btnCY = 1380, btnW = 410, btnH = 100,
+    btnCX = 540, btnCY = 1553, btnW = 410, btnH = 100,
     btnNsT = 10, btnNsR = 55, btnNsB = 10, btnNsL = 55,
     btnFont = 40,
     btnR = 0x1e, btnG = 0x51, btnB = 0x37,
@@ -88,10 +93,7 @@ local spineTfBg = {
     lastT   = 0,
 }
 
--- ======================== 星图拖拽区域 ========================
-
-local MAP_TOP = 320
-local MAP_H   = 1780
+-- 星图拖拽区域 = 1:1 视口（MAP_TOP / MAP_H 已在上方定义）
 
 -- ======================== 共享状态（由 setContext 注入） ========================
 
@@ -340,15 +342,13 @@ function M.drawContent(vg)
     -- ★ 天赋星图 (先绘制，作为底层)
     -- 同步缩放滑块值到星图
     TalentStarMap.setZoom(state.tfZoomSliderValue)
-    -- 星图区域: 全屏 1080×2400
-    local mapTop = 0
-    local mapH   = DESIGN_H
-    TalentStarMap.draw(vg, 0, mapTop, DESIGN_W, mapH)
+    -- 星图区域: 1:1 正方形，垂直居中
+    TalentStarMap.draw(vg, 0, MAP_TOP, DESIGN_W, MAP_H)
 
     -- 新手引导热点：整个天赋星图区域
     local _TM = require("systems.TutorialManager")
     if _TM.isActive() then
-        _TM.registerHotspot("talent_node_area", DESIGN_W * 0.5, mapTop + mapH * 0.5, DESIGN_W, mapH, "left")
+        _TM.registerHotspot("talent_node_area", DESIGN_W * 0.5, MAP_TOP + MAP_H * 0.5, DESIGN_W, MAP_H, "left")
     end
 
     -- 3. 天赋点背景光晕 UI_JTTF_HG.png（绘制在星图上方）
@@ -735,7 +735,7 @@ end
 --- 天赋 Tab 交互处理（重置按钮、滑块、星图节点点击）
 ---@return boolean consumed
 function M.handleTabInput(dx, dy)
-    if state.tab ~= "tianfu" then return false end
+    if state.tab and state.tab ~= "tianfu" then return false end
 
     -- 效果总览按钮
     if hitTest(dx, dy, TF.infoBtnCX, TF.infoBtnCY, TF.infoBtnW, TF.infoBtnH) then
@@ -765,11 +765,7 @@ function M.handleTabInput(dx, dy)
         return true
     end
 
-    -- 底部 Tab 栏区域保护：转职按钮(cx=439,cy=2308,w=410,h=143) 和 天赋按钮(cx=839)
-    -- 落在 Tab 栏内的点击不交给星图，让事件透传给 ChurchPage 的 Tab 切换逻辑
-    if hitTest(dx, dy, 639, 2308, 810, 143) then
-        return false
-    end
+    -- 古树页无底栏 Tab；星图点击全部交给节点 hitTest
 
     -- 星图节点点击 → 打开天赋详情面板
     local hitNodeId = TalentStarMap.hitTest(dx, dy)
@@ -786,7 +782,7 @@ end
 --- 拖拽开始
 ---@return boolean consumed
 function M.handleDragBegin(dx, dy)
-    if state.tab ~= "tianfu" then return false end
+    if state.tab and state.tab ~= "tianfu" then return false end
     if state.tfOverviewOpen then
         if hitTest(dx, dy, TOV.bgCX, TOV.bgCY, TOV.bgW, TOV.bgH) then
             state.tfOverviewDragging = true
@@ -826,7 +822,7 @@ end
 --- 拖拽移动
 ---@return boolean consumed
 function M.handleDragMove(dx, dy)
-    if state.tab ~= "tianfu" then return false end
+    if state.tab and state.tab ~= "tianfu" then return false end
 
     if state.tfOverviewDragging then
         local dyDelta = dy - state.tfOverviewLastDragY
@@ -903,7 +899,7 @@ function M.handleScroll(wheel, msx, msy)
         return
     end
 
-    -- 天赋星图：滚轮缩放（上滚放大 / 下滚缩小，以鼠标位置为锚）
+    -- 天赋星图：滚轮直接缩放（上滚放大 / 下滚缩小，以鼠标位置为锚）
     local step = 0.08 * wheel
     local v = math.max(0, math.min(1, state.tfZoomSliderValue - step))
     if math.abs(v - state.tfZoomSliderValue) < 1e-6 then return end

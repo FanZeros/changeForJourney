@@ -4,9 +4,7 @@
 
 local AD = require("systems.AttributeDef")
 local CharacterPanel = require("ui.CharacterPanel")
-local TalentStarMap = require("ui.TalentStarMap")
 local SpineCardEffect = require("ui.SpineCardEffect")
-local TalentPanel = require("ui.ChurchTalentPanel")
 local ClassChange = require("ui.ChurchClassChange")
 local ArtifactPanel = require("ui.ChurchArtifactPanel")
 
@@ -63,17 +61,6 @@ function M.bind(deps)
             clampRosterScroll()
             if math.abs(state.rosterScrollVelocity) < 0.5 or state.rosterScrollY <= 0 or state.rosterScrollY >= getRosterScrollMax() then
                 state.rosterScrollVelocity = 0
-            end
-        end
-
-        -- 更新星图惯性滑动 (每帧)
-        do
-            local now = time.elapsedTime
-            local lastT = state._lastDrawTime or now
-            local frameDt = now - lastT
-            state._lastDrawTime = now
-            if frameDt > 0 and frameDt < 0.2 then
-                TalentStarMap.update(frameDt)
             end
         end
 
@@ -357,7 +344,6 @@ function M.bind(deps)
                 nvgSave(vg)
                 nvgScissor(vg, 0, oVisTop, DESIGN_W, oVisBot - oVisTop)
                 nvgTranslate(vg, 0, oldOY_tab)
-                if state.tabFrom == "tianfu" then TalentPanel.drawBg(vg) end
                 if state.tabFrom == "zhuanzhi" then ClassChange.drawBg(vg) end
                 if state.tabFrom == "shenqi" then ArtifactPanel.drawBg(vg) end
                 nvgRestore(vg)
@@ -369,13 +355,11 @@ function M.bind(deps)
                 nvgSave(vg)
                 nvgScissor(vg, 0, nVisTop, DESIGN_W, nVisBot - nVisTop)
                 nvgTranslate(vg, 0, newOY_tab)
-                if state.tab == "tianfu" then TalentPanel.drawBg(vg) end
                 if state.tab == "zhuanzhi" then ClassChange.drawBg(vg) end
                 if state.tab == "shenqi" then ArtifactPanel.drawBg(vg) end
                 nvgRestore(vg)
             end
         else
-            if state.tab == "tianfu" then TalentPanel.drawBg(vg) end
             if state.tab == "zhuanzhi" then ClassChange.drawBg(vg) end
             if state.tab == "shenqi" then ArtifactPanel.drawBg(vg) end
         end
@@ -396,7 +380,6 @@ function M.bind(deps)
 
         -- drawTabContent 内联委托
         local function drawTabContent(tabKey)
-            if tabKey == "tianfu" then TalentPanel.drawContent(vg) end
             if tabKey == "zhuanzhi" then ClassChange.drawContent(vg) end
             if tabKey == "shenqi" then ArtifactPanel.drawContent(vg) end
         end
@@ -450,8 +433,6 @@ function M.bind(deps)
                 if i == 1 then
                     showTabBadge = hasAnyAdvance()
                 elseif i == 2 then
-                    showTabBadge = hasAnyUnusedTalent()
-                elseif i == 3 then
                     showTabBadge = ArtifactPanel.canUpgradeAnyArtifact()
                 end
                 if showTabBadge and img.iconUp >= 0 then
@@ -462,12 +443,7 @@ function M.bind(deps)
             end,
         })
 
-        -- 新手引导热点：天赋 Tab（TAB_ITEMS[2]）
-        local _TM = require("systems.TutorialManager")
-        if _TM.isActive() then
-            local ti2 = TAB_ITEMS[2]
-            _TM.registerHotspot("talent_toggle", ti2.cx + lowerOX, ti2.cy, TAB.SLIDER_W, TAB.SLIDER_H, "left")
-        end
+        -- 天赋已独立到古树，教堂不再注册 talent_toggle
 
         nvgRestore(vg)  -- 结束下半部分偏移
 
@@ -520,11 +496,7 @@ function M.bind(deps)
             nvgRestore(vg)
         end
 
-        -- ================== 天赋详情面板 ==================
-        TalentPanel.drawDetailPanel(vg)
-
-        -- ================== 天赋效果总览弹窗 ==================
-        TalentPanel.drawOverviewPanel(vg)
+        -- 天赋详情/总览已移至 TalentPage
 
         -- ================== 转职确认弹窗（最顶层） ==================
         ClassChange.drawConfirmPopup(vg)

@@ -58,15 +58,7 @@ function M.bind(deps)
             return ClassChange.handleConfirmInput(dx, dy)
         end
 
-        -- ========== 天赋效果总览（模态，优先于详情）→ 委托 TalentPanel ==========
-        if state.tfOverviewOpen then
-            return TalentPanel.handleOverviewInput(dx, dy)
-        end
-
-        -- ========== 天赋详情面板（模态，优先拦截）→ 委托 TalentPanel ==========
-        if state.tfDetailOpen then
-            return TalentPanel.handleDetailInput(dx, dy)
-        end
+        -- 天赋详情/总览已独立到 TalentPage
 
         -- ========== 神器 Tab 交互 → 委托 ArtifactPanel ==========
         if state.tab == "shenqi" then
@@ -170,12 +162,6 @@ function M.bind(deps)
             end
         end
 
-        -- ========== 天赋 Tab 交互 → 委托 TalentPanel ==========
-        if state.tab == "tianfu" then
-            local consumed = TalentPanel.handleTabInput(dx, dy)
-            if consumed then return true end
-        end
-
         -- ========== 转职分支图标点击 → 委托 ClassChange ==========
         if state.tab == "zhuanzhi" and state.selectedHeroId and not state.slotExpanded
            and state.slotLiftProgress > 0.9 and not state.selectAnim then
@@ -193,7 +179,6 @@ function M.bind(deps)
                     state.tabSwitchTime = time.elapsedTime
                     state.tab = newTab
                     require("systems.GameSFX").playUIMove(2)
-                    TalentStarMap.stopInertia()
 
                     -- 切换到非转职 tab 时：延迟清除英雄态，让旧 Tab 滑出期间仍渲染职业背景
                     if newTab ~= "zhuanzhi" then
@@ -232,10 +217,7 @@ function M.bind(deps)
             return true
         end
 
-        if state.tab ~= "tianfu" and state.tab ~= "shenqi" then return false end
-        if state.tab == "tianfu" then
-            return TalentPanel.handleDragBegin(dx, dy)
-        end
+        if state.tab ~= "shenqi" then return false end
         return ArtifactPanel.handleDragBegin(dx, dy)
     end
 
@@ -253,10 +235,7 @@ function M.bind(deps)
             return true
         end
 
-        if state.tab ~= "tianfu" and state.tab ~= "shenqi" then return false end
-        if state.tab == "tianfu" then
-            return TalentPanel.handleDragMove(dx, dy)
-        end
+        if state.tab ~= "shenqi" then return false end
         return ArtifactPanel.handleDragMove(dx, dy)
     end
 
@@ -267,9 +246,7 @@ function M.bind(deps)
             state.rosterDragging = false
             return
         end
-        if state.tab == "tianfu" then
-            TalentPanel.handleDragEnd(dx, dy)
-        elseif state.tab == "shenqi" then
+        if state.tab == "shenqi" then
             ArtifactPanel.handleDragEnd(dx, dy)
         end
     end
@@ -286,9 +263,7 @@ function M.bind(deps)
             clampRosterScroll()
             return
         end
-        if state.tab == "tianfu" and TalentPanel.handleScroll then
-            TalentPanel.handleScroll(wheel, msx, msy)
-        elseif state.tab == "shenqi" then
+        if state.tab == "shenqi" then
             ArtifactPanel.handleScroll(wheel)
         end
     end

@@ -28,6 +28,12 @@ function M.bind(deps)
         state.closing = false
         state.openTime = time.elapsedTime
         require("systems.GameSFX").playUIMove(1)
+        do
+            local okTP, TP = pcall(require, "ui.TalentPage")
+            if okTP and TP and TP.isOpen and TP.isOpen() and TP.forceClose then
+                TP.forceClose()
+            end
+        end
         state.tab = "zhuanzhi"
         state.tabFrom = "zhuanzhi"
         state.tabSwitchTime = 0
@@ -50,10 +56,6 @@ function M.bind(deps)
         state.tfDetailNodeId = nil
         state.tfDetailClosing = false
         state.confirmClosing = false
-        -- 重置星图视角到原点
-        TalentStarMap.resetCamera()
-        -- 从存档同步天赋点亮状态到星图
-        syncTalentLitNodes()
         ArtifactPanel.reset()
         print("[ChurchPage] 打开教堂")
     end

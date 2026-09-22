@@ -113,10 +113,16 @@ function M.run(rt)
         BlacksmithPage.init(vg)
         BlacksmithPage.open()
     end)
-    -- 城郊礼拜堂点击 → 打开教堂界面（转职/天赋/祈祷）
+    -- 城郊礼拜堂点击 → 打开教堂界面（转职/神器）
     TownScene.setOnChurchClick(function()
         ChurchPage.init(vg)
         ChurchPage.open()
+    end)
+    -- 终焉古树点击 → 打开独立天赋页
+    TownScene.setOnTreeClick(function()
+        local TalentPage = require("ui.TalentPage")
+        TalentPage.init(vg)
+        TalentPage.open()
     end)
     -- 5.16 城镇酒馆点击 → 打开酒馆界面
     TownScene.setOnTavernClick(function()

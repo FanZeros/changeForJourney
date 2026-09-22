@@ -137,7 +137,7 @@ TutorialConfig[6] = {
     triggerScenarios = { 27 },
     steps = {
         {
-            text      = "点击天赋页面，来学习天赋吧",
+            text      = "点击终焉古树，来学习天赋吧",
             highlight = "talent_toggle",
             advanceOn = "click_highlight",
         },

@@ -19,7 +19,7 @@ local ClientDispatcher = require("network.ClientDispatcher")
  --= UI 模块（lazy require，在 setup 中注入以避免循环依赖）
  local RewardPopup
  local LootBox, LootBoxPage
- local BlacksmithPage, ChurchPage, TavernPage
+ local BlacksmithPage, ChurchPage, TalentPage, TavernPage
  local MarketPage, DungeonPage, DungeonBattleScene
  local GMConsolePanel, RelicReforgePanel, MailPanel, AnnouncementPanel
  local TopBar, BattleScene, CharacterPanel
@@ -69,6 +69,7 @@ local ClientDispatcher = require("network.ClientDispatcher")
      BlacksmithPage      = require("ui.BlacksmithPage")
      BackpackPanel       = require("ui.BackpackPanel")
      ChurchPage          = require("ui.ChurchPage")
+     TalentPage          = require("ui.TalentPage")
      TavernPage          = require("ui.TavernPage")
      MarketPage          = require("ui.MarketPage")
      DungeonPage         = require("ui.DungeonPage")
@@ -406,7 +407,9 @@ local ClientDispatcher = require("network.ClientDispatcher")
      end
 
      local function apply()
-         if ChurchPage and ChurchPage.syncTalentFromStore then
+         if TalentPage and TalentPage.syncTalentFromStore then
+             pcall(TalentPage.syncTalentFromStore)
+         elseif ChurchPage and ChurchPage.syncTalentFromStore then
              pcall(ChurchPage.syncTalentFromStore)
          end
      end
@@ -483,7 +486,9 @@ local ClientDispatcher = require("network.ClientDispatcher")
          if data.action == Protocol.ACTION_TYPES.ACTIVATE_TALENT
              or data.action == Protocol.ACTION_TYPES.RESET_SINGLE_TALENT
              or data.action == Protocol.ACTION_TYPES.RESET_TALENTS then
-             if ChurchPage and ChurchPage.syncTalentFromStore then
+             if TalentPage and TalentPage.syncTalentFromStore then
+                 pcall(TalentPage.syncTalentFromStore)
+             elseif ChurchPage and ChurchPage.syncTalentFromStore then
                  pcall(ChurchPage.syncTalentFromStore)
              end
              if LootBoxPage and LootBoxPage.showToast then

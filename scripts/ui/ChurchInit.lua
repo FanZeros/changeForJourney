@@ -89,12 +89,16 @@ function M.bind(deps)
         -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HONG.png 贴图加载已移除（矢量绘制替代）
         img.tfInfoIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
 
-        -- 天赋星图初始化
-        TalentStarMap.init(vg)
+        -- 天赋星图由 TalentPage.init 负责，教堂不再抢初始化
 
         -- 订阅天赋数据变更，自动同步星图渲染状态 + 刷新角标
         getDispatcher().subscribe("talents", function()
-            syncTalentLitNodes()
+            local okTP, TP = pcall(require, "ui.TalentPage")
+            if okTP and TP and TP.syncTalentFromStore then
+                TP.syncTalentFromStore()
+            else
+                syncTalentLitNodes()
+            end
             clearPowerCache()
             refreshTownBadge()
         end)
@@ -127,7 +131,7 @@ function M.bind(deps)
             getProtocol      = getProtocol,
             getDispatcher    = getDispatcher,
         }
-        TalentPanel.setContext(ctx)
+        -- 天赋面板上下文由 TalentPage 独占注入，教堂不再 setContext
         ctx.getClassIcon2 = getClassIcon2
         ClassChange.setContext(ctx)
         ArtifactPanel.setContext(ctx)

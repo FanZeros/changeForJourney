@@ -16,6 +16,7 @@ local RewardPopup       = require("ui.RewardPopup")
 local TownScene         = require("ui.TownScene")
 local BlacksmithPage    = require("ui.BlacksmithPage")
 local ChurchPage        = require("ui.ChurchPage")
+local TalentPage        = require("ui.TalentPage")
 local TavernPage        = require("ui.TavernPage")
 local MarketPage        = require("ui.MarketPage")
 local DungeonBattleScene = require("ui.DungeonBattleScene")
@@ -181,6 +182,8 @@ local function seamBackList()
     if     BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
         leftClose = function() BackpackPanel.close() end
         leftAnim = { BackpackPanel.getSeamAnim() }
+    elseif TalentPage.isOpen()     then leftClose = function() TalentPage.close() end
+        leftAnim = { TalentPage.getSeamAnim() }
     elseif ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
         leftAnim = { ChurchPage.getSeamAnim() }
     elseif BlacksmithPage.isOpen()  then leftClose = function() BlacksmithPage.close() end
@@ -317,6 +320,7 @@ function HandleNanoVGRenderHorizon()
         TownScene.draw(vg())
         BlacksmithPage.draw(vg())
         ChurchPage.draw(vg())
+        TalentPage.draw(vg())
         TavernPage.draw(vg())
         MarketPage.draw(vg())
         BackpackPanel.draw(vg())
@@ -380,12 +384,13 @@ function HandleNanoVGRenderHorizon()
         TownScene.draw(vg())
         BlacksmithPage.draw(vg())
         ChurchPage.draw(vg())
+        TalentPage.draw(vg())
         TavernPage.draw(vg())
         MarketPage.draw(vg())
         BackpackPanel.draw(vg())
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
         -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
-        if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
+        if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TalentPage.isOpen() or TavernPage.isOpen()
             or MarketPage.isOpen()) then
             TopBar.draw(vg(), -30)
         end
@@ -585,6 +590,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     if pid == 'left' then
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragBegin(dx, dy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
+        if TalentPage.isOpen() then TalentPage.handleDragBegin(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragBegin(dx, dy) return end
@@ -628,6 +634,7 @@ function HandleMouseMoveHorizon(eventType, eventData)
     if pid == 'left' then
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragMove(dx, dy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
+        if TalentPage.isOpen() then TalentPage.handleDragMove(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragMove(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragMove(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragMove(dx, dy) return end
@@ -750,7 +757,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if pid == 'left' then
         -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
         if isTap and not (BackpackPanel.isOpen() or BlacksmithPage.isOpen() or ChurchPage.isOpen()
-            or TavernPage.isOpen() or MarketPage.isOpen()) then
+            or TalentPage.isOpen() or TavernPage.isOpen() or MarketPage.isOpen()) then
             if TopBar.hitTestAvatar(dx, dy, -30) then
                 PlayerInfoPanel.open()
                 return
@@ -771,6 +778,12 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
             BlacksmithPage.handleDragEnd(dx, dy)
             if not isTap then return end
             BlacksmithPage.handleInput(dx, dy)
+            return
+        end
+        if TalentPage.isOpen() then
+            TalentPage.handleDragEnd(dx, dy)
+            if not isTap then return end
+            TalentPage.handleInput(dx, dy)
             return
         end
         if ChurchPage.isOpen() then
@@ -869,7 +882,7 @@ function HandleMouseWheelHorizon(eventType, eventData)
 
     -- [按鼠标位置路由] 滚轮作用于鼠标所在的面板（左右面板可同开二级页，
     -- 不再依赖"最近点击面板"记录；滚到哪边就滚哪边的列表）
-    local pid = select(1, HorizonResolveMouse())
+    local pid, msx, msy = HorizonResolveMouse()
     if pid == 'playerinfo' then
         PlayerInfoPanel.handleScroll(wheel)
         return
@@ -889,7 +902,8 @@ function HandleMouseWheelHorizon(eventType, eventData)
     if pid == 'left' then
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleScroll(wheel) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel) return end
-        if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel) return end
+        if TalentPage.isOpen() then TalentPage.handleScroll(wheel, msx, msy) return end
+        if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel, msx, msy) return end
         if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end
         if MarketPage.isOpen() then MarketPage.handleScroll(wheel) return end
         return

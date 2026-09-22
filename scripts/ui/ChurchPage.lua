@@ -1,5 +1,5 @@
 -- ChurchPage.lua
--- 教堂界面：转职 / 天赋 / 神器 三个 Tab
+-- 教堂界面：转职 / 神器 两个 Tab（天赋已独立到 TalentPage / 终焉古树）
 -- 从城镇页面点击教堂进入的二级界面
 
 ---@diagnostic disable: undefined-global
@@ -78,10 +78,10 @@ local BTN_BACK = {
     CX = 958, CY = 1150, W = 184, H = 143,
 }
 
--- 4. Tab 栏 + 滑块（三 Tab，布局参考铁匠铺）
+-- 4. Tab 栏 + 滑块（两 Tab：转职 / 神器）
 local TAB = {
-    BG_CX = 540, BG_CY = 2308, BG_W = 810, BG_H = 143,
-    SLIDER_W = 277, SLIDER_H = 143,
+    BG_CX = 639, BG_CY = 2308, BG_W = 810, BG_H = 143,
+    SLIDER_W = 410, SLIDER_H = 143,
     INSET_TOP = 10, INSET_BOTTOM = 10, INSET_LEFT = 70, INSET_RIGHT = 70,
     FONT_SIZE = 40,
     ACTIVE_R = 0xD8, ACTIVE_G = 0xC9, ACTIVE_B = 0xA3,  -- [fix] 深色滑块上深棕不可读 → 骨白
@@ -89,14 +89,13 @@ local TAB = {
     ANIM_DUR = 0.35,
 }
 
--- 5. 三个滑块按钮位置
+-- 5. 两个滑块按钮位置
 local TAB_ITEMS = {
-    { name = "转职", cx = 274, cy = 2308, textX = 274, textY = 2302 },
-    { name = "天赋", cx = 540, cy = 2308, textX = 540, textY = 2302 },
-    { name = "神器", cx = 806, cy = 2308, textX = 806, textY = 2302 },
+    { name = "转职", cx = 439, cy = 2308, textX = 439, textY = 2302 },
+    { name = "神器", cx = 839, cy = 2308, textX = 839, textY = 2302 },
 }
 
-local TAB_KEYS = { "zhuanzhi", "tianfu", "shenqi" }
+local TAB_KEYS = { "zhuanzhi", "shenqi" }
 
 -- 6. 动画常量
 local ANIM = {
@@ -172,8 +171,8 @@ local state = {
     closing    = false,
     openTime   = 0,
     closeTime  = 0,
-    tab        = "tianfu",   -- "tianfu" | "zhuanzhi"
-    tabFrom    = "tianfu",
+    tab        = "zhuanzhi", -- "zhuanzhi" | "shenqi"
+    tabFrom    = "zhuanzhi",
     tabSwitchTime = 0,
     selectedHeroId = nil,    -- 当前选中的角色
 
@@ -474,8 +473,7 @@ end
 --- Tab 键名映射到索引
 local TAB_MAP = {
     zhuanzhi = 1,
-    tianfu   = 2,
-    shenqi   = 3,
+    shenqi   = 2,
 }
 
 --- 将存档中的天赋数据同步到 TalentStarMap 渲染状态 + HeroConfig 默认天赋
@@ -493,6 +491,11 @@ end
 
 --- 强制从 PlayerStore 刷新天赋星图（重连/操作失败兜底）
 function ChurchPage.syncTalentFromStore()
+    local ok, TP = pcall(require, "ui.TalentPage")
+    if ok and TP and TP.syncTalentFromStore then
+        TP.syncTalentFromStore()
+        return
+    end
     syncTalentLitNodes()
 end
 
@@ -725,7 +728,7 @@ local function bindPageDraw()
         img = img,
         powerCache = powerCache,
         hasAnyAdvance = ChurchPage.hasAnyAdvance,
-        hasAnyUnusedTalent = ChurchPage.hasAnyUnusedTalent,
+        hasAnyUnusedTalent = function() return false end,
         state = state,
         updateRosterSlide = updateRosterSlide,
         updateSelectAnim = updateSelectAnim,
@@ -763,10 +766,15 @@ function ChurchPage.onActionResult(data)
     return _results.onActionResult(data)
 end
 
---- 预加载天赋背景 Spine（启动时调用，避免进入教堂时卡顿）
+--- 预加载天赋背景 Spine（转发给 TalentPage）
 ---@param vg any NanoVG 上下文
 function ChurchPage.preloadSpine(vg)
-    TalentPanel.preloadSpine(vg)
+    local ok, TP = pcall(require, "ui.TalentPage")
+    if ok and TP and TP.preloadSpine then
+        TP.preloadSpine(vg)
+    else
+        TalentPanel.preloadSpine(vg)
+    end
 end
 
 --- [水平滑入] 整页从屏幕边缘滑入/滑出(与中缝返回条同步);0=完全展开

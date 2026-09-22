@@ -15,12 +15,14 @@ local TownScene = {}
 
 local imgBg       = -1   -- 城镇背景
 local imgChurch   = -1   -- 教堂建筑
+local imgTree     = -1   -- 终焉古树（天赋入口）
 local imgTavern   = -1   -- 酒馆建筑
 local imgMarket   = -1   -- 市场建筑
 local imgWarehouse = -1  -- 仓库建筑（背包入口）
 local imgIconWarehouse = -1 -- 仓库图标
 
 local imgIconChurch = -1 -- 教堂图标
+local imgIconTree   = -1 -- 古树图标
 local imgIconTavern = -1 -- 酒馆图标
 local imgIconMarket = -1 -- 市场图标
 
@@ -49,14 +51,23 @@ local LABEL_INSET_LEFT   = 100
 
 -- ---- 上方建筑 ----
 
--- 铁匠铺
-local SMITH_CX,  SMITH_CY  = 525,  477
-local SMITH_W,   SMITH_H   = 366,  405
-local SMITH_LBL_CX, SMITH_LBL_CY = 534, 372
+-- 铁匠铺（上移，给古树让出中轴）
+local SMITH_CX,  SMITH_CY  = 525,  390
+local SMITH_W,   SMITH_H   = 330,  365
+local SMITH_LBL_CX, SMITH_LBL_CY = 534, 285
 local SMITH_LBL_W,  SMITH_LBL_H  = 361, 113
-local SMITH_ICON_CX, SMITH_ICON_CY = 444, 366
+local SMITH_ICON_CX, SMITH_ICON_CY = 444, 279
 local SMITH_ICON_SZ = 64
-local SMITH_TEXT_X,  SMITH_TEXT_Y  = 569, 366
+local SMITH_TEXT_X,  SMITH_TEXT_Y  = 569, 279
+
+-- 终焉古树（天赋入口，画面中轴；尺寸避开仓库/酒馆热区）
+local TREE_CX,  TREE_CY  = 540,  1040
+local TREE_W,   TREE_H   = 250,  430
+local TREE_LBL_CX, TREE_LBL_CY = 540, 1235
+local TREE_LBL_W,  TREE_LBL_H  = 361, 113
+local TREE_ICON_CX, TREE_ICON_CY = 450, 1229
+local TREE_ICON_SZ = 64
+local TREE_TEXT_X,  TREE_TEXT_Y  = 585, 1229
 
 
 -- ---- 下方建筑 ----
@@ -294,6 +305,13 @@ local function getChurchPage()
     return ChurchPage_
 end
 
+---@type table TalentPage 模块（懒加载）
+local TalentPage_ = nil
+local function getTalentPage()
+    if not TalentPage_ then TalentPage_ = require("ui.TalentPage") end
+    return TalentPage_
+end
+
 ---@type table BlacksmithPage 模块（懒加载，避免循环依赖）
 local BlacksmithPage_ = nil
 local function getBlacksmithPage()
@@ -356,11 +374,13 @@ local function ensureTownImages(vg)
     imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
     imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)
     imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
+    imgTree        = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TREE.png", 0)
     imgTavern      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JG.png", 0)
     imgMarket      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_SJ.png", 0)
     imgWarehouse   = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_CK.png", 0)
     imgIconWarehouse = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_CK.png", 0)
     imgIconChurch  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_JT.png", 0)
+    imgIconTree    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TREE.png", 0)
     imgIconTavern  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_JG.png", 0)
     imgIconMarket  = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_SC.png", 0)
     imgIconUp      = nvgCreateImage(ctx, "image/通用图标/ICON_UP.png", 0)
@@ -421,6 +441,37 @@ function TownScene.draw(vg)
     BF.finish(vg, _bfSmith)
     if _tmActive and not smithLocked then _TM.registerHotspot("building_smith", SMITH_CX, SMITH_CY, SMITH_W, SMITH_H, "left") end
 
+    -- 2b) 终焉古树（天赋入口，中轴）
+    local treeLocked = not _TM.isBuildingUnlocked("church")
+    local _bfTree = (not treeLocked) and BF.begin(vg, "town_tree", TREE_CX, TREE_CY, TREE_W, TREE_H) or false
+    if treeLocked then
+        drawImageSilhouette(vg, imgTree, TREE_CX, TREE_CY, TREE_W, TREE_H, 0.85)
+    else
+        drawImageDarkTint(vg, imgTree, TREE_CX, TREE_CY, TREE_W, TREE_H, 1.0)
+        drawFlashOverlay(vg, imgTree, TREE_CX, TREE_CY, TREE_W, TREE_H, getClickFlashAlpha("tree"))
+        drawBuildingLabel(vg,
+            TREE_LBL_CX, TREE_LBL_CY, TREE_LBL_W, TREE_LBL_H,
+            TREE_ICON_CX, TREE_ICON_CY, TREE_ICON_SZ, imgIconTree,
+            TREE_TEXT_X, TREE_TEXT_Y, "终焉古树")
+    end
+    if treeLocked then
+        drawBuildingLockOverlay(vg, TREE_CX, TREE_CY, "church", true)
+    end
+    if not treeLocked and imgIconUp >= 0 then
+        local okUnused, unused = pcall(function() return getTalentPage().hasAnyUnusedTalent() end)
+        if okUnused and unused then
+            local upSize = 40
+            local upX = TREE_LBL_CX + TREE_LBL_W * 0.5 - upSize * 0.15
+            local upY = TREE_LBL_CY - TREE_LBL_H * 0.5 - upSize * 0.15
+            drawImageCentered(vg, imgIconUp, upX, upY, upSize, upSize, 1.0)
+        end
+    end
+    BF.finish(vg, _bfTree)
+    if _tmActive and not treeLocked then
+        _TM.registerHotspot("talent_toggle", TREE_CX, TREE_CY, TREE_W, TREE_H, "left")
+        _TM.registerHotspot("building_tree", TREE_CX, TREE_CY, TREE_W, TREE_H, "left")
+    end
+
     -- ---- 下方建筑 ----
 
     -- 5) 市场建筑（后层）
@@ -467,7 +518,7 @@ function TownScene.draw(vg)
     if churchLocked then
         drawBuildingLockOverlay(vg, CHURCH_CX, CHURCH_CY, "church", true)
     end
-    -- 教堂角标（骑在标签右上角，约一半探出牌外）：天赋可用 或 转职可用
+    -- 教堂角标：转职/神器（天赋角标已移到古树）
     if not churchLocked and imgIconUp >= 0 and getChurchPage().hasAnyChurchBadge() then
         local upSize = 40
         local upX = CHURCH_LBL_CX + CHURCH_LBL_W * 0.5 - upSize * 0.15
@@ -513,6 +564,13 @@ function TownScene.setOnChurchClick(fn)
     onChurchClick = fn
 end
 
+--- 回调：点击终焉古树
+local onTreeClick = nil
+
+function TownScene.setOnTreeClick(fn)
+    onTreeClick = fn
+end
+
 --- 回调：点击酒馆
 local onTavernClick = nil
 
@@ -553,6 +611,19 @@ function TownScene.handleInput(dx, dy)
         return true
     end
 
+    -- 古树点击检测
+    if dx >= TREE_CX - TREE_W * 0.5 and dx <= TREE_CX + TREE_W * 0.5
+       and dy >= TREE_CY - TREE_H * 0.5 and dy <= TREE_CY + TREE_H * 0.5 then
+        if not _TM.isBuildingUnlocked("church") then
+            print("[TownScene] 古树未被引导解锁")
+            return true
+        end
+        print("[TownScene] 点击终焉古树")
+        BF.trigger("town_tree")
+        triggerClickAnim("tree")
+        if onTreeClick then deferAction(CLICK_CALLBACK_DELAY, onTreeClick) end
+        return true
+    end
 
     -- 教堂点击检测
     if dx >= CHURCH_CX - CHURCH_W * 0.5 and dx <= CHURCH_CX + CHURCH_W * 0.5

@@ -96,7 +96,8 @@ function M.process(ctx, logicDt)
                 SpeechBubble.trigger(unit._killedBy, "kill")
             end
 
-            ctx.stageKillCount_ = ctx.stageKillCount_ + 1
+            -- 与 BattleScene 注入字段同名（stageKillCount，不是 stageKillCount_）
+            ctx.stageKillCount = (ctx.stageKillCount or 0) + 1
             -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空不再显示墓碑（完全隐藏空位）
             local okRatio = unit._overkillRatio or 0
             BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1,

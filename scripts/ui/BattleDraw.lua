@@ -169,7 +169,11 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
         local isEntering = animState == "entering"
         local transAlpha = combat.getTransitionAlpha(unit)
 
-        if (isAllyGroup and unit._fallen) or isGone then
+        -- 主线死亡即补位：无 tombstone 动画时 hp<=0 不画墓碑（空位隐藏）。
+        -- 通天塔仍走 tombstone_in / dead_done，不受影响。
+        local hideDeadSlot = isDead and not isDying and not isTombstoneIn
+            and not isReviving and animState ~= "dead_done"
+        if (isAllyGroup and unit._fallen) or isGone or hideDeadSlot then
             -- [阵亡紧凑] 已退场英雄不渲染（保留在队尾供复活/关卡重置）
             -- [死亡即补位] 空位期：完全隐藏，等待新怪从右补入
         elseif isDying then

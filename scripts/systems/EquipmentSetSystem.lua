@@ -27,7 +27,7 @@ end
 ---@param eqData table|nil equipment 模块数据
 ---@param heroId number
 ---@param getFromInventory fun(eqData: table, seq: any): table|nil
----@param getHeroSlots fun(eqData: table, heroId: number): table|nil
+---@param getHeroSlots fun(eqData: table, heroId: number|string): table|nil
 ---@return table counts { [setId] = number }
 ---@return boolean twoHandWorn
 function EquipmentSetSystem.countSets(eqData, heroId, getFromInventory, getHeroSlots)
@@ -158,7 +158,7 @@ end
 ---@param eqData table|nil
 ---@param heroId number
 ---@param getFromInventory fun(eqData: table, seq: any): table|nil
----@param getHeroSlots fun(eqData: table, heroId: number): table|nil
+---@param getHeroSlots fun(eqData: table, heroId: number|string): table|nil
 ---@return table rows
 function EquipmentSetSystem.applyToUnit(unitAttrs, eqData, heroId, getFromInventory, getHeroSlots)
     local counts = EquipmentSetSystem.countSets(eqData, heroId, getFromInventory, getHeroSlots)

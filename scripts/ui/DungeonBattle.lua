@@ -323,7 +323,9 @@ function DungeonBattle.getDamageMultiplier(unit, target)
     if not active then return 1.0 end
     local mult = 1.0
     -- 职业加成
-    if cfg.classBonus ~= "" and unit.classId and unit.classId == cfg.classBonus then
+    local CC = require("config.ClassConfig")
+    if cfg.classBonus ~= "" and unit.classId
+        and CC.normalize(unit.classId) == CC.normalize(cfg.classBonus) then
         mult = mult * (1.0 + cfg.classBonusValue)
     end
     -- 通天塔 mechanic 强化加成

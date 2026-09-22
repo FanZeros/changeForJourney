@@ -510,7 +510,10 @@ function M.draw(vg, heroId, detailState)
     if eqData then
         local counts = EquipmentSetSystem.countSets(
             eqData, heroId,
-            EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
+            EquipmentSystem.getFromInventory,
+            function(data, hid)
+                return EquipmentSystem.getHeroSlots(data, hid)
+            end)
         local rows = EquipmentSetSystem.summarize(counts)
         if #rows > 0 then
             local parts = {}

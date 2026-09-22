@@ -1,225 +1,203 @@
 -- ============================================================================
--- ClassConfig - 职业配置数据表
--- 数据来源: docs/配置文件/职业配置.txt
--- 包含: 6个基础职业的仇恨系数、基础属性加成、天赋、可穿戴护甲
+-- ClassConfig - 六门契职业表
+-- 拍板（2026-09-22）：六契名字采用；classId 换成 seal/spoil/rift/echo/mask/debt；
+-- 转职 101–224 数字保留；闪电卖鸡留 spoil；改死亡留给职业延缓；双持规则保留。
+-- 旧存档/遗物/塔词条仍可能写 knight 等，一律走 CC.normalize。
 -- ============================================================================
 
 local AD = require("systems.AttributeDef")
 
 local CC = {}
 
--- ======================== 职业 ID 常量 ========================
+-- 新 ID
+CC.SEAL  = "seal"   -- 封门人
+CC.SPOIL = "spoil"  -- 拾骸者
+CC.RIFT  = "rift"   -- 裂隙使
+CC.ECHO  = "echo"   -- 回响客
+CC.MASK  = "mask"   -- 换面人
+CC.DEBT  = "debt"   -- 司仪
 
-CC.KNIGHT  = "knight"   -- 骑士
-CC.WARRIOR = "warrior"  -- 战士
-CC.MAGE    = "mage"     -- 法师
-CC.RANGER  = "ranger"   -- 射手/游侠
-CC.ASSASSIN = "assassin" -- 刺客
-CC.PRIEST  = "priest"   -- 牧师
+-- 旧常量别名（大量 CC.KNIGHT 引用不用逐文件改）
+CC.KNIGHT   = CC.SEAL
+CC.WARRIOR  = CC.SPOIL
+CC.MAGE     = CC.RIFT
+CC.RANGER   = CC.ECHO
+CC.ASSASSIN = CC.MASK
+CC.PRIEST   = CC.DEBT
 
--- ======================== 职业配置表 ========================
--- baseAttackThreatMin/Max : 攻击获得基础仇恨范围
--- dmgThreatCoeffMin/Max   : 每点伤害仇恨系数范围
--- healThreatBaseMin/Max   : 治疗基础仇恨点范围
--- healThreatCoeffMin/Max  : 每点治疗仇恨系数范围
--- statBonus               : 职业基础属性加成 { [AD.key] = value }
--- talentName              : 天赋名称
--- talentDesc              : 天赋描述
--- armorTypes              : 可穿戴护甲类型列表
+local LEGACY_TO_NEW = {
+    knight = CC.SEAL, warrior = CC.SPOIL, mage = CC.RIFT,
+    ranger = CC.ECHO, assassin = CC.MASK, priest = CC.DEBT,
+    seal = CC.SEAL, spoil = CC.SPOIL, rift = CC.RIFT,
+    echo = CC.ECHO, mask = CC.MASK, debt = CC.DEBT,
+}
+
+--- 旧/新 classId → 新 ID
+---@param classId string|nil
+---@return string|nil
+function CC.normalize(classId)
+    if not classId then return nil end
+    return LEGACY_TO_NEW[classId] or classId
+end
 
 CC.CLASSES = {
-    [CC.KNIGHT] = {
-        name = "守誓者",
-        -- 仇恨系数（取范围中值）
+    [CC.SEAL] = {
+        name = "封门人",
         baseAttackThreatMin = 60,  baseAttackThreatMax = 100,
         dmgThreatCoeffMin   = 10.0, dmgThreatCoeffMax   = 15.0,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
         healThreatCoeffMin  = 0.8, healThreatCoeffMax  = 1.2,
-        -- 职业属性加成
-        statBonus = { [AD.VIT] = 5 },
-        -- 天赋
-        talentName = "阵前叫嚣",
-        talentDesc = "每场战斗开始时，第一次攻击获得20倍仇恨值",
-        talentId   = "knight_taunt",
-        -- 可穿戴护甲
+        statBonus = nil,
+        talentName = "门缝",
+        talentDesc = "受到的伤害先写入门缝（容量=最大生命12%），每秒释放20%。释放时30%打当前目标，70%仍打自己；写入量转化为仇恨。",
+        talentId   = "gate_seal_rift",
         armorTypes = { AD.ARMOR_PLATE, AD.ARMOR_HEAVY },
     },
-
-    [CC.WARRIOR] = {
-        name = "破阵者",
+    [CC.SPOIL] = {
+        name = "拾骸者",
         baseAttackThreatMin = 10,  baseAttackThreatMax = 20,
         dmgThreatCoeffMin   = 0.5, dmgThreatCoeffMax   = 0.7,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
         healThreatCoeffMin  = 0.8, healThreatCoeffMax  = 1.2,
-        statBonus = { [AD.STR] = 5 },
-        talentName = "物理精通",
-        talentDesc = "物理伤害加成+10%",
-        talentId   = "warrior_phys_mastery",
-        armorTypes = { AD.ARMOR_HEAVY, AD.ARMOR_HEAVY },
+        statBonus = nil,
+        talentName = "拾骸",
+        talentDesc = "击杀获得1骸骨（最多12）。每骨攻速+1.2%；满12时下次攻击消耗6骨，额外打一次40%伤害。",
+        talentId   = "gate_spoil_bone",
+        armorTypes = { AD.ARMOR_HEAVY, AD.ARMOR_LIGHT },
     },
-
-    [CC.MAGE] = {
-        name = "咒术师",
+    [CC.RIFT] = {
+        name = "裂隙使",
         baseAttackThreatMin = 0,   baseAttackThreatMax = 5,
         dmgThreatCoeffMin   = 0.5, dmgThreatCoeffMax   = 0.7,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
         healThreatCoeffMin  = 0.8, healThreatCoeffMax  = 1.2,
-        statBonus = { [AD.INT] = 5 },
-        talentName = "魔法精通",
-        talentDesc = "魔法伤害加成+10%",
-        talentId   = "mage_mag_mastery",
+        statBonus = nil,
+        talentName = "裂隙",
+        talentDesc = "每8秒展开4秒裂隙：攻击克制系数向1.25拉近，并对目标施加1层裂痕。",
+        talentId   = "gate_rift_open",
         armorTypes = { AD.ARMOR_CLOTH, AD.ARMOR_LIGHT },
     },
-
-    [CC.RANGER] = {
-        name = "夜猎者",
+    [CC.ECHO] = {
+        name = "回响客",
         baseAttackThreatMin = 1,   baseAttackThreatMax = 2,
         dmgThreatCoeffMin   = 0.8, dmgThreatCoeffMax   = 1.0,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
         healThreatCoeffMin  = 0.8, healThreatCoeffMax  = 1.2,
-        statBonus = { [AD.AGI] = 5 },
-        talentName = "远程攻击",
-        talentDesc = "在有骑士/战士存在时，仇恨获得倍率降低80%",
-        talentId   = "ranger_ranged_attack",
+        statBonus = nil,
+        talentName = "回响",
+        talentDesc = "普攻在目标身上留1个回响，1.2秒后打45%伤害（固定10%仇恨）。场上有封门人时回响伤害+15%。",
+        talentId   = "gate_echo_delay",
         armorTypes = { AD.ARMOR_LIGHT, AD.ARMOR_LEATHER },
     },
-
-    [CC.ASSASSIN] = {
-        name = "无痕者",
+    [CC.MASK] = {
+        name = "换面人",
         baseAttackThreatMin = 0,   baseAttackThreatMax = 0,
         dmgThreatCoeffMin   = 0.3, dmgThreatCoeffMax   = 0.5,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
         healThreatCoeffMin  = 0.8, healThreatCoeffMax  = 1.2,
-        statBonus = { [AD.LUK] = 5 },
-        talentName = "精准",
-        talentDesc = "通用暴击率+5%",
-        talentId   = "assassin_precision",
+        statBonus = nil,
+        talentName = "换面",
+        talentDesc = "开战复制当前目标护甲克制+0.1。目标死亡后3秒换成下一目标；期间下次攻击无视20%护甲。职业不加暴击。",
+        talentId   = "gate_mask_steal",
         armorTypes = { AD.ARMOR_LEATHER, AD.ARMOR_LEATHER },
     },
-
-    [CC.PRIEST] = {
-        name = "提灯者",
+    [CC.DEBT] = {
+        name = "司仪",
         baseAttackThreatMin = 0,   baseAttackThreatMax = 5,
         dmgThreatCoeffMin   = 0.5, dmgThreatCoeffMax   = 0.7,
         healThreatBaseMin   = 20,  healThreatBaseMax   = 30,
         healThreatCoeffMin  = 0.8, healThreatCoeffMax  = 1.2,
-        statBonus = { [AD.SPI] = 5 },
-        talentName = "疗愈",
-        talentDesc = "治疗加成+10%",
-        talentId   = "priest_heal_mastery",
+        statBonus = nil,
+        talentName = "延缓",
+        talentDesc = "治疗量按90%结算。过量治疗转为延缓：可垫一次致死伤害，垫掉的部分变成4秒债（受伤+15%）。每人最多1层。",
+        talentId   = "gate_debt_defer",
         armorTypes = { AD.ARMOR_CLOTH, AD.ARMOR_LEATHER },
     },
 }
-
--- ======================== 中文名 → classId 映射 ========================
 
 CC.NAME_TO_ID = {}
 for id, cls in pairs(CC.CLASSES) do
     CC.NAME_TO_ID[cls.name] = id
 end
--- 额外别名
-CC.NAME_TO_ID["射手"] = CC.RANGER
+CC.NAME_TO_ID["射手"] = CC.ECHO
+CC.NAME_TO_ID["骑士"] = CC.SEAL
+CC.NAME_TO_ID["战士"] = CC.SPOIL
+CC.NAME_TO_ID["法师"] = CC.RIFT
+CC.NAME_TO_ID["刺客"] = CC.MASK
+CC.NAME_TO_ID["牧师"] = CC.DEBT
+CC.NAME_TO_ID["守誓者"] = CC.SEAL
+CC.NAME_TO_ID["破阵者"] = CC.SPOIL
+CC.NAME_TO_ID["咒术师"] = CC.RIFT
+CC.NAME_TO_ID["夜猎者"] = CC.ECHO
+CC.NAME_TO_ID["无痕者"] = CC.MASK
+CC.NAME_TO_ID["提灯者"] = CC.DEBT
 
--- ======================== 辅助方法 ========================
-
---- 获取职业配置
----@param classId string 职业 ID（CC.KNIGHT 等）
+---@param classId string|nil
 ---@return table|nil
 function CC.get(classId)
-    return CC.CLASSES[classId]
+    return CC.CLASSES[CC.normalize(classId)]
 end
 
---- 通过中文名获取职业 ID
----@param name string 中文职业名（守誓者/破阵者/咒术师/夜猎者/无痕者/提灯者）
----@return string|nil classId
+---@param name string
+---@return string|nil
 function CC.getIdByName(name)
     return CC.NAME_TO_ID[name]
 end
 
---- 获取职业的攻击基础仇恨（取范围中值）
----@param classId string
+---@param classId string|nil
 ---@return number
 function CC.getBaseAttackThreat(classId)
-    local cls = CC.CLASSES[classId]
+    local cls = CC.get(classId)
     if not cls then return 5 end
     return (cls.baseAttackThreatMin + cls.baseAttackThreatMax) * 0.5
 end
 
---- 获取职业的伤害仇恨系数（取范围中值）
----@param classId string
+---@param classId string|nil
 ---@return number
 function CC.getDmgThreatCoeff(classId)
-    local cls = CC.CLASSES[classId]
+    local cls = CC.get(classId)
     if not cls then return 1.0 end
     return (cls.dmgThreatCoeffMin + cls.dmgThreatCoeffMax) * 0.5
 end
 
---- 获取职业的治疗基础仇恨（取范围中值）
----@param classId string
+---@param classId string|nil
 ---@return number
 function CC.getHealThreatBase(classId)
-    local cls = CC.CLASSES[classId]
+    local cls = CC.get(classId)
     if not cls then return 25 end
     return (cls.healThreatBaseMin + cls.healThreatBaseMax) * 0.5
 end
 
---- 获取职业的治疗仇恨系数（取范围中值）
----@param classId string
+---@param classId string|nil
 ---@return number
 function CC.getHealThreatCoeff(classId)
-    local cls = CC.CLASSES[classId]
+    local cls = CC.get(classId)
     if not cls then return 1.0 end
     return (cls.healThreatCoeffMin + cls.healThreatCoeffMax) * 0.5
 end
 
---- 应用职业天赋到 UnitAttributes（通过 modifier 系统）
----@param classId string
----@param attrs table UnitAttributes 实例
+--- 六契基础职不再给面板 +10% 伤 / +5 六围。被动在 ClassGateRuntime。
+---@param classId string|nil
+---@param attrs table
 function CC.applyTalent(classId, attrs)
-    local cls = CC.CLASSES[classId]
-    if not cls then return end
-
-    local entries = {}
-
-    if classId == CC.WARRIOR then
-        -- 物理伤害加成+10%
-        entries[#entries + 1] = { key = AD.PHYS_DMG_BONUS, pct = 10 }
-    elseif classId == CC.MAGE then
-        -- 魔法伤害加成+10%
-        entries[#entries + 1] = { key = AD.MAG_DMG_BONUS, pct = 10 }
-    elseif classId == CC.RANGER then
-        -- 攻击速度+10%
-        entries[#entries + 1] = { key = AD.ATK_SPEED, flat = 10 }
-    elseif classId == CC.ASSASSIN then
-        -- 通用暴击率+5%
-        entries[#entries + 1] = { key = AD.CRIT_RATE, flat = 5 }
-    elseif classId == CC.PRIEST then
-        -- 治疗加成+10%
-        entries[#entries + 1] = { key = AD.HEAL_BONUS, flat = 10 }
-    elseif classId == CC.KNIGHT then
-        -- 骑士天赋"阵前叫嚣"不是属性加成，而是战斗开始时仇恨效果
-        -- 由 ThreatManager 在战斗开始时处理
-    end
-
-    if #entries > 0 then
-        attrs:addModifier("talent_" .. classId, entries)
+    classId = CC.normalize(classId)
+    if classId == CC.DEBT and attrs then
+        -- 司仪治疗量按 90%：治疗加成 -10 百分点
+        attrs:addModifier("talent_" .. classId, { { key = AD.HEAL_BONUS, flat = -10 } })
     end
 end
 
---- 应用职业基础属性加成到 UnitAttributes
----@param classId string
----@param attrs table UnitAttributes 实例
+---@param classId string|nil
+---@param attrs table
 function CC.applyStatBonus(classId, attrs)
-    local cls = CC.CLASSES[classId]
-    if not cls or not cls.statBonus then return end
-
+    local cls = CC.get(classId)
+    if not cls or not cls.statBonus or not attrs then return end
     local entries = {}
     for key, val in pairs(cls.statBonus) do
         entries[#entries + 1] = { key = key, flat = val }
     end
-
     if #entries > 0 then
-        attrs:addModifier("class_bonus_" .. classId, entries)
+        attrs:addModifier("class_bonus_" .. CC.normalize(classId), entries)
     end
 end
 

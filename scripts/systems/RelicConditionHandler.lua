@@ -320,8 +320,9 @@ function RCH.shouldSkipThreat(attacker)
     local state = unitStates[attacker]
     if not state then return false end
     if state.yinYang then
-        local cid = attacker.classId
-        if cid == "assassin" or cid == "mage" then
+        local CC = require("config.ClassConfig")
+        local nid = CC.normalize(attacker.classId)
+        if nid == CC.MASK or nid == CC.RIFT then
             return true
         end
     end

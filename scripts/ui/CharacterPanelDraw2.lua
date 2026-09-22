@@ -71,12 +71,12 @@ local EXP_FILL_LEFT_INSET = 15  -- 填充起始右移，避开等级徽章遮挡
 
 -- 职业图标映射（与 BattleScene 一致）
 local CLASS_ICON_MAP = {
-    knight   = 1,
-    warrior  = 2,
-    mage     = 3,
-    ranger   = 4,
-    assassin = 5,
-    priest   = 6,
+    knight   = 1, seal  = 1,
+    warrior  = 2, spoil = 2,
+    mage     = 3, rift  = 3,
+    ranger   = 4, echo  = 4,
+    assassin = 5, mask  = 5,
+    priest   = 6, debt  = 6,
 }
 
 -- ======================== 下半部分：角色列表布局 ========================

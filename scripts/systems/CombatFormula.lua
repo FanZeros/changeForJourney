@@ -7,6 +7,11 @@
 local AD = require("systems.AttributeDef")
 local BattleDiag = require("systems.BattleDiag")
 local BattleLayout = require("core.BattleLayout")
+local CGR -- 延迟加载
+local function getCGR()
+    if not CGR then CGR = require("systems.ClassGateRuntime") end
+    return CGR
+end
 local MAS -- 延迟加载避免循环依赖
 local function getMAS()
     if not MAS then MAS = require("systems.MapAffixSystem") end
@@ -276,6 +281,7 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
     if attacker.artifactIgnoreArmor then
         rawArmor = 0
     end
+    rawArmor = getCGR().adjustArmor(attacker, rawArmor)
     effectiveArmor = math.max(0, rawArmor - rawPen)
     excessPen      = math.max(0, rawPen - rawArmor)
     local resistance = CF.armorToResistance(effectiveArmor)
@@ -303,6 +309,7 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
 
     -- ---- 7. 类型倍率 ----
     local typeMult = AD.getTypeMult(atkType, armorType)
+    typeMult = getCGR().adjustTypeMult(attacker, defender, typeMult)
 
     -- ---- 8. 连击次数（仅普通攻击时 roll，连击额外攻击不再触发连击） ----
     local comboCount = 0

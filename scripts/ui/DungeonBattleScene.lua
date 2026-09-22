@@ -453,11 +453,11 @@ end
 
 --- 职业名称映射
 local CLASS_NAMES = {
-    warrior  = "战士",
-    mage     = "法师",
-    archer   = "射手",
-    assassin = "刺客",
-    priest   = "牧师",
+    warrior  = "拾骸者", spoil = "拾骸者",
+    mage     = "裂隙使", rift = "裂隙使",
+    archer   = "回响客", echo = "回响客", ranger = "回响客",
+    assassin = "换面人", mask = "换面人",
+    priest   = "司仪", debt = "司仪",
 }
 
 --- 补充后备队列中的敌人到场上
@@ -778,7 +778,7 @@ function DungeonScene.draw(vg)
     local classId, bonusVal = DungeonBattle.getClassBonus()
     if classId and classId ~= "" then
         local className = CLASS_NAMES[classId] or classId
-        local bonusLabel = (classId == "priest") and "治疗" or "伤害"
+        local bonusLabel = (classId == "priest" or classId == "debt") and "治疗" or "伤害"
         local bonusText = string.format("%s +%.0f%%%s", className, bonusVal * 100, bonusLabel)
         drawTextStroke(vg, DB.TITLE_X, DB.BONUS_Y, bonusText,
             DB.BONUS_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,

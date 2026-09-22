@@ -317,7 +317,10 @@ local imgSlotBg       = {}  -- { weapon=.., offhand=.., armor=.., accessory=.. }
 local imgSlotSelected = -1  -- UI_TJPXZTBBJ.png（装备槽选中底图）
 
 -- CLASS_ICON_MAP（与 CharacterPanelDraw 一致）
-local CLASS_ICON_MAP = { knight=1, warrior=2, mage=3, ranger=4, assassin=5, priest=6 }
+local CLASS_ICON_MAP = {
+    knight=1, seal=1, warrior=2, spoil=2, mage=3, rift=3,
+    ranger=4, echo=4, assassin=5, mask=5, priest=6, debt=6,
+}
 
 -- ======================== 外部驱动标志 ========================
 local decomposeRedDot = false  -- 分解标签红点（背包满时）

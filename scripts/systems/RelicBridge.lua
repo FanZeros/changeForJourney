@@ -83,14 +83,13 @@ local ATTR_NAME_MAP = {
 
 -- ======================== 职业名 → classId 映射 ========================
 
+local CC = require("config.ClassConfig")
 local CLASS_NAME_MAP = {
-    ["骑士"] = "knight",
-    ["战士"] = "warrior",
-    ["法师"] = "mage",
-    ["射手"] = "ranger",
-    ["刺客"] = "assassin",
-    ["牧师"] = "priest",
-    ["冒险家"] = "adventurer",  -- 特殊：所有英雄都属于冒险家
+    ["骑士"] = CC.SEAL, ["战士"] = CC.SPOIL, ["法师"] = CC.RIFT,
+    ["射手"] = CC.ECHO, ["刺客"] = CC.MASK, ["牧师"] = CC.DEBT,
+    ["封门人"] = CC.SEAL, ["拾骸者"] = CC.SPOIL, ["裂隙使"] = CC.RIFT,
+    ["回响客"] = CC.ECHO, ["换面人"] = CC.MASK, ["司仪"] = CC.DEBT,
+    ["冒险家"] = "adventurer",
 }
 
 -- ======================== 特殊机制词缀ID（C类，需战斗运行时处理） ========================
@@ -323,8 +322,9 @@ local function collectFromGrid(attrs, classId, grid)
                     local classMatch = true
                     if entry.targetClasses then
                         classMatch = false
+                        local nid = CC.normalize(classId) or classId
                         for _, tc in ipairs(entry.targetClasses) do
-                            if tc == classId or tc == "adventurer" then
+                            if CC.normalize(tc) == nid or tc == "adventurer" then
                                 classMatch = true
                                 break
                             end
@@ -342,8 +342,9 @@ local function collectFromGrid(attrs, classId, grid)
         local classMatch = true
         if entry.targetClasses then
             classMatch = false
+            local nid = CC.normalize(classId) or classId
             for _, tc in ipairs(entry.targetClasses) do
-                if tc == classId or tc == "adventurer" then
+                if CC.normalize(tc) == nid or tc == "adventurer" then
                     classMatch = true
                     break
                 end
@@ -369,6 +370,7 @@ end
 ---@param classId string 英雄职业ID (如 "knight", "warrior")
 ---@return table[] conditionalEntries 条件/特殊词条（供战斗运行时使用）
 function RelicBridge.applyToUnit(attrs, classId)
+    classId = CC.normalize(classId) or classId
     local RelicSystem = require("systems.RelicSystem")
     return collectFromGrid(attrs, classId, RelicSystem.getGrid())
 end
@@ -380,6 +382,7 @@ end
 ---@param grid table[] 遗物 grid 数组 { {affixId, quality, ...}, ... }
 ---@return table[] conditionalEntries B/C类条件词条
 function RelicBridge.applyFromGrid(attrs, classId, grid)
+    classId = CC.normalize(classId) or classId
     return collectFromGrid(attrs, classId, grid)
 end
 

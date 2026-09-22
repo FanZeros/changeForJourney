@@ -20,6 +20,7 @@ local BattleStats = require("systems.BattleStats")
 local BattleCombatFx = require("ui.BattleCombatFx")
 local BattleCombatAnim = require("ui.BattleCombatAnim")
 local BattleCombatCombo = require("ui.BattleCombatCombo")
+local ClassGateRuntime = require("systems.ClassGateRuntime")
 
 local BattleCombat = {}
 -- ======================== [多实例] 战斗状态容器 ========================
@@ -388,6 +389,9 @@ end
 local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, source, statMeta)
     if not target or target.hp <= 0 then return 0 end
     damage = applyGlobalDmgMult(damage)
+    damage = ClassGateRuntime.applyDebtTaken(target, damage)
+    damage = ClassGateRuntime.absorbIncoming(target, damage)
+    if damage <= 0 then return 0 end
     local hpBefore = target.hp
     local actual
     local takenForStats
@@ -407,6 +411,10 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
         target.hp = target.hp - actual
     end
     if target.hp <= 0 and hpBefore > 0 then
+        if ClassGateRuntime.tryDeferDeath(target) then
+            syncUnitHp(target)
+            return actual
+        end
         local overkill = math.max(0, damage - hpBefore)
         target._overkillRatio = math.min(1.0, overkill / (target.maxHp or hpBefore))
         target._killedBy = source
@@ -1092,6 +1100,7 @@ local function performAttack(attacker, targetList, isAlly)
                         if (result.overhealAmount or 0) > 0 then
                             local allyListForShield = isAlly and BCS.ctx.getAllies() or BCS.ctx.getEnemies()
                             RCH.onOverheal(attacker, curTgt, result.overhealAmount, allyListForShield)
+                            ClassGateRuntime.onOverheal(attacker, curTgt, result.overhealAmount)
                         end
                         if Diag.logEnabled then
                             print(string.format(

@@ -18,23 +18,18 @@
 
 ## 上次做了什么（截至 2026-09-22）
 
-- 部署该重构分支并预览；修了 Lua 5.4 `\!` 启动崩溃 + TalentMelissa/Luoxing 丢失 ETS 依赖（`d4914f8`）
-- T11：从 BattleCombat 抽出卡牌动画状态机到 `scripts/ui/BattleCombatAnim.lua`（`a3f6930` 已 push）
-- BattleCombat 2101 → 1822 行；对外 API（`updateCardAnims` / `playEnterAnims` / `setCardAnim` 等）保持委托
-- T12：TalentManager 再拆 Alex/Elwyn/Sera/Suhua 到 `systems/talents/`（`3e9920f` 已 push）；3570 → 3276 行
-- T13：Client 抽出启动接线到 `network/ClientBoot.lua`（`a9c2566` 已 push）；2487 → 2143 行
-- T14：BattleScene 抽出死亡补位/胜负判定到 `BattleCasualty.lua`（`ebc1db4`）
-- T15–T18（`88ccd19`）：连击 Combo、loadStage、TAL.update、ClientRender 均已 push
-
-当前行数：TalentManager 2691 / BattleScene 1890 / Client 1844 / Blacksmith 1780 / Server 1693 / BattleCombat 1637
-
-T19–T21 已 push：`e16c12c` ServerEnterGame / `f6689b0` BattleSceneTick / `24eb755` 城镇页 DrawUtil 委托
+- 合并 `origin/workspace` 进重构分支：`fa7a775`（已 push）
+  - workspace 4 提交：中缝条 C 款 + ICON_UP、礼拜堂标签偏移、ZBBJ 暗黑框、791 资源 meta
+  - 唯一冲突：`scripts/network/Standalone.lua`（重构已抽出 `StandaloneHorizon`）
+  - 保留重构侧 `require("network.StandaloneHorizon")`，并把 workspace 的 `SEAMBAR_ASPECT` 补进 `StandaloneHorizon.seamBackList`
+- LSP Error=0；build 成功；validate `lua_errors=0`（engine shader/spike 噪音忽略）
+- TalentManager 仍 2691，是唯一 >2500 的脚本
 
 ## likely_next_task
 
-- TalentManager 仍 2838（唯一仍超 2500）
-- 城镇页 Market 1853 / Church 1873 / Blacksmith 1780 可继续抽玩法子页
-- Client HandleUpdate（仍 1844）
+- 继续压 TalentManager（唯一仍超 2500）
+- 城镇页 Market / Church / Blacksmith 可继续抽玩法子页
+- Client HandleUpdate（仍 ~1844）
 
 ## 用户硬性流程（必须遵守）
 
@@ -48,7 +43,8 @@ T19–T21 已 push：`e16c12c` ServerEnterGame / `f6689b0` BattleSceneTick / `24
 - BattleResultPanel 的 arenaMode 是通用参数（Dungeon 传 false），别误删
 - 追加技层数跟角色走（roster.extraTalent）；对手 createHero(..., false) 不要套本地层
 - 击杀认定用 `_killedBy`；弹射击杀用 `_killedByRicochet`
-- `/workspace/assets/**/*.meta` 绝不动
+- 本地不要再生成/提交额外 `assets/**/*.meta`（workspace 已入库 791 个；merge 前清掉未跟踪 meta）
+- 脏工作区（`.agent` / `project.json` / 未跟踪 meta）会让 `git merge` 直接失败且不建 MERGE_HEAD
 - Lua 5.4 字符串里不要写 `\!`（非法转义，启动即崩）
 - 抽取英雄天赋模块必须 `require("systems.ExtraTalentSystem")`，悬空 `---@param` 会挡 LSP 构建
 - LSP 冷启动会漏检：首次 build 放行、二次才报 Error

@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-18 | 版本:v2.7-awk3
+> 更新时间:2026-09-22 | 版本:v2.14-merge-workspace
 >
-> **本会话(2026-09-18)**：觉醒 7 阶压成 3 阶（粗暴/机制/进化）。旧档映射 + `_awk3Migrated`。已 build。
+> **本会话(2026-09-22)**：把 `origin/workspace` 最新 4 提交合进 `refactor/extract-battle-overlays`（`fa7a775`）。唯一冲突 `Standalone.lua`：保留 Horizon 抽取，并把 `SEAMBAR_ASPECT` 补进 `StandaloneHorizon`。LSP 0 Error / build 过 / validate lua_errors=0。禁止推 workspace。
 
 ---
 

@@ -26,13 +26,14 @@
 - T14：BattleScene 抽出死亡补位/胜负判定到 `BattleCasualty.lua`（`ebc1db4`）
 - T15–T18（`88ccd19`）：连击 Combo、loadStage、TAL.update、ClientRender 均已 push
 
-当前行数：TalentManager 2838 / Client 1844 / BattleScene 2014 / BattleCombat 1637 / Server 2068
+当前行数：TalentManager 2838 / BattleScene 1890 / Client 1844 / Blacksmith 1780 / Server 1693 / BattleCombat 1637
+
+T19–T21 已 push：`e16c12c` ServerEnterGame / `f6689b0` BattleSceneTick / `24eb755` 城镇页 DrawUtil 委托
 
 ## likely_next_task
 
-- Server.lua（2068，规划第 6 步后半）
-- BattleScene 再抽 update 攻击进度（仍 2014）
-- 城镇页（Market/Church/Blacksmith 仍 ~1800+）
+- TalentManager 仍 2838（唯一仍超 2500）
+- 城镇页 Market 1853 / Church 1873 / Blacksmith 1780 可继续抽玩法子页
 - Client HandleUpdate（仍 1844）
 
 ## 用户硬性流程（必须遵守）

@@ -32,6 +32,7 @@ local ChurchSlotAnim   = require("ui.ChurchSlotAnim")
 local ChurchInit       = require("ui.ChurchInit")
 local ChurchBadge      = require("ui.ChurchBadge")
 local ChurchResults    = require("ui.ChurchResults")
+local ChurchLifecycle  = require("ui.ChurchLifecycle")
 
 -- 懒加载网络模块（避免循环依赖）
 local Client_
@@ -522,95 +523,72 @@ function ChurchPage.init(vg)
     return _churchInit.init(vg)
 end
 
+local _life
+local function bindChurchLifecycle()
+    _life = ChurchLifecycle.bind({
+        state = state,
+        ANIM = ANIM,
+        easeOutCubic = easeOutCubic,
+        easeInCubic = easeInCubic,
+        TalentStarMap = TalentStarMap,
+        ArtifactPanel = ArtifactPanel,
+        resetRosterScrollState = resetRosterScrollState,
+        syncTalentLitNodes = syncTalentLitNodes,
+        ensureInit = function()
+            if not _churchInit then bindChurchInit() end
+            if not _churchInit.isInited() and _churchInit.getVg() then
+                ChurchPage.init(_churchInit.getVg())
+            end
+            return _churchInit.isInited()
+        end,
+        getOnCloseCallback = function() return onCloseCallback_ end,
+        setOnCloseCallback = function(fn) onCloseCallback_ = fn end,
+        getOnOpenCallback = function() return onOpenCallback_ end,
+        setOnOpenCallback = function(fn) onOpenCallback_ = fn end,
+    })
+end
+
 --- 打开教堂
 function ChurchPage.open()
-    if not _churchInit then bindChurchInit() end
-    if not _churchInit.isInited() and _churchInit.getVg() then
-        ChurchPage.init(_churchInit.getVg())
-    end
-    if not _churchInit.isInited() then
-        print("[ChurchPage] open before init, skip")
-        return
-    end
-    state.open = true
-    state.closing = false
-    state.openTime = time.elapsedTime
-    require("systems.GameSFX").playUIMove(1)
-    state.tab = "zhuanzhi"
-    state.tabFrom = "zhuanzhi"
-    state.tabSwitchTime = 0
-    state.selectedHeroId = nil
-    state.slotExpanded = false
-    state.slotAnimTime = 0
-    state.slotAnimDir = 0
-    state.slotLiftProgress = 0
-    state._deferClearHero = false
-    state.rosterScrollY = 0
-    resetRosterScrollState()
-    -- 天赋面板状态重置
-    state.tfZoomSliderValue = 0
-    state.tfSliderDragging = false
-    state.tfMapDragging = false
-    state.tfLastDragTime = 0
-    state.tfDragVelocityX = 0
-    state.tfDragVelocityY = 0
-    state.tfDetailOpen = false
-    state.tfDetailNodeId = nil
-    state.tfDetailClosing = false
-    state.confirmClosing = false
-    -- 重置星图视角到原点
-    TalentStarMap.resetCamera()
-    -- 从存档同步天赋点亮状态到星图
-    syncTalentLitNodes()
-    ArtifactPanel.reset()
-    print("[ChurchPage] 打开教堂")
+    if not _life then bindChurchLifecycle() end
+    return _life.open()
 end
 
 --- 关闭教堂（启动关闭动画）
 function ChurchPage.close()
-    if state.closing then return end
-    state.closing = true
-    state.closeTime = time.elapsedTime
-    print("[ChurchPage] 关闭教堂（动画）")
+    if not _life then bindChurchLifecycle() end
+    return _life.close()
 end
 
 --- 注册关闭动画完成后的回调（每次 open 前设置，触发一次后自动清除）
 function ChurchPage.setOnCloseCallback(fn)
-    onCloseCallback_ = fn
+    if not _life then bindChurchLifecycle() end
+    return _life.setOnCloseCallback(fn)
 end
 
 --- 注册打开动画完成后的回调（每次 open 前设置，触发一次后自动清除）
 function ChurchPage.setOnOpenCallback(fn)
-    onOpenCallback_ = fn
+    if not _life then bindChurchLifecycle() end
+    return _life.setOnOpenCallback(fn)
 end
 
 --- 是否打开
 ---@return boolean
 function ChurchPage.isOpen()
-    return state.open
+    if not _life then bindChurchLifecycle() end
+    return _life.isOpen()
 end
 
 --- 强制关闭（跳过动画，用于安全恢复 — 离开 tab4 时调用）
 function ChurchPage.forceClose()
-    if not state.open then return end
-    print("[ChurchPage] forceClose: 跳过动画强制关闭 (closing=" .. tostring(state.closing) .. ")")
-    state.open = false
-    state.closing = false
+    if not _life then bindChurchLifecycle() end
+    return _life.forceClose()
 end
 
 --- 返回打开/关闭动画进度 (0=完全关闭, 1=完全打开)
---- 用于 Client.lua 在动画期间渐变隐藏底部导航栏
 function ChurchPage.getAnimProgress()
-    if not state.open then return 0 end
-    if state.closing then
-        local elapsed = time.elapsedTime - state.closeTime
-        local rawT = math.min(1.0, elapsed / ANIM.CLOSE_DUR)
-        return 1 - easeInCubic(rawT)
-    else
-        local elapsed = time.elapsedTime - state.openTime
-        local rawT = math.min(1.0, elapsed / ANIM.OPEN_DUR)
-        return easeOutCubic(rawT)
-    end
+    if not _life then bindChurchLifecycle() end
+    return _life.getAnimProgress()
 end
 
 --- 槽位展开/选择/滑动

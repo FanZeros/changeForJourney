@@ -21,12 +21,13 @@
 - 部署该重构分支并预览；修了 Lua 5.4 `\!` 启动崩溃 + TalentMelissa/Luoxing 丢失 ETS 依赖（`d4914f8`）
 - T11：从 BattleCombat 抽出卡牌动画状态机到 `scripts/ui/BattleCombatAnim.lua`（`a3f6930` 已 push）
 - BattleCombat 2101 → 1822 行；对外 API（`updateCardAnims` / `playEnterAnims` / `setCardAnim` 等）保持委托
+- T12：TalentManager 再拆 Alex/Elwyn/Sera/Suhua 到 `systems/talents/`（`3e9920f` 已 push）；3570 → 3276 行
 
 ## likely_next_task
 
 - 继续拆超 1500 行文件（用户以选项指定）：
+  - TalentManager 仍 3276，可再抽弹射/转职/update 周期
   - BattleCombat 连击结算（`performComboAttack` 仍在主文件）
-  - TalentManager 再拆英雄块（仍 3570）
   - Client.lua overlay/启动（2487）
   - BattleScene 再拆（2384）
   - Server.lua（2068）

@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.28-four-meme-heroes | 2026-09-23 | 接入老六/哈基米/加载中/高ping战士（替代立绘）。分支 feat/four-meme-heroes。 |
 | v2.27-workspace-integrate | 2026-09-22 | 整合今天三线到 workspace：overlays 星图剔除+CharacterPower、docs 套装/六契/1.5竖屏天赋树、rename 远征文案。已推 origin/workspace。 |
 | v2.26-rename-expedition | 2026-09-22 | 玩家可见文案：冒险等级→远征等级、冒险家→远征队员、冒险招募券→远征招募券、冒险日志/奖励→远征日志/奖励。内部键名不变。分支 `feat/rename-adventure-to-expedition`。 |
 | v2.25-refactor-three-more | 2026-09-22 | Talent 减伤/复活、Church 槽位动画、Blacksmith 结果转发。Talent 1116 / Church 1004 / Blacksmith 1337。 |

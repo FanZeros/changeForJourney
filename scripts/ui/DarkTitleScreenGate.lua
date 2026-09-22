@@ -12,6 +12,8 @@
 --       [DarkTitleScreen]）。
 -- ============================================================================
 
+local I18n = require("core.I18n")
+
 local DarkTitleScreen = {}
 
 -- ── 状态 ──
@@ -166,9 +168,9 @@ function DarkTitleScreen.draw(vg, w, h)
         local stepMs = DarkTitleScreen.loadStepMs
         local pctText
         if stepName and stepMs then
-            pctText = string.format("资源加载中  %d%%  [%s %dms]", pct, tostring(stepName), stepMs)
+            pctText = string.format("%s  %d%%  [%s %dms]", I18n.t("loading_res"), pct, tostring(stepName), stepMs)
         else
-            pctText = string.format("资源加载中  %d%%", pct)
+            pctText = string.format("%s  %d%%", I18n.t("loading_res"), pct)
         end
         nvgText(vg, w * 0.5, h * 0.78, pctText, nil)
         local bw = w * 0.36
@@ -193,8 +195,60 @@ function DarkTitleScreen.draw(vg, w, h)
         local promptA = (0.30 + 0.62 * (0.5 + 0.5 * math.sin(t * 2.3))) * A
         nvgFontSize(vg, math.max(20, math.min(w * 0.024, 32)))
         nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], promptA * 255))
-        nvgText(vg, w * 0.5, h * 0.78, "轻 触 屏 幕 继 续", nil)
+        nvgText(vg, w * 0.5, h * 0.78, I18n.t("tap_continue"), nil)
     end
+
+    -- 标题页语言切换（左下）
+    local chipW, chipH, gap = 92, 36, 8
+    local x0 = 24
+    local y0 = h - 24 - chipH
+    DarkTitleScreen._langHits = {}
+    local cur = I18n.get()
+    for i, lang in ipairs(I18n.LANGS) do
+        local x = x0 + (i - 1) * (chipW + gap)
+        local on = lang.id == cur
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y0, chipW, chipH, 8)
+        if on then
+            nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 210 * A))
+        else
+            nvgFillColor(vg, nvgRGBA(20, 16, 12, 160 * A))
+        end
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], (on and 240 or 90) * A))
+        nvgStrokeWidth(vg, 1.5)
+        nvgStroke(vg)
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, math.max(14, math.min(w * 0.014, 18)))
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        if on then
+            nvgFillColor(vg, nvgRGBA(26, 18, 10, 255 * A))
+        else
+            nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 200 * A))
+        end
+        nvgText(vg, x + chipW * 0.5, y0 + chipH * 0.5, lang.label, nil)
+        DarkTitleScreen._langHits[i] = { x = x, y = y0, w = chipW, h = chipH, id = lang.id }
+    end
+end
+
+--- 标题页点语言芯片返回 true（吞掉继续）
+---@param sx number 逻辑坐标 X
+---@param sy number 逻辑坐标 Y
+---@return boolean
+function DarkTitleScreen.handleLanguageTap(sx, sy)
+    local hits = DarkTitleScreen._langHits
+    if not hits then return false end
+    for i = 1, #hits do
+        local r = hits[i]
+        if sx >= r.x and sx <= r.x + r.w and sy >= r.y and sy <= r.y + r.h then
+            I18n.set(r.id)
+            local ok, SP = pcall(require, "ui.SettingsPanel")
+            if ok and SP and SP.persistLanguage then SP.persistLanguage() end
+            print("[DarkTitleScreen] language=" .. r.id)
+            return true
+        end
+    end
+    return false
 end
 
 return DarkTitleScreen

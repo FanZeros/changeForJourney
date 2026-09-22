@@ -41,6 +41,7 @@ local SpinePowerUpEffect = require("ui.SpinePowerUpEffect")
 local IntroCutscene      = require("ui.IntroCutscene")
 local LetterIntro        = require("ui.LetterIntro")
 local CharacterDetail    = require("ui.CharacterDetail")
+local EquipmentBag       = require("ui.EquipmentBag")
 local ScenarioDialogue   = require("ui.ScenarioDialogue")
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
@@ -561,6 +562,28 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         return
     end
     local button = eventData["Button"]:GetInt()
+    if button == MOUSEB_RIGHT then
+        local pid, dx, dy = HorizonResolveMouse()
+        if pid == 'tri' then
+            BattleTriPage.handleRightClick(dx, dy)
+            return
+        end
+        if pid == 'playerinfo' then
+            if CharacterPanel.handleRightClick then CharacterPanel.handleRightClick(dx, dy) end
+            return
+        end
+        if pid == 'right' or pid == 'center' then
+            if CharacterPanel.handleRightClick then CharacterPanel.handleRightClick(dx, dy) end
+            return
+        end
+        if pid == 'left' then
+            if BlacksmithPage.isOpen() and EquipmentBag.isOpen() then
+                EquipmentBag.handleRightClick(dx, dy)
+            end
+            return
+        end
+        return
+    end
     if button ~= MOUSEB_LEFT then return end
     local pid, dx, dy = HorizonResolveMouse()
     -- 玩家信息全窗模态：按下也走设计坐标，避免抬起位移判定串栏
@@ -649,6 +672,12 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if not bootReady_() then return end
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续
     if DarkTitleScreen.isOpen() then
+        local mousePos = input:GetMousePosition()
+        local sx = mousePos.x / dpr()
+        local sy = mousePos.y / dpr()
+        if DarkTitleScreen.handleLanguageTap(sx, sy) then
+            return
+        end
         if DarkTitleScreen.isReady() and not DarkTitleScreen.isFading()
             and BottomNav.getSelectedIndex() == 3
             and not BattleTriPage.isOpen()
@@ -896,6 +925,11 @@ function HandleMouseWheelHorizon(eventType, eventData)
 
     if pid == 'modal' then
         PlayerInfoPanel.handleScroll(wheel)
+        return
+    end
+
+    if HeroRosterPanel.isVisible() then
+        HeroRosterPanel.handleScroll(wheel)
         return
     end
 

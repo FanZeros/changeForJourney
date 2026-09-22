@@ -690,6 +690,26 @@ function M.handleInput(dx, dy, heroId, detailState)
     return true
 end
 
+--- 右键：格子上快速穿戴
+---@param dx number
+---@param dy number
+---@param heroId number
+---@return boolean
+function M.handleRightClick(dx, dy, heroId)
+    if panelState.setCodexId then
+        panelState.setCodexId = nil
+        return true
+    end
+    if dy < CLIP_TOP or dy > CLIP_TOP + CLIP_HEIGHT then return false end
+    if dx < GRID_MARGIN_LEFT or dx > DESIGN_W - GRID_MARGIN_LEFT then return false end
+    local item = findItemAt(dx, dy)
+    if not item then return false end
+    local ok = equipItemNow(item, heroId, panelState.slot)
+    local EquipmentDetail = require("ui.EquipmentDetail")
+    if EquipmentDetail.isOpen() then EquipmentDetail.close() end
+    return ok
+end
+
 --- 处理滚动输入（由外层 drag handler 调用）
 ---@param deltaY number 拖拽增量
 function M.onDrag(deltaY)

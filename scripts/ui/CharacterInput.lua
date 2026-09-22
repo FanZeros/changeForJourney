@@ -314,12 +314,20 @@ function M.bind(deps)
         setScrollVelocity(0)
     end
 
+    local function handleRightClick(dx, dy)
+        if CharacterDetail.isOpen() then
+            return CharacterDetail.handleRightClick(dx, dy)
+        end
+        return false
+    end
+
     return {
         handleInput = handleInput,
         handleDragBegin = handleDragBegin,
         handleDragMove = handleDragMove,
         handleDragEnd = handleDragEnd,
         handleScroll = handleScroll,
+        handleRightClick = handleRightClick,
     }
 end
 

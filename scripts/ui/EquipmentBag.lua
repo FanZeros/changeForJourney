@@ -567,6 +567,59 @@ local function getCellCenter(row, col, land)
     return cx, cy
 end
 
+---@param dx number
+---@param dy number
+---@return table|nil
+local function findBagEntryAt(dx, dy)
+    local land = overlayRegion ~= nil
+    local cols      = land and LAND.COLS or CELL_COLS
+    local cellSize  = land and LAND.CELL or CELL_SIZE
+    local clipTop   = land and LAND.GRID_TOP or GRID_CLIP_TOP
+    local clipBot   = land and LAND.GRID_BOTTOM or GRID_CLIP_BOTTOM
+    if dy < clipTop or dy > clipBot then return nil end
+    local equips = getFilteredEquips()
+    local totalRows = math.ceil(math.max(#equips, cols) / cols)
+    for row = 1, totalRows do
+        for col = 1, cols do
+            local idx = (row - 1) * cols + col
+            ---@type table?
+            local entry = equips[idx]
+            if entry then
+                local cx, rawCY = getCellCenter(row, col, land)
+                local cy = rawCY - bagState.scrollY
+                if cy >= clipTop - cellSize * 0.5
+                   and cy <= clipBot + cellSize * 0.5
+                   and hitTest(dx, dy, cx, cy, cellSize, cellSize) then
+                    return entry
+                end
+            end
+        end
+    end
+    return nil
+end
+
+---@param entry table
+---@return boolean
+local function quickEquipEntry(entry)
+    if not entry or not bagState.heroId then return false end
+    if bagState.onSelect then
+        bagState.onSelect(entry.seq, entry.equip)
+        EquipmentBag.close()
+        return true
+    end
+    local Client = require("network.GameAction")
+    local Protocol = require("shared.Protocol")
+    local slot = bagState.filter or bagState.slot or entry.equip.slot
+    Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {
+        seq    = tonumber(entry.seq),
+        heroId = bagState.heroId,
+        slot   = slot,
+    })
+    require("systems.GameSFX").play("install")
+    print("[EquipmentBag] 右键快速装备 seq=" .. tostring(entry.seq) .. " slot=" .. tostring(slot))
+    return true
+end
+
 -- ======================== 输入处理 ========================
 
 --- 处理点击
@@ -587,10 +640,6 @@ function EquipmentBag.handleInput(dx, dy)
 
     -- [横屏 overlay] 横版布局参数
     local land = overlayRegion ~= nil
-    local cols      = land and LAND.COLS or CELL_COLS
-    local cellSize  = land and LAND.CELL or CELL_SIZE
-    local clipTop   = land and LAND.GRID_TOP or GRID_CLIP_TOP
-    local clipBot   = land and LAND.GRID_BOTTOM or GRID_CLIP_BOTTOM
     local bgCX, bgCY, bgW, bgH
     if land then
         bgCX, bgCY, bgW, bgH = 540, LAND.BG_H * 0.5, LAND.BG_W, LAND.BG_H
@@ -620,40 +669,31 @@ function EquipmentBag.handleInput(dx, dy)
         return true
     end
 
-    -- 格子区域点击检测
-    if dy >= clipTop and dy <= clipBot then
-        local equips = getFilteredEquips()
-        local totalRows = math.ceil(math.max(#equips, cols) / cols)
-
-        for row = 1, totalRows do
-            for col = 1, cols do
-                local idx = (row - 1) * cols + col
-                ---@type table?
-                local entry = equips[idx]
-                if entry then
-                    local cx, rawCY = getCellCenter(row, col, land)
-                    local cy = rawCY - bagState.scrollY
-                    -- 检查点击在可见区域内且命中格子
-                    if cy >= clipTop - cellSize * 0.5
-                       and cy <= clipBot + cellSize * 0.5
-                       and hitTest(dx, dy, cx, cy, cellSize, cellSize) then
-                        if bagState.onSelect then
-                            -- 选择模式：直接回调并关闭背包
-                            bagState.onSelect(entry.seq, entry.equip)
-                            EquipmentBag.close()
-                        else
-                            -- 装备模式：打开装备详情面板
-                            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId)
-                        end
-                        return true
-                    end
-                end
-            end
+    local entry = findBagEntryAt(dx, dy)
+    if entry then
+        if bagState.onSelect then
+            bagState.onSelect(entry.seq, entry.equip)
+            EquipmentBag.close()
+        else
+            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId)
         end
+        return true
     end
 
     -- 消费事件防止穿透
     return true
+end
+
+--- 右键：格子上快速穿戴（不打开详情）
+---@param dx number
+---@param dy number
+---@return boolean
+function EquipmentBag.handleRightClick(dx, dy)
+    if not bagState.open or bagState.closing then return false end
+    if EquipmentDetail.isOpen() then return false end
+    local entry = findBagEntryAt(dx, dy)
+    if not entry then return false end
+    return quickEquipEntry(entry)
 end
 
 --- 处理拖拽开始

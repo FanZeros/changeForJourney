@@ -557,4 +557,16 @@ function BattleTriPage.handleScroll(wheel)
     return false
 end
 
+---@param wx number
+---@param wy number
+---@return boolean
+function BattleTriPage.handleRightClick(wx, wy)
+    if not isOpen_ then return false end
+    if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
+        local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
+        return EquipmentBag.handleRightClick(dx, dy)
+    end
+    return false
+end
+
 return BattleTriPage

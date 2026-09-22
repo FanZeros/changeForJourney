@@ -26,6 +26,8 @@ local ClassChange      = require("ui.ChurchClassChange")
 local ArtifactPanel    = require("ui.ChurchArtifactPanel")
 local AVC              = require("config.AdvancementConfig")
 local ChurchDraw       = require("ui.ChurchDraw")
+local ChurchInput      = require("ui.ChurchInput")
+local ChurchRosterDraw = require("ui.ChurchRosterDraw")
 
 -- 懒加载网络模块（避免循环依赖）
 local Client_
@@ -460,187 +462,32 @@ end
 -- drawTabContent / openConfirmPopup / closeConfirmPopup / drawClassConfirmPopup
 -- → 已迁移至 ChurchClassChange.lua（通过 ClassChange.xxx 调用）
 --- 绘制角色列表（一比一复刻角色面板 CharacterPanel 的冒险家列表）
+local _rosterDraw
+local function bindRosterDraw()
+    _rosterDraw = ChurchRosterDraw.bind({
+        ROSTER = ROSTER,
+        DarkIcon = DarkIcon,
+        DrawUtil = DrawUtil,
+        CharacterPanel = CharacterPanel,
+        HC = HC,
+        AD = AD,
+        POWER_SKIP = POWER_SKIP,
+        ClassChange = ClassChange,
+        drawImageCentered = drawImageCentered,
+        drawTextStroke = drawTextStroke,
+        getHeroCardImage = getHeroCardImage,
+        getOwnedHeroList = getOwnedHeroList,
+        img = img,
+        rosterPowerCache = rosterPowerCache,
+        hasAdvanceForHero = ChurchPage.hasAdvanceForHero,
+        DESIGN_W = DESIGN_W,
+        state = state,
+    })
+end
+
 local function drawRosterList(vg)
-    local ownedList = getOwnedHeroList()
-    local rosterCount = #ownedList
-
-    -- 1) 列表背景图（与角色面板相同的 UI_JSJM_0.png）
-    drawImageCentered(vg, img.listBg, ROSTER.LIST_BG_CX, ROSTER.LIST_BG_CY, ROSTER.LIST_BG_W, ROSTER.LIST_BG_H, 1.0)
-
-    -- 2) "选择冒险家"提示（原战斗力位置，标题上方）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 42)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    local listTopY = ROSTER.LIST_BG_CY - ROSTER.LIST_BG_H * 0.5
-    nvgText(vg, ROSTER.MY_HEROES_CX, listTopY + 36, "选择", nil)
-
-    -- 3) "远征团"标题（42px 棕色 0x7b5339）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 42)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x7b, 0x53, 0x39, 255))
-    nvgText(vg, ROSTER.MY_HEROES_CX, ROSTER.MY_HEROES_CY, "远征团", nil)
-
-    if rosterCount == 0 then
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 32)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(180, 180, 180, 255))
-        nvgText(vg, 540, ROSTER.ROW1_CY, "暂无冒险家", nil)
-        return
-    end
-
-    -- 3) 角色卡片行（可滚动，裁剪到可视范围；用 Intersect 保留外层动画裁剪）
-    nvgSave(vg)
-    nvgIntersectScissor(vg, 0, ROSTER.SCROLL_TOP, DESIGN_W, ROSTER.SCROLL_BOTTOM - ROSTER.SCROLL_TOP)
-
-    local scrollY = state.rosterScrollY
-    for idx = 1, rosterCount do
-        local entry = ownedList[idx]
-        local heroCfg = HC.get(entry.heroId)
-        if not heroCfg then goto continueRoster end
-
-        -- 确定行列
-        local row = math.ceil(idx / ROSTER.MAX_PER_ROW)
-        local col = idx - (row - 1) * ROSTER.MAX_PER_ROW    -- 1~5
-
-        -- 当前行有多少张卡（最后一行可能不满）
-        local rowStart = (row - 1) * ROSTER.MAX_PER_ROW + 1
-        local rowEnd   = math.min(row * ROSTER.MAX_PER_ROW, rosterCount)
-        local rowCount = rowEnd - rowStart + 1
-
-        -- 行的 Y 中心（应用滚动偏移）
-        local rowCY = ROSTER.ROW1_CY + (row - 1) * ROSTER.ROW_SPACING - scrollY
-
-        -- 快速跳过完全不可见的行
-        local cardTop    = rowCY - ROSTER.CARD_H * 0.5 + ROSTER.TAG_OFFSET_Y
-        local cardBottom = rowCY + ROSTER.NAME_BG_DY + ROSTER.NAME_BG_H2 * 0.5
-        if cardBottom < ROSTER.SCROLL_TOP or cardTop > ROSTER.SCROLL_BOTTOM then
-            goto continueRoster
-        end
-
-        -- 水平居中分布（按实际卡片数居中）
-        local totalW = rowCount * ROSTER.CARD_W + (rowCount - 1) * ROSTER.CARD_SPACING
-        local startCX = (DESIGN_W - totalW) * 0.5 + ROSTER.CARD_W * 0.5
-        local cx = startCX + (col - 1) * (ROSTER.CARD_W + ROSTER.CARD_SPACING)
-        local cy = rowCY
-
-        -- a) 角色卡片
-        local cardImg = getHeroCardImage(vg, entry.heroId)
-        DrawUtil.drawImageCover(vg, cardImg, cx, cy, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
-
-        -- b) 职业图标（左上角，60x60）
-        local iconIdx = ClassChange.CLASS_NUM[heroCfg.classId]
-        if iconIdx and img.classIcons[iconIdx] then
-            drawImageCentered(vg, img.classIcons[iconIdx], cx, cy + ROSTER.TAG_OFFSET_Y, 60, 60, 1.0)
-        end
-
-        -- c) 战斗力图标+数值（居中于卡片）
-        if not rosterPowerCache[entry.heroId] then
-            local pw = 0
-            local statLevel = entry.level or 1
-            local heroUnit = HC.createHero(entry.heroId, statLevel, entry.advBranch, entry.awakening, entry.extraTalent)
-            if heroUnit and heroUnit.attrs then
-                local a = heroUnit.attrs
-                CharacterPanel.applyEquippedItems(a, entry.heroId)
-                for key, meta in pairs(AD.META) do
-                    if not POWER_SKIP[key] and meta.valueModel and meta.valueModel > 0 then
-                        local val = a:get(key)
-                        if meta.dataType == AD.TYPE_PCT then
-                            pw = pw + val * (meta.valueModel / 100)
-                        else
-                            pw = pw + val * meta.valueModel
-                        end
-                    end
-                end
-            end
-            rosterPowerCache[entry.heroId] = math.floor(pw + 0.5)
-        end
-        local rPower = rosterPowerCache[entry.heroId] or 0
-        local rPowerStr = tostring(rPower)
-        local POWER_GAP = 4
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 30)
-        local rptW = nvgTextBounds(vg, 0, 0, rPowerStr)
-        local rpcW = ROSTER.POWER_ICON_SIZE + POWER_GAP + rptW
-        local rpcX = cx - rpcW * 0.5
-        DarkIcon.draw(vg, "power", rpcX + ROSTER.POWER_ICON_SIZE * 0.5, cy + ROSTER.POWER_DY, ROSTER.POWER_ICON_SIZE, 1.0)
-        drawTextStroke(vg, rpcX + ROSTER.POWER_ICON_SIZE + POWER_GAP,
-            cy + ROSTER.POWER_DY, rPowerStr,
-            30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            247, 254, 119, 4)
-
-        -- d) 经验条
-        local expBarCX = cx + ROSTER.EXP_BAR_DX
-        local expBarCY = cy + ROSTER.EXP_BAR_DY
-        drawImageCentered(vg, img.expBarBg, expBarCX, expBarCY, ROSTER.EXP_BAR_BG_W, ROSTER.EXP_BAR_BG_H, 1.0)
-        local expProgress = (entry.maxExp > 0) and (entry.exp / entry.maxExp) or 0
-        expProgress = math.max(0, math.min(1, expProgress))
-        local fillW = ROSTER.EXP_BAR_BG_W - ROSTER.EXP_BAR_PADDING * 2 - ROSTER.EXP_FILL_LEFT_INSET
-        local fillH = ROSTER.EXP_BAR_BG_H - ROSTER.EXP_BAR_PADDING * 2
-        local fillX = expBarCX - ROSTER.EXP_BAR_BG_W * 0.5 + ROSTER.EXP_BAR_PADDING + ROSTER.EXP_FILL_LEFT_INSET
-        local fillY = expBarCY - ROSTER.EXP_BAR_BG_H * 0.5 + ROSTER.EXP_BAR_PADDING
-        local clipW = fillW * expProgress
-        if clipW > 0 and img.expBarFill >= 0 then
-            nvgSave(vg)
-            nvgIntersectScissor(vg, fillX, fillY, clipW, fillH)
-            local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, img.expBarFill, 1.0)
-            nvgBeginPath(vg)
-            nvgRect(vg, fillX, fillY, fillW, fillH)
-            nvgFillPaint(vg, paint)
-            nvgFill(vg)
-            nvgRestore(vg)
-        end
-
-        -- e) 等级徽章（与角色面板一致：显示有效等级，含共鸣）
-        local badgeLevel = entry.level or 1
-        local badgeCX = cx + ROSTER.LVL_BADGE_DX
-        local badgeCY = cy + ROSTER.LVL_BADGE_DY
-        drawImageCentered(vg, img.lvlBadge, badgeCX, badgeCY, ROSTER.LVL_BADGE_SIZE, ROSTER.LVL_BADGE_SIZE, 1.0)
-        drawTextStroke(vg, badgeCX, badgeCY, tostring(badgeLevel),
-            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4)
-
-        -- f) 角色名背景（纯黑矩形，10%不透明度，圆角24）
-        local nameBgCY = cy + ROSTER.NAME_BG_DY
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, cx - ROSTER.NAME_BG_W2 * 0.5, nameBgCY - ROSTER.NAME_BG_H2 * 0.5,
-            ROSTER.NAME_BG_W2, ROSTER.NAME_BG_H2, ROSTER.NAME_BG_RADIUS)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-        nvgFill(vg)
-
-        -- g) 角色名文字（白色，黑描边4）
-        drawTextStroke(vg, cx, nameBgCY, heroCfg.name,
-            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4)
-
-        -- h) 出战中标识（[三队并行] 显示所属队伍：队1/队2/队3）
-        local deployTeams = CharacterPanel.getHeroDeployTeams and CharacterPanel.getHeroDeployTeams(entry.heroId) or nil
-        if deployTeams and #deployTeams > 0 then
-            local labels = {}
-            for i, t in ipairs(deployTeams) do labels[i] = "队" .. t end
-            drawImageCentered(vg, img.deployed, cx + ROSTER.DEPLOYED_DX, cy + ROSTER.DEPLOYED_DY, ROSTER.DEPLOYED_W, ROSTER.DEPLOYED_H, 1.0)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, #deployTeams > 1 and 22 or 28)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-            nvgText(vg, cx + ROSTER.DEPLOYED_DX, cy + ROSTER.DEPLOYED_TXT_DY, table.concat(labels, "·"), nil)
-        end
-
-        -- i) 可转职角标（右上角 ICON_UP 40x40）
-        if ChurchPage.hasAdvanceForHero(entry.heroId) and img.iconUp >= 0 then
-            local upSize = 40
-            local upX = cx + ROSTER.CARD_W * 0.5 - upSize * 0.5 - 2
-            local upY = cy - ROSTER.CARD_H * 0.5 + upSize * 0.5 + 2
-            drawImageCentered(vg, img.iconUp, upX, upY, upSize, upSize, 1.0)
-        end
-
-        ::continueRoster::
-    end
-
-    nvgResetScissor(vg)
-    nvgRestore(vg)
+    if not _rosterDraw then bindRosterDraw() end
+    return _rosterDraw.drawRosterList(vg)
 end
 
 -- ======================== Public API ========================
@@ -976,264 +823,62 @@ local function updateRosterSlide()
     end
 end
 
---- 点击事件处理
----@return boolean consumed
+--- 点击/拖拽/滚轮
+local _input
+local function bindInput()
+    _input = ChurchInput.bind({
+        ANIM = ANIM,
+        CHAR_SLOT = CHAR_SLOT,
+        ClassChange = ClassChange,
+        TalentPanel = TalentPanel,
+        ArtifactPanel = ArtifactPanel,
+        TownPageChrome = TownPageChrome,
+        TAB_ITEMS = TAB_ITEMS,
+        TAB_KEYS = TAB_KEYS,
+        TAB = TAB,
+        CHURCH = CHURCH,
+        ROSTER = ROSTER,
+        DESIGN_W = DESIGN_W,
+        DESIGN_H = DESIGN_H,
+        clampRosterScroll = clampRosterScroll,
+        isRosterVisible = isRosterVisible,
+        isInRosterScrollArea = isInRosterScrollArea,
+        expandSlot = expandSlot,
+        collapseSlot = collapseSlot,
+        selectHero = selectHero,
+        getOwnedHeroList = getOwnedHeroList,
+        forceClose = ChurchPage.forceClose,
+        closePage = ChurchPage.close,
+        resetRosterScrollState = resetRosterScrollState,
+        TalentStarMap = TalentStarMap,
+        state = state,
+        hitTest = hitTest,
+    })
+end
+
 function ChurchPage.handleInput(dx, dy)
-    if not state.open then return false end
-    if state.closing then
-        -- 安全保护：关闭动画超过 1 秒仍未完成，强制关闭
-        local closingElapsed = time.elapsedTime - state.closeTime
-        if closingElapsed > 1.0 then
-            print("[ChurchPage] handleInput: 关闭动画超时(" .. string.format("%.2f", closingElapsed) .. "s)，强制关闭")
-            ChurchPage.forceClose()
-            return false
-        end
-        return true
-    end
-
-    -- ========== 重置确认弹窗（模态，优先拦截）→ 委托 ClassChange ==========
-    if state.resetConfPopup then
-        return ClassChange.handleResetConfirmInput(dx, dy)
-    end
-
-    -- ========== 转职确认弹窗（模态，优先拦截）→ 委托 ClassChange ==========
-    if state.confirmPopup then
-        return ClassChange.handleConfirmInput(dx, dy)
-    end
-
-    -- ========== 天赋效果总览（模态，优先于详情）→ 委托 TalentPanel ==========
-    if state.tfOverviewOpen then
-        return TalentPanel.handleOverviewInput(dx, dy)
-    end
-
-    -- ========== 天赋详情面板（模态，优先拦截）→ 委托 TalentPanel ==========
-    if state.tfDetailOpen then
-        return TalentPanel.handleDetailInput(dx, dy)
-    end
-
-    -- ========== 神器 Tab 交互 → 委托 ArtifactPanel ==========
-    if state.tab == "shenqi" then
-        local consumed = ArtifactPanel.handleTabInput(dx, dy)
-        if consumed then return true end
-    end
-
-    -- 返回按钮（三行模式由中缝层接管）
-    if TownPageChrome.hitBack(dx, dy) then
-        ChurchPage.close()
-        return true
-    end
-
-    -- 角色列表中的点击检测（展开且在转职tab时）
-    -- roster 使用屏幕设计坐标（独立浮层，不跟随上半部分偏移）
-    if state.slotExpanded and state.tab == "zhuanzhi" and state.slotLiftProgress > 0.9 then
-        local ownedList = getOwnedHeroList()
-        local rosterCount = #ownedList
-        local scrollOff = state.rosterScrollY
-        for idx, entry in ipairs(ownedList) do
-            -- 与 drawRosterList 完全一致的居中分布计算
-            local row = math.ceil(idx / ROSTER.MAX_PER_ROW)
-            local col = idx - (row - 1) * ROSTER.MAX_PER_ROW    -- 1~5
-
-            local rowStart = (row - 1) * ROSTER.MAX_PER_ROW + 1
-            local rowEnd   = math.min(row * ROSTER.MAX_PER_ROW, rosterCount)
-            local rowCount = rowEnd - rowStart + 1
-
-            local rowCY = ROSTER.ROW1_CY + (row - 1) * ROSTER.ROW_SPACING - scrollOff
-            local totalW = rowCount * ROSTER.CARD_W + (rowCount - 1) * ROSTER.CARD_SPACING
-            local startCX = (DESIGN_W - totalW) * 0.5 + ROSTER.CARD_W * 0.5
-            local cx = startCX + (col - 1) * (ROSTER.CARD_W + ROSTER.CARD_SPACING)
-            local cy = rowCY
-
-            if hitTest(dx, dy, cx, cy, ROSTER.CARD_W, ROSTER.CARD_H) then
-                selectHero(entry.heroId, cx, cy)
-                return true
-            end
-        end
-    end
-
-    -- 角色选择框点击（仅在转职 tab 中，跟随上移偏移）
-    if state.tab == "zhuanzhi" then
-        local slotOY = -ANIM.SLOT_LIFT * state.slotLiftProgress
-        local slotCY = CHAR_SLOT.CY + slotOY
-        if hitTest(dx, dy, CHAR_SLOT.CX, slotCY, CHAR_SLOT.W, CHAR_SLOT.H) then
-            if state.slotExpanded then
-                -- 已展开时点击槽位 → 收起
-                collapseSlot()
-            elseif state.slotLiftProgress >= 1.0 then
-                -- 槽位已在上移位置（之前选过角色）→ 列表从下方滑入
-                state.slotExpanded = true
-                state.slotAnimDir = 0
-                state.rosterScrollY = 0
-                resetRosterScrollState()
-                state.rosterSlideDir = 1
-                state.rosterSlideTime = time.elapsedTime
-                state.rosterSlideProgress = 0
-                print("[ChurchPage] 重新展开角色列表（从下方滑入）")
-            else
-                -- 未展开且未上移 → 展开角色列表（播放上移动画）
-                state.selectedHeroId = nil  -- 清除已选角色
-                expandSlot()
-            end
-            return true
-        end
-    end
-
-    -- ========== 点击列表上方空白区域 → 收起"我的冒险家"面板 ==========
-    if state.tab == "zhuanzhi" and not state.selectAnim then
-        local listTopY = ROSTER.LIST_BG_CY - ROSTER.LIST_BG_H * 0.5
-        if state.slotExpanded and state.rosterSlideProgress > 0.5 then
-            -- 列表展开时，点击列表背景上方区域 → 列表向下滑出
-            if dy < listTopY then
-                if state.selectedHeroId then
-                    -- 已选过角色：仅滑出列表，保持槽位上移
-                    state.rosterSlideDir = -1
-                    state.rosterSlideTime = time.elapsedTime
-                    state.rosterSlideProgress = 1.0
-                    print("[ChurchPage] 点击上方区域，滑出角色列表")
-                else
-                    -- 未选过角色：完全收起（槽位下移回原位）
-                    collapseSlot()
-                    print("[ChurchPage] 点击上方区域，收起角色列表")
-                end
-                return true
-            end
-        elseif not state.slotExpanded and state.slotLiftProgress >= 1.0 and state.selectedHeroId then
-            -- 已选角色、转职树显示时，点击上方空白区域 → 重新展开角色列表
-            if dy < listTopY then
-                state.slotExpanded = true
-                state.slotAnimDir = 0
-                state.rosterScrollY = 0
-                resetRosterScrollState()
-                state.rosterSlideDir = 1
-                state.rosterSlideTime = time.elapsedTime
-                state.rosterSlideProgress = 0
-                print("[ChurchPage] 点击上方区域，重新展开角色列表")
-                return true
-            end
-        end
-    end
-
-    -- ========== 天赋 Tab 交互 → 委托 TalentPanel ==========
-    if state.tab == "tianfu" then
-        local consumed = TalentPanel.handleTabInput(dx, dy)
-        if consumed then return true end
-    end
-
-    -- ========== 转职分支图标点击 → 委托 ClassChange ==========
-    if state.tab == "zhuanzhi" and state.selectedHeroId and not state.slotExpanded
-       and state.slotLiftProgress > 0.9 and not state.selectAnim then
-        local consumed = ClassChange.handleBranchInput(dx, dy)
-        if consumed then return true end
-    end
-
-    -- Tab 切换检测
-    do
-        local i = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
-        if i then
-            local newTab = TAB_KEYS[i]
-            if state.tab ~= newTab then
-                state.tabFrom = state.tab
-                state.tabSwitchTime = time.elapsedTime
-                state.tab = newTab
-                require("systems.GameSFX").playUIMove(2)
-                TalentStarMap.stopInertia()
-
-                -- 切换到非转职 tab 时：延迟清除英雄态，让旧 Tab 滑出期间仍渲染职业背景
-                if newTab ~= "zhuanzhi" then
-                    state._deferClearHero = true
-                    -- 冻结槽位动画（不独立收起，整体跟 tab 一起滑走）
-                    if state.slotExpanded then
-                        state.slotExpanded = false
-                    end
-                    state.slotAnimDir = 0  -- 停止独立动画
-                else
-                    state._deferClearHero = false
-                end
-
-                print("[ChurchPage] 切换到 " .. newTab)
-            end
-            return true
-        end
-    end
-
-    return true  -- 教堂打开时消费所有点击
+    if not _input then bindInput() end
+    return _input.handleInput(dx, dy)
 end
 
--- ======================== 拖拽三段式 ========================
-
--- ======================== 拖拽三段式 → 委托 TalentPanel ========================
-
---- 拖拽开始
----@return boolean consumed
 function ChurchPage.handleDragBegin(dx, dy)
-    if not state.open or state.closing then return false end
-
-    if isRosterVisible() and isInRosterScrollArea(dx, dy) then
-        state.rosterDragging = true
-        state.rosterLastDragY = dy
-        state.rosterScrollVelocity = 0
-        return true
-    end
-
-    if state.tab ~= "tianfu" and state.tab ~= "shenqi" then return false end
-    if state.tab == "tianfu" then
-        return TalentPanel.handleDragBegin(dx, dy)
-    end
-    return ArtifactPanel.handleDragBegin(dx, dy)
+    if not _input then bindInput() end
+    return _input.handleDragBegin(dx, dy)
 end
 
---- 拖拽移动
----@return boolean consumed
 function ChurchPage.handleDragMove(dx, dy)
-    if not state.open or state.closing then return false end
-
-    if state.rosterDragging then
-        local delta = state.rosterLastDragY - dy
-        state.rosterScrollY = state.rosterScrollY + delta
-        state.rosterLastDragY = dy
-        state.rosterScrollVelocity = -delta
-        clampRosterScroll()
-        return true
-    end
-
-    if state.tab ~= "tianfu" and state.tab ~= "shenqi" then return false end
-    if state.tab == "tianfu" then
-        return TalentPanel.handleDragMove(dx, dy)
-    end
-    return ArtifactPanel.handleDragMove(dx, dy)
+    if not _input then bindInput() end
+    return _input.handleDragMove(dx, dy)
 end
 
---- 拖拽结束
 function ChurchPage.handleDragEnd(dx, dy)
-    if not state.open or state.closing then return end
-    if state.rosterDragging then
-        state.rosterDragging = false
-        return
-    end
-    if state.tab == "tianfu" then
-        TalentPanel.handleDragEnd(dx, dy)
-    elseif state.tab == "shenqi" then
-        ArtifactPanel.handleDragEnd(dx, dy)
-    end
+    if not _input then bindInput() end
+    return _input.handleDragEnd(dx, dy)
 end
 
---- 鼠标滚轮滚动
----@param wheel number
----@param msx number|nil 鼠标设计坐标X (滚轮缩放锚点用, 可为nil)
----@param msy number|nil 鼠标设计坐标Y
 function ChurchPage.handleScroll(wheel, msx, msy)
-    if not state.open or state.closing then return end
-    if isRosterVisible() then
-        state.rosterScrollY = state.rosterScrollY - wheel * 80
-        state.rosterScrollVelocity = 0
-        clampRosterScroll()
-        return
-    end
-    if state.tab == "tianfu" and TalentPanel.handleScroll then
-        TalentPanel.handleScroll(wheel, msx, msy)
-    elseif state.tab == "shenqi" then
-        ArtifactPanel.handleScroll(wheel)
-    end
+    if not _input then bindInput() end
+    return _input.handleScroll(wheel, msx, msy)
 end
 
 --- 绘制教堂界面

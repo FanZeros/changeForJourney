@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-22 | 版本:v2.23-refactor-church-draw
+> 更新时间:2026-09-22 | 版本:v2.24-refactor-four-extracts
 >
-> **本会话(2026-09-22)**：T34 ChurchPage 主绘制抽到 ChurchDraw。禁止推 workspace。
+> **本会话(2026-09-22)**：T35 Church 输入/名单 + Talent 攻前/受伤 + Blacksmith 输入。禁止推 workspace。
 
 ---
 

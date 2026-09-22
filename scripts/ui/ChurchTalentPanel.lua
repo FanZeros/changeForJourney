@@ -82,17 +82,6 @@ local TOV = {
     headerR = 0x81, headerG = 0x57, headerB = 0x3c,
 }
 
--- ======================== Spine 天赋背景 ========================
-
-local spineTfBg = {
-    json    = "image/spine/UI_SPINE_TFBJ.json",
-    dataX   = -540,   dataY = -1200,
-    dataW   = 1080,   dataH = 2400,
-    inst    = nil,
-    loaded  = false,
-    lastT   = 0,
-}
-
 -- 星图拖拽区域 = 1:1 视口（MAP_TOP / MAP_H 已在上方定义）
 -- 世界画布约 1.5 竖屏、默认 zoom=1；本视口是窗口，超出部分拖拽
 
@@ -123,43 +112,6 @@ function M.setContext(ctx)
 end
 
 -- ======================== 内部函数 ========================
-
---- 初始化 Spine 天赋背景（懒加载）
-local function ensureSpineTfBgLoaded(vg)
-    if spineTfBg.loaded and spineTfBg.inst then return true end
-    if not vg then return false end
-
-    local inst = nvgSpineCreate(vg)
-    if not inst then
-        print("[ChurchTalentPanel] nvgSpineCreate(tfBg) failed")
-        return false
-    end
-
-    if not inst:Load(spineTfBg.json) then
-        print("[ChurchTalentPanel] Failed to load Spine: " .. spineTfBg.json)
-        return false
-    end
-
-    -- atlas 中 pma:true
-    inst:SetPremultipliedAlpha(true)
-    -- 动画 "1" 循环播放
-    inst:SetAnimation(0, "1", true)
-    inst:SetSpeed(1.0)
-
-    -- 动态读取真实骨架包围盒（美术导出值，勿手填假设）
-    spineTfBg.dataX = inst:GetDataX()
-    spineTfBg.dataY = inst:GetDataY()
-    spineTfBg.dataW = inst:GetDataWidth()
-    spineTfBg.dataH = inst:GetDataHeight()
-    print(string.format("[ChurchTalentPanel] tfBg bounds: x=%.0f y=%.0f w=%.0f h=%.0f",
-        spineTfBg.dataX, spineTfBg.dataY, spineTfBg.dataW, spineTfBg.dataH))
-
-    spineTfBg.inst   = inst
-    spineTfBg.loaded = true
-    spineTfBg.lastT  = time.elapsedTime
-    print("[ChurchTalentPanel] Spine tfBg loaded OK")
-    return true
-end
 
 --- 判断节点是否为末尾天赋（已点亮子图的叶子：只有 1 个已点亮邻居，即其父节点）
 --- 叶子节点可以安全移除而不断开其他已点亮节点的连通性
@@ -304,38 +256,8 @@ end
 
 --- 绘制天赋背景（铺满全屏，在上半部分之前绘制）
 function M.drawBg(vg)
-    if not ensureSpineTfBgLoaded(vg) then
-        -- fallback: 旧静态背景
-        drawImageCentered(vg, img.tfBg, TF.bgCX, TF.bgCY, TF.bgW, TF.bgH, 1.0)
-        drawImageCentered(vg, img.tfBorderGlow, TF.bgCX, TF.bgCY, TF.bgW, TF.bgH, 1.0)
-        return
-    end
-
-    -- 计算 dt
-    local now = time.elapsedTime
-    local dt  = now - spineTfBg.lastT
-    if dt > 0.2 then dt = 0.016 end   -- 防止暂停后大跳
-    spineTfBg.lastT = now
-
-    local inst = spineTfBg.inst
-
-    -- 更新动画
-    inst:Update(dt)
-
-    -- 缩放：Spine 尺寸 1080×2400 = 设计分辨率，1:1 映射
-    -- Spine Y 朝上，屏幕 Y 朝下，翻转 Y
-    inst:SetScale(1.0, -1.0)
-
-    -- 定位：骨架数据中心 = (dataX + dataW/2, dataY + dataH/2) = (0, 0)
-    -- 屏幕中心 = (540, 1200)
-    local dataCenterX = spineTfBg.dataX + spineTfBg.dataW * 0.5  -- 0
-    local dataCenterY = spineTfBg.dataY + spineTfBg.dataH * 0.5  -- 0
-    local posX = TF.bgCX - dataCenterX * 1.0     -- 540
-    local posY = TF.bgCY + dataCenterY * 1.0     -- 1200 (Y翻转所以 +)
-    inst:SetPosition(posX, posY)
-
-    -- 渲染
-    nvgSpineRender(vg, inst)
+    -- 暗黑定稿：终焉古树根系边框静态底（1080×2400 与设计分辨率 1:1）
+    drawImageCentered(vg, img.tfBg, TF.bgCX, TF.bgCY, TF.bgW, TF.bgH, 1.0)
 end
 
 --- 绘制天赋 Tab 内容（受 scissor 裁剪的部分）
@@ -912,9 +834,8 @@ function M.handleScroll(wheel, msx, msy)
     end
 end
 
---- 预加载 Spine 资源
+--- 预加载（旧 Spine 天赋背景已下掉，静态底随页面图片加载即完成；保留 API 供调用方）
 function M.preloadSpine(vg)
-    ensureSpineTfBgLoaded(vg)
 end
 
 return M

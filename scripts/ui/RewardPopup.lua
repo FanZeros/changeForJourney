@@ -275,10 +275,10 @@ end
 function RewardPopup.init(vg)
     cachedVg = vg
     ImageCache.init(vg)
-    imgGlow  = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_2.png", 0)
-    imgPanel = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_1.png", 0)
-    if imgGlow  < 0 then print("[RewardPopup] WARN: UI_GXHD_2.png load failed") end
-    if imgPanel < 0 then print("[RewardPopup] WARN: UI_GXHD_1.png load failed") end
+    imgGlow  = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_2_dark.png", 0)
+    imgPanel = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_1_dark.png", 0)
+    if imgGlow  < 0 then print("[RewardPopup] WARN: UI_GXHD_2_dark.png load failed") end
+    if imgPanel < 0 then print("[RewardPopup] WARN: UI_GXHD_1_dark.png load failed") end
 end
 
 --- 展示奖励弹窗
@@ -693,16 +693,22 @@ function RewardPopup.drawContent(vg)
     -- 3) 背景面板
     drawImageCentered(vg, imgPanel, PANEL_CX, PANEL_CY, PANEL_W, PANEL_H, 1.0)
 
-    -- 4) 奖励类型文本
+    -- 4) 奖励类型文本（暗金亮 + 深色描边，贴合暗黑主题）
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, TITLE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
+    nvgFillColor(vg, nvgRGBA(0x23, 0x1a, 0x10, 255))
+    local tStep = math.pi * 2 / 16
+    for si = 0, 15 do
+        local sa = si * tStep
+        nvgText(vg, TITLE_CX + math.cos(sa) * 3, TITLE_CY + math.sin(sa) * 3, state.title, nil)
+    end
+    nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
     nvgText(vg, TITLE_CX, TITLE_CY, state.title, nil)
 
     if state.subtitle and state.subtitle ~= "" then
         nvgFontSize(vg, 28)
-        nvgFillColor(vg, nvgRGBA(220, 220, 220, 230))
+        nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 230))
         nvgText(vg, TITLE_CX, TITLE_CY + 42, state.subtitle, nil)
     end
 
@@ -950,11 +956,11 @@ function RewardPopup.drawContent(vg)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- 6) 底部提示文本 "点击空白处关闭"
+    -- 6) 底部提示文本 "点击空白处关闭"（骨白压暗）
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, HINT_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
+    nvgFillColor(vg, nvgRGBA(0xC8, 0xC0, 0xB0, 200))
     nvgText(vg, HINT_CX, HINT_CY, HINT_TEXT, nil)
 
     -- 恢复缩放/透明变换

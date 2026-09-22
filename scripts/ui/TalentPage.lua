@@ -77,7 +77,6 @@ local state = {
 local img = {
     nameBg        = -1,
     tfBg          = -1,
-    tfBorderGlow  = -1,
     tfPointGlow   = -1,
     tfSliderThumb = -1,
     tfDetailBg    = {},
@@ -113,8 +112,7 @@ function TalentPage.init(vg)
     vgCache = vg
 
     img.nameBg        = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
-    img.tfBg          = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_BJ.png", 0)
-    img.tfBorderGlow  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_BJGY.png", 0)
+    img.tfBg          = nvgCreateImage(vg, "image/界面底板/终焉古树/UI_GS_TFBJ_dark.png", 0)
     img.tfPointGlow   = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HG.png", 0)
     img.tfSliderThumb = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HK.png", 0)
     local colorFileMap = { ["红"] = "HONG", ["绿"] = "LV", ["黄"] = "HUANG", ["蓝"] = "LAN", ["紫"] = "ZI" }

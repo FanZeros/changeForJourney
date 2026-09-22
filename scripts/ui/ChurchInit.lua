@@ -75,8 +75,7 @@ function M.bind(deps)
         img.resDiamond = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
 
         -- 天赋面板图片
-        img.tfBg          = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_BJ.png", 0)
-        img.tfBorderGlow  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_BJGY.png", 0)
+        img.tfBg          = nvgCreateImage(vg, "image/界面底板/终焉古树/UI_GS_TFBJ_dark.png", 0)
         img.tfPointGlow   = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HG.png", 0)
         img.tfSliderThumb = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HK.png", 0)
 

@@ -281,8 +281,7 @@ local img = {
     resGold     = -1,    -- UI_icon_JB_X.png
     resDiamond  = -1,    -- UI_icon_SJ_X.png
     -- 天赋面板
-    tfBg          = -1,  -- UI_JTTF_BJ.png (已废弃，改用 Spine)
-    tfBorderGlow  = -1,  -- UI_JTTF_BJGY.png (已废弃，改用 Spine)
+    tfBg          = -1,  -- image/界面底板/终焉古树/UI_GS_TFBJ_dark.png（TalentPage 内加载）
     tfPointGlow   = -1,  -- UI_JTTF_HG.png
     tfSliderThumb = -1,  -- UI_JTTF_HK.png
     -- 天赋详情面板背景（按颜色索引）

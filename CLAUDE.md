@@ -32,12 +32,14 @@
 - T36：Talent 减伤/复活 + Church 槽位动画 + Blacksmith 结果转发。Talent 1116 / Church 1004 / Blacksmith 1337
 - hotfix：敌人死亡误变墓碑。根因 BattleCasualty 写 `stageKillCount_`，BattleScene 注入 `stageKillCount`。`8a41499`
 - T37：ChurchPage.init → ChurchInit；Talent onEnemyDeath/checkMarkTarget → TalentEnemyDeath。Church 918 / Talent 1032
+- T38：ChurchBadge + TalentComboAttack + BlacksmithEnhanceCache + MarketCollection。Church 893 / Talent 1030 / Blacksmith 1244 / Market 1173
 
 ## likely_next_task
 
-- ChurchPage 918，可再抽 open/close 或角标查询
-- TalentManager 1032，可再拆 onComboAttack
-- BlacksmithPage 1337 上半绘制依赖局部图太多，勿盲目抽
+- ChurchPage 893，可再抽 open/close / onActionResult
+- TalentManager 1030，核心壳已较瘦，再拆收益低
+- BlacksmithPage 1244 上半绘制依赖局部图太多，勿盲目抽 init
+- MarketPage 1173，可再抽 init 或商店道具网格
 - ServerListConfig / GuildConfig 仍被存档与云排行使用，勿当死代码删
 
 ## 用户硬性流程（必须遵守）

@@ -28,6 +28,7 @@ local TalentDamageTaken = require("systems.talents.TalentDamageTaken")
 local TalentModifyDamage = require("systems.talents.TalentModifyDamage")
 local TalentAllyDeath = require("systems.talents.TalentAllyDeath")
 local TalentEnemyDeath = require("systems.talents.TalentEnemyDeath")
+local TalentComboAttack = require("systems.talents.TalentComboAttack")
 
 local MAS
 local function getMAS()
@@ -676,6 +677,20 @@ local function bindTalentEnemyDeath()
 end
 bindTalentEnemyDeath()
 
+local _combo
+local function bindTalentComboAttack()
+    _combo = TalentComboAttack.bind({
+        getState = getState,
+        wrapDealDmgForLuoxing = wrapDealDmgForLuoxing,
+        getLuoxingAccumAmount = getLuoxingAccumAmount,
+        addLuoxingWindowDamage = addLuoxingWindowDamage,
+        tryYouyeSuperCrit = tryYouyeSuperCrit,
+        runSuhuaNightSlash = runSuhuaNightSlash,
+        tickSeraMachineGunCount = tickSeraMachineGunCount,
+    })
+end
+bindTalentComboAttack()
+
 local _talentUpdate
 local function bindTalentUpdate()
     _talentUpdate = TalentUpdate.bind({
@@ -947,24 +962,7 @@ end
 ---@param targetList table 被攻击方的单位列表
 ---@param dealDmgFn function 伤害回调
 function TAL.onComboAttack(attacker, target, isAlly, targetList, dealDmgFn, comboMeta)
-    if not attacker or not dealDmgFn or not targetList then return end
-    local s = getState(attacker)
-    if not s then return end
-    dealDmgFn = wrapDealDmgForLuoxing(attacker, dealDmgFn)
-    if s.heroId == 16 and comboMeta and comboMeta.category ~= "healing" then
-        local amt = getLuoxingAccumAmount(comboMeta, comboMeta.totalDamage)
-        if amt > 0 then
-            addLuoxingWindowDamage(attacker, amt, nil, nil)
-        end
-    end
-    if s.heroId == 14 and comboMeta and comboMeta.isCrit then
-        tryYouyeSuperCrit(attacker, target, comboMeta, isAlly, dealDmgFn)
-    end
-    if s.heroId == 11 then
-        runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealDmgFn)
-    elseif s.heroId == 22 and attacker.attrs then
-        tickSeraMachineGunCount(attacker, s)
-    end
+    return _combo.onComboAttack(attacker, target, isAlly, targetList, dealDmgFn, comboMeta)
 end
 
 --- 攻击后钩子

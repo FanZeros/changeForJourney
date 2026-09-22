@@ -30,6 +30,7 @@ local ChurchInput      = require("ui.ChurchInput")
 local ChurchRosterDraw = require("ui.ChurchRosterDraw")
 local ChurchSlotAnim   = require("ui.ChurchSlotAnim")
 local ChurchInit       = require("ui.ChurchInit")
+local ChurchBadge      = require("ui.ChurchBadge")
 
 -- 懒加载网络模块（避免循环依赖）
 local Client_
@@ -322,79 +323,53 @@ local function getClassIcon2(vg, classId)
     return img.classIcons2[classId]
 end
 
+local _badge
+local function bindChurchBadge()
+    _badge = ChurchBadge.bind({
+        HC = HC,
+        ClassChange = ClassChange,
+        CharacterPanel = CharacterPanel,
+        GameState = GameState,
+        AVC = AVC,
+        ArtifactPanel = ArtifactPanel,
+        getDispatcher = getDispatcher,
+    })
+end
+
 --- 检查指定英雄是否有可用转职（用于入口链路角标）
---- 一转条件：level >= firstLevel 且尚未一转 且金币足够
---- 二转条件：level >= secondLevel 且已一转但尚未二转 且金币足够
 ---@param heroId number
 ---@return boolean
 function ChurchPage.hasAdvanceForHero(heroId)
-    local heroCfg = HC.get(heroId)
-    if not heroCfg then return false end
-    local classId = heroCfg.classId
-    -- 该职业需要有转职分支
-    if not ClassChange.FIRST_ADV_BRANCHES[classId] then return false end
-    -- 需要已拥有
-    local ownData = CharacterPanel.getOwnedHero(heroId)
-    if not ownData then return false end
-    local heroLevel = ownData.level or 1
-    local advBranch = ownData.advBranch
-    local gold = GameState.getGold()
-    -- 一转可用：等级达标 且 尚未一转 且 金币足够
-    local cost1 = AVC.COST[1]
-    if heroLevel >= ClassChange.ADV2.firstLevel and (not advBranch or not advBranch.first)
-       and cost1 and gold >= cost1.gold then
-        return true
-    end
-    -- 二转可用：等级达标 且 已一转 且 尚未二转 且 金币足够
-    local cost2 = AVC.COST[2]
-    if heroLevel >= ClassChange.ADV2.secondLevel and advBranch and advBranch.first and not advBranch.second
-       and cost2 and gold >= cost2.gold then
-        return true
-    end
-    return false
+    if not _badge then bindChurchBadge() end
+    return _badge.hasAdvanceForHero(heroId)
 end
 
 --- 检查是否有任何拥有的英雄可以转职
 ---@return boolean
 function ChurchPage.hasAnyAdvance()
-    local allIds = HC.getAllIds()
-    for _, id in ipairs(allIds) do
-        if CharacterPanel.isOwned(id) and CharacterPanel.isHeroDeployed(id) and ChurchPage.hasAdvanceForHero(id) then
-            return true
-        end
-    end
-    return false
+    if not _badge then bindChurchBadge() end
+    return _badge.hasAnyAdvance()
 end
 
 --- 检查玩家是否有未使用的天赋点
 ---@return boolean
 function ChurchPage.hasAnyUnusedTalent()
-    local talentsData = getDispatcher().get("talents")
-    local playerData  = getDispatcher().get("player")
-    local litCount   = (talentsData and talentsData.litNodes) and #talentsData.litNodes or 1
-    local usedPoints = litCount - 1
-    local maxPoints  = (playerData and playerData.level) or 1
-    local remaining  = maxPoints - usedPoints
-    return remaining > 0
+    if not _badge then bindChurchBadge() end
+    return _badge.hasAnyUnusedTalent()
 end
 
 --- 检查教堂是否需要显示角标（天赋、转职、神器任一满足）
 ---@return boolean
 function ChurchPage.hasAnyChurchBadge()
-    return ChurchPage.hasAnyUnusedTalent() or ChurchPage.hasAnyAdvance() or ArtifactPanel.canUpgradeAnyArtifact()
+    if not _badge then bindChurchBadge() end
+    return _badge.hasAnyChurchBadge()
 end
 
 --- 获取教堂角标的显示信息（区分天赋/神器可提升 vs 仅转职可用）
---- 天赋可用或神器可提升 → 绿色箭头（默认）；仅转职可用 → 红点；都无 → 不显示
 ---@return boolean show, string|nil style
 function ChurchPage.getChurchBadgeInfo()
-    if ChurchPage.hasAnyUnusedTalent() or ArtifactPanel.canUpgradeAnyArtifact() then
-        return true, nil        -- 绿色箭头
-    elseif ChurchPage.hasAnyAdvance() then
-        return true, "redDot"   -- 红点
-    else
-        return false, nil
-    end
+    if not _badge then bindChurchBadge() end
+    return _badge.getChurchBadgeInfo()
 end
 
 --- 获取拥有的英雄列表（排序：品质高→低，ID升序）

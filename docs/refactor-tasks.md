@@ -51,3 +51,4 @@
 - [x] **T24** Client：抽出 `HandleUpdate_Client` 到 `network/ClientUpdate.lua`。1348 行。
 - [x] **T25** BattleScene：抽出暂停/失败延迟/轮回/寻怪到 `BattleScenePhases.lua`。1765 行。
 - [x] **T26** 城镇页：Market 商品卡 → `MarketShopCard.lua`；Blacksmith 装备槽 → `BlacksmithEquipSlots.lua`。Church `drawPageImpl` 因 LSP `_ENV` undefined-global 回退。
+- [x] **T27** Market/Blacksmith `drawPageImpl` → `MarketDraw.lua` / `BlacksmithDraw.lua`（bind 具名注入；铁匠开关回调用 getter/setter 写回）。Market 1589 / Blacksmith 1533。

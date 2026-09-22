@@ -19,17 +19,15 @@
 ## 上次做了什么（截至 2026-09-22）
 
 - 已合并 `origin/workspace`（`fa7a775`）
-- T23–T26 四块抽取（LSP 0 Error / build 过 / validate lua_errors=0）：
-  - TalentAfterAttack：TalentManager 2691→1728
-  - ClientUpdate：Client 1844→1348
-  - BattleScenePhases：BattleScene 1890→1765
-  - MarketShopCard + BlacksmithEquipSlots；Church `_ENV` 抽取因 LSP undefined-global 回退
+- T23–T26 四块抽取（LSP 0 Error / build 过 / validate lua_errors=0）
+- T27：Market/Blacksmith `drawPageImpl` → `MarketDraw` / `BlacksmithDraw`（bind 具名注入）
+  - Market 1741→1589；Blacksmith 1678→1533
 
 ## likely_next_task
 
 - ChurchPage 仍 1873，勿用 `_ENV`，可抽具名 bind 助手
-- Market 1741 / Blacksmith 1678 可继续抽 drawPageImpl
 - TalentManager 1728 可再拆 onBeforeAttack / onDamageTaken
+- Client 1348 可再拆连接状态机
 
 ## 用户硬性流程（必须遵守）
 

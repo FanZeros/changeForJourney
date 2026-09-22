@@ -26,3 +26,9 @@
 - 不改战斗公式、掉落、关卡生成规则
 - `BattleScene.handlePressBegin/End`、倍速 API、`Standalone.Start` 对外签名不变
 - 每完成一项立即 commit + push 到 `refactor/extract-battle-overlays`
+
+
+## 追加：城镇页共用壳（用户 2026-09-22 选项）
+
+- [x] 新增 `scripts/ui/TownPageChrome.lua`：名称牌 / 返回 / 底栏 Tab / 开闭缓动
+- [x] 铁匠铺、教堂、酒馆、市场、背包接入共用壳；玩法内容未改

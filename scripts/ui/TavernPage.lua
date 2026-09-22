@@ -11,6 +11,7 @@ local HeroConfig     = require("config.HeroConfig")
 local GameState      = require("core.GameState")
 local Protocol       = require("shared.Protocol")
 local DrawUtil       = require("core.DrawUtil")
+local TownPageChrome = require("ui.TownPageChrome")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawImageCentered      = DrawUtil.drawImageCentered
 local drawNineSlice          = DrawUtil.drawNineSlice
@@ -280,16 +281,9 @@ local img = {
     slider      = -1, -- UI_AN_2.png
 }
 
--- ======================== 缓动函数 ========================
-
-local function easeOutCubic(t)
-    t = t - 1
-    return t * t * t + 1
-end
-
-local function easeInCubic(t)
-    return t * t * t
-end
+-- ======================== 缓动函数（TownPageChrome） ========================
+local easeOutCubic = TownPageChrome.easeOutCubic
+local easeInCubic  = TownPageChrome.easeInCubic
 
 --- 加载图片（主路径失败时尝试备用路径）
 local function loadImage(vg, primaryPath, altPath)
@@ -848,15 +842,10 @@ local function drawPageImpl(vg)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- ============ 2. 建筑名称背景 ============
-    drawImageCentered(vg, img.nameBg, NAME_BG_CX, NAME_BG_CY, NAME_BG_W, NAME_BG_H, 1.0)
-
-    -- ============ 3. 文本"酒馆" ============
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, NAME_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, NAME_TEXT_CX, NAME_TEXT_CY, "酒馆", nil)
+    -- ============ 2-3. 建筑名称牌 ============
+    TownPageChrome.drawNamePlate(vg, img.nameBg, "酒馆", {
+        textCX = NAME_TEXT_CX, textCY = NAME_TEXT_CY, font = NAME_FONT_SIZE,
+    })
 
     if state.tab == "shop" then
         -- ============ 商店标签页内容 ============
@@ -997,41 +986,23 @@ local function drawPageImpl(vg)
     ---@diagnostic disable-next-line: undefined-global
     if not H_SEAM_BACK then
         local _s5 = BF.begin(vg, "tavern_back", BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H)
-        DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
+        TownPageChrome.drawBack(vg)
         BF.finish(vg, _s5)
     end
 
-    -- ============ 19. 底部滑块背景 ============
-    drawImageCentered(vg, img.tabBg, TAB_BG_CX, TAB_BG_CY, TAB_BG_W, TAB_BG_H, 1.0)
-
-    -- ============ 20. 滑块按钮（带平移动画） ============
-    local tabIdx = TAB_MAP[state.tab] or 2
-    local fromIdx = TAB_MAP[state.tabFrom] or 2
-    local tabElapsed = time.elapsedTime - state.tabSwitchTime
-    local tabT = math.min(1.0, tabElapsed / TAB_ANIM_DURATION)
-    local tabEased = easeOutCubic(tabT)
-
-    local targetItem = TAB_ITEMS[tabIdx]
-    local fromItem = TAB_ITEMS[fromIdx]
-    local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
-    local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
-
-    DarkIcon.drawNine(vg, "btn", sliderCX - SLIDER_W * 0.5, sliderCY - SLIDER_H * 0.5, SLIDER_W, SLIDER_H, { accent = "gold" })
-
-    -- Tab 文本
+    -- ============ 19-20. 底栏 Tab ============
+    local tabIdx, fromIdx, tabEased = TownPageChrome.tabSlide(state, TAB_MAP, TAB_ANIM_DURATION, "out")
     local tabKeys = { "recruit", "shop" }
-    for i, item in ipairs(TAB_ITEMS) do
-        local isActive = (state.tab == tabKeys[i])
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, TAB_FONT_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        if isActive then
-            nvgFillColor(vg, nvgRGBA(TAB_ACTIVE_R, TAB_ACTIVE_G, TAB_ACTIVE_B, 255))
-        else
-            nvgFillColor(vg, nvgRGBA(TAB_INACTIVE_R, TAB_INACTIVE_G, TAB_INACTIVE_B, 255))
-        end
-        nvgText(vg, item.textX, item.textY, item.name, nil)
-    end
+    TownPageChrome.drawTabBar(vg, img.tabBg, {
+        items = TAB_ITEMS,
+        tabIdx = tabIdx, fromIdx = fromIdx, eased = tabEased,
+        sliderW = SLIDER_W, sliderH = SLIDER_H,
+        bgCX = TAB_BG_CX, bgCY = TAB_BG_CY, bgW = TAB_BG_W, bgH = TAB_BG_H,
+        font = TAB_FONT_SIZE,
+        active = { r = TAB_ACTIVE_R, g = TAB_ACTIVE_G, b = TAB_ACTIVE_B },
+        inactive = { r = TAB_INACTIVE_R, g = TAB_INACTIVE_G, b = TAB_INACTIVE_B },
+        activePred = function(i, _) return state.tab == tabKeys[i] end,
+    })
 
     nvgRestore(vg)
 
@@ -1118,7 +1089,7 @@ function TavernPage.handleInput(dx, dy)
 
     -- 返回按钮（三行模式由中缝层接管）
     ---@diagnostic disable-next-line: undefined-global
-    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
+    if TownPageChrome.hitBack(dx, dy) then
         -- 招募请求进行中，不允许离开（避免引导组8 invisible 步骤期间提前退出）
         if pendingGachaPull then return true end
         BF.trigger("tavern_back")
@@ -1176,8 +1147,9 @@ function TavernPage.handleInput(dx, dy)
 
     -- Tab 切换检测
     local tabKeys = { "recruit", "shop" }
-    for i, item in ipairs(TAB_ITEMS) do
-        if hitTest(dx, dy, item.cx, item.cy, SLIDER_W, SLIDER_H) then
+    do
+        local i = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, SLIDER_W, SLIDER_H)
+        if i then
             local newTab = tabKeys[i]
             if state.tab ~= newTab then
                 state.tabFrom = state.tab
@@ -1188,7 +1160,7 @@ function TavernPage.handleInput(dx, dy)
                     TavernShopPage.resetScroll()
                     TavernShopPage.syncPurchasedFromStore()
                 end
-                print("[TavernPage] 切换到: " .. item.name)
+                print("[TavernPage] 切换到: " .. TAB_ITEMS[i].name)
             end
             return true
         end

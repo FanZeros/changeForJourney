@@ -7,6 +7,7 @@
 local GameConfig       = require("config.GameConfig")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local DrawUtil         = require("core.DrawUtil")
+local TownPageChrome   = require("ui.TownPageChrome")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1] 矢量九宫格
 local GameState        = require("core.GameState")
 local PlayerStore      = require("client.data.PlayerStore")
@@ -179,12 +180,8 @@ local SCROLL_FRICTION  = 0.90
 local SCROLL_MIN_VEL   = 0.5
 local SCROLL_WHEEL_STEP = 60
 
--- ======================== 缓动函数 ========================
-
-local function easeInOutCubic(t)
-    if t < 0.5 then return 4 * t * t * t end
-    local f = 2 * t - 2; return 0.5 * f * f * f + 1
-end
+-- ======================== 缓动函数（TownPageChrome） ========================
+local easeInOutCubic = TownPageChrome.easeInOutCubic
 
 -- ======================== 资源道具定义 ========================
 
@@ -361,22 +358,10 @@ local ANIM_CLOSE_DUR = 0.38
 local UPPER_SLIDE_DIST = 1200   -- 上半部分从屏幕上方滑入的距离
 local LOWER_SLIDE_DIST = 1600   -- 下半部分从屏幕下方滑入的距离
 
-local function easeOutCubic(t)
-    local u = 1 - t; return 1 - u * u * u
-end
-
-local function easeInCubic(t)
-    return t * t * t
-end
+local easeOutCubic = TownPageChrome.easeOutCubic
+local easeInCubic  = TownPageChrome.easeInCubic
 
 -- ======================== 辅助函数 ========================
-
-local function getTabIndex(key)
-    for i, item in ipairs(TAB_ITEMS) do
-        if item.key == key then return i end
-    end
-    return 1
-end
 
 --- 获取道具图标（缓存）
 local function getItemIcon(def)
@@ -1238,13 +1223,10 @@ local function drawBody(vg)
     -- 1. 顶部背景图（顶端对齐）
     DrawUtil.drawImageCentered(vg, imgTopBg, TOP_BG.CX, TOP_BG.CY, TOP_BG.W, TOP_BG.H, 1.0)
 
-    -- 3. 标题（与教堂左上角一致：背景图 + 白色文字，无描边）
-    DrawUtil.drawImageCentered(vg, imgTitleBg, TITLE.BG_CX, TITLE.BG_CY, TITLE.BG_W, TITLE.BG_H, 1.0)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, TITLE.FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, TITLE.TEXT_CX, TITLE.TEXT_CY, TITLE.TEXT, nil)
+    -- 3. 标题（与教堂左上角一致）
+    TownPageChrome.drawNamePlate(vg, imgTitleBg, TITLE.TEXT, {
+        textCX = TITLE.TEXT_CX, textCY = TITLE.TEXT_CY, font = TITLE.FONT_SIZE,
+    })
 
     nvgRestore(vg)
     end
@@ -1337,40 +1319,22 @@ local function drawBody(vg)
     end
 
     -- 8. 返回按钮（[横屏左栏] 窗口模式由宿主中缝侧边返回条接管，页内不画）
-    if not isCompact() then
-        DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
-    end
+    TownPageChrome.drawBack(vg, { skip = isCompact(), cx = BTN_BACK.CX, cy = BTN_BACK.CY, w = BTN_BACK.W, h = BTN_BACK.H })
 
-    -- 9. Tab 背景
-    DrawUtil.drawImageCentered(vg, imgTabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
-
-    -- 10. Tab 滑块（带动画）
-    local tabIdx = getTabIndex(state.tab)
-    local fromIdx = getTabIndex(state.tabFrom)
-    local tabElapsed = time.elapsedTime - state.tabSwitchTime
-    local tabT = math.min(1.0, tabElapsed / TAB.ANIM_DUR)
-    local tabEased = easeInOutCubic(tabT)
-
-    local targetItem = TAB_ITEMS[tabIdx]
-    local fromItem = TAB_ITEMS[fromIdx]
-    local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
-    local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
-
-    DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
-
-    -- 11. Tab 文字
-    for i, item in ipairs(TAB_ITEMS) do
-        local isActive = (state.tab == item.key)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, TAB.FONT_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        if isActive then
-            nvgFillColor(vg, nvgRGBA(TAB.ACTIVE_R, TAB.ACTIVE_G, TAB.ACTIVE_B, 255))
-        else
-            nvgFillColor(vg, nvgRGBA(TAB.INACTIVE_R, TAB.INACTIVE_G, TAB.INACTIVE_B, 255))
-        end
-        nvgText(vg, item.textX, item.textY, item.name, nil)
-    end
+    -- 9-11. 底栏 Tab
+    local tabIdx, fromIdx, tabEased = TownPageChrome.tabSlide(state, {
+        equip = 1, item = 2,
+    }, TAB.ANIM_DUR)
+    TownPageChrome.drawTabBar(vg, imgTabBg, {
+        items = TAB_ITEMS,
+        tabIdx = tabIdx, fromIdx = fromIdx, eased = tabEased,
+        sliderW = TAB.SLIDER_W, sliderH = TAB.SLIDER_H,
+        bgCX = TAB.BG_CX, bgCY = TAB.BG_CY, bgW = TAB.BG_W, bgH = TAB.BG_H,
+        font = TAB.FONT_SIZE,
+        active = { r = TAB.ACTIVE_R, g = TAB.ACTIVE_G, b = TAB.ACTIVE_B },
+        inactive = { r = TAB.INACTIVE_R, g = TAB.INACTIVE_G, b = TAB.INACTIVE_B },
+        activePred = function(_, item) return state.tab == item.key end,
+    })
 
     nvgRestore(vg)
 
@@ -1603,15 +1567,16 @@ function Panel.handleInput(dx, dy)
     end
 
     -- 返回按钮（[横屏左栏] 窗口/左栏模式由宿主中缝侧边返回条接管）
-    if not isCompact()
-       and DrawUtil.hitTest(dx, dy, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H) then
+    if TownPageChrome.hitBack(dx, dy, { skip = isCompact(), cx = BTN_BACK.CX, cy = BTN_BACK.CY, w = BTN_BACK.W, h = BTN_BACK.H }) then
         Panel.close()
         return true
     end
 
     -- Tab 切换
-    for i, item in ipairs(TAB_ITEMS) do
-        if DrawUtil.hitTest(dx, dy, item.cx, item.cy, TAB.SLIDER_W, TAB.SLIDER_H) then
+    do
+        local i = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
+        if i then
+            local item = TAB_ITEMS[i]
             if state.tab ~= item.key then
                 state.tabFrom = state.tab
                 state.tabSwitchTime = time.elapsedTime

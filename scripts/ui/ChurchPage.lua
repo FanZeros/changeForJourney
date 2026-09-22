@@ -8,6 +8,7 @@
 local GameConfig       = require("config.GameConfig")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0]
 local DrawUtil         = require("core.DrawUtil")
+local TownPageChrome   = require("ui.TownPageChrome")
 local drawTextStroke   = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
 local drawNineSlice    = DrawUtil.drawNineSlice
@@ -289,25 +290,10 @@ local rosterPowerCache = {}
 
 -- Spine 天赋背景（spineTfBg）已迁移至 ChurchTalentPanel.lua
 
--- ======================== 缓动函数 ========================
-
-local function easeOutCubic(t)
-    t = t - 1
-    return t * t * t + 1
-end
-
-local function easeInCubic(t)
-    return t * t * t
-end
-
-local function easeInOutCubic(t)
-    if t < 0.5 then
-        return 4 * t * t * t
-    else
-        local f = 2 * t - 2
-        return 0.5 * f * f * f + 1
-    end
-end
+-- ======================== 缓动函数（TownPageChrome） ========================
+local easeOutCubic   = TownPageChrome.easeOutCubic
+local easeInCubic    = TownPageChrome.easeInCubic
+local easeInOutCubic = TownPageChrome.easeInOutCubic
 
 -- drawImageCentered / drawNineSlice / hitTest → 已由头部 DrawUtil 导入
 
@@ -1032,8 +1018,7 @@ function ChurchPage.handleInput(dx, dy)
     end
 
     -- 返回按钮（三行模式由中缝层接管）
-    ---@diagnostic disable-next-line: undefined-global
-    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H) then
+    if TownPageChrome.hitBack(dx, dy) then
         ChurchPage.close()
         return true
     end
@@ -1142,8 +1127,9 @@ function ChurchPage.handleInput(dx, dy)
     end
 
     -- Tab 切换检测
-    for i, item in ipairs(TAB_ITEMS) do
-        if hitTest(dx, dy, item.cx, item.cy, TAB.SLIDER_W, TAB.SLIDER_H) then
+    do
+        local i = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
+        if i then
             local newTab = TAB_KEYS[i]
             if state.tab ~= newTab then
                 state.tabFrom = state.tab
@@ -1376,15 +1362,10 @@ local function drawPageImpl(vg)
     end
 
     if not isArtifactTab then
-        -- 2. 建筑名称背景（不跟随上移）
-        drawImageCentered(vg, img.nameBg, CHURCH.NAME_BG_CX, CHURCH.NAME_BG_CY, CHURCH.NAME_BG_W, CHURCH.NAME_BG_H, 1.0)
-
-    -- 3. 文本"教堂"（不跟随上移）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, CHURCH.NAME_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, CHURCH.NAME_TEXT_CX, CHURCH.NAME_TEXT_CY, "教堂", nil)
+        -- 2-3. 建筑名称牌（不跟随上移）
+        TownPageChrome.drawNamePlate(vg, img.nameBg, "教堂", {
+            textCX = CHURCH.NAME_TEXT_CX, textCY = CHURCH.NAME_TEXT_CY, font = CHURCH.NAME_FONT_SIZE,
+        })
 
     -- 3.5 资源显示：金币 & 宝石（与主界面 TopBar 相同位置和样式）
     do
@@ -1641,53 +1622,34 @@ local function drawPageImpl(vg)
     end
 
     -- 6. 返回按钮（三行模式由中缝层绘制）
-    ---@diagnostic disable-next-line: undefined-global
-    if not H_SEAM_BACK then
-        DrawUtil.drawBackChevron(vg, BTN_BACK.CX, BTN_BACK.CY, BTN_BACK.W, BTN_BACK.H, "left")
-    end
+    TownPageChrome.drawBack(vg)
 
-    -- 7. 页面选项滑块背景
-    drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
-
-    -- 8. 滑块按钮（带平移动画）
-    local targetItem = TAB_ITEMS[tabIdx]
-    local fromItem = TAB_ITEMS[fromIdx]
-    local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
-    local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
-
-    DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
-
-    -- Tab 文本
-    for i, item in ipairs(TAB_ITEMS) do
-        local isActive = (state.tab == TAB_KEYS[i])
-
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, TAB.FONT_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        if isActive then
-            nvgFillColor(vg, nvgRGBA(TAB.ACTIVE_R, TAB.ACTIVE_G, TAB.ACTIVE_B, 255))
-        else
-            nvgFillColor(vg, nvgRGBA(TAB.INACTIVE_R, TAB.INACTIVE_G, TAB.INACTIVE_B, 255))
-        end
-        nvgText(vg, item.textX, item.textY, item.name, nil)
-
-        -- Tab 角标：转职Tab(i=1) 有可转职英雄→绿色箭头 / 天赋Tab(i=2) 有未用天赋点→绿色箭头 / 神器Tab(i=3) 有可合成神器→绿色箭头
-        local showTabBadge = false
-        if i == 1 then
-            showTabBadge = ChurchPage.hasAnyAdvance()
-        elseif i == 2 then
-            showTabBadge = ChurchPage.hasAnyUnusedTalent()
-        elseif i == 3 then
-            showTabBadge = ArtifactPanel.canUpgradeAnyArtifact()
-        end
-        if showTabBadge and img.iconUp >= 0 then
-            local upSize = 30
-            local textHalfW = nvgTextBounds(vg, 0, 0, item.name) * 0.5
-            local upX = item.textX + textHalfW + 10
-            local upY = item.textY - 18
-            drawImageCentered(vg, img.iconUp, upX, upY, upSize, upSize, 1.0)
-        end
-    end
+    -- 7-8. 底栏 Tab
+    TownPageChrome.drawTabBar(vg, img.tabBg, {
+        items = TAB_ITEMS,
+        tabIdx = tabIdx, fromIdx = fromIdx, eased = tabEased,
+        sliderW = TAB.SLIDER_W, sliderH = TAB.SLIDER_H,
+        bgCX = TAB.BG_CX, bgCY = TAB.BG_CY, bgW = TAB.BG_W, bgH = TAB.BG_H,
+        font = TAB.FONT_SIZE,
+        active = { r = TAB.ACTIVE_R, g = TAB.ACTIVE_G, b = TAB.ACTIVE_B },
+        inactive = { r = TAB.INACTIVE_R, g = TAB.INACTIVE_G, b = TAB.INACTIVE_B },
+        activePred = function(i, _) return state.tab == TAB_KEYS[i] end,
+        drawBadge = function(vg, i, item, textX, textY)
+            local showTabBadge = false
+            if i == 1 then
+                showTabBadge = ChurchPage.hasAnyAdvance()
+            elseif i == 2 then
+                showTabBadge = ChurchPage.hasAnyUnusedTalent()
+            elseif i == 3 then
+                showTabBadge = ArtifactPanel.canUpgradeAnyArtifact()
+            end
+            if showTabBadge and img.iconUp >= 0 then
+                local upSize = 30
+                local textHalfW = nvgTextBounds(vg, 0, 0, item.name) * 0.5
+                drawImageCentered(vg, img.iconUp, textX + textHalfW + 10, textY - 18, upSize, upSize, 1.0)
+            end
+        end,
+    })
 
     -- 新手引导热点：天赋 Tab（TAB_ITEMS[2]）
     local _TM = require("systems.TutorialManager")
@@ -1701,12 +1663,9 @@ local function drawPageImpl(vg)
     -- === 教堂名称（在 Tab 内容之上重绘，跟随 upperOX，确保不被星图覆盖） ===
     nvgSave(vg)
     nvgTranslate(vg, upperOX, 0)
-    drawImageCentered(vg, img.nameBg, CHURCH.NAME_BG_CX, CHURCH.NAME_BG_CY, CHURCH.NAME_BG_W, CHURCH.NAME_BG_H, 1.0)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, CHURCH.NAME_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, CHURCH.NAME_TEXT_CX, CHURCH.NAME_TEXT_CY, "教堂", nil)
+    TownPageChrome.drawNamePlate(vg, img.nameBg, "教堂", {
+        textCX = CHURCH.NAME_TEXT_CX, textCY = CHURCH.NAME_TEXT_CY, font = CHURCH.NAME_FONT_SIZE,
+    })
     nvgRestore(vg)
 
     -- ================== 角色列表浮层（独立绘制，不被下半部分遮盖） ==================

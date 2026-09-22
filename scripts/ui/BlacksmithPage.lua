@@ -20,6 +20,7 @@ local RewardPopup      = require("ui.RewardPopup")
 local SpineResultEffect = require("ui.SpineResultEffect")
 local DrawUtil         = require("core.DrawUtil")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
+local TownPageChrome   = require("ui.TownPageChrome")
 local HeroAssetUtil    = require("config.HeroAssetUtil")
 local CharacterPanel   = require("ui.CharacterPanel")
 local HeroConfig       = require("config.HeroConfig")
@@ -320,25 +321,10 @@ local imgQualityBg = {}   -- UI_icon_ZBBJ_1~5（品质背景框，按品质索�
 -- 词缀等级图标 D/C/B/A/S
 local imgGrade = {}      -- imgGrade["D"], imgGrade["C"], ...
 
--- ======================== 缓动函数 ========================
-
-local function easeOutCubic(t)
-    t = t - 1
-    return t * t * t + 1
-end
-
-local function easeInCubic(t)
-    return t * t * t
-end
-
-local function easeInOutCubic(t)
-    if t < 0.5 then
-        return 4 * t * t * t
-    else
-        local f = 2 * t - 2
-        return 0.5 * f * f * f + 1
-    end
-end
+-- ======================== 缓动函数（TownPageChrome） ========================
+local easeOutCubic   = TownPageChrome.easeOutCubic
+local easeInCubic    = TownPageChrome.easeInCubic
+local easeInOutCubic = TownPageChrome.easeInOutCubic
 
 -- ======================== 工具函数 ========================
 
@@ -1456,8 +1442,7 @@ function BlacksmithPage.handleInput(dx, dy)
     end
 
     -- 返回按钮（三行模式由中缝层接管）
-    ---@diagnostic disable-next-line: undefined-global
-    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
+    if TownPageChrome.hitBack(dx, dy) then
         BlacksmithPage.close()
         return true
     end
@@ -1508,9 +1493,9 @@ function BlacksmithPage.handleInput(dx, dy)
     end
 
     -- Tab 切换检测
-    for i, item in ipairs(TAB_ITEMS) do
-        -- 每个 tab 使用 SLIDER_W x SLIDER_H 的点击区域
-        if hitTest(dx, dy, item.cx, item.cy, SLIDER_W, SLIDER_H) then
+    do
+        local i = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, SLIDER_W, SLIDER_H)
+        if i then
             local tabKeys = { "qianghua", "xilian", "fenjie" }
             local newTab = tabKeys[i]
             if state.tab ~= newTab then
@@ -1532,7 +1517,7 @@ function BlacksmithPage.handleInput(dx, dy)
                     BlacksmithDecompose.onTabSwitch()
                     BlacksmithDecompose.refreshBackpackItems()
                 end
-                print("[BlacksmithPage] 切换到: " .. item.name)
+                print("[BlacksmithPage] 切换到: " .. TAB_ITEMS[i].name)
             end
             return true
         end
@@ -1605,15 +1590,8 @@ local function drawPageImpl(vg)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- 2. 铁匠铺名称背景（中心点绘制）
-    drawImageCentered(vg, imgNameBg, NAME_BG_CX, NAME_BG_CY, NAME_BG_W, NAME_BG_H, 1.0)
-
-    -- 3. 文本"铁匠铺"（中心点坐标，无描边）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, NAME_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, NAME_TEXT_CX, NAME_TEXT_CY, "铁匠铺", nil)
+    -- 2-3. 铁匠铺名称牌
+    TownPageChrome.drawNamePlate(vg, imgNameBg, "铁匠铺", { textCX = NAME_TEXT_CX, textCY = NAME_TEXT_CY, font = NAME_FONT_SIZE })
 
     -- 4-6. 上半部分槽位区域 + 下半部分面板内容（带 Tab 切换滑动动画）
     local tabIdx = TAB_MAP[state.tab] or 3
@@ -1731,61 +1709,33 @@ local function drawPageImpl(vg)
     nvgRestore(vg)
 
     -- 8. 返回按钮（三行模式由中缝层绘制）
-    ---@diagnostic disable-next-line: undefined-global
-    if not H_SEAM_BACK then
-        DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "left")
-    end
+    TownPageChrome.drawBack(vg)
 
-    -- 9. 页面选项滑块背景
-    drawImageCentered(vg, imgTabBg, TAB_BG_CX, TAB_BG_CY, TAB_BG_W, TAB_BG_H, 1.0)
-
-    -- 10-11. 滑块按钮（带平移动画，与角色详情完全一致）
-    local targetItem = TAB_ITEMS[tabIdx]
-    local fromItem = TAB_ITEMS[fromIdx]
-
-    local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
-    local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
-
-    -- 使用九宫格绘制滑块
-    DarkIcon.drawNine(vg, "btn", sliderCX - SLIDER_W * 0.5, sliderCY - SLIDER_H * 0.5, SLIDER_W, SLIDER_H, { accent = "gold" })
-
-    -- Tab 文本
-    for i, item in ipairs(TAB_ITEMS) do
-        local tabKeys = { "qianghua", "xilian", "fenjie" }
-        local isActive = (state.tab == tabKeys[i])
-
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, TAB_FONT_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        if isActive then
-            nvgFillColor(vg, nvgRGBA(TAB_ACTIVE_R, TAB_ACTIVE_G, TAB_ACTIVE_B, 255))
-        else
-            nvgFillColor(vg, nvgRGBA(TAB_INACTIVE_R, TAB_INACTIVE_G, TAB_INACTIVE_B, 255))
-        end
-        nvgText(vg, item.cx, TAB_TEXT_Y, item.name, nil)
-    end
-
-    -- 分解标签红点（背包满时，选中也保留）
-    if decomposeRedDot then
-        local fenjieTab = TAB_ITEMS[3]  -- "分解"
-        nvgFontFace(vg, "sans"); nvgFontSize(vg, TAB_FONT_SIZE)
-        local upSize = 30
-        local textHalfW = nvgTextBounds(vg, 0, 0, fenjieTab.name) * 0.5
-        local upX = fenjieTab.cx + textHalfW + 10
-        local upY = TAB_TEXT_Y - 18
-        DarkIcon.draw(vg, "reddot", upX, upY, upSize, 1.0)
-    end
-
-    -- 强化标签可强化角标（有任意槽位满足强化条件时显示）
-    if imgIconUp >= 0 and BlacksmithPage.canEnhanceAny() then
-        local qhTab = TAB_ITEMS[1]  -- "强化"
-        nvgFontFace(vg, "sans"); nvgFontSize(vg, TAB_FONT_SIZE)
-        local upSize = 30
-        local textHalfW = nvgTextBounds(vg, 0, 0, qhTab.name) * 0.5
-        local upX = qhTab.cx + textHalfW + 10
-        local upY = TAB_TEXT_Y - 18
-        DrawUtil.drawImageCentered(vg, imgIconUp, upX, upY, upSize, upSize, 1.0)
-    end
+    -- 9-11. 底栏 Tab
+    local tabKeys = { "qianghua", "xilian", "fenjie" }
+    TownPageChrome.drawTabBar(vg, imgTabBg, {
+        items = TAB_ITEMS,
+        tabIdx = tabIdx, fromIdx = fromIdx, eased = tabEased,
+        sliderW = SLIDER_W, sliderH = SLIDER_H,
+        bgCX = TAB_BG_CX, bgCY = TAB_BG_CY, bgW = TAB_BG_W, bgH = TAB_BG_H,
+        font = TAB_FONT_SIZE, textY = TAB_TEXT_Y,
+        active = { r = TAB_ACTIVE_R, g = TAB_ACTIVE_G, b = TAB_ACTIVE_B },
+        inactive = { r = TAB_INACTIVE_R, g = TAB_INACTIVE_G, b = TAB_INACTIVE_B },
+        activePred = function(i, _) return state.tab == tabKeys[i] end,
+        drawBadge = function(vg, i, item, textX, textY)
+            if i == 3 and decomposeRedDot then
+                nvgFontFace(vg, "sans"); nvgFontSize(vg, TAB_FONT_SIZE)
+                local upSize = 30
+                local textHalfW = nvgTextBounds(vg, 0, 0, item.name) * 0.5
+                DarkIcon.draw(vg, "reddot", textX + textHalfW + 10, textY - 18, upSize, 1.0)
+            elseif i == 1 and imgIconUp >= 0 and BlacksmithPage.canEnhanceAny() then
+                nvgFontFace(vg, "sans"); nvgFontSize(vg, TAB_FONT_SIZE)
+                local upSize = 30
+                local textHalfW = nvgTextBounds(vg, 0, 0, item.name) * 0.5
+                DrawUtil.drawImageCentered(vg, imgIconUp, textX + textHalfW + 10, textY - 18, upSize, upSize, 1.0)
+            end
+        end,
+    })
 
     nvgRestore(vg)  -- 结束下半部分偏移
 

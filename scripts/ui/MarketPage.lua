@@ -11,6 +11,7 @@ local GameState  = require("core.GameState")
 local Protocol   = require("shared.Protocol")
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
 local DrawUtil        = require("core.DrawUtil")  -- [三队并行] 返回键 chevron
+local TownPageChrome  = require("ui.TownPageChrome")
 local BF = require("systems.ButtonFeedback")
 local RewardPopup = require("ui.RewardPopup")
 
@@ -329,14 +330,10 @@ local POPUP_CLOSE_DUR  = 0.20
 local POPUP_SCALE_FROM = 0.8
 local POPUP_SCALE_TO   = 1.0
 
--- ======================== 缓动函数 ========================
-
-local function easeOutCubic(t) t = t - 1; return t * t * t + 1 end
-local function easeInCubic(t) return t * t * t end
-local function easeInOutCubic(t)
-    if t < 0.5 then return 4 * t * t * t
-    else local f = 2 * t - 2; return 0.5 * f * f * f + 1 end
-end
+-- ======================== 缓动函数（TownPageChrome） ========================
+local easeOutCubic   = TownPageChrome.easeOutCubic
+local easeInCubic    = TownPageChrome.easeInCubic
+local easeInOutCubic = TownPageChrome.easeInOutCubic
 
 -- ======================== 图片句柄 ========================
 
@@ -1375,12 +1372,10 @@ local function drawPageImpl(vg)
         drawUpperVariant(state.tab)
     end
 
-    -- 名称背景 + 文字（固定，不参与水平滑动）
-    drawImageCentered(vg, img.nameBg, P1.NAME_BG_CX, P1.NAME_BG_CY, P1.NAME_BG_W, P1.NAME_BG_H, 1.0)
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, P1.NAME_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, P1.NAME_TEXT_CX, P1.NAME_TEXT_CY, "市场", nil)
+    -- 名称牌（固定，不参与水平滑动）
+    TownPageChrome.drawNamePlate(vg, img.nameBg, "市场", {
+        textCX = P1.NAME_TEXT_CX, textCY = P1.NAME_TEXT_CY, font = P1.NAME_FONT,
+    })
 
     nvgRestore(vg)  -- 上半部分 end
 
@@ -1439,30 +1434,19 @@ local function drawPageImpl(vg)
     ---@diagnostic disable-next-line: undefined-global
     if not H_SEAM_BACK then
         local _sb = BF.begin(vg, "market_back", TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H)
-        DrawUtil.drawBackChevron(vg, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H, "left")
+        TownPageChrome.drawBack(vg)
         BF.finish(vg, _sb)
     end
-    drawImageCentered(vg, img.tabBg, TAB.BG_CX, TAB.BG_CY, TAB.BG_W, TAB.BG_H, 1.0)
-
-    -- 滑块动画
-    local targetItem = TAB.ITEMS[tabIdx]
-    local fromItem = TAB.ITEMS[fromIdx]
-    local sliderCX = fromItem.cx + (targetItem.cx - fromItem.cx) * tabEased
-    local sliderCY = fromItem.cy + (targetItem.cy - fromItem.cy) * tabEased
-    DarkIcon.drawNine(vg, "btn", sliderCX - TAB.SLIDER_W * 0.5, sliderCY - TAB.SLIDER_H * 0.5, TAB.SLIDER_W, TAB.SLIDER_H, { accent = "gold" })
-
-    -- Tab 文字
-    for i, item in ipairs(TAB.ITEMS) do
-        local isActive = (state.tab == TAB.KEYS[i])
-        nvgFontFace(vg, "sans"); nvgFontSize(vg, TAB.FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        if isActive then
-            nvgFillColor(vg, nvgRGBA(TAB.ACT_R, TAB.ACT_G, TAB.ACT_B, 255))
-        else
-            nvgFillColor(vg, nvgRGBA(TAB.INA_R, TAB.INA_G, TAB.INA_B, 255))
-        end
-        nvgText(vg, item.cx, TAB.TEXT_Y, item.name, nil)
-    end
+    TownPageChrome.drawTabBar(vg, img.tabBg, {
+        items = TAB.ITEMS,
+        tabIdx = tabIdx, fromIdx = fromIdx, eased = tabEased,
+        sliderW = TAB.SLIDER_W, sliderH = TAB.SLIDER_H,
+        bgCX = TAB.BG_CX, bgCY = TAB.BG_CY, bgW = TAB.BG_W, bgH = TAB.BG_H,
+        font = TAB.FONT, textY = TAB.TEXT_Y,
+        active = { r = TAB.ACT_R, g = TAB.ACT_G, b = TAB.ACT_B },
+        inactive = { r = TAB.INA_R, g = TAB.INA_G, b = TAB.INA_B },
+        activePred = function(i, _) return state.tab == TAB.KEYS[i] end,
+    })
 
     -- 弹窗（在裁剪区域外绘制，遮罩覆盖全屏）
     drawPurchaseDialog(vg)
@@ -1601,15 +1585,15 @@ function MarketPage.handleInput(dx, dy)
     end
 
     -- 返回按钮（三行模式由中缝层接管）
-    ---@diagnostic disable-next-line: undefined-global
-    if not H_SEAM_BACK and hitTest(dx, dy, TAB.BACK_CX, TAB.BACK_CY, TAB.BACK_W, TAB.BACK_H) then
+    if TownPageChrome.hitBack(dx, dy) then
         BF.trigger("market_back")
         MarketPage.close(); return true
     end
 
     -- Tab 切换
-    for i, item in ipairs(TAB.ITEMS) do
-        if hitTest(dx, dy, item.cx, item.cy, TAB.SLIDER_W, TAB.SLIDER_H) then
+    do
+        local i = TownPageChrome.hitTab(dx, dy, TAB.ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
+        if i then
             local newTab = TAB.KEYS[i]
             if state.tab ~= newTab then
                 state.tabFrom = state.tab
@@ -1617,7 +1601,7 @@ function MarketPage.handleInput(dx, dy)
                 state.tab = newTab
                 require("systems.GameSFX").playUIMove(2)
                 state.scrollY = 0
-                print("[MarketPage] 切换到 " .. item.name)
+                print("[MarketPage] 切换到 " .. TAB.ITEMS[i].name)
             end
             return true
         end

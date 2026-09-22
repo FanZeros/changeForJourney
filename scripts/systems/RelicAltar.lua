@@ -224,7 +224,7 @@ function RelicAltar.buildFormationEntries(altar, classId)
                 special = true, altar = true, kind = "gui_open_threat",
                 targetClasses = { "knight", "warrior" },
                 value = threat,
-                raw = "龟阵：开战时骑士与战士仇恨+" .. threat,
+                raw = "龟阵：开战时封门人与拾骸者仇恨+" .. threat,
             })
             local block = scaleByRelic(8, relic)
             push({
@@ -247,7 +247,7 @@ function RelicAltar.buildFormationEntries(altar, classId)
                 special = true, altar = true, kind = "she_stealth",
                 targetClasses = { "assassin", "mage" },
                 value = 30,
-                raw = "蛇阵：刺客/法师造成伤害 30% 不加仇恨",
+                raw = "蛇阵：换面人/裂隙使造成伤害 30% 不加仇恨",
             })
         end
         if native.lu and slotMap.lu then
@@ -256,7 +256,7 @@ function RelicAltar.buildFormationEntries(altar, classId)
                 special = true, altar = true, kind = "lu_overheal_shield",
                 targetClasses = { "priest" },
                 value = scaleByRelic(40, relic),
-                raw = "鹿阵：牧师过量治疗的一部分转为护盾",
+                raw = "鹿阵：司仪过量治疗的一部分转为护盾",
             })
         end
         if native.lang and slotMap.lang then

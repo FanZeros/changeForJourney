@@ -877,9 +877,11 @@ local function drawBody(vg)
         lowerProgress = progress
     end
 
-    local upperOY = -UPPER_SLIDE_DIST * (1 - progress)
-    local lowerOY =  LOWER_SLIDE_DIST * (1 - lowerProgress)
-    local overlayAlpha = math.floor(180 * progress)
+    -- 左栏页模式：整页 seamSlideX 已与中缝条同步，关掉内部分段滑和遮罩淡入
+    local seamMode = hostMode_ == "left" or H_SEAM_BACK == true
+    local upperOY = seamMode and 0 or (-UPPER_SLIDE_DIST * (1 - progress))
+    local lowerOY = seamMode and 0 or (LOWER_SLIDE_DIST * (1 - lowerProgress))
+    local overlayAlpha = seamMode and 0 or math.floor(180 * progress)
 
     -- === 全屏暗色遮罩 ===（[横屏左栏] 页面自带不透明底，不再叠暗罩）
     if not isCompact() then

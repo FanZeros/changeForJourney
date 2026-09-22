@@ -163,17 +163,14 @@ function TM.onBattleStart(allies, enemies)
     -- 检测队伍中是否有骑士/战士存活（用于射手天赋"远程攻击"）
     TM_BCS.hasKnightOrWarrior = false
     for _, ally in ipairs(allies) do
-        if ally.hp > 0 and (ally.classId == CC.KNIGHT or ally.classId == CC.WARRIOR) then
+        if ally.hp > 0 and (CC.normalize(ally.classId) == CC.SEAL or CC.normalize(ally.classId) == CC.SPOIL) then
             TM_BCS.hasKnightOrWarrior = true
             break
         end
     end
 
     for _, ally in ipairs(allies) do
-        if ally.classId == CC.KNIGHT and ally.hp > 0 then
-            TM_BCS.knightFirstAttackReady[ally] = true
-            print("[Threat] 骑士 " .. ally.name .. " 阵前叫嚣: 首次攻击仇恨×" .. TM.KNIGHT_FIRST_ATTACK_THREAT_MULT)
-        end
+        -- 阵前叫嚣已从基础职移除（封门人改走门缝）。旧字段保留以免热更空引用。
     end
 
     if TM_BCS.hasKnightOrWarrior then
@@ -213,16 +210,7 @@ function TM.onDamageDealt(damageSource, damage, includeBaseThreat, threatScale)
 
     local amount = ((includeBaseThreat and baseThreat or 0) + damage * dmgCoeff) * threatMult * threatScale
 
-    if includeBaseThreat and classId == CC.KNIGHT and TM_BCS.knightFirstAttackReady[damageSource] then
-        amount = amount * TM.KNIGHT_FIRST_ATTACK_THREAT_MULT
-        TM_BCS.knightFirstAttackReady[damageSource] = nil
-        print("[Threat] 骑士 " .. tostring(damageSource.name) .. " 阵前叫嚣首次攻击: 仇恨×" .. TM.KNIGHT_FIRST_ATTACK_THREAT_MULT)
-    end
-
-    -- 射手天赋"远程攻击"：队伍有骑士/战士时仇恨降低80%
-    if classId == CC.RANGER and TM_BCS.hasKnightOrWarrior then
-        amount = amount * (1.0 - TM.RANGER_THREAT_REDUCTION)
-    end
+    -- 回响客基础职不再减仇恨（改由回响弹本身 10% 仇恨）。保留 hasKnightOrWarrior 给塔词条 ranger_support。
 
     TM.addThreat(damageSource, amount)
 end
@@ -250,11 +238,6 @@ function TM.onHealingDone(healer, healAmount)
     end
 
     local amount = (healBase + healAmount * healCoeff) * threatMult
-
-    -- 射手天赋"远程攻击"：队伍有骑士/战士时仇恨降低80%
-    if classId == CC.RANGER and TM_BCS.hasKnightOrWarrior then
-        amount = amount * (1.0 - TM.RANGER_THREAT_REDUCTION)
-    end
 
     TM.addThreat(healer, amount)
 end

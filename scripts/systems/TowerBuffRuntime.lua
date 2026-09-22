@@ -77,7 +77,7 @@ function TBR.applyStatBuffs(allies, buffIds)
             if #entries > 0 then
                 for _, unit in ipairs(allies) do
                     if unit.hp > 0 and unit.attrs then
-                        if not buff.classReq or unit.classId == buff.classReq then
+                        if not buff.classReq or CC.normalize(unit.classId) == CC.normalize(buff.classReq) then
                             local oldHp = unit.hp
                             local oldMaxHp = unit.maxHp or unit.attrs:get(AD.MAX_HP)
                             unit.attrs:addModifier("tower_buff_" .. buffId, entries)

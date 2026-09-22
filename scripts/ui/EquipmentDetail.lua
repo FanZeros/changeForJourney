@@ -7,6 +7,7 @@
 
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
+local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local AffixConfig      = require("config.AffixConfig")
 local AD               = require("systems.AttributeDef")
 local GameConfig       = require("config.GameConfig")
@@ -565,6 +566,13 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
 
     -- 3) 装备类型 - 左对齐 X578 Y706 字号30 纯白
     local typeName = equip.type or EquipmentConfig.SLOT_NAME[equip.slot] or ""
+    local tpl = EquipmentConfig.ITEMS[equip.templateId]
+        or EquipmentConfig.ITEMS[tostring(equip.templateId)]
+    local setId = EquipmentSetConfig.getSetIdForTemplate(tpl)
+    local setDef = setId and EquipmentSetConfig.get(setId) or nil
+    if setDef then
+        typeName = typeName .. " · " .. setDef.name
+    end
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, REF_TYPE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)

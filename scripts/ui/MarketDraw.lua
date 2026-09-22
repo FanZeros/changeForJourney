@@ -53,9 +53,10 @@ function M.bind(deps)
         lowerProgress = progress
     end
 
-    local upperOX = -UPPER_DIST * (1 - progress)  -- [横向] 从左侧滑入/滑出
-    local lowerOX = -LOWER_DIST * (1 - lowerProgress)  -- [横向] 与整页同向:从左侧滑入/滑出
-    local overlayAlpha = math.floor(180 * progress)
+    local seamMode = H_SEAM_BACK == true
+    local upperOX = seamMode and 0 or (-UPPER_DIST * (1 - progress))
+    local lowerOX = seamMode and 0 or (-LOWER_DIST * (1 - lowerProgress))
+    local overlayAlpha = seamMode and 0 or math.floor(180 * progress)
 
     -- Tab 切换进度
     local tabT = 1.0

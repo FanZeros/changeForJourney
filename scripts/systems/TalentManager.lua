@@ -30,6 +30,8 @@ local TalentAllyDeath = require("systems.talents.TalentAllyDeath")
 local TalentEnemyDeath = require("systems.talents.TalentEnemyDeath")
 local TalentComboAttack = require("systems.talents.TalentComboAttack")
 local TalentFatFish = require("systems.talents.TalentFatFish")
+local ClassGateRuntime = require("systems.ClassGateRuntime")
+local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 
 local MAS
 local function getMAS()
@@ -925,6 +927,10 @@ function TAL.onBattleStart(allies, enemies)
     applyBattleStartTalents(allies, enemies)
     applyBattleStartTalents(enemies, allies)
     ETS.onBattleStart(allies, enemies)
+    ClassGateRuntime.onBattleStart(allies, enemies)
+    for _, u in ipairs(allies or {}) do
+        EquipmentSetRuntime.onBattleStart(u, allies)
+    end
 end
 
 --- 攻击前钩子（performAttack开头，目标选择后调用）
@@ -985,7 +991,13 @@ end
 ---@param dealDmgFn function dealDamageToUnit(target, damage, isTargetAlly, prefix, color)
 ---@param attackerAllies table|nil 攻击方所属队伍列表（可选，星图128共鸣之歌需要）
 function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
-    return _after.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
+    local r = _after.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
+    ClassGateRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, attackerAllies)
+    EquipmentSetRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, targetList)
+    if result and result.totalDamage then
+        EquipmentSetRuntime.addSwordWindowDamage(attacker, result.totalDamage)
+    end
+    return r
 end
 
 function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory)
@@ -1010,7 +1022,10 @@ end
 ---@param allies table 己方单位列表
 ---@param enemies table 敌方单位列表
 function TAL.onEnemyDeath(deadEnemy, allies, enemies)
-    return _enemyDeath.onEnemyDeath(deadEnemy, allies, enemies)
+    local r = _enemyDeath.onEnemyDeath(deadEnemy, allies, enemies)
+    ClassGateRuntime.onEnemyDeath(deadEnemy, allies)
+    EquipmentSetRuntime.onEnemyDeath(deadEnemy, allies)
+    return r
 end
 
 --- 每帧更新钩子（在 SEM.update 之后调用）
@@ -1019,7 +1034,10 @@ end
 ---@param enemies table 敌方列表
 ---@param ctx table { healUnit, dealDamage, syncHp, performAttack }
 function TAL.update(dt, allies, enemies, ctx)
-    return _talentUpdate.update(dt, allies, enemies, ctx)
+    local r = _talentUpdate.update(dt, allies, enemies, ctx)
+    ClassGateRuntime.update(dt, allies, enemies, ctx)
+    EquipmentSetRuntime.update(dt, allies, enemies, ctx)
+    return r
 end
 
 function TAL.getConquerStacks(unit)

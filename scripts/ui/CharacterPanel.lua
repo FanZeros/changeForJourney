@@ -19,6 +19,7 @@ local AwakeningConfig  = require("config.AwakeningConfig")
 local BottomNav        = require("ui.BottomNav")
 local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
+local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 local Draw             = require("ui.CharacterPanelDraw2")
 local HeroResonance    = require("shared.heroes.HeroResonance")
 local CharacterDeploy  = require("ui.CharacterDeploy")
@@ -245,6 +246,9 @@ local function applyEquippedItems(attrs, heroId, partySlot)
             end
         end
     end
+    EquipmentSetSystem.applyToUnit(
+        attrs, eqData, heroId,
+        EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
     return equippedArmorType
 end
 

@@ -26,13 +26,12 @@ table.sort(SORTED_NAMES, function(a, b) return #a > #b end)
 
 -- ======================== 职业名 → classId ========================
 
+local CC = require("config.ClassConfig")
 local CLASS_NAME_TO_ID = {
-    ["骑士"] = "knight",
-    ["战士"] = "warrior",
-    ["法师"] = "mage",
-    ["射手"] = "ranger",
-    ["刺客"] = "assassin",
-    ["牧师"] = "priest",
+    ["骑士"] = CC.SEAL, ["战士"] = CC.SPOIL, ["法师"] = CC.RIFT,
+    ["射手"] = CC.ECHO, ["刺客"] = CC.MASK, ["牧师"] = CC.DEBT,
+    ["封门人"] = CC.SEAL, ["拾骸者"] = CC.SPOIL, ["裂隙使"] = CC.RIFT,
+    ["回响客"] = CC.ECHO, ["换面人"] = CC.MASK, ["司仪"] = CC.DEBT,
 }
 
 -- ======================== 纯运行时节点（完全跳过） ========================
@@ -185,7 +184,7 @@ function TE.parseEffect(effectStr, classId)
         local className, bonus = trimmed:match("^%[(.-)%]职业额外获得(.+)$")
         if className then
             local classReq = CLASS_NAME_TO_ID[className]
-            if classReq and classId == classReq and bonus then
+            if classReq and CC.normalize(classId) == classReq and bonus then
                 local bonusAtoms = splitByDelimiters(bonus, {"，", ",", " "})
                 for _, atom in ipairs(bonusAtoms) do
                     local stripped = atom:gsub("^全体", ""):gsub("^冒险家", "")

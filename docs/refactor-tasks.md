@@ -38,3 +38,4 @@
 - [x] **T11** 抽出卡牌动画状态机到 `BattleCombatAnim.lua`（攻击前摇/受击/入场/死亡/补位）。`BattleCombat` 对外 API 不变。目标：BattleCombat < 1850 行。
 - [x] **T12** TalentManager 再拆英雄：Alex / Elwyn / Sera / Suhua 到 `systems/talents/`。目标：TalentManager < 3300 行。
 - [x] **T13** Client：抽出启动接线到 `network/ClientBoot.lua`（击杀缓冲/城镇情景/轮回关卡/阵亡/阵容）。对外 `Client.Start` 签名不变。
+- [x] **T14** BattleScene：抽出死亡补位/阵亡紧凑/胜负判定到 `BattleCasualty.lua`。目标：BattleScene < 2200 行。

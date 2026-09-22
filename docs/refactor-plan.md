@@ -56,7 +56,7 @@
 
 | 文件 | 重构前 | 重构后 |
 |------|--------|--------|
-| ui/BattleScene.lua | 3435 | 2384 |
+| ui/BattleScene.lua | 3435 | ~2154（抽出 BattleCasualty） |
 | ui/BattleCombat.lua | 2203 | 1821（卡牌动画抽出 BattleCombatAnim） |
 | systems/TalentManager.lua | 4197 | 3276（再抽 Alex/Elwyn/Sera/Suhua） |
 | network/Standalone.lua | 2168 | 841 |

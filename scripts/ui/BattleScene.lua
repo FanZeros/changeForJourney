@@ -36,6 +36,7 @@ local BattleTransitionHud = require("ui.BattleTransitionHud")
 local BattleStageFlow = require("ui.BattleStageFlow")
 local BattleAllyReset = require("ui.BattleAllyReset")
 local BattleStageNav = require("ui.BattleStageNav")
+local BattleCasualty = require("ui.BattleCasualty")
 
 local BattleScene = {}
 BattleScene.GameState = require("core.GameState")
@@ -1173,267 +1174,36 @@ function BattleScene.update(dt)
     ART.update(logicDt)
 
 
-    -- ---- 敌人死亡处理（死亡即补位：怪物池有剩余立刻替换新怪，不播墓碑动画） ----
-    -- [补位节流] 多只敌人同帧死亡时，补位/收缩按 0.4s 间隔逐只进行
-    --（首只按 RESPAWN_DELAY 1s，其后每只 +0.4s：AOE 杀 3 只 ≈1.8s 补全
-    --；冷却按 enemies 引用隔离存 weak-key 表，三行多场战斗互不干扰）
-    local REINFORCE_INTERVAL = 0.4
-    local reinforceCd = (reinforceCdByList[enemies] or 0) - logicDt
-    if reinforceCd < 0 then reinforceCd = 0 end
-    reinforceCdByList[enemies] = reinforceCd
-    for i, unit in ipairs(enemies) do
-        if unit.hp <= 0 then
-            -- 首次检测到死亡：发放击杀奖励（替换与墓碑共用，仅一次）
-            if not unit.reviveTimer then
-                unit.reviveTimer = 0  -- 标记已处理
-                unit.atkProgress = 0
-                TM.removeUnit(unit)   -- 清除仇恨记录（仅一次）
-                TAL.onEnemyDeath(unit, allies, enemies)  -- 转职天赋: 敌人死亡钩子（影袭等）
-                SEM.removeUnit(unit)  -- 清除状态效果
-
-                -- 波次效率累计（本地 UI 统计）
-                waveKillCount = waveKillCount + 1
-                waveGoldEarned = waveGoldEarned + (unit.goldReward or 0)
-                waveExpEarned  = waveExpEarned + (unit.expReward or 0)
-
-                -- 发放击杀奖励（经验 + 金币）
-                if onEnemyKillCallback and (unit.expReward or unit.goldReward) then
-                    local allyCount = #allies
-                    local expMult = require("config.ExpTable").getHeroCountExpMult(allyCount)
-                    -- 收集上场冒险家 heroId 列表
-                    local heroIds = {}
-                    for _, ally in ipairs(allies) do
-                        if ally.heroId then
-                            heroIds[#heroIds + 1] = ally.heroId
-                        end
-                    end
-                    onEnemyKillCallback({
-                        expReward  = unit.expReward or 0,
-                        goldReward = unit.goldReward or 0,
-                        allyCount  = allyCount,
-                        expMult    = expMult,
-                        heroIds    = heroIds,
-                        stageId    = currentStageId,
-                    })
-                end
-
-                -- 掉落回调（通知外部生成装备掉落）
-                if onEnemyDropCallback then
-                    local enemyCX = getCardCX(enemies, i)
-                    print("[BattleScene] enemy died, calling dropCallback stageId=" .. tostring(currentStageId))
-                    onEnemyDropCallback({
-                        stageId = currentStageId,
-                        enemyCX = enemyCX,
-                        enemyCY = ENEMY_CARD_CY,
-                    })
-                else
-                    print("[BattleScene] enemy died, but onEnemyDropCallback is nil!")
-                end
-
-                -- 击杀台词触发（击杀者说台词）
-                if unit._killedBy and unit._killedBy.heroId then
-                    SpeechBubble.trigger(unit._killedBy, "kill")
-                end
-
-                stageKillCount_ = stageKillCount_ + 1
-                -- 死亡退场动画：条带布局下向右滑出（0.4s）；池空不再显示墓碑（完全隐藏空位）
-                local okRatio = unit._overkillRatio or 0
-                BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1,
-                    knockbackMult = 1.0 + okRatio * 2.0, noTombstone = true })
-            end
-
-            unit.reviveTimer = unit.reviveTimer + logicDt
-
-            if #enemyQueue > 0 then
-                -- [死亡即补位 v2] 退场(向右滑出0.4s) → 1s 空位 → 新怪从右滑入补位
-                -- [补位节流] 同帧多只待补位时按 REINFORCE_INTERVAL 逐只补入
-                if unit.reviveTimer >= RESPAWN_DELAY and reinforceCd <= 0 then
-                    reinforceCd = REINFORCE_INTERVAL
-                    reinforceCdByList[enemies] = reinforceCd
-                    -- [队列前移补位] 死亡槽位 i 由后方敌人依次前移一格填入，
-                    -- 新怪从怪物池进入队尾淡入补齐（保持敌我阵列紧凑）
-                    for j = i, #enemies - 1 do
-                        local moved = enemies[j + 1]
-                        enemies[j] = moved
-                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
-                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
-                    end
-                    local newUnit = table.remove(enemyQueue, 1)
-                    Diag.installSentinel(newUnit)
-                    TAL.initUnit(newUnit)
-                    TAL.checkMarkTarget(allies, enemies)
-                    newUnit.atkProgress = 0
-                    enemies[#enemies] = newUnit
-                    -- 清理旧单位残留的动画状态
-                    BattleCombat.clearCardAnim(unit)
-                    BattleCombat.clearHitFlash(unit)
-                    -- 新怪从右侧滑入淡入补位（队尾）
-                    BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
-                end
-            else
-                -- [池空前移] 无后续敌人：死亡槽位仍由后方敌人前移填位（队列收缩，共享补位节流）
-                if unit.reviveTimer >= RESPAWN_DELAY and reinforceCd <= 0 then
-                    reinforceCd = REINFORCE_INTERVAL
-                    reinforceCdByList[enemies] = reinforceCd
-                    for j = i, #enemies - 1 do
-                        local moved = enemies[j + 1]
-                        enemies[j] = moved
-                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
-                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
-                    end
-                    table.remove(enemies)
-                    BattleCombat.clearCardAnim(unit)
-                    BattleCombat.clearHitFlash(unit)
-                end
-            end
-        end
-    end
-
-    -- ---- 墓碑处理（己方）：死亡淡出动画，不复活 ----
-    for _, unit in ipairs(allies) do
-        if unit.hp <= 0 and not unit.reviveTimer then
-            -- 神器: 死亡拦截（神圣十架复活 / 亡魂之祭）
-            local artifactRevived = ART.onAllyDeath(unit)
-            if artifactRevived then
-                local idx = 1
-                for ai, a in ipairs(allies) do
-                    if a == unit then idx = ai; break end
-                end
-                local cx = BattleCombat.getCardCX(allies, idx)
-                require("ui.SpineCardEffect").playRevive(cx, ALLY_CARD_CY)
-            else
-                -- 天赋: 死亡拦截（复活吧爱人复活）
-                local revived = TAL.onAllyDeath(unit, allies, syncUnitHp)
-                if revived then
-                    -- 复活成功，跳过死亡处理；播放复活 Spine 特效
-                    local idx = 1
-                    for ai, a in ipairs(allies) do
-                        if a == unit then idx = ai; break end
-                    end
-                    local cx = BattleCombat.getCardCX(allies, idx)
-                    require("ui.SpineCardEffect").playRevive(cx, ALLY_CARD_CY)
-                else
-                    -- 阵亡台词触发
-                    SpeechBubble.trigger(unit, "death")
-
-                    unit.reviveTimer = 0       -- 标记已处理，防止重复调用
-                    unit._fallenPending = true -- [阵亡紧凑] 退场完成后移至队尾
-                    unit.atkProgress = 0
-                    TM.removeUnit(unit)
-                    SEM.removeUnit(unit)
-                    -- 启动死亡动画：角色向下滑出（lungeDir=+1），超额伤害增加击退；完成后直接隐藏
-                    local okRatio = unit._overkillRatio or 0
-                    BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = 1,
-                        knockbackMult = 1.0 + okRatio * 2.0, noTombstone = true })
-                end
-            end
-        end
-    end
-
-    -- [阵亡紧凑] 阵亡英雄退场动画完成后移至队尾，存活英雄前移填位
-    -- （单位对象保留：下一关 resetAllyUnit 全员重置复活）
-    for i = #allies, 1, -1 do
-        local u = allies[i]
-        if u._fallenPending then
-            local st = BattleCombat.getAnimState(u)
-            if st == "gone" or st == nil then
-                u._fallenPending = nil
-                u._fallen = true
-                table.remove(allies, i)
-                table.insert(allies, u)
-                for j = i, #allies - 1 do
-                    local moved = allies[j]
-                    if moved.hp > 0 then
-                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
-                            advanceDist = require("core.BattleLayout").STRIP_PITCH })
-                    end
-                end
-            end
-        end
-    end
-
-    -- 检查是否有存活单位
-    local allyAlive  = getAliveUnits(allies)
-    local enemyAlive = getAliveUnits(enemies)
-
-    -- 胜利条件：场上敌人全灭 + 队列为空
-    if #enemyAlive == 0 and #enemyQueue == 0 then
-        settleWaveEfficiency()
-        resetWaveTimers()
-
-
-
-        local wasFirstClear = isFirstClear
-        if isFirstClear then
-            -- 首通完成：标记关卡已通关，解锁前进按钮
-            clearedStages[currentStageId] = true
-            isFirstClear = false
-            StageBerserk.exit()
-            print("[BattleScene] 首通完成: " .. stageName)
-            -- 通知外部持久化（Client 会发送 NEXT_STAGE 到服务端）
-            if onFirstClearCallback then
-                onFirstClearCallback(currentStageId)
-            end
-        end
-        -- 胜利台词触发（随机选一名存活英雄）
-        local aliveHeroesV = {}
-        for _, u in ipairs(allies) do
-            if u.hp > 0 and u.heroId then
-                aliveHeroesV[#aliveHeroesV + 1] = u
-            end
-        end
-        if #aliveHeroesV > 0 then
-            local speaker = aliveHeroesV[math.random(#aliveHeroesV)]
-            SpeechBubble.trigger(speaker, "victory")
-        end
-
-        -- 终焉神殿：胜利 → 进入轮回计时
-        if getStageConfig().isTerminalTemple(currentStageId) then
-            if reincarnationTimer == nil then
-                reincarnationTimer = 0
-                battleActive = false
-                print("[BattleScene] 终焉神殿胜利，进入轮回倒计时")
-            end
-            return
-        end
-
-        -- 首通成功：自动前进到下一关（不回到寻怪模式）
-        if wasFirstClear then
-            BattleScene.nextStage()
-        elseif searchingTimer == nil then
-            -- 挂机模式：进入寻怪倒计时
-            searchingTimer = 0
-            battleActive = false
-        end
-        return
-    end
-    -- 失败条件：己方全灭
-    if #allyAlive == 0 then
-            StageBerserk.exit()
-        -- 战败也结算已有的效率数据（不完整波次仍有参考价值）
-        settleWaveEfficiency()
-
-        -- 终焉神殿：失败 → 回退到上一关（该难度最后一关）
-        if getStageConfig().isTerminalTemple(currentStageId) then
-            if defeatTimer == nil then
-                defeatTimer = 0
-                battleActive = false
-                terminalDefeatPending = true
-                defeatByTimeout = false
-                print("[BattleScene] 终焉神殿失败，准备回退到上一关")
-            end
-            return
-        end
-        if defeatTimer == nil then
-            defeatTimer = 0
-            battleActive = false
-            defeatByTimeout = false
-            if onAllDeadCallback then onAllDeadCallback() end
-        end
-        return
-    end
-
-
+    -- ---- 敌人死亡处理 / 己方阵亡紧凑 / 胜负判定（委托 BattleCasualty） ----
+    local _casCtx = {
+        enemies = enemies, allies = allies, enemyQueue = enemyQueue,
+        getCardCX = getCardCX, getAliveUnits = getAliveUnits, syncUnitHp = syncUnitHp,
+        RESPAWN_DELAY = RESPAWN_DELAY, reinforceCdByList = reinforceCdByList,
+        ENEMY_CARD_CY = ENEMY_CARD_CY, ALLY_CARD_CY = ALLY_CARD_CY,
+        currentStageId = currentStageId, stageName = stageName, getStageConfig = getStageConfig,
+        waveKillCount = waveKillCount, waveGoldEarned = waveGoldEarned, waveExpEarned = waveExpEarned,
+        onEnemyKillCallback = onEnemyKillCallback, onEnemyDropCallback = onEnemyDropCallback,
+        onFirstClearCallback = onFirstClearCallback, onAllDeadCallback = onAllDeadCallback,
+        stageKillCount = stageKillCount_, isFirstClear = isFirstClear, clearedStages = clearedStages,
+        reincarnationTimer = reincarnationTimer, battleActive = battleActive,
+        searchingTimer = searchingTimer, defeatTimer = defeatTimer,
+        terminalDefeatPending = terminalDefeatPending, defeatByTimeout = defeatByTimeout,
+        settleWaveEfficiency = settleWaveEfficiency, resetWaveTimers = resetWaveTimers,
+        nextStage = BattleScene.nextStage,
+    }
+    local _casConsumed = BattleCasualty.process(_casCtx, logicDt)
+    waveKillCount = _casCtx.waveKillCount
+    waveGoldEarned = _casCtx.waveGoldEarned
+    waveExpEarned = _casCtx.waveExpEarned
+    stageKillCount_ = _casCtx.stageKillCount
+    isFirstClear = _casCtx.isFirstClear
+    reincarnationTimer = _casCtx.reincarnationTimer
+    battleActive = _casCtx.battleActive
+    searchingTimer = _casCtx.searchingTimer
+    defeatTimer = _casCtx.defeatTimer
+    terminalDefeatPending = _casCtx.terminalDefeatPending
+    defeatByTimeout = _casCtx.defeatByTimeout
+    if _casConsumed then return end
 
     -- ---- 更新攻击进度 ----
     -- 预先统计双方存活数，无目标时进度条停在满格等待

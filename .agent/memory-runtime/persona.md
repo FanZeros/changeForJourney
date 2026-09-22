@@ -1,6 +1,6 @@
 # persona（随行记忆 · 跨项目）
 
-> latest-wins 合并；[scope] 标记见条目尾。更新：2026-09-13
+> latest-wins 合并；[scope] 标记见条目尾。更新：2026-09-22
 
 ## 基础画像
 
@@ -17,3 +17,4 @@
 ## 项目足迹（追加去重）
 
 - 2026-09-12/13 宿命旅途（UrhoX 卡牌放置 RPG）：暗黑魔塔改造、GitHub Pages 自部署（CRC32 管线）、Electron Windows 离线版、先祖来信剧情、山海经怪兽替换（名字已上线，立绘交接给下一会话）
+- 2026-09-22 终焉之门：玩家可见「冒险等级」等改为远征世界观（分支 `feat/rename-adventure-to-expedition`）

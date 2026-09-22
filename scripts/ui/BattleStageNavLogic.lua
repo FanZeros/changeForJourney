@@ -80,6 +80,7 @@ function M.bind(deps)
         stageId = tonumber(stageId)
         if not stageId or stageId < 1 then return false, "无效关卡" end
         if stageId > get("maxStageId_") then return false, "关卡尚未解锁" end
+        set("bgTransAnim", { timer = 0, zoomTarget = get("BG_ZOOM_FWD_TARGET") })
         loadStage(stageId, true)
         local cb = get("onStageChangedCallback")
         if cb then cb(stageId) end

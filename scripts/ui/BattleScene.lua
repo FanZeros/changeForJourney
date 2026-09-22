@@ -258,12 +258,11 @@ local pendingReincarnation = nil
 
 -- (战斗动画状态: floatingTexts/cardAnims/hitFlashes/hpBuffers 已移至 BattleCombat)
 
--- 背景过渡动画（缩放+渐隐/渐入）
+-- 背景走动：放大再回正（模拟迈步），不做淡出换图
 local bgTransAnim = nil  -- nil=无动画; { timer, zoomTarget }
-local BG_TRANS_DURATION   = 0.45  -- 总时长
-local BG_FADE_OUT_RATIO   = 0.45  -- 前 45% 为缩放淡出，后 55% 为淡入
-local BG_ZOOM_FWD_TARGET  = 1.3   -- 前进：放大淡出
-local BG_ZOOM_BACK_TARGET = 0.7   -- 后退：缩小淡出
+local BG_TRANS_DURATION   = 0.72  -- 总时长（放大半步 + 回正半步）
+local BG_ZOOM_FWD_TARGET  = 1.32  -- 前进峰值
+local BG_ZOOM_BACK_TARGET = 1.22  -- 后退也放大（迈步感），峰值略低
 
 --- 全局章节号转难度内相对章节号
 local function getRelativeChapter(chapter)
@@ -687,22 +686,28 @@ function BattleScene.draw(vg)
         pendingMapBgPath_ = nil
         print(string.format("[BattleScene] 地图背景解码 %.0fms（惰性）", (time.elapsedTime - t0) * 1000))
     end
-    -- 1. 地图背景（上下漂移 + 场景切换过渡）
+    -- 1. 地图背景（上下漂移 + 切关走动：放大再回正）
     -- 只向上漂移：0 → -8 → 0，不会向下露出黑底
     local driftY = -BG_DRIFT_Y_AMP * (1.0 - math.cos(bgAnimTimer * 2 * math.pi / BG_DRIFT_Y_PERIOD)) * 0.5
-    -- 底图：带垂直漂移 [暗黑化 P1: 压暗 tint + 边缘晕影]
-    DarkIcon.drawDarkScene(vg, imgMap, MAP_CX, MAP_CY + driftY, MAP_W, MAP_H, 1.0)
-    -- 场景切换过渡叠加层
+    local mapScale = 1.0
+    local walkY = 0
     if bgTransAnim then
         local t = math.min(bgTransAnim.timer / BG_TRANS_DURATION, 1.0)
-        if t <= BG_FADE_OUT_RATIO then
-            local p = t / BG_FADE_OUT_RATIO  -- 0→1
-            local transScale = 1.0 + (bgTransAnim.zoomTarget - 1.0) * p
-            local bgAlpha = 1.0 - p
-            DarkIcon.drawDarkScene(vg, imgMap, MAP_CX, MAP_CY + driftY,
-                MAP_W * transScale, MAP_H * transScale, bgAlpha)
+        -- 0→1→0 的迈步鼓包，峰值在中点
+        local bump = math.sin(t * math.pi)
+        local peak = bgTransAnim.zoomTarget or BG_ZOOM_FWD_TARGET
+        if peak < 1.0 then
+            peak = 2.0 - peak  -- 旧「缩小淡出」值转成放大
         end
+        mapScale = 1.0 + (peak - 1.0) * bump
+        walkY = -36.0 * bump  -- 同步微微上移，模拟迈步
     end
+    -- 裁进设计画布，放大时不溢到邻栏
+    nvgSave(vg)
+    nvgIntersectScissor(vg, MAP_CX - MAP_W * 0.5, MAP_CY - MAP_H * 0.5, MAP_W, MAP_H)
+    DarkIcon.drawDarkScene(vg, imgMap, MAP_CX, MAP_CY + driftY + walkY,
+        MAP_W * mapScale, MAP_H * mapScale, 1.0)
+    nvgRestore(vg)
 
     -- 2. 敌方战场阴影
     drawImageCentered(vg, imgShadow, ENEMY_SHADOW_CX, ENEMY_SHADOW_CY,

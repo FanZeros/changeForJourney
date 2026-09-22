@@ -215,7 +215,7 @@ local state = {
     floatTextTime       = 0,      -- 飘字开始时间
 
     -- 天赋面板
-    tfZoomSliderValue   = 0,      -- 缩放滑块值 0(顶)~1(底)
+    tfZoomSliderValue   = TalentStarMap.getDefaultSliderValue(), -- 默认 1:1
     tfSliderDragging    = false,  -- 是否正在拖拽滑块
     tfMapDragging       = false,  -- 是否正在拖拽星图
     tfLastDragX         = 0,      -- 上次拖拽坐标 X

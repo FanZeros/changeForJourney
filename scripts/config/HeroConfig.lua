@@ -249,7 +249,7 @@ HC.HEROES = {
     },
     [17] = {
         quality = 2, classId = CC.MAGE,
-        title = "深海喷水员", name = "蓝色大肥鱼",
+        title = "爱吃白饭的摸鱼员", name = "蓝色大肥鱼",
         talentName = "高压水枪", talentDesc = "攻击喷出高压水柱：主目标受潮2秒（受伤+20%），并溅到另一名敌人，造成魔法攻击力40%的冰霜伤害。",
         talentId = "fatfish_water_gun",
         gender = "female",

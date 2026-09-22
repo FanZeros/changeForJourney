@@ -24,7 +24,7 @@
 | 3 | 拆 BattleCombat（攻击结算 / 连击 / 飘字） | 中高：战斗手感 | **飘字/闪烁/卡牌动画已完成；连击结算仍在 BattleCombat** |
 | 4 | 按英雄拆 TalentManager（核心 API 留壳，角色天赋分文件） | 高：战斗正确性 | **Ayane/Luoxing/Melissa/Alex/Elwyn/Sera/Suhua 已完成** |
 | 5 | Standalone `_bootWiring` / 横屏输入拆模块 | 中：入口接线 | **已完成** |
-| 6 | Client/Server 启动与 overlay 拆模块 | 中 | 未做（清单外） |
+| 6 | Client/Server 启动与 overlay 拆模块 | 中 | **ClientBoot 已完成；Server/overlay 未拆** |
 | 7 | 城镇页（铁匠/教堂/酒馆/市场/背包）抽共用页壳 | 中 | **本提交完成 TownPageChrome** |
 | 8 | 删死代码、统一重复九宫格/缓动 | 低 | **部分完成（确认弹窗贴图/墓碑常量/重复 boot 回调）** |
 
@@ -60,7 +60,7 @@
 | ui/BattleCombat.lua | 2203 | 1821（卡牌动画抽出 BattleCombatAnim） |
 | systems/TalentManager.lua | 4197 | 3276（再抽 Alex/Elwyn/Sera/Suhua） |
 | network/Standalone.lua | 2168 | 841 |
-| network/Client.lua | 2487 | 2487（未拆） |
+| network/Client.lua | 2487 | ~2141（抽出 ClientBoot） |
 | network/Server.lua | 2068 | 2068（未拆） |
 
 分支：`refactor/extract-battle-overlays`。禁止推 `workspace`。

@@ -33,6 +33,7 @@ function M.bind(deps)
     local tryYouyeSuperCrit = deps.tryYouyeSuperCrit
     local tryRosaBounce = deps.tryRosaBounce
     local onXinAfterAttack = deps.onXinAfterAttack
+    local onFatFishAfterAttack = deps.onFatFishAfterAttack
     local getTAL_BCS = deps.getTAL_BCS
 
     local function onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
@@ -436,6 +437,11 @@ function M.bind(deps)
         -- 造成物理攻击*100%的斩击伤害，投射物使用贝塞尔曲线
         if heroId == 11 and dealDmgFn and targetList then
             runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealDmgFn)
+        end
+
+        -- #17 蓝色大肥鱼 高压水枪：潮湿 + 溅射冰霜
+        if heroId == 17 and onFatFishAfterAttack then
+            onFatFishAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn)
         end
 
         -- #16 万剑归宗 灵月飞剑：累计实际造成伤害（含护盾吸收、暴击与各类增伤）

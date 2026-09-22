@@ -29,6 +29,7 @@ local TalentModifyDamage = require("systems.talents.TalentModifyDamage")
 local TalentAllyDeath = require("systems.talents.TalentAllyDeath")
 local TalentEnemyDeath = require("systems.talents.TalentEnemyDeath")
 local TalentComboAttack = require("systems.talents.TalentComboAttack")
+local TalentFatFish = require("systems.talents.TalentFatFish")
 
 local MAS
 local function getMAS()
@@ -534,6 +535,15 @@ local _xin = TalentXin.bind({
 })
 local onXinAfterAttack = _xin.onXinAfterAttack
 
+local _fatFish = TalentFatFish.bind({
+    hasAwaken = hasAwaken,
+    getState = getState,
+    talentLog = talentLog,
+    getAliveEnemies = getAliveEnemies,
+    calcTalentFixedDamage = calcTalentFixedDamage,
+})
+local onFatFishAfterAttack = _fatFish.onAfterAttack
+
 local _after
 local function bindTalentAfterAttack()
     _after = TalentAfterAttack.bind({
@@ -559,6 +569,7 @@ local function bindTalentAfterAttack()
         tryYouyeSuperCrit = tryYouyeSuperCrit,
         tryRosaBounce = tryRosaBounce,
         onXinAfterAttack = onXinAfterAttack,
+        onFatFishAfterAttack = onFatFishAfterAttack,
         getTAL_BCS = function() return TAL_BCS end,
     })
 end

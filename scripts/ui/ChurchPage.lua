@@ -113,7 +113,7 @@ local ANIM = {
     ROSTER_SLIDE_DIST = 1400,
 }
 
--- 7. 角色列表区域（复刻 CharacterPanel 冒险家列表）
+-- 7. 角色列表区域（复刻 CharacterPanel 远征队员列表）
 local ROSTER = {
     LIST_BG_CX = 540, LIST_BG_W = 1080, LIST_BG_H = 1579,
     MY_HEROES_CX = 540, MY_HEROES_CY = 868,
@@ -439,7 +439,7 @@ end
 -- drawClassChangeBg / drawBranchOverlay / drawClassChangeContent
 -- drawTabContent / openConfirmPopup / closeConfirmPopup / drawClassConfirmPopup
 -- → 已迁移至 ChurchClassChange.lua（通过 ClassChange.xxx 调用）
---- 绘制角色列表（一比一复刻角色面板 CharacterPanel 的冒险家列表）
+--- 绘制角色列表（一比一复刻角色面板 CharacterPanel 的远征队员列表）
 local _rosterDraw
 local function bindRosterDraw()
     _rosterDraw = ChurchRosterDraw.bind({

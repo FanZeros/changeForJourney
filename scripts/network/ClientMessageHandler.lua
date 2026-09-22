@@ -740,7 +740,7 @@ local ClientDispatcher = require("network.ClientDispatcher")
              }
              local key = data.reward.currencyKey; local amount = data.reward.amount or 0
              local popupType = CURRENCY_KEY_TO_POPUP_TYPE[key] or key
-             RewardPopup.show("冒险奖励", { { type = popupType, amount = amount } }, { onClose = fireTutorial })
+             RewardPopup.show("远征奖励", { { type = popupType, amount = amount } }, { onClose = fireTutorial })
          elseif data.success and data.reward then
              if data.rewardType == "hero" then
                  local heroId = data.reward.heroId; local heroName = data.reward.name or "英雄"
@@ -748,16 +748,16 @@ local ClientDispatcher = require("network.ClientDispatcher")
                  local HERO_TO_FOLLOWUP = { [1]=14, [2]=15, [3]=16 }
                  local followUpId = HERO_TO_FOLLOWUP[heroId]
                  local heroConfig = followUpId and ScenarioDialogueConfig["SCENARIO_" .. followUpId]
-                 RewardPopup.show("冒险奖励", { { type = "hero", heroId = heroId, name = heroName, quality = displayQuality } }, {
+                 RewardPopup.show("远征奖励", { { type = "hero", heroId = heroId, name = heroName, quality = displayQuality } }, {
                      onClose = function()
                          fireTutorial()
                          if heroConfig then M.pendingFollowUpDialogue_ = { config = heroConfig } end
                      end
                  })
              elseif data.rewardType == "relic" then
-                 RewardPopup.show("冒险奖励", { { type = "relic", relicType = data.reward.relicType, quality = data.reward.quality or 1 } }, { onClose = fireTutorial })
+                 RewardPopup.show("远征奖励", { { type = "relic", relicType = data.reward.relicType, quality = data.reward.quality or 1 } }, { onClose = fireTutorial })
              else
-                 RewardPopup.show("冒险奖励", { { type = "equip", templateId = data.reward.templateId, quality = data.reward.quality or 1, level = data.reward.level or 1 } }, { onClose = fireTutorial })
+                 RewardPopup.show("远征奖励", { { type = "equip", templateId = data.reward.templateId, quality = data.reward.quality or 1, level = data.reward.level or 1 } }, { onClose = fireTutorial })
              end
          else
              fireTutorial()

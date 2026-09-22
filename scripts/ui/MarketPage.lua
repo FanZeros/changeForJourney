@@ -94,7 +94,7 @@ local TAB = {
 local SHOP_ITEMS = {
     -- ===== 钻石商品（永久，不限购；定价已 /2） =====
     {
-        id = 12, name = "冒险招募券", quality = 5, rewardCount = 1,
+        id = 12, name = "远征招募券", quality = 5, rewardCount = 1,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 90,
         icon = "image/货币道具/UI_icon_ZMQ_1.png",

@@ -286,7 +286,7 @@ function DebugPanel.draw(vg, designOffsetX, screenDesignW)
         + SECTION_GAP
         + 20 + BTN_H + BTN_GAP + BTN_H        -- 资源获取区域（标签 + 选择器 + 获取按钮）
         + SECTION_GAP
-        + BTN_H                                -- 冒险等级提升按钮
+        + BTN_H                                -- 远征等级提升按钮
         + SECTION_GAP
         + BTN_H                                -- 离线收益面板按钮
         + SECTION_GAP
@@ -359,11 +359,11 @@ function DebugPanel.draw(vg, designOffsetX, screenDesignW)
     registerBtn("ally_sub", btnX, curY, btnW, BTN_H)
     curY = curY + BTN_H + SECTION_GAP
 
-    -- ==================== 冒险家管理 ====================
+    -- ==================== 远征队员管理 ====================
     local selHero = HC.get(getSelectedHeroId())
     local selName = selHero and selHero.name or "?"
     local isOwned = CharacterPanel.isOwned(getSelectedHeroId())
-    -- 选择器通用布局变量（冒险家 + 装备生成 共用）
+    -- 选择器通用布局变量（远征队员 + 装备生成 共用）
     local arrowW = 50
     local midW = btnW - arrowW * 2 - 8  -- 中间显示区域，两侧各留 4 间距
     local midX  ---@type number
@@ -392,7 +392,7 @@ function DebugPanel.draw(vg, designOffsetX, screenDesignW)
         80, 80, 100, 255, "▶", 8)
     registerBtn("hero_id_inc", rightX, curY, arrowW, BTN_H)
     curY = curY + BTN_H + BTN_GAP
-    -- 第二行: 获得冒险家按钮
+    -- 第二行: 获得远征队员按钮
     if isOwned then
         drawRoundedBtn(vg, btnX, curY, btnW, BTN_H,
             80, 80, 80, 255, "已拥有 " .. selName)
@@ -402,7 +402,7 @@ function DebugPanel.draw(vg, designOffsetX, screenDesignW)
     end
     registerBtn("add_hero", btnX, curY, btnW, BTN_H)
     curY = curY + BTN_H + BTN_GAP
-    -- 第三行: 删除冒险家按钮
+    -- 第三行: 删除远征队员按钮
     if isOwned then
         drawRoundedBtn(vg, btnX, curY, btnW, BTN_H,
             180, 50, 50, 255, "删除 " .. selName)
@@ -685,17 +685,17 @@ function DebugPanel.draw(vg, designOffsetX, screenDesignW)
     registerBtn("res_give", btnX, curY, btnW, BTN_H)
     curY = curY + BTN_H + SECTION_GAP
 
-    -- ==================== 冒险等级提升 ====================
+    -- ==================== 远征等级提升 ====================
     local playerLv = GameState.getLevel()
     local isMaxLv = ExpTable.isPlayerMaxLevel(playerLv)
     if isMaxLv then
         drawRoundedBtn(vg, btnX, curY, btnW, BTN_H,
             80, 80, 80, 255,
-            "冒险等级 Lv." .. playerLv .. " (满级)")
+            "远征等级 Lv." .. playerLv .. " (满级)")
     else
         drawRoundedBtn(vg, btnX, curY, btnW, BTN_H,
             160, 120, 50, 255,
-            "冒险等级 Lv." .. playerLv .. " → " .. (playerLv + 1))
+            "远征等级 Lv." .. playerLv .. " → " .. (playerLv + 1))
     end
     registerBtn("player_level_up", btnX, curY, btnW, BTN_H)
     curY = curY + BTN_H + SECTION_GAP
@@ -817,7 +817,7 @@ function DebugPanel.handleInput(sx, sy)
                     getClient().sendAction(getProtocol().ACTION_TYPES.GM_GIVE_HERO, {
                         heroId = heroId,
                     })
-                    print("[Debug] 已发送获得冒险家请求: ID " .. heroId)
+                    print("[Debug] 已发送获得远征队员请求: ID " .. heroId)
                 end
             elseif btn.id == "remove_hero" then
                 local heroId = getSelectedHeroId()
@@ -825,7 +825,7 @@ function DebugPanel.handleInput(sx, sy)
                     print("[Debug] 英雄 " .. heroId .. " 未拥有")
                 else
                     CharacterPanel.removeHero(heroId)
-                    print("[Debug] 删除冒险家 ID:" .. heroId)
+                    print("[Debug] 删除远征队员 ID:" .. heroId)
                 end
             elseif btn.id == "level_up_hero" then
                 local heroId = getSelectedHeroId()
@@ -833,7 +833,7 @@ function DebugPanel.handleInput(sx, sy)
                     getClient().sendAction(getProtocol().ACTION_TYPES.GM_LEVEL_UP, {
                         heroId = heroId,
                     })
-                    print("[Debug] 已发送升级请求: 冒险家 " .. heroId)
+                    print("[Debug] 已发送升级请求: 远征队员 " .. heroId)
                 else
                     print("[Debug] 英雄 " .. heroId .. " 未拥有，无法升级")
                 end
@@ -847,7 +847,7 @@ function DebugPanel.handleInput(sx, sy)
                     getClient().sendAction(getProtocol().ACTION_TYPES.GM_AWAKENING, {
                         heroId = heroId,
                     })
-                    print("[Debug] 已发送觉醒请求: 冒险家 " .. heroId)
+                    print("[Debug] 已发送觉醒请求: 远征队员 " .. heroId)
                 end
             elseif btn.id == "reload_stage" then
                 BattleScene.reloadStage()
@@ -984,10 +984,10 @@ function DebugPanel.handleInput(sx, sy)
             elseif btn.id == "player_level_up" then
                 local lv = GameState.getLevel()
                 if ExpTable.isPlayerMaxLevel(lv) then
-                    print("[Debug] 冒险等级已满级 Lv." .. lv)
+                    print("[Debug] 远征等级已满级 Lv." .. lv)
                 else
                     getClient().sendAction(getProtocol().ACTION_TYPES.GM_PLAYER_LEVEL_UP, {})
-                    print("[Debug] 已发送冒险等级提升请求: Lv." .. lv)
+                    print("[Debug] 已发送远征等级提升请求: Lv." .. lv)
                 end
             elseif btn.id == "offline_reward" then
                 -- mock 数据打开离线收益面板

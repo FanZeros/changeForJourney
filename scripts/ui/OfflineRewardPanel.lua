@@ -13,8 +13,8 @@
 --       offlineSeconds  = 43200,       -- 离线秒数
 --       maxSeconds      = 43200,       -- 最大可累积秒数（12小时）
 --       multiplier      = 1.0,         -- 收益倍率
---       adventureExp    = 12000,       -- 冒险等级经验
---       adventurerExp   = 5600,        -- 冒险家经验（总合）
+--       adventureExp    = 12000,       -- 远征等级经验
+--       adventurerExp   = 5600,        -- 远征队员经验（总合）
 --       rewards = {                    -- 奖励物品列表
 --           { type = "gold",    amount = 5000 },
 --           { type = "diamond", amount = 20 },
@@ -92,19 +92,19 @@ local DECO = {
     FR = 0x8d, FG = 0x5f, FB = 0x41,  -- #8d5f41
 }
 
--- 13+14+15. 冒险等级经验行
+-- 13+14+15. 远征等级经验行
 local EXP_ROW1 = {
     CX = 540, CY = 899, W = 800, H = 80, R = 16,
-    LABEL_X = 180, LABEL = "冒险等级经验",
+    LABEL_X = 180, LABEL = "远征等级经验",
     LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,
     VALUE_X = 921,
     VALUE_R = 0x63, VALUE_G = 0xff, VALUE_B = 0x84, VALUE_SW = 5,
 }
 
--- 冒险家经验行
+-- 远征队员经验行
 local EXP_ROW2 = {
     CX = 540, CY = 994, W = 800, H = 80, R = 16,
-    LABEL_X = 180, LABEL = "冒险家经验（总合）",
+    LABEL_X = 180, LABEL = "远征队员经验（总合）",
     LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,
     VALUE_X = 921,
     VALUE_R = 0x63, VALUE_G = 0xff, VALUE_B = 0x84, VALUE_SW = 5,
@@ -487,10 +487,10 @@ function Panel.draw(vg)
     nvgFillColor(vg, nvgRGBA(DECO.FR, DECO.FG, DECO.FB, 255))
     nvgText(vg, DECO.CX, DECO.CY, "离线收益", nil)
 
-    -- 13. 冒险等级经验行
+    -- 13. 远征等级经验行
     self_drawExpRow(vg, EXP_ROW1, state.adventureExp)
 
-    -- 14. 冒险家经验行
+    -- 14. 远征队员经验行
     self_drawExpRow(vg, EXP_ROW2, state.adventurerExp)
 
     -- 16. 奖励内容背景框

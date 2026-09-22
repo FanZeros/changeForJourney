@@ -266,7 +266,7 @@ function OfflineService.ClaimRewards(uid)
         HeroService.ApplyResonanceSync(uid)
     end
 
-    -- 3) 冒险经验（玩家升级）
+    -- 3) 远征经验（玩家升级）
     local playerExp = rewards.adventureExp
     playerExp = math.floor(playerExp)
     local oldLv = playerData.level or 1
@@ -416,7 +416,7 @@ function OfflineService.OnPlayerDisconnect(uid)
                             HeroService.ApplyResonanceSync(uid)
                         end
 
-                        -- 冒险经验
+                        -- 远征经验
                         local oldLv = playerData.level or 1
                         playerData.exp = (playerData.exp or 0) + math.floor(rewards.adventureExp)
                         ExpTable.autoLevelUpPlayer(playerData)

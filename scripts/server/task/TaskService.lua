@@ -155,7 +155,7 @@ function TaskService.RefreshAchievements(uid)
 
     if not heroes or not player then return end
 
-    -- 冒险等级
+    -- 远征等级
     taskData.achProg["player_level"] = player.level or 1
 
     -- SR / SSR 拥有数, 觉醒最大次数, 转职统计

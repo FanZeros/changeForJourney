@@ -1487,7 +1487,7 @@ function drawPlayerTab(vg, alpha)
         local data = state.queryResult
         local lines = {
             { label = "UID",      value = tostring(data.uid or "?") },
-            { label = "冒险等级", value = "Lv." .. tostring(data.level or 0) .. "  (经验: " .. tostring(data.exp or 0) .. ")" },
+            { label = "远征等级", value = "Lv." .. tostring(data.level or 0) .. "  (经验: " .. tostring(data.exp or 0) .. ")" },
             { label = "当前关卡", value = tostring(data.stage or "未知") },
             { label = "最高关卡", value = tostring(data.maxStage or "未知") },
             { label = "金币",     value = tostring(data.gold or 0) },

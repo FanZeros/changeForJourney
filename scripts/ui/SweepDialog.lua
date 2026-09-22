@@ -114,8 +114,8 @@ local EQUIP_PLACEHOLDER_QUALITY = 2
 -- ======================== 信息行定义 ========================
 -- label: 显示文本, field: StageConfig 字段名, cy: 行中心Y坐标
 local INFO_ROWS = {
-    { label = "冒险等级经验", field = "adventureExp",  cy = 1291 },
-    { label = "冒险家经验",   field = "adventurerExp", cy = 1390 },
+    { label = "远征等级经验", field = "adventureExp",  cy = 1291 },
+    { label = "远征队员经验",   field = "adventurerExp", cy = 1390 },
 }
 
 -- ======================== 扫荡消耗常量 ========================
@@ -488,7 +488,7 @@ function SweepDialog.draw(vg)
         drawRewardIcon(vg, cx, iconCY, i)
     end
 
-    -- 11) 奖励信息行（冒险等级经验 × 2 行）
+    -- 11) 奖励信息行（远征等级经验 × 2 行）
     for _, row in ipairs(INFO_ROWS) do
         -- 行背景
         nvgBeginPath(vg)

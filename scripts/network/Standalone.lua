@@ -384,7 +384,7 @@ function Standalone.Start()
     TavernPage.setSendAction(localSendAction)
     MarketPage.setSendAction(localSendAction)
 
-    -- 5.05 冒险等级提升弹窗：监听 PLAYER_LEVEL_UP 事件，并刷新解锁状态
+    -- 5.05 远征等级提升弹窗：监听 PLAYER_LEVEL_UP 事件，并刷新解锁状态
     EventBus.on(GameEvents.PLAYER_LEVEL_UP, function(data)
         local newLevel = data.level
         local unlocks = ExpTable.getLevelUnlocks(newLevel)

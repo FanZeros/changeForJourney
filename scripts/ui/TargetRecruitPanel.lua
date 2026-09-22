@@ -1,7 +1,7 @@
 -- ============================================================================
 -- TargetRecruitPanel - 指定招募 / 星辉指定UP角色面板
 -- 从酒馆页面点击“指定招募”或“指定UP角色”按钮打开
--- 常规招募: 指定一个SSR冒险家，在保底次数内必出
+-- 常规招募: 指定一个SSR远征队员，在保底次数内必出
 -- 星辉招募: 指定一个UR角色，抽到UR时50%概率获得该角色
 -- ============================================================================
 
@@ -55,7 +55,7 @@ local DESC_FONT = 40
 local DESC_COLOR_R, DESC_COLOR_G, DESC_COLOR_B = 0xb6, 0xb0, 0x9d
 local DESC_NUM_R, DESC_NUM_G, DESC_NUM_B = 0x24, 0xb2, 0x42
 
--- 冒险家选择区域
+-- 远征队员选择区域
 local SELECT_CX, SELECT_CY = 540, 1058
 local SELECT_W, SELECT_H   = 800, 716
 local SELECT_R = 16
@@ -245,7 +245,7 @@ function M.draw(vg)
         numStr = "50%"
         suffix = "概率获得"
     else
-        prefix = "指定一个冒险家在"
+        prefix = "指定一个远征队员在"
         numStr = tostring(state.pityRemain)
         suffix = "次SSR内必出"
     end
@@ -271,7 +271,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(DESC_COLOR_R, DESC_COLOR_G, DESC_COLOR_B, 255))
     nvgText(vg, startX + prefixW + numW, DESC_CY, suffix, nil)
 
-    -- 冒险家选择区域背景
+    -- 远征队员选择区域背景
     drawRoundedRectCentered(vg, SELECT_CX, SELECT_CY, SELECT_W, SELECT_H, SELECT_R, 0, 0, 0, 13)
 
     -- 绘制 SSR 英雄头像网格（居中排列）
@@ -354,7 +354,7 @@ function M.draw(vg)
         nvgFontSize(vg, 36)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 150))
-        local tipText = isStellarMode and "请选择UR角色" or "请选择冒险家"
+        local tipText = isStellarMode and "请选择UR角色" or "请选择远征队员"
         nvgText(vg, CHOSEN_AVATAR_CX, CHOSEN_AVATAR_CY, tipText, nil)
     end
 

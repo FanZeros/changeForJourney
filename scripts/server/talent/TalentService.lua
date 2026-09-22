@@ -74,7 +74,7 @@ function TalentService.Activate(uid, nodeId)
         return false, "需要先激活相邻天赋"
     end
 
-    -- 天赋点校验：剩余点数 = 冒险等级 - 已用点数（node 0 不消耗）
+    -- 天赋点校验：剩余点数 = 远征等级 - 已用点数（node 0 不消耗）
     local usedPoints = #talents.litNodes - 1
     local maxPoints  = player.level or 1
     local remaining  = maxPoints - usedPoints

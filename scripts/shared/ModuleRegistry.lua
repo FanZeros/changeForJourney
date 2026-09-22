@@ -60,7 +60,7 @@ ModuleRegistry.modules = {
                 name         = "玩家",
                 level        = 1,
                 exp          = 0,
-                maxExp       = 50,   -- 冒险等级1级升2级所需经验（来自 ExpTable）
+                maxExp       = 50,   -- 远征等级1级升2级所需经验（来自 ExpTable）
                 power        = 1000,
                 avatarHeroId = 1,
             }

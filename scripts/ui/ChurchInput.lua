@@ -127,7 +127,7 @@ function M.bind(deps)
             end
         end
 
-        -- ========== 点击列表上方空白区域 → 收起"我的冒险家"面板 ==========
+        -- ========== 点击列表上方空白区域 → 收起"我的远征队员"面板 ==========
         if state.tab == "zhuanzhi" and not state.selectAnim then
             local listTopY = ROSTER.LIST_BG_CY - ROSTER.LIST_BG_H * 0.5
             if state.slotExpanded and state.rosterSlideProgress > 0.5 then

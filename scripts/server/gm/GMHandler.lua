@@ -95,7 +95,7 @@ handlers[Protocol.ACTION_TYPES.GM_AWAKENING] = GMLogger.WrapGMAction(
     end
 )
 
---- GM: 获得冒险家
+--- GM: 获得远征队员
 handlers[Protocol.ACTION_TYPES.GM_GIVE_HERO] = GMLogger.WrapGMAction(
     Protocol.ACTION_TYPES.GM_GIVE_HERO,
     function(uid, params)
@@ -108,7 +108,7 @@ handlers[Protocol.ACTION_TYPES.GM_GIVE_HERO] = GMLogger.WrapGMAction(
     end
 )
 
---- GM: 冒险等级提升
+--- GM: 远征等级提升
 handlers[Protocol.ACTION_TYPES.GM_PLAYER_LEVEL_UP] = GMLogger.WrapGMAction(
     Protocol.ACTION_TYPES.GM_PLAYER_LEVEL_UP,
     function(uid, params)

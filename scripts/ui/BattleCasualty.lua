@@ -61,7 +61,7 @@ function M.process(ctx, logicDt)
             if ctx.onEnemyKillCallback and (unit.expReward or unit.goldReward) then
                 local allyCount = #allies
                 local expMult = require("config.ExpTable").getHeroCountExpMult(allyCount)
-                -- 收集上场冒险家 heroId 列表
+                -- 收集上场远征队员 heroId 列表
                 local heroIds = {}
                 for _, ally in ipairs(allies) do
                     if ally.heroId then

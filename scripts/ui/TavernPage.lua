@@ -108,11 +108,11 @@ local TICKET_BG_CX, TICKET_BG_CY = 429, 1785
 local TICKET_BG_W, TICKET_BG_H   = 170, 47
 local TICKET_BG_R = 18  -- 圆角
 
--- 14. 冒险招募券图标
+-- 14. 远征招募券图标
 local TICKET_ICON_CX, TICKET_ICON_CY = 365, 1785
 local TICKET_ICON_W, TICKET_ICON_H   = 70, 70
 
--- 15. 冒险招募券资源值
+-- 15. 远征招募券资源值
 local TICKET_VAL_X, TICKET_VAL_Y = 444, 1785
 local TICKET_VAL_SIZE = 33
 local TICKET_STROKE_W = 4
@@ -675,7 +675,7 @@ end
 local function drawPityText(vg, cx, cy)
     local remain = tostring(state.pityRemain)
     local rank   = state.pityRank .. "级"
-    local suffix = isStellarPoolSelected() and "角色" or "冒险家"
+    local suffix = isStellarPoolSelected() and "角色" or "远征队员"
 
     local segments = {
         { text = "接下来",   color = { 255, 255, 255 } },
@@ -915,7 +915,7 @@ local function drawPageImpl(vg)
         end
         drawImageCentered(vg, ticketImg, TICKET_ICON_CX, TICKET_ICON_CY, TICKET_ICON_W, TICKET_ICON_H, 1.0)
 
-        -- ============ 12. 冒险招募券资源值（居中于背景栏） ============
+        -- ============ 12. 远征招募券资源值（居中于背景栏） ============
         drawTextStroke(vg,
             TICKET_BG_CX, TICKET_VAL_Y,
             tostring(state.ticketCount),

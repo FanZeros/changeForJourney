@@ -392,7 +392,7 @@ function ArtifactService.Equip(uid, artifactId, slot, subSlot)
     local playerLevel = getPlayerLevel(uid)
     if subSlot > ArtifactSchema.getUnlockedSubSlotCount(playerLevel) then
         local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
-        return false, "冒险等级达到" .. tostring(unlockLevel) .. "级后解锁第" .. tostring(subSlot) .. "神器格"
+        return false, "远征等级达到" .. tostring(unlockLevel) .. "级后解锁第" .. tostring(subSlot) .. "神器格"
     end
 
     local data = ensureData(uid)

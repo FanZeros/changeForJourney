@@ -26,7 +26,7 @@ ResourceDefs.DEFS = {
     helmet_scroll     = { iconPath = "image/货币道具/UI_icon_JZ_TK.png",  quality = 3, name = "头盔卷轴" },
     shoes_scroll      = { iconPath = "image/货币道具/UI_icon_JZ_XZ.png",  quality = 3, name = "鞋子卷轴" },
     random_scroll     = { iconPath = "image/货币道具/UI_icon_JZ_SJ.png",  quality = 3, name = "随机卷轴" },
-    adventure_ticket  = { iconPath = "image/货币道具/UI_icon_ZMQ_1.png",  quality = 5, name = "冒险招募券" },
+    adventure_ticket  = { iconPath = "image/货币道具/UI_icon_ZMQ_1.png",  quality = 5, name = "远征招募券" },
     stellar_ticket    = { iconPath = "image/货币道具/UI_icon_ZMQ_2.png",  quality = 6, name = "星辉招募券" },
     sweep_ticket      = { iconPath = "image/货币道具/UI_icon_SDQ.png",    quality = 4, name = "扫荡券" },
     tavern_coin       = { iconPath = "image/UI_icon_JGB.png",    quality = 3, name = "酒馆币" },

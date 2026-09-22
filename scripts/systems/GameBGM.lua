@@ -10,7 +10,7 @@ local GameBGM = {}
 -- [BGM v2] 全套重制：山海经暗黑古卷世界观·东方古风配乐，与 letter 轨同源风格
 local TRACKS = {
     battle        = { path = "audio/bgm_battle.ogg",   gain = 0.50 },  -- 战斗：战鼓琵琶二胡，紧张古雅
-    other         = { path = "audio/bgm_roster.ogg",   gain = 0.45 },  -- 角色/其他：笛声行进的冒险旅途
+    other         = { path = "audio/bgm_roster.ogg",   gain = 0.45 },  -- 角色/其他：笛声行进的远征旅途
     popup         = { path = "audio/bgm_diary.ogg",    gain = 0.40 },  -- 日志：古琴书卷，深夜翻阅
     town          = { path = "audio/bgm_town.ogg",     gain = 0.40 },  -- 城镇：营地市集烟火气
     town_building = { path = "audio/bgm_building.ogg", gain = 0.38 },  -- 建筑内：炉火旁的古琴箫二重奏

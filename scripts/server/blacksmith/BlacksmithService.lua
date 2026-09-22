@@ -26,7 +26,7 @@ local pendingRefines = {}
 local SLOT_SCROLL_MAP = BlacksmithConfig.SLOT_SCROLL_MAP
 local MAX_ENHANCE_LV  = BlacksmithConfig.MAX_ENHANCE_LEVEL
 
---- 获取指定玩家当前的强化等级上限（冒险等级动态上限）
+--- 获取指定玩家当前的强化等级上限（远征等级动态上限）
 ---@param uid number
 ---@return number
 local function getEnhanceCap(uid)
@@ -64,7 +64,7 @@ function BlacksmithService.EnhanceSlot(uid, partySlot, equipSlot)
     local currentLv = slotData.levels[partySlot][equipSlot] or 0
     local enhanceCap = getEnhanceCap(uid)
     if currentLv >= enhanceCap then
-        return false, "强化等级已达当前冒险等级上限（" .. enhanceCap .. "级），提升冒险等级后可继续强化"
+        return false, "强化等级已达当前远征等级上限（" .. enhanceCap .. "级），提升远征等级后可继续强化"
     end
     if currentLv >= MAX_ENHANCE_LV then
         return false, "已达最大强化等级"
@@ -137,10 +137,10 @@ function BlacksmithService.EnhanceSlotToLevel(uid, partySlot, equipSlot, targetL
         return false, "无效的目标等级"
     end
 
-    -- 目标等级不能超过当前冒险等级上限
+    -- 目标等级不能超过当前远征等级上限
     local enhanceCap = getEnhanceCap(uid)
     if targetLevel > enhanceCap then
-        return false, "目标等级超过当前冒险等级上限（" .. enhanceCap .. "级），提升冒险等级后可继续强化"
+        return false, "目标等级超过当前远征等级上限（" .. enhanceCap .. "级），提升远征等级后可继续强化"
     end
 
     if not slotData.levels[partySlot] then

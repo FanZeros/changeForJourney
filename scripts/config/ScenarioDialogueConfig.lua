@@ -773,7 +773,7 @@ ScenarioDialogueConfig.SCENARIO_70 = {
         { characterId = 7, name = "黄桃龙？", text = "天气真好~最适合狩猎了呢~" },
         { characterId = 7, name = "黄桃龙？", text = "我的火焰今天状态超好~...大概！只要别把远征长您烧到就行~" },
         { characterId = 8, name = "叮咚鸡？", text = "...风向正常。适合行动。" },
-        { characterId = 8, name = "叮咚鸡？", text = "...物资里全是冒险家的遗物，快装不下了。" },
+        { characterId = 8, name = "叮咚鸡？", text = "...物资里全是远征队员的遗物，快装不下了。" },
         { characterId = 6, name = "大狗嚼？", text = "都准备好了！走吧！狩猎开始！" },
         { characterId = 1, name = "大狗嚼", text = "远征长！远征长！发什么呆呀，叫？做噩梦了？梦里是不是也有我？！" },
         { characterId = 2, name = "黄桃龙", text = "远征长今天怪怪的……黄桃龙决定分你一半黄桃罐头压压惊！" },
@@ -795,7 +795,7 @@ ScenarioDialogueConfig.SCENARIO_71 = {
 ScenarioDialogueConfig.SCENARIO_72 = {
     mode = "small",
     steps = {
-        { characterId = 7, name = "黄桃龙？", text = "远征长……今天又'送走'了好多冒险家呢……可是，还是没有远征长有意思……" },
+        { characterId = 7, name = "黄桃龙？", text = "远征长……今天又'送走'了好多远征队员呢……可是，还是没有远征长有意思……" },
     },
 }
 

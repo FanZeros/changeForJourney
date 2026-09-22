@@ -1,5 +1,5 @@
 -- ============================================================================
--- LevelUpPopup - 冒险等级提升全屏弹窗
+-- LevelUpPopup - 远征等级提升全屏弹窗
 -- ============================================================================
 --
 -- 【使用说明】
@@ -13,7 +13,7 @@
 --
 -- 【布局设计】（设计分辨率 1080×2400）
 --   1. Spine 全屏背景 UI_SPINE_DJTS（播完停留最后一帧）
---   2. "冒险等级提升" 标题 (X540 Y575, size 70)
+--   2. "远征等级提升" 标题 (X540 Y575, size 70)
 --   3. 等级数字 (X540 Y723, size 120)
 --   4. 文本背景框 UI_JJC_BTBJ (X540 Y1036, 660×60)
 --   5. "天赋点" 文本 (X540 Y1035, size 70)
@@ -44,7 +44,7 @@ local SPINE_DATA_Y = -1200
 local SPINE_DATA_W = 1080
 local SPINE_DATA_H = 2400
 
--- 标题 "冒险等级提升"
+-- 标题 "远征等级提升"
 local TITLE_X, TITLE_Y = 540, 575
 local TITLE_SIZE = 70
 -- 标题描边
@@ -416,8 +416,8 @@ function LevelUpPopup.draw(vg)
         nvgGlobalAlpha(vg, math.max(contentAlpha, 0))
     end
 
-    -- 2) "冒险等级提升" 标题
-    drawStrokedText(vg, TITLE_X, TITLE_Y, "冒险等级提升",
+    -- 2) "远征等级提升" 标题
+    drawStrokedText(vg, TITLE_X, TITLE_Y, "远征等级提升",
         TITLE_SIZE, COLOR_WHITE, COLOR_STROKE_BK, TITLE_STROKE)
 
     -- 3) 等级数字

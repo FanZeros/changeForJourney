@@ -188,7 +188,7 @@ function TE.parseEffect(effectStr, classId)
             if classReq and classId == classReq and bonus then
                 local bonusAtoms = splitByDelimiters(bonus, {"，", ",", " "})
                 for _, atom in ipairs(bonusAtoms) do
-                    local stripped = atom:gsub("^全体", ""):gsub("^冒险家", "")
+                    local stripped = atom:gsub("^全体", ""):gsub("^远征队员", "")
                     local entry = parseAtom(stripped)
                     if entry then entries[#entries + 1] = entry end
                 end
@@ -200,7 +200,7 @@ function TE.parseEffect(effectStr, classId)
         local atoms = splitByDelimiters(trimmed, {"，", ",", " "})
         for _, atom in ipairs(atoms) do
             -- 去除常见前缀
-            local stripped = atom:gsub("^全体", ""):gsub("^冒险家", ""):gsub("^但", "")
+            local stripped = atom:gsub("^全体", ""):gsub("^远征队员", ""):gsub("^但", "")
             local entry = parseAtom(stripped)
             if entry then
                 entries[#entries + 1] = entry

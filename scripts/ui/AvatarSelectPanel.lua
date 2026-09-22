@@ -392,7 +392,7 @@ function AvatarSelectPanel.draw(vg)
         ACQ_DESC.X - ACQ_DESC.W * 0.5,
         ACQ_DESC.Y - ACQ_DESC.H * 0.5,
         ACQ_DESC.W,
-        "获取途径：获取该冒险家",
+        "获取途径：获取该远征队员",
         nil
     )
 

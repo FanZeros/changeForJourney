@@ -333,7 +333,7 @@ function MailService.CheckAndSendTowerBugCompensation(uid)
     if compensation > 0 then
         local dmId = MailService.SendDynamicMail(uid, {
             title = "通天塔结算补偿",
-            body = "亲爱的冒险者：通天塔结算奖励显示与发放异常已修复。现按你当前通天塔层数对应扫荡钻石的3倍发放本次事故补偿，请在邮件中领取。该补偿仅本次事故发放一次。",
+            body = "亲爱的远征者：通天塔结算奖励显示与发放异常已修复。现按你当前通天塔层数对应扫荡钻石的3倍发放本次事故补偿，请在邮件中领取。该补偿仅本次事故发放一次。",
             rewards = {
                 { type = "diamond", amount = compensation },
             },

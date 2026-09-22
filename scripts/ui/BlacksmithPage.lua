@@ -613,7 +613,7 @@ local function drawUpperSlotContent(vg, tabName)
             nvgFontSize(vg, 22)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 255, 255, 180))
-            nvgText(vg, cx, cy + 40, "冒险等级" .. unlockLv .. "解锁", nil)
+            nvgText(vg, cx, cy + 40, "远征等级" .. unlockLv .. "解锁", nil)
 
         elseif slotState == "empty" then
             -- 空槽位：黑色半透明 + 加号

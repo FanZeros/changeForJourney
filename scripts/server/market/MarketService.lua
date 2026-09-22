@@ -31,7 +31,7 @@ local SHOP_CONFIG_VERSION = 7  -- 去掉每日折扣货，永久商品定价 /2
 --- rewardType 统一使用 CurrencyService.REWARD_TO_CURRENCY 的 key（canonical 名称），特殊奖励在 Buy 内分支处理
 local SHOP_ITEMS = {
     -- 钻石商品（永久，不限购；定价已 /2）
-    [12] = { name = "冒险招募券",   rewardType = "adventure_ticket",      currency = "diamond", price = 90,  rewardCount = 1,    restockType = "permanent", limitCount = -1 },
+    [12] = { name = "远征招募券",   rewardType = "adventure_ticket",      currency = "diamond", price = 90,  rewardCount = 1,    restockType = "permanent", limitCount = -1 },
     [13] = { name = "洗练石",       rewardType = "enhance_star",          currency = "diamond", price = 90,  rewardCount = 2,    restockType = "permanent", limitCount = -1 },
     [14] = { name = "点金石",       rewardType = "break_protect",         currency = "diamond", price = 250, rewardCount = 1,    restockType = "permanent", limitCount = -1 },
     [22] = { name = "腐化石",       rewardType = "corrupt_stone",         currency = "diamond", price = 250, rewardCount = 1,    restockType = "permanent", limitCount = -1 },

@@ -674,7 +674,7 @@ end
 
 -- ======================== Public API（供 DebugPanel 调用） ========================
 
---- 获得冒险家（添加到拥有列表）
+--- 获得远征队员（添加到拥有列表）
 ---@param heroId number 英雄 ID
 ---@param level number|nil 等级（默认1）
 ---@return boolean ok
@@ -702,7 +702,7 @@ function CharacterPanel.addHero(heroId, level)
     if not shardMap[heroId] then
         shardMap[heroId] = ownedSet[heroId].shards
     end
-    print("[CharacterPanel] 获得冒险家: " .. cfg.name)
+    print("[CharacterPanel] 获得远征队员: " .. cfg.name)
     applyResonanceSync()
     rebuildRoster()
     refreshPowerCache()
@@ -710,7 +710,7 @@ function CharacterPanel.addHero(heroId, level)
     return true
 end
 
---- 删除冒险家（从拥有列表移除）
+--- 删除远征队员（从拥有列表移除）
 ---@param heroId number 英雄 ID
 function CharacterPanel.removeHero(heroId)
     if not ownedSet[heroId] then
@@ -731,7 +731,7 @@ function CharacterPanel.removeHero(heroId)
     end
     ownedSet[heroId] = nil
     local heroCfg = HC.get(heroId)
-    print("[CharacterPanel] 删除冒险家: " .. (heroCfg and heroCfg.name or "ID:" .. heroId))
+    print("[CharacterPanel] 删除远征队员: " .. (heroCfg and heroCfg.name or "ID:" .. heroId))
     refreshPowerCache()
     rebuildRoster()
     refreshNavBadge()
@@ -999,7 +999,7 @@ function CharacterPanel.setActiveTeam(idx)
     if idx == activeTeamIdx then return true end
     if idx > ExpTable.getUnlockedTeamCount(GameState.getLevel()) then
         local needLv = ExpTable.getTeamUnlockLevel(idx)
-        print(string.format("[CharacterPanel] 队伍%d未解锁（需要冒险等级%s）", idx, tostring(needLv)))
+        print(string.format("[CharacterPanel] 队伍%d未解锁（需要远征等级%s）", idx, tostring(needLv)))
         return false
     end
     activeTeamIdx = idx
@@ -1025,7 +1025,7 @@ function CharacterPanel.isDetailOpen()
     return CharacterDetail.isOpen()
 end
 
---- 刷新槽位解锁状态（冒险等级提升后调用）
+--- 刷新槽位解锁状态（远征等级提升后调用）
 --- 将 locked 但已达到解锁等级的槽位变为 empty，不影响已占用的槽位
 --- [三队并行] 三支队伍的槽位解锁状态一起刷新
 function CharacterPanel.refreshSlotUnlocks()

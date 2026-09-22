@@ -312,7 +312,7 @@ function HandleNanoVGRenderHorizon()
     end
 
     -- [三行并行守卫] 三行战斗模式打开时，左右面板由下方 BattleTriPage 分支按
-    -- 三行布局重新绘制（viewport 变换不同）；此处跳过，避免右侧「我的冒险家」
+    -- 三行布局重新绘制（viewport 变换不同）；此处跳过，避免右侧「我的远征队员」
     -- 面板与左侧城镇建筑名牌各被绘制两次。
     if not BattleTriPage.isOpen() then
         -- 左面板：功能页组（城镇 + 二级页）

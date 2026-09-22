@@ -29,7 +29,7 @@ local DESIGN_W = 1080
 
 local SHOP_ITEMS = {
     {
-        id = 1, name = "冒险招募券", quality = 5,
+        id = 1, name = "远征招募券", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 40,
         icon = "image/货币道具/UI_icon_ZMQ_1.png",
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
@@ -165,10 +165,10 @@ local SHOP_ITEMS = {
     },
 }
 
---- 招募券置顶：冒险招募券 → 星辉招募券 → 其余商品
+--- 招募券置顶：远征招募券 → 星辉招募券 → 其余商品
 local function isRecruitTicketShopItem(item)
     return item.id == 1 or item.id == 102
-        or item.name == "冒险招募券" or item.name == "星辉招募券"
+        or item.name == "远征招募券" or item.name == "星辉招募券"
 end
 
 local function getShopDisplayItems()
@@ -510,7 +510,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
     end
 
     -- 数量角标（每次购买1个，不显示"×1"）
-    -- 仅冒险招募券 id=1 不需要角标，其余碎片默认1个
+    -- 仅远征招募券 id=1 不需要角标，其余碎片默认1个
     -- 不显示角标（均为1个/次）
 
     -- 限购文本（仅限购商品显示；不限购不显示）

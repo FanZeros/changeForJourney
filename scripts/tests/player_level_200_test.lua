@@ -1,5 +1,5 @@
 #!/usr/bin/env lua
--- 冒险等级 200 级上限回归测试（无引擎依赖）
+-- 远征等级 200 级上限回归测试（无引擎依赖）
 do
     local src = debug.getinfo(1, "S").source:gsub("^@", "")
     local testDir = src:match("(.+[\\/])") or "./"

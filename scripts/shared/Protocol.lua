@@ -112,8 +112,8 @@ Protocol.ACTION_TYPES = {
     GM_RESET_SAVE  = "gm_reset_save",   -- GM 清除存档（重置为默认值）
     GM_LEVEL_UP    = "gm_level_up",     -- GM 英雄升级（免费，不扣金币）
     GM_AWAKENING   = "gm_awakening",    -- GM 提升觉醒等级（免费，不扣碎片）
-    GM_GIVE_HERO   = "gm_give_hero",    -- GM 获得冒险家（写入服务端 roster）
-    GM_PLAYER_LEVEL_UP = "gm_player_level_up", -- GM 冒险等级提升（直接升一级）
+    GM_GIVE_HERO   = "gm_give_hero",    -- GM 获得远征队员（写入服务端 roster）
+    GM_PLAYER_LEVEL_UP = "gm_player_level_up", -- GM 远征等级提升（直接升一级）
     GM_JUMP_STAGE      = "gm_jump_stage",      -- GM 跳转关卡（同步 maxStageId / clearedStages）
 
     -- 天赋

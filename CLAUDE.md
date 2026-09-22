@@ -26,7 +26,7 @@
 - T14：BattleScene 抽出死亡补位/胜负判定到 `BattleCasualty.lua`（`ebc1db4`）
 - T15–T18（`88ccd19`）：连击 Combo、loadStage、TAL.update、ClientRender 均已 push
 
-当前行数：TalentManager 2838 / BattleScene 1890 / Client 1844 / Blacksmith 1780 / Server 1693 / BattleCombat 1637
+当前行数：TalentManager 2691 / BattleScene 1890 / Client 1844 / Blacksmith 1780 / Server 1693 / BattleCombat 1637
 
 T19–T21 已 push：`e16c12c` ServerEnterGame / `f6689b0` BattleSceneTick / `24eb755` 城镇页 DrawUtil 委托
 

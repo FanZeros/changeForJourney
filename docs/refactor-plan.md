@@ -58,7 +58,7 @@
 |------|--------|--------|
 | ui/BattleScene.lua | 3435 | 1890（Casualty + StageLoad + Tick） |
 | ui/BattleCombat.lua | 2203 | 1637（Anim + Combo） |
-| systems/TalentManager.lua | 4197 | 2838（七英雄 + TalentUpdate） |
+| systems/TalentManager.lua | 4197 | 2691（再抽 Rosa 弹射 / Xin 信光机兵） |
 | network/Standalone.lua | 2168 | 841 |
 | network/Client.lua | 2487 | 1844（ClientBoot + ClientRender） |
 | network/Server.lua | 2068 | 1693（抽出 ServerEnterGame） |

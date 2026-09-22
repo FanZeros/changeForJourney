@@ -46,3 +46,4 @@
 - [x] **T19** Server：抽出进服全量推送到 `network/ServerEnterGame.lua`。
 - [x] **T20** BattleScene：抽出攻击进度/tick 到 `BattleSceneTick.lua`。
 - [x] **T21** 城镇页：Blacksmith/Market/TavernShop 九宫格绘制委托 `DrawUtil`。
+- [x] **T22** TalentManager：抽出弹射(#13 Rosa)与信光机兵(#7 Xin) after-attack。2691 行。

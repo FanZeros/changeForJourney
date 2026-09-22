@@ -20,6 +20,8 @@ local TalentElwyn = require("systems.talents.TalentElwyn")
 local TalentSera = require("systems.talents.TalentSera")
 local TalentSuhua = require("systems.talents.TalentSuhua")
 local TalentUpdate = require("systems.talents.TalentUpdate")
+local TalentRosa = require("systems.talents.TalentRosa")
+local TalentXin = require("systems.talents.TalentXin")
 
 local MAS
 local function getMAS()
@@ -511,6 +513,20 @@ local _suhua = TalentSuhua.bind({
     CF = CF,
 })
 local runSuhuaNightSlash = _suhua.runSuhuaNightSlash
+
+local _rosa = TalentRosa.bind({
+    hasAwaken = hasAwaken,
+    AD = AD,
+})
+local tryRosaBounce = _rosa.tryRosaBounce
+
+local _xin = TalentXin.bind({
+    hasAwaken = hasAwaken,
+    talentLog = talentLog,
+    AD = AD,
+})
+local onXinAfterAttack = _xin.onXinAfterAttack
+
 
 local _talentUpdate
 local function bindTalentUpdate()
@@ -1213,89 +1229,9 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         attacker.attrs:removeModifier("talent_precise")
     end
 
-    -- #7 信光机兵 闪光协议：消费闪避/ 计数 + 觉醒效果
-    if heroId == 7 and attacker.attrs then
-        -- 觉醒2: 连击命中20%概率永久-1魔甲（按目标独立计数)
-        if hasAwaken(attacker, 2) and result and result.isCombo and target.hp > 0 and target.attrs then
-            if math.random() < 0.20 then
-                if not s.awakFlashMagArmorDebuffs then s.awakFlashMagArmorDebuffs = {} end
-                local tKey = tostring(target)
-                local curDebuff = (s.awakFlashMagArmorDebuffs[tKey] or 0) + 7
-                s.awakFlashMagArmorDebuffs[tKey] = curDebuff
-                target.attrs:removeModifier("awaken_flash_magarmor_" .. tKey)
-                target.attrs:addModifier("awaken_flash_magarmor_" .. tKey, {
-                    { key = AD.MAG_ARMOR, flat = -curDebuff },
-                })
-                talentLog("[Talent] 信光机兵 觉醒2: " .. target.name .. " 能量护盾永久-" .. curDebuff)
-            end
-        end
-        -- 觉醒6: 连击无法被闪避（每次攻击后移除临时命中加成）
-        if hasAwaken(attacker, 6) then
-            attacker.attrs:removeModifier("awaken_flash_hit")
-        end
-
-        if s.flashReady then
-            attacker.attrs:removeModifier("talent_flash")
-            -- 觉醒7: 闪光消耗时移除闪光专属加成
-            attacker.attrs:removeModifier("awaken_flash7_boost")
-            -- 必杀光线：贯穿当前目标以外的存活敌人
-            if dealDmgFn and targetList and result and (result.totalDamage or 0) > 0 then
-                local beamDmg = math.floor((result.totalDamage or 0) * 0.70 + 0.5)
-                if beamDmg > 0 then
-                    for _, u in ipairs(targetList) do
-                        if u ~= target and (u.hp or 0) > 0 then
-                            dealDmgFn(u, beamDmg, not isAlly, "必杀 ", { 120, 220, 255 }, {
-                                instantDamage = true,
-                                statCategory = result.category or "magical",
-                            })
-                        end
-                    end
-                    talentLog("[Talent] 信光机兵 必杀光线 贯穿")
-                end
-            end
-            attacker._beamKill = true
-            s.flashReady = false
-            s.atkCount = 0
-        else
-            s.atkCount = s.atkCount + 1
-            -- 觉醒3: 闪光协议间隔缩短为每3秒
-            local flashInterval = 4
-            if hasAwaken(attacker, 3) then flashInterval = 3 end
-            if s.atkCount % flashInterval == 0 then
-                s.flashReady = true
-                -- 觉醒7: 闪光专属模式，连击100%、连击增伤30%
-                if hasAwaken(attacker, 7) then
-                    attacker.attrs:removeModifier("awaken_flash_exclusive")
-                    -- 非闪光状态清除连击概率（连击只能由闪光触发）
-                end
-                talentLog("[Talent] 信光机兵 必杀蓄力：下次攻击连击概率200% (每" .. flashInterval .. "次)")
-            end
-        end
-
-        -- 觉醒7: 闪光专属模式处理 - 非闪光时禁用普通连击
-        if hasAwaken(attacker, 7) then
-            if not s.flashReady then
-                -- 非闪光就绪状态，移除所有连击概率
-                if not s.awakFlashExclActive then
-                    s.awakFlashExclActive = true
-                    attacker.attrs:addModifier("awaken_flash_exclusive", {
-                        { key = AD.COMBO_RATE, flat = -999 },
-                    })
-                end
-            else
-                -- 闪光就绪，恢复连击应用额外加成
-                if s.awakFlashExclActive then
-                    s.awakFlashExclActive = false
-                    attacker.attrs:removeModifier("awaken_flash_exclusive")
-                end
-                -- 闪光时额外连击100%、连击增伤30%（叠加在talent_flash上）
-                attacker.attrs:removeModifier("awaken_flash7_boost")
-                attacker.attrs:addModifier("awaken_flash7_boost", {
-                    { key = AD.COMBO_RATE, flat = 100 },
-                    { key = AD.COMBO_DMG_UP, flat = 30 },
-                })
-            end
-        end
+    -- #7 信光机兵 闪光协议
+    if heroId == 7 then
+        onXinAfterAttack(attacker, s, target, isAlly, targetList, dealDmgFn, result)
     end
 
     -- #5 叠甲怪 战斗征服：叠加征服层数
@@ -1582,92 +1518,9 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
             end
         end
 
-        -- #13 弹弹弹弹射箭矢：弹2次到其他敌人 + 觉醒
-        if heroId == 13 and dealDmgFn and targetList then
-            -- 觉醒1: 攻速10%（永久，首次添加成
-            if hasAwaken(attacker, 1) and not s.awakRosaAtkSpd then
-                s.awakRosaAtkSpd = true
-                attacker.attrs:addModifier("awaken_rosa_atkspd", {
-                    { key = AD.ATK_SPEED, flat = 10 },
-                })
-            end
-            -- 觉醒2: 物理穿透+10 已在 HeroConfig.createHero 中作为固定属性生效，确保首次伤害也吃到加成。
-            -- 这里不再运行时补加，避免第二次攻击后重复计算。
-            -- 觉醒5: 物理攻击加成+25%（永久）
-            if hasAwaken(attacker, 5) and not s.awakRosaPhysAtk then
-                s.awakRosaPhysAtk = true
-                attacker.attrs:addModifier("awaken_rosa_physatk", {
-                    { key = AD.PHYS_ATK_BONUS, flat = 25 },
-                })
-            end
-            -- 觉醒6: 攻速25%（永久）
-            if hasAwaken(attacker, 6) and not s.awakRosaAtkSpd2 then
-                s.awakRosaAtkSpd2 = true
-                attacker.attrs:addModifier("awaken_rosa_atkspd2", {
-                    { key = AD.ATK_SPEED, flat = 25 },
-                })
-            end
-
-            -- 觉醒3: 弹射次数+1（共2次）  觉醒7: 弹射3次,可重复弹射
-            local bounceCount = 1
-            if hasAwaken(attacker, 3) then bounceCount = 2 end
-            if hasAwaken(attacker, 7) then bounceCount = 3 end
-            bounceCount = bounceCount + ETS.getExtraBounces(ETS.getOwned(13), attacker)
-
-            local baseDmg = result.totalDamage or 0
-            local allowRepeatBounce = hasAwaken(attacker, 7)
-
-            local hitTargets = { [target] = true }
-            s.rosaBounceGen = (s.rosaBounceGen or 0) + 1
-            local bounceGen = s.rosaBounceGen
-
-            -- 每跳必须弹向与上一跳不同的敌人；无觉醒7时不可重复已弹过的敌人
-            local function pickBounceTarget(chainFrom)
-                local candidates = {}
-                for _, u in ipairs(targetList) do
-                    if u.hp > 0 and u ~= chainFrom then
-                        if not allowRepeatBounce and hitTargets[u] then
-                            -- skip
-                        else
-                            candidates[#candidates + 1] = u
-                        end
-                    end
-                end
-                if #candidates == 0 then return nil end
-                return candidates[math.random(#candidates)]
-            end
-
-            -- 连续弹射：上一箭命中后再发下一箭；无新目标则结束
-            local function fireBounce(bi, chainFrom)
-                if bounceGen ~= s.rosaBounceGen then return end
-                if bi > bounceCount then return end
-
-                local dmgMult = 0.5
-                if hasAwaken(attacker, 4) then
-                    dmgMult = 0.5 + bi * 0.15
-                end
-                local bounceDmg = math.floor(baseDmg * dmgMult + 0.5)
-                if bounceDmg <= 0 then return end
-
-                local bounceTarget = pickBounceTarget(chainFrom)
-                if not bounceTarget then return end
-
-                hitTargets[bounceTarget] = true
-                dealDmgFn(bounceTarget, bounceDmg, not isAlly, "弹射 ", { 180, 220, 255 }, {
-                    bounceFromUnit = chainFrom,
-                    target = bounceTarget,
-                    isRicochet = true,
-                    isCrit = result.isCrit,
-                    statCategory = result.category or "physical",
-                    critEligible = false,
-                    onProjectileLand = function()
-                        if bounceGen ~= s.rosaBounceGen then return end
-                        fireBounce(bi + 1, bounceTarget)
-                    end,
-                })
-            end
-
-            fireBounce(1, target)
+        -- #13 弹弹弹弹射箭矢
+        if heroId == 13 then
+            tryRosaBounce(attacker, s, target, isAlly, targetList, dealDmgFn, result)
         end
 
         -- #11 熬夜冠军 夜华斩：每攻速次斩出2道斩击

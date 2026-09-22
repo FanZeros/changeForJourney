@@ -1641,7 +1641,7 @@ function HandleNanoVGRenderHorizon()
         -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
         if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TavernPage.isOpen()
             or MarketPage.isOpen()) then
-            TopBar.draw(vg, -30)
+            TopBar.draw(vg, -30, true)
         end
         Viewport.finish(vg)
         Viewport.begin(vg, Viewport.PANELS.right, oxR, 0, ps)
@@ -2010,7 +2010,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
                 return
             end
             -- [底栏移除] 页面入口在 TopBar（812ddc7）：左栏链补接其输入
-            if TopBar.handleInput(dx, dy, -30) then
+            if TopBar.handleInput(dx, dy, -30, true) then
                 return
             end
         end

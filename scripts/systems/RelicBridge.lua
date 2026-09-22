@@ -143,7 +143,10 @@ function RelicBridge.parseAffix(affixId, quality)
     -- 检查无括号前缀的职业定向词缀（affix 5-10）
     -- 格式: "骑士伤害加成+15%", "牧师治疗增幅+24%"
     if not classTarget then
-        local prefixClass = text:match("^(骑士)") or text:match("^(战士)") or
+        local prefixClass = text:match("^(封门人)") or text:match("^(拾骸者)") or
+                            text:match("^(裂隙使)") or text:match("^(回响客)") or
+                            text:match("^(换面人)") or text:match("^(司仪)") or
+                            text:match("^(骑士)") or text:match("^(战士)") or
                             text:match("^(法师)") or text:match("^(射手)") or
                             text:match("^(刺客)") or text:match("^(牧师)") or
                             text:match("^(冒险家)")

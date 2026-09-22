@@ -153,7 +153,7 @@ function EquipmentSetSystem.applyTwoPieceToUnit(unitAttrs, counts)
     end
 end
 
---- 一站式：计数 + 注入 2 件
+--- 一站式：计数 + 注入 2 件，并把 4/6 件标记写到 unitAttrs 上供战斗读取
 ---@param unitAttrs table
 ---@param eqData table|nil
 ---@param heroId number
@@ -163,7 +163,28 @@ end
 function EquipmentSetSystem.applyToUnit(unitAttrs, eqData, heroId, getFromInventory, getHeroSlots)
     local counts = EquipmentSetSystem.countSets(eqData, heroId, getFromInventory, getHeroSlots)
     EquipmentSetSystem.applyTwoPieceToUnit(unitAttrs, counts)
-    return EquipmentSetSystem.summarize(counts)
+    local rows = EquipmentSetSystem.summarize(counts)
+    if unitAttrs then
+        unitAttrs._setRows = rows
+        unitAttrs._setFour = nil
+        unitAttrs._setSix = nil
+        for i = 1, #rows do
+            local r = rows[i]
+            if r.fourActive then unitAttrs._setFour = r.setId end
+            if r.sixActive then unitAttrs._setSix = r.setId end
+        end
+    end
+    return rows
+end
+
+--- 战斗单位上读取 4/6 件套 id
+---@param unit table
+---@return string|nil fourId
+---@return string|nil sixId
+function EquipmentSetSystem.activeHighSets(unit)
+    local attrs = unit and unit.attrs
+    if not attrs then return nil, nil end
+    return attrs._setFour, attrs._setSix
 end
 
 return EquipmentSetSystem

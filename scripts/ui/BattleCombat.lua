@@ -21,6 +21,7 @@ local BattleCombatFx = require("ui.BattleCombatFx")
 local BattleCombatAnim = require("ui.BattleCombatAnim")
 local BattleCombatCombo = require("ui.BattleCombatCombo")
 local ClassGateRuntime = require("systems.ClassGateRuntime")
+local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 
 local BattleCombat = {}
 -- ======================== [多实例] 战斗状态容器 ========================
@@ -391,6 +392,7 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     damage = applyGlobalDmgMult(damage)
     damage = ClassGateRuntime.applyDebtTaken(target, damage)
     damage = ClassGateRuntime.absorbIncoming(target, damage)
+    damage = EquipmentSetRuntime.onIncoming(target, damage)
     if damage <= 0 then return 0 end
     local hpBefore = target.hp
     local actual
@@ -1101,6 +1103,7 @@ local function performAttack(attacker, targetList, isAlly)
                             local allyListForShield = isAlly and BCS.ctx.getAllies() or BCS.ctx.getEnemies()
                             RCH.onOverheal(attacker, curTgt, result.overhealAmount, allyListForShield)
                             ClassGateRuntime.onOverheal(attacker, curTgt, result.overhealAmount)
+                            EquipmentSetRuntime.onOverheal(attacker, curTgt, result.overhealAmount)
                         end
                         if Diag.logEnabled then
                             print(string.format(

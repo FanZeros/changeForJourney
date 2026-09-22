@@ -31,6 +31,7 @@ local TalentEnemyDeath = require("systems.talents.TalentEnemyDeath")
 local TalentComboAttack = require("systems.talents.TalentComboAttack")
 local TalentFatFish = require("systems.talents.TalentFatFish")
 local ClassGateRuntime = require("systems.ClassGateRuntime")
+local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 
 local MAS
 local function getMAS()
@@ -927,6 +928,9 @@ function TAL.onBattleStart(allies, enemies)
     applyBattleStartTalents(enemies, allies)
     ETS.onBattleStart(allies, enemies)
     ClassGateRuntime.onBattleStart(allies, enemies)
+    for _, u in ipairs(allies or {}) do
+        EquipmentSetRuntime.onBattleStart(u, allies)
+    end
 end
 
 --- 攻击前钩子（performAttack开头，目标选择后调用）
@@ -989,6 +993,10 @@ end
 function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
     local r = _after.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
     ClassGateRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, attackerAllies)
+    EquipmentSetRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, targetList)
+    if result and result.totalDamage then
+        EquipmentSetRuntime.addSwordWindowDamage(attacker, result.totalDamage)
+    end
     return r
 end
 
@@ -1016,6 +1024,7 @@ end
 function TAL.onEnemyDeath(deadEnemy, allies, enemies)
     local r = _enemyDeath.onEnemyDeath(deadEnemy, allies, enemies)
     ClassGateRuntime.onEnemyDeath(deadEnemy, allies)
+    EquipmentSetRuntime.onEnemyDeath(deadEnemy, allies)
     return r
 end
 
@@ -1027,6 +1036,7 @@ end
 function TAL.update(dt, allies, enemies, ctx)
     local r = _talentUpdate.update(dt, allies, enemies, ctx)
     ClassGateRuntime.update(dt, allies, enemies, ctx)
+    EquipmentSetRuntime.update(dt, allies, enemies, ctx)
     return r
 end
 

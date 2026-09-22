@@ -21,6 +21,7 @@ local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
 local Draw             = require("ui.CharacterPanelDraw2")
 local HeroResonance    = require("shared.heroes.HeroResonance")
+local CharacterDeploy  = require("ui.CharacterDeploy")
 
 local CharacterPanel = {}
 
@@ -674,112 +675,39 @@ end
 
 -- ======================== 出战操作 ========================
 
---- 查询英雄所在队伍索引（不在任何队返回 nil）
----@param heroId number
----@return number|nil
+local _deploy
+local function bindDeploy()
+    _deploy = CharacterDeploy.bind({
+        HC = HC,
+        MAX_SLOTS = MAX_SLOTS,
+        TEAM_COUNT = TEAM_COUNT,
+        getTeams = function() return teams end,
+        getTeamSlots = function() return teamSlots end,
+        getActiveTeamIdx = function() return activeTeamIdx end,
+        getOwnedSet = function() return ownedSet end,
+        getTeamPowerCaches = function() return teamPowerCaches end,
+        getSlotPowerCache = function() return slotPowerCache end,
+        calcHeroPower = calcHeroPower,
+        rebuildRoster = rebuildRoster,
+        refreshPowerCache = refreshPowerCache,
+        refreshNavBadge = refreshNavBadge,
+        getOnTeamChanged = function() return onTeamChangedCallback end,
+    })
+end
+
 local function findHeroTeamIdx(heroId)
-    for t = 1, TEAM_COUNT do
-        local slots = teams[t] and teams[t].slots
-        if slots then
-            for i = 1, #slots do
-                local slot = slots[i]
-                if slot.state == "occupied" and slot.heroId == heroId then
-                    return t
-                end
-            end
-        end
-    end
-    return nil
+    if not _deploy then bindDeploy() end
+    return _deploy.findHeroTeamIdx(heroId)
 end
 
---- 将英雄部署到指定槽位
----@param heroId number 英雄 ID
----@param slotIdx number 槽位索引（1~MAX_SLOTS）
----@return boolean 是否成功
 local function deployHeroToSlot(heroId, slotIdx)
-    local slot = teamSlots[slotIdx]
-    if not slot then return false end
-    if slot.state == "locked" then return false end
-
-    local ownData = ownedSet[heroId]
-    if not ownData then
-        print("[CharacterPanel] 英雄 " .. heroId .. " 未拥有，无法出战")
-        return false
-    end
-
-    -- [三队并行] 跨队唯一性: 已在其他队 → 先从原队移出（同一英雄全局只能在一队）
-    local otherTeam = findHeroTeamIdx(heroId)
-    if otherTeam and otherTeam ~= activeTeamIdx then
-        local otherSlots = teams[otherTeam].slots
-        for i = 1, #otherSlots do
-            if otherSlots[i].state == "occupied" and otherSlots[i].heroId == heroId then
-                otherSlots[i] = { state = "empty" }
-                if teamPowerCaches[otherTeam] then teamPowerCaches[otherTeam][i] = 0 end
-                print(string.format("[CharacterPanel] 英雄%d 从队伍%d 移出，编入当前队伍%d", heroId, otherTeam, activeTeamIdx))
-                -- 先同步原队（单机: 队1 需刷新战斗画面；联机: 先提交原队再提交当前队，避免服务端唯一性校验拒绝）
-                if onTeamChangedCallback then onTeamChangedCallback(otherTeam) end
-                break
-            end
-        end
-    end
-
-    -- 如果该英雄已在其他槽位，先移除
-    for i = 1, MAX_SLOTS do
-        if teamSlots[i].state == "occupied" and teamSlots[i].heroId == heroId then
-            teamSlots[i] = { state = "empty" }
-            slotPowerCache[i] = 0
-            break
-        end
-    end
-
-    -- 如果目标槽位已有角色，先取消（回到列表）
-    if slot.state == "occupied" and slot.heroId then
-        print("[CharacterPanel] 槽位 " .. slotIdx .. " 原角色 " .. slot.heroId .. " 被替换")
-    end
-
-    -- 部署
-    teamSlots[slotIdx] = {
-        state  = "occupied",
-        heroId = heroId,
-        level  = ownData.level,
-        exp    = ownData.exp,
-        maxExp = ownData.maxExp,
-    }
-    slotPowerCache[slotIdx] = calcHeroPower(heroId, slotIdx)
-
-    local heroCfg = HC.get(heroId)
-    print("[CharacterPanel] 部署 " .. (heroCfg and heroCfg.name or "?") .. " 到槽位 " .. slotIdx)
-
-    -- 重建列表（排序会变化）
-    rebuildRoster()
-    refreshPowerCache()
-    refreshNavBadge()
-
-    -- 通知阵容变更
-    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-
-    require("systems.GameSFX").play("ui_loosen")
-
-    -- 新手引导：若拖拽的是引导高亮的新英雄，触发 drag_to_slot_3 推进
-    do
-        local _TM = require("systems.TutorialManager")
-        if _TM.isActive() and _TM.getNewHeroId() == heroId and slotIdx == 3 then
-            _TM.notifyEvent("drag_to_slot_3")
-        end
-    end
-
-    return true
+    if not _deploy then bindDeploy() end
+    return _deploy.deployHeroToSlot(heroId, slotIdx)
 end
 
---- 查找第一个可用的空槽位
----@return number|nil 空槽位索引
 local function findFirstEmptySlot()
-    for i = 1, MAX_SLOTS do
-        if teamSlots[i].state == "empty" then
-            return i
-        end
-    end
-    return nil
+    if not _deploy then bindDeploy() end
+    return _deploy.findFirstEmptySlot()
 end
 
 -- ======================== 输入处理 ========================

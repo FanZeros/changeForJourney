@@ -36,13 +36,14 @@
 - T39：BattleScene 导航/轮回 → BattleStageNavLogic；setBattleData → BattleDataRestore。BattleScene 1605
 - T40：ChurchResults + MarketResults。Church 812 / Market 1045
 - T41：ChurchLifecycle + MarketInit。Church 790 / Market 1008
+- T42：CharacterDeploy + BackpackDialogs。Character 1733 / Backpack 1737
 
 ## likely_next_task
 
 - BattleScene 1605，可再抽 init/draw/handleInput
 - ChurchPage 790，主壳已较瘦
 - MarketPage 1008，可再抽商店道具网格
-- CharacterPanel 1805 / BackpackPanel 1828 仍是最大页，下次优先
+- CharacterPanel 1733 / BackpackPanel 1737 仍是最大页，可再抽详情绘制/输入
 - BlacksmithPage 1244 上半绘制依赖局部图太多，勿盲目抽 init
 - ServerListConfig / GuildConfig 仍被存档与云排行使用，勿当死代码删
 

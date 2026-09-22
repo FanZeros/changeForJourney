@@ -67,3 +67,4 @@
 - [x] **T39** BattleScene 前进/后退/终焉/轮回 → `BattleStageNavLogic`；`setBattleData` → `BattleDataRestore`。BattleScene 1764→1605。
 - [x] **T40** Church `onActionResult` → `ChurchResults`；Market 购买/抽卡结果与限购同步 → `MarketResults`。Church 812 / Market 1045。铁匠上半绘制本轮未抽。
 - [x] **T41** Church open/close → `ChurchLifecycle`；Market init → `MarketInit`。Church 790 / Market 1008。
+- [x] **T42** Character 出战部署 → `CharacterDeploy`；Backpack 转区确认/换行文字 → `BackpackDialogs`。Character 1733 / Backpack 1737。

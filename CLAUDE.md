@@ -24,13 +24,15 @@
 - T28：Market 输入 → `MarketInput`（1402 行）
 - T29：单机 `sendAction` 走 `network.GameAction` → LocalActionBridge
 - T30：去掉多人入口。已删 Client/Server 联网壳
-- T31：删除 GuildPage / CharacterSelect / LoadingScreen；消息处理器与 Debug 解绑。选服面板仍在 StartScreen。
+- T31：删除 GuildPage / CharacterSelect / LoadingScreen；消息处理器与 Debug 解绑
+- T32：卸掉 StartScreen 选服并删除 ServerSelectPanel；点击直接进游戏。横屏仍 DarkTitleScreen
 
 ## likely_next_task
 
 - ChurchPage 仍 1873，勿用 `_ENV`，可抽具名 bind 助手
 - TalentManager 1728 可再拆 onBeforeAttack / onDamageTaken
 - Blacksmith 输入可对称 MarketInput
+- ServerListConfig 仍被存档/公会/邮件等使用，勿当死代码删
 
 ## 用户硬性流程（必须遵守）
 

@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-22 | 版本:v2.20-drop-mp-ui
+> 更新时间:2026-09-22 | 版本:v2.21-drop-server-select
 >
-> **本会话(2026-09-22)**：T31 删除公会页/选角/加载页。选服面板仍挂 StartScreen。禁止推 workspace。
+> **本会话(2026-09-22)**：T32 卸掉 StartScreen 选服并删除 ServerSelectPanel。禁止推 workspace。
 
 ---
 

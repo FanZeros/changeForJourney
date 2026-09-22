@@ -1053,9 +1053,7 @@ function DebugPanel.handleInput(sx, sy)
                 -- 4. 重置 Client 一次性标志（让开场动画等可重新触发）
                 getClient().resetForNewSession()
                 print(string.format("[Debug][DIAG-RESET] step4: resetForNewSession done clock=%.4f", os.clock()))
-                -- 5. 请求服务端"返回大厅"：清理旧会话 + 重推区服列表
-                --    修复：不加这步会导致 StartScreen.serverListData_ 永远为 nil，
-                --    玩家点击无响应（"无限重开"现象）
+                -- 5. 单机无大厅，GameAction.requestReturnToLobby 为空操作
                 getClient().requestReturnToLobby()
                 print(string.format("[Debug][DIAG-RESET] step5: requestReturnToLobby done clock=%.4f — COMPLETE", os.clock()))
             elseif btn.id == "test_intro_cutscene" then

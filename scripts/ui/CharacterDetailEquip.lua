@@ -15,6 +15,7 @@ local ClientDispatcher = require("network.ClientDispatcher")
 local EquipmentConfig = require("config.EquipmentConfig")
 local EquipmentSystem = require("systems.EquipmentSystem")
 local EquipmentSetSystem = require("systems.EquipmentSetSystem")
+local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local ImageCache      = require("ui.ImageCache")
 local AVC             = require("config.AdvancementConfig")
 local BF              = require("systems.ButtonFeedback")
@@ -80,6 +81,8 @@ local panelState = {
     items      = {},        -- 排序后的装备列表
     dirty      = true,      -- 需要刷新列表
     edWasOpen  = false,     -- 上帧装备详情弹窗是否打开
+    setCodexId = nil,       -- 打开的套装图鉴 id
+    setHits    = {},        -- { {setId, x, y, w, h} }
 }
 
 -- ======================== 工具函数 ========================
@@ -505,7 +508,8 @@ function M.draw(vg, heroId, detailState)
     nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
     nvgText(vg, DESIGN_W * 0.5, 860, slotLabel, nil)
 
-    -- 套装进度（P1：2 件可多套同亮）
+    -- 套装进度（可点开图鉴）
+    panelState.setHits = {}
     local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
     if eqData then
         local counts = EquipmentSetSystem.countSets(
@@ -516,19 +520,92 @@ function M.draw(vg, heroId, detailState)
             end)
         local rows = EquipmentSetSystem.summarize(counts)
         if #rows > 0 then
-            local parts = {}
-            for i = 1, math.min(3, #rows) do
-                local r = rows[i]
-                parts[#parts + 1] = string.format("%s %d/6", r.name, r.count)
-            end
-            local setLine = table.concat(parts, "  ")
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 22)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            local labels = {}
+            local totalW = 0
+            local gap = 28
+            for i = 1, math.min(3, #rows) do
+                local r = rows[i]
+                local lab = string.format("%s %d/6", r.name, r.count)
+                local w = nvgTextBounds(vg, 0, 0, lab)
+                labels[#labels + 1] = { row = r, lab = lab, w = w }
+                totalW = totalW + w
+            end
+            totalW = totalW + gap * (#labels - 1)
+            local x = DESIGN_W * 0.5 - totalW * 0.5
+            local y = 910
+            for i = 1, #labels do
+                local it = labels[i]
+                local col = it.row.twoActive and { 0xE8, 0xDC, 0xC8 } or { 0x9A, 0x90, 0x80 }
+                nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 220))
+                nvgText(vg, x + 2, y + 2, it.lab, nil)
+                nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
+                nvgText(vg, x, y, it.lab, nil)
+                panelState.setHits[#panelState.setHits + 1] = {
+                    setId = it.row.setId, x = x, y = y - 16, w = it.w, h = 32, row = it.row,
+                }
+                x = x + it.w + gap
+            end
+        end
+    end
+
+    -- 套装图鉴浮层
+    if panelState.setCodexId then
+        local def = EquipmentSetConfig.get(panelState.setCodexId)
+        local hitRow = nil
+        for i = 1, #panelState.setHits do
+            if panelState.setHits[i].setId == panelState.setCodexId then
+                hitRow = panelState.setHits[i].row
+                break
+            end
+        end
+        if def then
+            local boxW, boxH = 820, 420
+            local bx, by = (DESIGN_W - boxW) * 0.5, 980
+            nvgBeginPath(vg)
+            nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
+            nvgFill(vg)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, bx, by, boxW, boxH, 18)
+            nvgFillColor(vg, nvgRGBA(0x1A, 0x14, 0x12, 240))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 200))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
+
+            local title = def.name .. (hitRow and string.format("  %d/6", hitRow.count) or "")
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 34)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 220))
-            nvgText(vg, DESIGN_W * 0.5 + 2, 910 + 2, setLine, nil)
-            nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-            nvgText(vg, DESIGN_W * 0.5, 910, setLine, nil)
+            nvgFillColor(vg, nvgRGBA(0xF7, 0xFE, 0x77, 255))
+            nvgText(vg, DESIGN_W * 0.5, by + 46, title, nil)
+
+            local lines = {
+                { n = 2, text = def.desc2 or "", on = hitRow and hitRow.twoActive },
+                { n = 4, text = def.desc4 or "", on = hitRow and hitRow.fourActive },
+                { n = 6, text = def.desc6 or "", on = hitRow and hitRow.sixActive },
+            }
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+            for i = 1, 3 do
+                local ln = lines[i]
+                local ly = by + 90 + (i - 1) * 90
+                local r, g, b = 0x9A, 0x90, 0x80
+                if ln.on then r, g, b = 0xF4, 0xED, 0xE0 end
+                nvgFontSize(vg, 26)
+                nvgFillColor(vg, nvgRGBA(r, g, b, 255))
+                local tag = ln.n .. "件" .. (ln.on and " 已激活" or "")
+                nvgText(vg, bx + 40, ly, tag, nil)
+                nvgFontSize(vg, 24)
+                nvgFillColor(vg, nvgRGBA(r, g, b, 230))
+                nvgText(vg, bx + 40, ly + 34, ln.text or "", nil)
+            end
+            nvgFontSize(vg, 20)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0xC8, 0xC0, 0xB0, 180))
+            nvgText(vg, DESIGN_W * 0.5, by + boxH - 28, "点击空白关闭", nil)
         end
     end
 end
@@ -540,6 +617,19 @@ end
 ---@param detailState table
 ---@return boolean
 function M.handleInput(dx, dy, heroId, detailState)
+    -- 套装图鉴打开时优先关闭/吞掉点击
+    if panelState.setCodexId then
+        panelState.setCodexId = nil
+        return true
+    end
+    -- 点套名打开图鉴
+    for i = 1, #(panelState.setHits or {}) do
+        local h = panelState.setHits[i]
+        if dx >= h.x and dx <= h.x + h.w and dy >= h.y and dy <= h.y + h.h then
+            panelState.setCodexId = h.setId
+            return true
+        end
+    end
     -- 仅处理格子区域内的点击
     if dy < CLIP_TOP or dy > CLIP_TOP + CLIP_HEIGHT then
         return false

@@ -28,6 +28,9 @@ ESC.SETS = {
             { key = AD.HP_BONUS, flat = 6 },
             { key = AD.ARMOR_BONUS, flat = 4 },
         },
+        desc2 = "生命+6%，护甲加成+4%。",
+        desc4 = "每次受击获得1层甲片（最多8）。每层受伤-1.5%。",
+        desc6 = "甲片满层时，下次攻击消耗全部层数，按层数×2%追加伤害并嘲讽2秒。",
     },
     faceless = {
         id = "faceless",
@@ -37,6 +40,9 @@ ESC.SETS = {
             { key = AD.CRIT_RATE, flat = 4 },
             { key = AD.DODGE, flat = 5 },
         },
+        desc2 = "暴击率+4%，闪避+5。",
+        desc4 = "攻击生命低于50%的敌人时，追加25%本次伤害。",
+        desc6 = "击杀后4秒进入无面：清空仇恨。",
     },
     riftcrystal = {
         id = "riftcrystal",
@@ -46,6 +52,9 @@ ESC.SETS = {
             { key = AD.DMG_BONUS, flat = 4 },
             { key = AD.ES_BONUS, flat = 8 },
         },
+        desc2 = "全伤害+4%，能量护盾加成+8%。",
+        desc4 = "攻击命中15%给目标1层晶蚀（最多5）。",
+        desc6 = "晶蚀满5层碎裂：80%魔攻暗影伤害，并打断攻击进度。",
     },
     last_rite = {
         id = "last_rite",
@@ -55,6 +64,9 @@ ESC.SETS = {
             { key = AD.HEAL_BONUS, flat = 8 },
             { key = AD.ES_BONUS, flat = 6 },
         },
+        desc2 = "治疗加成+8%，能量护盾加成+6%。",
+        desc4 = "过量治疗的20%转为能量护盾。",
+        desc6 = "全队能量护盾加成+8%（不改写死亡）。",
     },
     tidepress = {
         id = "tidepress",
@@ -64,6 +76,9 @@ ESC.SETS = {
             { key = AD.MAG_PEN, flat = 6 },
             { key = AD.ATK_SPEED, flat = 5 },
         },
+        desc2 = "魔法穿透+6，攻速+5%。",
+        desc4 = "攻击主目标时30%溅射邻近1人，伤害35%。",
+        desc6 = "被溅射目标3秒内攻击进度-20%。",
     },
     nitros = {
         id = "nitros",
@@ -73,6 +88,9 @@ ESC.SETS = {
             { key = AD.ATK_SPEED, flat = 8 },
             { key = AD.HIT_VALUE, flat = 6 },
         },
+        desc2 = "攻速+8%，命中+6。",
+        desc4 = "每80点命中，连击率+2%（最多+10%）。",
+        desc6 = "连击时贯穿仇恨第二的目标（50%伤害）；仅1名敌人时自身攻速+12%持续2秒。",
     },
     swordgate = {
         id = "swordgate",
@@ -83,6 +101,9 @@ ESC.SETS = {
             { key = AD.PHYS_PEN, flat = 8 },
             { key = AD.PHYS_DMG_BONUS, flat = 5 },
         },
+        desc2 = "物理穿透+8，物伤+5%。",
+        desc4 = "每6秒召唤1柄门缝飞剑，伤害=这6秒自身伤害的15%。",
+        desc6 = "飞剑+1柄。穿套本人不额外飞一轮。",
     },
     starless = {
         id = "starless",
@@ -91,6 +112,9 @@ ESC.SETS = {
         twoPiece = {
             { key = AD.MAG_DMG_BONUS, flat = 4 },
         },
+        desc2 = "魔法伤害+4%。",
+        desc4 = "魔法穿透+8。",
+        desc6 = "每8秒对生命百分比最低的敌人打120%魔攻，不产生仇恨。",
     },
 }
 

@@ -23,17 +23,17 @@
 - BattleCombat 2101 → 1822 行；对外 API（`updateCardAnims` / `playEnterAnims` / `setCardAnim` 等）保持委托
 - T12：TalentManager 再拆 Alex/Elwyn/Sera/Suhua 到 `systems/talents/`（`3e9920f` 已 push）；3570 → 3276 行
 - T13：Client 抽出启动接线到 `network/ClientBoot.lua`（`a9c2566` 已 push）；2487 → 2143 行
-- T14：BattleScene 抽出死亡补位/胜负判定到 `BattleCasualty.lua`（`ebc1db4` 已 push）；2384 → 2154 行
+- T14：BattleScene 抽出死亡补位/胜负判定到 `BattleCasualty.lua`（`ebc1db4`）
+- T15–T18（`88ccd19`）：连击 Combo、loadStage、TAL.update、ClientRender 均已 push
+
+当前行数：TalentManager 2838 / Client 1844 / BattleScene 2014 / BattleCombat 1637 / Server 2068
 
 ## likely_next_task
 
-- 继续拆超 1500 行文件（用户以选项指定）：
-  - BattleScene 仍 2154，可再抽 loadStage / update 攻击进度
-  - Client overlay / HandleNanoVGRender / HandleUpdate（仍 2143）
-  - TalentManager 仍 3276，可再抽弹射/转职/update 周期
-  - BattleCombat 连击结算（`performComboAttack` 仍在主文件）
-  - Server.lua（2068）
-  - 城镇页（Market/Church/Blacksmith 仍 ~1800+，共用壳已接）
+- Server.lua（2068，规划第 6 步后半）
+- BattleScene 再抽 update 攻击进度（仍 2014）
+- 城镇页（Market/Church/Blacksmith 仍 ~1800+）
+- Client HandleUpdate（仍 1844）
 
 ## 用户硬性流程（必须遵守）
 

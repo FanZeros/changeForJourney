@@ -24,6 +24,7 @@ local TargetRecruitPanel = require("ui.TargetRecruitPanel")
 local BF                = require("systems.ButtonFeedback")
 local ClientDispatcher  = require("network.ClientDispatcher")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local I18n = require("core.I18n")
 local TavernPage = {}
 
 --- 网络发送函数注入点（多人模式由 Client.lua 调用 setSendAction 注入）
@@ -843,7 +844,7 @@ local function drawPageImpl(vg)
     nvgRestore(vg)
 
     -- ============ 2-3. 建筑名称牌 ============
-    TownPageChrome.drawNamePlate(vg, img.nameBg, "酒馆", {
+    TownPageChrome.drawNamePlate(vg, img.nameBg, I18n.t("tavern"), {
         textCX = NAME_TEXT_CX, textCY = NAME_TEXT_CY, font = NAME_FONT_SIZE,
     })
 

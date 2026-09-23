@@ -45,6 +45,7 @@ local EquipmentBag       = require("ui.EquipmentBag")
 local ScenarioDialogue   = require("ui.ScenarioDialogue")
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
+local UiToast            = require("core.UiToast")
 
 local function vg() return RT.vg end
 local function logicalW() return RT.logicalW or 0 end
@@ -476,6 +477,7 @@ function HandleNanoVGRenderHorizon()
     end
     -- [LetterIntro] 开场覆盖必须在标题之后（非三行路径同样需要）
     HorizonDrawIntroOverlay()
+    UiToast.draw(vg(), logicalW(), logicalH())
 
     nvgEndFrame(vg())
 end

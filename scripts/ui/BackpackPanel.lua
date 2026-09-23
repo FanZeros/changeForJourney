@@ -901,7 +901,7 @@ local function drawBody(vg)
     DrawUtil.drawImageCentered(vg, imgTopBg, TOP_BG.CX, TOP_BG.CY, TOP_BG.W, TOP_BG.H, 1.0)
 
     -- 3. 标题（与教堂左上角一致）
-    TownPageChrome.drawNamePlate(vg, imgTitleBg, TITLE.TEXT, {
+    TownPageChrome.drawNamePlate(vg, imgTitleBg, require("core.I18n").t("bag"), {
         textCX = TITLE.TEXT_CX, textCY = TITLE.TEXT_CY, font = TITLE.FONT_SIZE,
     })
 

@@ -17,6 +17,7 @@ local EquipmentSystem  = require("systems.EquipmentSystem")
 local EquipmentDetail  = require("ui.EquipmentDetail")
 local ImageCache       = require("ui.ImageCache")
 local BF               = require("systems.ButtonFeedback")
+local I18n             = require("core.I18n")
 
 local EquipmentBag = {}
 
@@ -76,13 +77,13 @@ local BAG_SLOT_FONT = 40
 local BAG_SLOT_R, BAG_SLOT_G, BAG_SLOT_B = 0xb6, 0xb0, 0x9d
 
 local FILTER_TABS = {
-    { key = nil,        label = "所有",   slotName = "全部装备" },
-    { key = "weapon",   label = "主手",   slotName = "主武器" },
-    { key = "offhand",  label = "副手",   slotName = "副武器" },
-    { key = "armor",    label = "护甲",   slotName = "护甲" },
-    { key = "helmet",   label = "头盔",   slotName = "头盔" },
-    { key = "shoes",    label = "鞋子",   slotName = "鞋子" },
-    { key = "accessory",label = "饰品",   slotName = "饰品" },
+    { key = nil,        labelKey = "filter_all",       slotKey = "slot_all" },
+    { key = "weapon",   labelKey = "filter_weapon",    slotKey = "slot_weapon" },
+    { key = "offhand",  labelKey = "filter_offhand",   slotKey = "slot_offhand" },
+    { key = "armor",    labelKey = "filter_armor",     slotKey = "slot_armor" },
+    { key = "helmet",   labelKey = "filter_helmet",    slotKey = "slot_helmet" },
+    { key = "shoes",    labelKey = "filter_shoes",     slotKey = "slot_shoes" },
+    { key = "accessory",labelKey = "filter_accessory", slotKey = "slot_accessory" },
 }
 local TAB_ROW1 = 4
 local TAB_Y1   = 568
@@ -600,22 +601,59 @@ end
 
 ---@param entry table
 ---@return boolean
+local function canWearBagEntry(entry)
+    if not entry or not entry.equip then return false end
+    local heroId = bagState.heroId
+    if not heroId then return true end
+    local slot = bagState.filter or bagState.slot or entry.equip.slot
+    local wearableSet = buildWearableSet(heroId, slot)
+    if not wearableSet then return true end
+    local equip = entry.equip
+    if not equip.type or not equip.slot then
+        EquipmentSystem.hydrate(equip)
+    end
+    return wearableSet[equip.type] == true
+end
+
+---@param entry table
+---@return boolean
 local function quickEquipEntry(entry)
-    if not entry or not bagState.heroId then return false end
+    if not entry then return false end
+    local Toast = require("core.UiToast")
     if bagState.onSelect then
         bagState.onSelect(entry.seq, entry.equip)
         EquipmentBag.close()
         return true
     end
+    if not bagState.heroId then return false end
+    if not canWearBagEntry(entry) then
+        Toast.show(I18n.t("cannot_wear"))
+        require("systems.GameSFX").playUIClick(1)
+        BF.trigger("equip_deny")
+        return true
+    end
     local Client = require("network.GameAction")
     local Protocol = require("shared.Protocol")
     local slot = bagState.filter or bagState.slot or entry.equip.slot
+    if entry.equipped then
+        Client.sendAction(Protocol.ACTION_TYPES.UNEQUIP_ITEM, {
+            heroId = bagState.heroId,
+            slot   = slot,
+        })
+        require("systems.GameSFX").playUIClick(2)
+        BF.trigger("unequip_quick")
+        Toast.show(I18n.t("unequipped"))
+        print("[EquipmentBag] 右键卸下 seq=" .. tostring(entry.seq))
+        return true
+    end
     Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {
         seq    = tonumber(entry.seq),
         heroId = bagState.heroId,
         slot   = slot,
     })
     require("systems.GameSFX").play("install")
+    BF.trigger("equip_quick")
+    Toast.show(I18n.t("equipped_ok"))
     print("[EquipmentBag] 右键快速装备 seq=" .. tostring(entry.seq) .. " slot=" .. tostring(slot))
     return true
 end
@@ -654,7 +692,7 @@ function EquipmentBag.handleInput(dx, dy)
         if dx >= tx and dx <= tx + tw and dy >= ty and dy <= ty + th then
             if not sameFilter(bagState.filter, tab.key) then
                 bagState.filter   = tab.key
-                bagState.slotName = tab.slotName
+                bagState.slotName = I18n.t(tab.slotKey)
                 bagState.scrollY  = 0
                 bagState.scrollVel = 0
                 BF.trigger("bag_filter_" .. tostring(tab.key or "all"))
@@ -916,7 +954,7 @@ function EquipmentBag.draw(vg, opts)
     else
         nvgFillColor(vg, nvgRGBA(BAG_TITLE_R, BAG_TITLE_G, BAG_TITLE_B, 255))
     end
-    nvgText(vg, BAG_TITLE_CX, BAG_TITLE_CY, "背包", nil)
+    nvgText(vg, BAG_TITLE_CX, BAG_TITLE_CY, I18n.t("bag"), nil)
 
     -- === 4) 部位页签（所有 / 主武器 / 副武器 / 护甲 / 饰品）===
     for i, tab in ipairs(FILTER_TABS) do
@@ -939,7 +977,7 @@ function EquipmentBag.draw(vg, opts)
         else
             nvgFillColor(vg, nvgRGBA(BAG_SLOT_R, BAG_SLOT_G, BAG_SLOT_B, 255))
         end
-        nvgText(vg, tx + tw * 0.5, ty + th * 0.5, tab.label, nil)
+        nvgText(vg, tx + tw * 0.5, ty + th * 0.5, I18n.t(tab.labelKey), nil)
     end
 
     -- === 5) 装备格子（裁剪区域） ===

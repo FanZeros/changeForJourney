@@ -11,6 +11,7 @@ local ClientDispatcher = require("network.ClientDispatcher")
 local PlayerStore = require("client.data.PlayerStore")
 local EquipmentBag = require("ui.EquipmentBag")
 local EquipmentDetail = require("ui.EquipmentDetail")
+local I18n = require("core.I18n")
 local SpineResultEffect = require("ui.SpineResultEffect")
 
 local M = {}
@@ -131,7 +132,7 @@ function M.bind(deps)
     nvgRestore(vg)
 
     -- 2-3. 铁匠铺名称牌
-    TownPageChrome.drawNamePlate(vg, imgNameBg, "铁匠铺", { textCX = NAME_TEXT_CX, textCY = NAME_TEXT_CY, font = NAME_FONT_SIZE })
+    TownPageChrome.drawNamePlate(vg, imgNameBg, I18n.t("blacksmith"), { textCX = NAME_TEXT_CX, textCY = NAME_TEXT_CY, font = NAME_FONT_SIZE })
 
     -- 4-6. 上半部分槽位区域 + 下半部分面板内容（带 Tab 切换滑动动画）
     local tabIdx = TAB_MAP[state.tab] or 3

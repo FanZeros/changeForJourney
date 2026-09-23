@@ -36,7 +36,7 @@ function M.bind(deps)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
         local listTopY = ROSTER.LIST_BG_CY - ROSTER.LIST_BG_H * 0.5
-        nvgText(vg, ROSTER.MY_HEROES_CX, listTopY + 24, "选择", nil)
+        nvgText(vg, ROSTER.MY_HEROES_CX, listTopY + 36, "选择", nil)
 
         -- 3) "远征团"标题（白色描边）
         drawTextStroke(vg, ROSTER.MY_HEROES_CX, ROSTER.MY_HEROES_CY, "远征团",

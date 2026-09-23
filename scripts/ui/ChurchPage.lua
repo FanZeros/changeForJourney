@@ -131,7 +131,7 @@ local ROSTER = {
 }
 -- Computed fields (depend on other ROSTER fields)
 ROSTER.LIST_BG_CY = DESIGN_H - ROSTER.LIST_BG_H * 0.5
-ROSTER.MY_HEROES_CY = (ROSTER.LIST_BG_CY - ROSTER.LIST_BG_H * 0.5) + 52
+ROSTER.MY_HEROES_CY = 995  -- 与角色详情名字 MID_NAME_CY 对齐
 ROSTER.DEPLOYED_DX = -ROSTER.CARD_W * 0.5 + 134 * 0.5
 
 -- 战斗力计算跳过的属性（与 CharacterPanel 一致）

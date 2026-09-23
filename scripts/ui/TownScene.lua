@@ -387,10 +387,203 @@ local function ensureTownImages(vg)
     imgLock        = nvgCreateImage(ctx, "image/通用图标/UI_ICON_SUO.png", 0)
 end
 
+-- ============================================================================
+-- [地图模式] 左栏改为 2D 世界地图页：纯地形底图 + 金环节点（节点=入口）
+-- 按 L0_ui_样式图：地图是页面覆盖区内容；节点点击沿用原建筑回调与解锁门槛
+-- ============================================================================
+
+local MAP_MODE = true
+local mapCbs = {}  -- [地图模式] setter 同步的建筑回调（避免前向 local 不可见）
+local imgMapTerrain = -1
+local MAP_TERRAIN_PATH = "image/界面底板/城镇世界/UI_WORLD_MAP.png"
+
+--- 地图节点（设计坐标 1080x2400）
+local MAP_NODES = {
+    { key = "camp",      name = "出发营地",  cx = 520, cy = 520,  r = 40, unlock = "none" },
+    { key = "warehouse", name = "尘封仓库",  cx = 640, cy = 720,  r = 40, unlock = "none" },
+    { key = "tavern",    name = "腐鸦酒馆",  cx = 760, cy = 1080, r = 40, unlock = "tavern_tm" },
+    { key = "church",    name = "缄默礼拜堂", cx = 760, cy = 1830, r = 40, unlock = "church_tm" },
+    { key = "tree",      name = "终焉古树",  cx = 430, cy = 1800, r = 40, unlock = "church_tm" },
+    { key = "smith",     name = "狱火锻炉",  cx = 430, cy = 1520, r = 40, unlock = "smith_tm" },
+    { key = "market",    name = "月蚀黑市",  cx = 280, cy = 940,  r = 40, unlock = "market" },
+}
+
+--- 节点环路连线顺序（路径感）
+local MAP_PATH_ORDER = { "camp", "warehouse", "tavern", "church", "tree", "smith", "market", "camp" }
+
+local function mapNodeByKey(key)
+    for _, n in ipairs(MAP_NODES) do
+        if n.key == key then return n end
+    end
+    return nil
+end
+
+--- 节点解锁判定（与原建筑门槛一致）
+local function mapNodeLocked(n)
+    local _TM = require("systems.TutorialManager")
+    if n.unlock == "market" then
+        return not ExpTable.isBuildingUnlocked("market", GameState.getLevel())
+    elseif n.unlock == "smith_tm" then
+        return not _TM.isBuildingUnlocked("smith")
+    elseif n.unlock == "tavern_tm" then
+        return not _TM.isBuildingUnlocked("tavern")
+    elseif n.unlock == "church_tm" then
+        return not _TM.isBuildingUnlocked("church")
+    end
+    return false
+end
+
+--- 绘制地图页（在 TownScene.draw 顶部early-return调用）
+local function drawMapPage(vg)
+    if imgMapTerrain < 0 then
+        imgMapTerrain = nvgCreateImage(vg, MAP_TERRAIN_PATH, 0)
+    end
+    local _TM = require("systems.TutorialManager")
+    local _tmActive = _TM.isActive()
+    local DrawUtil = require("core.DrawUtil")
+
+    -- 0) 地形底图 cover-fit（1215x2160 → 1080x2400）
+    if imgMapTerrain >= 0 then
+        local s = math.max(1080 / 1215, 2400 / 2160)
+        local dw, dh = 1215 * s, 2160 * s
+        local ox, oy = (1080 - dw) * 0.5, (2400 - dh) * 0.5
+        local paint = nvgImagePattern(vg, ox, oy, dw, dh, 0, imgMapTerrain, 1.0)
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, 1080, 2400)
+        nvgFillPaint(vg, paint)
+        nvgFill(vg)
+    else
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, 1080, 2400)
+        nvgFillColor(vg, nvgRGBA(24, 28, 24, 255))
+        nvgFill(vg)
+    end
+
+    -- 1) 环路路径（细金线）
+    nvgBeginPath(vg)
+    local first = true
+    for _, key in ipairs(MAP_PATH_ORDER) do
+        local n = mapNodeByKey(key)
+        if n then
+            if first then
+                nvgMoveTo(vg, n.cx, n.cy)
+                first = false
+            else
+                nvgLineTo(vg, n.cx, n.cy)
+            end
+        end
+    end
+    nvgStrokeColor(vg, nvgRGBA(196, 164, 92, 70))
+    nvgStrokeWidth(vg, 6)
+    nvgLineCap(vg, NVG_ROUND)
+    nvgLineJoin(vg, NVG_ROUND)
+    nvgStroke(vg)
+
+    -- 2) 节点 + 标签 + 热点/红点
+    for _, n in ipairs(MAP_NODES) do
+        local locked = mapNodeLocked(n)
+        local alpha = locked and 0.38 or 1.0
+        local _bf = (not locked) and BF.begin(vg, "town_" .. n.key, n.cx, n.cy, n.r * 2.4, n.r * 2.4) or false
+
+        -- 底圆 + 金环
+        nvgBeginPath(vg)
+        nvgCircle(vg, n.cx, n.cy, n.r)
+        nvgFillColor(vg, nvgRGBA(24, 19, 13, math.floor(235 * alpha + 0.5)))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(212, 180, 90, math.floor(255 * alpha + 0.5)))
+        nvgStrokeWidth(vg, 5)
+        nvgStroke(vg)
+        if not locked then
+            nvgBeginPath(vg)
+            nvgCircle(vg, n.cx, n.cy, n.r + 7)
+            nvgStrokeColor(vg, nvgRGBA(212, 180, 90, 60))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
+        end
+
+        -- 点击闪白
+        local flash = getClickFlashAlpha(n.key)
+        if flash > 0 then
+            nvgBeginPath(vg)
+            nvgCircle(vg, n.cx, n.cy, n.r)
+            nvgFillColor(vg, nvgRGBA(255, 240, 210, math.floor(255 * flash + 0.5)))
+            nvgFill(vg)
+        end
+
+        -- 名称
+        DrawUtil.drawTextStroke(vg, n.cx, n.cy + n.r + 30, n.name, 30,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, 225, 205, 4,
+            { strokeColor = { 20, 16, 10 }, alpha = alpha })
+
+        -- 铁匠铺分解红点
+        if n.key == "smith" and not locked and smithDecomposeRedDot then
+            DarkIcon.draw(vg, "reddot", n.cx + n.r * 0.72, n.cy - n.r * 0.72, 40, 1.0)
+        end
+        -- 古树可转职角标/红点
+        if n.key == "tree" and not locked and imgIconUp >= 0 then
+            local okT, unused = pcall(function() return getTalentPage().hasAnyUnusedTalent() end)
+            if okT and unused then
+                drawImageCentered(vg, imgIconUp, n.cx + n.r * 0.72, n.cy - n.r * 0.72, 40, 40, 1.0)
+            end
+        end
+
+        BF.finish(vg, _bf)
+
+        -- 引导热点
+        if _tmActive and not locked then
+            if n.key == "tree" then
+                _TM.registerHotspot("talent_toggle", n.cx, n.cy, n.r * 2.4, n.r * 2.4, "left")
+                _TM.registerHotspot("building_tree", n.cx, n.cy, n.r * 2.4, n.r * 2.4, "left")
+            else
+                _TM.registerHotspot("building_" .. n.key, n.cx, n.cy, n.r * 2.4, n.r * 2.4, "left")
+            end
+        end
+    end
+end
+
+--- 地图节点点击（在 handleInput 的 LootBox 之后调用）
+---@param dx number
+---@param dy number
+---@return boolean 是否消费
+local function handleMapInput(dx, dy)
+    for _, n in ipairs(MAP_NODES) do
+        local ddx, ddy = dx - n.cx, dy - n.cy
+        if ddx * ddx + ddy * ddy <= (n.r + 20) * (n.r + 20) then
+            if mapNodeLocked(n) then
+                print("[TownScene] 节点未解锁: " .. n.name)
+                return true
+            end
+            BF.trigger("town_" .. n.key)
+            triggerClickAnim(n.key)
+            if n.key == "camp" then
+                deferAction(CLICK_CALLBACK_DELAY, function()
+                    local BottomNav = require("ui.BottomNav")
+                    if BottomNav.getSelectedIndex() ~= 3 then
+                        BottomNav.setSelectedIndex(3)
+                        local GameSFX = require("systems.GameSFX")
+                        GameSFX.playUIMove(2)
+                    end
+                end)
+            else
+                local cb = mapCbs[n.key]
+                if cb then deferAction(CLICK_CALLBACK_DELAY, cb) end
+            end
+            return true
+        end
+    end
+    return false
+end
+
 function TownScene.draw(vg)
     ensureTownImages(vg)
     -- 0) 处理延迟回调
     processDeferredActions()
+
+    -- [地图模式] 左栏整页 = 2D 世界地图（节点即入口）
+    if MAP_MODE then
+        drawMapPage(vg)
+        return
+    end
 
     -- 新手引导热点管理器（仅引导激活时使用）
     local _TM = require("systems.TutorialManager")
@@ -555,6 +748,7 @@ local onSmithClick = nil
 
 function TownScene.setOnSmithClick(fn)
     onSmithClick = fn
+    mapCbs.smith = fn
 end
 
 --- 回调：点击教堂
@@ -562,6 +756,7 @@ local onChurchClick = nil
 
 function TownScene.setOnChurchClick(fn)
     onChurchClick = fn
+    mapCbs.church = fn
 end
 
 --- 回调：点击终焉古树
@@ -569,6 +764,7 @@ local onTreeClick = nil
 
 function TownScene.setOnTreeClick(fn)
     onTreeClick = fn
+    mapCbs.tree = fn
 end
 
 --- 回调：点击酒馆
@@ -576,6 +772,7 @@ local onTavernClick = nil
 
 function TownScene.setOnTavernClick(fn)
     onTavernClick = fn
+    mapCbs.tavern = fn
 end
 
 
@@ -584,6 +781,7 @@ local onMarketClick = nil
 
 function TownScene.setOnMarketClick(fn)
     onMarketClick = fn
+    mapCbs.market = fn
 end
 
 --- 回调：点击仓库（背包入口）
@@ -591,11 +789,16 @@ local onWarehouseClick = nil
 
 function TownScene.setOnWarehouseClick(fn)
     onWarehouseClick = fn
+    mapCbs.warehouse = fn
 end
 
 function TownScene.handleInput(dx, dy)
     -- 全局战利品箱（左下角）点击优先；LootBoxPage 打开时整栏输入交给页面
     if require("ui.LootBox").handleInput(dx, dy) then return true end
+    -- [地图模式] 节点命中 → 原建筑回调
+    if MAP_MODE then
+        return handleMapInput(dx, dy) or true
+    end
     local _TM = require("systems.TutorialManager")
     -- 铁匠铺点击检测
     if dx >= SMITH_CX - SMITH_W * 0.5 and dx <= SMITH_CX + SMITH_W * 0.5

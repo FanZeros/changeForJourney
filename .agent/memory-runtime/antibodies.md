@@ -32,3 +32,4 @@
 - [scope:project] 战斗 SE 不要用 >0.85s 的包条目（Starlight/Load/Wolf/Monster8/Magic8 等是技能咏唱不是普攻）。哈基米禁止 Cat，用短治疗/圣咏
 - [scope:project] `StageConfig.formatProgressDisplay` 必须用相对章节号（getRelativeChapter + stage），不要从 `entry.name` 抠 `1-1` 再拼 DIFF 前缀：高难名已是「困难·黑棘林道1-1」，会显示成「困难困难1-1」
 - [scope:project] SE 听感延迟两处：ButtonFeedback 在 trigger/松开才 playUIClick（应按下即播）；ProjectileSystem 在 spawn 就播远程音，飞 0.5s 才命中。远程/bezier/fly 改命中播，melee/lightning 仍出手播
+- [scope:project] 角色页「远征团」标题必须贴 LIST_BG 顶边（LIST_BG_TOP+52），不要写死 868：那会掉进下方列表框约 10%。教堂名册 ROSTER.MY_HEROES_CY 同步

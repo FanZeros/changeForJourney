@@ -87,15 +87,16 @@ local LIST_BG_W      = 1080
 local LIST_BG_H      = 1579
 local LIST_BG_CY     = DESIGN_H - LIST_BG_H * 0.5   -- 底部对齐: 2400 - 789.5 = 1610.5
 
--- 队伍总战斗力
+-- 队伍总战斗力（贴列表背景顶边，避免掉进下方框内）
+local LIST_BG_TOP    = LIST_BG_CY - LIST_BG_H * 0.5   -- 821
 local TOTAL_POWER_CX = 540
-local TOTAL_POWER_CY = 860
+local TOTAL_POWER_CY = LIST_BG_TOP + 28
 local TOTAL_POWER_ICON_SIZE = 36
 local TOTAL_POWER_GAP = 4
 
--- "远征团"标题（列表背景顶边约 821，标题落在顶边下方）
+-- "远征团"标题（原 868 大约掉进框内 10%，改贴顶边下方）
 local MY_HEROES_CX   = 540
-local MY_HEROES_CY   = 868
+local MY_HEROES_CY   = LIST_BG_TOP + 52
 
 -- 角色卡片行
 local ROW1_CY        = 1291    -- 第一排 Y 中心

@@ -23,6 +23,7 @@
 - 新角色 #18/#19/#24/#25 补独立攻击 SE + 投射物配置（图复用相近特效）
   - 老六 Darkness4 / 哈基米 Cat / 加载中 Load / 高ping Transceiver
 - 未改 BGM；未合入 workspace
+- 用户反馈新 SE 太大：Effect 通道乘 `SFX_PACK_GAIN=0.10` 试听（设置滑条仍相对调节）
 
 ## 更早：截至 2026-09-23 四人新角色
 

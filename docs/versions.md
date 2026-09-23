@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.29.1-se-gain | 2026-09-23 | 新 SE 太响，Effect 通道压到原音量 10% 试听。 |
 | v2.29-se-pack | 2026-09-23 | 用 RPG Maker SE 包替换全部 UI/战斗音效；#18/#19/#24/#25 补独立攻击 SE。分支 feat/four-meme-heroes。 |
 | v2.28-four-meme-heroes | 2026-09-23 | 接入老六/哈基米/加载中/高ping战士（替代立绘）。分支 feat/four-meme-heroes。 |
 | v2.27-workspace-integrate | 2026-09-22 | 整合今天三线到 workspace：overlays 星图剔除+CharacterPower、docs 套装/六契/1.5竖屏天赋树、rename 远征文案。已推 origin/workspace。 |

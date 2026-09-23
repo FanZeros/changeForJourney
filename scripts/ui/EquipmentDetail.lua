@@ -476,14 +476,15 @@ local CUR_BG_CY = math.floor(REF_BG_CY - REF_BG_H * 0.5 + CUR_BG_H * 0.5)
 -- 单面板居中
 local SINGLE_BG_CX = 540
 
--- 配装页小窗：贴在当前面板左上角，无遮罩
+-- 配装页小窗：贴在当前面板左上角，无遮罩；缩小避免盖住名字/底板
 local COMPACT_LEFT = 16
 local COMPACT_TOP  = 16
+local COMPACT_SCALE = 0.38
 
 local function compactOffset()
     local refLeft = REF_BG_CX - REF_BG_W * 0.5
     local refTop  = REF_BG_CY - REF_BG_H * 0.5
-    return COMPACT_LEFT - refLeft, COMPACT_TOP - refTop
+    return COMPACT_LEFT - refLeft * COMPACT_SCALE, COMPACT_TOP - refTop * COMPACT_SCALE
 end
 
 -- ======================== 面板绘制（绝对坐标 + X偏移） ========================
@@ -1019,8 +1020,8 @@ function EquipmentDetail.handleInput(dx, dy)
     if detState.closing then return true end
     if detState.compactCorner then
         local ox, oy = compactOffset()
-        dx = dx - ox
-        dy = dy - oy
+        dx = (dx - ox) / COMPACT_SCALE
+        dy = (dy - oy) / COMPACT_SCALE
     end
 
     local equipData = PlayerStore.Get("equipment")
@@ -1301,11 +1302,12 @@ function EquipmentDetail.draw(vg)
         nvgFill(vg)
     end
 
-    -- 应用滑入偏移（小窗不滑入，贴右栏左上角）
+    -- 应用滑入偏移（小窗不滑入，贴右栏左上角并缩小）
     nvgSave(vg)
     if compact then
         local ox, oy = compactOffset()
         nvgTranslate(vg, ox, oy)
+        nvgScale(vg, COMPACT_SCALE, COMPACT_SCALE)
     else
         nvgTranslate(vg, 0, slideOY)
     end

@@ -812,17 +812,24 @@ function M.draw(vg)
 
     if not isAwakenTab then
     -- === 6) 角色详情属性背景图（静态，不参与切换动画） ===
-    -- 配装页裁掉底板顶部装饰条（菱形金饰横条），只留下方皮革底给装备格
-    if detailState.tab == "equip" then
+    -- 配装页分段画底板：保留顶部金属外框 + 下方皮革，跳过图内菱形金饰小横条
+    if detailState.tab == "equip" and img.midBg and img.midBg >= 0 then
+        local midTop = MID_BG_CY - MID_BG_H * 0.5
+        local frameH = 100
+        local barEnd = 125
         nvgSave(vg)
-        nvgIntersectScissor(vg, 0, 1040, DESIGN_W, DESIGN_H)
+        nvgIntersectScissor(vg, 0, midTop, DESIGN_W, frameH)
+        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgIntersectScissor(vg, 0, midTop + barEnd, DESIGN_W, MID_BG_H - barEnd)
         drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
         nvgRestore(vg)
     else
         drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
     end
 
-    -- === 7) "角色详情" 标题：配装页改画槽位名，避免和「主武器」叠在同一条上 ===
+    -- === 7) "角色详情" 标题 ===
     if detailState.tab ~= "equip" then
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 30)
@@ -843,7 +850,7 @@ function M.draw(vg)
     nvgTranslate(vg, switchOX, 0)
     nvgGlobalAlpha(vg, switchAlpha)
 
-    -- === 8) 角色名称（配装页顶栏改画槽位名，这里不再画） ===
+    -- === 8) 角色名称：配装页放到装备详情之后画，避免被小窗盖住 ===
     if not isAwakenTab and detailState.tab ~= "equip" then
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 42)
@@ -1324,6 +1331,15 @@ function M.draw(vg)
         if EquipmentDetail.isOpen() then
             EquipmentDetail.draw(vg)
         end
+    end
+
+    -- 配装页角色名画在详情之上，避免被小窗挡住
+    if not isAwakenTab and detailState.tab == "equip" and heroCfg and heroCfg.name then
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 42)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 255))
+        nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name, nil)
     end
 end
 

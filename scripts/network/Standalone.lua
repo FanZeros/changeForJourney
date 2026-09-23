@@ -298,6 +298,7 @@ function Standalone.Start()
         print("[Standalone] ERROR: nvgCreate failed")
         return
     end
+    require("core.I18n").installDrawHook()
 
     -- 2.5 [一次性加载] 全局贴图去重：同一路径全生命周期只加载一次，
     -- 启动预载与各模块 init 共用同一句柄，避免重复占用显存与二次解码

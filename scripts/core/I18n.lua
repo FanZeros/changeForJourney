@@ -23,6 +23,35 @@ I18n.DISPLAY = {
 }
 
 local current_ = "zh_CN"
+local dict_ = nil ---@type table|nil
+local hooked_ = false
+local rawNvgText_ = nil
+local rawNvgTextBox_ = nil
+local rawNvgTextBounds_ = nil
+
+local function dict()
+    if dict_ then return dict_ end
+    local ok, d = pcall(require, "core.I18nDict")
+    if ok and type(d) == "table" then
+        dict_ = d
+    else
+        dict_ = { zh_TW = {}, en = {}, ja = {}, ko = {} }
+    end
+    return dict_
+end
+
+--- 按中文原文查表；无条目则原样返回（梗名/剧情不翻）
+---@param text any
+---@return any
+function I18n.lookup(text)
+    if current_ == "zh_CN" then return text end
+    if type(text) ~= "string" or text == "" then return text end
+    local pack = dict()[current_]
+    if not pack then return text end
+    local hit = pack[text]
+    if hit then return hit end
+    return text
+end
 
 local T = {
     zh_CN = {
@@ -340,6 +369,30 @@ function I18n.cycle()
     local nextItem = I18n.LANGS[idx % #I18n.LANGS + 1]
     I18n.set(nextItem.id)
     return nextItem.id
+end
+
+--- 拦截 nvgText / nvgTextBox / nvgTextBounds，绘制时按原文查表
+function I18n.installDrawHook()
+    if hooked_ then return end
+    if type(nvgText) ~= "function" then return end
+    rawNvgText_ = nvgText
+    rawNvgTextBox_ = nvgTextBox
+    rawNvgTextBounds_ = nvgTextBounds
+    nvgText = function(vg, x, y, text, endp)
+        return rawNvgText_(vg, x, y, I18n.lookup(text), endp)
+    end
+    if type(rawNvgTextBox_) == "function" then
+        nvgTextBox = function(vg, x, y, breakRowWidth, text, endp)
+            return rawNvgTextBox_(vg, x, y, breakRowWidth, I18n.lookup(text), endp)
+        end
+    end
+    if type(rawNvgTextBounds_) == "function" then
+        nvgTextBounds = function(vg, x, y, text, endp)
+            return rawNvgTextBounds_(vg, x, y, I18n.lookup(text), endp)
+        end
+    end
+    hooked_ = true
+    print("[I18n] nvgText draw hook installed")
 end
 
 return I18n

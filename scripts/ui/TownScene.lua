@@ -741,6 +741,9 @@ function TownScene.draw(vg)
     if _tmActive and not tavernLocked then _TM.registerHotspot("building_tavern", TAVERN_CX, TAVERN_CY, TAVERN_W, TAVERN_H, "left") end
     -- 城镇总览热点（引导组4）：左栏顶部空白带，不与建筑点击重叠
     if _tmActive then _TM.registerHotspot("town_overview", 540, 150, 900, 220, "left") end
+
+    -- 全局战利品箱（左下角）。横屏改造后从 BattleScene 迁出，输入已在 handleInput 优先拦截，绘制漏画
+    require("ui.LootBox").draw(vg)
 end
 
 --- 回调：点击铁匠铺

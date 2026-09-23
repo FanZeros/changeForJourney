@@ -44,9 +44,9 @@ local LOCK_ICON_H   = 64
 local PLUS_ICON_W   = 64
 local PLUS_ICON_H   = 64
 
--- 职业标签（已拥有卡:右下角与等级徽章左右对应; 未拥有卡:顶部）
+-- 职业标签（右下角，与等级徽章左右对应；未拥有卡同样放右下角）
 local TAG_SIZE        = 60
-local TAG_OFFSET_Y    = -172   -- 未拥有卡顶部, 相对卡片中心的 Y 偏移
+local TAG_OFFSET_Y    = -172   -- 历史顶部偏移，保留给滚动裁剪计算
 local TAG_DX          = 63     -- 与等级徽章(-63)左右镜像
 
 -- 卡半高（卡底相对卡中心的偏移，下方元素随卡高联动，避免改 CARD_H 后错位）
@@ -605,14 +605,6 @@ function M.draw(vg, scrollY)
             nvgFill(vg)
         end
 
-        -- b) 职业标志图标（拥有:右下角与等级徽章对应; 未拥有:顶部避开碎片条）
-        local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
-        if iconIdx and img.classIcons[iconIdx] then
-            local tagY = isOwned and (cy + LVL_BADGE_DY) or (cy + TAG_OFFSET_Y)
-            local tagX = isOwned and (cx + TAG_DX) or cx
-            drawImageCentered(vg, img.classIcons[iconIdx], tagX, tagY, TAG_SIZE, TAG_SIZE, isOwned and 1.0 or 0.3)
-        end
-
         -- c-shard) 未拥有角色：碎片进度条（复用经验条素材，ICON_SP 替代等级徽章）
         if not isOwned then
             local shards = entry.shards or 0
@@ -661,6 +653,12 @@ function M.draw(vg, scrollY)
                         0x44, 0xff, 0x5e, 3)
                 end
             end
+        end
+
+        -- b) 职业标志图标（右下角，与等级徽章左右对应；未拥有同样显示）
+        local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
+        if iconIdx and img.classIcons[iconIdx] then
+            drawImageCentered(vg, img.classIcons[iconIdx], cx + TAG_DX, cy + LVL_BADGE_DY, TAG_SIZE, TAG_SIZE, 1.0)
         end
 
         -- c/e 仅已拥有角色显示战斗力、等级（经验条已删）

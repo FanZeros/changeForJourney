@@ -19,7 +19,8 @@
 ## 上次做了什么（截至 2026-09-23 今天提交整合）
 
 - 从 `workspace` 新开 `integrate/20260923`，合入今天全部功能提交，未推 `workspace`
-- workspace 自身保留：左栏 2D 世界地图页、三行行内 #1E2430 平涂、装备详情小窗、暗黑化天赋底与恭喜获得弹窗、去掉战斗行标签黑条
+- workspace 在 23:44 撤回了左栏 2D 世界地图页（56cee55）。integrate/20260923 已合并该撤回，地图页不再存在
+- 仍保留：装备详情小窗、暗黑化天赋底与恭喜获得弹窗；三行行内平涂是否还在以合并后 TownScene/BattleTriPage 为准
 - 滚轮/右键装备/顶栏远征等级/运行时五语/Noto Sans CJK KR Bold
 - 四名玩梗角色（老六/哈基米/加载中/高ping战士，立绘仍是替代图）+ RPG Maker SE 包 + 音量 5% + 按下即播/远程命中出声
 - 未解锁角色职业标 + Maker MCP 一键脚本（含 workspace923 的 Windows/GBK 修复）

@@ -285,10 +285,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         else
             stageText = string.format("【小队%d】待解锁", row)
         end
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, ix + 14, iy + 8, 360, 34, 8)
-        nvgFillColor(vg, nvgRGBA(16, 18, 28, 200))
-        nvgFill(vg)
+        -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上
         nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
         nvgText(vg, ix + 28, iy + 25, stageText, nil)
 

@@ -58,8 +58,7 @@ local DESIGN_H = 2400
 
 -- ======================== 布局常量 ========================
 
--- 背景遮罩
-local MASK_ALPHA = 204  -- 80% 不透明度 (255 * 0.8 ≈ 204)
+-- [暗黑化] 去掉全屏/行内黑色叠加层：弹窗直接浮在暗黑场景上，靠光晕与面板自带对比
 
 -- 背景光晕: UI_GXHD_2.png
 local GLOW_CX, GLOW_CY = 540, 1044
@@ -101,8 +100,8 @@ end
 -- 第一行顶部 Y
 local FIRST_ROW_TOP = CLIP_TOP
 
--- 底部提示文本
-local HINT_CX, HINT_CY = 540, 1697
+-- 底部提示文本（[暗黑化] 上移贴近面板底，不再飘在屏幕下沿）
+local HINT_CX, HINT_CY = 540, 1596
 local HINT_FONT = 50
 local HINT_TEXT = "点击空白处关闭"
 
@@ -611,19 +610,7 @@ end
 function RewardPopup.drawRegion(vg, rx, ry, rw, rh, rowTag)
     if not state.open or state.rowTag ~= rowTag then return end
 
-    local animAlpha = 1.0
-    if state.animPhase == "opening" then
-        animAlpha = math.min(1.0, (time.elapsedTime - state.animStart) / ANIM_OPEN_DURATION)
-    elseif state.animPhase == "closing" then
-        animAlpha = 1.0 - math.min(1.0, (time.elapsedTime - state.animStart) / ANIM_CLOSE_DURATION)
-    end
-
-    -- 行内遮罩
-    nvgBeginPath(vg)
-    nvgRect(vg, rx, ry, rw, rh)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(MASK_ALPHA * animAlpha)))
-    nvgFill(vg)
-
+    -- [暗黑化] 不再画行内黑色叠加层，弹窗直接嵌入行内
     -- 弹窗内容等比嵌入: 设计锚点(540, GLOW_CY=1044) → 行中心
     local fit = math.min(rw / (DESIGN_W * 1.04), rh / 920)
     nvgSave(vg)
@@ -643,18 +630,7 @@ end
 function RewardPopup.draw(vg)
     if not state.open or state.rowTag then return end
 
-    -- 全屏黑色遮罩
-    local animAlpha = 1.0
-    if state.animPhase == "opening" then
-        animAlpha = math.min(1.0, (time.elapsedTime - state.animStart) / ANIM_OPEN_DURATION)
-    elseif state.animPhase == "closing" then
-        animAlpha = 1.0 - math.min(1.0, (time.elapsedTime - state.animStart) / ANIM_CLOSE_DURATION)
-    end
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(MASK_ALPHA * animAlpha)))
-    nvgFill(vg)
-
+    -- [暗黑化] 不再画全屏黑色叠加层，弹窗直接浮在场景上
     RewardPopup.drawContent(vg)
 end
 

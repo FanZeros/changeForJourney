@@ -769,7 +769,12 @@ local ClientDispatcher = require("network.ClientDispatcher")
          if data.success then
              local heroCfg = HeroConfig.get(data.heroId); local hn = heroCfg and heroCfg.name or "英雄"
              local hq = heroCfg and heroCfg.quality or 1
-             RewardPopup.show("合成成功", { { type = "hero", heroId = data.heroId, name = hn, quality = hq + 2 } })
+             local joinedHeroId = data.heroId
+             RewardPopup.show("合成成功", { { type = "hero", heroId = joinedHeroId, name = hn, quality = hq + 2 } }, {
+                 onClose = function()
+                     require("ui.HeroScenario").onOpenHero(joinedHeroId)
+                 end,
+             })
          end
      end
 

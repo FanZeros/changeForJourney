@@ -229,8 +229,9 @@ local function grantRewards(results)
         -- hero 类型：standalone 模式直接解锁英雄
         if r.type == "hero" and r.heroId then
             if CharacterPanel.addHero then
-                CharacterPanel.addHero(r.heroId, 1)
-                print("[GachaSystem] 解锁英雄: " .. tostring(r.heroId))
+                local added = CharacterPanel.addHero(r.heroId, 1)
+                r.isNew = added == true
+                print("[GachaSystem] 解锁英雄: " .. tostring(r.heroId) .. " isNew=" .. tostring(r.isNew))
             end
         end
     end

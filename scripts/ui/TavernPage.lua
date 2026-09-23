@@ -634,6 +634,7 @@ local function doRecruitDirect(count, forcePayType)
             end
         end
         _TM.notifyEvent("gacha10_complete")
+        require("ui.HeroScenario").onRecruitResults(results)
     end)
 end
 
@@ -1293,6 +1294,7 @@ function TavernPage.onActionResult(data)
     RecruitAnim.start(data.gachaResults, function()
         syncDisplayData()
         print("[TavernPage] 招募动画结束（服务端模式）")
+        require("ui.HeroScenario").onRecruitResults(data.gachaResults)
     end)
 end
 

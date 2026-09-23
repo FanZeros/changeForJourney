@@ -338,6 +338,7 @@ function CharacterDetail.open(heroId)
     AwakeningPanel.reset(heroId)
     local heroCfg = HC.get(heroId)
     print("[CharacterDetail] 打开角色详情: " .. (heroCfg and heroCfg.name or "?"))
+    require("ui.HeroScenario").onOpenHero(heroId)
 end
 
 --- 关闭详情界面（启动关闭动画）
@@ -402,6 +403,7 @@ function CharacterDetail._switchHero(direction)
     detailState.attrTip       = nil
     AwakeningPanel.reset(nextHeroId)
     print("[CharacterDetail] 箭头切换角色: " .. tostring(detailState.heroId))
+    require("ui.HeroScenario").onOpenHero(nextHeroId)
 end
 
 --- 是否打开

@@ -808,4 +808,84 @@ ScenarioDialogueConfig.SCENARIO_73 = {
     },
 }
 
+--- 情景 74：老六入队
+--- 出现条件: 首次获得 #18（招募或碎片合成，或之后第一次打开详情）
+ScenarioDialogueConfig.SCENARIO_74 = {
+    mode = "small",
+    steps = {
+        { characterId = 18, name = "老六", text = "远征长，别踩这丛草。我是来入队的，不是来被点名的。" },
+        { characterId = 18, name = "老六", text = "正门太亮。我从侧门进来。前四秒当我不存在，第一刀我包了。" },
+    },
+}
+
+--- 情景 75：哈基米入队
+--- 出现条件: 首次获得 #19
+ScenarioDialogueConfig.SCENARIO_75 = {
+    mode = "small",
+    steps = {
+        { characterId = 19, name = "哈基米", text = "哈基米！南北路多~入队费是木鱼三下，功德先记在我这。" },
+        { characterId = 19, name = "哈基米", text = "我不改谁的死期。满五层才给清心。别把我当成第二只卡皮巴拉。" },
+    },
+}
+
+--- 情景 76：加载中入队
+--- 出现条件: 首次获得 #24
+ScenarioDialogueConfig.SCENARIO_76 = {
+    mode = "small",
+    steps = {
+        { characterId = 24, name = "加载中", text = "请稍候……门板加载到百分之九十九。远征长，我是来挨打的，不是来抢奶的。" },
+        { characterId = 24, name = "加载中", text = "条满了我会吐回去。铁憨憨继续扛他的门，我扛我的转圈。" },
+    },
+}
+
+--- 情景 77：高ping战士入队
+--- 出现条件: 首次获得 #25
+ScenarioDialogueConfig.SCENARIO_77 = {
+    mode = "small",
+    steps = {
+        { characterId = 25, name = "高ping战士", text = "信号不太好。我先预输入：入队。你那边大概一秒半后才能看见我动手。" },
+        { characterId = 25, name = "高ping战士", text = "延迟那刀按回响的规矩，仇恨只有一成。别让坦以为我在抢门。" },
+    },
+}
+
+--- 情景 78：老六闲聊
+--- 出现条件: 已看过入队后，本局第一次打开或切换到老六
+ScenarioDialogueConfig.SCENARIO_78 = {
+    mode = "small",
+    steps = {
+        { characterId = 18, name = "老六", text = "这边的草太整齐，蹲进去像在排队。我还是喜欢乱草。" },
+        { characterId = 18, name = "老六", text = "远征长要是点我的名，我就当没听见。听见了也不承认。" },
+    },
+}
+
+--- 情景 79：哈基米闲聊
+--- 出现条件: 已看过入队后，本局第一次打开或切换到哈基米
+ScenarioDialogueConfig.SCENARIO_79 = {
+    mode = "small",
+    steps = {
+        { characterId = 19, name = "哈基米", text = "哈基米~今天木鱼敲了多少下？功德不够就再敲三下。" },
+        { characterId = 19, name = "哈基米", text = "南北路多。南边加一点，北边清心。别问路，问就是木鱼。" },
+    },
+}
+
+--- 情景 80：加载中闲聊
+--- 出现条件: 已看过入队后，本局第一次打开或切换到加载中
+ScenarioDialogueConfig.SCENARIO_80 = {
+    mode = "small",
+    steps = {
+        { characterId = 24, name = "加载中", text = "进度条又卡了。不是我懒，是门缝还在排队。" },
+        { characterId = 24, name = "加载中", text = "远征长别刷新。刷新会把我刚吃进去的伤害清掉。" },
+    },
+}
+
+--- 情景 81：高ping战士闲聊
+--- 出现条件: 已看过入队后，本局第一次打开或切换到高ping战士
+ScenarioDialogueConfig.SCENARIO_81 = {
+    mode = "small",
+    steps = {
+        { characterId = 25, name = "高ping战士", text = "你刚才那句话，我现在才收到。回复是：收到。" },
+        { characterId = 25, name = "高ping战士", text = "这刀是上一句的。你要是已经换了目标，那是网络的问题，不是我的问题。" },
+    },
+}
+
 return ScenarioDialogueConfig

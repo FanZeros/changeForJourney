@@ -29,14 +29,25 @@ local rawNvgText_ = nil
 local rawNvgTextBox_ = nil
 local rawNvgTextBounds_ = nil
 
+local function mergeLang(dst, src)
+    if type(src) ~= "table" then return end
+    for lang, pack in pairs(src) do
+        if type(pack) == "table" then
+            dst[lang] = dst[lang] or {}
+            for k, v in pairs(pack) do
+                dst[lang][k] = v
+            end
+        end
+    end
+end
+
 local function dict()
     if dict_ then return dict_ end
+    dict_ = { zh_TW = {}, en = {}, ja = {}, ko = {} }
     local ok, d = pcall(require, "core.I18nDict")
-    if ok and type(d) == "table" then
-        dict_ = d
-    else
-        dict_ = { zh_TW = {}, en = {}, ja = {}, ko = {} }
-    end
+    if ok then mergeLang(dict_, d) end
+    local ok2, extra = pcall(require, "core.I18nDictExtra")
+    if ok2 then mergeLang(dict_, extra) end
     return dict_
 end
 

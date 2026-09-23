@@ -50,7 +50,24 @@
             "undefined-field": "Any!"
         },
         "globals": [
-            "tolua"
+            "tolua",
+            "HandleNanoVGRenderHorizon",
+            "HandleMouseButtonDownHorizon",
+            "HandleMouseMoveHorizon",
+            "HandleMouseButtonUpHorizon",
+            "HandleTouchBeginHorizon",
+            "HandleTouchMoveHorizon",
+            "HandleTouchEndHorizon",
+            "HandleMouseWheelHorizon",
+            "H_AUTO_TAB",
+            "H_AUTO_OPEN_PANEL",
+            "H_AUTO_OPEN_TRI",
+            "H_skipDone",
+            "H_SKIP_START",
+            "H_AUTO_DISMISS_TITLE",
+            "H_shotTabSet",
+            "H_shotPanelOpened",
+            "H_TRI_L0"
         ],
         "disable": [
             "lowercase-global"

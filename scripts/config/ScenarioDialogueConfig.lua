@@ -843,7 +843,7 @@ ScenarioDialogueConfig.SCENARIO_76 = {
 ScenarioDialogueConfig.SCENARIO_77 = {
     mode = "small",
     steps = {
-        { characterId = 25, name = "高ping战士", text = "信号不太好。我先预输入：入队。你那边大概一秒半后才能看见我动手。" },
+        { characterId = 25, name = "高ping战士", text = "信号不太好。我先预输入：入队。第一刀先到，补刀要等一秒半。" },
         { characterId = 25, name = "高ping战士", text = "延迟那刀按回响的规矩，仇恨只有一成。别让坦以为我在抢门。" },
     },
 }
@@ -863,8 +863,8 @@ ScenarioDialogueConfig.SCENARIO_78 = {
 ScenarioDialogueConfig.SCENARIO_79 = {
     mode = "small",
     steps = {
-        { characterId = 19, name = "哈基米", text = "哈基米~今天木鱼敲了多少下？功德不够就再敲三下。" },
-        { characterId = 19, name = "哈基米", text = "南北路多。南边加一点，北边清心。别问路，问就是木鱼。" },
+        { characterId = 19, name = "哈基米", text = "哈基米~木鱼可以多敲，功德要成功治疗五次才满。满了才给清心。" },
+        { characterId = 19, name = "哈基米", text = "南北路多。我只加血，清心只减伤三秒。别指望我改谁的死期。" },
     },
 }
 
@@ -873,8 +873,8 @@ ScenarioDialogueConfig.SCENARIO_79 = {
 ScenarioDialogueConfig.SCENARIO_80 = {
     mode = "small",
     steps = {
-        { characterId = 24, name = "加载中", text = "进度条又卡了。不是我懒，是门缝还在排队。" },
-        { characterId = 24, name = "加载中", text = "远征长别刷新。刷新会把我刚吃进去的伤害清掉。" },
+        { characterId = 24, name = "加载中", text = "进度条又停在半路。不是坏了，是还没吃满，也还没干等六秒。" },
+        { characterId = 24, name = "加载中", text = "条不会自己刷新掉。满了，或者六秒没人打我，我才会吐回去。" },
     },
 }
 
@@ -884,7 +884,7 @@ ScenarioDialogueConfig.SCENARIO_81 = {
     mode = "small",
     steps = {
         { characterId = 25, name = "高ping战士", text = "你刚才那句话，我现在才收到。回复是：收到。" },
-        { characterId = 25, name = "高ping战士", text = "这刀是上一句的。你要是已经换了目标，那是网络的问题，不是我的问题。" },
+        { characterId = 25, name = "高ping战士", text = "补刀锁的是刚才打中的那个人。你后来换了目标，它也不会跟过去。" },
     },
 }
 

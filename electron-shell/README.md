@@ -28,7 +28,8 @@ Windows 双击：
 
 | 文件 | 做什么 |
 |------|--------|
-| `update_runtime.bat` | **本机一键更新**：拉最新 `dist-snapshot` → 打补丁 → 打离线包并上传 |
+| `../maker-mcp/update-maker-mcp.bat` | **本机 Maker MCP + 本地 Runtime**（官方口径，单机不用远端构建） |
+| `update_runtime.bat` | Electron 离线包：拉最新 `dist-snapshot` → 打补丁 → 打 zip |
 | `push_dist_snapshot.bat` | **云端 Build 后**：把 `dist/` 分片传到 `dist-snapshot`（80s 限时，反复点即可续传） |
 | `pack_release.bat` | 同步 `dist/` → 打补丁 → electron-builder → zip |
 | `pack_and_upload.bat` | 上面全套 + 上传 GitHub Release `win64-v{version}` |

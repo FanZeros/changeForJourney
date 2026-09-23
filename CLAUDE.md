@@ -27,6 +27,7 @@
 - 全 UI 接入：`core/I18nDict.lua`（约 500 条中文原文→四语）+ `nvgText` 运行时查表。梗名/剧情/信件正文不进表，保持原文
 - 右键装备：不可穿 toast「无法穿戴」+ 轻点击音；已穿则卸下；成功穿戴 `install` 音 + toast
 - **不要开** `.project/i18n.json enabled=true`：自动提取会扫进 5800+ 梗名/剧情，构建会把玩家可见中文打成 t_xxx
+- 主字体改为 `Fonts/NotoSansCJKkr-Bold.otf`（SIL OFL，覆盖中日韩英）。旧圆体 CN 无韩文会方框；加载失败才回退圆体
 
 ## 更早：截至 2026-09-22 晚 整合
 

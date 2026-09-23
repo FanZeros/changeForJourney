@@ -31,3 +31,4 @@
 - [scope:project] 当前功能分支是 `feat/wheel-rightequip-i18n`，完成后 push 该分支，不要推 `workspace`
 - [scope:project] 右键装备：不可穿 toast+轻点击音；已穿则 UNEQUIP；成功穿戴 play("install")+toast。提示走 `core/UiToast.lua`，横屏在 nvgEndFrame 前画
 - [scope:project] 全 UI 五语用 `core/I18n.installDrawHook()` 拦 nvgText 按中文原文查 `I18nDict`。梗名/剧情/信件不进词表。不要开引擎 i18n enabled=true
+- [scope:project] 主字体 `NotoSansCJKkr-Bold.otf`（OFL）。Resource Han Rounded CN-Heavy 是简体子集，韩文缺字。Pretendard / IBM Plex KR 中日也不全，五语不要单用它们

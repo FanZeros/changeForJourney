@@ -21,6 +21,9 @@ bash maker-mcp/update-maker-mcp.sh
 
 升级完后在 Agent 里 **Reconnect MCP**，新工具才会进当前会话。
 
+Windows 注意：官方 CLI 给已存在的 `%USERPROFILE%\\.codex` 做 mkdir 会报 `EEXIST`。
+一键脚本会按 Claude / Cursor / Codex 分开升级，撞这个错的 IDE 会跳过，不影响其余。
+
 ## 和「远端 Build」的关系
 
 本项目是单机客户端（`multiplayer.enabled=false`，入口 `main.lua`）：

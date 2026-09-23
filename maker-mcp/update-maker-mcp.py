@@ -122,9 +122,10 @@ def run_step(title: str, args: list[str], allow_fail: bool = False) -> dict:
     if combined:
         log(combined[-4000:])
     data = parse_json_tail(combined)
-    if proc.returncode != 0:
+    cli_failed = proc.returncode != 0 or (isinstance(data, dict) and data.get("ok") is False)
+    if cli_failed:
         if allow_fail:
-            log("WARN: %s 失败（exit %s），继续" % (title, proc.returncode))
+            log("WARN: %s 未完全成功（exit %s），继续" % (title, proc.returncode))
             return data or {"ok": False, "exit": proc.returncode}
         die("%s 失败（exit %s）" % (title, proc.returncode))
     if data:
@@ -172,11 +173,30 @@ def main() -> int:
         log("\n校验完成。")
         return 0
 
-    # 1) 升级本机 MCP（写入 ~/.claude.json / Cursor / Codex，不含项目 cwd）
-    upgrade = ["upgrade", "--target-dir", str(project)]
-    if args.ide:
-        upgrade.extend(["--ide", args.ide])
-    result = run_step("升级 Maker MCP", upgrade)
+    # 1) 按 IDE 分别升级。官方 CLI 给已存在的 ~/.codex 做 mkdir 会 EEXIST，
+    #    一次 upgrade 全 IDE 会整步失败；分开跑，失败的跳过。
+    ides = [args.ide] if args.ide else ["claude", "cursor", "codex"]
+    result = {"ok": True, "mcp_install": []}
+    any_ok = False
+    for ide in ides:
+        row = run_step(
+            "升级 Maker MCP (%s)" % ide,
+            ["upgrade", "--ide", ide, "--target-dir", str(project)],
+            allow_fail=True,
+        )
+        installs = (row or {}).get("mcp_install") or []
+        result["mcp_install"].extend(installs)
+        if (row or {}).get("ok") or any(x.get("ok") for x in installs):
+            any_ok = True
+        elif not installs:
+            msg = ""
+            if isinstance(row, dict):
+                msg = str(row.get("message") or row.get("error") or "")
+            if "EEXIST" in msg or "mkdir" in msg:
+                log("WARN: %s 配置目录已存在，官方 CLI mkdir 撞 EEXIST，跳过该 IDE" % ide)
+    result["ok"] = any_ok
+    if not any_ok:
+        log("WARN: 所有 IDE 的 upgrade 都失败了，继续走 mcp install / verify")
 
     # 2) 再跑一次 install，确保 self runtime 落地
     run_step("安装 MCP self runtime", ["mcp", "install"], allow_fail=True)

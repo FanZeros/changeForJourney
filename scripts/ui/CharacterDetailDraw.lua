@@ -18,6 +18,7 @@ local EquipmentSystem   = require("systems.EquipmentSystem")
 local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local ETS = require("systems.ExtraTalentSystem")
+local I18n = require("core.I18n")
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
@@ -757,7 +758,7 @@ function M.draw(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
         local _ds1 = BF.begin(vg, "unequip_all", BTN_UNEQUIP_CX, BTN_UNEQUIP_CY, BTN_BATCH_W, BTN_BATCH_H)
-        nvgText(vg, BTN_UNEQUIP_CX, BTN_UNEQUIP_CY, "一键卸下", nil)
+        nvgText(vg, BTN_UNEQUIP_CX, BTN_UNEQUIP_CY, I18n.t("unequip_all"), nil)
         BF.finish(vg, _ds1)
     end
     do
@@ -768,7 +769,7 @@ function M.draw(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
         local _ds = BF.begin(vg, "equip_all", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H)
-        nvgText(vg, BTN_EQUIP_CX, BTN_EQUIP_CY, "一键装备", nil)
+        nvgText(vg, BTN_EQUIP_CX, BTN_EQUIP_CY, I18n.t("equip_all"), nil)
         BF.finish(vg, _ds)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("equip_btn_auto", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H, "right") end
@@ -838,10 +839,10 @@ function M.draw(vg)
         nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 255))
         for i = 0, 15 do
             local a = i * stepAngle
-            nvgText(vg, MID_TITLE_CX + math.cos(a) * titleSW, MID_TITLE_CY + math.sin(a) * titleSW, "角色详情", nil)
+            nvgText(vg, MID_TITLE_CX + math.cos(a) * titleSW, MID_TITLE_CY + math.sin(a) * titleSW, I18n.t("hero_detail"), nil)
         end
         nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
-        nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, "角色详情", nil)
+        nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, I18n.t("hero_detail"), nil)
     end
     end  -- if not isAwakenTab（6b~7 节）
 
@@ -913,7 +914,7 @@ function M.draw(vg)
     nvgFontSize(vg, 35)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-    nvgText(vg, MID_QUALITY_LABEL_X, MID_QUALITY_LABEL_Y, "品质", nil)
+    nvgText(vg, MID_QUALITY_LABEL_X, MID_QUALITY_LABEL_Y, I18n.t("quality"), nil)
 
     -- === 13) 品质文字图标 ===
     local qualityName = HC.QUALITY_INFO[heroCfg.quality]
@@ -939,7 +940,7 @@ function M.draw(vg)
     nvgFontSize(vg, 35)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-    nvgText(vg, MID_CLASS_LABEL_X, MID_CLASS_LABEL_Y, "职业", nil)
+    nvgText(vg, MID_CLASS_LABEL_X, MID_CLASS_LABEL_Y, I18n.t("class_label"), nil)
 
     -- === 16) 职业图标 + 文字组合 ===
     local classCfg = CC.get(heroCfg.classId)
@@ -1204,13 +1205,13 @@ function M.draw(vg)
     local curTab = detailState.tab
 
     nvgFillColor(vg, curTab == "attr" and activeColor or inactiveColor)
-    nvgText(vg, TEXT_ATTR_CX, TEXT_ATTR_CY, "属性", nil)
+    nvgText(vg, TEXT_ATTR_CX, TEXT_ATTR_CY, I18n.t("tab_attr"), nil)
 
     nvgFillColor(vg, curTab == "equip" and activeColor or inactiveColor)
-    nvgText(vg, TEXT_EQUIP_CX, TEXT_EQUIP_CY, "配装", nil)
+    nvgText(vg, TEXT_EQUIP_CX, TEXT_EQUIP_CY, I18n.t("tab_equip"), nil)
 
     nvgFillColor(vg, curTab == "awaken" and activeColor or inactiveColor)
-    nvgText(vg, TEXT_AWAKEN_CX, TEXT_AWAKEN_CY, "觉醒", nil)
+    nvgText(vg, TEXT_AWAKEN_CX, TEXT_AWAKEN_CY, I18n.t("tab_awaken"), nil)
 
     -- 觉醒Tab角标：当前英雄有可用觉醒点时，在文字右上角显示 ICON_UP（选中也显示）
     if CharacterDetailRef and CharacterDetailRef.hasAwakeningUpgrade then

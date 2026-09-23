@@ -7,6 +7,7 @@ local CharacterPanel = require("ui.CharacterPanel")
 local SpineCardEffect = require("ui.SpineCardEffect")
 local ClassChange = require("ui.ChurchClassChange")
 local ArtifactPanel = require("ui.ChurchArtifactPanel")
+local I18n = require("core.I18n")
 
 local M = {}
 
@@ -163,7 +164,7 @@ function M.bind(deps)
 
         if not isArtifactTab then
             -- 2-3. 建筑名称牌（不跟随上移）
-            TownPageChrome.drawNamePlate(vg, img.nameBg, "教堂", {
+            TownPageChrome.drawNamePlate(vg, img.nameBg, I18n.t("church"), {
                 textCX = CHURCH.NAME_TEXT_CX, textCY = CHURCH.NAME_TEXT_CY, font = CHURCH.NAME_FONT_SIZE,
             })
 
@@ -452,7 +453,7 @@ function M.bind(deps)
         -- === 教堂名称（在 Tab 内容之上重绘，跟随 upperOX，确保不被星图覆盖） ===
         nvgSave(vg)
         nvgTranslate(vg, upperOX, 0)
-        TownPageChrome.drawNamePlate(vg, img.nameBg, "教堂", {
+        TownPageChrome.drawNamePlate(vg, img.nameBg, I18n.t("church"), {
             textCX = CHURCH.NAME_TEXT_CX, textCY = CHURCH.NAME_TEXT_CY, font = CHURCH.NAME_FONT_SIZE,
         })
         nvgRestore(vg)

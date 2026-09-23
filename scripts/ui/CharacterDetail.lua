@@ -421,6 +421,21 @@ local function hitTest(dx, dy, cx, cy, w, h)
        and dy >= cy - h * 0.5 and dy <= cy + h * 0.5
 end
 
+--- 右键快速装备（配装格子 / 装备背包）
+---@param dx number
+---@param dy number
+---@return boolean
+function CharacterDetail.handleRightClick(dx, dy)
+    if not detailState.open or detailState.closing then return false end
+    if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
+        return EquipmentBag.handleRightClick(dx, dy)
+    end
+    if detailState.tab == "equip" and CharacterDetail._EquipPanel then
+        return CharacterDetail._EquipPanel.handleRightClick(dx, dy, detailState.heroId) == true
+    end
+    return false
+end
+
 --- 处理输入
 ---@param dx number 设计空间 X
 ---@param dy number 设计空间 Y

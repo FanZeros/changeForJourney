@@ -4,7 +4,15 @@
   "enabled": false,
 
   "source_lang": "zh_CN",
-  "target_langs": ["en"],
+  "target_langs": ["zh_TW", "en", "ja", "ko"],
+
+  "lang_to_display": {
+    "zh_CN": "简体中文",
+    "zh_TW": "繁體中文",
+    "en": "English",
+    "ja": "日本語",
+    "ko": "한국어"
+  },
 
   "extract_rules": [
     {

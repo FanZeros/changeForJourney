@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-22 | 版本:v2.27-workspace-integrate
+> 更新时间:2026-09-23 | 版本:v2.28-wheel-rightequip-i18n
 >
-> **本会话(2026-09-22)**：整合今天分支到 `workspace` 并推送：overlays 星图剔除+战力抽取、docs 套装/六契/1.5竖屏天赋树、rename 远征文案。
+> **本会话(2026-09-23)**：`feat/wheel-rightequip-i18n`。滚轮/右键装备/顶栏远征等级/五语。随后扩 HUD 词表，右键改为不可穿提示、已穿卸下、Toast+音效。已 push，未推 workspace。
 
 ---
 

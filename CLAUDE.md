@@ -14,9 +14,22 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`workspace`（已整合今天的 overlays / docs / rename；后续功能分支从 workspace 拉出）
+- **当前开发分支**：`feat/wheel-rightequip-i18n`（从 `workspace` 拉出；已 push）
 
-## 上次做了什么（截至 2026-09-22 晚 整合）
+## 上次做了什么（截至 2026-09-23 滚轮/右键/i18n）
+
+- 从 `workspace` 新开 `feat/wheel-rightequip-i18n` 并已 push
+- 滚动列表补滚轮：GM 控制台、英雄名册、玩家信息内 GM
+- 右键点击装备格子快速穿戴（配装页 / 装备背包 / 战斗区覆盖背包）
+- 左上角 TopBar 原昵称位改为「远征等级 LV.n」
+- 运行时五语：`scripts/core/I18n.lua`（zh_CN/zh_TW/en/ja/ko）；标题页左下角按钮点开弹出选择（非横排芯片）；设置页仍为语言芯片；语言写入 `settings_volume.json`
+- 词表已扩到 HUD/城镇页名/配装按钮/装备页签；Toast=`core/UiToast.lua`
+- 全 UI 接入：`core/I18nDict.lua` + `I18nDictExtra.lua`（漏翻 HUD、21 角色名/称号/天赋、开场信件）+ `nvgText` 查表。战斗 73 情景长剧情仍原文，可再补
+- 右键装备：不可穿 toast「无法穿戴」+ 轻点击音；已穿则卸下；成功穿戴 `install` 音 + toast
+- **不要开** `.project/i18n.json enabled=true`：自动提取会扫进 5800+ 梗名/剧情，构建会把玩家可见中文打成 t_xxx
+- 主字体改为 `Fonts/NotoSansCJKkr-Bold.otf`（SIL OFL，覆盖中日韩英）。旧圆体 CN 无韩文会方框；加载失败才回退圆体
+
+## 更早：截至 2026-09-22 晚 整合
 
 - 已把今天三线合进 `workspace` 并推送：
   1. `docs/equip-set-and-class-migration`（套装 P1 + 六契 + 1.5 竖屏天赋树，此前已在 workspace）
@@ -50,6 +63,8 @@
 
 ## likely_next_task
 
+- 预览验收：滚轮、右键装备、顶栏远征等级、标题/设置切语言
+- 若要全量 i18n：不要开引擎自动提取，继续扩 `core/I18n.lua` 词表
 - BattleScene 1605，可再抽 init/draw/handleInput
 - ChurchPage 790，主壳已较瘦
 - MarketPage 1008，可再抽商店道具网格
@@ -60,7 +75,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 以当前功能分支继续开发；完成后每次 push **该分支**。本次用户明确要求合入并推送 `workspace`。
+- 以当前功能分支继续开发；完成后每次 push **该分支**。当前是 `feat/wheel-rightequip-i18n`，不要推 `workspace`。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
@@ -70,4 +85,5 @@
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
 - Lua 5.4 字符串里不要写 `\!`
 - 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
-- 禁止推 `workspace`
+- 禁止推 `workspace`（当前功能分支 `feat/wheel-rightequip-i18n`）
+- 不要开引擎 i18n `enabled=true`，用 `core/I18n.lua`

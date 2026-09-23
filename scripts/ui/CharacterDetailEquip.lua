@@ -136,21 +136,38 @@ end
 
 local function equipItemNow(item, heroId, slot)
     if not item or not heroId then return false end
+    local I18n = require("core.I18n")
+    local Toast = require("core.UiToast")
+    local BF = require("systems.ButtonFeedback")
     if not item.canWear then
+        Toast.show(I18n.t("cannot_wear"))
+        require("systems.GameSFX").playUIClick(1)
+        BF.trigger("equip_deny")
         print("[EquipPanel] 不可穿戴 seq=" .. tostring(item.seq))
-        return false
-    end
-    if item.equipped then
         return true
     end
-    local Client = require("network.Client")
+    local Client = require("network.GameAction")
     local Protocol = require("shared.Protocol")
+    if item.equipped then
+        Client.sendAction(Protocol.ACTION_TYPES.UNEQUIP_ITEM, {
+            heroId = heroId,
+            slot   = slot or panelState.slot,
+        })
+        require("systems.GameSFX").playUIClick(2)
+        BF.trigger("unequip_quick")
+        Toast.show(I18n.t("unequipped"))
+        panelState.dirty = true
+        print("[EquipPanel] 右键卸下 seq=" .. tostring(item.seq))
+        return true
+    end
     Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {
         seq    = tonumber(item.seq),
         heroId = heroId,
         slot   = slot or panelState.slot,
     })
     require("systems.GameSFX").play("install")
+    BF.trigger("equip_quick")
+    Toast.show(I18n.t("equipped_ok"))
     panelState.dirty = true
     print("[EquipPanel] 穿戴 seq=" .. tostring(item.seq) .. " slot=" .. tostring(slot or panelState.slot))
     return true
@@ -687,6 +704,26 @@ function M.handleInput(dx, dy, heroId, detailState)
     local EquipmentDetail = require("ui.EquipmentDetail")
     EquipmentDetail.open(item.seq, panelState.slot, heroId, true)
     print("[EquipPanel] 单击详情 seq=" .. seqStr)
+    return true
+end
+
+--- 右键：格子上快速穿戴
+---@param dx number
+---@param dy number
+---@param heroId number
+---@return boolean
+function M.handleRightClick(dx, dy, heroId)
+    if panelState.setCodexId then
+        panelState.setCodexId = nil
+        return true
+    end
+    if dy < CLIP_TOP or dy > CLIP_TOP + CLIP_HEIGHT then return false end
+    if dx < GRID_MARGIN_LEFT or dx > DESIGN_W - GRID_MARGIN_LEFT then return false end
+    local item = findItemAt(dx, dy)
+    if not item then return false end
+    equipItemNow(item, heroId, panelState.slot)
+    local EquipmentDetail = require("ui.EquipmentDetail")
+    if EquipmentDetail.isOpen() then EquipmentDetail.close() end
     return true
 end
 

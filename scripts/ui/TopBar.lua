@@ -10,6 +10,7 @@ local HeroAssetUtil   = require("config.HeroAssetUtil")
 local HeroConfig     = require("config.HeroConfig")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local BottomNav      = require("ui.BottomNav")
+local I18n           = require("core.I18n")
 
 local TopBar = {}
 
@@ -173,9 +174,9 @@ end
 -- 页面入口：横屏三栏下 角色常驻右栏 / 城镇常驻左栏，入口键冗余已删；
 -- 仅保留中栏页面：日志 / 战斗 / 副本
 local PAGE_TABS = {
-    [2] = { index = 2, name = "日志", icon = "nav_log",     hotspot = "tab_log" },
-    [3] = { index = 3, name = "战斗", icon = "nav_battle",  hotspot = "tab_battle" },
-    [5] = { index = 5, name = "副本", icon = "nav_dungeon", hotspot = "tab_dungeon" },
+    [2] = { index = 2, nameKey = "tab_log",     icon = "nav_log",     hotspot = "tab_log" },
+    [3] = { index = 3, nameKey = "tab_battle",  icon = "nav_battle",  hotspot = "tab_battle" },
+    [5] = { index = 5, nameKey = "tab_dungeon", icon = "nav_dungeon", hotspot = "tab_dungeon" },
 }
 local PAGE_TAB_ORDER = { 2, 3, 5 }
 local PAGE_BTN_W, PAGE_BTN_H = 196, 64
@@ -257,7 +258,7 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
             elseif locked then
                 tr, tg, tb = 110, 100, 80
             end
-            drawTextStroke(vg, cx, cy + 20, tab.name, 20,
+            drawTextStroke(vg, cx, cy + 20, I18n.t(tab.nameKey), 20,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 3,
                 { strokeColor = { 0x1a, 0x12, 0x0a } })
             local showBadge, badgeStyle = BottomNav.getBadge(tab.index)
@@ -312,14 +313,13 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
         nvgRestore(vg)
     end
 
-    -- #7 玩家名称: left=187, Y=103+oy, font 30, white, stroke 4
-    --    自适应缩放：名称区域最大宽度 = 头像背景右边界(430) - 左起点(187) - 边距(8)
-    local displayName = cachedName or GameState.getName()
+    -- #7 远征等级（原玩家名称位）: left=187, Y=103+oy
     local nameMaxW = 235
-    local nameFontSize = 30
+    local nameFontSize = 28
+    local displayName = I18n.t("expedition_lv", displayLevel)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, nameFontSize)
-    local advance, bounds = nvgTextBounds(vg, 0, 0, displayName)
+    local advance = nvgTextBounds(vg, 0, 0, displayName)
     if advance > nameMaxW and advance > 0 then
         nameFontSize = math.max(16, math.floor(nameFontSize * nameMaxW / advance))
     end
@@ -386,7 +386,7 @@ function TopBar.handleInput(x, y, offsetY, hidePageTabs)
         if x >= cx - halfW and x <= cx + halfW
            and y >= cy - halfH and y <= cy + halfH then
             if BottomNav.isTabLocked(tab.index) then
-                print("[TopBar] tab locked: " .. tab.name)
+                print("[TopBar] tab locked: " .. I18n.t(tab.nameKey))
                 return true
             end
             if BottomNav.getSelectedIndex() ~= tab.index then

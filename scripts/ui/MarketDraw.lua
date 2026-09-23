@@ -5,6 +5,7 @@
 local DarkIcon = require("core.DarkIcon")
 local GameState = require("core.GameState")
 local TownPageChrome = require("ui.TownPageChrome")
+local I18n = require("core.I18n")
 
 local M = {}
 
@@ -121,7 +122,7 @@ function M.bind(deps)
     end
 
     -- 名称牌（固定，不参与水平滑动）
-    TownPageChrome.drawNamePlate(vg, img.nameBg, "市场", {
+    TownPageChrome.drawNamePlate(vg, img.nameBg, I18n.t("market"), {
         textCX = P1.NAME_TEXT_CX, textCY = P1.NAME_TEXT_CY, font = P1.NAME_FONT,
     })
 

@@ -310,6 +310,7 @@ function Standalone.Start()
         print("[Standalone] ERROR: nvgCreate failed")
         return
     end
+    require("core.I18n").installDrawHook()
 
     -- 2.5 [一次性加载] 全局贴图去重：同一路径全生命周期只加载一次，
     -- 启动预载与各模块 init 共用同一句柄，避免重复占用显存与二次解码
@@ -323,10 +324,16 @@ function Standalone.Start()
         return handle
     end
 
-    -- 3. Font
-    fontNormal = nvgCreateFont(vg, "sans", "Fonts/ResourceHanRoundedCN-Heavy.ttf")
+    -- 3. Font：Noto Sans CJK KR Bold（OFL，覆盖中日韩英；旧圆体 CN 无韩文）
+    fontNormal = nvgCreateFont(vg, "sans", "Fonts/NotoSansCJKkr-Bold.otf")
+    if fontNormal < 0 then
+        print("[Standalone] WARN: NotoSansCJKkr-Bold.otf load failed, fallback rounded CN")
+        fontNormal = nvgCreateFont(vg, "sans", "Fonts/ResourceHanRoundedCN-Heavy.ttf")
+    end
     if fontNormal < 0 then
         print("[Standalone] ERROR: font load failed")
+    else
+        print("[Standalone] font OK id=" .. tostring(fontNormal))
     end
 
     -- 4. Layout

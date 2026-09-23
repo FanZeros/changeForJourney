@@ -21,9 +21,10 @@
 - 用户上传 `assets/video/se.mp4`（实为 ZIP，RPG Maker VX Ace 风格 SE 包）
 - 已用包内 ogg 覆盖全部现有 UI/战斗 SE（键名路径不变）
 - 新角色 #18/#19/#24/#25 补独立攻击 SE + 投射物配置（图复用相近特效）
-  - 老六 Darkness4 / 哈基米 Cat / 加载中 Load / 高ping Transceiver
+  - 老六 Slash8 / 哈基米 Heal6 / 加载中 Hammer / 高ping Crossbow
 - 未改 BGM；未合入 workspace
-- 用户反馈新 SE 太大：Effect 通道乘 `SFX_PACK_GAIN=0.10` 试听（设置滑条仍相对调节）
+- 用户反馈新 SE 太大：Effect 通道乘 `SFX_PACK_GAIN=0.05` 试听（设置滑条仍相对调节）
+- 战斗 SE 按时长筛：>0.85s 的换成短打击音；哈基米不用 Cat，改 Heal6
 
 ## 更早：截至 2026-09-23 四人新角色
 

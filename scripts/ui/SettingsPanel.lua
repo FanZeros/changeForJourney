@@ -174,8 +174,8 @@ local function applyBgmVolume(vol)
     GameBGM.setMasterGain(vol)
 end
 
--- RPG Maker SE 包比原音效响，试听压到原音量的 10%（设置滑条仍按 0~100% 相对调节）
-local SFX_PACK_GAIN = 0.10
+-- RPG Maker SE 包比原音效响，试听压到原音量的 5%（设置滑条仍按 0~100% 相对调节）
+local SFX_PACK_GAIN = 0.05
 
 --- 将 SFX 音量同步到引擎音频子系统（"Effect" 类型通道）
 local function applySfxVolume(vol)

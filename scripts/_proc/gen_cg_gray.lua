@@ -16,7 +16,7 @@ local function portraitPath(id)
     end
     return string.format("image/角色立绘/UI_DLH_%d.png", id)
 end
-local HERO_IDS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23 }
+local HERO_IDS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25 }
 
 local OUT_DIR = "/workspace/assets/image/角色CG"
 

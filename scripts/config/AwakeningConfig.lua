@@ -238,7 +238,7 @@ function AC.isFullyAwakened(awakening)
 end
 
 --- 获取指定角色的觉醒配置
----@param heroId number 英雄 ID (1~15, 16, 20~23)
+---@param heroId number 英雄 ID (1~19, 20~25)
 ---@return string[]|nil 3个觉醒效果描述，索引1~3
 function AC.get(heroId)
     return AC.DATA[heroId]
@@ -287,7 +287,7 @@ AC.COMBAT_POWER = {
 }
 
 --- 计算指定角色已点亮觉醒节点的总战力
----@param heroId number 英雄ID (1~15, 16, 20~23)
+---@param heroId number 英雄ID (1~19, 20~25)
 ---@param awakening table|nil 觉醒状态
 ---@return number 觉醒总战力
 function AC.calcTotalCombatPower(heroId, awakening)

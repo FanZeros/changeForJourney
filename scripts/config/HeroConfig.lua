@@ -441,7 +441,7 @@ end
 
 --- 创建英雄战斗单位
 --- 参照 MonsterConfig.createMonster 的模式，使用 UnitAttributes 创建完整属性的英雄
----@param heroId number 英雄序号 (1~15, 16, 20~23)
+---@param heroId number 英雄序号 (1~19, 20~25)
 ---@param level number 英雄等级
 ---@param advBranch table|nil 转职分支 { first=number?, second=number? }
 ---@param awakening table|nil 觉醒数据 { [1]=true, [2]=true, [3]=true }

@@ -83,6 +83,7 @@ UrGachaConfig.Pool = {
     { quality = 2, type = "hero", heroId = 7,  weight = 100, stardustValue = 250 },
     { quality = 2, type = "hero", heroId = 8,  weight = 100, stardustValue = 250 },
     { quality = 2, type = "hero", heroId = 9,  weight = 100, stardustValue = 250 },
+    { quality = 2, type = "hero", heroId = 17, weight = 100, stardustValue = 250 },
     { quality = 3, type = "hero", heroId = 10, weight = 100, stardustValue = 1000 },
     { quality = 3, type = "hero", heroId = 11, weight = 100, stardustValue = 1000 },
     { quality = 3, type = "hero", heroId = 12, weight = 100, stardustValue = 1000 },

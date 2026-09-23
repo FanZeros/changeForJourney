@@ -28,7 +28,15 @@
 - [scope:project] Church 输入/名单、Blacksmith 输入、Talent onBeforeAttack/onDamageTaken 已抽成 bind 模块。TAL_BCS 必须 `getTAL_BCS()`
 - [scope:project] Blacksmith 上半绘制依赖大量局部 img/CARD 常量，勿盲目整段抽；结果转发可抽 `BlacksmithResults`
 - [scope:project] 不要把 `.project/i18n.json` 的 `enabled` 设为 true：自动提取会扫进 5800+ 梗名/剧情台词，构建会把玩家可见中文替换成 `t_xxx`。五语用 `scripts/core/I18n.lua` 运行时词表
-- [scope:project] 当前功能分支是 `feat/wheel-rightequip-i18n`，完成后 push 该分支，不要推 `workspace`
+- [scope:project] 当前开发分支是 `integrate/20260923`。完成后只 push 该分支，不要推 `workspace` 或其他分支
+- [scope:project] 不能取消/退出任务；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
 - [scope:project] 右键装备：不可穿 toast+轻点击音；已穿则 UNEQUIP；成功穿戴 play("install")+toast。提示走 `core/UiToast.lua`，横屏在 nvgEndFrame 前画
 - [scope:project] 全 UI 五语用 `core/I18n.installDrawHook()` 拦 nvgText 按中文原文查 `I18nDict`。梗名/剧情/信件不进词表。不要开引擎 i18n enabled=true
 - [scope:project] 主字体 `NotoSansCJKkr-Bold.otf`（OFL）。Resource Han Rounded CN-Heavy 是简体子集，韩文缺字。Pretendard / IBM Plex KR 中日也不全，五语不要单用它们
+- [scope:project] 用户上传的 `assets/video/se.mp4` 实际是 RPG Maker VX Ace 风格 SE ZIP（m4a+ogg）。游戏 SE 走 OGG + GameSFX 键名；替换时覆盖同名文件、保留路径。新英雄攻击音必须同时进 GameSFX + ProjectileSystem.CONFIGS + 投射物图，否则无声无特效
+- [scope:project] RPG Maker SE 包比原音效响；试听用 SettingsPanel `SFX_PACK_GAIN=0.05` 乘到 Effect 通道（过场/对话 blip 也走 Effect）。滑条仍是相对音量。BGM 不乘这个系数
+- [scope:project] 战斗 SE 不要用 >0.85s 的包条目（Starlight/Load/Wolf/Monster8/Magic8 等是技能咏唱不是普攻）。哈基米禁止 Cat，用短治疗/圣咏
+- [scope:project] `StageConfig.formatProgressDisplay` 必须用相对章节号（getRelativeChapter + stage），不要从 `entry.name` 抠 `1-1` 再拼 DIFF 前缀：高难名已是「困难·黑棘林道1-1」，会显示成「困难困难1-1」
+- [scope:project] SE 听感延迟两处：ButtonFeedback 在 trigger/松开才 playUIClick（应按下即播）；ProjectileSystem 在 spawn 就播远程音，飞 0.5s 才命中。远程/bezier/fly 改命中播，melee/lightning 仍出手播
+- [scope:project] 角色页「远征团」标题对齐详情页角色名 `MID_NAME_CY=995`（CharacterDetailDraw），不是贴 LIST_BG 顶边。总战力仍在 860（与「角色详情」同高）
+- [scope:project] 三行 HUD 行标签底条已在 workspace 暗黑化中去掉，不要为了加宽标签把黑条加回去

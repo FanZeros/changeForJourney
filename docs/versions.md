@@ -4,10 +4,19 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.33-integrate-20260923 | 2026-09-23 | 从 workspace 开 integrate/20260923，合入今天滚轮/i18n、四人角色/SE、未解锁职业标，以及 workspace923 的一键脚本修复。 |
+| v2.29.6-exp-text | 2026-09-23 | 详情页经验条在等级后显示当前/目标经验。 |
+| v2.29.5-roster-title | 2026-09-23 | 「远征团」对齐详情页角色名 Y=995（与点进去名字同位置）。 |
+| v2.29.4-se-latency | 2026-09-23 | UI 点击按下即播；远程攻击 SE 改命中时播，去掉听感延迟。 |
+| v2.29.3-stage-progress | 2026-09-23 | 修关卡进度文案：高难不再重复难度前缀；章节名去掉「困难·」。 |
 | v2.32-i18n-names-letter | 2026-09-23 | 补漏翻 + 角色名/称号/天赋/开场信五语（信达雅、不露真名）。I18nDictExtra。 |
+| v2.29.2-se-short | 2026-09-23 | 战斗 SE 去掉过长条目（阈值约 0.85s）；哈基米不用 Cat；音量 5%。 |
 | v2.31-noto-cjk-kr | 2026-09-23 | 主字体换成 Noto Sans CJK KR Bold（OFL），韩文可显示。对比图 `assets/image/font_compare_kr.png`。 |
+| v2.29.1-se-gain | 2026-09-23 | 新 SE 太响，Effect 通道压到原音量 10% 试听。 |
+| v2.29-se-pack | 2026-09-23 | 用 RPG Maker SE 包替换全部 UI/战斗音效；#18/#19/#24/#25 补独立攻击 SE。分支 feat/four-meme-heroes。 |
 | v2.30-i18n-nvg-hook | 2026-09-23 | 全 UI 接入：I18nDict 约 500 条 + nvgText 运行时查表；梗名/剧情不翻。标题语言改为左下弹出。 |
 | v2.29-i18n-rightequip-tune | 2026-09-23 | 扩 HUD/城镇/配装五语词表；右键不可穿提示、已穿卸下、音效+Toast。分支 `feat/wheel-rightequip-i18n`。 |
+| v2.28-four-meme-heroes | 2026-09-23 | 接入老六/哈基米/加载中/高ping战士（替代立绘）。分支 feat/four-meme-heroes。 |
 | v2.28-wheel-rightequip-i18n | 2026-09-23 | 滚轮补齐 + 右键快速装备 + 顶栏远征等级 + 五语切换。分支 `feat/wheel-rightequip-i18n` 已 push。 |
 | v2.27-workspace-integrate | 2026-09-22 | 整合今天三线到 workspace：overlays 星图剔除+CharacterPower、docs 套装/六契/1.5竖屏天赋树、rename 远征文案。已推 origin/workspace。 |
 | v2.26-rename-expedition | 2026-09-22 | 玩家可见文案：冒险等级→远征等级、冒险家→远征队员、冒险招募券→远征招募券、冒险日志/奖励→远征日志/奖励。内部键名不变。分支 `feat/rename-adventure-to-expedition`。 |

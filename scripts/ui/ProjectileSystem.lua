@@ -129,6 +129,25 @@ local CONFIGS = {
         type = "bezier", imgKey = "EF_ATK_23",
         imgW = 200, imgH = 200, duration = 0.65,
     },
+    -- ---- 玩梗新角色 18/19/24/25 ----
+    [18] = {
+        type = "melee", imgKey = "EF_ATK_18",
+        imgW = 200, imgH = 200, duration = 0.40,
+    },
+    [19] = {
+        type = "bezier", imgKey = "EF_ATK_19",
+        imgW = 200, imgH = 200, duration = 0.65,
+        trail = { 255, 210, 120 },
+    },
+    [24] = {
+        type = "melee", imgKey = "EF_ATK_24",
+        imgW = 200, imgH = 200, duration = 0.50,
+    },
+    [25] = {
+        type = "fly", imgKey = "EF_ATK_25",
+        imgW = 200, imgH = 200, duration = 0.70,
+        trail = { 80, 220, 180 },
+    },
 }
 
 -- ======================== 怪物投射物配置（字符串 key） ========================
@@ -858,6 +877,26 @@ function ProjectileSystem.hasMonsterProjectile(effectKey)
     return effectKey ~= nil and MONSTER_CONFIGS[effectKey] ~= nil
 end
 
+--- 近战/闪电出手即播；远程弹在命中时再播，避免飞到一半才听见
+local function playAtkSfxOnSpawn(cfg)
+    if not cfg or not cfg.imgKey then return end
+    local t = cfg.type
+    if t == "melee" or t == "lightning" then
+        GameSFX.play(cfg.imgKey)
+    end
+end
+
+local function playAtkSfxOnHit(proj)
+    if not proj or proj.sfxPlayed then return end
+    local cfg = proj.cfg
+    if not cfg or not cfg.imgKey then return end
+    local t = cfg.type
+    if t ~= "melee" and t ~= "lightning" then
+        GameSFX.play(cfg.imgKey)
+    end
+    proj.sfxPlayed = true
+end
+
 --- 通过特效 key 触发怪物投射物
 --- @param effectKey string 特效 key
 --- @param startX number 起点 X
@@ -871,8 +910,7 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
     local cfg = MONSTER_CONFIGS[effectKey]
     if not cfg then return end
 
-    -- 播放对应投射物音效
-    GameSFX.play(cfg.imgKey)
+    playAtkSfxOnSpawn(cfg)
 
     -- 近战 override：共用 key（如 EF_MS_13, EF_MS_7, EF_MS_47）被近战怪物使用时，
     -- 强制替换为 melee 行为（极快穿透）
@@ -946,8 +984,7 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
     local cfg = CONFIGS[heroId]
     if not cfg then return end
 
-    -- 播放对应投射物音效
-    GameSFX.play(cfg.imgKey)
+    playAtkSfxOnSpawn(cfg)
 
     -- melee 类型：按距离动态计算 hitRatio
     if cfg.type == "melee" then
@@ -1004,7 +1041,7 @@ function ProjectileSystem.spawnPierce(source, startX, startY, endX, endY, hitEve
     table.sort(hitEvents, function(a, b) return (a.atT or 0) < (b.atT or 0) end)
 
     local cfg = setmetatable({ type = "pierce" }, { __index = base })
-    if base.imgKey then GameSFX.play(base.imgKey) end
+    -- 穿透弹沿途命中才出声，避免出手即响、命中对不上
 
     local proj = {
         cfg          = cfg,
@@ -1027,8 +1064,7 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
     local cfg = SKILL_CONFIGS[heroId]
     if not cfg then return end
 
-    -- 播放对应投射物音效
-    GameSFX.play(cfg.imgKey)
+    playAtkSfxOnSpawn(cfg)
 
     local proj = {
         cfg      = cfg,
@@ -1079,8 +1115,7 @@ function ProjectileSystem.spawnTalent(talentProjKey, startX, startY, endX, endY,
     local cfg = TALENT_PROJ_CONFIGS[talentProjKey]
     if not cfg then return end
 
-    -- 播放对应投射物音效
-    GameSFX.play(cfg.imgKey)
+    playAtkSfxOnSpawn(cfg)
 
     local proj = {
         cfg      = cfg,
@@ -1131,6 +1166,7 @@ function ProjectileSystem.update(dt)
                   and proj.pierceEvents[proj.nextEventIdx].atT <= pt do
                 local ev = proj.pierceEvents[proj.nextEventIdx]
                 proj.nextEventIdx = proj.nextEventIdx + 1
+                playAtkSfxOnHit(proj)
                 if ev.onHit then
                     safeInvokeProjectileCallback("pierce-hit", ev.onHit)
                 end
@@ -1142,6 +1178,7 @@ function ProjectileSystem.update(dt)
         if not proj.arrived and not proj.hitResolved and proj.target and proj.target.hp and proj.target.hp <= 0 then
             proj.hitResolved = true
             proj.arrived = true
+            playAtkSfxOnHit(proj)
             if proj.onArrive then
                 safeInvokeProjectileCallback("onArrive(dead-target)", proj.onArrive)
             end
@@ -1170,6 +1207,7 @@ function ProjectileSystem.update(dt)
                 local continueFb = nil
                 if not proj.hitResolved then
                     proj.hitResolved = true
+                    playAtkSfxOnHit(proj)
                     if proj.onArrive then
                         continueFb = safeInvokeProjectileCallback("onArrive", proj.onArrive)
                     end

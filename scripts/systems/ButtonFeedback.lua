@@ -63,8 +63,9 @@ function M.trigger(key)
             t0 = time.elapsedTime,
             releaseT0 = time.elapsedTime,
         }
+        -- 无按下记录时仍播一次（拖拽触发等），避免完全无声
+        require("systems.GameSFX").playUIClick(2)
     end
-    require("systems.GameSFX").playUIClick(2)
 end
 
 --- 在按钮绘制前调用，检测命中并应用缩放变换
@@ -96,6 +97,8 @@ function M.begin(vg, key, cx, cy, w, h)
             releaseT0 = 0,
         }
         active[key] = info
+        -- 按下即播点击音，避免等松开才响（听感延迟）
+        require("systems.GameSFX").playUIClick(2)
     end
 
     -- Phase 1: 快速缩小

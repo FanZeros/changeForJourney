@@ -64,6 +64,11 @@ local SFX_DEFS = {
     EF_ATK_21    = { paths = { "audio/battle_sfx/EF_ATK_21.ogg" }, gain = 0.56 },  -- 亚历克斯·银色闪光
     EF_ATK_22    = { paths = { "audio/battle_sfx/EF_ATK_22.ogg" }, gain = 0.56 },  -- 赛拉·精灵使徒
     EF_ATK_23    = { paths = { "audio/battle_sfx/EF_ATK_23.ogg" }, gain = 0.56 },  -- 艾尔温·吟游诗人
+    -- 18/19/24/25 玩梗新角色
+    EF_ATK_18    = { paths = { "audio/battle_sfx/EF_ATK_18.ogg" }, gain = 0.56 },  -- 老六·蹲人
+    EF_ATK_19    = { paths = { "audio/battle_sfx/EF_ATK_19.ogg" }, gain = 0.56 },  -- 哈基米
+    EF_ATK_24    = { paths = { "audio/battle_sfx/EF_ATK_24.ogg" }, gain = 0.56 },  -- 加载中
+    EF_ATK_25    = { paths = { "audio/battle_sfx/EF_ATK_25.ogg" }, gain = 0.56 },  -- 高ping战士
     -- 怪物攻击
     EF_MS_1      = { paths = { "audio/battle_sfx/EF_MS_1.ogg"   }, gain = 0.56 },
     EF_MS_7      = { paths = { "audio/battle_sfx/EF_MS_7.ogg"   }, gain = 0.56 },
@@ -96,7 +101,7 @@ local scene_       = nil
 ---@type Node
 local sfxNode_     = nil
 local started_     = false
-local masterGain_  = 1.0   -- 主音量乘数（由 SettingsPanel 控制）
+local masterGain_  = 1.0   -- 主音量乘数（由 SettingsPanel 控制；Effect 通道另有 SFX_PACK_GAIN）
 
 -- 已加载的 Sound 资源：{ key -> Sound[] }
 local sounds_      = {}

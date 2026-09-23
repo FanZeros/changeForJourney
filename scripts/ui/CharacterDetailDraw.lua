@@ -886,8 +886,10 @@ function M.draw(vg)
         nvgRestore(vg)
     end
 
-    -- === 10) 等级文本 ===
-    local lvlText = "Lv." .. tostring(heroLevel)
+    -- === 10) 等级文本 + 当前经验/目标经验 ===
+    local curExp = math.floor(exp or 0)
+    local needExp = math.floor(maxExp or 0)
+    local lvlText = "Lv." .. tostring(heroLevel) .. "  " .. tostring(curExp) .. "/" .. tostring(needExp)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 28)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)

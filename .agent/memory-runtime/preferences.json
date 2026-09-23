@@ -6,8 +6,7 @@
   "never_push_workspace": true,
   "always_askuserquestion": true,
   "never_cancel_task": true,
-  "dev_branch": "feat/wheel-rightequip-i18n",
-  "scoped_preferences": {
+  "dev_branch": "integrate/20260923",  "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",
       "reference_system": "三层参考:角色原版卡面(锁长相)+基准构图图(锁构图)+全队画风板(锁画风)",
@@ -21,7 +20,8 @@
       "player_level_name": "远征等级",
       "hero_unit_name": "远征队员",
       "recruit_ticket_name": "远征招募券",
-      "parallel_sessions": "用户开多 agent 会话并行,注意文件覆盖"
+      "parallel_sessions": "用户开多 agent 会话并行,注意文件覆盖",
+      "se_source": "RPG Maker VX Ace 风格 SE 包（用户 se.mp4 ZIP），游戏用 ogg"
     }
   }
 }

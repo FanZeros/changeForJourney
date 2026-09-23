@@ -59,6 +59,18 @@ local SHOP_ITEMS = {
         icon = "image/角色图标/UI_icon_hero_3.png",
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
+    {
+        id = 20, name = "老六-碎片", quality = 3,
+        limitCycle = "daily", limitCount = -1, price = 15,
+        icon = "image/角色图标/UI_icon_hero_18.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
+    },
+    {
+        id = 21, name = "哈基米-碎片", quality = 3,
+        limitCycle = "daily", limitCount = -1, price = 15,
+        icon = "image/角色图标/UI_icon_hero_19.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
+    },
     -- R 碎片（品质4）
     {
         id = 5, name = "接化发掌门-碎片", quality = 4,
@@ -152,6 +164,12 @@ local SHOP_ITEMS = {
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
+        id = 22, name = "加载中-碎片", quality = 5,
+        limitCycle = "daily", limitCount = -1, price = 250,
+        icon = "image/角色图标/UI_icon_hero_24.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
+    },
+    {
         id = 101, name = "万剑归宗-碎片", quality = 6,
         limitCycle = "daily", limitCount = -1, price = 1125, rewardHeroId = 16,
         icon = "image/角色图标/UI_icon_hero_16.png",
@@ -161,6 +179,12 @@ local SHOP_ITEMS = {
         id = 103, name = "摘星星星人-碎片", quality = 6,
         limitCycle = "daily", limitCount = -1, price = 1125, rewardHeroId = 20,
         icon = "image/角色图标/UI_icon_hero_20.png",
+        costIcon = "image/货币道具/UI_icon_JGB_X.png",
+    },
+    {
+        id = 104, name = "高ping战士-碎片", quality = 6,
+        limitCycle = "daily", limitCount = -1, price = 1125, rewardHeroId = 25,
+        icon = "image/角色图标/UI_icon_hero_25.png",
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
 }
@@ -418,7 +442,8 @@ local SHARD_ITEM_HERO_ID = {
     [5] = 4, [6] = 5, [7] = 6, [8] = 7, [9] = 8, [10] = 9,
     [11] = 10, [12] = 11, [13] = 12, [14] = 13, [15] = 14, [16] = 15,
     [17] = 21, [18] = 22, [19] = 23,
-    [101] = 16, [103] = 20,
+    [20] = 18, [21] = 19, [22] = 24,
+    [101] = 16, [103] = 20, [104] = 25,
 }
 
 local function getShardHeroId(item)

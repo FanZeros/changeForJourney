@@ -14,9 +14,20 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`workspace`（已整合今天的 overlays / docs / rename；后续功能分支从 workspace 拉出）
+- **当前开发分支**：`feat/four-meme-heroes`（从 workspace 拉出；四人新角色已接入）
 
-## 上次做了什么（截至 2026-09-22 晚 整合）
+## 上次做了什么（截至 2026-09-23 四人新角色）
+
+- 拍板并实装四名玩梗角色（替代立绘）：
+  - #18 R 换面 **老六**（蹲人：开战 4 秒 0 仇恨，第一击必暴）
+  - #19 R 司仪 **哈基米 / 南北路多**（功德+1，满 5 清心减伤，不改死亡）
+  - #24 SSR 封门 **加载中**（受击写入缓冲条，满条/超时吐出粉碎伤）
+  - #25 UR 回响 **高ping战士**（普攻后再延迟 1.5s 打 45% 额外穿刺伤，10% 仇恨）
+- 卡池/酒馆碎片/觉醒/台词/天赋均已接；图像为替代物，后续可换正稿
+- 已 push `origin/feat/four-meme-heroes`
+- 二次核对补漏：酒馆碎片映射 20/21/22/104、星辉池补 #17、ETS 名称+粗暴叠层、AssetManifest 新图、玩法文档 25 人、图鉴 UR 色
+
+## 更早：截至 2026-09-22 晚 整合
 
 - 已把今天三线合进 `workspace` 并推送：
   1. `docs/equip-set-and-class-migration`（套装 P1 + 六契 + 1.5 竖屏天赋树，此前已在 workspace）

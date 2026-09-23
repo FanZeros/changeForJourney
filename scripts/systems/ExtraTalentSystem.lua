@@ -22,7 +22,9 @@ local NAMES = {
     [5] = "焊甲", [6] = "安可回路", [7] = "必杀库存", [8] = "仇册",
     [9] = "温泉本金", [10] = "门板", [11] = "斩影", [12] = "冰雕收藏",
     [13] = "分裂弹", [14] = "抄作业簿", [15] = "预存复活", [16] = "剑冢",
+    [17] = "水压图鉴", [18] = "草图鉴", [19] = "功德本金",
     [20] = "星门殖民", [21] = "氮气赛道", [22] = "课时", [23] = "护盾本金",
+    [24] = "缓存条", [25] = "丢包补偿",
 }
 
 ---@class ExtraTalentData
@@ -359,6 +361,18 @@ local function bruteEntries(heroId, data)
     end
     if heroId == 23 and data.shieldStacks > 0 then
         entries[#entries + 1] = { key = AD.ENERGY_SHIELD, flat = data.shieldStacks }
+    end
+    if heroId == 18 and data.stacks > 0 then
+        entries[#entries + 1] = { key = AD.CRIT_RATE, flat = data.stacks * 0.1 }
+    end
+    if heroId == 19 and data.stacks > 0 then
+        entries[#entries + 1] = { key = AD.SPI, flat = data.stacks * 0.05 }
+    end
+    if heroId == 24 and data.stacks > 0 then
+        entries[#entries + 1] = { key = AD.MAX_HP, flat = data.stacks }
+    end
+    if heroId == 25 and data.stacks > 0 then
+        entries[#entries + 1] = { key = AD.PHYS_ATK, flat = data.stacks * 0.3 }
     end
     return entries
 end
@@ -699,6 +713,12 @@ function ETS.onEnemyDeath(deadEnemy, allies, enemies)
     end
     if heroId == 22 then
         if n1 then extra.gatlingKills = extra.gatlingKills + 1; bump() end
+    end
+    if heroId == 18 or heroId == 19 or heroId == 24 then
+        if n1 then bump() end
+    end
+    if heroId == 25 then
+        if n1 then bump() end
     end
 
     commit(killer, extra)

@@ -1,7 +1,7 @@
 -- ============================================================================
 -- HeroConfig - 英雄角色配置数据表 + 工厂函数
 -- 数据来源: docs/配置文件/角色配置.txt
--- 包含: 20个英雄角色（品质/职业/六围/成长/天赋/攻击类型）
+-- 包含: 25个英雄角色（品质/职业/六围/成长/天赋/攻击类型；id 1–19、20–25，缺无）
 -- ============================================================================
 
 local AD = require("systems.AttributeDef")
@@ -64,7 +64,7 @@ local ATK_TYPE_MAP = {
 }
 
 -- ======================== 英雄配置表 ========================
--- id           : 英雄序号 (1~15, 16, 20~23)
+-- id           : 英雄序号 (1~19, 20~25)
 -- quality      : 品质 (1=R, 2=SR, 3=SSR, 4=UR)
 -- classId      : 职业 ID (对应 ClassConfig)
 -- title        : 称谓
@@ -313,6 +313,50 @@ HC.HEROES = {
         baseStats  = { str = 4.25,  agi = 12.75, int = 12.75, vit = 8.50,  luk = 8.50,  spi = 21.25 },
         growthStats = { str = 0.00,  agi = 0.63,  int = 0.63,  vit = 0.00,  luk = 0.00,  spi = 1.25 },
     },
+    [18] = {
+        quality = 1, classId = CC.ASSASSIN,
+        title = "草丛哲学家", name = "老六",
+        talentName = "蹲人", talentDesc = "开战4秒内攻击不产生仇恨。第一次攻击必定暴击，并额外复制目标护甲克制+0.05。",
+        talentId = "laoliu_camp",
+        gender = "male",
+        atkType = AD.ATK_SHADOW, atkInterval = 1.1, atkTargets = 1,
+        dmgSpread = 0.25, atkCoeff = 1.35,
+        baseStats  = { str = 7.50,  agi = 12.50, int = 3.75,  vit = 5.00,  luk = 12.50, spi = 3.75 },
+        growthStats = { str = 0.38,  agi = 0.75,  int = 0.00,  vit = 0.00,  luk = 0.75,  spi = 0.00 },
+    },
+    [19] = {
+        quality = 1, classId = CC.PRIEST,
+        title = "南北路多", name = "哈基米",
+        talentName = "功德+1", talentDesc = "每次成功治疗功德+1，满5层清空，给治疗目标3秒清心：受伤-18%。不改变死亡。",
+        talentId = "hakimi_merit",
+        gender = "female",
+        atkType = AD.ATK_HOLY, atkInterval = 2.1, atkTargets = 2,
+        dmgSpread = 0.12, atkCoeff = 1.20,
+        baseStats  = { str = 3.75,  agi = 5.00,  int = 7.50,  vit = 7.50,  luk = 5.00,  spi = 12.50 },
+        growthStats = { str = 0.00,  agi = 0.00,  int = 0.38,  vit = 0.38,  luk = 0.00,  spi = 0.75 },
+    },
+    [24] = {
+        quality = 3, classId = CC.KNIGHT,
+        title = "转圈暂存", name = "加载中",
+        talentName = "缓冲圈", talentDesc = "受到伤害的25%写入加载条（容量=最大生命10%）。条满或6秒未写入时，对当前目标打出条内粉碎伤害并产仇恨。",
+        talentId = "loading_buffer",
+        gender = "male",
+        atkType = AD.ATK_CRUSH, atkInterval = 2.4, atkTargets = 1,
+        dmgSpread = 0.18, atkCoeff = 4.40,
+        baseStats  = { str = 12.75, agi = 4.25,  int = 4.25,  vit = 21.25, luk = 8.50,  spi = 8.50 },
+        growthStats = { str = 0.63,  agi = 0.00,  int = 0.00,  vit = 1.25,  luk = 0.00,  spi = 0.63 },
+    },
+    [25] = {
+        quality = 4, classId = CC.RANGER,
+        title = "999ms", name = "高ping战士",
+        talentName = "高延迟", talentDesc = "普攻命中后再延迟1.5秒打出45%额外穿刺伤害（10%仇恨）。若结算时目标生命百分比低于出手时，该延迟伤害+35%。",
+        talentId = "highping_lag",
+        gender = "male",
+        atkType = AD.ATK_PIERCE, atkInterval = 1.6, atkTargets = 1,
+        dmgSpread = 0.12, atkCoeff = 7.20,
+        baseStats  = { str = 14.67, agi = 24.44, int = 9.78,  vit = 14.67, luk = 14.67, spi = 9.78 },
+        growthStats = { str = 0.60,  agi = 1.20,  int = 0.00,  vit = 0.60,  luk = 0.60,  spi = 0.00 },
+    },
 }
 
 -- ======================== 伤害类型数据（角色配置.txt 伤害主类型 + 伤害次类型） ========================
@@ -341,6 +385,10 @@ local DMG_TYPE_DATA = {
     [21] = { HC.DMG_PHYSICAL, "斩击" },   -- 闪电卖鸡
     [22] = { HC.DMG_MAGICAL,  "闪电" },   -- 小黑子
     [23] = { HC.DMG_HEALING,  "神圣" },   -- 真布诗人
+    [18] = { HC.DMG_PHYSICAL, "暗影" },   -- 老六
+    [19] = { HC.DMG_HEALING,  "治疗" },   -- 哈基米
+    [24] = { HC.DMG_PHYSICAL, "粉碎" },   -- 加载中
+    [25] = { HC.DMG_PHYSICAL, "穿刺" },   -- 高ping战士
 }
 
 for id, dmgData in pairs(DMG_TYPE_DATA) do
@@ -376,6 +424,10 @@ local WEARABLE_DATA = {
     [21] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 闪电卖鸡(战士)
     [22] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 小黑子(法师)
     [23] = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 真布诗人(牧师)
+    [18] = { w = {"细剑","匕首","单手剑"},                    o = {"轻盾"} },             -- 老六(换面人)
+    [19] = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 哈基米(司仪)
+    [24] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"重盾","圣物"} },       -- 加载中(封门人)
+    [25] = { w = {"弓箭","单手弩"},                           o = {"轻盾"} },             -- 高ping战士(回响客)
 }
 
 for id, wData in pairs(WEARABLE_DATA) do
@@ -389,7 +441,7 @@ end
 
 --- 创建英雄战斗单位
 --- 参照 MonsterConfig.createMonster 的模式，使用 UnitAttributes 创建完整属性的英雄
----@param heroId number 英雄序号 (1~15, 16, 20~23)
+---@param heroId number 英雄序号 (1~19, 20~25)
 ---@param level number 英雄等级
 ---@param advBranch table|nil 转职分支 { first=number?, second=number? }
 ---@param awakening table|nil 觉醒数据 { [1]=true, [2]=true, [3]=true }

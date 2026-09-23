@@ -209,6 +209,9 @@ function TM.onDamageDealt(damageSource, damage, includeBaseThreat, threatScale)
     end
 
     local amount = ((includeBaseThreat and baseThreat or 0) + damage * dmgCoeff) * threatMult * threatScale
+    if damageSource._laoliuStealthLeft and damageSource._laoliuStealthLeft > 0 then
+        return
+    end
 
     -- 回响客基础职不再减仇恨（改由回响弹本身 10% 仇恨）。保留 hasKnightOrWarrior 给塔词条 ranger_support。
 

@@ -58,11 +58,15 @@ GachaConfig.Pool = {
     { quality = 0, type = "shard", heroId = 1,  amount = 1, weight = 100, stardustValue = 5 },  -- 大狗嚼碎片
     { quality = 0, type = "shard", heroId = 2,  amount = 1, weight = 100, stardustValue = 5 },  -- 黄桃龙碎片
     { quality = 0, type = "shard", heroId = 3,  amount = 1, weight = 100, stardustValue = 5 },  -- 叮咚鸡碎片
+    { quality = 0, type = "shard", heroId = 18, amount = 1, weight = 100, stardustValue = 5 },  -- 老六碎片
+    { quality = 0, type = "shard", heroId = 19, amount = 1, weight = 100, stardustValue = 5 },  -- 哈基米碎片
 
     -- R 品质（3 角色 + 6 碎片 = 9 项）
     { quality = 1, type = "hero",  heroId = 1,  weight = 100, stardustValue = 50 },  -- 大狗嚼
     { quality = 1, type = "hero",  heroId = 2,  weight = 100, stardustValue = 50 },  -- 黄桃龙
     { quality = 1, type = "hero",  heroId = 3,  weight = 100, stardustValue = 50 },  -- 叮咚鸡
+    { quality = 1, type = "hero",  heroId = 18, weight = 100, stardustValue = 50 },  -- 老六
+    { quality = 1, type = "hero",  heroId = 19, weight = 100, stardustValue = 50 },  -- 哈基米
     { quality = 1, type = "shard", heroId = 4,  amount = 1, weight = 100, stardustValue = 25 },  -- 接化发掌门碎片
     { quality = 1, type = "shard", heroId = 5,  amount = 1, weight = 100, stardustValue = 25 },  -- 叠甲怪碎片
     { quality = 1, type = "shard", heroId = 6,  amount = 1, weight = 100, stardustValue = 25 },  -- 阿姨压碎片
@@ -88,6 +92,7 @@ GachaConfig.Pool = {
     { quality = 2, type = "shard", heroId = 21, amount = 1, weight = 100, stardustValue = 100 },  -- 闪电卖鸡碎片
     { quality = 2, type = "shard", heroId = 22, amount = 1, weight = 100, stardustValue = 100 },  -- 小黑子碎片
     { quality = 2, type = "shard", heroId = 23, amount = 1, weight = 100, stardustValue = 100 },  -- 真布诗人碎片
+    { quality = 2, type = "shard", heroId = 24, amount = 1, weight = 100, stardustValue = 100 },  -- 加载中碎片
 
     -- SSR 品质（9 角色）
     { quality = 3, type = "hero", heroId = 10, weight = 100, stardustValue = 1000 }, -- 铁憨憨
@@ -99,6 +104,7 @@ GachaConfig.Pool = {
     { quality = 3, type = "hero", heroId = 21, weight = 100, stardustValue = 1000 }, -- 闪电卖鸡
     { quality = 3, type = "hero", heroId = 22, weight = 100, stardustValue = 1000 }, -- 小黑子
     { quality = 3, type = "hero", heroId = 23, weight = 100, stardustValue = 1000 }, -- 真布诗人
+    { quality = 3, type = "hero", heroId = 24, weight = 100, stardustValue = 1000 }, -- 加载中
 }
 
 -- ======================== 预计算：按品质分组 + 总权重 ========================

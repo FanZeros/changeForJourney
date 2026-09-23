@@ -25,12 +25,16 @@ function M.bind(deps)
     local isHighestThreat = deps.isHighestThreat
     local findLivingElwyn = deps.findLivingElwyn
     local tryElwynInvulnOnEsBreak = deps.tryElwynInvulnOnEsBreak
+    local onFourNewUpdate = deps.onFourNewUpdate
 
     local function update(dt, allies, enemies, ctx)
     local TAL_BCS = getTAL_BCS()
     local TM = require("systems.ThreatManager")
     TAL_BCS.dealDamage = ctx and ctx.dealDamage
     ETS.update(dt)
+    if onFourNewUpdate then
+        onFourNewUpdate(dt, allies, enemies, ctx)
+    end
 
     for _, ally in ipairs(allies) do
         if ally.hp > 0 then

@@ -23,6 +23,9 @@ function M.bind(deps)
         if damage <= 0 then return damage end
 
         if not isTargetAlly then return damage end
+        if target._hakimiWard and (target._hakimiWard.t or 0) > 0 then
+            damage = math.floor(damage * (1 - (target._hakimiWard.red or 0.18)) + 0.5)
+        end
 
         damage = ETS.absorbWithIceStatue(target, damage, TAL_BCS.bEnemies)
         if damage <= 0 then return 0 end

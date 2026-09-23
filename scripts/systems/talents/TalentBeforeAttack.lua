@@ -36,6 +36,7 @@ function M.bind(deps)
     local isHighestThreat = deps.isHighestThreat
     local isMelissaStarGateAttackSourceActive = deps.isMelissaStarGateAttackSourceActive
     local updateMelissaStarGate = deps.updateMelissaStarGate
+    local onFourNewBeforeAttack = deps.onFourNewBeforeAttack
 
     local function onBeforeAttack(attacker)
         local TAL_BCS = getTAL_BCS()
@@ -45,6 +46,10 @@ function M.bind(deps)
             return
         end
         local heroId = s.heroId
+
+        if onFourNewBeforeAttack then
+            onFourNewBeforeAttack(attacker, s)
+        end
 
         -- === 原有英雄天赋 ===
 

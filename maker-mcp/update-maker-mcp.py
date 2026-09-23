@@ -25,6 +25,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 MAKER_PKG = "@taptap/maker"
@@ -92,24 +93,58 @@ def maker_argv(args: list[str], json_out: bool) -> list[str]:
     return [npx] + inner
 
 
-def maker_cmd(args: list[str], json_out: bool = True) -> subprocess.CompletedProcess:
+def maker_cmd(args: list[str], json_out: bool = True, timeout: int = 180) -> subprocess.CompletedProcess:
+    """Run taptap-maker and stream logs so the window does not freeze on the $ line."""
     cmd = maker_argv(args, json_out)
     env = os.environ.copy()
-    env.setdefault("npm_config_fetch_retries", "3")
-    log("$ " + " ".join(cmd))
+    env.setdefault("npm_config_fetch_retries", "2")
+    env.setdefault("npm_config_fund", "false")
+    env.setdefault("npm_config_audit", "false")
+    env.setdefault("npm_config_update_notifier", "false")
+    env["CI"] = "1"
+    shown = subprocess.list2cmdline(cmd) if sys.platform == "win32" else " ".join(cmd)
+    log("$ " + shown)
+    log("    npm 日志会往下刷。本步最多 %s 秒，超时就停，不会一直挂着。" % timeout)
     try:
-        return subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=str(ROOT),
             env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
             encoding="utf-8",
             errors="replace",
-            capture_output=True,
+            bufsize=1,
         )
     except OSError as exc:
-        die("启动 npx 失败: %s\n命令: %s" % (exc, " ".join(cmd)))
+        die("启动 npx 失败: %s\n命令: %s" % (exc, shown))
 
+    chunks: list[str] = []
+
+    def _read() -> None:
+        if proc.stdout is None:
+            return
+        for line in proc.stdout:
+            chunks.append(line)
+            print(line, end="", flush=True)
+
+    reader = threading.Thread(target=_read, daemon=True)
+    reader.start()
+    try:
+        code = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        reader.join(2)
+        log("TIMEOUT: 本步超过 %s 秒，已杀掉。多半是 npm 下载 @taptap/maker 卡住。" % timeout)
+        return subprocess.CompletedProcess(cmd, 124, "".join(chunks), "TIMEOUT")
+    reader.join(3)
+    return subprocess.CompletedProcess(cmd, code, "".join(chunks), "")
 
 def parse_json_tail(text: str):
     text = (text or "").strip()
@@ -125,10 +160,10 @@ def parse_json_tail(text: str):
         return None
 
 
-def run_step(title: str, args: list[str], allow_fail: bool = False) -> dict:
+def run_step(title: str, args: list[str], allow_fail: bool = False, timeout: int = 180) -> dict:
     log("")
     log("==> " + title)
-    proc = maker_cmd(args)
+    proc = maker_cmd(args, timeout=timeout)
     combined = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
     if combined:
         log(combined[-4000:])
@@ -176,7 +211,17 @@ def main() -> int:
     project = find_project_dir(args.target_dir)
     log("项目目录: %s" % project)
     log("Maker 包: %s@%s" % (MAKER_PKG, MAKER_VER))
+    log("本机预览，不走云端 Build。npm 下载时日志会往下刷，不会再停在 $ 那一行没动静。")
     check_node()
+    if args.preview or args.start:
+        if not is_bound(project):
+            die(
+                "找不到 .maker-mcp/config.json，本地窗口开不了。"
+                "先在项目根绑定一次（要登录），再重跑 --start：\n"
+                "  npx -y --package %s@%s taptap-maker init --target-dir \"%s\""
+                % (MAKER_PKG, MAKER_VER, project)
+            )
+        log("已绑定 Maker 项目，--start 会在升级后安装 Runtime 并开窗口。")
 
     if args.verify:
         run_step("校验 MCP self runtime", ["mcp", "verify"])
@@ -194,6 +239,7 @@ def main() -> int:
             "升级 Maker MCP (%s)" % ide,
             ["upgrade", "--ide", ide, "--target-dir", str(project)],
             allow_fail=True,
+            timeout=120,
         )
         installs = (row or {}).get("mcp_install") or []
         result["mcp_install"].extend(installs)
@@ -210,8 +256,8 @@ def main() -> int:
         log("WARN: 所有 IDE 的 upgrade 都失败了，继续走 mcp install / verify")
 
     # 2) 再跑一次 install，确保 self runtime 落地
-    run_step("安装 MCP self runtime", ["mcp", "install"], allow_fail=True)
-    run_step("校验 MCP", ["mcp", "verify"], allow_fail=True)
+    run_step("安装 MCP self runtime", ["mcp", "install"], allow_fail=True, timeout=180)
+    run_step("校验 MCP", ["mcp", "verify"], allow_fail=True, timeout=90)
 
     bound = is_bound(project)
     log("")
@@ -227,12 +273,14 @@ def main() -> int:
         run_step(
             "安装本机游戏 Runtime（~/.taptap-maker/runtime）",
             ["preview", "install", "--target-dir", str(project)],
+            timeout=600,
         )
 
     if args.start:
         run_step(
             "启动本地预览窗口（不远端构建）",
             ["preview", "start", "--target-dir", str(project)],
+            timeout=180,
         )
         log("\n窗口已拉起。改完 scripts/ 后执行：")
         log("  npx -y --package %s@%s taptap-maker preview refresh --target-dir %s --json"

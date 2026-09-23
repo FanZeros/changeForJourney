@@ -47,3 +47,17 @@ npx -y --package @taptap/maker@0.0.34 taptap-maker preview start --target-dir <�
 ```bash
 npx -y @taptap/maker init
 ```
+
+## 窗口停在 upgrade 那一行
+
+`--start` 的第一条命令是 `taptap-maker upgrade`，会先用 npx 下载 `@taptap/maker@0.0.34`。
+旧脚本用 `capture_output` 把 npm 日志吃掉，窗口就像卡死在 `$ ... taptap-maker upgrade`。
+这不是云端 Build。现在日志会直接刷出来，单步超过时限会自己停并打印 TIMEOUT。
+
+若立刻报找不到 `.maker-mcp/config.json`：先在项目根执行一次
+
+```bat
+npx -y --package @taptap/maker@0.0.34 taptap-maker init
+```
+
+绑定（要登录）后再 `--start`。

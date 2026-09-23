@@ -4,6 +4,8 @@ REM   double-click              = upgrade MCP only
 REM   update-maker-mcp.bat --preview
 REM   update-maker-mcp.bat --start
 setlocal
+echo Local preview helper. Not a cloud build. Leave this window open.
+echo npm logs print below. If it sits with no new lines for 2 minutes, paste from ==> to the end.
 cd /d "%~dp0\.."
 chcp 65001 >nul
 set PYTHONUTF8=1

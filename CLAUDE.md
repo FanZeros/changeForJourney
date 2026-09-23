@@ -23,6 +23,8 @@
 - 右键点击装备格子快速穿戴（配装页 / 装备背包 / 战斗区覆盖背包）
 - 左上角 TopBar 原昵称位改为「远征等级 LV.n」
 - 运行时五语：`scripts/core/I18n.lua`（zh_CN/zh_TW/en/ja/ko）；标题页左下 + 设置页语言芯片；语言写入 `settings_volume.json`
+- 词表已扩到 HUD/城镇页名/配装按钮/装备页签；Toast=`core/UiToast.lua`
+- 右键装备：不可穿 toast「无法穿戴」+ 轻点击音；已穿则卸下；成功穿戴 `install` 音 + toast
 - **不要开** `.project/i18n.json enabled=true`：自动提取会扫进 5800+ 梗名/剧情，构建会把玩家可见中文打成 t_xxx
 
 ## 更早：截至 2026-09-22 晚 整合

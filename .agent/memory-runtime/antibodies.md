@@ -29,3 +29,4 @@
 - [scope:project] Blacksmith 上半绘制依赖大量局部 img/CARD 常量，勿盲目整段抽；结果转发可抽 `BlacksmithResults`
 - [scope:project] 不要把 `.project/i18n.json` 的 `enabled` 设为 true：自动提取会扫进 5800+ 梗名/剧情台词，构建会把玩家可见中文替换成 `t_xxx`。五语用 `scripts/core/I18n.lua` 运行时词表
 - [scope:project] 当前功能分支是 `feat/wheel-rightequip-i18n`，完成后 push 该分支，不要推 `workspace`
+- [scope:project] 右键装备：不可穿 toast+轻点击音；已穿则 UNEQUIP；成功穿戴 play("install")+toast。提示走 `core/UiToast.lua`，横屏在 nvgEndFrame 前画

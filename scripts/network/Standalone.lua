@@ -75,18 +75,6 @@ local SignInPanel        = require("ui.SignInPanel")
 
 local Standalone = {}
 
--- [LSP 前向声明] 横屏事件处理函数与截图验收钩子（实现于文件后部；先声明避免 usage-before-def 报错）
-HandleNanoVGRenderHorizon = nil
-HandleMouseButtonDownHorizon = nil
-HandleMouseMoveHorizon = nil
-HandleMouseButtonUpHorizon = nil
-HandleTouchBeginHorizon = nil
-HandleTouchMoveHorizon = nil
-HandleTouchEndHorizon = nil
-HandleMouseWheelHorizon = nil
-H_AUTO_TAB = false
-H_AUTO_OPEN_PANEL = false
-
 local localBridgeReady_ = false
 
 local function localSendAction(action, params)

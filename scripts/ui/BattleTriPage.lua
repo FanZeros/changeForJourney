@@ -184,7 +184,6 @@ function BattleTriPage.drawL0(vg, logicalW, logicalH)
 end
 
 --- L1 行内容背景垫底层（clip 到框内矩形; 锁定行加暗罩）——绘制于 L0 之前
---- [L0样式图] 行内改为纯色 #1E2430 平涂（去森林/骨场/深渊贴图）
 function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
     BattleTriPage.init(vg)
     local BattleScene = require("ui.BattleScene")
@@ -193,10 +192,14 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
         local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
         nvgSave(vg)
         nvgScissor(vg, ix, iy, iw, ih)
-        -- 纯色平涂 #1E2430
+        -- L1 cover-fit
+        local s = math.max(iw / 1896, ih / 720)
+        local dw, dh = 1896 * s, 720 * s
+        local paint = nvgImagePattern(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5,
+            dw, dh, 0, imgL1[row], 1.0)
         nvgBeginPath(vg)
         nvgRect(vg, ix, iy, iw, ih)
-        nvgFillColor(vg, nvgRGBA(0x1E, 0x24, 0x30, 255))
+        nvgFillPaint(vg, paint)
         nvgFill(vg)
         if row > unlocked then
             nvgBeginPath(vg)

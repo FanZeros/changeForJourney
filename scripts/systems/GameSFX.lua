@@ -101,7 +101,7 @@ local scene_       = nil
 ---@type Node
 local sfxNode_     = nil
 local started_     = false
-local masterGain_  = 1.0   -- 主音量乘数（由 SettingsPanel 控制；Effect 通道另有 10% 包音量系数）
+local masterGain_  = 1.0   -- 主音量乘数（由 SettingsPanel 控制；Effect 通道另有 SFX_PACK_GAIN）
 
 -- 已加载的 Sound 资源：{ key -> Sound[] }
 local sounds_      = {}

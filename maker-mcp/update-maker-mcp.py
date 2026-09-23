@@ -49,11 +49,21 @@ def which_node() -> str:
     return node
 
 
-def which_npx() -> str:
+def npx_js() -> str:
+    """npx.cmd 会弹黑窗；直接用 node 跑 npm 自带的 npx-cli.js。"""
+    node = Path(which_node()).resolve()
+    candidates = [
+        node.parent / "node_modules" / "npm" / "bin" / "npx-cli.js",
+        node.parent.parent / "lib" / "node_modules" / "npm" / "bin" / "npx-cli.js",
+        node.parent / "npx-cli.js",
+    ]
+    for p in candidates:
+        if p.is_file():
+            return str(p)
     npx = shutil.which("npx")
-    if not npx:
-        die("找不到 npx（应随 Node.js 安装，并加入 PATH）")
-    return npx
+    if npx:
+        return npx
+    die("找不到 npx-cli.js / npx（应随 Node.js 安装）")
 
 
 def check_node() -> None:
@@ -65,20 +75,21 @@ def check_node() -> None:
     log("Node %s  (%s)" % (out, node))
     if major < 18:
         die("需要 Node.js >= 18，当前 %s" % out)
-    log("npx     (%s)" % which_npx())
+    log("npx-cli (%s)" % npx_js())
 
 
 def maker_argv(args: list[str], json_out: bool) -> list[str]:
-    inner = [
-        which_npx(), "-y", "--package", "%s@%s" % (MAKER_PKG, MAKER_VER),
-        "taptap-maker",
-    ] + list(args)
+    npx = npx_js()
+    inner = ["-y", "--package", "%s@%s" % (MAKER_PKG, MAKER_VER), "taptap-maker"]
+    inner += list(args)
     if json_out and "--json" not in args:
         inner.append("--json")
-    # Windows 上 npx 是 npx.cmd，CreateProcess 不能直接起 .cmd
+    # Windows：优先 node + npx-cli.js，避免 cmd /c npx.cmd 弹四五个黑窗
+    if npx.lower().endswith(".js"):
+        return [which_node(), npx] + inner
     if sys.platform == "win32":
-        return ["cmd", "/c"] + inner
-    return inner
+        return ["cmd", "/c", npx] + inner
+    return [npx] + inner
 
 
 def maker_cmd(args: list[str], json_out: bool = True) -> subprocess.CompletedProcess:

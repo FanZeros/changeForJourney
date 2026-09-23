@@ -312,10 +312,16 @@ function Standalone.Start()
         return handle
     end
 
-    -- 3. Font
-    fontNormal = nvgCreateFont(vg, "sans", "Fonts/ResourceHanRoundedCN-Heavy.ttf")
+    -- 3. Font：Noto Sans CJK KR Bold（OFL，覆盖中日韩英；旧圆体 CN 无韩文）
+    fontNormal = nvgCreateFont(vg, "sans", "Fonts/NotoSansCJKkr-Bold.otf")
+    if fontNormal < 0 then
+        print("[Standalone] WARN: NotoSansCJKkr-Bold.otf load failed, fallback rounded CN")
+        fontNormal = nvgCreateFont(vg, "sans", "Fonts/ResourceHanRoundedCN-Heavy.ttf")
+    end
     if fontNormal < 0 then
         print("[Standalone] ERROR: font load failed")
+    else
+        print("[Standalone] font OK id=" .. tostring(fontNormal))
     end
 
     -- 4. Layout

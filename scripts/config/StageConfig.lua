@@ -344,8 +344,10 @@ for _, s in ipairs(SC.STAGES) do
         end
         chapterIndex[s.chapter][#chapterIndex[s.chapter] + 1] = s
         if not chapterNames[s.chapter] then
-            local base = s.name:match("^(.-)%d+%-%d+$")
-            chapterNames[s.chapter] = base or s.name
+            local base = s.name:match("^(.-)%d+%-%d+$") or s.name
+            -- 高难度名带「困难·/折磨II·」前缀，章节标签只留地名
+            base = base:gsub("^.-·", "")
+            chapterNames[s.chapter] = base
         end
     end
 end
@@ -703,15 +705,17 @@ local DIFF_DISPLAY_NAMES = {
 ---@return string
 function SC.formatProgressDisplay(stageId)
     if not stageId or stageId == 0 then return "普通1-1" end
-    local entry = idIndex[stageId]
+    local entry = idIndex[tonumber(stageId)]
     if not entry then return "普通1-1" end
     if SC.isTerminalTemple(stageId) then
         return entry.name
     end
-    local stageNum = entry.name:match("(%d+%-%d+)$")
-    if not stageNum then return entry.name end
+    -- 高难度关卡名已带「困难·黑棘林道1-1」，不能再从 name 抠 1-1 去拼前缀（会变成 困难困难1-1）
+    local rel = SC.getRelativeChapter(entry.chapter or 0)
+    local st = entry.stage or 1
+    if rel < 1 then rel = 1 end
     local prefix = DIFF_DISPLAY_NAMES[SC.getDifficulty(stageId)] or "普通"
-    return prefix .. stageNum
+    return prefix .. tostring(rel) .. "-" .. tostring(st)
 end
 
 ---@param difficulty string

@@ -30,3 +30,4 @@
 - [scope:project] 用户上传的 `assets/video/se.mp4` 实际是 RPG Maker VX Ace 风格 SE ZIP（m4a+ogg）。游戏 SE 走 OGG + GameSFX 键名；替换时覆盖同名文件、保留路径。新英雄攻击音必须同时进 GameSFX + ProjectileSystem.CONFIGS + 投射物图，否则无声无特效
 - [scope:project] RPG Maker SE 包比原音效响；试听用 SettingsPanel `SFX_PACK_GAIN=0.05` 乘到 Effect 通道（过场/对话 blip 也走 Effect）。滑条仍是相对音量。BGM 不乘这个系数
 - [scope:project] 战斗 SE 不要用 >0.85s 的包条目（Starlight/Load/Wolf/Monster8/Magic8 等是技能咏唱不是普攻）。哈基米禁止 Cat，用短治疗/圣咏
+- [scope:project] `StageConfig.formatProgressDisplay` 必须用相对章节号（getRelativeChapter + stage），不要从 `entry.name` 抠 `1-1` 再拼 DIFF 前缀：高难名已是「困难·黑棘林道1-1」，会显示成「困难困难1-1」

@@ -286,7 +286,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             stageText = string.format("【小队%d】待解锁", row)
         end
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, ix + 14, iy + 8, 360, 34, 8)
+        nvgRoundedRect(vg, ix + 14, iy + 8, 460, 34, 8)
         nvgFillColor(vg, nvgRGBA(16, 18, 28, 200))
         nvgFill(vg)
         nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))

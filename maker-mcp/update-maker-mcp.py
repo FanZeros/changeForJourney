@@ -49,29 +49,55 @@ def which_node() -> str:
     return node
 
 
+def which_npx() -> str:
+    npx = shutil.which("npx")
+    if not npx:
+        die("找不到 npx（应随 Node.js 安装，并加入 PATH）")
+    return npx
+
+
 def check_node() -> None:
     node = which_node()
-    out = subprocess.check_output([node, "-v"], text=True).strip().lstrip("v")
+    out = subprocess.check_output(
+        [node, "-v"], text=True, encoding="utf-8", errors="replace"
+    ).strip().lstrip("v")
     major = int(out.split(".")[0])
     log("Node %s  (%s)" % (out, node))
     if major < 18:
         die("需要 Node.js >= 18，当前 %s" % out)
-    if not shutil.which("npx"):
-        die("找不到 npx（应随 Node.js 安装）")
+    log("npx     (%s)" % which_npx())
+
+
+def maker_argv(args: list[str], json_out: bool) -> list[str]:
+    inner = [
+        which_npx(), "-y", "--package", "%s@%s" % (MAKER_PKG, MAKER_VER),
+        "taptap-maker",
+    ] + list(args)
+    if json_out and "--json" not in args:
+        inner.append("--json")
+    # Windows 上 npx 是 npx.cmd，CreateProcess 不能直接起 .cmd
+    if sys.platform == "win32":
+        return ["cmd", "/c"] + inner
+    return inner
 
 
 def maker_cmd(args: list[str], json_out: bool = True) -> subprocess.CompletedProcess:
-    cmd = [
-        "npx", "-y", "--package", "%s@%s" % (MAKER_PKG, MAKER_VER),
-        "taptap-maker",
-    ] + args
-    if json_out and "--json" not in args:
-        cmd.append("--json")
+    cmd = maker_argv(args, json_out)
     env = os.environ.copy()
-    # 本机常见代理；没有则忽略
     env.setdefault("npm_config_fetch_retries", "3")
     log("$ " + " ".join(cmd))
-    return subprocess.run(cmd, cwd=str(ROOT), env=env, text=True)
+    try:
+        return subprocess.run(
+            cmd,
+            cwd=str(ROOT),
+            env=env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+        )
+    except OSError as exc:
+        die("启动 npx 失败: %s\n命令: %s" % (exc, " ".join(cmd)))
 
 
 def parse_json_tail(text: str):
@@ -92,21 +118,17 @@ def run_step(title: str, args: list[str], allow_fail: bool = False) -> dict:
     log("")
     log("==> " + title)
     proc = maker_cmd(args)
-    data = parse_json_tail(proc.stdout or "")
+    combined = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+    if combined:
+        log(combined[-4000:])
+    data = parse_json_tail(combined)
     if proc.returncode != 0:
-        if proc.stdout:
-            log(proc.stdout[-2000:])
-        if proc.stderr:
-            log(proc.stderr[-2000:])
         if allow_fail:
             log("WARN: %s 失败（exit %s），继续" % (title, proc.returncode))
             return data or {"ok": False, "exit": proc.returncode}
         die("%s 失败（exit %s）" % (title, proc.returncode))
     if data:
         log(json.dumps(data, ensure_ascii=False, indent=2)[:2000])
-    else:
-        if proc.stdout:
-            log(proc.stdout[-1500:])
     return data or {"ok": True}
 
 

@@ -22,6 +22,7 @@ local isOpen_   = false
 local timer_    = 0      -- 打开以来的累计时间（驱动动画）
 local fadeOut_  = false  -- 是否正在淡出
 local fadeA_    = 1.0    -- 淡出透明度 1→0
+local langOpen_ = false  -- 左下语言弹出层
 local imgLogo_  = -1     -- image/界面底板/标题与加载/UI_LOGO_TM.png（1920×1080 透明画布）
 local imgGate_  = -1     -- image/界面底板/标题与加载/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
 
@@ -58,6 +59,7 @@ function DarkTitleScreen.open()
     timer_   = 0
     fadeOut_ = false
     fadeA_   = 1.0
+    langOpen_ = false
     print("[DarkTitleScreen] open")
 end
 
@@ -86,6 +88,7 @@ function DarkTitleScreen.handleTap()
         return
     end
     fadeOut_ = true
+    langOpen_ = false
     print("[DarkTitleScreen] tap → fade out")
 end
 
@@ -198,55 +201,96 @@ function DarkTitleScreen.draw(vg, w, h)
         nvgText(vg, w * 0.5, h * 0.78, I18n.t("tap_continue"), nil)
     end
 
-    -- 标题页语言切换（左下）
-    local chipW, chipH, gap = 92, 36, 8
-    local x0 = 24
-    local y0 = h - 24 - chipH
-    DarkTitleScreen._langHits = {}
+    -- 标题页语言：左下角一颗按钮，点开上弹列表
+    local btnW = math.max(132, math.min(w * 0.16, 176))
+    local btnH = math.max(36, math.min(h * 0.05, 44))
+    local x0 = 20
+    local y0 = h - 20 - btnH
     local cur = I18n.get()
-    for i, lang in ipairs(I18n.LANGS) do
-        local x = x0 + (i - 1) * (chipW + gap)
-        local on = lang.id == cur
+    local curLabel = I18n.displayName(cur)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, x0, y0, btnW, btnH, 10)
+    nvgFillColor(vg, nvgRGBA(20, 16, 12, 180 * A))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 200 * A))
+    nvgStrokeWidth(vg, 1.5)
+    nvgStroke(vg)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, math.max(14, math.min(w * 0.016, 20)))
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 230 * A))
+    nvgText(vg, x0 + btnW * 0.5, y0 + btnH * 0.5, curLabel, nil)
+    DarkTitleScreen._langBtn = { x = x0, y = y0, w = btnW, h = btnH }
+
+    DarkTitleScreen._langHits = {}
+    if langOpen_ then
+        local rowH = btnH
+        local n = #I18n.LANGS
+        local popH = n * rowH
+        local popY = y0 - 8 - popH
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, x, y0, chipW, chipH, 8)
-        if on then
-            nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 210 * A))
-        else
-            nvgFillColor(vg, nvgRGBA(20, 16, 12, 160 * A))
-        end
+        nvgRoundedRect(vg, x0, popY, btnW, popH, 10)
+        nvgFillColor(vg, nvgRGBA(14, 12, 10, 230 * A))
         nvgFill(vg)
-        nvgStrokeColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], (on and 240 or 90) * A))
+        nvgStrokeColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 160 * A))
         nvgStrokeWidth(vg, 1.5)
         nvgStroke(vg)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, math.max(14, math.min(w * 0.014, 18)))
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        if on then
-            nvgFillColor(vg, nvgRGBA(26, 18, 10, 255 * A))
-        else
-            nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 200 * A))
+        for i, lang in ipairs(I18n.LANGS) do
+            local ry = popY + (i - 1) * rowH
+            local on = lang.id == cur
+            if on then
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, x0 + 4, ry + 3, btnW - 8, rowH - 6, 7)
+                nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 210 * A))
+                nvgFill(vg)
+            end
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, math.max(14, math.min(w * 0.015, 18)))
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            if on then
+                nvgFillColor(vg, nvgRGBA(26, 18, 10, 255 * A))
+            else
+                nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 220 * A))
+            end
+            nvgText(vg, x0 + btnW * 0.5, ry + rowH * 0.5, I18n.displayName(lang.id), nil)
+            DarkTitleScreen._langHits[i] = { x = x0, y = ry, w = btnW, h = rowH, id = lang.id }
         end
-        nvgText(vg, x + chipW * 0.5, y0 + chipH * 0.5, lang.label, nil)
-        DarkTitleScreen._langHits[i] = { x = x, y = y0, w = chipW, h = chipH, id = lang.id }
     end
 end
 
---- 标题页点语言芯片返回 true（吞掉继续）
+--- 标题页语言按钮/弹出项：命中返回 true（吞掉继续）
 ---@param sx number 逻辑坐标 X
 ---@param sy number 逻辑坐标 Y
 ---@return boolean
 function DarkTitleScreen.handleLanguageTap(sx, sy)
-    local hits = DarkTitleScreen._langHits
-    if not hits then return false end
-    for i = 1, #hits do
-        local r = hits[i]
-        if sx >= r.x and sx <= r.x + r.w and sy >= r.y and sy <= r.y + r.h then
-            I18n.set(r.id)
-            local ok, SP = pcall(require, "ui.SettingsPanel")
-            if ok and SP and SP.persistLanguage then SP.persistLanguage() end
-            print("[DarkTitleScreen] language=" .. r.id)
+    if langOpen_ then
+        local hits = DarkTitleScreen._langHits
+        if hits then
+            for i = 1, #hits do
+                local r = hits[i]
+                if sx >= r.x and sx <= r.x + r.w and sy >= r.y and sy <= r.y + r.h then
+                    I18n.set(r.id)
+                    local ok, SP = pcall(require, "ui.SettingsPanel")
+                    if ok and SP and SP.persistLanguage then SP.persistLanguage() end
+                    langOpen_ = false
+                    print("[DarkTitleScreen] language=" .. r.id)
+                    return true
+                end
+            end
+        end
+        local btn = DarkTitleScreen._langBtn
+        if btn and sx >= btn.x and sx <= btn.x + btn.w and sy >= btn.y and sy <= btn.y + btn.h then
+            langOpen_ = false
             return true
         end
+        langOpen_ = false
+        return true  -- 弹出打开时点空白只关菜单，不进游戏
+    end
+    local btn = DarkTitleScreen._langBtn
+    if btn and sx >= btn.x and sx <= btn.x + btn.w and sy >= btn.y and sy <= btn.y + btn.h then
+        langOpen_ = true
+        print("[DarkTitleScreen] language menu open")
+        return true
     end
     return false
 end

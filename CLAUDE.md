@@ -14,9 +14,17 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`feat/four-meme-heroes`（从 workspace 拉出；四人新角色已接入）
+- **当前开发分支**：`feat/four-meme-heroes`（从 workspace 拉出；四人新角色已接入；SE 已换 RPG Maker 包）
 
-## 上次做了什么（截至 2026-09-23 四人新角色）
+## 上次做了什么（截至 2026-09-23 SE 替换）
+
+- 用户上传 `assets/video/se.mp4`（实为 ZIP，RPG Maker VX Ace 风格 SE 包）
+- 已用包内 ogg 覆盖全部现有 UI/战斗 SE（键名路径不变）
+- 新角色 #18/#19/#24/#25 补独立攻击 SE + 投射物配置（图复用相近特效）
+  - 老六 Darkness4 / 哈基米 Cat / 加载中 Load / 高ping Transceiver
+- 未改 BGM；未合入 workspace
+
+## 更早：截至 2026-09-23 四人新角色
 
 - 拍板并实装四名玩梗角色（替代立绘）：
   - #18 R 换面 **老六**（蹲人：开战 4 秒 0 仇恨，第一击必暴）
@@ -61,6 +69,9 @@
 
 ## likely_next_task
 
+- 试听新 SE / 四人战斗音效是否合适
+- 四人立绘正稿（当前仍是替代图）
+- 合入 workspace（需用户本轮明确要求）
 - BattleScene 1605，可再抽 init/draw/handleInput
 - ChurchPage 790，主壳已较瘦
 - MarketPage 1008，可再抽商店道具网格

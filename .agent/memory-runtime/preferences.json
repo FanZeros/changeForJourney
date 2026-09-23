@@ -21,7 +21,8 @@
       "player_level_name": "远征等级",
       "hero_unit_name": "远征队员",
       "recruit_ticket_name": "远征招募券",
-      "parallel_sessions": "用户开多 agent 会话并行,注意文件覆盖"
+      "parallel_sessions": "用户开多 agent 会话并行,注意文件覆盖",
+      "se_source": "RPG Maker VX Ace 风格 SE 包（用户 se.mp4 ZIP），游戏用 ogg"
     }
   }
 }

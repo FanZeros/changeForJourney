@@ -129,6 +129,25 @@ local CONFIGS = {
         type = "bezier", imgKey = "EF_ATK_23",
         imgW = 200, imgH = 200, duration = 0.65,
     },
+    -- ---- 玩梗新角色 18/19/24/25 ----
+    [18] = {
+        type = "melee", imgKey = "EF_ATK_18",
+        imgW = 200, imgH = 200, duration = 0.40,
+    },
+    [19] = {
+        type = "bezier", imgKey = "EF_ATK_19",
+        imgW = 200, imgH = 200, duration = 0.65,
+        trail = { 255, 210, 120 },
+    },
+    [24] = {
+        type = "melee", imgKey = "EF_ATK_24",
+        imgW = 200, imgH = 200, duration = 0.50,
+    },
+    [25] = {
+        type = "fly", imgKey = "EF_ATK_25",
+        imgW = 200, imgH = 200, duration = 0.70,
+        trail = { 80, 220, 180 },
+    },
 }
 
 -- ======================== 怪物投射物配置（字符串 key） ========================

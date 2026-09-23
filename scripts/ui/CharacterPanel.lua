@@ -632,6 +632,13 @@ function CharacterPanel.handleInput(dx, dy)
     return ensureInput().handleInput(dx, dy)
 end
 
+---@param dx number
+---@param dy number
+---@return boolean
+function CharacterPanel.handleRightClick(dx, dy)
+    return ensureInput().handleRightClick(dx, dy)
+end
+
 --- 请求合成英雄（碎片→解锁）
 ---@param heroId number
 function CharacterPanel.requestSynthesizeHero(heroId)

@@ -899,6 +899,24 @@ function GMConsolePanel.handleDragEnd(dx, dy)
     return true
 end
 
+---@param wheel number
+---@return boolean
+function GMConsolePanel.handleScroll(wheel)
+    if not state.open or state.closing then return false end
+    local contentH = 0
+    if state.selectedTab == TAB_ONLINE then
+        contentH = #state.onlinePlayers * (LIST_ITEM.H + LIST_ITEM.GAP)
+    elseif state.selectedTab == TAB_LOG then
+        contentH = #state.logEntries * 56
+    else
+        return true
+    end
+    local viewH = CONTENT_BOTTOM - CONTENT_TOP - 80
+    local maxScroll = math.max(0, contentH - viewH)
+    state.scrollY = math.max(0, math.min(maxScroll, state.scrollY - wheel * 60))
+    return true
+end
+
 local lastDrawTime_ = 0
 local autoRefreshTimer_ = 0
 local AUTO_REFRESH_INTERVAL = 10.0  -- 在线列表自动刷新间隔（秒）

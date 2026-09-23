@@ -284,7 +284,12 @@ end
 ---@return boolean 是否消费了该事件
 function Panel.handleScroll(delta)
     if not isOpen then return false end
-    scrollY = math.max(0, math.min(maxScrollY, scrollY - delta))
+    -- 与其它列表一致：正滚轮向上，步长约 60
+    local step = delta
+    if math.abs(delta) <= 10 then
+        step = delta * 60
+    end
+    scrollY = math.max(0, math.min(maxScrollY, scrollY - step))
     return true
 end
 

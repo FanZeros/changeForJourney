@@ -18,6 +18,7 @@ local BF               = require("systems.ButtonFeedback")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1-B5] 矢量九宫格
 local ExpTable         = require("config.ExpTable")
 local GameState        = require("core.GameState")
+local I18n             = require("core.I18n")
 
 local BlacksmithConfig = require("config.BlacksmithConfig")
 local BlacksmithPage   = nil  -- 延迟加载，避免循环依赖
@@ -926,7 +927,7 @@ function EquipmentDetail.close()
     local isEquipped = isClickedEquipEquipped()
     local curEquip = getComparisonEquip()
     local hasCurrent = (not isEquipped) and (curEquip ~= nil)
-    local btnText = isEquipped and "卸下" or (hasCurrent and "更换" or "穿戴")
+    local btnText = isEquipped and I18n.t("unequip") or (hasCurrent and I18n.t("replace") or I18n.t("wear"))
     local newPower = newEquip and calcEquipPower(newEquip, detState.heroId) or 0
     local curPower = curEquip and calcEquipPower(curEquip, detState.heroId) or 0
     detState.snapshot = {
@@ -1284,7 +1285,7 @@ function EquipmentDetail.draw(vg)
         isEquipped = isClickedEquipEquipped()
         curEquip = getComparisonEquip()
         hasCurrent = (not isEquipped) and (curEquip ~= nil)
-        btnText = isEquipped and "卸下" or (hasCurrent and "更换" or "穿戴")
+        btnText = isEquipped and I18n.t("unequip") or (hasCurrent and I18n.t("replace") or I18n.t("wear"))
         local newPower = calcEquipPower(newEquip, detState.heroId)
         local curPower = curEquip and calcEquipPower(curEquip, detState.heroId) or 0
         powerDiff = newPower - curPower

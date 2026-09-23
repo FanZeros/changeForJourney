@@ -14,18 +14,23 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`feat/four-meme-heroes`（从 workspace 拉出；四人新角色已接入）
+- **当前开发分支**：`workspace923`（从 workspace 合入今天三线，供本机测试；禁止推 workspace）
 
-## 上次做了什么（截至 2026-09-23 四人新角色）
+## 上次做了什么（截至 2026-09-23 workspace923）
 
-- 拍板并实装四名玩梗角色（替代立绘）：
+- 从 `workspace` 开 `workspace923`，按时间依次合入今天三线：
+  1. `feat/four-meme-heroes`：四名玩梗角色（老六/哈基米/加载中/高ping战士）
+  2. `feat/wheel-rightequip-i18n`：滚轮/右键装备/五语切换
+  3. `feat/unowned-class-icon-runtime`：未解锁职业标 + Maker MCP 一键脚本
+- 四名玩梗角色（替代立绘）：
   - #18 R 换面 **老六**（蹲人：开战 4 秒 0 仇恨，第一击必暴）
   - #19 R 司仪 **哈基米 / 南北路多**（功德+1，满 5 清心减伤，不改死亡）
   - #24 SSR 封门 **加载中**（受击写入缓冲条，满条/超时吐出粉碎伤）
   - #25 UR 回响 **高ping战士**（普攻后再延迟 1.5s 打 45% 额外穿刺伤，10% 仇恨）
-- 卡池/酒馆碎片/觉醒/台词/天赋均已接；图像为替代物，后续可换正稿
-- 已 push `origin/feat/four-meme-heroes`
-- 二次核对补漏：酒馆碎片映射 20/21/22/104、星辉池补 #17、ETS 名称+粗暴叠层、AssetManifest 新图、玩法文档 25 人、图鉴 UR 色
+- 滚轮/右键/i18n：
+  - 滚动列表补滚轮；右键快速穿戴（不可穿 toast、已穿卸下）
+  - TopBar「远征等级 LV.n」；五语 `scripts/core/I18n.lua`
+  - **不要开** `.project/i18n.json enabled=true`
 
 ## 更早：截至 2026-09-22 晚 整合
 
@@ -61,6 +66,8 @@
 
 ## likely_next_task
 
+- 预览验收：滚轮、右键装备、顶栏远征等级、标题/设置切语言
+- 若要全量 i18n：不要开引擎自动提取，继续扩 `core/I18n.lua` 词表
 - BattleScene 1605，可再抽 init/draw/handleInput
 - ChurchPage 790，主壳已较瘦
 - MarketPage 1008，可再抽商店道具网格
@@ -71,7 +78,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 以当前功能分支继续开发；完成后每次 push **该分支**。本次用户明确要求合入并推送 `workspace`。
+- 以当前功能分支继续开发；完成后每次 push **该分支**。当前是 `feat/wheel-rightequip-i18n`，不要推 `workspace`。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
@@ -81,4 +88,5 @@
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
 - Lua 5.4 字符串里不要写 `\!`
 - 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
-- 禁止推 `workspace`
+- 禁止推 `workspace`（当前功能分支 `feat/wheel-rightequip-i18n`）
+- 不要开引擎 i18n `enabled=true`，用 `core/I18n.lua`

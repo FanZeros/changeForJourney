@@ -9,6 +9,7 @@ local TownPageChrome = require("ui.TownPageChrome")
 local TalentStarMap  = require("ui.TalentStarMap")
 local TalentPanel    = require("ui.ChurchTalentPanel")
 local HC             = require("config.HeroConfig")
+local I18n           = require("core.I18n")
 
 local DESIGN_W = GameConfig.Design.WIDTH
 local DESIGN_H = GameConfig.Design.HEIGHT
@@ -341,7 +342,7 @@ local function drawPageImpl(vg)
     TalentPanel.drawBg(vg)
     TalentPanel.drawContent(vg)
 
-    TownPageChrome.drawNamePlate(vg, img.nameBg, "古树")
+    TownPageChrome.drawNamePlate(vg, img.nameBg, I18n.t("ancient_tree"))
     TownPageChrome.drawBack(vg)
 
     TalentPanel.drawDetailPanel(vg)

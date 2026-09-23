@@ -1,9 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-23 | 版本:v2.28-four-meme-heroes
+> 更新时间:2026-09-23 | 版本:v2.30-workspace923
 >
-> **本会话(2026-09-23)**：拍板并实装四名玩梗角色（老六/哈基米/加载中/高ping战士），替代立绘。分支 feat/four-meme-heroes。
+> **本会话(2026-09-23)**：从 workspace 开 `workspace923`，依次合入 four-meme-heroes / wheel-rightequip-i18n / unowned-class-icon-runtime。禁止推 workspace。
 
 ---
 

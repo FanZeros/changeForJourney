@@ -5,6 +5,7 @@
 -- ============================================================================
 
 local GameState      = require("core.GameState")
+local I18n           = require("core.I18n")
 local DrawUtil       = require("core.DrawUtil")
 local StageConfig    = require("config.StageConfig")
 local PlayerStore    = require("client.data.PlayerStore")
@@ -563,6 +564,12 @@ function PlayerInfoPanel.handleScroll(wheel)
     if AvatarSelectPanel.isOpen() then
         return AvatarSelectPanel.handleWheel(wheel)
     end
+    if GMConsolePanel.isOpen() then
+        if GMConsolePanel.handleScroll then
+            return GMConsolePanel.handleScroll(wheel)
+        end
+        return true
+    end
     return false
 end
 
@@ -820,7 +827,7 @@ function PlayerInfoPanel.draw(vg)
 
     -- ── 15. 远征等级文本 ──
     local advLevel = GameState.getLevel()
-    drawTextStroke(vg, ADV_LV.X, ADV_LV.Y, "远征等级LV." .. advLevel,
+    drawTextStroke(vg, ADV_LV.X, ADV_LV.Y, I18n.t("expedition_lv", advLevel),
         ADV_LV.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         ADV_LV.FR, ADV_LV.FG, ADV_LV.FB, ADV_LV.SW,
         { strokeColor = { ADV_LV.SR, ADV_LV.SG, ADV_LV.SB } })

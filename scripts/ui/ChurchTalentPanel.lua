@@ -882,8 +882,11 @@ end
 ---@param msx number|nil 鼠标设计坐标X (缩放锚点, 可为nil)
 ---@param msy number|nil 鼠标设计坐标Y
 function M.handleScroll(wheel, msx, msy)
-    -- 天赋星图：滚轮直接缩放（上滚放大 / 下滚缩小，以鼠标位置为锚）
-    local step = 0.14 * wheel
+    -- 一格滚轮只走一小步。部分设备 Wheel 一次会给很大的值，先收成 ±1。
+    local dir = 0
+    if wheel > 0 then dir = 1 elseif wheel < 0 then dir = -1 end
+    if dir == 0 then return end
+    local step = 0.04 * dir
     local v = math.max(0, math.min(1, state.tfZoomSliderValue - step))
     if math.abs(v - state.tfZoomSliderValue) < 1e-6 then return end
     state.tfZoomSliderValue = v
@@ -892,6 +895,8 @@ function M.handleScroll(wheel, msx, msy)
     else
         TalentStarMap.setZoom(v)
     end
+    print(string.format("[ChurchTalentPanel] 滚轮缩放 wheel=%s step=%.3f slider=%.3f zoom=%.2f",
+        tostring(wheel), step, v, TalentStarMap.getZoom()))
 end
 
 --- 预加载（旧 Spine 天赋背景已下掉，静态底随页面图片加载即完成；保留 API 供调用方）

@@ -559,40 +559,14 @@ local ClientDispatcher = require("network.ClientDispatcher")
              end
          end
          if #rewards > 0 then RewardPopup.show("首通奖励", rewards) end
-         -- 首通后检查是否有对应的情景对话奖励需要播放
-         if M.lastClearedStageId_ then
-             local sessionData = PlayerStore.Get("session")
-             local heroId = sessionData and sessionData.initialHeroId
-             if heroId then
-                 local STAGE_HERO_TO_SCENARIO = {
-                     ["101"] = { [1]=5,  [2]=6,  [3]=7  }, ["102"] = { [1]=8,  [2]=9,  [3]=10 },
-                     ["103"] = { [1]=11, [2]=12, [3]=13 }, ["104"] = { [1]=17, [2]=18, [3]=19 },
-                     ["105"] = { [1]=20, [2]=21, [3]=22 }, ["201"] = { [1]=35, [2]=36, [3]=37 },
-                     ["204"] = { [1]=44, [2]=45, [3]=46 }, ["205"] = { [1]=51, [2]=52, [3]=53 },
-                     ["305"] = { [1]=58, [2]=59, [3]=60 }, ["1305"] = { [1]=55, [2]=56, [3]=57 },
-                 }
-                 local stageMap = STAGE_HERO_TO_SCENARIO[tostring(M.lastClearedStageId_)]
-                 local scenarioId = stageMap and stageMap[heroId]
-                 if scenarioId and sessionData.starterTrioReady
-                     and (scenarioId == 11 or scenarioId == 12 or scenarioId == 13) then
-                     print("[ClientMessageHandler] skip companion-recruit scenario "
-                         .. tostring(scenarioId) .. " trio already joined")
-                     scenarioId = nil
-                 end
-                 if scenarioId then
-                     local claimed = sessionData.claimedScenarios and sessionData.claimedScenarios[tostring(scenarioId)]
-                     if not claimed then
-                         local configKey = "SCENARIO_" .. scenarioId
-                         local config = ScenarioDialogueConfig[configKey]
-                         if config then
-                             M.pendingScenarioDialogue_ = { config = config, scenarioId = scenarioId }
-                         end
-                     end
-                 end
-             end
-             M.lastClearedStageId_ = nil
-         end
-     end
+    end
+    -- 首通情景交给 StoryPlayer 排队，等奖励弹窗关掉再播
+    if M.lastClearedStageId_ then
+        local clearedId = M.lastClearedStageId_
+        M.lastClearedStageId_ = nil
+        print("[ClientMessageHandler] first clear story stage=" .. tostring(clearedId))
+        require("systems.StoryPlayer").onStage(clearedId, "clear")
+    end
 
      -- 签到结果
      if data.reward and data.reward.type then

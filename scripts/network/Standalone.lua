@@ -580,6 +580,9 @@ local function tryPlayPendingStory_()
         pending = ClientMsgHandler.consumePendingFollowUpDialogue()
     end
     if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
+        pending = require("systems.StoryPlayer").take()
+    end
+    if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
         return
     end
     local cfg = pending.config
@@ -596,6 +599,11 @@ local function tryPlayPendingStory_()
             if scenarioId then
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
                 localSendAction("claim_scenario_reward", { scenarioId = scenarioId })
+                local followId = require("systems.StoryPlayer").followOf(scenarioId)
+                if followId then
+                    print("[Standalone] enqueue follow scenario " .. tostring(followId))
+                    require("systems.StoryPlayer").enqueue(followId)
+                end
             end
         end,
     })
@@ -819,7 +827,9 @@ function HandleUpdate(eventType, eventData)
         -- 标签页
         elseif tabIndex == 2 then bgmScene = "popup"
         elseif tabIndex == 3 then bgmScene = BattleScene.isInTerminalTemple() and "samsara" or "battle"
-        elseif tabIndex == 4 then bgmScene = "town"
+        elseif tabIndex == 4 then
+            bgmScene = "town"
+            require("systems.StoryPlayer").onPlace("town", "enter")
         else bgmScene = "other"
         end
         GameBGM.setScene(bgmScene)

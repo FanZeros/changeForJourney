@@ -549,6 +549,8 @@ local function loadStage(stageId, skipBattleStart)
     _enemyGuardFired = ctx._enemyGuardFired
     battleActive = ctx.battleActive
     firstClearTimeLeft = ctx.firstClearTimeLeft
+    print("[BattleScene] stage loaded id=" .. tostring(stageId))
+    require("systems.StoryPlayer").onStage(stageId, "enter")
 end
 
 local _navLogic

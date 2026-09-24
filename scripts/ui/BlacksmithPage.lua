@@ -981,6 +981,7 @@ end
 --- 关闭铁匠铺（启动关闭动画）
 function BlacksmithPage.close()
     if state.closing then return end
+    require("systems.StoryPlayer").onPlace("smith", "leave")
     state.closing = true
     state.closeTime = time.elapsedTime
     print("[BlacksmithPage] 关闭铁匠铺（动画）")

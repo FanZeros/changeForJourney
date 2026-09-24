@@ -9,7 +9,7 @@ local ArtifactSchema = require("shared.artifact.ArtifactSchema")
 local ArtifactBridge = {}
 
 local function getArtifactData()
-    local ok, PlayerStore = pcall(require, "client.data.PlayerStore")
+    local ok, PlayerStore = pcall(require, "core.PlayerStore")
     if ok and PlayerStore and PlayerStore.Get then
         return PlayerStore.Get("artifacts")
     end

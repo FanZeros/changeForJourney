@@ -62,10 +62,9 @@ local DESIGN_H = 2400
 
 -- [暗黑化] 去掉全屏/行内黑色叠加层：弹窗直接浮在暗黑场景上，靠光晕与面板自带对比
 
--- 背景光晕: UI_GXHD_2.png
+-- 奖励弹窗锚点（原光晕中心，旋转底图已去掉）
 local GLOW_CX, GLOW_CY = 540, 1044
-local GLOW_W,  GLOW_H  = 908, 908
-local GLOW_ROTATE_SPEED = 0.5  -- 旋转速度（弧度/秒），与竞技场结算面板一致
+local GLOW_H = 908
 
 -- 背景面板: UI_GXHD_1.png
 local PANEL_CX, PANEL_CY = 540, 1194
@@ -130,8 +129,6 @@ local state = {
     -- 动画状态
     animPhase  = "none",  -- "none"|"opening"|"open"|"closing"
     animStart  = 0,       -- 动画开始时刻（time.elapsedTime）
-    -- 光晕旋转
-    glowAngle  = 0,
     -- 首通逐个获得
     cascade     = false,
     revealStart = 0,
@@ -362,7 +359,6 @@ end
 
 -- ======================== 图片资源 ========================
 
-local imgGlow  = -1   -- 背景光晕
 local imgPanel = -1   -- 背景面板
 
 -- 资源图标缓存: [type] = nvgImage handle
@@ -396,21 +392,6 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
     nvgFill(vg)
-end
-
-local function drawImageRotated(vg, img, cx, cy, w, h, angle, alpha)
-    if img < 0 or alpha <= 0.01 then return end
-    nvgSave(vg)
-    nvgTranslate(vg, cx, cy)
-    nvgRotate(vg, angle)
-    local x = -w * 0.5
-    local y = -h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, h)
-    nvgFillPaint(vg, paint)
-    nvgFill(vg)
-    nvgRestore(vg)
 end
 
 local function clampScroll()
@@ -492,9 +473,7 @@ end
 function RewardPopup.init(vg)
     cachedVg = vg
     ImageCache.init(vg)
-    imgGlow  = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_2_dark.png", 0)
     imgPanel = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_1_dark.png", 0)
-    if imgGlow  < 0 then print("[RewardPopup] WARN: UI_GXHD_2_dark.png load failed") end
     if imgPanel < 0 then print("[RewardPopup] WARN: UI_GXHD_1_dark.png load failed") end
 end
 
@@ -591,7 +570,6 @@ function RewardPopup.show(title, rewards, opts)
     state.animPhase = "opening"
     state.animStart = time.elapsedTime
     closedAt_ = 0  -- 重置关闭保护（重新打开时清除残留）
-    state.glowAngle = 0
     state.cascade = wantsCascade(state.title, opts)
     state.revealStart = time.elapsedTime + CASCADE_LEAD
     state.sfxPlayed = 0
@@ -671,9 +649,6 @@ function RewardPopup.update(dt)
             return
         end
     end
-
-    -- 光晕旋转
-    state.glowAngle = state.glowAngle + GLOW_ROTATE_SPEED * dt
 
     if state.cascade and state.animPhase ~= "closing" then
         local elapsed = cascadeElapsed()
@@ -909,8 +884,6 @@ function RewardPopup.drawContent(vg)
     nvgTranslate(vg, -pivotX, -pivotY)
     nvgGlobalAlpha(vg, animAlpha)
 
-    -- 2) 背景光晕（持续旋转）
-    drawImageRotated(vg, imgGlow, GLOW_CX, GLOW_CY, GLOW_W, GLOW_H, state.glowAngle, 1.0)
     if state.cascade and not cascadeFinished() then
         local elapsed = cascadeElapsed()
         if elapsed >= 0 then

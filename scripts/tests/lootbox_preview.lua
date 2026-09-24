@@ -1,7 +1,7 @@
 -- 遗匣三栏实机验收入口：不读取、不写入玩家存档。
 local Standalone = require("network.Standalone")
-local Save = require("network.StandaloneSave")
-local Dispatcher = require("network.ClientDispatcher")
+local Save = require("boot.StandaloneSave")
+local Dispatcher = require("runtime.ClientDispatcher")
 local Page = require("ui.LootBoxPage")
 local LootBox = require("ui.LootBox")
 local EquipmentSystem = require("systems.EquipmentSystem")

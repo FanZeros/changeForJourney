@@ -7,6 +7,7 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 
 local LootBoxSystem = {}
 -- 只用于旧版种子迁移，不影响已经确定的装备。
+--- 领取时若种子 level 超过此值则钳制，0=不限制
 LootBoxSystem.levelCap = 0
 
 function LootBoxSystem.getTotalCount(lootboxData)

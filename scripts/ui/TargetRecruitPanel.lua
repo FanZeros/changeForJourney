@@ -17,7 +17,7 @@ local drawTextStroke          = DrawUtil.drawTextStroke
 local drawRoundedRectCentered = DrawUtil.drawRoundedRectCentered
 local hitTest                 = DrawUtil.hitTest
 
-local PlayerStore   = require("client.data.PlayerStore")
+local PlayerStore   = require("core.PlayerStore")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local M = {}
@@ -389,7 +389,7 @@ function M.handleInput(dx, dy)
             local action = (state.mode == "stellar")
                 and Protocol.ACTION_TYPES.STELLAR_TARGET_UP
                 or Protocol.ACTION_TYPES.TARGET_RECRUIT
-            require("network.GameAction").sendAction(action, {
+            require("runtime.GameAction").sendAction(action, {
                 heroId = state.selectedHeroId,
             })
             -- 乐观更新：立即刷新 TavernPage 显示

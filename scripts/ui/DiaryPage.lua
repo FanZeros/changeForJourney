@@ -4,7 +4,7 @@
 -- ============================================================================
 
 local DrawUtil            = require("core.DrawUtil")
-local PlayerStore         = require("client.data.PlayerStore")
+local PlayerStore         = require("core.PlayerStore")
 local AnnouncementPanel   = require("ui.AnnouncementPanel")
 local MailPanel           = require("ui.MailPanel")
 local SignInPanel         = require("ui.SignInPanel")

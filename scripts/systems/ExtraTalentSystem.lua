@@ -500,7 +500,7 @@ local function persistNow(heroId, extra)
     if ok and CP and CP.patchExtraTalent then
         CP.patchExtraTalent(heroId, extra)
     end
-    local sentOk, GameAction = pcall(require, "network.GameAction")
+    local sentOk, GameAction = pcall(require, "runtime.GameAction")
     if sentOk and GameAction and GameAction.sendAction then
         pcall(function()
             GameAction.sendAction(Protocol.ACTION_TYPES.SYNC_EXTRA_TALENT, {
@@ -509,7 +509,7 @@ local function persistNow(heroId, extra)
             })
         end)
     end
-    local dispOk, ClientDispatcher = pcall(require, "network.ClientDispatcher")
+    local dispOk, ClientDispatcher = pcall(require, "runtime.ClientDispatcher")
     if dispOk and ClientDispatcher and ClientDispatcher.get then
         local heroes = ClientDispatcher.get("heroes")
         if heroes and heroes.roster then

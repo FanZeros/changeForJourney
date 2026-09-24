@@ -1,20 +1,24 @@
 ---@meta
 --- ============================================================
---- ProxyTransport.lua — 客户端 RemoteEvent HTTP transport
+--- ProxyTransport.lua — 单机直接 HTTP transport
+--- 不再经过 RemoteEvent / 服务端代理。
 --- ============================================================
 
 local cjson = require("cjson")
 
 local ProxyTransport = {}
 
-local EVENT_REQUEST = "HttpProxy_Request"
-local EVENT_RESPONSE = "HttpProxy_Response"
-
 local nextId_ = 1
 local pending_ = {}
-local outbox_ = {}
 local started_ = false
-local connected_ = false
+
+local METHOD_MAP = {
+    GET = HTTP_GET,
+    POST = HTTP_POST,
+    PUT = HTTP_PUT,
+    DELETE = HTTP_DELETE,
+    PATCH = HTTP_PATCH,
+}
 
 local function nowMs()
     return math.floor(os.time() * 1000)
@@ -26,124 +30,21 @@ local function nextRequestId()
     return id
 end
 
-local function safeDecode(value)
-    local ok, decoded = pcall(cjson.decode, value or "")
-    if ok and type(decoded) == "table" then return decoded end
-    return nil
-end
-
-local function canSendRemoteEvent()
-    if not network then return false end
-    return network.serverConnection ~= nil
-end
-
-local function trySendRemoteEvent(eventName, payload)
-    local conn = network.serverConnection
-    if not conn then return false, "no serverConnection" end
-
-    local eventData = VariantMap()
-    eventData["Payload"] = Variant(payload)
-    local ok, err = pcall(function()
-        conn:SendRemoteEvent(eventName, true, eventData)
-    end)
-    if ok then return true end
-    return false, tostring(err)
-end
-
-local function drainOutbox()
-    if #outbox_ == 0 or not canSendRemoteEvent() then return end
-
-    connected_ = true
-    local queue = outbox_
-    outbox_ = {}
-
-    for index, item in ipairs(queue) do
-        local shouldSend = true
-        if item.requestId then
-            local pending = pending_[item.requestId]
-            if not pending then
-                shouldSend = false
-            elseif pending.expiresAt <= nowMs() then
-                pending_[item.requestId] = nil
-                pending.callback("proxy timeout", nil)
-                shouldSend = false
-            end
-        end
-
-        if shouldSend then
-            local sent, err = trySendRemoteEvent(item.eventName, item.payload)
-            if not sent then
-                connected_ = false
-                table.insert(outbox_, item)
-                for rest = index + 1, #queue do
-                    table.insert(outbox_, queue[rest])
-                end
-                print("[GameAlgoSDK] proxy transport waiting for connection: " .. tostring(err))
-                return
-            end
-        end
-    end
-end
-
-local function sendRemoteEvent(eventName, payload, requestId)
-    if canSendRemoteEvent() then
-        connected_ = true
-        local sent, err = trySendRemoteEvent(eventName, payload)
-        if sent then return end
-        connected_ = false
-        print("[GameAlgoSDK] proxy send deferred: " .. tostring(err))
-    end
-
-    table.insert(outbox_, {
-        eventName = eventName,
-        payload = payload,
-        requestId = requestId,
-    })
-end
-
-function ProxyTransport.HandleResponse(eventType, eventData)
-    local payloadValue = eventData and eventData["Payload"]
-    local payload = payloadValue and payloadValue:GetString()
-    local response = safeDecode(payload)
-    if not response then
-        print("[GameAlgoSDK] proxy response parse failed")
-        return
-    end
-
-    local id = response.id or ""
+local function finish(id, err, response)
     local item = pending_[id]
-    if not item then return end
+    if not item or item.done then return end
+    item.done = true
     pending_[id] = nil
-
-    if response.success then
-        item.callback(nil, response)
-    else
-        item.callback(response.error or ("HTTP " .. tostring(response.status or 0)), response)
-    end
+    item.callback(err, response)
 end
 
 ---@param cfg? table
 function ProxyTransport.Start(cfg)
-    cfg = cfg or {}
-    local prefix = cfg.eventPrefix or "HttpProxy"
-    EVENT_REQUEST = prefix .. "_Request"
-    EVENT_RESPONSE = prefix .. "_Response"
-
     if started_ then return end
     started_ = true
-
-    network:RegisterRemoteEvent(EVENT_REQUEST)
-    network:RegisterRemoteEvent(EVENT_RESPONSE)
-    _G.HandleGameAlgoProxyResponse = function(eventType, eventData)
-        ProxyTransport.HandleResponse(eventType, eventData)
+    if cfg and cfg.eventPrefix then
+        print("[GameAlgoSDK] standalone ignores eventPrefix=" .. tostring(cfg.eventPrefix))
     end
-    _G.HandleGameAlgoServerConnected = function()
-        connected_ = true
-        drainOutbox()
-    end
-    SubscribeToEvent(EVENT_RESPONSE, "HandleGameAlgoProxyResponse")
-    SubscribeToEvent("ServerConnected", "HandleGameAlgoServerConnected")
-    drainOutbox()
 end
 
 ---@param request table
@@ -154,31 +55,81 @@ function ProxyTransport.Request(request, callback)
 
     local id = request.id or nextRequestId()
     local timeoutMs = request.timeoutMs or 10000
-    local payload = cjson.encode({
-        id = id,
-        method = request.method or "GET",
-        url = request.url,
-        headers = request.headers or {},
-        body = request.body or "",
-    })
+    local methodName = string.upper(tostring(request.method or "GET"))
+    local httpMethod = METHOD_MAP[methodName] or HTTP_GET
+    local headers = request.headers or {}
+    local body = request.body or ""
 
     pending_[id] = {
         callback = callback,
         expiresAt = nowMs() + timeoutMs,
+        done = false,
     }
-    sendRemoteEvent(EVENT_REQUEST, payload, id)
-    drainOutbox()
+
+    if not http then
+        finish(id, "单机运行时 HTTP 不可用", {
+            id = id,
+            status = 0,
+            success = false,
+            body = "",
+            error = "http unavailable",
+        })
+        return id
+    end
+
+    local client = http:Create()
+        :SetUrl(tostring(request.url or ""))
+        :SetMethod(httpMethod)
+        :SetTimeout(timeoutMs)
+
+    for key, value in pairs(headers) do
+        client:AddHeader(tostring(key), tostring(value))
+    end
+    if headers["Content-Type"] then
+        client:SetContentType(tostring(headers["Content-Type"]))
+    end
+    if body ~= "" and (httpMethod == HTTP_POST or httpMethod == HTTP_PUT or httpMethod == HTTP_PATCH) then
+        client:SetBody(body)
+    end
+
+    client
+        :OnSuccess(function(_, response)
+            local payload = {
+                id = id,
+                status = response and response.statusCode or 0,
+                success = response and response.success == true,
+                body = response and response.dataAsString or "",
+            }
+            if payload.success then
+                finish(id, nil, payload)
+            else
+                finish(id, "HTTP " .. tostring(payload.status), payload)
+            end
+        end)
+        :OnError(function(_, statusCode, error)
+            finish(id, error or ("HTTP " .. tostring(statusCode or 0)), {
+                id = id,
+                status = statusCode or 0,
+                success = false,
+                body = "",
+                error = error,
+            })
+        end)
+        :Send()
+
     return id
 end
 
 function ProxyTransport.Update()
-    drainOutbox()
     local now = nowMs()
+    local expired = {}
     for id, item in pairs(pending_) do
         if item.expiresAt <= now then
-            pending_[id] = nil
-            item.callback("proxy timeout", nil)
+            expired[#expired + 1] = id
         end
+    end
+    for i = 1, #expired do
+        finish(expired[i], "proxy timeout", nil)
     end
 end
 
@@ -189,7 +140,7 @@ function ProxyTransport.PendingCount()
 end
 
 function ProxyTransport.OutboxCount()
-    return #outbox_
+    return 0
 end
 
 return ProxyTransport

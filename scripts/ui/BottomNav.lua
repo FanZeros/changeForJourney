@@ -5,7 +5,7 @@
 
 local GameEvents  = require("config.GameEvents")
 local EventBus    = require("core.EventBus")
-local PlayerStore = require("client.data.PlayerStore")
+local PlayerStore = require("core.PlayerStore")
 
 local BottomNav = {}
 

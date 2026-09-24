@@ -25,7 +25,7 @@ local HeroConfig       = require("config.HeroConfig")
 local BF               = require("systems.ButtonFeedback")
 local DrawUtil         = require("core.DrawUtil")
 local StageConfig      = require("config.StageConfig")
-local PlayerStore      = require("client.data.PlayerStore")
+local PlayerStore      = require("core.PlayerStore")
 
 local TowerTriBattle = {}
 

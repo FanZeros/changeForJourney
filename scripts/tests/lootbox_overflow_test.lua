@@ -819,7 +819,7 @@ local function withBoot(bagCount, body)
         }
         return equip
     end
-    inject("network.ClientDispatcher", {
+    inject("runtime.ClientDispatcher", {
         get = function(name) return h.data[name] end,
         subscribe = function(name, callback)
             h.subscribers[name] = h.subscribers[name] or {}

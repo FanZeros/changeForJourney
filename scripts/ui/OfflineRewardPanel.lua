@@ -34,7 +34,7 @@ local ImageCache        = require("ui.ImageCache")
 local DrawUtil          = require("core.DrawUtil")
 local BF                = require("systems.ButtonFeedback")
 local ResourceDefs      = require("config.ResourceDefs")
-local ClientDispatcher  = require("network.ClientDispatcher")
+local ClientDispatcher  = require("runtime.ClientDispatcher")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 local Panel = {}

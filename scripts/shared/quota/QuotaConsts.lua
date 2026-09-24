@@ -13,7 +13,7 @@
 local QuotaConsts = {}
 
 --- 所有 quota key 定义
---- key:          serverCloud.quota 的云变量 key
+--- key:          本地限额键
 --- limit:        上限值
 --- refreshType:  刷新类型 ("hour"/"day"/"week_monday"/"week_sunday"/"month")
 --- refreshCount: 刷新周期数（1 = 每 1 个周期刷新）

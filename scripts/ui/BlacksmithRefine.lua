@@ -9,7 +9,7 @@
 local DrawUtil         = require("core.DrawUtil")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local GameState        = require("core.GameState")
-local PlayerStore      = require("client.data.PlayerStore")
+local PlayerStore      = require("core.PlayerStore")
 local AffixConfig      = require("config.AffixConfig")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local BlacksmithConfig = require("config.BlacksmithConfig")

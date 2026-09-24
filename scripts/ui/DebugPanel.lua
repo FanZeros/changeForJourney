@@ -14,13 +14,13 @@ local EquipmentConfig = require("config.EquipmentConfig")
 local DarkIcon        = require("core.DarkIcon")  -- [B-方案] 品质古卷色表引用
 local ExpTable        = require("config.ExpTable")
 
--- Client / Protocol 延迟加载（避免与 network.Client 循环依赖）
+-- Client / Protocol 延迟加载（避免循环依赖）
 ---@type table
 local Client_
 ---@type table
 local Protocol_
 local function getClient()
-    if not Client_ then Client_ = require("network.GameAction") end
+    if not Client_ then Client_ = require("runtime.GameAction") end
     return Client_
 end
 local function getProtocol()
@@ -42,7 +42,7 @@ local OfflineRewardPanel = require("ui.OfflineRewardPanel")
 ---@type table
 local Standalone_
 local function getStandalone()
-    if not Standalone_ then Standalone_ = require("network.Standalone") end
+    if not Standalone_ then Standalone_ = require("boot.Standalone") end
     return Standalone_
 end
 

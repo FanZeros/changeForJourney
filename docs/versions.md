@@ -4,8 +4,11 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.49-workspace925 | 2026-09-25 | 从 workspace924 开 workspace925，补合 9/24 漏掉的失焦挂机、立绘、配装布局、功绩边框与 integration。 |
+| v2.48-electron-background-trial | 2026-09-24 | Electron 离线包 BrowserWindow 关闭后台节流；语法与窗口构造检查通过，官方构建通过；Windows 失焦/最小化实测待做。 |
 | v2.48-pc-obfuscation-trial | 2026-09-24 | 外部副本保守混淆单模块；官方构建与隔离测试通过。整游戏原版已有启动错误，正式 PC 包未发布。 |
 | v2.47-pc-obfuscation-review | 2026-09-24 | 新分支核查 PC 构建：Lua 资源明文，Electron 原样打包；确认混淆试验边界及预览构建路径。 |
+| v2.47-background-idle-research | 2026-09-24 | 从 workspace924 开独立分支调研失焦挂机；重建可用预览，明确网页隐藏页需离线补算、Electron 可试关闭后台节流；未改玩法。 |
 | v2.44-lootbox-rarity | 2026-09-24 | 遗匣默认展示确定装备；六档稀有度筛选，范围内领取/回收。 |
 | v2.43-lootbox-left | 2026-09-24 | 遗匣改城镇左栏地点；满包奖励完整保管；滚轮按鼠标所在区域滚动。 |
 | v2.42-workspace924 | 2026-09-24 | 从当前集成线开 workspace924，补合天赋分支新增的古树图标与星图铺满。 |

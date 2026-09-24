@@ -96,11 +96,26 @@ local function resetBox()
     return cx, cy, w, h
 end
 
-local function infoBox()
-    local rcx, rcy, rw = resetBox()
-    local s = 72
-    local cx = rcx - rw * 0.5 - 16 - s * 0.5
-    return cx, rcy, s, s
+local function drawMapEdgeFade(vg, x, y, w, h)
+    local fade = math.max(72, math.min(w, h) * 0.16)
+    local edge = nvgRGBA(5, 4, 3, 200)
+    local clear = nvgRGBA(5, 4, 3, 0)
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, fade, h)
+    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x + fade, y, edge, clear))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgRect(vg, x + w - fade, y, fade, h)
+    nvgFillPaint(vg, nvgLinearGradient(vg, x + w, y, x + w - fade, y, edge, clear))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, w, fade * 0.85)
+    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x, y + fade * 0.85, edge, clear))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y + h - fade * 0.85, w, fade * 0.85)
+    nvgFillPaint(vg, nvgLinearGradient(vg, x, y + h, x, y + h - fade * 0.85, edge, clear))
+    nvgFill(vg)
 end
 
 -- ======================== 天赋详情面板布局常量 ========================
@@ -325,6 +340,8 @@ function M.drawContent(vg)
     local pageW = M.getPageWidth()
     local map = mapLayout()
     TalentStarMap.draw(vg, 0, map.top, pageW, map.h)
+    -- 星图边缘虚化，避免节点在页面边界被硬切
+    drawMapEdgeFade(vg, 0, map.top, pageW, map.h)
 
     -- 新手引导热点：整个天赋星图区域
     local _TM = require("systems.TutorialManager")
@@ -374,19 +391,7 @@ function M.drawContent(vg)
     nvgFillColor(vg, nvgRGBA(0xff, 0xef, 0x67, 255))
     nvgText(vg, midX(TF.lblCX), map.lblCY, "远征点", nil)
 
-    -- 5.5 效果总览感叹号（右上角）
-    local infoX, infoY, infoS = infoBox()
-    local _bfInfo = BF.begin(vg, "ctp_overview_info", infoX, infoY, infoS, infoS)
-    if img.tfInfoIcon and img.tfInfoIcon >= 0 then
-        drawImageCentered(vg, img.tfInfoIcon, infoX, infoY, TF.infoIconW, TF.infoIconH, 1.0)
-    else
-        drawTextStroke(vg, infoX, infoY, "!",
-            44, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
-    end
-    BF.finish(vg, _bfInfo)
-
-    -- 6. 重置按钮：右上角，暖金底配深褐字，贴古树金线
+    -- 6. 重置按钮：暗底，文字用亮金
     local rstX, rstY, rstW, rstH = resetBox()
     local _bf1 = BF.begin(vg, "ctp_reset", rstX, rstY, rstW, rstH)
     DarkIcon.drawNine(vg, "btn",
@@ -398,7 +403,7 @@ function M.drawContent(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, TF.rstFont)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x3a, 0x24, 0x0c, 255))
+    nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
     nvgText(vg, rstX, rstY, "重置", nil)
     BF.finish(vg, _bf1)
 
@@ -520,10 +525,10 @@ function M.drawDetailPanel(vg)
     local btnKey = isTerminal and "ctp_reset_single" or "ctp_activate"
     local btnAccent = isTerminal and "red" or "green"  -- [暗黑化 P1-B3] 重置=红 激活=绿
     local btnText = isTerminal and "重置" or (isLit and "已激活" or "激活")
-    -- 红色按钮文字: 白色; 绿色按钮文字: 深绿; 已激活灰显: 深绿
-    local btnTextR = isTerminal and 0xFF or TFD.btnR
-    local btnTextG = isTerminal and 0xFF or TFD.btnG
-    local btnTextB = isTerminal and 0xFF or TFD.btnB
+    local btnTextR, btnTextG, btnTextB = 255, 214, 102
+    if isLit and not isTerminal then
+        btnTextR, btnTextG, btnTextB = 196, 160, 90
+    end
 
     local _bf2 = BF.begin(vg, btnKey, TFD.btnCX, TFD.btnCY, TFD.btnW, TFD.btnH)
     DarkIcon.drawNine(vg, "btn",
@@ -720,16 +725,9 @@ end
 function M.handleTabInput(dx, dy)
     if state.tab and state.tab ~= "tianfu" then return false end
 
-    -- 效果总览按钮
-    if hitTest(dx, dy, infoBox()) then
-        BF.trigger("ctp_overview_info")
-        openOverview()
-        return true
-    end
-
     -- 重置按钮
-    local map = mapLayout()
-    if hitTest(dx, dy, resetBox()) then
+    local rstX, rstY, rstW, rstH = resetBox()
+    if hitTest(dx, dy, rstX, rstY, rstW, rstH) then
         BF.trigger("ctp_reset")
         print("[ChurchTalentPanel] 天赋重置按钮点击")
         -- 重置天赋：发送请求，服务端会清空并推送更新
@@ -738,6 +736,7 @@ function M.handleTabInput(dx, dy)
     end
 
     -- 缩放滑块区域
+    local map = mapLayout()
     local trackTop = map.slCY - TF.slTrkH * 0.5
     local trackBot = map.slCY + TF.slTrkH * 0.5
     if hitTest(dx, dy, sliderCX(), map.slCY, TF.slBgW, TF.slBgH) then
@@ -778,7 +777,8 @@ function M.handleDragBegin(dx, dy)
     -- 详情面板打开时不允许拖拽星图
     if state.tfDetailOpen then return true end
 
-    if hitTest(dx, dy, resetBox()) or hitTest(dx, dy, infoBox()) then
+    local rstX, rstY, rstW, rstH = resetBox()
+    if hitTest(dx, dy, rstX, rstY, rstW, rstH) then
         return true
     end
 
@@ -882,15 +882,11 @@ end
 ---@param msx number|nil 鼠标设计坐标X (缩放锚点, 可为nil)
 ---@param msy number|nil 鼠标设计坐标Y
 function M.handleScroll(wheel, msx, msy)
-    -- 效果总览（模态）优先：列表滚动
-    if state.tfOverviewOpen or state.tfOverviewClosing then
-        state.tfOverviewScrollY = state.tfOverviewScrollY - wheel * 80
-        clampOverviewScroll()
-        return
-    end
-
-    -- 天赋星图：滚轮直接缩放（上滚放大 / 下滚缩小，以鼠标位置为锚）
-    local step = 0.14 * wheel
+    -- 一格滚轮只走一小步。部分设备 Wheel 一次会给很大的值，先收成 ±1。
+    local dir = 0
+    if wheel > 0 then dir = 1 elseif wheel < 0 then dir = -1 end
+    if dir == 0 then return end
+    local step = 0.04 * dir
     local v = math.max(0, math.min(1, state.tfZoomSliderValue - step))
     if math.abs(v - state.tfZoomSliderValue) < 1e-6 then return end
     state.tfZoomSliderValue = v
@@ -899,6 +895,8 @@ function M.handleScroll(wheel, msx, msy)
     else
         TalentStarMap.setZoom(v)
     end
+    print(string.format("[ChurchTalentPanel] 滚轮缩放 wheel=%s step=%.3f slider=%.3f zoom=%.2f",
+        tostring(wheel), step, v, TalentStarMap.getZoom()))
 end
 
 --- 预加载（旧 Spine 天赋背景已下掉，静态底随页面图片加载即完成；保留 API 供调用方）

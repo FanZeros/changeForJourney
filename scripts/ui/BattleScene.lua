@@ -1363,7 +1363,7 @@ function BattleScene.setOnStageChanged(callback)
 end
 
 --- 注册敌方掉落回调（每次击杀敌人时触发）
---- callback(data): data = { stageId, enemyCX, enemyCY }
+--- callback(data): data = { stageId, enemyCX, enemyCY, isFirstClear }
 ---@param callback function|nil
 function BattleScene.setOnEnemyDrop(callback)
     onEnemyDropCallback = callback

@@ -86,6 +86,7 @@ function M.process(ctx, logicDt)
                     stageId = currentStageId,
                     enemyCX = enemyCX,
                     enemyCY = ENEMY_CARD_CY,
+                    isFirstClear = ctx.isFirstClear == true,
                 })
             else
                 print("[BattleScene] enemy died, but ctx.onEnemyDropCallback is nil!")

@@ -947,20 +947,6 @@ function RewardPopup.drawContent(vg)
         nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 230))
         nvgText(vg, TITLE_CX, TITLE_CY + 42, state.subtitle, nil)
     end
-    if state.cascade then
-        local elapsed = cascadeElapsed()
-        local shown = 0
-        if elapsed >= 0 then
-            shown = math.min(#state.items, math.floor(elapsed / CASCADE_INTERVAL) + 1)
-        end
-        local counter = string.format("%d / %d", shown, #state.items)
-        local counterY = (state.subtitle and state.subtitle ~= "") and (TITLE_CY + 74) or (TITLE_CY + 46)
-        nvgFontSize(vg, 26)
-        nvgFillColor(vg, nvgRGBA(0x23, 0x1a, 0x10, 220))
-        nvgText(vg, TITLE_CX + 1.5, counterY + 1.5, counter, nil)
-        nvgFillColor(vg, nvgRGBA(0xF6, 0xE2, 0x9A, 240))
-        nvgText(vg, TITLE_CX, counterY, counter, nil)
-    end
 
     -- 5) 奖励图标网格（裁剪区域内）
     local items = state.items

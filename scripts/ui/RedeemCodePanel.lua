@@ -78,7 +78,7 @@ local CONFIRM_BTN = {
     CX = 540, CY = 1348, W = 420, H = 108,
 }
 
--- 6. "确定" 文本（金按钮上用深褐字）
+-- 6. "确定" 文本（亮金底上用深褐字，保证对比）
 local CONFIRM_TXT = {
     X = 540, Y = 1348, FONT = 42,
     R = 0x3a, G = 0x24, B = 0x0c,
@@ -335,6 +335,35 @@ end
 
 -- ======================== 绘制 ========================
 
+--- 确定按钮：亮金渐变填充。DarkIcon 的 btn 只是暗底描金边，这里要更亮。
+---@param vg any
+---@param alpha number
+local function drawBrightConfirm(vg, alpha)
+    local x = CONFIRM_BTN.CX - CONFIRM_BTN.W * 0.5
+    local y = CONFIRM_BTN.CY - CONFIRM_BTN.H * 0.5
+    local w = CONFIRM_BTN.W
+    local h = CONFIRM_BTN.H
+    local r = h * 0.28
+    local a = math.max(0, math.min(255, math.floor(255 * alpha)))
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, x, y, w, h, r)
+    nvgFillPaint(vg, nvgLinearGradient(vg, 0, y, 0, y + h,
+        nvgRGBA(255, 226, 112, a),
+        nvgRGBA(232, 164, 42, a)))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, x + r, y + h * 0.22)
+    nvgLineTo(vg, x + w - r, y + h * 0.22)
+    nvgStrokeColor(vg, nvgRGBA(255, 248, 214, math.floor(a * 0.75)))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, x, y, w, h, r)
+    nvgStrokeColor(vg, nvgRGBA(122, 74, 18, a))
+    nvgStrokeWidth(vg, 3)
+    nvgStroke(vg)
+end
+
 function RedeemCodePanel.draw(vg)
     if not state.open then return end
 
@@ -423,14 +452,10 @@ function RedeemCodePanel.draw(vg)
         end
     end
 
-    -- ── 5. 确定按钮（暖金，不再用绿色贴图）──
+    -- ── 5. 确定按钮（亮金填充，不再用暗底描边）──
     local _bf1 = BF.begin(vg, "rcp_confirm", CONFIRM_BTN.CX, CONFIRM_BTN.CY, CONFIRM_BTN.W, CONFIRM_BTN.H)
     local btnAlpha = state.submitting and 0.55 or 1.0
-    DarkIcon.drawNine(vg, "btn",
-        CONFIRM_BTN.CX - CONFIRM_BTN.W * 0.5,
-        CONFIRM_BTN.CY - CONFIRM_BTN.H * 0.5,
-        CONFIRM_BTN.W, CONFIRM_BTN.H,
-        { accent = "gold", alpha = btnAlpha })
+    drawBrightConfirm(vg, btnAlpha)
 
     -- ── 6. 按钮文本（提交中显示"提交中..."）──
     nvgFontFace(vg, "sans")

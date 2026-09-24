@@ -30,6 +30,7 @@ return {
     { "image/进度条/UI_JSXQ_JYT1.png", 1187 },
     { "image/进度条/UI_LXSYJDT_2.png", 74852 },
     { "image/通用图标/UI_ICON_PZSX_5.png", 1765 },
+    { "image/通用图标/UI_ICON_PZSX_6.png", 1869 },
     { "image/通用图标/UI_ICON_PZSX_1.png", 1742 },
     { "image/通用图标/UI_ICON_PZSX_2.png", 1697 },
     { "image/通用图标/UI_ICON_PZSX_3.png", 1717 },

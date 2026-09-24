@@ -62,16 +62,19 @@ local DESIGN_H = 2400
 
 -- [暗黑化] 去掉全屏/行内黑色叠加层：弹窗直接浮在暗黑场景上，靠光晕与面板自带对比
 
+-- 奖励弹窗整体上移，避免在横屏中栏里显得偏下
+local POPUP_LIFT = 220
+
 -- 奖励弹窗锚点（原光晕中心，旋转底图已去掉）
-local GLOW_CX, GLOW_CY = 540, 1044
+local GLOW_CX, GLOW_CY = 540, 1044 - POPUP_LIFT
 local GLOW_H = 908
 
 -- 背景面板: UI_GXHD_1.png
-local PANEL_CX, PANEL_CY = 540, 1194
+local PANEL_CX, PANEL_CY = 540, 1194 - POPUP_LIFT
 local PANEL_W,  PANEL_H  = 1080, 685
 
 -- 奖励类型文本
-local TITLE_CX, TITLE_CY = 540, 996
+local TITLE_CX, TITLE_CY = 540, 996 - POPUP_LIFT
 local TITLE_FONT = 40
 
 -- 奖励图标区域：只露两行，超出部分上滚，不能画出面板
@@ -82,7 +85,7 @@ local COLS      = 5
 local VISIBLE_ROWS = 2
 local GRID_CX = 540
 local GRID_H = VISIBLE_ROWS * ICON_SIZE + (VISIBLE_ROWS - 1) * ROW_GAP
-local GRID_CY = 1228
+local GRID_CY = 1228 - POPUP_LIFT
 local GRID_W = 938
 
 -- 裁剪区域（基于图标区域）
@@ -102,9 +105,10 @@ end
 -- 第一行顶部 Y
 local FIRST_ROW_TOP = CLIP_TOP
 
--- 底部提示文本（[暗黑化] 上移贴近面板底，不再飘在屏幕下沿）
-local HINT_CX, HINT_CY = 540, 1596
-local HINT_FONT = 50
+-- 底部提示放在面板内侧，不能掉到面板底边外面
+local HINT_CX = 540
+local HINT_CY = PANEL_CY + PANEL_H * 0.5 - 72
+local HINT_FONT = 40
 local HINT_TEXT = "点击空白处关闭"
 
 -- 数量/等级角标（统一右下角角标样式）
@@ -620,6 +624,8 @@ function RewardPopup.show(title, rewards, opts)
     print("[RewardPopup] show: " .. title .. ", items=" .. #state.items
         .. ", rows=" .. tostring(math.ceil(#state.items / COLS))
         .. ", scrollMax=" .. tostring(state.scrollMax)
+        .. ", hintY=" .. tostring(HINT_CY)
+        .. ", panelBottom=" .. tostring(PANEL_CY + PANEL_H * 0.5)
         .. ", cascade=" .. tostring(state.cascade))
     if state.cascade then
         print(string.format("[RewardPopup] cascade start lead=%.2f head=%.2f tail=%.2f after=%d pop=%.2f",

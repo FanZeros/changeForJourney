@@ -311,19 +311,7 @@ end
 
 -- ======================== GM: 踢出玩家 ========================
 
---- 单机没有联机会话，不能踢人。
----@param targetUid number
----@param reason string
----@return boolean ok
----@return string|nil errMsg
-function GMService.KickPlayer(targetUid, reason)
-    if not targetUid then
-        return false, "缺少 targetUid"
-    end
-    print("[GMService] KickPlayer ignored in standalone targetUid=" .. tostring(targetUid)
-        .. " reason=" .. tostring(reason))
-    return false, "单机无联机会话"
-end
+-- 单机没有联机会话，踢人已删除。
 
 -- ======================== GM: 向指定玩家发送邮件 ========================
 
@@ -459,72 +447,7 @@ function GMService.ResetModule(targetUid, moduleName)
     return true
 end
 
--- ======================== GM: 封禁玩家 ========================
-
---- 封禁指定玩家（委托给 BanService）
---- 封禁后如果在线则推送弹窗 + 3 秒后踢出
----@param targetUid number
----@param duration number  封禁秒数（0 = 永久）
----@param reason string
----@param operatorUid number
----@return boolean ok
----@return string|nil reason
----@return table|nil result { targetUid, banExpireTime }
-function GMService.BanPlayer(targetUid, duration, reason, operatorUid)
-    if not targetUid then
-        return false, "缺少 targetUid"
-    end
-
-    local BanService = require("rules.gm.BanService")
-    local ok, errMsg = BanService.BanPlayer(targetUid, duration, reason, operatorUid)
-    if not ok then
-        return false, errMsg
-    end
-
-    -- 获取封禁信息
-    local banInfo = BanService.GetBanInfo(targetUid)
-    local banExpireTime = banInfo and banInfo.banExpireTime or 0
-
-    print("[GMService] BanPlayer targetUid=" .. tostring(targetUid)
-        .. " duration=" .. tostring(duration)
-        .. " reason=" .. tostring(reason))
-    return true, nil, { targetUid = targetUid, banExpireTime = banExpireTime }
-end
-
--- ======================== GM: 解封玩家 ========================
-
---- 解封指定玩家
----@param targetUid number
----@return boolean ok
----@return string|nil reason
-function GMService.UnbanPlayer(targetUid)
-    if not targetUid then
-        return false, "缺少 targetUid"
-    end
-
-    local BanService = require("rules.gm.BanService")
-    local ok, errMsg = BanService.UnbanPlayer(targetUid)
-    if not ok then
-        return false, errMsg
-    end
-
-    print("[GMService] UnbanPlayer targetUid=" .. tostring(targetUid))
-    return true
-end
-
--- ======================== GM: 维护模式开关 ========================
-
---- 设置维护模式（在线非 GM 玩家会被踢出）
----@param enabled boolean
----@return boolean ok
----@return string|nil reason
----@return table|nil result { maintenanceMode, kickedCount }
-function GMService.SetMaintenanceMode(enabled)
-    print("[GMService] SetMaintenanceMode ignored in standalone enabled=" .. tostring(enabled))
-    return false, "单机无联机会话，不能切换维护模式"
-end
-
--- ======================== GM: 查询在线玩家信息 ========================
+-- 单机不封禁、不维护。查询本地已加载存档仍可用。
 
 --- 查询指定在线玩家的基本信息
 ---@param targetUid number

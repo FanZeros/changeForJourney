@@ -12,39 +12,17 @@ local MailService      = require("rules.mail.MailService")
 
 local GMHandler = {}
 
--- ======================== GM 权限白名单 ========================
--- 只有以下 UID 才能执行 GM 指令，其余玩家一律拒绝。
--- 正式上线前务必更新此列表；留空则完全禁用 GM 功能。
-local GM_WHITELIST = {
-    [1658931154] = true,  -- 管理员 #1
-    [1002454410] = true,  -- 管理员 #2
-}
-
--- ======================== 公开接口 ========================
-
---- 判断指定 UID 是否为 GM（供 Server.lua 维护模式等外部模块使用）
----@param uid number
----@return boolean
-function GMHandler.IsGM(uid)
-    return GM_WHITELIST[uid] == true
-end
-
--- ======================== 鉴权 ========================
-
---- 鉴权检查：uid 不在白名单时拒绝。供 Equipment/Relic 等非 GMHandler 模块复用。
----@param uid number
----@return boolean
-function GMHandler.RequireAuth(uid)
-    if not GM_WHITELIST[uid] then
-        print("[GMHandler][WARN] 非授权 GM 请求 uid=" .. tostring(uid))
-        return false
-    end
+-- 单机不限制玩家。本地调试命令对当前存档开放。
+function GMHandler.IsGM(_uid)
     return true
 end
 
---- 鉴权检查：uid 不在白名单时直接返回拒绝结果
-local function checkGMAuth(uid)
-    return GMHandler.RequireAuth(uid)
+function GMHandler.RequireAuth(_uid)
+    return true
+end
+
+local function checkGMAuth(_uid)
+    return true
 end
 
 -- ======================== Handlers ========================
@@ -145,20 +123,7 @@ handlers[Protocol.ACTION_TYPES.GM_RESET_SAVE] = GMLogger.WrapGMAction(
 
 -- ──────────────────── 第一批新功能 ────────────────────
 
---- GM: 踢出玩家
-handlers[Protocol.ACTION_TYPES.GM_KICK_PLAYER] = GMLogger.WrapGMAction(
-    Protocol.ACTION_TYPES.GM_KICK_PLAYER,
-    function(uid, params)
-        if not checkGMAuth(uid) then return { success = false, reason = "权限不足" } end
-        local targetUid = params and tonumber(params.targetUid)
-        local reason    = params and params.reason or "被管理员踢出"
-        local ok, errMsg = GMService.KickPlayer(targetUid, reason)
-        if not ok then return { success = false, reason = errMsg } end
-        return { success = true, targetUid = targetUid }
-    end
-)
-
---- GM: 向指定玩家发送邮件（支持资源附件，跨实例安全）
+-- 单机没有联机会话，踢人/封禁/维护模式已删除。
 handlers[Protocol.ACTION_TYPES.GM_SEND_MAIL] = GMLogger.WrapGMAction(
     Protocol.ACTION_TYPES.GM_SEND_MAIL,
     function(uid, params)
@@ -237,48 +202,7 @@ handlers[Protocol.ACTION_TYPES.GM_QUERY_LOG] = GMLogger.WrapGMAction(
 
 -- ──────────────────── 第二批新功能 ────────────────────
 
---- GM: 封禁玩家
-handlers[Protocol.ACTION_TYPES.GM_BAN_PLAYER] = GMLogger.WrapGMAction(
-    Protocol.ACTION_TYPES.GM_BAN_PLAYER,
-    function(uid, params)
-        if not checkGMAuth(uid) then return { success = false, reason = "权限不足" } end
-        local targetUid = params and tonumber(params.targetUid)
-        local duration  = params and tonumber(params.duration) or 0  -- 秒, 0=永久
-        local reason    = params and params.reason or "违规操作"
-        local ok, errMsg, result = GMService.BanPlayer(targetUid, duration, reason, uid)
-        if not ok then return { success = false, reason = errMsg } end
-        return { success = true, targetUid = targetUid, banExpireTime = result.banExpireTime }
-    end
-)
-
---- GM: 解封玩家
-handlers[Protocol.ACTION_TYPES.GM_UNBAN_PLAYER] = GMLogger.WrapGMAction(
-    Protocol.ACTION_TYPES.GM_UNBAN_PLAYER,
-    function(uid, params)
-        if not checkGMAuth(uid) then return { success = false, reason = "权限不足" } end
-        local targetUid = params and tonumber(params.targetUid)
-        local ok, errMsg = GMService.UnbanPlayer(targetUid)
-        if not ok then return { success = false, reason = errMsg } end
-        return { success = true, targetUid = targetUid }
-    end
-)
-
---- GM: 维护模式开关
-handlers[Protocol.ACTION_TYPES.GM_MAINTENANCE] = GMLogger.WrapGMAction(
-    Protocol.ACTION_TYPES.GM_MAINTENANCE,
-    function(uid, params)
-        if not checkGMAuth(uid) then return { success = false, reason = "权限不足" } end
-        local enabled = params and params.enabled
-        if enabled == nil then return { success = false, reason = "缺少 enabled 参数" } end
-        -- 兼容字符串 "true"/"false"
-        if type(enabled) == "string" then
-            enabled = (enabled == "true")
-        end
-        local ok, errMsg, result = GMService.SetMaintenanceMode(enabled)
-        if not ok then return { success = false, reason = errMsg } end
-        return { success = true, maintenanceMode = result.maintenanceMode, kickedCount = result.kickedCount }
-    end
-)
+-- 单机没有联机会话，封禁/解封/维护模式已删除。
 
 --- GM: 查询在线玩家信息
 handlers[Protocol.ACTION_TYPES.GM_QUERY_PLAYER] = GMLogger.WrapGMAction(

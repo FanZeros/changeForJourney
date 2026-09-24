@@ -1,6 +1,8 @@
 --- 自动生成：全量图片清单（一次性加载用，带文件字节数）
 --- 已剔除设计稿/美术参照（edited_*/玩梗*/原素材_*/新旧卡面*/角色总览/Freestyle*），游戏不引用
 return {
+    { "image/界面底板/城镇世界/UI_CZ_YX.png", 232843 },
+    { "image/通用图标/ICON_CZ_YX.png", 285857 },
     { "image/界面底板/战斗/UI_ZD_GJT2.png", 261 },
     { "image/界面底板/竞技场排行/UI_JJCJL_DYT1.png", 301 },
     { "image/进度条/UI_TQ_JDY1.png", 13894 },

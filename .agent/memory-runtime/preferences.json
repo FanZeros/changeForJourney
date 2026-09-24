@@ -7,9 +7,9 @@
   "always_askuserquestion": true,
   "never_cancel_task": true,
   "never_end_without_askuserquestion": true,
-  "askuserquestion_rule": "不能取消或退出任务。每次完成后必须以 AskUserQuestion 选项提问下一步，禁止以纯文字中断对话。",
-  "dev_branch": "feat/ce-test-tools-20260924",
-  "push_policy": "从 workspace924 新开 feat/ce-test-tools-20260924 继续开发。只 push 该分支，禁止推送到 workspace924、integrate/20260923、workspace、workspace923 或其他分支。",
+  "askuserquestion_rule": "不能取消或退出任务。每次完成后必须以 AskUserQuestion 选项提问下一步，禁止以纯文字中断对话。即使用户暂时没再说话，也要停在选项上等待。",
+  "dev_branch": "feat/story-landscape-924",
+  "push_policy": "本轮用户明确要求把最近分支合入后推回 workspace924。可推 feat/story-landscape-924 与 workspace924，禁止推其他分支，禁止强推。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

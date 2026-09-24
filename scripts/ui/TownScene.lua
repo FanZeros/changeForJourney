@@ -21,7 +21,8 @@ local imgTavern   = -1   -- 酒馆建筑
 local imgMarket   = -1   -- 市场建筑
 local imgWarehouse = -1  -- 仓库建筑（背包入口）
 local imgIconWarehouse = -1 -- 仓库图标
-local imgLootBox = -1       -- 遗匣地点复用 ICON_BX
+local imgLootBox = -1       -- 遗匣地点立绘 UI_CZ_YX
+local imgIconLoot = -1      -- 遗匣名牌图标 ICON_CZ_YX
 
 local imgIconChurch = -1 -- 教堂图标
 local imgIconTree   = -1 -- 古树图标
@@ -378,7 +379,8 @@ local function ensureTownImages(vg)
     if not ctx then return end
     townImgsLoaded_ = true
     imgBg          = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
-    imgLootBox     = nvgCreateImage(ctx, "image/通用图标/ICON_BX.png", 0) or -1
+    imgLootBox     = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_YX.png", 0) or -1
+    imgIconLoot    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_YX.png", 0) or -1
     imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
     imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)
     imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
@@ -557,13 +559,13 @@ function TownScene.draw(vg)
     -- 城镇总览热点（引导组4）：左栏顶部空白带，不与建筑点击重叠
     if _tmActive then _TM.registerHotspot("town_overview", 540, 150, 900, 220, "left") end
 
-    -- 第7个地点：遗匣（没有等级/引导门槛），复用箱图与现有名牌风格。
+    -- 第7个地点：遗匣（没有等级/引导门槛）。立绘与名牌图标分开，名牌沿用地点图标尺寸。
     local lootFeedback = BF.begin(vg, "town_lootbox", LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H)
     DarkIcon.drawNine(vg, "plain", 390, 2010, 300, 64)
     drawImageDarkTint(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, 1.0)
     drawFlashOverlay(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, getClickFlashAlpha("lootbox"))
     drawBuildingLabel(vg, 540, LOOT_LBL_CY, 361, 113,
-        450, LOOT_LBL_CY - 6, 64, imgLootBox, 585, LOOT_LBL_CY - 6, "遗匣")
+        450, LOOT_LBL_CY - 6, 64, imgIconLoot, 585, LOOT_LBL_CY - 6, "遗匣")
     local count = LootBox.getCount()
     if count > 0 then
         DarkIcon.draw(vg, "reddot", 709, LOOT_LBL_CY - 45, 44, 1.0)

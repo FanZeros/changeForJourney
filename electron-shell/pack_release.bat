@@ -1,14 +1,15 @@
 @echo off
+REM 本地构建专用：先在 Maker 中 Build 当前分支，再用仓库根 dist 打 Windows 包；不拉快照、不上传。
 setlocal
 cd /d "%~dp0"
 where python >nul 2>&1
 if %errorlevel%==0 (
-  python pack_release.py %*
+  python pack_release.py --local-dist %*
   goto :done
 )
 where python3 >nul 2>&1
 if %errorlevel%==0 (
-  python3 pack_release.py %*
+  python3 pack_release.py --local-dist %*
   goto :done
 )
 echo 找不到 python。请先安装 Python 3 并勾选 Add to PATH。

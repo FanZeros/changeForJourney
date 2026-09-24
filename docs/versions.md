@@ -4,8 +4,9 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
-| v2.49-workspace925 | 2026-09-25 | 从 workspace924 开 workspace925，补合 9/24 漏掉的失焦挂机、立绘、配装布局、功绩边框与 integration。 |
-| v2.48-electron-background-trial | 2026-09-24 | Electron 离线包 BrowserWindow 关闭后台节流；语法与窗口构造检查通过，官方构建通过；Windows 失焦/最小化实测待做。 |
+| v2.50-workspace925 | 2026-09-25 | workspace925 补合立绘、配装布局、功绩边框、失焦挂机，以及 integration 的本地 Electron 打包校验。配装拖拽仍以 925 为准。 |
+| v2.49.2-local-electron-pack | 2026-09-24 | Electron 本地专用 `--local-dist`：校验 dist 中 Lua 与当前源码一致，禁止下载快照替换。 |
+| v2.48-electron-background-trial | 2026-09-24 | Electron 离线包 BrowserWindow 关闭后台节流；Windows 失焦/最小化实测待做。 |
 | v2.48-pc-obfuscation-trial | 2026-09-24 | 外部副本保守混淆单模块；官方构建与隔离测试通过。整游戏原版已有启动错误，正式 PC 包未发布。 |
 | v2.47-hero-equip-layout | 2026-09-24 | 属性页隐藏装备/批量按钮保留角色切换；配装页隐藏切角、批量按钮置顶，下方内容下移 160px 预留词条区域。 |
 | v2.47-pc-obfuscation-review | 2026-09-24 | 新分支核查 PC 构建：Lua 资源明文，Electron 原样打包；确认混淆试验边界及预览构建路径。 |

@@ -1272,6 +1272,7 @@ function HandleMouseWheelHorizon(eventType, eventData)
     local sy = mousePos.y / dpr()
     local csx, csy = toDesign(sx, sy)
     if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
+    if RewardPopup.isOpen() then RewardPopup.handleScroll(wheel) return end
 
     -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
     if TalentPage.isOpen() then
@@ -1298,7 +1299,6 @@ function HandleMouseWheelHorizon(eventType, eventData)
     -- 全屏弹窗
     if LevelUpPopup.isOpen() then return end
     if OfflineRewardPanel.isOpen() then OfflineRewardPanel.handleScroll(wheel) return end
-    if RewardPopup.isOpen() then RewardPopup.handleScroll(wheel) return end
 
     -- [按鼠标位置路由] 滚轮作用于鼠标所在的面板（左右面板可同开二级页，
     -- 不再依赖"最近点击面板"记录；滚到哪边就滚哪边的列表）

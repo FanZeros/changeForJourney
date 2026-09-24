@@ -880,12 +880,12 @@ function M.drawPanel(vg)
         local alpha = math.floor(255 * fadeIn)
         local centerY = XL.AFTER_BG_CY
 
-        -- "品质提升" 标题
+        -- "提品" 标题（点金石提品，不叫升阶）
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 34)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0xbc, 0xb8, 0xaa, alpha))
-        nvgText(vg, XL.AFTER_BG_CX, centerY - 40, "品质提升", nil)
+        nvgText(vg, XL.AFTER_BG_CX, centerY - 40, "提品", nil)
 
         -- "旧品质 → 新品质" 展示
         nvgFontSize(vg, 42)

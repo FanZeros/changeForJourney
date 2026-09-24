@@ -304,7 +304,7 @@ end
 
 -- 额外资源定义
 -- 洗练石: "洗练时保留词缀属性种类不变，重新随机品质等级和数值（可跨等级变化）"
--- 点金石: "洗练时使用可将装备升阶，最高升到史诗品质"
+-- 点金石: "洗练时使用可将装备提品，最高提到史诗品质"
 local EXTRA_RES_DEFS = {
     enhanceStone = { field = "enhanceStone", cost = 1, name = "洗练石" },
     destroyStone = { field = "destroyStone", cost = nil, name = "点金石" },  -- cost 动态计算：当前品质即为消耗数
@@ -743,7 +743,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
             local maxQ = getUpgradeMaxQuality(uid)
             if q >= maxQ then
                 local qName = EquipmentConfig.QUALITY[maxQ] and EquipmentConfig.QUALITY[maxQ].name or "最高"
-                return false, "装备已达" .. qName .. "品质，无法再升阶"
+                return false, "装备已达" .. qName .. "品质，无法再提品"
             end
         end
 

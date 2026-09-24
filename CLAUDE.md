@@ -19,8 +19,10 @@
 ## 本轮核查（2026-09-24 PC 代码混淆）
 
 - Windows Electron 离线包的 Lua 随 `dist/assets/*.lua` 原样进入 `extraResources/game`，目前没有混淆或加密；实测 `dist/1.0.7` 的 `main.lua`/`boot/Standalone.lua` 仍是可读源码。详细证据和安全试验路线见 `electron-shell/README.md`。
+- 独立副本的 `shared/StageProvider.lua` 保守混淆试点：`electron-shell/obfuscation_trial.py` 限定模块，不改原文件/`dist/`。构建成功且隔离模块 10 帧测试原版/试验版均 0 Error；已恢复预览原版重建。**未接入正式发布**，具体数据见 `electron-shell/README.md`。
+- 试验前整游戏基线验证已存在 `[systems/StoryPlayer]:7` 引用缺失 `network.ClientDispatcher`，试验版相同；旧存档回归测试 `tests/lootbox_page_test.lua:173` 的断言也失败。整游戏启动与存档尚未通过，不能把混淆试点视为可发布。
 - 本轮预览已将分支脚本/资源/配置同步到 `/workspace` 并用官方 Build 构建；克隆目录为 `/workspace/changeForJourney`。**MCP build 会从 `/workspace` 根读取资产**：不能只传 `changeForJourney/scripts` 就以为构建了该仓库，先确认构建日志包含实际资源和入口。
-- 未改游戏 Lua；本轮只记录核查结论，不对公开发布包或 TapTap 正式版操作。
+- 未改游戏 Lua；本轮只新增独立试验工具并记录核查结论，不对公开发布包或 TapTap 正式版操作。
 
 ## 上次做了什么（2026-09-24）
 
@@ -73,7 +75,8 @@
 
 ## likely_next_task
 
-- 询问用户：是否只保留 PC 混淆可行性评估，还是在本分支制作不影响游戏源码的保守混淆试验（需先验证官方构建与运行时）。
+- 下一步优先修复原版整游戏启动的 `systems/StoryPlayer` → `network.ClientDispatcher` 缺失依赖，并恢复存档回归测试；基线通过后才扩大混淆覆盖范围。
+- 当前隔离混淆试点不可发布。询问用户是否先修复基线，还是仅审阅试验结果；不用重新授权就不得上传正式 PC 包或 TapTap 版本。
 - 继续开发前先确认当前分支 `feature/pc-release-obfuscation-review`；做完必须以 AskUserQuestion 选项提问下一步。
 
 - 预览横屏左上角 CE / F1 测试面板，确认一键测试包、跳关、无敌和三倍速。

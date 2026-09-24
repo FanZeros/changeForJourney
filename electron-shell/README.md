@@ -27,6 +27,20 @@ electron-shell/
 - **可以评估混淆，但不要直接对 `dist/assets/*.lua` 做文本替换**：manifest 记录文件 hash/size，可能还有变体与引用关系；直接替换会破坏资源加载/校验。更安全的试验路线是在 Maker Build 前，对独立发布用副本的 Lua 做**保守混淆**，保留资源文件名、模块名、`require` 字符串和对外 API，运行 LSP、官方 Build 与启动/存档回归后再接入打包脚本。Lua 5.4 字节码仅在确认当前运行时和构建器均支持加载、且与目标平台版本一致时才考虑；它也不等于不可逆加密。
 - 如需求是**真正保密**，客户端运行的逻辑无法可靠隐藏，应把敏感规则/密钥移到可信服务端；本游戏当前是离线单机，不能把联网服务当成透明替换。未验证前不要对已有公开 Release/快照或正式 TapTap PC 版本执行替换上传。
 
+## 构建前隔离混淆试验（2026-09-24）
+
+`electron-shell/obfuscation_trial.py` 只允许处理 `scripts/shared/StageProvider.lua`，且要求内容完全符合本次审查过的模块。它只输出到**另一个目录**，绝不修改仓库源码或 `dist/`；变化仅为去注释/压缩排版和局部变量改名，`require` 模块名、文件名和外部方法名不变。这是流程可行性验证，**不是整个游戏已受保护**，其他 361 个 Lua 文件仍为可读源码。
+
+```bash
+python3 electron-shell/obfuscation_trial.py --source-root . --output-root ../pc-obfuscation-trial
+# 在独立的测试工程副本中用生成的 scripts/shared/StageProvider.lua 替换同名文件，
+# 然后用官方 build 构建该副本；不要修改 dist/assets/*.lua 或覆盖正式发布目录。
+```
+
+实测在隔离预览副本执行官方 Build 成功，`manifest-origin.json` 指向的该模块资源与输出逐字节相同；通过 UrhoXRuntime 对照运行 10 帧测试，原版和试验版均 `PASS`、0 Lua Error，四个导出方法返回值一致。`scripts/shared/StageProvider.lua` 原件 SHA256 为 `c503923c45d0dd87bcbe012d62984656d7d4908c1b1ed548d58b38d6887a13f2`，试验输出 SHA256 为 `7176b2c2092e0aec14dedde90d9682c5d6a67f9346c2ee94e7e25c5353653434`；预览已恢复到原版并重新 Build。
+
+**尚未通过整游戏启动/存档验收，禁止把此试验接入正式打包或上传 Release。** 未混淆的原版入口跑 60 帧已经报 `[systems/StoryPlayer]:7 Module not found: network.ClientDispatcher`；试验版出现相同错误，属于基线故障而非本试验引入。既有 `tests/lootbox_page_test.lua:173` 的存档断言和 `tests/lootbox_horizon_test.lua:49` 的旧模块路径也在当前分支基线上失败。需要先让基线测试恢复可用，再试更多模块与 Windows 离线包回归。
+
 ## 一键脚本（推荐，本机跑）
 
 云端代理传 ~466MB zip 会被超时掐断，**打包和上传请在本机直连 GitHub**。

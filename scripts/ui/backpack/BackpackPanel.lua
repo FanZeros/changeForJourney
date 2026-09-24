@@ -169,10 +169,38 @@ local TAB = {
     ANIM_DUR = 0.35,
 }
 
+---@type {key: string, name: string, cx: number, cy: number, textX: number, textY: number}[]
 local TAB_ITEMS = {
     { key = "equip", name = "装备", cx = 439, cy = 2308, textX = 439, textY = 2302 },
     { key = "item",  name = "道具", cx = 839, cy = 2308, textX = 839, textY = 2302 },
 }
+
+-- 左栏不画页内返回键，底栏页签不再为返回键让位，整组收到 1080 中线。
+local TAB_LAYOUT_ORIG = nil
+local function applyTabLayout(compact)
+    if not TAB_LAYOUT_ORIG then
+        TAB_LAYOUT_ORIG = {
+            bgCX = TAB.BG_CX,
+            cxs = { TAB_ITEMS[1].cx, TAB_ITEMS[2].cx },
+            txs = { TAB_ITEMS[1].textX, TAB_ITEMS[2].textX },
+        }
+    end
+    if compact then
+        local shift = 540 - TAB_LAYOUT_ORIG.bgCX
+        TAB.BG_CX = 540
+        for i = 1, #TAB_ITEMS do
+            TAB_ITEMS[i].cx = TAB_LAYOUT_ORIG.cxs[i] + shift
+            TAB_ITEMS[i].textX = TAB_LAYOUT_ORIG.txs[i] + shift
+        end
+        print("[BackpackPanel] 左栏装备/道具页签居中 shift=" .. tostring(shift))
+    else
+        TAB.BG_CX = TAB_LAYOUT_ORIG.bgCX
+        for i = 1, #TAB_ITEMS do
+            TAB_ITEMS[i].cx = TAB_LAYOUT_ORIG.cxs[i]
+            TAB_ITEMS[i].textX = TAB_LAYOUT_ORIG.txs[i]
+        end
+    end
+end
 
 -- 品质边框颜色：[B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表（粗铁/青铜/秘银/符文/黄金/血钻）
 local QUALITY_BORDER = DarkIcon.QUALITY_TRIM
@@ -801,6 +829,7 @@ function Panel.open(mode)
         hostMode_ = "inline"
     end
     applyLayout(isCompact())
+    applyTabLayout(isCompact())
     state.open = true
     state.closing = false
     state.openTime = time.elapsedTime
@@ -862,6 +891,7 @@ function Panel.update(dt)
             state.open = false
             state.closing = false
             applyLayout(false)  -- 恢复竖版原布局
+            applyTabLayout(false)
             print("[BackpackPanel] closed (anim done)")
         end
         return

@@ -49,8 +49,8 @@ local GRID_RADIUS   = 24
 local GRID_COL_STEP = GRID_CELL + GRID_GAP   -- 195
 local GRID_ROW_STEP = GRID_CELL + GRID_GAP   -- 195
 
--- 内容区域：配装tab隐藏了经验条/角色名后上移
-local GRID_TOP_Y    = 1144    -- 第一行中心 Y（比属性页上移150px）
+-- 内容区域：配装底板下移，列表顶部同步让出装备词条区域
+local GRID_TOP_Y    = 1304    -- 第一行中心 Y（与配装页底板下移 160px 对齐）
 local GRID_BOTTOM_Y = 2230    -- 底部裁剪 Y（Tab栏上方留白）
 
 -- 水平居中：5列 = 5*160 + 4*35 = 940px；(1080-940)/2 = 70 左边距
@@ -58,8 +58,8 @@ local GRID_MARGIN_LEFT = 70
 local GRID_FIRST_CX = GRID_MARGIN_LEFT + GRID_CELL * 0.5  -- 150
 
 -- 裁剪区域
-local CLIP_TOP    = GRID_TOP_Y - GRID_CELL * 0.5   -- 1214
-local CLIP_HEIGHT = GRID_BOTTOM_Y - CLIP_TOP        -- 1016
+local CLIP_TOP    = GRID_TOP_Y - GRID_CELL * 0.5   -- 1224
+local CLIP_HEIGHT = GRID_BOTTOM_Y - CLIP_TOP        -- 1006
 
 local GRID_MIN_ROWS = 5   -- 固定 5 行 = 25 格
 
@@ -581,7 +581,7 @@ function M.draw(vg, heroId, detailState)
             end
             totalW = totalW + gap * (#labels - 1)
             local x = DESIGN_W * 0.5 - totalW * 0.5
-            local y = 910
+            local y = 1070 -- 与配装页下方底板同步下移
             for i = 1, #labels do
                 local it = labels[i]
                 local col = it.row.twoActive and { 0xE8, 0xDC, 0xC8 } or { 0x9A, 0x90, 0x80 }
@@ -609,7 +609,7 @@ function M.draw(vg, heroId, detailState)
         end
         if def then
             local boxW, boxH = 820, 420
-            local bx, by = (DESIGN_W - boxW) * 0.5, 980
+            local bx, by = (DESIGN_W - boxW) * 0.5, 1140
             nvgBeginPath(vg)
             nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
             nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))

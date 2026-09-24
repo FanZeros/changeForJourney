@@ -566,28 +566,19 @@ function M.run(rt)
     -- 5.3 初始阵容同步/关卡重载已拆到 boot 队列独立步 firstStage
     --     （loadStage 内生成敌人+重置战斗，原与全部接线同帧执行会撑爆帧预算）
 
-    -- 5.3 获取玩家昵称（TapTap 账号系统）
-    ---@diagnostic disable-next-line: undefined-global
-    local myUid = clientCloud and clientCloud.userId or nil
-    ---@diagnostic disable-next-line: undefined-global
-    if not myUid then myUid = lobby and lobby:GetMyUserId() or nil end
-    if myUid then
-        PlayerInfoPanel.setUID(myUid)
-        GetUserNickname({
-            ---@diagnostic disable-next-line: assign-type-mismatch
-            userIds = { myUid },
-            onSuccess = function(nicknames)
-                if nicknames and nicknames[1] then
-                    TopBar.setPlayerName(nicknames[1].nickname)
-                    PlayerInfoPanel.setPlayerName(nicknames[1].nickname)
-                    print("[Standalone] 玩家昵称: " .. nicknames[1].nickname)
-                end
-            end,
-        })
-    else
-        PlayerInfoPanel.setUID("预览模式")
-        print("[Standalone] lobby 不可用，UID 设置为预览模式")
+    -- 5.3 本地昵称。不读 clientCloud / lobby / GetUserNickname。
+    local player = ClientDispatcher.get("player")
+    local localName = player and player.name or nil
+    if not localName or localName == "" then
+        localName = GameState.getName()
     end
+    if not localName or localName == "" then
+        localName = "玩家"
+    end
+    TopBar.setPlayerName(localName)
+    PlayerInfoPanel.setPlayerName(localName)
+    PlayerInfoPanel.setUID("本地")
+    print("[Standalone] 本地昵称: " .. tostring(localName))
 
     print("[Standalone] boot wiring done")
 

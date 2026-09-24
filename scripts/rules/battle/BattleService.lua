@@ -39,6 +39,7 @@ end
 ---@param uid number
 ---@param maxStageId number
 local function writeGuildStageRank(uid, maxStageId)
+    if PDM.IsLocalMode(uid) or not serverCloud then return end
     local serverId = PDM.GetServerId(uid)
     if not serverId then return end
     local key = GuildConfig.getCloudKey("STAGE_RANK", serverId)

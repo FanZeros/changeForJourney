@@ -1,11 +1,12 @@
 -- ============================================================================
--- StandaloneSave - 单机模式本地存档（无联网）
+-- StandaloneSave - 单机模式本地存档
+-- 读写 save.json。规则层 localMode 下不再写 serverCloud。
 -- 职责:
 --   1. 快照 ClientDispatcher 全部模块数据 + GameState 单机本地 state
 --   2. 变更检测（每秒全量 JSON 对比）→ 防抖落盘本地 File
 --   3. 启动时恢复（纯数据先注入，battle 进度待场景就绪后回灌）
 -- 运行端: 仅 Standalone（multiplayer.enabled=false）
--- 注意: 多人模式的持久化走 serverCloud + SaveManager（Server.lua），与本模块无关
+-- 本模块是单机唯一落盘路径。规则层 localMode 不再写云。
 -- ============================================================================
 -- 数据双源说明（单机模式）:
 --   - GameState.state       货币/等级/经验的真实源（setter 写本地表）

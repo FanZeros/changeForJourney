@@ -349,6 +349,14 @@ function PlayerDataManager.GetServerId(uid)
     return pd and pd.serverId
 end
 
+--- 单机本地模式不写云存档
+---@param uid number
+---@return boolean
+function PlayerDataManager.IsLocalMode(uid)
+    local pd = playerData_[uid]
+    return pd ~= nil and pd.localMode == true
+end
+
 -- ============================================================================
 -- 玩家生命周期：加载
 -- ============================================================================

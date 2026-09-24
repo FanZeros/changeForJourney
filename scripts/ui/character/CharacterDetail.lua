@@ -649,7 +649,19 @@ end
 ---@param dx number 设计空间 X
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
+function CharacterDetail.handleHover(dx, dy)
+    if not detailState.open or detailState.closing then return end
+    if detailState.tab ~= "equip" or not CharacterDetail._EquipPanel then return end
+    if CharacterDetail._EquipPanel.isItemDragging and CharacterDetail._EquipPanel.isItemDragging() then
+        return
+    end
+    if CharacterDetail._EquipPanel.handleHover then
+        CharacterDetail._EquipPanel.handleHover(dx, dy, detailState.heroId)
+    end
+end
+
 function CharacterDetail.handleDragBegin(dx, dy)
+
     if not detailState.open or detailState.closing then return true end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragBegin(dx, dy)

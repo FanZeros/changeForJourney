@@ -1,9 +1,11 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-24 | 版本:v2.49-merge-0924-all
+> 更新时间:2026-09-24 | 版本:v2.49.2-local-electron-pack
 >
-> **当前交付（`workspace924-integration`）**：从 `workspace924` 新建分支，合并今日剩余 5 分支（立绘、功绩置顶/品质边框、配装/一键领取、PC 源码保护调研、Electron 后台帧）。冲突已解，并修复重构路径残留的 require。官方 build 成功、dist 约 390 MB，LSP 0 Error；整游戏离屏运行 150 帧 0 Lua 错误/0 缺失资源，标题画面可见。旧 `StoryPlayer` 启动错误已不复现。全局奖励弹窗滚轮优先于装备袋。三套遗匣回归全部 PASS、各 0 Error；`lootbox_overflow_test.lua` 18/18 场景通过（含 199/200 背包边界和首通奖励），测试替身已适配自定义 require 缓存。下一步可手动验收功绩、配装与立绘，或在 Windows 实测 Electron 后台挂机。只推 `workspace924-integration`，交付后必须以 AskUserQuestion 选项询问下一步。
+> **当前交付（`workspace924-integration`）**：本地 Electron 打包安全入口已加固：`pack_release.bat` 默认 `--local-dist`；打包前校验当前游戏版本的 dist manifest 和全部 363 个 Lua 与源码逐字节一致，跳过云端快照与根目录清理，禁止结合上传/跳过同步/构建。官方 Build 成功，控制流模拟证实不拉快照/不上传，过期源码被拒。当前沙箱没有 Windows Electron 依赖，exe 尚需在 Windows 实测。游戏 1.0.7 / 壳 1.0.10；混淆试验未接入。只推 `workspace924-integration`，交付后 AskUserQuestion。
+>
+> **前次交付（`workspace924-integration`）**：从 `workspace924` 新建分支，合并今日剩余 5 分支（立绘、功绩置顶/品质边框、配装/一键领取、PC 源码保护调研、Electron 后台帧）。冲突已解，并修复重构路径残留的 require。官方 build 成功、dist 约 390 MB，LSP 0 Error；整游戏离屏运行 150 帧 0 Lua 错误/0 缺失资源，标题画面可见。旧 `StoryPlayer` 启动错误已不复现。全局奖励弹窗滚轮优先于装备袋。三套遗匣回归全部 PASS、各 0 Error；`lootbox_overflow_test.lua` 18/18 场景通过（含 199/200 背包边界和首通奖励），测试替身已适配自定义 require 缓存。下一步可手动验收功绩、配装与立绘，或在 Windows 实测 Electron 后台挂机。只推 `workspace924-integration`，交付后必须以 AskUserQuestion 选项询问下一步。
 >
 > **历史交接记录**：以下各小节记录此前独立分支验证，涉及“只 push 某历史分支”的约束仅是历史，不覆盖本轮授权。
 >

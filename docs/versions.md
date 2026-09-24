@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.49.2-local-electron-pack | 2026-09-24 | Electron 本地专用 `--local-dist`：校验 dist 中全部 363 个 Lua 与当前源码一致，禁止下载快照/清理根目录/上传；pack_release.bat 默认走此模式。官方 Build 与模拟测试通过，Windows exe 待本机验收。 |
 | v2.49.1-preview-regression | 2026-09-24 | 预览官方 build 与 150 帧离屏验证通过；修复全局奖励滚轮优先级与旧测试替身的 require 缓存适配，三套遗匣回归全部 PASS（溢出 18/18 场景）。 |
 | v2.49-merge-0924-all | 2026-09-24 | 从 workspace924 开 workspace924-integration，合入今日全部未合并分支（立绘重绘/功绩页/配装+一键领取/PC混淆调研/失焦挂机），修复合并残留失效 require 路径。 |
 | v2.48-pc-obfuscation-trial | 2026-09-24 | 外部副本保守混淆单模块；官方构建与隔离测试通过。整游戏原版已有启动错误，正式 PC 包未发布。 |

@@ -27,6 +27,12 @@
 - `systems/StoryPlayer.lua:7` 当前已引用 `runtime.ClientDispatcher`，原先的启动错误不再复现。修复合并后全局奖励弹窗滚轮被装备袋抢走的问题（`boot/StandaloneHorizon.lua`）。
 - 遗匣三套回归 `lootbox_page_test.lua`、`lootbox_horizon_test.lua`、`lootbox_overflow_test.lua` 均 PASS（各 0 Error）；溢出用例覆盖 18/18 场景，包括 199/200 背包边界及首通奖励。修复测试替身与引擎自定义 require 缓存不兼容，不改生产存档/结算逻辑。
 
+## 本地 Electron 打包（2026-09-24）
+
+- `electron-shell/pack_release.bat` 现在默认调用 `pack_release.py --local-dist`：不查询/下载 `dist-snapshot`、不上传、不调用会清理仓库根的 `clean_dist_spill()`。
+- `--local-dist` 在下载运行时或复制资源前，对 `.project/project.json` 版本对应的 dist manifest 校验全部 363 个 Lua 与 `scripts/` 逐字节一致；缺失或过期要求先在 Maker Build。原有快照/上传命令仍按原流程工作；`update_runtime.bat` 强制上传，**不能**用于仅本地打包。
+- 官方 MCP Build 成功；打包控制流模拟通过（不拉快照/不清理/不上传）、过期源码注入模拟被拒；当前沙箱缺 Windows Electron 依赖，未实测 Windows exe。版本：游戏 `1.0.7` / Electron `1.0.10`；源码仍未混淆。
+
 ## 遗留已知问题
 
 - Windows Electron 离线包的 Lua 随 `dist/assets/*.lua` 原样进入 `extraResources/game`，无混淆；`electron-shell/obfuscation_trial.py` 仅为独立试验，未接入发布。

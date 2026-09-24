@@ -1033,6 +1033,34 @@ def upload_release(ver: str) -> None:
     log("Release 页: https://github.com/%s/releases/tag/win64-v%s" % (repo, ver))
 
 
+def verify_local_dist() -> None:
+    """仅本地模式：确认 dist 是当前项目源码的完整构建，而非旧快照。"""
+    if not (DIST / "index.html").is_file():
+        die("本地 dist/index.html 不存在；先在 Maker 中 Build 当前分支")
+    project = json.loads((ROOT / ".project" / "project.json").read_text(encoding="utf-8"))
+    version = str(project["version"])
+    manifest_path = DIST / version / "manifest-origin.json"
+    if not manifest_path.is_file():
+        die("本地 dist 缺少 %s；先在 Maker 中 Build 当前分支" % manifest_path.relative_to(DIST))
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    lua_files = [item for item in manifest["files"] if item.get("ext") == ".lua" and item.get("prefix") == "../scripts"]
+    errors = []
+    built_paths = set()
+    for item in lua_files:
+        path = item["fs_path"]
+        built_paths.add(path)
+        source = ROOT / "scripts" / path
+        built = DIST / "assets" / (item["uuid"] + "-" + item["hash"] + ".lua")
+        if not source.is_file() or not built.is_file() or source.read_bytes() != built.read_bytes():
+            errors.append(path)
+    source_paths = {p.relative_to(ROOT / "scripts").as_posix() for p in (ROOT / "scripts").rglob("*.lua")}
+    errors.extend(sorted(source_paths - built_paths))
+    if "main.lua" not in built_paths or errors:
+        die("本地 dist 与当前源码不一致（%d 项，示例：%s）；请重新 Build，勿用旧快照" %
+            (len(errors), ", ".join(errors[:5])))
+    log("本地 dist 校验通过：项目 v%s、%d 个 Lua 文件与源码一致" % (version, len(lua_files)))
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="终焉之门 Windows 离线版一键打包")
     p.add_argument("--upload", action="store_true", help="打包后上传 GitHub Release")
@@ -1047,6 +1075,8 @@ def parse_args() -> argparse.Namespace:
                    help="云端用：把 dist/ 打成快照上传 Release dist-snapshot（供本机自动拉取）")
     p.add_argument("--no-fetch-dist", action="store_true",
                    help="本机缺 dist/ 时不自动从 Release 拉快照（直接报错）")
+    p.add_argument("--local-dist", action="store_true",
+                   help="仅用当前源码构建的本地 dist；校验全部 Lua，不拉快照、不清理仓库根、不上传")
     p.add_argument("--proxy", default=None, metavar="URL",
                    help="访问 GitHub 用的 HTTP 代理（如 http://127.0.0.1:7890）；"
                         "不指定时直连失败会自动探测常见本地代理端口（7890/7897/10809/1080…）")
@@ -1056,11 +1086,16 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     global PROXY_CLI
     args = parse_args()
+    if args.local_dist and (args.upload or args.upload_only or args.dist_only or args.runtime_only or args.skip_sync or args.skip_build):
+        die("--local-dist 不能与上传、跳过同步/构建或仅运行时模式组合")
     PROXY_CLI = (args.proxy or "").strip() or None
     ver = read_version()
     log("version %s" % ver)
     log("shell %s" % SHELL)
-    clean_dist_spill()
+    if args.local_dist:
+        verify_local_dist()
+    else:
+        clean_dist_spill()
     if args.upload_only:
         upload_release(ver)
         return 0
@@ -1075,7 +1110,7 @@ def main() -> int:
     else:
         log("跳过离线运行时（--skip-runtime）")
     if not args.skip_sync:
-        if not args.no_fetch_dist:
+        if not (args.no_fetch_dist or args.local_dist):
             ensure_dist(ver)
         sync_dist()
     else:

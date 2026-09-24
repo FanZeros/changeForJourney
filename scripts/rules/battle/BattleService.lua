@@ -10,14 +10,11 @@ local EquipmentSystem = require("systems.EquipmentSystem")
 local DropSystem      = require("systems.DropSystem")
 local StageConfig     = require("config.StageConfig")
 local StageProvider   = require("shared.StageProvider")
-local ChallengerService = require("rules.challenger.ChallengerService")
-local ChallengerServerConfig = require("shared.ChallengerServerConfig")
 local LootBoxSystem   = require("systems.LootBoxSystem")
 local HeroConfig      = require("config.HeroConfig")
 local BlacksmithConfig = require("config.BlacksmithConfig")
 local CurrencyService  = require("rules.currency.CurrencyService")
 local MonsterConfig    = require("config.MonsterConfig")
-local MapAffixConfig   = require("config.MapAffixConfig")
 local HeroService      = require("rules.hero.HeroService")
 local RelicAffix       = require("systems.RelicAffix")
 local RelicDefs        = require("shared.relic.RelicDefs")
@@ -29,7 +26,7 @@ local BattleService = {}
 -- ======================== 内部工具 ========================
 
 local function getStageConfig(uid)
-    return StageProvider.GetForServer(PDM.GetServerId(uid))
+    return StageProvider.Get()
 end
 
 -- ======================== 通关 & 推进关卡 ========================
@@ -40,11 +37,6 @@ end
 ---@param nextId number|nil
 ---@return boolean ok, string? err, table? result
 function BattleService.NextStage(uid, clearedId, nextId)
-    local canPlay, playErr = ChallengerService.CanPlay(uid)
-    if not canPlay then
-        return false, playErr or "挑战者活动不可进入"
-    end
-
     local StageConfig = getStageConfig(uid)
     local battle = PDM.GetModule(uid, "battle")
     if not battle then
@@ -54,7 +46,6 @@ function BattleService.NextStage(uid, clearedId, nextId)
         return false, "关卡配置不可用"
     end
 
-    local serverConfig = ChallengerServerConfig.GetByServerId(PDM.GetServerId(uid))
     local currentStageId = tonumber(battle.currentStageId)
     if not currentStageId or not StageConfig.getStage(currentStageId) then
         print("[BattleService][WARN] 当前关卡配置异常 uid=" .. tostring(uid)
@@ -82,12 +73,6 @@ function BattleService.NextStage(uid, clearedId, nextId)
         if StageConfig.isTerminalTemple(clearedId) then
             return false, "终焉神殿必须通过轮回流程结算"
         end
-        if serverConfig and serverConfig.maxStageId
-            and clearedId > tonumber(serverConfig.maxStageId)
-        then
-            return false, "通关关卡超出活动范围"
-        end
-
         -- 服务端权威：只能结算当前正在挑战的关卡。不得用 maxStageId、轮回目标
         -- 或客户端自称的更远进度自动矫正 currentStageId。
         if clearedId ~= currentStageId then
@@ -108,12 +93,6 @@ function BattleService.NextStage(uid, clearedId, nextId)
         local targetEntry = StageConfig.getStage(nextId)
         if not targetEntry then
             return false, "目标关卡不存在"
-        end
-        if serverConfig and serverConfig.maxStageId
-            and not StageConfig.isTerminalTemple(nextId)
-            and nextId > tonumber(serverConfig.maxStageId)
-        then
-            return false, "目标关卡超出活动范围"
         end
     end
 
@@ -211,29 +190,7 @@ function BattleService.NextStage(uid, clearedId, nextId)
                         .. " stage=" .. tostring(clearedId) .. " +" .. tostring(fcGoldenKey))
                 end
 
-                -- 挑战者区服：X-5 首通腐化石；每难度相对 4/8/12/16/20 章 X-5 首通神圣石
                 local fcCorruptStone, fcSacredStone = 0, 0
-                local currentServerConfig = ChallengerServerConfig.GetByServerId(PDM.GetServerId(uid))
-                if currentServerConfig and currentServerConfig.firstClearStonesEnabled ~= false then
-                    if StageConfig.getFirstClearCorruptStone then
-                        fcCorruptStone = StageConfig.getFirstClearCorruptStone(clearedId, stageEntry) or 0
-                    end
-                    if StageConfig.getFirstClearSacredStone then
-                        fcSacredStone = StageConfig.getFirstClearSacredStone(clearedId, stageEntry) or 0
-                    end
-                    if fcCorruptStone > 0 and currency then
-                        currency.corruptStone = (currency.corruptStone or 0) + fcCorruptStone
-                        PDM.MarkDirty(uid, "currency")
-                        print("[BattleService] first-clear corruptStone uid=" .. tostring(uid)
-                            .. " stage=" .. tostring(clearedId) .. " +" .. tostring(fcCorruptStone))
-                    end
-                    if fcSacredStone > 0 and currency then
-                        currency.sacredStone = (currency.sacredStone or 0) + fcSacredStone
-                        PDM.MarkDirty(uid, "currency")
-                        print("[BattleService] first-clear sacredStone uid=" .. tostring(uid)
-                            .. " stage=" .. tostring(clearedId) .. " +" .. tostring(fcSacredStone))
-                    end
-                end
 
                 firstClearRewards = {
                     gold         = fcGold,
@@ -251,7 +208,6 @@ function BattleService.NextStage(uid, clearedId, nextId)
         end
         battle.clearedStages[key] = true
         if not wasCleared then
-            ChallengerService.RecordProgress(uid, clearedId)
             local taskOk, TaskService = pcall(require, "rules.task.TaskService")
             if taskOk and TaskService then
                 TaskService.UpdateProgress(uid, "stage_clear", 1)
@@ -385,11 +341,6 @@ end
 ---@param newStageId number  轮回目标关卡 ID（由客户端通过 SC.getReincarnationTarget 计算）
 ---@return boolean ok, string? err
 function BattleService.Reincarnate(uid, newStageId)
-    local canPlay, playErr = ChallengerService.CanPlay(uid)
-    if not canPlay then
-        return false, playErr or "挑战者活动不可进入"
-    end
-
     local StageConfig = getStageConfig(uid)
     local battle = PDM.GetModule(uid, "battle")
     if not battle then
@@ -426,20 +377,12 @@ function BattleService.Reincarnate(uid, newStageId)
         return false, "目标关卡不存在 " .. tostring(newStageIdNum)
     end
 
-    local serverConfig = ChallengerServerConfig.GetByServerId(PDM.GetServerId(uid))
-    if serverConfig and serverConfig.maxStageId
-        and newStageIdNum > tonumber(serverConfig.maxStageId)
-    then
-        return false, "轮回目标超出活动范围"
-    end
-
     if not battle.clearedStages then
         battle.clearedStages = {}
     end
     battle.clearedStages[tostring(currentId)] = true
 
     battle.currentStageId = newStageIdNum
-    ChallengerService.RecordProgress(uid, currentId)
     if newStageIdNum > (battle.maxStageId or 0) then
         battle.maxStageId = newStageIdNum
         battle.battleMode = "firstClear"
@@ -481,7 +424,6 @@ function BattleService.DebugJumpToStage(uid, stageId)
     battle.currentStageId = stageIdNum
     battle.maxStageId = stageIdNum
     battle.clearedStages = StageConfig.buildClearedStagesUpTo(stageIdNum)
-    ChallengerService.RecordProgress(uid, stageIdNum)
     battle.battleMode = "idle"
     battle.idleAccumSec = 0
     PDM.MarkDirty(uid, "battle")
@@ -652,11 +594,6 @@ end
 ---@param rewards table[]
 ---@return boolean ok, string? err, table? result
 function BattleService.ClaimBattleRewards(uid, rewards)
-    local canPlay, playErr = ChallengerService.CanPlay(uid)
-    if not canPlay then
-        return false, playErr or "挑战者活动不可进入"
-    end
-
     local StageConfig = getStageConfig(uid)
     local battle      = PDM.GetModule(uid, "battle")
     local heroes      = PDM.GetModule(uid, "heroes")
@@ -717,17 +654,6 @@ function BattleService.ClaimBattleRewards(uid, rewards)
     local currentStageEntry = currentStageId and StageConfig.getStage(currentStageId)
     if not currentStageEntry then
         return false, "当前关卡数据异常"
-    end
-
-    local serverConfig = ChallengerServerConfig.GetByServerId(PDM.GetServerId(uid))
-    if serverConfig and serverConfig.seasonAffixMode == "difficulty_count" then
-        local affixes = MapAffixConfig.getAffixesForChallengerS1(currentStageEntry.chapter)
-        if not affixes or #affixes == 0 then
-            print("[BattleService][ERROR] S1词缀配置缺失 uid=" .. tostring(uid)
-                .. " stageId=" .. tostring(currentStageId)
-                .. " chapter=" .. tostring(currentStageEntry.chapter))
-            return false, "S1词缀配置异常"
-        end
     end
 
     for _, entry in ipairs(rewards) do

@@ -23,7 +23,7 @@ local imgWarehouse = -1  -- 仓库建筑（背包入口）
 local imgIconWarehouse = -1 -- 仓库图标
 local imgLootBox = -1       -- 遗匣地点立绘 UI_CZ_YX
 local imgIconLoot = -1      -- 遗匣名牌图标 ICON_CZ_YX
-local imgTask = -1          -- 任务地点
+local imgTask = -1          -- 功绩地点
 
 local imgIconChurch = -1 -- 教堂图标
 local imgIconTree   = -1 -- 古树图标
@@ -383,10 +383,10 @@ local function ensureTownImages(vg)
     local ctx = vg or townVg_
     if not ctx then return end
     townImgsLoaded_ = true
-    imgBg = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
-    imgLootBox = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_YX.png", 0) or -1
-    imgIconLoot = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_YX.png", 0) or -1
-    imgTask = nvgCreateImage(ctx, "image/界面底板/剧情日记/UI_RZAN_CJ.png", 0) or -1
+    imgBg          = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
+    imgLootBox     = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_YX.png", 0) or -1
+    imgIconLoot    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_YX.png", 0) or -1
+    imgTask        = nvgCreateImage(ctx, "image/界面底板/剧情日记/UI_RZAN_CJ.png", 0) or -1
     imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
     imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)
     imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)

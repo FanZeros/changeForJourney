@@ -75,6 +75,20 @@ local function statusOf(task)
     return TaskConfig.STATUS.LOCKED, current
 end
 
+local function sortRows(rows)
+    table.sort(rows, function(a, b)
+        local function rank(task)
+            local status = statusOf(task)
+            if status == TaskConfig.STATUS.CLAIMABLE then return 1 end
+            if status == TaskConfig.STATUS.CLAIMED then return 3 end
+            return 2
+        end
+        local ra, rb = rank(a), rank(b)
+        if ra ~= rb then return ra < rb end
+        return (a.target or 0) < (b.target or 0)
+    end)
+end
+
 local function listForTab()
     local out = {}
     for _, task in ipairs(TaskConfig.ACHIEVEMENT) do
@@ -86,6 +100,7 @@ local function listForTab()
             out[#out + 1] = task
         end
     end
+    sortRows(out)
     return out
 end
 
@@ -159,12 +174,21 @@ local function drawRow(vg, task, y)
     local shown = math.min(current, task.target)
     nvgBeginPath(vg)
     nvgRoundedRect(vg, LIST.x, y - LIST.rowH * 0.5, LIST.w, LIST.rowH, 12)
-    nvgFillColor(vg, nvgRGBA(32, 28, 24, 230))
+    local claimed = status == TaskConfig.STATUS.CLAIMED
+    local nameR, nameG, nameB = 244, 232, 204
+    local descR, descG, descB = 196, 176, 138
+    if claimed then
+        nvgFillColor(vg, nvgRGBA(36, 48, 42, 210))
+        nameR, nameG, nameB = 138, 156, 142
+        descR, descG, descB = 112, 128, 116
+    else
+        nvgFillColor(vg, nvgRGBA(32, 28, 24, 230))
+    end
     nvgFill(vg)
     text(vg, LIST.x + 28, y - 58, task.name or "远征委托", 36,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 232, 204, 2)
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, nameR, nameG, nameB, 2)
     text(vg, LIST.x + 28, y - 8, task.desc or "", 28,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 196, 176, 138, 2)
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, descR, descG, descB, 2)
     text(vg, LIST.x + 28, y + 46, "进度 " .. shown .. "/" .. task.target, 26,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 150, 176, 138, 2)
     local reward = task.reward
@@ -181,7 +205,7 @@ local function drawRow(vg, task, y)
     if status == TaskConfig.STATUS.CLAIMABLE then
         label, r, g, b = "领取", 176, 132, 48
     elseif status == TaskConfig.STATUS.CLAIMED then
-        label, r, g, b = "已领", 90, 140, 90
+        label, r, g, b = "已领", 92, 118, 98
     end
     nvgBeginPath(vg)
     nvgRoundedRect(vg, LIST.x + LIST.w - 210, y - 36, 180, 72, 10)

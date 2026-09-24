@@ -60,7 +60,7 @@ end
 function PlayerDataManager.AttachLocalModules(uid, modules, serverId)
     local pd = ensurePlayerData(uid)
     pd.modules = modules
-    pd.serverId = serverId or 1
+    pd.serverId = serverId
     pd.localMode = true
     pd.dirty = {}
     pd.sessionVersion = (pd.sessionVersion or 0) + 1

@@ -437,23 +437,6 @@ ModuleRegistry.modules = {
         end,
     },
 
-    -- ========== 邮件 ==========
-    {
-        name = "mail",
-        key  = "mod_mail",
-        scope = "server",
-        getDefault = function()
-            return {
-                claimed = {},   -- { [mailId] = true } 已领取的邮件
-                deleted = {},   -- { [mailId] = true } 已删除的邮件
-            }
-        end,
-        onLoad = function(data)
-            if not data.claimed then data.claimed = {} end
-            if not data.deleted then data.deleted = {} end
-        end,
-    },
-
     -- ========== 兑换码 ==========
     {
         name = "redeem",

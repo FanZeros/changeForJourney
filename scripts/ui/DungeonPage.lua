@@ -1128,16 +1128,6 @@ function DungeonPage.onActionResult(data)
         pendingIdleClaim = false
         pendingIdleClaimTime = 0
         if data.success then
-            -- 忽略迟到的旧区服响应，避免覆盖新区服的 idleAccumSec
-            local respSid = tonumber(data.serverId)
-            local curSid = require("ui.PlayerInfoPanel").getServerId()
-            if respSid and curSid and respSid ~= curSid then
-                print(string.format(
-                    "[DungeonPage] IDLE CLAIM stale sid=%s cur=%s, ignore accum update",
-                    tostring(respSid), tostring(curSid)))
-                return
-            end
-
             local amount = data.amount or 0
             local rewardType = data.rewardType or "gold"
             print("[DungeonPage] IDLE CLAIM OK: dungeon=" .. tostring(data.dungeonId)

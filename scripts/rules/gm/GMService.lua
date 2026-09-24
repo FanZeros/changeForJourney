@@ -7,7 +7,6 @@
 local PDM             = require("rules.character.PlayerDataManager")
 local CharacterSchema = require("shared.schemas.CharacterSchema")
 local CurrencyService = require("rules.currency.CurrencyService")
-local MailService     = require("rules.mail.MailService")
 local ResourceDefs    = require("config.ResourceDefs")
 local HeroConfig      = require("config.HeroConfig")
 local ExpTable        = require("config.ExpTable")
@@ -277,30 +276,13 @@ function GMService.ResetSave(uid)
     print(string.format("%s Phase1 done: reset %d modules, skipped %d. Fields: [%s]",
         TAG, resetCount, skippedCount, table.concat(fieldKeys, ", ")))
 
-    -- 2. 从 global_profile 中移除当前区服的创角记录和进度
-    local serverId = PDM.GetServerId(uid)
-    print(string.format("%s Phase2: serverId=%s", TAG, tostring(serverId)))
-    if serverId then
-        local gp = PDM.GetModule(uid, "global_profile")
-        if gp then
-            local hadServer = gp.servers and gp.servers[serverId] ~= nil
-            local hadProgress = gp.serverProgress and gp.serverProgress[tostring(serverId)] ~= nil
-            -- 移除 servers 中的创角标记
-            if gp.servers then
-                gp.servers[serverId] = nil
-            end
-            -- 移除 serverProgress 中的进度记录
-            if gp.serverProgress then
-                gp.serverProgress[tostring(serverId)] = nil
-            end
-            PDM.MarkDirty(uid, "global_profile")
-            print(string.format("%s   global_profile: removed serverId=%s hadServer=%s hadProgress=%s → MarkDirty",
-                TAG, tostring(serverId), tostring(hadServer), tostring(hadProgress)))
-        else
-            print(string.format("%s   WARNING: global_profile is nil!", TAG))
-        end
-    else
-        print(string.format("%s   WARNING: serverId is nil, skip global_profile cleanup", TAG))
+    -- 2. 清掉旧区服创角记录。单机不再分区服。
+    local gp = PDM.GetModule(uid, "global_profile")
+    if gp then
+        gp.servers = {}
+        gp.serverProgress = {}
+        PDM.MarkDirty(uid, "global_profile")
+        print(TAG .. "   global_profile: cleared legacy server maps")
     end
 
     local elapsed = os.clock() - resetClock
@@ -315,45 +297,15 @@ end
 
 -- ======================== GM: 向指定玩家发送邮件 ========================
 
---- 向本地已加载存档发送动态邮件。
----@param targetUid number
----@param title string
----@param body string
----@param rewards table[]|nil
+--- 单机不支持邮件
+---@param _targetUid number
+---@param _title string
+---@param _body string
+---@param _rewards table[]|nil
 ---@return boolean ok
 ---@return string|nil reason
----@return table|nil result { mailId, delivered }
-function GMService.SendMailToPlayer(targetUid, title, body, rewards)
-    if not targetUid then
-        return false, "缺少 targetUid"
-    end
-    if not title or title == "" then
-        return false, "邮件标题不能为空"
-    end
-    if not PDM.IsLoaded(targetUid) then
-        return false, "单机只能给已加载的本地存档发邮件"
-    end
-
-    local mailRewards = ResourceDefs.normalizeMailRewardList(rewards)
-    if ResourceDefs.hasDroppedMailRewards(rewards, mailRewards) then
-        return false, "奖励格式无效（碎片请用 101*数量、shard_16*数量 或 h16*数量）"
-    end
-
-    local dmId = MailService.SendDynamicMail(targetUid, {
-        title   = title,
-        body    = body or "",
-        rewards = mailRewards,
-        source  = "gm_console",
-        date    = os.date("%Y/%m/%d"),
-        sentAt  = os.time(),
-    })
-    if not dmId then
-        return false, "本地投递失败"
-    end
-
-    print("[GMService] SendMailToPlayer targetUid=" .. tostring(targetUid)
-        .. " delivered=local")
-    return true, nil, { mailId = dmId, delivered = "local" }
+function GMService.SendMailToPlayer(_targetUid, _title, _body, _rewards)
+    return false, "单机不支持邮件"
 end
 
 -- ======================== GM: 查询服务器状态 ========================
@@ -574,45 +526,17 @@ end
 
 -- ======================== 全服邮件 ========================
 
---- 发送全服广播邮件
----@param title string
----@param content string
----@param rewards table[]|nil
----@param expireDays number|nil
----@param operatorUid number GM 操作者 UID
----@param serverIds number[]|nil 目标区服列表（nil=全服）
+--- 单机不支持邮件
+---@param _title string
+---@param _content string
+---@param _rewards table[]|nil
+---@param _expireDays number|nil
+---@param _operatorUid number
+---@param _serverIds number[]|nil
 ---@return boolean ok
 ---@return string|nil errMsg
----@return table|nil result
-function GMService.BroadcastMail(title, content, rewards, expireDays, operatorUid, serverIds)
-    if not title or title == "" then
-        return false, "标题不能为空"
-    end
-    if not content or content == "" then
-        return false, "内容不能为空"
-    end
-
-    local BroadcastMailService = require("rules.mail.BroadcastMailService")
-
-    -- 确保服务已初始化
-    if not BroadcastMailService.IsInitialized() then
-        -- Init 未完成时不能立即发信
-        -- 正常情况下 Server.Start() 已经提前调用了 Init，这里是防御性兜底
-        BroadcastMailService.Init(nil)
-        return false, "全服邮件服务正在初始化，请稍后重试（约1-2秒）"
-    end
-
-    local ok, errMsg, result = BroadcastMailService.SendBroadcastMail(title, content, rewards, expireDays, serverIds)
-    if ok then
-        local serverStr = serverIds and table.concat(serverIds, ",") or "全服"
-        print("[GMService] BroadcastMail SUCCESS operator=" .. tostring(operatorUid)
-            .. " title=" .. title .. " servers=" .. serverStr
-            .. " mailId=" .. (result and result.mailId or "?"))
-    else
-        print("[GMService] BroadcastMail FAILED operator=" .. tostring(operatorUid)
-            .. " reason=" .. tostring(errMsg))
-    end
-    return ok, errMsg, result
+function GMService.BroadcastMail(_title, _content, _rewards, _expireDays, _operatorUid, _serverIds)
+    return false, "单机不支持邮件"
 end
 
 -- ======================== GM: 修复玩家丢档（迁移恢复） ========================
@@ -858,25 +782,10 @@ function GMService.RepairPlayerSave(targetUid, dryRun, operatorUid)
     heroes.deployed = newDeployed
     PDM.MarkDirty(targetUid, "heroes")
 
-    -- 2. 修复 serverProgress（防止自毁循环继续）
+    -- 单机不再写区服进度
     if gp then
-        if not gp.serverProgress then gp.serverProgress = {} end
-        local sp = gp.serverProgress[serverKey]
-        if sp then
-            -- 只升不降
-            if not sp.level or sp.level < playerLevel then
-                sp.level = playerLevel
-            end
-        else
-            gp.serverProgress[serverKey] = { level = playerLevel, stage = "" }
-        end
-
-        -- 修复 gp.servers 标记
-        if not gp.servers then gp.servers = {} end
-        if not gp.servers[serverKey] then
-            gp.servers[serverKey] = true
-        end
-
+        gp.servers = {}
+        gp.serverProgress = {}
         PDM.MarkDirty(targetUid, "global_profile")
     end
 

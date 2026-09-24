@@ -8,8 +8,6 @@ local PDM             = require("rules.character.PlayerDataManager")
 local SignInConfig    = require("shared.signin.SignInConfig")
 local SigninSchema    = require("shared.signin.SigninSchema")
 local CurrencyService = require("rules.currency.CurrencyService")
-local SaveManager     = require("rules.SaveManager")
-local ServerListConfig = require("shared.ServerListConfig")
 
 local SignInService = {}
 
@@ -18,24 +16,11 @@ local SignInService = {}
 ---@param uid number
 ---@return number openTime 开服 UTC 时间戳，0 表示未配置
 local function getOpenTime(uid)
-    local sid = SaveManager.getServerId(uid)
-    if not sid then return 0 end
-    local cfg = ServerListConfig.find(sid)
-    if not cfg then return 0 end
-    local ot = cfg.openTime or 0
-
-    -- 🔴 修复: openTime=0 表示"服务器已开放(无固定开服日)"
-    -- 此时签到周期应以玩家首次登录时间为基准，而不是回退到自然月日期
-    if ot <= 0 then
-        local sessionData = PDM.GetModule(uid, "session")
-        if sessionData and (sessionData.firstLoginTime or 0) > 0 then
-            ot = sessionData.firstLoginTime
-        end
-        -- 如果 firstLoginTime 也为 0（玩家还没完成首次登录），保持 ot=0
-        -- SignInConfig 会 fallback 到自然月，但这种情况极少发生（进入签到前必然已完成首登）
+    local sessionData = PDM.GetModule(uid, "session")
+    if sessionData and (sessionData.firstLoginTime or 0) > 0 then
+        return sessionData.firstLoginTime
     end
-
-    return ot
+    return 0
 end
 
 ---@param t table|nil

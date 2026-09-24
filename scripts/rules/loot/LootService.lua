@@ -28,7 +28,7 @@ local function applyPlayerLevelCap(uid)
         LootBoxSystem.levelCap = 0
         return
     end
-    local stageConfig = StageProvider.GetForServer(PDM.GetServerId(uid))
+    local stageConfig = StageProvider.Get()
     local entry = stageConfig.getStage(stageId)
     if entry and entry.monsterLevel and entry.monsterLevel > 0 then
         LootBoxSystem.levelCap = entry.monsterLevel

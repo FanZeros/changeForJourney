@@ -21,7 +21,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  local LootBox, LootBoxPage
  local BlacksmithPage, ChurchPage, TalentPage, TavernPage
  local MarketPage, DungeonPage, DungeonBattleScene
- local GMConsolePanel, RelicReforgePanel, MailPanel, AnnouncementPanel
+ local GMConsolePanel, RelicReforgePanel, AnnouncementPanel
  local TopBar, BattleScene, CharacterPanel
  local EquipmentDetail
  local RedeemCodePanel, SignInPanel, LootBoxSystem
@@ -76,7 +76,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      DungeonBattleScene  = require("ui.DungeonBattleScene")
      GMConsolePanel      = require("ui.GMConsolePanel")
      RelicReforgePanel   = require("ui.RelicReforgePanel")
-     MailPanel           = require("ui.MailPanel")
      TopBar              = require("ui.TopBar")
      BattleScene         = require("ui.BattleScene")
      CharacterPanel      = require("ui.CharacterPanel")
@@ -582,13 +581,8 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          RewardPopup.show("任务奖励", { { type = data.reward.type, amount = data.reward.amount } })
      end
 
-     -- 兑换码、邮件、邮件推送
+     -- 兑换码
      if (data.redeemAction or data.action == Protocol.ACTION_TYPES.REDEEM_CODE) and RedeemCodePanel.onActionResult then RedeemCodePanel.onActionResult(data) end
-     if data.mailAction and MailPanel.onActionResult then MailPanel.onActionResult(data) end
-     if data.mailPush and data.mails then
-         MailPanel.setMailData(data.mails)
-         return
-     end
      if data.announcementPush and data.announcements then
          AnnouncementPanel.setAnnouncementData(data.announcements)
          return

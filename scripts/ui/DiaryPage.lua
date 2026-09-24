@@ -6,7 +6,6 @@
 local DrawUtil            = require("core.DrawUtil")
 local PlayerStore         = require("core.PlayerStore")
 local AnnouncementPanel   = require("ui.AnnouncementPanel")
-local MailPanel           = require("ui.MailPanel")
 local SignInPanel         = require("ui.SignInPanel")
 local BackpackPanel       = require("ui.BackpackPanel")
 local TaskPanel           = require("ui.TaskPanel")
@@ -22,7 +21,6 @@ local imgSignIn  = -1   -- UI_RZAN_QD.png   签到卡片
 local imgNotice  = -1   -- UI_RZAN_GG.png   公告卡片
 local imgBag     = -1   -- UI_RZAN_BB.png   背包卡片
 local imgQuest   = -1   -- UI_RZAN_CJ.png   任务卡片
-local imgMail    = -1   -- UI_RZAN_YJ.png   邮件卡片
 
 local imgRedDot  = -1   -- ICON_HD.png      红点提示
 
@@ -67,9 +65,6 @@ local QUEST_W, QUEST_H   = 526, 247
 local QUEST_TXT_X, QUEST_TXT_Y = 176, 1398
 
 -- 邮件卡片
-local MAIL_CX, MAIL_CY = 795, 1332
-local MAIL_W, MAIL_H   = 397, 502
-local MAIL_TXT_X, MAIL_TXT_Y = 721, 1143
 
 
 
@@ -122,10 +117,8 @@ function DiaryPage.init(vg)
     imgNotice = nvgCreateImage(vg, "image/界面底板/剧情日记/UI_RZAN_GG.png", 0)
     imgBag    = nvgCreateImage(vg, "image/界面底板/剧情日记/UI_RZAN_BB.png", 0)
     imgQuest  = nvgCreateImage(vg, "image/界面底板/剧情日记/UI_RZAN_CJ.png", 0)
-    imgMail   = nvgCreateImage(vg, "image/界面底板/剧情日记/UI_RZAN_YJ.png", 0)
     imgRedDot = nvgCreateImage(vg, "image/通用图标/ICON_HD.png", 0)
     AnnouncementPanel.init(vg)
-    MailPanel.init(vg)
     SignInPanel.init(vg)
     BackpackPanel.init(vg)
     TaskPanel.init(vg)
@@ -234,18 +227,6 @@ function DiaryPage.draw(vg)
         255, 255, 255, CARD_STROKE_W)
     BF.finish(vg, _bf4)
 
-    -- 14. 邮件卡片
-    local _bf5 = BF.begin(vg, "dp_mail", MAIL_CX, MAIL_CY, MAIL_W, MAIL_H)
-    drawImageCentered(vg, imgMail, MAIL_CX, MAIL_CY, MAIL_W, MAIL_H, 1.0)
-
-    -- 15. "邮件" 文字
-    DrawUtil.drawTextStroke(vg, MAIL_TXT_X, MAIL_TXT_Y, "邮件",
-        CARD_TEXT_SIZE, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, CARD_STROKE_W)
-    BF.finish(vg, _bf5)
-
-
-
     -- 17. 底部日期编号 (斜体, #333333, 无描边, 显示玩家游戏天数)
     do
         local sessionData = PlayerStore.Get("session")
@@ -312,19 +293,10 @@ function DiaryPage.draw(vg)
                 QUEST_CY - QUEST_H * 0.5 + RED_DOT_DOWN,
                 RED_DOT_SIZE, RED_DOT_SIZE, 1.0)
         end
-        if MailPanel.hasClaimable() then
-            drawImageCentered(vg, imgRedDot,
-                MAIL_CX + MAIL_W * 0.5 - RED_DOT_INSET,
-                MAIL_CY - MAIL_H * 0.5 + RED_DOT_DOWN,
-                RED_DOT_SIZE, RED_DOT_SIZE, 1.0)
-        end
     end
 
     -- 19. 公告弹窗（覆盖在日志页面之上）
     AnnouncementPanel.draw(vg)
-
-    -- 20. 邮件弹窗（覆盖在日志页面之上）
-    MailPanel.draw(vg)
 
     -- 21. 签到面板（全屏覆盖）
     SignInPanel.draw(vg)
@@ -342,7 +314,6 @@ function DiaryPage.hasOverlayOpen()
     return SignInPanel.isOpen()
         or BackpackPanel.isOpen()
         or TaskPanel.isOpen()
-        or MailPanel.isOpen()
         or AnnouncementPanel.isOpen()
 end
 
@@ -350,13 +321,11 @@ end
 function DiaryPage.hasAnyClaimable()
     return SignInPanel.hasClaimable()
         or TaskPanel.hasClaimable()
-        or MailPanel.hasClaimable()
         or AnnouncementPanel.hasUnread()
 end
 
 function DiaryPage.update(dt)
     AnnouncementPanel.update(dt)
-    MailPanel.update(dt)
     SignInPanel.update(dt)
     -- [仓库入口] 横屏模态(window/left)由宿主驱动，避免双 update
     if not BackpackPanel.isWindowMode() and not BackpackPanel.isLeftMode() then
@@ -379,10 +348,6 @@ function DiaryPage.handleInput(dx, dy)
     -- 签到面板打开时优先拦截
     if SignInPanel.isOpen() then
         return SignInPanel.handleInput(dx, dy)
-    end
-    -- 邮件弹窗打开时优先拦截
-    if MailPanel.isOpen() then
-        return MailPanel.handleInput(dx, dy)
     end
     -- 公告弹窗打开时优先拦截
     if AnnouncementPanel.isOpen() then
@@ -417,14 +382,6 @@ function DiaryPage.handleInput(dx, dy)
         require("ui.TaskPage").open()
         return true
     end
-    -- 邮件卡片点击区域 → 打开邮件弹窗
-    if DrawUtil.hitTest(dx, dy, MAIL_CX, MAIL_CY, MAIL_W, MAIL_H) then
-        BF.trigger("dp_mail")
-        print("[DiaryPage] 邮件 clicked → open MailPanel")
-        MailPanel.open()
-        return true
-    end
-
     return false
 end
 
@@ -439,9 +396,6 @@ function DiaryPage.handleDragBegin(dx, dy)
     end
     if SignInPanel.isOpen() then
         return SignInPanel.handleDragBegin(dx, dy)
-    end
-    if MailPanel.isOpen() then
-        return MailPanel.handleDragBegin(dx, dy)
     end
     if AnnouncementPanel.isOpen() then
         return AnnouncementPanel.handleDragBegin(dx, dy)
@@ -459,9 +413,6 @@ function DiaryPage.handleDragMove(dx, dy)
     if SignInPanel.isOpen() then
         return SignInPanel.handleDragMove(dx, dy)
     end
-    if MailPanel.isOpen() then
-        return MailPanel.handleDragMove(dx, dy)
-    end
     if AnnouncementPanel.isOpen() then
         return AnnouncementPanel.handleDragMove(dx, dy)
     end
@@ -478,9 +429,6 @@ function DiaryPage.handleDragEnd(dx, dy)
     if SignInPanel.isOpen() then
         return SignInPanel.handleDragEnd(dx, dy)
     end
-    if MailPanel.isOpen() then
-        return MailPanel.handleDragEnd(dx, dy)
-    end
     if AnnouncementPanel.isOpen() then
         return AnnouncementPanel.handleDragEnd(dx, dy)
     end
@@ -496,9 +444,6 @@ function DiaryPage.handleScroll(wheel, dx, dy)
     end
     if SignInPanel.isOpen() then
         return SignInPanel.handleScroll(wheel)
-    end
-    if MailPanel.isOpen() then
-        return MailPanel.handleScroll(wheel)
     end
     if AnnouncementPanel.isOpen() then
         return AnnouncementPanel.handleScroll(wheel)

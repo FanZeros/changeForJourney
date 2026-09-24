@@ -5,7 +5,6 @@
 -- ============================================================================
 
 local PDM             = require("rules.character.PlayerDataManager")
-local SaveManager     = require("rules.SaveManager")
 local CurrencyService = require("rules.currency.CurrencyService")
 local ExpTable        = require("config.ExpTable")
 local HeroConfig        = require("config.HeroConfig")
@@ -37,18 +36,6 @@ end
 local function isUrHero(heroId)
     local cfg = HeroConfig.get(heroId)
     return cfg and tonumber(cfg.quality) == HeroConfig.QUALITY_UR
-end
-
-local function getServerDictValue(t, serverId)
-    if type(t) ~= "table" then return nil end
-    return t[tostring(serverId)] or t[serverId]
-end
-
-local function hasRealServerProgress(progress)
-    if type(progress) ~= "table" then return false end
-    local level = tonumber(progress.level or 0) or 0
-    local stage = progress.stage or ""
-    return level > 1 or stage ~= ""
 end
 
 -- ======================== 上阵 / 下阵 / 批量设置 ========================
@@ -253,24 +240,11 @@ function HeroService.SelectInitialHero(uid, heroId)
             end
             rosterDiag = string.format("{count=%d,ids=[%s]}", rc, rosterDiag == "nil" and "" or rosterDiag)
         end
-        local gp = PDM.GetModule(uid, "global_profile")
-        local sid = SaveManager.getServerId(uid)
-        local spDiag = "N/A"
-        if gp and gp.serverProgress and sid then
-            local sp = getServerDictValue(gp.serverProgress, sid)
-            if sp then
-                spDiag = string.format("{level=%s,stage=%s}", tostring(sp.level), tostring(sp.stage or ""))
-            else
-                spDiag = "NIL_FOR_KEY_" .. tostring(sid)
-            end
-        end
         local playerMod = PDM.GetModule(uid, "player")
         local playerLevel = playerMod and tostring(playerMod.level) or "nil"
         print(string.format(
-            "[HeroService][DIAG-INIT] SelectInitialHero CALLED uid=%s heroId=%s serverId=%s " ..
-            "roster=%s serverProgress=%s player.level=%s",
-            tostring(uid), tostring(heroId), tostring(sid),
-            rosterDiag, spDiag, playerLevel))
+            "[HeroService][DIAG-INIT] SelectInitialHero CALLED uid=%s heroId=%s roster=%s player.level=%s",
+            tostring(uid), tostring(heroId), rosterDiag, playerLevel))
     end
 
     -- 仅限初始三选一的英雄 ID
@@ -285,55 +259,6 @@ function HeroService.SelectInitialHero(uid, heroId)
     end
     if rosterCount > 1 then
         return false, "已非新玩家状态，无法选择初始英雄"
-    end
-
-    -- 🔴 防丢档二重校验：即使 roster 为空（可能因数据丢失），
-    -- 如果 serverProgress 表明该玩家有区服进度，则阻止选初始英雄
-    -- （防止丢档后客户端进入新手流程，覆盖 roster 为仅 1 级英雄）
-    -- 铁律 #18 强化：不仅检查 level > 1，还检查 stage 非空（防止 level 被降级覆盖为 1 的情况）
-    local gp = PDM.GetModule(uid, "global_profile")
-    local serverId = SaveManager.getServerId(uid)
-    if gp and gp.serverProgress and serverId then
-        local sp = getServerDictValue(gp.serverProgress, serverId)
-        if sp then
-            if hasRealServerProgress(sp) then
-                print(string.format(
-                    "[HeroService][CRITICAL] SelectInitialHero BLOCKED — roster empty but serverProgress exists " ..
-                    "uid=%s serverId=%s progressLevel=%s stage=%s. Possible data loss detected!",
-                    tostring(uid), tostring(serverId), tostring(sp.level), tostring(sp.stage)))
-                return false, "存档异常，请联系客服"
-            end
-        end
-    end
-
-    -- 🔴 铁律 #18 增强：gp.servers 辅助检测（防 serverProgress 自毁死循环）
-    -- 即使 serverProgress.level=1（被降级），gp.servers[serverId] 仍能证明玩家曾使用过此区服
-    -- 🔴 修复：仅当 spEntry 有实质进度时才触发阻断（level>1 OR stage 非空）
-    -- 清档后 updateServerProgress 会写入 {level=1, stage=""}，这是合法新玩家状态，不应阻断
-    if gp and gp.servers and serverId then
-        local hasCreatedOnThisServer = getServerDictValue(gp.servers, serverId)
-        if hasCreatedOnThisServer then
-            local spEntry = gp.serverProgress and getServerDictValue(gp.serverProgress, serverId)
-            if spEntry and rosterCount == 0 then
-                -- 验证 spEntry 是否包含有意义的游戏进度（与一级安全网一致的判定标准）
-                if hasRealServerProgress(spEntry) then
-                    print(string.format(
-                        "[HeroService][CRITICAL] SelectInitialHero BLOCKED (SECONDARY) — " ..
-                        "gp.servers[%s]=true, serverProgress has real progress (level=%s stage=%s) " ..
-                        "but roster is empty. Self-destruct scenario detected! uid=%s",
-                        tostring(serverId), tostring(spEntry.level), tostring(spEntry.stage or ""),
-                        tostring(uid)))
-                    return false, "存档异常，请联系客服"
-                else
-                    print(string.format(
-                        "[HeroService] SelectInitialHero SECONDARY check PASSED — " ..
-                        "gp.servers[%s]=true but spEntry has no real progress (level=%s stage=%s). " ..
-                        "Treating as legitimate new/reset player. uid=%s",
-                        tostring(serverId), tostring(spEntry.level), tostring(spEntry.stage or ""),
-                        tostring(uid)))
-                end
-            end
-        end
     end
 
     -- 替换 roster：只保留选中的英雄（起始等级 = 远征等级）

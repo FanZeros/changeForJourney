@@ -222,6 +222,14 @@ TalentNodeDefs.NODES = {
     [208] = { name = "终焉·？？",   adj = {176,187} },
 }
 
+--- 终焉环占位：可显示，但未填效果前不可点亮，避免白耗天赋点
+---@param id number|string|nil
+---@return boolean
+function TalentNodeDefs.isPlaceholder(id)
+    local nid = tonumber(id)
+    return nid ~= nil and nid >= 201 and nid <= 208
+end
+
 --- 获取指定节点定义
 ---@param id number
 ---@return table|nil { name, adj }

@@ -7,6 +7,7 @@
 local GameConfig    = require("config.GameConfig")
 local DrawUtil      = require("core.DrawUtil")
 local TalentStarMap = require("ui.TalentStarMap")
+local TalentNodeDefs = require("shared.talent.TalentNodeDefs")
 local TalentEffect  = require("systems.TalentEffect")
 local BF            = require("systems.ButtonFeedback")
 local DarkIcon      = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
@@ -457,9 +458,10 @@ function M.drawDetailPanel(vg)
     -- 7. 按钮：末尾已点亮节点显示红色"重置"，未点亮节点显示绿色"激活"
     local isLit = TalentStarMap.isNodeLit(state.tfDetailNodeId)
     local isTerminal = isLit and isTerminalNode(state.tfDetailNodeId)
+    local isPlaceholder = (not isLit) and TalentNodeDefs.isPlaceholder(state.tfDetailNodeId)
     local btnKey = isTerminal and "ctp_reset_single" or "ctp_activate"
-    local btnAccent = isTerminal and "red" or "green"  -- [暗黑化 P1-B3] 重置=红 激活=绿
-    local btnText = isTerminal and "重置" or (isLit and "已激活" or "激活")
+    local btnAccent = isTerminal and "red" or (isPlaceholder and "gold" or "green")
+    local btnText = isTerminal and "重置" or (isLit and "已激活" or (isPlaceholder and "未开放" or "激活"))
     -- 红色按钮文字: 白色; 绿色按钮文字: 深绿; 已激活灰显: 深绿
     local btnTextR = isTerminal and 0xFF or TFD.btnR
     local btnTextG = isTerminal and 0xFF or TFD.btnG
@@ -631,6 +633,10 @@ function M.handleDetailInput(dx, dy)
                 nodeId = nid,
             })
         elseif nid ~= nil and not isLit then
+            if TalentNodeDefs.isPlaceholder(nid) then
+                print("[ChurchTalentPanel] 终焉占位节点未开放: nodeId=" .. tostring(nid))
+                return true
+            end
             -- 未点亮节点：发送激活请求
             BF.trigger("ctp_activate")
             print("[ChurchTalentPanel] 天赋激活按钮点击: nodeId=" .. tostring(nid))

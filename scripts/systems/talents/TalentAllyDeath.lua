@@ -22,7 +22,7 @@ function M.bind(deps)
             return true
         end
 
-        -- ======== 星图节点125 不死鸟之翼 免疫致命伤害 + 3秒恢复0%HP ========
+        -- ======== 星图节点125 不死鸟之翼 免疫致命伤害 + 3秒恢复20%HP ========
         if hasStarNode(dyingUnit, 125) then
             local ds = getState(dyingUnit)
             if ds and not ds.phoenixUsed then
@@ -36,7 +36,7 @@ function M.bind(deps)
                     local hotDps = math.floor(maxHp * 0.20 / 3.0 + 0.5)
                     SEM.apply(dyingUnit, SEM.HOT, 3.0, dyingUnit, { hps = hotDps })
                     syncHpFn(dyingUnit)
-                    talentLog("[Talent] 不死鸟之翼 " .. (dyingUnit.name or "?") .. " 免疫致命伤害! 3秒恢复0%HP (hps=" .. hotDps .. ")")
+                    talentLog("[Talent] 不死鸟之翼 " .. (dyingUnit.name or "?") .. " 免疫致命伤害! 3秒恢复20%HP (hps=" .. hotDps .. ")")
                 else
                     dyingUnit.hp = 1
                 end

@@ -2,6 +2,7 @@
 -- 天赋星图
 
 local TalentsSchema = {}
+local TalentNodeDefs = require("shared.talent.TalentNodeDefs")
 
 --- 归一化 litNodes：压成连续数组，0 在首位
 ---@param data table
@@ -13,7 +14,7 @@ function TalentsSchema.normalizeModule(data)
     if type(raw) == "table" then
         for _, v in pairs(raw) do
             local id = tonumber(v)
-            if id ~= nil and not seen[id] and id ~= 0 then
+            if id ~= nil and not seen[id] and id ~= 0 and not TalentNodeDefs.isPlaceholder(id) then
                 seen[id] = true
                 dense[#dense + 1] = id
             end

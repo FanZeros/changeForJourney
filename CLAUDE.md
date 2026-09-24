@@ -14,7 +14,14 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`feat/ce-test-tools-20260924`（从 `workspace924` 新开）。只 push 本分支，不要推 `workspace924` / `integrate/20260923` / `workspace` / `workspace923`
+- **当前开发分支**：`feat/hero-equipment-layout-924`（从 `workspace924` 新开）。只 push 本分支；旧会话记录中的任何分支限制均以用户最新指令为准。
+
+## 本轮做了什么（2026-09-24）
+
+- 角色属性页：不显示装备槽、一键装备/卸下，保留左右切换已拥有角色。
+- 配装页：隐藏左右角色切角，一键装备/卸下移至上方；底板、标题、名字、套装信息与背包格子下移约 160px，为装备词条预留区域。绘制与输入热区同步。
+- 已 LSP 0 Error、官方 build 通过、60 帧运行验证无 Lua / 资源错误；离屏截图只到标题页，角色页待实际预览验收。
+- 只对 `feat/hero-equipment-layout-924` 提交、推送；别推 `workspace924` 或其他分支。
 
 ## 上次做了什么（2026-09-24）
 
@@ -67,8 +74,9 @@
 
 ## likely_next_task
 
-- 预览横屏左上角 CE / F1 测试面板，确认一键测试包、跳关、无敌和三倍速。
-- 只在 `feat/ce-test-tools-20260924` 上继续，做完必须 AskUserQuestion，禁止纯文字结束。
+- 预览确认属性页切角能切角色、配装页顶端批量按钮可点击，装备词条留白和下方列表无重叠。
+- 后续若用户要求，补齐装备词条实际显示（本轮只预留位置，不新增词条内容）。
+- 本轮只在 `feat/hero-equipment-layout-924` 上继续；每次交付都须 AskUserQuestion 选项，不纯文字结束。
 
 - 预览验收：滚轮、右键装备、顶栏远征等级、五语、四人战斗、新 SE、未解锁职业标、左栏世界地图
 - 四人入队/闲聊已接：情景 74–81。首次获得或第一次打开详情播放；闲聊每局每个角色一次
@@ -83,8 +91,8 @@
 
 ## 用户硬性流程（必须遵守）
 
-- **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 以 `feat/ce-test-tools-20260924` 继续开发；完成后每次 push **该分支**。不要推 `workspace924`、`integrate/20260923`、`workspace`、`workspace923` 或其他分支。
+- **不能自行取消/退出任务**；每次交付后都以 AskUserQuestion 给选项询问下一步，禁止纯文字结束。记忆会提醒此要求，但要自动强制执行“每次完成后”规则还须在 harness 中配置 hook。
+- 本轮从 `workspace924` 开 `feat/hero-equipment-layout-924`；完成后只 push **这个功能分支**。不要推 `workspace924`、`integrate/20260923`、`workspace`、`workspace923` 或其他分支。先核对实际 Git 分支。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
@@ -94,6 +102,6 @@
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
 - Lua 5.4 字符串里不要写 `\!`
 - 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
-- 禁止推其他分支（当前只推 `feat/first-clear-reward-cascade`）
+- 禁止推其他分支（本轮只推 `feat/hero-equipment-layout-924`）；旧条目里的分支名属于历史交接，不能覆盖用户本轮要求
 - 遗匣 `seeds[].equip` 是原装备，种子合并和等级兼容绝不能改写或丢弃它。
 - 不要开引擎 i18n `enabled=true`，用 `core/I18n.lua`

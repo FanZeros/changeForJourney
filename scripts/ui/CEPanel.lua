@@ -132,12 +132,10 @@ function CEPanel.pollHotkey()
 end
 
 function CEPanel.draw(vg, screenW, screenH)
-    if not vg then return end
+    if not vg or not open_ then return end
     if resetArm_ > 0 and os.clock() - resetArm_ > 3 then
         resetArm_ = 0
     end
-    drawBtn(vg, TOGGLE.x, TOGGLE.y, TOGGLE.w, TOGGLE.h, open_ and "CE 关" or "CE", open_)
-    if not open_ then return end
 
     clampScroll(screenH)
     local h = panelH(screenH)
@@ -185,11 +183,6 @@ local function inPanel(sx, sy, screenH)
 end
 
 function CEPanel.handleDown(sx, sy, screenH)
-    if hit(sx, sy, TOGGLE.x, TOGGLE.y, TOGGLE.w, TOGGLE.h) then
-        pressedId = "toggle"
-        captured_ = true
-        return true
-    end
     if not open_ then
         pressedId = nil
         captured_ = false
@@ -231,10 +224,7 @@ function CEPanel.handleUp(sx, sy, screenH)
 end
 
 function CEPanel.handleWheel(sx, sy, wheel, screenH)
-    if not open_ then return false end
-    if not inPanel(sx, sy, screenH) and not hit(sx, sy, TOGGLE.x, TOGGLE.y, TOGGLE.w, TOGGLE.h) then
-        return false
-    end
+    if not open_ or not inPanel(sx, sy, screenH) then return false end
     scroll_ = scroll_ - wheel * 28
     clampScroll(screenH or 1080)
     print("[CE] scroll=" .. tostring(scroll_))

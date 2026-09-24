@@ -150,10 +150,33 @@ function TaskService.RefreshAchievements(uid)
 
     ensurePeriods(taskData)
 
+    local battle = PDM.GetModule(uid, "battle")
+    if battle then
+        local stageCount = 0
+        if type(battle.clearedStages) == "table" then
+            for _, cleared in pairs(battle.clearedStages) do
+                if cleared then stageCount = stageCount + 1 end
+            end
+        end
+        taskData.achProg["stage_count"] = stageCount
+        taskData.achProg["max_stage"] = tonumber(battle.maxStageId) or tonumber(battle.currentStageId) or 0
+        local TaskConfig = require("config.TaskConfig")
+        local cleared = battle.clearedStages or {}
+        for _, task in ipairs(TaskConfig.ACHIEVEMENT) do
+            if task.stageId then
+                local done = cleared[tostring(task.stageId)] or cleared[task.stageId]
+                taskData.achProg[task.condKey] = done and 1 or 0
+            end
+        end
+    end
+
     local heroes = PDM.GetModule(uid, "heroes")
     local player = PDM.GetModule(uid, "player")
 
-    if not heroes or not player then return end
+    if not heroes or not player then
+        PDM.MarkDirty(uid, "task")
+        return
+    end
 
     -- 远征等级
     taskData.achProg["player_level"] = player.level or 1
@@ -161,6 +184,7 @@ function TaskService.RefreshAchievements(uid)
     -- SR / SSR 拥有数, 觉醒最大次数, 转职统计
     local srCount  = 0
     local ssrCount = 0
+    local heroCount = 0
     local awkRMax  = 0
     local awkSRMax = 0
     local awkSSRMax = 0
@@ -174,6 +198,7 @@ function TaskService.RefreshAchievements(uid)
         for heroId, heroData in pairs(heroes.roster) do
             -- 碎片存根（无 level 字段）不算"拥有"，跳过
             if not heroData.level then goto continue_hero end
+            heroCount = heroCount + 1
 
             -- HeroConfig 使用 quality 字段: 1=R, 2=SR, 3=SSR
             local quality = 1
@@ -208,13 +233,13 @@ function TaskService.RefreshAchievements(uid)
 
     taskData.achProg["sr_count"]    = srCount
     taskData.achProg["ssr_count"]   = ssrCount
+    taskData.achProg["hero_count"]  = heroCount
     taskData.achProg["awk_r_max"]   = awkRMax
     taskData.achProg["awk_sr_max"]  = awkSRMax
     taskData.achProg["awk_ssr_max"] = awkSSRMax
     taskData.achProg["adv1_count"]  = adv1Count
     taskData.achProg["adv2_count"]  = adv2Count
-
-    -- 竞技场段位
+    PDM.MarkDirty(uid, "task")
 end
 
 -- ======================== 生命周期 ========================
@@ -269,6 +294,7 @@ function TaskService.TickOnlineTime(uid)
     local minutes = math.floor(elapsed / 60)
     if minutes >= 1 then
         taskData.dailyProg["online_min"] = (taskData.dailyProg["online_min"] or 0) + minutes
+        taskData.weeklyProg["online_min"] = (taskData.weeklyProg["online_min"] or 0) + minutes
         taskData._onlineStart = now - (elapsed % 60)
         PDM.MarkDirty(uid, "task")
     end

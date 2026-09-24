@@ -23,6 +23,7 @@ local imgWarehouse = -1  -- 仓库建筑（背包入口）
 local imgIconWarehouse = -1 -- 仓库图标
 local imgLootBox = -1       -- 遗匣地点立绘 UI_CZ_YX
 local imgIconLoot = -1      -- 遗匣名牌图标 ICON_CZ_YX
+local imgTask = -1          -- 任务地点
 
 local imgIconChurch = -1 -- 教堂图标
 local imgIconTree   = -1 -- 古树图标
@@ -116,6 +117,10 @@ local MARKET_TEXT_X,  MARKET_TEXT_Y  = 219, 846
 local LOOT_CX, LOOT_CY, LOOT_W, LOOT_H = 540, 1940, 260, 260
 local LOOT_LBL_CY = 2090
 local LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H = 540, 2010, 380, 440
+-- 任务：左下角地点，避开教堂热区和遗匣热区。
+local TASK_CX, TASK_CY, TASK_W, TASK_H = 180, 2050, 180, 180
+local TASK_LBL_CY = 2188
+local TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H = 180, 2100, 280, 280
 
 -- 文字
 local LABEL_FONT_SIZE   = 38
@@ -381,6 +386,7 @@ local function ensureTownImages(vg)
     imgBg          = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
     imgLootBox     = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_YX.png", 0) or -1
     imgIconLoot    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_YX.png", 0) or -1
+    imgTask        = nvgCreateImage(ctx, "image/界面底板/剧情日记/UI_RZAN_CJ.png", 0) or -1
     imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
     imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)
     imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
@@ -574,6 +580,17 @@ function TownScene.draw(vg)
     end
     LootBox.drawRates(vg, 540, 2170)
     BF.finish(vg, lootFeedback)
+
+    local taskFeedback = BF.begin(vg, "town_task", TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H)
+    drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
+    drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
+    drawBuildingLabel(vg, 180, TASK_LBL_CY, 280, 90,
+        70, TASK_LBL_CY - 4, 52, imgTask, 210, TASK_LBL_CY - 4, "功绩")
+    local taskOk, TaskPage = pcall(require, "ui.TaskPage")
+    if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
+        DarkIcon.draw(vg, "reddot", 300, TASK_LBL_CY - 36, 36, 1.0)
+    end
+    BF.finish(vg, taskFeedback)
 end
 
 --- 回调：点击铁匠铺
@@ -621,9 +638,14 @@ end
 
 ---@type fun()|nil
 local onLootBoxClick = nil
+local onTaskClick = nil
 
 function TownScene.setOnLootBoxClick(fn)
     onLootBoxClick = fn
+end
+
+function TownScene.setOnTaskClick(fn)
+    onTaskClick = fn
 end
 
 function TownScene.handleInput(dx, dy)
@@ -633,6 +655,14 @@ function TownScene.handleInput(dx, dy)
         BF.trigger("town_lootbox")
         triggerClickAnim("lootbox")
         if onLootBoxClick then deferAction(CLICK_CALLBACK_DELAY, onLootBoxClick) end
+        return true
+    end
+    if math.abs(dx - TASK_HIT_CX) <= TASK_HIT_W * 0.5
+        and math.abs(dy - TASK_HIT_CY) <= TASK_HIT_H * 0.5 then
+        BF.trigger("town_task")
+        triggerClickAnim("task")
+        print("[TownScene] 点击功绩")
+        if onTaskClick then deferAction(CLICK_CALLBACK_DELAY, onTaskClick) end
         return true
     end
     local _TM = require("systems.TutorialManager")

@@ -186,6 +186,10 @@ function SignInService.DailySign(uid)
     PDM.MarkDirty(uid, "signin")
 
     grantReward(uid, reward)
+    local taskOk, TaskService = pcall(require, "rules.task.TaskService")
+    if taskOk and TaskService then
+        TaskService.UpdateProgress(uid, "signin", 1)
+    end
 
     return true, nil, { day = dayOfPeriod, reward = reward }
 end

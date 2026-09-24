@@ -17,9 +17,8 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 local TalentPage = {}
 
 -- 横屏古树页相对左栏的宽度倍率。
--- 1.0 = 与左栏同宽；1.5 = 宽 50%，多出的部分从左侧盖住战斗区。
--- 只改这个数即可，侧边返回条会跟着页面右缘移动。
-TalentPage.HORIZON_WIDTH_SCALE = 1.5
+-- 1.8 = 在原先 1.5 基础上再加宽约 20%，多出的部分从左侧盖住战斗区。
+TalentPage.HORIZON_WIDTH_SCALE = 1.8
 
 local ANIM = {
     OPEN_DUR  = 0.45,
@@ -199,7 +198,7 @@ function TalentPage.open()
     state.tfOverviewClosing = false
     TalentStarMap.resetCamera()
     syncTalentLitNodes()
-    print("[TalentPage] 打开古树天赋")
+    print("[TalentPage] 打开古树天赋 widthScale=" .. tostring(TalentPage.getHorizonWidthScale()))
 end
 
 function TalentPage.close()
@@ -275,9 +274,6 @@ function TalentPage.handleInput(dx, dy)
             return false
         end
         return true
-    end
-    if state.tfOverviewOpen then
-        return TalentPanel.handleOverviewInput(dx, dy)
     end
     if state.tfDetailOpen then
         return TalentPanel.handleDetailInput(dx, dy)
@@ -370,7 +366,6 @@ local function drawPageImpl(vg)
     TownPageChrome.drawBack(vg, { cx = 958 + extra })
 
     TalentPanel.drawDetailPanel(vg)
-    TalentPanel.drawOverviewPanel(vg)
 
     nvgRestore(vg)
 end

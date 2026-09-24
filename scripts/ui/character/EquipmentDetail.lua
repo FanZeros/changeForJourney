@@ -502,19 +502,23 @@ local function compactOffset()
     local cellLeft = ax - COMPACT_CELL * 0.5
     local cellRight = ax + COMPACT_CELL * 0.5
     local cellTop = ay - COMPACT_CELL * 0.5
+    -- 右栏详情往中缝外侧伸，左栏详情往右外侧伸，不锁在本栏里
+    local toCenterLeft = detState.owner == "character"
     local targetLeft
-    if ax < 540 then
-        targetLeft = cellRight + 12
+    local minLeft
+    local maxLeft
+    if toCenterLeft then
+        targetLeft = cellLeft - 12 - visW
+        minLeft = -1200
+        maxLeft = 1080 - COMPACT_MARGIN - visW
     else
-        targetLeft = cellLeft - 12 - visW
-    end
-    if targetLeft < COMPACT_MARGIN then
         targetLeft = cellRight + 12
+        minLeft = COMPACT_MARGIN
+        maxLeft = 2200
     end
-    if targetLeft + visW > 1080 - COMPACT_MARGIN then
-        targetLeft = cellLeft - 12 - visW
-    end
-    targetLeft = math.max(COMPACT_MARGIN, math.min(targetLeft, 1080 - COMPACT_MARGIN - visW))
+    if targetLeft < minLeft then targetLeft = cellRight + 12 end
+    if targetLeft > maxLeft then targetLeft = cellLeft - 12 - visW end
+    targetLeft = math.max(minLeft, math.min(targetLeft, maxLeft))
     local targetTop = math.max(COMPACT_MARGIN, math.min(cellTop, 2400 - COMPACT_MARGIN - visH))
     return targetLeft - refLeft * COMPACT_SCALE, targetTop - refTop * COMPACT_SCALE
 end
@@ -1502,7 +1506,12 @@ function EquipmentDetail.handleDragEnd()
     return detState.open == true
 end
 
+function EquipmentDetail.getOwner()
+    return detState.owner
+end
+
 function EquipmentDetail.drawIf(vg, owner)
+    if detState.compactCorner then return end
     if owner and detState.owner and detState.owner ~= owner then return end
     EquipmentDetail.draw(vg)
 end

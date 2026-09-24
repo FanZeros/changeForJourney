@@ -365,7 +365,7 @@ function M.drawPanel(vg)
             if cellIdx > 0 and cellIdx <= #backpackItems then
                 local item = backpackItems[cellIdx]
                 if item and item.seq then
-                    EquipmentDetail.open(item.seq, nil, nil, false, "smith")
+                    EquipmentDetail.open(item.seq, nil, nil, true, "smith")
                     print("[BlacksmithDecompose] 长按打开装备详情 idx=" .. cellIdx .. " seq=" .. item.seq)
                 end
             end

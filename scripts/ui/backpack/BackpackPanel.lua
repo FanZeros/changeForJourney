@@ -1430,7 +1430,8 @@ function Panel.handleInput(dx, dy)
                        and cy <= GRID.CLIP_BOTTOM + GRID.CELL_SIZE * 0.5
                        and DrawUtil.hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
                         -- 背包模式：slot=nil, heroId=nil → 显示"前往强化"按钮
-                        EquipmentDetail.open(equip.seq, nil, nil, false, "backpack")
+                        EquipmentDetail.open(equip.seq, nil, nil, true, "backpack", cx, cy)
+                        print("[BackpackPanel] 打开装备详情 seq=" .. tostring(equip.seq))
                         return true
                     end
                 end
@@ -1442,6 +1443,30 @@ function Panel.handleInput(dx, dy)
 end
 
 -- ======================== 拖拽/滚轮 ========================
+
+function Panel.handleHover(dx, dy)
+    if not state.open or state.tab ~= "equip" then return end
+    if dy < CLIP_TOP or dy > GRID.CLIP_BOTTOM then return end
+    local equipList = getEquipList()
+    for idx, equip in ipairs(equipList) do
+        local col = ((idx - 1) % GRID.COLS) + 1
+        local row = math.floor((idx - 1) / GRID.COLS)
+        local cx = CELL_COL_CX[col]
+        local cy = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5 - state.scrollY
+        if cy >= CLIP_TOP - GRID.CELL_SIZE * 0.5 and cy <= GRID.CLIP_BOTTOM + GRID.CELL_SIZE * 0.5
+            and DrawUtil.hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
+            local seq = tostring(equip.seq)
+            if Panel._hoverSeq == seq then
+                if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
+                return
+            end
+            Panel._hoverSeq = seq
+            EquipmentDetail.open(equip.seq, nil, nil, true, "backpack", cx, cy)
+            print("[BackpackPanel] 悬停详情 seq=" .. seq)
+            return
+        end
+    end
+end
 
 function Panel.handleDragBegin(dx, dy)
     if not state.open then return false end

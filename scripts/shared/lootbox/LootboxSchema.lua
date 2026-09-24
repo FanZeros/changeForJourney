@@ -10,7 +10,7 @@ LootboxSchema.Fields = {
         pdmKey     = "ModLootbox",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_lootbox" },
+        persist    = { via = "local", cloudKey = "mod_lootbox" },
         getDefault = function()
             return {
                 seeds = {},

@@ -12,14 +12,14 @@
 --     pdmKey     = "ModXxx",                       -- PDM 内部键名
 --     type       = "json",                          -- "scalar"|"string"|"json"
 --     scope      = "server"|"global",               -- 作用域
---     persist    = { via="cloud", cloudKey="mod_xxx" } | false,
+--     persist    = { via="local", cloudKey="mod_xxx" } | false,
 --     getDefault = function() return {} end,        -- 默认值工厂
 --     onLoad     = function(data) end,              -- 加载后修正（可选）
 --     desc       = "说明",
 --   }
 --
 -- 持久化策略:
---   via="cloud" → 模块 JSON（单机随 StandaloneSave 落盘，不写云）
+--   via="local" → 模块 JSON（单机随 StandaloneSave 落盘，不写云）
 --   false       → sync-only，仅运行时同步，不持久化
 --
 -- 与 SaveManager 的数据兼容:

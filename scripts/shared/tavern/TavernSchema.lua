@@ -10,7 +10,7 @@ TavernSchema.Fields = {
         pdmKey     = "ModTavern",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_tavern" },
+        persist    = { via = "local", cloudKey = "mod_tavern" },
         getDefault = function()
             return {
                 shopPurchased = {},   -- { [itemId] = count }

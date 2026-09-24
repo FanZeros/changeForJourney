@@ -8,7 +8,7 @@ PlayerSchema.Fields = {
         pdmKey     = "ModPlayer",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_player" },
+        persist    = { via = "local", cloudKey = "mod_player" },
         getDefault = function()
             return {
                 name         = "玩家",

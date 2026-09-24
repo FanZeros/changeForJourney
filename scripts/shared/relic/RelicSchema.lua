@@ -57,7 +57,7 @@ RelicSchema.Fields = {
         pdmKey     = "ModRelics",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_relics" },
+        persist    = { via = "local", cloudKey = "mod_relics" },
         getDefault = function()
             return {
                 bag          = {},

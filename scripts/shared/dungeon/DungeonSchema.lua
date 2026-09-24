@@ -8,7 +8,7 @@ DungeonSchema.Fields = {
         pdmKey     = "ModDungeon",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_dungeon" },
+        persist    = { via = "local", cloudKey = "mod_dungeon" },
         getDefault = function()
             return {
                 gold_mine = {

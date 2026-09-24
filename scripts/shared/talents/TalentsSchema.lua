@@ -30,7 +30,7 @@ TalentsSchema.Fields = {
         pdmKey     = "ModTalents",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_talents" },
+        persist    = { via = "local", cloudKey = "mod_talents" },
         getDefault = function()
             return {
                 litNodes = { 0 },

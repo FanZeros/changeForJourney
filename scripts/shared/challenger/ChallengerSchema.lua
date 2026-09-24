@@ -9,7 +9,7 @@ ChallengerSchema.Fields = {
         pdmKey     = "ModChallenger",
         type       = "json",
         scope      = "global",
-        persist    = { via = "cloud", cloudKey = "global_challenger" },
+        persist    = { via = "local", cloudKey = "global_challenger" },
         getDefault = function()
             return {
                 activities = {},

@@ -11,7 +11,7 @@ HeroesSchema.Fields = {
         pdmKey     = "ModHeroes",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_heroes" },
+        persist    = { via = "local", cloudKey = "mod_heroes" },
         getDefault = function()
             return {
                 roster   = {},

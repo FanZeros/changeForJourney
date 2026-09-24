@@ -8,7 +8,7 @@ RedeemSchema.Fields = {
         pdmKey     = "ModRedeem",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_redeem" },
+        persist    = { via = "local", cloudKey = "mod_redeem" },
         getDefault = function()
             return {
                 usedCodes = {},

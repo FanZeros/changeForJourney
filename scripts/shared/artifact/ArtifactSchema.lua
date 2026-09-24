@@ -318,7 +318,7 @@ ArtifactSchema.Fields = {
         pdmKey     = "Artifacts",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_artifacts" },
+        persist    = { via = "local", cloudKey = "mod_artifacts" },
         getDefault = function()
             return {
                 bag        = {},

@@ -10,7 +10,7 @@ SigninSchema.Fields = {
         pdmKey     = "ModSignin",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_signin" },
+        persist    = { via = "local", cloudKey = "mod_signin" },
         getDefault = function()
             return {
                 weekId        = 0,

@@ -8,7 +8,7 @@ MailSchema.Fields = {
         pdmKey     = "ModMail",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_mail" },
+        persist    = { via = "local", cloudKey = "mod_mail" },
         getDefault = function()
             return {
                 claimed = {},

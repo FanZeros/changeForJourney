@@ -10,7 +10,7 @@ BattleSchema.Fields = {
         pdmKey     = "ModBattle",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_battle" },
+        persist    = { via = "local", cloudKey = "mod_battle" },
         getDefault = function()
             return {
                 currentStageId = 0101,

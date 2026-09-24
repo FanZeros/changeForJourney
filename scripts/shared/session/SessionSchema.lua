@@ -8,7 +8,7 @@ SessionSchema.Fields = {
         pdmKey     = "ModSession",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_session" },
+        persist    = { via = "local", cloudKey = "mod_session" },
         getDefault = function()
             return {
                 lastOnlineTime    = 0,

@@ -37,7 +37,7 @@ CurrencySchema.Fields = {
         pdmKey     = "ModCurrency",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_currency" },
+        persist    = { via = "local", cloudKey = "mod_currency" },
         getDefault = function()
             return {
                 gold = 0,

@@ -10,7 +10,7 @@ TaskSchema.Fields = {
         pdmKey     = "ModTask",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_task" },
+        persist    = { via = "local", cloudKey = "mod_task" },
         getDefault = function()
             return {
                 dayId         = 0,

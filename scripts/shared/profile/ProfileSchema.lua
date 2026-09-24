@@ -8,7 +8,7 @@ ProfileSchema.Fields = {
         pdmKey     = "ModGlobalProfile",
         type       = "json",
         scope      = "global",
-        persist    = { via = "cloud", cloudKey = "global_profile" },
+        persist    = { via = "local", cloudKey = "global_profile" },
         getDefault = function()
             return {
                 servers      = {},

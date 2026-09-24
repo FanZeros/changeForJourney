@@ -8,7 +8,7 @@ SlotEnhanceSchema.Fields = {
         pdmKey     = "ModSlotEnhance",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_slot_enhance" },
+        persist    = { via = "local", cloudKey = "mod_slot_enhance" },
         getDefault = function()
             return {
                 -- levels[partySlot][equipSlot] = enhanceLevel

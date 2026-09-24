@@ -10,7 +10,7 @@ EquipmentSchema.Fields = {
         pdmKey     = "ModEquipment",
         type       = "json",
         scope      = "server",
-        persist    = { via = "cloud", cloudKey = "mod_equipment" },
+        persist    = { via = "local", cloudKey = "mod_equipment" },
         getDefault = function()
             return {
                 inventory = {},

@@ -150,10 +150,25 @@ function TaskService.RefreshAchievements(uid)
 
     ensurePeriods(taskData)
 
+    local battle = PDM.GetModule(uid, "battle")
+    if battle then
+        local stageCount = 0
+        if type(battle.clearedStages) == "table" then
+            for _, cleared in pairs(battle.clearedStages) do
+                if cleared then stageCount = stageCount + 1 end
+            end
+        end
+        taskData.achProg["stage_count"] = stageCount
+        taskData.achProg["max_stage"] = tonumber(battle.maxStageId) or tonumber(battle.currentStageId) or 0
+    end
+
     local heroes = PDM.GetModule(uid, "heroes")
     local player = PDM.GetModule(uid, "player")
 
-    if not heroes or not player then return end
+    if not heroes or not player then
+        PDM.MarkDirty(uid, "task")
+        return
+    end
 
     -- 远征等级
     taskData.achProg["player_level"] = player.level or 1
@@ -213,8 +228,7 @@ function TaskService.RefreshAchievements(uid)
     taskData.achProg["awk_ssr_max"] = awkSSRMax
     taskData.achProg["adv1_count"]  = adv1Count
     taskData.achProg["adv2_count"]  = adv2Count
-
-    -- 竞技场段位
+    PDM.MarkDirty(uid, "task")
 end
 
 -- ======================== 生命周期 ========================
@@ -269,6 +283,7 @@ function TaskService.TickOnlineTime(uid)
     local minutes = math.floor(elapsed / 60)
     if minutes >= 1 then
         taskData.dailyProg["online_min"] = (taskData.dailyProg["online_min"] or 0) + minutes
+        taskData.weeklyProg["online_min"] = (taskData.weeklyProg["online_min"] or 0) + minutes
         taskData._onlineStart = now - (elapsed % 60)
         PDM.MarkDirty(uid, "task")
     end

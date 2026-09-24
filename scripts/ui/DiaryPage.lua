@@ -413,8 +413,8 @@ function DiaryPage.handleInput(dx, dy)
     -- 任务卡片点击区域 → 打开任务面板
     if DrawUtil.hitTest(dx, dy, QUEST_CX, QUEST_CY, QUEST_W, QUEST_H) then
         BF.trigger("dp_quest")
-        print("[DiaryPage] 任务 clicked → open TaskPanel")
-        TaskPanel.open()
+        print("[DiaryPage] 任务 clicked → open TaskPage")
+        require("ui.TaskPage").open()
         return true
     end
     -- 邮件卡片点击区域 → 打开邮件弹窗

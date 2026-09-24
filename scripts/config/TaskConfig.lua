@@ -40,203 +40,61 @@ function TaskConfig.getWeekNumber()
     return math.floor((os.time() + 28800 + 3 * 86400) / (7 * 86400))
 end
 
--- ======================== 日任务定义（10 条） ========================
+-- ======================== 日任务：签到 / 关卡 / 在线 ========================
 
 TaskConfig.DAILY = {
-    {
-        id = "d_login",
-        name = "登录游戏",
-        condKey = "login",          -- 进度追踪 key
-        target = 1,
-        reward = { type = "diamond", amount = 282, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
-    {
-        id = "d_recruit_1",
-        name = "进行1次招募",
-        condKey = "recruit",
-        target = 1,
-        reward = { type = "adventure_ticket", amount = 1, icon = "image/货币道具/UI_icon_ZMQ_1.png", quality = 5 },
-    },
-    {
-        id = "d_stellar_recruit_3",
-        name = "进行3次星辉招募",
-        condKey = "stellar_recruit",
-        target = 3,
-        reward = { type = "stellar_ticket", amount = 1, icon = "image/货币道具/UI_icon_ZMQ_2.png", quality = 6 },
-    },
-    {
-        id = "d_artifact_draw_3",
-        name = "进行3次神器抽取",
-        condKey = "artifact_draw",
-        target = 3,
-        reward = { type = "golden_key", amount = 1, icon = "image/货币道具/UI_icon_HJYS.png", quality = 6 },
-    },
-    {
-        id = "d_decompose_20",
-        name = "分解20件装备",
-        condKey = "decompose",
-        target = 20,
-        reward = { type = "diamond", amount = 282, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
-    {
-        id = "d_enhance_3",
-        name = "强化3次装备",
-        condKey = "enhance",
-        target = 3,
-        reward = { type = "diamond", amount = 282, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
-    {
-        id = "d_refine_10",
-        name = "洗练10次装备",
-        condKey = "refine",
-        target = 10,
-        reward = { type = "diamond", amount = 282, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
-    {
-        id = "d_online_20",
-        name = "在线20分钟",
-        condKey = "online_min",
-        target = 20,
-        reward = { type = "diamond", amount = 282, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
-    {
-        id = "d_online_40",
-        name = "在线40分钟",
-        condKey = "online_min",
-        target = 40,
-        reward = { type = "diamond", amount = 432, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
-    {
-        id = "d_online_60",
-        name = "在线60分钟",
-        condKey = "online_min",
-        target = 60,
-        reward = { type = "diamond", amount = 582, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
+    { id = "d_login", name = "登录游戏", condKey = "login", target = 1,
+      reward = { type = "diamond", amount = 100, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "d_signin", name = "完成今日签到", condKey = "signin", target = 1,
+      reward = { type = "diamond", amount = 150, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "d_stage_1", name = "推进1关", condKey = "stage_clear", target = 1,
+      reward = { type = "diamond", amount = 120, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "d_stage_3", name = "推进3关", condKey = "stage_clear", target = 3,
+      reward = { type = "diamond", amount = 240, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "d_stage_5", name = "推进5关", condKey = "stage_clear", target = 5,
+      reward = { type = "diamond", amount = 400, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "d_online_20", name = "在线20分钟", condKey = "online_min", target = 20,
+      reward = { type = "diamond", amount = 150, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "d_online_40", name = "在线40分钟", condKey = "online_min", target = 40,
+      reward = { type = "diamond", amount = 250, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "d_online_60", name = "在线60分钟", condKey = "online_min", target = 60,
+      reward = { type = "diamond", amount = 400, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
 }
 
--- ======================== 周任务定义（8 条） ========================
+-- ======================== 周任务：签到 / 关卡 / 在线 ========================
 
 TaskConfig.WEEKLY = {
-    {
-        id = "w_login_3",
-        name = "累计登录3日",
-        condKey = "login_days",
-        target = 3,
-        reward = { type = "diamond", amount = 880, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
-    {
-        id = "w_login_7",
-        name = "累计登录7日",
-        condKey = "login_days",
-        target = 7,
-        reward = { type = "diamond", amount = 2000, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
-    {
-        id = "w_recruit_10",
-        name = "进行10次招募",
-        condKey = "recruit",
-        target = 10,
-        reward = { type = "adventure_ticket", amount = 5, icon = "image/货币道具/UI_icon_ZMQ_1.png", quality = 5 },
-    },
-    {
-        id = "w_recruit_20",
-        name = "进行20次招募",
-        condKey = "recruit",
-        target = 20,
-        reward = { type = "adventure_ticket", amount = 10, icon = "image/货币道具/UI_icon_ZMQ_1.png", quality = 5 },
-    },
-    {
-        id = "w_stellar_recruit_10",
-        name = "进行10次星辉招募",
-        condKey = "stellar_recruit",
-        target = 10,
-        reward = { type = "stellar_ticket", amount = 5, icon = "image/货币道具/UI_icon_ZMQ_2.png", quality = 6 },
-    },
-    {
-        id = "w_artifact_draw_10",
-        name = "进行10次神器抽取",
-        condKey = "artifact_draw",
-        target = 10,
-        reward = { type = "golden_key", amount = 5, icon = "image/货币道具/UI_icon_HJYS.png", quality = 6 },
-    },
-    {
-        id = "w_decompose_100",
-        name = "分解100件装备",
-        condKey = "decompose",
-        target = 100,
-        reward = { type = "diamond", amount = 880, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
-    {
-        id = "w_decompose_300",
-        name = "分解300件装备",
-        condKey = "decompose",
-        target = 300,
-        reward = { type = "diamond", amount = 1320, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
-    {
-        id = "w_enhance_20",
-        name = "强化20次装备",
-        condKey = "enhance",
-        target = 20,
-        reward = { type = "diamond", amount = 1320, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 },
-    },
+    { id = "w_login_3", name = "累计登录3日", condKey = "login_days", target = 3,
+      reward = { type = "diamond", amount = 300, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "w_login_7", name = "累计登录7日", condKey = "login_days", target = 7,
+      reward = { type = "diamond", amount = 800, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "w_signin_5", name = "本周签到5次", condKey = "signin", target = 5,
+      reward = { type = "diamond", amount = 500, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "w_stage_10", name = "本周推进10关", condKey = "stage_clear", target = 10,
+      reward = { type = "diamond", amount = 600, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "w_stage_30", name = "本周推进30关", condKey = "stage_clear", target = 30,
+      reward = { type = "diamond", amount = 1200, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "w_online_180", name = "本周在线3小时", condKey = "online_min", target = 180,
+      reward = { type = "diamond", amount = 800, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
 }
 
--- ======================== 成就定义（56 条） ========================
+-- ======================== 成就：关卡推进 ========================
 
 TaskConfig.ACHIEVEMENT = {
-    -- -------- 转职成就 (1-10) --------
-    { id = "a_adv1_1", name = "1名角色进行1转",   condKey = "adv1_count", target = 1, reward = { type = "diamond", amount = 100,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_adv1_2", name = "2名角色进行1转",   condKey = "adv1_count", target = 2, reward = { type = "diamond", amount = 150,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_adv1_3", name = "3名角色进行1转",   condKey = "adv1_count", target = 3, reward = { type = "diamond", amount = 200,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_adv1_4", name = "4名角色进行1转",   condKey = "adv1_count", target = 4, reward = { type = "diamond", amount = 300,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_adv1_5", name = "5名角色进行1转",   condKey = "adv1_count", target = 5, reward = { type = "diamond", amount = 400,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_adv2_1", name = "1名角色进行2转",   condKey = "adv2_count", target = 1, reward = { type = "diamond", amount = 200,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_adv2_2", name = "2名角色进行2转",   condKey = "adv2_count", target = 2, reward = { type = "diamond", amount = 400,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_adv2_3", name = "3名角色进行2转",   condKey = "adv2_count", target = 3, reward = { type = "diamond", amount = 600,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_adv2_4", name = "4名角色进行4转",   condKey = "adv2_count", target = 4, reward = { type = "diamond", amount = 888,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_adv2_5", name = "5名角色进行5转",   condKey = "adv2_count", target = 5, reward = { type = "diamond", amount = 1288, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-
-    -- -------- 远征等级成就 (11-18) --------
-    { id = "a_plv_5",  name = "远征等级达到5",    condKey = "player_level", target = 5,  reward = { type = "diamond", amount = 50,   icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_10", name = "远征等级达到10",   condKey = "player_level", target = 10, reward = { type = "diamond", amount = 100,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_15", name = "远征等级达到15",   condKey = "player_level", target = 15, reward = { type = "diamond", amount = 150,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_20", name = "远征等级达到20",   condKey = "player_level", target = 20, reward = { type = "diamond", amount = 200,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_30", name = "远征等级达到30",   condKey = "player_level", target = 30, reward = { type = "diamond", amount = 400,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_40", name = "远征等级达到40",   condKey = "player_level", target = 40, reward = { type = "diamond", amount = 600,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_50", name = "远征等级达到50",   condKey = "player_level", target = 50, reward = { type = "diamond", amount = 888,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_plv_60", name = "远征等级达到60",   condKey = "player_level", target = 60, reward = { type = "diamond", amount = 1288, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-
-    -- -------- 拥有 SR 角色 (19-23) --------
-    { id = "a_sr_1",  name = "拥有1个SR角色",   condKey = "sr_count",  target = 1, reward = { type = "diamond", amount = 100, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_sr_2",  name = "拥有2个SR角色",   condKey = "sr_count",  target = 2, reward = { type = "diamond", amount = 150, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_sr_3",  name = "拥有3个SR角色",   condKey = "sr_count",  target = 3, reward = { type = "diamond", amount = 200, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_sr_4",  name = "拥有4个SR角色",   condKey = "sr_count",  target = 4, reward = { type = "diamond", amount = 300, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_sr_5",  name = "拥有5个SR角色",   condKey = "sr_count",  target = 5, reward = { type = "diamond", amount = 500, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-
-    -- -------- 拥有 SSR 角色 (24-28) --------
-    { id = "a_ssr_1", name = "拥有1个SSR角色",  condKey = "ssr_count", target = 1, reward = { type = "diamond", amount = 200,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_ssr_2", name = "拥有2个SSR角色",  condKey = "ssr_count", target = 2, reward = { type = "diamond", amount = 400,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_ssr_3", name = "拥有3个SSR角色",  condKey = "ssr_count", target = 3, reward = { type = "diamond", amount = 600,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_ssr_4", name = "拥有4个SSR角色",  condKey = "ssr_count", target = 4, reward = { type = "diamond", amount = 888,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_ssr_5", name = "拥有5个SSR角色",  condKey = "ssr_count", target = 5, reward = { type = "diamond", amount = 1288, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-
-    -- -------- R 级角色觉醒 (29-35) --------
-    { id = "a_awk_r_1", name = "任意R级角色觉醒至1阶",  condKey = "awk_r_max", target = 1, reward = { type = "diamond", amount = 50,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_r_2", name = "任意R级角色觉醒至2阶",  condKey = "awk_r_max", target = 2, reward = { type = "diamond", amount = 80,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_r_3", name = "任意R级角色觉醒至3阶",  condKey = "awk_r_max", target = 3, reward = { type = "diamond", amount = 400, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-
-    -- -------- SR 级角色觉醒 (36-42) --------
-    { id = "a_awk_sr_1", name = "任意SR级角色觉醒至1阶",  condKey = "awk_sr_max", target = 1, reward = { type = "diamond", amount = 100, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_sr_2", name = "任意SR级角色觉醒至2阶",  condKey = "awk_sr_max", target = 2, reward = { type = "diamond", amount = 150, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_sr_3", name = "任意SR级角色觉醒至3阶",  condKey = "awk_sr_max", target = 3, reward = { type = "diamond", amount = 888, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-
-    -- -------- SSR 级角色觉醒 (43-49) --------
-    { id = "a_awk_ssr_1", name = "任意SSR级角色觉醒至1阶", condKey = "awk_ssr_max", target = 1, reward = { type = "diamond", amount = 200,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_ssr_2", name = "任意SSR级角色觉醒至2阶", condKey = "awk_ssr_max", target = 2, reward = { type = "diamond", amount = 300,  icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_awk_ssr_3", name = "任意SSR级角色觉醒至3阶", condKey = "awk_ssr_max", target = 3, reward = { type = "diamond", amount = 1888, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-
+    { id = "a_stage_10", name = "累计推进10关", condKey = "stage_count", target = 10,
+      reward = { type = "diamond", amount = 200, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_stage_30", name = "累计推进30关", condKey = "stage_count", target = 30,
+      reward = { type = "diamond", amount = 400, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_stage_60", name = "累计推进60关", condKey = "stage_count", target = 60,
+      reward = { type = "diamond", amount = 800, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_stage_100", name = "累计推进100关", condKey = "stage_count", target = 100,
+      reward = { type = "diamond", amount = 1500, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_reach_505", name = "到达普通5-5", condKey = "max_stage", target = 505,
+      reward = { type = "diamond", amount = 300, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_reach_1005", name = "到达普通10-5", condKey = "max_stage", target = 1005,
+      reward = { type = "diamond", amount = 600, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
+    { id = "a_reach_2305", name = "到达普通终焉前", condKey = "max_stage", target = 2305,
+      reward = { type = "diamond", amount = 2000, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
 }
 
 -- ======================== 按 ID 快速查找 ========================

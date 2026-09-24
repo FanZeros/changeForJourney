@@ -290,10 +290,10 @@ function LootBox.draw(vg)
     -- 1. 箱子图标（带抖动）
     drawImageCentered(vg, imgBox, BOX_CX + offsetX, BOX_CY, BOX_SIZE, BOX_SIZE, 1.0)
 
-    -- 2. "战利品" 文本（带抖动）+ 件数
-    local label = "战利品"
+    -- 2. 遗匣文本（带抖动）+ 件数
+    local label = "遗匣"
     if seedCount > 0 then
-        label = "战利品(" .. seedCount .. ")"
+        label = "遗匣(" .. seedCount .. ")"
     end
     drawTextStroke(vg, TEXT_X + offsetX, TEXT_Y, label, TEXT_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, TEXT_STROKE)

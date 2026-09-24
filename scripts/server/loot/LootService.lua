@@ -72,7 +72,7 @@ function LootService.ClaimGroup(uid, index)
     applyPlayerLevelCap(uid)
 
     if not index or index < 1 or index > #(lootboxData.seeds or {}) then
-        return false, "无效的战利品索引"
+        return false, "无效的遗匣索引"
     end
 
     if EquipmentSystem.isInventoryFull(equipData) then
@@ -127,7 +127,7 @@ function LootService.ClaimAll(uid)
     applyPlayerLevelCap(uid)
 
     if not lootboxData.seeds or #lootboxData.seeds == 0 then
-        return false, "战利品为空"
+        return false, "遗匣为空"
     end
 
     if EquipmentSystem.isInventoryFull(equipData) then
@@ -182,7 +182,7 @@ function LootService.DecomposeAll(uid)
     end
 
     if not lootboxData.seeds or #lootboxData.seeds == 0 then
-        return false, "战利品为空"
+        return false, "遗匣为空"
     end
 
     local totalEssence, totalPieces = LootBoxSystem.decomposeAll(lootboxData)
@@ -218,7 +218,7 @@ function LootService.DecomposeOne(uid, index)
     end
 
     if not lootboxData.seeds or #lootboxData.seeds == 0 then
-        return false, "战利品为空"
+        return false, "遗匣为空"
     end
 
     if not index or index < 1 or index > #lootboxData.seeds then

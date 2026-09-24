@@ -14,6 +14,7 @@ local EquipmentSystem  = require("systems.EquipmentSystem")
 local PlayerStore      = require("client.data.PlayerStore")
 local RewardPopup      = require("ui.RewardPopup")
 local EquipmentDetail  = require("ui.EquipmentDetail")
+local QualityMark      = require("ui.QualityMark")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -147,7 +148,7 @@ local getClient        -- 延迟加载 Client
 local getProtocol      -- 延迟加载 Protocol
 
 -- 分解界面专属图片
-local imgPzsx = {}        -- 品质筛选图标 1~5
+-- 品质筛选小图由 QualityMark 统一加载。
 local imgPopupBg = -1     -- 弹窗背景
 local imgPopupArrow = -1  -- 箭头
 local imgLock = -1        -- 锁定角标 UI_ICON_SUO
@@ -175,9 +176,7 @@ end
 
 --- 初始化分解界面专属图片
 function M.init(vg)
-    for i = 1, 5 do
-        imgPzsx[i] = nvgCreateImage(vg, "image/通用图标/UI_ICON_PZSX_" .. i .. ".png", 0)
-    end
+    QualityMark.init(vg)
     imgPopupBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgPopupArrow = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_JT.png", 0)
     imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
@@ -362,7 +361,7 @@ function M.drawPanel(vg)
     for i = 1, 5 do
         local cx = FJ.PZSX_FIRST_CX + (i - 1) * (FJ.PZSX_SIZE + FJ.PZSX_GAP)
         local didScale = BF.begin(vg, "bsd_filter_" .. i, cx, FJ.PZSX_CY, FJ.PZSX_SIZE, FJ.PZSX_SIZE)
-        drawImageCentered(vg, imgPzsx[i], cx, FJ.PZSX_CY, FJ.PZSX_SIZE, FJ.PZSX_SIZE, 1.0)
+        QualityMark.draw(vg, i, cx, FJ.PZSX_CY, FJ.PZSX_SIZE, 1.0)
         BF.finish(vg, didScale)
     end
 

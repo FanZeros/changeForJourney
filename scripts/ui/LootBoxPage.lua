@@ -7,6 +7,7 @@ local TownPageChrome = require("ui.TownPageChrome")
 local DarkIcon = require("core.DarkIcon")
 local EquipmentConfig = require("config.EquipmentConfig")
 local ImageCache = require("ui.ImageCache")
+local QualityMark = require("ui.QualityMark")
 local BF = require("systems.ButtonFeedback")
 local I18n = require("core.I18n")
 
@@ -73,6 +74,7 @@ function LootBoxPage.init(vg)
     if inited then return end
     inited = true
     ImageCache.init(vg)
+    QualityMark.init(vg)
     imgName = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0) or -1
     imgBox = nvgCreateImage(vg, "image/通用图标/ICON_CZ_YX.png", 0) or -1
 end
@@ -203,9 +205,26 @@ end
 
 local function drawFilters(vg)
     for quality = 0, 6 do
-        local label = quality == 0 and "全部" or EquipmentConfig.QUALITY[quality].name
-        drawButton(vg, "lbp_filter_" .. quality, FILTER.cx + quality * FILTER.step, FILTER.cy,
-            FILTER.w, FILTER.h, label, state.qualityFilter == quality and "green" or "gold", true)
+        local cx = FILTER.cx + quality * FILTER.step
+        local selected = state.qualityFilter == quality
+        if quality == 0 then
+            drawButton(vg, "lbp_filter_0", cx, FILTER.cy, FILTER.w, FILTER.h,
+                "全部", selected and "green" or "gold", true)
+        else
+            local feedback = BF.begin(vg, "lbp_filter_" .. quality, cx, FILTER.cy, FILTER.w, FILTER.h)
+            if selected then
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, cx - 38, FILTER.cy - 38, 76, 76, 14)
+                nvgStrokeWidth(vg, 4)
+                nvgStrokeColor(vg, nvgRGBA(168, 214, 122, 255))
+                nvgStroke(vg)
+            end
+            if not QualityMark.draw(vg, quality, cx, FILTER.cy, 64, 1) then
+                local label = EquipmentConfig.QUALITY[quality].name
+                text(vg, cx, FILTER.cy, label, 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
+            end
+            BF.finish(vg, feedback)
+        end
     end
 end
 
@@ -244,8 +263,12 @@ local function drawEntry(vg, entry, index, cy)
     local nameWidth = nvgTextBounds(vg, 0, 0, name)
     local font = math.min(42, 42 * 448 / math.max(1, nameWidth))
     text(vg, 294, cy - 56, name, font, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, r, g, b, 3)
-    text(vg, 294, cy + 1, equip and ((q and q.name) or "品质待整理") or "装备内容待整理", 34,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 224, 217, 201, 2)
+    if equip and quality and QualityMark.draw(vg, quality, 322, cy + 1, 48, 1) then
+        -- 品质行改用背包/铁匠共用的小图，不再重复写品质名。
+    else
+        text(vg, 294, cy + 1, equip and ((q and q.name) or "品质待整理") or "装备内容待整理", 34,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 224, 217, 201, 2)
+    end
     -- 旧的完整装备没有 source 字段，沿用背包溢出的展示语义。
     local sourceText = entry.source == "idle" and "挂机掉落 · 装备已暂存" or "背包溢出 · 原装备暂存"
     text(vg, 294, cy + 59, equip and sourceText or "暂不可领取或回收", 28,

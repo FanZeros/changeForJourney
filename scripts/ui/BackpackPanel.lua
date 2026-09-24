@@ -12,6 +12,7 @@ local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1] 矢量九�
 local GameState        = require("core.GameState")
 local PlayerStore      = require("client.data.PlayerStore")
 local ImageCache       = require("ui.ImageCache")
+local QualityMark      = require("ui.QualityMark")
 local NumberUtil       = require("core.NumberUtil")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local EquipmentDetail  = require("ui.EquipmentDetail")
@@ -222,7 +223,7 @@ local imgTabBg    = -1  -- UI_AN_1.png（Tab 背景）
 
 local imgBtnYellow = -1 -- UI_AN_HUANG.png（黄色按钮，碎片转化用）
 local imgBtnGreen  = -1 -- UI_AN_LV.png（批量分解/确认分解按钮绿色）
-local imgPzsx = {}       -- 品质筛选图标 1~5 (UI_ICON_PZSX_1~5)
+-- 品质筛选小图由 QualityMark 统一加载，背包不再单独持有句柄。
 local imgCheckmark = -1  -- UI_icon_GOU.png（选中勾选）
 
 --- 分解模式状态（装备 tab 专用）
@@ -751,10 +752,7 @@ function Panel.init(vg)
     imgBtnGreen  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     imgLock      = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
     imgCheckmark = nvgCreateImage(vg, "image/货币道具/UI_icon_GOU.png", 0)
-    -- 品质筛选图标
-    for i = 1, 5 do
-        imgPzsx[i] = nvgCreateImage(vg, "image/通用图标/UI_ICON_PZSX_" .. i .. ".png", 0)
-    end
+    QualityMark.init(vg)
 
     -- imgShardIcon 已移至 DrawUtil.drawShardIcon 统一管理
 
@@ -936,7 +934,7 @@ local function drawBody(vg)
         for i = 1, 5 do
             local cx = PZSX.FIRST_CX + (i - 1) * (PZSX.SIZE + PZSX.GAP)
             local didScale = BF.begin(vg, "bp_filter_" .. i, cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE)
-            DrawUtil.drawImageCentered(vg, imgPzsx[i], cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE, 1.0)
+            QualityMark.draw(vg, i, cx, PZSX.CY, PZSX.SIZE, 1.0)
             BF.finish(vg, didScale)
         end
     end

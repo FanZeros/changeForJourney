@@ -4,6 +4,7 @@
 -- ============================================================================
 
 local DrawUtil = require("core.DrawUtil")
+local DarkIcon = require("core.DarkIcon")
 local TownPageChrome = require("ui.TownPageChrome")
 local TaskConfig = require("config.TaskConfig")
 local ClientDispatcher = require("runtime.ClientDispatcher")
@@ -201,12 +202,15 @@ local function drawRow(vg, task, y)
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 150, 176, 138, 2)
     local reward = task.reward
     if reward then
+        local rcx = LIST.x + LIST.w - 300
+        local rcy = y - 8
+        DarkIcon.drawQualityBg(vg, reward.quality or 1, rcx, rcy, 78, 78, claimed and 0.55 or 1)
         local icon = rewardIcon(vg, reward.icon)
         if icon >= 0 then
-            DrawUtil.drawImageCentered(vg, icon, LIST.x + LIST.w - 300, y - 16, 64, 64, 1)
+            DrawUtil.drawImageCentered(vg, icon, rcx, rcy, 52, 52, claimed and 0.55 or 1)
         end
-        text(vg, LIST.x + LIST.w - 300, y + 42, "×" .. tostring(reward.amount or 0), 22,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 232, 210, 150, 2)
+        text(vg, rcx + 24, rcy + 28, tostring(reward.amount or 0), 20,
+            NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 255, 244, 220, 2)
     end
     local label = "未完成"
     local r, g, b = 120, 116, 108

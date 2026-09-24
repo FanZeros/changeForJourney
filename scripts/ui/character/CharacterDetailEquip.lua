@@ -127,7 +127,7 @@ local function findItemAt(dx, dy)
         local cx = GRID_FIRST_CX + (col - 1) * GRID_COL_STEP
         local cy = GRID_TOP_Y + (row - 1) * GRID_ROW_STEP - panelState.scrollY
         if hitTest(dx, dy, cx, cy, GRID_CELL, GRID_CELL) then
-            return items[idx]
+            return items[idx], cx, cy
         end
     end
     return nil
@@ -707,11 +707,15 @@ function M.handleHover(dx, dy, heroId)
     local EquipmentDetail = require("ui.character.EquipmentDetail")
     if not item then return end
     local seqStr = tostring(item.seq)
-    if panelState.hoverSeq == seqStr then return end
+    local _, cx, cy = findItemAt(dx, dy)
+    if panelState.hoverSeq == seqStr then
+        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
+        return
+    end
     panelState.hoverSeq = seqStr
     panelState.hoverPinned = false
-    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character")
-    print("[EquipPanel] 悬停详情 seq=" .. seqStr)
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
+    print("[EquipPanel] 悬停详情 seq=" .. seqStr .. " at " .. tostring(cx) .. "," .. tostring(cy))
 end
 
 --- 处理输入（单击详情 / 双击穿戴）
@@ -769,7 +773,8 @@ function M.handleInput(dx, dy, heroId, detailState)
     local EquipmentDetail = require("ui.character.EquipmentDetail")
     panelState.hoverSeq = seqStr
     panelState.hoverPinned = true
-    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character")
+    local _, cx, cy = findItemAt(dx, dy)
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
     print("[EquipPanel] 单击详情 seq=" .. seqStr)
     return true
 end

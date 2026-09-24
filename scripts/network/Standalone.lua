@@ -577,6 +577,7 @@ end
 -- ============================================================================
 
 function HandleNanoVGRender(eventType, eventData)
+    ---@diagnostic disable-next-line: undefined-global
     return HandleNanoVGRenderHorizon(eventType, eventData)
 end
 
@@ -764,18 +765,23 @@ function HandleUpdate(eventType, eventData)
     ---@diagnostic disable-next-line: undefined-global
     if H_AUTO_TAB and H_skipDone and not H_shotTabSet then
         H_shotTabSet = true
+        ---@diagnostic disable-next-line: undefined-global
         if math.floor(H_AUTO_TAB) ~= 3 and BattleTriPage.isOpen() then
             BattleTriPage.close()  -- 避免三栏战斗页全屏覆盖目标面板
         end
+        ---@diagnostic disable-next-line: undefined-global
         BottomNav.setSelectedIndex(math.floor(H_AUTO_TAB))
+        ---@diagnostic disable-next-line: undefined-global
         print("[ValidateHook] switched tab: " .. tostring(H_AUTO_TAB))
     end
     ---@diagnostic disable-next-line: undefined-global
     if H_AUTO_OPEN_PANEL and H_skipDone and not H_shotPanelOpened then
         H_shotPanelOpened = true
+        ---@diagnostic disable-next-line: undefined-global
         local panelMod = require("ui." .. tostring(H_AUTO_OPEN_PANEL))
         if panelMod and panelMod.open then
             panelMod.open()
+            ---@diagnostic disable-next-line: undefined-global
             print("[ValidateHook] opened panel: " .. tostring(H_AUTO_OPEN_PANEL))
         end
     end
@@ -810,27 +816,33 @@ end
 
 function HandleMouseButtonDown(eventType, eventData)
     if not bootReady_ then return end
+    ---@diagnostic disable-next-line: undefined-global
     return HandleMouseButtonDownHorizon(eventType, eventData)
 end
 
 function HandleMouseMove(eventType, eventData)
+    ---@diagnostic disable-next-line: undefined-global
     return HandleMouseMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseButtonUp(eventType, eventData)
     if not bootReady_ then return end
+    ---@diagnostic disable-next-line: undefined-global
     return HandleMouseButtonUpHorizon(eventType, eventData)
 end
 
 function HandleTouchBegin(eventType, eventData)
+    ---@diagnostic disable-next-line: undefined-global
     return HandleTouchBeginHorizon(eventType, eventData)
 end
 
 function HandleTouchMove(eventType, eventData)
+    ---@diagnostic disable-next-line: undefined-global
     return HandleTouchMoveHorizon(eventType, eventData)
 end
 
 function HandleTouchEnd(eventType, eventData)
+    ---@diagnostic disable-next-line: undefined-global
     return HandleTouchEndHorizon(eventType, eventData)
 end
 
@@ -840,6 +852,7 @@ function HandleScreenMode(eventType, eventData)
 end
 
 function HandleMouseWheel(eventType, eventData)
+    ---@diagnostic disable-next-line: undefined-global
     return HandleMouseWheelHorizon(eventType, eventData)
 end
 

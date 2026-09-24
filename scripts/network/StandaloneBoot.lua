@@ -23,7 +23,6 @@ local LootBox           = require("ui.LootBox")
 local LootBoxPage       = require("ui.LootBoxPage")
 local PlayerInfoPanel   = require("ui.PlayerInfoPanel")
 local MailPanel         = require("ui.MailPanel")
-local BattleCombat      = require("ui.BattleCombat")
 local BattleTriPage     = require("ui.BattleTriPage")
 local PlayerStore       = require("client.data.PlayerStore")
 local IntroCutscene     = require("ui.IntroCutscene")
@@ -47,7 +46,7 @@ local SCROLL_DROP_TO_REWARD = {
     shoesScroll     = "shoes_scroll",
 }
 
---- 取出暂存掉落，生成装备进背包。不进遗匣。
+--- 取出暂存掉落；背包满时完整存入遗匣。
 ---@return table[]
 local function takePendingFcRewards()
     local dropSeeds = pendingFcSeeds
@@ -56,18 +55,20 @@ local function takePendingFcRewards()
     pendingFcScrolls = {}
     local rewards = {}
     local equipData = ClientDispatcher.get("equipment")
+    local lootboxData = ClientDispatcher.get("lootbox")
     for _, seed in ipairs(dropSeeds) do
         local equip = EquipmentSystem.generateRandom(seed.level, seed.quality)
         if equip then
-            if equipData and not EquipmentSystem.isInventoryFull(equipData) then
-                EquipmentSystem.addToInventory(equipData, equip)
-            end
+            local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
             rewards[#rewards + 1] = {
                 type       = "equip",
                 templateId = equip.templateId,
                 quality    = equip.quality,
                 level      = equip.level,
+                destination = destination,
             }
+        else
+            LootBoxSystem.addSeed(lootboxData, 0, seed.quality, seed.level)
         end
     end
     for field, amount in pairs(dropScrolls) do
@@ -81,8 +82,11 @@ local function takePendingFcRewards()
             end
         end
     end
-    if #rewards > 0 then
+    if #dropSeeds > 0 then
         ClientDispatcher.notifySubscribers("equipment")
+        ClientDispatcher.notifySubscribers("lootbox")
+    end
+    if #rewards > 0 then
         print("[Standalone] 结算暂存掉落 n=" .. tostring(#rewards))
     end
     return rewards
@@ -208,6 +212,9 @@ function M.run(rt)
     TownScene.setOnWarehouseClick(function()
         BackpackPanel.open("left")
     end)
+    TownScene.setOnLootBoxClick(function()
+        LootBox.openPage()
+    end)
 
     -- 5.24 装备数据初始化（Standalone 模式下 ClientDispatcher 不会收到 Server 推送）
     if not ClientDispatcher.get("equipment") then
@@ -270,14 +277,14 @@ function M.run(rt)
     ClientDispatcher.subscribe("lootbox", function(data, moduleName)
         LootBoxSystem.consolidateSeeds(data) -- 合并旧存档中按 stageId 分开的同类种子
         -- 版本兼容：clamp 旧版高等级种子到当前关卡怪物等级
-        local capStageId = BattleScene.getCurrentStageId()
+        local capStageId = BattleScene.getMaxStageId() or BattleScene.getCurrentStageId()
         local capEntry = capStageId and StageConfig.getStage(capStageId)
         if capEntry and capEntry.monsterLevel and capEntry.monsterLevel > 0 then
             local cap = capEntry.monsterLevel
             LootBoxSystem.levelCap = cap
             local fixed = false
             for _, seed in ipairs(data.seeds or {}) do
-                if seed.level and seed.level > cap then
+                if not seed.equip and seed.level and seed.level > cap then
                     seed.level = cap
                     fixed = true
                 end
@@ -290,6 +297,8 @@ function M.run(rt)
         LootBox.updateSeedData(data)
         print("[Standalone] lootbox data updated, seedCount=" .. LootBoxSystem.getTotalCount(data))
     end)
+    -- 存档恢复早于订阅注册，首次打开也必须能看到已保存的遗匣。
+    LootBox.updateSeedData(ClientDispatcher.get("lootbox"))
 
     -- 5.245 击杀掉落：挂机进遗匣；首通暂存，通关后并入首通奖励
     BattleScene.setOnEnemyDrop(function(data)
@@ -351,149 +360,63 @@ function M.run(rt)
         showKeptDrops("战斗掉落")
     end)
 
-    -- 5.246 战利品领取回调：一键领取全部种子 → 生成装备加入背包
-    LootBox.setOnClaimAll(function()
+    -- 遗匣领取统一刷新：装备先入包，再显示实际到账的内容。
+    local function claimLoot(seedIndex)
         local lootboxData = ClientDispatcher.get("lootbox")
-        local equipData   = ClientDispatcher.get("equipment")
+        local equipData = ClientDispatcher.get("equipment")
         if not lootboxData or not equipData then return end
-        local claimed, bagFull = LootBoxSystem.claimAll(lootboxData, equipData)
-        -- 刷新 LootBox UI + LootBoxPage
-        LootBox.updateSeedData(lootboxData)
-        LootBox.refreshPage()
-        -- 通知 equipment 订阅者刷新（Standalone 直接修改数据，需手动触发）
-        ClientDispatcher.notifySubscribers("equipment")
-        -- 刷新战力显示
-        if CharacterPanel.getTotalPower then
-            TopBar.setTotalPower(CharacterPanel.getTotalPower())
+        ---@type table[]
+        local claimed = {}
+        local bagFull = false
+        if seedIndex then
+            claimed, bagFull = LootBoxSystem.claimGroup(lootboxData, seedIndex, equipData)
+        else
+            claimed, bagFull = LootBoxSystem.claimAll(lootboxData, equipData)
         end
-        -- 刷新战斗单位属性
-        if BattleScene.refreshAllyStats then
-            BattleScene.refreshAllyStats()
-        end
-        -- 领取完毕后，用 RewardPopup 展示领取到的装备（作为奖励展示页面）
+        ClientDispatcher.notifySubscribers("lootbox")
         if #claimed > 0 then
+            ClientDispatcher.notifySubscribers("equipment")
+            TopBar.setTotalPower(CharacterPanel.getTotalPower())
+            BattleScene.refreshAllyStats()
             local rewards = {}
             for _, equip in ipairs(claimed) do
                 rewards[#rewards + 1] = {
-                    type       = "equip",
-                    templateId = equip.templateId,
-                    quality    = equip.quality,
-                    level      = equip.level,
+                    type = "equip", templateId = equip.templateId,
+                    quality = equip.quality, level = equip.level,
                 }
             end
-            RewardPopup.show("领取了 " .. #claimed .. " 件装备", rewards)
-        end
-        if bagFull then
-            print("[Standalone] 领取 " .. #claimed .. " 件装备（背包已满，剩余种子保留）")
-            LootBoxPage.showToast("背包已满，请先分解多余装备")
-            local cx, cy = LootBoxPage.getLastClickPos()
-            BattleCombat.addFloatingText("背包已满", cx, cy, { 235, 80, 80 }, false, nil)
+            RewardPopup.show("遗匣领取", rewards, {
+                subtitle = bagFull and "背包已满，其余装备保留在遗匣" or nil,
+            })
+        elseif bagFull then
+            LootBoxPage.showToast("背包已满，其余装备保留在遗匣")
         else
-            print("[Standalone] 领取 " .. #claimed .. " 件装备（全部领取完毕）")
+            LootBoxPage.showToast("遗匣为空")
         end
-    end)
+        print("[Standalone] 遗匣领取: claimed=" .. #claimed
+            .. " remaining=" .. LootBoxSystem.getTotalCount(lootboxData))
+    end
+    LootBox.setOnClaimAll(function() claimLoot() end)
+    LootBox.setOnClaimOne(claimLoot)
 
-    -- 5.247 战利品单个领取回调：点击种子图标 → 领取该组全部装备加入背包
-    LootBox.setOnClaimOne(function(seedIndex)
-        local lootboxData = ClientDispatcher.get("lootbox")
-        local equipData   = ClientDispatcher.get("equipment")
-        if not lootboxData or not equipData then return end
-
-        -- 背包满检查
-        if EquipmentSystem.isInventoryFull(equipData) then
-            print("[Standalone] claimGroup: bag full, cannot claim")
-            LootBoxPage.showToast("背包已满，请先分解多余装备")
-            local cx, cy = LootBoxPage.getLastClickPos()
-            BattleCombat.addFloatingText("背包已满", cx, cy, { 235, 80, 80 }, false, nil)
-            return
-        end
-        -- 领取该组全部（背包不足则领到上限）
-        local claimed, bagFull = LootBoxSystem.claimGroup(lootboxData, seedIndex, equipData)
-        if #claimed == 0 then
-            print("[Standalone] claimGroup: nothing claimed (invalid index)")
-            return
-        end
-        -- 刷新 LootBox UI + LootBoxPage
-        LootBox.updateSeedData(lootboxData)
-        LootBox.refreshPage()
-        -- 通知 equipment 订阅者刷新
-        ClientDispatcher.notifySubscribers("equipment")
-        -- 刷新战力显示
-        if CharacterPanel.getTotalPower then
-            TopBar.setTotalPower(CharacterPanel.getTotalPower())
-        end
-        -- 刷新战斗单位属性
-        if BattleScene.refreshAllyStats then
-            BattleScene.refreshAllyStats()
-        end
-        -- 弹出奖励面板展示领取到的装备
-        local rewards = {}
-        for _, equip in ipairs(claimed) do
-            rewards[#rewards + 1] = {
-                type       = "equip",
-                templateId = equip.templateId,
-                quality    = equip.quality,
-                level      = equip.level,
-            }
-        end
-        RewardPopup.show("领取了 " .. #claimed .. " 件装备", rewards)
-        if bagFull then
-            LootBoxPage.showToast("背包已满，请先分解多余装备")
-            local cx, cy = LootBoxPage.getLastClickPos()
-            BattleCombat.addFloatingText("背包已满", cx, cy, { 235, 80, 80 }, false, nil)
-        end
-        local newTotal = LootBoxSystem.getTotalCount(lootboxData)
-        print("[Standalone] claimGroup: claimed " .. #claimed .. " equips, bagFull="
-            .. tostring(bagFull) .. ", remaining=" .. newTotal)
-    end)
-
-    -- 5.248 战利品一键分解回调：所有种子 → 精粹
-    LootBox.setOnDecomposeAll(function()
+    local function decomposeLoot(seedIndex)
         local lootboxData = ClientDispatcher.get("lootbox")
         if not lootboxData then return end
-        local totalEssence, totalPieces = LootBoxSystem.decomposeAll(lootboxData)
-        if totalPieces > 0 then
-            -- 增加精粹
-            GameState.setEssence(GameState.getEssence() + totalEssence)
-            -- 刷新 LootBox UI（种子已清空）
-            LootBox.updateSeedData(lootboxData)
-            LootBox.refreshPage()
-            -- 弹出奖励面板展示精粹
-            local rewards = {}
-            if totalEssence > 0 then
-                rewards[#rewards + 1] = { type = "essence", amount = totalEssence }
-            end
-            if #rewards > 0 then
-                RewardPopup.show("分解奖励", rewards)
-            end
-            print("[Standalone] decomposeAll: " .. totalPieces .. " pieces → "
-                .. totalEssence .. " essence")
+        local essence, pieces
+        if seedIndex then
+            essence, pieces = LootBoxSystem.decomposeOne(lootboxData, seedIndex)
         else
-            print("[Standalone] decomposeAll: nothing to decompose")
+            essence, pieces = LootBoxSystem.decomposeAll(lootboxData)
         end
-    end)
-
-    LootBox.setOnDecomposeOne(function(seedIndex)
-        local lootboxData = ClientDispatcher.get("lootbox")
-        if not lootboxData then return end
-        local totalEssence, totalPieces = LootBoxSystem.decomposeOne(lootboxData, seedIndex)
-        if totalPieces > 0 then
-            GameState.setEssence(GameState.getEssence() + totalEssence)
-            LootBox.updateSeedData(lootboxData)
-            LootBox.refreshPage()
-            local rewards = {}
-            if totalEssence > 0 then
-                rewards[#rewards + 1] = { type = "essence", amount = totalEssence }
-            end
-            if #rewards > 0 then
-                RewardPopup.show("分解奖励", rewards)
-            end
-            print("[Standalone] decomposeOne index=" .. seedIndex .. ": "
-                .. totalPieces .. " pieces → " .. totalEssence .. " essence")
-        else
-            print("[Standalone] decomposeOne: invalid index=" .. tostring(seedIndex))
+        if pieces <= 0 then return end
+        GameState.setEssence(GameState.getEssence() + essence)
+        ClientDispatcher.notifySubscribers("lootbox")
+        if essence > 0 then
+            RewardPopup.show("分解奖励", { { type = "essence", amount = essence } })
         end
-    end)
+    end
+    LootBox.setOnDecomposeAll(function() decomposeLoot() end)
+    LootBox.setOnDecomposeOne(decomposeLoot)
 
     -- 5.249 自动分解设置回调：打开铁匠铺分解弹窗
     LootBox.setOnAutoDecompose(function()
@@ -548,19 +471,23 @@ function M.run(rt)
             GameState.setArcaneDust(GameState.getArcaneDust() + fcArcaneDust)
             rewards[#rewards + 1] = { type = "arcane_dust", amount = fcArcaneDust }
         end
-        -- 首通装备（单机模式直接生成并加入背包）
+        -- 首通装备与击杀掉落共用投递规则，满包时完整入匣。
         local fcEquips = DropSystem.generateFirstClearEquips(stageEntry)
         local equipData = ClientDispatcher.get("equipment")
+        local lootboxData = ClientDispatcher.get("lootbox")
         for _, equip in ipairs(fcEquips) do
-            if equipData and not EquipmentSystem.isInventoryFull(equipData) then
-                EquipmentSystem.addToInventory(equipData, equip)
-            end
+            local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
             rewards[#rewards + 1] = {
                 type       = "equip",
                 templateId = equip.templateId,
                 quality    = equip.quality,
                 level      = equip.level,
+                destination = destination,
             }
+        end
+        if #fcEquips > 0 then
+            ClientDispatcher.notifySubscribers("equipment")
+            ClientDispatcher.notifySubscribers("lootbox")
         end
         -- 首通卷轴（每个独立随机，按类型聚合）
         local scrollReward = DropSystem.generateFirstClearScrolls(stageEntry)
@@ -608,7 +535,7 @@ function M.run(rt)
             GameState.setSacredStone(GameState.getSacredStone() + fcSacredStone)
             rewards[#rewards + 1] = { type = "sacred_stone", amount = fcSacredStone }
         end
-        -- 本关击杀掉落并入首通奖励（逐个弹出），不进遗匣，不显示件数
+        -- 本关击杀掉落并入首通奖励；超出背包容量的装备标记为已入遗匣。
         local dropRewards = takePendingFcRewards()
         for _, item in ipairs(dropRewards) do
             rewards[#rewards + 1] = item

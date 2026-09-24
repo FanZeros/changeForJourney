@@ -225,24 +225,18 @@ function BattleService.NextStage(uid, clearedId, nextId)
                 -- 首通装备
                 local fcEquips = DropSystem.generateFirstClearEquips(stageEntry)
                 local droppedList = {}
-                if equipData and #fcEquips > 0 then
+                local lootboxData = PDM.GetModule(uid, "lootbox")
+                if equipData and lootboxData and #fcEquips > 0 then
                     for _, equip in ipairs(fcEquips) do
-                        if EquipmentSystem.isInventoryFull(equipData) then
-                            print("[BattleService] first-clear equip SKIP (bag full) uid=" .. tostring(uid))
-                            break
-                        end
-                        local seq = EquipmentSystem.addToInventory(equipData, equip)
+                        local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
                         droppedList[#droppedList + 1] = {
-                            seq = seq, quality = equip.quality,
+                            seq = equip.seq, quality = equip.quality,
                             name = equip.name, templateId = equip.templateId,
-                            level = equip.level,
+                            level = equip.level, destination = destination,
                         }
-                        print("[BattleService] first-clear equip uid=" .. tostring(uid)
-                            .. " stage=" .. tostring(clearedId) .. " seq=" .. tostring(seq))
                     end
-                    if #droppedList > 0 then
-                        PDM.MarkDirty(uid, "equipment")
-                    end
+                    PDM.MarkDirty(uid, "equipment")
+                    PDM.MarkDirty(uid, "lootbox")
                 end
 
                 -- 首通卷轴（每个独立随机，按类型聚合）

@@ -14,10 +14,12 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`workspace924`（含今日合入与半屏/全屏画布修复；只 push 本分支，不要推 `integrate/20260923` / `workspace` / `workspace923`）
+- **当前开发分支**：`workspace924`（含今日合入、半屏/全屏画布、遗匣左栏与滚轮修复；只 push 本分支，不要推 `integrate/20260923` / `workspace` / `workspace923`）
 
 ## 上次做了什么（2026-09-24）
 
+- 遗匣改为城镇左栏地点。超出背包的奖励完整存入遗匣，领取只消费实际入包项。
+- 滚轮按鼠标所在区域滚动，详情不再吃掉后面的列表。
 - Windows `--start` 不再调用官方隐藏 PowerShell supervisor。`supervisor.log` 为 0 字节、`supervisor_pid` 为 0 时，改为项目目录前台启动已安装的 `UrhoXRuntime.exe`。不要重装 Node。
 
 ## 上次做了什么（截至 2026-09-23 今天提交整合）
@@ -64,6 +66,8 @@
 
 ## likely_next_task
 
+- 优先预览遗匣地点、左栏页、满包「已入遗匣」、领取与分解；恢复运行时资源后执行隔离截图入口。
+
 - 预览验收：滚轮、右键装备、顶栏远征等级、五语、四人战斗、新 SE、未解锁职业标、左栏世界地图
 - 四人入队/闲聊已接：情景 74–81。首次获得或第一次打开详情播放；闲聊每局每个角色一次
 - 四人立绘仍是替代图，正稿未做
@@ -88,5 +92,6 @@
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
 - Lua 5.4 字符串里不要写 `\!`
 - 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
-- 禁止推 `workspace` 或其他分支（当前只推 `integrate/20260923`）
+- 禁止推其他分支（当前只推 `feat/first-clear-reward-cascade`）
+- 遗匣 `seeds[].equip` 是原装备，种子合并和等级兼容绝不能改写或丢弃它。
 - 不要开引擎 i18n `enabled=true`，用 `core/I18n.lua`

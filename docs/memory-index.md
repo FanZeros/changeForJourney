@@ -1,13 +1,13 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-24 | 版本:v2.36-win-foreground-runtime
+> 更新时间:2026-09-24 | 版本:v2.43-lootbox-left
 >
-> **本会话(2026-09-24 workspace924)**：新分支 `workspace924`。已含今日首通奖励/遗匣/天赋/启动脚本/1920x1080 画布，并补合 `fix/talent-node-audit-20260924` 的古树图标与星图铺满。其他分支没有更新的提交。只 push 本分支。
+> **本会话(2026-09-24 workspace924)**：合入遗匣左栏地点与溢出完整保管，以及滚轮按鼠标所在区域滚动。只 push `workspace924`。
 >
-> **本会话(2026-09-24 合并)**：当前分支 `fix/windows-runtime-foreground-start` 已合入今日更新的 `feat/first-clear-reward-cascade`、`fix/lootbox-click-20260924`、`fix/talent-node-audit-20260924`。未合昨日及更早分支。只 push 本分支。
+> **本会话(2026-09-24 workspace924)**：新分支 `workspace924`。已含今日首通奖励/遗匣/天赋/启动脚本/1920x1080 画布，并补合 `fix/talent-node-audit-20260924` 的古树图标与星图铺满。
 >
-> **本会话(2026-09-24)**：分支 `fix/windows-runtime-foreground-start`。Windows 本地预览改为项目目录前台启动 Runtime，不走隐藏 PowerShell。只 push 本分支。
+> **遗匣地点**：超出背包的奖励完整存入遗匣 `seeds[].equip`，管理页在左栏，中缝返回与按栏滚轮已接。领取只消费实际入包项。
 >
 > **本会话(2026-09-23)**：从 `workspace` 新开 `integrate/20260923`，合入今天三条功能线 + workspace923 的一键脚本修复。含滚轮/右键装备/五语/Noto 字体、四名玩梗角色与 SE 包、未解锁职业标。未推 workspace。
 

@@ -83,7 +83,7 @@ function LootService.ClaimGroup(uid, index)
     local cap = LootBoxSystem.levelCap
     if cap > 0 then
         local seed = lootboxData.seeds[index]
-        if seed and seed.level and seed.level > cap then
+        if seed and not seed.equip and seed.level and seed.level > cap then
             seed.level = cap
         end
     end
@@ -139,7 +139,7 @@ function LootService.ClaimAll(uid)
     if cap > 0 then
         local seedFixed = false
         for _, seed in ipairs(lootboxData.seeds) do
-            if seed.level and seed.level > cap then
+            if not seed.equip and seed.level and seed.level > cap then
                 seed.level = cap
                 seedFixed = true
             end

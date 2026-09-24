@@ -187,7 +187,7 @@ function EquipLevelCompat._fixLootboxSeeds(uid, maxLevel)
     local fixedCount = 0
 
     for i, seed in ipairs(lootboxData.seeds) do
-        if type(seed) == "table" and seed.level and seed.level > maxLevel then
+        if type(seed) == "table" and not seed.equip and seed.level and seed.level > maxLevel then
             print(string.format("[EquipLevelCompat] 降级战利品种子 #%d: Lv.%d → Lv.%d (count=%d)",
                 i, seed.level, maxLevel, seed.count or 1))
             seed.level = maxLevel
@@ -209,25 +209,7 @@ end
 --- 合并同 quality+level 的种子条目
 ---@param lootboxData table
 function EquipLevelCompat._consolidateSeeds(lootboxData)
-    if not lootboxData or not lootboxData.seeds then return end
-
-    local merged = {}
-    local keyMap = {}  -- "quality_level" → merged index
-
-    for _, seed in ipairs(lootboxData.seeds) do
-        if type(seed) == "table" and seed.count and seed.count > 0 then
-            local key = tostring(seed.quality or 0) .. "_" .. tostring(seed.level or 0)
-            local idx = keyMap[key]
-            if idx then
-                merged[idx].count = merged[idx].count + seed.count
-            else
-                merged[#merged + 1] = { quality = seed.quality, level = seed.level, count = seed.count }
-                keyMap[key] = #merged
-            end
-        end
-    end
-
-    lootboxData.seeds = merged
+    require("systems.LootBoxSystem").consolidateSeeds(lootboxData)
 end
 
 return EquipLevelCompat

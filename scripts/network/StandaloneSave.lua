@@ -153,7 +153,8 @@ function StandaloneSave.Update(dt)
     end
     if json ~= lastSnapshot then
         lastSnapshot = json
-        flushTimer = FLUSH_DEBOUNCE
+        -- 掉落会持续改变快照；已有待写计时不能每秒重置，否则永远无法落盘。
+        if not flushTimer then flushTimer = FLUSH_DEBOUNCE end
     end
 end
 

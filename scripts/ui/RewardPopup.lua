@@ -1051,6 +1051,12 @@ function RewardPopup.drawContent(vg)
                     DarkIcon.drawIconDark(vg, equipImg, cx, cy, iconInner, iconInner, 1.0)  -- [暗黑化 P2-B]
                 end
 
+                -- 满包转存的装备仍展示奖励，但明确标示实际去向。
+                if item.destination == "lootbox" then
+                    DrawUtil.drawTextStroke(vg, cx, cy - ICON_SIZE * 0.5 + 18,
+                        "已入遗匣", 27, NVG_ALIGN_CENTER + NVG_ALIGN_TOP,
+                        230, 198, 125, 3)
+                end
                 -- 等级角标（右下角，描边）
                 if item.level and item.level > 0 then
                     do

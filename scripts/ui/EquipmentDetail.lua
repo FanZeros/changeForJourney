@@ -860,6 +860,19 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
                 nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
                 nvgText(vg, REF_BTN_CX + offsetX, decBtnCY, "立即分解", nil)
                 BF.finish(vg, _bf3)
+                local slot = equip.slot
+                local field = slot and BlacksmithConfig.SLOT_SCROLL_MAP[slot]
+                local refund = field and BlacksmithConfig.calcAscendScrollRefund(
+                    EquipmentSystem.getAscendLevel(equip)) or 0
+                if refund > 0 and field then
+                    local hint = BlacksmithConfig.formatScrollRefund({ [field] = refund })
+                    if hint then
+                        drawTextStroke(vg, REF_BTN_CX + offsetX,
+                            decBtnCY + REF_ENH_BTN_H * 0.5 + 28, hint,
+                            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                            255, 214, 102, 3)
+                    end
+                end
             end
         end
     end
@@ -1386,6 +1399,7 @@ function EquipmentDetail.onActionResult(data)
         if (data.goldReward or 0) > 0 then
             rewards[#rewards + 1] = { type = "gold", amount = data.goldReward }
         end
+        BlacksmithConfig.appendScrollRewardItems(rewards, data.scrollRewards)
         if #rewards > 0 then
             require("ui.RewardPopup").show("分解奖励", rewards)
         end

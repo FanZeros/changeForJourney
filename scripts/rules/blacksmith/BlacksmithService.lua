@@ -1087,7 +1087,7 @@ end
 
 -- ======================== 分解装备 ========================
 
---- 批量分解装备（获得精粹 + 强化金币返还）
+--- 批量分解装备（获得精粹 + 升阶卷轴 70% 返还，金币不退）
 ---@param uid number
 ---@param seqs number[]
 ---@return boolean ok, string? err, table? result
@@ -1140,10 +1140,14 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
     end
 
     -- 计算总精粹奖励: decBase * (1 + level * decScale) + 洗练返还
+    -- 升阶卷轴按已投入的 70% 退回对应部位，金币不退
     local totalEssence = 0
     local totalRefineReturn = 0
+    local scrollRewards = {}
+    local totalScrollRefund = 0
     for _, item in ipairs(toRemove) do
         local equip = item.equip
+        EquipmentSystem.hydrate(equip)
         local q = equip.quality or 1
         local lv = equip.level or 1
         local qCost = QUALITY_COST[q] or QUALITY_COST[1]
@@ -1158,6 +1162,17 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
             local refineReturn = math.floor(totalSpent * 0.5)
             totalRefineReturn = totalRefineReturn + refineReturn
         end
+
+        local ascendLv = EquipmentSystem.getAscendLevel(equip)
+        local scrollRefund = BlacksmithConfig.calcAscendScrollRefund(ascendLv)
+        local scrollField = SLOT_SCROLL_MAP[equip.slot]
+        if scrollRefund > 0 and scrollField then
+            scrollRewards[scrollField] = (scrollRewards[scrollField] or 0) + scrollRefund
+            totalScrollRefund = totalScrollRefund + scrollRefund
+        elseif scrollRefund > 0 then
+            print("[BlacksmithService] DECOMPOSE skip scroll refund, no slot seq="
+                .. tostring(item.seq))
+        end
     end
     totalEssence = totalEssence + totalRefineReturn
 
@@ -1166,6 +1181,9 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
         EquipmentSystem.removeFromInventory(equipData, item.seq)
     end
     currency.essence = (currency.essence or 0) + totalEssence
+    for field, amount in pairs(scrollRewards) do
+        currency[field] = (currency[field] or 0) + amount
+    end
 
     PDM.MarkDirty(uid, "equipment")
     PDM.MarkDirty(uid, "currency")
@@ -1173,7 +1191,8 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
     print("[BlacksmithService] DECOMPOSE uid=" .. tostring(uid)
         .. " count=" .. #toRemove
         .. " essence=+" .. totalEssence
-        .. " (base=" .. (totalEssence - totalRefineReturn) .. " refineReturn=" .. totalRefineReturn .. ")")
+        .. " (base=" .. (totalEssence - totalRefineReturn) .. " refineReturn=" .. totalRefineReturn .. ")"
+        .. " scrollRefund=+" .. totalScrollRefund)
 
     -- 任务进度
     TaskService.UpdateProgress(uid, "decompose", #toRemove)
@@ -1183,6 +1202,8 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
         decomposeCount = #toRemove,
         essenceReward = totalEssence,
         refineReturn = totalRefineReturn,
+        scrollRewards = scrollRewards,
+        scrollReward = totalScrollRefund,
     }
 end
 

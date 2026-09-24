@@ -1,6 +1,6 @@
 -- ============================================================================
 -- StandaloneSave - 单机模式本地存档
--- 读写 save.json。规则层 localMode 下不再写 serverCloud。
+-- 读写 save.json。这是单机唯一落盘路径。
 -- 职责:
 --   1. 快照 ClientDispatcher 全部模块数据 + GameState 单机本地 state
 --   2. 变更检测（每秒全量 JSON 对比）→ 防抖落盘本地 File

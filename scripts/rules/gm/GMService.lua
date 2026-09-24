@@ -596,7 +596,7 @@ function GMService.BroadcastMail(title, content, rewards, expireDays, operatorUi
 
     -- 确保服务已初始化
     if not BroadcastMailService.IsInitialized() then
-        -- Init 是异步的（serverCloud:Get 回调），调用后不能立即使用
+        -- Init 未完成时不能立即发信
         -- 正常情况下 Server.Start() 已经提前调用了 Init，这里是防御性兜底
         BroadcastMailService.Init(nil)
         return false, "全服邮件服务正在初始化，请稍后重试（约1-2秒）"

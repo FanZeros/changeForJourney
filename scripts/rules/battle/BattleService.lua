@@ -14,7 +14,6 @@ local ChallengerService = require("rules.challenger.ChallengerService")
 local ChallengerServerConfig = require("shared.ChallengerServerConfig")
 local LootBoxSystem   = require("systems.LootBoxSystem")
 local HeroConfig      = require("config.HeroConfig")
-local GuildConfig     = require("config.GuildConfig")
 local BlacksmithConfig = require("config.BlacksmithConfig")
 local CurrencyService  = require("rules.currency.CurrencyService")
 local MonsterConfig    = require("config.MonsterConfig")
@@ -31,53 +30,6 @@ local BattleService = {}
 
 local function getStageConfig(uid)
     return StageProvider.GetForServer(PDM.GetServerId(uid))
-end
-
---- 将 maxStageId 写入公会排行榜（区服隔离）
---- 分数编码: score = stageId * 100 + avatarHeroId（前N位关卡进度, 后两位头像英雄）
---- 使用 BatchSet 原子写入 iscore + name，避免分步写入时 Set 覆盖 iscore 的问题
----@param uid number
----@param maxStageId number
-local function writeGuildStageRank(uid, maxStageId)
-    if PDM.IsLocalMode(uid) or not serverCloud then return end
-    local serverId = PDM.GetServerId(uid)
-    if not serverId then return end
-    local key = GuildConfig.getCloudKey("STAGE_RANK", serverId)
-    -- 取玩家设置的展示头像（与 TopBar/竞技场一致）
-    local avatarHeroId = 1
-    local player = PDM.GetModule(uid, "player")
-    if player and player.avatarHeroId then
-        avatarHeroId = player.avatarHeroId
-    end
-    local score = maxStageId * 100 + math.min(avatarHeroId, 99)
-    -- 原子写入：iscore（排行分数）+ score（名字）同时写入，防止竞态
-    local playerName = (player and player.name and player.name ~= "") and player.name or nil
-    if playerName then
-        serverCloud:BatchSet(uid)
-            :SetInt(key, score)
-            :Set(key, playerName)
-            :Save("guild_rank_write")
-    else
-        -- 先写分数保证排行榜正确
-        serverCloud:SetInt(uid, key, score)
-        -- 异步查询平台昵称并补写 name
-        GetUserNickname({
-            ---@diagnostic disable-next-line: assign-type-mismatch
-            userIds = { uid },
-            onSuccess = function(nicknames)
-                if nicknames and nicknames[1] and nicknames[1].nickname
-                   and nicknames[1].nickname ~= "" then
-                    local nick = nicknames[1].nickname
-                    serverCloud:Set(uid, key, nick)
-                    -- 顺便修复 player.name
-                    if player then
-                        player.name = nick
-                        PDM.MarkDirty(uid, "player")
-                    end
-                end
-            end,
-        })
-    end
 end
 
 -- ======================== 通关 & 推进关卡 ========================
@@ -396,7 +348,6 @@ function BattleService.NextStage(uid, clearedId, nextId)
             -- 首通前结算：以旧 maxStageId 和对应公式结算当前累计挂机时间
             IdleSettleService.PreSettleForFirstClear(uid)
             battle.maxStageId = battle.currentStageId
-            writeGuildStageRank(uid, battle.maxStageId)
         end
         battle.battleMode = isFirstClearStage and "firstClear" or "idle"
     end
@@ -486,7 +437,6 @@ function BattleService.Reincarnate(uid, newStageId)
     ChallengerService.RecordProgress(uid, currentId)
     if newStageIdNum > (battle.maxStageId or 0) then
         battle.maxStageId = newStageIdNum
-        writeGuildStageRank(uid, battle.maxStageId)
         battle.battleMode = "firstClear"
     end
 
@@ -1344,15 +1294,5 @@ function BattleService._claimEquipReward(uid, sessionData, scenarioKey, rewardDe
     }
 end
 
---- 登录时同步公会排行榜分数
---- 修正 avatarHeroId 编码变更后的过时 cloud score，确保排行榜头像和进度正确
----@param uid number
-function BattleService.SyncGuildRankOnLogin(uid)
-    local battle = PDM.GetModule(uid, "battle")
-    if not battle or not battle.maxStageId or battle.maxStageId <= 0 then return end
-    writeGuildStageRank(uid, battle.maxStageId)
-    print("[BattleService] SyncGuildRankOnLogin uid=" .. tostring(uid)
-        .. " maxStageId=" .. tostring(battle.maxStageId))
-end
 
 return BattleService

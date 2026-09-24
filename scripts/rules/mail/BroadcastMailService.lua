@@ -2,7 +2,7 @@
 -- ============================================================================
 -- BroadcastMailService - 全服邮件管理（单机本地公告版）
 -- 职责: 公告的发送、存储（内存）、过期清理、登录合并
--- 层级: server/mail  |  单机化：不再依赖 serverCloud，公告仅本次运行内存中生效
+-- 层级: rules/mail  |  公告仅本次运行内存中生效
 -- ============================================================================
 
 local PDM = require("rules.character.PlayerDataManager")
@@ -103,7 +103,7 @@ function BroadcastMailService.Init(callback)
     end
     broadcastMails_ = {}
     initialized_ = true
-    print("[BroadcastMailService] Init local (no serverCloud)")
+    print("[BroadcastMailService] Init local")
     if callback then callback(true) end
 end
 

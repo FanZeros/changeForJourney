@@ -4,8 +4,8 @@
 --
 -- 职责:
 --   定义 "quotas" 字段，注册到 CharacterSchema 后 PDM 自动管理。
---   persist = { via = "quota" } 表示数据由 serverCloud.quota 管理，
---   PDM 仅作为缓存层（加载时拉取，不负责持久化存盘）。
+--   persist = { via = "quota" } 表示限额只存在本地 quotas 模块。
+--   单机由 PDM.UseQuota 改内存，随 StandaloneSave 落盘。
 --
 -- 数据结构（运行时缓存）:
 --   quotas = {

@@ -19,13 +19,13 @@
 --   }
 --
 -- 持久化策略:
---   via="cloud" → serverCloud scores（JSON 模块 blob）
+--   via="cloud" → 模块 JSON（单机随 StandaloneSave 落盘，不写云）
 --   false       → sync-only，仅运行时同步，不持久化
 --
 -- 与 SaveManager 的数据兼容:
 --   fieldKey 必须与 ModuleRegistry.modules[i].name 一致
 --   cloudKey 必须与 ModuleRegistry.modules[i].key 一致
---   → serverCloud 存储格式完全相同，迁移期两者共存
+--   cloudKey 只作模块分组名，不再对应云变量
 -- ============================================================================
 
 local CharacterSchema = {}
@@ -161,7 +161,7 @@ function CharacterSchema.applyOnLoad(fieldKey, data)
     end
 end
 
---- 获取 cloudKey -> fieldKey[] 分组映射（用于 serverCloud 批量操作）
+--- 获取 cloudKey -> fieldKey[] 分组映射
 ---@return table<string, string[]>
 function CharacterSchema.GetCloudKeyGroups()
     local result = {}

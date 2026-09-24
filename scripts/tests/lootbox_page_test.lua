@@ -16,10 +16,16 @@ function Start()
     local claimed, decomposed, allClaims, allDecomposes = {}, {}, 0, 0
     Page.setOnClaimOne(function(index) claimed[#claimed + 1] = index end)
     Page.setOnDecomposeOne(function(index) decomposed[#decomposed + 1] = index end)
-    Page.setOnClaimAll(function() allClaims = allClaims + 1 end)
-    Page.setOnDecomposeAll(function() allDecomposes = allDecomposes + 1 end)
+    local claimQuality, recycleQuality = -1, -1
+    Page.setOnClaimAll(function(quality) allClaims = allClaims + 1 claimQuality = quality end)
+    Page.setOnDecomposeAll(function(quality) allDecomposes = allDecomposes + 1 recycleQuality = quality end)
     local entries = {}
-    for index = 1, 20 do entries[index] = { quality = 1, level = index, count = 1 } end
+    for index = 1, 20 do
+        entries[index] = {
+            quality = 1, level = index, count = 1, source = "idle", sourceIndex = index,
+            equip = { templateId = "W1", name = "确定装备", quality = 1, level = index },
+        }
+    end
     Page.open(entries)
     Page.handleInput(873, 602)
     eq(#claimed, 0, "开场动画期间不触发领取")
@@ -69,6 +75,29 @@ function Start()
     Page.handleInput(540, 2220)
     eq(allClaims, 1, "空态不能重复领取")
     eq(allDecomposes, 1, "空态不能分解")
+    eq(claimQuality, 0, "默认领取范围为全部")
+    eq(recycleQuality, 0, "默认回收范围为全部")
+    entries[2].quality, entries[2].equip.quality = 6, 6
+    entries[9].quality, entries[9].equip.quality = 6, 6
+    Page.refresh(entries)
+    Page.handleInput(966, 354)
+    Page.handleInput(873, 602)
+    eq(decomposed[#decomposed], 2, "筛选后的首行回收仍指向原索引2")
+    Page.handleInput(300, 2070)
+    Page.handleInput(873, 844)
+    eq(claimed[#claimed], 9, "筛选后的第二行领取仍指向原索引9")
+    Page.handleInput(780, 2070)
+    eq(claimQuality, 6, "一键领取透传稀有度")
+    Page.handleInput(540, 2220)
+    Page.handleInput(750, 1340)
+    eq(recycleQuality, 6, "一键回收只处理筛选品质")
+    Page.refresh(entries)
+    Page.handleInput(873, 602)
+    eq(claimed[#claimed], 2, "刷新保持当前品质筛选")
+    Page.handleInput(398, 354)
+    local beforeEmptyFilter = allClaims
+    Page.handleInput(780, 2070)
+    eq(allClaims, beforeEmptyFilter, "空筛选不领取隐藏品质")
     Page.close()
     time.elapsedTime = 12
     Page.update(1)
@@ -80,6 +109,37 @@ function Start()
     time.elapsedTime = 14
     Page.update(1)
     eq(Page.isOpen(), false, "非三行页内返回")
+
+    local pending = { quality = 6, level = 80, count = 3 }
+    local determined = {
+        quality = 6, level = 20, count = 1, sourceIndex = 17,
+        equip = { templateId = "W1", quality = 6, level = 20 },
+    }
+    Page.open({ pending, determined })
+    time.elapsedTime = 15
+    local beforePending = #claimed
+    Page.handleInput(873, 602)
+    eq(#claimed, beforePending, "待整理条目不可领取")
+    Page.handleInput(966, 354)
+    Page.handleInput(873, 602)
+    eq(claimed[#claimed], 17, "筛选保留摘要携带的原存储索引")
+    Page.handleInput(540, 2220)
+    local beforeRefresh = allDecomposes
+    Page.refresh({ pending, determined })
+    Page.handleInput(750, 1340)
+    eq(allDecomposes, beforeRefresh, "刷新后旧确认不能执行回收")
+    Page.forceClose()
+    local System = require("systems.LootBoxSystem")
+    local box = { seeds = { pending, determined } }
+    local _, pendingPieces = System.decomposeOne(box, 1)
+    eq(pendingPieces, 0, "待整理条目不可单件回收")
+    local _, selectedPieces = System.decomposeAll(box, 6)
+    eq(selectedPieces, 1, "批量回收件数仅包含确定装备")
+    eq(#box.seeds, 1, "批量回收保留待整理条目")
+    eq(box.seeds[1], pending, "待整理原始数据完整保留")
+    eq(pending.count, 3, "待整理数量不会因回收减少")
+    local _, repeatedPieces = System.decomposeAll(box, 0)
+    eq(repeatedPieces, 0, "全部回收也不能消耗待整理数量")
     package.loaded["systems.GameSFX"] = oldSfx
     package.loaded["systems.ButtonFeedback"] = oldFeedback
     package.loaded["core.DarkIcon"] = oldIcons

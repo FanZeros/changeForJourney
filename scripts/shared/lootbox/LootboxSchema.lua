@@ -1,5 +1,5 @@
 -- LootboxSchema.lua — lootbox 模块 Schema
--- 战利品种子缓冲
+-- 确定装备暂存，兼容旧版种子迁移
 
 local LootBoxSystem = require("systems.LootBoxSystem")
 
@@ -26,8 +26,9 @@ LootboxSchema.Fields = {
             end
             -- 合并旧存档中按 stageId 分开的同类种子（quality+level 相同的合并为一条）
             LootBoxSystem.consolidateSeeds(data)
+            LootBoxSystem.revealLegacy(data)
         end,
-        desc = "战利品种子缓冲",
+        desc = "确定装备暂存",
     },
 }
 

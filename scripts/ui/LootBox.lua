@@ -42,7 +42,8 @@ function LootBox.init(vg)
 end
 
 local function syncSummary()
-    -- getSummary 保留完整 equip；禁止 UI 自行重新分组，回调索引必须与 seeds 相同。
+    LootBoxSystem.revealLegacy(lootboxData_)
+    -- 摘要含确定装备与原存储索引，筛选不改变领取目标。
     seedSummary = LootBoxSystem.getSummary(lootboxData_)
     seedCount = 0
     for _, entry in ipairs(seedSummary) do

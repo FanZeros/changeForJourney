@@ -25,7 +25,8 @@
       "hero_unit_name": "远征队员",
       "recruit_ticket_name": "远征招募券",
       "parallel_sessions": "用户开多 agent 会话并行,注意文件覆盖",
-      "se_source": "RPG Maker VX Ace 风格 SE 包（用户 se.mp4 ZIP），游戏用 ogg"
+      "se_source": "RPG Maker VX Ace 风格 SE 包（用户 se.mp4 ZIP），游戏用 ogg",
+      "lootbox_contents": "默认打开确定装备内容，不显示问号或领取时随机；保留一键回收，支持全部及六档稀有度筛选。"
     }
   }
 }

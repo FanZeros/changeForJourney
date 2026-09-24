@@ -1095,9 +1095,9 @@ function BlacksmithPage.handleDragEnd(dx, dy)
     return _input.handleDragEnd(dx, dy)
 end
 
-function BlacksmithPage.handleScroll(wheel)
+function BlacksmithPage.handleScroll(wheel, dx, dy)
     if not _input then bindInput() end
-    return _input.handleScroll(wheel)
+    return _input.handleScroll(wheel, dx, dy)
 end
 
 function BlacksmithPage.handleInput(dx, dy)

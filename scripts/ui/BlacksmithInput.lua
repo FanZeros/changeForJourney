@@ -86,12 +86,14 @@ function M.bind(deps)
 
     --- 鼠标滚轮滚动
     ---@param wheel number 滚轮值
-    local function handleScroll(wheel)
+    ---@param dx number|nil
+    ---@param dy number|nil
+    local function handleScroll(wheel, dx, dy)
         if not state.open or state.closing then return end
-        if EquipmentBag.isOpen() then EquipmentBag.handleScroll(wheel); return end
+        if EquipmentBag.isOpen() then EquipmentBag.handleScroll(wheel, dx, dy); return end
         -- 分解 tab：滚轮滚动背包列表
         if state.tab == "fenjie" then
-            BlacksmithDecompose.handleScroll(wheel)
+            BlacksmithDecompose.handleScroll(wheel, dx, dy)
         end
     end
 

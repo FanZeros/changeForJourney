@@ -543,14 +543,22 @@ function BattleTriPage.handleDragEnd(wx, wy)
 end
 
 ---@param wheel number
+---@param wx number|nil 窗口坐标
+---@param wy number|nil
 ---@return boolean
-function BattleTriPage.handleScroll(wheel)
+function BattleTriPage.handleScroll(wheel, wx, wy)
     if not isOpen_ then return false end
-    if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
-        EquipmentBag.handleScroll(wheel)
-        return true
+    if not (EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion()) then
+        return false
     end
-    return false
+    if not EquipmentBag.hitOverlayWindow(wx, wy) then return false end
+    local EquipmentDetail = require("ui.EquipmentDetail")
+    if EquipmentDetail.isOpen() then
+        local dx, dy = EquipmentBag.overlayToDetail(wx, wy)
+        if EquipmentDetail.handleScroll(wheel, dx, dy) then return true end
+    end
+    EquipmentBag.scrollByWheel(wheel)
+    return true
 end
 
 ---@param wx number

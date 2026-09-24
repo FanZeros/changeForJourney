@@ -754,25 +754,35 @@ function CharacterDetail.handleDragEnd(dx, dy)
 end
 
 --- 鼠标滚轮滚动（由 CharacterPanel 委托）
+--- 正滚轮向上：减小 scrollY。详情只在鼠标落在弹窗上时接管，否则滚后面的列表。
 ---@param wheel number 滚轮值（正=向上，负=向下）
-function CharacterDetail.handleScroll(wheel)
+---@param dx number|nil
+---@param dy number|nil
+function CharacterDetail.handleScroll(wheel, dx, dy)
     if not detailState.open or detailState.closing then return end
     if CharacterDetail._EquipDetail.isOpen() then
-        CharacterDetail._EquipDetail.handleScroll(wheel)
-        return
+        if dx == nil or CharacterDetail._EquipDetail.containsPoint(dx, dy) then
+            CharacterDetail._EquipDetail.handleScroll(wheel, dx, dy)
+            return
+        end
     end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
-        EquipmentBag.handleScroll(wheel)
+        EquipmentBag.handleScroll(wheel, dx, dy)
         return
     end
-    -- 配装面板滚轮
-    if detailState.tab == "equip" and CharacterDetail._EquipPanel then
-        CharacterDetail._EquipPanel.onDrag(wheel * ATTR_SCROLL_WHEEL_STEP)
-        return
+    local equipPanel = CharacterDetail._EquipPanel
+    if detailState.tab == "equip" and equipPanel then
+        if dx == nil or equipPanel.isInGridArea(dy) then
+            -- onDrag 是拖拽增量（向下拖为负）。滚轮正值应减小 scrollY，所以取反。
+            equipPanel.onDrag(-(wheel or 0) * ATTR_SCROLL_WHEEL_STEP)
+            return
+        end
     end
-    detailState.attrScrollY = detailState.attrScrollY - wheel * ATTR_SCROLL_WHEEL_STEP
-    clampAttrScroll()
-    detailState.attrScrollVel = 0
+    if dx == nil or isInAttrArea(dx, dy) then
+        detailState.attrScrollY = detailState.attrScrollY - (wheel or 0) * ATTR_SCROLL_WHEEL_STEP
+        clampAttrScroll()
+        detailState.attrScrollVel = 0
+    end
 end
 
 --- 绘制角色详情二级界面

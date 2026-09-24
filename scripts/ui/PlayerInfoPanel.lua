@@ -554,11 +554,11 @@ end
 
 --- 滚动处理（卡片区域滚动）
 ---@param wheel number 滚轮值（正=向上滚）
-function PlayerInfoPanel.handleScroll(wheel)
+function PlayerInfoPanel.handleScroll(wheel, dx, dy)
     if not state.open or state.closing then return false end
     -- 角色详情优先接管滚轮（与 CharacterPanel 模式一致）
     if CharacterDetail.isOpen() then
-        return CharacterDetail.handleScroll(wheel)
+        return CharacterDetail.handleScroll(wheel, dx, dy)
     end
     -- AvatarSelectPanel 优先拦截滚轮
     if AvatarSelectPanel.isOpen() then

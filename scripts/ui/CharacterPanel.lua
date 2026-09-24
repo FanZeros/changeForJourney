@@ -670,8 +670,8 @@ function CharacterPanel.handleDragEnd(dx, dy)
     return ensureInput().handleDragEnd(dx, dy)
 end
 
-function CharacterPanel.handleScroll(wheel)
-    return ensureInput().handleScroll(wheel)
+function CharacterPanel.handleScroll(wheel, dx, dy)
+    return ensureInput().handleScroll(wheel, dx, dy)
 end
 
 --- 是否正在进行卡片拖拽（用于输入层判断拖拽落点）

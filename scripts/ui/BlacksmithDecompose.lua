@@ -830,11 +830,16 @@ function M.handleDragEnd(dx, dy)
     fjState.longPressCellIdx = 0
 end
 
---- 鼠标滚轮
-function M.handleScroll(wheel)
+--- 鼠标滚轮。详情只在鼠标落在弹窗上时接管。
+---@param wheel number
+---@param dx number|nil
+---@param dy number|nil
+function M.handleScroll(wheel, dx, dy)
     if EquipmentDetail.isOpen() then
-        EquipmentDetail.handleScroll(wheel)
-        return
+        if dx == nil or EquipmentDetail.containsPoint(dx, dy) then
+            EquipmentDetail.handleScroll(wheel, dx, dy)
+            return
+        end
     end
     local scrollStep = FJ.GRID_ROW_STEP
     local totalSlots = EquipmentSystem.MAX_INVENTORY

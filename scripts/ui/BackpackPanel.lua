@@ -1456,11 +1456,13 @@ function Panel.handleDragEnd(dx, dy)
     return true
 end
 
-function Panel.handleScroll(wheel)
+function Panel.handleScroll(wheel, dx, dy)
     if not state.open then return false end
     if itemDetState.open then return true end
     if EquipmentDetail.isOpen() then
-        return EquipmentDetail.handleScroll(wheel)
+        if dx == nil or EquipmentDetail.containsPoint(dx, dy) then
+            return EquipmentDetail.handleScroll(wheel, dx, dy)
+        end
     end
     state.scrollY = state.scrollY - wheel * SCROLL_WHEEL_STEP
     clampScroll()

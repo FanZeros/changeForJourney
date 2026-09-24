@@ -257,14 +257,14 @@ function M.bind(deps)
     ---@param msy number|nil 鼠标设计坐标Y
     local function handleScroll(wheel, msx, msy)
         if not state.open or state.closing then return end
-        if isRosterVisible() then
+        if isRosterVisible() and (msx == nil or isInRosterScrollArea(msx, msy)) then
             state.rosterScrollY = state.rosterScrollY - wheel * 80
             state.rosterScrollVelocity = 0
             clampRosterScroll()
             return
         end
         if state.tab == "shenqi" then
-            ArtifactPanel.handleScroll(wheel)
+            ArtifactPanel.handleScroll(wheel, msx, msy)
         end
     end
 

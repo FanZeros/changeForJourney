@@ -304,9 +304,9 @@ function M.bind(deps)
         return true
     end
 
-    local function handleScroll(wheel)
+    local function handleScroll(wheel, dx, dy)
         if CharacterDetail.isOpen() then
-            CharacterDetail.handleScroll(wheel)
+            CharacterDetail.handleScroll(wheel, dx, dy)
             return
         end
         setScroll(getScroll() - wheel * SCROLL_WHEEL_STEP)

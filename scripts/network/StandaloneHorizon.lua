@@ -1019,6 +1019,9 @@ function HandleMouseWheelHorizon(eventType, eventData)
     if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local wheel = eventData["Wheel"]:GetInt()
     if wheel == 0 then return end
+    local mousePos = input:GetMousePosition()
+    local sx = mousePos.x / dpr()
+    local sy = mousePos.y / dpr()
 
     -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
     if TalentPage.isOpen() then
@@ -1031,8 +1034,8 @@ function HandleMouseWheelHorizon(eventType, eventData)
         end
     end
 
-    -- [三行并行] 装备袋战斗区覆盖层优先（全屏级）
-    if BattleTriPage.handleScroll(wheel) then return end
+    -- 装备袋只吃覆盖矩形内的滚轮，左右栏仍滚自己的列表
+    if BattleTriPage.handleScroll(wheel, sx, sy) then return end
 
     -- 全屏战斗场景
     if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end
@@ -1046,18 +1049,18 @@ function HandleMouseWheelHorizon(eventType, eventData)
     -- 不再依赖"最近点击面板"记录；滚到哪边就滚哪边的列表）
     local pid, msx, msy = HorizonResolveMouse()
     if pid == 'playerinfo' then
-        PlayerInfoPanel.handleScroll(wheel)
+        PlayerInfoPanel.handleScroll(wheel, msx, msy)
         return
     end
 
     -- [底栏移除] 日志页全窗模态：列表滚动
     if pid == 'modal' and HorizonPageModalActive() then
-        if BottomNav.getSelectedIndex() == 2 then DiaryPage.handleScroll(wheel) end
+        if BottomNav.getSelectedIndex() == 2 then DiaryPage.handleScroll(wheel, msx, msy) end
         return
     end
 
     if pid == 'modal' then
-        PlayerInfoPanel.handleScroll(wheel)
+        PlayerInfoPanel.handleScroll(wheel, msx, msy)
         return
     end
 
@@ -1067,8 +1070,8 @@ function HandleMouseWheelHorizon(eventType, eventData)
     end
 
     if pid == 'left' then
-        if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleScroll(wheel) return end
-        if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel) return end
+        if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleScroll(wheel, msx, msy) return end
+        if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel, msx, msy) return end
         if TalentPage.isOpen() then TalentPage.handleScroll(wheel, msx, msy) return end
         if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel, msx, msy) return end
         if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end
@@ -1077,7 +1080,7 @@ function HandleMouseWheelHorizon(eventType, eventData)
     end
 
     if pid == 'right' then
-        CharacterPanel.handleScroll(wheel)
+        CharacterPanel.handleScroll(wheel, msx, msy)
         return
     end
 
@@ -1086,9 +1089,9 @@ function HandleMouseWheelHorizon(eventType, eventData)
     -- center：主视图 Tab 页
     local tab = BottomNav.getSelectedIndex()
     if tab == 1 then
-        CharacterPanel.handleScroll(wheel)
+        CharacterPanel.handleScroll(wheel, msx, msy)
     elseif tab == 2 then
-        DiaryPage.handleScroll(wheel)
+        DiaryPage.handleScroll(wheel, msx, msy)
     end
 end
 

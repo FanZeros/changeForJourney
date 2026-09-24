@@ -1013,8 +1013,8 @@ local candCache = {}
 function M.rebuildCandidates()
     candCache = {}
     local ClientDispatcher = require("runtime.ClientDispatcher")
-    local eq = ClientDispatcher.get("equipment") or require("client.data.PlayerStore").Get("equipment")
-    local heroes = ClientDispatcher.get("heroes") or require("client.data.PlayerStore").Get("heroes")
+    local eq = ClientDispatcher.get("equipment") or require("core.PlayerStore").Get("equipment")
+    local heroes = ClientDispatcher.get("heroes") or require("core.PlayerStore").Get("heroes")
     if not eq or not eq.inventory then return candCache end
     local seen = {}
     local function push(seq, worn)

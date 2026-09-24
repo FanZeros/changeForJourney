@@ -820,8 +820,14 @@ function HandleMouseMoveHorizon(eventType, eventData)
         if RewardPopup.handleDragMove(dx, dy) then return end
         return
     end
-    if not pressValid then return end
+    if not pressValid then
+        if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+            if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
+        end
+        return
+    end
     if pid == 'tri' then
+
         BattleTriPage.handleDragMove(dx, dy)
         return
     end

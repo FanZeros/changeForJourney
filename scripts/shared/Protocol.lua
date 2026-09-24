@@ -174,7 +174,8 @@ Protocol.ACTION_TYPES = {
     TRANSFER_CLOSED_CHALLENGER_CARD   = "transfer_closed_challenger_card",   -- 挑战者活动结束后从选服界面转出特权卡
 
     -- 任务
-    CLAIM_TASK = "claim_task",  -- 领取任务奖励（params: { taskId = string }�?
+    CLAIM_TASK = "claim_task",  -- 领取任务奖励（params: { taskId = string }）
+    CLAIM_ALL_TASKS = "claim_all_tasks",  -- 一键领取当前页可领功绩
 
     -- 情景奖励
     CLAIM_SCENARIO_REWARD = "claim_scenario_reward", -- 领取情景对话奖励（params: { scenarioId = number }�?

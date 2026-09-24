@@ -666,6 +666,14 @@ function CharacterPanel.handleDragMove(dx, dy)
     return ensureInput().handleDragMove(dx, dy)
 end
 
+function CharacterPanel.handleHover(dx, dy)
+    local CharacterDetail = require("ui.character.detail.CharacterDetail")
+    if CharacterDetail.isOpen() and CharacterDetail.handleHover then
+        CharacterDetail.handleHover(dx, dy)
+    end
+end
+
+
 function CharacterPanel.handleDragEnd(dx, dy)
     return ensureInput().handleDragEnd(dx, dy)
 end

@@ -200,11 +200,111 @@ function BlacksmithService.EnhanceSlotToLevel(uid, partySlot, equipSlot, targetL
     }
 end
 
+-- ======================== 装备升阶（跟装备走，不绑角色） ========================
+
+local function findEquip(equipData, seq)
+    if not equipData or not equipData.inventory or not seq then return nil end
+    local key = tostring(seq)
+    return equipData.inventory[key] or equipData.inventory[seq]
+end
+
+--- 按 seq 升 1 阶。消耗为原强化表的 60%。
+---@param uid number
+---@param seq number
+---@return boolean ok, string? err, table? result
+function BlacksmithService.AscendEquip(uid, seq)
+    seq = tonumber(seq)
+    local equipData = PDM.GetModule(uid, "equipment")
+    local currency = PDM.GetModule(uid, "currency")
+    if not equipData or not currency then return false, "数据未加载" end
+    local equip = findEquip(equipData, seq)
+    if not equip then return false, "装备不存在" end
+    EquipmentSystem.hydrate(equip)
+    local scrollField = SLOT_SCROLL_MAP[equip.slot]
+    if not scrollField then return false, "无效的装备位置" end
+
+    local currentLv = EquipmentSystem.getAscendLevel(equip)
+    local cap = getEnhanceCap(uid)
+    if currentLv >= cap then
+        return false, "升阶已达当前远征等级上限（" .. cap .. "）"
+    end
+    if currentLv >= MAX_ENHANCE_LV then
+        return false, "已达最大升阶"
+    end
+    local nextLv = currentLv + 1
+    local cost = BlacksmithConfig.getAscendCost(nextLv)
+    if not cost then return false, "升阶配置异常" end
+    if (currency.gold or 0) < cost.gold then return false, "金币不足" end
+    if (currency[scrollField] or 0) < cost.scroll then return false, "卷轴不足" end
+
+    currency.gold = currency.gold - cost.gold
+    currency[scrollField] = currency[scrollField] - cost.scroll
+    equip.ascendLevel = nextLv
+    equip.enhanceLevel = nextLv
+    PDM.MarkDirty(uid, "currency")
+    PDM.MarkDirty(uid, "equipment")
+    TaskService.UpdateProgress(uid, "enhance", 1)
+    print("[BlacksmithService] ASCEND uid=" .. tostring(uid)
+        .. " seq=" .. tostring(seq) .. " lv=" .. nextLv
+        .. " gold=-" .. cost.gold .. " " .. scrollField .. "=-" .. cost.scroll)
+    return true, nil, {
+        enhanceOutcome = "success",
+        seq = seq,
+        newLevel = nextLv,
+        ascendLevel = nextLv,
+    }
+end
+
+--- 升到目标阶（含），按 60% 消耗逐级扣。
+function BlacksmithService.AscendEquipToLevel(uid, seq, targetLevel)
+    seq = tonumber(seq)
+    targetLevel = tonumber(targetLevel)
+    local equipData = PDM.GetModule(uid, "equipment")
+    local currency = PDM.GetModule(uid, "currency")
+    if not equipData or not currency then return false, "数据未加载" end
+    local equip = findEquip(equipData, seq)
+    if not equip then return false, "装备不存在" end
+    EquipmentSystem.hydrate(equip)
+    local scrollField = SLOT_SCROLL_MAP[equip.slot]
+    if not scrollField then return false, "无效的装备位置" end
+    local currentLv = EquipmentSystem.getAscendLevel(equip)
+    local cap = math.min(getEnhanceCap(uid), MAX_ENHANCE_LV)
+    if not targetLevel or targetLevel <= currentLv or targetLevel > cap then
+        return false, "无效的目标升阶"
+    end
+    local totalGold, totalScroll = 0, 0
+    for lv = currentLv + 1, targetLevel do
+        local cost = BlacksmithConfig.getAscendCost(lv)
+        if not cost then return false, "升阶配置异常" end
+        totalGold = totalGold + cost.gold
+        totalScroll = totalScroll + cost.scroll
+    end
+    if (currency.gold or 0) < totalGold then return false, "金币不足" end
+    if (currency[scrollField] or 0) < totalScroll then return false, "卷轴不足" end
+    currency.gold = currency.gold - totalGold
+    currency[scrollField] = currency[scrollField] - totalScroll
+    equip.ascendLevel = targetLevel
+    equip.enhanceLevel = targetLevel
+    PDM.MarkDirty(uid, "currency")
+    PDM.MarkDirty(uid, "equipment")
+    TaskService.UpdateProgress(uid, "enhance", targetLevel - currentLv)
+    print("[BlacksmithService] ASCEND_MAX uid=" .. tostring(uid)
+        .. " seq=" .. tostring(seq) .. " lv " .. currentLv .. "→" .. targetLevel
+        .. " gold=-" .. totalGold .. " scroll=-" .. totalScroll)
+    return true, nil, {
+        enhanceOutcome = "success",
+        seq = seq,
+        newLevel = targetLevel,
+        ascendLevel = targetLevel,
+        levelsGained = targetLevel - currentLv,
+    }
+end
+
 -- ======================== 洗练装备 ========================
 
 -- 额外资源定义
 -- 洗练石: "洗练时保留词缀属性种类不变，重新随机品质等级和数值（可跨等级变化）"
--- 点金石: "洗练时使用可将装备升阶，最高升到史诗品质"
+-- 点金石: "洗练时使用可将装备提品，最高提到史诗品质"
 local EXTRA_RES_DEFS = {
     enhanceStone = { field = "enhanceStone", cost = 1, name = "洗练石" },
     destroyStone = { field = "destroyStone", cost = nil, name = "点金石" },  -- cost 动态计算：当前品质即为消耗数
@@ -602,7 +702,7 @@ local function normalizeLockedIndices(lockedIndices, affixCount)
     return lockedSet, lockedCount
 end
 
---- 洗练装备（消耗精粹，可选额外资源：洗练石=只洗数值/点金石=装备升阶/腐化石=随机魔化效果/神圣石=净化腐化）
+--- 洗练装备（消耗精粹，可选额外资源：洗练石=只洗数值/点金石=提品/腐化石=随机魔化效果/神圣石=净化腐化）
 ---@param uid number
 ---@param seq number
 ---@param extraResource string|nil 额外资源 key ("enhanceStone"/"destroyStone"/"corruptStone"/"sacredStone"/nil)
@@ -643,7 +743,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
             local maxQ = getUpgradeMaxQuality(uid)
             if q >= maxQ then
                 local qName = EquipmentConfig.QUALITY[maxQ] and EquipmentConfig.QUALITY[maxQ].name or "最高"
-                return false, "装备已达" .. qName .. "品质，无法再升阶"
+                return false, "装备已达" .. qName .. "品质，无法再提品"
             end
         end
 
@@ -767,7 +867,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end
 
     elseif extraResource == "destroyStone" then
-        -- ── 点金石：装备升阶 +1，保留原有词缀不变 ──
+        -- ── 点金石：提品 +1，保留原有词缀不变 ──
         local maxQ = getUpgradeMaxQuality(uid)
         local newQ = math.min(q + 1, maxQ)
         -- 安全降级：若目标品质尚未配置（如至臻品质6），回退到已有最高品质
@@ -953,7 +1053,7 @@ function BlacksmithService.RefineReplace(uid, seq)
     -- 应用新词缀
     equip.affixes = pending.affixes
 
-    -- 点金石升阶：更新装备品质 + 重算基础属性
+    -- 点金石提品：更新装备品质 + 重算基础属性
     if pending.upgradedQuality then
         local oldQ = equip.quality
         equip.quality = pending.upgradedQuality
@@ -987,7 +1087,7 @@ end
 
 -- ======================== 分解装备 ========================
 
---- 批量分解装备（获得精粹 + 强化金币返还）
+--- 批量分解装备（获得精粹 + 升阶卷轴 70% 返还，金币不退）
 ---@param uid number
 ---@param seqs number[]
 ---@return boolean ok, string? err, table? result
@@ -1040,10 +1140,14 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
     end
 
     -- 计算总精粹奖励: decBase * (1 + level * decScale) + 洗练返还
+    -- 升阶卷轴按已投入的 70% 退回对应部位，金币不退
     local totalEssence = 0
     local totalRefineReturn = 0
+    local scrollRewards = {}
+    local totalScrollRefund = 0
     for _, item in ipairs(toRemove) do
         local equip = item.equip
+        EquipmentSystem.hydrate(equip)
         local q = equip.quality or 1
         local lv = equip.level or 1
         local qCost = QUALITY_COST[q] or QUALITY_COST[1]
@@ -1058,6 +1162,17 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
             local refineReturn = math.floor(totalSpent * 0.5)
             totalRefineReturn = totalRefineReturn + refineReturn
         end
+
+        local ascendLv = EquipmentSystem.getAscendLevel(equip)
+        local scrollRefund = BlacksmithConfig.calcAscendScrollRefund(ascendLv)
+        local scrollField = SLOT_SCROLL_MAP[equip.slot]
+        if scrollRefund > 0 and scrollField then
+            scrollRewards[scrollField] = (scrollRewards[scrollField] or 0) + scrollRefund
+            totalScrollRefund = totalScrollRefund + scrollRefund
+        elseif scrollRefund > 0 then
+            print("[BlacksmithService] DECOMPOSE skip scroll refund, no slot seq="
+                .. tostring(item.seq))
+        end
     end
     totalEssence = totalEssence + totalRefineReturn
 
@@ -1066,6 +1181,9 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
         EquipmentSystem.removeFromInventory(equipData, item.seq)
     end
     currency.essence = (currency.essence or 0) + totalEssence
+    for field, amount in pairs(scrollRewards) do
+        currency[field] = (currency[field] or 0) + amount
+    end
 
     PDM.MarkDirty(uid, "equipment")
     PDM.MarkDirty(uid, "currency")
@@ -1073,7 +1191,8 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
     print("[BlacksmithService] DECOMPOSE uid=" .. tostring(uid)
         .. " count=" .. #toRemove
         .. " essence=+" .. totalEssence
-        .. " (base=" .. (totalEssence - totalRefineReturn) .. " refineReturn=" .. totalRefineReturn .. ")")
+        .. " (base=" .. (totalEssence - totalRefineReturn) .. " refineReturn=" .. totalRefineReturn .. ")"
+        .. " scrollRefund=+" .. totalScrollRefund)
 
     -- 任务进度
     TaskService.UpdateProgress(uid, "decompose", #toRemove)
@@ -1083,6 +1202,8 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
         decomposeCount = #toRemove,
         essenceReward = totalEssence,
         refineReturn = totalRefineReturn,
+        scrollRewards = scrollRewards,
+        scrollReward = totalScrollRefund,
     }
 end
 

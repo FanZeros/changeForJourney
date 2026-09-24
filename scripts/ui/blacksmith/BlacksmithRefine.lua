@@ -305,7 +305,10 @@ local refineAnim = {
 local REFINE_ANIM_DURATION  = 0.4
 local REPLACE_ANIM_DURATION = 0.35
 
---- 点金石自动替换：洗练动画结束后自动触发替换动画
+--- 点金石是提品，不叫升阶，也不叫洗练
+local function isRaiseRarity()
+    return selectedExtraRes and selectedExtraRes.key == "destroyStone"
+end
 local autoReplaceScheduled = false
 
 --- 点金石品质提升展示状态
@@ -680,7 +683,7 @@ local function drawRefineAttrRows(vg, attrs, firstY, offsetX, alpha, lockOpts)
     end
 end
 
---- 洗练前词缀行是否显示锁定按钮（点金石升阶/腐化石魔化/神圣石净化不涉及锁词缀）
+--- 洗练前词缀行是否显示锁定按钮（点金石提品/腐化石魔化/神圣石净化不涉及锁词缀）
 ---@return boolean
 local function shouldShowAffixLocks()
     if selectedExtraRes and (selectedExtraRes.key == "destroyStone" or selectedExtraRes.key == "corruptStone" or selectedExtraRes.key == "sacredStone") then
@@ -749,12 +752,12 @@ function M.drawPanel(vg)
         replaceAlpha = math.floor(255 * (1 - eased))  -- 洗练前淡出
     end
 
-    -- 1. "洗练装备" 标题
+    -- 1. 标题：点金石路径叫提品，避免和装备升阶、普通洗练混在一起
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, XL.TITLE_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B, 255))
-    nvgText(vg, XL.TITLE_CX, XL.TITLE_CY, "洗练装备", nil)
+    nvgText(vg, XL.TITLE_CX, XL.TITLE_CY, isRaiseRarity() and "提品" or "洗练装备", nil)
 
     -- 腐化次数（已腐化装备显示）
     local corruptCount = getCorruptCount(state and state.selectedEquip)
@@ -792,7 +795,7 @@ function M.drawPanel(vg)
     else
         nvgFillColor(vg, nvgRGBA(XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B, 255))
     end
-    nvgText(vg, XL.BEFORE_TEXT_CX, XL.BEFORE_TEXT_CY, "洗练前", nil)
+    nvgText(vg, XL.BEFORE_TEXT_CX, XL.BEFORE_TEXT_CY, isRaiseRarity() and "当前" or "洗练前", nil)
 
     -- 4-7. 洗练前属性行
     local beforeLockOpts = getBeforeLockDrawOpts()
@@ -830,10 +833,11 @@ function M.drawPanel(vg)
     nvgFontSize(vg, XL.ATTR_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B, 255))
+    local afterTitle = (qualityUpgradeInfo or isRaiseRarity()) and "提品" or "洗练后"
     if animType == "replace" then
-        nvgText(vg, XL.AFTER_TEXT_CX, XL.AFTER_TEXT_CY + replaceYOffset, "洗练后", nil)
+        nvgText(vg, XL.AFTER_TEXT_CX, XL.AFTER_TEXT_CY + replaceYOffset, afterTitle, nil)
     else
-        nvgText(vg, XL.AFTER_TEXT_CX, XL.AFTER_TEXT_CY, "洗练后", nil)
+        nvgText(vg, XL.AFTER_TEXT_CX, XL.AFTER_TEXT_CY, afterTitle, nil)
     end
 
     -- 11. 洗练后属性行
@@ -880,12 +884,12 @@ function M.drawPanel(vg)
         local alpha = math.floor(255 * fadeIn)
         local centerY = XL.AFTER_BG_CY
 
-        -- "品质提升" 标题
+        -- "提品" 标题（点金石提品，不叫升阶）
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 34)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0xbc, 0xb8, 0xaa, alpha))
-        nvgText(vg, XL.AFTER_BG_CX, centerY - 40, "品质提升", nil)
+        nvgText(vg, XL.AFTER_BG_CX, centerY - 40, "提品", nil)
 
         -- "旧品质 → 新品质" 展示
         nvgFontSize(vg, 42)
@@ -977,7 +981,8 @@ function M.drawPanel(vg)
         nvgFontSize(vg, 30)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, 180))
-        nvgText(vg, XL.AFTER_BG_CX, XL.AFTER_BG_CY, "请点击洗练按钮来刷出新词条", nil)
+        nvgText(vg, XL.AFTER_BG_CX, XL.AFTER_BG_CY,
+            isRaiseRarity() and "请点击提品，提升装备品质" or "请点击洗练按钮来刷出新词条", nil)
     else
         -- 正常显示洗练后属性行
         drawRefineAttrRows(vg, data.after, XL.AFTER_ATTR_FIRST_Y)
@@ -1077,7 +1082,14 @@ local function drawExtraResPopup(vg)
         nvgFontSize(vg, 34)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(240, 230, 210, 255))
-        nvgText(vg, textX, itemY, opt.name, nil)
+        if opt.key == "destroyStone" then
+            nvgText(vg, textX, itemY - 12, opt.name, nil)
+            nvgFontSize(vg, 22)
+            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+            nvgText(vg, textX, itemY + 16, "提品", nil)
+        else
+            nvgText(vg, textX, itemY, opt.name, nil)
+        end
 
         -- 拥有数量（右侧）
         local ownedCount = 0
@@ -1105,7 +1117,7 @@ function M.drawPanelBottom(vg)
     nvgFontSize(vg, XL.REQ_TITLE_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(XL.REQ_TITLE_R, XL.REQ_TITLE_G, XL.REQ_TITLE_B, 255))
-    nvgText(vg, XL.REQ_TITLE_X, XL.REQ_TITLE_Y, "洗练需求", nil)
+    nvgText(vg, XL.REQ_TITLE_X, XL.REQ_TITLE_Y, isRaiseRarity() and "提品需求" or "洗练需求", nil)
 
     -- 2. "当前装备累计洗练XX次"（右对齐）
     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
@@ -1193,7 +1205,7 @@ function M.drawPanelBottom(vg)
     nvgFontSize(vg, XL.REFINE_TEXT_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(XL.REFINE_TEXT_R, XL.REFINE_TEXT_G, XL.REFINE_TEXT_B, 255))
-    nvgText(vg, XL.REFINE_BTN_CX, XL.REFINE_BTN_CY, "洗练", nil)
+    nvgText(vg, XL.REFINE_BTN_CX, XL.REFINE_BTN_CY, isRaiseRarity() and "提品" or "洗练", nil)
     BF.finish(vg, didRefine)
 
     -- 额外资源选择弹窗（绘制在按钮之上）

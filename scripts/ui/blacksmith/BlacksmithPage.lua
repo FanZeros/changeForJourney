@@ -402,6 +402,8 @@ local function deriveSelectedEquip()
         local equip = eqData.inventory[tostring(seq)]
         if equip then
             state.selectedEquip = equip
+            equip.seq = tonumber(seq)
+            state.selectedSeq = equip.seq
             BlacksmithEnhance.updateEnhanceData(equip)
             BlacksmithRefine.updateRefineData(equip)
             return
@@ -499,16 +501,7 @@ local function drawRefineUpperSlot(vg)
             DarkIcon.drawIconDark(vg, eqIcon, slotCX, slotCY, slotSize - 16, slotSize - 16, 1.0)  -- [暗黑化 P2-B]
         end
 
-        -- 槽位强化等级（来自 slotEnhance）
-        local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-        local enhLv = 0
-        if slotEnhanceData and slotEnhanceData.levels then
-            local partyLevels = slotEnhanceData.levels[tostring(state.selectedPartySlot)]
-                or slotEnhanceData.levels[state.selectedPartySlot]
-            if partyLevels then
-                enhLv = partyLevels[state.selectedEquipSlot] or 0
-            end
-        end
+        local enhLv = equip and EquipmentSystem.getAscendLevel(equip) or 0
         if enhLv > 0 then
             local lvX = slotCX - slotSize * 0.5 + 3
             local lvY = slotCY - slotSize * 0.5 + 22
@@ -582,7 +575,8 @@ local function drawUpperSlotContent(vg, tabName)
         return
     end
 
-    -- ===== 强化：5 张编队卡片 =====
+    -- ===== 强化：5 张编队卡片，下面一排身上优先的升阶候选 =====
+    BlacksmithEnhance.rebuildCandidates()
     local teamSlots, slotPowerCache = CharacterPanel.getTeamSlotsData()
     local playerLevel = GameState.getLevel and GameState.getLevel() or 1
 
@@ -723,7 +717,7 @@ local function drawUpperSlotContent(vg, tabName)
             end
         end
     end
-
+    BlacksmithEnhance.drawCandidates(vg)
 end
 
 --- 绘制 4 个装备槽位（强化 tab 专用，放在下半部分避免被 lower BG 覆盖）

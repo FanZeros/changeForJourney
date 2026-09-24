@@ -214,7 +214,7 @@ local function calcMaxAffordableLevel(curLevel, ownedGold, ownedScroll)
     local usedGold   = 0
     local usedScroll = 0
     for lv = curLevel + 1, maxLv do
-        local cost = BlacksmithConfig.getEnhanceCost(lv)
+        local cost = BlacksmithConfig.getAscendCost(lv)
         if not cost then break end
         if usedGold + cost.gold > ownedGold or usedScroll + cost.scroll > ownedScroll then
             break
@@ -229,13 +229,9 @@ end
 --- 获取当前选中槽位的 slotEnhance 等级
 ---@return number
 local function getSlotEnhanceLevel()
-    local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-    if not slotEnhanceData or not slotEnhanceData.levels then return 0 end
-    local partySlot = state.selectedPartySlot
-    local equipSlot = state.selectedEquipSlot
-    local partyLevels = slotEnhanceData.levels[tostring(partySlot)] or slotEnhanceData.levels[partySlot]
-    if not partyLevels then return 0 end
-    return partyLevels[equipSlot] or 0
+    local equip = state.selectedEquip
+    if not equip then return 0 end
+    return require("systems.EquipmentSystem").getAscendLevel(equip)
 end
 
 --- 根据选中装备更新强化面板数据
@@ -268,25 +264,8 @@ function M.updateEnhanceData(equip)
         return
     end
 
-    -- 当前加成和下一级加成（双手武器：主副手各50%叠加，与 calcSlotBoost 保持一致）
-    local curBoost, nextBoost
-    if equip.grip == "twohand" then
-        local sed = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-        local ps  = state.selectedPartySlot
-        local pl  = sed and sed.levels and (sed.levels[tostring(ps)] or sed.levels[ps]) or {}
-        local wLv = pl["weapon"]  or 0
-        local oLv = pl["offhand"] or 0
-        curBoost = BlacksmithConfig.getEnhanceBoost(wLv) * 0.5
-                 + BlacksmithConfig.getEnhanceBoost(oLv) * 0.5
-        -- 下一级：当前槽 +1，另一槽不变
-        local nWLv = (equipSlot == "weapon")  and math.min(wLv + 1, maxLv) or wLv
-        local nOLv = (equipSlot == "offhand") and math.min(oLv + 1, maxLv) or oLv
-        nextBoost = BlacksmithConfig.getEnhanceBoost(nWLv) * 0.5
-                  + BlacksmithConfig.getEnhanceBoost(nOLv) * 0.5
-    else
-        curBoost  = BlacksmithConfig.getEnhanceBoost(enhLv)
-        nextBoost = isMax and curBoost or BlacksmithConfig.getEnhanceBoost(nextLv)
-    end
+    local curBoost = BlacksmithConfig.getEnhanceBoost(enhLv)
+    local nextBoost = isMax and curBoost or BlacksmithConfig.getEnhanceBoost(nextLv)
 
     -- 基础属性：只有第一条受强化加成
     local baseAttrs = {}
@@ -341,7 +320,7 @@ function M.updateEnhanceData(equip)
     end
 
     -- 强化消耗（金币 + 卷轴）
-    local costEntry = BlacksmithConfig.getEnhanceCost(nextLv)
+    local costEntry = BlacksmithConfig.getAscendCost(nextLv)
     local costGold   = costEntry and costEntry.gold   or 0
     local costScroll = costEntry and costEntry.scroll or 0
 
@@ -440,8 +419,7 @@ function M.drawPanel(vg)
     local data = enhanceData
 
     -- 1. 动态标题："角色栏N>XX栏强化"
-    local slotName = EquipmentConfig.SLOT_NAME[state.selectedEquipSlot] or "主手"
-    local titleStr = "角色栏" .. (state.selectedPartySlot or 1) .. ">" .. slotName .. "栏强化"
+    local titleStr = (state.selectedEquip and state.selectedEquip.name or "装备") .. " 升阶"
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, ENH_TITLE_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -713,7 +691,7 @@ local function calcCostToTarget(targetLevel)
     local curLevel = enhanceData.curLevel
     local totalGold, totalScroll = 0, 0
     for lv = curLevel + 1, targetLevel do
-        local cost = BlacksmithConfig.getEnhanceCost(lv)
+        local cost = BlacksmithConfig.getAscendCost(lv)
         if cost then
             totalGold   = totalGold   + (cost.gold   or 0)
             totalScroll = totalScroll + (cost.scroll or 0)
@@ -946,6 +924,7 @@ function M.handleDialogInput(dx, dy)
         print("[BlacksmithEnhance] 一键强化确认 partySlot=" .. tostring(partySlot)
             .. " equipSlot=" .. tostring(equipSlot) .. " targetLevel=" .. dlg.targetLevel)
         getClient().sendAction(getProtocol().ACTION_TYPES.ENHANCE_EQUIP_MAX, {
+            seq = state.selectedSeq or (state.selectedEquip and state.selectedEquip.seq),
             partySlot   = partySlot,
             equipSlot   = equipSlot,
             targetLevel = dlg.targetLevel,
@@ -1027,11 +1006,105 @@ checkAndSetGate = function()
     return true
 end
 
+local CAND_Y = 700
+local CAND_SIZE = 64
+local candCache = {}
+
+function M.rebuildCandidates()
+    candCache = {}
+    local ClientDispatcher = require("network.ClientDispatcher")
+    local eq = ClientDispatcher.get("equipment") or require("client.data.PlayerStore").Get("equipment")
+    local heroes = ClientDispatcher.get("heroes") or require("client.data.PlayerStore").Get("heroes")
+    if not eq or not eq.inventory then return candCache end
+    local seen = {}
+    local function push(seq, worn)
+        local key = tostring(seq)
+        if seen[key] then return end
+        local equip = eq.inventory[key] or eq.inventory[seq]
+        if not equip then return end
+        seen[key] = true
+        equip.seq = tonumber(seq)
+        candCache[#candCache + 1] = { seq = equip.seq, equip = equip, worn = worn }
+    end
+    local deployed = heroes and heroes.deployed or {}
+    for i = 1, #deployed do
+        local heroId = deployed[i]
+        local slots = eq.equipped and (eq.equipped[heroId] or eq.equipped[tostring(heroId)])
+        if slots then
+            for _, slotKey in ipairs({ "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }) do
+                if slots[slotKey] then push(slots[slotKey], true) end
+            end
+        end
+    end
+    local bag = {}
+    for key, equip in pairs(eq.inventory) do
+        if not seen[tostring(key)] then
+            bag[#bag + 1] = tonumber(key) or 0
+        end
+    end
+    table.sort(bag)
+    for i = 1, #bag do
+        if bag[i] > 0 then push(bag[i], false) end
+    end
+    print("[BlacksmithEnhance] candidates worn+bag=" .. #candCache)
+    return candCache
+end
+
+function M.drawCandidates(vg)
+    if #candCache == 0 then M.rebuildCandidates() end
+    local startX = 80
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 22)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(232, 200, 120, 220))
+    nvgText(vg, startX, CAND_Y - 36, "身上优先，其后为背包", nil)
+    for i = 1, math.min(#candCache, 12) do
+        local row = candCache[i]
+        local cx = startX + (i - 1) * (CAND_SIZE + 8) + CAND_SIZE * 0.5
+        local selected = state.selectedSeq == row.seq
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, cx - CAND_SIZE * 0.5, CAND_Y - CAND_SIZE * 0.5, CAND_SIZE, CAND_SIZE, 8)
+        nvgFillColor(vg, nvgRGBA(row.worn and 40 or 20, 24, 16, 220))
+        nvgFill(vg)
+        if selected then
+            nvgStrokeColor(vg, nvgRGBA(255, 215, 0, 230))
+            nvgStrokeWidth(vg, 3)
+            nvgStroke(vg)
+        end
+        local plus = require("systems.EquipmentSystem").getAscendLevel(row.equip)
+        nvgFontSize(vg, 18)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(255, 236, 196, 255))
+        nvgText(vg, cx, CAND_Y, (row.worn and "穿" or "包") .. (plus > 0 and ("+" .. plus) or ""), nil)
+    end
+end
+
+function M.handleCandidateClick(dx, dy)
+    if #candCache == 0 then return false end
+    local startX = 80
+    for i = 1, math.min(#candCache, 12) do
+        local row = candCache[i]
+        local cx = startX + (i - 1) * (CAND_SIZE + 8) + CAND_SIZE * 0.5
+        if math.abs(dx - cx) <= CAND_SIZE * 0.5 and math.abs(dy - CAND_Y) <= CAND_SIZE * 0.5 then
+            state.selectedEquip = row.equip
+            state.selectedSeq = row.seq
+            state.selectedEquipSlot = row.equip.slot or state.selectedEquipSlot
+            M.updateEnhanceData(row.equip)
+            print("[BlacksmithEnhance] pick seq=" .. tostring(row.seq)
+                .. " worn=" .. tostring(row.worn)
+                .. " ascend=" .. require("systems.EquipmentSystem").getAscendLevel(row.equip))
+            return true
+        end
+    end
+    return false
+end
+
 --- 处理强化需求区域的点击
 ---@param dx number 设计坐标 X
 ---@param dy number 设计坐标 Y
 ---@return boolean consumed 是否消费了该事件
 function M.handleInput(dx, dy)
+    if M.handleCandidateClick(dx, dy) then return true end
     -- 强化按钮（升一级）
     if hitTest(dx, dy, EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H) then
         BF.trigger("bse_enhance")
@@ -1055,6 +1128,7 @@ function M.handleInput(dx, dy)
         local equipSlot = state.selectedEquipSlot
         print("[BlacksmithEnhance] 强化请求 partySlot=" .. tostring(partySlot) .. " equipSlot=" .. tostring(equipSlot))
         getClient().sendAction(getProtocol().ACTION_TYPES.ENHANCE_EQUIP, {
+            seq = state.selectedSeq or (state.selectedEquip and state.selectedEquip.seq),
             partySlot = partySlot,
             equipSlot = equipSlot,
         })
@@ -1103,9 +1177,12 @@ function M.onActionResult(data)
 
     local outcome = data.enhanceOutcome
     if outcome == "success" then
-        print("[BlacksmithEnhance] 槽位强化成功！")
-        -- 刷新强化面板数据（等级、消耗、拥有量）
-        -- 此时 PlayerStore 已收到 currency/slotEnhance 的推送更新
+        print("[BlacksmithEnhance] ascend success lv=" .. tostring(data.newLevel))
+        if data.newLevel and state.selectedEquip then
+            state.selectedEquip.ascendLevel = data.newLevel
+            state.selectedEquip.enhanceLevel = data.newLevel
+        end
+        M.rebuildCandidates()
         M.updateEnhanceData(state.selectedEquip)
         SpineResultEffect.play(true)
         -- 刷新城镇Tab角标（强化后金币/卷轴消耗，可强化状态可能变化）

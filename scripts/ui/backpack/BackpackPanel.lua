@@ -15,6 +15,7 @@ local ImageCache       = require("ui.widget.ImageCache")
 local QualityMark      = require("ui.widget.QualityMark")
 local NumberUtil       = require("core.NumberUtil")
 local EquipmentSystem  = require("systems.EquipmentSystem")
+local BlacksmithConfig = require("config.BlacksmithConfig")
 local EquipmentDetail  = require("ui.character.EquipmentDetail")
 local HeroConfig       = require("config.HeroConfig")
 local HeroAssetUtil    = require("config.HeroAssetUtil")
@@ -195,7 +196,7 @@ local ITEM_DEFS = {
     { key = "essence",       iconPath = "image/货币道具/UI_icon_JC.png",     quality = 2, name = "精粹",       source = "分解装备获得",           desc = "用于洗练装备",                                             getter = function() return GameState.getEssence() end },
     { key = "enhanceStone",  iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石",     source = "市场购买/任务",          desc = "洗练时使用可以只洗练数值高低，不洗练属性",                  getter = function() return GameState.getEnhanceStone() end },
     -- seq5 degradeStone 已隐藏，不在背包显示
-    { key = "destroyStone",  iconPath = "image/货币道具/UI_icon_QH_3.png",   quality = 5, name = "点金石",     source = "市场购买/任务",          desc = "洗练时使用可将装备升阶，最高升到史诗品质",                  getter = function() return GameState.getDestroyStone() end },
+    { key = "destroyStone",  iconPath = "image/货币道具/UI_icon_QH_3.png",   quality = 5, name = "点金石",     source = "市场购买/任务",          desc = "洗练时使用可将装备提品，最高提到史诗品质",                  getter = function() return GameState.getDestroyStone() end },
     { key = "weaponScroll",    iconPath = "image/货币道具/UI_icon_JZ_WQ.png",  quality = 3, name = "武器卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getWeaponScroll() end },
     { key = "offhandScroll",   iconPath = "image/货币道具/UI_icon_JZ_FS.png",  quality = 3, name = "副手卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getOffhandScroll() end },
     { key = "armorScroll",     iconPath = "image/货币道具/UI_icon_JZ_HJ.png",  quality = 3, name = "护甲卷轴",   source = "击杀/通关/任务",       desc = "强化装备时进行使用",                                       getter = function() return GameState.getArmorScroll() end },
@@ -431,6 +432,31 @@ end
 ---@return table
 local function getEquipList()
     return ensureGrids().getEquipList()
+end
+
+--- 分解确认前，按选中装备的升阶消耗预览 70% 卷轴返还
+---@return string|nil
+local function previewDecomposeScrollHint()
+    if not decomposeState.active then return nil end
+    local equipList = getEquipList()
+    local scrolls = {}
+    for idx, selected in pairs(decomposeState.selectedItems) do
+        local equip = selected and equipList[idx]
+        if equip then
+            local slot = equip.slot
+            if not slot and equip.templateId then
+                local tpl = EquipmentConfig.ITEMS[equip.templateId]
+                    or EquipmentConfig.ITEMS[tostring(equip.templateId)]
+                slot = tpl and tpl.slot
+            end
+            local field = slot and BlacksmithConfig.SLOT_SCROLL_MAP[slot]
+            local refund = BlacksmithConfig.calcAscendScrollRefund(EquipmentSystem.getAscendLevel(equip))
+            if field and refund > 0 then
+                scrolls[field] = (scrolls[field] or 0) + refund
+            end
+        end
+    end
+    return BlacksmithConfig.formatScrollRefund(scrolls)
 end
 
 -- ======================== 绘制: 装备 / 道具 tab ========================
@@ -949,11 +975,17 @@ local function drawBody(vg)
     -- 7. 背包上限文字 + 分解按钮（装备 tab）
     local curCount = getInventoryCount()
     local capStr = "背包上限" .. curCount .. "/" .. BAG_MAX
+    local scrollHint = previewDecomposeScrollHint()
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 32)
+    nvgFontSize(vg, scrollHint and 30 or 32)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(CAP_TEXT.R, CAP_TEXT.G, CAP_TEXT.B, 255))
-    nvgText(vg, CAP_TEXT.X, 2050, capStr, nil)
+    if scrollHint then
+        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+        nvgText(vg, CAP_TEXT.X, 2050, scrollHint, nil)
+    else
+        nvgFillColor(vg, nvgRGBA(CAP_TEXT.R, CAP_TEXT.G, CAP_TEXT.B, 255))
+        nvgText(vg, CAP_TEXT.X, 2050, capStr, nil)
+    end
 
     -- 7b. 分解按钮（装备 tab 专用）
     if state.tab == "equip" then
@@ -1481,10 +1513,12 @@ function Panel.onActionResult(data)
         if essenceReward > 0 then
             rewards[#rewards + 1] = { type = "essence", amount = essenceReward }
         end
+        BlacksmithConfig.appendScrollRewardItems(rewards, data.scrollRewards)
         if #rewards > 0 then
             RewardPopup.show("分解奖励", rewards)
         end
-        print("[BackpackPanel] 分解完成，精粹+" .. essenceReward)
+        print("[BackpackPanel] 分解完成，精粹+" .. essenceReward
+            .. " 卷轴+" .. tostring(data.scrollReward or 0))
         return
     end
 

@@ -134,6 +134,107 @@ function BlacksmithConfig.getEnhanceCost(level)
     return BlacksmithConfig.ENHANCE_TABLE[level]
 end
 
+--- 升阶消耗 = 原槽位强化表的 60%（向上取整，至少 1）
+---@param level number 目标升阶等级
+---@return {gold: number, scroll: number, boost: number}|nil
+function BlacksmithConfig.getAscendCost(level)
+    local raw = BlacksmithConfig.ENHANCE_TABLE[level]
+    if not raw then return nil end
+    return {
+        gold = math.max(1, math.ceil(raw.gold * 0.6)),
+        scroll = math.max(1, math.ceil(raw.scroll * 0.6)),
+        boost = raw.boost,
+    }
+end
+
+--- 分解升阶装备时，按已投入升阶卷轴的 70% 返还（向下取整）。金币不退。
+BlacksmithConfig.ASCEND_SCROLL_REFUND_RATE = 0.7
+
+local ASCEND_SCROLL_ORDER = {
+    "weaponScroll", "offhandScroll", "armorScroll",
+    "helmetScroll", "shoesScroll", "accessoryScroll",
+}
+
+--- 货币字段 → 奖励弹窗 type
+BlacksmithConfig.SCROLL_POPUP_TYPE = {
+    weaponScroll    = "weapon_scroll",
+    offhandScroll   = "offhand_scroll",
+    armorScroll     = "armor_scroll",
+    helmetScroll    = "helmet_scroll",
+    shoesScroll     = "shoes_scroll",
+    accessoryScroll = "accessory_scroll",
+}
+
+--- 分解提示用的短名
+BlacksmithConfig.SCROLL_SHORT_NAME = {
+    weaponScroll = "武器",
+    offhandScroll = "副手",
+    armorScroll = "护甲",
+    helmetScroll = "头盔",
+    shoesScroll = "鞋子",
+    accessoryScroll = "饰品",
+}
+
+--- 升到该阶累计消耗的部位卷轴（1..level，含本级）
+---@param level number
+---@return number
+function BlacksmithConfig.calcAscendScrollSpent(level)
+    level = math.floor(tonumber(level) or 0)
+    if level <= 0 then return 0 end
+    if level > BlacksmithConfig.MAX_ENHANCE_LEVEL then
+        level = BlacksmithConfig.MAX_ENHANCE_LEVEL
+    end
+    local total = 0
+    for lv = 1, level do
+        local cost = BlacksmithConfig.getAscendCost(lv)
+        if cost then total = total + cost.scroll end
+    end
+    return total
+end
+
+--- 分解返还卷轴 = 已投入升阶卷轴 × 70%，向下取整
+---@param level number
+---@return number
+function BlacksmithConfig.calcAscendScrollRefund(level)
+    local spent = BlacksmithConfig.calcAscendScrollSpent(level)
+    if spent <= 0 then return 0 end
+    return math.floor(spent * BlacksmithConfig.ASCEND_SCROLL_REFUND_RATE)
+end
+
+--- 把部位卷轴返还表写成一行提示。没有返还时返回 nil。
+---@param scrollRewards table|nil
+---@return string|nil
+function BlacksmithConfig.formatScrollRefund(scrollRewards)
+    if not scrollRewards then return nil end
+    local parts = {}
+    for _, field in ipairs(ASCEND_SCROLL_ORDER) do
+        local n = math.floor(tonumber(scrollRewards[field]) or 0)
+        if n > 0 then
+            parts[#parts + 1] = (BlacksmithConfig.SCROLL_SHORT_NAME[field] or field) .. "+" .. n
+        end
+    end
+    if #parts == 0 then return nil end
+    return "返还卷轴 " .. table.concat(parts, " ")
+end
+
+--- 把部位卷轴返还追加进奖励弹窗列表
+---@param rewards table
+---@param scrollRewards table|nil
+---@return table
+function BlacksmithConfig.appendScrollRewardItems(rewards, scrollRewards)
+    if not rewards or not scrollRewards then return rewards end
+    for _, field in ipairs(ASCEND_SCROLL_ORDER) do
+        local n = math.floor(tonumber(scrollRewards[field]) or 0)
+        if n > 0 then
+            local popupType = BlacksmithConfig.SCROLL_POPUP_TYPE[field]
+            if popupType then
+                rewards[#rewards + 1] = { type = popupType, amount = n }
+            end
+        end
+    end
+    return rewards
+end
+
 --- 获取指定等级的属性加成倍率
 --- 等级 0 返回 0，等级 1~100 返回对应 boost
 ---@param level number 当前强化等级 (0~100)

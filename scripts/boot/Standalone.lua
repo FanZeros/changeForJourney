@@ -599,6 +599,7 @@ end
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
+    require("ui.CEPanel").pollHotkey()
     -- 分帧启动：每帧 1 个模块 init，标题可先画出来
     pumpBootQueue_()
     if not bootReady_ then
@@ -752,6 +753,8 @@ function HandleUpdate(eventType, eventData)
         BattleTriPage.close()
     end
 
+    require("ui.CERuntime").installSpeedHook()
+    require("ui.CERuntime").tick()
     -- 副本/通天塔对战更新（打开时独占）
     if TowerBattleScene.isActive() then
         TowerBattleScene.update(dt)
@@ -764,6 +767,7 @@ function HandleUpdate(eventType, eventData)
         -- 战斗场景始终更新（挂机持续进行）
         BattleScene.update(dt)
     end
+    require("ui.CERuntime").tick()
 
     local tabIndex = BottomNav.getSelectedIndex()
     -- [三行并行] 三行战斗区常驻: tab3 下恒开（Dungeon 独占时由守卫暂收, 关闭后自动重开）

@@ -50,6 +50,21 @@ local UiToast            = require("core.UiToast")
 local function vg() return RT.vg end
 local function logicalW() return RT.logicalW or 0 end
 local function logicalH() return RT.logicalH or 0 end
+local function windowW() return RT.windowW or logicalW() end
+local function windowH() return RT.windowH or logicalH() end
+
+local function applyFrame()
+    nvgTranslate(vg(), RT.frameOx or 0, RT.frameOy or 0)
+    local frameScale = RT.frameScale or 1
+    if frameScale <= 0 then frameScale = 1 end
+    nvgScale(vg(), frameScale, frameScale)
+end
+
+local function toDesign(sx, sy)
+    local frameScale = RT.frameScale or 1
+    if frameScale <= 0 then frameScale = 1 end
+    return (sx - (RT.frameOx or 0)) / frameScale, (sy - (RT.frameOy or 0)) / frameScale
+end
 
 local function talentPageUsesWideLayout()
     return TalentPage.isOpen() and TalentPage.getHorizonWidthScale() > 1.001
@@ -162,6 +177,7 @@ local function HorizonDrawIntroOverlay()
     end
     nvgSave(vg())
     nvgResetTransform(vg())
+    applyFrame()
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     if LetterIntro.isOpen() then
         -- 全窗口逻辑坐标，16:9 cover，不再 letterbox 成竖条
@@ -250,7 +266,12 @@ end
 function HandleNanoVGRenderHorizon()
     if not vg() then return end
     HorizonUpdateTransform()
-    nvgBeginFrame(vg(), logicalW(), logicalH(), dpr())
+    nvgBeginFrame(vg(), windowW(), windowH(), dpr())
+    nvgBeginPath(vg())
+    nvgRect(vg(), 0, 0, windowW(), windowH())
+    nvgFillColor(vg(), nvgRGBA(8, 8, 12, 255))
+    nvgFill(vg())
+    applyFrame()
 
     -- 分帧启动中：只画标题，避免未 init 的城镇/战斗模块被绘制
     if not bootReady_() then
@@ -563,8 +584,7 @@ end
 -- 事件坐标 -> 面板命中；全局模态返回 ('modal', dx, dy)
 local function HorizonResolveMouse()
     local mousePos = input:GetMousePosition()
-    local sx = mousePos.x / dpr()
-    local sy = mousePos.y / dpr()
+    local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
     -- 玩家信息是全窗 letterbox，不能走左/中/右栏换算，否则点面板中部会被当成点外面
     if PlayerInfoPanel.isOpen() then
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
@@ -763,8 +783,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续
     if DarkTitleScreen.isOpen() then
         local mousePos = input:GetMousePosition()
-        local sx = mousePos.x / dpr()
-        local sy = mousePos.y / dpr()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
         if DarkTitleScreen.handleLanguageTap(sx, sy) then
             return
         end

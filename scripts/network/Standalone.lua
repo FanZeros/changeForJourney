@@ -235,10 +235,27 @@ local function RecalcLayout()
     physW  = graphics:GetWidth()
     physH  = graphics:GetHeight()
     dpr    = graphics:GetDPR()
-    logicalW = physW / dpr
-    logicalH = physH / dpr
+    if not dpr or dpr <= 0 then dpr = 1 end
+    local windowW = physW / dpr
+    local windowH = physH / dpr
+    -- Landscape canvas stays 1920x1080. Half-screen and full-screen only scale.
+    local frameW, frameH = 1920, 1080
+    local frameScale = 1
+    if windowW > 0 and windowH > 0 then
+        frameScale = math.min(windowW / frameW, windowH / frameH)
+    end
+    if frameScale <= 0 then frameScale = 1 end
+    local frameOx = (windowW - frameW * frameScale) * 0.5
+    local frameOy = (windowH - frameH * frameScale) * 0.5
+    logicalW = frameW
+    logicalH = frameH
     StandaloneRT.vg = vg
     StandaloneRT.bootReady_ = bootReady_
+    StandaloneRT.windowW = windowW
+    StandaloneRT.windowH = windowH
+    StandaloneRT.frameScale = frameScale
+    StandaloneRT.frameOx = frameOx
+    StandaloneRT.frameOy = frameOy
     StandaloneRT.logicalW = logicalW
     StandaloneRT.logicalH = logicalH
     StandaloneRT.dpr = dpr
@@ -848,7 +865,7 @@ end
 
 function HandleScreenMode(eventType, eventData)
     RecalcLayout()
-    print("[Standalone] ScreenMode → " .. physW .. "x" .. physH .. " dpr=" .. dpr)
+    print(string.format("[Standalone] ScreenMode window %.0fx%.0f dpr=%.2f frame 1920x1080 scale=%.3f", StandaloneRT.windowW or 0, StandaloneRT.windowH or 0, dpr, StandaloneRT.frameScale or 1))
 end
 
 function HandleMouseWheel(eventType, eventData)

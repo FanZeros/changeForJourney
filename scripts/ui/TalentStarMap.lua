@@ -8,7 +8,6 @@
 local TalentStarMap = {}
 
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P2-10] 矢量天赋符号系统
-local TalentNodeDefs = require("shared.talent.TalentNodeDefs")
 
 -- [暗黑化 P3-调整] 星图节点图标压暗档（与 DarkIcon.ICON_TINT_DARK 同档，独立常量避免反向依赖 ui 模块）
 local ICON_TINT_DARK = { 72, 64, 54 }
@@ -19,7 +18,7 @@ local ICON_TINT_DARK = { 72, 64, 54 }
 -- 竖屏 2400 高 × 1.5 ≈ 3600，按高度定格距，默认 1:1 铺开约 1.5 屏，横向拖拽浏览。
 local GRID_SPACING  = 100   -- 坐标点间距 (px)；3600/36.9≈97.6
 local LINE_WIDTH    = 5     -- 连接线宽度（随格距从 12 比例缩小）
-local NODE_MAX      = 208   -- 当前最大天赋节点 ID（201-208 为终焉环占位，待填内容）
+local NODE_MAX      = 208   -- 当前最大天赋节点 ID（201-208 为终焉环）
 
 -- 缩放范围：1.0 = 世界 1:1（约 1.5 竖屏画布）；可略缩小总览 / 放大看节点
 local ZOOM_MIN      = 0.55
@@ -256,17 +255,16 @@ local NODES = {
     [199]= { id=199,gx=19.4,  gy=6.3,   st="large",  name="破灭战阵",   adj={167,193,194},     icon="UI_icon_TF_135.png",  color="红" },
     [200]= { id=200,gx=0,   gy=20.4, st="large",  name="不朽圣域",   adj={168,195,196},     icon="UI_icon_TF_128.png",  color="黄" },
 
-    -- ==================== [终焉环占位 201-208] ====================
-    -- 贴在五角星外轮廓上的预留节点，供追加终焉级内容；name/effect 由后续设计填充
-    -- 占位期间渲染为紫色问号铭牌（matchTalentKind fallback → query 符号）
-    [201]= { id=201,gx=-5.94, gy=11.73, st="medium", name="终焉·？？",  adj={185,184},         icon="",                    color="紫" },
-    [202]= { id=202,gx=5.94,  gy=11.73, st="medium", name="终焉·？？",  adj={181,188},         icon="",                    color="紫" },
-    [203]= { id=203,gx=-9.32, gy=9.27, st="medium", name="终焉·？？",  adj={185,169},         icon="",                    color="紫" },
-    [204]= { id=204,gx=-12.2, gy=-12.75,  st="medium", name="终焉·？？",  adj={172,186},         icon="",                    color="紫" },
-    [205]= { id=205,gx=9.32,  gy=9.27, st="medium", name="终焉·？？",  adj={188,180},         icon="",                    color="紫" },
-    [206]= { id=206,gx=12.99,  gy=-2.02,  st="medium", name="终焉·？？",  adj={177,187},         icon="",                    color="紫" },
-    [207]= { id=207,gx=-8.35, gy=-15.54,  st="medium", name="终焉·？？",  adj={186,173},         icon="",                    color="紫" },
-    [208]= { id=208,gx=11.7,  gy=-6,  st="medium", name="终焉·？？",  adj={176,187},         icon="",                    color="紫" },
+    -- ==================== [终焉环 201-208] ====================
+    -- 贴在五角星外轮廓上，各接一条外环大节点。中型终焉节点，效果弱于相邻大型键石，但值得多花 1 点。
+    [201]= { id=201,gx=-5.94, gy=11.73, st="medium", name="余烬回春",  adj={185,184},         icon="UI_icon_TF_40.png",   color="黄" },
+    [202]= { id=202,gx=5.94,  gy=11.73, st="medium", name="终焉圣愈",  adj={181,188},         icon="UI_icon_TF_136.png",  color="黄" },
+    [203]= { id=203,gx=-9.32, gy=9.27, st="medium", name="终焉法盾",  adj={185,169},         icon="UI_icon_TF_32.png",   color="蓝" },
+    [204]= { id=204,gx=-12.2, gy=-12.75,  st="medium", name="终焉奥术",  adj={172,186},         icon="UI_icon_TF_82.png",   color="蓝" },
+    [205]= { id=205,gx=9.32,  gy=9.27, st="medium", name="终焉破击",  adj={188,180},         icon="UI_icon_TF_49.png",   color="红" },
+    [206]= { id=206,gx=12.99,  gy=-2.02,  st="medium", name="终焉狩猎",  adj={177,187},         icon="UI_icon_TF_83.png",   color="红" },
+    [207]= { id=207,gx=-8.35, gy=-15.54,  st="medium", name="终焉影步",  adj={186,173},         icon="UI_icon_TF_18.png",   color="绿" },
+    [208]= { id=208,gx=11.7,  gy=-6,  st="medium", name="终焉连斩",  adj={176,187},         icon="UI_icon_TF_28.png",   color="绿" },
 }
 
 -- ======================== 效果描述 ========================
@@ -474,15 +472,15 @@ local EFFECTS = {
     [199] = "全体物理伤害加成+24%，物理攻击加成+12%，物理穿透+8",
     [200] = "全体生命加成+14%，护甲加成+8%，护盾加成+6%",
 
-    -- [终焉环占位 201-208] 效果待设计填充
-    [201] = "【终焉·待定】预留槽位 I（北·西段）",
-    [202] = "【终焉·待定】预留槽位 II（北·东段）",
-    [203] = "【终焉·待定】预留槽位 III（西·北段）",
-    [204] = "【终焉·待定】预留槽位 IV（西·南段）",
-    [205] = "【终焉·待定】预留槽位 V（东·北段）",
-    [206] = "【终焉·待定】预留槽位 VI（东·南段）",
-    [207] = "【终焉·待定】预留槽位 VII（南·西段）",
-    [208] = "【终焉·待定】预留槽位 VIII（南·东段）",
+    -- [终焉环 201-208] 外环收束，数值低于相邻大型键石
+    [201] = "全体生命加成+8%，每秒回血+10，体质+1",
+    [202] = "全体治疗加成+16%，治疗暴击率+6%，护甲+4",
+    [203] = "全体护盾加成+10%，魔法格挡概率+4%，护盾伤害减免+6%",
+    [204] = "全体魔法伤害加成+16%，魔法暴击伤害+24%，魔法穿透+6",
+    [205] = "全体物理暴击伤害+32%，物理伤害加成+10%，物理穿透+8",
+    [206] = "全体暴击率+4%，暴击伤害+20%，命中值+3，物理攻击加成+4%",
+    [207] = "全体攻击速度+14%，闪避值+4，连击概率+8%",
+    [208] = "全体连击概率+12%，连击增伤+8%，暴击率+3%",
 }
 for id, eff in pairs(EFFECTS) do
     if NODES[id] then NODES[id].effect = eff end
@@ -676,17 +674,13 @@ local function drawEdges(vg)
             end
             local litA = litNodes[idA] or false
             local litB = litNodes[idB] or false
-            local unlitId = nil
-            if litA and not litB then unlitId = idB
-            elseif litB and not litA then unlitId = idA end
-            local placeholderEdge = unlitId ~= nil and TalentNodeDefs.isPlaceholder(unlitId)
+            -- 终焉环已开放，邻接点亮即可激活
 
             -- 决定颜色 [暗黑化] 三态: 已激活=琥珀金饰线 / 可激活=金闪 / 未激活=暗棕隐线
-            -- 终焉占位未开放，不闪可激活
             local r, g, b, a
             if litA and litB then
                 r, g, b, a = 201, 151, 59, 235
-            elseif (litA or litB) and not placeholderEdge then
+            elseif litA or litB then
                 r, g, b, a = flashR, flashG, flashB, flashA
             else
                 -- 未激活: 暗棕（在暗底上隐约可见走向）

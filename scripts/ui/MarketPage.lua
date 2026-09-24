@@ -17,7 +17,7 @@ local RewardPopup = require("ui.RewardPopup")
 
 local NumberUtil   = require("core.NumberUtil")
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
-local PlayerStore  = require("client.data.PlayerStore")
+local PlayerStore  = require("core.PlayerStore")
 local StageConfig  = require("config.StageConfig")
 local MarketShopCard = require("ui.MarketShopCard")
 local MarketDraw = require("ui.MarketDraw")

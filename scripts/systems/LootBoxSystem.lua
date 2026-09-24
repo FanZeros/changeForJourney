@@ -10,7 +10,7 @@ local LootBoxSystem = {}
 --- 战利品缓冲区种子总数上限（合并计数后的总件数）
 LootBoxSystem.MAX_SEEDS = 9999
 
---- 装备等级上限（由服务端 EquipLevelCompat 登录时设置，0=不限制）
+--- 装备等级上限（领取时若种子 level 超过此值则钳制，0=不限制）
 --- 领取战利品时，如果种子 level > levelCap，则 clamp 到此值
 LootBoxSystem.levelCap = 0
 

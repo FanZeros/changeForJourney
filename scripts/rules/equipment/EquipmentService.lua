@@ -1,0 +1,508 @@
+-- ============================================================================
+-- EquipmentService - 装备管理业务逻辑
+-- 职责: GM给装备、穿戴/卸下装备、双持互斥
+-- 层级: server/equipment  |  通过 PDM 读写，禁止网络 IO
+-- ============================================================================
+
+local PDM             = require("rules.character.PlayerDataManager")
+local EquipmentSystem  = require("systems.EquipmentSystem")
+local EquipmentConfig  = require("config.EquipmentConfig")
+local BlacksmithConfig = require("config.BlacksmithConfig")
+local AVC             = require("config.AdvancementConfig")
+local HC              = require("config.HeroConfig")
+local CC              = require("config.ClassConfig")
+local AD              = require("systems.AttributeDef")
+
+local EquipmentService = {}
+
+-- ======================== 战斗力计算（复刻客户端逻辑） ========================
+
+local EXCLUDED_KEYS_BY_DMG_TYPE = {
+    ["物理"] = {
+        magAtk=true, magCritRate=true, magCritDmg=true, magPen=true,
+        magDmgBonus=true, magAtkBonus=true,
+        healAmount=true, healBonus=true, healCritRate=true, healCritDmg=true,
+    },
+    ["魔法"] = {
+        physAtk=true, physCritRate=true, physCritDmg=true, physPen=true,
+        physDmgBonus=true, physAtkBonus=true,
+        healAmount=true, healBonus=true, healCritRate=true, healCritDmg=true,
+    },
+    ["治疗"] = {
+        physAtk=true, physCritRate=true, physCritDmg=true, physPen=true,
+        physDmgBonus=true, physAtkBonus=true,
+        magAtk=true, magCritRate=true, magCritDmg=true, magPen=true,
+        magDmgBonus=true, magAtkBonus=true,
+    },
+}
+
+local BASE_STAT_SET = {}
+for _, k in ipairs(AD.BASE_STATS) do BASE_STAT_SET[k] = true end
+
+local function calcStatPower(key, value, excluded)
+    if excluded and BASE_STAT_SET[key] then
+        local derivatives = AD.DERIVATIVES and AD.DERIVATIVES[key]
+        if derivatives then
+            local effectiveVM = 0
+            for _, d in ipairs(derivatives) do
+                if not excluded[d.attr] then
+                    local dMeta = AD.META[d.attr]
+                    if dMeta and dMeta.valueModel and dMeta.valueModel > 0 then
+                        if dMeta.dataType == AD.TYPE_PCT then
+                            effectiveVM = effectiveVM + d.perPoint * dMeta.valueModel / 100
+                        else
+                            effectiveVM = effectiveVM + d.perPoint * dMeta.valueModel
+                        end
+                    end
+                end
+            end
+            return value * effectiveVM
+        end
+    end
+    if excluded and excluded[key] then return 0 end
+    local meta = AD.META[key]
+    if not meta or not meta.valueModel or meta.valueModel <= 0 then return 0 end
+    if meta.dataType == AD.TYPE_PCT then
+        return value * meta.valueModel / 100
+    else
+        return value * meta.valueModel
+    end
+end
+
+local function calcEquipPower(equip, heroId)
+    if not equip then return 0 end
+    local excluded = nil
+    if heroId then
+        local hero = HC.HEROES and HC.HEROES[heroId]
+        if hero and hero.dmgMainType then
+            excluded = EXCLUDED_KEYS_BY_DMG_TYPE[hero.dmgMainType]
+        end
+    end
+    local power = 0
+    local enhBoost = BlacksmithConfig.getEnhanceBoost(equip.enhanceLevel or 0)
+    for _, s in ipairs(equip.baseStats or {}) do
+        power = power + calcStatPower(s[1], s[2] * (1 + enhBoost), excluded)
+    end
+    for _, affix in ipairs(equip.affixes or {}) do
+        power = power + calcStatPower(affix.key, affix.value, excluded)
+    end
+    return math.floor(power)
+end
+
+-- ======================== GM 给装备 ========================
+
+--- GM 给装备（指定模板）
+---@param uid number
+---@param templateId string|nil
+---@param level number|nil
+---@param quality number|nil
+---@return boolean ok, string? err, table? result
+function EquipmentService.GmGiveEquip(uid, templateId, level, quality)
+    local equipData = PDM.GetModule(uid, "equipment")
+    if not equipData then return false, "数据未加载" end
+
+    templateId = templateId and tostring(templateId) or nil
+    if not templateId or templateId == "" then
+        return false, "缺少 templateId"
+    end
+
+    level   = level   and tonumber(level)   or nil
+    quality = quality and tonumber(quality) or nil
+    if level then
+        level = math.max(1, math.min(9999, math.floor(level)))
+    end
+
+    if EquipmentSystem.isInventoryFull(equipData) then
+        return false, "背包已满（上限 " .. EquipmentSystem.MAX_INVENTORY .. " 件）"
+    end
+
+    local equip = EquipmentSystem.generate(templateId, level, quality)
+    if not equip then
+        return false, "模板不存在: " .. tostring(templateId)
+    end
+
+    local seq = EquipmentSystem.addToInventory(equipData, equip)
+    PDM.MarkDirty(uid, "equipment")
+
+    print("[EquipmentService] GM_GIVE_EQUIP uid=" .. tostring(uid)
+        .. " seq=" .. seq .. " " .. EquipmentSystem.summary(equip))
+
+    return true, nil, { seq = seq, equip = equip }
+end
+
+--- GM 随机给装备
+---@param uid number
+---@param level number|nil
+---@param quality number|nil
+---@param count number|nil
+---@return boolean ok, string? err, table? result
+function EquipmentService.GmGiveRandom(uid, level, quality, count)
+    local equipData = PDM.GetModule(uid, "equipment")
+    if not equipData then return false, "数据未加载" end
+
+    level   = tonumber(level)   or 1
+    quality = tonumber(quality) or nil
+    count   = tonumber(count)   or 1
+    count   = math.max(1, math.min(10, count))
+    level   = math.max(1, math.min(9999, math.floor(level)))
+
+    local results = {}
+    local bagFull = false
+    for _ = 1, count do
+        if EquipmentSystem.isInventoryFull(equipData) then
+            bagFull = true
+            print("[EquipmentService] GM_GIVE_RANDOM SKIP (bag full) uid=" .. tostring(uid))
+            break
+        end
+        local equip = EquipmentSystem.generateRandom(level, quality)
+        if equip then
+            local seq = EquipmentSystem.addToInventory(equipData, equip)
+            results[#results + 1] = { seq = seq, equip = equip }
+            print("[EquipmentService] GM_GIVE_RANDOM uid=" .. tostring(uid)
+                .. " seq=" .. seq .. " " .. EquipmentSystem.summary(equip))
+        end
+    end
+
+    if #results > 0 then
+        PDM.MarkDirty(uid, "equipment")
+    end
+
+    return true, nil, { count = #results, items = results, bagFull = bagFull or nil }
+end
+
+-- ======================== 穿戴 / 卸下 ========================
+
+--- 穿戴/更换装备
+---@param uid number
+---@param seq number|nil
+---@param heroId number|nil
+---@param slot string|nil
+---@return boolean ok, string? err, table? result
+function EquipmentService.EquipItem(uid, seq, heroId, slot)
+    local equipData = PDM.GetModule(uid, "equipment")
+    if not equipData then return false, "数据未加载" end
+
+    local heroesData = PDM.GetModule(uid, "heroes")
+    local seqN = tonumber(seq)
+    local heroN = tonumber(heroId)
+    if not seqN or not heroN or not slot then
+        return false, "参数缺失"
+    end
+    local ok, err, result = EquipmentSystem.applyEquip(equipData, seqN, heroN, slot, heroesData)
+    if not ok then
+        return false, err
+    end
+    PDM.MarkDirty(uid, "equipment")
+    print("[EquipmentService] EQUIP uid=" .. tostring(uid)
+        .. " heroId=" .. tostring(result.heroId) .. " slot=" .. tostring(result.slot)
+        .. " seq=" .. tostring(result.seq)
+        .. (result.oldSeq and (" replaced=" .. tostring(result.oldSeq)) or ""))
+    return true, nil, result
+end
+
+--- 卸下装备
+---@param uid number
+---@param heroId number|nil
+---@param slot string|nil
+---@return boolean ok, string? err, table? result
+function EquipmentService.UnequipItem(uid, heroId, slot)
+    local equipData = PDM.GetModule(uid, "equipment")
+    if not equipData then return false, "数据未加载" end
+
+    local heroN = tonumber(heroId)
+    if heroN == nil or not slot then
+        return false, "参数缺失"
+    end
+    ---@cast heroN number
+    local ok, err, result = EquipmentSystem.applyUnequip(equipData, heroN, slot)
+    if not ok then
+        return false, err
+    end
+    PDM.MarkDirty(uid, "equipment")
+    print("[EquipmentService] UNEQUIP uid=" .. tostring(uid)
+        .. " heroId=" .. tostring(result.heroId) .. " slot=" .. tostring(result.slot)
+        .. " seq=" .. tostring(result.removedSeq))
+    return true, nil, result
+end
+
+-- ======================== 批量穿戴 / 卸下 ========================
+
+--- 一键卸下：移除指定英雄所有已装备的装备
+---@param uid number
+---@param heroId number|nil
+---@return boolean ok, string? err, table? result
+function EquipmentService.UnequipAll(uid, heroId)
+    local equipData = PDM.GetModule(uid, "equipment")
+    if not equipData then return false, "数据未加载" end
+
+    heroId = tonumber(heroId)
+    if not heroId then return false, "参数缺失" end
+
+    local ok, err, result = EquipmentSystem.applyUnequipAll(equipData, heroId)
+    if not ok then
+        return false, err
+    end
+    if (result.removed or 0) > 0 then
+        PDM.MarkDirty(uid, "equipment")
+    end
+
+    print("[EquipmentService] UNEQUIP_ALL uid=" .. tostring(uid)
+        .. " heroId=" .. tostring(result.heroId) .. " removed=" .. tostring(result.removed))
+
+    return true, nil, result
+end
+
+--- 一键装备：为指定英雄的每个槽位装备战斗力最高的可穿戴装备
+--- 处理顺序：weapon → armor → accessory → offhand（武器先于副手，便于双手武器互斥判断）
+---@param uid number
+---@param heroId number|nil
+---@return boolean ok, string? err, table? result
+function EquipmentService.EquipAllBest(uid, heroId)
+    local equipData = PDM.GetModule(uid, "equipment")
+    if not equipData then return false, "数据未加载" end
+
+    heroId = tonumber(heroId)
+    if not heroId then return false, "参数缺失" end
+
+    local heroCfg = HC.get(heroId)
+    if not heroCfg then return false, "英雄不存在" end
+
+    EquipmentSystem.ensureHeroSlots(equipData, heroId)
+
+    local inventory = equipData.inventory
+    if not inventory then return true, nil, { heroId = heroId, equipped = 0 } end
+
+    -- 收集所有英雄已装备的 seq（不可用于装备）
+    local equippedSeqNums = {}
+    for _, heroSlots in pairs(equipData.equipped) do
+        if type(heroSlots) == "table" then
+            for _, eqSeq in pairs(heroSlots) do
+                local n = tonumber(eqSeq)
+                if n then equippedSeqNums[n] = true end
+            end
+        end
+    end
+
+    local wearableSets = {}
+    for _, slotKey in ipairs(EquipmentConfig.SLOTS) do
+        wearableSets[slotKey] = EquipmentSystem.getWearableTypeSet(heroId, slotKey)
+    end
+
+    -- 双持模式检测
+    local heroesData = PDM.GetModule(uid, "heroes")
+    local hd = heroesData and heroesData.roster and (heroesData.roster[heroId] or heroesData.roster[tostring(heroId)])
+    local advBranch = hd and hd.advBranch
+    local dualMode = AVC.getDualWieldMode(advBranch)
+
+    -- 按顺序处理：weapon → armor → helmet → shoes → accessory → offhand
+    local SLOT_ORDER = { "weapon", "armor", "helmet", "shoes", "accessory", "offhand" }
+    local changed = 0
+    local heroSlots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
+
+    for _, slotName in ipairs(SLOT_ORDER) do
+        local ws = wearableSets[slotName]  -- nil = 不限制
+
+        -- 当前已装备的战斗力
+        local curSeq = heroSlots[slotName]
+        local curPower = 0
+        if curSeq then
+            local curEquip = inventory[tostring(curSeq)]
+            if curEquip then
+                curPower = calcEquipPower(curEquip, heroId)
+            end
+        end
+
+        -- 双手武器特殊处理：武器槽的双手武器基准 = 当前武器 + 当前副手
+        -- 副手槽处理时，已装备双手武器则跳过
+        local baseline = curPower
+        if slotName == "weapon" then
+            local ohSeq = heroSlots["offhand"]
+            if ohSeq then
+                local ohEquip = inventory[tostring(ohSeq)]
+                if ohEquip then
+                    baseline = curPower  -- 单手武器只比自身；双手武器另行处理
+                end
+            end
+        elseif slotName == "offhand" then
+            -- 如果主手是双手武器，副手不可装备
+            local wpnSeq = heroSlots["weapon"]
+            if wpnSeq then
+                local wpnEquip = inventory[tostring(wpnSeq)]
+                if wpnEquip and wpnEquip.grip == "twohand" then
+                    goto continue_slot
+                end
+            end
+        end
+
+        -- 遍历背包找战力最高的可穿戴装备
+        -- 策略：先找绝对战力最高的候选，循环结束后再判断是否优于当前
+        local bestSeq      = nil
+        local bestPower    = 0
+        local bestBaseline = baseline  -- 记录最优候选对应的基准（双手武器基准不同）
+        local bestGrip     = nil
+
+        for seq, equip in pairs(inventory) do
+            local seqNum = tonumber(seq)
+            if not seqNum then goto continue_item end
+
+            -- 跳过已被任何英雄装备的
+            if equippedSeqNums[seqNum] then goto continue_item end
+
+            -- 槽位匹配
+            local matchSlot = false
+            if equip.slot == slotName then
+                matchSlot = true
+            elseif slotName == "offhand" and equip.slot == "weapon" and equip.grip == "onehand" and dualMode then
+                -- 双持天赋：单手武器可放副手
+                local mainWeaponSeq = heroSlots["weapon"]
+                local mainWeaponType = nil
+                if mainWeaponSeq then
+                    local mw = inventory[tostring(mainWeaponSeq)]
+                    mainWeaponType = mw and mw.type
+                end
+                if dualMode == "different" and mainWeaponType and equip.type == mainWeaponType then
+                    goto continue_item
+                elseif dualMode == "same" and mainWeaponType and equip.type ~= mainWeaponType then
+                    goto continue_item
+                end
+                matchSlot = true
+            end
+            if not matchSlot then goto continue_item end
+
+            -- 类型限制
+            if ws and not ws[equip.type] then goto continue_item end
+
+            -- 计算该装备战力（包含 baseStats + affixes 随机词缀）
+            local itemPower = calcEquipPower(equip, heroId)
+
+            -- 双手武器替换主手时，基准 = 当前主手 + 当前副手（卸副手的代价）
+            local itemBaseline = baseline
+            if slotName == "weapon" and equip.grip == "twohand" then
+                local ohSeq2 = heroSlots["offhand"]
+                if ohSeq2 then
+                    local ohEquip2 = inventory[tostring(ohSeq2)]
+                    if ohEquip2 then
+                        itemBaseline = curPower + calcEquipPower(ohEquip2, heroId)
+                    end
+                end
+            end
+
+            -- 选择净收益最大的候选（双手武器 baseline 已含副手代价）
+            local itemGain = itemPower - itemBaseline
+            local bestGain = bestPower - bestBaseline
+            if itemGain > bestGain then
+                bestSeq      = seqNum
+                bestPower    = itemPower
+                bestBaseline = itemBaseline
+                bestGrip     = equip.grip
+            end
+
+            ::continue_item::
+        end
+
+        -- 循环结束后统一判断：最优候选必须真的优于当前才替换
+        if bestSeq and bestPower > bestBaseline then
+            -- 清除旧装备在 equippedSeqNums 中的占用
+            if curSeq then
+                equippedSeqNums[tonumber(curSeq)] = nil
+            end
+
+            local applied, applyErr = EquipmentSystem.applyEquip(
+                equipData, bestSeq, heroId, slotName, heroesData)
+            if not applied then
+                print("[EquipmentService] EQUIP_ALL_BEST apply failed: " .. tostring(applyErr))
+                goto continue_slot
+            end
+            equippedSeqNums[bestSeq] = true
+            changed = changed + 1
+            heroSlots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
+
+            print("[EquipmentService] EQUIP_ALL_BEST uid=" .. tostring(uid)
+                .. " heroId=" .. tostring(heroId) .. " slot=" .. slotName
+                .. " seq=" .. tostring(bestSeq) .. " power=" .. bestPower)
+        end
+
+        ::continue_slot::
+    end
+
+    if changed > 0 then
+        PDM.MarkDirty(uid, "equipment")
+    end
+
+    print("[EquipmentService] EQUIP_ALL_BEST uid=" .. tostring(uid)
+        .. " heroId=" .. tostring(heroId) .. " total_changed=" .. changed)
+
+    return true, nil, { heroId = heroId, equipped = changed }
+end
+
+-- ======================== 自动分解设置 ========================
+
+---@param uid number
+---@param autoQuality number  品质阈值 (0=关闭, 1~5=该品质及以下自动分解)
+---@param autoLevel   number  等级阈值  (0=关闭, N=N级及以下自动分解)
+---@return boolean ok
+---@return string|nil reason
+function EquipmentService.SetAutoDecompose(uid, autoQuality, autoLevel)
+    local equipData = PDM.GetModule(uid, "equipment")
+    if not equipData then
+        return false, "数据未加载"
+    end
+
+    autoQuality = math.max(0, math.min(5, math.floor(tonumber(autoQuality) or 0)))
+    autoLevel   = math.max(0, math.min(100, math.floor(tonumber(autoLevel) or 0)))
+
+    if not equipData.settings then
+        equipData.settings = {}
+    end
+    equipData.settings.autoQuality = autoQuality
+    equipData.settings.autoLevel   = autoLevel
+    PDM.MarkDirty(uid, "equipment")
+
+    print("[EquipmentService] SetAutoDecompose uid=" .. tostring(uid)
+        .. " autoQuality=" .. autoQuality .. " autoLevel=" .. autoLevel)
+    return true, nil
+end
+
+--- 切换装备锁定状态（锁定后无法被分解）
+---@param uid number
+---@param seq number 装备序列号
+---@return boolean ok
+---@return string|nil err
+---@return table|nil result { seq, locked }
+function EquipmentService.ToggleEquipLock(uid, seq)
+    local equipData = PDM.GetModule(uid, "equipment")
+    if not equipData then
+        return false, "数据未加载"
+    end
+
+    seq = tonumber(seq)
+    if not seq then
+        return false, "无效的装备序列号"
+    end
+
+    local equip = EquipmentSystem.getFromInventory(equipData, seq)
+    if not equip then
+        return false, "装备不存在"
+    end
+
+    equip.locked = not equip.locked or nil  -- 切换；解锁时置 nil 保持数据精简
+    PDM.MarkDirty(uid, "equipment")
+
+    print("[EquipmentService] ToggleEquipLock uid=" .. tostring(uid)
+        .. " seq=" .. seq .. " locked=" .. tostring(equip.locked == true))
+    return true, nil, { seq = seq, locked = equip.locked == true }
+end
+
+--- 读取自动分解设置（供 BattleService 调用）
+---@param uid number
+---@return number autoQuality
+---@return number autoLevel
+function EquipmentService.GetAutoDecomposeSettings(uid)
+    local equipData = PDM.GetModule(uid, "equipment")
+    if not equipData or not equipData.settings then
+        return 0, 0
+    end
+    return equipData.settings.autoQuality or 0, equipData.settings.autoLevel or 0
+end
+
+return EquipmentService

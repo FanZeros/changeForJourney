@@ -12,7 +12,7 @@ local BF                = require("systems.ButtonFeedback")
 local RelicSystem       = require("systems.RelicSystem")
 local RelicAffix        = require("systems.RelicAffix")
 local RelicDefs         = require("data.RelicDefs")
-local PlayerStore       = require("client.data.PlayerStore")
+local PlayerStore       = require("core.PlayerStore")
 local DarkIcon          = require("core.DarkIcon")
 
 local RelicReforgePanel = {}

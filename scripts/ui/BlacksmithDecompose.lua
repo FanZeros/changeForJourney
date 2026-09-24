@@ -11,7 +11,7 @@ local DrawUtil         = require("core.DrawUtil")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
-local PlayerStore      = require("client.data.PlayerStore")
+local PlayerStore      = require("core.PlayerStore")
 local RewardPopup      = require("ui.RewardPopup")
 local EquipmentDetail  = require("ui.EquipmentDetail")
 

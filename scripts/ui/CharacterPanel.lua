@@ -10,8 +10,8 @@ local GameConfig = require("config.GameConfig")
 local GameState       = require("core.GameState")
 local CharacterDetail = require("ui.CharacterDetail")
 local ExpTable        = require("config.ExpTable")
-local ClientDispatcher = require("network.ClientDispatcher")
-local PlayerStore      = require("client.data.PlayerStore")
+local ClientDispatcher = require("app.ClientDispatcher")
+local PlayerStore      = require("core.PlayerStore")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local TalentEffect     = require("systems.TalentEffect")
@@ -651,7 +651,7 @@ function CharacterPanel.requestSynthesizeHero(heroId)
     end
     print("[CharacterPanel] 发送合成请求 - heroId=" .. heroId
         .. " 消耗碎片: " .. HC.SHARD_SYNTHESIZE_COST .. " / " .. shards)
-    local Client   = require("network.GameAction")
+    local Client   = require("app.GameAction")
     local Protocol = require("shared.Protocol")
     Client.sendAction(Protocol.ACTION_TYPES.SYNTHESIZE_HERO, {
         heroId = heroId,

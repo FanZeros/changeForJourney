@@ -6,8 +6,8 @@
 ------------------------------------------------------------------------
 local HC               = require("config.HeroConfig")
 local AD               = require("systems.AttributeDef")
-local PlayerStore      = require("client.data.PlayerStore")
-local ClientDispatcher = require("network.ClientDispatcher")
+local PlayerStore      = require("core.PlayerStore")
+local ClientDispatcher = require("app.ClientDispatcher")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local RelicBridge      = require("systems.RelicBridge")

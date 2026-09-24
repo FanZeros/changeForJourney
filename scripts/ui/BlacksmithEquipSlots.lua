@@ -3,8 +3,8 @@
 -- ============================================================================
 
 local CharacterPanel = require("ui.CharacterPanel")
-local ClientDispatcher = require("network.ClientDispatcher")
-local PlayerStore = require("client.data.PlayerStore")
+local ClientDispatcher = require("app.ClientDispatcher")
+local PlayerStore = require("core.PlayerStore")
 local EquipmentSystem = require("systems.EquipmentSystem")
 local DrawUtil = require("core.DrawUtil")
 

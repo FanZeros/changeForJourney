@@ -4,7 +4,7 @@
 
 local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")
-local PlayerStore = require("client.data.PlayerStore")
+local PlayerStore = require("core.PlayerStore")
 local GameState = require("core.GameState")
 
 local M = {}

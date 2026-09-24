@@ -4,7 +4,7 @@
 
 local DarkIcon = require("core.DarkIcon")
 local GameState = require("core.GameState")
-local PlayerStore = require("client.data.PlayerStore")
+local PlayerStore = require("core.PlayerStore")
 local StageConfig = require("config.StageConfig")
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 

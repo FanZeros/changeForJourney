@@ -11,7 +11,7 @@ local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local AffixConfig      = require("config.AffixConfig")
 local AD               = require("systems.AttributeDef")
 local GameConfig       = require("config.GameConfig")
-local PlayerStore      = require("client.data.PlayerStore")
+local PlayerStore      = require("core.PlayerStore")
 local HC               = require("config.HeroConfig")
 local ImageCache       = require("ui.ImageCache")
 local BF               = require("systems.ButtonFeedback")
@@ -101,7 +101,7 @@ local _cachedClient = nil
 
 local function getClient()
     if not _cachedClient then
-        _cachedClient = require("network.GameAction")
+        _cachedClient = require("app.GameAction")
     end
     return _cachedClient
 end
@@ -1162,7 +1162,7 @@ function EquipmentDetail.handleInput(dx, dy)
             end
         end
         -- 多人模式乐观更新：数字 heroId 写入 equipped（单机已由 Standalone.tryLocalAction 落地）
-        local okPS, PS = pcall(require, "client.data.PlayerStore")
+        local okPS, PS = pcall(require, "core.PlayerStore")
         if okPS then
             local eq = PS.Get("equipment")
             if eq then

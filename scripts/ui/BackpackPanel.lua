@@ -10,7 +10,7 @@ local DrawUtil         = require("core.DrawUtil")
 local TownPageChrome   = require("ui.TownPageChrome")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1] 矢量九宫格
 local GameState        = require("core.GameState")
-local PlayerStore      = require("client.data.PlayerStore")
+local PlayerStore      = require("core.PlayerStore")
 local ImageCache       = require("ui.ImageCache")
 local NumberUtil       = require("core.NumberUtil")
 local EquipmentSystem  = require("systems.EquipmentSystem")
@@ -1134,7 +1134,7 @@ function Panel.handleInput(dx, dy)
                 if DrawUtil.hitTest(dx, dy, cx, cy, U.CELL_SIZE, U.CELL_SIZE) then
                     BF.trigger("bp_ur_convert_" .. tostring(item.heroId))
                     itemDetState.urConvertPending = true
-                    local Client = require("network.GameAction")
+                    local Client = require("app.GameAction")
                     Client.sendAction(Protocol.ACTION_TYPES.CONVERT_UR_SHARD, {
                         fromHeroId = def.heroId,
                         toHeroId = item.heroId,
@@ -1166,7 +1166,7 @@ function Panel.handleInput(dx, dy)
                 else
                     closeTransferConfirm()
                     itemDetState.transferPending = true
-                    local Client = require("network.GameAction")
+                    local Client = require("app.GameAction")
                     Client.sendAction(Protocol.ACTION_TYPES.TRANSFER_PRIVILEGE_CARD, {})
                     print("[BackpackPanel] 发送特权卡转区请求")
                 end
@@ -1203,7 +1203,7 @@ function Panel.handleInput(dx, dy)
                 else
                     BF.trigger("bp_ur_convert_restore")
                     itemDetState.urConvertPending = true
-                    local Client = require("network.GameAction")
+                    local Client = require("app.GameAction")
                     Client.sendAction(Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT, {})
                     print("[BackpackPanel] 发送UR碎片转化次数恢复请求 cost=" .. tostring(UR_CONVERT_RESTORE_COST))
                 end
@@ -1216,7 +1216,7 @@ function Panel.handleInput(dx, dy)
             local coinValue = getShardCoinValue(def.heroId)
             if coinValue > 0 and DrawUtil.hitTest(dx, dy, CONVERT_BTN.CX, CONVERT_BTN.CY, CONVERT_BTN.W, CONVERT_BTN.H) then
                 -- 发送批量转化请求（服务端会一次性转化所有碎片）
-                local Client = require("network.GameAction")
+                local Client = require("app.GameAction")
                 Client.sendAction(Protocol.ACTION_TYPES.CONVERT_SHARD_TO_COIN, { heroId = def.heroId })
                 local shardCount = 0
                 if def.getter then shardCount = def.getter() or 0 end
@@ -1298,7 +1298,7 @@ function Panel.handleInput(dx, dy)
                     end
                 end
                 if #selectedSeqs > 0 then
-                    local Client = require("network.GameAction")
+                    local Client = require("app.GameAction")
                     decomposeState.pending = true
                     Client.sendAction(Protocol.ACTION_TYPES.DECOMPOSE_EQUIP, { seqs = selectedSeqs })
                     print("[BackpackPanel] 确认分解 " .. #selectedSeqs .. " 件装备")

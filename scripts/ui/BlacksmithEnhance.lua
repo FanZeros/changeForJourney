@@ -15,8 +15,8 @@ local BlacksmithConfig  = require("config.BlacksmithConfig")
 local ExpTable          = require("config.ExpTable")
 local AD                = require("systems.AttributeDef")
 local SpineResultEffect = require("ui.SpineResultEffect")
-local ClientDispatcher  = require("network.ClientDispatcher")
-local PlayerStore       = require("client.data.PlayerStore")
+local ClientDispatcher  = require("app.ClientDispatcher")
+local PlayerStore       = require("core.PlayerStore")
 local BF                = require("systems.ButtonFeedback")
 
 local drawImageCentered = DrawUtil.drawImageCentered

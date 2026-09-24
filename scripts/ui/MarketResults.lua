@@ -3,7 +3,7 @@
 -- ============================================================================
 
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
-local PlayerStore = require("client.data.PlayerStore")
+local PlayerStore = require("core.PlayerStore")
 local RewardPopup = require("ui.RewardPopup")
 
 local M = {}

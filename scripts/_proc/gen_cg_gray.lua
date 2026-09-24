@@ -18,7 +18,7 @@ local function portraitPath(id)
 end
 local HERO_IDS = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25 }
 
-local OUT_DIR = "/workspace/assets/image/角色CG"
+local OUT_DIR = "assets/image/角色CG"
 
 --- 依次尝试 CG / 立绘 / 卡牌，返回 (resource, kind)
 local function resolveSource(id)

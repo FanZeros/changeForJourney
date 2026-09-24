@@ -13,6 +13,7 @@ function TalentsSchema.normalizeModule(data)
     if type(raw) == "table" then
         for _, v in pairs(raw) do
             local id = tonumber(v)
+            -- 终焉环 201-208 已是正式节点，随存档保留
             if id ~= nil and not seen[id] and id ~= 0 then
                 seen[id] = true
                 dense[#dense + 1] = id

@@ -367,17 +367,11 @@ function LootBoxPage.draw(vg)
     end
     if not state.visible then return end
 
-    -- 1. 全屏黑色遮罩 50%
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, 1080, 2400)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-    nvgFill(vg)
-
-    -- 2. 面板背景（九宫格）
+    -- 2. 面板背景（九宫格）。不要全屏阴影遮罩，避免把三栏战斗压暗
     DarkIcon.drawNine(vg, "panel", PANEL_CX - PANEL_W * 0.5, PANEL_CY - PANEL_H * 0.5, PANEL_W, PANEL_H, { titleH = PANEL_9P_TOP })
 
-    -- 3. 标题 "战利品"
-    drawTextStroke(vg, TITLE_CX, TITLE_CY, "战利品", TITLE_SIZE,
+    -- 3. 标题
+    drawTextStroke(vg, TITLE_CX, TITLE_CY, "遗匣", TITLE_SIZE,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, TITLE_STROKE,
         { strokeColor = { TITLE_STROKE_R, TITLE_STROKE_G, TITLE_STROKE_B } })
 
@@ -386,7 +380,7 @@ function LootBoxPage.draw(vg)
     nvgFontSize(vg, SUBTITLE_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
-    nvgText(vg, SUBTITLE_CX, SUBTITLE_CY, "战斗中获得的装备会先存在战利品中", nil)
+    nvgText(vg, SUBTITLE_CX, SUBTITLE_CY, "战斗中获得的装备会先存入遗匣", nil)
 
     -- 5. 条目列表（带滚动裁剪）
     nvgSave(vg)
@@ -448,11 +442,7 @@ function LootBoxPage.draw(vg)
             totalCount = totalCount + (entry.count or 0)
         end
 
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, 1080, 2400)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 170))
-        nvgFill(vg)
-
+        -- 确认框本身有底色，不再铺全屏黑影
         nvgBeginPath(vg)
         nvgRoundedRect(vg, CONFIRM_CX - CONFIRM_W * 0.5, CONFIRM_CY - CONFIRM_H * 0.5,
             CONFIRM_W, CONFIRM_H, 24)
@@ -470,7 +460,7 @@ function LootBoxPage.draw(vg)
         nvgFontSize(vg, 34)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(88, 46, 45, 255))
-        nvgText(vg, CONFIRM_CX, CONFIRM_CY - 45, "将分解战利品箱子中的全部装备", nil)
+        nvgText(vg, CONFIRM_CX, CONFIRM_CY - 45, "将分解遗匣中的全部装备", nil)
         nvgText(vg, CONFIRM_CX, CONFIRM_CY + 5, "共 " .. tostring(totalCount) .. " 件，分解后无法撤回", nil)
         nvgText(vg, CONFIRM_CX, CONFIRM_CY + 55, "是否继续？", nil)
 
@@ -585,7 +575,7 @@ function LootBoxPage.handleInput(dx, dy)
        and math.abs(dy - BTN_ALL_DECOMP_Y) <= BTN_H * 0.5 then
         BF.trigger("lbp_all_decompose")
         if #state.seedSummary <= 0 then
-            LootBoxPage.showToast("战利品为空")
+            LootBoxPage.showToast("遗匣为空")
         else
             confirmAllDecomposeOpen = true
         end

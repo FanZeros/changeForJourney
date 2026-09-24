@@ -34,6 +34,76 @@ local BackpackPanel     = require("ui.BackpackPanel")
 
 local M = {}
 
+-- 首通战斗击杀掉落先暂存。通关并入首通奖励；失败保留为「战斗掉落」；挂机仍进遗匣。
+local pendingFcSeeds = {}
+local pendingFcScrolls = {}
+
+local SCROLL_DROP_TO_REWARD = {
+    weaponScroll    = "weapon_scroll",
+    offhandScroll   = "offhand_scroll",
+    armorScroll     = "armor_scroll",
+    accessoryScroll = "accessory_scroll",
+    helmetScroll    = "helmet_scroll",
+    shoesScroll     = "shoes_scroll",
+}
+
+--- 取出暂存掉落，生成装备进背包。不进遗匣。
+---@return table[]
+local function takePendingFcRewards()
+    local dropSeeds = pendingFcSeeds
+    local dropScrolls = pendingFcScrolls
+    pendingFcSeeds = {}
+    pendingFcScrolls = {}
+    local rewards = {}
+    local equipData = ClientDispatcher.get("equipment")
+    for _, seed in ipairs(dropSeeds) do
+        local equip = EquipmentSystem.generateRandom(seed.level, seed.quality)
+        if equip then
+            if equipData and not EquipmentSystem.isInventoryFull(equipData) then
+                EquipmentSystem.addToInventory(equipData, equip)
+            end
+            rewards[#rewards + 1] = {
+                type       = "equip",
+                templateId = equip.templateId,
+                quality    = equip.quality,
+                level      = equip.level,
+            }
+        end
+    end
+    for field, amount in pairs(dropScrolls) do
+        local getter = GameState["get" .. field:sub(1,1):upper() .. field:sub(2)]
+        local setter = GameState["set" .. field:sub(1,1):upper() .. field:sub(2)]
+        if getter and setter and amount > 0 then
+            setter(getter() + amount)
+            local rewardKey = SCROLL_DROP_TO_REWARD[field]
+            if rewardKey then
+                rewards[#rewards + 1] = { type = rewardKey, amount = amount }
+            end
+        end
+    end
+    if #rewards > 0 then
+        ClientDispatcher.notifySubscribers("equipment")
+        print("[Standalone] 结算暂存掉落 n=" .. tostring(#rewards))
+    end
+    return rewards
+end
+
+local function showKeptDrops(title)
+    if #pendingFcSeeds == 0 then
+        local hasScroll = false
+        for _ in pairs(pendingFcScrolls) do
+            hasScroll = true
+            break
+        end
+        if not hasScroll then return end
+    end
+    local rewards = takePendingFcRewards()
+    if #rewards > 0 then
+        print("[Standalone] " .. title .. " 显示掉落 n=" .. tostring(#rewards))
+        RewardPopup.show(title, rewards, { row = 1, cascade = false })
+    end
+end
+
 ---@param rt table { vg: userdata, localSendAction: fun(action:string, params:table|nil), setLocalBridgeReady: fun() }
 function M.run(rt)
     local vg = rt.vg
@@ -221,12 +291,27 @@ function M.run(rt)
         print("[Standalone] lootbox data updated, seedCount=" .. LootBoxSystem.getTotalCount(data))
     end)
 
-    -- 5.245 击杀掉落回调：掷骰 → 种子存入 lootbox 缓冲区 → UI 提示 + 卷轴掉落
+    -- 5.245 击杀掉落：挂机进遗匣；首通暂存，通关后并入首通奖励
     BattleScene.setOnEnemyDrop(function(data)
         local stageEntry = StageConfig.getStage(data.stageId)
         if not stageEntry then return end
-        -- 装备掉落
         local quality = DropSystem.rollKillDrop(stageEntry)
+        local scrollType = DropSystem.rollScrollDrop(stageEntry)
+        if data.isFirstClear then
+            if quality then
+                local level = stageEntry.monsterLevel or 1
+                pendingFcSeeds[#pendingFcSeeds + 1] = { quality = quality, level = level }
+                print("[Standalone] 首通掉落暂存: q=" .. quality .. " lv=" .. level
+                    .. " pending=" .. #pendingFcSeeds)
+            end
+            if scrollType then
+                pendingFcScrolls[scrollType] = (pendingFcScrolls[scrollType] or 0) + 1
+                print("[Standalone] 首通卷轴暂存: type=" .. scrollType
+                    .. " n=" .. tostring(pendingFcScrolls[scrollType]))
+            end
+            return
+        end
+        -- 装备掉落（挂机）
         if quality then
             local level = stageEntry.monsterLevel or 1
             local lootboxData = ClientDispatcher.get("lootbox")
@@ -238,8 +323,7 @@ function M.run(rt)
                     .. " total=" .. LootBoxSystem.getTotalCount(lootboxData))
             end
         end
-        -- 卷轴掉落（直接加入货币）
-        local scrollType = DropSystem.rollScrollDrop(stageEntry)
+        -- 卷轴掉落（挂机直接加入货币）
         if scrollType then
             local getter = GameState["get" .. scrollType:sub(1,1):upper() .. scrollType:sub(2)]
             local setter = GameState["set" .. scrollType:sub(1,1):upper() .. scrollType:sub(2)]
@@ -248,6 +332,23 @@ function M.run(rt)
                 print("[Standalone] scroll drop: type=" .. scrollType)
             end
         end
+    end)
+
+    BattleScene.setOnAllDead(function()
+        showKeptDrops("战斗掉落")
+    end)
+
+    BattleScene.setOnStageLoaded(function(stageId, _)
+        if #pendingFcSeeds == 0 then
+            local hasScroll = false
+            for _ in pairs(pendingFcScrolls) do
+                hasScroll = true
+                break
+            end
+            if not hasScroll then return end
+        end
+        print("[Standalone] 离开关卡仍保留掉落 stage=" .. tostring(stageId))
+        showKeptDrops("战斗掉落")
     end)
 
     -- 5.246 战利品领取回调：一键领取全部种子 → 生成装备加入背包
@@ -507,10 +608,16 @@ function M.run(rt)
             GameState.setSacredStone(GameState.getSacredStone() + fcSacredStone)
             rewards[#rewards + 1] = { type = "sacred_stone", amount = fcSacredStone }
         end
+        -- 本关击杀掉落并入首通奖励（逐个弹出），不进遗匣，不显示件数
+        local dropRewards = takePendingFcRewards()
+        for _, item in ipairs(dropRewards) do
+            rewards[#rewards + 1] = item
+        end
         if #rewards > 0 then
             print("[Standalone] 首通奖励: gold=" .. tostring(fcGold)
                 .. " diamond=" .. tostring(fcDiamond)
-                .. " equips=" .. tostring(#fcEquips))
+                .. " equips=" .. tostring(#fcEquips)
+                .. " killDrops=" .. tostring(#dropRewards))
             RewardPopup.show("首通奖励", rewards, { row = 1 })  -- [三行并行] 卡在行1内显示
         end
     end)

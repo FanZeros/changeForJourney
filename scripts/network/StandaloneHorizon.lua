@@ -420,6 +420,19 @@ function HandleNanoVGRenderHorizon()
             PlayerInfoPanel.draw(vg())
             nvgRestore(vg())
         end
+        -- [修复] 三行战斗提前 return，战利品页和全局奖励弹窗从未绘制，点击只改状态
+        if LootBox.isPageOpen() or (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then
+            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+            nvgSave(vg())
+            nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+            nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+            nvgScale(vg(), fit, fit)
+            LootBox.drawPage(vg())
+            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+                RewardPopup.draw(vg())
+            end
+            nvgRestore(vg())
+        end
         -- [底栏移除] 日志/副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
         HorizonDrawPageModal(vg())
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
@@ -510,6 +523,13 @@ local function HorizonResolveMouse()
     if PlayerInfoPanel.isOpen() then
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
         return 'playerinfo', pdx, pdy
+    end
+    -- 三行战斗下战利品页/全局领奖弹窗与玩家信息同一套 1080×2400 letterbox。
+    -- 不在这里拦截的话，点击会按左栏坐标投进战斗，页面开了也点不中。
+    if BattleTriPage.isOpen()
+        and (LootBox.isPageOpen() or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())) then
+        local pdx, pdy = playerInfoDesignCoords(sx, sy)
+        return 'modal', pdx, pdy
     end
     -- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态：中段命中映射到设计坐标；
     -- 左右栏让出（TopBar 页签/角色面板仍可点），全屏弹窗打开时让位
@@ -611,6 +631,14 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         end
         return
     end
+    if pid == 'modal' and (LootBox.isPageOpen() or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())) then
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            RewardPopup.handleDragBegin(dx, dy)
+        elseif LootBox.isPageOpen() then
+            LootBox.handleDragBegin(dx, dy)
+        end
+        return
+    end
     if pid == 'none' then return end
     if pid == 'left' then
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragBegin(dx, dy) return end
@@ -708,6 +736,18 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if pid == 'playerinfo' then
         PlayerInfoPanel.handleDragEnd(dx, dy)
         if isTap then PlayerInfoPanel.handleInput(dx, dy) end
+        return
+    end
+    -- 三行战利品/领奖 letterbox 也是设计坐标，必须在中缝命中（窗口坐标）之前处理
+    if pid == 'modal' and BattleTriPage.isOpen()
+        and (LootBox.isPageOpen() or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())) then
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            RewardPopup.handleDragEnd(dx, dy)
+            if isTap then RewardPopup.handleInput(dx, dy) end
+        elseif LootBox.isPageOpen() then
+            LootBox.handleDragEnd(dx, dy)
+            if isTap then LootBox.handleInput(dx, dy) end
+        end
         return
     end
     -- [LetterIntro] 开场链输入：信件任意释放即翻段（不依赖 isTap，避免 pressValid 丢失）

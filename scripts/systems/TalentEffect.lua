@@ -113,10 +113,33 @@ end
 
 -- ======================== 单原子解析 ========================
 
+-- 星图文案仍使用改名前的六围/仇恨叫法，解析前映射到 AttributeDef 现名
+local STAT_ALIASES = {
+    { "仇恨值", "怨引值" },
+    { "智慧", "秘识" },
+    { "运气", "命数" },
+    { "精神", "魂火" },
+}
+
+--- 把旧属性名换成当前 META 名（只替换原子开头，避免误伤更长属性名）
+---@param atom string
+---@return string
+local function canonicalizeAtom(atom)
+    for i = 1, #STAT_ALIASES do
+        local oldName = STAT_ALIASES[i][1]
+        local newName = STAT_ALIASES[i][2]
+        if atom:find(oldName, 1, true) == 1 then
+            return newName .. atom:sub(#oldName + 1)
+        end
+    end
+    return atom
+end
+
 --- 解析单个属性原子，如 "敏捷+1"、"暴击率+2.5%"、"生命值-20"
 ---@param atom string 去除前缀后的原子文本
 ---@return table|nil {key=string, flat=number} 或 {key=string, pct=number}
 local function parseAtom(atom)
+    atom = canonicalizeAtom(atom)
     -- 贪心匹配：遍历按长度降序排列的属性名
     local matchedName = nil
     local matchedKey = nil
@@ -148,7 +171,7 @@ local function parseAtom(atom)
             return { key = matchedKey, flat = value }
         else
             -- 非百分比属性 + %：百分比乘算（pct）
-            -- 例: 仇恨值+15% → threat 是 TYPE_INT → pct=15
+            -- 例: 怨引值+15% → threat 是 TYPE_INT → pct=15
             return { key = matchedKey, pct = value }
         end
     else

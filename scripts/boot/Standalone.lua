@@ -477,30 +477,140 @@ local function showOfflineRewardPanel_()
     print("[Standalone] auto-showed OfflineRewardPanel after StartScreen closed")
 end
 
---- [LetterIntro] 新档标记开场剧情完成（session.introCompleted，模块级整体替换需带全字段）
+--- [LetterIntro] 新档标记开场剧情完成（session 整表替换，必须带全字段）
 local function markIntroCompleted_()
     local sessionData = ClientDispatcher.get("session") or {}
     local claimed = sessionData.claimedScenarios or {}
-    claimed["1"] = true  -- 跳过情景1仍标记已领取，避免后续系统再拉起
-    local updated = {
-        lastOnlineTime   = sessionData.lastOnlineTime or 0,
-        firstLoginTime   = sessionData.firstLoginTime or 0,
-        introCompleted   = true,
-        claimedScenarios = claimed,
-    }
+    claimed["1"] = true  -- 旧点将情景不再播放
+    claimed["2"] = true
+    claimed["3"] = true
+    claimed["4"] = true
+    claimed["11"] = true  -- 三人已在开场入队，不再用 1-3 补人
+    claimed["12"] = true
+    claimed["13"] = true
+    local updated = {}
+    for k, v in pairs(sessionData) do
+        updated[k] = v
+    end
+    updated.lastOnlineTime = sessionData.lastOnlineTime or 0
+    updated.firstLoginTime = sessionData.firstLoginTime or 0
+    updated.introCompleted = true
+    updated.claimedScenarios = claimed
+    if not updated.initialHeroId then
+        updated.initialHeroId = 1
+    end
     ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
-    print("[Standalone] intro completed flag saved (session.introCompleted=true, scenario 1 claimed)")
+    print("[Standalone] intro completed flag saved (scenario 1 claimed, initialHeroId="
+        .. tostring(updated.initialHeroId) .. ")")
 end
 
---- [LetterIntro] 新档开场链：只播先祖来信，结束后直接解锁进游戏（不再播睁眼过场/情景1）
+--- 信件结束后的门厅点卯（横屏第二幕），再接三人入队
+local function finishIntro_()
+    print("[Standalone] intro chain finished, unlock game")
+    GameBGM.setScene("battle", { fromStart = true })
+    markIntroCompleted_()
+    showOfflineRewardPanel_()
+end
+
+local function playJoinAt_(index)
+    local joins = ScenarioDialogueConfig.OPENING_JOINS
+    if not joins or index > #joins then
+        print("[Standalone] starter joins finished played=" .. tostring(index - 1))
+        finishIntro_()
+        return
+    end
+    local cfg = joins[index]
+    if not cfg or not cfg.steps or #cfg.steps == 0 then
+        print("[Standalone] starter join missing index=" .. tostring(index))
+        playJoinAt_(index + 1)
+        return
+    end
+    print("[Standalone] play starter join " .. index .. "/" .. #joins
+        .. " title=" .. tostring(cfg.title) .. " steps=" .. #cfg.steps)
+    ScenarioDialogue.show({
+        mode = cfg.mode or "large",
+        background = cfg.background,
+        title = cfg.title,
+        steps = cfg.steps,
+        onFinish = function()
+            print("[Standalone] starter join finished index=" .. tostring(index))
+            playJoinAt_(index + 1)
+        end,
+    })
+end
+
+local function startStarterJoins_()
+    local handled = localSendAction("grant_starter_trio", {})
+    print("[Standalone] grant starter trio handled=" .. tostring(handled))
+    playJoinAt_(1)
+end
+
+local function startOpeningBriefing_()
+    local cfg = ScenarioDialogueConfig.OPENING
+    if not cfg or not cfg.steps then
+        print("[Standalone] OPENING missing, go straight to joins")
+        startStarterJoins_()
+        return
+    end
+    print("[Standalone] letter finished, play opening briefing steps=" .. #cfg.steps)
+    ScenarioDialogue.show({
+        mode = cfg.mode or "large",
+        background = cfg.background,
+        title = cfg.title,
+        steps = cfg.steps,
+        onFinish = function()
+            print("[Standalone] opening briefing finished, start joins")
+            startStarterJoins_()
+        end,
+    })
+end
+
+--- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
+local function tryPlayPendingStory_()
+    if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then
+        return
+    end
+    if RewardPopup.isOpen() or OfflineRewardPanel.isOpen() then
+        return
+    end
+    local pending = ClientMsgHandler.consumePendingScenarioDialogue()
+    if not pending then
+        pending = ClientMsgHandler.consumePendingFollowUpDialogue()
+    end
+    if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
+        pending = require("systems.StoryPlayer").take()
+    end
+    if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
+        return
+    end
+    local cfg = pending.config
+    local scenarioId = pending.scenarioId
+    print("[Standalone] play pending story id=" .. tostring(scenarioId)
+        .. " steps=" .. #cfg.steps .. " mode=" .. tostring(cfg.mode))
+    ScenarioDialogue.show({
+        mode = cfg.mode or "small",
+        background = cfg.background,
+        title = cfg.title,
+        eyeOpen = cfg.eyeOpen,
+        steps = cfg.steps,
+        onFinish = function()
+            if scenarioId then
+                print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
+                localSendAction("claim_scenario_reward", { scenarioId = scenarioId })
+                local followId = require("systems.StoryPlayer").followOf(scenarioId)
+                if followId then
+                    print("[Standalone] enqueue follow scenario " .. tostring(followId))
+                    require("systems.StoryPlayer").enqueue(followId)
+                end
+            end
+        end,
+    })
+end
+
+--- [LetterIntro] 新档开场链：先祖来信 → 门厅点卯 → 进游戏
 local function startIntroChain_()
     GameBGM.setScene("letter", { fromStart = true })
-    LetterIntro.start(function()
-        print("[Standalone] letter finished, skip cutscene/scenario, unlocking")
-        GameBGM.setScene("battle", { fromStart = true })
-        markIntroCompleted_()
-        showOfflineRewardPanel_()
-    end)
+    LetterIntro.start(startOpeningBriefing_)
 end
 
 --- 清除存档后重置客户端状态并回到开始界面
@@ -599,6 +709,7 @@ end
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
+    require("ui.CEPanel").pollHotkey()
     -- 分帧启动：每帧 1 个模块 init，标题可先画出来
     pumpBootQueue_()
     if not bootReady_ then
@@ -680,7 +791,7 @@ function HandleUpdate(eventType, eventData)
         end
     end
 
-    -- 开始页/标题刚关闭 → 老档弹离线收益；新档走开场链（先祖来信→过场→情景1）
+    -- 开始页/标题刚关闭 → 老档弹离线收益；新档走开场链（来信 → 门厅点卯）
     -- 必须等 DarkTitleScreen 关闭后再播，否则信件会被标题盖住且点击被吞
     if not postStartFlowDone_ and not DarkTitleScreen.isOpen() then
         postStartFlowDone_ = true
@@ -692,7 +803,7 @@ function HandleUpdate(eventType, eventData)
         if introDone then
             showOfflineRewardPanel_()
         else
-            print("[Standalone] new save detected, starting intro chain (letter → cutscene → scenario 1)")
+            print("[Standalone] new save detected, starting intro chain (letter → briefing)")
             startIntroChain_()
         end
     end
@@ -715,7 +826,9 @@ function HandleUpdate(eventType, eventData)
         -- 标签页
         elseif tabIndex == 2 then bgmScene = "popup"
         elseif tabIndex == 3 then bgmScene = BattleScene.isInTerminalTemple() and "samsara" or "battle"
-        elseif tabIndex == 4 then bgmScene = "town"
+        elseif tabIndex == 4 then
+            bgmScene = "town"
+            require("systems.StoryPlayer").onPlace("town", "enter")
         else bgmScene = "other"
         end
         GameBGM.setScene(bgmScene)
@@ -741,6 +854,8 @@ function HandleUpdate(eventType, eventData)
         if ScenarioDialogue.isFullscreen() then
             return
         end
+    else
+        tryPlayPendingStory_()
     end
 
     -- [三行并行] 横屏专用: 战斗布局恒为 strip（竖屏 classic 已移除）
@@ -752,6 +867,8 @@ function HandleUpdate(eventType, eventData)
         BattleTriPage.close()
     end
 
+    require("ui.CERuntime").installSpeedHook()
+    require("ui.CERuntime").tick()
     -- 副本/通天塔对战更新（打开时独占）
     if TowerBattleScene.isActive() then
         TowerBattleScene.update(dt)
@@ -764,6 +881,7 @@ function HandleUpdate(eventType, eventData)
         -- 战斗场景始终更新（挂机持续进行）
         BattleScene.update(dt)
     end
+    require("ui.CERuntime").tick()
 
     local tabIndex = BottomNav.getSelectedIndex()
     -- [三行并行] 三行战斗区常驻: tab3 下恒开（Dungeon 独占时由守卫暂收, 关闭后自动重开）
@@ -828,6 +946,8 @@ function HandleUpdate(eventType, eventData)
     TavernPage.update(dt)
     MarketPage.update(dt)
     PlayerInfoPanel.update(dt)
+    local KeyboardShortcuts = require("ui.KeyboardShortcuts")
+    KeyboardShortcuts.update()
 end
 
 function HandleMouseButtonDown(eventType, eventData)

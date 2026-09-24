@@ -350,12 +350,16 @@ function BattleScene.drawSpeedButton(vg)
     BattleSpeed.draw(vg, BattleScene.imgSpeedIcon, BattleScene.battleSpeed, BattleScene.isSpeedButtonVisible())
 end
 
-function BattleScene.handleSpeedButtonInput(dx, dy)
+function BattleScene.cycleBattleSpeed()
     if not BattleScene.isSpeedButtonVisible() then return false end
-    if not BattleSpeed.hitTest(dx, dy) then return false end
     BattleScene.battleSpeed = BattleSpeed.cycle(BattleScene.battleSpeed, BattleScene.getMaxUnlockedBattleSpeed())
     print("[BattleScene] 首通战斗倍速切换: " .. BattleScene.getSpeedText())
     return true
+end
+
+function BattleScene.handleSpeedButtonInput(dx, dy)
+    if not BattleSpeed.hitTest(dx, dy) then return false end
+    return BattleScene.cycleBattleSpeed()
 end
 
 -- ======================== 属性快照隔离（委托 BattleAllyReset） ========================
@@ -549,6 +553,8 @@ local function loadStage(stageId, skipBattleStart)
     _enemyGuardFired = ctx._enemyGuardFired
     battleActive = ctx.battleActive
     firstClearTimeLeft = ctx.firstClearTimeLeft
+    print("[BattleScene] stage loaded id=" .. tostring(stageId))
+    require("systems.StoryPlayer").onStage(stageId, "enter")
 end
 
 local _navLogic

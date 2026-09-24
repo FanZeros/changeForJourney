@@ -1,18 +1,56 @@
 -- ============================================================================
--- ScenarioDialogueConfig.lua — 情景对话数据配置（玩梗版 v2.1 · 全剧情梗味统一）
--- 对应策划配置: docs/配置文件/剧情-情景对话.txt
+-- ScenarioDialogueConfig.lua — 情景对话数据配置（玩梗版 v2.2 · 横屏开场）
+-- 开场第一幕在 LetterIntro；第二幕为 OPENING（门厅点卯），不再使用情景 1 点将。
+-- 对应文档: docs/剧情总表.md
 -- characterId: HeroConfig 英雄ID（立绘 = image/角色立绘/{角色名}_透明立绘.png）
--- mode: "large" = 大情景(全屏覆盖), "small" = 小情景(弹窗)
--- 人设规则: 主角贴合 DialogueConfig v2.0 玩梗人设; NPC/黑暗镜像台词同步玩梗化;
---           怪物名与 MonsterConfig(山海经版) 对齐(雷神/天狗/山膏/毕方/金乌…)
--- 放弃内部剧情: 原"正剧"文本全部废弃, 本文件即为唯一剧情源
+-- mode: "large" = 大情景(全屏覆盖), "small" = 小情景(底部横条)
 -- ============================================================================
 
 local ScenarioDialogueConfig = {}
 
---- 情景 1：新手过场动画结束后触发
---- 出现条件: 结束新手剧情过场动画时接上该情景
---- 结束后衔接角色选择界面
+--- 开场第二幕：信件结束后、进游戏前。横屏全屏，不点将。
+ScenarioDialogueConfig.OPENING = {
+    mode = "large",
+    title = "第二幕  ·  门厅",
+    background = "image/关卡地图/MAP_1.png",
+    steps = {
+        { characterId = 1, name = "大狗嚼", text = "叫！信拆完了？门外三条命都在等你签字。再磨蹭，我先把门牌啃了。" },
+        { characterId = 2, name = "黄桃龙", text = "黄桃龙带了火把，也带了烤肠。塔底下那些山海怪，保证只烧怪！……大概。" },
+        { characterId = 3, name = "叮咚鸡", text = "叮咚~编制通知：先锋位空缺。建议先带大狗嚼出门。理由：门槛已经有牙印了。" },
+        { characterId = 1, name = "大狗嚼", text = "远征长，帽子戴正。公会不发英雄光环，只发一张出门的单子。今天，我们去敲门。" },
+    },
+}
+
+--- 开场第三幕：三人依次入队。不点将，直接写入队1。
+ScenarioDialogueConfig.OPENING_JOINS = {
+    {
+        mode = "large",
+        title = "入队  ·  大狗嚼",
+        background = "image/关卡地图/MAP_1.png",
+        steps = {
+            { characterId = 1, name = "大狗嚼", text = "叫！先锋位我占了。骨头先寄存在你那儿，人我带上。" },
+            { characterId = 1, name = "大狗嚼", text = "天狗算什么。在狗面前，它就是只大鸟。出发之前，先让后两位报到。" },
+        },
+    },
+    {
+        mode = "large",
+        title = "入队  ·  黄桃龙",
+        background = "image/关卡地图/MAP_1.png",
+        steps = {
+            { characterId = 2, name = "黄桃龙", text = "黄桃龙也要上车！火把、烤肠，还有大概不会烧到队友的火球，三件套齐了！" },
+            { characterId = 2, name = "黄桃龙", text = "站中间就行。左边有狗咬，右边有铃。黄桃龙负责把路点亮。……大概。" },
+        },
+    },
+    {
+        mode = "large",
+        title = "入队  ·  叮咚鸡",
+        background = "image/关卡地图/MAP_1.png",
+        steps = {
+            { characterId = 3, name = "叮咚鸡", text = "叮咚~入队通知：叮咚鸡，哨位。编制三人，已齐。" },
+            { characterId = 3, name = "叮咚鸡", text = "叮咚~下一步：出门。落单勿慌，先听铃声。远征长，可以签字了。" },
+        },
+    },
+}
 ScenarioDialogueConfig.SCENARIO_1 = {
     mode = "large",
     background = "image/关卡地图/MAP_1.png",

@@ -14,7 +14,7 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`workspace924`（含今日合入、半屏/全屏画布、遗匣左栏与滚轮修复；只 push 本分支，不要推 `integrate/20260923` / `workspace` / `workspace923`）
+- **当前开发分支**：`feat/ce-test-tools-20260924`（从 `workspace924` 新开）。只 push 本分支，不要推 `workspace924` / `integrate/20260923` / `workspace` / `workspace923`
 
 ## 上次做了什么（2026-09-24）
 
@@ -67,7 +67,8 @@
 
 ## likely_next_task
 
-- 优先预览遗匣地点、左栏页、满包「已入遗匣」、领取与分解；恢复运行时资源后执行隔离截图入口。
+- 预览横屏左上角 CE / F1 测试面板，确认一键测试包、跳关、无敌和三倍速。
+- 只在 `feat/ce-test-tools-20260924` 上继续，做完必须 AskUserQuestion，禁止纯文字结束。
 
 - 预览验收：滚轮、右键装备、顶栏远征等级、五语、四人战斗、新 SE、未解锁职业标、左栏世界地图
 - 四人入队/闲聊已接：情景 74–81。首次获得或第一次打开详情播放；闲聊每局每个角色一次
@@ -83,7 +84,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 以当前功能分支继续开发；完成后每次 push **该分支**。当前是 `workspace924`，不要推 `integrate/20260923`、`workspace`、`workspace923` 或其他分支。
+- 以 `feat/ce-test-tools-20260924` 继续开发；完成后每次 push **该分支**。不要推 `workspace924`、`integrate/20260923`、`workspace`、`workspace923` 或其他分支。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）

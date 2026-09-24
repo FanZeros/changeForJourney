@@ -560,6 +560,7 @@ end
 --- 关闭教堂（启动关闭动画）
 function ChurchPage.close()
     if not _life then bindChurchLifecycle() end
+    require("systems.StoryPlayer").onPlace("church", "leave")
     return _life.close()
 end
 

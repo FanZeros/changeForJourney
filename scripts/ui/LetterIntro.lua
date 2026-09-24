@@ -1,9 +1,7 @@
 -- ============================================================================
--- LetterIntro.lua — 先祖来信（首登开场剧情·轻松带梗版）
--- 玩法：暗色信笺逐行显墨（短版 3 段，轻触翻段/自动推进）→ 火漆印「终」→ 淡出进游戏。
---       后续睁眼过场 / 情景1 已取消，解锁在信件结束时直接发放。
--- 绘制：全窗口逻辑坐标（调用方 nvgResetTransform 后传入 logicalW/logicalH），
---       横屏 16:9 cover 铺满，不再做 1080×2400 letterbox 窄条。
+-- LetterIntro.lua — 先祖来信（开场第一幕·横屏信笺）
+-- 玩法：暗色横信逐行显墨（4 段）→ 火漆印「终」→ 交给门厅点卯（ScenarioDialogue.OPENING）。
+-- 绘制：全窗口逻辑坐标。横屏信笺偏左、矮而宽，右边留出书斋桌案。
 -- 素材（本地路径，不走 URL）：
 --   image/界面底板/剧情日记/GF_KF06.png  书斋桌案（信封+帽）
 --   image/界面底板/剧情日记/GF_KF07.png     火漆特写「终」
@@ -22,19 +20,24 @@ local LetterIntro = {}
 -- ======================== 信件内容（blocks × lines） ========================
 local BLOCKS = {
     {
-        { t = "致我从未谋面的孩子：", gold = true },
-        { t = "拆开这封信时，我已经死了。" },
-        { t = "按公会规矩，这叫「荣休」。" },
+        { t = "致第三十七任远征长：", gold = true },
+        { t = "拆开这封信时，我已经荣休了。" },
+        { t = "公会管这叫交接。我管这叫甩锅。" },
     },
     {
-        { t = "帽子、印鉴、名册，都留给你。" },
-        { t = "塔底下的东西不讲道理，" },
-        { t = "但他们够吵。" },
+        { t = "帽子、印鉴、名册，都在桌上。" },
+        { t = "塔底下的山海怪不讲道理，" },
+        { t = "但它们会排队上门。" },
     },
     {
-        { t = "公会不需要英雄，", gold = true },
-        { t = "需要一个签字的傻子。", gold = true, seal = true },
-        { t = "——第三十六任远征长，你的外祖父", dim = true },
+        { t = "门外有三条吵闹的命。" },
+        { t = "狗会咬，龙会烧，鸡会敲铃。" },
+        { t = "先听他们把话说完，再出门。" },
+    },
+    {
+        { t = "公会不需要英雄。", gold = true },
+        { t = "需要一个肯签字的傻子。", gold = true, seal = true },
+        { t = "——第三十六任，你的外祖父", dim = true },
     },
 }
 
@@ -232,11 +235,11 @@ local function drawLetter(vg, w, h)
         nvgFill(vg)
     end
 
-    -- 3) 半透明信笺底板（横屏居中，约占 62% 宽 × 78% 高）
-    local panelW = math.min(w * 0.62, h * 1.05)
-    local panelH = math.min(h * 0.78, w * 0.72)
-    local panelX = (w - panelW) * 0.5
-    local panelY = (h - panelH) * 0.5 - h * 0.02
+    -- 3) 横屏信笺：宽而矮，略偏左，右边留出桌案/火漆
+    local panelW = math.min(w * 0.70, 1320)
+    local panelH = math.min(h * 0.62, 680)
+    local panelX = w * 0.06
+    local panelY = (h - panelH) * 0.46
     nvgBeginPath(vg)
     nvgRoundedRect(vg, panelX, panelY, panelW, panelH, math.max(10, h * 0.012))
     nvgFillColor(vg, nvgRGBA(12, 10, 8, 210 * fade))
@@ -247,11 +250,16 @@ local function drawLetter(vg, w, h)
     nvgStrokeWidth(vg, math.max(1.5, h * 0.0025))
     nvgStroke(vg)
 
-    -- 标题分隔金线
+    -- 幕标与分隔金线
     local padX = panelW * 0.08
     local textX = panelX + padX
     local textW = panelW - padX * 2
-    local lineY0 = panelY + panelH * 0.10
+    local lineY0 = panelY + panelH * 0.14
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, math.max(14, math.min(w * 0.014, 22)))
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_BASELINE)
+    nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 160 * fade))
+    nvgText(vg, textX, panelY + panelH * 0.09, "第一幕  ·  来信", nil)
     nvgBeginPath(vg)
     nvgMoveTo(vg, textX, lineY0)
     nvgLineTo(vg, textX + textW, lineY0)
@@ -259,10 +267,10 @@ local function drawLetter(vg, w, h)
     nvgStrokeWidth(vg, 1.5)
     nvgStroke(vg)
 
-    -- 4) 正文逐行显墨
-    local fsHead = math.max(22, math.min(w * 0.028, h * 0.045))
-    local fsBody = math.max(18, math.min(w * 0.022, h * 0.036))
-    local lineH  = fsBody * 1.55
+    -- 4) 正文逐行显墨（四段横信，字号按窗口收，避免撑出信笺）
+    local fsHead = math.max(20, math.min(w * 0.022, h * 0.034))
+    local fsBody = math.max(16, math.min(w * 0.016, h * 0.026))
+    local lineH  = fsBody * 1.38
     local lineY  = lineY0 + lineH * 1.35
     nvgFontFace(vg, "sans")
     for b = 1, blockIdx do

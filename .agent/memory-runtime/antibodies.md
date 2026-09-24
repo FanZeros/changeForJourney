@@ -45,3 +45,5 @@
 - [scope:project] SE 听感延迟两处：ButtonFeedback 在 trigger/松开才 playUIClick（应按下即播）；ProjectileSystem 在 spawn 就播远程音，飞 0.5s 才命中。远程/bezier/fly 改命中播，melee/lightning 仍出手播
 - [scope:project] 角色页「远征团」标题对齐详情页角色名 `MID_NAME_CY=995`（CharacterDetailDraw），不是贴 LIST_BG 顶边。总战力仍在 860（与「角色详情」同高）
 - [scope:project] 三行 HUD 行标签底条已在 workspace 暗黑化中去掉，不要为了加宽标签把黑条加回去
+
+- [scope:project] 2026-09-24：从 workspace924 新开 `workspace924-yixia-art`。只 push 这个功能分支，禁止推 workspace924 或其他分支。每步结束必须 AskUserQuestion，不能取消任务。

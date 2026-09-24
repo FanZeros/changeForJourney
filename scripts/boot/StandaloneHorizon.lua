@@ -11,6 +11,7 @@ local BottomNav         = require("ui.BottomNav")
 local BattleScene       = require("ui.BattleScene")
 local CharacterPanel    = require("ui.CharacterPanel")
 local DebugPanel        = require("ui.DebugPanel")
+local CEPanel           = require("ui.CEPanel")
 local HeroRosterPanel   = require("ui.HeroRosterPanel")
 local RewardPopup       = require("ui.RewardPopup")
 local TownScene         = require("ui.TownScene")
@@ -47,6 +48,7 @@ local ScenarioDialogue   = require("ui.ScenarioDialogue")
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
 local UiToast            = require("core.UiToast")
+local KeyboardShortcuts  = require("ui.KeyboardShortcuts")
 
 local function vg() return RT.vg end
 local function logicalW() return RT.logicalW or 0 end
@@ -59,6 +61,18 @@ local function applyFrame()
     local frameScale = RT.frameScale or 1
     if frameScale <= 0 then frameScale = 1 end
     nvgScale(vg(), frameScale, frameScale)
+end
+
+--- CE 面板画在帧变换后的逻辑坐标里，避免被面板 viewport 带走。
+local function finishFrame()
+    nvgSave(vg())
+    nvgResetTransform(vg())
+    applyFrame()
+    nvgResetScissor(vg())
+    nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    CEPanel.draw(vg(), logicalW(), logicalH())
+    nvgRestore(vg())
+    nvgEndFrame(vg())
 end
 
 local function toDesign(sx, sy)
@@ -173,7 +187,7 @@ local function HorizonDrawPageModal(_unused_vg)
     nvgRestore(vg())
 end
 
---- [LetterIntro] 开场链全窗口覆盖：信件铺满窗口；过场/情景仍用 1080×2400 letterbox
+--- [LetterIntro] 开场链全窗口覆盖：信件与情景都用逻辑分辨率横屏绘制；旧过场用 cover 裁切避免竖条
 local function HorizonDrawIntroOverlay()
     if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
         return
@@ -183,18 +197,16 @@ local function HorizonDrawIntroOverlay()
     applyFrame()
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     if LetterIntro.isOpen() then
-        -- 全窗口逻辑坐标，16:9 cover，不再 letterbox 成竖条
         ---@diagnostic disable-next-line: missing-parameter
         LetterIntro.draw(vg(), logicalW(), logicalH())
-    else
-        local ss = math.min(logicalW() / 1080, logicalH() / 2400)
-        nvgTranslate(vg(), (logicalW() - 1080 * ss) * 0.5, (logicalH() - 2400 * ss) * 0.5)
+    elseif ScenarioDialogue.isActive() then
+        ScenarioDialogue.draw(logicalW(), logicalH())
+    elseif IntroCutscene.isActive() then
+        local lw, lh = logicalW(), logicalH()
+        local ss = math.max(lw / 1080, lh / 2400)
+        nvgTranslate(vg(), (lw - 1080 * ss) * 0.5, (lh - 2400 * ss) * 0.5)
         nvgScale(vg(), ss, ss)
-        if IntroCutscene.isActive() then
-            IntroCutscene.draw(vg())
-        elseif ScenarioDialogue.isActive() then
-            ScenarioDialogue.draw()
-        end
+        IntroCutscene.draw(vg())
     end
     nvgRestore(vg())
 end
@@ -270,6 +282,20 @@ local function seamBackList()
     return list
 end
 
+--- 中缝返回条命中。必须用逻辑坐标（toDesign 之后），不能用窗口像素直接比。
+---@param sx number
+---@param sy number
+---@return table|nil
+local function seamHitAt(sx, sy)
+    for _, seamBtn in ipairs(seamBackList()) do
+        if math.abs(sx - seamBtn.cx) <= seamBtn.sw * 0.5
+            and math.abs(sy - logicalH() * 0.5) <= seamBtn.sh * 0.5 then
+            return seamBtn
+        end
+    end
+    return nil
+end
+
 function HandleNanoVGRenderHorizon()
     if not vg() then return end
     HorizonUpdateTransform()
@@ -301,7 +327,7 @@ function HandleNanoVGRenderHorizon()
             StartScreen.draw(vg())
             nvgRestore(vg())
         end
-        nvgEndFrame(vg())
+        finishFrame()
         return
     end
 
@@ -320,7 +346,7 @@ function HandleNanoVGRenderHorizon()
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg(), logicalW(), logicalH())
         end
-        nvgEndFrame(vg())
+        finishFrame()
         return
     end
 
@@ -378,7 +404,7 @@ function HandleNanoVGRenderHorizon()
         if RT.preload_.active then
             RT.DrawPreloadOverlay(vg(), logicalW(), logicalH())
         end
-        nvgEndFrame(vg())
+        finishFrame()
         return
     end
 
@@ -445,7 +471,8 @@ function HandleNanoVGRenderHorizon()
 
     if towerBattleOpen then
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
-        nvgEndFrame(vg())
+        KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
+        finishFrame()
         return
     end
 
@@ -517,7 +544,8 @@ function HandleNanoVGRenderHorizon()
         end
         -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
         HorizonDrawIntroOverlay()
-        nvgEndFrame(vg())
+        KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
+        finishFrame()
         return
     end
 
@@ -563,8 +591,9 @@ function HandleNanoVGRenderHorizon()
     -- [LetterIntro] 开场覆盖必须在标题之后（非三行路径同样需要）
     HorizonDrawIntroOverlay()
     UiToast.draw(vg(), logicalW(), logicalH())
+    KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
 
-    nvgEndFrame(vg())
+    finishFrame()
 end
 
 -- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态是否激活（全屏弹窗打开时让位）
@@ -657,6 +686,13 @@ local function HorizonResolveMouse()
 end
 
 function HandleMouseButtonDownHorizon(eventType, eventData)
+    if vg() then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        if CEPanel.handleDown(sx, sy, logicalH()) then
+            return
+        end
+    end
     if not bootReady_() then return end
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
     if DarkTitleScreen.isOpen() then return end
@@ -795,6 +831,13 @@ function HandleMouseMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseButtonUpHorizon(eventType, eventData)
+    if vg() then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        if CEPanel.handleUp(sx, sy, logicalH()) then
+            return
+        end
+    end
     local button = eventData["Button"]:GetInt()
     local wasLootPress = lootPress
     if button == MOUSEB_LEFT then
@@ -821,6 +864,20 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     if button ~= MOUSEB_LEFT then return end
+    local mousePos = input:GetMousePosition()
+    local seamX, seamY = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+    local seamBtn = seamHitAt(seamX, seamY)
+    if seamBtn then
+        local now = time.elapsedTime
+        if now - lastTapTime >= MIN_TAP_INTERVAL then
+            lastTapTime = now
+            print("[SeamBack] close dir=" .. tostring(seamBtn.dir)
+                .. string.format(" at %.0f,%.0f", seamX, seamY))
+            seamBtn.close()
+        end
+        pressValid = false
+        return
+    end
     local pid, dx, dy = HorizonResolveMouse()
     local isTap = false
     if wasLootPress and pid ~= 'left' then pressValid = false end
@@ -855,22 +912,18 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if IntroCutscene.isActive() then
         return
     end
+    -- 剧情不依赖 isTap：横屏覆盖层里 pressValid 容易丢，丢了就点不下去
     if ScenarioDialogue.isActive() then
-        if isTap then ScenarioDialogue.advance() end
+        local now = time.elapsedTime
+        if now - lastTapTime >= MIN_TAP_INTERVAL then
+            lastTapTime = now
+            print("[ScenarioDialogue] advance from release step pending")
+            ScenarioDialogue.advance()
+        end
         return
     end
     if wasLootPress and pid ~= 'left' then return end
     if pid == 'none' then return end
-    -- 返回条使用窗口逻辑坐标；dx/dy 是面板设计坐标，不能直接比较。
-    local mousePos = input:GetMousePosition()
-    local seamX, seamY = mousePos.x / dpr(), mousePos.y / dpr()
-    for _, seamBtn in ipairs(seamBackList()) do
-        if math.abs(seamX - seamBtn.cx) <= seamBtn.sw * 0.5
-            and math.abs(seamY - logicalH() * 0.5) <= seamBtn.sh * 0.5 then
-            if isTap then seamBtn.close() end
-            return
-        end
-    end
     if pid == 'tri' then
         BattleTriPage.handleDragEnd(dx, dy)
         if isTap then BattleTriPage.handleInput(dx, dy) end
@@ -1042,6 +1095,8 @@ function HandleMouseWheelHorizon(eventType, eventData)
     local mousePos = input:GetMousePosition()
     local sx = mousePos.x / dpr()
     local sy = mousePos.y / dpr()
+    local csx, csy = toDesign(sx, sy)
+    if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
 
     -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
     if TalentPage.isOpen() then

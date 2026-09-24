@@ -65,6 +65,7 @@ local mode_       = "large"     -- "large" | "small"
 local steps_      = {}          -- { {characterId, name, text}, ... }
 local stepIndex_  = 0
 local onFinishCb_ = nil
+local title_      = nil         -- 横屏章节标题（可选）
 
 -- 当前步骤的打字机状态
 local textElapsed_ = 0
@@ -347,6 +348,7 @@ function ScenarioDialogue.show(config)
     mode_       = config.mode or "large"
     steps_      = config.steps
     onFinishCb_ = config.onFinish
+    title_      = config.title
 
     -- 加载大情景全屏背景图
     if mode_ == "large" then
@@ -386,7 +388,8 @@ function ScenarioDialogue.show(config)
 
     exitCharId_ = nil
 
-    print("[ScenarioDialogue] show: mode=" .. mode_ .. " steps=" .. #steps_)
+    print("[ScenarioDialogue] show: mode=" .. mode_ .. " steps=" .. #steps_
+        .. " title=" .. tostring(title_))
 end
 
 --- 每帧更新
@@ -461,8 +464,179 @@ function ScenarioDialogue.update(dt)
     end
 end
 
+--- 横屏立绘（逻辑坐标，不走 1080×2400）
+---@param characterId number|nil
+---@param alpha number
+---@param cx number
+---@param cy number
+---@param pw number
+---@param ph number
+---@param offsetX number|nil
+local function drawPortraitAt(characterId, alpha, cx, cy, pw, ph, offsetX)
+    if not characterId or alpha <= 0.01 then return end
+    local img = getPortraitImage(characterId)
+    if img < 0 then return end
+    DrawUtil.drawImageCover(vg_, img, cx + (offsetX or 0), cy, pw, ph, alpha)
+end
+
+--- 横屏情景：左立绘 + 底部宽对话条。大情景铺满背景，小情景只压暗底层。
+---@param w number
+---@param h number
+local function drawLandscape(w, h)
+    if not active_ or stepIndex_ < 1 or stepIndex_ > #steps_ then return end
+    local step = steps_[stepIndex_]
+
+    local dismissAlpha = 1.0
+    local dismissSlideY = 0
+    if dismissing_ then
+        local prog = easeInCubic(math.min(1, dismissT_ / DISMISS_DUR))
+        dismissAlpha = 1.0 - prog
+        dismissSlideY = h * 0.06 * prog
+    end
+
+    nvgSave(vg_)
+    nvgScissor(vg_, 0, 0, w, h)
+    if dismissSlideY > 0 then
+        nvgTranslate(vg_, 0, dismissSlideY)
+    end
+
+    if mode_ == "large" then
+        nvgBeginPath(vg_)
+        nvgRect(vg_, 0, 0, w, h)
+        nvgFillColor(vg_, nvgRGBA(0, 0, 0, 255))
+        nvgFill(vg_)
+        if imgBG_ >= 0 then
+            DrawUtil.drawImageCover(vg_, imgBG_, w * 0.5, h * 0.5, w, h, 1.0)
+        end
+    else
+        nvgBeginPath(vg_)
+        nvgRect(vg_, 0, 0, w, h)
+        nvgFillColor(vg_, nvgRGBA(0, 0, 0, math.floor(150 * dismissAlpha)))
+        nvgFill(vg_)
+    end
+
+    local barH = math.max(150, h * 0.26)
+    local barX = w * 0.035
+    local barW = w - barX * 2
+    local barY = h - barH - h * 0.04
+    local portraitH = mode_ == "small" and h * 0.58 or h * 0.86
+    local portraitW = portraitH * 0.58
+    local portraitCx = barX + portraitW * 0.46
+    local portraitCy = mode_ == "small" and (barY - portraitH * 0.02) or (h * 0.42)
+    local slide = w * 0.045
+    local offsetX = 0
+    local alpha = dismissAlpha
+    local drawId = step.characterId
+    if not dismissing_ and portraitAnimState_ == "exiting" then
+        local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
+        local ease = easeInCubic(prog)
+        alpha = dismissAlpha * (1.0 - ease)
+        offsetX = -slide * ease
+        drawId = exitCharId_ or step.characterId
+    elseif not dismissing_ and portraitAnimState_ == "entering" then
+        local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
+        local ease = easeOutCubic(prog)
+        alpha = dismissAlpha * ease
+        offsetX = slide * (1.0 - ease)
+    end
+    drawPortraitAt(drawId, alpha, portraitCx, portraitCy, portraitW, portraitH, offsetX)
+
+    nvgBeginPath(vg_)
+    nvgRect(vg_, 0, barY - h * 0.02, w, h - barY + h * 0.04)
+    nvgFillColor(vg_, nvgRGBA(0, 0, 0, math.floor(70 * dismissAlpha)))
+    nvgFill(vg_)
+
+    local radius = math.max(8, h * 0.012)
+    nvgBeginPath(vg_)
+    nvgRoundedRect(vg_, barX, barY, barW, barH, radius)
+    nvgFillColor(vg_, nvgRGBA(10, 8, 6, math.floor(214 * dismissAlpha)))
+    nvgFill(vg_)
+    nvgBeginPath(vg_)
+    nvgRoundedRect(vg_, barX, barY, barW, barH, radius)
+    nvgStrokeColor(vg_, nvgRGBA(232, 200, 120, math.floor(120 * dismissAlpha)))
+    nvgStrokeWidth(vg_, math.max(1.5, h * 0.002))
+    nvgStroke(vg_)
+
+    local chipH = math.max(34, h * 0.046)
+    local chipW = math.min(barW * 0.32, math.max(200, h * 0.36))
+    local chipX = barX + w * 0.018
+    local chipY = barY - chipH * 0.42
+    nvgBeginPath(vg_)
+    nvgRoundedRect(vg_, chipX, chipY, chipW, chipH, chipH * 0.2)
+    nvgFillColor(vg_, nvgRGBA(28, 18, 12, math.floor(235 * dismissAlpha)))
+    nvgFill(vg_)
+    nvgStrokeColor(vg_, nvgRGBA(232, 200, 120, math.floor(160 * dismissAlpha)))
+    nvgStrokeWidth(vg_, 1.5)
+    nvgStroke(vg_)
+    if step.name then
+        DrawUtil.drawTextStroke(vg_, chipX + chipW * 0.5, chipY + chipH * 0.52, step.name,
+            math.max(20, h * 0.028),
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            255, 236, 196, 3,
+            { alpha = dismissAlpha, strokeColor = { 0x31, 0x24, 0x24 } })
+    end
+
+    local textX = barX + w * 0.028
+    local textY = barY + barH * 0.22
+    local textW = barW - w * 0.07
+    if step.text and textElapsed_ > 0 and dismissAlpha > 0.01 then
+        local charCount = utf8.len(step.text) or 0
+        local charsToShow = math.min(charCount, math.floor(textElapsed_ * TYPEWRITER_CPS))
+        if charsToShow > 0 then
+            nvgFontFace(vg_, "sans")
+            nvgFontSize(vg_, math.max(20, h * 0.030))
+            nvgTextLineHeight(vg_, 1.35)
+            nvgTextAlign(vg_, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+            nvgFillColor(vg_, nvgRGBA(232, 220, 196, math.floor(255 * dismissAlpha)))
+            nvgTextBox(vg_, textX, textY, textW, utf8sub(step.text, 1, charsToShow), nil)
+        end
+    end
+
+    nvgFontFace(vg_, "sans")
+    nvgFontSize(vg_, math.max(14, h * 0.020))
+    nvgTextAlign(vg_, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(170 * dismissAlpha)))
+    local chapter = title_ or (mode_ == "large" and "情景" or "闲谈")
+    nvgText(vg_, w * 0.04, h * 0.055, chapter, nil)
+    nvgTextAlign(vg_, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+    nvgText(vg_, w * 0.96, h * 0.055, string.format("%d / %d", stepIndex_, #steps_), nil)
+
+    if typingDone_ and not dismissing_ then
+        local blink = 0.55 + 0.45 * math.sin(textElapsed_ * ARROW_BLINK_SPEED * math.pi * 2)
+        nvgFontSize(vg_, math.max(16, h * 0.022))
+        nvgTextAlign(vg_, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(220 * blink)))
+        nvgText(vg_, barX + barW - w * 0.02, barY + barH - h * 0.028, "轻触继续", nil)
+    end
+
+    if eyeOpenActive_ then
+        local lidH = (h * 0.5) * (1 - eyeOpenness_)
+        if lidH >= 1 then
+            nvgBeginPath(vg_)
+            nvgRect(vg_, 0, 0, w, lidH)
+            nvgFillColor(vg_, nvgRGBA(0, 0, 0, 255))
+            nvgFill(vg_)
+            nvgBeginPath(vg_)
+            nvgRect(vg_, 0, h - lidH, w, lidH)
+            nvgFillColor(vg_, nvgRGBA(0, 0, 0, 255))
+            nvgFill(vg_)
+        end
+    end
+
+    nvgResetScissor(vg_)
+    nvgRestore(vg_)
+end
+
 --- 绘制（在 NanoVGRender 回调中调用）
-function ScenarioDialogue.draw()
+--- 传入逻辑宽高且为横屏时走横屏对话条；否则保留 1080×2400 竖屏布局。
+---@param frameW number|nil
+---@param frameH number|nil
+function ScenarioDialogue.draw(frameW, frameH)
+    if type(frameW) == "number" and type(frameH) == "number"
+        and frameW > 0 and frameH > 0 and frameW > frameH * 1.15 then
+        drawLandscape(frameW, frameH)
+        return
+    end
     if not active_ or stepIndex_ < 1 or stepIndex_ > #steps_ then return end
 
     local step = steps_[stepIndex_]
@@ -641,6 +815,7 @@ function ScenarioDialogue.reset()
     eyeOpenness_       = 0
     dismissing_        = false
     dismissT_          = 0
+    title_             = nil
 end
 
 return ScenarioDialogue

@@ -517,6 +517,7 @@ end
 --- 关闭酒馆（启动关闭动画）
 function TavernPage.close()
     if state.closing then return end
+    require("systems.StoryPlayer").onPlace("tavern", "leave")
     state.closing = true
     state.closeTime = time.elapsedTime
     TavernPopups.resetAll()

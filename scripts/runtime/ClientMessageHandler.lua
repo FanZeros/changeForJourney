@@ -580,6 +580,9 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if data.action == Protocol.ACTION_TYPES.CLAIM_TASK and data.reward then
          RewardPopup.show("任务奖励", { { type = data.reward.type, amount = data.reward.amount } })
      end
+     if data.action == Protocol.ACTION_TYPES.CLAIM_ALL_TASKS and data.rewards and #data.rewards > 0 then
+         RewardPopup.show("功绩奖励", data.rewards)
+     end
 
      -- 兑换码
      if (data.redeemAction or data.action == Protocol.ACTION_TYPES.REDEEM_CODE) and RedeemCodePanel.onActionResult then RedeemCodePanel.onActionResult(data) end

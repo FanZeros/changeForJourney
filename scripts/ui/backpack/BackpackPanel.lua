@@ -1444,6 +1444,56 @@ end
 
 -- ======================== 拖拽/滚轮 ========================
 
+--- 装备格命中，供左栏拖到角色槽。分解模式不拖。
+---@param dx number
+---@param dy number
+---@return table|nil
+function Panel.peekEquipAt(dx, dy)
+    if not state.open or state.tab ~= "equip" or decomposeState.active then return nil end
+    if dy < CLIP_TOP or dy > GRID.CLIP_BOTTOM then return nil end
+    local equipList = getEquipList()
+    for idx, equip in ipairs(equipList) do
+        local col = ((idx - 1) % GRID.COLS) + 1
+        local row = math.floor((idx - 1) / GRID.COLS)
+        local cx = CELL_COL_CX[col]
+        local cy = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5 - state.scrollY
+        if cy >= CLIP_TOP - GRID.CELL_SIZE * 0.5 and cy <= GRID.CLIP_BOTTOM + GRID.CELL_SIZE * 0.5
+            and DrawUtil.hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
+            local equipData = PlayerStore.Get("equipment")
+            local inventory = equipData and equipData.inventory
+            ---@class BpEquipRaw
+            ---@field slot string|nil
+            ---@field grip string|nil
+            ---@field type string|nil
+            ---@type BpEquipRaw|nil
+            local raw = nil
+            if inventory then
+                raw = inventory[tostring(equip.seq)] --[[@as BpEquipRaw|nil]]
+            end
+            if raw and (not raw.slot or not raw.type) then
+                EquipmentSystem.hydrate(raw)
+            end
+            local slotName = raw and raw.slot or nil
+            local gripName = raw and raw.grip or nil
+            local typeName = raw and raw.type or equip.type
+            return {
+                seq = equip.seq,
+                templateId = equip.templateId,
+                quality = equip.quality or 1,
+                slot = slotName,
+                grip = gripName,
+                equipType = typeName,
+            }
+        end
+    end
+    return nil
+end
+
+function Panel.haltScroll()
+    state.dragging = false
+    state.scrollVel = 0
+end
+
 function Panel.handleHover(dx, dy)
     if not state.open or state.tab ~= "equip" then return end
     if dy < CLIP_TOP or dy > GRID.CLIP_BOTTOM then return end

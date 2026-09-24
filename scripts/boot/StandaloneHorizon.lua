@@ -47,6 +47,7 @@ local IntroCutscene      = require("ui.story.IntroCutscene")
 local LetterIntro        = require("ui.story.LetterIntro")
 local CharacterDetail    = require("ui.character.CharacterDetail")
 local EquipmentBag       = require("ui.character.EquipmentBag")
+local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
@@ -514,6 +515,7 @@ function HandleNanoVGRenderHorizon()
     if towerBattleOpen then
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
         drawEquipDetailOverlay()
+        EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
         finishFrame()
         return
@@ -589,6 +591,7 @@ function HandleNanoVGRenderHorizon()
         -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
         HorizonDrawIntroOverlay()
         drawEquipDetailOverlay()
+        EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
         finishFrame()
         return
@@ -637,6 +640,7 @@ function HandleNanoVGRenderHorizon()
     HorizonDrawIntroOverlay()
     UiToast.draw(vg(), logicalW(), logicalH())
     drawEquipDetailOverlay()
+    EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
 
     finishFrame()
@@ -831,8 +835,30 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             TaskPage.handleDragBegin(dx, dy)
             return
         end
-        if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragBegin(dx, dy) return end
-        if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
+        if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local peek = BackpackPanel.peekEquipAt(dx, dy)
+            if peek then
+                EquipCrossDrag.arm(peek, sx, sy, "backpack")
+                print("[Horizon] 左栏背包按下 seq=" .. tostring(peek.seq))
+            end
+            BackpackPanel.handleDragBegin(dx, dy)
+            return
+        end
+        if BlacksmithPage.isOpen() then
+            if EquipmentBag.isOpen() and not EquipmentBag.hasOverlayRegion() then
+                local mousePos = input:GetMousePosition()
+                local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+                local peek = EquipmentBag.peekAt(dx, dy)
+                if peek then
+                    EquipCrossDrag.arm(peek, sx, sy, "bag")
+                    print("[Horizon] 左栏装备背包按下 seq=" .. tostring(peek.seq))
+                end
+            end
+            BlacksmithPage.handleDragBegin(dx, dy)
+            return
+        end
         if TalentPage.isOpen() then TalentPage.handleDragBegin(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
@@ -856,6 +882,14 @@ function HandleMouseMoveHorizon(eventType, eventData)
             pressValid = false
         end
         return
+    end
+    if EquipCrossDrag.isArmed() then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        if EquipCrossDrag.move(sx, sy) then
+            return
+        end
+        if pid ~= "left" then return end
     end
     if pid == 'none' then return end
     if pid == 'playerinfo' then
@@ -946,6 +980,18 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         -- 不论鼠标在哪一栏、是否有新覆盖层，都释放遗匣的拖拽状态。
         LootBox.handleDragEnd(0, 0)
         lootPress = false
+        if EquipCrossDrag.isArmed() then
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local dragged = EquipCrossDrag.finish(sx, sy)
+            if dragged then
+                if BackpackPanel.haltScroll then BackpackPanel.haltScroll() end
+                if EquipmentBag.haltScroll then EquipmentBag.haltScroll() end
+                pressValid = false
+                print("[Horizon] 左栏拖放穿戴结束")
+                return
+            end
+        end
     end
     if not bootReady_() then return end
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续

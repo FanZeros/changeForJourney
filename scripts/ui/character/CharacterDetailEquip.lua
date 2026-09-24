@@ -842,6 +842,10 @@ function M.isItemDragging()
     return panelState.itemDragging == true
 end
 
+function M.markDirty()
+    panelState.dirty = true
+end
+
 function M.getDragItem()
     return panelState.dragItem
 end

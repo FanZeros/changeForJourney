@@ -412,6 +412,18 @@ function CharacterDetail.isOpen()
     return detailState.open
 end
 
+--- 当前详情英雄。关闭或关闭动画中返回 nil。
+---@return number|nil
+function CharacterDetail.getHeroId()
+    if not detailState.open or detailState.closing then return nil end
+    return detailState.heroId
+end
+
+---@return boolean
+function CharacterDetail.isAwakenTab()
+    return detailState.tab == "awaken"
+end
+
 --- 标记战斗力/装备缓存为脏（外部数据变化时由 CharacterPanel.refreshPowerCache 调用）
 function CharacterDetail.markPowerDirty()
     Draw.markPowerDirty()

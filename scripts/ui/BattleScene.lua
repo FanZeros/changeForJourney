@@ -982,11 +982,20 @@ function BattleScene.update(dt)
         settleWaveEfficiency = settleWaveEfficiency, resetWaveTimers = resetWaveTimers,
         nextStage = BattleScene.nextStage,
     }
+    local stageIdBeforeCas = currentStageId
     local _casConsumed = BattleCasualty.process(_casCtx, logicDt)
     waveKillCount = _casCtx.waveKillCount
     waveGoldEarned = _casCtx.waveGoldEarned
     waveExpEarned = _casCtx.waveExpEarned
-    stageKillCount_ = _casCtx.stageKillCount
+    -- 首通胜利会在 process 内 nextStage/loadStage，新关击杀进度已清零。
+    -- 不能再用本帧开战前的 stageKillCount 写回，否则新关百分比沿用上一关。
+    if currentStageId ~= stageIdBeforeCas then
+        print(string.format("[BattleScene] 新关进度已重置: %s -> %s kill=%d/%d",
+            tostring(stageIdBeforeCas), tostring(currentStageId),
+            stageKillCount_, stageEnemyTotal_))
+    else
+        stageKillCount_ = _casCtx.stageKillCount
+    end
     isFirstClear = _casCtx.isFirstClear
     reincarnationTimer = _casCtx.reincarnationTimer
     battleActive = _casCtx.battleActive

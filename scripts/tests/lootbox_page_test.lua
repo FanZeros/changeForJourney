@@ -12,7 +12,7 @@ function Start()
     package.loaded["core.DarkIcon"] = {} -- 本测试只测输入，不调用渲染器。
     package.loaded["systems.GameSFX"] = { playUIMove = function() end }
     package.loaded["systems.ButtonFeedback"] = { trigger = function() end }
-    local Page = require("ui.LootBoxPage")
+    local Page = require("ui.loot.LootBoxPage")
     local claimed, decomposed, allClaims, allDecomposes = {}, {}, 0, 0
     Page.setOnClaimOne(function(index) claimed[#claimed + 1] = index end)
     Page.setOnDecomposeOne(function(index) decomposed[#decomposed + 1] = index end)
@@ -148,14 +148,14 @@ function Start()
 
     -- 持续变化也必须周期保存，模拟磁盘可证明不会覆盖玩家实际存档。
     local original = {}
-    for _, name in ipairs({ "runtime.ClientDispatcher", "core.GameState", "ui.BattleScene", "boot.StandaloneSave" }) do
+    for _, name in ipairs({ "runtime.ClientDispatcher", "core.GameState", "ui.battle.BattleScene", "boot.StandaloneSave" }) do
         original[name] = package.loaded[name]
     end
     local data = { lootbox = { seeds = {} } }
     local written = {}
     package.loaded["runtime.ClientDispatcher"] = { snapshotAll = function() return data end }
     package.loaded["core.GameState"] = { exportSave = function() return {} end }
-    package.loaded["ui.BattleScene"] = {}
+    package.loaded["ui.battle.BattleScene"] = {}
     package.loaded["boot.StandaloneSave"] = nil
     local originalFile = File
     File = function()

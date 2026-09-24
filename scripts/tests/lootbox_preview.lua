@@ -2,8 +2,8 @@
 local Standalone = require("network.Standalone")
 local Save = require("boot.StandaloneSave")
 local Dispatcher = require("runtime.ClientDispatcher")
-local Page = require("ui.LootBoxPage")
-local LootBox = require("ui.LootBox")
+local Page = require("ui.loot.LootBoxPage")
+local LootBox = require("ui.loot.LootBox")
 local EquipmentSystem = require("systems.EquipmentSystem")
 local done = false
 
@@ -14,7 +14,7 @@ function Start()
     local Tutorial = require("systems.TutorialManager")
     Tutorial.isActive = function() return false end
     Tutorial.isBuildingUnlocked = function() return true end
-    local Offline = require("ui.OfflineRewardPanel")
+    local Offline = require("ui.hud.OfflineRewardPanel")
     Offline.show = function() end
     Standalone.Start()
     Dispatcher.set("session", { introCompleted = true, claimedScenarios = {} })
@@ -24,7 +24,7 @@ end
 function LootboxPreviewUpdate()
     local rt = require("network.StandaloneRT")
     if not rt.bootReady_ then return end
-    local Title = require("ui.DarkTitleScreenGate")
+    local Title = require("ui.story.DarkTitleScreenGate")
     if Title.isOpen() then
         Title.setReady(true)
         Title.handleTap()

@@ -600,7 +600,7 @@ end
 function DarkIcon.drawQualityBg(vg, quality, cx, cy, w, h, alpha)
     local a = alpha or 1
     if a <= 0.01 then return end
-    local ImageCache = require("ui.ImageCache")
+    local ImageCache = require("ui.widget.ImageCache")
     local img = ImageCache.getQualityBg(quality)
     if not img or img < 0 then return end
     local x, y = cx - w * 0.5, cy - h * 0.5

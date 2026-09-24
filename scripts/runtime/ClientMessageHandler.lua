@@ -63,28 +63,28 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      sendAction_ = deps.sendAction
 
      -- 懒加载 UI 模块引用
-     RewardPopup         = require("ui.RewardPopup")
-     LootBox             = require("ui.LootBox")
-     LootBoxPage         = require("ui.LootBoxPage")
-     BlacksmithPage      = require("ui.BlacksmithPage")
-     BackpackPanel       = require("ui.BackpackPanel")
-     ChurchPage          = require("ui.ChurchPage")
-     TalentPage          = require("ui.TalentPage")
-     TavernPage          = require("ui.TavernPage")
-     MarketPage          = require("ui.MarketPage")
-     DungeonPage         = require("ui.DungeonPage")
-     DungeonBattleScene  = require("ui.DungeonBattleScene")
-     GMConsolePanel      = require("ui.GMConsolePanel")
-     RelicReforgePanel   = require("ui.RelicReforgePanel")
-     TopBar              = require("ui.TopBar")
-     BattleScene         = require("ui.BattleScene")
-     CharacterPanel      = require("ui.CharacterPanel")
-     EquipmentDetail     = require("ui.EquipmentDetail")
-     RedeemCodePanel     = require("ui.RedeemCodePanel")
-     SignInPanel         = require("ui.SignInPanel")
+     RewardPopup         = require("ui.hud.RewardPopup")
+     LootBox             = require("ui.loot.LootBox")
+     LootBoxPage         = require("ui.loot.LootBoxPage")
+     BlacksmithPage      = require("ui.blacksmith.BlacksmithPage")
+     BackpackPanel       = require("ui.backpack.BackpackPanel")
+     ChurchPage          = require("ui.church.ChurchPage")
+     TalentPage          = require("ui.church.TalentPage")
+     TavernPage          = require("ui.tavern.TavernPage")
+     MarketPage          = require("ui.market.MarketPage")
+     DungeonPage         = require("ui.dungeon.DungeonPage")
+     DungeonBattleScene  = require("ui.dungeon.DungeonBattleScene")
+     GMConsolePanel      = require("ui.dev.GMConsolePanel")
+     RelicReforgePanel   = require("ui.relic.RelicReforgePanel")
+     TopBar              = require("ui.hud.TopBar")
+     BattleScene         = require("ui.battle.BattleScene")
+     CharacterPanel      = require("ui.character.CharacterPanel")
+     EquipmentDetail     = require("ui.character.EquipmentDetail")
+     RedeemCodePanel     = require("ui.hud.RedeemCodePanel")
+     SignInPanel         = require("ui.story.SignInPanel")
      LootBoxSystem       = require("systems.LootBoxSystem")
      TutorialManager         = require("systems.TutorialManager")
-    AnnouncementPanel       = require("ui.AnnouncementPanel")
+    AnnouncementPanel       = require("ui.story.AnnouncementPanel")
 
      -- 批量合并监听
      EventBus.on("RELIC_BATCH_MERGE_START", function(data)
@@ -152,8 +152,8 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  function M.onPlayerDataUpdate(data, moduleName)
      if not data then return end
      -- 使用局部 require 确保引用有效（避免 upvalue 为 nil 导致整个函数被 pcall 吞掉）
-     local TopBarRef = TopBar or require("ui.TopBar")
-     local PlayerInfoPanel = require("ui.PlayerInfoPanel")
+     local TopBarRef = TopBar or require("ui.hud.TopBar")
+     local PlayerInfoPanel = require("ui.hud.PlayerInfoPanel")
 
      if data.name then
          TopBarRef.setPlayerName(data.name)
@@ -172,7 +172,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 
      -- player 模块到达时刷新槽位解锁（修复全量推送时 heroes 先于 player 分发导致槽位锁定）
      if data.level then
-         local CharacterPanel = require("ui.CharacterPanel")
+         local CharacterPanel = require("ui.character.CharacterPanel")
          pcall(CharacterPanel.refreshSlotUnlocks)
      end
  end
@@ -180,7 +180,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  function M.onCurrencyDataUpdate(data, moduleName)
      if not data then return end
      -- 使用 TopBar 的正确 API：setCurrencyData 处理 gold/gems
-     local TopBarRef = TopBar or require("ui.TopBar")
+     local TopBarRef = TopBar or require("ui.hud.TopBar")
      TopBarRef.setCurrencyData(data)
  end
 
@@ -496,7 +496,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          end
              if data.action == Protocol.ACTION_TYPES.CONVERT_UR_SHARD
              or data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT then
-             local BackpackPanel = require("ui.BackpackPanel")
+             local BackpackPanel = require("ui.backpack.BackpackPanel")
              if BackpackPanel.onActionResult then BackpackPanel.onActionResult(data) end
          end
          return
@@ -746,7 +746,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              local joinedHeroId = data.heroId
              RewardPopup.show("合成成功", { { type = "hero", heroId = joinedHeroId, name = hn, quality = hq + 2 } }, {
                  onClose = function()
-                     require("ui.HeroScenario").onOpenHero(joinedHeroId)
+                     require("ui.character.HeroScenario").onOpenHero(joinedHeroId)
                  end,
              })
          end

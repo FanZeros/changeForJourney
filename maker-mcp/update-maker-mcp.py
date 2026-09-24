@@ -238,11 +238,15 @@ def launch_windows_runtime(project: Path) -> None:
     log("这不是游戏代码，也不是 Node。改为与手工验证相同的前台启动。")
     log("Runtime: %s" % exe)
     log("工作目录: %s" % project)
+    # Official preview always passes this. Without it the Runtime shows the Tap QR login.
+    cmd = [str(exe), "-skip_login"]
+    log("已加 -skip_login。这是官方本地预览用来跳过 Tap 扫码登录的参数。")
+    log("不加它就会弹出扫码，不是游戏自己的登录，也不正常。")
     log("等价命令:")
     log('  cd /d "%s"' % project)
-    log('  "%s"' % exe)
+    log('  "%s" -skip_login' % exe)
     log("游戏窗口关掉之前，这个黑窗会停在这里。不要关黑窗。")
-    code = subprocess.call([str(exe)], cwd=str(project))
+    code = subprocess.call(cmd, cwd=str(project))
     log("Runtime 已退出，exit=%s" % code)
     if code != 0:
         die("Runtime 退出码 %s。若窗口闪退，把本窗口从 ==> 起的内容贴回 Agent。" % code)

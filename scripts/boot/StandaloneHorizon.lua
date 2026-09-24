@@ -26,6 +26,7 @@ local DungeonPage        = require("ui.DungeonPage")
 local BackpackPanel      = require("ui.BackpackPanel")
 local LootBox           = require("ui.LootBox")
 local LootBoxPage       = require("ui.LootBoxPage")
+local TaskPage          = require("ui.TaskPage")
 local LevelUpPopup      = require("ui.LevelUpPopup")
 local OfflineRewardPanel = require("ui.OfflineRewardPanel")
 local PlayerInfoPanel   = require("ui.PlayerInfoPanel")
@@ -253,6 +254,9 @@ local function seamBackList()
     if LootBoxPage.isOpen() then
         leftClose = function() LootBoxPage.close() end
         leftAnim = { LootBoxPage.getSeamAnim() }
+    elseif TaskPage.isOpen() then
+        leftClose = function() TaskPage.close() end
+        leftAnim = { TaskPage.getSeamAnim() }
     elseif BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
         leftClose = function() BackpackPanel.close() end
         leftAnim = { BackpackPanel.getSeamAnim() }
@@ -422,6 +426,7 @@ function HandleNanoVGRenderHorizon()
         MarketPage.draw(vg())
         BackpackPanel.draw(vg())
         LootBox.drawPage(vg())
+        TaskPage.draw(vg())
         Viewport.finish(vg())
 
         -- 右面板：角色固定（先于中面板绘制，便于弹窗时统一压暗侧栏）
@@ -492,10 +497,11 @@ function HandleNanoVGRenderHorizon()
         MarketPage.draw(vg())
         BackpackPanel.draw(vg())
         LootBox.drawPage(vg())
+        TaskPage.draw(vg())
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
         -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
         if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TalentPage.isOpen() or TavernPage.isOpen()
-            or MarketPage.isOpen() or LootBoxPage.isOpen()) then
+            or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
             TopBar.draw(vg(), -30)
         end
         Viewport.finish(vg())
@@ -764,6 +770,10 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             LootBox.handleDragBegin(dx, dy)
             return
         end
+        if TaskPage.isOpen() then
+            TaskPage.handleDragBegin(dx, dy)
+            return
+        end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragBegin(dx, dy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
         if TalentPage.isOpen() then TalentPage.handleDragBegin(dx, dy) return end
@@ -817,6 +827,7 @@ function HandleMouseMoveHorizon(eventType, eventData)
     end
     if pid == 'left' then
         if LootBoxPage.isOpen() then return end -- 非遗匣起始的拖拽不能穿透其下方页面
+        if TaskPage.isOpen() then TaskPage.handleDragMove(dx, dy) return end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragMove(dx, dy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
         if TalentPage.isOpen() then TalentPage.handleDragMove(dx, dy) return end
@@ -975,7 +986,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if pid == 'left' then
         -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
         if isTap and not (BackpackPanel.isOpen() or BlacksmithPage.isOpen() or ChurchPage.isOpen()
-            or TalentPage.isOpen() or TavernPage.isOpen() or MarketPage.isOpen() or LootBoxPage.isOpen()) then
+            or TalentPage.isOpen() or TavernPage.isOpen() or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
             if TopBar.hitTestAvatar(dx, dy, -30) then
                 PlayerInfoPanel.open()
                 return
@@ -988,6 +999,11 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if LootBoxPage.isOpen() then
             LootBox.handleDragEnd(dx, dy)
             if isTap and wasLootPress then LootBox.handleInput(dx, dy) end
+            return
+        end
+        if TaskPage.isOpen() then
+            TaskPage.handleDragEnd(dx, dy)
+            if isTap then TaskPage.handleInput(dx, dy) end
             return
         end
         -- [仓库入口] 背包左栏页（与黑市/教堂同链）
@@ -1145,6 +1161,7 @@ function HandleMouseWheelHorizon(eventType, eventData)
 
     if pid == 'left' then
         if LootBoxPage.isOpen() then LootBox.handleScroll(wheel) return end
+        if TaskPage.isOpen() then TaskPage.handleScroll(wheel) return end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleScroll(wheel, msx, msy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel, msx, msy) return end
         if TalentPage.isOpen() then TalentPage.handleScroll(wheel, msx, msy) return end

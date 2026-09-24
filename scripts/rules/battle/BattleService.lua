@@ -208,6 +208,11 @@ function BattleService.NextStage(uid, clearedId, nextId)
         end
         battle.clearedStages[key] = true
         if not wasCleared then
+            local taskOk, TaskService = pcall(require, "rules.task.TaskService")
+            if taskOk and TaskService then
+                TaskService.UpdateProgress(uid, "stage_clear", 1)
+                TaskService.RefreshAchievements(uid)
+            end
         end
     end
 

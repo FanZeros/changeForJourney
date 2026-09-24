@@ -406,6 +406,9 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
         local shieldAfter = (target.attrs.energyShield or 0) + (target.attrs.tempEnergyShield or 0)
         takenForStats = actual + math.max(0, shieldBefore - shieldAfter)
         ART.checkShieldBreak(target, shieldBefore)
+        if shieldBefore > 0 and shieldAfter <= 0 then
+            TAL.onStarShieldBreak(target)
+        end
         syncUnitHp(target)
     else
         actual = math.min(target.hp, damage)
@@ -1019,6 +1022,7 @@ local function performAttack(attacker, targetList, isAlly)
                     if curTarget then
                         RCH.onDodge(curTarget)
                         ART.onDodge(curTarget)
+                        TAL.onStarDodge(curTarget)
                     end
                     -- miss 不中断，继续攻击下一个目�?
                 elseif result.category == "healing" then

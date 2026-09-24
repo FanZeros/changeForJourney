@@ -1027,6 +1027,55 @@ function M.bind(deps)
         end
     end
 
+    -- 终焉圣愈：治疗低血目标时追加本次治疗的15%
+    if hasStarNode(attacker, 202) and result and result.category == "healing" and target and target.attrs and target.hp > 0 then
+        local healAmt = result.appliedHealAmount or result.healAmount or 0
+        local maxHp = math.max(1, target.maxHp or target.attrs:get(AD.MAX_HP) or 1)
+        local hpBefore = math.max(0, (target.hp or 0) - healAmt)
+        if hpBefore / maxHp < 0.40 then
+            local extra = math.floor(healAmt * 0.15 + 0.5)
+            if extra > 0 then
+                target.attrs:heal(extra)
+                target.hp = target.attrs:get(AD.HP)
+                if target.hp > target.maxHp then target.hp = target.maxHp end
+                talentLog("[Talent] 终焉圣愈: " .. (attacker.name or "?") .. " 追加治疗" .. tostring(extra))
+            end
+        end
+    end
+
+    -- 终焉奥术 / 破击 / 狩猎
+    if result and result.category ~= "healing" and target and target.hp > 0 and dealDmgFn then
+        if hasStarNode(attacker, 204) and result.category == "magical" and result.isCrit and math.random() < 0.20 then
+            local bonus = math.floor((result.totalDamage or 0) * 0.18 + 0.5)
+            if bonus > 0 then
+                dealDmgFn(target, bonus, not isAlly, "奥术 ", { 120, 180, 255 })
+                talentLog("[Talent] 终焉奥术: " .. (attacker.name or "?") .. " 追加" .. tostring(bonus))
+            end
+        end
+        if hasStarNode(attacker, 205) and result.category == "physical" and result.isCrit and target.attrs then
+            local ts = ensureState(target)
+            if ts then
+                ts.sunderTimer = 4
+                target.attrs:removeModifier("starmap_final_sunder")
+                target.attrs:addModifier("starmap_final_sunder", {
+                    { key = AD.ARMOR, flat = -8 },
+                })
+                talentLog("[Talent] 终焉破击: " .. (target.name or "?") .. " 护甲-8")
+            end
+        end
+        if hasStarNode(attacker, 206) and target.attrs then
+            local maxHp = math.max(1, target.maxHp or target.attrs:get(AD.MAX_HP) or 1)
+            local hpBefore = (target.hp or 0) + (result.actualDamage or 0)
+            if hpBefore / maxHp < 0.35 then
+                local bonus = math.floor((result.totalDamage or 0) * 0.12 + 0.5)
+                if bonus > 0 then
+                    dealDmgFn(target, bonus, not isAlly, "狩猎 ", { 255, 80, 60 })
+                    talentLog("[Talent] 终焉狩猎: " .. (attacker.name or "?") .. " 追加" .. tostring(bonus))
+                end
+            end
+        end
+    end
+
     -- 节点124 过量治疗: 溢出的治疗量转化为目标能量护盾（转化率30%）
     if teamHasStarNode(124) and result and result.category == "healing" then
         if target and target.hp > 0 and target.attrs then

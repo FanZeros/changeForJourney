@@ -158,7 +158,7 @@ function OfflineService.CalcOnEnter(uid)
     end
 
     -- 确定计算参数（首通进行中与在线结算使用同一双锚点解析）
-    local stageConfig = StageProvider.GetForServer(PDM.GetServerId(uid))
+    local stageConfig = StageProvider.Get()
     local incomeStageId, dropStageId = OfflineCalc.resolveIdleStageAnchors(battleData, stageConfig)
     if not incomeStageId or incomeStageId <= 0 then
         print("[OfflineService] no idle income stage uid=" .. tostring(uid))
@@ -384,7 +384,7 @@ function OfflineService.OnPlayerDisconnect(uid)
         local accumSec = battleData.idleAccumSec or 0
         if accumSec > 0 then
             local heroCount = heroesData and heroesData.deployed and #heroesData.deployed or 0
-            local stageConfig = StageProvider.GetForServer(PDM.GetServerId(uid))
+            local stageConfig = StageProvider.Get()
             local incomeStageId, dropStageId = OfflineCalc.resolveIdleStageAnchors(battleData, stageConfig)
             if incomeStageId > 0 and heroCount > 0 then
                 local rewards = OfflineCalc.calcOnlineIdleRewards(accumSec, incomeStageId, heroCount, dropStageId, stageConfig)

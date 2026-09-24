@@ -35,7 +35,6 @@ local function loadHandlers()
         { "rules.equipment.EquipmentHandler", "actionHandlers" },
         { "rules.blacksmith.BlacksmithHandler", "actionHandlers" },
         { "rules.task.TaskHandler", "actionHandlers" },
-        { "rules.mail.MailHandler", "actionHandlers" },
         { "rules.redeem.RedeemHandler", nil },
         { "rules.awakening.AwakeningHandler", nil },
         { "rules.advancement.AdvancementHandler", nil },
@@ -238,10 +237,7 @@ local function attachPdm()
             end
         end
     end)
-    pcall(function()
-        require("rules.SaveManager").setServerId(LOCAL_UID, 1)
-    end)
-    PDM.AttachLocalModules(LOCAL_UID, ClientDispatcher.getAll(), 1)
+    PDM.AttachLocalModules(LOCAL_UID, ClientDispatcher.getAll())
     pdmAttached_ = true
 end
 
@@ -317,9 +313,6 @@ function M.init()
     ensureModule("task", function()
         return defaultFromSchema("task")
     end)
-    ensureModule("mail", function()
-        return defaultFromSchema("mail")
-    end)
     ensureModule("redeem", function()
         return defaultFromSchema("redeem")
     end)
@@ -334,9 +327,6 @@ function M.init()
     end)
     ensureModule("dungeon", function()
         return defaultFromSchema("dungeon")
-    end)
-    ensureModule("challenger", function()
-        return defaultFromSchema("challenger")
     end)
     ensureModule("global_profile", function()
         return defaultFromSchema("global_profile")

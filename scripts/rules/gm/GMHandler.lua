@@ -8,7 +8,6 @@ local Protocol         = require("shared.Protocol")
 local GMService        = require("rules.gm.GMService")
 local GMLogger         = require("rules.gm.GMLogger")
 local ServerDispatcher = require("runtime.LocalDispatcher")
-local MailService      = require("rules.mail.MailService")
 
 local GMHandler = {}
 
@@ -134,27 +133,7 @@ handlers[Protocol.ACTION_TYPES.GM_SEND_MAIL] = GMLogger.WrapGMAction(
         local rewards   = params and params.rewards  -- [{key, amount}, ...]
         local ok, reason, result = GMService.SendMailToPlayer(targetUid, title, body, rewards)
         if not ok then return { success = false, reason = reason } end
-
-        -- 仅当目标在本实例（local 投递）时推送邮件列表
-        -- cloud_queued 表示目标不在本实例，无法推送（下次登录时自动拉取）
-        local delivered = result and result.delivered or ""
-        if delivered == "local" then
-            local mailList = MailService.BuildMailList(targetUid)
-            if mailList then
-                ServerDispatcher.sendEvent(targetUid, Protocol.RES_ACTION_RESULT, {
-                    success  = true,
-                    mailPush = true,
-                    mails    = mailList,
-                })
-            end
-        end
-
-        return {
-            success   = true,
-            targetUid = targetUid,
-            mailId    = result and result.mailId,
-            delivered = delivered,
-        }
+        return { success = true, targetUid = targetUid, mailId = result and result.mailId }
     end
 )
 

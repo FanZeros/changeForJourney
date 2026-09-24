@@ -22,7 +22,6 @@ local MarketPage        = require("ui.MarketPage")
 local LootBox           = require("ui.LootBox")
 local LootBoxPage       = require("ui.LootBoxPage")
 local PlayerInfoPanel   = require("ui.PlayerInfoPanel")
-local MailPanel         = require("ui.MailPanel")
 local BattleTriPage     = require("ui.BattleTriPage")
 local PlayerStore       = require("core.PlayerStore")
 local IntroCutscene     = require("ui.IntroCutscene")
@@ -266,16 +265,6 @@ function M.run(rt)
     LocalActionBridge.init()
     localBridgeReady_ = true
     if rt.setLocalBridgeReady then rt.setLocalBridgeReady() end
-    do
-        local mailData = ClientDispatcher.get("mail")
-        if mailData then
-            local okMail, MailService = pcall(require, "rules.mail.MailService")
-            if okMail and MailService.BuildMailList then
-                MailPanel.setMailData(MailService.BuildMailList(1))
-            end
-        end
-    end
-
     -- 订阅 lootbox 数据变化 → 刷新 LootBox UI
     ClientDispatcher.subscribe("lootbox", function(data, moduleName)
         LootBoxSystem.consolidateSeeds(data) -- 合并旧存档中按 stageId 分开的同类种子

@@ -126,7 +126,7 @@ local function settleOnlineIdle(uid, bd)
     end
     if heroCount <= 0 then heroCount = 1 end  -- 安全下限
 
-    local stageConfig = StageProvider.GetForServer(PDM.GetServerId(uid))
+    local stageConfig = StageProvider.Get()
     local incomeStageId, dropStageId = OfflineCalc.resolveIdleStageAnchors(bd, stageConfig)
     local calcSeconds, speedCardActive = getSpeedCardEffectiveSeconds(uid, settleSeconds)
     local rewards = OfflineCalc.calcOnlineIdleRewards(calcSeconds, incomeStageId, heroCount, dropStageId, stageConfig)
@@ -205,7 +205,7 @@ function IdleSettleService.PreSettleForFirstClear(uid)
     end
     if heroCount <= 0 then heroCount = 1 end
 
-    local stageConfig = StageProvider.GetForServer(PDM.GetServerId(uid))
+    local stageConfig = StageProvider.Get()
     local incomeStageId, dropStageId = OfflineCalc.resolveIdleStageAnchors(bd, stageConfig)
     local calcSeconds, speedCardActive = getSpeedCardEffectiveSeconds(uid, accum)
     local rewards = OfflineCalc.calcOnlineIdleRewards(calcSeconds, incomeStageId, heroCount, dropStageId, stageConfig)

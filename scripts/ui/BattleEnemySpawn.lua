@@ -83,14 +83,9 @@ function M.generateEnemyList(stageEntry, isFirstClear)
     if isFirstClear then
         local bonusIds = M.getFirstClearBonusMonsterIds(stageEntry)
         if bonusIds then
-            local bonusAtStart = require("shared.ServerListConfig").isFirstClearBonusAtStart(require("ui.PlayerInfoPanel").getServerId())
-            local bonusCount = #bonusIds
-            for i, monsterId in ipairs(bonusIds) do
+            for _, monsterId in ipairs(bonusIds) do
                 local bonusUnit = MC.createMonster(monsterId, level)
                 if bonusUnit then
-                    if bonusAtStart then
-                        M.markFirstClearBonusSpawnPhase(bonusUnit, i, bonusCount)
-                    end
                     list[#list + 1] = bonusUnit
                 end
             end

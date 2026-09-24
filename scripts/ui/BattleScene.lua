@@ -172,7 +172,7 @@ end
 local currentStageId = 0101
 
 local function getStageConfig()
-    return require("shared.StageProvider").GetForServer(require("ui.PlayerInfoPanel").getServerId())
+    return require("shared.StageProvider").Get()
 end
 
 --- 获取当前关卡的敌方场地上限

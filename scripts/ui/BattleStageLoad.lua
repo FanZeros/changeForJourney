@@ -92,12 +92,7 @@ function M.load(ctx, stageId, skipBattleStart)
 
     -- ---- 地图词缀：仅首通模式生效，挂机模式不应用 ----
     if ctx.isFirstClear then
-        local affixConfig = require("shared.ChallengerServerConfig").GetByServerId(require("ui.PlayerInfoPanel").getServerId())
-        if affixConfig and affixConfig.seasonAffixMode == "difficulty_count" then
-            MAS.onStageLoad(entry.chapter, ctx.allies, "challenger_s1")
-        else
-            MAS.onStageLoad(entry.chapter, ctx.allies)
-        end
+        MAS.onStageLoad(entry.chapter, ctx.allies)
         if MAS.hasAffixes() then
             local allEnemiesToBuff = {}
             for _, u in ipairs(ctx.enemies) do allEnemiesToBuff[#allEnemiesToBuff+1] = u end

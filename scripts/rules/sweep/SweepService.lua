@@ -55,7 +55,7 @@ function SweepService.Sweep(uid)
     end
 
     -- 以玩家最高进度关卡为基准，无论挂机在哪一关
-    local stageConfig = StageProvider.GetForServer(PDM.GetServerId(uid))
+    local stageConfig = StageProvider.Get()
     local maxStageId = battleData.maxStageId or battleData.currentStageId
     if not maxStageId then
         return false, "尚未开始远征"

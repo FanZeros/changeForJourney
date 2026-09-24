@@ -15,12 +15,11 @@ local onlineAccumFrac = {}
 
 local DUNGEON_IDS = DungeonIdleConfig.DUNGEON_IDS
 
---- 会话键：同一 uid 在不同区服有独立离线同步/在线累加状态
+--- 会话键：单机按 uid
 ---@param uid number
 ---@return string
 local function getSessionKey(uid)
-    local sid = PDM.GetServerId(uid) or 0
-    return tostring(uid) .. ":" .. tostring(sid)
+    return tostring(uid)
 end
 
 -- ======================== 工具 ========================
@@ -224,14 +223,12 @@ function DungeonIdleService.Claim(uid, dungeonId)
     PDM.MarkDirty(uid, "dungeon")
     PDM.FlushImmediate(uid)
 
-    local serverId = PDM.GetServerId(uid) or 0
     print(string.format(
-        "[DungeonIdle] claim uid=%s sid=%s %s floor=%d amount=%d sec=%d remain=%d",
-        tostring(uid), tostring(serverId), dungeonId, preview.idleFloor, preview.amount, claimSec, sub.idleAccumSec))
+        "[DungeonIdle] claim uid=%s %s floor=%d amount=%d sec=%d remain=%d",
+        tostring(uid), dungeonId, preview.idleFloor, preview.amount, claimSec, sub.idleAccumSec))
 
     return true, nil, {
         dungeonId  = dungeonId,
-        serverId   = serverId,
         amount     = preview.amount,
         rewardType = preview.rewardType,
         idleFloor  = preview.idleFloor,

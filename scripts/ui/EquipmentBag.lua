@@ -11,7 +11,7 @@ local HeroConfig       = require("config.HeroConfig")
 local HeroAssetUtil    = require("config.HeroAssetUtil")
 local ClassConfig      = require("config.ClassConfig")
 local AD               = require("systems.AttributeDef")
-local PlayerStore      = require("client.data.PlayerStore")
+local PlayerStore      = require("core.PlayerStore")
 local AVC              = require("config.AdvancementConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local EquipmentDetail  = require("ui.EquipmentDetail")
@@ -642,7 +642,7 @@ local function quickEquipEntry(entry)
         BF.trigger("equip_deny")
         return true
     end
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     local Protocol = require("shared.Protocol")
     local slot = bagState.filter or bagState.slot or entry.equip.slot
     if entry.equipped then

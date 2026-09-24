@@ -1,7 +1,7 @@
 -- ============================================================================
--- ServerListConfig - 区服列表静态配置（双端共享）
--- 职责: 定义所有区服的 id、名称、开服时间
--- 运行端: shared（服务端 + 客户端都加载）
+-- ServerListConfig - 单机仍使用的区服数据
+-- 存档 key 前缀、挑战者服判断、签到开服时间、首通怪出场。
+-- 选服面板分组已删除。
 -- ============================================================================
 
 local ServerListConfig = {}
@@ -57,34 +57,6 @@ ServerListConfig.SERVERS = {
 --- 首通附加特殊怪物「开场出场」的最低区服 id（旅程19服起）
 ServerListConfig.FIRST_CLEAR_BONUS_START_SERVER_ID = 29
 
---- 区服系列（选服面板左侧标签分组）
---- voyage : 启航服，id 11-20 → 展示编号 1-10
---- journey: 旅程服，id 21-30 → 展示编号 11-20
---- destiny: 命运服，id 31-40 → 展示编号 21-30
-ServerListConfig.SERIES = {
-    voyage = {
-        label       = "启航",
-        idMin       = 11,
-        idMax       = 20,
-        displayBase = 10,   -- displayNum = id - displayBase
-    },
-    journey = {
-        label       = "旅程",
-        idMin       = 21,
-        idMax       = 30,
-        displayBase = 10,   -- displayNum = id - 10 → 旅程11服起
-    },
-    destiny = {
-        label       = "命运",
-        idMin       = 31,
-        idMax       = 40,
-        displayBase = 10,   -- displayNum = id - 10 → 命运21服起
-    },
-}
-
---- 系列在选服面板中的展示顺序（新系列靠前）
-ServerListConfig.SERIES_ORDER = { "destiny", "journey", "voyage" }
-
 --- 按 id 查找区服配置
 ---@param serverId number
 ---@return table|nil
@@ -95,21 +67,6 @@ function ServerListConfig.find(serverId)
         end
     end
     return nil
-end
-
---- 校验 serverId 是否合法（存在、已开放、未关闭）
----@param serverId number
----@return boolean
-function ServerListConfig.isValid(serverId)
-    local cfg = ServerListConfig.find(serverId)
-    if not cfg then return false end
-    if ServerListConfig.isServerClosed(serverId) then
-        return false
-    end
-    if cfg.openTime > 0 and os.time() < cfg.openTime then
-        return false
-    end
-    return true
 end
 
 --- 获取区服类型
@@ -126,21 +83,6 @@ end
 ---@return boolean
 function ServerListConfig.isChallengerServer(serverId)
     return ServerListConfig.getServerKind(serverId) == ChallengerConsts.SERVER_KIND_CHALLENGER
-end
-
---- 是否非挑战者区服
----@param serverId number|string|nil
----@return boolean
-function ServerListConfig.isNonChallengerServer(serverId)
-    local cfg = ServerListConfig.find(tonumber(serverId))
-    return cfg ~= nil and not ServerListConfig.isChallengerServer(serverId)
-end
-
---- 是否常驻正式/测试区服
----@param serverId number|string|nil
----@return boolean
-function ServerListConfig.isPermanentServer(serverId)
-    return ServerListConfig.isNonChallengerServer(serverId)
 end
 
 --- 获取区服状态
@@ -174,70 +116,11 @@ function ServerListConfig.isServerClosed(serverId, now)
     return ServerListConfig.getStatus(serverId, now) == ChallengerConsts.STATUS_CLOSED
 end
 
---- 校验 serverId 对指定玩家是否可进入
---- 规则: 区服已开放 OR 玩家已在该区服创建过角色
----@param serverId number
----@param createdServerIds table<number|string, any>|nil  玩家已创建角色的区服集合 (gp.servers)
----@return boolean
-function ServerListConfig.isAccessible(serverId, createdServerIds)
-    local cfg = ServerListConfig.find(serverId)
-    if not cfg then return false end
-    if ServerListConfig.isServerClosed(serverId) then
-        return false
-    end
-    -- 已开放的区服，任何人都可进入
-    if cfg.openTime <= 0 or os.time() >= cfg.openTime then
-        return true
-    end
-    -- 未开放的区服，只有已创建过角色的非挑战者服玩家可进入
-    if createdServerIds and not ServerListConfig.isChallengerServer(serverId) then
-        if createdServerIds[serverId] or createdServerIds[tostring(serverId)] then
-            return true
-        end
-    end
-    return false
-end
-
---- 获取全部已开放的区服列表
----@return table[]
-function ServerListConfig.getOpenServers()
-    local now = os.time()
-    local result = {}
-    for _, s in ipairs(ServerListConfig.SERVERS) do
-        if ServerListConfig.getStatus(s.id, now) == ChallengerConsts.STATUS_OPEN then
-            result[#result + 1] = s
-        end
-    end
-    return result
-end
-
 --- 获取 key 前缀
 ---@param serverId number
 ---@return string  例如 "s1_"
 function ServerListConfig.getKeyPrefix(serverId)
     return "s" .. tostring(serverId) .. "_"
-end
-
---- 获取区服所属系列（正式服）；测试服 1-10 返回 nil
----@param serverId number
----@return string|nil  "voyage" | "journey"
-function ServerListConfig.getSeries(serverId)
-    for key, cfg in pairs(ServerListConfig.SERIES) do
-        if serverId >= cfg.idMin and serverId <= cfg.idMax then
-            return key
-        end
-    end
-    return nil
-end
-
---- 获取区服在系列内的展示编号（启航1服→1，旅程1服→1）
----@param serverId number
----@return number|nil
-function ServerListConfig.getDisplayNum(serverId)
-    local seriesKey = ServerListConfig.getSeries(serverId)
-    if not seriesKey then return nil end
-    local cfg = ServerListConfig.SERIES[seriesKey]
-    return serverId - cfg.displayBase
 end
 
 --- 首通附加特殊怪物是否开场出场（旅程19服及以上为 true，旧服为 false 即最后出场）
@@ -247,18 +130,6 @@ function ServerListConfig.isFirstClearBonusAtStart(serverId)
     local sid = tonumber(serverId)
     if not sid then return false end
     return sid >= ServerListConfig.FIRST_CLEAR_BONUS_START_SERVER_ID
-end
-
---- 获取全部已开放的正式区服（排除测试服 1-10）
----@return table[]
-function ServerListConfig.getOpenFormalServers()
-    local result = {}
-    for _, s in ipairs(ServerListConfig.getOpenServers()) do
-        if ServerListConfig.getSeries(s.id) then
-            result[#result + 1] = s
-        end
-    end
-    return result
 end
 
 return ServerListConfig

@@ -3,7 +3,7 @@
 -- 负责：候选池筛选、加权随机、文本解析、数值提取
 -- ============================================================================
 
-local RelicDefs = require("data.RelicDefs")
+local RelicDefs = require("shared.relic.RelicDefs")
 
 ---@class RelicAffix
 local RelicAffix = {}

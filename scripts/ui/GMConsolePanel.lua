@@ -17,7 +17,7 @@ local Protocol = require("shared.Protocol")
 -- 延迟获取 Client（避免循环依赖: Client→PlayerInfoPanel→GMConsolePanel→Client）
 local Client_
 local function getClient()
-    if not Client_ then Client_ = require("network.GameAction") end
+    if not Client_ then Client_ = require("runtime.GameAction") end
     return Client_
 end
 
@@ -615,12 +615,7 @@ function handleServerTabInput(dx, dy)
     local btnX = 540
     if hitTest(dx, dy, btnX, btnY, BTN.W, BTN.H) then
         BF.trigger("gm_maintenance_toggle")
-        local currentMode = state.serverInfo and state.serverInfo.maintenanceMode or false
-        getClient().sendAction(Protocol.ACTION_TYPES.GM_MAINTENANCE, {
-            enabled = not currentMode,
-            reason = "GM 手动切换",
-        })
-        showResult("正在切换维护模式...")
+        showResult("单机不支持维护模式")
         return true
     end
 
@@ -676,21 +671,8 @@ function handlePlayerTabInput(dx, dy)
                 showResult("请先输入目标 UID")
             else
                 local targetUid = tonumber(state.inputUID) or 0
-                if btn.action == "kick" then
-                    getClient().sendAction(Protocol.ACTION_TYPES.GM_KICK_PLAYER, {
-                        targetUid = targetUid,
-                        reason = "GM 踢出",
-                    })
-                elseif btn.action == "ban" then
-                    getClient().sendAction(Protocol.ACTION_TYPES.GM_BAN_PLAYER, {
-                        targetUid = targetUid,
-                        duration = 3600,  -- 默认1小时
-                        reason = "GM 封禁",
-                    })
-                elseif btn.action == "unban" then
-                    getClient().sendAction(Protocol.ACTION_TYPES.GM_UNBAN_PLAYER, {
-                        targetUid = targetUid,
-                    })
+                if btn.action == "kick" or btn.action == "ban" or btn.action == "unban" then
+                    showResult("单机不支持踢人/封禁")
                 elseif btn.action == "reset" then
                     if state.inputParam == "" then
                         setFocus("param")

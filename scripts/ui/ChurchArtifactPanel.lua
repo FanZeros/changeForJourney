@@ -6,7 +6,7 @@
 
 local GameConfig          = require("config.GameConfig")
 local DrawUtil            = require("core.DrawUtil")
-local PlayerStore         = require("client.data.PlayerStore")
+local PlayerStore         = require("core.PlayerStore")
 local ArtifactDefs        = require("shared.artifact.ArtifactDefs")
 local ArtifactSchema      = require("shared.artifact.ArtifactSchema")
 local ArtifactDetailPanel = require("ui.ArtifactDetailPanel")

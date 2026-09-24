@@ -10,8 +10,8 @@ local HeroConfig      = require("config.HeroConfig")
 local HeroAssetUtil   = require("config.HeroAssetUtil")
 local ClassConfig     = require("config.ClassConfig")
 local AD              = require("systems.AttributeDef")
-local PlayerStore     = require("client.data.PlayerStore")
-local ClientDispatcher = require("network.ClientDispatcher")
+local PlayerStore     = require("core.PlayerStore")
+local ClientDispatcher = require("runtime.ClientDispatcher")
 local EquipmentConfig = require("config.EquipmentConfig")
 local EquipmentSystem = require("systems.EquipmentSystem")
 local EquipmentSetSystem = require("systems.EquipmentSetSystem")
@@ -145,7 +145,7 @@ local function equipItemNow(item, heroId, slot)
         print("[EquipPanel] 不可穿戴 seq=" .. tostring(item.seq))
         return true
     end
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     local Protocol = require("shared.Protocol")
     if item.equipped then
         Client.sendAction(Protocol.ACTION_TYPES.UNEQUIP_ITEM, {

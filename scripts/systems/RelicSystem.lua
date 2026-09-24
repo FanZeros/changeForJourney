@@ -14,7 +14,7 @@
 --   Client.sendAction(ACTION_TYPE, params) → 服务端处理 → pushModule → PlayerStore 更新
 -- ============================================================================
 
-local RelicDefs  = require("data.RelicDefs")
+local RelicDefs  = require("shared.relic.RelicDefs")
 local RelicAffix = require("systems.RelicAffix")
 
 ---@class RelicSystem
@@ -40,7 +40,7 @@ RelicSystem.ACTIONS = {
 --- 获取遗物模块完整数据
 ---@return table|nil { bag={...}, grid={...}, mergeCount, reforgeCount }
 function RelicSystem.getData()
-    local PlayerStore = require("client.data.PlayerStore")
+    local PlayerStore = require("core.PlayerStore")
     return PlayerStore.Get("mod_relics")
 end
 
@@ -344,7 +344,7 @@ function RelicSystem.requestReforge(relicId, onResult)
     end
 
     -- 发送服务端请求
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_REFORGE, {
         relicId = relicId,
     })
@@ -369,7 +369,7 @@ function RelicSystem.requestReforgeConfirm(relicId, newAffixId, onResult)
         return
     end
 
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_REFORGE_CONFIRM, {
         relicId = relicId,
         newAffixId = newAffixId,
@@ -388,7 +388,7 @@ function RelicSystem.requestMerge(relicIds, onResult, keepAffixId)
         return
     end
 
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_MERGE, {
         relicIds = relicIds,
         keepAffixId = keepAffixId,
@@ -416,7 +416,7 @@ function RelicSystem.requestPlace(relicId, slotId, onResult)
         return
     end
 
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_PLACE, {
         relicId = relicId,
         slot = slotId,
@@ -439,7 +439,7 @@ function RelicSystem.requestRemoveFromGrid(relicId, onResult)
         return
     end
 
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_REMOVE, {
         relicId = relicId,
     })
@@ -462,7 +462,7 @@ function RelicSystem.requestMoveOnGrid(relicId, slotId, onResult)
         return
     end
 
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_BATCH_ADJUST, {
         moves = { { relicId = relicId, slot = slotId } },
     })
@@ -479,7 +479,7 @@ function RelicSystem.requestUpgrade(relicId, onResult)
         if onResult then onResult(false, "遗物不存在") end
         return
     end
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_UPGRADE, {
         relicId = relicId,
     })
@@ -489,7 +489,7 @@ end
 --- 请求切换遗物锁定状态（与装备锁定一致：服务端 toggle）
 ---@param relicId string
 function RelicSystem.requestToggleLock(relicId)
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_LOCK, {
         relicId = relicId,
     })
@@ -619,7 +619,7 @@ function RelicSystem.requestReplace(newRelicId, oldRelicId, onResult)
         return
     end
 
-    local Client = require("network.GameAction")
+    local Client = require("runtime.GameAction")
     Client.sendAction(RelicSystem.ACTIONS.RELIC_REPLACE, {
         oldRelicId = oldRelicId,
         newRelicId = newRelicId,

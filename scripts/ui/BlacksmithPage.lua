@@ -13,8 +13,8 @@ local EquipmentDetail  = require("ui.EquipmentDetail")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local AffixConfig      = require("config.AffixConfig")
 local AD               = require("systems.AttributeDef")
-local ClientDispatcher = require("network.ClientDispatcher")
-local PlayerStore      = require("client.data.PlayerStore")
+local ClientDispatcher = require("runtime.ClientDispatcher")
+local PlayerStore      = require("core.PlayerStore")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local RewardPopup      = require("ui.RewardPopup")
 local SpineResultEffect = require("ui.SpineResultEffect")
@@ -36,7 +36,7 @@ local BlacksmithEnhanceCache = require("ui.BlacksmithEnhanceCache")
 local Client_
 local Protocol_
 local function getClient()
-    if not Client_ then Client_ = require("network.GameAction") end
+    if not Client_ then Client_ = require("runtime.GameAction") end
     return Client_
 end
 local function getProtocol()

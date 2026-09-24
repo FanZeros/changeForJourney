@@ -11,7 +11,7 @@
 --   C类: 特殊机制（概率终结、免疫次数等 → 由 BattleScene 特殊逻辑处理）
 -- ============================================================================
 
-local RelicDefs  = require("data.RelicDefs")
+local RelicDefs  = require("shared.relic.RelicDefs")
 local RelicAffix = require("systems.RelicAffix")
 local RelicAltar = require("systems.RelicAltar")
 local AD         = require("systems.AttributeDef")

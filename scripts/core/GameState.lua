@@ -57,7 +57,7 @@ local bound_ = false
 --- 获取 PlayerStore（延迟 require）
 local function getPS()
     if not playerStore_ then
-        local ok, ps = pcall(require, "client.data.PlayerStore")
+        local ok, ps = pcall(require, "core.PlayerStore")
         ---@diagnostic disable-next-line: assign-type-mismatch
         if ok then playerStore_ = ps end
     end

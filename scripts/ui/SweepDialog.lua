@@ -6,7 +6,7 @@
 
 local GameConfig        = require("config.GameConfig")
 local GameState         = require("core.GameState")
-local PlayerStore       = require("client.data.PlayerStore")
+local PlayerStore       = require("core.PlayerStore")
 local SC                = require("config.StageConfig")
 local ImageCache        = require("ui.ImageCache")
 local DrawUtil          = require("core.DrawUtil")

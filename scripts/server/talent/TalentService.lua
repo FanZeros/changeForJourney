@@ -79,7 +79,7 @@ function TalentService.Activate(uid, nodeId)
     local maxPoints  = player.level or 1
     local remaining  = maxPoints - usedPoints
     if remaining <= 0 then
-        return false, "天赋点不足"
+        return false, "远征点不足"
     end
 
     -- === 原子修改 ===

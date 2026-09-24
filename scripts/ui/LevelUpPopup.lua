@@ -433,7 +433,7 @@ function LevelUpPopup.draw(vg)
     nvgFontSize(vg, TALENT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(COLOR_YELLOW[1], COLOR_YELLOW[2], COLOR_YELLOW[3], COLOR_YELLOW[4]))
-    nvgText(vg, TALENT_X, TALENT_Y, "天赋点", nil)
+    nvgText(vg, TALENT_X, TALENT_Y, "远征点", nil)
 
     -- 6) "+1" 文本（绿色）
     nvgFontSize(vg, PLUS_SIZE)

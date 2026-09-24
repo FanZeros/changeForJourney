@@ -198,6 +198,12 @@ local function ensureState(unit)
             -- Node120 趁胜追击: 连续攻击同一目标的层数
             pursuitTarget = nil,
             pursuitStacks = 0,
+            -- 终焉环触发状态
+            emberMendUsed = false,
+            wardBreakCd = 0,
+            shadowstepCd = 0,
+            shadowstepTimer = 0,
+            sunderTimer = 0,
             -- Node125 不死鸟之翼 每场每人1次
             phoenixUsed = false,
             -- Node126 杀戮盛宴 攻速buff剩余时间
@@ -666,6 +672,7 @@ local _modDmg
 local function bindTalentModifyDamage()
     _modDmg = TalentModifyDamage.bind({
         getState = getState,
+        ensureState = ensureState,
         hasAdv = hasAdv,
         hasAwaken = hasAwaken,
         hasStarNode = hasStarNode,
@@ -711,6 +718,9 @@ local _combo
 local function bindTalentComboAttack()
     _combo = TalentComboAttack.bind({
         getState = getState,
+        ensureState = ensureState,
+        hasStarNode = hasStarNode,
+        talentLog = talentLog,
         wrapDealDmgForLuoxing = wrapDealDmgForLuoxing,
         getLuoxingAccumAmount = getLuoxingAccumAmount,
         addLuoxingWindowDamage = addLuoxingWindowDamage,
@@ -725,6 +735,7 @@ local _talentUpdate
 local function bindTalentUpdate()
     _talentUpdate = TalentUpdate.bind({
         getState = getState,
+        ensureState = ensureState,
         hasAdv = hasAdv,
         hasAwaken = hasAwaken,
         hasStarNode = hasStarNode,
@@ -1060,6 +1071,20 @@ function TAL.update(dt, allies, enemies, ctx)
     ClassGateRuntime.update(dt, allies, enemies, ctx)
     EquipmentSetRuntime.update(dt, allies, enemies, ctx)
     return r
+end
+
+--- 终焉法盾：护盾从有到无时由 BattleCombat 调用
+function TAL.onStarShieldBreak(unit)
+    if _talentUpdate and _talentUpdate.onShieldBreak then
+        _talentUpdate.onShieldBreak(unit)
+    end
+end
+
+--- 终焉影步：闪避成功时由 BattleCombat 调用
+function TAL.onStarDodge(unit)
+    if _talentUpdate and _talentUpdate.onDodge then
+        _talentUpdate.onDodge(unit)
+    end
 end
 
 function TAL.getConquerStacks(unit)

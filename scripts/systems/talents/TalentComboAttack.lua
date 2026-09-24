@@ -6,6 +6,8 @@ local M = {}
 
 function M.bind(deps)
     local getState = deps.getState
+    local hasStarNode = deps.hasStarNode
+    local talentLog = deps.talentLog or function() end
     local wrapDealDmgForLuoxing = deps.wrapDealDmgForLuoxing
     local getLuoxingAccumAmount = deps.getLuoxingAccumAmount
     local addLuoxingWindowDamage = deps.addLuoxingWindowDamage
@@ -31,6 +33,13 @@ function M.bind(deps)
             runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealDmgFn)
         elseif s.heroId == 22 and attacker.attrs then
             tickSeraMachineGunCount(attacker, s)
+        end
+        if hasStarNode and hasStarNode(attacker, 208) and comboMeta and comboMeta.category ~= "healing" and target and target.hp > 0 then
+            local extra = math.floor((comboMeta.totalDamage or 0) * 0.12 + 0.5)
+            if extra > 0 then
+                dealDmgFn(target, extra, not isAlly, "连斩 ", { 180, 255, 140 })
+                talentLog("[Talent] 终焉连斩: " .. (attacker.name or "?") .. " 追加" .. tostring(extra))
+            end
         end
     end
 

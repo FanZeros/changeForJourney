@@ -11,6 +11,7 @@ local M = {}
 
 function M.bind(deps)
     local getState = deps.getState
+    local ensureState = deps.ensureState or getState
     local hasAdv = deps.hasAdv
     local hasAwaken = deps.hasAwaken
     local hasStarNode = deps.hasStarNode or function() return false end
@@ -47,6 +48,32 @@ function M.bind(deps)
 
             local s = getState(ally)
             if not s then goto continue_ally end
+
+            if (s.sunderTimer or 0) > 0 then
+                s.sunderTimer = s.sunderTimer - dt
+                if s.sunderTimer <= 0 and ally.attrs then
+                    s.sunderTimer = 0
+                    ally.attrs:removeModifier("starmap_final_sunder")
+                end
+            end
+            if (s.shadowstepTimer or 0) > 0 then
+                s.shadowstepTimer = s.shadowstepTimer - dt
+                if s.shadowstepTimer <= 0 then
+                    s.shadowstepTimer = 0
+                    if ally.attrs then ally.attrs:removeModifier("starmap_shadowstep") end
+                end
+            end
+            if (s.shadowstepCd or 0) > 0 then s.shadowstepCd = math.max(0, s.shadowstepCd - dt) end
+            if (s.wardBreakCd or 0) > 0 then s.wardBreakCd = math.max(0, s.wardBreakCd - dt) end
+            if hasStarNode(ally, 201) and not s.emberMendUsed and ally.attrs and (ally.hp or 0) > 0 then
+                local maxHp = math.max(1, ally.maxHp or ally.attrs:get(AD.MAX_HP) or 1)
+                if (ally.hp or 0) / maxHp < 0.30 then
+                    s.emberMendUsed = true
+                    local hotDps = math.max(1, math.floor(maxHp * 0.12 / 3.0 + 0.5))
+                    SEM.apply(ally, SEM.HOT, 3.0, ally, { hps = hotDps })
+                    talentLog("[Talent] 余烬回春: " .. (ally.name or "?") .. " 低血回复12%最大生命")
+                end
+            end
 
             -- ======== 10秒周期计时器 (101/102/105/109) ========
             local needsTimer = hasAdv(ally, "adv_101_holy_light")
@@ -511,9 +538,57 @@ function M.bind(deps)
             enemy.attrs:removeModifier("awaken_shock_debuff_" .. tostring(enemy))
         end
     end
+    for _, enemy in ipairs(enemies) do
+        local es = getState(enemy)
+        if es then
+            if (es.sunderTimer or 0) > 0 then
+                es.sunderTimer = es.sunderTimer - dt
+                if es.sunderTimer <= 0 or (enemy.hp or 0) <= 0 then
+                    es.sunderTimer = 0
+                    if enemy.attrs then enemy.attrs:removeModifier("starmap_final_sunder") end
+                end
+            end
+            if (es.shadowstepTimer or 0) > 0 then
+                es.shadowstepTimer = es.shadowstepTimer - dt
+                if es.shadowstepTimer <= 0 then
+                    es.shadowstepTimer = 0
+                    if enemy.attrs then enemy.attrs:removeModifier("starmap_shadowstep") end
+                end
+            end
+            if (es.shadowstepCd or 0) > 0 then es.shadowstepCd = math.max(0, es.shadowstepCd - dt) end
+            if (es.wardBreakCd or 0) > 0 then es.wardBreakCd = math.max(0, es.wardBreakCd - dt) end
+        end
     end
 
-    return { update = update }
+    end
+
+    local function onShieldBreak(unit)
+        if not unit or not hasStarNode(unit, 203) or not unit.attrs then return end
+        local s = ensureState(unit)
+        if not s or (s.wardBreakCd or 0) > 0 then return end
+        local maxES = math.floor((unit.attrs.final[AD.ENERGY_SHIELD] or 0) + 0.5)
+        if maxES <= 0 then return end
+        local gain = math.max(1, math.floor(maxES * 0.15 + 0.5))
+        local cur = math.floor(unit.attrs.energyShield or 0)
+        unit.attrs.energyShield = math.min(maxES, cur + gain)
+        s.wardBreakCd = 8
+        talentLog("[Talent] 终焉法盾: " .. (unit.name or "?") .. " 护盾击破回复" .. tostring(gain))
+    end
+
+    local function onDodge(unit)
+        if not unit or not hasStarNode(unit, 207) or not unit.attrs then return end
+        local s = ensureState(unit)
+        if not s or (s.shadowstepCd or 0) > 0 then return end
+        s.shadowstepCd = 6
+        s.shadowstepTimer = 3
+        unit.attrs:removeModifier("starmap_shadowstep")
+        unit.attrs:addModifier("starmap_shadowstep", {
+            { key = AD.ATK_SPEED, flat = 12 },
+        })
+        talentLog("[Talent] 终焉影步: " .. (unit.name or "?") .. " 闪避后攻速+12%")
+    end
+
+    return { update = update, onShieldBreak = onShieldBreak, onDodge = onDodge }
 end
 
 return M

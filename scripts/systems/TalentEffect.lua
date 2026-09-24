@@ -198,8 +198,8 @@ function TE.parseEffect(effectStr, classId)
     for _, seg in ipairs(segments) do
         local trimmed = seg:match("^%s*(.-)%s*$") or seg
 
-        -- 跳过运行时描述
-        if isNarrativeText(trimmed) then
+        -- 跳过运行时描述。终焉触发段以「触发：」开头，不能当成常驻属性解析
+        if isNarrativeText(trimmed) or trimmed:find("触发：", 1, true) then
             goto continue_seg
         end
 

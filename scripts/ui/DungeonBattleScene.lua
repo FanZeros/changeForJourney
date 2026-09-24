@@ -619,7 +619,7 @@ function DungeonScene.open(opts)
                 end
             end
 
-            local projOpts = result.category == "healing" and { target = target } or nil
+            local projOpts = result.category == "healing" and { target = target, forceBezier = true } or nil
 
             if hasHeroEffect then
                 ProjectileSystem.spawn(attacker.heroId, atkCX, atkCY, tgtCX, tgtCY, hitCallback, projOpts)

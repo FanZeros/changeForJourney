@@ -36,10 +36,12 @@ function LootboxPreviewUpdate()
         { quality = 6, level = 40, count = 1, equip = EquipmentSystem.generateRandom(40, 6) },
         { quality = 5, level = 35, count = 1, equip = EquipmentSystem.generateRandom(35, 5) },
     }
+    local LootBoxSystem = require("systems.LootBoxSystem")
+    local data = { seeds = seeds }
     for quality = 1, 6 do
-        seeds[#seeds + 1] = { quality = quality, level = 20, count = quality * 3 }
+        for _ = 1, quality * 3 do LootBoxSystem.addSeed(data, 101, quality, 20) end
     end
-    Dispatcher.set("lootbox", { seeds = seeds })
+    Dispatcher.set("lootbox", data)
     LootBox.openPage()
     assert(Page.isOpen(), "遗匣地点页面未打开")
     print("[lootbox_preview] 左栏已打开，不覆盖中间战斗和右栏")

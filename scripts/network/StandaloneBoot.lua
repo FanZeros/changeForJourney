@@ -361,7 +361,7 @@ function M.run(rt)
     end)
 
     -- 遗匣领取统一刷新：装备先入包，再显示实际到账的内容。
-    local function claimLoot(seedIndex)
+    local function claimLoot(seedIndex, quality)
         local lootboxData = ClientDispatcher.get("lootbox")
         local equipData = ClientDispatcher.get("equipment")
         if not lootboxData or not equipData then return end
@@ -371,7 +371,7 @@ function M.run(rt)
         if seedIndex then
             claimed, bagFull = LootBoxSystem.claimGroup(lootboxData, seedIndex, equipData)
         else
-            claimed, bagFull = LootBoxSystem.claimAll(lootboxData, equipData)
+            claimed, bagFull = LootBoxSystem.claimAll(lootboxData, equipData, quality)
         end
         ClientDispatcher.notifySubscribers("lootbox")
         if #claimed > 0 then
@@ -396,26 +396,26 @@ function M.run(rt)
         print("[Standalone] 遗匣领取: claimed=" .. #claimed
             .. " remaining=" .. LootBoxSystem.getTotalCount(lootboxData))
     end
-    LootBox.setOnClaimAll(function() claimLoot() end)
+    LootBox.setOnClaimAll(function(quality) claimLoot(nil, quality) end)
     LootBox.setOnClaimOne(claimLoot)
 
-    local function decomposeLoot(seedIndex)
+    local function decomposeLoot(seedIndex, quality)
         local lootboxData = ClientDispatcher.get("lootbox")
         if not lootboxData then return end
         local essence, pieces
         if seedIndex then
             essence, pieces = LootBoxSystem.decomposeOne(lootboxData, seedIndex)
         else
-            essence, pieces = LootBoxSystem.decomposeAll(lootboxData)
+            essence, pieces = LootBoxSystem.decomposeAll(lootboxData, quality)
         end
         if pieces <= 0 then return end
         GameState.setEssence(GameState.getEssence() + essence)
         ClientDispatcher.notifySubscribers("lootbox")
         if essence > 0 then
-            RewardPopup.show("分解奖励", { { type = "essence", amount = essence } })
+            RewardPopup.show("回收奖励", { { type = "essence", amount = essence } })
         end
     end
-    LootBox.setOnDecomposeAll(function() decomposeLoot() end)
+    LootBox.setOnDecomposeAll(function(quality) decomposeLoot(nil, quality) end)
     LootBox.setOnDecomposeOne(decomposeLoot)
 
     -- 5.249 自动分解设置回调：打开铁匠铺分解弹窗

@@ -222,29 +222,52 @@ def find_windows_runtime() -> Path:
     return candidates[0]
 
 
+def preview_entry(project: Path) -> str:
+    entry = "main.lua"
+    cfg = project / ".project" / "project.json"
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+        raw = data.get("entry")
+        if isinstance(raw, str) and raw.endswith(".lua") and not Path(raw).is_absolute():
+            entry = raw
+    except (OSError, json.JSONDecodeError):
+        pass
+    if not (project / "scripts" / entry).is_file():
+        die("找不到入口 scripts/%s，Runtime 会报找不到 Start。" % entry)
+    return entry
+
+
 def launch_windows_runtime(project: Path) -> None:
-    """Foreground-launch Runtime from the project directory.
+    """Foreground-launch Runtime with the same args as official preview.
 
     Official preview start on Windows uses a hidden PowerShell process created
-    via Win32_Process.Create. That child often never runs, leaving a 0-byte
-    supervisor.log and supervisor_pid=0. The Runtime itself is fine when
-    started directly with cwd=project. Skip that background chain.
+    via Win32_Process.Create. That child often never runs. Launch the exe
+    directly, but keep the official argument list: entry, tapcode_dir, and
+    -skip_login. Entry is required so the Runtime loads scripts/main.lua and
+    finds Start(). -skip_login skips the Tap QR screen.
     """
     exe = find_windows_runtime()
+    entry = preview_entry(project)
+    cmd = [
+        str(exe),
+        entry,
+        "-tapcode_dir=" + str(project),
+        "-skip_login",
+        "-p=Res",
+        "-w",
+        "-width=1920",
+        "-height=1080",
+    ]
+    shown = subprocess.list2cmdline(cmd)
     log("")
-    log("==> 前台启动 Runtime（跳过隐藏 PowerShell 后台链）")
-    log("官方 Windows preview start 用隐藏 powershell.exe + Win32_Process.Create。")
-    log("失败时 supervisor.log 是 0 字节，supervisor_pid 也是 0，窗口出不来。")
-    log("这不是游戏代码，也不是 Node。改为与手工验证相同的前台启动。")
+    log("==> 前台启动 Runtime（不跑 preview start，也不走隐藏 PowerShell）")
+    log("只传 -skip_login 时 Runtime 可能找不到入口，从而提示 Start。")
+    log("现在带上入口 %s 和 -tapcode_dir，并跳过 Tap 扫码。" % entry)
     log("Runtime: %s" % exe)
     log("工作目录: %s" % project)
-    # Official preview always passes this. Without it the Runtime shows the Tap QR login.
-    cmd = [str(exe), "-skip_login"]
-    log("已加 -skip_login。这是官方本地预览用来跳过 Tap 扫码登录的参数。")
-    log("不加它就会弹出扫码，不是游戏自己的登录，也不正常。")
     log("等价命令:")
     log('  cd /d "%s"' % project)
-    log('  "%s" -skip_login' % exe)
+    log("  " + shown)
     log("游戏窗口关掉之前，这个黑窗会停在这里。不要关黑窗。")
     code = subprocess.call(cmd, cwd=str(project))
     log("Runtime 已退出，exit=%s" % code)

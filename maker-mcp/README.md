@@ -71,5 +71,5 @@ npx -y --package @taptap/maker@0.0.34 taptap-maker init
 本脚本的 `--start` 在 Windows 上改为与手工验证相同的前台启动：工作目录是项目根，直接运行已安装的 `UrhoXRuntime.exe`。
 优先读 `%USERPROFILE%\.taptap-maker\runtime\installation.json` 的 `executable`，否则用最新的 `runtime-*\UrhoXRuntime.exe`。
 
-启动参数带 `-skip_login`，和官方本地预览一样跳过 Tap 扫码登录。漏掉这个参数时，Runtime 会自己弹出扫码，不是游戏逻辑。
+启动参数与官方本地预览一致：`main.lua -tapcode_dir=<项目根> -skip_login -p=Res -w -width=1920 -height=1080`。只传 `-skip_login` 时 Runtime 可能提示找不到 Start。
 黑窗会停到游戏窗口关闭。改完 `scripts/` 后重新双击 `--start`。不要用官方 `preview refresh`，那条仍走没起来的隐藏 supervisor。

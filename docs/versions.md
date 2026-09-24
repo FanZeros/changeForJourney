@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.39-preview-args | 2026-09-24 | Windows 前台启动补上入口和 tapcode_dir，避免只传 -skip_login 时提示 Start。 |
 | v2.38-default-start | 2026-09-24 | 不带参数默认等于 --start，Windows 前台开窗口并跳过扫码。 |
 | v2.37-skip-login | 2026-09-24 | Windows 前台启动补上 -skip_login，不再弹出 Tap 扫码登录。 |
 | v2.36-win-foreground-runtime | 2026-09-24 | Windows --start 跳过隐藏 PowerShell supervisor，项目目录前台启动 UrhoXRuntime.exe。 |

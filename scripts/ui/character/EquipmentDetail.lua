@@ -43,7 +43,7 @@ local detState = {
     heroId    = nil,    -- 当前角色 ID
     openTime  = 0,
     closeTime = 0,
-    compactCorner = false, -- 配装页单击：右栏左上角小窗，无阴影
+    compactCorner = false, -- 配装页单击：贴右栏内侧、朝中栏战斗区，无阴影
     owner = nil,           -- backpack | character | bag | smith，只在打开它的那一侧画
     descScrollY = 0,
     descScrollMax = 0,
@@ -471,10 +471,11 @@ local CUR_BG_CY = math.floor(REF_BG_CY - REF_BG_H * 0.5 + CUR_BG_H * 0.5)
 -- 单面板居中
 local SINGLE_BG_CX = 540
 
--- 配装页小窗：贴在当前面板左上角，无遮罩；缩小避免盖住名字/底板
-local COMPACT_LEFT = 16
-local COMPACT_TOP  = 16
-local COMPACT_SCALE = 0.38
+-- 配装页小窗：贴右栏内侧（靠中栏战斗区），垂直居中，无遮罩
+-- 右栏 1080 设计宽，内侧边是 x=0；小窗右缘留 28，避免贴边裁切
+local COMPACT_SCALE = 0.46
+local COMPACT_LEFT = 28
+local COMPACT_TOP  = math.floor((2400 - 1380 * COMPACT_SCALE) * 0.5)
 
 local function compactOffset()
     local refLeft = REF_BG_CX - REF_BG_W * 0.5
@@ -1281,7 +1282,7 @@ function EquipmentDetail.draw(vg)
     local compact = detState.compactCorner == true
     -- 说明栏不铺全屏黑影
 
-    -- 应用滑入偏移（小窗不滑入，贴右栏左上角并缩小）
+    -- 应用滑入偏移（小窗不滑入，贴右栏内侧并缩小）
     nvgSave(vg)
     if compact then
         local ox, oy = compactOffset()
@@ -1294,7 +1295,7 @@ function EquipmentDetail.draw(vg)
     local enhOnly = (detState.slot == nil)  -- 背包模式：无穿戴按钮，仅前往洗练
 
     if compact then
-        -- 配装页单击：单面板贴左上角，无对比、无阴影
+        -- 配装页单击：单面板贴右栏内侧，无对比、无阴影
         local compactBtn = not enhOnly
         drawEquipPanel(vg, newEquip, 0,
             REF_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,

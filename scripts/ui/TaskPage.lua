@@ -76,17 +76,22 @@ local function statusOf(task)
 end
 
 local function sortRows(rows)
-    table.sort(rows, function(a, b)
-        local function rank(task)
-            local status = statusOf(task)
-            if status == TaskConfig.STATUS.CLAIMABLE then return 1 end
-            if status == TaskConfig.STATUS.CLAIMED then return 3 end
-            return 2
+    local claimable, active, claimed = {}, {}, {}
+    for _, task in ipairs(rows) do
+        local status = statusOf(task)
+        if status == TaskConfig.STATUS.CLAIMABLE then
+            claimable[#claimable + 1] = task
+        elseif status == TaskConfig.STATUS.CLAIMED then
+            claimed[#claimed + 1] = task
+        else
+            active[#active + 1] = task
         end
-        local ra, rb = rank(a), rank(b)
-        if ra ~= rb then return ra < rb end
-        return (a.target or 0) < (b.target or 0)
-    end)
+    end
+    local out = {}
+    for _, task in ipairs(claimable) do out[#out + 1] = task end
+    for _, task in ipairs(active) do out[#out + 1] = task end
+    for _, task in ipairs(claimed) do out[#out + 1] = task end
+    return out
 end
 
 local function listForTab()
@@ -100,8 +105,7 @@ local function listForTab()
             out[#out + 1] = task
         end
     end
-    sortRows(out)
-    return out
+    return sortRows(out)
 end
 
 local function refreshScroll(count)
@@ -177,7 +181,11 @@ local function drawRow(vg, task, y)
     local claimed = status == TaskConfig.STATUS.CLAIMED
     local nameR, nameG, nameB = 244, 232, 204
     local descR, descG, descB = 196, 176, 138
-    if claimed then
+    if status == TaskConfig.STATUS.CLAIMABLE then
+        nvgFillColor(vg, nvgRGBA(72, 52, 18, 235))
+        nameR, nameG, nameB = 255, 226, 150
+        descR, descG, descB = 226, 196, 120
+    elseif claimed then
         nvgFillColor(vg, nvgRGBA(36, 48, 42, 210))
         nameR, nameG, nameB = 138, 156, 142
         descR, descG, descB = 112, 128, 116

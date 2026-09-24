@@ -800,6 +800,7 @@ function HandleUpdate(eventType, eventData)
     TownScene.setSmithRedDot(bagFull_)
     BlacksmithPage.setDecomposeRedDot(bagFull_)
 
+    LootBox.update(dt)
     RewardPopup.update(dt)
     OfflineRewardPanel.update(dt)
     LevelUpPopup.update(dt)

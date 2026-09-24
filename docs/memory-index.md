@@ -1,7 +1,22 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-23 | 版本:v2.33-integrate-20260923
+> 更新时间:2026-09-24 | 版本:v2.36-lootbox-location
+>
+> **当前分支**：`feat/first-clear-reward-cascade`，只推本分支。遗匣已改城镇左栏地点，背包溢出奖励完整保存；见下方最新交接。
+
+## 最新交接：遗匣地点与溢出保管
+
+- `systems/LootBoxSystem.lua`：统一 `deliverEquipment`，200件背包满则 `addEquipment` 保留原实例至 `seeds[].equip`。种子按品质/等级合并，完整装备独立保存；领取不重骰、不降级，满包保留余项。删除旧9999件截断。
+- `network/StandaloneBoot.lua`：首通固定奖励/暂存击杀共用投递；失败和切关只结算暂存一次；遗匣领取/分解回调去重，首载立即回填摘要。成功/失败/挂机三个显示分类不变。
+- `ui/LootBox.lua` 数据门面，`ui/LootBoxPage.lua` 为1080×2400左栏地点页；`TownScene.lua` 下方中轴地点；`StandaloneHorizon.lua` 左栏绘制/点击/拖拽/滚轮/中缝接线，移除原全局遗匣模态。
+- 奖励页超出背包的装备角标「已入遗匣」，不恢复6/6；领取空页保留空态；全分解确认防误触；按压期间滚轮或刷新阻止释放误触其他索引。
+- `server/battle/BattleService.lua` 同步首通溢出投递；`server/loot/LootService.lua` 和 `EquipLevelCompat.lua` 不降级/合并完整装备。
+- `StandaloneSave.lua` 修防抖饥饿：已有写盘倒计时不被持续掉落重置；原始遗匣表随模块存档，无须改存档格式。
+- 测试入口：`tests/lootbox_overflow_test.lua`（12组，含真实Boot回调）；`tests/lootbox_page_test.lua`（页面输入+内存磁盘存档）；`tests/lootbox_horizon_test.lua`（真实宿主按栏路由、中缝返回）。Lua5.4独立执行全部通过，JSON由Python桥接。LSP 0 Error，官方build成功。
+- **未完成实机视觉验收**：最新UrhoXRuntime读取项目manifest后engine-startup资源无法加载，0帧TIMEOUT；非脚本层通过证据。隔离预览入口 `tests/lootbox_preview.lua` 可待环境恢复后截图，不读写玩家存档。
+- 用户再次明确：不自行取消/退出；每次交付后必须 AskUserQuestion 选项询问下一步；完成后只提交并推当前授权功能分支，不能推别的分支；凭证不入库/记忆。
+
 >
 > **本会话(2026-09-23)**：从 `workspace` 新开 `integrate/20260923`，合入今天三条功能线 + workspace923 的一键脚本修复。含滚轮/右键装备/五语/Noto 字体、四名玩梗角色与 SE 包、未解锁职业标。未推 workspace。
 

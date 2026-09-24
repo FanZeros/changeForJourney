@@ -1,5 +1,9 @@
 # antibodies — 跨项目避雷清单(只增不减)
 
+- [scope:project] 遗匣完整溢出装备在 `seeds[].equip`，必须保持独立、不重新骰词条、不参与种子等级回退；挂机种子才按品质/等级合并。
+- [scope:project] 遗匣现在是左栏地点页，不能再加回全局中栏模态路由；按鼠标栏路由滚轮，中缝返回须用窗口逻辑坐标。
+- [通用] 凭证不能写进记忆、代码或提交；对话中贴出的PAT提示撤销轮换。
+
 - [scope:gamedev] UrhoX 项目 assets 里的 `.png` 实际是 KTX GPU 压缩纹理:ImageMagick 读不了;`Texture2D:GetImage()` 对压缩纹理返回噪声;可靠导出/验收 = `UrhoXRuntime -graphicssurfaceless -screenshot`(离屏渲染)
 - [scope:gamedev] UrhoX `-screenshot` 超时会静默失败(exit 0 但文件不落盘),完成后必须 `stat` 检查 mtime;软渲染大帧预算给足(timeout 280s+)
 - [scope:gamedev] `nvgClip` 在 UrhoX Lua 绑定中不存在;用 `nvgImagePattern + RoundedRect 填充路径` 自带裁切,或 nvgScissor/nvgIntersectScissor

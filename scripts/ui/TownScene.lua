@@ -8,6 +8,7 @@ local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标�
 local HorizonBg      = require("core.HorizonBg")  -- [横屏三联] 左右共享大背景
 local ExpTable   = require("config.ExpTable")
 local BF         = require("systems.ButtonFeedback")
+local LootBox    = require("ui.LootBox")
 
 local TownScene = {}
 
@@ -20,6 +21,7 @@ local imgTavern   = -1   -- 酒馆建筑
 local imgMarket   = -1   -- 市场建筑
 local imgWarehouse = -1  -- 仓库建筑（背包入口）
 local imgIconWarehouse = -1 -- 仓库图标
+local imgLootBox = -1       -- 遗匣地点复用 ICON_BX
 
 local imgIconChurch = -1 -- 教堂图标
 local imgIconTree   = -1 -- 古树图标
@@ -107,6 +109,12 @@ local MARKET_LBL_W,  MARKET_LBL_H  = 361, 113
 local MARKET_ICON_CX, MARKET_ICON_CY = 112, 846
 local MARKET_ICON_SZ = 64
 local MARKET_TEXT_X,  MARKET_TEXT_Y  = 219, 846
+
+-- 遗匣：下方中轴独立地点。整块热区 x=350..730 / y=1790..2230，
+-- 避开教堂底缘1777、酒馆底缘1594；箱体/基座/名牌/收益文字均在热区内。
+local LOOT_CX, LOOT_CY, LOOT_W, LOOT_H = 540, 1940, 260, 260
+local LOOT_LBL_CY = 2090
+local LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H = 540, 2010, 380, 440
 
 -- 文字
 local LABEL_FONT_SIZE   = 38
@@ -370,7 +378,7 @@ local function ensureTownImages(vg)
     if not ctx then return end
     townImgsLoaded_ = true
     imgBg          = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
-    imgLabelBg     = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BQ.png", 0)
+    imgLootBox     = nvgCreateImage(ctx, "image/通用图标/ICON_BX.png", 0) or -1
     imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
     imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)
     imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
@@ -549,8 +557,21 @@ function TownScene.draw(vg)
     -- 城镇总览热点（引导组4）：左栏顶部空白带，不与建筑点击重叠
     if _tmActive then _TM.registerHotspot("town_overview", 540, 150, 900, 220, "left") end
 
-    -- 全局战利品箱（左下角）。横屏改造后从 BattleScene 迁出，输入已在 handleInput 优先拦截，绘制漏画
-    require("ui.LootBox").draw(vg)
+    -- 第7个地点：遗匣（没有等级/引导门槛），复用箱图与现有名牌风格。
+    local lootFeedback = BF.begin(vg, "town_lootbox", LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H)
+    DarkIcon.drawNine(vg, "plain", 390, 2010, 300, 64)
+    drawImageDarkTint(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, 1.0)
+    drawFlashOverlay(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, getClickFlashAlpha("lootbox"))
+    drawBuildingLabel(vg, 540, LOOT_LBL_CY, 361, 113,
+        450, LOOT_LBL_CY - 6, 64, imgLootBox, 585, LOOT_LBL_CY - 6, "遗匣")
+    local count = LootBox.getCount()
+    if count > 0 then
+        DarkIcon.draw(vg, "reddot", 709, LOOT_LBL_CY - 45, 44, 1.0)
+        drawTextStroke(vg, 540, 1798, "待领取 " .. tostring(count) .. " 件", 30,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 238, 216, 161, 3)
+    end
+    LootBox.drawRates(vg, 540, 2170)
+    BF.finish(vg, lootFeedback)
 end
 
 --- 回调：点击铁匠铺
@@ -596,9 +617,22 @@ function TownScene.setOnWarehouseClick(fn)
     onWarehouseClick = fn
 end
 
+---@type fun()|nil
+local onLootBoxClick = nil
+
+function TownScene.setOnLootBoxClick(fn)
+    onLootBoxClick = fn
+end
+
 function TownScene.handleInput(dx, dy)
-    -- 全局战利品箱（左下角）点击优先；LootBoxPage 打开时整栏输入交给页面
-    if require("ui.LootBox").handleInput(dx, dy) then return true end
+    -- 整个地点含名牌与收益文字；不再保留左下角全局箱子热区。
+    if math.abs(dx - LOOT_HIT_CX) <= LOOT_HIT_W * 0.5
+        and math.abs(dy - LOOT_HIT_CY) <= LOOT_HIT_H * 0.5 then
+        BF.trigger("town_lootbox")
+        triggerClickAnim("lootbox")
+        if onLootBoxClick then deferAction(CLICK_CALLBACK_DELAY, onLootBoxClick) end
+        return true
+    end
     local _TM = require("systems.TutorialManager")
     -- 铁匠铺点击检测
     if dx >= SMITH_CX - SMITH_W * 0.5 and dx <= SMITH_CX + SMITH_W * 0.5

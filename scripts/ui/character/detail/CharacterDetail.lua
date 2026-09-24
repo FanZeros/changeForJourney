@@ -412,6 +412,18 @@ function CharacterDetail.isOpen()
     return detailState.open
 end
 
+--- 当前详情英雄。关闭或关闭动画中返回 nil。
+---@return number|nil
+function CharacterDetail.getHeroId()
+    if not detailState.open or detailState.closing then return nil end
+    return detailState.heroId
+end
+
+---@return boolean
+function CharacterDetail.isAwakenTab()
+    return detailState.tab == "awaken"
+end
+
 --- 标记战斗力/装备缓存为脏（外部数据变化时由 CharacterPanel.refreshPowerCache 调用）
 function CharacterDetail.markPowerDirty()
     Draw.markPowerDirty()
@@ -649,7 +661,19 @@ end
 ---@param dx number 设计空间 X
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
+function CharacterDetail.handleHover(dx, dy)
+    if not detailState.open or detailState.closing then return end
+    if detailState.tab ~= "equip" or not CharacterDetail._EquipPanel then return end
+    if CharacterDetail._EquipPanel.isItemDragging and CharacterDetail._EquipPanel.isItemDragging() then
+        return
+    end
+    if CharacterDetail._EquipPanel.handleHover then
+        CharacterDetail._EquipPanel.handleHover(dx, dy, detailState.heroId)
+    end
+end
+
 function CharacterDetail.handleDragBegin(dx, dy)
+
     if not detailState.open or detailState.closing then return true end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragBegin(dx, dy)

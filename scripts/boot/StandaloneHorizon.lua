@@ -4,6 +4,8 @@
 -- ============================================================================
 
 local Viewport = require("core.Viewport")
+local drawEquipDetailOverlay
+local equipOverlayDesign
 local RT = require("boot.StandaloneRT")
 
 local TopBar            = require("ui.hud.TopBar")
@@ -45,6 +47,7 @@ local IntroCutscene      = require("ui.story.gate.IntroCutscene")
 local LetterIntro        = require("ui.story.gate.LetterIntro")
 local CharacterDetail    = require("ui.character.detail.CharacterDetail")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
+local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
@@ -300,6 +303,41 @@ local function seamHitAt(sx, sy)
     return nil
 end
 
+drawEquipDetailOverlay = function()
+    -- 配装详情画在栏外，不被左右栏裁切
+    local ok, EquipmentDetail = pcall(require, "ui.character.equip.EquipmentDetail")
+    if not ok or not EquipmentDetail.isCompactCorner or not EquipmentDetail.isCompactCorner() then return end
+    local owner = EquipmentDetail.getOwner and EquipmentDetail.getOwner() or "character"
+    local panelId = (owner == "character") and "right" or "left"
+    local note = Viewport.getNote(panelId)
+    if not note then return end
+    local panel = Viewport.PANELS[panelId]
+    nvgSave(vg())
+    nvgResetScissor(vg())
+    nvgTranslate(vg(), note.ox + panel.bx * note.s, note.oy + panel.by * note.s)
+    nvgScale(vg(), note.s * Viewport.DS, note.s * Viewport.DS)
+    EquipmentDetail.draw(vg())
+    nvgRestore(vg())
+end
+
+equipOverlayDesign = function(sx, sy)
+    local ok, EquipmentDetail = pcall(require, "ui.character.equip.EquipmentDetail")
+    if not ok or not EquipmentDetail.isCompactCorner or not EquipmentDetail.isCompactCorner() then return nil end
+    local owner = EquipmentDetail.getOwner and EquipmentDetail.getOwner() or "character"
+    local panelId = (owner == "character") and "right" or "left"
+    local note = Viewport.getNote(panelId)
+    if not note then return nil end
+    local panel = Viewport.PANELS[panelId]
+    local cs = note.s * Viewport.DS
+    if cs == 0 then return nil end
+    local dx = (sx - (note.ox + panel.bx * note.s)) / cs
+    local dy = (sy - (note.oy + panel.by * note.s)) / cs
+    if EquipmentDetail.containsPoint(dx, dy) then
+        return dx, dy, EquipmentDetail
+    end
+    return nil
+end
+
 function HandleNanoVGRenderHorizon()
     if not vg() then return end
     HorizonUpdateTransform()
@@ -476,7 +514,9 @@ function HandleNanoVGRenderHorizon()
 
     if towerBattleOpen then
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
-        KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
+        drawEquipDetailOverlay()
+        EquipCrossDrag.draw(vg())
+    KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
         finishFrame()
         return
     end
@@ -550,7 +590,9 @@ function HandleNanoVGRenderHorizon()
         end
         -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
         HorizonDrawIntroOverlay()
-        KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
+        drawEquipDetailOverlay()
+        EquipCrossDrag.draw(vg())
+    KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
         finishFrame()
         return
     end
@@ -597,6 +639,8 @@ function HandleNanoVGRenderHorizon()
     -- [LetterIntro] 开场覆盖必须在标题之后（非三行路径同样需要）
     HorizonDrawIntroOverlay()
     UiToast.draw(vg(), logicalW(), logicalH())
+    drawEquipDetailOverlay()
+    EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
 
     finishFrame()
@@ -691,6 +735,10 @@ local function HorizonResolveMouse()
     return pid, dx, dy
 end
 
+local equipOverlayPress = false
+
+local equipOverlayPress = false
+
 function HandleMouseButtonDownHorizon(eventType, eventData)
     if vg() then
         local mousePos = input:GetMousePosition()
@@ -709,6 +757,19 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         return
     end
     local button = eventData["Button"]:GetInt()
+    if button == MOUSEB_LEFT then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        local dx, dy, ED = equipOverlayDesign(sx, sy)
+        if dx then
+            equipOverlayPress = true
+            pressValid = true
+            ED.handleDragBegin(dx, dy)
+            print("[Horizon] 详情浮层按下")
+            return
+        end
+        equipOverlayPress = false
+    end
     if button == MOUSEB_RIGHT then
         local pid, dx, dy = HorizonResolveMouse()
         if pid == 'tri' then
@@ -747,6 +808,23 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     if pid == 'tri' then
         pressStartDX, pressStartDY = dx or 0, dy or 0
         pressValid = true
+        if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion()
+            and EquipmentBag.hitOverlayWindow(dx, dy) then
+            local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+            local onDetail = false
+            if EquipmentDetail.isOpen() then
+                local ddx, ddy = EquipmentBag.overlayToDetail(dx, dy)
+                onDetail = EquipmentDetail.containsPoint(ddx, ddy) == true
+            end
+            if not onDetail then
+                local bdx, bdy = EquipmentBag.overlayToDesign(dx, dy)
+                local peek = EquipmentBag.peekOverlayAt(bdx, bdy)
+                if peek then
+                    EquipCrossDrag.arm(peek, dx, dy, "overlay")
+                    print("[Horizon] 战斗背包按下 seq=" .. tostring(peek.seq))
+                end
+            end
+        end
         BattleTriPage.handleDragBegin(dx, dy)
         return
     end
@@ -774,8 +852,30 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             TaskPage.handleDragBegin(dx, dy)
             return
         end
-        if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragBegin(dx, dy) return end
-        if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
+        if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local peek = BackpackPanel.peekEquipAt(dx, dy)
+            if peek then
+                EquipCrossDrag.arm(peek, sx, sy, "backpack")
+                print("[Horizon] 左栏背包按下 seq=" .. tostring(peek.seq))
+            end
+            BackpackPanel.handleDragBegin(dx, dy)
+            return
+        end
+        if BlacksmithPage.isOpen() then
+            if EquipmentBag.isOpen() and not EquipmentBag.hasOverlayRegion() then
+                local mousePos = input:GetMousePosition()
+                local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+                local peek = EquipmentBag.peekAt(dx, dy)
+                if peek then
+                    EquipCrossDrag.arm(peek, sx, sy, "bag")
+                    print("[Horizon] 左栏装备背包按下 seq=" .. tostring(peek.seq))
+                end
+            end
+            BlacksmithPage.handleDragBegin(dx, dy)
+            return
+        end
         if TalentPage.isOpen() then TalentPage.handleDragBegin(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
@@ -800,6 +900,19 @@ function HandleMouseMoveHorizon(eventType, eventData)
         end
         return
     end
+    if EquipCrossDrag.isArmed() then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        if EquipCrossDrag.move(sx, sy) then
+            return
+        end
+        local source = EquipCrossDrag.getSource()
+        if source == "overlay" then
+            if pid ~= "tri" then return end
+        elseif pid ~= "left" then
+            return
+        end
+    end
     if pid == 'none' then return end
     if pid == 'playerinfo' then
         PlayerInfoPanel.handleDragMove(dx, dy)
@@ -820,8 +933,29 @@ function HandleMouseMoveHorizon(eventType, eventData)
         if RewardPopup.handleDragMove(dx, dy) then return end
         return
     end
-    if not pressValid then return end
+    if equipOverlayPress then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        local odx, ody, ED = equipOverlayDesign(sx, sy)
+        if odx and ED then ED.handleDragMove(odx, ody) end
+        return
+    end
+    if not pressValid then
+        if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+            if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
+        end
+        if pid == 'left' then
+            if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
+                BackpackPanel.handleHover(dx, dy)
+            end
+            if EquipmentBag.isOpen and EquipmentBag.isOpen() and EquipmentBag.handleHover then
+                EquipmentBag.handleHover(dx, dy)
+            end
+        end
+        return
+    end
     if pid == 'tri' then
+
         BattleTriPage.handleDragMove(dx, dy)
         return
     end
@@ -842,6 +976,19 @@ function HandleMouseMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseButtonUpHorizon(eventType, eventData)
+    if equipOverlayPress then
+        equipOverlayPress = false
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        local dx, dy, ED = equipOverlayDesign(sx, sy)
+        if dx and ED then
+            ED.handleDragEnd()
+            ED.handleInput(dx, dy)
+            print("[Horizon] 详情浮层点击")
+        end
+        pressValid = false
+        return
+    end
     if vg() then
         local mousePos = input:GetMousePosition()
         local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
@@ -855,6 +1002,18 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         -- 不论鼠标在哪一栏、是否有新覆盖层，都释放遗匣的拖拽状态。
         LootBox.handleDragEnd(0, 0)
         lootPress = false
+        if EquipCrossDrag.isArmed() then
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local dragged = EquipCrossDrag.finish(sx, sy)
+            if dragged then
+                if BackpackPanel.haltScroll then BackpackPanel.haltScroll() end
+                if EquipmentBag.haltScroll then EquipmentBag.haltScroll() end
+                pressValid = false
+                print("[Horizon] 左栏拖放穿戴结束")
+                return
+            end
+        end
     end
     if not bootReady_() then return end
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续

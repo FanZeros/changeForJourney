@@ -33,7 +33,20 @@ end
 -- [修复] 原实现缺少 DS 缩放：内容按 s 直接绘制且裁剪区只有 486x1080，
 -- 导致每个面板只显示设计稿左上角（半宽、不到半高）。现按 s*DS 缩放内容、
 -- 裁剪区放宽到完整设计稿，面板完整显示 1080x2400
+Viewport._notes = {}
+
+function Viewport.note(id, ox, oy, s)
+    Viewport._notes[id] = { ox = ox, oy = oy, s = s }
+end
+
+function Viewport.getNote(id)
+    return Viewport._notes[id]
+end
+
 function Viewport.begin(vg, p, ox, oy, s)
+    if p and p.id then
+        Viewport.note(p.id, ox, oy, s)
+    end
     nvgSave(vg)
     nvgTranslate(vg, ox + p.bx * s, oy + p.by * s)
     local cs = s * Viewport.DS

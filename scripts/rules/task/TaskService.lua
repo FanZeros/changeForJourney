@@ -99,6 +99,49 @@ function TaskService.ClaimTask(uid, taskId)
     }
 end
 
+--- 当前页签对应的功绩列表
+---@param scope string "clear"|"level"|"hero"
+---@return table[]
+local function achievementsInScope(scope)
+    local out = {}
+    for _, task in ipairs(TaskConfig.ACHIEVEMENT) do
+        if scope == "level" or scope == "hero" then
+            if task.group == scope then
+                out[#out + 1] = task
+            end
+        elseif task.difficulty == "normal" or task.difficulty == "hard" or task.difficulty == "nightmare" then
+            out[#out + 1] = task
+        end
+    end
+    return out
+end
+
+--- 一键领取指定页签下全部可领功绩
+---@param uid number
+---@param scope string
+---@return boolean, string|nil, table|nil
+function TaskService.ClaimAll(uid, scope)
+    if scope ~= "clear" and scope ~= "level" and scope ~= "hero" then
+        return false, "invalid_scope"
+    end
+    TaskService.RefreshAchievements(uid)
+    local claimed = {}
+    local rewards = {}
+    for _, task in ipairs(achievementsInScope(scope)) do
+        local ok, _, result = TaskService.ClaimTask(uid, task.id)
+        if ok and result then
+            claimed[#claimed + 1] = result.taskId
+            rewards[#rewards + 1] = result.reward
+        end
+    end
+    print("[TaskService] ClaimAll uid=" .. tostring(uid)
+        .. " scope=" .. scope .. " count=" .. tostring(#claimed))
+    if #claimed == 0 then
+        return false, "nothing_to_claim"
+    end
+    return true, nil, { scope = scope, claimed = claimed, rewards = rewards }
+end
+
 -- ======================== 进度更新（供其他 Service/Handler 调用） ========================
 
 --- 增量更新指定 condKey 的进度（日任务 + 周任务 + 成就）

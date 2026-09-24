@@ -127,7 +127,7 @@ local function findItemAt(dx, dy)
         local cx = GRID_FIRST_CX + (col - 1) * GRID_COL_STEP
         local cy = GRID_TOP_Y + (row - 1) * GRID_ROW_STEP - panelState.scrollY
         if hitTest(dx, dy, cx, cy, GRID_CELL, GRID_CELL) then
-            return items[idx]
+            return items[idx], cx, cy
         end
     end
     return nil
@@ -375,6 +375,8 @@ function M.onSlotChanged(slot, heroId)
     panelState.dirty  = true
 end
 
+local drawDragGhost
+
 --- 绘制配装面板
 ---@param vg any NanoVG 上下文
 ---@param heroId number 当前英雄 ID
@@ -484,7 +486,14 @@ function M.draw(vg, heroId, detailState)
                 nvgText(vg, lvlX, lvlY, lvlText, nil)
             end
 
-            -- 不可装备不再叠灰色遮罩，靠原图本身区分
+            -- 不能穿的装备额外盖一层灰，和能穿的分开
+            if not canWear then
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, cx - GRID_CELL * 0.5, cy - GRID_CELL * 0.5,
+                    GRID_CELL, GRID_CELL, GRID_RADIUS)
+                nvgFillColor(vg, nvgRGBA(18, 18, 18, 150))
+                nvgFill(vg)
+            end
 
             -- 左上角角标（与临时背包相同逻辑）
             if item.equipped then
@@ -519,12 +528,11 @@ function M.draw(vg, heroId, detailState)
                     -- 圆形裁剪绘制头像
                     nvgSave(vg)
                     nvgBeginPath(vg)
-                    nvgCircle(vg, badgeX, badgeY, badgeSize * 0.5)
+                    nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
                     nvgFillPaint(vg, nvgImagePattern(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 0, ownerIcon, 1.0))
                     nvgFill(vg)
-                    -- 白色圆形描边
                     nvgBeginPath(vg)
-                    nvgCircle(vg, badgeX, badgeY, badgeSize * 0.5)
+                    nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
                     nvgStrokeColor(vg, nvgRGBA(0xff, 0xff, 0xff, 200))
                     nvgStrokeWidth(vg, 2)
                     nvgStroke(vg)
@@ -646,6 +654,67 @@ function M.draw(vg, heroId, detailState)
             nvgText(vg, DESIGN_W * 0.5, by + boxH - 28, "点击空白关闭", nil)
         end
     end
+    drawDragGhost(vg)
+end
+
+local function slotAccepts(equip, slot)
+    if not equip or not slot then return false end
+    if equip.slot == slot then return true end
+    return slot == "offhand" and equip.slot == "weapon" and equip.grip == "onehand"
+end
+
+function drawDragGhost(vg)
+    if not panelState.itemDragging or not panelState.dragItem then return end
+    local equip = panelState.dragItem.equip
+    local x = panelState.dragX or panelState.dragStartX or 0
+    local y = panelState.dragY or panelState.dragStartY or 0
+    local DrawMod = require("ui.character.detail.CharacterDetailDraw")
+    local over = nil
+    for _, s in ipairs(DrawMod.DT_SLOTS) do
+        if hitTest(x, y, s.cx, s.cy, DrawMod.DT_SLOT_SIZE, DrawMod.DT_SLOT_SIZE) then
+            over = s
+            break
+        end
+    end
+    if over then
+        local ok = panelState.dragItem.canWear and slotAccepts(equip, over.slot)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, over.cx - 88, over.cy - 88, 176, 176, 20)
+        nvgStrokeWidth(vg, 6)
+        if ok then
+            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 230))
+        else
+            nvgStrokeColor(vg, nvgRGBA(180, 70, 70, 220))
+        end
+        nvgStroke(vg)
+    end
+    local icon = equip and ImageCache.getEquipIcon(equip.templateId) or -1
+    if icon and icon >= 0 then
+        DarkIcon.drawQualityBg(vg, equip.quality or 1, x, y, 120, 120, 0.92)
+        DarkIcon.drawIconDark(vg, icon, x, y, 104, 104, 0.92)
+    end
+end
+
+--- 鼠标悬停格子时打开装备详情；离开未钉住的详情就关掉
+function M.handleHover(dx, dy, heroId)
+    if panelState.itemDragging then return end
+    local item = nil
+    if dy >= CLIP_TOP and dy <= CLIP_TOP + CLIP_HEIGHT
+        and dx >= GRID_MARGIN_LEFT and dx <= DESIGN_W - GRID_MARGIN_LEFT then
+        item = findItemAt(dx, dy)
+    end
+    local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+    if not item then return end
+    local seqStr = tostring(item.seq)
+    local _, cx, cy = findItemAt(dx, dy)
+    if panelState.hoverSeq == seqStr then
+        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
+        return
+    end
+    panelState.hoverSeq = seqStr
+    panelState.hoverPinned = false
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
+    print("[EquipPanel] 悬停详情 seq=" .. seqStr .. " at " .. tostring(cx) .. "," .. tostring(cy))
 end
 
 --- 处理输入（单击详情 / 双击穿戴）
@@ -699,9 +768,12 @@ function M.handleInput(dx, dy, heroId, detailState)
         return true
     end
 
-    -- 单击：右栏左上角小详情（无阴影）
+    -- 单击：右栏内侧小详情，朝向中栏战斗区（无阴影）
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
-    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character")
+    panelState.hoverSeq = seqStr
+    panelState.hoverPinned = true
+    local _, cx, cy = findItemAt(dx, dy)
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
     print("[EquipPanel] 单击详情 seq=" .. seqStr)
     return true
 end
@@ -752,12 +824,15 @@ function M.beginPointer(dx, dy)
 end
 
 function M.onPointerMove(dx, dy)
+    panelState.dragX = dx
+    panelState.dragY = dy
     if panelState.dragItem and not panelState.itemDragging then
-        local dist = math.abs(dx - panelState.dragStartX) + math.abs(dy - panelState.dragStartY)
+        local dist = math.abs(dx - (panelState.dragStartX or dx)) + math.abs(dy - (panelState.dragStartY or dy))
         if dist >= ITEM_DRAG_PX then
             panelState.itemDragging = true
             panelState.dragging = false
             panelState.scrollVel = 0
+            print("[EquipPanel] 开始拖装备 seq=" .. tostring(panelState.dragItem.seq))
         end
     end
     return panelState.itemDragging
@@ -765,6 +840,10 @@ end
 
 function M.isItemDragging()
     return panelState.itemDragging == true
+end
+
+function M.markDirty()
+    panelState.dirty = true
 end
 
 function M.getDragItem()
@@ -775,10 +854,16 @@ function M.equipDragged(heroId, slot)
     local item = panelState.dragItem
     panelState.itemDragging = false
     panelState.dragItem = nil
-    if item then
-        return equipItemNow(item, heroId, slot or panelState.slot)
+    if not item then return false end
+    local target = slot or panelState.slot
+    if item.equip and not slotAccepts(item.equip, target) then
+        local Toast = require("core.UiToast")
+        Toast.show(require("core.I18n").t("cannot_wear"))
+        print("[EquipPanel] 拖到不匹配槽位 slot=" .. tostring(target))
+        return false
     end
-    return false
+    print("[EquipPanel] 拖放穿戴 seq=" .. tostring(item.seq) .. " slot=" .. tostring(target))
+    return equipItemNow(item, heroId, target)
 end
 
 --- 获取上次拖拽Y坐标

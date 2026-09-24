@@ -43,7 +43,7 @@ local detState = {
     heroId    = nil,    -- 当前角色 ID
     openTime  = 0,
     closeTime = 0,
-    compactCorner = false, -- 配装页单击：右栏左上角小窗，无阴影
+    compactCorner = false, -- 配装页单击：贴右栏内侧、朝中栏战斗区，无阴影
     owner = nil,           -- backpack | character | bag | smith，只在打开它的那一侧画
     descScrollY = 0,
     descScrollMax = 0,
@@ -471,15 +471,56 @@ local CUR_BG_CY = math.floor(REF_BG_CY - REF_BG_H * 0.5 + CUR_BG_H * 0.5)
 -- 单面板居中
 local SINGLE_BG_CX = 540
 
--- 配装页小窗：贴在当前面板左上角，无遮罩；缩小避免盖住名字/底板
-local COMPACT_LEFT = 16
-local COMPACT_TOP  = 16
-local COMPACT_SCALE = 0.38
+-- 配装页小窗：贴当前格子的上角，比原来大约一倍。左半格往右展开，右半格往左展开。
+local COMPACT_SCALE = 0.92
+local COMPACT_MARGIN = 16
+local COMPACT_CELL = 160
+
+local function compactVisSize()
+    local w = REF_BG_W * COMPACT_SCALE
+    local h = (REF_BG_H + REF_ENH_BTN_GAP + REF_ENH_BTN_H + 8) * COMPACT_SCALE
+    return w, h
+end
+
+--- 小窗按钮：贴在卡片底边下方，左右并排
+---@return number cy, number wearCX, number refineCX, number w, number h
+local function compactButtonRow()
+    local cy = REF_BG_CY + REF_BG_H * 0.5 + REF_ENH_BTN_GAP + REF_ENH_BTN_H * 0.5
+    local w = 400
+    local gap = 20
+    local wearCX = REF_BG_CX - (gap + w) * 0.5
+    local refineCX = REF_BG_CX + (gap + w) * 0.5
+    return cy, wearCX, refineCX, w, REF_ENH_BTN_H
+end
 
 local function compactOffset()
     local refLeft = REF_BG_CX - REF_BG_W * 0.5
-    local refTop  = REF_BG_CY - REF_BG_H * 0.5
-    return COMPACT_LEFT - refLeft * COMPACT_SCALE, COMPACT_TOP - refTop * COMPACT_SCALE
+    local refTop = REF_BG_CY - REF_BG_H * 0.5
+    local visW, visH = compactVisSize()
+    local ax = detState.anchorX or 540
+    local ay = detState.anchorY or 1144
+    local cellLeft = ax - COMPACT_CELL * 0.5
+    local cellRight = ax + COMPACT_CELL * 0.5
+    local cellTop = ay - COMPACT_CELL * 0.5
+    -- 右栏详情往中缝外侧伸，左栏详情往右外侧伸，不锁在本栏里
+    local toCenterLeft = detState.owner == "character"
+    local targetLeft
+    local minLeft
+    local maxLeft
+    if toCenterLeft then
+        targetLeft = cellLeft - 12 - visW
+        minLeft = -1200
+        maxLeft = 1080 - COMPACT_MARGIN - visW
+    else
+        targetLeft = cellRight + 12
+        minLeft = COMPACT_MARGIN
+        maxLeft = 2200
+    end
+    if targetLeft < minLeft then targetLeft = cellRight + 12 end
+    if targetLeft > maxLeft then targetLeft = cellLeft - 12 - visW end
+    targetLeft = math.max(minLeft, math.min(targetLeft, maxLeft))
+    local targetTop = math.max(COMPACT_MARGIN, math.min(cellTop, 2400 - COMPACT_MARGIN - visH))
+    return targetLeft - refLeft * COMPACT_SCALE, targetTop - refTop * COMPACT_SCALE
 end
 
 local DESC_TOP = 980
@@ -891,7 +932,7 @@ end
 ---@param seq string|number 装备序列号
 ---@param slot string 槽位
 ---@param heroId number 角色ID
-function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner)
+function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, anchorY)
     detState.open      = true
     detState.closing   = false
     detState.equipSeq  = tostring(seq)
@@ -900,12 +941,19 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner)
     detState.openTime  = time.elapsedTime
     detState.compactCorner = compactCorner == true
     detState.owner = owner or (compactCorner and "character" or "bag")
+    detState.anchorX = tonumber(anchorX)
+    detState.anchorY = tonumber(anchorY)
     detState.descScrollY = 0
     detState.descScrollMax = 0
     detState.descDragging = false
     print("[EquipmentDetail] open seq=" .. tostring(seq) .. " slot=" .. tostring(slot)
         .. " heroId=" .. tostring(heroId) .. " compact=" .. tostring(detState.compactCorner)
-        .. " owner=" .. tostring(detState.owner))
+        .. " anchor=" .. tostring(detState.anchorX) .. "," .. tostring(detState.anchorY))
+end
+
+function EquipmentDetail.setAnchor(anchorX, anchorY)
+    detState.anchorX = tonumber(anchorX)
+    detState.anchorY = tonumber(anchorY)
 end
 
 --- 关闭（冻结当前面板内容用于关闭动画）
@@ -1053,8 +1101,55 @@ function EquipmentDetail.handleInput(dx, dy)
         enhBtnCY = REF_BG_CY + REF_BG_H * 0.5 + REF_ENH_BTN_GAP + REF_ENH_BTN_H * 0.5
     end
 
+    if detState.compactCorner then
+        local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+        local showWear = not enhOnly
+        local rowY, wearCX, refineCX, bw, bh = compactButtonRow()
+        local rcx = showWear and refineCX or REF_BG_CX
+        local wcx = smithOn and wearCX or REF_BG_CX
+        if smithOn and hitTest(dx, dy, rcx, rowY, bw, bh) then
+            BF.trigger("ed_enhance")
+            if not BlacksmithPage then BlacksmithPage = require("ui.blacksmith.BlacksmithPage") end
+            if not EquipmentBag then EquipmentBag = require("ui.character.equip.EquipmentBag") end
+            if not CharacterDetail then CharacterDetail = require("ui.character.detail.CharacterDetail") end
+            detState.open = false
+            detState.closing = false
+            detState.snapshot = nil
+            if EquipmentBag.isOpen() then EquipmentBag.close() end
+            local BackpackPanel = require("ui.backpack.BackpackPanel")
+            if BackpackPanel.isOpen() then BackpackPanel.close() end
+            if CharacterDetail.isOpen() then CharacterDetail.forceClose() end
+            BlacksmithPage.open(newEquip, "xilian")
+            print("[EquipmentDetail] 小窗前往洗练 seq=" .. tostring(detState.equipSeq))
+            return true
+        end
+        if showWear and hitTest(dx, dy, wcx, rowY, bw, bh) then
+            BF.trigger("ed_equip")
+            local Client = getClient()
+            local Protocol = getProtocol()
+            if Client and Client.sendAction and Protocol then
+                if isEquipped then
+                    Client.sendAction(Protocol.ACTION_TYPES.UNEQUIP_ITEM, {
+                        heroId = detState.heroId,
+                        slot = equippedSlot or detState.slot,
+                    })
+                else
+                    Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {
+                        seq = tonumber(detState.equipSeq),
+                        heroId = detState.heroId,
+                        slot = detState.slot,
+                    })
+                    require("systems.GameSFX").play("install")
+                end
+            end
+            print("[EquipmentDetail] 小窗穿戴 seq=" .. tostring(detState.equipSeq))
+            EquipmentDetail.close()
+            return true
+        end
+    end
+
     -- 点击前往洗练按钮（仅铁匠铺已解锁时响应）
-    if ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+    if (not detState.compactCorner) and ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
        and hitTest(dx, dy, btnCX, enhBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H) then
         BF.trigger("ed_enhance")
         -- 延迟加载依赖模块
@@ -1089,7 +1184,7 @@ function EquipmentDetail.handleInput(dx, dy)
     end
 
     -- 点击立即分解按钮（未穿戴未锁定装备，前往洗练下方；背包模式与角色槽位模式通用）
-    if (not newEquip.locked) and (not isEquipped)
+    if (not detState.compactCorner) and (not newEquip.locked) and (not isEquipped)
        and ExpTable.isBuildingUnlocked("smith", GameState.getLevel()) then
         local decBtnCY = enhBtnCY + REF_ENH_BTN_H + REF_DEC_BTN_GAP
         if hitTest(dx, dy, btnCX, decBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H) then
@@ -1109,7 +1204,7 @@ function EquipmentDetail.handleInput(dx, dy)
     end
 
     -- 点击穿戴/卸下按钮（背包模式不显示此按钮，跳过）
-    if not enhOnly and hitTest(dx, dy, btnCX, btnCY, REF_BTN_W, REF_BTN_H) then
+    if (not detState.compactCorner) and not enhOnly and hitTest(dx, dy, btnCX, btnCY, REF_BTN_W, REF_BTN_H) then
         BF.trigger("ed_equip")
         local Client = getClient()
         local Protocol = getProtocol()
@@ -1181,6 +1276,11 @@ function EquipmentDetail.handleInput(dx, dy)
     local inPanel = false
     if detState.compactCorner then
         if hitTest(dx, dy, REF_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H) then
+            inPanel = true
+        end
+        local rowY = select(1, compactButtonRow())
+        if math.abs(dy - rowY) <= REF_ENH_BTN_H * 0.5 + 8
+            and math.abs(dx - REF_BG_CX) <= REF_BG_W * 0.5 then
             inPanel = true
         end
     elseif hasCurrent then
@@ -1266,7 +1366,7 @@ function EquipmentDetail.draw(vg)
     local compact = detState.compactCorner == true
     -- 说明栏不铺全屏黑影
 
-    -- 应用滑入偏移（小窗不滑入，贴右栏左上角并缩小）
+    -- 应用滑入偏移（小窗不滑入，贴右栏内侧并缩小）
     nvgSave(vg)
     if compact then
         local ox, oy = compactOffset()
@@ -1279,11 +1379,33 @@ function EquipmentDetail.draw(vg)
     local enhOnly = (detState.slot == nil)  -- 背包模式：无穿戴按钮，仅前往洗练
 
     if compact then
-        -- 配装页单击：单面板贴左上角，无对比、无阴影
-        local compactBtn = not enhOnly
         drawEquipPanel(vg, newEquip, 0,
             REF_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
-            nil, compactBtn, btnText, enhOnly, true, false)
+            nil, false, btnText, false, true, false)
+        local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+        local showWear = not enhOnly
+        local rowY, wearCX, refineCX, bw, bh = compactButtonRow()
+        if showWear then
+            local _bf1 = BF.begin(vg, "ed_equip", wearCX, rowY, bw, bh)
+            drawImageCentered(vg, imgBtnGreen, wearCX, rowY, bw, bh, 1.0)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 36)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0x25, 0x55, 0x3d, 255))
+            nvgText(vg, wearCX, rowY, btnText, nil)
+            BF.finish(vg, _bf1)
+        end
+        if smithOn then
+            local rcx = showWear and refineCX or REF_BG_CX
+            local _bf2 = BF.begin(vg, "ed_enhance", rcx, rowY, bw, bh)
+            drawImageCentered(vg, imgBtnYellow, rcx, rowY, bw, bh, 1.0)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 36)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+            nvgText(vg, rcx, rowY, "前往洗练", nil)
+            BF.finish(vg, _bf2)
+        end
         nvgRestore(vg)
         return
     end
@@ -1312,6 +1434,13 @@ function EquipmentDetail.containsPoint(dx, dy)
     end
     local bgCX = detState.compactCorner and REF_BG_CX or SINGLE_BG_CX
     if hitTest(lx, ly, bgCX, REF_BG_CY, REF_BG_W, REF_BG_H) then return true end
+    if detState.compactCorner then
+        local rowY = select(1, compactButtonRow())
+        if math.abs(ly - rowY) <= REF_ENH_BTN_H * 0.5 + 8
+            and math.abs(lx - REF_BG_CX) <= REF_BG_W * 0.5 then
+            return true
+        end
+    end
     local offsetX = detState.compactCorner and 0 or (SINGLE_BG_CX - REF_BG_CX)
     local btnCX = REF_BTN_CX + offsetX
     local stripTop = REF_BG_CY + REF_BG_H * 0.5
@@ -1362,7 +1491,12 @@ function EquipmentDetail.handleDragEnd()
     return detState.open == true
 end
 
+function EquipmentDetail.getOwner()
+    return detState.owner
+end
+
 function EquipmentDetail.drawIf(vg, owner)
+    if detState.compactCorner then return end
     if owner and detState.owner and detState.owner ~= owner then return end
     EquipmentDetail.draw(vg)
 end

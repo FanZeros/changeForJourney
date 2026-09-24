@@ -601,7 +601,7 @@ local function findBagEntryAt(dx, dy)
                 if cy >= clipTop - cellSize * 0.5
                    and cy <= clipBot + cellSize * 0.5
                    and hitTest(dx, dy, cx, cy, cellSize, cellSize) then
-                    return entry
+                    return entry, cx, cy
                 end
             end
         end
@@ -723,7 +723,9 @@ function EquipmentBag.handleInput(dx, dy)
             bagState.onSelect(entry.seq, entry.equip)
             EquipmentBag.close()
         else
-            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, false, "bag")
+            local _, cx, cy = findBagEntryAt(dx, dy)
+            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", cx, cy)
+            print("[EquipmentBag] 打开详情 seq=" .. tostring(entry.seq))
         end
         return true
     end
@@ -791,6 +793,49 @@ function EquipmentBag.handleDragMove(dx, dy)
     end
 
     return true
+end
+
+function EquipmentBag.haltScroll()
+    bagState.dragging = false
+    bagState.scrollVel = 0
+end
+
+---@param dx number
+---@param dy number
+---@return table|nil
+function EquipmentBag.peekEntry(dx, dy)
+    local entry = findBagEntryAt(dx, dy)
+    if not entry or not entry.equip then return nil end
+    local equip = entry.equip
+    if not equip.slot or not equip.type then
+        EquipmentSystem.hydrate(equip)
+    end
+    return {
+        seq = entry.seq,
+        templateId = equip.templateId,
+        quality = equip.quality or 1,
+        slot = equip.slot,
+        grip = equip.grip,
+        equipType = equip.type,
+    }
+end
+
+--- 左栏设计坐标下的装备格。战斗覆盖层坐标系不同，不在这里命中。
+---@param dx number
+---@param dy number
+---@return table|nil
+function EquipmentBag.peekAt(dx, dy)
+    if not bagState.open or bagState.closing or overlayRegion ~= nil then return nil end
+    return EquipmentBag.peekEntry(dx, dy)
+end
+
+--- 战斗区覆盖层设计坐标下的装备格
+---@param dx number
+---@param dy number
+---@return table|nil
+function EquipmentBag.peekOverlayAt(dx, dy)
+    if not bagState.open or bagState.closing or overlayRegion == nil then return nil end
+    return EquipmentBag.peekEntry(dx, dy)
 end
 
 --- 处理拖拽结束
@@ -1069,6 +1114,13 @@ function EquipmentBag.draw(vg, opts)
                     nvgText(vg, cx, cy, displayName, nil)
                 end
 
+                if not canWearBagEntry(entry) then
+                    nvgBeginPath(vg)
+                    nvgRoundedRect(vg, cx - CELL_SIZE * 0.5, cy - CELL_SIZE * 0.5, CELL_SIZE, CELL_SIZE, 16)
+                    nvgFillColor(vg, nvgRGBA(18, 18, 18, 150))
+                    nvgFill(vg)
+                end
+
                 -- 等级角标（右下角，描边）
                 do
                     local lvlText = "Lv." .. (equip.level or 1)
@@ -1139,15 +1191,13 @@ function EquipmentBag.draw(vg, opts)
                         local badgeSize = 66
                         local badgeX = cx - CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
                         local badgeY = cy - CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
-                        -- 圆形裁剪绘制头像
                         nvgSave(vg)
                         nvgBeginPath(vg)
-                        nvgCircle(vg, badgeX, badgeY, badgeSize * 0.5)
+                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
                         nvgFillPaint(vg, nvgImagePattern(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 0, ownerIcon, 1.0))
                         nvgFill(vg)
-                        -- 白色圆形描边
                         nvgBeginPath(vg)
-                        nvgCircle(vg, badgeX, badgeY, badgeSize * 0.5)
+                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
                         nvgStrokeColor(vg, nvgRGBA(0xff, 0xff, 0xff, 200))
                         nvgStrokeWidth(vg, 2)
                         nvgStroke(vg)
@@ -1214,6 +1264,21 @@ function EquipmentBag.draw(vg, opts)
     else
         EquipmentDetail.drawIf(vg, "bag")
     end
+end
+
+
+function EquipmentBag.handleHover(dx, dy)
+    if not EquipmentBag.isOpen() then return end
+    local entry, cx, cy = findBagEntryAt(dx, dy)
+    if not entry then return end
+    local seq = tostring(entry.seq)
+    if EquipmentBag._hoverSeq == seq then
+        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
+        return
+    end
+    EquipmentBag._hoverSeq = seq
+    EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", cx, cy)
+    print("[EquipmentBag] 悬停详情 seq=" .. seq)
 end
 
 return EquipmentBag

@@ -16,16 +16,16 @@ local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
 local LIST = { x = 48, y = 430, w = 984, h = 1760, rowH = 210, gap = 16 }
 local TABS = {
-    { key = "normal", name = "普通", cx = 118, w = 168 },
-    { key = "hard", name = "困难", cx = 302, w = 168 },
-    { key = "nightmare", name = "噩梦", cx = 486, w = 168 },
-    { key = "level", name = "远征", cx = 670, w = 168 },
-    { key = "hero", name = "队员", cx = 854, w = 168 },
+    { key = "clear", name = "通关", cx = 270, w = 280 },
+    { key = "level", name = "远征", cx = 540, w = 280 },
+    { key = "hero", name = "队员", cx = 810, w = 280 },
 }
+local DIFF_MARK = { normal = "普通", hard = "困难", nightmare = "噩梦" }
+local CLAIM_ALL = { cx = 820, cy = 250, w = 240, h = 64 }
 
 local state = {
     open = false, closing = false, openTime = 0, closeTime = 0,
-    tab = "normal", scrollY = 0, maxScrollY = 0,
+    tab = "clear", scrollY = 0, maxScrollY = 0,
     dragging = false, dragStartY = 0, dragStartScroll = 0, dragMoved = false,
 }
 local iconCache = {}
@@ -96,12 +96,26 @@ local function listForTab()
             if task.group == state.tab then
                 out[#out + 1] = task
             end
-        elseif task.difficulty == state.tab then
+        elseif task.difficulty == "normal" or task.difficulty == "hard" or task.difficulty == "nightmare" then
             out[#out + 1] = task
         end
     end
     sortRows(out)
     return out
+end
+
+local function tabScope()
+    return state.tab == "clear" and "clear" or state.tab
+end
+
+local function claimableInTab()
+    local count = 0
+    for _, task in ipairs(listForTab()) do
+        if statusOf(task) == TaskConfig.STATUS.CLAIMABLE then
+            count = count + 1
+        end
+    end
+    return count
 end
 
 local function refreshScroll(count)
@@ -185,7 +199,11 @@ local function drawRow(vg, task, y)
         nvgFillColor(vg, nvgRGBA(32, 28, 24, 230))
     end
     nvgFill(vg)
-    text(vg, LIST.x + 28, y - 58, task.name or "远征委托", 36,
+    local title = task.name or "远征委托"
+    if task.difficulty and DIFF_MARK[task.difficulty] then
+        title = "[" .. DIFF_MARK[task.difficulty] .. "] " .. title
+    end
+    text(vg, LIST.x + 28, y - 58, title, 36,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, nameR, nameG, nameB, 2)
     text(vg, LIST.x + 28, y - 8, task.desc or "", 28,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, descR, descG, descB, 2)
@@ -228,7 +246,16 @@ function TaskPage.draw(vg)
     nvgFillColor(vg, nvgRGBA(18, 16, 22, 255))
     nvgFill(vg)
     TownPageChrome.drawNamePlate(vg, imgName, "功绩")
-    text(vg, 540, 250, "终焉功绩", 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
+    text(vg, 360, 250, "终焉功绩", 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
+    local claimCount = claimableInTab()
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, CLAIM_ALL.cx - CLAIM_ALL.w * 0.5, CLAIM_ALL.cy - CLAIM_ALL.h * 0.5,
+        CLAIM_ALL.w, CLAIM_ALL.h, 10)
+    nvgFillColor(vg, claimCount > 0 and nvgRGBA(176, 132, 48, 230) or nvgRGBA(62, 56, 48, 200))
+    nvgFill(vg)
+    local claimLabel = claimCount > 0 and ("一键领取 " .. claimCount) or "一键领取"
+    text(vg, CLAIM_ALL.cx, CLAIM_ALL.cy, claimLabel, 28,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 244, 220, 2)
     for _, tab in ipairs(TABS) do
         local on = state.tab == tab.key
         local half = (tab.w or 168) * 0.5
@@ -282,6 +309,15 @@ function TaskPage.handleInput(dx, dy)
             print("[TaskPage] tab " .. tab.key)
             return true
         end
+    end
+    if math.abs(dx - CLAIM_ALL.cx) <= CLAIM_ALL.w * 0.5 and math.abs(dy - CLAIM_ALL.cy) <= CLAIM_ALL.h * 0.5 then
+        if claimableInTab() > 0 then
+            print("[TaskPage] claim all " .. tabScope())
+            GameAction.sendAction(Protocol.ACTION_TYPES.CLAIM_ALL_TASKS, { scope = tabScope() })
+        else
+            print("[TaskPage] claim all empty")
+        end
+        return true
     end
     local task = rowAt(dx, dy)
     if not task then return true end

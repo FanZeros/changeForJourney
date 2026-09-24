@@ -6,7 +6,11 @@
   "never_push_workspace": true,
   "always_askuserquestion": true,
   "never_cancel_task": true,
-  "dev_branch": "integrate/20260923",  "scoped_preferences": {
+  "never_end_without_askuserquestion": true,
+  "askuserquestion_rule": "不能取消或退出任务。每次完成后必须以 AskUserQuestion 选项提问下一步，禁止以纯文字中断对话。",
+  "dev_branch": "integrate/20260923",
+  "feature_branch": "feat/first-clear-reward-cascade",
+  "push_policy": "从 integrate/20260923 新开功能分支开发；每次完成后只 push 当前功能分支，禁止推送到 integrate/20260923、workspace 或其他分支。",  "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",
       "reference_system": "三层参考:角色原版卡面(锁长相)+基准构图图(锁构图)+全队画风板(锁画风)",

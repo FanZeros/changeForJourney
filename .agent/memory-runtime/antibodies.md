@@ -28,8 +28,8 @@
 - [scope:project] Church 输入/名单、Blacksmith 输入、Talent onBeforeAttack/onDamageTaken 已抽成 bind 模块。TAL_BCS 必须 `getTAL_BCS()`
 - [scope:project] Blacksmith 上半绘制依赖大量局部 img/CARD 常量，勿盲目整段抽；结果转发可抽 `BlacksmithResults`
 - [scope:project] 不要把 `.project/i18n.json` 的 `enabled` 设为 true：自动提取会扫进 5800+ 梗名/剧情台词，构建会把玩家可见中文替换成 `t_xxx`。五语用 `scripts/core/I18n.lua` 运行时词表
-- [scope:project] 当前开发分支是 `integrate/20260923`。完成后只 push 该分支，不要推 `workspace` 或其他分支
-- [scope:project] 不能取消/退出任务；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
+- [scope:project] 不能取消/退出任务。每一步完成后必须用 AskUserQuestion 给下一步选项，禁止只用文字收尾或中断对话。即使用户没再说话，也要停在选项上等待。
+- [scope:project] 从 `integrate/20260923` 新开功能分支继续开发。完成后只 push 当前功能分支，禁止推 `integrate/20260923`、`workspace` 或其他分支。旧规则「只 push integrate/20260923」已作废。
 - [scope:project] 右键装备：不可穿 toast+轻点击音；已穿则 UNEQUIP；成功穿戴 play("install")+toast。提示走 `core/UiToast.lua`，横屏在 nvgEndFrame 前画
 - [scope:project] 全 UI 五语用 `core/I18n.installDrawHook()` 拦 nvgText 按中文原文查 `I18nDict`。梗名/剧情/信件不进词表。不要开引擎 i18n enabled=true
 - [scope:project] 主字体 `NotoSansCJKkr-Bold.otf`（OFL）。Resource Han Rounded CN-Heavy 是简体子集，韩文缺字。Pretendard / IBM Plex KR 中日也不全，五语不要单用它们

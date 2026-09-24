@@ -381,6 +381,63 @@ function HeroService.SelectInitialHero(uid, heroId)
     return true, nil, { heroId = heroId }
 end
 
+--- 开场把三名初始远征队员写入 roster，并部署到队1。
+--- 幂等：已拥有的不覆盖等级；已部署三人则直接返回。
+---@param uid number
+---@return boolean ok, string? err, table? result
+function HeroService.GrantStarterTrio(uid)
+    local heroes = PDM.GetModule(uid, "heroes")
+    if not heroes then return false, "数据未加载" end
+    if type(heroes.roster) ~= "table" then heroes.roster = {} end
+
+    local starterIds = { 1, 2, 3 }
+    local startLv = HeroService.GetNewHeroStartLevel(uid)
+    for i = 1, #starterIds do
+        local heroId = starterIds[i]
+        local existing = heroes.roster[heroId] or heroes.roster[tostring(heroId)]
+        if existing and existing.level then
+            heroes.roster[heroId] = existing
+            heroes.roster[tostring(heroId)] = nil
+            print("[HeroService] starter keep heroId=" .. tostring(heroId)
+                .. " lv=" .. tostring(existing.level))
+        else
+            local cfg = HeroConfig.get(heroId)
+            heroes.roster[heroId] = {
+                level = startLv,
+                exp = 0,
+                maxExp = ExpTable.getHeroExpForLevel(startLv) or 0,
+                classId = cfg and cfg.classId or 1,
+                dupeCount = 0,
+                shards = existing and existing.shards or 0,
+                awakening = { _awk3Migrated = true },
+                extraTalent = require("systems.ExtraTalentSystem").normalize(nil),
+                _shardMigrated = true,
+                _awk3Migrated = true,
+            }
+            heroes.roster[tostring(heroId)] = nil
+            print("[HeroService] starter grant heroId=" .. tostring(heroId)
+                .. " lv=" .. tostring(startLv))
+        end
+    end
+
+    local TeamSlots = require("shared.heroes.TeamSlots")
+    TeamSlots.setTeam(heroes, 1, starterIds)
+    PDM.MarkDirty(uid, "heroes")
+
+    local sessionData = PDM.GetModule(uid, "session")
+    if sessionData then
+        if not sessionData.initialHeroId then
+            sessionData.initialHeroId = 1
+        end
+        sessionData.starterTrioReady = true
+        PDM.MarkDirty(uid, "session")
+    end
+    PDM.FlushImmediate(uid)
+    print("[HeroService] starter trio ready deployed="
+        .. table.concat(heroes.deployed or {}, ","))
+    return true, nil, { deployed = heroes.deployed }
+end
+
 -- ======================== 头像设置 ========================
 
 --- 设置头像

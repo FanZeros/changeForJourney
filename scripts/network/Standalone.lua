@@ -484,6 +484,12 @@ local function markIntroCompleted_()
     local sessionData = ClientDispatcher.get("session") or {}
     local claimed = sessionData.claimedScenarios or {}
     claimed["1"] = true  -- 旧点将情景不再播放
+    claimed["2"] = true
+    claimed["3"] = true
+    claimed["4"] = true
+    claimed["11"] = true  -- 三人已在开场入队，不再用 1-3 补人
+    claimed["12"] = true
+    claimed["13"] = true
     local updated = {}
     for k, v in pairs(sessionData) do
         updated[k] = v
@@ -500,14 +506,52 @@ local function markIntroCompleted_()
         .. tostring(updated.initialHeroId) .. ")")
 end
 
---- 信件结束后的门厅点卯（横屏第二幕）
+--- 信件结束后的门厅点卯（横屏第二幕），再接三人入队
+local function finishIntro_()
+    print("[Standalone] intro chain finished, unlock game")
+    GameBGM.setScene("battle", { fromStart = true })
+    markIntroCompleted_()
+    showOfflineRewardPanel_()
+end
+
+local function playJoinAt_(index)
+    local joins = ScenarioDialogueConfig.OPENING_JOINS
+    if not joins or index > #joins then
+        print("[Standalone] starter joins finished played=" .. tostring(index - 1))
+        finishIntro_()
+        return
+    end
+    local cfg = joins[index]
+    if not cfg or not cfg.steps or #cfg.steps == 0 then
+        print("[Standalone] starter join missing index=" .. tostring(index))
+        playJoinAt_(index + 1)
+        return
+    end
+    print("[Standalone] play starter join " .. index .. "/" .. #joins
+        .. " title=" .. tostring(cfg.title) .. " steps=" .. #cfg.steps)
+    ScenarioDialogue.show({
+        mode = cfg.mode or "large",
+        background = cfg.background,
+        title = cfg.title,
+        steps = cfg.steps,
+        onFinish = function()
+            print("[Standalone] starter join finished index=" .. tostring(index))
+            playJoinAt_(index + 1)
+        end,
+    })
+end
+
+local function startStarterJoins_()
+    local handled = localSendAction("grant_starter_trio", {})
+    print("[Standalone] grant starter trio handled=" .. tostring(handled))
+    playJoinAt_(1)
+end
+
 local function startOpeningBriefing_()
     local cfg = ScenarioDialogueConfig.OPENING
     if not cfg or not cfg.steps then
-        print("[Standalone] OPENING missing, unlock directly")
-        GameBGM.setScene("battle", { fromStart = true })
-        markIntroCompleted_()
-        showOfflineRewardPanel_()
+        print("[Standalone] OPENING missing, go straight to joins")
+        startStarterJoins_()
         return
     end
     print("[Standalone] letter finished, play opening briefing steps=" .. #cfg.steps)
@@ -517,10 +561,8 @@ local function startOpeningBriefing_()
         title = cfg.title,
         steps = cfg.steps,
         onFinish = function()
-            print("[Standalone] opening briefing finished, unlocking")
-            GameBGM.setScene("battle", { fromStart = true })
-            markIntroCompleted_()
-            showOfflineRewardPanel_()
+            print("[Standalone] opening briefing finished, start joins")
+            startStarterJoins_()
         end,
     })
 end

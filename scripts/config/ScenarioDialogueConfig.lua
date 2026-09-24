@@ -21,7 +21,36 @@ ScenarioDialogueConfig.OPENING = {
     },
 }
 
---- 情景 1：旧版点将开场。新档不再播放，保留给调试重放。
+--- 开场第三幕：三人依次入队。不点将，直接写入队1。
+ScenarioDialogueConfig.OPENING_JOINS = {
+    {
+        mode = "large",
+        title = "入队  ·  大狗嚼",
+        background = "image/关卡地图/MAP_1.png",
+        steps = {
+            { characterId = 1, name = "大狗嚼", text = "叫！先锋位我占了。骨头先寄存在你那儿，人我带上。" },
+            { characterId = 1, name = "大狗嚼", text = "天狗算什么。在狗面前，它就是只大鸟。出发之前，先让后两位报到。" },
+        },
+    },
+    {
+        mode = "large",
+        title = "入队  ·  黄桃龙",
+        background = "image/关卡地图/MAP_1.png",
+        steps = {
+            { characterId = 2, name = "黄桃龙", text = "黄桃龙也要上车！火把、烤肠，还有大概不会烧到队友的火球，三件套齐了！" },
+            { characterId = 2, name = "黄桃龙", text = "站中间就行。左边有狗咬，右边有铃。黄桃龙负责把路点亮。……大概。" },
+        },
+    },
+    {
+        mode = "large",
+        title = "入队  ·  叮咚鸡",
+        background = "image/关卡地图/MAP_1.png",
+        steps = {
+            { characterId = 3, name = "叮咚鸡", text = "叮咚~入队通知：叮咚鸡，哨位。编制三人，已齐。" },
+            { characterId = 3, name = "叮咚鸡", text = "叮咚~下一步：出门。落单勿慌，先听铃声。远征长，可以签字了。" },
+        },
+    },
+}
 ScenarioDialogueConfig.SCENARIO_1 = {
     mode = "large",
     background = "image/关卡地图/MAP_1.png",

@@ -85,6 +85,19 @@ handlers[Protocol.ACTION_TYPES.SELECT_INITIAL_HERO] = function(uid, params)
     }
 end
 
+--- 开场三人入队（幂等）
+handlers[Protocol.ACTION_TYPES.GRANT_STARTER_TRIO] = function(uid, _params)
+    local ok, err, result = HeroService.GrantStarterTrio(uid)
+    if not ok then
+        return { success = false, reason = err }
+    end
+    return {
+        success = true,
+        action = Protocol.ACTION_TYPES.GRANT_STARTER_TRIO,
+        deployed = result.deployed,
+    }
+end
+
 --- 设置头像
 handlers[Protocol.ACTION_TYPES.SET_AVATAR] = function(uid, params)
     local ok, err, result = HeroService.SetAvatar(uid, params and params.avatarHeroId)

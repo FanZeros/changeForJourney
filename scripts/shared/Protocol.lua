@@ -154,6 +154,7 @@ Protocol.ACTION_TYPES = {
 
     -- 初始角色选择
     SELECT_INITIAL_HERO = "select_initial_hero",  -- 新玩家选择初始英雄
+    GRANT_STARTER_TRIO = "grant_starter_trio",    -- 开场将大狗嚼/黄桃龙/叮咚鸡写入队伍
 
     -- 开场剧�?
     MARK_INTRO_COMPLETED = "mark_intro_completed",  -- 标记开场剧情已完成

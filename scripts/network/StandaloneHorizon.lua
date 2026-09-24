@@ -853,8 +853,14 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if IntroCutscene.isActive() then
         return
     end
+    -- 剧情不依赖 isTap：横屏覆盖层里 pressValid 容易丢，丢了就点不下去
     if ScenarioDialogue.isActive() then
-        if isTap then ScenarioDialogue.advance() end
+        local now = time.elapsedTime
+        if now - lastTapTime >= MIN_TAP_INTERVAL then
+            lastTapTime = now
+            print("[ScenarioDialogue] advance from release step pending")
+            ScenarioDialogue.advance()
+        end
         return
     end
     if wasLootPress and pid ~= 'left' then return end

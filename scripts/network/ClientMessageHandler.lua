@@ -573,6 +573,12 @@ local ClientDispatcher = require("network.ClientDispatcher")
                  }
                  local stageMap = STAGE_HERO_TO_SCENARIO[tostring(M.lastClearedStageId_)]
                  local scenarioId = stageMap and stageMap[heroId]
+                 if scenarioId and sessionData.starterTrioReady
+                     and (scenarioId == 11 or scenarioId == 12 or scenarioId == 13) then
+                     print("[ClientMessageHandler] skip companion-recruit scenario "
+                         .. tostring(scenarioId) .. " trio already joined")
+                     scenarioId = nil
+                 end
                  if scenarioId then
                      local claimed = sessionData.claimedScenarios and sessionData.claimedScenarios[tostring(scenarioId)]
                      if not claimed then

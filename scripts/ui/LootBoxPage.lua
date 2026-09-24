@@ -74,7 +74,7 @@ function LootBoxPage.init(vg)
     inited = true
     ImageCache.init(vg)
     imgName = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0) or -1
-    imgBox = nvgCreateImage(vg, "image/通用图标/ICON_BX.png", 0) or -1
+    imgBox = nvgCreateImage(vg, "image/通用图标/ICON_CZ_YX.png", 0) or -1
 end
 
 function LootBoxPage.setOnClaimOne(cb) onClaimOne = cb end

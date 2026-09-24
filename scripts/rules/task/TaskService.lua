@@ -160,6 +160,14 @@ function TaskService.RefreshAchievements(uid)
         end
         taskData.achProg["stage_count"] = stageCount
         taskData.achProg["max_stage"] = tonumber(battle.maxStageId) or tonumber(battle.currentStageId) or 0
+        local TaskConfig = require("config.TaskConfig")
+        local cleared = battle.clearedStages or {}
+        for _, task in ipairs(TaskConfig.ACHIEVEMENT) do
+            if task.stageId then
+                local done = cleared[tostring(task.stageId)] or cleared[task.stageId]
+                taskData.achProg[task.condKey] = done and 1 or 0
+            end
+        end
     end
 
     local heroes = PDM.GetModule(uid, "heroes")

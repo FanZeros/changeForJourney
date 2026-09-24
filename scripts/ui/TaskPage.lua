@@ -14,16 +14,16 @@ local TaskPage = {}
 local W, H = 1080, 2400
 local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
-local LIST = { x = 48, y = 430, w = 984, h = 1760, rowH = 168, gap = 16 }
+local LIST = { x = 48, y = 430, w = 984, h = 1760, rowH = 210, gap = 16 }
 local TABS = {
-    { key = "stage", name = "关卡", cx = 220, cy = 340 },
-    { key = "signin", name = "签到", cx = 540, cy = 340 },
-    { key = "time", name = "时间", cx = 860, cy = 340 },
+    { key = "normal", name = "普通", cx = 220, cy = 340 },
+    { key = "hard", name = "困难", cx = 540, cy = 340 },
+    { key = "nightmare", name = "噩梦", cx = 860, cy = 340 },
 }
 
 local state = {
     open = false, closing = false, openTime = 0, closeTime = 0,
-    tab = "stage", scrollY = 0, maxScrollY = 0,
+    tab = "normal", scrollY = 0, maxScrollY = 0,
     dragging = false, dragStartY = 0, dragStartScroll = 0, dragMoved = false,
 }
 local imgName = -1
@@ -65,21 +65,10 @@ end
 
 local function listForTab()
     local out = {}
-    local function take(list, pred)
-        for _, task in ipairs(list) do
-            if pred(task) then out[#out + 1] = task end
+    for _, task in ipairs(TaskConfig.ACHIEVEMENT) do
+        if task.difficulty == state.tab then
+            out[#out + 1] = task
         end
-    end
-    if state.tab == "stage" then
-        take(TaskConfig.DAILY, function(t) return t.condKey == "stage_clear" end)
-        take(TaskConfig.WEEKLY, function(t) return t.condKey == "stage_clear" end)
-        take(TaskConfig.ACHIEVEMENT, function() return true end)
-    elseif state.tab == "signin" then
-        take(TaskConfig.DAILY, function(t) return t.condKey == "login" or t.condKey == "signin" end)
-        take(TaskConfig.WEEKLY, function(t) return t.condKey == "login_days" or t.condKey == "signin" end)
-    else
-        take(TaskConfig.DAILY, function(t) return t.condKey == "online_min" end)
-        take(TaskConfig.WEEKLY, function(t) return t.condKey == "online_min" end)
     end
     return out
 end
@@ -156,10 +145,13 @@ local function drawRow(vg, task, y)
     nvgRoundedRect(vg, LIST.x, y - LIST.rowH * 0.5, LIST.w, LIST.rowH, 12)
     nvgFillColor(vg, nvgRGBA(32, 28, 24, 230))
     nvgFill(vg)
-    text(vg, LIST.x + 28, y - 28, task.name, 36, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 232, 204, 2)
-    text(vg, LIST.x + 28, y + 28, shown .. " / " .. task.target, 28,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 186, 168, 132, 2)
-    local label = "进行中"
+    text(vg, LIST.x + 28, y - 58, task.name or "远征委托", 36,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 232, 204, 2)
+    text(vg, LIST.x + 28, y - 8, task.desc or "", 28,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 196, 176, 138, 2)
+    text(vg, LIST.x + 28, y + 46, "进度 " .. shown .. "/" .. task.target, 26,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 150, 176, 138, 2)
+    local label = "未完成"
     local r, g, b = 120, 116, 108
     if status == TaskConfig.STATUS.CLAIMABLE then
         label, r, g, b = "领取", 176, 132, 48
@@ -187,7 +179,7 @@ function TaskPage.draw(vg)
     nvgFillColor(vg, nvgRGBA(18, 16, 22, 255))
     nvgFill(vg)
     TownPageChrome.drawNamePlate(vg, imgName, "任务")
-    text(vg, 540, 250, "关卡、签到与在线", 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
+    text(vg, 540, 250, "通关指定关卡", 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
     for _, tab in ipairs(TABS) do
         local on = state.tab == tab.key
         nvgBeginPath(vg)

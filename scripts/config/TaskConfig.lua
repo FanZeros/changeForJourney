@@ -40,62 +40,50 @@ function TaskConfig.getWeekNumber()
     return math.floor((os.time() + 28800 + 3 * 86400) / (7 * 86400))
 end
 
--- ======================== 日任务：签到 / 关卡 / 在线 ========================
+-- ======================== 通关任务（名字 / 描述 / 指定关卡） ========================
 
-TaskConfig.DAILY = {
-    { id = "d_login", name = "登录游戏", condKey = "login", target = 1,
-      reward = { type = "diamond", amount = 100, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "d_signin", name = "完成今日签到", condKey = "signin", target = 1,
-      reward = { type = "diamond", amount = 150, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "d_stage_1", name = "推进1关", condKey = "stage_clear", target = 1,
-      reward = { type = "diamond", amount = 120, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "d_stage_3", name = "推进3关", condKey = "stage_clear", target = 3,
-      reward = { type = "diamond", amount = 240, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "d_stage_5", name = "推进5关", condKey = "stage_clear", target = 5,
-      reward = { type = "diamond", amount = 400, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "d_online_20", name = "在线20分钟", condKey = "online_min", target = 20,
-      reward = { type = "diamond", amount = 150, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "d_online_40", name = "在线40分钟", condKey = "online_min", target = 40,
-      reward = { type = "diamond", amount = 250, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "d_online_60", name = "在线60分钟", condKey = "online_min", target = 60,
-      reward = { type = "diamond", amount = 400, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-}
+TaskConfig.DAILY = {}
+TaskConfig.WEEKLY = {}
+TaskConfig.ACHIEVEMENT = {}
 
--- ======================== 周任务：签到 / 关卡 / 在线 ========================
+local StageConfig = require("config.StageConfig")
 
-TaskConfig.WEEKLY = {
-    { id = "w_login_3", name = "累计登录3日", condKey = "login_days", target = 3,
-      reward = { type = "diamond", amount = 300, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "w_login_7", name = "累计登录7日", condKey = "login_days", target = 7,
-      reward = { type = "diamond", amount = 800, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "w_signin_5", name = "本周签到5次", condKey = "signin", target = 5,
-      reward = { type = "diamond", amount = 500, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "w_stage_10", name = "本周推进10关", condKey = "stage_clear", target = 10,
-      reward = { type = "diamond", amount = 600, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "w_stage_30", name = "本周推进30关", condKey = "stage_clear", target = 30,
-      reward = { type = "diamond", amount = 1200, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "w_online_180", name = "本周在线3小时", condKey = "online_min", target = 180,
-      reward = { type = "diamond", amount = 800, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-}
+local function gem(amount)
+    return { type = "diamond", amount = amount, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 }
+end
 
--- ======================== 成就：关卡推进 ========================
+local function addClear(stageId, difficulty, amount)
+    local entry = StageConfig.getStage(stageId)
+    if not entry then return end
+    local label = StageConfig.formatProgressDisplay(stageId)
+    local place = StageConfig.getChapterName(entry.chapter or 0)
+    if not place or place == "" then place = label end
+    TaskConfig.ACHIEVEMENT[#TaskConfig.ACHIEVEMENT + 1] = {
+        id = "a_clear_" .. tostring(stageId),
+        name = place,
+        desc = "通关" .. label,
+        condKey = "clear_" .. tostring(stageId),
+        stageId = stageId,
+        difficulty = difficulty,
+        target = 1,
+        reward = gem(amount),
+    }
+end
 
-TaskConfig.ACHIEVEMENT = {
-    { id = "a_stage_10", name = "累计推进10关", condKey = "stage_count", target = 10,
-      reward = { type = "diamond", amount = 200, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_stage_30", name = "累计推进30关", condKey = "stage_count", target = 30,
-      reward = { type = "diamond", amount = 400, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_stage_60", name = "累计推进60关", condKey = "stage_count", target = 60,
-      reward = { type = "diamond", amount = 800, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_stage_100", name = "累计推进100关", condKey = "stage_count", target = 100,
-      reward = { type = "diamond", amount = 1500, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_reach_505", name = "到达普通5-5", condKey = "max_stage", target = 505,
-      reward = { type = "diamond", amount = 300, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_reach_1005", name = "到达普通10-5", condKey = "max_stage", target = 1005,
-      reward = { type = "diamond", amount = 600, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-    { id = "a_reach_2305", name = "到达普通终焉前", condKey = "max_stage", target = 2305,
-      reward = { type = "diamond", amount = 2000, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 } },
-}
+local function addBosses(range, difficulty, baseAmount)
+    local index = 0
+    for chapter = range.first, range.last do
+        index = index + 1
+        addClear(chapter * 100 + 5, difficulty, baseAmount + index * 40)
+    end
+end
+
+for stage = 1, 4 do
+    addClear(100 + stage, "normal", 60 + stage * 20)
+end
+addBosses(StageConfig.NORMAL_CHAPTERS, "normal", 120)
+addBosses(StageConfig.HARD_CHAPTERS, "hard", 400)
+addBosses(StageConfig.NIGHTMARE_CHAPTERS, "nightmare", 800)
 
 -- ======================== 按 ID 快速查找 ========================
 

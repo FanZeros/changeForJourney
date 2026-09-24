@@ -13,10 +13,16 @@ function Start()
         return setmetatable(values or {}, { __index = function() return noop end })
     end
     local mods = {
-        ["network.StandaloneRT"] = { logicalW = 1920, logicalH = 1080, dpr = 1, bootReady_ = true },
+        ["boot.StandaloneRT"] = { logicalW = 1920, logicalH = 1080, dpr = 1, bootReady_ = true },
         ["ui.battle.BattleTriPage"] = mock({
             isOpen = function() return true end,
-            handleScroll = function() counters.bag = counters.bag + 1 return true end,
+            handleScroll = function(_, x)
+                if x >= 486 and x <= 1434 then
+                    counters.bag = counters.bag + 1
+                    return true
+                end
+                return false
+            end,
         }),
         ["ui.loot.LootBoxPage"] = mock({
             isOpen = function() return pageOpen end,
@@ -40,13 +46,18 @@ function Start()
             seamSlideX = function() return 0 end,
         }),
     }
+    local RT = originalRequire("boot.StandaloneRT")
+    local originalRT = {}
+    for key, value in pairs(RT) do originalRT[key] = value end
+    for key, value in pairs(mods["boot.StandaloneRT"]) do RT[key] = value end
     require = function(name)
         if name == "core.Viewport" then return originalRequire(name) end
+        if name == "boot.StandaloneRT" then return RT end
         if not mods[name] then mods[name] = mock() end
         return mods[name]
     end
-    package.loaded["network.StandaloneHorizon"] = nil
-    originalRequire("network.StandaloneHorizon")
+    package.loaded["boot.StandaloneHorizon"] = nil
+    originalRequire("boot.StandaloneHorizon")
     require = originalRequire
     local wheel = { Wheel = { GetInt = function() return -1 end } }
     HandleMouseWheelHorizon("MouseWheel", wheel)
@@ -83,5 +94,7 @@ function Start()
     HandleMouseButtonUpHorizon("MouseButtonUp", button)
     assert(counters.close == 1 and not pageOpen, "中缝返回按窗口坐标正确关闭")
     input, time = originalInput, originalTime
+    for key in pairs(RT) do RT[key] = nil end
+    for key, value in pairs(originalRT) do RT[key] = value end
     print("[lootbox_horizon_test] 跨栏滚轮、全局优先、点击、拖拽、中缝返回全部通过")
 end

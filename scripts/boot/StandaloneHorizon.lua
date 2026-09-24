@@ -1125,6 +1125,12 @@ function HandleMouseWheelHorizon(eventType, eventData)
         end
     end
 
+    -- 全局领奖覆盖三栏时先消费滚轮，不能被中栏装备袋抢走。
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        RewardPopup.handleScroll(wheel)
+        return
+    end
+
     -- 装备袋只吃覆盖矩形内的滚轮，左右栏仍滚自己的列表
     if BattleTriPage.handleScroll(wheel, sx, sy) then return end
 

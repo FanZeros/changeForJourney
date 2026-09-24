@@ -4,7 +4,7 @@
 -- 已领取（session.claimedScenarios）的情景不会再入队。
 -- ============================================================================
 
-local ClientDispatcher = require("network.ClientDispatcher")
+local ClientDispatcher = require("runtime.ClientDispatcher")
 local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig")
 
 local StoryPlayer = {}

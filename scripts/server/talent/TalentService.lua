@@ -52,9 +52,6 @@ function TalentService.Activate(uid, nodeId)
     if not nodeCfg then
         return false, "无效的天赋节点: " .. tostring(nodeId)
     end
-    if TalentNodeDefs.isPlaceholder(nodeId) then
-        return false, "终焉节点尚未开放"
-    end
 
     -- 校验未被点亮
     local litSet = {}

@@ -89,20 +89,12 @@ local AVATAR = {
     CX = 245, CY = 499, W = 160, H = 160,
 }
 
--- 玩家名称
-local NAME = {
-    X = 355, Y = 432, FONT = 38,
-    R = 0x50, G = 0x2c, B = 0x15,  -- 502c15
+-- 游玩时间（原玩家名称位；名字不再显示）
+local PLAY_TIME = {
+    X = 355, Y = 432, FONT = 36,
 }
 
--- 装饰线1
-local DECO1 = {
-    CX = 610, CY = 463, W = 512, H = 6, R = 3,
-    CR = 0x8d, CG = 0x5f, CB = 0x41,  -- 8d5f41
-    A = 51,  -- 20% → 255*0.2≈51
-}
-
--- 玩家UID
+-- 区服名（原 UID 位置）
 local UID = {
     X = 355, Y = 492, FONT = 38,
     R = 0x50, G = 0x2c, B = 0x15,
@@ -118,13 +110,6 @@ local TOAST = {
     DURATION = 1.5,  -- 显示时长（秒）
     FONT = 32,
     R = 16, -- 圆角
-}
-
--- 装饰线2
-local DECO2 = {
-    CX = 610, CY = 521, W = 512, H = 6, R = 3,
-    CR = 0x8d, CG = 0x5f, CB = 0x41,
-    A = 51,
 }
 
 -- 战力背景框
@@ -267,6 +252,68 @@ local cachedServerName = nil  ---@type string|nil  当前区服名称
 local cachedServerId = nil    ---@type number|nil    当前区服 id
 local cachedVg         = nil  ---@type any
 
+local PLAY_TIME_FILE = "play_time.json"
+local playSeconds = 0.0
+local playLoaded = false
+local playSaveAccum = 0.0
+
+local function loadPlayTime()
+    if playLoaded then return end
+    playLoaded = true
+    if not fileSystem:FileExists(PLAY_TIME_FILE) then
+        print("[PlayerInfoPanel] 游玩时间：无存档，从 0 开始")
+        return
+    end
+    local file = File(PLAY_TIME_FILE, FILE_READ)
+    if not file:IsOpen() then
+        print("[PlayerInfoPanel] 游玩时间：存档打开失败")
+        return
+    end
+    local raw = file:ReadString()
+    file:Close()
+    local ok, data = pcall(cjson.decode, raw)
+    if ok and type(data) == "table" then
+        playSeconds = tonumber(data.seconds) or 0
+        print(string.format("[PlayerInfoPanel] 游玩时间已加载 %d 秒", math.floor(playSeconds)))
+    else
+        print("[PlayerInfoPanel] 游玩时间：存档解析失败")
+    end
+end
+
+local function savePlayTime()
+    local file = File(PLAY_TIME_FILE, FILE_WRITE)
+    if not file:IsOpen() then
+        print("[PlayerInfoPanel] 游玩时间：写入失败")
+        return
+    end
+    local payload = { seconds = math.floor(playSeconds) }
+    local ok, str = pcall(cjson.encode, payload)
+    if ok and str then
+        file:WriteString(str)
+    end
+    file:Close()
+end
+
+--- 累计游玩时长文案
+---@param secs number
+---@return string
+local function formatPlayTime(secs)
+    local total = math.max(0, math.floor(secs))
+    local days = math.floor(total / 86400)
+    local hours = math.floor((total % 86400) / 3600)
+    local mins = math.floor((total % 3600) / 60)
+    if days > 0 then
+        return string.format("游玩时间 %d天%d小时", days, hours)
+    end
+    if hours > 0 then
+        return string.format("游玩时间 %d小时%d分", hours, mins)
+    end
+    if mins > 0 then
+        return string.format("游玩时间 %d分", mins)
+    end
+    return "游玩时间 不足1分"
+end
+
 --- 判断当前玩家是否为 GM（完全由服务端鉴权，客户端无白名单）
 local function isGM()
     local Client = require("runtime.GameAction")
@@ -375,6 +422,7 @@ function PlayerInfoPanel.close()
     if not state.open or state.closing then return end
     state.closing = true
     state.closeTime = time.elapsedTime
+    savePlayTime()
     print("[PlayerInfoPanel] 关闭（动画中）")
 end
 
@@ -681,6 +729,15 @@ end
 
 --- 每帧更新（转发给 SettingsPanel → RedeemCodePanel 处理键盘输入）
 function PlayerInfoPanel.update(dt)
+    loadPlayTime()
+    if type(dt) == "number" and dt > 0 and dt < 5 then
+        playSeconds = playSeconds + dt
+        playSaveAccum = playSaveAccum + dt
+        if playSaveAccum >= 20 then
+            savePlayTime()
+            playSaveAccum = 0
+        end
+    end
     if not state.open then return end
     -- Toast 倒计时
     if state.toastTimer > 0 then
@@ -748,22 +805,13 @@ function PlayerInfoPanel.draw(vg)
     end
     BF.finish(vg, _bf1)
 
-    -- ── 7. 玩家名称（骨白 + 描边，暗底可读）──
-    local displayName = cachedName or GameState.getName()
-    drawTextStroke(vg, NAME.X, NAME.Y, displayName,
-        NAME.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+    -- ── 7. 游玩时间（名字与装饰下划线已移除）──
+    drawTextStroke(vg, PLAY_TIME.X, PLAY_TIME.Y, formatPlayTime(playSeconds),
+        PLAY_TIME.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         244, 237, 224, 4,
         { strokeColor = { 0x3a, 0x24, 0x0c } })
 
-    -- ── 8. 装饰线1 ──
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        DECO1.CX - DECO1.W * 0.5, DECO1.CY - DECO1.H * 0.5,
-        DECO1.W, DECO1.H, DECO1.R)
-    nvgFillColor(vg, nvgRGBA(DECO1.CR, DECO1.CG, DECO1.CB, DECO1.A))
-    nvgFill(vg)
-
-    -- ── 9.5 当前区服名称（UID 已删除，区服名放原 UID 位置）──
+    -- ── 9.5 当前区服名称 ──
     if cachedServerName then
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 32)
@@ -771,14 +819,6 @@ function PlayerInfoPanel.draw(vg)
         nvgFillColor(vg, nvgRGBA(216, 201, 163, 230))
         nvgText(vg, UID.X, UID.Y, cachedServerName, nil)
     end
-
-    -- ── 10. 装饰线2 ──
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        DECO2.CX - DECO2.W * 0.5, DECO2.CY - DECO2.H * 0.5,
-        DECO2.W, DECO2.H, DECO2.R)
-    nvgFillColor(vg, nvgRGBA(DECO2.CR, DECO2.CG, DECO2.CB, DECO2.A))
-    nvgFill(vg)
 
     -- ── 11. 战力背景框 ──
     nvgBeginPath(vg)

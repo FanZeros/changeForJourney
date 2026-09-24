@@ -800,12 +800,10 @@ function EquipmentBag.haltScroll()
     bagState.scrollVel = 0
 end
 
---- 左栏设计坐标下的装备格。战斗覆盖层坐标系不同，不在这里命中。
 ---@param dx number
 ---@param dy number
 ---@return table|nil
-function EquipmentBag.peekAt(dx, dy)
-    if not bagState.open or bagState.closing or overlayRegion ~= nil then return nil end
+function EquipmentBag.peekEntry(dx, dy)
     local entry = findBagEntryAt(dx, dy)
     if not entry or not entry.equip then return nil end
     local equip = entry.equip
@@ -820,6 +818,24 @@ function EquipmentBag.peekAt(dx, dy)
         grip = equip.grip,
         equipType = equip.type,
     }
+end
+
+--- 左栏设计坐标下的装备格。战斗覆盖层坐标系不同，不在这里命中。
+---@param dx number
+---@param dy number
+---@return table|nil
+function EquipmentBag.peekAt(dx, dy)
+    if not bagState.open or bagState.closing or overlayRegion ~= nil then return nil end
+    return EquipmentBag.peekEntry(dx, dy)
+end
+
+--- 战斗区覆盖层设计坐标下的装备格
+---@param dx number
+---@param dy number
+---@return table|nil
+function EquipmentBag.peekOverlayAt(dx, dy)
+    if not bagState.open or bagState.closing or overlayRegion == nil then return nil end
+    return EquipmentBag.peekEntry(dx, dy)
 end
 
 --- 处理拖拽结束

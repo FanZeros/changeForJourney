@@ -44,7 +44,7 @@ local function haltSource()
     if session.source == "backpack" then
         local Panel = require("ui.backpack.BackpackPanel")
         if Panel.haltScroll then Panel.haltScroll() end
-    elseif session.source == "bag" then
+    elseif session.source == "bag" or session.source == "overlay" then
         local Bag = require("ui.character.EquipmentBag")
         if Bag.haltScroll then Bag.haltScroll() end
     end
@@ -145,6 +145,12 @@ end
 ---@return boolean
 function EquipCrossDrag.isArmed()
     return session.armed == true
+end
+
+---@return string|nil
+function EquipCrossDrag.getSource()
+    if not session.armed then return nil end
+    return session.source
 end
 
 ---@return boolean

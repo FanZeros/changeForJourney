@@ -808,6 +808,23 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     if pid == 'tri' then
         pressStartDX, pressStartDY = dx or 0, dy or 0
         pressValid = true
+        if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion()
+            and EquipmentBag.hitOverlayWindow(dx, dy) then
+            local EquipmentDetail = require("ui.character.EquipmentDetail")
+            local onDetail = false
+            if EquipmentDetail.isOpen() then
+                local ddx, ddy = EquipmentBag.overlayToDetail(dx, dy)
+                onDetail = EquipmentDetail.containsPoint(ddx, ddy) == true
+            end
+            if not onDetail then
+                local bdx, bdy = EquipmentBag.overlayToDesign(dx, dy)
+                local peek = EquipmentBag.peekOverlayAt(bdx, bdy)
+                if peek then
+                    EquipCrossDrag.arm(peek, dx, dy, "overlay")
+                    print("[Horizon] 战斗背包按下 seq=" .. tostring(peek.seq))
+                end
+            end
+        end
         BattleTriPage.handleDragBegin(dx, dy)
         return
     end
@@ -889,7 +906,12 @@ function HandleMouseMoveHorizon(eventType, eventData)
         if EquipCrossDrag.move(sx, sy) then
             return
         end
-        if pid ~= "left" then return end
+        local source = EquipCrossDrag.getSource()
+        if source == "overlay" then
+            if pid ~= "tri" then return end
+        elseif pid ~= "left" then
+            return
+        end
     end
     if pid == 'none' then return end
     if pid == 'playerinfo' then

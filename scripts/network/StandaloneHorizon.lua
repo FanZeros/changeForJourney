@@ -173,7 +173,7 @@ local function HorizonDrawPageModal(_unused_vg)
     nvgRestore(vg())
 end
 
---- [LetterIntro] 开场链全窗口覆盖：信件铺满窗口；过场/情景仍用 1080×2400 letterbox
+--- [LetterIntro] 开场链全窗口覆盖：信件与情景都用逻辑分辨率横屏绘制；旧过场用 cover 裁切避免竖条
 local function HorizonDrawIntroOverlay()
     if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
         return
@@ -183,18 +183,16 @@ local function HorizonDrawIntroOverlay()
     applyFrame()
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     if LetterIntro.isOpen() then
-        -- 全窗口逻辑坐标，16:9 cover，不再 letterbox 成竖条
         ---@diagnostic disable-next-line: missing-parameter
         LetterIntro.draw(vg(), logicalW(), logicalH())
-    else
-        local ss = math.min(logicalW() / 1080, logicalH() / 2400)
-        nvgTranslate(vg(), (logicalW() - 1080 * ss) * 0.5, (logicalH() - 2400 * ss) * 0.5)
+    elseif ScenarioDialogue.isActive() then
+        ScenarioDialogue.draw(logicalW(), logicalH())
+    elseif IntroCutscene.isActive() then
+        local lw, lh = logicalW(), logicalH()
+        local ss = math.max(lw / 1080, lh / 2400)
+        nvgTranslate(vg(), (lw - 1080 * ss) * 0.5, (lh - 2400 * ss) * 0.5)
         nvgScale(vg(), ss, ss)
-        if IntroCutscene.isActive() then
-            IntroCutscene.draw(vg())
-        elseif ScenarioDialogue.isActive() then
-            ScenarioDialogue.draw()
-        end
+        IntroCutscene.draw(vg())
     end
     nvgRestore(vg())
 end

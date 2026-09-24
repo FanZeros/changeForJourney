@@ -479,30 +479,90 @@ local function showOfflineRewardPanel_()
     print("[Standalone] auto-showed OfflineRewardPanel after StartScreen closed")
 end
 
---- [LetterIntro] 新档标记开场剧情完成（session.introCompleted，模块级整体替换需带全字段）
+--- [LetterIntro] 新档标记开场剧情完成（session 整表替换，必须带全字段）
 local function markIntroCompleted_()
     local sessionData = ClientDispatcher.get("session") or {}
     local claimed = sessionData.claimedScenarios or {}
-    claimed["1"] = true  -- 跳过情景1仍标记已领取，避免后续系统再拉起
-    local updated = {
-        lastOnlineTime   = sessionData.lastOnlineTime or 0,
-        firstLoginTime   = sessionData.firstLoginTime or 0,
-        introCompleted   = true,
-        claimedScenarios = claimed,
-    }
+    claimed["1"] = true  -- 旧点将情景不再播放
+    local updated = {}
+    for k, v in pairs(sessionData) do
+        updated[k] = v
+    end
+    updated.lastOnlineTime = sessionData.lastOnlineTime or 0
+    updated.firstLoginTime = sessionData.firstLoginTime or 0
+    updated.introCompleted = true
+    updated.claimedScenarios = claimed
+    if not updated.initialHeroId then
+        updated.initialHeroId = 1
+    end
     ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
-    print("[Standalone] intro completed flag saved (session.introCompleted=true, scenario 1 claimed)")
+    print("[Standalone] intro completed flag saved (scenario 1 claimed, initialHeroId="
+        .. tostring(updated.initialHeroId) .. ")")
 end
 
---- [LetterIntro] 新档开场链：只播先祖来信，结束后直接解锁进游戏（不再播睁眼过场/情景1）
-local function startIntroChain_()
-    GameBGM.setScene("letter", { fromStart = true })
-    LetterIntro.start(function()
-        print("[Standalone] letter finished, skip cutscene/scenario, unlocking")
+--- 信件结束后的门厅点卯（横屏第二幕）
+local function startOpeningBriefing_()
+    local cfg = ScenarioDialogueConfig.OPENING
+    if not cfg or not cfg.steps then
+        print("[Standalone] OPENING missing, unlock directly")
         GameBGM.setScene("battle", { fromStart = true })
         markIntroCompleted_()
         showOfflineRewardPanel_()
-    end)
+        return
+    end
+    print("[Standalone] letter finished, play opening briefing steps=" .. #cfg.steps)
+    ScenarioDialogue.show({
+        mode = cfg.mode or "large",
+        background = cfg.background,
+        title = cfg.title,
+        steps = cfg.steps,
+        onFinish = function()
+            print("[Standalone] opening briefing finished, unlocking")
+            GameBGM.setScene("battle", { fromStart = true })
+            markIntroCompleted_()
+            showOfflineRewardPanel_()
+        end,
+    })
+end
+
+--- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
+local function tryPlayPendingStory_()
+    if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then
+        return
+    end
+    if RewardPopup.isOpen() or OfflineRewardPanel.isOpen() then
+        return
+    end
+    local pending = ClientMsgHandler.consumePendingScenarioDialogue()
+    if not pending then
+        pending = ClientMsgHandler.consumePendingFollowUpDialogue()
+    end
+    if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
+        return
+    end
+    local cfg = pending.config
+    local scenarioId = pending.scenarioId
+    print("[Standalone] play pending story id=" .. tostring(scenarioId)
+        .. " steps=" .. #cfg.steps .. " mode=" .. tostring(cfg.mode))
+    ScenarioDialogue.show({
+        mode = cfg.mode or "small",
+        background = cfg.background,
+        title = cfg.title,
+        eyeOpen = cfg.eyeOpen,
+        steps = cfg.steps,
+        onFinish = function()
+            if scenarioId then
+                print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
+                localSendAction("claim_scenario_reward", { scenarioId = scenarioId })
+            end
+        end,
+    })
+end
+
+--- [LetterIntro] 新档开场链：先祖来信 → 门厅点卯 → 进游戏
+local function startIntroChain_()
+    GameBGM.setScene("letter", { fromStart = true })
+    LetterIntro.start(startOpeningBriefing_)
 end
 
 --- 清除存档后重置客户端状态并回到开始界面
@@ -682,7 +742,7 @@ function HandleUpdate(eventType, eventData)
         end
     end
 
-    -- 开始页/标题刚关闭 → 老档弹离线收益；新档走开场链（先祖来信→过场→情景1）
+    -- 开始页/标题刚关闭 → 老档弹离线收益；新档走开场链（来信 → 门厅点卯）
     -- 必须等 DarkTitleScreen 关闭后再播，否则信件会被标题盖住且点击被吞
     if not postStartFlowDone_ and not DarkTitleScreen.isOpen() then
         postStartFlowDone_ = true
@@ -694,7 +754,7 @@ function HandleUpdate(eventType, eventData)
         if introDone then
             showOfflineRewardPanel_()
         else
-            print("[Standalone] new save detected, starting intro chain (letter → cutscene → scenario 1)")
+            print("[Standalone] new save detected, starting intro chain (letter → briefing)")
             startIntroChain_()
         end
     end
@@ -743,6 +803,8 @@ function HandleUpdate(eventType, eventData)
         if ScenarioDialogue.isFullscreen() then
             return
         end
+    else
+        tryPlayPendingStory_()
     end
 
     -- [三行并行] 横屏专用: 战斗布局恒为 strip（竖屏 classic 已移除）

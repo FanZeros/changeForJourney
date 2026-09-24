@@ -769,7 +769,7 @@ end
 
 --- 拖拽开始
 function M.handleDragBegin(dx, dy)
-    if EquipmentDetail.isOpen() then return end
+    if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragBegin(dx, dy) end
     fjState.touchStartY = dy
     fjState.touchStartScroll = fjState.scrollY
 
@@ -801,7 +801,7 @@ end
 
 --- 拖拽移动
 function M.handleDragMove(dx, dy)
-    if EquipmentDetail.isOpen() then return end
+    if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragMove(dx, dy) end
     -- 长按检测：移动超限则取消
     if fjState.longPressActive then
         local moveDist = math.abs(dx - fjState.longPressStartX) + math.abs(dy - fjState.longPressStartY)
@@ -823,7 +823,7 @@ end
 
 --- 拖拽结束
 function M.handleDragEnd(dx, dy)
-    if EquipmentDetail.isOpen() then return end
+    if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragEnd(dx, dy) end
     fjState.touchStartY = nil
     -- 重置长按状态
     fjState.longPressActive = false
@@ -832,6 +832,10 @@ end
 
 --- 鼠标滚轮
 function M.handleScroll(wheel)
+    if EquipmentDetail.isOpen() then
+        EquipmentDetail.handleScroll(wheel)
+        return
+    end
     local scrollStep = FJ.GRID_ROW_STEP
     local totalSlots = EquipmentSystem.MAX_INVENTORY
     local totalRows = math.ceil(totalSlots / FJ.GRID_COLS)

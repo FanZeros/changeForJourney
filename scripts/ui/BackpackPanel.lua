@@ -1416,7 +1416,9 @@ end
 function Panel.handleDragBegin(dx, dy)
     if not state.open then return false end
     if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then return true end
+    if EquipmentDetail.isOpen() then
+        return EquipmentDetail.handleDragBegin(dx, dy)
+    end
     -- 检查是否在网格区域内
     if dy >= CLIP_TOP and dy <= GRID.CLIP_BOTTOM then
         state.dragging = true
@@ -1430,7 +1432,9 @@ end
 function Panel.handleDragMove(dx, dy)
     if not state.open then return false end
     if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then return true end
+    if EquipmentDetail.isOpen() then
+        return EquipmentDetail.handleDragMove(dx, dy)
+    end
     if state.dragging then
         local delta = state.lastDragY - dy
         state.scrollY = state.scrollY + delta
@@ -1445,7 +1449,9 @@ end
 function Panel.handleDragEnd(dx, dy)
     if not state.open then return false end
     if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then return true end
+    if EquipmentDetail.isOpen() then
+        return EquipmentDetail.handleDragEnd(dx, dy)
+    end
     state.dragging = false
     return true
 end
@@ -1453,7 +1459,9 @@ end
 function Panel.handleScroll(wheel)
     if not state.open then return false end
     if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then return true end
+    if EquipmentDetail.isOpen() then
+        return EquipmentDetail.handleScroll(wheel)
+    end
     state.scrollY = state.scrollY - wheel * SCROLL_WHEEL_STEP
     clampScroll()
     return true

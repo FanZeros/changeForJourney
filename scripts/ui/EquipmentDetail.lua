@@ -45,6 +45,10 @@ local detState = {
     closeTime = 0,
     compactCorner = false, -- 配装页单击：右栏左上角小窗，无阴影
     owner = nil,           -- backpack | character | bag | smith，只在打开它的那一侧画
+    descScrollY = 0,
+    descScrollMax = 0,
+    descDragging = false,
+    descDragLastY = 0,
     -- 关闭动画快照（close() 时冻结，防止 server 推送导致面板内容跳变）
     snapshot  = nil,    -- { newEquip, isEquipped, curEquip, hasCurrent, btnText, powerDiff }
 }
@@ -489,6 +493,43 @@ local function compactOffset()
     return COMPACT_LEFT - refLeft * COMPACT_SCALE, COMPACT_TOP - refTop * COMPACT_SCALE
 end
 
+local DESC_TOP = 980
+local DESC_BTN_LIMIT_PAD = 150
+
+local function pinnedBtnCY()
+    return REF_BG_CY + REF_BG_H * 0.5 - DESC_BTN_LIMIT_PAD
+end
+
+--- 说明区超出底板时，按钮钉在框内，多出来的部分靠 descScrollY 下滚
+local function layoutButtons(equip)
+    local btnCY = REF_BTN_CY
+    if equip and equip.affixes and #equip.affixes > 0 then
+        local baseStatCount = equip.baseStats and #equip.baseStats or 0
+        local affixTitleY = REF_AFFIX_TITLE_Y
+        if baseStatCount ~= 0 then
+            local baseStatEndY = REF_STAT_BG_Y0 + (baseStatCount - 1) * (REF_STAT_BG_H + REF_STAT_GAP) + REF_STAT_BG_H * 0.5
+            if affixTitleY < baseStatEndY + 30 then
+                affixTitleY = baseStatEndY + 30
+            end
+        end
+        local lastAffixY = affixTitleY + REF_AFFIX_TITLE_FONT * 0.5 + REF_AFFIX_GAP_TOP + REF_AFFIX_ROW_H * 0.5
+            + (#equip.affixes - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP)
+        local natural = lastAffixY + REF_AFFIX_ROW_H * 0.5 + 40
+        if btnCY < natural then btnCY = natural end
+    end
+    local limit = pinnedBtnCY()
+    local scrollMax = math.max(0, btnCY - limit)
+    if btnCY > limit then btnCY = limit end
+    return btnCY, scrollMax
+end
+
+local function clampDescScroll()
+    if detState.descScrollY < 0 then detState.descScrollY = 0 end
+    if detState.descScrollY > detState.descScrollMax then
+        detState.descScrollY = detState.descScrollMax
+    end
+end
+
 -- ======================== 面板绘制（绝对坐标 + X偏移） ========================
 
 --- 获取装备图标（委托 ImageCache 共享缓存）
@@ -675,7 +716,15 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, lvBgCX, REF_LV_BG_CY, "LV " .. (equip.level or 1), nil)
 
-    -- 11-14) 基础属性栏（含强化加成 + 槽位强化加成）
+    -- 11-14) 基础属性 + 词缀：超出框内可视区时下滚
+    local pinnedCY, scrollMax = layoutButtons(equip)
+    detState.descScrollMax = scrollMax
+    clampDescScroll()
+    local descH = math.max(80, pinnedCY - 56 - DESC_TOP)
+    nvgSave(vg)
+    nvgIntersectScissor(vg, bgX, DESC_TOP, bgW, descH)
+    nvgTranslate(vg, 0, -detState.descScrollY)
+
     if equip.baseStats and #equip.baseStats > 0 then
         local enhBoost = BlacksmithConfig.getEnhanceBoost(equip.enhanceLevel or 0)
         -- 槽位强化加成（仅第一条基础属性，与服务端保持一致）
@@ -775,29 +824,11 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
         end
     end
 
-    -- 19-20) 穿戴按钮
-    if showButton then
-        -- 按钮Y也可能需要根据内容动态调整
-        local btnCY = REF_BTN_CY
-        -- 检查词缀是否超出按钮位置
-        if equip.affixes and #equip.affixes > 0 then
-            local baseStatCount = equip.baseStats and #equip.baseStats or 0
-            local affixTitleY = REF_AFFIX_TITLE_Y
-            if baseStatCount ~= 0 then
-                local baseStatEndY = REF_STAT_BG_Y0 + (baseStatCount - 1) * (REF_STAT_BG_H + REF_STAT_GAP) + REF_STAT_BG_H * 0.5
-                local minGap = 30
-                if affixTitleY < baseStatEndY + minGap then
-                    affixTitleY = baseStatEndY + minGap
-                end
-            end
-            local lastAffixY = affixTitleY + REF_AFFIX_TITLE_FONT * 0.5 + REF_AFFIX_GAP_TOP + REF_AFFIX_ROW_H * 0.5
-                + (#equip.affixes - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP)
-            local minBtnGap = 40
-            if btnCY < lastAffixY + REF_AFFIX_ROW_H * 0.5 + minBtnGap then
-                btnCY = lastAffixY + REF_AFFIX_ROW_H * 0.5 + minBtnGap
-            end
-        end
+    nvgRestore(vg)
 
+    -- 19-20) 穿戴按钮钉在框内，说明超出部分用滚动看
+    if showButton then
+        local btnCY = pinnedCY
         if not showEnhanceOnly then
             -- 19) 按钮背景 UI_AN_LV.png - X807 Y1461 410*100
             local _bf1 = BF.begin(vg, "ed_equip", REF_BTN_CX + offsetX, btnCY, REF_BTN_W, REF_BTN_H)
@@ -892,6 +923,9 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner)
     detState.openTime  = time.elapsedTime
     detState.compactCorner = compactCorner == true
     detState.owner = owner or (compactCorner and "character" or "bag")
+    detState.descScrollY = 0
+    detState.descScrollMax = 0
+    detState.descDragging = false
     print("[EquipmentDetail] open seq=" .. tostring(seq) .. " slot=" .. tostring(slot)
         .. " heroId=" .. tostring(heroId) .. " compact=" .. tostring(detState.compactCorner)
         .. " owner=" .. tostring(detState.owner))
@@ -1026,37 +1060,12 @@ function EquipmentDetail.handleInput(dx, dy)
     local curEquip = getComparisonEquip()
     local hasCurrent = (not isEquipped) and (curEquip ~= nil)
 
-    -- 按钮位置（与绘制一致）
-    local btnCX, btnCY
-    local offsetX = 0
-    if hasCurrent then
-        btnCX = REF_BTN_CX  -- 双面板模式，按钮在右面板
-        btnCY = REF_BTN_CY
-        offsetX = 0
-    else
-        offsetX = SINGLE_BG_CX - REF_BG_CX
-        btnCX = REF_BTN_CX + offsetX  -- 单面板居中
-        btnCY = REF_BTN_CY
-    end
-
-    -- 动态调整按钮Y（与绘制逻辑一致）
-    if newEquip.affixes and #newEquip.affixes > 0 then
-        local baseStatCount = newEquip.baseStats and #newEquip.baseStats or 0
-        local affixTitleY = REF_AFFIX_TITLE_Y
-        if baseStatCount ~= 0 then
-            local baseStatEndY = REF_STAT_BG_Y0 + (baseStatCount - 1) * (REF_STAT_BG_H + REF_STAT_GAP) + REF_STAT_BG_H * 0.5
-            local minGap = 30
-            if affixTitleY < baseStatEndY + minGap then
-                affixTitleY = baseStatEndY + minGap
-            end
-        end
-        local lastAffixY = affixTitleY + REF_AFFIX_TITLE_FONT * 0.5 + REF_AFFIX_GAP_TOP + REF_AFFIX_ROW_H * 0.5
-            + (#newEquip.affixes - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP)
-        local minBtnGap = 40
-        if btnCY < lastAffixY + REF_AFFIX_ROW_H * 0.5 + minBtnGap then
-            btnCY = lastAffixY + REF_AFFIX_ROW_H * 0.5 + minBtnGap
-        end
-    end
+    -- 按钮位置与绘制一致：超出时钉在框底
+    local btnCY = layoutButtons(newEquip)
+    detState.descScrollMax = select(2, layoutButtons(newEquip))
+    clampDescScroll()
+    local offsetX = detState.compactCorner and 0 or (SINGLE_BG_CX - REF_BG_CX)
+    local btnCX = REF_BTN_CX + offsetX
 
     -- 前往洗练按钮Y
     local enhOnly = (detState.slot == nil)  -- 背包模式
@@ -1310,6 +1319,43 @@ function EquipmentDetail.draw(vg)
         (hasCurrent and powerDiff or nil), true, btnText, enhOnly, true, showDecompose)
 
     nvgRestore(vg)
+end
+
+function EquipmentDetail.handleScroll(wheel)
+    if not detState.open or detState.closing then return false end
+    detState.descScrollY = detState.descScrollY - (wheel or 0) * 90
+    clampDescScroll()
+    return true
+end
+
+function EquipmentDetail.handleDragBegin(dx, dy)
+    if not detState.open or detState.closing then return false end
+    local _, ly = dx, dy
+    if detState.compactCorner then
+        local ox, oy = compactOffset()
+        ly = (dy - oy) / COMPACT_SCALE
+    end
+    detState.descDragging = true
+    detState.descDragLastY = ly
+    return true
+end
+
+function EquipmentDetail.handleDragMove(dx, dy)
+    if not detState.open or not detState.descDragging then return false end
+    local ly = dy
+    if detState.compactCorner then
+        local ox, oy = compactOffset()
+        ly = (dy - oy) / COMPACT_SCALE
+    end
+    detState.descScrollY = detState.descScrollY + (detState.descDragLastY - ly)
+    detState.descDragLastY = ly
+    clampDescScroll()
+    return true
+end
+
+function EquipmentDetail.handleDragEnd()
+    detState.descDragging = false
+    return detState.open == true
 end
 
 function EquipmentDetail.drawIf(vg, owner)

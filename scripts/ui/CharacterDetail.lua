@@ -651,8 +651,8 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragBegin(dx, dy)
     if not detailState.open or detailState.closing then return true end
-    if CharacterDetail._EquipDetail.isOpen() and not CharacterDetail._EquipDetail.isCompactCorner() then
-        return true
+    if CharacterDetail._EquipDetail.isOpen() then
+        return CharacterDetail._EquipDetail.handleDragBegin(dx, dy)
     end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleDragBegin(dx, dy)
@@ -681,8 +681,8 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragMove(dx, dy)
     if not detailState.open or detailState.closing then return true end
-    if CharacterDetail._EquipDetail.isOpen() and not CharacterDetail._EquipDetail.isCompactCorner() then
-        return true
+    if CharacterDetail._EquipDetail.isOpen() then
+        return CharacterDetail._EquipDetail.handleDragMove(dx, dy)
     end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleDragMove(dx, dy)
@@ -714,8 +714,8 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragEnd(dx, dy)
     if not detailState.open then return false end
-    if CharacterDetail._EquipDetail.isOpen() and not CharacterDetail._EquipDetail.isCompactCorner() then
-        return true
+    if CharacterDetail._EquipDetail.isOpen() then
+        return CharacterDetail._EquipDetail.handleDragEnd(dx, dy)
     end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleDragEnd(dx, dy)
@@ -757,7 +757,10 @@ end
 ---@param wheel number 滚轮值（正=向上，负=向下）
 function CharacterDetail.handleScroll(wheel)
     if not detailState.open or detailState.closing then return end
-    if CharacterDetail._EquipDetail.isOpen() then return end
+    if CharacterDetail._EquipDetail.isOpen() then
+        CharacterDetail._EquipDetail.handleScroll(wheel)
+        return
+    end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         EquipmentBag.handleScroll(wheel)
         return

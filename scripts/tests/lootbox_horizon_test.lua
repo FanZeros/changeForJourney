@@ -13,7 +13,7 @@ function Start()
         return setmetatable(values or {}, { __index = function() return noop end })
     end
     local mods = {
-        ["network.StandaloneRT"] = { logicalW = 1920, logicalH = 1080, dpr = 1, bootReady_ = true },
+        ["boot.StandaloneRT"] = { logicalW = 1920, logicalH = 1080, dpr = 1, bootReady_ = true },
         ["ui.battle.tri.BattleTriPage"] = mock({
             isOpen = function() return true end,
             handleScroll = function() counters.bag = counters.bag + 1 return true end,
@@ -45,8 +45,8 @@ function Start()
         if not mods[name] then mods[name] = mock() end
         return mods[name]
     end
-    package.loaded["network.StandaloneHorizon"] = nil
-    originalRequire("network.StandaloneHorizon")
+    package.loaded["boot.StandaloneHorizon"] = nil
+    originalRequire("boot.StandaloneHorizon")
     require = originalRequire
     local wheel = { Wheel = { GetInt = function() return -1 end } }
     HandleMouseWheelHorizon("MouseWheel", wheel)

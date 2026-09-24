@@ -232,12 +232,14 @@ end
 
 -- ======================== 布局计算（导出给 CharacterPanel hit testing） ========================
 
---- 计算5个编队槽位的 X 中心坐标（始终按5个位置布局）
+--- 计算5个编队槽位的 X 中心坐标。
+--- 显示与实战镜像：1 号在右（前排），序号越大越靠左。数据槽位不变。
 function M.getSlotCX(index)
     local count = M.MAX_SLOTS
     local totalW = count * CARD_W + (count - 1) * CARD_SPACING
     local startCX = (DESIGN_W - totalW) * 0.5 + CARD_W * 0.5
-    return startCX + (index - 1) * (CARD_W + CARD_SPACING)
+    local visual = count - index + 1
+    return startCX + (visual - 1) * (CARD_W + CARD_SPACING)
 end
 
 --- 根据设计空间坐标找到对应的编队槽位索引

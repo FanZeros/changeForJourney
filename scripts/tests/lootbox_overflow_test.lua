@@ -864,8 +864,8 @@ local function withBoot(bagCount, body)
     local info = ui("ui.hud.popup.PlayerInfoPanel")
     info.setUID = noop
     inject("client.data.PlayerStore", { Subscribe = noop })
-    inject("network.LocalActionBridge", { init = noop })
-    inject("network.StandaloneBoot", nil)
+    inject("runtime.LocalActionBridge", { init = noop })
+    inject("boot.StandaloneBoot", nil)
 
     -- 禁止昵称分支访问云端与账号接口。
     local oldCloud, oldLobby = rawget(_G, "clientCloud"), rawget(_G, "lobby")
@@ -875,7 +875,7 @@ local function withBoot(bagCount, body)
     rawset(_G, "lobby", false)
     rawset(_G, "GetUserNickname", function() error("test must not call account APIs") end)
     local ok, err = pcall(function()
-        local Boot = require("network.StandaloneBoot")
+        local Boot = require("boot.StandaloneBoot")
         Boot.run({
             localSendAction = function() error("test must not dispatch external actions") end,
             setLocalBridgeReady = function() h.bridgeReady = true end,

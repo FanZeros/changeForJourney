@@ -1,5 +1,5 @@
 -- 遗匣三栏实机验收入口：不读取、不写入玩家存档。
-local Standalone = require("network.Standalone")
+local Standalone = require("boot.Standalone")
 local Save = require("boot.StandaloneSave")
 local Dispatcher = require("runtime.ClientDispatcher")
 local Page = require("ui.loot.LootBoxPage")
@@ -22,7 +22,7 @@ function Start()
 end
 
 function LootboxPreviewUpdate()
-    local rt = require("network.StandaloneRT")
+    local rt = require("boot.StandaloneRT")
     if not rt.bootReady_ then return end
     local Title = require("ui.story.gate.DarkTitleScreenGate")
     if Title.isOpen() then

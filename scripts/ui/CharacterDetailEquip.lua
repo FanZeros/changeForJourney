@@ -61,8 +61,7 @@ local GRID_FIRST_CX = GRID_MARGIN_LEFT + GRID_CELL * 0.5  -- 150
 local CLIP_TOP    = GRID_TOP_Y - GRID_CELL * 0.5   -- 1214
 local CLIP_HEIGHT = GRID_BOTTOM_Y - CLIP_TOP        -- 1016
 
--- 暗化遮罩（不可装备物品）
-local DIM_ALPHA = 160  -- 0-255
+local GRID_MIN_ROWS = 5   -- 固定 5 行 = 25 格
 
 -- 滚动参数
 local SCROLL_FRICTION   = 0.90
@@ -358,7 +357,7 @@ refreshItems = function()
     panelState.dirty = false
 
     -- 重新计算滚动范围
-    local totalRows = math.ceil(#result / GRID_COLS)
+    local totalRows = math.max(GRID_MIN_ROWS, math.ceil(#result / GRID_COLS))
     local contentH  = totalRows * GRID_ROW_STEP - GRID_GAP
     panelState.scrollMax = math.max(0, contentH - CLIP_HEIGHT)
     clampScroll()
@@ -414,7 +413,7 @@ function M.draw(vg, heroId, detailState)
 
     local items = panelState.items
     local itemCount = #items
-    local totalSlots = math.max(itemCount, GRID_COLS * 2)  -- 至少显示 2 行空格
+    local totalSlots = math.max(itemCount, GRID_COLS * GRID_MIN_ROWS)  -- 5 行 25 格
 
     -- 裁剪区域
     nvgSave(vg)
@@ -539,7 +538,7 @@ function M.draw(vg, heroId, detailState)
             nvgBeginPath(vg)
             nvgRoundedRect(vg, cx - GRID_CELL * 0.5, cy - GRID_CELL * 0.5,
                 GRID_CELL, GRID_CELL, GRID_RADIUS)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 40))
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
             nvgFill(vg)
         end
 

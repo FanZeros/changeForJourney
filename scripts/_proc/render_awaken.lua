@@ -14,7 +14,7 @@ function Start()
     end
     nvgCreateFont(nvg, "sans", "Fonts/ResourceHanRoundedCN-Heavy.ttf")
 
-    local panel = require("ui.AwakeningPanel")
+    local panel = require("ui.character.AwakeningPanel")
     panel.initImages(nvg)
     panel.setClassIcons({})
     -- 模拟：1 阶已嵌合，2 阶可嵌合（碎片足够），3 阶未解锁
@@ -44,7 +44,7 @@ function HandleRender(eventType, eventData)
     nvgTranslate(nvg, (width / scale - 1080) * 0.5, (height / scale - 2400) * 0.5)
 
     local ok, err = pcall(function()
-        require("ui.AwakeningPanel").draw(nvg, 1)
+        require("ui.character.AwakeningPanel").draw(nvg, 1)
     end)
     if not ok then
         print("[awaken] draw ERROR: " .. tostring(err))

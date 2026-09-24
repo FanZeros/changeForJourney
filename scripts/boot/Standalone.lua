@@ -12,53 +12,53 @@ local DropSystem        = require("systems.DropSystem")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local LootBoxSystem     = require("systems.LootBoxSystem")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
-local TopBar            = require("ui.TopBar")
-local BottomNav         = require("ui.BottomNav")
-local BattleScene       = require("ui.BattleScene")
-local CharacterPanel    = require("ui.CharacterPanel")
-local DebugPanel        = require("ui.DebugPanel")
-local HeroRosterPanel   = require("ui.HeroRosterPanel")
-local RewardPopup       = require("ui.RewardPopup")
-local TownScene         = require("ui.TownScene")
-local BlacksmithPage    = require("ui.BlacksmithPage")
-local ChurchPage        = require("ui.ChurchPage")
-local TalentPage        = require("ui.TalentPage")
-local TavernPage        = require("ui.TavernPage")
-local MarketPage        = require("ui.MarketPage")
-local DungeonBattleScene = require("ui.DungeonBattleScene")
-local TowerBattleScene   = require("ui.TowerBattleScene")
-local TowerBuffPick      = require("ui.TowerBuffPick")
-local DungeonPage        = require("ui.DungeonPage")
-local BackpackPanel      = require("ui.BackpackPanel")
-local LootBox           = require("ui.LootBox")
-local LootBoxPage       = require("ui.LootBoxPage")
-local LevelUpPopup      = require("ui.LevelUpPopup")
-local BattleCombat      = require("ui.BattleCombat")
-local OfflineRewardPanel = require("ui.OfflineRewardPanel")
-local PlayerInfoPanel   = require("ui.PlayerInfoPanel")
-local RedeemCodePanel   = require("ui.RedeemCodePanel")
-local AnnouncementPanel = require("ui.AnnouncementPanel")
+local TopBar            = require("ui.hud.TopBar")
+local BottomNav         = require("ui.hud.BottomNav")
+local BattleScene       = require("ui.battle.BattleScene")
+local CharacterPanel    = require("ui.character.CharacterPanel")
+local DebugPanel        = require("ui.dev.DebugPanel")
+local HeroRosterPanel   = require("ui.character.HeroRosterPanel")
+local RewardPopup       = require("ui.hud.RewardPopup")
+local TownScene         = require("ui.town.TownScene")
+local BlacksmithPage    = require("ui.blacksmith.BlacksmithPage")
+local ChurchPage        = require("ui.church.ChurchPage")
+local TalentPage        = require("ui.church.TalentPage")
+local TavernPage        = require("ui.tavern.TavernPage")
+local MarketPage        = require("ui.market.MarketPage")
+local DungeonBattleScene = require("ui.dungeon.DungeonBattleScene")
+local TowerBattleScene   = require("ui.tower.TowerBattleScene")
+local TowerBuffPick      = require("ui.tower.TowerBuffPick")
+local DungeonPage        = require("ui.dungeon.DungeonPage")
+local BackpackPanel      = require("ui.backpack.BackpackPanel")
+local LootBox           = require("ui.loot.LootBox")
+local LootBoxPage       = require("ui.loot.LootBoxPage")
+local LevelUpPopup      = require("ui.hud.LevelUpPopup")
+local BattleCombat      = require("ui.battle.BattleCombat")
+local OfflineRewardPanel = require("ui.hud.OfflineRewardPanel")
+local PlayerInfoPanel   = require("ui.hud.PlayerInfoPanel")
+local RedeemCodePanel   = require("ui.hud.RedeemCodePanel")
+local AnnouncementPanel = require("ui.story.AnnouncementPanel")
 local AnnouncementConfig = require("shared.AnnouncementConfig")
-local DiaryPage         = require("ui.DiaryPage")
-local StartScreen       = require("ui.StartScreen")
-local DarkTitleScreen   = require("ui.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
-local BattleTriPage     = require("ui.BattleTriPage")    -- [三行并行] 三行战斗区
-local SweepDialog       = require("ui.SweepDialog")          -- [三行并行] 全窗模态弹窗
+local DiaryPage         = require("ui.story.DiaryPage")
+local StartScreen       = require("ui.story.StartScreen")
+local DarkTitleScreen   = require("ui.story.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
+local BattleTriPage     = require("ui.battle.BattleTriPage")    -- [三行并行] 三行战斗区
+local SweepDialog       = require("ui.battle.SweepDialog")          -- [三行并行] 全窗模态弹窗
 local PlayerStore       = require("core.PlayerStore") -- [单机] 数据缓存（扫荡/选关弹窗读取 battle 模块）
-local DamageStatsPanel  = require("ui.DamageStatsPanel")     -- [三行并行] 全窗模态弹窗
-local StageSelectDialog = require("ui.StageSelectDialog")    -- [三行并行] 全窗模态弹窗
+local DamageStatsPanel  = require("ui.battle.DamageStatsPanel")     -- [三行并行] 全窗模态弹窗
+local StageSelectDialog = require("ui.battle.StageSelectDialog")    -- [三行并行] 全窗模态弹窗
 local BattleLayout      = require("core.BattleLayout")   -- [三行并行] 布阵模式切换
-local ProjectileSystem  = require("ui.ProjectileSystem") -- [三行并行] 渲染缩放
+local ProjectileSystem  = require("ui.battle.ProjectileSystem") -- [三行并行] 渲染缩放
 local EventBus          = require("core.EventBus")
 local GameEvents        = require("config.GameEvents")
 local GameBGM           = require("systems.GameBGM")
 local GameSFX           = require("systems.GameSFX")
-local BattleEffects     = require("ui.BattleEffects")    -- [三行并行] 渲染缩放
-local SpinePowerUpEffect = require("ui.SpinePowerUpEffect")
-local IntroCutscene      = require("ui.IntroCutscene")
-local LetterIntro        = require("ui.LetterIntro")          -- [LetterIntro] 先祖来信（新档开场）
-local CharacterDetail    = require("ui.CharacterDetail")  -- [三队并行] 中缝返回键目标
-local ScenarioDialogue   = require("ui.ScenarioDialogue")     -- [LetterIntro] 情景对话
+local BattleEffects     = require("ui.battle.BattleEffects")    -- [三行并行] 渲染缩放
+local SpinePowerUpEffect = require("ui.fx.SpinePowerUpEffect")
+local IntroCutscene      = require("ui.story.IntroCutscene")
+local LetterIntro        = require("ui.story.LetterIntro")          -- [LetterIntro] 先祖来信（新档开场）
+local CharacterDetail    = require("ui.character.CharacterDetail")  -- [三队并行] 中缝返回键目标
+local ScenarioDialogue   = require("ui.story.ScenarioDialogue")     -- [LetterIntro] 情景对话
 local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig") -- [LetterIntro] 情景配置
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库 + 画廊验收页
@@ -67,8 +67,8 @@ local ClientMsgHandler   = require("runtime.ClientMessageHandler")
 local LocalActionBridge  = require("runtime.LocalActionBridge")
 local StandaloneBoot     = require("boot.StandaloneBoot")
 local StandaloneRT       = require("boot.StandaloneRT")
-local TaskPanel          = require("ui.TaskPanel")
-local SignInPanel        = require("ui.SignInPanel")
+local TaskPanel          = require("ui.story.TaskPanel")
+local SignInPanel        = require("ui.story.SignInPanel")
 
 local Standalone = {}
 
@@ -707,7 +707,7 @@ end
 ---@param eventType string
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
-    require("ui.CEPanel").pollHotkey()
+    require("ui.dev.CEPanel").pollHotkey()
     -- 分帧启动：每帧 1 个模块 init，标题可先画出来
     pumpBootQueue_()
     if not bootReady_ then
@@ -865,8 +865,8 @@ function HandleUpdate(eventType, eventData)
         BattleTriPage.close()
     end
 
-    require("ui.CERuntime").installSpeedHook()
-    require("ui.CERuntime").tick()
+    require("ui.dev.CERuntime").installSpeedHook()
+    require("ui.dev.CERuntime").tick()
     -- 副本/通天塔对战更新（打开时独占）
     if TowerBattleScene.isActive() then
         TowerBattleScene.update(dt)
@@ -879,7 +879,7 @@ function HandleUpdate(eventType, eventData)
         -- 战斗场景始终更新（挂机持续进行）
         BattleScene.update(dt)
     end
-    require("ui.CERuntime").tick()
+    require("ui.dev.CERuntime").tick()
 
     local tabIndex = BottomNav.getSelectedIndex()
     -- [三行并行] 三行战斗区常驻: tab3 下恒开（Dungeon 独占时由守卫暂收, 关闭后自动重开）
@@ -909,7 +909,7 @@ function HandleUpdate(eventType, eventData)
     if H_AUTO_OPEN_PANEL and H_skipDone and not H_shotPanelOpened then
         H_shotPanelOpened = true
         ---@diagnostic disable-next-line: undefined-global
-        local panelMod = require("ui." .. tostring(H_AUTO_OPEN_PANEL))
+        local panelMod = require(require("ui.ModuleMap").resolve(H_AUTO_OPEN_PANEL))
         if panelMod and panelMod.open then
             panelMod.open()
             ---@diagnostic disable-next-line: undefined-global
@@ -944,7 +944,7 @@ function HandleUpdate(eventType, eventData)
     TavernPage.update(dt)
     MarketPage.update(dt)
     PlayerInfoPanel.update(dt)
-    local KeyboardShortcuts = require("ui.KeyboardShortcuts")
+    local KeyboardShortcuts = require("ui.dev.KeyboardShortcuts")
     KeyboardShortcuts.update()
 end
 

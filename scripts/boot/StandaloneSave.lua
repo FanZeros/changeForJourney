@@ -18,7 +18,7 @@
 
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local GameState        = require("core.GameState")
-local BattleScene      = require("ui.BattleScene")
+local BattleScene      = require("ui.battle.BattleScene")
 
 local StandaloneSave = {}
 

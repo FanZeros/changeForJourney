@@ -11,7 +11,7 @@
 local TutorialConfig     = require("config.TutorialConfig")
 local DrawUtil           = require("core.DrawUtil")
 local GameConfig         = require("config.GameConfig")
-local ScenarioDialogue   = require("ui.ScenarioDialogue")
+local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
 local ViewportH          = require("core.Viewport")  -- 面板偏移换算（侧栏热点）
 
 local TutorialManager = {}
@@ -148,7 +148,7 @@ local function applyGroupUnlocks(groupId)
     local group = TutorialConfig[groupId]
     if not group or not group.unlocks then return end
 
-    local ok, BN = pcall(require, "ui.BottomNav")
+    local ok, BN = pcall(require, "ui.hud.BottomNav")
     if not ok then return end
 
     -- panelKey → tabIndex 映射
@@ -201,7 +201,7 @@ function TutorialManager.init(vg, playerStoreRef)
 
     -- playerStore 注入后，重新刷新 BottomNav 的解锁状态
     -- （BottomNav.init 先于 TutorialManager.init 执行，所以需要在此补刷一次）
-    local okBN, BN = pcall(require, "ui.BottomNav")
+    local okBN, BN = pcall(require, "ui.hud.BottomNav")
     if okBN then
         print("[TM][init] calling refreshUnlockState...")
         BN.refreshUnlockState()
@@ -736,7 +736,7 @@ function TutorialManager.draw()
     -- 情景对话播放时隐藏教程遮罩，避免与对话框同时出现产生冲突
     if ScenarioDialogue.isActive() then return end
     -- 奖励弹窗打开时隐藏教程遮罩，等玩家领完奖励再显示
-    local okRP, RewardPopup = pcall(require, "ui.RewardPopup")
+    local okRP, RewardPopup = pcall(require, "ui.hud.RewardPopup")
     if okRP and RewardPopup.isOpen and RewardPopup.isOpen() then return end
 
     -- 计算整体透明度（入场/离场动画）

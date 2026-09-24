@@ -1,5 +1,5 @@
 -- 渲染 LetterIntro 信件预览(MODE: early=显墨中 / sealed=火漆印落定)
-local LetterIntro = require("ui.LetterIntro")
+local LetterIntro = require("ui.story.LetterIntro")
 local MODE = "sealed"
 local nvg = nil
 local frame = 0

@@ -112,7 +112,7 @@ end
 ---@return ExtraTalentData
 function ETS.getOwned(heroId)
     heroId = toHeroId(heroId)
-    local ok, CP = pcall(require, "ui.CharacterPanel")
+    local ok, CP = pcall(require, "ui.character.CharacterPanel")
     if ok and CP and CP.getOwnedHero then
         local owned = CP.getOwnedHero(heroId)
         if owned then
@@ -124,7 +124,7 @@ function ETS.getOwned(heroId)
 end
 
 local function ownedAwakening(heroId)
-    local ok, CP = pcall(require, "ui.CharacterPanel")
+    local ok, CP = pcall(require, "ui.character.CharacterPanel")
     if ok and CP and CP.getOwnedHero then
         local owned = CP.getOwnedHero(heroId)
         return owned and owned.awakening or nil
@@ -496,7 +496,7 @@ end
 local function persistNow(heroId, extra)
     heroId = toHeroId(heroId)
     extra = ETS.normalize(extra)
-    local ok, CP = pcall(require, "ui.CharacterPanel")
+    local ok, CP = pcall(require, "ui.character.CharacterPanel")
     if ok and CP and CP.patchExtraTalent then
         CP.patchExtraTalent(heroId, extra)
     end
@@ -528,7 +528,7 @@ end
 
 local function commit(unit, extra)
     local heroId = toHeroId(unit and unit.heroId)
-    local ok, CP = pcall(require, "ui.CharacterPanel")
+    local ok, CP = pcall(require, "ui.character.CharacterPanel")
     if ok and CP and CP.patchExtraTalent then
         CP.patchExtraTalent(heroId, extra)
     end
@@ -934,7 +934,7 @@ function ETS.absorbWithIceStatue(target, damage, enemies)
     table.remove(battle.iceStatues, 1)
     local extra = ETS.getOwned(12)
     extra.iceStatues = math.max(0, extra.iceStatues - 1)
-    local ok, CP = pcall(require, "ui.CharacterPanel")
+    local ok, CP = pcall(require, "ui.character.CharacterPanel")
     if ok and CP and CP.patchExtraTalent then
         CP.patchExtraTalent(12, extra)
     end

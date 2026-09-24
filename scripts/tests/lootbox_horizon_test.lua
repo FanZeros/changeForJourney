@@ -14,23 +14,23 @@ function Start()
     end
     local mods = {
         ["network.StandaloneRT"] = { logicalW = 1920, logicalH = 1080, dpr = 1, bootReady_ = true },
-        ["ui.BattleTriPage"] = mock({
+        ["ui.battle.BattleTriPage"] = mock({
             isOpen = function() return true end,
             handleScroll = function() counters.bag = counters.bag + 1 return true end,
         }),
-        ["ui.LootBoxPage"] = mock({
+        ["ui.loot.LootBoxPage"] = mock({
             isOpen = function() return pageOpen end,
             getSeamAnim = function() return 1, 0, 0.45, 0.38 end,
             close = function() counters.close = counters.close + 1 pageOpen = false end,
         }),
-        ["ui.LootBox"] = mock({
+        ["ui.loot.LootBox"] = mock({
             handleScroll = function() counters.loot = counters.loot + 1 return true end,
             handleInput = function() counters.click = counters.click + 1 return true end,
         }),
-        ["ui.CharacterPanel"] = mock({
+        ["ui.character.CharacterPanel"] = mock({
             handleScroll = function() counters.right = counters.right + 1 end,
         }),
-        ["ui.RewardPopup"] = mock({
+        ["ui.hud.RewardPopup"] = mock({
             isOpen = function() return globalReward end,
             currentRowTag = function() return nil end,
             handleScroll = function() counters.reward = counters.reward + 1 return true end,

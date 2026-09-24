@@ -4,7 +4,7 @@
 
 local DrawUtil     = require("core.DrawUtil")
 local DarkIcon     = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
-local ImageCache   = require("ui.ImageCache")
+local ImageCache   = require("ui.widget.ImageCache")
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 
 local ArtifactAssetUtil = {}

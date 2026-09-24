@@ -691,10 +691,10 @@ local function testReopenAndJsonNoReroll()
     end
     page.hide = function() page.opened = false end
     page.refresh = function(summary) page.summary = summary end
-    withPatchedField(package.loaded, "ui.LootBoxPage", page, function()
+    withPatchedField(package.loaded, "ui.loot.LootBoxPage", page, function()
         withPatchedField(package.loaded, "core.DrawUtil", {}, function()
-            withPatchedField(package.loaded, "ui.LootBox", nil, function()
-                local facade = require("ui.LootBox")
+            withPatchedField(package.loaded, "ui.loot.LootBox", nil, function()
+                local facade = require("ui.loot.LootBox")
                 withGeneratorSpy(function(spy)
                     facade.updateSeedData(box)
                     eq(#spy.calls, 2, "facade reveals only previously unrevealed legacy pieces")
@@ -827,41 +827,41 @@ local function withBoot(bagCount, body)
         end,
         notifySubscribers = h.notify,
     })
-    local topBar = ui("ui.TopBar")
+    local topBar = ui("ui.hud.TopBar")
     topBar.setTotalPower = noop
-    local bottomNav = ui("ui.BottomNav")
+    local bottomNav = ui("ui.hud.BottomNav")
     bottomNav.setSelectedIndex = noop
-    local battle = ui("ui.BattleScene", { "setOnEnemyKill", "setOnEnemyDrop", "setOnAllDead",
+    local battle = ui("ui.battle.BattleScene", { "setOnEnemyKill", "setOnEnemyDrop", "setOnAllDead",
         "setOnStageLoaded", "setOnReincarnate", "setOnFirstClear" })
     battle.getCurrentStageId = function() return 1 end
     battle.getMaxStageId = function() return h.maxStageId end
     battle.refreshAllyStats = noop
-    local character = ui("ui.CharacterPanel", { "setOnTeamChanged" })
+    local character = ui("ui.character.CharacterPanel", { "setOnTeamChanged" })
     character.getTotalPower = function() return 0 end
-    ui("ui.BattleTriPage", { "setOnKill" })
-    ui("ui.TownScene", { "setOnSmithClick", "setOnChurchClick", "setOnTreeClick",
+    ui("ui.battle.BattleTriPage", { "setOnKill" })
+    ui("ui.town.TownScene", { "setOnSmithClick", "setOnChurchClick", "setOnTreeClick",
         "setOnTavernClick", "setOnMarketClick", "setOnWarehouseClick", "setOnLootBoxClick" })
-    for _, name in ipairs({ "ui.BlacksmithPage", "ui.ChurchPage", "ui.TavernPage", "ui.MarketPage",
-        "ui.IntroCutscene", "ui.TaskPanel", "ui.SignInPanel", "ui.BackpackPanel" }) do
+    for _, name in ipairs({ "ui.blacksmith.BlacksmithPage", "ui.church.ChurchPage", "ui.tavern.TavernPage", "ui.market.MarketPage",
+        "ui.story.IntroCutscene", "ui.story.TaskPanel", "ui.story.SignInPanel", "ui.backpack.BackpackPanel" }) do
         ui(name)
     end
-    local popup = ui("ui.RewardPopup")
+    local popup = ui("ui.hud.RewardPopup")
     popup.show = function(title, rewards, options)
         h.popups[#h.popups + 1] = { title = title, rewards = copy(rewards), options = copy(options or {}) }
     end
-    local lootUI = ui("ui.LootBox", { "setOnClaimAll", "setOnClaimOne", "setOnDecomposeAll",
+    local lootUI = ui("ui.loot.LootBox", { "setOnClaimAll", "setOnClaimOne", "setOnDecomposeAll",
         "setOnDecomposeOne", "setOnAutoDecompose" })
     lootUI.updateSeedData = noop
     lootUI.refreshPage = noop
     lootUI.addSeedHint = function(quality, level)
         h.hints[#h.hints + 1] = { quality = quality, level = level }
     end
-    local lootPage = ui("ui.LootBoxPage")
+    local lootPage = ui("ui.loot.LootBoxPage")
     lootPage.getLastClickPos = function() return 0, 0 end
     lootPage.showToast = function(text) h.toasts[#h.toasts + 1] = text end
-    local combat = ui("ui.BattleCombat")
+    local combat = ui("ui.battle.BattleCombat")
     combat.addFloatingText = noop
-    local info = ui("ui.PlayerInfoPanel")
+    local info = ui("ui.hud.PlayerInfoPanel")
     info.setUID = noop
     inject("client.data.PlayerStore", { Subscribe = noop })
     inject("network.LocalActionBridge", { init = noop })
@@ -897,7 +897,7 @@ end
 
 local function drop(h, firstClear, count)
     for _ = 1, count do
-        h.fire("ui.BattleScene", "setOnEnemyDrop", { stageId = 2, isFirstClear = firstClear })
+        h.fire("ui.battle.BattleScene", "setOnEnemyDrop", { stageId = 2, isFirstClear = firstClear })
     end
 end
 
@@ -928,9 +928,9 @@ end
 local function assertStageEventsCannotRepay(h)
     local beforeData, beforeCurrency = copy(h.data), copy(h.currency)
     local beforePopups, beforeGenerated = #h.popups, #h.generated
-    h.fire("ui.BattleScene", "setOnStageLoaded", 2, {})
-    h.fire("ui.BattleScene", "setOnStageLoaded", 1, {})
-    h.fire("ui.BattleScene", "setOnAllDead")
+    h.fire("ui.battle.BattleScene", "setOnStageLoaded", 2, {})
+    h.fire("ui.battle.BattleScene", "setOnStageLoaded", 1, {})
+    h.fire("ui.battle.BattleScene", "setOnAllDead")
     same(h.data, beforeData, "post-settlement stage/allDead cannot duplicate equipment")
     same(h.currency, beforeCurrency, "post-settlement stage/allDead cannot duplicate currencies")
     eq(#h.popups, beforePopups, "post-settlement events cannot show duplicate popup")
@@ -944,7 +944,7 @@ local function testBootSuccess(bagCount)
         eq(EquipmentSystem.getInventoryCount(h.data.equipment), bagCount, "pending kills not delivered early")
         eq(h.currency.WeaponScroll, 0, "first-clear kill scrolls pending")
         eq(#h.popups, 0, "no kill popup before first-clear settlement")
-        h.fire("ui.BattleScene", "setOnFirstClear", 2)
+        h.fire("ui.battle.BattleScene", "setOnFirstClear", 2)
         eq(#h.popups, 1, "success merges first-clear and kill rewards in one popup")
         eq(h.popups[1].title, "首通奖励", "success reward category unchanged")
         eq(h.popups[1].options.row, 1, "success popup remains in battle row")
@@ -988,7 +988,7 @@ end
 local function testBootFailure()
     withBoot(200, function(h)
         drop(h, true, 3)
-        h.fire("ui.BattleScene", "setOnAllDead")
+        h.fire("ui.battle.BattleScene", "setOnAllDead")
         eq(#h.popups, 1, "failure shows retained drops once")
         eq(h.popups[1].title, "战斗掉落", "failure reward category unchanged")
         eq(h.popups[1].options.row, 1, "failure popup battle row")
@@ -1010,7 +1010,7 @@ end
 local function testBootStageLoadedFallback()
     withBoot(200, function(h)
         drop(h, true, 1)
-        h.fire("ui.BattleScene", "setOnStageLoaded", 1, {})
+        h.fire("ui.battle.BattleScene", "setOnStageLoaded", 1, {})
         eq(#h.popups, 1, "leaving pending fight retains rewards")
         eq(h.popups[1].title, "战斗掉落", "abandoned fight uses battle-drop category")
         same(rewardTotals(h.popups[1]), { equip = 1, weapon_scroll = 1 }, "stage fallback settles pending once")
@@ -1018,7 +1018,7 @@ local function testBootStageLoadedFallback()
         assertBootEquipDelivered(h, h.generated[1].equip, h.generated[1].snapshot)
         assertStageEventsCannotRepay(h)
         drop(h, true, 1)
-        h.fire("ui.BattleScene", "setOnAllDead")
+        h.fire("ui.battle.BattleScene", "setOnAllDead")
         eq(#h.popups, 2, "subsequent fight can settle new rewards")
         eq(#h.generated, 2, "new fight does not replay old pending seeds")
         eq(h.currency.WeaponScroll, 2, "new fight does not replay old scrolls")
@@ -1056,7 +1056,7 @@ local function testBootIdleAndClaimCallbacks()
             spy.forbidden = true
             h.notify("lootbox")
             for _ = 1, 3 do assertSummary(h.data.lootbox) end
-            h.fire("ui.LootBox", "setOnClaimAll", 5)
+            h.fire("ui.loot.LootBox", "setOnClaimAll", 5)
             eq(EquipmentSystem.getInventoryCount(h.data.equipment), 200, "Boot claim respects capacity")
             countIs(h.data.lootbox, 1, 1, "Boot partial claim retains complete idle equipment")
             eq(#h.popups, 1, "idle claim uses separate popup")
@@ -1067,15 +1067,15 @@ local function testBootIdleAndClaimCallbacks()
             for _, generated in ipairs(h.generated) do
                 assertBootEquipDelivered(h, generated.equip, generated.snapshot)
             end
-            h.fire("ui.LootBox", "setOnClaimAll", 5)
+            h.fire("ui.loot.LootBox", "setOnClaimAll", 5)
             eq(#h.popups, 1, "full repeated claim cannot display duplicate reward")
             countIs(h.data.lootbox, 1, 1, "full repeated claim retains complete reward")
             assert(#h.toasts > 0, "Boot still reports full inventory")
-            h.fire("ui.LootBox", "setOnDecomposeAll", 5)
+            h.fire("ui.loot.LootBox", "setOnDecomposeAll", 5)
             eq(h.currency.Essence, essenceFor(5, 60, 1), "Boot recycles at original insertion quality/level")
             eq(#h.popups, 2, "recycle reward shown once")
             eq(h.popups[2].title, "回收奖励", "回收使用新标题")
-            h.fire("ui.LootBox", "setOnDecomposeAll", 5)
+            h.fire("ui.loot.LootBox", "setOnDecomposeAll", 5)
             eq(h.currency.Essence, essenceFor(5, 60, 1), "repeated Boot recycle cannot pay twice")
             eq(#h.popups, 2, "repeated Boot recycle has no duplicate popup")
             eq(#h.generated, 2, "Boot summary/claim/recycle cannot regenerate idle drops")
@@ -1120,11 +1120,11 @@ local function testBootSubscriberSeedOnlyClamp()
             same(h.data.lootbox, before, "Boot clamp cannot touch any already revealed equipment")
             LootboxSchema.Fields.lootbox.onLoad(h.data.lootbox)
             same(h.data.lootbox, before, "onLoad cannot reclamp revealed legacy equipment")
-            h.fire("ui.LootBox", "setOnClaimOne", 1)
+            h.fire("ui.loot.LootBox", "setOnClaimOne", 1)
             eq(h.data.equipment.inventory[tostring(complete.seq)], complete, "Boot claimOne stores original instance")
             sameEquip(complete, snapshot, "Boot single claim cannot reroll or downgrade")
             countIs(h.data.lootbox, 3, 3, "Boot singleton claim leaves remaining determined entries")
-            h.fire("ui.LootBox", "setOnClaimAll", 6)
+            h.fire("ui.loot.LootBox", "setOnClaimAll", 6)
             eq(EquipmentSystem.getInventoryCount(h.data.equipment), 4, "Boot claims all remaining matching equipment")
             sameEquip(idle, idleSnapshot, "new idle stays at insertion level after Boot claim")
             for _, call in ipairs(spy.calls) do
@@ -1158,7 +1158,7 @@ local function testBootQualityCallbackForwarding()
                     local hiddenSnapshot = copy(hidden)
                     local beforeBag = EquipmentSystem.getInventoryCount(h.data.equipment)
                     local beforePopup, beforeGenerated = #h.popups, #h.generated
-                    h.fire("ui.LootBox", "setOnClaimAll", quality)
+                    h.fire("ui.loot.LootBox", "setOnClaimAll", quality)
                     eq(claimCalls[#claimCalls].quality, quality, "Boot claim callback forwards 0..6 unchanged")
                     eq(EquipmentSystem.getInventoryCount(h.data.equipment), beforeBag + (quality == 0 and 12 or 2),
                         "Boot claims only exact selection")
@@ -1168,7 +1168,7 @@ local function testBootQualityCallbackForwarding()
                     for _, reward in ipairs(h.popups[#h.popups].rewards) do
                         assert(quality == 0 or reward.quality == quality, "claim popup excludes hidden quality")
                     end
-                    h.fire("ui.LootBox", "setOnClaimAll", quality)
+                    h.fire("ui.loot.LootBox", "setOnClaimAll", quality)
                     eq(#h.popups, beforePopup + 1, "repeated selected claim produces no reward popup")
                     assertHiddenEntries(h.data.lootbox, hidden, hiddenSnapshot)
                     eq(#h.generated, beforeGenerated, "Boot filtered claim cannot generateRandom")
@@ -1184,14 +1184,14 @@ local function testBootQualityCallbackForwarding()
                     end
                     local beforeEssence = h.currency.Essence
                     beforePopup, beforeGenerated = #h.popups, #h.generated
-                    h.fire("ui.LootBox", "setOnDecomposeAll", quality)
+                    h.fire("ui.loot.LootBox", "setOnDecomposeAll", quality)
                     eq(recycleCalls[#recycleCalls].quality, quality, "Boot recycle callback forwards 0..6 unchanged")
                     eq(h.currency.Essence, beforeEssence + expectedEssence, "Boot credits only filtered essence")
                     assertHiddenEntries(h.data.lootbox, hidden, hiddenSnapshot)
                     eq(#h.popups, beforePopup + 1, "filtered recycle shows one popup")
                     eq(h.popups[#h.popups].title, "回收奖励", "filtered recycle uses new title")
                     same(rewardTotals(h.popups[#h.popups]), { essence = expectedEssence }, "filtered recycle popup amount")
-                    h.fire("ui.LootBox", "setOnDecomposeAll", quality)
+                    h.fire("ui.loot.LootBox", "setOnDecomposeAll", quality)
                     eq(h.currency.Essence, beforeEssence + expectedEssence, "repeated selection cannot pay twice")
                     eq(#h.popups, beforePopup + 1, "empty selected recycle has no popup")
                     assertHiddenEntries(h.data.lootbox, hidden, hiddenSnapshot)

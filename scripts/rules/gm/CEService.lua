@@ -143,7 +143,7 @@ local function jumpTo(stageId)
     if not ok then
         return false, tostring(err)
     end
-    local sceneOk, BattleScene = pcall(require, "ui.BattleScene")
+    local sceneOk, BattleScene = pcall(require, "ui.battle.BattleScene")
     if sceneOk and BattleScene and BattleScene.debugJumpToStage then
         BattleScene.debugJumpToStage(stageId)
     end
@@ -154,7 +154,7 @@ function CEService.jumpStages(count)
     ensureReady()
     count = math.floor(tonumber(count) or 10)
     local StageConfig = require("config.StageConfig")
-    local BattleScene = require("ui.BattleScene")
+    local BattleScene = require("ui.battle.BattleScene")
     local id = BattleScene.getCurrentStageId()
     local jumped = 0
     for _ = 1, count do
@@ -172,7 +172,7 @@ end
 function CEService.jumpPreTerminal()
     ensureReady()
     local SC = require("config.StageConfig")
-    local BattleScene = require("ui.BattleScene")
+    local BattleScene = require("ui.battle.BattleScene")
     local stageId = BattleScene.getCurrentStageId()
     local curDiff = SC.getDifficulty(stageId)
     local preTerminalId = ({
@@ -203,7 +203,7 @@ end
 function CEService.jumpToAtLeast(stageId)
     ensureReady()
     stageId = math.floor(tonumber(stageId) or 305)
-    local BattleScene = require("ui.BattleScene")
+    local BattleScene = require("ui.battle.BattleScene")
     local current = BattleScene.getCurrentStageId() or 0
     if current >= stageId then
         return toast("当前关卡 " .. tostring(current) .. " 已不低于 " .. tostring(stageId))
@@ -214,9 +214,9 @@ function CEService.jumpToAtLeast(stageId)
 end
 
 function CEService.instantClear()
-    local BattleScene = require("ui.BattleScene")
-    local dungeonScene = require("ui.DungeonBattleScene")
-    local dungeonBattle = require("ui.DungeonBattle")
+    local BattleScene = require("ui.battle.BattleScene")
+    local dungeonScene = require("ui.dungeon.DungeonBattleScene")
+    local dungeonBattle = require("ui.dungeon.DungeonBattle")
     if dungeonScene.isOpen and dungeonScene.isOpen()
         and dungeonBattle.debugInstantWin and dungeonBattle.debugInstantWin() then
         return toast("已秒杀当前副本/塔小波")
@@ -229,7 +229,7 @@ function CEService.instantClear()
 end
 
 function CEService.healAllies()
-    local BattleScene = require("ui.BattleScene")
+    local BattleScene = require("ui.battle.BattleScene")
     local AD = require("systems.AttributeDef")
     local allies = BattleScene.getAllies() or {}
     for _, ally in ipairs(allies) do

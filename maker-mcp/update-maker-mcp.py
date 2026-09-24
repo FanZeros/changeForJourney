@@ -10,7 +10,7 @@
 用法：
   python tools/update-maker-mcp.py              # 升级 MCP 并写入本机 IDE 配置
   python tools/update-maker-mcp.py --preview    # 再装本地 Runtime（需已绑定 Maker 项目）
-  python tools/update-maker-mcp.py --start      # 升级后启动本地预览窗口
+  python tools/update-maker-mcp.py --start      # 升级后开本地窗口。Windows 为前台启动 Runtime
   python tools/update-maker-mcp.py --verify     # 只校验，不改配置
 
 双击：
@@ -188,6 +188,65 @@ def find_project_dir(explicit: str | None) -> Path:
     return ROOT
 
 
+def maker_home() -> Path:
+    override = os.environ.get("TAPTAP_MAKER_HOME")
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".taptap-maker"
+
+
+def find_windows_runtime() -> Path:
+    """Installed UrhoXRuntime.exe. Do not suggest reinstalling Node."""
+    root = maker_home() / "runtime"
+    install = root / "installation.json"
+    if install.is_file():
+        try:
+            data = json.loads(install.read_text(encoding="utf-8"))
+            exe = data.get("executable")
+            if isinstance(exe, str) and Path(exe).is_file():
+                return Path(exe)
+        except (OSError, json.JSONDecodeError):
+            pass
+    candidates: list[Path] = []
+    if root.is_dir():
+        for child in root.iterdir():
+            exe = child / "UrhoXRuntime.exe"
+            if child.is_dir() and child.name.startswith("runtime-") and exe.is_file():
+                candidates.append(exe)
+    if not candidates:
+        die(
+            "找不到 UrhoXRuntime.exe（应在 %s 下的 runtime-*）。先跑 maker-mcp\\update-maker-mcp.bat --preview，不要重装 Node。"
+            % root
+        )
+    candidates.sort(key=lambda item: item.stat().st_mtime, reverse=True)
+    return candidates[0]
+
+
+def launch_windows_runtime(project: Path) -> None:
+    """Foreground-launch Runtime from the project directory.
+
+    Official preview start on Windows uses a hidden PowerShell process created
+    via Win32_Process.Create. That child often never runs, leaving a 0-byte
+    supervisor.log and supervisor_pid=0. The Runtime itself is fine when
+    started directly with cwd=project. Skip that background chain.
+    """
+    exe = find_windows_runtime()
+    log("")
+    log("==> 前台启动 Runtime（跳过隐藏 PowerShell 后台链）")
+    log("官方 Windows preview start 用隐藏 powershell.exe + Win32_Process.Create。")
+    log("失败时 supervisor.log 是 0 字节，supervisor_pid 也是 0，窗口出不来。")
+    log("这不是游戏代码，也不是 Node。改为与手工验证相同的前台启动。")
+    log("Runtime: %s" % exe)
+    log("工作目录: %s" % project)
+    log("等价命令:")
+    log('  cd /d "%s"' % project)
+    log('  "%s"' % exe)
+    log("游戏窗口关掉之前，这个黑窗会停在这里。不要关黑窗。")
+    code = subprocess.call([str(exe)], cwd=str(project))
+    log("Runtime 已退出，exit=%s" % code)
+    if code != 0:
+        die("Runtime 退出码 %s。若窗口闪退，把本窗口从 ==> 起的内容贴回 Agent。" % code)
+
 def is_bound(project: Path) -> bool:
     cur = project
     for _ in range(8):
@@ -277,14 +336,20 @@ def main() -> int:
         )
 
     if args.start:
-        run_step(
-            "启动本地预览窗口（不远端构建）",
-            ["preview", "start", "--target-dir", str(project)],
-            timeout=180,
-        )
-        log("\n窗口已拉起。改完 scripts/ 后执行：")
-        log("  npx -y --package %s@%s taptap-maker preview refresh --target-dir %s --json"
-            % (MAKER_PKG, MAKER_VER, project))
+        if sys.platform == "win32":
+            launch_windows_runtime(project)
+            log("")
+            log("改完 scripts/ 后重新双击 --start。不要用官方 preview refresh。")
+            log("官方 refresh 仍走没起来的隐藏 PowerShell supervisor。")
+        else:
+            run_step(
+                "启动本地预览窗口（不远端构建）",
+                ["preview", "start", "--target-dir", str(project)],
+                timeout=180,
+            )
+            log("\n窗口已拉起。改完 scripts/ 后执行：")
+            log("  npx -y --package %s@%s taptap-maker preview refresh --target-dir %s --json"
+                % (MAKER_PKG, MAKER_VER, project))
 
     log("")
     log("完成。当前 MCP 会话仍用旧进程；要让新 MCP 生效：在 IDE 里 Reconnect / 重开 Agent。")

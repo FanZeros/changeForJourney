@@ -6,7 +6,7 @@
   "never_push_workspace": true,
   "always_askuserquestion": true,
   "never_cancel_task": true,
-  "dev_branch": "integrate/20260923",  "scoped_preferences": {
+  "dev_branch": "fix/windows-runtime-foreground-start",  "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",
       "reference_system": "三层参考:角色原版卡面(锁长相)+基准构图图(锁构图)+全队画风板(锁画风)",

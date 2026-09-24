@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.36-win-foreground-runtime | 2026-09-24 | Windows --start 跳过隐藏 PowerShell supervisor，项目目录前台启动 UrhoXRuntime.exe。 |
 | v2.35-four-hero-scenario | 2026-09-23 | 老六/哈基米/加载中/高ping战士补入队与闲聊情景。首次获得或第一次打开详情播放，闲聊每局一次。 |
 | v2.34-local-preview-log | 2026-09-23 | 本地 --start 不再吞 npm 日志：流式输出、单步超时、未绑定先失败。不是云端 Build。 |
 | v2.33-integrate-20260923 | 2026-09-23 | 从 workspace 开 integrate/20260923，合入今天滚轮/i18n、四人角色/SE、未解锁职业标，以及 workspace923 的一键脚本修复。 |

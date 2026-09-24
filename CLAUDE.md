@@ -14,7 +14,11 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`integrate/20260923`（从 `workspace` 拉出；只 push 本分支）
+- **当前开发分支**：`fix/windows-runtime-foreground-start`（从 `integrate/20260923` 拉出；只 push 本分支，不要推 `integrate/20260923` / `workspace`）
+
+## 上次做了什么（2026-09-24）
+
+- Windows `--start` 不再调用官方隐藏 PowerShell supervisor。`supervisor.log` 为 0 字节、`supervisor_pid` 为 0 时，改为项目目录前台启动已安装的 `UrhoXRuntime.exe`。不要重装 Node。
 
 ## 上次做了什么（截至 2026-09-23 今天提交整合）
 
@@ -74,7 +78,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 以当前功能分支继续开发；完成后每次 push **该分支**。当前是 `integrate/20260923`，不要推 `workspace` 或其他分支。
+- 以当前功能分支继续开发；完成后每次 push **该分支**。当前是 `fix/windows-runtime-foreground-start`，不要推 `integrate/20260923`、`workspace` 或其他分支。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）

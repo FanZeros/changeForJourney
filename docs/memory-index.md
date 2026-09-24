@@ -1,7 +1,9 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-23 | 版本:v2.33-integrate-20260923
+> 更新时间:2026-09-24 | 版本:v2.36-win-foreground-runtime
+>
+> **本会话(2026-09-24)**：分支 `fix/windows-runtime-foreground-start`。Windows 本地预览改为项目目录前台启动 Runtime，不走隐藏 PowerShell。只 push 本分支。
 >
 > **本会话(2026-09-23)**：从 `workspace` 新开 `integrate/20260923`，合入今天三条功能线 + workspace923 的一键脚本修复。含滚轮/右键装备/五语/Noto 字体、四名玩梗角色与 SE 包、未解锁职业标。未推 workspace。
 

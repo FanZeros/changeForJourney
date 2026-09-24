@@ -61,3 +61,14 @@ npx -y --package @taptap/maker@0.0.34 taptap-maker init
 ```
 
 绑定（要登录）后再 `--start`。
+
+## Windows --start：前台开窗口，不走隐藏 PowerShell
+
+官方 `taptap-maker preview start` 在 Windows 上用隐藏 `powershell.exe` 加 `Win32_Process.Create` 拉 supervisor。
+这条后台链失败时：`supervisor.log` 是 0 字节，`supervisor_pid` 是 0，Runtime 已安装但窗口出不来。
+这不是游戏代码，也不是云端构建，不要重装 Node。
+
+本脚本的 `--start` 在 Windows 上改为与手工验证相同的前台启动：工作目录是项目根，直接运行已安装的 `UrhoXRuntime.exe`。
+优先读 `%USERPROFILE%\.taptap-maker\runtime\installation.json` 的 `executable`，否则用最新的 `runtime-*\UrhoXRuntime.exe`。
+
+黑窗会停到游戏窗口关闭。改完 `scripts/` 后重新双击 `--start`。不要用官方 `preview refresh`，那条仍走没起来的隐藏 supervisor。

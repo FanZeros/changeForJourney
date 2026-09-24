@@ -1003,6 +1003,30 @@ function M.bind(deps)
         end
     end
 
+    -- 节点120 趁胜追击: 连续攻击同一目标，从第2击起每次+2%攻速，最多5层
+    if hasStarNode(attacker, 120) and attacker.attrs and target and (not result or result.category ~= "healing") then
+        local as = ensureState(attacker)
+        if as then
+            if as.pursuitTarget == target then
+                local stacks = as.pursuitStacks or 0
+                if stacks < 5 then
+                    as.pursuitStacks = stacks + 1
+                end
+            else
+                as.pursuitTarget = target
+                as.pursuitStacks = 0
+            end
+            attacker.attrs:removeModifier("starmap_pursuit")
+            local stacksNow = as.pursuitStacks or 0
+            if stacksNow > 0 then
+                attacker.attrs:addModifier("starmap_pursuit", {
+                    { key = AD.ATK_SPEED, flat = stacksNow * 2 },
+                })
+            end
+            talentLog("[Talent] 趁胜追击: " .. (attacker.name or "?") .. " 层数=" .. tostring(stacksNow))
+        end
+    end
+
     -- 节点124 过量治疗: 溢出的治疗量转化为目标能量护盾（转化率30%）
     if teamHasStarNode(124) and result and result.category == "healing" then
         if target and target.hp > 0 and target.attrs then
@@ -1017,7 +1041,7 @@ function M.bind(deps)
         end
     end
 
-    -- 节点128 共鸣之歌: 攻击/治疗后15%概率全队伤害+5%，持续5秒）
+    -- 节点128 共鸣之歌: 攻击/治疗后15%概率全队伤害+5%，持续3秒
     if hasStarNode(attacker, 128) and attackerAllies then
         if math.random() < 0.15 then
             for _, ally in ipairs(attackerAllies) do

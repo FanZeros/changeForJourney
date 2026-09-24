@@ -13,6 +13,7 @@ function M.bind(deps)
     local getState = deps.getState
     local hasAdv = deps.hasAdv
     local hasAwaken = deps.hasAwaken
+    local hasStarNode = deps.hasStarNode or function() return false end
     local talentLog = deps.talentLog
     local calcDragonBloodThreatLead = deps.calcDragonBloodThreatLead
     local getTAL_BCS = deps.getTAL_BCS or function() return deps.TAL_BCS end
@@ -337,6 +338,24 @@ function M.bind(deps)
                         s.bulwarkLowHpArmorApplied = false
                     end
                 end
+            end
+
+            -- ======== 星图节点117 抗魔体质: 生命低于50%时额外护盾加成+5.8% ========
+            if hasStarNode(ally, 117) and ally.attrs then
+                local hpRatio = (ally.hp or 0) / math.max(1, ally.maxHp or 1)
+                if hpRatio < 0.50 and not s.lowHpEsApplied then
+                    ally.attrs:addModifier("starmap_lowhp_es", {
+                        { key = AD.ES_BONUS, flat = 5.8 },
+                    })
+                    s.lowHpEsApplied = true
+                    talentLog("[Talent] 抗魔体质: " .. (ally.name or "?") .. " 低血护盾加成+5.8%")
+                elseif hpRatio >= 0.50 and s.lowHpEsApplied then
+                    ally.attrs:removeModifier("starmap_lowhp_es")
+                    s.lowHpEsApplied = false
+                end
+            elseif s.lowHpEsApplied and ally.attrs then
+                ally.attrs:removeModifier("starmap_lowhp_es")
+                s.lowHpEsApplied = false
             end
 
             -- ======== 星图节点126 杀戮盛宴 攻速buff倒计时========

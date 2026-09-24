@@ -193,6 +193,11 @@ local function ensureState(unit)
             elwynInvulnProcChance = 1.0,
             awakElwynTeamBuffApplied = false,
             -- ===== 星图 RUNTIME_ONLY 节点状态=====
+            -- Node117 抗魔体质: 低血额外护盾是否已施加
+            lowHpEsApplied = false,
+            -- Node120 趁胜追击: 连续攻击同一目标的层数
+            pursuitTarget = nil,
+            pursuitStacks = 0,
             -- Node125 不死鸟之翼 每场每人1次
             phoenixUsed = false,
             -- Node126 杀戮盛宴 攻速buff剩余时间
@@ -722,6 +727,7 @@ local function bindTalentUpdate()
         getState = getState,
         hasAdv = hasAdv,
         hasAwaken = hasAwaken,
+        hasStarNode = hasStarNode,
         talentLog = talentLog,
         calcDragonBloodThreatLead = calcDragonBloodThreatLead,
         getTAL_BCS = function() return TAL_BCS end,

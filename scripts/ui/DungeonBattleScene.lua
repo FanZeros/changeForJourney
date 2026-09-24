@@ -285,21 +285,23 @@ local function drawSpeedButton(vg)
         { strokeColor = { 0x36, 0x77, 0x78 } })
 end
 
-local function handleSpeedButtonInput(dx, dy)
+function DungeonScene.cycleBattleSpeed()
     if not isSpeedButtonVisible() then return false end
-    if math.abs(dx - 987) <= 65 and math.abs(dy - 311) <= 71.5 then
-        local maxSpeed = getMaxUnlockedBattleSpeed()
-        if state.battleSpeed < 1.5 and maxSpeed >= 1.5 then
-            state.battleSpeed = 1.5
-        elseif state.battleSpeed < 2.0 and maxSpeed >= 2.0 then
-            state.battleSpeed = 2.0
-        else
-            state.battleSpeed = 1.0
-        end
-        print("[DungeonBattleScene] 副本战斗倍速切换: " .. getSpeedText())
-        return true
+    local maxSpeed = getMaxUnlockedBattleSpeed()
+    if state.battleSpeed < 1.5 and maxSpeed >= 1.5 then
+        state.battleSpeed = 1.5
+    elseif state.battleSpeed < 2.0 and maxSpeed >= 2.0 then
+        state.battleSpeed = 2.0
+    else
+        state.battleSpeed = 1.0
     end
-    return false
+    print("[DungeonBattleScene] 副本战斗倍速切换: " .. getSpeedText())
+    return true
+end
+
+local function handleSpeedButtonInput(dx, dy)
+    if math.abs(dx - 987) > 65 or math.abs(dy - 311) > 71.5 then return false end
+    return DungeonScene.cycleBattleSpeed()
 end
 
 --- 九宫格绘制

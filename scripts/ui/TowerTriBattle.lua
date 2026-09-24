@@ -804,6 +804,22 @@ local function hitBox(x, y, cx, cy, w, h)
     return math.abs(x - cx) <= w * 0.5 and math.abs(y - cy) <= h * 0.5
 end
 
+function TowerTriBattle.cycleBattleSpeed()
+    if getMaxUnlockedBattleSpeed() <= 1.0 or state.phase ~= BATTLE_ACTIVE then
+        return false
+    end
+    local maxSpeed = getMaxUnlockedBattleSpeed()
+    if state.battleSpeed < 1.5 and maxSpeed >= 1.5 then
+        state.battleSpeed = 1.5
+    elseif state.battleSpeed < 2.0 and maxSpeed >= 2.0 then
+        state.battleSpeed = 2.0
+    else
+        state.battleSpeed = 1.0
+    end
+    print("[TowerTriBattle] speed " .. getSpeedText())
+    return true
+end
+
 function TowerTriBattle.handleClick(wx, wy)
     if not state.open then return true end
     local logicalW, logicalH = state.logicalW, state.logicalH
@@ -833,16 +849,7 @@ function TowerTriBattle.handleClick(wx, wy)
     if state.phase ~= BATTLE_ACTIVE then return true end
 
     if getMaxUnlockedBattleSpeed() > 1.0 and hitBox(wx, wy, logicalW - 70, 40, 96, 44) then
-        local maxSpeed = getMaxUnlockedBattleSpeed()
-        if state.battleSpeed < 1.5 and maxSpeed >= 1.5 then
-            state.battleSpeed = 1.5
-        elseif state.battleSpeed < 2.0 and maxSpeed >= 2.0 then
-            state.battleSpeed = 2.0
-        else
-            state.battleSpeed = 1.0
-        end
-        print("[TowerTriBattle] speed " .. getSpeedText())
-        return true
+        return TowerTriBattle.cycleBattleSpeed()
     end
 
     if hitBox(wx, wy, logicalW * 0.5, logicalH - 42, 220, 56) then

@@ -643,6 +643,16 @@ end
 
 -- ======================== 输入处理 ========================
 
+function Panel.claim()
+    if not state.open then return false end
+    print("[OfflineRewardPanel] 领取 clicked")
+    if state.onClaim then
+        state.onClaim()
+    end
+    Panel.close()
+    return true
+end
+
 --- 处理点击（松开时调用）
 ---@param dx number 设计空间 X
 ---@param dy number 设计空间 Y
@@ -653,12 +663,7 @@ function Panel.handleInput(dx, dy)
     -- 领取按钮（居中）
     if DrawUtil.hitTest(dx, dy, BG.CX, BTN_CLAIM.CY, BTN_CLAIM.W, BTN_CLAIM.H) then
         BF.trigger("orp_claim")
-        print("[OfflineRewardPanel] 领取 clicked")
-        if state.onClaim then
-            state.onClaim()
-        end
-        Panel.close()
-        return true
+        return Panel.claim()
     end
 
     -- 弹窗内部消费事件（阻止穿透）

@@ -5,7 +5,7 @@
 
 local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig")
 local ScenarioDialogue = require("ui.ScenarioDialogue")
-local ClientDispatcher = require("app.ClientDispatcher")
+local ClientDispatcher = require("runtime.ClientDispatcher")
 
 local HeroScenario = {}
 

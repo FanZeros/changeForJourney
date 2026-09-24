@@ -529,7 +529,7 @@ function M.handleInput(dx, dy, heroId)
             end
             if canActivate then
                 print("[AwakeningPanel] 发送嵌合请求 - heroId=" .. heroId .. " node=" .. selectedNode)
-                local Client   = require("app.GameAction")
+                local Client   = require("runtime.GameAction")
                 local Protocol = require("shared.Protocol")
                 Client.sendAction(Protocol.ACTION_TYPES.ACTIVATE_AWAKENING, {
                     heroId    = heroId,

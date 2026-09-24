@@ -12,7 +12,7 @@
 local ModuleRegistry    = require("shared.ModuleRegistry")
 local ServerListConfig  = require("shared.ServerListConfig")
 local Protocol          = require("shared.Protocol")
-local ServerDispatcher  = require("app.LocalDispatcher")
+local ServerDispatcher  = require("runtime.LocalDispatcher")
 local CharacterSchema   = require("shared.schemas.CharacterSchema")
 
 local SaveManager = {}

@@ -11,7 +11,7 @@ local StageConfig       = require("config.StageConfig")
 local DropSystem        = require("systems.DropSystem")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local LootBoxSystem     = require("systems.LootBoxSystem")
-local ClientDispatcher  = require("app.ClientDispatcher")
+local ClientDispatcher  = require("runtime.ClientDispatcher")
 local TopBar            = require("ui.TopBar")
 local BottomNav         = require("ui.BottomNav")
 local BattleScene       = require("ui.BattleScene")
@@ -63,11 +63,11 @@ local ScenarioDialogue   = require("ui.ScenarioDialogue")     -- [LetterIntro] �
 local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig") -- [LetterIntro] 情景配置
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库 + 画廊验收页
-local StandaloneSave     = require("app.StandaloneSave") -- [单机存档] 本地快照/恢复（无联网）
-local ClientMsgHandler   = require("app.ClientMessageHandler")
-local LocalActionBridge  = require("app.LocalActionBridge")
-local StandaloneBoot     = require("app.StandaloneBoot")
-local StandaloneRT       = require("app.StandaloneRT")
+local StandaloneSave     = require("boot.StandaloneSave") -- [单机存档] 本地快照/恢复（无联网）
+local ClientMsgHandler   = require("runtime.ClientMessageHandler")
+local LocalActionBridge  = require("runtime.LocalActionBridge")
+local StandaloneBoot     = require("boot.StandaloneBoot")
+local StandaloneRT       = require("boot.StandaloneRT")
 local TaskPanel          = require("ui.TaskPanel")
 local SignInPanel        = require("ui.SignInPanel")
 
@@ -76,7 +76,7 @@ local Standalone = {}
 local localBridgeReady_ = false
 
 local function localSendAction(action, params)
-    return require("app.GameAction").sendAction(action, params)
+    return require("runtime.GameAction").sendAction(action, params)
 end
 
 --- 单机无服务器：所有 Client.sendAction 落到本地 Handler
@@ -844,6 +844,6 @@ end
 
 
 
-require("app.StandaloneHorizon")
+require("boot.StandaloneHorizon")
 
 return Standalone

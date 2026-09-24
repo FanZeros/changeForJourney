@@ -17,7 +17,7 @@ local Protocol = require("shared.Protocol")
 -- 延迟获取 Client（避免循环依赖: Client→PlayerInfoPanel→GMConsolePanel→Client）
 local Client_
 local function getClient()
-    if not Client_ then Client_ = require("app.GameAction") end
+    if not Client_ then Client_ = require("runtime.GameAction") end
     return Client_
 end
 

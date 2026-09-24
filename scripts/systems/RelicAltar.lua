@@ -8,7 +8,7 @@
 --   成阵：本座 3=小成，5=大成，5+阵眼=圆满
 -- ============================================================================
 
-local RelicDefs = require("data.RelicDefs")
+local RelicDefs = require("shared.relic.RelicDefs")
 local AD        = require("systems.AttributeDef")
 
 ---@class RelicAltar

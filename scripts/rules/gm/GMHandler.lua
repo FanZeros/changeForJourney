@@ -7,7 +7,7 @@
 local Protocol         = require("shared.Protocol")
 local GMService        = require("rules.gm.GMService")
 local GMLogger         = require("rules.gm.GMLogger")
-local ServerDispatcher = require("app.LocalDispatcher")
+local ServerDispatcher = require("runtime.LocalDispatcher")
 local MailService      = require("rules.mail.MailService")
 
 local GMHandler = {}

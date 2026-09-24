@@ -10,7 +10,7 @@ local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
 local BF                = require("systems.ButtonFeedback")
 local RelicSystem       = require("systems.RelicSystem")
-local RelicDefs         = require("data.RelicDefs")
+local RelicDefs         = require("shared.relic.RelicDefs")
 local RelicAltar        = require("systems.RelicAltar")
 local DarkIcon          = require("core.DarkIcon")
 

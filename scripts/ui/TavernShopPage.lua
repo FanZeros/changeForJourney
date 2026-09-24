@@ -11,7 +11,7 @@ local drawTextStroke = DrawUtil.drawTextStroke
 local Protocol       = require("shared.Protocol")
 local BF             = require("systems.ButtonFeedback")
 local PlayerStore    = require("core.PlayerStore")
-local ClientDispatcher = require("app.ClientDispatcher")
+local ClientDispatcher = require("runtime.ClientDispatcher")
 local TavernConfig     = require("config.TavernConfig")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
@@ -921,7 +921,7 @@ function TavernShopPage.handleInput(dx, dy)
                 elseif isLockedByOwnership(item) then
                     showFloatText("拥有该角色后可购买碎片", DLG.BUY_CX, DLG.BUY_CY)
                 else
-                    local sent = require("app.GameAction").sendAction(
+                    local sent = require("runtime.GameAction").sendAction(
                         Protocol.ACTION_TYPES.TAVERN_SHOP_BUY, {
                             itemId   = item.id,
                             quantity = shopState.buyQuantity,

@@ -1,10 +1,10 @@
 -- ============================================================================
 -- StandaloneHorizon - 横屏多面板绘制与输入（原 Standalone.lua 后半段）
--- 共享运行时见 app.StandaloneRT
+-- 共享运行时见 boot.StandaloneRT
 -- ============================================================================
 
 local Viewport = require("core.Viewport")
-local RT = require("app.StandaloneRT")
+local RT = require("boot.StandaloneRT")
 
 local TopBar            = require("ui.TopBar")
 local BottomNav         = require("ui.BottomNav")

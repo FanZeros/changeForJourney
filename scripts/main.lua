@@ -9,7 +9,7 @@ local Module = nil
 function Start()
     print("[Main] Start() called")
     print("[Main] loading Standalone module...")
-    Module = require("app.Standalone")
+    Module = require("boot.Standalone")
     print("[Main] Standalone module loaded OK")
     print("[Main] calling Module.Start()...")
     Module.Start()

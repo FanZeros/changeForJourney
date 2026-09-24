@@ -11,7 +11,7 @@ local hitTest           = DrawUtil.hitTest
 local BF                = require("systems.ButtonFeedback")
 local RelicSystem       = require("systems.RelicSystem")
 local RelicAffix        = require("systems.RelicAffix")
-local RelicDefs         = require("data.RelicDefs")
+local RelicDefs         = require("shared.relic.RelicDefs")
 local PlayerStore       = require("core.PlayerStore")
 local DarkIcon          = require("core.DarkIcon")
 

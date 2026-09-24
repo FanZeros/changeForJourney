@@ -6,7 +6,7 @@
 
 local PDM         = require("rules.character.PlayerDataManager")
 local RelicAffix  = require("systems.RelicAffix")
-local RelicDefs   = require("data.RelicDefs")
+local RelicDefs   = require("shared.relic.RelicDefs")
 local RelicSchema = require("shared.relic.RelicSchema")
 local RelicAltar  = require("systems.RelicAltar")
 

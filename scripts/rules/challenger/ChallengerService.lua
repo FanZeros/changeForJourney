@@ -21,7 +21,7 @@ local MERGE_THRESHOLD = ChallengerConsts.MERGE_MAIL_THRESHOLD or 8
 
 local function pushMailListToClient(uid)
     local okHandler, MailHandler = pcall(require, "rules.mail.MailHandler")
-    local okDispatcher, ServerDispatcher = pcall(require, "app.LocalDispatcher")
+    local okDispatcher, ServerDispatcher = pcall(require, "runtime.LocalDispatcher")
     local okProtocol, Protocol = pcall(require, "shared.Protocol")
     if not okHandler or not okDispatcher or not okProtocol then
         return

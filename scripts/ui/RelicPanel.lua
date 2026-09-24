@@ -16,7 +16,7 @@ local RelicDetailPanel  = require("ui.RelicDetailPanel")
 local RelicReforgePanel = require("ui.RelicReforgePanel")
 local RelicSystem       = require("systems.RelicSystem")
 local RelicAltar        = require("systems.RelicAltar")
-local RelicDefs         = require("data.RelicDefs")
+local RelicDefs         = require("shared.relic.RelicDefs")
 local PlayerStore       = require("core.PlayerStore")
 
 local RelicPanel = {}

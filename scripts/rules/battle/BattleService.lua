@@ -21,7 +21,7 @@ local MonsterConfig    = require("config.MonsterConfig")
 local MapAffixConfig   = require("config.MapAffixConfig")
 local HeroService      = require("rules.hero.HeroService")
 local RelicAffix       = require("systems.RelicAffix")
-local RelicDefs        = require("data.RelicDefs")
+local RelicDefs        = require("shared.relic.RelicDefs")
 local RelicService     = require("rules.relic.RelicService")
 local IdleSettleService = require("rules.offline.IdleSettleService")
 

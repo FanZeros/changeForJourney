@@ -15,7 +15,7 @@
 --                           setBattleData 回灌（含 string→number key 修正）
 -- ============================================================================
 
-local ClientDispatcher = require("app.ClientDispatcher")
+local ClientDispatcher = require("runtime.ClientDispatcher")
 local GameState        = require("core.GameState")
 local BattleScene      = require("ui.BattleScene")
 

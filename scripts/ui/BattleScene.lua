@@ -665,7 +665,7 @@ function BattleScene.init(vg)
     -- 初始化扫荡弹窗
     SweepDialog.init(vg)
     SweepDialog.onSweep = function()
-        require("app.GameAction").sendAction(
+        require("runtime.GameAction").sendAction(
             require("shared.Protocol").ACTION_TYPES.SWEEP, {})
     end
 

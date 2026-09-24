@@ -28,7 +28,7 @@ local cjson = cjson ---@diagnostic disable-line: undefined-global
 local PlayerStore = {}
 
 local CharacterSchema  = require("shared.schemas.CharacterSchema")
-local ClientDispatcher = require("app.ClientDispatcher")
+local ClientDispatcher = require("runtime.ClientDispatcher")
 
 -- ============================================================================
 -- 内部状态

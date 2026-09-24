@@ -7,7 +7,7 @@
 
 local Protocol         = require("shared.Protocol")
 local ArtifactDefs     = require("shared.artifact.ArtifactDefs")
-local ClientDispatcher = require("app.ClientDispatcher")
+local ClientDispatcher = require("runtime.ClientDispatcher")
  local GameState        = require("core.GameState")
  local ExpTable         = require("config.ExpTable")
  local HeroConfig       = require("config.HeroConfig")

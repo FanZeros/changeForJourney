@@ -632,7 +632,7 @@ local function quickEquipEntry(entry)
         BF.trigger("equip_deny")
         return true
     end
-    local Client = require("app.GameAction")
+    local Client = require("runtime.GameAction")
     local Protocol = require("shared.Protocol")
     local slot = bagState.filter or bagState.slot or entry.equip.slot
     if entry.equipped then

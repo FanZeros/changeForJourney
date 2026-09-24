@@ -8,7 +8,7 @@ local StageConfig       = require("config.StageConfig")
 local DropSystem        = require("systems.DropSystem")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local LootBoxSystem     = require("systems.LootBoxSystem")
-local ClientDispatcher  = require("app.ClientDispatcher")
+local ClientDispatcher  = require("runtime.ClientDispatcher")
 local TopBar            = require("ui.TopBar")
 local BottomNav         = require("ui.BottomNav")
 local BattleScene       = require("ui.BattleScene")
@@ -27,7 +27,7 @@ local BattleCombat      = require("ui.BattleCombat")
 local BattleTriPage     = require("ui.BattleTriPage")
 local PlayerStore       = require("core.PlayerStore")
 local IntroCutscene     = require("ui.IntroCutscene")
-local LocalActionBridge = require("app.LocalActionBridge")
+local LocalActionBridge = require("runtime.LocalActionBridge")
 local TaskPanel         = require("ui.TaskPanel")
 local SignInPanel       = require("ui.SignInPanel")
 local BackpackPanel     = require("ui.BackpackPanel")
@@ -484,13 +484,13 @@ function M.run(rt)
                     local current = getter()
                     local base = 0
                     if type(current) == "number" then
-                        base = current
+                        base = math.floor(current)
                     end
                     local add = 0
                     if type(amount) == "number" then
-                        add = amount
+                        add = math.floor(amount)
                     end
-                    setter(base + add)
+                    setter(math.floor(base + add))
                     local rewardKey = SCROLL_TO_REWARD[field]
                     if rewardKey then
                         rewards[#rewards + 1] = {

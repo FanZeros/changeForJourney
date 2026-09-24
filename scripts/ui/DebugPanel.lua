@@ -20,7 +20,7 @@ local Client_
 ---@type table
 local Protocol_
 local function getClient()
-    if not Client_ then Client_ = require("app.GameAction") end
+    if not Client_ then Client_ = require("runtime.GameAction") end
     return Client_
 end
 local function getProtocol()
@@ -42,7 +42,7 @@ local OfflineRewardPanel = require("ui.OfflineRewardPanel")
 ---@type table
 local Standalone_
 local function getStandalone()
-    if not Standalone_ then Standalone_ = require("app.Standalone") end
+    if not Standalone_ then Standalone_ = require("boot.Standalone") end
     return Standalone_
 end
 

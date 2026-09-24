@@ -460,7 +460,7 @@ function DungeonBattle.onVictory()
     serverResult  = nil  -- 等待服务端返回
 
     -- 发送胜利请求到服务端
-    local Client = require("app.GameAction")
+    local Client = require("runtime.GameAction")
     if cfg.dungeonId == "babel_tower" then
         -- 通天塔：发送波次胜利（由 TowerBattleScene 管理后续流程）
         Client.sendAction(Protocol.ACTION_TYPES.TOWER_WAVE_WIN, {

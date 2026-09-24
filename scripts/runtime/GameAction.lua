@@ -9,7 +9,7 @@ local M = {}
 ---@param params table|nil
 ---@return boolean
 function M.sendAction(action, params)
-    return require("app.LocalActionBridge").dispatch(action, params)
+    return require("runtime.LocalActionBridge").dispatch(action, params)
 end
 
 ---@return boolean

@@ -17,7 +17,7 @@
 --   每个遗物的 row/col/rotation 记录锚点位置和旋转状态
 -- ============================================================================
 
-local RelicDefs = require("data.RelicDefs")
+local RelicDefs = require("shared.relic.RelicDefs")
 
 ---@class RelicGrid
 local RelicGrid = {}

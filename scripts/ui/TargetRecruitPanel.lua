@@ -389,7 +389,7 @@ function M.handleInput(dx, dy)
             local action = (state.mode == "stellar")
                 and Protocol.ACTION_TYPES.STELLAR_TARGET_UP
                 or Protocol.ACTION_TYPES.TARGET_RECRUIT
-            require("app.GameAction").sendAction(action, {
+            require("runtime.GameAction").sendAction(action, {
                 heroId = state.selectedHeroId,
             })
             -- 乐观更新：立即刷新 TavernPage 显示

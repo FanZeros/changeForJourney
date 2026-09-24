@@ -411,7 +411,7 @@ function BroadcastMailService.NotifyOnlinePlayers(serverIds)
         end
     end
 
-    local ServerDispatcher = require("app.LocalDispatcher")
+    local ServerDispatcher = require("runtime.LocalDispatcher")
     local MailService = require("rules.mail.MailService")
     local Protocol = require("shared.Protocol")
     local mailList = MailService.BuildMailList(uid)

@@ -5,10 +5,10 @@
 
 local Protocol         = require("shared.Protocol")
 local CharacterSchema  = require("shared.schemas.CharacterSchema")
-local ClientDispatcher = require("app.ClientDispatcher")
+local ClientDispatcher = require("runtime.ClientDispatcher")
 local PDM              = require("rules.character.PlayerDataManager")
 local GameState        = require("core.GameState")
-local ServerDispatcher = require("app.LocalDispatcher")
+local ServerDispatcher = require("runtime.LocalDispatcher")
 
 local M = {}
 
@@ -170,7 +170,7 @@ end
 
 local function deliverActionResult(result)
     if type(result) ~= "table" then return end
-    local okMsg, Msg = pcall(require, "app.ClientMessageHandler")
+    local okMsg, Msg = pcall(require, "runtime.ClientMessageHandler")
     if okMsg and Msg and Msg.handleActionResult then
         pcall(Msg.handleActionResult, result)
     end

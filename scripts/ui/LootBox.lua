@@ -224,10 +224,8 @@ function LootBox.handleInput(dx, dy)
     -- 触发抖动（无论有无物品）
     shakeTimer = SHAKE_DURATION
 
-    -- 箱子为空时仅抖动，不打开页面
-    if seedCount == 0 then return true end
-
-    -- 打开全屏战利品管理页面
+    -- 空箱也打开管理页，避免“点了只抖一下”被当成没反应
+    print(string.format("[LootBox] tap box seedCount=%d", seedCount))
     LootBoxPage.show(seedSummary)
     return true
 end

@@ -176,9 +176,10 @@ local TALENT_TEXT_WIDTH  = TALENT_TEXT_RIGHT - TALENT_TEXT_LEFT
 
 -- ======================== 一键卸下/一键装备按钮布局常量 ========================
 
-local BTN_UNEQUIP_CX, BTN_UNEQUIP_CY = 211, 763
-local BTN_EQUIP_CX,   BTN_EQUIP_CY   = 869, 763
+local BTN_UNEQUIP_CX, BTN_UNEQUIP_CY = 211, 105
+local BTN_EQUIP_CX,   BTN_EQUIP_CY   = 869, 105
 local BTN_BATCH_W,     BTN_BATCH_H    = 304, 100
+local EQUIP_LOWER_OFFSET = 160 -- 配装页底板下移，给装备词条预留空间
 
 -- 九宫格参数（左右60，上下15）打包为 table，节省 local 变量槽位
 local NP = { hongT=15, hongR=60, hongB=15, hongL=60, lvT=15, lvR=60, lvB=15, lvL=60 }
@@ -604,6 +605,7 @@ function M.draw(vg)
 
     end
 
+    if detailState.tab == "equip" then
     -- === 5) 装备槽位 ===
     local equipData = PlayerStore.Get("equipment")
     local heroEquipped = nil
@@ -615,7 +617,7 @@ function M.draw(vg)
 
     for _, slot in ipairs(DT_SLOTS) do
         -- 配装tab下：选中槽位绘制选中底图
-        if detailState.tab == "equip" and slot.slot == detailState.equipSlot and img.slotSelected >= 0 then
+        if slot.slot == detailState.equipSlot and img.slotSelected >= 0 then
             drawImageCentered(vg, img.slotSelected, slot.cx, slot.cy, 234, 234, 1.0)
         end
 
@@ -776,12 +778,13 @@ function M.draw(vg)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("equip_btn_auto", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H, "right") end
     end
+    end  -- if detailState.tab == "equip"（装备槽与批量按钮）
     end  -- if not isAwakenTab（4~6 节）
 
     nvgRestore(vg)  -- 结束动态内容偏移（switchOX/switchAlpha）
 
-    -- === 左右切换箭头按钮（静态，不参与切换动画；觉醒页被面板遮挡不画） ===
-    if not isAwakenTab then
+    -- === 左右切换箭头按钮（只在属性页切换角色） ===
+    if detailState.tab == "attr" then
     if img.arrowBg >= 0 then
         -- 左箭头背景（翻转绘制，对齐屏幕左边缘）
         nvgSave(vg)
@@ -805,7 +808,7 @@ function M.draw(vg)
             drawImageCentered(vg, img.arrowIcon, M.ARROW_RIGHT_CX - M.ARROW_ICON_INSET, M.ARROW_CY, M.ARROW_ICON_W, M.ARROW_ICON_H, 1.0)
         end
     end
-    end  -- if not isAwakenTab（切换箭头）
+    end  -- 属性页切换箭头
 
     nvgRestore(vg)  -- 结束上半部分偏移
 
@@ -815,6 +818,10 @@ function M.draw(vg)
 
     if not isAwakenTab then
     -- === 6) 角色详情属性背景图（静态，不参与切换动画） ===
+    -- 配装页底板及标题整体下移，给上半部装备词条留位置
+    if detailState.tab == "equip" then
+        nvgTranslate(vg, 0, EQUIP_LOWER_OFFSET)
+    end
     -- 配装页分段画底板：保留顶部金属外框 + 下方皮革，跳过图内菱形金饰小横条
     if detailState.tab == "equip" and img.midBg and img.midBg >= 0 then
         local midTop = MID_BG_CY - MID_BG_H * 0.5
@@ -851,6 +858,10 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
     nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, titleText, nil)
     end  -- if not isAwakenTab（6b~7 节）
+
+    if detailState.tab == "equip" then
+        nvgTranslate(vg, 0, -EQUIP_LOWER_OFFSET)
+    end
 
     -- === 动态内容开始（箭头切换时水平滑入+淡入） ===
     nvgSave(vg)
@@ -1342,13 +1353,13 @@ function M.draw(vg)
         end
     end
 
-    -- 配装页角色名画在详情之上，避免被小窗挡住
+    -- 配装页角色名画在详情之上，随下方界面一同下移
     if not isAwakenTab and detailState.tab == "equip" and heroCfg and heroCfg.name then
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 42)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 255))
-        nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name, nil)
+        nvgText(vg, MID_NAME_CX, MID_NAME_CY + EQUIP_LOWER_OFFSET, heroCfg.name, nil)
     end
 end
 

@@ -461,12 +461,11 @@ function CharacterDetail.handleInput(dx, dy)
         return EquipmentBag.handleInput(dx, dy)
     end
 
-    -- 装备槽位点击（觉醒页槽位不绘制也不响应）
-    if detailState.tab ~= "awaken" then
+    -- 装备槽位仅配装页可见、可点击
+    if detailState.tab == "equip" then
     for _, s in ipairs(DT_SLOTS) do
         if hitTest(dx, dy, s.cx, s.cy, DT_SLOT_SIZE, DT_SLOT_SIZE) then
-            -- [交互] 属性/任意页点装备槽：自动跳配装 Tab 并选中该槽（不再另开装备背包）
-            detailState.tab = "equip"
+            -- 点击装备槽切换当前配装部位
             detailState.equipSlot = s.slot
             if CharacterDetail._EquipPanel then
                 CharacterDetail._EquipPanel.onSlotChanged(s.slot, detailState.heroId)
@@ -474,10 +473,10 @@ function CharacterDetail.handleInput(dx, dy)
             return true
         end
     end
-    end  -- if not awaken
+    end  -- if tab == "equip"
 
-    -- 一键卸下按钮（觉醒页不绘制不响应）
-    if detailState.tab ~= "awaken"
+    -- 批量装备操作仅在配装页显示并响应
+    if detailState.tab == "equip"
        and math.abs(dx - Draw.BTN_UNEQUIP_CX) <= Draw.BTN_BATCH_W * 0.5
        and math.abs(dy - Draw.BTN_UNEQUIP_CY) <= Draw.BTN_BATCH_H * 0.5 then
         BF.trigger("unequip_all")
@@ -489,8 +488,8 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- 一键装备按钮（觉醒页不绘制不响应）
-    if detailState.tab ~= "awaken"
+    -- 一键装备按钮（仅配装页）
+    if detailState.tab == "equip"
        and math.abs(dx - Draw.BTN_EQUIP_CX) <= Draw.BTN_BATCH_W * 0.5
        and math.abs(dy - Draw.BTN_EQUIP_CY) <= Draw.BTN_BATCH_H * 0.5 then
         BF.trigger("equip_all")
@@ -510,14 +509,14 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- 左箭头切换上一个角色（热区覆盖整个背景；觉醒页箭头不绘制也不响应）
-    if detailState.tab ~= "awaken" and hitTest(dx, dy, ARROW_BG_LEFT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
+    -- 左箭头切换上一个角色（仅属性页）
+    if detailState.tab == "attr" and hitTest(dx, dy, ARROW_BG_LEFT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
         CharacterDetail._switchHero(-1)
         return true
     end
 
-    -- 右箭头切换下一个角色（热区覆盖整个背景）
-    if detailState.tab ~= "awaken" and hitTest(dx, dy, ARROW_BG_RIGHT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
+    -- 右箭头切换下一个角色（仅属性页）
+    if detailState.tab == "attr" and hitTest(dx, dy, ARROW_BG_RIGHT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
         CharacterDetail._switchHero(1)
         return true
     end

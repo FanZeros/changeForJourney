@@ -713,7 +713,7 @@ function EquipmentBag.handleInput(dx, dy)
             bagState.onSelect(entry.seq, entry.equip)
             EquipmentBag.close()
         else
-            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId)
+            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, false, "bag")
         end
         return true
     end
@@ -740,6 +740,7 @@ end
 ---@return boolean 是否消费事件
 function EquipmentBag.handleDragBegin(dx, dy)
     if not bagState.open then return false end
+    if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragBegin(dx, dy) end
     if bagState.closing then return true end
 
     -- 在格子区域内开始拖拽 → 启动滚动
@@ -769,6 +770,7 @@ end
 ---@return boolean 是否消费事件
 function EquipmentBag.handleDragMove(dx, dy)
     if not bagState.open then return false end
+    if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragMove(dx, dy) end
 
     if bagState.dragging then
         local delta = bagState.dragLastY - dy
@@ -787,6 +789,7 @@ end
 ---@return boolean 是否消费事件
 function EquipmentBag.handleDragEnd(dx, dy)
     if not bagState.open then return false end
+    if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragEnd(dx, dy) end
 
     if bagState.dragging then
         bagState.dragging = false
@@ -799,6 +802,10 @@ end
 ---@param wheel number 滚轮值
 function EquipmentBag.handleScroll(wheel)
     if not bagState.open then return end
+    if EquipmentDetail.isOpen() then
+        EquipmentDetail.handleScroll(wheel)
+        return
+    end
     bagState.scrollY = bagState.scrollY - wheel * SCROLL_WHEEL_STEP
     clampScroll()
     bagState.scrollVel = 0
@@ -1178,10 +1185,10 @@ function EquipmentBag.draw(vg, opts)
         nvgTranslate(vg, R.x + R.w * 0.5 - DESIGN_W * fit * 0.5,
                          R.y + R.h * 0.5 - DESIGN_H * fit * 0.5)
         nvgScale(vg, fit, fit)
-        EquipmentDetail.draw(vg)
+        EquipmentDetail.drawIf(vg, "bag")
         nvgRestore(vg)
     else
-        EquipmentDetail.draw(vg)
+        EquipmentDetail.drawIf(vg, "bag")
     end
 end
 

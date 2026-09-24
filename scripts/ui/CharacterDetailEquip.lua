@@ -701,7 +701,7 @@ function M.handleInput(dx, dy, heroId, detailState)
 
     -- 单击：右栏左上角小详情（无阴影）
     local EquipmentDetail = require("ui.EquipmentDetail")
-    EquipmentDetail.open(item.seq, panelState.slot, heroId, true)
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character")
     print("[EquipPanel] 单击详情 seq=" .. seqStr)
     return true
 end

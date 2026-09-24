@@ -1347,7 +1347,7 @@ function M.draw(vg)
     if not EquipmentBag.isOpen() then
         local EquipmentDetail = require("ui.EquipmentDetail")
         if EquipmentDetail.isOpen() then
-            EquipmentDetail.draw(vg)
+            EquipmentDetail.drawIf(vg, "character")
         end
     end
 

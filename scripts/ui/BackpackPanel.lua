@@ -1016,7 +1016,7 @@ local function drawBody(vg)
     nvgRestore(vg)
 
     -- 装备详情面板（覆盖在最上层）
-    EquipmentDetail.draw(vg)
+    EquipmentDetail.drawIf(vg, "backpack")
 
     -- 道具详情弹窗（覆盖在最上层）
     drawItemDetail(vg)
@@ -1320,7 +1320,7 @@ function Panel.handleInput(dx, dy)
             -- 格子点击：切换选中状态
             if dy >= CLIP_TOP and dy <= GRID.CLIP_BOTTOM then
                 local equipList = getEquipList()
-                local totalSlots = math.max(#equipList, 10)
+                local totalSlots = math.max(#equipList, 35)
                 for idx = 1, totalSlots do
                     local equip = equipList[idx]
                     if equip and not equip.locked and not equip.equippedByHeroId then
@@ -1384,7 +1384,7 @@ function Panel.handleInput(dx, dy)
     -- 装备 tab 网格区域点击 → 打开装备详情
     if state.tab == "equip" and dy >= CLIP_TOP and dy <= GRID.CLIP_BOTTOM then
         local equipList = getEquipList()
-        local totalSlots = math.max(#equipList, 10)
+        local totalSlots = math.max(#equipList, 35)
         local totalRows = math.ceil(totalSlots / GRID.COLS)
 
         for row = 1, totalRows do
@@ -1400,7 +1400,7 @@ function Panel.handleInput(dx, dy)
                        and cy <= GRID.CLIP_BOTTOM + GRID.CELL_SIZE * 0.5
                        and DrawUtil.hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
                         -- 背包模式：slot=nil, heroId=nil → 显示"前往强化"按钮
-                        EquipmentDetail.open(equip.seq, nil, nil)
+                        EquipmentDetail.open(equip.seq, nil, nil, false, "backpack")
                         return true
                     end
                 end
@@ -1416,7 +1416,9 @@ end
 function Panel.handleDragBegin(dx, dy)
     if not state.open then return false end
     if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then return true end
+    if EquipmentDetail.isOpen() then
+        return EquipmentDetail.handleDragBegin(dx, dy)
+    end
     -- 检查是否在网格区域内
     if dy >= CLIP_TOP and dy <= GRID.CLIP_BOTTOM then
         state.dragging = true
@@ -1430,7 +1432,9 @@ end
 function Panel.handleDragMove(dx, dy)
     if not state.open then return false end
     if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then return true end
+    if EquipmentDetail.isOpen() then
+        return EquipmentDetail.handleDragMove(dx, dy)
+    end
     if state.dragging then
         local delta = state.lastDragY - dy
         state.scrollY = state.scrollY + delta
@@ -1445,7 +1449,9 @@ end
 function Panel.handleDragEnd(dx, dy)
     if not state.open then return false end
     if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then return true end
+    if EquipmentDetail.isOpen() then
+        return EquipmentDetail.handleDragEnd(dx, dy)
+    end
     state.dragging = false
     return true
 end
@@ -1453,7 +1459,9 @@ end
 function Panel.handleScroll(wheel)
     if not state.open then return false end
     if itemDetState.open then return true end
-    if EquipmentDetail.isOpen() then return true end
+    if EquipmentDetail.isOpen() then
+        return EquipmentDetail.handleScroll(wheel)
+    end
     state.scrollY = state.scrollY - wheel * SCROLL_WHEEL_STEP
     clampScroll()
     return true

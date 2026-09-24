@@ -959,6 +959,18 @@ function HandleMouseWheelHorizon(eventType, eventData)
     if DarkTitleScreen.isOpen() then return end
     if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local wheel = eventData["Wheel"]:GetInt()
+    if wheel == 0 then return end
+
+    -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
+    if TalentPage.isOpen() then
+        syncTalentPageLayout()
+        local pid, msx, msy = HorizonResolveMouse()
+        if pid == "left" then
+            TalentPage.handleScroll(wheel, msx, msy)
+            print("[TalentPage] wheel zoom wheel=" .. tostring(wheel))
+            return
+        end
+    end
 
     -- [三行并行] 装备袋战斗区覆盖层优先（全屏级）
     if BattleTriPage.handleScroll(wheel) then return end

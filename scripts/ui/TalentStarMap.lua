@@ -21,8 +21,8 @@ local LINE_WIDTH    = 5     -- 连接线宽度（随格距从 12 比例缩小）
 local NODE_MAX      = 208   -- 当前最大天赋节点 ID（201-208 为终焉环）
 
 -- 缩放范围：1.0 = 世界 1:1（约 1.5 竖屏画布）；可略缩小总览 / 放大看节点
-local ZOOM_MIN      = 0.55
-local ZOOM_MAX      = 1.80
+local ZOOM_MIN      = 0.40
+local ZOOM_MAX      = 2.40
 local ZOOM_DEFAULT  = 1.00
 
 -- 各类型原图尺寸 (px) 和缩放倍率

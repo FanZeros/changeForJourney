@@ -74,6 +74,28 @@ local function midX(base)
     return base + extraW() * 0.5
 end
 
+local function mapLayout()
+    local pageW = M.getPageWidth()
+    -- 视口尽量跟页面同宽，形成 1:1。底部给重置按钮留空。
+    local reserveBottom = 200
+    local h = math.min(pageW, DESIGN_H - reserveBottom)
+    local top = math.floor((DESIGN_H - h) * 0.5)
+    if top < 48 then top = 48 end
+    if top + h + reserveBottom > DESIGN_H then
+        h = DESIGN_H - top - reserveBottom
+    end
+    return {
+        top = top,
+        h = h,
+        glowCY = top + 90,
+        ptCY = top + 62,
+        lblCY = top + 146,
+        infoY = top + 70,
+        rstCY = top + h + 80,
+        slCY = top + h * 0.5,
+    }
+end
+
 -- ======================== 天赋详情面板布局常量 ========================
 
 local TFD = {
@@ -294,16 +316,17 @@ function M.drawContent(vg)
     TalentStarMap.setZoom(state.tfZoomSliderValue)
     -- 星图区域: 1:1 正方形，垂直居中
     local pageW = M.getPageWidth()
-    TalentStarMap.draw(vg, 0, MAP_TOP, pageW, MAP_H)
+    local map = mapLayout()
+    TalentStarMap.draw(vg, 0, map.top, pageW, map.h)
 
     -- 新手引导热点：整个天赋星图区域
     local _TM = require("systems.TutorialManager")
     if _TM.isActive() then
-        _TM.registerHotspot("talent_node_area", pageW * 0.5, MAP_TOP + MAP_H * 0.5, pageW, MAP_H, "left")
+        _TM.registerHotspot("talent_node_area", pageW * 0.5, map.top + map.h * 0.5, pageW, map.h, "left")
     end
 
     -- 3. 天赋点背景光晕 UI_JTTF_HG.png（绘制在星图上方）
-    drawImageCentered(vg, img.tfPointGlow, midX(TF.glowCX), TF.glowCY, TF.glowW, TF.glowH, 1.0)
+    drawImageCentered(vg, img.tfPointGlow, midX(TF.glowCX), map.glowCY, TF.glowW, TF.glowH, 1.0)
 
     -- 4. 天赋点数值 "剩余天赋点/天赋点上限"
     --    左部分(剩余) #ffef67 + 黑色描边; 右部分(/上限) 白色 + 黑色描边
@@ -327,13 +350,13 @@ function M.drawContent(vg)
     local startX = midX(TF.ptCX) - totalW * 0.5
 
     -- 左部分：描边(黑) + 填充(#ffef67)
-    drawTextStroke(vg, startX, TF.ptCY, leftText,
+    drawTextStroke(vg, startX, map.ptCY, leftText,
         TF.ptFont, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         0xff, 0xef, 0x67, TF.ptStroke)
 
     -- 右部分：描边(黑) + 填充(白)
     local afterLeftX = startX + leftW
-    drawTextStroke(vg, afterLeftX, TF.ptCY, rightText,
+    drawTextStroke(vg, afterLeftX, map.ptCY, rightText,
         TF.ptFont, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         255, 255, 255, TF.ptStroke)
 
@@ -342,25 +365,25 @@ function M.drawContent(vg)
     nvgFontSize(vg, TF.lblFont)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xff, 0xef, 0x67, 255))
-    nvgText(vg, midX(TF.lblCX), TF.lblCY, "天赋点", nil)
+    nvgText(vg, midX(TF.lblCX), map.lblCY, "远征点", nil)
 
     -- 5.5 效果总览感叹号（右上角）
     local infoX = infoCX()
-    local _bfInfo = BF.begin(vg, "ctp_overview_info", infoX, TF.infoBtnCY, TF.infoBtnW, TF.infoBtnH)
+    local _bfInfo = BF.begin(vg, "ctp_overview_info", infoX, map.infoY, TF.infoBtnW, TF.infoBtnH)
     if img.tfInfoIcon and img.tfInfoIcon >= 0 then
-        drawImageCentered(vg, img.tfInfoIcon, infoX, TF.infoBtnCY, TF.infoIconW, TF.infoIconH, 1.0)
+        drawImageCentered(vg, img.tfInfoIcon, infoX, map.infoY, TF.infoIconW, TF.infoIconH, 1.0)
     else
-        drawTextStroke(vg, infoX, TF.infoBtnCY, "!",
+        drawTextStroke(vg, infoX, map.infoY, "!",
             44, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
     end
     BF.finish(vg, _bfInfo)
 
     -- 6. 重置按钮 [暗黑化 P1-B3] 矢量按钮（绿色）
-    local _bf1 = BF.begin(vg, "ctp_reset", TF.rstCX, TF.rstCY, TF.rstW, TF.rstH)
+    local _bf1 = BF.begin(vg, "ctp_reset", TF.rstCX, map.rstCY, TF.rstW, TF.rstH)
     DarkIcon.drawNine(vg, "btn",
         TF.rstCX - TF.rstW * 0.5,
-        TF.rstCY - TF.rstH * 0.5,
+        map.rstCY - TF.rstH * 0.5,
         TF.rstW, TF.rstH,
         { accent = "green" })
 
@@ -369,7 +392,7 @@ function M.drawContent(vg)
     nvgFontSize(vg, TF.rstFont)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0x1d, 0x50, 0x37, 255))
-    nvgText(vg, TF.rstCX, TF.rstCY, "重置", nil)
+    nvgText(vg, TF.rstCX, map.rstCY, "重置", nil)
     BF.finish(vg, _bf1)
 
     -- 8. 缩放滑块背景 (黑色30%透明, 圆角18)
@@ -377,7 +400,7 @@ function M.drawContent(vg)
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
         slX - TF.slBgW * 0.5,
-        TF.slBgCY - TF.slBgH * 0.5,
+        map.slCY - TF.slBgH * 0.5,
         TF.slBgW, TF.slBgH, TF.slBgR)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 77))  -- 30% opacity ≈ 77/255
     nvgFill(vg)
@@ -386,14 +409,14 @@ function M.drawContent(vg)
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
         slX - TF.slTrkW * 0.5,
-        TF.slBgCY - TF.slTrkH * 0.5,
+        map.slCY - TF.slTrkH * 0.5,
         TF.slTrkW, TF.slTrkH, TF.slTrkR)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 77))  -- 30% opacity
     nvgFill(vg)
 
     -- 10. 缩放滑块滑块 UI_JTTF_HK.png (可拖拽, 初始在顶部)
-    local trackTop = TF.slBgCY - TF.slTrkH * 0.5
-    local trackBot = TF.slBgCY + TF.slTrkH * 0.5
+    local trackTop = map.slCY - TF.slTrkH * 0.5
+    local trackBot = map.slCY + TF.slTrkH * 0.5
     local thumbCY = trackTop + state.tfZoomSliderValue * (trackBot - trackTop)
     drawImageCentered(vg, img.tfSliderThumb,
         slX, thumbCY,
@@ -691,14 +714,15 @@ function M.handleTabInput(dx, dy)
     if state.tab and state.tab ~= "tianfu" then return false end
 
     -- 效果总览按钮
-    if hitTest(dx, dy, infoCX(), TF.infoBtnCY, TF.infoBtnW, TF.infoBtnH) then
+    if hitTest(dx, dy, infoCX(), mapLayout().infoY, TF.infoBtnW, TF.infoBtnH) then
         BF.trigger("ctp_overview_info")
         openOverview()
         return true
     end
 
     -- 重置按钮
-    if hitTest(dx, dy, TF.rstCX, TF.rstCY, TF.rstW, TF.rstH) then
+    local map = mapLayout()
+    if hitTest(dx, dy, TF.rstCX, map.rstCY, TF.rstW, TF.rstH) then
         BF.trigger("ctp_reset")
         print("[ChurchTalentPanel] 天赋重置按钮点击")
         -- 重置天赋：发送请求，服务端会清空并推送更新
@@ -707,9 +731,9 @@ function M.handleTabInput(dx, dy)
     end
 
     -- 缩放滑块区域
-    local trackTop = TF.slBgCY - TF.slTrkH * 0.5
-    local trackBot = TF.slBgCY + TF.slTrkH * 0.5
-    if hitTest(dx, dy, sliderCX(), TF.slBgCY, TF.slBgW, TF.slBgH) then
+    local trackTop = map.slCY - TF.slTrkH * 0.5
+    local trackBot = map.slCY + TF.slTrkH * 0.5
+    if hitTest(dx, dy, sliderCX(), map.slCY, TF.slBgW, TF.slBgH) then
         -- 点击滑块区域 → 直接定位滑块
         local clamped = math.max(trackTop, math.min(trackBot, dy))
         state.tfZoomSliderValue = (clamped - trackTop) / (trackBot - trackTop)
@@ -748,9 +772,10 @@ function M.handleDragBegin(dx, dy)
     if state.tfDetailOpen then return true end
 
     -- 缩放滑块
-    local trackTop = TF.slBgCY - TF.slTrkH * 0.5
-    local trackBot = TF.slBgCY + TF.slTrkH * 0.5
-    if hitTest(dx, dy, sliderCX(), TF.slBgCY, TF.slBgW, TF.slBgH) then
+    local map = mapLayout()
+    local trackTop = map.slCY - TF.slTrkH * 0.5
+    local trackBot = map.slCY + TF.slTrkH * 0.5
+    if hitTest(dx, dy, sliderCX(), map.slCY, TF.slBgW, TF.slBgH) then
         local clamped = math.max(trackTop, math.min(trackBot, dy))
         state.tfZoomSliderValue = (clamped - trackTop) / (trackBot - trackTop)
         state.tfSliderDragging = true
@@ -758,7 +783,7 @@ function M.handleDragBegin(dx, dy)
     end
 
     -- 星图区域
-    if dx >= 0 and dx <= M.getPageWidth() and dy >= MAP_TOP and dy <= MAP_TOP + MAP_H then
+    if dx >= 0 and dx <= M.getPageWidth() and dy >= map.top and dy <= map.top + map.h then
         TalentStarMap.stopInertia()
         state.tfMapDragging = true
         state.tfLastDragX = dx
@@ -787,8 +812,9 @@ function M.handleDragMove(dx, dy)
 
     -- 滑块拖拽中
     if state.tfSliderDragging then
-        local trackTop = TF.slBgCY - TF.slTrkH * 0.5
-        local trackBot = TF.slBgCY + TF.slTrkH * 0.5
+        local map = mapLayout()
+        local trackTop = map.slCY - TF.slTrkH * 0.5
+        local trackBot = map.slCY + TF.slTrkH * 0.5
         local clamped = math.max(trackTop, math.min(trackBot, dy))
         state.tfZoomSliderValue = (clamped - trackTop) / (trackBot - trackTop)
         return true
@@ -853,7 +879,7 @@ function M.handleScroll(wheel, msx, msy)
     end
 
     -- 天赋星图：滚轮直接缩放（上滚放大 / 下滚缩小，以鼠标位置为锚）
-    local step = 0.08 * wheel
+    local step = 0.14 * wheel
     local v = math.max(0, math.min(1, state.tfZoomSliderValue - step))
     if math.abs(v - state.tfZoomSliderValue) < 1e-6 then return end
     state.tfZoomSliderValue = v

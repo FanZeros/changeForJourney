@@ -142,7 +142,7 @@ TutorialConfig[6] = {
             advanceOn = "click_highlight",
         },
         {
-            text      = "尝试点击来学习任意的天赋点",
+            text      = "尝试点击来学习任意的远征点",
             highlight = "talent_node_area",
             advanceOn = "click_highlight",
         },

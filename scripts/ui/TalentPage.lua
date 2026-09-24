@@ -16,6 +16,11 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 
 local TalentPage = {}
 
+-- 横屏古树页相对左栏的宽度倍率。
+-- 1.0 = 与左栏同宽；1.5 = 宽 50%，多出的部分从左侧盖住战斗区。
+-- 只改这个数即可，侧边返回条会跟着页面右缘移动。
+TalentPage.HORIZON_WIDTH_SCALE = 1.5
+
 local ANIM = {
     OPEN_DUR  = 0.45,
     CLOSE_DUR = 0.38,
@@ -222,8 +227,26 @@ function TalentPage.setOnOpenCallback(fn)
     onOpenCallback_ = fn
 end
 
+function TalentPage.getHorizonWidthScale()
+    local scale = TalentPage.HORIZON_WIDTH_SCALE or 1.0
+    if scale < 1.0 then scale = 1.0 end
+    return scale
+end
+
+function TalentPage.applyHorizonLayout()
+    TalentPanel.setWidthScale(TalentPage.getHorizonWidthScale())
+end
+
+function TalentPage.resetHorizonLayout()
+    TalentPanel.setWidthScale(1.0)
+end
+
 function TalentPage.getSeamAnim()
     return state.openTime, state.closeTime, ANIM.OPEN_DUR, ANIM.CLOSE_DUR
+end
+
+function TalentPage.getSlideDistance()
+    return TalentPanel.getPageWidth()
 end
 
 function TalentPage.syncTalentFromStore()
@@ -259,7 +282,7 @@ function TalentPage.handleInput(dx, dy)
     if state.tfDetailOpen then
         return TalentPanel.handleDetailInput(dx, dy)
     end
-    if TownPageChrome.hitBack(dx, dy) then
+    if TownPageChrome.hitBack(dx, dy, { cx = 958 + (TalentPanel.getPageWidth() - DESIGN_W) }) then
         TalentPage.close()
         return true
     end
@@ -332,7 +355,7 @@ local function drawPageImpl(vg)
 
     local overlayAlpha = math.floor(180 * progress)
     nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+    nvgRect(vg, 0, 0, TalentPanel.getPageWidth(), DESIGN_H)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, overlayAlpha))
     nvgFill(vg)
 
@@ -342,8 +365,9 @@ local function drawPageImpl(vg)
     TalentPanel.drawBg(vg)
     TalentPanel.drawContent(vg)
 
+    local extra = TalentPanel.getPageWidth() - DESIGN_W
     TownPageChrome.drawNamePlate(vg, img.nameBg, I18n.t("ancient_tree"))
-    TownPageChrome.drawBack(vg)
+    TownPageChrome.drawBack(vg, { cx = 958 + extra })
 
     TalentPanel.drawDetailPanel(vg)
     TalentPanel.drawOverviewPanel(vg)
@@ -354,7 +378,7 @@ end
 function TalentPage.draw(vg)
     if not state.open and not state.closing then return end
     local ot, ct, od, cd = TalentPage.getSeamAnim()
-    local ox = DrawUtil.seamSlideX(-1, ot, ct, od, cd, 1080)
+    local ox = DrawUtil.seamSlideX(-1, ot, ct, od, cd, TalentPage.getSlideDistance())
     if ox ~= 0 then
         nvgSave(vg)
         nvgTranslate(vg, ox, 0)

@@ -50,6 +50,43 @@ local UiToast            = require("core.UiToast")
 local function vg() return RT.vg end
 local function logicalW() return RT.logicalW or 0 end
 local function logicalH() return RT.logicalH or 0 end
+
+local function talentPageUsesWideLayout()
+    return TalentPage.isOpen() and TalentPage.getHorizonWidthScale() > 1.001
+end
+
+local function syncTalentPageLayout()
+    if talentPageUsesWideLayout() then
+        TalentPage.applyHorizonLayout()
+    else
+        TalentPage.resetHorizonLayout()
+    end
+end
+
+--- 古树加宽后的窗口右缘（含滑入偏移）。ox 为左栏窗口原点。
+local function talentPageRightEdge(ox, ps)
+    syncTalentPageLayout()
+    local scale = TalentPage.getHorizonWidthScale()
+    local cs = ps * Viewport.DS
+    local dist = 1080 * scale
+    local ot, ct, od, cd = TalentPage.getSeamAnim()
+    local oxDesign = DrawUtil.seamSlideX(-1, ot, ct, od, cd, dist)
+    return ox + (dist + oxDesign) * cs, cs, dist, oxDesign
+end
+
+local function drawWideTalentPage(ox, oy, ps)
+    if not talentPageUsesWideLayout() then return end
+    syncTalentPageLayout()
+    local scale = TalentPage.getHorizonWidthScale()
+    local cs = ps * Viewport.DS
+    nvgSave(vg())
+    nvgResetScissor(vg())
+    nvgScissor(vg(), ox, oy, 1080 * scale * cs, 2400 * cs)
+    nvgTranslate(vg(), ox, oy)
+    nvgScale(vg(), cs, cs)
+    TalentPage.draw(vg())
+    nvgRestore(vg())
+end
 local function dpr() return RT.dpr or 1 end
 local function DESIGN_W() return RT.DESIGN_W or 1080 end
 local function DESIGN_H() return RT.DESIGN_H or 2400 end
@@ -180,12 +217,13 @@ local function seamBackList()
         }
     end
     -- 左框柱 ‹：左栏二级页（背包/教堂/铁匠/酒馆/市场）——条贴页面右缘(前缘),同步推进
-    local leftClose, leftAnim
+    local leftClose, leftAnim, leftScale
     if     BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
         leftClose = function() BackpackPanel.close() end
         leftAnim = { BackpackPanel.getSeamAnim() }
     elseif TalentPage.isOpen()     then leftClose = function() TalentPage.close() end
         leftAnim = { TalentPage.getSeamAnim() }
+        leftScale = TalentPage.getHorizonWidthScale()
     elseif ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
         leftAnim = { ChurchPage.getSeamAnim() }
     elseif BlacksmithPage.isOpen()  then leftClose = function() BlacksmithPage.close() end
@@ -196,9 +234,12 @@ local function seamBackList()
         leftAnim = { MarketPage.getSeamAnim() }
     end
     if leftClose then
-        local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], DIST) * cs
+        local scale = leftScale or 1
+        if scale < 1 then scale = 1 end
+        local dist = 1080 * scale
+        local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], dist) * cs
         list[#list + 1] = {
-            cx = 486 * psL + barW * 0.5 + oxWin,
+            cx = 486 * psL * scale + barW * 0.5 + oxWin,
             sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
             close = leftClose,
         }
@@ -322,7 +363,7 @@ function HandleNanoVGRenderHorizon()
         TownScene.draw(vg())
         BlacksmithPage.draw(vg())
         ChurchPage.draw(vg())
-        TalentPage.draw(vg())
+        if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
         MarketPage.draw(vg())
         BackpackPanel.draw(vg())
@@ -369,6 +410,10 @@ function HandleNanoVGRenderHorizon()
     end
     Viewport.finish(vg())
 
+    if talentPageUsesWideLayout() and not BattleTriPage.isOpen() then
+        drawWideTalentPage(H_ox, H_oy, H_s)
+    end
+
     if towerBattleOpen then
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
         nvgEndFrame(vg())
@@ -386,7 +431,7 @@ function HandleNanoVGRenderHorizon()
         TownScene.draw(vg())
         BlacksmithPage.draw(vg())
         ChurchPage.draw(vg())
-        TalentPage.draw(vg())
+        if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
         MarketPage.draw(vg())
         BackpackPanel.draw(vg())
@@ -405,6 +450,7 @@ function HandleNanoVGRenderHorizon()
         -- [行1 HUD] 宿主最终层级绘制：速度/扫荡/统计/选关按钮——
         -- 确保位于一切战斗行背景与框柱之上（用户实测按钮被行1背景穿帮）
         BattleTriPage.drawHud(vg(), logicalW(), logicalH())
+        drawWideTalentPage(0, 0, logicalH() / 1080)
         -- [三队并行] 中缝返回条（窗口坐标，页面视口之外）：全高门柱边条，左页‹ / 详情›，两级并存各自绘制
         for _, seamBtn in ipairs(seamBackList()) do
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
@@ -529,6 +575,13 @@ local function HorizonResolveMouse()
             return 'tri', sx, sy
         end
         local ps = logicalH() / 1080
+        if talentPageUsesWideLayout() then
+            local rightEdge = talentPageRightEdge(0, ps)
+            if sx >= 0 and sx < rightEdge then
+                local cs = ps * Viewport.DS
+                return 'left', sx / cs, sy / cs
+            end
+        end
         local leftW = 486 * ps
         if sx < leftW then
             return 'left', sx / (ps * 0.45), sy / (ps * 0.45)
@@ -539,6 +592,13 @@ local function HorizonResolveMouse()
     end
     if TowerBattleScene.isActive() then
         return 'modal', sx, sy
+    end
+    if talentPageUsesWideLayout() then
+        local rightEdge = talentPageRightEdge(H_ox, H_s)
+        if sx >= H_ox and sx < rightEdge then
+            local cs = H_s * Viewport.DS
+            return 'left', (sx - H_ox) / cs, (sy - H_oy) / cs
+        end
     end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end

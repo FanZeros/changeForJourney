@@ -31,6 +31,21 @@ local MAP_SIZE = 1080
 local MAP_TOP  = math.floor((DESIGN_H - MAP_SIZE) * 0.5) -- 660
 local MAP_H    = MAP_SIZE
 
+local widthScale = 1.0
+
+function M.setWidthScale(scale)
+    widthScale = scale or 1.0
+    if widthScale < 1.0 then widthScale = 1.0 end
+end
+
+function M.getPageWidth()
+    return DESIGN_W * widthScale
+end
+
+local function extraW()
+    return M.getPageWidth() - DESIGN_W
+end
+
 local TF = {
     bgCX = 540, bgCY = 1200, bgW = 1080, bgH = 2400,          -- 背景
     glowCX = 540, glowCY = MAP_TOP + 90, glowW = 723, glowH = 729, -- 天赋点光晕
@@ -46,6 +61,18 @@ local TF = {
     slTrkW = 10, slTrkH = 312, slTrkR = 5,
     slThW = 70, slThH = 30,
 }
+
+local function infoCX()
+    return TF.infoBtnCX + extraW()
+end
+
+local function sliderCX()
+    return TF.slBgCX + extraW()
+end
+
+local function midX(base)
+    return base + extraW() * 0.5
+end
 
 -- ======================== 天赋详情面板布局常量 ========================
 
@@ -256,8 +283,8 @@ end
 
 --- 绘制天赋背景（铺满全屏，在上半部分之前绘制）
 function M.drawBg(vg)
-    -- 暗黑定稿：终焉古树根系边框静态底（1080×2400 与设计分辨率 1:1）
-    drawImageCentered(vg, img.tfBg, TF.bgCX, TF.bgCY, TF.bgW, TF.bgH, 1.0)
+    local pageW = M.getPageWidth()
+    drawImageCentered(vg, img.tfBg, pageW * 0.5, TF.bgCY, pageW, TF.bgH, 1.0)
 end
 
 --- 绘制天赋 Tab 内容（受 scissor 裁剪的部分）
@@ -266,16 +293,17 @@ function M.drawContent(vg)
     -- 同步缩放滑块值到星图
     TalentStarMap.setZoom(state.tfZoomSliderValue)
     -- 星图区域: 1:1 正方形，垂直居中
-    TalentStarMap.draw(vg, 0, MAP_TOP, DESIGN_W, MAP_H)
+    local pageW = M.getPageWidth()
+    TalentStarMap.draw(vg, 0, MAP_TOP, pageW, MAP_H)
 
     -- 新手引导热点：整个天赋星图区域
     local _TM = require("systems.TutorialManager")
     if _TM.isActive() then
-        _TM.registerHotspot("talent_node_area", DESIGN_W * 0.5, MAP_TOP + MAP_H * 0.5, DESIGN_W, MAP_H, "left")
+        _TM.registerHotspot("talent_node_area", pageW * 0.5, MAP_TOP + MAP_H * 0.5, pageW, MAP_H, "left")
     end
 
     -- 3. 天赋点背景光晕 UI_JTTF_HG.png（绘制在星图上方）
-    drawImageCentered(vg, img.tfPointGlow, TF.glowCX, TF.glowCY, TF.glowW, TF.glowH, 1.0)
+    drawImageCentered(vg, img.tfPointGlow, midX(TF.glowCX), TF.glowCY, TF.glowW, TF.glowH, 1.0)
 
     -- 4. 天赋点数值 "剩余天赋点/天赋点上限"
     --    左部分(剩余) #ffef67 + 黑色描边; 右部分(/上限) 白色 + 黑色描边
@@ -296,7 +324,7 @@ function M.drawContent(vg)
     local leftW = nvgTextBounds(vg, 0, 0, leftText)
     local rightW = nvgTextBounds(vg, 0, 0, rightText)
     local totalW = leftW + rightW
-    local startX = TF.ptCX - totalW * 0.5
+    local startX = midX(TF.ptCX) - totalW * 0.5
 
     -- 左部分：描边(黑) + 填充(#ffef67)
     drawTextStroke(vg, startX, TF.ptCY, leftText,
@@ -314,14 +342,15 @@ function M.drawContent(vg)
     nvgFontSize(vg, TF.lblFont)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xff, 0xef, 0x67, 255))
-    nvgText(vg, TF.lblCX, TF.lblCY, "天赋点", nil)
+    nvgText(vg, midX(TF.lblCX), TF.lblCY, "天赋点", nil)
 
     -- 5.5 效果总览感叹号（右上角）
-    local _bfInfo = BF.begin(vg, "ctp_overview_info", TF.infoBtnCX, TF.infoBtnCY, TF.infoBtnW, TF.infoBtnH)
+    local infoX = infoCX()
+    local _bfInfo = BF.begin(vg, "ctp_overview_info", infoX, TF.infoBtnCY, TF.infoBtnW, TF.infoBtnH)
     if img.tfInfoIcon and img.tfInfoIcon >= 0 then
-        drawImageCentered(vg, img.tfInfoIcon, TF.infoBtnCX, TF.infoBtnCY, TF.infoIconW, TF.infoIconH, 1.0)
+        drawImageCentered(vg, img.tfInfoIcon, infoX, TF.infoBtnCY, TF.infoIconW, TF.infoIconH, 1.0)
     else
-        drawTextStroke(vg, TF.infoBtnCX, TF.infoBtnCY, "!",
+        drawTextStroke(vg, infoX, TF.infoBtnCY, "!",
             44, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
     end
@@ -344,9 +373,10 @@ function M.drawContent(vg)
     BF.finish(vg, _bf1)
 
     -- 8. 缩放滑块背景 (黑色30%透明, 圆角18)
+    local slX = sliderCX()
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
-        TF.slBgCX - TF.slBgW * 0.5,
+        slX - TF.slBgW * 0.5,
         TF.slBgCY - TF.slBgH * 0.5,
         TF.slBgW, TF.slBgH, TF.slBgR)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 77))  -- 30% opacity ≈ 77/255
@@ -355,7 +385,7 @@ function M.drawContent(vg)
     -- 9. 缩放滑块轨道 (白色30%透明, 圆角5)
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
-        TF.slBgCX - TF.slTrkW * 0.5,
+        slX - TF.slTrkW * 0.5,
         TF.slBgCY - TF.slTrkH * 0.5,
         TF.slTrkW, TF.slTrkH, TF.slTrkR)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 77))  -- 30% opacity
@@ -366,7 +396,7 @@ function M.drawContent(vg)
     local trackBot = TF.slBgCY + TF.slTrkH * 0.5
     local thumbCY = trackTop + state.tfZoomSliderValue * (trackBot - trackTop)
     drawImageCentered(vg, img.tfSliderThumb,
-        TF.slBgCX, thumbCY,
+        slX, thumbCY,
         TF.slThW, TF.slThH, 1.0)
 end
 
@@ -403,7 +433,7 @@ function M.drawDetailPanel(vg)
 
     -- 1. 全屏半透明黑色遮罩 (50% × progress)
     nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+    nvgRect(vg, 0, 0, M.getPageWidth(), DESIGN_H)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(128 * progress + 0.5)))
     nvgFill(vg)
 
@@ -506,7 +536,7 @@ function M.drawOverviewPanel(vg)
     local scale = POPUP_SCALE_FROM + (1.0 - POPUP_SCALE_FROM) * progress
 
     nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+    nvgRect(vg, 0, 0, M.getPageWidth(), DESIGN_H)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(128 * progress + 0.5)))
     nvgFill(vg)
 
@@ -661,7 +691,7 @@ function M.handleTabInput(dx, dy)
     if state.tab and state.tab ~= "tianfu" then return false end
 
     -- 效果总览按钮
-    if hitTest(dx, dy, TF.infoBtnCX, TF.infoBtnCY, TF.infoBtnW, TF.infoBtnH) then
+    if hitTest(dx, dy, infoCX(), TF.infoBtnCY, TF.infoBtnW, TF.infoBtnH) then
         BF.trigger("ctp_overview_info")
         openOverview()
         return true
@@ -679,7 +709,7 @@ function M.handleTabInput(dx, dy)
     -- 缩放滑块区域
     local trackTop = TF.slBgCY - TF.slTrkH * 0.5
     local trackBot = TF.slBgCY + TF.slTrkH * 0.5
-    if hitTest(dx, dy, TF.slBgCX, TF.slBgCY, TF.slBgW, TF.slBgH) then
+    if hitTest(dx, dy, sliderCX(), TF.slBgCY, TF.slBgW, TF.slBgH) then
         -- 点击滑块区域 → 直接定位滑块
         local clamped = math.max(trackTop, math.min(trackBot, dy))
         state.tfZoomSliderValue = (clamped - trackTop) / (trackBot - trackTop)
@@ -720,7 +750,7 @@ function M.handleDragBegin(dx, dy)
     -- 缩放滑块
     local trackTop = TF.slBgCY - TF.slTrkH * 0.5
     local trackBot = TF.slBgCY + TF.slTrkH * 0.5
-    if hitTest(dx, dy, TF.slBgCX, TF.slBgCY, TF.slBgW, TF.slBgH) then
+    if hitTest(dx, dy, sliderCX(), TF.slBgCY, TF.slBgW, TF.slBgH) then
         local clamped = math.max(trackTop, math.min(trackBot, dy))
         state.tfZoomSliderValue = (clamped - trackTop) / (trackBot - trackTop)
         state.tfSliderDragging = true
@@ -728,7 +758,7 @@ function M.handleDragBegin(dx, dy)
     end
 
     -- 星图区域
-    if dx >= 0 and dx <= DESIGN_W and dy >= MAP_TOP and dy <= MAP_TOP + MAP_H then
+    if dx >= 0 and dx <= M.getPageWidth() and dy >= MAP_TOP and dy <= MAP_TOP + MAP_H then
         TalentStarMap.stopInertia()
         state.tfMapDragging = true
         state.tfLastDragX = dx

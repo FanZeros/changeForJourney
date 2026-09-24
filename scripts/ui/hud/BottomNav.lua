@@ -100,7 +100,7 @@ end
 --- 刷新城镇标签(Tab 4)角标：古树(天赋) + 教堂(转职/神器) + 铁匠铺(可强化) + 遗物
 function BottomNav.refreshTownBadge()
     -- 古树天赋点未用 → 箭头
-    local okTP, TP = pcall(require, "ui.church.TalentPage")
+    local okTP, TP = pcall(require, "ui.church.talent.TalentPage")
     if okTP and TP and TP.hasAnyUnusedTalent then
         local ok, unused = pcall(TP.hasAnyUnusedTalent)
         if ok and unused then

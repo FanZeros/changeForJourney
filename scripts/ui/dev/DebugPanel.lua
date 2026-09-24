@@ -3,13 +3,13 @@
 -- 功能: 增减己方/敌方队伍单位数量, 己方单位使用 HeroConfig 创建完整属性的英雄角色
 -- ============================================================================
 
-local BattleScene = require("ui.battle.BattleScene")
+local BattleScene = require("ui.battle.scene.BattleScene")
 local SC = require("config.StageConfig")
 local MC = require("config.MonsterConfig")
 local HC = require("config.HeroConfig")
 local AD = require("systems.AttributeDef")
-local HeroRosterPanel = require("ui.character.HeroRosterPanel")
-local CharacterPanel  = require("ui.character.CharacterPanel")
+local HeroRosterPanel = require("ui.character.hero.HeroRosterPanel")
+local CharacterPanel  = require("ui.character.panel.CharacterPanel")
 local EquipmentConfig = require("config.EquipmentConfig")
 local DarkIcon        = require("core.DarkIcon")  -- [B-方案] 品质古卷色表引用
 local ExpTable        = require("config.ExpTable")
@@ -35,8 +35,8 @@ local GameState  = require("core.GameState")
 local function isDebugAllowed()
     return getClient().isGM() == true
 end
-local BattleEffects = require("ui.battle.BattleEffects")
-local OfflineRewardPanel = require("ui.hud.OfflineRewardPanel")
+local BattleEffects = require("ui.battle.combat.BattleEffects")
+local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
 
 -- Standalone 延迟加载（避免与 Standalone→DebugPanel 循环依赖）
 ---@type table
@@ -64,7 +64,7 @@ end
 ---@type table
 local IntroCutscene_
 local function getIntroCutscene()
-    if not IntroCutscene_ then IntroCutscene_ = require("ui.story.IntroCutscene") end
+    if not IntroCutscene_ then IntroCutscene_ = require("ui.story.gate.IntroCutscene") end
     return IntroCutscene_
 end
 local ScenarioDialogue_
@@ -1027,7 +1027,7 @@ function DebugPanel.handleInput(sx, sy)
                 resetConfirmClock = 0  -- 重置确认状态
 
                 -- [DIAG] 记录清档开始时的关键状态
-                local PlayerInfoPanel_ = require("ui.hud.PlayerInfoPanel")
+                local PlayerInfoPanel_ = require("ui.hud.popup.PlayerInfoPanel")
                 print(string.format("[Debug][DIAG-RESET] START clock=%.4f — PlayerInfoPanel.getUID()=%s",
                     os.clock(),
                     tostring(PlayerInfoPanel_.getUID and PlayerInfoPanel_.getUID() or "no-getter")))

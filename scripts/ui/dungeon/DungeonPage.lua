@@ -455,7 +455,7 @@ end
 ---@return table|nil teamAllies
 ---@return string|nil err
 local function collectTowerTeams()
-    local CharacterPanel = require("ui.character.CharacterPanel")
+    local CharacterPanel = require("ui.character.panel.CharacterPanel")
     local needLv = ExpTable.getTeamUnlockLevel(3) or 20
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
     if unlocked < 3 then
@@ -1116,7 +1116,7 @@ function DungeonPage.onActionResult(data)
                     rewards[#rewards + 1] = { type = "relic", relicType = r.type, quality = r.quality or 4 }
                 end
             end
-            require("ui.hud.RewardPopup").show("扫荡奖励", rewards)
+            require("ui.hud.popup.RewardPopup").show("扫荡奖励", rewards)
         else
             print("[DungeonPage] SWEEP FAIL: " .. tostring(data.reason))
         end
@@ -1139,7 +1139,7 @@ function DungeonPage.onActionResult(data)
                 dungeonState[dId].idleAccumSec = data.accumSec
             end
             if amount > 0 then
-                require("ui.hud.RewardPopup").show("挂机奖励", {
+                require("ui.hud.popup.RewardPopup").show("挂机奖励", {
                     { type = rewardType, amount = amount },
                 })
             end
@@ -1162,7 +1162,7 @@ function DungeonPage.onActionResult(data)
             detailDungeon = nil
             -- 打开独立副本战斗场景（类似竞技场）
             local DungeonBattleScene = require("ui.dungeon.DungeonBattleScene")
-            local CharacterPanel = require("ui.character.CharacterPanel")
+            local CharacterPanel = require("ui.character.panel.CharacterPanel")
             if dungeonVg_ then DungeonBattleScene.init(dungeonVg_) end
             local allies = CharacterPanel.getDeployedTeam()
             print("[DungeonPage] opening DungeonBattleScene with " .. #allies .. " allies, dungeon=" .. tostring(openedDungeonId))
@@ -1229,7 +1229,7 @@ function DungeonPage.onActionResult(data)
             if (data.diamondReward or 0) > 0 then
                 rewards[#rewards + 1] = { type = "diamond", amount = data.diamondReward }
             end
-            require("ui.hud.RewardPopup").show("扫荡奖励", rewards)
+            require("ui.hud.popup.RewardPopup").show("扫荡奖励", rewards)
         else
             print("[DungeonPage] TOWER_SWEEP FAIL: " .. tostring(data.reason))
         end

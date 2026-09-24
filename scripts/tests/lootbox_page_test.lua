@@ -148,14 +148,14 @@ function Start()
 
     -- 持续变化也必须周期保存，模拟磁盘可证明不会覆盖玩家实际存档。
     local original = {}
-    for _, name in ipairs({ "runtime.ClientDispatcher", "core.GameState", "ui.battle.BattleScene", "boot.StandaloneSave" }) do
+    for _, name in ipairs({ "runtime.ClientDispatcher", "core.GameState", "ui.battle.scene.BattleScene", "boot.StandaloneSave" }) do
         original[name] = package.loaded[name]
     end
     local data = { lootbox = { seeds = {} } }
     local written = {}
     package.loaded["runtime.ClientDispatcher"] = { snapshotAll = function() return data end }
     package.loaded["core.GameState"] = { exportSave = function() return {} end }
-    package.loaded["ui.battle.BattleScene"] = {}
+    package.loaded["ui.battle.scene.BattleScene"] = {}
     package.loaded["boot.StandaloneSave"] = nil
     local originalFile = File
     File = function()

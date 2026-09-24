@@ -323,7 +323,7 @@ end
 ---@type table TalentPage 模块（懒加载）
 local TalentPage_ = nil
 local function getTalentPage()
-    if not TalentPage_ then TalentPage_ = require("ui.church.TalentPage") end
+    if not TalentPage_ then TalentPage_ = require("ui.church.talent.TalentPage") end
     return TalentPage_
 end
 
@@ -589,7 +589,7 @@ function TownScene.draw(vg)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
     drawBuildingLabel(vg, 180, TASK_LBL_CY, 280, 90,
         70, TASK_LBL_CY - 4, 52, imgIconTask, 210, TASK_LBL_CY - 4, "功绩")
-    local taskOk, TaskPage = pcall(require, "ui.story.TaskPage")
+    local taskOk, TaskPage = pcall(require, "ui.story.task.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
         DarkIcon.draw(vg, "reddot", 300, TASK_LBL_CY - 36, 36, 1.0)
     end

@@ -56,7 +56,7 @@ local origUnitAtkCoeffs = {}  -- [unit] = 原始 unit.atkCoeff（部分天赋直
 local BattleScene_ = nil
 local function getBattleScene()
     if not BattleScene_ then
-        BattleScene_ = require("ui.battle.BattleScene")
+        BattleScene_ = require("ui.battle.scene.BattleScene")
     end
     return BattleScene_
 end

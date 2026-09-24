@@ -1108,7 +1108,7 @@ function TavernShopPage.onBuyResult(data)
         local item = getShopItemById(itemId)
         if item then
             local qty = tonumber(data.quantity) or shopState.buyQuantity or 1
-            local RewardPopup = require("ui.hud.RewardPopup")
+            local RewardPopup = require("ui.hud.popup.RewardPopup")
             if isRecruitTicketShopItem(item) then
                 local rewardType = (itemId == 102) and "stellar_ticket" or "adventure_ticket"
                 RewardPopup.show("购买成功", {

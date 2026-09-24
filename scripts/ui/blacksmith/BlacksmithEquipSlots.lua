@@ -2,7 +2,7 @@
 -- BlacksmithEquipSlots - 铁匠装备槽绘制（玩法不变）
 -- ============================================================================
 
-local CharacterPanel = require("ui.character.CharacterPanel")
+local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local PlayerStore = require("core.PlayerStore")
 local EquipmentSystem = require("systems.EquipmentSystem")

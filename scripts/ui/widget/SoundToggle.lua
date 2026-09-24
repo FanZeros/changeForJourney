@@ -7,7 +7,7 @@
 
 local DrawUtil = require("core.DrawUtil")
 local BF       = require("systems.ButtonFeedback")
-local SettingsPanel = require("ui.hud.SettingsPanel")
+local SettingsPanel = require("ui.hud.popup.SettingsPanel")
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local drawTextStroke    = DrawUtil.drawTextStroke

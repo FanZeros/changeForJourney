@@ -13,7 +13,7 @@ local drawTextStroke = require("core.DrawUtil").drawTextStroke
 local DrawUtil        = require("core.DrawUtil")  -- [三队并行] 返回键 chevron
 local TownPageChrome  = require("ui.town.TownPageChrome")
 local BF = require("systems.ButtonFeedback")
-local RewardPopup = require("ui.hud.RewardPopup")
+local RewardPopup = require("ui.hud.popup.RewardPopup")
 
 local NumberUtil   = require("core.NumberUtil")
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")

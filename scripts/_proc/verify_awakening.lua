@@ -6,7 +6,7 @@
 --   -screenshot-frame=40 -x 1080 -y 2400
 -- ============================================================================
 
-local AwakeningPanel = require("ui.character.AwakeningPanel")
+local AwakeningPanel = require("ui.character.hero.AwakeningPanel")
 
 local nvg = nil
 local vgOk = false

@@ -5,7 +5,7 @@
 
 local GameState      = require("core.GameState")
 local NumberUtil     = require("core.NumberUtil")
-local CharacterPanel = require("ui.character.CharacterPanel")
+local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local HeroAssetUtil   = require("config.HeroAssetUtil")
 local HeroConfig     = require("config.HeroConfig")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
@@ -196,7 +196,7 @@ end
 --- 横屏三联已常驻城镇/战斗/角色，页签条（日志/战斗/副本）不再显示
 local function shouldHidePageTabs(hidePageTabs)
     if hidePageTabs then return true end
-    local ok, BTP = pcall(require, "ui.battle.BattleTriPage")
+    local ok, BTP = pcall(require, "ui.battle.tri.BattleTriPage")
     if not ok or not BTP or not BTP.isOpen then return false end
     return BTP.isOpen() == true
 end

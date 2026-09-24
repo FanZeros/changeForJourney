@@ -63,13 +63,13 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      sendAction_ = deps.sendAction
 
      -- 懒加载 UI 模块引用
-     RewardPopup         = require("ui.hud.RewardPopup")
+     RewardPopup         = require("ui.hud.popup.RewardPopup")
      LootBox             = require("ui.loot.LootBox")
      LootBoxPage         = require("ui.loot.LootBoxPage")
      BlacksmithPage      = require("ui.blacksmith.BlacksmithPage")
      BackpackPanel       = require("ui.backpack.BackpackPanel")
      ChurchPage          = require("ui.church.ChurchPage")
-     TalentPage          = require("ui.church.TalentPage")
+     TalentPage          = require("ui.church.talent.TalentPage")
      TavernPage          = require("ui.tavern.TavernPage")
      MarketPage          = require("ui.market.MarketPage")
      DungeonPage         = require("ui.dungeon.DungeonPage")
@@ -77,14 +77,14 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      GMConsolePanel      = require("ui.dev.GMConsolePanel")
      RelicReforgePanel   = require("ui.relic.RelicReforgePanel")
      TopBar              = require("ui.hud.TopBar")
-     BattleScene         = require("ui.battle.BattleScene")
-     CharacterPanel      = require("ui.character.CharacterPanel")
-     EquipmentDetail     = require("ui.character.EquipmentDetail")
-     RedeemCodePanel     = require("ui.hud.RedeemCodePanel")
-     SignInPanel         = require("ui.story.SignInPanel")
+     BattleScene         = require("ui.battle.scene.BattleScene")
+     CharacterPanel      = require("ui.character.panel.CharacterPanel")
+     EquipmentDetail     = require("ui.character.equip.EquipmentDetail")
+     RedeemCodePanel     = require("ui.hud.popup.RedeemCodePanel")
+     SignInPanel         = require("ui.story.task.SignInPanel")
      LootBoxSystem       = require("systems.LootBoxSystem")
      TutorialManager         = require("systems.TutorialManager")
-    AnnouncementPanel       = require("ui.story.AnnouncementPanel")
+    AnnouncementPanel       = require("ui.story.task.AnnouncementPanel")
 
      -- 批量合并监听
      EventBus.on("RELIC_BATCH_MERGE_START", function(data)
@@ -153,7 +153,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if not data then return end
      -- 使用局部 require 确保引用有效（避免 upvalue 为 nil 导致整个函数被 pcall 吞掉）
      local TopBarRef = TopBar or require("ui.hud.TopBar")
-     local PlayerInfoPanel = require("ui.hud.PlayerInfoPanel")
+     local PlayerInfoPanel = require("ui.hud.popup.PlayerInfoPanel")
 
      if data.name then
          TopBarRef.setPlayerName(data.name)
@@ -172,7 +172,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 
      -- player 模块到达时刷新槽位解锁（修复全量推送时 heroes 先于 player 分发导致槽位锁定）
      if data.level then
-         local CharacterPanel = require("ui.character.CharacterPanel")
+         local CharacterPanel = require("ui.character.panel.CharacterPanel")
          pcall(CharacterPanel.refreshSlotUnlocks)
      end
  end
@@ -746,7 +746,7 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              local joinedHeroId = data.heroId
              RewardPopup.show("合成成功", { { type = "hero", heroId = joinedHeroId, name = hn, quality = hq + 2 } }, {
                  onClose = function()
-                     require("ui.character.HeroScenario").onOpenHero(joinedHeroId)
+                     require("ui.character.hero.HeroScenario").onOpenHero(joinedHeroId)
                  end,
              })
          end

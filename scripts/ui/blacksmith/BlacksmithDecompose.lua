@@ -12,8 +12,8 @@ local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local PlayerStore      = require("core.PlayerStore")
-local RewardPopup      = require("ui.hud.RewardPopup")
-local EquipmentDetail  = require("ui.character.EquipmentDetail")
+local RewardPopup      = require("ui.hud.popup.RewardPopup")
+local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local QualityMark      = require("ui.widget.QualityMark")
 
 local drawTextStroke    = DrawUtil.drawTextStroke

@@ -92,7 +92,7 @@ function M.bind(deps)
 
         -- 订阅天赋数据变更，自动同步星图渲染状态 + 刷新角标
         getDispatcher().subscribe("talents", function()
-            local okTP, TP = pcall(require, "ui.church.TalentPage")
+            local okTP, TP = pcall(require, "ui.church.talent.TalentPage")
             if okTP and TP and TP.syncTalentFromStore then
                 TP.syncTalentFromStore()
             else

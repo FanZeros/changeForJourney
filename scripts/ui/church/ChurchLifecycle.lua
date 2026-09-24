@@ -29,7 +29,7 @@ function M.bind(deps)
         state.openTime = time.elapsedTime
         require("systems.GameSFX").playUIMove(1)
         do
-            local okTP, TP = pcall(require, "ui.church.TalentPage")
+            local okTP, TP = pcall(require, "ui.church.talent.TalentPage")
             if okTP and TP and TP.isOpen and TP.isOpen() and TP.forceClose then
                 TP.forceClose()
             end

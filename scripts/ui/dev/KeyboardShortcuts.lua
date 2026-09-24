@@ -40,14 +40,14 @@ local function toast(text)
 end
 
 local function blockedByTitle()
-    local DarkTitleScreen = require("ui.story.DarkTitleScreenGate")
-    local StartScreen = require("ui.story.StartScreen")
+    local DarkTitleScreen = require("ui.story.gate.DarkTitleScreenGate")
+    local StartScreen = require("ui.story.gate.StartScreen")
     if DarkTitleScreen.isOpen() or StartScreen.isOpen() then return true end
     return false
 end
 
 local function textBusy()
-    local RedeemCodePanel = require("ui.hud.RedeemCodePanel")
+    local RedeemCodePanel = require("ui.hud.popup.RedeemCodePanel")
     if RedeemCodePanel.isOpen() then return true end
     local GMConsolePanel = require("ui.dev.GMConsolePanel")
     if GMConsolePanel.isOpen() then return true end
@@ -68,7 +68,7 @@ local function closeLeftPages()
     if LootBoxPage.isOpen() then LootBoxPage.close() closed = true end
     local BackpackPanel = require("ui.backpack.BackpackPanel")
     if BackpackPanel.isOpen() then BackpackPanel.close() closed = true end
-    local TalentPage = require("ui.church.TalentPage")
+    local TalentPage = require("ui.church.talent.TalentPage")
     if TalentPage.isOpen() then TalentPage.close() closed = true end
     local ChurchPage = require("ui.church.ChurchPage")
     if ChurchPage.isOpen() then ChurchPage.close() closed = true end
@@ -128,7 +128,7 @@ local function cycleSpeed()
         toast("当前不能切换倍速")
         return
     end
-    local BattleScene = require("ui.battle.BattleScene")
+    local BattleScene = require("ui.battle.scene.BattleScene")
     if BattleScene.cycleBattleSpeed and BattleScene.cycleBattleSpeed() then
         toast("倍速 " .. BattleScene.getSpeedText())
         return
@@ -142,7 +142,7 @@ local function handleEscape()
         print("[KeyboardShortcuts] 关闭说明")
         return
     end
-    local IntroCutscene = require("ui.story.IntroCutscene")
+    local IntroCutscene = require("ui.story.gate.IntroCutscene")
     if IntroCutscene.isActive() then
         IntroCutscene.skip()
         return
@@ -152,7 +152,7 @@ local function handleEscape()
         ScenarioDialogue.skip()
         return
     end
-    local RedeemCodePanel = require("ui.hud.RedeemCodePanel")
+    local RedeemCodePanel = require("ui.hud.popup.RedeemCodePanel")
     if RedeemCodePanel.isOpen() then
         RedeemCodePanel.close()
         return
@@ -162,33 +162,33 @@ local function handleEscape()
         GMConsolePanel.close()
         return
     end
-    local RewardPopup = require("ui.hud.RewardPopup")
+    local RewardPopup = require("ui.hud.popup.RewardPopup")
     if RewardPopup.isOpen() then
         RewardPopup.handleInput(-1, -1)
         return
     end
-    local LevelUpPopup = require("ui.hud.LevelUpPopup")
+    local LevelUpPopup = require("ui.hud.popup.LevelUpPopup")
     if LevelUpPopup.isOpen() then
         LevelUpPopup.handleInput(0, 0)
         return
     end
-    local PlayerInfoPanel = require("ui.hud.PlayerInfoPanel")
+    local PlayerInfoPanel = require("ui.hud.popup.PlayerInfoPanel")
     if PlayerInfoPanel.isOpen() then
         PlayerInfoPanel.close()
         return
     end
-    local CharacterDetail = require("ui.character.CharacterDetail")
+    local CharacterDetail = require("ui.character.detail.CharacterDetail")
     if CharacterDetail.isOpen() then
         CharacterDetail.close()
         return
     end
-    local HeroRosterPanel = require("ui.character.HeroRosterPanel")
+    local HeroRosterPanel = require("ui.character.hero.HeroRosterPanel")
     if HeroRosterPanel.isVisible() then
         HeroRosterPanel.hide()
         return
     end
     if closeLeftPages() then return end
-    local OfflineRewardPanel = require("ui.hud.OfflineRewardPanel")
+    local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
     if OfflineRewardPanel.isOpen() then
         toast("按空格领取离线收益")
         return
@@ -202,22 +202,22 @@ local function handleConfirm()
         ScenarioDialogue.advance()
         return
     end
-    local LetterIntro = require("ui.story.LetterIntro")
+    local LetterIntro = require("ui.story.gate.LetterIntro")
     if LetterIntro.isOpen() then
         LetterIntro.handleTap()
         return
     end
-    local RewardPopup = require("ui.hud.RewardPopup")
+    local RewardPopup = require("ui.hud.popup.RewardPopup")
     if RewardPopup.isOpen() then
         RewardPopup.handleInput(-1, -1)
         return
     end
-    local OfflineRewardPanel = require("ui.hud.OfflineRewardPanel")
+    local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
     if OfflineRewardPanel.isOpen() then
         OfflineRewardPanel.claim()
         return
     end
-    local LevelUpPopup = require("ui.hud.LevelUpPopup")
+    local LevelUpPopup = require("ui.hud.popup.LevelUpPopup")
     if LevelUpPopup.isOpen() then
         LevelUpPopup.handleInput(0, 0)
         return
@@ -253,14 +253,14 @@ function KeyboardShortcuts.update()
         return
     end
     if pressed(KEY_M) then
-        local SettingsPanel = require("ui.hud.SettingsPanel")
+        local SettingsPanel = require("ui.hud.popup.SettingsPanel")
         local on = not SettingsPanel.isSoundOn()
         SettingsPanel.setSoundOn(on)
         toast(on and "音效开" or "音效关")
         return
     end
     if pressed(KEY_I) then
-        local PlayerInfoPanel = require("ui.hud.PlayerInfoPanel")
+        local PlayerInfoPanel = require("ui.hud.popup.PlayerInfoPanel")
         if PlayerInfoPanel.isOpen() then
             PlayerInfoPanel.close()
         else
@@ -292,9 +292,9 @@ function KeyboardShortcuts.update()
         return
     end
     if pressed(KEY_3) then
-        togglePage(function() return require("ui.church.TalentPage").isOpen() end,
-            function() require("ui.church.TalentPage").close() end,
-            function() openWithInit("ui.church.TalentPage", function(mod) mod.open() end) end)
+        togglePage(function() return require("ui.church.talent.TalentPage").isOpen() end,
+            function() require("ui.church.talent.TalentPage").close() end,
+            function() openWithInit("ui.church.talent.TalentPage", function(mod) mod.open() end) end)
         return
     end
     if pressed(KEY_4) then

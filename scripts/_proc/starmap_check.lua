@@ -1,5 +1,5 @@
 -- 天赋星图布局验证:直接调 TalentStarMap.draw 渲染一张,看节点是五角星还是矩形网格
-local StarMap = require "ui.church.TalentStarMap"
+local StarMap = require "ui.church.talent.TalentStarMap"
 
 local W, H = 1400, 1000
 local nvg = nil

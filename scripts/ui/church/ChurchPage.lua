@@ -15,13 +15,13 @@ local drawNineSlice    = DrawUtil.drawNineSlice
 local hitTest          = DrawUtil.hitTest
 local HC               = require("config.HeroConfig")
 local CC               = require("config.ClassConfig")
-local CharacterPanel   = require("ui.character.CharacterPanel")
+local CharacterPanel   = require("ui.character.panel.CharacterPanel")
 local AD               = require("systems.AttributeDef")
 local GameState        = require("core.GameState")
 local NumberUtil       = require("core.NumberUtil")
-local TalentStarMap    = require("ui.church.TalentStarMap")
+local TalentStarMap    = require("ui.church.talent.TalentStarMap")
 local SpineCardEffect  = require("ui.fx.SpineCardEffect")
-local TalentPanel      = require("ui.church.ChurchTalentPanel")
+local TalentPanel      = require("ui.church.talent.ChurchTalentPanel")
 local ClassChange      = require("ui.church.ChurchClassChange")
 local ArtifactPanel    = require("ui.church.ChurchArtifactPanel")
 local AVC              = require("config.AdvancementConfig")
@@ -491,7 +491,7 @@ end
 
 --- 强制从 PlayerStore 刷新天赋星图（重连/操作失败兜底）
 function ChurchPage.syncTalentFromStore()
-    local ok, TP = pcall(require, "ui.church.TalentPage")
+    local ok, TP = pcall(require, "ui.church.talent.TalentPage")
     if ok and TP and TP.syncTalentFromStore then
         TP.syncTalentFromStore()
         return
@@ -770,7 +770,7 @@ end
 --- 预加载天赋背景 Spine（转发给 TalentPage）
 ---@param vg any NanoVG 上下文
 function ChurchPage.preloadSpine(vg)
-    local ok, TP = pcall(require, "ui.church.TalentPage")
+    local ok, TP = pcall(require, "ui.church.talent.TalentPage")
     if ok and TP and TP.preloadSpine then
         TP.preloadSpine(vg)
     else

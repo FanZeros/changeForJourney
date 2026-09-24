@@ -4,7 +4,7 @@
 
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 local PlayerStore = require("core.PlayerStore")
-local RewardPopup = require("ui.hud.RewardPopup")
+local RewardPopup = require("ui.hud.popup.RewardPopup")
 
 local M = {}
 

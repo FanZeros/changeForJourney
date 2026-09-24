@@ -9,7 +9,7 @@ local NumberUtil      = require("core.NumberUtil")
 local PlayerStore     = require("core.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
 local HeroConfig      = require("config.HeroConfig")
-local CharacterPanel  = require("ui.character.CharacterPanel")
+local CharacterPanel  = require("ui.character.panel.CharacterPanel")
 
 local M = {}
 

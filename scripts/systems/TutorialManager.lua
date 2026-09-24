@@ -736,7 +736,7 @@ function TutorialManager.draw()
     -- 情景对话播放时隐藏教程遮罩，避免与对话框同时出现产生冲突
     if ScenarioDialogue.isActive() then return end
     -- 奖励弹窗打开时隐藏教程遮罩，等玩家领完奖励再显示
-    local okRP, RewardPopup = pcall(require, "ui.hud.RewardPopup")
+    local okRP, RewardPopup = pcall(require, "ui.hud.popup.RewardPopup")
     if okRP and RewardPopup.isOpen and RewardPopup.isOpen() then return end
 
     -- 计算整体透明度（入场/离场动画）

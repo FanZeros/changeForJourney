@@ -831,21 +831,21 @@ local function withBoot(bagCount, body)
     topBar.setTotalPower = noop
     local bottomNav = ui("ui.hud.BottomNav")
     bottomNav.setSelectedIndex = noop
-    local battle = ui("ui.battle.BattleScene", { "setOnEnemyKill", "setOnEnemyDrop", "setOnAllDead",
+    local battle = ui("ui.battle.scene.BattleScene", { "setOnEnemyKill", "setOnEnemyDrop", "setOnAllDead",
         "setOnStageLoaded", "setOnReincarnate", "setOnFirstClear" })
     battle.getCurrentStageId = function() return 1 end
     battle.getMaxStageId = function() return h.maxStageId end
     battle.refreshAllyStats = noop
-    local character = ui("ui.character.CharacterPanel", { "setOnTeamChanged" })
+    local character = ui("ui.character.panel.CharacterPanel", { "setOnTeamChanged" })
     character.getTotalPower = function() return 0 end
-    ui("ui.battle.BattleTriPage", { "setOnKill" })
+    ui("ui.battle.tri.BattleTriPage", { "setOnKill" })
     ui("ui.town.TownScene", { "setOnSmithClick", "setOnChurchClick", "setOnTreeClick",
         "setOnTavernClick", "setOnMarketClick", "setOnWarehouseClick", "setOnLootBoxClick" })
     for _, name in ipairs({ "ui.blacksmith.BlacksmithPage", "ui.church.ChurchPage", "ui.tavern.TavernPage", "ui.market.MarketPage",
-        "ui.story.IntroCutscene", "ui.story.TaskPanel", "ui.story.SignInPanel", "ui.backpack.BackpackPanel" }) do
+        "ui.story.gate.IntroCutscene", "ui.story.task.TaskPanel", "ui.story.task.SignInPanel", "ui.backpack.BackpackPanel" }) do
         ui(name)
     end
-    local popup = ui("ui.hud.RewardPopup")
+    local popup = ui("ui.hud.popup.RewardPopup")
     popup.show = function(title, rewards, options)
         h.popups[#h.popups + 1] = { title = title, rewards = copy(rewards), options = copy(options or {}) }
     end
@@ -859,9 +859,9 @@ local function withBoot(bagCount, body)
     local lootPage = ui("ui.loot.LootBoxPage")
     lootPage.getLastClickPos = function() return 0, 0 end
     lootPage.showToast = function(text) h.toasts[#h.toasts + 1] = text end
-    local combat = ui("ui.battle.BattleCombat")
+    local combat = ui("ui.battle.combat.BattleCombat")
     combat.addFloatingText = noop
-    local info = ui("ui.hud.PlayerInfoPanel")
+    local info = ui("ui.hud.popup.PlayerInfoPanel")
     info.setUID = noop
     inject("client.data.PlayerStore", { Subscribe = noop })
     inject("network.LocalActionBridge", { init = noop })
@@ -897,7 +897,7 @@ end
 
 local function drop(h, firstClear, count)
     for _ = 1, count do
-        h.fire("ui.battle.BattleScene", "setOnEnemyDrop", { stageId = 2, isFirstClear = firstClear })
+        h.fire("ui.battle.scene.BattleScene", "setOnEnemyDrop", { stageId = 2, isFirstClear = firstClear })
     end
 end
 
@@ -928,9 +928,9 @@ end
 local function assertStageEventsCannotRepay(h)
     local beforeData, beforeCurrency = copy(h.data), copy(h.currency)
     local beforePopups, beforeGenerated = #h.popups, #h.generated
-    h.fire("ui.battle.BattleScene", "setOnStageLoaded", 2, {})
-    h.fire("ui.battle.BattleScene", "setOnStageLoaded", 1, {})
-    h.fire("ui.battle.BattleScene", "setOnAllDead")
+    h.fire("ui.battle.scene.BattleScene", "setOnStageLoaded", 2, {})
+    h.fire("ui.battle.scene.BattleScene", "setOnStageLoaded", 1, {})
+    h.fire("ui.battle.scene.BattleScene", "setOnAllDead")
     same(h.data, beforeData, "post-settlement stage/allDead cannot duplicate equipment")
     same(h.currency, beforeCurrency, "post-settlement stage/allDead cannot duplicate currencies")
     eq(#h.popups, beforePopups, "post-settlement events cannot show duplicate popup")
@@ -944,7 +944,7 @@ local function testBootSuccess(bagCount)
         eq(EquipmentSystem.getInventoryCount(h.data.equipment), bagCount, "pending kills not delivered early")
         eq(h.currency.WeaponScroll, 0, "first-clear kill scrolls pending")
         eq(#h.popups, 0, "no kill popup before first-clear settlement")
-        h.fire("ui.battle.BattleScene", "setOnFirstClear", 2)
+        h.fire("ui.battle.scene.BattleScene", "setOnFirstClear", 2)
         eq(#h.popups, 1, "success merges first-clear and kill rewards in one popup")
         eq(h.popups[1].title, "首通奖励", "success reward category unchanged")
         eq(h.popups[1].options.row, 1, "success popup remains in battle row")
@@ -988,7 +988,7 @@ end
 local function testBootFailure()
     withBoot(200, function(h)
         drop(h, true, 3)
-        h.fire("ui.battle.BattleScene", "setOnAllDead")
+        h.fire("ui.battle.scene.BattleScene", "setOnAllDead")
         eq(#h.popups, 1, "failure shows retained drops once")
         eq(h.popups[1].title, "战斗掉落", "failure reward category unchanged")
         eq(h.popups[1].options.row, 1, "failure popup battle row")
@@ -1010,7 +1010,7 @@ end
 local function testBootStageLoadedFallback()
     withBoot(200, function(h)
         drop(h, true, 1)
-        h.fire("ui.battle.BattleScene", "setOnStageLoaded", 1, {})
+        h.fire("ui.battle.scene.BattleScene", "setOnStageLoaded", 1, {})
         eq(#h.popups, 1, "leaving pending fight retains rewards")
         eq(h.popups[1].title, "战斗掉落", "abandoned fight uses battle-drop category")
         same(rewardTotals(h.popups[1]), { equip = 1, weapon_scroll = 1 }, "stage fallback settles pending once")
@@ -1018,7 +1018,7 @@ local function testBootStageLoadedFallback()
         assertBootEquipDelivered(h, h.generated[1].equip, h.generated[1].snapshot)
         assertStageEventsCannotRepay(h)
         drop(h, true, 1)
-        h.fire("ui.battle.BattleScene", "setOnAllDead")
+        h.fire("ui.battle.scene.BattleScene", "setOnAllDead")
         eq(#h.popups, 2, "subsequent fight can settle new rewards")
         eq(#h.generated, 2, "new fight does not replay old pending seeds")
         eq(h.currency.WeaponScroll, 2, "new fight does not replay old scrolls")

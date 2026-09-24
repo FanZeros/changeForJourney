@@ -15,11 +15,11 @@ local ImageCache       = require("ui.widget.ImageCache")
 local QualityMark      = require("ui.widget.QualityMark")
 local NumberUtil       = require("core.NumberUtil")
 local EquipmentSystem  = require("systems.EquipmentSystem")
-local EquipmentDetail  = require("ui.character.EquipmentDetail")
+local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local HeroConfig       = require("config.HeroConfig")
 local HeroAssetUtil    = require("config.HeroAssetUtil")
 local UrGachaConfig    = require("config.UrGachaConfig")
-local CharacterPanel   = require("ui.character.CharacterPanel")
+local CharacterPanel   = require("ui.character.panel.CharacterPanel")
 local Protocol         = require("shared.Protocol")
 local BF               = require("systems.ButtonFeedback")
 local BackpackDialogs  = require("ui.backpack.BackpackDialogs")
@@ -1476,7 +1476,7 @@ function Panel.onActionResult(data)
         if not data.decomposed then return end
 
         local essenceReward = data.essenceReward or 0
-        local RewardPopup = require("ui.hud.RewardPopup")
+        local RewardPopup = require("ui.hud.popup.RewardPopup")
         local rewards = {}
         if essenceReward > 0 then
             rewards[#rewards + 1] = { type = "essence", amount = essenceReward }

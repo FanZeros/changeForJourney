@@ -7,7 +7,7 @@ local GachaConfig    = require("config.GachaConfig")
 local GameState      = require("core.GameState")
 local EventBus       = require("core.EventBus")
 local GameEvents     = require("config.GameEvents")
-local CharacterPanel = require("ui.character.CharacterPanel")
+local CharacterPanel = require("ui.character.panel.CharacterPanel")
 
 local GachaSystem = {}
 

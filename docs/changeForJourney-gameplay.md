@@ -51,7 +51,7 @@
 
 ---
 
-## 3. 战斗系统（`systems/CombatFormula.lua` / `ui/BattleCombat.lua` / `AttributeDef.lua`）
+## 3. 战斗系统（`systems/CombatFormula.lua` / `ui/battle/combat/BattleCombat.lua` / `AttributeDef.lua`）
 
 ### 3.1 流程
 - 按 `atkProgress += dt/interval` 累积普攻；战斗速度按钮循环 **1.0 / 1.5 / 2.0**。

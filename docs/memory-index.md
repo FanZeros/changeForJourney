@@ -26,7 +26,7 @@
 - **改造方向**(用户拍板):① 全角色玩梗化 ② 整体转**暗黑风格**(游戏名/标题/背景/人物图)③ 横屏标题页+背景视频化(视频未做)
 - **新游戏名**:《终焉之门 Gate of Finality》
 - **玩家称呼**:远征长(组织:远征队)
-- **关键文件入口**:`scripts/config/HeroConfig.lua`(角色)、`scripts/ui/DarkTitleScreen.lua`(横屏标题)、`scripts/ui/LetterIntro.lua`(外祖父遗产信)、`scripts/network/Standalone.lua`(单机主循环)、`scripts/config/DialogueConfig.lua`(战斗台词)、`scripts/config/ScenarioDialogueConfig.lua`(剧情对话)
+- **关键文件入口**:`scripts/config/HeroConfig.lua`(角色)、`scripts/ui/DarkTitleScreen.lua`(横屏标题)、`scripts/ui/story/gate/LetterIntro.lua`(外祖父遗产信)、`scripts/network/Standalone.lua`(单机主循环)、`scripts/config/DialogueConfig.lua`(战斗台词)、`scripts/config/ScenarioDialogueConfig.lua`(剧情对话)
 
 ## 2. 决策时间线(为什么做成这样)
 
@@ -134,7 +134,7 @@ timeout 280 ./.cli/UrhoXRuntime <script>.lua -tapcode_dir=/workspace -tool_mode 
 | `assets/image/关卡地图/MAP_*.png`(27 张) | 统一大背景竖裁版 ✅ |
 | 7 个页背景(`UI_CZ_BJ/UI_TJP_CH_1/UI_KCBJ_1/UI_KCBJ_2/UI_SCBJ/UI_JJC_BJ1/UI_JTZZBJ`) | 统一大背景竖裁版 ✅ |
 | `scripts/ui/DarkTitleScreen.lua` | 终焉之门标题(紫辉粒子+新 LOGO)✅ |
-| `scripts/ui/LetterIntro.lua` | 外祖父遗产信(精修版)✅ |
+| `scripts/ui/story/gate/LetterIntro.lua` | 外祖父遗产信(精修版)✅ |
 | `assets/image/LOGO终焉之门_透明版.png` | 游戏标题 LOGO(黑白抠图法)✅ |
 | 台词/对话/名字 | 全量 ✅ |
 

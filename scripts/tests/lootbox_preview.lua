@@ -14,7 +14,7 @@ function Start()
     local Tutorial = require("systems.TutorialManager")
     Tutorial.isActive = function() return false end
     Tutorial.isBuildingUnlocked = function() return true end
-    local Offline = require("ui.hud.OfflineRewardPanel")
+    local Offline = require("ui.hud.popup.OfflineRewardPanel")
     Offline.show = function() end
     Standalone.Start()
     Dispatcher.set("session", { introCompleted = true, claimedScenarios = {} })
@@ -24,7 +24,7 @@ end
 function LootboxPreviewUpdate()
     local rt = require("network.StandaloneRT")
     if not rt.bootReady_ then return end
-    local Title = require("ui.story.DarkTitleScreenGate")
+    local Title = require("ui.story.gate.DarkTitleScreenGate")
     if Title.isOpen() then
         Title.setReady(true)
         Title.handleTap()

@@ -41,7 +41,7 @@ end
 
 function CERuntime.installSpeedHook()
     if speedHooked_ then return end
-    local ok, BattleScene = pcall(require, "ui.battle.BattleScene")
+    local ok, BattleScene = pcall(require, "ui.battle.scene.BattleScene")
     if not ok or not BattleScene or not BattleScene.getBattleLogicDt then
         print("[CE] speed hook skipped, BattleScene not ready")
         return
@@ -77,7 +77,7 @@ end
 --- 无敌：给己方属性打标，并在每帧拉满，避免漏掉直接改 hp 的路径
 function CERuntime.tick()
     CERuntime.installDamageHook()
-    local ok, BattleScene = pcall(require, "ui.battle.BattleScene")
+    local ok, BattleScene = pcall(require, "ui.battle.scene.BattleScene")
     if not ok or not BattleScene or not BattleScene.getAllies then return end
     local allies = BattleScene.getAllies()
     if not allies then return end

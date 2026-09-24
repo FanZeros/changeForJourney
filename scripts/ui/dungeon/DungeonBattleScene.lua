@@ -11,13 +11,13 @@ local SEM = require("systems.StatusEffectManager")
 local TAL = require("systems.TalentManager")
 local MapAffixSystem    = require("systems.MapAffixSystem")
 
-local BattleCombat      = require("ui.battle.BattleCombat")
+local BattleCombat      = require("ui.battle.combat.BattleCombat")
 local BattleStats       = require("systems.BattleStats")
-local BattleDraw        = require("ui.battle.BattleDraw")
+local BattleDraw        = require("ui.battle.scene.BattleDraw")
 local DarkIcon          = require("core.DarkIcon")  -- [暗黑化] 地图压暗滤镜
-local BattleEffects     = require("ui.battle.BattleEffects")
+local BattleEffects     = require("ui.battle.combat.BattleEffects")
 local SpineCardEffect  = require("ui.fx.SpineCardEffect")
-local ProjectileSystem  = require("ui.battle.ProjectileSystem")
+local ProjectileSystem  = require("ui.battle.combat.ProjectileSystem")
 local RCH              = require("systems.RelicConditionHandler")
 local ART              = require("systems.ArtifactRuntime")
 
@@ -27,11 +27,11 @@ local Protocol   = require("shared.Protocol")
 local HeroConfig = require("config.HeroConfig")
 local PlayerStore = require("core.PlayerStore")
 local DungeonBattle     = require("ui.dungeon.DungeonBattle")
-local BattleResultPanel = require("ui.battle.BattleResultPanel")
+local BattleResultPanel = require("ui.battle.popup.BattleResultPanel")
 local BF                = require("systems.ButtonFeedback")
-local BattleScene       = require("ui.battle.BattleScene")
-local DamageStatsPanel  = require("ui.battle.DamageStatsPanel")
-local SettingsPanel     = require("ui.hud.SettingsPanel")
+local BattleScene       = require("ui.battle.scene.BattleScene")
+local DamageStatsPanel  = require("ui.battle.popup.DamageStatsPanel")
+local SettingsPanel     = require("ui.hud.popup.SettingsPanel")
 
 local drawTextStroke    = BattleDraw.drawTextStroke
 local drawImageCentered = BattleDraw.drawImageCentered

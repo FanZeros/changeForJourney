@@ -3,7 +3,7 @@
 -- ============================================================================
 
 local AD = require("systems.AttributeDef")
-local CharacterPanel = require("ui.character.CharacterPanel")
+local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local SpineCardEffect = require("ui.fx.SpineCardEffect")
 local ClassChange = require("ui.church.ChurchClassChange")
 local ArtifactPanel = require("ui.church.ChurchArtifactPanel")

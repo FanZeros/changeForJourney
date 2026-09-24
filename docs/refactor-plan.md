@@ -8,9 +8,9 @@
 - 约 14 万行 Lua，`scripts/ui` 87 个文件。
 - 超 1500 行文件（引擎规则必须拆）：
   - `systems/TalentManager.lua` 4197
-  - `ui/BattleScene.lua` 原 3435（本步后约 3008）
+  - `ui/battle/scene/BattleScene.lua` 原 3435（本步后约 3008）
   - `network/Client.lua` 2487
-  - `ui/BattleCombat.lua` 2203
+  - `ui/battle/combat/BattleCombat.lua` 2203
   - `network/Standalone.lua` 2168
   - `network/Server.lua` 2068
   - 多个城镇页（Market/Church/Blacksmith/Backpack/Character）1900 上下
@@ -30,8 +30,8 @@
 
 ## 第 1 步改动
 
-- 新增 `scripts/ui/TerminalConfirmDialog.lua`
-- 新增 `scripts/ui/MonsterInfoPopup.lua`
+- 新增 `scripts/ui/battle/popup/TerminalConfirmDialog.lua`
+- 新增 `scripts/ui/battle/popup/MonsterInfoPopup.lua`
 - `BattleScene` 只保留委托：`handlePressBegin/End` 签名不变（ClientInput 无需改）
 - 行为保持：打开动画未完成不响应按钮、点窗外取消、长按 0.4s、松开关闭
 
@@ -44,9 +44,9 @@
 
 ## 第 2 步改动
 
-- 新增 `scripts/ui/BattleSpeed.lua`：倍速解锁 / 循环 / 绘制 / 点击判定
-- 新增 `scripts/ui/BattleEnemySpawn.lua`：首通出怪、挂机混合出怪、上场分配
-- 新增 `scripts/ui/BattleTransitionHud.lua`：寻怪 / 战败 / 轮回 / 胜利 HUD
+- 新增 `scripts/ui/battle/stage/BattleSpeed.lua`：倍速解锁 / 循环 / 绘制 / 点击判定
+- 新增 `scripts/ui/battle/stage/BattleEnemySpawn.lua`：首通出怪、挂机混合出怪、上场分配
+- 新增 `scripts/ui/battle/stage/BattleTransitionHud.lua`：寻怪 / 战败 / 轮回 / 胜利 HUD
 - `BattleScene` 对外倍速 API 签名不变（`BattleTriPage` 仍走 BattleScene）
 - 删除已无引用的终焉确认弹窗贴图加载（`imgConfirmBg` / `imgBtnGreen` / `imgBtnGray`）
 - `BattleScene` 约 3435 → 3008 → 2722 行
@@ -56,8 +56,8 @@
 
 | 文件 | 重构前 | 重构后 |
 |------|--------|--------|
-| ui/BattleScene.lua | 3435 | 1890（Casualty + StageLoad + Tick） |
-| ui/BattleCombat.lua | 2203 | 1637（Anim + Combo） |
+| ui/battle/scene/BattleScene.lua | 3435 | 1890（Casualty + StageLoad + Tick） |
+| ui/battle/combat/BattleCombat.lua | 2203 | 1637（Anim + Combo） |
 | systems/TalentManager.lua | 4197 | 2691（再抽 Rosa 弹射 / Xin 信光机兵） |
 | network/Standalone.lua | 2168 | 841 |
 | network/Client.lua | 2487 | 1844（ClientBoot + ClientRender） |

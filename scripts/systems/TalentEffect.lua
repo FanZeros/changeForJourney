@@ -245,7 +245,7 @@ function TE.collectEntries(litNodes, classId)
     if not litNodes then return {} end
 
     -- 延迟加载 TalentStarMap（避免循环依赖）
-    local TSM = require("ui.church.TalentStarMap")
+    local TSM = require("ui.church.talent.TalentStarMap")
 
     local entries = {}
     for _, nodeId in ipairs(litNodes) do
@@ -280,7 +280,7 @@ end
 function TE.calcRuntimeOnlyPower(litNodes)
     if not litNodes then return 0 end
 
-    local TSM = require("ui.church.TalentStarMap")
+    local TSM = require("ui.church.talent.TalentStarMap")
     local total = 0
     for _, nodeId in ipairs(litNodes) do
         if RUNTIME_ONLY[nodeId] or RUNTIME_POWER_ONLY[nodeId] then
@@ -323,7 +323,7 @@ end
 ---@param litNodes table|nil 已点亮节点 ID 列表
 ---@return table { stats={label,text,sortKey}[], classBonuses={className,text}[], specials={name,text}[] }
 function TE.buildOverview(litNodes)
-    local TSM = require("ui.church.TalentStarMap")
+    local TSM = require("ui.church.talent.TalentStarMap")
     local statsAgg = {}
     local classBonuses = {}
     local specials = {}

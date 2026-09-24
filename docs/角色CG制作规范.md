@@ -28,7 +28,7 @@ image/角色CG/CG_H<id>.png                    （正式 CG）
 ## 2. 画幅与技术规格
 
 - **比例/尺寸**：2:3 竖构图，输出 **832×1248**
-- **切片几何**（面板 1080×2400 设计页，`ui/AwakeningPanel.lua`）：
+- **切片几何**（面板 1080×2400 设计页，`ui/character/hero/AwakeningPanel.lua`）：
   - 三竖条各 **336×1150**，间距 12，斜切 30px，中条上移 36 错位
   - CG 按切片总宽**等宽适配**（cover），纵向取窗偏上（`V_BIAS = 0.18`）
   - 实际可见高度约 **77%**（脸部必须落在画面上 1/3～1/2 区间）
@@ -122,7 +122,7 @@ LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe EGL_PLATFORM=surfaceless \
 
 | 文件 | 职责 |
 |------|------|
-| `scripts/ui/AwakeningPanel.lua` | 影画切片绘制/灰度切换/命中（`resolveCG` 回退链） |
+| `scripts/ui/character/hero/AwakeningPanel.lua` | 影画切片绘制/灰度切换/命中（`resolveCG` 回退链） |
 | `scripts/_proc/gen_cg_gray.lua` | 离线灰度生成（CG→立绘→卡牌三级回退） |
 | `scripts/_proc/render_awaken.lua` | 离屏渲染觉醒面板，布局截图验证 |
 | `scripts/config/HeroAssetUtil.lua` | `getPortraitPath`（按角色名映射透明立绘） |

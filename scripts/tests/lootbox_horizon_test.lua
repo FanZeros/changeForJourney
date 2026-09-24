@@ -14,7 +14,7 @@ function Start()
     end
     local mods = {
         ["network.StandaloneRT"] = { logicalW = 1920, logicalH = 1080, dpr = 1, bootReady_ = true },
-        ["ui.battle.BattleTriPage"] = mock({
+        ["ui.battle.tri.BattleTriPage"] = mock({
             isOpen = function() return true end,
             handleScroll = function() counters.bag = counters.bag + 1 return true end,
         }),
@@ -27,10 +27,10 @@ function Start()
             handleScroll = function() counters.loot = counters.loot + 1 return true end,
             handleInput = function() counters.click = counters.click + 1 return true end,
         }),
-        ["ui.character.CharacterPanel"] = mock({
+        ["ui.character.panel.CharacterPanel"] = mock({
             handleScroll = function() counters.right = counters.right + 1 end,
         }),
-        ["ui.hud.RewardPopup"] = mock({
+        ["ui.hud.popup.RewardPopup"] = mock({
             isOpen = function() return globalReward end,
             currentRowTag = function() return nil end,
             handleScroll = function() counters.reward = counters.reward + 1 return true end,

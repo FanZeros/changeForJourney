@@ -5,13 +5,13 @@
 --   -graphicssurfaceless -screenshot=/abs/xxx.png -screenshot-frame=30 -x 1080 -y 1400
 -- ============================================================================
 
-package.loaded["ui.battle.BattleScene"] = {
+package.loaded["ui.battle.scene.BattleScene"] = {
     getMaxStageId = function() return 305 end,
     getStageId = function() return 203 end,
     gotoStage = function(id) print("[mock] gotoStage " .. tostring(id)) return true end,
 }
 
-local StageSelectDialog = require("ui.battle.StageSelectDialog")
+local StageSelectDialog = require("ui.battle.stage.StageSelectDialog")
 
 local nvg = nil
 local vgOk = false

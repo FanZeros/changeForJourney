@@ -13,8 +13,6 @@ local I18n = require("core.I18n")
 local BF              = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local drawTextStroke    = DrawUtil.drawTextStroke
-local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 local hitTest           = DrawUtil.hitTest
 
 local SettingsPanel = {}
@@ -38,11 +36,7 @@ local state = {
 }
 
 -- ======================== 图片资源句柄 ========================
-
-local img = {
-    bg      = -1,   -- UI_TY_EJQRK.png 九宫格弹窗背景
-    codeBtn = -1,   -- UI_AN_LV.png 兑换码按钮
-}
+-- 兑换码按钮已改为 DarkIcon 矢量绘制
 
 -- ======================== 布局常量 ========================
 
@@ -101,9 +95,10 @@ local ITEM5_CY = 1480
 local TOGGLE = {
     CX = 795, W = 150, H = 56, R = 28,
     KNOB_SIZE = 46,
-    ON_R = 0x6c, ON_G = 0xd4, ON_B = 0x6c,
-    OFF_R = 0x77, OFF_G = 0x66, OFF_B = 0x55,
-    TEXT_X = 795, TEXT_FONT = 28,
+    -- 开启用暖金，和语言芯片同一套，不再用绿色
+    ON_R = 0xC4, ON_G = 0xA0, ON_B = 0x5A,
+    OFF_R = 0x44, OFF_G = 0x36, OFF_B = 0x28,
+    TEXT_FONT = 28,
 }
 
 -- 9. 兑换码按钮
@@ -223,12 +218,6 @@ end
 
 --- 初始化（加载图片资源，仅调用一次）
 function SettingsPanel.init(vg)
-    img.bg      = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
-    img.codeBtn = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-
-    if img.bg < 0 then print("[SettingsPanel] WARN: UI_TY_EJQRK.png load failed") end
-    if img.codeBtn < 0 then print("[SettingsPanel] WARN: UI_AN_LV.png load failed") end
-
     RedeemCodePanel.init(vg)
 
     -- 加载本地保存的设置并应用（含静音标志）
@@ -582,8 +571,11 @@ local function drawToggleItem(vg, itemCY, label, enabled)
 
     nvgBeginPath(vg)
     nvgRoundedRect(vg, x, y, TOGGLE.W, TOGGLE.H, TOGGLE.R)
-    nvgFillColor(vg, nvgRGBA(r, g, b, 230))
+    nvgFillColor(vg, nvgRGBA(r, g, b, enabled and 230 or 200))
     nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, enabled and 255 or 140))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
 
     local knobR = TOGGLE.KNOB_SIZE * 0.5
     local knobX = enabled and (x + TOGGLE.W - TOGGLE.H * 0.5) or (x + TOGGLE.H * 0.5)
@@ -595,11 +587,17 @@ local function drawToggleItem(vg, itemCY, label, enabled)
     nvgStrokeWidth(vg, 4)
     nvgStroke(vg)
 
+    -- 文字避开旋钮：开时在左，关时在右
+    local labelX = enabled and (x + TOGGLE.H * 0.62) or (x + TOGGLE.W - TOGGLE.H * 0.62)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, TOGGLE.TEXT_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 230))
-    nvgText(vg, TOGGLE.TEXT_X, itemCY, enabled and I18n.t("on") or I18n.t("off"), nil)
+    if enabled then
+        nvgFillColor(vg, nvgRGBA(0x1a, 0x12, 0x0a, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 230))
+    end
+    nvgText(vg, labelX, itemCY, enabled and I18n.t("on") or I18n.t("off"), nil)
 end
 
 -- ============================================================================
@@ -665,17 +663,17 @@ function SettingsPanel.draw(vg)
     -- ── 8.3 语言 ──
     drawLanguageItem(vg, ITEM5_CY)
 
-    -- ── 9. 兑换码按钮 ──
+    -- ── 9. 兑换码按钮（暖金，不再用绿色贴图）──
     local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H)
-    if img.codeBtn >= 0 then
-        drawImageCentered(vg, img.codeBtn, CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H, 1.0)
-    end
+    DarkIcon.drawNine(vg, "btn",
+        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY - CODE_BTN.H * 0.5,
+        CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
 
     -- ── 10. "兑换码" 文本 ──
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CODE_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(244, 237, 224, CODE_TXT.A))
+    nvgFillColor(vg, nvgRGBA(0x3a, 0x24, 0x0c, 255))
     nvgText(vg, CODE_TXT.X, CODE_TXT.Y, I18n.t("redeem_code"), nil)
     BF.finish(vg, _bf1)
 
@@ -702,13 +700,13 @@ function SettingsPanel.drawEmbedded(vg, yOffset)
     drawToggleItem(vg, ITEM4_CY, I18n.t("show_effects"), state.showEffects ~= false)
     drawLanguageItem(vg, ITEM5_CY)
     local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + oy, CODE_BTN.W, CODE_BTN.H)
-    if img.codeBtn >= 0 then
-        drawImageCentered(vg, img.codeBtn, CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H, 1.0)
-    end
+    DarkIcon.drawNine(vg, "btn",
+        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY - CODE_BTN.H * 0.5,
+        CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CODE_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(244, 237, 224, 230))
+    nvgFillColor(vg, nvgRGBA(0x3a, 0x24, 0x0c, 255))
     nvgText(vg, CODE_TXT.X, CODE_TXT.Y, I18n.t("redeem_code"), nil)
     BF.finish(vg, _bf1)
     nvgRestore(vg)

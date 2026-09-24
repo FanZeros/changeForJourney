@@ -8,9 +8,9 @@
   - Agent 里说「更新 Maker MCP」= 跑本脚本
 
 用法：
-  python tools/update-maker-mcp.py              # 升级 MCP 并写入本机 IDE 配置
-  python tools/update-maker-mcp.py --preview    # 再装本地 Runtime（需已绑定 Maker 项目）
-  python tools/update-maker-mcp.py --start      # 升级后开本地窗口。Windows 为前台启动 Runtime
+  python tools/update-maker-mcp.py              # 默认等于 --start：升级后开窗口，Windows 跳过扫码
+  python tools/update-maker-mcp.py --preview    # 只装本地 Runtime，不开窗口
+  python tools/update-maker-mcp.py --start      # 与不带参数相同
   python tools/update-maker-mcp.py --verify     # 只校验，不改配置
 
 双击：
@@ -267,9 +267,13 @@ def main() -> int:
     parser.add_argument("--target-dir", default=str(ROOT), help="Maker 项目目录（默认仓库根）")
     parser.add_argument("--verify", action="store_true", help="只校验 MCP，不升级")
     parser.add_argument("--preview", action="store_true", help="同时安装本机游戏 Runtime")
-    parser.add_argument("--start", action="store_true", help="升级后启动本地预览窗口")
+    parser.add_argument("--start", action="store_true", help="升级后启动本地预览窗口。不带参数时默认开启")
     parser.add_argument("--ide", choices=["codex", "cursor", "claude"], help="只更新某一个 IDE")
     args = parser.parse_args()
+
+    if not (args.verify or args.preview or args.start or args.ide):
+        args.start = True
+        log("未带参数，按 --start 处理：升级后开本地窗口。Windows 前台启动并跳过 Tap 扫码。")
 
     project = find_project_dir(args.target_dir)
     log("项目目录: %s" % project)
@@ -343,7 +347,7 @@ def main() -> int:
         if sys.platform == "win32":
             launch_windows_runtime(project)
             log("")
-            log("改完 scripts/ 后重新双击 --start。不要用官方 preview refresh。")
+            log("改完 scripts/ 后重新双击本脚本即可。不要用官方 preview refresh。")
             log("官方 refresh 仍走没起来的隐藏 PowerShell supervisor。")
         else:
             run_step(

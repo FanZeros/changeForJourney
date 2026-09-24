@@ -1,10 +1,11 @@
 @echo off
 REM One-click: update Maker MCP (+ optional local Runtime)
-REM   double-click              = upgrade MCP only
-REM   update-maker-mcp.bat --preview
-REM   update-maker-mcp.bat --start
+REM   double-click              = --start, open window, skip Tap QR login
+REM   update-maker-mcp.bat --preview   = install Runtime only
+REM   update-maker-mcp.bat --verify    = check MCP only
 setlocal
-echo Local preview helper. Not a cloud build. Leave this window open.
+echo Double-click opens the local window and skips Tap QR login. Not a cloud build.
+echo Leave this window open.
 echo npm logs print below. If it sits with no new lines for 2 minutes, paste from ==> to the end.
 cd /d "%~dp0\.."
 chcp 65001 >nul

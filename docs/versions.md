@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.38-default-start | 2026-09-24 | 不带参数默认等于 --start，Windows 前台开窗口并跳过扫码。 |
 | v2.37-skip-login | 2026-09-24 | Windows 前台启动补上 -skip_login，不再弹出 Tap 扫码登录。 |
 | v2.36-win-foreground-runtime | 2026-09-24 | Windows --start 跳过隐藏 PowerShell supervisor，项目目录前台启动 UrhoXRuntime.exe。 |
 | v2.35-four-hero-scenario | 2026-09-23 | 老六/哈基米/加载中/高ping战士补入队与闲聊情景。首次获得或第一次打开详情播放，闲聊每局一次。 |

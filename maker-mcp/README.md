@@ -14,9 +14,9 @@ bash maker-mcp/update-maker-mcp.sh
 
 | 参数 | 作用 |
 |------|------|
-| （无） | 升级 MCP，写入 Claude / Cursor / Codex 配置 |
-| `--preview` | 再下载本机游戏 Runtime 到 `~/.taptap-maker/runtime/` |
-| `--start` | 升级后直接开本地预览窗口（不远端构建） |
+| （无） | 与 `--start` 相同：升级后开窗口。Windows 前台启动并跳过 Tap 扫码 |
+| `--preview` | 只下载本机游戏 Runtime，不开窗口 |
+| `--start` | 与不带参数相同 |
 | `--verify` | 只校验，不改配置 |
 
 升级完后在 Agent 里 **Reconnect MCP**，新工具才会进当前会话。

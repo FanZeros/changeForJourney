@@ -14,7 +14,7 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`feat/ce-test-tools-20260924`（从 `workspace924` 新开）。只 push 本分支，不要推 `workspace924` / `integrate/20260923` / `workspace` / `workspace923`
+- **本轮开发分支**：`feature/background-idle-924`（从 `workspace924` 新开）。本轮只 push 这个分支；历史交接里的其他分支名不是当前指令。
 
 ## 上次做了什么（2026-09-24）
 
@@ -67,8 +67,11 @@
 
 ## likely_next_task
 
+- 本轮失焦挂机调研结论：`docs/memory-index.md` 置顶条目。当前未修改挂机玩法；下一步优先确认目标是 Electron Windows 后台运行，还是网页/移动端隐藏后的可靠补算。前者可试 `electron-shell/main.js` 的 `webPreferences.backgroundThrottling=false`；后者必须按墙上时间补算，不能依赖隐藏页 `Update` 连续运行。当前离线奖励 `scripts/boot/Standalone.lua:450` 使用固定演示值，`StandaloneSave` 的 `savedAt` 只记录不结算。禁止把固定示例收益作为真正离线奖励。
+- 本轮预览：官方 build 以 `/workspace` 为项目根，已将克隆仓库的 scripts/assets/配置同步到该根后重建 `/workspace/dist`；首次对嵌套 scriptsPath 的空壳 build 不可用。LSP 0 Error，真实资源包约 378 MB；尚未实机验证失焦挂机。
+- 后续每次交付先核对当前授权分支，完成后只 push `feature/background-idle-924`，并必须通过 AskUserQuestion 选项询问下一步，禁止仅文字收尾。
+
 - 预览横屏左上角 CE / F1 测试面板，确认一键测试包、跳关、无敌和三倍速。
-- 只在 `feat/ce-test-tools-20260924` 上继续，做完必须 AskUserQuestion，禁止纯文字结束。
 
 - 预览验收：滚轮、右键装备、顶栏远征等级、五语、四人战斗、新 SE、未解锁职业标、左栏世界地图
 - 四人入队/闲聊已接：情景 74–81。首次获得或第一次打开详情播放；闲聊每局每个角色一次
@@ -84,7 +87,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 以 `feat/ce-test-tools-20260924` 继续开发；完成后每次 push **该分支**。不要推 `workspace924`、`integrate/20260923`、`workspace`、`workspace923` 或其他分支。
+- 本轮只在 `feature/background-idle-924` 上研究/继续开发；完成后每次 push **该分支**。不要推 `workspace924`、`integrate/20260923`、`workspace`、`workspace923` 或历史交接中的其他分支。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
@@ -94,6 +97,6 @@
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
 - Lua 5.4 字符串里不要写 `\!`
 - 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
-- 禁止推其他分支（当前只推 `feat/first-clear-reward-cascade`）
+- 分支禁令以用户**当前轮次**授权为准；本轮仅推 `feature/background-idle-924`，旧交接分支名不适用。
 - 遗匣 `seeds[].equip` 是原装备，种子合并和等级兼容绝不能改写或丢弃它。
 - 不要开引擎 i18n `enabled=true`，用 `core/I18n.lua`

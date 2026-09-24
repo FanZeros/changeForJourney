@@ -828,6 +828,8 @@ function HandleUpdate(eventType, eventData)
     TavernPage.update(dt)
     MarketPage.update(dt)
     PlayerInfoPanel.update(dt)
+    local KeyboardShortcuts = require("ui.KeyboardShortcuts")
+    KeyboardShortcuts.update()
 end
 
 function HandleMouseButtonDown(eventType, eventData)

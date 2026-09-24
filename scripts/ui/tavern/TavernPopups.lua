@@ -222,7 +222,7 @@ local RES_NAME_MAP = {
     enhance_star   = "强化星石",
     sweep_ticket   = "扫荡券",
     degrade_protect = "退级保护石",
-    break_protect  = "损毁保护石",
+    break_protect  = "点金石",
 }
 
 -- [稀有度显示名] 与 HeroConfig.QUALITY_INFO 一致；机制值不变

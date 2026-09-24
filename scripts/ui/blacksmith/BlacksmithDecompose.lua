@@ -11,6 +11,7 @@ local DrawUtil         = require("core.DrawUtil")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
+local BlacksmithConfig = require("config.BlacksmithConfig")
 local PlayerStore      = require("core.PlayerStore")
 local RewardPopup      = require("ui.hud.popup.RewardPopup")
 local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
@@ -303,9 +304,10 @@ function M.drawUpperSlot(vg)
     DarkIcon.drawQualityBg(vg, 2, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
     drawImageCentered(vg, imgEssenceIcon, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)
 
-    -- 计算选中装备的预估精粹奖励
+    -- 计算选中装备的预估精粹奖励，以及升阶卷轴 70% 返还
     local previewEssence = 0
     local selCount = 0
+    local previewScrolls = {}
     for idx in pairs(fjState.selectedItems) do
         local item = backpackItems[idx]
         if item then
@@ -314,6 +316,17 @@ function M.drawUpperSlot(vg)
             local lv = item.level or 1
             local qCost = QUALITY_COST[q] or QUALITY_COST[1]
             previewEssence = previewEssence + math.floor(qCost.decBase * (1 + lv * qCost.decScale))
+            local slot = item.slot
+            if not slot and item.templateId then
+                local tpl = EquipmentConfig.ITEMS[item.templateId]
+                    or EquipmentConfig.ITEMS[tostring(item.templateId)]
+                slot = tpl and tpl.slot
+            end
+            local field = slot and BlacksmithConfig.SLOT_SCROLL_MAP[slot]
+            local refund = BlacksmithConfig.calcAscendScrollRefund(EquipmentSystem.getAscendLevel(item))
+            if field and refund > 0 then
+                previewScrolls[field] = (previewScrolls[field] or 0) + refund
+            end
         end
     end
 
@@ -329,6 +342,15 @@ function M.drawUpperSlot(vg)
     drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 30, rewardText,
         36, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
+    local scrollHint = BlacksmithConfig.formatScrollRefund(previewScrolls)
+    if not scrollHint and fjState.lastScrollHint and selCount == 0 then
+        scrollHint = fjState.lastScrollHint
+    end
+    if scrollHint then
+        drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 72, scrollHint,
+            32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            255, 214, 102, 3)
+    end
 end
 
 --- 绘制分解面板（下半部分）
@@ -874,12 +896,15 @@ function M.onActionResult(data)
     if goldReward > 0 then
         rewards[#rewards + 1] = { type = "gold", amount = goldReward }
     end
+    BlacksmithConfig.appendScrollRewardItems(rewards, data.scrollRewards)
+    fjState.lastScrollHint = BlacksmithConfig.formatScrollRefund(data.scrollRewards)
     if #rewards > 0 then
         RewardPopup.show("分解奖励", rewards)
     end
     print("[BlacksmithDecompose] 分解完成，获得精粹: " .. tostring(essenceReward)
         .. " (含洗练返还: " .. tostring(data.refineReturn or 0) .. ")"
         .. " 金币: " .. tostring(goldReward)
+        .. " 卷轴: " .. tostring(data.scrollReward or 0)
         .. "，分解数量: " .. tostring(data.decomposeCount))
 end
 

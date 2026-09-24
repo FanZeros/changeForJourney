@@ -138,15 +138,7 @@ function M.bind(deps)
 
         -- 槽位强化等级文本（来自 slotEnhance，与装备无关）
         do
-            local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-            local enhLv = 0
-            if slotEnhanceData and slotEnhanceData.levels then
-                local partyLevels = slotEnhanceData.levels[tostring(state.selectedPartySlot)]
-                    or slotEnhanceData.levels[state.selectedPartySlot]
-                if partyLevels then
-                    enhLv = partyLevels[slotKey] or 0
-                end
-            end
+        local enhLv = equip and EquipmentSystem.getAscendLevel(equip) or 0
             if enhLv > 0 then
                 local lvX = cx
                 local lvY = cy + EQUIP_LV_Y_OFFSET

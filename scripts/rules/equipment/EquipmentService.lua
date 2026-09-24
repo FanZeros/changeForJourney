@@ -79,9 +79,11 @@ local function calcEquipPower(equip, heroId)
         end
     end
     local power = 0
-    local enhBoost = BlacksmithConfig.getEnhanceBoost(equip.enhanceLevel or 0)
-    for _, s in ipairs(equip.baseStats or {}) do
-        power = power + calcStatPower(s[1], s[2] * (1 + enhBoost), excluded)
+    local ascendBoost = EquipmentSystem.getAscendBoost(equip)
+    for i, s in ipairs(equip.baseStats or {}) do
+        local val = s[2]
+        if i == 1 then val = val * (1 + ascendBoost) end
+        power = power + calcStatPower(s[1], val, excluded)
     end
     for _, affix in ipairs(equip.affixes or {}) do
         power = power + calcStatPower(affix.key, affix.value, excluded)

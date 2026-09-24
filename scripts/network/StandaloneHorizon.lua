@@ -268,6 +268,20 @@ local function seamBackList()
     return list
 end
 
+--- 中缝返回条命中。必须用逻辑坐标（toDesign 之后），不能用窗口像素直接比。
+---@param sx number
+---@param sy number
+---@return table|nil
+local function seamHitAt(sx, sy)
+    for _, seamBtn in ipairs(seamBackList()) do
+        if math.abs(sx - seamBtn.cx) <= seamBtn.sw * 0.5
+            and math.abs(sy - logicalH() * 0.5) <= seamBtn.sh * 0.5 then
+            return seamBtn
+        end
+    end
+    return nil
+end
+
 function HandleNanoVGRenderHorizon()
     if not vg() then return end
     HorizonUpdateTransform()
@@ -819,6 +833,20 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     if button ~= MOUSEB_LEFT then return end
+    local mousePos = input:GetMousePosition()
+    local seamX, seamY = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+    local seamBtn = seamHitAt(seamX, seamY)
+    if seamBtn then
+        local now = time.elapsedTime
+        if now - lastTapTime >= MIN_TAP_INTERVAL then
+            lastTapTime = now
+            print("[SeamBack] close dir=" .. tostring(seamBtn.dir)
+                .. string.format(" at %.0f,%.0f", seamX, seamY))
+            seamBtn.close()
+        end
+        pressValid = false
+        return
+    end
     local pid, dx, dy = HorizonResolveMouse()
     local isTap = false
     if wasLootPress and pid ~= 'left' then pressValid = false end
@@ -865,16 +893,6 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     if wasLootPress and pid ~= 'left' then return end
     if pid == 'none' then return end
-    -- 返回条使用窗口逻辑坐标；dx/dy 是面板设计坐标，不能直接比较。
-    local mousePos = input:GetMousePosition()
-    local seamX, seamY = mousePos.x / dpr(), mousePos.y / dpr()
-    for _, seamBtn in ipairs(seamBackList()) do
-        if math.abs(seamX - seamBtn.cx) <= seamBtn.sw * 0.5
-            and math.abs(seamY - logicalH() * 0.5) <= seamBtn.sh * 0.5 then
-            if isTap then seamBtn.close() end
-            return
-        end
-    end
     if pid == 'tri' then
         BattleTriPage.handleDragEnd(dx, dy)
         if isTap then BattleTriPage.handleInput(dx, dy) end

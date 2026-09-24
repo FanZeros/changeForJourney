@@ -1,7 +1,7 @@
 ---@meta
 --- ============================================================
---- ProxyTransport.lua — 单机直接 HTTP transport
---- 不再经过 RemoteEvent / 服务端代理。
+--- ProxyTransport.lua — 单机空传输
+--- 不发 HTTP，不读云。
 --- ============================================================
 
 local cjson = require("cjson")
@@ -52,71 +52,15 @@ end
 function ProxyTransport.Request(request, callback)
     if not started_ then ProxyTransport.Start() end
     callback = callback or function() end
-
     local id = request.id or nextRequestId()
-    local timeoutMs = request.timeoutMs or 10000
-    local methodName = string.upper(tostring(request.method or "GET"))
-    local httpMethod = METHOD_MAP[methodName] or HTTP_GET
-    local headers = request.headers or {}
-    local body = request.body or ""
-
-    pending_[id] = {
-        callback = callback,
-        expiresAt = nowMs() + timeoutMs,
-        done = false,
-    }
-
-    if not http then
-        finish(id, "单机运行时 HTTP 不可用", {
-            id = id,
-            status = 0,
-            success = false,
-            body = "",
-            error = "http unavailable",
-        })
-        return id
-    end
-
-    local client = http:Create()
-        :SetUrl(tostring(request.url or ""))
-        :SetMethod(httpMethod)
-        :SetTimeout(timeoutMs)
-
-    for key, value in pairs(headers) do
-        client:AddHeader(tostring(key), tostring(value))
-    end
-    if headers["Content-Type"] then
-        client:SetContentType(tostring(headers["Content-Type"]))
-    end
-    if body ~= "" and (httpMethod == HTTP_POST or httpMethod == HTTP_PUT or httpMethod == HTTP_PATCH) then
-        client:SetBody(body)
-    end
-
-    client
-        :OnSuccess(function(_, response)
-            local payload = {
-                id = id,
-                status = response and response.statusCode or 0,
-                success = response and response.success == true,
-                body = response and response.dataAsString or "",
-            }
-            if payload.success then
-                finish(id, nil, payload)
-            else
-                finish(id, "HTTP " .. tostring(payload.status), payload)
-            end
-        end)
-        :OnError(function(_, statusCode, error)
-            finish(id, error or ("HTTP " .. tostring(statusCode or 0)), {
-                id = id,
-                status = statusCode or 0,
-                success = false,
-                body = "",
-                error = error,
-            })
-        end)
-        :Send()
-
+    print("[GameAlgoSDK] local skip url=" .. tostring(request.url))
+    callback("单机不访问云", {
+        id = id,
+        status = 0,
+        success = false,
+        body = "",
+        error = "local only",
+    })
     return id
 end
 

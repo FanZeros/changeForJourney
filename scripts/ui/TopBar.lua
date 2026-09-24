@@ -24,7 +24,7 @@ local imgHeroIcons = {}  -- [heroId] 角色头像图标
 
 -- ======================== 本地数据缓存（多人模式由 Client.lua 设置） ========================
 -- 设置后优先使用，未设置（nil）时回退到 GameState
-local cachedName     = nil   ---@type string|nil  玩家昵称（来自 GetUserNickname API）
+local cachedName     = nil   ---@type string|nil  玩家昵称（本地存档）
 local cachedLevel    = nil   ---@type number|nil
 local cachedExp      = nil   ---@type number|nil
 local cachedMaxExp   = nil   ---@type number|nil
@@ -81,7 +81,7 @@ end
 
 -- ======================== 数据设置接口 ========================
 
---- 设置玩家昵称（来自 GetUserNickname API）
+--- 设置玩家昵称（本地）
 ---@param name string
 function TopBar.setPlayerName(name)
     cachedName = name

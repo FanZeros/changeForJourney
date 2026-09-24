@@ -369,7 +369,7 @@ function PlayerInfoPanel.init(vg)
     print("[PlayerInfoPanel] init OK")
 end
 
---- 设置玩家UID（由外部 lobby:GetMyUserId() 获取后传入）
+--- 设置玩家UID（单机本地标识）
 ---@param uid string|number
 function PlayerInfoPanel.setUID(uid)
     local prev = cachedUID

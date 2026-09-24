@@ -375,7 +375,7 @@ function M.dispatch(action, params)
         local fallback = tryLocalCloudFallback(action, params)
         if fallback then
             deliverActionResult(fallback)
-            print("[LocalActionBridge] local-cloud action=" .. tostring(action)
+            print("[LocalActionBridge] local fallback action=" .. tostring(action)
                 .. " success=" .. tostring(fallback.success)
                 .. " reason=" .. tostring(fallback.reason))
             return true

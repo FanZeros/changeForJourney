@@ -16,7 +16,11 @@ function Start()
         ["boot.StandaloneRT"] = { logicalW = 1920, logicalH = 1080, dpr = 1, bootReady_ = true },
         ["ui.battle.tri.BattleTriPage"] = mock({
             isOpen = function() return true end,
-            handleScroll = function() counters.bag = counters.bag + 1 return true end,
+            handleScroll = function(_, wx)
+                if not wx or wx < 486 or wx > 1434 then return false end
+                counters.bag = counters.bag + 1
+                return true
+            end,
         }),
         ["ui.loot.LootBoxPage"] = mock({
             isOpen = function() return pageOpen end,

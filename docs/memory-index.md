@@ -1,7 +1,11 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
-> 更新时间:2026-09-24 | 版本:v2.48-electron-background-trial
+> 更新时间:2026-09-24 | 版本:v2.49-merge-0924-all
+>
+> **当前交付（`workspace924-integration`）**：从 `workspace924` 新建分支，合并今日剩余 5 分支（立绘、功绩置顶/品质边框、配装/一键领取、PC 源码保护调研、Electron 后台帧）。冲突已解，并修复重构路径残留的 require。官方 build 成功、dist 约 390 MB，LSP 0 Error；整游戏离屏运行 150 帧 0 Lua 错误/0 缺失资源，标题画面可见。旧 `StoryPlayer` 启动错误已不复现。全局奖励弹窗滚轮优先于装备袋。三套遗匣回归全部 PASS、各 0 Error；`lootbox_overflow_test.lua` 18/18 场景通过（含 199/200 背包边界和首通奖励），测试替身已适配自定义 require 缓存。下一步可手动验收功绩、配装与立绘，或在 Windows 实测 Electron 后台挂机。只推 `workspace924-integration`，交付后必须以 AskUserQuestion 选项询问下一步。
+>
+> **历史交接记录**：以下各小节记录此前独立分支验证，涉及“只 push 某历史分支”的约束仅是历史，不覆盖本轮授权。
 >
 > **本轮桌面试点（`feature/background-idle-924`）**：用户选择 Windows Electron 失焦挂机。`electron-shell/main.js:145` 的 BrowserWindow.webPreferences 设 `backgroundThrottling=false`，不改 Lua/网页版本。`node --check` 和 VM 模拟创建 BrowserWindow 的断言通过（同时确认 contextIsolation/nodeIntegration 安全设置保持不变）；LSP 0 Error、官方 build 通过。当前沙箱没有 Electron 可执行文件、node_modules、虚拟显示器或 Wine，因此**没有 Windows 最小化/失焦的实机验收**，也未生成新版 Windows 包；已有 `/workspace/dist` 网页预览不会体现这项桌面独占改动。下一步在 Windows 用仓库现有 `electron-shell/pack_release.py` / 一键脚本将最新 dist 打成 Electron 包，实际对比聚焦/失焦/最小化时三队金币、经验、掉落、存档及 CPU；关闭进程/系统休眠仍需另做离线补算。
 >

@@ -147,16 +147,14 @@ function Start()
     print("[lootbox_page_test] 页面交互全部通过")
 
     -- 持续变化也必须周期保存，模拟磁盘可证明不会覆盖玩家实际存档。
-    local original = {}
-    for _, name in ipairs({ "runtime.ClientDispatcher", "core.GameState", "ui.battle.scene.BattleScene", "boot.StandaloneSave" }) do
-        original[name] = package.loaded[name]
-    end
     local data = { lootbox = { seeds = {} } }
     local written = {}
-    package.loaded["runtime.ClientDispatcher"] = { snapshotAll = function() return data end }
-    package.loaded["core.GameState"] = { exportSave = function() return {} end }
-    package.loaded["ui.battle.scene.BattleScene"] = {}
-    package.loaded["boot.StandaloneSave"] = nil
+    local Dispatcher = require("runtime.ClientDispatcher")
+    local GameState = require("core.GameState")
+    local originalSnapshotAll = Dispatcher.snapshotAll
+    local originalExportSave = GameState.exportSave
+    Dispatcher.snapshotAll = function() return data end
+    GameState.exportSave = function() return {} end
     local originalFile = File
     File = function()
         return {
@@ -175,6 +173,7 @@ function Start()
     local decoded = cjson.decode(written[#written])
     eq(decoded.modules.lootbox.seeds[1].count, 10, "立即保存包含最新遗匣数据")
     File = originalFile
-    for name, value in pairs(original) do package.loaded[name] = value end
+    Dispatcher.snapshotAll = originalSnapshotAll
+    GameState.exportSave = originalExportSave
     print("[lootbox_page_test] 持续掉落存档全部通过")
 end

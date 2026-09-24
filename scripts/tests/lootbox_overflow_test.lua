@@ -691,9 +691,10 @@ local function testReopenAndJsonNoReroll()
     end
     page.hide = function() page.opened = false end
     page.refresh = function(summary) page.summary = summary end
-    withPatchedField(package.loaded, "ui.loot.LootBoxPage", page, function()
-        withPatchedField(package.loaded, "core.DrawUtil", {}, function()
-            withPatchedField(package.loaded, "ui.loot.LootBox", nil, function()
+    local realPage = require("ui.loot.LootBoxPage")
+    withPatchedField(realPage, "isOpen", page.isOpen, function()
+        withPatchedField(realPage, "open", page.open, function()
+            withPatchedField(realPage, "refresh", page.refresh, function()
                 local facade = require("ui.loot.LootBox")
                 withGeneratorSpy(function(spy)
                     facade.updateSeedData(box)
@@ -751,9 +752,13 @@ local function withBoot(bagCount, body)
     }
     h.stage, h.dropQuality, h.maxStageId = stage, 5, 2
     local patches = {}
-    local function inject(name, value)
-        patches[#patches + 1] = { name = name, previous = package.loaded[name] }
-        package.loaded[name] = value
+    local function inject(name, overrides)
+        local module = require(name)
+        for key, replacement in pairs(overrides) do
+            patches[#patches + 1] = { module = module, key = key, previous = module[key] }
+            module[key] = replacement
+        end
+        return module
     end
     local function noop() end
     local function ui(name, methods)
@@ -766,8 +771,7 @@ local function withBoot(bagCount, body)
                 h.callbacks[key] = callback
             end
         end
-        inject(name, module)
-        return module
+        return inject(name, module)
     end
     function h.fire(moduleName, method, ...)
         local callback = assert(h.callbacks[moduleName .. "." .. method], "Boot callback missing: " .. method)
@@ -863,9 +867,8 @@ local function withBoot(bagCount, body)
     combat.addFloatingText = noop
     local info = ui("ui.hud.popup.PlayerInfoPanel")
     info.setUID = noop
-    inject("client.data.PlayerStore", { Subscribe = noop })
+    inject("core.PlayerStore", { Subscribe = noop })
     inject("runtime.LocalActionBridge", { init = noop })
-    inject("boot.StandaloneBoot", nil)
 
     -- 禁止昵称分支访问云端与账号接口。
     local oldCloud, oldLobby = rawget(_G, "clientCloud"), rawget(_G, "lobby")
@@ -890,7 +893,7 @@ local function withBoot(bagCount, body)
     rawset(_G, "GetUserNickname", oldNickname)
     for index = #patches, 1, -1 do
         local patch = patches[index]
-        package.loaded[patch.name] = patch.previous
+        patch.module[patch.key] = patch.previous
     end
     assert(ok, tostring(err))
 end

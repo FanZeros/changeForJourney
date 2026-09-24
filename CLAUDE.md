@@ -12,7 +12,7 @@
 ## 项目是什么
 
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
-- 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
+- 入口 `scripts/main.lua` → 只加载 `boot/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
 - **当前开发分支（本轮 2026-09-24）**：`workspace924-integration`，从 `workspace924` 新开，合入今日全部未合并分支。**只 push 本分支**，不推 `workspace924`、旧功能分支或其他分支。
 
@@ -21,9 +21,14 @@
 - 今日 26 个分支中 21 个已在 `workspace924` 内；本轮合入剩余 5 个：`feat/image-enhance-0924`（五名角色立绘重绘）、`feat/ce-test-tools-20260924`（功绩页可领置顶+稀有度边框）、`feat/merit-claim-all`（配装交互+功绩一键领取）、`feature/pc-release-obfuscation-review`（PC 混淆调研）、`feature/background-idle-924`（Electron 失焦保持战斗帧）。
 - 合并冲突已解决，并修复合并引入的失效 require 路径：`CharacterDetailEquip` / `EquipmentDetail` / `CharacterPanel` 的 `ui.character.X` → `ui.character.detail.X` 或 `ui.character.equip.X`；`BlacksmithEnhance` 的 `client.data.PlayerStore` → `core.PlayerStore`。
 
-## 遗留已知问题（来自 PC 混淆核查，待修）
+## 本轮验证（2026-09-24）
 
-- 整游戏启动存在 `[systems/StoryPlayer]:7` 引用缺失 `network.ClientDispatcher`；旧存档回归测试 `tests/lootbox_page_test.lua:173` 断言失败。
+- 官方 MCP build 成功；`/workspace/dist` 已更新用于预览（约 390 MB）。Lua LSP 0 Error；整游戏 `main.lua` 离屏运行 150 帧，`lua_errors=0`、`missing_resources=[]`，已出标题画面截图；报告的软渲染帧耗时尖刺是环境噪音。
+- `systems/StoryPlayer.lua:7` 当前已引用 `runtime.ClientDispatcher`，原先的启动错误不再复现。修复合并后全局奖励弹窗滚轮被装备袋抢走的问题（`boot/StandaloneHorizon.lua`）。
+- 遗匣三套回归 `lootbox_page_test.lua`、`lootbox_horizon_test.lua`、`lootbox_overflow_test.lua` 均 PASS（各 0 Error）；溢出用例覆盖 18/18 场景，包括 199/200 背包边界及首通奖励。修复测试替身与引擎自定义 require 缓存不兼容，不改生产存档/结算逻辑。
+
+## 遗留已知问题
+
 - Windows Electron 离线包的 Lua 随 `dist/assets/*.lua` 原样进入 `extraResources/game`，无混淆；`electron-shell/obfuscation_trial.py` 仅为独立试验，未接入发布。
 - **MCP build 会从 `/workspace` 根读取资产**：先确认构建日志包含实际资源和入口。
 
@@ -78,7 +83,7 @@
 
 ## likely_next_task
 
-- **优先修复**整游戏启动的 `systems/StoryPlayer` → `network.ClientDispatcher` 缺失依赖，并恢复存档回归测试 `tests/lootbox_page_test.lua:173`。
+- 下一步可在预览中手动验收功绩页（可领置顶/一键领取/稀有度边框）、配装悬停/拖拽与新立绘；或在 Windows 实测 Electron 失焦/最小化挂机。整游戏 `StoryPlayer` 启动错误及三套遗匣回归已复测解决。
 - Electron 离线包 `electron-shell/main.js:145` 已设 `webPreferences.backgroundThrottling=false`（仅 Windows Electron 包）；本沙箱无 Electron/虚拟显示器，**未实测 Windows 失焦、最小化后的持续战斗**，需用户本地重打验证。
 - 混淆试点 `electron-shell/obfuscation_trial.py` 不可发布，未接入正式包。
 - 预览横屏左上角 CE / F1 测试面板，确认一键测试包、跳关、无敌和三倍速。
@@ -98,7 +103,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 本轮只在 `feature/background-idle-924` 上研究/继续开发；完成后每次 push **该分支**。不要推 `workspace924`、`integrate/20260923`、`workspace`、`workspace923` 或历史交接中的其他分支。
+- 本轮只在 `workspace924-integration` 上继续开发；完成后每次只 push **该分支**。不要推 `workspace924`、`integrate/20260923`、`workspace`、`workspace923` 或历史交接中的其他分支。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）

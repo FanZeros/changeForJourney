@@ -184,6 +184,7 @@ function TaskService.RefreshAchievements(uid)
     -- SR / SSR 拥有数, 觉醒最大次数, 转职统计
     local srCount  = 0
     local ssrCount = 0
+    local heroCount = 0
     local awkRMax  = 0
     local awkSRMax = 0
     local awkSSRMax = 0
@@ -197,6 +198,7 @@ function TaskService.RefreshAchievements(uid)
         for heroId, heroData in pairs(heroes.roster) do
             -- 碎片存根（无 level 字段）不算"拥有"，跳过
             if not heroData.level then goto continue_hero end
+            heroCount = heroCount + 1
 
             -- HeroConfig 使用 quality 字段: 1=R, 2=SR, 3=SSR
             local quality = 1
@@ -231,6 +233,7 @@ function TaskService.RefreshAchievements(uid)
 
     taskData.achProg["sr_count"]    = srCount
     taskData.achProg["ssr_count"]   = ssrCount
+    taskData.achProg["hero_count"]  = heroCount
     taskData.achProg["awk_r_max"]   = awkRMax
     taskData.achProg["awk_sr_max"]  = awkSRMax
     taskData.achProg["awk_ssr_max"] = awkSSRMax

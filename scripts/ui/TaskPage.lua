@@ -16,9 +16,11 @@ local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
 local LIST = { x = 48, y = 430, w = 984, h = 1760, rowH = 210, gap = 16 }
 local TABS = {
-    { key = "normal", name = "普通", cx = 220, cy = 340 },
-    { key = "hard", name = "困难", cx = 540, cy = 340 },
-    { key = "nightmare", name = "噩梦", cx = 860, cy = 340 },
+    { key = "normal", name = "普通", cx = 118, w = 168 },
+    { key = "hard", name = "困难", cx = 302, w = 168 },
+    { key = "nightmare", name = "噩梦", cx = 486, w = 168 },
+    { key = "level", name = "远征", cx = 670, w = 168 },
+    { key = "hero", name = "队员", cx = 854, w = 168 },
 }
 
 local state = {
@@ -26,8 +28,18 @@ local state = {
     tab = "normal", scrollY = 0, maxScrollY = 0,
     dragging = false, dragStartY = 0, dragStartScroll = 0, dragMoved = false,
 }
+local iconCache = {}
 local imgName = -1
 local inited = false
+
+local function rewardIcon(vg, path)
+    if not path or path == "" then return -1 end
+    local cached = iconCache[path]
+    if cached then return cached end
+    local handle = nvgCreateImage(vg, path, 0) or -1
+    iconCache[path] = handle
+    return handle
+end
 
 local function clampScroll()
     state.scrollY = math.max(0, math.min(state.maxScrollY, state.scrollY))
@@ -66,7 +78,11 @@ end
 local function listForTab()
     local out = {}
     for _, task in ipairs(TaskConfig.ACHIEVEMENT) do
-        if task.difficulty == state.tab then
+        if state.tab == "level" or state.tab == "hero" then
+            if task.group == state.tab then
+                out[#out + 1] = task
+            end
+        elseif task.difficulty == state.tab then
             out[#out + 1] = task
         end
     end
@@ -151,6 +167,15 @@ local function drawRow(vg, task, y)
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 196, 176, 138, 2)
     text(vg, LIST.x + 28, y + 46, "进度 " .. shown .. "/" .. task.target, 26,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 150, 176, 138, 2)
+    local reward = task.reward
+    if reward then
+        local icon = rewardIcon(vg, reward.icon)
+        if icon >= 0 then
+            DrawUtil.drawImageCentered(vg, icon, LIST.x + LIST.w - 300, y - 16, 64, 64, 1)
+        end
+        text(vg, LIST.x + LIST.w - 300, y + 42, "×" .. tostring(reward.amount or 0), 22,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 232, 210, 150, 2)
+    end
     local label = "未完成"
     local r, g, b = 120, 116, 108
     if status == TaskConfig.STATUS.CLAIMABLE then
@@ -178,22 +203,23 @@ function TaskPage.draw(vg)
     nvgRect(vg, 0, 0, W, H)
     nvgFillColor(vg, nvgRGBA(18, 16, 22, 255))
     nvgFill(vg)
-    TownPageChrome.drawNamePlate(vg, imgName, "任务")
-    text(vg, 540, 250, "通关指定关卡", 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
+    TownPageChrome.drawNamePlate(vg, imgName, "功绩")
+    text(vg, 540, 250, "终焉功绩", 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
     for _, tab in ipairs(TABS) do
         local on = state.tab == tab.key
+        local half = (tab.w or 168) * 0.5
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, tab.cx - 120, tab.cy - 36, 240, 72, 10)
+        nvgRoundedRect(vg, tab.cx - half, 304, tab.w or 168, 72, 10)
         nvgFillColor(vg, on and nvgRGBA(176, 132, 48, 230) or nvgRGBA(42, 36, 28, 220))
         nvgFill(vg)
-        text(vg, tab.cx, tab.cy, tab.name, 32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 245, 232, 200, 2)
+        text(vg, tab.cx, 340, tab.name, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 245, 232, 200, 2)
     end
     local rows = listForTab()
     refreshScroll(#rows)
     nvgSave(vg)
     nvgIntersectScissor(vg, LIST.x, LIST.y, LIST.w, LIST.h)
     if #rows == 0 then
-        text(vg, 540, 900, "暂无任务", 42, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 186, 168, 132, 2)
+        text(vg, 540, 900, "暂无功绩", 42, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 186, 168, 132, 2)
     else
         for i, task in ipairs(rows) do
             local y = LIST.y + LIST.rowH * 0.5 + (i - 1) * (LIST.rowH + LIST.gap) - state.scrollY
@@ -226,7 +252,7 @@ function TaskPage.handleInput(dx, dy)
         return true
     end
     for _, tab in ipairs(TABS) do
-        if math.abs(dx - tab.cx) <= 120 and math.abs(dy - tab.cy) <= 36 then
+        if math.abs(dx - tab.cx) <= (tab.w or 168) * 0.5 and math.abs(dy - 340) <= 36 then
             state.tab = tab.key
             state.scrollY = 0
             print("[TaskPage] tab " .. tab.key)

@@ -583,7 +583,7 @@ function TownScene.draw(vg)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
     drawBuildingLabel(vg, 180, TASK_LBL_CY, 280, 90,
-        70, TASK_LBL_CY - 4, 52, imgTask, 210, TASK_LBL_CY - 4, "任务")
+        70, TASK_LBL_CY - 4, 52, imgTask, 210, TASK_LBL_CY - 4, "功绩")
     local taskOk, TaskPage = pcall(require, "ui.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
         DarkIcon.draw(vg, "reddot", 300, TASK_LBL_CY - 36, 36, 1.0)
@@ -659,7 +659,7 @@ function TownScene.handleInput(dx, dy)
         and math.abs(dy - TASK_HIT_CY) <= TASK_HIT_H * 0.5 then
         BF.trigger("town_task")
         triggerClickAnim("task")
-        print("[TownScene] 点击任务")
+        print("[TownScene] 点击功绩")
         if onTaskClick then deferAction(CLICK_CALLBACK_DELAY, onTaskClick) end
         return true
     end

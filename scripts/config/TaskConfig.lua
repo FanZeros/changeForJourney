@@ -85,6 +85,41 @@ addBosses(StageConfig.NORMAL_CHAPTERS, "normal", 120)
 addBosses(StageConfig.HARD_CHAPTERS, "hard", 400)
 addBosses(StageConfig.NIGHTMARE_CHAPTERS, "nightmare", 800)
 
+local function gold(amount)
+    return { type = "gold", amount = amount, icon = "image/货币道具/UI_icon_JB.png", quality = 2 }
+end
+
+local function addRecord(id, name, desc, condKey, target, group, reward)
+    TaskConfig.ACHIEVEMENT[#TaskConfig.ACHIEVEMENT + 1] = {
+        id = id,
+        name = name,
+        desc = desc,
+        condKey = condKey,
+        group = group,
+        target = target,
+        reward = reward,
+    }
+end
+
+for _, lv in ipairs({ 5, 10, 20, 30, 50, 80, 100, 150, 200 }) do
+    addRecord("a_plv_" .. lv, "远征勋记", "远征等级达到" .. lv, "player_level", lv, "level", gem(lv * 8))
+end
+
+for _, n in ipairs({ 3, 6, 10, 16, 20 }) do
+    addRecord("a_hero_" .. n, "集结令", "拥有" .. n .. "名远征队员", "hero_count", n, "hero", gold(n * 2000))
+end
+for _, n in ipairs({ 1, 3, 5, 8 }) do
+    addRecord("a_sr_" .. n, "稀有集结", "拥有" .. n .. "名稀有远征队员", "sr_count", n, "hero", gem(n * 80))
+end
+for _, n in ipairs({ 1, 2, 3, 5 }) do
+    addRecord("a_ssr_" .. n, "史诗集结", "拥有" .. n .. "名史诗远征队员", "ssr_count", n, "hero", gem(n * 200))
+end
+for _, n in ipairs({ 1, 2, 3 }) do
+    addRecord("a_awk_r_" .. n, "觉醒印", "任意普通队员觉醒至" .. n .. "阶", "awk_r_max", n, "hero", gold(n * 3000))
+    addRecord("a_awk_sr_" .. n, "稀有觉醒", "任意稀有队员觉醒至" .. n .. "阶", "awk_sr_max", n, "hero", gem(n * 120))
+    addRecord("a_awk_ssr_" .. n, "史诗觉醒", "任意史诗队员觉醒至" .. n .. "阶", "awk_ssr_max", n, "hero", gem(n * 300))
+end
+
 -- ======================== 按 ID 快速查找 ========================
 
 TaskConfig._byId = {}

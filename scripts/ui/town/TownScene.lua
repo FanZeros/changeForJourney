@@ -23,7 +23,8 @@ local imgWarehouse = -1  -- 仓库建筑（背包入口）
 local imgIconWarehouse = -1 -- 仓库图标
 local imgLootBox = -1       -- 遗匣地点立绘 UI_CZ_YX
 local imgIconLoot = -1      -- 遗匣名牌图标 ICON_CZ_YX
-local imgTask = -1          -- 功绩地点
+local imgTask = -1          -- 功绩地点立绘 UI_CZ_GJ
+local imgIconTask = -1      -- 功绩名牌图标 ICON_CZ_GJ
 
 local imgIconChurch = -1 -- 教堂图标
 local imgIconTree   = -1 -- 古树图标
@@ -387,7 +388,8 @@ local function ensureTownImages(vg)
     imgBg          = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
     imgLootBox     = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_YX.png", 0) or -1
     imgIconLoot    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_YX.png", 0) or -1
-    imgTask        = nvgCreateImage(ctx, "image/界面底板/剧情日记/UI_RZAN_CJ.png", 0) or -1
+    imgTask        = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_GJ.png", 0) or -1
+    imgIconTask    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_GJ.png", 0) or -1
     imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
     imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)
     imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
@@ -586,7 +588,7 @@ function TownScene.draw(vg)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
     drawBuildingLabel(vg, 180, TASK_LBL_CY, 280, 90,
-        70, TASK_LBL_CY - 4, 52, imgTask, 210, TASK_LBL_CY - 4, "功绩")
+        70, TASK_LBL_CY - 4, 52, imgIconTask, 210, TASK_LBL_CY - 4, "功绩")
     local taskOk, TaskPage = pcall(require, "ui.story.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
         DarkIcon.draw(vg, "reddot", 300, TASK_LBL_CY - 36, 36, 1.0)

@@ -628,4 +628,12 @@ function ArtifactDetailPanel.handleTap(tx, ty)
     return true
 end
 
+---@param dx number|nil
+---@param dy number|nil
+---@return boolean
+function ArtifactDetailPanel.containsPoint(dx, dy)
+    if not state.visible or dx == nil or dy == nil then return false end
+    return hitTest(dx, dy, BG.CX, BG.CY, BG.W, BG.H)
+end
+
 return ArtifactDetailPanel

@@ -859,8 +859,12 @@ function M.handleDragEnd(_dx, _dy)
 end
 
 ---@param wheel number
-function M.handleScroll(wheel)
-    if ArtifactDetailPanel.isVisible() then return end
+---@param dx number|nil
+---@param dy number|nil
+function M.handleScroll(wheel, dx, dy)
+    if ArtifactDetailPanel.isVisible() then
+        if dx == nil or ArtifactDetailPanel.containsPoint(dx, dy) then return end
+    end
     state.scrollY = state.scrollY - wheel * SCROLL_WHEEL_STEP
     state.scrollVel = 0
     clampScroll()

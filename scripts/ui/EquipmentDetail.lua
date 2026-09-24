@@ -1321,8 +1321,35 @@ function EquipmentDetail.draw(vg)
     nvgRestore(vg)
 end
 
-function EquipmentDetail.handleScroll(wheel)
+--- 鼠标是否落在详情面板（含按钮条）。未给坐标时视为命中，兼容旧调用。
+---@param dx number|nil
+---@param dy number|nil
+---@return boolean
+function EquipmentDetail.containsPoint(dx, dy)
+    if not detState.open or dx == nil or dy == nil then return false end
+    local lx, ly = dx, dy
+    if detState.compactCorner then
+        local ox, oy = compactOffset()
+        lx = (dx - ox) / COMPACT_SCALE
+        ly = (dy - oy) / COMPACT_SCALE
+    end
+    local bgCX = detState.compactCorner and REF_BG_CX or SINGLE_BG_CX
+    if hitTest(lx, ly, bgCX, REF_BG_CY, REF_BG_W, REF_BG_H) then return true end
+    local offsetX = detState.compactCorner and 0 or (SINGLE_BG_CX - REF_BG_CX)
+    local btnCX = REF_BTN_CX + offsetX
+    local stripTop = REF_BG_CY + REF_BG_H * 0.5
+    local stripBot = stripTop + REF_ENH_BTN_GAP + REF_ENH_BTN_H + 48
+    return lx >= btnCX - (REF_BTN_W + 40) * 0.5 and lx <= btnCX + (REF_BTN_W + 40) * 0.5
+       and ly >= stripTop and ly <= stripBot
+end
+
+---@param wheel number
+---@param dx number|nil 设计坐标；给出且不在面板上时不消费
+---@param dy number|nil
+---@return boolean
+function EquipmentDetail.handleScroll(wheel, dx, dy)
     if not detState.open or detState.closing then return false end
+    if dx ~= nil and not EquipmentDetail.containsPoint(dx, dy) then return false end
     detState.descScrollY = detState.descScrollY - (wheel or 0) * 90
     clampDescScroll()
     return true

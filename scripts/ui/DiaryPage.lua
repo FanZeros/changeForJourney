@@ -487,12 +487,12 @@ function DiaryPage.handleDragEnd(dx, dy)
     return false
 end
 
-function DiaryPage.handleScroll(wheel)
+function DiaryPage.handleScroll(wheel, dx, dy)
     if TaskPanel.isOpen() then
         return TaskPanel.handleScroll(wheel)
     end
     if BackpackPanel.isOpen() then
-        return BackpackPanel.handleScroll(wheel)
+        return BackpackPanel.handleScroll(wheel, dx, dy)
     end
     if SignInPanel.isOpen() then
         return SignInPanel.handleScroll(wheel)

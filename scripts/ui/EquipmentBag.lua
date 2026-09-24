@@ -247,6 +247,16 @@ function EquipmentBag.hasOverlayRegion()
     return overlayRegion ~= nil
 end
 
+--- 窗口坐标是否落在战斗区覆盖矩形内
+---@param wx number|nil
+---@param wy number|nil
+---@return boolean
+function EquipmentBag.hitOverlayWindow(wx, wy)
+    local R = overlayRegion
+    if not R or wx == nil or wy == nil then return false end
+    return wx >= R.x and wx <= R.x + R.w and wy >= R.y and wy <= R.y + R.h
+end
+
 --- 角色装备栏打开的背包才覆盖战斗页（铁匠铺选择模式不覆盖）
 function EquipmentBag.shouldBattleOverlay()
     return bagState.open and bagState.onSelect == nil
@@ -798,17 +808,31 @@ function EquipmentBag.handleDragEnd(dx, dy)
     return true
 end
 
---- 处理滚轮
----@param wheel number 滚轮值
-function EquipmentBag.handleScroll(wheel)
-    if not bagState.open then return end
-    if EquipmentDetail.isOpen() then
-        EquipmentDetail.handleScroll(wheel)
-        return
-    end
-    bagState.scrollY = bagState.scrollY - wheel * SCROLL_WHEEL_STEP
+--- 只滚背包列表，不转给详情
+---@param wheel number
+---@return boolean
+function EquipmentBag.scrollByWheel(wheel)
+    if not bagState.open then return false end
+    bagState.scrollY = bagState.scrollY - (wheel or 0) * SCROLL_WHEEL_STEP
     clampScroll()
     bagState.scrollVel = 0
+    return true
+end
+
+--- 处理滚轮。给出坐标时，只有鼠标在详情上才滚详情，否则滚后面的列表。
+---@param wheel number 滚轮值（正=向上）
+---@param dx number|nil
+---@param dy number|nil
+---@return boolean
+function EquipmentBag.handleScroll(wheel, dx, dy)
+    if not bagState.open then return false end
+    if EquipmentDetail.isOpen() and not EquipmentBag.shouldBattleOverlay() then
+        if dx == nil or EquipmentDetail.containsPoint(dx, dy) then
+            EquipmentDetail.handleScroll(wheel, dx, dy)
+            return true
+        end
+    end
+    return EquipmentBag.scrollByWheel(wheel)
 end
 
 -- ======================== 绘制 ========================

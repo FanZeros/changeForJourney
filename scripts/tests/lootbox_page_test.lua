@@ -147,16 +147,15 @@ function Start()
     print("[lootbox_page_test] 页面交互全部通过")
 
     -- 持续变化也必须周期保存，模拟磁盘可证明不会覆盖玩家实际存档。
-    local original = {}
-    for _, name in ipairs({ "runtime.ClientDispatcher", "core.GameState", "ui.battle.scene.BattleScene", "boot.StandaloneSave" }) do
-        original[name] = package.loaded[name]
-    end
+    -- 运行时 require 自带模块缓存，改 package.loaded 不会替换已加载的模块。
+    -- 直接替换被 StandaloneSave 持有的模块方法，再在测试结束恢复。
+    local Dispatcher = require("runtime.ClientDispatcher")
+    local GameState = require("core.GameState")
+    local originalSnapshotAll, originalExportSave = Dispatcher.snapshotAll, GameState.exportSave
     local data = { lootbox = { seeds = {} } }
     local written = {}
-    package.loaded["runtime.ClientDispatcher"] = { snapshotAll = function() return data end }
-    package.loaded["core.GameState"] = { exportSave = function() return {} end }
-    package.loaded["ui.battle.scene.BattleScene"] = {}
-    package.loaded["boot.StandaloneSave"] = nil
+    Dispatcher.snapshotAll = function() return data end
+    GameState.exportSave = function() return {} end
     local originalFile = File
     File = function()
         return {
@@ -175,6 +174,6 @@ function Start()
     local decoded = cjson.decode(written[#written])
     eq(decoded.modules.lootbox.seeds[1].count, 10, "立即保存包含最新遗匣数据")
     File = originalFile
-    for name, value in pairs(original) do package.loaded[name] = value end
+    Dispatcher.snapshotAll, GameState.exportSave = originalSnapshotAll, originalExportSave
     print("[lootbox_page_test] 持续掉落存档全部通过")
 end

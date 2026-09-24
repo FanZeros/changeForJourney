@@ -682,56 +682,60 @@ local function testReopenAndJsonNoReroll()
     LootBoxSystem.addSeed(box, 1, 6, 80)
     LootBoxSystem.addEquipment(box, newEquip(90, 6, 39))
     box.seeds[#box.seeds + 1] = { quality = 4, level = 70, count = 2 }
-    local page = { opened = false, opens = 0, summary = {} }
-    page.isOpen = function() return page.opened end
-    page.open = function(summary)
-        page.opened = true
-        page.opens = page.opens + 1
-        page.summary = summary
+    local page = require("ui.loot.LootBoxPage")
+    local originalOpen, originalRefresh, originalIsOpen, originalHide =
+        page.open, page.refresh, page.isOpen, page.hide
+    local opened, opens = false, 0
+    ---@type table[]|nil
+    local summary = nil
+    page.isOpen = function() return opened end
+    page.open = function(value)
+        opened = true
+        opens = opens + 1
+        summary = value
     end
-    page.hide = function() page.opened = false end
-    page.refresh = function(summary) page.summary = summary end
-    withPatchedField(package.loaded, "ui.loot.LootBoxPage", page, function()
-        withPatchedField(package.loaded, "core.DrawUtil", {}, function()
-            withPatchedField(package.loaded, "ui.loot.LootBox", nil, function()
-                local facade = require("ui.loot.LootBox")
-                withGeneratorSpy(function(spy)
-                    facade.updateSeedData(box)
-                    eq(#spy.calls, 2, "facade reveals only previously unrevealed legacy pieces")
-                    countIs(box, 4, 4, "facade retains all rewards after initial reveal")
-                    eq(facade.getCount(), 4, "facade count uses determined entries")
-                    local before = copy(box)
-                    spy.forbidden = true
-                    LootBoxSystem.levelCap = 1
-                    for _ = 1, 3 do
-                        facade.openPage()
-                        assert(facade.isPageOpen(), "real facade opens stub page")
-                        facade.refreshPage()
-                        assertSummary(box)
-                        for index, entry in ipairs(box.seeds) do
-                            eq(page.summary[index].equip, entry.equip, "reopen uses same equipment instance")
-                            eq(page.summary[index].sourceIndex, index, "reopen preserves claim index")
-                        end
-                        page.hide()
-                        assert(not facade.isPageOpen(), "page closes before reopening")
-                    end
-                    eq(page.opens, 3, "actually exercised three close/reopen cycles")
-                    same(box, before, "close/reopen does not mutate determined rewards")
-                    local loaded = roundtrip(box)
-                    LootboxSchema.Fields.lootbox.onLoad(loaded)
-                    facade.updateSeedData(loaded)
-                    facade.openPage()
-                    facade.refreshPage()
-                    same(loaded, before, "JSON onLoad and reopen do not reroll or clamp")
-                    eq(facade.getCount(), 4, "reload count preserved")
-                    for index, entry in ipairs(loaded.seeds) do
-                        eq(page.summary[index].equip, entry.equip, "reload points to loaded equipment")
-                    end
-                    eq(#spy.calls, 2, "only first legacy reveal called generator")
-                end)
-            end)
+    page.hide = function() opened = false end
+    page.refresh = function(value) summary = value end
+    local facade = require("ui.loot.LootBox")
+    local ok, err = pcall(function()
+        withGeneratorSpy(function(spy)
+            facade.updateSeedData(box)
+            eq(#spy.calls, 2, "facade reveals only previously unrevealed legacy pieces")
+            countIs(box, 4, 4, "facade retains all rewards after initial reveal")
+            eq(facade.getCount(), 4, "facade count uses determined entries")
+            local before = copy(box)
+            spy.forbidden = true
+            LootBoxSystem.levelCap = 1
+            for _ = 1, 3 do
+                facade.openPage()
+                assert(facade.isPageOpen(), "real facade opens stub page")
+                facade.refreshPage()
+                assertSummary(box)
+                for index, entry in ipairs(box.seeds) do
+                    eq(summary[index].equip, entry.equip, "reopen uses same equipment instance")
+                    eq(summary[index].sourceIndex, index, "reopen preserves claim index")
+                end
+                page.hide()
+                assert(not facade.isPageOpen(), "page closes before reopening")
+            end
+            eq(opens, 3, "actually exercised three close/reopen cycles")
+            same(box, before, "close/reopen does not mutate determined rewards")
+            local loaded = roundtrip(box)
+            LootboxSchema.Fields.lootbox.onLoad(loaded)
+            facade.updateSeedData(loaded)
+            facade.openPage()
+            facade.refreshPage()
+            same(loaded, before, "JSON onLoad and reopen do not reroll or clamp")
+            eq(facade.getCount(), 4, "reload count preserved")
+            for index, entry in ipairs(loaded.seeds) do
+                eq(summary[index].equip, entry.equip, "reload points to loaded equipment")
+            end
+            eq(#spy.calls, 2, "only first legacy reveal called generator")
         end)
     end)
+    page.open, page.refresh, page.isOpen, page.hide =
+        originalOpen, originalRefresh, originalIsOpen, originalHide
+    assert(ok, tostring(err))
 end
 
 -- 执行真实 Boot.run 及其注册的回调，不在替身里重写奖励结算。
@@ -750,23 +754,29 @@ local function withBoot(bagCount, body)
         fcEssence = 11, fcArcaneDust = 13,
     }
     h.stage, h.dropQuality, h.maxStageId = stage, 5, 2
+    local boot = require("boot.StandaloneBoot")
     local patches = {}
     local function inject(name, value)
-        patches[#patches + 1] = { name = name, previous = package.loaded[name] }
-        package.loaded[name] = value
+        local target = require(name)
+        for key, replacement in pairs(value) do
+            patches[#patches + 1] = { target = target, key = key, previous = target[key] }
+            target[key] = replacement
+        end
     end
     local function noop() end
     local function ui(name, methods)
-        local module = {}
+        local module = require(name)
         for _, method in ipairs(methods or {}) do
             local key = name .. "." .. method
+            assert(type(module[method]) == "function", key .. " missing")
+            local original = module[method]
             module[method] = function(callback)
                 assert(type(callback) == "function", key .. " requires callback")
                 assert(not h.callbacks[key], key .. " registered twice")
                 h.callbacks[key] = callback
             end
+            patches[#patches + 1] = { target = module, key = method, previous = original }
         end
-        inject(name, module)
         return module
     end
     function h.fire(moduleName, method, ...)
@@ -827,17 +837,20 @@ local function withBoot(bagCount, body)
         end,
         notifySubscribers = h.notify,
     })
-    local topBar = ui("ui.hud.TopBar")
-    topBar.setTotalPower = noop
-    local bottomNav = ui("ui.hud.BottomNav")
-    bottomNav.setSelectedIndex = noop
-    local battle = ui("ui.battle.scene.BattleScene", { "setOnEnemyKill", "setOnEnemyDrop", "setOnAllDead",
+    -- 测试初始数据均已存在，不应触发真实分发器向模块注册表写入。
+    ui("ui.hud.TopBar")
+    inject("ui.hud.TopBar", { setTotalPower = noop })
+    ui("ui.hud.BottomNav")
+    inject("ui.hud.BottomNav", { setSelectedIndex = noop })
+    ui("ui.battle.scene.BattleScene", { "setOnEnemyKill", "setOnEnemyDrop", "setOnAllDead",
         "setOnStageLoaded", "setOnReincarnate", "setOnFirstClear" })
-    battle.getCurrentStageId = function() return 1 end
-    battle.getMaxStageId = function() return h.maxStageId end
-    battle.refreshAllyStats = noop
-    local character = ui("ui.character.panel.CharacterPanel", { "setOnTeamChanged" })
-    character.getTotalPower = function() return 0 end
+    inject("ui.battle.scene.BattleScene", {
+        getCurrentStageId = function() return 1 end,
+        getMaxStageId = function() return h.maxStageId end,
+        refreshAllyStats = noop,
+    })
+    ui("ui.character.panel.CharacterPanel", { "setOnTeamChanged" })
+    inject("ui.character.panel.CharacterPanel", { getTotalPower = function() return 0 end })
     ui("ui.battle.tri.BattleTriPage", { "setOnKill" })
     ui("ui.town.TownScene", { "setOnSmithClick", "setOnChurchClick", "setOnTreeClick",
         "setOnTavernClick", "setOnMarketClick", "setOnWarehouseClick", "setOnLootBoxClick" })
@@ -845,27 +858,27 @@ local function withBoot(bagCount, body)
         "ui.story.gate.IntroCutscene", "ui.story.task.TaskPanel", "ui.story.task.SignInPanel", "ui.backpack.BackpackPanel" }) do
         ui(name)
     end
-    local popup = ui("ui.hud.popup.RewardPopup")
-    popup.show = function(title, rewards, options)
+    ui("ui.hud.popup.RewardPopup")
+    inject("ui.hud.popup.RewardPopup", { show = function(title, rewards, options)
         h.popups[#h.popups + 1] = { title = title, rewards = copy(rewards), options = copy(options or {}) }
-    end
-    local lootUI = ui("ui.loot.LootBox", { "setOnClaimAll", "setOnClaimOne", "setOnDecomposeAll",
+    end })
+    ui("ui.loot.LootBox", { "setOnClaimAll", "setOnClaimOne", "setOnDecomposeAll",
         "setOnDecomposeOne", "setOnAutoDecompose" })
-    lootUI.updateSeedData = noop
-    lootUI.refreshPage = noop
-    lootUI.addSeedHint = function(quality, level)
-        h.hints[#h.hints + 1] = { quality = quality, level = level }
-    end
-    local lootPage = ui("ui.loot.LootBoxPage")
-    lootPage.getLastClickPos = function() return 0, 0 end
-    lootPage.showToast = function(text) h.toasts[#h.toasts + 1] = text end
-    local combat = ui("ui.battle.combat.BattleCombat")
-    combat.addFloatingText = noop
-    local info = ui("ui.hud.popup.PlayerInfoPanel")
-    info.setUID = noop
-    inject("client.data.PlayerStore", { Subscribe = noop })
+    inject("ui.loot.LootBox", {
+        updateSeedData = noop,
+        refreshPage = noop,
+        addSeedHint = function(quality, level)
+            h.hints[#h.hints + 1] = { quality = quality, level = level }
+        end,
+    })
+    ui("ui.loot.LootBoxPage")
+    inject("ui.loot.LootBoxPage", {
+        showToast = function(text) h.toasts[#h.toasts + 1] = text end,
+    })
+    ui("ui.hud.popup.PlayerInfoPanel")
+    inject("ui.hud.popup.PlayerInfoPanel", { setUID = noop })
+    inject("core.PlayerStore", { Subscribe = noop })
     inject("runtime.LocalActionBridge", { init = noop })
-    inject("boot.StandaloneBoot", nil)
 
     -- 禁止昵称分支访问云端与账号接口。
     local oldCloud, oldLobby = rawget(_G, "clientCloud"), rawget(_G, "lobby")
@@ -875,8 +888,7 @@ local function withBoot(bagCount, body)
     rawset(_G, "lobby", false)
     rawset(_G, "GetUserNickname", function() error("test must not call account APIs") end)
     local ok, err = pcall(function()
-        local Boot = require("boot.StandaloneBoot")
-        Boot.run({
+        boot.run({
             localSendAction = function() error("test must not dispatch external actions") end,
             setLocalBridgeReady = function() h.bridgeReady = true end,
         })
@@ -890,7 +902,7 @@ local function withBoot(bagCount, body)
     rawset(_G, "GetUserNickname", oldNickname)
     for index = #patches, 1, -1 do
         local patch = patches[index]
-        package.loaded[patch.name] = patch.previous
+        patch.target[patch.key] = patch.previous
     end
     assert(ok, tostring(err))
 end

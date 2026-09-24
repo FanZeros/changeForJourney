@@ -76,24 +76,31 @@ end
 
 local function mapLayout()
     local pageW = M.getPageWidth()
-    -- 视口尽量跟页面同宽，形成 1:1。底部给重置按钮留空。
-    local reserveBottom = 200
-    local h = math.min(pageW, DESIGN_H - reserveBottom)
-    local top = math.floor((DESIGN_H - h) * 0.5)
-    if top < 48 then top = 48 end
-    if top + h + reserveBottom > DESIGN_H then
-        h = DESIGN_H - top - reserveBottom
-    end
+    -- 星图铺满整页古树，顶栏按钮叠在星图上
     return {
-        top = top,
-        h = h,
-        glowCY = top + 90,
-        ptCY = top + 62,
-        lblCY = top + 146,
-        infoY = top + 70,
-        rstCY = top + h + 80,
-        slCY = top + h * 0.5,
+        top = 0,
+        h = DESIGN_H,
+        pageW = pageW,
+        glowCY = 220,
+        ptCY = 196,
+        lblCY = 270,
+        slCY = DESIGN_H * 0.5,
     }
+end
+
+local function resetBox()
+    local pageW = M.getPageWidth()
+    local w, h = 228, 76
+    local marginR, cy = 40, 148
+    local cx = pageW - marginR - w * 0.5
+    return cx, cy, w, h
+end
+
+local function infoBox()
+    local rcx, rcy, rw = resetBox()
+    local s = 72
+    local cx = rcx - rw * 0.5 - 16 - s * 0.5
+    return cx, rcy, s, s
 end
 
 -- ======================== 天赋详情面板布局常量 ========================
@@ -368,31 +375,31 @@ function M.drawContent(vg)
     nvgText(vg, midX(TF.lblCX), map.lblCY, "远征点", nil)
 
     -- 5.5 效果总览感叹号（右上角）
-    local infoX = infoCX()
-    local _bfInfo = BF.begin(vg, "ctp_overview_info", infoX, map.infoY, TF.infoBtnW, TF.infoBtnH)
+    local infoX, infoY, infoS = infoBox()
+    local _bfInfo = BF.begin(vg, "ctp_overview_info", infoX, infoY, infoS, infoS)
     if img.tfInfoIcon and img.tfInfoIcon >= 0 then
-        drawImageCentered(vg, img.tfInfoIcon, infoX, map.infoY, TF.infoIconW, TF.infoIconH, 1.0)
+        drawImageCentered(vg, img.tfInfoIcon, infoX, infoY, TF.infoIconW, TF.infoIconH, 1.0)
     else
-        drawTextStroke(vg, infoX, map.infoY, "!",
+        drawTextStroke(vg, infoX, infoY, "!",
             44, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
     end
     BF.finish(vg, _bfInfo)
 
-    -- 6. 重置按钮 [暗黑化 P1-B3] 矢量按钮（绿色）
-    local _bf1 = BF.begin(vg, "ctp_reset", TF.rstCX, map.rstCY, TF.rstW, TF.rstH)
+    -- 6. 重置按钮：右上角，暖金底配深褐字，贴古树金线
+    local rstX, rstY, rstW, rstH = resetBox()
+    local _bf1 = BF.begin(vg, "ctp_reset", rstX, rstY, rstW, rstH)
     DarkIcon.drawNine(vg, "btn",
-        TF.rstCX - TF.rstW * 0.5,
-        map.rstCY - TF.rstH * 0.5,
-        TF.rstW, TF.rstH,
-        { accent = "green" })
+        rstX - rstW * 0.5,
+        rstY - rstH * 0.5,
+        rstW, rstH,
+        { accent = "gold" })
 
-    -- 7. "重置"文字 (居中于按钮, #1d5037)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, TF.rstFont)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x1d, 0x50, 0x37, 255))
-    nvgText(vg, TF.rstCX, map.rstCY, "重置", nil)
+    nvgFillColor(vg, nvgRGBA(0x3a, 0x24, 0x0c, 255))
+    nvgText(vg, rstX, rstY, "重置", nil)
     BF.finish(vg, _bf1)
 
     -- 8. 缩放滑块背景 (黑色30%透明, 圆角18)
@@ -714,7 +721,7 @@ function M.handleTabInput(dx, dy)
     if state.tab and state.tab ~= "tianfu" then return false end
 
     -- 效果总览按钮
-    if hitTest(dx, dy, infoCX(), mapLayout().infoY, TF.infoBtnW, TF.infoBtnH) then
+    if hitTest(dx, dy, infoBox()) then
         BF.trigger("ctp_overview_info")
         openOverview()
         return true
@@ -722,7 +729,7 @@ function M.handleTabInput(dx, dy)
 
     -- 重置按钮
     local map = mapLayout()
-    if hitTest(dx, dy, TF.rstCX, map.rstCY, TF.rstW, TF.rstH) then
+    if hitTest(dx, dy, resetBox()) then
         BF.trigger("ctp_reset")
         print("[ChurchTalentPanel] 天赋重置按钮点击")
         -- 重置天赋：发送请求，服务端会清空并推送更新
@@ -770,6 +777,10 @@ function M.handleDragBegin(dx, dy)
     end
     -- 详情面板打开时不允许拖拽星图
     if state.tfDetailOpen then return true end
+
+    if hitTest(dx, dy, resetBox()) or hitTest(dx, dy, infoBox()) then
+        return true
+    end
 
     -- 缩放滑块
     local map = mapLayout()

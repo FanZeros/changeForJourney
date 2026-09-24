@@ -20,6 +20,13 @@ electron-shell/
 - CSS 隐藏 fab + MutationObserver 移除 eruda
 - WebSocket shim：登录服改连 `ws://127.0.0.1:1/` → skipping login
 
+## PC 发行包代码保护现状（2026-09-24 审核）
+
+- 现有流程是 Maker Build → `dist/` → `pack_release.py:sync_dist()` 原样复制到 `electron-shell/game/` → `electron-builder` 将 `game/` 放入 `extraResources`。目前**没有 Lua 混淆/加密步骤**；`app.asar` 只封装 Electron 壳的 `main.js`，不保护 `extraResources/game/assets`。
+- 实测 `dist/1.0.7` 的 `main.lua`、`boot/Standalone.lua` 对应资源文件头是 Lua 源码，不是 Lua 字节码。UUID 文件名和 zip 压缩并不能阻止玩家恢复源码；Release `dist-snapshot` 上传的是同一份未混淆 `dist/`。
+- **可以评估混淆，但不要直接对 `dist/assets/*.lua` 做文本替换**：manifest 记录文件 hash/size，可能还有变体与引用关系；直接替换会破坏资源加载/校验。更安全的试验路线是在 Maker Build 前，对独立发布用副本的 Lua 做**保守混淆**，保留资源文件名、模块名、`require` 字符串和对外 API，运行 LSP、官方 Build 与启动/存档回归后再接入打包脚本。Lua 5.4 字节码仅在确认当前运行时和构建器均支持加载、且与目标平台版本一致时才考虑；它也不等于不可逆加密。
+- 如需求是**真正保密**，客户端运行的逻辑无法可靠隐藏，应把敏感规则/密钥移到可信服务端；本游戏当前是离线单机，不能把联网服务当成透明替换。未验证前不要对已有公开 Release/快照或正式 TapTap PC 版本执行替换上传。
+
 ## 一键脚本（推荐，本机跑）
 
 云端代理传 ~466MB zip 会被超时掐断，**打包和上传请在本机直连 GitHub**。

@@ -975,15 +975,16 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
         cfg = setmetatable({ hitRatio = ratio }, { __index = cfg })
     end
 
-    -- [治疗抛物线] 治疗弹统一改为贝塞尔轨迹；不继承 melee 的 hitRatio，保持落点时结算
-    if opts and opts.forceBezier and cfg.type ~= "bezier" then
+    -- [治疗抛物线] 治疗弹一律向上抛物线，已是贝塞尔的也改成治疗弧
+    if opts and opts.forceBezier then
         cfg = {
             type     = "bezier",
             imgKey   = cfg.imgKey,
             imgW     = cfg.imgW,
             imgH     = cfg.imgH,
-            duration = cfg.duration or 0.5,
+            duration = cfg.duration or 0.55,
             trail    = cfg.trail,
+            rotate   = cfg.rotate,
             arc      = "heal",
         }
     end
@@ -1031,15 +1032,16 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
         cfg = setmetatable({ hitRatio = ratio }, { __index = cfg })
     end
 
-    -- [治疗抛物线] 治疗弹统一改为贝塞尔轨迹；不继承 melee 的 hitRatio，保持落点时结算
-    if opts and opts.forceBezier and cfg.type ~= "bezier" then
+    -- [治疗抛物线] 治疗弹一律向上抛物线，已是贝塞尔的也改成治疗弧
+    if opts and opts.forceBezier then
         cfg = {
             type     = "bezier",
             imgKey   = cfg.imgKey,
             imgW     = cfg.imgW,
             imgH     = cfg.imgH,
-            duration = cfg.duration or 0.5,
+            duration = cfg.duration or 0.55,
             trail    = cfg.trail,
+            rotate   = cfg.rotate,
             arc      = "heal",
         }
     end

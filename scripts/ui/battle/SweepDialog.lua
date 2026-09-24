@@ -410,12 +410,7 @@ function SweepDialog.draw(vg)
     local scale = getAnimScale()
     if scale <= 0.01 then return end
 
-    -- 1) 全屏黑色遮罩 50%
-    local ovlAlpha = math.floor(D.OVL_A * math.min(scale * 2, 1.0))
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, ovlAlpha))
-    nvgFill(vg)
+    -- 不再铺全屏灰色遮罩
 
     -- 弹窗内容以 BG_CX/BG_CY 为中心缩放
     nvgSave(vg)

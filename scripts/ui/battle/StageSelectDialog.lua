@@ -307,12 +307,7 @@ function StageSelectDialog.draw(vg)
     local sel = selectedGroup(groups)
     if not sel then return end
 
-    local ovlAlpha = math.floor(D.OVL_A * math.min(scale * 2, 1.0))
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, ovlAlpha))
-    nvgFill(vg)
-
+    -- 不再铺全屏灰色遮罩
     nvgSave(vg)
     nvgTranslate(vg, D.BG_CX, D.BG_CY)
     nvgScale(vg, scale, scale)

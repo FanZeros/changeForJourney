@@ -11,6 +11,7 @@ local BottomNav         = require("ui.BottomNav")
 local BattleScene       = require("ui.BattleScene")
 local CharacterPanel    = require("ui.CharacterPanel")
 local DebugPanel        = require("ui.DebugPanel")
+local CEPanel           = require("ui.CEPanel")
 local HeroRosterPanel   = require("ui.HeroRosterPanel")
 local RewardPopup       = require("ui.RewardPopup")
 local TownScene         = require("ui.TownScene")
@@ -60,6 +61,18 @@ local function applyFrame()
     local frameScale = RT.frameScale or 1
     if frameScale <= 0 then frameScale = 1 end
     nvgScale(vg(), frameScale, frameScale)
+end
+
+--- CE 面板画在帧变换后的逻辑坐标里，避免被面板 viewport 带走。
+local function finishFrame()
+    nvgSave(vg())
+    nvgResetTransform(vg())
+    applyFrame()
+    nvgResetScissor(vg())
+    nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    CEPanel.draw(vg(), logicalW(), logicalH())
+    nvgRestore(vg())
+    nvgEndFrame(vg())
 end
 
 local function toDesign(sx, sy)
@@ -314,7 +327,7 @@ function HandleNanoVGRenderHorizon()
             StartScreen.draw(vg())
             nvgRestore(vg())
         end
-        nvgEndFrame(vg())
+        finishFrame()
         return
     end
 
@@ -333,7 +346,7 @@ function HandleNanoVGRenderHorizon()
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg(), logicalW(), logicalH())
         end
-        nvgEndFrame(vg())
+        finishFrame()
         return
     end
 
@@ -391,7 +404,7 @@ function HandleNanoVGRenderHorizon()
         if RT.preload_.active then
             RT.DrawPreloadOverlay(vg(), logicalW(), logicalH())
         end
-        nvgEndFrame(vg())
+        finishFrame()
         return
     end
 
@@ -459,7 +472,7 @@ function HandleNanoVGRenderHorizon()
     if towerBattleOpen then
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
         KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
-        nvgEndFrame(vg())
+        finishFrame()
         return
     end
 
@@ -532,7 +545,7 @@ function HandleNanoVGRenderHorizon()
         -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
         HorizonDrawIntroOverlay()
         KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
-        nvgEndFrame(vg())
+        finishFrame()
         return
     end
 
@@ -580,7 +593,7 @@ function HandleNanoVGRenderHorizon()
     UiToast.draw(vg(), logicalW(), logicalH())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
 
-    nvgEndFrame(vg())
+    finishFrame()
 end
 
 -- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态是否激活（全屏弹窗打开时让位）
@@ -673,6 +686,13 @@ local function HorizonResolveMouse()
 end
 
 function HandleMouseButtonDownHorizon(eventType, eventData)
+    if vg() then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        if CEPanel.handleDown(sx, sy, logicalH()) then
+            return
+        end
+    end
     if not bootReady_() then return end
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
     if DarkTitleScreen.isOpen() then return end
@@ -811,6 +831,13 @@ function HandleMouseMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseButtonUpHorizon(eventType, eventData)
+    if vg() then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        if CEPanel.handleUp(sx, sy, logicalH()) then
+            return
+        end
+    end
     local button = eventData["Button"]:GetInt()
     local wasLootPress = lootPress
     if button == MOUSEB_LEFT then
@@ -1068,6 +1095,8 @@ function HandleMouseWheelHorizon(eventType, eventData)
     local mousePos = input:GetMousePosition()
     local sx = mousePos.x / dpr()
     local sy = mousePos.y / dpr()
+    local csx, csy = toDesign(sx, sy)
+    if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
 
     -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
     if TalentPage.isOpen() then

@@ -730,6 +730,17 @@ function M.draw(vg)
                 nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
                 nvgFill(vg)
             end
+        else
+            -- 空槽：槽位图本身偏浅，再压一层更深的暗影
+            local inset = 16
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg,
+                slot.cx - DT_SLOT_SIZE * 0.5 + inset,
+                slot.cy - DT_SLOT_SIZE * 0.5 + inset,
+                DT_SLOT_SIZE - inset * 2,
+                DT_SLOT_SIZE - inset * 2, 18)
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 130))
+            nvgFill(vg)
         end
 
         -- ICON_UP 可提升角标（使用缓存，避免每帧遍历全背包）
@@ -830,20 +841,24 @@ function M.draw(vg)
         drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
     end
 
-    -- === 7) "角色详情" 标题 ===
-    if detailState.tab ~= "equip" then
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 30)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        local titleSW = 4
-        nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 255))
-        for i = 0, 15 do
-            local a = i * stepAngle
-            nvgText(vg, MID_TITLE_CX + math.cos(a) * titleSW, MID_TITLE_CY + math.sin(a) * titleSW, I18n.t("hero_detail"), nil)
-        end
-        nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
-        nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, I18n.t("hero_detail"), nil)
+    -- === 7) 标题：属性页「角色详情」，配装页显示当前部位名 ===
+    local titleText = I18n.t("hero_detail")
+    if detailState.tab == "equip" then
+        local slotKey = "slot_" .. tostring(detailState.equipSlot or "weapon")
+        local slotName = I18n.t(slotKey)
+        titleText = (slotName ~= slotKey) and slotName or "主武器"
     end
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 30)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    local titleSW = 4
+    nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 255))
+    for i = 0, 15 do
+        local a = i * stepAngle
+        nvgText(vg, MID_TITLE_CX + math.cos(a) * titleSW, MID_TITLE_CY + math.sin(a) * titleSW, titleText, nil)
+    end
+    nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
+    nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, titleText, nil)
     end  -- if not isAwakenTab（6b~7 节）
 
     -- === 动态内容开始（箭头切换时水平滑入+淡入） ===

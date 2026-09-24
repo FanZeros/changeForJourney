@@ -224,10 +224,8 @@ function LootBox.handleInput(dx, dy)
     -- 触发抖动（无论有无物品）
     shakeTimer = SHAKE_DURATION
 
-    -- 箱子为空时仅抖动，不打开页面
-    if seedCount == 0 then return true end
-
-    -- 打开全屏战利品管理页面
+    -- 空箱也打开管理页，避免“点了只抖一下”被当成没反应
+    print(string.format("[LootBox] tap box seedCount=%d", seedCount))
     LootBoxPage.show(seedSummary)
     return true
 end
@@ -292,10 +290,10 @@ function LootBox.draw(vg)
     -- 1. 箱子图标（带抖动）
     drawImageCentered(vg, imgBox, BOX_CX + offsetX, BOX_CY, BOX_SIZE, BOX_SIZE, 1.0)
 
-    -- 2. "战利品" 文本（带抖动）+ 件数
-    local label = "战利品"
+    -- 2. 遗匣文本（带抖动）+ 件数
+    local label = "遗匣"
     if seedCount > 0 then
-        label = "战利品(" .. seedCount .. ")"
+        label = "遗匣(" .. seedCount .. ")"
     end
     drawTextStroke(vg, TEXT_X + offsetX, TEXT_Y, label, TEXT_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, TEXT_STROKE)

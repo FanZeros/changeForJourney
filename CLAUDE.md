@@ -67,7 +67,7 @@
 
 ## likely_next_task
 
-- 本轮失焦挂机调研结论：`docs/memory-index.md` 置顶条目。当前未修改挂机玩法；下一步优先确认目标是 Electron Windows 后台运行，还是网页/移动端隐藏后的可靠补算。前者可试 `electron-shell/main.js` 的 `webPreferences.backgroundThrottling=false`；后者必须按墙上时间补算，不能依赖隐藏页 `Update` 连续运行。当前离线奖励 `scripts/boot/Standalone.lua:450` 使用固定演示值，`StandaloneSave` 的 `savedAt` 只记录不结算。禁止把固定示例收益作为真正离线奖励。
+- 桌面试点已获用户确认并在 `electron-shell/main.js:145` 设置 `webPreferences.backgroundThrottling=false`，仅作用于 Windows Electron 包；Lua 战斗和网页预览玩法未改。`node --check`、模拟创建 BrowserWindow 断言、Lua LSP 0 Error、官方 build 均通过；本沙箱无 Electron/虚拟显示器/Wine，**未实测 Windows 失焦、最小化后的持续战斗及存档**。下一步建议用户在本地重打 Electron 包并对比三队金币/经验/掉落及最小化 CPU；系统休眠/退出仍需离线补算，不能声称已解决。
 - 本轮预览：官方 build 以 `/workspace` 为项目根，已将克隆仓库的 scripts/assets/配置同步到该根后重建 `/workspace/dist`；首次对嵌套 scriptsPath 的空壳 build 不可用。LSP 0 Error，真实资源包约 378 MB；尚未实机验证失焦挂机。
 - 后续每次交付先核对当前授权分支，完成后只 push `feature/background-idle-924`，并必须通过 AskUserQuestion 选项询问下一步，禁止仅文字收尾。
 

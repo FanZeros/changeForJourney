@@ -319,12 +319,7 @@ function DamageStatsPanel.draw(vg)
     local scale = getAnimScale()
     if scale <= 0.01 then return end
 
-    -- 1) 全屏遮罩
-    local ovlAlpha = math.floor(D.OVL_A * math.min(scale * 2, 1.0))
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, ovlAlpha))
-    nvgFill(vg)
+    -- 不再铺全屏灰色遮罩
 
     -- 2) 缩放变换
     nvgSave(vg)

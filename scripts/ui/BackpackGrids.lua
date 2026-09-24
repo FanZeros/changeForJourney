@@ -74,7 +74,7 @@ function M.bind(deps)
 
     local function drawEquipGrid(vg)
         local equipList = getEquipList()
-        local totalSlots = math.max(#equipList, 10)
+        local totalSlots = math.max(#equipList, 35)
         state.scrollMax = calcScrollMax(totalSlots)
         clampScroll()
 

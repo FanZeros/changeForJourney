@@ -44,6 +44,7 @@ local detState = {
     openTime  = 0,
     closeTime = 0,
     compactCorner = false, -- 配装页单击：右栏左上角小窗，无阴影
+    owner = nil,           -- backpack | character | bag | smith，只在打开它的那一侧画
     -- 关闭动画快照（close() 时冻结，防止 server 推送导致面板内容跳变）
     snapshot  = nil,    -- { newEquip, isEquipped, curEquip, hasCurrent, btnText, powerDiff }
 }
@@ -377,22 +378,22 @@ end
 
 -- 面板背景
 local REF_BG_CX  = 805
-local REF_BG_CY  = 1072
-local REF_BG_W   = 530
-local REF_BG_H   = 1015
+local REF_BG_CY  = 1120
+local REF_BG_W   = 860
+local REF_BG_H   = 1380
 
 -- 装备名称（左对齐）
-local REF_NAME_X = 578    -- 左对齐基准
+local REF_NAME_X = 470    -- 左对齐基准
 local REF_NAME_Y = 625
 local REF_NAME_FONT = 40
 
 -- 装备类型
-local REF_TYPE_X = 578
+local REF_TYPE_X = 470
 local REF_TYPE_Y = 706
 local REF_TYPE_FONT = 30
 
 -- 品质文本
-local REF_QUALITY_X = 578
+local REF_QUALITY_X = 470
 local REF_QUALITY_Y = 861
 local REF_QUALITY_FONT = 30
 
@@ -425,16 +426,16 @@ local REF_LV_FONT   = 30
 -- 基础属性栏
 local REF_STAT_BG_CX  = 805
 local REF_STAT_BG_Y0  = 1007   -- 第一行中心Y
-local REF_STAT_BG_W   = 460
+local REF_STAT_BG_W   = 740
 local REF_STAT_BG_H   = 60
 local REF_STAT_BG_RAD = 14
 local REF_STAT_GAP    = 12     -- 多条属性间距
-local REF_STAT_TEXT_X  = 595   -- 左对齐
-local REF_STAT_VAL_X   = 1016  -- 右对齐
+local REF_STAT_TEXT_X  = 470   -- 左对齐
+local REF_STAT_VAL_X   = 1148  -- 右对齐
 local REF_STAT_FONT   = 34
 
 -- 随机属性标题
-local REF_AFFIX_TITLE_X = 578
+local REF_AFFIX_TITLE_X = 470
 local REF_AFFIX_TITLE_Y = 1206
 local REF_AFFIX_TITLE_FONT = 30
 
@@ -690,16 +691,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
         for i, s in ipairs(equip.baseStats) do
             local statCY = REF_STAT_BG_Y0 + (i - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
 
-            -- 11) 属性背景 - X805 460*60 纯黑10% 圆角14
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg,
-                REF_STAT_BG_CX + offsetX - REF_STAT_BG_W * 0.5,
-                statCY - REF_STAT_BG_H * 0.5,
-                REF_STAT_BG_W, REF_STAT_BG_H, REF_STAT_BG_RAD)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 25))  -- 10% 不透明度
-            nvgFill(vg)
-
-            -- 12) 属性名 - 左对齐 X595 字号34 颜色725850
+            -- 11) 属性行：不要底色阴影，只留文字
             local sName = getStatName(s[1])
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, REF_STAT_FONT)
@@ -749,16 +741,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             local badgeKey = AFFIX_BADGE_KEY[aq] or "D"
             local badgeImg = imgAffixBadge[badgeKey] or -1
 
-            -- 背景框（与基础属性相同：460*60 黑10% 圆角14）
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg,
-                REF_STAT_BG_CX + offsetX - REF_STAT_BG_W * 0.5,
-                affixY - REF_AFFIX_ROW_H * 0.5,
-                REF_STAT_BG_W, REF_AFFIX_ROW_H, REF_STAT_BG_RAD)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 25))  -- 10%不透明度
-            nvgFill(vg)
-
-            -- 17) 品质标识徽章 / 魔化紫色圆标
+            -- 词缀行不铺底色阴影
             if isCorrupt then
                 local r = math.min(REF_BADGE_W, REF_BADGE_H) * 0.28
                 nvgBeginPath(vg)
@@ -900,7 +883,7 @@ end
 ---@param seq string|number 装备序列号
 ---@param slot string 槽位
 ---@param heroId number 角色ID
-function EquipmentDetail.open(seq, slot, heroId, compactCorner)
+function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner)
     detState.open      = true
     detState.closing   = false
     detState.equipSeq  = tostring(seq)
@@ -908,8 +891,10 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner)
     detState.heroId    = heroId
     detState.openTime  = time.elapsedTime
     detState.compactCorner = compactCorner == true
+    detState.owner = owner or (compactCorner and "character" or "bag")
     print("[EquipmentDetail] open seq=" .. tostring(seq) .. " slot=" .. tostring(slot)
-        .. " heroId=" .. tostring(heroId) .. " compact=" .. tostring(detState.compactCorner))
+        .. " heroId=" .. tostring(heroId) .. " compact=" .. tostring(detState.compactCorner)
+        .. " owner=" .. tostring(detState.owner))
 end
 
 --- 关闭（冻结当前面板内容用于关闭动画）
@@ -1213,8 +1198,7 @@ function EquipmentDetail.handleInput(dx, dy)
             inPanel = true
         end
     elseif hasCurrent then
-        if hitTest(dx, dy, CUR_BG_CX, CUR_BG_CY, CUR_BG_W, CUR_BG_H)
-           or hitTest(dx, dy, REF_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H) then
+        if hitTest(dx, dy, SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H) then
             inPanel = true
         end
     else
@@ -1265,7 +1249,6 @@ function EquipmentDetail.draw(vg)
     end
 
     slideOY = SLIDE_DIST * (1 - progress)
-    local overlayAlpha = math.floor(120 * progress)
 
     -- 获取渲染数据：关闭动画期间使用快照，避免 server 推送导致面板内容跳变
     local newEquip, isEquipped, curEquip, hasCurrent, powerDiff, btnText
@@ -1295,13 +1278,7 @@ function EquipmentDetail.draw(vg)
     if not newEquip then return end
 
     local compact = detState.compactCorner == true
-    if not compact then
-        -- 半透明遮罩
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, overlayAlpha))
-        nvgFill(vg)
-    end
+    -- 说明栏不铺全屏黑影
 
     -- 应用滑入偏移（小窗不滑入，贴右栏左上角并缩小）
     nvgSave(vg)
@@ -1325,38 +1302,19 @@ function EquipmentDetail.draw(vg)
         return
     end
 
-    if hasCurrent then
-        -- ===== 双面板布局（有对比装备） =====
-        local curOffsetX = CUR_BG_CX - REF_BG_CX
-
-        drawEquipPanel(vg, curEquip, curOffsetX,
-            CUR_BG_CX, CUR_BG_CY, CUR_BG_W, CUR_BG_H,
-            nil, false, "", false)
-
-        -- 点击的是背包未穿戴装备，未锁定时显示「立即分解」
-        local showDecompose = (not newEquip.locked)
-        drawEquipPanel(vg, newEquip, 0,
-            REF_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
-            powerDiff, true, btnText, enhOnly, true, showDecompose)
-    elseif isEquipped then
-        -- ===== 单面板布局（已穿戴） =====
-        local singleOffsetX = SINGLE_BG_CX - REF_BG_CX
-
-        drawEquipPanel(vg, newEquip, singleOffsetX,
-            SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
-            nil, true, btnText, enhOnly, true)
-    else
-        -- ===== 单面板布局（未穿戴） =====
-        local singleOffsetX = SINGLE_BG_CX - REF_BG_CX
-
-        -- 未穿戴且未锁定时，显示「立即分解」按钮
-        local showDecompose = (not newEquip.locked)
-        drawEquipPanel(vg, newEquip, singleOffsetX,
-            SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
-            nil, true, btnText, enhOnly, true, showDecompose)
-    end
+    -- 只画被点开的这一件，不再左右各铺一份完整说明
+    local singleOffsetX = SINGLE_BG_CX - REF_BG_CX
+    local showDecompose = (not isEquipped) and (not newEquip.locked)
+    drawEquipPanel(vg, newEquip, singleOffsetX,
+        SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
+        (hasCurrent and powerDiff or nil), true, btnText, enhOnly, true, showDecompose)
 
     nvgRestore(vg)
+end
+
+function EquipmentDetail.drawIf(vg, owner)
+    if owner and detState.owner and detState.owner ~= owner then return end
+    EquipmentDetail.draw(vg)
 end
 
 --- 处理 action 结果：当「立即分解」由本面板发起时，弹出分解奖励

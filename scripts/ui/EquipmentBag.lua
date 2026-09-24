@@ -713,7 +713,7 @@ function EquipmentBag.handleInput(dx, dy)
             bagState.onSelect(entry.seq, entry.equip)
             EquipmentBag.close()
         else
-            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId)
+            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, false, "bag")
         end
         return true
     end
@@ -1178,10 +1178,10 @@ function EquipmentBag.draw(vg, opts)
         nvgTranslate(vg, R.x + R.w * 0.5 - DESIGN_W * fit * 0.5,
                          R.y + R.h * 0.5 - DESIGN_H * fit * 0.5)
         nvgScale(vg, fit, fit)
-        EquipmentDetail.draw(vg)
+        EquipmentDetail.drawIf(vg, "bag")
         nvgRestore(vg)
     else
-        EquipmentDetail.draw(vg)
+        EquipmentDetail.drawIf(vg, "bag")
     end
 end
 

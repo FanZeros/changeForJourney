@@ -287,7 +287,7 @@ function M.bind(deps)
 
     -- 装备详情面板（最顶层，长按触发）
     if state.tab == "fenjie" then
-        EquipmentDetail.draw(vg)
+        EquipmentDetail.drawIf(vg, "smith")
     end
 
     -- 一键强化确认弹窗（强化 tab，最顶层）

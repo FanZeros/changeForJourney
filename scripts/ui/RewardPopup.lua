@@ -74,15 +74,16 @@ local PANEL_W,  PANEL_H  = 1080, 685
 local TITLE_CX, TITLE_CY = 540, 996
 local TITLE_FONT = 40
 
--- 奖励图标区域
-local GRID_CX, GRID_CY = 540, 1258
-local GRID_W,  GRID_H  = 938, 424
-
--- 图标尺寸与间距
+-- 奖励图标区域：只露两行，超出部分上滚，不能画出面板
 local ICON_SIZE = 160
 local ROW_GAP   = 20
 local COL_GAP   = 34
 local COLS      = 5
+local VISIBLE_ROWS = 2
+local GRID_CX = 540
+local GRID_H = VISIBLE_ROWS * ICON_SIZE + (VISIBLE_ROWS - 1) * ROW_GAP
+local GRID_CY = 1228
+local GRID_W = 938
 
 -- 裁剪区域（基于图标区域）
 local CLIP_LEFT   = GRID_CX - GRID_W * 0.5
@@ -126,6 +127,7 @@ local state = {
     dragging  = false,
     dragLastY = 0,
     scrollVel = 0,
+    followScroll = true,
     -- 动画状态
     animPhase  = "none",  -- "none"|"opening"|"open"|"closing"
     animStart  = 0,       -- 动画开始时刻（time.elapsedTime）
@@ -228,8 +230,11 @@ local function skipCascade()
     if not state.cascade or cascadeFinished() then return false end
     state.revealStart = time.elapsedTime - (#state.items * CASCADE_INTERVAL + CASCADE_POP_DUR)
     state.sfxPlayed = #state.items
-    state.scrollY = 0
-    print("[RewardPopup] cascade skipped, items=" .. tostring(#state.items))
+    state.followScroll = true
+    state.scrollY = state.scrollMax
+    if state.scrollY < 0 then state.scrollY = 0 end
+    print("[RewardPopup] cascade skipped, items=" .. tostring(#state.items)
+        .. " scroll=" .. tostring(state.scrollY))
     GameSFX.play("level_up")
     return true
 end
@@ -451,19 +456,21 @@ local function getCellCenter(row, col)
 end
 
 local function syncCascadeScroll()
-    if not state.cascade or state.dragging then return end
+    if not state.cascade or state.dragging or not state.followScroll then return end
     local elapsed = cascadeElapsed() + 0.04
     if elapsed < 0 then return end
     local shown = math.min(#state.items, math.floor(elapsed / CASCADE_INTERVAL) + 1)
-    if shown < 1 then return end
+    if shown <= VISIBLE_ROWS * COLS then
+        state.scrollY = 0
+        return
+    end
     local row = math.ceil(shown / COLS)
     local _, rawCY = getCellCenter(row, 1)
     local bottom = rawCY + ICON_SIZE * 0.5
-    if bottom > CLIP_BOTTOM + state.scrollY - 6 then
-        state.scrollY = bottom - CLIP_BOTTOM + 20
-        clampScroll()
-        state.scrollVel = 0
-    end
+    -- 第三行及以后自动上滚，新图标底边贴住两行窗口
+    state.scrollY = bottom - CLIP_BOTTOM
+    clampScroll()
+    state.scrollVel = 0
 end
 
 -- ======================== Public API ========================
@@ -489,6 +496,7 @@ function RewardPopup.show(title, rewards, opts)
     state.scrollMax = 0
     state.dragging = false
     state.scrollVel = 0
+    state.followScroll = true
     state.onItemClick = opts and opts.onItemClick or nil
     state.onClose     = opts and opts.onClose     or nil
 
@@ -574,6 +582,8 @@ function RewardPopup.show(title, rewards, opts)
     state.revealStart = time.elapsedTime + CASCADE_LEAD
     state.sfxPlayed = 0
     print("[RewardPopup] show: " .. title .. ", items=" .. #state.items
+        .. ", rows=" .. tostring(math.ceil(#state.items / COLS))
+        .. ", scrollMax=" .. tostring(state.scrollMax)
         .. ", cascade=" .. tostring(state.cascade))
     if state.cascade then
         print(string.format("[RewardPopup] cascade start lead=%.2f interval=%.2f pop=%.2f",
@@ -664,6 +674,15 @@ function RewardPopup.update(dt)
             playObtainSfx(item)
         end
         syncCascadeScroll()
+    elseif state.followScroll and not state.dragging and state.scrollMax > 0 then
+        -- 一次性展示超过两行时，自动上滚到末行，避免图标停在窗口外
+        local delta = state.scrollMax - state.scrollY
+        if math.abs(delta) > 0.5 then
+            state.scrollY = state.scrollY + delta * math.min(1, dt * 5)
+            clampScroll()
+        else
+            state.scrollY = state.scrollMax
+        end
     end
 
     -- 惯性滚动
@@ -766,6 +785,7 @@ function RewardPopup.handleDragBegin(dx, dy)
         state.dragging  = true
         state.dragLastY = dy
         state.scrollVel = 0
+        state.followScroll = false
     end
 
     return true
@@ -818,6 +838,7 @@ end
 function RewardPopup.handleScroll(wheel)
     if not state.open then return end
     state.scrollY = state.scrollY - wheel * 60
+    state.followScroll = false
     clampScroll()
     state.scrollVel = 0
 end
@@ -926,19 +947,8 @@ function RewardPopup.drawContent(vg)
     local totalRows = math.ceil(math.max(#items, 1) / COLS)
 
     nvgSave(vg)
-    -- [修复] nvgScissor 是绝对设置会覆盖面板 intersect 裁剪，导致奖励物品逃逸面板边界（横屏三联布局下溢出到相邻面板）
-    -- 首通逐个获得时略微放宽，让光柱和冲击环能呼吸，但仍锁在面板内
-    local scissorTop = CLIP_TOP
-    local scissorH = GRID_H
-    local scissorLeft = CLIP_LEFT
-    local scissorW = GRID_W
-    if state.cascade and not cascadeFinished() then
-        scissorTop = CLIP_TOP - 150
-        scissorH = GRID_H + 170
-        scissorLeft = CLIP_LEFT - 36
-        scissorW = GRID_W + 72
-    end
-    nvgIntersectScissor(vg, scissorLeft, scissorTop, scissorW, scissorH)
+    -- 只裁在两行窗口内。放宽裁剪会让图标和光效画出面板。
+    nvgIntersectScissor(vg, CLIP_LEFT, CLIP_TOP, GRID_W, GRID_H)
 
     if state.cascade and not cascadeFinished() then
         local elapsed = math.max(0, cascadeElapsed())
@@ -975,8 +985,8 @@ function RewardPopup.drawContent(vg)
             local cy = rawCY - state.scrollY
 
             -- 跳过不可见
-            if cy + ICON_SIZE * 0.5 < CLIP_TOP - 10 then goto continue end
-            if cy - ICON_SIZE * 0.5 > CLIP_BOTTOM + 10 then goto continue end
+            if cy + ICON_SIZE * 0.5 < CLIP_TOP then goto continue end
+            if cy - ICON_SIZE * 0.5 > CLIP_BOTTOM then goto continue end
 
             popT = cascadeT(idx) or -1
             if popT < 0 then

@@ -1,6 +1,6 @@
 -- ============================================================================
 -- RewardPopup - 通用奖励弹窗模块
--- 首通奖励逐个获得：间隔 0.2s
+-- 首通奖励逐个获得：前 8 个间隔 0.12s，超过 8 个后间隔 0.1s
 -- ============================================================================
 --
 -- 【使用说明】
@@ -148,10 +148,46 @@ local ANIM_OPEN_DURATION  = 0.35   -- 打开动画时长（秒）
 local ANIM_CLOSE_DURATION = 0.25   -- 关闭动画时长
 local CLOSE_GUARD_DURATION = 0.15  -- 关闭后事件吞噬保护期（防止点击穿透到下层界面）
 
--- 首通奖励：面板落定后每隔 0.2s 获得一件
-local CASCADE_LEAD     = 0.28
-local CASCADE_INTERVAL = 0.2
-local CASCADE_POP_DUR  = 0.46
+-- 首通奖励：前 8 个更快弹出，第 9 个起间隔固定 0.1s
+local CASCADE_LEAD          = 0.1
+local CASCADE_INTERVAL      = 0.12
+local CASCADE_INTERVAL_TAIL = 0.1
+local CASCADE_FAST_AFTER    = 8
+local CASCADE_POP_DUR       = 0.22
+
+--- 第 idx 件与上一件的间隔。idx 从 1 开始，第 1 件没有间隔。
+local function cascadeGap(idx)
+    if idx <= 1 then return 0 end
+    if idx > CASCADE_FAST_AFTER then
+        return CASCADE_INTERVAL_TAIL
+    end
+    return CASCADE_INTERVAL
+end
+
+--- 第 idx 件的出场时刻（第 1 件为 0）
+local function cascadeStartAt(idx)
+    if idx <= 1 then return 0 end
+    local t = 0
+    for i = 2, idx do
+        t = t + cascadeGap(i)
+    end
+    return t
+end
+
+--- 当前已经开始出场的件数
+local function cascadeShownCount(elapsed)
+    local n = #state.items
+    if elapsed < 0 or n <= 0 then return 0 end
+    local shown = 0
+    for i = 1, n do
+        if elapsed + 0.0001 >= cascadeStartAt(i) then
+            shown = i
+        else
+            break
+        end
+    end
+    return shown
+end
 
 -- 关闭保护时间戳（关闭完成时记录，保护期内 isOpen() 仍返回 true 以吞噬事件）
 local closedAt_ = 0
@@ -188,14 +224,14 @@ local function cascadeFinished()
     if not state.cascade then return true end
     local n = #state.items
     if n <= 0 then return true end
-    return cascadeElapsed() >= (n - 1) * CASCADE_INTERVAL + CASCADE_POP_DUR
+    return cascadeElapsed() >= cascadeStartAt(n) + CASCADE_POP_DUR
 end
 
 --- nil = 尚未出场；0..1 = 弹出中；>1 = 已落地
 local function cascadeT(idx)
     if not state.cascade then return 1 end
     local elapsed = cascadeElapsed()
-    local startAt = (idx - 1) * CASCADE_INTERVAL
+    local startAt = cascadeStartAt(idx)
     if elapsed < startAt then return nil end
     return (elapsed - startAt) / CASCADE_POP_DUR
 end
@@ -228,7 +264,7 @@ end
 
 local function skipCascade()
     if not state.cascade or cascadeFinished() then return false end
-    state.revealStart = time.elapsedTime - (#state.items * CASCADE_INTERVAL + CASCADE_POP_DUR)
+    state.revealStart = time.elapsedTime - (cascadeStartAt(#state.items) + CASCADE_POP_DUR)
     state.sfxPlayed = #state.items
     state.followScroll = true
     state.scrollY = state.scrollMax
@@ -352,7 +388,7 @@ local function drawCascadeGlint(vg, cx, cy, t)
 end
 
 local function drawCascadeAnticipate(vg, cx, cy, idx)
-    local lead = cascadeElapsed() - (idx - 1) * CASCADE_INTERVAL
+    local lead = cascadeElapsed() - cascadeStartAt(idx)
     if lead <= -0.08 then return end
     local a = math.floor(110 * ((lead + 0.08) / 0.08))
     nvgBeginPath(vg)
@@ -459,7 +495,7 @@ local function syncCascadeScroll()
     if not state.cascade or state.dragging or not state.followScroll then return end
     local elapsed = cascadeElapsed() + 0.04
     if elapsed < 0 then return end
-    local shown = math.min(#state.items, math.floor(elapsed / CASCADE_INTERVAL) + 1)
+    local shown = cascadeShownCount(elapsed)
     if shown <= VISIBLE_ROWS * COLS then
         state.scrollY = 0
         return
@@ -586,8 +622,8 @@ function RewardPopup.show(title, rewards, opts)
         .. ", scrollMax=" .. tostring(state.scrollMax)
         .. ", cascade=" .. tostring(state.cascade))
     if state.cascade then
-        print(string.format("[RewardPopup] cascade start lead=%.2f interval=%.2f pop=%.2f",
-            CASCADE_LEAD, CASCADE_INTERVAL, CASCADE_POP_DUR))
+        print(string.format("[RewardPopup] cascade start lead=%.2f head=%.2f tail=%.2f after=%d pop=%.2f",
+            CASCADE_LEAD, CASCADE_INTERVAL, CASCADE_INTERVAL_TAIL, CASCADE_FAST_AFTER, CASCADE_POP_DUR))
         GameSFX.play("level_up")
     end
 end
@@ -664,7 +700,7 @@ function RewardPopup.update(dt)
         local elapsed = cascadeElapsed()
         local due = 0
         if elapsed >= 0 then
-            due = math.min(#state.items, math.floor(elapsed / CASCADE_INTERVAL) + 1)
+            due = cascadeShownCount(elapsed)
         end
         while state.sfxPlayed < due do
             state.sfxPlayed = state.sfxPlayed + 1
@@ -908,7 +944,12 @@ function RewardPopup.drawContent(vg)
     if state.cascade and not cascadeFinished() then
         local elapsed = cascadeElapsed()
         if elapsed >= 0 then
-            local phase = (elapsed % CASCADE_INTERVAL) / CASCADE_INTERVAL
+            local shown = math.max(1, cascadeShownCount(elapsed))
+            local gap = cascadeGap(shown + 1)
+            if gap <= 0 then gap = CASCADE_INTERVAL_TAIL end
+            local phase = (elapsed - cascadeStartAt(shown)) / gap
+            if phase < 0 then phase = 0 end
+            if phase > 1 then phase = 1 end
             local pulse = (1 - phase) * (1 - phase)
             local halo = nvgRadialGradient(vg, GLOW_CX, GLOW_CY, 30, 380,
                 nvgRGBA(255, 210, 90, math.floor(90 * pulse)),

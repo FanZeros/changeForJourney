@@ -116,10 +116,7 @@ local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqD
                 local equip = eqData.inventory[tostring(seq)] or eqData.inventory[seq]
                 if equip then
                     EquipmentSystem.hydrate(equip)
-                    local slotBoost = 0
-                    if partySlot and slotEnhanceData then
-                        slotBoost = EquipmentSystem.calcSlotBoost(slotEnhanceData, partySlot, slotKey, equip.grip)
-                    end
+                    local slotBoost = EquipmentSystem.getAscendBoost(equip)
                     EquipmentSystem.applyToUnit(attrs, equip, seq, slotBoost)
                     appliedSeqs[seq] = true
                 end

@@ -323,22 +323,11 @@ local function calcEquipPower(equip, heroId)
     end
 
     local power = 0
-    local enhBoost = BlacksmithConfig.getEnhanceBoost(equip.enhanceLevel or 0)
-
-    -- 槽位强化加成（仅作用于第一条基础属性，与服务端 computeModifierEntries 保持一致）
-    local slotBoost = 0
-    if detState.heroId and detState.slot then
-        local heroesData = PlayerStore.Get("heroes")
-        local partySlot = EquipmentSystem.findPartySlotInTeams(heroesData, detState.heroId)
-        if partySlot then
-            local slotEnhanceData = PlayerStore.Get("slotEnhance")
-            slotBoost = EquipmentSystem.calcSlotBoost(slotEnhanceData, partySlot, detState.slot, equip.grip)
-        end
-    end
+    local ascendBoost = EquipmentSystem.getAscendBoost(equip)
 
     for i, s in ipairs(equip.baseStats or {}) do
-        local val = s[2] * (1 + enhBoost)
-        if i == 1 then val = val * (1 + slotBoost) end
+        local val = s[2]
+        if i == 1 then val = val * (1 + ascendBoost) end
         power = power + calcStatPower(s[1], val, excluded)
     end
 
@@ -583,8 +572,8 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
 
     -- 2) 装备名称 - 左对齐 X578 Y625 字号40 纯白 描边4
     local nameStr = equip.name or "???"
-    if equip.enhanceLevel and equip.enhanceLevel > 0 then
-        nameStr = nameStr .. " +" .. equip.enhanceLevel
+    if EquipmentSystem.getAscendLevel(equip) > 0 then
+        nameStr = nameStr .. " +" .. EquipmentSystem.getAscendLevel(equip)
     end
     drawTextStroke(vg, REF_NAME_X + offsetX, REF_NAME_Y, nameStr,
         REF_NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
@@ -726,17 +715,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
     nvgTranslate(vg, 0, -detState.descScrollY)
 
     if equip.baseStats and #equip.baseStats > 0 then
-        local enhBoost = BlacksmithConfig.getEnhanceBoost(equip.enhanceLevel or 0)
-        -- 槽位强化加成（仅第一条基础属性，与服务端保持一致）
-        local slotBoost = 0
-        if detState.heroId and detState.slot then
-            local heroesData = PlayerStore.Get("heroes")
-            local partySlot = EquipmentSystem.findPartySlotInTeams(heroesData, detState.heroId)
-            if partySlot then
-                local slotEnhanceData = PlayerStore.Get("slotEnhance")
-                slotBoost = EquipmentSystem.calcSlotBoost(slotEnhanceData, partySlot, detState.slot, equip.grip)
-            end
-        end
+        local ascendBoost = EquipmentSystem.getAscendBoost(equip)
         for i, s in ipairs(equip.baseStats) do
             local statCY = REF_STAT_BG_Y0 + (i - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
 
@@ -748,9 +727,9 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
             nvgText(vg, REF_STAT_TEXT_X + offsetX, statCY, sName, nil)
 
-            -- 13) 属性值 - 右对齐 X1016 字号34 纯白 描边4（含强化加成 + 槽位强化加成）
-            local rawVal = s[2] * (1 + enhBoost)
-            if i == 1 then rawVal = rawVal * (1 + slotBoost) end
+            -- 属性值含装备升阶加成
+            local rawVal = s[2]
+            if i == 1 then rawVal = rawVal * (1 + ascendBoost) end
             local sVal = formatStatValue(s[1], rawVal)
             drawTextStroke(vg, REF_STAT_VAL_X + offsetX, statCY, sVal,
                 REF_STAT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,

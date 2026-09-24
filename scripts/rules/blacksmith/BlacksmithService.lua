@@ -200,6 +200,106 @@ function BlacksmithService.EnhanceSlotToLevel(uid, partySlot, equipSlot, targetL
     }
 end
 
+-- ======================== 装备升阶（跟装备走，不绑角色） ========================
+
+local function findEquip(equipData, seq)
+    if not equipData or not equipData.inventory or not seq then return nil end
+    local key = tostring(seq)
+    return equipData.inventory[key] or equipData.inventory[seq]
+end
+
+--- 按 seq 升 1 阶。消耗为原强化表的 60%。
+---@param uid number
+---@param seq number
+---@return boolean ok, string? err, table? result
+function BlacksmithService.AscendEquip(uid, seq)
+    seq = tonumber(seq)
+    local equipData = PDM.GetModule(uid, "equipment")
+    local currency = PDM.GetModule(uid, "currency")
+    if not equipData or not currency then return false, "数据未加载" end
+    local equip = findEquip(equipData, seq)
+    if not equip then return false, "装备不存在" end
+    EquipmentSystem.hydrate(equip)
+    local scrollField = SLOT_SCROLL_MAP[equip.slot]
+    if not scrollField then return false, "无效的装备位置" end
+
+    local currentLv = EquipmentSystem.getAscendLevel(equip)
+    local cap = getEnhanceCap(uid)
+    if currentLv >= cap then
+        return false, "升阶已达当前远征等级上限（" .. cap .. "）"
+    end
+    if currentLv >= MAX_ENHANCE_LV then
+        return false, "已达最大升阶"
+    end
+    local nextLv = currentLv + 1
+    local cost = BlacksmithConfig.getAscendCost(nextLv)
+    if not cost then return false, "升阶配置异常" end
+    if (currency.gold or 0) < cost.gold then return false, "金币不足" end
+    if (currency[scrollField] or 0) < cost.scroll then return false, "卷轴不足" end
+
+    currency.gold = currency.gold - cost.gold
+    currency[scrollField] = currency[scrollField] - cost.scroll
+    equip.ascendLevel = nextLv
+    equip.enhanceLevel = nextLv
+    PDM.MarkDirty(uid, "currency")
+    PDM.MarkDirty(uid, "equipment")
+    TaskService.UpdateProgress(uid, "enhance", 1)
+    print("[BlacksmithService] ASCEND uid=" .. tostring(uid)
+        .. " seq=" .. tostring(seq) .. " lv=" .. nextLv
+        .. " gold=-" .. cost.gold .. " " .. scrollField .. "=-" .. cost.scroll)
+    return true, nil, {
+        enhanceOutcome = "success",
+        seq = seq,
+        newLevel = nextLv,
+        ascendLevel = nextLv,
+    }
+end
+
+--- 升到目标阶（含），按 60% 消耗逐级扣。
+function BlacksmithService.AscendEquipToLevel(uid, seq, targetLevel)
+    seq = tonumber(seq)
+    targetLevel = tonumber(targetLevel)
+    local equipData = PDM.GetModule(uid, "equipment")
+    local currency = PDM.GetModule(uid, "currency")
+    if not equipData or not currency then return false, "数据未加载" end
+    local equip = findEquip(equipData, seq)
+    if not equip then return false, "装备不存在" end
+    EquipmentSystem.hydrate(equip)
+    local scrollField = SLOT_SCROLL_MAP[equip.slot]
+    if not scrollField then return false, "无效的装备位置" end
+    local currentLv = EquipmentSystem.getAscendLevel(equip)
+    local cap = math.min(getEnhanceCap(uid), MAX_ENHANCE_LV)
+    if not targetLevel or targetLevel <= currentLv or targetLevel > cap then
+        return false, "无效的目标升阶"
+    end
+    local totalGold, totalScroll = 0, 0
+    for lv = currentLv + 1, targetLevel do
+        local cost = BlacksmithConfig.getAscendCost(lv)
+        if not cost then return false, "升阶配置异常" end
+        totalGold = totalGold + cost.gold
+        totalScroll = totalScroll + cost.scroll
+    end
+    if (currency.gold or 0) < totalGold then return false, "金币不足" end
+    if (currency[scrollField] or 0) < totalScroll then return false, "卷轴不足" end
+    currency.gold = currency.gold - totalGold
+    currency[scrollField] = currency[scrollField] - totalScroll
+    equip.ascendLevel = targetLevel
+    equip.enhanceLevel = targetLevel
+    PDM.MarkDirty(uid, "currency")
+    PDM.MarkDirty(uid, "equipment")
+    TaskService.UpdateProgress(uid, "enhance", targetLevel - currentLv)
+    print("[BlacksmithService] ASCEND_MAX uid=" .. tostring(uid)
+        .. " seq=" .. tostring(seq) .. " lv " .. currentLv .. "→" .. targetLevel
+        .. " gold=-" .. totalGold .. " scroll=-" .. totalScroll)
+    return true, nil, {
+        enhanceOutcome = "success",
+        seq = seq,
+        newLevel = targetLevel,
+        ascendLevel = targetLevel,
+        levelsGained = targetLevel - currentLv,
+    }
+end
+
 -- ======================== 洗练装备 ========================
 
 -- 额外资源定义

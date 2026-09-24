@@ -10,28 +10,41 @@ local BlacksmithService = require("rules.blacksmith.BlacksmithService")
 local BlacksmithHandler = {}
 local handlers = {}
 
---- 槽位强化
-handlers[Protocol.ACTION_TYPES.ENHANCE_EQUIP] = function(uid, params)
+--- 装备升阶。优先 seq；旧的 partySlot 参数只用来找到身上那一件。
+local function resolveAscendSeq(uid, params)
+    local seq = params and tonumber(params.seq)
+    if seq then return seq end
     local partySlot = params and tonumber(params.partySlot)
     local equipSlot = params and params.equipSlot
-    if not partySlot or not equipSlot then
-        return { success = false, reason = "缺少 partySlot 或 equipSlot" }
+    if not partySlot or not equipSlot then return nil end
+    local heroes = require("rules.character.PlayerDataManager").GetModule(uid, "heroes")
+    local equipData = require("rules.character.PlayerDataManager").GetModule(uid, "equipment")
+    if not heroes or not equipData then return nil end
+    local heroId = heroes.deployed and heroes.deployed[partySlot]
+    if not heroId then return nil end
+    local slots = equipData.equipped and (equipData.equipped[heroId] or equipData.equipped[tostring(heroId)])
+    local found = slots and slots[equipSlot]
+    return tonumber(found)
+end
+
+handlers[Protocol.ACTION_TYPES.ENHANCE_EQUIP] = function(uid, params)
+    local seq = resolveAscendSeq(uid, params)
+    if not seq then
+        return { success = false, reason = "请选择要升阶的装备" }
     end
-    local ok, err, result = BlacksmithService.EnhanceSlot(uid, partySlot, equipSlot)
+    local ok, err, result = BlacksmithService.AscendEquip(uid, seq)
     if not ok then return { success = false, reason = err } end
     result.success = true
     return result
 end
 
---- 一键强化到目标等级
 handlers[Protocol.ACTION_TYPES.ENHANCE_EQUIP_MAX] = function(uid, params)
-    local partySlot  = params and tonumber(params.partySlot)
-    local equipSlot  = params and params.equipSlot
+    local seq = resolveAscendSeq(uid, params)
     local targetLevel = params and tonumber(params.targetLevel)
-    if not partySlot or not equipSlot or not targetLevel then
-        return { success = false, reason = "缺少 partySlot、equipSlot 或 targetLevel" }
+    if not seq or not targetLevel then
+        return { success = false, reason = "请选择装备和目标升阶" }
     end
-    local ok, err, result = BlacksmithService.EnhanceSlotToLevel(uid, partySlot, equipSlot, targetLevel)
+    local ok, err, result = BlacksmithService.AscendEquipToLevel(uid, seq, targetLevel)
     if not ok then return { success = false, reason = err } end
     result.success = true
     return result

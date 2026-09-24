@@ -703,7 +703,7 @@ function M.draw(vg)
                 nvgText(vg, lvlX, lvlY, lvlText, nil)
             end
 
-            local slotEnhLv = slotEnhLevels and slotEnhLevels[slot.slot] or 0
+            local slotEnhLv = equippedEquip and EquipmentSystem.getAscendLevel(equippedEquip) or 0
             if slotEnhLv > 0 then
                 local enhText = "+" .. slotEnhLv
                 local enhX = scx + DT_SLOT_SIZE * 0.5 - 8

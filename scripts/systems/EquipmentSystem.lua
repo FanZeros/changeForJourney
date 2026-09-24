@@ -518,6 +518,24 @@ end
 
 local BlacksmithConfig = require("config.BlacksmithConfig")
 
+--- 装备自身升阶等级。不读槽位表。
+---@param equip table|nil
+---@return number
+function EquipmentSystem.getAscendLevel(equip)
+    if not equip then return 0 end
+    local lv = math.floor(tonumber(equip.ascendLevel or equip.enhanceLevel) or 0)
+    if lv < 0 then return 0 end
+    if lv > 100 then return 100 end
+    return lv
+end
+
+--- 升阶加成倍率。双手武器只看自己，不再拆主手/副手格子。
+---@param equip table|nil
+---@return number
+function EquipmentSystem.getAscendBoost(equip)
+    return BlacksmithConfig.getEnhanceBoost(EquipmentSystem.getAscendLevel(equip))
+end
+
 --- 计算指定槽位的强化加成倍率
 --- 双手武器同时享受主手(weapon) + 副手(offhand)加成，但各只享受 50%
 ---@param slotEnhanceData table|nil slotEnhance 模块数据 { levels = { [partySlot] = { [equipSlot] = lv } } }
@@ -1131,10 +1149,15 @@ function EquipmentSystem.hydrate(equip)
     local clamped = math.max(1, math.min(MAX_EQUIP_LEVEL, math.floor(lv)))
     if clamped ~= lv then
         equip.level = clamped
-        equip.baseStats = nil  -- 强制按合法等级重算
+        equip.baseStats = nil
     else
         equip.level = clamped
     end
+    local ascend = math.floor(tonumber(equip.ascendLevel or equip.enhanceLevel) or 0)
+    if ascend < 0 then ascend = 0 end
+    if ascend > 100 then ascend = 100 end
+    equip.ascendLevel = ascend
+    equip.enhanceLevel = ascend
 
     if equip.refineCount ~= nil then
         equip.refineCount = BlacksmithConfig.clampRefineCount(equip.refineCount)
@@ -1214,6 +1237,7 @@ function EquipmentSystem.dehydrate(equip)
         level      = persistLevel,
         quality    = equip.quality,
         locked     = equip.locked or nil,  -- 锁定状态需持久化（false/nil 时省略，保持精简）
+        ascendLevel = (tonumber(equip.ascendLevel) or 0) > 0 and math.floor(tonumber(equip.ascendLevel)) or nil,
         corruptCount = (equip.corruptCount and equip.corruptCount > 0) and equip.corruptCount or nil,
         corruptBaseMult = (equip.corruptBaseMult and equip.corruptBaseMult ~= 1) and equip.corruptBaseMult or nil,
         -- baseStats 省略：可从 templateId+level+quality+腐化基础倍率确定性推导，hydrate 时重算

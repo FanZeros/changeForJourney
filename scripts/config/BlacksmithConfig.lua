@@ -134,6 +134,19 @@ function BlacksmithConfig.getEnhanceCost(level)
     return BlacksmithConfig.ENHANCE_TABLE[level]
 end
 
+--- 升阶消耗 = 原槽位强化表的 60%（向上取整，至少 1）
+---@param level number 目标升阶等级
+---@return {gold: number, scroll: number, boost: number}|nil
+function BlacksmithConfig.getAscendCost(level)
+    local raw = BlacksmithConfig.ENHANCE_TABLE[level]
+    if not raw then return nil end
+    return {
+        gold = math.max(1, math.ceil(raw.gold * 0.6)),
+        scroll = math.max(1, math.ceil(raw.scroll * 0.6)),
+        boost = raw.boost,
+    }
+end
+
 --- 获取指定等级的属性加成倍率
 --- 等级 0 返回 0，等级 1~100 返回对应 boost
 ---@param level number 当前强化等级 (0~100)

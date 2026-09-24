@@ -748,13 +748,12 @@ function PlayerInfoPanel.draw(vg)
     end
     BF.finish(vg, _bf1)
 
-    -- ── 7. 玩家名称 ──
+    -- ── 7. 玩家名称（骨白 + 描边，暗底可读）──
     local displayName = cachedName or GameState.getName()
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, NAME.FONT)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(NAME.R, NAME.G, NAME.B, 255))
-    nvgText(vg, NAME.X, NAME.Y, displayName, nil)
+    drawTextStroke(vg, NAME.X, NAME.Y, displayName,
+        NAME.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        244, 237, 224, 4,
+        { strokeColor = { 0x3a, 0x24, 0x0c } })
 
     -- ── 8. 装饰线1 ──
     nvgBeginPath(vg)
@@ -769,7 +768,7 @@ function PlayerInfoPanel.draw(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 32)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 200))
+        nvgFillColor(vg, nvgRGBA(216, 201, 163, 230))
         nvgText(vg, UID.X, UID.Y, cachedServerName, nil)
     end
 

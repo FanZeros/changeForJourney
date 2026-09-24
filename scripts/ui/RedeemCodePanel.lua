@@ -11,8 +11,6 @@ local RewardPopup     = require("ui.RewardPopup")
 local BF              = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local drawTextStroke    = DrawUtil.drawTextStroke
-local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 local hitTest           = DrawUtil.hitTest
 
 local RedeemCodePanel = {}
@@ -42,11 +40,7 @@ local state = {
 }
 
 -- ======================== 图片资源句柄 ========================
-
-local img = {
-    bg        = -1,   -- UI_EJBB.png 九宫格弹窗背景
-    confirmBtn = -1,  -- UI_AN_LV.png 确定按钮
-}
+-- 面板与按钮已改为 DarkIcon 矢量绘制
 
 -- ======================== 布局常量 ========================
 
@@ -55,51 +49,52 @@ local ANIM_OPEN_DUR  = 0.25
 local ANIM_CLOSE_DUR = 0.15
 
 -- 1. 背景框（九宫格）
+-- 加高：标题带、输入框、确定按钮各自留出间距，不再贴着金线
 local BG = {
-    CX = 540, CY = 1199, W = 996, H = 627,
-    IT = 175, IL = 100, IR = 100, IB = 100,
+    CX = 540, CY = 1180, W = 900, H = 680,
+    IT = 148,
 }
 
--- 2. 标题 "兑换码"
+-- 2. 标题 "兑换码"（骨白字 + 深褐描边，暗底可读）
 local TTL = {
-    X = 540, Y = 1019, FONT = 60,
-    R = 0x36, G = 0x2c, B = 0x21,
+    X = 540, Y = 914, FONT = 56,
+    FR = 244, FG = 237, FB = 224,
+    SW = 5, SR = 0x3a, SG = 0x24, SB = 0x0c,
 }
 
 -- 3. 输入框
 local INPUT_BOX = {
-    CX = 540, CY = 1177, W = 700, H = 90, R = 12,
-    A = 26,  -- 纯黑 10%
+    CX = 540, CY = 1160, W = 720, H = 110, R = 14,
 }
 
 -- 4. 占位符文本 "请输入兑换码"
 local PLACEHOLDER = {
-    X = 540, Y = 1177, FONT = 42,
-    A = 77,  -- 纯黑 30%
+    X = 540, Y = 1160, FONT = 40,
+    R = 244, G = 237, B = 224, A = 110,
 }
 
 -- 5. 确定按钮
 local CONFIRM_BTN = {
-    CX = 540, CY = 1333, W = 410, H = 100,
+    CX = 540, CY = 1348, W = 420, H = 108,
 }
 
--- 6. "确定" 文本
+-- 6. "确定" 文本（金按钮上用深褐字）
 local CONFIRM_TXT = {
-    X = 540, Y = 1333, FONT = 40,
-    A = 179,  -- 纯黑 70%
+    X = 540, Y = 1348, FONT = 42,
+    R = 0x3a, G = 0x24, B = 0x0c,
 }
 
 -- 输入文本样式
 local INPUT_TXT = {
     FONT = 42,
-    R = 0, G = 0, B = 0, A = 200,
+    R = 244, G = 237, B = 224, A = 255,
 }
 
 -- 光标样式
 local CURSOR = {
     BLINK_PERIOD = 1.0,  -- 闪烁周期（秒）
-    W = 2, H = 36,
-    R = 0, G = 0, B = 0, A = 180,
+    W = 3, H = 42,
+    R = 0xC4, G = 0xA0, B = 0x5A, A = 230,
 }
 
 -- 提交反馈 toast
@@ -157,13 +152,7 @@ end
 
 --- 初始化（加载图片资源，仅调用一次）
 function RedeemCodePanel.init(vg)
-    img.bg         = nvgCreateImage(vg, "image/界面底板/通用面板/UI_EJBB.png", 0)
-    img.confirmBtn = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-
-    if img.bg < 0 then print("[RedeemCodePanel] WARN: UI_EJBB.png load failed") end
-    if img.confirmBtn < 0 then print("[RedeemCodePanel] WARN: UI_AN_LV.png load failed") end
-
-    -- 注意: TextInput 事件由 GMConsolePanel 统一订阅并转发，避免后订阅覆盖前订阅
+    -- 面板和按钮改用矢量绘制，不再加载绿色贴图
     print("[RedeemCodePanel] init OK")
 end
 
@@ -367,6 +356,13 @@ function RedeemCodePanel.draw(vg)
 
     nvgSave(vg)
 
+    -- 遮罩：让弹窗从玩家信息页上分离出来
+    local shade = math.max(0, math.min(1, animProgress))
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, 1080, 2400)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(150 * shade)))
+    nvgFill(vg)
+
     -- 弹窗缩放动画（以弹窗中心为原点）
     nvgTranslate(vg, BG.CX, BG.CY)
     nvgScale(vg, animProgress, animProgress)
@@ -375,20 +371,22 @@ function RedeemCodePanel.draw(vg)
     -- ── 1. 背景框（九宫格）──
     DarkIcon.drawNine(vg, "panel", BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5, BG.W, BG.H, { titleH = BG.IT })
 
-    -- ── 2. 标题 "兑换码"（无描边，纯色文本）──
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, TTL.FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(TTL.R, TTL.G, TTL.B, 255))
-    nvgText(vg, TTL.X, TTL.Y, "兑换码", nil)
+    -- ── 2. 标题 "兑换码" ──
+    drawTextStroke(vg, TTL.X, TTL.Y, "兑换码",
+        TTL.FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        TTL.FR, TTL.FG, TTL.FB, TTL.SW,
+        { strokeColor = { TTL.SR, TTL.SG, TTL.SB } })
 
-    -- ── 3. 输入框背景 ──
+    -- ── 3. 输入框：暗槽 + 金边 ──
+    local boxL = INPUT_BOX.CX - INPUT_BOX.W * 0.5
+    local boxT = INPUT_BOX.CY - INPUT_BOX.H * 0.5
     nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        INPUT_BOX.CX - INPUT_BOX.W * 0.5, INPUT_BOX.CY - INPUT_BOX.H * 0.5,
-        INPUT_BOX.W, INPUT_BOX.H, INPUT_BOX.R)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, INPUT_BOX.A))
+    nvgRoundedRect(vg, boxL, boxT, INPUT_BOX.W, INPUT_BOX.H, INPUT_BOX.R)
+    nvgFillColor(vg, nvgRGBA(16, 13, 10, 230))
     nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 200))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
 
     -- ── 4. 占位符 或 输入文本 ──
     local hasText = #state.inputText > 0
@@ -400,7 +398,7 @@ function RedeemCodePanel.draw(vg)
     if not hasText then
         -- 占位符 "请输入兑换码"（居中）
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, PLACEHOLDER.A))
+        nvgFillColor(vg, nvgRGBA(PLACEHOLDER.R, PLACEHOLDER.G, PLACEHOLDER.B, PLACEHOLDER.A))
         nvgText(vg, PLACEHOLDER.X, PLACEHOLDER.Y, "请输入兑换码", nil)
     else
         -- 已输入文本（左对齐，左边距 20px）
@@ -425,19 +423,21 @@ function RedeemCodePanel.draw(vg)
         end
     end
 
-    -- ── 5. 确定按钮 ──
+    -- ── 5. 确定按钮（暖金，不再用绿色贴图）──
     local _bf1 = BF.begin(vg, "rcp_confirm", CONFIRM_BTN.CX, CONFIRM_BTN.CY, CONFIRM_BTN.W, CONFIRM_BTN.H)
-    local btnAlpha = state.submitting and 0.5 or 1.0
-    if img.confirmBtn >= 0 then
-        drawImageCentered(vg, img.confirmBtn, CONFIRM_BTN.CX, CONFIRM_BTN.CY, CONFIRM_BTN.W, CONFIRM_BTN.H, btnAlpha)
-    end
+    local btnAlpha = state.submitting and 0.55 or 1.0
+    DarkIcon.drawNine(vg, "btn",
+        CONFIRM_BTN.CX - CONFIRM_BTN.W * 0.5,
+        CONFIRM_BTN.CY - CONFIRM_BTN.H * 0.5,
+        CONFIRM_BTN.W, CONFIRM_BTN.H,
+        { accent = "gold", alpha = btnAlpha })
 
     -- ── 6. 按钮文本（提交中显示"提交中..."）──
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CONFIRM_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    local btnTextAlpha = state.submitting and 100 or CONFIRM_TXT.A
-    nvgFillColor(vg, nvgRGBA(244, 237, 224, btnTextAlpha))
+    local btnTextAlpha = state.submitting and 140 or 255
+    nvgFillColor(vg, nvgRGBA(CONFIRM_TXT.R, CONFIRM_TXT.G, CONFIRM_TXT.B, btnTextAlpha))
     nvgText(vg, CONFIRM_TXT.X, CONFIRM_TXT.Y, state.submitting and "提交中..." or "确定", nil)
     BF.finish(vg, _bf1)
 

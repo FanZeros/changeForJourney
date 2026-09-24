@@ -77,14 +77,14 @@ local TREE_TEXT_X,  TREE_TEXT_Y  = 585, 1229
 
 -- ---- 下方建筑 ----
 
--- 教堂
-local CHURCH_CX,  CHURCH_CY  = 171,  1400
+-- 教堂（略向右，避免贴死左缘）
+local CHURCH_CX,  CHURCH_CY  = 211,  1400
 local CHURCH_W,   CHURCH_H   = 344,  688
-local CHURCH_LBL_CX, CHURCH_LBL_CY = 198, 1720
+local CHURCH_LBL_CX, CHURCH_LBL_CY = 238, 1720
 local CHURCH_LBL_W,  CHURCH_LBL_H  = 361, 113
-local CHURCH_ICON_CX, CHURCH_ICON_CY = 108, 1714
+local CHURCH_ICON_CX, CHURCH_ICON_CY = 148, 1714
 local CHURCH_ICON_SZ = 64
-local CHURCH_TEXT_X,  CHURCH_TEXT_Y  = 252, 1714
+local CHURCH_TEXT_X,  CHURCH_TEXT_Y  = 292, 1714
 
 -- 酒馆
 local TAVERN_CX,  TAVERN_CY  = 832,  1400
@@ -105,23 +105,24 @@ local WAREHOUSE_ICON_SZ = 64
 local WAREHOUSE_TEXT_X,  WAREHOUSE_TEXT_Y  = 871, 864
 
 -- 市场（月蚀黑市）—— 布局重排：移至左侧，与右侧竞技场同高对称
-local MARKET_CX,  MARKET_CY  = 171,  720
+local MARKET_CX,  MARKET_CY  = 211,  720
 local MARKET_W,   MARKET_H   = 369,  454
-local MARKET_LBL_CX, MARKET_LBL_CY = 185, 846
+local MARKET_LBL_CX, MARKET_LBL_CY = 225, 846
 local MARKET_LBL_W,  MARKET_LBL_H  = 361, 113
-local MARKET_ICON_CX, MARKET_ICON_CY = 112, 846
+local MARKET_ICON_CX, MARKET_ICON_CY = 152, 846
 local MARKET_ICON_SZ = 64
-local MARKET_TEXT_X,  MARKET_TEXT_Y  = 219, 846
+local MARKET_TEXT_X,  MARKET_TEXT_Y  = 259, 846
 
--- 遗匣：下方中轴独立地点。整块热区 x=350..730 / y=1790..2230，
--- 避开教堂底缘1777、酒馆底缘1594；箱体/基座/名牌/收益文字均在热区内。
-local LOOT_CX, LOOT_CY, LOOT_W, LOOT_H = 540, 1940, 260, 260
+-- 遗匣：下方偏右。热区随立绘右移，避开教堂底缘与酒馆底缘。
+local LOOT_SHIFT_X = 70
+local LOOT_CX, LOOT_CY, LOOT_W, LOOT_H = 540 + LOOT_SHIFT_X, 1940, 260, 260
 local LOOT_LBL_CY = 2090
-local LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H = 540, 2010, 380, 440
--- 任务：左下角地点，避开教堂热区和遗匣热区。
-local TASK_CX, TASK_CY, TASK_W, TASK_H = 180, 2050, 180, 180
+local LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H = 540 + LOOT_SHIFT_X, 2010, 380, 440
+-- 功绩：左下角地点，整体右移，避开教堂热区和遗匣热区。
+local TASK_SHIFT_X = 50
+local TASK_CX, TASK_CY, TASK_W, TASK_H = 180 + TASK_SHIFT_X, 2050, 180, 180
 local TASK_LBL_CY = 2188
-local TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H = 180, 2100, 280, 280
+local TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H = 180 + TASK_SHIFT_X, 2100, 280, 280
 
 -- 文字
 local LABEL_FONT_SIZE   = 38
@@ -570,28 +571,28 @@ function TownScene.draw(vg)
 
     -- 第7个地点：遗匣（没有等级/引导门槛）。立绘与名牌图标分开，名牌沿用地点图标尺寸。
     local lootFeedback = BF.begin(vg, "town_lootbox", LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H)
-    DarkIcon.drawNine(vg, "plain", 390, 2010, 300, 64)
+    DarkIcon.drawNine(vg, "plain", 390 + LOOT_SHIFT_X, 2010, 300, 64)
     drawImageDarkTint(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, 1.0)
     drawFlashOverlay(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, getClickFlashAlpha("lootbox"))
-    drawBuildingLabel(vg, 540, LOOT_LBL_CY, 361, 113,
-        450, LOOT_LBL_CY - 6, 64, imgIconLoot, 585, LOOT_LBL_CY - 6, "遗匣")
+    drawBuildingLabel(vg, 540 + LOOT_SHIFT_X, LOOT_LBL_CY, 361, 113,
+        450 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, 64, imgIconLoot, 585 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, "遗匣")
     local count = LootBox.getCount()
     if count > 0 then
-        DarkIcon.draw(vg, "reddot", 709, LOOT_LBL_CY - 45, 44, 1.0)
-        drawTextStroke(vg, 540, 1798, "待领取 " .. tostring(count) .. " 件", 30,
+        DarkIcon.draw(vg, "reddot", 709 + LOOT_SHIFT_X, LOOT_LBL_CY - 45, 44, 1.0)
+        drawTextStroke(vg, 540 + LOOT_SHIFT_X, 1798, "待领取 " .. tostring(count) .. " 件", 30,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 238, 216, 161, 3)
     end
-    LootBox.drawRates(vg, 540, 2170)
+    LootBox.drawRates(vg, 540 + LOOT_SHIFT_X, 2170)
     BF.finish(vg, lootFeedback)
 
     local taskFeedback = BF.begin(vg, "town_task", TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
-    drawBuildingLabel(vg, 180, TASK_LBL_CY, 280, 90,
-        70, TASK_LBL_CY - 4, 52, imgIconTask, 210, TASK_LBL_CY - 4, "功绩")
+    drawBuildingLabel(vg, 180 + TASK_SHIFT_X, TASK_LBL_CY, 280, 90,
+        70 + TASK_SHIFT_X, TASK_LBL_CY - 4, 52, imgIconTask, 210 + TASK_SHIFT_X, TASK_LBL_CY - 4, "功绩")
     local taskOk, TaskPage = pcall(require, "ui.story.task.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
-        DarkIcon.draw(vg, "reddot", 300, TASK_LBL_CY - 36, 36, 1.0)
+        DarkIcon.draw(vg, "reddot", 300 + TASK_SHIFT_X, TASK_LBL_CY - 36, 36, 1.0)
     end
     BF.finish(vg, taskFeedback)
 end

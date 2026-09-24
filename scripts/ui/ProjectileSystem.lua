@@ -39,12 +39,14 @@ local CONFIGS = {
         type = "fly", imgKey = "EF_ATK_2",
         imgW = 200, imgH = 200, duration = 0.55,
         trail = { 255, 80, 30 },
+        arc = "shallow",
     },
     -- 3: 箭矢 — 白色拖尾
     [3] = {
         type = "fly", imgKey = "EF_ATK_3",
         imgW = 200, imgH = 200, duration = 0.50,
         trail = { 255, 255, 255 },
+        arc = "shallow",
     },
     [4] = {
         type = "melee", imgKey = "EF_ATK_4",
@@ -64,6 +66,7 @@ local CONFIGS = {
     [7] = {
         type = "fly", imgKey = "EF_ATK_7",
         imgW = 200, imgH = 200, duration = 0.50,
+        arc = "shallow",
     },
     [8] = {
         type = "melee", imgKey = "EF_ATK_8",
@@ -73,6 +76,7 @@ local CONFIGS = {
     [9] = {
         type = "bezier", imgKey = "EF_ATK_9",
         imgW = 200, imgH = 200, duration = 0.65,
+        arc = "float",
     },
     [10] = {
         type = "melee", imgKey = "EF_ATK_10",
@@ -87,23 +91,27 @@ local CONFIGS = {
         type = "fly", imgKey = "EF_ATK_12",
         imgW = 200, imgH = 200, duration = 0.55,
         trail = { 100, 180, 255 },
+        arc = "lob",
     },
     -- 13: 能量箭 — 紫色拖尾
     [13] = {
         type = "fly", imgKey = "EF_ATK_13",
         imgW = 200, imgH = 200, duration = 0.50,
         trail = { 180, 80, 255 },
+        arc = "shallow",
     },
     -- 14: 飞镖 — 持续旋转
     [14] = {
         type = "fly", imgKey = "EF_ATK_14",
         imgW = 200, imgH = 200, duration = 0.55,
         rotate = true,
+        arc = "lob",
     },
     -- 15: 圣光球 — 贝塞尔曲线
     [15] = {
         type = "bezier", imgKey = "EF_ATK_15",
         imgW = 200, imgH = 200, duration = 0.65,
+        arc = "heal",
     },
     -- ---- 新增角色攻击特效（16/20/21/22/23） ----
     [16] = {
@@ -114,20 +122,24 @@ local CONFIGS = {
         type = "bezier", imgKey = "EF_ATK_20",
         imgW = 200, imgH = 200, duration = 0.60,
         trail = { 190, 120, 255 },
+        arc = "lob",
     },
     [21] = {
         type = "fly", imgKey = "EF_ATK_21",
         imgW = 200, imgH = 200, duration = 0.55,
         trail = { 120, 220, 255 },
+        arc = "shallow",
     },
     [22] = {
         type = "fly", imgKey = "EF_ATK_22",
         imgW = 200, imgH = 200, duration = 0.50,
         trail = { 80, 255, 120 },
+        arc = "shallow",
     },
     [23] = {
         type = "bezier", imgKey = "EF_ATK_23",
         imgW = 200, imgH = 200, duration = 0.65,
+        arc = "lob",
     },
     -- ---- 玩梗新角色 18/19/24/25 ----
     [18] = {
@@ -138,6 +150,7 @@ local CONFIGS = {
         type = "bezier", imgKey = "EF_ATK_19",
         imgW = 200, imgH = 200, duration = 0.65,
         trail = { 255, 210, 120 },
+        arc = "heal",
     },
     [24] = {
         type = "melee", imgKey = "EF_ATK_24",
@@ -147,6 +160,7 @@ local CONFIGS = {
         type = "fly", imgKey = "EF_ATK_25",
         imgW = 200, imgH = 200, duration = 0.70,
         trail = { 80, 220, 180 },
+        arc = "shallow",
     },
 }
 
@@ -208,6 +222,7 @@ local SKILL_CONFIGS = {
         type = "bezier", imgKey = "EF_skill_11",
         imgW = 200, imgH = 400, duration = 0.55,
         trail = { 255, 50, 50 },
+        arc = "shallow",
     },
     -- 16: 灵月飞剑 — 卡片中心生成 → 外扩至圆上 → 齐射
     [16] = {
@@ -475,9 +490,48 @@ local function updateAndDrawShake(proj, vg, t)
     drawProjectileImage(vg, imgHandle, cx, cy, cfg.imgW, cfg.imgH, flyAngle, alpha)
 end
 
---- 贝塞尔曲线飞行投射物（圣光球、蝴蝶等）
---- 通用设计：通过最小弧线半径保证任何距离（包括起终点重合）都有可见弧线
-local MIN_ARC_RADIUS = 160  -- 最小弧线半径（像素），决定最短距离下弧线的弯曲程度
+--- 贝塞尔曲线飞行投射物
+--- 弧顶始终向上（屏幕 Y 减小）。高度按距离封顶，避免近战对射甩成半圆、远射甩出屏幕。
+local ARC_LOGGED = {}
+
+local function arcStyleOf(cfg)
+    if cfg.arc then return cfg.arc end
+    if cfg.type == "bezier" then return "lob" end
+    if cfg.type == "fly" then return "shallow" end
+    return "straight"
+end
+
+local function arcLiftFor(cfg, dist)
+    local style = arcStyleOf(cfg)
+    if style == "straight" then return 0 end
+    if style == "shallow" then
+        return math.max(14, math.min(56, dist * 0.06))
+    elseif style == "lob" then
+        return math.max(30, math.min(130, dist * 0.18))
+    elseif style == "heal" then
+        return math.max(40, math.min(108, dist * 0.22))
+    elseif style == "float" then
+        return math.max(18, math.min(64, dist * 0.11))
+    end
+    return 0
+end
+
+local function prepareArc(proj)
+    local dx = proj.endX - proj.startX
+    local dy = proj.endY - proj.startY
+    local dist = math.sqrt(dx * dx + dy * dy)
+    local lift = arcLiftFor(proj.cfg, dist)
+    proj.arcLift = lift
+    if lift > 6 and proj.cfg.type == "fly" then
+        proj.arcUpgrade = true
+    end
+    local key = tostring(proj.cfg.imgKey or proj.cfg.type)
+    if not ARC_LOGGED[key] then
+        ARC_LOGGED[key] = true
+        print(string.format("[ProjectileSystem] arc %s style=%s dist=%.0f lift=%.0f",
+            key, arcStyleOf(proj.cfg), dist, lift))
+    end
+end
 
 local function updateAndDrawBezier(proj, vg, t)
     local cfg = proj.cfg
@@ -486,7 +540,6 @@ local function updateAndDrawBezier(proj, vg, t)
     local dy = proj.endY - proj.startY
     local dist = math.sqrt(dx * dx + dy * dy)
 
-    -- 距离极小时，给终点一个微偏，避免方向向量退化为零
     local effEndX, effEndY = proj.endX, proj.endY
     if dist < 1 then
         effEndX = proj.startX + 1
@@ -496,20 +549,11 @@ local function updateAndDrawBezier(proj, vg, t)
         dist = 1
     end
 
-    -- 计算垂直偏移量：max(最小半径, 距离×0.4)
-    local perpLen = math.max(MIN_ARC_RADIUS * renderScale, dist * 0.4)
-
-    -- 归一化方向 + 垂直方向
-    local ndx = dx / dist
-    local ndy = dy / dist
-    local perpNx = -ndy * proj.bezierSide
-    local perpNy =  ndx * proj.bezierSide
-
-    -- 控制点 = 中点 + 垂直偏移
+    local lift = (proj.arcLift or arcLiftFor(cfg, dist)) * renderScale
     local midX = (proj.startX + effEndX) * 0.5
     local midY = (proj.startY + effEndY) * 0.5
-    local ctrlX = midX + perpNx * perpLen
-    local ctrlY = midY + perpNy * perpLen
+    local ctrlX = midX
+    local ctrlY = midY - lift
 
     -- 线性插值（恒定速度）
     local cx, cy = bezier2(proj.startX, proj.startY, ctrlX, ctrlY, effEndX, effEndY, t)
@@ -940,6 +984,7 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
             imgH     = cfg.imgH,
             duration = cfg.duration or 0.5,
             trail    = cfg.trail,
+            arc      = "heal",
         }
     end
 
@@ -957,17 +1002,11 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
 
     -- 贝塞尔曲线：随机弯曲方向
     if cfg.type == "bezier" then
-        proj.bezierSide = (math.random() > 0.5) and 1 or -1
+        proj.bezierSide = 1
     end
+    prepareArc(proj)
 
-    -- [看情况抛物线] fly 直线弹距离足够远时升级为弧线（弧顶始终向上）
-    if cfg.type == "fly" then
-        local ddx, ddy = endX - startX, endY - startY
-        if (ddx * ddx + ddy * ddy) >= ARC_TRIGGER_DIST * ARC_TRIGGER_DIST then
-            proj.arcUpgrade = true
-            proj.bezierSide = (endX >= startX) and -1 or 1
-        end
-    end
+    -- [看情况抛物线] 直线弹按弧高决定要不要抬成抛物线，弧顶始终向上
 
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
@@ -1001,6 +1040,7 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
             imgH     = cfg.imgH,
             duration = cfg.duration or 0.5,
             trail    = cfg.trail,
+            arc      = "heal",
         }
     end
 
@@ -1018,8 +1058,9 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
 
     -- 贝塞尔曲线：随机弯曲方向
     if cfg.type == "bezier" then
-        proj.bezierSide = (math.random() > 0.5) and 1 or -1
+        proj.bezierSide = 1
     end
+    prepareArc(proj)
 
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
@@ -1099,6 +1140,7 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
         proj.ringY = startY + math.sin(angleOnRing) * radius
         proj.spawnAngle = math.atan(endY - startY, endX - startX)
     end
+    prepareArc(proj)
 
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
@@ -1135,6 +1177,7 @@ function ProjectileSystem.spawnTalent(talentProjKey, startX, startY, endX, endY,
             proj.bezierSide = (math.random() > 0.5) and 1 or -1
         end
     end
+    prepareArc(proj)
 
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end

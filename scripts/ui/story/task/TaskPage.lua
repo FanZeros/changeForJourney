@@ -4,6 +4,7 @@
 -- ============================================================================
 
 local DrawUtil = require("core.DrawUtil")
+local DarkIcon = require("core.DarkIcon")
 local TownPageChrome = require("ui.town.TownPageChrome")
 local TaskConfig = require("config.TaskConfig")
 local ClientDispatcher = require("runtime.ClientDispatcher")
@@ -76,17 +77,22 @@ local function statusOf(task)
 end
 
 local function sortRows(rows)
-    table.sort(rows, function(a, b)
-        local function rank(task)
-            local status = statusOf(task)
-            if status == TaskConfig.STATUS.CLAIMABLE then return 1 end
-            if status == TaskConfig.STATUS.CLAIMED then return 3 end
-            return 2
+    local claimable, active, claimed = {}, {}, {}
+    for _, task in ipairs(rows) do
+        local status = statusOf(task)
+        if status == TaskConfig.STATUS.CLAIMABLE then
+            claimable[#claimable + 1] = task
+        elseif status == TaskConfig.STATUS.CLAIMED then
+            claimed[#claimed + 1] = task
+        else
+            active[#active + 1] = task
         end
-        local ra, rb = rank(a), rank(b)
-        if ra ~= rb then return ra < rb end
-        return (a.target or 0) < (b.target or 0)
-    end)
+    end
+    local out = {}
+    for _, task in ipairs(claimable) do out[#out + 1] = task end
+    for _, task in ipairs(active) do out[#out + 1] = task end
+    for _, task in ipairs(claimed) do out[#out + 1] = task end
+    return out
 end
 
 local function listForTab()
@@ -100,8 +106,7 @@ local function listForTab()
             out[#out + 1] = task
         end
     end
-    sortRows(out)
-    return out
+    return sortRows(out)
 end
 
 local function tabScope()
@@ -191,7 +196,11 @@ local function drawRow(vg, task, y)
     local claimed = status == TaskConfig.STATUS.CLAIMED
     local nameR, nameG, nameB = 244, 232, 204
     local descR, descG, descB = 196, 176, 138
-    if claimed then
+    if status == TaskConfig.STATUS.CLAIMABLE then
+        nvgFillColor(vg, nvgRGBA(72, 52, 18, 235))
+        nameR, nameG, nameB = 255, 226, 150
+        descR, descG, descB = 226, 196, 120
+    elseif claimed then
         nvgFillColor(vg, nvgRGBA(36, 48, 42, 210))
         nameR, nameG, nameB = 138, 156, 142
         descR, descG, descB = 112, 128, 116
@@ -211,12 +220,15 @@ local function drawRow(vg, task, y)
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 150, 176, 138, 2)
     local reward = task.reward
     if reward then
+        local rcx = LIST.x + LIST.w - 300
+        local rcy = y - 8
+        DarkIcon.drawQualityBg(vg, reward.quality or 1, rcx, rcy, 78, 78, claimed and 0.55 or 1)
         local icon = rewardIcon(vg, reward.icon)
         if icon >= 0 then
-            DrawUtil.drawImageCentered(vg, icon, LIST.x + LIST.w - 300, y - 16, 64, 64, 1)
+            DrawUtil.drawImageCentered(vg, icon, rcx, rcy, 52, 52, claimed and 0.55 or 1)
         end
-        text(vg, LIST.x + LIST.w - 300, y + 42, "×" .. tostring(reward.amount or 0), 22,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 232, 210, 150, 2)
+        text(vg, rcx + 24, rcy + 28, tostring(reward.amount or 0), 20,
+            NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 255, 244, 220, 2)
     end
     local label = "未完成"
     local r, g, b = 120, 116, 108

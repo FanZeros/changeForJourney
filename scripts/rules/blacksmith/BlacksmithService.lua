@@ -702,7 +702,7 @@ local function normalizeLockedIndices(lockedIndices, affixCount)
     return lockedSet, lockedCount
 end
 
---- 洗练装备（消耗精粹，可选额外资源：洗练石=只洗数值/点金石=装备升阶/腐化石=随机魔化效果/神圣石=净化腐化）
+--- 洗练装备（消耗精粹，可选额外资源：洗练石=只洗数值/点金石=提品/腐化石=随机魔化效果/神圣石=净化腐化）
 ---@param uid number
 ---@param seq number
 ---@param extraResource string|nil 额外资源 key ("enhanceStone"/"destroyStone"/"corruptStone"/"sacredStone"/nil)
@@ -867,7 +867,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end
 
     elseif extraResource == "destroyStone" then
-        -- ── 点金石：装备升阶 +1，保留原有词缀不变 ──
+        -- ── 点金石：提品 +1，保留原有词缀不变 ──
         local maxQ = getUpgradeMaxQuality(uid)
         local newQ = math.min(q + 1, maxQ)
         -- 安全降级：若目标品质尚未配置（如至臻品质6），回退到已有最高品质
@@ -1053,7 +1053,7 @@ function BlacksmithService.RefineReplace(uid, seq)
     -- 应用新词缀
     equip.affixes = pending.affixes
 
-    -- 点金石升阶：更新装备品质 + 重算基础属性
+    -- 点金石提品：更新装备品质 + 重算基础属性
     if pending.upgradedQuality then
         local oldQ = equip.quality
         equip.quality = pending.upgradedQuality

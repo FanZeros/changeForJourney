@@ -536,31 +536,6 @@ function EquipmentSystem.getAscendBoost(equip)
     return BlacksmithConfig.getEnhanceBoost(EquipmentSystem.getAscendLevel(equip))
 end
 
---- 计算指定槽位的强化加成倍率
---- 双手武器同时享受主手(weapon) + 副手(offhand)加成，但各只享受 50%
----@param slotEnhanceData table|nil slotEnhance 模块数据 { levels = { [partySlot] = { [equipSlot] = lv } } }
----@param partySlot number 出战槽位索引 (1~5)
----@param equipSlot string 装备位置 ("weapon"/"offhand"/"armor"/"helmet"/"shoes"/"accessory")
----@param grip string|nil 装备握持类型 ("onehand"/"twohand"/nil)
----@return number 加成百分比（如 0.05 = 5%）
-function EquipmentSystem.calcSlotBoost(slotEnhanceData, partySlot, equipSlot, grip)
-    if not slotEnhanceData or not slotEnhanceData.levels then return 0 end
-    local partyLevels = slotEnhanceData.levels[partySlot]
-    if not partyLevels then return 0 end
-
-    if grip == "twohand" then
-        -- 双手武器：主手槽位 50% + 副手槽位 50%
-        local weaponLv  = partyLevels["weapon"]  or 0
-        local offhandLv = partyLevels["offhand"] or 0
-        local weaponBoost  = BlacksmithConfig.getEnhanceBoost(weaponLv)
-        local offhandBoost = BlacksmithConfig.getEnhanceBoost(offhandLv)
-        return weaponBoost * 0.5 + offhandBoost * 0.5
-    else
-        local lv = partyLevels[equipSlot] or 0
-        return BlacksmithConfig.getEnhanceBoost(lv)
-    end
-end
-
 --- 通过 deployed 数组反查 heroId 所在的 partySlot 索引
 ---@param deployed table 出战英雄 ID 数组 { heroId1, heroId2, ... }
 ---@param heroId number
@@ -601,7 +576,7 @@ end
 --- 计算装备实例的属性修改器条目列表
 --- 返回值格式与 UnitAttributes:addModifier(id, entries) 的 entries 参数一致
 ---@param equip table 装备实例
----@param slotBoost number|nil 槽位强化加成倍率（由 calcSlotBoost 计算，0 表示无加成）
+---@param slotBoost number|nil 升阶加成倍率（由 getAscendBoost 计算，0 表示无加成）
 ---@return table[] entries { { key=string, flat=number }, ... }
 function EquipmentSystem.computeModifierEntries(equip, slotBoost)
     local entries = {}
@@ -645,7 +620,7 @@ end
 ---@param unitAttrs table UnitAttributes 实例
 ---@param equip table 装备实例
 ---@param seq number 装备序列号
----@param slotBoost number|nil 槽位强化加成（由 calcSlotBoost 计算）
+---@param slotBoost number|nil 升阶加成（由 getAscendBoost 计算）
 function EquipmentSystem.applyToUnit(unitAttrs, equip, seq, slotBoost)
     local entries = EquipmentSystem.computeModifierEntries(equip, slotBoost)
     unitAttrs:addModifier(EquipmentSystem.modifierId(seq), entries)

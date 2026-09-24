@@ -226,7 +226,7 @@ local function calcMaxAffordableLevel(curLevel, ownedGold, ownedScroll)
     return reachLevel
 end
 
---- 获取当前选中槽位的 slotEnhance 等级
+--- 当前选中装备的升阶等级
 ---@return number
 local function getSlotEnhanceLevel()
     local equip = state.selectedEquip

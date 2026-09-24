@@ -1,5 +1,5 @@
 -- ============================================================================
--- BlacksmithEnhanceCache - 可强化缓存 / 角标查询（玩法不变）
+-- BlacksmithEnhanceCache - 可升阶角标。只看装备自己的 ascendLevel，不读格子。
 -- ============================================================================
 
 local M = {}
@@ -15,44 +15,55 @@ function M.bind(deps)
     local MAX_PARTY = deps.MAX_PARTY
     local cache = deps.cache
 
-    local function canEnhanceSlot(partySlot, equipSlot, slotEnhanceData, gold)
-        local BlacksmithConfig = require("config.BlacksmithConfig")
-        ---@diagnostic disable-next-line: assign-type-mismatch
-        slotEnhanceData = slotEnhanceData or ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-        if not slotEnhanceData or not slotEnhanceData.levels then return false end
-        gold = gold or GameState.getGold()
+    local function equippedAt(partySlot, equipSlot)
+        local teamSlots = CharacterPanel.getTeamSlotsData()
+        local slot = teamSlots and teamSlots[partySlot]
+        if not slot or slot.state ~= "occupied" or not slot.heroId then
+            return nil
+        end
+        local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
+        if not eqData or not eqData.inventory then return nil end
+        local EquipmentSystem = require("systems.EquipmentSystem")
+        local heroEq = EquipmentSystem.getHeroSlots(eqData, slot.heroId)
+        local seq = heroEq and heroEq[equipSlot]
+        if not seq then return nil end
+        local equip = eqData.inventory[tostring(seq)] or eqData.inventory[seq]
+        if equip then EquipmentSystem.hydrate(equip) end
+        return equip
+    end
 
-        local partyLevels = slotEnhanceData.levels[tostring(partySlot)]
-            or slotEnhanceData.levels[partySlot]
-        -- partyLevels 为 nil 表示该出战位从未强化过，所有槽位等级视为 0
-        local curLevel = (partyLevels and partyLevels[equipSlot]) or 0
-        -- 动态上限 = min(硬上限, 玩家等级限制)
+    local function canAfford(equip, equipSlot, gold)
+        if not equip then return false end
+        local BlacksmithConfig = require("config.BlacksmithConfig")
+        local EquipmentSystem = require("systems.EquipmentSystem")
+        gold = gold or GameState.getGold()
+        local curLevel = EquipmentSystem.getAscendLevel(equip)
         local maxLv = math.min(BlacksmithConfig.MAX_ENHANCE_LEVEL,
             ExpTable.getEnhanceLevelCap(GameState.getLevel()))
         if curLevel >= maxLv then return false end
-
-        local nextLevel = curLevel + 1
-        local cost = BlacksmithConfig.getEnhanceCost(nextLevel)
+        local cost = BlacksmithConfig.getAscendCost(curLevel + 1)
         if not cost then return false end
-
-        local scrollField = BlacksmithConfig.SLOT_SCROLL_MAP[equipSlot]
+        local scrollField = BlacksmithConfig.SLOT_SCROLL_MAP[equip.slot or equipSlot]
         local scrollGetter = scrollField and BlacksmithEnhance.getScrollGetter(scrollField)
         local ownedScroll = 0
         if scrollGetter and GameState[scrollGetter] then
-        ---@diagnostic disable-next-line: assign-type-mismatch
+            ---@diagnostic disable-next-line: assign-type-mismatch
             ownedScroll = GameState[scrollGetter]()
         end
         return gold >= cost.gold and ownedScroll >= cost.scroll
     end
 
-    local function canEnhancePartySlot(partySlot, slotEnhanceData, gold)
-        -- 只有已上阵角色的出战位才能强化，空槽位/未解锁槽位不算
+    -- 旧签名仍接收 slotEnhanceData，调用方不用改；格子数据已不再读取。
+    local function canEnhanceSlot(partySlot, equipSlot, _slotEnhanceData, gold)
+        return canAfford(equippedAt(partySlot, equipSlot), equipSlot, gold)
+    end
+
+    local function canEnhancePartySlot(partySlot, _slotEnhanceData, gold)
         local teamSlots = CharacterPanel.getTeamSlotsData()
         local slot = teamSlots and teamSlots[partySlot]
         if not slot or slot.state ~= "occupied" then return false end
-
         for _, equipSlot in ipairs(EQUIP_SLOT_ORDER) do
-            if canEnhanceSlot(partySlot, equipSlot, slotEnhanceData, gold) then
+            if canEnhanceSlot(partySlot, equipSlot, nil, gold) then
                 return true
             end
         end
@@ -62,20 +73,15 @@ function M.bind(deps)
     local function refreshEnhanceCache()
         if not cache.dirty then return end
         cache.dirty = false
-
-        -- 预取共享数据，避免 canEnhanceSlot 内部重复读取
-        local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
         local gold = GameState.getGold()
-
         for i = 1, MAX_PARTY do
             cache.slotCanEnhance[i] = cache.slotCanEnhance[i] or {}
             local anyCanEnhance = false
-            -- 只有已上阵角色的出战位才能强化
             local teamSlots = CharacterPanel.getTeamSlotsData()
             local slot = teamSlots and teamSlots[i]
             if slot and slot.state == "occupied" then
                 for _, equipSlot in ipairs(EQUIP_SLOT_ORDER) do
-                    local can = canEnhanceSlot(i, equipSlot, slotEnhanceData, gold)
+                    local can = canEnhanceSlot(i, equipSlot, nil, gold)
                     cache.slotCanEnhance[i][equipSlot] = can
                     if can then anyCanEnhance = true end
                 end
@@ -100,36 +106,14 @@ function M.bind(deps)
     end
 
     local function canEnhanceAny()
-        local BlacksmithConfig = require("config.BlacksmithConfig")
-        local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-        if not slotEnhanceData or not slotEnhanceData.levels then return false end
-
         local gold = GameState.getGold()
         local teamSlots = CharacterPanel.getTeamSlotsData()
-
         for partySlot = 1, MAX_PARTY do
-            -- 跳过空槽位和未解锁槽位：只有已上阵角色的装备槽才算可强化
             local slot = teamSlots and teamSlots[partySlot]
             if slot and slot.state == "occupied" then
-                local partyLevels = slotEnhanceData.levels[tostring(partySlot)]
-                    or slotEnhanceData.levels[partySlot]
                 for _, equipSlot in ipairs(EQUIP_SLOT_ORDER) do
-                    local curLevel = (partyLevels and partyLevels[equipSlot]) or 0
-                    if curLevel < BlacksmithConfig.MAX_ENHANCE_LEVEL then
-                        local nextLevel = curLevel + 1
-                        local cost = BlacksmithConfig.getEnhanceCost(nextLevel)
-                        if cost then
-                            local scrollField = BlacksmithConfig.SLOT_SCROLL_MAP[equipSlot]
-                            local scrollGetter = scrollField and BlacksmithEnhance.getScrollGetter(scrollField)
-                            local ownedScroll = 0
-                            if scrollGetter and GameState[scrollGetter] then
-                            ---@diagnostic disable-next-line: assign-type-mismatch
-                                ownedScroll = GameState[scrollGetter]()
-                            end
-                            if gold >= cost.gold and ownedScroll >= cost.scroll then
-                                return true
-                            end
-                        end
+                    if canEnhanceSlot(partySlot, equipSlot, nil, gold) then
+                        return true
                     end
                 end
             end

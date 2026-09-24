@@ -136,7 +136,7 @@ function M.bind(deps)
             end
         end
 
-        -- 槽位强化等级文本（来自 slotEnhance，与装备无关）
+        -- 升阶角标（跟着这件装备）
         do
         local enhLv = equip and EquipmentSystem.getAscendLevel(equip) or 0
             if enhLv > 0 then

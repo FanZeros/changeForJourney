@@ -44,7 +44,6 @@ function M.bind(deps)
             return nil
         end
 
-        local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
         local heroesData = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
         if partySlot == nil then
             partySlot = EquipmentSystem.findPartySlot(heroesData and heroesData.deployed, heroId)

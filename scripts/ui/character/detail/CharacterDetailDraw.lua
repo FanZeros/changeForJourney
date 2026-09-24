@@ -613,15 +613,6 @@ function M.draw(vg)
         heroInventory = equipData.inventory
     end
 
-    -- 槽位强化等级（slotEnhance）
-    local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-    local heroesData = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
-    local partySlot = EquipmentSystem.findPartySlot(heroesData and heroesData.deployed, heroId)
-    local slotEnhLevels = nil
-    if slotEnhanceData and slotEnhanceData.levels and partySlot then
-        slotEnhLevels = slotEnhanceData.levels[tostring(partySlot)] or slotEnhanceData.levels[partySlot]
-    end
-
     for _, slot in ipairs(DT_SLOTS) do
         -- 配装tab下：选中槽位绘制选中底图
         if detailState.tab == "equip" and slot.slot == detailState.equipSlot and img.slotSelected >= 0 then

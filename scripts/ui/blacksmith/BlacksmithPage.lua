@@ -886,14 +886,11 @@ function BlacksmithPage.init(vg)
     BlacksmithRefine.init(vg)
     BlacksmithDecompose.init(vg)
 
-    -- 订阅外部数据变化，标脏可强化缓存（页面打开期间金币/强化等级由其他系统变动时）
-    PlayerStore.Subscribe("slotEnhance", function()
-        _enhanceCache.dirty = true
-    end)
-    ClientDispatcher.subscribe("slotEnhance", function()
-        _enhanceCache.dirty = true
-    end)
+    -- 升阶跟装备走，装备或货币变化时刷新可升阶角标
     PlayerStore.Subscribe("equipment", function()
+        _enhanceCache.dirty = true
+    end)
+    PlayerStore.Subscribe("currency", function()
         _enhanceCache.dirty = true
     end)
 

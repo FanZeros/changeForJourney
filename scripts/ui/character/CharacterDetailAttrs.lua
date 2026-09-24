@@ -106,9 +106,6 @@ end
 local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqData)
     local heroEq = getHeroEquipped(eqData, heroId)
     if heroEq and eqData and eqData.inventory then
-        local slotEnhanceData = ClientDispatcher.get("slotEnhance") or PlayerStore.Get("slotEnhance")
-        local partySlot = EquipmentSystem.findPartySlotInTeams(heroesData, heroId)
-
         local appliedSeqs = {}
         for _, slotKey in ipairs(EquipmentConfig.SLOTS) do
             local seq = heroEq[slotKey]

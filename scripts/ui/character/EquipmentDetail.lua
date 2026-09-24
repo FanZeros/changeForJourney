@@ -528,21 +528,6 @@ local function getEquipIcon(templateId)
     return ImageCache.getEquipIcon(templateId)
 end
 
---- 获取当前装备详情上下文的槽位强化等级
----@param equipSlot string|nil 装备槽位 ("weapon"|"offhand"|"armor"|"accessory")
----@return number|nil slotLevel 槽位强化等级 (nil = 上下文不可用，不显示角标)
-local function getSlotEnhLevel(equipSlot)
-    if not detState.heroId or not equipSlot then return nil end
-    local heroesData = PlayerStore.Get("heroes")
-    local partySlot = EquipmentSystem.findPartySlotInTeams(heroesData, detState.heroId)
-    if not partySlot then return nil end
-    local slotEnhanceData = PlayerStore.Get("slotEnhance")
-    if not slotEnhanceData or not slotEnhanceData.levels then return 0 end
-    local partyLevels = slotEnhanceData.levels[tostring(partySlot)] or slotEnhanceData.levels[partySlot]
-    if not partyLevels then return 0 end
-    return partyLevels[equipSlot] or 0
-end
-
 --- 绘制单个装备面板（新装备或当前装备）
 ---@param vg any NanoVG 上下文
 ---@param equip table 装备实例
@@ -669,9 +654,9 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
         nvgText(vg, iconCX, iconCY, shortName, nil)
     end
 
-    -- 8.5) 槽位强化角标（右上角，描边，+X）
-    local slotLv = getSlotEnhLevel(detState.slot)
-    if slotLv then
+    -- 8.5) 升阶角标（右上角，跟着这件装备）
+    local slotLv = EquipmentSystem.getAscendLevel(equip)
+    if slotLv > 0 then
         local enhText = "+" .. slotLv
         local enhX = iconCX + REF_ICON_SIZE * 0.5 - 12
         local enhY = iconCY - REF_ICON_SIZE * 0.5 + 12

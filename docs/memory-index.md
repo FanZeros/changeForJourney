@@ -3,6 +3,8 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > 更新时间:2026-09-24 | 版本:v2.36-win-foreground-runtime
 >
+> **本会话(2026-09-24 workspace924)**：新分支 `workspace924`。已含今日首通奖励/遗匣/天赋/启动脚本/1920x1080 画布，并补合 `fix/talent-node-audit-20260924` 的古树图标与星图铺满。其他分支没有更新的提交。只 push 本分支。
+>
 > **本会话(2026-09-24 合并)**：当前分支 `fix/windows-runtime-foreground-start` 已合入今日更新的 `feat/first-clear-reward-cascade`、`fix/lootbox-click-20260924`、`fix/talent-node-audit-20260924`。未合昨日及更早分支。只 push 本分支。
 >
 > **本会话(2026-09-24)**：分支 `fix/windows-runtime-foreground-start`。Windows 本地预览改为项目目录前台启动 Runtime，不走隐藏 PowerShell。只 push 本分支。

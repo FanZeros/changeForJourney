@@ -8,8 +8,8 @@
   "never_cancel_task": true,
   "never_end_without_askuserquestion": true,
   "askuserquestion_rule": "不能取消或退出任务。每次完成后必须以 AskUserQuestion 选项提问下一步，禁止以纯文字中断对话。",
-  "dev_branch": "fix/windows-runtime-foreground-start",
-  "push_policy": "只在 fix/windows-runtime-foreground-start 上开发并 push，禁止推送到 integrate/20260923、workspace 或其他分支。",
+  "dev_branch": "workspace924",
+  "push_policy": "只在 workspace924 上开发并 push，禁止推送到 integrate/20260923、workspace、workspace923 或其他分支。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

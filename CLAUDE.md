@@ -14,7 +14,7 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`fix/windows-runtime-foreground-start`（从 `integrate/20260923` 拉出；只 push 本分支，不要推 `integrate/20260923` / `workspace`）
+- **当前开发分支**：`workspace924`（含今日合入与半屏/全屏画布修复；只 push 本分支，不要推 `integrate/20260923` / `workspace` / `workspace923`）
 
 ## 上次做了什么（2026-09-24）
 
@@ -78,7 +78,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 以当前功能分支继续开发；完成后每次 push **该分支**。当前是 `fix/windows-runtime-foreground-start`，不要推 `integrate/20260923`、`workspace` 或其他分支。
+- 以当前功能分支继续开发；完成后每次 push **该分支**。当前是 `workspace924`，不要推 `integrate/20260923`、`workspace`、`workspace923` 或其他分支。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）

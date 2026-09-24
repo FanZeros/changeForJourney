@@ -103,7 +103,7 @@ function BattleTriPage.init(vg)
     inited = true
     BattleView.init(vg)
     -- [暗黑替换] L0 整套大背景 + L1 行内容背景（森林/荒原/深渊）
-    imgL0      = nvgCreateImage(vg, "image/暗黑/L0_ui_bg_v6.png", 0)  -- [L0改版 v5] 哥特金卷草, 等高三行
+    imgL0      = nvgCreateImage(vg, "image/暗黑/L0_stone_frame.png", 0)  -- 石框三行底，左右石墙
     imgL1[1]   = nvgCreateImage(vg, "image/暗黑/L1_row1_forest.png", 0)
     imgL1[2]   = nvgCreateImage(vg, "image/暗黑/L1_row2_bonefield.png", 0)
     imgL1[3]   = nvgCreateImage(vg, "image/暗黑/L1_row3_abyss.png", 0)
@@ -136,9 +136,9 @@ local PLATE_AR = 1672 / 941
 -- 透明内矩形（归一化, 由图像 alpha 分析测得）
 -- [等距化] 左右缝柱=行缝=37: x0=(486*941/1080+37)/1672, x1=1-同款
 local INTERIORS = {
-    { x0 = 0.2754, y0 = 0.0064, x1 = 0.7247, y1 = 0.3093 },
-    { x0 = 0.2754, y0 = 0.3486, x1 = 0.7247, y1 = 0.6514 },
-    { x0 = 0.2754, y0 = 0.6908, x1 = 0.7247, y1 = 0.9936 },
+    { x0 = 0.2835, y0 = 0.0117, x1 = 0.7201, y1 = 0.3103 },
+    { x0 = 0.2835, y0 = 0.3475, x1 = 0.7207, y1 = 0.6482 },
+    { x0 = 0.2877, y0 = 0.6812, x1 = 0.7099, y1 = 0.9883 },
 }
 
 --- 框体内矩形 → 窗口坐标（L0 图按高度适配居中）

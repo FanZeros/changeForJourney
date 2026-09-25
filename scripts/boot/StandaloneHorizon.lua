@@ -142,7 +142,7 @@ local lootPress = false
 -- 右面板：角色固定
 -- 一期限制：弹窗为模态（绘制于中面板空间）；同一页面只在一个面板
 -- ============================================================================
-H_SKIP_START = true   -- 调试：跳过开始画面直接进主界面
+H_SKIP_START = false  -- 240db7b 打开调试跳过后会和暗黑标题互相卡住，表现为黑屏
 H_skipDone = false
 H_AUTO_DISMISS_TITLE = false  -- DarkTitleScreen 验收已通过：关闭无输入环境自动淡出钩子
 -- 截图验收钩子默认值（由外部 _validate_entry.lua 运行时覆写；此处定义避免 LSP 未定义全局）

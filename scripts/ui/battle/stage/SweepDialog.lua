@@ -299,13 +299,13 @@ end
 local _sweepRewardCache = nil   ---@type table|nil
 local _sweepRewardStageId = nil
 
---- 扫荡固定参数（与服务端 SweepService 保持一致）
-local SWEEP_REWARD_MINUTES = 10   -- 扫荡 = 领取 N 分钟挂机收益（与服务端 SweepService.REWARD_MINUTES 一致）
+--- 扫荡固定参数（与本地 SweepService 保持一致）
+local SWEEP_REWARD_MINUTES = 10   -- 扫荡 = 领取 N 分钟挂机收益（与本地 SweepService.REWARD_MINUTES 一致）
 local IdleIncomeConfig = require("config.IdleIncomeConfig")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 --- 获取扫荡单次预估奖励，结果按帧缓存
---- 与服务端 SweepService 完全一致：基于玩家最高进度关卡 maxStageId，
+--- 与本地 SweepService 完全一致：基于玩家最高进度关卡 maxStageId，
 --- 领取 SWEEP_REWARD_MINUTES 分钟的挂机收益（IdleIncomeConfig）
 ---@return table|nil rewards  adventureExp / adventurerExp / gold 等
 local function getSweepRewardEstimate()
@@ -326,7 +326,7 @@ local function getSweepRewardEstimate()
     local heroCount = #deployed
     if heroCount == 0 then heroCount = 1 end
 
-    -- 金币 & 经验 = 挂机收益/分钟 × N 分钟（与服务端一致）
+    -- 金币 & 经验 = 挂机收益/分钟 × N 分钟（与本地 SweepService 一致）
     local cfgGoldPerMin, cfgExpPerMin = IdleIncomeConfig.get(maxStageId)
     local gold    = math.floor(cfgGoldPerMin * SWEEP_REWARD_MINUTES)
     local baseExp = math.floor(cfgExpPerMin * SWEEP_REWARD_MINUTES)

@@ -77,7 +77,13 @@ function M.bind(deps)
         local onTeamChangedCallback = getOnTeamChanged()
 
         if dragState.active then
-            local slotIdx = hitTestTeamSlot(dx, dy)
+            local dropTeam, dropSlot = Draw.hitTestAvatarSlot(dx, dy)
+            if dropTeam and dropTeam ~= activeTeamIdx then
+                CharacterPanel.setActiveTeam(dropTeam)
+                teamSlots = getTeamSlots()
+                activeTeamIdx = dropTeam
+            end
+            local slotIdx = dropSlot or hitTestTeamSlot(dx, dy)
             if slotIdx and dragState.fromSlot then
                 local srcIdx = dragState.fromSlot
                 if slotIdx ~= srcIdx then
@@ -206,7 +212,12 @@ function M.bind(deps)
 
         local dragState = getDragState()
         local teamSlots = getTeamSlots()
-        local slotIdx = hitTestTeamSlot(dx, dy)
+        local avatarTeam, avatarSlot = Draw.hitTestAvatarSlot(dx, dy)
+        local slotIdx = avatarSlot or hitTestTeamSlot(dx, dy)
+        if avatarTeam and avatarTeam ~= getActiveTeamIdx() then
+            CharacterPanel.setActiveTeam(avatarTeam)
+            teamSlots = getTeamSlots()
+        end
         if slotIdx then
             local slot = teamSlots[slotIdx]
             if slot.state == "occupied" and slot.heroId then

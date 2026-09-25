@@ -890,19 +890,28 @@ function M.draw(vg, scrollY)
     -- 7) 拖拽中的浮动卡片（绘制在最上层）
     if dragState.active and dragState.heroId then
         local cardVg = img.vg or vg
-        local cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, dragState.heroId)
-        if (not cardImg or cardImg < 0) and dragState.heroId ~= 1 then
-            cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, 1)
+        local icon = heroIconHandle(vg, dragState.heroId)
+        if icon and icon >= 0 then
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, dragState.cx - 74, dragState.cy - 74, 148, 148, 16)
+            nvgFillColor(vg, nvgRGBA(20, 16, 12, 180))
+            nvgFill(vg)
+            drawImageCentered(vg, icon, dragState.cx, dragState.cy, 148, 148, 0.92)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, dragState.cx - 74, dragState.cy - 74, 148, 148, 16)
+            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 230))
+            nvgStrokeWidth(vg, 3)
+            nvgStroke(vg)
         end
-        -- 半透明浮动卡片
-        drawImageCover(vg, cardImg, dragState.cx, dragState.cy, CARD_W * 1.05, CARD_H * 1.05, 0.8)
-        -- 高亮边框
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, dragState.cx - CARD_W * 0.525, dragState.cy - CARD_H * 0.525,
-            CARD_W * 1.05, CARD_H * 1.05, 10)
-        nvgStrokeColor(vg, nvgRGBA(255, 220, 80, 200))
-        nvgStrokeWidth(vg, 3)
-        nvgStroke(vg)
+        local hoverTeam, hoverSlot = M.hitTestAvatarSlot(dragState.cx, dragState.cy)
+        if hoverTeam and hoverSlot then
+            local hx, hy = avatarCenter(hoverTeam, hoverSlot)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, hx - AV_SIZE * 0.5 - 4, hy - AV_SIZE * 0.5 - 4, AV_SIZE + 8, AV_SIZE + 8, 16)
+            nvgStrokeColor(vg, nvgRGBA(99, 255, 132, 230))
+            nvgStrokeWidth(vg, 4)
+            nvgStroke(vg)
+        end
     end
 end
 

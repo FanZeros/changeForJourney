@@ -1445,6 +1445,12 @@ function M.draw(vg)
     -- === 装备背包覆盖层 ===
     EquipmentBag.draw(vg)
 
+    -- === 套装详情浮层，盖住底部页签 ===
+    if detailState.tab == "equip" and CharacterDetailRef and CharacterDetailRef._EquipPanel
+        and CharacterDetailRef._EquipPanel.drawSetCodex then
+        CharacterDetailRef._EquipPanel.drawSetCodex(vg)
+    end
+
     -- === 装备详情弹窗（配装面板点击时显示）===
     if not EquipmentBag.isOpen() then
         local EquipmentDetail = require("ui.character.equip.EquipmentDetail")

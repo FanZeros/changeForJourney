@@ -213,11 +213,7 @@ local function collectEquipSide(heroId)
             setRows[#setRows + 1] = {
                 setId = row.setId,
                 title = string.format("%s %d/6", row.name, row.count),
-                lines = {
-                    { text = "2件 " .. (def.desc2 or ""), on = row.twoActive },
-                    { text = "4件 " .. (def.desc4 or ""), on = row.fourActive },
-                    { text = "6件 " .. (def.desc6 or ""), on = row.sixActive },
-                },
+                lines = {},
                 row = row,
             }
         end
@@ -789,63 +785,6 @@ function M.draw(vg, heroId, detailState)
     panelState.sideHits.right = { x = SIDE_RIGHT_X, y = SIDE_TOP, w = SIDE_RIGHT_W, h = SIDE_H }
     panelState.setHits = setHits
 
-    -- 套装图鉴浮层
-    if panelState.setCodexId then
-        local def = EquipmentSetConfig.get(panelState.setCodexId)
-        local hitRow = nil
-        for i = 1, #panelState.setHits do
-            if panelState.setHits[i].setId == panelState.setCodexId then
-                hitRow = panelState.setHits[i].row
-                break
-            end
-        end
-        if def then
-            local boxW, boxH = 820, 420
-            local bx, by = (DESIGN_W - boxW) * 0.5, 1140
-            nvgBeginPath(vg)
-            nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
-            nvgFill(vg)
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, bx, by, boxW, boxH, 18)
-            nvgFillColor(vg, nvgRGBA(0x1A, 0x14, 0x12, 240))
-            nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 200))
-            nvgStrokeWidth(vg, 2)
-            nvgStroke(vg)
-
-            local title = def.name .. (hitRow and string.format("  %d/6", hitRow.count) or "")
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 34)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0xF7, 0xFE, 0x77, 255))
-            nvgText(vg, DESIGN_W * 0.5, by + 46, title, nil)
-
-            local lines = {
-                { n = 2, text = def.desc2 or "", on = hitRow and hitRow.twoActive },
-                { n = 4, text = def.desc4 or "", on = hitRow and hitRow.fourActive },
-                { n = 6, text = def.desc6 or "", on = hitRow and hitRow.sixActive },
-            }
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-            for i = 1, 3 do
-                local ln = lines[i]
-                local ly = by + 90 + (i - 1) * 90
-                local r, g, b = 0x9A, 0x90, 0x80
-                if ln.on then r, g, b = 0xF4, 0xED, 0xE0 end
-                nvgFontSize(vg, 26)
-                nvgFillColor(vg, nvgRGBA(r, g, b, 255))
-                local tag = ln.n .. "件" .. (ln.on and " 已激活" or "")
-                nvgText(vg, bx + 40, ly, tag, nil)
-                nvgFontSize(vg, 24)
-                nvgFillColor(vg, nvgRGBA(r, g, b, 230))
-                nvgText(vg, bx + 40, ly + 34, ln.text or "", nil)
-            end
-            nvgFontSize(vg, 20)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0xC8, 0xC0, 0xB0, 180))
-            nvgText(vg, DESIGN_W * 0.5, by + boxH - 28, "点击空白关闭", nil)
-        end
-    end
     drawDragGhost(vg)
 end
 
@@ -1125,6 +1064,68 @@ function M.handleSideScroll(wheel, dx, dy)
 end
 
 --- 重置面板状态（角色切换时）
+
+--- 套装详情浮层。由详情页在最上层调用，避免被底部页签盖住。
+function M.drawSetCodex(vg)
+    if not panelState.setCodexId then return end
+    if panelState.setCodexId then
+        local def = EquipmentSetConfig.get(panelState.setCodexId)
+        local hitRow = nil
+        for i = 1, #panelState.setHits do
+            if panelState.setHits[i].setId == panelState.setCodexId then
+                hitRow = panelState.setHits[i].row
+                break
+            end
+        end
+        if def then
+            local boxW, boxH = 820, 420
+            local bx, by = (DESIGN_W - boxW) * 0.5, 1320
+            nvgBeginPath(vg)
+            nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
+            nvgFill(vg)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, bx, by, boxW, boxH, 18)
+            nvgFillColor(vg, nvgRGBA(0x1A, 0x14, 0x12, 240))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 200))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
+
+            local title = def.name .. (hitRow and string.format("  %d/6", hitRow.count) or "")
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 34)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0xF7, 0xFE, 0x77, 255))
+            nvgText(vg, DESIGN_W * 0.5, by + 46, title, nil)
+
+            local lines = {
+                { n = 2, text = def.desc2 or "", on = hitRow and hitRow.twoActive },
+                { n = 4, text = def.desc4 or "", on = hitRow and hitRow.fourActive },
+                { n = 6, text = def.desc6 or "", on = hitRow and hitRow.sixActive },
+            }
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+            for i = 1, 3 do
+                local ln = lines[i]
+                local ly = by + 90 + (i - 1) * 90
+                local r, g, b = 0x9A, 0x90, 0x80
+                if ln.on then r, g, b = 0xF4, 0xED, 0xE0 end
+                nvgFontSize(vg, 26)
+                nvgFillColor(vg, nvgRGBA(r, g, b, 255))
+                local tag = ln.n .. "件" .. (ln.on and " 已激活" or "")
+                nvgText(vg, bx + 40, ly, tag, nil)
+                nvgFontSize(vg, 24)
+                nvgFillColor(vg, nvgRGBA(r, g, b, 230))
+                nvgText(vg, bx + 40, ly + 34, ln.text or "", nil)
+            end
+            nvgFontSize(vg, 20)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0xC8, 0xC0, 0xB0, 180))
+            nvgText(vg, DESIGN_W * 0.5, by + boxH - 28, "点击空白关闭", nil)
+        end
+    end
+end
+
 function M.reset(heroId, slot)
     panelState.heroId  = heroId
     panelState.slot    = slot or "weapon"

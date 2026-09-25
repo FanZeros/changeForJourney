@@ -876,9 +876,6 @@ function HandleUpdate(eventType, eventData)
     -- [LetterIntro] 情景对话更新（large 全屏期间阻止其他 UI 更新）
     if ScenarioDialogue.isActive() then
         ScenarioDialogue.update(dt)
-        if ScenarioDialogue.isFullscreen() then
-            return
-        end
     else
         tryPlayPendingStory_()
     end

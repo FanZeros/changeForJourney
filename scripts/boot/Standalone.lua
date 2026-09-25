@@ -656,6 +656,8 @@ function Standalone.requestResetToStartScreen()
         modules = {
             equipment = { inventory = {}, equipped = {}, nextSeq = 1 },
             lootbox   = { seeds = {} },
+            heroes    = { roster = { ["1"] = { level = 1, exp = 0, shards = 0 } }, deployed = { 1 } },
+            battle    = { currentStageId = 101, maxStageId = 101, clearedStages = {}, battleMode = "idle" },
             session   = { lastOnlineTime = 0, firstLoginTime = 0, introCompleted = false },
         }
     }))
@@ -802,10 +804,6 @@ function HandleUpdate(eventType, eventData)
         local sessionData = ClientDispatcher.get("session") or {}
         local battleData = ClientDispatcher.get("battle") or {}
         local introDone = sessionData.introCompleted == true
-            or (tonumber(sessionData.firstLoginTime) or 0) > 0
-            or (tonumber(battleData.maxStageId) or 0) > 1
-            or (tonumber(battleData.currentStageId) or 0) > 1
-            or next(battleData.clearedStages or {}) ~= nil
         if introDone and sessionData.introCompleted ~= true then
             print("[Standalone] legacy save detected, mark intro completed")
             markIntroCompleted_()

@@ -121,16 +121,20 @@ local refreshItems
 local function findItemAt(dx, dy)
     if panelState.dirty then refreshItems() end
     local items = panelState.items
+    local bestItem, bestCX, bestCY, bestDist = nil, nil, nil, nil
     for idx = 1, #items do
         local row = math.ceil(idx / GRID_COLS)
         local col = ((idx - 1) % GRID_COLS) + 1
         local cx = GRID_FIRST_CX + (col - 1) * GRID_COL_STEP
         local cy = GRID_TOP_Y + (row - 1) * GRID_ROW_STEP - panelState.scrollY
         if hitTest(dx, dy, cx, cy, GRID_CELL, GRID_CELL) then
-            return items[idx], cx, cy
+            local dist = math.abs(dx - cx) + math.abs(dy - cy)
+            if not bestDist or dist < bestDist then
+                bestItem, bestCX, bestCY, bestDist = items[idx], cx, cy, dist
+            end
         end
     end
-    return nil
+    return bestItem, bestCX, bestCY
 end
 
 local function equipItemNow(item, heroId, slot)
@@ -676,17 +680,25 @@ function drawDragGhost(vg)
             break
         end
     end
+    -- 拖起后直接标出全部可穿戴槽，不必等指针先落到槽上。
+    for _, s in ipairs(DrawMod.DT_SLOTS) do
+        if panelState.dragItem.canWear and slotAccepts(equip, s.slot) then
+            nvgBeginPath(vg)
+            nvgCircle(vg, s.cx, s.cy, DrawMod.DT_SLOT_SIZE * 0.5 + 8)
+            nvgStrokeWidth(vg, 7)
+            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 235))
+            nvgStroke(vg)
+        end
+    end
     if over then
-        local ok = panelState.dragItem.canWear and slotAccepts(equip, over.slot)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, over.cx - 88, over.cy - 88, 176, 176, 20)
         nvgStrokeWidth(vg, 6)
-        if ok then
-            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 230))
-        else
+        local accepted = panelState.dragItem.canWear and slotAccepts(equip, over.slot)
+        if not accepted then
             nvgStrokeColor(vg, nvgRGBA(180, 70, 70, 220))
+            nvgStroke(vg)
         end
-        nvgStroke(vg)
     end
     local icon = equip and ImageCache.getEquipIcon(equip.templateId) or -1
     if icon and icon >= 0 then
@@ -702,6 +714,13 @@ function M.handleHover(dx, dy, heroId)
     if dy >= CLIP_TOP and dy <= CLIP_TOP + CLIP_HEIGHT
         and dx >= GRID_MARGIN_LEFT and dx <= DESIGN_W - GRID_MARGIN_LEFT then
         item = findItemAt(dx, dy)
+    end
+    if not item and dx >= GRID_MARGIN_LEFT and dx <= DESIGN_W - GRID_MARGIN_LEFT then
+        -- 首行常贴着裁剪边上沿，指针略高时仍应命中第一件。
+        local probeY = math.max(dy, CLIP_TOP + 8)
+        if probeY <= CLIP_TOP + GRID_CELL then
+            item = findItemAt(dx, probeY)
+        end
     end
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
     if not item then return end

@@ -350,7 +350,7 @@ function RelicDetailPanel.draw(vg)
 
     -- 5) 战力图标+文本 - 左对齐 X316 Y1051
     local strength = qualityDef and qualityDef.strength or 0
-    local powerStr = tostring(math.floor(strength))
+    local powerStr = require("core.NumberUtil").format(strength)
 
     -- 战力图标（左对齐，垂直居中于Y1051）
     if imgPowerIcon >= 0 then

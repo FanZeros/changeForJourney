@@ -7,8 +7,8 @@ local NumberUtil = {}
 --- 2^53 安全上限（JSON number 精度极限）
 local MAX_SAFE_NUMBER = 9007199254740992  -- 2^53
 
---- 将大数值格式化为 K/M/B/T 短表示
---- 小于 10000 原样返回，>=10000 转为 "12.3K" 等
+--- 将大数值格式化为 k/M/B/T 短表示
+--- 小于 10000 原样返回，>=10000 转为 "10k"、"12.3k" 等
 --- 自动去除 ".0" 尾缀以缩短字符串长度
 --- 支持范围：0 ~ 9007T（2^53）
 ---@param n number
@@ -25,8 +25,8 @@ function NumberUtil.format(n)
         if k >= 999.95 then
             return "1M"
         end
-        local s = string.format("%.1fK", k)
-        return (s:gsub("%.0K", "K"))  -- "140.0K" → "140K"
+        local s = string.format("%.1fk", k)
+        return (s:gsub("%.0k", "k"))  -- "10.0k" → "10k"
     elseif n < 1000000000 then
         local m = n / 1000000
         if m >= 999.95 then

@@ -642,7 +642,7 @@ local function drawUpperSlotContent(vg, tabName)
             -- 战力图标 + 数值（与 CharacterPanelDraw 一致）
             local power = slotPowerCache and slotPowerCache[i] or 0
             if power > 0 then
-                local powerStr = tostring(math.floor(power))
+                local powerStr = require("core.NumberUtil").format(power)
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 30)
                 nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)

@@ -486,7 +486,7 @@ function ArtifactDetailPanel.draw(vg)
         qc[1], qc[2], qc[3], QUALITY.STROKE,
         { strokeColor = { QUALITY.STROKE_R, QUALITY.STROKE_G, QUALITY.STROKE_B } })
 
-    local powerStr = tostring(getArtifactPower(artifact))
+    local powerStr = require("core.NumberUtil").format(getArtifactPower(artifact))
     if imgPowerIcon >= 0 then
         DrawUtil.drawImageCentered(vg, imgPowerIcon,
             POWER.ICON_X + POWER.ICON_W * 0.5,

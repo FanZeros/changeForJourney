@@ -462,7 +462,7 @@ function M.draw(vg, scrollY)
 
             -- c) 战斗力图标 + 数值 (Y=680)，整体水平居中于卡片
             local power = slotPowerCache[i] or 0
-            local powerStr = tostring(power)
+            local powerStr = require("core.NumberUtil").format(power)
             local POWER_GAP = 4
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 30)
@@ -529,7 +529,7 @@ function M.draw(vg, scrollY)
     for i = 1, M.MAX_SLOTS do
         totalPower = totalPower + (slotPowerCache[i] or 0)
     end
-    local totalPowerStr = tostring(totalPower)
+    local totalPowerStr = require("core.NumberUtil").format(totalPower)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 30)
     local tpTextW = nvgTextBounds(vg, 0, 0, totalPowerStr)
@@ -667,7 +667,7 @@ function M.draw(vg, scrollY)
         if isOwned then
             -- c) 战斗力图标+数值
             local power = rosterPowerCache[idx] or 0
-            local powerStr = tostring(power)
+            local powerStr = require("core.NumberUtil").format(power)
             local POWER_GAP = 4
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 30)

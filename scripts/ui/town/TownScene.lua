@@ -120,9 +120,9 @@ local LOOT_LBL_CY = 2090
 local LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H = 540 + LOOT_SHIFT_X, 2010, 380, 440
 -- 功绩：左下角地点，整体右移，避开教堂热区和遗匣热区。
 local TASK_SHIFT_X = 50
-local TASK_CX, TASK_CY, TASK_W, TASK_H = 180 + TASK_SHIFT_X, 2050, 180, 180
-local TASK_LBL_CY = 2188
-local TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H = 180 + TASK_SHIFT_X, 2100, 280, 280
+local TASK_CX, TASK_CY, TASK_W, TASK_H = 180 + TASK_SHIFT_X, 2050, 270, 270
+local TASK_LBL_CY = 2240
+local TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H = 180 + TASK_SHIFT_X, 2100, 420, 420
 
 -- 文字
 local LABEL_FONT_SIZE   = 38
@@ -579,7 +579,7 @@ function TownScene.draw(vg)
     local count = LootBox.getCount()
     if count > 0 then
         DarkIcon.draw(vg, "reddot", 709 + LOOT_SHIFT_X, LOOT_LBL_CY - 45, 44, 1.0)
-        drawTextStroke(vg, 540 + LOOT_SHIFT_X, 1798, "待领取 " .. tostring(count) .. " 件", 30,
+        drawTextStroke(vg, 540 + LOOT_SHIFT_X, 1798, "待领取 " .. require("core.NumberUtil").format(count) .. " 件", 30,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 238, 216, 161, 3)
     end
     LootBox.drawRates(vg, 540 + LOOT_SHIFT_X, 2170)
@@ -588,8 +588,8 @@ function TownScene.draw(vg)
     local taskFeedback = BF.begin(vg, "town_task", TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
-    drawBuildingLabel(vg, 180 + TASK_SHIFT_X, TASK_LBL_CY, 280, 90,
-        70 + TASK_SHIFT_X, TASK_LBL_CY - 4, 52, imgIconTask, 210 + TASK_SHIFT_X, TASK_LBL_CY - 4, "功绩")
+    drawBuildingLabel(vg, 180 + TASK_SHIFT_X, TASK_LBL_CY, 420, 135,
+        15 + TASK_SHIFT_X, TASK_LBL_CY - 6, 78, imgIconTask, 225 + TASK_SHIFT_X, TASK_LBL_CY - 6, "功绩")
     local taskOk, TaskPage = pcall(require, "ui.story.task.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
         DarkIcon.draw(vg, "reddot", 300 + TASK_SHIFT_X, TASK_LBL_CY - 36, 36, 1.0)

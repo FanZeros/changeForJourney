@@ -215,7 +215,7 @@ local function drawRow(vg, task, y)
         if icon >= 0 then
             DrawUtil.drawImageCentered(vg, icon, LIST.x + LIST.w - 300, y - 16, 64, 64, 1)
         end
-        text(vg, LIST.x + LIST.w - 300, y + 42, "×" .. tostring(reward.amount or 0), 22,
+        text(vg, LIST.x + LIST.w - 300, y + 42, "×" .. require("core.NumberUtil").format(reward.amount or 0), 22,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 232, 210, 150, 2)
     end
     local label = "未完成"

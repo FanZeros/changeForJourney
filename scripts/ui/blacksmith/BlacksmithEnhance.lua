@@ -810,8 +810,8 @@ function M.drawConfirmDialog(vg)
 
     -- 消耗展示（金币 + 卷轴，两组居中排列）
     local totalGold, totalScroll = calcCostToTarget(dlg.targetLevel)
-    local goldStr   = "×" .. tostring(totalGold)
-    local scrollStr = "×" .. tostring(totalScroll)
+    local goldStr   = "×" .. require("core.NumberUtil").format(totalGold)
+    local scrollStr = "×" .. require("core.NumberUtil").format(totalScroll)
     local iconSz    = EMDLG.COST_ICON_SIZE
     local font      = EMDLG.COST_FONT
 

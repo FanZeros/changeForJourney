@@ -675,6 +675,12 @@ end
 function CharacterDetail.handleDragBegin(dx, dy)
 
     if not detailState.open or detailState.closing then return true end
+    if detailState.tab == "equip" and CharacterDetail._EquipPanel
+        and CharacterDetail._EquipPanel.isInGridArea(dy) then
+        detailState.equipDragging = true
+        CharacterDetail._EquipPanel.beginPointer(dx, dy)
+        return true
+    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragBegin(dx, dy)
     end
@@ -705,6 +711,24 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragMove(dx, dy)
     if not detailState.open or detailState.closing then return true end
+    if detailState.equipDragging and CharacterDetail._EquipPanel then
+        local panel = CharacterDetail._EquipPanel
+        if panel.onPointerMove(dx, dy) then
+            return true
+        end
+        local delta = panel.getDragLastY() - dy
+        panel.onDrag(delta)
+        panel.setDragLastY(dy)
+        return true
+    end
+    -- 详情已打开后，再从格子开始拖也要切到装备拖拽，不能继续滚详情文本。
+    if detailState.tab == "equip" and CharacterDetail._EquipPanel
+        and CharacterDetail._EquipPanel.isInGridArea(dy) then
+        detailState.equipDragging = true
+        CharacterDetail._EquipPanel.beginPointer(dx, dy)
+        CharacterDetail._EquipPanel.onPointerMove(dx, dy)
+        return true
+    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragMove(dx, dy)
     end
@@ -738,6 +762,28 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragEnd(dx, dy)
     if not detailState.open then return false end
+    if detailState.equipDragging and CharacterDetail._EquipPanel then
+        local panel = CharacterDetail._EquipPanel
+        if panel.isItemDragging() then
+            local dropSlot = nil
+            for _, s in ipairs(DT_SLOTS) do
+                if hitTest(dx, dy, s.cx, s.cy, DT_SLOT_SIZE, DT_SLOT_SIZE) then
+                    dropSlot = s.slot
+                    break
+                end
+            end
+            if dropSlot then
+                panel.equipDragged(detailState.heroId, dropSlot)
+            else
+                panel.onDragEnd()
+            end
+            detailState.equipDragging = false
+            return true
+        end
+        detailState.equipDragging = false
+        panel.onDragEnd()
+        return true
+    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragEnd(dx, dy)
     end

@@ -253,20 +253,25 @@ function EquipCrossDrag.draw(vg)
         local target = hitSlot(dx, dy)
         if target and heroId and not (CharacterDetail.isAwakenTab and CharacterDetail.isAwakenTab()) then
             local Draw = require("ui.character.detail.CharacterDetailDraw")
-            local ok = canDrop(heroId, session.equipType, session.slot, session.grip, target)
             nvgSave(vg)
             nvgTranslate(vg, note.ox + panel.bx * note.s, note.oy + panel.by * note.s)
             nvgScale(vg, note.s * Viewport.DS, note.s * Viewport.DS)
             for _, s in ipairs(Draw.DT_SLOTS) do
-                if s.slot == target then
+                if canDrop(heroId, session.equipType, session.slot, session.grip, s.slot) then
+                    nvgBeginPath(vg)
+                    nvgCircle(vg, s.cx, s.cy, Draw.DT_SLOT_SIZE * 0.5 + 8)
+                    nvgStrokeWidth(vg, 7)
+                    nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 235))
+                    nvgStroke(vg)
+                end
+            end
+            for _, s in ipairs(Draw.DT_SLOTS) do
+                if s.slot == target
+                    and not canDrop(heroId, session.equipType, session.slot, session.grip, target) then
                     nvgBeginPath(vg)
                     nvgRoundedRect(vg, s.cx - 88, s.cy - 88, 176, 176, 20)
                     nvgStrokeWidth(vg, 6)
-                    if ok then
-                        nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 230))
-                    else
-                        nvgStrokeColor(vg, nvgRGBA(180, 70, 70, 220))
-                    end
+                    nvgStrokeColor(vg, nvgRGBA(180, 70, 70, 220))
                     nvgStroke(vg)
                     break
                 end

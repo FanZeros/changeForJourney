@@ -374,6 +374,10 @@ local REF_BG_CX  = 805
 local REF_BG_CY  = 1120
 local REF_BG_W   = 860
 local REF_BG_H   = 1380
+-- 小窗按实际内容收紧。旧 1380 高把按钮压出框，并在词条下方留下大片空白。
+local COMPACT_BG_W = 760
+local COMPACT_BTN_H = 72
+local COMPACT_BTN_GAP = 18
 
 -- 装备名称（左对齐）
 local REF_NAME_X = 470    -- 左对齐基准
@@ -476,25 +480,53 @@ local COMPACT_SCALE = 0.92
 local COMPACT_MARGIN = 16
 local COMPACT_CELL = 160
 
+--- 小窗内容底部：最后一条词条或等级行下方，不再沿用大面板的固定高度。
+---@param equip table|nil
+---@return number
+local function compactContentBottom(equip)
+    local bottom = REF_LV_BG_CY + REF_LV_BG_H * 0.5
+    if equip and equip.baseStats and #equip.baseStats > 0 then
+        bottom = REF_STAT_BG_Y0 + (#equip.baseStats - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
+            + REF_STAT_BG_H * 0.5
+    end
+    if equip and equip.affixes and #equip.affixes > 0 then
+        local titleY = math.max(REF_AFFIX_TITLE_Y, bottom + 30)
+        bottom = titleY + REF_AFFIX_TITLE_FONT * 0.5 + REF_AFFIX_GAP_TOP + REF_AFFIX_ROW_H * 0.5
+            + (#equip.affixes - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP) + REF_AFFIX_ROW_H * 0.5
+    end
+    return bottom
+end
+
+---@param equip table|nil
+---@return number
+local function compactPanelHeight(equip)
+    local top = REF_BG_CY - REF_BG_H * 0.5
+    local contentBottom = compactContentBottom(equip)
+    local buttonBottom = contentBottom + 28 + COMPACT_BTN_GAP + COMPACT_BTN_H + 18
+    return math.max(620, buttonBottom - top)
+end
+
 local function compactVisSize()
-    local w = REF_BG_W * COMPACT_SCALE
-    local h = (REF_BG_H + REF_ENH_BTN_GAP + REF_ENH_BTN_H + 8) * COMPACT_SCALE
+    local w = COMPACT_BG_W * COMPACT_SCALE
+    local h = compactPanelHeight(detState.layoutEquip) * COMPACT_SCALE
     return w, h
 end
 
---- 小窗按钮：贴在卡片底边下方，左右并排
+--- 小窗按钮：贴在最后一条内容下方，左右并排，完整留在框内。
 ---@return number cy, number wearCX, number refineCX, number w, number h
 local function compactButtonRow()
-    local cy = REF_BG_CY + REF_BG_H * 0.5 + REF_ENH_BTN_GAP + REF_ENH_BTN_H * 0.5
-    local w = 400
+    local panelH = compactPanelHeight(detState.layoutEquip)
+    local panelTop = REF_BG_CY - REF_BG_H * 0.5
+    local cy = panelTop + panelH - 18 - COMPACT_BTN_H * 0.5
+    local w = 330
     local gap = 20
     local wearCX = REF_BG_CX - (gap + w) * 0.5
     local refineCX = REF_BG_CX + (gap + w) * 0.5
-    return cy, wearCX, refineCX, w, REF_ENH_BTN_H
+    return cy, wearCX, refineCX, w, COMPACT_BTN_H
 end
 
 local function compactOffset()
-    local refLeft = REF_BG_CX - REF_BG_W * 0.5
+    local refLeft = REF_BG_CX - COMPACT_BG_W * 0.5
     local refTop = REF_BG_CY - REF_BG_H * 0.5
     local visW, visH = compactVisSize()
     local ax = detState.anchorX or 540
@@ -653,7 +685,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
 
     -- 6) 战斗力数值 - 左对齐 X622 Y917 字号42 颜色f7fe77 描边4
     local equipPower = calcEquipPower(equip, detState.heroId)
-    local powerStr = tostring(equipPower)
+    local powerStr = require("core.NumberUtil").format(equipPower)
     drawTextStroke(vg, REF_POWER_VAL_X + offsetX, REF_POWER_VAL_Y, powerStr,
         REF_POWER_VAL_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         0xf7, 0xfe, 0x77, 4)
@@ -1275,12 +1307,14 @@ function EquipmentDetail.handleInput(dx, dy)
     -- 点击面板外部 → 关闭
     local inPanel = false
     if detState.compactCorner then
-        if hitTest(dx, dy, REF_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H) then
+        local panelTop = REF_BG_CY - REF_BG_H * 0.5
+        local panelH = compactPanelHeight(newEquip)
+        if hitTest(dx, dy, REF_BG_CX, panelTop + panelH * 0.5, COMPACT_BG_W, panelH) then
             inPanel = true
         end
-        local rowY = select(1, compactButtonRow())
-        if math.abs(dy - rowY) <= REF_ENH_BTN_H * 0.5 + 8
-            and math.abs(dx - REF_BG_CX) <= REF_BG_W * 0.5 then
+        local rowY, _, _, _, bh = compactButtonRow()
+        if math.abs(dy - rowY) <= bh * 0.5 + 8
+            and math.abs(dx - REF_BG_CX) <= COMPACT_BG_W * 0.5 then
             inPanel = true
         end
     elseif hasCurrent then
@@ -1379,8 +1413,11 @@ function EquipmentDetail.draw(vg)
     local enhOnly = (detState.slot == nil)  -- 背包模式：无穿戴按钮，仅前往洗练
 
     if compact then
+        detState.layoutEquip = newEquip
+        local panelTop = REF_BG_CY - REF_BG_H * 0.5
+        local panelH = compactPanelHeight(newEquip)
         drawEquipPanel(vg, newEquip, 0,
-            REF_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H,
+            REF_BG_CX, panelTop + panelH * 0.5, COMPACT_BG_W, panelH,
             nil, false, btnText, false, true, false)
         local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
         local showWear = not enhOnly
@@ -1432,12 +1469,19 @@ function EquipmentDetail.containsPoint(dx, dy)
         lx = (dx - ox) / COMPACT_SCALE
         ly = (dy - oy) / COMPACT_SCALE
     end
-    local bgCX = detState.compactCorner and REF_BG_CX or SINGLE_BG_CX
-    if hitTest(lx, ly, bgCX, REF_BG_CY, REF_BG_W, REF_BG_H) then return true end
     if detState.compactCorner then
-        local rowY = select(1, compactButtonRow())
-        if math.abs(ly - rowY) <= REF_ENH_BTN_H * 0.5 + 8
-            and math.abs(lx - REF_BG_CX) <= REF_BG_W * 0.5 then
+        local panelTop = REF_BG_CY - REF_BG_H * 0.5
+        local panelH = compactPanelHeight(detState.layoutEquip)
+        if hitTest(lx, ly, REF_BG_CX, panelTop + panelH * 0.5, COMPACT_BG_W, panelH) then
+            return true
+        end
+    else
+        if hitTest(lx, ly, SINGLE_BG_CX, REF_BG_CY, REF_BG_W, REF_BG_H) then return true end
+    end
+    if detState.compactCorner then
+        local rowY, _, _, _, bh = compactButtonRow()
+        if math.abs(ly - rowY) <= bh * 0.5 + 8
+            and math.abs(lx - REF_BG_CX) <= COMPACT_BG_W * 0.5 then
             return true
         end
     end

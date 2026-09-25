@@ -301,7 +301,7 @@ end
 --- 头像编队一行的左上角 X（4 个头像水平居中）
 ---@return number
 local function avatarRowX()
-    return 132
+    return 168
 end
 
 --- 第 teamIdx 队第 slotIdx 个头像的中心
@@ -370,9 +370,9 @@ function M.drawTeamAvatars(vg)
         local _, rowCy = avatarCenter(t, 1)
         local rowX = avatarRowX()
         local rowW = M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
-        local frameX = 86
+        local frameX = 28
         local frameY = rowCy - AV_SIZE * 0.5 - 14
-        local frameW = DESIGN_W - 108
+        local frameW = DESIGN_W - 48
         local frameH = AV_SIZE + 28
         nvgBeginPath(vg)
         nvgRoundedRect(vg, frameX, frameY, frameW, frameH, 16)
@@ -388,9 +388,9 @@ function M.drawTeamAvatars(vg)
             nvgStrokeWidth(vg, 2)
         end
         nvgStroke(vg)
-        local labelX = rowX - 8
+        local labelX = rowX - 28
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 22)
+        nvgFontSize(vg, 32)
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
         if locked then
             nvgFillColor(vg, nvgRGBA(140, 130, 115, 180))
@@ -410,13 +410,13 @@ function M.drawTeamAvatars(vg)
         end
         local powerStr = require("core.NumberUtil").format(teamPower)
         local rowRight = rowX + rowW
-        nvgFontSize(vg, 22)
+        nvgFontSize(vg, 30)
         nvgFillColor(vg, locked and nvgRGBA(140, 130, 115, 160) or nvgRGBA(247, 254, 119, 255))
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         if img.power and img.power >= 0 then
-            drawImageCentered(vg, img.power, rowRight + 28, rowCy, 26, 26, locked and 0.45 or 1)
+            drawImageCentered(vg, img.power, rowRight + 42, rowCy, 32, 32, locked and 0.45 or 1)
         end
-        nvgText(vg, rowRight + 48, rowCy, powerStr, nil)
+        nvgText(vg, rowRight + 66, rowCy, powerStr, nil)
         local slots = teams[t] and teams[t].slots
         for s = 1, M.MAX_SLOTS do
             drawAvatarSlot(vg, t, s, slots and slots[s], locked)

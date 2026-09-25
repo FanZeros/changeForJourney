@@ -378,6 +378,8 @@ local function calcTalentFixedDamage(attacker, target, baseDmg, opts)
     if attacker.attrs.artifactCritDmgMult then
         critDmg = critDmg * attacker.attrs.artifactCritDmgMult
     end
+    -- 与普攻一致：暴击率溢出转为暴击伤害（forceCrit 分支同样受益）
+    critRate, critDmg = CF.applyCritOverflow(critRate, critDmg)
 
     local armorType = target.armorType or AD.ARMOR_LEATHER
     local resistance = 0

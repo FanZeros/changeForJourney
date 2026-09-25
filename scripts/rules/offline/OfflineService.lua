@@ -182,8 +182,9 @@ function OfflineService.CalcOnEnter(uid)
 
     -- 构建面板展示数据（v2 结构）
     local panelData = {
-        offlineSeconds = rewards.seconds,
-        maxSeconds     = rewards.maxSeconds or OfflineCalc.MAX_SECONDS,
+        offlineSeconds = rewards.rawSeconds or rewards.seconds,
+        maxSeconds     = rewards.fullRateSeconds or OfflineCalc.FULL_RATE_SECONDS,
+        tailRatio      = rewards.tailRatio or OfflineCalc.TAIL_RATIO,
         totalKills     = rewards.kills,
         adventureExp   = rewards.adventureExp,
         adventurerExp  = rewards.adventurerExp,

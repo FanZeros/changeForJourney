@@ -508,6 +508,10 @@ function DungeonPage.init(vg)
     print("[DungeonPage] init OK")
 end
 
+function DungeonPage.refreshFromStore()
+    getDungeonData()
+end
+
 function DungeonPage.draw(vg)
     if not dungeonInited_ then
         DungeonPage.init(vg)

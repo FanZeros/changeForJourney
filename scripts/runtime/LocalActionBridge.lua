@@ -280,21 +280,11 @@ function M.init()
     end)
     ensureModule("player", defaultPlayer)
     ensureModule("currency", defaultCurrency)
+    -- 不在这里写 firstLoginTime。开场是否播放只看 introCompleted；
+    -- 登录时间由 OfflineService.CalcOnEnter 在真正进游戏时记录。
     ensureModule("session", function()
-        local data = defaultFromSchema("session")
-        local now = os.time()
-        if (data.firstLoginTime or 0) == 0 then data.firstLoginTime = now end
-        if (data.lastOnlineTime or 0) == 0 then data.lastOnlineTime = now end
-        return data
+        return defaultFromSchema("session")
     end)
-    do
-        local session = ClientDispatcher.get("session")
-        if session then
-            local now = os.time()
-            if (session.firstLoginTime or 0) == 0 then session.firstLoginTime = now end
-            if (session.lastOnlineTime or 0) == 0 then session.lastOnlineTime = now end
-        end
-    end
     ensureModule("talents", function()
         return defaultFromSchema("talents")
     end)

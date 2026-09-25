@@ -100,7 +100,7 @@ local MY_HEROES_CY   = 680
 -- 下方名册：图标网格，点图标才打开角色卡面
 local ROSTER_ICON = 148
 local ROSTER_GAP = 24
-local ROW1_CY        = 900
+local ROW1_CY        = 820
 local MAX_PER_ROW    = 5
 
 -- 行间距
@@ -121,7 +121,7 @@ local DEPLOYED_TXT_DY = -120  -- [卡高4/5] 原-149
 
 -- ======================== 滚动区域 ========================
 
-local SCROLL_TOP     = 790   -- 三队头像下方
+local SCROLL_TOP     = 720   -- 三队边框下方
 local SCROLL_BOTTOM  = 2400   -- 屏幕底边（与 ChurchPage 名册一致；避免底部大片留白）
 local SCROLL_LEFT    = 0
 local SCROLL_RIGHT   = DESIGN_W
@@ -270,10 +270,10 @@ local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px �
 
 -- 右侧栏只显示图标：三队头像同时显示，点进去才打开角色卡面
 local heroIconCache = {}  ---@type table<number, integer>
-local AV_SIZE = 112
-local AV_GAP = 12
-local AV_ROW_H = 156
-local AV_TOP = 168
+local AV_SIZE = 148
+local AV_GAP = 18
+local AV_ROW_H = 188
+local AV_TOP = 28
 
 --- 计算第 idx 个页签的左上角 X
 ---@param idx number
@@ -301,7 +301,7 @@ end
 --- 头像编队一行的左上角 X（4 个头像水平居中）
 ---@return number
 local function avatarRowX()
-    return 118
+    return 78
 end
 
 --- 第 teamIdx 队第 slotIdx 个头像的中心
@@ -368,7 +368,27 @@ function M.drawTeamAvatars(vg)
     for t = 1, M.TEAM_TAB_COUNT do
         local locked = t > unlockedCnt
         local _, rowCy = avatarCenter(t, 1)
-        local labelX = avatarRowX() - 16
+        local rowX = avatarRowX()
+        local rowW = M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
+        local frameX = 16
+        local frameY = rowCy - AV_SIZE * 0.5 - 16
+        local frameW = DESIGN_W - 32
+        local frameH = AV_SIZE + 32
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, frameX, frameY, frameW, frameH, 16)
+        if t == activeIdx then
+            nvgFillColor(vg, nvgRGBA(48, 36, 18, 150))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(212, 175, 90, 230))
+            nvgStrokeWidth(vg, 3)
+        else
+            nvgFillColor(vg, nvgRGBA(12, 10, 8, locked and 70 or 110))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(120, 100, 70, locked and 80 or 160))
+            nvgStrokeWidth(vg, 2)
+        end
+        nvgStroke(vg)
+        local labelX = rowX - 8
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 22)
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
@@ -389,7 +409,7 @@ function M.drawTeamAvatars(vg)
             end
         end
         local powerStr = require("core.NumberUtil").format(teamPower)
-        local rowRight = avatarRowX() + M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
+        local rowRight = rowX + rowW
         nvgFontSize(vg, 22)
         nvgFillColor(vg, locked and nvgRGBA(140, 130, 115, 160) or nvgRGBA(247, 254, 119, 255))
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)

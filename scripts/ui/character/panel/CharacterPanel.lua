@@ -421,6 +421,7 @@ function CharacterPanel.init(vg)
         getUnlockedTeamCount = function() return ExpTable.getUnlockedTeamCount(GameState.getLevel()) end,
         getTeamOccupiedCounts = function() return CharacterPanel.getTeamOccupiedCounts() end,
         getTeams = function() return teams end,
+        getTeamPowerCaches = function() return teamPowerCaches end,
     })
     Draw.initImages(vg)
 

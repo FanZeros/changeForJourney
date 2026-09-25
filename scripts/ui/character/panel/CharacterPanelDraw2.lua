@@ -89,18 +89,18 @@ local LIST_BG_CY     = DESIGN_H - LIST_BG_H * 0.5   -- 底部对齐: 2400 - 789.
 
 -- 队伍总战斗力（与详情页「角色详情」同高 Y=860）
 local TOTAL_POWER_CX = 540
-local TOTAL_POWER_CY = 700
+local TOTAL_POWER_CY = 660
 local TOTAL_POWER_ICON_SIZE = 36
 local TOTAL_POWER_GAP = 4
 
 -- "远征团"标题：与点进角色后的名字同位置（CharacterDetailDraw MID_NAME_CY=995）
 local MY_HEROES_CX   = 540
-local MY_HEROES_CY   = 820
+local MY_HEROES_CY   = 680
 
 -- 下方名册：图标网格，点图标才打开角色卡面
 local ROSTER_ICON = 148
 local ROSTER_GAP = 24
-local ROW1_CY        = 980
+local ROW1_CY        = 900
 local MAX_PER_ROW    = 5
 
 -- 行间距
@@ -121,7 +121,7 @@ local DEPLOYED_TXT_DY = -120  -- [卡高4/5] 原-149
 
 -- ======================== 滚动区域 ========================
 
-local SCROLL_TOP     = 880   -- 三队头像与标题下方
+local SCROLL_TOP     = 790   -- 三队头像下方
 local SCROLL_BOTTOM  = 2400   -- 屏幕底边（与 ChurchPage 名册一致；避免底部大片留白）
 local SCROLL_LEFT    = 0
 local SCROLL_RIGHT   = DESIGN_W
@@ -179,6 +179,7 @@ local getActiveTeamIdx    -- [三队并行] function() return activeTeamIdx end
 local getUnlockedTeamCount -- [三队并行] function() return unlockedCount end
 local getTeamOccupiedCounts -- [三队并行] function() return counts[] end
 local getTeams             -- function() return teams end
+local getTeamPowerCaches   -- function() return teamPowerCaches end
 
 --- 注入来自 CharacterPanel 的共享状态
 function M.setContext(ctx)
@@ -195,6 +196,7 @@ function M.setContext(ctx)
     getUnlockedTeamCount = ctx.getUnlockedTeamCount
     getTeamOccupiedCounts = ctx.getTeamOccupiedCounts
     getTeams             = ctx.getTeams
+    getTeamPowerCaches   = ctx.getTeamPowerCaches
 end
 
 -- ======================== 图片初始化 ========================
@@ -268,8 +270,8 @@ local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px �
 
 -- 右侧栏只显示图标：三队头像同时显示，点进去才打开角色卡面
 local heroIconCache = {}  ---@type table<number, integer>
-local AV_SIZE = 132
-local AV_GAP = 16
+local AV_SIZE = 112
+local AV_GAP = 12
 local AV_ROW_H = 156
 local AV_TOP = 168
 
@@ -299,8 +301,7 @@ end
 --- 头像编队一行的左上角 X（4 个头像水平居中）
 ---@return number
 local function avatarRowX()
-    local totalW = M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
-    return (DESIGN_W - totalW) * 0.5
+    return 118
 end
 
 --- 第 teamIdx 队第 slotIdx 个头像的中心
@@ -379,6 +380,23 @@ function M.drawTeamAvatars(vg)
             nvgFillColor(vg, nvgRGBA(220, 210, 190, 255))
         end
         nvgText(vg, labelX, rowCy, "队" .. t, nil)
+        local powerCaches = getTeamPowerCaches and getTeamPowerCaches() or {}
+        local teamPower = 0
+        local cache = powerCaches[t]
+        if cache then
+            for i = 1, M.MAX_SLOTS do
+                teamPower = teamPower + (cache[i] or 0)
+            end
+        end
+        local powerStr = require("core.NumberUtil").format(teamPower)
+        local rowRight = avatarRowX() + M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
+        nvgFontSize(vg, 22)
+        nvgFillColor(vg, locked and nvgRGBA(140, 130, 115, 160) or nvgRGBA(247, 254, 119, 255))
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+        if img.power and img.power >= 0 then
+            drawImageCentered(vg, img.power, rowRight + 28, rowCy, 26, 26, locked and 0.45 or 1)
+        end
+        nvgText(vg, rowRight + 48, rowCy, powerStr, nil)
         local slots = teams[t] and teams[t].slots
         for s = 1, M.MAX_SLOTS do
             drawAvatarSlot(vg, t, s, slots and slots[s], locked)
@@ -655,32 +673,11 @@ function M.draw(vg, scrollY)
     -- 下半部分：角色列表
     -- ================================================================
 
-    -- 3) 角色列表背景
-    drawImageCentered(vg, img.listBg, LIST_BG_CX, LIST_BG_CY, LIST_BG_W, LIST_BG_H, 1.0)
+    -- 3) 角色框图片背景先去掉，背景稍后另定
+    -- 4) 总战力已改到各队头像后方
+    -- 5) 不显示“远征团”
 
-    -- 4) 队伍总战斗力（图标+数值，水平居中）
-    local totalPower = 0
-    for i = 1, M.MAX_SLOTS do
-        totalPower = totalPower + (slotPowerCache[i] or 0)
-    end
-    local totalPowerStr = require("core.NumberUtil").format(totalPower)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 30)
-    local tpTextW = nvgTextBounds(vg, 0, 0, totalPowerStr)
-    local tpComboW = TOTAL_POWER_ICON_SIZE + TOTAL_POWER_GAP + tpTextW
-    local tpStartX = TOTAL_POWER_CX - tpComboW * 0.5
-    drawImageCentered(vg, img.power, tpStartX + TOTAL_POWER_ICON_SIZE * 0.5, TOTAL_POWER_CY,
-        TOTAL_POWER_ICON_SIZE, TOTAL_POWER_ICON_SIZE, 1.0)
-    drawTextStroke(vg, tpStartX + TOTAL_POWER_ICON_SIZE + TOTAL_POWER_GAP, TOTAL_POWER_CY,
-        totalPowerStr, 30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        247, 254, 119, 4)
-
-    -- 5) "远征团"标题（白色描边，贴列表背景顶边下方）
-    drawTextStroke(vg, MY_HEROES_CX, MY_HEROES_CY, "远征团",
-        42, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 4)
-
-    -- 6) 角色卡片行（可滚动区域，裁剪到可视范围）
+    -- 6) 角色图标行（可滚动区域，裁剪到可视范围）
     nvgSave(vg)
     nvgScissor(vg, SCROLL_LEFT, SCROLL_TOP, SCROLL_RIGHT - SCROLL_LEFT, SCROLL_BOTTOM - SCROLL_TOP)
 

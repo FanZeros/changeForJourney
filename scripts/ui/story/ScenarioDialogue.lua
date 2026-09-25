@@ -178,12 +178,10 @@ end
 
 local function getCgImage(step)
     if not step then return -1 end
-    local key = step.cg or step.cgPath or step.characterId
+    -- 角色 CG 只在步骤明确指定时使用。默认角色图走立绘，避免剧情里铺出 CG。
     local path = step.cg or step.cgPath
-    if not path and step.characterId then
-        path = string.format("image/角色CG/CG_H%d.png", step.characterId)
-    end
-    return getCachedImage(cgCache_, key, path)
+    if not path or path == "" then return -1 end
+    return getCachedImage(cgCache_, path, path)
 end
 
 local function getPortraitImage(characterId)

@@ -294,6 +294,17 @@ function OfflineCalc.calcRewardsFromKills(kills, stageEntry, heroCount, stageCon
             scrollDrops[st] = (scrollDrops[st] or 0) + 1
         end
     end
+    -- 扫荡券：约每 5 只怪 1 张，比卷轴更频繁
+    local ticketRate = math.min(0.35, math.max(0.12, scrollDropRate * 4))
+    if ticketRate <= 0 then ticketRate = 0.20 end
+    local rawTickets = kills * ticketRate
+    local ticketCount = math.floor(rawTickets)
+    if math.random() < (rawTickets - ticketCount) then
+        ticketCount = ticketCount + 1
+    end
+    if ticketCount > 0 then
+        scrollDrops.sweepTicket = ticketCount
+    end
 
     return {
         gold          = totalGold,

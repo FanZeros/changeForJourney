@@ -17,6 +17,8 @@ local SweepService = {}
 
 -- 每次扫荡消耗的扫荡券数
 SweepService.SWEEP_COST = 1
+-- 单次请求最多扫荡次数
+SweepService.MAX_COUNT = 10
 -- 扫荡收益 = 即时领取 N 分钟挂机收益（与挂机/离线统一走 IdleIncomeConfig）
 SweepService.REWARD_MINUTES = 10
 -- 扫荡固定掉落装备数
@@ -28,12 +30,16 @@ SweepService.SWEEP_STAGE_COUNT = 1
 
 -- ======================== 执行扫荡 ========================
 
---- 消耗 1 张扫荡券，只扫最高已通关，发放该关收益
+--- 消耗 count 张扫荡券，只扫最高已通关，奖励按次数相乘
 ---@param uid number
+---@param count number|nil
 ---@return boolean ok
 ---@return string|nil err
 ---@return table|nil result  { gold, heroExp, playerExp, equipCount, scrolls, stages }
-function SweepService.Sweep(uid)
+function SweepService.Sweep(uid, count)
+    count = math.floor(tonumber(count) or 1)
+    if count < 1 then count = 1 end
+    if count > SweepService.MAX_COUNT then count = SweepService.MAX_COUNT end
     local currency   = PDM.GetModule(uid, "currency")
     local battleData = PDM.GetModule(uid, "battle")
     local heroesData = PDM.GetModule(uid, "heroes")
@@ -46,7 +52,8 @@ function SweepService.Sweep(uid)
 
     -- 检查扫荡券是否足够
     local owned = currency.sweepTicket or 0
-    if owned < SweepService.SWEEP_COST then
+    local cost = SweepService.SWEEP_COST * count
+    if owned < cost then
         return false, "扫荡券不足"
     end
 
@@ -89,8 +96,8 @@ function SweepService.Sweep(uid)
     -- 1 张扫荡券 = 即时领取 REWARD_MINUTES 分钟的挂机收益（基于玩家最高进度关卡）
     local stageCount = #sweepStages
     local cfgGoldPerMin, cfgExpPerMin = IdleIncomeConfig.get(maxStageId)
-    local goldAmount = math.floor(cfgGoldPerMin * SweepService.REWARD_MINUTES)
-    local baseExp    = math.floor(cfgExpPerMin * SweepService.REWARD_MINUTES)
+    local goldAmount = math.floor(cfgGoldPerMin * SweepService.REWARD_MINUTES) * count
+    local baseExp    = math.floor(cfgExpPerMin * SweepService.REWARD_MINUTES) * count
 
     -- 英雄经验 = baseExp × 出战人数倍率（与挂机一致）
     local heroCountMult = ExpTable.heroCountExpMult[heroCount] or 1.0
@@ -110,7 +117,7 @@ function SweepService.Sweep(uid)
         cfgGoldPerMin, cfgExpPerMin, SweepService.REWARD_MINUTES))
 
     -- ── 扣券 ──
-    currency.sweepTicket = owned - SweepService.SWEEP_COST
+    currency.sweepTicket = owned - cost
     PDM.MarkDirty(uid, "currency")
 
     -- ── 发放奖励 ──
@@ -150,8 +157,9 @@ function SweepService.Sweep(uid)
 
     -- 4) 装备掉落：固定 10 件，平均分配到各关卡，品质由各关卡怪物池决定
     local MC = require("config.MonsterConfig")
-    local equipsPerStage = math.floor(SweepService.EQUIP_DROP_COUNT / stageCount)
-    local remainder = SweepService.EQUIP_DROP_COUNT - equipsPerStage * stageCount
+    local totalEquipDrops = SweepService.EQUIP_DROP_COUNT * count
+    local equipsPerStage = math.floor(totalEquipDrops / stageCount)
+    local remainder = totalEquipDrops - equipsPerStage * stageCount
     local equipSeeds = {}
     local equipByQuality = {}  -- [quality] = count
 
@@ -217,14 +225,14 @@ function SweepService.Sweep(uid)
     -- 5) 卷轴掉落：固定数量，随机分配到 6 种类型
     local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
     local scrollDrops = {}
-    for _ = 1, SweepService.SCROLL_DROP_COUNT do
+    for _ = 1, SweepService.SCROLL_DROP_COUNT * count do
         local st = scrollTypes[math.random(1, #scrollTypes)]
         scrollDrops[st] = (scrollDrops[st] or 0) + 1
     end
-    local totalScrolls = SweepService.SCROLL_DROP_COUNT
-    for scrollField, count in pairs(scrollDrops) do
-        if count > 0 then
-            currency[scrollField] = (currency[scrollField] or 0) + count
+    local totalScrolls = SweepService.SCROLL_DROP_COUNT * count
+    for scrollField, amount in pairs(scrollDrops) do
+        if amount > 0 then
+            currency[scrollField] = (currency[scrollField] or 0) + amount
         end
     end
     PDM.MarkDirty(uid, "currency")
@@ -238,14 +246,15 @@ function SweepService.Sweep(uid)
     print(string.format("[SweepService] uid=%s swept %d stages (%s): gold=%d heroExp=%d playerExp=%d equips=%d scrolls=%d ticketLeft=%d",
         tostring(uid), stageCount, table.concat(sweepStageIds, ","),
         goldAmount, heroExpTotal, baseExp,
-        SweepService.EQUIP_DROP_COUNT, totalScrolls, currency.sweepTicket))
+        totalEquipDrops, totalScrolls, currency.sweepTicket))
 
     return true, nil, {
         gold            = goldAmount,
         heroExp         = perHeroExp,
         heroExpTotal    = heroExpTotal,
         playerExp       = baseExp,
-        equipCount      = SweepService.EQUIP_DROP_COUNT,
+        equipCount      = totalEquipDrops,
+        count           = count,
         equipByQuality  = equipByQuality,
         scrollDrops     = scrollDrops,
         ticketLeft      = currency.sweepTicket,

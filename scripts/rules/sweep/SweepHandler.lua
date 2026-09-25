@@ -12,7 +12,8 @@ local SweepHandler = {}
 local handlers = {}
 
 handlers[Protocol.ACTION_TYPES.SWEEP] = function(uid, params)
-    local ok, err, result = SweepService.Sweep(uid)
+    local count = params and (params.count or params.times) or 1
+    local ok, err, result = SweepService.Sweep(uid, count)
     if not ok then
         return { success = false, reason = err }
     end
@@ -26,6 +27,7 @@ handlers[Protocol.ACTION_TYPES.SWEEP] = function(uid, params)
         equipByQuality  = result.equipByQuality,
         scrollDrops     = result.scrollDrops,
         ticketLeft      = result.ticketLeft,
+        count           = result.count,
     }
 end
 

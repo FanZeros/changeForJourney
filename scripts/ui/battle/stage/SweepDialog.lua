@@ -138,9 +138,12 @@ local cachedVg = nil
 
 -- ======================== 状态 ========================
 
+local SWEEP_COUNTS = { 1, 5, 10 }
+
 local state = {
     open      = false,
     openTime  = 0,
+    count     = 1,
 }
 
 -- ======================== 动画常量 ========================
@@ -347,6 +350,7 @@ local function getStageRewardStr(field)
     if not rewards then return "---" end
     local v = rewards[field]
     if not v or v <= 0 then return "---" end
+    v = v * (state.count or 1)
     if v >= 10000 then return string.format("%.1f万", v / 10000) end
     return tostring(math.floor(v))
 end
@@ -502,15 +506,40 @@ function SweepDialog.draw(vg)
     -- 拥有数右对齐于分割点，"/消耗数" 左对齐于分割点，整体视觉上居中于 X=TKT_TXT_CX
     local owned    = GameState.getSweepTicket() or 0
     local ownedStr = tostring(owned)
-    local costStr  = "/" .. tostring(SWEEP_COST)
+    local costStr  = "/" .. tostring(SWEEP_COST * (state.count or 1))
     local tr, tg, tb = 0xff, 0x44, 0x44
-    if owned >= SWEEP_COST then tr, tg, tb = 0x63, 0xff, 0x84 end
+    if owned >= SWEEP_COST * (state.count or 1) then tr, tg, tb = 0x63, 0xff, 0x84 end
     drawTextStroke(vg, D.TKT_TXT_CX, D.TKT_TXT_CY, ownedStr,
         D.TKT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         tr, tg, tb, 4, { strokeColor = { 0, 0, 0 } })
     drawTextStroke(vg, D.TKT_TXT_CX, D.TKT_TXT_CY, costStr,
         D.TKT_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
+
+    -- 次数选择：1 / 5 / 10
+    do
+        local counts = SWEEP_COUNTS
+        local btnW, btnH, gap = 110, 52, 16
+        local total = #counts * btnW + (#counts - 1) * gap
+        local left = D.ACT_CX - total * 0.5
+        local cy = D.ACT_CY - 78
+        for i, n in ipairs(counts) do
+            local cx = left + (i - 1) * (btnW + gap) + btnW * 0.5
+            local selected = (state.count or 1) == n
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, cx - btnW * 0.5, cy - btnH * 0.5, btnW, btnH, 12)
+            if selected then
+                nvgFillColor(vg, nvgRGBA(0x63, 0xff, 0x84, 220))
+            else
+                nvgFillColor(vg, nvgRGBA(0, 0, 0, 90))
+            end
+            nvgFill(vg)
+            drawTextStroke(vg, cx, cy, "x" .. tostring(n), 32,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                selected and 0 or 255, selected and 0 or 255, selected and 0 or 255, 3,
+                { strokeColor = { 0, 0, 0 } })
+        end
+    end
 
     -- 13) 确认按钮（扫荡）
     if imgActBtn >= 0 then
@@ -539,9 +568,25 @@ end
 function SweepDialog.handleInput(x, y)
     -- 弹窗已打开：优先检测确认按钮，再判断背景外关闭
     if state.open then
+        -- 次数按钮
+        do
+            local counts = SWEEP_COUNTS
+            local btnW, btnH, gap = 110, 52, 16
+            local total = #counts * btnW + (#counts - 1) * gap
+            local left = D.ACT_CX - total * 0.5
+            local cy = D.ACT_CY - 78
+            for i, n in ipairs(counts) do
+                local cx = left + (i - 1) * (btnW + gap) + btnW * 0.5
+                if hitTestRect(x, y, cx, cy, btnW, btnH) then
+                    state.count = n
+                    print("[SweepDialog] count=" .. tostring(n))
+                    return true
+                end
+            end
+        end
         -- 扫荡确认按钮
         if hitTestRect(x, y, D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H) then
-            if SweepDialog.onSweep then SweepDialog.onSweep() end
+            if SweepDialog.onSweep then SweepDialog.onSweep(state.count or 1) end
             -- 不关闭面板，让玩家可以连续扫荡；奖励由 RewardPanel 展示后关闭
             return true
         end

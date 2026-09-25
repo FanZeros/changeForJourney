@@ -75,8 +75,8 @@ local MID_QUALITY_LABEL_X  = 121
 local MID_QUALITY_LABEL_Y  = 1175
 local MID_QUALITY_ICON_RIGHT_X = 509
 
-local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 770, 1175
-local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 440, 60
+local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 540, 1175
+local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 900, 60
 M.MID_CLASS_BOX_CX = MID_CLASS_BOX_CX
 M.MID_CLASS_BOX_CY = MID_CLASS_BOX_CY
 M.MID_CLASS_BOX_W = MID_CLASS_BOX_W
@@ -974,33 +974,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, MID_EXP_CX, MID_EXP_CY, lvlText, nil)
 
-    -- === 11) 品质内容背景框 ===
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        MID_QUALITY_BOX_CX - MID_QUALITY_BOX_W * 0.5,
-        MID_QUALITY_BOX_CY - MID_QUALITY_BOX_H * 0.5,
-        MID_QUALITY_BOX_W, MID_QUALITY_BOX_H, 20)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-    nvgFill(vg)
-
-    -- === 12) "品质"文本 ===
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 35)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-    nvgText(vg, MID_QUALITY_LABEL_X, MID_QUALITY_LABEL_Y, I18n.t("quality"), nil)
-
-    -- === 13) 品质文字图标 ===
-    local qualityName = HC.QUALITY_INFO[heroCfg.quality]
-        and HC.QUALITY_INFO[heroCfg.quality].name or "R"
-    local qBadge = imgQualityBadges[qualityName]
-    if qBadge and qBadge >= 0 then
-        local qImgW, qImgH = nvgImageSize(vg, qBadge)
-        local qDrawCX = MID_QUALITY_ICON_RIGHT_X - qImgW * 0.5
-        drawImageCentered(vg, qBadge, qDrawCX, MID_QUALITY_LABEL_Y, qImgW, qImgH, 1.0)
-    end
-
-    -- === 14) 职业内容背景框 ===
+    -- === 14) 职业内容背景框（品质行已去掉，职业条居中拉满） ===
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
         MID_CLASS_BOX_CX - MID_CLASS_BOX_W * 0.5,
@@ -1009,14 +983,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
     nvgFill(vg)
 
-    -- === 15) "职业"文本 ===
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 35)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-    nvgText(vg, MID_CLASS_LABEL_X, MID_CLASS_LABEL_Y, I18n.t("class_label"), nil)
-
-    -- === 16) 职业图标 + 文字组合 ===
+    -- === 15) 职业图标 + 名称，整条居中 ===
     local classCfg = CC.get(heroCfg.classId)
     local className = classCfg and classCfg.name or "未知"
     local classIconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -1025,19 +992,19 @@ function M.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 34)
     local classTextW = nvgTextBounds(vg, 0, 0, className)
-    local classGap = 6
-    local comboW = MID_CLASS_ICON_SIZE + classGap + classTextW
-    local comboRightX = MID_CLASS_COMBO_RIGHT_X
-    local comboLeftX  = comboRightX - comboW
-    local classIconCX = comboLeftX + MID_CLASS_ICON_SIZE * 0.5
-    local classTextX  = comboLeftX + MID_CLASS_ICON_SIZE + classGap
+    local classGap = 8
+    local iconW = classIcon >= 0 and MID_CLASS_ICON_SIZE or 0
+    local comboW = iconW + (iconW > 0 and classGap or 0) + classTextW
+    local comboLeftX = MID_CLASS_BOX_CX - comboW * 0.5
+    local classIconCX = comboLeftX + iconW * 0.5
+    local classTextX = comboLeftX + iconW + (iconW > 0 and classGap or 0) + classTextW * 0.5
 
     if classIcon >= 0 then
         drawImageCentered(vg, classIcon, classIconCX, MID_CLASS_LABEL_Y,
             MID_CLASS_ICON_SIZE, MID_CLASS_ICON_SIZE, 1.0)
     end
     drawTextStroke(vg, classTextX, MID_CLASS_LABEL_Y, className,
-        34, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
 
     -- === 17) 分割线1 ===

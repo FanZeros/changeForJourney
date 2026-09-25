@@ -442,8 +442,8 @@ end
 
 --- 护盾回复跟体质挂钩。
 --- 0 体质：冷却 2.4 秒，每秒回上限的 40%。
---- 40 体质：冷却 1.2 秒，每秒回满，和改前手感一致。
---- 80 体质及以上：冷却 0.6 秒，每秒回上限的 160%。
+--- 40 体质：冷却 1.2 秒，每秒回满。
+--- 80 体质及以上：受伤后立即回复，每秒回上限的 160%。
 ---@return number cooldown
 ---@return number ratePerSec  每秒回复的上限比例
 function UnitAttributes:getShieldRegenProfile()
@@ -452,7 +452,7 @@ function UnitAttributes:getShieldRegenProfile()
     if t < 0 then t = 0 end
     if t > 2 then t = 2 end
     local cooldown = 2.4 - t * 1.2
-    if cooldown < 0.6 then cooldown = 0.6 end
+    if cooldown < 0 then cooldown = 0 end
     local rate = 0.4 + t * 0.6
     -- 数值回复：每点体质每秒 2 点，和盾的厚度无关。
     local flatPerSec = vit * 2

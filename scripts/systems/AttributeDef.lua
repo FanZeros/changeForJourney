@@ -17,12 +17,10 @@ AD.SPI = "spi"   -- 精神
 
 -- 防御属性
 AD.MAX_HP           = "maxHp"           -- 生命值上限
-AD.MAX_MANA         = "maxMana"         -- 法力值上限
 AD.HP               = "hp"              -- 当前生命值（运行时）
 AD.ARMOR            = "armor"           -- 护甲（统一，原 physArmor + magArmor 合并）
 AD.RESISTANCE       = "resistance"      -- 伤害抗性（由护甲派生，百分比）
 AD.ENERGY_SHIELD    = "energyShield"    -- 能量护盾上限
-AD.ES_REGEN_INTERVAL = "esRegenInterval" -- 能量护盾恢复间隔（秒）
 -- 向后兼容别名（旧代码/旧存档引用）
 AD.PHYS_ARMOR       = "armor"           -- [兼容] 物理护甲 → 护甲
 AD.MAG_ARMOR        = "energyShield"    -- [兼容] 魔法护甲 → 能量护盾
@@ -39,7 +37,6 @@ AD.MAG_BLOCK_RATIO  = "magBlockRatio"   -- 魔法格挡比例
 AD.ABNORMAL_RES     = "abnormalRes"     -- 异常抗性
 AD.HP_BONUS         = "hpBonus"         -- 生命加成（%）
 AD.DODGE_BONUS      = "dodgeBonus"     -- 闪避加成（%）
-AD.ES_REGEN_SPEED   = "esRegenSpeed"   -- 能量护盾恢复速度（%）
 AD.ES_BONUS         = "esBonus"        -- 能量护盾加成（%）
 AD.ES_DMG_REDUCE    = "esDmgReduce"   -- 能量护盾伤害减免（%）
 AD.ARMOR_BONUS      = "armorBonus"     -- 护甲加成（%）
@@ -142,12 +139,10 @@ AD.META = {
 
     -- 防御属性
     [AD.MAX_HP]           = { name = "生命值",       valueModel = 0.03, dataType = AD.TYPE_INT,   default = 0 },
-    [AD.MAX_MANA]         = { name = "法力值",       valueModel = 0,    dataType = AD.TYPE_INT,   default = 0 },
     [AD.HP]               = { name = "当前生命",     valueModel = 0,    dataType = AD.TYPE_INT,   default = 0 },
     [AD.ARMOR]            = { name = "护甲",         valueModel = 0.7,  dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.RESISTANCE]       = { name = "伤害抗性",     valueModel = 0,    dataType = AD.TYPE_PCT,   default = 0 },
     [AD.ENERGY_SHIELD]    = { name = "护盾",     valueModel = 0.1,  dataType = AD.TYPE_FLOAT, default = 0 },
-    [AD.ES_REGEN_INTERVAL] = { name = "护盾恢复间隔", valueModel = 0,   dataType = AD.TYPE_FLOAT, default = 1.2 },
     [AD.DODGE]            = { name = "闪避值",       valueModel = 1,    dataType = AD.TYPE_FLOAT, default = 0 },
     [AD.THREAT]           = { name = "怨引值",       valueModel = 0.08, dataType = AD.TYPE_INT,   default = 1 },
     [AD.HP_REGEN]         = { name = "每秒回血",     valueModel = 0.3,  dataType = AD.TYPE_FLOAT, default = 0 },
@@ -159,7 +154,6 @@ AD.META = {
     [AD.ABNORMAL_RES]     = { name = "异常抗性",     valueModel = 50,   dataType = AD.TYPE_PCT,   default = 0,  cap = 80 },
     [AD.HP_BONUS]         = { name = "生命加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.DODGE_BONUS]      = { name = "闪避加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.ES_REGEN_SPEED]   = { name = "护盾恢复速度",   valueModel = 0,    dataType = AD.TYPE_PCT,   default = 0 },
     [AD.ES_BONUS]         = { name = "护盾加成",   valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.ES_DMG_REDUCE]    = { name = "护盾伤害减免", valueModel = 60, dataType = AD.TYPE_PCT,   default = 20, cap = 80 },
     [AD.ARMOR_BONUS]      = { name = "护甲加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
@@ -229,8 +223,7 @@ AD.DESC = {
     [AD.MAX_HP]           = "生命上限。生命归零则死亡。",
     [AD.ARMOR]            = "将同比转化为伤害抗性，转化率 = 0.01×护甲/(0.01×护甲+1)",
     [AD.RESISTANCE]       = "通常只能通过护甲转化而来",
-    [AD.ENERGY_SHIELD]    = "受伤时先扣除护盾，护盾扣完后才扣生命。该值为护盾上限。",
-    [AD.ES_REGEN_INTERVAL] = "护盾恢复间隔，基础1.2秒。",
+    [AD.ENERGY_SHIELD]    = "受伤时先扣除护盾，护盾扣完后才扣生命。该值为护盾上限。受伤后 1.2 秒开始恢复。",
     [AD.DODGE]            = "影响被命中概率，命中率=(命中值+150)/(闪避值+150)",
     [AD.THREAT]           = "影响被敌方随机攻击的权重，仇恨值越高越容易被集火",
     [AD.HP_REGEN]         = "每秒恢复的生命值，可被治疗属性增幅",
@@ -244,7 +237,6 @@ AD.DESC = {
     [AD.DODGE_BONUS]     = "百分比增加闪避值",
     [AD.ES_BONUS]         = "百分比增加护盾上限",
     [AD.ES_DMG_REDUCE]    = "护盾受到伤害时减免的比例",
-    [AD.ES_REGEN_SPEED]   = "百分比加快护盾恢复速度",
 
     -- 攻击属性
     [AD.PHYS_ATK]       = "单位基础物理攻击力",

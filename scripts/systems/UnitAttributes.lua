@@ -402,7 +402,7 @@ function UnitAttributes:takeDamage(amount)
     -- 受到任何伤害都重置能量护盾恢复冷却（未受伤2秒后才开始恢复）
     local maxES = self.final[AD.ENERGY_SHIELD] or 0
     if maxES > 0 then
-        self.esRegenCooldown = self.final[AD.ES_REGEN_INTERVAL] or 1.2
+        self.esRegenCooldown = 1.2
     end
     -- 能量护盾伤害减免：任一护盾存在时生效
     local es = self.energyShield or 0
@@ -448,10 +448,8 @@ function UnitAttributes:tickEnergyShield(dt)
         self.esRegenCooldown = cd - dt
         return
     end
-    -- 逐渐恢复（基础速率 = maxES/秒，受 esRegenSpeed% 加成）
-    local regenSpeedBonus = self.final[AD.ES_REGEN_SPEED] or 0
-    local regenRate = maxES * (1 + regenSpeedBonus / 100)
-    self.energyShield = math.min(maxES, es + regenRate * dt)
+    -- 逐渐恢复（速率 = 护盾上限/秒）
+    self.energyShield = math.min(maxES, es + maxES * dt)
 end
 
 --- 初始化能量护盾（创建单位 / 重新计算属性后调用）

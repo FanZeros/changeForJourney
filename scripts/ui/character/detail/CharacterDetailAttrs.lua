@@ -21,7 +21,6 @@ local M = {}
 --- 左列候选属性（按优先级排列，hero不具有的属性跳过）
 M.ATTR_LEFT_PRIORITY = {
     AD.MAX_HP,
-    AD.MAX_MANA,
     AD.PHYS_ARMOR,
     AD.MAG_ARMOR,
     AD.DODGE,

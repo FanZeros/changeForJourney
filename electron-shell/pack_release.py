@@ -781,6 +781,27 @@ def download_runtime() -> None:
     log("离线运行时镜像就绪：%s" % RUNTIME_DIR)
 
 
+def verify_prepare_dist(dist: Path) -> None:
+    latest_path = dist / "latest.json"
+    if not latest_path.is_file() or not (dist / "index.html").is_file():
+        die("prepare 产物不完整。先运行 electron-shell/prepare_local_dist.py")
+    latest = json.loads(latest_path.read_text(encoding="utf-8"))
+    project = json.loads((ROOT / ".project" / "project.json").read_text(encoding="utf-8"))
+    version = str(latest.get("version") or "")
+    if not version == str(project.get("version") or ""):
+        die("prepare 版本与当前项目不一致")
+    manifest_path = dist / version / "manifest-origin.json"
+    if not manifest_path.is_file():
+        die("prepare 产物缺少 manifest-origin.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    items = [item for item in manifest.get("files") or [] if item.get("ext") == ".lua" and item.get("prefix") == "../scripts"]
+    built = {item.get("fs_path") for item in items}
+    source = {path.relative_to(ROOT / "scripts").as_posix() for path in (ROOT / "scripts").rglob("*.lua")}
+    if not built == source or "main.lua" not in built:
+        die("prepare 产物与当前 Lua 源码不一致。请重新 preview prepare 后运行 prepare_local_dist.py")
+    log("prepare 产物校验通过：v%s、%d 个 Lua 文件" % (version, len(items)))
+
+
 def resolve_prepare_dist() -> Path:
     roots = list((Path.home() / ".taptap-maker" / "preview").glob("*/preparations/*/source/dist"))
     if not roots:
@@ -1099,12 +1120,15 @@ def main() -> int:
         die("--local-dist 不能与上传、跳过同步/构建或仅运行时模式组合")
     if args.prepare_dist and (args.upload or args.upload_only or args.dist_only or args.runtime_only or args.local_dist or args.skip_sync):
         die("--prepare-dist 不能与上传、旧 dist 或跳过同步模式组合")
+        verify_prepare_dist(resolve_prepare_dist())
     PROXY_CLI = (args.proxy or "").strip() or None
     ver = read_version()
     log("version %s" % ver)
     log("shell %s" % SHELL)
     if args.local_dist:
         verify_local_dist()
+    elif args.prepare_dist:
+        verify_prepare_dist(resolve_prepare_dist())
     else:
         clean_dist_spill()
     if args.upload_only:
@@ -1121,7 +1145,7 @@ def main() -> int:
     else:
         log("跳过离线运行时（--skip-runtime）")
     if not args.skip_sync:
-        if not (args.no_fetch_dist or args.local_dist):
+        if not (args.no_fetch_dist or args.local_dist or args.prepare_dist):
             ensure_dist(ver)
         sync_dist(resolve_prepare_dist() if args.prepare_dist else DIST)
     else:

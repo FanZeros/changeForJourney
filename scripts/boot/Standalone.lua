@@ -582,6 +582,15 @@ local function tryPlayPendingStory_()
     end
     local cfg = pending.config
     local scenarioId = pending.scenarioId
+    if scenarioId then
+        local sessionData = ClientDispatcher.get("session") or {}
+        local claimed = sessionData.claimedScenarios or {}
+        claimed[tostring(scenarioId)] = true
+        local updated = {}
+        for k, v in pairs(sessionData) do updated[k] = v end
+        updated.claimedScenarios = claimed
+        ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
+    end
     print("[Standalone] play pending story id=" .. tostring(scenarioId)
         .. " steps=" .. #cfg.steps .. " mode=" .. tostring(cfg.mode))
     ScenarioDialogue.show({

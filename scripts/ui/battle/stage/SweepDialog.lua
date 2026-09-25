@@ -114,8 +114,7 @@ local EQUIP_PLACEHOLDER_QUALITY = 2
 -- ======================== 信息行定义 ========================
 -- label: 显示文本, field: StageConfig 字段名, cy: 行中心Y坐标
 local INFO_ROWS = {
-    { label = "远征等级经验", field = "adventureExp",  cy = 1291 },
-    { label = "远征队员经验",   field = "adventurerExp", cy = 1390 },
+    { label = "远征队员经验", field = "adventurerExp", cy = 1340 },
 }
 
 -- ======================== 扫荡消耗常量 ========================
@@ -138,7 +137,7 @@ local cachedVg = nil
 
 -- ======================== 状态 ========================
 
-local SWEEP_COUNTS = { 1, 5, 10 }
+local SWEEP_MAX = 10
 
 local state = {
     open      = false,
@@ -516,29 +515,26 @@ function SweepDialog.draw(vg)
         D.TKT_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
 
-    -- 次数选择：1 / 5 / 10
+    -- 次数：减号、数字、加号
     do
-        local counts = SWEEP_COUNTS
-        local btnW, btnH, gap = 110, 52, 16
-        local total = #counts * btnW + (#counts - 1) * gap
-        local left = D.ACT_CX - total * 0.5
+        local btn = 56
         local cy = D.ACT_CY - 78
-        for i, n in ipairs(counts) do
-            local cx = left + (i - 1) * (btnW + gap) + btnW * 0.5
-            local selected = (state.count or 1) == n
+        local minusX = D.ACT_CX - 92
+        local plusX = D.ACT_CX + 92
+        local function drawStep(cx, text)
             nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - btnW * 0.5, cy - btnH * 0.5, btnW, btnH, 12)
-            if selected then
-                nvgFillColor(vg, nvgRGBA(0x63, 0xff, 0x84, 220))
-            else
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 90))
-            end
+            nvgRoundedRect(vg, cx - btn * 0.5, cy - btn * 0.5, btn, btn, 12)
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 110))
             nvgFill(vg)
-            drawTextStroke(vg, cx, cy, "x" .. tostring(n), 32,
+            drawTextStroke(vg, cx, cy, text, 36,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                selected and 0 or 255, selected and 0 or 255, selected and 0 or 255, 3,
-                { strokeColor = { 0, 0, 0 } })
+                255, 255, 255, 3, { strokeColor = { 0, 0, 0 } })
         end
+        drawStep(minusX, "-")
+        drawStep(plusX, "+")
+        drawTextStroke(vg, D.ACT_CX, cy, tostring(state.count or 1), 36,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            255, 230, 120, 3, { strokeColor = { 0, 0, 0 } })
     end
 
     -- 13) 确认按钮（扫荡）
@@ -568,20 +564,18 @@ end
 function SweepDialog.handleInput(x, y)
     -- 弹窗已打开：优先检测确认按钮，再判断背景外关闭
     if state.open then
-        -- 次数按钮
+        -- 次数加减
         do
-            local counts = SWEEP_COUNTS
-            local btnW, btnH, gap = 110, 52, 16
-            local total = #counts * btnW + (#counts - 1) * gap
-            local left = D.ACT_CX - total * 0.5
+            local btn = 56
             local cy = D.ACT_CY - 78
-            for i, n in ipairs(counts) do
-                local cx = left + (i - 1) * (btnW + gap) + btnW * 0.5
-                if hitTestRect(x, y, cx, cy, btnW, btnH) then
-                    state.count = n
-                    print("[SweepDialog] count=" .. tostring(n))
-                    return true
-                end
+            local count = state.count or 1
+            if hitTestRect(x, y, D.ACT_CX - 92, cy, btn, btn) then
+                state.count = math.max(1, count - 1)
+                return true
+            end
+            if hitTestRect(x, y, D.ACT_CX + 92, cy, btn, btn) then
+                state.count = math.min(SWEEP_MAX, count + 1)
+                return true
             end
         end
         -- 扫荡确认按钮

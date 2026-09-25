@@ -396,13 +396,13 @@ end
 --- 扣血（不低于 0）
 ---@param amount number 伤害量
 ---@return number 实际扣除量
-function UnitAttributes:takeDamage(amount)
+function UnitAttributes:takeDamage(amount, resistance)
     amount = math.max(0, math.floor(amount))
     if amount <= 0 then return 0 end
-    -- 受到任何伤害都重置能量护盾恢复冷却（未受伤2秒后才开始恢复）
+    -- 受伤重置护盾回复冷却。体质越高，冷却越短。
     local maxES = self.final[AD.ENERGY_SHIELD] or 0
     if maxES > 0 then
-        self.esRegenCooldown = 1.2
+        self.esRegenCooldown = self:getShieldRegenCooldown()
     end
     -- 能量护盾伤害减免：任一护盾存在时生效
     local es = self.energyShield or 0
@@ -428,28 +428,56 @@ function UnitAttributes:takeDamage(amount)
             amount = amount - absorbed
         end
     end
+    -- 护盾按原伤吸收。打穿护盾后剩下的部分才吃护甲抗性。
+    local resist = tonumber(resistance) or 0
+    if resist > 0 and amount > 0 then
+        if resist > 0.95 then resist = 0.95 end
+        amount = math.max(1, math.floor(amount * (1 - resist) + 0.5))
+    end
     local hp = self.final[AD.HP]
     local actual = math.min(hp, amount)
     self.final[AD.HP] = hp - actual
     return actual
 end
 
+--- 护盾回复跟体质挂钩。
+--- 0 体质：冷却 1.6 秒，每秒回上限的 40%。
+--- 40 体质：冷却 0.8 秒，每秒回满。
+--- 80 体质及以上：受伤后立即回复，每秒回上限的 160%。
+---@return number cooldown
+---@return number ratePerSec  每秒回复的上限比例
+function UnitAttributes:getShieldRegenProfile()
+    local vit = self:get(AD.VIT) or 0
+    local t = vit / 40
+    if t < 0 then t = 0 end
+    if t > 2 then t = 2 end
+    local cooldown = 1.6 - t * 0.8
+    if cooldown < 0 then cooldown = 0 end
+    local rate = 0.4 + t * 0.6
+    -- 数值回复：每点体质每秒 2 点，和盾的厚度无关。
+    local flatPerSec = vit * 2
+    return cooldown, rate, flatPerSec
+end
+
+function UnitAttributes:getShieldRegenCooldown()
+    local cooldown = self:getShieldRegenProfile()
+    return cooldown
+end
+
 --- 能量护盾恢复 tick（每帧调用）
---- 冷却结束后以 maxES/秒 的速度逐渐恢复
 ---@param dt number 帧间隔（秒）
 function UnitAttributes:tickEnergyShield(dt)
     local maxES = self.final[AD.ENERGY_SHIELD] or 0
     if maxES <= 0 then return end
     local es = self.energyShield or 0
-    if es >= maxES then return end  -- 已满
-    -- 恢复冷却倒计时
+    if es >= maxES then return end
     local cd = self.esRegenCooldown or 0
     if cd > 0 then
         self.esRegenCooldown = cd - dt
         return
     end
-    -- 逐渐恢复（速率 = 护盾上限/秒）
-    self.energyShield = math.min(maxES, es + maxES * dt)
+    local _, rate, flatPerSec = self:getShieldRegenProfile()
+    self.energyShield = math.min(maxES, es + (maxES * rate + flatPerSec) * dt)
 end
 
 --- 初始化能量护盾（创建单位 / 重新计算属性后调用）

@@ -52,75 +52,75 @@ local MASK_ALPHA = 128  -- 50% 不透明度
 
 -- 2. 弹窗背景框（九宫格）
 local BG = {
-    CX = 540, CY = 1200, W = 1040, H = 1960,
+    CX = 960, CY = 1200, W = 1760, H = 1960,
     IT = 180, IL = 40, IR = 40, IB = 50,  -- 九宫格切割
 }
 
 -- 3. 标题 "对战记录"
 local TTL = {
-    X = 540, Y = 413, FONT = 60,
+    X = 960, Y = 413, FONT = 60,
     FR = 255, FG = 255, FB = 255,            -- 纯白
     SR = 0x59, SG = 0x32, SB = 0x19, SW = 6, -- 描边 #593219
 }
 
 -- 4+5+6. 离线收益倍率行
 local MULT_ROW = {
-    CX = 540, CY = 552, W = 960, H = 72, R = 16,  -- 背景框
-    LABEL_X = 70, LABEL_FONT = 40,                  -- "离线收益倍率" 左对齐
+    CX = 960, CY = 552, W = 1600, H = 72, R = 16,  -- 背景框
+    LABEL_X = 200, LABEL_FONT = 40,                  -- "离线收益倍率" 左对齐
     LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,  -- #725850
-    VALUE_X = 1010, VALUE_FONT = 40,                   -- 值 右对齐
+    VALUE_X = 1720, VALUE_FONT = 40,                   -- 值 右对齐
     VALUE_SW = 5,                                      -- 纯黑描边
 }
 
 -- 7+8+9. 离线时间进度条
 local PROG = {
-    CX = 540, CY = 649, W = 810, H = 60,  -- 背景 UI_LXSYJDT_2
+    CX = 960, CY = 649, W = 1400, H = 60,  -- 背景 UI_LXSYJDT_2
     TIME_FONT = 40, TIME_SW = 5,            -- 计时文字
     TIME_SR = 0x31, TIME_SG = 0x24, TIME_SB = 0x24, -- 描边 #312424
 }
 
 -- 10. 提示文本
 local HINT = {
-    CX = 540, CY = 714, FONT = 40,
+    CX = 960, CY = 714, FONT = 40,
     NR = 0xb6, NG = 0xb0, NB = 0x9d,         -- 普通文字 #b6b09d
     HR = 0x1b, HG = 0xa1, HB = 0x24,         -- 高亮色 #1ba124
 }
 
 -- 11+12. 装饰框 + "离线收益"
 local DECO = {
-    CX = 540, CY = 796, W = 660, H = 60,
+    CX = 960, CY = 796, W = 900, H = 60,
     FONT = 40,
     FR = 0x8d, FG = 0x5f, FB = 0x41,  -- #8d5f41
 }
 
 -- 13+14+15. 远征等级经验行
 local EXP_ROW1 = {
-    CX = 540, CY = 899, W = 960, H = 72, R = 16,
-    LABEL_X = 70, LABEL = "远征等级经验",
+    CX = 960, CY = 899, W = 1600, H = 72, R = 16,
+    LABEL_X = 200, LABEL = "远征等级经验",
     LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,
-    VALUE_X = 1010,
+    VALUE_X = 1720,
     VALUE_R = 0x63, VALUE_G = 0xff, VALUE_B = 0x84, VALUE_SW = 5,
 }
 
 -- 远征队员经验行
 local EXP_ROW2 = {
-    CX = 540, CY = 994, W = 960, H = 72, R = 16,
-    LABEL_X = 70, LABEL = "远征队员经验（总合）",
+    CX = 960, CY = 994, W = 1600, H = 72, R = 16,
+    LABEL_X = 200, LABEL = "远征队员经验（总合）",
     LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,
-    VALUE_X = 1010,
+    VALUE_X = 1720,
     VALUE_R = 0x63, VALUE_G = 0xff, VALUE_B = 0x84, VALUE_SW = 5,
 }
 
 -- 16+17. 奖励内容区域
 local REWARD_AREA = {
-    CX = 540, CY = 1360, W = 980, H = 980, R = 16,
+    CX = 960, CY = 1480, W = 1600, H = 740, R = 16,
     PAD = 16,  -- 内边距
 }
 -- 奖励图标网格（8 列）
 local ICON_SIZE = 148
 local ROW_GAP   = 16
 local COL_GAP   = 14
-local COLS      = 5
+local COLS      = 8
 
 -- 奖励裁剪区域（内容背景框内边距40）
 local CLIP = {}
@@ -147,10 +147,10 @@ end
 
 -- 22+23. 领取按钮
 local BTN_CLAIM = {
-    CX = 540, CY = 1980, W = 420, H = 100,
+    CX = 960, CY = 2010, W = 420, H = 100,
     NP = 35,
-    TEXT_CX = 540, TEXT_CY = 1980, FONT = 40,
-    TR = 0, TG = 0, TB = 0, TA = 191,
+    TEXT_CX = 960, TEXT_CY = 2010, FONT = 40,
+    TR = 0xD8, TG = 0xC9, TB = 0xA3, TA = 255,
 }
 
 -- 数量角标
@@ -384,7 +384,7 @@ function Panel.draw(vg)
 
     -- 1. 全屏黑色遮罩 50%
     nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+    nvgRect(vg, 0, 0, 1920, 1080)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(MASK_ALPHA * animAlpha)))
     nvgFill(vg)
 
@@ -519,7 +519,7 @@ function Panel.draw(vg)
 
     -- 领取按钮（居中）
     local _bf2 = BF.begin(vg, "orp_claim", BG.CX, BTN_CLAIM.CY, BTN_CLAIM.W, BTN_CLAIM.H)
-    DarkIcon.drawNine(vg, "btn", BG.CX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5, BTN_CLAIM.W, BTN_CLAIM.H, { accent = "green" })
+    DarkIcon.drawNine(vg, "btn", BG.CX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5, BTN_CLAIM.W, BTN_CLAIM.H, { accent = "gold" })
 
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, BTN_CLAIM.FONT)

@@ -645,8 +645,21 @@ function M.draw(vg)
         nvgRestore(vg)
     end
     if detailState.tab == "attr" then
-        drawCarouselCard(neighborId(-1), -1, 1)
-        drawCarouselCard(neighborId(1), 1, 1)
+        local leftId = neighborId(-1)
+        local rightId = neighborId(1)
+        -- 往一侧拖时，再外侧的那张也要在场，否则露出空白。
+        local function secondNeighbor(firstId, dir)
+            if not firstId then return nil end
+            local saved = heroId
+            heroId = firstId
+            local id = neighborId(dir)
+            heroId = saved
+            return id
+        end
+        drawCarouselCard(secondNeighbor(leftId, -1), -2, 1)
+        drawCarouselCard(leftId, -1, 1)
+        drawCarouselCard(rightId, 1, 1)
+        drawCarouselCard(secondNeighbor(rightId, 1), 2, 1)
     end
     drawCarouselCard(heroId, 0, 1)
     local cx, cy = DT_CARD_CX, CARD.CY - ((detailState.tab == "equip") and 70 or 0)

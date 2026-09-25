@@ -132,6 +132,7 @@ local MID_DIV2_CX, MID_DIV2_CY = 540, 1565
 local MID_DIV2_W, MID_DIV2_H   = 1010, 37
 
 -- ======================== 六围区域布局常量 ========================
+-- 雷达图占位仍按旧的 2 列 × 3 行盒子算高度，避免把下面的天赋区顶开。
 
 local STAT_BOX_W, STAT_BOX_H = 437, 95
 local STAT_BOX_RADIUS        = 20
@@ -141,6 +142,14 @@ local STAT_COL_GAP           = 26
 local STAT_ROW_GAP_STAT      = 16
 local STAT_COL2_CX           = STAT_COL1_CX + STAT_BOX_W + STAT_COL_GAP
 local STAT_ROW_STEP          = STAT_BOX_H + STAT_ROW_GAP_STAT
+
+local HEX_CX = 540
+local HEX_CY = STAT_ROW1_CY + STAT_ROW_STEP
+local HEX_R  = 148
+local HEX_LABEL_R = 196
+-- 顶点顺序：上起顺时针。力量在上，其余按战斗直觉绕圈。
+local HEX_NAMES = { "力量", "敏捷", "体质", "魂火", "命数", "秘识" }
+local HEX_KEYS = { ["力量"] = "str", ["敏捷"] = "agi", ["体质"] = "vit", ["魂火"] = "spi", ["命数"] = "luk", ["秘识"] = "int" }
 
 local STAT_ICON_BG_DX   = 132 - 301
 local STAT_ICON_BG_DY   = 0
@@ -166,6 +175,10 @@ M.STAT_COL2_CX  = STAT_COL2_CX
 M.STAT_ROW1_CY  = STAT_ROW1_CY
 M.STAT_ROW_STEP = STAT_ROW_STEP
 M.STAT_LAYOUT   = STAT_LAYOUT
+M.HEX_CX        = HEX_CX
+M.HEX_CY        = HEX_CY
+M.HEX_LABEL_R   = HEX_LABEL_R
+M.HEX_NAMES     = HEX_NAMES
 
 -- ======================== 天赋技能区域布局常量 ========================
 
@@ -1144,51 +1157,97 @@ function M.draw(vg)
     drawImageCentered(vg, img.midDiv2, MID_DIV2_CX, MID_DIV2_CY, MID_DIV2_W, MID_DIV2_H, 1.0)
 
     -- ================================================================
-    -- ===                  六围区域（2列×3行）                      ===
+    -- ===                  六围雷达图                                ===
     -- ================================================================
 
     local statValues = attrData.stats
-
+    local statByKey = {}
     for _, st in ipairs(STAT_LAYOUT) do
-        local boxCX = (st.col == 1) and STAT_COL1_CX or STAT_COL2_CX
-        local boxCY = STAT_ROW1_CY + (st.row - 1) * STAT_ROW_STEP
+        statByKey[st.key] = st
+    end
 
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg,
-            boxCX - STAT_BOX_W * 0.5, boxCY - STAT_BOX_H * 0.5,
-            STAT_BOX_W, STAT_BOX_H, STAT_BOX_RADIUS)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-        nvgFill(vg)
+    local function hexPoint(i, radius)
+        local ang = -math.pi * 0.5 + (i - 1) * (math.pi / 3)
+        return HEX_CX + math.cos(ang) * radius, HEX_CY + math.sin(ang) * radius
+    end
 
-        local ibCX = boxCX + STAT_ICON_BG_DX
-        local ibCY = boxCY + STAT_ICON_BG_DY
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg,
-            ibCX - STAT_ICON_BG_SIZE * 0.5, ibCY - STAT_ICON_BG_SIZE * 0.5,
-            STAT_ICON_BG_SIZE, STAT_ICON_BG_SIZE, STAT_ICON_BG_R)
-        nvgFillColor(vg, nvgRGBA(0xa9, 0xa0, 0x8f, 255))
-        nvgFill(vg)
-
-        local iconImg = imgStatIcons[st.icon] or -1
-        if iconImg >= 0 then
-            local icCX = boxCX + STAT_ICON_DX
-            local icCY = boxCY + STAT_ICON_DY
-            drawImageCentered(vg, iconImg, icCX, icCY, STAT_ICON_SIZE, STAT_ICON_SIZE, 1.0)
+    -- 满格 = 该角色 200 级主属性成长 + 两次转职。装备词条超出后贴边，不把图形撑变形。
+    local hexMax = 80
+    local heroDef = HC.get(detailState.heroId)
+    if heroDef and heroDef.growthStats then
+        local peak = 0
+        for _, name in ipairs(HEX_NAMES) do
+            local statKey = HEX_KEYS[name]
+            local grown = (heroDef.baseStats[statKey] or 0) + (heroDef.growthStats[statKey] or 0) * 199
+            if grown > peak then peak = grown end
         end
+        hexMax = math.max(40, math.ceil(peak + 10))
+    end
 
-        local nmX = boxCX + STAT_NAME_DX
-        local nmY = boxCY + STAT_NAME_DY
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 35)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgBeginPath(vg)
+    nvgCircle(vg, HEX_CX, HEX_CY, HEX_LABEL_R + 28)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
+    nvgFill(vg)
+
+    for ring = 1, 3 do
+        local rr = HEX_R * ring / 3
+        nvgBeginPath(vg)
+        local x0, y0 = hexPoint(1, rr)
+        nvgMoveTo(vg, x0, y0)
+        for i = 2, 6 do
+            local x, y = hexPoint(i, rr)
+            nvgLineTo(vg, x, y)
+        end
+        nvgClosePath(vg)
+        nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, ring == 3 and 160 or 70))
+        nvgStrokeWidth(vg, ring == 3 and 2 or 1)
+        nvgStroke(vg)
+    end
+
+    for i = 1, 6 do
+        local x, y = hexPoint(i, HEX_R)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, HEX_CX, HEX_CY)
+        nvgLineTo(vg, x, y)
+        nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, 50))
+        nvgStrokeWidth(vg, 1)
+        nvgStroke(vg)
+    end
+
+    nvgBeginPath(vg)
+    for i, name in ipairs(HEX_NAMES) do
+        local stFill = nil
+        for _, item in pairs(statByKey) do
+            if item.name == name then stFill = item break end
+        end
+        local val = stFill and statValues[stFill.key] or 0
+        local ratio = val / hexMax
+        if ratio < 0.08 then ratio = 0.08 end
+        if ratio > 1 then ratio = 1 end
+        local x, y = hexPoint(i, HEX_R * ratio)
+        if i == 1 then nvgMoveTo(vg, x, y) else nvgLineTo(vg, x, y) end
+    end
+    nvgClosePath(vg)
+    nvgFillColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 90))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0xFF, 0xEA, 0x00, 220))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    nvgFontFace(vg, "sans")
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    for i, name in ipairs(HEX_NAMES) do
+        local st = nil
+        for _, item in pairs(statByKey) do
+            if item.name == name then st = item break end
+        end
+        local lx, ly = hexPoint(i, HEX_LABEL_R)
+        nvgFontSize(vg, 26)
         nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-        nvgText(vg, nmX, nmY, st.name, nil)
-
-        local valY = boxCY + STAT_VAL_DY
-        local valStr = tostring(statValues[st.key] or 0)
-        drawTextStroke(vg, nmX, valY, valStr,
-            35, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4)
+        nvgText(vg, lx, ly - 14, st and st.name or "", nil)
+        drawTextStroke(vg, lx, ly + 14, tostring(st and statValues[st.key] or 0),
+            24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            255, 255, 255, 3)
     end
 
     -- ================================================================

@@ -100,7 +100,7 @@ local MY_HEROES_CY   = 680
 -- 下方名册：图标网格，点图标才打开角色卡面
 local ROSTER_ICON = 148
 local ROSTER_GAP = 24
-local ROW1_CY        = 820
+local ROW1_CY        = 900
 local MAX_PER_ROW    = 5
 
 -- 行间距
@@ -121,7 +121,7 @@ local DEPLOYED_TXT_DY = -120  -- [卡高4/5] 原-149
 
 -- ======================== 滚动区域 ========================
 
-local SCROLL_TOP     = 720   -- 三队边框下方
+local SCROLL_TOP     = 790   -- 三队边框下方
 local SCROLL_BOTTOM  = 2400   -- 屏幕底边（与 ChurchPage 名册一致；避免底部大片留白）
 local SCROLL_LEFT    = 0
 local SCROLL_RIGHT   = DESIGN_W
@@ -271,9 +271,9 @@ local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px �
 -- 右侧栏只显示图标：三队头像同时显示，点进去才打开角色卡面
 local heroIconCache = {}  ---@type table<number, integer>
 local AV_SIZE = 148
-local AV_GAP = 18
+local AV_GAP = 10
 local AV_ROW_H = 188
-local AV_TOP = 28
+local AV_TOP = 64
 
 --- 计算第 idx 个页签的左上角 X
 ---@param idx number
@@ -301,7 +301,7 @@ end
 --- 头像编队一行的左上角 X（4 个头像水平居中）
 ---@return number
 local function avatarRowX()
-    return 78
+    return 132
 end
 
 --- 第 teamIdx 队第 slotIdx 个头像的中心
@@ -370,10 +370,10 @@ function M.drawTeamAvatars(vg)
         local _, rowCy = avatarCenter(t, 1)
         local rowX = avatarRowX()
         local rowW = M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
-        local frameX = 16
-        local frameY = rowCy - AV_SIZE * 0.5 - 16
-        local frameW = DESIGN_W - 32
-        local frameH = AV_SIZE + 32
+        local frameX = 86
+        local frameY = rowCy - AV_SIZE * 0.5 - 14
+        local frameW = DESIGN_W - 108
+        local frameH = AV_SIZE + 28
         nvgBeginPath(vg)
         nvgRoundedRect(vg, frameX, frameY, frameW, frameH, 16)
         if t == activeIdx then

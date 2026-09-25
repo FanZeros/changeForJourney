@@ -13,19 +13,16 @@ local TYPE_NAME_MAP = { "龟", "蛇", "鹿", "狼", "鹰" }
 ---@class RelicTypeDef
 ---@field name string
 ---@field key string
----@field cells number[][] {row, col} 偏移列表（锚点为 {0,0}，文档格式 col:row 转换而来）
 ---@field iconSmall string 小图标资源名
----@field iconGrid string 格子图资源名
 
 ---@type table<number, RelicTypeDef>
 RelicDefs.TYPES = {
-    -- 文档格子占位格式为 col:row，代码存储为 {row_offset, col_offset}
-    -- 转换规则: 文档 A:B → 代码 {-B, A}（row 取反，因为文档正row=上，屏幕正row=下）
-    [1] = { name = "岩龟", key = "GUI",  cells = {{0,0},{-1,0},{-1,1},{0,1}},    iconSmall = "ICON_YWX_GUI",  iconGrid = "ICON_YW_GUI" },   -- 2×2方块
-    [2] = { name = "毒蛇", key = "SHE",  cells = {{0,0},{-1,0},{1,0},{2,0}},     iconSmall = "ICON_YWX_SHE",  iconGrid = "ICON_YW_SHE" },   -- 竖直1×4
-    [3] = { name = "白鹿", key = "LU",   cells = {{0,0},{-1,0},{0,1},{0,2}},     iconSmall = "ICON_YWX_LU",   iconGrid = "ICON_YW_LU" },    -- L形(3宽×2高)
-    [4] = { name = "灰狼", key = "LANG", cells = {{0,0},{-1,-1},{-1,0},{0,1}},   iconSmall = "ICON_YWX_LANG", iconGrid = "ICON_YW_LANG" },  -- Z形(3宽×2高)
-    [5] = { name = "猎鹰", key = "YING", cells = {{0,0},{1,0},{0,-1},{0,1}},     iconSmall = "ICON_YWX_YING", iconGrid = "ICON_YW_YING" },  -- 十字(3宽×2高)
+    -- 旧的 10×8 方块网格（cells / iconGrid）已随 RelicGrid 移除，现行是祭位模型
+    [1] = { name = "岩龟", key = "GUI",  iconSmall = "ICON_YWX_GUI" },
+    [2] = { name = "毒蛇", key = "SHE",  iconSmall = "ICON_YWX_SHE" },
+    [3] = { name = "白鹿", key = "LU",   iconSmall = "ICON_YWX_LU" },
+    [4] = { name = "灰狼", key = "LANG", iconSmall = "ICON_YWX_LANG" },
+    [5] = { name = "猎鹰", key = "YING", iconSmall = "ICON_YWX_YING" },
 }
 
 -- ======================== 品质定义 ========================
@@ -207,41 +204,6 @@ function RelicDefs.getUpgradeCost(quality, level)
     if level >= RelicDefs.MAX_LEVEL then return 0 end
     local base = q.upgradeCost or 40
     return math.floor(base * (1.0 + (level - 1) * 0.55))
-end
-
---- 获取类型的所有格子偏移
----@param relicType number
----@return number[][]|nil
-function RelicDefs.getTypeCells(relicType)
-    local t = RelicDefs.TYPES[relicType]
-    return t and t.cells or nil
-end
-
--- ======================== 格子行解锁条件 ========================
--- 每行（row 1~10）的解锁条件：最高关卡进度（maxStageId）必须大于此值
--- 来源: docs/配置文件/亡誓公会-遗物.txt "解锁条件"
----@type table<number, number> row -> 解锁所需最低 maxStageId
-RelicDefs.ROW_UNLOCK = {
-    [1]  = 1305,
-    [2]  = 1305,
-    [3]  = 1805,
-    [4]  = 2305,
-    [5]  = 2805,
-    [6]  = 3305,
-    [7]  = 3805,
-    [8]  = 4305,
-    [9]  = 4805,
-    [10] = 5305,
-}
-
---- 检查某行是否已解锁
----@param row number 行号 1~10
----@param maxStageId number 玩家当前最高关卡进度
----@return boolean
-function RelicDefs.isRowUnlocked(row, maxStageId)
-    local threshold = RelicDefs.ROW_UNLOCK[row]
-    if not threshold then return true end  -- 无配置默认解锁
-    return maxStageId >= threshold
 end
 
 return RelicDefs

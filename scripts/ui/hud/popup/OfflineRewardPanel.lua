@@ -10,8 +10,9 @@
 --
 --   -- 展示离线收益：
 --   OfflineRewardPanel.show({
---       offlineSeconds  = 43200,       -- 离线秒数
---       maxSeconds      = 43200,       -- 最大可累积秒数（12小时）
+--       offlineSeconds  = 90000,       -- 实际离线秒数
+--       maxSeconds      = 86400,       -- 满额时长（24小时），超出按 tailRatio 计
+--       tailRatio       = 0.5,         -- 超出满额部分的收益比例
 --       multiplier      = 1.0,         -- 收益倍率
 --       adventureExp    = 12000,       -- 远征等级经验
 --       adventurerExp   = 5600,        -- 远征队员经验（总合）
@@ -82,7 +83,7 @@ local PROG = {
 local HINT = {
     CX = 540, CY = 714, FONT = 40,
     NR = 0xb6, NG = 0xb0, NB = 0x9d,         -- 普通文字 #b6b09d
-    HR = 0x1b, HG = 0xa1, HB = 0x24,         -- 高亮 "12小时" #1ba124
+    HR = 0x1b, HG = 0xa1, HB = 0x24,         -- 高亮色 #1ba124
 }
 
 -- 11+12. 装饰框 + "离线收益"
@@ -179,7 +180,8 @@ local state = {
     open = false,
     -- 数据
     offlineSeconds  = 0,
-    maxSeconds      = 43200,  -- 12小时
+    maxSeconds      = 86400,  -- 满额 24 小时
+    tailRatio       = 0.5,
     multiplier      = 1.0,
     adventureExp    = 0,
     adventurerExp   = 0,
@@ -276,7 +278,8 @@ end
 ---@param data table 离线收益数据
 function Panel.show(data)
     state.offlineSeconds = data.offlineSeconds or 0
-    state.maxSeconds     = data.maxSeconds or 43200
+    state.maxSeconds     = data.maxSeconds or 86400
+    state.tailRatio      = data.tailRatio or 0.5
     state.multiplier     = data.multiplier or 1.0
     state.adventureExp   = data.adventureExp or 0
     state.adventurerExp  = data.adventurerExp or 0
@@ -424,7 +427,7 @@ function Panel.draw(vg)
     DrawUtil.drawImageCentered(vg, img.progBg,
         PROG.CX, PROG.CY, PROG.W, PROG.H, 1.0)
 
-    -- 8. 进度条填充（与背景保持 5 像素内边距）
+    -- 8. 进度条填充：满额前按比例，超出满额后保持满格
     local progress = 0
     if state.maxSeconds > 0 then
         progress = math.min(1.0, state.offlineSeconds / state.maxSeconds)
@@ -450,30 +453,43 @@ function Panel.draw(vg)
         255, 255, 255, PROG.TIME_SW,
         { strokeColor = { PROG.TIME_SR, PROG.TIME_SG, PROG.TIME_SB } })
 
-    -- 10. 提示文本 "当前最多可获得离线12小时收益"（混合颜色）
+    -- 10. 提示：24 小时内满额，超出部分减半，不封顶
     do
-        local maxHours = formatMaxHours(state.maxSeconds)
-        local prefix   = "当前最多可获得离线"
-        local highlight = maxHours .. "小时"
-        local suffix   = "收益"
+        local fullHours = formatMaxHours(state.maxSeconds)
+        local tailPct = math.floor((state.tailRatio or 0.5) * 100 + 0.5)
+        local parts
+        if state.offlineSeconds > state.maxSeconds then
+            parts = {
+                { "离线超过", false },
+                { fullHours .. "小时", true },
+                { "，超出部分按" .. tailPct .. "%计算", false },
+            }
+        else
+            parts = {
+                { fullHours .. "小时", true },
+                { "内全额，超出按" .. tailPct .. "%", false },
+            }
+        end
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, HINT.FONT)
-        -- 测量各段实际绘制文本的宽度
-        local wPre  = nvgTextBounds(vg, 0, 0, prefix)
-        local wHigh = nvgTextBounds(vg, 0, 0, highlight)
-        local wSuf  = nvgTextBounds(vg, 0, 0, suffix)
-        local totalW = wPre + wHigh + wSuf
+        local totalW = 0
+        local widths = {}
+        for i, part in ipairs(parts) do
+            widths[i] = nvgTextBounds(vg, 0, 0, part[1])
+            totalW = totalW + widths[i]
+        end
         local startX = HINT.CX - totalW * 0.5
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        -- 前缀（普通色）
-        nvgFillColor(vg, nvgRGBA(HINT.NR, HINT.NG, HINT.NB, 255))
-        nvgText(vg, startX, HINT.CY, prefix, nil)
-        -- 高亮小时数
-        nvgFillColor(vg, nvgRGBA(HINT.HR, HINT.HG, HINT.HB, 255))
-        nvgText(vg, startX + wPre, HINT.CY, highlight, nil)
-        -- 后缀（普通色）
-        nvgFillColor(vg, nvgRGBA(HINT.NR, HINT.NG, HINT.NB, 255))
-        nvgText(vg, startX + wPre + wHigh, HINT.CY, suffix, nil)
+        local x = startX
+        for i, part in ipairs(parts) do
+            if part[2] then
+                nvgFillColor(vg, nvgRGBA(HINT.HR, HINT.HG, HINT.HB, 255))
+            else
+                nvgFillColor(vg, nvgRGBA(HINT.NR, HINT.NG, HINT.NB, 255))
+            end
+            nvgText(vg, x, HINT.CY, part[1], nil)
+            x = x + widths[i]
+        end
     end
 
     -- 11. 装饰框

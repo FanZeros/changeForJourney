@@ -41,9 +41,7 @@ end
 
 local function blockedByTitle()
     local DarkTitleScreen = require("ui.story.gate.DarkTitleScreenGate")
-    local StartScreen = require("ui.story.gate.StartScreen")
-    if DarkTitleScreen.isOpen() or StartScreen.isOpen() then return true end
-    return false
+    return DarkTitleScreen.isOpen()
 end
 
 local function textBusy()

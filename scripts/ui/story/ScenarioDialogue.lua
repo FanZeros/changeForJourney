@@ -559,10 +559,10 @@ local function drawLandscape(w, h)
     if cgOnly then
         DrawUtil.drawImageCover(vg_, cgImage, w * 0.5, h * 0.5, w, h, dismissAlpha)
     else
-        local portraitH = mode_ == "small" and h * 0.42 or h * 0.58
-        local portraitW = portraitH * 0.62
-        local portraitCx = barX + portraitW * 0.46
-        local portraitCy = mode_ == "small" and (barY - portraitH * 0.02) or (h * 0.42)
+        local portraitH = mode_ == "small" and h * 0.72 or h * 0.92
+        local portraitW = portraitH * 0.72
+        local portraitCx = w * 0.30
+        local portraitCy = mode_ == "small" and (h * 0.46) or (h * 0.42)
         local slide = w * 0.045
         local offsetX = 0
         local alpha = dismissAlpha

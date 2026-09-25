@@ -117,11 +117,11 @@ local function clampScroll()
     panelState.scrollY = math.max(0, math.min(panelState.scrollMax, panelState.scrollY))
 end
 
--- 配装页左右栏：左套装效果，右装备属性+词条。放在格子裁剪区上方，否则会被裁掉。
-local SIDE_TOP = 820
-local SIDE_H = 380
-local SIDE_LEFT_X, SIDE_LEFT_W = 24, 500
-local SIDE_RIGHT_X, SIDE_RIGHT_W = 556, 500
+-- 配装页左右栏：左套装效果，右装备属性。顶边与鞋子槽平齐，宽高按上一版收一档。
+local SIDE_TOP = 710
+local SIDE_H = 228
+local SIDE_LEFT_X, SIDE_LEFT_W = 24, 450
+local SIDE_RIGHT_X, SIDE_RIGHT_W = 606, 450
 local SIDE_ROW = 40
 
 local function formatEquipValue(key, value)

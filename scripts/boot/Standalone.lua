@@ -446,33 +446,31 @@ function Standalone.Stop()
     end
 end
 
---- [LetterIntro] StartScreen 关闭后的离线收益弹窗（原 StartScreen 关闭钩子内容提取）
+--- 标题关闭后按真实离线时长结算并弹窗。不足 1 分钟不弹。
 local function showOfflineRewardPanel_()
+    local LocalActionBridge = require("runtime.LocalActionBridge")
+    LocalActionBridge.init()
+    local OfflineService = require("rules.offline.OfflineService")
+    local panelData = OfflineService.CalcOnEnter(1)
+    if not panelData then
+        print("[Standalone] no offline reward to show")
+        return
+    end
     OfflineRewardPanel.show({
-        offlineSeconds  = 23025,
-        maxSeconds      = 43200,
-        multiplier      = 2.0,
-        adventureExp    = 128000,
-        adventurerExp   = 56000,
-        rewards = {
-            { type = "gold",    amount = 12500 },
-            { type = "diamond", amount = 80 },
-            { type = "essence", amount = 3200 },
-            { type = "equip", templateId = "W5", quality = 5, level = 12 },
-            { type = "equip", templateId = "W4", quality = 4, level = 8 },
-            { type = "equip", templateId = "A3", quality = 3, level = 5 },
-            { type = "equip", templateId = "W3", quality = 3, level = 7 },
-            { type = "equip", templateId = "A2", quality = 2, level = 3 },
-            { type = "equip", templateId = "W2", quality = 2, level = 4 },
-            { type = "equip", templateId = "W1", quality = 1, level = 1 },
-            { type = "equip", templateId = "A4", quality = 4, level = 10 },
-            { type = "equip", templateId = "A5", quality = 5, level = 15 },
-        },
-        onClaim = function(doubled)
-            print("[OfflineRewardPanel] claimed, doubled=" .. tostring(doubled))
+        offlineSeconds = panelData.offlineSeconds,
+        maxSeconds     = panelData.maxSeconds,
+        multiplier     = panelData.multiplier or 1.0,
+        adventureExp   = panelData.adventureExp,
+        adventurerExp  = panelData.adventurerExp,
+        rewards        = panelData.rewards,
+        onClaim = function()
+            local handled = localSendAction("claim_offline_rewards", {})
+            print("[OfflineRewardPanel] claim sent handled=" .. tostring(handled))
         end,
     })
-    print("[Standalone] auto-showed OfflineRewardPanel after StartScreen closed")
+    print("[Standalone] showed real OfflineRewardPanel seconds="
+        .. tostring(panelData.offlineSeconds)
+        .. " rewards=" .. tostring(panelData.rewards and #panelData.rewards or 0))
 end
 
 --- [LetterIntro] 新档标记开场剧情完成（session 整表替换，必须带全字段）

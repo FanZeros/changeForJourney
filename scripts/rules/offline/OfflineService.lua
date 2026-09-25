@@ -33,15 +33,35 @@ local SCROLL_TO_REWARD = {
     shoesScroll     = "shoes_scroll",
 }
 
-local function appendEquipPreviewItems(list, equipSeeds)
+--- 把离线装备种子立刻生成真实装备。展示和领取共用同一批实例。
+---@param equipSeeds table|nil
+---@return table[]
+local function materializeEquipSeeds(equipSeeds)
+    local equips = {}
     for _, seed in ipairs(equipSeeds or {}) do
-        local previewEquip = EquipmentSystem.generateRandom(seed.level, seed.quality)
+        local count = math.floor(tonumber(seed.count) or 1)
+        if count < 1 then count = 1 end
+        for _ = 1, count do
+            local equip = EquipmentSystem.generateRandom(seed.level, seed.quality)
+            if equip then
+                equips[#equips + 1] = equip
+            else
+                print("[OfflineService][WARN] generateRandom failed level="
+                    .. tostring(seed.level) .. " quality=" .. tostring(seed.quality))
+            end
+        end
+    end
+    return equips
+end
+
+local function appendEquipPreviewItems(list, equips)
+    for _, equip in ipairs(equips or {}) do
         list[#list + 1] = {
             type       = "equip",
-            templateId = previewEquip and previewEquip.templateId or nil,
-            quality    = seed.quality,
-            level      = seed.level,
-            count      = seed.count,
+            templateId = equip.templateId,
+            quality    = equip.quality,
+            level      = equip.level,
+            slot       = equip.slot,
         }
     end
 end
@@ -198,8 +218,10 @@ function OfflineService.CalcOnEnter(uid)
         }
     end
 
-    -- 装备种子（展示为装备图标）
-    appendEquipPreviewItems(panelData.rewards, rewards.equipSeeds)
+    -- 装备种子立刻生成真实装备，展示和领取共用同一批
+    local grantedEquips = materializeEquipSeeds(rewards.equipSeeds)
+    rewards.grantedEquips = grantedEquips
+    appendEquipPreviewItems(panelData.rewards, grantedEquips)
 
     -- 卷轴掉落
     appendScrollPreviewItems(panelData.rewards, rewards.scrollDrops)
@@ -234,10 +256,13 @@ function OfflineService.ClaimRewards(uid)
     local currency   = PDM.GetModule(uid, "currency")
     local heroesData = PDM.GetModule(uid, "heroes")
     local playerData = PDM.GetModule(uid, "player")
-    local lootbox    = PDM.GetModule(uid, "lootbox")
+    local equipData  = PDM.GetModule(uid, "equipment")
 
-    if not currency or not heroesData or not playerData or not lootbox then
+    if not currency or not heroesData or not playerData or not equipData then
         return false, "数据未加载"
+    end
+    if not equipData.inventory then
+        equipData.inventory = {}
     end
 
     -- 1) 金币
@@ -277,20 +302,23 @@ function OfflineService.ClaimRewards(uid)
         HeroService.SyncHeroLevelsToPlayerLevel(uid, playerData.level)
     end
 
-    -- 4) 装备种子 → 战利品缓冲
-    local equipSeedGroups = { rewards.equipSeeds }
-    local equipDirty = false
-    for _, equipSeeds in ipairs(equipSeedGroups) do
-        for _, seed in ipairs(equipSeeds or {}) do
-            local count = seed.count or 1
-            for _ = 1, count do
-                LootBoxSystem.addSeed(lootbox, seed.stageId, seed.quality, seed.level)
-            end
-            equipDirty = true
+    -- 4) 展示时已生成的真实装备 → 背包
+    local grantedCount = 0
+    local skippedFull = 0
+    for _, equip in ipairs(rewards.grantedEquips or {}) do
+        if EquipmentSystem.isInventoryFull(equipData) then
+            skippedFull = skippedFull + 1
+        else
+            EquipmentSystem.addToInventory(equipData, equip)
+            grantedCount = grantedCount + 1
         end
     end
-    if equipDirty then
-        PDM.MarkDirty(uid, "lootbox")
+    if grantedCount > 0 then
+        PDM.MarkDirty(uid, "equipment")
+    end
+    if skippedFull > 0 then
+        print("[OfflineService][WARN] inventory full, skipped equips=" .. skippedFull
+            .. " uid=" .. tostring(uid))
     end
 
     -- 5) 卷轴掉落 → 货币

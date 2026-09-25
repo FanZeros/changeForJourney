@@ -113,7 +113,7 @@ local EXP_ROW2 = {
 
 -- 16+17. 奖励内容区域
 local REWARD_AREA = {
-    CX = 540, CY = 1360, W = 980, H = 980, R = 16,
+    CX = 540, CY = 1480, W = 980, H = 740, R = 16,
     PAD = 16,  -- 内边距
 }
 -- 奖励图标网格（8 列）
@@ -147,10 +147,10 @@ end
 
 -- 22+23. 领取按钮
 local BTN_CLAIM = {
-    CX = 540, CY = 1980, W = 420, H = 100,
+    CX = 540, CY = 2010, W = 420, H = 100,
     NP = 35,
-    TEXT_CX = 540, TEXT_CY = 1980, FONT = 40,
-    TR = 0, TG = 0, TB = 0, TA = 191,
+    TEXT_CX = 540, TEXT_CY = 2010, FONT = 40,
+    TR = 0xD8, TG = 0xC9, TB = 0xA3, TA = 255,
 }
 
 -- 数量角标
@@ -519,7 +519,7 @@ function Panel.draw(vg)
 
     -- 领取按钮（居中）
     local _bf2 = BF.begin(vg, "orp_claim", BG.CX, BTN_CLAIM.CY, BTN_CLAIM.W, BTN_CLAIM.H)
-    DarkIcon.drawNine(vg, "btn", BG.CX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5, BTN_CLAIM.W, BTN_CLAIM.H, { accent = "green" })
+    DarkIcon.drawNine(vg, "btn", BG.CX - BTN_CLAIM.W * 0.5, BTN_CLAIM.CY - BTN_CLAIM.H * 0.5, BTN_CLAIM.W, BTN_CLAIM.H, { accent = "gold" })
 
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, BTN_CLAIM.FONT)

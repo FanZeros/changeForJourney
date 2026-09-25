@@ -731,7 +731,10 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             return
         end
         if pid == 'left' then
-            if LootBoxPage.isOpen() then return end
+            if LootBoxPage.isOpen() then
+                LootBoxPage.handleRightClick(dx, dy)
+                return
+            end
             if BlacksmithPage.isOpen() and EquipmentBag.isOpen() then
                 EquipmentBag.handleRightClick(dx, dy)
             end

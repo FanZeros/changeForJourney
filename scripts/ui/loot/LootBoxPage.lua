@@ -273,10 +273,9 @@ local function drawEntry(vg, entry, index, cy)
     text(vg, 294, cy + 59, equip and sourceText or "暂不可领取或回收", 28,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 181, 166, 143, 2)
     nvgRestore(vg)
-    local label = equip and (state.decompose and "回收" or "领取") or "待整理"
-    drawButton(vg, (state.decompose and "lbp_decompose_" or "lbp_claim_") .. index,
-        ACTION_CX, cy, ACTION_W, ACTION_H, label,
-        state.decompose and "red" or "green", equip ~= nil)
+    drawButton(vg, "lbp_claim_" .. index,
+        ACTION_CX, cy, ACTION_W, ACTION_H, equip and "领取" or "待整理",
+        "green", equip ~= nil)
 end
 
 local function drawConfirmation(vg)
@@ -313,7 +312,6 @@ function LootBoxPage.draw(vg)
     if state.pendingCount > 0 then
         statusText = statusText .. string.format(I18n.lookup(" · 待整理 %d 件"), state.pendingCount)
     end
-    if state.decompose then statusText = statusText .. I18n.lookup(" · 回收模式") end
     text(vg, 540, 360, statusText, 28,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 231, 210, 161, 2)
 
@@ -341,11 +339,9 @@ function LootBoxPage.draw(vg)
         nvgFill(vg)
     end
     local hasItems = state.count > 0
-    drawButton(vg, "lbp_mode", 300, BTN_Y, BTN_W, BTN_H,
-        state.decompose and "取消回收" or "切换回收", "red", hasItems or state.decompose)
-    drawButton(vg, "lbp_claim_all", 780, BTN_Y, BTN_W, BTN_H,
+    drawButton(vg, "lbp_claim_all", 360, BTN_Y, BTN_W, BTN_H,
         state.qualityFilter == 0 and "一键领取" or "领取筛选", "gold", hasItems)
-    drawButton(vg, "lbp_decompose_all", 540, 2220, BTN_W, BTN_H,
+    drawButton(vg, "lbp_decompose_all", 800, BTN_Y, BTN_W, BTN_H,
         state.qualityFilter == 0 and "一键回收" or "回收筛选", "red", hasItems)
     TownPageChrome.drawBack(vg, BACK)
     if state.confirm then drawConfirmation(vg) end
@@ -364,6 +360,24 @@ end
 local function action(name, callback, value)
     print("[LootBoxPage] action=" .. name .. " value=" .. tostring(value))
     if callback then callback(value) end
+end
+
+local function entryAt(dx, dy)
+    if not insideList(dx, dy) then return nil end
+    local index = math.floor((dy - LIST.y + state.scrollY) / (LIST.rowH + LIST.gap)) + 1
+    local entry = state.summary[index] --[[@as table?]]
+    if not entry then return nil end
+    entry.index = index
+    return entry
+end
+
+function LootBoxPage.handleRightClick(dx, dy)
+    if not state.open or not ready() or state.confirm then return false end
+    local entry = entryAt(dx, dy)
+    if not entry or not entry.equip then return true end
+    print("[LootBoxPage] right-click recycle index=" .. tostring(entry.sourceIndex))
+    action("decompose", onDecomposeOne, entry.sourceIndex)
+    return true
 end
 
 function LootBoxPage.handleInput(dx, dy)
@@ -391,36 +405,21 @@ function LootBoxPage.handleInput(dx, dy)
             return true
         end
     end
-    if DrawUtil.hitTest(dx, dy, 300, BTN_Y, BTN_W, BTN_H) then
-        if state.count > 0 or state.decompose then
-            BF.trigger("lbp_mode")
-            state.decompose = not state.decompose
-        end
-        return true
-    end
-    if DrawUtil.hitTest(dx, dy, 780, BTN_Y, BTN_W, BTN_H) then
+    if DrawUtil.hitTest(dx, dy, 360, BTN_Y, BTN_W, BTN_H) then
         if state.count > 0 then
             BF.trigger("lbp_claim_all")
             action("claimAll", onClaimAll, state.qualityFilter)
         end
         return true
     end
-    if DrawUtil.hitTest(dx, dy, 540, 2220, BTN_W, BTN_H) then
+    if DrawUtil.hitTest(dx, dy, 800, BTN_Y, BTN_W, BTN_H) then
         if state.count > 0 then BF.trigger("lbp_decompose_all") state.confirm = true end
         return true
     end
-    if insideList(dx, dy) then
-        local index = math.floor((dy - LIST.y + state.scrollY) / (LIST.rowH + LIST.gap)) + 1
-        local entry = state.summary[index] --[[@as table?]]
-        if entry and entry.equip and DrawUtil.hitTest(dx, dy, ACTION_CX, rowY(index), ACTION_W, ACTION_H) then
-            local name = state.decompose and "decompose" or "claim"
-            BF.trigger("lbp_" .. name .. "_" .. index)
-            if state.decompose then
-                action(name, onDecomposeOne, entry.sourceIndex)
-            else
-                action(name, onClaimOne, entry.sourceIndex)
-            end
-        end
+    local entry = entryAt(dx, dy)
+    if entry and entry.equip and DrawUtil.hitTest(dx, dy, ACTION_CX, rowY(entry.index), ACTION_W, ACTION_H) then
+        BF.trigger("lbp_claim_" .. entry.index)
+        action("claim", onClaimOne, entry.sourceIndex)
     end
     -- 空白与空态仍属于左栏页，不以“点面板外”关闭。
     return true

@@ -14,15 +14,13 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支（本轮 2026-09-24）**：`feature/pc-release-obfuscation-review`，从 `workspace924` 新开。**只 push 本分支**，不推 `workspace924`、旧功能分支或其他分支。旧记忆中的 `feat/ce-test-tools-20260924` 已不适用于本轮。
+- **当前开发分支**：`workspace925`。本轮只 push 这个分支，不推 `workspace924` 或历史功能分支。
 
-## 本轮核查（2026-09-24 PC 代码混淆）
+## 已合入备忘
 
-- Windows Electron 离线包的 Lua 随 `dist/assets/*.lua` 原样进入 `extraResources/game`，目前没有混淆或加密；实测 `dist/1.0.7` 的 `main.lua`/`boot/Standalone.lua` 仍是可读源码。详细证据和安全试验路线见 `electron-shell/README.md`。
-- 独立副本的 `shared/StageProvider.lua` 保守混淆试点：`electron-shell/obfuscation_trial.py` 限定模块，不改原文件/`dist/`。构建成功且隔离模块 10 帧测试原版/试验版均 0 Error；已恢复预览原版重建。**未接入正式发布**，具体数据见 `electron-shell/README.md`。
-- 试验前整游戏基线验证已存在 `[systems/StoryPlayer]:7` 引用缺失 `network.ClientDispatcher`，试验版相同；旧存档回归测试 `tests/lootbox_page_test.lua:173` 的断言也失败。整游戏启动与存档尚未通过，不能把混淆试点视为可发布。
-- 本轮预览已将分支脚本/资源/配置同步到 `/workspace` 并用官方 Build 构建；克隆目录为 `/workspace/changeForJourney`。**MCP build 会从 `/workspace` 根读取资产**：不能只传 `changeForJourney/scripts` 就以为构建了该仓库，先确认构建日志包含实际资源和入口。
-- 未改游戏 Lua；本轮只新增独立试验工具并记录核查结论，不对公开发布包或 TapTap 正式版操作。
+- Electron 离线包在 `electron-shell/main.js` 关闭 `backgroundThrottling`，失焦时保持战斗帧更新。网页隐藏页仍需离线补算。Windows 失焦/最小化尚未实机验证。
+- PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
+- 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
 
 ## 上次做了什么（2026-09-24）
 
@@ -75,12 +73,9 @@
 
 ## likely_next_task
 
-- 下一步优先修复原版整游戏启动的 `systems/StoryPlayer` → `network.ClientDispatcher` 缺失依赖，并恢复存档回归测试；基线通过后才扩大混淆覆盖范围。
-- 当前隔离混淆试点不可发布。询问用户是否先修复基线，还是仅审阅试验结果；不用重新授权就不得上传正式 PC 包或 TapTap 版本。
-- 继续开发前先确认当前分支 `feature/pc-release-obfuscation-review`；做完必须以 AskUserQuestion 选项提问下一步。
-
-- 预览横屏左上角 CE / F1 测试面板，确认一键测试包、跳关、无敌和三倍速。
-- 仅在当前授权的 `feature/pc-release-obfuscation-review` 上继续本轮工作；做完必须 AskUserQuestion，禁止纯文字结束。
+- 当前分支是 `workspace925`。做完必须以 AskUserQuestion 选项提问下一步，只 push 该分支。
+- Electron 已关后台节流，但未实机验证失焦/最小化。系统休眠仍需离线补算。
+- 配装页已下移留出词条空位，词条内容本身还没画。
 
 - 预览验收：滚轮、右键装备、顶栏远征等级、五语、四人战斗、新 SE、未解锁职业标、左栏世界地图
 - 四人入队/闲聊已接：情景 74–81。首次获得或第一次打开详情播放；闲聊每局每个角色一次
@@ -96,7 +91,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 以 `feat/ce-test-tools-20260924` 继续开发；完成后每次 push **该分支**。不要推 `workspace924`、`integrate/20260923`、`workspace`、`workspace923` 或其他分支。
+- 本轮只在 `workspace925` 上继续；完成后只 push 该分支。不要推 `workspace924` 或历史交接中的其他分支。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
@@ -106,6 +101,6 @@
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
 - Lua 5.4 字符串里不要写 `\!`
 - 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
-- 只推当前授权分支 `feature/pc-release-obfuscation-review`，历史分支名均仅作为交接记录。
+- 分支禁令以用户当前轮次授权为准；本轮仅推 `workspace925`。
 - 遗匣 `seeds[].equip` 是原装备，种子合并和等级兼容绝不能改写或丢弃它。
 - 不要开引擎 i18n `enabled=true`，用 `core/I18n.lua`

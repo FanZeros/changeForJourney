@@ -1,6 +1,11 @@
 # antibodies — 跨项目避雷清单(只增不减)
 
+- [scope:project] `CharacterDetail` 属性页仅角色切角能切角色；装备槽和一键操作只在配装页绘制/响应，配装页不要绘制/响应左右切角。底板/标题下移时列表网格和滚动热区必须同步，Tab 栏不能位移。
+- [通用] 用户要求每次交付以 AskUserQuestion 选项询问下一步，不纯文字结束；记忆是提醒，自动执行的跨会话保证须配置 harness hook。
+
 - [scope:project] 遗匣 `seeds[].equip` 为确定装备：挂机入匣即生成，旧分组只迁移一次；领取/重开/读档不重骰、不降级、不合并完整装备。
+- [scope:project] UrhoXRuntime 自定义 `require` 有独立模块缓存；测试里单改 `package.loaded["模块名"]` 不一定替换实际依赖。需要注入替身时优先临时修改真实模块的函数，并在测试后恢复。
+- [scope:project] 横屏全局奖励弹窗滚轮应先于 `BattleTriPage.handleScroll`（装备袋覆盖区）处理，否则奖励列表无法滚动。
 - [scope:project] 遗匣稀有度筛选不重排源数据；单件使用原 sourceIndex，批量领取/回收传0全部或1..6精确品质。待整理项不参与回收，刷新取消旧确认。
 - [scope:project] 遗匣现在是左栏地点页，不能再加回全局中栏模态路由；按鼠标栏路由滚轮，中缝返回须用窗口逻辑坐标。
 - [通用] 凭证不能写进记忆、代码或提交；对话中贴出的PAT提示撤销轮换。

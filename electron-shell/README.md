@@ -52,15 +52,33 @@ Windows 双击：
 | `../maker-mcp/update-maker-mcp.bat` | **本机 Maker MCP + 本地 Runtime**（官方口径，单机不用远端构建） |
 | `update_runtime.bat` | Electron 离线包：拉最新 `dist-snapshot` → 打补丁 → 打 zip |
 | `push_dist_snapshot.bat` | **云端 Build 后**：把 `dist/` 分片传到 `dist-snapshot`（80s 限时，反复点即可续传） |
-| `pack_release.bat` | 同步 `dist/` → 打补丁 → electron-builder → zip |
-| `pack_and_upload.bat` | 上面全套 + 上传 GitHub Release `win64-v{version}` |
+| `pack_release.bat` | **仅本地**：校验当前源码与 `dist/` 中全部 Lua 一致 → 打补丁 → electron-builder → zip；不拉快照、不上传 |
+| `pack_and_upload.bat` | 原有远端快照检查 + 打包 + 上传 GitHub Release `win64-v{version}`；**不是**本地专用入口 |
 | `upload_only.bat` | 已有 zip 只上传（不重打） |
 
 命令行：
 
+```bat
+cd electron-shell
+python pack_release.py --local-dist
+```
+
+推荐：Maker Build 后，只用当前本地 dist，不上传。
+
+`--local-dist` 在任何下载/复制前校验 `dist/<游戏版本>/manifest-origin.json` 中全部 Lua
+与 `scripts/` 源文件逐字节一致；缺文件或内容不一致直接退出。此校验只覆盖 Lua，
+图片/音频等经烘焙的资源不能据此证明是最新版本；改动非 Lua 资源后也必须重新 Build。
+它不会拉 `dist-snapshot`，也不会执行清理仓库根的 `clean_dist_spill()`；
+仍会按需联网下载离线引擎运行时和 Electron 依赖。
+`--skip-runtime` 会省去运行时下载，但生成的包首次启动需联网。若入口脚本或资源变动，先在 Maker 中
+调用 Build 重新生成仓库根目录的 `dist/index.html`，仅启动本地预览不会生成这个发布产物。
+`--local-dist` 不允许搭配 `--upload`、`--skip-sync` 或 `--skip-build`。
+
+旧版快照/上传命令（**不要用于仅本地打包**）：
+
 ```bash
 cd electron-shell
-python pack_release.py              # 只打包
+python pack_release.py              # 默认会校验云端快照，可能替换本地 dist
 python pack_release.py --upload     # 打包并上传
 python pack_release.py --upload-only  # 已有 zip 只上传
 ```

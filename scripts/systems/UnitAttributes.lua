@@ -396,7 +396,7 @@ end
 --- 扣血（不低于 0）
 ---@param amount number 伤害量
 ---@return number 实际扣除量
-function UnitAttributes:takeDamage(amount)
+function UnitAttributes:takeDamage(amount, resistance)
     amount = math.max(0, math.floor(amount))
     if amount <= 0 then return 0 end
     -- 受到任何伤害都重置能量护盾恢复冷却（未受伤2秒后才开始恢复）
@@ -427,6 +427,12 @@ function UnitAttributes:takeDamage(amount)
             self.energyShield = es - absorbed
             amount = amount - absorbed
         end
+    end
+    -- 护盾按原伤吸收。打穿护盾后剩下的部分才吃护甲抗性。
+    local resist = tonumber(resistance) or 0
+    if resist > 0 and amount > 0 then
+        if resist > 0.95 then resist = 0.95 end
+        amount = math.max(1, math.floor(amount * (1 - resist) + 0.5))
     end
     local hp = self.final[AD.HP]
     local actual = math.min(hp, amount)

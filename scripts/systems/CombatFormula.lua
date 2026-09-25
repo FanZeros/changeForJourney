@@ -373,8 +373,9 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
         dmg = dmg * typeMult
     end
 
-    -- 抗性减免 + 穿透增伤（独立乘区）
-    dmg = dmg * (1 - resistance) * penBonus
+    -- 穿透增伤仍在这里。护甲抗性不在这里减：
+    -- 护盾按这份原伤吸收，打到生命的部分由 takeDamage 按同一抗性再减。
+    dmg = dmg * penBonus
 
     -- 神器额外伤害（独立乘区，如狂怒沙漏）
     if attacker.artifactExtraDamageMult then
@@ -398,6 +399,7 @@ function CF.calcAttack(attacker, defender, atkType, comboHitIndex)
 
     result.hits[1] = hit
     result.totalDamage = dmg
+    result.resistance = resistance
 
     -- 顶层暴击/格挡状态
     result.isCrit    = hit.isCrit

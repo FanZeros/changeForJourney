@@ -377,10 +377,10 @@ local REF_BG_CY  = 1120
 local REF_BG_W   = 860
 local REF_BG_H   = 1380
 -- 小窗按实际内容收紧。旧 1380 高把按钮压出框，并在词条下方留下大片空白。
-local COMPACT_BG_W = 520
+local COMPACT_BG_W = 780
 local COMPACT_BTN_H = 64
 local COMPACT_BTN_GAP = 14
-local COMPACT_BTN_W = 300
+local COMPACT_BTN_W = 420
 
 -- 装备名称（左对齐）
 local REF_NAME_X = 470    -- 左对齐基准

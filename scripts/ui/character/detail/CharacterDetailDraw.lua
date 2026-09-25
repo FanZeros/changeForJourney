@@ -1047,8 +1047,10 @@ function M.draw(vg)
     local attrClipH = ATTR_VISIBLE_ROWS * ATTR_BOX_H + (ATTR_VISIBLE_ROWS - 1) * ATTR_ROW_GAP
 
     local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
-    local totalContentH = totalRows * ATTR_BOX_H + (totalRows - 1) * ATTR_ROW_GAP
-    detailState.attrScrollMax = math.max(0, totalContentH - attrClipH)
+    -- 滚到底时最后一行贴住可视区底部，不再留出一行空白。
+    local contentBottom = ATTR_FIRST_ROW_Y + math.max(0, totalRows - 1) * rowStep + ATTR_BOX_H * 0.5
+    local viewBottom = attrClipY + attrClipH
+    detailState.attrScrollMax = math.max(0, contentBottom - viewBottom)
 
     nvgSave(vg)
     nvgScissor(vg, 0, attrClipY, 560, attrClipH)

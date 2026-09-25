@@ -550,11 +550,17 @@ local function startOpeningBriefing_()
         return
     end
     print("[Standalone] letter finished, play opening briefing steps=" .. #cfg.steps)
+    local openingSteps = {}
+    for i, step in ipairs(cfg.steps) do
+        openingSteps[i] = {}
+        for k, v in pairs(step) do openingSteps[i][k] = v end
+        openingSteps[i].background = cfg.background
+    end
     ScenarioDialogue.show({
         mode = cfg.mode or "large",
         background = cfg.background,
         title = cfg.title,
-        steps = cfg.steps,
+        steps = openingSteps,
         onFinish = function()
             print("[Standalone] opening briefing finished, start joins")
             startStarterJoins_()

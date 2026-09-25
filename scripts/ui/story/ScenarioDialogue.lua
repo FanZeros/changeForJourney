@@ -178,8 +178,11 @@ end
 
 local function getCgImage(step)
     if not step then return -1 end
-    -- 角色 CG 只在步骤明确指定时使用。默认角色图走立绘，避免剧情里铺出 CG。
+    -- 开场 CG 写在情景 background 上，不在每句 step.cg。含“CG”的背景不再叠加立绘。
     local path = step.cg or step.cgPath
+    if (not path or path == "") and type(step.background) == "string" and string.find(step.background, "CG", 1, true) then
+        path = step.background
+    end
     if not path or path == "" then return -1 end
     return getCachedImage(cgCache_, path, path)
 end

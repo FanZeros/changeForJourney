@@ -155,7 +155,7 @@ AD.META = {
     [AD.HP_BONUS]         = { name = "生命加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.DODGE_BONUS]      = { name = "闪避加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.ES_BONUS]         = { name = "护盾加成",   valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.ES_DMG_REDUCE]    = { name = "护盾伤害减免", valueModel = 60, dataType = AD.TYPE_PCT,   default = 20, cap = 80 },
+    [AD.ES_DMG_REDUCE]    = { name = "护盾伤害减免", valueModel = 60, dataType = AD.TYPE_PCT,   default = 0, cap = 80 },
     [AD.ARMOR_BONUS]      = { name = "护甲加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
 
     -- 攻击属性
@@ -236,7 +236,7 @@ AD.DESC = {
     [AD.HP_BONUS]         = "百分比增加生命值上限",
     [AD.DODGE_BONUS]     = "百分比增加闪避值",
     [AD.ES_BONUS]         = "百分比增加护盾上限",
-    [AD.ES_DMG_REDUCE]    = "护盾受到伤害时减免的比例",
+    [AD.ES_DMG_REDUCE]    = "护盾存在时，先按该比例减免本次伤害，再扣护盾。没有来源时为 0，上限 80%。",
 
     -- 攻击属性
     [AD.PHYS_ATK]       = "单位基础物理攻击力",

@@ -315,7 +315,7 @@ function M.collectAttributes(heroId, heroCfg, level)
     if effCrit > 0 then
         local critDesc = (category == "healing")
             and "治疗暴击判定使用的暴击率"
-            or "通用暴击率 + 类型暴击率，与战斗中普攻/连击暴击判定一致；神器倍率已计入"
+            or "通用暴击率 + 类型暴击率，与战斗中普攻/连击暴击判定一致；神器倍率已计入。超过 100% 的部分按 1:1 转为暴击伤害"
         right[#right + 1] = {
             key = "_effCritRate",
             name = (category == "healing") and "治疗暴击率" or "暴击率",
@@ -338,12 +338,23 @@ function M.collectAttributes(heroId, heroCfg, level)
     if attrs.artifactCritDmgMult then
         effCritDmg = effCritDmg * attrs.artifactCritDmgMult
     end
+    -- 暴击溢出：超过 100% 的暴击率按 1:1 转为暴击伤害，面板与实战口径一致
+    local overflowPct = 0
+    if category ~= "healing" and effCrit and effCrit > 100 then
+        overflowPct = effCrit - 100
+        effCritDmg = effCritDmg * (1 + overflowPct / 100)
+    end
     if effCritDmg and effCritDmg > 0 then
+        local dmgDesc = "实战暴击伤害倍率；神器倍率已计入。"
+        if overflowPct > 0 then
+            dmgDesc = string.format(
+                "实战暴击伤害倍率；其中 %.1f%% 由溢出暴击率按 1:1 转化而来。", overflowPct)
+        end
         right[#right + 1] = {
             key = "_effCritDmg",
             name = (category == "healing") and "治疗暴击伤害" or "暴击伤害",
             value = string.format("%.1f%%", effCritDmg),
-            desc = "实战暴击伤害倍率；神器倍率已计入。",
+            desc = dmgDesc,
         }
     end
 

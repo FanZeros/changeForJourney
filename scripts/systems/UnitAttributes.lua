@@ -366,7 +366,10 @@ function UnitAttributes:recalc()
 
     -- 6) 恢复战斗 HP（不让公式覆盖运行时血量）
     --    savedHp 为 nil 仅在首次 create → recalc 时，此时 final[HP] 保持公式值（由 fillHp 初始化）
-    if savedHp and savedHp > 0 then
+    if self._forceFullHpOnRecalc then
+        self.final[AD.HP] = self.final[AD.MAX_HP]
+        self._forceFullHpOnRecalc = nil
+    elseif savedHp and savedHp > 0 then
         -- 保留当前战斗 HP，但不超过新的 maxHP
         self.final[AD.HP] = math.min(savedHp, self.final[AD.MAX_HP])
     elseif savedHp and savedHp <= 0 then
@@ -385,6 +388,9 @@ end
 function UnitAttributes:fillHp()
     self.final[AD.HP] = self.final[AD.MAX_HP]
     self._healFrac = 0
+    -- 失败回退会先满血，再由开战天赋 addModifier 触发 recalc。
+    -- recalc 默认保留死亡时的 0 血；这次满血必须覆盖该保留值。
+    self._forceFullHpOnRecalc = true
 end
 
 --- 扣血（不低于 0）

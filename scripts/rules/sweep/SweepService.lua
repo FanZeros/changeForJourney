@@ -23,7 +23,7 @@ SweepService.REWARD_MINUTES = 10
 SweepService.EQUIP_DROP_COUNT = 10
 -- 扫荡固定掉落卷轴数
 SweepService.SCROLL_DROP_COUNT = 10
--- 扫荡只结算最高已通关，不再回退前 5 个小关
+-- 扫荡只结算最高已通关一关，不再回退前 5 个小关
 SweepService.SWEEP_STAGE_COUNT = 1
 
 -- ======================== 执行扫荡 ========================

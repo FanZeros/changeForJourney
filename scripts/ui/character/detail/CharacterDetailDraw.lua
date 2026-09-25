@@ -1120,6 +1120,22 @@ function M.draw(vg)
         return HEX_CX + math.cos(ang) * radius, HEX_CY + math.sin(ang) * radius
     end
 
+    local function strokeDashed(x1, y1, x2, y2, dash, gap)
+        local dx, dy = x2 - x1, y2 - y1
+        local len = math.sqrt(dx * dx + dy * dy)
+        if len <= 0 then return end
+        local ux, uy = dx / len, dy / len
+        local pos = 0
+        while pos < len do
+            local seg = math.min(dash, len - pos)
+            nvgBeginPath(vg)
+            nvgMoveTo(vg, x1 + ux * pos, y1 + uy * pos)
+            nvgLineTo(vg, x1 + ux * (pos + seg), y1 + uy * (pos + seg))
+            nvgStroke(vg)
+            pos = pos + dash + gap
+        end
+    end
+
     -- 满格跟当前六维走：取六项最大值再留 25% 空，主属性接近外圈，弱项明显内收。
     local hexPeak = 1
     for _, item in pairs(statByKey) do
@@ -1133,29 +1149,35 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
     nvgFill(vg)
 
+    -- 外圈实线，内两圈虚线
     for ring = 1, 3 do
         local rr = HEX_R * ring / 3
-        nvgBeginPath(vg)
-        local x0, y0 = hexPoint(1, rr)
-        nvgMoveTo(vg, x0, y0)
-        for i = 2, 6 do
-            local x, y = hexPoint(i, rr)
-            nvgLineTo(vg, x, y)
+        nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, ring == 3 and 170 or 110))
+        nvgStrokeWidth(vg, ring == 3 and 2 or 1.5)
+        local pts = {}
+        for i = 1, 6 do
+            pts[i] = { hexPoint(i, rr) }
         end
-        nvgClosePath(vg)
-        nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, ring == 3 and 160 or 70))
-        nvgStrokeWidth(vg, ring == 3 and 2 or 1)
-        nvgStroke(vg)
+        for i = 1, 6 do
+            local a = pts[i]
+            local b = pts[i % 6 + 1]
+            if ring == 3 then
+                nvgBeginPath(vg)
+                nvgMoveTo(vg, a[1], a[2])
+                nvgLineTo(vg, b[1], b[2])
+                nvgStroke(vg)
+            else
+                strokeDashed(a[1], a[2], b[1], b[2], 7, 5)
+            end
+        end
     end
 
+    -- 六条轴线用虚线
+    nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, 120))
+    nvgStrokeWidth(vg, 1.5)
     for i = 1, 6 do
         local x, y = hexPoint(i, HEX_R)
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, HEX_CX, HEX_CY)
-        nvgLineTo(vg, x, y)
-        nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, 50))
-        nvgStrokeWidth(vg, 1)
-        nvgStroke(vg)
+        strokeDashed(HEX_CX, HEX_CY, x, y, 6, 5)
     end
 
     nvgBeginPath(vg)

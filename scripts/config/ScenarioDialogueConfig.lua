@@ -11,7 +11,7 @@ local ScenarioDialogueConfig = {}
 --- 开场第二幕：信件结束后、进游戏前。横屏全屏，不点将。
 ScenarioDialogueConfig.OPENING = {
     mode = "large",
-    title = "第二幕  ·  门厅",
+    title = "",
     background = "image/关卡地图/MAP_1.png",
     steps = {
         { characterId = 1, name = "大狗嚼", text = "叫！信拆完了？门外三条命都在等你签字。再磨蹭，我先把门牌啃了。" },

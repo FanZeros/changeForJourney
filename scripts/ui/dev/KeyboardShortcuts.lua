@@ -325,10 +325,7 @@ function KeyboardShortcuts.draw(vg, w, h)
     if blockedByTitle() then return end
 
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 18)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(244, 237, 224, helpOpen and 40 or 170))
-    nvgText(vg, w * 0.5, h - 22, "H 快捷键", nil)
 
     if not helpOpen then return end
 

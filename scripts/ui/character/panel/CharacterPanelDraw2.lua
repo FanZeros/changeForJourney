@@ -393,18 +393,21 @@ function M.drawTeamAvatars(vg)
             nvgStrokeWidth(vg, 2)
         end
         nvgStroke(vg)
-        local labelX = frameX + 16
+        local badgeCx, badgeCy = avatarCenter(t, 1)
+        badgeCx = badgeCx - AV_SIZE * 0.5 + 22
+        badgeCy = badgeCy + AV_SIZE * 0.5 - 18
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, badgeCx - 18, badgeCy - 16, 36, 32, 8)
+        nvgFillColor(vg, nvgRGBA(18, 14, 10, 210))
+        nvgFill(vg)
+        nvgStrokeColor(vg, t == activeIdx and nvgRGBA(255, 214, 102, 230) or nvgRGBA(140, 120, 80, 180))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 26)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-        if locked then
-            nvgFillColor(vg, nvgRGBA(140, 130, 115, 180))
-        elseif t == activeIdx then
-            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-        else
-            nvgFillColor(vg, nvgRGBA(220, 210, 190, 255))
-        end
-        nvgText(vg, labelX, frameY + 8, tostring(t), nil)
+        nvgFontSize(vg, 22)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, t == activeIdx and nvgRGBA(255, 214, 102, 255) or nvgRGBA(244, 237, 224, 230))
+        nvgText(vg, badgeCx, badgeCy, tostring(t), nil)
         local powerCaches = getTeamPowerCaches and getTeamPowerCaches() or {}
         local teamPower = 0
         local cache = powerCaches[t]
@@ -847,16 +850,28 @@ function M.draw(vg, scrollY)
                 255, 230, 160, 3)
         end
 
-        -- h) 出战中标识（[三队并行] 显示所属队伍：队1/队2/队3）
+        -- h) 出战队伍角标：左下角深色底，显示队1/队2/队3
         local deployTeams = getHeroDeployTeams and getHeroDeployTeams(entry.heroId) or nil
         if deployTeams and #deployTeams > 0 then
             local labels = {}
             for i, t in ipairs(deployTeams) do labels[i] = "队" .. t end
+            local badge = table.concat(labels, "·")
+            local bx = ix + 6
+            local by = iy + ROSTER_ICON - 28
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 16)
+            local textW = nvgTextBounds(vg, 0, 0, badge)
+            local bw = math.max(46, textW + 14)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, bx, by, bw, 22, 6)
+            nvgFillColor(vg, nvgRGBA(18, 14, 10, 215))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 200))
+            nvgStrokeWidth(vg, 1.5)
+            nvgStroke(vg)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-            nvgText(vg, cx, cy + ROSTER_ICON * 0.5 - 16, table.concat(labels, "·"), nil)
+            nvgText(vg, bx + bw * 0.5, by + 11, badge, nil)
         end
 
         -- i) 可提升角标（右上角，所有已拥有角色）：从缓存查找
@@ -890,19 +905,28 @@ function M.draw(vg, scrollY)
     -- 7) 拖拽中的浮动卡片（绘制在最上层）
     if dragState.active and dragState.heroId then
         local cardVg = img.vg or vg
-        local cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, dragState.heroId)
-        if (not cardImg or cardImg < 0) and dragState.heroId ~= 1 then
-            cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, 1)
+        local icon = heroIconHandle(vg, dragState.heroId)
+        if icon and icon >= 0 then
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, dragState.cx - 74, dragState.cy - 74, 148, 148, 16)
+            nvgFillColor(vg, nvgRGBA(20, 16, 12, 180))
+            nvgFill(vg)
+            drawImageCentered(vg, icon, dragState.cx, dragState.cy, 148, 148, 0.92)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, dragState.cx - 74, dragState.cy - 74, 148, 148, 16)
+            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 230))
+            nvgStrokeWidth(vg, 3)
+            nvgStroke(vg)
         end
-        -- 半透明浮动卡片
-        drawImageCover(vg, cardImg, dragState.cx, dragState.cy, CARD_W * 1.05, CARD_H * 1.05, 0.8)
-        -- 高亮边框
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, dragState.cx - CARD_W * 0.525, dragState.cy - CARD_H * 0.525,
-            CARD_W * 1.05, CARD_H * 1.05, 10)
-        nvgStrokeColor(vg, nvgRGBA(255, 220, 80, 200))
-        nvgStrokeWidth(vg, 3)
-        nvgStroke(vg)
+        local hoverTeam, hoverSlot = M.hitTestAvatarSlot(dragState.cx, dragState.cy)
+        if hoverTeam and hoverSlot then
+            local hx, hy = avatarCenter(hoverTeam, hoverSlot)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, hx - AV_SIZE * 0.5 - 4, hy - AV_SIZE * 0.5 - 4, AV_SIZE + 8, AV_SIZE + 8, 16)
+            nvgStrokeColor(vg, nvgRGBA(99, 255, 132, 230))
+            nvgStrokeWidth(vg, 4)
+            nvgStroke(vg)
+        end
     end
 end
 

@@ -526,6 +526,7 @@ function M.draw(vg)
         lowerProgress = 1.0  -- 下半部分不做垂直滑入
         if rawT >= 1.0 then
             detailState.switchDir = nil  -- 动画结束，清除标记
+            detailState.switchFrom = nil
             -- 修正抖动：确保下一帧进入 else 分支时 elapsed/ANIM_DURATION >= 1.0
             detailState.openTime = time.elapsedTime - ANIM_DURATION
         end
@@ -627,7 +628,9 @@ function M.draw(vg)
         if not imgCard or imgCard < 0 then return end
         local slide = detailState.cardDragVisual or 0
         if detailState.switchDir then
-            slide = -(detailState.switchDir or 0) * (1 - progress)
+            -- 松手时从拖动位置继续滑到中间，不再先跳回 0 再从屏外滑入。
+            local from = (detailState.switchDir or 0) + (detailState.switchFrom or 0)
+            slide = from * (1 - progress)
         end
         local pos = slot + slide
         local ax = math.min(1, math.abs(pos))

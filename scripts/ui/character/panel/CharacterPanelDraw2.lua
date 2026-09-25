@@ -522,15 +522,6 @@ function M.draw(vg, scrollY)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- 1.4) 临时方框底板：深色圆角矩形 + 细金边，后面再换正式背景
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, 12, 12, DESIGN_W - 24, DESIGN_H - 24, 18)
-    nvgFillColor(vg, nvgRGBA(8, 7, 6, 170))
-    nvgFill(vg)
-    nvgStrokeColor(vg, nvgRGBA(186, 154, 92, 180))
-    nvgStrokeWidth(vg, 2)
-    nvgStroke(vg)
-
     -- 1.5) 三队头像同时显示。右侧栏不画整卡，点头像才进卡面。
     M.drawTeamAvatars(vg)
 
@@ -711,6 +702,23 @@ function M.draw(vg, scrollY)
     nvgScissor(vg, SCROLL_LEFT, SCROLL_TOP, SCROLL_RIGHT - SCROLL_LEFT, SCROLL_BOTTOM - SCROLL_TOP)
 
     local rosterCount = #heroRoster
+    if rosterCount > 0 then
+        local numRows = math.ceil(rosterCount / MAX_PER_ROW)
+        local gridW = MAX_PER_ROW * ROSTER_ICON + (MAX_PER_ROW - 1) * ROSTER_GAP
+        local pad = 16
+        local frameX = (DESIGN_W - gridW) * 0.5 - pad
+        local firstTop = ROW1_CY - ROSTER_ICON * 0.5 - scrollY
+        local lastCY = ROW1_CY + (numRows - 1) * ROW_SPACING - scrollY
+        local frameY = firstTop - pad
+        local frameBottom = lastCY + ROSTER_ICON * 0.5 + 36 + pad
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, frameX, frameY, gridW + pad * 2, frameBottom - frameY, 16)
+        nvgFillColor(vg, nvgRGBA(8, 7, 6, 150))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(186, 154, 92, 180))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
+    end
     for idx = 1, rosterCount do
         local entry = heroRoster[idx]
         local heroCfg = HC.get(entry.heroId)

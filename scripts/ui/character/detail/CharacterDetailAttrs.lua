@@ -260,12 +260,28 @@ function M.collectAttributes(heroId, heroCfg, level)
         left[#left + 1] = { key = AD.HEAL_AMOUNT, name = "治疗量", value = tostring(math.floor(attrs:get(AD.HEAL_AMOUNT))) }
     end
 
-    for _, key in ipairs(M.ATTR_LEFT_PRIORITY) do
-        local val = attrs:getUncapped(key)
+    -- 人人都有、以前被默认值藏掉的防御项，固定显示。
+    local alwaysLeft = { AD.ARMOR, AD.ENERGY_SHIELD, AD.RESISTANCE, AD.HIT_VALUE }
+    local alwaysLeftSet = {}
+    for _, key in ipairs(alwaysLeft) do
+        alwaysLeftSet[key] = true
         local meta = AD.getMeta(key)
-        if meta and val ~= 0 and val ~= (meta.default or 0) then
-            if key ~= AD.MAX_HP then
-                left[#left + 1] = { key = key, name = meta.name, value = AD.formatAttrDisplayValue(key, val) }
+        local val = attrs:get(key)
+        left[#left + 1] = {
+            key = key,
+            name = meta and meta.name or key,
+            value = AD.formatAttrDisplayValue(key, val),
+        }
+    end
+
+    for _, key in ipairs(M.ATTR_LEFT_PRIORITY) do
+        if not alwaysLeftSet[key] then
+            local val = attrs:getUncapped(key)
+            local meta = AD.getMeta(key)
+            if meta and val ~= 0 and val ~= (meta.default or 0) then
+                if key ~= AD.MAX_HP then
+                    left[#left + 1] = { key = key, name = meta.name, value = AD.formatAttrDisplayValue(key, val) }
+                end
             end
         end
     end
@@ -295,6 +311,19 @@ function M.collectAttributes(heroId, heroCfg, level)
     right[#right + 1] = { key = AD.ATK_INTERVAL, name = "攻击间隔", value = string.format("%.1fs", heroCfg.atkInterval) }
     right[#right + 1] = { key = "_atkTargets", name = "攻击目标", value = tostring(heroCfg.atkTargets),
         desc = "普攻每次可命中的敌方目标数量" }
+
+    -- 本职攻击力已在左列。另一条攻击力固定显示，治疗职业两条都显示。
+    if category ~= "physical" then
+        right[#right + 1] = { key = AD.PHYS_ATK, name = "物理攻击力", value = tostring(math.floor(attrs:get(AD.PHYS_ATK))) }
+    end
+    if category ~= "magical" then
+        right[#right + 1] = { key = AD.MAG_ATK, name = "魔法攻击力", value = tostring(math.floor(attrs:get(AD.MAG_ATK))) }
+    end
+    right[#right + 1] = {
+        key = AD.ATK_SPEED,
+        name = "攻击速度",
+        value = AD.formatAttrDisplayValue(AD.ATK_SPEED, attrs:get(AD.ATK_SPEED)),
+    }
 
     -- 暴击率：合并通用+类型，与战斗公式/统计口径一致（展示截断前实际值）
     local effCrit = AD.getEffectiveCritRate(attrs, category)
@@ -376,6 +405,7 @@ function M.collectAttributes(heroId, heroCfg, level)
     end
 
     local skipCritKeys = {
+        [AD.ATK_SPEED] = true,
         [AD.CRIT_RATE] = true,
         [AD.PHYS_CRIT_RATE] = true,
         [AD.MAG_CRIT_RATE] = true,

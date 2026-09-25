@@ -582,6 +582,15 @@ local function tryPlayPendingStory_()
     end
     local cfg = pending.config
     local scenarioId = pending.scenarioId
+    if scenarioId then
+        local sessionData = ClientDispatcher.get("session") or {}
+        local claimed = sessionData.claimedScenarios or {}
+        claimed[tostring(scenarioId)] = true
+        local updated = {}
+        for k, v in pairs(sessionData) do updated[k] = v end
+        updated.claimedScenarios = claimed
+        ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
+    end
     print("[Standalone] play pending story id=" .. tostring(scenarioId)
         .. " steps=" .. #cfg.steps .. " mode=" .. tostring(cfg.mode))
     ScenarioDialogue.show({
@@ -606,6 +615,8 @@ end
 
 --- [LetterIntro] 新档开场链：先祖来信 → 门厅点卯 → 进游戏
 local function startIntroChain_()
+    -- 一开始就落盘，避免标题关闭后重进或存档回写把同一段开场再播一遍。
+    markIntroCompleted_()
     GameBGM.setScene("letter", { fromStart = true })
     LetterIntro.start(startOpeningBriefing_)
 end

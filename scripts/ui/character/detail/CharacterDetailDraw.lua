@@ -49,7 +49,7 @@ local DT_SLOTS = {
     { name = "头盔",   cx = 540, cy = 185, img = "helmet",    slot = "helmet" },
     { name = "饰品",   cx = 755, cy = 316, img = "accessory", slot = "accessory" },
     { name = "副武器", cx = 755, cy = 578, img = "offhand",   slot = "offhand" },
-    { name = "鞋子",   cx = 540, cy = 709, img = "shoes",     slot = "shoes" },
+    { name = "鞋子",   cx = 540, cy = 790, img = "shoes",     slot = "shoes" },
     { name = "主武器", cx = 325, cy = 578, img = "weapon",    slot = "weapon" },
     { name = "护甲",   cx = 325, cy = 316, img = "armor",     slot = "armor" },
 }
@@ -76,6 +76,10 @@ local MID_QUALITY_ICON_RIGHT_X = 509
 
 local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 770, 1175
 local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 440, 60
+M.MID_CLASS_BOX_CX = MID_CLASS_BOX_CX
+M.MID_CLASS_BOX_CY = MID_CLASS_BOX_CY
+M.MID_CLASS_BOX_W = MID_CLASS_BOX_W
+M.MID_CLASS_BOX_H = MID_CLASS_BOX_H
 local MID_CLASS_LABEL_X  = 580
 local MID_CLASS_LABEL_Y  = 1175
 local MID_CLASS_COMBO_RIGHT_X = 967
@@ -243,15 +247,17 @@ local CARD = {
     -- [复用角色展示/编队页卡片] 同尺寸 198x350 + 卡底锚定（战力上83/等级38/经验36），随卡高联动
     -- （卡 272..622：头盔槽底 265 / 鞋子槽顶 629，各留 7px；名牌不画——MID 名称行两页均显示）
     W=198, H=350, CY=544,
-    SIDE_SCALE=0.72, SIDE_DX=250, SIDE_SQUASH=0.62, SIDE_TILT=0.22,
+    SIDE_SCALE=0.92, SIDE_DX=250, CENTER_SCALE=1.18, YAW_SQUASH=0.86,
     TAG_SIZE=60, TAG_DX=63,  -- 职业标识右下角，与等级徽章(-63)左右对应
     POWER_BOTTOM_UP=83, POWER_ICON_SIZE=36,
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BOTTOM_UP=38,
 }
 M.ARROW_BG_LEFT_CX  = DT_CARD_CX - CARD.SIDE_DX
 M.ARROW_BG_RIGHT_CX = DT_CARD_CX + CARD.SIDE_DX
-M.SIDE_CARD_W = CARD.W * CARD.SIDE_SCALE * CARD.SIDE_SQUASH
+M.SIDE_CARD_W = CARD.W * CARD.SIDE_SCALE * CARD.YAW_SQUASH
 M.SIDE_CARD_H = CARD.H * CARD.SIDE_SCALE
+M.CARD_TOP_CY = CARD.CY
+M.CARD_BOT_CY = CARD.CY
 M.ARROW_CY = CARD.CY
 
 -- 职业图标映射
@@ -564,11 +570,10 @@ function M.draw(vg)
 
     -- === 动态内容开始（箭头切换时水平滑入+淡入） ===
     nvgSave(vg)
-    nvgTranslate(vg, switchOX, 0)
-    nvgGlobalAlpha(vg, switchAlpha)
+    nvgGlobalAlpha(vg, 1)
 
     if not isAwakenTab then
-    -- === 4) 角色卡片：中卡放大，左右侧卡沿圆弧侧转 ===
+    -- === 4) 角色卡片：X 轴排列，绕竖直 Y 轴转向，不做画面旋转 ===
     local function neighborId(dir)
         local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
         if not roster then return nil end
@@ -590,17 +595,18 @@ function M.draw(vg)
         if not id or alpha <= 0.01 then return end
         local imgCard = imgHeroCards[id] or imgHeroCards[1]
         if not imgCard or imgCard < 0 then return end
-        local slide = detailState.switchDir and (1 - progress) or 0
-        local pos = slot + (detailState.switchDir or 0) * slide
-        local ax = math.abs(pos)
-        local scale = 1.08 - 0.36 * math.min(1, ax)
-        local squash = 1 - (1 - CARD.SIDE_SQUASH) * math.min(1, ax)
-        local tilt = -pos * CARD.SIDE_TILT
-        local x = DT_CARD_CX + pos * CARD.SIDE_DX
+        local slide = detailState.cardDragVisual or 0
+        if detailState.switchDir then
+            slide = -(detailState.switchDir or 0) * (1 - progress)
+        end
+        local pos = slot + slide
+        local ax = math.min(1, math.abs(pos))
+        local scale = CARD.CENTER_SCALE - (CARD.CENTER_SCALE - CARD.SIDE_SCALE) * ax
+        local yaw = 1 - (1 - CARD.YAW_SQUASH) * ax
         nvgSave(vg)
-        nvgTranslate(vg, x, CARD.CY + 18 * math.min(1, ax))
-        nvgRotate(vg, tilt)
-        nvgScale(vg, scale * squash, scale)
+        local cardY = CARD.CY - ((detailState.tab == "equip") and 70 or 0)
+        nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, cardY)
+        nvgScale(vg, scale * yaw, scale)
         nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
         DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, 1.0)
         nvgRestore(vg)
@@ -610,16 +616,20 @@ function M.draw(vg)
         drawCarouselCard(neighborId(1), 1, 1)
     end
     drawCarouselCard(heroId, 0, 1)
-    local cx, cy = DT_CARD_CX, CARD.CY
+    local cx, cy = DT_CARD_CX, CARD.CY - ((detailState.tab == "equip") and 70 or 0)
+    local cardSliding = detailState.switchDir or math.abs(detailState.cardDragVisual or 0) > 0.01
 
     -- 职业标志图标
+    if not cardSliding then
     local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
     if iconIdx and imgClassIcons[iconIdx] then
         drawImageCentered(vg, imgClassIcons[iconIdx], cx + CARD.TAG_DX,
             cy + (CARD.H * 0.5 - CARD.LVL_BOTTOM_UP), CARD.TAG_SIZE, CARD.TAG_SIZE, 1.0)
     end
+    end
 
-    -- 战斗力图标+数值（使用缓存，避免每帧重算）
+    -- 战斗力图标+数值（滚动时隐藏）
+    if not cardSliding then
     local power = getCachedPower(heroId, heroLevel)
     local powerStr = tostring(power)
     local POWER_GAP = 4
@@ -634,8 +644,10 @@ function M.draw(vg)
         cy + (CARD.H * 0.5 - CARD.POWER_BOTTOM_UP), powerStr,
         30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         247, 254, 119, 4)
+    end
 
-    -- 等级徽章（卡片小经验条已删，经验见名称下大经验条）
+    -- 等级徽章（滚动时隐藏）
+    if not cardSliding then
     do
         -- 等级徽章
         local badgeCX = cx + CARD.LVL_BADGE_DX
@@ -645,6 +657,7 @@ function M.draw(vg)
             28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 4)
 
+    end
     end
 
     if detailState.tab == "equip" then

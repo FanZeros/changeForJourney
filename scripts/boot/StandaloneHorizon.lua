@@ -554,9 +554,7 @@ function HandleNanoVGRenderHorizon()
             or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
             TopBar.draw(vg(), -30)
         end
-        if PlayerInfoPanel.isOpen() then
-            PlayerInfoPanel.draw(vg())
-        end
+        -- 三行战斗的玩家信息在后面全窗居中重画，这里不画，避免左栏裁切出半个面板。
         Viewport.finish(vg())
         Viewport.begin(vg(), Viewport.PANELS.right, oxR, 0, ps)
         CharacterPanel.draw(vg())
@@ -572,7 +570,17 @@ function HandleNanoVGRenderHorizon()
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
-        -- 玩家信息已画在左栏视口内，不再用竖屏坐标居中重画。
+        -- 玩家信息已画在左栏视口内。三行路径会提前 return，必须在这里再画一层全窗居中，
+        -- 否则面板被左栏裁切，点外面也无法按面板外关闭。
+        if PlayerInfoPanel.isOpen() then
+            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+            nvgSave(vg())
+            nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+            nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+            nvgScale(vg(), fit, fit)
+            PlayerInfoPanel.draw(vg())
+            nvgRestore(vg())
+        end
         -- 全局奖励 / 离线收益仍在窗口居中覆盖，遗匣仅在上方左栏链绘制。
         -- 三行战斗会提前 return，必须在这里画，否则离线收益只 open 不显示。
         if (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) or OfflineRewardPanel.isOpen() then
@@ -662,8 +670,19 @@ local function HorizonPageModalActive()
     return true
 end
 
---- 玩家信息面板横屏 letterbox：窗口坐标 → 1080×2400 设计坐标
+--- 玩家信息面板坐标。三行战斗里面板是全窗居中重画的，点击必须用同一套 letterbox。
 local function playerInfoDesignCoords(sx, sy)
+    if BattleTriPage.isOpen() then
+        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+        return (sx - (logicalW() - 1080 * fit) * 0.5) / fit,
+               (sy - (logicalH() - 2400 * fit) * 0.5) / fit
+    end
+    local note = Viewport.getNote("center")
+    if note then
+        local cs = note.s * Viewport.DS
+        return (sx - note.ox - Viewport.PANELS.center.bx * note.s) / cs,
+               (sy - note.oy) / cs
+    end
     local fit = math.min(logicalW() / 1080, logicalH() / 2400)
     return (sx - (logicalW() - 1080 * fit) * 0.5) / fit,
            (sy - (logicalH() - 2400 * fit) * 0.5) / fit

@@ -418,10 +418,7 @@ function HandleNanoVGRenderHorizon()
     if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
         H_skipDone = true
         StartScreen.skipForReconnect()
-        DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
-        if H_AUTO_DISMISS_TITLE and DarkTitleScreen.isReady() then
-            DarkTitleScreen.handleTap()  -- 临时验证入口: 无输入环境自动淡出标题
-        end
+        -- 调试跳过开始画面时直接进主界面。提前打开暗黑标题会在资源未就绪时吞点击，表现为黑屏卡死。
     end
 
     -- 开始画面：全窗口居中（2400 高画布，适配横屏高度）

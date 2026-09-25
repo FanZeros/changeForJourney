@@ -177,6 +177,9 @@ function M.bind(deps)
         local rosterIdx = hitTestRosterCard(dx, dy)
         if rosterIdx then
             local entry = heroRoster[rosterIdx]
+            if dragState.moved or dragState.active then
+                return true
+            end
             if entry and entry.owned then
                 local _TM = require("systems.TutorialManager")
                 if _TM.isActive() and _TM.getCurrentHighlight() == "character_new_hero" then
@@ -280,7 +283,8 @@ function M.bind(deps)
                     require("systems.GameSFX").play("ui_pick")
                 end
             else
-                if distY > DRAG_THRESHOLD and (dragState.startY - dy) > DRAG_THRESHOLD then
+                -- 任意方向超过阈值都算拖拽上阵，避免松手被当成点击打开详情
+                if distX > DRAG_THRESHOLD or distY > DRAG_THRESHOLD then
                     dragState.active = true
                     dragState.moved = true
                     require("systems.GameSFX").play("ui_pick")
@@ -325,6 +329,8 @@ function M.bind(deps)
             dragState.heroId = nil
             dragState.rosterIdx = nil
             dragState.fromSlot = nil
+        elseif dragState.moved or dragState.active then
+            dragState.moved = true
         end
 
         if getIsDragging() then

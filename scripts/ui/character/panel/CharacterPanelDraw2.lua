@@ -393,18 +393,21 @@ function M.drawTeamAvatars(vg)
             nvgStrokeWidth(vg, 2)
         end
         nvgStroke(vg)
-        local labelX = frameX + 16
+        local badgeCx, badgeCy = avatarCenter(t, 1)
+        badgeCx = badgeCx - AV_SIZE * 0.5 + 22
+        badgeCy = badgeCy + AV_SIZE * 0.5 - 18
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, badgeCx - 18, badgeCy - 16, 36, 32, 8)
+        nvgFillColor(vg, nvgRGBA(18, 14, 10, 210))
+        nvgFill(vg)
+        nvgStrokeColor(vg, t == activeIdx and nvgRGBA(255, 214, 102, 230) or nvgRGBA(140, 120, 80, 180))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 26)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-        if locked then
-            nvgFillColor(vg, nvgRGBA(140, 130, 115, 180))
-        elseif t == activeIdx then
-            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-        else
-            nvgFillColor(vg, nvgRGBA(220, 210, 190, 255))
-        end
-        nvgText(vg, labelX, frameY + 8, tostring(t), nil)
+        nvgFontSize(vg, 22)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, t == activeIdx and nvgRGBA(255, 214, 102, 255) or nvgRGBA(244, 237, 224, 230))
+        nvgText(vg, badgeCx, badgeCy, tostring(t), nil)
         local powerCaches = getTeamPowerCaches and getTeamPowerCaches() or {}
         local teamPower = 0
         local cache = powerCaches[t]

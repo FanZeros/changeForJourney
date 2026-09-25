@@ -50,7 +50,8 @@ local PORTRAIT_ANIM_DUR   = 0.25   -- 单阶段动画时长 (秒)
 local PORTRAIT_SLIDE_DIST = 150    -- 滑动距离 (设计像素)
 
 -- ======================== 睁眼入场参数 ========================
-local EYE_OPEN_DUR = 2.0   -- 睁眼动画时长 (秒)
+local EYE_OPEN_DUR = 2.0
+local EYE_DIALOGUE_DELAY = 2.0
 
 -- ======================== 打字机音效 ========================
 local BLIP_SFX_PATH = "audio/sfx/dialogue_blip.ogg"
@@ -66,7 +67,6 @@ local steps_      = {}          -- { {characterId, name, text}, ... }
 local stepIndex_  = 0
 local onFinishCb_ = nil
 local title_      = nil         -- 横屏章节标题（可选）
-local eyeCloseOnFinish_ = false
 
 -- 当前步骤的打字机状态
 local textElapsed_ = 0
@@ -89,11 +89,13 @@ local portraitAnimT_     = 0
 local exitCharId_        = nil       -- 正在退出的角色 ID
 
 -- 睁眼入场状态
-local eyeOpenActive_   = false   -- 是否正在播放睁眼动画
-local eyeOpenT_        = 0       -- 睁眼计时器
-local eyeOpenness_     = 0       -- 0=完全闭眼, 1=完全睁开
-local eyeCloseActive_  = false   -- 结束时闭眼
-local eyeCloseT_       = 0
+local eyeOpenActive_   = false
+local eyeOpenT_        = 0
+local eyeOpenness_     = 0
+local eyeHoldActive_   = false
+local eyeHoldT_        = 0
+local avatarCache_     = {}
+local cgCache_         = {}
 
 -- 消失动画状态（小情景用）
 local dismissing_      = false   -- 是否正在播放消失动画
@@ -160,9 +162,30 @@ end
 
 -- ======================== 内部绘制辅助 ========================
 
---- 按需加载并缓存角色立绘
----@param characterId number
----@return number nvgImage handle
+local function getCachedImage(cache, key, path)
+    if not key or not path then return -1 end
+    local cached = cache[key]
+    if cached then return cached end
+    local handle = nvgCreateImage(vg_, path, 0)
+    cache[key] = handle or -1
+    return cache[key]
+end
+
+local function getAvatarImage(characterId)
+    return getCachedImage(avatarCache_, characterId,
+        require("config.HeroAssetUtil").getIconPath(characterId))
+end
+
+local function getCgImage(step)
+    if not step then return -1 end
+    local key = step.cg or step.cgPath or step.characterId
+    local path = step.cg or step.cgPath
+    if not path and step.characterId then
+        path = string.format("image/角色CG/CG_H%d.png", step.characterId)
+    end
+    return getCachedImage(cgCache_, key, path)
+end
+
 local function getPortraitImage(characterId)
     if not characterId then return -1 end
     local cached = portraitCache_[characterId]
@@ -339,7 +362,6 @@ end
 ---   config.mode       string "large"|"small" （默认 "large"）
 ---   config.background string|nil 大情景背景图路径（默认 "image/关卡地图/MAP_1.png"）
 ---   config.eyeOpen    boolean|nil 是否以睁眼动画入场（默认 false）
----   config.eyeClose   boolean|nil 结束后先闭眼再回调（默认 false）
 ---   config.steps      table  对话步骤列表:
 ---       { characterId = 1, name = "角色名", text = "对话内容" }
 ---   config.onFinish   function|nil 全部对话结束后的回调
@@ -353,7 +375,6 @@ function ScenarioDialogue.show(config)
     steps_      = config.steps
     onFinishCb_ = config.onFinish
     title_      = config.title
-    eyeCloseOnFinish_ = config.eyeClose == true
 
     -- 加载大情景全屏背景图
     if mode_ == "large" then
@@ -386,6 +407,7 @@ function ScenarioDialogue.show(config)
     else
         eyeOpenActive_ = false
         eyeOpenness_   = 1
+        eyeHoldActive_ = false
         -- 无睁眼时，首个立绘从右侧滑入
         portraitAnimState_ = "entering"
         portraitAnimT_     = 0
@@ -401,22 +423,6 @@ end
 ---@param dt number 帧间隔
 function ScenarioDialogue.update(dt)
     if not active_ then return end
-
-    if eyeCloseActive_ then
-        eyeCloseT_ = eyeCloseT_ + dt
-        eyeOpenness_ = 1 - easeInOut(math.min(1, eyeCloseT_ / EYE_OPEN_DUR))
-        if eyeCloseT_ >= EYE_OPEN_DUR then
-            eyeCloseActive_ = false
-            eyeOpenness_ = 0
-            active_ = false
-            print("[ScenarioDialogue] eyeClose finished")
-            if onFinishCb_ then
-                onFinishCb_()
-                onFinishCb_ = nil
-            end
-        end
-        return
-    end
 
     -- 消失动画推进
     if dismissing_ then
@@ -439,12 +445,21 @@ function ScenarioDialogue.update(dt)
         eyeOpenness_ = easeInOut(math.min(1, eyeOpenT_ / EYE_OPEN_DUR))
 
         if eyeOpenT_ >= EYE_OPEN_DUR then
-            -- 睁眼完成
             eyeOpenActive_ = false
             eyeOpenness_   = 1
-            print("[ScenarioDialogue] eyeOpen finished, typewriter starts")
+            eyeHoldActive_ = true
+            eyeHoldT_      = 0
+            print("[ScenarioDialogue] eyeOpen finished, waiting before dialogue")
         end
-        -- 睁眼期间不推进打字机（文本隐藏在眼皮后面，等睁眼完成再开始）
+        return
+    end
+
+    if eyeHoldActive_ then
+        eyeHoldT_ = eyeHoldT_ + dt
+        if eyeHoldT_ >= EYE_DIALOGUE_DELAY then
+            eyeHoldActive_ = false
+            print("[ScenarioDialogue] dialogue delay finished")
+        end
         return
     end
 
@@ -536,32 +551,39 @@ local function drawLandscape(w, h)
         nvgFill(vg_)
     end
 
+    local showDialogue = not eyeOpenActive_ and not eyeHoldActive_
     local barH = math.max(150, h * 0.26)
     local barX = w * 0.035
     local barW = w - barX * 2
     local barY = h - barH - h * 0.04
-    local portraitH = mode_ == "small" and h * 0.58 or h * 0.86
-    local portraitW = portraitH * 0.58
-    local portraitCx = barX + portraitW * 0.46
-    local portraitCy = mode_ == "small" and (barY - portraitH * 0.02) or (h * 0.42)
-    local slide = w * 0.045
-    local offsetX = 0
-    local alpha = dismissAlpha
-    local drawId = step.characterId
-    if not dismissing_ and portraitAnimState_ == "exiting" then
-        local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
-        local ease = easeInCubic(prog)
-        alpha = dismissAlpha * (1.0 - ease)
-        offsetX = -slide * ease
-        drawId = exitCharId_ or step.characterId
-    elseif not dismissing_ and portraitAnimState_ == "entering" then
-        local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
-        local ease = easeOutCubic(prog)
-        alpha = dismissAlpha * ease
-        offsetX = slide * (1.0 - ease)
+    local cgImage = getCgImage(step)
+    if cgImage >= 0 then
+        DrawUtil.drawImageCover(vg_, cgImage, w * 0.5, h * 0.5, w, h, dismissAlpha)
+    else
+        local portraitH = mode_ == "small" and h * 0.58 or h * 0.86
+        local portraitW = portraitH * 0.58
+        local portraitCx = barX + portraitW * 0.46
+        local portraitCy = mode_ == "small" and (barY - portraitH * 0.02) or (h * 0.42)
+        local slide = w * 0.045
+        local offsetX = 0
+        local alpha = dismissAlpha
+        local drawId = step.characterId
+        if not dismissing_ and portraitAnimState_ == "exiting" then
+            local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
+            local ease = easeInCubic(prog)
+            alpha = dismissAlpha * (1.0 - ease)
+            offsetX = -slide * ease
+            drawId = exitCharId_ or step.characterId
+        elseif not dismissing_ and portraitAnimState_ == "entering" then
+            local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
+            local ease = easeOutCubic(prog)
+            alpha = dismissAlpha * ease
+            offsetX = slide * (1.0 - ease)
+        end
+        drawPortraitAt(drawId, alpha, portraitCx, portraitCy, portraitW, portraitH, offsetX)
     end
-    drawPortraitAt(drawId, alpha, portraitCx, portraitCy, portraitW, portraitH, offsetX)
 
+    if showDialogue then
     nvgBeginPath(vg_)
     nvgRect(vg_, 0, barY - h * 0.02, w, h - barY + h * 0.04)
     nvgFillColor(vg_, nvgRGBA(0, 0, 0, math.floor(70 * dismissAlpha)))
@@ -578,10 +600,26 @@ local function drawLandscape(w, h)
     nvgStrokeWidth(vg_, math.max(1.5, h * 0.002))
     nvgStroke(vg_)
 
+    local avatarSize = math.max(54, h * 0.078)
+    local avatarX = barX + w * 0.018
+    local avatarY = barY - avatarSize * 0.34
+    local avatarImg = getAvatarImage(step.characterId)
+    nvgBeginPath(vg_)
+    nvgRoundedRect(vg_, avatarX - 3, avatarY - 3, avatarSize + 6, avatarSize + 6, (avatarSize + 6) * 0.18)
+    nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(230 * dismissAlpha)))
+    nvgFill(vg_)
+    if avatarImg >= 0 then
+        nvgSave(vg_)
+        nvgScissor(vg_, avatarX, avatarY, avatarSize, avatarSize)
+        DrawUtil.drawImageCover(vg_, avatarImg, avatarX + avatarSize * 0.5,
+            avatarY + avatarSize * 0.5, avatarSize, avatarSize, dismissAlpha)
+        nvgRestore(vg_)
+    end
+
     local chipH = math.max(34, h * 0.046)
     local chipW = math.min(barW * 0.32, math.max(200, h * 0.36))
-    local chipX = barX + w * 0.018
-    local chipY = barY - chipH * 0.42
+    local chipX = avatarX + avatarSize + w * 0.012
+    local chipY = avatarY + (avatarSize - chipH) * 0.5
     nvgBeginPath(vg_)
     nvgRoundedRect(vg_, chipX, chipY, chipW, chipH, chipH * 0.2)
     nvgFillColor(vg_, nvgRGBA(28, 18, 12, math.floor(235 * dismissAlpha)))
@@ -629,8 +667,9 @@ local function drawLandscape(w, h)
         nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(220 * blink)))
         nvgText(vg_, barX + barW - w * 0.02, barY + barH - h * 0.028, "轻触继续", nil)
     end
+    end
 
-    if eyeOpenActive_ or eyeCloseActive_ or eyeOpenness_ < 0.999 then
+    if eyeOpenActive_ then
         local lidH = (h * 0.5) * (1 - eyeOpenness_)
         if lidH >= 1 then
             nvgBeginPath(vg_)
@@ -709,7 +748,7 @@ function ScenarioDialogue.draw(frameW, frameH)
     end
 
     -- 7. 睁眼入场遮罩：上下眼皮覆盖在所有内容之上
-    if eyeOpenActive_ or eyeCloseActive_ or eyeOpenness_ < 0.999 then
+    if eyeOpenActive_ then
         drawEyelids(eyeOpenness_)
     end
 
@@ -724,21 +763,10 @@ end
 function ScenarioDialogue.advance()
     if not active_ then return end
 
-    if eyeCloseActive_ then
-        eyeCloseActive_ = false
-        eyeOpenness_ = 0
-        active_ = false
-        print("[ScenarioDialogue] eyeClose skipped by tap")
-        if onFinishCb_ then
-            onFinishCb_()
-            onFinishCb_ = nil
-        end
-        return
-    end
-
     -- 睁眼期间点击 → 跳过睁眼，直接进入对话
-    if eyeOpenActive_ then
+    if eyeOpenActive_ or eyeHoldActive_ then
         eyeOpenActive_ = false
+        eyeHoldActive_ = false
         eyeOpenness_   = 1
         eyeOpenT_      = EYE_OPEN_DUR
         print("[ScenarioDialogue] eyeOpen skipped by tap")
@@ -768,12 +796,6 @@ function ScenarioDialogue.advance()
             dismissing_ = true
             dismissT_   = 0
             print("[ScenarioDialogue] starting dismiss animation")
-        elseif eyeCloseOnFinish_ then
-            stepIndex_ = #steps_
-            eyeCloseActive_ = true
-            eyeCloseT_ = 0
-            eyeOpenness_ = 1
-            print("[ScenarioDialogue] starting eyeClose")
         else
             -- 大情景：直接结束
             active_ = false
@@ -852,9 +874,6 @@ function ScenarioDialogue.reset()
     eyeOpenActive_     = false
     eyeOpenT_          = 0
     eyeOpenness_       = 0
-    eyeCloseActive_    = false
-    eyeCloseT_         = 0
-    eyeCloseOnFinish_  = false
     dismissing_        = false
     dismissT_          = 0
     title_             = nil

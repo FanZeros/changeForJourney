@@ -9,7 +9,7 @@ local OfflineCalc     = require("systems.OfflineCalc")
 local SC              = require("config.StageConfig")
 local StageProvider   = require("shared.StageProvider")
 local ExpTable        = require("config.ExpTable")
-local LootBoxSystem   = require("systems.LootBoxSystem")
+local EquipmentSystem = require("systems.EquipmentSystem")
 local HeroService     = require("rules.hero.HeroService")
 local IdleIncomeConfig = require("config.IdleIncomeConfig")
 
@@ -44,10 +44,13 @@ function SweepService.Sweep(uid, count)
     local battleData = PDM.GetModule(uid, "battle")
     local heroesData = PDM.GetModule(uid, "heroes")
     local playerData = PDM.GetModule(uid, "player")
-    local lootbox    = PDM.GetModule(uid, "lootbox")
+    local equipData  = PDM.GetModule(uid, "equipment")
 
-    if not currency or not battleData or not heroesData or not playerData or not lootbox then
+    if not currency or not battleData or not heroesData or not playerData or not equipData then
         return false, "数据未加载"
+    end
+    if not equipData.inventory then
+        equipData.inventory = {}
     end
 
     -- 检查扫荡券是否足够
@@ -155,13 +158,14 @@ function SweepService.Sweep(uid, count)
         end
     end
 
-    -- 4) 装备掉落：固定 10 件，平均分配到各关卡，品质由各关卡怪物池决定
+    -- 4) 装备掉落：按次数生成真实装备，直接放入背包
     local MC = require("config.MonsterConfig")
     local totalEquipDrops = SweepService.EQUIP_DROP_COUNT * count
     local equipsPerStage = math.floor(totalEquipDrops / stageCount)
     local remainder = totalEquipDrops - equipsPerStage * stageCount
-    local equipSeeds = {}
+    local grantedEquips = {}
     local equipByQuality = {}  -- [quality] = count
+    local skippedFull = 0
 
     for stageIdx, stageEntry in ipairs(sweepStages) do
         -- 按实际出怪队列构建品质池（与 BattleScene.generateEnemyList 一致）
@@ -202,25 +206,32 @@ function SweepService.Sweep(uid, count)
                 quality = 1
             end
             if quality > maxDropQ then quality = maxDropQ end
-            equipSeeds[#equipSeeds + 1] = {
-                stageId = stageEntry.id,
-                quality = quality,
-                level   = stageEntry.monsterLevel,
-                count   = 1,
-            }
-            equipByQuality[quality] = (equipByQuality[quality] or 0) + 1
+            local equip = EquipmentSystem.generateRandom(stageEntry.monsterLevel, quality)
+            if not equip then
+                print("[SweepService][WARN] generateRandom failed level="
+                    .. tostring(stageEntry.monsterLevel) .. " quality=" .. tostring(quality))
+            elseif EquipmentSystem.isInventoryFull(equipData) then
+                skippedFull = skippedFull + 1
+            else
+                EquipmentSystem.addToInventory(equipData, equip)
+                grantedEquips[#grantedEquips + 1] = {
+                    type = "equip",
+                    templateId = equip.templateId,
+                    quality = equip.quality,
+                    level = equip.level,
+                    slot = equip.slot,
+                }
+                equipByQuality[quality] = (equipByQuality[quality] or 0) + 1
+            end
         end
     end
-    -- 合并相同 stageId+quality+level 的种子
-    equipSeeds = OfflineCalc._mergeSeeds(equipSeeds)
-
-    for _, seed in ipairs(equipSeeds) do
-        local count = seed.count or 1
-        for _ = 1, count do
-            LootBoxSystem.addSeed(lootbox, seed.stageId, seed.quality, seed.level)
-        end
+    if #grantedEquips > 0 then
+        PDM.MarkDirty(uid, "equipment")
     end
-    PDM.MarkDirty(uid, "lootbox")
+    if skippedFull > 0 then
+        print("[SweepService][WARN] inventory full, skipped equips=" .. skippedFull
+            .. " uid=" .. tostring(uid))
+    end
 
     -- 5) 卷轴掉落：固定数量，随机分配到 6 种类型
     local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
@@ -253,7 +264,8 @@ function SweepService.Sweep(uid, count)
         heroExp         = perHeroExp,
         heroExpTotal    = heroExpTotal,
         playerExp       = baseExp,
-        equipCount      = totalEquipDrops,
+        equipCount      = #grantedEquips,
+        equips          = grantedEquips,
         count           = count,
         equipByQuality  = equipByQuality,
         scrollDrops     = scrollDrops,

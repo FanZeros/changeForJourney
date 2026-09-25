@@ -770,12 +770,14 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if data.action == Protocol.ACTION_TYPES.SWEEP and data.success then
          local rewards = {}
          if (data.gold or 0) > 0 then rewards[#rewards + 1] = { type = "gold", amount = data.gold } end
-         local EQUIP_BY_QUALITY = data.equipByQuality or {}
-         for q = 5, 1, -1 do
-             local cnt = EQUIP_BY_QUALITY[q] or EQUIP_BY_QUALITY[tostring(q)]
-             if cnt and cnt > 0 then rewards[#rewards + 1] = { type = "seed", quality = q, amount = cnt } end
+         for _, equip in ipairs(data.equips or {}) do
+             rewards[#rewards + 1] = {
+                 type = "equip",
+                 templateId = equip.templateId,
+                 quality = equip.quality,
+                 level = equip.level,
+             }
          end
-         if (data.equipCount or 0) > 0 then LootBox.refreshPage() end
          for scrollField, count in pairs(data.scrollDrops or {}) do
              local SCROLL_MAP = { weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll", armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll", helmetScroll = "helmet_scroll", shoesScroll = "shoes_scroll" }
              local rk = SCROLL_MAP[scrollField]

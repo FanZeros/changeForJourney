@@ -24,6 +24,7 @@ handlers[Protocol.ACTION_TYPES.SWEEP] = function(uid, params)
         heroExpTotal    = result.heroExpTotal,
         playerExp       = result.playerExp,
         equipCount      = result.equipCount,
+        equips          = result.equips,
         equipByQuality  = result.equipByQuality,
         scrollDrops     = result.scrollDrops,
         ticketLeft      = result.ticketLeft,

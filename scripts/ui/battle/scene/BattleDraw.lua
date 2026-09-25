@@ -9,6 +9,7 @@ local NumberUtil = require("core.NumberUtil")
 local BattleLayout = require("core.BattleLayout")
 local DrawUtil = require("core.DrawUtil")
 local ETS = require("systems.ExtraTalentSystem")
+local DamageGlyph = require("ui.battle.fx.DamageGlyph")
 
 local BattleDraw = {}
 
@@ -131,18 +132,15 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
     for idx = 1, count do
         local unit = units[idx]
         local animOff = combat.getCardAnimOffsetY(unit) + combat.getChargeOffsetY(unit, isAllyGroup)
-        local arcY = combat.getCardAnimArcY(unit, isAllyGroup)
         local cx, cy
         if stripMode then
             -- [三行并行] 条带坐标: 我左/敌右单线, 朝向敌方轴映射到 X
             cx, cy = BattleLayout.cardPos(group, idx)
             cx = cx - animOff
-            cy = cy + arcY
         else
             -- classic: 原竖屏行阵, 朝向敌方轴为 Y
             cx, cy = BattleLayout.cardPos(group, idx, count)
             cy = cy + animOff
-            cx = cx + arcY
         end
 
         -- 条带内卡牌整体缩放（外层；内层远程蓄力缩放嵌套其上）
@@ -412,13 +410,10 @@ function BattleDraw.drawFloatingTexts(vg)
     for _, ft in ipairs(texts) do
         local frame = (ft.timer / ft.duration) * FLOAT_TOTAL_FRAMES
         local t = frame / FLOAT_TOTAL_FRAMES
-
         local drawX = ft.x + ft.dirX * FLOAT_MOVE_DIST * t
         local drawY = ft.y + ft.dirY * FLOAT_MOVE_DIST * t
-
         local scale = 1.0 - 0.75 * t
         local fontSize = math.max(1, math.floor(ft.fontSize * scale))
-
         local alpha
         if frame <= 10 then
             alpha = math.floor(255 * (frame / 10))
@@ -428,16 +423,25 @@ function BattleDraw.drawFloatingTexts(vg)
             alpha = math.floor(255 * (1.0 - (frame - 15) / 5))
         end
         alpha = math.max(0, math.min(255, alpha))
-
         if alpha > 0 then
+            local glyphKey, isCrit, valueText = DamageGlyph.split(ft.text)
+            local textX = drawX
+            if glyphKey then
+                local iconSize = math.max(12, fontSize * 0.72)
+                local gap = iconSize * 0.55
+                DamageGlyph.draw(vg, glyphKey, drawX - gap, drawY, iconSize, alpha)
+                textX = drawX + gap
+            end
             nvgSave(vg)
             nvgGlobalAlpha(vg, alpha / 255)
-            drawTextStroke(vg, drawX, drawY, ft.text,
+            drawTextStroke(vg, textX, drawY, valueText,
                 fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
                 ft.color[1], ft.color[2], ft.color[3], 5)
             nvgRestore(vg)
+            if isCrit or ft.isCrit then
+                DamageGlyph.drawCrit(vg, textX, drawY, fontSize * 1.35, math.floor(alpha * 0.82))
+            end
         end
     end
 end
-
 return BattleDraw

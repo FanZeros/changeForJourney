@@ -33,7 +33,6 @@ local LevelUpPopup      = require("ui.hud.popup.LevelUpPopup")
 local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
 local DiaryPage         = require("ui.story.task.DiaryPage")
-local StartScreen       = require("ui.story.gate.StartScreen")
 local DarkTitleScreen   = require("ui.story.gate.DarkTitleScreenGate")
 local BattleTriPage     = require("ui.battle.tri.BattleTriPage")
 local SweepDialog       = require("ui.battle.stage.SweepDialog")
@@ -142,8 +141,6 @@ local lootPress = false
 -- 右面板：角色固定
 -- 一期限制：弹窗为模态（绘制于中面板空间）；同一页面只在一个面板
 -- ============================================================================
-H_SKIP_START = true   -- 调试：跳过开始画面直接进主界面
-H_skipDone = false
 H_AUTO_DISMISS_TITLE = false  -- DarkTitleScreen 验收已通过：关闭无输入环境自动淡出钩子
 -- 截图验收钩子默认值（由外部 _validate_entry.lua 运行时覆写；此处定义避免 LSP 未定义全局）
 H_AUTO_TAB = false
@@ -354,20 +351,8 @@ function HandleNanoVGRenderHorizon()
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
         nvgFill(vg())
-        if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
-            H_skipDone = true
-            StartScreen.skipForReconnect()
-            DarkTitleScreen.open()
-        end
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg(), logicalW(), logicalH())
-        elseif StartScreen.isOpen() then
-            local ss = math.min(logicalW() / 1080, logicalH() / 2400)
-            nvgSave(vg())
-            nvgTranslate(vg(), (logicalW() - 1080 * ss) * 0.5, (logicalH() - 2400 * ss) * 0.5)
-            nvgScale(vg(), ss, ss)
-            StartScreen.draw(vg())
-            nvgRestore(vg())
         end
         finishFrame()
         return
@@ -376,18 +361,11 @@ function HandleNanoVGRenderHorizon()
     -- 标题未淡出：只画标题。bootReady_() 提前解锁后默认 tab 仍是战斗，
     -- 但 BattleTriPage 要等标题关闭才 open；若此时画中栏会闪一帧竖屏 BattleScene。
     if DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading() then
-        if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
-            H_skipDone = true
-            StartScreen.skipForReconnect()
-            DarkTitleScreen.open()
-        end
         nvgBeginPath(vg())
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
         nvgFill(vg())
-        if DarkTitleScreen.isOpen() then
-            DarkTitleScreen.draw(vg(), logicalW(), logicalH())
-        end
+        DarkTitleScreen.draw(vg(), logicalW(), logicalH())
         finishFrame()
         return
     end
@@ -425,29 +403,13 @@ function HandleNanoVGRenderHorizon()
     end
 
     -- 调试跳过：进主流程
-    if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
-        H_skipDone = true
-        StartScreen.skipForReconnect()
-        DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
-        if H_AUTO_DISMISS_TITLE and DarkTitleScreen.isReady() then
-            DarkTitleScreen.handleTap()  -- 临时验证入口: 无输入环境自动淡出标题
-        end
+    if H_AUTO_DISMISS_TITLE and DarkTitleScreen.isOpen() and DarkTitleScreen.isReady() then
+        DarkTitleScreen.handleTap()  -- 临时验证入口: 无输入环境自动淡出标题
     end
 
-    -- 开始画面：全窗口居中（2400 高画布，适配横屏高度）
-    if StartScreen.isOpen() then
-        local ss = math.min(logicalW() / 1080, logicalH() / 2400)
-        nvgSave(vg())
-        nvgTranslate(vg(), (logicalW() - 1080 * ss) * 0.5, (logicalH() - 2400 * ss) * 0.5)
-        nvgScale(vg(), ss, ss)
-        StartScreen.draw(vg())
-        nvgRestore(vg())
-        -- [一次性加载] 预载遮罩（开始画面上层）
-        if RT.preload_.active then
-            RT.DrawPreloadOverlay(vg(), logicalW(), logicalH())
-        end
-        finishFrame()
-        return
+    -- [一次性加载] 预载遮罩（覆盖在主界面上层）
+    if RT.preload_.active then
+        RT.DrawPreloadOverlay(vg(), logicalW(), logicalH())
     end
 
     -- [三行并行守卫] 三行战斗模式打开时，左右面板由下方 BattleTriPage 分支按
@@ -724,7 +686,6 @@ local function HorizonResolveMouse()
         end
     end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
-    if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
     if DungeonBattleScene.isOpen()
         or LevelUpPopup.isOpen() or PlayerInfoPanel.isOpen()
         or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() then

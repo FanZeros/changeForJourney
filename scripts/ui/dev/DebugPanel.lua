@@ -1047,9 +1047,9 @@ function DebugPanel.handleInput(sx, sy)
                 relicQuality = 1
                 selectedResIdx = 1
 
-                -- 3. 调用 Standalone 的重启流程（重置所有客户端状态 + 回到开始界面）
-                getStandalone().requestResetToStartScreen()
-                print(string.format("[Debug][DIAG-RESET] step3: requestResetToStartScreen done clock=%.4f", os.clock()))
+                -- 3. 调用 Standalone 的重启流程（重置所有客户端状态 + 回到横屏标题）
+                getStandalone().requestResetToTitleScreen()
+                print(string.format("[Debug][DIAG-RESET] step3: requestResetToTitleScreen done clock=%.4f", os.clock()))
                 -- 4. 重置 Client 一次性标志（让开场动画等可重新触发）
                 getClient().resetForNewSession()
                 print(string.format("[Debug][DIAG-RESET] step4: resetForNewSession done clock=%.4f", os.clock()))

@@ -40,7 +40,6 @@ local RedeemCodePanel   = require("ui.hud.popup.RedeemCodePanel")
 local AnnouncementPanel = require("ui.story.task.AnnouncementPanel")
 local AnnouncementConfig = require("shared.AnnouncementConfig")
 local DiaryPage         = require("ui.story.task.DiaryPage")
-local StartScreen       = require("ui.story.gate.StartScreen")
 local DarkTitleScreen   = require("ui.story.gate.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
 local BattleTriPage     = require("ui.battle.tri.BattleTriPage")    -- [三行并行] 三行战斗区
 local SweepDialog       = require("ui.battle.stage.SweepDialog")          -- [三行并行] 全窗模态弹窗
@@ -91,8 +90,7 @@ end
 
 -- NanoVG context & font
 local vg = nil
-local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen 使用
-local startScreenWasOpen_ = false
+
 local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发一次（等标题关闭）
 local fontNormal = -1
 local bootQueue_ = nil
@@ -296,7 +294,7 @@ function Standalone.Start()
 
     -- 1. Minimal scene (renderer needs a viewport)
     local scene = Scene()
-    sceneRef_ = scene  -- 保存引用
+
     scene:CreateComponent("Octree")
     local camNode = scene:CreateChild("Camera")
     local camera = camNode:CreateComponent("Camera")
@@ -349,9 +347,9 @@ function Standalone.Start()
     StandaloneSave.RestoreData()
 
     -- 5. 先出标题：只加载标题必要贴图，其余模块分帧补 init，避免预览首帧卡死
-    StartScreen.init(vg, scene)
     DarkTitleScreen.init(vg)
     DarkTitleScreen.setReady(false)
+    DarkTitleScreen.open()
     bootQueue_ = {
         { "LetterIntro", function() LetterIntro.init(vg) end },
         { "TopBar", function() TopBar.init(vg) end },
@@ -446,7 +444,7 @@ function Standalone.Stop()
     end
 end
 
---- [LetterIntro] StartScreen 关闭后的离线收益弹窗（原 StartScreen 关闭钩子内容提取）
+--- [LetterIntro] 标题关闭后的离线收益弹窗
 local function showOfflineRewardPanel_()
     OfflineRewardPanel.show({
         offlineSeconds  = 23025,
@@ -472,7 +470,7 @@ local function showOfflineRewardPanel_()
             print("[OfflineRewardPanel] claimed, doubled=" .. tostring(doubled))
         end,
     })
-    print("[Standalone] auto-showed OfflineRewardPanel after StartScreen closed")
+    print("[Standalone] auto-showed OfflineRewardPanel after title closed")
 end
 
 --- [LetterIntro] 新档标记开场剧情完成（session 整表替换，必须带全字段）
@@ -611,12 +609,12 @@ local function startIntroChain_()
     LetterIntro.start(startOpeningBriefing_)
 end
 
---- 清除存档后重置客户端状态并回到开始界面
+--- 清除存档后重置客户端状态并回到横屏标题
 --- 由 DebugPanel 的 reset_save 处理器调用
-function Standalone.requestResetToStartScreen()
+function Standalone.requestResetToTitleScreen()
     local TAG = "[Standalone][DIAG-RESET]"
     local t0 = os.clock()
-    print(string.format("%s requestResetToStartScreen START clock=%.4f", TAG, t0))
+    print(string.format("%s requestResetToTitleScreen START clock=%.4f", TAG, t0))
 
     -- 1. 停止 BGM & SFX
     GameBGM.stop()
@@ -684,15 +682,14 @@ function Standalone.requestResetToStartScreen()
     LetterIntro.reset()
     print(string.format("%s step10: IntroCutscene.reset done clock=%.4f", TAG, os.clock()))
 
-    -- 11. 设置标志：重新进入开始界面流程（等标题关闭后再走开场链）
-    startScreenWasOpen_ = true
+    -- 11. 设置标志：重新走一遍"标题关闭后"的流程（等标题关闭后再走开场链）
     postStartFlowDone_ = false
-    print(string.format("%s step11: startScreenWasOpen_=true clock=%.4f", TAG, os.clock()))
+    print(string.format("%s step11: postStartFlowDone_=false clock=%.4f", TAG, os.clock()))
 
-    -- 12. 重新打开 StartScreen
-    StartScreen.reopen(sceneRef_)
+    -- 12. 重新打开横屏暗黑标题（点击后重新淡出并走开场链）
+    DarkTitleScreen.reopen()
 
-    print(string.format("%s requestResetToStartScreen DONE elapsed=%.4fs clock=%.4f", TAG, os.clock() - t0, os.clock()))
+    print(string.format("%s requestResetToTitleScreen DONE elapsed=%.4fs clock=%.4f", TAG, os.clock() - t0, os.clock()))
 end
 
 -- ============================================================================
@@ -708,11 +705,10 @@ end
 ---@param eventData UpdateEventData
 function HandleUpdate(eventType, eventData)
     require("ui.dev.CEPanel").pollHotkey()
-    -- 分帧启动：每帧 1 个模块 init，标题可先画出来
+    -- 分帧启动：每帧最多 8ms 的模块 init，标题可先画出来
     pumpBootQueue_()
     if not bootReady_ then
         local dt = eventData["TimeStep"]:GetFloat()
-        if StartScreen.isOpen() then StartScreen.update(dt) end
         if DarkTitleScreen.isOpen() then DarkTitleScreen.update(dt) end
         return
     end
@@ -723,9 +719,6 @@ function HandleUpdate(eventType, eventData)
     --   3) 主线程全程不做任何同步加载
     if preload_.active then
         local dt = eventData["TimeStep"]:GetFloat()
-        if StartScreen.isOpen() then
-            StartScreen.update(dt)
-        end
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.update(dt)
         end
@@ -766,18 +759,10 @@ function HandleUpdate(eventType, eventData)
     -- [单机存档] 变更检测 + 防抖落盘
     StandaloneSave.Update(dt)
 
-    -- 开始界面打开时只更新它
-    if StartScreen.isOpen() then
-        StartScreen.update(dt)
-        startScreenWasOpen_ = true
-        return
-    end
-
     -- [DarkTitleScreen] 横屏标题动画。未淡出时不跑游戏逻辑；淡出期间放行，
     -- 让三行战斗先 open，避免标题揭开时底下还是竖屏 BattleScene。
     if DarkTitleScreen.isOpen() then
         DarkTitleScreen.update(dt)
-        startScreenWasOpen_ = true
         if not DarkTitleScreen.isFading() then
             return
         end
@@ -789,11 +774,10 @@ function HandleUpdate(eventType, eventData)
         end
     end
 
-    -- 开始页/标题刚关闭 → 老档弹离线收益；新档走开场链（来信 → 门厅点卯）
+    -- 标题刚关闭 → 老档弹离线收益；新档走开场链（来信 → 门厅点卯）
     -- 必须等 DarkTitleScreen 关闭后再播，否则信件会被标题盖住且点击被吞
     if not postStartFlowDone_ and not DarkTitleScreen.isOpen() then
         postStartFlowDone_ = true
-        startScreenWasOpen_ = false
         GameBGM.start()
         GameSFX.start()
         local sessionData = ClientDispatcher.get("session")
@@ -889,12 +873,12 @@ function HandleUpdate(eventType, eventData)
     end
     -- 临时验证钩子: 无输入环境强制打开三栏页（仅 _validate_entry.lua 置位时生效）
     ---@diagnostic disable-next-line: undefined-global
-    if H_AUTO_OPEN_TRI and H_skipDone and not BattleTriPage.isOpen() then
+    if H_AUTO_OPEN_TRI and H_AUTO_DISMISS_TITLE and not BattleTriPage.isOpen() then
         BattleTriPage.open()
     end
     -- 临时验证钩子: 无输入环境强制打开任意 ui 面板（仅 _validate_entry.lua 置位时生效，B3/B5 截图验收用）
     ---@diagnostic disable-next-line: undefined-global
-    if H_AUTO_TAB and H_skipDone and not H_shotTabSet then
+    if H_AUTO_TAB and H_AUTO_DISMISS_TITLE and not H_shotTabSet then
         H_shotTabSet = true
         ---@diagnostic disable-next-line: undefined-global
         if math.floor(H_AUTO_TAB) ~= 3 and BattleTriPage.isOpen() then
@@ -906,7 +890,7 @@ function HandleUpdate(eventType, eventData)
         print("[ValidateHook] switched tab: " .. tostring(H_AUTO_TAB))
     end
     ---@diagnostic disable-next-line: undefined-global
-    if H_AUTO_OPEN_PANEL and H_skipDone and not H_shotPanelOpened then
+    if H_AUTO_OPEN_PANEL and H_AUTO_DISMISS_TITLE and not H_shotPanelOpened then
         H_shotPanelOpened = true
         ---@diagnostic disable-next-line: undefined-global
         local panelMod = require(require("ui.ModuleMap").resolve(H_AUTO_OPEN_PANEL))

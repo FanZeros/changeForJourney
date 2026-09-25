@@ -114,7 +114,6 @@ local MAP = {
     ["SpineResultEffect"] = "ui.fx.SpineResultEffect",
     ["StageBerserk"] = "ui.battle.stage.StageBerserk",
     ["StageSelectDialog"] = "ui.battle.stage.StageSelectDialog",
-    ["StartScreen"] = "ui.story.gate.StartScreen",
     ["SweepDialog"] = "ui.battle.stage.SweepDialog",
     ["TalentPage"] = "ui.church.talent.TalentPage",
     ["TalentStarMap"] = "ui.church.talent.TalentStarMap",

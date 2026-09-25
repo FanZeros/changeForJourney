@@ -354,8 +354,8 @@ function CEService.resetSave()
     local ok, reason = GM.ResetSave(UID)
     if not ok then return toast("清档失败: " .. tostring(reason)) end
     local standalone = require("boot.Standalone")
-    if standalone.requestResetToStartScreen then
-        standalone.requestResetToStartScreen()
+    if standalone.requestResetToTitleScreen then
+        standalone.requestResetToTitleScreen()
     end
     return toast("存档已重置")
 end

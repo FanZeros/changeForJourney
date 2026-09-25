@@ -13,14 +13,22 @@ local TowerConfig   = require("config.TowerConfig")
 
 local DungeonIdleConfig = {}
 
---- 满条可累积时长（12 小时，超过不再增长）
-DungeonIdleConfig.MAX_ACCUM_SEC = 43200
+--- 进度条满格点（24 小时）。超过后仍继续累积，收益减半，不封顶。
+DungeonIdleConfig.FULL_RATE_SEC = 86400
 
---- 满条对应分钟数（= MAX_ACCUM_SEC / 60）
-DungeonIdleConfig.MAX_ACCUM_MIN = DungeonIdleConfig.MAX_ACCUM_SEC / 60
+--- 超过满格点的收益比例
+DungeonIdleConfig.TAIL_RATIO = 0.5
 
---- 每分钟效率除数：满条总收益 ≈ 1 次扫荡（720min × sweep/720 = sweep）
-DungeonIdleConfig.EFFICIENCY_DIVISOR = DungeonIdleConfig.MAX_ACCUM_MIN
+--- 兼容旧字段：进度条满格与「挂机已满」文案仍读这个
+DungeonIdleConfig.MAX_ACCUM_SEC = DungeonIdleConfig.FULL_RATE_SEC
+
+--- 满格对应分钟数（= FULL_RATE_SEC / 60）
+DungeonIdleConfig.MAX_ACCUM_MIN = DungeonIdleConfig.FULL_RATE_SEC / 60
+
+--- 每分钟效率除数：24 小时满额 ≈ 1 次扫荡，与改前 12 小时口径的每分钟效率保持一致
+--- 改前除数是 720（12h），满条收益 ≈ 1 次扫荡。现在满格改成 24h，除数仍用 720，
+--- 否则每分钟收益会被砍半。
+DungeonIdleConfig.EFFICIENCY_DIVISOR = 720
 
 --- 副本挂机收益倍率
 DungeonIdleConfig.REWARD_MULT = 2
@@ -80,22 +88,34 @@ function DungeonIdleConfig.getFillRatio(accumSec)
     return math.min(1, accumSec / DungeonIdleConfig.MAX_ACCUM_SEC)
 end
 
+--- 收益用的有效秒数：满格前原样，超出部分按 TAIL_RATIO，无硬顶
+---@param accumSec number
+---@return number
+function DungeonIdleConfig.effectiveSeconds(accumSec)
+    local raw = math.max(0, math.floor(tonumber(accumSec) or 0))
+    local full = DungeonIdleConfig.FULL_RATE_SEC
+    if raw <= full then return raw end
+    return full + math.floor((raw - full) * DungeonIdleConfig.TAIL_RATIO)
+end
+
 --- 根据累积秒数计算可领取数量
+--- 返回的 minutes 是实际累积分钟（领取时按它扣存档），amount 按有效时长算。
 ---@param dungeonId string
 ---@param floor number
 ---@param accumSec number
 ---@return number amount
 ---@return number minutes
 function DungeonIdleConfig.calcReward(dungeonId, floor, accumSec)
-    accumSec = math.floor(tonumber(accumSec) or 0)
-    accumSec = math.min(accumSec, DungeonIdleConfig.MAX_ACCUM_SEC)
-    if accumSec < DungeonIdleConfig.MIN_CLAIM_SEC then
+    local raw = math.floor(tonumber(accumSec) or 0)
+    if raw < DungeonIdleConfig.MIN_CLAIM_SEC then
         return 0, 0
     end
     local perMin = DungeonIdleConfig.getIdlePerMin(dungeonId, floor)
     if perMin <= 0 then return 0, 0 end
-    local minutes = math.floor(accumSec / 60)
-    return minutes * perMin * DungeonIdleConfig.REWARD_MULT, minutes
+    local effective = DungeonIdleConfig.effectiveSeconds(raw)
+    local payMinutes = math.floor(effective / 60)
+    local rawMinutes = math.floor(raw / 60)
+    return payMinutes * perMin * DungeonIdleConfig.REWARD_MULT, rawMinutes
 end
 
 --- 从副本进度子结构推算挂机层（= 可扫荡层 = floor - 1）

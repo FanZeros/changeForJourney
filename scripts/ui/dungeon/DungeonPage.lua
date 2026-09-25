@@ -264,15 +264,15 @@ local function getIdleClaimPreview(dungeonId)
 end
 
 local function getIdleMaxHourText()
-    local hours = math.floor((DungeonIdleConfig.MAX_ACCUM_SEC or 0) / 3600 + 0.5)
+    local hours = math.floor((DungeonIdleConfig.FULL_RATE_SEC or 0) / 3600 + 0.5)
     return tostring(hours) .. "h"
 end
 
---- 格式化挂机累积时长（显示用）
+--- 格式化挂机累积时长（显示用，不截断）
 ---@param sec number
 ---@return string
 local function formatIdleDuration(sec)
-    sec = math.min(math.floor(tonumber(sec) or 0), DungeonIdleConfig.MAX_ACCUM_SEC)
+    sec = math.floor(tonumber(sec) or 0)
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
     if h > 0 then
@@ -903,11 +903,12 @@ function DungeonPage.drawDetailPanel(vg)
     -- 23. 挂机时长 / 上限提示
     if detailDungeon then
         local _, accumSec = getIdleClaimPreview(detailDungeon.id)
-        accumSec = math.min(accumSec or 0, DungeonIdleConfig.MAX_ACCUM_SEC)
+        accumSec = accumSec or 0
         local timeTxt
         local maxHourText = getIdleMaxHourText()
         if DungeonIdleConfig.getFillRatio(accumSec) >= 1 then
-            timeTxt = "挂机已满(" .. maxHourText .. ")"
+            local tailPct = math.floor((DungeonIdleConfig.TAIL_RATIO or 0.5) * 100 + 0.5)
+            timeTxt = "超过" .. maxHourText .. "，超出按" .. tailPct .. "%"
         else
             timeTxt = "挂机 " .. formatIdleDuration(accumSec) .. "/" .. maxHourText
         end

@@ -599,7 +599,8 @@ local function compactOffset()
     local cellRight = ax + COMPACT_CELL * 0.5
     local cellTop = ay - COMPACT_CELL * 0.5
     -- 右栏详情往中缝外侧伸，左栏详情往右外侧伸，不锁在本栏里
-    local toCenterLeft = detState.owner == "character"
+    -- 右栏详情往左外侧放，左栏详情往右外侧放
+    local toCenterLeft = detState.owner ~= "character"
     local targetLeft
     local minLeft
     local maxLeft
@@ -1198,6 +1199,7 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, 
     detState.owner = owner or (compactCorner and "character" or "bag")
     detState.anchorX = tonumber(anchorX)
     detState.anchorY = tonumber(anchorY)
+    detState.pinned = false
     detState.descScrollY = 0
     detState.descScrollMax = 0
     detState.descDragging = false
@@ -1211,13 +1213,24 @@ function EquipmentDetail.setAnchor(anchorX, anchorY)
     detState.anchorY = tonumber(anchorY)
 end
 
+function EquipmentDetail.pin()
+    detState.pinned = true
+end
+
 --- 关闭（冻结当前面板内容用于关闭动画）
+function EquipmentDetail.dismissHover()
+    if not detState.open or not detState.compactCorner then return end
+    if detState.pinned then return end
+    EquipmentDetail.close()
+end
+
 function EquipmentDetail.close()
     if detState.compactCorner then
         detState.open = false
         detState.closing = false
         detState.compactCorner = false
         detState.snapshot = nil
+        detState.pinned = false
         return
     end
     if detState.closing then return end
@@ -1636,7 +1649,7 @@ function EquipmentDetail.draw(vg)
         detState.layoutEquip = newEquip
         local compare = hasCurrent and curEquip or nil
         if compare then
-            local side = (detState.owner == "character") and 1 or -1
+            local side = (detState.owner == "character") and -1 or 1
             nvgSave(vg)
             nvgTranslate(vg, side * (COMPACT_BG_W + 16), 0)
             drawCompactPanel(vg, compare, "当前", false)
@@ -1679,7 +1692,7 @@ function EquipmentDetail.containsPoint(dx, dy)
         local spanW = COMPACT_BG_W
         local spanCenter = REF_BG_CX * 1.0
         if compactCompareEquip() then
-            local side = (detState.owner == "character") and 1 or -1
+            local side = (detState.owner == "character") and -1 or 1
             spanW = COMPACT_BG_W * 2 + 16
             spanCenter = spanCenter + side * (COMPACT_BG_W + 16) * 0.5
             panelH = math.max(panelH, compactViewHeight(compactCompareEquip(), false))

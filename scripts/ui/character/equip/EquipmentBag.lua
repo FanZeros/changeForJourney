@@ -333,6 +333,9 @@ function EquipmentBag.close()
     if bagState.closing then return end
     bagState.closing  = true
     bagState.closeTime = time.elapsedTime
+    EquipmentBag._hoverSeq = nil
+    EquipmentBag._hoverSince = nil
+    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
     print("[EquipmentBag] close")
 end
 
@@ -725,6 +728,7 @@ function EquipmentBag.handleInput(dx, dy)
         else
             local _, cx, cy = findBagEntryAt(dx, dy)
             EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", cx, cy)
+            if EquipmentDetail.pin then EquipmentDetail.pin() end
             print("[EquipmentBag] 打开详情 seq=" .. tostring(entry.seq))
         end
         return true
@@ -1268,15 +1272,33 @@ end
 
 
 function EquipmentBag.handleHover(dx, dy)
-    if not EquipmentBag.isOpen() then return end
-    local entry, cx, cy = findBagEntryAt(dx, dy)
-    if not entry then return end
-    local seq = tostring(entry.seq)
-    if EquipmentBag._hoverSeq == seq then
-        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
+    if not EquipmentBag.isOpen() then
+        EquipmentBag._hoverSeq = nil
+        EquipmentBag._hoverSince = nil
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
         return
     end
-    EquipmentBag._hoverSeq = seq
+    local entry, cx, cy = findBagEntryAt(dx, dy)
+    if not entry then
+        EquipmentBag._hoverSeq = nil
+        EquipmentBag._hoverSince = nil
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+        return
+    end
+    local seq = tostring(entry.seq)
+    if EquipmentBag._hoverSeq ~= seq then
+        EquipmentBag._hoverSeq = seq
+        EquipmentBag._hoverSince = time.elapsedTime
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+        return
+    end
+    if (time.elapsedTime - (EquipmentBag._hoverSince or 0)) < 0.5 then
+        return
+    end
+    if EquipmentDetail.isOpen and EquipmentDetail.isOpen() and EquipmentDetail.setAnchor then
+        EquipmentDetail.setAnchor(cx, cy)
+        return
+    end
     EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", cx, cy)
     print("[EquipmentBag] 悬停详情 seq=" .. seq)
 end

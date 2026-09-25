@@ -988,14 +988,23 @@ function HandleMouseMoveHorizon(eventType, eventData)
     if not pressValid then
         if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
             if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
+        else
+            if CharacterPanel.handleHover then CharacterPanel.handleHover(-1, -1) end
         end
         if pid == 'left' then
             if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
                 BackpackPanel.handleHover(dx, dy)
+            elseif BackpackPanel.handleHover then
+                BackpackPanel.handleHover(-1, -1)
             end
             if EquipmentBag.isOpen and EquipmentBag.isOpen() and EquipmentBag.handleHover then
                 EquipmentBag.handleHover(dx, dy)
+            elseif EquipmentBag.handleHover then
+                EquipmentBag.handleHover(-1, -1)
             end
+        else
+            if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
+            if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
         end
         return
     end

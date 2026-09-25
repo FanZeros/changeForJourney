@@ -265,7 +265,7 @@ end
 
 -- ======================== [三队并行] 队伍页签 ========================
 
-local TAB_W, TAB_H, TAB_GAP = 240, 54, 16
+local TAB_W, TAB_H, TAB_GAP = 132, 54, 12
 local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px 间隙）
 
 -- 右侧栏只显示图标：三队头像同时显示，点进去才打开角色卡面
@@ -301,7 +301,8 @@ end
 --- 头像编队一行的左上角 X（4 个头像水平居中）
 ---@return number
 local function avatarRowX()
-    return 168
+    local rowW = M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
+    return (DESIGN_W - rowW) * 0.5
 end
 
 --- 第 teamIdx 队第 slotIdx 个头像的中心
@@ -354,7 +355,11 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
         nvgFontSize(vg, locked and 30 or 40)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(160, 145, 120, locked and 140 or 200))
-        nvgText(vg, cx, cy, locked and "锁" or "+", nil)
+        if locked and img.lock and img.lock >= 0 then
+            drawImageCentered(vg, img.lock, cx, cy, 42, 42, 0.85)
+        else
+            nvgText(vg, cx, cy, "+", nil)
+        end
     end
 end
 
@@ -370,9 +375,9 @@ function M.drawTeamAvatars(vg)
         local _, rowCy = avatarCenter(t, 1)
         local rowX = avatarRowX()
         local rowW = M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
-        local frameX = 28
+        local frameX = rowX - 18
         local frameY = rowCy - AV_SIZE * 0.5 - 14
-        local frameW = DESIGN_W - 48
+        local frameW = rowW + 36
         local frameH = AV_SIZE + 28
         nvgBeginPath(vg)
         nvgRoundedRect(vg, frameX, frameY, frameW, frameH, 16)
@@ -388,10 +393,10 @@ function M.drawTeamAvatars(vg)
             nvgStrokeWidth(vg, 2)
         end
         nvgStroke(vg)
-        local labelX = rowX - 28
+        local labelX = frameX + 16
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 32)
-        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+        nvgFontSize(vg, 26)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
         if locked then
             nvgFillColor(vg, nvgRGBA(140, 130, 115, 180))
         elseif t == activeIdx then
@@ -399,7 +404,7 @@ function M.drawTeamAvatars(vg)
         else
             nvgFillColor(vg, nvgRGBA(220, 210, 190, 255))
         end
-        nvgText(vg, labelX, rowCy, "队" .. t, nil)
+        nvgText(vg, labelX, frameY + 8, tostring(t), nil)
         local powerCaches = getTeamPowerCaches and getTeamPowerCaches() or {}
         local teamPower = 0
         local cache = powerCaches[t]
@@ -468,12 +473,14 @@ function M.drawTeamTabs(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         local label
         if isLocked then
-            local needLv = ExpTable.getTeamUnlockLevel(i)
-            label = string.format("队%d · Lv%s解锁", i, tostring(needLv or "?"))
-            nvgFontSize(vg, 22)
+            label = tostring(i)
+            nvgFontSize(vg, 24)
             nvgFillColor(vg, nvgRGBA(150, 150, 165, 255))
+            if img.lock and img.lock >= 0 then
+                drawImageCentered(vg, img.lock, x + 22, y + TAB_H * 0.5, 28, 28, 0.8)
+            end
         else
-            label = string.format("队%d（%d/%d）", i, counts[i] or 0, M.MAX_SLOTS)
+            label = string.format("%d  %d/%d", i, counts[i] or 0, M.MAX_SLOTS)
             nvgFontSize(vg, 24)
             nvgFillColor(vg, isActive and nvgRGBA(255, 255, 255, 255) or nvgRGBA(205, 210, 225, 255))
         end
@@ -704,7 +711,8 @@ function M.draw(vg, scrollY)
     local rosterCount = #heroRoster
     if rosterCount > 0 then
         local numRows = math.ceil(rosterCount / MAX_PER_ROW)
-        local gridW = MAX_PER_ROW * ROSTER_ICON + (MAX_PER_ROW - 1) * ROSTER_GAP
+        local cols = math.min(rosterCount, MAX_PER_ROW)
+        local gridW = cols * ROSTER_ICON + (cols - 1) * ROSTER_GAP
         local pad = 16
         local frameX = (DESIGN_W - gridW) * 0.5 - pad
         local firstTop = ROW1_CY - ROSTER_ICON * 0.5 - scrollY

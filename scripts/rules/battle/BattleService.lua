@@ -785,6 +785,11 @@ function BattleService.ClaimBattleRewards(uid, rewards)
                         print("[BattleService] scroll drop uid=" .. tostring(uid)
                             .. " stage=" .. tostring(sid) .. " type=" .. scrollType)
                     end
+                    if currency and DropSystem.rollSweepTicket(stageEntry) then
+                        currency.sweepTicket = (currency.sweepTicket or 0) + 1
+                        print("[BattleService] sweep ticket drop uid=" .. tostring(uid)
+                            .. " stage=" .. tostring(sid))
+                    end
                 end
             end
         end

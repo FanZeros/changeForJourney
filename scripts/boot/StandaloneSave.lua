@@ -160,6 +160,16 @@ function StandaloneSave.Update(dt)
 end
 
 --- 立即落盘（退出时调用）
+function StandaloneSave.Wipe()
+    lastSnapshot = nil
+    snapshotAcc = 0
+    flushTimer = nil
+    if fileSystem and fileSystem.Delete then
+        fileSystem:Delete(SAVE_FILE)
+    end
+    print("[StandaloneSave] wiped " .. SAVE_FILE)
+end
+
 function StandaloneSave.Flush()
     writeFile()
 end

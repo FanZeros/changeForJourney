@@ -448,7 +448,7 @@ end
 local function showOfflineRewardPanel_()
     OfflineRewardPanel.show({
         offlineSeconds  = 23025,
-        maxSeconds      = 43200,
+        maxSeconds      = 86400,
         multiplier      = 2.0,
         adventureExp    = 128000,
         adventurerExp   = 56000,

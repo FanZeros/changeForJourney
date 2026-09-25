@@ -1004,7 +1004,7 @@ function DebugPanel.handleInput(sx, sy)
                 end
                 OfflineRewardPanel.show({
                     offlineSeconds  = 6 * 3600 + 23 * 60 + 45,
-                    maxSeconds      = 12 * 3600,
+                    maxSeconds      = 24 * 3600,
                     multiplier      = 2,
                     adventureExp    = 128456,
                     adventurerExp   = 56230,

@@ -17,9 +17,21 @@ local OfflineCalc = {}
 -- ======================== 常量 ========================
 
 OfflineCalc.IDLE_KILL_RATE    = 1/3     -- 固定杀怪效率：每 3 秒 1 只（在线/离线通用）
-OfflineCalc.MAX_SECONDS       = 43200   -- 最大累计 12 小时（离线入口使用）
+OfflineCalc.FULL_RATE_SECONDS = 86400   -- 离线前 24 小时按满额计
+OfflineCalc.TAIL_RATIO        = 0.5     -- 超过 24 小时的部分按 50% 计，不封顶
+OfflineCalc.MAX_SECONDS       = OfflineCalc.FULL_RATE_SECONDS  -- 兼容旧字段：进度条满格点
 OfflineCalc.MIN_SECONDS       = 60      -- 最少 1 分钟才产生收益（离线入口使用）
 OfflineCalc.SWEEP_STAGE_COUNT = 5       -- 覆盖关卡数（与扫荡一致）
+
+--- 离线有效秒数：前 FULL_RATE_SECONDS 满额，超出部分按 TAIL_RATIO，无硬顶
+---@param seconds number
+---@return number effective
+function OfflineCalc.effectiveOfflineSeconds(seconds)
+    local raw = math.max(0, seconds)
+    local full = OfflineCalc.FULL_RATE_SECONDS
+    if raw <= full then return raw end
+    return full + (raw - full) * OfflineCalc.TAIL_RATIO
+end
 
 --- 解析挂机收益锚点关卡（金币/经验查表 + 前 5 关掉落混合）
 --- 规则：常规挂机用 maxStageId；首通进行中（当前关未 cleared）用上一关（已通关最高关）
@@ -416,15 +428,17 @@ end
 
 --- 内部核心计算（纯逻辑，无策略门槛）
 --- 基于 IDLE_KILL_RATE × 时间 计算击杀数，再分配到 dropStageId 前 N 关
----@param seconds number    挂机秒数
+---@param seconds number    金币/经验所用秒数（离线入口传入折算后的有效秒数）
 ---@param incomeStageId number  金币/经验查表锚点（IdleIncomeConfig）
 ---@param heroCount number  出战英雄数
 ---@param dropStageId number|nil  装备/卷轴混合掉落锚点（默认与 incomeStageId 相同）
+---@param stageConfig table|nil
+---@param dropSeconds number|nil  掉落所用秒数，省略则与 seconds 相同
 ---@return table|nil rewards
-local function _calcIdleCore(seconds, incomeStageId, heroCount, dropStageId, stageConfig)
+local function _calcIdleCore(seconds, incomeStageId, heroCount, dropStageId, stageConfig, dropSeconds)
     local cfg = stageConfig or SC
     dropStageId = dropStageId or incomeStageId
-    local totalKills = math.floor(seconds * OfflineCalc.IDLE_KILL_RATE)
+    local totalKills = math.floor((dropSeconds or seconds) * OfflineCalc.IDLE_KILL_RATE)
     if totalKills <= 0 then return nil end
 
     -- 取 dropStageId 前 N 关（跨难度安全）
@@ -435,17 +449,6 @@ local function _calcIdleCore(seconds, incomeStageId, heroCount, dropStageId, sta
         if not entry then return nil end
         stages = { entry }
     end
-
-    -- [DEBUG] 收益计算诊断日志
-    local stageIds = {}
-    local stageLevels = {}
-    for _, s in ipairs(stages) do
-        stageIds[#stageIds + 1] = tostring(s.id or "?")
-        stageLevels[#stageLevels + 1] = tostring(s.monsterLevel or "?")
-    end
-    print(string.format("[INCOME_DEBUG] _calcIdleCore: incomeStage=%s dropStage=%s heroCount=%d stageCount=%d stages=[%s] monsterLevels=[%s]",
-        tostring(incomeStageId), tostring(dropStageId), heroCount, #stages,
-        table.concat(stageIds, ","), table.concat(stageLevels, ",")))
 
     -- 击杀数平均分配到各关卡（余数分配给前几关）
     local killsPerStage = math.floor(totalKills / #stages)
@@ -464,17 +467,10 @@ local function _calcIdleCore(seconds, incomeStageId, heroCount, dropStageId, sta
             totalHeroExp = totalHeroExp + r.adventurerExp
             mergeEquipSeedsInto(allEquipSeeds, r.equipSeeds)
             mergeScrollDropsInto(allScrollDrops, r.scrollDrops)
-            -- [DEBUG] 每关贡献
-            print(string.format("[INCOME_DEBUG]   stage[%d] id=%s monsterLv=%d kills=%d → gold=%d exp=%d heroExp=%d",
-                i, tostring(stageEntry.id), stageEntry.monsterLevel or 0, stageKills,
-                r.gold, r.adventureExp, r.adventurerExp))
         end
     end
-    -- [DEBUG] 旧公式汇总（保留用于新旧方案对比）
-    print(string.format("[INCOME_DEBUG]   TOTAL(OLD): gold=%d exp=%d heroExp=%d (from %d kills across %d stages)",
-        totalGold, totalExp, totalHeroExp, totalKills, #stages))
 
-    -- ==================== 新方案：逐关固定收益配置 ====================
+    -- 金币/玩家经验按关卡查表，英雄经验沿用 heroCountMult
     -- gold / adventureExp（玩家经验）直接由 IdleIncomeConfig 按关卡查表得到，
     -- 按 seconds/60 比例缩放；adventurerExp（英雄经验）沿用原有 heroCountMult 关系。
     -- equipSeeds / scrollDrops 仍由上方击杀计算驱动（不改变掉落逻辑）。
@@ -484,15 +480,6 @@ local function _calcIdleCore(seconds, incomeStageId, heroCount, dropStageId, sta
     local newExp  = math.floor(cfgExpPerMin * minutes + 0.5)
     local heroCountMult = ET.heroCountExpMult[heroCount] or 1.0
     local newHeroExp = math.floor(newExp * heroCountMult + 0.5)
-
-    -- [DEBUG] 新方案汇总 + 新旧差距对比
-    print(string.format("[INCOME_DEBUG]   TOTAL(NEW): gold=%d exp=%d heroExp=%d (cfg %d/%d per-min, incomeStage=%s, %.2f min)",
-        newGold, newExp, newHeroExp, cfgGoldPerMin, cfgExpPerMin, tostring(incomeStageId), minutes))
-    print(string.format("[INCOME_COMPARE] incomeStage=%s  gold: %d→%d(%+d)  playerExp: %d→%d(%+d)  heroExp: %d→%d(%+d)",
-        tostring(incomeStageId),
-        totalGold, newGold, newGold - totalGold,
-        totalExp, newExp, newExp - totalExp,
-        totalHeroExp, newHeroExp, newHeroExp - totalHeroExp))
 
     return {
         gold          = newGold,
@@ -505,19 +492,27 @@ local function _calcIdleCore(seconds, incomeStageId, heroCount, dropStageId, sta
     }
 end
 
---- 【入口 A】离线面板结算（有 MIN_SECONDS 门槛 + MAX_SECONDS 上限）
----@param seconds number
+--- 【入口 A】离线面板结算
+--- 前 24 小时满额，超出部分按 TAIL_RATIO 计，无硬顶。门槛仍是 MIN_SECONDS。
+---@param seconds number  实际离线秒数
 ---@param incomeStageId number  金币/经验锚点
 ---@param heroCount number
 ---@param dropStageId number|nil  掉落混合锚点（省略则与 incomeStageId 相同）
 ---@param stageConfig table|nil
 ---@return table|nil rewards
 function OfflineCalc.calcOfflineIdleRewards(seconds, incomeStageId, heroCount, dropStageId, stageConfig)
-    seconds = math.min(seconds, OfflineCalc.MAX_SECONDS)
-    if seconds < OfflineCalc.MIN_SECONDS then return nil end
-    local rewards = _calcIdleCore(seconds, incomeStageId, heroCount, dropStageId, stageConfig)
+    local raw = math.max(0, seconds)
+    if raw < OfflineCalc.MIN_SECONDS then return nil end
+    local effective = OfflineCalc.effectiveOfflineSeconds(raw)
+    -- 金币/经验吃折算时长；装备和卷轴按实际离线时长掉，避免长时间离线反而少掉东西
+    local rewards = _calcIdleCore(effective, incomeStageId, heroCount, dropStageId, stageConfig, raw)
     if rewards then
-        rewards.maxSeconds = OfflineCalc.MAX_SECONDS
+        rewards.rawSeconds = raw
+        rewards.seconds = raw
+        rewards.effectiveSeconds = effective
+        rewards.fullRateSeconds = OfflineCalc.FULL_RATE_SECONDS
+        rewards.tailRatio = OfflineCalc.TAIL_RATIO
+        rewards.maxSeconds = OfflineCalc.FULL_RATE_SECONDS
     end
     return rewards
 end

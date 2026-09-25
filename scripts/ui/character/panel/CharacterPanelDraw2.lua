@@ -850,16 +850,28 @@ function M.draw(vg, scrollY)
                 255, 230, 160, 3)
         end
 
-        -- h) 出战中标识（[三队并行] 显示所属队伍：队1/队2/队3）
+        -- h) 出战队伍角标：左下角深色底，显示队1/队2/队3
         local deployTeams = getHeroDeployTeams and getHeroDeployTeams(entry.heroId) or nil
         if deployTeams and #deployTeams > 0 then
             local labels = {}
             for i, t in ipairs(deployTeams) do labels[i] = "队" .. t end
+            local badge = table.concat(labels, "·")
+            local bx = ix + 6
+            local by = iy + ROSTER_ICON - 28
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 16)
+            local textW = nvgTextBounds(vg, 0, 0, badge)
+            local bw = math.max(46, textW + 14)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, bx, by, bw, 22, 6)
+            nvgFillColor(vg, nvgRGBA(18, 14, 10, 215))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 200))
+            nvgStrokeWidth(vg, 1.5)
+            nvgStroke(vg)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-            nvgText(vg, cx, cy + ROSTER_ICON * 0.5 - 16, table.concat(labels, "·"), nil)
+            nvgText(vg, bx + bw * 0.5, by + 11, badge, nil)
         end
 
         -- i) 可提升角标（右上角，所有已拥有角色）：从缓存查找

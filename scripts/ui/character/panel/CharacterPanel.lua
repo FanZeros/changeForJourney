@@ -366,7 +366,7 @@ recalcScrollMax = function()
     end
     -- 最后一行的名字背景底边 + 底部留白
     local lastRowCY = ROW1_CY + (numRows - 1) * ROW_SPACING
-    local contentBottom = lastRowCY + 128 * 0.5 + 50
+    local contentBottom = lastRowCY + 148 * 0.5 + 50
     scrollMaxY = math.max(0, contentBottom - SCROLL_BOTTOM)
 end
 
@@ -388,8 +388,8 @@ local function hitTestRosterCard(dx, dy)
         local rowEnd   = math.min(row * MAX_PER_ROW, rosterCount)
         local rowCount = rowEnd - rowStart + 1
         local rowCY = ROW1_CY + (row - 1) * ROW_SPACING - scrollY
-        local iconSize = 128
-        local iconGap = 22
+        local iconSize = 148
+        local iconGap = 24
         local totalW = rowCount * iconSize + (rowCount - 1) * iconGap
         local startCX = (DESIGN_W - totalW) * 0.5 + iconSize * 0.5
         local cx = startCX + (col - 1) * (iconSize + iconGap)

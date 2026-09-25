@@ -89,22 +89,22 @@ local LIST_BG_CY     = DESIGN_H - LIST_BG_H * 0.5   -- 底部对齐: 2400 - 789.
 
 -- 队伍总战斗力（与详情页「角色详情」同高 Y=860）
 local TOTAL_POWER_CX = 540
-local TOTAL_POWER_CY = 680
+local TOTAL_POWER_CY = 700
 local TOTAL_POWER_ICON_SIZE = 36
 local TOTAL_POWER_GAP = 4
 
 -- "远征团"标题：与点进角色后的名字同位置（CharacterDetailDraw MID_NAME_CY=995）
 local MY_HEROES_CX   = 540
-local MY_HEROES_CY   = 790
+local MY_HEROES_CY   = 820
 
 -- 下方名册：图标网格，点图标才打开角色卡面
-local ROSTER_ICON = 128
-local ROSTER_GAP = 22
-local ROW1_CY        = 960
+local ROSTER_ICON = 148
+local ROSTER_GAP = 24
+local ROW1_CY        = 980
 local MAX_PER_ROW    = 5
 
 -- 行间距
-local ROW_SPACING    = ROSTER_ICON + 78
+local ROW_SPACING    = ROSTER_ICON + 64
 
 -- 角色名背景（相对卡片行 Y 中心的偏移）
 local NAME_BG_DY     = CARD_H * 0.5 + 34  -- [卡高4/5] 名牌中心=卡底下方34(原253)
@@ -121,7 +121,7 @@ local DEPLOYED_TXT_DY = -120  -- [卡高4/5] 原-149
 
 -- ======================== 滚动区域 ========================
 
-local SCROLL_TOP     = 860   -- 三队头像与标题下方
+local SCROLL_TOP     = 880   -- 三队头像与标题下方
 local SCROLL_BOTTOM  = 2400   -- 屏幕底边（与 ChurchPage 名册一致；避免底部大片留白）
 local SCROLL_LEFT    = 0
 local SCROLL_RIGHT   = DESIGN_W
@@ -268,10 +268,10 @@ local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px �
 
 -- 右侧栏只显示图标：三队头像同时显示，点进去才打开角色卡面
 local heroIconCache = {}  ---@type table<number, integer>
-local AV_SIZE = 96
-local AV_GAP = 18
-local AV_ROW_H = 132
-local AV_TOP = 250
+local AV_SIZE = 132
+local AV_GAP = 16
+local AV_ROW_H = 156
+local AV_TOP = 168
 
 --- 计算第 idx 个页签的左上角 X
 ---@param idx number

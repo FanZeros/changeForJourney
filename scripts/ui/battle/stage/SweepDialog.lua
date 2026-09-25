@@ -184,47 +184,30 @@ local DIFF_NAMES = {
     [SC.DIFFICULTY_ANNIHILATION5] = "湮灭V",
 }
 
---- 获取扫荡关卡显示名称（格式："普通 5-1至5-5"）
+--- 获取扫荡关卡显示名称。只显示最高已通关，不再拼「5-1至5-5」。
 local function getCurrentStageName()
     local battleData = PlayerStore.Get("battle")
     local maxStageId = battleData and (battleData.maxStageId or battleData.currentStageId)
     if not maxStageId or maxStageId == 0 then return "未知关卡" end
 
-    -- 从 maxStageId 往前收集最多 5 个关卡（与服务端逻辑一致）
-    local prevId = SC.getPrevStageId(maxStageId)
-    if not prevId then
-        prevId = SC.getLastStageOfPrevDifficulty(maxStageId)
+    local cleared = battleData.clearedStages or {}
+    local function isCleared(id)
+        return cleared[id] or cleared[tostring(id)]
     end
-    if not prevId then return "未知关卡" end
-
-    local stages = {}
-    local id = prevId
-    while id and #stages < 5 do
-        local entry = SC.getStage(id)
-        if entry then stages[#stages + 1] = entry end
-        local nextPrev = SC.getPrevStageId(id)
-        if not nextPrev then
-            nextPrev = SC.getLastStageOfPrevDifficulty(id)
-        end
-        id = nextPrev
+    local stageId = maxStageId
+    if not isCleared(stageId) then
+        stageId = SC.getPrevStageId(stageId) or SC.getLastStageOfPrevDifficulty(stageId)
     end
+    if stageId and SC.isTerminalTemple(stageId) then
+        stageId = SC.getPrevStageId(stageId) or SC.getTerminalPrevStageId(stageId)
+            or SC.getLastStageOfPrevDifficulty(stageId)
+    end
+    local entry = stageId and SC.getStage(stageId) or nil
+    if not entry then return "未知关卡" end
 
-    if #stages == 0 then return "未知关卡" end
-
-    -- 取首尾关卡（stages[1]是最接近当前的，stages[#stages]是最远的）
-    local first = stages[#stages]  -- 最远的（编号最小）
-    local last  = stages[1]        -- 最近的（编号最大）
-    local diff = SC.getDifficulty(last.id)
+    local diff = SC.getDifficulty(entry.id)
     local diffName = DIFF_NAMES[diff] or "普通"
-
-    local firstChap = getRelativeChapter(first.chapter)
-    local lastChap  = getRelativeChapter(last.chapter)
-
-    if #stages == 1 then
-        return diffName .. " " .. firstChap .. "-" .. first.stage
-    else
-        return diffName .. " " .. firstChap .. "-" .. first.stage .. "至" .. lastChap .. "-" .. last.stage
-    end
+    return diffName .. " " .. getRelativeChapter(entry.chapter) .. "-" .. entry.stage
 end
 
 --- 获取弹窗动画缩放系数（打开/关闭）

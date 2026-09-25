@@ -11,7 +11,6 @@ local StageProvider   = require("shared.StageProvider")
 local ExpTable        = require("config.ExpTable")
 local LootBoxSystem   = require("systems.LootBoxSystem")
 local HeroService     = require("rules.hero.HeroService")
-local StageUtils      = require("shared.StageUtils")
 local IdleIncomeConfig = require("config.IdleIncomeConfig")
 
 local SweepService = {}
@@ -24,15 +23,12 @@ SweepService.REWARD_MINUTES = 10
 SweepService.EQUIP_DROP_COUNT = 10
 -- 扫荡固定掉落卷轴数
 SweepService.SCROLL_DROP_COUNT = 10
--- 扫荡覆盖的关卡数量
-SweepService.SWEEP_STAGE_COUNT = 5
+-- 扫荡只结算最高已通关，不再回退前 5 个小关
+SweepService.SWEEP_STAGE_COUNT = 1
 
 -- ======================== 执行扫荡 ========================
 
--- collectPrevStages 已提取到 shared.StageUtils（扫荡与挂机共用）
-local collectPrevStages = StageUtils.collectPrevStages
-
---- 消耗 1 张扫荡券，平均扫荡记录关卡前 5 关，发放综合收益
+--- 消耗 1 张扫荡券，只扫最高已通关，发放该关收益
 ---@param uid number
 ---@return boolean ok
 ---@return string|nil err
@@ -61,11 +57,26 @@ function SweepService.Sweep(uid)
         return false, "尚未开始远征"
     end
 
-    -- 收集前 5 关（从最高进度关卡往回数）
-    local sweepStages = collectPrevStages(maxStageId, SweepService.SWEEP_STAGE_COUNT, stageConfig)
-    if #sweepStages == 0 then
+    -- 只扫最高已通关。maxStageId 未通关时回退一关；终焉神殿不产掉落，再回退到上一关。
+    local sweepStageId = maxStageId
+    local cleared = battleData.clearedStages or {}
+    local function isCleared(id)
+        return cleared[id] or cleared[tostring(id)]
+    end
+    if not isCleared(sweepStageId) then
+        sweepStageId = stageConfig.getPrevStageId(sweepStageId)
+            or stageConfig.getLastStageOfPrevDifficulty(sweepStageId)
+    end
+    if sweepStageId and stageConfig.isTerminalTemple and stageConfig.isTerminalTemple(sweepStageId) then
+        sweepStageId = stageConfig.getPrevStageId(sweepStageId)
+            or stageConfig.getTerminalPrevStageId(sweepStageId)
+            or stageConfig.getLastStageOfPrevDifficulty(sweepStageId)
+    end
+    local sweepEntry = sweepStageId and stageConfig.getStage(sweepStageId) or nil
+    if not sweepEntry or (sweepEntry.monsterLevel or 0) <= 0 then
         return false, "当前关卡无法扫荡"
     end
+    local sweepStages = { sweepEntry }
 
     -- 出战英雄数
     local deployed  = heroesData.deployed or {}

@@ -8,6 +8,7 @@
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
+local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 local AffixConfig      = require("config.AffixConfig")
 local AD               = require("systems.AttributeDef")
 local GameConfig       = require("config.GameConfig")
@@ -375,9 +376,10 @@ local REF_BG_CY  = 1120
 local REF_BG_W   = 860
 local REF_BG_H   = 1380
 -- 小窗按实际内容收紧。旧 1380 高把按钮压出框，并在词条下方留下大片空白。
-local COMPACT_BG_W = 760
-local COMPACT_BTN_H = 72
-local COMPACT_BTN_GAP = 18
+local COMPACT_BG_W = 520
+local COMPACT_BTN_H = 64
+local COMPACT_BTN_GAP = 14
+local COMPACT_BTN_W = 300
 
 -- 装备名称（左对齐）
 local REF_NAME_X = 470    -- 左对齐基准
@@ -486,15 +488,14 @@ local COMPACT_TYPE_Y = 78
 local COMPACT_QUALITY_Y = 122
 local COMPACT_ICON_CY = 168
 local COMPACT_ICON_SIZE = 132
-local COMPACT_POWER_Y = 252
-local COMPACT_STAT_Y0 = 312
+local COMPACT_STAT_Y0 = 248
 local COMPACT_CONTENT_BOTTOM_PAD = 24
 
 --- 小窗内容底部：按小窗自己的紧凑坐标计算，不再沿用大面板的旧坐标。
 ---@param equip table|nil
 ---@return number
 local function compactContentBottom(equip)
-    local bottom = COMPACT_POWER_Y + REF_LV_BG_H * 0.5
+    local bottom = COMPACT_QUALITY_Y + 18
     local statCount = equip and equip.baseStats and #equip.baseStats or 0
     if statCount > 0 then
         bottom = COMPACT_STAT_Y0 + (statCount - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
@@ -513,26 +514,79 @@ end
 ---@return number
 local function compactPanelHeight(equip)
     local contentBottom = compactContentBottom(equip)
-    local buttonBottom = contentBottom + COMPACT_BTN_GAP + COMPACT_BTN_H + 18
+    local btnCount = 1
+    if detState.slot ~= nil and ExpTable.isBuildingUnlocked("smith", GameState.getLevel()) then
+        btnCount = 2
+    end
+    local buttonBottom = contentBottom + COMPACT_BTN_GAP
+        + btnCount * COMPACT_BTN_H + (btnCount - 1) * 12 + 18
     return math.max(430, buttonBottom)
 end
 
-local function compactVisSize()
-    local w = COMPACT_BG_W * COMPACT_SCALE
-    local h = compactPanelHeight(detState.layoutEquip) * COMPACT_SCALE
-    return w, h
+local SET_LINE_H = 28
+
+local function compactSetLines(equip)
+    local tpl = EquipmentConfig.ITEMS[equip and equip.templateId]
+        or EquipmentConfig.ITEMS[equip and tostring(equip.templateId)]
+    local setId = EquipmentSetConfig.getSetIdForTemplate(tpl)
+    local def = setId and EquipmentSetConfig.get(setId) or nil
+    if not def then return nil, {} end
+    local count = 0
+    local eqData = PlayerStore.Get("equipment")
+    if eqData and detState.heroId then
+        local counts = EquipmentSetSystem.countSets(
+            eqData, detState.heroId,
+            EquipmentSystem.getFromInventory,
+            function(data, hid) return EquipmentSystem.getHeroSlots(data, hid) end)
+        count = counts[setId] or 0
+    end
+    local lines = {
+        { text = string.format("%s  %d/6", def.name, count), active = true },
+        { text = "2件  " .. (def.desc2 or ""), active = count >= 2 },
+        { text = "4件  " .. (def.desc4 or ""), active = count >= 4 },
+        { text = "6件  " .. (def.desc6 or ""), active = count >= 6 },
+    }
+    return def, lines
 end
 
---- 小窗按钮：贴在最后一条内容下方，左右并排，完整留在框内。
----@return number cy, number wearCX, number refineCX, number w, number h
+local function compactSetBlockHeight(equip)
+    local _, lines = compactSetLines(equip)
+    if #lines == 0 then return 0 end
+    return 16 + #lines * SET_LINE_H + 8
+end
+
+local function compactViewHeight(equip, withButtons)
+    local setH = compactSetBlockHeight(equip)
+    if not withButtons then
+        return math.max(360, compactContentBottom(equip) + setH + 18)
+    end
+    return compactPanelHeight(equip) + setH
+end
+
+local function compactCompareEquip()
+    if not detState.open or detState.slot == nil then return nil end
+    if isClickedEquipEquipped() then return nil end
+    return getComparisonEquip()
+end
+
+local function compactVisSize()
+    local h = compactViewHeight(detState.layoutEquip, true) * COMPACT_SCALE
+    return COMPACT_BG_W * COMPACT_SCALE, h
+end
+
+--- 小窗按钮：贴在最后一条内容下方，上下排列，完整留在框内。
+---@return number wearCY, number refineCY, number cx, number w, number h
 local function compactButtonRow()
-    local panelH = compactPanelHeight(detState.layoutEquip)
-    local cy = panelH - 18 - COMPACT_BTN_H * 0.5
-    local w = 330
-    local gap = 20
-    local wearCX = REF_BG_CX - (gap + w) * 0.5
-    local refineCX = REF_BG_CX + (gap + w) * 0.5
-    return cy, wearCX, refineCX, w, COMPACT_BTN_H
+    local panelH = compactViewHeight(detState.layoutEquip, true)
+    local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+    local showWear = detState.slot ~= nil
+    local h = COMPACT_BTN_H
+    local refineCY = panelH - 18 - h * 0.5
+    local wearCY = refineCY
+    if showWear and smithOn then
+        wearCY = refineCY - h - 12
+    end
+    return wearCY, refineCY, REF_BG_CX, COMPACT_BTN_W, h
 end
 
 local function compactOffset()
@@ -950,11 +1004,12 @@ end
 ---@param vg any
 ---@param equip table
 ---@param btnText string
-local function drawCompactPanel(vg, equip, btnText)
+---@param showActions boolean|nil
+local function drawCompactPanel(vg, equip, btnText, showActions)
     local q = equip.quality or 1
     local qColor = QUALITY_COLOR[q] or QUALITY_COLOR[1]
     local panelW = COMPACT_BG_W
-    local panelH = compactPanelHeight(equip)
+    local panelH = compactViewHeight(equip, showActions ~= false)
     local panelX = REF_BG_CX - panelW * 0.5
     local leftX = panelX + COMPACT_PAD_TOP
     local rightX = panelX + panelW - COMPACT_PAD_TOP
@@ -1000,21 +1055,30 @@ local function drawCompactPanel(vg, equip, btnText)
             NVG_ALIGN_RIGHT + NVG_ALIGN_TOP, 0, 255, 96, 3)
     end
 
-    drawImageCentered(vg, imgPowerIcon, leftX + 18, COMPACT_POWER_Y, 32, 32, 1.0)
     local powerStr = require("core.NumberUtil").format(calcEquipPower(equip, detState.heroId))
-    drawTextStroke(vg, leftX + 42, COMPACT_POWER_Y, powerStr, 34,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 0xf7, 0xfe, 0x77, 3)
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, rightX - 118, COMPACT_POWER_Y - 18, 118, 36, 18)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 102))
-    nvgFill(vg)
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 24)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, rightX - 59, COMPACT_POWER_Y, "LV " .. tostring(equip.level or 1), nil)
+    nvgFontSize(vg, 22)
+    local powerW = nvgTextBounds(vg, 0, 0, powerStr)
+    local lvStr = "LV " .. tostring(equip.level or 1)
+    nvgFontSize(vg, 20)
+    local lvW = nvgTextBounds(vg, 0, 0, lvStr)
+    local badgeW = 28 + powerW + 18 + lvW + 22
+    local badgeX = rightX - badgeW
+    local badgeY = COMPACT_NAME_Y
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, badgeX, badgeY - 18, badgeW, 36, 18)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
+    nvgFill(vg)
+    drawImageCentered(vg, imgPowerIcon, badgeX + 18, badgeY, 22, 22, 1.0)
+    drawTextStroke(vg, badgeX + 34, badgeY, powerStr, 22,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 0xf7, 0xfe, 0x77, 2)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 20)
+    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(220, 214, 200, 255))
+    nvgText(vg, rightX - 10, badgeY, lvStr, nil)
 
-    local bottom = COMPACT_POWER_Y + 28
+    local bottom = COMPACT_QUALITY_Y + 18
     if equip.baseStats and #equip.baseStats > 0 then
         local boost = EquipmentSystem.getAscendBoost(equip)
         for i, stat in ipairs(equip.baseStats) do
@@ -1051,28 +1115,46 @@ local function drawCompactPanel(vg, equip, btnText)
         end
     end
 
+    local setDef, setLines = compactSetLines(equip)
+    if #setLines > 0 then
+        local setY = bottom + 24
+        local col = setDef.color or { 232, 208, 122, 255 }
+        for i, line in ipairs(setLines) do
+            local y = setY + (i - 1) * SET_LINE_H
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, i == 1 and 24 or 20)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            if line.active then
+                nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
+            else
+                nvgFillColor(vg, nvgRGBA(120, 112, 100, 180))
+            end
+            nvgText(vg, leftX, y, line.text, nil)
+        end
+    end
+
+    if showActions == false then return end
     local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
     local showWear = detState.slot ~= nil
-    local rowY, wearCX, refineCX, bw, bh = compactButtonRow()
+    local wearCY, refineCY, cx, bw, bh = compactButtonRow()
     if showWear then
-        local feedback = BF.begin(vg, "ed_equip", wearCX, rowY, bw, bh)
-        drawImageCentered(vg, imgBtnGreen, wearCX, rowY, bw, bh, 1.0)
+        local feedback = BF.begin(vg, "ed_equip", cx, wearCY, bw, bh)
+        drawImageCentered(vg, imgBtnGreen, cx, wearCY, bw, bh, 1.0)
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 32)
+        nvgFontSize(vg, 30)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x25, 0x55, 0x3d, 255))
-        nvgText(vg, wearCX, rowY, btnText, nil)
+        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+        nvgText(vg, cx, wearCY, btnText, nil)
         BF.finish(vg, feedback)
     end
     if smithOn then
-        local cx = showWear and refineCX or REF_BG_CX
-        local feedback = BF.begin(vg, "ed_enhance", cx, rowY, bw, bh)
-        drawImageCentered(vg, imgBtnYellow, cx, rowY, bw, bh, 1.0)
+        local feedback = BF.begin(vg, "ed_enhance", cx, refineCY, bw, bh)
+        drawImageCentered(vg, imgBtnYellow, cx, refineCY, bw, bh, 1.0)
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 32)
+        nvgFontSize(vg, 30)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-        nvgText(vg, cx, rowY, "前往洗练", nil)
+        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+        nvgText(vg, cx, refineCY, "前往洗练", nil)
         BF.finish(vg, feedback)
     end
 end
@@ -1277,10 +1359,8 @@ function EquipmentDetail.handleInput(dx, dy)
     if detState.compactCorner then
         local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
         local showWear = not enhOnly
-        local rowY, wearCX, refineCX, bw, bh = compactButtonRow()
-        local rcx = showWear and refineCX or REF_BG_CX
-        local wcx = smithOn and wearCX or REF_BG_CX
-        if smithOn and hitTest(dx, dy, rcx, rowY, bw, bh) then
+        local wearCY, refineCY, cx, bw, bh = compactButtonRow()
+        if smithOn and hitTest(dx, dy, cx, refineCY, bw, bh) then
             BF.trigger("ed_enhance")
             if not BlacksmithPage then BlacksmithPage = require("ui.blacksmith.BlacksmithPage") end
             if not EquipmentBag then EquipmentBag = require("ui.character.equip.EquipmentBag") end
@@ -1296,7 +1376,7 @@ function EquipmentDetail.handleInput(dx, dy)
             print("[EquipmentDetail] 小窗前往洗练 seq=" .. tostring(detState.equipSeq))
             return true
         end
-        if showWear and hitTest(dx, dy, wcx, rowY, bw, bh) then
+        if showWear and hitTest(dx, dy, cx, wearCY, bw, bh) then
             BF.trigger("ed_equip")
             local Client = getClient()
             local Protocol = getProtocol()
@@ -1554,6 +1634,19 @@ function EquipmentDetail.draw(vg)
 
     if compact then
         detState.layoutEquip = newEquip
+        local compare = hasCurrent and curEquip or nil
+        if compare then
+            local side = (detState.owner == "character") and 1 or -1
+            nvgSave(vg)
+            nvgTranslate(vg, side * (COMPACT_BG_W + 16), 0)
+            drawCompactPanel(vg, compare, "当前", false)
+            nvgRestore(vg)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 22)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+            nvgText(vg, REF_BG_CX + side * (COMPACT_BG_W + 16), 16, "当前装备", nil)
+        end
         drawCompactPanel(vg, newEquip, btnText)
         nvgRestore(vg)
         return
@@ -1582,8 +1675,16 @@ function EquipmentDetail.containsPoint(dx, dy)
         ly = (dy - oy) / COMPACT_SCALE
     end
     if detState.compactCorner then
-        local panelH = compactPanelHeight(detState.layoutEquip)
-        if hitTest(lx, ly, REF_BG_CX, panelH * 0.5, COMPACT_BG_W, panelH) then
+        local panelH = compactViewHeight(detState.layoutEquip, true)
+        local spanW = COMPACT_BG_W
+        local spanCenter = REF_BG_CX * 1.0
+        if compactCompareEquip() then
+            local side = (detState.owner == "character") and 1 or -1
+            spanW = COMPACT_BG_W * 2 + 16
+            spanCenter = spanCenter + side * (COMPACT_BG_W + 16) * 0.5
+            panelH = math.max(panelH, compactViewHeight(compactCompareEquip(), false))
+        end
+        if hitTest(lx, ly, spanCenter, panelH * 0.5, spanW, panelH) then
             return true
         end
     else

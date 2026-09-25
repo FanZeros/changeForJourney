@@ -248,7 +248,9 @@ local function seamBackList()
         local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
         list[#list + 1] = {
             cx = (logicalW() - 486 * psL) - barW * 0.5 + oxWin,
-            sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "right",
+            sw = math.max(barW * 2.2, 56), sh = logicalH() * 0.18,
+            hitCy = logicalH() * DrawUtil.SEAMBAR_ARROW_Y,
+            bw = 0, bh = 0, dir = "right",
             close = function() CharacterDetail.close() end,
         }
     end
@@ -282,7 +284,9 @@ local function seamBackList()
         local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], dist) * cs
         list[#list + 1] = {
             cx = 486 * psL * scale + barW * 0.5 + oxWin,
-            sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
+            sw = math.max(barW * 2.2, 56), sh = logicalH() * 0.18,
+            hitCy = logicalH() * DrawUtil.SEAMBAR_ARROW_Y,
+            bw = 0, bh = 0, dir = "left",
             close = leftClose,
         }
     end
@@ -296,7 +300,7 @@ end
 local function seamHitAt(sx, sy)
     for _, seamBtn in ipairs(seamBackList()) do
         if math.abs(sx - seamBtn.cx) <= seamBtn.sw * 0.5
-            and math.abs(sy - logicalH() * 0.5) <= seamBtn.sh * 0.5 then
+            and math.abs(sy - (seamBtn.hitCy or logicalH() * 0.5)) <= seamBtn.sh * 0.5 then
             return seamBtn
         end
     end

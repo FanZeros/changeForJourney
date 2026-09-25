@@ -441,8 +441,8 @@ function UnitAttributes:takeDamage(amount, resistance)
 end
 
 --- 护盾回复跟体质挂钩。
---- 0 体质：冷却 2.4 秒，每秒回上限的 40%。
---- 40 体质：冷却 1.2 秒，每秒回满。
+--- 0 体质：冷却 1.6 秒，每秒回上限的 40%。
+--- 40 体质：冷却 0.8 秒，每秒回满。
 --- 80 体质及以上：受伤后立即回复，每秒回上限的 160%。
 ---@return number cooldown
 ---@return number ratePerSec  每秒回复的上限比例
@@ -451,7 +451,7 @@ function UnitAttributes:getShieldRegenProfile()
     local t = vit / 40
     if t < 0 then t = 0 end
     if t > 2 then t = 2 end
-    local cooldown = 2.4 - t * 1.2
+    local cooldown = 1.6 - t * 0.8
     if cooldown < 0 then cooldown = 0 end
     local rate = 0.4 + t * 0.6
     -- 数值回复：每点体质每秒 2 点，和盾的厚度无关。

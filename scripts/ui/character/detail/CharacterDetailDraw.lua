@@ -1335,7 +1335,7 @@ function M.draw(vg)
         local TIP_GAP     = 6
         local TIP_FONT    = 28
         local TIP_NAME_FONT = 30
-        local TIP_MAX_W   = 420
+        local TIP_MAX_W   = 546
         local TIP_LINE_H  = 36
 
         nvgFontFace(vg, "sans")

@@ -556,6 +556,8 @@ local function startOpeningBriefing_()
         background = cfg.background,
         title = cfg.title,
         steps = cfg.steps,
+        eyeOpen = true,
+        eyeClose = true,
         onFinish = function()
             print("[Standalone] opening briefing finished, start joins")
             startStarterJoins_()

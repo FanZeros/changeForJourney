@@ -64,8 +64,8 @@ local STAT_COL2_CX             = Draw.STAT_COL2_CX
 local STAT_ROW1_CY             = Draw.STAT_ROW1_CY
 local STAT_ROW_STEP            = Draw.STAT_ROW_STEP
 local STAT_LAYOUT              = Draw.STAT_LAYOUT
-local ARROW_BG_W               = Draw.ARROW_BG_W
-local ARROW_BG_H               = Draw.ARROW_BG_H
+local ARROW_BG_W               = Draw.SIDE_CARD_W
+local ARROW_BG_H               = Draw.SIDE_CARD_H
 local ARROW_CY                 = Draw.ARROW_CY
 local ARROW_LEFT_CX            = Draw.ARROW_LEFT_CX
 local ARROW_RIGHT_CX           = Draw.ARROW_RIGHT_CX
@@ -396,6 +396,7 @@ function CharacterDetail._switchHero(direction)
     detailState.tabSwitchTime = 0
     detailState.openTime = time.elapsedTime
     detailState.switchDir = direction  -- -1=左切, 1=右切（触发水平滑入动画）
+    detailState.prevHeroId = roster[curIdx].heroId
     detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0
     detailState.attrDragging  = false
@@ -674,12 +675,6 @@ end
 function CharacterDetail.handleDragBegin(dx, dy)
 
     if not detailState.open or detailState.closing then return true end
-    if detailState.tab == "equip" and CharacterDetail._EquipPanel
-        and CharacterDetail._EquipPanel.isInGridArea(dy) then
-        detailState.equipDragging = true
-        CharacterDetail._EquipPanel.beginPointer(dx, dy)
-        return true
-    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragBegin(dx, dy)
     end
@@ -710,24 +705,6 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragMove(dx, dy)
     if not detailState.open or detailState.closing then return true end
-    if detailState.equipDragging and CharacterDetail._EquipPanel then
-        local panel = CharacterDetail._EquipPanel
-        if panel.onPointerMove(dx, dy) then
-            return true
-        end
-        local delta = panel.getDragLastY() - dy
-        panel.onDrag(delta)
-        panel.setDragLastY(dy)
-        return true
-    end
-    -- 详情已打开后，再从格子开始拖也要切到装备拖拽，不能继续滚详情文本。
-    if detailState.tab == "equip" and CharacterDetail._EquipPanel
-        and CharacterDetail._EquipPanel.isInGridArea(dy) then
-        detailState.equipDragging = true
-        CharacterDetail._EquipPanel.beginPointer(dx, dy)
-        CharacterDetail._EquipPanel.onPointerMove(dx, dy)
-        return true
-    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragMove(dx, dy)
     end
@@ -761,28 +738,6 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragEnd(dx, dy)
     if not detailState.open then return false end
-    if detailState.equipDragging and CharacterDetail._EquipPanel then
-        local panel = CharacterDetail._EquipPanel
-        if panel.isItemDragging() then
-            local dropSlot = nil
-            for _, s in ipairs(DT_SLOTS) do
-                if hitTest(dx, dy, s.cx, s.cy, DT_SLOT_SIZE, DT_SLOT_SIZE) then
-                    dropSlot = s.slot
-                    break
-                end
-            end
-            if dropSlot then
-                panel.equipDragged(detailState.heroId, dropSlot)
-            else
-                panel.onDragEnd()
-            end
-            detailState.equipDragging = false
-            return true
-        end
-        detailState.equipDragging = false
-        panel.onDragEnd()
-        return true
-    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragEnd(dx, dy)
     end

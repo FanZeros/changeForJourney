@@ -66,6 +66,7 @@ local steps_      = {}          -- { {characterId, name, text}, ... }
 local stepIndex_  = 0
 local onFinishCb_ = nil
 local title_      = nil         -- 横屏章节标题（可选）
+local eyeCloseOnFinish_ = false
 
 -- 当前步骤的打字机状态
 local textElapsed_ = 0
@@ -91,6 +92,8 @@ local exitCharId_        = nil       -- 正在退出的角色 ID
 local eyeOpenActive_   = false   -- 是否正在播放睁眼动画
 local eyeOpenT_        = 0       -- 睁眼计时器
 local eyeOpenness_     = 0       -- 0=完全闭眼, 1=完全睁开
+local eyeCloseActive_  = false   -- 结束时闭眼
+local eyeCloseT_       = 0
 
 -- 消失动画状态（小情景用）
 local dismissing_      = false   -- 是否正在播放消失动画
@@ -336,6 +339,7 @@ end
 ---   config.mode       string "large"|"small" （默认 "large"）
 ---   config.background string|nil 大情景背景图路径（默认 "image/关卡地图/MAP_1.png"）
 ---   config.eyeOpen    boolean|nil 是否以睁眼动画入场（默认 false）
+---   config.eyeClose   boolean|nil 结束后先闭眼再回调（默认 false）
 ---   config.steps      table  对话步骤列表:
 ---       { characterId = 1, name = "角色名", text = "对话内容" }
 ---   config.onFinish   function|nil 全部对话结束后的回调
@@ -349,6 +353,7 @@ function ScenarioDialogue.show(config)
     steps_      = config.steps
     onFinishCb_ = config.onFinish
     title_      = config.title
+    eyeCloseOnFinish_ = config.eyeClose == true
 
     -- 加载大情景全屏背景图
     if mode_ == "large" then
@@ -396,6 +401,22 @@ end
 ---@param dt number 帧间隔
 function ScenarioDialogue.update(dt)
     if not active_ then return end
+
+    if eyeCloseActive_ then
+        eyeCloseT_ = eyeCloseT_ + dt
+        eyeOpenness_ = 1 - easeInOut(math.min(1, eyeCloseT_ / EYE_OPEN_DUR))
+        if eyeCloseT_ >= EYE_OPEN_DUR then
+            eyeCloseActive_ = false
+            eyeOpenness_ = 0
+            active_ = false
+            print("[ScenarioDialogue] eyeClose finished")
+            if onFinishCb_ then
+                onFinishCb_()
+                onFinishCb_ = nil
+            end
+        end
+        return
+    end
 
     -- 消失动画推进
     if dismissing_ then
@@ -609,7 +630,7 @@ local function drawLandscape(w, h)
         nvgText(vg_, barX + barW - w * 0.02, barY + barH - h * 0.028, "轻触继续", nil)
     end
 
-    if eyeOpenActive_ then
+    if eyeOpenActive_ or eyeCloseActive_ or eyeOpenness_ < 0.999 then
         local lidH = (h * 0.5) * (1 - eyeOpenness_)
         if lidH >= 1 then
             nvgBeginPath(vg_)
@@ -688,7 +709,7 @@ function ScenarioDialogue.draw(frameW, frameH)
     end
 
     -- 7. 睁眼入场遮罩：上下眼皮覆盖在所有内容之上
-    if eyeOpenActive_ then
+    if eyeOpenActive_ or eyeCloseActive_ or eyeOpenness_ < 0.999 then
         drawEyelids(eyeOpenness_)
     end
 
@@ -702,6 +723,18 @@ end
 --- 打字已完成：进入下一步
 function ScenarioDialogue.advance()
     if not active_ then return end
+
+    if eyeCloseActive_ then
+        eyeCloseActive_ = false
+        eyeOpenness_ = 0
+        active_ = false
+        print("[ScenarioDialogue] eyeClose skipped by tap")
+        if onFinishCb_ then
+            onFinishCb_()
+            onFinishCb_ = nil
+        end
+        return
+    end
 
     -- 睁眼期间点击 → 跳过睁眼，直接进入对话
     if eyeOpenActive_ then
@@ -735,6 +768,12 @@ function ScenarioDialogue.advance()
             dismissing_ = true
             dismissT_   = 0
             print("[ScenarioDialogue] starting dismiss animation")
+        elseif eyeCloseOnFinish_ then
+            stepIndex_ = #steps_
+            eyeCloseActive_ = true
+            eyeCloseT_ = 0
+            eyeOpenness_ = 1
+            print("[ScenarioDialogue] starting eyeClose")
         else
             -- 大情景：直接结束
             active_ = false
@@ -813,6 +852,9 @@ function ScenarioDialogue.reset()
     eyeOpenActive_     = false
     eyeOpenT_          = 0
     eyeOpenness_       = 0
+    eyeCloseActive_    = false
+    eyeCloseT_         = 0
+    eyeCloseOnFinish_  = false
     dismissing_        = false
     dismissT_          = 0
     title_             = nil

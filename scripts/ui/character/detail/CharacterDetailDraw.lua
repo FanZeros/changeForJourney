@@ -230,9 +230,6 @@ M.ARROW_BG_H      = 226
 M.ARROW_ICON_W    = 54
 M.ARROW_ICON_H    = 82
 M.ARROW_CY        = 491
--- 背景中心：左右边缘对齐屏幕边缘
-M.ARROW_BG_LEFT_CX  = 158 * 0.5              -- 79: 背景左边缘对齐屏幕左侧
-M.ARROW_BG_RIGHT_CX = DESIGN_W - 158 * 0.5   -- 1001: 背景右边缘对齐屏幕右侧
 -- 图标中心（保持原位不变）
 M.ARROW_LEFT_CX   = 158 * 0.5 - 30           -- 49: 左箭头图标中心
 M.ARROW_RIGHT_CX  = DESIGN_W - 158 * 0.5 + 30 -- 1031: 右箭头图标中心
@@ -246,10 +243,16 @@ local CARD = {
     -- [复用角色展示/编队页卡片] 同尺寸 198x350 + 卡底锚定（战力上83/等级38/经验36），随卡高联动
     -- （卡 272..622：头盔槽底 265 / 鞋子槽顶 629，各留 7px；名牌不画——MID 名称行两页均显示）
     W=198, H=350, CY=544,
+    SIDE_SCALE=0.72, SIDE_DX=250, SIDE_SQUASH=0.62, SIDE_TILT=0.22,
     TAG_SIZE=60, TAG_DX=63,  -- 职业标识右下角，与等级徽章(-63)左右对应
     POWER_BOTTOM_UP=83, POWER_ICON_SIZE=36,
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BOTTOM_UP=38,
 }
+M.ARROW_BG_LEFT_CX  = DT_CARD_CX - CARD.SIDE_DX
+M.ARROW_BG_RIGHT_CX = DT_CARD_CX + CARD.SIDE_DX
+M.SIDE_CARD_W = CARD.W * CARD.SIDE_SCALE * CARD.SIDE_SQUASH
+M.SIDE_CARD_H = CARD.H * CARD.SIDE_SCALE
+M.ARROW_CY = CARD.CY
 
 -- 职业图标映射
 local CLASS_ICON_MAP = {
@@ -565,10 +568,49 @@ function M.draw(vg)
     nvgGlobalAlpha(vg, switchAlpha)
 
     if not isAwakenTab then
-    -- === 4) 角色卡片 ===
-    local cx, cy = DT_CARD_CX, DT_CARD_CY
-    local cardImg = imgHeroCards[heroId] or imgHeroCards[1]
-    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD.W, CARD.H, 1.0)
+    -- === 4) 角色卡片：中卡放大，左右侧卡沿圆弧侧转 ===
+    local function neighborId(dir)
+        local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
+        if not roster then return nil end
+        local cur = nil
+        for i, entry in ipairs(roster) do
+            if entry.heroId == heroId then cur = i break end
+        end
+        if not cur then return nil end
+        local idx = cur
+        for _ = 1, #roster - 1 do
+            idx = idx + dir
+            if idx < 1 then idx = #roster end
+            if idx > #roster then idx = 1 end
+            if roster[idx].owned then return roster[idx].heroId end
+        end
+        return nil
+    end
+    local function drawCarouselCard(id, slot, alpha)
+        if not id or alpha <= 0.01 then return end
+        local imgCard = imgHeroCards[id] or imgHeroCards[1]
+        if not imgCard or imgCard < 0 then return end
+        local slide = detailState.switchDir and (1 - progress) or 0
+        local pos = slot + (detailState.switchDir or 0) * slide
+        local ax = math.abs(pos)
+        local scale = 1.08 - 0.36 * math.min(1, ax)
+        local squash = 1 - (1 - CARD.SIDE_SQUASH) * math.min(1, ax)
+        local tilt = -pos * CARD.SIDE_TILT
+        local x = DT_CARD_CX + pos * CARD.SIDE_DX
+        nvgSave(vg)
+        nvgTranslate(vg, x, CARD.CY + 18 * math.min(1, ax))
+        nvgRotate(vg, tilt)
+        nvgScale(vg, scale * squash, scale)
+        nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
+        DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, 1.0)
+        nvgRestore(vg)
+    end
+    if detailState.tab == "attr" then
+        drawCarouselCard(neighborId(-1), -1, 1)
+        drawCarouselCard(neighborId(1), 1, 1)
+    end
+    drawCarouselCard(heroId, 0, 1)
+    local cx, cy = DT_CARD_CX, CARD.CY
 
     -- 职业标志图标
     local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -579,7 +621,7 @@ function M.draw(vg)
 
     -- 战斗力图标+数值（使用缓存，避免每帧重算）
     local power = getCachedPower(heroId, heroLevel)
-    local powerStr = require("core.NumberUtil").format(power)
+    local powerStr = tostring(power)
     local POWER_GAP = 4
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 30)
@@ -783,33 +825,6 @@ function M.draw(vg)
 
     nvgRestore(vg)  -- 结束动态内容偏移（switchOX/switchAlpha）
 
-    -- === 左右切换箭头按钮（只在属性页切换角色） ===
-    if detailState.tab == "attr" then
-    if img.arrowBg >= 0 then
-        -- 左箭头背景（翻转绘制，对齐屏幕左边缘）
-        nvgSave(vg)
-        nvgTranslate(vg, M.ARROW_BG_LEFT_CX, M.ARROW_CY)
-        nvgScale(vg, -1, 1)  -- 水平翻转
-        drawImageCentered(vg, img.arrowBg, 0, 0, M.ARROW_BG_W, M.ARROW_BG_H, 1.0)
-        nvgRestore(vg)
-        -- 左箭头图标（翻转+对称位置：距左边缘69px）
-        if img.arrowIcon >= 0 then
-            nvgSave(vg)
-            nvgTranslate(vg, M.ARROW_LEFT_CX + M.ARROW_ICON_INSET, M.ARROW_CY)
-            nvgScale(vg, -1, 1)  -- 水平翻转使箭头指向左
-            drawImageCentered(vg, img.arrowIcon, 0, 0, M.ARROW_ICON_W, M.ARROW_ICON_H, 1.0)
-            nvgRestore(vg)
-        end
-
-        -- 右箭头背景（对齐屏幕右边缘）
-        drawImageCentered(vg, img.arrowBg, M.ARROW_BG_RIGHT_CX, M.ARROW_CY, M.ARROW_BG_W, M.ARROW_BG_H, 1.0)
-        -- 右箭头图标（距右边缘69px）
-        if img.arrowIcon >= 0 then
-            drawImageCentered(vg, img.arrowIcon, M.ARROW_RIGHT_CX - M.ARROW_ICON_INSET, M.ARROW_CY, M.ARROW_ICON_W, M.ARROW_ICON_H, 1.0)
-        end
-    end
-    end  -- 属性页切换箭头
-
     nvgRestore(vg)  -- 结束上半部分偏移
 
     -- ================== 下半部分（从下方滑入） ==================
@@ -863,12 +878,10 @@ function M.draw(vg)
         nvgTranslate(vg, 0, -EQUIP_LOWER_OFFSET)
     end
 
-    -- === 动态内容开始（箭头切换时水平滑入+淡入） ===
+    -- === 下方文本：原地交叉淡化。旧文本由 drawLowerText 末尾重绘模糊残影 ===
+    local textBlur = detailState.switchDir and (1 - progress) or 0
     nvgSave(vg)
-    nvgTranslate(vg, switchOX, 0)
-    nvgGlobalAlpha(vg, switchAlpha)
-
-    -- === 8) 角色名称：配装页放到装备详情之后画，避免被小窗盖住 ===
+    nvgGlobalAlpha(vg, 1 - textBlur * 0.55)
     if not isAwakenTab and detailState.tab ~= "equip" then
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 42)
@@ -906,8 +919,7 @@ function M.draw(vg)
     -- === 10) 等级文本 + 当前经验/目标经验 ===
     local curExp = math.floor(exp or 0)
     local needExp = math.floor(maxExp or 0)
-    local lvlText = "Lv." .. tostring(heroLevel) .. "  "
-    .. require("core.NumberUtil").format(curExp) .. "/" .. require("core.NumberUtil").format(needExp)
+    local lvlText = "Lv." .. tostring(heroLevel) .. "  " .. tostring(curExp) .. "/" .. tostring(needExp)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 28)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -1190,7 +1202,40 @@ function M.draw(vg)
 
     end -- if detailState.tab == "awaken" / "attr"
 
-    nvgRestore(vg)  -- 结束动态内容偏移（switchOX/switchAlpha）
+    nvgRestore(vg)
+    if textBlur > 0.04 and detailState.prevHeroId and detailState.tab == "attr" then
+        local savedId = detailState.heroId
+        local savedCfg = heroCfg
+        local savedLevel = heroLevel
+        local savedExp = exp
+        local savedMax = maxExp
+        local savedOwn = ownData
+        detailState.heroId = detailState.prevHeroId
+        heroCfg = HC.get(detailState.prevHeroId) or heroCfg
+        ownData = getOwnedData and getOwnedData(detailState.prevHeroId) or nil
+        heroLevel = ownData and ownData.level or 1
+        exp = ownData and ownData.exp or 0
+        maxExp = ownData and ownData.maxExp or ExpTable.getHeroExpForLevel(heroLevel) or 5
+        for pass = -2, 2 do
+            nvgSave(vg)
+            nvgTranslate(vg, pass * 3 * textBlur, 0)
+            nvgGlobalAlpha(vg, textBlur * 0.16)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 42)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+            nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name or "", nil)
+            nvgFontSize(vg, 28)
+            nvgText(vg, MID_EXP_CX, MID_EXP_CY, "Lv." .. tostring(heroLevel), nil)
+            nvgRestore(vg)
+        end
+        detailState.heroId = savedId
+        heroCfg = savedCfg
+        heroLevel = savedLevel
+        exp = savedExp
+        maxExp = savedMax
+        ownData = savedOwn
+    end
 
     -- ================================================================
     -- ===              底部按钮区域（静态，不参与切换动画）          ===

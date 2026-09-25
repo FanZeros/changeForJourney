@@ -152,6 +152,15 @@ local HEX_LABEL_R = 230
 -- 顶点顺序：上起顺时针。力量在上，其余按战斗直觉绕圈。
 local HEX_NAMES = { "力量", "敏捷", "体质", "魂火", "命数", "秘识" }
 local HEX_KEYS = { ["力量"] = "str", ["敏捷"] = "agi", ["体质"] = "vit", ["魂火"] = "spi", ["命数"] = "luk", ["秘识"] = "int" }
+-- 六维各自的颜色：力量赤、敏捷绿、体质褐、魂火紫、命数金、秘识青
+local HEX_COLORS = {
+    ["力量"] = { 0xE2, 0x4A, 0x3B },
+    ["敏捷"] = { 0x3D, 0xDC, 0x6E },
+    ["体质"] = { 0xC4, 0x8A, 0x3A },
+    ["魂火"] = { 0xC0, 0x58, 0xE8 },
+    ["命数"] = { 0xFF, 0xD2, 0x3A },
+    ["秘识"] = { 0x3E, 0xC6, 0xE0 },
+}
 
 local STAT_ICON_BG_DX   = 132 - 301
 local STAT_ICON_BG_DY   = 0
@@ -1193,9 +1202,19 @@ function M.draw(vg)
         if i == 1 then nvgMoveTo(vg, x, y) else nvgLineTo(vg, x, y) end
     end
     nvgClosePath(vg)
-    nvgFillColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 90))
+    nvgFillColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 70))
     nvgFill(vg)
-    nvgStrokeColor(vg, nvgRGBA(0xFF, 0xEA, 0x00, 220))
+    nvgStrokeColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 200))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    nvgBeginPath(vg)
+    nvgCircle(vg, HEX_CX, HEX_CY, 5)
+    nvgFillColor(vg, nvgRGBA(0xFF, 0xF4, 0xD6, 255))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgCircle(vg, HEX_CX, HEX_CY, 5)
+    nvgStrokeColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 255))
     nvgStrokeWidth(vg, 2)
     nvgStroke(vg)
 
@@ -1206,13 +1225,14 @@ function M.draw(vg)
         for _, item in pairs(statByKey) do
             if item.name == name then st = item break end
         end
+        local color = HEX_COLORS[name] or { 0xE8, 0xDC, 0xC8 }
         local lx, ly = hexPoint(i, HEX_LABEL_R)
         nvgFontSize(vg, 26)
-        nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-        nvgText(vg, lx, ly - 14, st and st.name or "", nil)
-        drawTextStroke(vg, lx, ly + 14, tostring(st and statValues[st.key] or 0),
-            24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 3)
+        nvgFillColor(vg, nvgRGBA(color[1], color[2], color[3], 255))
+        nvgText(vg, lx, ly - 24, st and st.name or "", nil)
+        drawTextStroke(vg, lx, ly + 16, tostring(st and statValues[st.key] or 0),
+            34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            color[1], color[2], color[3], 3)
     end
 
     -- ================================================================

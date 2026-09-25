@@ -514,6 +514,15 @@ function HandleNanoVGRenderHorizon()
 
     if towerBattleOpen then
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
+        if OfflineRewardPanel.isOpen() then
+            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+            nvgSave(vg())
+            nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+            nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+            nvgScale(vg(), fit, fit)
+            OfflineRewardPanel.draw(vg())
+            nvgRestore(vg())
+        end
         drawEquipDetailOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
@@ -563,14 +572,20 @@ function HandleNanoVGRenderHorizon()
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
         -- 玩家信息已画在左栏视口内，不再用竖屏坐标居中重画。
-        -- 全局奖励仍在窗口居中覆盖，遗匣仅在上方左栏链绘制。
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        -- 全局奖励 / 离线收益仍在窗口居中覆盖，遗匣仅在上方左栏链绘制。
+        -- 三行战斗会提前 return，必须在这里画，否则离线收益只 open 不显示。
+        if (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) or OfflineRewardPanel.isOpen() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
             nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
             nvgScale(vg(), fit, fit)
-            RewardPopup.draw(vg())
+            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+                RewardPopup.draw(vg())
+            end
+            if OfflineRewardPanel.isOpen() then
+                OfflineRewardPanel.draw(vg())
+            end
             nvgRestore(vg())
         end
         -- [底栏移除] 日志/副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
@@ -659,7 +674,12 @@ local function HorizonResolveMouse()
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
         return 'playerinfo', pdx, pdy
     end
-    -- 三行全局奖励使用居中的 1080×2400 letterbox，优先于所有左栏页面。
+    -- 三行全局奖励 / 离线收益 / 通天塔离线收益使用居中的 1080×2400 letterbox。
+    if OfflineRewardPanel.isOpen()
+        and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        local pdx, pdy = playerInfoDesignCoords(sx, sy)
+        return 'modal', pdx, pdy
+    end
     if BattleTriPage.isOpen()
         and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
@@ -822,6 +842,11 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         end
         return
     end
+    if pid == 'modal' and OfflineRewardPanel.isOpen()
+        and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        OfflineRewardPanel.handleDragBegin(dx, dy)
+        return
+    end
     if pid == 'modal' and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         RewardPopup.handleDragBegin(dx, dy)
         return
@@ -901,6 +926,12 @@ function HandleMouseMoveHorizon(eventType, eventData)
     if pid == 'none' then return end
     if pid == 'playerinfo' then
         PlayerInfoPanel.handleDragMove(dx, dy)
+        return
+    end
+    -- 三行 / 通天塔离线收益是全窗 letterbox，拖拽必须在左栏/战斗区之前消费。
+    if pid == 'modal' and OfflineRewardPanel.isOpen()
+        and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        OfflineRewardPanel.handleDragMove(dx, dy)
         return
     end
     if pid == 'modal' and HorizonPageModalActive() then
@@ -1052,7 +1083,13 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if isTap then PlayerInfoPanel.handleInput(dx, dy) end
         return
     end
-    -- 全局领奖必须在中缝返回与左栏页面之前消费。
+    -- 全局领奖 / 离线收益必须在中缝返回与左栏页面之前消费。
+    if pid == 'modal' and OfflineRewardPanel.isOpen()
+        and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        OfflineRewardPanel.handleDragEnd(dx, dy)
+        if isTap then OfflineRewardPanel.handleInput(dx, dy) end
+        return
+    end
     if pid == 'modal' and BattleTriPage.isOpen()
         and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         RewardPopup.handleDragEnd(dx, dy)
@@ -1270,7 +1307,11 @@ function HandleMouseWheelHorizon(eventType, eventData)
         end
     end
 
-    -- 全局领奖覆盖三栏时先消费滚轮，不能被中栏装备袋抢走。
+    -- 全局领奖 / 离线收益覆盖三栏时先消费滚轮，不能被中栏装备袋抢走。
+    if OfflineRewardPanel.isOpen() then
+        OfflineRewardPanel.handleScroll(wheel)
+        return
+    end
     if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         RewardPopup.handleScroll(wheel)
         return

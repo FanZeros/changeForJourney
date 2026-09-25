@@ -33,6 +33,7 @@ local LevelUpPopup      = require("ui.hud.popup.LevelUpPopup")
 local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
 local DiaryPage         = require("ui.story.task.DiaryPage")
+local StartScreen       = require("ui.story.gate.StartScreen")
 local DarkTitleScreen   = require("ui.story.gate.DarkTitleScreenGate")
 local BattleTriPage     = require("ui.battle.tri.BattleTriPage")
 local SweepDialog       = require("ui.battle.stage.SweepDialog")
@@ -141,6 +142,8 @@ local lootPress = false
 -- 右面板：角色固定
 -- 一期限制：弹窗为模态（绘制于中面板空间）；同一页面只在一个面板
 -- ============================================================================
+H_SKIP_START = true   -- 调试：跳过开始画面直接进主界面
+H_skipDone = false
 H_AUTO_DISMISS_TITLE = false  -- DarkTitleScreen 验收已通过：关闭无输入环境自动淡出钩子
 -- 截图验收钩子默认值（由外部 _validate_entry.lua 运行时覆写；此处定义避免 LSP 未定义全局）
 H_AUTO_TAB = false
@@ -353,6 +356,13 @@ function HandleNanoVGRenderHorizon()
         nvgFill(vg())
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg(), logicalW(), logicalH())
+        elseif StartScreen.isOpen() then
+            local ss = math.min(logicalW() / 1080, logicalH() / 2400)
+            nvgSave(vg())
+            nvgTranslate(vg(), (logicalW() - 1080 * ss) * 0.5, (logicalH() - 2400 * ss) * 0.5)
+            nvgScale(vg(), ss, ss)
+            StartScreen.draw(vg())
+            nvgRestore(vg())
         end
         finishFrame()
         return
@@ -365,7 +375,9 @@ function HandleNanoVGRenderHorizon()
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
         nvgFill(vg())
-        DarkTitleScreen.draw(vg(), logicalW(), logicalH())
+        if DarkTitleScreen.isOpen() then
+            DarkTitleScreen.draw(vg(), logicalW(), logicalH())
+        end
         finishFrame()
         return
     end
@@ -403,13 +415,29 @@ function HandleNanoVGRenderHorizon()
     end
 
     -- 调试跳过：进主流程
-    if H_AUTO_DISMISS_TITLE and DarkTitleScreen.isOpen() and DarkTitleScreen.isReady() then
-        DarkTitleScreen.handleTap()  -- 临时验证入口: 无输入环境自动淡出标题
+    if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
+        H_skipDone = true
+        StartScreen.skipForReconnect()
+        DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
+        if H_AUTO_DISMISS_TITLE and DarkTitleScreen.isReady() then
+            DarkTitleScreen.handleTap()  -- 临时验证入口: 无输入环境自动淡出标题
+        end
     end
 
-    -- [一次性加载] 预载遮罩（覆盖在主界面上层）
-    if RT.preload_.active then
-        RT.DrawPreloadOverlay(vg(), logicalW(), logicalH())
+    -- 开始画面：全窗口居中（2400 高画布，适配横屏高度）
+    if StartScreen.isOpen() then
+        local ss = math.min(logicalW() / 1080, logicalH() / 2400)
+        nvgSave(vg())
+        nvgTranslate(vg(), (logicalW() - 1080 * ss) * 0.5, (logicalH() - 2400 * ss) * 0.5)
+        nvgScale(vg(), ss, ss)
+        StartScreen.draw(vg())
+        nvgRestore(vg())
+        -- [一次性加载] 预载遮罩（开始画面上层）
+        if RT.preload_.active then
+            RT.DrawPreloadOverlay(vg(), logicalW(), logicalH())
+        end
+        finishFrame()
+        return
     end
 
     -- [三行并行守卫] 三行战斗模式打开时，左右面板由下方 BattleTriPage 分支按
@@ -476,6 +504,24 @@ function HandleNanoVGRenderHorizon()
 
     if towerBattleOpen then
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
+        if OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
+            or (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then
+            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+            nvgSave(vg())
+            nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+            nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+            nvgScale(vg(), fit, fit)
+            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+                RewardPopup.draw(vg())
+            end
+            if OfflineRewardPanel.isOpen() then
+                OfflineRewardPanel.draw(vg())
+            end
+            if LevelUpPopup.isOpen() then
+                LevelUpPopup.draw(vg())
+            end
+            nvgRestore(vg())
+        end
         drawEquipDetailOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
@@ -525,14 +571,23 @@ function HandleNanoVGRenderHorizon()
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
         -- 玩家信息已画在左栏视口内，不再用竖屏坐标居中重画。
-        -- 全局奖励仍在窗口居中覆盖，遗匣仅在上方左栏链绘制。
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        -- 全局奖励 / 离线收益仍在窗口居中覆盖，遗匣仅在上方左栏链绘制。
+        -- 三行战斗会提前 return，必须在这里画，否则离线收益只 open 不显示。
+        if (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) or OfflineRewardPanel.isOpen() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
             nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
             nvgScale(vg(), fit, fit)
-            RewardPopup.draw(vg())
+            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+                RewardPopup.draw(vg())
+            end
+            if OfflineRewardPanel.isOpen() then
+                OfflineRewardPanel.draw(vg())
+            end
+            if LevelUpPopup.isOpen() then
+                LevelUpPopup.draw(vg())
+            end
             nvgRestore(vg())
         end
         -- [底栏移除] 日志/副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
@@ -621,7 +676,13 @@ local function HorizonResolveMouse()
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
         return 'playerinfo', pdx, pdy
     end
-    -- 三行全局奖励使用居中的 1080×2400 letterbox，优先于所有左栏页面。
+    -- 三行全局奖励 / 离线收益 / 通天塔离线收益使用居中的 1080×2400 letterbox。
+    if (OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
+            or (RewardPopup.isOpen() and not RewardPopup.currentRowTag()))
+        and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        local pdx, pdy = playerInfoDesignCoords(sx, sy)
+        return 'modal', pdx, pdy
+    end
     if BattleTriPage.isOpen()
         and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
@@ -671,6 +732,7 @@ local function HorizonResolveMouse()
         end
     end
     local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
+    if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
     if DungeonBattleScene.isOpen()
         or LevelUpPopup.isOpen() or PlayerInfoPanel.isOpen()
         or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() then
@@ -786,6 +848,19 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         end
         return
     end
+    if pid == 'modal' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        if OfflineRewardPanel.isOpen() then
+            OfflineRewardPanel.handleDragBegin(dx, dy)
+            return
+        end
+        if LevelUpPopup.isOpen() then
+            return
+        end
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            RewardPopup.handleDragBegin(dx, dy)
+            return
+        end
+    end
     if pid == 'modal' and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         RewardPopup.handleDragBegin(dx, dy)
         return
@@ -866,6 +941,20 @@ function HandleMouseMoveHorizon(eventType, eventData)
     if pid == 'playerinfo' then
         PlayerInfoPanel.handleDragMove(dx, dy)
         return
+    end
+    -- 三行 / 通天塔离线收益是全窗 letterbox，拖拽必须在左栏/战斗区之前消费。
+    if pid == 'modal' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        if OfflineRewardPanel.isOpen() then
+            OfflineRewardPanel.handleDragMove(dx, dy)
+            return
+        end
+        if LevelUpPopup.isOpen() then
+            return
+        end
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            RewardPopup.handleDragMove(dx, dy)
+            return
+        end
     end
     if pid == 'modal' and HorizonPageModalActive() then
         -- [底栏移除] 日志页全窗模态：拖拽滚动
@@ -1016,7 +1105,23 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if isTap then PlayerInfoPanel.handleInput(dx, dy) end
         return
     end
-    -- 全局领奖必须在中缝返回与左栏页面之前消费。
+    -- 全局领奖 / 离线收益必须在中缝返回与左栏页面之前消费。
+    if pid == 'modal' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        if OfflineRewardPanel.isOpen() then
+            OfflineRewardPanel.handleDragEnd(dx, dy)
+            if isTap then OfflineRewardPanel.handleInput(dx, dy) end
+            return
+        end
+        if LevelUpPopup.isOpen() then
+            if isTap then LevelUpPopup.handleInput(dx, dy) end
+            return
+        end
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            RewardPopup.handleDragEnd(dx, dy)
+            if isTap then RewardPopup.handleInput(dx, dy) end
+            return
+        end
+    end
     if pid == 'modal' and BattleTriPage.isOpen()
         and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         RewardPopup.handleDragEnd(dx, dy)
@@ -1234,7 +1339,14 @@ function HandleMouseWheelHorizon(eventType, eventData)
         end
     end
 
-    -- 全局领奖覆盖三栏时先消费滚轮，不能被中栏装备袋抢走。
+    -- 全局领奖 / 离线收益覆盖三栏时先消费滚轮，不能被中栏装备袋抢走。
+    if OfflineRewardPanel.isOpen() then
+        OfflineRewardPanel.handleScroll(wheel)
+        return
+    end
+    if LevelUpPopup.isOpen() and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        return
+    end
     if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         RewardPopup.handleScroll(wheel)
         return

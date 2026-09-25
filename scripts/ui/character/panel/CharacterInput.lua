@@ -14,6 +14,8 @@ function M.bind(deps)
     local getSlotPowerCache = deps.getSlotPowerCache
     local getDragState = deps.getDragState
     local getSelectSlotState = deps.getSelectSlotState
+    local selectSlotState = getSelectSlotState()
+    local getTeams = deps.getTeams
     local getHeroRoster = deps.getHeroRoster
     local getShardMap = deps.getShardMap
     local getActiveTeamIdx = deps.getActiveTeamIdx
@@ -47,6 +49,24 @@ function M.bind(deps)
         local tabIdx = Draw.hitTestTeamTabs(dx, dy)
         if tabIdx then
             CharacterPanel.setActiveTeam(tabIdx)
+            return true
+        end
+
+        -- 头像编队：点哪一队的头像就切到哪一队，空位进入选人
+        local avatarTeam, avatarSlot = Draw.hitTestAvatarSlot(dx, dy)
+        if avatarTeam then
+            if avatarTeam ~= getActiveTeamIdx() then
+                CharacterPanel.setActiveTeam(avatarTeam)
+            end
+            local teams = getTeams()
+            local slot = teams[avatarTeam] and teams[avatarTeam].slots[avatarSlot]
+            if slot and slot.state == "occupied" and slot.heroId then
+                require("systems.GameSFX").play("ui_pick")
+                CharacterDetail.open(slot.heroId)
+            elseif slot and slot.state == "empty" then
+                selectSlotState.active = true
+                selectSlotState.slotIndex = avatarSlot
+            end
             return true
         end
 

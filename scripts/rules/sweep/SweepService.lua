@@ -1,7 +1,7 @@
 -- ============================================================================
 -- SweepService - 扫荡业务逻辑
 -- 职责: 扣除扫荡券，即时发放固定关卡收益（首通奖励×10）
--- 层级: server/sweep  |  通过 PDM 读写，禁止网络 IO
+-- 层级: rules/sweep  |  单机本地结算，通过 PDM 读写，禁止网络 IO
 -- ============================================================================
 
 local PDM             = require("rules.character.PlayerDataManager")
@@ -9,48 +9,54 @@ local OfflineCalc     = require("systems.OfflineCalc")
 local SC              = require("config.StageConfig")
 local StageProvider   = require("shared.StageProvider")
 local ExpTable        = require("config.ExpTable")
-local LootBoxSystem   = require("systems.LootBoxSystem")
+local EquipmentSystem = require("systems.EquipmentSystem")
 local HeroService     = require("rules.hero.HeroService")
-local StageUtils      = require("shared.StageUtils")
 local IdleIncomeConfig = require("config.IdleIncomeConfig")
 
 local SweepService = {}
 
 -- 每次扫荡消耗的扫荡券数
 SweepService.SWEEP_COST = 1
+-- 单次请求最多扫荡次数
+SweepService.MAX_COUNT = 10
 -- 扫荡收益 = 即时领取 N 分钟挂机收益（与挂机/离线统一走 IdleIncomeConfig）
 SweepService.REWARD_MINUTES = 10
 -- 扫荡固定掉落装备数
 SweepService.EQUIP_DROP_COUNT = 10
 -- 扫荡固定掉落卷轴数
 SweepService.SCROLL_DROP_COUNT = 10
--- 扫荡覆盖的关卡数量
-SweepService.SWEEP_STAGE_COUNT = 5
+-- 扫荡只结算最高已通关一关，不再回退前 5 个小关
+SweepService.SWEEP_STAGE_COUNT = 1
 
 -- ======================== 执行扫荡 ========================
 
--- collectPrevStages 已提取到 shared.StageUtils（扫荡与挂机共用）
-local collectPrevStages = StageUtils.collectPrevStages
-
---- 消耗 1 张扫荡券，平均扫荡记录关卡前 5 关，发放综合收益
+--- 消耗 count 张扫荡券，只扫最高已通关，奖励按次数相乘
 ---@param uid number
+---@param count number|nil
 ---@return boolean ok
 ---@return string|nil err
 ---@return table|nil result  { gold, heroExp, playerExp, equipCount, scrolls, stages }
-function SweepService.Sweep(uid)
+function SweepService.Sweep(uid, count)
+    count = math.floor(tonumber(count) or 1)
+    if count < 1 then count = 1 end
+    if count > SweepService.MAX_COUNT then count = SweepService.MAX_COUNT end
     local currency   = PDM.GetModule(uid, "currency")
     local battleData = PDM.GetModule(uid, "battle")
     local heroesData = PDM.GetModule(uid, "heroes")
     local playerData = PDM.GetModule(uid, "player")
-    local lootbox    = PDM.GetModule(uid, "lootbox")
+    local equipData  = PDM.GetModule(uid, "equipment")
 
-    if not currency or not battleData or not heroesData or not playerData or not lootbox then
+    if not currency or not battleData or not heroesData or not playerData or not equipData then
         return false, "数据未加载"
+    end
+    if not equipData.inventory then
+        equipData.inventory = {}
     end
 
     -- 检查扫荡券是否足够
     local owned = currency.sweepTicket or 0
-    if owned < SweepService.SWEEP_COST then
+    local cost = SweepService.SWEEP_COST * count
+    if owned < cost then
         return false, "扫荡券不足"
     end
 
@@ -61,11 +67,26 @@ function SweepService.Sweep(uid)
         return false, "尚未开始远征"
     end
 
-    -- 收集前 5 关（从最高进度关卡往回数）
-    local sweepStages = collectPrevStages(maxStageId, SweepService.SWEEP_STAGE_COUNT, stageConfig)
-    if #sweepStages == 0 then
+    -- 只扫最高已通关。maxStageId 未通关时回退一关；终焉神殿不产掉落，再回退到上一关。
+    local sweepStageId = maxStageId
+    local cleared = battleData.clearedStages or {}
+    local function isCleared(id)
+        return cleared[id] or cleared[tostring(id)]
+    end
+    if not isCleared(sweepStageId) then
+        sweepStageId = stageConfig.getPrevStageId(sweepStageId)
+            or stageConfig.getLastStageOfPrevDifficulty(sweepStageId)
+    end
+    if sweepStageId and stageConfig.isTerminalTemple and stageConfig.isTerminalTemple(sweepStageId) then
+        sweepStageId = stageConfig.getPrevStageId(sweepStageId)
+            or stageConfig.getTerminalPrevStageId(sweepStageId)
+            or stageConfig.getLastStageOfPrevDifficulty(sweepStageId)
+    end
+    local sweepEntry = sweepStageId and stageConfig.getStage(sweepStageId) or nil
+    if not sweepEntry or (sweepEntry.monsterLevel or 0) <= 0 then
         return false, "当前关卡无法扫荡"
     end
+    local sweepStages = { sweepEntry }
 
     -- 出战英雄数
     local deployed  = heroesData.deployed or {}
@@ -78,8 +99,8 @@ function SweepService.Sweep(uid)
     -- 1 张扫荡券 = 即时领取 REWARD_MINUTES 分钟的挂机收益（基于玩家最高进度关卡）
     local stageCount = #sweepStages
     local cfgGoldPerMin, cfgExpPerMin = IdleIncomeConfig.get(maxStageId)
-    local goldAmount = math.floor(cfgGoldPerMin * SweepService.REWARD_MINUTES)
-    local baseExp    = math.floor(cfgExpPerMin * SweepService.REWARD_MINUTES)
+    local goldAmount = math.floor(cfgGoldPerMin * SweepService.REWARD_MINUTES) * count
+    local baseExp    = math.floor(cfgExpPerMin * SweepService.REWARD_MINUTES) * count
 
     -- 英雄经验 = baseExp × 出战人数倍率（与挂机一致）
     local heroCountMult = ExpTable.heroCountExpMult[heroCount] or 1.0
@@ -99,7 +120,7 @@ function SweepService.Sweep(uid)
         cfgGoldPerMin, cfgExpPerMin, SweepService.REWARD_MINUTES))
 
     -- ── 扣券 ──
-    currency.sweepTicket = owned - SweepService.SWEEP_COST
+    currency.sweepTicket = owned - cost
     PDM.MarkDirty(uid, "currency")
 
     -- ── 发放奖励 ──
@@ -137,12 +158,14 @@ function SweepService.Sweep(uid)
         end
     end
 
-    -- 4) 装备掉落：固定 10 件，平均分配到各关卡，品质由各关卡怪物池决定
+    -- 4) 装备掉落：按次数生成真实装备，直接放入背包
     local MC = require("config.MonsterConfig")
-    local equipsPerStage = math.floor(SweepService.EQUIP_DROP_COUNT / stageCount)
-    local remainder = SweepService.EQUIP_DROP_COUNT - equipsPerStage * stageCount
-    local equipSeeds = {}
+    local totalEquipDrops = SweepService.EQUIP_DROP_COUNT * count
+    local equipsPerStage = math.floor(totalEquipDrops / stageCount)
+    local remainder = totalEquipDrops - equipsPerStage * stageCount
+    local grantedEquips = {}
     local equipByQuality = {}  -- [quality] = count
+    local skippedFull = 0
 
     for stageIdx, stageEntry in ipairs(sweepStages) do
         -- 按实际出怪队列构建品质池（与 BattleScene.generateEnemyList 一致）
@@ -183,37 +206,44 @@ function SweepService.Sweep(uid)
                 quality = 1
             end
             if quality > maxDropQ then quality = maxDropQ end
-            equipSeeds[#equipSeeds + 1] = {
-                stageId = stageEntry.id,
-                quality = quality,
-                level   = stageEntry.monsterLevel,
-                count   = 1,
-            }
-            equipByQuality[quality] = (equipByQuality[quality] or 0) + 1
+            local equip = EquipmentSystem.generateRandom(stageEntry.monsterLevel, quality)
+            if not equip then
+                print("[SweepService][WARN] generateRandom failed level="
+                    .. tostring(stageEntry.monsterLevel) .. " quality=" .. tostring(quality))
+            elseif EquipmentSystem.isInventoryFull(equipData) then
+                skippedFull = skippedFull + 1
+            else
+                EquipmentSystem.addToInventory(equipData, equip)
+                grantedEquips[#grantedEquips + 1] = {
+                    type = "equip",
+                    templateId = equip.templateId,
+                    quality = equip.quality,
+                    level = equip.level,
+                    slot = equip.slot,
+                }
+                equipByQuality[quality] = (equipByQuality[quality] or 0) + 1
+            end
         end
     end
-    -- 合并相同 stageId+quality+level 的种子
-    equipSeeds = OfflineCalc._mergeSeeds(equipSeeds)
-
-    for _, seed in ipairs(equipSeeds) do
-        local count = seed.count or 1
-        for _ = 1, count do
-            LootBoxSystem.addSeed(lootbox, seed.stageId, seed.quality, seed.level)
-        end
+    if #grantedEquips > 0 then
+        PDM.MarkDirty(uid, "equipment")
     end
-    PDM.MarkDirty(uid, "lootbox")
+    if skippedFull > 0 then
+        print("[SweepService][WARN] inventory full, skipped equips=" .. skippedFull
+            .. " uid=" .. tostring(uid))
+    end
 
     -- 5) 卷轴掉落：固定数量，随机分配到 6 种类型
     local scrollTypes = { "weaponScroll", "offhandScroll", "armorScroll", "helmetScroll", "shoesScroll", "accessoryScroll" }
     local scrollDrops = {}
-    for _ = 1, SweepService.SCROLL_DROP_COUNT do
+    for _ = 1, SweepService.SCROLL_DROP_COUNT * count do
         local st = scrollTypes[math.random(1, #scrollTypes)]
         scrollDrops[st] = (scrollDrops[st] or 0) + 1
     end
-    local totalScrolls = SweepService.SCROLL_DROP_COUNT
-    for scrollField, count in pairs(scrollDrops) do
-        if count > 0 then
-            currency[scrollField] = (currency[scrollField] or 0) + count
+    local totalScrolls = SweepService.SCROLL_DROP_COUNT * count
+    for scrollField, amount in pairs(scrollDrops) do
+        if amount > 0 then
+            currency[scrollField] = (currency[scrollField] or 0) + amount
         end
     end
     PDM.MarkDirty(uid, "currency")
@@ -227,14 +257,16 @@ function SweepService.Sweep(uid)
     print(string.format("[SweepService] uid=%s swept %d stages (%s): gold=%d heroExp=%d playerExp=%d equips=%d scrolls=%d ticketLeft=%d",
         tostring(uid), stageCount, table.concat(sweepStageIds, ","),
         goldAmount, heroExpTotal, baseExp,
-        SweepService.EQUIP_DROP_COUNT, totalScrolls, currency.sweepTicket))
+        totalEquipDrops, totalScrolls, currency.sweepTicket))
 
     return true, nil, {
         gold            = goldAmount,
         heroExp         = perHeroExp,
         heroExpTotal    = heroExpTotal,
         playerExp       = baseExp,
-        equipCount      = SweepService.EQUIP_DROP_COUNT,
+        equipCount      = #grantedEquips,
+        equips          = grantedEquips,
+        count           = count,
         equipByQuality  = equipByQuality,
         scrollDrops     = scrollDrops,
         ticketLeft      = currency.sweepTicket,

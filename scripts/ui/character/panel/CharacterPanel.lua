@@ -366,7 +366,7 @@ recalcScrollMax = function()
     end
     -- 最后一行的名字背景底边 + 底部留白
     local lastRowCY = ROW1_CY + (numRows - 1) * ROW_SPACING
-    local contentBottom = lastRowCY + NAME_BG_DY + NAME_BG_H * 0.5 + 50  -- 50px 底部边距
+    local contentBottom = lastRowCY + 148 * 0.5 + 50
     scrollMaxY = math.max(0, contentBottom - SCROLL_BOTTOM)
 end
 
@@ -388,12 +388,14 @@ local function hitTestRosterCard(dx, dy)
         local rowEnd   = math.min(row * MAX_PER_ROW, rosterCount)
         local rowCount = rowEnd - rowStart + 1
         local rowCY = ROW1_CY + (row - 1) * ROW_SPACING - scrollY
-        local totalW = rowCount * CARD_W + (rowCount - 1) * CARD_SPACING
-        local startCX = (DESIGN_W - totalW) * 0.5 + CARD_W * 0.5
-        local cx = startCX + (col - 1) * (CARD_W + CARD_SPACING)
+        local iconSize = 148
+        local iconGap = 24
+        local totalW = rowCount * iconSize + (rowCount - 1) * iconGap
+        local startCX = (DESIGN_W - totalW) * 0.5 + iconSize * 0.5
+        local cx = startCX + (col - 1) * (iconSize + iconGap)
         local cy = rowCY
-        if dx >= cx - CARD_W * 0.5 and dx <= cx + CARD_W * 0.5
-           and dy >= cy - CARD_H * 0.5 and dy <= cy + CARD_H * 0.5
+        if dx >= cx - iconSize * 0.5 and dx <= cx + iconSize * 0.5
+           and dy >= cy - iconSize * 0.5 and dy <= cy + iconSize * 0.5 + 28
            and dy >= SCROLL_TOP and dy <= SCROLL_BOTTOM then
             return idx
         end
@@ -418,6 +420,8 @@ function CharacterPanel.init(vg)
         getActiveTeamIdx     = function() return activeTeamIdx end,
         getUnlockedTeamCount = function() return ExpTable.getUnlockedTeamCount(GameState.getLevel()) end,
         getTeamOccupiedCounts = function() return CharacterPanel.getTeamOccupiedCounts() end,
+        getTeams = function() return teams end,
+        getTeamPowerCaches = function() return teamPowerCaches end,
     })
     Draw.initImages(vg)
 
@@ -599,6 +603,7 @@ local function bindInput()
         getSlotPowerCache = function() return slotPowerCache end,
         getDragState = function() return dragState end,
         getSelectSlotState = function() return selectSlotState end,
+        getTeams = function() return teams end,
         getHeroRoster = function() return heroRoster end,
         getShardMap = function() return shardMap end,
         getActiveTeamIdx = function() return activeTeamIdx end,

@@ -138,9 +138,12 @@ local cachedVg = nil
 
 -- ======================== 状态 ========================
 
+local SWEEP_COUNTS = { 1, 5, 10 }
+
 local state = {
     open      = false,
     openTime  = 0,
+    count     = 1,
 }
 
 -- ======================== 动画常量 ========================
@@ -184,47 +187,30 @@ local DIFF_NAMES = {
     [SC.DIFFICULTY_ANNIHILATION5] = "湮灭V",
 }
 
---- 获取扫荡关卡显示名称（格式："普通 5-1至5-5"）
+--- 获取扫荡关卡显示名称。只显示最高已通关，不再拼「5-1至5-5」。
 local function getCurrentStageName()
     local battleData = PlayerStore.Get("battle")
     local maxStageId = battleData and (battleData.maxStageId or battleData.currentStageId)
     if not maxStageId or maxStageId == 0 then return "未知关卡" end
 
-    -- 从 maxStageId 往前收集最多 5 个关卡（与服务端逻辑一致）
-    local prevId = SC.getPrevStageId(maxStageId)
-    if not prevId then
-        prevId = SC.getLastStageOfPrevDifficulty(maxStageId)
+    local cleared = battleData.clearedStages or {}
+    local function isCleared(id)
+        return cleared[id] or cleared[tostring(id)]
     end
-    if not prevId then return "未知关卡" end
-
-    local stages = {}
-    local id = prevId
-    while id and #stages < 5 do
-        local entry = SC.getStage(id)
-        if entry then stages[#stages + 1] = entry end
-        local nextPrev = SC.getPrevStageId(id)
-        if not nextPrev then
-            nextPrev = SC.getLastStageOfPrevDifficulty(id)
-        end
-        id = nextPrev
+    local stageId = maxStageId
+    if not isCleared(stageId) then
+        stageId = SC.getPrevStageId(stageId) or SC.getLastStageOfPrevDifficulty(stageId)
     end
+    if stageId and SC.isTerminalTemple(stageId) then
+        stageId = SC.getPrevStageId(stageId) or SC.getTerminalPrevStageId(stageId)
+            or SC.getLastStageOfPrevDifficulty(stageId)
+    end
+    local entry = stageId and SC.getStage(stageId) or nil
+    if not entry then return "未知关卡" end
 
-    if #stages == 0 then return "未知关卡" end
-
-    -- 取首尾关卡（stages[1]是最接近当前的，stages[#stages]是最远的）
-    local first = stages[#stages]  -- 最远的（编号最小）
-    local last  = stages[1]        -- 最近的（编号最大）
-    local diff = SC.getDifficulty(last.id)
+    local diff = SC.getDifficulty(entry.id)
     local diffName = DIFF_NAMES[diff] or "普通"
-
-    local firstChap = getRelativeChapter(first.chapter)
-    local lastChap  = getRelativeChapter(last.chapter)
-
-    if #stages == 1 then
-        return diffName .. " " .. firstChap .. "-" .. first.stage
-    else
-        return diffName .. " " .. firstChap .. "-" .. first.stage .. "至" .. lastChap .. "-" .. last.stage
-    end
+    return diffName .. " " .. getRelativeChapter(entry.chapter) .. "-" .. entry.stage
 end
 
 --- 获取弹窗动画缩放系数（打开/关闭）
@@ -313,13 +299,13 @@ end
 local _sweepRewardCache = nil   ---@type table|nil
 local _sweepRewardStageId = nil
 
---- 扫荡固定参数（与服务端 SweepService 保持一致）
-local SWEEP_REWARD_MINUTES = 10   -- 扫荡 = 领取 N 分钟挂机收益（与服务端 SweepService.REWARD_MINUTES 一致）
+--- 扫荡固定参数（与本地 SweepService 保持一致）
+local SWEEP_REWARD_MINUTES = 10   -- 扫荡 = 领取 N 分钟挂机收益（与本地 SweepService.REWARD_MINUTES 一致）
 local IdleIncomeConfig = require("config.IdleIncomeConfig")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 
 --- 获取扫荡单次预估奖励，结果按帧缓存
---- 与服务端 SweepService 完全一致：基于玩家最高进度关卡 maxStageId，
+--- 与本地 SweepService 完全一致：基于玩家最高进度关卡 maxStageId，
 --- 领取 SWEEP_REWARD_MINUTES 分钟的挂机收益（IdleIncomeConfig）
 ---@return table|nil rewards  adventureExp / adventurerExp / gold 等
 local function getSweepRewardEstimate()
@@ -340,7 +326,7 @@ local function getSweepRewardEstimate()
     local heroCount = #deployed
     if heroCount == 0 then heroCount = 1 end
 
-    -- 金币 & 经验 = 挂机收益/分钟 × N 分钟（与服务端一致）
+    -- 金币 & 经验 = 挂机收益/分钟 × N 分钟（与本地 SweepService 一致）
     local cfgGoldPerMin, cfgExpPerMin = IdleIncomeConfig.get(maxStageId)
     local gold    = math.floor(cfgGoldPerMin * SWEEP_REWARD_MINUTES)
     local baseExp = math.floor(cfgExpPerMin * SWEEP_REWARD_MINUTES)
@@ -364,6 +350,7 @@ local function getStageRewardStr(field)
     if not rewards then return "---" end
     local v = rewards[field]
     if not v or v <= 0 then return "---" end
+    v = v * (state.count or 1)
     if v >= 10000 then return string.format("%.1f万", v / 10000) end
     return tostring(math.floor(v))
 end
@@ -519,15 +506,40 @@ function SweepDialog.draw(vg)
     -- 拥有数右对齐于分割点，"/消耗数" 左对齐于分割点，整体视觉上居中于 X=TKT_TXT_CX
     local owned    = GameState.getSweepTicket() or 0
     local ownedStr = tostring(owned)
-    local costStr  = "/" .. tostring(SWEEP_COST)
+    local costStr  = "/" .. tostring(SWEEP_COST * (state.count or 1))
     local tr, tg, tb = 0xff, 0x44, 0x44
-    if owned >= SWEEP_COST then tr, tg, tb = 0x63, 0xff, 0x84 end
+    if owned >= SWEEP_COST * (state.count or 1) then tr, tg, tb = 0x63, 0xff, 0x84 end
     drawTextStroke(vg, D.TKT_TXT_CX, D.TKT_TXT_CY, ownedStr,
         D.TKT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         tr, tg, tb, 4, { strokeColor = { 0, 0, 0 } })
     drawTextStroke(vg, D.TKT_TXT_CX, D.TKT_TXT_CY, costStr,
         D.TKT_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
+
+    -- 次数选择：1 / 5 / 10
+    do
+        local counts = SWEEP_COUNTS
+        local btnW, btnH, gap = 110, 52, 16
+        local total = #counts * btnW + (#counts - 1) * gap
+        local left = D.ACT_CX - total * 0.5
+        local cy = D.ACT_CY - 78
+        for i, n in ipairs(counts) do
+            local cx = left + (i - 1) * (btnW + gap) + btnW * 0.5
+            local selected = (state.count or 1) == n
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, cx - btnW * 0.5, cy - btnH * 0.5, btnW, btnH, 12)
+            if selected then
+                nvgFillColor(vg, nvgRGBA(0x63, 0xff, 0x84, 220))
+            else
+                nvgFillColor(vg, nvgRGBA(0, 0, 0, 90))
+            end
+            nvgFill(vg)
+            drawTextStroke(vg, cx, cy, "x" .. tostring(n), 32,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                selected and 0 or 255, selected and 0 or 255, selected and 0 or 255, 3,
+                { strokeColor = { 0, 0, 0 } })
+        end
+    end
 
     -- 13) 确认按钮（扫荡）
     if imgActBtn >= 0 then
@@ -556,9 +568,25 @@ end
 function SweepDialog.handleInput(x, y)
     -- 弹窗已打开：优先检测确认按钮，再判断背景外关闭
     if state.open then
+        -- 次数按钮
+        do
+            local counts = SWEEP_COUNTS
+            local btnW, btnH, gap = 110, 52, 16
+            local total = #counts * btnW + (#counts - 1) * gap
+            local left = D.ACT_CX - total * 0.5
+            local cy = D.ACT_CY - 78
+            for i, n in ipairs(counts) do
+                local cx = left + (i - 1) * (btnW + gap) + btnW * 0.5
+                if hitTestRect(x, y, cx, cy, btnW, btnH) then
+                    state.count = n
+                    print("[SweepDialog] count=" .. tostring(n))
+                    return true
+                end
+            end
+        end
         -- 扫荡确认按钮
         if hitTestRect(x, y, D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H) then
-            if SweepDialog.onSweep then SweepDialog.onSweep() end
+            if SweepDialog.onSweep then SweepDialog.onSweep(state.count or 1) end
             -- 不关闭面板，让玩家可以连续扫荡；奖励由 RewardPanel 展示后关闭
             return true
         end

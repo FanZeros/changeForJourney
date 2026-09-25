@@ -322,7 +322,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
 
     -- [对话框覆盖] 选关/扫荡/统计：无灰底，整体缩小到 70%，不铺满竖屏
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 1200) * 0.7
+        local fit = math.min(logicalW / 1080, logicalH / 2400) * 0.7
         nvgSave(vg)
         nvgScissor(vg, 0, 0, logicalW, logicalH)
         nvgTranslate(vg, logicalW * 0.5, logicalH * 0.5)
@@ -453,9 +453,9 @@ function BattleTriPage.handleInput(wx, wy)
 
     -- 对话框打开: 逆映射到设计空间（与 70% 渲染缩放一致）
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 1200) * 0.7
+        local fit = math.min(logicalW / 1080, logicalH / 2400) * 0.7
         local dx = (wx - logicalW * 0.5) / fit + 540
-        local dy = (wy - logicalH * 0.5) / fit + 1195
+        local dy = (wy - logicalH * 0.5) / fit + 1200
         if SweepDialog.isOpen() then SweepDialog.handleInput(dx, dy) end
         if DamageStatsPanel.isOpen() then DamageStatsPanel.handleInput(dx, dy) end
         if StageSelectDialog.isOpen() then StageSelectDialog.handleInput(dx, dy) end

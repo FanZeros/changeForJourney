@@ -32,11 +32,11 @@ local COMMON = {
     arrow    = { cx = 947, cy = 2312, w = 48, h = 43 },
 }
 
---- 大情景立绘参数：X440 Y1253, 2359×1545
-local PORTRAIT_LARGE = { cx = 540, cy = 1209.50, w = 2359, h = 1545 }
+--- 大情景立绘：半身，约占设计宽 62%，不再铺出屏幕
+local PORTRAIT_LARGE = { cx = 250, cy = 1280, w = 680, h = 1020 }
 
---- 小情景立绘参数：X275 Y1546, 1464×960（按大情景 ×1.1795 等比缩放）
-local PORTRAIT_SMALL = { cx = 275, cy = 1546, w = 1464, h = 960 }
+--- 小情景立绘：更小的半身，贴在对话框左侧
+local PORTRAIT_SMALL = { cx = 210, cy = 1500, w = 460, h = 690 }
 
 -- ======================== 打字机参数 ========================
 local TYPEWRITER_CPS     = 10    -- 字/秒
@@ -560,8 +560,8 @@ local function drawLandscape(w, h)
     if cgImage >= 0 then
         DrawUtil.drawImageCover(vg_, cgImage, w * 0.5, h * 0.5, w, h, dismissAlpha)
     else
-        local portraitH = mode_ == "small" and h * 0.58 or h * 0.86
-        local portraitW = portraitH * 0.58
+        local portraitH = mode_ == "small" and h * 0.42 or h * 0.58
+        local portraitW = portraitH * 0.62
         local portraitCx = barX + portraitW * 0.46
         local portraitCy = mode_ == "small" and (barY - portraitH * 0.02) or (h * 0.42)
         local slide = w * 0.045

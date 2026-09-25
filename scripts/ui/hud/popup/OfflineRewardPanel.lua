@@ -52,7 +52,7 @@ local MASK_ALPHA = 128  -- 50% 不透明度
 
 -- 2. 弹窗背景框（九宫格）
 local BG = {
-    CX = 540, CY = 1160, W = 1040, H = 1760,
+    CX = 540, CY = 1200, W = 1040, H = 1960,
     IT = 180, IL = 40, IR = 40, IB = 50,  -- 九宫格切割
 }
 
@@ -113,14 +113,14 @@ local EXP_ROW2 = {
 
 -- 16+17. 奖励内容区域
 local REWARD_AREA = {
-    CX = 540, CY = 1328, W = 980, H = 820, R = 16,
+    CX = 540, CY = 1360, W = 980, H = 980, R = 16,
     PAD = 16,  -- 内边距
 }
 -- 奖励图标网格（8 列）
-local ICON_SIZE = 108
-local ROW_GAP   = 12
-local COL_GAP   = 10
-local COLS      = 8
+local ICON_SIZE = 148
+local ROW_GAP   = 16
+local COL_GAP   = 14
+local COLS      = 5
 
 -- 奖励裁剪区域（内容背景框内边距40）
 local CLIP = {}
@@ -147,9 +147,9 @@ end
 
 -- 22+23. 领取按钮
 local BTN_CLAIM = {
-    CX = 750, CY = 1855, W = 390, H = 100,
+    CX = 540, CY = 1980, W = 420, H = 100,
     NP = 35,
-    TEXT_CX = 750, TEXT_CY = 1855, FONT = 40,
+    TEXT_CX = 540, TEXT_CY = 1980, FONT = 40,
     TR = 0, TG = 0, TB = 0, TA = 191,
 }
 

@@ -177,6 +177,7 @@ local getUpgradeBadgeCache -- function() return upgradeBadgeCache end
 local getActiveTeamIdx    -- [三队并行] function() return activeTeamIdx end
 local getUnlockedTeamCount -- [三队并行] function() return unlockedCount end
 local getTeamOccupiedCounts -- [三队并行] function() return counts[] end
+local getTeams             -- function() return teams end
 
 --- 注入来自 CharacterPanel 的共享状态
 function M.setContext(ctx)
@@ -192,6 +193,7 @@ function M.setContext(ctx)
     getActiveTeamIdx     = ctx.getActiveTeamIdx
     getUnlockedTeamCount = ctx.getUnlockedTeamCount
     getTeamOccupiedCounts = ctx.getTeamOccupiedCounts
+    getTeams             = ctx.getTeams
 end
 
 -- ======================== 图片初始化 ========================
@@ -263,12 +265,144 @@ end
 local TAB_W, TAB_H, TAB_GAP = 240, 54, 16
 local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px 间隙）
 
+-- 头像编队：三队同时显示，每队一行 4 个头像
+local heroIconCache = {}  ---@type table<number, integer>
+local AV_SIZE = 104
+local AV_GAP = 22
+local AV_ROW_H = 150
+local AV_TOP = 330
+
 --- 计算第 idx 个页签的左上角 X
 ---@param idx number
 ---@return number
 local function teamTabX(idx)
     local totalW = M.TEAM_TAB_COUNT * TAB_W + (M.TEAM_TAB_COUNT - 1) * TAB_GAP
     return (DESIGN_W - totalW) * 0.5 + (idx - 1) * (TAB_W + TAB_GAP)
+end
+
+--- 角色头像句柄，按需加载并缓存
+---@param heroId number
+---@return integer
+local function heroIconHandle(heroId)
+    local cached = heroIconCache[heroId]
+    if cached then return cached end
+    local handle = nvgCreateImage(img.vg, HeroAssetUtil.getIconPath(heroId), 0)
+    heroIconCache[heroId] = (handle and handle > 0) and math.floor(handle) or -1
+    return heroIconCache[heroId]
+end
+
+--- 头像编队一行的左上角 X（4 个头像水平居中）
+---@return number
+local function avatarRowX()
+    local totalW = M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
+    return (DESIGN_W - totalW) * 0.5
+end
+
+--- 第 teamIdx 队第 slotIdx 个头像的中心
+---@param teamIdx number
+---@param slotIdx number
+---@return number cx, number cy
+local function avatarCenter(teamIdx, slotIdx)
+    local x0 = avatarRowX()
+    local cx = x0 + (slotIdx - 1) * (AV_SIZE + AV_GAP) + AV_SIZE * 0.5
+    local cy = AV_TOP + (teamIdx - 1) * AV_ROW_H + AV_SIZE * 0.5
+    return cx, cy
+end
+
+--- 绘制单个头像槽：已上阵显示头像，空位虚框，未解锁灰锁
+---@param vg any
+---@param teamIdx number
+---@param slotIdx number
+---@param slot table|nil
+---@param locked boolean
+local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
+    local cx, cy = avatarCenter(teamIdx, slotIdx)
+    local x = cx - AV_SIZE * 0.5
+    local y = cy - AV_SIZE * 0.5
+    local occupied = slot and slot.state == "occupied" and slot.heroId
+    if occupied and not locked then
+        local icon = heroIconHandle(slot.heroId)
+        if icon and icon >= 0 then
+            nvgSave(vg)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, x, y, AV_SIZE, AV_SIZE, 14)
+            nvgFillColor(vg, nvgRGBA(20, 16, 12, 255))
+            nvgFill(vg)
+            nvgScissor(vg, x, y, AV_SIZE, AV_SIZE)
+            drawImageCentered(vg, icon, cx, cy, AV_SIZE, AV_SIZE, 1.0)
+            nvgRestore(vg)
+        end
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, AV_SIZE, AV_SIZE, 14)
+        nvgStrokeColor(vg, nvgRGBA(212, 175, 90, 230))
+        nvgStrokeWidth(vg, 3)
+        nvgStroke(vg)
+    else
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, AV_SIZE, AV_SIZE, 14)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, locked and 90 or 60))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(120, 100, 70, locked and 90 or 160))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, locked and 30 or 40)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(160, 145, 120, locked and 140 or 200))
+        nvgText(vg, cx, cy, locked and "锁" or "+", nil)
+    end
+end
+
+--- 三队头像编队：同时显示全部队伍，未解锁整行置灰并标注解锁等级
+---@param vg any
+function M.drawTeamAvatars(vg)
+    if not getTeams or not getUnlockedTeamCount then return end
+    local teams = getTeams()
+    local unlockedCnt = getUnlockedTeamCount() or 1
+    local activeIdx = getActiveTeamIdx and getActiveTeamIdx() or 1
+    for t = 1, M.TEAM_TAB_COUNT do
+        local locked = t > unlockedCnt
+        local _, rowCy = avatarCenter(t, 1)
+        local labelX = avatarRowX() - 18
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 24)
+        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+        if locked then
+            nvgFillColor(vg, nvgRGBA(140, 130, 115, 180))
+        elseif t == activeIdx then
+            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+        else
+            nvgFillColor(vg, nvgRGBA(220, 210, 190, 255))
+        end
+        nvgText(vg, labelX, rowCy - 16, "队" .. t, nil)
+        if locked then
+            local needLv = ExpTable.getTeamUnlockLevel(t)
+            nvgFontSize(vg, 18)
+            nvgFillColor(vg, nvgRGBA(150, 140, 125, 200))
+            nvgText(vg, labelX, rowCy + 16, "Lv" .. tostring(needLv or "?"), nil)
+        end
+        local slots = teams[t] and teams[t].slots
+        for s = 1, M.MAX_SLOTS do
+            drawAvatarSlot(vg, t, s, slots and slots[s], locked)
+        end
+    end
+end
+
+--- 头像槽命中：返回队伍与槽位，未解锁队伍不响应
+---@param dx number
+---@param dy number
+---@return number|nil teamIdx, number|nil slotIdx
+function M.hitTestAvatarSlot(dx, dy)
+    local unlockedCnt = getUnlockedTeamCount and getUnlockedTeamCount() or 1
+    for t = 1, math.min(M.TEAM_TAB_COUNT, unlockedCnt) do
+        for s = 1, M.MAX_SLOTS do
+            local cx, cy = avatarCenter(t, s)
+            if math.abs(dx - cx) <= AV_SIZE * 0.5 and math.abs(dy - cy) <= AV_SIZE * 0.5 then
+                return t, s
+            end
+        end
+    end
+    return nil, nil
 end
 
 --- 绘制三队页签（队1/队2/队3，含解锁状态与上阵人数角标）
@@ -352,10 +486,11 @@ function M.draw(vg, scrollY)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- 1.5) [三队并行] 绘制三队页签
-    M.drawTeamTabs(vg)
+    -- 1.5) [头像编队] 三队同时显示，取代整卡槽位与队伍页签
+    M.drawTeamAvatars(vg)
 
-    -- 2) 绘制编队槽位
+    -- 2) 绘制编队槽位（头像模式已取代，整卡绘制停用）
+    if false then
     -- 拖拽中：计算鼠标悬停的目标槽位（用于高亮提示）
     local dragHoverSlot = nil
     if dragState.active and dragState.heroId then
@@ -515,6 +650,7 @@ function M.draw(vg, scrollY)
         end
 
         ::continueSlot::
+    end
     end
 
     -- ================================================================

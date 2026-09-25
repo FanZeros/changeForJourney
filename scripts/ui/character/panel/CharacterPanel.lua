@@ -418,6 +418,7 @@ function CharacterPanel.init(vg)
         getActiveTeamIdx     = function() return activeTeamIdx end,
         getUnlockedTeamCount = function() return ExpTable.getUnlockedTeamCount(GameState.getLevel()) end,
         getTeamOccupiedCounts = function() return CharacterPanel.getTeamOccupiedCounts() end,
+        getTeams = function() return teams end,
     })
     Draw.initImages(vg)
 
@@ -599,6 +600,7 @@ local function bindInput()
         getSlotPowerCache = function() return slotPowerCache end,
         getDragState = function() return dragState end,
         getSelectSlotState = function() return selectSlotState end,
+        getTeams = function() return teams end,
         getHeroRoster = function() return heroRoster end,
         getShardMap = function() return shardMap end,
         getActiveTeamIdx = function() return activeTeamIdx end,

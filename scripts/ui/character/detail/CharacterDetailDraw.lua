@@ -4,6 +4,7 @@
 -- ============================================================================
 
 local HC               = require("config.HeroConfig")
+local HeroAssetUtil    = require("config.HeroAssetUtil")
 local CC               = require("config.ClassConfig")
 local GameConfig        = require("config.GameConfig")
 local ExpTable          = require("config.ExpTable")
@@ -593,7 +594,11 @@ function M.draw(vg)
     end
     local function drawCarouselCard(id, slot, alpha)
         if not id or alpha <= 0.01 then return end
-        local imgCard = imgHeroCards[id] or imgHeroCards[1]
+        -- 编队页已改头像，不再预热卡图；详情页按需加载，避免卡片空白
+        local imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, id)
+        if not imgCard or imgCard < 0 then
+            imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, 1)
+        end
         if not imgCard or imgCard < 0 then return end
         local slide = detailState.cardDragVisual or 0
         if detailState.switchDir then

@@ -9,7 +9,6 @@ local NumberUtil = require("core.NumberUtil")
 local BattleLayout = require("core.BattleLayout")
 local DrawUtil = require("core.DrawUtil")
 local ETS = require("systems.ExtraTalentSystem")
-local DamageGlyph = require("ui.battle.fx.DamageGlyph")
 
 local BattleDraw = {}
 
@@ -109,7 +108,6 @@ local function drawProgressBar(vg, imgBg, imgFill, cx, cy, bgW, bgH, padding, pr
         nvgRect(vg, fillX, fillY, fillW, fillH)
         nvgFillPaint(vg, paint)
         nvgFill(vg)
-        nvgResetScissor(vg)
         nvgRestore(vg)
     end
 end
@@ -271,7 +269,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     nvgStrokeColor(vg, nvgRGBA(0x9a, 0xff, 0x8c, 140))
                     nvgStrokeWidth(vg, 1)
                     nvgStroke(vg)
-                    nvgResetScissor(vg)
                     nvgRestore(vg)
                 end
 
@@ -300,7 +297,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                         nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 160))
                         nvgStrokeWidth(vg, 1)
                         nvgStroke(vg)
-                        nvgResetScissor(vg)
                         nvgRestore(vg)
                     end
                     -- 临时护盾跟在常规护盾之后（更亮的青色，同一刻度，同样不越界）
@@ -316,7 +312,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                             nvgRect(vg, tempX, fillY, tempClipW, fillH)
                             nvgFillColor(vg, nvgRGBA(255, 255, 255, 200))
                             nvgFill(vg)
-                            nvgResetScissor(vg)
                             nvgRestore(vg)
                         end
                     end
@@ -410,10 +405,13 @@ function BattleDraw.drawFloatingTexts(vg)
     for _, ft in ipairs(texts) do
         local frame = (ft.timer / ft.duration) * FLOAT_TOTAL_FRAMES
         local t = frame / FLOAT_TOTAL_FRAMES
+
         local drawX = ft.x + ft.dirX * FLOAT_MOVE_DIST * t
         local drawY = ft.y + ft.dirY * FLOAT_MOVE_DIST * t
+
         local scale = 1.0 - 0.75 * t
         local fontSize = math.max(1, math.floor(ft.fontSize * scale))
+
         local alpha
         if frame <= 10 then
             alpha = math.floor(255 * (frame / 10))
@@ -423,25 +421,16 @@ function BattleDraw.drawFloatingTexts(vg)
             alpha = math.floor(255 * (1.0 - (frame - 15) / 5))
         end
         alpha = math.max(0, math.min(255, alpha))
+
         if alpha > 0 then
-            local glyphKey, isCrit, valueText = DamageGlyph.split(ft.text)
-            local textX = drawX
-            if glyphKey then
-                local iconSize = math.max(12, fontSize * 0.72)
-                local gap = iconSize * 0.55
-                DamageGlyph.draw(vg, glyphKey, drawX - gap, drawY, iconSize, alpha)
-                textX = drawX + gap
-            end
             nvgSave(vg)
             nvgGlobalAlpha(vg, alpha / 255)
-            drawTextStroke(vg, textX, drawY, valueText,
+            drawTextStroke(vg, drawX, drawY, ft.text,
                 fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
                 ft.color[1], ft.color[2], ft.color[3], 5)
             nvgRestore(vg)
-            if isCrit or ft.isCrit then
-                DamageGlyph.drawCrit(vg, textX, drawY, fontSize * 1.35, math.floor(alpha * 0.82))
-            end
         end
     end
 end
+
 return BattleDraw

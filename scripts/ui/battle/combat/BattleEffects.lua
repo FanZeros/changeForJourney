@@ -701,7 +701,6 @@ local SILVER_FLASH_EFFECT = {
             end
         end
 
-        nvgResetScissor(vg)
         nvgRestore(vg)
     end,
 }

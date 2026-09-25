@@ -725,7 +725,13 @@ function M.handleHover(dx, dy, heroId)
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
     if not item then return end
     local seqStr = tostring(item.seq)
-    local _, cx, cy = findItemAt(dx, dy)
+    local _, cx, cy = item, nil, nil
+    if dy >= CLIP_TOP then
+        _, cx, cy = findItemAt(dx, dy)
+    end
+    if not cx then
+        _, cx, cy = findItemAt(dx, math.max(dy, CLIP_TOP + 8))
+    end
     if panelState.hoverSeq == seqStr then
         if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
         return

@@ -250,8 +250,8 @@ function EquipCrossDrag.draw(vg)
         local panel = Viewport.PANELS.right
         local CharacterDetail = require("ui.character.detail.CharacterDetail")
         local heroId = CharacterDetail.getHeroId and CharacterDetail.getHeroId() or nil
-        local target = hitSlot(dx, dy)
-        if target and heroId and not (CharacterDetail.isAwakenTab and CharacterDetail.isAwakenTab()) then
+        if heroId and not (CharacterDetail.isAwakenTab and CharacterDetail.isAwakenTab()) then
+            local target = hitSlot(dx, dy)
             local Draw = require("ui.character.detail.CharacterDetailDraw")
             nvgSave(vg)
             nvgTranslate(vg, note.ox + panel.bx * note.s, note.oy + panel.by * note.s)

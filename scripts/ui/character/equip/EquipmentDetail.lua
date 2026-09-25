@@ -480,30 +480,41 @@ local COMPACT_SCALE = 0.92
 local COMPACT_MARGIN = 16
 local COMPACT_CELL = 160
 
---- 小窗内容底部：最后一条词条或等级行下方，不再沿用大面板的固定高度。
+local COMPACT_PAD_TOP = 28
+local COMPACT_NAME_Y = 34
+local COMPACT_TYPE_Y = 78
+local COMPACT_QUALITY_Y = 122
+local COMPACT_ICON_CY = 168
+local COMPACT_ICON_SIZE = 132
+local COMPACT_POWER_Y = 252
+local COMPACT_STAT_Y0 = 312
+local COMPACT_CONTENT_BOTTOM_PAD = 24
+
+--- 小窗内容底部：按小窗自己的紧凑坐标计算，不再沿用大面板的旧坐标。
 ---@param equip table|nil
 ---@return number
 local function compactContentBottom(equip)
-    local bottom = REF_LV_BG_CY + REF_LV_BG_H * 0.5
-    if equip and equip.baseStats and #equip.baseStats > 0 then
-        bottom = REF_STAT_BG_Y0 + (#equip.baseStats - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
+    local bottom = COMPACT_POWER_Y + REF_LV_BG_H * 0.5
+    local statCount = equip and equip.baseStats and #equip.baseStats or 0
+    if statCount > 0 then
+        bottom = COMPACT_STAT_Y0 + (statCount - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
             + REF_STAT_BG_H * 0.5
     end
-    if equip and equip.affixes and #equip.affixes > 0 then
-        local titleY = math.max(REF_AFFIX_TITLE_Y, bottom + 30)
+    local affixCount = equip and equip.affixes and #equip.affixes or 0
+    if affixCount > 0 then
+        local titleY = bottom + 30
         bottom = titleY + REF_AFFIX_TITLE_FONT * 0.5 + REF_AFFIX_GAP_TOP + REF_AFFIX_ROW_H * 0.5
-            + (#equip.affixes - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP) + REF_AFFIX_ROW_H * 0.5
+            + (affixCount - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP) + REF_AFFIX_ROW_H * 0.5
     end
-    return bottom
+    return bottom + COMPACT_CONTENT_BOTTOM_PAD
 end
 
 ---@param equip table|nil
 ---@return number
 local function compactPanelHeight(equip)
-    local top = REF_BG_CY - REF_BG_H * 0.5
     local contentBottom = compactContentBottom(equip)
-    local buttonBottom = contentBottom + 28 + COMPACT_BTN_GAP + COMPACT_BTN_H + 18
-    return math.max(620, buttonBottom - top)
+    local buttonBottom = contentBottom + COMPACT_BTN_GAP + COMPACT_BTN_H + 18
+    return math.max(430, buttonBottom)
 end
 
 local function compactVisSize()
@@ -516,8 +527,7 @@ end
 ---@return number cy, number wearCX, number refineCX, number w, number h
 local function compactButtonRow()
     local panelH = compactPanelHeight(detState.layoutEquip)
-    local panelTop = REF_BG_CY - REF_BG_H * 0.5
-    local cy = panelTop + panelH - 18 - COMPACT_BTN_H * 0.5
+    local cy = panelH - 18 - COMPACT_BTN_H * 0.5
     local w = 330
     local gap = 20
     local wearCX = REF_BG_CX - (gap + w) * 0.5
@@ -527,7 +537,7 @@ end
 
 local function compactOffset()
     local refLeft = REF_BG_CX - COMPACT_BG_W * 0.5
-    local refTop = REF_BG_CY - REF_BG_H * 0.5
+    local refTop = 0
     local visW, visH = compactVisSize()
     local ax = detState.anchorX or 540
     local ay = detState.anchorY or 1144
@@ -936,6 +946,137 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
     end
 end
 
+--- 配装小窗：内容从顶部开始排，按钮贴在最后一条词条下方。
+---@param vg any
+---@param equip table
+---@param btnText string
+local function drawCompactPanel(vg, equip, btnText)
+    local q = equip.quality or 1
+    local qColor = QUALITY_COLOR[q] or QUALITY_COLOR[1]
+    local panelW = COMPACT_BG_W
+    local panelH = compactPanelHeight(equip)
+    local panelX = REF_BG_CX - panelW * 0.5
+    local leftX = panelX + COMPACT_PAD_TOP
+    local rightX = panelX + panelW - COMPACT_PAD_TOP
+    DarkIcon.drawNine(vg, "plain", panelX, 0, panelW, panelH,
+        { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
+
+    local nameStr = equip.name or "???"
+    if EquipmentSystem.getAscendLevel(equip) > 0 then
+        nameStr = nameStr .. " +" .. EquipmentSystem.getAscendLevel(equip)
+    end
+    drawTextStroke(vg, leftX, COMPACT_NAME_Y, nameStr, 36,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+    if imgLock >= 0 then
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 36)
+        local nameW = nvgTextBounds(vg, 0, 0, nameStr)
+        local lockSize = 36
+        local lockCX = leftX + nameW + 14 + lockSize * 0.5
+        drawImageCentered(vg, imgLock, lockCX, COMPACT_NAME_Y, lockSize, lockSize,
+            equip.locked and 1.0 or 0.4)
+        detState.lockHotspot = { cx = lockCX, cy = COMPACT_NAME_Y, w = lockSize + 20, h = lockSize + 20 }
+    end
+
+    local typeName = equip.type or EquipmentConfig.SLOT_NAME[equip.slot] or ""
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 26)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
+    nvgText(vg, leftX, COMPACT_TYPE_Y, typeName, nil)
+
+    local qualityDef = EquipmentConfig.QUALITY[q]
+    drawTextStroke(vg, leftX, COMPACT_QUALITY_Y, qualityDef and qualityDef.name or "普通", 28,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, qColor[1], qColor[2], qColor[3], 3)
+
+    local iconCX = panelX + panelW - 96
+    local icon = getEquipIcon(equip.templateId)
+    if icon >= 0 then
+        DarkIcon.drawIconDark(vg, icon, iconCX, COMPACT_ICON_CY, COMPACT_ICON_SIZE, COMPACT_ICON_SIZE, 1.0)
+    end
+    local ascend = EquipmentSystem.getAscendLevel(equip)
+    if ascend > 0 then
+        drawTextStroke(vg, iconCX + 48, COMPACT_ICON_CY - 52, "+" .. ascend, 28,
+            NVG_ALIGN_RIGHT + NVG_ALIGN_TOP, 0, 255, 96, 3)
+    end
+
+    drawImageCentered(vg, imgPowerIcon, leftX + 18, COMPACT_POWER_Y, 32, 32, 1.0)
+    local powerStr = require("core.NumberUtil").format(calcEquipPower(equip, detState.heroId))
+    drawTextStroke(vg, leftX + 42, COMPACT_POWER_Y, powerStr, 34,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 0xf7, 0xfe, 0x77, 3)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, rightX - 118, COMPACT_POWER_Y - 18, 118, 36, 18)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 102))
+    nvgFill(vg)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 24)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
+    nvgText(vg, rightX - 59, COMPACT_POWER_Y, "LV " .. tostring(equip.level or 1), nil)
+
+    local bottom = COMPACT_POWER_Y + 28
+    if equip.baseStats and #equip.baseStats > 0 then
+        local boost = EquipmentSystem.getAscendBoost(equip)
+        for i, stat in ipairs(equip.baseStats) do
+            local y = COMPACT_STAT_Y0 + (i - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
+            local raw = stat[2]
+            if i == 1 then raw = raw * (1 + boost) end
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 30)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+            nvgText(vg, leftX, y, getStatName(stat[1]), nil)
+            drawTextStroke(vg, rightX, y, formatStatValue(stat[1], raw), 30,
+                NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+            bottom = y + REF_STAT_BG_H * 0.5
+        end
+    end
+    if equip.affixes and #equip.affixes > 0 then
+        local titleY = bottom + 30
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 26)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, 255))
+        nvgText(vg, leftX, titleY, "随机属性", nil)
+        local firstY = titleY + 13 + REF_AFFIX_GAP_TOP + REF_AFFIX_ROW_H * 0.5
+        for i, affix in ipairs(equip.affixes) do
+            local y = firstY + (i - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 28)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+            nvgText(vg, leftX + 48, y, affix.name or "?", nil)
+            drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, affix.value), 28,
+                NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+        end
+    end
+
+    local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+    local showWear = detState.slot ~= nil
+    local rowY, wearCX, refineCX, bw, bh = compactButtonRow()
+    if showWear then
+        local feedback = BF.begin(vg, "ed_equip", wearCX, rowY, bw, bh)
+        drawImageCentered(vg, imgBtnGreen, wearCX, rowY, bw, bh, 1.0)
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 32)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(0x25, 0x55, 0x3d, 255))
+        nvgText(vg, wearCX, rowY, btnText, nil)
+        BF.finish(vg, feedback)
+    end
+    if smithOn then
+        local cx = showWear and refineCX or REF_BG_CX
+        local feedback = BF.begin(vg, "ed_enhance", cx, rowY, bw, bh)
+        drawImageCentered(vg, imgBtnYellow, cx, rowY, bw, bh, 1.0)
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 32)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+        nvgText(vg, cx, rowY, "前往洗练", nil)
+        BF.finish(vg, feedback)
+    end
+end
+
 -- ======================== Public API ========================
 
 --- 初始化（加载图片资源）
@@ -1307,9 +1448,8 @@ function EquipmentDetail.handleInput(dx, dy)
     -- 点击面板外部 → 关闭
     local inPanel = false
     if detState.compactCorner then
-        local panelTop = REF_BG_CY - REF_BG_H * 0.5
         local panelH = compactPanelHeight(newEquip)
-        if hitTest(dx, dy, REF_BG_CX, panelTop + panelH * 0.5, COMPACT_BG_W, panelH) then
+        if hitTest(dx, dy, REF_BG_CX, panelH * 0.5, COMPACT_BG_W, panelH) then
             inPanel = true
         end
         local rowY, _, _, _, bh = compactButtonRow()
@@ -1414,35 +1554,7 @@ function EquipmentDetail.draw(vg)
 
     if compact then
         detState.layoutEquip = newEquip
-        local panelTop = REF_BG_CY - REF_BG_H * 0.5
-        local panelH = compactPanelHeight(newEquip)
-        drawEquipPanel(vg, newEquip, 0,
-            REF_BG_CX, panelTop + panelH * 0.5, COMPACT_BG_W, panelH,
-            nil, false, btnText, false, true, false)
-        local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
-        local showWear = not enhOnly
-        local rowY, wearCX, refineCX, bw, bh = compactButtonRow()
-        if showWear then
-            local _bf1 = BF.begin(vg, "ed_equip", wearCX, rowY, bw, bh)
-            drawImageCentered(vg, imgBtnGreen, wearCX, rowY, bw, bh, 1.0)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 36)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x25, 0x55, 0x3d, 255))
-            nvgText(vg, wearCX, rowY, btnText, nil)
-            BF.finish(vg, _bf1)
-        end
-        if smithOn then
-            local rcx = showWear and refineCX or REF_BG_CX
-            local _bf2 = BF.begin(vg, "ed_enhance", rcx, rowY, bw, bh)
-            drawImageCentered(vg, imgBtnYellow, rcx, rowY, bw, bh, 1.0)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 36)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-            nvgText(vg, rcx, rowY, "前往洗练", nil)
-            BF.finish(vg, _bf2)
-        end
+        drawCompactPanel(vg, newEquip, btnText)
         nvgRestore(vg)
         return
     end
@@ -1470,9 +1582,8 @@ function EquipmentDetail.containsPoint(dx, dy)
         ly = (dy - oy) / COMPACT_SCALE
     end
     if detState.compactCorner then
-        local panelTop = REF_BG_CY - REF_BG_H * 0.5
         local panelH = compactPanelHeight(detState.layoutEquip)
-        if hitTest(lx, ly, REF_BG_CX, panelTop + panelH * 0.5, COMPACT_BG_W, panelH) then
+        if hitTest(lx, ly, REF_BG_CX, panelH * 0.5, COMPACT_BG_W, panelH) then
             return true
         end
     else

@@ -588,8 +588,7 @@ function CharacterDetail.handleInput(dx, dy)
     if detailState.tab == "attr" then
         local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
         local cachedL = detailState.cachedLeft or {}
-        local cachedR = detailState.cachedRight or {}
-        local totalRows = math.max(#cachedL, #cachedR)
+        local totalRows = #cachedL
 
         -- 杂项属性区域（可滚动）
         if dy >= ATTR_CLIP_TOP and dy <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT then
@@ -605,19 +604,6 @@ function CharacterDetail.handleInput(dx, dy)
                         if desc and desc ~= "" then
                             detailState.attrTip = {
                                 boxCX = ATTR_COL1_CX, boxTopY = rowY - ATTR_BOX_H * 0.5,
-                                desc = desc, name = attr.name, area = "attr",
-                            }
-                        end
-                        return true
-                    end
-                    -- 右列
-                    if row <= #cachedR and math.abs(dx - ATTR_COL2_CX) <= ATTR_BOX_W * 0.5
-                       and math.abs(dy - rowY) <= ATTR_BOX_H * 0.5 then
-                        local attr = cachedR[row]
-                        local desc = attr.desc or AD.getDesc(attr.key)
-                        if desc and desc ~= "" then
-                            detailState.attrTip = {
-                                boxCX = ATTR_COL2_CX, boxTopY = rowY - ATTR_BOX_H * 0.5,
                                 desc = desc, name = attr.name, area = "attr",
                             }
                         end

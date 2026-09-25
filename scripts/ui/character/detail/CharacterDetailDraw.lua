@@ -110,7 +110,8 @@ local ATTR_FONT_SIZE     = 35
 local ATTR_FONT_SIZE_MIN = 22
 local ATTR_NAME_VAL_GAP  = 15
 
-local ATTR_VISIBLE_ROWS = 4
+-- 左列单列，右侧留给雷达图。可见 8 行，超出继续滚动。
+local ATTR_VISIBLE_ROWS = 8
 local ATTR_SCROLL_FRICTION = 0.90
 local ATTR_SCROLL_MIN_VEL  = 0.3
 local ATTR_SCROLL_WHEEL_STEP = 60
@@ -128,7 +129,7 @@ M.ATTR_CLIP_TOP     = ATTR_CLIP_TOP
 M.ATTR_CLIP_HEIGHT  = ATTR_CLIP_HEIGHT
 M.ATTR_SCROLL_WHEEL_STEP = ATTR_SCROLL_WHEEL_STEP
 
-local MID_DIV2_CX, MID_DIV2_CY = 540, 1565
+local MID_DIV2_CX, MID_DIV2_CY = 540, 1840
 local MID_DIV2_W, MID_DIV2_H   = 1010, 37
 
 -- ======================== 六围区域布局常量 ========================
@@ -143,10 +144,11 @@ local STAT_ROW_GAP_STAT      = 16
 local STAT_COL2_CX           = STAT_COL1_CX + STAT_BOX_W + STAT_COL_GAP
 local STAT_ROW_STEP          = STAT_BOX_H + STAT_ROW_GAP_STAT
 
-local HEX_CX = 540
-local HEX_CY = STAT_ROW1_CY + STAT_ROW_STEP
-local HEX_R  = 148
-local HEX_LABEL_R = 196
+-- 雷达图放在右列，高度对齐分割线以上的属性区
+local HEX_CX = 800
+local HEX_CY = ATTR_FIRST_ROW_Y + (ATTR_VISIBLE_ROWS - 1) * (ATTR_BOX_H + ATTR_ROW_GAP) * 0.5
+local HEX_R  = 175
+local HEX_LABEL_R = 230
 -- 顶点顺序：上起顺时针。力量在上，其余按战斗直觉绕圈。
 local HEX_NAMES = { "力量", "敏捷", "体质", "魂火", "命数", "秘识" }
 local HEX_KEYS = { ["力量"] = "str", ["敏捷"] = "agi", ["体质"] = "vit", ["魂火"] = "spi", ["命数"] = "luk", ["秘识"] = "int" }
@@ -182,11 +184,11 @@ M.HEX_NAMES     = HEX_NAMES
 
 -- ======================== 天赋技能区域布局常量 ========================
 
-local TALENT_BG_CX, TALENT_BG_CY = 540, 2057
-local TALENT_BG_W, TALENT_BG_H   = 903, 250
+local TALENT_BG_CX, TALENT_BG_CY = 540, 2045
+local TALENT_BG_W, TALENT_BG_H   = 903, 210
 local TALENT_BG_RADIUS            = 20
 
-local TALENT_NAME_X, TALENT_NAME_Y = 121.5, 1976
+local TALENT_NAME_X, TALENT_NAME_Y = 121.5, 1918
 local TALENT_TEXT_LEFT   = TALENT_BG_CX - TALENT_BG_W * 0.5 + 33
 local TALENT_TEXT_TOP    = TALENT_BG_CY - TALENT_BG_H * 0.5 + 81
 local TALENT_TEXT_RIGHT  = TALENT_BG_CX + TALENT_BG_W * 0.5 - 33
@@ -1057,10 +1059,13 @@ function M.draw(vg)
     local attrData = collectAttributes(heroId, heroCfg, heroLevel)
     local leftAttrs  = attrData.left
     local rightAttrs = attrData.right
-    local totalRows  = math.max(#leftAttrs, #rightAttrs)
+    local attrRows = {}
+    for _, attr in ipairs(leftAttrs) do attrRows[#attrRows + 1] = attr end
+    for _, attr in ipairs(rightAttrs) do attrRows[#attrRows + 1] = attr end
+    local totalRows = #attrRows
 
-    detailState.cachedLeft  = leftAttrs
-    detailState.cachedRight = rightAttrs
+    detailState.cachedLeft  = attrRows
+    detailState.cachedRight = {}
 
     local attrClipY = ATTR_FIRST_ROW_Y - ATTR_BOX_H * 0.5
     local attrClipH = ATTR_VISIBLE_ROWS * ATTR_BOX_H + (ATTR_VISIBLE_ROWS - 1) * ATTR_ROW_GAP
@@ -1070,7 +1075,7 @@ function M.draw(vg)
     detailState.attrScrollMax = math.max(0, totalContentH - attrClipH)
 
     nvgSave(vg)
-    nvgScissor(vg, 0, attrClipY, DESIGN_W, attrClipH)
+    nvgScissor(vg, 0, attrClipY, 560, attrClipH)
 
     for row = 1, totalRows do
         local rowY = ATTR_FIRST_ROW_Y + (row - 1) * rowStep - detailState.attrScrollY
@@ -1112,41 +1117,6 @@ function M.draw(vg)
                     255, 255, 255, 4)
             end
 
-            -- === 右列属性 ===
-            if row <= #rightAttrs then
-                local attr = rightAttrs[row]
-                local colCX = ATTR_COL2_CX
-
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg,
-                    colCX - ATTR_BOX_W * 0.5, rowY - ATTR_BOX_H * 0.5,
-                    ATTR_BOX_W, ATTR_BOX_H, ATTR_BOX_RADIUS)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-                nvgFill(vg)
-
-                drawImageCentered(vg, img.attrDeco, ATTR_DECO_X + ATTR_DECO_DX, rowY,
-                    ATTR_DECO_SIZE, ATTR_DECO_SIZE, 1.0)
-
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, ATTR_FONT_SIZE)
-                local rNameW = nvgTextBounds(vg, 0, 0, attr.name)
-                local rValW  = nvgTextBounds(vg, 0, 0, attr.value)
-                local rMaxNameW = (ATTR_VAL_RIGHT_X + ATTR_DECO_DX)
-                    - (ATTR_NAME_LEFT_X + ATTR_DECO_DX) - rValW - ATTR_NAME_VAL_GAP
-                local rNameFS = ATTR_FONT_SIZE
-                if rMaxNameW > 0 and rNameW > rMaxNameW then
-                    rNameFS = math.max(ATTR_FONT_SIZE_MIN,
-                        math.floor(ATTR_FONT_SIZE * rMaxNameW / rNameW))
-                    nvgFontSize(vg, rNameFS)
-                end
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-                nvgText(vg, ATTR_NAME_LEFT_X + ATTR_DECO_DX, rowY, attr.name, nil)
-
-                drawTextStroke(vg, ATTR_VAL_RIGHT_X + ATTR_DECO_DX, rowY, attr.value,
-                    ATTR_FONT_SIZE, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 4)
-            end
         end
     end
 
@@ -1171,18 +1141,13 @@ function M.draw(vg)
         return HEX_CX + math.cos(ang) * radius, HEX_CY + math.sin(ang) * radius
     end
 
-    -- 满格 = 该角色 200 级主属性成长 + 两次转职。装备词条超出后贴边，不把图形撑变形。
-    local hexMax = 80
-    local heroDef = HC.get(detailState.heroId)
-    if heroDef and heroDef.growthStats then
-        local peak = 0
-        for _, name in ipairs(HEX_NAMES) do
-            local statKey = HEX_KEYS[name]
-            local grown = (heroDef.baseStats[statKey] or 0) + (heroDef.growthStats[statKey] or 0) * 199
-            if grown > peak then peak = grown end
-        end
-        hexMax = math.max(40, math.ceil(peak + 10))
+    -- 满格跟当前六维走：取六项最大值再留 25% 空，主属性接近外圈，弱项明显内收。
+    local hexPeak = 1
+    for _, item in pairs(statByKey) do
+        local val = statValues[item.key] or 0
+        if val > hexPeak then hexPeak = val end
     end
+    local hexMax = math.max(8, hexPeak / 0.82)
 
     nvgBeginPath(vg)
     nvgCircle(vg, HEX_CX, HEX_CY, HEX_LABEL_R + 28)

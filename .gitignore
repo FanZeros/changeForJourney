@@ -41,6 +41,7 @@ CLAUDE.md
 
 # Electron Windows 离线包（game/ 是 dist 拷贝，release/ 是构筑产物，game_engine/ 是离线运行时镜像）
 electron-shell/game/
+electron-shell/__pycache__/
 electron-shell/node_modules/
 electron-shell/release/
 electron-shell/game_engine/

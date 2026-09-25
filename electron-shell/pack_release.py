@@ -781,13 +781,20 @@ def download_runtime() -> None:
     log("离线运行时镜像就绪：%s" % RUNTIME_DIR)
 
 
-def sync_dist() -> None:
-    if not DIST.exists():
-        die("找不到 dist/。先在 Maker 里 Build，或把产物拷到仓库根目录 dist/")
-    log("同步 dist → electron-shell/game/ …")
+def resolve_prepare_dist() -> Path:
+    roots = list((Path.home() / ".taptap-maker" / "preview").glob("*/preparations/*/source/dist"))
+    if not roots:
+        die("找不到 preview prepare 产物。先运行 taptap-maker preview prepare")
+    return max(roots, key=lambda path: path.stat().st_mtime)
+
+
+def sync_dist(source_dist: Path = DIST) -> None:
+    if not source_dist.exists():
+        die("找不到构建产物。先完成本地 prepare，或在 Maker 里 Build")
+    log("同步 %s → electron-shell/game/ …" % source_dist)
     if GAME.exists():
         shutil.rmtree(GAME)
-    shutil.copytree(DIST, GAME, dirs_exist_ok=False)
+    shutil.copytree(source_dist, GAME, dirs_exist_ok=False)
     for name in DROP_FILES:
         p = GAME / name
         if p.exists():
@@ -1075,6 +1082,8 @@ def parse_args() -> argparse.Namespace:
                    help="云端用：把 dist/ 打成快照上传 Release dist-snapshot（供本机自动拉取）")
     p.add_argument("--no-fetch-dist", action="store_true",
                    help="本机缺 dist/ 时不自动从 Release 拉快照（直接报错）")
+    p.add_argument("--prepare-dist", action="store_true",
+                   help="使用最近一次 preview prepare 的 dist，不读取仓库根 dist")
     p.add_argument("--local-dist", action="store_true",
                    help="仅用当前源码构建的本地 dist；校验全部 Lua，不拉快照、不清理仓库根、不上传")
     p.add_argument("--proxy", default=None, metavar="URL",
@@ -1088,6 +1097,8 @@ def main() -> int:
     args = parse_args()
     if args.local_dist and (args.upload or args.upload_only or args.dist_only or args.runtime_only or args.skip_sync or args.skip_build):
         die("--local-dist 不能与上传、跳过同步/构建或仅运行时模式组合")
+    if args.prepare_dist and (args.upload or args.upload_only or args.dist_only or args.runtime_only or args.local_dist or args.skip_sync):
+        die("--prepare-dist 不能与上传、旧 dist 或跳过同步模式组合")
     PROXY_CLI = (args.proxy or "").strip() or None
     ver = read_version()
     log("version %s" % ver)
@@ -1112,7 +1123,7 @@ def main() -> int:
     if not args.skip_sync:
         if not (args.no_fetch_dist or args.local_dist):
             ensure_dist(ver)
-        sync_dist()
+        sync_dist(resolve_prepare_dist() if args.prepare_dist else DIST)
     else:
         if not (GAME / "index.html").exists():
             die("game/index.html 不存在，不能 --skip-sync")

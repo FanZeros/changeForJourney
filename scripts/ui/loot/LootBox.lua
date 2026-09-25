@@ -76,6 +76,7 @@ function LootBox.isPageOpen() return LootBoxPage.isOpen() end
 function LootBox.drawPage(vg) LootBoxPage.draw(vg) end
 function LootBox.update(dt) LootBoxPage.update(dt) end
 function LootBox.handleInput(dx, dy) return LootBoxPage.handleInput(dx, dy) end
+function LootBox.handleRightClick(dx, dy) return LootBoxPage.handleRightClick(dx, dy) end
 function LootBox.handleDragBegin(dx, dy) return LootBoxPage.handleDragBegin(dx, dy) end
 function LootBox.handleDragMove(dx, dy) return LootBoxPage.handleDragMove(dx, dy) end
 function LootBox.handleDragEnd(dx, dy) return LootBoxPage.handleDragEnd(dx, dy) end

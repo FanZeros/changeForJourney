@@ -346,6 +346,8 @@ function CharacterDetail.close()
     if detailState.closing then return end
     detailState.closing = true
     detailState.closeTime = time.elapsedTime
+    local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
     print("[CharacterDetail] 关闭角色详情（动画）")
 end
 

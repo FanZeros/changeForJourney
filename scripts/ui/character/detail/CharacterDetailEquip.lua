@@ -117,12 +117,12 @@ local function clampScroll()
     panelState.scrollY = math.max(0, math.min(panelState.scrollMax, panelState.scrollY))
 end
 
--- 配装页左右栏：左套装效果，右装备属性+词条。下移避开主武器，放大可读
-local SIDE_TOP = 700
-local SIDE_H = 290
-local SIDE_LEFT_X, SIDE_LEFT_W = 12, 290
-local SIDE_RIGHT_X, SIDE_RIGHT_W = 778, 290
-local SIDE_ROW = 36
+-- 配装页左右栏：左套装效果，右装备属性+词条。放在格子裁剪区上方，否则会被裁掉。
+local SIDE_TOP = 820
+local SIDE_H = 380
+local SIDE_LEFT_X, SIDE_LEFT_W = 24, 500
+local SIDE_RIGHT_X, SIDE_RIGHT_W = 556, 500
+local SIDE_ROW = 40
 
 local function formatEquipValue(key, value)
     local meta = AD.META[key]
@@ -138,6 +138,29 @@ end
 local function statName(key)
     local meta = AD.META[key]
     return meta and meta.name or tostring(key)
+end
+
+--- 按显示宽度拆行。中文按字切，避免套装长句被栏宽裁掉。
+local function wrapText(vg, text, fontSize, maxW)
+    local src = tostring(text or "")
+    if src == "" then return { "" } end
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, fontSize)
+    local lines = {}
+    local line = ""
+    for _, char in utf8.codes(src) do
+        local piece = utf8.char(char)
+        local trial = line .. piece
+        if line ~= "" and nvgTextBounds(vg, 0, 0, trial) > maxW then
+            lines[#lines + 1] = line
+            line = piece
+        else
+            line = trial
+        end
+    end
+    if line ~= "" then lines[#lines + 1] = line end
+    if #lines == 0 then lines[1] = "" end
+    return lines
 end
 
 local function addTotal(totals, order, key, val)
@@ -212,10 +235,10 @@ local function drawStatColumn(vg, x, y, w, h, title, rows, scroll)
     nvgStroke(vg)
 
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 22)
+    nvgFontSize(vg, 28)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 230))
-    nvgText(vg, x + 16, y + 22, title, nil)
+    nvgText(vg, x + 16, y + 24, title, nil)
 
     local contentTop = y + 44
     local contentH = h - 52
@@ -232,7 +255,7 @@ local function drawStatColumn(vg, x, y, w, h, title, rows, scroll)
             if ry > contentTop - SIDE_ROW and ry < contentTop + contentH + SIDE_ROW then
                 local name = statName(row.key)
                 local val = (row.value >= 0 and "+" or "") .. formatEquipValue(row.key, row.value)
-                nvgFontSize(vg, 20)
+                nvgFontSize(vg, 26)
                 nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
                 nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 230))
                 nvgText(vg, x + 16, ry, name, nil)
@@ -257,10 +280,10 @@ local function drawSetColumn(vg, x, y, w, h, sets, scroll)
     nvgStroke(vg)
 
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 24)
+    nvgFontSize(vg, 30)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 230))
-    nvgText(vg, x + 14, y + 22, "套装效果", nil)
+    nvgText(vg, x + 14, y + 24, "套装效果", nil)
 
     local contentTop = y + 42
     local contentH = h - 44
@@ -269,25 +292,37 @@ local function drawSetColumn(vg, x, y, w, h, sets, scroll)
     nvgSave(vg)
     nvgIntersectScissor(vg, x + 4, contentTop, w - 8, contentH)
     if #sets == 0 then
-        nvgFontSize(vg, 18)
+        nvgFontSize(vg, 24)
         nvgFillColor(vg, nvgRGBA(0x9A, 0x90, 0x80, 180))
-        nvgText(vg, x + 12, contentTop + 16, "暂无", nil)
+        nvgText(vg, x + 14, contentTop + 18, "暂无", nil)
     else
         for i = 1, #sets do
             local set = sets[i]
-            local blockH = 28 + #set.lines * 34 + 10
+            local wrapped = {}
+            local blockH = 36
+            for li = 1, #set.lines do
+                wrapped[li] = wrapText(vg, set.lines[li].text, 24, w - 36)
+                blockH = blockH + math.max(1, #wrapped[li]) * 30 + 8
+            end
+            blockH = blockH + 8
             local by = contentTop + cursor - scroll
             if by + blockH > contentTop and by < contentTop + contentH then
-                nvgFontSize(vg, 22)
+                nvgFontSize(vg, 26)
                 nvgFillColor(vg, nvgRGBA(0xF7, 0xFE, 0x77, 240))
                 nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgText(vg, x + 14, by + 14, set.title, nil)
+                nvgText(vg, x + 14, by + 16, set.title, nil)
+                local lineY = by + 42
                 for li = 1, #set.lines do
                     local line = set.lines[li]
                     local col = line.on and { 0xF4, 0xED, 0xE0 } or { 0x7A, 0x72, 0x64 }
-                    nvgFontSize(vg, 18)
+                    nvgFontSize(vg, 24)
                     nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], line.on and 240 or 170))
-                    nvgText(vg, x + 14, by + 26 + li * 32, line.text, nil)
+                    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+                    for wi = 1, #wrapped[li] do
+                        nvgText(vg, x + 14, lineY, wrapped[li][wi], nil)
+                        lineY = lineY + 30
+                    end
+                    lineY = lineY + 8
                 end
             end
             hits[#hits + 1] = {
@@ -740,6 +775,7 @@ function M.draw(vg, heroId, detailState)
     end
 
     nvgRestore(vg)
+    -- 退出格子裁剪后再画，否则套装说明会被裁掉。
     -- 左：套装效果；右：基础属性+词条合计。避开鞋子槽和仓库
     local setRows, statRows = collectEquipSide(heroId)
     local side = panelState.sideScroll
@@ -860,15 +896,34 @@ function M.handleHover(dx, dy, heroId)
         item = findItemAt(dx, dy)
     end
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
-    if not item then return end
+    if not item then
+        panelState.hoverSeq = nil
+        panelState.hoverSince = nil
+        if not panelState.hoverPinned and EquipmentDetail.dismissHover then
+            EquipmentDetail.dismissHover()
+        end
+        return
+    end
     local seqStr = tostring(item.seq)
     local _, cx, cy = findItemAt(dx, dy)
-    if panelState.hoverSeq == seqStr then
+    if panelState.hoverSeq ~= seqStr then
+        panelState.hoverSeq = seqStr
+        panelState.hoverSince = time.elapsedTime
+        panelState.hoverPinned = false
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+        return
+    end
+    if panelState.hoverPinned then
         if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
         return
     end
-    panelState.hoverSeq = seqStr
-    panelState.hoverPinned = false
+    if (time.elapsedTime - (panelState.hoverSince or 0)) < 0.5 then
+        return
+    end
+    if EquipmentDetail.isOpen and EquipmentDetail.isOpen() and EquipmentDetail.setAnchor then
+        EquipmentDetail.setAnchor(cx, cy)
+        return
+    end
     EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
     print("[EquipPanel] 悬停详情 seq=" .. seqStr .. " at " .. tostring(cx) .. "," .. tostring(cy))
 end
@@ -928,8 +983,10 @@ function M.handleInput(dx, dy, heroId, detailState)
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
     panelState.hoverSeq = seqStr
     panelState.hoverPinned = true
+    panelState.hoverSince = time.elapsedTime
     local _, cx, cy = findItemAt(dx, dy)
     EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
+    if EquipmentDetail.pin then EquipmentDetail.pin() end
     print("[EquipPanel] 单击详情 seq=" .. seqStr)
     return true
 end

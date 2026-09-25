@@ -52,7 +52,7 @@ local MASK_ALPHA = 128  -- 50% 不透明度
 
 -- 2. 弹窗背景框（九宫格）
 local BG = {
-    CX = 540, CY = 1160, W = 950, H = 1631,
+    CX = 540, CY = 1200, W = 1040, H = 1960,
     IT = 180, IL = 40, IR = 40, IB = 50,  -- 九宫格切割
 }
 
@@ -65,10 +65,10 @@ local TTL = {
 
 -- 4+5+6. 离线收益倍率行
 local MULT_ROW = {
-    CX = 540, CY = 552, W = 800, H = 80, R = 16,  -- 背景框
-    LABEL_X = 180, LABEL_FONT = 40,                  -- "离线收益倍率" 左对齐
+    CX = 540, CY = 552, W = 960, H = 72, R = 16,  -- 背景框
+    LABEL_X = 70, LABEL_FONT = 40,                  -- "离线收益倍率" 左对齐
     LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,  -- #725850
-    VALUE_X = 921, VALUE_FONT = 40,                   -- 值 右对齐
+    VALUE_X = 1010, VALUE_FONT = 40,                   -- 值 右对齐
     VALUE_SW = 5,                                      -- 纯黑描边
 }
 
@@ -95,32 +95,32 @@ local DECO = {
 
 -- 13+14+15. 远征等级经验行
 local EXP_ROW1 = {
-    CX = 540, CY = 899, W = 800, H = 80, R = 16,
-    LABEL_X = 180, LABEL = "远征等级经验",
+    CX = 540, CY = 899, W = 960, H = 72, R = 16,
+    LABEL_X = 70, LABEL = "远征等级经验",
     LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,
-    VALUE_X = 921,
+    VALUE_X = 1010,
     VALUE_R = 0x63, VALUE_G = 0xff, VALUE_B = 0x84, VALUE_SW = 5,
 }
 
 -- 远征队员经验行
 local EXP_ROW2 = {
-    CX = 540, CY = 994, W = 800, H = 80, R = 16,
-    LABEL_X = 180, LABEL = "远征队员经验（总合）",
+    CX = 540, CY = 994, W = 960, H = 72, R = 16,
+    LABEL_X = 70, LABEL = "远征队员经验（总合）",
     LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,
-    VALUE_X = 921,
+    VALUE_X = 1010,
     VALUE_R = 0x63, VALUE_G = 0xff, VALUE_B = 0x84, VALUE_SW = 5,
 }
 
 -- 16+17. 奖励内容区域
 local REWARD_AREA = {
-    CX = 540, CY = 1406, W = 800, H = 714, R = 16,
-    PAD = 40,  -- 内边距
+    CX = 540, CY = 1360, W = 980, H = 980, R = 16,
+    PAD = 16,  -- 内边距
 }
--- 奖励图标网格
-local ICON_SIZE = 160
+-- 奖励图标网格（8 列）
+local ICON_SIZE = 148
 local ROW_GAP   = 16
 local COL_GAP   = 14
-local COLS      = 4
+local COLS      = 5
 
 -- 奖励裁剪区域（内容背景框内边距40）
 local CLIP = {}
@@ -147,9 +147,9 @@ end
 
 -- 22+23. 领取按钮
 local BTN_CLAIM = {
-    CX = 750, CY = 1855, W = 390, H = 100,
+    CX = 540, CY = 1980, W = 420, H = 100,
     NP = 35,
-    TEXT_CX = 750, TEXT_CY = 1855, FONT = 40,
+    TEXT_CX = 540, TEXT_CY = 1980, FONT = 40,
     TR = 0, TG = 0, TB = 0, TA = 191,
 }
 
@@ -585,15 +585,20 @@ function self_drawRewardGrid(vg)
             if cy - ICON_SIZE * 0.5 > CLIP.BOTTOM + 10 then goto continue end
 
             if item.type == "equip" then
-                -- 装备种子图标（问号样式，与战利品界面一致）
+                -- 已生成的真实装备：品质底 + 模板图标
                 local q = item.quality or 1
                 local qBgImg = ImageCache.getQualityBg(q)
                 if qBgImg >= 0 then
                     DrawUtil.drawImageCentered(vg, qBgImg, cx, cy, ICON_SIZE, ICON_SIZE, 1.0)
                 end
-                -- "?" 问号（居中）
-                DrawUtil.drawTextStroke(vg, cx, cy, "?", 56,
-                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+                local equipImg = ImageCache.getEquipIcon(item.templateId)
+                if equipImg >= 0 then
+                    local inner = ICON_SIZE - 16
+                    DrawUtil.drawImageCentered(vg, equipImg, cx, cy, inner, inner, 1.0)
+                else
+                    DrawUtil.drawTextStroke(vg, cx, cy, "?", 40,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+                end
                 -- 等级角标（底部居中）
                 if item.level and item.level > 0 then
                     local lvlText = "Lv." .. tostring(item.level)

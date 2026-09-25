@@ -13,6 +13,7 @@ local PlayerStore       = require("core.PlayerStore")
 local EquipmentConfig   = require("config.EquipmentConfig")
 local DetailAttrs       = require("ui.character.detail.CharacterDetailAttrs")
 local DrawUtil          = require("core.DrawUtil")
+local HeroAssetUtil     = require("config.HeroAssetUtil")
 local AwakeningPanel    = require("ui.character.hero.AwakeningPanel")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local EquipmentSystem   = require("systems.EquipmentSystem")
@@ -197,9 +198,9 @@ local TALENT_BG_CX, TALENT_BG_CY = 540, 2045
 local TALENT_BG_W, TALENT_BG_H   = 903, 210
 local TALENT_BG_RADIUS            = 20
 
-local TALENT_NAME_X, TALENT_NAME_Y = 121.5, 1918
+local TALENT_NAME_Y = 1918
 local TALENT_TEXT_LEFT   = TALENT_BG_CX - TALENT_BG_W * 0.5 + 33
-local TALENT_TEXT_TOP    = TALENT_BG_CY - TALENT_BG_H * 0.5 + 81
+local TALENT_TEXT_TOP    = TALENT_NAME_Y + 36
 local TALENT_TEXT_RIGHT  = TALENT_BG_CX + TALENT_BG_W * 0.5 - 33
 local TALENT_TEXT_WIDTH  = TALENT_TEXT_RIGHT - TALENT_TEXT_LEFT
 
@@ -620,7 +621,7 @@ function M.draw(vg)
         if not id or alpha <= 0.01 then return end
         -- 编队页已改头像，不再预热卡图；详情页按需加载，避免卡片空白
         local imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, id)
-        if not imgCard or imgCard < 0 then
+        if (not imgCard or imgCard < 0) and id ~= 1 then
             imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, 1)
         end
         if not imgCard or imgCard < 0 then return end
@@ -1216,7 +1217,7 @@ function M.draw(vg)
     nvgFill(vg)
 
     local talentName = heroCfg.talentName or ""
-    drawTextStroke(vg, TALENT_NAME_X, TALENT_NAME_Y, talentName .. "：",
+    drawTextStroke(vg, TALENT_TEXT_LEFT, TALENT_NAME_Y, talentName .. "：",
         40, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         0x66, 0xf8, 0x62, 5)
 

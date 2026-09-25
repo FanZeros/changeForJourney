@@ -185,6 +185,15 @@ local function randomScrollType()
     return SCROLL_TYPES[math.random(1, #SCROLL_TYPES)]
 end
 
+--- 扫荡券掉落。约为卷轴掉率的 4 倍，大约每 5 只怪 1 张。
+---@param stageEntry table|nil
+---@return boolean
+function DropSystem.rollSweepTicket(stageEntry)
+    local scrollRate = stageEntry and stageEntry.scrollDropRate or 0.05
+    local rate = math.min(0.35, math.max(0.12, scrollRate * 4))
+    return math.random() <= rate
+end
+
 --- 判定一次击杀是否掉落卷轴
 ---@param stageEntry StageEntry 关卡配置条目
 ---@return string|nil scrollType 卷轴类型字符串，nil=未掉落

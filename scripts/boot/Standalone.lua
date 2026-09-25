@@ -606,6 +606,8 @@ end
 
 --- [LetterIntro] 新档开场链：先祖来信 → 门厅点卯 → 进游戏
 local function startIntroChain_()
+    -- 一开始就落盘，避免标题关闭后重进或存档回写把同一段开场再播一遍。
+    markIntroCompleted_()
     GameBGM.setScene("letter", { fromStart = true })
     LetterIntro.start(startOpeningBriefing_)
 end

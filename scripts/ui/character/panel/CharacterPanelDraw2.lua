@@ -265,12 +265,11 @@ end
 local TAB_W, TAB_H, TAB_GAP = 240, 54, 16
 local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px 间隙）
 
--- 头像编队：三队同时显示，每队一行 4 个头像
+-- 头像条：当前队，画在页签上方，不盖整卡
 local heroIconCache = {}  ---@type table<number, integer>
-local AV_SIZE = 104
-local AV_GAP = 22
-local AV_ROW_H = 150
-local AV_TOP = 330
+local AV_SIZE = 64
+local AV_GAP = 14
+local AV_TOP = 178
 
 --- 计算第 idx 个页签的左上角 X
 ---@param idx number
@@ -280,15 +279,19 @@ local function teamTabX(idx)
     return (DESIGN_W - totalW) * 0.5 + (idx - 1) * (TAB_W + TAB_GAP)
 end
 
---- 角色头像句柄，按需加载并缓存
+--- 角色头像句柄，按需加载并缓存。必须用当前帧 vg，失败不缓存，避免永久空白。
+---@param vg any
 ---@param heroId number
 ---@return integer
-local function heroIconHandle(heroId)
+local function heroIconHandle(vg, heroId)
     local cached = heroIconCache[heroId]
-    if cached then return cached end
-    local handle = nvgCreateImage(img.vg, HeroAssetUtil.getIconPath(heroId), 0)
-    heroIconCache[heroId] = (handle and handle > 0) and math.floor(handle) or -1
-    return heroIconCache[heroId]
+    if cached and cached > 0 then return cached end
+    local handle = HeroAssetUtil.ensureIcon(vg, heroIconCache, heroId)
+    if not handle or handle <= 0 then
+        heroIconCache[heroId] = nil
+        return -1
+    end
+    return handle
 end
 
 --- 头像编队一行的左上角 X（4 个头像水平居中）
@@ -298,30 +301,28 @@ local function avatarRowX()
     return (DESIGN_W - totalW) * 0.5
 end
 
---- 第 teamIdx 队第 slotIdx 个头像的中心
----@param teamIdx number
+--- 当前队第 slotIdx 个头像的中心
 ---@param slotIdx number
 ---@return number cx, number cy
-local function avatarCenter(teamIdx, slotIdx)
+local function avatarCenter(slotIdx)
     local x0 = avatarRowX()
     local cx = x0 + (slotIdx - 1) * (AV_SIZE + AV_GAP) + AV_SIZE * 0.5
-    local cy = AV_TOP + (teamIdx - 1) * AV_ROW_H + AV_SIZE * 0.5
+    local cy = AV_TOP + AV_SIZE * 0.5
     return cx, cy
 end
 
---- 绘制单个头像槽：已上阵显示头像，空位虚框，未解锁灰锁
+--- 绘制单个头像槽：已上阵显示头像，空位虚框
 ---@param vg any
----@param teamIdx number
 ---@param slotIdx number
 ---@param slot table|nil
 ---@param locked boolean
-local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
-    local cx, cy = avatarCenter(teamIdx, slotIdx)
+local function drawAvatarSlot(vg, slotIdx, slot, locked)
+    local cx, cy = avatarCenter(slotIdx)
     local x = cx - AV_SIZE * 0.5
     local y = cy - AV_SIZE * 0.5
     local occupied = slot and slot.state == "occupied" and slot.heroId
     if occupied and not locked then
-        local icon = heroIconHandle(slot.heroId)
+        local icon = heroIconHandle(vg, slot.heroId)
         if icon and icon >= 0 then
             nvgSave(vg)
             nvgBeginPath(vg)
@@ -353,38 +354,15 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
     end
 end
 
---- 三队头像编队：同时显示全部队伍，未解锁整行置灰并标注解锁等级
+--- 当前队头像条：画在整卡上方，不覆盖角色卡
 ---@param vg any
 function M.drawTeamAvatars(vg)
-    if not getTeams or not getUnlockedTeamCount then return end
+    if not getTeams then return end
     local teams = getTeams()
-    local unlockedCnt = getUnlockedTeamCount() or 1
     local activeIdx = getActiveTeamIdx and getActiveTeamIdx() or 1
-    for t = 1, M.TEAM_TAB_COUNT do
-        local locked = t > unlockedCnt
-        local _, rowCy = avatarCenter(t, 1)
-        local labelX = avatarRowX() - 18
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 24)
-        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-        if locked then
-            nvgFillColor(vg, nvgRGBA(140, 130, 115, 180))
-        elseif t == activeIdx then
-            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-        else
-            nvgFillColor(vg, nvgRGBA(220, 210, 190, 255))
-        end
-        nvgText(vg, labelX, rowCy - 16, "队" .. t, nil)
-        if locked then
-            local needLv = ExpTable.getTeamUnlockLevel(t)
-            nvgFontSize(vg, 18)
-            nvgFillColor(vg, nvgRGBA(150, 140, 125, 200))
-            nvgText(vg, labelX, rowCy + 16, "Lv" .. tostring(needLv or "?"), nil)
-        end
-        local slots = teams[t] and teams[t].slots
-        for s = 1, M.MAX_SLOTS do
-            drawAvatarSlot(vg, t, s, slots and slots[s], locked)
-        end
+    local slots = teams[activeIdx] and teams[activeIdx].slots
+    for s = 1, M.MAX_SLOTS do
+        drawAvatarSlot(vg, s, slots and slots[s], false)
     end
 end
 
@@ -393,13 +371,11 @@ end
 ---@param dy number
 ---@return number|nil teamIdx, number|nil slotIdx
 function M.hitTestAvatarSlot(dx, dy)
-    local unlockedCnt = getUnlockedTeamCount and getUnlockedTeamCount() or 1
-    for t = 1, math.min(M.TEAM_TAB_COUNT, unlockedCnt) do
-        for s = 1, M.MAX_SLOTS do
-            local cx, cy = avatarCenter(t, s)
-            if math.abs(dx - cx) <= AV_SIZE * 0.5 and math.abs(dy - cy) <= AV_SIZE * 0.5 then
-                return t, s
-            end
+    local activeIdx = getActiveTeamIdx and getActiveTeamIdx() or 1
+    for s = 1, M.MAX_SLOTS do
+        local cx, cy = avatarCenter(s)
+        if math.abs(dx - cx) <= AV_SIZE * 0.5 and math.abs(dy - cy) <= AV_SIZE * 0.5 then
+            return activeIdx, s
         end
     end
     return nil, nil
@@ -486,11 +462,12 @@ function M.draw(vg, scrollY)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- 1.5) [头像编队] 三队同时显示，取代整卡槽位与队伍页签
+    -- 1.5) 三队页签 + 当前队头像条，整卡仍在下方绘制
+    M.drawTeamTabs(vg)
     M.drawTeamAvatars(vg)
 
-    -- 2) 绘制编队槽位（头像模式已取代，整卡绘制停用）
-    if false then
+    -- 2) 绘制编队槽位
+    do
     -- 拖拽中：计算鼠标悬停的目标槽位（用于高亮提示）
     local dragHoverSlot = nil
     if dragState.active and dragState.heroId then

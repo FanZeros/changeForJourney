@@ -497,6 +497,7 @@ local function markIntroCompleted_()
         updated.initialHeroId = 1
     end
     ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
+    require("boot.StandaloneSave").Flush()
     print("[Standalone] intro completed flag saved (scenario 1 claimed, initialHeroId="
         .. tostring(updated.initialHeroId) .. ")")
 end
@@ -805,7 +806,17 @@ function HandleUpdate(eventType, eventData)
         GameSFX.start()
         local sessionData = ClientDispatcher.get("session") or {}
         local battleData = ClientDispatcher.get("battle") or {}
-        local introDone = sessionData.introCompleted == true
+        local heroesData = ClientDispatcher.get("heroes") or {}
+        local ownedCount = 0
+        if type(heroesData.roster) == "table" then
+            for _, hero in pairs(heroesData.roster) do
+                if type(hero) == "table" and hero.level then
+                    ownedCount = ownedCount + 1
+                end
+            end
+        end
+        -- 已有多名角色的旧档不再重走开场，避免重启后又补初始角色。
+        local introDone = sessionData.introCompleted == true or ownedCount > 1
         if introDone and sessionData.introCompleted ~= true then
             print("[Standalone] legacy save detected, mark intro completed")
             markIntroCompleted_()

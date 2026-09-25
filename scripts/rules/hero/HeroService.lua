@@ -315,6 +315,17 @@ function HeroService.GrantStarterTrio(uid)
     if not heroes then return false, "数据未加载" end
     if type(heroes.roster) ~= "table" then heroes.roster = {} end
 
+    local ownedCount = 0
+    for _, hero in pairs(heroes.roster) do
+        if type(hero) == "table" and hero.level then
+            ownedCount = ownedCount + 1
+        end
+    end
+    if ownedCount > 1 then
+        print("[HeroService] starter skip, roster already has " .. tostring(ownedCount))
+        return true, nil, { skipped = true, owned = ownedCount }
+    end
+
     local starterIds = { 1, 2, 3 }
     local startLv = HeroService.GetNewHeroStartLevel(uid)
     for i = 1, #starterIds do

@@ -270,15 +270,8 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local stageText
         if row == 1 then
-            -- [进度显示] 首通模式：击杀怪/总怪 百分比；挂机模式不显示
-            local killed, total = BattleScene.getStageKillProgress()
-            if killed then
-                local pct = math.floor(killed / total * 100 + 0.5)
-                stageText = string.format("【小队1】%s · %d%%",
-                    stageDisplayName(BattleScene.getStageId()), pct)
-            else
-                stageText = string.format("【小队1】%s", stageDisplayName(BattleScene.getStageId()))
-            end
+            -- [进度显示] 百分比改到战斗页下方进度条，标题只留关卡名
+            stageText = string.format("【小队1】%s", stageDisplayName(BattleScene.getStageId()))
         elseif drivers[row] then
             stageText = string.format("【小队%d】%s · 击杀%d", row,
                 stageDisplayName(drivers[row].stageId), drivers[row].kills)
@@ -287,6 +280,34 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         end
         -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上        nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
         nvgText(vg, ix + 28, iy + 25, stageText, nil)
+
+        -- [进度显示] 首通模式：战斗页下方进度条（击杀 / 总怪）
+        if row == 1 and row <= unlocked then
+            local killed, total = BattleScene.getStageKillProgress()
+            if killed and total and total > 0 then
+                local ratio = math.max(0, math.min(1, killed / total))
+                local pctShown = math.floor(ratio * 100 + 0.5)
+                local pctText = string.format("%d%%", pctShown)
+                local barW = math.min(iw * 0.62, 280)
+                local barH = 10
+                local barX = ix + (iw - barW) * 0.5
+                local barY = iy + ih - 8
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, barX, barY, barW, barH, 5)
+                nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
+                nvgFill(vg)
+                if ratio > 0 then
+                    nvgBeginPath(vg)
+                    nvgRoundedRect(vg, barX, barY, math.max(barH, barW * ratio), barH, 5)
+                    nvgFillColor(vg, nvgRGBA(196, 148, 72, 230))
+                    nvgFill(vg)
+                end
+                nvgFontSize(vg, 16)
+                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+                nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+                nvgText(vg, ix + iw * 0.5, barY - 12, "关卡进度 " .. pctText, nil)
+            end
+        end
 
         -- 未解锁提示（行内居中）
         if row > unlocked then
@@ -338,13 +359,14 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
     end
     local BattleScene = require("ui.battle.scene.BattleScene")
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
-    local hudScale = 0.55
+    local hudScale = 0.44  -- 原 0.55 的约 80%
     local hudPad = 4
-    local hudHalf = 36
+    local hudHalf = 29
     local hudY = iy1 + hudHalf + 2
-    local hudGap = 72
+    local hudGap = 58
+    local hudShift = 17  -- 约 0.3 个按钮宽，避免贴出右框
     local showSpeed = BattleScene.isSpeedButtonVisible()
-    local cursorX = ix1 + iw1 - hudPad - hudHalf
+    local cursorX = ix1 + iw1 - hudPad - hudHalf - hudShift
     local hudSpeedX, hudSweepX, hudStatsX, hudStageX, hudSoundX
     if showSpeed then
         hudSpeedX = cursorX
@@ -440,13 +462,14 @@ function BattleTriPage.handleInput(wx, wy)
         return true
     end
 
-    local hudScale = 0.55
+    local hudScale = 0.44  -- 与 drawHud 一致，约原尺寸 80%
     local hudPad = 4
-    local hudHalf = 36
+    local hudHalf = 29
     local hudY = iy1 + hudHalf + 2
-    local hudGap = 72
+    local hudGap = 58
+    local hudShift = 17  -- 与 drawHud 一致
     local showSpeed = bs.isSpeedButtonVisible()
-    local cursorX = ix1 + iw1 - hudPad - hudHalf
+    local cursorX = ix1 + iw1 - hudPad - hudHalf - hudShift
     local hudSpeedX, hudSweepX, hudStatsX, hudStageX, hudSoundX
     if showSpeed then
         hudSpeedX = cursorX

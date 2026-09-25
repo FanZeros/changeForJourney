@@ -59,7 +59,8 @@ function M.bind(deps)
         end
 
         -- 恢复当前关卡（如果与本地不同则切换）
-        local serverStageId = data.currentStageId and tonumber(data.currentStageId)
+        -- 单机存档里的当前关卡。变量名沿用旧联机字段，不是真正的服务端。
+        local savedStageId = data.currentStageId and tonumber(data.currentStageId)
 
         -- 🔴 修复中间状态：通关消息已落盘但推进消息未到（两条消息间掉线/存档）
         -- 表现：currentStageId == maxStageId 且 clearedStages[maxStageId] == true
@@ -72,7 +73,7 @@ function M.bind(deps)
         local nextOfMax = maxSId and stageConfig.getNextStageId(maxSId)
         local isAtTerminalEntrance = nextOfMax and stageConfig.isTerminalTemple(nextOfMax)
         local clearedStages = get("clearedStages")
-        if maxSId and serverStageId and serverStageId == maxSId and clearedStages[maxSId]
+        if maxSId and savedStageId and savedStageId == maxSId and clearedStages[maxSId]
            and not isAtTerminalEntrance then
             clearedStages[maxSId] = nil
             print("[BattleScene] 修复中间状态: 关卡" .. tostring(maxSId)
@@ -82,11 +83,11 @@ function M.bind(deps)
         -- 首次加载兜底：如果 currentStageId 落后于 maxStageId，
         -- 说明上次存档异常或版本更新导致进度不同步，以 maxStageId 为准恢复到最新进度
         local initialBattleDataLoaded = get("initialBattleDataLoaded")
-        if not initialBattleDataLoaded and serverStageId and maxSId then
-            if maxSId > serverStageId then
-                print("[BattleScene] 检测到进度落后: currentStageId=" .. tostring(serverStageId)
+        if not initialBattleDataLoaded and savedStageId and maxSId then
+            if maxSId > savedStageId then
+                print("[BattleScene] 检测到进度落后: currentStageId=" .. tostring(savedStageId)
                     .. " 但 maxStageId=" .. tostring(maxSId) .. "，使用 maxStageId 恢复")
-                serverStageId = maxSId
+                savedStageId = maxSId
             end
         end
 
@@ -95,33 +96,33 @@ function M.bind(deps)
         local searchingTimer = get("searchingTimer")
         local defeatTimer = get("defeatTimer")
         local reincarnationTimer = get("reincarnationTimer")
-        if serverStageId and serverStageId ~= currentStageId then
+        if savedStageId and savedStageId ~= currentStageId then
             -- 首次加载数据时无条件恢复（否则 init 里 loadStage(0101) 已启动战斗，isBusy=true 会拦截）
             if not initialBattleDataLoaded then
-                loadStage(serverStageId)
+                loadStage(savedStageId)
                 set("regenAccum", 0)
-                -- 首次加载进入寻怪模式，等服务端装备/天赋数据同步完毕再开战
+                -- 首次加载进入寻怪模式，等本地装备/天赋数据同步完毕再开战
                 set("battleActive", false)
                 set("searchingTimer", 0)
-                print("[BattleScene] 首次加载，恢复关卡(寻怪模式): " .. tostring(serverStageId))
+                print("[BattleScene] 首次加载，恢复关卡(寻怪模式): " .. tostring(savedStageId))
             else
-                -- 后续推送：仅在战斗未激活时才接受切换，避免打断进行中的战斗或轮回倒计时
+                -- 后续存档回灌：仅在战斗未激活时才接受切换，避免打断进行中的战斗或轮回倒计时
                 local isBusy = battleActive or (searchingTimer ~= nil) or (defeatTimer ~= nil) or (reincarnationTimer ~= nil)
                 if not isBusy then
-                    loadStage(serverStageId, true)  -- skipBattleStart
+                    loadStage(savedStageId, true)  -- skipBattleStart
                     set("regenAccum", 0)
                     for _, u in ipairs(getAllies()) do resetAllyUnit(u) end
                     startBattleTalents()
-                    print("[BattleScene] 从服务端恢复关卡: " .. tostring(serverStageId))
+                    print("[BattleScene] 从本地存档恢复关卡: " .. tostring(savedStageId))
                 else
                     local reason = battleActive and "battleActive" or (searchingTimer ~= nil) and "searching" or (defeatTimer ~= nil) and "defeat" or "reincarnation"
-                    print("[BattleScene] 战斗进行中，忽略服务端关卡切换: server=" .. tostring(serverStageId) .. " local=" .. tostring(currentStageId) .. " reason=" .. reason)
+                    print("[BattleScene] 战斗进行中，忽略旧存档关卡: saved=" .. tostring(savedStageId) .. " local=" .. tostring(currentStageId) .. " reason=" .. reason)
                 end
             end
         elseif not initialBattleDataLoaded then
-            -- 首次加载且关卡未切换（serverStageId == currentStageId 或 serverStageId 为 nil）
+            -- 首次加载且关卡未切换（savedStageId == currentStageId 或 savedStageId 为 nil）
             -- init 不再预加载关卡，这里统一触发 loadStage 进入寻怪模式
-            local stageToLoad = serverStageId or currentStageId
+            local stageToLoad = savedStageId or currentStageId
             loadStage(stageToLoad)
             set("battleActive", false)
             set("searchingTimer", 0)
@@ -136,7 +137,7 @@ function M.bind(deps)
 
         -- 无论是否切换关卡，都刷新 isFirstClear（clearedStages 可能已更新）
         -- 注意：当战斗进行中(isBusy)时关卡切换被忽略，此时应以本地 currentStageId 为准
-        -- 否则 serverStageId（可能是旧值）会导致 isFirstClear 被错误设为 false
+        -- 否则 savedStageId（可能是旧值）会导致 isFirstClear 被错误设为 false
         local isFirstClear = not get("clearedStages")[get("currentStageId")]
         set("isFirstClear", isFirstClear)
         if not isFirstClear and StageBerserk.isActive() then

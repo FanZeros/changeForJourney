@@ -19,6 +19,11 @@ local RECOIL_DISTANCE  = 30
 local CHARGE_START     = 0.7
 local CHARGE_DISTANCE  = 25
 
+-- 纵向弧线抖动（弧顶高度，像素）：攻击冲刺/回位、受击后退、蓄力前摇
+local LUNGE_ARC_HEIGHT  = 18
+local RECOIL_ARC_HEIGHT = 10
+local CHARGE_ARC_HEIGHT = 6
+
 -- 死亡/复活动画
 local DEATH_HITSTOP        = 0.06
 local DEATH_BURST_DUR      = 0.22
@@ -226,6 +231,37 @@ function M.getOffsetY(BCS, unit)
         return anim.lungeDir * dist * (1 - t)
     end
     return 0
+end
+
+--- 纵向弧线抖动（屏幕 Y 轴，向上为负）
+--- 攻击冲刺/回位、受击后退走抛物线弧，蓄力前摇轻微上浮
+function M.getArcOffsetY(BCS, unit, isAllyGroup)
+    local anim = BCS.cardAnims[unit]
+    if anim and not isCombatCardAnimEnabled() and isCombatCardAnimState(anim.state) then
+        return 0
+    end
+    if anim then
+        if anim.state == "lunge" and not anim.isRanged then
+            local t = math.min(1, anim.timer / LUNGE_DURATION)
+            return -LUNGE_ARC_HEIGHT * math.sin(t * math.pi)
+        elseif anim.state == "return" and not anim.isRanged then
+            local t = math.min(1, anim.timer / RETURN_DURATION)
+            return -LUNGE_ARC_HEIGHT * math.sin(t * math.pi)
+        elseif anim.state == "recoil" then
+            local t = math.min(1, anim.timer / RECOIL_DURATION)
+            return -RECOIL_ARC_HEIGHT * math.sin(t * math.pi)
+        elseif anim.state == "recoil_return" then
+            local t = math.min(1, anim.timer / RECOIL_RETURN)
+            return -RECOIL_ARC_HEIGHT * math.sin(t * math.pi)
+        end
+        return 0
+    end
+    if not isCombatCardAnimEnabled() then return 0 end
+    if unit.hp <= 0 or isRangedUnit(unit) then return 0 end
+    local p = unit.atkProgress or 0
+    if p < CHARGE_START then return 0 end
+    local t = (p - CHARGE_START) / (1.0 - CHARGE_START)
+    return -CHARGE_ARC_HEIGHT * t * t
 end
 
 function M.getTransitionAlpha(BCS, unit)

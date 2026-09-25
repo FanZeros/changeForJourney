@@ -44,6 +44,8 @@ function M.load(ctx, stageId, skipBattleStart)
     ctx.searchingTimer = nil
     ctx.defeatTimer = nil
     ctx.reincarnationTimer = nil
+    ctx.pendingReincarnation = nil
+    ctx.terminalDefeatPending = false
 
     -- 切关时重置波次计时（丢弃未完成波次数据）
     ctx.resetWaveTimers()

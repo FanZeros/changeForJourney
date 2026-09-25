@@ -64,8 +64,8 @@ local STAT_COL2_CX             = Draw.STAT_COL2_CX
 local STAT_ROW1_CY             = Draw.STAT_ROW1_CY
 local STAT_ROW_STEP            = Draw.STAT_ROW_STEP
 local STAT_LAYOUT              = Draw.STAT_LAYOUT
-local ARROW_BG_W               = Draw.ARROW_BG_W
-local ARROW_BG_H               = Draw.ARROW_BG_H
+local ARROW_BG_W               = Draw.SIDE_CARD_W * 0.78
+local ARROW_BG_H               = Draw.SIDE_CARD_H * 0.78
 local ARROW_CY                 = Draw.ARROW_CY
 local ARROW_LEFT_CX            = Draw.ARROW_LEFT_CX
 local ARROW_RIGHT_CX           = Draw.ARROW_RIGHT_CX
@@ -396,6 +396,7 @@ function CharacterDetail._switchHero(direction)
     detailState.tabSwitchTime = 0
     detailState.openTime = time.elapsedTime
     detailState.switchDir = direction  -- -1=左切, 1=右切（触发水平滑入动画）
+    detailState.prevHeroId = roster[curIdx].heroId
     detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0
     detailState.attrDragging  = false
@@ -521,14 +522,12 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- 左箭头切换上一个角色（仅属性页）
-    if detailState.tab == "attr" and hitTest(dx, dy, ARROW_BG_LEFT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
+    -- 左卡=上一个，右卡=下一个（仅属性页）
+    if detailState.tab == "attr" and hitTest(dx, dy, Draw.ARROW_BG_LEFT_CX, Draw.ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
         CharacterDetail._switchHero(-1)
         return true
     end
-
-    -- 右箭头切换下一个角色（仅属性页）
-    if detailState.tab == "attr" and hitTest(dx, dy, ARROW_BG_RIGHT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
+    if detailState.tab == "attr" and hitTest(dx, dy, Draw.ARROW_BG_RIGHT_CX, Draw.ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
         CharacterDetail._switchHero(1)
         return true
     end
@@ -628,6 +627,27 @@ function CharacterDetail.handleInput(dx, dy)
             end
         end
 
+        -- 职业框：和六围一样弹出说明浮窗
+        local heroCfg = HC.get(detailState.heroId)
+        if math.abs(dx - Draw.MID_CLASS_BOX_CX) <= Draw.MID_CLASS_BOX_W * 0.5
+           and math.abs(dy - Draw.MID_CLASS_BOX_CY) <= Draw.MID_CLASS_BOX_H * 0.5 then
+            local classCfg = CC.get(heroCfg and heroCfg.classId)
+            if classCfg then
+                local desc = classCfg.talentDesc or ""
+                if classCfg.talentName and classCfg.talentName ~= "" then
+                    desc = classCfg.talentName .. "：" .. desc
+                end
+                detailState.attrTip = {
+                    boxCX = Draw.MID_CLASS_BOX_CX,
+                    boxTopY = Draw.MID_CLASS_BOX_CY - Draw.MID_CLASS_BOX_H * 0.5,
+                    desc = desc ~= "" and desc or "暂无职业说明",
+                    name = classCfg.name or "职业",
+                    area = "class",
+                }
+            end
+            return true
+        end
+
         -- 六围区域点击检测
         for _, st in ipairs(STAT_LAYOUT) do
             local boxCX = (st.col == 1) and STAT_COL1_CX or STAT_COL2_CX
@@ -674,12 +694,6 @@ end
 function CharacterDetail.handleDragBegin(dx, dy)
 
     if not detailState.open or detailState.closing then return true end
-    if detailState.tab == "equip" and CharacterDetail._EquipPanel
-        and CharacterDetail._EquipPanel.isInGridArea(dy) then
-        detailState.equipDragging = true
-        CharacterDetail._EquipPanel.beginPointer(dx, dy)
-        return true
-    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragBegin(dx, dy)
     end
@@ -694,6 +708,13 @@ function CharacterDetail.handleDragBegin(dx, dy)
             CharacterDetail._EquipPanel.beginPointer(dx, dy)
             return true
         end
+    end
+    if detailState.tab == "attr"
+        and dx >= Draw.ARROW_BG_LEFT_CX - 120 and dx <= Draw.ARROW_BG_RIGHT_CX + 120
+        and dy >= Draw.ARROW_CY - 230 and dy <= Draw.ARROW_CY + 230 then
+        detailState.cardDragX = dx
+        detailState.cardDragMoved = 0
+        return true
     end
     if isInAttrArea(dx, dy) then
         detailState.attrDragging  = true
@@ -710,24 +731,6 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragMove(dx, dy)
     if not detailState.open or detailState.closing then return true end
-    if detailState.equipDragging and CharacterDetail._EquipPanel then
-        local panel = CharacterDetail._EquipPanel
-        if panel.onPointerMove(dx, dy) then
-            return true
-        end
-        local delta = panel.getDragLastY() - dy
-        panel.onDrag(delta)
-        panel.setDragLastY(dy)
-        return true
-    end
-    -- 详情已打开后，再从格子开始拖也要切到装备拖拽，不能继续滚详情文本。
-    if detailState.tab == "equip" and CharacterDetail._EquipPanel
-        and CharacterDetail._EquipPanel.isInGridArea(dy) then
-        detailState.equipDragging = true
-        CharacterDetail._EquipPanel.beginPointer(dx, dy)
-        CharacterDetail._EquipPanel.onPointerMove(dx, dy)
-        return true
-    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragMove(dx, dy)
     end
@@ -745,6 +748,11 @@ function CharacterDetail.handleDragMove(dx, dy)
         panel.setDragLastY(dy)
         return true
     end
+    if detailState.cardDragX then
+        detailState.cardDragMoved = dx - detailState.cardDragX
+        detailState.cardDragVisual = math.max(-1, math.min(1, detailState.cardDragMoved / 180))
+        return true
+    end
     if detailState.attrDragging then
         local delta = detailState.attrDragLastY - dy
         detailState.attrScrollY = detailState.attrScrollY + delta
@@ -760,29 +768,16 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragEnd(dx, dy)
-    if not detailState.open then return false end
-    if detailState.equipDragging and CharacterDetail._EquipPanel then
-        local panel = CharacterDetail._EquipPanel
-        if panel.isItemDragging() then
-            local dropSlot = nil
-            for _, s in ipairs(DT_SLOTS) do
-                if hitTest(dx, dy, s.cx, s.cy, DT_SLOT_SIZE, DT_SLOT_SIZE) then
-                    dropSlot = s.slot
-                    break
-                end
-            end
-            if dropSlot then
-                panel.equipDragged(detailState.heroId, dropSlot)
-            else
-                panel.onDragEnd()
-            end
-            detailState.equipDragging = false
-            return true
-        end
-        detailState.equipDragging = false
-        panel.onDragEnd()
+    if detailState.cardDragX then
+        local moved = detailState.cardDragMoved or 0
+        detailState.cardDragX = nil
+        detailState.cardDragMoved = 0
+        detailState.cardDragVisual = 0
+        if moved <= -50 then CharacterDetail._switchHero(1)
+        elseif moved >= 50 then CharacterDetail._switchHero(-1) end
         return true
     end
+    if not detailState.open then return false end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragEnd(dx, dy)
     end
@@ -841,11 +836,22 @@ function CharacterDetail.handleScroll(wheel, dx, dy)
     end
     local equipPanel = CharacterDetail._EquipPanel
     if detailState.tab == "equip" and equipPanel then
+        if equipPanel.handleSideScroll and equipPanel.handleSideScroll(wheel, dx, dy) then
+            return
+        end
         if dx == nil or equipPanel.isInGridArea(dy) then
             -- onDrag 是拖拽增量（向下拖为负）。滚轮正值应减小 scrollY，所以取反。
             equipPanel.onDrag(-(wheel or 0) * ATTR_SCROLL_WHEEL_STEP)
             return
         end
+    end
+    local onCards = dx and dy and detailState.tab == "attr"
+        and dx >= Draw.ARROW_BG_LEFT_CX - 120 and dx <= Draw.ARROW_BG_RIGHT_CX + 120
+        and dy >= Draw.ARROW_CY - 230 and dy <= Draw.ARROW_CY + 230
+    if onCards then
+        if (wheel or 0) > 0 then CharacterDetail._switchHero(-1)
+        elseif (wheel or 0) < 0 then CharacterDetail._switchHero(1) end
+        return
     end
     if dx == nil or isInAttrArea(dx, dy) then
         detailState.attrScrollY = detailState.attrScrollY - (wheel or 0) * ATTR_SCROLL_WHEEL_STEP

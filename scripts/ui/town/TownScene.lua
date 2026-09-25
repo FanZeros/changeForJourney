@@ -575,7 +575,8 @@ function TownScene.draw(vg)
     drawImageDarkTint(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, 1.0)
     drawFlashOverlay(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, getClickFlashAlpha("lootbox"))
     drawBuildingLabel(vg, 540 + LOOT_SHIFT_X, LOOT_LBL_CY, 361, 113,
-        450 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, 64, imgIconLoot, 585 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, "遗匣")
+        450 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, 64, -1, 585 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, "遗匣")
+    DarkIcon.draw(vg, "relicbox", 450 + LOOT_SHIFT_X + 32, LOOT_LBL_CY - 6, 64, 1.0)
     local count = LootBox.getCount()
     if count > 0 then
         DarkIcon.draw(vg, "reddot", 709 + LOOT_SHIFT_X, LOOT_LBL_CY - 45, 44, 1.0)
@@ -589,7 +590,8 @@ function TownScene.draw(vg)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
     drawBuildingLabel(vg, 180 + TASK_SHIFT_X, TASK_LBL_CY, 420, 135,
-        15 + TASK_SHIFT_X, TASK_LBL_CY - 6, 78, imgIconTask, 225 + TASK_SHIFT_X, TASK_LBL_CY - 6, "功绩")
+        15 + TASK_SHIFT_X, TASK_LBL_CY - 6, 78, -1, 225 + TASK_SHIFT_X, TASK_LBL_CY - 6, "功绩")
+    DarkIcon.draw(vg, "merit", 15 + TASK_SHIFT_X + 39, TASK_LBL_CY - 6, 78, 1.0)
     local taskOk, TaskPage = pcall(require, "ui.story.task.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
         DarkIcon.draw(vg, "reddot", 300 + TASK_SHIFT_X, TASK_LBL_CY - 36, 36, 1.0)

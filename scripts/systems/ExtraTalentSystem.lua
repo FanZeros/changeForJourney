@@ -305,10 +305,11 @@ function ETS.getDesc(heroId, extra)
     if not name then return "" end
     local awk = ownedAwakening(heroId)
     local unlocked = awkHas(awk, 1) or awkHas(awk, 4) or awkHas(awk, 7)
+    -- 未觉醒时只给一行解锁提示；已觉醒直接展示效果，不再重复"觉醒后解锁"
     if not unlocked then
         return name .. "（觉醒后解锁）"
     end
-    return name .. "  Lv." .. tostring(extra.stacks) .. "\n" .. ETS.getStatusLine(heroId, extra)
+    return ETS.getStatusLine(heroId, extra)
 end
 
 local function bruteEntries(heroId, data)

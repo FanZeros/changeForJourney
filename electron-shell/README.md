@@ -52,11 +52,21 @@ Windows 双击：
 | `../maker-mcp/update-maker-mcp.bat` | **本机 Maker MCP + 本地 Runtime**（官方口径，单机不用远端构建） |
 | `update_runtime.bat` | Electron 离线包：拉最新 `dist-snapshot` → 打补丁 → 打 zip |
 | `push_dist_snapshot.bat` | **云端 Build 后**：把 `dist/` 分片传到 `dist-snapshot`（80s 限时，反复点即可续传） |
+| `build_local_windows.bat` | **本机一键**：preview prepare → 校验并补入口 → Electron 打包；不读仓库根 dist、不上传 |
 | `pack_release.bat` | **仅本地**：校验当前源码与 `dist/` 中全部 Lua 一致 → 打补丁 → electron-builder → zip；不拉快照、不上传 |
 | `pack_and_upload.bat` | 原有远端快照检查 + 打包 + 上传 GitHub Release `win64-v{version}`；**不是**本地专用入口 |
 | `upload_only.bat` | 已有 zip 只上传（不重打） |
 
 命令行：
+
+本机无仓库根 dist 时，在仓库根目录双击 `electron-shell/build_local_windows.bat`，或执行：
+
+```bat
+electron-shell\build_local_windows.bat
+```
+
+它依次运行 preview prepare、prepare_local_dist.py、pack_release.py --prepare-dist。
+成功标志是 `ok 1.0.7 lua 364`，最终 zip 在 `electron-shell/release/`。
 
 ```bat
 cd electron-shell

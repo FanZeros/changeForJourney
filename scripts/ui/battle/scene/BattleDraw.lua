@@ -108,7 +108,6 @@ local function drawProgressBar(vg, imgBg, imgFill, cx, cy, bgW, bgH, padding, pr
         nvgRect(vg, fillX, fillY, fillW, fillH)
         nvgFillPaint(vg, paint)
         nvgFill(vg)
-        nvgResetScissor(vg)
         nvgRestore(vg)
     end
 end
@@ -270,7 +269,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     nvgStrokeColor(vg, nvgRGBA(0x9a, 0xff, 0x8c, 140))
                     nvgStrokeWidth(vg, 1)
                     nvgStroke(vg)
-                    nvgResetScissor(vg)
                     nvgRestore(vg)
                 end
 
@@ -299,7 +297,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                         nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 160))
                         nvgStrokeWidth(vg, 1)
                         nvgStroke(vg)
-                        nvgResetScissor(vg)
                         nvgRestore(vg)
                     end
                     -- 临时护盾跟在常规护盾之后（更亮的青色，同一刻度，同样不越界）
@@ -315,7 +312,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                             nvgRect(vg, tempX, fillY, tempClipW, fillH)
                             nvgFillColor(vg, nvgRGBA(255, 255, 255, 200))
                             nvgFill(vg)
-                            nvgResetScissor(vg)
                             nvgRestore(vg)
                         end
                     end

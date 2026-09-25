@@ -467,8 +467,10 @@ function DrawUtil.seamSlideX(dirSign, openTime, closeTime, openDur, closeDur, di
     return 0
 end
 
---- 中缝返回条素材等比（108/1365,随 UI_SEAMBAR.png 实际比例同步更新;Standalone.seamBackList 点击宽共用）
-DrawUtil.SEAMBAR_ASPECT = 0.0791
+--- 中缝返回条素材等比（166/2165,随 UI_SEAMBAR.png 实际比例同步更新;Standalone.seamBackList 点击宽共用）
+DrawUtil.SEAMBAR_ASPECT = 0.0767
+--- 箭头在素材高度上的位置。点击只认这一段，不认整条边。
+DrawUtil.SEAMBAR_ARROW_Y = 0.469
 
 --- 全高"门柱"返回条（三行模式中缝）：UI_SEAMBAR.png 图片条等比铺满逻辑高度，
 --- dir="left" 时水平镜像（素材箭头朝右，左条翻成 ‹）。素材自带中央 ">" 按钮。

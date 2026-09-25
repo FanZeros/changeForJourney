@@ -555,7 +555,8 @@ local function drawLandscape(w, h)
     local barW = w - barX * 2
     local barY = h - barH - h * 0.04
     local cgImage = getCgImage(step)
-    if cgImage >= 0 then
+    local cgOnly = cgImage >= 0
+    if cgOnly then
         DrawUtil.drawImageCover(vg_, cgImage, w * 0.5, h * 0.5, w, h, dismissAlpha)
     else
         local portraitH = mode_ == "small" and h * 0.42 or h * 0.58
@@ -598,15 +599,17 @@ local function drawLandscape(w, h)
     nvgStrokeWidth(vg_, math.max(1.5, h * 0.002))
     nvgStroke(vg_)
 
-    local avatarSize = math.max(54, h * 0.078)
+    local avatarSize = cgOnly and 0 or math.max(54, h * 0.078)
     local avatarX = barX + w * 0.018
     local avatarY = barY - avatarSize * 0.34
     local avatarImg = getAvatarImage(step.characterId)
+    if not cgOnly then
     nvgBeginPath(vg_)
     nvgRoundedRect(vg_, avatarX - 3, avatarY - 3, avatarSize + 6, avatarSize + 6, (avatarSize + 6) * 0.18)
     nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(230 * dismissAlpha)))
     nvgFill(vg_)
-    if avatarImg >= 0 then
+    end
+    if avatarImg >= 0 and not cgOnly then
         nvgSave(vg_)
         nvgScissor(vg_, avatarX, avatarY, avatarSize, avatarSize)
         DrawUtil.drawImageCover(vg_, avatarImg, avatarX + avatarSize * 0.5,

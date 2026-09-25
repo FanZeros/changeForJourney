@@ -117,7 +117,7 @@ function M.bind(deps)
         finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, comboTgtIsAlly, syncUnitHp, result.category)
         result.damageDealt = finalDmg
         local shieldBefore = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
-        local actual = curTgt.attrs:takeDamage(finalDmg)
+        local actual = curTgt.attrs:takeDamage(finalDmg, result.resistance)
         local shieldAfter = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
         local takenForStats = actual + math.max(0, shieldBefore - shieldAfter)
         ART.checkShieldBreak(curTgt, shieldBefore)

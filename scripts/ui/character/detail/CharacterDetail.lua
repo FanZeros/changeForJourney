@@ -590,8 +590,7 @@ function CharacterDetail.handleInput(dx, dy)
     if detailState.tab == "attr" then
         local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
         local cachedL = detailState.cachedLeft or {}
-        local cachedR = detailState.cachedRight or {}
-        local totalRows = math.max(#cachedL, #cachedR)
+        local totalRows = #cachedL
 
         -- 杂项属性区域（可滚动）
         if dy >= ATTR_CLIP_TOP and dy <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT then
@@ -607,19 +606,6 @@ function CharacterDetail.handleInput(dx, dy)
                         if desc and desc ~= "" then
                             detailState.attrTip = {
                                 boxCX = ATTR_COL1_CX, boxTopY = rowY - ATTR_BOX_H * 0.5,
-                                desc = desc, name = attr.name, area = "attr",
-                            }
-                        end
-                        return true
-                    end
-                    -- 右列
-                    if row <= #cachedR and math.abs(dx - ATTR_COL2_CX) <= ATTR_BOX_W * 0.5
-                       and math.abs(dy - rowY) <= ATTR_BOX_H * 0.5 then
-                        local attr = cachedR[row]
-                        local desc = attr.desc or AD.getDesc(attr.key)
-                        if desc and desc ~= "" then
-                            detailState.attrTip = {
-                                boxCX = ATTR_COL2_CX, boxTopY = rowY - ATTR_BOX_H * 0.5,
                                 desc = desc, name = attr.name, area = "attr",
                             }
                         end
@@ -650,16 +636,38 @@ function CharacterDetail.handleInput(dx, dy)
             return true
         end
 
-        -- 六围区域点击检测
-        for _, st in ipairs(STAT_LAYOUT) do
-            local boxCX = (st.col == 1) and STAT_COL1_CX or STAT_COL2_CX
-            local boxCY = STAT_ROW1_CY + (st.row - 1) * STAT_ROW_STEP
-            if math.abs(dx - boxCX) <= STAT_BOX_W * 0.5
-               and math.abs(dy - boxCY) <= STAT_BOX_H * 0.5 then
+        -- 六维雷达图：点在图内才弹出最近顶点的说明，点外面不拦截
+        local hexCX, hexCY = Draw.HEX_CX, Draw.HEX_CY
+        local hitR = Draw.HEX_LABEL_R + 36
+        local hitDx, hitDy = dx - hexCX, dy - hexCY
+        if hitDx * hitDx + hitDy * hitDy > hitR * hitR then
+            return true
+        end
+        local bestIdx, bestDist = nil, hitR * hitR
+        for i, name in ipairs(Draw.HEX_NAMES) do
+            local ang = -math.pi * 0.5 + (i - 1) * (math.pi / 3)
+            local vx = hexCX + math.cos(ang) * Draw.HEX_LABEL_R
+            local vy = hexCY + math.sin(ang) * Draw.HEX_LABEL_R
+            local ddx, ddy = dx - vx, dy - vy
+            local dist = ddx * ddx + ddy * ddy
+            if dist < bestDist then
+                bestDist = dist
+                bestIdx = i
+            end
+        end
+        if bestIdx then
+            local name = Draw.HEX_NAMES[bestIdx]
+            local st = nil
+            for _, item in ipairs(STAT_LAYOUT) do
+                if item.name == name then st = item break end
+            end
+            if st then
                 local desc = AD.getDesc(st.key)
                 if desc ~= "" then
+                    local ang = -math.pi * 0.5 + (bestIdx - 1) * (math.pi / 3)
                     detailState.attrTip = {
-                        boxCX = boxCX, boxTopY = boxCY - STAT_BOX_H * 0.5,
+                        boxCX = hexCX + math.cos(ang) * Draw.HEX_LABEL_R,
+                        boxTopY = hexCY + math.sin(ang) * Draw.HEX_LABEL_R - 20,
                         desc = desc, name = st.name, area = "stat",
                     }
                 end

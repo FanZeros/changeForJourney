@@ -76,8 +76,8 @@ local MID_QUALITY_LABEL_X  = 121
 local MID_QUALITY_LABEL_Y  = 1175
 local MID_QUALITY_ICON_RIGHT_X = 509
 
-local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 770, 1175
-local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 440, 60
+local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 540, 1175
+local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 900, 60
 M.MID_CLASS_BOX_CX = MID_CLASS_BOX_CX
 M.MID_CLASS_BOX_CY = MID_CLASS_BOX_CY
 M.MID_CLASS_BOX_W = MID_CLASS_BOX_W
@@ -111,7 +111,8 @@ local ATTR_FONT_SIZE     = 35
 local ATTR_FONT_SIZE_MIN = 22
 local ATTR_NAME_VAL_GAP  = 15
 
-local ATTR_VISIBLE_ROWS = 4
+-- 左列单列，右侧留给雷达图。可见 8 行，超出继续滚动。
+local ATTR_VISIBLE_ROWS = 8
 local ATTR_SCROLL_FRICTION = 0.90
 local ATTR_SCROLL_MIN_VEL  = 0.3
 local ATTR_SCROLL_WHEEL_STEP = 60
@@ -129,10 +130,11 @@ M.ATTR_CLIP_TOP     = ATTR_CLIP_TOP
 M.ATTR_CLIP_HEIGHT  = ATTR_CLIP_HEIGHT
 M.ATTR_SCROLL_WHEEL_STEP = ATTR_SCROLL_WHEEL_STEP
 
-local MID_DIV2_CX, MID_DIV2_CY = 540, 1565
+local MID_DIV2_CX, MID_DIV2_CY = 540, 1840
 local MID_DIV2_W, MID_DIV2_H   = 1010, 37
 
 -- ======================== 六围区域布局常量 ========================
+-- 雷达图占位仍按旧的 2 列 × 3 行盒子算高度，避免把下面的天赋区顶开。
 
 local STAT_BOX_W, STAT_BOX_H = 437, 95
 local STAT_BOX_RADIUS        = 20
@@ -142,6 +144,24 @@ local STAT_COL_GAP           = 26
 local STAT_ROW_GAP_STAT      = 16
 local STAT_COL2_CX           = STAT_COL1_CX + STAT_BOX_W + STAT_COL_GAP
 local STAT_ROW_STEP          = STAT_BOX_H + STAT_ROW_GAP_STAT
+
+-- 雷达图放在右列，高度对齐分割线以上的属性区
+local HEX_CX = 800
+local HEX_CY = ATTR_FIRST_ROW_Y + (ATTR_VISIBLE_ROWS - 1) * (ATTR_BOX_H + ATTR_ROW_GAP) * 0.5
+local HEX_R  = 175
+local HEX_LABEL_R = 230
+-- 顶点顺序：上起顺时针。力量在上，其余按战斗直觉绕圈。
+local HEX_NAMES = { "力量", "敏捷", "体质", "魂火", "命数", "秘识" }
+local HEX_KEYS = { ["力量"] = "str", ["敏捷"] = "agi", ["体质"] = "vit", ["魂火"] = "spi", ["命数"] = "luk", ["秘识"] = "int" }
+-- 六维各自的颜色：力量赤、敏捷绿、体质褐、魂火紫、命数金、秘识青
+local HEX_COLORS = {
+    ["力量"] = { 0xE2, 0x4A, 0x3B },
+    ["敏捷"] = { 0x3D, 0xDC, 0x6E },
+    ["体质"] = { 0xC4, 0x8A, 0x3A },
+    ["魂火"] = { 0xC0, 0x58, 0xE8 },
+    ["命数"] = { 0xFF, 0xD2, 0x3A },
+    ["秘识"] = { 0x3E, 0xC6, 0xE0 },
+}
 
 local STAT_ICON_BG_DX   = 132 - 301
 local STAT_ICON_BG_DY   = 0
@@ -167,14 +187,18 @@ M.STAT_COL2_CX  = STAT_COL2_CX
 M.STAT_ROW1_CY  = STAT_ROW1_CY
 M.STAT_ROW_STEP = STAT_ROW_STEP
 M.STAT_LAYOUT   = STAT_LAYOUT
+M.HEX_CX        = HEX_CX
+M.HEX_CY        = HEX_CY
+M.HEX_LABEL_R   = HEX_LABEL_R
+M.HEX_NAMES     = HEX_NAMES
 
 -- ======================== 天赋技能区域布局常量 ========================
 
-local TALENT_BG_CX, TALENT_BG_CY = 540, 2057
-local TALENT_BG_W, TALENT_BG_H   = 903, 250
+local TALENT_BG_CX, TALENT_BG_CY = 540, 2045
+local TALENT_BG_W, TALENT_BG_H   = 903, 210
 local TALENT_BG_RADIUS            = 20
 
-local TALENT_NAME_Y = 1976
+local TALENT_NAME_Y = 1918
 local TALENT_TEXT_LEFT   = TALENT_BG_CX - TALENT_BG_W * 0.5 + 33
 local TALENT_TEXT_TOP    = TALENT_NAME_Y + 36
 local TALENT_TEXT_RIGHT  = TALENT_BG_CX + TALENT_BG_W * 0.5 - 33
@@ -951,33 +975,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, MID_EXP_CX, MID_EXP_CY, lvlText, nil)
 
-    -- === 11) 品质内容背景框 ===
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        MID_QUALITY_BOX_CX - MID_QUALITY_BOX_W * 0.5,
-        MID_QUALITY_BOX_CY - MID_QUALITY_BOX_H * 0.5,
-        MID_QUALITY_BOX_W, MID_QUALITY_BOX_H, 20)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-    nvgFill(vg)
-
-    -- === 12) "品质"文本 ===
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 35)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-    nvgText(vg, MID_QUALITY_LABEL_X, MID_QUALITY_LABEL_Y, I18n.t("quality"), nil)
-
-    -- === 13) 品质文字图标 ===
-    local qualityName = HC.QUALITY_INFO[heroCfg.quality]
-        and HC.QUALITY_INFO[heroCfg.quality].name or "R"
-    local qBadge = imgQualityBadges[qualityName]
-    if qBadge and qBadge >= 0 then
-        local qImgW, qImgH = nvgImageSize(vg, qBadge)
-        local qDrawCX = MID_QUALITY_ICON_RIGHT_X - qImgW * 0.5
-        drawImageCentered(vg, qBadge, qDrawCX, MID_QUALITY_LABEL_Y, qImgW, qImgH, 1.0)
-    end
-
-    -- === 14) 职业内容背景框 ===
+    -- === 14) 职业内容背景框（品质行已去掉，职业条居中拉满） ===
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
         MID_CLASS_BOX_CX - MID_CLASS_BOX_W * 0.5,
@@ -986,14 +984,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
     nvgFill(vg)
 
-    -- === 15) "职业"文本 ===
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 35)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-    nvgText(vg, MID_CLASS_LABEL_X, MID_CLASS_LABEL_Y, I18n.t("class_label"), nil)
-
-    -- === 16) 职业图标 + 文字组合 ===
+    -- === 15) 职业图标 + 名称，整条居中 ===
     local classCfg = CC.get(heroCfg.classId)
     local className = classCfg and classCfg.name or "未知"
     local classIconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -1002,19 +993,19 @@ function M.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 34)
     local classTextW = nvgTextBounds(vg, 0, 0, className)
-    local classGap = 6
-    local comboW = MID_CLASS_ICON_SIZE + classGap + classTextW
-    local comboRightX = MID_CLASS_COMBO_RIGHT_X
-    local comboLeftX  = comboRightX - comboW
-    local classIconCX = comboLeftX + MID_CLASS_ICON_SIZE * 0.5
-    local classTextX  = comboLeftX + MID_CLASS_ICON_SIZE + classGap
+    local classGap = 8
+    local iconW = classIcon >= 0 and MID_CLASS_ICON_SIZE or 0
+    local comboW = iconW + (iconW > 0 and classGap or 0) + classTextW
+    local comboLeftX = MID_CLASS_BOX_CX - comboW * 0.5
+    local classIconCX = comboLeftX + iconW * 0.5
+    local classTextX = comboLeftX + iconW + (iconW > 0 and classGap or 0) + classTextW * 0.5
 
     if classIcon >= 0 then
         drawImageCentered(vg, classIcon, classIconCX, MID_CLASS_LABEL_Y,
             MID_CLASS_ICON_SIZE, MID_CLASS_ICON_SIZE, 1.0)
     end
     drawTextStroke(vg, classTextX, MID_CLASS_LABEL_Y, className,
-        34, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
 
     -- === 17) 分割线1 ===
@@ -1045,20 +1036,25 @@ function M.draw(vg)
     local attrData = collectAttributes(heroId, heroCfg, heroLevel)
     local leftAttrs  = attrData.left
     local rightAttrs = attrData.right
-    local totalRows  = math.max(#leftAttrs, #rightAttrs)
+    local attrRows = {}
+    for _, attr in ipairs(leftAttrs) do attrRows[#attrRows + 1] = attr end
+    for _, attr in ipairs(rightAttrs) do attrRows[#attrRows + 1] = attr end
+    local totalRows = #attrRows
 
-    detailState.cachedLeft  = leftAttrs
-    detailState.cachedRight = rightAttrs
+    detailState.cachedLeft  = attrRows
+    detailState.cachedRight = {}
 
     local attrClipY = ATTR_FIRST_ROW_Y - ATTR_BOX_H * 0.5
     local attrClipH = ATTR_VISIBLE_ROWS * ATTR_BOX_H + (ATTR_VISIBLE_ROWS - 1) * ATTR_ROW_GAP
 
     local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
-    local totalContentH = totalRows * ATTR_BOX_H + (totalRows - 1) * ATTR_ROW_GAP
-    detailState.attrScrollMax = math.max(0, totalContentH - attrClipH)
+    -- 滚到底时最后一行贴住可视区底部，不再留出一行空白。
+    local contentBottom = ATTR_FIRST_ROW_Y + math.max(0, totalRows - 1) * rowStep + ATTR_BOX_H * 0.5
+    local viewBottom = attrClipY + attrClipH
+    detailState.attrScrollMax = math.max(0, contentBottom - viewBottom)
 
     nvgSave(vg)
-    nvgScissor(vg, 0, attrClipY, DESIGN_W, attrClipH)
+    nvgScissor(vg, 0, attrClipY, 560, attrClipH)
 
     for row = 1, totalRows do
         local rowY = ATTR_FIRST_ROW_Y + (row - 1) * rowStep - detailState.attrScrollY
@@ -1100,41 +1096,6 @@ function M.draw(vg)
                     255, 255, 255, 4)
             end
 
-            -- === 右列属性 ===
-            if row <= #rightAttrs then
-                local attr = rightAttrs[row]
-                local colCX = ATTR_COL2_CX
-
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg,
-                    colCX - ATTR_BOX_W * 0.5, rowY - ATTR_BOX_H * 0.5,
-                    ATTR_BOX_W, ATTR_BOX_H, ATTR_BOX_RADIUS)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-                nvgFill(vg)
-
-                drawImageCentered(vg, img.attrDeco, ATTR_DECO_X + ATTR_DECO_DX, rowY,
-                    ATTR_DECO_SIZE, ATTR_DECO_SIZE, 1.0)
-
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, ATTR_FONT_SIZE)
-                local rNameW = nvgTextBounds(vg, 0, 0, attr.name)
-                local rValW  = nvgTextBounds(vg, 0, 0, attr.value)
-                local rMaxNameW = (ATTR_VAL_RIGHT_X + ATTR_DECO_DX)
-                    - (ATTR_NAME_LEFT_X + ATTR_DECO_DX) - rValW - ATTR_NAME_VAL_GAP
-                local rNameFS = ATTR_FONT_SIZE
-                if rMaxNameW > 0 and rNameW > rMaxNameW then
-                    rNameFS = math.max(ATTR_FONT_SIZE_MIN,
-                        math.floor(ATTR_FONT_SIZE * rMaxNameW / rNameW))
-                    nvgFontSize(vg, rNameFS)
-                end
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-                nvgText(vg, ATTR_NAME_LEFT_X + ATTR_DECO_DX, rowY, attr.name, nil)
-
-                drawTextStroke(vg, ATTR_VAL_RIGHT_X + ATTR_DECO_DX, rowY, attr.value,
-                    ATTR_FONT_SIZE, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 4)
-            end
         end
     end
 
@@ -1145,51 +1106,103 @@ function M.draw(vg)
     drawImageCentered(vg, img.midDiv2, MID_DIV2_CX, MID_DIV2_CY, MID_DIV2_W, MID_DIV2_H, 1.0)
 
     -- ================================================================
-    -- ===                  六围区域（2列×3行）                      ===
+    -- ===                  六围雷达图                                ===
     -- ================================================================
 
     local statValues = attrData.stats
-
+    local statByKey = {}
     for _, st in ipairs(STAT_LAYOUT) do
-        local boxCX = (st.col == 1) and STAT_COL1_CX or STAT_COL2_CX
-        local boxCY = STAT_ROW1_CY + (st.row - 1) * STAT_ROW_STEP
+        statByKey[st.key] = st
+    end
 
+    local function hexPoint(i, radius)
+        local ang = -math.pi * 0.5 + (i - 1) * (math.pi / 3)
+        return HEX_CX + math.cos(ang) * radius, HEX_CY + math.sin(ang) * radius
+    end
+
+    -- 满格跟当前六维走：取六项最大值再留 25% 空，主属性接近外圈，弱项明显内收。
+    local hexPeak = 1
+    for _, item in pairs(statByKey) do
+        local val = statValues[item.key] or 0
+        if val > hexPeak then hexPeak = val end
+    end
+    local hexMax = math.max(8, hexPeak / 0.82)
+
+    nvgBeginPath(vg)
+    nvgCircle(vg, HEX_CX, HEX_CY, HEX_LABEL_R + 28)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
+    nvgFill(vg)
+
+    for ring = 1, 3 do
+        local rr = HEX_R * ring / 3
         nvgBeginPath(vg)
-        nvgRoundedRect(vg,
-            boxCX - STAT_BOX_W * 0.5, boxCY - STAT_BOX_H * 0.5,
-            STAT_BOX_W, STAT_BOX_H, STAT_BOX_RADIUS)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-        nvgFill(vg)
-
-        local ibCX = boxCX + STAT_ICON_BG_DX
-        local ibCY = boxCY + STAT_ICON_BG_DY
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg,
-            ibCX - STAT_ICON_BG_SIZE * 0.5, ibCY - STAT_ICON_BG_SIZE * 0.5,
-            STAT_ICON_BG_SIZE, STAT_ICON_BG_SIZE, STAT_ICON_BG_R)
-        nvgFillColor(vg, nvgRGBA(0xa9, 0xa0, 0x8f, 255))
-        nvgFill(vg)
-
-        local iconImg = imgStatIcons[st.icon] or -1
-        if iconImg >= 0 then
-            local icCX = boxCX + STAT_ICON_DX
-            local icCY = boxCY + STAT_ICON_DY
-            drawImageCentered(vg, iconImg, icCX, icCY, STAT_ICON_SIZE, STAT_ICON_SIZE, 1.0)
+        local x0, y0 = hexPoint(1, rr)
+        nvgMoveTo(vg, x0, y0)
+        for i = 2, 6 do
+            local x, y = hexPoint(i, rr)
+            nvgLineTo(vg, x, y)
         end
+        nvgClosePath(vg)
+        nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, ring == 3 and 160 or 70))
+        nvgStrokeWidth(vg, ring == 3 and 2 or 1)
+        nvgStroke(vg)
+    end
 
-        local nmX = boxCX + STAT_NAME_DX
-        local nmY = boxCY + STAT_NAME_DY
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 35)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-        nvgText(vg, nmX, nmY, st.name, nil)
+    for i = 1, 6 do
+        local x, y = hexPoint(i, HEX_R)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, HEX_CX, HEX_CY)
+        nvgLineTo(vg, x, y)
+        nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, 50))
+        nvgStrokeWidth(vg, 1)
+        nvgStroke(vg)
+    end
 
-        local valY = boxCY + STAT_VAL_DY
-        local valStr = tostring(statValues[st.key] or 0)
-        drawTextStroke(vg, nmX, valY, valStr,
-            35, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4)
+    nvgBeginPath(vg)
+    for i, name in ipairs(HEX_NAMES) do
+        local stFill = nil
+        for _, item in pairs(statByKey) do
+            if item.name == name then stFill = item break end
+        end
+        local val = stFill and statValues[stFill.key] or 0
+        local ratio = val / hexMax
+        if ratio < 0.08 then ratio = 0.08 end
+        if ratio > 1 then ratio = 1 end
+        local x, y = hexPoint(i, HEX_R * ratio)
+        if i == 1 then nvgMoveTo(vg, x, y) else nvgLineTo(vg, x, y) end
+    end
+    nvgClosePath(vg)
+    nvgFillColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 70))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 200))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    nvgBeginPath(vg)
+    nvgCircle(vg, HEX_CX, HEX_CY, 5)
+    nvgFillColor(vg, nvgRGBA(0xFF, 0xF4, 0xD6, 255))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgCircle(vg, HEX_CX, HEX_CY, 5)
+    nvgStrokeColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 255))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    nvgFontFace(vg, "sans")
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    for i, name in ipairs(HEX_NAMES) do
+        local st = nil
+        for _, item in pairs(statByKey) do
+            if item.name == name then st = item break end
+        end
+        local color = HEX_COLORS[name] or { 0xE8, 0xDC, 0xC8 }
+        local lx, ly = hexPoint(i, HEX_LABEL_R)
+        nvgFontSize(vg, 26)
+        nvgFillColor(vg, nvgRGBA(color[1], color[2], color[3], 255))
+        nvgText(vg, lx, ly - 24, st and st.name or "", nil)
+        drawTextStroke(vg, lx, ly + 16, tostring(st and statValues[st.key] or 0),
+            34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            color[1], color[2], color[3], 3)
     end
 
     -- ================================================================
@@ -1325,7 +1338,7 @@ function M.draw(vg)
         local TIP_GAP     = 6
         local TIP_FONT    = 28
         local TIP_NAME_FONT = 30
-        local TIP_MAX_W   = 420
+        local TIP_MAX_W   = 546
         local TIP_LINE_H  = 36
 
         nvgFontFace(vg, "sans")

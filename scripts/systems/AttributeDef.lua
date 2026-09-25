@@ -155,7 +155,7 @@ AD.META = {
     [AD.HP_BONUS]         = { name = "生命加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.DODGE_BONUS]      = { name = "闪避加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.ES_BONUS]         = { name = "护盾加成",   valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.ES_DMG_REDUCE]    = { name = "护盾伤害减免", valueModel = 60, dataType = AD.TYPE_PCT,   default = 20, cap = 80 },
+    [AD.ES_DMG_REDUCE]    = { name = "护盾伤害减免", valueModel = 60, dataType = AD.TYPE_PCT,   default = 0, cap = 80 },
     [AD.ARMOR_BONUS]      = { name = "护甲加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
 
     -- 攻击属性
@@ -223,7 +223,7 @@ AD.DESC = {
     [AD.MAX_HP]           = "生命上限。生命归零则死亡。",
     [AD.ARMOR]            = "将同比转化为伤害抗性，转化率 = 0.01×护甲/(0.01×护甲+1)",
     [AD.RESISTANCE]       = "通常只能通过护甲转化而来",
-    [AD.ENERGY_SHIELD]    = "受伤时先扣除护盾，护盾扣完后才扣生命。该值为护盾上限。受伤后 1.2 秒开始恢复。",
+    [AD.ENERGY_SHIELD]    = "受伤时先扣除护盾，护盾扣完后才扣生命。回复速度跟体质：体质越高，受伤后等待越短，每秒回复越多。",
     [AD.DODGE]            = "影响被命中概率，命中率=(命中值+150)/(闪避值+150)",
     [AD.THREAT]           = "影响被敌方随机攻击的权重，仇恨值越高越容易被集火",
     [AD.HP_REGEN]         = "每秒恢复的生命值，可被治疗属性增幅",
@@ -236,7 +236,7 @@ AD.DESC = {
     [AD.HP_BONUS]         = "百分比增加生命值上限",
     [AD.DODGE_BONUS]     = "百分比增加闪避值",
     [AD.ES_BONUS]         = "百分比增加护盾上限",
-    [AD.ES_DMG_REDUCE]    = "护盾受到伤害时减免的比例",
+    [AD.ES_DMG_REDUCE]    = "护盾存在时，先按该比例减免本次伤害，再扣护盾。没有来源时为 0，上限 80%。",
 
     -- 攻击属性
     [AD.PHYS_ATK]       = "单位基础物理攻击力",

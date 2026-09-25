@@ -60,9 +60,12 @@ function M.bind(deps)
             end
             local teams = getTeams()
             local slot = teams[avatarTeam] and teams[avatarTeam].slots[avatarSlot]
-            if slot and slot.state == "empty" then
-                selectSlotState.open = true
-                selectSlotState.slotIdx = avatarSlot
+            if slot and slot.state == "occupied" and slot.heroId then
+                require("systems.GameSFX").play("ui_pick")
+                CharacterDetail.open(slot.heroId)
+            elseif slot and slot.state == "empty" then
+                selectSlotState.active = true
+                selectSlotState.slotIndex = avatarSlot
             end
             return true
         end

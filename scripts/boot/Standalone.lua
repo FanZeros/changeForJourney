@@ -688,8 +688,12 @@ function Standalone.requestResetToStartScreen()
     postStartFlowDone_ = false
     print(string.format("%s step11: startScreenWasOpen_=true clock=%.4f", TAG, os.clock()))
 
-    -- 12. 重新打开 StartScreen
-    StartScreen.reopen(sceneRef_)
+    -- 12. 回到标题。不能重跑 Start，否则事件重复注册并把页面叠坏。
+    local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+    if not BattleTriPage.isOpen() then
+        BattleTriPage.open()
+    end
+    DarkTitleScreen.reopen()
 
     print(string.format("%s requestResetToStartScreen DONE elapsed=%.4fs clock=%.4f", TAG, os.clock() - t0, os.clock()))
 end

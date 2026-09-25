@@ -374,8 +374,8 @@ function CEService.resetSave()
     if not ok then return toast("清档失败: " .. tostring(reason)) end
     require("boot.StandaloneSave").Wipe()
     local standalone = require("boot.Standalone")
-    if standalone.Start then
-        standalone.Start()
+    if standalone.requestResetToStartScreen then
+        standalone.requestResetToStartScreen()
     end
     return toast("存档已重置")
 end

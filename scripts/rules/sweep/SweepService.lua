@@ -147,16 +147,7 @@ function SweepService.Sweep(uid, count)
         HeroService.ApplyResonanceSync(uid)
     end
 
-    -- 3) 远征经验
-    if baseExp > 0 then
-        local oldLv = playerData.level or 1
-        playerData.exp = (playerData.exp or 0) + baseExp
-        ExpTable.autoLevelUpPlayer(playerData)
-        PDM.MarkDirty(uid, "player")
-        if playerData.level > oldLv then
-            HeroService.SyncHeroLevelsToPlayerLevel(uid, playerData.level)
-        end
-    end
+    -- 3) 扫荡不再增加远征经验
 
     -- 4) 装备掉落：按次数生成真实装备，直接放入背包
     local MC = require("config.MonsterConfig")

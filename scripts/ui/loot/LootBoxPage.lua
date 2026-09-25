@@ -13,9 +13,9 @@ local I18n = require("core.I18n")
 
 local LootBoxPage = {}
 local W, H = 1080, 2400
-local LIST = { x = 48, y = 490, w = 984, h = 1450, rowH = 224, gap = 18 }
--- 单行七档筛选，热区宽 132、高 72，中心从 (114, 354) 起每档右移 142。
-local FILTER = { cx = 114, cy = 354, w = 132, h = 72, step = 142 }
+local LIST = { x = 48, y = 430, w = 984, h = 1510, rowH = 224, gap = 18 }
+-- 七档品质贴在一起。名称牌占左上，说明改到右上。
+local FILTER = { x = 24, cy = 286, w = 96, h = 64, gap = 4 }
 local BACK = { cx = 958, cy = 2308, w = 144, h = 120 }
 local ACTION_CX, ACTION_W, ACTION_H = 873, 202, 112
 local BTN_W, BTN_H, BTN_Y = 420, 108, 2070
@@ -203,25 +203,24 @@ local function drawButton(vg, id, cx, cy, w, h, label, accent, enabled)
     BF.finish(vg, feedback)
 end
 
+local function filterCenter(quality)
+    return FILTER.x + FILTER.w * 0.5 + quality * (FILTER.w + FILTER.gap), FILTER.cy
+end
+
 local function drawFilters(vg)
     for quality = 0, 6 do
-        local cx = FILTER.cx + quality * FILTER.step
+        local cx, cy = filterCenter(quality)
         local selected = state.qualityFilter == quality
         if quality == 0 then
-            drawButton(vg, "lbp_filter_0", cx, FILTER.cy, FILTER.w, FILTER.h,
+            drawButton(vg, "lbp_filter_0", cx, cy, FILTER.w, FILTER.h,
                 "全部", selected and "green" or "gold", true)
         else
-            local feedback = BF.begin(vg, "lbp_filter_" .. quality, cx, FILTER.cy, FILTER.w, FILTER.h)
-            if selected then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cx - 38, FILTER.cy - 38, 76, 76, 14)
-                nvgStrokeWidth(vg, 4)
-                nvgStrokeColor(vg, nvgRGBA(168, 214, 122, 255))
-                nvgStroke(vg)
-            end
-            if not QualityMark.draw(vg, quality, cx, FILTER.cy, 64, 1) then
+            local feedback = BF.begin(vg, "lbp_filter_" .. quality, cx, cy, FILTER.w, FILTER.h)
+            DarkIcon.drawNine(vg, "btn", cx - FILTER.w * 0.5, cy - FILTER.h * 0.5,
+                FILTER.w, FILTER.h, { accent = selected and "green" or "gold" })
+            if not QualityMark.draw(vg, quality, cx, cy, 52, 1) then
                 local label = EquipmentConfig.QUALITY[quality].name
-                text(vg, cx, FILTER.cy, label, 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
+                text(vg, cx, cy, label, 24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
             end
             BF.finish(vg, feedback)
         end
@@ -307,14 +306,15 @@ function LootBoxPage.draw(vg)
     nvgFillColor(vg, nvgRGBA(18, 16, 22, 255))
     nvgFill(vg)
     TownPageChrome.drawNamePlate(vg, imgName, "遗匣")
-    text(vg, 540, 285, "旅途所得，暂存于此", 48, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
+    text(vg, 1044, 130, "旅途所得，暂存于此", 32,
+        NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
     drawFilters(vg)
     local statusText = string.format(I18n.lookup("%s · 待领取 %d 件"), I18n.lookup(filterName()), state.count)
     if state.pendingCount > 0 then
         statusText = statusText .. string.format(I18n.lookup(" · 待整理 %d 件"), state.pendingCount)
     end
     if state.decompose then statusText = statusText .. I18n.lookup(" · 回收模式") end
-    text(vg, 540, 427, statusText, 32,
+    text(vg, 540, 360, statusText, 28,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 231, 210, 161, 2)
 
     nvgSave(vg)
@@ -384,7 +384,8 @@ function LootBoxPage.handleInput(dx, dy)
     end
     if TownPageChrome.hitBack(dx, dy, BACK) then LootBoxPage.close() return true end
     for quality = 0, 6 do
-        if DrawUtil.hitTest(dx, dy, FILTER.cx + quality * FILTER.step, FILTER.cy, FILTER.w, FILTER.h) then
+        local cx, cy = filterCenter(quality)
+        if DrawUtil.hitTest(dx, dy, cx, cy, FILTER.w, FILTER.h) then
             BF.trigger("lbp_filter_" .. quality)
             setFilter(quality)
             return true

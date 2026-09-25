@@ -286,7 +286,7 @@ end
 --- 角色头像句柄，按需加载并缓存。必须用当前帧 vg，失败不缓存，避免永久空白。
 ---@param vg any
 ---@param heroId number
----@return integer
+---@return number
 local function heroIconHandle(vg, heroId)
     local cached = heroIconCache[heroId]
     if cached and cached > 0 then return cached end

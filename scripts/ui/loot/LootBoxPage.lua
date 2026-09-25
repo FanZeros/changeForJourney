@@ -13,9 +13,9 @@ local I18n = require("core.I18n")
 
 local LootBoxPage = {}
 local W, H = 1080, 2400
-local LIST = { x = 48, y = 490, w = 984, h = 1450, rowH = 224, gap = 18 }
--- 单行七档筛选，热区宽 132、高 72，中心从 (114, 354) 起每档右移 142。
-local FILTER = { cx = 114, cy = 354, w = 132, h = 72, step = 142 }
+local LIST = { x = 48, y = 430, w = 984, h = 1510, rowH = 224, gap = 18 }
+-- 七档品质贴在一起。名称牌占左上，说明改到右上。
+local FILTER = { x = 24, cy = 286, w = 96, h = 64, gap = 4 }
 local BACK = { cx = 958, cy = 2308, w = 144, h = 120 }
 local ACTION_CX, ACTION_W, ACTION_H = 873, 202, 112
 local BTN_W, BTN_H, BTN_Y = 420, 108, 2070
@@ -203,25 +203,24 @@ local function drawButton(vg, id, cx, cy, w, h, label, accent, enabled)
     BF.finish(vg, feedback)
 end
 
+local function filterCenter(quality)
+    return FILTER.x + FILTER.w * 0.5 + quality * (FILTER.w + FILTER.gap), FILTER.cy
+end
+
 local function drawFilters(vg)
     for quality = 0, 6 do
-        local cx = FILTER.cx + quality * FILTER.step
+        local cx, cy = filterCenter(quality)
         local selected = state.qualityFilter == quality
         if quality == 0 then
-            drawButton(vg, "lbp_filter_0", cx, FILTER.cy, FILTER.w, FILTER.h,
+            drawButton(vg, "lbp_filter_0", cx, cy, FILTER.w, FILTER.h,
                 "全部", selected and "green" or "gold", true)
         else
-            local feedback = BF.begin(vg, "lbp_filter_" .. quality, cx, FILTER.cy, FILTER.w, FILTER.h)
-            if selected then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cx - 38, FILTER.cy - 38, 76, 76, 14)
-                nvgStrokeWidth(vg, 4)
-                nvgStrokeColor(vg, nvgRGBA(168, 214, 122, 255))
-                nvgStroke(vg)
-            end
-            if not QualityMark.draw(vg, quality, cx, FILTER.cy, 64, 1) then
+            local feedback = BF.begin(vg, "lbp_filter_" .. quality, cx, cy, FILTER.w, FILTER.h)
+            DarkIcon.drawNine(vg, "btn", cx - FILTER.w * 0.5, cy - FILTER.h * 0.5,
+                FILTER.w, FILTER.h, { accent = selected and "green" or "gold" })
+            if not QualityMark.draw(vg, quality, cx, cy, 52, 1) then
                 local label = EquipmentConfig.QUALITY[quality].name
-                text(vg, cx, FILTER.cy, label, 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
+                text(vg, cx, cy, label, 24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
             end
             BF.finish(vg, feedback)
         end
@@ -274,10 +273,9 @@ local function drawEntry(vg, entry, index, cy)
     text(vg, 294, cy + 59, equip and sourceText or "暂不可领取或回收", 28,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 181, 166, 143, 2)
     nvgRestore(vg)
-    local label = equip and (state.decompose and "回收" or "领取") or "待整理"
-    drawButton(vg, (state.decompose and "lbp_decompose_" or "lbp_claim_") .. index,
-        ACTION_CX, cy, ACTION_W, ACTION_H, label,
-        state.decompose and "red" or "green", equip ~= nil)
+    drawButton(vg, "lbp_claim_" .. index,
+        ACTION_CX, cy, ACTION_W, ACTION_H, equip and "领取" or "待整理",
+        "green", equip ~= nil)
 end
 
 local function drawConfirmation(vg)
@@ -307,14 +305,14 @@ function LootBoxPage.draw(vg)
     nvgFillColor(vg, nvgRGBA(18, 16, 22, 255))
     nvgFill(vg)
     TownPageChrome.drawNamePlate(vg, imgName, "遗匣")
-    text(vg, 540, 285, "旅途所得，暂存于此", 48, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
+    text(vg, 1044, 130, "旅途所得，暂存于此", 32,
+        NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
     drawFilters(vg)
     local statusText = string.format(I18n.lookup("%s · 待领取 %d 件"), I18n.lookup(filterName()), state.count)
     if state.pendingCount > 0 then
         statusText = statusText .. string.format(I18n.lookup(" · 待整理 %d 件"), state.pendingCount)
     end
-    if state.decompose then statusText = statusText .. I18n.lookup(" · 回收模式") end
-    text(vg, 540, 427, statusText, 32,
+    text(vg, 540, 360, statusText, 28,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 231, 210, 161, 2)
 
     nvgSave(vg)
@@ -341,11 +339,9 @@ function LootBoxPage.draw(vg)
         nvgFill(vg)
     end
     local hasItems = state.count > 0
-    drawButton(vg, "lbp_mode", 300, BTN_Y, BTN_W, BTN_H,
-        state.decompose and "取消回收" or "切换回收", "red", hasItems or state.decompose)
-    drawButton(vg, "lbp_claim_all", 780, BTN_Y, BTN_W, BTN_H,
+    drawButton(vg, "lbp_claim_all", 360, BTN_Y, BTN_W, BTN_H,
         state.qualityFilter == 0 and "一键领取" or "领取筛选", "gold", hasItems)
-    drawButton(vg, "lbp_decompose_all", 540, 2220, BTN_W, BTN_H,
+    drawButton(vg, "lbp_decompose_all", 800, BTN_Y, BTN_W, BTN_H,
         state.qualityFilter == 0 and "一键回收" or "回收筛选", "red", hasItems)
     TownPageChrome.drawBack(vg, BACK)
     if state.confirm then drawConfirmation(vg) end
@@ -366,6 +362,24 @@ local function action(name, callback, value)
     if callback then callback(value) end
 end
 
+local function entryAt(dx, dy)
+    if not insideList(dx, dy) then return nil end
+    local index = math.floor((dy - LIST.y + state.scrollY) / (LIST.rowH + LIST.gap)) + 1
+    local entry = state.summary[index] --[[@as table?]]
+    if not entry then return nil end
+    entry.index = index
+    return entry
+end
+
+function LootBoxPage.handleRightClick(dx, dy)
+    if not state.open or not ready() or state.confirm then return false end
+    local entry = entryAt(dx, dy)
+    if not entry or not entry.equip then return true end
+    print("[LootBoxPage] right-click recycle index=" .. tostring(entry.sourceIndex))
+    action("decompose", onDecomposeOne, entry.sourceIndex)
+    return true
+end
+
 function LootBoxPage.handleInput(dx, dy)
     if not state.open then return false end
     if not ready() then return true end
@@ -384,42 +398,28 @@ function LootBoxPage.handleInput(dx, dy)
     end
     if TownPageChrome.hitBack(dx, dy, BACK) then LootBoxPage.close() return true end
     for quality = 0, 6 do
-        if DrawUtil.hitTest(dx, dy, FILTER.cx + quality * FILTER.step, FILTER.cy, FILTER.w, FILTER.h) then
+        local cx, cy = filterCenter(quality)
+        if DrawUtil.hitTest(dx, dy, cx, cy, FILTER.w, FILTER.h) then
             BF.trigger("lbp_filter_" .. quality)
             setFilter(quality)
             return true
         end
     end
-    if DrawUtil.hitTest(dx, dy, 300, BTN_Y, BTN_W, BTN_H) then
-        if state.count > 0 or state.decompose then
-            BF.trigger("lbp_mode")
-            state.decompose = not state.decompose
-        end
-        return true
-    end
-    if DrawUtil.hitTest(dx, dy, 780, BTN_Y, BTN_W, BTN_H) then
+    if DrawUtil.hitTest(dx, dy, 360, BTN_Y, BTN_W, BTN_H) then
         if state.count > 0 then
             BF.trigger("lbp_claim_all")
             action("claimAll", onClaimAll, state.qualityFilter)
         end
         return true
     end
-    if DrawUtil.hitTest(dx, dy, 540, 2220, BTN_W, BTN_H) then
+    if DrawUtil.hitTest(dx, dy, 800, BTN_Y, BTN_W, BTN_H) then
         if state.count > 0 then BF.trigger("lbp_decompose_all") state.confirm = true end
         return true
     end
-    if insideList(dx, dy) then
-        local index = math.floor((dy - LIST.y + state.scrollY) / (LIST.rowH + LIST.gap)) + 1
-        local entry = state.summary[index] --[[@as table?]]
-        if entry and entry.equip and DrawUtil.hitTest(dx, dy, ACTION_CX, rowY(index), ACTION_W, ACTION_H) then
-            local name = state.decompose and "decompose" or "claim"
-            BF.trigger("lbp_" .. name .. "_" .. index)
-            if state.decompose then
-                action(name, onDecomposeOne, entry.sourceIndex)
-            else
-                action(name, onClaimOne, entry.sourceIndex)
-            end
-        end
+    local entry = entryAt(dx, dy)
+    if entry and entry.equip and DrawUtil.hitTest(dx, dy, ACTION_CX, rowY(entry.index), ACTION_W, ACTION_H) then
+        BF.trigger("lbp_claim_" .. entry.index)
+        action("claim", onClaimOne, entry.sourceIndex)
     end
     -- 空白与空态仍属于左栏页，不以“点面板外”关闭。
     return true

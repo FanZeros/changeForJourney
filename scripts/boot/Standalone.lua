@@ -352,6 +352,7 @@ function Standalone.Start()
     StartScreen.init(vg, scene)
     DarkTitleScreen.init(vg)
     DarkTitleScreen.setReady(false)
+    DarkTitleScreen.open()
     bootQueue_ = {
         { "LetterIntro", function() LetterIntro.init(vg) end },
         { "TopBar", function() TopBar.init(vg) end },

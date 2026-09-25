@@ -354,11 +354,6 @@ function HandleNanoVGRenderHorizon()
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
         nvgFill(vg())
-        if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
-            H_skipDone = true
-            StartScreen.skipForReconnect()
-            DarkTitleScreen.open()
-        end
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg(), logicalW(), logicalH())
         elseif StartScreen.isOpen() then
@@ -376,11 +371,6 @@ function HandleNanoVGRenderHorizon()
     -- 标题未淡出：只画标题。bootReady_() 提前解锁后默认 tab 仍是战斗，
     -- 但 BattleTriPage 要等标题关闭才 open；若此时画中栏会闪一帧竖屏 BattleScene。
     if DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading() then
-        if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
-            H_skipDone = true
-            StartScreen.skipForReconnect()
-            DarkTitleScreen.open()
-        end
         nvgBeginPath(vg())
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))

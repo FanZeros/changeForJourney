@@ -19,6 +19,7 @@ local BF               = require("systems.ButtonFeedback")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1-B5] 矢量九宫格
 local ExpTable         = require("config.ExpTable")
 local GameState        = require("core.GameState")
+local TutorialManager  = require("systems.TutorialManager")
 local I18n             = require("core.I18n")
 
 local BlacksmithConfig = require("config.BlacksmithConfig")
@@ -515,7 +516,7 @@ end
 local function compactPanelHeight(equip)
     local contentBottom = compactContentBottom(equip)
     local btnCount = 1
-    if detState.slot ~= nil and ExpTable.isBuildingUnlocked("smith", GameState.getLevel()) then
+    if detState.slot ~= nil and TutorialManager.isBuildingUnlocked("smith") then
         btnCount = 2
     end
     local buttonBottom = contentBottom + COMPACT_BTN_GAP
@@ -578,7 +579,7 @@ end
 ---@return number wearCY, number refineCY, number cx, number w, number h
 local function compactButtonRow()
     local panelH = compactViewHeight(detState.layoutEquip, true)
-    local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+    local smithOn = TutorialManager.isBuildingUnlocked("smith")
     local showWear = detState.slot ~= nil
     local h = COMPACT_BTN_H
     local refineCY = panelH - 18 - h * 0.5
@@ -949,7 +950,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
         end
 
         -- 21-22) 前往洗练按钮（仅铁匠铺已解锁时显示）
-        if ExpTable.isBuildingUnlocked("smith", GameState.getLevel()) then
+        if TutorialManager.isBuildingUnlocked("smith") then
             local enhBtnCY
             if showEnhanceOnly then
                 -- 背包模式：前往洗练按钮顶替穿戴按钮的位置
@@ -1134,7 +1135,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
     end
 
     if showActions == false then return end
-    local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+    local smithOn = TutorialManager.isBuildingUnlocked("smith")
     local showWear = detState.slot ~= nil
     local wearCY, refineCY, cx, bw, bh = compactButtonRow()
     if showWear then
@@ -1357,7 +1358,7 @@ function EquipmentDetail.handleInput(dx, dy)
     end
 
     if detState.compactCorner then
-        local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+        local smithOn = TutorialManager.isBuildingUnlocked("smith")
         local showWear = not enhOnly
         local wearCY, refineCY, cx, bw, bh = compactButtonRow()
         if smithOn and hitTest(dx, dy, cx, refineCY, bw, bh) then
@@ -1402,7 +1403,7 @@ function EquipmentDetail.handleInput(dx, dy)
     end
 
     -- 点击前往洗练按钮（仅铁匠铺已解锁时响应）
-    if (not detState.compactCorner) and ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+    if (not detState.compactCorner) and TutorialManager.isBuildingUnlocked("smith")
        and hitTest(dx, dy, btnCX, enhBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H) then
         BF.trigger("ed_enhance")
         -- 延迟加载依赖模块
@@ -1438,7 +1439,7 @@ function EquipmentDetail.handleInput(dx, dy)
 
     -- 点击立即分解按钮（未穿戴未锁定装备，前往洗练下方；背包模式与角色槽位模式通用）
     if (not detState.compactCorner) and (not newEquip.locked) and (not isEquipped)
-       and ExpTable.isBuildingUnlocked("smith", GameState.getLevel()) then
+       and TutorialManager.isBuildingUnlocked("smith") then
         local decBtnCY = enhBtnCY + REF_ENH_BTN_H + REF_DEC_BTN_GAP
         if hitTest(dx, dy, btnCX, decBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H) then
             BF.trigger("ed_decompose")

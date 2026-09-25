@@ -441,6 +441,27 @@ function M.run(rt)
 
     -- 5.25 首通奖励回调：本地计算首通金币+装备，弹出 RewardPopup
     BattleScene.setOnFirstClear(function(clearedStageId)
+        -- 先落盘通关进度，再发奖励。否则本地已切到下一关，存档 currentStageId
+        -- 仍停在旧关；随后 onBattleDataUpdate 会把战斗拉回旧关，表现为打完卡住。
+        local battle = ClientDispatcher.get("battle")
+        if type(battle) == "table" then
+            local clearedNum = tonumber(clearedStageId)
+            if clearedNum then
+                if not battle.clearedStages then battle.clearedStages = {} end
+                battle.clearedStages[tostring(clearedNum)] = true
+                local nextId = StageConfig.getNextStageId(clearedNum)
+                if nextId then
+                    battle.currentStageId = nextId
+                    if nextId > (tonumber(battle.maxStageId) or 0) then
+                        battle.maxStageId = nextId
+                    end
+                    local nextCleared = battle.clearedStages[tostring(nextId)] == true
+                    battle.battleMode = nextCleared and "idle" or "firstClear"
+                end
+                print(string.format("[Standalone] 首通进度已写入 current=%s max=%s",
+                    tostring(battle.currentStageId), tostring(battle.maxStageId)))
+            end
+        end
         local stageEntry = StageConfig.getStage(clearedStageId)
         if not stageEntry then return end
 

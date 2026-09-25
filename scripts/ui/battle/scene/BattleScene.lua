@@ -524,6 +524,7 @@ local function loadStage(stageId, skipBattleStart)
         currentStageId = currentStageId, stageName = stageName, maxStageId_ = maxStageId_,
         isFirstClear = isFirstClear, idleRangeText_ = idleRangeText_,
         searchingTimer = searchingTimer, defeatTimer = defeatTimer, reincarnationTimer = reincarnationTimer,
+        pendingReincarnation = pendingReincarnation, terminalDefeatPending = terminalDefeatPending,
         currentChapter = currentChapter, vg_ = vg_,
         enemies = enemies, enemyQueue = enemyQueue, allies = allies,
         stageEnemyTotal_ = stageEnemyTotal_, stageKillCount_ = stageKillCount_,
@@ -545,6 +546,8 @@ local function loadStage(stageId, skipBattleStart)
     searchingTimer = ctx.searchingTimer
     defeatTimer = ctx.defeatTimer
     reincarnationTimer = ctx.reincarnationTimer
+    pendingReincarnation = ctx.pendingReincarnation
+    terminalDefeatPending = ctx.terminalDefeatPending
     currentChapter = ctx.currentChapter
     enemies = ctx.enemies
     enemyQueue = ctx.enemyQueue

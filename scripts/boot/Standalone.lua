@@ -556,8 +556,6 @@ local function startOpeningBriefing_()
         background = cfg.background,
         title = cfg.title,
         steps = cfg.steps,
-        eyeOpen = true,
-        eyeClose = true,
         onFinish = function()
             print("[Standalone] opening briefing finished, start joins")
             startStarterJoins_()
@@ -798,8 +796,17 @@ function HandleUpdate(eventType, eventData)
         startScreenWasOpen_ = false
         GameBGM.start()
         GameSFX.start()
-        local sessionData = ClientDispatcher.get("session")
-        local introDone = sessionData and sessionData.introCompleted or false
+        local sessionData = ClientDispatcher.get("session") or {}
+        local battleData = ClientDispatcher.get("battle") or {}
+        local introDone = sessionData.introCompleted == true
+            or (tonumber(sessionData.firstLoginTime) or 0) > 0
+            or (tonumber(battleData.maxStageId) or 0) > 1
+            or (tonumber(battleData.currentStageId) or 0) > 1
+            or next(battleData.clearedStages or {}) ~= nil
+        if introDone and sessionData.introCompleted ~= true then
+            print("[Standalone] legacy save detected, mark intro completed")
+            markIntroCompleted_()
+        end
         if introDone then
             showOfflineRewardPanel_()
         else

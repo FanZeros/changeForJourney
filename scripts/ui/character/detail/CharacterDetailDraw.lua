@@ -174,9 +174,9 @@ local TALENT_BG_CX, TALENT_BG_CY = 540, 2057
 local TALENT_BG_W, TALENT_BG_H   = 903, 250
 local TALENT_BG_RADIUS            = 20
 
-local TALENT_NAME_X, TALENT_NAME_Y = 121.5, 1976
+local TALENT_NAME_Y = 1976
 local TALENT_TEXT_LEFT   = TALENT_BG_CX - TALENT_BG_W * 0.5 + 33
-local TALENT_TEXT_TOP    = TALENT_BG_CY - TALENT_BG_H * 0.5 + 81
+local TALENT_TEXT_TOP    = TALENT_NAME_Y + 36
 local TALENT_TEXT_RIGHT  = TALENT_BG_CX + TALENT_BG_W * 0.5 - 33
 local TALENT_TEXT_WIDTH  = TALENT_TEXT_RIGHT - TALENT_TEXT_LEFT
 
@@ -1204,7 +1204,7 @@ function M.draw(vg)
     nvgFill(vg)
 
     local talentName = heroCfg.talentName or ""
-    drawTextStroke(vg, TALENT_NAME_X, TALENT_NAME_Y, talentName .. "：",
+    drawTextStroke(vg, TALENT_TEXT_LEFT, TALENT_NAME_Y, talentName .. "：",
         40, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         0x66, 0xf8, 0x62, 5)
 

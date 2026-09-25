@@ -398,6 +398,7 @@ function CharacterDetail._switchHero(direction)
     detailState.tabSwitchTime = 0
     detailState.openTime = time.elapsedTime
     detailState.switchDir = direction  -- -1=左切, 1=右切（触发水平滑入动画）
+    detailState.switchFrom = detailState.cardDragVisual or 0
     detailState.prevHeroId = roster[curIdx].heroId
     detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0
@@ -782,9 +783,12 @@ function CharacterDetail.handleDragEnd(dx, dy)
         local moved = detailState.cardDragMoved or 0
         detailState.cardDragX = nil
         detailState.cardDragMoved = 0
+        if moved <= -50 then
+            CharacterDetail._switchHero(1)
+        elseif moved >= 50 then
+            CharacterDetail._switchHero(-1)
+        end
         detailState.cardDragVisual = 0
-        if moved <= -50 then CharacterDetail._switchHero(1)
-        elseif moved >= 50 then CharacterDetail._switchHero(-1) end
         return true
     end
     if not detailState.open then return false end

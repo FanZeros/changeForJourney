@@ -860,15 +860,34 @@ function M.handleHover(dx, dy, heroId)
         item = findItemAt(dx, dy)
     end
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
-    if not item then return end
+    if not item then
+        panelState.hoverSeq = nil
+        panelState.hoverSince = nil
+        if not panelState.hoverPinned and EquipmentDetail.dismissHover then
+            EquipmentDetail.dismissHover()
+        end
+        return
+    end
     local seqStr = tostring(item.seq)
     local _, cx, cy = findItemAt(dx, dy)
-    if panelState.hoverSeq == seqStr then
+    if panelState.hoverSeq ~= seqStr then
+        panelState.hoverSeq = seqStr
+        panelState.hoverSince = time.elapsedTime
+        panelState.hoverPinned = false
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+        return
+    end
+    if panelState.hoverPinned then
         if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
         return
     end
-    panelState.hoverSeq = seqStr
-    panelState.hoverPinned = false
+    if (time.elapsedTime - (panelState.hoverSince or 0)) < 0.5 then
+        return
+    end
+    if EquipmentDetail.isOpen and EquipmentDetail.isOpen() and EquipmentDetail.setAnchor then
+        EquipmentDetail.setAnchor(cx, cy)
+        return
+    end
     EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
     print("[EquipPanel] 悬停详情 seq=" .. seqStr .. " at " .. tostring(cx) .. "," .. tostring(cy))
 end
@@ -928,8 +947,10 @@ function M.handleInput(dx, dy, heroId, detailState)
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
     panelState.hoverSeq = seqStr
     panelState.hoverPinned = true
+    panelState.hoverSince = time.elapsedTime
     local _, cx, cy = findItemAt(dx, dy)
     EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
+    if EquipmentDetail.pin then EquipmentDetail.pin() end
     print("[EquipPanel] 单击详情 seq=" .. seqStr)
     return true
 end

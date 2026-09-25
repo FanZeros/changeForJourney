@@ -19,6 +19,7 @@ local BF               = require("systems.ButtonFeedback")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1-B5] 矢量九宫格
 local ExpTable         = require("config.ExpTable")
 local GameState        = require("core.GameState")
+local TutorialManager  = require("systems.TutorialManager")
 local I18n             = require("core.I18n")
 
 local BlacksmithConfig = require("config.BlacksmithConfig")
@@ -376,10 +377,10 @@ local REF_BG_CY  = 1120
 local REF_BG_W   = 860
 local REF_BG_H   = 1380
 -- 小窗按实际内容收紧。旧 1380 高把按钮压出框，并在词条下方留下大片空白。
-local COMPACT_BG_W = 520
+local COMPACT_BG_W = 780
 local COMPACT_BTN_H = 64
 local COMPACT_BTN_GAP = 14
-local COMPACT_BTN_W = 300
+local COMPACT_BTN_W = 420
 
 -- 装备名称（左对齐）
 local REF_NAME_X = 470    -- 左对齐基准
@@ -515,7 +516,7 @@ end
 local function compactPanelHeight(equip)
     local contentBottom = compactContentBottom(equip)
     local btnCount = 1
-    if detState.slot ~= nil and ExpTable.isBuildingUnlocked("smith", GameState.getLevel()) then
+    if detState.slot ~= nil and TutorialManager.isBuildingUnlocked("smith") then
         btnCount = 2
     end
     local buttonBottom = contentBottom + COMPACT_BTN_GAP
@@ -578,7 +579,7 @@ end
 ---@return number wearCY, number refineCY, number cx, number w, number h
 local function compactButtonRow()
     local panelH = compactViewHeight(detState.layoutEquip, true)
-    local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+    local smithOn = TutorialManager.isBuildingUnlocked("smith")
     local showWear = detState.slot ~= nil
     local h = COMPACT_BTN_H
     local refineCY = panelH - 18 - h * 0.5
@@ -599,7 +600,8 @@ local function compactOffset()
     local cellRight = ax + COMPACT_CELL * 0.5
     local cellTop = ay - COMPACT_CELL * 0.5
     -- 右栏详情往中缝外侧伸，左栏详情往右外侧伸，不锁在本栏里
-    local toCenterLeft = detState.owner == "character"
+    -- 右栏详情往左外侧放，左栏详情往右外侧放
+    local toCenterLeft = detState.owner ~= "character"
     local targetLeft
     local minLeft
     local maxLeft
@@ -949,7 +951,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
         end
 
         -- 21-22) 前往洗练按钮（仅铁匠铺已解锁时显示）
-        if ExpTable.isBuildingUnlocked("smith", GameState.getLevel()) then
+        if TutorialManager.isBuildingUnlocked("smith") then
             local enhBtnCY
             if showEnhanceOnly then
                 -- 背包模式：前往洗练按钮顶替穿戴按钮的位置
@@ -1134,7 +1136,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
     end
 
     if showActions == false then return end
-    local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+    local smithOn = TutorialManager.isBuildingUnlocked("smith")
     local showWear = detState.slot ~= nil
     local wearCY, refineCY, cx, bw, bh = compactButtonRow()
     if showWear then
@@ -1198,6 +1200,7 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, 
     detState.owner = owner or (compactCorner and "character" or "bag")
     detState.anchorX = tonumber(anchorX)
     detState.anchorY = tonumber(anchorY)
+    detState.pinned = false
     detState.descScrollY = 0
     detState.descScrollMax = 0
     detState.descDragging = false
@@ -1211,13 +1214,24 @@ function EquipmentDetail.setAnchor(anchorX, anchorY)
     detState.anchorY = tonumber(anchorY)
 end
 
+function EquipmentDetail.pin()
+    detState.pinned = true
+end
+
 --- 关闭（冻结当前面板内容用于关闭动画）
+function EquipmentDetail.dismissHover()
+    if not detState.open or not detState.compactCorner then return end
+    if detState.pinned then return end
+    EquipmentDetail.close()
+end
+
 function EquipmentDetail.close()
     if detState.compactCorner then
         detState.open = false
         detState.closing = false
         detState.compactCorner = false
         detState.snapshot = nil
+        detState.pinned = false
         return
     end
     if detState.closing then return end
@@ -1357,7 +1371,7 @@ function EquipmentDetail.handleInput(dx, dy)
     end
 
     if detState.compactCorner then
-        local smithOn = ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+        local smithOn = TutorialManager.isBuildingUnlocked("smith")
         local showWear = not enhOnly
         local wearCY, refineCY, cx, bw, bh = compactButtonRow()
         if smithOn and hitTest(dx, dy, cx, refineCY, bw, bh) then
@@ -1402,7 +1416,7 @@ function EquipmentDetail.handleInput(dx, dy)
     end
 
     -- 点击前往洗练按钮（仅铁匠铺已解锁时响应）
-    if (not detState.compactCorner) and ExpTable.isBuildingUnlocked("smith", GameState.getLevel())
+    if (not detState.compactCorner) and TutorialManager.isBuildingUnlocked("smith")
        and hitTest(dx, dy, btnCX, enhBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H) then
         BF.trigger("ed_enhance")
         -- 延迟加载依赖模块
@@ -1438,7 +1452,7 @@ function EquipmentDetail.handleInput(dx, dy)
 
     -- 点击立即分解按钮（未穿戴未锁定装备，前往洗练下方；背包模式与角色槽位模式通用）
     if (not detState.compactCorner) and (not newEquip.locked) and (not isEquipped)
-       and ExpTable.isBuildingUnlocked("smith", GameState.getLevel()) then
+       and TutorialManager.isBuildingUnlocked("smith") then
         local decBtnCY = enhBtnCY + REF_ENH_BTN_H + REF_DEC_BTN_GAP
         if hitTest(dx, dy, btnCX, decBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H) then
             BF.trigger("ed_decompose")
@@ -1636,7 +1650,7 @@ function EquipmentDetail.draw(vg)
         detState.layoutEquip = newEquip
         local compare = hasCurrent and curEquip or nil
         if compare then
-            local side = (detState.owner == "character") and 1 or -1
+            local side = (detState.owner == "character") and -1 or 1
             nvgSave(vg)
             nvgTranslate(vg, side * (COMPACT_BG_W + 16), 0)
             drawCompactPanel(vg, compare, "当前", false)
@@ -1679,7 +1693,7 @@ function EquipmentDetail.containsPoint(dx, dy)
         local spanW = COMPACT_BG_W
         local spanCenter = REF_BG_CX * 1.0
         if compactCompareEquip() then
-            local side = (detState.owner == "character") and 1 or -1
+            local side = (detState.owner == "character") and -1 or 1
             spanW = COMPACT_BG_W * 2 + 16
             spanCenter = spanCenter + side * (COMPACT_BG_W + 16) * 0.5
             panelH = math.max(panelH, compactViewHeight(compactCompareEquip(), false))

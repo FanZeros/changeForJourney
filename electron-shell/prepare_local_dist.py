@@ -62,7 +62,7 @@ def verify_lua(dist: Path, version: str) -> int:
     extra = sorted(built - source)
     if errors or missing or extra or "main.lua" not in built:
         sample=errors[:5] or missing[:5] or extra[:5]
-        fail("lua mismatch errors=%d missing=%d extra=%d sample=%s" % (len(errors), len(missing), len(extra), sample))
+        fail("lua mismatch errors=%d missing=%d extra=%d missing_files=%s sample=%s dist=%s" % (len(errors), len(missing), len(extra), missing[:5], sample, dist))
     return len(items)
 
 

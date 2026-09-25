@@ -1559,6 +1559,10 @@ function BattleCombat.getCardAnimOffsetY(unit)
     return BattleCombatAnim.getOffsetY(BCS, unit)
 end
 
+function BattleCombat.getCardAnimArcY(unit, isAllyGroup)
+    return BattleCombatAnim.getArcOffsetY(BCS, unit, isAllyGroup)
+end
+
 function BattleCombat.getTransitionAlpha(unit)
     return BattleCombatAnim.getTransitionAlpha(BCS, unit)
 end

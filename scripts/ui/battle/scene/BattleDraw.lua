@@ -131,15 +131,18 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
     for idx = 1, count do
         local unit = units[idx]
         local animOff = combat.getCardAnimOffsetY(unit) + combat.getChargeOffsetY(unit, isAllyGroup)
+        local arcY = combat.getCardAnimArcY(unit, isAllyGroup)
         local cx, cy
         if stripMode then
             -- [三行并行] 条带坐标: 我左/敌右单线, 朝向敌方轴映射到 X
             cx, cy = BattleLayout.cardPos(group, idx)
             cx = cx - animOff
+            cy = cy + arcY
         else
             -- classic: 原竖屏行阵, 朝向敌方轴为 Y
             cx, cy = BattleLayout.cardPos(group, idx, count)
             cy = cy + animOff
+            cx = cx + arcY
         end
 
         -- 条带内卡牌整体缩放（外层；内层远程蓄力缩放嵌套其上）

@@ -90,7 +90,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.4, atkTargets = 1,
         dmgSpread = 0.10, atkCoeff = 1.4,
-        baseStats  = { str = 12.50, agi = 7.50,  int = 3.75,  vit = 7.50,  luk = 3.75,  spi = 5.00 },
+        baseStats  = { str = 7.50, agi = 4.50,  int = 2.25,  vit = 4.50,  luk = 2.25,  spi = 3.00 },
         growthStats = { str = 0.75,  agi = 0.38,  int = 0.00,  vit = 0.38,  luk = 0.00,  spi = 0.00 },
     },
     [2] = {
@@ -101,7 +101,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_FIRE, atkInterval = 2.6, atkTargets = 2,
         dmgSpread = 0.15, atkCoeff = 1.44,
-        baseStats  = { str = 3.75,  agi = 5.00,  int = 12.50, vit = 3.75,  luk = 7.50,  spi = 7.50 },
+        baseStats  = { str = 2.25,  agi = 3.00,  int = 7.50, vit = 2.25,  luk = 4.50,  spi = 4.50 },
         growthStats = { str = 0.00,  agi = 0.00,  int = 0.75,  vit = 0.00,  luk = 0.38,  spi = 0.38 },
     },
     [3] = {
@@ -112,7 +112,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 2.0, atkTargets = 1,
         dmgSpread = 0.08, atkCoeff = 2.0,
-        baseStats  = { str = 7.50,  agi = 12.50, int = 3.75,  vit = 5.00,  luk = 7.50,  spi = 3.75 },
+        baseStats  = { str = 4.50,  agi = 7.50, int = 2.25,  vit = 3.00,  luk = 4.50,  spi = 2.25 },
         growthStats = { str = 0.38,  agi = 0.75,  int = 0.00,  vit = 0.00,  luk = 0.38,  spi = 0.00 },
     },
     [4] = {
@@ -123,7 +123,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_CRUSH, atkInterval = 2.7, atkTargets = 1,
         dmgSpread = 0.20, atkCoeff = 5.4,
-        baseStats  = { str = 9.75,  agi = 6.50,  int = 3.25,  vit = 16.25, luk = 6.50,  spi = 9.75 },
+        baseStats  = { str = 5.85,  agi = 3.90,  int = 1.95,  vit = 9.75, luk = 3.90,  spi = 5.85 },
         growthStats = { str = 0.50,  agi = 0.00,  int = 0.00,  vit = 1.00,  luk = 0.00,  spi = 0.50 },
     },
     [5] = {
@@ -134,7 +134,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 1.2, atkTargets = 1,
         dmgSpread = 0.15, atkCoeff = 2.4,
-        baseStats  = { str = 16.25, agi = 9.75,  int = 3.25,  vit = 9.75,  luk = 6.50,  spi = 6.50 },
+        baseStats  = { str = 9.75, agi = 5.85,  int = 1.95,  vit = 5.85,  luk = 3.90,  spi = 3.90 },
         growthStats = { str = 1.00,  agi = 0.50,  int = 0.00,  vit = 0.50,  luk = 0.00,  spi = 0.00 },
     },
     [6] = {
@@ -145,7 +145,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_LIGHTNING, atkInterval = 3.2, atkTargets = 3,
         dmgSpread = 0.30, atkCoeff = 2.46,
-        baseStats  = { str = 3.25,  agi = 9.75,  int = 16.25, vit = 6.50,  luk = 9.75,  spi = 6.50 },
+        baseStats  = { str = 1.95,  agi = 5.85,  int = 9.75, vit = 3.90,  luk = 5.85,  spi = 3.90 },
         growthStats = { str = 0.00,  agi = 0.50,  int = 1.00,  vit = 0.00,  luk = 0.50,  spi = 0.00 },
     },
     [7] = {
@@ -156,7 +156,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_LIGHTNING, atkInterval = 1.5, atkTargets = 2,
         dmgSpread = 0.08, atkCoeff = 1.67,
-        baseStats  = { str = 3.25,  agi = 16.25, int = 9.75,  vit = 6.50,  luk = 6.50,  spi = 9.75 },
+        baseStats  = { str = 1.95,  agi = 9.75, int = 5.85,  vit = 3.90,  luk = 3.90,  spi = 5.85 },
         growthStats = { str = 0.00,  agi = 1.00,  int = 0.50,  vit = 0.00,  luk = 0.00,  spi = 0.50 },
     },
     [8] = {
@@ -167,7 +167,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.0, atkTargets = 2,
         dmgSpread = 0.25, atkCoeff = 1.11,
-        baseStats  = { str = 9.75,  agi = 9.75,  int = 3.25,  vit = 6.50,  luk = 16.25, spi = 6.50 },
+        baseStats  = { str = 5.85,  agi = 5.85,  int = 1.95,  vit = 3.90,  luk = 9.75, spi = 3.90 },
         growthStats = { str = 0.50,  agi = 0.50,  int = 0.00,  vit = 0.00,  luk = 1.00,  spi = 0.00 },
     },
     [9] = {
@@ -178,7 +178,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_HOLY, atkInterval = 2.0, atkTargets = 2,
         dmgSpread = 0.15, atkCoeff = 1.33,
-        baseStats  = { str = 3.25,  agi = 6.50,  int = 9.75,  vit = 9.75,  luk = 6.50,  spi = 16.25 },
+        baseStats  = { str = 1.95,  agi = 3.90,  int = 5.85,  vit = 5.85,  luk = 3.90,  spi = 9.75 },
         growthStats = { str = 0.00,  agi = 0.00,  int = 0.50,  vit = 0.50,  luk = 0.00,  spi = 1.00 },
     },
     [10] = {
@@ -189,7 +189,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_CRUSH, atkInterval = 2.2, atkTargets = 2,
         dmgSpread = 0.20, atkCoeff = 4.89,
-        baseStats  = { str = 12.75, agi = 8.50,  int = 8.50,  vit = 21.25, luk = 4.25,  spi = 12.75 },
+        baseStats  = { str = 7.65, agi = 5.10,  int = 5.10,  vit = 12.75, luk = 2.55,  spi = 7.65 },
         growthStats = { str = 0.63,  agi = 0.00,  int = 0.00,  vit = 1.25,  luk = 0.00,  spi = 0.63 },
     },
     [11] = {
@@ -200,7 +200,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_SLASH, atkInterval = 1.6, atkTargets = 1,
         dmgSpread = 0.15, atkCoeff = 6.4,
-        baseStats  = { str = 21.25, agi = 12.75, int = 4.25,  vit = 12.75, luk = 8.50,  spi = 8.50 },
+        baseStats  = { str = 12.75, agi = 7.65, int = 2.55,  vit = 7.65, luk = 5.10,  spi = 5.10 },
         growthStats = { str = 1.25,  agi = 0.63,  int = 0.00,  vit = 0.63,  luk = 0.00,  spi = 0.00 },
     },
     [12] = {
@@ -211,7 +211,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_ICE, atkInterval = 4.0, atkTargets = 4,
         dmgSpread = 0.30, atkCoeff = 4.71,
-        baseStats  = { str = 4.25,  agi = 8.50,  int = 21.25, vit = 8.50,  luk = 12.75, spi = 12.75 },
+        baseStats  = { str = 2.55,  agi = 5.10,  int = 12.75, vit = 5.10,  luk = 7.65, spi = 7.65 },
         growthStats = { str = 0.00,  agi = 0.00,  int = 1.25,  vit = 0.00,  luk = 0.63,  spi = 0.63 },
     },
     [13] = {
@@ -222,7 +222,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 1.2, atkTargets = 1,
         dmgSpread = 0.05, atkCoeff = 4.8,
-        baseStats  = { str = 17.00, agi = 17.00, int = 6.80,  vit = 6.80,  luk = 10.20, spi = 10.20 },
+        baseStats  = { str = 10.20, agi = 10.20, int = 4.08,  vit = 4.08,  luk = 6.12, spi = 6.12 },
         growthStats = { str = 1.25,  agi = 1.25,  int = 0.00,  vit = 0.00,  luk = 0.00,  spi = 0.00 },
     },
     [14] = {
@@ -233,7 +233,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_SHADOW, atkInterval = 0.9, atkTargets = 1,
         dmgSpread = 0.35, atkCoeff = 3.6,
-        baseStats  = { str = 4.00,  agi = 12.00, int = 20.00, vit = 4.00,  luk = 20.00, spi = 8.00 },
+        baseStats  = { str = 2.40,  agi = 7.20, int = 12.00, vit = 2.40,  luk = 12.00, spi = 4.80 },
         growthStats = { str = 0.00,  agi = 0.50,  int = 1.00,  vit = 0.00,  luk = 1.00,  spi = 0.00 },
     },
     [15] = {
@@ -244,7 +244,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_HOLY, atkInterval = 2.0, atkTargets = 3,
         dmgSpread = 0.15, atkCoeff = 1.85,
-        baseStats  = { str = 4.25,  agi = 8.50,  int = 12.75, vit = 8.50,  luk = 12.75, spi = 21.25 },
+        baseStats  = { str = 2.55,  agi = 5.10,  int = 7.65, vit = 5.10,  luk = 7.65, spi = 12.75 },
         growthStats = { str = 0.00,  agi = 0.00,  int = 0.63,  vit = 0.00,  luk = 0.63,  spi = 1.25 },
     },
     [17] = {
@@ -255,7 +255,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_ICE, atkInterval = 2.4, atkTargets = 1,
         dmgSpread = 0.20, atkCoeff = 1.8,
-        baseStats  = { str = 3.25,  agi = 6.50,  int = 16.25, vit = 9.75,  luk = 6.50,  spi = 9.75 },
+        baseStats  = { str = 1.95,  agi = 3.90,  int = 9.75, vit = 5.85,  luk = 3.90,  spi = 5.85 },
         growthStats = { str = 0.00,  agi = 0.00,  int = 1.00,  vit = 0.50,  luk = 0.00,  spi = 0.50 },
     },
     [16] = {
@@ -266,7 +266,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_PIERCE, atkInterval = 1.5, atkTargets = 2,
         dmgSpread = 0.15, atkCoeff = 6.67,
-        baseStats  = { str = 24.44, agi = 9.78,  int = 4.89,  vit = 24.44, luk = 14.67, spi = 9.78 },
+        baseStats  = { str = 14.66, agi = 5.87,  int = 2.93,  vit = 14.66, luk = 8.80, spi = 5.87 },
         growthStats = { str = 1.20,  agi = 0.00,  int = 0.00,  vit = 1.20,  luk = 0.60,  spi = 0.00 },
     },
     [20] = {
@@ -277,7 +277,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_SHADOW, atkInterval = 3.0, atkTargets = 1,
         dmgSpread = 0.30, atkCoeff = 24.0,
-        baseStats  = { str = 5.50,  agi = 16.50, int = 27.50, vit = 11.00, luk = 16.50, spi = 11.00 },
+        baseStats  = { str = 3.30,  agi = 9.90, int = 16.50, vit = 6.60, luk = 9.90, spi = 6.60 },
         growthStats = { str = 0.00,  agi = 0.75,  int = 1.50,  vit = 0.00,  luk = 0.75,  spi = 0.00 },
     },
     [21] = {
@@ -288,7 +288,7 @@ HC.HEROES = {
         gender = "male",
         atkType = AD.ATK_SLASH, atkInterval = 3.0, atkTargets = 2,
         dmgSpread = 0.15, atkCoeff = 6.67,
-        baseStats  = { str = 18.89, agi = 18.89, int = 3.78,  vit = 11.33, luk = 7.56,  spi = 7.56 },
+        baseStats  = { str = 11.33, agi = 11.33, int = 2.27,  vit = 6.80, luk = 4.54,  spi = 4.54 },
         growthStats = { str = 1.00,  agi = 1.00,  int = 0.00,  vit = 0.50,  luk = 0.00,  spi = 0.00 },
     },
     [22] = {
@@ -299,7 +299,7 @@ HC.HEROES = {
         gender = "male",
         atkType = AD.ATK_LIGHTNING, atkInterval = 1.2, atkTargets = 1,
         dmgSpread = 0.30, atkCoeff = 4.8,
-        baseStats  = { str = 3.78,  agi = 7.56,  int = 18.89, vit = 7.56,  luk = 18.89, spi = 11.33 },
+        baseStats  = { str = 2.27,  agi = 4.54,  int = 11.33, vit = 4.54,  luk = 11.33, spi = 6.80 },
         growthStats = { str = 0.00,  agi = 0.00,  int = 1.00,  vit = 0.00,  luk = 1.00,  spi = 0.50 },
     },
     [23] = {
@@ -310,7 +310,7 @@ HC.HEROES = {
         gender = "male",
         atkType = AD.ATK_HOLY, atkInterval = 1.5, atkTargets = 3,
         dmgSpread = 0.15, atkCoeff = 1.38,
-        baseStats  = { str = 4.25,  agi = 12.75, int = 12.75, vit = 8.50,  luk = 8.50,  spi = 21.25 },
+        baseStats  = { str = 2.55,  agi = 7.65, int = 7.65, vit = 5.10,  luk = 5.10,  spi = 12.75 },
         growthStats = { str = 0.00,  agi = 0.63,  int = 0.63,  vit = 0.00,  luk = 0.00,  spi = 1.25 },
     },
     [18] = {
@@ -321,7 +321,7 @@ HC.HEROES = {
         gender = "male",
         atkType = AD.ATK_SHADOW, atkInterval = 1.1, atkTargets = 1,
         dmgSpread = 0.25, atkCoeff = 1.35,
-        baseStats  = { str = 7.50,  agi = 12.50, int = 3.75,  vit = 5.00,  luk = 12.50, spi = 3.75 },
+        baseStats  = { str = 4.50,  agi = 7.50, int = 2.25,  vit = 3.00,  luk = 7.50, spi = 2.25 },
         growthStats = { str = 0.38,  agi = 0.75,  int = 0.00,  vit = 0.00,  luk = 0.75,  spi = 0.00 },
     },
     [19] = {
@@ -332,7 +332,7 @@ HC.HEROES = {
         gender = "female",
         atkType = AD.ATK_HOLY, atkInterval = 2.1, atkTargets = 2,
         dmgSpread = 0.12, atkCoeff = 1.20,
-        baseStats  = { str = 3.75,  agi = 5.00,  int = 7.50,  vit = 7.50,  luk = 5.00,  spi = 12.50 },
+        baseStats  = { str = 2.25,  agi = 3.00,  int = 4.50,  vit = 4.50,  luk = 3.00,  spi = 7.50 },
         growthStats = { str = 0.00,  agi = 0.00,  int = 0.38,  vit = 0.38,  luk = 0.00,  spi = 0.75 },
     },
     [24] = {
@@ -343,7 +343,7 @@ HC.HEROES = {
         gender = "male",
         atkType = AD.ATK_CRUSH, atkInterval = 2.4, atkTargets = 1,
         dmgSpread = 0.18, atkCoeff = 4.40,
-        baseStats  = { str = 12.75, agi = 4.25,  int = 4.25,  vit = 21.25, luk = 8.50,  spi = 8.50 },
+        baseStats  = { str = 7.65, agi = 2.55,  int = 2.55,  vit = 12.75, luk = 5.10,  spi = 5.10 },
         growthStats = { str = 0.63,  agi = 0.00,  int = 0.00,  vit = 1.25,  luk = 0.00,  spi = 0.63 },
     },
     [25] = {
@@ -354,7 +354,7 @@ HC.HEROES = {
         gender = "male",
         atkType = AD.ATK_PIERCE, atkInterval = 1.6, atkTargets = 1,
         dmgSpread = 0.12, atkCoeff = 7.20,
-        baseStats  = { str = 14.67, agi = 24.44, int = 9.78,  vit = 14.67, luk = 14.67, spi = 9.78 },
+        baseStats  = { str = 8.80, agi = 14.66, int = 5.87,  vit = 8.80, luk = 8.80, spi = 5.87 },
         growthStats = { str = 0.60,  agi = 1.20,  int = 0.00,  vit = 0.60,  luk = 0.60,  spi = 0.00 },
     },
 }

@@ -555,6 +555,69 @@ painters.nav_dungeon = function(vg, cx, cy, s, alpha)
     end
 end
 
+--- 名牌白色剪影用的镂空描边（深色，露出名牌底）
+local function glyphCut(vg, alpha, s)
+    strokeC(vg, alpha, 10, 8, 6, 1)
+    nvgStrokeWidth(vg, math.max(1.5, s * 0.045))
+    nvgStroke(vg)
+end
+
+--- 功绩（白色剪影：切角石碑 + 符文环镂空）
+painters.merit = function(vg, cx, cy, s, alpha)
+    -- 底座
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cx - s * 0.42, cy + s * 0.26, s * 0.84, s * 0.14, s * 0.03)
+    fillC(vg, alpha, 255, 255, 255, 1)
+    nvgFill(vg)
+    -- 碑身 + 切角碑顶
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, cx, cy - s * 0.46)
+    nvgLineTo(vg, cx + s * 0.22, cy - s * 0.30)
+    nvgLineTo(vg, cx + s * 0.22, cy + s * 0.28)
+    nvgLineTo(vg, cx - s * 0.22, cy + s * 0.28)
+    nvgLineTo(vg, cx - s * 0.22, cy - s * 0.30)
+    nvgClosePath(vg)
+    fillC(vg, alpha, 255, 255, 255, 1)
+    nvgFill(vg)
+    -- 符文环镂空
+    nvgBeginPath(vg)
+    nvgCircle(vg, cx, cy - s * 0.02, s * 0.13)
+    glyphCut(vg, alpha, s)
+    -- 环心点
+    nvgBeginPath(vg)
+    nvgCircle(vg, cx, cy - s * 0.02, s * 0.035)
+    glyphCut(vg, alpha, s)
+end
+
+--- 遗匣（白色剪影：拱盖宝箱 + 锁扣镂空）
+painters.relicbox = function(vg, cx, cy, s, alpha)
+    -- 箱身
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cx - s * 0.40, cy - s * 0.02, s * 0.80, s * 0.40, s * 0.05)
+    fillC(vg, alpha, 255, 255, 255, 1)
+    nvgFill(vg)
+    -- 箱盖（拱形）
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, cx - s * 0.38, cy - s * 0.02)
+    nvgBezierTo(vg, cx - s * 0.38, cy - s * 0.42, cx + s * 0.38, cy - s * 0.42, cx + s * 0.38, cy - s * 0.02)
+    nvgClosePath(vg)
+    fillC(vg, alpha, 255, 255, 255, 1)
+    nvgFill(vg)
+    -- 盖缝镂空
+    nvgBeginPath(vg)
+    nvgMoveTo(vg, cx - s * 0.36, cy - s * 0.02)
+    nvgLineTo(vg, cx + s * 0.36, cy - s * 0.02)
+    glyphCut(vg, alpha, s)
+    -- 锁扣镂空
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cx - s * 0.07, cy - s * 0.10, s * 0.14, s * 0.20, s * 0.03)
+    glyphCut(vg, alpha, s)
+    -- 锁环镂空
+    nvgBeginPath(vg)
+    nvgArc(vg, cx, cy - s * 0.10, s * 0.055, math.pi, 0, 1)
+    glyphCut(vg, alpha, s)
+end
+
 -- ============================================================================
 -- Public API
 -- ============================================================================

@@ -454,7 +454,9 @@ function UnitAttributes:getShieldRegenProfile()
     local cooldown = 2.4 - t * 1.2
     if cooldown < 0.6 then cooldown = 0.6 end
     local rate = 0.4 + t * 0.6
-    return cooldown, rate
+    -- 数值回复：每点体质每秒 2 点，和盾的厚度无关。
+    local flatPerSec = vit * 2
+    return cooldown, rate, flatPerSec
 end
 
 function UnitAttributes:getShieldRegenCooldown()
@@ -474,8 +476,8 @@ function UnitAttributes:tickEnergyShield(dt)
         self.esRegenCooldown = cd - dt
         return
     end
-    local _, rate = self:getShieldRegenProfile()
-    self.energyShield = math.min(maxES, es + maxES * rate * dt)
+    local _, rate, flatPerSec = self:getShieldRegenProfile()
+    self.energyShield = math.min(maxES, es + (maxES * rate + flatPerSec) * dt)
 end
 
 --- 初始化能量护盾（创建单位 / 重新计算属性后调用）

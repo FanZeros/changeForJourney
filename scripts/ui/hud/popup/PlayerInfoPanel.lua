@@ -9,6 +9,7 @@ local I18n           = require("core.I18n")
 local DrawUtil       = require("core.DrawUtil")
 local StageConfig    = require("config.StageConfig")
 local PlayerStore    = require("core.PlayerStore")
+local NumberUtil     = require("core.NumberUtil")
 local CharacterPanel    = require("ui.character.panel.CharacterPanel")
 local HeroConfig        = require("config.HeroConfig")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
@@ -810,6 +811,19 @@ function PlayerInfoPanel.draw(vg)
         PLAY_TIME.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         244, 237, 224, 4,
         { strokeColor = { 0x3a, 0x24, 0x0c } })
+
+    -- ── 9.6 金币 / 宝石 / 游戏天数 ──
+    do
+        local session = PlayerStore.Get("session") or {}
+        local days = tonumber(session.playDays) or 1
+        local goldText = NumberUtil.format(GameState.getGold())
+        local gemText = NumberUtil.format(GameState.getGems())
+        local statText = string.format("金币 %s    宝石 %s    第%d天", goldText, gemText, days)
+        drawTextStroke(vg, PLAY_TIME.X, PLAY_TIME.Y + 42, statText,
+            28, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+            216, 201, 163, 3,
+            { strokeColor = { 0x3a, 0x24, 0x0c } })
+    end
 
     -- ── 9.5 当前区服名称 ──
     if cachedServerName then

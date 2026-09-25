@@ -93,7 +93,7 @@ local ITEM4_CY = 1370
 local ITEM5_CY = 1480
 
 local TOGGLE = {
-    CX = 795, W = 150, H = 56, R = 28,
+    CX = 820, W = 96, H = 48, R = 24,
     KNOB_SIZE = 46,
     -- 开启用暖金，和语言芯片同一套，不再用绿色
     ON_R = 0xC4, ON_G = 0xA0, ON_B = 0x5A,
@@ -103,16 +103,17 @@ local TOGGLE = {
 
 -- 9. 兑换码按钮
 local CODE_BTN = {
-    CX = 540, CY = 1590, W = 410, H = 100,
+    CX = 540, CY = 1660, W = 410, H = 100,
 }
 
 -- 10. 兑换码文本
 local CODE_TXT = {
-    X = 540, Y = 1590, FONT = 40,
+    X = 540, Y = 1660, FONT = 40,
     A = 179,  -- 纯黑 70%
 }
 
-local LANG_CHIP_W, LANG_CHIP_H, LANG_CHIP_GAP = 88, 44, 6
+local LANG_CHIP_W, LANG_CHIP_H, LANG_CHIP_GAP = 150, 44, 8
+local LANG_ROW_GAP = 52
 
 -- ======================== 本地设置持久化 ========================
 
@@ -299,15 +300,17 @@ end
 ---@param itemCY number
 ---@return table[]
 local function langChipRects(itemCY)
-    local n = #I18n.LANGS
-    local total = n * LANG_CHIP_W + (n - 1) * LANG_CHIP_GAP
+    local perRow = 3
+    local rowW = perRow * LANG_CHIP_W + (perRow - 1) * LANG_CHIP_GAP
     local right = ITEM1_BG.CX + ITEM1_BG.W * 0.5 - 12
-    local x0 = right - total
+    local x0 = right - rowW
     local rects = {}
     for i, lang in ipairs(I18n.LANGS) do
+        local row = math.floor((i - 1) / perRow)
+        local col = (i - 1) % perRow
         rects[i] = {
-            x = x0 + (i - 1) * (LANG_CHIP_W + LANG_CHIP_GAP),
-            y = itemCY - LANG_CHIP_H * 0.5,
+            x = x0 + col * (LANG_CHIP_W + LANG_CHIP_GAP),
+            y = itemCY - LANG_CHIP_H * 0.5 + row * LANG_ROW_GAP,
             w = LANG_CHIP_W,
             h = LANG_CHIP_H,
             id = lang.id,
@@ -587,17 +590,6 @@ local function drawToggleItem(vg, itemCY, label, enabled)
     nvgStrokeWidth(vg, 4)
     nvgStroke(vg)
 
-    -- 文字避开旋钮：开时在左，关时在右
-    local labelX = enabled and (x + TOGGLE.H * 0.62) or (x + TOGGLE.W - TOGGLE.H * 0.62)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, TOGGLE.TEXT_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    if enabled then
-        nvgFillColor(vg, nvgRGBA(0x1a, 0x12, 0x0a, 255))
-    else
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 230))
-    end
-    nvgText(vg, labelX, itemCY, enabled and I18n.t("on") or I18n.t("off"), nil)
 end
 
 -- ============================================================================

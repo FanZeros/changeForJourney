@@ -248,9 +248,7 @@ local function seamBackList()
         local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
         list[#list + 1] = {
             cx = (logicalW() - 486 * psL) - barW * 0.5 + oxWin,
-            sw = math.max(barW * 2.2, 56), sh = logicalH() * 0.18,
-            hitCy = logicalH() * DrawUtil.SEAMBAR_ARROW_Y,
-            bw = 0, bh = 0, dir = "right",
+            sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "right",
             close = function() CharacterDetail.close() end,
         }
     end
@@ -284,9 +282,7 @@ local function seamBackList()
         local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], dist) * cs
         list[#list + 1] = {
             cx = 486 * psL * scale + barW * 0.5 + oxWin,
-            sw = math.max(barW * 2.2, 56), sh = logicalH() * 0.18,
-            hitCy = logicalH() * DrawUtil.SEAMBAR_ARROW_Y,
-            bw = 0, bh = 0, dir = "left",
+            sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
             close = leftClose,
         }
     end
@@ -300,7 +296,7 @@ end
 local function seamHitAt(sx, sy)
     for _, seamBtn in ipairs(seamBackList()) do
         if math.abs(sx - seamBtn.cx) <= seamBtn.sw * 0.5
-            and math.abs(sy - (seamBtn.hitCy or logicalH() * 0.5)) <= seamBtn.sh * 0.5 then
+            and math.abs(sy - logicalH() * 0.5) <= seamBtn.sh * 0.5 then
             return seamBtn
         end
     end
@@ -548,6 +544,9 @@ function HandleNanoVGRenderHorizon()
             or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
             TopBar.draw(vg(), -30)
         end
+        if PlayerInfoPanel.isOpen() then
+            PlayerInfoPanel.draw(vg())
+        end
         Viewport.finish(vg())
         Viewport.begin(vg(), Viewport.PANELS.right, oxR, 0, ps)
         CharacterPanel.draw(vg())
@@ -563,16 +562,7 @@ function HandleNanoVGRenderHorizon()
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
-        -- [修复] 玩家信息面板（点头像打开）——横屏此前从未绘制，open 成功但不可见
-        if PlayerInfoPanel.isOpen() then
-            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
-            nvgSave(vg())
-            nvgScissor(vg(), 0, 0, logicalW(), logicalH())
-            nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
-            nvgScale(vg(), fit, fit)
-            PlayerInfoPanel.draw(vg())
-            nvgRestore(vg())
-        end
+        -- 玩家信息已画在左栏视口内，不再用竖屏坐标居中重画。
         -- 全局奖励仍在窗口居中覆盖，遗匣仅在上方左栏链绘制。
         if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
@@ -622,16 +612,7 @@ function HandleNanoVGRenderHorizon()
         nvgRestore(vg())
     end
 
-    -- [修复] 玩家信息面板（非三行横屏路径同样漏画）
-    if PlayerInfoPanel.isOpen() then
-        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
-        nvgSave(vg())
-        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
-        nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
-        nvgScale(vg(), fit, fit)
-        PlayerInfoPanel.draw(vg())
-        nvgRestore(vg())
-    end
+    -- 玩家信息已由中栏弹窗层绘制，不再用竖屏坐标居中重画。
     -- [底栏移除] 日志/副本页全窗竖版模态
     HorizonDrawPageModal(vg())
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）

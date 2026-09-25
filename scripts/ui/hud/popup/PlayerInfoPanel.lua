@@ -666,7 +666,7 @@ local function drawTeamCard(vg, cx, cy, slot, power)
     end
 
     -- c) 战斗力图标 + 数值
-    local powerStr = require("core.NumberUtil").format(power or 0)
+    local powerStr = tostring(power or 0)
     local POWER_GAP = 4
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 30)
@@ -830,7 +830,7 @@ function PlayerInfoPanel.draw(vg)
 
     -- ── 12. 战力图标 + 战力数值（组合居中在战力背景框内）──
     local displayPower = CharacterPanel.getTotalPower()
-    local powerStr = require("core.NumberUtil").format(displayPower)
+    local powerStr = tostring(displayPower)
 
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, PWR.FONT)
@@ -874,7 +874,7 @@ function PlayerInfoPanel.draw(vg)
     -- ── 16. 远征等级经验进度数值 ──
     local advExp    = GameState.getExp()
     local advMaxExp = GameState.getMaxExp()
-    local expText = require("core.NumberUtil").format(advExp) .. "/" .. require("core.NumberUtil").format(advMaxExp)
+    local expText = tostring(advExp) .. "/" .. tostring(advMaxExp)
     drawTextStroke(vg, ADV_EXP.X, ADV_EXP.Y, expText,
         ADV_EXP.FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         ADV_EXP.FR, ADV_EXP.FG, ADV_EXP.FB, ADV_EXP.SW,
@@ -961,9 +961,7 @@ function PlayerInfoPanel.draw(vg)
 
     nvgRestore(vg)
 
-    -- 在 PlayerInfoPanel 变换之外绘制子面板（它们有自己的遮罩和缩放）
-    -- 角色详情覆盖在队伍卡之上（从队伍卡点击打开）
-    CharacterDetail.draw(vg)
+    -- 横屏角色详情由 CharacterPanel 绘制。这里再画会用竖屏坐标叠出第二份。
     AvatarSelectPanel.draw(vg)
     GMConsolePanel.draw(vg)
 end

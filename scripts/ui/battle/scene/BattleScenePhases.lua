@@ -121,8 +121,23 @@ function M.process(ctx, dt)
             bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_BACK_TARGET }
             loadStage(targetId, true)  -- skipBattleStart
             regenAccum = 0
-            for _, u in ipairs(allies) do resetAllyUnit(u) end
+            for _, u in ipairs(allies) do
+                resetAllyUnit(u)
+                -- 开战天赋会 addModifier 并重算属性。先满血，重算才能保留满血，
+                -- 否则死亡时的 0 血会被 recalc 写回，回退后立刻再次全灭并卡死。
+                if u.attrs then u.attrs:fillHp() end
+            end
             startBattleTalents()
+            local AD = require("systems.AttributeDef")
+            local revived = 0
+            for _, u in ipairs(allies) do
+                if u.attrs then
+                    u.hp = u.attrs.final[AD.HP]
+                    u.maxHp = u.attrs.final[AD.MAX_HP]
+                end
+                if (u.hp or 0) > 0 then revived = revived + 1 end
+            end
+            print(string.format("[BattleScene] 失败回退重开 allies=%d revived=%d", #allies, revived))
             if onStageChangedCallback then
                 onStageChangedCallback(targetId)
             end

@@ -109,7 +109,7 @@ local function getAnimScale()
     return t * (1.0 + 0.08 * math.sin(t * math.pi))
 end
 
---- 沿官方关卡链收集全链（不随进度截断；不跟随转生跨难度回环）
+--- 沿官方关卡链收集全链（不随进度截断，终焉神殿后进入下一难度）
 --- 返回 ids 与链序表 order[id]=序号
 local function collectAllIds()
     local ids = {}

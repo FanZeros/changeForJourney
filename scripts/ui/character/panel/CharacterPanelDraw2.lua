@@ -372,20 +372,13 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
         drawTextStroke(vg, badgeCX, badgeCY, tostring(lvl),
             24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
 
-        -- 左上角队伍归属
-        local tagCX, tagCY = x + 28, y + 26
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, tagCX - 20, tagCY - 16, 40, 32, 7)
-        nvgFillColor(vg, nvgRGBA(18, 14, 10, 220))
-        nvgFill(vg)
-        nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 230))
-        nvgStrokeWidth(vg, 2)
-        nvgStroke(vg)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 22)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-        nvgText(vg, tagCX, tagCY, tostring(teamIdx), nil)
+        -- 右下角职业框（队伍号由所在行的「小队N」标明，不再重复）
+        local heroCfg = HC.get(slot.heroId)
+        local iconIdx = heroCfg and CLASS_ICON_MAP[heroCfg.classId]
+        if iconIdx and img.classIcons[iconIdx] then
+            drawImageCentered(vg, img.classIcons[iconIdx],
+                x + AV_SIZE - 30, y + AV_SIZE - 30, 48, 48, 1.0)
+        end
     else
         nvgBeginPath(vg)
         nvgRoundedRect(vg, x, y, AV_SIZE, AV_SIZE, 14)
@@ -887,33 +880,50 @@ function M.draw(vg, scrollY)
             20, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 3)
         if isOwned then
-            drawTextStroke(vg, cx, iy + 18, "Lv" .. tostring(entry.level or 1),
-                18, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                255, 230, 160, 3)
+            -- 左下角等级框（与出战槽同一套徽章）
+            local badgeSize = 44
+            local badgeCX = ix + 28
+            local badgeCY = iy + ROSTER_ICON - 28
+            if img.lvlBadge and img.lvlBadge >= 0 then
+                drawImageCentered(vg, img.lvlBadge, badgeCX, badgeCY, badgeSize, badgeSize, 1.0)
+            else
+                nvgBeginPath(vg)
+                nvgCircle(vg, badgeCX, badgeCY, badgeSize * 0.5)
+                nvgFillColor(vg, nvgRGBA(18, 14, 10, 220))
+                nvgFill(vg)
+            end
+            drawTextStroke(vg, badgeCX, badgeCY, tostring(entry.level or 1),
+                20, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
         end
 
-        -- h) 出战队伍角标：左下角深色底，显示队1/队2/队3
+        -- 左上角队伍归属（出战槽所在行已标明小队，这里才需要）
         local deployTeams = getHeroDeployTeams and getHeroDeployTeams(entry.heroId) or nil
         if deployTeams and #deployTeams > 0 then
             local labels = {}
-            for i, t in ipairs(deployTeams) do labels[i] = "队" .. t end
+            for i, t in ipairs(deployTeams) do labels[i] = tostring(t) end
             local badge = table.concat(labels, "·")
-            local bx = ix + 6
-            local by = iy + ROSTER_ICON - 28
+            local tagCX, tagCY = ix + 26, iy + 24
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 16)
+            nvgFontSize(vg, 18)
             local textW = nvgTextBounds(vg, 0, 0, badge)
-            local bw = math.max(46, textW + 14)
+            local bw = math.max(36, textW + 14)
             nvgBeginPath(vg)
-            nvgRoundedRect(vg, bx, by, bw, 22, 6)
-            nvgFillColor(vg, nvgRGBA(18, 14, 10, 215))
+            nvgRoundedRect(vg, tagCX - bw * 0.5, tagCY - 14, bw, 28, 7)
+            nvgFillColor(vg, nvgRGBA(18, 14, 10, 220))
             nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 200))
-            nvgStrokeWidth(vg, 1.5)
+            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 230))
+            nvgStrokeWidth(vg, 2)
             nvgStroke(vg)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-            nvgText(vg, bx + bw * 0.5, by + 11, badge, nil)
+            nvgText(vg, tagCX, tagCY, badge, nil)
+        end
+
+        -- 右下角职业框
+        local classIdx = CLASS_ICON_MAP[heroCfg.classId]
+        if classIdx and img.classIcons[classIdx] then
+            drawImageCentered(vg, img.classIcons[classIdx],
+                ix + ROSTER_ICON - 28, iy + ROSTER_ICON - 28, 44, 44, isOwned and 1.0 or 0.45)
         end
 
         -- i) 可提升角标（右上角，所有已拥有角色）：从缓存查找

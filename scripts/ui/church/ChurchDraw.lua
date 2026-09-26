@@ -5,7 +5,7 @@
 local AD = require("systems.AttributeDef")
 local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local SpineCardEffect = require("ui.fx.SpineCardEffect")
-local ClassChange = require("ui.church.ChurchClassChange")
+-- 转职已迁到右侧栏角色详情，教堂不再绘制转职页
 local ArtifactPanel = require("ui.church.ChurchArtifactPanel")
 local I18n = require("core.I18n")
 
@@ -220,7 +220,7 @@ function M.bind(deps)
 
             if heroCfg then
                 -- b) 职业图标（左上角，60x60）
-                local iconIdx = ClassChange.CLASS_NUM[heroCfg.classId]
+                local iconIdx = heroCfg.classId
                 if iconIdx and img.classIcons[iconIdx] then
                     drawImageCentered(vg, img.classIcons[iconIdx], cx, cy + ROSTER.TAG_OFFSET_Y, 60, 60, 1.0)
                 end
@@ -347,7 +347,6 @@ function M.bind(deps)
                 nvgSave(vg)
                 nvgScissor(vg, 0, oVisTop, DESIGN_W, oVisBot - oVisTop)
                 nvgTranslate(vg, 0, oldOY_tab)
-                if state.tabFrom == "zhuanzhi" then ClassChange.drawBg(vg) end
                 if state.tabFrom == "shenqi" then ArtifactPanel.drawBg(vg) end
                 nvgRestore(vg)
             end
@@ -358,12 +357,10 @@ function M.bind(deps)
                 nvgSave(vg)
                 nvgScissor(vg, 0, nVisTop, DESIGN_W, nVisBot - nVisTop)
                 nvgTranslate(vg, 0, newOY_tab)
-                if state.tab == "zhuanzhi" then ClassChange.drawBg(vg) end
                 if state.tab == "shenqi" then ArtifactPanel.drawBg(vg) end
                 nvgRestore(vg)
             end
         else
-            if state.tab == "zhuanzhi" then ClassChange.drawBg(vg) end
             if state.tab == "shenqi" then ArtifactPanel.drawBg(vg) end
         end
         nvgRestore(vg)
@@ -383,7 +380,6 @@ function M.bind(deps)
 
         -- drawTabContent 内联委托
         local function drawTabContent(tabKey)
-            if tabKey == "zhuanzhi" then ClassChange.drawContent(vg) end
             if tabKey == "shenqi" then ArtifactPanel.drawContent(vg) end
         end
 
@@ -434,8 +430,6 @@ function M.bind(deps)
             drawBadge = function(vg, i, item, textX, textY)
                 local showTabBadge = false
                 if i == 1 then
-                    showTabBadge = hasAnyAdvance()
-                elseif i == 2 then
                     showTabBadge = ArtifactPanel.canUpgradeAnyArtifact()
                 end
                 if showTabBadge and img.iconUp >= 0 then
@@ -460,7 +454,7 @@ function M.bind(deps)
 
         -- ================== 角色列表浮层（独立绘制，不被下半部分遮盖） ==================
         -- 仅在展开状态（slotExpanded）时绘制；选中远征队员后 slotExpanded=false 但 slotLiftProgress 保持1.0
-        if (state.slotExpanded or state.rosterSlideProgress > 0.01) and state.slotLiftProgress > 0.01 and state.tab == "zhuanzhi" then
+        if false and (state.slotExpanded or state.rosterSlideProgress > 0.01) and state.slotLiftProgress > 0.01 then
             local rosterAlpha = state.slotLiftProgress * state.rosterSlideProgress
             nvgSave(vg)
             nvgGlobalAlpha(vg, rosterAlpha)
@@ -501,11 +495,7 @@ function M.bind(deps)
 
         -- 天赋详情/总览已移至 TalentPage
 
-        -- ================== 转职确认弹窗（最顶层） ==================
-        ClassChange.drawConfirmPopup(vg)
-
-        -- ================== 重置确认弹窗（最顶层） ==================
-        ClassChange.drawResetConfirmPopup(vg)
+        -- 转职确认/重置弹窗已随转职页迁到右侧栏角色详情
 
         -- ================== Spine 卡牌特效 ==================
         SpineCardEffect.draw(vg)

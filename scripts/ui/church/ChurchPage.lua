@@ -78,10 +78,10 @@ local BTN_BACK = {
     CX = 958, CY = 1150, W = 184, H = 143,
 }
 
--- 4. Tab 栏 + 滑块（两 Tab：转职 / 神器）
+-- 4. Tab 栏（转职已迁到右侧栏角色详情，教堂只留神器）
 local TAB = {
     BG_CX = 540, BG_CY = 2308, BG_W = 810, BG_H = 143,
-    SLIDER_W = 410, SLIDER_H = 143,
+    SLIDER_W = 810, SLIDER_H = 143,
     INSET_TOP = 10, INSET_BOTTOM = 10, INSET_LEFT = 70, INSET_RIGHT = 70,
     FONT_SIZE = 40,
     ACTIVE_R = 0xD8, ACTIVE_G = 0xC9, ACTIVE_B = 0xA3,  -- [fix] 深色滑块上深棕不可读 → 骨白
@@ -89,13 +89,12 @@ local TAB = {
     ANIM_DUR = 0.35,
 }
 
--- 5. 两个滑块按钮位置
+-- 5. 页签（单页：神器）
 local TAB_ITEMS = {
-    { name = "转职", cx = 340, cy = 2308, textX = 340, textY = 2302 },
-    { name = "神器", cx = 740, cy = 2308, textX = 740, textY = 2302 },
+    { name = "神器", cx = 540, cy = 2308, textX = 540, textY = 2302 },
 }
 
-local TAB_KEYS = { "zhuanzhi", "shenqi" }
+local TAB_KEYS = { "shenqi" }
 
 -- 6. 动画常量
 local ANIM = {
@@ -172,8 +171,8 @@ local state = {
     closing    = false,
     openTime   = 0,
     closeTime  = 0,
-    tab        = "zhuanzhi", -- "zhuanzhi" | "shenqi"
-    tabFrom    = "zhuanzhi",
+    tab        = "shenqi", -- 转职已迁到右侧栏角色详情，教堂只留神器
+    tabFrom    = "shenqi",
     tabSwitchTime = 0,
     selectedHeroId = nil,    -- 当前选中的角色
 
@@ -416,7 +415,7 @@ end
 
 local function isRosterVisible()
     return state.open and not state.closing
-       and state.tab == "zhuanzhi"
+       and false  -- 转职选人已迁出，教堂不再展开角色列表
        and state.slotExpanded
        and state.slotLiftProgress > 0.9
        and state.rosterSlideProgress > 0.5
@@ -470,10 +469,9 @@ end
 
 -- ======================== Public API ========================
 
---- Tab 键名映射到索引
+--- Tab 键名映射到索引（转职已迁出，只留神器）
 local TAB_MAP = {
-    zhuanzhi = 1,
-    shenqi   = 2,
+    shenqi = 1,
 }
 
 --- 将存档中的天赋数据同步到 TalentStarMap 渲染状态 + HeroConfig 默认天赋

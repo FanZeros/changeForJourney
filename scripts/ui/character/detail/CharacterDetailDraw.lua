@@ -230,15 +230,17 @@ local BTN_BACK_W, BTN_BACK_H   = 184, 143
 local BTN_TAB_BG_CX, BTN_TAB_BG_CY = 540, 2308
 local BTN_TAB_BG_W, BTN_TAB_BG_H   = 810, 143
 
--- 3-Tab 布局（参考铁匠铺 SLIDER_W=277）
-local BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H = 277, 143
-local BTN_TAB_ATTR_CX, BTN_TAB_ATTR_CY     = 274, 2308
-local BTN_TAB_EQUIP_CX, BTN_TAB_EQUIP_CY   = 540, 2308
-local BTN_TAB_AWAKEN_CX, BTN_TAB_AWAKEN_CY = 806, 2308
+-- 4-Tab 布局：属性 / 配装 / 转职 / 觉醒
+local BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H = 200, 143
+local BTN_TAB_ATTR_CX, BTN_TAB_ATTR_CY     = 255, 2308
+local BTN_TAB_EQUIP_CX, BTN_TAB_EQUIP_CY   = 445, 2308
+local BTN_TAB_CLASS_CX, BTN_TAB_CLASS_CY   = 635, 2308
+local BTN_TAB_AWAKEN_CX, BTN_TAB_AWAKEN_CY = 825, 2308
 
-local TEXT_ATTR_CX, TEXT_ATTR_CY     = 274, 2302
-local TEXT_EQUIP_CX, TEXT_EQUIP_CY   = 540, 2302
-local TEXT_AWAKEN_CX, TEXT_AWAKEN_CY = 806, 2302
+local TEXT_ATTR_CX, TEXT_ATTR_CY     = 255, 2302
+local TEXT_EQUIP_CX, TEXT_EQUIP_CY   = 445, 2302
+local TEXT_CLASS_CX, TEXT_CLASS_CY   = 635, 2302
+local TEXT_AWAKEN_CX, TEXT_AWAKEN_CY = 825, 2302
 
 -- 导出给 handleInput 使用
 M.BTN_BACK_CX  = BTN_BACK_CX
@@ -251,6 +253,8 @@ M.BTN_TAB_ATTR_CX  = BTN_TAB_ATTR_CX
 M.BTN_TAB_ATTR_CY  = BTN_TAB_ATTR_CY
 M.BTN_TAB_EQUIP_CX = BTN_TAB_EQUIP_CX
 M.BTN_TAB_EQUIP_CY = BTN_TAB_EQUIP_CY
+M.BTN_TAB_CLASS_CX = BTN_TAB_CLASS_CX
+M.BTN_TAB_CLASS_CY = BTN_TAB_CLASS_CY
 M.BTN_TAB_AWAKEN_CX = BTN_TAB_AWAKEN_CX
 M.BTN_TAB_AWAKEN_CY = BTN_TAB_AWAKEN_CY
 
@@ -580,9 +584,9 @@ function M.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, upperOX, 0)
 
-    -- 觉醒页由 AwakeningPanel 整页接管，以下 1~7 节/8~17 节全部被其背景遮挡，
-    -- 统一跳过绘制（含装备槽引导热点注册），避免无效绘制与幽灵热点
-    local isAwakenTab = (detailState.tab == "awaken")
+    -- 觉醒页由 AwakeningPanel、转职页由 ChurchClassChange 整页接管，
+    -- 以下 1~7 节/8~17 节全部被其背景遮挡，统一跳过绘制
+    local isAwakenTab = (detailState.tab == "awaken" or detailState.tab == "class")
     local stepAngle = math.pi * 2 / 16  -- 16向描边步进角（7节标题/10节等级共用）
 
     -- === 1) 背景图 ===
@@ -1038,6 +1042,14 @@ function M.draw(vg)
         -- 觉醒面板绘制
         AwakeningPanel.draw(vg, heroId)
 
+    elseif detailState.tab == "class" then
+        -- 转职页（从教堂迁入，整页接管）
+        local ClassChange = require("ui.church.ChurchClassChange")
+        ClassChange.init(vg)
+        ClassChange.setHero(heroId)
+        ClassChange.drawBg(vg)
+        ClassChange.drawContent(vg)
+
     elseif detailState.tab == "equip" then
         -- 配装面板绘制（由 CharacterDetailEquip 子模块负责）
         if M._drawEquipPanel then
@@ -1320,7 +1332,7 @@ function M.draw(vg)
 
     drawImageCentered(vg, img.tabBg, BTN_TAB_BG_CX, BTN_TAB_BG_CY, BTN_TAB_BG_W, BTN_TAB_BG_H, 1.0)
 
-    local TAB_CX_MAP = { attr = BTN_TAB_ATTR_CX, equip = BTN_TAB_EQUIP_CX, awaken = BTN_TAB_AWAKEN_CX }
+    local TAB_CX_MAP = { attr = BTN_TAB_ATTR_CX, equip = BTN_TAB_EQUIP_CX, class = BTN_TAB_CLASS_CX, awaken = BTN_TAB_AWAKEN_CX }
     local targetCX = TAB_CX_MAP[detailState.tab] or BTN_TAB_ATTR_CX
     local fromCX   = TAB_CX_MAP[detailState.tabFrom] or BTN_TAB_ATTR_CX
     local tabElapsed = time.elapsedTime - detailState.tabSwitchTime
@@ -1345,6 +1357,20 @@ function M.draw(vg)
 
     nvgFillColor(vg, curTab == "equip" and activeColor or inactiveColor)
     nvgText(vg, TEXT_EQUIP_CX, TEXT_EQUIP_CY, I18n.t("tab_equip"), nil)
+
+    nvgFillColor(vg, curTab == "class" and activeColor or inactiveColor)
+    nvgText(vg, TEXT_CLASS_CX, TEXT_CLASS_CY, I18n.t("tab_class"), nil)
+
+    -- 转职Tab角标：当前英雄可转职时显示红点
+    do
+        local okBadge, ChurchPage = pcall(require, "ui.church.ChurchPage")
+        if okBadge and ChurchPage.hasAdvanceForHero and ChurchPage.hasAdvanceForHero(heroId) then
+            nvgBeginPath(vg)
+            nvgCircle(vg, TEXT_CLASS_CX + 42, TEXT_CLASS_CY - 20, 9)
+            nvgFillColor(vg, nvgRGBA(0xE2, 0x3A, 0x2E, 255))
+            nvgFill(vg)
+        end
+    end
 
     nvgFillColor(vg, curTab == "awaken" and activeColor or inactiveColor)
     nvgText(vg, TEXT_AWAKEN_CX, TEXT_AWAKEN_CY, I18n.t("tab_awaken"), nil)
@@ -1458,6 +1484,15 @@ function M.draw(vg)
     end
 
     nvgRestore(vg)  -- 结束下半部分偏移
+
+    -- === 转职确认/重置弹窗、飘字与转职 Spine 特效（转职页最上层）===
+    if detailState.tab == "class" then
+        local ClassChange = require("ui.church.ChurchClassChange")
+        ClassChange.drawConfirmPopup(vg)
+        ClassChange.drawResetConfirmPopup(vg)
+        ClassChange.drawFloatText(vg)
+        require("ui.fx.SpineCardEffect").draw(vg)
+    end
 
     -- === 装备背包覆盖层 ===
     EquipmentBag.draw(vg)

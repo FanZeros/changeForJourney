@@ -12,7 +12,7 @@ function M.bind(deps)
     local easeInCubic = deps.easeInCubic
     local TalentStarMap = deps.TalentStarMap
     local TalentPanel = deps.TalentPanel
-    local ClassChange = deps.ClassChange
+    local ClassChange = deps.ClassChange  -- 转职已迁出，保留注入但不使用
     local ArtifactPanel = deps.ArtifactPanel
     local getDispatcher = deps.getDispatcher
     local getClient = deps.getClient
@@ -132,7 +132,7 @@ function M.bind(deps)
         }
         -- 天赋面板上下文由 TalentPage 独占注入，教堂不再 setContext
         ctx.getClassIcon2 = getClassIcon2
-        ClassChange.setContext(ctx)
+        -- 转职页已迁到右侧栏角色详情，图片与状态由 ChurchClassChange 自管
         ArtifactPanel.setContext(ctx)
         ArtifactPanel.init(vg)
 

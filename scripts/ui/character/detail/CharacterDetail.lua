@@ -46,6 +46,8 @@ local BTN_TAB_ATTR_CX        = Draw.BTN_TAB_ATTR_CX
 local BTN_TAB_ATTR_CY        = Draw.BTN_TAB_ATTR_CY
 local BTN_TAB_EQUIP_CX       = Draw.BTN_TAB_EQUIP_CX
 local BTN_TAB_EQUIP_CY       = Draw.BTN_TAB_EQUIP_CY
+local BTN_TAB_CLASS_CX       = Draw.BTN_TAB_CLASS_CX
+local BTN_TAB_CLASS_CY       = Draw.BTN_TAB_CLASS_CY
 local BTN_TAB_AWAKEN_CX      = Draw.BTN_TAB_AWAKEN_CX
 local BTN_TAB_AWAKEN_CY      = Draw.BTN_TAB_AWAKEN_CY
 local ATTR_BOX_W              = Draw.ATTR_BOX_W
@@ -572,6 +574,17 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
+    -- Tab 切换 —— 转职区域
+    if hitTest(dx, dy, BTN_TAB_CLASS_CX, BTN_TAB_CLASS_CY, BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H) then
+        if detailState.tab ~= "class" then
+            detailState.tabFrom = detailState.tab
+            detailState.tabSwitchTime = time.elapsedTime
+            detailState.tab = "class"
+            print("[CharacterDetail] 切换到转职页")
+        end
+        return true
+    end
+
     -- Tab 切换 —— 觉醒区域
     if hitTest(dx, dy, BTN_TAB_AWAKEN_CX, BTN_TAB_AWAKEN_CY, BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H) then
         if detailState.tab ~= "awaken" then
@@ -589,6 +602,16 @@ function CharacterDetail.handleInput(dx, dy)
             return CharacterDetail._EquipPanel.handleInput(dx, dy, detailState.heroId, detailState)
         end
         return false
+    end
+
+    -- === 转职面板输入委托 ===
+    if detailState.tab == "class" then
+        local ClassChange = require("ui.church.ChurchClassChange")
+        ClassChange.setHero(detailState.heroId)
+        if ClassChange.handleResetConfirmInput(dx, dy) then return true end
+        if ClassChange.handleConfirmInput(dx, dy) then return true end
+        if ClassChange.handleBranchInput(dx, dy) then return true end
+        return true
     end
 
     -- === 觉醒面板输入委托 ===
@@ -716,6 +739,8 @@ end
 function CharacterDetail.handleDragBegin(dx, dy)
 
     if not detailState.open or detailState.closing then return true end
+    -- 转职页无拖拽滚动，消费拖拽避免穿透
+    if detailState.tab == "class" then return true end
     if CharacterDetail._EquipDetail.isOpen() then
         if detailState.tab == "equip" and not CharacterDetail._EquipDetail.containsPoint(dx, dy)
             and CharacterDetail._EquipPanel.beginSideDrag(dx, dy) then
@@ -882,6 +907,7 @@ end
 ---@param dy number|nil
 function CharacterDetail.handleScroll(wheel, dx, dy)
     if not detailState.open or detailState.closing then return end
+    if detailState.tab == "class" then return end
     if CharacterDetail._EquipDetail.isOpen() then
         if dx == nil or CharacterDetail._EquipDetail.containsPoint(dx, dy) then
             CharacterDetail._EquipDetail.handleScroll(wheel, dx, dy)

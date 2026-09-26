@@ -160,6 +160,7 @@ local CASCADE_FAST_AFTER    = RewardCascade.FAST_AFTER
 local CASCADE_POP_DUR       = RewardCascade.POP_DUR
 
 -- 本弹窗的时间轴（件数在 show() 里定）
+---@class RewardCascadeTimeline : table  逐件弹出时间轴（定义见 ui/widget/RewardCascade.lua）
 ---@type RewardCascadeTimeline|nil
 local cascade = nil
 
@@ -894,7 +895,7 @@ function RewardPopup.drawContent(vg)
 
         for col = 1, COLS do
             local popping = false
-            local popT = 1
+            local popT = 1.0
             local drawThis = true
             local idx = (row - 1) * COLS + col
             local item = items[idx]
@@ -908,12 +909,12 @@ function RewardPopup.drawContent(vg)
             if cy + ICON_SIZE * 0.5 < CLIP_TOP then goto continue end
             if cy - ICON_SIZE * 0.5 > CLIP_BOTTOM then goto continue end
 
-            popT = cascadeT(idx) or -1
-            if popT < 0 then
+            local tNow = cascadeT(idx)
+            if not tNow then
                 drawCascadeAnticipate(vg, cx, cy, idx)
                 drawThis = false
-                popT = 1
             else
+                popT = tNow
                 popping = popT < 1
             end
             if drawThis then
@@ -923,7 +924,7 @@ function RewardPopup.drawContent(vg)
             end
             nvgSave(vg)
             if popping then
-                RewardCascade.applyPop(vg, cx, cy, popT, animAlpha)
+                RewardCascade.applyPop(vg, cx, cy, popT or 1.0, animAlpha)
             end
 
             if item.type == "equip" then

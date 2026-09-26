@@ -383,6 +383,8 @@ function BattleTriDriver.new(teamIdx)
         end
 
         -- 状态子系统 tick（mount 作用域内）
+        self._heavyFrame = (self._heavyFrame or 0) + 1
+        local heavy = require("ui.battle.combat.BattleStutterPlans").heavyThisFrame(self._heavyFrame)
         RCH.update(allies, 0)
         BattleCombat.updateHpBuffers(allies, dt)
         BattleCombat.updateHpBuffers(enemies, dt)
@@ -407,7 +409,7 @@ function BattleTriDriver.new(teamIdx)
                 end
             end,
         })
-        TAL.update(dt, allies, enemies, {
+        if heavy then TAL.update(dt, allies, enemies, {
             healUnit = function(unit, amount)
                 if unit.attrs and unit.hp > 0 then
                     local actual = unit.attrs:heal(amount)
@@ -427,7 +429,7 @@ function BattleTriDriver.new(teamIdx)
             performAttack = function(attacker, targetList, isAlly)
                 BattleCombat.performAttack(attacker, targetList, isAlly)
             end,
-        })
+        }) end
 
         -- 能量护盾恢复
         for _, u in ipairs(allies) do

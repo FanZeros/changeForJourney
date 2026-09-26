@@ -750,7 +750,8 @@ function BattleCombat.advanceAttackProgress(unit, dt, interval, hasTarget, onAtt
     end
     local hits = 0
     local pendingHits = math.floor(unit.atkProgress)
-    local maxHits = math.min(BattleCombat.MAX_ATTACKS_PER_FRAME, math.max(BattleCombat.MIN_ATTACKS_PER_FRAME, pendingHits))
+    local planCap = require("ui.battle.combat.BattleStutterPlans").maxHits()
+    local maxHits = math.min(planCap, math.max(1, pendingHits))
     while unit.atkProgress >= 1.0 and hits < maxHits do
         unit.atkProgress = unit.atkProgress - 1.0
         onAttack()

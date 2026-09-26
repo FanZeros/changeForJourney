@@ -155,6 +155,7 @@ end
 --- 每帧更新：三行使用同一套 BattleTriDriver，只切换各自的状态实例。
 function BattleTriPage.update(dt)
     if not isOpen_ then return end
+    require("ui.battle.combat.BattleStutterPlans").poll()
     BattleLayout.setMode("strip")
     require("ui.battle.scene.BattleScene").pumpBattleCards()
     ensureDrivers()
@@ -255,6 +256,12 @@ end
 function BattleTriPage.draw(vg, logicalW, logicalH)
     if not isOpen_ then return end
     BattleTriPage.init(vg)
+    local plans = require("ui.battle.combat.BattleStutterPlans")
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 22)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+    nvgFillColor(vg, nvgRGBA(255, 214, 120, 255))
+    nvgText(vg, 16, 8, "卡顿方案 " .. (plans.names[plans.mode] or "?") .. "  按1/2/3切换", nil)
     BattleLayout.setMode("strip")
     region = { x = 0, y = 0, w = logicalW, h = logicalH }
 

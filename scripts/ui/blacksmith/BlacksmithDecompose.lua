@@ -50,7 +50,7 @@ local FJ = {
     -- 8. 分解按钮
     DEC_BTN_CX = 773, DEC_BTN_CY = 2129, DEC_BTN_W = 410, DEC_BTN_H = 100,
     DEC_TEXT_FONT_SIZE = 40,
-    DEC_TEXT_R = 0x25, DEC_TEXT_G = 0x55, DEC_TEXT_B = 0x3d,
+    DEC_TEXT_R = 255, DEC_TEXT_G = 214, DEC_TEXT_B = 102,
 }
 -- 自动分解弹窗常量
 FJ.POP_MASK_ALPHA = 128

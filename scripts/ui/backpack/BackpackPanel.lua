@@ -97,7 +97,7 @@ local BTN_CONFIRM_DEC = {
 }
 local BTN_BATCH_DEC = {
     CX = 773, CY = 2129, W = 410, H = 100,
-    TEXT_R = 0x25, TEXT_G = 0x55, TEXT_B = 0x3d,
+    TEXT_R = 255, TEXT_G = 214, TEXT_B = 102,
 }
 
 -- 预计算列中心 X
@@ -349,7 +349,7 @@ local TRANSFER_CONFIRM = {
     BTN_OK_CX = 770, BTN_CANCEL_CX = 310, BTN_CY = 1301, BTN_W = 410, BTN_H = 100,
     BTN_FONT = 40,
     BTN_OK_R = 0x64, BTN_OK_G = 0x51, BTN_OK_B = 0x29,
-    BTN_CANCEL_R = 0x25, BTN_CANCEL_G = 0x55, BTN_CANCEL_B = 0x3d,
+    BTN_CANCEL_R = 255, BTN_CANCEL_G = 214, BTN_CANCEL_B = 102,
 }
 
 --- 判断英雄是否满觉醒
@@ -616,7 +616,7 @@ local function drawUrConvertDialog(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, C.BTN_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x25, 0x55, 0x3d, 255))
+    nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
     nvgText(vg, C.CANCEL_CX, C.CANCEL_CY, "取消", nil)
 end
 

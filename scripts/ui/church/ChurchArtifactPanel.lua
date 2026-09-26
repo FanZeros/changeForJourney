@@ -79,7 +79,7 @@ local MERGE_BTN = {
     W = 410, H = 100,
     FONT = 40,
     NP_T = 20, NP_R = 20, NP_B = 20, NP_L = 20,
-    TEXT_R = 0x25, TEXT_G = 0x55, TEXT_B = 0x3d,
+    TEXT_R = 255, TEXT_G = 214, TEXT_B = 102,
 }
 
 -- 背包网格

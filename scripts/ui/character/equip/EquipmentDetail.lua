@@ -924,11 +924,11 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
                 REF_BTN_CX + offsetX, btnCY,
                 REF_BTN_W, REF_BTN_H, 1.0)
 
-            -- 20) 按钮文字 - 正中央 字号40 颜色25553d
+            -- 20) 穿戴按钮文字
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, REF_BTN_FONT)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x25, 0x55, 0x3d, 255))
+            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
             nvgText(vg, REF_BTN_CX + offsetX, btnCY, btnText, nil)
             BF.finish(vg, _bf1)
             local _TM = require("systems.TutorialManager")

@@ -853,6 +853,19 @@ function CharacterPanel.getHeroDeployTeams(heroId)
     return result
 end
 
+--- 槽位阵容签名：只包含英雄 ID 与槽位顺序，经验/属性刷新不应重开战斗
+---@param teamIdx number
+---@return string
+function CharacterPanel.getTeamSignature(teamIdx)
+    local slots = (teams[teamIdx] and teams[teamIdx].slots) or {}
+    local ids = {}
+    for i = 1, MAX_SLOTS do
+        local slot = slots[i]
+        ids[i] = tostring(slot and slot.state == "occupied" and slot.heroId or 0)
+    end
+    return table.concat(ids, ",")
+end
+
 --- 获取指定队伍的战斗单位列表（供 BattleScene / 三栏并行战斗使用）
 --- [三队并行] 缺省 teamIdx=1（主线战斗沿用队1，与旧行为一致）
 ---@param teamIdx? number 队伍索引（1~3），缺省 1

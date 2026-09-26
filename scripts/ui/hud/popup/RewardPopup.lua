@@ -160,7 +160,7 @@ local CASCADE_FAST_AFTER    = RewardCascade.FAST_AFTER
 local CASCADE_POP_DUR       = RewardCascade.POP_DUR
 
 -- 本弹窗的时间轴（件数在 show() 里定）
----@type RewardCascadeTimeline|nil
+---@type table|nil
 local cascade = nil
 
 --- 第 idx 件与上一件的间隔。idx 从 1 开始，第 1 件没有间隔。

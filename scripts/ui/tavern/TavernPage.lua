@@ -143,10 +143,10 @@ local DIAMOND_STROKE_B = 0x23
 local BTN_1_CX, BTN_1_CY = 314, 1902
 local BTN_1_W, BTN_1_H   = 410, 100
 local BTN_TEXT_SIZE = 40
--- 按钮文本颜色 #25553d
-local BTN_TEXT_R = 0x25
-local BTN_TEXT_G = 0x55
-local BTN_TEXT_B = 0x3d
+-- 招募按钮文字统一为黄色
+local BTN_TEXT_R = 255
+local BTN_TEXT_G = 214
+local BTN_TEXT_B = 102
 
 -- 20. 招募10次按钮
 local BTN_10_CX, BTN_10_CY = 766, 1902

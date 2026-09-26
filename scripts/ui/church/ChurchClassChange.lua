@@ -762,7 +762,7 @@ function M.drawConfirmPopup(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, C.costFont)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x1e, 0x51, 0x37, 255))
+        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
         nvgText(vg, C.btnCX, C.btnCY, "已拥有", nil)
         BF.finish(vg, _bf1)
     else
@@ -849,7 +849,7 @@ function M.drawConfirmPopup(vg)
                 C.coinSize, C.coinSize, 1.0)
 
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x1e, 0x51, 0x37, 255))
+            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
             nvgText(vg, coinStartX + C.coinSize + coinGap, C.btnCY, costStr, nil)
             BF.finish(vg, _bf2)
         end

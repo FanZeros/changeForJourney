@@ -47,10 +47,8 @@ function BattleTriPage.setOnKill(cb) triOnKill = cb end
 function BattleTriPage.isOpen() return isOpen_ end
 
 
---- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
-function BattleTriPage.open()
-    if isOpen_ then return end
-    isOpen_ = true
+--- 创建新解锁队伍的战斗驱动；已存在的驱动保留关卡进度
+local function ensureDrivers()
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
     for t = 2, COL_COUNT do
         if unlocked >= t and not drivers[t] then
@@ -59,10 +57,18 @@ function BattleTriPage.open()
             drv.onKill = function(data)
                 if triOnKill then triOnKill(data) end
             end
-            drv:start(1)
+            drv:start(StageConfig.NORMAL_FIRST_STAGE)
             drivers[t] = drv
         end
     end
+    return unlocked
+end
+
+--- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
+function BattleTriPage.open()
+    if isOpen_ then return end
+    isOpen_ = true
+    local unlocked = ensureDrivers()
     print("[BattleTriPage] open, unlockedTeams=" .. unlocked)
 end
 
@@ -117,6 +123,7 @@ end
 function BattleTriPage.update(dt)
     if not isOpen_ then return end
     BattleLayout.setMode("strip")
+    ensureDrivers()
     -- 回到 default 状态供 BattleScene 使用
     BattleCombat.mount(nil)
     ProjectileSystem.mount(nil)
@@ -275,38 +282,50 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         elseif drivers[row] then
             stageText = string.format("【小队%d】%s · 击杀%d", row,
                 stageDisplayName(drivers[row].stageId), drivers[row].kills)
+        elseif row <= unlocked then
+            stageText = string.format("【小队%d】准备中", row)
         else
             stageText = string.format("【小队%d】待解锁", row)
         end
-        -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上        nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
+        -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上
+        nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
         nvgText(vg, ix + 28, iy + 25, stageText, nil)
 
-        -- [进度显示] 首通模式：战斗页下方进度条（击杀 / 总怪）
-        if row == 1 and row <= unlocked then
-            local killed, total = BattleScene.getStageKillProgress()
-            if killed and total and total > 0 then
-                local ratio = math.max(0, math.min(1, killed / total))
-                local pctShown = math.floor(ratio * 100 + 0.5)
-                local pctText = string.format("%d%%", pctShown)
-                local barW = math.min(iw * 0.62, 280)
-                local barH = 10
-                local barX = ix + (iw - barW) * 0.5
-                local barY = iy + ih - 8
+        local killed, total
+        if row == 1 then
+            killed, total = BattleScene.getStageKillProgress()
+        elseif row <= unlocked and drivers[row] and #drivers[row].allies > 0 then
+            killed, total = drivers[row].kills, drivers[row].stageTotal
+        end
+        if killed and total and total > 0 then
+            local ratio = math.max(0, math.min(1, killed / total))
+            local pctShown = math.floor(ratio * 100 + 0.5)
+            local pctText = string.format("%d%%", pctShown)
+            local barW = math.min(iw * 0.62, 280)
+            local barH = 10
+            local barX = ix + (iw - barW) * 0.5
+            local barY = iy + ih - 8
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, barX, barY, barW, barH, 5)
+            nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
+            nvgFill(vg)
+            if ratio > 0 then
                 nvgBeginPath(vg)
-                nvgRoundedRect(vg, barX, barY, barW, barH, 5)
-                nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
+                nvgRoundedRect(vg, barX, barY, math.max(barH, barW * ratio), barH, 5)
+                nvgFillColor(vg, nvgRGBA(196, 148, 72, 230))
                 nvgFill(vg)
-                if ratio > 0 then
-                    nvgBeginPath(vg)
-                    nvgRoundedRect(vg, barX, barY, math.max(barH, barW * ratio), barH, 5)
-                    nvgFillColor(vg, nvgRGBA(196, 148, 72, 230))
-                    nvgFill(vg)
-                end
-                nvgFontSize(vg, 16)
-                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
-                nvgText(vg, ix + iw * 0.5, barY - 12, "关卡进度 " .. pctText, nil)
             end
+            nvgFontSize(vg, 16)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+            nvgText(vg, ix + iw * 0.5, barY - 12, "关卡进度 " .. pctText, nil)
+        end
+
+        if row > 1 and row <= unlocked and drivers[row] and #drivers[row].allies == 0 then
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFontSize(vg, 28)
+            nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+            nvgText(vg, ix + iw * 0.5, iy + ih * 0.5, "未编队，请在右侧部署队员", nil)
         end
 
         -- 未解锁提示（行内居中）

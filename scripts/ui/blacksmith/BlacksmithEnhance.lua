@@ -102,7 +102,7 @@ local EB = {
     -- 强化按钮（左侧）
     ENH_BTN_CX = 307, ENH_BTN_CY = 2129, ENH_BTN_W = 410, ENH_BTN_H = 100,
     ENH_TEXT_FONT_SIZE = 40,
-    ENH_TEXT_R = 0x25, ENH_TEXT_G = 0x55, ENH_TEXT_B = 0x3d,
+    ENH_TEXT_R = 255, ENH_TEXT_G = 214, ENH_TEXT_B = 102,
     -- 一键强化按钮（右侧）
     ENH_MAX_BTN_CX = 770, ENH_MAX_BTN_CY = 2129, ENH_MAX_BTN_W = 410, ENH_MAX_BTN_H = 100,
 }
@@ -862,7 +862,7 @@ function M.drawConfirmDialog(vg)
     nvgGlobalAlpha(vg, 1.0)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, EMDLG.CONFIRM_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x25, 0x55, 0x3d, canConfirm and 255 or 100))
+    nvgFillColor(vg, nvgRGBA(255, 214, 102, canConfirm and 255 or 100))
     nvgText(vg, EMDLG.CONFIRM_CX, EMDLG.CONFIRM_CY, "强化", nil)
     BF.finish(vg, _sc)
 

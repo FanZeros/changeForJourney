@@ -1585,7 +1585,7 @@ function M.draw(vg)
         ClassChange.drawConfirmPopup(vg)
         ClassChange.drawResetConfirmPopup(vg)
         ClassChange.drawFloatText(vg)
-        require("ui.fx.SpineCardEffect").draw(vg)
+        require("ui.fx.SpineCardEffect").draw(vg, "church")
     end
 
     -- === 装备背包覆盖层 ===

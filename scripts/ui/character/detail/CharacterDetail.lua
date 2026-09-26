@@ -418,7 +418,10 @@ function CharacterDetail._switchHero(direction, keepDrag)
     detailState.attrTip       = nil
     AwakeningPanel.reset(nextHeroId)
     print("[CharacterDetail] 箭头切换角色: " .. tostring(detailState.heroId))
-    require("ui.character.hero.HeroScenario").onOpenHero(nextHeroId)
+    -- 按住连续滑卡时不逐张触发情景，松手落定的那次（keepDrag=false）再播
+    if not keepDrag then
+        require("ui.character.hero.HeroScenario").onOpenHero(nextHeroId)
+    end
 end
 
 --- 是否打开

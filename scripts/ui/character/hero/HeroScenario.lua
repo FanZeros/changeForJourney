@@ -15,6 +15,22 @@ local IDLE_ID = { [18] = 78, [19] = 79, [24] = 80, [25] = 81 }
 ---@type table<integer, boolean>
 local idleSeen_ = {}
 
+-- 对话正在播时新来的入队请求先排队，当前对话（含退场动画）结束后再播，避免静默丢弃
+---@type integer[]
+local pending_ = {}
+
+---@param heroId integer
+local function enqueue(heroId)
+    for i = 1, #pending_ do
+        if pending_[i] == heroId then return end
+    end
+    pending_[#pending_ + 1] = heroId
+end
+
+-- 前向声明：播放函数在对话忙时入队后需要立刻尝试消化队列
+---@type fun()
+local drainPending
+
 ---@param v any
 ---@return integer
 local function heroIdOf(v)
@@ -50,6 +66,11 @@ local function markClaimed(id)
     end
     updated.claimedScenarios = claimed
     ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
+    -- 入队只该播一次：立刻落档，避免播放中途退出后重启重播
+    local okSave, StandaloneSave = pcall(require, "boot.StandaloneSave")
+    if okSave and StandaloneSave and StandaloneSave.Flush then
+        StandaloneSave.Flush()
+    end
     print("[HeroScenario] claimed scenario " .. tostring(id))
 end
 
@@ -89,8 +110,10 @@ local function playIdle(heroId, onFinish)
     end)
     if shown then
         idleSeen_[heroId] = true
-    elseif onFinish then
-        onFinish()
+    else
+        -- 没播出来（配置缺失或已有对话在播），不占用本局次数，交给排队重试
+        enqueue(heroId)
+        drainPending()
     end
 end
 
@@ -110,11 +133,18 @@ local function playJoinThenIdle(heroId, onFinish)
         markClaimed(joinId)
         playIdle(heroId, onFinish)
     end)
-    if shown then
-        markClaimed(joinId)
-    elseif onFinish then
-        onFinish()
+    if not shown then
+        -- 对话忙或配置缺失：不标记已看，排队等当前对话结束再播
+        enqueue(heroId)
+        drainPending()
     end
+end
+
+--- 当前对话结束后把排队的入队/闲聊补上
+local function drainPending()
+    if ScenarioDialogue.isActive() or #pending_ == 0 then return end
+    local heroId = table.remove(pending_, 1)
+    playJoinThenIdle(heroId, drainPending)
 end
 
 --- 招募结果里 isNew 的四人，播入队再接闲聊
@@ -133,7 +163,10 @@ function HeroScenario.onRecruitResults(results)
         end
     end
     local function nextAt(index)
-        if index > #queue then return end
+        if index > #queue then
+            drainPending()
+            return
+        end
         playJoinThenIdle(queue[index], function()
             nextAt(index + 1)
         end)
@@ -147,7 +180,7 @@ function HeroScenario.onOpenHero(heroId)
     local hid = heroIdOf(heroId)
     if not JOIN_ID[hid] then return end
     print("[HeroScenario] open hero " .. tostring(hid))
-    playJoinThenIdle(hid, nil)
+    playJoinThenIdle(hid, drainPending)
 end
 
 return HeroScenario

@@ -604,14 +604,14 @@ function CharacterDetail.handleInput(dx, dy)
         return false
     end
 
-    -- === 转职面板输入委托（转职树点击坐标下移 260px，重置按钮用屏幕坐标）===
+    -- === 转职面板输入委托（转职树上移 300px，重置按钮用屏幕坐标）===
     if detailState.tab == "class" then
         local ClassChange = require("ui.church.ChurchClassChange")
         ClassChange.setHero(detailState.heroId)
-        if ClassChange.handleResetConfirmInput(dx, dy - 260) then return true end
-        if ClassChange.handleConfirmInput(dx, dy - 260) then return true end
-        if ClassChange.handleResetButton(dx, dy) then return true end
-        if ClassChange.handleBranchInput(dx, dy - 260) then return true end
+        if ClassChange.handleResetConfirmInput(dx, dy + 300) then return true end
+        if ClassChange.handleConfirmInput(dx, dy + 300) then return true end
+        if ClassChange.handleResetButton(dx, dy + 300) then return true end
+        if ClassChange.handleBranchInput(dx, dy + 300) then return true end
         return true
     end
 
@@ -768,9 +768,7 @@ function CharacterDetail.handleDragBegin(dx, dy)
     end
     if (detailState.tab == "attr" or detailState.tab == "class")
         and dx >= Draw.ARROW_BG_LEFT_CX - 120 and dx <= Draw.ARROW_BG_RIGHT_CX + 120
-        and dy >= Draw.ARROW_CY - 230 and dy <= Draw.ARROW_CY + 230
-        -- 转职页重置按钮在卡片上方，别让横滑拖拽把它吃掉
-        and not (detailState.tab == "class" and dy <= 360) then
+        and dy >= Draw.ARROW_CY - 230 and dy <= Draw.ARROW_CY + 230 then
         detailState.cardDragX = dx
         detailState.cardDragMoved = 0
         return true

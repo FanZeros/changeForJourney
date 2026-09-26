@@ -590,8 +590,8 @@ function M.draw(vg)
     local isClassTab = (detailState.tab == "class")
     local stepAngle = math.pi * 2 / 16  -- 16向描边步进角（7节标题/10节等级共用）
 
-    -- === 1) 背景图（转职页与属性页同款）===
-    if not isAwakenTab then
+    -- === 1) 背景图（转职页另用觉醒页的整页背景）===
+    if not isAwakenTab and not isClassTab then
         nvgSave(vg)
         nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
         drawImageCentered(vg, img.detailBg, DT_BG_CX, DT_BG_CY, DT_BG_W, DT_BG_H, 1.0)
@@ -888,65 +888,6 @@ function M.draw(vg)
     end  -- if detailState.tab == "equip"（装备槽与批量按钮）
     end  -- if not isAwakenTab and not isClassTab（4~6 节）
 
-    -- === 转职页：复用属性页的角色横滑（左右相邻卡 + 拖动跟随）===
-    if isClassTab then
-        local function neighborId(dir)
-            local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
-            if not roster then return nil end
-            local cur = nil
-            for i, entry in ipairs(roster) do
-                if entry.heroId == heroId then cur = i break end
-            end
-            if not cur then return nil end
-            local idx = cur
-            for _ = 1, #roster - 1 do
-                idx = idx + dir
-                if idx < 1 then idx = #roster end
-                if idx > #roster then idx = 1 end
-                if roster[idx].owned then return roster[idx].heroId end
-            end
-            return nil
-        end
-        local function drawCarouselCard(id, slot, alpha)
-            if not id or alpha <= 0.01 then return end
-            local imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, id)
-            if (not imgCard or imgCard < 0) and id ~= 1 then
-                imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, 1)
-            end
-            if not imgCard or imgCard < 0 then return end
-            local slide = detailState.cardDragVisual or 0
-            if detailState.switchDir then
-                local from = (detailState.switchDir or 0) + (detailState.switchFrom or 0)
-                slide = from * (1 - progress)
-            end
-            local pos = slot + slide
-            local ax = math.min(1, math.abs(pos))
-            local scale = CARD.CENTER_SCALE - (CARD.CENTER_SCALE - CARD.SIDE_SCALE) * ax
-            local yaw = 1 - (1 - CARD.YAW_SQUASH) * ax
-            nvgSave(vg)
-            nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, CARD.CY)
-            nvgScale(vg, scale * yaw, scale)
-            nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
-            DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, 1.0)
-            nvgRestore(vg)
-        end
-        local leftId = neighborId(-1)
-        local rightId = neighborId(1)
-        local function secondNeighbor(firstId, dir)
-            if not firstId then return nil end
-            local saved = heroId
-            heroId = firstId
-            local id = neighborId(dir)
-            heroId = saved
-            return id
-        end
-        drawCarouselCard(secondNeighbor(leftId, -1), -2, 1)
-        drawCarouselCard(leftId, -1, 1)
-        drawCarouselCard(rightId, 1, 1)
-        drawCarouselCard(secondNeighbor(rightId, 1), 2, 1)
-        drawCarouselCard(heroId, 0, 1)
-    end
-
     nvgRestore(vg)  -- 结束动态内容偏移（switchOX/switchAlpha）
 
     nvgRestore(vg)  -- 结束上半部分偏移
@@ -1000,6 +941,13 @@ function M.draw(vg)
 
     if detailState.tab == "equip" then
         nvgTranslate(vg, 0, -EQUIP_LOWER_OFFSET)
+    end
+
+    -- 转职页背景不参与角色切换淡入，换角色时保持不动
+    if detailState.tab == "class" then
+        local ClassChange = require("ui.church.ChurchClassChange")
+        ClassChange.init(vg)
+        ClassChange.drawBg(vg)
     end
 
     -- === 下方文本：原地交叉淡化。旧文本由 drawLowerText 末尾重绘模糊残影 ===
@@ -1107,8 +1055,6 @@ function M.draw(vg)
         local ClassChange = require("ui.church.ChurchClassChange")
         ClassChange.init(vg)
         ClassChange.setHero(heroId)
-        ClassChange.drawBg(vg)
-        ClassChange.drawResetButton(vg)
         ClassChange.drawContent(vg)
 
     elseif detailState.tab == "equip" then
@@ -1545,6 +1491,93 @@ function M.draw(vg)
     end
 
     nvgRestore(vg)  -- 结束下半部分偏移
+
+    -- === 转职页角色横滑重绘在转职树之上，避免被职业图标盖住 ===
+    if detailState.tab == "class" then
+        local function neighborId(dir)
+            local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
+            if not roster then return nil end
+            local cur = nil
+            for i, entry in ipairs(roster) do
+                if entry.heroId == heroId then cur = i break end
+            end
+            if not cur then return nil end
+            local idx = cur
+            for _ = 1, #roster - 1 do
+                idx = idx + dir
+                if idx < 1 then idx = #roster end
+                if idx > #roster then idx = 1 end
+                if roster[idx].owned then return roster[idx].heroId end
+            end
+            return nil
+        end
+        local function drawCarouselCard(id, slot, alpha)
+            if not id or alpha <= 0.01 then return end
+            local imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, id)
+            if (not imgCard or imgCard < 0) and id ~= 1 then
+                imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, 1)
+            end
+            if not imgCard or imgCard < 0 then return end
+            local slide = detailState.cardDragVisual or 0
+            if detailState.switchDir then
+                local from = (detailState.switchDir or 0) + (detailState.switchFrom or 0)
+                slide = from * (1 - progress)
+            end
+            local pos = slot + slide
+            local ax = math.min(1, math.abs(pos))
+            local scale = CARD.CENTER_SCALE - (CARD.CENTER_SCALE - CARD.SIDE_SCALE) * ax
+            local yaw = 1 - (1 - CARD.YAW_SQUASH) * ax
+            nvgSave(vg)
+            nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, CARD.CY)
+            nvgScale(vg, scale * yaw, scale)
+            nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
+            DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, 1.0)
+            nvgRestore(vg)
+        end
+        local leftId = neighborId(-1)
+        local rightId = neighborId(1)
+        local function secondNeighbor(firstId, dir)
+            if not firstId then return nil end
+            local saved = heroId
+            heroId = firstId
+            local id = neighborId(dir)
+            heroId = saved
+            return id
+        end
+        drawCarouselCard(secondNeighbor(leftId, -1), -2, 1)
+        drawCarouselCard(leftId, -1, 1)
+        drawCarouselCard(rightId, 1, 1)
+        drawCarouselCard(secondNeighbor(rightId, 1), 2, 1)
+        drawCarouselCard(heroId, 0, 1)
+
+        -- 当前卡补齐和其他页一样的信息：职业标、战力、等级（滑动中隐藏）
+        local cardSliding = detailState.switchDir or math.abs(detailState.cardDragVisual or 0) > 0.01
+        if not cardSliding then
+            local cx, cy = DT_CARD_CX, CARD.CY
+            local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
+            if iconIdx and imgClassIcons[iconIdx] then
+                drawImageCentered(vg, imgClassIcons[iconIdx], cx + CARD.TAG_DX,
+                    cy + (CARD.H * 0.5 - CARD.LVL_BOTTOM_UP), CARD.TAG_SIZE, CARD.TAG_SIZE, 1.0)
+            end
+            local power = getCachedPower(heroId, heroLevel)
+            local powerStr = tostring(power)
+            local POWER_GAP = 4
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 30)
+            local ptW = nvgTextBounds(vg, 0, 0, powerStr)
+            local pcX = cx - (CARD.POWER_ICON_SIZE + POWER_GAP + ptW) * 0.5
+            drawImageCentered(vg, imgPower, pcX + CARD.POWER_ICON_SIZE * 0.5,
+                cy + (CARD.H * 0.5 - CARD.POWER_BOTTOM_UP), CARD.POWER_ICON_SIZE, CARD.POWER_ICON_SIZE, 1.0)
+            drawTextStroke(vg, pcX + CARD.POWER_ICON_SIZE + POWER_GAP,
+                cy + (CARD.H * 0.5 - CARD.POWER_BOTTOM_UP), powerStr,
+                30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 247, 254, 119, 4)
+            local badgeCX = cx + CARD.LVL_BADGE_DX
+            local badgeCY = cy + (CARD.H * 0.5 - CARD.LVL_BOTTOM_UP)
+            drawImageCentered(vg, imgLvlBadge, badgeCX, badgeCY, CARD.LVL_BADGE_SIZE, CARD.LVL_BADGE_SIZE, 1.0)
+            drawTextStroke(vg, badgeCX, badgeCY, tostring(heroLevel),
+                28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+        end
+    end
 
     -- === 转职确认/重置弹窗、飘字与转职 Spine 特效（转职页最上层）===
     if detailState.tab == "class" then

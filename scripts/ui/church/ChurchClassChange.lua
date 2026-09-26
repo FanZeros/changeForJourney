@@ -76,9 +76,9 @@ end
 
 -- ======================== 转职界面布局常量 ========================
 
--- 背景与属性页同款（UI_JSXQ_BJ_dark，1240x1290，中心 540,477）
-local CLASS_BG_W, CLASS_BG_H   = 1240, 1290
-local CLASS_BG_CX, CLASS_BG_CY = 540, 477
+-- 背景与觉醒页同款，铺满整页（UI_JX_BJ，1080x2400）
+local CLASS_BG_W, CLASS_BG_H   = 1080, 2400
+local CLASS_BG_CX, CLASS_BG_CY = 540, 1200
 
 -- 标题背景
 local TITLE_BG_CX, TITLE_BG_CY = 540, 1092
@@ -88,9 +88,9 @@ local TITLE_BG_W, TITLE_BG_H   = 660, 60
 local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 1092
 local TITLE_FONT_SIZE              = 40
 
--- 重置按钮：画在角色横滑上方（屏幕坐标，不随转职树下移）
+-- 重置按钮：二转图标（1941）下方，随转职树一起上移
 local BTN_RESET_CX   = 540
-local BTN_RESET_CY   = 300
+local BTN_RESET_CY   = 2140
 local BTN_RESET_W    = 410
 local BTN_RESET_H    = 100
 local BTN_RESET_FONT = 40
@@ -380,7 +380,7 @@ function M.init(vg)
     img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
     img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
     img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
-    img.detailBg   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_BJ_dark.png", 0)
+    img.detailBg   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_BJ.png", 0)
 end
 
 --- 设置当前转职页英雄（详情页页签切换/换角色时调用）
@@ -420,7 +420,7 @@ end
 
 -- ======================== 绘制 API ========================
 
---- 绘制转职页背景（与属性页同款 UI_JSXQ_BJ_dark）
+--- 绘制转职页背景（与觉醒页同款 UI_JX_BJ，铺满整页）
 function M.drawBg(vg)
     if img.detailBg and img.detailBg >= 0 then
         drawImageCentered(vg, img.detailBg, CLASS_BG_CX, CLASS_BG_CY, CLASS_BG_W, CLASS_BG_H, 1.0)
@@ -432,9 +432,10 @@ function M.drawContent(vg)
     if not heroId() then return end
     local heroCfg = HC.get(heroId())
     if not heroCfg then return end
-    -- 详情页上半部是角色横滑，转职树整体下移到卡片下方
+    -- 转职树整体上移，并裁到页签上方，避免二转图标压住底部按钮
     nvgSave(vg)
-    nvgTranslate(vg, 0, 260)
+    nvgTranslate(vg, 0, -300)
+    nvgScissor(vg, 0, 0, DESIGN_W, 2236)
 
     local classId = heroCfg.classId
     local classColor = CLASS_COLORS[classId] or { r = 255, g = 255, b = 255 }
@@ -610,7 +611,11 @@ function M.drawContent(vg)
             255, 255, 255, 6,
             { italic = true })
     end
-    nvgRestore(vg)  -- 结束转职树下移
+
+    -- 重置按钮放在二转下方（按钮中心 2190 超出裁剪线，临时放开裁剪）
+    nvgResetScissor(vg)
+    M.drawResetButton(vg)
+    nvgRestore(vg)  -- 结束转职树上移
 end
 
 -- ======================== 确认弹窗 ========================

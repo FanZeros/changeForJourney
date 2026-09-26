@@ -20,6 +20,7 @@ local FILTER = { x = 24, cy = 286, w = 96, h = 64, gap = 4 }
 local BACK = { cx = 958, cy = 2308, w = 144, h = 120 }
 local ACTION_CX, ACTION_W, ACTION_H = 873, 202, 112
 local BTN_W, BTN_H, BTN_Y = 420, 108, 2210
+local BTN_CLAIM_CX, BTN_DECOMPOSE_CX = 320, 760
 local CONFIRM = { cx = 540, cy = 1200, w = 860, h = 460, btnY = 1340 }
 local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
@@ -391,9 +392,9 @@ function LootBoxPage.draw(vg)
         nvgFill(vg)
     end
     local hasItems = state.count > 0
-    drawButton(vg, "lbp_claim_all", 360, BTN_Y, BTN_W, BTN_H,
+    drawButton(vg, "lbp_claim_all", BTN_CLAIM_CX, BTN_Y, BTN_W, BTN_H,
         state.qualityFilter == 0 and "一键领取" or "领取筛选", "gold", hasItems)
-    drawButton(vg, "lbp_decompose_all", 800, BTN_Y, BTN_W, BTN_H,
+    drawButton(vg, "lbp_decompose_all", BTN_DECOMPOSE_CX, BTN_Y, BTN_W, BTN_H,
         state.qualityFilter == 0 and "一键回收" or "回收筛选", "red", hasItems)
     TownPageChrome.drawBack(vg, BACK)
     if not state.confirm and state.detailIndex then
@@ -496,7 +497,7 @@ function LootBoxPage.handleInput(dx, dy)
             return true
         end
     end
-    if DrawUtil.hitTest(dx, dy, 360, BTN_Y, BTN_W, BTN_H) then
+    if DrawUtil.hitTest(dx, dy, BTN_CLAIM_CX, BTN_Y, BTN_W, BTN_H) then
         clearDetail()
         if state.count > 0 then
             BF.trigger("lbp_claim_all")
@@ -504,7 +505,7 @@ function LootBoxPage.handleInput(dx, dy)
         end
         return true
     end
-    if DrawUtil.hitTest(dx, dy, 800, BTN_Y, BTN_W, BTN_H) then
+    if DrawUtil.hitTest(dx, dy, BTN_DECOMPOSE_CX, BTN_Y, BTN_W, BTN_H) then
         clearDetail()
         if state.count > 0 then BF.trigger("lbp_decompose_all") state.confirm = true end
         return true

@@ -80,7 +80,7 @@ local BTN_BACK = {
 
 -- 4. Tab 栏 + 滑块（两 Tab：转职 / 神器）
 local TAB = {
-    BG_CX = 639, BG_CY = 2308, BG_W = 810, BG_H = 143,
+    BG_CX = 540, BG_CY = 2308, BG_W = 810, BG_H = 143,
     SLIDER_W = 410, SLIDER_H = 143,
     INSET_TOP = 10, INSET_BOTTOM = 10, INSET_LEFT = 70, INSET_RIGHT = 70,
     FONT_SIZE = 40,
@@ -91,8 +91,8 @@ local TAB = {
 
 -- 5. 两个滑块按钮位置
 local TAB_ITEMS = {
-    { name = "转职", cx = 439, cy = 2308, textX = 439, textY = 2302 },
-    { name = "神器", cx = 839, cy = 2308, textX = 839, textY = 2302 },
+    { name = "转职", cx = 340, cy = 2308, textX = 340, textY = 2302 },
+    { name = "神器", cx = 740, cy = 2308, textX = 740, textY = 2302 },
 }
 
 local TAB_KEYS = { "zhuanzhi", "shenqi" }

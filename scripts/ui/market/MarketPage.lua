@@ -82,8 +82,8 @@ local TAB = {
     INA_R = 255, INA_G = 255, INA_B = 255,
     ANIM_DUR = 0.35,
     ITEMS = {
-        { name = "道具",   cx = 505, cy = 2308 },
-        { name = "典藏",   cx = 772, cy = 2308 },
+        { name = "道具",   cx = 407, cy = 2308 },
+        { name = "典藏",   cx = 673, cy = 2308 },
     },
     MAP   = { items = 1, collection = 2 },
     KEYS  = { "items", "collection" },

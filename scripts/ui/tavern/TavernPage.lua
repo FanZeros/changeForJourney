@@ -158,12 +158,12 @@ local BTN_TARGET_W, BTN_TARGET_H   = 410, 100
 local BTN_TARGET_FONT = 40
 
 -- 21. 底部滑块（与教堂一致）
-local TAB_BG_CX, TAB_BG_CY = 639, 2308
+local TAB_BG_CX, TAB_BG_CY = 540, 2308
 local TAB_BG_W, TAB_BG_H   = 810, 143
 
 local TAB_ITEMS = {
-    { name = "招募",   cx = 439, cy = 2308, textX = 439, textY = 2302 },
-    { name = "商店",   cx = 839, cy = 2308, textX = 839, textY = 2302 },
+    { name = "招募",   cx = 340, cy = 2308, textX = 340, textY = 2302 },
+    { name = "商店",   cx = 740, cy = 2308, textX = 740, textY = 2302 },
 }
 local SLIDER_W, SLIDER_H = 410, 143
 local SLIDER_INSET_TOP    = 10

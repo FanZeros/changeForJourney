@@ -231,6 +231,14 @@ local function ensureMapImg(vg, group)
     return img
 end
 
+local function currentStageId()
+    if state.targetTeam and state.targetTeam > 1 then
+        local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+        return BattleTriPage.getTeamStageId(state.targetTeam)
+    end
+    return require("ui.battle.scene.BattleScene").getStageId()
+end
+
 local function selectedGroup(groups)
     for _, g in ipairs(groups) do
         if tostring(g.key) == tostring(state.selKey) then return g end
@@ -379,9 +387,8 @@ function StageSelectDialog.draw(vg)
     local scale = getAnimScale()
     if scale <= 0.01 then return end
 
-    local BS = require("ui.battle.scene.BattleScene")
     local groups, maxOrder = ensureCache()
-    local curStage = BS.getStageId()
+    local curStage = currentStageId()
     local sel = selectedGroup(groups)
     if not sel then return end
 
@@ -707,7 +714,7 @@ function StageSelectDialog.handleInput(x, y)
                 if (ord == nil) or (maxOrder == nil) or (ord > maxOrder) then
                     return true
                 end
-                if id == BS.getStageId() then return true end
+                if id == currentStageId() then return true end
                 state.pendingId = id
                 print("[StageSelectDialog] 待确认关卡: " .. tostring(id))
                 return true

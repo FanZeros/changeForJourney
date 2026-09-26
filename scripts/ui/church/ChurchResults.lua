@@ -29,7 +29,16 @@ function M.bind(deps)
     end
 
     local function onActionResult(data)
-        if not state.open then return end
+        -- 转职结果与教堂开关无关（转职页在右侧栏角色详情）
+        local ProtocolEarly = getProtocol()
+        if data.action == ProtocolEarly.ACTION_TYPES.ADVANCE_CLASS
+            or data.action == ProtocolEarly.ACTION_TYPES.RESET_CLASS
+            or (data.branchId and data.advLevel) then
+            -- 继续往下处理
+        elseif not state.open then
+            return
+        end
+        if not data.success and not state.open then return end
 
         -- 神器装配结果
         local Protocol = getProtocol()
@@ -73,6 +82,7 @@ function M.bind(deps)
         end
 
         -- 转职成功结果（由 ADVANCE_CLASS handler 返回，含 branchId + advLevel + branchName）
+        -- 转职页已迁到右侧栏角色详情，结果处理与教堂打开状态无关
         if data.branchId and data.advLevel then
             print("[ChurchPage] 转职成功: " .. tostring(data.branchName)
                 .. " heroId=" .. tostring(data.heroId)
@@ -85,9 +95,14 @@ function M.bind(deps)
             clearPowerCache()
             -- 刷新城镇Tab角标（转职后可能不再有可转职英雄）
             refreshTownBadge()
-            -- 转职成功 Spine 特效：在角色卡片当前位置播放（卡片已上移 ANIM.SLOT_LIFT）
-            local cardActualCY = CHAR_SLOT.CY - ANIM.SLOT_LIFT * state.slotLiftProgress
-            SpineCardEffect.playJobChange(CHAR_SLOT.CX, cardActualCY)
+            -- 转职成功 Spine 特效：播放在右侧栏角色详情的立绘位置
+            local okDetail, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
+            if okDetail and CharacterDetail.getHeroId and CharacterDetail.getHeroId() == data.heroId then
+                CharacterDetail.markPowerDirty()
+                SpineCardEffect.playJobChange(540, 447)
+            end
+            local ClassChange = require("ui.church.ChurchClassChange")
+            ClassChange.showFloat("转职成功")
         end
 
         -- 重置转职成功结果（由 RESET_CLASS handler 返回）
@@ -99,6 +114,11 @@ function M.bind(deps)
             clearPowerCache()
             -- 刷新城镇Tab角标
             refreshTownBadge()
+            local okDetail, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
+            if okDetail and CharacterDetail.markPowerDirty then
+                CharacterDetail.markPowerDirty()
+            end
+            require("ui.church.ChurchClassChange").showFloat("已重置转职")
         end
     end
 

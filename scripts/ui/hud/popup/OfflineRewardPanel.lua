@@ -39,6 +39,7 @@ local ResourceDefs      = require("config.ResourceDefs")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local RewardCascade = require("ui.widget.RewardCascade")  -- 奖励逐件弹出动画（与关卡奖励同款）
+---@class RewardCascadeTimeline : table  逐件弹出时间轴（定义见 ui/widget/RewardCascade.lua）
 local GameSFX       = require("systems.GameSFX")
 
 local Panel = {}

@@ -16,13 +16,52 @@ local NumberUtil     = require("core.NumberUtil")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 local hitTest           = DrawUtil.hitTest
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 local M = {}
+
+-- 当前转职页英雄（由详情页页签注入，不再依赖教堂选人槽）
+---@type number|nil
+local currentHeroId = nil
+
+local function heroId()
+    return currentHeroId
+end
+
+-- 弹窗与飘字状态（模块自管，不再挂在教堂 state 上）
+local pop = {
+    confirmPopup = false, confirmAdvLevel = 0, confirmBranchId = 0,
+    confirmBranchName = "", confirmClassNum = 1, confirmOwned = false,
+    confirmAnimT = 0, confirmClosing = false,
+    resetConfPopup = false, resetConfRefund = 0,
+    resetConfAnimT = 0, resetConfClosing = false,
+    floatText = nil, floatTextX = 0, floatTextY = 0, floatTextTime = 0,
+}
+
+-- 转职页图片（模块自管，init 时加载）
+local img = {
+    classIcons2 = {},
+    titleBg = -1, branchLine = -1, branchLine2 = -1,
+    goldCoin = -1, iconUp = -1,
+    detailBg = -1,
+}
+local inited = false
+local savedVg = nil
+
+local function getClassIcon2(vg, classId)
+    local h = img.classIcons2[classId]
+    if h ~= nil then return h end
+    if not vg or not classId then
+        img.classIcons2[classId] = -1
+        return -1
+    end
+    local icon = nvgCreateImage(vg, "image/职业图标/UI_icon_ZY_" .. classId .. ".png", 0)
+    img.classIcons2[classId] = icon or -1
+    return img.classIcons2[classId]
+end
 
 --- 转职门槛等级：与战斗/角色页一致，使用有效等级（含远征等级、共鸣等级）
 ---@param heroId number
@@ -37,10 +76,9 @@ end
 
 -- ======================== 转职界面布局常量 ========================
 
--- 职业背景图
-local CLASS_BG_W, CLASS_BG_H   = 1080, 1700
-local CLASS_BG_CX              = 540
-local CLASS_BG_CY              = DESIGN_H - CLASS_BG_H * 0.5
+-- 背景与觉醒页同款，铺满整页（UI_JX_BJ，1080x2400）
+local CLASS_BG_W, CLASS_BG_H   = 1080, 2400
+local CLASS_BG_CX, CLASS_BG_CY = 540, 1200
 
 -- 标题背景
 local TITLE_BG_CX, TITLE_BG_CY = 540, 1092
@@ -50,9 +88,9 @@ local TITLE_BG_W, TITLE_BG_H   = 660, 60
 local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 1092
 local TITLE_FONT_SIZE              = 40
 
--- 重置按钮（位于"转职"标题上方）
+-- 重置按钮：二转图标（1941）下方，随转职树一起上移
 local BTN_RESET_CX   = 540
-local BTN_RESET_CY   = 1000   -- 标题顶边(1062) - 间距12 - 半高50 = 1000
+local BTN_RESET_CY   = 2140
 local BTN_RESET_W    = 410
 local BTN_RESET_H    = 100
 local BTN_RESET_FONT = 40
@@ -111,7 +149,7 @@ local ADV2 = {
 
 -- ======================== 转职数据表 ========================
 
---- classId → 编号（用于背景图文件名 UI_ZZBJ_X.png）
+--- classId → 职业序号（图标与转职分支用）
 local CLASS_NUM = {
     [CC.KNIGHT]   = 1,
     [CC.WARRIOR]  = 2,
@@ -323,33 +361,45 @@ M.ADV2                 = ADV2
 M.FIRST_ADV_BRANCHES   = FIRST_ADV_BRANCHES
 M.SECOND_ADV_BRANCHES  = SECOND_ADV_BRANCHES
 
--- ======================== ctx 注入的共享状态 ========================
+-- ======================== 弹窗动画常量 ========================
 
----@type table
-local state           -- ChurchPage 主 state 表
-local img             -- ChurchPage 主 img 表
-local getClassIcon2   -- 转职职业图标按需加载
-local easeOutCubic    -- easing 函数
-local easeInCubic     -- easing 函数
-local POPUP_ANIM_DUR  -- 弹窗动画时长
-local POPUP_SCALE_FROM -- 弹窗缩放起始值
-local getClient       -- 网络延迟加载
-local getProtocol     -- 协议延迟加载
-local getDispatcher   -- 事件分发延迟加载
+local POPUP_ANIM_DUR   = 0.22
+local POPUP_SCALE_FROM = 0.85
 
---- 注入共享上下文
----@param ctx table { state, img, easeOutCubic, easeInCubic, POPUP_ANIM_DUR, POPUP_SCALE_FROM, getClient, getProtocol, getDispatcher }
-function M.setContext(ctx)
-    state           = ctx.state
-    img             = ctx.img
-    easeOutCubic    = ctx.easeOutCubic
-    easeInCubic     = ctx.easeInCubic
-    POPUP_ANIM_DUR  = ctx.POPUP_ANIM_DUR
-    POPUP_SCALE_FROM = ctx.POPUP_SCALE_FROM
-    getClient       = ctx.getClient
-    getProtocol     = ctx.getProtocol
-    getDispatcher   = ctx.getDispatcher
-    getClassIcon2   = ctx.getClassIcon2
+local function easeOutCubic(t) return 1 - (1 - t) ^ 3 end
+local function easeInCubic(t) return t * t * t end
+
+--- 加载转职页图片（幂等，详情页首次打开时调用）
+---@param vg any
+function M.init(vg)
+    if inited then return end
+    inited = true
+    savedVg = vg
+    img.titleBg    = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
+    img.branchLine = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
+    img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
+    img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+    img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+    img.detailBg   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_BJ.png", 0)
+end
+
+--- 设置当前转职页英雄（详情页页签切换/换角色时调用）
+---@param id number|nil
+function M.setHero(id)
+    if currentHeroId ~= id then
+        pop.confirmPopup = false
+        pop.resetConfPopup = false
+    end
+    currentHeroId = id
+end
+
+--- 转职成功后的飘字提示
+---@param text string
+function M.showFloat(text)
+    pop.floatText = text
+    pop.floatTextX = DESIGN_W * 0.5
+    pop.floatTextY = DESIGN_H * 0.45
+    pop.floatTextTime = time.elapsedTime
 end
 
 -- ======================== 内部函数 ========================
@@ -370,31 +420,30 @@ end
 
 -- ======================== 绘制 API ========================
 
---- 绘制转职职业背景图（不受 scissor 裁剪，单独调用）
+--- 绘制转职页背景（与觉醒页同款 UI_JX_BJ，铺满整页）
 function M.drawBg(vg)
-    if not state.selectedHeroId then return end
-    local heroCfg = HC.get(state.selectedHeroId)
-    if not heroCfg then return end
-    local classNum = CLASS_NUM[heroCfg.classId] or 1
-    local bgImg = img.classBg[classNum]
-    if bgImg and bgImg >= 0 then
-        drawImageCentered(vg, bgImg, CLASS_BG_CX, CLASS_BG_CY, CLASS_BG_W, CLASS_BG_H, 1.0)
+    if img.detailBg and img.detailBg >= 0 then
+        drawImageCentered(vg, img.detailBg, CLASS_BG_CX, CLASS_BG_CY, CLASS_BG_W, CLASS_BG_H, 1.0)
     end
 end
 
 --- 绘制转职 Tab 内容（标题、图标、分支等，不含背景图）
 function M.drawContent(vg)
-    if not state.selectedHeroId then return end
-    local heroCfg = HC.get(state.selectedHeroId)
+    if not heroId() then return end
+    local heroCfg = HC.get(heroId())
     if not heroCfg then return end
+    -- 转职树整体上移，并裁到页签上方，避免二转图标压住底部按钮
+    nvgSave(vg)
+    nvgTranslate(vg, 0, -300)
+    nvgScissor(vg, 0, 0, DESIGN_W, 2236)
 
     local classId = heroCfg.classId
     local classColor = CLASS_COLORS[classId] or { r = 255, g = 255, b = 255 }
     local className = CLASS_DISPLAY_NAMES[classId] or "未知"
     local branches = FIRST_ADV_BRANCHES[classId]
 
-    local ownData = CharacterPanel.getOwnedHero(state.selectedHeroId)
-    local heroLevel = getAdvanceHeroLevel(state.selectedHeroId)
+    local ownData = CharacterPanel.getOwnedHero(heroId())
+    local heroLevel = getAdvanceHeroLevel(heroId())
     local advBranch = ownData and ownData.advBranch
 
     -- 标题背景
@@ -406,18 +455,6 @@ function M.drawContent(vg)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, TITLE_TEXT_CX, TITLE_TEXT_CY, "转职", nil)
-
-    -- 重置按钮（UI_AN_LV.png，410×100，字号40，纯黑70%不透明）
-    do
-        local _bfReset = BF.begin(vg, "ccc_reset", BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H)
-        drawImageCentered(vg, img.confirmBtn, BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H, 1.0)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_RESET_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-        nvgText(vg, BTN_RESET_CX, BTN_RESET_CY, "重置", nil)
-        BF.finish(vg, _bfReset)
-    end
 
     -- "初始职业"
     drawTextStroke(vg, INIT_LABEL_CX, INIT_LABEL_CY, "初始职业",
@@ -574,6 +611,11 @@ function M.drawContent(vg)
             255, 255, 255, 6,
             { italic = true })
     end
+
+    -- 重置按钮放在二转下方（按钮中心 2190 超出裁剪线，临时放开裁剪）
+    nvgResetScissor(vg)
+    M.drawResetButton(vg)
+    nvgRestore(vg)  -- 结束转职树上移
 end
 
 -- ======================== 确认弹窗 ========================
@@ -585,45 +627,45 @@ end
 ---@param classNum number 职业序号 1~6
 ---@param owned boolean? 是否已拥有
 function M.openConfirmPopup(advLevel, branchId, branchName, classNum, owned)
-    state.confirmPopup      = true
-    state.confirmAdvLevel   = advLevel
-    state.confirmBranchId   = branchId
-    state.confirmBranchName = branchName
-    state.confirmClassNum   = classNum
-    state.confirmOwned      = owned or false
-    state.confirmClosing    = false
-    state.confirmAnimT      = time.elapsedTime
-    print("[ChurchClassChange] 打开转职确认: " .. branchName .. " (Lv" .. advLevel .. "转, owned=" .. tostring(state.confirmOwned) .. ")")
+    pop.confirmPopup      = true
+    pop.confirmAdvLevel   = advLevel
+    pop.confirmBranchId   = branchId
+    pop.confirmBranchName = branchName
+    pop.confirmClassNum   = classNum
+    pop.confirmOwned      = owned or false
+    pop.confirmClosing    = false
+    pop.confirmAnimT      = time.elapsedTime
+    print("[ChurchClassChange] 打开转职确认: " .. branchName .. " (Lv" .. advLevel .. "转, owned=" .. tostring(pop.confirmOwned) .. ")")
 end
 
 --- 关闭转职确认弹窗（带动画）
 function M.closeConfirmPopup()
-    if not state.confirmPopup then return end
-    if state.confirmClosing then return end
-    state.confirmClosing = true
-    state.confirmAnimT = time.elapsedTime
+    if not pop.confirmPopup then return end
+    if pop.confirmClosing then return end
+    pop.confirmClosing = true
+    pop.confirmAnimT = time.elapsedTime
     print("[ChurchClassChange] 关闭转职确认弹窗（动画）")
 end
 
 --- 绘制转职确认弹窗
 function M.drawConfirmPopup(vg)
-    if not state.confirmPopup then return end
+    if not pop.confirmPopup then return end
 
     local C = CONFIRM
-    local branchId   = state.confirmBranchId
-    local branchName = state.confirmBranchName
-    local advLevel   = state.confirmAdvLevel
-    local classNum   = state.confirmClassNum
+    local branchId   = pop.confirmBranchId
+    local branchName = pop.confirmBranchName
+    local advLevel   = pop.confirmAdvLevel
+    local classNum   = pop.confirmClassNum
 
     -- 动画进度
-    local elapsed = time.elapsedTime - state.confirmAnimT
+    local elapsed = time.elapsedTime - pop.confirmAnimT
     local rawT = math.min(1.0, elapsed / POPUP_ANIM_DUR)
     local popProgress
-    if state.confirmClosing then
+    if pop.confirmClosing then
         popProgress = 1.0 - easeInCubic(rawT)
         if rawT >= 1.0 then
-            state.confirmPopup = false
-            state.confirmClosing = false
+            pop.confirmPopup = false
+            pop.confirmClosing = false
             return
         end
     else
@@ -633,14 +675,14 @@ function M.drawConfirmPopup(vg)
 
     -- 获取角色名和等级
     local heroName = ""
-    local heroLevel = state.selectedHeroId and getAdvanceHeroLevel(state.selectedHeroId) or 1
-    if state.selectedHeroId then
-        local heroCfg = HC.get(state.selectedHeroId)
+    local heroLevel = heroId() and getAdvanceHeroLevel(heroId()) or 1
+    if heroId() then
+        local heroCfg = HC.get(heroId())
         if heroCfg then heroName = heroCfg.name end
     end
 
     -- 获取职业颜色
-    local heroCfg = state.selectedHeroId and HC.get(state.selectedHeroId)
+    local heroCfg = heroId() and HC.get(heroId())
     local classId = heroCfg and heroCfg.classId
     local classColor = classId and CLASS_COLORS[classId] or { r = 255, g = 255, b = 255 }
 
@@ -657,9 +699,9 @@ function M.drawConfirmPopup(vg)
     nvgTranslate(vg, -C.bgCX, -C.bgCY)
     nvgGlobalAlpha(vg, popProgress)
 
-    -- 弹窗面板背景
-    local bgImg = img.confirmBg[classNum] or img.confirmBg[1]
-    drawImageCentered(vg, bgImg, C.bgCX, C.bgCY, C.bgW, C.bgH, 1.0)
+    -- 弹窗面板背景（彩色职业底图已删除，改用深色矢量面板）
+    DarkIcon.drawNine(vg, "panel",
+        C.bgCX - C.bgW * 0.5, C.bgCY - C.bgH * 0.5, C.bgW, C.bgH)
 
     -- 职业名称
     drawTextStroke(vg, C.nameCX, C.nameCY, branchName,
@@ -755,10 +797,10 @@ function M.drawConfirmPopup(vg)
     end
 
     -- 底部区域
-    if state.confirmOwned then
+    if pop.confirmOwned then
         -- 已拥有模式
         local _bf1 = BF.begin(vg, "ccc_confirm", C.btnCX, C.btnCY, C.btnW, C.btnH)
-        drawImageCentered(vg, img.confirmBtn, C.btnCX, C.btnCY, C.btnW, C.btnH, 1.0)
+        DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH, { accent = "green" })
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, C.costFont)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -778,8 +820,8 @@ function M.drawConfirmPopup(vg)
             lockReason = "需要Lv" .. ADV2.secondLevel
         end
         -- 已走另一条路线判断
-        if not locked and advLevel > 0 and state.selectedHeroId then
-            local ownData = CharacterPanel.getOwnedHero(state.selectedHeroId)
+        if not locked and advLevel > 0 and heroId() then
+            local ownData = CharacterPanel.getOwnedHero(heroId())
             local ab = ownData and ownData.advBranch
             if ab then
                 if advLevel == 1 and ab.first and ab.first ~= branchId then
@@ -787,7 +829,7 @@ function M.drawConfirmPopup(vg)
                     lockReason = "不可转职"
                 elseif advLevel == 2 then
                     local parentFirstId = nil
-                    local heroCfg2 = HC.get(state.selectedHeroId)
+                    local heroCfg2 = HC.get(heroId())
                     local cid = heroCfg2 and heroCfg2.classId
                     if cid then
                         local br = FIRST_ADV_BRANCHES[cid]
@@ -815,7 +857,7 @@ function M.drawConfirmPopup(vg)
 
         if locked then
             -- 不可转职 / 等级不足
-            drawImageCentered(vg, img.confirmBtn, C.btnCX, C.btnCY, C.btnW, C.btnH, 0.4)
+            DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH, { alpha = 0.4 })
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, C.costFont)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -832,7 +874,7 @@ function M.drawConfirmPopup(vg)
 
             -- 确认按钮背景
             local _bf2 = BF.begin(vg, "ccc_confirm", C.btnCX, C.btnCY, C.btnW, C.btnH)
-            drawImageCentered(vg, img.confirmBtn, C.btnCX, C.btnCY, C.btnW, C.btnH, 1.0)
+            DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH, { accent = "green" })
 
             -- 金币图标+消耗
             local cost = ADV_COST[advLevel] or 5000
@@ -865,73 +907,74 @@ end
 ---@param dy number 设计坐标Y
 ---@return boolean consumed
 function M.handleConfirmInput(dx, dy)
-    if not state.confirmPopup then return false end
-    if state.confirmClosing then return true end
+    if not pop.confirmPopup then return false end
+    if pop.confirmClosing then return true end
 
     local C = CONFIRM
 
     -- 确认按钮
     if hitTest(dx, dy, C.btnCX, C.btnCY, C.btnW, C.btnH) then
-        if state.confirmOwned then
+        if pop.confirmOwned then
             BF.trigger("ccc_confirm")
-            print("[ChurchClassChange] 关闭已拥有职业信息: " .. state.confirmBranchName)
+            print("[ChurchClassChange] 关闭已拥有职业信息: " .. pop.confirmBranchName)
             M.closeConfirmPopup()
         else
             -- 判断是否已走另一条路线
             local clickLocked = false
-            if state.confirmAdvLevel > 0 and state.selectedHeroId then
-                local od = CharacterPanel.getOwnedHero(state.selectedHeroId)
+            if pop.confirmAdvLevel > 0 and heroId() then
+                local od = CharacterPanel.getOwnedHero(heroId())
                 local ab = od and od.advBranch
                 if ab then
-                    if state.confirmAdvLevel == 1 and ab.first and ab.first ~= state.confirmBranchId then
+                    if pop.confirmAdvLevel == 1 and ab.first and ab.first ~= pop.confirmBranchId then
                         clickLocked = true
-                    elseif state.confirmAdvLevel == 2 then
+                    elseif pop.confirmAdvLevel == 2 then
                         if ab.first then
                             local pid = nil
-                            local hc = HC.get(state.selectedHeroId)
+                            local hc = HC.get(heroId())
                             local cid = hc and hc.classId
                             if cid and FIRST_ADV_BRANCHES[cid] then
                                 for _, b in ipairs(FIRST_ADV_BRANCHES[cid]) do
                                     local sb = SECOND_ADV_BRANCHES[b.id]
                                     if sb then
                                         for _, s in ipairs(sb) do
-                                            if s.id == state.confirmBranchId then pid = b.id end
+                                            if s.id == pop.confirmBranchId then pid = b.id end
                                         end
                                     end
                                 end
                             end
                             if pid and ab.first ~= pid then clickLocked = true end
                         end
-                        if not clickLocked and ab.second and ab.second ~= state.confirmBranchId then
+                        if not clickLocked and ab.second and ab.second ~= pop.confirmBranchId then
                             clickLocked = true
                         end
                     end
                 end
             end
             if clickLocked then
-                print("[ChurchClassChange] 不可转职（已走另一条路线）: " .. state.confirmBranchName)
+                print("[ChurchClassChange] 不可转职（已走另一条路线）: " .. pop.confirmBranchName)
                 M.closeConfirmPopup()
                 return true
             end
             BF.trigger("ccc_confirm")
             -- 检查金币
-            local cost = ADV_COST[state.confirmAdvLevel] or 5000
+            local cost = ADV_COST[pop.confirmAdvLevel] or 5000
             local gold = GameState.getGold()
             if gold < cost then
-                state.floatText = "金币不足"
-                state.floatTextX = C.btnCX
-                state.floatTextY = C.btnCY
-                state.floatTextTime = time.elapsedTime
+                pop.floatText = "金币不足"
+                pop.floatTextX = C.btnCX
+                pop.floatTextY = C.btnCY
+                pop.floatTextTime = time.elapsedTime
                 print("[ChurchClassChange] 金币不足: 需要" .. cost .. " 拥有" .. gold)
             else
-                print("[ChurchClassChange] 确认转职: " .. state.confirmBranchName
-                    .. " heroId=" .. tostring(state.selectedHeroId)
-                    .. " branchId=" .. tostring(state.confirmBranchId)
-                    .. " advLevel=" .. tostring(state.confirmAdvLevel))
-                getClient().sendAction(getProtocol().ACTION_TYPES.ADVANCE_CLASS, {
-                    heroId   = state.selectedHeroId,
-                    branchId = state.confirmBranchId,
-                    advLevel = state.confirmAdvLevel,
+                print("[ChurchClassChange] 确认转职: " .. pop.confirmBranchName
+                    .. " heroId=" .. tostring(heroId())
+                    .. " branchId=" .. tostring(pop.confirmBranchId)
+                    .. " advLevel=" .. tostring(pop.confirmAdvLevel))
+                require("runtime.GameAction").sendAction(
+                    require("shared.Protocol").ACTION_TYPES.ADVANCE_CLASS, {
+                    heroId   = heroId(),
+                    branchId = pop.confirmBranchId,
+                    advLevel = pop.confirmAdvLevel,
                 })
                 M.closeConfirmPopup()
             end
@@ -940,7 +983,7 @@ function M.handleConfirmInput(dx, dy)
     end
 
     -- 同帧保护：防止 openConfirmPopup() 同帧的点击事件立即关闭弹窗
-    if time.elapsedTime - state.confirmAnimT < 0.05 then return true end
+    if time.elapsedTime - pop.confirmAnimT < 0.05 then return true end
 
     -- 点击面板外部 → 关闭弹窗
     if not hitTest(dx, dy, C.bgCX, C.bgCY, C.bgW, C.bgH) then
@@ -957,14 +1000,14 @@ end
 ---@param dy number 设计坐标Y
 ---@return boolean consumed
 function M.handleBranchInput(dx, dy)
-    if not state.selectedHeroId then return false end
+    if not heroId() then return false end
 
-    local heroCfg = HC.get(state.selectedHeroId)
+    local heroCfg = HC.get(heroId())
     local classId = heroCfg and heroCfg.classId
     local classNum = classId and CLASS_NUM[classId] or 1
     local className = classId and CLASS_DISPLAY_NAMES[classId] or "未知"
-    local heroLevel = getAdvanceHeroLevel(state.selectedHeroId)
-    local ownData = CharacterPanel.getOwnedHero(state.selectedHeroId)
+    local heroLevel = getAdvanceHeroLevel(heroId())
+    local ownData = CharacterPanel.getOwnedHero(heroId())
 
     -- 基础职业图标
     if classId then
@@ -1021,16 +1064,32 @@ function M.handleBranchInput(dx, dy)
         end
     end
 
-    -- 重置按钮 → 打开二级确认弹窗
-    if hitTest(dx, dy, BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H) then
-        BF.trigger("ccc_reset")
-        if state.selectedHeroId then
-            M.openResetConfirmPopup()
-        end
-        return true
-    end
-
     return false
+end
+
+--- 重置按钮（屏幕坐标，位于角色横滑上方）
+function M.drawResetButton(vg)
+    local _bfReset = BF.begin(vg, "ccc_reset", BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H)
+    DarkIcon.drawNine(vg, "btn", BTN_RESET_CX - BTN_RESET_W * 0.5, BTN_RESET_CY - BTN_RESET_H * 0.5, BTN_RESET_W, BTN_RESET_H)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, BTN_RESET_FONT)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+    nvgText(vg, BTN_RESET_CX, BTN_RESET_CY, "重置", nil)
+    BF.finish(vg, _bfReset)
+end
+
+--- 重置按钮点击（屏幕坐标，调用方不要做转职树下移换算）
+---@return boolean
+function M.handleResetButton(dx, dy)
+    if not hitTest(dx, dy, BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H) then
+        return false
+    end
+    BF.trigger("ccc_reset")
+    if heroId() then
+        M.openResetConfirmPopup()
+    end
+    return true
 end
 
 -- ======================== 重置转职二级确认弹窗 ========================
@@ -1057,8 +1116,8 @@ local RC = {
 --- 计算当前英雄重置时可返还的金币
 ---@return number refundGold
 local function calcResetRefund()
-    if not state.selectedHeroId then return 0 end
-    local ownData = CharacterPanel.getOwnedHero(state.selectedHeroId)
+    if not heroId() then return 0 end
+    local ownData = CharacterPanel.getOwnedHero(heroId())
     if not ownData or not ownData.advBranch then return 0 end
     local refund = 0
     if ownData.advBranch.first then
@@ -1072,34 +1131,34 @@ end
 
 --- 打开重置转职确认弹窗
 function M.openResetConfirmPopup()
-    state.resetConfPopup   = true
-    state.resetConfClosing = false
-    state.resetConfAnimT   = time.elapsedTime
-    state.resetConfRefund  = calcResetRefund()
-    print("[ChurchClassChange] 打开重置确认弹窗 refund=" .. tostring(state.resetConfRefund))
+    pop.resetConfPopup   = true
+    pop.resetConfClosing = false
+    pop.resetConfAnimT   = time.elapsedTime
+    pop.resetConfRefund  = calcResetRefund()
+    print("[ChurchClassChange] 打开重置确认弹窗 refund=" .. tostring(pop.resetConfRefund))
 end
 
 --- 关闭重置转职确认弹窗（带动画）
 function M.closeResetConfirmPopup()
-    if not state.resetConfPopup then return end
-    if state.resetConfClosing then return end
-    state.resetConfClosing = true
-    state.resetConfAnimT   = time.elapsedTime
+    if not pop.resetConfPopup then return end
+    if pop.resetConfClosing then return end
+    pop.resetConfClosing = true
+    pop.resetConfAnimT   = time.elapsedTime
 end
 
 --- 绘制重置转职确认弹窗
 function M.drawResetConfirmPopup(vg)
-    if not state.resetConfPopup then return end
+    if not pop.resetConfPopup then return end
 
     -- 动画进度
-    local elapsed = time.elapsedTime - state.resetConfAnimT
+    local elapsed = time.elapsedTime - pop.resetConfAnimT
     local rawT = math.min(1.0, elapsed / POPUP_ANIM_DUR)
     local popProgress
-    if state.resetConfClosing then
+    if pop.resetConfClosing then
         popProgress = 1.0 - easeInCubic(rawT)
         if rawT >= 1.0 then
-            state.resetConfPopup = false
-            state.resetConfClosing = false
+            pop.resetConfPopup = false
+            pop.resetConfClosing = false
             return
         end
     else
@@ -1142,7 +1201,7 @@ function M.drawResetConfirmPopup(vg)
     nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
     nvgText(vg, RC.BG_CX, RC.LINE1_CY, "重置后将清除所有转职分支", nil)
 
-    local refund = state.resetConfRefund or 0
+    local refund = pop.resetConfRefund or 0
     local refundText = "返还50%已消耗金币: " .. formatGold(refund) .. " 金币"
     nvgFillColor(vg, nvgRGBA(0xc8, 0x96, 0x20, 255))  -- 金色高亮
     nvgText(vg, RC.BG_CX, RC.LINE2_CY, refundText, nil)
@@ -1173,16 +1232,17 @@ end
 ---@param dy number 设计坐标Y
 ---@return boolean consumed
 function M.handleResetConfirmInput(dx, dy)
-    if not state.resetConfPopup then return false end
-    if state.resetConfClosing then return true end
+    if not pop.resetConfPopup then return false end
+    if pop.resetConfClosing then return true end
 
     -- 确认按钮
     if hitTest(dx, dy, RC.OK_CX, RC.OK_CY, RC.OK_W, RC.OK_H) then
         BF.trigger("ccc_reset_confirm")
-        if state.selectedHeroId then
-            print("[ChurchClassChange] 确认重置转职 heroId=" .. tostring(state.selectedHeroId))
-            getClient().sendAction(getProtocol().ACTION_TYPES.RESET_CLASS, {
-                heroId = state.selectedHeroId,
+        if heroId() then
+            print("[ChurchClassChange] 确认重置转职 heroId=" .. tostring(heroId()))
+            require("runtime.GameAction").sendAction(
+                require("shared.Protocol").ACTION_TYPES.RESET_CLASS, {
+                heroId = heroId(),
             })
         end
         M.closeResetConfirmPopup()
@@ -1197,7 +1257,7 @@ function M.handleResetConfirmInput(dx, dy)
     end
 
     -- 同帧保护
-    if time.elapsedTime - state.resetConfAnimT < 0.05 then return true end
+    if time.elapsedTime - pop.resetConfAnimT < 0.05 then return true end
 
     -- 点击面板外部 → 关闭
     if not hitTest(dx, dy, RC.BG_CX, RC.BG_CY, RC.BG_W, RC.BG_H) then
@@ -1206,6 +1266,22 @@ function M.handleResetConfirmInput(dx, dy)
     end
 
     return true
+end
+
+--- 飘字提示（金币不足等），由详情页在弹窗之上绘制
+function M.drawFloatText(vg)
+    if not pop.floatText then return end
+    local FLOAT_DURATION = 1.5
+    local FLOAT_DIST = 100
+    local elapsed = time.elapsedTime - pop.floatTextTime
+    if elapsed >= FLOAT_DURATION then
+        pop.floatText = nil
+        return
+    end
+    local t = elapsed / FLOAT_DURATION
+    drawTextStroke(vg, pop.floatTextX, pop.floatTextY - FLOAT_DIST * t,
+        pop.floatText, 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 80, 80, 6, { alpha = 1.0 - t })
 end
 
 return M

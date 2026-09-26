@@ -171,12 +171,16 @@ function M.bind(deps)
     local function refreshUpgradeBadgeCache()
         local ownedSet = get("ownedSet")
         local upgradeBadgeCache = {}
+        -- 转职已迁到角色详情页签，可转职也计入角色页角标
+        local okChurch, ChurchPage = pcall(require, "ui.church.ChurchPage")
+        local canAdvance = (okChurch and ChurchPage.hasAdvanceForHero) and ChurchPage.hasAdvanceForHero or nil
         for heroId, _ in pairs(ownedSet) do
+            local advance = canAdvance and canAdvance(heroId) or false
             if CharacterPanel.isHeroDeployed(heroId) then
                 upgradeBadgeCache[heroId] = CharacterDetail.hasAnyUpgradeForHero(heroId)
-                    or CharacterDetail.hasAwakeningUpgrade(heroId)
+                    or CharacterDetail.hasAwakeningUpgrade(heroId) or advance
             else
-                upgradeBadgeCache[heroId] = CharacterDetail.hasAwakeningUpgrade(heroId)
+                upgradeBadgeCache[heroId] = CharacterDetail.hasAwakeningUpgrade(heroId) or advance
             end
         end
         set("upgradeBadgeCache", upgradeBadgeCache)

@@ -29,12 +29,15 @@ end
 BattleStutterPlans.showFloat = true
 BattleStutterPlans.showAnim = true
 BattleStutterPlans.showProj = true
+-- 死亡是否结算经验、金币和掉落。关掉只用来看死亡卡顿是不是结算造成的。
+BattleStutterPlans.settleKills = true
 
 function BattleStutterPlans.label()
     local s = BattleStutterPlans.names[BattleStutterPlans.mode] or "?"
     s = s .. (BattleStutterPlans.showFloat and " 飘字开" or " 飘字关")
     s = s .. (BattleStutterPlans.showAnim and " 动画开" or " 动画关")
     s = s .. (BattleStutterPlans.showProj and " 弹道开" or " 弹道关")
+    s = s .. (BattleStutterPlans.settleKills and " 结算开" or " 结算关")
     return s
 end
 
@@ -54,6 +57,9 @@ function BattleStutterPlans.poll()
         BattleStutterPlans.showAnim = not BattleStutterPlans.showAnim
     elseif input:GetKeyPress(KEY_6) then
         BattleStutterPlans.showProj = not BattleStutterPlans.showProj
+    elseif input:GetKeyPress(KEY_7) then
+        BattleStutterPlans.settleKills = not BattleStutterPlans.settleKills
+        print("[BattleStutter] settle " .. (BattleStutterPlans.settleKills and "on" or "off"))
     end
 end
 

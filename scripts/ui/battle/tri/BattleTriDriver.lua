@@ -224,6 +224,8 @@ function BattleTriDriver.new(teamIdx)
     --- 击杀奖励上报
     function drv:reportKill(unit)
         self.kills = self.kills + 1
+        local plans = require("ui.battle.combat.BattleStutterPlans")
+        if not plans.settleKills then return end
         if self.onKill then
             local heroIds = {}
             for _, u in ipairs(self.allies) do

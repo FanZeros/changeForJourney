@@ -261,7 +261,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
     nvgFontSize(vg, 22)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
     nvgFillColor(vg, nvgRGBA(255, 214, 120, 255))
-    nvgText(vg, 16, 8, "卡顿 " .. plans.label() .. "  1/2/3方案 4飘字 5动画 6弹道", nil)
+    nvgText(vg, 16, 8, "卡顿 " .. plans.label() .. "  1/2/3方案 4飘字 5动画 6弹道 7结算", nil)
     BattleLayout.setMode("strip")
     region = { x = 0, y = 0, w = logicalW, h = logicalH }
 

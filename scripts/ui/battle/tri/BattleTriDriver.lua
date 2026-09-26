@@ -22,12 +22,16 @@ local MC                = require("config.MonsterConfig")
 local SC                = require("config.StageConfig")
 local NumberUtil        = require("core.NumberUtil")
 local BattleLayout      = require("core.BattleLayout")
+local BattleStats       = require("systems.BattleStats")
+local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 
 local BattleTriDriver = {}
 
 local DEFAULT_ALLY_INTERVAL  = 1.2
 local DEFAULT_ENEMY_INTERVAL = 2.0
 local REVIVE_DELAY = 3.0
+local RESPAWN_DELAY = 1.0
+local REINFORCE_INTERVAL = 0.4
 -- 全灭兜底：单单位复活计时失效（缺 attrs 等）时，按这个墙钟整队复活，避免永久卡死
 local WIPE_RESET_DELAY = 5.0
 
@@ -81,6 +85,8 @@ function BattleTriDriver.new(teamIdx)
         stageId  = SC.NORMAL_FIRST_STAGE,
         allies   = {},
         enemies  = {},
+        enemyQueue = {},
+        reinforceCd = 0,
         teamSignature = nil,
         kills    = 0,
         stageTotal = 0,
@@ -98,6 +104,7 @@ function BattleTriDriver.new(teamIdx)
 
     --- mount 本战斗的全部子系统状态
     function drv.mount()
+        BattleStats.mount(drv.teamIdx)
         BattleCombat.mount(drv.combatState)
         ProjectileSystem.mount(drv.psState)
         TM.mount(drv.tmState)
@@ -187,8 +194,14 @@ function BattleTriDriver.new(teamIdx)
         self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
         self.allies = CharacterPanel.getDeployedTeam(self.teamIdx) or {}
         -- 敌方
-        self.enemies = buildWave(stageId)
-        self.stageTotal = #self.enemies
+        local entry = SC.getStage(stageId)
+        local allEnemies = entry and BattleEnemySpawn.generateEnemyList(entry, false) or {}
+        if #allEnemies == 0 then allEnemies = buildWave(stageId) end
+        local maxField = (entry and entry.maxFieldEnemies) or BattleLayout.MAX_PER_SIDE
+        maxField = math.min(maxField, BattleLayout.MAX_PER_SIDE)
+        self.enemies, self.enemyQueue = BattleEnemySpawn.assignEnemiesToField(allEnemies, maxField)
+        self.stageTotal = #allEnemies
+        self.reinforceCd = 0
         -- 状态复位（mount 作用域内）
         BattleCombat.reset()
         BattleEffects.reset()
@@ -241,6 +254,45 @@ function BattleTriDriver.new(teamIdx)
         end
     end
 
+    --- 死亡后按原战斗补位：后方敌人前移，队列里的下一只从队尾进入。
+    function drv:reinforceDeadEnemies()
+        local enemies = self.enemies
+        local queue = self.enemyQueue
+        for i = #enemies, 1, -1 do
+            local unit = enemies[i]
+            if unit.hp <= 0 then
+                if not unit.reviveTimer then
+                    unit.reviveTimer = 0
+                    unit.atkProgress = 0
+                    TM.removeUnit(unit)
+                    SEM.removeUnit(unit)
+                    BattleCombat.setCardAnim(unit, { state = "dying", timer = 0, lungeDir = -1, noTombstone = true })
+                end
+                unit.reviveTimer = unit.reviveTimer + (self._tickDt or 0)
+                if unit.reviveTimer >= RESPAWN_DELAY and self.reinforceCd <= 0 then
+                    self.reinforceCd = REINFORCE_INTERVAL
+                    for j = i, #enemies - 1 do
+                        local moved = enemies[j + 1]
+                        enemies[j] = moved
+                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = -1,
+                            advanceDist = BattleLayout.STRIP_PITCH })
+                    end
+                    if #queue > 0 then
+                        local newUnit = table.remove(queue, 1)
+                        newUnit.atkProgress = 0
+                        TAL.initUnit(newUnit)
+                        enemies[#enemies] = newUnit
+                        BattleCombat.clearCardAnim(unit)
+                        BattleCombat.setCardAnim(newUnit, { state = "reviving", timer = 0, lungeDir = -1 })
+                    else
+                        table.remove(enemies)
+                        BattleCombat.clearCardAnim(unit)
+                    end
+                end
+            end
+        end
+    end
+
     --- 通关推进
     function drv:advanceStage()
         local nextId = SC.getNextStageId(self.stageId)
@@ -257,6 +309,7 @@ function BattleTriDriver.new(teamIdx)
     --- 战斗 tick（须已 mount）
     function drv:tick(dt)
         if not self.active then return end
+        self._tickDt = dt
         local allies, enemies = self.allies, self.enemies
         if #allies == 0 then return end
 
@@ -280,8 +333,16 @@ function BattleTriDriver.new(teamIdx)
             if u.hp > 0 then hasAliveAlly = true break end
         end
 
+        self:reportDefeatedEnemies()
+        self.reinforceCd = math.max(0, (self.reinforceCd or 0) - dt)
+        self:reinforceDeadEnemies()
+        hasAliveEnemy = false
+        for _, u in ipairs(enemies) do
+            if u.hp > 0 then hasAliveEnemy = true break end
+        end
+
         -- 通关: 敌方全灭（先结算最后一击再切换到下一关）
-        if not hasAliveEnemy then
+        if not hasAliveEnemy and #self.enemyQueue == 0 and #self.enemies == 0 then
             self:reportDefeatedEnemies()
             self:advanceStage()
             return
@@ -384,9 +445,6 @@ function BattleTriDriver.new(teamIdx)
         -- 投射物 / 连击
         ProjectileSystem.update(dt)
         BattleCombat.updateComboQueue(dt)
-
-        -- 击杀检测（敌方死亡 → 奖励；每只怪只结算一次）
-        self:reportDefeatedEnemies()
 
         -- 纯视觉层
         BattleEffects.update(dt)

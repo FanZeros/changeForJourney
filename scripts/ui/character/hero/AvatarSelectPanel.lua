@@ -55,7 +55,7 @@ local MASK_ALPHA = 128  -- 50%
 
 -- 2. 弹窗背景（九宫格）
 local BG = {
-    CX = 540, CY = 902, W = 950, H = 1417,
+    CX = 540, CY = 1060, W = 950, H = 1760,
     IT = 180, IL = 40, IR = 40, IB = 50,
 }
 
@@ -80,7 +80,7 @@ local AVATAR = {
 -- 7. 角色名称
 local HERO_NAME = {
     X = 380, Y = 424, FONT = 42,
-    R = 0x50, G = 0x2c, B = 0x15,
+    R = 0xC9, G = 0x97, B = 0x3B,
 }
 
 -- 8. "(已解锁)" / "(未解锁)" 状态文本
@@ -99,27 +99,28 @@ local ACQ_DESC = {
 
 -- 10. 内容区域背景
 local CONTENT_BG = {
-    CX = 540, CY = 1020, W = 800, H = 810, R = 16,
+    CX = 540, CY = 1180, W = 800, H = 1130, R = 16,
     A = 13,  -- 黑色 5%
 }
 
 -- 下半部分：头像排列区域
 local GRID_AREA = {
-    CX = 540, CY = 1020, W = 720, H = 720,
+    CX = 540, CY = 1180, W = 720, H = 1040,
 }
 
--- 每个格子
+-- 每个格子：4 列，一次显示 7 行
 local CELL = {
-    SIZE = 160,     -- 160×160
-    RADIUS = 12,    -- 圆角
-    BG_A = 26,      -- 黑色 10% 不透明度
-    COLS = 4,       -- 4 列（720 / 160 ≈ 4，留间距）
-    SPACING_Y = 18, -- 固定行间距 18px
+    SIZE = 128,
+    RADIUS = 12,
+    BG_A = 26,
+    COLS = 4,
+    ROWS = 7,
+    SPACING_Y = 16,
 }
 
 -- 穿戴按钮
 local WEAR_BTN = {
-    CX = 540, CY = 1505, W = 410, H = 100,
+    CX = 540, CY = 1820, W = 410, H = 100,
     FONT = 40,
     TEXT_A = 179,   -- 纯黑 70% 不透明度
 }

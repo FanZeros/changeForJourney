@@ -926,7 +926,7 @@ local function playAtkSfxOnSpawn(cfg)
     if not cfg or not cfg.imgKey then return end
     local t = cfg.type
     if t == "melee" or t == "lightning" then
-        GameSFX.play(cfg.imgKey)
+        GameSFX.play(cfg.imgKey, require("systems.BattleStats").mountedTeam())
     end
 end
 
@@ -936,7 +936,7 @@ local function playAtkSfxOnHit(proj)
     if not cfg or not cfg.imgKey then return end
     local t = cfg.type
     if t ~= "melee" and t ~= "lightning" then
-        GameSFX.play(cfg.imgKey)
+        GameSFX.play(cfg.imgKey, require("systems.BattleStats").mountedTeam())
     end
     proj.sfxPlayed = true
 end

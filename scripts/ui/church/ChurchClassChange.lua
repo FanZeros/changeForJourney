@@ -352,16 +352,6 @@ function M.drawContent(vg)
     local heroLevel = getAdvanceHeroLevel(heroId())
     local advBranch = ownData and ownData.advBranch
 
-    -- 标题背景
-    drawImageCentered(vg, img.titleBg, TITLE_BG_CX, TITLE_BG_CY, TITLE_BG_W, TITLE_BG_H, 1.0)
-
-    -- 标题文字 "转职"
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, TITLE_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, TITLE_TEXT_CX, TITLE_TEXT_CY, "转职", nil)
-
     -- "初始职业"
     drawTextStroke(vg, INIT_LABEL_CX, INIT_LABEL_CY, "初始职业",
         INIT_LABEL_FONT,
@@ -781,10 +771,12 @@ function M.drawConfirmPopup(vg)
 
             -- 确认按钮背景
             local _bf2 = BF.begin(vg, "ccc_confirm", C.btnCX, C.btnCY, C.btnW, C.btnH)
-            DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH, { accent = "green" })
+            local cost = ADV_COST[advLevel] or 5000
+            local canAfford = GameState.getGold() >= cost
+            DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH,
+                canAfford and { accent = "gold" } or { accent = { 120, 145, 125 }, alpha = 0.7 })
 
             -- 金币图标+消耗
-            local cost = ADV_COST[advLevel] or 5000
             local costStr = formatGold(cost)
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, C.costFont)
@@ -798,7 +790,7 @@ function M.drawConfirmPopup(vg)
                 C.coinSize, C.coinSize, 1.0)
 
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x1e, 0x51, 0x37, 255))
+            nvgFillColor(vg, canAfford and nvgRGBA(0x46, 0x2f, 0x20, 255) or nvgRGBA(0x1e, 0x51, 0x37, 255))
             nvgText(vg, coinStartX + C.coinSize + coinGap, C.btnCY, costStr, nil)
             BF.finish(vg, _bf2)
         end

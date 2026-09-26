@@ -149,10 +149,11 @@ function DamageStatsPanel.init(vg)
     print("[DamageStatsPanel] init OK")
 end
 
-function DamageStatsPanel.open()
+function DamageStatsPanel.open(teamIdx)
     if state.open then return end
     state.open     = true
     state.openTime = time.elapsedTime
+    state.teamIdx  = tonumber(teamIdx) or 0
 end
 
 function DamageStatsPanel.close()
@@ -315,6 +316,7 @@ end
 --- 绘制弹窗全部内容
 ---@param vg any
 function DamageStatsPanel.draw(vg)
+    BattleStats.mount(state.teamIdx)
     if not state.open then return end
     local scale = getAnimScale()
     if scale <= 0.01 then return end
@@ -410,11 +412,11 @@ end
 ---@param x number
 ---@param y number
 ---@return boolean consumed
-function DamageStatsPanel.handleButtonInput(x, y)
+function DamageStatsPanel.handleButtonInput(x, y, teamIdx)
     if state.open then return false end
     if hitTestRect(x, y, BTN_CX, BTN_CY, BTN_W, BTN_H) then
         BF.trigger("dmgstat_btn")
-        DamageStatsPanel.open()
+        DamageStatsPanel.open(teamIdx)
         return true
     end
     return false

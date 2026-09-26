@@ -155,7 +155,7 @@ function M.bind(deps)
 
         setRecoil(curTgt, isAlly and -1 or 1)
         setHitFlash(curTgt)
-        if actual > 0 then require("systems.GameSFX").play("hit") end
+        if actual > 0 then require("systems.GameSFX").play("hit", require("systems.BattleStats").mountedTeam()) end
         -- 累计伤害统计（结算面板用�?
         getBCS().unitDamageAccum[attacker] = (getBCS().unitDamageAccum[attacker] or 0) + takenForStats
 

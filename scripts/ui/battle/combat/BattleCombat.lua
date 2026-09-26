@@ -474,7 +474,7 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     end
     setHitFlash(target)
     if actual > 0 then
-        require("systems.GameSFX").play("hit")
+        require("systems.GameSFX").play("hit", require("systems.BattleStats").mountedTeam())
     end
     return actual
 end
@@ -1324,7 +1324,7 @@ local function performAttack(attacker, targetList, isAlly)
 
                         setRecoil(curTgt, isAlly and -1 or 1)
                         setHitFlash(curTgt)
-                        if actual > 0 then require("systems.GameSFX").play("hit") end
+                        if actual > 0 then require("systems.GameSFX").play("hit", require("systems.BattleStats").mountedTeam()) end
 
                         if isAlly and not RCH.shouldSkipThreat(attacker) then
                             local includeBaseThreat = not baseThreatCounted
@@ -1495,7 +1495,7 @@ local function performAttack(attacker, targetList, isAlly)
                 )
                 setRecoil(curTarget, isAlly and -1 or 1)
                 setHitFlash(curTarget)
-                if actualDmg > 0 then require("systems.GameSFX").play("hit") end
+                if actualDmg > 0 then require("systems.GameSFX").play("hit", require("systems.BattleStats").mountedTeam()) end
 
                 if isAlly then
                     local includeBaseThreat = not baseThreatCounted

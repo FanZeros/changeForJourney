@@ -34,8 +34,10 @@ end
 
 --- 绘制入口按钮（由 BattleTriPage.drawHud 在设计空间平移缩放后调用）
 ---@param vg any
-function SoundToggle.drawButton(vg)
-    local img = SettingsPanel.isSoundOn() and imgOn or imgOff
+function SoundToggle.drawButton(vg, teamIdx)
+    local GameSFX = require("systems.GameSFX")
+    local on = teamIdx and (not GameSFX.isTeamMuted(teamIdx)) or (not teamIdx and SettingsPanel.isSoundOn())
+    local img = on and imgOn or imgOff
     if not img or img < 0 then return end
     local _ds = BF.begin(vg, "sound_toggle_btn", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, img, BTN_CX, BTN_CY, BTN_W, BTN_H, 1.0)
@@ -46,7 +48,12 @@ function SoundToggle.drawButton(vg)
 end
 
 --- 点击处理（由 BattleTriPage hit test 后调用）
-function SoundToggle.handleButtonInput()
+function SoundToggle.handleButtonInput(teamIdx)
+    if teamIdx then
+        local GameSFX = require("systems.GameSFX")
+        GameSFX.setTeamMuted(teamIdx, not GameSFX.isTeamMuted(teamIdx))
+        return
+    end
     SettingsPanel.setSoundOn(not SettingsPanel.isSoundOn())
 end
 

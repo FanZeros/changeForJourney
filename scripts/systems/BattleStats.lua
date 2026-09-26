@@ -21,14 +21,25 @@ local BattleStats = {}
 --   hotHeal,      -- 持续治疗(HOT)分量
 --   takenDamage,  -- 承受伤害
 -- }
-local stats = {}
+local buckets = { [0] = { stats = {}, startTime = nil, lastTime = nil } }
+local activeKey = 0
 
-local startTime = nil   -- 第一次记录的时间
-local lastTime  = nil   -- 最后一次活动的时间（用于排除寻怪等待，DPS 更准确）
+local function bucket()
+    local b = buckets[activeKey]
+    if not b then
+        b = { stats = {}, startTime = nil, lastTime = nil }
+        buckets[activeKey] = b
+    end
+    return b
+end
+
+local function stats()
+    return bucket().stats
+end
 
 --- 获取/创建某英雄的统计条目
 local function ensure(heroId, name)
-    local s = stats[heroId]
+    local s = stats()[heroId]
     if not s then
         s = {
             heroId = heroId, name = name or "?",
@@ -38,7 +49,7 @@ local function ensure(heroId, name)
             totalHeal = 0, hotHeal = 0,
             takenDamage = 0,
         }
-        stats[heroId] = s
+        stats()[heroId] = s
     elseif name and (s.name == "?" or not s.name) then
         s.name = name
     end
@@ -48,8 +59,21 @@ end
 --- 标记一次活动（更新计时窗口）
 local function touch()
     local now = time.elapsedTime
-    if not startTime then startTime = now end
-    lastTime = now
+    local b = bucket()
+    if not b.startTime then b.startTime = now end
+    b.lastTime = now
+end
+
+--- 切换当前统计桶。0 是主线/默认战斗，多队战斗用各自队伍号。
+---@param key number|nil
+function BattleStats.mount(key)
+    activeKey = tonumber(key) or 0
+end
+
+---@return number|nil
+function BattleStats.mountedTeam()
+    if activeKey > 0 then return activeKey end
+    return nil
 end
 
 -- ======================== 采集接口 ========================
@@ -119,9 +143,7 @@ end
 
 --- 清零（每波战斗开始时由 BattleCombat.reset 调用）
 function BattleStats.reset()
-    stats = {}
-    startTime = nil
-    lastTime  = nil
+    buckets[activeKey] = { stats = {}, startTime = nil, lastTime = nil }
 end
 
 -- ======================== 查询接口 ========================
@@ -129,8 +151,9 @@ end
 --- 战斗有效时长（秒，从首次伤害到最后一次活动）
 ---@return number
 function BattleStats.getDuration()
-    if not startTime or not lastTime then return 0 end
-    return math.max(0, lastTime - startTime)
+    local b = bucket()
+    if not b.startTime or not b.lastTime then return 0 end
+    return math.max(0, b.lastTime - b.startTime)
 end
 
 --- 按指定字段降序排序，返回英雄统计列表
@@ -138,7 +161,7 @@ end
 ---@return table[] 排序后的统计条目数组
 function BattleStats.getSorted(sortKey)
     local list = {}
-    for _, s in pairs(stats) do
+    for _, s in pairs(stats()) do
         list[#list + 1] = s
     end
     table.sort(list, function(a, b)
@@ -152,7 +175,7 @@ end
 ---@return number
 function BattleStats.getTotal(field)
     local sum = 0
-    for _, s in pairs(stats) do
+    for _, s in pairs(stats()) do
         sum = sum + (s[field] or 0)
     end
     return sum
@@ -161,7 +184,7 @@ end
 --- 是否已有任何统计数据
 ---@return boolean
 function BattleStats.hasData()
-    return next(stats) ~= nil
+    return next(stats()) ~= nil
 end
 
 --- 构建结算面板的英雄输出列表（与 DamageStatsPanel 伤害页同一数据源）

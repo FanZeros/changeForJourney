@@ -148,6 +148,28 @@ function M.run(rt)
 
     -- 5.2 击杀奖励回调：经验平分给每个上场远征队员，金币/远征等级经验照常
     -- [三栏并行] 提取为局部函数，BattleScene（栏1）与 BattleTriPage（栏2/3）共用
+    local pendingHeroExp = {}
+    local pendingHeroExpTimer = 0
+    local function flushPendingHeroExp()
+        local any = false
+        for hid, amount in pairs(pendingHeroExp) do
+            if amount > 0 then
+                CharacterPanel.addHeroExp(hid, amount)
+                any = true
+            end
+            pendingHeroExp[hid] = nil
+        end
+        if any and BattleScene.refreshAllyStats then
+            BattleScene.refreshAllyStats()
+        end
+    end
+    require("boot.StandaloneRT").flushPendingHeroExp = function(dt)
+        pendingHeroExpTimer = pendingHeroExpTimer + (dt or 0)
+        if pendingHeroExpTimer < 0.5 then return end
+        pendingHeroExpTimer = 0
+        flushPendingHeroExp()
+    end
+
     local handleKillRewards = function(data)
         local baseExp  = data.expReward  or 0
         local baseGold = data.goldReward or 0
@@ -171,11 +193,7 @@ function M.run(rt)
             local perHeroExp = math.floor(totalExp / #heroIds + 0.5)
             if perHeroExp > 0 then
                 for _, hid in ipairs(heroIds) do
-                    CharacterPanel.addHeroExp(hid, perHeroExp)
-                end
-                -- 升级后刷新战斗单位属性（同步 _pendingLevel + _pendingSnapshot）
-                if BattleScene.refreshAllyStats then
-                    BattleScene.refreshAllyStats()
+                    pendingHeroExp[hid] = (pendingHeroExp[hid] or 0) + perHeroExp
                 end
             end
         end

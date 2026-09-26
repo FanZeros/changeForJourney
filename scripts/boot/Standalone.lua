@@ -924,6 +924,7 @@ function HandleUpdate(eventType, eventData)
         elseif BattleTriPage.isOpen() then
             -- [三栏并行] 三栏页内部会以 default 状态驱动 BattleScene.update（栏1 引擎）
             BattleTriPage.update(dt)
+            if StandaloneRT.flushPendingHeroExp then StandaloneRT.flushPendingHeroExp(dt) end
         else
             -- 战斗场景始终更新（挂机持续进行）
             BattleScene.update(dt)

@@ -50,7 +50,7 @@ local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 -- 1. 全屏遮罩
 local MASK_ALPHA = 128  -- 50% 不透明度
 
--- 2. 弹窗背景框（九宫格）
+-- 2. 弹窗背景框（九宫格）。奖励区扩到 8 列，面板加宽到接近设计宽。
 local BG = {
     CX = 960, CY = 1200, W = 1760, H = 1960,
     IT = 180, IL = 40, IR = 40, IB = 50,  -- 九宫格切割
@@ -602,8 +602,8 @@ function self_drawRewardGrid(vg)
                 -- 等级角标（底部居中）
                 if item.level and item.level > 0 then
                     local lvlText = "Lv." .. tostring(item.level)
-                    DrawUtil.drawTextStroke(vg, cx, cy + ICON_SIZE * 0.35, lvlText, 32,
-                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+                    DrawUtil.drawTextStroke(vg, cx, cy + ICON_SIZE * 0.34, lvlText, 22,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
                 end
                 -- 数量角标（右上角，仅 count>1 时显示）
                 if item.count and item.count > 1 then

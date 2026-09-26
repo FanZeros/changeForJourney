@@ -88,9 +88,9 @@ local TITLE_BG_W, TITLE_BG_H   = 660, 60
 local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 1092
 local TITLE_FONT_SIZE              = 40
 
--- 重置按钮：二转图标（1941）下方，随转职树一起上移
+-- 重置按钮：二转图标（1941）下方再留一个按钮位，随转职树一起上移
 local BTN_RESET_CX   = 540
-local BTN_RESET_CY   = 2140
+local BTN_RESET_CY   = 2240
 local BTN_RESET_W    = 410
 local BTN_RESET_H    = 100
 local BTN_RESET_FONT = 40

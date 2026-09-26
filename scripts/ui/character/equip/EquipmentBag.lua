@@ -720,17 +720,18 @@ function EquipmentBag.handleInput(dx, dy)
         return true
     end
 
-    local entry = findBagEntryAt(dx, dy)
+    local entry, cx, cy = findBagEntryAt(dx, dy)
     if entry then
         if bagState.onSelect then
             bagState.onSelect(entry.seq, entry.equip)
             EquipmentBag.close()
         else
-            local anchorX, anchorY = dx, dy
+            local cellSize = overlayRegion and LAND.CELL or CELL_SIZE
+            local anchorX, anchorY = cx + cellSize * 0.5, cy - cellSize * 0.5
             if overlayRegion then
                 local fit = overlayFit()
-                local wx = overlayRegion.x + overlayRegion.w * 0.5 + (dx - 540) * fit
-                local wy = overlayRegion.y + overlayRegion.h * 0.5 + (dy - LAND.BG_H * 0.5) * fit
+                local wx = overlayRegion.x + overlayRegion.w * 0.5 + (anchorX - 540) * fit
+                local wy = overlayRegion.y + overlayRegion.h * 0.5 + (anchorY - LAND.BG_H * 0.5) * fit
                 anchorX, anchorY = EquipmentBag.overlayToDetail(wx, wy)
             end
             EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", anchorX, anchorY)
@@ -1284,7 +1285,7 @@ function EquipmentBag.handleHover(dx, dy)
         if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("bag") end
         return
     end
-    local entry = findBagEntryAt(dx, dy)
+    local entry, cx, cy = findBagEntryAt(dx, dy)
     if not entry then
         EquipmentBag._hoverSeq = nil
         EquipmentBag._hoverSince = nil
@@ -1301,11 +1302,12 @@ function EquipmentBag.handleHover(dx, dy)
     if (time.elapsedTime - (EquipmentBag._hoverSince or 0)) < 0.3 then
         return
     end
-    local anchorX, anchorY = dx, dy
+    local cellSize = overlayRegion and LAND.CELL or CELL_SIZE
+    local anchorX, anchorY = cx + cellSize * 0.5, cy - cellSize * 0.5
     if overlayRegion then
         local fit = overlayFit()
-        local wx = overlayRegion.x + overlayRegion.w * 0.5 + (dx - 540) * fit
-        local wy = overlayRegion.y + overlayRegion.h * 0.5 + (dy - LAND.BG_H * 0.5) * fit
+        local wx = overlayRegion.x + overlayRegion.w * 0.5 + (anchorX - 540) * fit
+        local wy = overlayRegion.y + overlayRegion.h * 0.5 + (anchorY - LAND.BG_H * 0.5) * fit
         anchorX, anchorY = EquipmentBag.overlayToDetail(wx, wy)
     end
     if EquipmentDetail.isOpen and EquipmentDetail.isOpen() then

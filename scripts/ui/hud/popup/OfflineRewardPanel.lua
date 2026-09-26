@@ -30,6 +30,7 @@
 
 local GameConfig        = require("config.GameConfig")
 local EquipmentConfig   = require("config.EquipmentConfig")
+local ExpTable          = require("config.ExpTable")
 local NumberUtil        = require("core.NumberUtil")
 local ImageCache        = require("ui.widget.ImageCache")
 local DrawUtil          = require("core.DrawUtil")
@@ -47,79 +48,115 @@ local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 -- ======================== 布局常量（依据需求文档） ========================
 
--- 1. 全屏遮罩
-local MASK_ALPHA = 128  -- 50% 不透明度
+-- 弹窗整体居中于设计稿（1080 宽）。
+-- 历史遗留：弹窗加宽到 1760 时 CX 被写成 960，导致整体右移 145px；这里统一以 CENTER_X 推导。
+local CENTER_X = DESIGN_W * 0.5  -- 540
+-- 面板内边距：弹窗左右各留 20，行内容与面板边缘对齐
+local PANEL_W = 1760
+local PANEL_LEFT  = CENTER_X - PANEL_W * 0.5
+local PANEL_RIGHT = CENTER_X + PANEL_W * 0.5
+local ROW_W   = PANEL_W - 160           -- 行背景框宽
+local ROW_L   = CENTER_X - ROW_W * 0.5  -- 行左缘
+local ROW_R   = CENTER_X + ROW_W * 0.5  -- 行右缘
+local ROW_PAD = 60                      -- 行内文字左右内缩
 
--- 2. 弹窗背景框（九宫格）。奖励区扩到 8 列，面板加宽到接近设计宽。
+-- 2. 弹窗背景框（九宫格）。奖励区 8 列，面板加宽到接近设计宽。
+-- 高度按内容收紧：顶部 220 + 内容到底部按钮 + 50 边距
+local PANEL_TOP = 220
+local PANEL_H   = 1852
 local BG = {
-    CX = 960, CY = 1200, W = 1760, H = 1960,
+    CX = CENTER_X, CY = PANEL_TOP + PANEL_H * 0.5, W = PANEL_W, H = PANEL_H,
     IT = 180, IL = 40, IR = 40, IB = 50,  -- 九宫格切割
 }
 
--- 3. 标题 "对战记录"
+-- 3. 标题 "欢迎回来"
 local TTL = {
-    X = 960, Y = 413, FONT = 60,
+    X = CENTER_X, Y = 413, FONT = 60,
     FR = 255, FG = 255, FB = 255,            -- 纯白
     SR = 0x59, SG = 0x32, SB = 0x19, SW = 6, -- 描边 #593219
 }
 
 -- 4+5+6. 离线收益倍率行
 local MULT_ROW = {
-    CX = 960, CY = 552, W = 1600, H = 72, R = 16,  -- 背景框
-    LABEL_X = 200, LABEL_FONT = 40,                  -- "离线收益倍率" 左对齐
-    LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,  -- #725850
-    VALUE_X = 1720, VALUE_FONT = 40,                   -- 值 右对齐
-    VALUE_SW = 5,                                      -- 纯黑描边
+    CX = CENTER_X, CY = 552, W = ROW_W, H = 72, R = 16,  -- 背景框
+    LABEL_X = ROW_L + ROW_PAD, LABEL_FONT = 40,          -- "离线收益倍率" 左对齐
+    LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,      -- #725850
+    VALUE_X = ROW_R - ROW_PAD, VALUE_FONT = 40,          -- 值 右对齐
+    VALUE_SW = 5,                                        -- 纯黑描边
 }
 
 -- 7+8+9. 离线时间进度条
 local PROG = {
-    CX = 960, CY = 649, W = 1400, H = 60,  -- 背景 UI_LXSYJDT_2
-    TIME_FONT = 40, TIME_SW = 5,            -- 计时文字
-    TIME_SR = 0x31, TIME_SG = 0x24, TIME_SB = 0x24, -- 描边 #312424
+    CX = CENTER_X, CY = 649, W = ROW_W - 200, H = 60,  -- 背景 UI_LXSYJDT_2
+    TIME_FONT = 40, TIME_SW = 5,                       -- 计时文字
+    TIME_SR = 0x31, TIME_SG = 0x24, TIME_SB = 0x24,    -- 描边 #312424
 }
 
 -- 10. 提示文本
 local HINT = {
-    CX = 960, CY = 714, FONT = 40,
+    CX = CENTER_X, CY = 714, FONT = 40,
     NR = 0xb6, NG = 0xb0, NB = 0x9d,         -- 普通文字 #b6b09d
     HR = 0x1b, HG = 0xa1, HB = 0x24,         -- 高亮色 #1ba124
 }
 
 -- 11+12. 装饰框 + "离线收益"
 local DECO = {
-    CX = 960, CY = 796, W = 900, H = 60,
+    CX = CENTER_X, CY = 796, W = 900, H = 60,
     FONT = 40,
     FR = 0x8d, FG = 0x5f, FB = 0x41,  -- #8d5f41
 }
 
 -- 13+14+15. 远征等级经验行
 local EXP_ROW1 = {
-    CX = 960, CY = 899, W = 1600, H = 72, R = 16,
-    LABEL_X = 200, LABEL = "远征等级经验",
+    CX = CENTER_X, CY = 899, W = ROW_W, H = 72, R = 16,
+    LABEL_X = ROW_L + ROW_PAD, LABEL = "远征等级经验",
     LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,
-    VALUE_X = 1720,
+    VALUE_X = ROW_R - ROW_PAD,
     VALUE_R = 0x63, VALUE_G = 0xff, VALUE_B = 0x84, VALUE_SW = 5,
 }
 
 -- 远征队员经验行
 local EXP_ROW2 = {
-    CX = 960, CY = 994, W = 1600, H = 72, R = 16,
-    LABEL_X = 200, LABEL = "远征队员经验（总合）",
+    CX = CENTER_X, CY = 994, W = ROW_W, H = 72, R = 16,
+    LABEL_X = ROW_L + ROW_PAD, LABEL = "远征队员经验（总合）",
     LABEL_R = 0x72, LABEL_G = 0x58, LABEL_B = 0x50,
-    VALUE_X = 1720,
+    VALUE_X = ROW_R - ROW_PAD,
     VALUE_R = 0x63, VALUE_G = 0xff, VALUE_B = 0x84, VALUE_SW = 5,
+}
+
+-- 队员升级预览行（头像 + 名字 + Lv 变化 + 经验进度条 + 剩余经验数字）
+-- 每队最多 4 人（ExpTable.TEAM_MAX_SLOTS），4 行一次排满不滚动。
+-- TOP 为整块上缘；每行中心 = TOP + (i-1)*(H+GAP) + H/2
+local HERO_ROW = {
+    TOP    = 1030,          -- 整块上缘 Y
+    H      = 88,            -- 行高
+    GAP    = 8,             -- 行间距
+    VISIBLE = 4,            -- 可视行数
+    ICON   = 68,            -- 头像边长
+    ICON_L = ROW_L + 16,    -- 头像左缘
+    NAME_X = ROW_L + 16 + 68 + 20,   -- 名字左对齐 X
+    NAME_FONT = 30,
+    LV_X   = ROW_R - ROW_PAD,        -- Lv 变化右对齐 X
+    LV_FONT = 30,
+    BAR_X  = ROW_L + 16 + 68 + 20,   -- 经验条左缘
+    BAR_R  = ROW_R - ROW_PAD - 170,  -- 经验条右缘（给剩余经验数字留位）
+    BAR_H  = 16,
+    BAR_CY_OFF = 62,        -- 经验条中心相对行上缘的偏移
+    EXP_X  = ROW_R - ROW_PAD,        -- 剩余经验数字右对齐 X
+    EXP_FONT = 26,
+    TEXT_CY_OFF = 22,       -- 名字/Lv 行中心相对行上缘的偏移
+    BG_A   = 13,            -- 行底色透明度（纯黑 5%）
 }
 
 -- 16+17. 奖励内容区域
 local REWARD_AREA = {
-    CX = 960, CY = 1480, W = 1600, H = 740, R = 16,
+    CX = CENTER_X, CY = 1700, W = ROW_W, H = 460, R = 16,
     PAD = 16,  -- 内边距
 }
 -- 奖励图标网格（8 列）
-local ICON_SIZE = 148
-local ROW_GAP   = 16
-local COL_GAP   = 14
+local ICON_SIZE = 132
+local ROW_GAP   = 14
+local COL_GAP   = 12
 local COLS      = 8
 
 -- 奖励裁剪区域（内容背景框内边距40）
@@ -145,11 +182,11 @@ for c = 1, COLS do
     COL_CX[c] = FIRST_COL_LEFT + (c - 1) * (ICON_SIZE + COL_GAP) + ICON_SIZE * 0.5
 end
 
--- 22+23. 领取按钮
+-- 22+23. 领取按钮（底部居中，面板下缘留 70）
 local BTN_CLAIM = {
-    CX = 960, CY = 2010, W = 420, H = 100,
+    CX = CENTER_X, CY = PANEL_TOP + PANEL_H - 120, W = 420, H = 100,
     NP = 35,
-    TEXT_CX = 960, TEXT_CY = 2010, FONT = 40,
+    TEXT_CX = CENTER_X, TEXT_CY = PANEL_TOP + PANEL_H - 120, FONT = 40,
     TR = 0xD8, TG = 0xC9, TB = 0xA3, TA = 255,
 }
 
@@ -186,6 +223,7 @@ local state = {
     adventureExp    = 0,
     adventurerExp   = 0,
     rewards         = {},
+    heroExpPreview  = {},   -- 出战队员升级预览（服务端下发）
     onClaim         = nil,
     -- 滚动
     scrollY    = 0,
@@ -193,6 +231,9 @@ local state = {
     dragging   = false,
     dragLastY  = 0,
     scrollVel  = 0,
+    -- 队员升级动画
+    heroAnim   = {},   -- [i] = { level = 动画等级, exp = 动画内经验, remain = 剩余待发放经验 }
+    heroTime   = 0,    -- 动画已播放秒数
     -- 动画
     animPhase  = "none",  -- "none"|"opening"|"open"|"closing"
     animStart  = 0,
@@ -205,6 +246,11 @@ local SCROLL_MIN_VEL  = 0.5
 -- 动画参数
 local ANIM_OPEN_DUR  = 0.30
 local ANIM_CLOSE_DUR = 0.20
+
+-- 队员升级动画参数
+local HERO_ANIM_DELAY = 0.45   -- 弹窗开完后停顿多久开始发放
+local HERO_EXP_PER_SEC = 0.85  -- 经验发放速度（占总经验比例/秒），1/0.85 ≈ 1.2 秒发完
+local HERO_ANIM_MIN_TAIL = 0.35 -- 发完后停顿，方便看清最终等级
 
 local cachedVg = nil
 
@@ -257,6 +303,82 @@ local function getCellCenter(row, col)
     return cx, cy
 end
 
+--- 队员行上缘 Y
+local function heroRowTop(i)
+    return HERO_ROW.TOP + (i - 1) * (HERO_ROW.H + HERO_ROW.GAP)
+end
+
+--- 队员头像懒加载
+local heroIconCache = {}
+local function getHeroIcon(heroId)
+    local cached = heroIconCache[heroId]
+    if cached then return cached end
+    if not cachedVg then return -1 end
+    local h = nvgCreateImage(cachedVg, "image/角色图标/UI_icon_hero_" .. tostring(heroId) .. ".png", 0)
+    heroIconCache[heroId] = h
+    return h
+end
+
+--- 初始化队员升级动画状态（把每条预览的经验从 0 逐级累积到最终等级）
+--- 动画口径与服务端一致：在「原始等级/原始经验」上逐级消耗待发放经验。
+local function resetHeroAnim()
+    local anim = {}
+    for i, item in ipairs(state.heroExpPreview) do
+        anim[i] = {
+            level  = item.startLevel or item.level or 1,
+            exp    = item.startExp or 0,
+            remain = item.expGain or 0,
+        }
+    end
+    state.heroAnim = anim
+    state.heroTime = 0
+end
+
+--- 推进队员升级动画：把 remain 里的经验按等级曲线逐级消耗
+local function updateHeroAnim(dt)
+    if #state.heroAnim == 0 then return end
+    if state.animPhase ~= "open" and state.animPhase ~= "opening" then return end
+    state.heroTime = state.heroTime + dt
+    if state.heroTime < HERO_ANIM_DELAY then return end
+
+    local budget = (state.heroTime - HERO_ANIM_DELAY) * HERO_EXP_PER_SEC
+    for i, a in ipairs(state.heroAnim) do
+        local item = state.heroExpPreview[i]
+        local total = (item and item.expGain) or 0
+        if total > 0 and a.remain > 0 then
+            local want = math.floor(total * math.min(1, budget))
+            if want > a.remain then want = a.remain end
+            -- 逐级消耗
+            local consumed = 0
+            while want > consumed do
+                if a.capped then break end
+                local needed = ExpTable.getHeroExpForLevel(a.level) or 0
+                if needed <= 0 then a.capped = true break end
+                local room = needed - a.exp
+                local step = want - consumed
+                if step >= room then
+                    consumed = consumed + room
+                    a.exp = 0
+                    a.level = a.level + 1
+                    if ExpTable.isHeroMaxLevel(a.level) then a.capped = true end
+                else
+                    a.exp = a.exp + step
+                    consumed = consumed + step
+                end
+            end
+            a.remain = a.remain - consumed
+        end
+    end
+end
+
+--- 动画是否已全部发完
+local function heroAnimDone()
+    for _, a in ipairs(state.heroAnim) do
+        if a.remain > 0 then return false end
+    end
+    return true
+end
+
 -- ======================== Public API ========================
 
 --- 初始化
@@ -283,6 +405,7 @@ function Panel.show(data)
     state.multiplier     = data.multiplier or 1.0
     state.adventureExp   = data.adventureExp or 0
     state.adventurerExp  = data.adventurerExp or 0
+    state.heroExpPreview = data.heroExpPreview or {}
     state.onClaim        = data.onClaim
 
     -- 排序奖励：资源在前，装备在后
@@ -316,7 +439,9 @@ function Panel.show(data)
     state.open           = true
     state.animPhase = "opening"
     state.animStart = time.elapsedTime
-    print("[OfflineRewardPanel] show: offline=" .. state.offlineSeconds .. "s, rewards=" .. #state.rewards)
+    resetHeroAnim()
+    print("[OfflineRewardPanel] show: offline=" .. state.offlineSeconds .. "s, rewards=" .. #state.rewards
+        .. ", heroPreview=" .. #state.heroExpPreview)
 end
 
 --- 关闭
@@ -350,6 +475,9 @@ function Panel.update(dt)
         end
     end
 
+    -- 队员升级动画
+    updateHeroAnim(dt)
+
     -- 惯性滚动
     if not state.dragging and math.abs(state.scrollVel) > SCROLL_MIN_VEL then
         state.scrollY = state.scrollY + state.scrollVel
@@ -382,11 +510,7 @@ function Panel.draw(vg)
         animScale = 1.0 - easeInCubic(t) * 0.3
     end
 
-    -- 1. 全屏黑色遮罩 50%
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, 1920, 1080)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(MASK_ALPHA * animAlpha)))
-    nvgFill(vg)
+    -- [去阴影] 不再铺全屏黑色遮罩，背景画面保持原亮度（与遗匣页去黑影一致）
 
     -- 缩放动画
     local pivotX, pivotY = BG.CX, BG.CY
@@ -509,6 +633,9 @@ function Panel.draw(vg)
     -- 14. 远征队员经验行
     self_drawExpRow(vg, EXP_ROW2, state.adventurerExp)
 
+    -- 15. 每个远征队员的实际升级情况（逐级动画）
+    self_drawHeroExpList(vg)
+
     -- 16. 奖励内容背景框
     DrawUtil.drawRoundedRectCentered(vg,
         REWARD_AREA.CX, REWARD_AREA.CY, REWARD_AREA.W, REWARD_AREA.H, REWARD_AREA.R,
@@ -559,6 +686,119 @@ function self_drawExpRow(vg, cfg, value)
     DrawUtil.drawTextStroke(vg, cfg.VALUE_X, cfg.CY, valText,
         40, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         cfg.VALUE_R, cfg.VALUE_G, cfg.VALUE_B, cfg.VALUE_SW)
+end
+
+--- 绘制队员升级列表（头像 + 名字 + Lv 变化 + 经验进度条 + 剩余待发放经验）
+function self_drawHeroExpList(vg)
+    local preview = state.heroExpPreview
+    if #preview == 0 then return end
+
+    local viewH = HERO_ROW.VISIBLE * HERO_ROW.H + (HERO_ROW.VISIBLE - 1) * HERO_ROW.GAP
+    local animDone = heroAnimDone()
+
+    nvgSave(vg)
+    nvgScissor(vg, ROW_L, HERO_ROW.TOP, ROW_W, viewH)
+
+    for i, item in ipairs(preview) do
+        local top = heroRowTop(i)
+        local cy  = top + HERO_ROW.H * 0.5
+        if cy + HERO_ROW.H * 0.5 >= HERO_ROW.TOP and cy - HERO_ROW.H * 0.5 <= HERO_ROW.TOP + viewH then
+            local a = state.heroAnim[i]
+            local curLevel = (a and a.level) or item.level or 1
+            local curExp   = (a and a.exp) or 0
+            local remain   = (a and a.remain) or 0
+            local maxExp   = ExpTable.getHeroExpForLevel(curLevel) or 0
+            if item.capped or (a and a.capped) then maxExp = 0 end
+
+            -- 行底
+            DrawUtil.drawRoundedRectCentered(vg, CENTER_X, cy, ROW_W, HERO_ROW.H, 12,
+                0, 0, 0, HERO_ROW.BG_A)
+
+            -- 头像（品质底 + 角色图标）
+            local iconCX = HERO_ROW.ICON_L + HERO_ROW.ICON * 0.5
+            local q = (item.quality and item.quality > 0) and item.quality or 2
+            local qBg = ImageCache.getQualityBg(q)
+            if qBg >= 0 then
+                DrawUtil.drawImageCentered(vg, qBg, iconCX, cy, HERO_ROW.ICON, HERO_ROW.ICON, 1.0)
+            end
+            local heroImg = getHeroIcon(item.heroId)
+            if heroImg >= 0 then
+                local inner = HERO_ROW.ICON - 12
+                DrawUtil.drawImageCentered(vg, heroImg, iconCX, cy, inner, inner, 1.0)
+            end
+
+            -- 名字（左对齐）
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, HERO_ROW.NAME_FONT)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0xd8, 0xc9, 0xa3, 255))
+            nvgText(vg, HERO_ROW.NAME_X, top + HERO_ROW.TEXT_CY_OFF, item.name or "", nil)
+
+            -- Lv 变化（右对齐；动画中只有真升过级才画「旧 → 新」并转金色）
+            local startLevel = item.startLevel or curLevel
+            local lvText
+            if curLevel > startLevel then
+                lvText = "Lv." .. tostring(startLevel) .. " → Lv." .. tostring(curLevel)
+            else
+                lvText = "Lv." .. tostring(curLevel)
+            end
+            local lvR, lvG, lvB = 0x9a, 0x9a, 0x9a
+            if curLevel > startLevel then
+                lvR, lvG, lvB = 0xff, 0xd7, 0x6b
+            end
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, HERO_ROW.LV_FONT)
+            nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(lvR, lvG, lvB, 255))
+            nvgText(vg, HERO_ROW.LV_X, top + HERO_ROW.TEXT_CY_OFF, lvText, nil)
+
+            -- 经验进度条
+            local barCY = top + HERO_ROW.BAR_CY_OFF
+            local barW  = HERO_ROW.BAR_R - HERO_ROW.BAR_X
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, HERO_ROW.BAR_X, barCY - HERO_ROW.BAR_H * 0.5, barW, HERO_ROW.BAR_H,
+                HERO_ROW.BAR_H * 0.5)
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
+            nvgFill(vg)
+
+            local ratio = 0
+            if maxExp > 0 then
+                ratio = math.max(0, math.min(1, curExp / maxExp))
+            elseif (item.capped or (a and a.capped)) then
+                ratio = 1
+            end
+            if ratio > 0 then
+                local fillW = math.max(HERO_ROW.BAR_H, barW * ratio)
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, HERO_ROW.BAR_X, barCY - HERO_ROW.BAR_H * 0.5, fillW, HERO_ROW.BAR_H,
+                    HERO_ROW.BAR_H * 0.5)
+                if animDone then
+                    nvgFillColor(vg, nvgRGBA(0x63, 0xff, 0x84, 255))
+                else
+                    nvgFillColor(vg, nvgRGBA(0xff, 0xc8, 0x4a, 255))
+                end
+                nvgFill(vg)
+            end
+
+            -- 剩余待发放经验（右对齐，数字递减到 0 时显示该级进度）
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, HERO_ROW.EXP_FONT)
+            nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+            if remain > 0 then
+                nvgFillColor(vg, nvgRGBA(0xff, 0xc8, 0x4a, 255))
+                nvgText(vg, HERO_ROW.EXP_X, barCY, "+" .. NumberUtil.format(remain), nil)
+            elseif maxExp > 0 then
+                nvgFillColor(vg, nvgRGBA(0x9a, 0x9a, 0x9a, 255))
+                nvgText(vg, HERO_ROW.EXP_X, barCY, NumberUtil.format(curExp) .. "/" .. NumberUtil.format(maxExp), nil)
+            else
+                nvgFillColor(vg, nvgRGBA(0xff, 0xd7, 0x6b, 255))
+                nvgText(vg, HERO_ROW.EXP_X, barCY, "已满级", nil)
+            end
+        end
+    end
+
+    nvgResetScissor(vg)
+    nvgRestore(vg)
 end
 
 --- 绘制奖励物品网格

@@ -463,6 +463,7 @@ local function showOfflineRewardPanel_()
         multiplier     = panelData.multiplier or 1.0,
         adventureExp   = panelData.adventureExp,
         adventurerExp  = panelData.adventurerExp,
+        heroExpPreview = panelData.heroExpPreview,
         rewards        = panelData.rewards,
         onClaim = function()
             local handled = localSendAction("claim_offline_rewards", {})

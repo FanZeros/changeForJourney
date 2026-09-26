@@ -55,6 +55,13 @@ function BattleTriPage.setOnDrop(cb) triOnDrop = cb end
 
 function BattleTriPage.isOpen() return isOpen_ end
 
+--- 存档阵容晚于战斗页到达时，清掉已记住的编队，下一帧按真实槽位重建。
+function BattleTriPage.invalidateTeams()
+    for _, drv in pairs(drivers) do
+        drv.teamSignature = nil
+    end
+end
+
 
 --- 创建新解锁队伍的战斗驱动；已存在的驱动保留关卡进度。
 --- 小队1跟主线 BattleScene 的当前关，避免共用驱动后从第一关重开。

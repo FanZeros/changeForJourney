@@ -129,12 +129,7 @@ function BattleTriDriver.new(teamIdx)
                                          and ProjectileSystem.hasMonsterProjectile(attacker.atkEffect)
 
                 local hitCallback = function()
-                    if applyHit then
-                        local ok, err = pcall(applyHit)
-                        if not ok then
-                            print("[TriDriver] applyHit ERROR: " .. tostring(err))
-                        end
-                    end
+                    if applyHit then applyHit() end
                     if result.category ~= "healing" and target.attrs then
                         local armorType = target.attrs.armorType or 1
                         BattleEffects.spawn(armorType, tgtCX, tgtCY)

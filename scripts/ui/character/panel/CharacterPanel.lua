@@ -1000,6 +1000,26 @@ function CharacterPanel.getActiveTeamIdx()
     return activeTeamIdx
 end
 
+--- 各队当前上阵英雄 ID，供离线奖励在存档 teams 未就绪时使用。
+---@return table[]
+function CharacterPanel.getTeamSlotIds()
+    local result = {}
+    for t = 1, TEAM_COUNT do
+        local ids = {}
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, #slots do
+                local slot = slots[i]
+                if slot.state == "occupied" and slot.heroId then
+                    ids[#ids + 1] = slot.heroId
+                end
+            end
+        end
+        result[t] = { slots = ids }
+    end
+    return result
+end
+
 --- 已解锁的队伍数量
 ---@return number
 function CharacterPanel.getUnlockedTeamCount()

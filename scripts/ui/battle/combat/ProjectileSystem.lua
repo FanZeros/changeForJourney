@@ -1184,14 +1184,9 @@ function ProjectileSystem.spawnTalent(talentProjKey, startX, startY, endX, endY,
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
 end
 
-local function safeInvokeProjectileCallback(label, fn)
+local function safeInvokeProjectileCallback(_, fn)
     if not fn then return nil end
-    local ok, ret = pcall(fn)
-    if not ok then
-        print("[ProjectileSystem] " .. tostring(label) .. " callback failed: " .. tostring(ret))
-        return nil
-    end
-    return ret
+    return fn()
 end
 
 --- 每帧更新

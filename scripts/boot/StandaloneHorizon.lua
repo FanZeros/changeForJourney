@@ -839,6 +839,10 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     if pid == 'tri' then
         pressStartDX, pressStartDY = dx or 0, dy or 0
         pressValid = true
+        if SweepDialog.isOpen() then
+            BattleTriPage.handleDragBegin(dx, dy)
+            return
+        end
         if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion()
             and EquipmentBag.hitOverlayWindow(dx, dy) then
             local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
@@ -1015,6 +1019,10 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if not pressValid then
+        if SweepDialog.isOpen() and pid == 'tri' then
+            BattleTriPage.handleDragMove(dx, dy)
+            return
+        end
         if LootBoxPage.isOpen() then
             if pid == 'left' then LootBoxPage.handleHover(dx, dy)
             else LootBoxPage.handleHover(-1, -1) end
@@ -1042,7 +1050,6 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if pid == 'tri' then
-
         BattleTriPage.handleDragMove(dx, dy)
         return
     end

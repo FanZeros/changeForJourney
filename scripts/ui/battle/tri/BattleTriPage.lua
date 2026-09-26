@@ -453,6 +453,16 @@ end
 function BattleTriPage.handleInput(wx, wy)
     if not isOpen_ then return false end
 
+    -- 全窗扫荡弹窗优先于装备背包覆盖层处理
+    if SweepDialog.isOpen() then
+        local logicalW, logicalH = region.w, region.h
+        local fit = math.min(logicalW / 1080, logicalH / 2400) * 2
+        local dx = (wx - logicalW * 0.5) / fit + 540
+        local dy = (wy - logicalH * 0.5) / fit + 1195
+        SweepDialog.handleInput(dx, dy)
+        return true
+    end
+
     -- 装备背包覆盖战斗区：窗口坐标映射到背包设计空间
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
         -- 装备详情弹窗按竖版设计空间铺在覆盖矩形内，需单独换算
@@ -535,6 +545,10 @@ end
 ---@return boolean
 function BattleTriPage.handleDragBegin(wx, wy)
     if not isOpen_ then return false end
+    if SweepDialog.isOpen() then
+        local dx, dy = dialogToDesign(wx, wy)
+        return SweepDialog.handleDragBegin(dx, dy)
+    end
     if StageSelectDialog.isOpen() then
         local dx, dy = dialogToDesign(wx, wy)
         return StageSelectDialog.handleDragBegin(dx, dy)
@@ -552,6 +566,10 @@ end
 ---@return boolean
 function BattleTriPage.handleDragMove(wx, wy)
     if not isOpen_ then return false end
+    if SweepDialog.isOpen() then
+        local dx, dy = dialogToDesign(wx, wy)
+        return SweepDialog.handleDragMove(dx, dy)
+    end
     if StageSelectDialog.isOpen() then
         local dx, dy = dialogToDesign(wx, wy)
         return StageSelectDialog.handleDragMove(dx, dy)
@@ -569,6 +587,7 @@ end
 ---@return boolean
 function BattleTriPage.handleDragEnd(wx, wy)
     if not isOpen_ then return false end
+    if SweepDialog.isOpen() then return SweepDialog.handleDragEnd() end
     if StageSelectDialog.isOpen() then return StageSelectDialog.handleDragEnd() end
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
         local dx, dy = EquipmentBag.overlayToDesign(wx, wy)

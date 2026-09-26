@@ -154,6 +154,7 @@ function M.bind(deps)
         end
         set("teamSlots", teams[activeTeamIdx].slots)
         set("slotPowerCache", teamPowerCaches[activeTeamIdx])
+        rebuildRoster()
         local okTri, BattleTriPage = pcall(require, "ui.battle.tri.BattleTriPage")
         if okTri and BattleTriPage.invalidateTeams then
             BattleTriPage.invalidateTeams()

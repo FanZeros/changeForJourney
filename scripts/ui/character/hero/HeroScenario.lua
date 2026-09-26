@@ -125,15 +125,20 @@ local function playJoinThenIdle(heroId, onFinish)
         if onFinish then onFinish() end
         return
     end
-    if isClaimed(joinId) then
+    local heroes = ClientDispatcher.get("heroes") or {}
+    local roster = heroes.roster or {}
+    local owned = roster[heroId] or roster[tostring(heroId)]
+    if isClaimed(joinId) or (type(owned) == "table" and owned.level) then
+        if not isClaimed(joinId) then markClaimed(joinId) end
         playIdle(heroId, onFinish)
         return
     end
     local shown = showScenario(joinId, function()
-        markClaimed(joinId)
         playIdle(heroId, onFinish)
     end)
-    if not shown then
+    if shown then
+        markClaimed(joinId)
+    else
         -- 对话忙或配置缺失：不标记已看，排队等当前对话结束再播
         enqueue(heroId)
         drainPending()

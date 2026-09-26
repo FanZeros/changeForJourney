@@ -17,6 +17,7 @@ local MAS = require("systems.MapAffixSystem")
 local DungeonBattle = require("ui.dungeon.DungeonBattle")
 local NumberUtil = require("core.NumberUtil")
 local BattleStats = require("systems.BattleStats")
+local GameSFX = require("systems.GameSFX")
 local BattleCombatFx = require("ui.battle.combat.BattleCombatFx")
 local BattleCombatAnim = require("ui.battle.combat.BattleCombatAnim")
 local BattleCombatCombo = require("ui.battle.combat.BattleCombatCombo")
@@ -344,8 +345,8 @@ BattleCombat.syncUnitHp = syncUnitHp
 ---@param color table {r,g,b}
 ---@param isCrit boolean
 ---@param fontSize number|nil
-local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred)
-    BattleCombatFx.addFloatingText(BCS, text, cx, cy, color, isCrit, fontSize, deferred)
+local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred, kind)
+    BattleCombatFx.addFloatingText(BCS, text, cx, cy, color, isCrit, fontSize, deferred, kind)
 end
 BattleCombat.addFloatingText = addFloatingText
 
@@ -462,8 +463,9 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     -- 伤害飘字配色：普通白色 / 暴击红色 / 护盾吸收灰色（完全吸收时不显示 -0）
     local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
     if actual > 0 then
-        addFloatingText((prefix or "") .. "-" .. NumberUtil.format(actual), tgtCX, tgtCY,
-            showCrit and { 255, 60, 60 } or { 255, 255, 255 }, showCrit, nil, true)
+        addFloatingText("-" .. NumberUtil.format(actual), tgtCX, tgtCY,
+            showCrit and { 255, 60, 60 } or { 255, 255, 255 }, showCrit, nil, true,
+            statMeta and statMeta.floatKind)
         if shieldAbsorb > 0 then
             addFloatingText("-" .. NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
                 { 168, 168, 168 }, false, nil, true)
@@ -474,7 +476,7 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     end
     setHitFlash(target)
     if actual > 0 then
-        require("systems.GameSFX").play("hit", require("systems.BattleStats").mountedTeam())
+        GameSFX.play("hit", BattleStats.mountedTeam())
     end
     return actual
 end
@@ -1284,12 +1286,16 @@ local function performAttack(attacker, targetList, isAlly)
                         end
 
                         -- 飘字配色：普通白色 / 暴击红色（物理魔法不再分色，格挡由前缀表达）
-                        local prefix = ""
-                        if hit.isCrit then
-                            prefix = "暴击 "
+                        local kind = nil
+                        if hit.isCrit and hit.isBlocked then kind = "critblock"
+                        elseif hit.isCrit then kind = "crit"
+                        elseif hit.isBlocked then kind = "block" end
+                        if result.category == "magical" then
+                            kind = kind and (kind .. "magic") or "magic"
+                        elseif result.category == "physical" then
+                            kind = kind and (kind .. "phys") or "phys"
                         end
                         if hit.isBlocked then
-                            prefix = prefix .. "格挡 "
                             local blockedAmt = (hit.preBlockDamage or hit.rawDamage or takenForStats or 0) - (actual or 0)
                             if blockedAmt < 0 then blockedAmt = takenForStats or 0 end
                             EquipmentSetRuntime.onBlocked(curTgt, attacker, blockedAmt, dealDamageToUnit)
@@ -1298,15 +1304,19 @@ local function performAttack(attacker, targetList, isAlly)
                         -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
                         local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
                         if actual > 0 then
-                            addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY,
-                                hit.isCrit and { 255, 60, 60 } or { 255, 255, 255 }, hit.isCrit, nil, true)
+                            local numColor = { 255, 236, 170 }
+                            if kind and kind:find("magic", 1, true) then numColor = { 120, 220, 255 }
+                            elseif kind and kind:find("burn", 1, true) then numColor = { 255, 140, 40 }
+                            elseif hit.isCrit then numColor = { 255, 70, 70 } end
+                            addFloatingText("-" .. NumberUtil.format(actual), curTgtCX, curTgtCY,
+                                numColor, hit.isCrit, nil, true, kind)
                             if shieldAbsorb > 0 then
                                 addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
                                     { 168, 168, 168 }, false, nil, true)
                             end
                         elseif shieldAbsorb > 0 then
-                            addFloatingText(prefix .. "-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
-                                { 168, 168, 168 }, false, nil, true)
+                            addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+                                { 168, 168, 168 }, false, nil, true, "shield")
                         end
 
                         -- 暴击回调（供台词系统触发暴击台词�?
@@ -1324,7 +1334,7 @@ local function performAttack(attacker, targetList, isAlly)
 
                         setRecoil(curTgt, isAlly and -1 or 1)
                         setHitFlash(curTgt)
-                        if actual > 0 then require("systems.GameSFX").play("hit", require("systems.BattleStats").mountedTeam()) end
+                        if actual > 0 then GameSFX.play("hit", BattleStats.mountedTeam()) end
 
                         if isAlly and not RCH.shouldSkipThreat(attacker) then
                             local includeBaseThreat = not baseThreatCounted
@@ -1495,7 +1505,7 @@ local function performAttack(attacker, targetList, isAlly)
                 )
                 setRecoil(curTarget, isAlly and -1 or 1)
                 setHitFlash(curTarget)
-                if actualDmg > 0 then require("systems.GameSFX").play("hit", require("systems.BattleStats").mountedTeam()) end
+                if actualDmg > 0 then GameSFX.play("hit", BattleStats.mountedTeam()) end
 
                 if isAlly then
                     local includeBaseThreat = not baseThreatCounted

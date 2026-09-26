@@ -376,6 +376,69 @@ end
 
 -- ======================== 绘制 ========================
 
+--- 横屏卡片：把竖屏长页收成居中宽面板
+local function drawLandscapeCard(vg, contentAlpha)
+    local cardW, cardH = 1500, 760
+    local cardX, cardY = (DESIGN_W - cardW) * 0.5, (DESIGN_H - cardH) * 0.5
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cardX, cardY, cardW, cardH, 28)
+    nvgFillColor(vg, nvgRGBA(18, 14, 10, math.floor(230 * contentAlpha)))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(196, 160, 90, math.floor(230 * contentAlpha)))
+    nvgStrokeWidth(vg, 3)
+    nvgStroke(vg)
+
+    drawStrokedText(vg, DESIGN_W * 0.5, cardY + 78, "远征等级提升",
+        52, COLOR_WHITE, COLOR_STROKE_BK, 4)
+    drawStrokedText(vg, DESIGN_W * 0.5, cardY + 168, "Lv." .. tostring(state.newLevel),
+        84, COLOR_YELLOW, COLOR_LV_STROKE, 6)
+
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 36)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(COLOR_YELLOW[1], COLOR_YELLOW[2], COLOR_YELLOW[3], 255))
+    nvgText(vg, DESIGN_W * 0.5 - 80, cardY + 250, "远征点", nil)
+    nvgFillColor(vg, nvgRGBA(COLOR_GREEN[1], COLOR_GREEN[2], COLOR_GREEN[3], 255))
+    nvgText(vg, DESIGN_W * 0.5 + 90, cardY + 250, "+1", nil)
+
+    local unlocks = state.unlocks or {}
+    local count = #unlocks
+    if count > 0 then
+        local cols = math.min(count, 3)
+        local itemW, itemH, gap = 420, 72, 18
+        local rows = math.ceil(count / cols)
+        local gridW = cols * itemW + (cols - 1) * gap
+        local startX = DESIGN_W * 0.5 - gridW * 0.5
+        local startY = cardY + 330
+        for i, unlock in ipairs(unlocks) do
+            local col = (i - 1) % cols
+            local row = math.floor((i - 1) / cols)
+            local x = startX + col * (itemW + gap)
+            local y = startY + row * (itemH + gap)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, x, y, itemW, itemH, 14)
+            nvgFillColor(vg, nvgRGBA(255, 255, 255, 28))
+            nvgFill(vg)
+            nvgFontSize(vg, 28)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
+            nvgText(vg, x + itemW * 0.5, y + itemH * 0.5, (unlock.unlockName or "") .. "  已开放", nil)
+        end
+        if rows > 2 then
+            nvgFontSize(vg, 22)
+            nvgFillColor(vg, nvgRGBA(216, 201, 163, 200))
+            nvgText(vg, DESIGN_W * 0.5, cardY + cardH - 92, "还有更多解锁", nil)
+        end
+    end
+
+    local remaining = math.ceil(math.max(state.autoCloseTimer, 0))
+    local hintText = remaining .. "秒后自动关闭  点击跳过"
+    nvgFontSize(vg, 28)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(255, 255, 255, 210))
+    nvgText(vg, DESIGN_W * 0.5, cardY + cardH - 48, hintText, nil)
+end
+
 --- 绘制弹窗（在设计空间内调用）
 ---@param vg any NanoVG 上下文
 function LevelUpPopup.draw(vg)
@@ -408,6 +471,10 @@ function LevelUpPopup.draw(vg)
 
     -- 入场延迟期间不绘制内容
     if contentAlpha <= 0 then return end
+
+    -- 横屏宿主把 1080×2400 画布居中缩放，内容改成宽卡片，避免竖屏长页被裁切
+    drawLandscapeCard(vg, contentAlpha)
+    return
 
     -- ── 内容层：统一应用平移 + 透明度 ──
     nvgSave(vg)

@@ -832,10 +832,10 @@ end
 --- 鼠标悬停格子时打开装备详情；离开未钉住的详情就关掉
 function M.handleHover(dx, dy, heroId)
     if panelState.itemDragging then return end
-    local item = nil
+    local item, cx, cy = nil, nil, nil
     if dy >= CLIP_TOP and dy <= CLIP_TOP + CLIP_HEIGHT
         and dx >= GRID_MARGIN_LEFT and dx <= DESIGN_W - GRID_MARGIN_LEFT then
-        item = findItemAt(dx, dy)
+        item, cx, cy = findItemAt(dx, dy)
     end
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
     if not item then
@@ -863,11 +863,12 @@ function M.handleHover(dx, dy, heroId)
     if EquipmentDetail.isOpen and EquipmentDetail.isOpen() then
         if EquipmentDetail.getOwner and EquipmentDetail.getOwner() ~= "character" then return end
         if EquipmentDetail.isPinned and EquipmentDetail.isPinned() then return end
-        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(dx, dy) end
+        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx - GRID_CELL * 0.5, cy - GRID_CELL * 0.5) end
         return
     end
-    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", dx, dy)
-    print("[EquipPanel] 悬停详情 seq=" .. seqStr .. " at " .. tostring(dx) .. "," .. tostring(dy))
+    local anchorX, anchorY = cx - GRID_CELL * 0.5, cy - GRID_CELL * 0.5
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", anchorX, anchorY)
+    print("[EquipPanel] 悬停详情 seq=" .. seqStr .. " anchor=" .. tostring(anchorX) .. "," .. tostring(anchorY))
 end
 
 --- 处理输入（单击详情 / 双击穿戴）
@@ -902,7 +903,7 @@ function M.handleInput(dx, dy, heroId, detailState)
         return false
     end
 
-    local item = findItemAt(dx, dy)
+    local item, cx, cy = findItemAt(dx, dy)
     if not item then
         local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
         if EquipmentDetail.isCompactCorner and EquipmentDetail.isCompactCorner() then
@@ -925,12 +926,13 @@ function M.handleInput(dx, dy, heroId, detailState)
         return true
     end
 
-    -- 单击：右栏详情从鼠标左侧展开，已装备对比继续排在左侧。
+    -- 单击：右栏详情以格子左上角为基准向左展开，已装备对比继续排在左侧。
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
     panelState.hoverSeq = seqStr
     panelState.hoverPinned = true
     panelState.hoverSince = time.elapsedTime
-    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", dx, dy)
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character",
+        cx - GRID_CELL * 0.5, cy - GRID_CELL * 0.5)
     if EquipmentDetail.pin then EquipmentDetail.pin() end
     print("[EquipPanel] 单击详情 seq=" .. seqStr)
     return true

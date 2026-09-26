@@ -292,7 +292,7 @@ local recalcScrollMax
 --- 重建 heroRoster 列表（全部英雄，按排序规则排列）
 --- 排序：拥有且出战 > 拥有未出战（品质高→低，等级高→低）> 未拥有（品质高→低）
 local function rebuildRoster()
-    heroRoster = {}
+    for i = #heroRoster, 1, -1 do heroRoster[i] = nil end
     local allIds = HC.getAllIds()
     for _, id in ipairs(allIds) do
         local ownData = ownedSet[id]

@@ -1304,8 +1304,12 @@ local function performAttack(attacker, targetList, isAlly)
                         -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
                         local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
                         if actual > 0 then
+                            local numColor = { 255, 236, 170 }
+                            if kind and kind:find("magic", 1, true) then numColor = { 120, 220, 255 }
+                            elseif kind and kind:find("burn", 1, true) then numColor = { 255, 140, 40 }
+                            elseif hit.isCrit then numColor = { 255, 70, 70 } end
                             addFloatingText("-" .. NumberUtil.format(actual), curTgtCX, curTgtCY,
-                                hit.isCrit and { 255, 60, 60 } or { 255, 255, 255 }, hit.isCrit, nil, true, kind)
+                                numColor, hit.isCrit, nil, true, kind)
                             if shieldAbsorb > 0 then
                                 addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
                                     { 168, 168, 168 }, false, nil, true)

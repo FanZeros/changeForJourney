@@ -505,10 +505,25 @@ function BattleDraw.drawFloatingTexts(vg)
         if alpha > 0 then
             nvgSave(vg)
             nvgGlobalAlpha(vg, alpha / 255)
-            local iconW = drawFloatIcon(vg, ft.kind, drawX - fontSize * 0.7, drawY, fontSize * 0.7, alpha)
-            drawTextStroke(vg, drawX + iconW * 0.15, drawY, ft.text,
+            local textW = 0
+            if ft.text and ft.text ~= "" then
+                nvgFontFace(vg, "sans")
+                nvgFontSize(vg, fontSize)
+                textW = nvgTextBounds(vg, 0, 0, ft.text) or fontSize
+            end
+            local iconSize = math.max(28, fontSize * 1.15)
+            local tr, tg, tb = ft.color[1], ft.color[2], ft.color[3]
+            local kind = ft.kind or ""
+            if kind:find("burn", 1, true) then tr, tg, tb = 255, 140, 40
+            elseif kind:find("magic", 1, true) then tr, tg, tb = 120, 220, 255
+            elseif kind:find("phys", 1, true) then tr, tg, tb = 255, 236, 170
+            elseif kind:find("heal", 1, true) then tr, tg, tb = 90, 235, 130
+            elseif kind:find("crit", 1, true) then tr, tg, tb = 255, 70, 70
+            end
+            drawTextStroke(vg, drawX, drawY, ft.text,
                 fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                ft.color[1], ft.color[2], ft.color[3], 5)
+                tr, tg, tb, 5)
+            drawFloatIcon(vg, ft.kind, drawX + textW * 0.5 + iconSize * 0.7, drawY, iconSize, alpha)
             nvgRestore(vg)
         end
     end

@@ -31,6 +31,9 @@ local DEFAULT_ALLY_INTERVAL  = 1.2
 local DEFAULT_ENEMY_INTERVAL = 2.0
 local REVIVE_DELAY = 3.0
 local RESPAWN_DELAY = 1.0
+local ENTER_ANIM_DURATION = 0.30
+local ENTER_STAGGER = 0.06
+local REWARD_INTERVAL = 0.05
 local REINFORCE_INTERVAL = 0.4
 -- 全灭兜底：单单位复活计时失效（缺 attrs 等）时，按这个墙钟整队复活，避免永久卡死
 local WIPE_RESET_DELAY = 5.0
@@ -91,6 +94,9 @@ function BattleTriDriver.new(teamIdx)
         kills    = 0,
         stageTotal = 0,
         pendingKills = {},
+        rewardQueue = {},
+        rewardTimer = 0,
+        introTimer = 0,
         active   = false,
         -- [多实例] 各子系统状态
         combatState = BattleCombat.newState("tri" .. teamIdx),
@@ -181,7 +187,7 @@ function BattleTriDriver.new(teamIdx)
             stageId = SC.NORMAL_FIRST_STAGE
         end
         if self.pendingKills and #self.pendingKills > 0 then
-            self:flushPendingKills()
+            self:queuePendingKills()
         end
         self.stageId = stageId
         self.kills = 0
@@ -220,6 +226,10 @@ function BattleTriDriver.new(teamIdx)
         ART.initBattle(self.allies)
         TM.onBattleStart(self.allies, self.enemies)
         TAL.onBattleStart(self.allies, self.enemies)
+        BattleCombat.playEnterAnims(self.enemies, -1)
+        BattleCombat.playEnterAnims(self.allies, 1)
+        local enterCount = math.max(#self.allies, #self.enemies)
+        self.introTimer = ENTER_ANIM_DURATION + math.max(0, enterCount - 1) * ENTER_STAGGER
         self.bindContext()
         self.active = true
         print(string.format("[TriDriver] 队%d 开战 stage=%s allies=%d enemies=%d",
@@ -237,9 +247,9 @@ function BattleTriDriver.new(teamIdx)
         }
     end
 
-    function drv:flushPendingKills()
+    function drv:queuePendingKills()
         local pending = self.pendingKills
-        if not pending or #pending == 0 or not self.onKill then
+        if not pending or #pending == 0 then
             self.pendingKills = {}
             return
         end
@@ -247,19 +257,39 @@ function BattleTriDriver.new(teamIdx)
         for _, u in ipairs(self.allies) do
             if u.hp > 0 then heroIds[#heroIds + 1] = u.heroId end
         end
-        local batch = pending
-        self.pendingKills = {}
-        for i = 1, #batch do
-            local kill = batch[i]
+        local stageId = pending[1].stageId
+        local expReward = 0
+        local goldReward = 0
+        local queue = self.rewardQueue or {}
+        self.rewardQueue = queue
+        for i = 1, #pending do
+            local kill = pending[i]
+            expReward = expReward + (kill.expReward or 0)
+            goldReward = goldReward + (kill.goldReward or 0)
+            queue[#queue + 1] = { stageId = kill.stageId, dropOnly = true }
+        end
+        if self.onKill and (expReward > 0 or goldReward > 0) then
             self.onKill({
                 teamIdx = self.teamIdx,
-                stageId = kill.stageId,
-                expReward = kill.expReward,
-                goldReward = kill.goldReward,
+                stageId = stageId,
+                expReward = expReward,
+                goldReward = goldReward,
                 heroIds = heroIds,
                 allyCount = #heroIds,
             })
         end
+        self.pendingKills = {}
+    end
+
+    function drv:tickRewards(dt)
+        local queue = self.rewardQueue
+        if not queue or #queue == 0 or not self.onDrop then return end
+        self.rewardTimer = (self.rewardTimer or 0) + dt
+        while self.rewardTimer >= REWARD_INTERVAL and #queue > 0 do
+            self.rewardTimer = self.rewardTimer - REWARD_INTERVAL
+            self.onDrop(table.remove(queue, 1))
+        end
+        if #queue == 0 then self.rewardTimer = 0 end
     end
 
     function drv:reportDefeatedEnemies()
@@ -312,24 +342,34 @@ function BattleTriDriver.new(teamIdx)
 
     --- 通关推进
     function drv:advanceStage()
-        self:flushPendingKills()
+        self:queuePendingKills()
         local nextId = SC.getNextStageId(self.stageId)
         if not nextId then
             self:start(self.stageId)
             return
         end
+        local clearedId = self.stageId
         print(string.format("[TriDriver] 队%d 通关 %s → %s",
-            self.teamIdx, tostring(self.stageId), tostring(nextId)))
+            self.teamIdx, tostring(clearedId), tostring(nextId)))
+        self._syncedMainStage = nextId
         self:start(nextId)
-        if self.onStageChanged then self.onStageChanged(self.teamIdx, self.stageId) end
+        if self.onStageCleared then self.onStageCleared(self.teamIdx, clearedId) end
     end
 
     --- 战斗 tick（须已 mount）
     function drv:tick(dt)
         if not self.active then return end
         self._tickDt = dt
+        self:tickRewards(dt)
         local allies, enemies = self.allies, self.enemies
         if #allies == 0 then return end
+        if (self.introTimer or 0) > 0 then
+            self.introTimer = self.introTimer - dt
+            BattleCombat.updateCardAnims(dt)
+            BattleCombat.updateFloatingTexts(dt)
+            BattleCombat.updateHitFlashes(dt)
+            return
+        end
 
         -- 己方阵亡复活计时
         for _, u in ipairs(allies) do

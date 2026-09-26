@@ -8,6 +8,8 @@ local GameConfig     = require("config.GameConfig")
 local DrawUtil       = require("core.DrawUtil")
 local HC             = require("config.HeroConfig")
 local CC             = require("config.ClassConfig")
+local AVC            = require("config.AdvancementConfig")
+local AD             = require("systems.AttributeDef")
 local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local GameState      = require("core.GameState")
 local BF             = require("systems.ButtonFeedback")
@@ -169,139 +171,43 @@ local CLASS_COLORS = {
     [CC.PRIEST]   = { r = 0xfc, g = 0xff, b = 0x00 },
 }
 
---- classId → 基础职业中文名
-local CLASS_DISPLAY_NAMES = {
-    [CC.KNIGHT]   = "守誓者",
-    [CC.WARRIOR]  = "破阵者",
-    [CC.MAGE]     = "咒术师",
-    [CC.RANGER]   = "夜猎者",
-    [CC.ASSASSIN] = "无痕者",
-    [CC.PRIEST]   = "提灯者",
-}
+--- 职业与分支显示名直接取现行六契配置，保留原有分支 id/图标顺序。
+local CLASS_DISPLAY_NAMES = {}
+local FIRST_ADV_BRANCHES = {}
+local SECOND_ADV_BRANCHES = {}
+for classId, branchIds in pairs(AVC.FIRST_BRANCHES) do
+    local baseClass = CC.get(classId)
+    CLASS_DISPLAY_NAMES[classId] = baseClass and baseClass.name or "未知"
+    local firstBranches = {}
+    for _, firstId in ipairs(branchIds) do
+        firstBranches[#firstBranches + 1] = { id = firstId, name = AVC.get(firstId).name }
+        local secondBranches = {}
+        for _, secondId in ipairs(AVC.SECOND_BRANCHES[firstId]) do
+            secondBranches[#secondBranches + 1] = { id = secondId, name = AVC.get(secondId).name }
+        end
+        SECOND_ADV_BRANCHES[firstId] = secondBranches
+    end
+    FIRST_ADV_BRANCHES[classId] = firstBranches
+end
 
---- classId → 一转分支 { { id, name }, { id, name } }
-local FIRST_ADV_BRANCHES = {
-    [CC.KNIGHT]   = { { id = 101, name = "圣骑士" },  { id = 102, name = "龙骑士" } },
-    [CC.WARRIOR]  = { { id = 103, name = "狂战士" },  { id = 104, name = "决斗者" } },
-    [CC.MAGE]     = { { id = 105, name = "咒术师" },  { id = 106, name = "魔导师" } },
-    [CC.RANGER]   = { { id = 107, name = "巡林客" },  { id = 108, name = "弓箭手" } },
-    [CC.ASSASSIN] = { { id = 109, name = "暗杀者" },  { id = 110, name = "影袭者" } },
-    [CC.PRIEST]   = { { id = 111, name = "大祭祀" },  { id = 112, name = "大主教" } },
-}
+-- 转职属性直接按配置表展示，不重复维护与实效脱节的旧加成。
+local function getBranchAttrs(branchId, classId)
+    local cfg = AVC.get(branchId) or (classId and CC.get(classId))
+    local attrs = {}
+    for _, bonus in ipairs(cfg and cfg.statBonus or {}) do
+        local meta = AD.getMeta(bonus.key)
+        local name = (meta and meta.name) or bonus.key
+        local value = bonus.flat or 0
+        attrs[#attrs + 1] = {
+            name = name,
+            value = string.format("+%g%s", value, meta and meta.dataType == "pct" and "%" or ""),
+        }
+    end
+    return attrs
+end
 
---- 一转分支 id → 二转分支 { { id, name }, { id, name } }
-local SECOND_ADV_BRANCHES = {
-    [101] = { { id = 201, name = "圣堂骑士" }, { id = 202, name = "传颂骑士" } },
-    [102] = { { id = 203, name = "十字之军" }, { id = 204, name = "怒龙骑士" } },
-    [103] = { { id = 205, name = "疾风剑狂" }, { id = 206, name = "嗜血狂徒" } },
-    [104] = { { id = 207, name = "武器大师" }, { id = 208, name = "幻影剑士" } },
-    [105] = { { id = 209, name = "瘟疫巫师" }, { id = 210, name = "诅咒术士" } },
-    [106] = { { id = 211, name = "智慧学者" }, { id = 212, name = "奥能大师" } },
-    [107] = { { id = 213, name = "风灵使者" }, { id = 214, name = "林间猎手" } },
-    [108] = { { id = 215, name = "鹰眼箭神" }, { id = 216, name = "重弩炮手" } },
-    [109] = { { id = 217, name = "瞬狱杀手" }, { id = 218, name = "千面刺客" } },
-    [110] = { { id = 219, name = "致命之刃" }, { id = 220, name = "双刃刺客" } },
-    [111] = { { id = 221, name = "祝祭神官" }, { id = 222, name = "黑衣祭祀" } },
-    [112] = { { id = 223, name = "神之使徒" }, { id = 224, name = "惩戒牧师" } },
-}
-
---- 分支 id → 转职属性加成 { { name, value }, ... }
-local ADV_BRANCH_ATTRS = {
-    -- ===== 基础职业 =====
-    [1] = { { name = "体质", value = "+5" } },
-    [2] = { { name = "力量", value = "+5" } },
-    [3] = { { name = "智慧", value = "+5" } },
-    [4] = { { name = "敏捷", value = "+5" } },
-    [5] = { { name = "运气", value = "+5" } },
-    [6] = { { name = "精神", value = "+5" } },
-    -- ===== 一转 =====
-    [101] = { { name = "体质", value = "+5" }, { name = "精神", value = "+5" } },
-    [102] = { { name = "体质", value = "+5" }, { name = "力量", value = "+5" } },
-    [103] = { { name = "力量", value = "+5" }, { name = "体质", value = "+5" } },
-    [104] = { { name = "力量", value = "+5" }, { name = "智慧", value = "+5" } },
-    [105] = { { name = "智慧", value = "+5" }, { name = "精神", value = "+5" } },
-    [106] = { { name = "智慧", value = "+5" }, { name = "运气", value = "+5" } },
-    [107] = { { name = "敏捷", value = "+5" }, { name = "力量", value = "+5" } },
-    [108] = { { name = "敏捷", value = "+5" }, { name = "运气", value = "+5" } },
-    [109] = { { name = "运气", value = "+5" }, { name = "敏捷", value = "+5" } },
-    [110] = { { name = "运气", value = "+5" }, { name = "力量", value = "+5" } },
-    [111] = { { name = "精神", value = "+5" }, { name = "运气", value = "+5" } },
-    [112] = { { name = "精神", value = "+5" }, { name = "体质", value = "+5" } },
-    -- ===== 二转 =====
-    [201] = { { name = "精神", value = "+5" }, { name = "体质", value = "+5" }, { name = "治疗加成", value = "+20%" } },
-    [202] = { { name = "体质", value = "+5" }, { name = "力量", value = "+5" }, { name = "护盾", value = "+49" } },
-    [203] = { { name = "体质", value = "+5" }, { name = "力量", value = "+5" }, { name = "护甲", value = "+7" } },
-    [204] = { { name = "体质", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "物理暴击率", value = "+6.25%" } },
-    [205] = { { name = "力量", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "物理暴击率", value = "+6.25%" } },
-    [206] = { { name = "力量", value = "+5" }, { name = "体质", value = "+5" }, { name = "暴击伤害", value = "+25%" } },
-    [207] = { { name = "力量", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "物理穿透", value = "+10" } },
-    [208] = { { name = "力量", value = "+5" }, { name = "运气", value = "+5" }, { name = "物理暴击伤害", value = "+33%" } },
-    [209] = { { name = "智慧", value = "+5" }, { name = "体质", value = "+5" }, { name = "魔法穿透", value = "+10" } },
-    [210] = { { name = "智慧", value = "+5" }, { name = "精神", value = "+5" }, { name = "魔法暴击率", value = "+6.25%" } },
-    [211] = { { name = "智慧", value = "+5" }, { name = "精神", value = "+5" }, { name = "魔法暴击率", value = "+6.25%" } },
-    [212] = { { name = "智慧", value = "+5" }, { name = "运气", value = "+5" }, { name = "魔法穿透", value = "+10" } },
-    [213] = { { name = "敏捷", value = "+5" }, { name = "力量", value = "+5" }, { name = "攻击速度", value = "+15%" } },
-    [214] = { { name = "敏捷", value = "+5" }, { name = "运气", value = "+5" }, { name = "暴击伤害", value = "+33%" } },
-    [215] = { { name = "敏捷", value = "+5" }, { name = "运气", value = "+5" }, { name = "物理穿透", value = "+10" } },
-    [216] = { { name = "力量", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "暴击伤害", value = "+25%" } },
-    [217] = { { name = "运气", value = "+5" }, { name = "力量", value = "+5" }, { name = "暴击伤害", value = "+33%" } },
-    [218] = { { name = "敏捷", value = "+5" }, { name = "运气", value = "+5" }, { name = "物理穿透", value = "+10" } },
-    [219] = { { name = "运气", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "暴击率", value = "+6.25%" } },
-    [220] = { { name = "运气", value = "+5" }, { name = "力量", value = "+5" }, { name = "物理穿透", value = "+10" } },
-    [221] = { { name = "精神", value = "+5" }, { name = "智慧", value = "+5" }, { name = "治疗加成", value = "+20%" } },
-    [222] = { { name = "精神", value = "+5" }, { name = "运气", value = "+5" }, { name = "治疗暴击率", value = "+6.25%" } },
-    [223] = { { name = "精神", value = "+5" }, { name = "体质", value = "+5" }, { name = "治疗加成", value = "+20%" } },
-    [224] = { { name = "精神", value = "+5" }, { name = "智慧", value = "+5" }, { name = "魔法穿透", value = "+10" } },
-}
-
---- 分支 id → 天赋 { name, desc }
-local ADV_BRANCH_TALENT = {
-    -- ===== 基础职业天赋 =====
-    [1] = { name = "阵前叫嚣", desc = "每场战斗开始时，第一次攻击获得20倍仇恨值" },
-    [2] = { name = "物理精通", desc = "物理伤害加成+10%" },
-    [3] = { name = "魔法精通", desc = "魔法伤害加成+10%" },
-    [4] = { name = "远程攻击", desc = "在有骑士/战士存在时，仇恨获得倍率降低80%" },
-    [5] = { name = "精准", desc = "暴击率+5%" },
-    [6] = { name = "疗愈", desc = "治疗加成+10%" },
-    -- ===== 一转天赋 =====
-    [101] = { name = "圣光术", desc = "每10秒释放圣光术恢复自己10%生命" },
-    [102] = { name = "龙之血", desc = "在战斗开始时和每10秒进行嘲讽，获得相当于模拟平A伤害×50的仇恨值，强制嘲讽3秒；仇恨值保持己方最高时每秒恢复2%已损失生命值" },
-    [103] = { name = "狂暴之血", desc = "当前生命值每损失5%，物理攻击加成+2.5%" },
-    [104] = { name = "战场决斗", desc = "攻击速度+15%，每5次攻击只会攻击同一个敌人，不会受仇恨值影响，对锁定目标伤害加成+5%" },
-    [105] = { name = "易伤诅咒", desc = "每10秒对一个敌人施加持续8秒的[易伤]，使受到额外伤害+20%（乘法计算）" },
-    [106] = { name = "奥术飞弹", desc = "每次造成攻击伤害时，有35%概率对随机敌人发射奥术飞弹，造成魔法攻击力*100%的暗影伤害" },
-    [107] = { name = "巡游射击", desc = "每当怪物攻击其他角色后1秒，该角色有25%概率无视攻击进度条立即对该怪物进行攻击" },
-    [108] = { name = "阵前提速", desc = "战斗开始时获得10层[提速]，每层提供8%攻击速度，每次攻击后减少1层" },
-    [109] = { name = "隐匿", desc = "每过去10秒后立即清空仇恨值，清空后获得5秒[暗影]状态：暴击率+15%，暴击伤害+30%" },
-    [110] = { name = "影袭", desc = "每当有敌人死亡时，立即填充100%当前攻击进度条，并使下一次攻击伤害加成+30%" },
-    [111] = { name = "激励", desc = "每次进行攻击治疗时，立即填充目标25%的攻击进度条，并使目标获得持续3秒的治疗加成+10%" },
-    [112] = { name = "团队治疗", desc = "每次进行攻击治疗时，将治疗量的10%为整个团队所有远征队员进行治疗" },
-    -- ===== 二转天赋 =====
-    [201] = { name = "进阶圣光术", desc = "一转效果[圣光术]治疗的血量提升至三倍，在初次生命值低于50%/20%时立即释放一次[圣光术]" },
-    [202] = { name = "传颂祝福", desc = "在战斗中每累计损失10%生命值时，为所有远征队员增加7%伤害加成，最多增加98%" },
-    [203] = { name = "十字盾守", desc = "每当受到伤害时提升2点护甲，最多能叠加50次" },
-    [204] = { name = "怒龙反击", desc = "每次受到攻击时，立即填充40%当前攻击进度条" },
-    [205] = { name = "狂风骤雨", desc = "当前生命值每损失5%，攻击速度+3%，物理暴击率+1.5%" },
-    [206] = { name = "嗜血狂怒", desc = "物理攻击加成+35%，当生命值高于50%时每次攻击时减少3%当前生命值" },
-    [207] = { name = "武器精通", desc = "无法再装备常规副手，但可在副手装备与主手不同类型的武器" },
-    [208] = { name = "幻影剑斩", desc = "攻击同一个敌人时，每次攻击获得1层[连击]，每层[连击]提供10%连击概率和2%连击增伤，最多叠加至10层；切换攻击目标时失去2层[连击]" },
-    [209] = { name = "群体诅咒术", desc = "每次诅咒时同时诅咒所有敌人，且[易伤诅咒]的效果提升至25%" },
-    [210] = { name = "蚀骨诅咒", desc = "[易伤诅咒]的持续时间延长至15秒。带有诅咒的敌人，每次受到伤害时，都会额外受到一次相当于该角色魔法攻击力*80%的暗影伤害（此效果每1秒最多触发1次）" },
-    [211] = { name = "奥术智慧", desc = "[奥术飞弹]的触发概率提升至50%。飞弹现在会优先攻击生命值百分比最低的敌人，且对生命值低于40%的敌人造成的伤害提升100%。当目标生命值低于20%时，[奥术飞弹]必定触发。" },
-    [212] = { name = "奥能充盈", desc = "[奥术飞弹]的伤害提升至魔法攻击力*200%。每次触发飞弹时，有30%几率使本次飞弹爆炸，对目标及其相邻单位造成等量伤害。" },
-    [213] = { name = "风之气息", desc = "[巡游射击]的触发概率提升至35%。每当触发此效果获得1层[风之气息]，自身攻击速度提升12%，持续5秒，此效果最多叠加3层。" },
-    [214] = { name = "林间之眼", desc = "[巡游射击]必定造成暴击，每当进行普通攻击时获得1层[暴击提升]，暴击伤害+8%，持续10秒，此效果最多叠加20层" },
-    [215] = { name = "鹰眼", desc = "[阵前提速]获得的[提速]层数+5，每层[提速]额外提供6物理穿透" },
-    [216] = { name = "重火力", desc = "攻击速度固定为100%；多余的攻击速度按照1:2转化为物理伤害加成" },
-    [217] = { name = "瞬杀", desc = "保持5秒未受到攻击时，暴击概率+25%" },
-    [218] = { name = "千面", desc = "保持5秒未受到攻击时，攻击速度+50%，伤害加成+10%" },
-    [219] = { name = "致命", desc = "攻击造成暴击时，其攻击进度条立即前进100%，暴击伤害+25%" },
-    [220] = { name = "双刃精通", desc = "无法再装备常规副手，但可在副手装备与主手相同类型的武器" },
-    [221] = { name = "战争之祭", desc = "[激励]的效果提升至40%。当目标因[激励]效果而立即进行攻击后，其此次攻击造成的伤害提升25%（乘法计算）" },
-    [222] = { name = "嗜血祭祀", desc = "[激励]的效果提升至100%，但[激励]变为40%概率触发，因[激励]效果而立即攻击后，被[激励]的单位将恢复本次攻击造成的伤害值的生命值" },
-    [223] = { name = "神之赐福", desc = "[团队治疗]治疗量提升至三倍，并且对当前生命值低于20%的远征队员必定造成治疗暴击" },
-    [224] = { name = "神圣惩戒", desc = "每当进行任意治疗时，有40%概率对一个随机敌人发射惩戒飞弹，造成治疗量*400%的暗影伤害" },
-}
+-- 确认弹窗直接使用 ClassConfig / AdvancementConfig 的实际职业天赋说明，
+-- 不在界面重复维护一份旧职业文案。
 
 --- 转职消耗金币
 local ADV_COST = {
@@ -720,7 +626,7 @@ function M.drawConfirmPopup(vg)
         { strokeColor = { 0x28, 0x28, 0x28 } })
 
     -- 基础属性列表
-    local attrs = ADV_BRANCH_ATTRS[branchId] or {}
+    local attrs = getBranchAttrs(branchId, classId)
     local attrCount = #attrs
     for i, attr in ipairs(attrs) do
         local ay = C.attrStartY + (i - 1) * C.attrSpacing
@@ -761,10 +667,11 @@ function M.drawConfirmPopup(vg)
     nvgFill(vg)
 
     -- 天赋名称
-    local talent = ADV_BRANCH_TALENT[branchId]
+    local branchCfg = AVC.get(branchId)
+    local talent = branchCfg or (advLevel == 0 and classId and CC.get(classId))
     if talent then
         local talentNameY = talentBgTop + C.talentNameGapTop
-        drawTextStroke(vg, C.talentNameX, talentNameY, talent.name,
+        drawTextStroke(vg, C.talentNameX, talentNameY, talent.talentName,
             C.talentNameFont, NVG_ALIGN_LEFT + NVG_ALIGN_TOP,
             classColor.r, classColor.g, classColor.b, 5)
 
@@ -781,7 +688,7 @@ function M.drawConfirmPopup(vg)
         local minFont  = 20
         while fontSize > minFont do
             nvgFontSize(vg, fontSize)
-            local bounds = nvgTextBoxBounds(vg, descLeft, descTop, descW, talent.desc)
+            local bounds = nvgTextBoxBounds(vg, descLeft, descTop, descW, talent.talentDesc)
             if bounds and bounds[4] then
                 local textH = bounds[4] - descTop
                 if textH <= maxDescH then break end
@@ -793,7 +700,7 @@ function M.drawConfirmPopup(vg)
 
         nvgFontSize(vg, fontSize)
         nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-        nvgTextBox(vg, descLeft, descTop, descW, talent.desc, nil)
+        nvgTextBox(vg, descLeft, descTop, descW, talent.talentDesc, nil)
     end
 
     -- 底部区域

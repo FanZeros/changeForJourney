@@ -1,13 +1,14 @@
 -- ============================================================================
 -- AwakeningPanel - 觉醒面板（绝区零影画式）
 -- 角色 CG 切成三竖条错位排布：未解锁灰度渲染，解锁显示原色
--- Ⅰ 粗暴 / Ⅱ 机制 / Ⅲ 进化；点切片查看，底部嵌合
+-- Ⅰ 初醒 / Ⅱ 共鸣 / Ⅲ 蜕变；点切片查看，底部嵌合
 -- ============================================================================
 
 local HC         = require("config.HeroConfig")
 local DrawUtil   = require("core.DrawUtil")
 local AKC        = require("config.AwakeningConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
+local I18n       = require("core.I18n")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -28,7 +29,7 @@ local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 319
 local TITLE_FONT_SIZE              = 50
 
 local NODE_COUNT = AKC.NODE_COUNT
-local NODE_NAMES  = { "粗暴", "机制", "进化" }
+local NODE_NAMES  = { "初醒", "共鸣", "蜕变" }
 local NODE_ROMANS = { "Ⅰ", "Ⅱ", "Ⅲ" }
 
 -- 影画切片：CG 三竖条直角对齐，无缝拼合
@@ -244,7 +245,7 @@ end
 ---@param heroId number
 ---@return string, string
 local function getNodeInfo(nodeIndex, heroCfg, heroId)
-    local title = (NODE_ROMANS[nodeIndex] or "") .. "  " .. (NODE_NAMES[nodeIndex] or "觉醒")
+    local title = (NODE_ROMANS[nodeIndex] or "") .. "  " .. I18n.lookup(NODE_NAMES[nodeIndex] or "觉醒")
     local effect = AKC.getNodeEffect(heroId, nodeIndex) or "效果待配置"
     return title, effect
 end

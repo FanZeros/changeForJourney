@@ -19,6 +19,7 @@
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local GameState        = require("core.GameState")
 local BattleScene      = require("ui.battle.scene.BattleScene")
+local OfflineService   = require("rules.offline.OfflineService")
 
 local StandaloneSave = {}
 
@@ -33,6 +34,10 @@ local lastSnapshot = nil
 local snapshotAcc = 0.0
 ---@type number|nil  防抖写盘剩余时间（nil = 无待写变更）
 local flushTimer = nil
+local restoredSavedAt = 0  -- 当前进程启动前最后一次落盘；用于兼容旧存档的在线边界
+local restoredSave = false
+local offlineChecked = false
+local lastSavedAt = 0
 
 --- 收集当前全部可持久化数据 → 存档表
 local function buildSaveData()
@@ -43,7 +48,7 @@ local function buildSaveData()
     end
     return {
         version   = SAVE_VERSION,
-        savedAt   = os.time(),
+        savedAt   = lastSavedAt,
         gameState = GameState.exportSave(),
         modules   = modules,
     }
@@ -59,12 +64,13 @@ local function encodeSave()
     return json
 end
 
---- 写盘（不传 json 则实时编码）
-local function writeFile(json)
-    if not json then
-        json = encodeSave()
-        if not json then return false end
-    end
+--- 离线收益尚未核算或尚待领取时，不改写旧存档的时间边界。
+local function writeFile()
+    if not offlineChecked or OfflineService.HasPendingRewards(1) then return false end
+    OfflineService.MarkOnline(1)
+    lastSavedAt = os.time()
+    local json = encodeSave()
+    if not json then return false end
     local file = File(SAVE_FILE, FILE_WRITE)
     if not file or not file:IsOpen() then
         print("[StandaloneSave] 写档失败(无法打开): " .. SAVE_FILE)
@@ -82,6 +88,13 @@ end
 --- （各系统初始化均为 "if not ClientDispatcher.get(x)" 守卫，先注入即跳过默认值）
 ---@return boolean 是否恢复了存档
 function StandaloneSave.RestoreData()
+    offlineChecked = false
+    restoredSave = false
+    restoredSavedAt = 0
+    lastSavedAt = 0
+    lastSnapshot = nil
+    flushTimer = nil
+    snapshotAcc = 0
     if not fileSystem or not fileSystem:FileExists(SAVE_FILE) then
         print("[StandaloneSave] 无本地存档，开始新档")
         return false
@@ -110,9 +123,40 @@ function StandaloneSave.RestoreData()
         names[#names + 1] = name
     end
 
+    restoredSavedAt = tonumber(saveData.savedAt) or 0
+    lastSavedAt = restoredSavedAt
+    restoredSave = true
     lastSnapshot = nil  -- 恢复后重建基线，防止把恢复内容误判为变更
     print("[StandaloneSave] 存档已恢复: " .. #names .. " 个模块 savedAt=" .. tostring(saveData.savedAt))
     return true
+end
+
+--- 旧存档的 lastOnlineTime 长期未推进时，以已落盘的在线快照时刻作离线起点。
+--- 必须在本轮 CalcOnEnter 之前调用，不能使用本轮新写入的 savedAt。
+function StandaloneSave.ReconcileOfflineBoundary()
+    local session = ClientDispatcher.get("session")
+    if not restoredSave or type(session) ~= "table" or (session.lastOnlineTime or 0) <= 0 then
+        restoredSavedAt = 0
+        return
+    end
+    local boundary = math.min(restoredSavedAt, os.time())
+    if boundary > session.lastOnlineTime then
+        print("[StandaloneSave] 恢复在线边界 lastOnline=" .. tostring(session.lastOnlineTime)
+            .. " savedAt=" .. tostring(boundary))
+        session.lastOnlineTime = boundary
+        local battle = ClientDispatcher.get("battle")
+        if type(battle) == "table" then
+            battle.idleAccumSec = 0
+        end
+    end
+    restoredSavedAt = 0
+end
+
+--- 离线收益已核算；只有不存在待领取奖励时才允许写档和推进在线边界。
+function StandaloneSave.OfflineChecked()
+    offlineChecked = true
+    lastSnapshot = nil
+    print("[StandaloneSave] 离线时间边界已核算")
 end
 
 --- 回灌战斗进度（切关/首通标记/挂机模式判定）
@@ -132,6 +176,7 @@ end
 --- 主循环更新（由 Standalone.HandleUpdate 调用）
 ---@param dt number
 function StandaloneSave.Update(dt)
+    if not offlineChecked or OfflineService.HasPendingRewards(1) then return end
     -- 防抖写盘
     if flushTimer then
         flushTimer = flushTimer - dt
@@ -161,6 +206,10 @@ end
 
 --- 立即落盘（退出时调用）
 function StandaloneSave.Wipe()
+    restoredSavedAt = 0
+    lastSavedAt = 0
+    restoredSave = false
+    offlineChecked = false
     lastSnapshot = nil
     snapshotAcc = 0
     flushTimer = nil

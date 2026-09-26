@@ -22,8 +22,6 @@ local pendingRewards = {}
 
 -- ======================== 常量 ========================
 
-local IDLE_SETTLE_INTERVAL = 60  -- 在线结算周期（秒），用于崩溃恢复判定
-
 -- 卷轴掉落（reward type 用 snake_case 与 RESOURCE_DEFS 对齐）
 local SCROLL_TO_REWARD = {
     weaponScroll    = "weapon_scroll",
@@ -198,32 +196,12 @@ function OfflineService.CalcOnEnter(uid)
         return
     end
 
-    local offlineSeconds = now - lastOnline
-
-    -- ══════════ 崩溃恢复：检测 lastIdleClaimTime 遗漏 ══════════
+    local offlineSeconds = math.max(0, now - lastOnline)
     local battleData = PDM.GetModule(uid, "battle")
-    if battleData then
-        local lastClaim = battleData.lastIdleClaimTime or 0
-        if lastClaim > 0 and lastOnline > lastClaim then
-            -- 存在未结算窗口（崩溃/热更导致 idleAccumSec 未结算）
-            local missedSeconds = lastOnline - lastClaim
-            if missedSeconds > 0 and missedSeconds < IDLE_SETTLE_INTERVAL * 2 then
-                -- 合理范围内（最多 ~120 秒遗漏），并入离线时长一起结算
-                offlineSeconds = offlineSeconds + missedSeconds
-                print(string.format(
-                    "[OfflineService] crash recovery: added %d missed seconds uid=%s",
-                    missedSeconds, tostring(uid)))
-            end
-        end
-        -- 重置累积器（上一轮残留的 idleAccumSec 已合并到 offlineSeconds）
-        if (battleData.idleAccumSec or 0) > 0 then
-            offlineSeconds = offlineSeconds + battleData.idleAccumSec
-            print(string.format(
-                "[OfflineService] merging residual idleAccumSec=%d uid=%s",
-                math.floor(battleData.idleAccumSec), tostring(uid)))
-            battleData.idleAccumSec = 0
-            PDM.MarkDirty(uid, "battle")
-        end
+    -- 单机在线战斗已按击杀发奖；旧在线累积器不应再计入离线时长。
+    if battleData and (battleData.idleAccumSec or 0) > 0 then
+        battleData.idleAccumSec = 0
+        PDM.MarkDirty(uid, "battle")
     end
 
     -- 不满足最低离线时间
@@ -562,10 +540,20 @@ function OfflineService.OnPlayerDisconnect(uid)
         PDM.MarkDirty(uid, "battle")
     end
 
-    -- 4. 更新 lastOnlineTime
+    OfflineService.MarkOnline(uid)
+end
+
+-- ======================== 在线时间边界 ========================
+
+--- 仅推进在线时刻，不额外结算挂机收益；单机战斗收益已按击杀发放。
+---@param uid number
+function OfflineService.MarkOnline(uid)
+    if pendingRewards[uid] then return end
     local sessionData = PDM.GetModule(uid, "session")
-    if sessionData then
-        sessionData.lastOnlineTime = os.time()
+    if not sessionData or (sessionData.lastOnlineTime or 0) <= 0 then return end
+    local now = os.time()
+    if now > sessionData.lastOnlineTime then
+        sessionData.lastOnlineTime = now
         PDM.MarkDirty(uid, "session")
     end
 end

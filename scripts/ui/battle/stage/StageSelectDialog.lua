@@ -239,9 +239,10 @@ local function stageMonsterIds(entry)
 end
 
 local function currentStageId()
-    if state.targetTeam and state.targetTeam > 1 then
+    if state.targetTeam then
         local BattleTriPage = require("ui.battle.tri.BattleTriPage")
         return BattleTriPage.getTeamStageId(state.targetTeam)
+            or require("ui.battle.scene.BattleScene").getStageId()
     end
     return require("ui.battle.scene.BattleScene").getStageId()
 end
@@ -277,7 +278,7 @@ function StageSelectDialog.open(teamIdx)
     state.openTime = time.elapsedTime
     state.chDragY = nil
     state.chDragMoved = false
-    state.targetTeam = (teamIdx and teamIdx > 1) and teamIdx or nil
+    state.targetTeam = teamIdx
     local BS = require("ui.battle.scene.BattleScene")
     local curStage = BS.getStageId()
     if state.targetTeam then
@@ -632,7 +633,7 @@ function StageSelectDialog.handleInput(x, y)
                 end
                 if id == currentStageId() then return true end
                 local ok
-                if state.targetTeam and state.targetTeam > 1 then
+                if state.targetTeam then
                     local BattleTriPage = require("ui.battle.tri.BattleTriPage")
                     ok = BattleTriPage.gotoTeamStage(state.targetTeam, id)
                 else

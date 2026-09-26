@@ -165,6 +165,12 @@ function BattleTriDriver.new(teamIdx)
         BattleCombat.addFloatingText("复活", cx, cy, { 120, 255, 160 }, false)
     end
 
+    --- 挂载本队状态并注入上下文。绘制和更新都必须先调用，避免串用上一队状态。
+    function drv:activate()
+        self.mount()
+        self.bindContext()
+    end
+
     --- 开始/重开一场战斗
     function drv:start(stageId)
         stageId = tonumber(stageId) or self.stageId or SC.NORMAL_FIRST_STAGE
@@ -175,7 +181,7 @@ function BattleTriDriver.new(teamIdx)
         self.kills = 0
         -- 清理上一轮残留的复活/全灭计时，避免沿用旧进度
         self._wipeTimer = nil
-        self.mount()
+        self:activate()
         -- 己方: 从编队页构建新单位（应用装备/神器/遗物）
         local CharacterPanel = require("ui.character.panel.CharacterPanel")
         self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
@@ -397,7 +403,7 @@ function BattleTriDriver.new(teamIdx)
             print(string.format("[TriDriver] 队%d 编队变化，刷新当前关卡 %s", self.teamIdx, tostring(self.stageId)))
             self:start(self.stageId)
         end
-        self.mount()
+        self:activate()
         self:tick(dt)
     end
 

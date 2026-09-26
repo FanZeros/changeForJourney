@@ -128,24 +128,22 @@ end
 
 --- [三行并行] L0 整套大背景铺满窗口（左右面板 + 中段框体同源）
 
---- 每帧更新: 行1 走 BattleScene 全引擎（default 状态），行2/3 走各自驱动
+--- 每帧更新：三行使用同一套 BattleTriDriver，只切换各自的状态实例。
 function BattleTriPage.update(dt)
     if not isOpen_ then return end
     BattleLayout.setMode("strip")
     ensureDrivers()
-    -- 回到 default 状态供 BattleScene 使用
+    for t = 1, COL_COUNT do
+        local drv = drivers[t]
+        if drv then drv:update(dt) end
+    end
+    -- 三行结束后恢复默认状态，避免后续单场界面读到最后一队的数据。
     BattleCombat.mount(nil)
     ProjectileSystem.mount(nil)
     TM.mount(nil)
     TAL.mount(nil)
     BattleEffects.mount(nil)
     SEM.mount(nil)
-    local BattleScene = require("ui.battle.scene.BattleScene")
-    BattleScene.update(dt)
-    for t = 2, COL_COUNT do
-        local drv = drivers[t]
-        if drv then drv:update(dt) end
-    end
 end
 -- [暗黑替换 v2] L0 框体图（用户素材, 1672x941, 三个透明内矩形）+ 分层渲染
 local PLATE_AR = 1672 / 941
@@ -255,23 +253,10 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgScissor(vg, ix, iy, iw, ih)
             nvgTranslate(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5 + ih * 0.06)
             nvgScale(vg, contentScale, contentScale)
-            if row == 1 then
-                BattleCombat.mount(nil)
-                ProjectileSystem.mount(nil)
-                TM.mount(nil)
-                TAL.mount(nil)
-                BattleEffects.mount(nil)
-                SEM.mount(nil)
-                BattleView.draw(vg, {
-                    allies  = BattleScene.getAllies() or {},
-                    enemies = BattleScene.getEnemies() or {},
-                }, nil, true)
-            else
-                local drv = drivers[row]
-                if drv then
-                    drv.mount()
-                    BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies }, nil, true)
-                end
+            local drv = drivers[row]
+            if drv then
+                drv:activate()
+                BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies }, nil, true)
             end
             nvgRestore(vg)
         end
@@ -285,10 +270,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgFontSize(vg, 22)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local stageText
-        if row == 1 then
-            -- [进度显示] 百分比改到战斗页下方进度条，标题只留关卡名
-            stageText = string.format("【小队1】%s", stageDisplayName(BattleScene.getStageId()))
-        elseif drivers[row] then
+        if drivers[row] then
             stageText = string.format("【小队%d】%s", row, stageDisplayName(drivers[row].stageId))
         elseif row <= unlocked then
             stageText = string.format("【小队%d】准备中", row)
@@ -300,9 +282,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgText(vg, ix + 28, iy + 25, stageText, nil)
 
         local killed, total
-        if row == 1 then
-            killed, total = BattleScene.getStageKillProgress()
-        elseif row <= unlocked and drivers[row] and #drivers[row].allies > 0 then
+        if row <= unlocked and drivers[row] and #drivers[row].allies > 0 then
             killed, total = drivers[row].kills, drivers[row].stageTotal
         end
         if killed and total and total > 0 then

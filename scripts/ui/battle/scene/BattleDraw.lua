@@ -405,6 +405,81 @@ end
 
 -- ======================== 浮动文字渲染 ========================
 
+local function drawFloatIcon(vg, kind, x, y, s, a)
+    if not kind then return 0 end
+    local function mark(r, g, b)
+        nvgFillColor(vg, nvgRGBA(r, g, b, a))
+    end
+    if kind:find("phys", 1, true) then
+        mark(230, 230, 235)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x - s * 0.15, y - s * 0.45)
+        nvgLineTo(vg, x + s * 0.35, y + s * 0.15)
+        nvgLineTo(vg, x + s * 0.15, y + s * 0.35)
+        nvgLineTo(vg, x - s * 0.35, y - s * 0.25)
+        nvgClosePath(vg)
+        nvgFill(vg)
+    elseif kind:find("magic", 1, true) then
+        mark(120, 210, 255)
+        nvgBeginPath(vg)
+        nvgCircle(vg, x, y, s * 0.28)
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x, y - s * 0.48)
+        nvgLineTo(vg, x + s * 0.1, y - s * 0.1)
+        nvgLineTo(vg, x, y)
+        nvgLineTo(vg, x - s * 0.1, y - s * 0.1)
+        nvgClosePath(vg)
+        nvgFill(vg)
+    elseif kind:find("burn", 1, true) then
+        mark(255, 120, 30)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x, y - s * 0.48)
+        nvgLineTo(vg, x + s * 0.28, y + s * 0.2)
+        nvgLineTo(vg, x, y + s * 0.05)
+        nvgLineTo(vg, x - s * 0.28, y + s * 0.2)
+        nvgClosePath(vg)
+        nvgFill(vg)
+    elseif kind:find("block", 1, true) then
+        mark(180, 190, 210)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x, y - s * 0.42)
+        nvgLineTo(vg, x + s * 0.34, y - s * 0.12)
+        nvgLineTo(vg, x + s * 0.22, y + s * 0.38)
+        nvgLineTo(vg, x - s * 0.22, y + s * 0.38)
+        nvgLineTo(vg, x - s * 0.34, y - s * 0.12)
+        nvgClosePath(vg)
+        nvgFill(vg)
+    elseif kind:find("shield", 1, true) then
+        mark(170, 175, 185)
+        nvgBeginPath(vg)
+        nvgCircle(vg, x, y, s * 0.3)
+        nvgFill(vg)
+    elseif kind:find("heal", 1, true) then
+        mark(80, 230, 120)
+        nvgBeginPath(vg)
+        nvgRect(vg, x - s * 0.1, y - s * 0.36, s * 0.2, s * 0.72)
+        nvgRect(vg, x - s * 0.36, y - s * 0.1, s * 0.72, s * 0.2)
+        nvgFill(vg)
+    end
+    if kind:find("crit", 1, true) then
+        mark(255, 70, 70)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x, y - s * 0.5)
+        nvgLineTo(vg, x + s * 0.14, y - s * 0.14)
+        nvgLineTo(vg, x + s * 0.5, y)
+        nvgLineTo(vg, x + s * 0.14, y + s * 0.14)
+        nvgLineTo(vg, x, y + s * 0.5)
+        nvgLineTo(vg, x - s * 0.14, y + s * 0.14)
+        nvgLineTo(vg, x - s * 0.5, y)
+        nvgLineTo(vg, x - s * 0.14, y - s * 0.14)
+        nvgClosePath(vg)
+        nvgFill(vg)
+        return s
+    end
+    return s * 0.8
+end
+
 function BattleDraw.drawFloatingTexts(vg)
     local texts = combat.getFloatingTexts()
     for _, ft in ipairs(texts) do
@@ -430,7 +505,8 @@ function BattleDraw.drawFloatingTexts(vg)
         if alpha > 0 then
             nvgSave(vg)
             nvgGlobalAlpha(vg, alpha / 255)
-            drawTextStroke(vg, drawX, drawY, ft.text,
+            local iconW = drawFloatIcon(vg, ft.kind, drawX - fontSize * 0.7, drawY, fontSize * 0.7, alpha)
+            drawTextStroke(vg, drawX + iconW * 0.15, drawY, ft.text,
                 fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
                 ft.color[1], ft.color[2], ft.color[3], 5)
             nvgRestore(vg)

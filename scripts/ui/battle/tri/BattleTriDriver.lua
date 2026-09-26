@@ -390,7 +390,7 @@ function BattleTriDriver.new(teamIdx)
         SEM.update(dt, {
             onDot = function(unit, source, dmg)
                 local isUnitAlly = BattleLayout.detectGroup({ unit }) == "ally"
-                BattleCombat.dealDamageToUnit(unit, dmg, isUnitAlly, "灼烧 ", { 255, 120, 30 }, source, { isDot = true })
+                BattleCombat.dealDamageToUnit(unit, dmg, isUnitAlly, "", { 255, 120, 30 }, source, { isDot = true, floatKind = "burn" })
             end,
             onHot = function(unit, source, heal)
                 if unit.attrs and unit.hp > 0 then
@@ -402,7 +402,7 @@ function BattleTriDriver.new(teamIdx)
                         for ii, uu in ipairs(list) do
                             if uu == unit then cx, cy = BattleCombat.getCardPos(list, ii) break end
                         end
-                        BattleCombat.addFloatingText("恢复 +" .. NumberUtil.format(actual), cx, cy, { 0, 255, 82 }, false)
+                        BattleCombat.addFloatingText("+" .. NumberUtil.format(actual), cx, cy, { 0, 255, 82 }, false, nil, false, "heal")
                     end
                 end
             end,
@@ -450,11 +450,15 @@ function BattleTriDriver.new(teamIdx)
 
     --- 便捷: mount + tick
     function drv:update(dt)
-        local CharacterPanel = require("ui.character.panel.CharacterPanel")
-        local signature = CharacterPanel.getTeamSignature(self.teamIdx)
-        if signature ~= self.teamSignature then
-            print(string.format("[TriDriver] 队%d 编队变化，刷新当前关卡 %s", self.teamIdx, tostring(self.stageId)))
-            self:start(self.stageId)
+        self._sigTick = (self._sigTick or 0) + 1
+        if self._sigTick >= 15 then
+            self._sigTick = 0
+            local CharacterPanel = require("ui.character.panel.CharacterPanel")
+            local signature = CharacterPanel.getTeamSignature(self.teamIdx)
+            if signature ~= self.teamSignature then
+                self:start(self.stageId)
+                return
+            end
         end
         self:activate()
         self:tick(dt)

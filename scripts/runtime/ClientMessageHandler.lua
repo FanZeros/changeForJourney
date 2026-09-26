@@ -224,6 +224,10 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              end
              if #team > 0 then
                  BattleScene.setAllies(team)
+                 local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+                 if BattleTriPage.invalidateTeams then
+                     BattleTriPage.invalidateTeams()
+                 end
              else
                  print("[DIAG-HERO] WARNING: getDeployedTeam returned EMPTY! deployed=" .. snapshot)
                  BattleScene.setAllies({})

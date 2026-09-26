@@ -17,6 +17,7 @@ function ProjectileSystem.mountedState() return PS_BCS end
 
 
 local GameSFX = require "systems.GameSFX"
+local BattleStats = require("systems.BattleStats")
 local Diag = require("systems.BattleDiag")
 
 -- 活跃投射物列表
@@ -926,7 +927,7 @@ local function playAtkSfxOnSpawn(cfg)
     if not cfg or not cfg.imgKey then return end
     local t = cfg.type
     if t == "melee" or t == "lightning" then
-        GameSFX.play(cfg.imgKey, require("systems.BattleStats").mountedTeam())
+        GameSFX.play(cfg.imgKey, BattleStats.mountedTeam())
     end
 end
 
@@ -936,7 +937,7 @@ local function playAtkSfxOnHit(proj)
     if not cfg or not cfg.imgKey then return end
     local t = cfg.type
     if t ~= "melee" and t ~= "lightning" then
-        GameSFX.play(cfg.imgKey, require("systems.BattleStats").mountedTeam())
+        GameSFX.play(cfg.imgKey, BattleStats.mountedTeam())
     end
     proj.sfxPlayed = true
 end

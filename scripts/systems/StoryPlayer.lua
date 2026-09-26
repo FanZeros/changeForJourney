@@ -105,9 +105,17 @@ end
 local function enqueueSpec(spec)
     local id = resolve(spec)
     if not id then return end
-    if (id == 11 or id == 12 or id == 13) and session().starterTrioReady then
-        print("[StoryPlayer] skip recruit scenario " .. tostring(id))
-        return
+    if id == 11 or id == 12 or id == 13 then
+        local heroes = ClientDispatcher.get("heroes") or {}
+        local roster = heroes.roster or {}
+        local owned = 0
+        for _, hero in pairs(roster) do
+            if type(hero) == "table" and hero.level then owned = owned + 1 end
+        end
+        if session().starterTrioReady == true or isClaimed(id) or owned >= 3 then
+            print("[StoryPlayer] skip recruit scenario " .. tostring(id))
+            return
+        end
     end
     StoryPlayer.enqueue(id)
 end

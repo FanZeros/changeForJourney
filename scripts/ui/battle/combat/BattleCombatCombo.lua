@@ -10,6 +10,7 @@ local TAL = require("systems.TalentManager")
 local ART = require("systems.ArtifactRuntime")
 local NumberUtil = require("core.NumberUtil")
 local BattleStats = require("systems.BattleStats")
+local GameSFX = require("systems.GameSFX")
 
 local M = {}
 
@@ -155,7 +156,7 @@ function M.bind(deps)
 
         setRecoil(curTgt, isAlly and -1 or 1)
         setHitFlash(curTgt)
-        if actual > 0 then require("systems.GameSFX").play("hit", require("systems.BattleStats").mountedTeam()) end
+        if actual > 0 then GameSFX.play("hit", BattleStats.mountedTeam()) end
         -- 累计伤害统计（结算面板用�?
         getBCS().unitDamageAccum[attacker] = (getBCS().unitDamageAccum[attacker] or 0) + takenForStats
 

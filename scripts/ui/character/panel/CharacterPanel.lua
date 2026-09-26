@@ -861,15 +861,16 @@ end
 
 --- 槽位阵容签名：只包含英雄 ID 与槽位顺序，经验/属性刷新不应重开战斗
 ---@param teamIdx number
----@return string
+---@return number
 function CharacterPanel.getTeamSignature(teamIdx)
     local slots = (teams[teamIdx] and teams[teamIdx].slots) or {}
-    local ids = {}
+    local sig = 0
     for i = 1, MAX_SLOTS do
         local slot = slots[i]
-        ids[i] = tostring(slot and slot.state == "occupied" and slot.heroId or 0)
+        local id = (slot and slot.state == "occupied" and slot.heroId) or 0
+        sig = sig * 1000 + (tonumber(id) or 0)
     end
-    return table.concat(ids, ",")
+    return sig
 end
 
 --- 获取指定队伍的战斗单位列表（供 BattleScene / 三栏并行战斗使用）

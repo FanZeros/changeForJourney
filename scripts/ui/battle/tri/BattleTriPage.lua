@@ -39,6 +39,7 @@ local isOpen_ = false
 local inited = false
 local drivers = {}        -- [2]/[3] = BattleTriDriver
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
+local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local region = { x = 486, y = 0, w = 948, h = 1080 }  -- 战斗区（窗口坐标）
 
 local function dialogToDesign(wx, wy)
@@ -49,6 +50,7 @@ end
 
 --- 击杀奖励回调注入（宿主与 BattleScene.setOnEnemyKill 同源）
 function BattleTriPage.setOnKill(cb) triOnKill = cb end
+function BattleTriPage.setOnDrop(cb) triOnDrop = cb end
 
 function BattleTriPage.isOpen() return isOpen_ end
 
@@ -62,6 +64,7 @@ local function ensureDrivers()
             local drv = Driver.new(t)
             drv.onKill = function(data)
                 if triOnKill then triOnKill(data) end
+                if triOnDrop then triOnDrop(data) end
             end
             drv:start(StageConfig.NORMAL_FIRST_STAGE)
             drivers[t] = drv
@@ -374,9 +377,29 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
     end
 end
 
+--- 某队当前关卡（供选关弹窗定位章节）
+---@param teamIdx number
+---@return number|nil
+function BattleTriPage.getTeamStageId(teamIdx)
+    local drv = drivers[teamIdx]
+    return drv and drv.stageId or nil
+end
+
+--- 切换某队（大于 1）的关卡；小队1 走 BattleScene
+---@param teamIdx number
+---@param stageId number
+---@return boolean
+function BattleTriPage.gotoTeamStage(teamIdx, stageId)
+    local drv = drivers[teamIdx]
+    if not drv then return false end
+    drv:start(stageId)
+    return true
+end
+
 --- [行1 HUD] 从右上角往左排：速度(可选) / 扫荡 / 统计 / 选关
 --- 由宿主在 BattleTriPage.draw 之后调用——保证按钮位于一切战斗背景/框柱之上（避免穿帮）。
 --- 任一模态对话框打开时不绘制（弹窗压暗与本体在 draw 内已覆盖按钮位）。
+--- 其余已解锁队伍只放「选关」，切各自的关卡。
 function BattleTriPage.drawHud(vg, logicalW, logicalH)
     if not isOpen_ then return end
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
@@ -442,6 +465,19 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         nvgScale(vg, hudScale, hudScale)
         nvgTranslate(vg, -503, -2115)
         SoundToggle.drawButton(vg)
+        nvgRestore(vg)
+    end
+
+    -- 其余已解锁队伍：右上角只放选关（扫荡/统计/音效是全局的，不重复）
+    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    for row = 2, math.min(COL_COUNT, unlocked) do
+        local ix, iy, iw = interiorRect(row, logicalW, logicalH)
+        local stageX = ix + iw - hudPad - hudHalf - hudShift
+        nvgSave(vg)
+        nvgTranslate(vg, stageX, iy + hudHalf + 2)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -659, -2115)
+        StageSelectDialog.drawButton(vg)
         nvgRestore(vg)
     end
 end
@@ -525,6 +561,18 @@ function BattleTriPage.handleInput(wx, wy)
     if math.abs(wx - hudSoundX) <= hitW and math.abs(wy - hudY) <= hitH then
         SoundToggle.handleButtonInput()
         return true
+    end
+
+    -- 其余已解锁队伍的选关按钮
+    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    for row = 2, math.min(COL_COUNT, unlocked) do
+        local ix, iy, iw = interiorRect(row, logicalW, logicalH)
+        local stageX = ix + iw - hudPad - hudHalf - hudShift
+        local rowY = iy + hudHalf + 2
+        if math.abs(wx - stageX) <= hitW and math.abs(wy - rowY) <= hitH then
+            StageSelectDialog.handleButtonInput(659 + (wx - stageX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
+            return true
+        end
     end
 
     return true  -- 战斗区吞掉其余点击（自动战斗）

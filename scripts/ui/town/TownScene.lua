@@ -579,7 +579,7 @@ function TownScene.draw(vg)
     DarkIcon.draw(vg, "relicbox", 450 + LOOT_SHIFT_X + 32, LOOT_LBL_CY - 6, 64, 1.0)
     local count = LootBox.getCount()
     if count > 0 then
-        DarkIcon.draw(vg, "reddot", 709 + LOOT_SHIFT_X, LOOT_LBL_CY - 45, 44, 1.0)
+        -- 数量文字已经说明有待领取，不再额外画红点
         drawTextStroke(vg, 540 + LOOT_SHIFT_X, 1798, "待领取 " .. require("core.NumberUtil").format(count) .. " 件", 30,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 238, 216, 161, 3)
     end

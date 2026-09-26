@@ -365,8 +365,8 @@ recalcScrollMax = function()
     end
     -- 最后一行的名字背景底边 + 底部留白
     local lastRowCY = ROW1_CY + (numRows - 1) * ROW_SPACING
-    -- 名字在图标下方 22，再留字高和边距，保证滚到底名字完整
-    local contentBottom = lastRowCY + 148 * 0.5 + 64
+    -- 名字在图标下方 22，保证滚到底名字完整
+    local contentBottom = lastRowCY + 148 * 0.5 + 50
     scrollMaxY = math.max(0, contentBottom - SCROLL_BOTTOM)
 end
 

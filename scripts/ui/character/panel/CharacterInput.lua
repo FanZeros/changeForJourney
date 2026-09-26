@@ -59,34 +59,44 @@ function M.bind(deps)
             if dropTeam then
                 local srcTeam = dragState.fromTeam or activeTeamIdx
                 local srcIdx = dragState.fromSlot
-                if dropTeam ~= activeTeamIdx then
-                    teamSlots = getTeams()[dropTeam].slots
-                    slotPowerCache = getTeamPowerCaches()[dropTeam]
-                end
-                local dstSlot = teamSlots[dropSlot]
-                if dstSlot.state == "locked" then
+                local teams = getTeams()
+                local powerCaches = getTeamPowerCaches()
+                local srcSlots = teams[srcTeam] and teams[srcTeam].slots
+                local dstSlots = teams[dropTeam] and teams[dropTeam].slots
+                local srcCache = powerCaches[srcTeam]
+                local dstCache = powerCaches[dropTeam]
+                local dstSlot = dstSlots and dstSlots[dropSlot]
+                if not dstSlot or dstSlot.state == "locked" then
                     print("[CharacterPanel] 目标槽位 " .. dropSlot .. " 未解锁，无法交换")
-                elseif srcIdx and srcTeam == dropTeam then
-                    if dropSlot ~= srcIdx then
-                        local srcSlot = teamSlots[srcIdx]
+                elseif srcIdx and srcSlots then
+                    -- 槽位之间拖拽：同队或跨队都直接交换/移动，不切队
+                    if not (srcTeam == dropTeam and dropSlot == srcIdx) then
+                        local srcSlot = srcSlots[srcIdx]
                         if dstSlot.state == "empty" then
-                            teamSlots[dropSlot] = srcSlot
-                            teamSlots[srcIdx] = { state = "empty" }
-                            slotPowerCache[dropSlot] = slotPowerCache[srcIdx] or 0
-                            slotPowerCache[srcIdx] = 0
-                            print("[CharacterPanel] 移动槽位 " .. srcIdx .. " → " .. dropSlot)
+                            dstSlots[dropSlot] = srcSlot
+                            srcSlots[srcIdx] = { state = "empty" }
+                            if dstCache then dstCache[dropSlot] = (srcCache and srcCache[srcIdx]) or 0 end
+                            if srcCache then srcCache[srcIdx] = 0 end
+                            print(string.format("[CharacterPanel] 移动 队%d槽%d → 队%d槽%d",
+                                srcTeam, srcIdx, dropTeam, dropSlot))
                         else
-                            teamSlots[srcIdx], teamSlots[dropSlot] = teamSlots[dropSlot], teamSlots[srcIdx]
-                            slotPowerCache[srcIdx], slotPowerCache[dropSlot] = slotPowerCache[dropSlot], slotPowerCache[srcIdx]
-                            print("[CharacterPanel] 交换槽位 " .. srcIdx .. " ↔ " .. dropSlot)
+                            srcSlots[srcIdx], dstSlots[dropSlot] = dstSlots[dropSlot], srcSlots[srcIdx]
+                            if srcCache and dstCache then
+                                srcCache[srcIdx], dstCache[dropSlot] = dstCache[dropSlot], srcCache[srcIdx]
+                            end
+                            print(string.format("[CharacterPanel] 交换 队%d槽%d ↔ 队%d槽%d",
+                                srcTeam, srcIdx, dropTeam, dropSlot))
                         end
                         rebuildRoster()
                         refreshPowerCache()
                         refreshNavBadge()
-                        if onTeamChangedCallback then onTeamChangedCallback(dropTeam) end
+                        if onTeamChangedCallback then
+                            onTeamChangedCallback(srcTeam)
+                            if dropTeam ~= srcTeam then onTeamChangedCallback(dropTeam) end
+                        end
                     end
                 else
-                    -- setActiveTeam 会清除拖拽状态，先保存角色 ID 再切换目标队。
+                    -- 从名册拖上来：编入目标队（跨队唯一性由部署函数处理）
                     if dropTeam ~= getActiveTeamIdx() then
                         CharacterPanel.setActiveTeam(dropTeam)
                     end

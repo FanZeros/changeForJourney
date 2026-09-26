@@ -359,8 +359,8 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
             lvl = CharacterPanel.getEffectiveLevel(slot.heroId) or 1
         end
         local badgeSize = 48
-        local badgeCX = x + 30
-        local badgeCY = y + AV_SIZE - 30
+        local badgeCX = x + 18
+        local badgeCY = y + AV_SIZE - 18
         if img.lvlBadge and img.lvlBadge >= 0 then
             drawImageCentered(vg, img.lvlBadge, badgeCX, badgeCY, badgeSize, badgeSize, 1.0)
         else
@@ -377,7 +377,7 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
         local iconIdx = heroCfg and CLASS_ICON_MAP[heroCfg.classId]
         if iconIdx and img.classIcons[iconIdx] then
             drawImageCentered(vg, img.classIcons[iconIdx],
-                x + AV_SIZE - 30, y + AV_SIZE - 30, 48, 48, 1.0)
+                x + AV_SIZE - 18, y + AV_SIZE - 18, 48, 48, 1.0)
         end
     else
         nvgBeginPath(vg)
@@ -755,8 +755,8 @@ function M.draw(vg, scrollY)
         local firstTop = ROW1_CY - ROSTER_ICON * 0.5 - scrollY
         local lastCY = ROW1_CY + (numRows - 1) * ROW_SPACING - scrollY
         local frameY = firstTop - pad
-        -- 名字在图标下方 22，再留一行字高，避免底框停在名字中间
-        local frameBottom = lastCY + ROSTER_ICON * 0.5 + 48 + pad
+        -- 名字在图标下方 22，底框包住名字即可
+        local frameBottom = lastCY + ROSTER_ICON * 0.5 + 36 + pad
         nvgBeginPath(vg)
         nvgRoundedRect(vg, frameX, frameY, gridW + pad * 2, frameBottom - frameY, 16)
         nvgFillColor(vg, nvgRGBA(8, 7, 6, 150))
@@ -825,52 +825,40 @@ function M.draw(vg, scrollY)
         nvgStrokeWidth(vg, 2)
         nvgStroke(vg)
 
-        -- c-shard) 未拥有角色：碎片进度条（复用经验条素材，ICON_SP 替代等级徽章）
+        -- c-shard) 未拥有角色：碎片进度收进头像框底部，图标和进度条都缩小
         if not isOwned then
             local shards = entry.shards or 0
             if shards > 0 then
                 local canSynth = shards >= HC.SHARD_SYNTHESIZE_COST
                 local shardMax = HC.SHARD_SYNTHESIZE_COST  -- 10
 
-                -- 碎片进度条（与经验条同位置/同尺寸）
-                local sBarCX = cx + EXP_BAR_DX
-                local sBarCY = cy + EXP_BAR_DY
-                drawImageCentered(vg, img.expBarBg, sBarCX, sBarCY, EXP_BAR_BG_W, EXP_BAR_BG_H, 1.0)
+                local sBarW, sBarH = 92, 18
+                local sBarCX = cx + 14
+                local sBarCY = iy + ROSTER_ICON - 16
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, sBarCX - sBarW * 0.5, sBarCY - sBarH * 0.5, sBarW, sBarH, 6)
+                nvgFillColor(vg, nvgRGBA(0, 0, 0, 170))
+                nvgFill(vg)
 
                 local sProgress = math.min(1, shards / shardMax)
-                local sFillW = EXP_BAR_BG_W - EXP_BAR_PADDING * 2 - EXP_FILL_LEFT_INSET
-                local sFillH = EXP_BAR_BG_H - EXP_BAR_PADDING * 2
-                local sFillX = sBarCX - EXP_BAR_BG_W * 0.5 + EXP_BAR_PADDING + EXP_FILL_LEFT_INSET
-                local sFillY = sBarCY - EXP_BAR_BG_H * 0.5 + EXP_BAR_PADDING
-                local sClipW = sFillW * sProgress
-                if sClipW > 0 and img.expBarFill >= 0 then
-                    nvgSave(vg)
-                    nvgIntersectScissor(vg, sFillX, sFillY, sClipW, sFillH)
-                    local sPaint = nvgImagePattern(vg, sFillX, sFillY, sFillW, sFillH, 0, img.expBarFill, 1.0)
+                local sFillW = (sBarW - 4) * sProgress
+                if sFillW > 0 then
                     nvgBeginPath(vg)
-                    nvgRect(vg, sFillX, sFillY, sFillW, sFillH)
-                    nvgFillPaint(vg, sPaint)
+                    nvgRoundedRect(vg, sBarCX - sBarW * 0.5 + 2, sBarCY - sBarH * 0.5 + 2,
+                        sFillW, sBarH - 4, 5)
+                    nvgFillColor(vg, nvgRGBA(canSynth and 0x44 or 0xc9, canSynth and 0xff or 0x97, canSynth and 0x5e or 0x3b, 230))
                     nvgFill(vg)
-                    nvgRestore(vg)
                 end
 
-                -- ICON_SP 碎片图标（替代等级徽章，同位置 50×50）
-                local spCX = cx + LVL_BADGE_DX
-                local spCY = cy + LVL_BADGE_DY
-                drawImageCentered(vg, img.shardSp, spCX, spCY, 50, 50, 1.0)
+                -- 碎片图标放在进度条左侧，框内
+                drawImageCentered(vg, img.shardSp, ix + 16, sBarCY, 26, 26, 1.0)
 
-                -- 碎片进度文字（显示在进度条上方）
-                local shardLabel = shards .. "/" .. shardMax
-                drawTextStroke(vg, sBarCX + 10, sBarCY, shardLabel,
-                    20, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 3)
+                drawTextStroke(vg, sBarCX, sBarCY, shards .. "/" .. shardMax,
+                    16, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 2)
 
-                -- 可合成文本（进度条上方）
                 if canSynth then
-                    local synthY = sBarCY - EXP_BAR_BG_H * 0.5 - 36
-                    drawTextStroke(vg, cx, synthY, "可合成",
-                        28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                        0x44, 0xff, 0x5e, 3)
+                    drawTextStroke(vg, cx, iy + 20, "可合成",
+                        20, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0x44, 0xff, 0x5e, 3)
                 end
             end
         end
@@ -882,8 +870,8 @@ function M.draw(vg, scrollY)
         if isOwned then
             -- 左下角等级框（与出战槽同一套徽章）
             local badgeSize = 44
-            local badgeCX = ix + 28
-            local badgeCY = iy + ROSTER_ICON - 28
+            local badgeCX = ix + 16
+            local badgeCY = iy + ROSTER_ICON - 16
             if img.lvlBadge and img.lvlBadge >= 0 then
                 drawImageCentered(vg, img.lvlBadge, badgeCX, badgeCY, badgeSize, badgeSize, 1.0)
             else
@@ -902,7 +890,7 @@ function M.draw(vg, scrollY)
             local labels = {}
             for i, t in ipairs(deployTeams) do labels[i] = tostring(t) end
             local badge = table.concat(labels, "·")
-            local tagCX, tagCY = ix + 26, iy + 24
+            local tagCX, tagCY = ix + 16, iy + 16
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 18)
             local textW = nvgTextBounds(vg, 0, 0, badge)
@@ -923,7 +911,7 @@ function M.draw(vg, scrollY)
         local classIdx = CLASS_ICON_MAP[heroCfg.classId]
         if classIdx and img.classIcons[classIdx] then
             drawImageCentered(vg, img.classIcons[classIdx],
-                ix + ROSTER_ICON - 28, iy + ROSTER_ICON - 28, 44, 44, isOwned and 1.0 or 0.45)
+                ix + ROSTER_ICON - 16, iy + ROSTER_ICON - 16, 44, 44, isOwned and 1.0 or 0.45)
         end
 
         -- i) 可提升角标（右上角，所有已拥有角色）：从缓存查找

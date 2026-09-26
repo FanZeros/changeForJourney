@@ -68,21 +68,41 @@ end
 
 --- 构建出战队员的升级预览（只读，不改数据；领取时才真正发经验）
 --- 经验与 ClaimRewards 一致：总量平分给出战队员，各自套用自己的等级曲线。
+--- 弹窗按队伍分行：有 teams 时按队1..3 的槽位顺序排，并带上 teamIdx；
+--- 没有 teams 的旧数据全部归到队1。
 ---@param heroesData table|nil
 ---@param totalHeroExp number 队员经验总合
----@return table[] { heroId, name, quality, startLevel, startExp, level, exp, maxExp, levelGain, expGain, capped }
+---@return table[] { heroId, name, quality, teamIdx, startLevel, startExp, level, exp, maxExp, levelGain, expGain, capped }
 local function buildHeroExpPreview(heroesData, totalHeroExp)
     local preview = {}
     if not heroesData then return preview end
-    local deployed = heroesData.deployed or {}
-    local heroCount = #deployed
-    if heroCount <= 0 then return preview end
+
+    -- 先收集 (heroId, teamIdx)，保持队伍顺序
+    local entries = {}
+    local teams = heroesData.teams
+    local hasTeams = type(teams) == "table"
+    if hasTeams then
+        for t = 1, ExpTable.TEAM_COUNT do
+            local slots = teams[t] and teams[t].slots
+            if type(slots) == "table" then
+                for _, heroId in ipairs(slots) do
+                    entries[#entries + 1] = { id = tonumber(heroId) or heroId, team = t }
+                end
+            end
+        end
+    end
+    if #entries == 0 then
+        for _, heroId in ipairs(heroesData.deployed or {}) do
+            entries[#entries + 1] = { id = tonumber(heroId) or heroId, team = 1 }
+        end
+    end
+    if #entries == 0 then return preview end
 
     local total = math.floor(totalHeroExp or 0)
-    local perHeroExp = math.floor(total / heroCount + 0.5)
+    local perHeroExp = math.floor(total / #entries + 0.5)
 
-    for _, heroId in ipairs(deployed) do
-        local numId = tonumber(heroId) or heroId
+    for _, entry in ipairs(entries) do
+        local numId = entry.id
         local heroData = heroesData.roster and heroesData.roster[numId]
         if heroData then
             local beforeLv = heroData.level or 1
@@ -93,6 +113,7 @@ local function buildHeroExpPreview(heroesData, totalHeroExp)
                 heroId     = numId,
                 name       = (cfg and cfg.name) or ("#" .. tostring(numId)),
                 quality    = cfg and cfg.quality or 1,
+                teamIdx    = entry.team,
                 startLevel = beforeLv,
                 startExp   = beforeExp,
                 level      = sim.level,

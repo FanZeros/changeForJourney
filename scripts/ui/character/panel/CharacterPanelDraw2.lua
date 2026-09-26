@@ -100,7 +100,7 @@ local MY_HEROES_CY   = 680
 -- 下方名册：图标网格，点图标才打开角色卡面
 local ROSTER_ICON = 148
 local ROSTER_GAP = 24
-local ROW1_CY        = 900
+local ROW1_CY        = 1040
 local MAX_PER_ROW    = 5
 
 -- 行间距
@@ -121,7 +121,7 @@ local DEPLOYED_TXT_DY = -120  -- [卡高4/5] 原-149
 
 -- ======================== 滚动区域 ========================
 
-local SCROLL_TOP     = 790   -- 三队边框下方
+local SCROLL_TOP     = 940   -- 三队头像边框下方
 local SCROLL_BOTTOM  = 2400   -- 屏幕底边（与 ChurchPage 名册一致；避免底部大片留白）
 local SCROLL_LEFT    = 0
 local SCROLL_RIGHT   = DESIGN_W
@@ -270,10 +270,14 @@ local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px �
 
 -- 右侧栏只显示图标：三队头像同时显示，点进去才打开角色卡面
 local heroIconCache = {}  ---@type table<number, integer>
-local AV_SIZE = 148
-local AV_GAP = 10
-local AV_ROW_H = 188
-local AV_TOP = 64
+-- 头像放大到接近名册图标。标题独占一行，头像另起一行，避免和标题挤在一起被压扁
+local AV_SIZE = 176
+local AV_GAP = 16
+local AV_LABEL_H = 56   -- 「小队N」标题行高
+local AV_PAD_Y = 14     -- 标题行与头像之间的空隙
+local AV_ROW_GAP = 28   -- 队与队之间的间距
+local AV_ROW_H = AV_LABEL_H + AV_PAD_Y + AV_SIZE + AV_ROW_GAP
+local AV_TOP = 28
 
 --- 计算第 idx 个页签的左上角 X
 ---@param idx number
@@ -312,7 +316,8 @@ end
 local function avatarCenter(teamIdx, slotIdx)
     local x0 = avatarRowX()
     local cx = x0 + (slotIdx - 1) * (AV_SIZE + AV_GAP) + AV_SIZE * 0.5
-    local cy = AV_TOP + (teamIdx - 1) * AV_ROW_H + AV_SIZE * 0.5
+    -- 标题独占一行，头像在标题行下方另起一行
+    local cy = AV_TOP + (teamIdx - 1) * AV_ROW_H + AV_LABEL_H + AV_PAD_Y + AV_SIZE * 0.5
     return cx, cy
 end
 
@@ -346,6 +351,41 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
         nvgStrokeColor(vg, nvgRGBA(212, 175, 90, 230))
         nvgStrokeWidth(vg, 3)
         nvgStroke(vg)
+
+        -- 左下角等级徽章（与角色卡面同一套素材）
+        local lvl = 1
+        local okLvl, CharacterPanel = pcall(require, "ui.character.panel.CharacterPanel")
+        if okLvl and CharacterPanel.getEffectiveLevel then
+            lvl = CharacterPanel.getEffectiveLevel(slot.heroId) or 1
+        end
+        local badgeSize = 48
+        local badgeCX = x + 30
+        local badgeCY = y + AV_SIZE - 30
+        if img.lvlBadge and img.lvlBadge >= 0 then
+            drawImageCentered(vg, img.lvlBadge, badgeCX, badgeCY, badgeSize, badgeSize, 1.0)
+        else
+            nvgBeginPath(vg)
+            nvgCircle(vg, badgeCX, badgeCY, badgeSize * 0.5)
+            nvgFillColor(vg, nvgRGBA(18, 14, 10, 220))
+            nvgFill(vg)
+        end
+        drawTextStroke(vg, badgeCX, badgeCY, tostring(lvl),
+            24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+
+        -- 左上角队伍归属
+        local tagCX, tagCY = x + 28, y + 26
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, tagCX - 20, tagCY - 16, 40, 32, 7)
+        nvgFillColor(vg, nvgRGBA(18, 14, 10, 220))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 230))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 22)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+        nvgText(vg, tagCX, tagCY, tostring(teamIdx), nil)
     else
         nvgBeginPath(vg)
         nvgRoundedRect(vg, x, y, AV_SIZE, AV_SIZE, 14)
@@ -355,12 +395,12 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
         nvgStrokeWidth(vg, 2)
         nvgStroke(vg)
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, locked and 30 or 40)
+        nvgFontSize(vg, locked and 36 or 48)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(160, 145, 120, locked and 140 or 200))
         if not draggingSource then
             if locked and img.lock and img.lock >= 0 then
-                drawImageCentered(vg, img.lock, cx, cy, 42, 42, 0.85)
+                drawImageCentered(vg, img.lock, cx, cy, 52, 52, 0.85)
             else
                 nvgText(vg, cx, cy, "+", nil)
             end
@@ -380,39 +420,33 @@ function M.drawTeamAvatars(vg)
         local _, rowCy = avatarCenter(t, 1)
         local rowX = avatarRowX()
         local rowW = M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
-        local frameX = rowX - 18
-        local frameY = rowCy - AV_SIZE * 0.5 - 14
-        local frameW = rowW + 36
-        local frameH = AV_SIZE + 28
+        -- 底条包住标题行和头像行
+        local frameX = rowX - 20
+        local frameY = rowCy - AV_SIZE * 0.5 - AV_PAD_Y - AV_LABEL_H - 10
+        local frameW = rowW + 40
+        local frameH = AV_LABEL_H + AV_PAD_Y + AV_SIZE + 20
         nvgBeginPath(vg)
         nvgRoundedRect(vg, frameX, frameY, frameW, frameH, 16)
         if t == activeIdx then
-            nvgFillColor(vg, nvgRGBA(48, 36, 18, 150))
+            nvgFillColor(vg, nvgRGBA(48, 36, 18, 170))
             nvgFill(vg)
             nvgStrokeColor(vg, nvgRGBA(212, 175, 90, 230))
             nvgStrokeWidth(vg, 3)
         else
-            nvgFillColor(vg, nvgRGBA(12, 10, 8, locked and 70 or 110))
+            nvgFillColor(vg, nvgRGBA(12, 10, 8, locked and 80 or 130))
             nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(120, 100, 70, locked and 80 or 160))
+            nvgStrokeColor(vg, nvgRGBA(120, 100, 70, locked and 90 or 170))
             nvgStrokeWidth(vg, 2)
         end
         nvgStroke(vg)
-        local badgeCx, badgeCy = avatarCenter(t, 1)
-        badgeCx = badgeCx - AV_SIZE * 0.5 + 22
-        badgeCy = badgeCy + AV_SIZE * 0.5 - 18
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, badgeCx - 18, badgeCy - 16, 36, 32, 8)
-        nvgFillColor(vg, nvgRGBA(18, 14, 10, 210))
-        nvgFill(vg)
-        nvgStrokeColor(vg, t == activeIdx and nvgRGBA(255, 214, 102, 230) or nvgRGBA(140, 120, 80, 180))
-        nvgStrokeWidth(vg, 2)
-        nvgStroke(vg)
+        -- 「小队N」标题，左上角
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 22)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, t == activeIdx and nvgRGBA(255, 214, 102, 255) or nvgRGBA(244, 237, 224, 230))
-        nvgText(vg, badgeCx, badgeCy, tostring(t), nil)
+        nvgFontSize(vg, 30)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, t == activeIdx and nvgRGBA(255, 214, 102, 255)
+            or (locked and nvgRGBA(150, 140, 125, 170) or nvgRGBA(244, 237, 224, 235)))
+        nvgText(vg, frameX + 20, frameY + AV_LABEL_H * 0.5,
+            locked and ("小队" .. t .. "  未解锁") or ("小队" .. t), nil)
         local powerCaches = getTeamPowerCaches and getTeamPowerCaches() or {}
         local teamPower = 0
         local cache = powerCaches[t]
@@ -422,14 +456,16 @@ function M.drawTeamAvatars(vg)
             end
         end
         local powerStr = require("core.NumberUtil").format(teamPower)
-        local rowRight = rowX + rowW
-        nvgFontSize(vg, 30)
+        local labelCY = frameY + AV_LABEL_H * 0.5
+        nvgFontSize(vg, 26)
         nvgFillColor(vg, locked and nvgRGBA(140, 130, 115, 160) or nvgRGBA(247, 254, 119, 255))
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+        nvgText(vg, frameX + frameW - 16, labelCY, powerStr, nil)
+        local powerTextW = nvgTextBounds(vg, 0, 0, powerStr)
         if img.power and img.power >= 0 then
-            drawImageCentered(vg, img.power, rowRight + 42, rowCy, 32, 32, locked and 0.45 or 1)
+            drawImageCentered(vg, img.power, frameX + frameW - 16 - powerTextW - 22, labelCY,
+                30, 30, locked and 0.45 or 1)
         end
-        nvgText(vg, rowRight + 66, rowCy, powerStr, nil)
         local slots = teams[t] and teams[t].slots
         for s = 1, M.MAX_SLOTS do
             drawAvatarSlot(vg, t, s, slots and slots[s], locked)
@@ -726,7 +762,8 @@ function M.draw(vg, scrollY)
         local firstTop = ROW1_CY - ROSTER_ICON * 0.5 - scrollY
         local lastCY = ROW1_CY + (numRows - 1) * ROW_SPACING - scrollY
         local frameY = firstTop - pad
-        local frameBottom = lastCY + ROSTER_ICON * 0.5 + 36 + pad
+        -- 名字在图标下方 22，再留一行字高，避免底框停在名字中间
+        local frameBottom = lastCY + ROSTER_ICON * 0.5 + 48 + pad
         nvgBeginPath(vg)
         nvgRoundedRect(vg, frameX, frameY, gridW + pad * 2, frameBottom - frameY, 16)
         nvgFillColor(vg, nvgRGBA(8, 7, 6, 150))

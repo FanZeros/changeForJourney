@@ -61,7 +61,7 @@ local GRID_FIRST_CX = GRID_MARGIN_LEFT + GRID_CELL * 0.5  -- 150
 local CLIP_TOP    = GRID_TOP_Y - GRID_CELL * 0.5   -- 1224
 local CLIP_HEIGHT = GRID_BOTTOM_Y - CLIP_TOP        -- 1006
 
-local GRID_MIN_ROWS = 5   -- 固定 5 行 = 25 格
+local GRID_MIN_ROWS = 7   -- 固定 7 行 = 35 格
 
 -- 滚动参数
 local SCROLL_FRICTION   = 0.90

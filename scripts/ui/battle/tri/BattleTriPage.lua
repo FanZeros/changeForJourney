@@ -2,8 +2,8 @@
 -- BattleTriPage - 三行并行战斗（Phase 3 修正版）
 -- 布局: 战斗区 = 中段区域（Standalone 传入 486,0,948,1080，左右经营/角色面板
 --       保持原样），纵向堆叠三行战斗（行高 = rh/3 ≈ 360）:
---   行1 = 队1 = BattleScene 全引擎（完整关卡进度/首通/掉落，零改动复用）
---   行2/3 = BattleTriDriver 轻量驱动（自动战斗/击杀奖励回调/通关推进）
+--   行1/2/3 = 同一套 BattleTriDriver（各自独立状态）
+--   行1 的关卡进度仍跟随 BattleScene（首通/存档/掉落不另起一套）
 --   未解锁行: 暗罩 + 解锁等级 + 该队编队预览；返回按钮退出战斗区
 -- 每行内 8 卡单线: 我方 4 张在左半段、敌方 4 张在右半段（BattleLayout strip 模式）
 -- ============================================================================
@@ -37,7 +37,7 @@ local COL_COUNT = ExpTable.TEAM_COUNT or 3
 -- ---- 状态 ----
 local isOpen_ = false
 local inited = false
-local drivers = {}        -- [2]/[3] = BattleTriDriver
+local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local region = { x = 486, y = 0, w = 948, h = 1080 }  -- 战斗区（窗口坐标）
@@ -55,10 +55,12 @@ function BattleTriPage.setOnDrop(cb) triOnDrop = cb end
 function BattleTriPage.isOpen() return isOpen_ end
 
 
---- 创建新解锁队伍的战斗驱动；已存在的驱动保留关卡进度
+--- 创建新解锁队伍的战斗驱动；已存在的驱动保留关卡进度。
+--- 小队1跟主线 BattleScene 的当前关，避免共用驱动后从第一关重开。
 local function ensureDrivers()
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
-    for t = 2, COL_COUNT do
+    local BattleScene = require("ui.battle.scene.BattleScene")
+    for t = 1, COL_COUNT do
         if unlocked >= t and not drivers[t] then
             local Driver = require("ui.battle.tri.BattleTriDriver")
             local drv = Driver.new(t)
@@ -66,9 +68,21 @@ local function ensureDrivers()
                 if triOnKill then triOnKill(data) end
                 if triOnDrop then triOnDrop(data) end
             end
-            drv:start(StageConfig.NORMAL_FIRST_STAGE)
+            local startStage = (t == 1) and BattleScene.getStageId()
+                or StageConfig.NORMAL_FIRST_STAGE
+            drv._syncedMainStage = startStage
+            drv:start(startStage)
             drivers[t] = drv
         end
+    end
+    local teamOne = drivers[1]
+    local mainStage = BattleScene.getStageId()
+    if teamOne and mainStage and teamOne.stageId ~= mainStage
+        and teamOne.stageId == teamOne._syncedMainStage then
+        teamOne._syncedMainStage = mainStage
+        teamOne:start(mainStage)
+    elseif teamOne then
+        teamOne._syncedMainStage = teamOne.stageId
     end
     return unlocked
 end
@@ -309,7 +323,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgText(vg, ix + iw * 0.5, barY - 12, "关卡进度 " .. pctText, nil)
         end
 
-        if row > 1 and row <= unlocked and drivers[row] and #drivers[row].allies == 0 then
+        if row <= unlocked and drivers[row] and #drivers[row].allies == 0 then
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFontSize(vg, 28)
             nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
@@ -364,13 +378,17 @@ function BattleTriPage.getTeamStageId(teamIdx)
     return drv and drv.stageId or nil
 end
 
---- 切换某队（大于 1）的关卡；小队1 走 BattleScene
+--- 切换某队关卡。小队1同步写回 BattleScene，保持主线进度一致。
 ---@param teamIdx number
 ---@param stageId number
 ---@return boolean
 function BattleTriPage.gotoTeamStage(teamIdx, stageId)
     local drv = drivers[teamIdx]
     if not drv then return false end
+    if teamIdx == 1 then
+        local BattleScene = require("ui.battle.scene.BattleScene")
+        if not BattleScene.gotoStage(stageId) then return false end
+    end
     drv:start(stageId)
     return true
 end

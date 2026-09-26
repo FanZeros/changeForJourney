@@ -986,8 +986,8 @@ end
 function Panel.claim()
     if not state.open then return false end
     print("[OfflineRewardPanel] 领取 clicked")
-    if state.onClaim then
-        state.onClaim()
+    if state.onClaim and state.onClaim() == false then
+        return true  -- 领取失败时保留弹窗，不能让未领奖励卡在不可再次点击的状态。
     end
     Panel.close()
     return true

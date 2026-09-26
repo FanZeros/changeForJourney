@@ -451,9 +451,12 @@ end
 local function showOfflineRewardPanel_()
     local LocalActionBridge = require("runtime.LocalActionBridge")
     LocalActionBridge.init()
+    StandaloneSave.ReconcileOfflineBoundary()
     local OfflineService = require("rules.offline.OfflineService")
     local panelData = OfflineService.CalcOnEnter(1)
+    StandaloneSave.OfflineChecked()
     if not panelData then
+        StandaloneSave.Flush()
         print("[Standalone] no offline reward to show")
         return
     end
@@ -467,7 +470,11 @@ local function showOfflineRewardPanel_()
         rewards        = panelData.rewards,
         onClaim = function()
             local handled = localSendAction("claim_offline_rewards", {})
+            if handled and not OfflineService.HasPendingRewards(1) then
+                StandaloneSave.Flush()
+            end
             print("[OfflineRewardPanel] claim sent handled=" .. tostring(handled))
+            return handled and not OfflineService.HasPendingRewards(1)
         end,
     })
     print("[Standalone] showed real OfflineRewardPanel seconds="
@@ -906,17 +913,21 @@ function HandleUpdate(eventType, eventData)
 
     require("ui.dev.CERuntime").installSpeedHook()
     require("ui.dev.CERuntime").tick()
-    -- 副本/通天塔对战更新（打开时独占）
-    if TowerBattleScene.isActive() then
-        TowerBattleScene.update(dt)
-    elseif DungeonBattleScene.isOpen() then
-        DungeonBattleScene.update(dt)
-    elseif BattleTriPage.isOpen() then
-        -- [三栏并行] 三栏页内部会以 default 状态驱动 BattleScene.update（栏1 引擎）
-        BattleTriPage.update(dt)
-    else
-        -- 战斗场景始终更新（挂机持续进行）
-        BattleScene.update(dt)
+    -- 待领取离线奖励不落盘；此时暂停战斗，避免线上击杀收益因存档冻结而丢失。
+    local awaitingOfflineClaim = require("rules.offline.OfflineService").HasPendingRewards(1)
+    if postStartFlowDone_ and not awaitingOfflineClaim then
+        -- 副本/通天塔对战更新（打开时独占）
+        if TowerBattleScene.isActive() then
+            TowerBattleScene.update(dt)
+        elseif DungeonBattleScene.isOpen() then
+            DungeonBattleScene.update(dt)
+        elseif BattleTriPage.isOpen() then
+            -- [三栏并行] 三栏页内部会以 default 状态驱动 BattleScene.update（栏1 引擎）
+            BattleTriPage.update(dt)
+        else
+            -- 战斗场景始终更新（挂机持续进行）
+            BattleScene.update(dt)
+        end
     end
     require("ui.dev.CERuntime").tick()
 

@@ -29,7 +29,7 @@ end
 BattleStutterPlans.showFloat = true
 BattleStutterPlans.showAnim = true
 BattleStutterPlans.showProj = true
--- 死亡是否结算经验、金币和掉落。关掉只用来看死亡卡顿是不是结算造成的。
+-- 关卡结束是否结算经验、金币和掉落。关掉只用来对比卡顿。
 BattleStutterPlans.settleKills = true
 
 function BattleStutterPlans.label()

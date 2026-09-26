@@ -74,6 +74,8 @@ local function ensureDrivers()
             local drv = Driver.new(t)
             drv.onKill = function(data)
                 if triOnKill then triOnKill(data) end
+            end
+            drv.onDrop = function(data)
                 if triOnDrop then triOnDrop(data) end
             end
             local startStage = (t == 1) and BattleScene.getStageId()

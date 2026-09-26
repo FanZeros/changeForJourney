@@ -249,7 +249,7 @@ function BattleTriDriver.new(teamIdx)
 
     function drv:queuePendingKills()
         local pending = self.pendingKills
-        if not pending or #pending == 0 or not self.onKill then
+        if not pending or #pending == 0 then
             self.pendingKills = {}
             return
         end
@@ -257,32 +257,37 @@ function BattleTriDriver.new(teamIdx)
         for _, u in ipairs(self.allies) do
             if u.hp > 0 then heroIds[#heroIds + 1] = u.heroId end
         end
+        local stageId = pending[1].stageId
+        local expReward = 0
+        local goldReward = 0
         local queue = self.rewardQueue or {}
         self.rewardQueue = queue
         for i = 1, #pending do
             local kill = pending[i]
-            queue[#queue + 1] = {
+            expReward = expReward + (kill.expReward or 0)
+            goldReward = goldReward + (kill.goldReward or 0)
+            queue[#queue + 1] = { stageId = kill.stageId, dropOnly = true }
+        end
+        if self.onKill and (expReward > 0 or goldReward > 0) then
+            self.onKill({
                 teamIdx = self.teamIdx,
-                stageId = kill.stageId,
-                expReward = kill.expReward,
-                goldReward = kill.goldReward,
+                stageId = stageId,
+                expReward = expReward,
+                goldReward = goldReward,
                 heroIds = heroIds,
                 allyCount = #heroIds,
-                deferHeroExp = true,
-            }
+            })
         end
         self.pendingKills = {}
     end
 
     function drv:tickRewards(dt)
         local queue = self.rewardQueue
-        if not queue or #queue == 0 or not self.onKill then return end
+        if not queue or #queue == 0 or not self.onDrop then return end
         self.rewardTimer = (self.rewardTimer or 0) + dt
         while self.rewardTimer >= REWARD_INTERVAL and #queue > 0 do
             self.rewardTimer = self.rewardTimer - REWARD_INTERVAL
-            local reward = table.remove(queue, 1)
-            reward.deferHeroExp = #queue > 0
-            self.onKill(reward)
+            self.onDrop(table.remove(queue, 1))
         end
         if #queue == 0 then self.rewardTimer = 0 end
     end

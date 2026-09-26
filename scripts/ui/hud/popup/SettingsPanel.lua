@@ -675,9 +675,8 @@ function SettingsPanel.draw(vg)
     RedeemCodePanel.draw(vg)
 end
 
---- 嵌入玩家信息页：设置项 Y 偏移（相对独立设置弹窗）
---- 独立页 ITEM1_CY=1040，经验条在 699，下移到约 820 起排
-local EMBED_Y_OFFSET = -220
+-- 嵌入玩家信息页：统计和经验条下移后，设置项从 1080 开始排
+local EMBED_Y_OFFSET = 40
 
 --- 嵌入绘制：无遮罩、无独立弹窗，仅绘制设置条目 + 兑换码
 ---@param vg any

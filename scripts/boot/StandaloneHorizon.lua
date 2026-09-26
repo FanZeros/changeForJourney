@@ -570,8 +570,7 @@ function HandleNanoVGRenderHorizon()
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
-        -- 玩家信息已画在左栏视口内。三行路径会提前 return，必须在这里再画一层全窗居中，
-        -- 否则面板被左栏裁切，点外面也无法按面板外关闭。
+        -- 玩家信息在全窗设计空间绘制，点击也按对应 letterbox 换算。
         if PlayerInfoPanel.isOpen() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
@@ -1115,7 +1114,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if button ~= MOUSEB_LEFT then return end
     local mousePos = input:GetMousePosition()
     local seamX, seamY = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
-    local seamBtn = seamHitAt(seamX, seamY)
+    local seamBtn = not PlayerInfoPanel.isOpen() and seamHitAt(seamX, seamY)
     if seamBtn then
         local now = time.elapsedTime
         if now - lastTapTime >= MIN_TAP_INTERVAL then

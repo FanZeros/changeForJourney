@@ -93,6 +93,7 @@ local panelState = {
 }
 
 local DOUBLE_CLICK_SEC = 0.35
+local HOVER_DELAY = 0.3
 local ITEM_DRAG_PX     = 28
 
 -- ======================== 工具函数 ========================
@@ -839,7 +840,7 @@ function M.handleHover(dx, dy, heroId)
         panelState.hoverSeq = nil
         panelState.hoverSince = nil
         if not panelState.hoverPinned and EquipmentDetail.dismissHover then
-            EquipmentDetail.dismissHover()
+            EquipmentDetail.dismissHover("character")
         end
         return
     end
@@ -848,17 +849,19 @@ function M.handleHover(dx, dy, heroId)
         panelState.hoverSeq = seqStr
         panelState.hoverSince = time.elapsedTime
         panelState.hoverPinned = false
-        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("character") end
         return
     end
     if panelState.hoverPinned then
         return
     end
-    if (time.elapsedTime - (panelState.hoverSince or 0)) < 0.5 then
+    if (time.elapsedTime - (panelState.hoverSince or 0)) < HOVER_DELAY then
         return
     end
-    if EquipmentDetail.isOpen and EquipmentDetail.isOpen() and EquipmentDetail.setAnchor then
-        EquipmentDetail.setAnchor(dx, dy)
+    if EquipmentDetail.isOpen and EquipmentDetail.isOpen() then
+        if EquipmentDetail.getOwner and EquipmentDetail.getOwner() ~= "character" then return end
+        if EquipmentDetail.isPinned and EquipmentDetail.isPinned() then return end
+        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(dx, dy) end
         return
     end
     EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", dx, dy)

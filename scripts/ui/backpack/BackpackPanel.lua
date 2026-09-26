@@ -859,7 +859,7 @@ function Panel.close()
     state.dragging = false
     Panel._hoverSeq = nil
     Panel._hoverSince = nil
-    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
     print("[BackpackPanel] close")
 end
 
@@ -1532,13 +1532,13 @@ function Panel.handleHover(dx, dy)
     if not state.open or state.tab ~= "equip" then
         Panel._hoverSeq = nil
         Panel._hoverSince = nil
-        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
         return
     end
     if dy < CLIP_TOP or dy > GRID.CLIP_BOTTOM then
         Panel._hoverSeq = nil
         Panel._hoverSince = nil
-        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
         return
     end
     local equipList = getEquipList()
@@ -1553,15 +1553,16 @@ function Panel.handleHover(dx, dy)
             if Panel._hoverSeq ~= seq then
                 Panel._hoverSeq = seq
                 Panel._hoverSince = time.elapsedTime
-                if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+                if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
                 return
             end
-            if (time.elapsedTime - (Panel._hoverSince or 0)) < 0.5 then
+            if (time.elapsedTime - (Panel._hoverSince or 0)) < 0.3 then
                 return
             end
-            if EquipmentDetail.isOpen and EquipmentDetail.isOpen() and EquipmentDetail.setAnchor then
+            if EquipmentDetail.isOpen and EquipmentDetail.isOpen() then
+                if EquipmentDetail.getOwner and EquipmentDetail.getOwner() ~= "backpack" then return end
                 if EquipmentDetail.isPinned and EquipmentDetail.isPinned() then return end
-                EquipmentDetail.setAnchor(dx, dy)
+                if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(dx, dy) end
                 return
             end
             EquipmentDetail.open(equip.seq, nil, nil, true, "backpack", dx, dy)
@@ -1571,7 +1572,7 @@ function Panel.handleHover(dx, dy)
     end
     Panel._hoverSeq = nil
     Panel._hoverSince = nil
-    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
 end
 
 function Panel.handleDragBegin(dx, dy)

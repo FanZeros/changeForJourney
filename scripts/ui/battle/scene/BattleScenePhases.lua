@@ -14,6 +14,7 @@ local TAL = require("systems.TalentManager")
 local RCH = require("systems.RelicConditionHandler")
 local ART = require("systems.ArtifactRuntime")
 local Diag = require("systems.BattleDiag")
+local BattleAllyReset = require("ui.battle.scene.BattleAllyReset")
 
 local M = {}
 
@@ -56,13 +57,16 @@ function M.process(ctx, dt)
     local assignEnemiesToField = ctx.assignEnemiesToField
     local BattleScene = ctx.BattleScene
 
+    -- [修复] 这里不回写 battleActive：本文件内 loadStage 会把 ctx.battleActive 置 true
+    -- （失败回退/轮回/寻怪开始都走这条），若用进入 process 时缓存的旧值覆盖，
+    -- 会让回退重开后 battleActive 永远停在 false，下一帧 update 直接早退 → 战斗卡死。
+    -- 本文件确实需要改 battleActive 的地方（寻怪开始）直接写 ctx.battleActive。
     local function writeback()
         ctx.defeatTimer = defeatTimer
         ctx.reincarnationTimer = reincarnationTimer
         ctx.searchingTimer = searchingTimer
         ctx.terminalDefeatPending = terminalDefeatPending
         ctx.defeatByTimeout = defeatByTimeout
-        ctx.battleActive = battleActive
         ctx.pendingReincarnation = pendingReincarnation
         ctx.bgTransAnim = bgTransAnim
         ctx.regenAccum = regenAccum
@@ -121,6 +125,8 @@ function M.process(ctx, dt)
             bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_BACK_TARGET }
             loadStage(targetId, true)  -- skipBattleStart
             regenAccum = 0
+            -- 阵亡紧凑会打乱 allies 顺序（全灭时尤其明显），先还原再重置
+            BattleAllyReset.restoreOrder(allies)
             for _, u in ipairs(allies) do
                 resetAllyUnit(u)
                 -- 开战天赋会 addModifier 并重算属性。先满血，重算才能保留满血，
@@ -232,7 +238,9 @@ function M.process(ctx, dt)
                         u.atkProgress = 0
                     end
                 end
+                -- 直接写 ctx：writeback 不再回写 battleActive（见文件上方注释）
                 battleActive = true
+                ctx.battleActive = true
                 BattleCombat.reset()
                 BattleEffects.reset()
                 ProjectileSystem.reset()

@@ -28,6 +28,8 @@ local BattleTriDriver = {}
 local DEFAULT_ALLY_INTERVAL  = 1.2
 local DEFAULT_ENEMY_INTERVAL = 2.0
 local REVIVE_DELAY = 3.0
+-- 全灭兜底：单单位复活计时失效（缺 attrs 等）时，按这个墙钟整队复活，避免永久卡死
+local WIPE_RESET_DELAY = 5.0
 
 --- 单位攻击间隔（魔改 buff 感知的最小实现：直接取 attrs 的实际间隔）
 local function getLiveAttackInterval(unit, fallback)
@@ -76,10 +78,12 @@ function BattleTriDriver.new(teamIdx)
     ---@class table
     local drv = {
         teamIdx  = teamIdx,
-        stageId  = 1,
+        stageId  = SC.NORMAL_FIRST_STAGE,
         allies   = {},
         enemies  = {},
+        teamSignature = nil,
         kills    = 0,
+        stageTotal = 0,
         active   = false,
         -- [多实例] 各子系统状态
         combatState = BattleCombat.newState("tri" .. teamIdx),
@@ -144,17 +148,47 @@ function BattleTriDriver.new(teamIdx)
         })
     end
 
+    --- 复活单个己方单位（缺 attrs 时退回满血兜底，保证一定复活）
+    ---@param u table
+    function drv:reviveUnit(u)
+        u._triReviveTimer = nil
+        u.atkProgress = 0
+        if u.attrs then
+            u.attrs:fillHp()
+            u.hp = u.attrs.final[AD.HP]
+        else
+            -- 无 attrs 的单位无法走属性回血，用记录过的上限兜底
+            u.hp = u.maxHp or u.hp or 1
+            if u.hp <= 0 then u.hp = 1 end
+        end
+        local cx, cy = BattleLayout.cardPos("ally", 1)
+        BattleCombat.addFloatingText("复活", cx, cy, { 120, 255, 160 }, false)
+    end
+
+    --- 挂载本队状态并注入上下文。绘制和更新都必须先调用，避免串用上一队状态。
+    function drv:activate()
+        self.mount()
+        self.bindContext()
+    end
+
     --- 开始/重开一场战斗
     function drv:start(stageId)
-        stageId = tonumber(stageId) or self.stageId or 1
+        stageId = tonumber(stageId) or self.stageId or SC.NORMAL_FIRST_STAGE
+        if not SC.getStage(stageId) then
+            stageId = SC.NORMAL_FIRST_STAGE
+        end
         self.stageId = stageId
         self.kills = 0
-        self.mount()
+        -- 清理上一轮残留的复活/全灭计时，避免沿用旧进度
+        self._wipeTimer = nil
+        self:activate()
         -- 己方: 从编队页构建新单位（应用装备/神器/遗物）
         local CharacterPanel = require("ui.character.panel.CharacterPanel")
+        self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
         self.allies = CharacterPanel.getDeployedTeam(self.teamIdx) or {}
         -- 敌方
         self.enemies = buildWave(stageId)
+        self.stageTotal = #self.enemies
         -- 状态复位（mount 作用域内）
         BattleCombat.reset()
         BattleEffects.reset()
@@ -198,11 +232,21 @@ function BattleTriDriver.new(teamIdx)
         end
     end
 
+    function drv:reportDefeatedEnemies()
+        for _, u in ipairs(self.enemies) do
+            if u.hp <= 0 and not u._triKillReported then
+                u._triKillReported = true
+                self:reportKill(u)
+            end
+        end
+    end
+
     --- 通关推进
     function drv:advanceStage()
         local nextId = SC.getNextStageId(self.stageId)
-        if not nextId or nextId <= self.stageId then
-            nextId = self.stageId + 1
+        if not nextId then
+            self:start(self.stageId)
+            return
         end
         print(string.format("[TriDriver] 队%d 通关 %s → %s",
             self.teamIdx, tostring(self.stageId), tostring(nextId)))
@@ -218,15 +262,11 @@ function BattleTriDriver.new(teamIdx)
 
         -- 己方阵亡复活计时
         for _, u in ipairs(allies) do
-            if u.hp <= 0 and u.attrs then
+            if u.hp <= 0 then
                 u._triReviveTimer = (u._triReviveTimer or 0) + dt
                 if u._triReviveTimer >= REVIVE_DELAY then
                     u._triReviveTimer = nil
-                    u.attrs:fillHp()
-                    u.hp = u.attrs.final[AD.HP]
-                    u.atkProgress = 0
-                    local cx, cy = BattleLayout.cardPos("ally", 1)
-                    BattleCombat.addFloatingText("复活", cx, cy, { 120, 255, 160 }, false)
+                    self:reviveUnit(u)
                 end
             end
         end
@@ -240,18 +280,33 @@ function BattleTriDriver.new(teamIdx)
             if u.hp > 0 then hasAliveAlly = true break end
         end
 
-        -- 通关: 敌方全灭
+        -- 通关: 敌方全灭（先结算最后一击再切换到下一关）
         if not hasAliveEnemy then
+            self:reportDefeatedEnemies()
             self:advanceStage()
             return
         end
         -- 失败: 己方全灭（等待复活计时，不推进战斗）
         if not hasAliveAlly then
+            -- [兜底] 复活计时只对「拿得到 attrs」的单位推进；一旦单位缺 attrs，
+            -- 上面永远不会复活它，全灭就会永久卡住。这里按墙钟兜底整队复活。
+            self._wipeTimer = (self._wipeTimer or 0) + dt
+            if self._wipeTimer >= WIPE_RESET_DELAY then
+                self._wipeTimer = nil
+                for _, u in ipairs(allies) do
+                    u._triReviveTimer = nil
+                    self:reviveUnit(u)
+                end
+                BattleCombat.addFloatingText("重整旗鼓", BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY,
+                    { 120, 255, 160 }, false)
+                print(string.format("[TriDriver] 队%d 全灭兜底复活 allies=%d", self.teamIdx, #allies))
+            end
             BattleCombat.updateCardAnims(dt)
             BattleCombat.updateFloatingTexts(dt)
             BattleCombat.updateHitFlashes(dt)
             return
         end
+        self._wipeTimer = nil
 
         -- 攻击推进
         for _, unit in ipairs(allies) do
@@ -330,14 +385,8 @@ function BattleTriDriver.new(teamIdx)
         ProjectileSystem.update(dt)
         BattleCombat.updateComboQueue(dt)
 
-        -- 击杀检测（敌方死亡 → 奖励 + 清理）
-        for i = #enemies, 1, -1 do
-            local u = enemies[i]
-            if u.hp <= 0 and not u._triKillReported then
-                u._triKillReported = true
-                self:reportKill(u)
-            end
-        end
+        -- 击杀检测（敌方死亡 → 奖励；每只怪只结算一次）
+        self:reportDefeatedEnemies()
 
         -- 纯视觉层
         BattleEffects.update(dt)
@@ -348,7 +397,13 @@ function BattleTriDriver.new(teamIdx)
 
     --- 便捷: mount + tick
     function drv:update(dt)
-        self.mount()
+        local CharacterPanel = require("ui.character.panel.CharacterPanel")
+        local signature = CharacterPanel.getTeamSignature(self.teamIdx)
+        if signature ~= self.teamSignature then
+            print(string.format("[TriDriver] 队%d 编队变化，刷新当前关卡 %s", self.teamIdx, tostring(self.stageId)))
+            self:start(self.stageId)
+        end
+        self:activate()
         self:tick(dt)
     end
 

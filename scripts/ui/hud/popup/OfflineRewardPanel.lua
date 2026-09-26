@@ -259,7 +259,11 @@ local HERO_EXP_PER_SEC = 0.34  -- 经验发放速度（占总经验比例/秒）
 
 -- 奖励逐件弹出参数（关卡奖励同款节奏）
 local CASCADE_LEAD   = 0.15    -- 队员经验发完后再停顿多久开始发奖励
-local CASCADE_INTERVAL = 0.14  -- 逐件间隔
+local CASCADE_INTERVAL = 0.14  -- 前 10 件间隔
+local CASCADE_INTERVAL_TAIL = 0.10  -- 超过 10 件后的间隔
+local CASCADE_INTERVAL_FASTER = 0.05  -- 超过 20 件后的间隔
+local CASCADE_FAST_AFTER = 10
+local CASCADE_FASTER_AFTER = 20
 local CASCADE_POP_DUR  = 0.24  -- 单件弹出时长
 
 local cachedVg = nil
@@ -466,11 +470,13 @@ function Panel.show(data)
     state.animStart = time.elapsedTime
     resetHeroAnim()
     state.cascade = RewardCascade.new(#state.rewards, {
-        interval     = CASCADE_INTERVAL,
-        intervalTail = CASCADE_INTERVAL,
-        fastAfter    = 8,
-        popDur       = CASCADE_POP_DUR,
-        lead         = CASCADE_LEAD,
+        interval       = CASCADE_INTERVAL,
+        intervalTail   = CASCADE_INTERVAL_TAIL,
+        fastAfter      = CASCADE_FAST_AFTER,
+        intervalFaster = CASCADE_INTERVAL_FASTER,
+        fasterAfter    = CASCADE_FASTER_AFTER,
+        popDur         = CASCADE_POP_DUR,
+        lead           = CASCADE_LEAD,
     })
     state.cascadeSfx = 0
     print("[OfflineRewardPanel] show: offline=" .. state.offlineSeconds .. "s, rewards=" .. #state.rewards
@@ -883,6 +889,9 @@ function self_drawRewardGrid(vg)
             -- 逐件弹出：未到出场时刻只画预告框，弹出中叠加爆发+变换
             local popT = cascade and cascade:t(idx) or 1
             local popping = false
+            if cascade and cascade.revealStart == 0 then
+                goto continue
+            end
             if popT == nil then
                 RewardCascade.anticipate(vg, cx, cy,
                     cascade:elapsed() - cascade:startAt(idx), ICON_SIZE)

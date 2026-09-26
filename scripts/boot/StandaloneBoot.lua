@@ -299,7 +299,8 @@ function M.run(rt)
     LootBox.updateSeedData(ClientDispatcher.get("lootbox"))
 
     -- 5.245 击杀掉落：挂机进遗匣；首通暂存，通关后并入首通奖励
-    BattleScene.setOnEnemyDrop(function(data)
+    -- 第 1 队与第 2/3 队共用同一套挂机掉落（装备种子 + 卷轴）
+    local function applyKillDrop(data)
         local stageEntry = StageConfig.getStage(data.stageId)
         if not stageEntry then return end
         local quality = DropSystem.rollKillDrop(stageEntry)
@@ -344,6 +345,11 @@ function M.run(rt)
                 print("[Standalone] scroll drop: type=" .. scrollType)
             end
         end
+    end
+    BattleScene.setOnEnemyDrop(applyKillDrop)
+    -- 第 2/3 队不记首通，只按挂机掉落叠加
+    BattleTriPage.setOnDrop(function(data)
+        applyKillDrop({ stageId = data.stageId, isFirstClear = false })
     end)
 
     BattleScene.setOnAllDead(function()

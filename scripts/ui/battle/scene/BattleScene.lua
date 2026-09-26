@@ -1147,6 +1147,11 @@ function BattleScene.setAllies(list)
     else
         allies = list
     end
+    -- [站位顺序] 记录编队槽位序号：战斗中途「阵亡紧凑」会打乱数组顺序，
+    -- 切关时用 _slotOrder 还原，避免角色站位与编队不一致（见 BattleAllyReset.restoreOrder）
+    for i, u in ipairs(allies) do
+        u._slotOrder = i
+    end
     -- 为所有 ally 创建初始基线快照（此时 unit 已含全部持久性 modifier + 装备）
     for _, u in ipairs(allies) do
         createSnapshot(u)
@@ -1546,8 +1551,9 @@ function BattleScene.reloadStage(opts)
         searchingTimer = 0
         print("[BattleScene] 首次进入，以寻怪模式启动")
     else
-        -- 常规重载：skipBattleStart → resetAllyUnit → startBattleTalents
+        -- 常规重载：skipBattleStart → 还原站位顺序 → resetAllyUnit → startBattleTalents
         loadStage(currentStageId, true)
+        BattleAllyReset.restoreOrder(allies)
         for _, u in ipairs(allies) do resetAllyUnit(u) end
         startBattleTalents()
     end

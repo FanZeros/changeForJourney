@@ -70,6 +70,8 @@ function RewardCascade.new(count, opts)
     self.interval     = opts.interval     or RewardCascade.INTERVAL
     self.intervalTail = opts.intervalTail or RewardCascade.INTERVAL_TAIL
     self.fastAfter    = opts.fastAfter    or RewardCascade.FAST_AFTER
+    self.fasterAfter  = opts.fasterAfter
+    self.intervalFaster = opts.intervalFaster
     self.popDur       = opts.popDur       or RewardCascade.POP_DUR
     self.lead         = opts.lead         or RewardCascade.LEAD
     self.revealStart  = 0
@@ -81,6 +83,9 @@ end
 ---@return number
 function Timeline:gap(idx)
     if idx <= 1 then return 0 end
+    if self.fasterAfter and idx > self.fasterAfter then
+        return self.intervalFaster or self.intervalTail
+    end
     if idx > self.fastAfter then return self.intervalTail end
     return self.interval
 end

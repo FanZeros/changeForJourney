@@ -39,6 +39,7 @@ local isOpen_ = false
 local inited = false
 local drivers = {}        -- [2]/[3] = BattleTriDriver
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
+local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local region = { x = 486, y = 0, w = 948, h = 1080 }  -- 战斗区（窗口坐标）
 
 local function dialogToDesign(wx, wy)
@@ -49,14 +50,13 @@ end
 
 --- 击杀奖励回调注入（宿主与 BattleScene.setOnEnemyKill 同源）
 function BattleTriPage.setOnKill(cb) triOnKill = cb end
+function BattleTriPage.setOnDrop(cb) triOnDrop = cb end
 
 function BattleTriPage.isOpen() return isOpen_ end
 
 
---- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
-function BattleTriPage.open()
-    if isOpen_ then return end
-    isOpen_ = true
+--- 创建新解锁队伍的战斗驱动；已存在的驱动保留关卡进度
+local function ensureDrivers()
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
     for t = 2, COL_COUNT do
         if unlocked >= t and not drivers[t] then
@@ -64,11 +64,20 @@ function BattleTriPage.open()
             local drv = Driver.new(t)
             drv.onKill = function(data)
                 if triOnKill then triOnKill(data) end
+                if triOnDrop then triOnDrop(data) end
             end
-            drv:start(1)
+            drv:start(StageConfig.NORMAL_FIRST_STAGE)
             drivers[t] = drv
         end
     end
+    return unlocked
+end
+
+--- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
+function BattleTriPage.open()
+    if isOpen_ then return end
+    isOpen_ = true
+    local unlocked = ensureDrivers()
     print("[BattleTriPage] open, unlockedTeams=" .. unlocked)
 end
 
@@ -119,23 +128,22 @@ end
 
 --- [三行并行] L0 整套大背景铺满窗口（左右面板 + 中段框体同源）
 
---- 每帧更新: 行1 走 BattleScene 全引擎（default 状态），行2/3 走各自驱动
+--- 每帧更新：三行使用同一套 BattleTriDriver，只切换各自的状态实例。
 function BattleTriPage.update(dt)
     if not isOpen_ then return end
     BattleLayout.setMode("strip")
-    -- 回到 default 状态供 BattleScene 使用
+    ensureDrivers()
+    for t = 1, COL_COUNT do
+        local drv = drivers[t]
+        if drv then drv:update(dt) end
+    end
+    -- 三行结束后恢复默认状态，避免后续单场界面读到最后一队的数据。
     BattleCombat.mount(nil)
     ProjectileSystem.mount(nil)
     TM.mount(nil)
     TAL.mount(nil)
     BattleEffects.mount(nil)
     SEM.mount(nil)
-    local BattleScene = require("ui.battle.scene.BattleScene")
-    BattleScene.update(dt)
-    for t = 2, COL_COUNT do
-        local drv = drivers[t]
-        if drv then drv:update(dt) end
-    end
 end
 -- [暗黑替换 v2] L0 框体图（用户素材, 1672x941, 三个透明内矩形）+ 分层渲染
 local PLATE_AR = 1672 / 941
@@ -245,23 +253,10 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgScissor(vg, ix, iy, iw, ih)
             nvgTranslate(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5 + ih * 0.06)
             nvgScale(vg, contentScale, contentScale)
-            if row == 1 then
-                BattleCombat.mount(nil)
-                ProjectileSystem.mount(nil)
-                TM.mount(nil)
-                TAL.mount(nil)
-                BattleEffects.mount(nil)
-                SEM.mount(nil)
-                BattleView.draw(vg, {
-                    allies  = BattleScene.getAllies() or {},
-                    enemies = BattleScene.getEnemies() or {},
-                }, nil, true)
-            else
-                local drv = drivers[row]
-                if drv then
-                    drv.mount()
-                    BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies }, nil, true)
-                end
+            local drv = drivers[row]
+            if drv then
+                drv:activate()
+                BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies }, nil, true)
             end
             nvgRestore(vg)
         end
@@ -275,44 +270,50 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgFontSize(vg, 22)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local stageText
-        if row == 1 then
-            -- [进度显示] 百分比改到战斗页下方进度条，标题只留关卡名
-            stageText = string.format("【小队1】%s", stageDisplayName(BattleScene.getStageId()))
-        elseif drivers[row] then
-            stageText = string.format("【小队%d】%s · 击杀%d", row,
-                stageDisplayName(drivers[row].stageId), drivers[row].kills)
+        if drivers[row] then
+            stageText = string.format("【小队%d】%s", row, stageDisplayName(drivers[row].stageId))
+        elseif row <= unlocked then
+            stageText = string.format("【小队%d】准备中", row)
         else
             stageText = string.format("【小队%d】待解锁", row)
         end
-        -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上        nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
+        -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上
+        nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
         nvgText(vg, ix + 28, iy + 25, stageText, nil)
 
-        -- [进度显示] 首通模式：战斗页下方进度条（击杀 / 总怪）
-        if row == 1 and row <= unlocked then
-            local killed, total = BattleScene.getStageKillProgress()
-            if killed and total and total > 0 then
-                local ratio = math.max(0, math.min(1, killed / total))
-                local pctShown = math.floor(ratio * 100 + 0.5)
-                local pctText = string.format("%d%%", pctShown)
-                local barW = math.min(iw * 0.62, 280)
-                local barH = 10
-                local barX = ix + (iw - barW) * 0.5
-                local barY = iy + ih - 8
+        local killed, total
+        if row <= unlocked and drivers[row] and #drivers[row].allies > 0 then
+            killed, total = drivers[row].kills, drivers[row].stageTotal
+        end
+        if killed and total and total > 0 then
+            local ratio = math.max(0, math.min(1, killed / total))
+            local pctShown = math.floor(ratio * 100 + 0.5)
+            local pctText = string.format("%d%%", pctShown)
+            local barW = math.min(iw * 0.62, 280)
+            local barH = 10
+            local barX = ix + (iw - barW) * 0.5
+            local barY = iy + ih - 8
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, barX, barY, barW, barH, 5)
+            nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
+            nvgFill(vg)
+            if ratio > 0 then
                 nvgBeginPath(vg)
-                nvgRoundedRect(vg, barX, barY, barW, barH, 5)
-                nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
+                nvgRoundedRect(vg, barX, barY, math.max(barH, barW * ratio), barH, 5)
+                nvgFillColor(vg, nvgRGBA(196, 148, 72, 230))
                 nvgFill(vg)
-                if ratio > 0 then
-                    nvgBeginPath(vg)
-                    nvgRoundedRect(vg, barX, barY, math.max(barH, barW * ratio), barH, 5)
-                    nvgFillColor(vg, nvgRGBA(196, 148, 72, 230))
-                    nvgFill(vg)
-                end
-                nvgFontSize(vg, 16)
-                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
-                nvgText(vg, ix + iw * 0.5, barY - 12, "关卡进度 " .. pctText, nil)
             end
+            nvgFontSize(vg, 16)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+            nvgText(vg, ix + iw * 0.5, barY - 12, "关卡进度 " .. pctText, nil)
+        end
+
+        if row > 1 and row <= unlocked and drivers[row] and #drivers[row].allies == 0 then
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFontSize(vg, 28)
+            nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+            nvgText(vg, ix + iw * 0.5, iy + ih * 0.5, "未编队，请在右侧部署队员", nil)
         end
 
         -- 未解锁提示（行内居中）
@@ -355,9 +356,29 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
     end
 end
 
---- [行1 HUD] 从右上角往左排：速度(可选) / 扫荡 / 统计 / 选关
+--- 某队当前关卡（供选关弹窗定位章节）
+---@param teamIdx number
+---@return number|nil
+function BattleTriPage.getTeamStageId(teamIdx)
+    local drv = drivers[teamIdx]
+    return drv and drv.stageId or nil
+end
+
+--- 切换某队（大于 1）的关卡；小队1 走 BattleScene
+---@param teamIdx number
+---@param stageId number
+---@return boolean
+function BattleTriPage.gotoTeamStage(teamIdx, stageId)
+    local drv = drivers[teamIdx]
+    if not drv then return false end
+    drv:start(stageId)
+    return true
+end
+
+--- 每行 HUD 从右上角往左排：速度(可选) / 扫荡 / 统计 / 选关 / 音效。
 --- 由宿主在 BattleTriPage.draw 之后调用——保证按钮位于一切战斗背景/框柱之上（避免穿帮）。
 --- 任一模态对话框打开时不绘制（弹窗压暗与本体在 draw 内已覆盖按钮位）。
+--- 已解锁的其他队伍与第一行保持同一套按钮。
 function BattleTriPage.drawHud(vg, logicalW, logicalH)
     if not isOpen_ then return end
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
@@ -425,6 +446,58 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         SoundToggle.drawButton(vg)
         nvgRestore(vg)
     end
+
+    -- 其余已解锁队伍与第一行使用同一组按钮。
+    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    for row = 2, math.min(COL_COUNT, unlocked) do
+        local ix, iy, iw = interiorRect(row, logicalW, logicalH)
+        local rowY = iy + hudHalf + 2
+        local rowCursor = ix + iw - hudPad - hudHalf - hudShift
+        local rowSpeedX, rowSweepX, rowStatsX, rowStageX, rowSoundX
+        if showSpeed then
+            rowSpeedX = rowCursor
+            rowCursor = rowCursor - hudGap
+        end
+        rowSweepX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowStatsX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowStageX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowSoundX = rowCursor
+        if showSpeed then
+            nvgSave(vg)
+            nvgTranslate(vg, rowSpeedX, rowY)
+            nvgScale(vg, hudScale, hudScale)
+            nvgTranslate(vg, -987, -311)
+            BattleScene.drawSpeedButton(vg)
+            nvgRestore(vg)
+        end
+        nvgSave(vg)
+        nvgTranslate(vg, rowSweepX, rowY)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -971, -2115)
+        SweepDialog.drawButton(vg)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgTranslate(vg, rowStatsX, rowY)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -815, -2115)
+        DamageStatsPanel.drawButton(vg)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgTranslate(vg, rowStageX, rowY)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -659, -2115)
+        StageSelectDialog.drawButton(vg)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgTranslate(vg, rowSoundX, rowY)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -503, -2115)
+        SoundToggle.drawButton(vg)
+        nvgRestore(vg)
+    end
 end
 
 --- 输入（窗口坐标）；返回 true 表示消费
@@ -433,6 +506,16 @@ end
 ---@return boolean
 function BattleTriPage.handleInput(wx, wy)
     if not isOpen_ then return false end
+
+    -- 全窗扫荡弹窗优先于装备背包覆盖层处理
+    if SweepDialog.isOpen() then
+        local logicalW, logicalH = region.w, region.h
+        local fit = math.min(logicalW / 1080, logicalH / 2400) * 2
+        local dx = (wx - logicalW * 0.5) / fit + 540
+        local dy = (wy - logicalH * 0.5) / fit + 1195
+        SweepDialog.handleInput(dx, dy)
+        return true
+    end
 
     -- 装备背包覆盖战斗区：窗口坐标映射到背包设计空间
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
@@ -446,15 +529,17 @@ function BattleTriPage.handleInput(wx, wy)
         return EquipmentBag.handleInput(dx, dy)
     end
 
-    -- [常驻] 点击行1 内任意处可关闭归属本行的获得弹窗
-    if RewardPopup.currentRowTag() then
-        RewardPopup.close()
-        return true
-    end
-
     local logicalH = region.h
     local logicalW = region.w
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
+
+    -- [常驻] 行1 的获得弹窗：交给 RewardPopup 统一处理，保留同帧保护
+    -- （逐个获得未结束时点击只跳过动画）。此前直接 close() 会让通关后
+    -- 随手一点就把刚弹出的奖励关掉，看起来像「结算页不显示」。
+    if RewardPopup.currentRowTag() then
+        RewardPopup.handleInputRegion(wx, wy, ix1, iy1, iw1, ih1)
+        return true
+    end
     local bs = require("ui.battle.scene.BattleScene")
 
     -- 对话框打开: 逆映射到设计空间（与 2 倍渲染缩放一致）
@@ -508,6 +593,46 @@ function BattleTriPage.handleInput(wx, wy)
         return true
     end
 
+    -- 其余已解锁队伍与第一行使用同一组按钮。
+    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    for row = 2, math.min(COL_COUNT, unlocked) do
+        local ix, iy, iw = interiorRect(row, logicalW, logicalH)
+        local rowY = iy + hudHalf + 2
+        local rowCursor = ix + iw - hudPad - hudHalf - hudShift
+        local rowSpeedX, rowSweepX, rowStatsX, rowStageX, rowSoundX
+        if showSpeed then
+            rowSpeedX = rowCursor
+            rowCursor = rowCursor - hudGap
+        end
+        rowSweepX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowStatsX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowStageX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowSoundX = rowCursor
+        if showSpeed and math.abs(wx - rowSpeedX) <= hitW and math.abs(wy - rowY) <= hitH then
+            bs.handleSpeedButtonInput(987 + (wx - rowSpeedX) / hudScale, 311 + (wy - rowY) / hudScale)
+            return true
+        end
+        if math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
+            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale)
+            return true
+        end
+        if math.abs(wx - rowStatsX) <= hitW and math.abs(wy - rowY) <= hitH then
+            DamageStatsPanel.handleButtonInput(815 + (wx - rowStatsX) / hudScale, 2115 + (wy - rowY) / hudScale)
+            return true
+        end
+        if math.abs(wx - rowStageX) <= hitW and math.abs(wy - rowY) <= hitH then
+            StageSelectDialog.handleButtonInput(659 + (wx - rowStageX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
+            return true
+        end
+        if math.abs(wx - rowSoundX) <= hitW and math.abs(wy - rowY) <= hitH then
+            SoundToggle.handleButtonInput()
+            return true
+        end
+    end
+
     return true  -- 战斗区吞掉其余点击（自动战斗）
 end
 
@@ -516,6 +641,10 @@ end
 ---@return boolean
 function BattleTriPage.handleDragBegin(wx, wy)
     if not isOpen_ then return false end
+    if SweepDialog.isOpen() then
+        local dx, dy = dialogToDesign(wx, wy)
+        return SweepDialog.handleDragBegin(dx, dy)
+    end
     if StageSelectDialog.isOpen() then
         local dx, dy = dialogToDesign(wx, wy)
         return StageSelectDialog.handleDragBegin(dx, dy)
@@ -533,6 +662,10 @@ end
 ---@return boolean
 function BattleTriPage.handleDragMove(wx, wy)
     if not isOpen_ then return false end
+    if SweepDialog.isOpen() then
+        local dx, dy = dialogToDesign(wx, wy)
+        return SweepDialog.handleDragMove(dx, dy)
+    end
     if StageSelectDialog.isOpen() then
         local dx, dy = dialogToDesign(wx, wy)
         return StageSelectDialog.handleDragMove(dx, dy)
@@ -550,6 +683,7 @@ end
 ---@return boolean
 function BattleTriPage.handleDragEnd(wx, wy)
     if not isOpen_ then return false end
+    if SweepDialog.isOpen() then return SweepDialog.handleDragEnd() end
     if StageSelectDialog.isOpen() then return StageSelectDialog.handleDragEnd() end
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
         local dx, dy = EquipmentBag.overlayToDesign(wx, wy)

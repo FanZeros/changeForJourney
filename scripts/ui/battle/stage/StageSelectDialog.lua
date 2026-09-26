@@ -231,6 +231,14 @@ local function ensureMapImg(vg, group)
     return img
 end
 
+local function currentStageId()
+    if state.targetTeam and state.targetTeam > 1 then
+        local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+        return BattleTriPage.getTeamStageId(state.targetTeam)
+    end
+    return require("ui.battle.scene.BattleScene").getStageId()
+end
+
 local function selectedGroup(groups)
     for _, g in ipairs(groups) do
         if tostring(g.key) == tostring(state.selKey) then return g end
@@ -255,15 +263,21 @@ function StageSelectDialog.init(vg)
     print("[StageSelectDialog] init OK")
 end
 
-function StageSelectDialog.open()
+---@param teamIdx number|nil 多队战斗行号；大于 1 时确认后切该队自己的关卡
+function StageSelectDialog.open(teamIdx)
     if state.open then return end
     state.open     = true
     state.openTime = time.elapsedTime
     state.pendingId = nil
     state.chDragY = nil
     state.chDragMoved = false
+    state.targetTeam = (teamIdx and teamIdx > 1) and teamIdx or nil
     local BS = require("ui.battle.scene.BattleScene")
     local curStage = BS.getStageId()
+    if state.targetTeam then
+        local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+        curStage = BattleTriPage.getTeamStageId(state.targetTeam) or curStage
+    end
     -- 定位到当前关所在章节
     local curKey
     if curStage and SC.isTerminalTemple(curStage) then
@@ -373,9 +387,8 @@ function StageSelectDialog.draw(vg)
     local scale = getAnimScale()
     if scale <= 0.01 then return end
 
-    local BS = require("ui.battle.scene.BattleScene")
     local groups, maxOrder = ensureCache()
-    local curStage = BS.getStageId()
+    local curStage = currentStageId()
     local sel = selectedGroup(groups)
     if not sel then return end
 
@@ -631,7 +644,14 @@ function StageSelectDialog.handleInput(x, y)
         elseif hitTestRect(x, y, D.BG_CX + 145, buttonY, 225, 76) then
             local ord = state.cacheOrder and state.cacheOrder[id]
             if ord and maxOrder and ord <= maxOrder and SC.getStage(id) then
-                local ok = BS.gotoStage(id)
+                local ok
+                if state.targetTeam and state.targetTeam > 1 then
+                    -- 多队战斗行：切对应队伍自己的关卡，不影响小队1
+                    local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+                    ok = BattleTriPage.gotoTeamStage(state.targetTeam, id)
+                else
+                    ok = BS.gotoStage(id)
+                end
                 if ok then StageSelectDialog.close() end
             else
                 state.pendingId = nil
@@ -694,7 +714,7 @@ function StageSelectDialog.handleInput(x, y)
                 if (ord == nil) or (maxOrder == nil) or (ord > maxOrder) then
                     return true
                 end
-                if id == BS.getStageId() then return true end
+                if id == currentStageId() then return true end
                 state.pendingId = id
                 print("[StageSelectDialog] 待确认关卡: " .. tostring(id))
                 return true
@@ -711,11 +731,11 @@ end
 ---@param x number
 ---@param y number
 ---@return boolean
-function StageSelectDialog.handleButtonInput(x, y)
+function StageSelectDialog.handleButtonInput(x, y, teamIdx)
     if state.open then return false end
     if hitTestRect(x, y, BTN_CX, BTN_CY, BTN_W, BTN_H) then
         BF.trigger("stage_sel_btn")
-        StageSelectDialog.open()
+        StageSelectDialog.open(teamIdx)
         return true
     end
     return false

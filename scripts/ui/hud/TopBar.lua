@@ -230,11 +230,6 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
         nvgRestore(vg)
     end
 
-    -- #2c 红点提示（有可更换头像时显示）[暗黑化 P0: 余烬光点]
-    if TopBar.hasAvailableAvatar() then
-        DarkIcon.draw(vg, "reddot", 160, 74, 74, 1)
-    end
-
     -- #2e 页面入口：非三联旧布局才画日志/战斗/副本；横屏三联已常驻，不再画
     if not hidePageTabs then
         local selectedTab = BottomNav.getSelectedIndex()

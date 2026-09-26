@@ -607,14 +607,14 @@ function CharacterDetail.handleInput(dx, dy)
         return false
     end
 
-    -- === 转职面板输入委托（转职树上移 300px，重置按钮用屏幕坐标）===
+    -- === 转职面板输入委托（绘制已是屏幕坐标，不再额外下移）===
     if detailState.tab == "class" then
         local ClassChange = require("ui.church.ChurchClassChange")
         ClassChange.setHero(detailState.heroId)
-        if ClassChange.handleResetConfirmInput(dx, dy + 300) then return true end
-        if ClassChange.handleConfirmInput(dx, dy + 300) then return true end
-        if ClassChange.handleResetButton(dx, dy + 300) then return true end
-        if ClassChange.handleBranchInput(dx, dy + 300) then return true end
+        if ClassChange.handleResetConfirmInput(dx, dy) then return true end
+        if ClassChange.handleConfirmInput(dx, dy) then return true end
+        if ClassChange.handleResetButton(dx, dy) then return true end
+        if ClassChange.handleBranchInput(dx, dy) then return true end
         return true
     end
 

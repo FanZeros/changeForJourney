@@ -10,6 +10,7 @@
 
 local GameConfig        = require("config.GameConfig")
 local SC                = require("config.StageConfig")
+local MC                = require("config.MonsterConfig")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DrawUtil          = require("core.DrawUtil")
 local BF                = require("systems.ButtonFeedback")
@@ -56,8 +57,8 @@ local D = {
     ROW_Y0    = 756,     -- 第一行顶边
     ROW_H     = 168,     -- 一行高度
     ROW_GAP   = 10,
-    CARD_W    = 104,     -- 敌人卡面宽
-    CARD_H    = 132,     -- 敌人卡面高
+    CARD_W    = 92,      -- 敌人卡面宽
+    CARD_H    = 104,     -- 敌人卡面高
     CARD_GAP  = 8,
     CARD_X    = 455,     -- 卡面区左缘（标签右侧）
 
@@ -222,20 +223,37 @@ end
 --- 一关实际出场的敌人 id：常规怪 + 首领 + 首通附加怪
 ---@param entry table|nil
 ---@return number[]
-local function stageMonsterIds(entry)
-    local ids = {}
-    if not entry then return ids end
-    for _, monsterId in ipairs(entry.monsters or {}) do
-        ids[#ids + 1] = monsterId
+local function stageMonsterCards(entry)
+    local cards = {}
+    local counts = {}
+    if not entry then return cards end
+    local total = entry.firstCount or entry.idleCount or 0
+    local types = entry.monsters or {}
+    local normalCount = total
+    if entry.bossId and entry.bossId > 0 then
+        normalCount = math.max(0, total - 1)
+    end
+    for i = 1, normalCount do
+        local monsterId = types[((i - 1) % math.max(1, #types)) + 1]
+        if monsterId then counts[monsterId] = (counts[monsterId] or 0) + 1 end
     end
     if entry.bossId and entry.bossId > 0 then
-        ids[#ids + 1] = entry.bossId
+        counts[entry.bossId] = (counts[entry.bossId] or 0) + 1
     end
     local bonusIds = BattleEnemySpawn.getFirstClearBonusMonsterIds(entry)
     for _, monsterId in ipairs(bonusIds or {}) do
-        ids[#ids + 1] = monsterId
+        counts[monsterId] = (counts[monsterId] or 0) + 1
     end
-    return ids
+    local function push(monsterId)
+        if monsterId and counts[monsterId] and not cards["_" .. monsterId] then
+            cards["_" .. monsterId] = true
+            cards[#cards + 1] = { id = monsterId, count = counts[monsterId] }
+        end
+    end
+    for _, monsterId in ipairs(types) do push(monsterId) end
+    push(entry.bossId)
+    for _, monsterId in ipairs(bonusIds or {}) do push(monsterId) end
+    return cards
 end
 
 local function currentStageId()
@@ -419,17 +437,13 @@ function StageSelectDialog.draw(vg)
     if state.chScroll < 0 then state.chScroll = 0 end
 
     local needScroll = maxScroll > 0
-    local arrowCX = D.CH_X + D.CH_W * 0.5
+    local arrowCX = D.CH_X + 28
     local listTop = D.CH_Y0
-    if needScroll then
-        -- 上箭头
-        if state.chScroll > 0 then
-            drawImageCentered(vg, imgAct, arrowCX, D.CH_Y0 - 26, 64, 40, 1.0)
-            drawTextStroke(vg, arrowCX, D.CH_Y0 - 26, "▲", 24,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-        end
-        listTop = D.CH_Y0 + 30
-        -- 下箭头位置在列表底部之后
+    local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
+    if needScroll and state.chScroll > 0 then
+        drawImageCentered(vg, imgAct, arrowCX, listTop - 34, 52, 32, 1.0)
+        drawTextStroke(vg, arrowCX, listTop - 34, "▲", 22,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 2)
     end
 
     for vi = 1, D.CH_VISIBLE do
@@ -473,13 +487,10 @@ function StageSelectDialog.draw(vg)
         nvgText(vg, cx, y + D.CH_BTN_H * 0.74, rel, nil)
     end
 
-    if needScroll then
-        local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
-        if state.chScroll < maxScroll then
-            drawImageCentered(vg, imgAct, arrowCX, listBottom + 26, 64, 40, 1.0)
-            drawTextStroke(vg, arrowCX, listBottom + 26, "▼", 24,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-        end
+    if needScroll and state.chScroll < maxScroll then
+        drawImageCentered(vg, imgAct, arrowCX, listBottom + 34, 52, 32, 1.0)
+        drawTextStroke(vg, arrowCX, listBottom + 34, "▼", 22,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 2)
     end
 
     -- ===================== 中栏：关卡竖排 + 敌人卡面 =====================
@@ -517,7 +528,7 @@ function StageSelectDialog.draw(vg)
         local txtA = locked and 140 or 255
         drawTextStroke(vg, x + 16, y + 34, shortStageLabel(id), 30,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            txtA, txtA, txtA, 3, { strokeColor = { fr, fg, fb } })
+            fr, fg, fb, 2, { alpha = txtA / 255 })
 
         -- 状态（行左下）
         local sub
@@ -545,9 +556,10 @@ function StageSelectDialog.draw(vg)
         nvgText(vg, x + 16, y + D.ROW_H - 34, sub, nil)
 
         -- 敌人卡面（行右侧横排）
-        local mids = stageMonsterIds(entry)
-        local cardCY = y + D.ROW_H * 0.5
-        for ci, monsterId in ipairs(mids) do
+        local mids = stageMonsterCards(entry)
+        local cardCY = y + 62
+        for ci, info in ipairs(mids) do
+            local monsterId = info.id
             local cardCX = D.CARD_X + (ci - 1) * (D.CARD_W + D.CARD_GAP) + D.CARD_W * 0.5
             local card = ensureMonsterCard(vg, monsterId)
             if card >= 0 then
@@ -565,6 +577,14 @@ function StageSelectDialog.draw(vg)
             nvgStrokeColor(vg, nvgRGBA(201, 151, 59, locked and 90 or 200))
             nvgStrokeWidth(vg, 2)
             nvgStroke(vg)
+            local name = MC.getName(monsterId)
+            drawTextStroke(vg, cardCX, cardCY - D.CARD_H * 0.5 - 12, name, 16,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 236, 226, 198, 2,
+                { alpha = locked and 0.55 or 1 })
+            drawTextStroke(vg, cardCX, cardCY + D.CARD_H * 0.5 + 12,
+                "x" .. tostring(info.count), 18,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 214, 120, 2,
+                { alpha = locked and 0.55 or 1 })
         end
     end
     nvgRestore(vg)
@@ -589,18 +609,19 @@ function StageSelectDialog.handleInput(x, y)
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
     local needScroll = maxScroll > 0
 
-    local listTop, listBottom = chapterListBounds(groups)
-    local arrowCX = D.CH_X + D.CH_W * 0.5
+    local arrowCX = D.CH_X + 28
+    local listTop = D.CH_Y0
+    local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
 
-    -- 左栏滚动箭头
+    -- 左栏滚动箭头（列表外侧，不压章节名）
     if needScroll and state.chScroll > 0
-        and hitTestRect(x, y, arrowCX, D.CH_Y0 - 26, 72, 44) then
+        and hitTestRect(x, y, arrowCX, listTop - 34, 64, 40) then
         BF.trigger("stage_sel_chup")
         state.chScroll = state.chScroll - 1
         return true
     end
     if needScroll and state.chScroll < maxScroll
-        and hitTestRect(x, y, arrowCX, listBottom + 26, 72, 44) then
+        and hitTestRect(x, y, arrowCX, listBottom + 34, 64, 40) then
         BF.trigger("stage_sel_chdown")
         state.chScroll = state.chScroll + 1
         return true

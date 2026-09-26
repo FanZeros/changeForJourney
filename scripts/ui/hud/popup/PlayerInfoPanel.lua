@@ -801,15 +801,6 @@ function PlayerInfoPanel.draw(vg)
     local _bf1 = BF.begin(vg, "pip_avatar", AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H)
     drawImageCentered(vg, img.avatar, AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H, 1.0)
 
-    -- ── 6b. 头像红点（有新头像时显示）──
-    if img.redDot >= 0 and TopBar.hasAvailableAvatar() then
-        local RD_SIZE = 50
-        local RD_INSET = 10
-        drawImageCentered(vg, img.redDot,
-            AVATAR.CX + AVATAR.W * 0.5 - RD_INSET,
-            AVATAR.CY - AVATAR.H * 0.5 + RD_INSET,
-            RD_SIZE, RD_SIZE, 1.0)
-    end
     BF.finish(vg, _bf1)
 
     -- ── 7. 游玩时间（名字与装饰下划线已移除）──

@@ -90,6 +90,7 @@ function BattleTriDriver.new(teamIdx)
         teamSignature = nil,
         kills    = 0,
         stageTotal = 0,
+        pendingKills = {},
         active   = false,
         -- [多实例] 各子系统状态
         combatState = BattleCombat.newState("tri" .. teamIdx),
@@ -179,6 +180,9 @@ function BattleTriDriver.new(teamIdx)
         if not SC.getStage(stageId) then
             stageId = SC.NORMAL_FIRST_STAGE
         end
+        if self.pendingKills and #self.pendingKills > 0 then
+            self:flushPendingKills()
+        end
         self.stageId = stageId
         self.kills = 0
         -- 清理上一轮残留的复活/全灭计时，避免沿用旧进度
@@ -196,6 +200,7 @@ function BattleTriDriver.new(teamIdx)
         maxField = math.min(maxField, BattleLayout.MAX_PER_SIDE)
         self.enemies, self.enemyQueue = BattleEnemySpawn.assignEnemiesToField(allEnemies, maxField)
         self.stageTotal = #allEnemies
+        self.pendingKills = {}
         self.reinforceCd = 0
         -- 状态复位（mount 作用域内）
         BattleCombat.reset()
@@ -221,20 +226,37 @@ function BattleTriDriver.new(teamIdx)
             self.teamIdx, tostring(stageId), #self.allies, #self.enemies))
     end
 
-    --- 击杀奖励上报
+    --- 死亡只记账。经验、金币和掉落等本关结束再一次性结算。
     function drv:reportKill(unit)
         self.kills = self.kills + 1
-        if self.onKill then
-            local heroIds = {}
-            for _, u in ipairs(self.allies) do
-                if u.hp > 0 then heroIds[#heroIds + 1] = u.heroId end
-            end
+        local pending = self.pendingKills
+        pending[#pending + 1] = {
+            stageId = self.stageId,
+            expReward = unit.expReward or 0,
+            goldReward = unit.goldReward or 0,
+        }
+    end
+
+    function drv:flushPendingKills()
+        local pending = self.pendingKills
+        if not pending or #pending == 0 or not self.onKill then
+            self.pendingKills = {}
+            return
+        end
+        local heroIds = {}
+        for _, u in ipairs(self.allies) do
+            if u.hp > 0 then heroIds[#heroIds + 1] = u.heroId end
+        end
+        local batch = pending
+        self.pendingKills = {}
+        for i = 1, #batch do
+            local kill = batch[i]
             self.onKill({
-                teamIdx   = self.teamIdx,
-                stageId   = self.stageId,
-                expReward = unit.expReward or 0,
-                goldReward = unit.goldReward or 0,
-                heroIds   = heroIds,
+                teamIdx = self.teamIdx,
+                stageId = kill.stageId,
+                expReward = kill.expReward,
+                goldReward = kill.goldReward,
+                heroIds = heroIds,
                 allyCount = #heroIds,
             })
         end
@@ -290,6 +312,7 @@ function BattleTriDriver.new(teamIdx)
 
     --- 通关推进
     function drv:advanceStage()
+        self:flushPendingKills()
         local nextId = SC.getNextStageId(self.stageId)
         if not nextId then
             self:start(self.stageId)

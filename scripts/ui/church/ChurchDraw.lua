@@ -508,7 +508,7 @@ function M.bind(deps)
         ClassChange.drawResetConfirmPopup(vg)
 
         -- ================== Spine 卡牌特效 ==================
-        SpineCardEffect.draw(vg)
+        SpineCardEffect.draw(vg, "church")
 
         -- ================== 飘字提示（最最顶层） ==================
         if state.floatText then

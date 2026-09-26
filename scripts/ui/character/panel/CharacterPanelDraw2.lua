@@ -100,7 +100,7 @@ local MY_HEROES_CY   = 680
 -- 下方名册：图标网格，点图标才打开角色卡面
 local ROSTER_ICON = 148
 local ROSTER_GAP = 24
-local ROW1_CY        = 1040
+local ROW1_CY        = 1090
 local MAX_PER_ROW    = 5
 
 -- 行间距
@@ -121,7 +121,7 @@ local DEPLOYED_TXT_DY = -120  -- [卡高4/5] 原-149
 
 -- ======================== 滚动区域 ========================
 
-local SCROLL_TOP     = 940   -- 三队头像边框下方
+local SCROLL_TOP     = 990   -- 三队头像边框下方
 local SCROLL_BOTTOM  = 2400   -- 屏幕底边（与 ChurchPage 名册一致；避免底部大片留白）
 local SCROLL_LEFT    = 0
 local SCROLL_RIGHT   = DESIGN_W
@@ -274,7 +274,7 @@ local heroIconCache = {}  ---@type table<number, integer>
 local AV_SIZE = 176
 local AV_GAP = 16
 local AV_LABEL_H = 56   -- 「小队N」标题行高
-local AV_PAD_Y = 14     -- 标题行与头像之间的空隙
+local AV_PAD_Y = 30     -- 标题行与头像之间的空隙（留给站位名）
 local AV_ROW_GAP = 28   -- 队与队之间的间距
 local AV_ROW_H = AV_LABEL_H + AV_PAD_Y + AV_SIZE + AV_ROW_GAP
 local AV_TOP = 28
@@ -309,13 +309,18 @@ local function avatarRowX()
     return (DESIGN_W - rowW) * 0.5
 end
 
+--- 站位名：1 号最靠右是前锋，4 号最靠左是后排
+local SLOT_POS_NAME = { "前锋", "中锋", "中卫", "后卫" }
+
 --- 第 teamIdx 队第 slotIdx 个头像的中心
+--- 右侧为前锋（1 号），与战斗条带里我方从右向左排布一致
 ---@param teamIdx number
 ---@param slotIdx number
 ---@return number cx, number cy
 local function avatarCenter(teamIdx, slotIdx)
     local x0 = avatarRowX()
-    local cx = x0 + (slotIdx - 1) * (AV_SIZE + AV_GAP) + AV_SIZE * 0.5
+    local visual = M.MAX_SLOTS - slotIdx
+    local cx = x0 + visual * (AV_SIZE + AV_GAP) + AV_SIZE * 0.5
     -- 标题独占一行，头像在标题行下方另起一行
     local cy = AV_TOP + (teamIdx - 1) * AV_ROW_H + AV_LABEL_H + AV_PAD_Y + AV_SIZE * 0.5
     return cx, cy
@@ -397,6 +402,17 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
             else
                 nvgText(vg, cx, cy, "+", nil)
             end
+        end
+    end
+    -- 站位名：空位和已上阵都显示，未解锁的队不显示
+    if not locked then
+        local posName = SLOT_POS_NAME[slotIdx]
+        if posName then
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 20)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(255, 214, 120, occupied and 235 or 170))
+            nvgText(vg, cx, y - 16, posName, nil)
         end
     end
 end

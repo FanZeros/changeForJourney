@@ -473,12 +473,7 @@ local function setupBattleCombatContext()
                     print(string.format("[HealDiag4] hitCallback FIRED healer=%s target=%s hp=%.0f applyHit=%s",
                         tostring(attacker.name), tostring(target.name), target.hp or -1, tostring(applyHit ~= nil)))
                 end
-                if applyHit then
-                    local ok, err = pcall(applyHit)
-                    if not ok then
-                        print("[HealDiag4] applyHit ERROR: " .. tostring(err))
-                    end
-                end
+                if applyHit then applyHit() end
                 if result.category ~= "healing" and target.attrs then
                     local armorType = target.attrs.armorType or 1
                     BattleEffects.spawn(armorType, tgtCX, tgtCY)

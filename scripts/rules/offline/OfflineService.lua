@@ -79,7 +79,16 @@ local function buildHeroExpPreview(heroesData, totalHeroExp)
 
     -- 先收集 (heroId, teamIdx)，保持队伍顺序
     local entries = {}
-    local teams = heroesData.teams
+    local liveTeams = {}
+    local liveCount = 0
+    local okPanel, CharacterPanel = pcall(require, "ui.character.panel.CharacterPanel")
+    if okPanel and CharacterPanel.getTeamSlotIds then
+        liveTeams = CharacterPanel.getTeamSlotIds() or {}
+        for _, team in ipairs(liveTeams) do
+            liveCount = liveCount + #(team.slots or {})
+        end
+    end
+    local teams = (liveCount > 0) and liveTeams or heroesData.teams
     local hasTeams = type(teams) == "table"
     if hasTeams then
         for t = 1, ExpTable.TEAM_COUNT do
@@ -149,6 +158,20 @@ local function getTodayDateStr()
     return os.date("!%Y-%m-%d", t)
 end
 
+
+--- 阵容晚于弹窗到达时，按当前槽位重算队员经验预览。
+---@param uid number
+---@return table[]|nil
+function OfflineService.RebuildHeroPreview(uid)
+    local pending = pendingRewards[uid]
+    if not pending or not pending.rewards then return nil end
+    local heroesData = PDM.GetModule(uid, "heroes")
+    if not heroesData then return nil end
+    local preview = buildHeroExpPreview(heroesData, pending.rewards.adventurerExp)
+    if #preview == 0 then return nil end
+    pending.panelData.heroExpPreview = preview
+    return preview
+end
 
 --- 玩家进入游戏后计算离线收益，返回面板数据（不做网络 IO）
 ---@param uid number

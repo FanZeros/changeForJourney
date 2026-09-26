@@ -254,7 +254,7 @@ local img = {
     slider      = -1,   -- UI_AN_2.png
     plus        = -1,   -- UI_ICON_JIA.png
     -- 转职相关
-    classBg     = {},    -- classBg[1~6] = nvg image handle
+    -- 彩色职业背景 UI_ZZBJ 已删除
     titleBg     = -1,    -- UI_ZBT1.png
     branchLine  = -1,    -- UI_ZZXT_1Z.png
     branchLine2 = -1,    -- UI_ZZXT_2Z.png（二转分叉线）
@@ -270,7 +270,7 @@ local img = {
     expBarFill  = -1,    -- UI_JSMB_JYT2.png 经验条填充
     deployed    = -1,    -- UI_JSJM_CZZ.png 出战中标识
     -- 转职确认弹窗
-    confirmBg   = {},    -- UI_ZYTS_1~6.png 职业提示背景
+    -- 彩色职业提示背景 UI_ZYTS 已删除
     confirmBtn  = -1,    -- UI_AN_LV.png 确认按钮
     cancelBtn   = -1,    -- UI_AN_FANG.png 取消按钮（灰色）
     resetConfBg = -1,    -- UI_TY_EJQRK.png 重置确认九宫格背景

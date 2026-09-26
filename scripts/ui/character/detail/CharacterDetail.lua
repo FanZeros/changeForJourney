@@ -604,13 +604,14 @@ function CharacterDetail.handleInput(dx, dy)
         return false
     end
 
-    -- === 转职面板输入委托 ===
+    -- === 转职面板输入委托（转职树点击坐标下移 260px，重置按钮用屏幕坐标）===
     if detailState.tab == "class" then
         local ClassChange = require("ui.church.ChurchClassChange")
         ClassChange.setHero(detailState.heroId)
-        if ClassChange.handleResetConfirmInput(dx, dy) then return true end
-        if ClassChange.handleConfirmInput(dx, dy) then return true end
-        if ClassChange.handleBranchInput(dx, dy) then return true end
+        if ClassChange.handleResetConfirmInput(dx, dy - 260) then return true end
+        if ClassChange.handleConfirmInput(dx, dy - 260) then return true end
+        if ClassChange.handleResetButton(dx, dy) then return true end
+        if ClassChange.handleBranchInput(dx, dy - 260) then return true end
         return true
     end
 
@@ -739,8 +740,7 @@ end
 function CharacterDetail.handleDragBegin(dx, dy)
 
     if not detailState.open or detailState.closing then return true end
-    -- 转职页无拖拽滚动，消费拖拽避免穿透
-    if detailState.tab == "class" then return true end
+    -- 转职页除角色横滑外不拖拽滚动，避免穿透
     if CharacterDetail._EquipDetail.isOpen() then
         if detailState.tab == "equip" and not CharacterDetail._EquipDetail.containsPoint(dx, dy)
             and CharacterDetail._EquipPanel.beginSideDrag(dx, dy) then
@@ -766,9 +766,11 @@ function CharacterDetail.handleDragBegin(dx, dy)
             return true
         end
     end
-    if detailState.tab == "attr"
+    if (detailState.tab == "attr" or detailState.tab == "class")
         and dx >= Draw.ARROW_BG_LEFT_CX - 120 and dx <= Draw.ARROW_BG_RIGHT_CX + 120
-        and dy >= Draw.ARROW_CY - 230 and dy <= Draw.ARROW_CY + 230 then
+        and dy >= Draw.ARROW_CY - 230 and dy <= Draw.ARROW_CY + 230
+        -- 转职页重置按钮在卡片上方，别让横滑拖拽把它吃掉
+        and not (detailState.tab == "class" and dy <= 360) then
         detailState.cardDragX = dx
         detailState.cardDragMoved = 0
         return true
@@ -907,7 +909,6 @@ end
 ---@param dy number|nil
 function CharacterDetail.handleScroll(wheel, dx, dy)
     if not detailState.open or detailState.closing then return end
-    if detailState.tab == "class" then return end
     if CharacterDetail._EquipDetail.isOpen() then
         if dx == nil or CharacterDetail._EquipDetail.containsPoint(dx, dy) then
             CharacterDetail._EquipDetail.handleScroll(wheel, dx, dy)
@@ -929,7 +930,7 @@ function CharacterDetail.handleScroll(wheel, dx, dy)
             return
         end
     end
-    local onCards = dx and dy and detailState.tab == "attr"
+    local onCards = dx and dy and (detailState.tab == "attr" or detailState.tab == "class")
         and dx >= Draw.ARROW_BG_LEFT_CX - 120 and dx <= Draw.ARROW_BG_RIGHT_CX + 120
         and dy >= Draw.ARROW_CY - 230 and dy <= Draw.ARROW_CY + 230
     if onCards then

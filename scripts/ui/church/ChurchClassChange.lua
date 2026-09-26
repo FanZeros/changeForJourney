@@ -43,9 +43,10 @@ local pop = {
 
 -- 转职页图片（模块自管，init 时加载）
 local img = {
-    classBg = {}, confirmBg = {}, classIcons2 = {},
+    classIcons2 = {},
     titleBg = -1, branchLine = -1, branchLine2 = -1,
     goldCoin = -1, iconUp = -1,
+    detailBg = -1,
 }
 local inited = false
 local savedVg = nil
@@ -75,10 +76,9 @@ end
 
 -- ======================== 转职界面布局常量 ========================
 
--- 职业背景图
-local CLASS_BG_W, CLASS_BG_H   = 1080, 1700
-local CLASS_BG_CX              = 540
-local CLASS_BG_CY              = DESIGN_H - CLASS_BG_H * 0.5
+-- 背景与属性页同款（UI_JSXQ_BJ_dark，1240x1290，中心 540,477）
+local CLASS_BG_W, CLASS_BG_H   = 1240, 1290
+local CLASS_BG_CX, CLASS_BG_CY = 540, 477
 
 -- 标题背景
 local TITLE_BG_CX, TITLE_BG_CY = 540, 1092
@@ -88,9 +88,9 @@ local TITLE_BG_W, TITLE_BG_H   = 660, 60
 local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 1092
 local TITLE_FONT_SIZE              = 40
 
--- 重置按钮（位于"转职"标题上方）
+-- 重置按钮：画在角色横滑上方（屏幕坐标，不随转职树下移）
 local BTN_RESET_CX   = 540
-local BTN_RESET_CY   = 1000   -- 标题顶边(1062) - 间距12 - 半高50 = 1000
+local BTN_RESET_CY   = 300
 local BTN_RESET_W    = 410
 local BTN_RESET_H    = 100
 local BTN_RESET_FONT = 40
@@ -149,7 +149,7 @@ local ADV2 = {
 
 -- ======================== 转职数据表 ========================
 
---- classId → 编号（用于背景图文件名 UI_ZZBJ_X.png）
+--- classId → 职业序号（图标与转职分支用）
 local CLASS_NUM = {
     [CC.KNIGHT]   = 1,
     [CC.WARRIOR]  = 2,
@@ -375,15 +375,12 @@ function M.init(vg)
     if inited then return end
     inited = true
     savedVg = vg
-    for i = 1, 6 do
-        img.classBg[i]   = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZBJ_" .. i .. ".png", 0)
-        img.confirmBg[i] = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZYTS_" .. i .. ".png", 0)
-    end
     img.titleBg    = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
     img.branchLine = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
     img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
     img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
     img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+    img.detailBg   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_BJ_dark.png", 0)
 end
 
 --- 设置当前转职页英雄（详情页页签切换/换角色时调用）
@@ -423,15 +420,10 @@ end
 
 -- ======================== 绘制 API ========================
 
---- 绘制转职职业背景图（不受 scissor 裁剪，单独调用）
+--- 绘制转职页背景（与属性页同款 UI_JSXQ_BJ_dark）
 function M.drawBg(vg)
-    if not heroId() then return end
-    local heroCfg = HC.get(heroId())
-    if not heroCfg then return end
-    local classNum = CLASS_NUM[heroCfg.classId] or 1
-    local bgImg = img.classBg[classNum]
-    if bgImg and bgImg >= 0 then
-        drawImageCentered(vg, bgImg, CLASS_BG_CX, CLASS_BG_CY, CLASS_BG_W, CLASS_BG_H, 1.0)
+    if img.detailBg and img.detailBg >= 0 then
+        drawImageCentered(vg, img.detailBg, CLASS_BG_CX, CLASS_BG_CY, CLASS_BG_W, CLASS_BG_H, 1.0)
     end
 end
 
@@ -440,6 +432,9 @@ function M.drawContent(vg)
     if not heroId() then return end
     local heroCfg = HC.get(heroId())
     if not heroCfg then return end
+    -- 详情页上半部是角色横滑，转职树整体下移到卡片下方
+    nvgSave(vg)
+    nvgTranslate(vg, 0, 260)
 
     local classId = heroCfg.classId
     local classColor = CLASS_COLORS[classId] or { r = 255, g = 255, b = 255 }
@@ -459,18 +454,6 @@ function M.drawContent(vg)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, TITLE_TEXT_CX, TITLE_TEXT_CY, "转职", nil)
-
-    -- 重置按钮（UI_AN_LV.png，410×100，字号40，纯黑70%不透明）
-    do
-        local _bfReset = BF.begin(vg, "ccc_reset", BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H)
-        DarkIcon.drawNine(vg, "btn", BTN_RESET_CX - BTN_RESET_W * 0.5, BTN_RESET_CY - BTN_RESET_H * 0.5, BTN_RESET_W, BTN_RESET_H)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_RESET_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-        nvgText(vg, BTN_RESET_CX, BTN_RESET_CY, "重置", nil)
-        BF.finish(vg, _bfReset)
-    end
 
     -- "初始职业"
     drawTextStroke(vg, INIT_LABEL_CX, INIT_LABEL_CY, "初始职业",
@@ -627,6 +610,7 @@ function M.drawContent(vg)
             255, 255, 255, 6,
             { italic = true })
     end
+    nvgRestore(vg)  -- 结束转职树下移
 end
 
 -- ======================== 确认弹窗 ========================
@@ -710,9 +694,9 @@ function M.drawConfirmPopup(vg)
     nvgTranslate(vg, -C.bgCX, -C.bgCY)
     nvgGlobalAlpha(vg, popProgress)
 
-    -- 弹窗面板背景
-    local bgImg = img.confirmBg[classNum] or img.confirmBg[1]
-    drawImageCentered(vg, bgImg, C.bgCX, C.bgCY, C.bgW, C.bgH, 1.0)
+    -- 弹窗面板背景（彩色职业底图已删除，改用深色矢量面板）
+    DarkIcon.drawNine(vg, "panel",
+        C.bgCX - C.bgW * 0.5, C.bgCY - C.bgH * 0.5, C.bgW, C.bgH)
 
     -- 职业名称
     drawTextStroke(vg, C.nameCX, C.nameCY, branchName,
@@ -1075,16 +1059,32 @@ function M.handleBranchInput(dx, dy)
         end
     end
 
-    -- 重置按钮 → 打开二级确认弹窗
-    if hitTest(dx, dy, BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H) then
-        BF.trigger("ccc_reset")
-        if heroId() then
-            M.openResetConfirmPopup()
-        end
-        return true
-    end
-
     return false
+end
+
+--- 重置按钮（屏幕坐标，位于角色横滑上方）
+function M.drawResetButton(vg)
+    local _bfReset = BF.begin(vg, "ccc_reset", BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H)
+    DarkIcon.drawNine(vg, "btn", BTN_RESET_CX - BTN_RESET_W * 0.5, BTN_RESET_CY - BTN_RESET_H * 0.5, BTN_RESET_W, BTN_RESET_H)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, BTN_RESET_FONT)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+    nvgText(vg, BTN_RESET_CX, BTN_RESET_CY, "重置", nil)
+    BF.finish(vg, _bfReset)
+end
+
+--- 重置按钮点击（屏幕坐标，调用方不要做转职树下移换算）
+---@return boolean
+function M.handleResetButton(dx, dy)
+    if not hitTest(dx, dy, BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H) then
+        return false
+    end
+    BF.trigger("ccc_reset")
+    if heroId() then
+        M.openResetConfirmPopup()
+    end
+    return true
 end
 
 -- ======================== 重置转职二级确认弹窗 ========================

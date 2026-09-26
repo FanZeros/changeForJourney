@@ -42,10 +42,7 @@ function M.bind(deps)
         -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
         img.plus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
 
-        -- 转职相关图片
-        for i = 1, 6 do
-            img.classBg[i] = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZBJ_" .. i .. ".png", 0)
-        end
+        -- 转职相关图片（彩色职业背景 UI_ZZBJ 已删除）
         img.titleBg    = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
         img.branchLine  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
         img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
@@ -63,10 +60,7 @@ function M.bind(deps)
         img.expBarFill = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
         img.deployed   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_CZZ.png", 0)
 
-        -- 转职确认弹窗图片
-        for i = 1, 6 do
-            img.confirmBg[i] = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZYTS_" .. i .. ".png", 0)
-        end
+        -- 转职确认弹窗改用深色矢量面板（彩色职业底图 UI_ZYTS 已删除）
         -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
         -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_FANG.png 贴图加载已移除（矢量绘制替代）
         -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）

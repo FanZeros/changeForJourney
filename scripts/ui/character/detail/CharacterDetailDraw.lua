@@ -584,12 +584,13 @@ function M.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, upperOX, 0)
 
-    -- 觉醒页由 AwakeningPanel、转职页由 ChurchClassChange 整页接管，
-    -- 以下 1~7 节/8~17 节全部被其背景遮挡，统一跳过绘制
-    local isAwakenTab = (detailState.tab == "awaken" or detailState.tab == "class")
+    -- 觉醒页由 AwakeningPanel 整页接管，以下 1~7 节/8~17 节全部被其背景遮挡，统一跳过绘制。
+    -- 转职页复用属性页背景与角色横滑，只跳过属性区内容。
+    local isAwakenTab = (detailState.tab == "awaken")
+    local isClassTab = (detailState.tab == "class")
     local stepAngle = math.pi * 2 / 16  -- 16向描边步进角（7节标题/10节等级共用）
 
-    -- === 1) 背景图 ===
+    -- === 1) 背景图（转职页与属性页同款）===
     if not isAwakenTab then
         nvgSave(vg)
         nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
@@ -604,7 +605,7 @@ function M.draw(vg)
     nvgSave(vg)
     nvgGlobalAlpha(vg, 1)
 
-    if not isAwakenTab then
+    if not isAwakenTab and not isClassTab then
     -- === 4) 角色卡片：X 轴排列，绕竖直 Y 轴转向，不做画面旋转 ===
     local function neighborId(dir)
         local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
@@ -649,7 +650,7 @@ function M.draw(vg)
         DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, 1.0)
         nvgRestore(vg)
     end
-    if detailState.tab == "attr" then
+    if detailState.tab == "attr" or detailState.tab == "class" then
         local leftId = neighborId(-1)
         local rightId = neighborId(1)
         -- 往一侧拖时，再外侧的那张也要在场，否则露出空白。
@@ -885,7 +886,66 @@ function M.draw(vg)
         if _TM.isActive() then _TM.registerHotspot("equip_btn_auto", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H, "right") end
     end
     end  -- if detailState.tab == "equip"（装备槽与批量按钮）
-    end  -- if not isAwakenTab（4~6 节）
+    end  -- if not isAwakenTab and not isClassTab（4~6 节）
+
+    -- === 转职页：复用属性页的角色横滑（左右相邻卡 + 拖动跟随）===
+    if isClassTab then
+        local function neighborId(dir)
+            local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
+            if not roster then return nil end
+            local cur = nil
+            for i, entry in ipairs(roster) do
+                if entry.heroId == heroId then cur = i break end
+            end
+            if not cur then return nil end
+            local idx = cur
+            for _ = 1, #roster - 1 do
+                idx = idx + dir
+                if idx < 1 then idx = #roster end
+                if idx > #roster then idx = 1 end
+                if roster[idx].owned then return roster[idx].heroId end
+            end
+            return nil
+        end
+        local function drawCarouselCard(id, slot, alpha)
+            if not id or alpha <= 0.01 then return end
+            local imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, id)
+            if (not imgCard or imgCard < 0) and id ~= 1 then
+                imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, 1)
+            end
+            if not imgCard or imgCard < 0 then return end
+            local slide = detailState.cardDragVisual or 0
+            if detailState.switchDir then
+                local from = (detailState.switchDir or 0) + (detailState.switchFrom or 0)
+                slide = from * (1 - progress)
+            end
+            local pos = slot + slide
+            local ax = math.min(1, math.abs(pos))
+            local scale = CARD.CENTER_SCALE - (CARD.CENTER_SCALE - CARD.SIDE_SCALE) * ax
+            local yaw = 1 - (1 - CARD.YAW_SQUASH) * ax
+            nvgSave(vg)
+            nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, CARD.CY)
+            nvgScale(vg, scale * yaw, scale)
+            nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
+            DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, 1.0)
+            nvgRestore(vg)
+        end
+        local leftId = neighborId(-1)
+        local rightId = neighborId(1)
+        local function secondNeighbor(firstId, dir)
+            if not firstId then return nil end
+            local saved = heroId
+            heroId = firstId
+            local id = neighborId(dir)
+            heroId = saved
+            return id
+        end
+        drawCarouselCard(secondNeighbor(leftId, -1), -2, 1)
+        drawCarouselCard(leftId, -1, 1)
+        drawCarouselCard(rightId, 1, 1)
+        drawCarouselCard(secondNeighbor(rightId, 1), 2, 1)
+        drawCarouselCard(heroId, 0, 1)
+    end
 
     nvgRestore(vg)  -- 结束动态内容偏移（switchOX/switchAlpha）
 
@@ -895,7 +955,7 @@ function M.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, lowerOX, 0)
 
-    if not isAwakenTab then
+    if not isAwakenTab and not isClassTab then
     -- === 6) 角色详情属性背景图（静态，不参与切换动画） ===
     -- 配装页底板及标题整体下移，给上半部装备词条留位置
     if detailState.tab == "equip" then
@@ -936,7 +996,7 @@ function M.draw(vg)
     end
     nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
     nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, titleText, nil)
-    end  -- if not isAwakenTab（6b~7 节）
+    end  -- if not isAwakenTab and not isClassTab（6b~7 节）
 
     if detailState.tab == "equip" then
         nvgTranslate(vg, 0, -EQUIP_LOWER_OFFSET)
@@ -946,7 +1006,7 @@ function M.draw(vg)
     local textBlur = detailState.switchDir and (1 - progress) or 0
     nvgSave(vg)
     nvgGlobalAlpha(vg, 1 - textBlur * 0.55)
-    if not isAwakenTab and detailState.tab ~= "equip" then
+    if not isAwakenTab and not isClassTab and detailState.tab ~= "equip" then
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 42)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -1048,6 +1108,7 @@ function M.draw(vg)
         ClassChange.init(vg)
         ClassChange.setHero(heroId)
         ClassChange.drawBg(vg)
+        ClassChange.drawResetButton(vg)
         ClassChange.drawContent(vg)
 
     elseif detailState.tab == "equip" then

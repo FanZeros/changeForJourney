@@ -148,7 +148,7 @@ function M.run(rt)
 
     -- 5.2 击杀奖励回调：经验平分给每个上场远征队员，金币/远征等级经验照常
     -- [三栏并行] 提取为局部函数，BattleScene（栏1）与 BattleTriPage（栏2/3）共用
-    -- 三行战斗在关卡结束时一次性把本关击杀交过来，经验合并成一次刷新。
+    -- 三行战斗按入场节奏逐只发放。同一批经验先累加，最后一只到了再刷新一次。
     local pendingHeroExp = {}
     local function flushPendingHeroExp()
         local any = false
@@ -189,8 +189,10 @@ function M.run(rt)
                 for _, hid in ipairs(heroIds) do
                     pendingHeroExp[hid] = (pendingHeroExp[hid] or 0) + perHeroExp
                 end
-                flushPendingHeroExp()
             end
+        end
+        if not data.deferHeroExp then
+            flushPendingHeroExp()
         end
     end
     BattleScene.setOnEnemyKill(handleKillRewards)

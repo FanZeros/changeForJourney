@@ -1365,6 +1365,14 @@ function BattleScene.setOnFirstClear(callback)
     onFirstClearCallback = callback
 end
 
+--- 三行战斗通关后复用首通奖励弹窗。
+---@param clearedStageId number
+function BattleScene.onFirstClear(clearedStageId)
+    if onFirstClearCallback then
+        onFirstClearCallback(clearedStageId)
+    end
+end
+
 --- 注册关卡加载完成回调（每次 loadStage 结束时触发）
 ---@param callback function|nil  function(stageId, isFirstClear)
 function BattleScene.setOnStageLoaded(callback)

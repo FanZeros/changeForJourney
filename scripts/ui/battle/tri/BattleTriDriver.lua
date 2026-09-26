@@ -348,10 +348,12 @@ function BattleTriDriver.new(teamIdx)
             self:start(self.stageId)
             return
         end
+        local clearedId = self.stageId
         print(string.format("[TriDriver] 队%d 通关 %s → %s",
-            self.teamIdx, tostring(self.stageId), tostring(nextId)))
+            self.teamIdx, tostring(clearedId), tostring(nextId)))
+        self._syncedMainStage = nextId
         self:start(nextId)
-        if self.onStageChanged then self.onStageChanged(self.teamIdx, self.stageId) end
+        if self.onStageCleared then self.onStageCleared(self.teamIdx, clearedId) end
     end
 
     --- 战斗 tick（须已 mount）

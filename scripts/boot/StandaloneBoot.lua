@@ -349,7 +349,14 @@ function M.run(rt)
     BattleScene.setOnEnemyDrop(applyKillDrop)
     -- 第 2/3 队不记首通，只按挂机掉落叠加
     BattleTriPage.setOnDrop(function(data)
+        if data.dropOnly then
+            applyKillDrop({ stageId = data.stageId, isFirstClear = true })
+            return
+        end
         applyKillDrop({ stageId = data.stageId, isFirstClear = false })
+    end)
+    BattleTriPage.setOnStageClear(function(_, _)
+        showKeptDrops("战斗掉落")
     end)
 
     BattleScene.setOnAllDead(function()
@@ -578,7 +585,9 @@ function M.run(rt)
                 .. " equips=" .. tostring(#fcEquips)
                 .. " killDrops=" .. tostring(#dropRewards))
             RewardPopup.show("首通奖励", rewards, { row = 1 })  -- [三行并行] 卡在行1内显示
+            return
         end
+        showKeptDrops("战斗掉落")
     end)
 
     -- 5.3 初始阵容同步/关卡重载已拆到 boot 队列独立步 firstStage

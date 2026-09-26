@@ -41,6 +41,7 @@ local inited = false
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
+local triOnStageClear = nil -- function(teamIdx, clearedStageId)
 local region = { x = 486, y = 0, w = 948, h = 1080 }  -- 战斗区（窗口坐标）
 
 local function dialogToDesign(wx, wy)
@@ -52,6 +53,7 @@ end
 --- 击杀奖励回调注入（宿主与 BattleScene.setOnEnemyKill 同源）
 function BattleTriPage.setOnKill(cb) triOnKill = cb end
 function BattleTriPage.setOnDrop(cb) triOnDrop = cb end
+function BattleTriPage.setOnStageClear(cb) triOnStageClear = cb end
 
 function BattleTriPage.isOpen() return isOpen_ end
 
@@ -77,6 +79,17 @@ local function ensureDrivers()
             end
             drv.onDrop = function(data)
                 if triOnDrop then triOnDrop(data) end
+            end
+            drv.onStageCleared = function(teamIdx, clearedStageId)
+                if teamIdx ~= 1 then return end
+                local cleared = BattleScene.getClearedStages()
+                if cleared[clearedStageId] then return end
+                cleared[clearedStageId] = true
+                if BattleScene.onFirstClear then
+                    BattleScene.onFirstClear(clearedStageId)
+                else
+                    if triOnStageClear then triOnStageClear(teamIdx, clearedStageId) end
+                end
             end
             local startStage = (t == 1) and BattleScene.getStageId()
                 or StageConfig.NORMAL_FIRST_STAGE

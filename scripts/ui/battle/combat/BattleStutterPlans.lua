@@ -26,6 +26,18 @@ function BattleStutterPlans.heavyThisFrame(frame)
     return (frame % 2) == 0
 end
 
+BattleStutterPlans.showFloat = true
+BattleStutterPlans.showAnim = true
+BattleStutterPlans.showProj = true
+
+function BattleStutterPlans.label()
+    local s = BattleStutterPlans.names[BattleStutterPlans.mode] or "?"
+    s = s .. (BattleStutterPlans.showFloat and " 飘字开" or " 飘字关")
+    s = s .. (BattleStutterPlans.showAnim and " 动画开" or " 动画关")
+    s = s .. (BattleStutterPlans.showProj and " 弹道开" or " 弹道关")
+    return s
+end
+
 function BattleStutterPlans.poll()
     if input:GetKeyPress(KEY_1) then
         BattleStutterPlans.mode = 1
@@ -36,6 +48,12 @@ function BattleStutterPlans.poll()
     elseif input:GetKeyPress(KEY_3) then
         BattleStutterPlans.mode = 3
         print("[BattleStutter] plan 3")
+    elseif input:GetKeyPress(KEY_4) then
+        BattleStutterPlans.showFloat = not BattleStutterPlans.showFloat
+    elseif input:GetKeyPress(KEY_5) then
+        BattleStutterPlans.showAnim = not BattleStutterPlans.showAnim
+    elseif input:GetKeyPress(KEY_6) then
+        BattleStutterPlans.showProj = not BattleStutterPlans.showProj
     end
 end
 

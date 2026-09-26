@@ -68,13 +68,16 @@ function BattleView.draw(vg, b, bgImg, skipBg)
     require("systems.ExtraTalentSystem").drawIceStatues(vg)
 
     -- 4) 飘字 / 特效 / 投射物 / 星门（均为 mounted 状态内容；坐标即条带坐标）
-    BattleDraw.drawFloatingTexts(vg)
-    BattleEffects.draw(vg)
-    ProjectileSystem.draw(vg)
-    ProjectileSystem.drawStarGates(vg, allies, BattleLayout.STRIP_CY,
-        BattleCombat.getCardCX, true, BattleCombat.getCardCY)
-    ProjectileSystem.drawStarGates(vg, enemies, BattleLayout.STRIP_CY,
-        BattleCombat.getCardCX, false, BattleCombat.getCardCY)
+    local plans = require("ui.battle.combat.BattleStutterPlans")
+    if plans.showFloat then BattleDraw.drawFloatingTexts(vg) end
+    if plans.showAnim then BattleEffects.draw(vg) end
+    if plans.showProj then
+        ProjectileSystem.draw(vg)
+        ProjectileSystem.drawStarGates(vg, allies, BattleLayout.STRIP_CY,
+            BattleCombat.getCardCX, true, BattleCombat.getCardCY)
+        ProjectileSystem.drawStarGates(vg, enemies, BattleLayout.STRIP_CY,
+            BattleCombat.getCardCX, false, BattleCombat.getCardCY)
+    end
 end
 
 return BattleView

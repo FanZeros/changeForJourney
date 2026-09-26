@@ -440,14 +440,17 @@ function BattleTriDriver.new(teamIdx)
         end
 
         -- 投射物 / 连击
-        ProjectileSystem.update(dt)
+        if require("ui.battle.combat.BattleStutterPlans").showProj then ProjectileSystem.update(dt) end
         BattleCombat.updateComboQueue(dt)
 
         -- 纯视觉层
-        BattleEffects.update(dt)
-        BattleCombat.updateCardAnims(dt)
-        BattleCombat.updateFloatingTexts(dt)
-        BattleCombat.updateHitFlashes(dt)
+        local plans = require("ui.battle.combat.BattleStutterPlans")
+        if plans.showAnim then
+            BattleEffects.update(dt)
+            BattleCombat.updateCardAnims(dt)
+            BattleCombat.updateHitFlashes(dt)
+        end
+        if plans.showFloat then BattleCombat.updateFloatingTexts(dt) end
     end
 
     --- 便捷: mount + tick

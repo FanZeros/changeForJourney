@@ -346,6 +346,7 @@ BattleCombat.syncUnitHp = syncUnitHp
 ---@param isCrit boolean
 ---@param fontSize number|nil
 local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred, kind)
+    if not require("ui.battle.combat.BattleStutterPlans").showFloat then return end
     BattleCombatFx.addFloatingText(BCS, text, cx, cy, color, isCrit, fontSize, deferred, kind)
 end
 BattleCombat.addFloatingText = addFloatingText

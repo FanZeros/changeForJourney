@@ -698,8 +698,10 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function CharacterDetail.handleHover(dx, dy)
-    if not detailState.open or detailState.closing then return end
-    if detailState.tab ~= "equip" or not CharacterDetail._EquipPanel then return end
+    if not detailState.open or detailState.closing or detailState.tab ~= "equip" then
+        CharacterDetail._EquipPanel.handleHover(-1, -1, detailState.heroId)
+        return
+    end
     if CharacterDetail._EquipPanel.isItemDragging and CharacterDetail._EquipPanel.isItemDragging() then
         return
     end

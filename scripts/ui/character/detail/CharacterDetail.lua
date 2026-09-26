@@ -360,7 +360,7 @@ function CharacterDetail.forceClose()
 end
 
 --- 切换到前/后一个角色（direction: -1=上一个, 1=下一个）
-function CharacterDetail._switchHero(direction)
+function CharacterDetail._switchHero(direction, keepDrag)
     local getRoster = CharacterDetail._getHeroRoster
     if not getRoster then return end
     local roster = getRoster()
@@ -396,10 +396,16 @@ function CharacterDetail._switchHero(direction)
     detailState.tab = currentTab
     detailState.tabFrom = currentTab
     detailState.tabSwitchTime = 0
-    detailState.openTime = time.elapsedTime
-    detailState.switchDir = direction  -- -1=左切, 1=右切（触发水平滑入动画）
-    detailState.switchFrom = detailState.cardDragVisual or 0
     detailState.prevHeroId = roster[curIdx].heroId
+    if keepDrag then
+        -- 手指还按着：越过一张后立刻接上下一张，不播松手滑入。
+        detailState.switchDir = nil
+        detailState.switchFrom = nil
+    else
+        detailState.openTime = time.elapsedTime
+        detailState.switchDir = direction  -- -1=左切, 1=右切（触发水平滑入动画）
+        detailState.switchFrom = detailState.cardDragVisual or 0
+    end
     detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0
     detailState.attrDragging  = false
@@ -761,7 +767,21 @@ function CharacterDetail.handleDragMove(dx, dy)
     end
     if detailState.cardDragX then
         detailState.cardDragMoved = dx - detailState.cardDragX
-        detailState.cardDragVisual = math.max(-1, math.min(1, detailState.cardDragMoved / 180))
+        local step = Draw.SIDE_CARD_STEP or 180
+        local visual = detailState.cardDragMoved / step
+        while visual <= -1 do
+            CharacterDetail._switchHero(1, true)
+            detailState.cardDragX = detailState.cardDragX - step
+            detailState.cardDragMoved = dx - detailState.cardDragX
+            visual = detailState.cardDragMoved / step
+        end
+        while visual >= 1 do
+            CharacterDetail._switchHero(-1, true)
+            detailState.cardDragX = detailState.cardDragX + step
+            detailState.cardDragMoved = dx - detailState.cardDragX
+            visual = detailState.cardDragMoved / step
+        end
+        detailState.cardDragVisual = visual
         return true
     end
     if detailState.attrDragging then

@@ -783,6 +783,9 @@ function HandleUpdate(eventType, eventData)
 
     local dt = eventData["TimeStep"]:GetFloat()
 
+    -- 鼠标静止时也检查装备悬停计时，移到其他格子则由命中检测立即收起旧说明。
+    HandleEquipmentHoverTickHorizon()
+
     -- [Standalone] battle 状态本地同步（建筑/页签解锁判定依赖）
     SyncBattleState(dt)
 

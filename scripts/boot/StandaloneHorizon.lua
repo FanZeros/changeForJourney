@@ -961,9 +961,15 @@ function HandleMouseMoveHorizon(eventType, eventData)
     end
     if pid == 'none' then
         if LootBoxPage.isOpen() then LootBoxPage.handleHover(-1, -1) end
+        CharacterPanel.handleHover(-1, -1)
+        BackpackPanel.handleHover(-1, -1)
+        EquipmentBag.handleHover(-1, -1)
         return
     end
     if pid == 'playerinfo' then
+        CharacterPanel.handleHover(-1, -1)
+        BackpackPanel.handleHover(-1, -1)
+        EquipmentBag.handleHover(-1, -1)
         PlayerInfoPanel.handleDragMove(dx, dy)
         return
     end
@@ -982,6 +988,9 @@ function HandleMouseMoveHorizon(eventType, eventData)
         end
     end
     if pid == 'modal' and HorizonPageModalActive() then
+        CharacterPanel.handleHover(-1, -1)
+        BackpackPanel.handleHover(-1, -1)
+        EquipmentBag.handleHover(-1, -1)
         -- [底栏移除] 日志页全窗模态：拖拽滚动
         if BottomNav.getSelectedIndex() == 2 then
             DiaryPage.handleDragMove(dx, dy)
@@ -989,6 +998,9 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if pid == 'modal' then
+        CharacterPanel.handleHover(-1, -1)
+        BackpackPanel.handleHover(-1, -1)
+        EquipmentBag.handleHover(-1, -1)
         if DungeonBattleScene.isOpen() then DungeonBattleScene.handleDragMove(dx, dy) return end
         if LevelUpPopup.isOpen() then return end
         if PlayerInfoPanel.isOpen() then PlayerInfoPanel.handleDragMove(dx, dy) return end
@@ -1051,6 +1063,25 @@ function HandleMouseMoveHorizon(eventType, eventData)
         if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragMove(dx, dy) end
     elseif pid == 'right' then
         CharacterPanel.handleDragMove(dx, dy)
+    end
+end
+
+function HandleEquipmentHoverTickHorizon()
+    if DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
+        or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
+        or EquipCrossDrag.isArmed() then return end
+    local pid, dx, dy = HorizonResolveMouse()
+    if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+        CharacterPanel.handleHover(dx, dy)
+    else
+        CharacterPanel.handleHover(-1, -1)
+    end
+    if pid == 'left' then
+        if BackpackPanel.isOpen() then BackpackPanel.handleHover(dx, dy) end
+        if EquipmentBag.isOpen() then EquipmentBag.handleHover(dx, dy) end
+    else
+        BackpackPanel.handleHover(-1, -1)
+        EquipmentBag.handleHover(-1, -1)
     end
 end
 

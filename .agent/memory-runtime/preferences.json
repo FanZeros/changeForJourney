@@ -9,7 +9,7 @@
   "never_end_without_askuserquestion": true,
   "askuserquestion_rule": "不能取消或退出任务。每次完成后必须以 AskUserQuestion 选项提问下一步，禁止以纯文字中断对话。即使用户暂时没再说话，也要停在选项上等待。",
   "dev_branch": "workspace925",
-  "push_policy": "本轮仅 push workspace925。不推 workspace924、历史功能分支或其他分支；下一轮以用户当轮指定分支为准，不强推。",
+  "push_policy": "以用户当前轮次明确指令为准：从 workspace925 创建开发分支，完成后推送开发分支并合并、推送回 workspace925；不强推，不推其他分支。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

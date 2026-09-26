@@ -68,12 +68,29 @@ local function applyFrame()
 end
 
 --- CE 面板画在帧变换后的逻辑坐标里，避免被面板 viewport 带走。
+--- 归属战斗行的奖励弹窗（row=1）在离开三行战斗页时会失去唯一绘制路径
+--- （drawRegion 只在 BattleTriPage.draw 内调用）。这里在收尾统一兜底绘制，
+--- 避免「弹窗 open 了但看不见」。三行页打开时由 drawRegion 负责，不重复画。
+local function drawOrphanRowReward()
+    if not RewardPopup.isOpen() or not RewardPopup.currentRowTag() then return end
+    if BattleTriPage.isOpen() then return end
+    local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+    nvgSave(vg())
+    nvgResetScissor(vg())
+    nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+    nvgScale(vg(), fit, fit)
+    RewardPopup.drawRegion(vg(), 0, 0, 1080, 2400, RewardPopup.currentRowTag())
+    nvgRestore(vg())
+end
+
 local function finishFrame()
     nvgSave(vg())
     nvgResetTransform(vg())
     applyFrame()
     nvgResetScissor(vg())
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    drawOrphanRowReward()
     CEPanel.draw(vg(), logicalW(), logicalH())
     nvgRestore(vg())
     nvgEndFrame(vg())
@@ -570,7 +587,8 @@ function HandleNanoVGRenderHorizon()
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
-        -- 玩家信息在全窗设计空间绘制，点击也按对应 letterbox 换算。
+        -- 玩家信息已画在左栏视口内。三行路径会提前 return，必须在这里再画一层全窗居中，
+        -- 否则面板被左栏裁切，点外面也无法按面板外关闭。
         if PlayerInfoPanel.isOpen() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
@@ -839,6 +857,10 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     if pid == 'tri' then
         pressStartDX, pressStartDY = dx or 0, dy or 0
         pressValid = true
+        if SweepDialog.isOpen() then
+            BattleTriPage.handleDragBegin(dx, dy)
+            return
+        end
         if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion()
             and EquipmentBag.hitOverlayWindow(dx, dy) then
             local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
@@ -942,7 +964,6 @@ function HandleMouseMoveHorizon(eventType, eventData)
             LootBox.handleDragEnd(0, 0)
             pressValid = false
         end
-        if LootBoxPage.isOpen() then LootBoxPage.handleHover(-1, -1) end
         return
     end
     if EquipCrossDrag.isArmed() then
@@ -958,17 +979,8 @@ function HandleMouseMoveHorizon(eventType, eventData)
             return
         end
     end
-    if pid == 'none' then
-        if LootBoxPage.isOpen() then LootBoxPage.handleHover(-1, -1) end
-        CharacterPanel.handleHover(-1, -1)
-        BackpackPanel.handleHover(-1, -1)
-        EquipmentBag.handleHover(-1, -1)
-        return
-    end
+    if pid == 'none' then return end
     if pid == 'playerinfo' then
-        CharacterPanel.handleHover(-1, -1)
-        BackpackPanel.handleHover(-1, -1)
-        EquipmentBag.handleHover(-1, -1)
         PlayerInfoPanel.handleDragMove(dx, dy)
         return
     end
@@ -987,9 +999,6 @@ function HandleMouseMoveHorizon(eventType, eventData)
         end
     end
     if pid == 'modal' and HorizonPageModalActive() then
-        CharacterPanel.handleHover(-1, -1)
-        BackpackPanel.handleHover(-1, -1)
-        EquipmentBag.handleHover(-1, -1)
         -- [底栏移除] 日志页全窗模态：拖拽滚动
         if BottomNav.getSelectedIndex() == 2 then
             DiaryPage.handleDragMove(dx, dy)
@@ -997,9 +1006,6 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if pid == 'modal' then
-        CharacterPanel.handleHover(-1, -1)
-        BackpackPanel.handleHover(-1, -1)
-        EquipmentBag.handleHover(-1, -1)
         if DungeonBattleScene.isOpen() then DungeonBattleScene.handleDragMove(dx, dy) return end
         if LevelUpPopup.isOpen() then return end
         if PlayerInfoPanel.isOpen() then PlayerInfoPanel.handleDragMove(dx, dy) return end
@@ -1015,6 +1021,10 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if not pressValid then
+        if SweepDialog.isOpen() and pid == 'tri' then
+            BattleTriPage.handleDragMove(dx, dy)
+            return
+        end
         if LootBoxPage.isOpen() then
             if pid == 'left' then LootBoxPage.handleHover(dx, dy)
             else LootBoxPage.handleHover(-1, -1) end
@@ -1042,15 +1052,11 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if pid == 'tri' then
-
         BattleTriPage.handleDragMove(dx, dy)
         return
     end
     if pid == 'left' then
-        if LootBoxPage.isOpen() then
-            LootBoxPage.handleHover(dx, dy)
-            return
-        end
+        if LootBoxPage.isOpen() then return end -- 非遗匣起始的拖拽不能穿透其下方页面
         if TaskPage.isOpen() then TaskPage.handleDragMove(dx, dy) return end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragMove(dx, dy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
@@ -1062,25 +1068,6 @@ function HandleMouseMoveHorizon(eventType, eventData)
         if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragMove(dx, dy) end
     elseif pid == 'right' then
         CharacterPanel.handleDragMove(dx, dy)
-    end
-end
-
-function HandleEquipmentHoverTickHorizon()
-    if DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
-        or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
-        or EquipCrossDrag.isArmed() then return end
-    local pid, dx, dy = HorizonResolveMouse()
-    if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
-        CharacterPanel.handleHover(dx, dy)
-    else
-        CharacterPanel.handleHover(-1, -1)
-    end
-    if pid == 'left' then
-        if BackpackPanel.isOpen() then BackpackPanel.handleHover(dx, dy) end
-        if EquipmentBag.isOpen() then EquipmentBag.handleHover(dx, dy) end
-    else
-        BackpackPanel.handleHover(-1, -1)
-        EquipmentBag.handleHover(-1, -1)
     end
 end
 
@@ -1145,7 +1132,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if button ~= MOUSEB_LEFT then return end
     local mousePos = input:GetMousePosition()
     local seamX, seamY = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
-    local seamBtn = not PlayerInfoPanel.isOpen() and seamHitAt(seamX, seamY)
+    local seamBtn = seamHitAt(seamX, seamY)
     if seamBtn then
         local now = time.elapsedTime
         if now - lastTapTime >= MIN_TAP_INTERVAL then
@@ -1399,14 +1386,6 @@ function HandleMouseWheelHorizon(eventType, eventData)
     if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
     if RewardPopup.isOpen() then RewardPopup.handleScroll(wheel) return end
 
-    -- 遗匣只滚鼠标所在的左栏；其它面板的滚轮继续走各自路由。
-    local wheelPid, wheelX, wheelY = HorizonResolveMouse()
-    if wheelPid == 'left' and LootBoxPage.isOpen() then
-        LootBox.handleScroll(wheel)
-        LootBoxPage.handleHover(wheelX, wheelY)
-        return
-    end
-
     -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
     if TalentPage.isOpen() then
         syncTalentPageLayout()
@@ -1470,6 +1449,7 @@ function HandleMouseWheelHorizon(eventType, eventData)
     end
 
     if pid == 'left' then
+        if LootBoxPage.isOpen() then LootBox.handleScroll(wheel) return end
         if TaskPage.isOpen() then TaskPage.handleScroll(wheel) return end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleScroll(wheel, msx, msy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel, msx, msy) return end

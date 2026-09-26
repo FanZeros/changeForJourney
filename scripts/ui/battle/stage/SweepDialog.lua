@@ -34,13 +34,10 @@ local BTN_H    = 144
 -- ======================== 弹窗布局常量 ========================
 
 local D = {
-    -- 遮罩
-    OVL_A   = 128,   -- 50% 不透明度
-
     -- 弹窗背景框（九宫格）
     BG_CX   = 540,  BG_CY   = 1195,
-    BG_W    = 950,  BG_H    = 1117,
-    BG_IT   = 180,  BG_IR   = 40,  BG_IB = 50, BG_IL = 40,
+    BG_W    = 950,  BG_H    = 1250,
+    BG_IT   = 180,
 
     -- 标题 "主线扫荡"
     TT_X    = 540,  TT_Y    = 705,
@@ -87,16 +84,17 @@ local D = {
     INF_BG_W   = 800, INF_BG_H = 80, INF_BG_R = 16, INF_BG_A = 13,
     INF_LBL_R  = 0x8d, INF_LBL_G = 0x5f, INF_LBL_B = 0x41,
 
-    -- 扫荡券区域（背景仅右侧两角圆角）
-    TKT_BG_CX   = 564,  TKT_BG_CY   = 1522,
-    TKT_BG_W    = 162,  TKT_BG_H    = 47,
-    TKT_BG_RA   = 24,   -- 右侧圆角半径
-    TKT_BG_A    = 26,   -- 10% 不透明度 (0.1*255≈26)
-    TKT_ICON_CX = 484,  TKT_ICON_CY = 1522, TKT_ICON_SZ = 70,
-    TKT_TXT_CX  = 573,  TKT_TXT_CY  = 1522,  TKT_FONT = 40,
+    -- 扫荡次数（沿用购买道具弹窗的数量控件）
+    QTY_CX = 540, QTY_CY = 1440, QTY_FONT = 40,
+    MINUS_CX = 282, PLUS_CX = 798, STEP_CY = 1510, STEP_SIZE = 84,
+    SLIDER_CX = 540, SLIDER_CY = 1510, SLIDER_W = 400, SLIDER_H = 24,
+    KNOB_SIZE = 36,
+
+    -- 扫荡券消耗
+    TKT_ICON_CY = 1600, TKT_ICON_SZ = 70, TKT_FONT = 40,
 
     -- 确认按钮（扫荡）
-    ACT_CX   = 540,  ACT_CY  = 1619,
+    ACT_CX   = 540,  ACT_CY  = 1700,
     ACT_W    = 410,  ACT_H   = 100,
     ACT_FONT = 40,
 }
@@ -120,15 +118,13 @@ local INFO_ROWS = {
 -- ======================== 扫荡消耗常量 ========================
 local SWEEP_COST = 1   -- 每次扫荡消耗扫荡券数
 
--- ======================== 文本宽度缓存（防 scale 动画闪烁） ========================
-local _txtWidthCache = {}
-
 -- ======================== 图片句柄 ========================
 
 local imgBtnSweep   = -1   -- UI_ICON_SD.png（入口按钮图标）
 local imgBg         = -1   -- UI_TY_EJQRK.png（弹窗九宫格背景）
-local imgActBtn     = -1   -- UI_AN_HUANG.png（确认扫荡按钮背景）
 local imgTicketIcon = -1   -- UI_icon_SDQ_X.png（扫荡券图标）
+local imgMinus     = -1   -- UI_AN_JIAN.png
+local imgPlus      = -1   -- UI_AN_JIA.png
 
 -- 奖励图标缓存 [index] = nvgImage
 local rewardIconCache = {}
@@ -138,11 +134,14 @@ local cachedVg = nil
 -- ======================== 状态 ========================
 
 local SWEEP_MAX = 10
+local _sweepRewardCache = nil   ---@type table|nil
+local _sweepRewardStageId = nil
 
 local state = {
     open      = false,
     openTime  = 0,
     count     = 1,
+    sliderDragging = false,
 }
 
 -- ======================== 动画常量 ========================
@@ -222,6 +221,37 @@ local function getAnimScale()
     return t * k
 end
 
+--- 是否有可用的已通关关卡（与扫荡结算的关卡回退规则一致）
+local function canSweepStage()
+    local battleData = PlayerStore.Get("battle")
+    local maxStageId = battleData and (battleData.maxStageId or battleData.currentStageId)
+    if not maxStageId or maxStageId == 0 then return false end
+    local cleared = battleData.clearedStages or {}
+    local stageId = maxStageId
+    if not (cleared[stageId] or cleared[tostring(stageId)]) then
+        stageId = SC.getPrevStageId(stageId) or SC.getLastStageOfPrevDifficulty(stageId)
+    end
+    if stageId and SC.isTerminalTemple(stageId) then
+        stageId = SC.getPrevStageId(stageId) or SC.getTerminalPrevStageId(stageId)
+            or SC.getLastStageOfPrevDifficulty(stageId)
+    end
+    local entry = stageId and SC.getStage(stageId)
+    return entry ~= nil and (entry.monsterLevel or 0) > 0
+end
+
+local function getMaxCount()
+    if not canSweepStage() then return 0 end
+    return math.min(SWEEP_MAX, math.max(0, math.floor(GameState.getSweepTicket() or 0) / SWEEP_COST))
+end
+
+local function setSliderCount(x)
+    local maxCount = getMaxCount()
+    if maxCount < 1 then return end
+    local sliderL = D.SLIDER_CX - D.SLIDER_W * 0.5
+    local frac = math.max(0, math.min(1, (x - sliderL) / D.SLIDER_W))
+    state.count = math.floor(frac * (maxCount - 1) + 0.5) + 1
+end
+
 -- ======================== Public API ========================
 
 --- 初始化（在 BattleScene.init 中调用）
@@ -238,9 +268,10 @@ function SweepDialog.init(vg)
         end
     end
 
-    -- 确认按钮 & 扫荡券图标
-    imgActBtn     = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png",   0)
+    -- 次数按钮 & 扫荡券图标
     imgTicketIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_SDQ_X.png", 0)
+    imgMinus     = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
+    imgPlus      = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
 
     -- 初始化 ImageCache（如未初始化）
     ImageCache.init(vg)
@@ -253,6 +284,10 @@ function SweepDialog.open()
     if state.open then return end
     state.open     = true
     state.openTime = time.elapsedTime
+    state.count    = 1
+    state.sliderDragging = false
+    print("[SweepDialog] open, tickets=" .. tostring(GameState.getSweepTicket() or 0)
+        .. ", maxCount=" .. getMaxCount())
     -- 重新打开时清除预估奖励缓存，确保数据最新
     _sweepRewardCache = nil
 end
@@ -260,6 +295,7 @@ end
 --- 关闭弹窗
 function SweepDialog.close()
     state.open = false
+    state.sliderDragging = false
 end
 
 --- 是否已打开
@@ -282,21 +318,6 @@ function SweepDialog.drawButton(vg)
 end
 
 -- ======================== 绘制弹窗 ========================
-
---- 获取缓存的文本宽度（防止 scale 动画中 hinting 抖动）
-local function getCachedTextW(vg, text, fontSize)
-    local key = text .. "\0" .. tostring(fontSize)
-    if not _txtWidthCache[key] then
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, fontSize)
-        _txtWidthCache[key] = nvgTextBounds(vg, 0, 0, text)
-    end
-    return _txtWidthCache[key]
-end
-
---- 缓存单次扫荡预估奖励（避免每帧重复计算）
-local _sweepRewardCache = nil   ---@type table|nil
-local _sweepRewardStageId = nil
 
 --- 扫荡固定参数（与本地 SweepService 保持一致）
 local SWEEP_REWARD_MINUTES = 10   -- 扫荡 = 领取 N 分钟挂机收益（与本地 SweepService.REWARD_MINUTES 一致）
@@ -393,6 +414,10 @@ end
 function SweepDialog.draw(vg)
     if not state.open then return end
 
+    -- 扫荡次数随实际持有扫荡券变化，不能在扣券后保留超额选择
+    local maxCount = getMaxCount()
+    state.count = math.max(1, math.min(state.count, maxCount))
+
     local scale = getAnimScale()
     if scale <= 0.01 then return end
 
@@ -488,69 +513,71 @@ function SweepDialog.draw(vg)
             0x63, 0xff, 0x84, D.INF_VAL_SW, { strokeColor = { 0, 0, 0 } })
     end
 
-    -- 12) 扫荡券区域
-    -- 背景（仅右侧两角圆角）
-    local tkL = D.TKT_BG_CX - D.TKT_BG_W * 0.5
-    local tkT = D.TKT_BG_CY - D.TKT_BG_H * 0.5
+    -- 次数选择：与购买道具一致的减号、滑条和加号
+    drawTextStroke(vg, D.QTY_CX, D.QTY_CY, "扫荡次数:" .. state.count,
+        D.QTY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 255, 255, 5, { strokeColor = { 0, 0, 0 } })
+
+    local minus = BF.begin(vg, "sweep_dlg_minus", D.MINUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE)
+    drawImageCentered(vg, imgMinus, D.MINUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE,
+        state.count <= 1 and 0.4 or 1.0)
+    BF.finish(vg, minus)
+    local plus = BF.begin(vg, "sweep_dlg_plus", D.PLUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE)
+    drawImageCentered(vg, imgPlus, D.PLUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE,
+        state.count >= maxCount and 0.4 or 1.0)
+    BF.finish(vg, plus)
+
+    local sliderL = D.SLIDER_CX - D.SLIDER_W * 0.5
+    local sliderFrac = maxCount > 1 and (state.count - 1) / (maxCount - 1) or 0
     nvgBeginPath(vg)
-    nvgRoundedRectVarying(vg, tkL, tkT, D.TKT_BG_W, D.TKT_BG_H,
-        0, D.TKT_BG_RA, D.TKT_BG_RA, 0)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, D.TKT_BG_A)); nvgFill(vg)
-    -- 扫荡券图标
-    if imgTicketIcon >= 0 then
-        drawImageCentered(vg, imgTicketIcon, D.TKT_ICON_CX, D.TKT_ICON_CY,
-            D.TKT_ICON_SZ, D.TKT_ICON_SZ, 1.0)
-    end
-    -- 文本 "拥有数/消耗数"（白色+黑描边，以 TKT_TXT_CX 为分割点）
-    -- 拥有数右对齐于分割点，"/消耗数" 左对齐于分割点，整体视觉上居中于 X=TKT_TXT_CX
-    local owned    = GameState.getSweepTicket() or 0
-    local ownedStr = tostring(owned)
-    local costStr  = "/" .. tostring(SWEEP_COST * (state.count or 1))
-    local tr, tg, tb = 0xff, 0x44, 0x44
-    if owned >= SWEEP_COST * (state.count or 1) then tr, tg, tb = 0x63, 0xff, 0x84 end
-    drawTextStroke(vg, D.TKT_TXT_CX, D.TKT_TXT_CY, ownedStr,
-        D.TKT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-        tr, tg, tb, 4, { strokeColor = { 0, 0, 0 } })
-    drawTextStroke(vg, D.TKT_TXT_CX, D.TKT_TXT_CY, costStr,
-        D.TKT_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 4, { strokeColor = { 0, 0, 0 } })
-
-    -- 次数：减号、数字、加号
-    do
-        local btn = 56
-        local cy = D.ACT_CY - 78
-        local minusX = D.ACT_CX - 92
-        local plusX = D.ACT_CX + 92
-        local function drawStep(cx, text)
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - btn * 0.5, cy - btn * 0.5, btn, btn, 12)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 110))
-            nvgFill(vg)
-            drawTextStroke(vg, cx, cy, text, 36,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                255, 255, 255, 3, { strokeColor = { 0, 0, 0 } })
-        end
-        drawStep(minusX, "-")
-        drawStep(plusX, "+")
-        drawTextStroke(vg, D.ACT_CX, cy, tostring(state.count or 1), 36,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 230, 120, 3, { strokeColor = { 0, 0, 0 } })
-    end
-
-    -- 13) 确认按钮（扫荡）
-    if imgActBtn >= 0 then
-        drawImageCentered(vg, imgActBtn, D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H, 1.0)
-    else
-        -- 图片缺失时用纯色兜底
+    nvgRoundedRect(vg, sliderL, D.SLIDER_CY - D.SLIDER_H * 0.5,
+        D.SLIDER_W, D.SLIDER_H, D.SLIDER_H * 0.5)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 51))
+    nvgFill(vg)
+    local fillW = D.SLIDER_W * sliderFrac
+    if fillW > 0 then
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, D.ACT_CX - D.ACT_W * 0.5, D.ACT_CY - D.ACT_H * 0.5,
-            D.ACT_W, D.ACT_H, 16)
-        nvgFillColor(vg, nvgRGBA(220, 180, 60, 220)); nvgFill(vg)
+        nvgRoundedRect(vg, sliderL, D.SLIDER_CY - D.SLIDER_H * 0.5,
+            fillW, D.SLIDER_H, D.SLIDER_H * 0.5)
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 80))
+        nvgFill(vg)
     end
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, D.ACT_FONT)
+    nvgBeginPath(vg)
+    nvgCircle(vg, sliderL + fillW, D.SLIDER_CY, D.KNOB_SIZE * 0.5)
+    nvgFillColor(vg, nvgRGBA(255, 255, 255, maxCount > 0 and 255 or 100))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0x44, 0x2d, 0x19, 255))
+    nvgStrokeWidth(vg, 6)
+    nvgStroke(vg)
+
+    -- 消耗与拥有数：数量与扫荡次数同步
+    local cost = SWEEP_COST * state.count
+    local owned = GameState.getSweepTicket() or 0
+    local costStr = "×" .. tostring(cost) .. "  (拥有 " .. tostring(owned) .. ")"
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, D.TKT_FONT)
+    local costTextW = nvgTextBounds(vg, 0, 0, costStr)
+    local costTotalW = D.TKT_ICON_SZ + 4 + costTextW
+    local costStartX = D.BG_CX - costTotalW * 0.5
+    drawImageCentered(vg, imgTicketIcon, costStartX + D.TKT_ICON_SZ * 0.5,
+        D.TKT_ICON_CY, D.TKT_ICON_SZ, D.TKT_ICON_SZ, 1.0)
+    drawTextStroke(vg, costStartX + D.TKT_ICON_SZ + 4, D.TKT_ICON_CY, costStr,
+        D.TKT_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        255, owned >= cost and 255 or 90,
+        owned >= cost and 255 or 90, 5, { strokeColor = { 0, 0, 0 } })
+
+    -- 确认按钮（无券时禁用）
+    local canSweep = maxCount >= 1
+    local confirm = BF.begin(vg, "sweep_dlg_confirm", D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H)
+    DarkIcon.drawNine(vg, "btn", D.ACT_CX - D.ACT_W * 0.5, D.ACT_CY - D.ACT_H * 0.5,
+        D.ACT_W, D.ACT_H, { accent = canSweep and "gold" or nil })
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, D.ACT_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 178))   -- 纯黑 70%
-    nvgText(vg, D.ACT_CX, D.ACT_CY, "扫荡", nil)
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, canSweep and 255 or 110))
+    nvgText(vg, D.ACT_CX, D.ACT_CY,
+        canSweep and "扫荡" or (canSweepStage() and "扫荡券不足" or "尚无可扫荡关卡"), nil)
+    BF.finish(vg, confirm)
 
     nvgRestore(vg)
 end
@@ -562,36 +589,66 @@ end
 ---@param y number 点击Y
 ---@return boolean consumed 是否消费事件
 function SweepDialog.handleInput(x, y)
-    -- 弹窗已打开：优先检测确认按钮，再判断背景外关闭
-    if state.open then
-        -- 次数加减
-        do
-            local btn = 56
-            local cy = D.ACT_CY - 78
-            local count = state.count or 1
-            if hitTestRect(x, y, D.ACT_CX - 92, cy, btn, btn) then
-                state.count = math.max(1, count - 1)
-                return true
-            end
-            if hitTestRect(x, y, D.ACT_CX + 92, cy, btn, btn) then
-                state.count = math.min(SWEEP_MAX, count + 1)
-                return true
-            end
-        end
-        -- 扫荡确认按钮
-        if hitTestRect(x, y, D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H) then
-            if SweepDialog.onSweep then SweepDialog.onSweep(state.count or 1) end
-            -- 不关闭面板，让玩家可以连续扫荡；奖励由 RewardPanel 展示后关闭
-            return true
-        end
-        -- 点击背景外关闭
-        local inBg = hitTestRect(x, y, D.BG_CX, D.BG_CY, D.BG_W, D.BG_H)
-        if not inBg then
-            SweepDialog.close()
-        end
+    if not state.open then return false end
+
+    local maxCount = getMaxCount()
+    state.count = math.max(1, math.min(state.count, maxCount))
+    if hitTestRect(x, y, D.MINUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE) then
+        BF.trigger("sweep_dlg_minus")
+        state.count = math.max(1, state.count - 1)
+        print("[SweepDialog] count=" .. state.count .. "/" .. maxCount)
         return true
     end
-    return false
+    if hitTestRect(x, y, D.PLUS_CX, D.STEP_CY, D.STEP_SIZE, D.STEP_SIZE) then
+        BF.trigger("sweep_dlg_plus")
+        if maxCount > 0 then state.count = math.min(maxCount, state.count + 1) end
+        print("[SweepDialog] count=" .. state.count .. "/" .. maxCount)
+        return true
+    end
+    if maxCount > 1 and hitTestRect(x, y, D.SLIDER_CX, D.SLIDER_CY,
+        D.SLIDER_W + D.KNOB_SIZE, math.max(D.SLIDER_H, D.KNOB_SIZE) + 20) then
+        setSliderCount(x)
+        print("[SweepDialog] slider count=" .. state.count .. "/" .. maxCount)
+        return true
+    end
+    if hitTestRect(x, y, D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H) then
+        if maxCount < 1 then
+            print("[SweepDialog] sweep blocked: " .. (canSweepStage() and "扫荡券不足" or "当前关卡无法扫荡"))
+            return true
+        end
+        BF.trigger("sweep_dlg_confirm")
+        print("[SweepDialog] submit count=" .. state.count .. " tickets=" .. GameState.getSweepTicket())
+        if SweepDialog.onSweep then SweepDialog.onSweep(state.count) end
+        return true
+    end
+    if not hitTestRect(x, y, D.BG_CX, D.BG_CY, D.BG_W, D.BG_H) then
+        SweepDialog.close()
+    end
+    return true
+end
+
+--- 滑条拖拽使用与三行弹窗相同的窗口坐标逆映射。
+function SweepDialog.handleDragBegin(x, y)
+    if not state.open then return false end
+    if getMaxCount() > 1 and hitTestRect(x, y, D.SLIDER_CX, D.SLIDER_CY,
+        D.SLIDER_W + D.KNOB_SIZE, math.max(D.SLIDER_H, D.KNOB_SIZE) + 20) then
+        state.sliderDragging = true
+        setSliderCount(x)
+    end
+    return true
+end
+
+function SweepDialog.handleDragMove(x, _y)
+    if not state.sliderDragging then return false end
+    setSliderCount(x)
+    return true
+end
+
+function SweepDialog.handleDragEnd()
+    if not state.sliderDragging then return false end
+    state.sliderDragging = false
+    print("[SweepDialog] slider final count=" .. state.count)
+    return true
 end
 
 --- 确认扫荡回调（由外部绑定，如 BattleScene.lua）

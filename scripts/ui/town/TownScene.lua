@@ -220,13 +220,13 @@ local function drawImageSilhouette(vg, img, cx, cy, w, h, darkness)
     nvgRestore(vg)
 end
 
---- [暗黑替换] 建筑压暗绘制：nvgImagePatternTinted 乘法叠色（暖褐 ×≈0.57）
+--- 城镇已解锁地点统一轻度暖色叠色，保留立绘细节和识别度
 local function drawImageDarkTint(vg, img, cx, cy, w, h, alpha)
     if img < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
     local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img,
-        nvgRGBA(150, 138, 122, math.floor(255 * alpha)))
+        nvgRGBA(222, 211, 196, math.floor(255 * alpha)))
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)

@@ -489,6 +489,16 @@ end
 function BattleTriPage.handleInput(wx, wy)
     if not isOpen_ then return false end
 
+    -- 全窗扫荡弹窗优先于装备背包覆盖层处理
+    if SweepDialog.isOpen() then
+        local logicalW, logicalH = region.w, region.h
+        local fit = math.min(logicalW / 1080, logicalH / 2400) * 2
+        local dx = (wx - logicalW * 0.5) / fit + 540
+        local dy = (wy - logicalH * 0.5) / fit + 1195
+        SweepDialog.handleInput(dx, dy)
+        return true
+    end
+
     -- 装备背包覆盖战斗区：窗口坐标映射到背包设计空间
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
         -- 装备详情弹窗按竖版设计空间铺在覆盖矩形内，需单独换算
@@ -501,15 +511,17 @@ function BattleTriPage.handleInput(wx, wy)
         return EquipmentBag.handleInput(dx, dy)
     end
 
-    -- [常驻] 点击行1 内任意处可关闭归属本行的获得弹窗
-    if RewardPopup.currentRowTag() then
-        RewardPopup.close()
-        return true
-    end
-
     local logicalH = region.h
     local logicalW = region.w
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
+
+    -- [常驻] 行1 的获得弹窗：交给 RewardPopup 统一处理，保留同帧保护
+    -- （逐个获得未结束时点击只跳过动画）。此前直接 close() 会让通关后
+    -- 随手一点就把刚弹出的奖励关掉，看起来像「结算页不显示」。
+    if RewardPopup.currentRowTag() then
+        RewardPopup.handleInputRegion(wx, wy, ix1, iy1, iw1, ih1)
+        return true
+    end
     local bs = require("ui.battle.scene.BattleScene")
 
     -- 对话框打开: 逆映射到设计空间（与 2 倍渲染缩放一致）
@@ -583,6 +595,10 @@ end
 ---@return boolean
 function BattleTriPage.handleDragBegin(wx, wy)
     if not isOpen_ then return false end
+    if SweepDialog.isOpen() then
+        local dx, dy = dialogToDesign(wx, wy)
+        return SweepDialog.handleDragBegin(dx, dy)
+    end
     if StageSelectDialog.isOpen() then
         local dx, dy = dialogToDesign(wx, wy)
         return StageSelectDialog.handleDragBegin(dx, dy)
@@ -600,6 +616,10 @@ end
 ---@return boolean
 function BattleTriPage.handleDragMove(wx, wy)
     if not isOpen_ then return false end
+    if SweepDialog.isOpen() then
+        local dx, dy = dialogToDesign(wx, wy)
+        return SweepDialog.handleDragMove(dx, dy)
+    end
     if StageSelectDialog.isOpen() then
         local dx, dy = dialogToDesign(wx, wy)
         return StageSelectDialog.handleDragMove(dx, dy)
@@ -617,6 +637,7 @@ end
 ---@return boolean
 function BattleTriPage.handleDragEnd(wx, wy)
     if not isOpen_ then return false end
+    if SweepDialog.isOpen() then return SweepDialog.handleDragEnd() end
     if StageSelectDialog.isOpen() then return StageSelectDialog.handleDragEnd() end
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
         local dx, dy = EquipmentBag.overlayToDesign(wx, wy)

@@ -95,18 +95,32 @@ local function sortRows(rows)
     return out
 end
 
-local function listForTab()
+local function listForKey(tabKey)
     local out = {}
     for _, task in ipairs(TaskConfig.ACHIEVEMENT) do
-        if state.tab == "level" or state.tab == "hero" then
-            if task.group == state.tab then
+        if tabKey == "level" or tabKey == "hero" then
+            if task.group == tabKey then
                 out[#out + 1] = task
             end
         elseif task.difficulty == "normal" or task.difficulty == "hard" or task.difficulty == "nightmare" then
             out[#out + 1] = task
         end
     end
-    return sortRows(out)
+    return out
+end
+
+local function claimableForKey(tabKey)
+    local count = 0
+    for _, task in ipairs(listForKey(tabKey)) do
+        if statusOf(task) == TaskConfig.STATUS.CLAIMABLE then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function listForTab()
+    return sortRows(listForKey(state.tab))
 end
 
 local function tabScope()
@@ -114,13 +128,7 @@ local function tabScope()
 end
 
 local function claimableInTab()
-    local count = 0
-    for _, task in ipairs(listForTab()) do
-        if statusOf(task) == TaskConfig.STATUS.CLAIMABLE then
-            count = count + 1
-        end
-    end
-    return count
+    return claimableForKey(state.tab)
 end
 
 local function refreshScroll(count)
@@ -276,6 +284,14 @@ function TaskPage.draw(vg)
         nvgFillColor(vg, on and nvgRGBA(176, 132, 48, 230) or nvgRGBA(42, 36, 28, 220))
         nvgFill(vg)
         text(vg, tab.cx, 340, tab.name, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 245, 232, 200, 2)
+        local badgeCount = claimableForKey(tab.key)
+        if badgeCount > 0 then
+            local badgeX = tab.cx + half - 8
+            local badgeY = 312
+            DarkIcon.draw(vg, "reddot", badgeX, badgeY, 42, 1)
+            text(vg, badgeX, badgeY, badgeCount > 99 and "99+" or tostring(badgeCount), 24,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 244, 220, 2)
+        end
     end
     local rows = listForTab()
     refreshScroll(#rows)

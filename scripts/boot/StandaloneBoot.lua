@@ -148,7 +148,7 @@ function M.run(rt)
 
     -- 5.2 击杀奖励回调：经验平分给每个上场远征队员，金币/远征等级经验照常
     -- [三栏并行] 提取为局部函数，BattleScene（栏1）与 BattleTriPage（栏2/3）共用
-    -- 三行战斗已改成关卡结束一次性结算，这里不再按时间把经验拆开刷。
+    -- 三行战斗在关卡结束时一次性把本关击杀交过来，经验合并成一次刷新。
     local pendingHeroExp = {}
     local function flushPendingHeroExp()
         local any = false
@@ -162,9 +162,6 @@ function M.run(rt)
         if any and BattleScene.refreshAllyStats then
             BattleScene.refreshAllyStats()
         end
-    end
-    require("boot.StandaloneRT").flushPendingHeroExp = function(_)
-        flushPendingHeroExp()
     end
 
     local handleKillRewards = function(data)
@@ -192,6 +189,7 @@ function M.run(rt)
                 for _, hid in ipairs(heroIds) do
                     pendingHeroExp[hid] = (pendingHeroExp[hid] or 0) + perHeroExp
                 end
+                flushPendingHeroExp()
             end
         end
     end

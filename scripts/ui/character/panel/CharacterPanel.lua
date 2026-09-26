@@ -275,22 +275,30 @@ local function isHeroDeployed(heroId)
     return false
 end
 
---- 获取英雄在出战槽位中的索引（用于排序），未出战返回 MAX_SLOTS+1
-local function getDeployedSlotIndex(heroId)
-    for i = 1, MAX_SLOTS do
-        local slot = teamSlots[i]
-        if slot.state == "occupied" and slot.heroId == heroId then
-            return i
+--- 英雄是否在任意队伍出战（用于名册排序）。只看全部队伍，不跟当前选中小队走。
+---@param heroId number
+---@return boolean
+local function isDeployedInAnyTeam(heroId)
+    for t = 1, TEAM_COUNT do
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, #slots do
+                local slot = slots[i]
+                if slot.state == "occupied" and slot.heroId == heroId then
+                    return true
+                end
+            end
         end
     end
-    return MAX_SLOTS + 1
+    return false
 end
 
 -- 前向声明（rebuildRoster 需要调用 recalcScrollMax）
 local recalcScrollMax
 
 --- 重建 heroRoster 列表（全部英雄，按排序规则排列）
---- 排序：拥有且出战 > 拥有未出战（品质高→低，等级高→低）> 未拥有（品质高→低）
+--- 排序：拥有且任一队出战 > 拥有未出战（品质高→低，等级高→低）> 未拥有（品质高→低）
+--- 出战判定覆盖全部队伍，切换当前小队不改变下方名册顺序。
 local function rebuildRoster()
     for i = #heroRoster, 1, -1 do heroRoster[i] = nil end
     local allIds = HC.getAllIds()
@@ -324,9 +332,9 @@ local function rebuildRoster()
             return a.owned
         end
         if a.owned then
-            -- 已出战角色固定排在未出战角色前，但不按编队槽位重排下方名册。
-            local aDeployed = getDeployedSlotIndex(a.heroId) <= MAX_SLOTS
-            local bDeployed = getDeployedSlotIndex(b.heroId) <= MAX_SLOTS
+            -- 任一队出战的角色固定排在未出战角色前；不按当前小队、也不按槽位重排。
+            local aDeployed = isDeployedInAnyTeam(a.heroId)
+            local bDeployed = isDeployedInAnyTeam(b.heroId)
             if aDeployed ~= bDeployed then
                 return aDeployed
             end

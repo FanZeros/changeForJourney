@@ -229,8 +229,6 @@ function BattleTriDriver.new(teamIdx)
     --- 死亡只记账。经验、金币和掉落等本关结束再一次性结算。
     function drv:reportKill(unit)
         self.kills = self.kills + 1
-        local plans = require("ui.battle.combat.BattleStutterPlans")
-        if not plans.settleKills then return end
         local pending = self.pendingKills
         pending[#pending + 1] = {
             stageId = self.stageId,
@@ -408,8 +406,6 @@ function BattleTriDriver.new(teamIdx)
         end
 
         -- 状态子系统 tick（mount 作用域内）
-        self._heavyFrame = (self._heavyFrame or 0) + 1
-        local heavy = require("ui.battle.combat.BattleStutterPlans").heavyThisFrame(self._heavyFrame)
         RCH.update(allies, 0)
         BattleCombat.updateHpBuffers(allies, dt)
         BattleCombat.updateHpBuffers(enemies, dt)
@@ -434,7 +430,7 @@ function BattleTriDriver.new(teamIdx)
                 end
             end,
         })
-        if heavy then TAL.update(dt, allies, enemies, {
+        TAL.update(dt, allies, enemies, {
             healUnit = function(unit, amount)
                 if unit.attrs and unit.hp > 0 then
                     local actual = unit.attrs:heal(amount)
@@ -454,7 +450,7 @@ function BattleTriDriver.new(teamIdx)
             performAttack = function(attacker, targetList, isAlly)
                 BattleCombat.performAttack(attacker, targetList, isAlly)
             end,
-        }) end
+        })
 
         -- 能量护盾恢复
         for _, u in ipairs(allies) do
@@ -465,17 +461,14 @@ function BattleTriDriver.new(teamIdx)
         end
 
         -- 投射物 / 连击
-        if require("ui.battle.combat.BattleStutterPlans").showProj then ProjectileSystem.update(dt) end
+        ProjectileSystem.update(dt)
         BattleCombat.updateComboQueue(dt)
 
         -- 纯视觉层
-        local plans = require("ui.battle.combat.BattleStutterPlans")
-        if plans.showAnim then
-            BattleEffects.update(dt)
-            BattleCombat.updateCardAnims(dt)
-            BattleCombat.updateHitFlashes(dt)
-        end
-        if plans.showFloat then BattleCombat.updateFloatingTexts(dt) end
+        BattleEffects.update(dt)
+        BattleCombat.updateCardAnims(dt)
+        BattleCombat.updateFloatingTexts(dt)
+        BattleCombat.updateHitFlashes(dt)
     end
 
     --- 便捷: mount + tick

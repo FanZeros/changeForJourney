@@ -346,7 +346,6 @@ BattleCombat.syncUnitHp = syncUnitHp
 ---@param isCrit boolean
 ---@param fontSize number|nil
 local function addFloatingText(text, cx, cy, color, isCrit, fontSize, deferred, kind)
-    if not require("ui.battle.combat.BattleStutterPlans").showFloat then return end
     BattleCombatFx.addFloatingText(BCS, text, cx, cy, color, isCrit, fontSize, deferred, kind)
 end
 BattleCombat.addFloatingText = addFloatingText
@@ -751,8 +750,7 @@ function BattleCombat.advanceAttackProgress(unit, dt, interval, hasTarget, onAtt
     end
     local hits = 0
     local pendingHits = math.floor(unit.atkProgress)
-    local planCap = require("ui.battle.combat.BattleStutterPlans").maxHits()
-    local maxHits = math.min(planCap, math.max(1, pendingHits))
+    local maxHits = math.min(BattleCombat.MAX_ATTACKS_PER_FRAME, math.max(BattleCombat.MIN_ATTACKS_PER_FRAME, pendingHits))
     while unit.atkProgress >= 1.0 and hits < maxHits do
         unit.atkProgress = unit.atkProgress - 1.0
         onAttack()

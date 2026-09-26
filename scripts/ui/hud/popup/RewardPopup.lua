@@ -50,6 +50,7 @@ local ImageCache        = require("ui.widget.ImageCache")
 local ArtifactAssetUtil = require("config.ArtifactAssetUtil")
 local ResourceDefs      = require("config.ResourceDefs")
 local GameSFX           = require("systems.GameSFX")
+local RewardCascade     = require("ui.widget.RewardCascade")
 
 local RewardPopup = {}
 
@@ -135,9 +136,8 @@ local state = {
     -- 动画状态
     animPhase  = "none",  -- "none"|"opening"|"open"|"closing"
     animStart  = 0,       -- 动画开始时刻（time.elapsedTime）
-    -- 首通逐个获得
+    -- 首通逐个获得（时间轴见模块级 cascade）
     cascade     = false,
-    revealStart = 0,
     sfxPlayed   = 0,
     -- 物品点击回调
     onItemClick = nil,    -- function(item, index) 点击某个物品时触发
@@ -152,66 +152,43 @@ local ANIM_OPEN_DURATION  = 0.35   -- 打开动画时长（秒）
 local ANIM_CLOSE_DURATION = 0.25   -- 关闭动画时长
 local CLOSE_GUARD_DURATION = 0.15  -- 关闭后事件吞噬保护期（防止点击穿透到下层界面）
 
--- 首通奖励：前 8 个更快弹出，第 9 个起间隔固定 0.1s
-local CASCADE_LEAD          = 0.1
-local CASCADE_INTERVAL      = 0.12
-local CASCADE_INTERVAL_TAIL = 0.1
-local CASCADE_FAST_AFTER    = 8
-local CASCADE_POP_DUR       = 0.22
+-- 首通奖励逐件弹出：时间轴与动画原语统一走 ui.widget.RewardCascade
+local CASCADE_LEAD          = RewardCascade.LEAD
+local CASCADE_INTERVAL      = RewardCascade.INTERVAL
+local CASCADE_INTERVAL_TAIL = RewardCascade.INTERVAL_TAIL
+local CASCADE_FAST_AFTER    = RewardCascade.FAST_AFTER
+local CASCADE_POP_DUR       = RewardCascade.POP_DUR
+
+-- 本弹窗的时间轴（件数在 show() 里定）
+---@type RewardCascadeTimeline|nil
+local cascade = nil
 
 --- 第 idx 件与上一件的间隔。idx 从 1 开始，第 1 件没有间隔。
 local function cascadeGap(idx)
-    if idx <= 1 then return 0 end
-    if idx > CASCADE_FAST_AFTER then
-        return CASCADE_INTERVAL_TAIL
-    end
-    return CASCADE_INTERVAL
+    if not cascade then return 0 end
+    return cascade:gap(idx)
 end
 
 --- 第 idx 件的出场时刻（第 1 件为 0）
 local function cascadeStartAt(idx)
-    if idx <= 1 then return 0 end
-    local t = 0
-    for i = 2, idx do
-        t = t + cascadeGap(i)
-    end
-    return t
+    if not cascade then return 0 end
+    return cascade:startAt(idx)
 end
 
 --- 当前已经开始出场的件数
 local function cascadeShownCount(elapsed)
-    local n = #state.items
-    if elapsed < 0 or n <= 0 then return 0 end
-    local shown = 0
-    for i = 1, n do
-        if elapsed + 0.0001 >= cascadeStartAt(i) then
-            shown = i
-        else
-            break
-        end
-    end
-    return shown
+    if not cascade then return 0 end
+    return cascade:shownCount(elapsed)
 end
 
 -- 关闭保护时间戳（关闭完成时记录，保护期内 isOpen() 仍返回 true 以吞噬事件）
 local closedAt_ = 0
 
---- ease-out back 缓动（带回弹）
-local function easeOutBack(t)
-    local s = 1.70158
-    t = t - 1
-    return t * t * ((s + 1) * t + s) + 1
-end
+local easeOutBack = RewardCascade.easeOutBack
 
 --- ease-in cubic 缓动（加速离开）
 local function easeInCubic(t)
     return t * t * t
-end
-
---- ease-out cubic
-local function easeOutCubic(t)
-    local u = 1 - t
-    return 1 - u * u * u
 end
 
 local function wantsCascade(title, opts)
@@ -221,23 +198,20 @@ local function wantsCascade(title, opts)
 end
 
 local function cascadeElapsed()
-    return time.elapsedTime - state.revealStart
+    if not cascade then return 0 end
+    return cascade:elapsed()
 end
 
 local function cascadeFinished()
     if not state.cascade then return true end
-    local n = #state.items
-    if n <= 0 then return true end
-    return cascadeElapsed() >= cascadeStartAt(n) + CASCADE_POP_DUR
+    if not cascade then return true end
+    return cascade:finished()
 end
 
 --- nil = 尚未出场；0..1 = 弹出中；>1 = 已落地
 local function cascadeT(idx)
-    if not state.cascade then return 1 end
-    local elapsed = cascadeElapsed()
-    local startAt = cascadeStartAt(idx)
-    if elapsed < startAt then return nil end
-    return (elapsed - startAt) / CASCADE_POP_DUR
+    if not state.cascade or not cascade then return 1 end
+    return cascade:t(idx)
 end
 
 local function itemAccent(item)
@@ -268,7 +242,7 @@ end
 
 local function skipCascade()
     if not state.cascade or cascadeFinished() then return false end
-    state.revealStart = time.elapsedTime - (cascadeStartAt(#state.items) + CASCADE_POP_DUR)
+    if cascade then cascade:skipToEnd() end
     state.sfxPlayed = #state.items
     state.followScroll = true
     state.scrollY = state.scrollMax
@@ -281,125 +255,17 @@ end
 
 --- 单件获得：光柱、冲击环、射线、火花（绘制在图标下层）
 local function drawCascadeBurst(vg, cx, cy, t, r, g, b)
-    local glowR = ICON_SIZE * (0.28 + t * 0.95)
-    local glowA = math.floor(150 * (1 - t) + 28)
-    local glow = nvgRadialGradient(vg, cx, cy, 6, glowR,
-        nvgRGBA(r, g, b, glowA), nvgRGBA(r, g, b, 0))
-    nvgBeginPath(vg)
-    nvgCircle(vg, cx, cy, glowR)
-    nvgFillPaint(vg, glow)
-    nvgFill(vg)
-
-    if t < 0.5 then
-        local bt = t / 0.5
-        local beamA = math.floor(230 * (1 - bt))
-        local beamH = 70 + bt * 150
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, cx - 5 - bt * 8, cy - beamH)
-        nvgLineTo(vg, cx + 5 + bt * 8, cy - beamH)
-        nvgLineTo(vg, cx + 26, cy + 6)
-        nvgLineTo(vg, cx - 26, cy + 6)
-        nvgClosePath(vg)
-        local beam = nvgLinearGradient(vg, cx, cy - beamH, cx, cy,
-            nvgRGBA(255, 248, 210, 0), nvgRGBA(255, 228, 120, beamA))
-        nvgFillPaint(vg, beam)
-        nvgFill(vg)
-    end
-
-    for i = 1, 2 do
-        local rt = (t - (i - 1) * 0.1) / 0.72
-        if rt > 0 and rt < 1 then
-            local radius = 16 + rt * (ICON_SIZE * 0.62 + i * 22)
-            local a = math.floor(220 * (1 - rt) * (1 - rt))
-            nvgBeginPath(vg)
-            nvgCircle(vg, cx, cy, radius)
-            nvgStrokeWidth(vg, 2.2 + (1 - rt) * 5)
-            nvgStrokeColor(vg, nvgRGBA(255, 236, 168, a))
-            nvgStroke(vg)
-            nvgBeginPath(vg)
-            nvgCircle(vg, cx, cy, radius * 0.78)
-            nvgStrokeWidth(vg, 1.6)
-            nvgStrokeColor(vg, nvgRGBA(r, g, b, math.floor(a * 0.75)))
-            nvgStroke(vg)
-        end
-    end
-
-    if t < 0.72 then
-        local rt = t / 0.72
-        nvgSave(vg)
-        nvgTranslate(vg, cx, cy)
-        nvgRotate(vg, rt * 0.55)
-        for i = 1, 10 do
-            local ang = (i - 1) / 10 * math.pi * 2
-            local inner = 18
-            local len = 30 + rt * (58 + (i % 3) * 14)
-            local a = math.floor(170 * (1 - rt))
-            nvgBeginPath(vg)
-            nvgMoveTo(vg, math.cos(ang) * inner, math.sin(ang) * inner)
-            nvgLineTo(vg, math.cos(ang) * len, math.sin(ang) * len)
-            nvgStrokeWidth(vg, 1.4 + (1 - rt) * 2.4)
-            nvgStrokeColor(vg, nvgRGBA(255, 232, 150, a))
-            nvgStroke(vg)
-        end
-        nvgRestore(vg)
-    end
-
-    for i = 1, 14 do
-        local ang = (i - 1) / 14 * math.pi * 2 + 0.35
-        local dist = 8 + t * (62 + (i % 4) * 16)
-        local sx = cx + math.cos(ang) * dist
-        local sy = cy + math.sin(ang) * dist * 0.7 - (1 - t) * 28
-        local sa = math.floor(255 * (1 - t) * (1 - t * 0.25))
-        local tail = 16 * (1 - t)
-        nvgBeginPath(vg)
-        nvgMoveTo(vg, sx, sy)
-        nvgLineTo(vg, sx - math.cos(ang) * tail, sy - math.sin(ang) * tail * 0.7)
-        nvgStrokeWidth(vg, 1.8)
-        nvgStrokeColor(vg, nvgRGBA(255, 248, 220, sa))
-        nvgStroke(vg)
-        nvgBeginPath(vg)
-        nvgCircle(vg, sx, sy, 1.6 + (1 - t) * 2.4)
-        nvgFillColor(vg, nvgRGBA(255, 255, 240, sa))
-        nvgFill(vg)
-    end
-
-    if t < 0.26 then
-        local fa = math.floor(210 * (1 - t / 0.26))
-        local fr = 18 + (t / 0.26) * 40
-        local flash = nvgRadialGradient(vg, cx, cy, 2, fr,
-            nvgRGBA(255, 255, 245, fa), nvgRGBA(255, 220, 120, 0))
-        nvgBeginPath(vg)
-        nvgCircle(vg, cx, cy, fr)
-        nvgFillPaint(vg, flash)
-        nvgFill(vg)
-    end
+    RewardCascade.burst(vg, cx, cy, t, ICON_SIZE, r, g, b)
 end
+
 
 --- 图标上层扫光
 local function drawCascadeGlint(vg, cx, cy, t)
-    if t < 0.18 or t > 0.82 then return end
-    local gt = (t - 0.18) / 0.64
-    local glide = -ICON_SIZE * 0.55 + gt * ICON_SIZE * 1.2
-    local a = math.floor(150 * math.sin(gt * math.pi))
-    nvgSave(vg)
-    nvgTranslate(vg, cx, cy)
-    nvgRotate(vg, -0.55)
-    nvgBeginPath(vg)
-    nvgRect(vg, glide - 10, -ICON_SIZE * 0.55, 18, ICON_SIZE * 1.1)
-    nvgFillColor(vg, nvgRGBA(255, 255, 245, a))
-    nvgFill(vg)
-    nvgRestore(vg)
+    RewardCascade.glint(vg, cx, cy, t, ICON_SIZE)
 end
 
 local function drawCascadeAnticipate(vg, cx, cy, idx)
-    local lead = cascadeElapsed() - cascadeStartAt(idx)
-    if lead <= -0.08 then return end
-    local a = math.floor(110 * ((lead + 0.08) / 0.08))
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, cx - ICON_SIZE * 0.42, cy - ICON_SIZE * 0.42, ICON_SIZE * 0.84, ICON_SIZE * 0.84, 14)
-    nvgStrokeWidth(vg, 2)
-    nvgStrokeColor(vg, nvgRGBA(247, 220, 120, a))
-    nvgStroke(vg)
+    RewardCascade.anticipate(vg, cx, cy, cascadeElapsed() - cascadeStartAt(idx), ICON_SIZE)
 end
 
 -- ======================== 图片资源 ========================
@@ -619,7 +485,14 @@ function RewardPopup.show(title, rewards, opts)
     state.animStart = time.elapsedTime
     closedAt_ = 0  -- 重置关闭保护（重新打开时清除残留）
     state.cascade = wantsCascade(state.title, opts)
-    state.revealStart = time.elapsedTime + CASCADE_LEAD
+    cascade = RewardCascade.new(#state.items, {
+        interval     = CASCADE_INTERVAL,
+        intervalTail = CASCADE_INTERVAL_TAIL,
+        fastAfter    = CASCADE_FAST_AFTER,
+        popDur       = CASCADE_POP_DUR,
+        lead         = CASCADE_LEAD,
+    })
+    cascade:start(time.elapsedTime)
     state.sfxPlayed = 0
     print("[RewardPopup] show: " .. title .. ", items=" .. #state.items
         .. ", rows=" .. tostring(math.ceil(#state.items / COLS))
@@ -1050,17 +923,7 @@ function RewardPopup.drawContent(vg)
             end
             nvgSave(vg)
             if popping then
-                local appear = math.min(1, popT / 0.16)
-                local pop = math.min(1, popT / 0.68)
-                local iconScale = 0.16 + 0.84 * easeOutBack(pop)
-                if iconScale < 0.04 then iconScale = 0.04 end
-                local wobble = math.sin(popT * math.pi * 2.4) * (1 - math.min(1, popT)) * 0.2
-                local lift = (1 - easeOutCubic(math.min(1, popT / 0.5))) * -56
-                nvgGlobalAlpha(vg, animAlpha * appear)
-                nvgTranslate(vg, cx, cy + lift)
-                nvgRotate(vg, wobble)
-                nvgScale(vg, iconScale, iconScale)
-                nvgTranslate(vg, -cx, -cy)
+                RewardCascade.applyPop(vg, cx, cy, popT, animAlpha)
             end
 
             if item.type == "equip" then

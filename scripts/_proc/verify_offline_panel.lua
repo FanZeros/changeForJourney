@@ -32,9 +32,21 @@ local function drawBackdrop(n)
     nvgText(n, W * 0.5, 40, "背景（不应变暗）", nil)
 end
 
+--- 用固定步长推进动画到指定秒数，便于截取确定的动画阶段
+local simTime = 0
+local function advanceTo(target)
+    while simTime < target do
+        panel.update(1 / 60)
+        simTime = simTime + 1 / 60
+    end
+end
+
+--- 由外部 -validate-test 或环境变量指定的目标动画秒数（默认 6s，已播完全部动画）
+local TARGET = tonumber(os.getenv("VR_AT")) or 6.0
+
 function onRender()
     frames = frames + 1
-    panel.update(1 / 60)
+    advanceTo(TARGET)
 
     nvgBeginFrame(nvg, W, H, 1.0)
     drawBackdrop(nvg)
@@ -49,7 +61,7 @@ function onRender()
     nvgEndFrame(nvg)
 
     if frames == 1 or frames % 30 == 0 then
-        print("[verify_offline] frame " .. frames)
+        print(string.format("[verify_offline] frame=%d elapsed=%.3f", frames, time.elapsedTime))
     end
 end
 

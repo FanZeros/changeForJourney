@@ -816,6 +816,7 @@ function DungeonScene.draw(vg)
         ProjectileSystem.drawStarGates(vg, state.enemies, ENEMY_CARD_CY, getCardCX, false)
         BattleEffects.draw(vg)
         ProjectileSystem.draw(vg)
+        SpineCardEffect.draw(vg, "dungeon")
     end
 
     -- 11. 浮动伤害文字
@@ -1108,7 +1109,7 @@ function DungeonScene.update(dt)
                     if ally == unit then idx = ai; break end
                 end
                 local cx = getCardCX(state.allies, idx)
-                SpineCardEffect.playRevive(cx, ALLY_CARD_CY)
+                SpineCardEffect.playRevive(cx, ALLY_CARD_CY, nil, "dungeon")
             end
         end
     end

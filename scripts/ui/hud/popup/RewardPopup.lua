@@ -894,7 +894,7 @@ function RewardPopup.drawContent(vg)
 
         for col = 1, COLS do
             local popping = false
-            local popT = 1
+            local popT = 1.0
             local drawThis = true
             local idx = (row - 1) * COLS + col
             local item = items[idx]

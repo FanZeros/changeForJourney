@@ -76,10 +76,12 @@ function BattleTriDriver.new(teamIdx)
     ---@class table
     local drv = {
         teamIdx  = teamIdx,
-        stageId  = 1,
+        stageId  = SC.NORMAL_FIRST_STAGE,
         allies   = {},
         enemies  = {},
+        teamSignature = nil,
         kills    = 0,
+        stageTotal = 0,
         active   = false,
         -- [多实例] 各子系统状态
         combatState = BattleCombat.newState("tri" .. teamIdx),
@@ -146,15 +148,20 @@ function BattleTriDriver.new(teamIdx)
 
     --- 开始/重开一场战斗
     function drv:start(stageId)
-        stageId = tonumber(stageId) or self.stageId or 1
+        stageId = tonumber(stageId) or self.stageId or SC.NORMAL_FIRST_STAGE
+        if not SC.getStage(stageId) then
+            stageId = SC.NORMAL_FIRST_STAGE
+        end
         self.stageId = stageId
         self.kills = 0
         self.mount()
         -- 己方: 从编队页构建新单位（应用装备/神器/遗物）
         local CharacterPanel = require("ui.character.panel.CharacterPanel")
+        self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
         self.allies = CharacterPanel.getDeployedTeam(self.teamIdx) or {}
         -- 敌方
         self.enemies = buildWave(stageId)
+        self.stageTotal = #self.enemies
         -- 状态复位（mount 作用域内）
         BattleCombat.reset()
         BattleEffects.reset()
@@ -198,11 +205,21 @@ function BattleTriDriver.new(teamIdx)
         end
     end
 
+    function drv:reportDefeatedEnemies()
+        for _, u in ipairs(self.enemies) do
+            if u.hp <= 0 and not u._triKillReported then
+                u._triKillReported = true
+                self:reportKill(u)
+            end
+        end
+    end
+
     --- 通关推进
     function drv:advanceStage()
         local nextId = SC.getNextStageId(self.stageId)
-        if not nextId or nextId <= self.stageId then
-            nextId = self.stageId + 1
+        if not nextId then
+            self:start(self.stageId)
+            return
         end
         print(string.format("[TriDriver] 队%d 通关 %s → %s",
             self.teamIdx, tostring(self.stageId), tostring(nextId)))
@@ -240,8 +257,9 @@ function BattleTriDriver.new(teamIdx)
             if u.hp > 0 then hasAliveAlly = true break end
         end
 
-        -- 通关: 敌方全灭
+        -- 通关: 敌方全灭（先结算最后一击再切换到下一关）
         if not hasAliveEnemy then
+            self:reportDefeatedEnemies()
             self:advanceStage()
             return
         end
@@ -330,14 +348,8 @@ function BattleTriDriver.new(teamIdx)
         ProjectileSystem.update(dt)
         BattleCombat.updateComboQueue(dt)
 
-        -- 击杀检测（敌方死亡 → 奖励 + 清理）
-        for i = #enemies, 1, -1 do
-            local u = enemies[i]
-            if u.hp <= 0 and not u._triKillReported then
-                u._triKillReported = true
-                self:reportKill(u)
-            end
-        end
+        -- 击杀检测（敌方死亡 → 奖励；每只怪只结算一次）
+        self:reportDefeatedEnemies()
 
         -- 纯视觉层
         BattleEffects.update(dt)
@@ -348,6 +360,12 @@ function BattleTriDriver.new(teamIdx)
 
     --- 便捷: mount + tick
     function drv:update(dt)
+        local CharacterPanel = require("ui.character.panel.CharacterPanel")
+        local signature = CharacterPanel.getTeamSignature(self.teamIdx)
+        if signature ~= self.teamSignature then
+            print(string.format("[TriDriver] 队%d 编队变化，刷新当前关卡 %s", self.teamIdx, tostring(self.stageId)))
+            self:start(self.stageId)
+        end
         self.mount()
         self:tick(dt)
     end

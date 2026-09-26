@@ -45,7 +45,7 @@ local detState = {
     heroId    = nil,    -- 当前角色 ID
     openTime  = 0,
     closeTime = 0,
-    compactCorner = false, -- 配装详情贴鼠标：右栏向左、左栏向右展开，无阴影
+    compactCorner = false, -- 小窗以装备格子的上角定位：右栏向左、左栏向右展开
     owner = nil,           -- backpack | character | bag | smith，只在打开它的那一侧画
     descScrollY = 0,
     descScrollMax = 0,
@@ -478,10 +478,9 @@ local CUR_BG_CY = math.floor(REF_BG_CY - REF_BG_H * 0.5 + CUR_BG_H * 0.5)
 -- 单面板居中
 local SINGLE_BG_CX = 540
 
--- 配装页小窗：右栏向左、左栏向右展开，已装备的对比卡继续向外排列。
+-- 小窗以装备格子的上角定位，比较卡向外侧排列。
 local COMPACT_SCALE = 0.92
 local COMPACT_MARGIN = 16
-local COMPACT_CELL = 160
 
 local COMPACT_PAD_TOP = 28
 local COMPACT_NAME_Y = 34
@@ -602,7 +601,7 @@ local function compactOffset()
     local ay = detState.anchorY or 1144
     local toLeft = detState.owner == "character"
     local targetLeft = toLeft and (ax - 12 - visW) or (ax + 12)
-    local targetTop = math.max(COMPACT_MARGIN, math.min(ay - COMPACT_CELL * 0.5,
+    local targetTop = math.max(COMPACT_MARGIN, math.min(ay,
         DESIGN_H - COMPACT_MARGIN - visH))
     return targetLeft - refLeft * COMPACT_SCALE, targetTop
 end

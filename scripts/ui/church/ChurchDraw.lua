@@ -498,7 +498,7 @@ function M.bind(deps)
         -- 转职确认/重置弹窗已随转职页迁到右侧栏角色详情
 
         -- ================== Spine 卡牌特效 ==================
-        SpineCardEffect.draw(vg)
+        SpineCardEffect.draw(vg, "church")
 
         -- ================== 飘字提示（最最顶层） ==================
         if state.floatText then

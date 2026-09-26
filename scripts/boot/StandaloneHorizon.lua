@@ -1431,6 +1431,11 @@ function HandleMouseWheelHorizon(eventType, eventData)
         return
     end
 
+    -- 弹窗横跨三栏；任何位置的滚轮都交给选关，避免误滚角色列表。
+    if BattleTriPage.isOpen() and StageSelectDialog.isOpen() then
+        BattleTriPage.handleScroll(wheel, sx, sy)
+        return
+    end
     -- 装备袋只吃覆盖矩形内的滚轮，左右栏仍滚自己的列表
     if BattleTriPage.handleScroll(wheel, sx, sy) then return end
 

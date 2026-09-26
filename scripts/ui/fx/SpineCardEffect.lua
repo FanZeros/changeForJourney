@@ -9,7 +9,7 @@
 --   SpineCardEffect.playLevelUp(cx, cy, function() end)   -- 升级
 --   SpineCardEffect.playJobChange(cx, cy, function() end)  -- 转职
 --   SpineCardEffect.playRevive(cx, cy, function() end)     -- 复活
---   在 NanoVGRender 中调用 SpineCardEffect.draw(vg)
+--   在各页面的 NanoVGRender 中调用 SpineCardEffect.draw(vg, "battle"/"dungeon"/"church")
 -- ============================================================================
 
 ---@diagnostic disable: undefined-global
@@ -35,16 +35,18 @@ local DATA_W = 665.91
 local DATA_H = 1209
 
 -- 活跃播放实例列表
--- 每个元素: { inst, cx, cy, lastT, onComplete }
+-- 每个元素: { inst, cx, cy, lastT, onComplete, scope }
 local activeInstances = {}
+local MAX_IDLE_TIME = 2.0  -- 页面不再绘制后丢弃旧特效，防止返回页面时补播
 
 --- 内部：创建并播放一个 Spine 实例
 ---@param vg any NanoVG 上下文（可为 nil，延迟到 draw 时加载）
 ---@param animName string 动画名称 "1"/"2"/"3"
+---@param scope string 所属页面（battle/dungeon/church）
 ---@param cx number 绘制中心 X
 ---@param cy number 绘制中心 Y
 ---@param onComplete? function 播放完成回调
-local function playAnim(vg, animName, cx, cy, onComplete)
+local function playAnim(vg, animName, scope, cx, cy, onComplete)
     local entry = {
         inst        = nil,
         cx          = cx,
@@ -52,6 +54,7 @@ local function playAnim(vg, animName, cx, cy, onComplete)
         lastT       = time.elapsedTime,
         onComplete  = onComplete,
         animName    = animName,
+        scope       = scope,
         loaded      = false,
         finished    = false,
     }
@@ -80,7 +83,7 @@ end
 ---@param cy number 卡片中心 Y
 ---@param onComplete? function 播放完成回调
 function SpineCardEffect.playLevelUp(cx, cy, onComplete)
-    playAnim(nil, ANIM_LEVEL_UP, cx, cy, onComplete)
+    playAnim(nil, ANIM_LEVEL_UP, "battle", cx, cy, onComplete)
     print("[SpineCardEffect] PlayLevelUp at " .. cx .. "," .. cy)
 end
 
@@ -89,7 +92,7 @@ end
 ---@param cy number 卡片中心 Y
 ---@param onComplete? function 播放完成回调
 function SpineCardEffect.playJobChange(cx, cy, onComplete)
-    playAnim(nil, ANIM_JOB_CHANGE, cx, cy, onComplete)
+    playAnim(nil, ANIM_JOB_CHANGE, "church", cx, cy, onComplete)
     print("[SpineCardEffect] PlayJobChange at " .. cx .. "," .. cy)
 end
 
@@ -97,8 +100,9 @@ end
 ---@param cx number 卡片中心 X
 ---@param cy number 卡片中心 Y
 ---@param onComplete? function 播放完成回调
-function SpineCardEffect.playRevive(cx, cy, onComplete)
-    playAnim(nil, ANIM_REVIVE, cx, cy, onComplete)
+---@param scope? string 所属战斗页面（默认主线 battle）
+function SpineCardEffect.playRevive(cx, cy, onComplete, scope)
+    playAnim(nil, ANIM_REVIVE, scope or "battle", cx, cy, onComplete)
     print("[SpineCardEffect] PlayRevive at " .. cx .. "," .. cy)
 end
 
@@ -108,9 +112,10 @@ function SpineCardEffect.isPlaying()
     return #activeInstances > 0
 end
 
---- 每帧绘制所有活跃实例（在 NanoVG 渲染函数中调用）
+--- 每帧仅绘制当前页面的活跃实例；未绘制过久的实例会被释放
 ---@param vg any NanoVG 上下文
-function SpineCardEffect.draw(vg)
+---@param scope string 当前页面（battle/dungeon/church）
+function SpineCardEffect.draw(vg, scope)
     if #activeInstances == 0 then return end
 
     local now = time.elapsedTime
@@ -122,6 +127,14 @@ function SpineCardEffect.draw(vg)
     -- 从后往前遍历，方便安全删除
     for i = #activeInstances, 1, -1 do
         local e = activeInstances[i]
+
+        if now - e.lastT > MAX_IDLE_TIME then
+            if e.inst then e.inst:Unload() end
+            table.remove(activeInstances, i)
+            if e.onComplete then e.onComplete() end
+            goto continue
+        end
+        if e.scope ~= scope then goto continue end
 
         -- 懒加载：首次 draw 时创建实例
         if not e.loaded then

@@ -238,7 +238,7 @@ local state = {
     heroAnim   = {},   -- [i] = { level = 动画等级, exp = 动画内经验, remain = 剩余待发放经验 }
     heroTime   = 0,    -- 动画已播放秒数
     -- 奖励逐件弹出（与关卡奖励同款；队员经验发完后才开始）
-    cascade    = nil,  ---@type RewardCascadeTimeline|nil
+    cascade    = nil,  ---@type any
     cascadeSfx = 0,    -- 已播放入场音的件数
     -- 动画
     animPhase  = "none",  -- "none"|"opening"|"open"|"closing"

@@ -41,6 +41,12 @@ local drivers = {}        -- [2]/[3] = BattleTriDriver
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local region = { x = 486, y = 0, w = 948, h = 1080 }  -- 战斗区（窗口坐标）
 
+local function dialogToDesign(wx, wy)
+    local fit = math.min(region.w / 1080, region.h / 2400) * 2
+    return (wx - region.w * 0.5) / fit + 540,
+           (wy - region.h * 0.5) / fit + 1195
+end
+
 --- 击杀奖励回调注入（宿主与 BattleScene.setOnEnemyKill 同源）
 function BattleTriPage.setOnKill(cb) triOnKill = cb end
 
@@ -453,9 +459,7 @@ function BattleTriPage.handleInput(wx, wy)
 
     -- 对话框打开: 逆映射到设计空间（与 2 倍渲染缩放一致）
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
-        local fit = math.min(logicalW / 1080, logicalH / 2400) * 2
-        local dx = (wx - logicalW * 0.5) / fit + 540
-        local dy = (wy - logicalH * 0.5) / fit + 1195
+        local dx, dy = dialogToDesign(wx, wy)
         if SweepDialog.isOpen() then SweepDialog.handleInput(dx, dy) end
         if DamageStatsPanel.isOpen() then DamageStatsPanel.handleInput(dx, dy) end
         if StageSelectDialog.isOpen() then StageSelectDialog.handleInput(dx, dy) end
@@ -512,6 +516,10 @@ end
 ---@return boolean
 function BattleTriPage.handleDragBegin(wx, wy)
     if not isOpen_ then return false end
+    if StageSelectDialog.isOpen() then
+        local dx, dy = dialogToDesign(wx, wy)
+        return StageSelectDialog.handleDragBegin(dx, dy)
+    end
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
         local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
         EquipmentBag.handleDragBegin(dx, dy)
@@ -525,6 +533,10 @@ end
 ---@return boolean
 function BattleTriPage.handleDragMove(wx, wy)
     if not isOpen_ then return false end
+    if StageSelectDialog.isOpen() then
+        local dx, dy = dialogToDesign(wx, wy)
+        return StageSelectDialog.handleDragMove(dx, dy)
+    end
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
         local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
         EquipmentBag.handleDragMove(dx, dy)
@@ -538,6 +550,7 @@ end
 ---@return boolean
 function BattleTriPage.handleDragEnd(wx, wy)
     if not isOpen_ then return false end
+    if StageSelectDialog.isOpen() then return StageSelectDialog.handleDragEnd() end
     if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion() then
         local dx, dy = EquipmentBag.overlayToDesign(wx, wy)
         EquipmentBag.handleDragEnd(dx, dy)
@@ -552,6 +565,13 @@ end
 ---@return boolean
 function BattleTriPage.handleScroll(wheel, wx, wy)
     if not isOpen_ then return false end
+    if StageSelectDialog.isOpen() then
+        if wx and wy then
+            local dx, dy = dialogToDesign(wx, wy)
+            return StageSelectDialog.handleScroll(wheel, dx, dy)
+        end
+        return true
+    end
     if not (EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion()) then
         return false
     end

@@ -84,6 +84,7 @@ local detailState = {
     tabFrom       = "attr",   -- Tab 切换前的页签
     tabSwitchTime = 0,        -- Tab 切换时刻
     equipSlot     = "weapon", -- 配装页当前选中槽位
+    sideDragging  = false,    -- 配装页左右侧栏拖拽
     -- 属性区域滚动
     attrScrollY   = 0,        -- 像素滚动偏移（>0 表示内容上移）
     attrScrollMax = 0,        -- 最大滚动值
@@ -328,6 +329,8 @@ function CharacterDetail.open(heroId)
     detailState.tabFrom = "attr"
     detailState.tabSwitchTime = 0
     detailState.openTime = time.elapsedTime
+    detailState.sideDragging = false
+    CharacterDetail._EquipPanel.endSideDrag()
     detailState.seamOpenTime = time.elapsedTime  -- [水平滑入] 页面滑入基准(切换英雄不重置)
     detailState.switchDir = nil  -- 普通打开：使用垂直滑入动画
     detailState.attrScrollY   = 0
@@ -714,12 +717,22 @@ function CharacterDetail.handleDragBegin(dx, dy)
 
     if not detailState.open or detailState.closing then return true end
     if CharacterDetail._EquipDetail.isOpen() then
+        if detailState.tab == "equip" and not CharacterDetail._EquipDetail.containsPoint(dx, dy)
+            and CharacterDetail._EquipPanel.beginSideDrag(dx, dy) then
+            detailState.sideDragging = true
+            return true
+        end
         return CharacterDetail._EquipDetail.handleDragBegin(dx, dy)
     end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleDragBegin(dx, dy)
     end
     detailState.attrTip = nil  -- 拖拽时关闭气泡
+    -- 配装侧栏优先于属性区/格子拖拽，避免侧栏滑动触发其他交互。
+    if detailState.tab == "equip" and CharacterDetail._EquipPanel.beginSideDrag(dx, dy) then
+        detailState.sideDragging = true
+        return true
+    end
     -- 配装面板：按下格子可滚动，位移够大则改成拖装备
     if detailState.tab == "equip" and CharacterDetail._EquipPanel then
         if CharacterDetail._EquipPanel.isInGridArea(dy) then
@@ -750,6 +763,10 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragMove(dx, dy)
     if not detailState.open or detailState.closing then return true end
+    if detailState.sideDragging then
+        CharacterDetail._EquipPanel.moveSideDrag(dy)
+        return true
+    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragMove(dx, dy)
     end
@@ -814,6 +831,11 @@ function CharacterDetail.handleDragEnd(dx, dy)
         return true
     end
     if not detailState.open then return false end
+    if detailState.sideDragging then
+        detailState.sideDragging = false
+        CharacterDetail._EquipPanel.endSideDrag()
+        return true
+    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragEnd(dx, dy)
     end

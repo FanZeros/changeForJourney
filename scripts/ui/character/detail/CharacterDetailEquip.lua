@@ -90,6 +90,8 @@ local panelState = {
     setHits    = {},        -- { {setId, x, y, w, h} }
     sideScroll = { left = 0, right = 0, leftMax = 0, rightMax = 0 },
     sideHits   = { left = nil, right = nil },
+    sideDragKey = nil,
+    sideDragLastY = 0,
 }
 
 local DOUBLE_CLICK_SEC = 0.35
@@ -121,8 +123,8 @@ end
 -- 配装页左右栏：左套装效果，右装备属性。顶边与鞋子槽平齐，宽高按上一版收一档。
 local SIDE_TOP = 710
 local SIDE_H = 228
-local SIDE_LEFT_X, SIDE_LEFT_W = 24, 450
-local SIDE_RIGHT_X, SIDE_RIGHT_W = 606, 450
+local SIDE_LEFT_X, SIDE_LEFT_W = 42, 414
+local SIDE_RIGHT_X, SIDE_RIGHT_W = 624, 414
 local SIDE_ROW = 40
 
 local function formatEquipValue(key, value)
@@ -880,12 +882,16 @@ function M.handleInput(dx, dy, heroId, detailState)
         panelState.setCodexId = nil
         return true
     end
-    -- 点套名打开图鉴
-    for i = 1, #(panelState.setHits or {}) do
-        local h = panelState.setHits[i]
-        if dx >= h.x and dx <= h.x + h.w and dy >= h.y and dy <= h.y + h.h then
-            panelState.setCodexId = h.setId
-            return true
+    -- 点套名打开图鉴（只响应栏内可见的内容）。
+    local leftHit = panelState.sideHits.left
+    if leftHit and dx >= leftHit.x and dx <= leftHit.x + leftHit.w
+        and dy >= leftHit.y + 42 and dy <= leftHit.y + leftHit.h then
+        for i = 1, #panelState.setHits do
+            local h = panelState.setHits[i]
+            if dy >= h.y and dy <= h.y + h.h then
+                panelState.setCodexId = h.setId
+                return true
+            end
         end
     end
     -- 仅处理格子区域内的点击
@@ -1040,6 +1046,34 @@ end
 ---@return boolean
 function M.isInGridArea(dy)
     return dy >= CLIP_TOP and dy <= CLIP_TOP + CLIP_HEIGHT
+end
+
+--- 从侧栏按下时锁定目标；拖出侧栏后仍继续滚动该栏。
+function M.beginSideDrag(dx, dy)
+    for _, key in ipairs({ "left", "right" }) do
+        local hit = panelState.sideHits[key]
+        if hit and dx >= hit.x and dx <= hit.x + hit.w
+            and dy >= hit.y and dy <= hit.y + hit.h then
+            panelState.sideDragKey = key
+            panelState.sideDragLastY = dy
+            print("[EquipPanel] 开始拖动" .. (key == "left" and "套装效果" or "装备属性"))
+            return true
+        end
+    end
+    return false
+end
+
+function M.moveSideDrag(dy)
+    local key = panelState.sideDragKey
+    if not key then return end
+    local side = panelState.sideScroll
+    local maxV = side[key .. "Max"] or 0
+    side[key] = math.max(0, math.min(maxV, side[key] + panelState.sideDragLastY - dy))
+    panelState.sideDragLastY = dy
+end
+
+function M.endSideDrag()
+    panelState.sideDragKey = nil
 end
 
 --- 鼠标落在左右栏时滚动对应栏，返回是否吃掉滚轮

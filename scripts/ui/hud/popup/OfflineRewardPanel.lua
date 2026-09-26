@@ -38,6 +38,8 @@ local BF                = require("systems.ButtonFeedback")
 local ResourceDefs      = require("config.ResourceDefs")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local RewardCascade = require("ui.widget.RewardCascade")  -- 奖励逐件弹出动画（与关卡奖励同款）
+local GameSFX       = require("systems.GameSFX")
 
 local Panel = {}
 
@@ -139,7 +141,7 @@ local HERO_ROW = {
     LV_X   = ROW_R - ROW_PAD,        -- Lv 变化右对齐 X
     LV_FONT = 30,
     BAR_X  = ROW_L + 16 + 68 + 20,   -- 经验条左缘
-    BAR_R  = ROW_R - ROW_PAD - 170,  -- 经验条右缘（给剩余经验数字留位）
+    BAR_W  = 700,                    -- 经验条长度（留出右侧剩余经验数字的位置）
     BAR_H  = 16,
     BAR_CY_OFF = 62,        -- 经验条中心相对行上缘的偏移
     EXP_X  = ROW_R - ROW_PAD,        -- 剩余经验数字右对齐 X
@@ -234,6 +236,9 @@ local state = {
     -- 队员升级动画
     heroAnim   = {},   -- [i] = { level = 动画等级, exp = 动画内经验, remain = 剩余待发放经验 }
     heroTime   = 0,    -- 动画已播放秒数
+    -- 奖励逐件弹出（与关卡奖励同款；队员经验发完后才开始）
+    cascade    = nil,  ---@type RewardCascadeTimeline|nil
+    cascadeSfx = 0,    -- 已播放入场音的件数
     -- 动画
     animPhase  = "none",  -- "none"|"opening"|"open"|"closing"
     animStart  = 0,
@@ -248,9 +253,13 @@ local ANIM_OPEN_DUR  = 0.30
 local ANIM_CLOSE_DUR = 0.20
 
 -- 队员升级动画参数
-local HERO_ANIM_DELAY = 0.45   -- 弹窗开完后停顿多久开始发放
-local HERO_EXP_PER_SEC = 0.85  -- 经验发放速度（占总经验比例/秒），1/0.85 ≈ 1.2 秒发完
-local HERO_ANIM_MIN_TAIL = 0.35 -- 发完后停顿，方便看清最终等级
+local HERO_ANIM_DELAY = 0.55   -- 弹窗开完后停顿多久开始发放
+local HERO_EXP_PER_SEC = 0.34  -- 经验发放速度（占总经验比例/秒），1/0.34 ≈ 2.9 秒发完
+
+-- 奖励逐件弹出参数（关卡奖励同款节奏）
+local CASCADE_LEAD   = 0.15    -- 队员经验发完后再停顿多久开始发奖励
+local CASCADE_INTERVAL = 0.14  -- 逐件间隔
+local CASCADE_POP_DUR  = 0.24  -- 单件弹出时长
 
 local cachedVg = nil
 
@@ -301,6 +310,21 @@ local function getCellCenter(row, col)
     local cx = COL_CX[col]
     local cy = CLIP.TOP + ICON_SIZE * 0.5 + (row - 1) * (ICON_SIZE + ROW_GAP)
     return cx, cy
+end
+
+--- 奖励物品的强调色（品质色，用于弹出爆发光效）
+---@param item table
+---@return number r, number g, number b
+local function itemAccent(item)
+    local q = 2
+    if item.type == "equip" then
+        q = item.quality or 1
+    else
+        local def = RESOURCE_DEFS[item.type]
+        q = (def and def.quality) or 2
+    end
+    local trim = DarkIcon.QUALITY_TRIM[q] or DarkIcon.QUALITY_TRIM[5]
+    return trim[1], trim[2], trim[3]
 end
 
 --- 队员行上缘 Y
@@ -440,6 +464,14 @@ function Panel.show(data)
     state.animPhase = "opening"
     state.animStart = time.elapsedTime
     resetHeroAnim()
+    state.cascade = RewardCascade.new(#state.rewards, {
+        interval     = CASCADE_INTERVAL,
+        intervalTail = CASCADE_INTERVAL,
+        fastAfter    = 8,
+        popDur       = CASCADE_POP_DUR,
+        lead         = CASCADE_LEAD,
+    })
+    state.cascadeSfx = 0
     print("[OfflineRewardPanel] show: offline=" .. state.offlineSeconds .. "s, rewards=" .. #state.rewards
         .. ", heroPreview=" .. #state.heroExpPreview)
 end
@@ -477,6 +509,28 @@ function Panel.update(dt)
 
     -- 队员升级动画
     updateHeroAnim(dt)
+
+    -- 奖励逐件弹出：等队员经验全部发完（或本来就没有队员行）再开始
+    if state.cascade then
+        if state.cascade.revealStart == 0 then
+            if #state.heroAnim == 0 or heroAnimDone() then
+                state.cascade:start(time.elapsedTime)
+                print("[OfflineRewardPanel] cascade start, items=" .. tostring(#state.rewards))
+            end
+        else
+            -- 逐件入场音
+            local due = state.cascade:shownCount()
+            while state.cascadeSfx < due do
+                state.cascadeSfx = state.cascadeSfx + 1
+                local item = state.rewards[state.cascadeSfx]
+                if item and item.type == "equip" then
+                    GameSFX.play("install")
+                else
+                    GameSFX.play("ui_click_3")
+                end
+            end
+        end
+    end
 
     -- 惯性滚动
     if not state.dragging and math.abs(state.scrollVel) > SCROLL_MIN_VEL then
@@ -754,7 +808,7 @@ function self_drawHeroExpList(vg)
 
             -- 经验进度条
             local barCY = top + HERO_ROW.BAR_CY_OFF
-            local barW  = HERO_ROW.BAR_R - HERO_ROW.BAR_X
+            local barW  = HERO_ROW.BAR_W
             nvgBeginPath(vg)
             nvgRoundedRect(vg, HERO_ROW.BAR_X, barCY - HERO_ROW.BAR_H * 0.5, barW, HERO_ROW.BAR_H,
                 HERO_ROW.BAR_H * 0.5)
@@ -801,12 +855,13 @@ function self_drawHeroExpList(vg)
     nvgRestore(vg)
 end
 
---- 绘制奖励物品网格
+--- 绘制奖励物品网格（逐件弹出，与关卡奖励同款动画）
 function self_drawRewardGrid(vg)
     local items = state.rewards
     if #items == 0 then return end
 
     local totalRows = math.ceil(#items / COLS)
+    local cascade = state.cascade
 
     nvgSave(vg)
     nvgScissor(vg, CLIP.LEFT, CLIP.TOP, CLIP.W, CLIP.H)
@@ -823,6 +878,24 @@ function self_drawRewardGrid(vg)
             -- 跳过不可见
             if cy + ICON_SIZE * 0.5 < CLIP.TOP - 10 then goto continue end
             if cy - ICON_SIZE * 0.5 > CLIP.BOTTOM + 10 then goto continue end
+
+            -- 逐件弹出：未到出场时刻只画预告框，弹出中叠加爆发+变换
+            local popT = cascade and cascade:t(idx) or 1
+            local popping = false
+            if popT == nil then
+                RewardCascade.anticipate(vg, cx, cy,
+                    cascade:elapsed() - cascade:startAt(idx), ICON_SIZE)
+                goto continue
+            elseif popT < 1 then
+                popping = true
+            end
+
+            nvgSave(vg)
+            if popping then
+                local ar, ag, ab = itemAccent(item)
+                RewardCascade.burst(vg, cx, cy, popT, ICON_SIZE, ar, ag, ab)
+                RewardCascade.applyPop(vg, cx, cy, popT, 1.0)
+            end
 
             if item.type == "equip" then
                 -- 已生成的真实装备：品质底 + 模板图标
@@ -892,6 +965,11 @@ function self_drawRewardGrid(vg)
                     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
                     nvgText(vg, bx, by, amtText, nil)
                 end
+            end
+
+            nvgRestore(vg)
+            if popping then
+                RewardCascade.glint(vg, cx, cy, popT, ICON_SIZE)
             end
 
             ::continue::

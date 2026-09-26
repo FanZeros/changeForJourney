@@ -24,6 +24,7 @@ local StageSelectDialog = require("ui.battle.stage.StageSelectDialog")
 local SoundToggle       = require("ui.widget.SoundToggle")  -- [音效开关] 行1 HUD 快捷按钮
 local EquipmentBag      = require("ui.character.equip.EquipmentBag")
 local StageConfig       = require("config.StageConfig")
+local BattleStats       = require("systems.BattleStats")
 
 local function stageDisplayName(stageId)
     local entry = stageId and StageConfig.getStage(tonumber(stageId))
@@ -91,6 +92,7 @@ end
 function BattleTriPage.open()
     if isOpen_ then return end
     isOpen_ = true
+    require("ui.battle.scene.BattleScene").pumpBattleCards()
     local unlocked = ensureDrivers()
     print("[BattleTriPage] open, unlockedTeams=" .. unlocked)
 end
@@ -119,6 +121,7 @@ end
 --- 挂载锁定行的全空状态集
 function BattleTriPage.mountEmpty()
     ensureEmptyStates()
+    BattleStats.mount(0)
     BattleCombat.mount(emptyStates.combat)
     ProjectileSystem.mount(emptyStates.ps)
     TM.mount(emptyStates.tm)
@@ -146,12 +149,14 @@ end
 function BattleTriPage.update(dt)
     if not isOpen_ then return end
     BattleLayout.setMode("strip")
+    require("ui.battle.scene.BattleScene").pumpBattleCards()
     ensureDrivers()
     for t = 1, COL_COUNT do
         local drv = drivers[t]
         if drv then drv:update(dt) end
     end
     -- 三行结束后恢复默认状态，避免后续单场界面读到最后一队的数据。
+    BattleStats.mount(0)
     BattleCombat.mount(nil)
     ProjectileSystem.mount(nil)
     TM.mount(nil)
@@ -461,7 +466,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         nvgTranslate(vg, hudSoundX, hudY)
         nvgScale(vg, hudScale, hudScale)
         nvgTranslate(vg, -503, -2115)
-        SoundToggle.drawButton(vg)
+        SoundToggle.drawButton(vg, 1)
         nvgRestore(vg)
     end
 
@@ -513,7 +518,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         nvgTranslate(vg, rowSoundX, rowY)
         nvgScale(vg, hudScale, hudScale)
         nvgTranslate(vg, -503, -2115)
-        SoundToggle.drawButton(vg)
+        SoundToggle.drawButton(vg, row)
         nvgRestore(vg)
     end
 end
@@ -599,7 +604,7 @@ function BattleTriPage.handleInput(wx, wy)
         return true
     end
     if math.abs(wx - hudStatsX) <= hitW and math.abs(wy - hudY) <= hitH then
-        DamageStatsPanel.handleButtonInput(815 + (wx - hudStatsX) / hudScale, 2115 + (wy - hudY) / hudScale)
+        DamageStatsPanel.handleButtonInput(815 + (wx - hudStatsX) / hudScale, 2115 + (wy - hudY) / hudScale, 1)
         return true
     end
     if math.abs(wx - hudStageX) <= hitW and math.abs(wy - hudY) <= hitH then
@@ -607,7 +612,7 @@ function BattleTriPage.handleInput(wx, wy)
         return true
     end
     if math.abs(wx - hudSoundX) <= hitW and math.abs(wy - hudY) <= hitH then
-        SoundToggle.handleButtonInput()
+        SoundToggle.handleButtonInput(1)
         return true
     end
 
@@ -638,7 +643,7 @@ function BattleTriPage.handleInput(wx, wy)
             return true
         end
         if math.abs(wx - rowStatsX) <= hitW and math.abs(wy - rowY) <= hitH then
-            DamageStatsPanel.handleButtonInput(815 + (wx - rowStatsX) / hudScale, 2115 + (wy - rowY) / hudScale)
+            DamageStatsPanel.handleButtonInput(815 + (wx - rowStatsX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
             return true
         end
         if math.abs(wx - rowStageX) <= hitW and math.abs(wy - rowY) <= hitH then
@@ -646,7 +651,7 @@ function BattleTriPage.handleInput(wx, wy)
             return true
         end
         if math.abs(wx - rowSoundX) <= hitW and math.abs(wy - rowY) <= hitH then
-            SoundToggle.handleButtonInput()
+            SoundToggle.handleButtonInput(row)
             return true
         end
     end

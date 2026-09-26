@@ -9,6 +9,7 @@ local NumberUtil = require("core.NumberUtil")
 local BattleLayout = require("core.BattleLayout")
 local DrawUtil = require("core.DrawUtil")
 local ETS = require("systems.ExtraTalentSystem")
+local HeroAssetUtil = require("config.HeroAssetUtil")
 
 local BattleDraw = {}
 
@@ -56,6 +57,33 @@ local imgCtx = {}   -- 图片句柄
 function BattleDraw.setContext(context)
     combat = context.combat
     imgCtx = context
+end
+
+local directCards = { hero = {}, monster = {} }
+
+--- 分帧队列没完成时，按场上单位直接读本地卡面。
+local function cardImage(vg, unit)
+    if unit.heroId then
+        local cached = imgCtx.imgHeroCards and imgCtx.imgHeroCards[unit.heroId]
+        if cached and cached >= 0 then return cached end
+        local direct = directCards.hero[unit.heroId]
+        if direct == nil then
+            direct = nvgCreateImage(vg, HeroAssetUtil.getCardPath(unit.heroId), 0)
+            directCards.hero[unit.heroId] = direct
+        end
+        return direct
+    end
+    if unit.monsterId then
+        local cached = imgCtx.imgMonsterCards and imgCtx.imgMonsterCards[unit.monsterId]
+        if cached and cached >= 0 then return cached end
+        local direct = directCards.monster[unit.monsterId]
+        if direct == nil then
+            direct = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", unit.monsterId), 0)
+            directCards.monster[unit.monsterId] = direct
+        end
+        return direct
+    end
+    return -1
 end
 
 -- ======================== 工具绘制函数 ========================
@@ -171,39 +199,16 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             -- [阵亡紧凑] 已退场英雄不渲染（保留在队尾供复活/关卡重置）
         elseif isDying then
             -- 死亡淡出：显示原卡牌向上/向下滑出
-            local cardBgImg
-            if unit.heroId then
-                cardBgImg = imgCtx.imgHeroCards[unit.heroId] or imgCtx.imgHeroCards[1]
-            elseif unit.monsterId then
-                cardBgImg = imgCtx.imgMonsterCards[unit.monsterId] or imgCtx.imgMonsterCards[1]
-            else
-                cardBgImg = imgCtx.imgHeroCards[1]
-            end
-            DrawUtil.drawImageCover(vg, cardBgImg, cx, cy, CARD_W, CARD_H, transAlpha)
+            DrawUtil.drawImageCover(vg, cardImage(vg, unit), cx, cy, CARD_W, CARD_H, transAlpha)
 
         elseif isDead or isGone then
-            -- 已删除墓碑图：死亡/空位不画卡面；通天塔补位等待只留进度条
-            if not isAllyGroup then
-                local reviveProg = unit.atkProgress or 0
-                if reviveProg > 0 then
-                    drawProgressBar(vg, imgCtx.imgAtkBg, imgCtx.imgAtkFill, cx, cy + atkBgOffY,
-                        ATK_BAR_W, ATK_BAR_H, ATK_BAR_PADDING, reviveProg)
-                end
-            end
+            -- 死亡单位不留黄条。下一只敌人由战斗驱动补上。
         else
             -- 正常存活渲染
             local alpha = (isReviving or isEntering) and transAlpha or 1.0
 
             -- 1) 卡片背景
-            local cardBgImg
-            if unit.heroId then
-                cardBgImg = imgCtx.imgHeroCards[unit.heroId] or imgCtx.imgHeroCards[1]
-            elseif unit.monsterId then
-                cardBgImg = imgCtx.imgMonsterCards[unit.monsterId] or imgCtx.imgMonsterCards[1]
-            else
-                cardBgImg = imgCtx.imgHeroCards[1]
-            end
-            DrawUtil.drawImageCover(vg, cardBgImg, cx, cy, CARD_W, CARD_H, alpha)
+            DrawUtil.drawImageCover(vg, cardImage(vg, unit), cx, cy, CARD_W, CARD_H, alpha)
 
             -- 受击闪烁
             if not isReviving and not isEntering then

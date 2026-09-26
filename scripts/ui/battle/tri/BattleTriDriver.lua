@@ -22,6 +22,7 @@ local MC                = require("config.MonsterConfig")
 local SC                = require("config.StageConfig")
 local NumberUtil        = require("core.NumberUtil")
 local BattleLayout      = require("core.BattleLayout")
+local BattleStats       = require("systems.BattleStats")
 
 local BattleTriDriver = {}
 
@@ -81,6 +82,7 @@ function BattleTriDriver.new(teamIdx)
         stageId  = SC.NORMAL_FIRST_STAGE,
         allies   = {},
         enemies  = {},
+        enemyQueue = {},
         teamSignature = nil,
         kills    = 0,
         stageTotal = 0,
@@ -98,6 +100,7 @@ function BattleTriDriver.new(teamIdx)
 
     --- mount 本战斗的全部子系统状态
     function drv.mount()
+        BattleStats.mount(drv.teamIdx)
         BattleCombat.mount(drv.combatState)
         ProjectileSystem.mount(drv.psState)
         TM.mount(drv.tmState)
@@ -187,8 +190,17 @@ function BattleTriDriver.new(teamIdx)
         self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
         self.allies = CharacterPanel.getDeployedTeam(self.teamIdx) or {}
         -- 敌方
-        self.enemies = buildWave(stageId)
-        self.stageTotal = #self.enemies
+        local wave = buildWave(stageId)
+        self.enemies = {}
+        self.enemyQueue = {}
+        for i, u in ipairs(wave) do
+            if i <= BattleLayout.MAX_PER_SIDE then
+                self.enemies[#self.enemies + 1] = u
+            else
+                self.enemyQueue[#self.enemyQueue + 1] = u
+            end
+        end
+        self.stageTotal = #wave
         -- 状态复位（mount 作用域内）
         BattleCombat.reset()
         BattleEffects.reset()
@@ -278,6 +290,30 @@ function BattleTriDriver.new(teamIdx)
         end
         for _, u in ipairs(allies) do
             if u.hp > 0 then hasAliveAlly = true break end
+        end
+
+        self:reportDefeatedEnemies()
+
+        -- 场上有空位就补下一只，避免死亡敌人留下空卡和黄条。
+        local aliveSlots = 0
+        for _, u in ipairs(enemies) do
+            if u.hp > 0 then aliveSlots = aliveSlots + 1 end
+        end
+        while aliveSlots < BattleLayout.MAX_PER_SIDE and #self.enemyQueue > 0 do
+            local nextEnemy = table.remove(self.enemyQueue, 1)
+            nextEnemy.atkProgress = 0
+            TAL.initUnit(nextEnemy)
+            local replaced = false
+            for i, u in ipairs(enemies) do
+                if u.hp <= 0 then
+                    enemies[i] = nextEnemy
+                    replaced = true
+                    break
+                end
+            end
+            if not replaced then enemies[#enemies + 1] = nextEnemy end
+            aliveSlots = aliveSlots + 1
+            hasAliveEnemy = true
         end
 
         -- 通关: 敌方全灭（先结算最后一击再切换到下一关）
@@ -384,9 +420,6 @@ function BattleTriDriver.new(teamIdx)
         -- 投射物 / 连击
         ProjectileSystem.update(dt)
         BattleCombat.updateComboQueue(dt)
-
-        -- 击杀检测（敌方死亡 → 奖励；每只怪只结算一次）
-        self:reportDefeatedEnemies()
 
         -- 纯视觉层
         BattleEffects.update(dt)

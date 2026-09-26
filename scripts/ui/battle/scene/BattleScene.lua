@@ -866,6 +866,12 @@ function BattleScene.draw(vg)
     MonsterInfoPopup.draw(vg)
 end
 
+--- 三队页面不再走 BattleScene.update，但仍要分帧加载角色/怪物卡面。
+function BattleScene.pumpBattleCards()
+    if vg_ then ensureBattleCards(vg_) end
+    pumpBattleCards()
+end
+
 function BattleScene.update(dt)
     pumpBattleCards()
     for _, list in ipairs({ enemies, enemyQueue }) do

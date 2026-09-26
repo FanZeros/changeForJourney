@@ -14,7 +14,7 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **当前开发分支**：`workspace925`。本轮只 push 这个分支，不推 `workspace924` 或历史功能分支。
+- **开发基线分支**：`workspace925`。每轮按用户当前指令从基线创建新的任务分支；验收通过后推送任务分支，合并回 `workspace925` 并推送。不要推送 `workspace924` 或其他历史分支。
 
 ## 已合入备忘
 
@@ -97,8 +97,8 @@
 
 ## 用户硬性流程（必须遵守）
 
-- **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断
-- 本轮只在 `workspace925` 上继续；完成后只 push 该分支。不要推 `workspace924` 或历史交接中的其他分支。
+- **不能取消/退出任务**；每步完成后必须用 AskUserQuestion 给选项，禁止纯文字中断。不要在仓库或记忆中保存访问令牌。
+- 本轮以 `workspace925` 为基线，在新任务分支上开发，验证后推送任务分支并合入 `workspace925`；远端发生并发更新或冲突时先确认，不覆盖他人工作。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）

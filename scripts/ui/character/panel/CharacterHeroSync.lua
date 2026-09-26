@@ -198,6 +198,7 @@ function M.bind(deps)
         dragState.heroId = nil
         dragState.rosterIdx = nil
         dragState.fromSlot = nil
+        dragState.fromTeam = nil
         local selectSlotState = get("selectSlotState")
         selectSlotState.active = false
         selectSlotState.slotIndex = nil

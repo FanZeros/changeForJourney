@@ -50,8 +50,6 @@ local DESIGN_H     = GameConfig.Design.HEIGHT  -- 2400
 
 ---@type fun(index: number): number
 local getSlotCX       = Draw.getSlotCX
----@type fun(dx: number, dy: number): number?
-local hitTestTeamSlot = Draw.hitTestTeamSlot
 
 -- ======================== 队伍数据 ========================
 -- [三队并行] 3 支队伍，每队 4 槽（Draw.MAX_SLOTS）；teamSlots 恒指向当前激活队的槽位数组，
@@ -188,6 +186,7 @@ local dragState = {
     heroId   = nil,     -- 被拖拽的英雄 ID
     rosterIdx = nil,    -- 被拖拽的 roster 索引（从列表拖拽时有值）
     fromSlot  = nil,    -- 被拖拽的槽位索引（从出战槽位拖拽时有值）
+    fromTeam  = nil,    -- 被拖拽头像所属队伍（跨队拖放保持源队正确）
     cx       = 0,       -- 当前拖拽位置 X（设计空间）
     cy       = 0,       -- 当前拖拽位置 Y（设计空间）
     startX   = 0,       -- 拖拽起始 X
@@ -597,13 +596,13 @@ local function bindInput()
         CharacterDetail = CharacterDetail,
         Draw = Draw,
         CharacterPanel = CharacterPanel,
-        hitTestTeamSlot = hitTestTeamSlot,
         hitTestRosterCard = hitTestRosterCard,
         getTeamSlots = function() return teamSlots end,
         getSlotPowerCache = function() return slotPowerCache end,
         getDragState = function() return dragState end,
         getSelectSlotState = function() return selectSlotState end,
         getTeams = function() return teams end,
+        getTeamPowerCaches = function() return teamPowerCaches end,
         getHeroRoster = function() return heroRoster end,
         getShardMap = function() return shardMap end,
         getActiveTeamIdx = function() return activeTeamIdx end,
@@ -1030,6 +1029,7 @@ function CharacterPanel.setActiveTeam(idx)
     dragState.heroId = nil
     dragState.rosterIdx = nil
     dragState.fromSlot = nil
+    dragState.fromTeam = nil
     selectSlotState.active = false
     selectSlotState.slotIndex = nil
     rebuildRoster()

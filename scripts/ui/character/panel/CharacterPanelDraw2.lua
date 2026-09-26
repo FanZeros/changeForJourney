@@ -325,8 +325,11 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
     local cx, cy = avatarCenter(teamIdx, slotIdx)
     local x = cx - AV_SIZE * 0.5
     local y = cy - AV_SIZE * 0.5
+    local dragState = getDragState and getDragState()
+    local draggingSource = dragState and dragState.active
+        and dragState.fromTeam == teamIdx and dragState.fromSlot == slotIdx
     local occupied = slot and slot.state == "occupied" and slot.heroId
-    if occupied and not locked then
+    if occupied and not locked and not draggingSource then
         local icon = heroIconHandle(vg, slot.heroId)
         if icon and icon >= 0 then
             nvgSave(vg)
@@ -355,10 +358,12 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
         nvgFontSize(vg, locked and 30 or 40)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(160, 145, 120, locked and 140 or 200))
-        if locked and img.lock and img.lock >= 0 then
-            drawImageCentered(vg, img.lock, cx, cy, 42, 42, 0.85)
-        else
-            nvgText(vg, cx, cy, "+", nil)
+        if not draggingSource then
+            if locked and img.lock and img.lock >= 0 then
+                drawImageCentered(vg, img.lock, cx, cy, 42, 42, 0.85)
+            else
+                nvgText(vg, cx, cy, "+", nil)
+            end
         end
     end
 end

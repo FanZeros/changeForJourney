@@ -12,6 +12,7 @@
   python tools/update-maker-mcp.py --preview    # 只装本地 Runtime，不开窗口
   python tools/update-maker-mcp.py --start      # 与不带参数相同
   python tools/update-maker-mcp.py --verify     # 只校验，不改配置
+  python tools/update-maker-mcp.py --log        # 输出升级、npm 和 Runtime 日志（可与其他参数组合）
 
 双击：
   Windows: tools/update-maker-mcp.bat
@@ -32,10 +33,12 @@ MAKER_PKG = "@taptap/maker"
 MAKER_VER = "0.0.34"
 # 本文件在 <repo>/maker-mcp/，仓库根是上一级
 ROOT = Path(__file__).resolve().parent.parent
+SHOW_LOG = False
 
 
 def log(msg: str) -> None:
-    print(msg, flush=True)
+    if SHOW_LOG:
+        print(msg, flush=True)
 
 
 def die(msg: str, code: int = 1) -> None:
@@ -94,7 +97,7 @@ def maker_argv(args: list[str], json_out: bool) -> list[str]:
 
 
 def maker_cmd(args: list[str], json_out: bool = True, timeout: int = 180) -> subprocess.CompletedProcess:
-    """Run taptap-maker and stream logs so the window does not freeze on the $ line."""
+    """Run taptap-maker, capturing output; stream it only with --log."""
     cmd = maker_argv(args, json_out)
     env = os.environ.copy()
     env.setdefault("npm_config_fetch_retries", "2")
@@ -104,7 +107,7 @@ def maker_cmd(args: list[str], json_out: bool = True, timeout: int = 180) -> sub
     env["CI"] = "1"
     shown = subprocess.list2cmdline(cmd) if sys.platform == "win32" else " ".join(cmd)
     log("$ " + shown)
-    log("    npm 日志会往下刷。本步最多 %s 秒，超时就停，不会一直挂着。" % timeout)
+    log("    本步最多 %s 秒，超时就停。" % timeout)
     try:
         proc = subprocess.Popen(
             cmd,
@@ -128,7 +131,8 @@ def maker_cmd(args: list[str], json_out: bool = True, timeout: int = 180) -> sub
             return
         for line in proc.stdout:
             chunks.append(line)
-            print(line, end="", flush=True)
+            if SHOW_LOG:
+                print(line, end="", flush=True)
 
     reader = threading.Thread(target=_read, daemon=True)
     reader.start()
@@ -165,7 +169,7 @@ def run_step(title: str, args: list[str], allow_fail: bool = False, timeout: int
     log("==> " + title)
     proc = maker_cmd(args, timeout=timeout)
     combined = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
-    if combined:
+    if combined and SHOW_LOG:
         log(combined[-4000:])
     data = parse_json_tail(combined)
     cli_failed = proc.returncode != 0 or (isinstance(data, dict) and data.get("ok") is False)
@@ -269,10 +273,15 @@ def launch_windows_runtime(project: Path) -> None:
     log('  cd /d "%s"' % project)
     log("  " + shown)
     log("游戏窗口关掉之前，这个黑窗会停在这里。不要关黑窗。")
-    code = subprocess.call(cmd, cwd=str(project))
+    code = subprocess.call(
+        cmd,
+        cwd=str(project),
+        stdout=None if SHOW_LOG else subprocess.DEVNULL,
+        stderr=None if SHOW_LOG else subprocess.DEVNULL,
+    )
     log("Runtime 已退出，exit=%s" % code)
     if code != 0:
-        die("Runtime 退出码 %s。若窗口闪退，把本窗口从 ==> 起的内容贴回 Agent。" % code)
+        die("Runtime 退出码 %s。使用 --log 重试查看详细日志。" % code)
 
 def is_bound(project: Path) -> bool:
     cur = project
@@ -286,13 +295,16 @@ def is_bound(project: Path) -> bool:
 
 
 def main() -> int:
+    global SHOW_LOG
     parser = argparse.ArgumentParser(description="一键更新 Maker MCP / 本地 Runtime")
+    parser.add_argument("--log", action="store_true", help="输出升级、npm 和 Runtime 的详细日志（默认静默）")
     parser.add_argument("--target-dir", default=str(ROOT), help="Maker 项目目录（默认仓库根）")
     parser.add_argument("--verify", action="store_true", help="只校验 MCP，不升级")
     parser.add_argument("--preview", action="store_true", help="同时安装本机游戏 Runtime")
     parser.add_argument("--start", action="store_true", help="升级后启动本地预览窗口。不带参数时默认开启")
     parser.add_argument("--ide", choices=["codex", "cursor", "claude"], help="只更新某一个 IDE")
     args = parser.parse_args()
+    SHOW_LOG = args.log
 
     if not (args.verify or args.preview or args.start or args.ide):
         args.start = True

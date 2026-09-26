@@ -9,16 +9,17 @@ local EquipmentConfig = require("config.EquipmentConfig")
 local ImageCache = require("ui.widget.ImageCache")
 local QualityMark = require("ui.widget.QualityMark")
 local BF = require("systems.ButtonFeedback")
+local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
 local I18n = require("core.I18n")
 
 local LootBoxPage = {}
 local W, H = 1080, 2400
-local LIST = { x = 48, y = 430, w = 984, h = 1510, rowH = 224, gap = 18 }
+local LIST = { x = 48, y = 430, w = 984, h = 1690, rowH = 224, gap = 18 }
 -- 七档品质贴在一起。名称牌占左上，说明改到右上。
 local FILTER = { x = 24, cy = 286, w = 96, h = 64, gap = 4 }
 local BACK = { cx = 958, cy = 2308, w = 144, h = 120 }
 local ACTION_CX, ACTION_W, ACTION_H = 873, 202, 112
-local BTN_W, BTN_H, BTN_Y = 420, 108, 2070
+local BTN_W, BTN_H, BTN_Y = 420, 108, 2210
 local CONFIRM = { cx = 540, cy = 1200, w = 860, h = 460, btnY = 1340 }
 local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
@@ -30,7 +31,8 @@ local state = {
     dragging = false, dragStartY = 0, dragStartScroll = 0, dragMoved = false,
     decompose = false, confirm = false,
     lastClickX = 540, lastClickY = BTN_Y,
-    toast = "", toastTime = 0,
+    messages = {}, messageUntil = 0,
+    hoverIndex = nil, hoverSince = 0, detailIndex = nil, detailPinned = false,
 }
 local imgName, imgBox = -1, -1
 local inited = false
@@ -60,13 +62,26 @@ local function rowY(index)
     return LIST.y + LIST.rowH * 0.5 + (index - 1) * (LIST.rowH + LIST.gap) - state.scrollY
 end
 
+local function previewBounds(index, equip)
+    local width, height = EquipmentDetail.readOnlySize(equip)
+    local x = 16
+    local y = math.max(390, math.min(2150 - height, rowY(index) - height * 0.5))
+    return x, y, width, height
+end
+
 local function ready()
     return state.open and not state.closing and time.elapsedTime - state.openTime >= OPEN_DUR
 end
 
+local function clearDetail()
+    state.detailIndex, state.detailPinned = nil, false
+    state.hoverIndex, state.hoverSince = nil, 0
+end
+
 local function finishClose()
+    clearDetail()
     state.open, state.closing, state.dragging = false, false, false
-    state.confirm, state.dragMoved, state.toast = false, false, ""
+    state.confirm, state.dragMoved, state.messages = false, false, {}
     if onClose then onClose() end
 end
 
@@ -75,6 +90,7 @@ function LootBoxPage.init(vg)
     inited = true
     ImageCache.init(vg)
     QualityMark.init(vg)
+    EquipmentDetail.init(vg)
     imgName = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0) or -1
     imgBox = nvgCreateImage(vg, "image/通用图标/ICON_CZ_YX.png", 0) or -1
 end
@@ -114,6 +130,7 @@ local function rebuildSummary()
     local height = #state.summary * (LIST.rowH + LIST.gap) - LIST.gap
     state.maxScrollY = math.max(0, height - LIST.h)
     clampScroll()
+    clearDetail()
 end
 
 local function setFilter(quality)
@@ -144,7 +161,7 @@ function LootBoxPage.open(summary)
     state.open, state.closing = true, false
     state.openTime, state.closeTime = time.elapsedTime, 0
     state.scrollY, state.dragging, state.dragMoved = 0, false, false
-    state.decompose, state.confirm, state.toast = false, false, ""
+    state.decompose, state.confirm, state.messages = false, false, {}
     require("systems.GameSFX").playUIMove(1)
     print("[LootBoxPage] open entries=" .. #state.summary)
 end
@@ -154,6 +171,7 @@ function LootBoxPage.close()
     if not state.open or state.closing then return end
     state.closing, state.closeTime = true, time.elapsedTime
     state.dragging, state.confirm = false, false
+    clearDetail()
     print("[LootBoxPage] close")
 end
 function LootBoxPage.forceClose()
@@ -166,6 +184,7 @@ end
 function LootBoxPage.hide() LootBoxPage.forceClose() end
 function LootBoxPage.isOpen() return state.open end
 function LootBoxPage.isVisible() return state.open end
+function LootBoxPage.isDetailOpen() return state.detailIndex ~= nil end
 function LootBoxPage.getSeamAnim()
     return state.openTime, state.closeTime, OPEN_DUR, CLOSE_DUR
 end
@@ -183,10 +202,43 @@ function LootBoxPage.update(_dt)
 end
 
 function LootBoxPage.showToast(message)
-    if not state.open or state.closing then return end
-    state.toast, state.toastTime = message, time.elapsedTime
+    if not state.open or state.closing or not message or message == "" then return end
+    local messages = state.messages
+    messages[#messages + 1] = message
+    if #messages == 1 then state.messageUntil = time.elapsedTime + 1.8 end
+    print("[LootBoxPage] message=" .. message)
 end
 function LootBoxPage.getLastClickPos() return state.lastClickX, state.lastClickY end
+
+local function drawMessages(vg)
+    local messages = state.messages
+    if #messages == 0 then return end
+    if time.elapsedTime >= state.messageUntil then
+        table.remove(messages, 1)
+        if #messages == 0 then return end
+        state.messageUntil = time.elapsedTime + 1.8
+    end
+    local current = messages[1]
+    local remaining = state.messageUntil - time.elapsedTime
+    local alpha = math.min(1, remaining / 0.35)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 32)
+    local boxY = 910
+    local boxW = math.min(910, math.max(370, nvgTextBounds(vg, 0, 0, I18n.lookup(current)) + 68))
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, 540 - boxW * 0.5, boxY, boxW, 104, 18)
+    nvgFillColor(vg, nvgRGBA(22, 19, 22, math.floor(220 * alpha)))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(190, 155, 104, math.floor(185 * alpha)))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+    text(vg, 540, boxY + 52, current, 32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        244, 237, 224, 3, { alpha = alpha })
+    if #messages > 1 then
+        text(vg, 540, boxY + 90, "+" .. tostring(#messages - 1), 22,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2, { alpha = alpha })
+    end
+end
 
 local function drawButton(vg, id, cx, cy, w, h, label, accent, enabled)
     local feedback = enabled and BF.begin(vg, id, cx, cy, w, h) or false
@@ -344,14 +396,15 @@ function LootBoxPage.draw(vg)
     drawButton(vg, "lbp_decompose_all", 800, BTN_Y, BTN_W, BTN_H,
         state.qualityFilter == 0 and "一键回收" or "回收筛选", "red", hasItems)
     TownPageChrome.drawBack(vg, BACK)
-    if state.confirm then drawConfirmation(vg) end
-    -- toast 必须最后绘制，且只属于本页，不再藏到弹窗底下或泄漏到其他页面。
-    local elapsed = time.elapsedTime - state.toastTime
-    if state.toast ~= "" and elapsed < 1.8 then
-        text(vg, 540, 1580 - 70 * elapsed / 1.8, state.toast, 34,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 169, 141, 4,
-            { alpha = math.min(1, (1.8 - elapsed) / 0.5) })
+    if not state.confirm and state.detailIndex then
+        local entry = state.summary[state.detailIndex]
+        if entry and entry.equip then
+            local x, y = previewBounds(state.detailIndex, entry.equip)
+            EquipmentDetail.drawReadOnly(vg, entry.equip, x, y)
+        end
     end
+    if state.confirm then drawConfirmation(vg) end
+    drawMessages(vg)
     nvgRestore(vg)
 end
 
@@ -367,14 +420,42 @@ local function entryAt(dx, dy)
     local index = math.floor((dy - LIST.y + state.scrollY) / (LIST.rowH + LIST.gap)) + 1
     local entry = state.summary[index] --[[@as table?]]
     if not entry then return nil end
+    local cy = rowY(index)
+    if dy > cy + LIST.rowH * 0.5 or dy < cy - LIST.rowH * 0.5 then return nil end
     entry.index = index
     return entry
+end
+
+function LootBoxPage.handleHover(dx, dy)
+    if not ready() or state.confirm or state.dragging then clearDetail() return end
+    if state.detailIndex then
+        local selected = state.summary[state.detailIndex]
+        if selected and selected.equip then
+            local x, y, w, h = previewBounds(state.detailIndex, selected.equip)
+            if dx >= x and dx <= x + w and dy >= y and dy <= y + h then return end
+        end
+    end
+    local entry = entryAt(dx, dy)
+    if not entry or not entry.equip or dx >= ACTION_CX - ACTION_W * 0.5 then
+        state.hoverIndex, state.hoverSince = nil, 0
+        if not state.detailPinned then state.detailIndex = nil end
+        return
+    end
+    if state.hoverIndex ~= entry.index then
+        state.hoverIndex, state.hoverSince = entry.index, time.elapsedTime
+        if not state.detailPinned then state.detailIndex = nil end
+        return
+    end
+    if not state.detailPinned and time.elapsedTime - state.hoverSince >= 0.5 then
+        state.detailIndex = entry.index
+    end
 end
 
 function LootBoxPage.handleRightClick(dx, dy)
     if not state.open or not ready() or state.confirm then return false end
     local entry = entryAt(dx, dy)
     if not entry or not entry.equip then return true end
+    clearDetail()
     print("[LootBoxPage] right-click recycle index=" .. tostring(entry.sourceIndex))
     action("decompose", onDecomposeOne, entry.sourceIndex)
     return true
@@ -396,6 +477,16 @@ function LootBoxPage.handleInput(dx, dy)
         end
         return true
     end
+    if state.detailIndex then
+        local selected = state.summary[state.detailIndex]
+        if selected and selected.equip then
+            local x, y, w, h = previewBounds(state.detailIndex, selected.equip)
+            if dx >= x and dx <= x + w and dy >= y and dy <= y + h then
+                clearDetail()
+                return true
+            end
+        end
+    end
     if TownPageChrome.hitBack(dx, dy, BACK) then LootBoxPage.close() return true end
     for quality = 0, 6 do
         local cx, cy = filterCenter(quality)
@@ -406,6 +497,7 @@ function LootBoxPage.handleInput(dx, dy)
         end
     end
     if DrawUtil.hitTest(dx, dy, 360, BTN_Y, BTN_W, BTN_H) then
+        clearDetail()
         if state.count > 0 then
             BF.trigger("lbp_claim_all")
             action("claimAll", onClaimAll, state.qualityFilter)
@@ -413,13 +505,25 @@ function LootBoxPage.handleInput(dx, dy)
         return true
     end
     if DrawUtil.hitTest(dx, dy, 800, BTN_Y, BTN_W, BTN_H) then
+        clearDetail()
         if state.count > 0 then BF.trigger("lbp_decompose_all") state.confirm = true end
         return true
     end
     local entry = entryAt(dx, dy)
-    if entry and entry.equip and DrawUtil.hitTest(dx, dy, ACTION_CX, rowY(entry.index), ACTION_W, ACTION_H) then
-        BF.trigger("lbp_claim_" .. entry.index)
-        action("claim", onClaimOne, entry.sourceIndex)
+    if entry and entry.equip then
+        if DrawUtil.hitTest(dx, dy, ACTION_CX, rowY(entry.index), ACTION_W, ACTION_H) then
+            BF.trigger("lbp_claim_" .. entry.index)
+            clearDetail()
+            action("claim", onClaimOne, entry.sourceIndex)
+        elseif state.detailIndex == entry.index and state.detailPinned then
+            clearDetail()
+        else
+            state.detailIndex, state.detailPinned = entry.index, true
+            state.hoverIndex, state.hoverSince = entry.index, time.elapsedTime
+            print("[LootBoxPage] detail index=" .. tostring(entry.sourceIndex))
+        end
+    else
+        clearDetail()
     end
     -- 空白与空态仍属于左栏页，不以“点面板外”关闭。
     return true
@@ -435,7 +539,10 @@ end
 function LootBoxPage.handleDragMove(_dx, dy)
     if not state.dragging then return false end
     local delta = state.dragStartY - dy
-    if math.abs(delta) >= 15 then state.dragMoved = true end
+    if math.abs(delta) >= 15 then
+        state.dragMoved = true
+        clearDetail()
+    end
     state.scrollY = state.dragStartScroll + delta
     clampScroll()
     return true
@@ -450,6 +557,7 @@ function LootBoxPage.handleScroll(wheel)
     if not ready() or state.confirm then return true end
     if state.dragging then state.dragMoved = true end
     state.dragging = false
+    clearDetail()
     state.scrollY = state.scrollY - wheel * 100
     clampScroll()
     return true

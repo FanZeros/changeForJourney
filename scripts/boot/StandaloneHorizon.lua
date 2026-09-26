@@ -943,6 +943,7 @@ function HandleMouseMoveHorizon(eventType, eventData)
             LootBox.handleDragEnd(0, 0)
             pressValid = false
         end
+        if LootBoxPage.isOpen() then LootBoxPage.handleHover(-1, -1) end
         return
     end
     if EquipCrossDrag.isArmed() then
@@ -958,7 +959,10 @@ function HandleMouseMoveHorizon(eventType, eventData)
             return
         end
     end
-    if pid == 'none' then return end
+    if pid == 'none' then
+        if LootBoxPage.isOpen() then LootBoxPage.handleHover(-1, -1) end
+        return
+    end
     if pid == 'playerinfo' then
         PlayerInfoPanel.handleDragMove(dx, dy)
         return
@@ -1000,6 +1004,10 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if not pressValid then
+        if LootBoxPage.isOpen() then
+            if pid == 'left' then LootBoxPage.handleHover(dx, dy)
+            else LootBoxPage.handleHover(-1, -1) end
+        end
         if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
             if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
         else
@@ -1028,7 +1036,10 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if pid == 'left' then
-        if LootBoxPage.isOpen() then return end -- 非遗匣起始的拖拽不能穿透其下方页面
+        if LootBoxPage.isOpen() then
+            LootBoxPage.handleHover(dx, dy)
+            return
+        end
         if TaskPage.isOpen() then TaskPage.handleDragMove(dx, dy) return end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragMove(dx, dy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
@@ -1358,6 +1369,14 @@ function HandleMouseWheelHorizon(eventType, eventData)
     if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
     if RewardPopup.isOpen() then RewardPopup.handleScroll(wheel) return end
 
+    -- 遗匣只滚鼠标所在的左栏；其它面板的滚轮继续走各自路由。
+    local wheelPid, wheelX, wheelY = HorizonResolveMouse()
+    if wheelPid == 'left' and LootBoxPage.isOpen() then
+        LootBox.handleScroll(wheel)
+        LootBoxPage.handleHover(wheelX, wheelY)
+        return
+    end
+
     -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
     if TalentPage.isOpen() then
         syncTalentPageLayout()
@@ -1416,7 +1435,6 @@ function HandleMouseWheelHorizon(eventType, eventData)
     end
 
     if pid == 'left' then
-        if LootBoxPage.isOpen() then LootBox.handleScroll(wheel) return end
         if TaskPage.isOpen() then TaskPage.handleScroll(wheel) return end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleScroll(wheel, msx, msy) return end
         if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel, msx, msy) return end

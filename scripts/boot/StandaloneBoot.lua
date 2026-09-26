@@ -21,6 +21,7 @@ local TavernPage        = require("ui.tavern.TavernPage")
 local MarketPage        = require("ui.market.MarketPage")
 local LootBox           = require("ui.loot.LootBox")
 local LootBoxPage       = require("ui.loot.LootBoxPage")
+local I18n              = require("core.I18n")
 local TaskPage          = require("ui.story.task.TaskPage")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
 local BattleTriPage     = require("ui.battle.tri.BattleTriPage")
@@ -381,16 +382,8 @@ function M.run(rt)
             ClientDispatcher.notifySubscribers("equipment")
             TopBar.setTotalPower(CharacterPanel.getTotalPower())
             BattleScene.refreshAllyStats()
-            local rewards = {}
-            for _, equip in ipairs(claimed) do
-                rewards[#rewards + 1] = {
-                    type = "equip", templateId = equip.templateId,
-                    quality = equip.quality, level = equip.level,
-                }
-            end
-            RewardPopup.show("遗匣领取", rewards, {
-                subtitle = bagFull and "背包已满，其余装备保留在遗匣" or nil,
-            })
+            LootBoxPage.showToast(string.format(I18n.lookup("已领取 %d 件装备"), #claimed))
+            if bagFull then LootBoxPage.showToast("背包已满，其余装备保留在遗匣") end
         elseif bagFull then
             LootBoxPage.showToast("背包已满，其余装备保留在遗匣")
         else
@@ -415,7 +408,7 @@ function M.run(rt)
         GameState.setEssence(GameState.getEssence() + essence)
         ClientDispatcher.notifySubscribers("lootbox")
         if essence > 0 then
-            RewardPopup.show("回收奖励", { { type = "essence", amount = essence } })
+            LootBoxPage.showToast(string.format(I18n.lookup("回收 %d 件装备 · 精华 +%d"), pieces, essence))
         end
     end
     LootBox.setOnDecomposeAll(function(quality) decomposeLoot(nil, quality) end)

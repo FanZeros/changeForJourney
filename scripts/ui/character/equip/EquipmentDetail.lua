@@ -1704,6 +1704,20 @@ function EquipmentDetail.draw(vg)
     nvgRestore(vg)
 end
 
+--- 遗匣预览：直接展示尚未领取的原装备，不访问背包或提供穿戴/分解操作。
+function EquipmentDetail.drawReadOnly(vg, equip, x, y)
+    if not equip then return end
+    nvgSave(vg)
+    nvgTranslate(vg, x - (REF_BG_CX - COMPACT_BG_W * 0.5) * COMPACT_SCALE, y)
+    nvgScale(vg, COMPACT_SCALE, COMPACT_SCALE)
+    drawCompactPanel(vg, equip, "", false)
+    nvgRestore(vg)
+end
+
+function EquipmentDetail.readOnlySize(equip)
+    return COMPACT_BG_W * COMPACT_SCALE, compactViewHeight(equip, false) * COMPACT_SCALE
+end
+
 --- 鼠标是否落在详情面板（含按钮条）。未给坐标时视为命中，兼容旧调用。
 ---@param dx number|nil
 ---@param dy number|nil

@@ -9,6 +9,12 @@ function Start()
     local oldSfx = package.loaded["systems.GameSFX"]
     local oldFeedback = package.loaded["systems.ButtonFeedback"]
     local oldIcons = package.loaded["core.DarkIcon"]
+    local oldDetail = package.loaded["ui.character.equip.EquipmentDetail"]
+    package.loaded["ui.character.equip.EquipmentDetail"] = {
+        init = function() end,
+        readOnlySize = function() return 720, 440 end,
+        drawReadOnly = function() end,
+    }
     package.loaded["core.DarkIcon"] = {} -- 本测试只测输入，不调用渲染器。
     package.loaded["systems.GameSFX"] = { playUIMove = function() end }
     package.loaded["systems.ButtonFeedback"] = { trigger = function() end }
@@ -27,13 +33,13 @@ function Start()
         }
     end
     Page.open(entries)
-    Page.handleInput(873, 602)
+    Page.handleInput(873, 542)
     eq(#claimed, 0, "开场动画期间不触发领取")
     time.elapsedTime = 11
-    Page.handleInput(873, 602)
+    Page.handleInput(873, 542)
     eq(claimed[1], 1, "首行领取索引")
     Page.handleScroll(-1000)
-    Page.handleInput(873, 1828)
+    Page.handleInput(873, 2008)
     eq(claimed[2], 20, "滚轮到底仍对应原存储索引")
     Page.handleScroll(1000)
     Page.handleDragBegin(500, 1000)
@@ -41,11 +47,11 @@ function Start()
     Page.handleDragEnd(500, 800)
     Page.handleInput(873, 644)
     eq(#claimed, 2, "拖拽结束不会误领")
-    Page.handleInput(873, 644)
+    Page.handleScroll(1000)
+    Page.handleInput(873, 784)
     eq(claimed[3], 2, "拖拽后按可见位置命中第二行")
-    Page.handleInput(300, 2070)
-    Page.handleInput(873, 644)
-    eq(decomposed[1], 2, "分解模式原索引")
+    Page.handleRightClick(873, 784)
+    eq(decomposed[1], 2, "右键回收对应原索引")
     Page.handleScroll(1000)
     Page.handleDragBegin(873, 602)
     Page.handleScroll(-2)
@@ -58,21 +64,21 @@ function Start()
     Page.handleDragEnd(873, 602)
     Page.handleInput(873, 602)
     eq(#decomposed, 1, "数据刷新加滚轮仍保留防误点击保护")
-    Page.handleInput(540, 2220)
+    Page.handleInput(780, 2210)
     eq(allDecomposes, 0, "全部分解必须二次确认")
     Page.handleInput(873, 644)
     eq(#decomposed, 1, "确认框阻止点击底层条目")
     Page.handleInput(330, 1340)
     eq(allDecomposes, 0, "取消确认不分解")
-    Page.handleInput(540, 2220)
+    Page.handleInput(780, 2210)
     Page.handleInput(750, 1340)
     eq(allDecomposes, 1, "确认后仅分解一次")
-    Page.handleInput(780, 2070)
+    Page.handleInput(330, 2210)
     eq(allClaims, 1, "全部领取接线")
     Page.refresh({})
     eq(Page.isOpen(), true, "领空后保留地点空态")
-    Page.handleInput(780, 2070)
-    Page.handleInput(540, 2220)
+    Page.handleInput(330, 2210)
+    Page.handleInput(780, 2210)
     eq(allClaims, 1, "空态不能重复领取")
     eq(allDecomposes, 1, "空态不能分解")
     eq(claimQuality, 0, "默认领取范围为全部")
@@ -80,23 +86,22 @@ function Start()
     entries[2].quality, entries[2].equip.quality = 6, 6
     entries[9].quality, entries[9].equip.quality = 6, 6
     Page.refresh(entries)
-    Page.handleInput(966, 354)
-    Page.handleInput(873, 602)
+    Page.handleInput(675, 286)
+    Page.handleRightClick(873, 542)
     eq(decomposed[#decomposed], 2, "筛选后的首行回收仍指向原索引2")
-    Page.handleInput(300, 2070)
-    Page.handleInput(873, 844)
+    Page.handleInput(873, 784)
     eq(claimed[#claimed], 9, "筛选后的第二行领取仍指向原索引9")
-    Page.handleInput(780, 2070)
+    Page.handleInput(330, 2210)
     eq(claimQuality, 6, "一键领取透传稀有度")
-    Page.handleInput(540, 2220)
+    Page.handleInput(780, 2210)
     Page.handleInput(750, 1340)
     eq(recycleQuality, 6, "一键回收只处理筛选品质")
     Page.refresh(entries)
-    Page.handleInput(873, 602)
+    Page.handleInput(873, 542)
     eq(claimed[#claimed], 2, "刷新保持当前品质筛选")
-    Page.handleInput(398, 354)
+    Page.handleInput(375, 286)
     local beforeEmptyFilter = allClaims
-    Page.handleInput(780, 2070)
+    Page.handleInput(330, 2210)
     eq(allClaims, beforeEmptyFilter, "空筛选不领取隐藏品质")
     Page.close()
     time.elapsedTime = 12
@@ -118,12 +123,24 @@ function Start()
     Page.open({ pending, determined })
     time.elapsedTime = 15
     local beforePending = #claimed
-    Page.handleInput(873, 602)
+    Page.handleInput(873, 542)
     eq(#claimed, beforePending, "待整理条目不可领取")
-    Page.handleInput(966, 354)
-    Page.handleInput(873, 602)
+    Page.handleInput(675, 286)
+    Page.handleInput(873, 542)
     eq(claimed[#claimed], 17, "筛选保留摘要携带的原存储索引")
-    Page.handleInput(540, 2220)
+    Page.handleInput(180, 542)
+    eq(Page.isDetailOpen(), true, "点击装备卡片显示只读详情")
+    Page.handleInput(400, 700)
+    eq(Page.isDetailOpen(), false, "点击详情关闭预览")
+    Page.showToast("消息甲")
+    Page.showToast("消息乙")
+    Page.handleInput(873, 542)
+    eq(claimed[#claimed], 17, "消息队列不拦截领取按钮")
+    Page.handleScroll(-1)
+    Page.handleHover(180, 542)
+    time.elapsedTime = 15.6
+    Page.handleHover(180, 542)
+    Page.handleInput(780, 2210)
     local beforeRefresh = allDecomposes
     Page.refresh({ pending, determined })
     Page.handleInput(750, 1340)
@@ -143,6 +160,7 @@ function Start()
     package.loaded["systems.GameSFX"] = oldSfx
     package.loaded["systems.ButtonFeedback"] = oldFeedback
     package.loaded["core.DarkIcon"] = oldIcons
+    package.loaded["ui.character.equip.EquipmentDetail"] = oldDetail
     time = oldTime
     print("[lootbox_page_test] 页面交互全部通过")
 

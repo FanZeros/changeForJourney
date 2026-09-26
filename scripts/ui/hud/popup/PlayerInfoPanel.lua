@@ -9,6 +9,7 @@ local I18n           = require("core.I18n")
 local DrawUtil       = require("core.DrawUtil")
 local StageConfig    = require("config.StageConfig")
 local PlayerStore    = require("core.PlayerStore")
+local NumberUtil     = require("core.NumberUtil")
 local CharacterPanel    = require("ui.character.panel.CharacterPanel")
 local HeroConfig        = require("config.HeroConfig")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
@@ -810,6 +811,42 @@ function PlayerInfoPanel.draw(vg)
         PLAY_TIME.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         244, 237, 224, 4,
         { strokeColor = { 0x3a, 0x24, 0x0c } })
+
+    -- ── 9.6 金币 / 宝石 / 游戏天数 ──
+    do
+        local session = PlayerStore.Get("session") or {}
+        local days = tonumber(session.playDays) or 1
+        local goldText = NumberUtil.format(GameState.getGold())
+        local gemText = NumberUtil.format(GameState.getGems())
+        local statText = string.format("金币 %s    宝石 %s    第%d天", goldText, gemText, days)
+        drawTextStroke(vg, PLAY_TIME.X, PLAY_TIME.Y + 36, statText,
+            26, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+            216, 201, 163, 3,
+            { strokeColor = { 0x3a, 0x24, 0x0c } })
+        local heroes = PlayerStore.Get("heroes") or {}
+        local heroCount = 0
+        for _ in pairs(heroes.roster or {}) do heroCount = heroCount + 1 end
+        local equipData = PlayerStore.Get("equipment")
+        local bagCount = 0
+        if equipData and equipData.inventory then
+            for _ in pairs(equipData.inventory) do bagCount = bagCount + 1 end
+        end
+        local line2 = string.format("精粹 %s  扫荡券 %s  招募券 %s",
+            NumberUtil.format(GameState.getEssence()),
+            NumberUtil.format(GameState.getSweepTicket()),
+            NumberUtil.format(GameState.getRecruitTicket()))
+        local line3 = string.format("钥匙 %s    队员 %d    背包 %d",
+            NumberUtil.format(GameState.getGoldenKey()),
+            heroCount, bagCount)
+        drawTextStroke(vg, PLAY_TIME.X, PLAY_TIME.Y + 66, line2,
+            24, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+            216, 201, 163, 3,
+            { strokeColor = { 0x3a, 0x24, 0x0c } })
+        drawTextStroke(vg, PLAY_TIME.X, PLAY_TIME.Y + 94, line3,
+            24, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+            216, 201, 163, 3,
+            { strokeColor = { 0x3a, 0x24, 0x0c } })
+    end
 
     -- ── 9.5 当前区服名称 ──
     if cachedServerName then

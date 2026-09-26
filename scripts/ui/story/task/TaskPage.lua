@@ -222,12 +222,12 @@ local function drawRow(vg, task, y)
     if reward then
         local rcx = LIST.x + LIST.w - 300
         local rcy = y - 8
-        DarkIcon.drawQualityBg(vg, reward.quality or 1, rcx, rcy, 78, 78, claimed and 0.55 or 1)
+        DarkIcon.drawQualityBg(vg, reward.quality or 1, rcx, rcy, 124, 124, claimed and 0.55 or 1)
         local icon = rewardIcon(vg, reward.icon)
         if icon >= 0 then
-            DrawUtil.drawImageCentered(vg, icon, rcx, rcy, 52, 52, claimed and 0.55 or 1)
+            DrawUtil.drawImageCentered(vg, icon, rcx, rcy, 96, 96, claimed and 0.55 or 1)
         end
-        text(vg, rcx + 24, rcy + 28, require("core.NumberUtil").format(reward.amount or 0), 20,
+        text(vg, rcx + 55, rcy + 55, require("core.NumberUtil").format(reward.amount or 0), 26,
             NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 255, 244, 220, 2)
     end
     local label = "未完成"

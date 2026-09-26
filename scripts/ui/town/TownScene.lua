@@ -589,9 +589,9 @@ function TownScene.draw(vg)
     local taskFeedback = BF.begin(vg, "town_task", TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
-    drawBuildingLabel(vg, 180 + TASK_SHIFT_X, TASK_LBL_CY, 500, 170,
-        15 + TASK_SHIFT_X, TASK_LBL_CY - 6, 156, -1, 300 + TASK_SHIFT_X, TASK_LBL_CY - 6, "功绩")
-    DarkIcon.draw(vg, "merit", 15 + TASK_SHIFT_X + 78, TASK_LBL_CY - 6, 156, 1.0)
+    drawBuildingLabel(vg, 180 + TASK_SHIFT_X, TASK_LBL_CY, 420, 135,
+        15 + TASK_SHIFT_X, TASK_LBL_CY - 6, 78, -1, 225 + TASK_SHIFT_X, TASK_LBL_CY - 6, "功绩")
+    DarkIcon.draw(vg, "merit", 15 + TASK_SHIFT_X + 39, TASK_LBL_CY - 6, 78, 1.0)
     local taskOk, TaskPage = pcall(require, "ui.story.task.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
         DarkIcon.draw(vg, "reddot", 300 + TASK_SHIFT_X, TASK_LBL_CY - 36, 36, 1.0)

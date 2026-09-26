@@ -1463,7 +1463,8 @@ function Panel.handleInput(dx, dy)
                        and cy <= GRID.CLIP_BOTTOM + GRID.CELL_SIZE * 0.5
                        and DrawUtil.hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
                         -- 背包模式：slot=nil, heroId=nil → 显示"前往强化"按钮
-                        EquipmentDetail.open(equip.seq, nil, nil, true, "backpack", dx, dy)
+                        EquipmentDetail.open(equip.seq, nil, nil, true, "backpack",
+                            cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
                         if EquipmentDetail.pin then EquipmentDetail.pin() end
                         print("[BackpackPanel] 打开装备详情 seq=" .. tostring(equip.seq))
                         return true
@@ -1562,10 +1563,13 @@ function Panel.handleHover(dx, dy)
             if EquipmentDetail.isOpen and EquipmentDetail.isOpen() then
                 if EquipmentDetail.getOwner and EquipmentDetail.getOwner() ~= "backpack" then return end
                 if EquipmentDetail.isPinned and EquipmentDetail.isPinned() then return end
-                if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(dx, dy) end
+                if EquipmentDetail.setAnchor then
+                    EquipmentDetail.setAnchor(cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
+                end
                 return
             end
-            EquipmentDetail.open(equip.seq, nil, nil, true, "backpack", dx, dy)
+            EquipmentDetail.open(equip.seq, nil, nil, true, "backpack",
+                cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
             print("[BackpackPanel] 悬停详情 seq=" .. seq)
             return
         end

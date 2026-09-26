@@ -1071,6 +1071,31 @@ function HandleMouseMoveHorizon(eventType, eventData)
     end
 end
 
+-- 鼠标静止时也推进装备悬停计时（Standalone.HandleUpdate 每帧调用）。
+-- 移到其他格子由命中检测立即收起旧说明。
+function HandleEquipmentHoverTickHorizon()
+    if DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
+        or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
+        or EquipCrossDrag.isArmed() then return end
+    local pid, dx, dy = HorizonResolveMouse()
+    if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+        if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
+    elseif CharacterPanel.handleHover then
+        CharacterPanel.handleHover(-1, -1)
+    end
+    if pid == 'left' then
+        if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
+            BackpackPanel.handleHover(dx, dy)
+        end
+        if EquipmentBag.isOpen and EquipmentBag.isOpen() and EquipmentBag.handleHover then
+            EquipmentBag.handleHover(dx, dy)
+        end
+    else
+        if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
+        if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
+    end
+end
+
 function HandleMouseButtonUpHorizon(eventType, eventData)
     if equipOverlayPress then
         equipOverlayPress = false

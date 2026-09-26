@@ -761,8 +761,6 @@ end
 
 -- ======================== 绘制 ========================
 
---- 绘制奖励弹窗（在设计空间内调用）
----@param vg any NanoVG 上下文
 --- 行内区域绘制用的变换参数（逆映射必须与 drawRegion 完全一致）
 ---@param rx number
 ---@param ry number
@@ -775,7 +773,12 @@ local function regionTransform(rx, ry, rw, rh)
 end
 
 --- [三行并行] 行内绘制: 遮罩只盖本行, 弹窗等比缩放嵌入行内
---- @param rowTag number 归属行（1..3）; 不匹配则不绘制
+---@param vg any NanoVG 上下文
+---@param rx number
+---@param ry number
+---@param rw number
+---@param rh number
+---@param rowTag number 归属行（1..3）; 不匹配则不绘制
 function RewardPopup.drawRegion(vg, rx, ry, rw, rh, rowTag)
     if not state.open or state.rowTag ~= rowTag then return end
 

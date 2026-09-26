@@ -73,9 +73,9 @@ local function buildDefaultSlots(teamIdx)
     end
     if teamIdx == 1 then
         -- 队1 保留旧版默认开局阵容（服务端数据到达后会被 setHeroesData 覆盖）
-        slots[1] = { state = "occupied", heroId = 1, level = 5, exp = 60, maxExp = ExpTable.getHeroExpForLevel(5) or 40 }
-        slots[2] = { state = "occupied", heroId = 3, level = 3, exp = 30, maxExp = ExpTable.getHeroExpForLevel(3) or 18 }
-        slots[3] = { state = "empty" }
+        slots[1] = { state = "occupied", heroId = 1, level = 1, exp = 0, maxExp = ExpTable.getHeroExpForLevel(1) or 5 }
+        slots[2] = { state = "occupied", heroId = 2, level = 1, exp = 0, maxExp = ExpTable.getHeroExpForLevel(1) or 5 }
+        slots[3] = { state = "occupied", heroId = 3, level = 1, exp = 0, maxExp = ExpTable.getHeroExpForLevel(1) or 5 }
         slots[4] = { state = "locked" }
     end
     return slots

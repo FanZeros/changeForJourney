@@ -546,8 +546,6 @@ local function playJoinAt_(index)
 end
 
 local function startStarterJoins_()
-    local handled = localSendAction("grant_starter_trio", {})
-    print("[Standalone] grant starter trio handled=" .. tostring(handled))
     playJoinAt_(1)
 end
 
@@ -631,7 +629,10 @@ end
 --- [LetterIntro] 新档开场链：先祖来信 → 门厅点卯 → 进游戏
 local function startIntroChain_()
     -- 一开始就落盘，避免标题关闭后重进或存档回写把同一段开场再播一遍。
+    -- 三人也在这时入队。若只等对话结束，中途存档会把默认的一个人写死。
     markIntroCompleted_()
+    local handled = localSendAction("grant_starter_trio", {})
+    print("[Standalone] grant starter trio at intro start handled=" .. tostring(handled))
     GameBGM.setScene("letter", { fromStart = true })
     LetterIntro.start(startOpeningBriefing_)
 end

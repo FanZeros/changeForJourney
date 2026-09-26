@@ -763,6 +763,17 @@ end
 
 --- 绘制奖励弹窗（在设计空间内调用）
 ---@param vg any NanoVG 上下文
+--- 行内区域绘制用的变换参数（逆映射必须与 drawRegion 完全一致）
+---@param rx number
+---@param ry number
+---@param rw number
+---@param rh number
+---@return number ox, number oy, number fit
+local function regionTransform(rx, ry, rw, rh)
+    local fit = math.min(rw / (DESIGN_W * 1.04), rh / 920)
+    return rx + rw * 0.5, ry + rh * 0.48, fit
+end
+
 --- [三行并行] 行内绘制: 遮罩只盖本行, 弹窗等比缩放嵌入行内
 --- @param rowTag number 归属行（1..3）; 不匹配则不绘制
 function RewardPopup.drawRegion(vg, rx, ry, rw, rh, rowTag)
@@ -770,9 +781,9 @@ function RewardPopup.drawRegion(vg, rx, ry, rw, rh, rowTag)
 
     -- [暗黑化] 不再画行内黑色叠加层，弹窗直接嵌入行内
     -- 弹窗内容等比嵌入: 设计锚点(540, GLOW_CY=1044) → 行中心
-    local fit = math.min(rw / (DESIGN_W * 1.04), rh / 920)
+    local ox, oy, fit = regionTransform(rx, ry, rw, rh)
     nvgSave(vg)
-    nvgTranslate(vg, rx + rw * 0.5, ry + rh * 0.48)
+    nvgTranslate(vg, ox, oy)
     nvgScale(vg, fit, fit)
     nvgTranslate(vg, -540, -GLOW_CY)
     RewardPopup.drawContent(vg)
@@ -782,6 +793,24 @@ end
 --- [三行并行] 当前归属行（nil=全局）
 function RewardPopup.currentRowTag()
     return state.open and state.rowTag or nil
+end
+
+--- [三行并行] 行内输入：窗口坐标 → 设计空间，交给统一的 handleInput。
+--- 走这里才能保留同帧保护与「逐个获得未结束时先跳过动画」的行为；
+--- 直接调 close() 会让玩家通关后随手一点就把弹窗关掉，看起来像没弹。
+---@param wx number 窗口坐标 X
+---@param wy number 窗口坐标 Y
+---@param rx number 行内矩形
+---@param ry number
+---@param rw number
+---@param rh number
+---@return boolean 是否消费事件
+function RewardPopup.handleInputRegion(wx, wy, rx, ry, rw, rh)
+    if not state.open or state.rowTag == nil then return false end
+    local ox, oy, fit = regionTransform(rx, ry, rw, rh)
+    local dx = (wx - ox) / fit + 540
+    local dy = (wy - oy) / fit + GLOW_CY
+    return RewardPopup.handleInput(dx, dy)
 end
 
 --- 全局绘制（无行归属时走原全屏路径）

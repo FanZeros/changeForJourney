@@ -475,15 +475,17 @@ function BattleTriPage.handleInput(wx, wy)
         return EquipmentBag.handleInput(dx, dy)
     end
 
-    -- [常驻] 点击行1 内任意处可关闭归属本行的获得弹窗
-    if RewardPopup.currentRowTag() then
-        RewardPopup.close()
-        return true
-    end
-
     local logicalH = region.h
     local logicalW = region.w
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
+
+    -- [常驻] 行1 的获得弹窗：交给 RewardPopup 统一处理，保留同帧保护
+    -- （逐个获得未结束时点击只跳过动画）。此前直接 close() 会让通关后
+    -- 随手一点就把刚弹出的奖励关掉，看起来像「结算页不显示」。
+    if RewardPopup.currentRowTag() then
+        RewardPopup.handleInputRegion(wx, wy, ix1, iy1, iw1, ih1)
+        return true
+    end
     local bs = require("ui.battle.scene.BattleScene")
 
     -- 对话框打开: 逆映射到设计空间（与 2 倍渲染缩放一致）

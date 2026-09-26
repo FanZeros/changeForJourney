@@ -147,4 +147,26 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
     end
 end
 
+--- 恢复己方出场顺序（原位排序，调用方持有的数组引用不变）
+--- 「阵亡紧凑」会把阵亡英雄 table.remove + insert 到队尾（BattleCasualty），
+--- 渲染按数组下标定位（BattleDraw → BattleLayout.cardPos），所以顺序一旦被打乱，
+--- 切关后角色站位就会和编队槽位不一致。切关统一调这里复位。
+--- 没有原始槽位号时保持现有顺序，不做任何改动。
+---@param allies table[]
+function M.restoreOrder(allies)
+    if not allies or #allies < 2 then return end
+    -- 只按「记录过槽位的单位」判断是否需要重排，避免无槽位信息时误排
+    local hasSlot = false
+    for _, u in ipairs(allies) do
+        if u._slotOrder then hasSlot = true break end
+    end
+    if not hasSlot then return end
+    table.sort(allies, function(a, b)
+        local oa = a._slotOrder or math.huge
+        local ob = b._slotOrder or math.huge
+        if oa ~= ob then return oa < ob end
+        return false  -- 稳定：相等时保持相对顺序
+    end)
+end
+
 return M

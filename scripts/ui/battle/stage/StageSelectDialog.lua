@@ -125,6 +125,9 @@ local function collectAllIds()
             order[cur] = #ids
         end
         local nxt = SC.getNextStageId(cur)
+        if not nxt and SC.isTerminalTemple(cur) then
+            nxt = SC.getReincarnationTarget(SC.getDifficulty(cur))
+        end
         if not nxt then break end
         cur = nxt
     end

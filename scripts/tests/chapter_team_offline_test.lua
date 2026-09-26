@@ -21,6 +21,13 @@ function Start()
     local Stage = require("ui.battle.stage.StageSelectDialog")
     Stage.open()
     eq(Stage.isOpen(), true, "选关弹窗打开")
+    local SC = require("config.StageConfig")
+    local stageState
+    for i = 1, 20 do
+        local key, value = debug.getupvalue(Stage.handleInput, i)
+        if key == "state" then stageState = value break end
+    end
+    eq(#stageState.cacheGroups, SC.TOTAL_CHAPTERS + 1, "章节列表包含所有难度和终焉")
     Stage.handleInput(370, 1060) -- 1-1：当前关无需切换
     eq(jumps, 0, "当前关不切换")
     Stage.handleInput(480, 1060) -- 1-2：首次点击仅展开确认

@@ -512,8 +512,13 @@ local function compactContentBottom(equip)
 end
 
 local SET_TITLE_H = 50
-local SET_ROW_H = 124
+local SET_ROW_H = 82
 local SET_GAP = 18
+
+local function compactSetRowHeight(line)
+    local desc = line.text:match("^%d件%s+(.*)$") or ""
+    return math.max(SET_ROW_H, 16 + math.ceil((utf8.len(desc) or 0) / 24) * 32)
+end
 
 local function compactSetLines(equip)
     local tpl = EquipmentConfig.ITEMS[equip and equip.templateId]
@@ -542,7 +547,11 @@ end
 local function compactSetBlockHeight(equip)
     local _, lines = compactSetLines(equip)
     if #lines == 0 then return 0 end
-    return SET_GAP + SET_TITLE_H + (#lines - 1) * SET_ROW_H + 20
+    local height = SET_GAP + SET_TITLE_H + 20
+    for i = 2, #lines do
+        height = height + compactSetRowHeight(lines[i])
+    end
+    return height
 end
 
 local function compactViewHeight(equip, withButtons)
@@ -1102,9 +1111,12 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
     if #setLines > 0 then
         local sectionTop = compactContentBottom(equip) + SET_GAP
         local col = setDef.color or { 232, 208, 122, 255 }
+        local sectionH = SET_TITLE_H + 12
+        for i = 2, #setLines do
+            sectionH = sectionH + compactSetRowHeight(setLines[i])
+        end
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, leftX - 10, sectionTop, panelW - 36,
-            SET_TITLE_H + (#setLines - 1) * SET_ROW_H + 12, 12)
+        nvgRoundedRect(vg, leftX - 10, sectionTop, panelW - 36, sectionH, 12)
         nvgFillColor(vg, nvgRGBA(12, 10, 8, 200))
         nvgFill(vg)
         nvgStrokeColor(vg, nvgRGBA(col[1], col[2], col[3], 110))
@@ -1115,8 +1127,8 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
         nvgText(vg, leftX + 8, sectionTop + 26, setLines[1].text, nil)
+        local rowTop = sectionTop + SET_TITLE_H
         for i = 2, #setLines do
-            local rowTop = sectionTop + SET_TITLE_H + (i - 2) * SET_ROW_H
             local line = setLines[i]
             local tier, desc = line.text:match("^(%d件%s+)(.*)$")
             nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], line.active and 255 or 185))
@@ -1127,6 +1139,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
                 or nvgRGBA(170, 158, 140, 210))
             nvgFontSize(vg, 26)
             nvgTextBox(vg, leftX + 96, rowTop + 8, panelW - 150, desc, nil)
+            rowTop = rowTop + compactSetRowHeight(line)
         end
     end
 
@@ -1220,9 +1233,9 @@ function EquipmentDetail.isPinned()
 end
 
 --- 关闭（冻结当前面板内容用于关闭动画）
-function EquipmentDetail.dismissHover()
+function EquipmentDetail.dismissHover(owner)
     if not detState.open or not detState.compactCorner then return end
-    if detState.pinned then return end
+    if detState.pinned or (owner and detState.owner ~= owner) then return end
     EquipmentDetail.close()
 end
 

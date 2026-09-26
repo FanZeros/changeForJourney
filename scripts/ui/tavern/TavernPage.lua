@@ -447,6 +447,7 @@ function TavernPage.init(vg)
     img.pityIcon    = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
     img.ticketIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_X.png", 0)
     img.ticketIconStellar = loadImage(vg, UrGachaConfig.UI.ticketIconPath, "image/货币道具/UI_icon_ZMQ2_X.png")
+    img.diamondIcon = loadImage(vg, "image/货币道具/UI_icon_SJ_X.png")
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv       = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）

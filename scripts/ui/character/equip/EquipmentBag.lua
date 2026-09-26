@@ -335,7 +335,7 @@ function EquipmentBag.close()
     bagState.closeTime = time.elapsedTime
     EquipmentBag._hoverSeq = nil
     EquipmentBag._hoverSince = nil
-    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("bag") end
     print("[EquipmentBag] close")
 end
 
@@ -1281,24 +1281,24 @@ function EquipmentBag.handleHover(dx, dy)
     if not EquipmentBag.isOpen() then
         EquipmentBag._hoverSeq = nil
         EquipmentBag._hoverSince = nil
-        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("bag") end
         return
     end
     local entry = findBagEntryAt(dx, dy)
     if not entry then
         EquipmentBag._hoverSeq = nil
         EquipmentBag._hoverSince = nil
-        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("bag") end
         return
     end
     local seq = tostring(entry.seq)
     if EquipmentBag._hoverSeq ~= seq then
         EquipmentBag._hoverSeq = seq
         EquipmentBag._hoverSince = time.elapsedTime
-        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("bag") end
         return
     end
-    if (time.elapsedTime - (EquipmentBag._hoverSince or 0)) < 0.5 then
+    if (time.elapsedTime - (EquipmentBag._hoverSince or 0)) < 0.3 then
         return
     end
     local anchorX, anchorY = dx, dy
@@ -1308,9 +1308,10 @@ function EquipmentBag.handleHover(dx, dy)
         local wy = overlayRegion.y + overlayRegion.h * 0.5 + (dy - LAND.BG_H * 0.5) * fit
         anchorX, anchorY = EquipmentBag.overlayToDetail(wx, wy)
     end
-    if EquipmentDetail.isOpen and EquipmentDetail.isOpen() and EquipmentDetail.setAnchor then
+    if EquipmentDetail.isOpen and EquipmentDetail.isOpen() then
+        if EquipmentDetail.getOwner and EquipmentDetail.getOwner() ~= "bag" then return end
         if EquipmentDetail.isPinned and EquipmentDetail.isPinned() then return end
-        EquipmentDetail.setAnchor(anchorX, anchorY)
+        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(anchorX, anchorY) end
         return
     end
     EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", anchorX, anchorY)

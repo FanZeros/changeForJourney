@@ -8,7 +8,6 @@ function M.bind(deps)
     local CharacterDetail = deps.CharacterDetail
     local Draw = deps.Draw
     local CharacterPanel = deps.CharacterPanel
-    local hitTestTeamSlot = deps.hitTestTeamSlot
     local hitTestRosterCard = deps.hitTestRosterCard
     local getTeamSlots = deps.getTeamSlots
     local getSlotPowerCache = deps.getSlotPowerCache
@@ -16,6 +15,7 @@ function M.bind(deps)
     local getSelectSlotState = deps.getSelectSlotState
     local selectSlotState = getSelectSlotState()
     local getTeams = deps.getTeams
+    local getTeamPowerCaches = deps.getTeamPowerCaches
     local getHeroRoster = deps.getHeroRoster
     local getShardMap = deps.getShardMap
     local getActiveTeamIdx = deps.getActiveTeamIdx
@@ -46,6 +46,73 @@ function M.bind(deps)
             return CharacterDetail.handleInput(dx, dy)
         end
 
+        local dragState = getDragState()
+        local teamSlots = getTeamSlots()
+        local slotPowerCache = getSlotPowerCache()
+        local activeTeamIdx = getActiveTeamIdx()
+        local onTeamChangedCallback = getOnTeamChanged()
+
+        if dragState.active then
+            local draggedHeroId = dragState.heroId
+            local dropTeam, dropSlot = Draw.hitTestAvatarSlot(dx, dy)
+            if dropTeam then
+                local srcTeam = dragState.fromTeam or activeTeamIdx
+                local srcIdx = dragState.fromSlot
+                if dropTeam ~= activeTeamIdx then
+                    teamSlots = getTeams()[dropTeam].slots
+                    slotPowerCache = getTeamPowerCaches()[dropTeam]
+                end
+                local dstSlot = teamSlots[dropSlot]
+                if dstSlot.state == "locked" then
+                    print("[CharacterPanel] 目标槽位 " .. dropSlot .. " 未解锁，无法交换")
+                elseif srcIdx and srcTeam == dropTeam then
+                    if dropSlot ~= srcIdx then
+                        local srcSlot = teamSlots[srcIdx]
+                        if dstSlot.state == "empty" then
+                            teamSlots[dropSlot] = srcSlot
+                            teamSlots[srcIdx] = { state = "empty" }
+                            slotPowerCache[dropSlot] = slotPowerCache[srcIdx] or 0
+                            slotPowerCache[srcIdx] = 0
+                            print("[CharacterPanel] 移动槽位 " .. srcIdx .. " → " .. dropSlot)
+                        else
+                            teamSlots[srcIdx], teamSlots[dropSlot] = teamSlots[dropSlot], teamSlots[srcIdx]
+                            slotPowerCache[srcIdx], slotPowerCache[dropSlot] = slotPowerCache[dropSlot], slotPowerCache[srcIdx]
+                            print("[CharacterPanel] 交换槽位 " .. srcIdx .. " ↔ " .. dropSlot)
+                        end
+                        rebuildRoster()
+                        refreshPowerCache()
+                        refreshNavBadge()
+                        if onTeamChangedCallback then onTeamChangedCallback(dropTeam) end
+                    end
+                else
+                    -- setActiveTeam 会清除拖拽状态，先保存角色 ID 再切换目标队。
+                    if dropTeam ~= getActiveTeamIdx() then
+                        CharacterPanel.setActiveTeam(dropTeam)
+                    end
+                    deployHeroToSlot(draggedHeroId, dropSlot)
+                end
+            elseif dragState.fromSlot then
+                local srcTeam = dragState.fromTeam or activeTeamIdx
+                local srcSlots = getTeams()[srcTeam].slots
+                local srcSlot = srcSlots[dragState.fromSlot]
+                if srcSlot.state == "occupied" and srcSlot.heroId == draggedHeroId then
+                    print("[CharacterPanel] 解除出战 槽位 " .. dragState.fromSlot .. " 英雄 " .. (srcSlot.heroId or "?"))
+                    srcSlots[dragState.fromSlot] = { state = "empty" }
+                    getTeamPowerCaches()[srcTeam][dragState.fromSlot] = 0
+                    rebuildRoster()
+                    refreshPowerCache()
+                    refreshNavBadge()
+                    if onTeamChangedCallback then onTeamChangedCallback(srcTeam) end
+                end
+            end
+            dragState.active = false
+            dragState.heroId = nil
+            dragState.rosterIdx = nil
+            dragState.fromSlot = nil
+            dragState.fromTeam = nil
+            return true
+        end
+
         local tabIdx = Draw.hitTestTeamTabs(dx, dy)
         if tabIdx then
             CharacterPanel.setActiveTeam(tabIdx)
@@ -70,70 +137,6 @@ function M.bind(deps)
             return true
         end
 
-        local dragState = getDragState()
-        local teamSlots = getTeamSlots()
-        local slotPowerCache = getSlotPowerCache()
-        local activeTeamIdx = getActiveTeamIdx()
-        local onTeamChangedCallback = getOnTeamChanged()
-
-        if dragState.active then
-            local dropTeam, dropSlot = Draw.hitTestAvatarSlot(dx, dy)
-            if dropTeam and dropTeam ~= activeTeamIdx then
-                CharacterPanel.setActiveTeam(dropTeam)
-                teamSlots = getTeamSlots()
-                activeTeamIdx = dropTeam
-            end
-            local slotIdx = dropSlot or hitTestTeamSlot(dx, dy)
-            if slotIdx and dragState.fromSlot then
-                local srcIdx = dragState.fromSlot
-                if slotIdx ~= srcIdx then
-                    local srcSlot = teamSlots[srcIdx]
-                    local dstSlot = teamSlots[slotIdx]
-                    if dstSlot.state == "locked" then
-                        print("[CharacterPanel] 目标槽位 " .. slotIdx .. " 未解锁，无法交换")
-                    elseif dstSlot.state == "empty" then
-                        teamSlots[slotIdx] = srcSlot
-                        teamSlots[srcIdx] = { state = "empty" }
-                        slotPowerCache[slotIdx] = slotPowerCache[srcIdx] or 0
-                        slotPowerCache[srcIdx] = 0
-                        print("[CharacterPanel] 移动槽位 " .. srcIdx .. " → " .. slotIdx)
-                        rebuildRoster()
-                        refreshNavBadge()
-                        if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-                    else
-                        teamSlots[srcIdx], teamSlots[slotIdx] = teamSlots[slotIdx], teamSlots[srcIdx]
-                        slotPowerCache[srcIdx], slotPowerCache[slotIdx] = slotPowerCache[slotIdx], slotPowerCache[srcIdx]
-                        print("[CharacterPanel] 交换槽位 " .. srcIdx .. " ↔ " .. slotIdx)
-                        rebuildRoster()
-                        refreshNavBadge()
-                        if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-                    end
-                end
-            elseif slotIdx and not dragState.fromSlot then
-                local slot = teamSlots[slotIdx]
-                if slot.state == "empty" or slot.state == "occupied" then
-                    deployHeroToSlot(dragState.heroId, slotIdx)
-                end
-            elseif not slotIdx and dragState.fromSlot then
-                local srcIdx = dragState.fromSlot
-                local srcSlot = teamSlots[srcIdx]
-                if srcSlot.state == "occupied" then
-                    print("[CharacterPanel] 解除出战 槽位 " .. srcIdx .. " 英雄 " .. (srcSlot.heroId or "?"))
-                    teamSlots[srcIdx] = { state = "empty" }
-                    slotPowerCache[srcIdx] = 0
-                    rebuildRoster()
-                    refreshPowerCache()
-                    refreshNavBadge()
-                    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-                end
-            end
-            dragState.active = false
-            dragState.heroId = nil
-            dragState.rosterIdx = nil
-            dragState.fromSlot = nil
-            return true
-        end
-
         local selectSlotState = getSelectSlotState()
         local heroRoster = getHeroRoster()
         if selectSlotState.active then
@@ -155,23 +158,6 @@ function M.bind(deps)
             end
             selectSlotState.active = false
             selectSlotState.slotIndex = nil
-        end
-
-        local slotIdx = hitTestTeamSlot(dx, dy)
-        if slotIdx then
-            local slot = teamSlots[slotIdx]
-            if slot.state == "locked" then
-                print("[CharacterPanel] 槽位 " .. slotIdx .. " 未解锁")
-            elseif slot.state == "empty" then
-                selectSlotState.active = true
-                selectSlotState.slotIndex = slotIdx
-                print("[CharacterPanel] 槽位 " .. slotIdx .. " 已选中，请点击下方角色出战")
-            elseif slot.state == "occupied" then
-                print("[CharacterPanel] 查看已出战角色详情: heroId=" .. tostring(slot.heroId))
-                require("systems.GameSFX").play("ui_pick")
-                CharacterDetail.open(slot.heroId)
-            end
-            return true
         end
 
         local rosterIdx = hitTestRosterCard(dx, dy)
@@ -214,15 +200,9 @@ function M.bind(deps)
         end
 
         local dragState = getDragState()
-        local teamSlots = getTeamSlots()
-        local avatarTeam, avatarSlot = Draw.hitTestAvatarSlot(dx, dy)
-        local slotIdx = avatarSlot or hitTestTeamSlot(dx, dy)
-        if avatarTeam and avatarTeam ~= getActiveTeamIdx() then
-            CharacterPanel.setActiveTeam(avatarTeam)
-            teamSlots = getTeamSlots()
-        end
-        if slotIdx then
-            local slot = teamSlots[slotIdx]
+        local avatarTeam, slotIdx = Draw.hitTestAvatarSlot(dx, dy)
+        if avatarTeam then
+            local slot = getTeams()[avatarTeam].slots[slotIdx]
             if slot.state == "occupied" and slot.heroId then
                 dragState.startX = dx
                 dragState.startY = dy
@@ -230,6 +210,7 @@ function M.bind(deps)
                 dragState.cy = dy
                 dragState.heroId = slot.heroId
                 dragState.fromSlot = slotIdx
+                dragState.fromTeam = avatarTeam
                 dragState.rosterIdx = nil
                 dragState.active = false
                 dragState.moved = false
@@ -250,6 +231,7 @@ function M.bind(deps)
                     dragState.heroId = entry.heroId
                     dragState.rosterIdx = rosterIdx
                     dragState.fromSlot = nil
+                    dragState.fromTeam = nil
                     dragState.active = false
                     dragState.moved = false
                 end
@@ -320,6 +302,7 @@ function M.bind(deps)
             dragState.heroId = nil
             dragState.rosterIdx = nil
             dragState.fromSlot = nil
+            dragState.fromTeam = nil
             CharacterDetail.handleDragEnd(dx, dy)
             return true
         end
@@ -329,6 +312,7 @@ function M.bind(deps)
             dragState.heroId = nil
             dragState.rosterIdx = nil
             dragState.fromSlot = nil
+            dragState.fromTeam = nil
         elseif dragState.moved or dragState.active then
             dragState.moved = true
         end

@@ -90,14 +90,19 @@ local AVATAR = {
     CX = 245, CY = 499, W = 160, H = 160,
 }
 
--- 游玩时间（原玩家名称位；名字不再显示）
+-- 游玩时间（与头像并排）
 local PLAY_TIME = {
-    X = 355, Y = 432, FONT = 36,
+    X = 355, Y = 430, FONT = 36,
+}
+
+-- 资源统计改为全宽三行，避免挤在头像右侧
+local RESOURCE_STATS = {
+    COL_X = { 155, 430, 700 }, FIRST_Y = 650, LINE_GAP = 56, COL_W = 265,
 }
 
 -- 区服名（原 UID 位置）
 local UID = {
-    X = 355, Y = 492, FONT = 38,
+    X = 355, Y = 490, FONT = 32,
     R = 0x50, G = 0x2c, B = 0x15,
 }
 
@@ -115,7 +120,7 @@ local TOAST = {
 
 -- 战力背景框
 local PWR_BG = {
-    CX = 453, CY = 559, W = 200, H = 50, R = 17,
+    CX = 455, CY = 560, W = 200, H = 50, R = 17,
     CR = 0x64, CG = 0x35, CB = 0x16,  -- 643516
     A = 128,  -- 50%
 }
@@ -130,7 +135,7 @@ local PWR = {
 
 -- 关卡进度背景框（宽度按文案加长，避免「湮灭III12-5」溢出）
 local STG_BG = {
-    CX = 700, CY = 559, W = 280, H = 50, R = 17,
+    CX = 760, CY = 560, W = 280, H = 50, R = 17,
     CR = 0x64, CG = 0x35, CB = 0x16,
     A = 128,
 }
@@ -144,21 +149,21 @@ local STG = {
 
 -- 远征等级文本
 local ADV_LV = {
-    X = 143, Y = 655, FONT = 38,
+    X = 143, Y = 865, FONT = 38,
     FR = 255, FG = 255, FB = 255,
     SW = 5, SR = 0, SG = 0, SB = 0,
 }
 
 -- 远征等级经验数值
 local ADV_EXP = {
-    X = 940, Y = 656, FONT = 38,
+    X = 940, Y = 865, FONT = 38,
     FR = 255, FG = 255, FB = 255,
     SW = 5, SR = 0, SG = 0, SB = 0,
 }
 
 -- 经验进度条背景
 local EXP_BAR = {
-    CX = 540, CY = 699, W = 804, H = 30,
+    CX = 540, CY = 909, W = 804, H = 30,
     PAD = 6,  -- 内间距
 }
 
@@ -541,7 +546,8 @@ function PlayerInfoPanel.handleInput(dx, dy)
         return true
     end
 
-    -- 弹窗内部点击消费事件防穿透
+    -- 未命中任何可交互控件（包括面板内留白）时关闭，不透传到底层
+    PlayerInfoPanel.close()
     return true
 end
 
@@ -812,17 +818,10 @@ function PlayerInfoPanel.draw(vg)
         244, 237, 224, 4,
         { strokeColor = { 0x3a, 0x24, 0x0c } })
 
-    -- ── 9.6 金币 / 宝石 / 游戏天数 ──
+    -- ── 9.6 资源统计：独占头像下方全宽三行，文字自适应每列宽度 ──
     do
         local session = PlayerStore.Get("session") or {}
         local days = tonumber(session.playDays) or 1
-        local goldText = NumberUtil.format(GameState.getGold())
-        local gemText = NumberUtil.format(GameState.getGems())
-        local statText = string.format("金币 %s    宝石 %s    第%d天", goldText, gemText, days)
-        drawTextStroke(vg, PLAY_TIME.X, PLAY_TIME.Y + 36, statText,
-            26, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            216, 201, 163, 3,
-            { strokeColor = { 0x3a, 0x24, 0x0c } })
         local heroes = PlayerStore.Get("heroes") or {}
         local heroCount = 0
         for _ in pairs(heroes.roster or {}) do heroCount = heroCount + 1 end
@@ -831,21 +830,31 @@ function PlayerInfoPanel.draw(vg)
         if equipData and equipData.inventory then
             for _ in pairs(equipData.inventory) do bagCount = bagCount + 1 end
         end
-        local line2 = string.format("精粹 %s  扫荡券 %s  招募券 %s",
-            NumberUtil.format(GameState.getEssence()),
-            NumberUtil.format(GameState.getSweepTicket()),
-            NumberUtil.format(GameState.getRecruitTicket()))
-        local line3 = string.format("钥匙 %s    队员 %d    背包 %d",
-            NumberUtil.format(GameState.getGoldenKey()),
-            heroCount, bagCount)
-        drawTextStroke(vg, PLAY_TIME.X, PLAY_TIME.Y + 66, line2,
-            24, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            216, 201, 163, 3,
-            { strokeColor = { 0x3a, 0x24, 0x0c } })
-        drawTextStroke(vg, PLAY_TIME.X, PLAY_TIME.Y + 94, line3,
-            24, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            216, 201, 163, 3,
-            { strokeColor = { 0x3a, 0x24, 0x0c } })
+        local stats = {
+            { "金币 " .. NumberUtil.format(GameState.getGold()),
+              "宝石 " .. NumberUtil.format(GameState.getGems()), "第" .. days .. "天" },
+            { "精粹 " .. NumberUtil.format(GameState.getEssence()),
+              "扫荡券 " .. NumberUtil.format(GameState.getSweepTicket()),
+              "招募券 " .. NumberUtil.format(GameState.getRecruitTicket()) },
+            { "钥匙 " .. NumberUtil.format(GameState.getGoldenKey()),
+              "队员 " .. heroCount, "背包 " .. bagCount },
+        }
+        nvgFontFace(vg, "sans")
+        for row, entries in ipairs(stats) do
+            for col, text in ipairs(entries) do
+                local fontSize = 29
+                nvgFontSize(vg, fontSize)
+                while nvgTextBounds(vg, 0, 0, text) > RESOURCE_STATS.COL_W and fontSize > 21 do
+                    fontSize = fontSize - 1
+                    nvgFontSize(vg, fontSize)
+                end
+                drawTextStroke(vg, RESOURCE_STATS.COL_X[col],
+                    RESOURCE_STATS.FIRST_Y + (row - 1) * RESOURCE_STATS.LINE_GAP,
+                    text, fontSize, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+                    216, 201, 163, 3,
+                    { strokeColor = { 0x3a, 0x24, 0x0c } })
+            end
+        end
     end
 
     -- ── 9.5 当前区服名称 ──

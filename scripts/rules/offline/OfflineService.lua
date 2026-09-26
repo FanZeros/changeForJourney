@@ -32,6 +32,7 @@ local SCROLL_TO_REWARD = {
     accessoryScroll = "accessory_scroll",
     helmetScroll    = "helmet_scroll",
     shoesScroll     = "shoes_scroll",
+    sweepTicket     = "sweep_ticket",
 }
 
 --- 把离线装备种子立刻生成真实装备。展示和领取共用同一批实例。

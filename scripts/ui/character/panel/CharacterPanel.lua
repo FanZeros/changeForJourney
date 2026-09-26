@@ -324,13 +324,13 @@ local function rebuildRoster()
             return a.owned
         end
         if a.owned then
-            -- 2) 已出战排最前，且按槽位顺序排列
-            local aSlot = getDeployedSlotIndex(a.heroId)
-            local bSlot = getDeployedSlotIndex(b.heroId)
-            if aSlot ~= bSlot then
-                return aSlot < bSlot
+            -- 已出战角色固定排在未出战角色前，但不按编队槽位重排下方名册。
+            local aDeployed = getDeployedSlotIndex(a.heroId) <= MAX_SLOTS
+            local bDeployed = getDeployedSlotIndex(b.heroId) <= MAX_SLOTS
+            if aDeployed ~= bDeployed then
+                return aDeployed
             end
-            -- 3) 品质从高到低
+            -- 品质从高到低
             local aq = HC.get(a.heroId).quality or 0
             local bq = HC.get(b.heroId).quality or 0
             if aq ~= bq then return aq > bq end

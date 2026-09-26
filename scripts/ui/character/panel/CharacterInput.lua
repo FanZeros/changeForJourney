@@ -53,6 +53,7 @@ function M.bind(deps)
         local onTeamChangedCallback = getOnTeamChanged()
 
         if dragState.active then
+            -- 头像行内移动时，仍按槽位命中处理交换/部署。
             local draggedHeroId = dragState.heroId
             local dropTeam, dropSlot = Draw.hitTestAvatarSlot(dx, dy)
             if dropTeam then
@@ -92,18 +93,8 @@ function M.bind(deps)
                     deployHeroToSlot(draggedHeroId, dropSlot)
                 end
             elseif dragState.fromSlot then
-                local srcTeam = dragState.fromTeam or activeTeamIdx
-                local srcSlots = getTeams()[srcTeam].slots
-                local srcSlot = srcSlots[dragState.fromSlot]
-                if srcSlot.state == "occupied" and srcSlot.heroId == draggedHeroId then
-                    print("[CharacterPanel] 解除出战 槽位 " .. dragState.fromSlot .. " 英雄 " .. (srcSlot.heroId or "?"))
-                    srcSlots[dragState.fromSlot] = { state = "empty" }
-                    getTeamPowerCaches()[srcTeam][dragState.fromSlot] = 0
-                    rebuildRoster()
-                    refreshPowerCache()
-                    refreshNavBadge()
-                    if onTeamChangedCallback then onTeamChangedCallback(srcTeam) end
-                end
+                -- 松手在非槽位处只取消本次拖拽；切换队伍不能顺带卸下英雄。
+                print("[CharacterPanel] 取消头像拖拽 hero=" .. tostring(draggedHeroId))
             end
             dragState.active = false
             dragState.heroId = nil

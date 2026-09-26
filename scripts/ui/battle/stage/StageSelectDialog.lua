@@ -10,6 +10,8 @@
 
 local GameConfig        = require("config.GameConfig")
 local SC                = require("config.StageConfig")
+local MC                = require("config.MonsterConfig")
+local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DrawUtil          = require("core.DrawUtil")
 local BF                = require("systems.ButtonFeedback")
 
@@ -49,6 +51,11 @@ local D = {
     CH_Y0     = 756,     -- 第一个章节按钮顶边
     CH_VISIBLE = 8,      -- 可视章节数（超出滚动）
 
+    CONFIRM_TOP = 1170,
+    CONFIRM_W = 580,
+    CONFIRM_H = 390,
+    CONFIRM_BTN_OFFSET = 52,
+
     -- 中栏
     MID_X     = 315,
     MID_W     = 580,
@@ -78,7 +85,11 @@ local state = {
     open      = false,
     openTime  = 0,
     selKey    = nil,   -- 选中章节 key（chapter number 或 "T"=终焉神殿组）
+    pendingId = nil,   -- 二次确认的关卡 ID
     chScroll  = 0,     -- 左栏滚动起点（0-based）
+    chDragY   = nil,   -- 左栏按下位置
+    chDragScroll = 0, -- 按下时滚动起点
+    chDragMoved = false,
 
     -- [选关 v3] 全链数据缓存（ensureCache 维护, 随 maxStage 变化重建）
     cacheGroups   = nil,  ---@type table[] 章节组列表
@@ -224,6 +235,13 @@ local function selectedGroup(groups)
     return groups[1]
 end
 
+local function chapterListBounds(groups)
+    local needScroll = #groups > D.CH_VISIBLE
+    local top = D.CH_Y0 + (needScroll and 30 or 0)
+    local bottom = top + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
+    return top, bottom
+end
+
 -- ======================== Public API ========================
 
 ---@param vg any
@@ -238,6 +256,9 @@ function StageSelectDialog.open()
     if state.open then return end
     state.open     = true
     state.openTime = time.elapsedTime
+    state.pendingId = nil
+    state.chDragY = nil
+    state.chDragMoved = false
     local BS = require("ui.battle.scene.BattleScene")
     local curStage = BS.getStageId()
     -- 定位到当前关所在章节
@@ -261,6 +282,8 @@ end
 
 function StageSelectDialog.close()
     state.open = false
+    state.pendingId = nil
+    state.chDragY = nil
 end
 
 function StageSelectDialog.isOpen()
@@ -273,6 +296,52 @@ function StageSelectDialog.toggle()
     else
         StageSelectDialog.open()
     end
+end
+
+function StageSelectDialog.handleScroll(wheel, x, y)
+    if not state.open then return false end
+    if state.pendingId then return true end
+    local groups = ensureCache()
+    local top, bottom = chapterListBounds(groups)
+    if x >= D.CH_X and x <= D.CH_X + D.CH_W and y >= top and y <= bottom then
+        local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
+        state.chScroll = math.max(0, math.min(maxScroll, state.chScroll - wheel))
+    end
+    return true
+end
+
+function StageSelectDialog.handleDragBegin(x, y)
+    if not state.open then return false end
+    state.chDragMoved = false
+    if state.pendingId then return true end
+    local groups = ensureCache()
+    local top, bottom = chapterListBounds(groups)
+    if x >= D.CH_X and x <= D.CH_X + D.CH_W and y >= top and y <= bottom then
+        state.chDragY = y
+        state.chDragScroll = state.chScroll
+        state.chDragMoved = false
+    end
+    return true
+end
+
+function StageSelectDialog.handleDragMove(_, y)
+    if not state.open then return false end
+    if state.chDragY then
+        local delta = state.chDragY - y
+        if math.abs(delta) >= 15 then state.chDragMoved = true end
+        local groups = ensureCache()
+        local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
+        local step = D.CH_BTN_H + D.CH_GAP
+        state.chScroll = math.max(0, math.min(maxScroll,
+            state.chDragScroll + math.floor(delta / step + 0.5)))
+    end
+    return true
+end
+
+function StageSelectDialog.handleDragEnd()
+    if not state.open then return false end
+    state.chDragY = nil
+    return true
 end
 
 -- ======================== 绘制入口按钮 ========================
@@ -489,6 +558,55 @@ function StageSelectDialog.draw(vg)
         nvgText(vg, cx, cy + 20, sub, nil)
     end
 
+    -- 待确认的关卡详情，明确展示敌人后才能切换。
+    if state.pendingId then
+        local entry = SC.getStage(state.pendingId)
+        local cx, top, w, h = D.BG_CX, D.CONFIRM_TOP, D.CONFIRM_W, D.CONFIRM_H
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, cx - w * 0.5, top, w, h, 18)
+        nvgFillColor(vg, nvgRGBA(19, 17, 16, 248))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(201, 151, 59, 240))
+        nvgStrokeWidth(vg, 3)
+        nvgStroke(vg)
+        drawTextStroke(vg, cx, top + 48, "确认前往 " .. shortStageLabel(state.pendingId) .. "？", 32,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+        local enemies = {}
+        if entry then
+            for _, monsterId in ipairs(entry.monsters or {}) do
+                enemies[#enemies + 1] = MC.getName(monsterId)
+            end
+            if entry.bossId and entry.bossId > 0 then
+                enemies[#enemies + 1] = "首领 " .. MC.getName(entry.bossId)
+            end
+            local bonusIds = BattleEnemySpawn.getFirstClearBonusMonsterIds(entry)
+            for _, monsterId in ipairs(bonusIds or {}) do
+                enemies[#enemies + 1] = "首通 " .. MC.getName(monsterId)
+            end
+        end
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 25)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
+        nvgText(vg, cx, top + 103, "敌人 Lv." .. tostring(entry and entry.monsterLevel or "?") .. "：", nil)
+        for i, name in ipairs(enemies) do
+            nvgText(vg, cx, top + 106 + i * 28, name, nil)
+        end
+        local buttonY = top + h - D.CONFIRM_BTN_OFFSET
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, cx - 245, buttonY - 38, 200, 76, 12)
+        nvgFillColor(vg, nvgRGBA(67, 58, 46, 255))
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, cx + 33, buttonY - 38, 225, 76, 12)
+        nvgFillColor(vg, nvgRGBA(153, 106, 36, 255))
+        nvgFill(vg)
+        drawTextStroke(vg, cx - 145, buttonY, "取消", 32,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+        drawTextStroke(vg, cx + 145, buttonY, "确认前往", 32,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+    end
+
     nvgRestore(vg)
 end
 
@@ -502,12 +620,31 @@ function StageSelectDialog.handleInput(x, y)
 
     local BS = require("ui.battle.scene.BattleScene")
     local groups, maxOrder = ensureCache()
+    if state.pendingId then
+        local id = state.pendingId
+        local buttonY = D.CONFIRM_TOP + D.CONFIRM_H - D.CONFIRM_BTN_OFFSET
+        if hitTestRect(x, y, D.BG_CX - 145, buttonY, 200, 76) then
+            state.pendingId = nil
+        elseif hitTestRect(x, y, D.BG_CX + 145, buttonY, 225, 76) then
+            local ord = state.cacheOrder and state.cacheOrder[id]
+            if ord and maxOrder and ord <= maxOrder and SC.getStage(id) then
+                local ok = BS.gotoStage(id)
+                if ok then StageSelectDialog.close() end
+            else
+                state.pendingId = nil
+            end
+        end
+        return true
+    end
+    if state.chDragMoved then
+        state.chDragMoved = false
+        return true
+    end
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
     local needScroll = maxScroll > 0
 
-    local listTop = D.CH_Y0 + (needScroll and 30 or 0)
+    local listTop, listBottom = chapterListBounds(groups)
     local arrowCX = D.CH_X + D.CH_W * 0.5
-    local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
 
     -- 左栏滚动箭头
     if needScroll and state.chScroll > 0
@@ -533,6 +670,7 @@ function StageSelectDialog.handleInput(x, y)
         if x >= bx and x <= bx + D.CH_W and y >= by and y <= by + D.CH_BTN_H then
             BF.trigger("stage_sel_ch")
             state.selKey = g.key
+            state.pendingId = nil
             return true
         end
     end
@@ -553,8 +691,9 @@ function StageSelectDialog.handleInput(x, y)
                 if (ord == nil) or (maxOrder == nil) or (ord > maxOrder) then
                     return true
                 end
-                local ok = BS.gotoStage(id)
-                if ok then StageSelectDialog.close() end
+                if id == BS.getStageId() then return true end
+                state.pendingId = id
+                print("[StageSelectDialog] 待确认关卡: " .. tostring(id))
                 return true
             end
         end

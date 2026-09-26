@@ -592,18 +592,7 @@ local function compactOffset()
     local ax = detState.anchorX or 540
     local ay = detState.anchorY or 1144
     local toLeft = detState.owner == "character"
-    local compare = compactCompareEquip()
-    local compareW = compare and (visW + 16 * COMPACT_SCALE) or 0
-    local targetLeft
-    if toLeft then
-        targetLeft = ax - 12 - visW
-        if targetLeft - compareW < -1200 then targetLeft = -1200 + compareW end
-    else
-        targetLeft = ax + 12
-        if targetLeft + visW + compareW > 2200 then
-            targetLeft = 2200 - visW - compareW
-        end
-    end
+    local targetLeft = toLeft and (ax - 12 - visW) or (ax + 12)
     local targetTop = math.max(COMPACT_MARGIN, math.min(ay - COMPACT_CELL * 0.5,
         DESIGN_H - COMPACT_MARGIN - visH))
     return targetLeft - refLeft * COMPACT_SCALE, targetTop

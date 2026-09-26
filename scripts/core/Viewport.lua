@@ -51,7 +51,9 @@ function Viewport.begin(vg, p, ox, oy, s)
     nvgTranslate(vg, ox + p.bx * s, oy + p.by * s)
     local cs = s * Viewport.DS
     nvgScale(vg, cs, cs)
-    nvgIntersectScissor(vg, 0, 0, Viewport.DESIGN_W, Viewport.DESIGN_H)
+    -- 面板整体下移时，裁剪起点跟着上移，避免底部被切掉
+    local clipY = (oy > 0) and (-oy / cs) or 0
+    nvgIntersectScissor(vg, 0, clipY, Viewport.DESIGN_W, Viewport.DESIGN_H)
 end
 
 function Viewport.finish(vg)

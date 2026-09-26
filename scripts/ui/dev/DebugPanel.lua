@@ -1002,12 +1002,23 @@ function DebugPanel.handleInput(sx, sy)
                         count      = (i <= 8) and 1 or (i * 2),
                     }
                 end
+                local mockHeroPreview = {
+                    { heroId = 1,  name = "大狗嚼",   quality = 3, startLevel = 12, startExp = 0,
+                      level = 18, exp = 4210, maxExp = 597953, levelGain = 6, expGain = 14058, capped = false },
+                    { heroId = 2,  name = "黄桃龙",   quality = 3, startLevel = 9,  startExp = 120,
+                      level = 15, exp = 90210, maxExp = 261426, levelGain = 6, expGain = 14058, capped = false },
+                    { heroId = 3,  name = "叮咚鸡",   quality = 2, startLevel = 21, startExp = 500,
+                      level = 22, exp = 8800, maxExp = 998870, levelGain = 1, expGain = 14058, capped = false },
+                    { heroId = 4,  name = "接化发掌门", quality = 4, startLevel = 30, startExp = 0,
+                      level = 30, exp = 14058, maxExp = 3317385, levelGain = 0, expGain = 14058, capped = false },
+                }
                 OfflineRewardPanel.show({
                     offlineSeconds  = 6 * 3600 + 23 * 60 + 45,
                     maxSeconds      = 24 * 3600,
                     multiplier      = 2,
                     adventureExp    = 128456,
                     adventurerExp   = 56230,
+                    heroExpPreview  = mockHeroPreview,
                     rewards         = mockRewards,
                     onClaim         = function()
                         print("[Debug] 离线收益领取")

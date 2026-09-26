@@ -8,6 +8,7 @@ local PDM              = require("rules.character.PlayerDataManager")
 local OfflineCalc      = require("systems.OfflineCalc")
 local StageProvider    = require("shared.StageProvider")
 local ExpTable         = require("config.ExpTable")
+local HeroConfig       = require("config.HeroConfig")
 local LootBoxSystem    = require("systems.LootBoxSystem")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local CurrencyService  = require("rules.currency.CurrencyService")
@@ -64,6 +65,47 @@ local function appendEquipPreviewItems(list, equips)
             slot       = equip.slot,
         }
     end
+end
+
+--- 构建出战队员的升级预览（只读，不改数据；领取时才真正发经验）
+--- 经验与 ClaimRewards 一致：总量平分给出战队员，各自套用自己的等级曲线。
+---@param heroesData table|nil
+---@param totalHeroExp number 队员经验总合
+---@return table[] { heroId, name, quality, startLevel, startExp, level, exp, maxExp, levelGain, expGain, capped }
+local function buildHeroExpPreview(heroesData, totalHeroExp)
+    local preview = {}
+    if not heroesData then return preview end
+    local deployed = heroesData.deployed or {}
+    local heroCount = #deployed
+    if heroCount <= 0 then return preview end
+
+    local total = math.floor(totalHeroExp or 0)
+    local perHeroExp = math.floor(total / heroCount + 0.5)
+
+    for _, heroId in ipairs(deployed) do
+        local numId = tonumber(heroId) or heroId
+        local heroData = heroesData.roster and heroesData.roster[numId]
+        if heroData then
+            local beforeLv = heroData.level or 1
+            local beforeExp = heroData.exp or 0
+            local sim = ExpTable.simulateHeroExp(beforeLv, beforeExp, perHeroExp)
+            local cfg = HeroConfig.get(numId)
+            preview[#preview + 1] = {
+                heroId     = numId,
+                name       = (cfg and cfg.name) or ("#" .. tostring(numId)),
+                quality    = cfg and cfg.quality or 1,
+                startLevel = beforeLv,
+                startExp   = beforeExp,
+                level      = sim.level,
+                exp        = sim.exp,
+                maxExp     = sim.maxExp,
+                levelGain  = sim.gain,
+                expGain    = perHeroExp,
+                capped     = sim.capped,
+            }
+        end
+    end
+    return preview
 end
 
 local function appendScrollPreviewItems(list, scrollDrops)
@@ -207,6 +249,7 @@ function OfflineService.CalcOnEnter(uid)
         totalKills     = rewards.kills,
         adventureExp   = rewards.adventureExp,
         adventurerExp  = rewards.adventurerExp,
+        heroExpPreview = buildHeroExpPreview(heroesData, rewards.adventurerExp),
         rewards        = {},
     }
 

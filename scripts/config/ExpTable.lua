@@ -470,6 +470,41 @@ function ExpTable.isHeroMaxLevel(lv)
     return lv >= ExpTable.HERO_MAX_LEVEL
 end
 
+--- 模拟给英雄加经验后的等级/经验结果（不修改传入数据）
+--- 与 autoLevelUpHero 同一套规则，供离线收益预览等只读场景使用。
+---@param level number 当前等级
+---@param exp number 当前等级内已有经验
+---@param addExp number 追加经验
+---@return table { level = 新等级, exp = 新等级内经验, maxExp = 新等级所需经验, gain = 实际提升等级数, capped = 是否满级 }
+function ExpTable.simulateHeroExp(level, exp, addExp)
+    local lv = math.max(1, math.floor(tonumber(level) or 1))
+    local rest = math.max(0, math.floor(tonumber(exp) or 0)) + math.max(0, math.floor(tonumber(addExp) or 0))
+    local startLv = lv
+    local capped = false
+    while true do
+        if ExpTable.isHeroMaxLevel(lv) then
+            capped = true
+            rest = 0
+            break
+        end
+        local needed = ExpTable.getHeroExpForLevel(lv)
+        if not needed or rest < needed then break end
+        rest = rest - needed
+        lv = lv + 1
+    end
+    local maxExp = 0
+    if not capped then
+        maxExp = ExpTable.getHeroExpForLevel(lv) or 0
+    end
+    return {
+        level  = lv,
+        exp    = rest,
+        maxExp = maxExp,
+        gain   = lv - startLv,
+        capped = capped,
+    }
+end
+
 --- 判断玩家是否满级
 ---@param lv number
 ---@return boolean

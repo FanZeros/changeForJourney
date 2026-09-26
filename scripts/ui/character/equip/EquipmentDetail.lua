@@ -45,7 +45,7 @@ local detState = {
     heroId    = nil,    -- 当前角色 ID
     openTime  = 0,
     closeTime = 0,
-    compactCorner = false, -- 配装页单击：贴右栏内侧、朝中栏战斗区，无阴影
+    compactCorner = false, -- 配装详情贴鼠标：右栏向左、左栏向右展开，无阴影
     owner = nil,           -- backpack | character | bag | smith，只在打开它的那一侧画
     descScrollY = 0,
     descScrollMax = 0,
@@ -478,7 +478,7 @@ local CUR_BG_CY = math.floor(REF_BG_CY - REF_BG_H * 0.5 + CUR_BG_H * 0.5)
 -- 单面板居中
 local SINGLE_BG_CX = 540
 
--- 配装页小窗：贴当前格子的上角，比原来大约一倍。左半格往右展开，右半格往左展开。
+-- 配装页小窗：右栏向左、左栏向右展开，已装备的对比卡继续向外排列。
 local COMPACT_SCALE = 0.92
 local COMPACT_MARGIN = 16
 local COMPACT_CELL = 160
@@ -511,20 +511,9 @@ local function compactContentBottom(equip)
     return bottom + COMPACT_CONTENT_BOTTOM_PAD
 end
 
----@param equip table|nil
----@return number
-local function compactPanelHeight(equip)
-    local contentBottom = compactContentBottom(equip)
-    local btnCount = 1
-    if detState.slot ~= nil and TutorialManager.isBuildingUnlocked("smith") then
-        btnCount = 2
-    end
-    local buttonBottom = contentBottom + COMPACT_BTN_GAP
-        + btnCount * COMPACT_BTN_H + (btnCount - 1) * 12 + 18
-    return math.max(430, buttonBottom)
-end
-
-local SET_LINE_H = 28
+local SET_TITLE_H = 50
+local SET_ROW_H = 124
+local SET_GAP = 18
 
 local function compactSetLines(equip)
     local tpl = EquipmentConfig.ITEMS[equip and equip.templateId]
@@ -553,15 +542,20 @@ end
 local function compactSetBlockHeight(equip)
     local _, lines = compactSetLines(equip)
     if #lines == 0 then return 0 end
-    return 16 + #lines * SET_LINE_H + 8
+    return SET_GAP + SET_TITLE_H + (#lines - 1) * SET_ROW_H + 20
 end
 
 local function compactViewHeight(equip, withButtons)
+    local contentBottom = compactContentBottom(equip)
     local setH = compactSetBlockHeight(equip)
     if not withButtons then
-        return math.max(360, compactContentBottom(equip) + setH + 18)
+        return math.max(360, contentBottom + setH + 18)
     end
-    return compactPanelHeight(equip) + setH
+    local btnCount = 0
+    if detState.slot ~= nil then btnCount = btnCount + 1 end
+    if TutorialManager.isBuildingUnlocked("smith") then btnCount = btnCount + 1 end
+    return math.max(430, contentBottom + setH + COMPACT_BTN_GAP
+        + btnCount * COMPACT_BTN_H + math.max(0, btnCount - 1) * 12 + 18)
 end
 
 local function compactCompareEquip()
@@ -571,8 +565,10 @@ local function compactCompareEquip()
 end
 
 local function compactVisSize()
-    local h = compactViewHeight(detState.layoutEquip, true) * COMPACT_SCALE
-    return COMPACT_BG_W * COMPACT_SCALE, h
+    local h = compactViewHeight(detState.layoutEquip, true)
+    local compare = compactCompareEquip()
+    if compare then h = math.max(h, compactViewHeight(compare, false)) end
+    return COMPACT_BG_W * COMPACT_SCALE, h * COMPACT_SCALE
 end
 
 --- 小窗按钮：贴在最后一条内容下方，上下排列，完整留在框内。
@@ -592,33 +588,25 @@ end
 
 local function compactOffset()
     local refLeft = REF_BG_CX - COMPACT_BG_W * 0.5
-    local refTop = 0
     local visW, visH = compactVisSize()
     local ax = detState.anchorX or 540
     local ay = detState.anchorY or 1144
-    local cellLeft = ax - COMPACT_CELL * 0.5
-    local cellRight = ax + COMPACT_CELL * 0.5
-    local cellTop = ay - COMPACT_CELL * 0.5
-    -- 右栏详情往中缝外侧伸，左栏详情往右外侧伸，不锁在本栏里
-    -- 右栏详情往左外侧放，左栏详情往右外侧放
-    local toCenterLeft = detState.owner ~= "character"
+    local toLeft = detState.owner == "character"
+    local compare = compactCompareEquip()
+    local compareW = compare and (visW + 16 * COMPACT_SCALE) or 0
     local targetLeft
-    local minLeft
-    local maxLeft
-    if toCenterLeft then
-        targetLeft = cellLeft - 12 - visW
-        minLeft = -1200
-        maxLeft = 1080 - COMPACT_MARGIN - visW
+    if toLeft then
+        targetLeft = ax - 12 - visW
+        if targetLeft - compareW < -1200 then targetLeft = -1200 + compareW end
     else
-        targetLeft = cellRight + 12
-        minLeft = COMPACT_MARGIN
-        maxLeft = 2200
+        targetLeft = ax + 12
+        if targetLeft + visW + compareW > 2200 then
+            targetLeft = 2200 - visW - compareW
+        end
     end
-    if targetLeft < minLeft then targetLeft = cellRight + 12 end
-    if targetLeft > maxLeft then targetLeft = cellLeft - 12 - visW end
-    targetLeft = math.max(minLeft, math.min(targetLeft, maxLeft))
-    local targetTop = math.max(COMPACT_MARGIN, math.min(cellTop, 2400 - COMPACT_MARGIN - visH))
-    return targetLeft - refLeft * COMPACT_SCALE, targetTop - refTop * COMPACT_SCALE
+    local targetTop = math.max(COMPACT_MARGIN, math.min(ay - COMPACT_CELL * 0.5,
+        DESIGN_H - COMPACT_MARGIN - visH))
+    return targetLeft - refLeft * COMPACT_SCALE, targetTop
 end
 
 local DESC_TOP = 980
@@ -1002,7 +990,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
     end
 end
 
---- 配装小窗：内容从顶部开始排，按钮贴在最后一条词条下方。
+--- 配装小窗：套装说明独立于属性和词条，按钮贴在套装区后方。
 ---@param vg any
 ---@param equip table
 ---@param btnText string
@@ -1017,6 +1005,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
     local rightX = panelX + panelW - COMPACT_PAD_TOP
     DarkIcon.drawNine(vg, "plain", panelX, 0, panelW, panelH,
         { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
+    if showActions ~= false then detState.lockHotspot = nil end
 
     local nameStr = equip.name or "???"
     if EquipmentSystem.getAscendLevel(equip) > 0 then
@@ -1032,7 +1021,9 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
         local lockCX = leftX + nameW + 14 + lockSize * 0.5
         drawImageCentered(vg, imgLock, lockCX, COMPACT_NAME_Y, lockSize, lockSize,
             equip.locked and 1.0 or 0.4)
-        detState.lockHotspot = { cx = lockCX, cy = COMPACT_NAME_Y, w = lockSize + 20, h = lockSize + 20 }
+        if showActions ~= false then
+            detState.lockHotspot = { cx = lockCX, cy = COMPACT_NAME_Y, w = lockSize + 20, h = lockSize + 20 }
+        end
     end
 
     local typeName = equip.type or EquipmentConfig.SLOT_NAME[equip.slot] or ""
@@ -1114,24 +1105,39 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
             nvgText(vg, leftX + 48, y, affix.name or "?", nil)
             drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, affix.value), 28,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+            bottom = y + REF_AFFIX_ROW_H * 0.5
         end
     end
 
     local setDef, setLines = compactSetLines(equip)
     if #setLines > 0 then
-        local setY = bottom + 24
+        local sectionTop = compactContentBottom(equip) + SET_GAP
         local col = setDef.color or { 232, 208, 122, 255 }
-        for i, line in ipairs(setLines) do
-            local y = setY + (i - 1) * SET_LINE_H
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, i == 1 and 24 or 20)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            if line.active then
-                nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
-            else
-                nvgFillColor(vg, nvgRGBA(120, 112, 100, 180))
-            end
-            nvgText(vg, leftX, y, line.text, nil)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, leftX - 10, sectionTop, panelW - 36,
+            SET_TITLE_H + (#setLines - 1) * SET_ROW_H + 12, 12)
+        nvgFillColor(vg, nvgRGBA(12, 10, 8, 200))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(col[1], col[2], col[3], 110))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 30)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
+        nvgText(vg, leftX + 8, sectionTop + 26, setLines[1].text, nil)
+        for i = 2, #setLines do
+            local rowTop = sectionTop + SET_TITLE_H + (i - 2) * SET_ROW_H
+            local line = setLines[i]
+            local tier, desc = line.text:match("^(%d件%s+)(.*)$")
+            nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], line.active and 255 or 185))
+            nvgFontSize(vg, 27)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+            nvgText(vg, leftX + 8, rowTop + 8, tier, nil)
+            nvgFillColor(vg, line.active and nvgRGBA(244, 237, 224, 255)
+                or nvgRGBA(170, 158, 140, 210))
+            nvgFontSize(vg, 26)
+            nvgTextBox(vg, leftX + 96, rowTop + 8, panelW - 150, desc, nil)
         end
     end
 
@@ -1204,6 +1210,8 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, 
     detState.descScrollY = 0
     detState.descScrollMax = 0
     detState.descDragging = false
+    detState.lockHotspot = nil
+    detState.layoutEquip = nil
     print("[EquipmentDetail] open seq=" .. tostring(seq) .. " slot=" .. tostring(slot)
         .. " heroId=" .. tostring(heroId) .. " compact=" .. tostring(detState.compactCorner)
         .. " anchor=" .. tostring(detState.anchorX) .. "," .. tostring(detState.anchorY))
@@ -1216,6 +1224,10 @@ end
 
 function EquipmentDetail.pin()
     detState.pinned = true
+end
+
+function EquipmentDetail.isPinned()
+    return detState.open and detState.pinned == true
 end
 
 --- 关闭（冻结当前面板内容用于关闭动画）
@@ -1232,6 +1244,8 @@ function EquipmentDetail.close()
         detState.compactCorner = false
         detState.snapshot = nil
         detState.pinned = false
+        detState.layoutEquip = nil
+        detState.lockHotspot = nil
         return
     end
     if detState.closing then return end
@@ -1368,6 +1382,23 @@ function EquipmentDetail.handleInput(dx, dy)
         enhBtnCY = btnCY  -- 背包模式：顶替穿戴按钮位置
     else
         enhBtnCY = REF_BG_CY + REF_BG_H * 0.5 + REF_ENH_BTN_GAP + REF_ENH_BTN_H * 0.5
+    end
+
+    if detState.compactCorner and detState.lockHotspot
+       and hitTest(dx, dy, detState.lockHotspot.cx, detState.lockHotspot.cy,
+                   detState.lockHotspot.w, detState.lockHotspot.h) then
+        BF.trigger("ed_equip")
+        local Client = getClient()
+        local Protocol = getProtocol()
+        if Client and Client.sendAction and Protocol then
+            Client.sendAction(Protocol.ACTION_TYPES.TOGGLE_EQUIP_LOCK, {
+                seq = tonumber(detState.equipSeq),
+            })
+        end
+        newEquip.locked = (not newEquip.locked) or nil
+        print("[EquipmentDetail] 切换装备锁定 seq=" .. tostring(detState.equipSeq)
+            .. " locked=" .. tostring(newEquip.locked == true))
+        return true
     end
 
     if detState.compactCorner then
@@ -1521,7 +1552,7 @@ function EquipmentDetail.handleInput(dx, dy)
     if time.elapsedTime - detState.openTime < 0.05 then return true end
 
     -- 点击锁定图标 → 切换锁定状态
-    if detState.lockHotspot
+    if (not detState.compactCorner) and detState.lockHotspot
        and hitTest(dx, dy, detState.lockHotspot.cx, detState.lockHotspot.cy,
                    detState.lockHotspot.w, detState.lockHotspot.h) then
         BF.trigger("ed_equip")
@@ -1542,8 +1573,16 @@ function EquipmentDetail.handleInput(dx, dy)
     -- 点击面板外部 → 关闭
     local inPanel = false
     if detState.compactCorner then
-        local panelH = compactPanelHeight(newEquip)
-        if hitTest(dx, dy, REF_BG_CX, panelH * 0.5, COMPACT_BG_W, panelH) then
+        local panelH = compactViewHeight(newEquip, true)
+        local panelCenter = REF_BG_CX
+        local panelW = COMPACT_BG_W
+        if hasCurrent then
+            local side = (detState.owner == "character") and -1 or 1
+            panelH = math.max(panelH, compactViewHeight(curEquip, false))
+            panelW = COMPACT_BG_W * 2 + 16
+            panelCenter = panelCenter + side * (COMPACT_BG_W + 16) * 0.5
+        end
+        if hitTest(dx, dy, panelCenter, panelH * 0.5, panelW, panelH) then
             inPanel = true
         end
         local rowY, _, _, _, bh = compactButtonRow()
@@ -1634,7 +1673,8 @@ function EquipmentDetail.draw(vg)
     local compact = detState.compactCorner == true
     -- 说明栏不铺全屏黑影
 
-    -- 应用滑入偏移（小窗不滑入，贴右栏内侧并缩小）
+    -- 小窗贴点击格子的外侧，右栏向左、左栏向右展开。
+    if compact then detState.layoutEquip = newEquip end
     nvgSave(vg)
     if compact then
         local ox, oy = compactOffset()
@@ -1647,7 +1687,6 @@ function EquipmentDetail.draw(vg)
     local enhOnly = (detState.slot == nil)  -- 背包模式：无穿戴按钮，仅前往洗练
 
     if compact then
-        detState.layoutEquip = newEquip
         local compare = hasCurrent and curEquip or nil
         if compare then
             local side = (detState.owner == "character") and -1 or 1

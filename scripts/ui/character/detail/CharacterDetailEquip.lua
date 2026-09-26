@@ -844,7 +844,6 @@ function M.handleHover(dx, dy, heroId)
         return
     end
     local seqStr = tostring(item.seq)
-    local _, cx, cy = findItemAt(dx, dy)
     if panelState.hoverSeq ~= seqStr then
         panelState.hoverSeq = seqStr
         panelState.hoverSince = time.elapsedTime
@@ -853,18 +852,17 @@ function M.handleHover(dx, dy, heroId)
         return
     end
     if panelState.hoverPinned then
-        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
         return
     end
     if (time.elapsedTime - (panelState.hoverSince or 0)) < 0.5 then
         return
     end
     if EquipmentDetail.isOpen and EquipmentDetail.isOpen() and EquipmentDetail.setAnchor then
-        EquipmentDetail.setAnchor(cx, cy)
+        EquipmentDetail.setAnchor(dx, dy)
         return
     end
-    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
-    print("[EquipPanel] 悬停详情 seq=" .. seqStr .. " at " .. tostring(cx) .. "," .. tostring(cy))
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", dx, dy)
+    print("[EquipPanel] 悬停详情 seq=" .. seqStr .. " at " .. tostring(dx) .. "," .. tostring(dy))
 end
 
 --- 处理输入（单击详情 / 双击穿戴）
@@ -918,13 +916,12 @@ function M.handleInput(dx, dy, heroId, detailState)
         return true
     end
 
-    -- 单击：右栏内侧小详情，朝向中栏战斗区（无阴影）
+    -- 单击：右栏详情从鼠标左侧展开，已装备对比继续排在左侧。
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
     panelState.hoverSeq = seqStr
     panelState.hoverPinned = true
     panelState.hoverSince = time.elapsedTime
-    local _, cx, cy = findItemAt(dx, dy)
-    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", dx, dy)
     if EquipmentDetail.pin then EquipmentDetail.pin() end
     print("[EquipPanel] 单击详情 seq=" .. seqStr)
     return true

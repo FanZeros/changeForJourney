@@ -726,8 +726,14 @@ function EquipmentBag.handleInput(dx, dy)
             bagState.onSelect(entry.seq, entry.equip)
             EquipmentBag.close()
         else
-            local _, cx, cy = findBagEntryAt(dx, dy)
-            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", cx, cy)
+            local anchorX, anchorY = dx, dy
+            if overlayRegion then
+                local fit = overlayFit()
+                local wx = overlayRegion.x + overlayRegion.w * 0.5 + (dx - 540) * fit
+                local wy = overlayRegion.y + overlayRegion.h * 0.5 + (dy - LAND.BG_H * 0.5) * fit
+                anchorX, anchorY = EquipmentBag.overlayToDetail(wx, wy)
+            end
+            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", anchorX, anchorY)
             if EquipmentDetail.pin then EquipmentDetail.pin() end
             print("[EquipmentBag] 打开详情 seq=" .. tostring(entry.seq))
         end
@@ -1278,7 +1284,7 @@ function EquipmentBag.handleHover(dx, dy)
         if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
         return
     end
-    local entry, cx, cy = findBagEntryAt(dx, dy)
+    local entry = findBagEntryAt(dx, dy)
     if not entry then
         EquipmentBag._hoverSeq = nil
         EquipmentBag._hoverSince = nil
@@ -1295,11 +1301,19 @@ function EquipmentBag.handleHover(dx, dy)
     if (time.elapsedTime - (EquipmentBag._hoverSince or 0)) < 0.5 then
         return
     end
+    local anchorX, anchorY = dx, dy
+    if overlayRegion then
+        local fit = overlayFit()
+        local wx = overlayRegion.x + overlayRegion.w * 0.5 + (dx - 540) * fit
+        local wy = overlayRegion.y + overlayRegion.h * 0.5 + (dy - LAND.BG_H * 0.5) * fit
+        anchorX, anchorY = EquipmentBag.overlayToDetail(wx, wy)
+    end
     if EquipmentDetail.isOpen and EquipmentDetail.isOpen() and EquipmentDetail.setAnchor then
-        EquipmentDetail.setAnchor(cx, cy)
+        if EquipmentDetail.isPinned and EquipmentDetail.isPinned() then return end
+        EquipmentDetail.setAnchor(anchorX, anchorY)
         return
     end
-    EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", cx, cy)
+    EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", anchorX, anchorY)
     print("[EquipmentBag] 悬停详情 seq=" .. seq)
 end
 

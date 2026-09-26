@@ -69,8 +69,9 @@ local drawTextStroke = require("core.DrawUtil").drawTextStroke
 function TopBar.init(vg)
     imgExpBg   = nvgCreateImage(vg, "image/进度条/UI_JYT_1.png", 0)
     imgExpFill = nvgCreateImage(vg, "image/进度条/UI_JYT_2.png", 0)
-    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
+    if not imgGoldIcon or imgGoldIcon < 0 then print("[TopBar] WARN: UI_icon_JB_X.png load failed, using vector icon") end
     -- 加载角色头像图标
     HeroAssetUtil.preloadIcons(vg, imgHeroIcons)
 
@@ -340,7 +341,11 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
     drawRoundedRectCentered(vg, goldBgCX, goldBgCY, goldBgW, goldBgH, 18, 0, 0, 0, 204)
 
     -- #10 金币图标: center(653,100), 73x73 [三队并行] 以角色详情页图标为准
-    drawImageCentered(vg, imgGoldIcon, 653, 100, 73, 73, 1.0)
+    if imgGoldIcon and imgGoldIcon >= 0 then
+        drawImageCentered(vg, imgGoldIcon, 653, 100, 73, 73)
+    else
+        DarkIcon.draw(vg, "gold", 653, 100, 73, 1)
+    end
 
     -- #11 金币数值: left=goldBgLeft+44, Y=100, font 33, white, stroke 4
     local displayGold = GameState.getGold()  -- [修复] 直读实时值(此前 cachedGold 推送一次后恒旧, 花费不更新)

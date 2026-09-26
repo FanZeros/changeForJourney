@@ -120,9 +120,9 @@ local LOOT_LBL_CY = 2090
 local LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H = 540 + LOOT_SHIFT_X, 2010, 380, 440
 -- 功绩：左下角地点，整体右移，避开教堂热区和遗匣热区。
 local TASK_SHIFT_X = 50
-local TASK_CX, TASK_CY, TASK_W, TASK_H = 180 + TASK_SHIFT_X, 2050, 270, 270
+local TASK_CX, TASK_CY, TASK_W, TASK_H = 180 + TASK_SHIFT_X, 2050, 245, 245
 local TASK_LBL_CY = 2240
-local TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H = 180 + TASK_SHIFT_X, 2100, 420, 420
+local TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H = 180 + TASK_SHIFT_X, 2100, 361, 400
 
 -- 文字
 local LABEL_FONT_SIZE   = 38
@@ -589,12 +589,12 @@ function TownScene.draw(vg)
     local taskFeedback = BF.begin(vg, "town_task", TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
-    drawBuildingLabel(vg, 180 + TASK_SHIFT_X, TASK_LBL_CY, 420, 135,
-        15 + TASK_SHIFT_X, TASK_LBL_CY - 6, 78, -1, 225 + TASK_SHIFT_X, TASK_LBL_CY - 6, "功绩")
-    DarkIcon.draw(vg, "merit", 15 + TASK_SHIFT_X + 39, TASK_LBL_CY - 6, 78, 1.0)
+    drawBuildingLabel(vg, TASK_CX, TASK_LBL_CY, 361, 113,
+        TASK_CX - 90, TASK_LBL_CY - 6, 64, -1, TASK_CX + 45, TASK_LBL_CY - 6, "功绩")
+    DarkIcon.draw(vg, "merit", TASK_CX - 58, TASK_LBL_CY - 6, 64, 1.0)
     local taskOk, TaskPage = pcall(require, "ui.story.task.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
-        DarkIcon.draw(vg, "reddot", 300 + TASK_SHIFT_X, TASK_LBL_CY - 36, 36, 1.0)
+        DarkIcon.draw(vg, "reddot", TASK_CX + 169, TASK_LBL_CY - 45, 36, 1.0)
     end
     BF.finish(vg, taskFeedback)
 end

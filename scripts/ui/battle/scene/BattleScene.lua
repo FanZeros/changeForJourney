@@ -801,7 +801,7 @@ function BattleScene.draw(vg)
         BattleEffects.draw(vg)
 
         -- 卡片 Spine 特效（升级/复活，在攻击特效之上）
-        require("ui.fx.SpineCardEffect").draw(vg)
+        require("ui.fx.SpineCardEffect").draw(vg, "battle")
     end
 
     -- 15. 浮动伤害数字

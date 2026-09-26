@@ -289,8 +289,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             -- [进度显示] 百分比改到战斗页下方进度条，标题只留关卡名
             stageText = string.format("【小队1】%s", stageDisplayName(BattleScene.getStageId()))
         elseif drivers[row] then
-            stageText = string.format("【小队%d】%s · 击杀%d", row,
-                stageDisplayName(drivers[row].stageId), drivers[row].kills)
+            stageText = string.format("【小队%d】%s", row, stageDisplayName(drivers[row].stageId))
         elseif row <= unlocked then
             stageText = string.format("【小队%d】准备中", row)
         else
@@ -396,10 +395,10 @@ function BattleTriPage.gotoTeamStage(teamIdx, stageId)
     return true
 end
 
---- [行1 HUD] 从右上角往左排：速度(可选) / 扫荡 / 统计 / 选关
+--- 每行 HUD 从右上角往左排：速度(可选) / 扫荡 / 统计 / 选关 / 音效。
 --- 由宿主在 BattleTriPage.draw 之后调用——保证按钮位于一切战斗背景/框柱之上（避免穿帮）。
 --- 任一模态对话框打开时不绘制（弹窗压暗与本体在 draw 内已覆盖按钮位）。
---- 其余已解锁队伍只放「选关」，切各自的关卡。
+--- 已解锁的其他队伍与第一行保持同一套按钮。
 function BattleTriPage.drawHud(vg, logicalW, logicalH)
     if not isOpen_ then return end
     if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
@@ -468,16 +467,55 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
         nvgRestore(vg)
     end
 
-    -- 其余已解锁队伍：右上角只放选关（扫荡/统计/音效是全局的，不重复）
+    -- 其余已解锁队伍与第一行使用同一组按钮。
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
     for row = 2, math.min(COL_COUNT, unlocked) do
         local ix, iy, iw = interiorRect(row, logicalW, logicalH)
-        local stageX = ix + iw - hudPad - hudHalf - hudShift
+        local rowY = iy + hudHalf + 2
+        local rowCursor = ix + iw - hudPad - hudHalf - hudShift
+        local rowSpeedX, rowSweepX, rowStatsX, rowStageX, rowSoundX
+        if showSpeed then
+            rowSpeedX = rowCursor
+            rowCursor = rowCursor - hudGap
+        end
+        rowSweepX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowStatsX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowStageX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowSoundX = rowCursor
+        if showSpeed then
+            nvgSave(vg)
+            nvgTranslate(vg, rowSpeedX, rowY)
+            nvgScale(vg, hudScale, hudScale)
+            nvgTranslate(vg, -987, -311)
+            BattleScene.drawSpeedButton(vg)
+            nvgRestore(vg)
+        end
         nvgSave(vg)
-        nvgTranslate(vg, stageX, iy + hudHalf + 2)
+        nvgTranslate(vg, rowSweepX, rowY)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -971, -2115)
+        SweepDialog.drawButton(vg)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgTranslate(vg, rowStatsX, rowY)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -815, -2115)
+        DamageStatsPanel.drawButton(vg)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgTranslate(vg, rowStageX, rowY)
         nvgScale(vg, hudScale, hudScale)
         nvgTranslate(vg, -659, -2115)
         StageSelectDialog.drawButton(vg)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgTranslate(vg, rowSoundX, rowY)
+        nvgScale(vg, hudScale, hudScale)
+        nvgTranslate(vg, -503, -2115)
+        SoundToggle.drawButton(vg)
         nvgRestore(vg)
     end
 end
@@ -575,14 +613,42 @@ function BattleTriPage.handleInput(wx, wy)
         return true
     end
 
-    -- 其余已解锁队伍的选关按钮
+    -- 其余已解锁队伍与第一行使用同一组按钮。
     local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
     for row = 2, math.min(COL_COUNT, unlocked) do
         local ix, iy, iw = interiorRect(row, logicalW, logicalH)
-        local stageX = ix + iw - hudPad - hudHalf - hudShift
         local rowY = iy + hudHalf + 2
-        if math.abs(wx - stageX) <= hitW and math.abs(wy - rowY) <= hitH then
-            StageSelectDialog.handleButtonInput(659 + (wx - stageX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
+        local rowCursor = ix + iw - hudPad - hudHalf - hudShift
+        local rowSpeedX, rowSweepX, rowStatsX, rowStageX, rowSoundX
+        if showSpeed then
+            rowSpeedX = rowCursor
+            rowCursor = rowCursor - hudGap
+        end
+        rowSweepX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowStatsX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowStageX = rowCursor
+        rowCursor = rowCursor - hudGap
+        rowSoundX = rowCursor
+        if showSpeed and math.abs(wx - rowSpeedX) <= hitW and math.abs(wy - rowY) <= hitH then
+            bs.handleSpeedButtonInput(987 + (wx - rowSpeedX) / hudScale, 311 + (wy - rowY) / hudScale)
+            return true
+        end
+        if math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
+            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale)
+            return true
+        end
+        if math.abs(wx - rowStatsX) <= hitW and math.abs(wy - rowY) <= hitH then
+            DamageStatsPanel.handleButtonInput(815 + (wx - rowStatsX) / hudScale, 2115 + (wy - rowY) / hudScale)
+            return true
+        end
+        if math.abs(wx - rowStageX) <= hitW and math.abs(wy - rowY) <= hitH then
+            StageSelectDialog.handleButtonInput(659 + (wx - rowStageX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
+            return true
+        end
+        if math.abs(wx - rowSoundX) <= hitW and math.abs(wy - rowY) <= hitH then
+            SoundToggle.handleButtonInput()
             return true
         end
     end

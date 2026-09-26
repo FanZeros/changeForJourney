@@ -552,10 +552,9 @@ function HandleNanoVGRenderHorizon()
     if BattleTriPage.isOpen() then
         local ps = logicalH() / 1080                -- 面板缩放（高适配）
         local oxL = 0
-        -- 右栏加宽 5% 并向右贴边，内容下移 6%
+        -- 右栏加宽 5% 并向右贴边；内容的下移和右移在角色面板内部做，背景铺满不动
         local rightW = 486 * ps * 1.05
         local oxR = logicalW() - (972 * ps + rightW)
-        local oyR = logicalH() * 0.06
         BattleTriPage.drawL1Underlay(vg(), logicalW(), logicalH())  -- [暗黑替换] L1 行内容背景垫底（框内 clip）
         BattleTriPage.drawL0(vg(), logicalW(), logicalH())          -- [暗黑替换] L0 框体图（透明框内透出 L1）
         Viewport.begin(vg(), Viewport.PANELS.left, oxL, 0, ps)
@@ -576,7 +575,7 @@ function HandleNanoVGRenderHorizon()
         end
         -- 三行战斗的玩家信息在后面全窗居中重画，这里不画，避免左栏裁切出半个面板。
         Viewport.finish(vg())
-        Viewport.begin(vg(), Viewport.PANELS.right, oxR, oyR, ps)
+        Viewport.begin(vg(), Viewport.PANELS.right, oxR, 0, ps)
         CharacterPanel.draw(vg())
         Viewport.finish(vg())
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
@@ -759,7 +758,7 @@ local function HorizonResolveMouse()
         if sx < leftW then
             return 'left', sx / (ps * 0.45), sy / (ps * 0.45)
         elseif sx > logicalW() - rightW then
-            return 'right', (sx - (logicalW() - rightW)) / (ps * 0.45), (sy - logicalH() * 0.06) / (ps * 0.45)
+            return 'right', (sx - (logicalW() - rightW)) / (ps * 0.45), sy / (ps * 0.45)
         end
         return 'tri', sx, sy
     end

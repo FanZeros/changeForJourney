@@ -380,6 +380,9 @@ end
 ---@param dy number 设计空间 Y
 ---@return number|nil roster 索引
 local function hitTestRosterCard(dx, dy)
+    -- 名册整体右移 5%、下移 6%，命中换算回未偏移的坐标
+    dx = dx - DESIGN_W * 0.05
+    dy = dy - DESIGN_H * 0.06
     local rosterCount = #heroRoster
     for idx = 1, rosterCount do
         local row = math.ceil(idx / MAX_PER_ROW)
@@ -587,6 +590,8 @@ end
 -- ======================== 输入处理 ========================
 
 local function isInScrollArea(dx, dy)
+    dx = dx - DESIGN_W * 0.05
+    dy = dy - DESIGN_H * 0.06
     return dx >= SCROLL_LEFT and dx <= SCROLL_RIGHT
        and dy >= SCROLL_TOP  and dy <= SCROLL_BOTTOM
 end

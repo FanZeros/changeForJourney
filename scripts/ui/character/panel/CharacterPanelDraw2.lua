@@ -487,6 +487,9 @@ end
 ---@param dy number
 ---@return number|nil teamIdx, number|nil slotIdx
 function M.hitTestAvatarSlot(dx, dy)
+    -- 内容整体右移 5%、下移 6%，命中换算回未偏移的坐标
+    dx = dx - DESIGN_W * 0.05
+    dy = dy - DESIGN_H * 0.06
     local unlockedCnt = getUnlockedTeamCount and getUnlockedTeamCount() or 1
     for t = 1, math.min(M.TEAM_TAB_COUNT, unlockedCnt) do
         for s = 1, M.MAX_SLOTS do
@@ -583,6 +586,9 @@ function M.draw(vg, scrollY)
     nvgRestore(vg)
 
     -- 1.5) 三队头像同时显示。右侧栏不画整卡，点头像才进卡面。
+    -- 内容下移 6%、右移栏宽的 5%；背景在上面已经铺满，不跟着动。
+    nvgSave(vg)
+    nvgTranslate(vg, DESIGN_W * 0.05, DESIGN_H * 0.06)
     M.drawTeamAvatars(vg)
 
     -- 2) 整卡槽位已改为头像，保留块结构供下方列表复用局部变量
@@ -956,7 +962,7 @@ function M.draw(vg, scrollY)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-
+    nvgRestore(vg)  -- 结束内容下移/右移
 
     -- 7) 拖拽中的浮动卡片（绘制在最上层）
     if dragState.active and dragState.heroId then
@@ -977,6 +983,8 @@ function M.draw(vg, scrollY)
         local hoverTeam, hoverSlot = M.hitTestAvatarSlot(dragState.cx, dragState.cy)
         if hoverTeam and hoverSlot then
             local hx, hy = avatarCenter(hoverTeam, hoverSlot)
+            hx = hx + DESIGN_W * 0.05
+            hy = hy + DESIGN_H * 0.06
             nvgBeginPath(vg)
             nvgRoundedRect(vg, hx - AV_SIZE * 0.5 - 4, hy - AV_SIZE * 0.5 - 4, AV_SIZE + 8, AV_SIZE + 8, 16)
             nvgStrokeColor(vg, nvgRGBA(99, 255, 132, 230))

@@ -111,14 +111,13 @@ local ATTR_FONT_SIZE     = 35
 local ATTR_FONT_SIZE_MIN = 22
 local ATTR_NAME_VAL_GAP  = 15
 
--- 左列单列，右侧留给雷达图。可视区一直延伸到屏幕底边，超出继续滚动。
+-- 左列单列，右侧留给雷达图。可见 8 行，超出继续滚动。
 local ATTR_VISIBLE_ROWS = 8
 local ATTR_SCROLL_FRICTION = 0.90
 local ATTR_SCROLL_MIN_VEL  = 0.3
 local ATTR_SCROLL_WHEEL_STEP = 60
 local ATTR_CLIP_TOP    = ATTR_FIRST_ROW_Y - ATTR_BOX_H * 0.5
-local ATTR_CLIP_BOTTOM = DESIGN_H
-local ATTR_CLIP_HEIGHT = ATTR_CLIP_BOTTOM - ATTR_CLIP_TOP
+local ATTR_CLIP_HEIGHT = ATTR_VISIBLE_ROWS * ATTR_BOX_H + (ATTR_VISIBLE_ROWS - 1) * ATTR_ROW_GAP
 
 -- 导出给 handleInput 使用
 M.ATTR_BOX_W        = ATTR_BOX_W
@@ -1086,11 +1085,9 @@ function M.draw(vg)
     local attrClipH = ATTR_CLIP_HEIGHT
 
     local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
-    -- 顶部留出天赋说明的高度，滚到底时最后一行贴住屏幕底边。
-    local talentLead = 162
     local contentBottom = ATTR_FIRST_ROW_Y + math.max(0, totalRows - 1) * rowStep + ATTR_BOX_H * 0.5
     local viewBottom = attrClipY + attrClipH
-    detailState.attrScrollMax = math.max(0, contentBottom - viewBottom + talentLead)
+    detailState.attrScrollMax = math.max(0, contentBottom - viewBottom)
 
     nvgSave(vg)
     nvgScissor(vg, 0, attrClipY, 560, attrClipH)
@@ -1141,46 +1138,8 @@ function M.draw(vg)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- 天赋说明作为属性列表的第一条，跟着滚动
-    local talentName = heroCfg.talentName or ""
-    local talentDesc = heroCfg.talentDesc or ""
-    local extraLine = ETS.getDesc(heroId, ownData and ownData.extraTalent)
-    if extraLine ~= "" then
-        talentDesc = talentDesc .. "\n" .. extraLine
-    end
-    if talentName ~= "" or talentDesc ~= "" then
-        local talentH = 150
-        local talentTop = ATTR_FIRST_ROW_Y - ATTR_BOX_H * 0.5 - detailState.attrScrollY - talentH - 12
-        if talentTop + talentH > attrClipY and talentTop < attrClipY + attrClipH then
-            nvgSave(vg)
-            nvgScissor(vg, 0, attrClipY, 560, attrClipH)
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, ATTR_DECO_X, talentTop, 520, talentH, 16)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-            nvgFill(vg)
-            drawTextStroke(vg, ATTR_DECO_X + 20, talentTop + 28, talentName .. "：",
-                34, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 0x66, 0xf8, 0x62, 4)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 26)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-            nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-            nvgTextBox(vg, ATTR_DECO_X + 20, talentTop + 52, 480, talentDesc, nil)
-            nvgRestore(vg)
-        end
-    end
-
-    -- 上下还有内容时显示小箭头
-    local arrowCX = ATTR_COL1_CX
-    if detailState.attrScrollY > 1 then
-        drawTextStroke(vg, arrowCX, attrClipY + 6, "▲", 26,
-            NVG_ALIGN_CENTER + NVG_ALIGN_TOP, 255, 214, 120, 3)
-    end
-    if detailState.attrScrollY < detailState.attrScrollMax - 1 then
-        drawTextStroke(vg, arrowCX, viewBottom - 6, "▼", 26,
-            NVG_ALIGN_CENTER + NVG_ALIGN_BOTTOM, 255, 214, 120, 3)
-    end
-
-    -- 分割线2 在属性区加长后被列表盖住，属性页不再画
+    -- === 18) 分割线2 ===
+    drawImageCentered(vg, img.midDiv2, MID_DIV2_CX, MID_DIV2_CY, MID_DIV2_W, MID_DIV2_H, 1.0)
 
     -- ================================================================
     -- ===                  六围雷达图                                ===
@@ -1303,6 +1262,33 @@ function M.draw(vg)
             34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             color[1], color[2], color[3], 3)
     end
+
+    -- ================================================================
+    -- ===                    天赋技能区域                            ===
+    -- ================================================================
+
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg,
+        TALENT_BG_CX - TALENT_BG_W * 0.5, TALENT_BG_CY - TALENT_BG_H * 0.5,
+        TALENT_BG_W, TALENT_BG_H, TALENT_BG_RADIUS)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
+    nvgFill(vg)
+
+    local talentName = heroCfg.talentName or ""
+    drawTextStroke(vg, TALENT_TEXT_LEFT, TALENT_NAME_Y, talentName .. "：",
+        40, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        0x66, 0xf8, 0x62, 5)
+
+    local talentDesc = heroCfg.talentDesc or ""
+    local extraLine = ETS.getDesc(heroId, ownData and ownData.extraTalent)
+    if extraLine ~= "" then
+        talentDesc = talentDesc .. "\n" .. extraLine
+    end
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, extraLine ~= "" and 28 or 34)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
+    nvgTextBox(vg, TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH, talentDesc, nil)
 
     end -- if detailState.tab == "awaken" / "attr"
 

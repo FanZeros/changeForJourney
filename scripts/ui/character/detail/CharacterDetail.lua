@@ -106,8 +106,7 @@ local collectAttributes = DetailAttrs.collectAttributes
 
 --- 限制属性滚动值（需在 setContext 之前定义，传递给 Draw）
 local function clampAttrScroll()
-    -- 下限 -162：顶部留出天赋说明的高度
-    detailState.attrScrollY = math.max(-162, math.min(detailState.attrScrollMax, detailState.attrScrollY))
+    detailState.attrScrollY = math.max(0, math.min(detailState.attrScrollMax, detailState.attrScrollY))
 end
 
 -- ======================== 装备可提升判断 ========================
@@ -336,7 +335,7 @@ function CharacterDetail.open(heroId)
     CharacterDetail._EquipPanel.endSideDrag()
     detailState.seamOpenTime = time.elapsedTime  -- [水平滑入] 页面滑入基准(切换英雄不重置)
     detailState.switchDir = nil  -- 普通打开：使用垂直滑入动画
-    detailState.attrScrollY   = -162
+    detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0
     detailState.attrDragging  = false
     detailState.attrScrollVel = 0
@@ -412,7 +411,7 @@ function CharacterDetail._switchHero(direction, keepDrag)
         detailState.switchDir = direction  -- -1=左切, 1=右切（触发水平滑入动画）
         detailState.switchFrom = detailState.cardDragVisual or 0
     end
-    detailState.attrScrollY   = -162
+    detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0
     detailState.attrDragging  = false
     detailState.attrScrollVel = 0

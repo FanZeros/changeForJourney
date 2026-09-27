@@ -108,12 +108,16 @@ local function enqueueSpec(spec)
     if id == 11 or id == 12 or id == 13 then
         local heroes = ClientDispatcher.get("heroes") or {}
         local roster = heroes.roster or {}
-        local owned = 0
-        for _, hero in pairs(roster) do
-            if type(hero) == "table" and hero.level then owned = owned + 1 end
+        local starterCount = 0
+        for _, heroId in ipairs({ 1, 2, 3 }) do
+            local hero = roster[heroId] or roster[tostring(heroId)]
+            if type(hero) == "table" and hero.level then
+                starterCount = starterCount + 1
+            end
         end
-        if session().starterTrioReady == true or isClaimed(id) or owned >= 3 then
-            print("[StoryPlayer] skip recruit scenario " .. tostring(id))
+        if session().starterTrioReady == true or isClaimed(id) or starterCount >= 3 then
+            print("[StoryPlayer] skip recruit scenario " .. tostring(id)
+                .. " starters=" .. tostring(starterCount))
             return
         end
     end

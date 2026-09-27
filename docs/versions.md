@@ -4,8 +4,11 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
-| v2.53-offline-save-reliability | 2026-09-27 | 将最新 workspace925@c614ec0 合入任务分支；修复离线经验空槽摊薄与存档写入失败后重试，合并后三条引擎回归 PASS、LSP/Build 通过。直接覆盖中断安全与损坏存档备份仍待验证。 |
-| v2.52-character-drag-save | 2026-09-27 | feat926/character-drag-save：修复英雄存档双层恢复丢名册、右栏跨栏拖拽头像假消失与跨队编队同步丢人；三条针对性引擎回归 PASS，LSP/Build 通过，主入口既有日记贴图缺失待验收。 |
+| v2.54-workspace926 | 2026-09-27 | 新建 workspace926，合入 workspace925 与 feat926/character-drag-save、cleanup-unused-panels、remove-unused-diary、artifact-audit、battle-lab。 |
+| v2.53-offline-save-reliability | 2026-09-27 | 修复离线经验空槽摊薄与存档写入失败后重试。直接覆盖中断安全与损坏存档备份仍待验证。 |
+| v2.53-cleanup-unused-panels | 2026-09-27 | 删除四个无入口旧界面、专属接线及 14 张图片；保留功绩/签到数据/GM 配置/遗物奖励。 |
+| v2.52-character-drag-save | 2026-09-27 | 修复英雄存档双层恢复丢名册、右栏跨栏拖拽头像假消失与跨队编队同步丢人。 |
+| v2.52-remove-unused-diary | 2026-09-27 | 删除旧日志页及失效引导/页签/启动引用，消除 UI_RZ 五图启动加载错误。 |
 | v2.51-equipment-detail-popup | 2026-09-26 | workspace925 装备详情按左右栏反向展开，对比卡继续排在外侧；套装效果独立分区，增加字号、换行和点击热区。LSP/Build 通过，视觉预览待验收。 |
 | v2.50-workspace925 | 2026-09-25 | workspace925 补合立绘、配装布局、功绩边框、失焦挂机，以及 integration 的本地 Electron 打包校验。配装拖拽仍以 925 为准。 |
 | v2.49.2-local-electron-pack | 2026-09-24 | Electron 本地专用 `--local-dist`：校验 dist 中 Lua 与当前源码一致，禁止下载快照替换。 |

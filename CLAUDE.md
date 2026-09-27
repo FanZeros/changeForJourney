@@ -14,7 +14,12 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **开发基线分支**：`workspace925`。本轮用户明确要求新建 `feat926/character-drag-save` 并**只 push 此任务分支**；不得自动合入或推送 `workspace925`、`workspace` 或其他历史分支。后续分支权限以用户当轮明确指令为准。
+- **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
+
+## 已合入备忘（feat926，2026-09-27）
+
+- `character-drag-save`：右栏拖拽跨栏取消、英雄名册数字键保留、跨队一次提交、离线经验不算空槽、存档写入失败重试。
+- `cleanup-unused-panels` / `remove-unused-diary`：删除无入口的旧日志、遗物洗练、签到、旧任务、公告面板及专属图。保留城镇 `TaskPage`、签到/任务服务与存档、GM `AnnouncementConfig`、遗物奖励图标。
 
 ## 已合入备忘
 
@@ -95,7 +100,7 @@
 
 ## likely_next_task
 
-- 当前分支 `feat926/character-drag-save`：实际游戏中验收右栏头像跨栏松手、同队/跨队移动及重启后名册完整性；仅当用户新一轮明确授权时才决定是否合入基线。
+- 当前基线 `workspace926`：已合入 925 与全部 feat926。需要在游戏里验收拖拽编队、存档读回、旧面板已消失。
 - `workspace925` 装备详情定位及套装效果区已调整；需要在实际游戏预览中确认左/右栏比较卡与最长套装说明的视觉效果。
 - Electron 已关后台节流，但未实机验证失焦/最小化。系统休眠仍需离线补算。
 - 配装页已下移留出词条空位，词条内容本身还没画。
@@ -114,7 +119,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能擅自取消/退出任务，也不能以纯文字结束交付**；每次完成或遇到阻碍，先汇报结果，再真正调用 `AskUserQuestion` 工具，以选项询问下一步并等待选择。记忆用于提醒，不等同于自动 hook；不得据此擅自执行未授权操作，也不得在仓库或记忆中保存访问令牌。
-- 分支操作以用户**当前轮次**授权为准：当前 `feat926/character-drag-save` 仅推送这个任务分支；不自动合入或推送 `workspace925`、`workspace` 或历史分支。远端并发更新先核对，不覆盖他人工作、不强推。
+- 分支操作以用户**当前轮次**授权为准：本轮只推 `workspace926`。不推 `workspace`、`workspace925`。远端并发更新先核对，不覆盖他人工作、不强推。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
@@ -124,6 +129,6 @@
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
 - Lua 5.4 字符串里不要写 `\!`
 - 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
-- 分支禁令以用户当前轮次授权为准；本轮只推 `feat926/character-drag-save`，不碰 `workspace925`、`workspace` 或其他分支。
+- 分支禁令以用户当前轮次授权为准；本轮只推 `workspace926`，不推 `workspace` / `workspace925`。
 - 遗匣 `seeds[].equip` 是原装备，种子合并和等级兼容绝不能改写或丢弃它。
 - 不要开引擎 i18n `enabled=true`，用 `core/I18n.lua`

@@ -855,7 +855,7 @@ local function withBoot(bagCount, body)
     ui("ui.town.TownScene", { "setOnSmithClick", "setOnChurchClick", "setOnTreeClick",
         "setOnTavernClick", "setOnMarketClick", "setOnWarehouseClick", "setOnLootBoxClick" })
     for _, name in ipairs({ "ui.blacksmith.BlacksmithPage", "ui.church.ChurchPage", "ui.tavern.TavernPage", "ui.market.MarketPage",
-        "ui.story.gate.IntroCutscene", "ui.story.task.TaskPanel", "ui.story.task.SignInPanel", "ui.backpack.BackpackPanel" }) do
+        "ui.story.gate.IntroCutscene", "ui.backpack.BackpackPanel" }) do
         ui(name)
     end
     ui("ui.hud.popup.RewardPopup")

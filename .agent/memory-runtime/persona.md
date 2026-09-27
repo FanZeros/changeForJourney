@@ -11,7 +11,7 @@
 ## 工作特征
 
 - [confirmed] 不自行取消/退出任务；每次交付或遇到阻碍先简报，再真正调用 AskUserQuestion 工具以选项询问下一步并等待选择，不以纯文字结束。记忆不能替代自动 hook。
-- [confirmed] 完成后提交并只推本轮授权的当前功能分支；先核对分支，不推其他分支，不强推。旧记忆分支名不得覆盖最新用户指令。
+- [confirmed] 完成后只推本轮授权的分支；先核对分支，不推其他分支，不强推。旧记忆分支名不得覆盖最新用户指令。2026-09-27 本轮授权是新建并推送 `workspace926`。
 
 - 快速试错 + 放手授权；给方向不抠细节，但交付必须"上线可玩" [observed]
 - 多 agent 并行工作流（会话内多线协作，跨会话交接明确要求"数据/文档/记忆完整"） [observed]
@@ -19,7 +19,9 @@
 
 ## 项目足迹（追加去重）
 
-- 2026-09-27 终焉之门：`feat926/character-drag-save` 已修复并推送右栏拖拽、双层读档英雄名册丢失和跨队同步；后续检查空槽离线经验摊薄与存档写盘失败重试。[scope:project]
+- 2026-09-27 终焉之门：新建 `workspace926`，合入 `workspace925` 以及 `feat926/character-drag-save`、`cleanup-unused-panels`（含 `remove-unused-diary`）、`artifact-audit`、`battle-lab`。[scope:project]
+- 2026-09-27 终焉之门：`feat926/character-drag-save` 已修复右栏拖拽、双层读档英雄名册丢失、跨队同步、空槽离线经验摊薄与存档写盘失败重试。[scope:project]
+- 2026-09-27 终焉之门：`feat926/cleanup-unused-panels` 清理四个无入口旧面板及 14 张专属图，并删除旧 DiaryPage；保留现行功绩、遗物奖励、签到/任务数据与 GM 配置。[scope:project]
 
 - 2026-09-26 终焉之门：装备详情按栏侧展开、套装与装备属性/随机词条分区并放大字号；先 Build/LSP，再仅推 workspace925；游戏内视觉验收待截图确认。[scope:project]
 

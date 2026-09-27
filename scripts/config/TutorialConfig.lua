@@ -17,7 +17,6 @@
 --   }
 --
 -- highlight key 对照表（由各 UI 模块调用 TutorialOverlay.registerHotspot() 注册）：
---   "tab_log"                — 顶部页面入口：日志
 --   "character_slot_1"       — 角色面板第一个槽位中的角色
 --   "equip_slot_weapon"      — 角色详情武器槽位
 --   "equip_btn_equip"        — 装备详情「装备」按钮
@@ -80,21 +79,6 @@ TutorialConfig[2] = {
         {
             text      = "这次试试一键装备吧！",
             highlight = "equip_btn_auto",
-            advanceOn = "click_highlight",
-        },
-    },
-}
-
--- ─── 引导组 3 ───
--- 触发：情景17/18/19（首通0104）结束后
--- 解锁：日志面板
-TutorialConfig[3] = {
-    triggerScenarios = { 17, 18, 19 },
-    unlocks = { "log_panel" },
-    steps = {
-        {
-            text      = "点击日志来看看有什么奖励可以领取的吧！",
-            highlight = "tab_log",
             advanceOn = "click_highlight",
         },
     },

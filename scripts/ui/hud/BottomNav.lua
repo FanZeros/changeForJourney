@@ -13,7 +13,7 @@ local TAB_COUNT = 5
 
 local tabs = {
     { name = "角色", locked = true },  -- 由引导1解锁
-    { name = "日志", locked = true },  -- 由引导3解锁
+    false,                       -- 旧日志页已移除，保留页码以兼容其他标签
     { name = "战斗", locked = false },
     { name = "城镇", locked = true },  -- 由引导4解锁
     { name = "副本", locked = true },  -- 首通0305解锁
@@ -67,7 +67,7 @@ function BottomNav.getSelectedIndex()
 end
 
 function BottomNav.setSelectedIndex(index)
-    if index >= 1 and index <= TAB_COUNT and not tabs[index].locked then
+    if index >= 1 and index <= TAB_COUNT and tabs[index] and not tabs[index].locked then
         selectedIndex = index
     end
 end
@@ -77,8 +77,7 @@ end
 ---@return boolean
 function BottomNav.isTabLocked(index)
     local tab = tabs[index]
-    if not tab then return false end
-    return tab.locked and true or false
+    return not tab or tab.locked and true or false
 end
 
 --- 设置指定标签的角标显示状态
@@ -183,14 +182,13 @@ function BottomNav.refreshDungeonBadge()
     BottomNav.setBadge(5, false, nil)
 end
 
---- 根据引导完成状态刷新标签 1/2/4 的锁定状态
+--- 根据引导完成状态刷新标签 1/4 的锁定状态
 --- 在 init() 时调用一次，引导完成后也会通过 setTabLocked 实时解锁
 function BottomNav.refreshUnlockState()
     local ok, TM = pcall(require, "systems.TutorialManager")
     if not ok then return end
 
     if TM.isPanelUnlocked("character_panel") then tabs[1].locked = false end
-    if TM.isPanelUnlocked("log_panel")      then tabs[2].locked = false end
     if TM.isPanelUnlocked("town_panel")     then tabs[4].locked = false end
 
     -- tab5：副本（首通通关0305解锁）
@@ -203,7 +201,7 @@ end
 ---@param tabIndex number 标签索引 (1~5)
 ---@param locked boolean
 function BottomNav.setTabLocked(tabIndex, locked)
-    if tabIndex < 1 or tabIndex > TAB_COUNT then return end
+    if tabIndex < 1 or tabIndex > TAB_COUNT or not tabs[tabIndex] then return end
     tabs[tabIndex].locked = locked
     -- 若解锁后当前选中的是锁定标签，切回战斗
     if not locked and selectedIndex == tabIndex then return end

@@ -1,7 +1,7 @@
 -- ResourceDefs.lua — 资源定义中央注册表（唯一真相源）
 -- ============================================================
 -- 所有 UI 面板（RewardPopup / MailPanel / BattleResultPanel / OfflineRewardPanel /
--- RecruitAnim / SignInPanel / GMConsolePanel 等）统一 require 此文件，
+-- RecruitAnim / GMConsolePanel 等）统一 require 此文件，
 -- 新增资源只需在此文件添加一行即可全局生效。
 -- ============================================================
 

@@ -21,10 +21,10 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  local LootBox, LootBoxPage
  local BlacksmithPage, ChurchPage, TalentPage, TavernPage
  local MarketPage, DungeonPage, DungeonBattleScene
- local GMConsolePanel, RelicReforgePanel, AnnouncementPanel
+ local GMConsolePanel
  local TopBar, BattleScene, CharacterPanel
  local EquipmentDetail
- local RedeemCodePanel, SignInPanel, LootBoxSystem
+ local RedeemCodePanel, LootBoxSystem
  local TutorialManager
 
  local M = {}
@@ -75,16 +75,13 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      DungeonPage         = require("ui.dungeon.DungeonPage")
      DungeonBattleScene  = require("ui.dungeon.DungeonBattleScene")
      GMConsolePanel      = require("ui.dev.GMConsolePanel")
-     RelicReforgePanel   = require("ui.relic.RelicReforgePanel")
      TopBar              = require("ui.hud.TopBar")
      BattleScene         = require("ui.battle.scene.BattleScene")
      CharacterPanel      = require("ui.character.panel.CharacterPanel")
      EquipmentDetail     = require("ui.character.equip.EquipmentDetail")
      RedeemCodePanel     = require("ui.hud.popup.RedeemCodePanel")
-     SignInPanel         = require("ui.story.task.SignInPanel")
      LootBoxSystem       = require("systems.LootBoxSystem")
      TutorialManager         = require("systems.TutorialManager")
-    AnnouncementPanel       = require("ui.story.task.AnnouncementPanel")
 
      -- 批量合并监听
      EventBus.on("RELIC_BATCH_MERGE_START", function(data)
@@ -315,66 +312,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      return nil
  end
 
- --- 洗练确认是否已同步到客户端（词缀已替换且 pending 已清）
- ---@param modData table|nil
- ---@param relicId string
- ---@param newAffixId number|nil
- ---@return boolean
- local function isReforgeConfirmSynced(modData, relicId, newAffixId)
-     local relic = findRelicInModData(modData, relicId)
-     if not relic then return false end
-     if newAffixId and tonumber(relic.affixId) ~= tonumber(newAffixId) then
-         return false
-     end
-     return relic.pendingReforgeAffixId == nil
- end
-
- --- 等待 mod_relics 同步后再关闭洗练面板（避免结果事件先于数据 / 重连旧包覆盖）
- ---@param relicId string|nil
- ---@param newAffixId number|nil
- local function finishReforgeConfirmWhenSynced(relicId, newAffixId)
-     if not relicId then
-         pcall(RelicReforgePanel.setConfirmResult, true, nil)
-         return
-     end
-     relicId = tostring(relicId)
-
-     local function applyResult(modData)
-         if findRelicInModData(modData, relicId) then
-             pcall(RelicReforgePanel.setConfirmResult, true, nil)
-         else
-             print("[ClientMsgHandler] REFORGE_CONFIRM relic missing after sync id=" .. relicId)
-             pcall(RelicReforgePanel.setConfirmResult, false, "遗物数据同步异常，请重新打开背包查看")
-         end
-     end
-
-     local cur = PlayerStore.Get("mod_relics")
-     if isReforgeConfirmSynced(cur, relicId, newAffixId) then
-         applyResult(cur)
-         return
-     end
-
-     PlayerStore.WaitForChange("mod_relics", {
-         timeout = 5.0,
-         compare = function(old, new)
-             if new == old then return false end
-             return isReforgeConfirmSynced(new, relicId, newAffixId)
-         end,
-         onChange = function(newVal)
-             applyResult(newVal)
-         end,
-         onTimeout = function()
-             local latest = PlayerStore.Get("mod_relics")
-             if isReforgeConfirmSynced(latest, relicId, newAffixId) then
-                 applyResult(latest)
-             else
-                 print("[ClientMsgHandler] REFORGE_CONFIRM sync timeout id=" .. relicId)
-                 applyResult(latest)
-             end
-         end,
-     })
- end
-
  --- litNodes 中是否包含指定节点
  ---@param modData table|nil
  ---@param nodeId number|string
@@ -480,12 +417,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          if EquipmentDetail.onActionResult then EquipmentDetail.onActionResult(data) end
          if ChurchPage.onActionResult then ChurchPage.onActionResult(data) end
          if DungeonPage.onActionResult then DungeonPage.onActionResult(data) end
-         if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE then
-             pcall(RelicReforgePanel.setReforgeResult, nil)
-         end
-         if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE_CONFIRM then
-             pcall(RelicReforgePanel.setConfirmResult, false, data.reason)
-         end
          if data.action == Protocol.ACTION_TYPES.ACTIVATE_TALENT
              or data.action == Protocol.ACTION_TYPES.RESET_SINGLE_TALENT
              or data.action == Protocol.ACTION_TYPES.RESET_TALENTS then
@@ -516,9 +447,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          return
      end
 
-     if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE_CONFIRM then
-         finishReforgeConfirmWhenSynced(data.relicId, data.newAffixId)
-     end
      if data.action == Protocol.ACTION_TYPES.ACTIVATE_TALENT and data.nodeId then
          finishTalentActionWhenSynced({ mode = "activate", nodeId = data.nodeId })
      end
@@ -590,8 +518,8 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 
      -- 兑换码
      if (data.redeemAction or data.action == Protocol.ACTION_TYPES.REDEEM_CODE) and RedeemCodePanel.onActionResult then RedeemCodePanel.onActionResult(data) end
+     -- 无玩家入口的旧公告面板已移除，公告推送不再转发给 UI。
      if data.announcementPush and data.announcements then
-         AnnouncementPanel.setAnnouncementData(data.announcements)
          return
      end
 
@@ -604,9 +532,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if DungeonBattleScene.onActionResult then pcall(DungeonBattleScene.onActionResult, data) end
      if MarketPage.onActionResult then pcall(MarketPage.onActionResult, data) end
      if GMConsolePanel.onActionResult then pcall(GMConsolePanel.onActionResult, data) end
-     if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE and data.newAffixId then
-         pcall(RelicReforgePanel.setReforgeResult, data.newAffixId)
-     end
 
      -- 遗物合成结果
      if data.action == Protocol.ACTION_TYPES.RELIC_MERGE and data.relic then

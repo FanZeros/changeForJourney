@@ -179,11 +179,24 @@ function HeroScenario.onRecruitResults(results)
     nextAt(1)
 end
 
---- 打开或切换到四人时：没看过入队就先播入队，否则本局闲聊一次
+---@param heroId integer
+---@return boolean
+local function ownsHero(heroId)
+    local heroes = ClientDispatcher.get("heroes") or {}
+    local roster = heroes.roster or {}
+    local owned = roster[heroId] or roster[tostring(heroId)]
+    return type(owned) == "table" and owned.level ~= nil
+end
+
+--- 打开或切换到四人时：没获得不播；已获得且没看过入队就先播入队，否则本局闲聊一次
 ---@param heroId number|nil
 function HeroScenario.onOpenHero(heroId)
     local hid = heroIdOf(heroId)
     if not JOIN_ID[hid] then return end
+    if not ownsHero(hid) then
+        print("[HeroScenario] skip unowned hero " .. tostring(hid))
+        return
+    end
     print("[HeroScenario] open hero " .. tostring(hid))
     playJoinThenIdle(hid, drainPending)
 end

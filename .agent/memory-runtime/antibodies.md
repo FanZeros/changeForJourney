@@ -1,7 +1,8 @@
 # antibodies — 跨项目避雷清单(只增不减)
 
 - [scope:gamedev] `File:WriteString(cjson.encode(data))` 会给 JSON 追加 NUL，Python json.load 读不出；与外部工具交换单行 JSON 用 `File:WriteLine`/`File:ReadLine`，并实际在 OS 层解析验证。
-- [scope:project] 战力校准样本必须先核对 `EquipmentConfig.ITEMS[templateId].levelRange`：C10/C4 模板最早 Lv.28，放在 Lv.1 虽能模拟却不属于正常掉落；跨种子 A/B 需模板等级合法、同装备品质、同一英雄/关卡，并避免在胜率全 0/全 100 时只靠胜率定权重。`BattleLab.prepare` 已加范围拒绝。
+- [scope:project] 战力校准样本必须先核对 `EquipmentConfig.ITEMS[templateId].levelRange`：C10/C4 模板最早 Lv.28，放在 Lv.1 虽能模拟却不属于正常掉落；跨种子 A/B 需模板等级合法、同装备品质、同一英雄/关卡，并避免在胜率全 0/全 100 时只靠胜率定权重。`BattleLab.prepare` 已加范围拒绝，回归见 `tests/battle_lab_boundary_test.lua`（改 prepare 校验必须同步过这个测试）。
+- [scope:project] 战力校准取样要先探难度悬崖再定关卡：Lv7 大狗嚼在 302 双侧全胜、303 双侧全败，饱和区内 A/B 胜率差恒为 0，白跑 40 局；非饱和样本出在 tier2 下边界 Lv8/303（3/40 vs 0/40）。取样顺序 = 先用 20 局探 2~3 个关卡找到「有一侧不全胜不全败」的组合，再扩到 40 局 + 第二个种子窗口复验；全饱和时改看场均输出/承伤/耗时并如实标注不可外推。
 - [scope:project] 战斗实验不要直接嵌入主游戏进程：MapAffixSystem/StageBerserk/遗物神器等共享模块级状态。新 Runtime 进程配模板英雄跑三行驱动；未经用户授权不要修改玩家编队/存档或发奖。
 - [scope:project] 装备详情小窗展开方向必须由 owner 区分：character（右栏）从鼠标左侧展开、对比继续向左；bag/backpack（左栏）从鼠标右侧展开、对比继续向右。别让边界夹取把小窗挤到鼠标另一侧；悬停锚点用鼠标坐标，钉住后不要用格子中心重设。
 - [scope:project] 套装详情必须按最后一条随机词条的底部计算起点，并同步面板高度、按钮和热区；中文描述要换行并保证字号可读。

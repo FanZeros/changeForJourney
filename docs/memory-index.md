@@ -3,9 +3,11 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-27 | 版本:v2.55-battle-lab-boundary-samples
+> 更新时间:2026-09-27 | 版本:v2.56-power-estimate-prototype
 >
-> **边界样本补齐（`feat926/battle-lab`，本轮）**：新增 `scripts/tests/battle_lab_boundary_test.lua`（纯 prepare 校验，不跑战斗，**自带 `engine:Exit()`，exit 0 即完成**），覆盖 `Lab.prepare` 全部拒绝分支与数值边界共 60+ 断言 ALL PASS：stageId 缺省/未知/终焉神殿 idle、英雄数 0/5、重复/不存在 ID、等级钳制（0→1、400→345、NaN/inf→缺省）、runs/seed/timeLimit 钳制上下界、loadouts 结构与非法槽位、模板与槽位不符、职业不可穿戴（战士穿魔杖）、双手武器+副手互斥、**levelRange 边界（C1{1,7}：Lv1/Lv7 合法，Lv0/Lv8/1.5/10000/非数字拒绝；C2{8,9999}：Lv7 拒绝、Lv8/Lv9999 合法）**、ascendLevel 0/100 合法 101/-1/1.5 拒绝、quality/affixes 出现即拒绝、mode 归一化，且历史反例 C10/C4 Lv1 确认被拒。真实边界校准（同种子 40 局、独立 Runtime、timeLimit=120、errors=0，复跑逐局一致）：
+> **分项计价战力原型（`feat926/battle-lab`，本轮）**：新增 `scripts/systems/CombatPowerEstimate.lua`——「实战预估」原型，**仅 battle-lab 报告使用**，未接线角色页/队伍展示，正式战力公式与战斗结算未改。设计：与官方同一价值底座（`AD.META.valueModel`、pct/100、同一跳过表），属性分 phys/mag/heal/generic 四组，按英雄伤害大类 `AD.getAtkCategory(attrs.atkType)` 取系数——本系 1.0、异系输出 `OFF_FACTOR=0.25`、治疗系英雄对输出系 `HEALER_ATK_FACTOR=0.5`；通用攻防（攻速/暴击/命中/生命/护甲/闪避等）不乘系数。⚠️ 战斗单位本体没有 `unit.atkType`（只有 ClassGateRuntime 战中会设），必须读 `attrs.atkType`（UnitAttributes.create 从英雄配置写入，恒有值）。`tests/BattleLab.lua` 报告新增 `teamEstimate`、`heroPowers[].estimate/category`、`delta.teamEstimate`；CLI 摘要输出「预估」。方向验证（与 v2.54/v2.55 实测一致）：战士 Lv8/303 同官方战力 160 → 预估力量戒 133 > 智力戒 128（实测 3/40 vs 0/40、输出 2112 vs 1780）；法师 Lv1/101 同官方战力 112 → 预估智力戒 85 > 力量戒 83（实测输出 287 vs 193）。原型成功区分官方战力无法区分的职业适配方向。`battle_lab_boundary_test.lua` 第 9 节新增 8 断言（类别正确/同战力区分/法师方向反转/牧师 healing/atkType=nil 回落/estimateUnit 一致），ALL PASS；旧默认入口 20/20 胜 schemaVersion=1 兼容、切关回归 ALL PASS。系数未做跨阵容/关卡/层级拟合，仅方向性参考，不可当绝对强度承诺。
+>
+> **边界样本补齐（`feat926/battle-lab`）**：新增 `scripts/tests/battle_lab_boundary_test.lua`（纯 prepare 校验，不跑战斗，**自带 `engine:Exit()`，exit 0 即完成**），覆盖 `Lab.prepare` 全部拒绝分支与数值边界共 60+ 断言 ALL PASS：stageId 缺省/未知/终焉神殿 idle、英雄数 0/5、重复/不存在 ID、等级钳制（0→1、400→345、NaN/inf→缺省）、runs/seed/timeLimit 钳制上下界、loadouts 结构与非法槽位、模板与槽位不符、职业不可穿戴（战士穿魔杖）、双手武器+副手互斥、**levelRange 边界（C1{1,7}：Lv1/Lv7 合法，Lv0/Lv8/1.5/10000/非数字拒绝；C2{8,9999}：Lv7 拒绝、Lv8/Lv9999 合法）**、ascendLevel 0/100 合法 101/-1/1.5 拒绝、quality/affixes 出现即拒绝、mode 归一化，且历史反例 C10/C4 Lv1 确认被拒。真实边界校准（同种子 40 局、独立 Runtime、timeLimit=120、errors=0，复跑逐局一致）：
 >
 > | 边界样本 | A/B 饰品 | A/B 战力 | A 胜场 | B 胜场 | A/B 场均用时 | A/B 场均输出 | A/B 场均承伤 |
 > | --- | --- | --- | --- | --- | --- | --- | --- |

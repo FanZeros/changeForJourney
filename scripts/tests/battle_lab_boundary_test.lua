@@ -10,6 +10,7 @@
 --      C2={8,9999} → Lv8 合法（跨档下边界）、Lv7 拒绝、Lv9999 合法
 --   6) ascendLevel 0..100 边界；quality/affixes 出现即拒绝
 --   7) 双手武器 + 副手互斥；单手 + 副手合法
+--   8) CombatPowerEstimate 分项计价原型：同官方战力下战士/法师方向区分
 -- 跑法: ./.cli/UrhoXRuntime tests/battle_lab_boundary_test.lua \
 --         -tapcode_dir=<项目根> -tool_mode -graphicsheadless
 -- ============================================================================
@@ -259,6 +260,81 @@ local function testMode()
     check(prepared and prepared.mode == "firstClear", "未知 mode → firstClear")
 end
 
+-- ── 9) CombatPowerEstimate 分项计价原型：同官方战力下按职业区分适配 ──
+local function testEstimate()
+    local HC = require("config.HeroConfig")
+    local EC = require("config.EquipmentConfig")
+    local ES = require("systems.EquipmentSystem")
+    local Sets = require("systems.EquipmentSetSystem")
+    local CPE = require("systems.CombatPowerEstimate")
+    local AD = require("systems.AttributeDef")
+
+    -- 与 BattleLab.powerOf 相同的官方权重（跳过六围）
+    local SKIP = {
+        [AD.STR] = true, [AD.AGI] = true, [AD.INT] = true,
+        [AD.VIT] = true, [AD.LUK] = true, [AD.SPI] = true,
+        [AD.HP] = true, [AD.ATK_INTERVAL] = true,
+        [AD.PHYS_RES] = true, [AD.MAG_RES] = true,
+    }
+    local function officialPower(attrs)
+        local total = 0
+        for key, meta in pairs(AD.META) do
+            if not SKIP[key] and meta.valueModel and meta.valueModel > 0 then
+                total = total + attrs:get(key)
+                    * (meta.dataType == AD.TYPE_PCT and meta.valueModel / 100 or meta.valueModel)
+            end
+        end
+        return math.floor(total + 0.5)
+    end
+
+    --- 造一个 Lv8 模板英雄并穿指定饰品（复刻 BattleLab.makeUnit 的最小路径）
+    local function unitWith(heroId, level, templateId)
+        local unit = assert(HC.createHero(heroId, level, nil, nil, false))
+        local equip = ES.hydrate({ templateId = templateId, level = level,
+            quality = 1, ascendLevel = 0, affixes = {} })
+        local eqData = { inventory = { ["1"] = equip }, equipped = { [heroId] = { accessory = 1 } } }
+        ES.applyToUnit(unit.attrs, equip, 1, ES.getAscendBoost(equip))
+        Sets.applyToUnit(unit.attrs, eqData, heroId, ES.getFromInventory, ES.getHeroSlots)
+        unit.attrs:fillHp()
+        return unit
+    end
+
+    check(EC.ITEMS["C2"] ~= nil and EC.ITEMS["C8"] ~= nil, "C2/C8 模板存在（tier2 下边界组）")
+
+    -- 战士（大狗嚼 id=1，physical）：力量戒 vs 智力戒
+    local wStr = unitWith(1, 8, "C2")
+    local wInt = unitWith(1, 8, "C8")
+    local wPowA, wPowB = officialPower(wStr.attrs), officialPower(wInt.attrs)
+    local wEstA, wCatA = CPE.estimate(wStr.attrs, wStr.attrs.atkType)
+    local wEstB = CPE.estimate(wInt.attrs, wInt.attrs.atkType)
+    check(wCatA == "physical", "战士伤害大类 = physical")
+    check(wPowA == wPowB, "官方战力不区分力量/智力戒（同 " .. wPowA .. "）")
+    check(wEstA > wEstB, "预估区分适配：战士力量戒 " .. wEstA .. " > 智力戒 " .. wEstB)
+
+    -- 法师（黄桃龙 id=2，magical）：方向必须反转
+    local mStr = unitWith(2, 8, "C2")
+    local mInt = unitWith(2, 8, "C8")
+    local mPowA, mPowB = officialPower(mStr.attrs), officialPower(mInt.attrs)
+    local mEstA, mCatA = CPE.estimate(mStr.attrs, mStr.attrs.atkType)
+    local mEstB = CPE.estimate(mInt.attrs, mInt.attrs.atkType)
+    check(mCatA == "magical", "法师伤害大类 = magical")
+    check(mPowA == mPowB, "法师官方战力同样不区分（同 " .. mPowA .. "）")
+    check(mEstB > mEstA, "法师方向反转：智力戒 " .. mEstB .. " > 力量戒 " .. mEstA)
+
+    -- 牧师（卡皮巴拉 id=9，healing）：治疗系不崩、类别正确
+    local hUnit = unitWith(9, 8, "C2")
+    local _, hCat = CPE.estimate(hUnit.attrs, hUnit.attrs.atkType)
+    check(hCat == "healing", "牧师伤害大类 = healing")
+
+    -- 边界：atkType 为 nil 时回落 physical，不抛错
+    local estNil = CPE.estimate(wStr.attrs, nil)
+    check(type(estNil) == "number" and estNil > 0, "atkType=nil 回落 physical 不抛错")
+
+    -- estimateUnit 便捷入口与 estimate 一致
+    local estDirect = CPE.estimateUnit(wStr)
+    check(estDirect == wEstA, "estimateUnit 与 estimate 结果一致（" .. estDirect .. "）")
+end
+
 function Start()
     print("[battle_lab_boundary_test] start")
     local ok, err = pcall(function()
@@ -270,6 +346,7 @@ function Start()
         testLevelRange()
         testAscendAndDeterminism()
         testMode()
+        testEstimate()
     end)
     if not ok then
         print("[FAIL] 测试抛异常: " .. tostring(err))

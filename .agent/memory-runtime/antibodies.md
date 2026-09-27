@@ -1,5 +1,6 @@
 # antibodies — 跨项目避雷清单(只增不减)
 
+- [scope:project] 战斗单位的攻击类型读 `unit.attrs.atkType`，不要读 `unit.atkType`：`HC.createHero` 构建的 unit 本体没有 atkType 字段（只有 dmgMainType/dmgSubType 中文名），`unit.atkType` 仅 ClassGateRuntime 战中转职时动态设置；`attrs.atkType` 由 UnitAttributes.create 从英雄配置写入，恒有值（nil 时 CombatFormula 回落 ATK_SLASH）。
 - [scope:gamedev] `File:WriteString(cjson.encode(data))` 会给 JSON 追加 NUL，Python json.load 读不出；与外部工具交换单行 JSON 用 `File:WriteLine`/`File:ReadLine`，并实际在 OS 层解析验证。
 - [scope:project] 战力校准样本必须先核对 `EquipmentConfig.ITEMS[templateId].levelRange`：C10/C4 模板最早 Lv.28，放在 Lv.1 虽能模拟却不属于正常掉落；跨种子 A/B 需模板等级合法、同装备品质、同一英雄/关卡，并避免在胜率全 0/全 100 时只靠胜率定权重。`BattleLab.prepare` 已加范围拒绝，回归见 `tests/battle_lab_boundary_test.lua`（改 prepare 校验必须同步过这个测试）。
 - [scope:project] 战力校准取样要先探难度悬崖再定关卡：Lv7 大狗嚼在 302 双侧全胜、303 双侧全败，饱和区内 A/B 胜率差恒为 0，白跑 40 局；非饱和样本出在 tier2 下边界 Lv8/303（3/40 vs 0/40）。取样顺序 = 先用 20 局探 2~3 个关卡找到「有一侧不全胜不全败」的组合，再扩到 40 局 + 第二个种子窗口复验；全饱和时改看场均输出/承伤/耗时并如实标注不可外推。

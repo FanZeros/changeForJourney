@@ -27,6 +27,11 @@
 
 **步骤 2（preview prepare / 官方 Build）成功标志：**
 - [ ] 命令退出码 0（无 LSP Error 中断）
+- 若报 `Preview requires a bound Maker project with .maker-mcp/config.json`：
+  说明仓库根缺 `.maker-mcp/`（Maker 绑定目录，被 gitignore 不入库，各机器本地生成）。
+  protect_build.py 已自动复制它进混淆工作区；若源仓库根就没有，先在仓库根跑一次
+  `maker-mcp\update-maker-mcp.bat`（或任何一次成功的官方 preview prepare / Maker 绑定）
+  生成 `.maker-mcp\config.json`，再重跑本 bat。
 - [ ] `%USERPROFILE%\.taptap-maker\preview\<...>\preparations\<...>\source\dist\` 生成
 - [ ] **关键**：该 dist 的 `<版本>\manifest-origin.json` 里统计资源——
       应有 `361 .lua + 770 .png + 77 .ogg + 6 .atlas + 字体`（共约 1226 项）。

@@ -163,6 +163,9 @@ L1 混淆已接入打包流程（默认关闭，不影响现有一键脚本）�
 ```
 protect_build.py                物化「混淆工作区」：361 个 Lua 全部 L1 混淆
                                 + .meta/.py 逐字节复制 + assets/ 真实复制 + .project/ 复制
+                                + .maker-mcp/ 等 Maker 绑定目录复制（官方 preview
+                                prepare 要求 target-dir 已绑定 Maker，缺
+                                .maker-mcp/config.json 会 FAIL）
   ↓
 taptap-maker preview prepare    官方 Build 跑在混淆工作区上（LSP/烘焙/manifest 全走正式流程）
   ↓
@@ -199,6 +202,16 @@ pack_release.py                 --protect-scripts-root 同基准复核 → elect
   伪造 lua-only manifest 拒包）。
 - `verify_prepare_dist` 加 `--protect-scripts-root` 后：无覆盖时正确拒绝
   混淆 dist（与仓库原版源码不一致），有覆盖时通过（361 文件逐字节一致）。
+
+### 本机实跑修复记录（2026-09-28）
+- `protect_build.py:109` 反斜杠感叹号 SyntaxError → 已修（b204359）。
+- pip/python 解释器错位致 `No module named antlr4` → bat/sh 加 [0/4] 预检 +
+  报错打印 sys.executable（dda8be7）；修复用 `python -m pip install luaparser lupa`。
+- 工作区守卫方向写反，误拒 `.tmp/protected-workspace` → 已修（22257b9）。
+- 步骤 2 报 `Preview requires a bound Maker project with .maker-mcp/config.json`
+  → protect_build 现自动复制 `.maker-mcp/.maker/.installer/.cli/.sce`（存在即复制）；
+  若仓库根本身没有 `.maker-mcp/`，先在仓库根跑一次 `maker-mcp\update-maker-mcp.bat`
+  完成 Maker 绑定再重跑本链。
 
 ### 尚未验证（需本机 Windows 实机）
 

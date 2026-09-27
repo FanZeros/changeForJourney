@@ -119,6 +119,19 @@ def materialize(source_root: Path, ws: Path, link_assets: bool) -> dict:
     shutil.copytree(source_root / ".project", ws / ".project")
     log(".project/ -> copied")
 
+    # Maker 绑定/工具目录：官方 preview prepare 要求 target-dir 是「已绑定 Maker
+    # 的工程」，缺 .maker-mcp/config.json 会直接 FAIL。这些目录是本地绑定产物
+    # （通常被 gitignore，各机器内容不同），存在即复制，绝不修改仓库原件。
+    for name in (".maker-mcp", ".maker", ".installer", ".cli", ".sce"):
+        src_dir = source_root / name
+        if src_dir.is_dir():
+            shutil.copytree(src_dir, ws / name)
+            log("%s/ -> copied (Maker 绑定/工具目录)" % name)
+        elif name == ".maker-mcp":
+            log("⚠️ source-root 下没有 .maker-mcp/：官方 preview prepare 会报 "
+                "\"Preview requires a bound Maker project\"。请确认本机 Maker 已绑定"
+                "该工程（.maker-mcp/config.json 存在），或把 --source-root 指向绑定过的仓库根。")
+
     # scripts: 物化混淆产物
     files = sorted((source_root / "scripts").rglob("*"))
     report = {"changed": [], "unchanged": [], "rejected": [], "copied_non_lua": 0}

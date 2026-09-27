@@ -14,6 +14,7 @@ local ResourceDefs = require("config.ResourceDefs")
 local GachaConfig = require("config.GachaConfig")
 local UrGachaConfig = require("config.UrGachaConfig")
 local GameState = require("core.GameState")
+local HeroFrame = require("ui.widget.HeroFrame")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawImageCenteredUtil = DrawUtil.drawImageCentered
 
@@ -598,6 +599,14 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
 
     local cardImg = getHeroCardImage(vg, heroId)
     DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
+    -- [统一角色框] 招募英雄卡叠加品质色描边
+    HeroFrame.draw(vg, {
+        cx = cx, cy = cy, w = CARD_W, h = CARD_H,
+        heroId = heroId,
+        state = "owned",
+        frameOnly = true,
+        alpha = alpha,
+    })
 
     -- 角色名称（上移25px：OFFSET从44增到69）
     local combinedAlpha = alpha * _fadeAlpha

@@ -222,11 +222,11 @@ function M.draw(vg, opts)
             end
             if opts.lockOverlay and state == "unowned" then
                 nvgSave(vg)
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, x, y, w, h, r)
                 nvgScissor(vg, x, y, w, h)
+                nvgBeginPath(vg)
+                nvgRect(vg, x, y, w, h)
                 nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(alpha * 100)))
-                nvgFillRect(vg, x, y, w, h)
+                nvgFill(vg)
                 nvgRestore(vg)
                 if img.lock >= 0 then
                     drawImageCentered(vg, img.lock, cx, cy, side * 0.31, side * 0.31, alpha * 0.9)

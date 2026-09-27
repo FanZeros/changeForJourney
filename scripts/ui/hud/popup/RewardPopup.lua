@@ -51,6 +51,7 @@ local ArtifactAssetUtil = require("config.ArtifactAssetUtil")
 local ResourceDefs      = require("config.ResourceDefs")
 local GameSFX           = require("systems.GameSFX")
 local RewardCascade     = require("ui.widget.RewardCascade")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local RewardPopup = {}
 
@@ -1019,22 +1020,17 @@ function RewardPopup.drawContent(vg)
                     end
                 end
             elseif item.type == "hero" then
-                -- ========== 角色头像图标 ==========
-                local q = item.quality or 3
-
-                -- 品质背景框
-                local qBgImg = getQualityBg(q)
-                if qBgImg >= 0 then
-                    drawImageCentered(vg, qBgImg, cx, cy, ICON_SIZE, ICON_SIZE, 1.0)
-                end
-
-                -- 角色头像图标（内缩 12px）
+                -- ========== 角色头像图标（[统一角色框] 品质色描边，替代 ZBBJ 贴图底） ==========
+                local iconPadding = 12
+                local iconInner = ICON_SIZE - iconPadding * 2
                 local heroImg = getHeroIcon(item.heroId)
-                if heroImg >= 0 then
-                    local iconPadding = 12
-                    local iconInner = ICON_SIZE - iconPadding * 2
-                    drawImageCentered(vg, heroImg, cx, cy, iconInner, iconInner, 1.0)
-                end
+                HeroFrame.draw(vg, {
+                    cx = cx, cy = cy, size = iconInner,
+                    heroId = item.heroId,
+                    iconHandle = heroImg,
+                    quality = item.quality or 3,
+                    state = "owned",
+                })
 
                 -- 名称角标（右下角，描边）
                 if item.name then
@@ -1124,12 +1120,21 @@ function RewardPopup.drawContent(vg)
                 local heroDef = HeroConfig.get(heroId)
                 local q = heroDef and heroDef.quality or 3
 
-                local qBgImg = getQualityBg(q)
-                if qBgImg >= 0 then
-                    drawImageCentered(vg, qBgImg, cx, cy, ICON_SIZE, ICON_SIZE, 1.0)
+                -- [统一角色框] 碎片：品质色描边头像 + 左上碎片角标
+                local shardSize = ICON_SIZE - 12
+                HeroFrame.draw(vg, {
+                    cx = cx, cy = cy, size = shardSize,
+                    heroId = heroId,
+                    quality = q,
+                    state = "owned",
+                })
+                local badgeSize = math.floor(shardSize * 53 / 160 + 0.5)
+                if DrawUtil._shardBadgeImg and DrawUtil._shardBadgeImg >= 0 then
+                    drawImageCentered(vg, DrawUtil._shardBadgeImg,
+                        cx - shardSize * 0.5 + badgeSize * 0.5,
+                        cy - shardSize * 0.5 + badgeSize * 0.5,
+                        badgeSize, badgeSize, 1.0)
                 end
-
-                DrawUtil.drawShardIcon(vg, heroId, cx, cy, ICON_SIZE - 12, 1.0)
 
                 if item.amount and item.amount > 0 then
                     do

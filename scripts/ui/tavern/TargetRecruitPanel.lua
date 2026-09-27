@@ -19,6 +19,7 @@ local hitTest                 = DrawUtil.hitTest
 
 local PlayerStore   = require("core.PlayerStore")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local M = {}
 
@@ -296,14 +297,14 @@ function M.draw(vg)
             nvgFill(vg)
         end
 
-        -- 品质框 [暗黑化 P2-A]
-        DarkIcon.drawQualityBg(vg, qualityFrame, cx, cy, AVATAR_SIZE, AVATAR_SIZE, 1.0)
-
-        -- 英雄头像（160x160 与品质框同尺寸）
+        -- [统一角色框] 英雄头像 + 品质色描边（原池品质贴图框改为按英雄自身品质）
         local heroIcon = img.heroIcons[hero.id]
-        if heroIcon and heroIcon >= 0 then
-            drawImageCentered(vg, heroIcon, cx, cy, AVATAR_SIZE, AVATAR_SIZE, 1.0)
-        end
+        HeroFrame.draw(vg, {
+            cx = cx, cy = cy, size = AVATAR_SIZE,
+            heroId = hero.id,
+            iconHandle = heroIcon,
+            state = "owned",
+        })
 
         -- 职业图标（右上角）
         local badgeImg = img.classBadge[hero.classIdx]
@@ -321,12 +322,13 @@ function M.draw(vg)
     local displayId = state.selectedHeroId or state.confirmedHeroId
     if displayId then
         local heroIcon = img.heroIcons[displayId]
-        if qualityFrame then
-            DarkIcon.drawQualityBg(vg, qualityFrame, CHOSEN_AVATAR_CX, CHOSEN_AVATAR_CY, AVATAR_SIZE, AVATAR_SIZE, 1.0)  -- [暗黑化 P2-A]
-        end
-        if heroIcon and heroIcon >= 0 then
-            drawImageCentered(vg, heroIcon, CHOSEN_AVATAR_CX, CHOSEN_AVATAR_CY, AVATAR_SIZE, AVATAR_SIZE, 1.0)
-        end
+        -- [统一角色框] 已指定头像：品质色描边
+        HeroFrame.draw(vg, {
+            cx = CHOSEN_AVATAR_CX, cy = CHOSEN_AVATAR_CY, size = AVATAR_SIZE,
+            heroId = displayId,
+            iconHandle = heroIcon,
+            state = "owned",
+        })
 
         -- 已指定文本
         local heroCfg = HeroConfig.HEROES[displayId]

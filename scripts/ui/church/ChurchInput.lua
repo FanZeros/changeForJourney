@@ -60,14 +60,14 @@ function M.bind(deps)
         end
 
         -- ========== 神器宝箱 Tab 交互 → 委托 ArtifactDrawPanel ==========
-        -- （钥匙补购弹窗为模态，优先消费；页签切换在其下方处理）
+        -- （钥匙补购弹窗为模态，优先消费；返回键/页签栏点击放行给下方公共逻辑）
         if state.tab == "baoxiang" then
             if ArtifactDrawPanel.isKeyConfirmVisible and ArtifactDrawPanel.isKeyConfirmVisible() then
                 return ArtifactDrawPanel.handleTabInput(dx, dy)
             end
-            -- 非弹窗态：先判定是否点到底部 Tab 栏（允许切回神器页），否则交给宝箱页消费
             local tabHit = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
-            if not tabHit then
+            local backHit = TownPageChrome.hitBack(dx, dy)
+            if not tabHit and not backHit then
                 return ArtifactDrawPanel.handleTabInput(dx, dy)
             end
         end

@@ -3,7 +3,9 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-27 | 版本:v2.52-battle-lab
+> 更新时间:2026-09-27 | 版本:v2.53-power-calibration
+>
+> **本轮校准（`feat926/battle-lab`）**：`tests/BattleLab.lua` 支持 `loadouts.A/B` 纯配置装备，英雄 ID 对应槽位（weapon/offhand/armor/helmet/shoes/accessory）对应 `{templateId,level,ascendLevel?}`；只支持普通品质且无随机词缀，合法模板/职业类型/双手占副手校验。内存装备调用 EquipmentSystem 与 EquipmentSetSystem，战斗前按 CharacterPower 同一属性权重求和，不读任何存档/星图/觉醒/神器/遗物。独立 Runtime 中 A、B 每局同种子配对，JSON schemaVersion=2 含 A、B 全量报告、paired、delta 与配装快照；未传 loadouts 时旧单方案 schemaVersion=1。实测 101 关首通大狗嚼 Lv1，20 个种子，C10 魔攻戒和 C4 物攻戒战力同为 116，胜率 0/20 vs 20/20，场均输出差 +89.55、承伤差 -105.55、耗时差 -6.07s；重复运行结论一致、同配装 A/B 逐局一致。故展示战力不是职业适配的胜率指标；暂不直接改全局权重。LSP 0 Error、官方 Build 通过，旧 3 局入口通过，切关回归日志 ALL PASS（测试脚本不自动退出，外部超时）。A/B 当前仅 CLI 单行 JSON，NanoVG 工作台尚无配装编辑。只推 `feat926/battle-lab`，不动 workspace。
 >
 > **本轮（`feat926/battle-lab` 独立战斗实验）**：基于 `origin/workspace925@aaa53e7` 建分支，只提交并 push `feat926/battle-lab`，绝不合并或推送 workspace。`scripts/tests/battle_lab_ui.lua` 是 NanoVG 模式 B (DPR 校正) 鼠标操作台；`tests/battle_lab.lua` 读取根目录单行 `battle_lab_config.json`，写出纯 JSON `battle_lab_report.json`（两文件被 .gitignore 忽略）；实验逻辑在 `tests/BattleLab.lua`，向 BattleTriDriver 注入无存档的模板英雄，固定 1/60 步长，多局分种子记录胜率/耗时/伤害/治疗/承伤/暴击。仅独立进程安全，不能在主游戏战斗中运行；模板英雄无装备/遗物/神器，首通未模拟完整 BattleScene 进度/奖励，挂机只测本关怪物。实测 20 局首通胜、4 局挂机败、20 局超时，固定种子两次逐局数据一致，原 `battle_stage_switch_test` ALL PASS，LSP 0 Error/官方构建成功/离屏 UI 可见；尚未真人鼠标交互验收。
 > **当前硬性流程**：完成或受阻先报告，再调用 AskUserQuestion 提供下一步选项；不能取消/退出任务。每次只 push 本轮授权的功能分支，不推 workspace；记忆不是自动化 hook 的保证。令牌不进仓库与记忆。

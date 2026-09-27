@@ -1,6 +1,7 @@
 -- 独立战斗实验入口：./.cli/UrhoXRuntime tests/battle_lab.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless
 -- 工作区根目录放置单行 JSON battle_lab_config.json；输出 battle_lab_report.json。
--- 仅在独立 Runtime 进程运行：不加载主入口、不读存档、不发奖。
+-- 配装 A/B 示例: "loadouts":{"A":{},"B":{"1":{"accessory":{"templateId":"C1","level":1}}}}
+-- 未配置 loadouts 时保持原单方案报告。校准只接受确定性的普通装备，无词缀。
 local Lab = require("tests.BattleLab")
 local CONFIG_FILE = "battle_lab_config.json"
 local OUTPUT_FILE = "battle_lab_report.json"
@@ -41,12 +42,24 @@ function Start()
             end
         end)
         assert(report, message)
-        print(string.format("[BattleLab] %s #%d: %d/%d 胜(%.1f%%) 负%d 超时%d 平均%.1fs",
-            report.stageName, report.stageId, report.wins, report.completedRuns,
-            report.winRate, report.losses, report.timeouts, report.avgSeconds))
-        for _, stat in ipairs(report.heroStats) do
-            print(string.format("[BattleLab] %s: 场均输出 %.0f 治疗 %.0f 承伤 %.0f 暴击 %.1f%%",
-                stat.name, stat.avgDamage, stat.avgHealing, stat.avgTaken, stat.critRate))
+        if report.A then
+            for _, name in ipairs({ "A", "B" }) do
+                local result = report[name]
+                print(string.format("[BattleLab] 配装%s 战力%d 胜%d/%d (%.1f%%) 场均%.1fs 输出%.0f 治疗%.0f 承伤%.0f",
+                    name, result.teamPower, result.wins, result.completedRuns,
+                    result.winRate, result.avgSeconds, result.avgDamage, result.avgHealing, result.avgTaken))
+            end
+            print(string.format("[BattleLab] B-A 战力%+d 胜率%+.1f百分点 耗时%+.1fs 输出%+.0f 治疗%+.0f 承伤%+.0f",
+                report.delta.teamPower, report.delta.winRate, report.delta.avgSeconds,
+                report.delta.avgDamage, report.delta.avgHealing, report.delta.avgTaken))
+        else
+            print(string.format("[BattleLab] %s #%d: %d/%d 胜(%.1f%%) 负%d 超时%d 平均%.1fs",
+                report.stageName, report.stageId, report.wins, report.completedRuns,
+                report.winRate, report.losses, report.timeouts, report.avgSeconds))
+            for _, stat in ipairs(report.heroStats) do
+                print(string.format("[BattleLab] %s: 场均输出 %.0f 治疗 %.0f 承伤 %.0f 暴击 %.1f%%",
+                    stat.name, stat.avgDamage, stat.avgHealing, stat.avgTaken, stat.critRate))
+            end
         end
         writeReport(report)
     end, debug.traceback)

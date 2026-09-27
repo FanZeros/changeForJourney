@@ -410,6 +410,16 @@ function BattleTriDriver.new(teamIdx, options)
             self:start(self.stageId)
             return
         end
+        -- 终焉神殿要先确认。第一队走主线前进，否则会直接跳过确认框。
+        if self.teamIdx == 1 and SC.isTerminalTemple(nextId) then
+            local BattleScene = require("ui.battle.scene.BattleScene")
+            print(string.format("[TriDriver] 队1 通关 %s，等待确认进入终焉 %s",
+                tostring(self.stageId), tostring(nextId)))
+            self._syncedMainStage = self.stageId
+            if BattleScene.nextStage then BattleScene.nextStage() end
+            self:start(self.stageId)
+            return
+        end
         local clearedId = self.stageId
         print(string.format("[TriDriver] 队%d 通关 %s → %s",
             self.teamIdx, tostring(clearedId), tostring(nextId)))

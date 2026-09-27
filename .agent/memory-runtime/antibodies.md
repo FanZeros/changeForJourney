@@ -1,6 +1,7 @@
 # antibodies — 跨项目避雷清单(只增不减)
 
-- [scope:project] 用战斗模拟数据回归属性→强度系数时，**因变量必须用 DPS（输出/秒）而不是败局总输出**：败局总输出=存活时间×DPS，生存属性（HP/护甲）通过拉长存活时间混杂进总输出，直接回归会让生存组吞掉攻击组信号（实测 physical R²≈0.03、攻击组负系数），DPS 口径才能拿到可解释系数（R²=0.43/0.52）。全胜样本伤害被怪物总血量截断，同样必须剔除（winRate=100 不进回归）。healer 局全部超时结束时 healing 回归不成立（R²<0），需要更短 timeLimit 制造非超时败局才有可拟合样本。
+- [scope:project] 用战斗模拟数据回归属性→强度系数时，**因变量必须用 DPS（输出/秒）而不是败局总输出**：败局总输出=存活时间×DPS，生存属性（HP/护甲）通过拉长存活时间混杂进总输出，直接回归会让生存组吞掉攻击组信号（实测 physical R²≈0.03、攻击组负系数），DPS 口径才能拿到可解释系数（R²=0.43/0.52）。全胜样本伤害被怪物总血量截断，同样必须剔除（winRate=100 不进回归）。
+- [scope:project] 治疗量拟合同样要先查**需求截断饱和**：治疗=min(供给,需求)，heal/taken 比值高（≥0.65）时 HPS 不再随治疗属性变化（实测 W68@17→32 HPS 仅 24.0→23.6、几乎不动即饱和铁证），这类样本必须按 healTakenRatio 剔除。单人牧师无输出不能击杀：稳定关全超时、难关全阵亡，不存在「阵亡且非饱和」带，只有超时带（时间固定、需求未满足）可拟合，样本量因此受限（n=8、R²=0.32），结论只能作方向性验证。
 - [scope:project] 战斗单位的攻击类型读 `unit.attrs.atkType`，不要读 `unit.atkType`：`HC.createHero` 构建的 unit 本体没有 atkType 字段（只有 dmgMainType/dmgSubType 中文名），`unit.atkType` 仅 ClassGateRuntime 战中转职时动态设置；`attrs.atkType` 由 UnitAttributes.create 从英雄配置写入，恒有值（nil 时 CombatFormula 回落 ATK_SLASH）。
 - [scope:gamedev] `File:WriteString(cjson.encode(data))` 会给 JSON 追加 NUL，Python json.load 读不出；与外部工具交换单行 JSON 用 `File:WriteLine`/`File:ReadLine`，并实际在 OS 层解析验证。
 - [scope:project] 战力校准样本必须先核对 `EquipmentConfig.ITEMS[templateId].levelRange`：C10/C4 模板最早 Lv.28，放在 Lv.1 虽能模拟却不属于正常掉落；跨种子 A/B 需模板等级合法、同装备品质、同一英雄/关卡，并避免在胜率全 0/全 100 时只靠胜率定权重。`BattleLab.prepare` 已加范围拒绝，回归见 `tests/battle_lab_boundary_test.lua`（改 prepare 校验必须同步过这个测试）。

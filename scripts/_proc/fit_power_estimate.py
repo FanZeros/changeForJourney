@@ -4,7 +4,10 @@
 fit_power_estimate.py — 分项计价战力原型的系数拟合（battle-lab 专用工具）
 
 输入: 项目根 battle_lab_fit_samples.json（由 tests/battle_lab_fit.lua 产出）
+      battle_lab_fit_healer_samples.json（由 tests/battle_lab_fit_healer.lua 产出）
 输出: stdout 报告 + battle_lab_fit_result.json（同目录，供人工审阅，不进游戏包）
+用法: python3 fit_power_estimate.py [samples.json] [--mode healing]
+      --mode healing: 治疗系数拟合（因变量 HPS，按 healTakenRatio 剔除饱和样本）
 
 模型:
   败局中「场均总输出 = 存活时间 × 秒伤」，generic 组（HP/护甲/闪避等生存属性）
@@ -33,10 +36,12 @@ RIDGE_LAMBDA = 1.0
 GROUPS = ["phys", "mag", "heal", "generic"]
 
 
-def fit_category(samples, category, target_fn):
+def fit_category(samples, category, target_fn, row_filter=None):
     """对一个伤害大类做岭回归，返回 (系数 dict, 样本数, R²)"""
     rows = [s for s in samples if s["category"] == category
             and s["measured"]["winRate"] < 100]
+    if row_filter:
+        rows = [s for s in rows if row_filter(s)]
     if len(rows) < 4:
         return None, len(rows), None
     X = np.array([[s["groups"][g] for g in GROUPS] for s in rows], dtype=float)
@@ -73,9 +78,65 @@ def normalize(own_key, coef):
 # R² 低于该阈值的拟合视为不可信，不参与 OFF_FACTOR 建议
 R2_TRUST_THRESHOLD = 0.3
 
+# healing 模式：治疗量=min(供给,需求)，heal/taken 高于该值视为需求截断（饱和），
+# HPS 不随治疗属性变化（实测 W68@17→32 HPS 24.0→23.6 几乎不动），必须剔除
+HEAL_SATURATION_RATIO = 0.65
+
+
+def run_healing_mode(samples):
+    """治疗系数拟合：因变量 HPS，只取非饱和样本（healTakenRatio < 0.65）"""
+    def hps(m):
+        return m["avgHealing"] / m["avgSeconds"] if m["avgSeconds"] > 0 else 0.0
+
+    def non_saturated(s):
+        return s["measured"].get("healTakenRatio", 1.0) < HEAL_SATURATION_RATIO
+
+    total = len([s for s in samples if s["category"] == "healing"])
+    coef, n, r2 = fit_category(samples, "healing", hps, row_filter=non_saturated)
+    result = {"mode": "healing", "ridgeLambda": RIDGE_LAMBDA, "groups": GROUPS,
+              "saturationRatioThreshold": HEAL_SATURATION_RATIO,
+              "totalHealingSamples": total, "nonSaturatedSamples": n}
+    print(f"[healing] 总样本 {total}，非饱和（heal/taken<{HEAL_SATURATION_RATIO}）{n}")
+    if coef is None:
+        result["error"] = f"非饱和样本不足（n={n} < 4），无法拟合"
+        print(result["error"])
+        return result
+    result["coefficients"] = coef
+    result["r2"] = None if r2 is None else round(r2, 4)
+    norm = normalize("heal", coef)
+    result["normalized"] = norm
+    print(f"[healing] target=HPS  R²={result['r2']}")
+    for g in GROUPS:
+        print(f"  w_{g:<8}= {coef[g]:10.4f}"
+              + (f"   (归一化 {norm[g]:.3f})" if norm else ""))
+    if coef.get("_raw_negative_clipped"):
+        print(f"  ⚠️ 负系数截断: {coef['_raw_negative_clipped']}")
+    if norm:
+        print(f"\n归一化解读（heal=1.0 基准）:")
+        print(f"  phys → {norm['phys']:.3f}   mag → {norm['mag']:.3f}   "
+              f"generic → {norm['generic']:.3f}")
+        print("  HEALER_ATK_FACTOR 建议 = max(off[phys], off[mag])（输出系取较大者，"
+              "保守不低估）")
+        result["suggestedHealerAtkFactor"] = round(max(norm["phys"], norm["mag"]), 3)
+        print(f"  建议 HEALER_ATK_FACTOR ≈ {result['suggestedHealerAtkFactor']}"
+              f"（当前原型 0.5）")
+    return result
+
 
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "battle_lab_fit_samples.json"
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    mode = "healing" if "--mode" in sys.argv and "healing" in sys.argv else "dps"
+    if mode == "healing":
+        path = args[0] if args else "battle_lab_fit_healer_samples.json"
+        with open(path, encoding="utf-8") as f:
+            samples = json.load(f)
+        result = run_healing_mode(samples)
+        out = path.replace(".json", "_result.json")
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=1)
+        print(f"\n已写入 {out}")
+        return
+    path = args[0] if args else "battle_lab_fit_samples.json"
     with open(path, encoding="utf-8") as f:
         samples = json.load(f)
 

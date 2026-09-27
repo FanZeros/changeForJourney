@@ -17,6 +17,9 @@ logs/.nfs*
 /battle_lab_config.json
 /battle_lab_report.json
 /battle_lab_fit_samples.json
+/battle_lab_fit_samples_result.json
+/battle_lab_fit_healer_samples.json
+/battle_lab_fit_healer_samples_result.json
 
 # OSS util
 .ossutil_checkpoint/

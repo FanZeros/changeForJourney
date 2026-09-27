@@ -260,22 +260,30 @@ function M.collectAttributes(heroId, heroCfg, level)
         left[#left + 1] = { key = AD.HEAL_AMOUNT, name = "治疗量", value = tostring(math.floor(attrs:get(AD.HEAL_AMOUNT))) }
     end
 
-    -- 人人都有的防御项和百分比加成固定显示，0 也保留，避免列表提前结束。
+    -- 基础值在前，对应加成紧跟后面。0 也保留，避免列表提前结束。
     local alwaysLeft = {
-        AD.ARMOR, AD.ENERGY_SHIELD, AD.RESISTANCE, AD.HIT_VALUE,
-        AD.HP_BONUS, AD.ARMOR_BONUS, AD.ES_BONUS, AD.DODGE_BONUS,
-        AD.FINAL_HP_BONUS, AD.FINAL_ARMOR_BONUS,
-        AD.FINAL_ENERGY_SHIELD_BONUS, AD.FINAL_DODGE_BONUS,
+        { key = AD.ARMOR, name = "护甲" },
+        { key = AD.ARMOR_BONUS, name = "护甲加成" },
+        { key = AD.FINAL_ARMOR_BONUS, name = "最终护甲" },
+        { key = AD.RESISTANCE, name = "伤害抗性" },
+        { key = AD.ENERGY_SHIELD, name = "护盾上限" },
+        { key = AD.ES_BONUS, name = "护盾加成" },
+        { key = AD.FINAL_ENERGY_SHIELD_BONUS, name = "最终护盾" },
+        { key = AD.HIT_VALUE, name = "命中值" },
+        { key = AD.DODGE, name = "闪避值" },
+        { key = AD.DODGE_BONUS, name = "闪避加成" },
+        { key = AD.FINAL_DODGE_BONUS, name = "最终闪避" },
+        { key = AD.HP_BONUS, name = "生命加成" },
+        { key = AD.FINAL_HP_BONUS, name = "最终生命" },
     }
     local alwaysLeftSet = {}
-    for _, key in ipairs(alwaysLeft) do
-        alwaysLeftSet[key] = true
-        local meta = AD.getMeta(key)
-        local val = attrs:getUncapped(key)
+    for _, item in ipairs(alwaysLeft) do
+        alwaysLeftSet[item.key] = true
+        local val = attrs:getUncapped(item.key)
         left[#left + 1] = {
-            key = key,
-            name = meta and meta.name or key,
-            value = AD.formatAttrDisplayValue(key, val),
+            key = item.key,
+            name = item.name,
+            value = AD.formatAttrDisplayValue(item.key, val),
         }
     end
 

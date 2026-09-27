@@ -141,12 +141,75 @@ local function testTriDriverWipeFallback()
     end
 end
 
+-- ── 4) 神器并行战线/叠层/倒计时回归 ──
+local function testArtifactRuntimeIsolation()
+    local ART = require("systems.ArtifactRuntime")
+    local AD = require("systems.AttributeDef")
+    local function makeUnit(effectType, value)
+        local attrs = {
+            final = { [AD.HP] = 0 },
+            artifactExtraDamageMult = nil,
+            modifiers = {},
+        }
+        function attrs:get(key)
+            if key == AD.MAX_HP then return 100 end
+            return self.final[key] or 0
+        end
+        function attrs:addModifier(id, entries)
+            self.modifiers[id] = entries
+        end
+        function attrs:removeModifier(id)
+            self.modifiers[id] = nil
+        end
+        return { attrs = attrs, hp = 0, maxHp = 100,
+            artifactEffects = { { effectType = effectType, value = value } } }
+    end
+    local a = makeUnit("revive_damage_bonus", 50)
+    local b = makeUnit("revive_damage_bonus", 50)
+    ART.initBattle({ a })
+    ART.initBattle({ b })
+    check(ART.onAllyDeath(a), "队 A 神圣十架首次触发")
+    ART.reset({ b })
+    check(not ART.onAllyDeath(a), "队 B 重置后队 A 复活次数不会重置")
+    ART.initBattle({ b })
+    check(ART.onAllyDeath(b), "队 B 重开后能独立触发")
+
+    local cloak = makeUnit("dodge_decay", 25)
+    ART.initBattle({ cloak })
+    local modId = "artifact_dodge_decay_1"
+    check(cloak.attrs.modifiers[modId][1].flat == 200, "影羽斗篷入场额外闪避 200")
+    ART.onDodge(cloak)
+    check(cloak.attrs.modifiers[modId][1].flat == 150, "影羽斗篷按初始值 25% 衰减 50")
+    ART.initBattle({ cloak })
+    check(cloak.attrs.modifiers[modId][1].flat == 200, "重新开战前清理旧 modifier")
+
+    local attacker = makeUnit("judgment_res_down", 3)
+    local enemyA, enemyB = {}, {}
+    ART.initBattle({ attacker })
+    ART.onAfterAttack(attacker, enemyA, { isHit = true, category = "physical" })
+    ART.onAfterAttack(attacker, enemyA, { isHit = true, category = "physical" })
+    check(attacker.artifactJudgmentStacks[enemyA].value == 6, "连续命中叠加抗性削减")
+    ART.onAfterAttack(attacker, enemyB, { isHit = true, category = "physical" })
+    check(attacker.artifactJudgmentStacks[enemyA] == nil
+        and attacker.artifactJudgmentStacks[enemyB].value == 3, "切换目标清旧叠层")
+
+    local ghost = makeUnit("ghost_damage_bonus", 50)
+    ART.initBattle({ ghost })
+    check(ART.onAllyDeath(ghost) and ghost.artifactUntargetable, "亡魂首次触发")
+    ART.update(5, { ghost })
+    check(ghost.hp == 1 and ghost.artifactUntargetable, "亡魂计时 5 秒后仍存活")
+    ART.update(5, { ghost })
+    check(ghost.hp == 0 and not ghost.artifactUntargetable, "亡魂十秒到期退场")
+    ART.reset({ a, b, cloak, attacker, ghost })
+end
+
 function Start()
     print("[battle_stage_switch_test] start")
     local ok, err = pcall(function()
         testRestoreOrder()
         testDefeatRollbackKeepsBattleActive()
         testTriDriverWipeFallback()
+        testArtifactRuntimeIsolation()
     end)
     if not ok then
         print("[FAIL] 测试抛异常: " .. tostring(err))

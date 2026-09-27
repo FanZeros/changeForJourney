@@ -200,6 +200,8 @@ function BattleTriDriver.new(teamIdx)
         -- 己方: 从编队页构建新单位（应用装备/神器/遗物）
         local CharacterPanel = require("ui.character.panel.CharacterPanel")
         self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
+        -- 清理旧战线单位的临时效果，不触碰其他队的神器状态
+        ART.reset(self.allies)
         self.allies = CharacterPanel.getDeployedTeam(self.teamIdx) or {}
         -- 敌方
         local entry = SC.getStage(stageId)
@@ -389,13 +391,17 @@ function BattleTriDriver.new(teamIdx)
             return
         end
 
-        -- 己方阵亡复活计时
+        -- 己方阵亡复活计时；神器优先拦截首次死亡
         for _, u in ipairs(allies) do
             if u.hp <= 0 then
-                u._triReviveTimer = (u._triReviveTimer or 0) + dt
-                if u._triReviveTimer >= REVIVE_DELAY then
+                if ART.onAllyDeath(u) then
                     u._triReviveTimer = nil
-                    self:reviveUnit(u)
+                else
+                    u._triReviveTimer = (u._triReviveTimer or 0) + dt
+                    if u._triReviveTimer >= REVIVE_DELAY then
+                        u._triReviveTimer = nil
+                        self:reviveUnit(u)
+                    end
                 end
             end
         end
@@ -490,6 +496,7 @@ function BattleTriDriver.new(teamIdx)
         end
 
         -- 状态子系统 tick（mount 作用域内）
+        ART.update(dt, allies)
         RCH.update(allies, 0)
         BattleCombat.updateHpBuffers(allies, dt)
         BattleCombat.updateHpBuffers(enemies, dt)

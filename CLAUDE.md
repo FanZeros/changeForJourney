@@ -14,13 +14,19 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **开发基线分支**：`workspace925`。每轮按用户当前指令从基线创建新的任务分支；验收通过后推送任务分支，合并回 `workspace925` 并推送。不要推送 `workspace924` 或其他历史分支。
+- **开发基线分支**：`workspace925`。本轮从该基线创建 `feat926/artifact-audit`，只允许提交并 push 该任务分支，**禁止 push 任何 `workspace*` 分支**。未来分支授权以用户当轮最新指令为准，不沿用旧任务的合并与推送许可。
 
 ## 已合入备忘
 
 - Electron 离线包在 `electron-shell/main.js` 关闭 `backgroundThrottling`，失焦时保持战斗帧更新。网页隐藏页仍需离线补算。Windows 失焦/最小化尚未实机验证。
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
+
+## 本轮进展（2026-09-27，`feat926/artifact-audit`）
+
+- 规范化 `docs/changeForJourney-gameplay.md` §8：实际为 4 个出战位×每位 3 个神器子格，40/80 级解锁、抽取保底、置换/洗练及战斗桥接均按代码记录；部分旧文档其他章节仍待核对。
+- 修复 `ArtifactRuntime` 独立战线状态互相清空、战斗重复初始化副作用、审判锤旧目标叠层和影羽斗篷衰减；三行战斗接入首次死亡拦截及亡魂计时；通天塔改为逐名阵亡时拦截。所有宿主均传本战线单位列表到 reset/update。
+- `scripts/tests/battle_stage_switch_test.lua` 增加神器回归，离屏运行 24 PASS、0 FAIL；Lua LSP 0 Error，官方 Build 成功。整游戏启动 60 帧 Lua 错误 0，但报告有 5 张仓库本来缺失的剧情日记图片，不能宣称整游戏零资源错误；通天塔死亡路径还需实战验收。构建可能更新 `.project` 的本地生成配置，提交前应排除。
 
 ## 上次做了什么（2026-09-26）
 
@@ -79,7 +85,7 @@
 
 ## likely_next_task
 
-- 当前分支是 `workspace925`。做完必须以 AskUserQuestion 选项提问下一步，只 push 该分支。
+- 当前分支是 `feat926/artifact-audit`。每次交付前汇报结果，最后必须调用 AskUserQuestion 以选项提问下一步；只 push 该任务分支，不 push `workspace925` 或任何 `workspace*` 分支。
 - `workspace925` 装备详情定位及套装效果区已调整；需要在实际游戏预览中确认左/右栏比较卡与最长套装说明的视觉效果。
 - Electron 已关后台节流，但未实机验证失焦/最小化。系统休眠仍需离线补算。
 - 配装页已下移留出词条空位，词条内容本身还没画。
@@ -98,7 +104,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；无论任务完成或遇到阻碍，先汇报结果，再用 AskUserQuestion 提供下一步选项，禁止纯文字中断；用户选择后继续。不得据此擅自执行未授权操作，也不得在仓库或记忆中保存访问令牌。
-- 分支操作以用户**当前轮次**授权为准：以 `workspace925` 为基线，在新任务分支开发，验证后推送该分支并合入、推送 `workspace925`；若远端发生并发更新或冲突，不覆盖他人工作，先确认。
+- 分支操作以用户**当前轮次**授权为准：本轮以 `workspace925` 为基线，在 `feat926/artifact-audit` 开发、验证并**仅 push 任务分支**，不可合入或 push `workspace*`；若远端并发更新或冲突，不覆盖他人工作，先确认。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
@@ -108,6 +114,7 @@
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
 - Lua 5.4 字符串里不要写 `\!`
 - 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
-- 分支禁令以用户当前轮次授权为准；本轮只推任务分支和 `workspace925`，不碰其他分支。
+- 分支禁令以用户当前轮次授权为准；本轮只推 `feat926/artifact-audit`，不碰 `workspace*` 或其他分支。
 - 遗匣 `seeds[].equip` 是原装备，种子合并和等级兼容绝不能改写或丢弃它。
+- 神器独立战线的 `ART.reset`/`ART.update` 必须传本战线 allies；`initBattle` 不能清除其他战线；主线 60 帧验证有 5 张既有剧情日记图片缺失，不归咎于神器逻辑。
 - 不要开引擎 i18n `enabled=true`，用 `core/I18n.lua`

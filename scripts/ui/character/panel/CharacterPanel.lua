@@ -389,8 +389,10 @@ end
 ---@param dy number 设计空间 Y
 ---@return number|nil roster 索引
 local function hitTestRosterCard(dx, dy)
-    -- 名册整体右移 5%、下移 6%，命中换算回未偏移的坐标
-    dx = dx - DESIGN_W * 0.05
+    -- 名册下移 6%。详情未打开时还有右移 5%，命中换算回未偏移坐标。
+    if not (CharacterDetail.isOpen and CharacterDetail.isOpen()) then
+        dx = dx - DESIGN_W * 0.05
+    end
     dy = dy - DESIGN_H * 0.06
     local rosterCount = #heroRoster
     for idx = 1, rosterCount do
@@ -540,7 +542,7 @@ end
 
 function CharacterPanel.draw(vg)
     -- 委托给 Draw 子模块绘制主界面（编队槽位 + 角色列表 + 拖拽浮层）
-    Draw.draw(vg, scrollY)
+    Draw.draw(vg, scrollY, CharacterDetail.isOpen and CharacterDetail.isOpen() or false)
 
     -- 角色详情二级界面（覆盖在一切之上）
     CharacterDetail.draw(vg)
@@ -599,7 +601,9 @@ end
 -- ======================== 输入处理 ========================
 
 local function isInScrollArea(dx, dy)
-    dx = dx - DESIGN_W * 0.05
+    if not (CharacterDetail.isOpen and CharacterDetail.isOpen()) then
+        dx = dx - DESIGN_W * 0.05
+    end
     dy = dy - DESIGN_H * 0.06
     return dx >= SCROLL_LEFT and dx <= SCROLL_RIGHT
        and dy >= SCROLL_TOP  and dy <= SCROLL_BOTTOM

@@ -486,9 +486,11 @@ end
 ---@param dx number
 ---@param dy number
 ---@return number|nil teamIdx, number|nil slotIdx
-function M.hitTestAvatarSlot(dx, dy)
-    -- 内容整体右移 5%、下移 6%，命中换算回未偏移的坐标
-    dx = dx - DESIGN_W * 0.05
+function M.hitTestAvatarSlot(dx, dy, detailOpen)
+    -- 内容下移 6%。详情未打开时还有右移 5%，命中换算回未偏移坐标。
+    if not detailOpen then
+        dx = dx - DESIGN_W * 0.05
+    end
     dy = dy - DESIGN_H * 0.06
     local unlockedCnt = getUnlockedTeamCount and getUnlockedTeamCount() or 1
     for t = 1, math.min(M.TEAM_TAB_COUNT, unlockedCnt) do
@@ -564,7 +566,7 @@ end
 --- CharacterDetail.draw() 由 CharacterPanel 在调用本函数之后单独调用
 ---@param vg any NanoVG 上下文
 ---@param scrollY number 当前滚动偏移
-function M.draw(vg, scrollY)
+function M.draw(vg, scrollY, detailOpen)
     local teamSlots       = getTeamSlots()
     local heroRoster      = getHeroRoster()
     local slotPowerCache  = getSlotPowerCache()
@@ -586,9 +588,10 @@ function M.draw(vg, scrollY)
     nvgRestore(vg)
 
     -- 1.5) 三队头像同时显示。右侧栏不画整卡，点头像才进卡面。
-    -- 内容下移 6%、右移栏宽的 5%；背景在上面已经铺满，不跟着动。
+    -- 列表下移 6%、右移栏宽的 5%。详情打开后铺满右栏，不再右移。
+    local contentShiftX = detailOpen and 0 or DESIGN_W * 0.05
     nvgSave(vg)
-    nvgTranslate(vg, DESIGN_W * 0.05, DESIGN_H * 0.06)
+    nvgTranslate(vg, contentShiftX, DESIGN_H * 0.06)
     M.drawTeamAvatars(vg)
 
     -- 2) 整卡槽位已改为头像，保留块结构供下方列表复用局部变量
@@ -980,10 +983,10 @@ function M.draw(vg, scrollY)
             nvgStrokeWidth(vg, 3)
             nvgStroke(vg)
         end
-        local hoverTeam, hoverSlot = M.hitTestAvatarSlot(dragState.cx, dragState.cy)
+        local hoverTeam, hoverSlot = M.hitTestAvatarSlot(dragState.cx, dragState.cy, detailOpen)
         if hoverTeam and hoverSlot then
             local hx, hy = avatarCenter(hoverTeam, hoverSlot)
-            hx = hx + DESIGN_W * 0.05
+            if not detailOpen then hx = hx + DESIGN_W * 0.05 end
             hy = hy + DESIGN_H * 0.06
             nvgBeginPath(vg)
             nvgRoundedRect(vg, hx - AV_SIZE * 0.5 - 4, hy - AV_SIZE * 0.5 - 4, AV_SIZE + 8, AV_SIZE + 8, 16)

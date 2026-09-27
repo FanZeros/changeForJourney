@@ -698,7 +698,8 @@ function BattleScene.draw(vg)
     local mapAlpha = 1.0
     local alignRight = false
     if bgTransAnim then
-        local t = math.min(bgTransAnim.timer / BG_TRANS_DURATION, 1.0)
+        local duration = bgTransAnim.duration or BG_TRANS_DURATION
+        local t = math.min(bgTransAnim.timer / duration, 1.0)
         local peak = bgTransAnim.zoomTarget or BG_ZOOM_FWD_TARGET
         if peak < 1.0 then
             peak = 2.0 - peak
@@ -1007,6 +1008,7 @@ function BattleScene.update(dt)
         terminalDefeatPending = terminalDefeatPending, defeatByTimeout = defeatByTimeout,
         settleWaveEfficiency = settleWaveEfficiency, resetWaveTimers = resetWaveTimers,
         nextStage = BattleScene.nextStage,
+        beginVictoryMarch = BattleScene.beginVictoryMarch,
     }
     local stageIdBeforeCas = currentStageId
     local _casConsumed = BattleCasualty.process(_casCtx, logicDt)
@@ -1069,9 +1071,13 @@ function BattleScene.update(dt)
     -- ---- 更新背景过渡动画 ----
     if bgTransAnim then
         bgTransAnim.timer = bgTransAnim.timer + dt
-        if bgTransAnim.timer >= BG_TRANS_DURATION then
+        local duration = bgTransAnim.duration or BG_TRANS_DURATION
+        if bgTransAnim.timer >= duration then
             bgTransAnim = nil
         end
+    end
+    if _navLogic and _navLogic.tickVictoryMarch then
+        _navLogic.tickVictoryMarch(dt)
     end
 end
 
@@ -1317,6 +1323,15 @@ end
 function BattleScene.nextStage()
     if not _navLogic then bindBattleExtracts() end
     return _navLogic.nextStage()
+end
+
+function BattleScene.beginMapMarch(duration)
+    bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET, duration = duration or 2.0 }
+end
+
+function BattleScene.beginVictoryMarch()
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.beginVictoryMarch()
 end
 
 --- 后退到上一关

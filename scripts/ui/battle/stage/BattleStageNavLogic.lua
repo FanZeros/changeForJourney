@@ -50,6 +50,49 @@ function M.bind(deps)
         require("systems.GameBGM").setScene("samsara", { fromStart = true })
     end
 
+    local nextStage
+    local function beginVictoryMarch()
+        if get("victoryMarch") then return end
+        local stageConfig = getStageConfig()
+        local nextId = stageConfig.getNextStageId(get("currentStageId"))
+        if not nextId then
+            nextStage()
+            return
+        end
+        set("victoryMarch", { nextId = nextId, timer = 0 })
+        set("battleActive", false)
+        set("bgTransAnim", { timer = 0, zoomTarget = get("BG_ZOOM_FWD_TARGET"), duration = 2.0 })
+        local BattleCombat = require("ui.battle.combat.BattleCombat")
+        for _, unit in ipairs(getAllies()) do
+            if unit.hp > 0 then
+                BattleCombat.setCardAnim(unit, { state = "march", timer = 0, lungeDir = -1, marchStep = 7 })
+            end
+        end
+        BattleCombat.addFloatingText("正在前进中", 540, 1500, { 255, 230, 160 }, false)
+    end
+
+    local function tickVictoryMarch(dt)
+        local march = get("victoryMarch")
+        if not march then return end
+        march.timer = march.timer + dt
+        local BattleCombat = require("ui.battle.combat.BattleCombat")
+        for _, unit in ipairs(getAllies()) do
+            if unit.hp > 0 then
+                BattleCombat.setCardAnim(unit, {
+                    state = "march", timer = 0, lungeDir = -1,
+                    marchStep = math.sin(march.timer * 10) * 7,
+                })
+            end
+        end
+        if march.timer < 2.0 then return end
+        local nextId = march.nextId
+        set("victoryMarch", nil)
+        nextStage()
+        if get("currentStageId") ~= nextId then
+            print("[BattleScene] 前进结束，但未进入预约关卡 " .. tostring(nextId))
+        end
+    end
+
     local function nextStage()
         local stageConfig = getStageConfig()
         local currentStageId = get("currentStageId")
@@ -143,6 +186,8 @@ function M.bind(deps)
     return {
         doEnterTerminalTemple = doEnterTerminalTemple,
         nextStage = nextStage,
+        beginVictoryMarch = beginVictoryMarch,
+        tickVictoryMarch = tickVictoryMarch,
         prevStage = prevStage,
         gotoStage = gotoStage,
         completeReincarnation = completeReincarnation,

@@ -369,6 +369,8 @@ function BattleTriDriver.new(teamIdx)
             self.teamIdx, tostring(clearedId), tostring(nextId)))
         self._syncedMainStage = nextId
         self._clearReported = false
+        local BattleScene = require("ui.battle.scene.BattleScene")
+        if BattleScene.beginMapMarch then BattleScene.beginMapMarch(MARCH_DURATION) end
         self:start(nextId)
     end
 

@@ -260,9 +260,13 @@ function M.process(ctx, logicDt)
         return true
     end
 
-    -- 首通成功：自动前进到下一关（不回到寻怪模式）
+    -- 首通成功：先播前进，动画结束后再进下一关
     if wasFirstClear then
-        ctx.nextStage()
+        if ctx.beginVictoryMarch then
+            ctx.beginVictoryMarch()
+        else
+            ctx.nextStage()
+        end
     elseif ctx.searchingTimer == nil then
         -- 挂机模式：进入寻怪倒计时
         ctx.searchingTimer = 0

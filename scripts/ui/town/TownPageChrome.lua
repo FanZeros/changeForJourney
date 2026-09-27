@@ -76,8 +76,15 @@ function M.drawNamePlate(vg, img, title, opts)
     opts = opts or {}
     local N = M.NAME
     DrawUtil.drawImageCentered(vg, img, N.BG_CX, N.BG_CY, N.BG_W, N.BG_H, 1.0)
+    local font = opts.font or N.FONT
+    local titleLen = utf8.len(title or "") or 0
+    if titleLen >= 8 then
+        font = math.min(font, 32)
+    elseif titleLen >= 5 then
+        font = math.min(font, 40)
+    end
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, opts.font or N.FONT)
+    nvgFontSize(vg, font)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, opts.textCX or N.TEXT_CX, opts.textCY or N.TEXT_CY, title, nil)

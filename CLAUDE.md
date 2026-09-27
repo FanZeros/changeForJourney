@@ -14,13 +14,19 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **开发基线分支**：`workspace925`。以用户当前轮次授权为准建立任务分支；当前任务只提交并 push `feat926/remove-unused-diary`，绝不 push `workspace`、`workspace925` 或其他分支。远端基线在任务期间更新时不覆盖他人改动。
+- **开发基线分支**：`workspace925`。以用户当前轮次授权为准建立任务分支；当前任务只提交并 push `feat926/cleanup-unused-panels`，绝不 push `workspace` 或 `workspace925`。远端基线在任务期间更新时不覆盖他人改动。
 
-## 本轮进展（2026-09-27，`feat926/remove-unused-diary`）
+## 本轮进展（2026-09-27，`feat926/cleanup-unused-panels`）
+
+- 从已清理旧日志页的 `feat926/remove-unused-diary` 开新分支，提交 `cf212823dc907bfb7677c7000cc76246619e823d`：删除无玩家入口的 `RelicReforgePanel`、`SignInPanel`、`TaskPanel`、`AnnouncementPanel`，移除启动/数据订阅/消息结果/调试映射接线与 14 张专属图片及 meta、清单条目。现行城镇 `TaskPage`、签到/任务服务及存档、GM `AnnouncementConfig`、遗物奖励图标和共享素材均保留。
+- LSP 0 Error、官方 Build 成功；Runtime 主入口 60 帧无 Lua 错误或缺失资源（原始 FAIL 仅 3 条环境噪音）。遗匣旧测试在领取弹窗断言失败，已核实该断言与当前 Boot 实现的 Toast 行为在本任务修改前就不一致，未扩大范围修复。
+- **未推送**：当前环境没有 GitHub 写入凭据，`git push` 提示 `could not read Username`；远端 `feat926/cleanup-unused-panels` 不存在。不要在仓库、日志或命令里保存令牌；由用户配置安全认证后只推该任务分支。构建生成的 `.project/project.json` 和 `.project/settings.json` 改动未纳入提交。
+
+## 上轮进展（2026-09-27，`feat926/remove-unused-diary`）
 
 - 旧日志 `DiaryPage` 启动时加载五张已于 `a852547` 删除的 UI_RZ 图片，导致 10 条资源错误；日志页入口在横屏三栏已废弃。
 - 本轮删除 `DiaryPage`/meta、初始化/绘制/输入/导航/引导残余引用；`BackpackPanel` 独立初始化，城镇仓库/功绩任务入口及副本保留。LSP 0 Error、官方 Build 成功；本地 Runtime 安装超时，未能做运行时验证。
-- 下次如需恢复旧签到/公告/日周任务，先确认是否要新入口；旧 `SignInPanel`/`AnnouncementPanel`/`TaskPanel` 本轮不作为日志页之外的玩家可达页面。
+- 如要恢复签到/公告/旧日周任务界面，应重新设计入口和页面；这三个旧面板已在 `feat926/cleanup-unused-panels` 删除。
 
 ## 已合入备忘
 

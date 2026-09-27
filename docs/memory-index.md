@@ -1,15 +1,16 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
-> **最新（2026-09-27，`feat926/remove-unused-diary`）**：用户要求彻底移除旧日志页。`scripts/ui/story/task/DiaryPage.lua` 启动时加载 5 张已删除图片（`UI_RZ_BJ`、`UI_RZAN_QD/GG/BB/CJ`），造成 10 条资源错误；现已删除日志页、对应启动/渲染/输入/标签/引导引用。仓库 `BackpackPanel.init` 单独接回启动队列，城镇仓库、功绩任务 `TaskPage`、副本入口仍保留。旧 `SignInPanel`/`TaskPanel`/`AnnouncementPanel` 不随本轮删除，但旧日志以外暂无玩家打开入口；如要恢复相关功能须单独确认。LSP 0 Error、官方 Build 成功；本地 Runtime 安装超时，缺少运行时截图/日志验证。远端 `workspace925` 在开发时已有并发提交，本任务仅 push `feat926/remove-unused-diary`，**不得推送 workspace/workspace925**。
+> **最新（2026-09-27，`feat926/cleanup-unused-panels`）**：在已清理旧日志页的 `feat926/remove-unused-diary` 基础上，任务提交 `cf212823dc907bfb7677c7000cc76246619e823d` 删除无入口的遗物洗练、签到、旧任务和公告四个面板，拆除专属启动/数据/消息路由，移除 14 张仅供它们使用的图片及已跟踪 meta、AssetManifest 条目。保留城镇功绩 `TaskPage`、签到及任务服务/协议/存档、GM 公告配置、遗物奖励图标和共享素材。LSP 0 Error、官方 Build 成功，Runtime 主入口 60 帧无 Lua 错误或缺失资源（原始 FAIL 仅环境噪音）。遗匣旧测试在旧弹窗断言处失败：基线 `StandaloneBoot.lua` 的领取实际仅发 Toast，与本轮无关。**尚未 push**：GitHub 写入凭据缺失，远端 `feat926/cleanup-unused-panels` 无分支，等待用户安全配置认证，仅可推此任务分支；构建生成的项目设置改动未纳入提交。
+> **上轮（2026-09-27，`feat926/remove-unused-diary`）**：用户要求彻底移除旧日志页。`scripts/ui/story/task/DiaryPage.lua` 启动时加载 5 张已删除图片（`UI_RZ_BJ`、`UI_RZAN_QD/GG/BB/CJ`），造成 10 条资源错误；现已删除日志页、对应启动/渲染/输入/标签/引导引用。仓库 `BackpackPanel.init` 单独接回启动队列，城镇仓库、功绩任务 `TaskPage`、副本入口仍保留。旧 `SignInPanel`/`TaskPanel`/`AnnouncementPanel` 不随本轮删除，但旧日志以外暂无玩家打开入口；如要恢复相关功能须单独确认。LSP 0 Error、官方 Build 成功；本地 Runtime 安装超时，缺少运行时截图/日志验证。远端 `workspace925` 在开发时已有并发提交，本任务仅 push `feat926/remove-unused-diary`，**不得推送 workspace/workspace925**。
 > **最优先的用户流程**：不可自行取消/退出任务；每次完成或受阻都要先汇报，再使用 **AskUserQuestion（非纯文字）**提供明确的下一步选项并等待用户决定。不能在仓库/记忆保存访问令牌；本轮只允许 push 任务分支，不可合并/推基线。后续分支授权以用户当轮指令为准。
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-27 | 版本:v2.52-remove-unused-diary
+> 更新时间:2026-09-27 | 版本:v2.53-cleanup-unused-panels
 >
 > **本轮（`workspace925` 装备详情）**：右栏点击详情在鼠标左侧、已装备比较卡更靠左；左栏反向。点击锚点用鼠标位置，悬停跟随、钉住不漂移；套装区排在全部词条后，独立描边底板、放大字体及换行，详情热区随内容高度变化。Lua LSP 0 Error，官方 Build 成功；本地 Runtime 安装超时，尚无实际页面截图验收。下一步用游戏预览点击左右栏带/不带已装备比较的详情，特别检查最长套装描述。
-> **历史流程备注（原 workspace925 装备详情任务，已过期）**：当时曾只授权推 `workspace925`；不得将其当作当前任务分支授权。当前只允许推 `feat926/remove-unused-diary`。
+> **历史流程备注（原 workspace925 装备详情任务，已过期）**：当时曾只授权推 `workspace925`；不得将其当作当前任务分支授权。当前只允许推 `feat926/cleanup-unused-panels`，认证尚待配置。
 >
 > **本轮桌面试点（`feature/background-idle-924`）**：用户选择 Windows Electron 失焦挂机。`electron-shell/main.js:145` 的 BrowserWindow.webPreferences 设 `backgroundThrottling=false`，不改 Lua/网页版本。`node --check` 和 VM 模拟创建 BrowserWindow 的断言通过（同时确认 contextIsolation/nodeIntegration 安全设置保持不变）；LSP 0 Error、官方 build 通过。当前沙箱没有 Electron 可执行文件、node_modules、虚拟显示器或 Wine，因此**没有 Windows 最小化/失焦的实机验收**，也未生成新版 Windows 包；已有 `/workspace/dist` 网页预览不会体现这项桌面独占改动。下一步在 Windows 用仓库现有 `electron-shell/pack_release.py` / 一键脚本将最新 dist 打成 Electron 包，实际对比聚焦/失焦/最小化时三队金币、经验、掉落、存档及 CPU；关闭进程/系统休眠仍需另做离线补算。
 >

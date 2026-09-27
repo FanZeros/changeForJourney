@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.53-cleanup-unused-panels | 2026-09-27 | `feat926/cleanup-unused-panels` 删除四个无入口旧界面、专属接线及 14 张图片；保留功绩/签到数据/GM 配置/遗物奖励。LSP 0 Error、Build 成功、主入口 60 帧无脚本/资源错误；遗匣旧弹窗断言与基线不符。已本地提交 `cf21282`，GitHub 认证缺失，尚未推送。 |
 | v2.52-remove-unused-diary | 2026-09-27 | `feat926/remove-unused-diary` 删除旧日志页及失效引导/页签/启动引用，消除 UI_RZ 五图启动加载错误；仓库初始化独立保留。LSP 0 Error、Build 通过，Runtime 验证受安装超时限制；仅 push 任务分支。 |
 | v2.51-equipment-detail-popup | 2026-09-26 | workspace925 装备详情按左右栏反向展开，对比卡继续排在外侧；套装效果独立分区，增加字号、换行和点击热区。LSP/Build 通过，视觉预览待验收。 |
 | v2.50-workspace925 | 2026-09-25 | workspace925 补合立绘、配装布局、功绩边框、失焦挂机，以及 integration 的本地 Electron 打包校验。配装拖拽仍以 925 为准。 |

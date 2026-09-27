@@ -110,35 +110,27 @@ local function testDefeatRollbackKeepsBattleActive()
     check(ally.hp == 100, "失败回退重置了己方单位")
 end
 
--- ── 3) BattleTriDriver 全灭墙钟兜底 ──
+-- ── 3) BattleTriDriver 全灭退回上一关，倒下的人不会自己满血 ──
 local function testTriDriverWipeFallback()
     local Driver = require("ui.battle.tri.BattleTriDriver")
+    local SC = require("config.StageConfig")
     local drv = Driver.new(2)
-
-    -- 两个都没有 attrs 的单位：单单位复活计时无法推进（旧逻辑会永久卡死）
-    -- maxHp 必填：BattleCombat.updateHpBuffers 会读它（真实单位一定有）
+    local stageId = SC.getNextStageId(SC.NORMAL_FIRST_STAGE)
+    drv.stageId = stageId
     drv.allies = { { name = "a", hp = 0, maxHp = 50 }, { name = "b", hp = 0, maxHp = 60 } }
     drv.enemies = { { name = "e", hp = 10, maxHp = 10 } }
+    drv.enemyQueue = {}
     drv.active = true
     drv.mount()
     drv.bindContext()
 
-    local revivedAt = nil
-    for frame = 1, 400 do
-        drv:tick(1 / 60)
-        local alive = 0
-        for _, u in ipairs(drv.allies) do
-            if u.hp > 0 then alive = alive + 1 end
-        end
-        if alive == #drv.allies then revivedAt = frame / 60 break end
-    end
-    check(revivedAt ~= nil, "行2/3 全灭后能自动复活（不再永久卡死）")
-    if revivedAt then
-        check(revivedAt <= 6.0, string.format("全灭兜底在 6 秒内触发，实得 %.2fs", revivedAt))
-    end
+    drv:tick(1 / 60)
+    check(drv.stageId == SC.NORMAL_FIRST_STAGE, "全灭后退回上一关，实得 " .. tostring(drv.stageId))
+    local stillDown = true
     for _, u in ipairs(drv.allies) do
-        check(u.hp > 0, "单位 " .. tostring(u.name) .. " 已复活，hp=" .. tostring(u.hp))
+        if u.name == "a" or u.name == "b" then stillDown = false end
     end
+    check(stillDown, "倒下的单位没有在本场被自动复活")
 end
 
 -- ── 4) 神器并行战线/叠层/倒计时回归 ──

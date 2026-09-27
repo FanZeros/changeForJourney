@@ -29,7 +29,6 @@ local BattleTriDriver = {}
 
 local DEFAULT_ALLY_INTERVAL  = 1.2
 local DEFAULT_ENEMY_INTERVAL = 2.0
-local REVIVE_DELAY = 3.0
 local RESPAWN_DELAY = 1.0
 local ENTER_ANIM_DURATION = 0.30
 local ENTER_STAGGER = 0.06
@@ -37,8 +36,6 @@ local REWARD_INTERVAL = 0.05
 local REINFORCE_INTERVAL = 0.4
 local MARCH_DURATION = 2.0
 local MARCH_STEP = 7
--- 全灭兜底：单单位复活计时失效（缺 attrs 等）时，按这个墙钟整队复活，避免永久卡死
-local WIPE_RESET_DELAY = 5.0
 
 --- 单位攻击间隔（魔改 buff 感知的最小实现：直接取 attrs 的实际间隔）
 local function getLiveAttackInterval(unit, fallback)
@@ -165,21 +162,28 @@ function BattleTriDriver.new(teamIdx, options)
         })
     end
 
-    --- 复活单个己方单位（缺 attrs 时退回满血兜底，保证一定复活）
-    ---@param u table
-    function drv:reviveUnit(u)
-        u._triReviveTimer = nil
-        u.atkProgress = 0
-        if u.attrs then
-            u.attrs:fillHp()
-            u.hp = u.attrs.final[AD.HP]
-        else
-            -- 无 attrs 的单位无法走属性回血，用记录过的上限兜底
-            u.hp = u.maxHp or u.hp or 1
-            if u.hp <= 0 then u.hp = 1 end
+    --- 全灭退回上一关。第一关没有上一关，就在原地重开。
+    function drv:retreatStage()
+        local prevId = SC.getPrevStageId(self.stageId) or self.stageId
+        print(string.format("[TriDriver] 队%d 全灭，从 %s 退回 %s",
+            self.teamIdx, tostring(self.stageId), tostring(prevId)))
+        if self.teamIdx == 1 then
+            local BattleScene = require("ui.battle.scene.BattleScene")
+            BattleScene.adoptStageProgress(prevId)
+            local ClientDispatcher = require("runtime.ClientDispatcher")
+            local battle = ClientDispatcher.get("battle")
+            if type(battle) == "table" then
+                battle.currentStageId = prevId
+                local cleared = battle.clearedStages
+                local nextCleared = type(cleared) == "table" and cleared[tostring(prevId)] == true
+                battle.battleMode = nextCleared and "idle" or "firstClear"
+                require("boot.StandaloneSave").Flush()
+            end
         end
-        local cx, cy = BattleLayout.cardPos("ally", 1)
-        BattleCombat.addFloatingText("复活", cx, cy, { 120, 255, 160 }, false)
+        self._syncedMainStage = prevId
+        self:start(prevId)
+        BattleCombat.addFloatingText("退回上一关", BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY,
+            { 255, 140, 120 }, false)
     end
 
     --- 挂载本队状态并注入上下文。绘制和更新都必须先调用，避免串用上一队状态。
@@ -199,8 +203,6 @@ function BattleTriDriver.new(teamIdx, options)
         end
         self.stageId = stageId
         self.kills = 0
-        -- 清理上一轮残留的复活/全灭计时，避免沿用旧进度
-        self._wipeTimer = nil
         self._clearReported = false
         self._labDefeated = false
         self._labTimedOut = false
@@ -441,19 +443,26 @@ function BattleTriDriver.new(teamIdx, options)
             end
         end
 
-        -- 己方阵亡复活计时；神器优先拦截首次死亡。实验室为单局胜负，不复活。
+        -- 倒下的人留在场上。只有神器或天赋能在本场拉起来，没有倒计时复活。
         if not self.battleLab then
             for _, u in ipairs(allies) do
-                if u.hp <= 0 then
-                    if ART.onAllyDeath(u) then
-                        u._triReviveTimer = nil
-                    else
-                        u._triReviveTimer = (u._triReviveTimer or 0) + dt
-                        if u._triReviveTimer >= REVIVE_DELAY then
-                            u._triReviveTimer = nil
-                            self:reviveUnit(u)
-                        end
+                if u.hp <= 0 and not u._triDeathHandled then
+                    local revived = ART.onAllyDeath(u)
+                    if not revived then
+                        revived = TAL.onAllyDeath(u, allies, BattleCombat.syncUnitHp)
                     end
+                    if revived then
+                        local cx, cy = BattleLayout.cardPos("ally", 1)
+                        BattleCombat.addFloatingText("复活", cx, cy, { 120, 255, 160 }, false)
+                    else
+                        u._triDeathHandled = true
+                        u.atkProgress = 0
+                        TM.removeUnit(u)
+                        SEM.removeUnit(u)
+                        BattleCombat.setCardAnim(u, { state = "dying", timer = 0, lungeDir = 1, noTombstone = true })
+                    end
+                elseif u.hp > 0 then
+                    u._triDeathHandled = nil
                 end
             end
         end
@@ -517,32 +526,16 @@ function BattleTriDriver.new(teamIdx, options)
             end
             return
         end
-        -- 失败: 己方全灭（等待复活计时，不推进战斗）
+        -- 失败: 己方全灭，退回上一关。已通关记录保留。
         if not hasAliveAlly then
             if self.battleLab then
                 self._labDefeated = true
                 self.active = false
                 return
             end
-            -- [兜底] 复活计时只对「拿得到 attrs」的单位推进；一旦单位缺 attrs，
-            -- 上面永远不会复活它，全灭就会永久卡住。这里按墙钟兜底整队复活。
-            self._wipeTimer = (self._wipeTimer or 0) + dt
-            if self._wipeTimer >= WIPE_RESET_DELAY then
-                self._wipeTimer = nil
-                for _, u in ipairs(allies) do
-                    u._triReviveTimer = nil
-                    self:reviveUnit(u)
-                end
-                BattleCombat.addFloatingText("重整旗鼓", BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY,
-                    { 120, 255, 160 }, false)
-                print(string.format("[TriDriver] 队%d 全灭兜底复活 allies=%d", self.teamIdx, #allies))
-            end
-            BattleCombat.updateCardAnims(dt)
-            BattleCombat.updateFloatingTexts(dt)
-            BattleCombat.updateHitFlashes(dt)
+            self:retreatStage()
             return
         end
-        self._wipeTimer = nil
 
         -- 攻击推进
         for _, unit in ipairs(allies) do

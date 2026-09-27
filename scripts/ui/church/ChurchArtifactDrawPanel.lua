@@ -82,7 +82,6 @@ local function easeOutCubic(t) return 1 - (1 - t) * (1 - t) * (1 - t) end
 local function easeInCubic(t) return t * t * t end
 
 local img = {
-    topBg             = -1, -- UI_JTSQ_BJ.png（与神器装配页同一顶部背景）
     titleDeco         = -1,
     collectionChestBg = -1,
     collectionDrawBtn = -1,
@@ -295,17 +294,10 @@ local function drawCollectionDrawButton(vg, id, cx, countText, keyCost)
     BF.finish(vg, bf)
 end
 
---- 「宝箱」页签背景（与神器装配页 drawBg 相同结构：顶部大图 + 下部暗色底板）
+--- 「宝箱」页签背景：不显示神器装配页的顶部背景图（UI_JTSQ_BJ），
+--- 改用一整块暗色底板铺满 Tab 内容区，让宝箱大图成为视觉主体。
 function M.drawBg(vg)
-    if img.topBg >= 0 then
-        drawImageCentered(vg, img.topBg, 540, 674.5, 1080, 1349, 1.0)
-    else
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, DESIGN_W, 1349)
-        nvgFillColor(vg, nvgRGBA(44, 42, 48, 255))
-        nvgFill(vg)
-    end
-    DarkIcon.drawNine(vg, "plain", 0, 1689 - 1422 * 0.5, 1080, 1422)
+    DarkIcon.drawNine(vg, "plain", 0, 200, DESIGN_W, DESIGN_H - 200 - 180)
 end
 
 function M.drawContent(vg)
@@ -516,7 +508,6 @@ function M.setContext(ctx)
 end
 
 function M.init(vg)
-    img.topBg             = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTSQ_BJ.png", 0)
     img.titleDeco         = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     img.collectionChestBg = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_KC1.png", 0)
     img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_AN.png", 0)

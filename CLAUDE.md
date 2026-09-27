@@ -2,6 +2,15 @@
 
 > 本文件由记忆系统维护（会话启动时先读本文件与 docs/memory-index.md）。
 
+## 🔴 协作铁律（每个会话、每次完成任务都必须遵守）
+
+1. **不能取消/退出任务**：任何情况下不得中途放弃用户交付的任务，必须推进到完成。
+2. **每次任务完成后，必须用 `AskUserQuestion` 工具以选项形式向用户提问下一步做什么**。
+   - ❌ 禁止用纯文本、开放式问题、或任何非 `AskUserQuestion` 的形式中断对话等待用户。
+   - ✅ 必须调用 `AskUserQuestion`，给出 2–4 个明确的下一步选项。
+3. **在本记忆中持续强化此规则**：每轮结束更新「上次做了什么」，并保留本节铁律不被覆盖。
+4. **分支纪律**：以新分支继续开发，完成后 push 到新分支；**绝不推送到 `workspace926`**（或任何基线分支）。
+
 ## 恢复指令
 
 1. 读 `docs/memory-index.md`（项目详细上下文）
@@ -28,6 +37,16 @@
 - Electron 离线包在 `electron-shell/main.js` 关闭 `backgroundThrottling`，失焦时保持战斗帧更新。网页隐藏页仍需离线补算。Windows 失焦/最小化尚未实机验证。
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
+
+## 本轮进展（2026-09-27，`workspace927-keyword-system`）
+
+- **任务**：实现关键词系统——让描述文本内的机制关键词（如「回响」）可点击查看效果解释。基于 `workspace926` 新建 `workspace927-keyword-system` 分支，已 push（未动 workspace926）。
+- **新增 `scripts/config/KeywordConfig.lua`**：关键词百科表，覆盖六门契职业（封门人/拾骸者/裂隙使/回响客/换面人/司仪）、职业天赋（门缝/拾骸/裂隙/回响/换面/延缓）、战斗机制（骸骨/裂痕/仇恨/护甲克制/连击/超暴击/能量护盾）、锻造（腐化/腐化石/神圣石/洗练石/点金石/洗练）。文案逐条对照 `ClassConfig`/`AttributeDef`/`ClassGateRuntime`/`UnitAttributes`/`BlacksmithService` 实际实现核对。长词优先排序（「回响客」不被「回响」截胡）。
+- **新增 `scripts/ui/widget/KeywordText.lua`**：NanoVG 富文本组件。按词表拆段→逐字符折行（与 attrTip 一致，关键词整体不拆行）→关键词金色+下划线绘制→记录点击热区→点击弹解释气泡（风格复用 attrTip，支持上方空间不足自动翻下方）。排版结果按 text+width+fontSize 缓存；无引擎环境（回归测试）时 measure 退化为等宽估算。
+- **接入点**：① 角色详情 attr 页天赋描述区（`CharacterDetailDraw` 的 `M.talentKwText`）；② 觉醒面板效果描述（`AwakeningPanel` 的 `M.kwText`，居中排版）。弹窗帧末置顶统一绘制；`CharacterDetail.handleInput` 开头统一处理「弹窗开着→任意点击先关弹窗」；attr 页关键词点击优先于属性行命中；切角色/拖拽/打开面板调 `clearKeywordUi` 清状态；handleHover 悬停加亮。
+- **验证**：新增 `scripts/tests/keyword_text_test.lua`（20 项全 PASS：词表/长词优先/拆段计数/热区坐标/点击开关弹窗/折行/显式\n）。LSP 全工作区 0 Error 0 Warning；官方 Build 成功；主入口 60 帧无 Lua 错误；战斗回归 `battle_stage_switch_test` 22 PASS/0 FAIL（退出码 124 是已知「测试自身不退出进程」行为）。6 个相关模块 smoke require 全 true。
+- **踩坑**：`--[[@as string[]]]` 注解会让引擎 LoadChunk 报 `'end' expected`（引擎 Lua 解析器不认这种行内 cast 写法，但 LSP 认）→ 改为 `---@type` 独立行 + 中间变量。**教训：引擎 LoadChunk 与 LSP 对注解容错不同，新文件务必用 headless Runtime 实跑一次 require，别只信 LSP。**
+- **待办/未验收**：① headless 离屏 NanoVG 截图未落盘（VG 上下文限制），关键词视觉效果（金色下划线、弹窗）尚未真人预览验收。② 转职页 `ChurchClassChange` 的 talentDesc 仍是纯 `nvgTextBox`，未接入关键词（可作下一步）。③ 装备词条/遗物/神器/通天塔 desc 等更多描述区未接入。④ 词表可继续扩充。
 
 ## 上次做了什么（2026-09-27，925 同步与存档再排查）
 

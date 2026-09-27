@@ -416,6 +416,11 @@ end
 --- 打开面板
 function PlayerInfoPanel.open()
     if state.open then return end
+    -- 右侧角色详情还开着时会抢走全屏点击，先关掉
+    if CharacterDetail.isOpen() then
+        CharacterDetail.close()
+        print("[PlayerInfoPanel] 打开前关闭角色详情")
+    end
     state.open = true
     state.closing = false
     state.animTime = time.elapsedTime
@@ -477,11 +482,6 @@ end
 function PlayerInfoPanel.handleInput(dx, dy)
     if not state.open then return false end
     if state.closing then return true end
-
-    -- 角色详情在面板之上打开时优先接管（与 CharacterPanel 模式一致）
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleInput(dx, dy)
-    end
 
     -- GMConsolePanel 优先拦截（最顶层）
     if GMConsolePanel.isOpen() then
@@ -554,9 +554,6 @@ end
 --- 拖拽开始（转发给子面板）
 function PlayerInfoPanel.handleDragBegin(dx, dy)
     if not state.open or state.closing then return false end
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleDragBegin(dx, dy)
-    end
     if GMConsolePanel.isOpen() then
         return GMConsolePanel.handleDragBegin and GMConsolePanel.handleDragBegin(dx, dy) or true
     end
@@ -572,9 +569,6 @@ end
 --- 拖拽移动（转发给子面板）
 function PlayerInfoPanel.handleDragMove(dx, dy)
     if not state.open or state.closing then return false end
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleDragMove(dx, dy)
-    end
     if GMConsolePanel.isOpen() then
         return GMConsolePanel.handleDragMove and GMConsolePanel.handleDragMove(dx, dy) or true
     end
@@ -590,9 +584,6 @@ end
 --- 拖拽结束（转发给子面板）
 function PlayerInfoPanel.handleDragEnd(dx, dy)
     if not state.open or state.closing then return false end
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleDragEnd(dx, dy)
-    end
     if GMConsolePanel.isOpen() then
         if GMConsolePanel.handleDragEnd then GMConsolePanel.handleDragEnd(dx, dy) end
         return true
@@ -611,10 +602,6 @@ end
 ---@param wheel number 滚轮值（正=向上滚）
 function PlayerInfoPanel.handleScroll(wheel, dx, dy)
     if not state.open or state.closing then return false end
-    -- 角色详情优先接管滚轮（与 CharacterPanel 模式一致）
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleScroll(wheel, dx, dy)
-    end
     -- AvatarSelectPanel 优先拦截滚轮
     if AvatarSelectPanel.isOpen() then
         return AvatarSelectPanel.handleWheel(wheel)

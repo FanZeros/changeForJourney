@@ -19,7 +19,7 @@ local RECOIL_DISTANCE  = 30
 local CHARGE_START     = 0.7
 local CHARGE_DISTANCE  = 25
 
--- 纵向弧线抖动（弧顶高度，像素）：攻击冲刺/回位、受击后退、蓄力前摇
+-- 纵向弧线（屏幕像素）：攻击冲刺/回位、受击后退、蓄力前摇
 local LUNGE_ARC_HEIGHT  = 18
 local RECOIL_ARC_HEIGHT = 10
 local CHARGE_ARC_HEIGHT = 6

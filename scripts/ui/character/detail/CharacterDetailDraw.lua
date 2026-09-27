@@ -758,6 +758,10 @@ function M.draw(vg)
         if slotImg and slotImg >= 0 then
             drawImageCentered(vg, slotImg, slot.cx, slot.cy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)
         end
+        -- 选中四角放在装备图标下面，避免挡住图标和等级
+        if slot.slot == detailState.equipSlot and img.slotSelected >= 0 then
+            drawImageCentered(vg, img.slotSelected, slot.cx, slot.cy, 234, 234, 1.0)
+        end
 
         local equippedEquip = nil
         local isTwohandOccupied = false
@@ -854,10 +858,6 @@ function M.draw(vg)
                 DT_SLOT_SIZE - inset * 2, 18)
             nvgFillColor(vg, nvgRGBA(0, 0, 0, 130))
             nvgFill(vg)
-        end
-
-        if slot.slot == detailState.equipSlot and img.slotSelected >= 0 then
-            drawImageCentered(vg, img.slotSelected, slot.cx, slot.cy, 234, 234, 1.0)
         end
 
         -- ICON_UP 可提升角标（使用缓存，避免每帧遍历全背包）

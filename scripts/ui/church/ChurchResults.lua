@@ -95,11 +95,9 @@ function M.bind(deps)
             clearPowerCache()
             -- 刷新城镇Tab角标（转职后可能不再有可转职英雄）
             refreshTownBadge()
-            -- 转职成功 Spine 特效：播放在右侧栏角色详情的立绘位置
             local okDetail, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
             if okDetail and CharacterDetail.getHeroId and CharacterDetail.getHeroId() == data.heroId then
                 CharacterDetail.markPowerDirty()
-                SpineCardEffect.playJobChange(540, 447)
             end
             local ClassChange = require("ui.church.ChurchClassChange")
             ClassChange.showFloat("转职成功")

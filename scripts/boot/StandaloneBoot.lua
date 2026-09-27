@@ -148,6 +148,7 @@ function M.run(rt)
 
     -- 5.2 击杀奖励回调：经验平分给每个上场远征队员，金币/远征等级经验照常
     -- [三栏并行] 提取为局部函数，BattleScene（栏1）与 BattleTriPage（栏2/3）共用
+    -- 三行战斗在入场时把本关经验和金币加总后一次发放。
     local handleKillRewards = function(data)
         local baseExp  = data.expReward  or 0
         local baseGold = data.goldReward or 0
@@ -173,7 +174,6 @@ function M.run(rt)
                 for _, hid in ipairs(heroIds) do
                     CharacterPanel.addHeroExp(hid, perHeroExp)
                 end
-                -- 升级后刷新战斗单位属性（同步 _pendingLevel + _pendingSnapshot）
                 if BattleScene.refreshAllyStats then
                     BattleScene.refreshAllyStats()
                 end
@@ -349,7 +349,14 @@ function M.run(rt)
     BattleScene.setOnEnemyDrop(applyKillDrop)
     -- 第 2/3 队不记首通，只按挂机掉落叠加
     BattleTriPage.setOnDrop(function(data)
+        if data.dropOnly then
+            applyKillDrop({ stageId = data.stageId, isFirstClear = true })
+            return
+        end
         applyKillDrop({ stageId = data.stageId, isFirstClear = false })
+    end)
+    BattleTriPage.setOnStageClear(function(_, _)
+        showKeptDrops("战斗掉落")
     end)
 
     BattleScene.setOnAllDead(function()
@@ -578,7 +585,9 @@ function M.run(rt)
                 .. " equips=" .. tostring(#fcEquips)
                 .. " killDrops=" .. tostring(#dropRewards))
             RewardPopup.show("首通奖励", rewards, { row = 1 })  -- [三行并行] 卡在行1内显示
+            return
         end
+        showKeptDrops("战斗掉落")
     end)
 
     -- 5.3 初始阵容同步/关卡重载已拆到 boot 队列独立步 firstStage

@@ -362,12 +362,12 @@ function ExpTable.getBuildingUnlockLevel(buildingKey)
 end
 
 --- 获取指定编队槽位的解锁等级
---- 槽位 1~2 为基础槽位（始终解锁），槽位 3/4/5 分别在 Lv2/Lv6/Lv10 解锁
+--- 槽位 1~3 为基础槽位（始终解锁），槽位 4 起按 Lv2/Lv6/Lv10 解锁
 ---@param slotIndex number 槽位索引（1~5）
 ---@return number|nil 解锁所需远征等级，基础槽位返回 nil
 function ExpTable.getSlotUnlockLevel(slotIndex)
     -- 基础槽位无需解锁
-    if slotIndex <= 2 then return nil end
+    if slotIndex <= 3 then return nil end
     -- 收集所有"出战槽位+1"的等级并排序
     local levels = {}
     for lv, unlocks in pairs(ExpTable.levelUnlocks) do
@@ -378,17 +378,17 @@ function ExpTable.getSlotUnlockLevel(slotIndex)
         end
     end
     table.sort(levels)
-    -- slotIndex 3 对应第 1 个解锁，4 对应第 2 个，5 对应第 3 个
-    local idx = slotIndex - 2
+    -- slotIndex 4 对应第 1 个解锁，5 对应第 2 个
+    local idx = slotIndex - 3
     return levels[idx]
 end
 
 --- 根据远征等级计算已解锁的出战槽位数量
---- 基础 2 个槽位，Lv2/Lv6/Lv10 各 +1
+--- 基础 3 个槽位，之后按 Lv2/Lv6/Lv10 各 +1
 ---@param playerLevel number 当前远征等级
----@return number 已解锁槽位总数（2~5，受 MAX_SLOTS 限制）
+---@return number 已解锁槽位总数（3~4，受 MAX_SLOTS 限制）
 function ExpTable.getUnlockedSlotCount(playerLevel)
-    local base = 2
+    local base = 3
     local extra = 0
     for lv, unlocks in pairs(ExpTable.levelUnlocks) do
         if playerLevel >= lv then
@@ -430,7 +430,7 @@ end
 
 --- 每队出战槽位数（复用"出战槽位+1"节奏 Lv2/Lv6/Lv10，上限 4）
 ---@param playerLevel number 当前远征等级
----@return number 该队已解锁槽位数（2~TEAM_MAX_SLOTS）
+---@return number 该队已解锁槽位数（3~TEAM_MAX_SLOTS）
 function ExpTable.getUnlockedSlotCountForTeam(playerLevel)
     return math.min(ExpTable.getUnlockedSlotCount(playerLevel), ExpTable.TEAM_MAX_SLOTS)
 end

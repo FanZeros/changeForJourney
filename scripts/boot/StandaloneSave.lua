@@ -39,12 +39,31 @@ local restoredSave = false
 local offlineChecked = false
 local lastSavedAt = 0
 
+--- 数字键会被 cjson 存成数组，读回来就丢掉英雄编号。落盘前改成字符串键。
+---@param roster table|nil
+---@return table|nil
+local function rosterForSave(roster)
+    if type(roster) ~= "table" then return roster end
+    local out = {}
+    for heroId, hero in pairs(roster) do
+        out["h" .. tostring(heroId)] = hero
+    end
+    return out
+end
+
 --- 收集当前全部可持久化数据 → 存档表
 local function buildSaveData()
     local all = ClientDispatcher.snapshotAll()
     local modules = {}
     for name, data in pairs(all) do
-        modules[name] = data
+        if name == "heroes" and type(data) == "table" then
+            local copy = {}
+            for k, v in pairs(data) do copy[k] = v end
+            copy.roster = rosterForSave(data.roster)
+            modules[name] = copy
+        else
+            modules[name] = data
+        end
     end
     return {
         version   = SAVE_VERSION,

@@ -24,12 +24,28 @@ HeroesSchema.Fields = {
         onLoad = function(data)
             if data.roster then
                 local fixed = {}
+                local arrayItems = {}
+                local arrayCount = 0
                 for k, v in pairs(data.roster) do
-                    local numKey = tonumber(k)
-                    if numKey then
+                    if type(k) == "number" and type(v) == "table" then
+                        arrayCount = arrayCount + 1
+                        arrayItems[k] = v
+                    end
+                    local raw = tostring(k)
+                    local tagged = raw:match("^h(%d+)$")
+                    local numKey = tonumber(tagged) or tonumber(raw)
+                    if numKey and type(k) ~= "number" then
                         fixed[numKey] = v
-                    else
+                    elseif type(k) ~= "number" then
                         fixed[k] = v
+                    end
+                end
+                if next(fixed) == nil and arrayCount > 0 and type(data.deployed) == "table" then
+                    for i, heroId in ipairs(data.deployed) do
+                        local numId = tonumber(heroId)
+                        if numId and arrayItems[i] then
+                            fixed[numId] = arrayItems[i]
+                        end
                     end
                 end
                 data.roster = fixed

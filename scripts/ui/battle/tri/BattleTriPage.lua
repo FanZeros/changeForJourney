@@ -309,7 +309,9 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             local drv = drivers[row]
             if drv then
                 drv:activate()
-                BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies }, nil, true)
+                -- 无编队时完全不显示敌人（血条/名字等），只留空行提示
+                local enemiesShown = (#drv.allies > 0) and drv.enemies or {}
+                BattleView.draw(vg, { allies = drv.allies, enemies = enemiesShown }, nil, true)
             end
             nvgRestore(vg)
         end

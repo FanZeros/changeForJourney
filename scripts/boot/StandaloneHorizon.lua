@@ -83,6 +83,25 @@ local function drawOrphanRowReward()
     nvgRestore(vg())
 end
 
+--- [三面板] 在指定面板视口内绘制归属该面板的奖励弹窗（须在 Viewport.begin/finish 之间调用）
+local function drawRewardInPanel(pid)
+    if not pid then return end
+    if not (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then return end
+    if RewardPopup.currentPanel() ~= pid then return end
+    -- 三行模式的中栏不走 Viewport：直接全窗 letterbox 居中绘制
+    if pid == 'center' and BattleTriPage.isOpen() then
+        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+        nvgSave(vg())
+        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+        nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+        nvgScale(vg(), fit, fit)
+        RewardPopup.draw(vg())
+        nvgRestore(vg())
+        return
+    end
+    RewardPopup.drawRegion(vg(), 0, 0, 1080, 2400, nil)
+end
+
 local function finishFrame()
     nvgSave(vg())
     nvgResetTransform(vg())
@@ -166,6 +185,7 @@ H_AUTO_TAB = false
 H_AUTO_OPEN_PANEL = false
 H_ox, H_oy, H_s = 0, 0, 1
 H_lastPanel = 'center'
+H_focusPanel = 'center'  -- 当前焦点面板（left/center/right），奖励弹窗 show 时记录触发面板
 H_lastTopBarPower = nil  -- [三队并行] TopBar 战力逐帧比对缓存
 H_SEAM_BACK = false      -- [三队并行] 三行模式=true：返回键由中缝层绘制，页面内不画
 
@@ -474,11 +494,13 @@ function HandleNanoVGRenderHorizon()
         BackpackPanel.draw(vg())
         LootBox.drawPage(vg())
         TaskPage.draw(vg())
+        drawRewardInPanel('left')
         Viewport.finish(vg())
 
         -- 右面板：角色固定（先于中面板绘制，便于弹窗时统一压暗侧栏）
         Viewport.begin(vg(), Viewport.PANELS.right, H_ox, H_oy, H_s)
         CharacterPanel.draw(vg())
+        drawRewardInPanel('right')
         Viewport.finish(vg())
 
         -- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（在侧栏之上、中面板之下）
@@ -606,7 +628,8 @@ function HandleNanoVGRenderHorizon()
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
             nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
             nvgScale(vg(), fit, fit)
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+                and not RewardPopup.currentPanel() then
                 RewardPopup.draw(vg())
             end
             if OfflineRewardPanel.isOpen() then
@@ -619,6 +642,11 @@ function HandleNanoVGRenderHorizon()
         end
         -- [底栏移除] 副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
         HorizonDrawPageModal(vg())
+        -- [三面板] 三行模式：归属面板的奖励弹窗随触发面板绘制（左/中/右）；
+        -- 非三行模式左/右已在各自视口内绘制、中栏由全局弹窗层绘制，此处不重复
+        if BattleTriPage.isOpen() then
+            drawRewardInPanel(RewardPopup.currentPanel())
+        end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面
         if DarkTitleScreen.isOpen() then
@@ -704,6 +732,21 @@ local function playerInfoDesignCoords(sx, sy)
            (sy - (logicalH() - 2400 * fit) * 0.5) / fit
 end
 
+--- 归属面板奖励弹窗的设计坐标：左/右栏走各自 Viewport note，中栏（三行模式）走全窗 letterbox
+local function rewardPopupDesignCoords(sx, sy, pid)
+    if pid == 'center' and BattleTriPage.isOpen() then
+        return playerInfoDesignCoords(sx, sy)
+    end
+    local note = Viewport.getNote(pid)
+    local pdef = Viewport.PANELS[pid]
+    if note and pdef then
+        local cs = note.s * Viewport.DS
+        return (sx - note.ox - pdef.bx * note.s) / cs,
+               (sy - note.oy - pdef.by * note.s) / cs
+    end
+    return playerInfoDesignCoords(sx, sy)
+end
+
 -- 事件坐标 -> 面板命中；全局模态返回 ('modal', dx, dy)
 local function HorizonResolveMouse()
     local mousePos = input:GetMousePosition()
@@ -719,8 +762,28 @@ local function HorizonResolveMouse()
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
         return 'modal', pdx, pdy
     end
-    -- 全局奖励弹窗打开时所有点击都路由给它（任意点击可关闭弹窗）
+    -- 全局奖励弹窗：归属面板时点击路由到该面板（面板内任意点击可交互/关闭，
+    -- 面板外点击 rp_out 关闭）；无归属时所有点击都路由给它（任意点击可关闭）
     if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        local rpanel = RewardPopup.currentPanel()
+        if rpanel then
+            local pid2
+            if BattleTriPage.isOpen() then
+                local ps = logicalH() / 1080
+                local leftW = 486 * ps
+                if sx < leftW then pid2 = 'left'
+                elseif sx > logicalW() - leftW then pid2 = 'right'
+                else pid2 = 'center' end
+            else
+                pid2 = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
+            end
+            if pid2 == rpanel then
+                local mx, my = rewardPopupDesignCoords(sx, sy, pid2)
+                H_focusPanel = pid2
+                return pid2, mx, my
+            end
+            return 'rp_out', 0, 0
+        end
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
         return 'modal', pdx, pdy
     end
@@ -776,6 +839,7 @@ local function HorizonResolveMouse()
         return 'modal', dx or 0, dy or 0
     end
     if not pid then return 'none', 0, 0 end
+    H_focusPanel = pid  -- 当前焦点面板（奖励弹窗 show 时记录触发面板用）
     H_lastPanel = pid
     return pid, dx, dy
 end
@@ -912,6 +976,12 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         return
     end
     if pid == 'none' then return end
+    -- 归属面板的奖励弹窗：其面板内按下先交给弹窗（拖拽滚动等）
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        and RewardPopup.currentPanel() == pid then
+        RewardPopup.handleDragBegin(dx, dy)
+        return
+    end
     if pid == 'left' then
         if LootBoxPage.isOpen() then
             lootPress = true
@@ -986,6 +1056,12 @@ function HandleMouseMoveHorizon(eventType, eventData)
     if pid == 'none' then return end
     if pid == 'playerinfo' then
         PlayerInfoPanel.handleDragMove(dx, dy)
+        return
+    end
+    -- 归属面板的奖励弹窗：其面板内拖拽交给弹窗滚动
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        and RewardPopup.currentPanel() == pid then
+        RewardPopup.handleDragMove(dx, dy)
         return
     end
     -- 三行 / 通天塔离线收益是全窗 letterbox，拖拽必须在左栏/战斗区之前消费。
@@ -1209,6 +1285,11 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if isTap then PlayerInfoPanel.handleInput(dx, dy) end
         return
     end
+    -- 归属面板的奖励弹窗：点击其面板之外 → 关闭弹窗并消费事件
+    if pid == 'rp_out' then
+        if RewardPopup.isOpen() then RewardPopup.close() end
+        return
+    end
     -- 全局领奖 / 离线收益必须在中缝返回与左栏页面之前消费。
     if pid == 'modal' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
         if OfflineRewardPanel.isOpen() then
@@ -1295,6 +1376,13 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     -- 左面板：功能页组点击链
     if pid == 'left' then
+        -- 归属左栏的奖励弹窗：左栏内任意点击交给弹窗（可交互/关闭）
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+            and RewardPopup.currentPanel() == 'left' then
+            RewardPopup.handleDragEnd(dx, dy)
+            if isTap then RewardPopup.handleInput(dx, dy) end
+            return
+        end
         -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
         if isTap and not (BackpackPanel.isOpen() or BlacksmithPage.isOpen() or ChurchPage.isOpen()
             or TalentPage.isOpen() or TavernPage.isOpen() or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
@@ -1359,6 +1447,13 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     -- 右面板：角色链
     if pid == 'right' then
+        -- 归属右栏的奖励弹窗：右栏内任意点击交给弹窗（可交互/关闭）
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+            and RewardPopup.currentPanel() == 'right' then
+            RewardPopup.handleDragEnd(dx, dy)
+            if isTap then RewardPopup.handleInput(dx, dy) end
+            return
+        end
         if CharacterPanel.isDraggingCard() then
             CharacterPanel.handleInput(dx, dy)
             CharacterPanel.handleDragEnd(dx, dy)
@@ -1369,6 +1464,12 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     -- 中面板：主视图链
+    if pid == 'center' and RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        and RewardPopup.currentPanel() == 'center' then
+        RewardPopup.handleDragEnd(dx, dy)
+        if isTap then RewardPopup.handleInput(dx, dy) end
+        return
+    end
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
     local tabIndex = BottomNav.getSelectedIndex()
     -- [底栏移除] 非三行旧布局：中栏顶部 TopBar 页签入口（三行布局画左栏、走左栏链）
@@ -1424,6 +1525,26 @@ function HandleMouseWheelHorizon(eventType, eventData)
     local sy = mousePos.y / dpr()
     local csx, csy = toDesign(sx, sy)
     if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
+    -- 归属面板的奖励弹窗：指针在其面板内且命中面板时滚轮滚弹窗列表
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag() and RewardPopup.currentPanel() then
+        local pid2
+        if BattleTriPage.isOpen() then
+            local ps = logicalH() / 1080
+            local leftW = 486 * ps
+            if csx < leftW then pid2 = 'left'
+            elseif csx > logicalW() - leftW then pid2 = 'right'
+            else pid2 = 'center' end
+        else
+            pid2 = Viewport.hit(csx, csy, H_ox, H_oy, H_s)
+        end
+        if pid2 == RewardPopup.currentPanel() then
+            local mx, my = rewardPopupDesignCoords(csx, csy, pid2)
+            if RewardPopup.hitPanel(mx, my) then
+                RewardPopup.handleScroll(wheel)
+                return
+            end
+        end
+    end
     if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         local pdx, pdy = playerInfoDesignCoords(csx, csy)
         if RewardPopup.hitPanel(pdx, pdy) then

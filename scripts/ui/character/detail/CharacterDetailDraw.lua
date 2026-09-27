@@ -741,11 +741,6 @@ function M.draw(vg)
     end
 
     for _, slot in ipairs(DT_SLOTS) do
-        -- 配装tab下：选中槽位绘制选中底图
-        if slot.slot == detailState.equipSlot and img.slotSelected >= 0 then
-            drawImageCentered(vg, img.slotSelected, slot.cx, slot.cy, 234, 234, 1.0)
-        end
-
         local slotImg
         if slot.img == "weapon" then
             slotImg = img.slotWeapon
@@ -859,6 +854,10 @@ function M.draw(vg)
                 DT_SLOT_SIZE - inset * 2, 18)
             nvgFillColor(vg, nvgRGBA(0, 0, 0, 130))
             nvgFill(vg)
+        end
+
+        if slot.slot == detailState.equipSlot and img.slotSelected >= 0 then
+            drawImageCentered(vg, img.slotSelected, slot.cx, slot.cy, 234, 234, 1.0)
         end
 
         -- ICON_UP 可提升角标（使用缓存，避免每帧遍历全背包）

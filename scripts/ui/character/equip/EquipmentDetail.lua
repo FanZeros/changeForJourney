@@ -377,7 +377,7 @@ local REF_BG_CY  = 1120
 local REF_BG_W   = 860
 local REF_BG_H   = 1380
 -- 小窗按实际内容收紧。旧 1380 高把按钮压出框，并在词条下方留下大片空白。
-local COMPACT_BG_W = 780
+local COMPACT_BG_W = 680
 local COMPACT_BTN_H = 64
 local COMPACT_BTN_GAP = 14
 local COMPACT_BTN_W = 420
@@ -503,20 +503,21 @@ local function compactContentBottom(equip)
     end
     local affixCount = equip and equip.affixes and #equip.affixes or 0
     if affixCount > 0 then
-        local titleY = bottom + 30
-        bottom = titleY + REF_AFFIX_TITLE_FONT * 0.5 + REF_AFFIX_GAP_TOP + REF_AFFIX_ROW_H * 0.5
-            + (affixCount - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP) + REF_AFFIX_ROW_H * 0.5
+        bottom = bottom + 16 + REF_AFFIX_ROW_H * 0.5
+            + (affixCount - 1) * (REF_AFFIX_ROW_H + 8) + REF_AFFIX_ROW_H * 0.5
     end
     return bottom + COMPACT_CONTENT_BOTTOM_PAD
 end
 
-local SET_TITLE_H = 50
-local SET_ROW_H = 82
-local SET_GAP = 18
+local SET_TITLE_H = 42
+local SET_ROW_H = 36
+local SET_GAP = 10
 
 local function compactSetRowHeight(line)
     local desc = line.text:match("^%d件%s+(.*)$") or ""
-    return math.max(SET_ROW_H, 16 + math.ceil((utf8.len(desc) or 0) / 24) * 32)
+    local chars = utf8.len(desc) or 0
+    local lines = math.max(1, math.ceil(chars / 16))
+    return 8 + lines * 32
 end
 
 local function compactSetLines(equip)
@@ -546,7 +547,7 @@ end
 local function compactSetBlockHeight(equip)
     local _, lines = compactSetLines(equip)
     if #lines == 0 then return 0 end
-    local height = SET_GAP + SET_TITLE_H + 20
+    local height = SET_GAP + SET_TITLE_H + 8
     for i = 2, #lines do
         height = height + compactSetRowHeight(lines[i])
     end
@@ -1008,11 +1009,11 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
     if EquipmentSystem.getAscendLevel(equip) > 0 then
         nameStr = nameStr .. " +" .. EquipmentSystem.getAscendLevel(equip)
     end
-    drawTextStroke(vg, leftX, COMPACT_NAME_Y, nameStr, 36,
+    drawTextStroke(vg, leftX, COMPACT_NAME_Y, nameStr, 44,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
     if imgLock >= 0 then
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 36)
+        nvgFontSize(vg, 44)
         local nameW = nvgTextBounds(vg, 0, 0, nameStr)
         local lockSize = 36
         local lockCX = leftX + nameW + 14 + lockSize * 0.5
@@ -1076,31 +1077,25 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
             local raw = stat[2]
             if i == 1 then raw = raw * (1 + boost) end
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 30)
+            nvgFontSize(vg, 36)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
             nvgText(vg, leftX, y, getStatName(stat[1]), nil)
-            drawTextStroke(vg, rightX, y, formatStatValue(stat[1], raw), 30,
+            drawTextStroke(vg, rightX, y, formatStatValue(stat[1], raw), 36,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
             bottom = y + REF_STAT_BG_H * 0.5
         end
     end
     if equip.affixes and #equip.affixes > 0 then
-        local titleY = bottom + 30
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 26)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, 255))
-        nvgText(vg, leftX, titleY, "随机属性", nil)
-        local firstY = titleY + 13 + REF_AFFIX_GAP_TOP + REF_AFFIX_ROW_H * 0.5
+        local firstY = bottom + 16 + REF_AFFIX_ROW_H * 0.5
         for i, affix in ipairs(equip.affixes) do
-            local y = firstY + (i - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP)
+            local y = firstY + (i - 1) * (REF_AFFIX_ROW_H + 8)
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 28)
+            nvgFontSize(vg, 36)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-            nvgText(vg, leftX + 48, y, affix.name or "?", nil)
-            drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, affix.value), 28,
+            nvgText(vg, leftX, y, affix.name or "?", nil)
+            drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, affix.value), 36,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
             bottom = y + REF_AFFIX_ROW_H * 0.5
         end
@@ -1110,7 +1105,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
     if #setLines > 0 then
         local sectionTop = compactContentBottom(equip) + SET_GAP
         local col = setDef.color or { 232, 208, 122, 255 }
-        local sectionH = SET_TITLE_H + 12
+        local sectionH = SET_TITLE_H + 4
         for i = 2, #setLines do
             sectionH = sectionH + compactSetRowHeight(setLines[i])
         end
@@ -1125,19 +1120,19 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
         nvgFontSize(vg, 30)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
-        nvgText(vg, leftX + 8, sectionTop + 26, setLines[1].text, nil)
+        nvgText(vg, leftX + 8, sectionTop + 22, setLines[1].text, nil)
         local rowTop = sectionTop + SET_TITLE_H
         for i = 2, #setLines do
             local line = setLines[i]
             local tier, desc = line.text:match("^(%d件%s+)(.*)$")
             nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], line.active and 255 or 185))
-            nvgFontSize(vg, 27)
+            nvgFontSize(vg, 26)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-            nvgText(vg, leftX + 8, rowTop + 8, tier, nil)
+            nvgText(vg, leftX + 8, rowTop + 2, tier or "", nil)
             nvgFillColor(vg, line.active and nvgRGBA(244, 237, 224, 255)
                 or nvgRGBA(170, 158, 140, 210))
             nvgFontSize(vg, 26)
-            nvgTextBox(vg, leftX + 96, rowTop + 8, panelW - 150, desc, nil)
+            nvgTextBox(vg, leftX + 78, rowTop + 2, panelW - 130, desc or line.text, nil)
             rowTop = rowTop + compactSetRowHeight(line)
         end
     end

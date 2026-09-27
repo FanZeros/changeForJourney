@@ -762,7 +762,6 @@ function M.drawAll(vg)
             12,
             0, 0, 0, CF.CONTENT_A)
 
-        drawImageCentered(vg, img.confirmArrow, CF.ARROW_CX, CF.ARROW_CY, CF.ARROW_W, CF.ARROW_H, 1.0)
         DarkIcon.drawQualityBg(vg, 5, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_5
         drawImageCentered(vg, img.diamondBig, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)
         DarkIcon.drawQualityBg(vg, 5, CF.TICKET_CX, CF.TICKET_CY, CF.TICKET_W, CF.TICKET_H, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_5
@@ -771,6 +770,19 @@ function M.drawAll(vg)
             confirmTicketIcon = img.ticketBigStellar
         end
         drawImageCentered(vg, confirmTicketIcon, CF.TICKET_CX, CF.TICKET_CY, CF.TICKET_W, CF.TICKET_H, 1.0)
+        -- 贴图带实心底色，夹在两个图标中间会挡住。按同样的双箭头形状直接画。
+        nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 255))
+        nvgStrokeWidth(vg, 7)
+        nvgLineCap(vg, NVG_ROUND)
+        nvgLineJoin(vg, NVG_ROUND)
+        for i = 0, 1 do
+            local ax = CF.ARROW_CX - 16 + i * 24
+            nvgBeginPath(vg)
+            nvgMoveTo(vg, ax - 12, CF.ARROW_CY - 18)
+            nvgLineTo(vg, ax + 8, CF.ARROW_CY)
+            nvgLineTo(vg, ax - 12, CF.ARROW_CY + 18)
+            nvgStroke(vg)
+        end
 
         local diamondEnough = GameState.getGems() >= popupState.confirmDiamondCost
         local dBadgeR, dBadgeG, dBadgeB = 255, 255, 255

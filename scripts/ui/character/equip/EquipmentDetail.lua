@@ -902,7 +902,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, REF_STAT_FONT)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+            nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
             nvgText(vg, REF_AFFIX_TEXT_X + offsetX, affixY, affName, nil)
 
             -- 词缀数值 - 右对齐 X1016 字号34 白色 描边4（与基础属性相同）
@@ -1093,7 +1093,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 36)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
+            nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
             nvgText(vg, leftX, y, affix.name or "?", nil)
             drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, affix.value), 36,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)

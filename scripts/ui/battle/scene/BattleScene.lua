@@ -989,7 +989,7 @@ function BattleScene.update(dt)
     if StageBerserk.isActive() then
         StageBerserk.update(logicDt, enemies, allies)
     end
-    ART.update(logicDt)
+    ART.update(logicDt, allies)
 
 
     -- ---- 敌人死亡处理 / 己方阵亡紧凑 / 胜负判定（委托 BattleCasualty） ----
@@ -1116,7 +1116,7 @@ local function resetBattle()
     SEM.reset()  -- 清空状态效果
     TAL.reset()  -- 清空天赋运行时状态
     RCH.reset()  -- 清空遗物条件状态
-    ART.reset()  -- 清空神器条件状态
+    ART.reset(allies)  -- 只清理当前战斗单位的神器条件状态
     -- 重置所有己方单位（清除Buff → 重新应用装备 → 填满血）& 初始化天赋
     for _, u in ipairs(allies) do
         Diag.installSentinel(u)
@@ -1633,7 +1633,7 @@ function BattleScene.resetToDefault()
     SEM.reset()
     TAL.reset()
     RCH.reset()
-    ART.reset()
+    ART.reset(allies)
     BattleCombat.reset()
     ProjectileSystem.reset()
     -- 解锁导航（防止终焉神殿锁定残留）

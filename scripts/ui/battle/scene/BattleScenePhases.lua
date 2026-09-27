@@ -248,7 +248,7 @@ function M.process(ctx, dt)
                 SEM.reset()
                 TAL.reset()
                 RCH.reset()
-                ART.reset()
+                ART.reset(allies)
                 RCH.initBattle(allies)
                 ART.initBattle(allies)
                 for _, u in ipairs(allies) do

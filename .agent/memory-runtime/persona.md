@@ -12,6 +12,8 @@
 
 - [confirmed] 不自行取消/退出任务；每次交付或遇到阻碍先简报，再真正调用 AskUserQuestion 工具以选项询问下一步并等待选择，不以纯文字结束。记忆不能替代自动 hook。
 - [confirmed] 完成后只推本轮授权的分支；先核对分支，不推其他分支，不强推。旧记忆分支名不得覆盖最新用户指令。2026-09-27 本轮授权是新建并推送 `workspace926`。
+- [confirmed] 每次交付先汇报结果、最后必须用 AskUserQuestion 给出下一步选项；不能自行取消/退出或纯文字结束；受阻也给选项。记忆本身不等同于自动 hook，Stop hook 尚未配置。
+- [confirmed] 2026-09-27 当轮授权推送 `workspace926`，其中已包含神器审查；不推 `workspace` / `workspace925`。[scope:project]
 
 - 快速试错 + 放手授权；给方向不抠细节，但交付必须"上线可玩" [observed]
 - 多 agent 并行工作流（会话内多线协作，跨会话交接明确要求"数据/文档/记忆完整"） [observed]
@@ -24,6 +26,8 @@
 - 2026-09-27 终焉之门：`feat926/cleanup-unused-panels` 清理四个无入口旧面板及 14 张专属图，并删除旧 DiaryPage；保留现行功绩、遗物奖励、签到/任务数据与 GM 配置。[scope:project]
 
 - 2026-09-26 终焉之门：装备详情按栏侧展开、套装与装备属性/随机词条分区并放大字号；先 Build/LSP，再仅推 workspace925；游戏内视觉验收待截图确认。[scope:project]
+- 2026-09-27 终焉之门：神器 4×3 规范核对与独立战线状态隔离；回归 24 PASS、构建成功；已合入 `workspace926`。[scope:project]
+- 2026-09-26 终焉之门：装备详情按栏侧展开、套装与装备属性/随机词条分区并放大字号；Build/LSP 已通过，曾仅推 workspace925（旧授权已失效）；游戏内视觉验收待截图确认。[scope:project]
 
 - 2026-09-24 终焉之门：角色属性页保留角色切换但隐藏装备操作；配装页批量按钮置顶、下方下移留词条位。基于 `workspace924` 的独立功能分支 `feat/hero-equipment-layout-924`，只 push 此分支。[scope:project]
 

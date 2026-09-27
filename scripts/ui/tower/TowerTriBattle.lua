@@ -279,27 +279,23 @@ local function tickLane(lane, dt)
 
     tickTombstones(lane, dt)
 
-    local allyAlive = BattleCombat.getAliveUnits(lane.allies)
-    if #allyAlive == 0 and #lane.allies > 0 then
-        for _, unit in ipairs(lane.allies) do
-            if unit.hp <= 0 and not unit._artifactDeathHandled then
-                unit._artifactDeathHandled = true
-                if not unit._towerDeathNotified then
-                    unit._towerDeathNotified = true
-                    DungeonBattle.onAllyDeath(unit)
-                end
-                local revived = ART.onAllyDeath(unit)
-                if not revived then
-                    revived = TAL.onAllyDeath(unit, lane.allies, BattleCombat.syncUnitHp)
-                end
+    for _, unit in ipairs(lane.allies) do
+        if unit.hp <= 0 and not unit._artifactDeathHandled then
+            unit._artifactDeathHandled = true
+            if not unit._towerDeathNotified then
+                unit._towerDeathNotified = true
+                DungeonBattle.onAllyDeath(unit)
+            end
+            if not ART.onAllyDeath(unit) then
+                TAL.onAllyDeath(unit, lane.allies, BattleCombat.syncUnitHp)
             end
         end
-        allyAlive = BattleCombat.getAliveUnits(lane.allies)
-        if #allyAlive == 0 then
-            lane.wiped = true
-            print(string.format("[TowerTriBattle] 队%d 全灭", lane.teamIdx))
-            return
-        end
+    end
+    local allyAlive = BattleCombat.getAliveUnits(lane.allies)
+    if #allyAlive == 0 and #lane.allies > 0 then
+        lane.wiped = true
+        print(string.format("[TowerTriBattle] 队%d 全灭", lane.teamIdx))
+        return
     end
 
     if laneEnemiesCleared(lane) then
@@ -506,7 +502,7 @@ function TowerTriBattle.open(opts)
     DungeonBattle.enter(data, combinedAllies)
 
     RCH.reset()
-    ART.reset()
+    ART.reset(combinedAllies)
     TAL.reset()
     BattleStats.reset()
     local allForRCH = {}
@@ -542,7 +538,7 @@ function TowerTriBattle.close()
     state.confirmOpen = false
     DungeonBattle.exit()
     RCH.reset()
-    ART.reset()
+    ART.reset(state.allAllies)
     BattleCombat.mount(nil)
     ProjectileSystem.mount(nil)
     TM.mount(nil)
@@ -621,7 +617,7 @@ function TowerTriBattle.update(dt)
 
     local logicDt = getBattleLogicDt(dt)
     DungeonBattle.update(logicDt, collectFieldEnemies(), state.allAllies)
-    ART.update(logicDt)
+    ART.update(logicDt, state.allAllies)
 
     if DungeonBattle.isTimeLimitExceeded() then
         finishLose()

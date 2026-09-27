@@ -9,6 +9,8 @@
 - [scope:project] 装备详情小窗展开方向必须由 owner 区分：character（右栏）从鼠标左侧展开、对比继续向左；bag/backpack（左栏）从鼠标右侧展开、对比继续向右。别让边界夹取把小窗挤到鼠标另一侧；悬停锚点用鼠标坐标，钉住后不要用格子中心重设。
 - [scope:project] 套装详情必须按最后一条随机词条的底部计算起点，并同步面板高度、按钮和热区；中文描述要换行并保证字号可读。
 - [scope:project] 分支推送以用户当前轮次授权为准。2026-09-27 已授权新建并推送 `workspace926`，合入 `workspace925` 与全部 `feat926/`。历史「只推某个 feat926、不推基线」不再覆盖本轮。远端并发提交先 fetch 核对，不强推。不在凭据 URL/Git 配置/记忆中保存 PAT。
+- [scope:project] 神器并行战线 `ArtifactRuntime.initBattle` 不能重置全局状态；`reset/update` 必须使用当前 allies。战斗效果为每次战斗独立状态，不能污染 `unit.artifactEffects`。亡魂计时在三行模式须逐队推进。
+- [scope:project] 2026-09-27 当轮授权是新建并推送 `workspace926`（已含 `feat926/artifact-audit`）。不推 `workspace` / `workspace925`，不强推。不在凭据 URL/Git 配置/记忆中保存 PAT。
 - [scope:project] `CharacterDetail` 属性页仅角色切角能切角色；装备槽和一键操作只在配装页绘制/响应，配装页不要绘制/响应左右切角。底板/标题下移时列表网格和滚动热区必须同步，Tab 栏不能位移。
 - [通用] 用户要求每次交付以 AskUserQuestion 选项询问下一步，不纯文字结束；记忆是提醒，自动执行的跨会话保证须配置 harness hook。
 

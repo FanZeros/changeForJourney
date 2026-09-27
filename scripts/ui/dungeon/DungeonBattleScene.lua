@@ -556,7 +556,7 @@ function DungeonScene.open(opts)
     SEM.reset()
     TAL.reset()
     RCH.reset()
-    ART.reset()
+    ART.reset(state.allies)
 
     -- 初始化所有单位
     for _, u in ipairs(state.allies) do
@@ -654,7 +654,7 @@ function DungeonScene.close()
     MapAffixSystem.reset(state.allies)
     DungeonBattle.exit()
     RCH.reset()
-    ART.reset()
+    ART.reset(state.allies)
     -- 恢复主战斗的 BattleCombat 上下文和 TAL/TM 天赋状态
     -- 修复: 副本 open 时覆盖了 ctx.getAllies/getEnemies 指向副本单位，
     -- 导致主战斗恢复后治疗者遍历的是副本的满血单位列表，治疗量计算为 0
@@ -675,7 +675,7 @@ function DungeonScene.forceClose()
     state.confirmClosing = false
     DungeonBattle.exit()
     RCH.reset()
-    ART.reset()
+    ART.reset(state.allies)
     BattleScene.restoreContext()
     print("[DungeonBattleScene] forceClose (tower wave transition)")
 end
@@ -932,7 +932,7 @@ function DungeonScene.update(dt)
 
     -- DungeonBattle 计时（狂暴阶段检测，狂暴加成施加到怪物与己方单位）
     DungeonBattle.update(logicDt, state.enemies, state.allies)
-    ART.update(logicDt)
+    ART.update(logicDt, state.allies)
 
     -- 战斗限时：超时自动判负
     if DungeonBattle.isTimeLimitExceeded() then

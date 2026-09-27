@@ -44,7 +44,7 @@ end
 function M.startBattleTalents(allies, enemies)
     RCH.reset()
     RCH.initBattle(allies)
-    ART.reset()
+    ART.reset(allies)
     ART.initBattle(allies)
     TAL.reset()
     for _, u in ipairs(allies) do

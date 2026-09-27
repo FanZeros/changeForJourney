@@ -13,6 +13,13 @@
 > **当前基线 `workspace926`**：合入 workspace925 与全部 feat926。只推此分支。
 >
 > **装备详情（来自 workspace925）**：右栏点击详情在鼠标左侧、已装备比较卡更靠左；左栏反向。套装区排在全部词条后。
+> 更新时间:2026-09-27 | 版本:v2.52-artifact-audit
+>
+> **本轮（`feat926/artifact-audit` 神器审查）**：文档 §8 已按实际 4×3 装配、品质池与保底规则更新。`ArtifactRuntime` 按单位重置/更新并清理临时效果，影羽斗篷按初始 +200% 的比例衰减，审判锤切目标清旧层；三行加入首次死亡拦截与亡魂计时，通天塔逐名阵亡拦截。原有 `battle_stage_switch_test` 增至 24 个断言，0 FAIL；LSP 0 Error，官方 Build 成功。主入口 60 帧 0 Lua 错，5 个既有剧情日记图片缺失仍使完整 validate FAIL，不能宣称主入口完全通过。抽取中途失败的非原子性仅在人为损坏定义时可达，留待专项审查。操作不要在仓库写凭证或把测试生成的存档提交。
+> **流程硬性要求（当前授权）**：不能取消/退出任务，每次交付先汇报结果、最后必须通过 AskUserQuestion 给选项问下一步，不能纯文字结束。本轮只 push `workspace926`。自动化 Stop hook 尚未配置，记忆本身不能保证执行。
+>
+> **上一轮（`workspace925` 装备详情）**：右栏点击详情在鼠标左侧、已装备比较卡更靠左；左栏反向。点击锚点用鼠标位置，悬停跟随、钉住不漂移；套装区排在全部词条后，独立描边底板、放大字体及换行，详情热区随内容高度变化。Lua LSP 0 Error，官方 Build 成功；本地 Runtime 安装超时，尚无实际页面截图验收。下一步用游戏预览点击左右栏带/不带已装备比较的详情，特别检查最长套装描述。
+> **旧会话历史**：曾授权只 push `workspace925` 或某个 `feat926/`。这些授权已被本轮「新建并推送 workspace926」覆盖。访问令牌不写入仓库或记忆。
 >
 > **本轮桌面试点（`feature/background-idle-924`）**：用户选择 Windows Electron 失焦挂机。`electron-shell/main.js:145` 的 BrowserWindow.webPreferences 设 `backgroundThrottling=false`，不改 Lua/网页版本。`node --check` 和 VM 模拟创建 BrowserWindow 的断言通过（同时确认 contextIsolation/nodeIntegration 安全设置保持不变）；LSP 0 Error、官方 build 通过。当前沙箱没有 Electron 可执行文件、node_modules、虚拟显示器或 Wine，因此**没有 Windows 最小化/失焦的实机验收**，也未生成新版 Windows 包；已有 `/workspace/dist` 网页预览不会体现这项桌面独占改动。下一步在 Windows 用仓库现有 `electron-shell/pack_release.py` / 一键脚本将最新 dist 打成 Electron 包，实际对比聚焦/失焦/最小化时三队金币、经验、掉落、存档及 CPU；关闭进程/系统休眠仍需另做离线补算。
 >

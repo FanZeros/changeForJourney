@@ -34,8 +34,8 @@ function M.bind(deps)
                 TP.forceClose()
             end
         end
-        state.tab = "libaitang"
-        state.tabFrom = "libaitang"
+        state.tab = "shenqi"
+        state.tabFrom = "shenqi"
         state.tabSwitchTime = 0
         state.selectedHeroId = nil
         state.slotExpanded = false

@@ -29,6 +29,12 @@
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
 
+## 上次做了什么（2026-09-27，feat927/ele-protection-research-0927）
+
+- 基于 `feat926/ele-obfuscation-audit-0927` 建调研分支，只加文档不改流水线。
+- 产出 `docs/pc-protection-research-0927.md`：四级保护方案评估（L1 AST 混淆保留 EmmyLua 注释 / L2 Lua5.4 字节码需先 POC 验证 WASM VM 与 manifest 运行时校验 / L3 Electron 打包期静态加密+sendFile 内存解密+关 F12 / L4 完整性校验），路线图 P0-P4；P0=发布版关 DevTools，零成本高收益。
+- 本轮只 push `feat927/ele-protection-research-0927`；不推 workspace*。完成后必须 AskUserQuestion 问下一步，不得取消/退出任务，令牌不进仓库与记忆。
+
 ## 上次做了什么（2026-09-27，925 同步与存档再排查）
 
 - 开始核对时 `workspace925@aaa53e7` 已是当前分支祖先，合并返回 `Already up to date`；提交前远端继续推进到 `c614ec0`，已在任务分支合并（含战斗通关、招募及右栏宽度改动），没有推送基线。合并后 LSP 0 Error、Build 成功，三项针对性引擎回归 PASS。

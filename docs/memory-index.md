@@ -1,5 +1,6 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+> **本轮（2026-09-27，`feat927/ele-protection-research-0927`）**：基于 `feat926/ele-obfuscation-audit-0927` 新建调研分支。产出 `docs/pc-protection-research-0927.md`：PC 包保护强化调研（威胁模型 + L1 AST 混淆 / L2 Lua5.4 字节码 / L3 Electron 静态加密+内存解密 / L4 完整性校验 四级评估与 P0-P4 路线图）。**纯文档，未改任何打包流水线**。关键结论：发布版应关 F12 DevTools（P0 零成本）；字节码需先 POC 验证 WASM VM 是否接受及 manifest hash 是否运行时强校验；混淆接入点必须在官方 Build 之前（保留 EmmyLua 注释）；L3 加密在 pack 期做、响应时解密，不改 manifest。基线故障（StoryPlayer 缺 ClientDispatcher、lootbox 旧断言）仍在，非本轮引入。本轮只 push `feat927/ele-protection-research-0927`，不推 workspace*。流程硬性要求不变：不取消/退出任务，交付后必须用 AskUserQuestion 提供下一步选项；令牌不写入仓库或记忆。
 > **最新（2026-09-27，`workspace926`）**：用户要求新建 `workspace926`，合入 `workspace925` 与全部 `feat926/`：`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`。只推 `workspace926`，不推 `workspace` / `workspace925`。
 > **feat926/character-drag-save**：英雄名册数字键保留；右栏跨栏松手取消拖拽；跨队一次提交；离线经验不算空槽；存档写入失败重试。
 > **feat926/cleanup-unused-panels / remove-unused-diary**：删除旧日志页及无入口的遗物洗练、签到、旧任务、公告面板和专属图。保留城镇功绩 `TaskPage`、签到及任务服务/协议/存档、GM 公告配置、遗物奖励图标。

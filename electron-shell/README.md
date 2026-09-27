@@ -156,6 +156,59 @@ python3 electron-shell/lua_bytecode_poc.py --file scripts/shared/StageProvider.l
 3. 若 L2 可行：`源码 → L1 混淆 → luac 字节码 → 官方 Build`（解决 `---@param` 后）。
 4. 若 L2 不可行：`源码 → L1 混淆（修 @param）→ 官方 Build`，可选叠加 L3 静态加密。
 
+## --protect 受保护打包（2026-09-27，`feat927/ele-protection-research-0927`）
+
+L1 混淆已接入打包流程（默认关闭，不影响现有一键脚本）。**四步链**：
+
+```
+protect_build.py                物化「混淆工作区」：361 个 Lua 全部 L1 混淆
+                                + .meta/.py 逐字节复制 + assets/ 真实复制 + .project/ 复制
+  ↓
+taptap-maker preview prepare    官方 Build 跑在混淆工作区上（LSP/烘焙/manifest 全走正式流程）
+  ↓
+prepare_local_dist.py           --scripts-root 指向混淆工作区：校验 dist Lua 与混淆源码
+  --scripts-root <ws>/scripts   逐字节一致 + 资产闸门（manifest 必须含 png/ogg，
+                                缺资源即拒包）→ 打补丁 → game/
+  ↓
+pack_release.py                 --protect-scripts-root 同基准复核 → electron-builder → zip
+  --prepare-dist
+  --protect-scripts-root <ws>/scripts
+```
+
+一键入口：
+
+| 文件 | 平台 | 说明 |
+|------|------|------|
+| `build_protected_windows.bat` | Windows | 四步链一键；混淆工作区在 `.tmp/protected-workspace`（.gitignore 已排除） |
+| `build_protected_windows.sh` | Linux/macOS | 同上；`PYTHON=~/luaenv/bin/python` 指定解释器 |
+
+依赖：`pip install luaparser`（lupa 仅测试需要）。
+
+### 本轮实测（沙箱内完成的部分）
+
+- `protect_build.py` 小规模工作区端到端 PASS：混淆产物、`@param` 同步、
+  非 Lua 逐字节复制、protect-report.json（含每文件处置与 SHA256）。
+- **官方 Build（混淆 scripts + 真实 assets 复制）成功**：manifest 1226 项
+  （361 lua + 770 png + 77 ogg + 6 atlas + 字体），dist lua 与混淆源码
+  **361/361 逐字节一致**，344 个文件确认含混淆名。
+- **关键发现：官方 Build 不烘焙符号链接的 assets/**——工作区 assets 用
+  symlink 时 manifest 只剩 361 lua + 4 json（游戏必然黑屏缺图）。故
+  `protect_build.py` 默认**真实复制** assets（+398MB），`--link-assets`
+  降级为实验选项并打醒目警告；`prepare_local_dist.py` 新增资产闸门
+  （manifest 缺 .png/.ogg 即拒包），闸门双向测试 PASS（真实 dist 通过、
+  伪造 lua-only manifest 拒包）。
+- `verify_prepare_dist` 加 `--protect-scripts-root` 后：无覆盖时正确拒绝
+  混淆 dist（与仓库原版源码不一致），有覆盖时通过（361 文件逐字节一致）。
+
+### 尚未验证（需本机 Windows 实机）
+
+1. **成品包回归**：`build_protected_windows.bat` 全链 + Electron zip +
+   实机启动/存档/战斗 60 帧（沙箱没有 npx taptap-maker CLI 与 Electron）。
+2. **junction 行为**：Windows 上 assets 真实复制耗磁盘 ~400MB；若改用
+   junction 需实测官方 Build 是否跟随（Linux symlink 已证实不跟随）。
+3. `prepare_local_dist.py` 的 `latest_prepare_source()` 取「最近一次 preview
+   prepare 产物」——多工程并存时确认拿到的是混淆工作区那次。
+
 ## 一键脚本（推荐，本机跑）
 
 云端代理传 ~466MB zip 会被超时掐断，**打包和上传请在本机直连 GitHub**。

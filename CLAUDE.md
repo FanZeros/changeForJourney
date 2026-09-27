@@ -29,6 +29,14 @@
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
 
+## 上次做了什么（2026-09-27，feat927 L1 接入打包 --protect 四步链）
+
+- 新增 `protect_build.py`：物化混淆工作区（361 Lua 混淆 + 非 Lua 复制 + assets 真实复制 + protect-report.json）；不改仓库源码/dist/game。
+- `prepare_local_dist.py` +`--scripts-root` 与资产闸门（manifest 缺 png/ogg 拒包）；`pack_release.py` +`--protect-scripts-root`；一键入口 `build_protected_windows.bat/.sh`。
+- **关键发现：官方 Build 不烘焙符号链接 assets/**（symlink→manifest 只剩 lua+json；真实复制→1226 项全烘焙）。默认真实复制，闸门双向 PASS。
+- 官方 Build（混淆版）成功：dist lua 与混淆源码 361/361 逐字节一致，344 含混淆名。回归全绿（21/21、8/8、残留0、71/71）。
+- 待本机验证：taptap-maker CLI 全链 + Electron 实机回归；Windows junction 行为。仍只 push feat927；令牌不进仓库/记忆。
+
 ## 上次做了什么（2026-09-27，feat927 修复 @param + 官方 Build 通过）
 
 - 给 `lua_obfuscator.py` 加 doc 注释同步：紧邻函数声明上方的注释块里 `@param 旧名`→该形参新名（仅本函数形参；注释与函数间夹代码则不关联；字符串里的 @param 属 NORMALSTRING 天然不动；类型名/描述保留；匿名函数跳过，实测全项目 1373 个 @param doc 块无一匿名）。

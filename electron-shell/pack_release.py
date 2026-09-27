@@ -35,6 +35,8 @@ from urllib.error import HTTPError, URLError
 SHELL = Path(__file__).resolve().parent
 ROOT = SHELL.parent
 DIST = ROOT / "dist"
+# --protect 流程：Lua 校验基准源码树（混淆工作区 scripts/）。None = 仓库 scripts/。
+PROTECT_SCRIPTS_ROOT = None
 GAME = SHELL / "game"
 RELEASE = SHELL / "release"
 UNPACKED = RELEASE / "win-unpacked"
@@ -781,6 +783,10 @@ def download_runtime() -> None:
     log("离线运行时镜像就绪：%s" % RUNTIME_DIR)
 
 
+def protect_scripts_root() -> Path:
+    return PROTECT_SCRIPTS_ROOT if PROTECT_SCRIPTS_ROOT is not None else ROOT / "scripts"
+
+
 def verify_prepare_dist(dist: Path) -> None:
     latest_path = dist / "latest.json"
     if not latest_path.is_file() or not (dist / "index.html").is_file():
@@ -796,10 +802,23 @@ def verify_prepare_dist(dist: Path) -> None:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     items = [item for item in manifest.get("files") or [] if item.get("ext") == ".lua" and item.get("prefix") == "../scripts"]
     built = {item.get("fs_path") for item in items}
-    source = {path.relative_to(ROOT / "scripts").as_posix() for path in (ROOT / "scripts").rglob("*.lua")}
+    scripts_root = protect_scripts_root()
+    source = {path.relative_to(scripts_root).as_posix() for path in scripts_root.rglob("*.lua")}
     if not built == source or "main.lua" not in built:
-        die("prepare 产物与当前 Lua 源码不一致。请重新 preview prepare 后运行 prepare_local_dist.py")
-    log("prepare 产物校验通过：v%s、%d 个 Lua 文件" % (version, len(items)))
+        die("prepare 产物与当前 Lua 源码不一致（基准：%s）。请重新 preview prepare 后运行 prepare_local_dist.py" % scripts_root)
+    # --protect 模式下逐字节校验 dist Lua == 混淆工作区源码
+    errors = []
+    for item in items:
+        rel = item.get("fs_path")
+        built_file = dist / "assets" / (item.get("uuid") + "-" + item.get("hash") + ".lua")
+        source_file = scripts_root / rel
+        if not source_file.is_file() or not built_file.is_file() \
+                or source_file.read_bytes() != built_file.read_bytes():
+            errors.append(rel)
+    if errors:
+        die("prepare 产物 Lua 与基准源码树内容不一致（%d 项，示例：%s）" % (len(errors), ", ".join(errors[:5])))
+    log("prepare 产物校验通过：v%s、%d 个 Lua 文件与基准源码树一致%s" % (
+        version, len(items), "（--protect 混淆基准）" if PROTECT_SCRIPTS_ROOT else ""))
 
 
 def resolve_prepare_dist() -> Path:
@@ -1107,6 +1126,8 @@ def parse_args() -> argparse.Namespace:
                    help="使用最近一次 preview prepare 的 dist，不读取仓库根 dist")
     p.add_argument("--local-dist", action="store_true",
                    help="仅用当前源码构建的本地 dist；校验全部 Lua，不拉快照、不清理仓库根、不上传")
+    p.add_argument("--protect-scripts-root", default=None, metavar="DIR",
+                   help="--protect 流程：Lua 校验基准改为混淆工作区的 scripts/（protect_build.py 产物）")
     p.add_argument("--proxy", default=None, metavar="URL",
                    help="访问 GitHub 用的 HTTP 代理（如 http://127.0.0.1:7890）；"
                         "不指定时直连失败会自动探测常见本地代理端口（7890/7897/10809/1080…）")
@@ -1114,8 +1135,13 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    global PROXY_CLI
+    global PROXY_CLI, PROTECT_SCRIPTS_ROOT
     args = parse_args()
+    if args.protect_scripts_root:
+        PROTECT_SCRIPTS_ROOT = Path(args.protect_scripts_root).resolve()
+        if not (PROTECT_SCRIPTS_ROOT / "main.lua").is_file():
+            die("--protect-scripts-root 下没有 main.lua：%s" % PROTECT_SCRIPTS_ROOT)
+        log("protect 基准源码树：%s" % PROTECT_SCRIPTS_ROOT)
     if args.local_dist and (args.upload or args.upload_only or args.dist_only or args.runtime_only or args.skip_sync or args.skip_build):
         die("--local-dist 不能与上传、跳过同步/构建或仅运行时模式组合")
     if args.prepare_dist and (args.upload or args.upload_only or args.dist_only or args.runtime_only or args.local_dist or args.skip_sync):

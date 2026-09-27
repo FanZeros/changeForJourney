@@ -106,10 +106,10 @@ end
 -- 第一行顶部 Y
 local FIRST_ROW_TOP = CLIP_TOP
 
--- 底部提示放在面板内侧，不能掉到面板底边外面
+-- 底部提示放在奖励框下方背景上，离开框边一行文字
 local HINT_CX = 540
-local HINT_CY = PANEL_CY + PANEL_H * 0.5 - 72
 local HINT_FONT = 40
+local HINT_CY = PANEL_CY + PANEL_H * 0.5 + HINT_FONT + 8
 local HINT_TEXT = "点击空白处关闭"
 
 -- 数量/等级角标（统一右下角角标样式）

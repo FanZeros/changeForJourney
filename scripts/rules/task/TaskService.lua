@@ -280,6 +280,7 @@ function TaskService.RefreshAchievements(uid)
     taskData.achProg["awk_r_max"]   = awkRMax
     taskData.achProg["awk_sr_max"]  = awkSRMax
     taskData.achProg["awk_ssr_max"] = awkSSRMax
+    taskData.achProg["awk_max"]     = math.max(awkRMax, awkSRMax, awkSSRMax)
     taskData.achProg["adv1_count"]  = adv1Count
     taskData.achProg["adv2_count"]  = adv2Count
     PDM.MarkDirty(uid, "task")

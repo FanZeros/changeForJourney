@@ -124,15 +124,13 @@ for _, n in ipairs({ 4, 6, 10, 16, 20 }) do
     addRecord("a_hero_" .. n, "集结令", "拥有" .. n .. "名远征队员", "hero_count", n, "hero", nextReward(n * 2))
 end
 for _, n in ipairs({ 1, 3, 5, 8 }) do
-    addRecord("a_sr_" .. n, "稀有集结", "拥有" .. n .. "名稀有远征队员", "sr_count", n, "hero", nextReward(n * 3))
+    addRecord("a_adv1_" .. n, "一转集结", "完成一转的队员达到" .. n .. "名", "adv1_count", n, "hero", nextReward(n * 3))
 end
 for _, n in ipairs({ 1, 2, 3, 5 }) do
-    addRecord("a_ssr_" .. n, "史诗集结", "拥有" .. n .. "名史诗远征队员", "ssr_count", n, "hero", nextReward(n * 6))
+    addRecord("a_adv2_" .. n, "二转集结", "完成二转的队员达到" .. n .. "名", "adv2_count", n, "hero", nextReward(n * 6))
 end
 for _, n in ipairs({ 1, 2, 3 }) do
-    addRecord("a_awk_r_" .. n, "觉醒印", "任意普通队员觉醒至" .. n .. "阶", "awk_r_max", n, "hero", nextReward(n * 2))
-    addRecord("a_awk_sr_" .. n, "稀有觉醒", "任意稀有队员觉醒至" .. n .. "阶", "awk_sr_max", n, "hero", nextReward(n * 4))
-    addRecord("a_awk_ssr_" .. n, "史诗觉醒", "任意史诗队员觉醒至" .. n .. "阶", "awk_ssr_max", n, "hero", nextReward(n * 8))
+    addRecord("a_awk_" .. n, "觉醒印", "任意队员觉醒至" .. n .. "阶", "awk_max", n, "hero", nextReward(n * 4))
 end
 
 -- ======================== 按 ID 快速查找 ========================

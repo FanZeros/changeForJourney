@@ -6,6 +6,19 @@ setlocal
 cd /d "%~dp0\.."
 set PROTECT_WS=%CD%\.tmp\protected-workspace
 
+echo [0/4] 依赖预检（luaparser/antlr4 必须装进下面这个解释器）...
+python -c "import sys; print('  python =', sys.executable)"
+python -c "import luaparser, antlr4" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo [预检失败] 上面的解释器缺 luaparser 或 antlr4。
+    echo   常见原因：pip 与 python 不是同一个解释器（PATH 里有多个 Python）。
+    echo   修复：python -m pip install luaparser lupa
+    echo   （务必用 python -m pip，别直接敲 pip）
+    goto :fail
+)
+echo   依赖 OK
+
 echo [1/4] 物化混淆工作区 ...
 python electron-shell\protect_build.py --source-root "%CD%" --workspace-root "%PROTECT_WS%"
 if errorlevel 1 goto :fail

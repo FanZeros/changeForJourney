@@ -50,9 +50,14 @@ sys.path.insert(0, str(SHELL))
 try:
     from lua_obfuscator import obfuscate_file_safe  # noqa: E402
 except ImportError as e:  # pragma: no cover
+    import sys as _sys
     raise SystemExit(
-        "缺少依赖：%s\n请先安装：python3 -m venv ~/luaenv && "
-        "~/luaenv/bin/pip install luaparser lupa" % e)
+        "缺少依赖：%s\n"
+        "当前解释器：%s\n"
+        "请用【同一个解释器】安装依赖（关键：用 python -m pip，避免 pip 与 python 不是同一个）：\n"
+        "    python -m pip install luaparser lupa\n"
+        "（Linux/macOS 建议 venv：python3 -m venv ~/luaenv && ~/luaenv/bin/pip install luaparser lupa）"
+        % (e, _sys.executable))
 
 
 def log(msg: str) -> None:

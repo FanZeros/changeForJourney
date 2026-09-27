@@ -6,6 +6,14 @@ cd "$(dirname "$0")/.."
 PROTECT_WS="$PWD/.tmp/protected-workspace"
 PY="${PYTHON:-python3}"
 
+echo "[0/4] 依赖预检 ..."
+"$PY" -c "import sys; print('  python =', sys.executable)"
+if ! "$PY" -c "import luaparser, antlr4" >/dev/null 2>&1; then
+    echo "[预检失败] 该解释器缺 luaparser/antlr4。修复：$PY -m pip install luaparser lupa"
+    exit 1
+fi
+echo "  依赖 OK"
+
 echo "[1/4] 物化混淆工作区 ..."
 "$PY" electron-shell/protect_build.py --source-root "$PWD" --workspace-root "$PROTECT_WS"
 

@@ -156,9 +156,11 @@ function M.bind(deps)
                         local badgeX = cx - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
                         local badgeY = cy - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
                         -- [统一角色框] 已装备头像角标（白描边变体）
+                        ---@type number
+                        local ownerHeroId = equip.equippedByHeroId
                         HeroFrame.draw(vg, {
                             cx = badgeX, cy = badgeY, size = badgeSize, radius = 6,
-                            heroId = equip.equippedByHeroId,
+                            heroId = ownerHeroId,
                             iconHandle = ownerIcon,
                             state = "owned",
                             borderOverride = { 255, 255, 255, 200, 2 },

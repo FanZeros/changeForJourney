@@ -325,13 +325,7 @@ function M.collectAttributes(heroId, heroCfg, level)
     right[#right + 1] = { key = "_atkTargets", name = "攻击目标", value = tostring(heroCfg.atkTargets),
         desc = "普攻每次可命中的敌方目标数量" }
 
-    -- 本职攻击力已在左列。另一条攻击力固定显示，治疗职业两条都显示。
-    if category ~= "physical" then
-        right[#right + 1] = { key = AD.PHYS_ATK, name = "物理攻击力", value = tostring(math.floor(attrs:get(AD.PHYS_ATK))) }
-    end
-    if category ~= "magical" then
-        right[#right + 1] = { key = AD.MAG_ATK, name = "魔法攻击力", value = tostring(math.floor(attrs:get(AD.MAG_ATK))) }
-    end
+    -- 只显示本职攻击力。物理不看魔法，魔法不看物理，治疗不看两边攻击力。
     right[#right + 1] = {
         key = AD.ATK_SPEED,
         name = "攻击速度",
@@ -426,6 +420,34 @@ function M.collectAttributes(heroId, heroCfg, level)
         [AD.PHYS_CRIT_DMG] = true,
         [AD.MAG_CRIT_DMG] = true,
     }
+    if category == "physical" then
+        skipCritKeys[AD.MAG_ATK] = true
+        skipCritKeys[AD.MAG_ATK_BONUS] = true
+        skipCritKeys[AD.MAG_PEN] = true
+        skipCritKeys[AD.MAG_DMG_BONUS] = true
+        skipCritKeys[AD.FINAL_MAG_ATK_BONUS] = true
+        skipCritKeys[AD.HEAL_AMOUNT] = true
+        skipCritKeys[AD.HEAL_BONUS] = true
+    elseif category == "magical" then
+        skipCritKeys[AD.PHYS_ATK] = true
+        skipCritKeys[AD.PHYS_ATK_BONUS] = true
+        skipCritKeys[AD.PHYS_PEN] = true
+        skipCritKeys[AD.PHYS_DMG_BONUS] = true
+        skipCritKeys[AD.FINAL_PHYS_ATK_BONUS] = true
+        skipCritKeys[AD.HEAL_AMOUNT] = true
+        skipCritKeys[AD.HEAL_BONUS] = true
+    elseif category == "healing" then
+        skipCritKeys[AD.PHYS_ATK] = true
+        skipCritKeys[AD.MAG_ATK] = true
+        skipCritKeys[AD.PHYS_ATK_BONUS] = true
+        skipCritKeys[AD.MAG_ATK_BONUS] = true
+        skipCritKeys[AD.PHYS_PEN] = true
+        skipCritKeys[AD.MAG_PEN] = true
+        skipCritKeys[AD.PHYS_DMG_BONUS] = true
+        skipCritKeys[AD.MAG_DMG_BONUS] = true
+        skipCritKeys[AD.FINAL_PHYS_ATK_BONUS] = true
+        skipCritKeys[AD.FINAL_MAG_ATK_BONUS] = true
+    end
     if category == "healing" then
         skipCritKeys[AD.HEAL_CRIT_RATE] = true
         skipCritKeys[AD.HEAL_CRIT_DMG] = true

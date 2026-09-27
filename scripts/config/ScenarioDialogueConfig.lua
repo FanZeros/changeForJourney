@@ -318,7 +318,7 @@ ScenarioDialogueConfig.SCENARIO_24 = {
     mode = "small",
     steps = {
         { characterId = 1,  name = "大狗嚼", text = "叫！别挥锤别挥锤！我们是正经远征队，持证上路！这位就是我们的远征长，实拍，如假包换！" },
-        { characterId = 11, name = "卫兵", text = "外来远征队一律先去教堂领祝福，这是城里的规矩。跟我走吧，别乱跑。" },
+        { characterId = 11, name = "卫兵", text = "外来远征队一律先去教堂登记神器，这是城里的规矩。战场上捡的神器，只有圣女能开光嵌槽。跟我走吧，别乱跑。" },
     },
 }
 
@@ -328,7 +328,7 @@ ScenarioDialogueConfig.SCENARIO_25 = {
     mode = "small",
     steps = {
         { characterId = 2,  name = "黄桃龙", text = "呜哇！黄桃龙们是正经远征队！…对吧远征长？快点头快点头！" },
-        { characterId = 11, name = "卫兵", text = "……规矩不变，先去教堂领祝福，才能在城里自由活动。走吧。" },
+        { characterId = 11, name = "卫兵", text = "……规矩不变，先去教堂登记神器，才能在城里自由活动。包里那些捡来的神器，顺便让圣女鉴定嵌槽。走吧。" },
     },
 }
 
@@ -338,16 +338,17 @@ ScenarioDialogueConfig.SCENARIO_26 = {
     mode = "small",
     steps = {
         { characterId = 3,  name = "叮咚鸡", text = "叮咚~申报通知：过境远征队，无恶意，欲补给。可配合检查。" },
-        { characterId = 11, name = "卫兵", text = "先去教堂领祝福，这是规矩，谁都一样。跟我来。" },
+        { characterId = 11, name = "卫兵", text = "先去教堂登记神器，这是规矩，谁都一样。神器不嵌槽，等于白捡。跟我来。" },
     },
 }
 
 --- 情景 27：初次进入教堂
---- 出现条件: 初次进入教堂
+--- 出现条件: 初次进入教堂（教堂现仅提供神器：槽位装配 + 神器背包）
 ScenarioDialogueConfig.SCENARIO_27 = {
     mode = "small",
     steps = {
-        { characterId = 21, name = "圣女", text = "新面孔呀~想得到祝福的话，请抬头看向天空吧……对，就是现在，姿势虔诚一点~" },
+        { characterId = 21, name = "圣女", text = "新面孔呀~别抬头找祝福啦，那套早就不兴了。现在教堂只办一件事：神器登记。" },
+        { characterId = 21, name = "圣女", text = "战场上捡的神器都拿来吧~开好光、嵌进槽里，它们才肯干活。空着槽位出门，可是会被人笑话的哦~" },
     },
 }
 
@@ -356,8 +357,8 @@ ScenarioDialogueConfig.SCENARIO_27 = {
 ScenarioDialogueConfig.SCENARIO_28 = {
     mode = "small",
     steps = {
-        { characterId = 1,  name = "大狗嚼", text = "叫！！全身的毛都竖起来了！力量在血管里汪汪叫！这就是神明的抚摸吗！" },
-        { characterId = 11, name = "卫兵", text = "祝福到手，看来不是什么邪祟。城里随便逛吧。" },
+        { characterId = 1,  name = "大狗嚼", text = "叫！！神器嵌进槽里的一瞬间，全身的毛都竖起来了！这手感，比啃到肉骨头还上头！" },
+        { characterId = 11, name = "卫兵", text = "神器登过记了，看来不是什么邪祟。城里随便逛吧。" },
         { characterId = 11, name = "卫兵", text = "想找新伙伴的话，去酒馆看看，招募告示天天贴满墙。" },
         { characterId = 1,  name = "大狗嚼", text = "走！远征长！酒馆！听说那儿的骨头管够，还是无限续的！叫！" },
     },
@@ -368,8 +369,8 @@ ScenarioDialogueConfig.SCENARIO_28 = {
 ScenarioDialogueConfig.SCENARIO_29 = {
     mode = "small",
     steps = {
-        { characterId = 2,  name = "黄桃龙", text = "远征长远征长！黄桃龙的火球好像变大了！这祝福也太超值了吧！" },
-        { characterId = 11, name = "卫兵", text = "祝福到手，不是邪祟，城里随便逛。" },
+        { characterId = 2,  name = "黄桃龙", text = "远征长远征长！神器嵌好之后黄桃龙的火球好像变大了！这登记也太超值了吧！" },
+        { characterId = 11, name = "卫兵", text = "神器登过记了，不是邪祟，城里随便逛。" },
         { characterId = 11, name = "卫兵", text = "想找新伙伴，去酒馆看看。" },
         { characterId = 2,  name = "黄桃龙", text = "酒馆！肯定有吃的！烤肉片！芝士汉堡！还有黄桃派！黄桃龙先预定三份！……不对，四份！" },
     },
@@ -380,8 +381,8 @@ ScenarioDialogueConfig.SCENARIO_29 = {
 ScenarioDialogueConfig.SCENARIO_30 = {
     mode = "small",
     steps = {
-        { characterId = 3,  name = "叮咚鸡", text = "叮咚~祝福通知：已接收。生效情况：待验证。" },
-        { characterId = 11, name = "卫兵", text = "祝福到手，不是邪祟。城里随便逛吧。" },
+        { characterId = 3,  name = "叮咚鸡", text = "叮咚~登记通知：神器已入槽。生效情况：待实战验证。" },
+        { characterId = 11, name = "卫兵", text = "神器登过记了，不是邪祟。城里随便逛吧。" },
         { characterId = 11, name = "卫兵", text = "想找新伙伴，去酒馆看看。" },
         { characterId = 3,  name = "叮咚鸡", text = "叮咚~行军通知：目的地，酒馆。出发。" },
     },
@@ -509,7 +510,7 @@ ScenarioDialogueConfig.SCENARIO_41 = {
     background = "image/关卡地图/MAP_2.png",
     steps = {
         { characterId = 10, name = "愤怒的铁匠", text = "又是你们这帮打家劫舍的！吃我一锤！四十米长的大锤了解一下！" },
-        { characterId = 1,  name = "大狗嚼",      text = "叫？！大爷冷静！我们刚在教堂盖过祝福章的！正经远征队，有编号的那种！" },
+        { characterId = 1,  name = "大狗嚼",      text = "叫？！大爷冷静！我们刚在教堂登记过神器的！正经远征队，有编号的那种！" },
     },
 }
 

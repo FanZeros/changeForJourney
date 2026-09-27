@@ -814,6 +814,15 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             print("[Horizon] 详情浮层按下")
             return
         end
+        -- 详情开着时，点任意空白先关掉，不把这次点击传给后面的页面
+        local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+        if EquipmentDetail.isCompactCorner() then
+            EquipmentDetail.close()
+            equipOverlayPress = false
+            pressValid = false
+            print("[Horizon] 点击空白关闭装备详情")
+            return
+        end
         equipOverlayPress = false
     end
     if button == MOUSEB_RIGHT then
@@ -1170,6 +1179,11 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         local now = time.elapsedTime
         if now - lastTapTime >= MIN_TAP_INTERVAL then
             lastTapTime = now
+            local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+            if EquipmentDetail.isCompactCorner() then
+                EquipmentDetail.close()
+                print("[SeamBack] 返回同时关闭装备详情")
+            end
             print("[SeamBack] close dir=" .. tostring(seamBtn.dir)
                 .. string.format(" at %.0f,%.0f", seamX, seamY))
             seamBtn.close()

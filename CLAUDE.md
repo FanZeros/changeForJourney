@@ -40,6 +40,13 @@
 - 合法样本：第 101 关首通，大狗嚼 Lv.1，均为普通 Lv.1 `C13`（秘识戒）A 与 `C1`（力量戒）B；显示战力同为 112。种子 926–965：A 14/40 胜、B 40/40；种子 3926–3965：A 10/40、B 40/40；第 103 关：A 22/40、B 40/40。第 102 关两者均 40/40，但平均耗时 A 34.82s、B 28.02s；队伍加黄桃龙后第 101 关均 40/40，A 22.04s、B 21.30s。不同职业的单人法师/游侠样本均 0/40，不可据它们的胜率比较适配，需看输出与生存；全量实测汇总在 `docs/memory-index.md` 顶部。
 - 建议：不要全局削减魔攻权重（会误伤魔法职业）；显示战力如要反映角色适配，应以角色攻击类别区别计价物攻/魔攻及专属伤害、暴击、穿透，治疗者独立考虑治疗量。先保留原始属性战力供详情/队伍展示，对“实战预估”新口径跨阵容、关卡、层级验证，避免仅由胜率饱和场景定权重。正式战力公式和战斗结算尚未改。
 
+## 最新：战力预估生产接线（2026-09-28，v2.59，玩家可见但默认关闭）
+
+- **非破坏性接入**：官方 `calcHeroPower` 公式与数字完全不变；`ui/character/panel/CharacterPower.lua` 抽出共享 `buildHeroAttrs(heroId, partySlot)`（装备/遗物/神器/觉醒管线），战力与新增 `calcHeroEstimate` 共用，避免两条管线漂移。预估 = `CPE.estimate(attrs, attrs.atkType)` + 觉醒战力 + 神器加成（后两项沿用官方口径并入）。
+- 接线链：`CharacterPanel.calcHeroEstimate` → `CharacterDetail.setContext` → `Draw.setContext`（存 `calcHeroEstimateFn`）。展示：`CharacterDetailDraw` 卡面战力下「预估 N」副行（y=powerY+26），`SHOW_ESTIMATE` 模块开关**默认 false**——系数未跨全阵容标定、本环境无法截图验收玩家 UI，真人验收后 `Draw.setEstimateVisible(true)` 开启。`_estimateCache` 与战力共用 `markPowerDirty` 脏标记，关闭时不计算。
+- 验证：新增 `tests/character_power_estimate_test.lua`（真实模块+mock 存档）9 断言 ALL PASS：官方战力不回归（战士 Lv1=106、Lv50=479）、预估>0（战士75/法师74）、预估≤官方×1.5、未知英雄返回0不崩、重构后可重复；主入口 validate 30 帧 lua_errors=0；边界/切关/默认 lab 20/20 v1 全 ALL PASS。**当前玩家数值零变化**。
+- ⚠️ 开启副行前必须真人预览验收：卡面副行与等级徽章/职业标是否重叠、字色是否可读；开启后预估数值口径（不含觉醒分项拆分）需在 UI 说明或气泡中注明，避免玩家误解为官方战力。
+
 ## 最新：治疗系数拟合（2026-09-27，v2.58）
 
 - 采样：`tests/battle_lab_fit_healer.lua`（22 组牧师：303 超时稳定带 + 304/305 阵亡带 × W67/W68 权杖等级 × C2/C8/C14/C20/C27 饰品）→ `battle_lab_fit_healer_samples.json`（gitignore）。

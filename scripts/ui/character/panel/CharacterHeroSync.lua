@@ -86,8 +86,10 @@ function M.bind(deps)
             for i = 1, MAX_SLOTS do
                 slots[i] = { state = (i <= unlocked) and "empty" or "locked" }
             end
-            for idx, heroId in ipairs(ids or {}) do
-                local numId = tonumber(heroId) or heroId
+            local idCount = ids and #ids or 0
+            for idx = 1, idCount do
+                local heroId = ids[idx]
+                local numId = tonumber(heroId) or 0
                 if idx <= MAX_SLOTS and numId ~= 0 then
                     local ownData = ownedSet[numId]
                     if ownData then

@@ -27,7 +27,9 @@ local TEAM_MAX_SLOTS = ExpTable.TEAM_MAX_SLOTS  -- 4
 ---@param slots any
 ---@return table
 local function sanitizeSlots(slots)
-    local out, seen = {}, {}
+    ---@type integer[]
+    local out = {}
+    local seen = {}
     if type(slots) ~= "table" then return out end
     for _, v in ipairs(slots) do
         local num = tonumber(v) or 0
@@ -38,6 +40,10 @@ local function sanitizeSlots(slots)
             out[#out + 1] = num
         end
         if #out >= TEAM_MAX_SLOTS then break end
+    end
+    -- 开局三人阵容旧档没有第四格。补一个空位，右侧栏才能直接交换。
+    if #out == 3 and out[1] ~= 0 and out[2] ~= 0 and out[3] ~= 0 then
+        out[4] = 0
     end
     return out
 end

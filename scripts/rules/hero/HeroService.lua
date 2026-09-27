@@ -357,7 +357,8 @@ function HeroService.GrantStarterTrio(uid)
     end
 
     local TeamSlots = require("shared.heroes.TeamSlots")
-    TeamSlots.setTeam(heroes, 1, starterIds)
+    -- 开局就占满 4 个槽位：三人在前，第四格是空位。否则右侧栏没有可交换的空槽。
+    TeamSlots.setTeam(heroes, 1, { starterIds[1], starterIds[2], starterIds[3], 0 })
     PDM.MarkDirty(uid, "heroes")
 
     local sessionData = PDM.GetModule(uid, "session")

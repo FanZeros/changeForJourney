@@ -334,6 +334,7 @@ local CHAPTER_RANGES = {
     { diff = SC.DIFFICULTY_HELL,      range = SC.HELL_CHAPTERS },
     { diff = SC.DIFFICULTY_NIGHTMARE, range = SC.NIGHTMARE_CHAPTERS },
     { diff = SC.DIFFICULTY_HARD,      range = SC.HARD_CHAPTERS },
+    { diff = SC.DIFFICULTY_NORMAL,    range = SC.NORMAL_CHAPTERS },
 }
 
 for _, s in ipairs(SC.STAGES) do

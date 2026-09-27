@@ -86,8 +86,7 @@ end
 --- 离线收益还没领时，不推进在线时间，避免把待领时长清掉。
 --- 角色、关卡和首通标记仍要落盘，否则重启就像丢档，首通也能再领一次。
 local function writeFile()
-    if not offlineChecked then return false end
-    if not OfflineService.HasPendingRewards(1) then
+    if offlineChecked and not OfflineService.HasPendingRewards(1) then
         OfflineService.MarkOnline(1)
         lastSavedAt = os.time()
     end
@@ -198,7 +197,6 @@ end
 --- 主循环更新（由 Standalone.HandleUpdate 调用）
 ---@param dt number
 function StandaloneSave.Update(dt)
-    if not offlineChecked then return end
     -- 防抖写盘
     if flushTimer then
         flushTimer = flushTimer - dt

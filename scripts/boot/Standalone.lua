@@ -225,10 +225,13 @@ local function SyncBattleState(dt)
     -- 读档时被补回 1-1，首通奖励就能重复领，进度也像丢了。
     local battle = ClientDispatcher.get("battle")
     if type(battle) ~= "table" then battle = {} end
-    battle.maxStageId = maxId
+    local liveStage = tonumber(BattleScene.getStageId()) or 0
+    local savedStage = tonumber(battle.currentStageId) or 0
+    local savedMax = tonumber(battle.maxStageId) or 0
+    battle.maxStageId = math.max(maxId or 0, savedMax)
     battle.clearedStages = clearedStr
-    if not battle.currentStageId then
-        battle.currentStageId = BattleScene.getStageId()
+    if liveStage > savedStage then
+        battle.currentStageId = liveStage
     end
     ClientDispatcher.handleStateUpdate(cjson.encode({
         modules = { battle = battle }
@@ -840,7 +843,22 @@ function HandleUpdate(eventType, eventData)
         if not DarkTitleScreen.isFading() then
             return
         end
-        if BottomNav.getSelectedIndex() == 3
+        local sessionData = ClientDispatcher.get("session") or {}
+        local heroesData = ClientDispatcher.get("heroes") or {}
+        local ownedCount = 0
+        if type(heroesData.roster) == "table" then
+            for _, hero in pairs(heroesData.roster) do
+                if type(hero) == "table" and hero.level then
+                    ownedCount = ownedCount + 1
+                end
+            end
+        end
+        local introDone = sessionData.introCompleted == true or ownedCount > 1
+        if not introDone and not LetterIntro.isOpen() then
+            print("[Standalone] cover game before intro")
+            startIntroChain_()
+        end
+        if introDone and BottomNav.getSelectedIndex() == 3
             and not BattleTriPage.isOpen()
             and not DungeonBattleScene.isOpen()
             and not TowerBattleScene.isActive() then

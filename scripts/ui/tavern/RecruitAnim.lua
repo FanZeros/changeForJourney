@@ -11,6 +11,9 @@ local GameConfig = require("config.GameConfig")
 local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质框/卡底矢量绘制
 local ResourceDefs = require("config.ResourceDefs")
+local GachaConfig = require("config.GachaConfig")
+local UrGachaConfig = require("config.UrGachaConfig")
+local GameState = require("core.GameState")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawImageCenteredUtil = DrawUtil.drawImageCentered
 
@@ -257,7 +260,7 @@ local function resultRank(item)
     return 3
 end
 
-function RecruitAnim.start(results, onClose, count)
+function RecruitAnim.start(results, onClose, count, poolId)
     local list = results or {}
     local ordered = {}
     local buckets = { {}, {}, {} }
@@ -276,6 +279,7 @@ function RecruitAnim.start(results, onClose, count)
     state.results = ordered
     state.onClose = onClose
     state.pullCount = (count == 10 or count == 1) and count or ((#ordered > 1) and 10 or 1)
+    state.poolId = poolId
 
     state.highestQ = 0
     for _, r in ipairs(state.results) do
@@ -372,7 +376,7 @@ function RecruitAnim.handleInput(dx, dy)
     if state.phase == "cards" then
         local elapsed = time.elapsedTime - state.cardStartT
         if elapsed > 0.4 and againFn_
-            and math.abs(dx - DESIGN_W * 0.5) <= 180
+            and math.abs(dx - DESIGN_W * 0.5) <= 240
             and math.abs(dy - (DESIGN_H - 230)) <= 44 then
             againFn_(state.pullCount or 1)
             return true
@@ -812,11 +816,30 @@ function RecruitAnim.draw(vg)
             nvgFontSize(vg, 40)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 255, 255, 180))
-            local againText = (state.pullCount == 10) and "继续十连" or "继续单抽"
-            DarkIcon.drawNine(vg, "btn", 360, DESIGN_H - 274, 360, 88, { accent = "gold" })
-            nvgFontSize(vg, 36)
+            local count = state.pullCount == 10 and 10 or 1
+            local againText = (count == 10) and "继续十连" or "继续单抽"
+            local stellar = state.poolId == "stellar"
+            local ticketCost = stellar
+                and ((count == 10) and UrGachaConfig.Cost.TEN_TICKET or UrGachaConfig.Cost.SINGLE_TICKET)
+                or ((count == 10) and GachaConfig.Cost.TEN_TICKET or GachaConfig.Cost.SINGLE_TICKET)
+            local gemCost = stellar
+                and ((count == 10) and UrGachaConfig.Cost.TEN_DIAMOND or UrGachaConfig.Cost.SINGLE_DIAMOND)
+                or ((count == 10) and GachaConfig.Cost.TEN_DIAMOND or GachaConfig.Cost.SINGLE_DIAMOND)
+            local owned = stellar and GameState.getStellarRecruitTicket() or GameState.getRecruitTicket()
+            local tickets = math.min(owned or 0, ticketCost)
+            local gems = (ticketCost - tickets) * gemCost / ticketCost
+            local costText = tostring(gems)
+            if tickets > 0 then
+                costText = tostring(tickets)
+                if gems > 0 then costText = costText .. "+" .. tostring(gems) end
+            end
+            DarkIcon.drawNine(vg, "btn", 300, DESIGN_H - 274, 480, 88, { accent = "gold" })
+            nvgFontSize(vg, 34)
             nvgFillColor(vg, nvgRGBA(255, 236, 190, 255))
-            nvgText(vg, DESIGN_W * 0.5, DESIGN_H - 230, againText, nil)
+            nvgText(vg, DESIGN_W * 0.5 - 90, DESIGN_H - 230, againText, nil)
+            nvgFontSize(vg, 28)
+            nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
+            nvgText(vg, DESIGN_W * 0.5 + 125, DESIGN_H - 230, costText, nil)
             nvgFontSize(vg, 40)
             nvgFillColor(vg, nvgRGBA(255, 255, 255, 180))
             nvgText(vg, DESIGN_W * 0.5, DESIGN_H - 120, "点击任意处继续", nil)

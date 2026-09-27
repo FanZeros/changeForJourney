@@ -106,7 +106,7 @@ def materialize(source_root: Path, ws: Path, link_assets: bool) -> dict:
     # assets: 默认真实复制（官方 Build 对符号链接 assets 不烘焙，实测证实）
     mode = link_or_copy_dir(source_root / "assets", ws / "assets", link_assets)
     log("assets/ -> %s (%s)" % (mode, source_root / "assets"))
-    if mode \!= "copied":
+    if mode != "copied":
         log("⚠️⚠️ --link-assets：官方 Build 实测不烘焙符号链接 assets/，dist 将缺全部"
             "图片/音频，prepare_local_dist 资产闸门会拒包。仅供实验。")
 

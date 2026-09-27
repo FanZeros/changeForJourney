@@ -1,4 +1,4 @@
-#\!/usr/bin/env bash
+#!/usr/bin/env bash
 # 终焉之门 · --protect 受保护打包（Linux/macOS 版，与 build_protected_windows.bat 等价）
 # 依赖：luaparser（python venv）；npx。详见 electron-shell/README.md §「--protect 受保护打包」。
 set -euo pipefail

@@ -5,9 +5,11 @@ fit_power_estimate.py — 分项计价战力原型的系数拟合（battle-lab �
 
 输入: 项目根 battle_lab_fit_samples.json（由 tests/battle_lab_fit.lua 产出）
       battle_lab_fit_healer_samples.json（由 tests/battle_lab_fit_healer.lua 产出）
-输出: stdout 报告 + battle_lab_fit_result.json（同目录，供人工审阅，不进游戏包）
-用法: python3 fit_power_estimate.py [samples.json] [--mode healing]
+      battle_lab_fit_expand_samples.json（由 tests/battle_lab_fit_expand.lua 产出）
+输出: stdout 报告 + <输入名>_result.json（同目录，供人工审阅，不进游戏包）
+用法: python3 fit_power_estimate.py [samples.json] [--mode dps|healing|expand]
       --mode healing: 治疗系数拟合（因变量 HPS，按 healTakenRatio 剔除饱和样本）
+      --mode expand : 跨难度带稳定性检验（全量+按 band 分桶，汇总可信 off 系数波动）
 
 模型:
   败局中「场均总输出 = 存活时间 × 秒伤」，generic 组（HP/护甲/闪避等生存属性）
@@ -123,14 +125,95 @@ def run_healing_mode(samples):
     return result
 
 
+def run_expand_mode(samples):
+    """跨难度带扩展拟合：全量 + 按 band 分桶，检验 OFF_FACTOR 稳定性。
+    只用 physical/magical 类别（healing 已在 --mode healing 单独处理）。
+    每桶输出 off 归一化系数；跨桶差异即 OFF_FACTOR 的带间波动。"""
+    def dps(m):
+        return m["avgDamage"] / m["avgSeconds"] if m["avgSeconds"] > 0 else 0.0
+
+    bands = sorted({s.get("band", "ALL") for s in samples})
+    result = {"mode": "expand", "ridgeLambda": RIDGE_LAMBDA, "groups": GROUPS,
+              "r2TrustThreshold": R2_TRUST_THRESHOLD, "buckets": {}}
+    off_trusted = []
+
+    def fit_bucket(tag, subset):
+        print(f"\n== 桶 {tag}（样本 {len(subset)}）==")
+        bucket = {}
+        for category, own_key, off_keys in [("physical", "phys", ["mag"]),
+                                            ("magical", "mag", ["phys"])]:
+            coef, n, r2 = fit_category(subset, category, dps)
+            entry = {"samples": n}
+            if coef is None:
+                entry["error"] = f"非饱和样本不足 n={n}"
+                print(f"  [{category}] {entry['error']}")
+            else:
+                entry["coefficients"] = coef
+                entry["r2"] = None if r2 is None else round(r2, 4)
+                norm = normalize(own_key, coef)
+                entry["normalized"] = norm
+                print(f"  [{category}] n={n} DPS-R²={entry['r2']}")
+                for g in GROUPS:
+                    print(f"    w_{g:<8}= {coef[g]:10.4f}"
+                          + (f"   (归一化 {norm[g]:.3f})" if norm else ""))
+                if coef.get("_raw_negative_clipped"):
+                    print(f"    ⚠️ 负系数截断: {coef['_raw_negative_clipped']}")
+                if norm and r2 is not None and r2 >= R2_TRUST_THRESHOLD:
+                    for k in off_keys:
+                        off_trusted.append((tag, category, k, norm[k], round(r2, 3)))
+                elif norm:
+                    print(f"    （R² < {R2_TRUST_THRESHOLD}，不进 OFF_FACTOR 汇总）")
+            bucket[category] = entry
+        result["buckets"][tag] = bucket
+
+    fit_bucket("ALL", samples)
+    for band in bands:
+        if band == "ALL":
+            continue
+        fit_bucket(band, [s for s in samples if s.get("band") == band])
+
+    result["offFactorTrusted"] = [
+        {"bucket": t, "category": c, "offGroup": k, "value": v, "r2": r}
+        for t, c, k, v, r in off_trusted]
+    if off_trusted:
+        values = [v for _, _, _, v, _ in off_trusted]
+        result["offFactorSpread"] = {
+            "min": round(min(values), 3), "max": round(max(values), 3),
+            "mean": round(sum(values) / len(values), 3)}
+        print("\n可信 off 系数汇总（R² ≥ %.2f 的桶）:" % R2_TRUST_THRESHOLD)
+        for t, c, k, v, r in off_trusted:
+            print(f"  [{t}/{c}] off[{k}] = {v:.3f}  (R²={r})")
+        print(f"  跨带波动: min={result['offFactorSpread']['min']} "
+              f"max={result['offFactorSpread']['max']} "
+              f"mean={result['offFactorSpread']['mean']}")
+        print("  判读: 可信拟合的 off 系数若全部 ≈0（非负截断），说明各带一致支持")
+        print("  「异系攻击属性对 DPS 无可测贡献」，OFF_FACTOR 只承担显示保底职能，")
+        print("  当前 0.10 的选择跨带稳定；若某带出现显著非零 off，需要重新标定。")
+    return result
+
+
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    mode = "healing" if "--mode" in sys.argv and "healing" in sys.argv else "dps"
+    mode = "dps"
+    if "--mode" in sys.argv:
+        idx = sys.argv.index("--mode")
+        if idx + 1 < len(sys.argv):
+            mode = sys.argv[idx + 1]
     if mode == "healing":
         path = args[0] if args else "battle_lab_fit_healer_samples.json"
         with open(path, encoding="utf-8") as f:
             samples = json.load(f)
         result = run_healing_mode(samples)
+        out = path.replace(".json", "_result.json")
+        with open(out, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=1)
+        print(f"\n已写入 {out}")
+        return
+    if mode == "expand":
+        path = args[0] if args else "battle_lab_fit_expand_samples.json"
+        with open(path, encoding="utf-8") as f:
+            samples = json.load(f)
+        result = run_expand_mode(samples)
         out = path.replace(".json", "_result.json")
         with open(out, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=1)

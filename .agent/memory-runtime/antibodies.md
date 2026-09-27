@@ -3,6 +3,7 @@
 - [scope:project] 玩家可见数值/UI 改动必须非破坏性推进：v2.59 战力预估接线保持官方 `calcHeroPower` 数字零变化，新增预估副行用 `SHOW_ESTIMATE` 开关默认关闭，等真人视觉验收（本环境无法截图玩家 UI）再开。改 `CharacterPower` 时抽出共享 `buildHeroAttrs` 让战力与预估走同一管线，防止装备/遗物/神器应用逻辑漂移；改完必须跑 `tests/character_power_estimate_test.lua`（真实模块+mock 存档验证官方战力不回归）+ 主入口 validate（lua_errors=0，字体/图片缺失是 sparse checkout 无 assets 的环境噪音，不是代码错误）。
 
 - [scope:project] 用战斗模拟数据回归属性→强度系数时，**因变量必须用 DPS（输出/秒）而不是败局总输出**：败局总输出=存活时间×DPS，生存属性（HP/护甲）通过拉长存活时间混杂进总输出，直接回归会让生存组吞掉攻击组信号（实测 physical R²≈0.03、攻击组负系数），DPS 口径才能拿到可解释系数（R²=0.43/0.52）。全胜样本伤害被怪物总血量截断，同样必须剔除（winRate=100 不进回归）。
+- [scope:project] 战力系数回归**必须分难度带分桶，不能跨带混池**：L8/L16/L24 三带 DPS 量级差数倍，混池 ALL 桶 R² 为负、全部组系数被吞。分带后 magical 类三带 R²=0.63/0.68/0.96 全可信（off[phys] 0.33/0/0.028，均值≈0.12 支持 OFF_FACTOR=0.10 跨带稳定）；physical 类各带 R² 均低（战士 DPS 被衔骨狂天赋触发主导、武器扫描方差不足），不能靠回归标定，方向性只能由同种子 A/B 实测对照保证。速死带（<5s 阵亡）样本 DPS 噪声大，只作对照不作依据。
 - [scope:project] 治疗量拟合同样要先查**需求截断饱和**：治疗=min(供给,需求)，heal/taken 比值高（≥0.65）时 HPS 不再随治疗属性变化（实测 W68@17→32 HPS 仅 24.0→23.6、几乎不动即饱和铁证），这类样本必须按 healTakenRatio 剔除。单人牧师无输出不能击杀：稳定关全超时、难关全阵亡，不存在「阵亡且非饱和」带，只有超时带（时间固定、需求未满足）可拟合，样本量因此受限（n=8、R²=0.32），结论只能作方向性验证。
 - [scope:project] 战斗单位的攻击类型读 `unit.attrs.atkType`，不要读 `unit.atkType`：`HC.createHero` 构建的 unit 本体没有 atkType 字段（只有 dmgMainType/dmgSubType 中文名），`unit.atkType` 仅 ClassGateRuntime 战中转职时动态设置；`attrs.atkType` 由 UnitAttributes.create 从英雄配置写入，恒有值（nil 时 CombatFormula 回落 ATK_SLASH）。
 - [scope:gamedev] `File:WriteString(cjson.encode(data))` 会给 JSON 追加 NUL，Python json.load 读不出；与外部工具交换单行 JSON 用 `File:WriteLine`/`File:ReadLine`，并实际在 OS 层解析验证。

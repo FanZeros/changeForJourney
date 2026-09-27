@@ -19,6 +19,8 @@
 
 ## 项目足迹（追加去重）
 
+- 2026-09-28 终焉之门：OFF_FACTOR 跨难度带验证。新增 `tests/battle_lab_fit_expand.lua`（63 组：三职业 × L8/L16/L24 三带）+ `fit_power_estimate.py --mode expand`（分桶岭回归）。结论：跨带混池不成立（ALL R²=-5.5）必须分带；magical 三带 R²=0.63/0.68/0.96 全可信、off[phys] 均值 0.119≈0.10 → OFF_FACTOR 跨带稳定维持 0.10；physical 三带 R² 均低（战士 DPS 被衔骨狂天赋触发主导）无法回归标定，方向性由 A/B 实测保证。系数零改动，回归全绿，只推 `feat926/battle-lab`。[scope:project]
+
 - 2026-09-28 终焉之门：战力预估生产接线（玩家可见但默认关闭，非破坏性）。`CharacterPower` 抽出共享 `buildHeroAttrs`，官方 `calcHeroPower` 数字不变，新增并列 `calcHeroEstimate`（CPE 基础+觉醒+神器），经 CharacterPanel→Detail→Draw 注入；卡面「预估 N」副行由 `SHOW_ESTIMATE` 控制、默认 false（系数未跨全阵容标定、本环境无法截图验收），真人验收后 `Draw.setEstimateVisible(true)` 开启。新增 `tests/character_power_estimate_test.lua` 9 断言 ALL PASS（战力不回归 106/479、预估>0、未知英雄不崩），主入口 validate lua_errors=0，全回归通过。当前玩家数值零变化，只推 `feat926/battle-lab`。[scope:project]
 
 - 2026-09-27 终焉之门：治疗系数拟合。新增 `tests/battle_lab_fit_healer.lua`（22 组牧师采样）+ `fit_power_estimate.py --mode healing`（HPS 口径、按 healTakenRatio 剔除需求截断饱和）。关键发现：治疗=min(供给,需求)，304/305 阵亡带全饱和（W68@17→32 HPS 24.0→23.6 几乎不动），仅 303 超时带 8 组非饱和可拟合；R²=0.32、输出组≈0.48 → 确认初值 HEALER_ATK_FACTOR=0.5 与数据一致并保留。至此 OFF_FACTOR(0.10)/HEALER(0.5) 均有数据依据。回归全绿、拟合可复现，正式公式未改，只推 `feat926/battle-lab`。[scope:project]

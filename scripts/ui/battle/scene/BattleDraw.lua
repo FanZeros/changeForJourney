@@ -520,10 +520,12 @@ function BattleDraw.drawFloatingTexts(vg)
             elseif kind:find("heal", 1, true) then tr, tg, tb = 90, 235, 130
             elseif kind:find("crit", 1, true) then tr, tg, tb = 255, 70, 70
             end
-            drawTextStroke(vg, drawX, drawY, ft.text,
+            local gap = iconSize * 0.35
+            local iconW = ft.kind and (textW + gap) or 0
+            drawTextStroke(vg, drawX + iconW * 0.5, drawY, ft.text,
                 fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
                 tr, tg, tb, 5)
-            drawFloatIcon(vg, ft.kind, drawX + textW * 0.5 + iconSize * 0.7, drawY, iconSize, alpha)
+            drawFloatIcon(vg, ft.kind, drawX - (textW + gap) * 0.5, drawY, iconSize, alpha)
             nvgRestore(vg)
         end
     end

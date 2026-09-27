@@ -182,12 +182,10 @@ function M.bind(deps)
                 if shards >= HC.SHARD_SYNTHESIZE_COST then
                     CharacterPanel.requestSynthesizeHero(entry.heroId)
                     return true
-                else
-                    local heroCfg = HC.get(entry.heroId)
-                    print("[CharacterPanel] " .. (heroCfg and heroCfg.name or "?")
-                        .. " 碎片不足，需要 " .. HC.SHARD_SYNTHESIZE_COST
-                        .. " 个，当前 " .. shards .. " 个")
                 end
+                -- 碎片不够时仍可查看属性，配装和转职在详情里禁用。
+                require("systems.GameSFX").play("ui_pick")
+                CharacterDetail.open(entry.heroId)
                 return true
             end
         end
@@ -340,7 +338,35 @@ function M.bind(deps)
         if CharacterDetail.isOpen() then
             return CharacterDetail.handleRightClick(dx, dy)
         end
-        return false
+
+        -- 编队槽右键卸下，回到下方名册。空槽和锁定槽不处理。
+        local avatarTeam, slotIdx = Draw.hitTestAvatarSlot(dx, dy)
+        if not avatarTeam then return false end
+        local teams = getTeams()
+        local slots = teams[avatarTeam] and teams[avatarTeam].slots
+        local slot = slots and slots[slotIdx]
+        if not slot or slot.state ~= "occupied" or not slot.heroId then return false end
+
+        local heroId = slot.heroId
+        slots[slotIdx] = { state = "empty" }
+        local caches = getTeamPowerCaches()
+        if caches[avatarTeam] then caches[avatarTeam][slotIdx] = 0 end
+
+        local dragState = getDragState()
+        dragState.active = false
+        dragState.heroId = nil
+        dragState.rosterIdx = nil
+        dragState.fromSlot = nil
+        dragState.fromTeam = nil
+
+        rebuildRoster()
+        refreshPowerCache()
+        refreshNavBadge()
+        local cb = getOnTeamChanged()
+        if cb then cb(avatarTeam) end
+        require("systems.GameSFX").play("ui_loosen")
+        print(string.format("[CharacterPanel] 右键卸下 英雄%d 队伍%d 槽位%d", heroId, avatarTeam, slotIdx))
+        return true
     end
 
     return {

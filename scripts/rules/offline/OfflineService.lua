@@ -88,7 +88,10 @@ local function buildHeroExpPreview(heroesData, totalHeroExp)
             liveCount = liveCount + #(team.slots or {})
         end
     end
-    local teams = (liveCount > 0) and liveTeams or heroesData.teams
+    -- 面板还停在默认开局阵容时，不用它，改用存档里的队伍。
+    local heroesReady = okPanel and CharacterPanel.isHeroesDataApplied
+        and CharacterPanel.isHeroesDataApplied()
+    local teams = (heroesReady and liveCount > 0) and liveTeams or heroesData.teams
     local hasTeams = type(teams) == "table"
     if hasTeams then
         for t = 1, ExpTable.TEAM_COUNT do
@@ -337,16 +340,31 @@ function OfflineService.ClaimRewards(uid)
     currency.gold = (currency.gold or 0) + goldAmount
     PDM.MarkDirty(uid, "currency")
 
-    -- 2) 英雄经验（平分给出战英雄）
-    local deployed = heroesData.deployed or {}
-    local heroCount = #deployed
+    -- 2) 英雄经验（平分给全部队伍的出战英雄，与预览同一份名单）
+    local recipients = {}
+    local preview = pending.panelData and pending.panelData.heroExpPreview
+    if type(preview) == "table" and #preview > 0 then
+        local seen = {}
+        for _, item in ipairs(preview) do
+            local numId = tonumber(item.heroId) or item.heroId
+            if numId and not seen[numId] then
+                seen[numId] = true
+                recipients[#recipients + 1] = numId
+            end
+        end
+    end
+    if #recipients == 0 then
+        for _, heroId in ipairs(heroesData.deployed or {}) do
+            recipients[#recipients + 1] = tonumber(heroId) or heroId
+        end
+    end
+    local heroCount = #recipients
     local perHeroExp = 0
     if heroCount > 0 then
         local totalHeroExp = rewards.adventurerExp
         totalHeroExp = math.floor(totalHeroExp)
         perHeroExp = math.floor(totalHeroExp / heroCount + 0.5)
-        for _, heroId in ipairs(deployed) do
-            local numId = tonumber(heroId) or heroId
+        for _, numId in ipairs(recipients) do
             local heroData = heroesData.roster[numId]
             if heroData then
                 heroData.exp = (heroData.exp or 0) + perHeroExp

@@ -81,6 +81,8 @@ end
 -- 背景与觉醒页同款，铺满整页（UI_JX_BJ，1080x2400）
 local CLASS_BG_W, CLASS_BG_H   = 1080, 2400
 local CLASS_BG_CX, CLASS_BG_CY = 540, 1200
+-- drawContent 把整棵转职树上移这么多；点击必须用同一偏移，重置按钮不在平移内。
+local TREE_SHIFT_Y = -300
 
 -- 标题背景
 local TITLE_BG_CX, TITLE_BG_CY = 540, 1092
@@ -340,7 +342,7 @@ function M.drawContent(vg)
     if not heroCfg then return end
     -- 转职树整体上移，并裁到页签上方，避免二转图标压住底部按钮
     nvgSave(vg)
-    nvgTranslate(vg, 0, -300)
+    nvgTranslate(vg, 0, TREE_SHIFT_Y)
     nvgScissor(vg, 0, 0, DESIGN_W, 2236)
 
     local classId = heroCfg.classId
@@ -900,6 +902,7 @@ end
 ---@return boolean consumed
 function M.handleBranchInput(dx, dy)
     if not heroId() then return false end
+    dy = dy - TREE_SHIFT_Y
 
     local heroCfg = HC.get(heroId())
     local classId = heroCfg and heroCfg.classId

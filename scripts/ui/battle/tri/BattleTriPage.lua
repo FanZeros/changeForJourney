@@ -155,6 +155,12 @@ end
 --- 每帧更新：三行使用同一套 BattleTriDriver，只切换各自的状态实例。
 function BattleTriPage.update(dt)
     if not isOpen_ then return end
+    -- 初始剧情（信件/过场/情景对话）点完之前不推进战斗，避免开场期间自动开战。
+    if require("ui.story.gate.LetterIntro").isOpen()
+        or require("ui.story.gate.IntroCutscene").isActive()
+        or require("ui.story.ScenarioDialogue").isActive() then
+        return
+    end
     BattleLayout.setMode("strip")
     require("ui.battle.scene.BattleScene").pumpBattleCards()
     ensureDrivers()
@@ -660,6 +666,41 @@ function BattleTriPage.handleInput(wx, wy)
         if math.abs(wx - rowSoundX) <= hitW and math.abs(wy - rowY) <= hitH then
             SoundToggle.handleButtonInput(row)
             return true
+        end
+    end
+
+    -- 点击己方战斗卡，右侧打开该角色属性页。敌方卡和空白不处理。
+    local contentScale = 1.0
+    for row = 1, COL_COUNT do
+        local _, _, iw, ih = interiorRect(row, logicalW, logicalH)
+        contentScale = math.min(contentScale,
+            math.min(iw / BattleLayout.STRIP_W, ih / BattleLayout.STRIP_H))
+    end
+    local cardW = BattleLayout.CARD_W * BattleLayout.CARD_SCALE * contentScale
+    local cardH = BattleLayout.CARD_H * BattleLayout.CARD_SCALE * contentScale
+    for row = 1, math.min(COL_COUNT, unlocked) do
+        local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
+        local dw = BattleLayout.STRIP_W * contentScale
+        local dh = BattleLayout.STRIP_H * contentScale
+        local originX = ix + (iw - dw) * 0.5
+        local originY = iy + (ih - dh) * 0.5 + ih * 0.06
+        local allies = drivers[row] and drivers[row].allies
+        if allies then
+            for i = 1, #allies do
+                local unit = allies[i]
+                if unit and unit.heroId then
+                    local cx, cy = BattleLayout.cardPos("ally", i, #allies)
+                    local sx = originX + cx * contentScale
+                    local sy = originY + cy * contentScale
+                    if math.abs(wx - sx) <= cardW * 0.5 and math.abs(wy - sy) <= cardH * 0.5 then
+                        require("ui.character.detail.CharacterDetail").open(unit.heroId)
+                        require("systems.GameSFX").play("ui_pick")
+                        print(string.format("[BattleTriPage] 点击战场角色 队%d 槽%d hero=%s",
+                            row, i, tostring(unit.heroId)))
+                        return true
+                    end
+                end
+            end
         end
     end
 

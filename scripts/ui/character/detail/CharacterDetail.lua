@@ -381,20 +381,19 @@ function CharacterDetail._switchHero(direction, keepDrag)
     end
     if not curIdx then return end
 
-    -- 循环切换（跳过未解锁角色）
-    local nextIdx = curIdx
-    for _ = 1, #roster - 1 do
-        nextIdx = nextIdx + direction
-        if nextIdx < 1 then nextIdx = #roster end
-        if nextIdx > #roster then nextIdx = 1 end
-        if roster[nextIdx].owned then
-            break
-        end
-    end
-    -- 如果绕了一圈没有找到其他已拥有角色，不切换
-    if nextIdx == curIdx or not roster[nextIdx].owned then return end
+    -- 循环切换，未获得的角色也可以看属性。
+    local nextIdx = curIdx + direction
+    if nextIdx < 1 then nextIdx = #roster end
+    if nextIdx > #roster then nextIdx = 1 end
+    if nextIdx == curIdx then return end
 
     local nextHeroId = roster[nextIdx].heroId
+    -- 未获得角色只能看属性，滑过去时从配装/转职退回。
+    if not roster[nextIdx].owned and detailState.tab ~= "attr" and detailState.tab ~= "awaken" then
+        detailState.tab = "attr"
+        detailState.tabFrom = "attr"
+        detailState.tabSwitchTime = 0
+    end
     -- 切换角色：使用水平滑动动画，保持当前tab不变
     local currentTab = detailState.tab
     detailState.heroId = nextHeroId
@@ -566,8 +565,9 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- Tab 切换 —— 配装区域
+    -- Tab 切换 —— 配装区域（未获得角色只能看属性）
     if hitTest(dx, dy, BTN_TAB_EQUIP_CX, BTN_TAB_EQUIP_CY, BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H) then
+        if not require("ui.character.panel.CharacterPanel").getOwnedHero(detailState.heroId) then return true end
         if detailState.tab ~= "equip" then
             detailState.tabFrom = detailState.tab
             detailState.tabSwitchTime = time.elapsedTime
@@ -577,8 +577,9 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- Tab 切换 —— 转职区域
+    -- Tab 切换 —— 转职区域（未获得角色只能看属性）
     if hitTest(dx, dy, BTN_TAB_CLASS_CX, BTN_TAB_CLASS_CY, BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H) then
+        if not require("ui.character.panel.CharacterPanel").getOwnedHero(detailState.heroId) then return true end
         if detailState.tab ~= "class" then
             detailState.tabFrom = detailState.tab
             detailState.tabSwitchTime = time.elapsedTime

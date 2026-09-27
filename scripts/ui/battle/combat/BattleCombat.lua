@@ -463,15 +463,15 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     -- 伤害飘字配色：普通白色 / 暴击红色 / 护盾吸收灰色（完全吸收时不显示 -0）
     local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
     if actual > 0 then
-        addFloatingText("-" .. NumberUtil.format(actual), tgtCX, tgtCY,
+        addFloatingText(NumberUtil.format(actual), tgtCX, tgtCY,
             showCrit and { 255, 60, 60 } or { 255, 255, 255 }, showCrit, nil, true,
             statMeta and statMeta.floatKind)
         if shieldAbsorb > 0 then
-            addFloatingText("-" .. NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
+            addFloatingText(NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
                 { 168, 168, 168 }, false, nil, true)
         end
     elseif shieldAbsorb > 0 then
-        addFloatingText((prefix or "") .. "-" .. NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
+        addFloatingText((prefix or "") .. NumberUtil.format(shieldAbsorb), tgtCX, tgtCY,
             { 168, 168, 168 }, false, nil, true)
     end
     setHitFlash(target)
@@ -1308,14 +1308,14 @@ local function performAttack(attacker, targetList, isAlly)
                             if kind and kind:find("magic", 1, true) then numColor = { 120, 220, 255 }
                             elseif kind and kind:find("burn", 1, true) then numColor = { 255, 140, 40 }
                             elseif hit.isCrit then numColor = { 255, 70, 70 } end
-                            addFloatingText("-" .. NumberUtil.format(actual), curTgtCX, curTgtCY,
+                            addFloatingText(NumberUtil.format(actual), curTgtCX, curTgtCY,
                                 numColor, hit.isCrit, nil, true, kind)
                             if shieldAbsorb > 0 then
-                                addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+                                addFloatingText(NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
                                     { 168, 168, 168 }, false, nil, true)
                             end
                         elseif shieldAbsorb > 0 then
-                            addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+                            addFloatingText(NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
                                 { 168, 168, 168 }, false, nil, true, "shield")
                         end
 
@@ -1500,7 +1500,7 @@ local function performAttack(attacker, targetList, isAlly)
                 -- 伤害飘字配色：普通白色 / 暴击红色
                 local ftColor = isCrit and { 255, 60, 60 } or { 255, 255, 255 }
                 addFloatingText(
-                    (isCrit and "暴击 " or "") .. "-" .. NumberUtil.format(actualDmg),
+                    (isCrit and "暴击 " or "") .. NumberUtil.format(actualDmg),
                     tgtCX, tgtCY, ftColor, isCrit
                 )
                 setRecoil(curTarget, isAlly and -1 or 1)

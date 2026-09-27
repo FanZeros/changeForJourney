@@ -1362,10 +1362,12 @@ function M.draw(vg)
     nvgFillColor(vg, curTab == "attr" and activeColor or inactiveColor)
     nvgText(vg, TEXT_ATTR_CX, TEXT_ATTR_CY, I18n.t("tab_attr"), nil)
 
-    nvgFillColor(vg, curTab == "equip" and activeColor or inactiveColor)
+    local ownedHero = getOwnedData and getOwnedData(heroId) ~= nil
+    local lockedColor = nvgRGBA(120, 120, 120, 180)
+    nvgFillColor(vg, not ownedHero and lockedColor or (curTab == "equip" and activeColor or inactiveColor))
     nvgText(vg, TEXT_EQUIP_CX, TEXT_EQUIP_CY, I18n.t("tab_equip"), nil)
 
-    nvgFillColor(vg, curTab == "class" and activeColor or inactiveColor)
+    nvgFillColor(vg, not ownedHero and lockedColor or (curTab == "class" and activeColor or inactiveColor))
     nvgText(vg, TEXT_CLASS_CX, TEXT_CLASS_CY, I18n.t("tab_class"), nil)
 
     -- 转职Tab角标：当前英雄可转职时显示红点

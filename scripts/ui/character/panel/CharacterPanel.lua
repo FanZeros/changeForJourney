@@ -61,6 +61,7 @@ local TEAM_COUNT = ExpTable.TEAM_COUNT or 3
 local teams = {}
 local activeTeamIdx = 1
 local teamSlots = {}       -- = teams[activeTeamIdx].slots（切换页签时重指向）
+local heroesDataApplied = false  -- setHeroesData 已用存档覆盖默认开局阵容
 
 --- 构建一支队伍的默认槽位
 ---@param teamIdx number
@@ -1014,6 +1015,12 @@ function CharacterPanel.getActiveTeamIdx()
     return activeTeamIdx
 end
 
+--- 存档英雄数据是否已刷新到面板。离线结算必须等它为真，避免用默认开局阵容。
+---@return boolean
+function CharacterPanel.isHeroesDataApplied()
+    return heroesDataApplied
+end
+
 --- 各队当前上阵英雄 ID，供离线奖励在存档 teams 未就绪时使用。
 ---@return table[]
 function CharacterPanel.getTeamSlotIds()
@@ -1130,7 +1137,8 @@ local function bindHeroSync()
             return nil
         end,
         set = function(k, v)
-            if k == "ownedSet" then ownedSet = v
+            if k == "heroesDataApplied" then heroesDataApplied = v
+            elseif k == "ownedSet" then ownedSet = v
             elseif k == "shardMap" then shardMap = v
             elseif k == "teamSlots" then teamSlots = v
             elseif k == "slotPowerCache" then slotPowerCache = v

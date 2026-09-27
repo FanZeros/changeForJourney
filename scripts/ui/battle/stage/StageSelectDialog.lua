@@ -48,8 +48,8 @@ local D = {
     CH_W      = 190,
     CH_BTN_H  = 84,
     CH_GAP    = 10,
-    CH_Y0     = 756,     -- 第一个章节按钮顶边
-    CH_VISIBLE = 8,      -- 可视章节数（超出滚动）
+    CH_Y0     = 836,     -- 第一个章节按钮顶边（给上箭头和弹窗标题留空）
+    CH_VISIBLE = 7,      -- 可视章节数（下移后仍留在弹窗内，超出滚动）
 
     -- 中栏：关卡竖排（5-1 在上，5-5 在下），每行直接展示敌人卡面
     MID_X     = 315,
@@ -75,6 +75,7 @@ local CH_HUES = {
 local imgBtn = -1
 local imgBg  = -1
 local imgAct = -1
+local imgLock = -1
 
 local state = {
     open      = false,
@@ -286,6 +287,7 @@ function StageSelectDialog.init(vg)
     imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_XG.png", 0)
     imgBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgAct = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
     print("[StageSelectDialog] init OK")
 end
 
@@ -343,7 +345,9 @@ function StageSelectDialog.handleScroll(wheel, x, y)
     if not state.open then return false end
     local groups = ensureCache()
     local top, bottom = chapterListBounds(groups)
-    if x >= D.CH_X and x <= D.CH_X + D.CH_W and y >= top and y <= bottom then
+    -- 覆盖整列章节和上下箭头，不要求正好落在按钮高度内。
+    if x >= D.CH_X - 20 and x <= D.CH_X + D.CH_W + 20
+        and y >= top - 70 and y <= bottom + 70 then
         local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
         state.chScroll = math.max(0, math.min(maxScroll, state.chScroll - wheel))
     end
@@ -454,6 +458,9 @@ function StageSelectDialog.draw(vg)
         local y = listTop + (vi - 1) * (D.CH_BTN_H + D.CH_GAP)
         local isSel = (tostring(g.key) == tostring(sel.key))
         local hue = chapterHue(g.key)
+        local firstId = g.ids and g.ids[1]
+        local firstOrder = firstId and state.cacheOrder and state.cacheOrder[firstId]
+        local chapterLocked = (firstOrder == nil) or (maxOrder == nil) or (firstOrder > maxOrder)
 
         nvgBeginPath(vg)
         nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
@@ -472,8 +479,13 @@ function StageSelectDialog.draw(vg)
         end
 
         local cx = x + D.CH_W * 0.5
+        local nameA = chapterLocked and 150 or 255
         drawTextStroke(vg, cx, y + D.CH_BTN_H * 0.36, g.name, 28,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, 230, 210, 3)
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, 230, 210, 3,
+            { alpha = nameA / 255 })
+        if chapterLocked and imgLock >= 0 then
+            drawImageCentered(vg, imgLock, x + D.CH_W - 22, y + 22, 30, 30, 0.9)
+        end
         local rel
         if g.key == "T" then
             rel = "终焉"
@@ -578,9 +590,13 @@ function StageSelectDialog.draw(vg)
             nvgStrokeWidth(vg, 2)
             nvgStroke(vg)
             local name = MC.getName(monsterId)
-            drawTextStroke(vg, cardCX, cardCY - D.CARD_H * 0.5 - 12, name, 16,
+            nvgSave(vg)
+            nvgIntersectScissor(vg, cardCX - D.CARD_W * 0.5, cardCY - D.CARD_H * 0.5,
+                D.CARD_W, D.CARD_H)
+            drawTextStroke(vg, cardCX, cardCY - D.CARD_H * 0.5 + 14, name, 16,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 236, 226, 198, 2,
                 { alpha = locked and 0.55 or 1 })
+            nvgRestore(vg)
             drawTextStroke(vg, cardCX, cardCY + D.CARD_H * 0.5 + 12,
                 "x" .. tostring(info.count), 18,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 214, 120, 2,

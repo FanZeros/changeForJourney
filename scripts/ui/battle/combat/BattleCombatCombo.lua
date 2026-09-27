@@ -139,13 +139,13 @@ function M.bind(deps)
         -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
         local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
         if actual > 0 then
-            addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit, nil, true)
+            addFloatingText(prefix .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit, nil, true)
             if shieldAbsorb > 0 then
-                addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+                addFloatingText(NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
                     { 168, 168, 168 }, false, nil, true)
             end
         elseif shieldAbsorb > 0 then
-            addFloatingText(prefix .. "-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+            addFloatingText(prefix .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
                 { 168, 168, 168 }, false, nil, true)
         end
 

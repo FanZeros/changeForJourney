@@ -18,7 +18,7 @@ local LINES = {
     "M  开关音效",
     "I  玩家信息",
     "B  背包",
-    "1 铁匠  2 教堂  3 古树  4 酒馆  5 市场  6 遗匣",
+    "6  遗匣",
 }
 
 local function pressed(key)
@@ -27,11 +27,6 @@ end
 
 local function ctrlDown()
     return input:GetQualifierDown(QUAL_CTRL)
-end
-
-local function getVg()
-    local RT = require("boot.StandaloneRT")
-    return RT.vg
 end
 
 local function toast(text)
@@ -93,17 +88,6 @@ local function togglePage(isOpen, closeFn, openFn)
     end
     closeLeftPages()
     openFn()
-end
-
-local function openWithInit(modName, openFn)
-    local vg = getVg()
-    if not vg then
-        print("[KeyboardShortcuts] vg 未就绪，忽略打开 " .. modName)
-        return
-    end
-    local mod = require(modName)
-    if mod.init then mod.init(vg) end
-    openFn(mod)
 end
 
 local function cycleSpeed()
@@ -275,36 +259,6 @@ function KeyboardShortcuts.update()
         end, function()
             require("ui.backpack.BackpackPanel").open("left")
         end)
-        return
-    end
-    if pressed(KEY_1) then
-        togglePage(function() return require("ui.blacksmith.BlacksmithPage").isOpen() end,
-            function() require("ui.blacksmith.BlacksmithPage").close() end,
-            function() openWithInit("ui.blacksmith.BlacksmithPage", function(mod) mod.open() end) end)
-        return
-    end
-    if pressed(KEY_2) then
-        togglePage(function() return require("ui.church.ChurchPage").isOpen() end,
-            function() require("ui.church.ChurchPage").close() end,
-            function() openWithInit("ui.church.ChurchPage", function(mod) mod.open() end) end)
-        return
-    end
-    if pressed(KEY_3) then
-        togglePage(function() return require("ui.church.talent.TalentPage").isOpen() end,
-            function() require("ui.church.talent.TalentPage").close() end,
-            function() openWithInit("ui.church.talent.TalentPage", function(mod) mod.open() end) end)
-        return
-    end
-    if pressed(KEY_4) then
-        togglePage(function() return require("ui.tavern.TavernPage").isOpen() end,
-            function() require("ui.tavern.TavernPage").close() end,
-            function() openWithInit("ui.tavern.TavernPage", function(mod) mod.open() end) end)
-        return
-    end
-    if pressed(KEY_5) then
-        togglePage(function() return require("ui.market.MarketPage").isOpen() end,
-            function() require("ui.market.MarketPage").close() end,
-            function() openWithInit("ui.market.MarketPage", function(mod) mod.open() end) end)
         return
     end
     if pressed(KEY_6) then

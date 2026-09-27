@@ -94,6 +94,7 @@ local vg = nil
 local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen 使用
 local startScreenWasOpen_ = false
 local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发一次（等标题关闭）
+local startFlowBegun_ = false     -- 标题已关，BGM 已起；离线结算可能还在等角色刷新
 local fontNormal = -1
 local bootQueue_ = nil
 local bootIdx_ = 0
@@ -448,7 +449,19 @@ function Standalone.Stop()
 end
 
 --- 标题关闭后按真实离线时长结算并弹窗。不足 1 分钟不弹。
+--- 必须等存档角色刷新到面板后再算，避免按默认开局阵容结算。
 local function showOfflineRewardPanel_()
+    local CharacterPanel = require("ui.character.panel.CharacterPanel")
+    if not CharacterPanel.isHeroesDataApplied() then
+        local heroesData = ClientDispatcher.get("heroes")
+        if heroesData then
+            CharacterPanel.setHeroesData(heroesData)
+        end
+    end
+    if not CharacterPanel.isHeroesDataApplied() then
+        print("[Standalone] 角色数据未刷新，推迟离线结算")
+        return false
+    end
     local LocalActionBridge = require("runtime.LocalActionBridge")
     LocalActionBridge.init()
     StandaloneSave.ReconcileOfflineBoundary()
@@ -458,7 +471,7 @@ local function showOfflineRewardPanel_()
     if not panelData then
         StandaloneSave.Flush()
         print("[Standalone] no offline reward to show")
-        return
+        return true
     end
     OfflineRewardPanel.show({
         offlineSeconds = panelData.offlineSeconds,
@@ -480,6 +493,7 @@ local function showOfflineRewardPanel_()
     print("[Standalone] showed real OfflineRewardPanel seconds="
         .. tostring(panelData.offlineSeconds)
         .. " rewards=" .. tostring(panelData.rewards and #panelData.rewards or 0))
+    return true
 end
 
 --- [LetterIntro] 新档标记开场剧情完成（session 整表替换，必须带全字段）
@@ -714,6 +728,7 @@ function Standalone.requestResetToStartScreen()
     -- 11. 设置标志：重新进入开始界面流程（等标题关闭后再走开场链）
     startScreenWasOpen_ = true
     postStartFlowDone_ = false
+    startFlowBegun_ = false
     print(string.format("%s step11: startScreenWasOpen_=true clock=%.4f", TAG, os.clock()))
 
     -- 12. 回到标题。不能重跑 Start，否则事件重复注册并把页面叠坏。
@@ -826,10 +841,12 @@ function HandleUpdate(eventType, eventData)
     -- 开始页/标题刚关闭 → 老档弹离线收益；新档走开场链（来信 → 门厅点卯）
     -- 必须等 DarkTitleScreen 关闭后再播，否则信件会被标题盖住且点击被吞
     if not postStartFlowDone_ and not DarkTitleScreen.isOpen() then
-        postStartFlowDone_ = true
-        startScreenWasOpen_ = false
-        GameBGM.start()
-        GameSFX.start()
+        if not startFlowBegun_ then
+            startFlowBegun_ = true
+            startScreenWasOpen_ = false
+            GameBGM.start()
+            GameSFX.start()
+        end
         local sessionData = ClientDispatcher.get("session") or {}
         local battleData = ClientDispatcher.get("battle") or {}
         local heroesData = ClientDispatcher.get("heroes") or {}
@@ -848,8 +865,12 @@ function HandleUpdate(eventType, eventData)
             markIntroCompleted_()
         end
         if introDone then
-            showOfflineRewardPanel_()
+            -- 角色还没刷新时保持未完成，下一帧再结算。
+            if showOfflineRewardPanel_() then
+                postStartFlowDone_ = true
+            end
         else
+            postStartFlowDone_ = true
             print("[Standalone] new save detected, starting intro chain (letter → briefing)")
             startIntroChain_()
         end

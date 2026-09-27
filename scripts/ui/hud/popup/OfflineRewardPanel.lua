@@ -531,11 +531,10 @@ function Panel.isOpen()
     return state.open
 end
 
---- 阵容晚到时补刷队员经验预览，奖励内容不变。
+--- 阵容刷新后覆盖队员经验预览，奖励内容不变。
 ---@param preview table[]|nil
 function Panel.refreshHeroPreview(preview)
     if not state.open or type(preview) ~= "table" or #preview == 0 then return end
-    if #state.heroExpPreview > 0 then return end
     state.heroExpPreview = preview
     resetHeroAnim()
 end

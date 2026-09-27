@@ -882,6 +882,24 @@ function CharacterPanel.getTeamSignature(teamIdx)
     return sig
 end
 
+--- 按槽位导出编队。空位记 0，避免保存时被挤到前面。
+---@param teamIdx? number
+---@return integer[]
+function CharacterPanel.getTeamSlotLayout(teamIdx)
+    teamIdx = tonumber(teamIdx) or 1
+    local slots = (teams[teamIdx] and teams[teamIdx].slots) or {}
+    local ids = {}
+    for i = 1, MAX_SLOTS do
+        local slot = slots[i]
+        if slot and slot.state == "occupied" and slot.heroId then
+            ids[i] = slot.heroId
+        else
+            ids[i] = 0
+        end
+    end
+    return ids
+end
+
 --- 获取指定队伍的战斗单位列表（供 BattleScene / 三栏并行战斗使用）
 --- [三队并行] 缺省 teamIdx=1（主线战斗沿用队1，与旧行为一致）
 ---@param teamIdx? number 队伍索引（1~3），缺省 1

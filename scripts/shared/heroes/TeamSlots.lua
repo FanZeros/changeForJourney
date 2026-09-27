@@ -30,12 +30,14 @@ local function sanitizeSlots(slots)
     local out, seen = {}, {}
     if type(slots) ~= "table" then return out end
     for _, v in ipairs(slots) do
-        local num = tonumber(v)
-        if num and not seen[num] then
+        local num = tonumber(v) or 0
+        if num == 0 then
+            out[#out + 1] = 0
+        elseif not seen[num] then
             seen[num] = true
             out[#out + 1] = num
-            if #out >= TEAM_MAX_SLOTS then break end
         end
+        if #out >= TEAM_MAX_SLOTS then break end
     end
     return out
 end
@@ -129,6 +131,9 @@ function TeamSlots.validate(heroes, teamIdx, heroIds, playerLevel)
         if not numId then
             return false, "无效的 heroId"
         end
+        if numId == 0 then
+            goto continue_slot
+        end
         if not heroes.roster or not heroes.roster[numId] then
             return false, "未拥有英雄: " .. tostring(numId)
         end
@@ -136,6 +141,7 @@ function TeamSlots.validate(heroes, teamIdx, heroIds, playerLevel)
             return false, "重复的英雄: " .. tostring(numId)
         end
         seen[numId] = true
+        ::continue_slot::
     end
 
     -- 跨队唯一性: 目标队之外不得出现这些英雄

@@ -58,10 +58,17 @@ function M.bind(deps)
             local teamPowerCaches = getTeamPowerCaches()
             for i = 1, #otherSlots do
                 if otherSlots[i].state == "occupied" and otherSlots[i].heroId == heroId then
-                    otherSlots[i] = { state = "empty" }
-                    if teamPowerCaches[otherTeam] then teamPowerCaches[otherTeam][i] = 0 end
-                    print(string.format("[CharacterPanel] 英雄%d 从队伍%d 移出，编入当前队伍%d", heroId, otherTeam, activeTeamIdx))
-                    -- 先同步原队（单机: 队1 需刷新战斗画面；联机: 先提交原队再提交当前队，避免服务端唯一性校验拒绝）
+                    if slot.state == "occupied" and slot.heroId and slot.heroId ~= heroId then
+                        otherSlots[i] = slot
+                        if teamPowerCaches[otherTeam] then
+                            teamPowerCaches[otherTeam][i] = calcHeroPower(slot.heroId, i)
+                        end
+                        print(string.format("[CharacterPanel] 英雄%d 与队伍%d槽%d 交换", heroId, otherTeam, i))
+                    else
+                        otherSlots[i] = { state = "empty" }
+                        if teamPowerCaches[otherTeam] then teamPowerCaches[otherTeam][i] = 0 end
+                        print(string.format("[CharacterPanel] 英雄%d 从队伍%d 移到当前队伍%d", heroId, otherTeam, activeTeamIdx))
+                    end
                     local cb = getOnTeamChanged()
                     if cb then cb(otherTeam) end
                     break

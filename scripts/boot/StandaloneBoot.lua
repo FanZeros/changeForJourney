@@ -120,12 +120,7 @@ function M.run(rt)
     CharacterPanel.setOnTeamChanged(function(teamIdx)
         teamIdx = tonumber(teamIdx) or 1
         local team = CharacterPanel.getDeployedTeam(teamIdx)
-        local deployedIds = {}
-        for _, unit in ipairs(team) do
-            if unit.heroId then
-                deployedIds[#deployedIds + 1] = unit.heroId
-            end
-        end
+        local deployedIds = CharacterPanel.getTeamSlotLayout(teamIdx)
         if localBridgeReady_ then
             localSendAction(require("shared.Protocol").ACTION_TYPES.SET_TEAM, {
                 teamIdx = teamIdx,

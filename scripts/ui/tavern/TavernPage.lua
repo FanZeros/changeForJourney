@@ -637,7 +637,7 @@ local function doRecruitDirect(count, forcePayType)
         end
         _TM.notifyEvent("gacha10_complete")
         require("ui.character.hero.HeroScenario").onRecruitResults(results)
-    end)
+    end, count)
 end
 
 -- 延迟注入 doRecruitDirect 到弹窗子模块（因为定义在 init 之后）
@@ -660,6 +660,10 @@ local function doRecruit(count)
     -- 招募券足够，直接执行
     doRecruitDirect(count)
 end
+
+RecruitAnim.setOnAgain(function(count)
+    doRecruit(count)
+end)
 
 -- ======================== 绘制辅助 ========================
 

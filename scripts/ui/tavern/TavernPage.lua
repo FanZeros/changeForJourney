@@ -946,26 +946,39 @@ local function drawPageImpl(vg)
         end
         local function drawRecruitCost(cx, cy, count)
             local tickets, gems, enough = recruitPay(count)
-            local icon = img.diamondIcon
-            local text = tostring(math.floor(gems + 0.5))
-            if tickets > 0 then
-                icon = img.ticketIcon
-                if isStellarPoolSelected() and img.ticketIconStellar >= 0 then
-                    icon = img.ticketIconStellar
-                end
-                text = tostring(math.floor(tickets + 0.5))
-                if gems > 0 then text = text .. "+" .. tostring(math.floor(gems + 0.5)) end
+            local ticketIcon = img.ticketIcon
+            if isStellarPoolSelected() and img.ticketIconStellar >= 0 then
+                ticketIcon = img.ticketIconStellar
             end
+            local parts = {}
+            if tickets > 0 then
+                parts[#parts + 1] = { icon = ticketIcon, text = tostring(math.floor(tickets + 0.5)) }
+            end
+            if gems > 0 or tickets <= 0 then
+                parts[#parts + 1] = { icon = img.diamondIcon, text = tostring(math.floor(gems + 0.5)) }
+            end
+            local mixed = #parts > 1
+            local fontSize = mixed and 24 or 30
+            local iconSize = mixed and 28 or 36
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 30)
-            local textW = nvgTextBounds(vg, 0, 0, text)
-            local totalW = 36 + 8 + textW
-            local left = cx - totalW * 0.5
-            drawImageCentered(vg, icon, left + 18, cy, 36, 36, 1.0)
+            nvgFontSize(vg, fontSize)
+            local gap = mixed and 6 or 0
+            local totalW = 0
+            for i = 1, #parts do
+                parts[i].textW = nvgTextBounds(vg, 0, 0, parts[i].text)
+                totalW = totalW + iconSize + 4 + parts[i].textW
+                if i > 1 then totalW = totalW + gap end
+            end
+            local x = cx - totalW * 0.5
             local r, g, b = 255, 255, 255
             if not enough then r, g, b = 255, 90, 90 end
-            drawTextStroke(vg, left + 44, cy, text, 30,
-                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, r, g, b, 3)
+            for i = 1, #parts do
+                if i > 1 then x = x + gap end
+                drawImageCentered(vg, parts[i].icon, x + iconSize * 0.5, cy, iconSize, iconSize, 1.0)
+                drawTextStroke(vg, x + iconSize + 4, cy, parts[i].text, fontSize,
+                    NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, r, g, b, 3)
+                x = x + iconSize + 4 + parts[i].textW
+            end
         end
 
         -- ============ 16. 招募1次按钮 ============
@@ -988,8 +1001,8 @@ local function drawPageImpl(vg)
         nvgFontSize(vg, BTN_TEXT_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
-        nvgText(vg, BTN_10_CX - 108, BTN_10_CY, "招募10次", nil)
-        drawRecruitCost(BTN_10_CX + 78, BTN_10_CY, 10)
+        nvgText(vg, BTN_10_CX - 120, BTN_10_CY, "招募10次", nil)
+        drawRecruitCost(BTN_10_CX + 55, BTN_10_CY, 10)
         BF.finish(vg, _s4)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("tavern_btn_gacha10", BTN_10_CX, BTN_10_CY, BTN_10_W, BTN_10_H, "left") end

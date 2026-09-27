@@ -417,17 +417,13 @@ function BattleTriDriver.new(teamIdx)
             if u.hp > 0 then hasAliveEnemy = true break end
         end
 
-        -- 通关: 先结算并弹出奖励，奖励关掉后再显示前进，约 2 秒后切下一关
+        -- 通关奖励只做展示，不挡住前进和下一关。
         if not hasAliveEnemy and #self.enemyQueue == 0 and #self.enemies == 0 then
             self:reportDefeatedEnemies()
             if not self._clearReported then
                 self._clearReported = true
                 self:queuePendingKills()
                 if self.onStageCleared then self.onStageCleared(self.teamIdx, self.stageId) end
-            end
-            if require("ui.hud.popup.RewardPopup").isOpen() then
-                BattleCombat.updateFloatingTexts(dt)
-                return
             end
             if (self.marchTimer or 0) <= 0 then
                 self:beginMarch()

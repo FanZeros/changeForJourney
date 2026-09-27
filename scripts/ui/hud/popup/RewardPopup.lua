@@ -641,12 +641,11 @@ function RewardPopup.handleInput(dx, dy)
     -- 逐个获得未结束时，点击只跳过动画，避免奖励还没看完就被关掉
     if skipCascade() then return true end
 
-    -- 点击面板外部 → 关闭
+    -- 点面板外面不关闭，也不拦截战斗操作。
     local inPanel = dx >= PANEL_CX - PANEL_W * 0.5 and dx <= PANEL_CX + PANEL_W * 0.5
                 and dy >= GLOW_CY - GLOW_H * 0.5 and dy <= PANEL_CY + PANEL_H * 0.5
     if not inPanel then
-        RewardPopup.close()
-        return true
+        return false
     end
 
     -- 点击物品图标检测（仅在裁剪区域内且有回调时）

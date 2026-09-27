@@ -120,7 +120,7 @@ for _, lv in ipairs({ 5, 10, 20, 30, 50, 80, 100, 150, 200 }) do
     addRecord("a_plv_" .. lv, "远征勋记", "远征等级达到" .. lv, "player_level", lv, "level", nextReward(lv))
 end
 
-for _, n in ipairs({ 3, 6, 10, 16, 20 }) do
+for _, n in ipairs({ 4, 6, 10, 16, 20 }) do
     addRecord("a_hero_" .. n, "集结令", "拥有" .. n .. "名远征队员", "hero_count", n, "hero", nextReward(n * 2))
 end
 for _, n in ipairs({ 1, 3, 5, 8 }) do

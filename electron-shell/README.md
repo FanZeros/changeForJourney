@@ -41,6 +41,17 @@ python3 electron-shell/obfuscation_trial.py --source-root . --output-root ../pc-
 
 **尚未通过整游戏启动/存档验收，禁止把此试验接入正式打包或上传 Release。** 未混淆的原版入口跑 60 帧已经报 `[systems/StoryPlayer]:7 Module not found: network.ClientDispatcher`；试验版出现相同错误，属于基线故障而非本试验引入。既有 `tests/lootbox_page_test.lua:173` 的存档断言和 `tests/lootbox_horizon_test.lua:49` 的旧模块路径也在当前分支基线上失败。需要先让基线测试恢复可用，再试更多模块与 Windows 离线包回归。
 
+## 全量隔离压缩试点（2026-09-27，尚未接入发行）
+
+`obfuscation_trial.py --all-scripts` 在工程之外的新目录生成全部 361 个 Lua 文件的**注释清理/缩排压缩副本**，保留文件名、所有代码、字符串、长字符串及供官方 LSP 使用的 EmmyLua 注释。输出目录必须不存在、且不能与源码树互相包含；仓库源码、`dist/` 和 `electron-shell/game/` 不会被修改。该模式**不会重命名全量变量、编译字节码、加密或保护资源**；原有不带 `--all-scripts` 的单模块试点保持不变。请勿把试点直接当成正式 PC 包保护方案。
+
+```bash
+python3 electron-shell/obfuscation_trial.py --all-scripts --source-root . --output-root ../pc-all-lua-trial
+# 用独立项目副本补齐 assets/ 和 .project/，再对其 scripts/ 运行官方 Build 与运行时回归。
+```
+
+本次隔离副本从 6,008,895 字节变为 4,653,072 字节（减少约 22.6%，361/361 文件内容变化），原版和压缩版 60 帧 Runtime 验证均为 PASS、0 Lua/资源错误。当前副本放在 `.tmp` 下，官方 Build 的 LSP 检查报大量缺少引擎声明的 `undefined-global`，不能宣称它已通过正式 Build；待在正常可识别引擎类型定义的独立工程内完成完整 LSP、Build、存档及 Windows 成品包回归。所有处理后 Lua 仍是可读明文，当前发布流水线依然完全没有调用此脚本。
+
 ## 一键脚本（推荐，本机跑）
 
 云端代理传 ~466MB zip 会被超时掐断，**打包和上传请在本机直连 GitHub**。

@@ -402,8 +402,9 @@ function RewardPopup.show(title, rewards, opts)
     state.scrollY = 0
     state.scrollMax = 0
     state.dragging = false
+    state.dragMoved = 0
     state.scrollVel = 0
-    state.followScroll = true
+    state.followScroll = false
     state.onItemClick = opts and opts.onItemClick or nil
     state.onClose     = opts and opts.onClose     or nil
 
@@ -600,15 +601,6 @@ function RewardPopup.update(dt)
             playObtainSfx(item)
         end
         syncCascadeScroll()
-    elseif state.followScroll and not state.dragging and state.scrollMax > 0 then
-        -- 一次性展示超过两行时，自动上滚到末行，避免图标停在窗口外
-        local delta = state.scrollMax - state.scrollY
-        if math.abs(delta) > 0.5 then
-            state.scrollY = state.scrollY + delta * math.min(1, dt * 5)
-            clampScroll()
-        else
-            state.scrollY = state.scrollMax
-        end
     end
 
     -- 惯性滚动
@@ -619,6 +611,12 @@ function RewardPopup.update(dt)
     elseif not state.dragging then
         state.scrollVel = 0
     end
+end
+
+--- 刚滑过奖励列表时，这次松开不算点击
+---@return boolean
+function RewardPopup.consumedDrag()
+    return (state.dragMoved or 0) > 12
 end
 
 --- 处理点击（松开时调用）
@@ -637,6 +635,11 @@ function RewardPopup.handleInput(dx, dy)
 
     -- 同帧保护：防止 show() 同帧的点击事件立即关闭弹窗
     if time.elapsedTime - state.animStart < 0.05 then return true end
+    -- 拖动列表后松开，不关闭、不点物品
+    if RewardPopup.consumedDrag() then
+        state.dragMoved = 0
+        return true
+    end
 
     -- 逐个获得未结束时，点击只跳过动画，避免奖励还没看完就被关掉
     if skipCascade() then return true end
@@ -710,6 +713,7 @@ function RewardPopup.handleDragBegin(dx, dy)
        and dy >= CLIP_TOP and dy <= CLIP_BOTTOM then
         state.dragging  = true
         state.dragLastY = dy
+        state.dragMoved = 0
         state.scrollVel = 0
         state.followScroll = false
     end
@@ -731,10 +735,13 @@ function RewardPopup.handleDragMove(dx, dy)
 
     if state.dragging then
         local delta = state.dragLastY - dy
-        state.scrollY = state.scrollY + delta
-        state.scrollVel = delta
+        state.dragMoved = (state.dragMoved or 0) + math.abs(delta)
+        if state.scrollMax > 0 then
+            state.scrollY = state.scrollY + delta
+            state.scrollVel = delta
+            clampScroll()
+        end
         state.dragLastY = dy
-        clampScroll()
     end
 
     return true
@@ -1194,6 +1201,17 @@ function RewardPopup.drawContent(vg)
 
     nvgResetScissor(vg)
     nvgRestore(vg)
+
+    if state.scrollMax > 8 then
+        local trackH = GRID_H - 16
+        local thumbH = math.max(36, trackH * (GRID_H / (GRID_H + state.scrollMax)))
+        local travel = math.max(1, trackH - thumbH)
+        local thumbY = CLIP_TOP + 8 + (state.scrollY / state.scrollMax) * travel
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, CLIP_RIGHT - 8, thumbY, 6, thumbH, 3)
+        nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 170))
+        nvgFill(vg)
+    end
 
     -- 6) 底部提示文本（逐个获得中可点击跳过）
     local hint = HINT_TEXT

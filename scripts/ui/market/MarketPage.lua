@@ -95,6 +95,7 @@ local SHOP_ITEMS = {
     -- ===== 钻石商品（永久，不限购；定价已 /2） =====
     {
         id = 12, name = "远征招募券", quality = 5, rewardCount = 1,
+        desc = "用于远征招募，每次消耗1张。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 180,
         icon = "image/货币道具/UI_icon_ZMQ_1.png",
@@ -102,6 +103,7 @@ local SHOP_ITEMS = {
     },
     {
         id = 13, name = "洗练石", quality = 3, rewardCount = 2,
+        desc = "用于装备洗练，重新随机词条。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 90,
         icon = "image/货币道具/UI_icon_QH_1.png",
@@ -109,6 +111,7 @@ local SHOP_ITEMS = {
     },
     {
         id = 14, name = "点金石", quality = 5, rewardCount = 1,
+        desc = "装备升阶失败时保护装备不掉级。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 250,
         icon = "image/货币道具/UI_icon_QH_3.png",
@@ -116,6 +119,7 @@ local SHOP_ITEMS = {
     },
     {
         id = 22, name = "腐化石", quality = 5, rewardCount = 1,
+        desc = "用于腐化装备，随机改变词条。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 250,
         icon = "image/货币道具/UI_icon_FHS.png",
@@ -123,6 +127,7 @@ local SHOP_ITEMS = {
     },
     {
         id = 15, name = "奥术粉尘", quality = 3, rewardCount = 300,
+        desc = "用于神器升级。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 90,
         icon = "image/货币道具/UI_icon_ASFC.png",
@@ -130,6 +135,7 @@ local SHOP_ITEMS = {
     },
     {
         id = 16, name = "金币", quality = 1, rewardCount = 6000,
+        desc = "通用货币，用于装备强化和升阶。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 94,
         icon = "image/货币道具/UI_icon_JB.png",
@@ -137,6 +143,7 @@ local SHOP_ITEMS = {
     },
     {
         id = 17, name = "精粹", quality = 2, rewardCount = 600,
+        desc = "用于装备洗练。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 94,
         icon = "image/货币道具/UI_icon_JC.png",
@@ -144,6 +151,7 @@ local SHOP_ITEMS = {
     },
     {
         id = 20, name = "黄金钥匙", quality = 6, rewardCount = 1,
+        desc = "用于开启黄金宝箱。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 300,
         icon = "image/货币道具/UI_icon_HJYS.png",
@@ -492,7 +500,14 @@ drawPurchaseDialog = function(vg)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.SUB_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(DLG.SUB_R, DLG.SUB_G, DLG.SUB_B, 255))
-    nvgText(vg, DLG.SUB_CX, DLG.SUB_CY, "是否购买此物品", nil)
+    local desc = item.name .. "：" .. (item.desc or "购买后获得该道具。")
+    local descSize = DLG.SUB_FONT
+    local descW = nvgTextBounds(vg, 0, 0, desc)
+    if descW > 760 then
+        descSize = math.max(24, math.floor(DLG.SUB_FONT * 760 / descW))
+        nvgFontSize(vg, descSize)
+    end
+    nvgText(vg, DLG.SUB_CX, DLG.SUB_CY, desc, nil)
 
     -- 4. 商品背景图
     nvgBeginPath(vg)

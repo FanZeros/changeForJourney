@@ -7,6 +7,7 @@ local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local SpineCardEffect = require("ui.fx.SpineCardEffect")
 -- 转职已迁到右侧栏角色详情，教堂不再绘制转职页
 local ArtifactPanel = require("ui.church.ChurchArtifactPanel")
+local ArtifactDrawPanel = require("ui.church.ChurchArtifactDrawPanel")
 local I18n = require("core.I18n")
 
 local M = {}
@@ -148,11 +149,11 @@ function M.bind(deps)
         nvgSave(vg)
         nvgTranslate(vg, upperOX, upperTabOY)
 
-        local isArtifactTab = (state.tab == "shenqi")
+        local isArtifactTab = (state.tab == "shenqi" or state.tab == "baoxiang")
 
-        -- 1. 教堂背景图（神器 Tab 隐藏，避免遮挡 UI_JTSQ_BJ）
+        -- 1. 教堂背景图（神器/宝箱 Tab 隐藏，避免遮挡全屏 Tab 背景）
         local hideChurchBg = isArtifactTab
-            and not (isAnimating and state.tabFrom == "shenqi")
+            and not (isAnimating and (state.tabFrom == "shenqi" or state.tabFrom == "baoxiang"))
         if not hideChurchBg then
             nvgSave(vg)
             nvgTranslate(vg, 0, slotLiftOY)
@@ -347,7 +348,8 @@ function M.bind(deps)
                 nvgSave(vg)
                 nvgScissor(vg, 0, oVisTop, DESIGN_W, oVisBot - oVisTop)
                 nvgTranslate(vg, 0, oldOY_tab)
-                if state.tabFrom == "shenqi" then ArtifactPanel.drawBg(vg) end
+                if state.tabFrom == "shenqi" then ArtifactPanel.drawBg(vg)
+                elseif state.tabFrom == "baoxiang" then ArtifactDrawPanel.drawBg(vg) end
                 nvgRestore(vg)
             end
             -- 新 tab 背景（垂直滑入）
@@ -357,11 +359,13 @@ function M.bind(deps)
                 nvgSave(vg)
                 nvgScissor(vg, 0, nVisTop, DESIGN_W, nVisBot - nVisTop)
                 nvgTranslate(vg, 0, newOY_tab)
-                if state.tab == "shenqi" then ArtifactPanel.drawBg(vg) end
+                if state.tab == "shenqi" then ArtifactPanel.drawBg(vg)
+                elseif state.tab == "baoxiang" then ArtifactDrawPanel.drawBg(vg) end
                 nvgRestore(vg)
             end
         else
-            if state.tab == "shenqi" then ArtifactPanel.drawBg(vg) end
+            if state.tab == "shenqi" then ArtifactPanel.drawBg(vg)
+            elseif state.tab == "baoxiang" then ArtifactDrawPanel.drawBg(vg) end
         end
         nvgRestore(vg)
 
@@ -380,7 +384,8 @@ function M.bind(deps)
 
         -- drawTabContent 内联委托
         local function drawTabContent(tabKey)
-            if tabKey == "shenqi" then ArtifactPanel.drawContent(vg) end
+            if tabKey == "shenqi" then ArtifactPanel.drawContent(vg)
+            elseif tabKey == "baoxiang" then ArtifactDrawPanel.drawContent(vg) end
         end
 
         -- 绘制旧面板内容（垂直滑出，仅动画中）
@@ -496,6 +501,9 @@ function M.bind(deps)
         -- 天赋详情/总览已移至 TalentPage
 
         -- 转职确认/重置弹窗已随转职页迁到右侧栏角色详情
+
+        -- ================== 神器宝箱·钥匙补购确认弹窗（模态，Tab 内容之上） ==================
+        ArtifactDrawPanel.drawKeyConfirmDialog(vg)
 
         -- ================== Spine 卡牌特效 ==================
         SpineCardEffect.draw(vg, "church")

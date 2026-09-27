@@ -14,6 +14,7 @@ function M.bind(deps)
     local TalentPanel = deps.TalentPanel
     local ClassChange = deps.ClassChange  -- 转职已迁出，保留注入但不使用
     local ArtifactPanel = deps.ArtifactPanel
+    local ArtifactDrawPanel = deps.ArtifactDrawPanel
     local getDispatcher = deps.getDispatcher
     local getClient = deps.getClient
     local getProtocol = deps.getProtocol
@@ -129,6 +130,9 @@ function M.bind(deps)
         -- 转职页已迁到右侧栏角色详情，图片与状态由 ChurchClassChange 自管
         ArtifactPanel.setContext(ctx)
         ArtifactPanel.init(vg)
+        -- 神器宝箱页签（市场典藏迁移）：注入同一共享上下文
+        ArtifactDrawPanel.setContext(ctx)
+        ArtifactDrawPanel.init(vg)
 
         print("[ChurchPage] init OK")
     end

@@ -48,11 +48,7 @@ function M.bind(deps)
         -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
         end
 
-        img.collectionChestBg = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_KC1.png", 0)
-        img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_AN.png", 0)
-        img.goldenKey = nvgCreateImage(vg, "image/货币道具/UI_icon_HJYS.png", 0)
-        img.diamondBig = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
-        img.confirmArrow = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
+        -- 典藏（神器宝箱）图片已随页签迁移至 ChurchArtifactDrawPanel
 
         state.purchased = {}
         state.scrollY = 0

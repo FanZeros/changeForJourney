@@ -7,9 +7,9 @@
   "always_askuserquestion": true,
   "never_cancel_task": true,
   "never_end_without_askuserquestion": true,
-  "askuserquestion_rule": "不能取消或退出任务。每次交付后必须以 AskUserQuestion 选项提问下一步，禁止以纯文字中断对话；即使遇到阻塞也用选项询问后续操作。",
-  "dev_branch": "workspace925",
-  "push_policy": "用户要求从指定基础分支新开修复分支、完成后推送修复分支并合并回基础分支再推送；本轮基础分支 workspace925。之后按用户当轮指定分支执行，绝不强推或推送无关分支。",
+  "askuserquestion_rule": "不能取消或退出任务。每次交付先简要汇报结果，再必须调用 AskUserQuestion 给出下一步选项，不得纯文字结束；即使遇到阻塞也用选项询问后续操作。记忆只是提醒，跨会话自动保证须由用户同意后配置 Stop hook。",
+  "dev_branch": "feat926/artifact-audit",
+  "push_policy": "当前轮次（2026-09-27）只 push feat926/artifact-audit；严禁 push 任意 workspace* 分支，不合并基线。旧的推送许可不延续到新任务，每轮按用户最新明确指令决定；绝不强推。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

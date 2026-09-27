@@ -116,6 +116,17 @@ local HINT_TEXT = "点击空白处关闭"
 local BADGE_FONT   = 40
 local BADGE_STROKE = 4
 
+-- 角标字号自适应：按实际文本宽度测量，太长（大数值/长名字）时等比缩小，避免溢出图标
+local BADGE_FONT_MIN = 24
+local function fitBadgeFont(vg, text)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, BADGE_FONT)
+    local w = nvgTextBounds(vg, 0, 0, text)
+    local maxW = ICON_SIZE - 20
+    if w <= maxW then return BADGE_FONT end
+    return math.max(BADGE_FONT_MIN, BADGE_FONT * maxW / w)
+end
+
 -- ======================== 资源定义表（统一引用中央注册表） ========================
 local RESOURCE_DEFS = ResourceDefs.DEFS
 
@@ -133,6 +144,7 @@ local state = {
     dragLastY = 0,
     scrollVel = 0,
     followScroll = true,
+    autoScroll = nil,  -- { t, dur, to } 非逐件弹出时开屏平滑滚到底部（显示最新/最下方奖励）
     -- 动画状态
     animPhase  = "none",  -- "none"|"opening"|"open"|"closing"
     animStart  = 0,       -- 动画开始时刻（time.elapsedTime）
@@ -364,6 +376,14 @@ end
 
 local function syncCascadeScroll()
     if not state.cascade or state.dragging or not state.followScroll then return end
+    if cascadeFinished() then
+        -- 全部出场后停到最底部，保证看到的是最新（最下方）的奖励
+        if state.scrollMax > 0 then
+            state.scrollY = state.scrollMax
+            state.scrollVel = 0
+        end
+        return
+    end
     local elapsed = cascadeElapsed() + 0.04
     if elapsed < 0 then return end
     local shown = cascadeShownCount(elapsed)
@@ -487,6 +507,12 @@ function RewardPopup.show(title, rewards, opts)
     state.animStart = time.elapsedTime
     closedAt_ = 0  -- 重置关闭保护（重新打开时清除残留）
     state.cascade = wantsCascade(state.title, opts)
+    -- 非逐件弹出（整屏立即显示）且内容超出一屏时：开屏自动平滑滚到最底部，
+    -- 让玩家直接看到最新（最下方）的奖励；手动拖拽/滚轮会取消该动画。
+    state.autoScroll = nil
+    if not state.cascade and state.scrollMax > 0 then
+        state.autoScroll = { t = 0, dur = 0.5, to = state.scrollMax }
+    end
     cascade = RewardCascade.new(#state.items, {
         interval     = CASCADE_INTERVAL,
         intervalTail = CASCADE_INTERVAL_TAIL,
@@ -603,6 +629,19 @@ function RewardPopup.update(dt)
         syncCascadeScroll()
     end
 
+    -- 非逐件弹出：开屏平滑滚到底部（显示最下方的最新奖励）
+    local as = state.autoScroll
+    if as and not state.dragging then
+        as.t = as.t + dt
+        local k = math.min(1, as.t / as.dur)
+        state.scrollY = as.to * (1 - (1 - k) * (1 - k))  -- ease-out quad
+        if k >= 1 then
+            state.scrollY = as.to
+            state.autoScroll = nil
+        end
+        state.scrollVel = 0
+    end
+
     -- 惯性滚动
     if not state.dragging and math.abs(state.scrollVel) > SCROLL_MIN_VEL then
         state.scrollY = state.scrollY + state.scrollVel
@@ -715,6 +754,7 @@ function RewardPopup.handleDragBegin(dx, dy)
         state.dragMoved = 0
         state.scrollVel = 0
         state.followScroll = false
+        state.autoScroll = nil  -- 手动拖拽取消开屏自动滚动
     end
 
     return true
@@ -771,6 +811,7 @@ function RewardPopup.handleScroll(wheel)
     if not state.open then return end
     state.scrollY = state.scrollY - wheel * 60
     state.followScroll = false
+    state.autoScroll = nil  -- 手动滚轮取消开屏自动滚动
     clampScroll()
     state.scrollVel = 0
 end
@@ -1006,7 +1047,7 @@ function RewardPopup.drawContent(vg)
                         local lvlX = cx + ICON_SIZE * 0.5 - 8
                         local lvlY = cy + ICON_SIZE * 0.5 - 8
                         nvgFontFace(vg, "sans")
-                        nvgFontSize(vg, BADGE_FONT)
+                        nvgFontSize(vg, fitBadgeFont(vg, lvlText))
                         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                         nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                         local sStep = math.pi * 2 / 16
@@ -1042,7 +1083,7 @@ function RewardPopup.drawContent(vg)
                     local nameX = cx + ICON_SIZE * 0.5 - 8
                     local nameY = cy + ICON_SIZE * 0.5 - 8
                     nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, BADGE_FONT)
+                    nvgFontSize(vg, fitBadgeFont(vg, nameText))
                     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                     local sStep = math.pi * 2 / 16
@@ -1107,7 +1148,7 @@ function RewardPopup.drawContent(vg)
                     local amtX = cx + ICON_SIZE * 0.5 - 8
                     local amtY = cy + ICON_SIZE * 0.5 - 8
                     nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, BADGE_FONT)
+                    nvgFontSize(vg, fitBadgeFont(vg, amtText))
                     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                     local bStep = math.pi * 2 / 16
@@ -1137,7 +1178,7 @@ function RewardPopup.drawContent(vg)
                         local amtX = cx + ICON_SIZE * 0.5 - 8
                         local amtY = cy + ICON_SIZE * 0.5 - 8
                         nvgFontFace(vg, "sans")
-                        nvgFontSize(vg, BADGE_FONT)
+                        nvgFontSize(vg, fitBadgeFont(vg, amtText))
                         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                         nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                         local bStep = math.pi * 2 / 16
@@ -1174,7 +1215,7 @@ function RewardPopup.drawContent(vg)
                         local amtX = cx + ICON_SIZE * 0.5 - 8
                         local amtY = cy + ICON_SIZE * 0.5 - 8
                         nvgFontFace(vg, "sans")
-                        nvgFontSize(vg, BADGE_FONT)
+                        nvgFontSize(vg, fitBadgeFont(vg, amtText))
                         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                         nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                         local sStep = math.pi * 2 / 16

@@ -163,6 +163,17 @@ local BTN_CLAIM = {
 local BADGE_FONT   = 36
 local BADGE_STROKE = 4
 
+-- 角标字号自适应：按实际文本宽度测量，太长（大数值/长名字）时等比缩小，避免溢出图标
+local BADGE_FONT_MIN = 22
+local function fitBadgeFont(vg, text)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, BADGE_FONT)
+    local w = nvgTextBounds(vg, 0, 0, text)
+    local maxW = ICON_SIZE - 16
+    if w <= maxW then return BADGE_FONT end
+    return math.max(BADGE_FONT_MIN, BADGE_FONT * maxW / w)
+end
+
 -- ======================== 资源定义表（统一引用中央注册表） ========================
 local RESOURCE_DEFS = ResourceDefs.DEFS
 
@@ -199,6 +210,7 @@ local state = {
     dragging   = false,
     dragLastY  = 0,
     scrollVel  = 0,
+    followScroll = true,  -- 奖励逐件弹出时自动跟随滚到最新一行（底部）
     -- 队员升级动画
     heroAnim   = {},   -- [i] = { level = 动画等级, exp = 动画内经验, remain = 剩余待发放经验 }
     heroTime   = 0,    -- 动画已播放秒数
@@ -281,6 +293,26 @@ local function getCellCenter(row, col)
     local cx = COL_CX[col]
     local cy = CLIP.TOP + ICON_SIZE * 0.5 + (row - 1) * (ICON_SIZE + ROW_GAP)
     return cx, cy
+end
+
+--- 奖励逐件弹出时自动跟随：把最新出场的那行滚到裁剪区底部（显示最下方内容）。
+--- 玩家手动拖拽/滚轮后停止跟随。
+local function syncCascadeScroll()
+    local cascade = state.cascade
+    if not cascade or cascade.revealStart == 0 then return end
+    if state.dragging or not state.followScroll then return end
+    if state.scrollMax <= 0 then return end
+    local shown = cascade:shownCount()
+    if shown <= COLS then
+        state.scrollY = 0
+        return
+    end
+    local row = math.ceil(shown / COLS)
+    local _, rawCY = getCellCenter(row, 1)
+    local bottom = rawCY + ICON_SIZE * 0.5
+    state.scrollY = bottom - CLIP.BOTTOM
+    clampScroll()
+    state.scrollVel = 0
 end
 
 --- 奖励物品的强调色（品质色，用于弹出爆发光效）
@@ -500,6 +532,7 @@ function Panel.show(data)
     state.scrollY        = 0
     state.scrollVel      = 0
     state.dragging       = false
+    state.followScroll   = true
     state.open           = true
     state.animPhase = "opening"
     state.animStart = time.elapsedTime
@@ -579,6 +612,8 @@ function Panel.update(dt)
                     GameSFX.play("ui_click_3")
                 end
             end
+            -- 内容超出可视区时自动滚到最新一行（底部）
+            syncCascadeScroll()
         end
     end
 
@@ -757,10 +792,20 @@ function self_drawExpRow(vg, cfg, value)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(cfg.LABEL_R, cfg.LABEL_G, cfg.LABEL_B, 255))
     nvgText(vg, cfg.LABEL_X, cfg.CY, cfg.LABEL, nil)
-    -- 值（右对齐，绿色描边）
+    -- 值（右对齐，绿色描边）；数值文本过长时缩字号避免溢出/压到标签
     local valText = "+" .. NumberUtil.format(value)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, font)
+    local maxW = cfg.VALUE_X - cfg.LABEL_X - nvgTextBounds(vg, 0, 0, cfg.LABEL) - 24
+    local valFont = font
+    if maxW > 40 then
+        local w = nvgTextBounds(vg, 0, 0, valText)
+        if w > maxW then
+            valFont = math.max(28, font * maxW / w)
+        end
+    end
     DrawUtil.drawTextStroke(vg, cfg.VALUE_X, cfg.CY, valText,
-        font, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
+        valFont, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         cfg.VALUE_R, cfg.VALUE_G, cfg.VALUE_B, cfg.VALUE_SW)
 end
 
@@ -955,7 +1000,7 @@ function self_drawRewardGrid(vg, shiftY)
                     local bx2 = cx + ICON_SIZE * 0.5 - 8
                     local by2 = cy - ICON_SIZE * 0.5 + 8
                     nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, BADGE_FONT)
+                    nvgFontSize(vg, fitBadgeFont(vg, cntText))
                     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                     local sStep2 = math.pi * 2 / 16
@@ -985,7 +1030,7 @@ function self_drawRewardGrid(vg, shiftY)
                     local bx = cx + ICON_SIZE * 0.5 - 8
                     local by = cy + ICON_SIZE * 0.5 - 8
                     nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, BADGE_FONT)
+                    nvgFontSize(vg, fitBadgeFont(vg, amtText))
                     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                     local sStep = math.pi * 2 / 16
@@ -1009,6 +1054,19 @@ function self_drawRewardGrid(vg, shiftY)
 
     nvgResetScissor(vg)
     nvgRestore(vg)
+
+    -- 滚动条：内容超出可视区时右侧显示细条，提示可滚动
+    if state.scrollMax > 8 then
+        local trackTop = clipTop + 8
+        local trackH = CLIP.H - 16
+        local thumbH = math.max(36, trackH * (CLIP.H / (CLIP.H + state.scrollMax)))
+        local travel = math.max(1, trackH - thumbH)
+        local thumbY = trackTop + (state.scrollY / state.scrollMax) * travel
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, CLIP.RIGHT - 8, thumbY, 6, thumbH, 3)
+        nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 170))
+        nvgFill(vg)
+    end
 end
 
 -- ======================== 输入处理 ========================
@@ -1060,6 +1118,7 @@ function Panel.handleDragBegin(dx, dy)
         state.dragging  = true
         state.dragLastY = dy
         state.scrollVel = 0
+        state.followScroll = false  -- 手动拖拽后不再自动跟随
     end
     return true
 end
@@ -1097,6 +1156,7 @@ end
 function Panel.handleScroll(wheel)
     if not state.open then return end
     state.scrollY = state.scrollY - wheel * 60
+    state.followScroll = false  -- 手动滚轮后不再自动跟随
     clampScroll()
     state.scrollVel = 0
 end

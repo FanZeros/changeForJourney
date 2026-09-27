@@ -426,7 +426,7 @@ function SweepDialog.draw(vg)
     -- 弹窗内容以 BG_CX/BG_CY 为中心缩放
     nvgSave(vg)
     nvgTranslate(vg, D.BG_CX, D.BG_CY)
-    nvgScale(vg, scale, scale)
+    nvgScale(vg, scale * 0.8, scale * 0.8)
     nvgTranslate(vg, -D.BG_CX, -D.BG_CY)
 
     -- 2) 弹窗背景框（九宫格）
@@ -590,6 +590,8 @@ end
 ---@return boolean consumed 是否消费事件
 function SweepDialog.handleInput(x, y)
     if not state.open then return false end
+    x = D.BG_CX + (x - D.BG_CX) / 0.8
+    y = D.BG_CY + (y - D.BG_CY) / 0.8
 
     local maxCount = getMaxCount()
     state.count = math.max(1, math.min(state.count, maxCount))
@@ -630,6 +632,8 @@ end
 --- 滑条拖拽使用与三行弹窗相同的窗口坐标逆映射。
 function SweepDialog.handleDragBegin(x, y)
     if not state.open then return false end
+    x = D.BG_CX + (x - D.BG_CX) / 0.8
+    y = D.BG_CY + (y - D.BG_CY) / 0.8
     if getMaxCount() > 1 and hitTestRect(x, y, D.SLIDER_CX, D.SLIDER_CY,
         D.SLIDER_W + D.KNOB_SIZE, math.max(D.SLIDER_H, D.KNOB_SIZE) + 20) then
         state.sliderDragging = true
@@ -640,6 +644,7 @@ end
 
 function SweepDialog.handleDragMove(x, _y)
     if not state.sliderDragging then return false end
+    x = D.BG_CX + (x - D.BG_CX) / 0.8
     setSliderCount(x)
     return true
 end

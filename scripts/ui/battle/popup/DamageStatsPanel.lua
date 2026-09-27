@@ -326,7 +326,7 @@ function DamageStatsPanel.draw(vg)
     -- 2) 缩放变换
     nvgSave(vg)
     nvgTranslate(vg, D.BG_CX, D.BG_CY)
-    nvgScale(vg, scale, scale)
+    nvgScale(vg, scale * 0.8, scale * 0.8)
     nvgTranslate(vg, -D.BG_CX, -D.BG_CY)
 
     -- 3) 九宫格背景
@@ -389,6 +389,8 @@ end
 ---@return boolean consumed
 function DamageStatsPanel.handleInput(x, y)
     if not state.open then return false end
+    x = D.BG_CX + (x - D.BG_CX) / 0.8
+    y = D.BG_CY + (y - D.BG_CY) / 0.8
 
     -- Tab 切换
     for i, tab in ipairs(TABS) do

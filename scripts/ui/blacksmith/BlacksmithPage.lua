@@ -242,6 +242,7 @@ local BlacksmithEquipSlots = require("ui.blacksmith.BlacksmithEquipSlots")
 local BlacksmithDraw = require("ui.blacksmith.BlacksmithDraw")
 local BlacksmithInput = require("ui.blacksmith.BlacksmithInput")
 local BlacksmithResults = require("ui.blacksmith.BlacksmithResults")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local function formatAffixValue(key, value, affixId)
     local numeric = EquipmentSystem.normalizeAffixNumericValue(value)
@@ -588,13 +589,13 @@ local function drawUpperSlotContent(vg, tabName)
         local slotState = slotData and slotData.state or "locked"
         local isSelected = (i == state.selectedPartySlot)
 
-        -- 选中高亮底框
+        -- 选中高亮底框（[统一角色框] 金色高亮常量）
         if isSelected then
             nvgBeginPath(vg)
             nvgRoundedRect(vg, cx - CARD_W * 0.5 - 4, cy - CARD_H * 0.5 - 4,
                 CARD_W + 8, CARD_H + 8, 16)
-            nvgStrokeColor(vg, nvgRGBA(0xff, 0xd7, 0x00, 200))
-            nvgStrokeWidth(vg, 4)
+            nvgStrokeColor(vg, nvgRGBA(HeroFrame.GOLD_HI[1], HeroFrame.GOLD_HI[2], HeroFrame.GOLD_HI[3], 230))
+            nvgStrokeWidth(vg, 5)
             nvgStroke(vg)
         end
 
@@ -629,6 +630,13 @@ local function drawUpperSlotContent(vg, tabName)
             if cardImg and cardImg >= 0 then
                 DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
             end
+            -- [统一角色框] 卡面叠加品质色描边
+            HeroFrame.draw(vg, {
+                cx = cx, cy = cy, w = CARD_W, h = CARD_H,
+                heroId = heroId,
+                state = "owned",
+                frameOnly = true,
+            })
 
             -- 职业图标（卡片顶部）
             if heroInfo and heroInfo.classId then

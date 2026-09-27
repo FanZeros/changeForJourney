@@ -6,6 +6,7 @@
 
 local DrawUtil = require("core.DrawUtil")
 local GameConfig = require("config.GameConfig")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local ScenarioDialogue = {}
 
@@ -606,18 +607,16 @@ local function drawLandscape(w, h)
     local avatarX = barX + w * 0.018
     local avatarY = barY - avatarSize * 0.34
     local avatarImg = getAvatarImage(step.characterId)
+    -- [统一角色框] 剧情头像：实心金填充框改为品质色描边（名牌 chip 保留）
     if not cgOnly then
-    nvgBeginPath(vg_)
-    nvgRoundedRect(vg_, avatarX - 3, avatarY - 3, avatarSize + 6, avatarSize + 6, (avatarSize + 6) * 0.18)
-    nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(230 * dismissAlpha)))
-    nvgFill(vg_)
-    end
-    if avatarImg >= 0 and not cgOnly then
-        nvgSave(vg_)
-        nvgScissor(vg_, avatarX, avatarY, avatarSize, avatarSize)
-        DrawUtil.drawImageCover(vg_, avatarImg, avatarX + avatarSize * 0.5,
-            avatarY + avatarSize * 0.5, avatarSize, avatarSize, dismissAlpha)
-        nvgRestore(vg_)
+        HeroFrame.draw(vg_, {
+            cx = avatarX + avatarSize * 0.5, cy = avatarY + avatarSize * 0.5,
+            size = avatarSize, radius = (avatarSize + 6) * 0.18,
+            heroId = step.characterId,
+            iconHandle = avatarImg,
+            state = "owned",
+            alpha = dismissAlpha,
+        })
     end
 
     local chipH = math.max(34, h * 0.046)

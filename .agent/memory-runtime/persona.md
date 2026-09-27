@@ -11,13 +11,15 @@
 ## 工作特征
 
 - [confirmed] 不自行取消/退出任务；交付或受阻时先汇报，再必须用 AskUserQuestion 选项询问下一步，等待用户决定；绝不纯文字结束（2026-09-27 重申）。
-- [confirmed] 只提交并推送用户当轮授权的当前任务分支；2026-09-27 为 `feat926/remove-unused-diary`，不得推 `workspace`/`workspace925`、强推或擅自合并。旧记忆分支名与策略不能覆盖最新授权。[scope:project]
+- [confirmed] 只提交并推送用户当轮授权的当前任务分支；2026-09-27 旧面板清理为 `feat926/cleanup-unused-panels`，不得推 `workspace`/`workspace925`、强推或擅自合并。当前环境没有 GitHub 写入凭据，待安全配置后才能推送；不要将凭据写入仓库或记忆。[scope:project]
 
 - 快速试错 + 放手授权；给方向不抠细节，但交付必须"上线可玩" [observed]
 - 多 agent 并行工作流（会话内多线协作，跨会话交接明确要求"数据/文档/记忆完整"） [observed]
 - 审美：暗黑+金饰+水墨古风，接受玩梗与黑色幽默 [observed]
 
 ## 项目足迹（追加去重）
+
+- 2026-09-27 终焉之门：`feat926/cleanup-unused-panels` 清理四个无入口旧面板及 14 张专属图，保留现行功绩、遗物奖励、签到/任务数据与 GM 配置；已提交并通过 LSP、Build 和主入口 60 帧，远端推送等待认证。[scope:project]
 
 - 2026-09-27 终焉之门：旧 DiaryPage 引用五张已删除素材导致启动时报 10 条资源错误；用户授权 `feat926/` 分支删除旧日志页及启动/引导引用，保留仓库与功绩入口；仅推任务分支。[scope:project]
 

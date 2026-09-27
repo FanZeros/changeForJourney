@@ -853,7 +853,7 @@ local function drawConfirmDialog(vg)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, C.SUB_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(C.SUB_R, C.SUB_G, C.SUB_B, 255))
-    nvgText(vg, C.SUB_CX, C.SUB_CY, "是否消耗钻石进行补签？", nil)
+    nvgText(vg, C.SUB_CX, C.SUB_CY, "是否消耗黑晶进行补签？", nil)
 
     -- 6) 内容背景框（纯黑 5% 圆角矩形）
     nvgBeginPath(vg)

@@ -223,7 +223,7 @@ local dungeonList = {
         cardImage = "image/界面底板/副本秘境/UI_FBRK_3.png",
         maxDaily = 2,
         rewards = {
-            { type = "diamond", icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5, label = "钻石" },
+            { type = "diamond", icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5, label = "黑晶" },
         },
     },
 }

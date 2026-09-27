@@ -57,7 +57,7 @@ GameConfig.Currency = {
 -- key 与 currency 存档字段名一致
 GameConfig.Resources = {
     { key = "gold",          name = "金币",       giveAmount = 1000 },
-    { key = "gems",          name = "钻石",       giveAmount = 100  },
+    { key = "gems",          name = "黑晶",       giveAmount = 100  },
     { key = "essence",       name = "精粹",       giveAmount = 500  },
     { key = "enhanceStone",    name = "洗练石",     giveAmount = 10   },
     -- degradeStone(seq5) 已隐藏，不在 Debug 面板显示

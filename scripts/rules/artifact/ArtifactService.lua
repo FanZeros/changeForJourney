@@ -311,7 +311,7 @@ function ArtifactService.Draw(uid, count, payType)
         local shortfall = keyCost - keysToUse
         diamondNeeded = shortfall * ArtifactDefs.KEY_DIAMOND_PRICE
         if (currency.gems or 0) < diamondNeeded then
-            return false, "钻石不足（需要 " .. diamondNeeded .. "）"
+            return false, "黑晶不足（需要 " .. diamondNeeded .. "）"
         end
     end
 

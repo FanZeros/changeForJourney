@@ -261,7 +261,7 @@ local QUOTA_FAIL_TEXT = "剩余购买次数不足"
 function M.formatGachaFailReason(reason)
     if not reason then return "招募失败" end
     local text = tostring(reason)
-    if text:find("钻石购买星辉") or text:find("购买上限") or text == QUOTA_FAIL_TEXT then
+    if text:find("黑晶购买星辉") or text:find("钻石购买星辉") or text:find("购买上限") or text == QUOTA_FAIL_TEXT then
         return QUOTA_FAIL_TEXT
     end
     return text
@@ -631,7 +631,7 @@ function M.init(vg)
     img.confirmBg     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.confirmBtnBuy = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
-    img.diamondBig    = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
+    img.diamondBig    = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     img.ticketBig     = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_1.png", 0)
     local stellarTicketPath = UrGachaConfig.UI.ticketIconPath or "image/货币道具/UI_icon_ZMQ2_X.png"
     img.ticketBigStellar = nvgCreateImage(vg, stellarTicketPath, 0)
@@ -754,7 +754,7 @@ function M.drawAll(vg)
         nvgFontSize(vg, CF.SUB_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(CF.SUB_R, CF.SUB_G, CF.SUB_B, 255))
-        nvgText(vg, CF.SUB_CX, CF.SUB_CY, "是否使用钻石快速购买", nil)
+        nvgText(vg, CF.SUB_CX, CF.SUB_CY, "是否使用黑晶快速购买", nil)
 
         drawRoundedRectCentered(vg,
             CF.CONTENT_CX, CF.CONTENT_CY,

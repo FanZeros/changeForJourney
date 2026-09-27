@@ -389,10 +389,8 @@ end
 ---@param dy number 设计空间 Y
 ---@return number|nil roster 索引
 local function hitTestRosterCard(dx, dy)
-    -- 名册下移 6%。详情未打开时还有右移 5%，命中换算回未偏移坐标。
-    if not (CharacterDetail.isOpen and CharacterDetail.isOpen()) then
-        dx = dx - DESIGN_W * 0.05
-    end
+    -- 名册右移 5%、下移 6%，命中换算回未偏移坐标。
+    dx = dx - DESIGN_W * 0.05
     dy = dy - DESIGN_H * 0.06
     local rosterCount = #heroRoster
     for idx = 1, rosterCount do
@@ -601,9 +599,7 @@ end
 -- ======================== 输入处理 ========================
 
 local function isInScrollArea(dx, dy)
-    if not (CharacterDetail.isOpen and CharacterDetail.isOpen()) then
-        dx = dx - DESIGN_W * 0.05
-    end
+    dx = dx - DESIGN_W * 0.05
     dy = dy - DESIGN_H * 0.06
     return dx >= SCROLL_LEFT and dx <= SCROLL_RIGHT
        and dy >= SCROLL_TOP  and dy <= SCROLL_BOTTOM

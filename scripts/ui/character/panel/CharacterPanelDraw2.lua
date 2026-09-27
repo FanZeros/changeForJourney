@@ -487,10 +487,8 @@ end
 ---@param dy number
 ---@return number|nil teamIdx, number|nil slotIdx
 function M.hitTestAvatarSlot(dx, dy, detailOpen)
-    -- 内容下移 6%。详情未打开时还有右移 5%，命中换算回未偏移坐标。
-    if not detailOpen then
-        dx = dx - DESIGN_W * 0.05
-    end
+    -- 内容右移 5%、下移 6%，命中换算回未偏移坐标。
+    dx = dx - DESIGN_W * 0.05
     dy = dy - DESIGN_H * 0.06
     local unlockedCnt = getUnlockedTeamCount and getUnlockedTeamCount() or 1
     for t = 1, math.min(M.TEAM_TAB_COUNT, unlockedCnt) do
@@ -589,7 +587,7 @@ function M.draw(vg, scrollY, detailOpen)
 
     -- 1.5) 三队头像同时显示。右侧栏不画整卡，点头像才进卡面。
     -- 列表下移 6%、右移栏宽的 5%。详情打开后铺满右栏，不再右移。
-    local contentShiftX = detailOpen and 0 or DESIGN_W * 0.05
+    local contentShiftX = DESIGN_W * 0.05
     nvgSave(vg)
     nvgTranslate(vg, contentShiftX, DESIGN_H * 0.06)
     M.drawTeamAvatars(vg)
@@ -986,7 +984,7 @@ function M.draw(vg, scrollY, detailOpen)
         local hoverTeam, hoverSlot = M.hitTestAvatarSlot(dragState.cx, dragState.cy, detailOpen)
         if hoverTeam and hoverSlot then
             local hx, hy = avatarCenter(hoverTeam, hoverSlot)
-            if not detailOpen then hx = hx + DESIGN_W * 0.05 end
+            hx = hx + DESIGN_W * 0.05
             hy = hy + DESIGN_H * 0.06
             nvgBeginPath(vg)
             nvgRoundedRect(vg, hx - AV_SIZE * 0.5 - 4, hy - AV_SIZE * 0.5 - 4, AV_SIZE + 8, AV_SIZE + 8, 16)

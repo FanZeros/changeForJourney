@@ -94,10 +94,16 @@ local function writeFile()
     if not json then return false end
     local file = File(SAVE_FILE, FILE_WRITE)
     if not file or not file:IsOpen() then
+        flushTimer = FLUSH_DEBOUNCE
         print("[StandaloneSave] 写档失败(无法打开): " .. SAVE_FILE)
         return false
     end
-    file:WriteString(json)
+    if not file:WriteString(json) then
+        file:Close()
+        flushTimer = FLUSH_DEBOUNCE
+        print("[StandaloneSave] 写档失败(写入未完成): " .. SAVE_FILE)
+        return false
+    end
     file:Close()
     lastSnapshot = json
     print("[StandaloneSave] 存档落盘 bytes=" .. #json)

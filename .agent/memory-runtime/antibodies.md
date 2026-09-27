@@ -1,5 +1,8 @@
 # antibodies — 跨项目避雷清单(只增不减)
 
+- [scope:project] `StandaloneSave.writeFile` 必须检查 `File:WriteString` 的 boolean 返回；失败后不能记成功快照，且须安排下一轮重试。直接覆盖旧档与损坏 JSON 恢复仍未解决；`FileSystem:Rename` 在隔离存储平台上的行为未经验证，不能仅凭声明视为原子落盘。
+- [scope:project] 离线英雄经验预览不能把编队中的 `0` 空槽、未拥有或重复 ID 算进平分分母；领取回退路径应使用同一有效名单规则。
+
 - [scope:project] 2026-09-27 本轮只授权 push `feat926/character-drag-save`；历史记录中的 `workspace925` 推送权限不适用。远端地址不能嵌入 PAT；移除明文凭据后若无安全认证应保留已提交成果，待用户选择认证方式，不用令牌 URL 绕过。
 - [scope:project] `ModuleRegistry` 与 `HeroesSchema` 在单机收到 heroes 时连续规范化，数字名册键必须保留；跨队同步不可逐队回调：第一队推送触发面板刷新会覆盖第二队未提交的编队。0 是空槽而非角色，normalize 不得删除后续队伍的 0。
 

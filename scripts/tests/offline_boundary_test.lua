@@ -23,8 +23,11 @@ function Start()
     local oldResonance = heroService.ApplyResonanceSync
     local oldFile, oldSystem = File, fileSystem
     local disk = nil
+    local failWrite = false
+    local failOpen = false
     local modules = {}
     local calcSeconds = nil
+    local calcHeroExp = 0
 
     dispatcher.snapshotAll = function() return modules end
     dispatcher.get = function(name) return modules[name] end
@@ -42,14 +45,18 @@ function Start()
     calc.calcOfflineIdleRewards = function(seconds)
         calcSeconds = seconds
         return { seconds = seconds, maxSeconds = 43200, kills = 0,
-            adventureExp = 0, adventurerExp = 0, gold = 7, equipSeeds = {}, scrollDrops = {} }
+            adventureExp = 0, adventurerExp = calcHeroExp, gold = 7, equipSeeds = {}, scrollDrops = {} }
     end
     fileSystem = { FileExists = function() return disk ~= nil end }
     File = function(_, mode)
         local file = {}
-        function file:IsOpen() return true end
+        function file:IsOpen() return not (mode == FILE_WRITE and failOpen) end
         function file:ReadString() return disk end
-        function file:WriteString(data) disk = data end
+        function file:WriteString(data)
+            if failWrite then return false end
+            disk = data
+            return true
+        end
         function file:Close() end
         return file
     end
@@ -150,6 +157,50 @@ function Start()
     eq(restoredHeroes.roster[25].exp, 8, "未编队英雄经验保留")
     eq(restoredHeroes.deployed[3], 2, "编队空槽位置保留")
     eq(restoredHeroes.teams[1].slots[3], 2, "三队编队槽位保留")
+
+    -- 带 0 空槽的读档：奖励只能平分给真实英雄，预览与领取保持一致。
+    offline.Cleanup(1)
+    now = 20000
+    calcHeroExp = 100
+    modules.heroes = restoredHeroes
+    modules.session = { lastOnlineTime = 19000, firstLoginTime = 100 }
+    modules.battle = { idleAccumSec = 0, idleHeroCount = 2 }
+    local sparsePanel = offline.CalcOnEnter(1)
+    eq(#sparsePanel.heroExpPreview, 2, "空槽不能生成经验预览")
+    eq(sparsePanel.heroExpPreview[1].expGain, 50, "经验只按真实队员平分")
+    eq(sparsePanel.heroExpPreview[2].expGain, 50, "第二位队员预览经验正确")
+    eq(sparsePanel.heroExpPreview[2].heroId, 2, "空槽后面的队员仍能领取经验")
+    local claimOk, _, claimResult = offline.ClaimRewards(1)
+    eq(claimOk, true, "有空槽时可以领取离线经验")
+    eq(claimResult.heroExp, 50, "实际领取的每人经验与预览一致")
+    eq(restoredHeroes.roster[1].level, sparsePanel.heroExpPreview[1].level, "队员1实际等级与预览一致")
+    eq(restoredHeroes.roster[1].exp, sparsePanel.heroExpPreview[1].exp, "队员1实际经验与预览一致")
+    eq(restoredHeroes.roster[2].level, sparsePanel.heroExpPreview[2].level, "队员2实际等级与预览一致")
+    eq(restoredHeroes.roster[2].exp, sparsePanel.heroExpPreview[2].exp, "队员2实际经验与预览一致")
+    eq(restoredHeroes.roster[25].exp, 8, "未上阵队员经验不变")
+    offline.Cleanup(1)
+
+    -- 写档失败不能当成成功快照，下一轮 Update 应自动重试。
+    save.Flush()
+    local previousDisk = disk
+    modules.currency.gold = 99
+    failWrite = true
+    save.Flush()
+    eq(disk, previousDisk, "写盘失败不能改动已经存在的存档")
+    failWrite = false
+    save.Update(1)
+    save.Update(1)
+    save.Update(2)
+    eq(saved().modules.currency.gold, 99, "写盘恢复后自动重试未落盘变更")
+
+    local previousOpenDisk = disk
+    modules.currency.gold = 123
+    failOpen = true
+    save.Flush()
+    eq(disk, previousOpenDisk, "无法打开文件时旧存档保持不变")
+    failOpen = false
+    save.Update(2)
+    eq(saved().modules.currency.gold, 123, "文件可再次打开时自动重试存档")
 
     os.time = realTime
     dispatcher.snapshotAll, dispatcher.get, dispatcher.handleStateUpdate = oldSnapshot, oldGet, oldUpdate

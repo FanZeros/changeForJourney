@@ -3,7 +3,9 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-27 | 版本:v2.52-character-drag-save
+> 更新时间:2026-09-27 | 版本:v2.53-offline-save-reliability
+>
+> **本轮（`feat926/character-drag-save` 后续）**：远端最新 `workspace925@aaa53e7` 已是当前分支祖先，合并无新内容。修复保存空槽 `0` 的编队在离线收益预览中摊薄经验；领取回退名单同步过滤空槽、未拥有和重复的 ID。`StandaloneSave` 对 `WriteString` 失败及无法打开写入文件安排自动重试、不把失败记作成功快照。引擎测试先复现经验 `25/50` 及写盘不重试，再三条测试全 PASS，LSP 0 Error、Build 成功。仍未证实直接覆盖中断安全性、损坏 JSON 备份恢复与 Web 持久性，下一步须核实引擎沙箱行为再选择方案。只 push 当前 `feat926/character-drag-save`，不推基线。
 >
 > **本轮（`feat926/character-drag-save`）**：`StandaloneSave` 的英雄名册 JSON 写出后，`ModuleRegistry` 和 `HeroesSchema` 连续 `onLoad` 以前会丢数字键；现均保留已规范化英雄 ID，验证未上阵英雄等级/经验与队伍空槽。横屏右栏拖拽跨栏/窗外松手统一结算，防止头像留在拖拽态。跨队槽位交换及名册跨队部署一次提交双方队伍，`LocalActionBridge.setTeams` 在隔离副本校验后单次通知；`TeamSlots.normalize` 保留多队 0 空槽。三条引擎用例 PASS、LSP 0 Error、官方 Build 通过；主入口 60 帧无 Lua 错误但剧情日记 5 张 UI 贴图缺失，视觉与 Windows 实机仍待验收。
 > **最新硬性流程**：不能擅自取消或退出任务；每次交付或遇到阻碍都先汇报，再**调用 AskUserQuestion 工具**以选项询问下一步，不以文字收尾。本轮**只 push `feat926/character-drag-save`**，禁止自动合入/推送 `workspace925`、`workspace` 或其他分支；后续仅以用户当轮授权为准。不要把 PAT 写到仓库/记忆。

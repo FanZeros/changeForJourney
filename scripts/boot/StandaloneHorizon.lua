@@ -550,8 +550,8 @@ function HandleNanoVGRenderHorizon()
     if BattleTriPage.isOpen() then
         local ps = logicalH() / 1080                -- 面板缩放（高适配）
         local oxL = 0
-        -- 右栏加宽 5% 并向右贴边；内容的下移和右移在角色面板内部做，背景铺满不动
-        local rightW = 486 * ps * 1.05
+        -- 右栏与左栏同宽。横向再放大 5% 会把方形角色框拉成扁的。
+        local rightW = 486 * ps
         local oxR = logicalW() - (972 * ps + rightW)
         BattleTriPage.drawL1Underlay(vg(), logicalW(), logicalH())  -- [暗黑替换] L1 行内容背景垫底（框内 clip）
         BattleTriPage.drawL0(vg(), logicalW(), logicalH())          -- [暗黑替换] L0 框体图（透明框内透出 L1）
@@ -751,7 +751,7 @@ local function HorizonResolveMouse()
             end
         end
         local leftW = 486 * ps
-        local rightW = leftW * 1.05
+        local rightW = leftW
         if sx < leftW then
             return 'left', sx / (ps * 0.45), sy / (ps * 0.45)
         elseif sx > logicalW() - rightW then

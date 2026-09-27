@@ -29,6 +29,14 @@
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
 
+## 上次做了什么（2026-09-27，feat927 修复 @param + 官方 Build 通过）
+
+- 给 `lua_obfuscator.py` 加 doc 注释同步：紧邻函数声明上方的注释块里 `@param 旧名`→该形参新名（仅本函数形参；注释与函数间夹代码则不关联；字符串里的 @param 属 NORMALSTRING 天然不动；类型名/描述保留；匿名函数跳过，实测全项目 1373 个 @param doc 块无一匿名）。
+- **结果**：全量 361 文件 @param 残留不匹配 219→0；行为等价 71/71 PASS；**官方 MCP Build 成功 0 Error，dist/assets/*.lua 产物确认是混淆代码**。推翻旧「去注释试点 Build 报 undefined-global」结论——根因是隔离工程缺 268 个引擎 .emmylua 类型定义，非混淆本身。
+- ⚠️ LSP `textDocument/diagnostic` workspace 汇总对磁盘替换返回陈旧缓存(注入语法错误都不报)，只有 didOpen/官方 Build 读最新内容；结论以 Build+dist 为准，勿信那个汇总接口。
+- 剩余限制：`scripts/core/DarkIcon.lua` 因 luaparser 中文 token 解析失败被安全跳过(仍明文，361中仅1个)；L1 产物仍可读明文，去阅读难度须叠加 L2(Q1 待本机验证)。
+- 依赖：`python3 -m venv ~/luaenv && ~/luaenv/bin/pip install luaparser lupa`。全部未接入 pack_release/build_local。仍只 push `feat927/ele-protection-research-0927`；完成后必须 AskUserQuestion；令牌不进仓库/记忆。
+
 ## 上次做了什么（2026-09-27，feat927 L1 混淆器 + L2 字节码 POC）
 
 - 把调研的 L1（AST 作用域重命名）实现为 `electron-shell/lua_obfuscator.py`：基于 luaparser 内置 ANTLR 树做作用域解析，token 级 splice，只改局部绑定（local/参数/for 变量/local function），字段名/方法名/全局/require 路径/字符串/EmmyLua 注释逐字节保留；解析失败或不通过 5 项等价校验的文件拒绝改写、原样复制。

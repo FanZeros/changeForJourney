@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -137,6 +138,9 @@ class Analyzer:
     def __init__(self, root, pm):
         self.root = root
         self.pm = pm
+        self.code = ""            # 原始源码（doc 注释同步用）
+        self.all_tokens = None    # 全部 token（含 hidden channel，doc 注释同步用）
+        self.comment_edits = []   # (start, stop, new) —— 仅 @param 名
         self.edits = []           # (start, stop, new)
         self.globals_seen = set()  # 未解析到 local 的引用名（=全局/字段基名）
         self.fields_seen = set()   # 字段/方法名（永不改）
@@ -269,16 +273,86 @@ class Analyzer:
 
     def h_FuncbodyContext(self, node, scope):
         fscope = Scope(scope)          # 参数所在作用域
+        param_map = {}                 # 本函数形参 orig -> new（仅用于 doc 注释同步）
         for c in kids(node):
             if ctx_name(c) == "ParlistContext":
                 for nl in kids(c):
                     if ctx_name(nl) == "NamelistContext":
                         for t in kids(nl):
                             if is_name(t):
+                                before = fscope.names.get(t.symbol.text)
                                 self._declare(t, fscope)
+                                param_map[t.symbol.text] = fscope.names[t.symbol.text]
                     # `...` 无 NAME
-            else:
+        # doc 注释同步：紧邻本函数声明语句上方的注释块里，@param 旧名 -> 新名。
+        # 只对 Stat_localfunction / Stat_function（锚点=声明语句起点）可靠关联；
+        # 匿名函数（Functiondef）锚点歧义，跳过——不影响运行，只是注释名不改。
+        if param_map and self.all_tokens is not None:
+            parent = self.pm.get(id(node))
+            pcn = ctx_name(parent) if parent is not None else None
+            if pcn in ("Stat_localfunctionContext", "Stat_functionContext"):
+                anchor = self._stmt_anchor(parent)
+                if anchor is not None:
+                    doc_tokens = self._doc_comment_block(anchor)
+                    for ctok in doc_tokens:
+                        self._sync_param_comment(ctok, param_map)
+        for c in kids(node):
+            if ctx_name(c) != "ParlistContext":
                 self.visit(c, fscope)  # Block 会再压一层子作用域
+
+    # -- doc 注释 @param 同步 ----------------------------------------------
+    def _stmt_anchor(self, stmt_node):
+        """声明语句起始字符偏移（Token.start）。"""
+        try:
+            st = stmt_node.start
+            return st.start if st is not None else None
+        except Exception:
+            return None
+
+    def _doc_comment_block(self, before_pos):
+        """收集紧邻 before_pos 上方、其间只有空白/换行的注释 token（= doc 注释块）。
+
+        一旦回溯途中遇到任何默认通道的代码 token，说明该注释块与本函数之间夹着
+        代码，判定为「非本函数的 doc 注释」，返回空——绝不跨代码关联。
+        """
+        toks = self.all_tokens
+        idx = None
+        for i, tok in enumerate(toks):
+            if tok.start >= before_pos:
+                idx = i
+                break
+        if idx is None:
+            return []
+        comments = []
+        i = idx - 1
+        while i >= 0:
+            tok = toks[i]
+            sym = sym_of(tok.type)
+            if sym in ("WS", "NL") or tok.channel != 0:
+                if sym in ("LINE_COMMENT", "COMMENT"):
+                    comments.append(tok)
+                    i -= 1
+                    continue
+                # 其它 hidden（空白/换行）跳过
+                i -= 1
+                continue
+            # 默认通道的代码 token：停止
+            break
+        comments.reverse()
+        return comments
+
+    def _sync_param_comment(self, ctok, param_map):
+        """把注释 token 内的 `@param <旧名>` 改成 `@param <新名>`（旧名须是形参）。"""
+        base = ctok.start
+        text = ctok.text
+        for m in re.finditer(r"@param\s+([A-Za-z_][A-Za-z0-9_]*)", text):
+            name = m.group(1)
+            new = param_map.get(name)
+            if new is None:
+                continue
+            s = base + m.start(1)
+            e = base + m.end(1)
+            self.comment_edits.append((s, e, new))
 
     def h_Stat_forContext(self, node, scope):
         ch = kids(node)
@@ -378,7 +452,7 @@ def apply_edits(code: str, edits) -> str:
 
 def obfuscate_source(code: str) -> str:
     an = plan_renames(code)
-    return apply_edits(code, an.edits)
+    return apply_edits(code, an.edits + an.comment_edits)
 
 
 # ---------------------------------------------------------------------------
@@ -395,10 +469,21 @@ def _all_name_tokens(code: str):
             yield tok.text
 
 
+def _lex_all_tokens(code: str):
+    """词法分析，返回全部 token（含 hidden channel：注释/空白/换行），按位置有序。"""
+    lexer = LuaLexer(InputStream(code))
+    lexer.removeErrorListeners()
+    ts = CommonTokenStream(lexer)
+    ts.fill()
+    return [tok for tok in ts.tokens if tok.type >= 0]
+
+
 def plan_renames(code: str):
     tree = parse_tree(code)
     pm = build_parent_map(tree)
     an = Analyzer(tree, pm)
+    an.code = code
+    an.all_tokens = _lex_all_tokens(code)
     # 预扫描：把所有已出现标识符加入 reserved，生成的新名绝不与之冲突
     for existing in _all_name_tokens(code):
         an.reserved.add(existing)
@@ -423,7 +508,9 @@ def token_fingerprint(code: str):
     for tok in ts.tokens:
         sym = sym_of(tok.type)
         if sym is None or tok.type < 0:
-            continue  # 跳过 EOF 及隐式 channel
+            continue  # 跳过 EOF
+        if sym in ("LINE_COMMENT", "COMMENT"):
+            continue  # 注释在 hidden channel，语义无关；doc 同步只改 @param 名
         if sym == "NAME":
             names.append(tok.text)
         else:
@@ -471,12 +558,12 @@ def obfuscate_file_safe(code: str):
     """返回 (obfuscated_code, status, detail)。status in {'changed','unchanged','rejected'}。"""
     try:
         an = plan_renames(code)
-        if not an.edits:
+        if not an.edits and not an.comment_edits:
             return code, "unchanged", "no local bindings to rename"
-        result = apply_edits(code, an.edits)
+        result = apply_edits(code, an.edits + an.comment_edits)
         verify_equivalence(code, result)
-        return result, "changed", "%d renames, %d globals kept" % (
-            len(an.edits), len(an.globals_seen))
+        return result, "changed", "%d renames, %d @param synced, %d globals kept" % (
+            len(an.edits), len(an.comment_edits), len(an.globals_seen))
     except Analyzer.Unsupported as e:
         return code, "rejected", str(e)
     except Exception as e:  # 兜底：任何异常都拒绝改写

@@ -947,14 +947,14 @@ local function drawPageImpl(vg)
         local function drawRecruitCost(cx, cy, count)
             local tickets, gems, enough = recruitPay(count)
             local icon = img.diamondIcon
-            local text = tostring(gems)
+            local text = tostring(math.floor(gems + 0.5))
             if tickets > 0 then
                 icon = img.ticketIcon
                 if isStellarPoolSelected() and img.ticketIconStellar >= 0 then
                     icon = img.ticketIconStellar
                 end
-                text = tostring(tickets)
-                if gems > 0 then text = text .. "+" .. tostring(gems) end
+                text = tostring(math.floor(tickets + 0.5))
+                if gems > 0 then text = text .. "+" .. tostring(math.floor(gems + 0.5)) end
             end
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 30)

@@ -1227,6 +1227,19 @@ function BattleScene.getStageId()
     return currentStageId
 end
 
+--- 三行第一队通关后，只同步主线关卡号，不重开 BattleScene 自己的战斗。
+--- 否则存档已到下一关，BattleScene 仍停在旧关，下一帧会把第一队拉回去。
+---@param stageId number
+function BattleScene.adoptStageProgress(stageId)
+    stageId = tonumber(stageId)
+    if not stageId or not getStageConfig().getStage(stageId) then return end
+    if stageId > maxStageId_ then
+        maxStageId_ = stageId
+    end
+    currentStageId = stageId
+    isFirstClear = not clearedStages[stageId]
+end
+
 --- 触发敌方击杀回调 [修复] BattleTriPage 三队战斗驱动依赖（与主战斗内部调用同构）
 ---@param data table { expReward, goldReward, allyCount, expMult, heroIds, stageId }
 function BattleScene.onEnemyKill(data)

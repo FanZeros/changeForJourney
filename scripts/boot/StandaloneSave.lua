@@ -83,11 +83,14 @@ local function encodeSave()
     return json
 end
 
---- 离线收益尚未核算或尚待领取时，不改写旧存档的时间边界。
+--- 离线收益还没领时，不推进在线时间，避免把待领时长清掉。
+--- 角色、关卡和首通标记仍要落盘，否则重启就像丢档，首通也能再领一次。
 local function writeFile()
-    if not offlineChecked or OfflineService.HasPendingRewards(1) then return false end
-    OfflineService.MarkOnline(1)
-    lastSavedAt = os.time()
+    if not offlineChecked then return false end
+    if not OfflineService.HasPendingRewards(1) then
+        OfflineService.MarkOnline(1)
+        lastSavedAt = os.time()
+    end
     local json = encodeSave()
     if not json then return false end
     local file = File(SAVE_FILE, FILE_WRITE)
@@ -195,7 +198,7 @@ end
 --- 主循环更新（由 Standalone.HandleUpdate 调用）
 ---@param dt number
 function StandaloneSave.Update(dt)
-    if not offlineChecked or OfflineService.HasPendingRewards(1) then return end
+    if not offlineChecked then return end
     -- 防抖写盘
     if flushTimer then
         flushTimer = flushTimer - dt

@@ -221,8 +221,17 @@ local function SyncBattleState(dt)
     battleSync.lastCleared = clearedN
     local clearedStr = {}
     for k in pairs(cleared) do clearedStr[tostring(k)] = true end
+    -- 模块更新是整表替换。只带这两个字段会把 currentStageId 清掉，
+    -- 读档时被补回 1-1，首通奖励就能重复领，进度也像丢了。
+    local battle = ClientDispatcher.get("battle")
+    if type(battle) ~= "table" then battle = {} end
+    battle.maxStageId = maxId
+    battle.clearedStages = clearedStr
+    if not battle.currentStageId then
+        battle.currentStageId = BattleScene.getStageId()
+    end
     ClientDispatcher.handleStateUpdate(cjson.encode({
-        modules = { battle = { maxStageId = maxId, clearedStages = clearedStr } }
+        modules = { battle = battle }
     }))
 end
 

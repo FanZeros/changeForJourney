@@ -85,6 +85,12 @@ local function ensureDrivers()
                 local cleared = BattleScene.getClearedStages()
                 if cleared[clearedStageId] then return end
                 cleared[clearedStageId] = true
+                -- 先把主线关卡切到下一关，再发首通。否则存档已是 1-2，
+                -- BattleScene 仍停在 1-1，下一帧同步会把第一队拉回去。
+                local nextId = StageConfig.getNextStageId(clearedStageId)
+                if nextId and BattleScene.getStageId() ~= nextId then
+                    BattleScene.adoptStageProgress(nextId)
+                end
                 if BattleScene.onFirstClear then
                     BattleScene.onFirstClear(clearedStageId)
                 else

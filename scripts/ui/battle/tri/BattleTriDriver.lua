@@ -35,6 +35,8 @@ local ENTER_ANIM_DURATION = 0.30
 local ENTER_STAGGER = 0.06
 local REWARD_INTERVAL = 0.05
 local REINFORCE_INTERVAL = 0.4
+local MARCH_DURATION = 2.0
+local MARCH_STEP = 16
 -- 全灭兜底：单单位复活计时失效（缺 attrs 等）时，按这个墙钟整队复活，避免永久卡死
 local WIPE_RESET_DELAY = 5.0
 
@@ -97,6 +99,7 @@ function BattleTriDriver.new(teamIdx)
         rewardQueue = {},
         rewardTimer = 0,
         introTimer = 0,
+        marchTimer = 0,
         active   = false,
         -- [多实例] 各子系统状态
         combatState = BattleCombat.newState("tri" .. teamIdx),
@@ -340,9 +343,23 @@ function BattleTriDriver.new(teamIdx)
         end
     end
 
+    --- 通关后先走一段路，再切下一关
+    function drv:beginMarch()
+        if (self.marchTimer or 0) > 0 then return end
+        self:queuePendingKills()
+        self.marchTimer = MARCH_DURATION
+        for _, unit in ipairs(self.allies) do
+            if unit.hp > 0 then
+                BattleCombat.setCardAnim(unit, { state = "march", timer = 0, lungeDir = -1 })
+            end
+        end
+        BattleCombat.addFloatingText("正在前进中", BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY - 80,
+            { 255, 230, 160 }, false)
+    end
+
     --- 通关推进
     function drv:advanceStage()
-        self:queuePendingKills()
+        self.marchTimer = 0
         local nextId = SC.getNextStageId(self.stageId)
         if not nextId then
             self:start(self.stageId)
@@ -399,10 +416,27 @@ function BattleTriDriver.new(teamIdx)
             if u.hp > 0 then hasAliveEnemy = true break end
         end
 
-        -- 通关: 敌方全灭（先结算最后一击再切换到下一关）
+        -- 通关: 敌方全灭后先显示前进，约 2 秒后再切下一关
         if not hasAliveEnemy and #self.enemyQueue == 0 and #self.enemies == 0 then
             self:reportDefeatedEnemies()
-            self:advanceStage()
+            if (self.marchTimer or 0) <= 0 then
+                self:beginMarch()
+            end
+            self.marchTimer = self.marchTimer - dt
+            for _, unit in ipairs(allies) do
+                if unit.hp > 0 then
+                    local step = math.sin(self.marchTimer * 10) * MARCH_STEP
+                    BattleCombat.setCardAnim(unit, {
+                        state = "march", timer = 0, lungeDir = -1, marchStep = step,
+                    })
+                end
+            end
+            BattleCombat.updateCardAnims(dt)
+            BattleCombat.updateFloatingTexts(dt)
+            BattleCombat.updateHitFlashes(dt)
+            if self.marchTimer <= 0 then
+                self:advanceStage()
+            end
             return
         end
         -- 失败: 己方全灭（等待复活计时，不推进战斗）

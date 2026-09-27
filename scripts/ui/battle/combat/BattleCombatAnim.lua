@@ -162,6 +162,8 @@ function M.update(BCS, dt)
             if anim.timer >= ADVANCE_DURATION then
                 toRemove[#toRemove + 1] = unit
             end
+        elseif anim.state == "march" then
+            -- 通关前进由战斗驱动每帧刷新，不在这里结束
         end
         ::continue::
     end
@@ -222,6 +224,8 @@ function M.getOffsetY(BCS, unit)
         local t = math.min(1, anim.timer / ENTER_ANIM_DURATION)
         t = 1 - (1 - t) * (1 - t)
         return anim.lungeDir * ENTER_ANIM_DISTANCE * (1 - t)
+    elseif anim.state == "march" then
+        return anim.marchStep or 0
     elseif anim.state == "advance" then
         if BattleLayout.MODE ~= "strip" then return 0 end
         local dist = anim.advanceDist or 0

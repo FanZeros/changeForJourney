@@ -1,8 +1,11 @@
 # antibodies — 跨项目避雷清单(只增不减)
 
+- [scope:project] 2026-09-27 清理旧 `DiaryPage`：五张 `UI_RZ*` 图片已在 `a852547` 删除，但 `Standalone` boot queue 仍调用 `.init()`，一图两错=10条。删除页时需保留仓库初始化与城镇 TaskPage 入口、保持 tab2 不可选；旧签到/公告/日周任务若恢复需重新设计入口。
+- [通用] 用户反复强调：任务完成或受阻均不可自行退出；先汇报，再以 AskUserQuestion 选项询问下一步，禁止纯文字收尾。
+
 - [scope:project] 装备详情小窗展开方向必须由 owner 区分：character（右栏）从鼠标左侧展开、对比继续向左；bag/backpack（左栏）从鼠标右侧展开、对比继续向右。别让边界夹取把小窗挤到鼠标另一侧；悬停锚点用鼠标坐标，钉住后不要用格子中心重设。
 - [scope:project] 套装详情必须按最后一条随机词条的底部计算起点，并同步面板高度、按钮和热区；中文描述要换行并保证字号可读。
-- [scope:project] 本轮授权只 push workspace925；远端可能有其他会话并发提交，先 fetch 并整合、不强推。不在凭据 URL/Git 配置/记忆中保存 PAT。
+- [scope:project] 分支推送以用户当前轮次授权为准：2026-09-27 仅推 `feat926/remove-unused-diary`，不得推 `workspace`/`workspace925`、强推或擅自合并；远端并发提交先 fetch 核对。不在凭据 URL/记忆中保存 PAT。
 - [scope:project] `CharacterDetail` 属性页仅角色切角能切角色；装备槽和一键操作只在配装页绘制/响应，配装页不要绘制/响应左右切角。底板/标题下移时列表网格和滚动热区必须同步，Tab 栏不能位移。
 - [通用] 用户要求每次交付以 AskUserQuestion 选项询问下一步，不纯文字结束；记忆是提醒，自动执行的跨会话保证须配置 harness hook。
 

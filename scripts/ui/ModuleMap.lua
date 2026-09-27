@@ -69,7 +69,6 @@ local MAP = {
     ["DamageStatsPanel"] = "ui.battle.popup.DamageStatsPanel",
     ["DarkTitleScreenGate"] = "ui.story.gate.DarkTitleScreenGate",
     ["DebugPanel"] = "ui.dev.DebugPanel",
-    ["DiaryPage"] = "ui.story.task.DiaryPage",
     ["DungeonBattle"] = "ui.dungeon.DungeonBattle",
     ["DungeonBattleScene"] = "ui.dungeon.DungeonBattleScene",
     ["DungeonPage"] = "ui.dungeon.DungeonPage",

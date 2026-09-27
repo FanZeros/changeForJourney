@@ -151,13 +151,11 @@ local function applyGroupUnlocks(groupId)
     local ok, BN = pcall(require, "ui.hud.BottomNav")
     if not ok then return end
 
-    -- panelKey → tabIndex 映射
-       local PANEL_TO_TAB = {
-           character_panel = 1,
-           log_panel       = 2,
-           town_panel      = 4,
-            dungeon_panel   = 5,
-       }
+    local PANEL_TO_TAB = {
+        character_panel = 1,
+        town_panel      = 4,
+        dungeon_panel   = 5,
+    }
     for _, uk in ipairs(group.unlocks) do
         local tabIdx = PANEL_TO_TAB[uk]
         if tabIdx then
@@ -223,7 +221,6 @@ end
 -- 例：通关 1-1 → nextId=102 → maxStageId=102；通关 1-4 → maxStageId=105
 local PANEL_UNLOCK_THRESHOLDS = {
     character_panel = 101,   -- 通关 1-1 后解锁（maxStageId 变为 102 > 101）
-    log_panel       = 104,   -- 通关 1-4 后解锁（maxStageId 变为 105 > 104）
     town_panel      = 105,   -- 通关 1-5 后解锁（maxStageId 变为下章首关 > 105）
 }
 
@@ -285,7 +282,7 @@ function TutorialManager.isBuildingUnlocked(buildingKey)
 end
 
 --- 检查某面板 key 是否已解锁（基于 maxStageId 和 clearedStages 判断）
----@param panelKey string  如 "character_panel" / "log_panel" / "town_panel"
+---@param panelKey string  如 "character_panel" / "town_panel"
 ---@return boolean
 function TutorialManager.isPanelUnlocked(panelKey)
     local threshold = PANEL_UNLOCK_THRESHOLDS[panelKey]

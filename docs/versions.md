@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.52-remove-unused-diary | 2026-09-27 | `feat926/remove-unused-diary` 删除旧日志页及失效引导/页签/启动引用，消除 UI_RZ 五图启动加载错误；仓库初始化独立保留。LSP 0 Error、Build 通过，Runtime 验证受安装超时限制；仅 push 任务分支。 |
 | v2.51-equipment-detail-popup | 2026-09-26 | workspace925 装备详情按左右栏反向展开，对比卡继续排在外侧；套装效果独立分区，增加字号、换行和点击热区。LSP/Build 通过，视觉预览待验收。 |
 | v2.50-workspace925 | 2026-09-25 | workspace925 补合立绘、配装布局、功绩边框、失焦挂机，以及 integration 的本地 Electron 打包校验。配装拖拽仍以 925 为准。 |
 | v2.49.2-local-electron-pack | 2026-09-24 | Electron 本地专用 `--local-dist`：校验 dist 中 Lua 与当前源码一致，禁止下载快照替换。 |

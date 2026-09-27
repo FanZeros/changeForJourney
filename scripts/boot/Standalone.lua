@@ -39,7 +39,6 @@ local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
 local RedeemCodePanel   = require("ui.hud.popup.RedeemCodePanel")
 local AnnouncementPanel = require("ui.story.task.AnnouncementPanel")
 local AnnouncementConfig = require("shared.AnnouncementConfig")
-local DiaryPage         = require("ui.story.task.DiaryPage")
 local StartScreen       = require("ui.story.gate.StartScreen")
 local DarkTitleScreen   = require("ui.story.gate.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
 local BattleTriPage     = require("ui.battle.tri.BattleTriPage")    -- [三行并行] 三行战斗区
@@ -374,7 +373,7 @@ function Standalone.Start()
         { "IntroCutscene", function() IntroCutscene.init(vg, scene) end },
         { "ScenarioDialogue", function() ScenarioDialogue.init(vg, scene) end },
         { "CharacterPanel", function() CharacterPanel.init(vg) end },
-        { "DiaryPage", function() DiaryPage.init(vg) end },
+        { "BackpackPanel", function() BackpackPanel.init(vg) end },
         { "TownScene", function() TownScene.init(vg) end },
         { "RewardPopup", function() RewardPopup.init(vg) end },
         { "OfflineRewardPanel", function() OfflineRewardPanel.init(vg) end },
@@ -920,7 +919,6 @@ function HandleUpdate(eventType, eventData)
             or MarketPage.isOpen()) then
             bgmScene = "town_building"
         -- 标签页
-        elseif tabIndex == 2 then bgmScene = "popup"
         elseif tabIndex == 3 then bgmScene = BattleScene.isInTerminalTemple() and "samsara" or "battle"
         elseif tabIndex == 4 then
             bgmScene = "town"
@@ -1017,18 +1015,12 @@ function HandleUpdate(eventType, eventData)
     end
     if tabIndex == 1 then
         CharacterPanel.update(dt)
-    elseif tabIndex == 2 then
-        DiaryPage.update(dt)
     elseif tabIndex == 5 then
         DungeonPage.update(dt)
     end
-    -- [仓库入口] 背包左栏页动画由宿主驱动（DiaryPage 已让位）
     if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
         BackpackPanel.update(dt)
     end
-
-    -- 角标刷新（始终执行，不受当前 tab 限制）
-    BottomNav.setBadge(2, DiaryPage.hasAnyClaimable(), "redDot")
 
     -- 铁匠铺分解红点（背包满时提示）
     local equipData_ = ClientDispatcher.get("equipment")

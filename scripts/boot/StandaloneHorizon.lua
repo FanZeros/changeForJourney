@@ -32,7 +32,6 @@ local TaskPage          = require("ui.story.task.TaskPage")
 local LevelUpPopup      = require("ui.hud.popup.LevelUpPopup")
 local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
-local DiaryPage         = require("ui.story.task.DiaryPage")
 local StartScreen       = require("ui.story.gate.StartScreen")
 local DarkTitleScreen   = require("ui.story.gate.DarkTitleScreenGate")
 local BattleTriPage     = require("ui.battle.tri.BattleTriPage")
@@ -186,11 +185,10 @@ local function HorizonUpdateTransform()
     end
 end
 
--- [底栏移除] 横屏日志(2)/副本(5)页：竖版设计全窗等比铺（模态层）
+-- [底栏移除] 横屏副本(5)页：竖版设计全窗等比铺（模态层）
 -- 全屏弹窗/战斗覆盖打开时不画（它们自带层级与让位逻辑）
 local function HorizonDrawPageModal(_unused_vg)
-    local tabIndex = BottomNav.getSelectedIndex()
-    if tabIndex ~= 2 and tabIndex ~= 5 then return end
+    if BottomNav.getSelectedIndex() ~= 5 then return end
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
     local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
     local ox = (logicalW() - DESIGN_W() * fit) * 0.5
@@ -204,7 +202,7 @@ local function HorizonDrawPageModal(_unused_vg)
     nvgScissor(vg(), ox, oy, DESIGN_W() * fit, DESIGN_H() * fit)
     nvgTranslate(vg(), ox, oy)
     nvgScale(vg(), fit, fit)
-    if tabIndex == 2 then DiaryPage.draw(vg()) else DungeonPage.draw(vg()) end
+    DungeonPage.draw(vg())
     nvgRestore(vg())
 end
 
@@ -499,8 +497,6 @@ function HandleNanoVGRenderHorizon()
         local tabIndex = BottomNav.getSelectedIndex()
         if tabIndex == 1 then
             CharacterPanel.draw(vg())
-        elseif tabIndex == 2 then
-            -- [底栏移除] 日志页横屏全窗绘制，见 Viewport.finish 之后
         elseif tabIndex == 3 then
             if not BattleTriPage.isOpen() then
                 BattleScene.draw(vg())
@@ -621,7 +617,7 @@ function HandleNanoVGRenderHorizon()
             end
             nvgRestore(vg())
         end
-        -- [底栏移除] 日志/副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
+        -- [底栏移除] 副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
         HorizonDrawPageModal(vg())
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面
@@ -661,7 +657,7 @@ function HandleNanoVGRenderHorizon()
     end
 
     -- 玩家信息已由中栏弹窗层绘制，不再用竖屏坐标居中重画。
-    -- [底栏移除] 日志/副本页全窗竖版模态
+    -- [底栏移除] 副本页全窗竖版模态
     HorizonDrawPageModal(vg())
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then
@@ -679,10 +675,9 @@ function HandleNanoVGRenderHorizon()
     finishFrame()
 end
 
--- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态是否激活（全屏弹窗打开时让位）
+-- [底栏移除] 横屏副本(5)页全窗竖版模态是否激活（全屏弹窗打开时让位）
 local function HorizonPageModalActive()
-    local tabIndex = BottomNav.getSelectedIndex()
-    if tabIndex ~= 2 and tabIndex ~= 5 then return false end
+    if BottomNav.getSelectedIndex() ~= 5 then return false end
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return false end
     if PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen()
         or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() then
@@ -730,7 +725,7 @@ local function HorizonResolveMouse()
             return 'modal', pdx, pdy
         end
     end
-    -- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态：中段命中映射到设计坐标；
+    -- [底栏移除] 横屏副本(5)页全窗竖版模态：中段命中映射到设计坐标；
     -- 左右栏让出（TopBar 页签/角色面板仍可点），全屏弹窗打开时让位
     if HorizonPageModalActive() then
         local ps = logicalH() / 1080
@@ -889,10 +884,6 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     pressStartDX, pressStartDY = dx or 0, dy or 0
     pressValid = (pid ~= 'none')
     if pid == 'modal' and HorizonPageModalActive() then
-        -- [底栏移除] 日志页全窗模态：拖拽起点（列表滚动）
-        if BottomNav.getSelectedIndex() == 2 then
-            DiaryPage.handleDragBegin(dx, dy)
-        end
         return
     end
     if pid == 'modal' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
@@ -1004,10 +995,6 @@ function HandleMouseMoveHorizon(eventType, eventData)
         end
     end
     if pid == 'modal' and HorizonPageModalActive() then
-        -- [底栏移除] 日志页全窗模态：拖拽滚动
-        if BottomNav.getSelectedIndex() == 2 then
-            DiaryPage.handleDragMove(dx, dy)
-        end
         return
     end
     if pid == 'modal' then
@@ -1242,15 +1229,9 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     if pid == 'modal' then
-        -- [底栏移除] 日志/副本页全窗模态点击（设计坐标）
+        -- [底栏移除] 副本页全窗模态点击（设计坐标）
         if HorizonPageModalActive() then
-            local tab = BottomNav.getSelectedIndex()
-            if tab == 2 then
-                DiaryPage.handleDragEnd(dx, dy)
-                if isTap then DiaryPage.handleInput(dx, dy) end
-            elseif tab == 5 then
-                if isTap then DungeonPage.handleInput(dx, dy) end
-            end
+            if isTap then DungeonPage.handleInput(dx, dy) end
             return
         end
         if TowerBattleScene.isActive() then
@@ -1471,9 +1452,8 @@ function HandleMouseWheelHorizon(eventType, eventData)
         return
     end
 
-    -- [底栏移除] 日志页全窗模态：列表滚动
+    -- [底栏移除] 副本页全窗模态：不透传滚轮
     if pid == 'modal' and HorizonPageModalActive() then
-        if BottomNav.getSelectedIndex() == 2 then DiaryPage.handleScroll(wheel, msx, msy) end
         return
     end
 
@@ -1513,8 +1493,6 @@ function HandleMouseWheelHorizon(eventType, eventData)
     local tab = BottomNav.getSelectedIndex()
     if tab == 1 then
         CharacterPanel.handleScroll(wheel, msx, msy)
-    elseif tab == 2 then
-        DiaryPage.handleScroll(wheel, msx, msy)
     end
 end
 

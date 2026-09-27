@@ -28,7 +28,7 @@ local BackpackGrids    = require("ui.backpack.BackpackGrids")
 
 local Panel = {}
 
---- [横屏] 宿主模式："inline"=随 DiaryPage 内嵌绘制（竖屏）；"window"=全窗居中模态（横屏仓库入口）
+--- [横屏] 宿主模式："left"=城镇仓库左栏；"window"=全窗模态；"inline"=旧内嵌布局
 local hostMode_ = "inline"
 
 -- ======================== 设计分辨率 ========================
@@ -819,7 +819,7 @@ function Panel.init(vg)
 end
 
 --- 打开面板
----@param mode? boolean|"left" true=全窗居中模态(旧)；"left"=横屏左栏页(同铁匠铺/教堂模板)；nil/false=内嵌(竖屏/日志页内)
+---@param mode? boolean|"left" true=全窗居中模态；"left"=横屏左栏页；nil/false=内嵌
 function Panel.open(mode)
     if mode == "left" then
         hostMode_ = "left"

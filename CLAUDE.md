@@ -14,7 +14,13 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **开发基线分支**：`workspace925`。每轮按用户当前指令从基线创建新的任务分支；验收通过后推送任务分支，合并回 `workspace925` 并推送。不要推送 `workspace924` 或其他历史分支。
+- **开发基线分支**：`workspace925`。以用户当前轮次授权为准建立任务分支；当前任务只提交并 push `feat926/remove-unused-diary`，绝不 push `workspace`、`workspace925` 或其他分支。远端基线在任务期间更新时不覆盖他人改动。
+
+## 本轮进展（2026-09-27，`feat926/remove-unused-diary`）
+
+- 旧日志 `DiaryPage` 启动时加载五张已于 `a852547` 删除的 UI_RZ 图片，导致 10 条资源错误；日志页入口在横屏三栏已废弃。
+- 本轮删除 `DiaryPage`/meta、初始化/绘制/输入/导航/引导残余引用；`BackpackPanel` 独立初始化，城镇仓库/功绩任务入口及副本保留。LSP 0 Error、官方 Build 成功；本地 Runtime 安装超时，未能做运行时验证。
+- 下次如需恢复旧签到/公告/日周任务，先确认是否要新入口；旧 `SignInPanel`/`AnnouncementPanel`/`TaskPanel` 本轮不作为日志页之外的玩家可达页面。
 
 ## 已合入备忘
 
@@ -79,7 +85,7 @@
 
 ## likely_next_task
 
-- 当前分支是 `workspace925`。做完必须以 AskUserQuestion 选项提问下一步，只 push 该分支。
+- 当前任务分支 `feat926/remove-unused-diary`。交付后**必须**以 AskUserQuestion 选项提问下一步；只 push 本任务分支，绝不推 `workspace`/`workspace925`。后续分支授权重新听用户最新指令。
 - `workspace925` 装备详情定位及套装效果区已调整；需要在实际游戏预览中确认左/右栏比较卡与最长套装说明的视觉效果。
 - Electron 已关后台节流，但未实机验证失焦/最小化。系统休眠仍需离线补算。
 - 配装页已下移留出词条空位，词条内容本身还没画。
@@ -97,8 +103,8 @@
 
 ## 用户硬性流程（必须遵守）
 
-- **不能取消/退出任务**；无论任务完成或遇到阻碍，先汇报结果，再用 AskUserQuestion 提供下一步选项，禁止纯文字中断；用户选择后继续。不得据此擅自执行未授权操作，也不得在仓库或记忆中保存访问令牌。
-- 分支操作以用户**当前轮次**授权为准：以 `workspace925` 为基线，在新任务分支开发，验证后推送该分支并合入、推送 `workspace925`；若远端发生并发更新或冲突，不覆盖他人工作，先确认。
+- **不可取消/退出任务**：用户再次确认，无论完成还是受阻，先汇报结果，最后**必须调用 AskUserQuestion 并给出下一步选项**；用户选择后继续，不得以普通文字答复结束。不得擅自执行未授权操作，也不得在仓库或记忆中保存访问令牌。
+- **分支/推送按当前轮次授权**：`feat926/remove-unused-diary` 开发、验证、提交并 push 后停在本任务分支；**禁止**向 `workspace`、`workspace925`、其他分支推送或合并。用户后续明确授权时再处理基线；遇远端并发变更先确认，不覆盖他人工作。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
@@ -108,6 +114,6 @@
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
 - Lua 5.4 字符串里不要写 `\!`
 - 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
-- 分支禁令以用户当前轮次授权为准；本轮只推任务分支和 `workspace925`，不碰其他分支。
+- 分支禁令以用户当前轮次授权为准；`feat926/remove-unused-diary` 只推任务分支，不碰基线与历史分支。
 - 遗匣 `seeds[].equip` 是原装备，种子合并和等级兼容绝不能改写或丢弃它。
 - 不要开引擎 i18n `enabled=true`，用 `core/I18n.lua`

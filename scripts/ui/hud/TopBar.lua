@@ -172,20 +172,17 @@ end
 --- 每帧绘制（在设计空间 1080x2400 内调用）
 
 -- 页面入口（替代底栏五键）。通栏放在头像行正下方，避开金币/钻石。
--- 页面入口：横屏三栏下 角色常驻右栏 / 城镇常驻左栏，入口键冗余已删；
--- 仅保留中栏页面：日志 / 战斗 / 副本
+-- 页面入口：横屏三栏下角色常驻右栏、城镇常驻左栏；旧日志页已移除。
 local PAGE_TABS = {
-    [2] = { index = 2, nameKey = "tab_log",     icon = "nav_log",     hotspot = "tab_log" },
     [3] = { index = 3, nameKey = "tab_battle",  icon = "nav_battle",  hotspot = "tab_battle" },
     [5] = { index = 5, nameKey = "tab_dungeon", icon = "nav_dungeon", hotspot = "tab_dungeon" },
 }
-local PAGE_TAB_ORDER = { 2, 3, 5 }
+local PAGE_TAB_ORDER = { 3, 5 }
 local PAGE_BTN_W, PAGE_BTN_H = 196, 64
 local PAGE_BTN_GAP = 12
 local PAGE_BTN_CY = 244
 local PAGE_BTN_START_CX = 108
 local PAGE_HOTSPOT_KEYS = {
-    tab_log = 2,
     tab_battle = 3,
     tab_dungeon = 5,
 }
@@ -194,7 +191,7 @@ local function pageBtnCenterX(i)
     return PAGE_BTN_START_CX + (i - 1) * (PAGE_BTN_W + PAGE_BTN_GAP)
 end
 
---- 横屏三联已常驻城镇/战斗/角色，页签条（日志/战斗/副本）不再显示
+--- 横屏三联已常驻城镇/战斗/角色，页签条不再显示
 local function shouldHidePageTabs(hidePageTabs)
     if hidePageTabs then return true end
     local ok, BTP = pcall(require, "ui.battle.tri.BattleTriPage")
@@ -204,7 +201,7 @@ end
 
 function TopBar.draw(vg, offsetY, hidePageTabs)
     -- 可选纵向偏移：三行并行左面板调用时上移头像区（热区同步用 TopBar.hitTestAvatar）
-    -- hidePageTabs：横屏三联布局下城镇/战斗/角色已常驻，不再画日志/战斗/副本页签
+    -- hidePageTabs：横屏三联布局下城镇/战斗/角色已常驻，不再画旧页签条
     local oy = tonumber(offsetY) or 0
     hidePageTabs = shouldHidePageTabs(hidePageTabs)
     -- #1 头像背景框: center(239,139+oy), 382x136, black 70%, r=36
@@ -230,7 +227,7 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
         nvgRestore(vg)
     end
 
-    -- #2e 页面入口：非三联旧布局才画日志/战斗/副本；横屏三联已常驻，不再画
+    -- #2e 页面入口：非三联旧布局才画战斗/副本；横屏三联已常驻，不再画
     if not hidePageTabs then
         local selectedTab = BottomNav.getSelectedIndex()
         local allLocked = BottomNav.isAllLocked()

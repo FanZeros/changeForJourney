@@ -103,6 +103,9 @@ local function prepareLoadouts(raw, heroes)
                     or not ascend or ascend % 1 ~= 0 or ascend < 0 or ascend > 100 then
                     return nil, name .. " 英雄 " .. heroId .. " 装备等级/升阶无效"
                 end
+                if level < tpl.levelRange[1] or level > tpl.levelRange[2] then
+                    return nil, name .. " 英雄 " .. heroId .. " 装备等级不在模板掉落范围: " .. spec.templateId
+                end
                 if spec.quality ~= nil or spec.affixes ~= nil then
                     return nil, "校准仅支持普通品质、无词缀的确定性装备"
                 end

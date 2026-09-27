@@ -14,13 +14,19 @@
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
 - 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
-- **开发基线分支**：`workspace925`。每轮按用户当前指令从基线创建新的任务分支；验收通过后推送任务分支，合并回 `workspace925` 并推送。不要推送 `workspace924` 或其他历史分支。
+- **开发基线分支**：`workspace925`。当前轮次从 `origin/workspace925@aaa53e7` 建立 `feat926/battle-lab`；仅提交并推送该功能分支，**不合并、不推送任何 workspace 分支**。后续轮次按用户当轮指令判断。
 
 ## 已合入备忘
 
 - Electron 离线包在 `electron-shell/main.js` 关闭 `backgroundThrottling`，失焦时保持战斗帧更新。网页隐藏页仍需离线补算。Windows 失焦/最小化尚未实机验证。
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
+
+## 本轮进展（2026-09-27）
+
+- `feat926/battle-lab`：新增独立进程战斗平衡工作台（`scripts/tests/battle_lab_ui.lua`）与无界面批量入口（`scripts/tests/battle_lab.lua`），`BattleLab.lua` 复用三行战斗驱动、技能与战斗统计。可配置关卡、首通/挂机、1–4 位模板英雄与等级、固定种子、局数和限时；输出胜负、平均时长/伤害/治疗、逐英雄数据和逐局 JSON。
+- 测试入口不加载游戏主入口，不读玩家编队/存档，不发奖、不推进关卡；游戏内并行执行会污染共享战斗状态，必须以独立 Runtime 进程运行。仅模拟无装备/遗物/神器的模板英雄；首通流程与完整 BattleScene 结算不同，挂机不包含前五关混合出怪。
+- LSP 0 Error，官方构建成功；Runtime 验证首通胜利、单英雄挂机战败、1 秒超时、固定种子逐局复现，原切关/全灭回归通过。工作台离屏截图已检查；尚未通过真人鼠标交互验收。
 
 ## 上次做了什么（2026-09-26）
 
@@ -79,7 +85,8 @@
 
 ## likely_next_task
 
-- 当前分支是 `workspace925`。做完必须以 AskUserQuestion 选项提问下一步，只 push 该分支。
+- 当前任务分支 `feat926/battle-lab`：仅 push 此分支，不合并、不推送 `workspace925` 或其他 workspace 分支。交付后必须以 AskUserQuestion 选项提问下一步。
+- 战斗工作台需独立运行（`tests/battle_lab_ui.lua`），批量入口 `tests/battle_lab.lua`；在游戏主进程并行测试会污染共享战斗状态。下一步可验收鼠标操作与不同分辨率 UI，并按需增加玩家配装的隔离配置支持。
 - `workspace925` 装备详情定位及套装效果区已调整；需要在实际游戏预览中确认左/右栏比较卡与最长套装说明的视觉效果。
 - Electron 已关后台节流，但未实机验证失焦/最小化。系统休眠仍需离线补算。
 - 配装页已下移留出词条空位，词条内容本身还没画。
@@ -98,7 +105,7 @@
 ## 用户硬性流程（必须遵守）
 
 - **不能取消/退出任务**；无论任务完成或遇到阻碍，先汇报结果，再用 AskUserQuestion 提供下一步选项，禁止纯文字中断；用户选择后继续。不得据此擅自执行未授权操作，也不得在仓库或记忆中保存访问令牌。
-- 分支操作以用户**当前轮次**授权为准：以 `workspace925` 为基线，在新任务分支开发，验证后推送该分支并合入、推送 `workspace925`；若远端发生并发更新或冲突，不覆盖他人工作，先确认。
+- 分支操作以用户**当前轮次**授权为准：本轮从最新 `origin/workspace925` 建 `feat926/battle-lab`，仅提交并推送该任务分支，禁止合并或推送 workspace；远端并发更新/冲突时不得覆盖他人工作。
 - 只抽模块、不改玩法；对外 API 尽量保持
 
 ## 避雷清单（摘要）
@@ -108,6 +115,6 @@
 - 三行模式 `H_SEAM_BACK`：二级页返回只由中缝层画
 - Lua 5.4 字符串里不要写 `\!`
 - 脏工作区会让 `git merge` 失败且不建 MERGE_HEAD
-- 分支禁令以用户当前轮次授权为准；本轮只推任务分支和 `workspace925`，不碰其他分支。
+- 分支禁令以用户当前轮次授权为准；本轮只推 `feat926/battle-lab`，不碰任何 workspace 分支。
 - 遗匣 `seeds[].equip` 是原装备，种子合并和等级兼容绝不能改写或丢弃它。
 - 不要开引擎 i18n `enabled=true`，用 `core/I18n.lua`

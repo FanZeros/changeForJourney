@@ -13,6 +13,10 @@ logs/.nfs*
 *.crswap
 .DS_Store
 
+# Battle lab local input/output
+/battle_lab_config.json
+/battle_lab_report.json
+
 # OSS util
 .ossutil_checkpoint/
 ossutil_output/

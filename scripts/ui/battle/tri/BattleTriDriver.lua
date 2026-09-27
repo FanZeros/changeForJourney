@@ -82,11 +82,16 @@ end
 
 --- 新建驱动器
 ---@param teamIdx number 队伍索引（2/3）
+---@param options? table 独立战斗测试可注入 allyFactory，并禁止正常奖励与关卡推进
 ---@return table drv
-function BattleTriDriver.new(teamIdx)
+function BattleTriDriver.new(teamIdx, options)
+    options = options or {}
     ---@class table
     local drv = {
         teamIdx  = teamIdx,
+        battleLab = options.battleLab == true,
+        allyFactory = options.allyFactory,
+        firstClear = options.firstClear == true,
         stageId  = SC.NORMAL_FIRST_STAGE,
         allies   = {},
         enemies  = {},
@@ -196,15 +201,35 @@ function BattleTriDriver.new(teamIdx)
         self.kills = 0
         -- 清理上一轮残留的复活/全灭计时，避免沿用旧进度
         self._wipeTimer = nil
+        self._clearReported = false
+        self._labDefeated = false
+        self._labTimedOut = false
+        self._labElapsed = 0
+        self._labTimeLimit = options.timeLimit or 300
         self:activate()
-        -- 己方: 从编队页构建新单位（应用装备/神器/遗物）
-        local CharacterPanel = require("ui.character.panel.CharacterPanel")
-        self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
-        self.allies = CharacterPanel.getDeployedTeam(self.teamIdx) or {}
-        -- 敌方
+        if self.battleLab then TAL.reset() end
+        -- 己方: 正常战斗从编队页构建；战斗实验室由测试配置创建独立单位
+        if self.battleLab then
+            self.teamSignature = nil
+            self.allies = self.allyFactory() or {}
+        else
+            local CharacterPanel = require("ui.character.panel.CharacterPanel")
+            self.teamSignature = CharacterPanel.getTeamSignature(self.teamIdx)
+            self.allies = CharacterPanel.getDeployedTeam(self.teamIdx) or {}
+        end
+        -- 敌方：首通实验使用正式首通敌人列表，其余沿用当前三行战斗的出怪规则
         local entry = SC.getStage(stageId)
-        local allEnemies = entry and BattleEnemySpawn.generateEnemyList(entry, false) or {}
-        if #allEnemies == 0 then allEnemies = buildWave(stageId) end
+        local allEnemies = entry and BattleEnemySpawn.generateEnemyList(entry, self.battleLab and self.firstClear) or {}
+        if self.battleLab and self.firstClear and entry then
+            -- 生成顺序为普通怪后接附加怪；首/末附加怪使用正式出场阶段标记。
+            local bonusIds = BattleEnemySpawn.getFirstClearBonusMonsterIds(entry)
+            if bonusIds then
+                for i = 1, #bonusIds do
+                    BattleEnemySpawn.markFirstClearBonusSpawnPhase(allEnemies[#allEnemies - #bonusIds + i], i, #bonusIds)
+                end
+            end
+        end
+        if #allEnemies == 0 and not self.battleLab then allEnemies = buildWave(stageId) end
         local maxField = (entry and entry.maxFieldEnemies) or BattleLayout.MAX_PER_SIDE
         maxField = math.min(maxField, BattleLayout.MAX_PER_SIDE)
         self.enemies, self.enemyQueue = BattleEnemySpawn.assignEnemiesToField(allEnemies, maxField)
@@ -216,6 +241,18 @@ function BattleTriDriver.new(teamIdx)
         BattleEffects.reset()
         ProjectileSystem.reset()
         TM.reset()
+        if self.battleLab then
+            SEM.reset()
+            -- 仅在独立测试入口使用全局词缀状态，不能与游戏内战斗交错运行
+            local MAS = require("systems.MapAffixSystem")
+            MAS.onStageLoad(self.firstClear and (entry.chapter or 0) or 0, self.allies)
+            if MAS.hasAffixes() then
+                local wave = {}
+                for _, u in ipairs(self.enemies) do wave[#wave + 1] = u end
+                for _, u in ipairs(self.enemyQueue) do wave[#wave + 1] = u end
+                MAS.applyStaticAffixes(wave)
+            end
+        end
         -- 单位初始化
         for _, u in ipairs(self.allies) do
             u.atkProgress = 0
@@ -229,6 +266,10 @@ function BattleTriDriver.new(teamIdx)
         ART.initBattle(self.allies)
         TM.onBattleStart(self.allies, self.enemies)
         TAL.onBattleStart(self.allies, self.enemies)
+        if self.battleLab then
+            local Berserk = require("ui.battle.stage.StageBerserk")
+            if self.firstClear then Berserk.enter(self.enemies, self.allies) else Berserk.exit() end
+        end
         BattleCombat.playEnterAnims(self.enemies, -1)
         BattleCombat.playEnterAnims(self.allies, 1)
         local enterCount = math.max(#self.allies, #self.enemies)
@@ -242,6 +283,7 @@ function BattleTriDriver.new(teamIdx)
     --- 死亡只记账。经验、金币和掉落等本关结束再一次性结算。
     function drv:reportKill(unit)
         self.kills = self.kills + 1
+        if self.battleLab then return end
         local pending = self.pendingKills
         pending[#pending + 1] = {
             stageId = self.stageId,
@@ -388,14 +430,24 @@ function BattleTriDriver.new(teamIdx)
             BattleCombat.updateHitFlashes(dt)
             return
         end
+        if self.battleLab then
+            self._labElapsed = self._labElapsed + dt
+            if self._labElapsed >= self._labTimeLimit then
+                self._labTimedOut = true
+                self.active = false
+                return
+            end
+        end
 
-        -- 己方阵亡复活计时
-        for _, u in ipairs(allies) do
-            if u.hp <= 0 then
-                u._triReviveTimer = (u._triReviveTimer or 0) + dt
-                if u._triReviveTimer >= REVIVE_DELAY then
-                    u._triReviveTimer = nil
-                    self:reviveUnit(u)
+        -- 己方阵亡复活计时（实验室为单局胜负，不复活）
+        if not self.battleLab then
+            for _, u in ipairs(allies) do
+                if u.hp <= 0 then
+                    u._triReviveTimer = (u._triReviveTimer or 0) + dt
+                    if u._triReviveTimer >= REVIVE_DELAY then
+                        u._triReviveTimer = nil
+                        self:reviveUnit(u)
+                    end
                 end
             end
         end
@@ -416,10 +468,24 @@ function BattleTriDriver.new(teamIdx)
         for _, u in ipairs(enemies) do
             if u.hp > 0 then hasAliveEnemy = true break end
         end
+        hasAliveAlly = false
+        for _, u in ipairs(allies) do
+            if u.hp > 0 then hasAliveAlly = true break end
+        end
+        if self.battleLab and not hasAliveAlly then
+            self._labDefeated = true
+            self.active = false
+            return
+        end
 
         -- 通关: 先结算并弹出奖励，奖励关掉后再显示前进，约 2 秒后切下一关
         if not hasAliveEnemy and #self.enemyQueue == 0 and #self.enemies == 0 then
             self:reportDefeatedEnemies()
+            if self.battleLab then
+                self._clearReported = true
+                self.active = false
+                return
+            end
             if not self._clearReported then
                 self._clearReported = true
                 self:queuePendingKills()
@@ -451,6 +517,11 @@ function BattleTriDriver.new(teamIdx)
         end
         -- 失败: 己方全灭（等待复活计时，不推进战斗）
         if not hasAliveAlly then
+            if self.battleLab then
+                self._labDefeated = true
+                self.active = false
+                return
+            end
             -- [兜底] 复活计时只对「拿得到 attrs」的单位推进；一旦单位缺 attrs，
             -- 上面永远不会复活它，全灭就会永久卡住。这里按墙钟兜底整队复活。
             self._wipeTimer = (self._wipeTimer or 0) + dt
@@ -491,6 +562,13 @@ function BattleTriDriver.new(teamIdx)
 
         -- 状态子系统 tick（mount 作用域内）
         RCH.update(allies, 0)
+        if self.battleLab then
+            ART.update(dt)
+            require("systems.MapAffixSystem").tick(dt, allies, enemies)
+            if self.firstClear then
+                require("ui.battle.stage.StageBerserk").update(dt, enemies, allies)
+            end
+        end
         BattleCombat.updateHpBuffers(allies, dt)
         BattleCombat.updateHpBuffers(enemies, dt)
         TM.update(dt)
@@ -557,14 +635,16 @@ function BattleTriDriver.new(teamIdx)
 
     --- 便捷: mount + tick
     function drv:update(dt)
-        self._sigTick = (self._sigTick or 0) + 1
-        if self._sigTick >= 15 then
-            self._sigTick = 0
-            local CharacterPanel = require("ui.character.panel.CharacterPanel")
-            local signature = CharacterPanel.getTeamSignature(self.teamIdx)
-            if signature ~= self.teamSignature then
-                self:start(self.stageId)
-                return
+        if not self.battleLab then
+            self._sigTick = (self._sigTick or 0) + 1
+            if self._sigTick >= 15 then
+                self._sigTick = 0
+                local CharacterPanel = require("ui.character.panel.CharacterPanel")
+                local signature = CharacterPanel.getTeamSignature(self.teamIdx)
+                if signature ~= self.teamSignature then
+                    self:start(self.stageId)
+                    return
+                end
             end
         end
         self:activate()

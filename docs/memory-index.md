@@ -3,10 +3,13 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-26 | 版本:v2.51-equipment-detail-popup
+> 更新时间:2026-09-27 | 版本:v2.52-battle-lab
+>
+> **本轮（`feat926/battle-lab` 独立战斗实验）**：基于 `origin/workspace925@aaa53e7` 建分支，只提交并 push `feat926/battle-lab`，绝不合并或推送 workspace。`scripts/tests/battle_lab_ui.lua` 是 NanoVG 模式 B (DPR 校正) 鼠标操作台；`tests/battle_lab.lua` 读取根目录单行 `battle_lab_config.json`，写出纯 JSON `battle_lab_report.json`（两文件被 .gitignore 忽略）；实验逻辑在 `tests/BattleLab.lua`，向 BattleTriDriver 注入无存档的模板英雄，固定 1/60 步长，多局分种子记录胜率/耗时/伤害/治疗/承伤/暴击。仅独立进程安全，不能在主游戏战斗中运行；模板英雄无装备/遗物/神器，首通未模拟完整 BattleScene 进度/奖励，挂机只测本关怪物。实测 20 局首通胜、4 局挂机败、20 局超时，固定种子两次逐局数据一致，原 `battle_stage_switch_test` ALL PASS，LSP 0 Error/官方构建成功/离屏 UI 可见；尚未真人鼠标交互验收。
+> **当前硬性流程**：完成或受阻先报告，再调用 AskUserQuestion 提供下一步选项；不能取消/退出任务。每次只 push 本轮授权的功能分支，不推 workspace；记忆不是自动化 hook 的保证。令牌不进仓库与记忆。
 >
 > **本轮（`workspace925` 装备详情）**：右栏点击详情在鼠标左侧、已装备比较卡更靠左；左栏反向。点击锚点用鼠标位置，悬停跟随、钉住不漂移；套装区排在全部词条后，独立描边底板、放大字体及换行，详情热区随内容高度变化。Lua LSP 0 Error，官方 Build 成功；本地 Runtime 安装超时，尚无实际页面截图验收。下一步用游戏预览点击左右栏带/不带已装备比较的详情，特别检查最长套装描述。
-> **流程硬性要求**：不能取消/退出任务；每次交付后必须通过 AskUserQuestion 提供下一步选项。当前用户明确授权只提交并 push `workspace925`，不得把历史文档中的其他分支要求套到本轮；不要在仓库/记忆里记录访问令牌。
+> **历史（2026-09-26，已被本轮授权覆盖）**：当时要求只提交并 push `workspace925`。本轮仅推 `feat926/battle-lab`，不得套用旧分支要求。
 >
 > **本轮桌面试点（`feature/background-idle-924`）**：用户选择 Windows Electron 失焦挂机。`electron-shell/main.js:145` 的 BrowserWindow.webPreferences 设 `backgroundThrottling=false`，不改 Lua/网页版本。`node --check` 和 VM 模拟创建 BrowserWindow 的断言通过（同时确认 contextIsolation/nodeIntegration 安全设置保持不变）；LSP 0 Error、官方 build 通过。当前沙箱没有 Electron 可执行文件、node_modules、虚拟显示器或 Wine，因此**没有 Windows 最小化/失焦的实机验收**，也未生成新版 Windows 包；已有 `/workspace/dist` 网页预览不会体现这项桌面独占改动。下一步在 Windows 用仓库现有 `electron-shell/pack_release.py` / 一键脚本将最新 dist 打成 Electron 包，实际对比聚焦/失焦/最小化时三队金币、经验、掉落、存档及 CPU；关闭进程/系统休眠仍需另做离线补算。
 >

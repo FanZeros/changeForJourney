@@ -220,7 +220,7 @@ local easeInOutCubic = TownPageChrome.easeInOutCubic
 -- key → { iconPath, quality, name, source, desc, getter }
 local ITEM_DEFS = {
     { key = "gold",          iconPath = "image/货币道具/UI_icon_JB.png",     quality = 2, name = "金币",       source = "击杀/通关/任务",         desc = "强化武器，购买资源",                                       getter = function() return GameState.getGold() end },
-    { key = "gems",          iconPath = "image/货币道具/UI_icon_SJ.png",     quality = 5, name = "钻石",       source = "成就/首通/活动",         desc = "酒馆招募抽卡",                                             getter = function() return GameState.getGems() end },
+    { key = "gems",          iconPath = "image/货币道具/UI_icon_SJ_X.png",     quality = 5, name = "黑晶",       source = "成就/首通/活动",         desc = "酒馆招募抽卡",                                             getter = function() return GameState.getGems() end },
     { key = "essence",       iconPath = "image/货币道具/UI_icon_JC.png",     quality = 2, name = "精粹",       source = "分解装备获得",           desc = "用于洗练装备",                                             getter = function() return GameState.getEssence() end },
     { key = "enhanceStone",  iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石",     source = "市场购买/任务",          desc = "洗练时使用可以只洗练数值高低，不洗练属性",                  getter = function() return GameState.getEnhanceStone() end },
     -- seq5 degradeStone 已隐藏，不在背包显示

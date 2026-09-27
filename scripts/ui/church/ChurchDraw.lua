@@ -429,7 +429,7 @@ function M.bind(deps)
             activePred = function(i, _) return state.tab == TAB_KEYS[i] end,
             drawBadge = function(vg, i, item, textX, textY)
                 local showTabBadge = false
-                if i == 1 then
+                if TAB_KEYS[i] == "shenqi" then
                     showTabBadge = ArtifactPanel.canUpgradeAnyArtifact()
                 end
                 if showTabBadge and img.iconUp >= 0 then

@@ -407,77 +407,99 @@ end
 
 local function drawFloatIcon(vg, kind, x, y, s, a)
     if not kind then return 0 end
-    local function mark(r, g, b)
+    local function ink(r, g, b)
         nvgFillColor(vg, nvgRGBA(r, g, b, a))
+        nvgStrokeColor(vg, nvgRGBA(20, 12, 8, a))
     end
-    if kind:find("phys", 1, true) then
-        mark(230, 230, 235)
+    local function blade()
         nvgBeginPath(vg)
-        nvgMoveTo(vg, x - s * 0.15, y - s * 0.45)
-        nvgLineTo(vg, x + s * 0.35, y + s * 0.15)
-        nvgLineTo(vg, x + s * 0.15, y + s * 0.35)
-        nvgLineTo(vg, x - s * 0.35, y - s * 0.25)
+        nvgMoveTo(vg, x - s * 0.08, y - s * 0.46)
+        nvgLineTo(vg, x + s * 0.16, y - s * 0.22)
+        nvgLineTo(vg, x + s * 0.04, y + s * 0.08)
+        nvgLineTo(vg, x - s * 0.20, y - s * 0.16)
         nvgClosePath(vg)
         nvgFill(vg)
-    elseif kind:find("magic", 1, true) then
-        mark(120, 210, 255)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.06))
+        nvgStroke(vg)
         nvgBeginPath(vg)
-        nvgCircle(vg, x, y, s * 0.28)
+        nvgRoundedRect(vg, x - s * 0.05, y + s * 0.06, s * 0.22, s * 0.07, s * 0.02)
         nvgFill(vg)
         nvgBeginPath(vg)
-        nvgMoveTo(vg, x, y - s * 0.48)
-        nvgLineTo(vg, x + s * 0.1, y - s * 0.1)
-        nvgLineTo(vg, x, y)
-        nvgLineTo(vg, x - s * 0.1, y - s * 0.1)
+        nvgRoundedRect(vg, x + s * 0.02, y + s * 0.12, s * 0.06, s * 0.22, s * 0.02)
+        nvgFill(vg)
+    end
+    if kind:find("phys", 1, true) then
+        ink(236, 232, 220)
+        blade()
+    elseif kind:find("magic", 1, true) then
+        ink(150, 220, 255)
+        nvgBeginPath(vg)
+        nvgCircle(vg, x, y + s * 0.04, s * 0.22)
+        nvgFill(vg)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.06))
+        nvgStroke(vg)
+        ink(230, 250, 255)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x, y - s * 0.42)
+        nvgLineTo(vg, x + s * 0.08, y - s * 0.08)
+        nvgLineTo(vg, x - s * 0.08, y - s * 0.08)
         nvgClosePath(vg)
         nvgFill(vg)
     elseif kind:find("burn", 1, true) then
-        mark(255, 120, 30)
+        ink(255, 150, 40)
         nvgBeginPath(vg)
-        nvgMoveTo(vg, x, y - s * 0.48)
-        nvgLineTo(vg, x + s * 0.28, y + s * 0.2)
-        nvgLineTo(vg, x, y + s * 0.05)
-        nvgLineTo(vg, x - s * 0.28, y + s * 0.2)
+        nvgMoveTo(vg, x, y + s * 0.38)
+        nvgQuadTo(vg, x + s * 0.42, y + s * 0.18, x + s * 0.12, y - s * 0.08)
+        nvgQuadTo(vg, x + s * 0.28, y - s * 0.34, x, y - s * 0.48)
+        nvgQuadTo(vg, x - s * 0.06, y - s * 0.16, x - s * 0.16, y - s * 0.02)
+        nvgQuadTo(vg, x - s * 0.42, y + s * 0.16, x, y + s * 0.38)
         nvgClosePath(vg)
         nvgFill(vg)
-    elseif kind:find("block", 1, true) then
-        mark(180, 190, 210)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.05))
+        nvgStroke(vg)
+        ink(255, 230, 140)
         nvgBeginPath(vg)
-        nvgMoveTo(vg, x, y - s * 0.42)
-        nvgLineTo(vg, x + s * 0.34, y - s * 0.12)
-        nvgLineTo(vg, x + s * 0.22, y + s * 0.38)
-        nvgLineTo(vg, x - s * 0.22, y + s * 0.38)
-        nvgLineTo(vg, x - s * 0.34, y - s * 0.12)
+        nvgMoveTo(vg, x, y + s * 0.22)
+        nvgQuadTo(vg, x + s * 0.12, y, x, y - s * 0.18)
+        nvgQuadTo(vg, x - s * 0.10, y + s * 0.02, x, y + s * 0.22)
         nvgClosePath(vg)
         nvgFill(vg)
-    elseif kind:find("shield", 1, true) then
-        mark(170, 175, 185)
+    elseif kind:find("block", 1, true) or kind:find("shield", 1, true) then
+        ink(190, 198, 214)
         nvgBeginPath(vg)
-        nvgCircle(vg, x, y, s * 0.3)
+        nvgMoveTo(vg, x, y - s * 0.44)
+        nvgLineTo(vg, x + s * 0.32, y - s * 0.18)
+        nvgQuadTo(vg, x + s * 0.28, y + s * 0.28, x, y + s * 0.44)
+        nvgQuadTo(vg, x - s * 0.28, y + s * 0.28, x - s * 0.32, y - s * 0.18)
+        nvgClosePath(vg)
         nvgFill(vg)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.06))
+        nvgStroke(vg)
     elseif kind:find("heal", 1, true) then
-        mark(80, 230, 120)
+        ink(90, 230, 130)
         nvgBeginPath(vg)
-        nvgRect(vg, x - s * 0.1, y - s * 0.36, s * 0.2, s * 0.72)
-        nvgRect(vg, x - s * 0.36, y - s * 0.1, s * 0.72, s * 0.2)
+        nvgRoundedRect(vg, x - s * 0.09, y - s * 0.32, s * 0.18, s * 0.64, s * 0.05)
+        nvgRoundedRect(vg, x - s * 0.32, y - s * 0.09, s * 0.64, s * 0.18, s * 0.05)
         nvgFill(vg)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.05))
+        nvgStroke(vg)
     end
     if kind:find("crit", 1, true) then
-        mark(255, 70, 70)
+        ink(255, 80, 70)
         nvgBeginPath(vg)
-        nvgMoveTo(vg, x, y - s * 0.5)
-        nvgLineTo(vg, x + s * 0.14, y - s * 0.14)
-        nvgLineTo(vg, x + s * 0.5, y)
-        nvgLineTo(vg, x + s * 0.14, y + s * 0.14)
-        nvgLineTo(vg, x, y + s * 0.5)
-        nvgLineTo(vg, x - s * 0.14, y + s * 0.14)
-        nvgLineTo(vg, x - s * 0.5, y)
-        nvgLineTo(vg, x - s * 0.14, y - s * 0.14)
+        for i = 0, 7 do
+            local ang = i * math.pi / 4 - math.pi / 2
+            local rad = (i % 2 == 0) and s * 0.42 or s * 0.16
+            local px = x + math.cos(ang) * rad
+            local py = y + math.sin(ang) * rad
+            if i == 0 then nvgMoveTo(vg, px, py) else nvgLineTo(vg, px, py) end
+        end
         nvgClosePath(vg)
         nvgFill(vg)
-        return s
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.05))
+        nvgStroke(vg)
     end
-    return s * 0.8
+    return s * 0.72
 end
 
 function BattleDraw.drawFloatingTexts(vg)
@@ -511,7 +533,7 @@ function BattleDraw.drawFloatingTexts(vg)
                 nvgFontSize(vg, fontSize)
                 textW = nvgTextBounds(vg, 0, 0, ft.text) or fontSize
             end
-            local iconSize = math.max(28, fontSize * 1.15)
+            local iconSize = math.max(22, fontSize * 0.92)
             local tr, tg, tb = ft.color[1], ft.color[2], ft.color[3]
             local kind = ft.kind or ""
             if kind:find("burn", 1, true) then tr, tg, tb = 255, 140, 40
@@ -520,12 +542,15 @@ function BattleDraw.drawFloatingTexts(vg)
             elseif kind:find("heal", 1, true) then tr, tg, tb = 90, 235, 130
             elseif kind:find("crit", 1, true) then tr, tg, tb = 255, 70, 70
             end
-            local gap = iconSize * 0.35
-            local iconW = ft.kind and (textW + gap) or 0
-            drawTextStroke(vg, drawX + iconW * 0.5, drawY, ft.text,
+            local gap = 2
+            local iconW = ft.kind and iconSize * 0.72 or 0
+            local textX = drawX + (ft.kind and (iconW + gap) * 0.5 or 0)
+            drawTextStroke(vg, textX, drawY, ft.text,
                 fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
                 tr, tg, tb, 5)
-            drawFloatIcon(vg, ft.kind, drawX - (textW + gap) * 0.5, drawY, iconSize, alpha)
+            if ft.kind then
+                drawFloatIcon(vg, ft.kind, textX - textW * 0.5 - gap - iconW * 0.5, drawY, iconSize, alpha)
+            end
             nvgRestore(vg)
         end
     end

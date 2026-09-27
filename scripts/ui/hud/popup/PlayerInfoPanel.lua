@@ -823,7 +823,7 @@ function PlayerInfoPanel.draw(vg)
         end
         local stats = {
             { "金币 " .. NumberUtil.format(GameState.getGold()),
-              "宝石 " .. NumberUtil.format(GameState.getGems()), "第" .. days .. "天" },
+              "黑晶 " .. NumberUtil.format(GameState.getGems()), "第" .. days .. "天" },
             { "精粹 " .. NumberUtil.format(GameState.getEssence()),
               "扫荡券 " .. NumberUtil.format(GameState.getSweepTicket()),
               "招募券 " .. NumberUtil.format(GameState.getRecruitTicket()) },

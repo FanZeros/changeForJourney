@@ -226,7 +226,7 @@ function UrGachaService.Pull(uid, count, payType)
         local shortfall = ticketCost - ticketsToUse
         diamondNeeded = shortfall * UrGachaConfig.Cost.SINGLE_DIAMOND
         if (currency.gems or 0) < diamondNeeded then
-            return false, "钻石不足（需要 " .. diamondNeeded .. "）"
+            return false, "黑晶不足（需要 " .. diamondNeeded .. "）"
         end
     end
 

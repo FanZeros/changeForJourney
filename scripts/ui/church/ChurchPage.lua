@@ -89,12 +89,13 @@ local TAB = {
     ANIM_DUR = 0.35,
 }
 
--- 5. 页签（单页：神器）
+-- 5. 页签（打开停在礼拜堂，神器要手动点）
 local TAB_ITEMS = {
-    { name = "神器", cx = 540, cy = 2308, textX = 540, textY = 2302 },
+    { name = "礼拜堂", cx = 270, cy = 2308, textX = 270, textY = 2302 },
+    { name = "神器", cx = 810, cy = 2308, textX = 810, textY = 2302 },
 }
 
-local TAB_KEYS = { "shenqi" }
+local TAB_KEYS = { "libaitang", "shenqi" }
 
 -- 6. 动画常量
 local ANIM = {
@@ -171,8 +172,8 @@ local state = {
     closing    = false,
     openTime   = 0,
     closeTime  = 0,
-    tab        = "shenqi", -- 转职已迁到右侧栏角色详情，教堂只留神器
-    tabFrom    = "shenqi",
+    tab        = "libaitang", -- 打开停在礼拜堂，不自动切到神器
+    tabFrom    = "libaitang",
     tabSwitchTime = 0,
     selectedHeroId = nil,    -- 当前选中的角色
 
@@ -471,7 +472,8 @@ end
 
 --- Tab 键名映射到索引（转职已迁出，只留神器）
 local TAB_MAP = {
-    shenqi = 1,
+    libaitang = 1,
+    shenqi = 2,
 }
 
 --- 将存档中的天赋数据同步到 TalentStarMap 渲染状态 + HeroConfig 默认天赋

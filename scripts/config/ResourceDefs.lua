@@ -12,7 +12,7 @@ local ResourceDefs = {}
 --- value = { iconPath, quality, name }
 ResourceDefs.DEFS = {
     gold              = { iconPath = "image/货币道具/UI_icon_JB.png",     quality = 2, name = "金币" },
-    diamond           = { iconPath = "image/货币道具/UI_icon_SJ.png",     quality = 5, name = "钻石" },
+    diamond           = { iconPath = "image/货币道具/UI_icon_SJ_X.png",     quality = 5, name = "黑晶" },
     essence           = { iconPath = "image/货币道具/UI_icon_JC.png",     quality = 2, name = "精粹" },
     enhance_star      = { iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石" },
     refine_stone      = { iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石" },  -- 别名

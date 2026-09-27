@@ -68,7 +68,7 @@ local function nextReward(scale)
     elseif kind == 7 then
         return { type = "stellar_ticket", amount = 1, icon = "image/货币道具/UI_icon_ZMQ_2.png", quality = 6 }
     end
-    return { type = "diamond", amount = 40 + scale * 8, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 }
+    return { type = "diamond", amount = 40 + scale * 8, icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5 }
 end
 
 local function addClear(stageId, difficulty, amount)

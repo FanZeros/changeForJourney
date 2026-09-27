@@ -70,7 +70,7 @@ function TopBar.init(vg)
     imgExpBg   = nvgCreateImage(vg, "image/进度条/UI_JYT_1.png", 0)
     imgExpFill = nvgCreateImage(vg, "image/进度条/UI_JYT_2.png", 0)
     imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
-    imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
+    imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     if not imgGoldIcon or imgGoldIcon < 0 then print("[TopBar] WARN: UI_icon_JB_X.png load failed, using vector icon") end
     -- 加载角色头像图标
     HeroAssetUtil.preloadIcons(vg, imgHeroIcons)

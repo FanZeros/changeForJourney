@@ -47,7 +47,7 @@ local function handleInput(dx, dy)
         if hitTest(dx, dy, KEY_CF.BUY_CX, KEY_CF.BUY_CY, KEY_CF.BUY_W, KEY_CF.BUY_H) then
             BF.trigger("market_key_confirm")
             if GameState.getGems() < state.keyConfirmDiamondCost then
-                state.floatText = "钻石不足"
+                state.floatText = "黑晶不足"
                 state.floatTextX = KEY_CF.BUY_CX
                 state.floatTextY = KEY_CF.BUY_CY - 80
                 state.floatTextTime = time.elapsedTime
@@ -111,7 +111,7 @@ local function handleInput(dx, dy)
                 local currName = "金币"
                 local balance = 0
                 if item.currency == "diamond" then
-                    currName = "钻石"
+                    currName = "黑晶"
                     balance = GameState.getGems()
                 else
                     balance = GameState.getGold()

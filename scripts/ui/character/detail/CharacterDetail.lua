@@ -631,11 +631,11 @@ function CharacterDetail.handleInput(dx, dy)
         local totalRows = #cachedL
 
         -- 杂项属性区域（可滚动）
-        if dy >= ATTR_CLIP_TOP and dy <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT then
+        if dx >= 40 and dx <= 540
+           and dy >= ATTR_CLIP_TOP and dy <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT then
             for row = 1, totalRows do
                 local rowY = ATTR_FIRST_ROW_Y + (row - 1) * rowStep - detailState.attrScrollY
-                if rowY >= ATTR_CLIP_TOP - ATTR_BOX_H * 0.5
-                   and rowY <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT + ATTR_BOX_H * 0.5 then
+                if rowY >= ATTR_CLIP_TOP and rowY <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT then
                     -- 左列
                     if row <= #cachedL and math.abs(dx - ATTR_COL1_CX) <= ATTR_BOX_W * 0.5
                        and math.abs(dy - rowY) <= ATTR_BOX_H * 0.5 then

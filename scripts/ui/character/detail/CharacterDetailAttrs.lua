@@ -260,13 +260,18 @@ function M.collectAttributes(heroId, heroCfg, level)
         left[#left + 1] = { key = AD.HEAL_AMOUNT, name = "治疗量", value = tostring(math.floor(attrs:get(AD.HEAL_AMOUNT))) }
     end
 
-    -- 人人都有、以前被默认值藏掉的防御项，固定显示。
-    local alwaysLeft = { AD.ARMOR, AD.ENERGY_SHIELD, AD.RESISTANCE, AD.HIT_VALUE }
+    -- 人人都有的防御项和百分比加成固定显示，0 也保留，避免列表提前结束。
+    local alwaysLeft = {
+        AD.ARMOR, AD.ENERGY_SHIELD, AD.RESISTANCE, AD.HIT_VALUE,
+        AD.HP_BONUS, AD.ARMOR_BONUS, AD.ES_BONUS, AD.DODGE_BONUS,
+        AD.FINAL_HP_BONUS, AD.FINAL_ARMOR_BONUS,
+        AD.FINAL_ENERGY_SHIELD_BONUS, AD.FINAL_DODGE_BONUS,
+    }
     local alwaysLeftSet = {}
     for _, key in ipairs(alwaysLeft) do
         alwaysLeftSet[key] = true
         local meta = AD.getMeta(key)
-        local val = attrs:get(key)
+        local val = attrs:getUncapped(key)
         left[#left + 1] = {
             key = key,
             name = meta and meta.name or key,

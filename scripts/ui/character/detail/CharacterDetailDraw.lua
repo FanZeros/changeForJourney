@@ -117,7 +117,7 @@ local ATTR_SCROLL_FRICTION = 0.90
 local ATTR_SCROLL_MIN_VEL  = 0.3
 local ATTR_SCROLL_WHEEL_STEP = 60
 local ATTR_CLIP_TOP    = ATTR_FIRST_ROW_Y - ATTR_BOX_H * 0.5
-local ATTR_CLIP_HEIGHT = ATTR_VISIBLE_ROWS * ATTR_BOX_H + (ATTR_VISIBLE_ROWS - 1) * ATTR_ROW_GAP
+local ATTR_CLIP_HEIGHT = 1840 - 24 - ATTR_CLIP_TOP
 
 -- 导出给 handleInput 使用
 M.ATTR_BOX_W        = ATTR_BOX_W
@@ -1090,12 +1090,13 @@ function M.draw(vg)
     local attrData = collectAttributes(heroId, heroCfg, heroLevel)
     local leftAttrs  = attrData.left
     local rightAttrs = attrData.right
-    -- 左列防御、右列攻击都要显示，按行交错排进同一条滚动列表。
+    -- 防御属性在前，攻击和额外属性接在后面，同一列滚动。
     local attrRows = {}
-    local rowCount = math.max(#leftAttrs, #rightAttrs)
-    for i = 1, rowCount do
-        if leftAttrs[i] then attrRows[#attrRows + 1] = leftAttrs[i] end
-        if rightAttrs[i] then attrRows[#attrRows + 1] = rightAttrs[i] end
+    for i = 1, #leftAttrs do
+        attrRows[#attrRows + 1] = leftAttrs[i]
+    end
+    for i = 1, #rightAttrs do
+        attrRows[#attrRows + 1] = rightAttrs[i]
     end
     local totalRows = #attrRows
 
@@ -1111,16 +1112,15 @@ function M.draw(vg)
     detailState.attrScrollMax = math.max(0, contentBottom - viewBottom)
 
     nvgSave(vg)
-    nvgScissor(vg, 0, attrClipY, 560, attrClipH)
+    nvgScissor(vg, 40, attrClipY, 500, attrClipH)
 
     for row = 1, totalRows do
         local rowY = ATTR_FIRST_ROW_Y + (row - 1) * rowStep - detailState.attrScrollY
 
         if rowY >= attrClipY - ATTR_BOX_H and rowY <= attrClipY + attrClipH + ATTR_BOX_H then
 
-            -- === 左列属性 ===
-            if row <= #leftAttrs then
-                local attr = leftAttrs[row]
+            local attr = attrRows[row]
+            if attr then
                 local colCX = ATTR_COL1_CX
 
                 nvgBeginPath(vg)

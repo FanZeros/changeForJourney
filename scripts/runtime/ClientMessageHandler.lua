@@ -662,6 +662,19 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                  })
              elseif data.rewardType == "relic" then
                  RewardPopup.show("远征奖励", { { type = "relic", relicType = data.reward.relicType, quality = data.reward.quality or 1 } }, { onClose = fireTutorial })
+             elseif data.rewardType == "shard" then
+                 -- 潜能引导碎片：领完自动打开该角色的觉醒（潜能）页，引导玩家去嵌合
+                 local shardHeroId = data.reward.heroId
+                 RewardPopup.show("远征奖励", { { type = "shard", heroId = shardHeroId, amount = data.reward.amount or 0 } }, {
+                     onClose = function()
+                         fireTutorial()
+                         local okCd, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
+                         if okCd and CharacterDetail then
+                             CharacterDetail.open(shardHeroId, "awaken")
+                             print("[ClientMessageHandler] shard reward: opened awakening page for hero " .. tostring(shardHeroId))
+                         end
+                     end,
+                 })
              else
                  RewardPopup.show("远征奖励", { { type = "equip", templateId = data.reward.templateId, quality = data.reward.quality or 1, level = data.reward.level or 1 } }, { onClose = fireTutorial })
              end

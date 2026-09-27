@@ -323,12 +323,14 @@ end
 
 --- 打开详情界面
 ---@param heroId number
-function CharacterDetail.open(heroId)
+---@param tab string|nil 初始页签 "attr"|"equip"|"awaken"，默认 "attr"
+function CharacterDetail.open(heroId, tab)
     detailState.open = true
     detailState.closing = false
     detailState.heroId = heroId
-    detailState.tab = "attr"
-    detailState.tabFrom = "attr"
+    local initTab = (tab == "equip" or tab == "awaken") and tab or "attr"
+    detailState.tab = initTab
+    detailState.tabFrom = initTab
     detailState.tabSwitchTime = 0
     detailState.openTime = time.elapsedTime
     detailState.sideDragging = false

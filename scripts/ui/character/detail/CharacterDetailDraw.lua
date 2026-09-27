@@ -21,10 +21,14 @@ local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local ETS = require("systems.ExtraTalentSystem")
 local I18n = require("core.I18n")
+local KeywordText = require("ui.widget.KeywordText")
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
 local M = {}
+
+-- 天赋描述关键词富文本（可点击关键词弹出解释）；输入侧经 M.talentKwText 访问
+M.talentKwText = KeywordText.new()
 
 ---@type fun(vg: any, heroId: number, detailState: table)|nil
 M._drawEquipPanel = nil
@@ -1304,11 +1308,10 @@ function M.draw(vg)
     if extraLine ~= "" then
         talentDesc = talentDesc .. "\n" .. extraLine
     end
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, extraLine ~= "" and 28 or 34)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-    nvgTextBox(vg, TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH, talentDesc, nil)
+    -- 关键词富文本：可点击的机制词（如「回响」）弹解释气泡；热区写入 talentKwText
+    M.talentKwText:draw(vg, talentDesc,
+        TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH,
+        extraLine ~= "" and 28 or 34)
 
     end -- if detailState.tab == "awaken" / "attr"
 
@@ -1614,6 +1617,14 @@ function M.draw(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 255))
         nvgText(vg, MID_NAME_CX, MID_NAME_CY + EQUIP_LOWER_OFFSET, heroCfg.name, nil)
+    end
+
+    -- === 关键词解释弹窗（最上层，盖住页签与装备浮层）===
+    if detailState.tab == "awaken" then
+        local AwakeningKw = require("ui.character.hero.AwakeningPanel").kwText
+        if AwakeningKw then AwakeningKw:drawPopup(vg) end
+    else
+        M.talentKwText:drawPopup(vg)
     end
 end
 

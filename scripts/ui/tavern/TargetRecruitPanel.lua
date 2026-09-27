@@ -171,17 +171,14 @@ end
 --- 打开面板
 ---@param mode string|nil "standard" | "stellar"
 function M.open(mode)
-    state.mode = (mode == "stellar") and "stellar" or "standard"
-
-    local targetId
-    local remain
-    if state.mode == "stellar" then
-        targetId = PlayerStore.GetField("currency", "stellarTargetUpHeroId")
-        remain = 0
-    else
-        targetId = PlayerStore.GetField("currency", "targetRecruitHeroId")
-        remain   = PlayerStore.GetField("currency", "targetRecruitRemain")
+    if mode ~= "stellar" then
+        print("[TargetRecruitPanel] 指定招募已取消")
+        return
     end
+    state.mode = "stellar"
+
+    local targetId = PlayerStore.GetField("currency", "stellarTargetUpHeroId")
+    local remain = 0
 
     state.confirmedHeroId = targetId
     state.pityRemain = (remain and remain > 0) and remain or 3
@@ -223,8 +220,8 @@ function M.draw(vg)
     -- 背景九宫格
     DarkIcon.drawNine(vg, "panel", BG_CX - BG_W * 0.5, BG_CY - BG_H * 0.5, BG_W, BG_H, { titleH = BG_INSET_TOP })
 
-    local isStellarMode = state.mode == "stellar"
-    local titleText = isStellarMode and "指定UP角色" or "指定招募"
+    local isStellarMode = true
+    local titleText = "指定UP角色"
     local qualityFrame = getQualityFrame(state.mode)
     local activeHeroes = getActiveHeroes()
 
@@ -386,27 +383,17 @@ function M.handleInput(dx, dy)
                 .. " heroId=" .. tostring(state.selectedHeroId))
             -- 发送服务端请求
             local Protocol = require("shared.Protocol")
-            local action = (state.mode == "stellar")
-                and Protocol.ACTION_TYPES.STELLAR_TARGET_UP
-                or Protocol.ACTION_TYPES.TARGET_RECRUIT
-            require("runtime.GameAction").sendAction(action, {
+            require("runtime.GameAction").sendAction(Protocol.ACTION_TYPES.STELLAR_TARGET_UP, {
                 heroId = state.selectedHeroId,
             })
             -- 乐观更新：立即刷新 TavernPage 显示
             local TavernPage = require("ui.tavern.TavernPage")
             local HeroConfig = require("config.HeroConfig")
             local heroCfg = HeroConfig.get(state.selectedHeroId)
-            if state.mode == "stellar" then
-                TavernPage.setStellarTargetUp(
-                    state.selectedHeroId,
-                    heroCfg and heroCfg.name or "未知"
-                )
-            else
-                TavernPage.setTargetRecruit(
-                    state.selectedHeroId,
-                    heroCfg and heroCfg.name or "未知"
-                )
-            end
+            TavernPage.setStellarTargetUp(
+                state.selectedHeroId,
+                heroCfg and heroCfg.name or "未知"
+            )
         end
         M.close()
         return true

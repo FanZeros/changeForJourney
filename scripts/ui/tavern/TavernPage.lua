@@ -205,10 +205,6 @@ local state = {
     -- 保底数据（从 GachaSystem 实时读取）
     pityRemain = GachaConfig.Pity.SSR_THRESHOLD,
     pityRank   = "史诗",
-    -- 指定招募数据（从服务端 currency 模块同步）
-    targetRecruitHeroId = nil,   -- 指定的SSR英雄ID（nil=未指定）
-    targetRecruitRemain = 0,     -- 剩余SSR保底次数
-    targetRecruitName   = nil,   -- 指定的SSR英雄名字（缓存）
     stellarTargetUpHeroId = nil,  -- 星辉指定UP角色ID（nil=未指定）
     stellarTargetUpName   = nil,  -- 星辉指定UP角色名字（缓存）
     -- 资源数据（从 GameState 实时读取）
@@ -380,16 +376,6 @@ local function syncDisplayData()
         local serverSR  = currencyData.gachaPitySR or 0
         local serverSSR = currencyData.gachaPitySSR or 0
         GachaSystem.setPityCounts(serverSR, serverSSR)
-
-        -- 同步指定招募数据
-        state.targetRecruitHeroId = currencyData.targetRecruitHeroId
-        state.targetRecruitRemain = currencyData.targetRecruitRemain or 0
-        if state.targetRecruitHeroId then
-            local heroCfg = HeroConfig.get(state.targetRecruitHeroId)
-            state.targetRecruitName = heroCfg and heroCfg.name or "未知"
-        else
-            state.targetRecruitName = nil
-        end
 
         local prevStellarTargetUpHeroId = state.stellarTargetUpHeroId
         state.stellarTargetUpHeroId = currencyData.stellarTargetUpHeroId
@@ -719,7 +705,7 @@ local function drawTargetRecruitText(vg, cx, cy)
     nvgFontSize(vg, TARGET_TEXT_SIZE)
 
     local segments = nil
-    local emptyText = "当前未指定招募保底"
+    local emptyText = ""
 
     if isStellarPoolSelected() then
         if state.stellarTargetUpHeroId then
@@ -732,14 +718,6 @@ local function drawTargetRecruitText(vg, cx, cy)
         else
             emptyText = "当前未指定UP角色"
         end
-    elseif state.targetRecruitHeroId and state.targetRecruitRemain > 0 then
-        -- 有指定招募：多段绘制 "还剩 N 次招募SSR必定招募 XXX"
-        segments = {
-            { text = "还剩",     color = { 255, 255, 255 } },
-            { text = tostring(state.targetRecruitRemain), color = { 0xFF, 0xEF, 0x67 } },
-            { text = "次招募SSR必定招募", color = { 255, 255, 255 } },
-            { text = state.targetRecruitName or "未知", color = { 0xFF, 0x88, 0x44 } },
-        }
     end
 
     if segments then
@@ -772,7 +750,7 @@ local function drawTargetRecruitText(vg, cx, cy)
             nvgText(vg, curX, cy, seg.text, nil)
             curX = curX + seg.w
         end
-    else
+    elseif emptyText ~= "" then
         -- 未指定：带描边的灰色提示
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 180))
@@ -882,12 +860,6 @@ local function drawPageImpl(vg)
             ::continue_pool_draw::
         end
 
-        -- ============ 5. 历史招募图标背景 + 图标 ============
-        local _s1 = BF.begin(vg, "tavern_history", TIMER_BG_CX, TIMER_BG_CY, TIMER_BG_W, TIMER_BG_H)
-        drawImageCentered(vg, img.timerBg, TIMER_BG_CX, TIMER_BG_CY, TIMER_BG_W, TIMER_BG_H, 1.0)
-        drawImageCentered(vg, img.timerIcon, TIMER_ICON_CX, TIMER_ICON_CY, TIMER_ICON_W, TIMER_ICON_H, 1.0)
-        BF.finish(vg, _s1)
-
         -- ============ 6. 保底提示背景条 ============
         drawImageCentered(vg, img.pityBg, PITY_BG_CX, PITY_BG_CY, PITY_BG_W, PITY_BG_H, 1.0)
 
@@ -951,6 +923,35 @@ local function drawPageImpl(vg)
             { strokeColor = { DIAMOND_STROKE_R, DIAMOND_STROKE_G, DIAMOND_STROKE_B } }
         )
 
+        -- 按钮上方显示招募券，券不够时下方补黑晶差额。
+        local function recruitCost(count)
+            local ticketCost, gemEach
+            if isStellarPoolSelected() then
+                ticketCost = (count == 10) and UrGachaConfig.Cost.TEN_TICKET or UrGachaConfig.Cost.SINGLE_TICKET
+                gemEach = UrGachaConfig.Cost.SINGLE_DIAMOND
+            else
+                ticketCost = (count == 10) and GachaConfig.Cost.TEN_TICKET or GachaConfig.Cost.SINGLE_TICKET
+                gemEach = GachaConfig.Cost.SINGLE_DIAMOND
+            end
+            local shortfall = math.max(0, ticketCost - (state.ticketCount or 0))
+            return ticketCost, shortfall * gemEach
+        end
+        local function drawRecruitCost(cx, cy, count)
+            local tickets, gems = recruitCost(count)
+            local ticketImg = img.ticketIcon
+            if isStellarPoolSelected() and img.ticketIconStellar >= 0 then
+                ticketImg = img.ticketIconStellar
+            end
+            drawImageCentered(vg, ticketImg, cx - 28, cy - 62, 42, 42, 1.0)
+            drawTextStroke(vg, cx + 4, cy - 62, tostring(tickets), 30,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+            if gems > 0 then
+                drawImageCentered(vg, img.diamondIcon, cx - 36, cy + 62, 42, 42, 1.0)
+                drawTextStroke(vg, cx - 4, cy + 62, tostring(gems), 30,
+                    NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 90, 90, 3)
+            end
+        end
+
         -- ============ 16. 招募1次按钮 ============
         local _s3 = BF.begin(vg, "tavern_recruit1", BTN_1_CX, BTN_1_CY, BTN_1_W, BTN_1_H)
         DarkIcon.drawNine(vg, "btn", BTN_1_CX - BTN_1_W * 0.5, BTN_1_CY - BTN_1_H * 0.5, BTN_1_W, BTN_1_H, { accent = "green" })
@@ -960,6 +961,7 @@ local function drawPageImpl(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
         nvgText(vg, BTN_1_CX, BTN_1_CY, "招募1次", nil)
+        drawRecruitCost(BTN_1_CX, BTN_1_CY, 1)
         BF.finish(vg, _s3)
 
         -- ============ 17. 招募10次按钮 ============
@@ -971,19 +973,22 @@ local function drawPageImpl(vg)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
         nvgText(vg, BTN_10_CX, BTN_10_CY, "招募10次", nil)
+        drawRecruitCost(BTN_10_CX, BTN_10_CY, 10)
         BF.finish(vg, _s4)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("tavern_btn_gacha10", BTN_10_CX, BTN_10_CY, BTN_10_W, BTN_10_H, "left") end
 
-        -- ============ 20.5 指定招募 / 指定UP角色按钮 ==========
-        local _s6 = BF.begin(vg, "tavern_target", BTN_TARGET_CX, BTN_TARGET_CY, BTN_TARGET_W, BTN_TARGET_H)
-        DarkIcon.drawNine(vg, "btn", BTN_TARGET_CX - BTN_TARGET_W * 0.5, BTN_TARGET_CY - BTN_TARGET_H * 0.5, BTN_TARGET_W, BTN_TARGET_H, { accent = "gold" })
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_TARGET_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 191))
-        nvgText(vg, BTN_TARGET_CX, BTN_TARGET_CY, isStellarPoolSelected() and "指定UP角色" or "指定招募", nil)
-        BF.finish(vg, _s6)
+        -- 星辉池保留指定UP。常规池的指定招募已取消。
+        if isStellarPoolSelected() then
+            local _s6 = BF.begin(vg, "tavern_target", BTN_TARGET_CX, BTN_TARGET_CY, BTN_TARGET_W, BTN_TARGET_H)
+            DarkIcon.drawNine(vg, "btn", BTN_TARGET_CX - BTN_TARGET_W * 0.5, BTN_TARGET_CY - BTN_TARGET_H * 0.5, BTN_TARGET_W, BTN_TARGET_H, { accent = "gold" })
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, BTN_TARGET_FONT)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(244, 237, 224, 191))
+            nvgText(vg, BTN_TARGET_CX, BTN_TARGET_CY, "指定UP角色", nil)
+            BF.finish(vg, _s6)
+        end
     end -- state.tab ~= "shop"
 
     -- ============ 18. 返回按钮 ============
@@ -1105,13 +1110,6 @@ function TavernPage.handleInput(dx, dy)
         -- 商店标签页输入转发
         if TavernShopPage.handleInput(dx, dy) then return true end
     else
-        -- 历史招募图标点击 → 打开历史弹窗
-        if hitTest(dx, dy, TIMER_BG_CX, TIMER_BG_CY, TIMER_BG_W, TIMER_BG_H) then
-            BF.trigger("tavern_history")
-            TavernPopups.openHistory()
-            return true
-        end
-
         -- 保底提示图标（招募说明）→ 打开说明弹窗
         if hitTest(dx, dy, PITY_ICON_BG_CX, PITY_ICON_BG_CY, PITY_ICON_BG_W, PITY_ICON_BG_H) then
             BF.trigger("tavern_pity")
@@ -1135,16 +1133,12 @@ function TavernPage.handleInput(dx, dy)
             return true
         end
 
-        -- 指定招募 / 指定UP角色按钮
-        if hitTest(dx, dy, BTN_TARGET_CX, BTN_TARGET_CY, BTN_TARGET_W, BTN_TARGET_H) then
+        -- 星辉指定UP。常规池的指定招募已取消。
+        if isStellarPoolSelected()
+            and hitTest(dx, dy, BTN_TARGET_CX, BTN_TARGET_CY, BTN_TARGET_W, BTN_TARGET_H) then
             BF.trigger("tavern_target")
-            if isStellarPoolSelected() then
-                print("[TavernPage] 点击: 指定UP角色")
-                TargetRecruitPanel.open("stellar")
-            else
-                print("[TavernPage] 点击: 指定招募")
-                TargetRecruitPanel.open("standard")
-            end
+            print("[TavernPage] 点击: 指定UP角色")
+            TargetRecruitPanel.open("stellar")
             return true
         end
     end
@@ -1351,20 +1345,6 @@ end
 --- 刷新显示数据（供外部模块在数据变化后调用，如指定招募确认后）
 function TavernPage.refreshDisplay()
     syncDisplayData()
-end
-
---- 设置指定招募显示状态（供 TargetRecruitPanel 确认后乐观更新）
----@param heroId number|nil
----@param heroName string|nil
-function TavernPage.setTargetRecruit(heroId, heroName)
-    -- remain 继承逻辑：之前没有指定或已用完 → 设为满值；否则保持当前值
-    local prevTarget = state.targetRecruitHeroId
-    local prevRemain = state.targetRecruitRemain or 0
-    if not prevTarget or prevRemain <= 0 then
-        state.targetRecruitRemain = 3
-    end
-    state.targetRecruitHeroId = heroId
-    state.targetRecruitName   = heroName
 end
 
 --- 设置星辉指定UP显示状态（供 TargetRecruitPanel 确认后乐观更新）

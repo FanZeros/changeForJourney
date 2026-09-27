@@ -592,11 +592,25 @@ function M.draw(vg)
     local isClassTab = (detailState.tab == "class")
     local stepAngle = math.pi * 2 / 16  -- 16向描边步进角（7节标题/10节等级共用）
 
-    --- 卡面底部信息：等级徽章、战力、职业标。画在卡的局部坐标里，随卡缩放和滑动。
+    local function heroOwned(id)
+        local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
+        if not roster then return true end
+        for _, entry in ipairs(roster) do
+            if entry.heroId == id then return entry.owned == true end
+        end
+        return true
+    end
+
+    --- 卡面底部信息：等级徽章、战力、职业标。未获得只写文字并压灰。
     ---@param id number 英雄 id
     local function drawCardBadges(id)
         local cfg = HC.get(id)
         if not cfg then return end
+        if not heroOwned(id) then
+            drawTextStroke(vg, 0, CARD.H * 0.5 - CARD.LVL_BOTTOM_UP, "未获得",
+                28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 190, 190, 190, 4)
+            return
+        end
         local level = heroLevel
         if id ~= heroId then
             local ok, CharacterPanel = pcall(require, "ui.character.panel.CharacterPanel")
@@ -659,7 +673,7 @@ function M.draw(vg)
             idx = idx + dir
             if idx < 1 then idx = #roster end
             if idx > #roster then idx = 1 end
-            if roster[idx].owned then return roster[idx].heroId end
+            return roster[idx].heroId
         end
         return nil
     end
@@ -686,7 +700,14 @@ function M.draw(vg)
         nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, cardY)
         nvgScale(vg, scale * yaw, scale)
         nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
-        DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, 1.0)
+        local owned = heroOwned(id)
+        DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
+        if not owned then
+            nvgBeginPath(vg)
+            nvgRect(vg, -CARD.W * 0.5, -CARD.H * 0.5, CARD.W, CARD.H)
+            nvgFillColor(vg, nvgRGBA(28, 28, 28, 120))
+            nvgFill(vg)
+        end
         drawCardBadges(id)
         nvgRestore(vg)
     end
@@ -1509,7 +1530,7 @@ function M.draw(vg)
                 idx = idx + dir
                 if idx < 1 then idx = #roster end
                 if idx > #roster then idx = 1 end
-                if roster[idx].owned then return roster[idx].heroId end
+                return roster[idx].heroId
             end
             return nil
         end
@@ -1533,7 +1554,14 @@ function M.draw(vg)
             nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, CARD.CY)
             nvgScale(vg, scale * yaw, scale)
             nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
-            DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, 1.0)
+            local owned = heroOwned(id)
+            DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
+            if not owned then
+                nvgBeginPath(vg)
+                nvgRect(vg, -CARD.W * 0.5, -CARD.H * 0.5, CARD.W, CARD.H)
+                nvgFillColor(vg, nvgRGBA(28, 28, 28, 120))
+                nvgFill(vg)
+            end
             drawCardBadges(id)
             nvgRestore(vg)
         end

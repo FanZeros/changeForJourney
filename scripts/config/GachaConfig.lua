@@ -26,10 +26,10 @@ GachaConfig.QUALITY_SSR = 3
 
 -- 基础概率（百分比）
 GachaConfig.Probability = {
-    [GachaConfig.QUALITY_N]   = 71.0,
-    [GachaConfig.QUALITY_R]   = 18.0,
-    [GachaConfig.QUALITY_SR]  = 10.0,
-    [GachaConfig.QUALITY_SSR] = 1.0,
+    [GachaConfig.QUALITY_N]   = 55.0,
+    [GachaConfig.QUALITY_R]   = 25.0,
+    [GachaConfig.QUALITY_SR]  = 15.0,
+    [GachaConfig.QUALITY_SSR] = 5.0,
 }
 
 -- ======================== 保底配置 ========================

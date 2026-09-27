@@ -54,7 +54,6 @@ Protocol.ACTION_TYPES = {
     -- 经济
     DRAW_CARD      = "draw_card",       -- 抽卡（旧版简易抽卡）
     GACHA_PULL     = "gacha_pull",      -- 酒馆招募（完整抽卡系统）
-    TARGET_RECRUIT = "target_recruit", -- 指定招募（设置保底目标英雄）
     STELLAR_TARGET_UP = "stellar_target_up", -- 星辉指定UP角色（UR命中时50%概率转为该角色）
 
     -- 战斗奖励

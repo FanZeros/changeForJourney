@@ -695,22 +695,38 @@ function BattleScene.draw(vg)
     local driftY = -BG_DRIFT_Y_AMP * (1.0 - math.cos(bgAnimTimer * 2 * math.pi / BG_DRIFT_Y_PERIOD)) * 0.5
     local mapScale = 1.0
     local walkY = 0
+    local mapAlpha = 1.0
+    local alignRight = false
     if bgTransAnim then
         local t = math.min(bgTransAnim.timer / BG_TRANS_DURATION, 1.0)
-        -- 0→1→0 的迈步鼓包，峰值在中点
-        local bump = math.sin(t * math.pi)
         local peak = bgTransAnim.zoomTarget or BG_ZOOM_FWD_TARGET
         if peak < 1.0 then
-            peak = 2.0 - peak  -- 旧「缩小淡出」值转成放大
+            peak = 2.0 - peak
         end
-        mapScale = 1.0 + (peak - 1.0) * bump
-        walkY = -36.0 * bump  -- 同步微微上移，模拟迈步
+        if t < 0.45 then
+            -- 右边缘对齐放大，模拟往画面右侧迈出
+            local u = t / 0.45
+            mapScale = 1.0 + (peak - 1.0) * (u * u)
+            alignRight = true
+            mapAlpha = 1.0
+        else
+            -- 透明淡入回原本大小
+            local u = (t - 0.45) / 0.55
+            local fade = u * u * (3 - 2 * u)
+            mapScale = peak + (1.0 - peak) * fade
+            mapAlpha = fade
+            alignRight = true
+        end
+    end
+    local mapX = MAP_CX
+    if alignRight then
+        mapX = MAP_CX + MAP_W * 0.5 - MAP_W * mapScale * 0.5
     end
     -- 裁进设计画布，放大时不溢到邻栏
     nvgSave(vg)
     nvgIntersectScissor(vg, MAP_CX - MAP_W * 0.5, MAP_CY - MAP_H * 0.5, MAP_W, MAP_H)
-    DarkIcon.drawDarkScene(vg, imgMap, MAP_CX, MAP_CY + driftY + walkY,
-        MAP_W * mapScale, MAP_H * mapScale, 1.0)
+    DarkIcon.drawDarkScene(vg, imgMap, mapX, MAP_CY + driftY + walkY,
+        MAP_W * mapScale, MAP_H * mapScale, mapAlpha)
     nvgRestore(vg)
 
     -- 2. 敌方战场阴影

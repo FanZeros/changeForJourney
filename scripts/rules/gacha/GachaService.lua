@@ -232,67 +232,16 @@ function GachaService.GachaPull(uid, count, payType, poolId)
             -- 从对应品质的统一卡池中按权重抽取
             local group = GachaConfig.getPoolGroup(quality)
             if group and #group.items > 0 then
-                -- 指定招募：命中 SSR 时检查是否强制产出目标英雄
-                local targetHeroId = currency.targetRecruitHeroId
-                local targetRemain = currency.targetRecruitRemain or 0
-                if quality == QUALITY_SSR and targetHeroId and targetRemain > 0 then
-                    -- 递减保底计数
-                    currency.targetRecruitRemain = targetRemain - 1
-                    if currency.targetRecruitRemain <= 0 then
-                        -- 保底触发：强制产出指定英雄
-                        for _, item in ipairs(group.items) do
-                            if item.type == "hero" and item.heroId == targetHeroId then
-                                poolItem = item
-                                break
-                            end
-                        end
-                        -- 兜底：若目标英雄不在卡池中（配置变更），正常随机SSR
-                        if not poolItem then
-                            local roll = math.random() * group.totalWeight
-                            local acc = 0
-                            for _, item in ipairs(group.items) do
-                                acc = acc + item.weight
-                                if roll <= acc then poolItem = item; break end
-                            end
-                            if not poolItem then poolItem = group.items[#group.items] end
-                            print("[GachaService] 指定招募目标不在池中,随机SSR uid=" .. tostring(uid))
-                        end
-                        -- 产出后重置指定招募
-                        currency.targetRecruitHeroId = nil
-                        currency.targetRecruitRemain = 0
-                        print("[GachaService] 指定招募保底触发! uid=" .. tostring(uid) .. " heroId=" .. tostring(targetHeroId))
-                    else
-                        -- 未到保底，正常随机（但若随机到目标英雄也算完成）
-                        local roll = math.random() * group.totalWeight
-                        local acc = 0
-                        for _, item in ipairs(group.items) do
-                            acc = acc + item.weight
-                            if roll <= acc then
-                                poolItem = item
-                                break
-                            end
-                        end
-                        if not poolItem then poolItem = group.items[#group.items] end
-                        -- 如果恰好随机到了目标英雄，提前完成指定招募
-                        if poolItem and poolItem.type == "hero" and poolItem.heroId == targetHeroId then
-                            currency.targetRecruitHeroId = nil
-                            currency.targetRecruitRemain = 0
-                            print("[GachaService] 指定招募提前命中! uid=" .. tostring(uid) .. " heroId=" .. tostring(targetHeroId))
-                        end
+                local roll = math.random() * group.totalWeight
+                local acc = 0
+                for _, item in ipairs(group.items) do
+                    acc = acc + item.weight
+                    if roll <= acc then
+                        poolItem = item
+                        break
                     end
-                else
-                    -- 无指定招募或非SSR：正常随机
-                    local roll = math.random() * group.totalWeight
-                    local acc = 0
-                    for _, item in ipairs(group.items) do
-                        acc = acc + item.weight
-                        if roll <= acc then
-                            poolItem = item
-                            break
-                        end
-                    end
-                    if not poolItem then poolItem = group.items[#group.items] end
                 end
+                if not poolItem then poolItem = group.items[#group.items] end
             end
         end
 
@@ -413,46 +362,6 @@ function GachaService.GachaPull(uid, count, payType, poolId)
         poolId       = "standard",
         pity = { poolId = "standard", sinceSR = currency.gachaPitySR or 0, sinceSSR = currency.gachaPitySSR or 0 },
     }
-end
-
--- ======================== 指定招募 ========================
-
-local TARGET_RECRUIT_PITY = 3  -- 保底次数：3次SSR内必出
-
---- 设置指定招募目标英雄
---- 更换目标时继承已消耗的保底进度（remain 不重置），仅首次激活时设为满值
----@param uid number
----@param heroId number
----@return boolean ok, string? err
-function GachaService.SetTargetRecruit(uid, heroId)
-    local currency = PDM.GetModule(uid, "currency")
-    if not currency then return false, "数据未加载" end
-
-    -- 校验英雄ID是否为有效的SSR英雄
-    local hero = HeroConfig.HEROES[heroId]
-    if not hero then return false, "英雄不存在" end
-    if hero.quality ~= (HeroConfig.QUALITY_SSR or 3) then
-        return false, "只能指定SSR品质英雄"
-    end
-
-    -- 设置指定招募（更换目标时继承剩余计数）
-    local prevRemain = currency.targetRecruitRemain or 0
-    local prevTarget = currency.targetRecruitHeroId
-    currency.targetRecruitHeroId = heroId
-
-    if not prevTarget or prevRemain <= 0 then
-        -- 首次激活 或 上一轮保底已触发（remain=0）：初始化为满值
-        currency.targetRecruitRemain = TARGET_RECRUIT_PITY
-    end
-    -- 否则（正在进行中切换目标）：保留当前 remain 不变，继承已消耗的进度
-
-    PDM.MarkDirty(uid, "currency")
-
-    print("[GachaService] SetTargetRecruit uid=" .. tostring(uid)
-        .. " heroId=" .. tostring(heroId)
-        .. " remain=" .. tostring(currency.targetRecruitRemain)
-        .. " (prev=" .. tostring(prevTarget) .. " prevRemain=" .. tostring(prevRemain) .. ")")
-    return true
 end
 
 -- ======================== 星辉指定UP角色 ========================

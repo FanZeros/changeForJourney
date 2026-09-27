@@ -175,9 +175,7 @@ end
 --- 打开指定弹窗
 local function openPopup(name)
     if name == "history" then
-        popupState.historyVisible = true
-        popupState.historyScrollY = 0
-        popupState.historyTouchY = nil
+        return
     elseif name == "info" then
         popupState.infoVisible = true
         popupState.infoScrollY = 0
@@ -566,13 +564,13 @@ local function drawInfoRuleText(vg, poolId)
             {},
             { { text = "各品质基础概率：", r = tr, g = tg, b = tb } },
             { { text = "杂项: ", r = tr, g = tg, b = tb },
-              { text = "71%", r = hr, g = hg, b = hb } },
+              { text = "55%", r = hr, g = hg, b = hb } },
             { { text = "普通: ", r = tr, g = tg, b = tb },
-              { text = "18%", r = hr, g = hg, b = hb } },
+              { text = "25%", r = hr, g = hg, b = hb } },
             { { text = "稀有: ", r = tr, g = tg, b = tb },
-              { text = "10%", r = hr, g = hg, b = hb } },
+              { text = "15%", r = hr, g = hg, b = hb } },
             { { text = "史诗: ", r = tr, g = tg, b = tb },
-              { text = "1%", r = hr, g = hg, b = hb } },
+              { text = "5%", r = hr, g = hg, b = hb } },
         }
     end
 
@@ -643,10 +641,8 @@ function M.init(vg)
     print("[TavernPopups] init OK")
 end
 
---- 打开历史招募弹窗
+--- 历史招募已取消
 function M.openHistory()
-    openPopup("history")
-    print("[TavernPopups] 打开历史招募弹窗")
 end
 
 --- 打开招募说明弹窗

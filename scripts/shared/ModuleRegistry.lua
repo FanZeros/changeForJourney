@@ -111,8 +111,6 @@ ModuleRegistry.modules = {
                 urPitySR  = 0,
                 urPitySSR = 0,
                 urPityUR  = 0,
-                targetRecruitHeroId = nil,
-                targetRecruitRemain = 0,
                 stellarTargetUpHeroId = nil,
             }
         end,

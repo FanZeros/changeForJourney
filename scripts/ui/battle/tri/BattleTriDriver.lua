@@ -36,7 +36,7 @@ local ENTER_STAGGER = 0.06
 local REWARD_INTERVAL = 0.05
 local REINFORCE_INTERVAL = 0.4
 local MARCH_DURATION = 2.0
-local MARCH_STEP = 16
+local MARCH_STEP = 7
 -- 全灭兜底：单单位复活计时失效（缺 attrs 等）时，按这个墙钟整队复活，避免永久卡死
 local WIPE_RESET_DELAY = 5.0
 
@@ -343,10 +343,9 @@ function BattleTriDriver.new(teamIdx)
         end
     end
 
-    --- 通关后先走一段路，再切下一关
+    --- 奖励关掉后再走一段路，然后切下一关
     function drv:beginMarch()
         if (self.marchTimer or 0) > 0 then return end
-        self:queuePendingKills()
         self.marchTimer = MARCH_DURATION
         for _, unit in ipairs(self.allies) do
             if unit.hp > 0 then
@@ -369,8 +368,8 @@ function BattleTriDriver.new(teamIdx)
         print(string.format("[TriDriver] 队%d 通关 %s → %s",
             self.teamIdx, tostring(clearedId), tostring(nextId)))
         self._syncedMainStage = nextId
+        self._clearReported = false
         self:start(nextId)
-        if self.onStageCleared then self.onStageCleared(self.teamIdx, clearedId) end
     end
 
     --- 战斗 tick（须已 mount）
@@ -416,9 +415,18 @@ function BattleTriDriver.new(teamIdx)
             if u.hp > 0 then hasAliveEnemy = true break end
         end
 
-        -- 通关: 敌方全灭后先显示前进，约 2 秒后再切下一关
+        -- 通关: 先结算并弹出奖励，奖励关掉后再显示前进，约 2 秒后切下一关
         if not hasAliveEnemy and #self.enemyQueue == 0 and #self.enemies == 0 then
             self:reportDefeatedEnemies()
+            if not self._clearReported then
+                self._clearReported = true
+                self:queuePendingKills()
+                if self.onStageCleared then self.onStageCleared(self.teamIdx, self.stageId) end
+            end
+            if require("ui.hud.popup.RewardPopup").isOpen() then
+                BattleCombat.updateFloatingTexts(dt)
+                return
+            end
             if (self.marchTimer or 0) <= 0 then
                 self:beginMarch()
             end

@@ -37,8 +37,6 @@ local BattleCombat      = require("ui.battle.combat.BattleCombat")
 local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
 local RedeemCodePanel   = require("ui.hud.popup.RedeemCodePanel")
-local AnnouncementPanel = require("ui.story.task.AnnouncementPanel")
-local AnnouncementConfig = require("shared.AnnouncementConfig")
 local StartScreen       = require("ui.story.gate.StartScreen")
 local DarkTitleScreen   = require("ui.story.gate.DarkTitleScreenGate")  -- [DarkTitleScreen] 横屏暗黑标题
 local BattleTriPage     = require("ui.battle.tri.BattleTriPage")    -- [三行并行] 三行战斗区
@@ -66,8 +64,6 @@ local ClientMsgHandler   = require("runtime.ClientMessageHandler")
 local LocalActionBridge  = require("runtime.LocalActionBridge")
 local StandaloneBoot     = require("boot.StandaloneBoot")
 local StandaloneRT       = require("boot.StandaloneRT")
-local TaskPanel          = require("ui.story.task.TaskPanel")
-local SignInPanel        = require("ui.story.task.SignInPanel")
 
 local Standalone = {}
 
@@ -404,7 +400,6 @@ function Standalone.Start()
     -- 轻量接线（不解码贴图，可在首帧完成）
     ClientMsgHandler.setup({ sendAction = localSendAction })
     ClientMsgHandler.setupDataSubscriptions()
-    AnnouncementPanel.setAnnouncementData(AnnouncementConfig.buildWithDates(0))
 
     RedeemCodePanel.setSendAction(function(action, params)
         local sent = localSendAction(action, params)
@@ -412,8 +407,6 @@ function Standalone.Start()
             RedeemCodePanel.onActionResult({ success = false, reason = "本地处理失败", redeemAction = true })
         end
     end)
-    SignInPanel.setSendAction(localSendAction)
-    TaskPanel.setSendAction(localSendAction)
     TavernPage.setSendAction(localSendAction)
     MarketPage.setSendAction(localSendAction)
 

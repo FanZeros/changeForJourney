@@ -1,7 +1,6 @@
 -- ui.ModuleMap - panel short name to subdirectory module path
 local M = {}
 local MAP = {
-    ["AnnouncementPanel"] = "ui.story.task.AnnouncementPanel",
     ["ArtifactDetailPanel"] = "ui.character.hero.ArtifactDetailPanel",
     ["AvatarSelectPanel"] = "ui.character.hero.AvatarSelectPanel",
     ["AwakeningPanel"] = "ui.character.hero.AwakeningPanel",
@@ -98,11 +97,9 @@ local MAP = {
     ["QualityMark"] = "ui.widget.QualityMark",
     ["RecruitAnim"] = "ui.tavern.RecruitAnim",
     ["RedeemCodePanel"] = "ui.hud.popup.RedeemCodePanel",
-    ["RelicReforgePanel"] = "ui.relic.RelicReforgePanel",
     ["RewardPopup"] = "ui.hud.popup.RewardPopup",
     ["ScenarioDialogue"] = "ui.story.ScenarioDialogue",
     ["SettingsPanel"] = "ui.hud.popup.SettingsPanel",
-    ["SignInPanel"] = "ui.story.task.SignInPanel",
     ["SoundToggle"] = "ui.widget.SoundToggle",
     ["SpeechBubble"] = "ui.widget.SpeechBubble",
     ["SpineCardEffect"] = "ui.fx.SpineCardEffect",
@@ -115,7 +112,6 @@ local MAP = {
     ["TalentStarMap"] = "ui.church.talent.TalentStarMap",
     ["TargetRecruitPanel"] = "ui.tavern.TargetRecruitPanel",
     ["TaskPage"] = "ui.story.task.TaskPage",
-    ["TaskPanel"] = "ui.story.task.TaskPanel",
     ["TavernPage"] = "ui.tavern.TavernPage",
     ["TavernPopups"] = "ui.tavern.TavernPopups",
     ["TavernShopPage"] = "ui.tavern.TavernShopPage",

@@ -28,8 +28,6 @@ local BattleTriPage     = require("ui.battle.tri.BattleTriPage")
 local PlayerStore       = require("core.PlayerStore")
 local IntroCutscene     = require("ui.story.gate.IntroCutscene")
 local LocalActionBridge = require("runtime.LocalActionBridge")
-local TaskPanel         = require("ui.story.task.TaskPanel")
-local SignInPanel       = require("ui.story.task.SignInPanel")
 local BackpackPanel     = require("ui.backpack.BackpackPanel")
 
 local M = {}
@@ -258,12 +256,6 @@ function M.run(rt)
         print("[Standalone] 初始化 heroes 数据（大狗嚼 Lv1）")
     end
 
-    PlayerStore.Subscribe("signin", function(data, _fieldKey)
-        if data then SignInPanel.setSignInData(data) end
-    end)
-    PlayerStore.Subscribe("task", function(data, _fieldKey)
-        if data then TaskPanel.setTaskData(data) end
-    end)
     PlayerStore.Subscribe("market", function(data, _fieldKey)
         if data then MarketPage.setMarketData(data) end
     end)

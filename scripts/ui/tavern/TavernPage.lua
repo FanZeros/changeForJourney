@@ -623,7 +623,7 @@ local function doRecruitDirect(count, forcePayType)
         end
         _TM.notifyEvent("gacha10_complete")
         require("ui.character.hero.HeroScenario").onRecruitResults(results)
-    end, count)
+    end, count, getSelectedPoolId())
 end
 
 -- 延迟注入 doRecruitDirect 到弹窗子模块（因为定义在 init 之后）
@@ -937,21 +937,25 @@ local function drawPageImpl(vg)
                 ticketCost = (count == 10) and GachaConfig.Cost.TEN_TICKET or GachaConfig.Cost.SINGLE_TICKET
                 gemCost = (count == 10) and GachaConfig.Cost.TEN_DIAMOND or GachaConfig.Cost.SINGLE_DIAMOND
             end
-            if (state.ticketCount or 0) >= ticketCost then
-                return "ticket", ticketCost, true
-            end
-            return "gem", gemCost, (state.diamondCount or 0) >= gemCost
+            local tickets = math.min(state.ticketCount or 0, ticketCost)
+            local missing = ticketCost - tickets
+            local gemEach = gemCost / ticketCost
+            local gems = missing * gemEach
+            local enough = missing == 0 or (state.diamondCount or 0) >= gems
+            return tickets, gems, enough
         end
         local function drawRecruitCost(cx, cy, count)
-            local kind, amount, enough = recruitPay(count)
+            local tickets, gems, enough = recruitPay(count)
             local icon = img.diamondIcon
-            if kind == "ticket" then
+            local text = tostring(gems)
+            if tickets > 0 then
                 icon = img.ticketIcon
                 if isStellarPoolSelected() and img.ticketIconStellar >= 0 then
                     icon = img.ticketIconStellar
                 end
+                text = tostring(tickets)
+                if gems > 0 then text = text .. "+" .. tostring(gems) end
             end
-            local text = tostring(amount)
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 30)
             local textW = nvgTextBounds(vg, 0, 0, text)
@@ -984,8 +988,8 @@ local function drawPageImpl(vg)
         nvgFontSize(vg, BTN_TEXT_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
-        nvgText(vg, BTN_10_CX - 78, BTN_10_CY, "招募10次", nil)
-        drawRecruitCost(BTN_10_CX + 112, BTN_10_CY, 10)
+        nvgText(vg, BTN_10_CX - 108, BTN_10_CY, "招募10次", nil)
+        drawRecruitCost(BTN_10_CX + 78, BTN_10_CY, 10)
         BF.finish(vg, _s4)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("tavern_btn_gacha10", BTN_10_CX, BTN_10_CY, BTN_10_W, BTN_10_H, "left") end
@@ -1303,7 +1307,7 @@ function TavernPage.onActionResult(data)
         syncDisplayData()
         print("[TavernPage] 招募动画结束（服务端模式）")
         require("ui.character.hero.HeroScenario").onRecruitResults(data.gachaResults)
-    end)
+    end, nil, getSelectedPoolId())
 end
 
 -- ======================== 拖拽/滚动支持 ========================

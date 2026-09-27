@@ -577,11 +577,7 @@ function HandleNanoVGRenderHorizon()
         end
         -- 三行战斗的玩家信息在后面全窗居中重画，这里不画，避免左栏裁切出半个面板。
         Viewport.finish(vg())
-        local rightScaleX = nil
-        if CharacterPanel.isDetailOpen and CharacterPanel.isDetailOpen() then
-            rightScaleX = rightW / 1080
-        end
-        Viewport.begin(vg(), Viewport.PANELS.right, oxR, 0, ps, rightScaleX)
+        Viewport.begin(vg(), Viewport.PANELS.right, oxR, 0, ps, rightW / 1080)
         CharacterPanel.draw(vg())
         Viewport.finish(vg())
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
@@ -764,11 +760,7 @@ local function HorizonResolveMouse()
         if sx < leftW then
             return 'left', sx / (ps * 0.45), sy / (ps * 0.45)
         elseif sx > logicalW() - rightW then
-            local scaleX = ps * 0.45
-            if CharacterPanel.isDetailOpen and CharacterPanel.isDetailOpen() then
-                scaleX = rightW / 1080
-            end
-            return 'right', (sx - (logicalW() - rightW)) / scaleX, sy / (ps * 0.45)
+            return 'right', (sx - (logicalW() - rightW)) / (rightW / 1080), sy / (ps * 0.45)
         end
         return 'tri', sx, sy
     end

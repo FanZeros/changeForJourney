@@ -312,8 +312,10 @@ end
 ---@return table|nil
 local function seamHitAt(sx, sy)
     for _, seamBtn in ipairs(seamBackList()) do
+        local arrowY = seamBtn.sh * DrawUtil.SEAMBAR_ARROW_Y
+        local arrowH = seamBtn.sh * 0.16
         if math.abs(sx - seamBtn.cx) <= seamBtn.sw * 0.5
-            and math.abs(sy - logicalH() * 0.5) <= seamBtn.sh * 0.5 then
+            and math.abs(sy - arrowY) <= arrowH * 0.5 then
             return seamBtn
         end
     end

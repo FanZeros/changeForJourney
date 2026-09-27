@@ -466,6 +466,7 @@ function M.run(rt)
                 end
                 print(string.format("[Standalone] 首通进度已写入 current=%s max=%s",
                     tostring(battle.currentStageId), tostring(battle.maxStageId)))
+                require("boot.StandaloneSave").Flush()
             end
         end
         local stageEntry = StageConfig.getStage(clearedStageId)

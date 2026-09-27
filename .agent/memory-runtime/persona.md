@@ -19,6 +19,8 @@
 
 ## 项目足迹（追加去重）
 
+- 2026-09-27 终焉之门：分项计价系数数据驱动拟合。新增 `tests/battle_lab_fit.lua`（31 组败局带采样，新 API `Lab.runSingle`）+ `_proc/fit_power_estimate.py`（岭回归/非负截断/剔除饱和样本）。关键方法论：败局总输出被存活时间混杂，必须用 DPS 口径回归（physical R² 0.03→0.43、magical 0.52）。可信拟合异系攻击系数=0 → OFF_FACTOR 0.25→0.10（保留小正值防显示归零）；healing 拟合不成立保留 0.5 待牧师专属采样。方向断言复验更清晰（战士 128>122、法师 126>119）。报告新增 heroPowers[].groups 四组分解。回归全绿，正式公式未改，只推 `feat926/battle-lab`。[scope:project]
+
 - 2026-09-27 终焉之门：实现分项计价战力原型 `systems/CombatPowerEstimate.lua`（仅 battle-lab 报告用，正式公式未改）：官方同底座 + 按伤害大类给 phys/mag/heal 区别系数（异系 0.25、治疗系输出 0.5）。方向验证通过：战士同战力 160 预估力量 133>智力 128（实测 3/40 vs 0/40），法师同战力 112 预估智力 85>力量 83（输出 287 vs 193）；边界测试第 9 节 + 旧入口/切关回归 ALL PASS。系数未拟合，只作方向参考。只推 `feat926/battle-lab`。[scope:project]
 
 - 2026-09-27 终焉之门：补齐 battle-lab 边界样本。新增 `tests/battle_lab_boundary_test.lua`（60+ 断言覆盖 `Lab.prepare` 全部拒绝分支/钳制/levelRange/ascendLevel 边界，headless ALL PASS 且自带退出）；真实校准 4×40 局：Lv7 tier1 上边界在 302/303 双侧全胜/全败（难度悬崖），Lv8 tier2 下边界在 303 得到非饱和样本——同战力 160 力量戒 3/40 vs 智力戒 0/40（种子 3926 复验 1/40 vs 0/40），输出+333/承伤-55，与 v2.54 方向一致。未动正式战力权重，只推 `feat926/battle-lab`。[scope:project]

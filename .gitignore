@@ -16,6 +16,7 @@ logs/.nfs*
 # Battle lab local input/output
 /battle_lab_config.json
 /battle_lab_report.json
+/battle_lab_fit_samples.json
 
 # OSS util
 .ossutil_checkpoint/

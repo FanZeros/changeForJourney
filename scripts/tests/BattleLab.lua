@@ -241,8 +241,12 @@ local function runPrepared(cfg, loadout, progress)
         -- 注意：createHero 的战斗单位没有 unit.atkType（仅 ClassGateRuntime 战中会设），
         -- 类型固定取 attrs.atkType（UnitAttributes.create 从配置写入，恒有值）。
         local estimate, category = CPE.estimate(unit.attrs, unit.attrs.atkType)
+        -- 四组分解（官方价值底座，未乘类别系数）：供 fit_power_estimate.py 回归拟合
+        local groups = CPE.breakdown(unit.attrs, unit.attrs.atkType)
         heroPowers[#heroPowers + 1] = { heroId = hero.id, power = power,
-            estimate = estimate, category = category }
+            estimate = estimate, category = category,
+            groups = { phys = groups.phys, mag = groups.mag,
+                heal = groups.heal, generic = groups.generic } }
         teamPower = teamPower + power
         teamEstimate = teamEstimate + estimate
     end
@@ -299,6 +303,33 @@ local function runPrepared(cfg, loadout, progress)
     end
     table.sort(list, function(a, b) return a.damage > b.damage end)
     report.heroStats = list
+    return report
+end
+
+--- 单方案运行入口：只跑一套配装（config.loadouts.A，或未传 loadouts 时裸英雄）。
+--- 供拟合采样器等批量场景使用，避免 Lab.run 的 A/B 路径把同一配装跑两遍。
+---@param config table 同 Lab.run 的 JSON 配置
+---@param progress fun(done:integer, total:integer, battle:table)|nil
+---@return table|nil report schemaVersion=1 报告
+---@return string|nil errorMessage
+function Lab.runSingle(config, progress)
+    local cfg, errorMessage = Lab.prepare(config)
+    if not cfg then return nil, errorMessage end
+    local oldLayout = Layout.MODE
+    local oldBucket = Stats.mountedTeam()
+    local SFX = require("systems.GameSFX")
+    local oldSound = SFX.isTeamMuted(926)
+    Layout.setMode("strip")
+    SFX.setTeamMuted(926, true)
+    local report
+    local ok, err = xpcall(function()
+        report = runPrepared(cfg, cfg.loadouts and cfg.loadouts.A or nil, progress)
+    end, debug.traceback)
+    require("ui.battle.stage.StageBerserk").exit()
+    SFX.setTeamMuted(926, oldSound)
+    Stats.mount(oldBucket or 0)
+    Layout.setMode(oldLayout or "strip")
+    if not ok then return nil, err end
     return report
 end
 

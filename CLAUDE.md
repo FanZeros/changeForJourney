@@ -40,6 +40,13 @@
 - 合法样本：第 101 关首通，大狗嚼 Lv.1，均为普通 Lv.1 `C13`（秘识戒）A 与 `C1`（力量戒）B；显示战力同为 112。种子 926–965：A 14/40 胜、B 40/40；种子 3926–3965：A 10/40、B 40/40；第 103 关：A 22/40、B 40/40。第 102 关两者均 40/40，但平均耗时 A 34.82s、B 28.02s；队伍加黄桃龙后第 101 关均 40/40，A 22.04s、B 21.30s。不同职业的单人法师/游侠样本均 0/40，不可据它们的胜率比较适配，需看输出与生存；全量实测汇总在 `docs/memory-index.md` 顶部。
 - 建议：不要全局削减魔攻权重（会误伤魔法职业）；显示战力如要反映角色适配，应以角色攻击类别区别计价物攻/魔攻及专属伤害、暴击、穿透，治疗者独立考虑治疗量。先保留原始属性战力供详情/队伍展示，对“实战预估”新口径跨阵容、关卡、层级验证，避免仅由胜率饱和场景定权重。正式战力公式和战斗结算尚未改。
 
+## 最新：分项计价系数拟合（2026-09-27，v2.57）
+
+- 采样：`tests/battle_lab_fit.lua`（31 组，四职业 × 武器等级 × 饰品，全取 303 关败局带，runs=10，走新 API `Lab.runSingle`）→ `battle_lab_fit_samples.json`（gitignore）。
+- 回归：`scripts/_proc/fit_power_estimate.py`（岭回归 λ=1、非负截断、剔除 winRate=100 饱和样本、DPS 与总输出双口径对照）。方法论要点：**败局总输出=存活时间×DPS，直接回归总输出会被 generic 生存组吞掉攻击信号**（physical 总输出 R²≈0.03、攻击组负系数）；DPS 口径 physical R²=0.43、magical R²=0.52。
+- 结论：可信拟合的异系攻击组系数均=0（异系攻击属性对 DPS 无可测贡献，其派生生存价值由 generic 组承载）→ `OFF_FACTOR` 0.25→**0.10**（保留小正值防止显示战力对异系装备归零）；方向断言复验更清晰（战士力量 128>智力 122、法师智力 126>力量 119）。healing 类 R² 为负（healer 局全超时）模型不成立，`HEALER_ATK_FACTOR=0.5` 保留初值，待牧师专属采样（短 timeLimit 制造非超时败局）再拟合。physical off[heal]=0.87 判为 C20(vit+spi) 单点共线噪声，已排除。
+- 报告新增 `heroPowers[].groups`（phys/mag/heal/generic 四组分解）；`CombatPowerEstimate.breakdown()` 为公开 API。回归全绿（边界/默认入口/切关），正式战力公式未改。
+
 ## 最新：分项计价战力原型（2026-09-27，v2.56）
 
 - 新增 `scripts/systems/CombatPowerEstimate.lua`（原型，**仅 battle-lab 报告使用**，不接线角色页/队伍展示，正式战力公式未改）：与官方同一价值底座（AD.META.valueModel + pct/100），把属性分为 phys/mag/heal/generic 四组，按英雄伤害大类（`AD.getAtkCategory(attrs.atkType)`）给本系 1.0、异系输出 0.25（治疗系英雄对输出系 0.5）。

@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.57-power-estimate-fit | 2026-09-27 | `feat926/battle-lab`：分项计价系数数据驱动拟合。新增 `tests/battle_lab_fit.lua`（31 组败局带采样，新 API `Lab.runSingle` 单方案跑）+ `_proc/fit_power_estimate.py`（岭回归、非负截断、剔除饱和样本）。方法论：败局总输出被存活时间混杂（physical 总输出口径 R²≈0.03），改 DPS 口径后 physical R²=0.43 / magical R²=0.52；可信拟合异系攻击系数=0 → `OFF_FACTOR` 0.25→0.10（保留小正值防显示归零），方向断言复验更清晰（战士 128>122、法师 126>119）。healing 拟合不成立（R²<0，healer 局全超时）保留 0.5 待专属采样。报告新增 heroPowers[].groups 四组分解。回归全绿，正式公式未改。 |
 | v2.56-power-estimate-prototype | 2026-09-27 | `feat926/battle-lab`：分项计价战力原型 `systems/CombatPowerEstimate.lua`（lab-only，正式公式未改）——与官方同底座，按英雄伤害大类给 phys/mag/heal 属性区别系数（异系 0.25、治疗系输出 0.5）；BattleLab 报告新增 teamEstimate/heroPowers.estimate/category/delta.teamEstimate，CLI 输出预估。方向验证通过：战士同战力 160 预估力量 133>智力 128（实测 3/40 vs 0/40）、法师同战力 112 预估智力 85>力量 83（实测输出 287 vs 193）；边界测试第 9 节 8 断言 + 旧入口/切关回归 ALL PASS。系数未拟合，仅方向性参考。 |
 | v2.55-battle-lab-boundary-samples | 2026-09-27 | `feat926/battle-lab`：补齐校准边界样本——新增 `tests/battle_lab_boundary_test.lua`（60+ 断言覆盖 `Lab.prepare` 全部拒绝分支与钳制/levelRange/ascendLevel 边界，ALL PASS、自带退出）；真实边界校准 4×40 局：tier1 上边界 Lv7 302 双侧全胜、303 双侧全败（难度悬崖），tier2 下边界 Lv8/303 非饱和样本同战力 160 力量戒 3/40 vs 智力戒 0/40（种子 3926 复验 1/40 vs 0/40），力量饰品输出+333/承伤-55，方向与 v2.54 一致。正式战力公式未改，仅推任务分支。 |
 | v2.54-power-calibration-samples | 2026-09-27 | `feat926/battle-lab`：校验模板掉落等级范围并扩样至战士/法师/游侠、101–103、两个种子窗口及双人队伍；合法 Lv.1 同战力力量/秘识装备战士 101 胜场 40/40 vs 14/40（另种子 40/40 vs 10/40），正式战力公式未改。纠正 v2.53 的 `C10`/`C4` Lv.1 对照超出掉落等级范围，不可作为正常掉落平衡证据。 |

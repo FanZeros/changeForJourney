@@ -23,10 +23,18 @@ local AD = require("systems.AttributeDef")
 
 local M = {}
 
--- 异系输出属性折扣（原型初值：保留 1/4，方向性区分优先于精确拟合）
-local OFF_FACTOR = 0.25
+-- 异系输出属性折扣。
+-- 拟合依据（_proc/fit_power_estimate.py，31 组败局样本、DPS 口径岭回归）：
+--   physical 类 off[mag] 与 magical 类 off[phys] 的非负约束解均为 0
+--   （异系攻击属性对 DPS 无可测贡献，其派生生存价值已计入 generic 组）。
+-- 工程上保留小正值而非 0：避免显示战力对异系装备完全归零（异系属性的
+-- 六围派生生存价值仍然存在），并保持 A/B 方向区分度。
+local OFF_FACTOR = 0.10
 
--- 治疗系英雄对输出属性的系数（治疗职业也参与输出循环，折半计）
+-- 治疗系英雄对输出属性的系数。
+-- healing 类 DPS 回归 R² 为负（healer 局全部超时、样本结构受限），模型不
+-- 成立，该系数未经数据验证，保留初值 0.5 仅作方向性展示，待牧师专属
+-- 采样（更短 timeLimit 制造非超时败局）后再拟合。
 local HEALER_ATK_FACTOR = 0.5
 
 -- 属性分组：phys / mag / heal（未列出的非跳过属性都按 generic 全额计）
@@ -79,24 +87,41 @@ local function factorsFor(category)
     return { phys = 1.0, mag = OFF_FACTOR, heal = OFF_FACTOR }
 end
 
+M.factorsFor = factorsFor
+
+--- 按官方价值底座把属性分解到 phys/mag/heal/generic 四组（未乘类别系数）。
+--- 供拟合工具（tests/battle_lab_fit.lua + _proc/fit_power_estimate.py）做回归，
+--- 也供报告展示各组构成。
+---@param attrs table UnitAttributes
+---@param atkType number|nil AD.ATK_*（nil 时类别回落 physical，仅影响第二返回值）
+---@return table<string, number> sums { phys, mag, heal, generic }
+---@return string category
+function M.breakdown(attrs, atkType)
+    local category = AD.getAtkCategory(atkType)
+    local sums = { phys = 0, mag = 0, heal = 0, generic = 0 }
+    for key, meta in pairs(AD.META) do
+        if not SKIP[key] and meta.valueModel and meta.valueModel > 0 then
+            local value = attrs:get(key)
+            local unit = meta.dataType == AD.TYPE_PCT and meta.valueModel / 100 or meta.valueModel
+            local group = GROUP[key] or "generic"
+            sums[group] = sums[group] + value * unit
+        end
+    end
+    return sums, category
+end
+
 --- 计算单位的分项计价预估战力
 ---@param attrs table UnitAttributes（含 final 表与 get 方法）
 ---@param atkType number AD.ATK_* 攻击类型
 ---@return integer estimate 预估战力（向下取整到 0.5 精度以内）
 ---@return string category 伤害大类
 function M.estimate(attrs, atkType)
-    local category = AD.getAtkCategory(atkType)
+    local sums, category = M.breakdown(attrs, atkType)
     local factors = factorsFor(category)
-    local total = 0
-    for key, meta in pairs(AD.META) do
-        if not SKIP[key] and meta.valueModel and meta.valueModel > 0 then
-            local value = attrs:get(key)
-            local unit = meta.dataType == AD.TYPE_PCT and meta.valueModel / 100 or meta.valueModel
-            local group = GROUP[key]
-            local factor = group and factors[group] or 1.0
-            total = total + value * unit * factor
-        end
-    end
+    local total = sums.generic
+        + sums.phys * factors.phys
+        + sums.mag * factors.mag
+        + sums.heal * factors.heal
     return math.floor(total + 0.5), category
 end
 

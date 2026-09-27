@@ -96,7 +96,7 @@ local SHOP_ITEMS = {
     {
         id = 12, name = "远征招募券", quality = 5, rewardCount = 1,
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 90,
+        currency = "diamond", price = 180,
         icon = "image/货币道具/UI_icon_ZMQ_1.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
@@ -122,21 +122,21 @@ local SHOP_ITEMS = {
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
-        id = 15, name = "奥术粉尘", quality = 3, rewardCount = 288,
+        id = 15, name = "奥术粉尘", quality = 3, rewardCount = 300,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 90,
         icon = "image/货币道具/UI_icon_ASFC.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
-        id = 16, name = "金币", quality = 1, rewardCount = 6666,
+        id = 16, name = "金币", quality = 1, rewardCount = 6000,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 94,
         icon = "image/货币道具/UI_icon_JB.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
-        id = 17, name = "精粹", quality = 2, rewardCount = 666,
+        id = 17, name = "精粹", quality = 2, rewardCount = 600,
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 94,
         icon = "image/货币道具/UI_icon_JC.png",
@@ -152,7 +152,7 @@ local SHOP_ITEMS = {
 }
 
 --- 与服务端 MarketService.SHOP_CONFIG_VERSION 保持一致；版本升级时会清空购买记录
-local SHOP_CONFIG_VERSION = 7
+local SHOP_CONFIG_VERSION = 8
 
 --- 按商品 id 索引（SHOP_ITEMS 为展示顺序数组，禁止用 itemId 当下标）
 local SHOP_ITEMS_BY_ID = {}

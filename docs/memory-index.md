@@ -1,6 +1,8 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
-> **最新（2026-09-27，`workspace926`）**：用户要求新建 `workspace926`，合入 `workspace925` 与全部 `feat926/`：`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`。只推 `workspace926`，不推 `workspace` / `workspace925`。
+> **最新（2026-09-28，`feat926/unified-character-frame`）**：统一角色框 + 角色图像统一。①GPT 六宫格合图重绘 6 张风格不符头像（H17/18/19/22/24/25→256px 覆盖 `UI_icon_hero_*`，同步 AssetManifest）；②新增 `scripts/ui/widget/HeroFrame.lua` 统一组件：品质色描边（色源 HeroConfig.QUALITY_INFO 唯一）、等级/职业/碎片/队伍/可提升角标等比化、selected/drag/hover 交互态、lockOverlay、frameOnly、borderOverride；③P1~P3 全量接入 20+ 处：编队头像/名册/头像选择/详情卡/已装备角标/结算(顺带修缺UR映射 bug)/伤害统计/奖励/离线/UP池/招募卡/背包碎片/顶栏/玩家信息/剧情对话/教堂/铁匠/觉醒(徽章改品质色矢量铭牌并清理失效 UI_PZBZ 加载)。装备 ZBBJ 品质框体系保持不动。LSP 0 Error + 官方 build 成功×3。规划全文见 `docs/统一角色框方案.md`。下一步：实机预览验收各面板角色框与新头像观感；战斗内 BattleDraw 单位卡属后续专项。
+> **流程**：只推 `feat926/unified-character-frame`（基于 origin/workspace926），不推 workspace* 分支。
+> **旧（2026-09-27，`workspace926`）**：新建 `workspace926`，合入 `workspace925` 与全部 `feat926/`：`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`。只推 `workspace926`，不推 `workspace` / `workspace925`。
 > **feat926/character-drag-save**：英雄名册数字键保留；右栏跨栏松手取消拖拽；跨队一次提交；离线经验不算空槽；存档写入失败重试。
 > **feat926/cleanup-unused-panels / remove-unused-diary**：删除旧日志页及无入口的遗物洗练、签到、旧任务、公告面板和专属图。保留城镇功绩 `TaskPage`、签到及任务服务/协议/存档、GM 公告配置、遗物奖励图标。
 > **最优先的用户流程**：不可自行取消/退出任务；每次完成或受阻都要先汇报，再使用 **AskUserQuestion（非纯文字）**提供明确的下一步选项并等待用户决定。不能在仓库/记忆保存访问令牌。本轮只推 `workspace926`。

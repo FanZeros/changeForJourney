@@ -516,6 +516,16 @@ function RewardPopup.close()
     print("[RewardPopup] closing (anim)")
 end
 
+---@param dx number
+---@param dy number
+---@return boolean
+function RewardPopup.hitPanel(dx, dy)
+    if not state.open then return false end
+    local bottom = math.max(PANEL_CY + PANEL_H * 0.5, HINT_CY + HINT_FONT)
+    return dx >= PANEL_CX - PANEL_W * 0.5 and dx <= PANEL_CX + PANEL_W * 0.5
+        and dy >= GLOW_CY - GLOW_H * 0.5 and dy <= bottom + 24
+end
+
 --- 是否打开（含关闭后保护期，防止点击穿透）
 ---@return boolean
 function RewardPopup.isOpen()

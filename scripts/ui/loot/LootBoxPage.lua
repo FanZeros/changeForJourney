@@ -246,13 +246,16 @@ local function drawButton(vg, id, cx, cy, w, h, label, accent, enabled)
     nvgSave(vg)
     if not enabled then nvgGlobalAlpha(vg, 0.4) end
     DarkIcon.drawNine(vg, "btn", cx - w * 0.5, cy - h * 0.5, w, h, { accent = accent })
+    nvgRestore(vg)
     local caption = I18n.lookup(label)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 38)
     local captionWidth = nvgTextBounds(vg, 0, 0, caption)
     local fontSize = math.min(38, 38 * (w - 20) / math.max(1, captionWidth))
-    text(vg, cx, cy, caption, fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
-    nvgRestore(vg)
+    -- 按钮文字：可用=亮骨白，禁用=棕色
+    local tr, tg, tb = 244, 237, 224
+    if not enabled then tr, tg, tb = 0x8d, 0x5f, 0x41 end
+    text(vg, cx, cy, caption, fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 3)
     BF.finish(vg, feedback)
 end
 

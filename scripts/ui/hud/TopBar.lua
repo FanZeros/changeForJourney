@@ -249,7 +249,7 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
             if isSel then
                 tr, tg, tb = 240, 199, 94
             elseif locked then
-                tr, tg, tb = 110, 100, 80
+                tr, tg, tb = 0x8d, 0x5f, 0x41  -- 锁定=棕色
             end
             drawTextStroke(vg, cx, cy + 20, I18n.t(tab.nameKey), 20,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 3,

@@ -749,7 +749,12 @@ local function drawItemDetail(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, UR_CONVERT_BTN.FONT_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, itemDetState.urConvertPending and 120 or 191))
+        -- 按钮文字：可转化=亮深棕，处理中=棕色禁用色
+        if itemDetState.urConvertPending then
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        else
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+        end
         local btnText
         if itemDetState.urConvertPending then
             btnText = "处理中..."

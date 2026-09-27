@@ -561,10 +561,11 @@ function SweepDialog.draw(vg)
     local costStartX = D.BG_CX - costTotalW * 0.5
     drawImageCentered(vg, imgTicketIcon, costStartX + D.TKT_ICON_SZ * 0.5,
         D.TKT_ICON_CY, D.TKT_ICON_SZ, D.TKT_ICON_SZ, 1.0)
+    -- 消耗文字：券够=亮白，不够=棕色
     drawTextStroke(vg, costStartX + D.TKT_ICON_SZ + 4, D.TKT_ICON_CY, costStr,
         D.TKT_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        255, owned >= cost and 255 or 90,
-        owned >= cost and 255 or 90, 5, { strokeColor = { 0, 0, 0 } })
+        owned >= cost and 255 or 0x8d, owned >= cost and 255 or 0x5f,
+        owned >= cost and 255 or 0x41, 5, { strokeColor = { 0, 0, 0 } })
 
     -- 确认按钮（无券时禁用）
     local canSweep = maxCount >= 1
@@ -574,7 +575,12 @@ function SweepDialog.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, D.ACT_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(244, 237, 224, canSweep and 255 or 110))
+    -- 按钮文字：满足=亮骨白，不满足=棕色
+    if canSweep then
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    end
     nvgText(vg, D.ACT_CX, D.ACT_CY,
         canSweep and "扫荡" or (canSweepStage() and "扫荡券不足" or "尚无可扫荡关卡"), nil)
     BF.finish(vg, confirm)

@@ -447,7 +447,8 @@ function M.draw(vg, heroId)
     local costText = selectedCost > 0 and ("/" .. selectedCost) or ""
     local fullText = shardNumText .. costText
     DrawUtil.drawShardIcon(vg, heroId, SHARD_ICON_CX, SHARD_ROW_CY, SHARD_ICON_SIZE, 1.0)
-    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0xaa, 0xaa, 0xaa }
+    -- 碎片数量：够=亮青，不够=棕色
+    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8d, 0x5f, 0x41 }
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 66)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -455,29 +456,31 @@ function M.draw(vg, heroId)
     nvgText(vg, SHARD_ICON_CX + SHARD_ICON_SIZE * 0.5 + 18, SHARD_ROW_CY, fullText, nil)
 
     local currentNodeActive = activated[selectedNode]
-    local btnText, btnAlpha, btnTextAlpha
+    local btnText, btnAlpha, btnDisabled
     if currentNodeActive then
         btnText = "已嵌合"
         btnAlpha = 0.5
-        btnTextAlpha = 0.38
+        btnDisabled = true
     elseif selectedNode > nextNode then
         btnText = "需先嵌合前阶"
         btnAlpha = 0.5
-        btnTextAlpha = 0.38
+        btnDisabled = true
     elseif not shardSufficient then
         btnText = "碎片不足"
         btnAlpha = 0.5
-        btnTextAlpha = 0.38
+        btnDisabled = true
     else
         btnText = "嵌合"
         btnAlpha = 1.0
-        btnTextAlpha = 0.75
+        btnDisabled = false
     end
     local _bfAct = BF.begin(vg, "awp_activate", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, imgActivateBtn, BTN_CX, BTN_CY, BTN_W, BTN_H, btnAlpha)
-    local tr = math.floor(244 * btnTextAlpha)
-    local tg = math.floor(237 * btnTextAlpha)
-    local tb = math.floor(224 * btnTextAlpha)
+    -- 按钮文字：可嵌合=亮骨白，禁用=棕色
+    local tr, tg, tb = 244, 237, 224
+    if btnDisabled then
+        tr, tg, tb = 0x8d, 0x5f, 0x41
+    end
     drawTextStroke(vg, BTN_CX, BTN_CY, btnText, BTN_TEXT_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4,
         { strokeColor = { 0x2a, 0x1c, 0x14 } })

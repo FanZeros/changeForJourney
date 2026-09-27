@@ -856,7 +856,7 @@ function DungeonPage.drawDetailPanel(vg)
     local dailyText = "今日次数:" .. dailyRemain .. "/" .. dailyMax
     local dtR, dtG, dtB = DT.DAILY_R, DT.DAILY_G, DT.DAILY_B
     if dailyRemain <= 0 then
-        dtR, dtG, dtB = 0xFF, 0x44, 0x44  -- 红色警告
+        dtR, dtG, dtB = 0x8d, 0x5f, 0x41  -- 耗尽=棕色
     end
     DrawUtil.drawTextStroke(vg, DT.DAILY_X, DT.DAILY_Y, dailyText,
         DT.DAILY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -868,14 +868,18 @@ function DungeonPage.drawDetailPanel(vg)
     nvgGlobalAlpha(vg, sweepDisabled and 0.45 or 1.0)
     DarkIcon.drawNine(vg, "btn", DT.SWEEP_CX - DT.SWEEP_W * 0.5, DT.SWEEP_CY - DT.SWEEP_H * 0.5, DT.SWEEP_W, DT.SWEEP_H, { accent = "gold" })
     BF.finish(vg, _bfSweep)
+    nvgGlobalAlpha(vg, 1.0)  -- 底图变暗即可恢复，文字单独按条件着色
 
-    -- 19. 扫荡按钮文本 "扫荡上一层"
+    -- 19. 扫荡按钮文本 "扫荡上一层"（禁用=棕色，可用=深色亮字）
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, DT.SWEEP_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, sweepDisabled and 100 or 191))
+    if sweepDisabled then
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+    end
     nvgText(vg, DT.SWEEP_CX, DT.SWEEP_CY, "扫荡上一层", nil)
-    nvgGlobalAlpha(vg, 1.0)  -- 恢复全局透明度
 
     -- 20. 挑战按钮背景 UI_AN_LV（九宫格）
     local _bfFight = BF.begin(vg, "dt_fight_btn", DT.FIGHT_CX, DT.FIGHT_CY, DT.FIGHT_W, DT.FIGHT_H)

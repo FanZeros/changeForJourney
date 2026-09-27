@@ -1383,7 +1383,7 @@ function M.draw(vg)
     nvgText(vg, TEXT_ATTR_CX, TEXT_ATTR_CY, I18n.t("tab_attr"), nil)
 
     local ownedHero = getOwnedData and getOwnedData(heroId) ~= nil
-    local lockedColor = nvgRGBA(120, 120, 120, 180)
+    local lockedColor = nvgRGBA(0x8d, 0x5f, 0x41, 255)  -- 未拥有=棕色禁用色
     nvgFillColor(vg, not ownedHero and lockedColor or (curTab == "equip" and activeColor or inactiveColor))
     nvgText(vg, TEXT_EQUIP_CX, TEXT_EQUIP_CY, I18n.t("tab_equip"), nil)
 

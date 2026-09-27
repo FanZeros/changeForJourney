@@ -245,9 +245,10 @@ function M.bind(deps)
         DarkIcon.drawQualityBg(vg, 6, KEY_CF.KEY_CX, KEY_CF.KEY_CY, KEY_CF.KEY_W, KEY_CF.KEY_H, 1.0)
         drawImageCentered(vg, img.goldenKey, KEY_CF.KEY_CX, KEY_CF.KEY_CY, KEY_CF.KEY_W, KEY_CF.KEY_H, 1.0)
 
+        -- 按钮内黑晶角标：够=亮白，不够=棕色
         local diamondEnough = GameState.getGems() >= state.keyConfirmDiamondCost
         local dBadgeR, dBadgeG, dBadgeB = 255, 255, 255
-        if not diamondEnough then dBadgeR, dBadgeG, dBadgeB = 255, 50, 50 end
+        if not diamondEnough then dBadgeR, dBadgeG, dBadgeB = 0x8d, 0x5f, 0x41 end
         drawTextStroke(vg,
             KEY_CF.DIAMOND_CX + KEY_CF.BADGE_OX, KEY_CF.DIAMOND_CY + KEY_CF.BADGE_OY,
             tostring(state.keyConfirmDiamondCost),

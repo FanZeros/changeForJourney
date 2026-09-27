@@ -760,7 +760,7 @@ function M.drawConfirmPopup(vg)
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, C.costFont)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x80, 0x80, 0x80, 255))
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 锁定=棕色
             nvgText(vg, C.btnCX, C.btnCY, lockReason, nil)
         else
             -- 转职确认
@@ -792,7 +792,8 @@ function M.drawConfirmPopup(vg)
                 C.coinSize, C.coinSize, 1.0)
 
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, canAfford and nvgRGBA(0x46, 0x2f, 0x20, 255) or nvgRGBA(0x1e, 0x51, 0x37, 255))
+            -- 按钮内金币消耗：够=亮深棕，不够=棕色禁用色
+            nvgFillColor(vg, canAfford and nvgRGBA(0x46, 0x2f, 0x20, 255) or nvgRGBA(0x8d, 0x5f, 0x41, 255))
             nvgText(vg, coinStartX + C.coinSize + coinGap, C.btnCY, costStr, nil)
             BF.finish(vg, _bf2)
         end

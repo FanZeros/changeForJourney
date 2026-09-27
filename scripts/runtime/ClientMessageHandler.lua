@@ -712,6 +712,12 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              local rk = SCROLL_MAP[scrollField]
              if rk and count > 0 then rewards[#rewards + 1] = { type = rk, amount = count } end
          end
+         -- 奖励弹窗出现时自动关闭扫荡弹窗，避免两层弹窗叠在一起
+         local SweepDialog = require("ui.battle.stage.SweepDialog")
+         if SweepDialog.isOpen() then
+             SweepDialog.close()
+             print("[ClientMessageHandler] sweep reward popup shown, SweepDialog auto-closed")
+         end
          RewardPopup.show("扫荡奖励", rewards)
      end
  end

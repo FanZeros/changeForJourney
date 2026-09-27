@@ -339,6 +339,13 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
     local draggingSource = dragState and dragState.active
         and dragState.fromTeam == teamIdx and dragState.fromSlot == slotIdx
     local occupied = slot and slot.state == "occupied" and slot.heroId
+    if draggingSource then
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x - 4, y - 4, AV_SIZE + 8, AV_SIZE + 8, 16)
+        nvgStrokeColor(vg, nvgRGBA(255, 220, 90, 255))
+        nvgStrokeWidth(vg, 5)
+        nvgStroke(vg)
+    end
     if occupied and not locked and not draggingSource then
         local icon = heroIconHandle(vg, slot.heroId)
         if icon and icon >= 0 then
@@ -396,7 +403,16 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
         nvgFontSize(vg, locked and 36 or 48)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(160, 145, 120, locked and 140 or 200))
-        if not draggingSource then
+        if draggingSource and occupied then
+            local icon = heroIconHandle(vg, slot.heroId)
+            if icon and icon >= 0 then
+                nvgSave(vg)
+                nvgGlobalAlpha(vg, 0.45)
+                nvgScissor(vg, x, y, AV_SIZE, AV_SIZE)
+                drawImageCentered(vg, icon, cx, cy, AV_SIZE, AV_SIZE, 1.0)
+                nvgRestore(vg)
+            end
+        elseif not draggingSource then
             if locked and img.lock and img.lock >= 0 then
                 drawImageCentered(vg, img.lock, cx, cy, 52, 52, 0.85)
             else
@@ -842,10 +858,13 @@ function M.draw(vg, scrollY, detailOpen)
             nvgFillColor(vg, nvgRGBA(0, 0, 0, 90))
             nvgFill(vg)
         end
+        local draggingThis = dragState and dragState.active and dragState.heroId == entry.heroId
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, ix, iy, ROSTER_ICON, ROSTER_ICON, 16)
-        nvgStrokeColor(vg, nvgRGBA(212, 175, 90, isOwned and 210 or 90))
-        nvgStrokeWidth(vg, 2)
+        nvgRoundedRect(vg, ix - (draggingThis and 4 or 0), iy - (draggingThis and 4 or 0),
+            ROSTER_ICON + (draggingThis and 8 or 0), ROSTER_ICON + (draggingThis and 8 or 0), 16)
+        nvgStrokeColor(vg, draggingThis and nvgRGBA(255, 220, 90, 255)
+            or nvgRGBA(212, 175, 90, isOwned and 210 or 90))
+        nvgStrokeWidth(vg, draggingThis and 5 or 2)
         nvgStroke(vg)
 
         -- c-shard) 未拥有角色：碎片进度收进头像框底部，图标和进度条都缩小

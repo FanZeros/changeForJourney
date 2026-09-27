@@ -88,7 +88,7 @@ function M.bind(deps)
             end
             for idx, heroId in ipairs(ids or {}) do
                 local numId = tonumber(heroId) or heroId
-                if idx <= MAX_SLOTS then
+                if idx <= MAX_SLOTS and numId ~= 0 then
                     local ownData = ownedSet[numId]
                     if ownData then
                         slots[idx] = {

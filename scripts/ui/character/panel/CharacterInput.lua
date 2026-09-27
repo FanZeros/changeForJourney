@@ -91,16 +91,17 @@ function M.bind(deps)
                         refreshPowerCache()
                         refreshNavBadge()
                         if onTeamChangedCallback then
-                            onTeamChangedCallback(srcTeam)
-                            if dropTeam ~= srcTeam then onTeamChangedCallback(dropTeam) end
+                            -- 跨队交换必须一次性提交两队，逐队同步会在第一轮刷新时覆盖第二队槽位。
+                            onTeamChangedCallback(srcTeam, dropTeam ~= srcTeam and dropTeam or nil)
                         end
                     end
                 else
                     -- 从名册拖上来：编入目标队（跨队唯一性由部署函数处理）
-                    if dropTeam ~= getActiveTeamIdx() then
-                        CharacterPanel.setActiveTeam(dropTeam)
+                    if dropTeam ~= getActiveTeamIdx() and not CharacterPanel.setActiveTeam(dropTeam) then
+                        print("[CharacterPanel] 目标队伍未解锁，取消拖拽")
+                    else
+                        deployHeroToSlot(draggedHeroId, dropSlot)
                     end
-                    deployHeroToSlot(draggedHeroId, dropSlot)
                 end
             elseif dragState.fromSlot then
                 -- 松手在非槽位处只取消本次拖拽；切换队伍不能顺带卸下英雄。

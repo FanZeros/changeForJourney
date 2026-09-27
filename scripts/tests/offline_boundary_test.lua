@@ -133,6 +133,24 @@ function Start()
     save.Flush()
     eq(saved().modules.session.lastOnlineTime, 15000, "时钟回拨不倒退在线边界")
 
+    -- 存档往返：未编队英雄也必须留在 roster，不能按 deployed 数组位置还原。
+    local heroes = { roster = {
+        [1] = { level = 2, exp = 4 },
+        [2] = { level = 3, exp = 6 },
+        [25] = { level = 7, exp = 8 },
+    }, deployed = { 1, 0, 2, 0 }, teams = { { slots = { 1, 0, 2, 0 } } } }
+    modules.heroes = heroes
+    save.Flush()
+    local restoredHeroes = saved().modules.heroes
+    require("shared.ModuleRegistry").applyOnLoad("heroes", restoredHeroes)
+    require("shared.schemas.CharacterSchema").applyOnLoad("heroes", restoredHeroes)
+    eq(restoredHeroes.roster[1].level, 2, "队1英雄存档等级保留")
+    eq(restoredHeroes.roster[2].level, 3, "非连续英雄编号不与编队位置混淆")
+    eq(restoredHeroes.roster[25].level, 7, "未编队英雄存档等级保留")
+    eq(restoredHeroes.roster[25].exp, 8, "未编队英雄经验保留")
+    eq(restoredHeroes.deployed[3], 2, "编队空槽位置保留")
+    eq(restoredHeroes.teams[1].slots[3], 2, "三队编队槽位保留")
+
     os.time = realTime
     dispatcher.snapshotAll, dispatcher.get, dispatcher.handleStateUpdate = oldSnapshot, oldGet, oldUpdate
     state.exportSave, state.importSave = oldExport, oldImport

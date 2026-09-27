@@ -9,6 +9,8 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 local PDM              = require("rules.character.PlayerDataManager")
 local GameState        = require("core.GameState")
 local ServerDispatcher = require("runtime.LocalDispatcher")
+local TeamSlots       = require("shared.heroes.TeamSlots")
+local ExpTable        = require("config.ExpTable")
 
 local M = {}
 
@@ -380,6 +382,58 @@ function M.dispatch(action, params)
     print("[LocalActionBridge] action=" .. tostring(action)
         .. " success=" .. tostring(result.success)
         .. " reason=" .. tostring(result.reason))
+    return true
+end
+
+---@param teamLayouts table<number, integer[]>
+---@return boolean ok
+---@return string? reason
+function M.setTeams(teamLayouts)
+    if not inited_ then M.init() end
+    local heroes = ClientDispatcher.get("heroes")
+    if not heroes then return false, "英雄数据未加载" end
+    local player = ClientDispatcher.get("player")
+    local playerLevel = player and (player.level or 1) or 1
+    local teamCount = ExpTable.TEAM_COUNT
+    for teamIdx, ids in pairs(teamLayouts) do
+        if type(teamIdx) ~= "number" or teamIdx < 1 or teamIdx > teamCount or type(ids) ~= "table" then
+            return false, "无效的队伍编号或阵容"
+        end
+    end
+    local copy = { roster = heroes.roster, deployed = heroes.deployed, teams = {} }
+    for i = 1, teamCount do
+        local team = heroes.teams and heroes.teams[i]
+        local ids = team and team.slots or (i == 1 and heroes.deployed or {})
+        copy.teams[i] = { slots = {} }
+        for slot, id in ipairs(ids or {}) do copy.teams[i].slots[slot] = id end
+    end
+    -- 校验时隔离参与队伍的旧占位；候选队伍间单独查重，再整体写入副本。
+    local seen = {}
+    for _, ids in pairs(teamLayouts) do
+        for _, id in ipairs(ids) do
+            local numId = tonumber(id)
+            if numId and numId ~= 0 then
+                if seen[numId] then return false, "重复的英雄: " .. tostring(numId) end
+                seen[numId] = true
+            end
+        end
+    end
+    for teamIdx in pairs(teamLayouts) do
+        copy.teams[teamIdx].slots = {}
+    end
+    if teamLayouts[1] then copy.deployed = {} end
+    for teamIdx, ids in pairs(teamLayouts) do
+        local ok, reason = TeamSlots.validate(copy, teamIdx, ids, playerLevel)
+        if not ok then return false, reason end
+    end
+    for teamIdx, ids in pairs(teamLayouts) do
+        copy.teams[teamIdx].slots = ids
+    end
+    if teamLayouts[1] then copy.deployed = teamLayouts[1] end
+    TeamSlots.normalize(copy)
+    heroes.teams, heroes.deployed = copy.teams, copy.deployed
+    PDM.MarkDirty(LOCAL_UID, "heroes")
+    print("[LocalActionBridge] teams committed atomically")
     return true
 end
 

@@ -3,10 +3,13 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-26 | 版本:v2.51-equipment-detail-popup
+> 更新时间:2026-09-27 | 版本:v2.52-character-drag-save
+>
+> **本轮（`feat926/character-drag-save`）**：`StandaloneSave` 的英雄名册 JSON 写出后，`ModuleRegistry` 和 `HeroesSchema` 连续 `onLoad` 以前会丢数字键；现均保留已规范化英雄 ID，验证未上阵英雄等级/经验与队伍空槽。横屏右栏拖拽跨栏/窗外松手统一结算，防止头像留在拖拽态。跨队槽位交换及名册跨队部署一次提交双方队伍，`LocalActionBridge.setTeams` 在隔离副本校验后单次通知；`TeamSlots.normalize` 保留多队 0 空槽。三条引擎用例 PASS、LSP 0 Error、官方 Build 通过；主入口 60 帧无 Lua 错误但剧情日记 5 张 UI 贴图缺失，视觉与 Windows 实机仍待验收。
+> **最新硬性流程**：不能擅自取消或退出任务；每次交付或遇到阻碍都先汇报，再**调用 AskUserQuestion 工具**以选项询问下一步，不以文字收尾。本轮**只 push `feat926/character-drag-save`**，禁止自动合入/推送 `workspace925`、`workspace` 或其他分支；后续仅以用户当轮授权为准。不要把 PAT 写到仓库/记忆。
 >
 > **本轮（`workspace925` 装备详情）**：右栏点击详情在鼠标左侧、已装备比较卡更靠左；左栏反向。点击锚点用鼠标位置，悬停跟随、钉住不漂移；套装区排在全部词条后，独立描边底板、放大字体及换行，详情热区随内容高度变化。Lua LSP 0 Error，官方 Build 成功；本地 Runtime 安装超时，尚无实际页面截图验收。下一步用游戏预览点击左右栏带/不带已装备比较的详情，特别检查最长套装描述。
-> **流程硬性要求**：不能取消/退出任务；每次交付后必须通过 AskUserQuestion 提供下一步选项。当前用户明确授权只提交并 push `workspace925`，不得把历史文档中的其他分支要求套到本轮；不要在仓库/记忆里记录访问令牌。
+> **历史记录（2026-09-26 `workspace925`）**：旧轮曾仅授权推送 `workspace925`；该权限已被上方 2026-09-27 的最新任务要求覆盖，不能沿用到本轮。
 >
 > **本轮桌面试点（`feature/background-idle-924`）**：用户选择 Windows Electron 失焦挂机。`electron-shell/main.js:145` 的 BrowserWindow.webPreferences 设 `backgroundThrottling=false`，不改 Lua/网页版本。`node --check` 和 VM 模拟创建 BrowserWindow 的断言通过（同时确认 contextIsolation/nodeIntegration 安全设置保持不变）；LSP 0 Error、官方 build 通过。当前沙箱没有 Electron 可执行文件、node_modules、虚拟显示器或 Wine，因此**没有 Windows 最小化/失焦的实机验收**，也未生成新版 Windows 包；已有 `/workspace/dist` 网页预览不会体现这项桌面独占改动。下一步在 Windows 用仓库现有 `electron-shell/pack_release.py` / 一键脚本将最新 dist 打成 Electron 包，实际对比聚焦/失焦/最小化时三队金币、经验、掉落、存档及 CPU；关闭进程/系统休眠仍需另做离线补算。
 >

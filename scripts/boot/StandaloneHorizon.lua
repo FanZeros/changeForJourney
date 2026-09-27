@@ -1148,6 +1148,22 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
                 return
             end
         end
+        -- 角色拖拽由起始面板持有；松手即结算，不能按落点分栏遗留拖拽态。
+        if CharacterPanel.isDraggingCard() then
+            local pid, dx, dy = HorizonResolveMouse()
+            if pid ~= 'right' and not (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+                dx, dy = -1, -1  -- 跨栏/弹窗外释放仅取消，不得命中其它栏的槽位
+            end
+            CharacterPanel.handleInput(dx, dy)
+            CharacterPanel.handleDragEnd(dx, dy)
+            pressValid = false
+            return
+        end
+        -- 滚动/未达拖拽阈值的角色按压跨栏松开时也要清除起点状态。
+        local pid, dx, dy = HorizonResolveMouse()
+        if pid ~= 'right' and not (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+            CharacterPanel.handleDragEnd(-1, -1)
+        end
     end
     if not bootReady_() then return end
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续

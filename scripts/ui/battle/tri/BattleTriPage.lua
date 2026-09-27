@@ -591,12 +591,11 @@ function BattleTriPage.handleInput(wx, wy)
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
 
     -- [常驻] 行1 的获得弹窗：交给 RewardPopup 统一处理，保留同帧保护
-    -- （逐个获得未结束时点击只跳过动画）。此前直接 close() 会让通关后
-    -- 随手一点就把刚弹出的奖励关掉，看起来像「结算页不显示」。
+    -- （逐个获得未结束时点击只跳过动画）。弹窗打开时任意点击都消费：
+    -- 行内点击由 handleInputRegion 处理，行外点击也关闭弹窗，避免一直挂着。
     if RewardPopup.currentRowTag() then
-        if RewardPopup.handleInputRegion(wx, wy, ix1, iy1, iw1, ih1) then
-            return true
-        end
+        RewardPopup.handleInputRegion(wx, wy, ix1, iy1, iw1, ih1)
+        return true
     end
     local bs = require("ui.battle.scene.BattleScene")
 

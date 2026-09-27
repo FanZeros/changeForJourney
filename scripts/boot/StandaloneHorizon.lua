@@ -719,11 +719,10 @@ local function HorizonResolveMouse()
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
         return 'modal', pdx, pdy
     end
+    -- 全局奖励弹窗打开时所有点击都路由给它（任意点击可关闭弹窗）
     if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
-        if RewardPopup.hitPanel(pdx, pdy) then
-            return 'modal', pdx, pdy
-        end
+        return 'modal', pdx, pdy
     end
     -- [底栏移除] 横屏副本(5)页全窗竖版模态：中段命中映射到设计坐标；
     -- 左右栏让出（TopBar 页签/角色面板仍可点），全屏弹窗打开时让位

@@ -229,7 +229,7 @@ function M.bind(deps)
         nvgFontSize(vg, KEY_CF.SUB_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(KEY_CF.SUB_R, KEY_CF.SUB_G, KEY_CF.SUB_B, 255))
-        nvgText(vg, KEY_CF.SUB_CX, KEY_CF.SUB_CY, "是否使用钻石快速购买", nil)
+        nvgText(vg, KEY_CF.SUB_CX, KEY_CF.SUB_CY, "是否使用黑晶快速购买", nil)
 
         nvgBeginPath(vg)
         nvgRoundedRect(vg,

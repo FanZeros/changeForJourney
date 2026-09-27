@@ -51,7 +51,7 @@ function M.bind(deps)
         img.collectionChestBg = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_KC1.png", 0)
         img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_AN.png", 0)
         img.goldenKey = nvgCreateImage(vg, "image/货币道具/UI_icon_HJYS.png", 0)
-        img.diamondBig = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
+        img.diamondBig = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
         img.confirmArrow = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
 
         state.purchased = {}

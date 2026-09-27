@@ -130,6 +130,7 @@ local state = {
     location  = "bag",
     slot      = nil,
     subSlot   = nil,
+    teamIdx   = nil,   -- [三队行式布局] 装配所在队伍（卸下时回传）
 }
 
 local onEquipCallback_ = nil
@@ -370,6 +371,7 @@ local function internalUpdate()
             state.location = "bag"
             state.slot = nil
             state.subSlot = nil
+            state.teamIdx = nil
             if onCloseCallback_ then onCloseCallback_() end
         end
     end
@@ -383,16 +385,19 @@ function ArtifactDetailPanel.init(vg)
     print("[ArtifactDetailPanel] init OK")
 end
 
+-- 三队行式布局：teamIdx 为装配所在队伍，"slot" 时必传（卸下用），"bag" 时可省
 ---@param artifact table 神器实例
----@param location string|nil "bag" 或 "slot"
----@param slot number|nil 已装配槽位
----@param subSlot number|nil 已装配子格
-function ArtifactDetailPanel.show(artifact, location, slot, subSlot)
+---@param location? string "bag" 或 "slot"
+---@param slot? number 已装配槽位
+---@param subSlot? number 已装配子格
+---@param teamIdx? number 装配所在队伍
+function ArtifactDetailPanel.show(artifact, location, slot, subSlot, teamIdx)
     if not artifact then return end
     state.artifact = artifact
     state.location = location or "bag"
     state.slot = slot
     state.subSlot = subSlot
+    state.teamIdx = teamIdx
     state.visible = true
     state.opening = true
     state.closing = false
@@ -604,7 +609,7 @@ function ArtifactDetailPanel.handleTap(tx, ty)
     if hitTest(tx, ty, BTN_EQUIP.CX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H) then
         BF.trigger("artifact_detail_equip")
         if onEquipCallback_ then
-            onEquipCallback_(artifact, state.location, state.slot, state.subSlot)
+            onEquipCallback_(artifact, state.location, state.slot, state.subSlot, state.teamIdx)
         end
         return true
     end

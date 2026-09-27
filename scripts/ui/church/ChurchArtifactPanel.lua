@@ -43,34 +43,20 @@ local HINT = {
     TEXT = "在对应槽位装配神器对该位置角色进行加成",
 }
 
--- [三队适配] 队伍页签（装配表按队伍隔离，同一神器可装到多支队伍）
-local TEAM_TAB = {
-    CY = 286,
-    W = 190, H = 58,
-    GAP = 24,
-    FONT = 32,
-    LOCK_FONT = 24,
-}
-TEAM_TAB.CX_LIST = {}
-do
-    local totalW = ArtifactSchema.TEAM_COUNT * TEAM_TAB.W
-        + (ArtifactSchema.TEAM_COUNT - 1) * TEAM_TAB.GAP
-    local startX = (DESIGN_W - totalW) * 0.5 + TEAM_TAB.W * 0.5
-    for t = 1, ArtifactSchema.TEAM_COUNT do
-        TEAM_TAB.CX_LIST[t] = startX + (t - 1) * (TEAM_TAB.W + TEAM_TAB.GAP)
-    end
-end
-
--- 出战槽位（1~4 号位）
-local SLOT = {
-    CX_LIST   = { 222, 434, 646, 858 },
-    LABEL_Y   = 346,
-    GRID_CY   = 624,
-    SIZE      = 160,
-    SUB_SIZE  = 130,
-    SUB_GAP   = 16,
-    LOCK_FONT = 26,
-    LABEL_FONT = 38,
+-- [三队行式布局] 队伍1/2/3 各占一行同时显示（替代原页签切换）
+-- 每行 = 队标签 + 4 个号位列（每列 3 个子格纵向堆叠）
+local TEAM_ROW = {
+    HEADER_Y   = 292,                       -- 号位表头（1号位~4号位，只画一行，三队共用）
+    HEADER_FONT = 28,
+    ROW_CY     = { 415, 640, 865 },         -- 每队行的 y 中心（行底 973 < 下方面板顶 978）
+    LABEL_X    = 76,                        -- 队标签中心 x
+    LABEL_W    = 100, LABEL_H = 216,        -- 队标签底板
+    LABEL_FONT = 26,
+    LOCK_FONT  = 20,
+    CX_LIST    = { 250, 462, 674, 886 },    -- 4 个号位列中心 x
+    SUB_SIZE   = 64,                        -- 子格边长（原 130，三行同显缩小）
+    SUB_GAP    = 5,
+    CELL_LOCK_FONT = 18,
 }
 
 -- 下半部分背景 UI_TJP_1（九宫格，与背包/遗物背包一致）
@@ -149,12 +135,12 @@ local img = {
 -- ======================== 状态 ========================
 
 local state = {
-    teamIdx      = 1,   -- [三队适配] 当前编辑的队伍（1~3）
     scrollY      = 0,
     scrollMax    = 0,
     dragging     = false,
     lastDragY    = 0,
     scrollVel    = 0,
+    selectedTeam = nil,   -- [行式布局] 1~3 | nil
     selectedSlot = nil,   -- 1~4 | nil
     selectedSubSlot = nil, -- 1~3 | nil
     selectedBagIdx = nil, -- 背包格子索引 | nil
@@ -191,19 +177,15 @@ local function getBag()
     return data.bag or {}
 end
 
---- 当前队伍页签是否已装配（决定背包可见性：装在本队才从背包隐藏）
-local function isArtifactEquippedId(id)
-    id = tostring(id or "")
-    local data = getArtifactData()
-    return ArtifactSchema.findEquippedSlot(data, id, state.teamIdx) ~= nil
-end
-
---- [三队适配] 任意队伍是否已装配（合成/置换守卫，与服务端规则一致）
+--- [行式布局] 任一队伍已装配即从背包隐藏（三行同显，装配状态一目了然）
+--- 同时作为合成/置换守卫（与服务端"任一队已装不能消耗"规则一致）
 local function isArtifactEquippedAnyTeam(id)
     id = tostring(id or "")
     local data = getArtifactData()
     return ArtifactSchema.findEquippedSlotAnyTeam(data, id) ~= nil
 end
+
+local isArtifactEquippedId = isArtifactEquippedAnyTeam
 
 --- 已解锁队伍数（远征等级门槛）
 local function getUnlockedTeamCount()
@@ -236,30 +218,32 @@ local function getUnlockedSubSlotCount()
     return ArtifactSchema.getUnlockedSubSlotCount(getPlayerLevel())
 end
 
-local function getSlotCell(slot, subSlot)
-    local cx = SLOT.CX_LIST[slot]
-    local totalH = ArtifactSchema.SUB_SLOT_COUNT * SLOT.SUB_SIZE
-        + (ArtifactSchema.SUB_SLOT_COUNT - 1) * SLOT.SUB_GAP
-    local firstCy = SLOT.GRID_CY - totalH * 0.5 + SLOT.SUB_SIZE * 0.5
-    return cx, firstCy + (subSlot - 1) * (SLOT.SUB_SIZE + SLOT.SUB_GAP), SLOT.SUB_SIZE
+--- [行式布局] 指定队伍行、号位列、子格的屏幕位置
+local function getSlotCell(slot, subSlot, team)
+    team = team or 1
+    local cx = TEAM_ROW.CX_LIST[slot]
+    local totalH = ArtifactSchema.SUB_SLOT_COUNT * TEAM_ROW.SUB_SIZE
+        + (ArtifactSchema.SUB_SLOT_COUNT - 1) * TEAM_ROW.SUB_GAP
+    local rowCy = TEAM_ROW.ROW_CY[team] or TEAM_ROW.ROW_CY[1]
+    local firstCy = rowCy - totalH * 0.5 + TEAM_ROW.SUB_SIZE * 0.5
+    return cx, firstCy + (subSlot - 1) * (TEAM_ROW.SUB_SIZE + TEAM_ROW.SUB_GAP), TEAM_ROW.SUB_SIZE
 end
 
-local function getEquippedArtifact(slot, subSlot)
+local function getEquippedArtifact(slot, subSlot, team)
     local data = getArtifactData()
-    -- [三队适配] 读当前队伍页签的装配
-    local id = ArtifactSchema.getEquippedId(data, slot, subSlot or 1, state.teamIdx)
+    local id = ArtifactSchema.getEquippedId(data, slot, subSlot or 1, team or 1)
     if not id then return nil end
     return findArtifactById(id)
 end
 
-local function hasSameTypeInSlot(slot, artifact, ignoreSubSlot)
+local function hasSameTypeInSlot(slot, artifact, ignoreSubSlot, team)
     if not artifact then return false end
     local artifactType = tonumber(artifact.artifactId) or tonumber(artifact.type) or 0
     if artifactType <= 0 then return false end
     local artifactInstanceId = tostring(artifact.id or "")
     for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
         if subSlot ~= ignoreSubSlot then
-            local equipped = getEquippedArtifact(slot, subSlot)
+            local equipped = getEquippedArtifact(slot, subSlot, team)
             local equippedType = equipped and (tonumber(equipped.artifactId) or tonumber(equipped.type) or 0) or 0
             if equipped and equippedType == artifactType and tostring(equipped.id or "") ~= artifactInstanceId then
                 return true
@@ -478,23 +462,29 @@ function M.init(vg)
     img.rerollBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.iconUp    = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     ArtifactDetailPanel.init(vg)
-    ArtifactDetailPanel.setOnEquip(function(artifact, location, slot, subSlot)
+    ArtifactDetailPanel.setOnEquip(function(artifact, location, slot, subSlot, teamIdx)
         if location == "slot" then
             local Protocol = ctx_ and ctx_.getProtocol and ctx_.getProtocol() or nil
             if Protocol and slot then
-                sendAction(Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP, { slot = slot, subSlot = subSlot or 1, teamIdx = state.teamIdx })
-                showFloat("正在卸下神器", SLOT.CX_LIST[slot] or 540, SLOT.GRID_CY - 120)
+                -- [行式布局] 详情面板回传所在队伍行，卸下精确到该队
+                local team = teamIdx or 1
+                sendAction(Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP, { slot = slot, subSlot = subSlot or 1, teamIdx = team })
+                local fx = TEAM_ROW.CX_LIST[slot] or 540
+                local fy = (TEAM_ROW.ROW_CY[team] or TEAM_ROW.ROW_CY[1]) - 130
+                showFloat("正在卸下神器", fx, fy)
             end
             clearPendingEquip()
+            state.selectedTeam = nil
             state.selectedSlot = nil
             state.selectedSubSlot = nil
             state.selectedBagIdx = nil
         else
             state.pendingEquipArtifactId = tostring(artifact.id)
             state.selectedBagIdx = findBagIndexById(artifact.id)
+            state.selectedTeam = nil
             state.selectedSlot = nil
             state.selectedSubSlot = nil
-            showFloat("请选择上方槽位安装神器", 540, 430)
+            showFloat("请选择槽位安装神器（任一队伍行）", 540, 1095)
         end
         ArtifactDetailPanel.hide()
     end)
@@ -519,6 +509,7 @@ function M.reset()
     state.scrollMax = 0
     state.dragging = false
     state.scrollVel = 0
+    state.selectedTeam = nil
     state.selectedSlot = nil
     state.selectedSubSlot = nil
     state.selectedBagIdx = nil
@@ -551,78 +542,90 @@ function M.drawContent(vg)
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 5)
 
-    -- [三队适配] 队伍页签
+    -- [行式布局] 号位表头（三队共用一行）
     do
-        local unlockedTeams = getUnlockedTeamCount()
         nvgFontFace(vg, "sans")
+        nvgFontSize(vg, TEAM_ROW.HEADER_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        for t = 1, ArtifactSchema.TEAM_COUNT do
-            local cx = TEAM_TAB.CX_LIST[t]
-            local locked = t > unlockedTeams
-            local active = state.teamIdx == t
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - TEAM_TAB.W * 0.5, TEAM_TAB.CY - TEAM_TAB.H * 0.5,
-                TEAM_TAB.W, TEAM_TAB.H, 14)
-            if locked then
-                nvgFillColor(vg, nvgRGBA(30, 28, 34, 160))
-            elseif active then
-                nvgFillColor(vg, nvgRGBA(196, 158, 84, 235))
-            else
-                nvgFillColor(vg, nvgRGBA(44, 42, 48, 200))
-            end
-            nvgFill(vg)
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - TEAM_TAB.W * 0.5, TEAM_TAB.CY - TEAM_TAB.H * 0.5,
-                TEAM_TAB.W, TEAM_TAB.H, 14)
-            nvgStrokeColor(vg, nvgRGBA(active and 255 or 120, active and 230 or 110, active and 150 or 90, 255))
-            nvgStrokeWidth(vg, active and 3 or 1.5)
-            nvgStroke(vg)
-            if locked then
-                local lv = ExpTable.getTeamUnlockLevel(t)
-                nvgFontSize(vg, TEAM_TAB.LOCK_FONT)
-                nvgFillColor(vg, nvgRGBA(190, 190, 190, 255))
-                nvgText(vg, cx, TEAM_TAB.CY, tostring(lv) .. "级解锁", nil)
-            else
-                nvgFontSize(vg, TEAM_TAB.FONT)
-                if active then
-                    nvgFillColor(vg, nvgRGBA(30, 20, 8, 255))
-                else
-                    nvgFillColor(vg, nvgRGBA(235, 230, 220, 255))
-                end
-                nvgText(vg, cx, TEAM_TAB.CY, "队伍 " .. t, nil)
-            end
+        nvgFillColor(vg, nvgRGBA(235, 230, 220, 255))
+        for i = 1, ArtifactSchema.SLOT_COUNT do
+            nvgText(vg, TEAM_ROW.CX_LIST[i], TEAM_ROW.HEADER_Y, i .. "号位", nil)
         end
     end
 
-    -- 出战槽位标签 + 格子
+    -- [行式布局] 队伍 1/2/3 三行同时显示
     local unlockedSubSlots = getUnlockedSubSlotCount()
-    for i = 1, ArtifactSchema.SLOT_COUNT do
-        local cx = SLOT.CX_LIST[i]
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, SLOT.LABEL_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-        nvgText(vg, cx, SLOT.LABEL_Y, i .. "号位", nil)
+    local unlockedTeams = getUnlockedTeamCount()
+    local pending = state.pendingEquipArtifactId and true or false
+    for t = 1, ArtifactSchema.TEAM_COUNT do
+        local rowCy = TEAM_ROW.ROW_CY[t]
+        local locked = t > unlockedTeams
 
-        local pending = state.pendingEquipArtifactId and true or false
-        for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
-            local subCx, subCy, subSize = getSlotCell(i, subSlot)
-            local equipped = getEquippedArtifact(i, subSlot)
-            local selected = state.selectedSlot == i and state.selectedSubSlot == subSlot
-            local locked = subSlot > unlockedSubSlots
-            drawImageCentered(vg, img.slotGrid, subCx, subCy, subSize, subSize, 1.0)
-            nvgGlobalAlpha(vg, locked and 0.45 or 1.0)
-            drawArtifactIcon(vg, equipped, subCx, subCy, subSize, selected or pending)
-            nvgGlobalAlpha(vg, 1.0)
+        -- 行底板（暗色，圈出每队区域）
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, 30, rowCy - TEAM_ROW.LABEL_H * 0.5,
+            DESIGN_W - 60, TEAM_ROW.LABEL_H, 16)
+        nvgFillColor(vg, nvgRGBA(24, 22, 28, locked and 120 or 170))
+        nvgFill(vg)
+
+        -- 队标签（左侧竖块）
+        do
+            local lx, lw, lh = TEAM_ROW.LABEL_X, TEAM_ROW.LABEL_W, TEAM_ROW.LABEL_H
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, lx - lw * 0.5, rowCy - lh * 0.5, lw, lh, 12)
             if locked then
-                local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, subCx - subSize * 0.5, subCy - subSize * 0.5, subSize, subSize, 18)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 110))
-                nvgFill(vg)
-                drawTextStroke(vg, subCx, subCy, tostring(unlockLevel) .. "级", SLOT.LOCK_FONT,
-                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 3)
+                nvgFillColor(vg, nvgRGBA(30, 28, 34, 200))
+            else
+                nvgFillColor(vg, nvgRGBA(58, 48, 36, 235))
+            end
+            nvgFill(vg)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, lx - lw * 0.5, rowCy - lh * 0.5, lw, lh, 12)
+            nvgStrokeColor(vg, nvgRGBA(locked and 120 or 196, locked and 110 or 158, locked and 90 or 84, 255))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
+
+            nvgFontFace(vg, "sans")
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            if locked then
+                nvgFontSize(vg, TEAM_ROW.LABEL_FONT)
+                nvgFillColor(vg, nvgRGBA(190, 190, 190, 255))
+                nvgText(vg, lx, rowCy - 24, "队伍" .. t, nil)
+                local lv = ExpTable.getTeamUnlockLevel(t)
+                nvgFontSize(vg, TEAM_ROW.LOCK_FONT)
+                nvgFillColor(vg, nvgRGBA(160, 160, 160, 255))
+                nvgText(vg, lx, rowCy + 20, tostring(lv) .. "级解锁", nil)
+            else
+                nvgFontSize(vg, TEAM_ROW.LABEL_FONT + 6)
+                nvgFillColor(vg, nvgRGBA(255, 240, 200, 255))
+                nvgText(vg, lx, rowCy - 16, "队伍", nil)
+                nvgFontSize(vg, TEAM_ROW.LABEL_FONT + 22)
+                nvgText(vg, lx, rowCy + 30, tostring(t), nil)
+            end
+        end
+
+        -- 4 号位 × 3 子格
+        for i = 1, ArtifactSchema.SLOT_COUNT do
+            for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                local subCx, subCy, subSize = getSlotCell(i, subSlot, t)
+                local equipped = locked and nil or getEquippedArtifact(i, subSlot, t)
+                local selected = state.selectedTeam == t
+                    and state.selectedSlot == i and state.selectedSubSlot == subSlot
+                local cellLocked = locked or subSlot > unlockedSubSlots
+                drawImageCentered(vg, img.slotGrid, subCx, subCy, subSize, subSize, 1.0)
+                nvgGlobalAlpha(vg, cellLocked and 0.45 or 1.0)
+                drawArtifactIcon(vg, equipped, subCx, subCy, subSize, selected or pending)
+                nvgGlobalAlpha(vg, 1.0)
+                if subSlot > unlockedSubSlots then
+                    local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
+                    nvgBeginPath(vg)
+                    nvgRoundedRect(vg, subCx - subSize * 0.5, subCy - subSize * 0.5, subSize, subSize, 10)
+                    nvgFillColor(vg, nvgRGBA(0, 0, 0, 110))
+                    nvgFill(vg)
+                    drawTextStroke(vg, subCx, subCy, tostring(unlockLevel) .. "级", TEAM_ROW.CELL_LOCK_FONT,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                        255, 255, 255, 2)
+                end
             end
         end
     end
@@ -755,6 +758,7 @@ function M.handleTabInput(dx, dy)
         require("systems.ButtonFeedback").trigger("artifactBagReroll")
         state.rerollMode = not state.rerollMode
         clearPendingEquip()
+        state.selectedTeam = nil
         state.selectedSlot = nil
         state.selectedSubSlot = nil
         state.selectedBagIdx = nil
@@ -794,84 +798,74 @@ function M.handleTabInput(dx, dy)
         return true
     end
 
-    -- [三队适配] 队伍页签点击
-    do
-        local unlockedTeams = getUnlockedTeamCount()
-        for t = 1, ArtifactSchema.TEAM_COUNT do
-            local cx = TEAM_TAB.CX_LIST[t]
-            if hitTest(dx, dy, cx, TEAM_TAB.CY, TEAM_TAB.W, TEAM_TAB.H) then
-                if t > unlockedTeams then
-                    local lv = ExpTable.getTeamUnlockLevel(t)
-                    showFloat("远征等级达到" .. tostring(lv) .. "级解锁队伍" .. t, cx, TEAM_TAB.CY - 60)
-                elseif state.teamIdx ~= t then
-                    state.teamIdx = t
-                    -- 切换队伍：清空选择态，避免把上一队的 pending 安装到新队
-                    clearPendingEquip()
-                    state.selectedSlot = nil
-                    state.selectedSubSlot = nil
-                    state.selectedBagIdx = nil
-                    ArtifactDetailPanel.hide()
-                    showFloat("切换到队伍 " .. t .. " 的神器装配", cx, TEAM_TAB.CY + 70)
-                end
-                return true
-            end
-        end
-    end
-
-    -- 出战槽位点击
+    -- [行式布局] 出战槽位点击：三队行 × 4 号位 × 3 子格
     local unlockedSubSlots = getUnlockedSubSlotCount()
-    for i = 1, ArtifactSchema.SLOT_COUNT do
-        for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
-            local cx, cy, size = getSlotCell(i, subSlot)
-            if hitTest(dx, dy, cx, cy, size, size) then
-                local pendingArtifact = getPendingEquipArtifact()
-                local equipped = getEquippedArtifact(i, subSlot)
-                local locked = subSlot > unlockedSubSlots
-                if locked and pendingArtifact then
-                    local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
-                    showFloat("远征等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 80)
-                elseif locked and not equipped then
-                    local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
-                    showFloat("远征等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 80)
-                elseif pendingArtifact and hasSameTypeInSlot(i, pendingArtifact, subSlot) then
-                    showFloat("同一槽位不能佩戴相同类型神器", cx, cy - 80)
-                elseif pendingArtifact and Protocol then
-                    if state.equipRequestPending then
-                        showFloat("正在安装神器", cx, cy - 80)
-                    else
-                        local sent = sendAction(Protocol.ACTION_TYPES.ARTIFACT_EQUIP, {
-                            artifactId = pendingArtifact.id,
-                            slot = i,
-                            subSlot = subSlot,
-                            teamIdx = state.teamIdx,  -- [三队适配]
-                        })
-                        if sent then
-                            showFloat("正在安装神器", cx, cy - 80)
-                            state.equipRequestPending = true
-                            state.selectedSlot = i
-                            state.selectedSubSlot = subSlot
-                            state.selectedBagIdx = findBagIndexById(pendingArtifact.id)
-                        end
+    local unlockedTeams = getUnlockedTeamCount()
+    for t = 1, ArtifactSchema.TEAM_COUNT do
+        for i = 1, ArtifactSchema.SLOT_COUNT do
+            for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                local cx, cy, size = getSlotCell(i, subSlot, t)
+                if hitTest(dx, dy, cx, cy, size, size) then
+                    if t > unlockedTeams then
+                        local lv = ExpTable.getTeamUnlockLevel(t)
+                        showFloat("远征等级达到" .. tostring(lv) .. "级解锁队伍" .. t, cx, cy - 70)
+                        return true
                     end
-                elseif pendingArtifact then
-                    showFloat("网络未连接", cx, cy - 80)
-                elseif equipped then
-                    ArtifactDetailPanel.show(equipped, "slot", i, subSlot)
-                    state.selectedSlot = i
-                    state.selectedSubSlot = subSlot
-                    state.selectedBagIdx = nil
-                else
-                    if state.selectedSlot == i and state.selectedSubSlot == subSlot then
-                        state.selectedSlot = nil
-                        state.selectedSubSlot = nil
-                    else
+                    local pendingArtifact = getPendingEquipArtifact()
+                    local equipped = getEquippedArtifact(i, subSlot, t)
+                    local locked = subSlot > unlockedSubSlots
+                    if locked and pendingArtifact then
+                        local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
+                        showFloat("远征等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 70)
+                    elseif locked and not equipped then
+                        local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
+                        showFloat("远征等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 70)
+                    elseif pendingArtifact and hasSameTypeInSlot(i, pendingArtifact, subSlot, t) then
+                        showFloat("同一槽位不能佩戴相同类型神器", cx, cy - 70)
+                    elseif pendingArtifact and Protocol then
+                        if state.equipRequestPending then
+                            showFloat("正在安装神器", cx, cy - 70)
+                        else
+                            local sent = sendAction(Protocol.ACTION_TYPES.ARTIFACT_EQUIP, {
+                                artifactId = pendingArtifact.id,
+                                slot = i,
+                                subSlot = subSlot,
+                                teamIdx = t,  -- [行式布局] 直接按所在行安装
+                            })
+                            if sent then
+                                showFloat("正在安装神器", cx, cy - 70)
+                                state.equipRequestPending = true
+                                state.selectedTeam = t
+                                state.selectedSlot = i
+                                state.selectedSubSlot = subSlot
+                                state.selectedBagIdx = findBagIndexById(pendingArtifact.id)
+                            end
+                        end
+                    elseif pendingArtifact then
+                        showFloat("网络未连接", cx, cy - 70)
+                    elseif equipped then
+                        -- 点击已装配格子 → 详情（带队伍，供"取下"用）
+                        ArtifactDetailPanel.show(equipped, "slot", i, subSlot, t)
+                        state.selectedTeam = t
                         state.selectedSlot = i
                         state.selectedSubSlot = subSlot
+                        state.selectedBagIdx = nil
+                    else
+                        if state.selectedTeam == t and state.selectedSlot == i
+                            and state.selectedSubSlot == subSlot then
+                            state.selectedTeam = nil
+                            state.selectedSlot = nil
+                            state.selectedSubSlot = nil
+                        else
+                            state.selectedTeam = t
+                            state.selectedSlot = i
+                            state.selectedSubSlot = subSlot
+                        end
+                        showFloat("先在背包神器详情中点击安装", cx, cy - 70)
                     end
-                    showFloat("先在背包神器详情中点击安装", cx, cy - 80)
+                    print(string.format("[ChurchArtifactPanel] slot click t%d %d:%d", t, i, subSlot))
+                    return true
                 end
-                print("[ChurchArtifactPanel] slot click " .. i .. ":" .. subSlot)
-                return true
             end
         end
     end
@@ -895,15 +889,17 @@ function M.handleTabInput(dx, dy)
                 if state.rerollMode then
                     toggleRerollSelect(artifact)
                     state.selectedBagIdx = idx
+                    state.selectedTeam = nil
                     state.selectedSlot = nil
                     state.selectedSubSlot = nil
                     ArtifactDetailPanel.hide()
                     return true
                 end
                 state.selectedBagIdx = idx
+                state.selectedTeam = nil
                 state.selectedSlot = nil
                 state.selectedSubSlot = nil
-                ArtifactDetailPanel.show(artifact, "bag")
+                ArtifactDetailPanel.show(artifact, "bag", nil, nil, nil)
                 print("[ChurchArtifactPanel] bag click " .. idx)
                 return true
             end
@@ -926,6 +922,7 @@ function M.onArtifactRerollResult(success)
         state.rerollMode = false
         clearRerollSelection()
         state.selectedBagIdx = nil
+        state.selectedTeam = nil
         state.selectedSlot = nil
         state.selectedSubSlot = nil
         clearPendingEquip()

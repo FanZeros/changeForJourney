@@ -190,8 +190,16 @@ def main() -> int:
 
     source_root = args.source_root.resolve()
     ws = args.workspace_root.resolve()
-    if ws == source_root or source_root in ws.parents or ws in source_root.parents:
-        die("workspace-root 不能与 source-root 互为包含（%s vs %s）" % (ws, source_root))
+    # 安全边界：
+    #  - ws == source_root：禁止（会污染源码树）
+    #  - source_root in ws.parents（ws 是 source 的祖先，包含源码）：禁止
+    #  - ws 位于 source_root 内部（如 .tmp/protected-workspace）：允许——
+    #    物化只读 scripts/.project/assets，ws 内容由本工具全新生成并整目录重建，
+    #    .tmp/ 已被 .gitignore 排除；这也是 build_protected_windows.bat 的默认位置。
+    # 注意方向：ws in source_root.parents 表示 ws 是 source 的祖先（包含源码）→ 禁止。
+    # source_root in ws.parents 表示 ws 在 source 内部（如 .tmp/ 下）→ 允许。
+    if ws == source_root or ws in source_root.parents:
+        die("workspace-root 不能等于 source-root、也不能包含 source-root（%s vs %s）" % (ws, source_root))
 
     summary = materialize(source_root, ws, args.link_assets)
     log("完成。下一步：")

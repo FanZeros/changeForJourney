@@ -7,9 +7,9 @@
   "always_askuserquestion": true,
   "never_cancel_task": true,
   "never_end_without_askuserquestion": true,
-  "askuserquestion_rule": "不能取消或退出任务。每次交付后必须以 AskUserQuestion 选项提问下一步，禁止以纯文字中断对话；即使遇到阻塞也用选项询问后续操作。",
-  "dev_branch": "workspace925",
-  "push_policy": "用户要求从指定基础分支新开修复分支、完成后推送修复分支并合并回基础分支再推送；本轮基础分支 workspace925。之后按用户当轮指定分支执行，绝不强推或推送无关分支。",
+  "askuserquestion_rule": "不能擅自取消或退出任务；每次交付或遇到阻碍都先简报，再真正调用 AskUserQuestion 工具，以选项询问下一步并等待用户选择。禁止仅以文字结束；记忆不等同于自动 hook。",
+  "dev_branch": "feat926/character-drag-save",
+  "push_policy": "分支操作以用户当前轮次授权为准；本轮仅允许推送 feat926/character-drag-save，不自动合入或推送 workspace925/workspace/其他分支。不强推，不在远端 URL、代码或记忆中保存 PAT。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

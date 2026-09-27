@@ -927,33 +927,41 @@ local function drawPageImpl(vg)
             { strokeColor = { DIAMOND_STROKE_R, DIAMOND_STROKE_G, DIAMOND_STROKE_B } }
         )
 
-        -- 按钮上方显示招募券，券不够时下方补黑晶差额。
-        local function recruitCost(count)
-            local ticketCost, gemEach
+        -- 文字右侧只显示实际花费：券够用券，不够才换成黑钻。
+        local function recruitPay(count)
+            local ticketCost, gemCost
             if isStellarPoolSelected() then
                 ticketCost = (count == 10) and UrGachaConfig.Cost.TEN_TICKET or UrGachaConfig.Cost.SINGLE_TICKET
-                gemEach = UrGachaConfig.Cost.SINGLE_DIAMOND
+                gemCost = (count == 10) and UrGachaConfig.Cost.TEN_DIAMOND or UrGachaConfig.Cost.SINGLE_DIAMOND
             else
                 ticketCost = (count == 10) and GachaConfig.Cost.TEN_TICKET or GachaConfig.Cost.SINGLE_TICKET
-                gemEach = GachaConfig.Cost.SINGLE_DIAMOND
+                gemCost = (count == 10) and GachaConfig.Cost.TEN_DIAMOND or GachaConfig.Cost.SINGLE_DIAMOND
             end
-            local shortfall = math.max(0, ticketCost - (state.ticketCount or 0))
-            return ticketCost, shortfall * gemEach
+            if (state.ticketCount or 0) >= ticketCost then
+                return "ticket", ticketCost, true
+            end
+            return "gem", gemCost, (state.diamondCount or 0) >= gemCost
         end
         local function drawRecruitCost(cx, cy, count)
-            local tickets, gems = recruitCost(count)
-            local ticketImg = img.ticketIcon
-            if isStellarPoolSelected() and img.ticketIconStellar >= 0 then
-                ticketImg = img.ticketIconStellar
+            local kind, amount, enough = recruitPay(count)
+            local icon = img.diamondIcon
+            if kind == "ticket" then
+                icon = img.ticketIcon
+                if isStellarPoolSelected() and img.ticketIconStellar >= 0 then
+                    icon = img.ticketIconStellar
+                end
             end
-            drawImageCentered(vg, ticketImg, cx - 28, cy - 62, 42, 42, 1.0)
-            drawTextStroke(vg, cx + 4, cy - 62, tostring(tickets), 30,
-                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-            if gems > 0 then
-                drawImageCentered(vg, img.diamondIcon, cx - 36, cy + 62, 42, 42, 1.0)
-                drawTextStroke(vg, cx - 4, cy + 62, tostring(gems), 30,
-                    NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 90, 90, 3)
-            end
+            local text = tostring(amount)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 30)
+            local textW = nvgTextBounds(vg, 0, 0, text)
+            local totalW = 36 + 8 + textW
+            local left = cx - totalW * 0.5
+            drawImageCentered(vg, icon, left + 18, cy, 36, 36, 1.0)
+            local r, g, b = 255, 255, 255
+            if not enough then r, g, b = 255, 90, 90 end
+            drawTextStroke(vg, left + 44, cy, text, 30,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, r, g, b, 3)
         end
 
         -- ============ 16. 招募1次按钮 ============
@@ -964,8 +972,8 @@ local function drawPageImpl(vg)
         nvgFontSize(vg, BTN_TEXT_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
-        nvgText(vg, BTN_1_CX, BTN_1_CY, "招募1次", nil)
-        drawRecruitCost(BTN_1_CX, BTN_1_CY, 1)
+        nvgText(vg, BTN_1_CX - 70, BTN_1_CY, "招募1次", nil)
+        drawRecruitCost(BTN_1_CX + 105, BTN_1_CY, 1)
         BF.finish(vg, _s3)
 
         -- ============ 17. 招募10次按钮 ============
@@ -976,8 +984,8 @@ local function drawPageImpl(vg)
         nvgFontSize(vg, BTN_TEXT_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
-        nvgText(vg, BTN_10_CX, BTN_10_CY, "招募10次", nil)
-        drawRecruitCost(BTN_10_CX, BTN_10_CY, 10)
+        nvgText(vg, BTN_10_CX - 78, BTN_10_CY, "招募10次", nil)
+        drawRecruitCost(BTN_10_CX + 112, BTN_10_CY, 10)
         BF.finish(vg, _s4)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("tavern_btn_gacha10", BTN_10_CX, BTN_10_CY, BTN_10_W, BTN_10_H, "left") end

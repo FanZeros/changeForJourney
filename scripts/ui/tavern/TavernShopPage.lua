@@ -977,7 +977,13 @@ function TavernShopPage.handleInput(dx, dy)
             shopState.popupClosing  = false
             shopState.sliderDragging = false
             shopState.buyQuantity   = 1
-            shopState.buyMaxQuantity = math.max(1, item.limitCount - getPurchased(item.id))
+            local price = math.max(1, item.price or 1)
+            local affordable = math.floor((tonumber(GameState.getTavernCoin()) or 0) / price)
+            local cap = math.max(1, affordable)
+            if item.limitCount and item.limitCount >= 0 then
+                cap = math.min(cap, math.max(0, item.limitCount - getPurchased(item.id)))
+            end
+            shopState.buyMaxQuantity = math.max(1, cap)
             return true
         end
     end

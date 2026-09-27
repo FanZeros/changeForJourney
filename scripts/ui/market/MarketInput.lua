@@ -206,14 +206,17 @@ local function handleInput(dx, dy)
                 state.popupAnimTime = time.elapsedTime
                 state.popupClosing = false
                 state.sliderDragging = false
-                -- 计算最大可购买数量
+                -- 上限取余额能买的件数，限购商品再和剩余次数取较小值
                 state.buyQuantity = 1
-                if item.limitCount == -1 then
-                    state.buyMaxQuantity = 99
-                else
+                local price = math.max(1, getActualPrice(item) or 1)
+                local balance = (item.currency == "diamond") and GameState.getGems() or GameState.getGold()
+                local affordable = math.floor((tonumber(balance) or 0) / price)
+                local cap = math.max(1, affordable)
+                if item.limitCount ~= -1 then
                     local bought = getPurchased(item.id)
-                    state.buyMaxQuantity = math.max(1, item.limitCount - bought)
+                    cap = math.min(cap, math.max(0, item.limitCount - bought))
                 end
+                state.buyMaxQuantity = math.max(1, cap)
                 print("[MarketPage] 打开购买确认: " .. item.name .. " maxQty=" .. state.buyMaxQuantity)
                 return true
             end

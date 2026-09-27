@@ -225,10 +225,13 @@ local function SyncBattleState(dt)
     -- 读档时被补回 1-1，首通奖励就能重复领，进度也像丢了。
     local battle = ClientDispatcher.get("battle")
     if type(battle) ~= "table" then battle = {} end
-    battle.maxStageId = maxId
+    local liveStage = tonumber(BattleScene.getStageId()) or 0
+    local savedStage = tonumber(battle.currentStageId) or 0
+    local savedMax = tonumber(battle.maxStageId) or 0
+    battle.maxStageId = math.max(maxId or 0, savedMax)
     battle.clearedStages = clearedStr
-    if not battle.currentStageId then
-        battle.currentStageId = BattleScene.getStageId()
+    if liveStage > savedStage then
+        battle.currentStageId = liveStage
     end
     ClientDispatcher.handleStateUpdate(cjson.encode({
         modules = { battle = battle }

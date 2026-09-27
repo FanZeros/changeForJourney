@@ -244,9 +244,38 @@ function RecruitAnim.init(vg)
     print("[RecruitAnim] init OK")
 end
 
-function RecruitAnim.start(results, onClose)
-    state.results = results or {}
+local againFn_ = nil
+
+function RecruitAnim.setOnAgain(fn)
+    againFn_ = fn
+end
+
+local function resultRank(item)
+    local t = item and item.type
+    if t == "hero" or t == "dupe_to_shard" or t == "decompose" then return 1 end
+    if t == "shard" then return 2 end
+    return 3
+end
+
+function RecruitAnim.start(results, onClose, count)
+    local list = results or {}
+    local ordered = {}
+    local buckets = { {}, {}, {} }
+    for i = 1, #list do
+        local item = list[i]
+        local rank = resultRank(item)
+        local bucket = buckets[rank]
+        bucket[#bucket + 1] = item
+    end
+    for rank = 1, 3 do
+        local bucket = buckets[rank]
+        for i = 1, #bucket do
+            ordered[#ordered + 1] = bucket[i]
+        end
+    end
+    state.results = ordered
     state.onClose = onClose
+    state.pullCount = (count == 10 or count == 1) and count or ((#ordered > 1) and 10 or 1)
 
     state.highestQ = 0
     for _, r in ipairs(state.results) do
@@ -341,6 +370,13 @@ function RecruitAnim.handleInput(dx, dy)
     end
 
     if state.phase == "cards" then
+        local elapsed = time.elapsedTime - state.cardStartT
+        if elapsed > 0.4 and againFn_
+            and math.abs(dx - DESIGN_W * 0.5) <= 180
+            and math.abs(dy - (DESIGN_H - 230)) <= 44 then
+            againFn_(state.pullCount or 1)
+            return true
+        end
         -- 点击触发淡出
         state.phase = "fadeOut"
         state.fadeOutStartT = time.elapsedTime
@@ -421,7 +457,6 @@ end
 --- 碎片类卡片（type="shard"）：图标+角标样式（与资源卡风格一致）
 local function drawShardCard(vg, cx, cy, item, alpha)
     local heroId  = item.heroId
-    local heroCfg = HC.get(heroId)
     local qTag    = qualityToCardTag(item.quality)
 
     -- 卡面背景（品质边框）[暗黑化 P2-A]
@@ -454,18 +489,6 @@ local function drawShardCard(vg, cx, cy, item, alpha)
 
     -- [稀有度显示] 烧字徽章不再显示；保留品质色卡边作隐晦标识
 
-    -- 英雄名 + "碎片"
-    local heroName = heroCfg and heroCfg.name or ("英雄" .. heroId)
-    local nameCY = cy + CARD_H * 0.5 - RES_NAME_OFFSET_BOTTOM
-    drawTextStroke(vg,
-        cx, nameCY,
-        heroName .. "-碎片",
-        RES_NAME_FONT,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255,
-        3,
-        { strokeColor = { 0, 0, 0 } }
-    )
     nvgRestore(vg)
 end
 
@@ -568,17 +591,9 @@ end
 local function drawCharacterCard(vg, cx, cy, item, alpha)
     local heroId = item.heroId
     local heroCfg = HC.get(heroId)
-    local qTag = qualityToCardTag(item.quality)
 
     local cardImg = getHeroCardImage(vg, heroId)
-    drawCardBg(vg, qTag, cx, cy, CARD_W, CARD_H, alpha)
     DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
-
-    local badgeImg = img.qualityBadge[qualityToBadgeTag(item.quality)]
-    if badgeImg and badgeImg >= 0 then
-        local badgeCY = cy + CARD_H * 0.5
-        drawImageCentered(vg, badgeImg, cx, badgeCY, QUALITY_BADGE_W, QUALITY_BADGE_H, alpha)
-    end
 
     -- 角色名称（上移25px：OFFSET从44增到69）
     local combinedAlpha = alpha * _fadeAlpha
@@ -708,11 +723,15 @@ function RecruitAnim.draw(vg)
     -- 半透明黑色遮罩（在视频最后一帧上）
     nvgBeginPath(vg)
     nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(180 * bgAlpha)))
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(210 * bgAlpha)))
     nvgFill(vg)
 
     -- 结果背景
-    drawImageCentered(vg, img.resultBg, 540, 1200, DESIGN_W, DESIGN_H, bgAlpha)
+    drawImageCentered(vg, img.resultBg, 540, 1200, DESIGN_W, DESIGN_H, bgAlpha * 0.72)
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+    nvgFillColor(vg, nvgRGBA(8, 10, 16, math.floor(70 * bgAlpha)))
+    nvgFill(vg)
 
     -- 泛光（cards / fadeOut 阶段都绘制）
     if (state.phase == "cards" or state.phase == "fadeOut") and state.glowStartT > 0 then
@@ -792,6 +811,13 @@ function RecruitAnim.draw(vg)
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 40)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(255, 255, 255, 180))
+            local againText = (state.pullCount == 10) and "继续十连" or "继续单抽"
+            DarkIcon.drawNine(vg, "btn", 360, DESIGN_H - 274, 360, 88, { accent = "gold" })
+            nvgFontSize(vg, 36)
+            nvgFillColor(vg, nvgRGBA(255, 236, 190, 255))
+            nvgText(vg, DESIGN_W * 0.5, DESIGN_H - 230, againText, nil)
+            nvgFontSize(vg, 40)
             nvgFillColor(vg, nvgRGBA(255, 255, 255, 180))
             nvgText(vg, DESIGN_W * 0.5, DESIGN_H - 120, "点击任意处继续", nil)
         end

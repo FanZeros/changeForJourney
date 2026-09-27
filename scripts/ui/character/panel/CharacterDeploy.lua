@@ -69,8 +69,6 @@ function M.bind(deps)
                         if teamPowerCaches[otherTeam] then teamPowerCaches[otherTeam][i] = 0 end
                         print(string.format("[CharacterPanel] 英雄%d 从队伍%d 移到当前队伍%d", heroId, otherTeam, activeTeamIdx))
                     end
-                    local cb = getOnTeamChanged()
-                    if cb then cb(otherTeam) end
                     break
                 end
             end
@@ -111,7 +109,7 @@ function M.bind(deps)
 
         -- 通知阵容变更
         local cb = getOnTeamChanged()
-        if cb then cb(activeTeamIdx) end
+        if cb then cb(activeTeamIdx, otherTeam ~= activeTeamIdx and otherTeam or nil) end
 
         require("systems.GameSFX").play("ui_loosen")
 

@@ -117,20 +117,26 @@ function M.run(rt)
 
     -- 5.1 阵容变更回调：角色面板出战变动 → 同步战斗画面 → 重载关卡 → 更新 TopBar 战力
     -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 编队先本地生效（并行战斗 Phase 3 接入）
-    CharacterPanel.setOnTeamChanged(function(teamIdx)
+    CharacterPanel.setOnTeamChanged(function(teamIdx, otherTeamIdx)
         teamIdx = tonumber(teamIdx) or 1
-        local team = CharacterPanel.getDeployedTeam(teamIdx)
-        local deployedIds = CharacterPanel.getTeamSlotLayout(teamIdx)
-        if localBridgeReady_ then
-            localSendAction(require("shared.Protocol").ACTION_TYPES.SET_TEAM, {
-                teamIdx = teamIdx,
-                heroIds = deployedIds,
-            })
+        local teamLayouts = { [teamIdx] = CharacterPanel.getTeamSlotLayout(teamIdx) }
+        if otherTeamIdx and otherTeamIdx ~= teamIdx then
+            teamLayouts[otherTeamIdx] = CharacterPanel.getTeamSlotLayout(otherTeamIdx)
         end
-        if teamIdx ~= 1 then
+        if localBridgeReady_ then
+            local ok, reason = require("runtime.LocalActionBridge").setTeams(teamLayouts)
+            if not ok then
+                print("[Standalone] 编队同步失败: " .. tostring(reason))
+                local heroesData = ClientDispatcher.get("heroes")
+                if heroesData then CharacterPanel.setHeroesData(heroesData) end
+                return
+            end
+        end
+        if teamIdx ~= 1 and otherTeamIdx ~= 1 then
             print("[Standalone] 队伍" .. teamIdx .. " 编队变更")
             return
         end
+        local team = CharacterPanel.getDeployedTeam(1)
         TopBar.setTotalPower(CharacterPanel.getTotalPower())
         if #team > 0 then
             BattleScene.setAllies(team)

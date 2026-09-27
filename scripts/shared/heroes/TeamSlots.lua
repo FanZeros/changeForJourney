@@ -71,11 +71,15 @@ function TeamSlots.normalize(heroes)
 
     -- 跨队去重（队1 优先保留，后出现的队让位）
     local owned = {}
-    for _, id in ipairs(teams[1].slots) do owned[id] = 1 end
+    for _, id in ipairs(teams[1].slots) do
+        if id ~= 0 then owned[id] = 1 end
+    end
     for i = 2, TEAM_COUNT do
         local kept = {}
         for _, id in ipairs(teams[i].slots) do
-            if not owned[id] then
+            if id == 0 then
+                kept[#kept + 1] = 0
+            elseif not owned[id] then
                 owned[id] = i
                 kept[#kept + 1] = id
             end

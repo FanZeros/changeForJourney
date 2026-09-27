@@ -30,6 +30,7 @@ HeroesSchema.Fields = {
                     if type(k) == "number" and type(v) == "table" then
                         arrayCount = arrayCount + 1
                         arrayItems[k] = v
+                        fixed[k] = v
                     end
                     local raw = tostring(k)
                     local tagged = raw:match("^h(%d+)$")

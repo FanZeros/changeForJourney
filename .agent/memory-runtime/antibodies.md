@@ -1,8 +1,14 @@
 # antibodies — 跨项目避雷清单(只增不减)
 
+- [scope:project] `StandaloneSave.writeFile` 必须检查 `File:WriteString` 的 boolean 返回；失败后不能记成功快照，且须安排下一轮重试。直接覆盖旧档与损坏 JSON 恢复仍未解决；`FileSystem:Rename` 在隔离存储平台上的行为未经验证，不能仅凭声明视为原子落盘。
+- [scope:project] 离线英雄经验预览不能把编队中的 `0` 空槽、未拥有或重复 ID 算进平分分母；领取回退路径应使用同一有效名单规则。
+
+- [scope:project] 2026-09-27 本轮只授权 push `feat926/character-drag-save`；历史记录中的 `workspace925` 推送权限不适用。远端地址不能嵌入 PAT；移除明文凭据后若无安全认证应保留已提交成果，待用户选择认证方式，不用令牌 URL 绕过。
+- [scope:project] `ModuleRegistry` 与 `HeroesSchema` 在单机收到 heroes 时连续规范化，数字名册键必须保留；跨队同步不可逐队回调：第一队推送触发面板刷新会覆盖第二队未提交的编队。0 是空槽而非角色，normalize 不得删除后续队伍的 0。
+
 - [scope:project] 装备详情小窗展开方向必须由 owner 区分：character（右栏）从鼠标左侧展开、对比继续向左；bag/backpack（左栏）从鼠标右侧展开、对比继续向右。别让边界夹取把小窗挤到鼠标另一侧；悬停锚点用鼠标坐标，钉住后不要用格子中心重设。
 - [scope:project] 套装详情必须按最后一条随机词条的底部计算起点，并同步面板高度、按钮和热区；中文描述要换行并保证字号可读。
-- [scope:project] 本轮授权只 push workspace925；远端可能有其他会话并发提交，先 fetch 并整合、不强推。不在凭据 URL/Git 配置/记忆中保存 PAT。
+- [scope:project] 2026-09-26 的历史任务曾授权只 push workspace925；该权限已被 2026-09-27 的 `feat926/character-drag-save` 分支指令覆盖，不得用于当前任务。远端可能有其他会话并发提交，先 fetch 并整合、不强推。不在凭据 URL/Git 配置/记忆中保存 PAT。
 - [scope:project] `CharacterDetail` 属性页仅角色切角能切角色；装备槽和一键操作只在配装页绘制/响应，配装页不要绘制/响应左右切角。底板/标题下移时列表网格和滚动热区必须同步，Tab 栏不能位移。
 - [通用] 用户要求每次交付以 AskUserQuestion 选项询问下一步，不纯文字结束；记忆是提醒，自动执行的跨会话保证须配置 harness hook。
 

@@ -79,6 +79,14 @@ local function buildHeroExpPreview(heroesData, totalHeroExp)
 
     -- 先收集 (heroId, teamIdx)，保持队伍顺序
     local entries = {}
+    local seen = {}
+    local function addHero(heroId, teamIdx)
+        local id = tonumber(heroId)
+        if id and id > 0 and not seen[id] and heroesData.roster and heroesData.roster[id] then
+            seen[id] = true
+            entries[#entries + 1] = { id = id, team = teamIdx }
+        end
+    end
     local liveTeams = {}
     local liveCount = 0
     local okPanel, CharacterPanel = pcall(require, "ui.character.panel.CharacterPanel")
@@ -98,14 +106,14 @@ local function buildHeroExpPreview(heroesData, totalHeroExp)
             local slots = teams[t] and teams[t].slots
             if type(slots) == "table" then
                 for _, heroId in ipairs(slots) do
-                    entries[#entries + 1] = { id = tonumber(heroId) or heroId, team = t }
+                    addHero(heroId, t)
                 end
             end
         end
     end
     if #entries == 0 then
         for _, heroId in ipairs(heroesData.deployed or {}) do
-            entries[#entries + 1] = { id = tonumber(heroId) or heroId, team = 1 }
+            addHero(heroId, 1)
         end
     end
     if #entries == 0 then return preview end
@@ -354,8 +362,14 @@ function OfflineService.ClaimRewards(uid)
         end
     end
     if #recipients == 0 then
+        local seen = {}
         for _, heroId in ipairs(heroesData.deployed or {}) do
-            recipients[#recipients + 1] = tonumber(heroId) or heroId
+            local numId = tonumber(heroId)
+            if numId and numId > 0 and not seen[numId]
+                and heroesData.roster and heroesData.roster[numId] then
+                seen[numId] = true
+                recipients[#recipients + 1] = numId
+            end
         end
     end
     local heroCount = #recipients

@@ -29,6 +29,12 @@
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
 
+## 上次做了什么（2026-09-28，feat927 修复 Windows SyntaxError）
+
+- 用户本机跑 bat 步骤 1 报 protect_build.py:109 `\\!=` SyntaxError；heredoc 转义 bug，已修（line 109 + sh shebang），双分支沙箱复测 PASS，推送 b204359。
+- **流程教训（必须遵守）**：heredoc/shell 生成的每个 py/sh，commit 前独立跑语法校验（勿串在会被中断的 && 链里）；新脚本每条分支实跑过再提交；用户报本机错误先全仓库 grep 同类模式。
+- 用户下一步：本机重跑 bat 继续清单 §1-§4，回报 manifest 统计/实机回归/Q1 VERDICT。仍只 push feat927；完成后 AskUserQuestion。
+
 ## 上次做了什么（2026-09-27，feat927 本机验证清单）
 
 - 新增 `electron-shell/WINDOWS_PROTECT_CHECKLIST.md`：本机 Windows 逐步骤验证 --protect 全链 + 实机回归 + L2 Q1 判定（含成功标志/失败回报模板/决策表）。

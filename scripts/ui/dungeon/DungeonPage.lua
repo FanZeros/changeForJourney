@@ -1084,6 +1084,17 @@ end
 
 -- ======================== 网络响应处理 ========================
 
+--- 扫荡奖励弹出时自动离开副本页（回到主视图页签）。
+--- 横屏下副本页是全窗模态层，绘制在全局弹窗层之上；不离开的话
+--- 奖励弹窗会被副本页盖住，玩家看不到扫荡奖励。
+local function leaveDungeonPageForReward()
+    local BottomNav = require("ui.hud.BottomNav")
+    if BottomNav.getSelectedIndex() == 5 then
+        BottomNav.setSelectedIndex(3)
+        print("[DungeonPage] sweep reward shown, auto leave dungeon page -> tab 3")
+    end
+end
+
 --- 服务端操作结果回调（由 Client.lua 调用）
 ---@param data table { action, success, reason, ... }
 function DungeonPage.onActionResult(data)
@@ -1121,6 +1132,7 @@ function DungeonPage.onActionResult(data)
                     rewards[#rewards + 1] = { type = "relic", relicType = r.type, quality = r.quality or 4 }
                 end
             end
+            leaveDungeonPageForReward()
             require("ui.hud.popup.RewardPopup").show("扫荡奖励", rewards)
         else
             print("[DungeonPage] SWEEP FAIL: " .. tostring(data.reason))
@@ -1234,6 +1246,7 @@ function DungeonPage.onActionResult(data)
             if (data.diamondReward or 0) > 0 then
                 rewards[#rewards + 1] = { type = "diamond", amount = data.diamondReward }
             end
+            leaveDungeonPageForReward()
             require("ui.hud.popup.RewardPopup").show("扫荡奖励", rewards)
         else
             print("[DungeonPage] TOWER_SWEEP FAIL: " .. tostring(data.reason))

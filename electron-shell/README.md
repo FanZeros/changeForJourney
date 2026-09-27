@@ -52,6 +52,94 @@ python3 electron-shell/obfuscation_trial.py --all-scripts --source-root . --outp
 
 本次隔离副本从 6,008,895 字节变为 4,653,072 字节（减少约 22.6%，361/361 文件内容变化），原版和压缩版 60 帧 Runtime 验证均为 PASS、0 Lua/资源错误。当前副本放在 `.tmp` 下，官方 Build 的 LSP 检查报大量缺少引擎声明的 `undefined-global`，不能宣称它已通过正式 Build；待在正常可识别引擎类型定义的独立工程内完成完整 LSP、Build、存档及 Windows 成品包回归。所有处理后 Lua 仍是可读明文，当前发布流水线依然完全没有调用此脚本。
 
+## L1 作用域安全混淆器 + L2 字节码 POC（2026-09-27，`feat927/ele-protection-research-0927`）
+
+调研结论见 `docs/pc-protection-research-0927.md`。本节是把其中 **L1（AST 重命名）**
+落地为可用脚本，并为 **L2（Lua 5.4 字节码）** 准备可行性探针。**均未接入正式打包流水线**，
+`pack_release.py` / `build_local_windows.bat` 完全没调用它们。
+
+### L1：`lua_obfuscator.py`（作用域安全重命名）
+
+基于 luaparser 内置 ANTLR 语法树做标准 Lua 作用域解析，**只重命名局部绑定**
+（文件级 local、函数参数、for 循环变量、local function、嵌套匿名函数的 local），
+用 token 级 splice 改写，其余（注释、字符串、数字、空白、排版）**从原文逐字节拷贝**。
+
+- **永不改名**：全局名（引擎 API、`require` 到的模块、未声明标识符）、
+  所有字段名与方法名（`.` / `:` 之后、表构造器 key、`function a.b.c:d()` 中
+  `.`/`:` 之后的部分）、`require` 路径字符串、goto label。
+- **保留** EmmyLua `---` 注释（官方 LSP 依赖），但注释里的 `---@param 旧名`
+  **不会跟着实参一起改**（见下方已知限制）。
+- **安全策略**：任何解析失败、含未知语法形态、或未通过等价校验的文件，
+  一律拒绝改写并原样复制——宁可漏混淆也不冒运行期破坏的风险。
+
+```bash
+# 依赖：python3 -m venv ~/luaenv && ~/luaenv/bin/pip install luaparser lupa
+# 单文件诊断（打印混淆结果）：
+python3 electron-shell/lua_obfuscator.py --file scripts/shared/StageProvider.lua
+# 全量（输出必须在源码树之外）：
+python3 electron-shell/lua_obfuscator.py --source-root . --output-root ../obf-out
+```
+
+**等价校验（内置，逐文件强制）**：混淆后必须①重新解析成功；②非 NAME token 序列
+逐一致（保证只动标识符文本）；③字符串字面量完全一致；④NAME token 数量一致；
+⑤全局名集合不变。任一不满足即 `rejected` 原样复制。
+
+**本轮实测**（本分支源码）：
+- 单元/行为等价测试 `test_lua_obfuscator.py`：21/21 PASS（覆盖递归、upvalue 闭包、
+  shadowing、`self` 方法、数值/泛型 for、goto label、repeat-until、`<const>`、
+  多重赋值、varargs、do-block、字段 vs 局部同名等）。
+- 全量 361 文件：**344 改名 / 17 未变**（16 个纯数据表 StageConfig/AssetManifest
+  无 local 绑定；`scripts/core/DarkIcon.lua` 因 luaparser 对某中文 token 解析失败
+  被安全拒绝、原样复制）。体积 6,008,895 → 5,843,096 字节（-2.76%，因保留注释
+  与排版，本就不是压缩目标）。
+- 行为等价抽样 `verify_obfuscation_sample.py`（lupa Lua 5.4 真跑 + 确定性深度序列化
+  比对返回值）：**71/71 PASS，0 mismatch**，290 个依赖引擎全局的文件离线跳过。
+
+```bash
+python3 electron-shell/test_lua_obfuscator.py          # 单元/行为等价
+python3 electron-shell/verify_obfuscation_sample.py ../obf-out .   # 全量抽样行为等价
+```
+
+**已知限制（接入官方 Build 前必须处理）**：
+1. **`---@param`/`---@return` 注释里的旧参数名不会同步改名**：219 个文件的注释仍
+   引用重命名前的实参名（实参已是 `_zN_`）。官方 LSP 可能报 param 不匹配告警。
+   处理方向二选一：(a) 混淆时对参数**不改名**（只改纯 local，牺牲部分强度）；
+   (b) 解析 `---@param`/`---@return` 行并把其中的旧名同步替换。落地前需先跑通
+   官方 LSP 0 Error 再决定。
+2. **`DarkIcon.lua` 被跳过**（解析失败），仍是明文；需要换 parser 或手工处理该文件。
+3. **仍是可读明文源码**：L1 只去掉变量名语义，控制流与字符串依旧可读。要显著提高
+   阅读难度必须叠加 L2（字节码）——但 L2 有前置未知，见下。
+
+### L2：`lua_bytecode_poc.py`（字节码可行性探针）
+
+把 Lua 源码 `string.dump` 成 Lua 5.4 字节码。**本地已验证**标准 Lua 5.4 可往返
+（header `1b 4c 75 61 54 00` = `\x1bLua` + 版本 0x54），体积 -22.8%。
+
+```bash
+python3 electron-shell/lua_bytecode_poc.py --file scripts/shared/StageProvider.lua --out-dir .tmp/bc-poc
+```
+
+生成 `.luac` 字节码 + `poc_loader.lua` 自包含探针（把 `return 42` 编译成字节码，
+与业务模块解耦）。本地 lupa Lua 5.4 跑探针输出
+`VERDICT: VM ACCEPTS bytecode (Q1=yes), returned 42`。
+
+**两个前置未知必须在真实引擎上验证（沙箱无 WASM 引擎资产，跑不了）**：
+- **Q1**：UrhoX 的 **WASM Lua VM 是否接受字节码 chunk**？
+  把 `poc_loader.lua` 贴进官方 Runtime / 预览 Console 运行：
+  打印 `VM ACCEPTS (Q1=yes)` → L2 可行；`VM REJECTS (Q1=no)` → **L2 作废，退回纯 L1**。
+- **Q2**：`dist/assets/*.lua` 的 manifest hash/size 是否被引擎**运行时强校验**？
+  若是，字节码化必须发生在官方 Build **之前**（对源码副本混淆+编译 → 用副本走 Build，
+  manifest 天然一致），不能事后替换 `dist`（会破坏校验，README 早有结论）。
+- **版本锁死风险**：字节码与 Lua 版本/字长/endianness 绑定；本地 5.4 编的字节码
+  未必匹配引擎 WASM Lua 版本。引擎升级即可能失效，需在 CI/打包机用引擎自带 `luac`
+  或 VM 内 `string.dump` 生成，而非本地 lupa。
+
+### 建议的下一步顺序（供决策，不代表已执行）
+1. **P0**：发布版关 F12 DevTools（`main.js:172`）——当前等于官方送提取器，一行改动。
+2. **Q1-POC**：在本机 Windows 用官方 Runtime 跑 `poc_loader.lua`，定 L2 生死。
+3. 若 L2 可行：`源码 → L1 混淆 → luac 字节码 → 官方 Build`（解决 `---@param` 后）。
+4. 若 L2 不可行：`源码 → L1 混淆（修 @param）→ 官方 Build`，可选叠加 L3 静态加密。
+
 ## 一键脚本（推荐，本机跑）
 
 云端代理传 ~466MB zip 会被超时掐断，**打包和上传请在本机直连 GitHub**。

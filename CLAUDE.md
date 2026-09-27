@@ -29,6 +29,15 @@
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
 
+## 上次做了什么（2026-09-27，feat927 L1 混淆器 + L2 字节码 POC）
+
+- 把调研的 L1（AST 作用域重命名）实现为 `electron-shell/lua_obfuscator.py`：基于 luaparser 内置 ANTLR 树做作用域解析，token 级 splice，只改局部绑定（local/参数/for 变量/local function），字段名/方法名/全局/require 路径/字符串/EmmyLua 注释逐字节保留；解析失败或不通过 5 项等价校验的文件拒绝改写、原样复制。
+- 验证：`test_lua_obfuscator.py` 21/21 行为等价 PASS；全量 361 文件 344 改名/17 未变（16 纯数据表 + DarkIcon 解析失败安全拒绝）；`verify_obfuscation_sample.py`（lupa Lua5.4 真跑 + 确定性深度序列化）71/71 PASS。
+- L2：`lua_bytecode_poc.py` 本地验证标准 Lua5.4 字节码往返（header 1b4c75615400，-22.8%），生成 `poc_loader.lua` 自包含探针（lupa 输出 VERDICT: VM ACCEPTS Q1=yes）。
+- **已知限制（接入官方 Build 前必须处理）**：`---@param/@return` 注释旧参数名不随实参改名（219 文件），会触发 LSP param 不匹配告警 → 需参数不改名或同步替换注释名；DarkIcon 仍明文；L1 产物仍可读明文，去阅读难度须叠加 L2。
+- **待真实环境验证**：Q1 WASM Lua VM 是否接受字节码、Q2 manifest hash 是否运行时强校验（沙箱无 wasm 资产跑不了；本地 lupa 字节码未必匹配引擎 Lua 版本，正式化用引擎自带 luac/VM 内 dump）。
+- 依赖：`python3 -m venv ~/luaenv && ~/luaenv/bin/pip install luaparser lupa`。全部未接入 pack_release/build_local。仍只 push `feat927/ele-protection-research-0927`；完成后必须 AskUserQuestion 问下一步；令牌不进仓库/记忆。
+
 ## 上次做了什么（2026-09-27，feat927/ele-protection-research-0927）
 
 - 基于 `feat926/ele-obfuscation-audit-0927` 建调研分支，只加文档不改流水线。

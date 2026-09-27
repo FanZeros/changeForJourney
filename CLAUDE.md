@@ -29,6 +29,13 @@
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
 
+## 上次做了什么（2026-09-28，feat927 发布包源码相似度实测）
+
+- 用 tempGame 的 compare_lua_similarity.py 做 A/B：未混淆发布包 vs 源码 = **100% 对称相似/100% 逐字节行/361 exact**；L1 混淆发布包 vs 源码 = **46% 对称相似/2.8% 逐字节行/17 exact**（16 纯数据表 + DarkIcon 盲区）。
+- 残留 46% = 刻意保留的注释/字符串/对外字段名/排版（保可运行 + 过 LSP 的代价）；报告 `docs/pc-obfuscation-similarity-0928.md`。
+- 结论：保守 L1 消除逐字节泄露（100%→2.8%）；行级相似要归零须靠 L2 字节码（脚本对 `\x1bLua` 判 bytecode 不计行相似），Q1 仍待本机验证。
+- 方法：/workspace 隔离工程用官方 Build 分别产混淆 dist 与基线 dist。仍只 push feat927；完成后 AskUserQuestion；令牌不进仓库/记忆。
+
 ## 上次做了什么（2026-09-28，feat927 修复 Windows SyntaxError）
 
 - 用户本机跑 bat 步骤 1 报 protect_build.py:109 `\\!=` SyntaxError；heredoc 转义 bug，已修（line 109 + sh shebang），双分支沙箱复测 PASS，推送 b204359。

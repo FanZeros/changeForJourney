@@ -203,6 +203,116 @@ local function testArtifactRuntimeIsolation()
     ART.reset({ a, b, cloak, attacker, ghost })
 end
 
+-- ── 5) [三队适配] 神器装配表按队伍隔离 + 旧档迁移 ──
+local function testArtifactTeamSchema()
+    local ArtifactSchema = require("shared.artifact.ArtifactSchema")
+
+    -- 旧档（无 equippedByTeam）迁移到队1
+    local legacy = {
+        bag = { { id = "1", artifactId = 5, quality = 2, value = 50 } },
+        equipped = { [1] = { [1] = "1" } },
+        nextId = 2,
+    }
+    ArtifactSchema.normalizeModule(legacy)
+    check(ArtifactSchema.getEquippedId(legacy, 1, 1) == "1", "旧档装配迁移后队1 可读（缺省 teamIdx）")
+    check(ArtifactSchema.getEquippedId(legacy, 1, 1, 1) == "1", "旧档装配显式 teamIdx=1 可读")
+    check(ArtifactSchema.getEquippedId(legacy, 1, 1, 2) == nil, "旧档装配不会泄漏到队2")
+    check(ArtifactSchema.getEquippedId(legacy, 1, 1, 3) == nil, "旧档装配不会泄漏到队3")
+
+    -- 同一实例可跨队复用（实例可复用方案）
+    local data = { bag = { { id = "7", artifactId = 5, quality = 2, value = 50 } }, nextId = 8 }
+    ArtifactSchema.normalizeModule(data)
+    ArtifactSchema.setEquippedId(data, 2, 1, "7", 1)
+    ArtifactSchema.setEquippedId(data, 2, 1, "7", 2)
+    ArtifactSchema.setEquippedId(data, 3, 3, "7", 3)
+    check(ArtifactSchema.getEquippedId(data, 2, 1, 1) == "7"
+        and ArtifactSchema.getEquippedId(data, 2, 1, 2) == "7"
+        and ArtifactSchema.getEquippedId(data, 3, 3, 3) == "7", "同一实例可同时装到三支队伍")
+
+    -- 各队独立查找/卸下
+    check((ArtifactSchema.findEquippedSlot(data, "7", 1)) == 2, "队1 查找命中本队槽位")
+    local teamAny, slotAny = ArtifactSchema.findEquippedSlotAnyTeam(data, "7")
+    check(teamAny == 1 and slotAny == 2, "任意队查找优先命中队1")
+    ArtifactSchema.setEquippedId(data, 2, 1, nil, 1)
+    check(ArtifactSchema.getEquippedId(data, 2, 1, 1) == nil, "卸下队1 装配")
+    check(ArtifactSchema.getEquippedId(data, 2, 1, 2) == "7", "卸队1 不影响队2 装配")
+    local t2 = ArtifactSchema.findEquippedSlotAnyTeam(data, "7")
+    check(t2 == 2, "队1 卸下后任意队查找命中队2")
+
+    -- 同队内实例唯一：队2 再装到别处应清掉旧位
+    ArtifactSchema.setEquippedId(data, 1, 1, "7", 2)
+    check(ArtifactSchema.getEquippedId(data, 2, 1, 2) == nil
+        and ArtifactSchema.getEquippedId(data, 1, 1, 2) == "7", "同队内重装实例自动移出旧位")
+
+    -- 非法 teamIdx 回落 1
+    ArtifactSchema.setEquippedId(data, 4, 1, "7", nil)
+    check(ArtifactSchema.getEquippedId(data, 4, 1, 1) == "7", "teamIdx 缺省回落队1")
+    ArtifactSchema.setEquippedId(data, 4, 1, "7", 99)
+    check(ArtifactSchema.getEquippedId(data, 4, 1, 1) == "7", "teamIdx 越界回落队1")
+
+    -- 存档 roundtrip：dehydrate → normalize 后三队装配保持
+    local lean = ArtifactSchema.dehydrateModule(data)
+    check(lean.e == nil and type(lean.et) == "table", "dehydrate 输出 et 分队结构且不再输出旧 e")
+    local restored = { bag = { { id = "7", artifactId = 5, quality = 2, value = 50 } } }
+    for k, v in pairs(lean) do restored[k] = v end
+    ArtifactSchema.normalizeModule(restored)
+    check(ArtifactSchema.getEquippedId(restored, 1, 1, 2) == "7"
+        and ArtifactSchema.getEquippedId(restored, 3, 3, 3) == "7"
+        and ArtifactSchema.getEquippedId(restored, 4, 1, 1) == "7", "存档 roundtrip 后各队装配一致")
+end
+
+-- ── 6) [三队适配] ArtifactBridge 按队伍读取装配 ──
+local function testArtifactBridgeTeam()
+    local ArtifactBridge = require("systems.ArtifactBridge")
+    local ArtifactSchema = require("shared.artifact.ArtifactSchema")
+    local AD = require("systems.AttributeDef")
+
+    -- 巨人之铠(5, counter_attack) 只加战力分；嘲讽面具(11, taunt_mask) 加 artifactExtraDamageMult，可断言
+    local data = {
+        bag = {
+            { id = "1", artifactId = 11, quality = 1, value = 20 },
+            { id = "2", artifactId = 11, quality = 3, value = 60 },
+        },
+        nextId = 3,
+    }
+    ArtifactSchema.normalizeModule(data)
+    ArtifactSchema.setEquippedId(data, 1, 1, "1", 1)
+    ArtifactSchema.setEquippedId(data, 1, 1, "2", 2)
+
+    local function mkAttrs()
+        local attrs = { final = {}, modifiers = {} }
+        function attrs:get(key) return self.final[key] or 0 end
+        function attrs:addModifier(id, entries)
+            self.modifiers[id] = entries
+            for _, e in ipairs(entries) do
+                self.final[e.key] = (self.final[e.key] or 0) + e.flat
+            end
+        end
+        function attrs:removeModifier(id) self.modifiers[id] = nil end
+        return attrs
+    end
+
+    local a1 = mkAttrs()
+    local fx1 = ArtifactBridge.applyToUnit(a1, 1, data, 1)
+    check(#fx1 == 1 and a1.artifactExtraDamageMult and math.abs(a1.artifactExtraDamageMult - 1.2) < 1e-9,
+        "队1 按本队装配获得 +20% 额外伤害")
+
+    local a2 = mkAttrs()
+    local fx2 = ArtifactBridge.applyToUnit(a2, 1, data, 2)
+    check(#fx2 == 1 and a2.artifactExtraDamageMult and math.abs(a2.artifactExtraDamageMult - 1.6) < 1e-9,
+        "队2 按本队装配获得 +60% 额外伤害（与队1 隔离）")
+
+    local a3 = mkAttrs()
+    local fx3 = ArtifactBridge.applyToUnit(a3, 1, data, 3)
+    check(#fx3 == 0 and a3.artifactExtraDamageMult == nil, "队3 无装配时不获得神器效果")
+
+    -- 缺省 teamIdx（旧调用）等价队1
+    local a4 = mkAttrs()
+    ArtifactBridge.applyToUnit(a4, 1, data)
+    check(a4.artifactExtraDamageMult and math.abs(a4.artifactExtraDamageMult - 1.2) < 1e-9,
+        "缺省 teamIdx 回落队1（旧调用兼容）")
+end
+
 function Start()
     print("[battle_stage_switch_test] start")
     local ok, err = pcall(function()
@@ -210,6 +320,8 @@ function Start()
         testDefeatRollbackKeepsBattleActive()
         testTriDriverWipeFallback()
         testArtifactRuntimeIsolation()
+        testArtifactTeamSchema()
+        testArtifactBridgeTeam()
     end)
     if not ok then
         print("[FAIL] 测试抛异常: " .. tostring(err))

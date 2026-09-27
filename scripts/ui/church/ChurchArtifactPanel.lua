@@ -5,6 +5,8 @@
 ---@diagnostic disable: undefined-global
 
 local GameConfig          = require("config.GameConfig")
+local GameState           = require("core.GameState")
+local ExpTable            = require("config.ExpTable")
 local DrawUtil            = require("core.DrawUtil")
 local PlayerStore         = require("core.PlayerStore")
 local ArtifactDefs        = require("shared.artifact.ArtifactDefs")
@@ -40,6 +42,24 @@ local HINT = {
     FONT = 38,
     TEXT = "在对应槽位装配神器对该位置角色进行加成",
 }
+
+-- [三队适配] 队伍页签（装配表按队伍隔离，同一神器可装到多支队伍）
+local TEAM_TAB = {
+    CY = 286,
+    W = 190, H = 58,
+    GAP = 24,
+    FONT = 32,
+    LOCK_FONT = 24,
+}
+TEAM_TAB.CX_LIST = {}
+do
+    local totalW = ArtifactSchema.TEAM_COUNT * TEAM_TAB.W
+        + (ArtifactSchema.TEAM_COUNT - 1) * TEAM_TAB.GAP
+    local startX = (DESIGN_W - totalW) * 0.5 + TEAM_TAB.W * 0.5
+    for t = 1, ArtifactSchema.TEAM_COUNT do
+        TEAM_TAB.CX_LIST[t] = startX + (t - 1) * (TEAM_TAB.W + TEAM_TAB.GAP)
+    end
+end
 
 -- 出战槽位（1~4 号位）
 local SLOT = {
@@ -129,6 +149,7 @@ local img = {
 -- ======================== 状态 ========================
 
 local state = {
+    teamIdx      = 1,   -- [三队适配] 当前编辑的队伍（1~3）
     scrollY      = 0,
     scrollMax    = 0,
     dragging     = false,
@@ -161,7 +182,8 @@ local function isInGridScrollArea(dx, dy)
 end
 
 local function getArtifactData()
-    return PlayerStore.Get("artifacts") or { bag = {}, equipped = {}, pityRare = 0, pityEpic = 0 }
+    return PlayerStore.Get("artifacts")
+        or { bag = {}, equipped = {}, equippedByTeam = {}, pityRare = 0, pityEpic = 0 }
 end
 
 local function getBag()
@@ -169,10 +191,23 @@ local function getBag()
     return data.bag or {}
 end
 
+--- 当前队伍页签是否已装配（决定背包可见性：装在本队才从背包隐藏）
 local function isArtifactEquippedId(id)
     id = tostring(id or "")
     local data = getArtifactData()
-    return ArtifactSchema.findEquippedSlot(data, id) ~= nil
+    return ArtifactSchema.findEquippedSlot(data, id, state.teamIdx) ~= nil
+end
+
+--- [三队适配] 任意队伍是否已装配（合成/置换守卫，与服务端规则一致）
+local function isArtifactEquippedAnyTeam(id)
+    id = tostring(id or "")
+    local data = getArtifactData()
+    return ArtifactSchema.findEquippedSlotAnyTeam(data, id) ~= nil
+end
+
+--- 已解锁队伍数（远征等级门槛）
+local function getUnlockedTeamCount()
+    return ExpTable.getUnlockedTeamCount(GameState.getLevel())
 end
 
 local function getVisibleBag()
@@ -211,7 +246,8 @@ end
 
 local function getEquippedArtifact(slot, subSlot)
     local data = getArtifactData()
-    local id = ArtifactSchema.getEquippedId(data, slot, subSlot or 1)
+    -- [三队适配] 读当前队伍页签的装配
+    local id = ArtifactSchema.getEquippedId(data, slot, subSlot or 1, state.teamIdx)
     if not id then return nil end
     return findArtifactById(id)
 end
@@ -249,7 +285,8 @@ local function findMergeCandidates()
     local groups = {}
     for _, artifact in ipairs(getVisibleBag()) do
         local q = tonumber(artifact.quality) or 1
-        if q < 6 then
+        -- [三队适配] 跳过在其他队伍已装配的实例（服务端会拒绝）
+        if q < 6 and not isArtifactEquippedAnyTeam(artifact.id) then
             local artifactId = tonumber(artifact.artifactId) or tonumber(artifact.type) or 0
             if artifactId > 0 and ArtifactDefs.getRange(artifactId, q + 1) then
                 local key = tostring(artifactId) .. "_" .. tostring(q)
@@ -291,7 +328,8 @@ local function findMergeCandidates()
 end
 
 local function isArtifactMergeable(artifact)
-    if not artifact or isArtifactEquippedId(artifact.id) then return false end
+    -- [三队适配] 任一队伍已装配都不能合成（与服务端一致）
+    if not artifact or isArtifactEquippedAnyTeam(artifact.id) then return false end
     local q = tonumber(artifact.quality) or 1
     if q >= 6 then return false end
     local artifactId = tonumber(artifact.artifactId) or tonumber(artifact.type) or 0
@@ -346,9 +384,14 @@ local function getRerollSelectedArtifacts()
     return list
 end
 
+--- [三队适配] 任一队伍已装配的实例不能进入置换选择
 local function toggleRerollSelect(artifact)
     if not artifact then return end
     local id = tostring(artifact.id)
+    if isArtifactEquippedAnyTeam(id) then
+        showFloat("已安装神器不能置换", 540, 1120)
+        return
+    end
     for i, selectedId in ipairs(state.rerollSelectedIds) do
         if tostring(selectedId) == id then
             table.remove(state.rerollSelectedIds, i)
@@ -439,7 +482,7 @@ function M.init(vg)
         if location == "slot" then
             local Protocol = ctx_ and ctx_.getProtocol and ctx_.getProtocol() or nil
             if Protocol and slot then
-                sendAction(Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP, { slot = slot, subSlot = subSlot or 1 })
+                sendAction(Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP, { slot = slot, subSlot = subSlot or 1, teamIdx = state.teamIdx })
                 showFloat("正在卸下神器", SLOT.CX_LIST[slot] or 540, SLOT.GRID_CY - 120)
             end
             clearPendingEquip()
@@ -507,6 +550,49 @@ function M.drawContent(vg)
     drawTextStroke(vg, HINT.X, HINT.Y, HINT.TEXT, HINT.FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 5)
+
+    -- [三队适配] 队伍页签
+    do
+        local unlockedTeams = getUnlockedTeamCount()
+        nvgFontFace(vg, "sans")
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        for t = 1, ArtifactSchema.TEAM_COUNT do
+            local cx = TEAM_TAB.CX_LIST[t]
+            local locked = t > unlockedTeams
+            local active = state.teamIdx == t
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, cx - TEAM_TAB.W * 0.5, TEAM_TAB.CY - TEAM_TAB.H * 0.5,
+                TEAM_TAB.W, TEAM_TAB.H, 14)
+            if locked then
+                nvgFillColor(vg, nvgRGBA(30, 28, 34, 160))
+            elseif active then
+                nvgFillColor(vg, nvgRGBA(196, 158, 84, 235))
+            else
+                nvgFillColor(vg, nvgRGBA(44, 42, 48, 200))
+            end
+            nvgFill(vg)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, cx - TEAM_TAB.W * 0.5, TEAM_TAB.CY - TEAM_TAB.H * 0.5,
+                TEAM_TAB.W, TEAM_TAB.H, 14)
+            nvgStrokeColor(vg, nvgRGBA(active and 255 or 120, active and 230 or 110, active and 150 or 90, 255))
+            nvgStrokeWidth(vg, active and 3 or 1.5)
+            nvgStroke(vg)
+            if locked then
+                local lv = ExpTable.getTeamUnlockLevel(t)
+                nvgFontSize(vg, TEAM_TAB.LOCK_FONT)
+                nvgFillColor(vg, nvgRGBA(190, 190, 190, 255))
+                nvgText(vg, cx, TEAM_TAB.CY, tostring(lv) .. "级解锁", nil)
+            else
+                nvgFontSize(vg, TEAM_TAB.FONT)
+                if active then
+                    nvgFillColor(vg, nvgRGBA(30, 20, 8, 255))
+                else
+                    nvgFillColor(vg, nvgRGBA(235, 230, 220, 255))
+                end
+                nvgText(vg, cx, TEAM_TAB.CY, "队伍 " .. t, nil)
+            end
+        end
+    end
 
     -- 出战槽位标签 + 格子
     local unlockedSubSlots = getUnlockedSubSlotCount()
@@ -708,6 +794,30 @@ function M.handleTabInput(dx, dy)
         return true
     end
 
+    -- [三队适配] 队伍页签点击
+    do
+        local unlockedTeams = getUnlockedTeamCount()
+        for t = 1, ArtifactSchema.TEAM_COUNT do
+            local cx = TEAM_TAB.CX_LIST[t]
+            if hitTest(dx, dy, cx, TEAM_TAB.CY, TEAM_TAB.W, TEAM_TAB.H) then
+                if t > unlockedTeams then
+                    local lv = ExpTable.getTeamUnlockLevel(t)
+                    showFloat("远征等级达到" .. tostring(lv) .. "级解锁队伍" .. t, cx, TEAM_TAB.CY - 60)
+                elseif state.teamIdx ~= t then
+                    state.teamIdx = t
+                    -- 切换队伍：清空选择态，避免把上一队的 pending 安装到新队
+                    clearPendingEquip()
+                    state.selectedSlot = nil
+                    state.selectedSubSlot = nil
+                    state.selectedBagIdx = nil
+                    ArtifactDetailPanel.hide()
+                    showFloat("切换到队伍 " .. t .. " 的神器装配", cx, TEAM_TAB.CY + 70)
+                end
+                return true
+            end
+        end
+    end
+
     -- 出战槽位点击
     local unlockedSubSlots = getUnlockedSubSlotCount()
     for i = 1, ArtifactSchema.SLOT_COUNT do
@@ -733,6 +843,7 @@ function M.handleTabInput(dx, dy)
                             artifactId = pendingArtifact.id,
                             slot = i,
                             subSlot = subSlot,
+                            teamIdx = state.teamIdx,  -- [三队适配]
                         })
                         if sent then
                             showFloat("正在安装神器", cx, cy - 80)

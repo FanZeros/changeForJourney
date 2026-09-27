@@ -3,9 +3,10 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-27 | 版本:v2.52-artifact-audit
+> 更新时间:2026-09-27 | 版本:v2.53-artifact-three-teams
 >
-> **本轮（`feat926/artifact-audit` 神器审查）**：文档 §8 已按实际 4×3 装配、品质池与保底规则更新。`ArtifactRuntime` 按单位重置/更新并清理临时效果，影羽斗篷按初始 +200% 的比例衰减，审判锤切目标清旧层；三行加入首次死亡拦截与亡魂计时，通天塔逐名阵亡拦截。原有 `battle_stage_switch_test` 增至 24 个断言，0 FAIL；LSP 0 Error，官方 Build 成功。主入口 60 帧 0 Lua 错，5 个既有剧情日记图片缺失仍使完整 validate FAIL，不能宣称主入口完全通过。抽取中途失败的非原子性仅在人为损坏定义时可达，留待专项审查。操作不要在仓库写凭证或把测试生成的存档提交。
+> **本轮（`feat926/artifact-audit` 神器三队适配）**：用户拍板「每队独立装配 + 实例可跨队复用」。`ArtifactSchema` 装配表改为 `equippedByTeam[team][slot][subSlot]`，存档键 `e`→`et`，旧档 `e` 自动迁移为队1；`getEquippedId/setEquippedId/findEquippedSlot` 加 `teamIdx`（缺省 1，旧调用兼容），新增 `findEquippedSlotAnyTeam/normalizeTeamIdx`。`ArtifactService.Equip/Unequip` + Handler + Protocol 透传 `teamIdx`；合成/置换守卫改为「任一队已装配即拒绝」（服务端+教堂 UI 一致）。`ArtifactBridge.applyToUnit` 加第 4 参 `teamIdx`；`getDeployedTeam(teamIdx)` 按本队装配构建并给单位打 `artifactTeamIdx`，BattleScene/BattleAllyReset 波次刷新回读；`calcHeroPower(heroId, slot, teamIdx)` + `refreshPowerCache` 按队算战力。教堂神器页顶部新增队伍 1/2/3 页签（等级 10/20 解锁，切换清空选择态）。`battle_stage_switch_test` 新增 testArtifactTeamSchema/testArtifactBridgeTeam 两组断言（旧档迁移、跨队复用、队内唯一、越界回落、roundtrip、桥接隔离）。文档 §8 已同步。**尚需**：runtime 跑测试 + 官方构建 + 实机 UI 验收。
+> **上轮（`feat926/artifact-audit` 神器审查）**：文档 §8 已按实际 4×3 装配、品质池与保底规则更新。`ArtifactRuntime` 按单位重置/更新并清理临时效果，影羽斗篷按初始 +200% 的比例衰减，审判锤切目标清旧层；三行加入首次死亡拦截与亡魂计时，通天塔逐名阵亡拦截。原有 `battle_stage_switch_test` 增至 24 个断言，0 FAIL；LSP 0 Error，官方 Build 成功。主入口 60 帧 0 Lua 错，5 个既有剧情日记图片缺失仍使完整 validate FAIL，不能宣称主入口完全通过。抽取中途失败的非原子性仅在人为损坏定义时可达，留待专项审查。操作不要在仓库写凭证或把测试生成的存档提交。
 > **流程硬性要求（当前授权）**：不能取消/退出任务，每次交付先汇报结果、最后必须通过 AskUserQuestion 给选项问下一步，不能纯文字结束。本轮只 push `feat926/artifact-audit`，不 push `workspace925` 或任何 `workspace*`；历史分支授权全部失效。自动化 Stop hook 尚未配置，记忆本身不能保证执行。
 >
 > **上一轮（`workspace925` 装备详情）**：右栏点击详情在鼠标左侧、已装备比较卡更靠左；左栏反向。点击锚点用鼠标位置，悬停跟随、钉住不漂移；套装区排在全部词条后，独立描边底板、放大字体及换行，详情热区随内容高度变化。Lua LSP 0 Error，官方 Build 成功；本地 Runtime 安装超时，尚无实际页面截图验收。下一步用游戏预览点击左右栏带/不带已装备比较的详情，特别检查最长套装描述。

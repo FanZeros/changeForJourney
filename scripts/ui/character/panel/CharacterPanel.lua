@@ -250,8 +250,9 @@ local function getHeroLevel(heroId)
     return ensurePower().getHeroLevel(heroId)
 end
 
-local function calcHeroPower(heroId, partySlot)
-    return ensurePower().calcHeroPower(heroId, partySlot)
+--- [三队适配] teamIdx 透传：按该队伍的装配表计算神器加成战力（缺省 1）
+local function calcHeroPower(heroId, partySlot, teamIdx)
+    return ensurePower().calcHeroPower(heroId, partySlot, teamIdx)
 end
 
 local function refreshPowerCache()
@@ -937,10 +938,12 @@ function CharacterPanel.getDeployedTeam(teamIdx)
                         unit.relicConditions = relicConds
                     end
                     -- 应用神器属性加成与战斗运行时效果
-                    local artifactEffects = ArtifactBridge.applyToUnit(unit.attrs, i)
+                    -- [三队适配] 按本队装配表读取神器（旧版三队共享队1装配）
+                    local artifactEffects = ArtifactBridge.applyToUnit(unit.attrs, i, nil, teamIdx)
                     if artifactEffects and #artifactEffects > 0 then
                         unit.artifactEffects = artifactEffects
                     end
+                    unit.artifactTeamIdx = teamIdx
                     -- 装备可能增加 maxHp，recalc 不会自动抬升 HP，需重新满血
                     unit.attrs:fillHp()
                     -- 重新同步 flat 字段

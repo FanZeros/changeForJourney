@@ -843,7 +843,22 @@ function HandleUpdate(eventType, eventData)
         if not DarkTitleScreen.isFading() then
             return
         end
-        if BottomNav.getSelectedIndex() == 3
+        local sessionData = ClientDispatcher.get("session") or {}
+        local heroesData = ClientDispatcher.get("heroes") or {}
+        local ownedCount = 0
+        if type(heroesData.roster) == "table" then
+            for _, hero in pairs(heroesData.roster) do
+                if type(hero) == "table" and hero.level then
+                    ownedCount = ownedCount + 1
+                end
+            end
+        end
+        local introDone = sessionData.introCompleted == true or ownedCount > 1
+        if not introDone and not LetterIntro.isOpen() then
+            print("[Standalone] cover game before intro")
+            startIntroChain_()
+        end
+        if introDone and BottomNav.getSelectedIndex() == 3
             and not BattleTriPage.isOpen()
             and not DungeonBattleScene.isOpen()
             and not TowerBattleScene.isActive() then

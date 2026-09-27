@@ -136,8 +136,16 @@ def main() -> None:
         hexed = LOADER_TEMPLATE.replace("__HEX__", probe_bc.hex())
         loader = out / "poc_loader.lua"
         loader.write_text(hexed, encoding="utf-8")
+        # 官方 Build 入口需要 Start():包一层,便于在隔离工程里直接当 main.lua 用
+        entry_body = hexed.split("\n")
+        indented = "\n".join("    " + ln if ln.strip() else ln for ln in entry_body)
+        entry = ("-- Q1 探针入口:把本文件当作隔离工程的 scripts/main.lua,官方 Build 后看运行日志\n"
+                 "function Start()\n" + indented + "\nend\n")
+        entry_file = out / "poc_entry.lua"
+        entry_file.write_text(entry, encoding="utf-8")
         print("wrote bytecode    :", bc_file)
         print("wrote loader probe:", loader)
+        print("wrote build entry :", entry_file, "(当隔离工程 main.lua 用)")
 
     print()
     print("=" * 70)

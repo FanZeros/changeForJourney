@@ -29,6 +29,13 @@
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
 
+## 上次做了什么（2026-09-27，feat927 本机验证清单）
+
+- 新增 `electron-shell/WINDOWS_PROTECT_CHECKLIST.md`：本机 Windows 逐步骤验证 --protect 全链 + 实机回归 + L2 Q1 判定（含成功标志/失败回报模板/决策表）。
+- `lua_bytecode_poc.py` 增发生成 `poc_entry.lua`（Start() 包裹可直接当官方 Build 入口；lupa 已验 VERDICT ACCEPTS）。
+- 等待用户本机执行清单并回报（尤其 Q1 VERDICT 与实机启动/存档结果）；回报后按决策表定 L2 去留。
+- 仍只 push feat927 分支；完成后 AskUserQuestion；令牌不进仓库/记忆。
+
 ## 上次做了什么（2026-09-27，feat927 L1 接入打包 --protect 四步链）
 
 - 新增 `protect_build.py`：物化混淆工作区（361 Lua 混淆 + 非 Lua 复制 + assets 真实复制 + protect-report.json）；不改仓库源码/dist/game。

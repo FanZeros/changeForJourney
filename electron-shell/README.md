@@ -202,6 +202,9 @@ pack_release.py                 --protect-scripts-root 同基准复核 → elect
 
 ### 尚未验证（需本机 Windows 实机）
 
+**逐步骤验证清单见 `electron-shell/WINDOWS_PROTECT_CHECKLIST.md`**（含成功标志、
+包内容抽检、实机回归项、L2 Q1 判定与失败回报模板）。
+
 1. **成品包回归**：`build_protected_windows.bat` 全链 + Electron zip +
    实机启动/存档/战斗 60 帧（沙箱没有 npx taptap-maker CLI 与 Electron）。
 2. **junction 行为**：Windows 上 assets 真实复制耗磁盘 ~400MB；若改用

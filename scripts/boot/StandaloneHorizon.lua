@@ -719,16 +719,16 @@ local function HorizonResolveMouse()
         return 'playerinfo', pdx, pdy
     end
     -- 三行全局奖励 / 离线收益 / 通天塔离线收益使用居中的 1080×2400 letterbox。
-    if (OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
-            or (RewardPopup.isOpen() and not RewardPopup.currentRowTag()))
+    if (OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen())
         and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
         return 'modal', pdx, pdy
     end
-    if BattleTriPage.isOpen()
-        and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
-        return 'modal', pdx, pdy
+        if RewardPopup.hitPanel(pdx, pdy) then
+            return 'modal', pdx, pdy
+        end
     end
     -- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态：中段命中映射到设计坐标；
     -- 左右栏让出（TopBar 页签/角色面板仍可点），全屏弹窗打开时让位
@@ -778,7 +778,7 @@ local function HorizonResolveMouse()
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
     if DungeonBattleScene.isOpen()
         or LevelUpPopup.isOpen() or PlayerInfoPanel.isOpen()
-        or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() then
+        or OfflineRewardPanel.isOpen() then
         return 'modal', dx or 0, dy or 0
     end
     if not pid then return 'none', 0, 0 end
@@ -1414,7 +1414,13 @@ function HandleMouseWheelHorizon(eventType, eventData)
     local sy = mousePos.y / dpr()
     local csx, csy = toDesign(sx, sy)
     if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
-    if RewardPopup.isOpen() then RewardPopup.handleScroll(wheel) return end
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        local pdx, pdy = playerInfoDesignCoords(csx, csy)
+        if RewardPopup.hitPanel(pdx, pdy) then
+            RewardPopup.handleScroll(wheel)
+            return
+        end
+    end
 
     -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
     if TalentPage.isOpen() then
@@ -1436,8 +1442,11 @@ function HandleMouseWheelHorizon(eventType, eventData)
         return
     end
     if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
-        RewardPopup.handleScroll(wheel)
-        return
+        local pdx, pdy = playerInfoDesignCoords(csx, csy)
+        if RewardPopup.hitPanel(pdx, pdy) then
+            RewardPopup.handleScroll(wheel)
+            return
+        end
     end
 
     -- 弹窗横跨三栏；任何位置的滚轮都交给选关，避免误滚角色列表。

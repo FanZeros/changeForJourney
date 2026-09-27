@@ -628,7 +628,7 @@ return {
     { "image/界面底板/弹窗奖励/UI_GXHD_3.png", 311437 },
     { "image/界面底板/城镇世界/UI_CZ_BJ.png", 1223127 },
     { "image/界面底板/教堂转职/UI_JTZZBJ.png", 1223127 },
-    { "image/界面底板/酒馆抽卡/UI_KCBJ_1.png", 1223127 },
+    { "image/界面底板/酒馆抽卡/UI_KCBJ_1.png", 1488993 },
     { "image/界面底板/酒馆抽卡/UI_KCBJ_2.png", 1223127 },
     { "image/界面底板/商店/UI_SCBJ.png", 1223127 },
     { "image/界面底板/通用面板/UI_TJP_CH_1.png", 1223127 },

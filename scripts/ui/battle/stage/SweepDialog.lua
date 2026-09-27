@@ -102,8 +102,8 @@ local D = {
 -- ======================== 奖励项定义 ========================
 -- 每个奖励项：{ quality, iconPath, label }
 local REWARD_ITEMS = {
-    { quality = 2, iconPath = "image/货币道具/UI_icon_JB.png",      label = "金币"     },
-    { quality = 2, iconPath = "image/货币道具/UI_icon_JB.png",      label = "随机装备",  isEquip = true  },
+    { quality = 2, iconPath = "image/货币道具/UI_icon_JB_X.png",    label = "金币"     },
+    { quality = 2, iconPath = "image/货币道具/UI_icon_JB_X.png",    label = "随机装备",  isEquip = true  },
     { quality = 3, iconPath = "image/货币道具/UI_icon_JZ_SJ.png",   label = "随机卷轴" },
 }
 -- 装备图标用固定的 B 品质背景占位

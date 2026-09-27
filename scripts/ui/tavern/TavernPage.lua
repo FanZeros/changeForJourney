@@ -944,7 +944,9 @@ local function drawPageImpl(vg)
             local enough = missing == 0 or (state.diamondCount or 0) >= gems
             return tickets, gems, enough
         end
-        local function drawRecruitCost(cx, cy, count)
+        -- 整组（文字+图标+数字）量宽后整体居中
+        local COST_FONT, COST_ICON = 34, 46
+        local function drawRecruitButton(cx, cy, count, label)
             local tickets, gems, enough = recruitPay(count)
             local icon = img.diamondIcon
             local text = tostring(gems)
@@ -957,39 +959,35 @@ local function drawPageImpl(vg)
                 if gems > 0 then text = text .. "+" .. tostring(gems) end
             end
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 30)
-            local textW = nvgTextBounds(vg, 0, 0, text)
-            local totalW = 36 + 8 + textW
+            nvgFontSize(vg, BTN_TEXT_SIZE)
+            local labelW = nvgTextBounds(vg, 0, 0, label)
+            nvgFontSize(vg, COST_FONT)
+            local costW = nvgTextBounds(vg, 0, 0, text)
+            local GAP = 16
+            local totalW = labelW + GAP + COST_ICON + 10 + costW
             local left = cx - totalW * 0.5
-            drawImageCentered(vg, icon, left + 18, cy, 36, 36, 1.0)
+
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFontSize(vg, BTN_TEXT_SIZE)
+            nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
+            nvgText(vg, left, cy, label, nil)
+            drawImageCentered(vg, icon, left + labelW + GAP + COST_ICON * 0.5, cy, COST_ICON, COST_ICON, 1.0)
             local r, g, b = 255, 255, 255
             if not enough then r, g, b = 255, 90, 90 end
-            drawTextStroke(vg, left + 44, cy, text, 30,
+            drawTextStroke(vg, left + labelW + GAP + COST_ICON + 10, cy, text, COST_FONT,
                 NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, r, g, b, 3)
         end
 
         -- ============ 16. 招募1次按钮 ============
         local _s3 = BF.begin(vg, "tavern_recruit1", BTN_1_CX, BTN_1_CY, BTN_1_W, BTN_1_H)
         DarkIcon.drawNine(vg, "btn", BTN_1_CX - BTN_1_W * 0.5, BTN_1_CY - BTN_1_H * 0.5, BTN_1_W, BTN_1_H, { accent = "green" })
-
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_TEXT_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
-        nvgText(vg, BTN_1_CX - 70, BTN_1_CY, "招募1次", nil)
-        drawRecruitCost(BTN_1_CX + 105, BTN_1_CY, 1)
+        drawRecruitButton(BTN_1_CX, BTN_1_CY, 1, "招募1次")
         BF.finish(vg, _s3)
 
         -- ============ 17. 招募10次按钮 ============
         local _s4 = BF.begin(vg, "tavern_recruit10", BTN_10_CX, BTN_10_CY, BTN_10_W, BTN_10_H)
         DarkIcon.drawNine(vg, "btn", BTN_10_CX - BTN_10_W * 0.5, BTN_10_CY - BTN_10_H * 0.5, BTN_10_W, BTN_10_H, { accent = "green" })
-
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_TEXT_SIZE)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
-        nvgText(vg, BTN_10_CX - 108, BTN_10_CY, "招募10次", nil)
-        drawRecruitCost(BTN_10_CX + 78, BTN_10_CY, 10)
+        drawRecruitButton(BTN_10_CX, BTN_10_CY, 10, "招募10次")
         BF.finish(vg, _s4)
         local _TM = require("systems.TutorialManager")
         if _TM.isActive() then _TM.registerHotspot("tavern_btn_gacha10", BTN_10_CX, BTN_10_CY, BTN_10_W, BTN_10_H, "left") end

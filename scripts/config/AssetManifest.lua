@@ -182,7 +182,7 @@ return {
     { "image/货币道具/UI_icon_FBBX.png", 35897 },
     { "image/货币道具/UI_icon_FHS.png", 23943 },
     { "image/货币道具/UI_icon_HJYS.png", 23059 },
-    { "image/货币道具/UI_icon_JB.png", 27291 },
+    { "image/货币道具/UI_icon_JB_X.png", 9268 },
     { "image/货币道具/UI_icon_JC.png", 21336 },
     { "image/货币道具/UI_icon_JJB.png", 33781 },
     { "image/货币道具/UI_icon_JJCQ.png", 26660 },

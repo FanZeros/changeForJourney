@@ -1097,6 +1097,16 @@ function M.draw(vg)
     for i = 1, #rightAttrs do
         attrRows[#attrRows + 1] = rightAttrs[i]
     end
+    -- 按重要程度稳定排序（未列出的属性保持原相对顺序，排在最后）
+    local orderIdx = DetailAttrs.displayOrderIndex()
+    for i, row in ipairs(attrRows) do row._origIdx = i end
+    table.sort(attrRows, function(a, b)
+        local oa = orderIdx[a.key] or 9999
+        local ob = orderIdx[b.key] or 9999
+        if oa ~= ob then return oa < ob end
+        return (a._origIdx or 0) < (b._origIdx or 0)
+    end)
+    for _, row in ipairs(attrRows) do row._origIdx = nil end
     local totalRows = #attrRows
 
     detailState.cachedLeft  = attrRows

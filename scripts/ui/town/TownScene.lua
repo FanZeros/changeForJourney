@@ -538,7 +538,7 @@ function TownScene.draw(vg)
     if churchLocked then
         drawBuildingLockOverlay(vg, CHURCH_CX, CHURCH_CY, "church", true)
     end
-    -- 教堂角标：转职/神器（天赋角标已移到古树）
+    -- 教堂角标：仅神器可合成（转职已迁角色详情、天赋角标已移到古树）
     if not churchLocked and imgIconUp >= 0 and getChurchPage().hasAnyChurchBadge() then
         local upSize = 40
         local upX = CHURCH_LBL_CX + CHURCH_LBL_W * 0.5 - upSize * 0.15

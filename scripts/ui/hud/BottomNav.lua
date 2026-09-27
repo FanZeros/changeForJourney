@@ -107,7 +107,7 @@ function BottomNav.refreshTownBadge()
             return
         end
     end
-    -- 教堂角标（神器→箭头，转职→红点）
+    -- 教堂角标（仅神器可合成→箭头；转职已迁角色详情，不再出红点）
     local okCP, CP = pcall(require, "ui.church.ChurchPage")
     if okCP and CP and CP.getChurchBadgeInfo then
         local show, style = CP.getChurchBadgeInfo()

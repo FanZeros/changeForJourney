@@ -48,40 +48,42 @@ local HINT = {
 local TEAM_ROW = {
     HEADER_Y   = 292,                       -- 号位表头（1号位~4号位，只画一行，三队共用）
     HEADER_FONT = 28,
-    ROW_CY     = { 415, 640, 865 },         -- 每队行的 y 中心（行底 973 < 下方面板顶 978）
+    ROW_CY     = { 446, 713, 980 },         -- 每队行的 y 中心（行底 1108 < 下方面板顶 1118，留 10px 缝）
     LABEL_X    = 76,                        -- 队标签中心 x
-    LABEL_W    = 100, LABEL_H = 216,        -- 队标签底板
+    LABEL_W    = 100, LABEL_H = 256,        -- 队标签底板（行距 267，板间 11px 缝；子格栈高 252 收进板内）
     LABEL_FONT = 26,
     LOCK_FONT  = 20,
-    CX_LIST    = { 250, 462, 674, 886 },    -- 4 个号位列中心 x
-    SUB_SIZE   = 64,                        -- 子格边长（原 130，三行同显缩小）
-    SUB_GAP    = 5,
-    CELL_LOCK_FONT = 18,
+    CX_LIST    = { 252, 476, 700, 924 },    -- 4 个号位列中心 x（间距 224，适配大格）
+    SUB_SIZE   = 80,                        -- 子格边长（64→80，背包下压腾出空间）
+    SUB_GAP    = 6,
+    CELL_LOCK_FONT = 20,
 }
 
 -- 下半部分背景 UI_TJP_1（九宫格，与背包/遗物背包一致）
+-- [行式布局加大格子] CY 1689→1829：面板下压 140，给三队行区腾空间（底部溢出屏幕被裁剪）
 local LOWER_PANEL = {
-    CX = 540, CY = 1689, W = 1080, H = 1422,
+    CX = 540, CY = 1829, W = 1080, H = 1422,
     IT = 200, IR = 10, IB = 200, IL = 10,
 }
 
 -- 标题装饰 + 文字
 local TITLE = {
-    DECO_CX = 540, DECO_CY = 1135, DECO_W = 660, DECO_H = 60,
-    TEXT_X = 540, TEXT_Y = 1135,
+    -- [行式布局] 背包标题随三队行区加高整体下移 140
+    DECO_CX = 540, DECO_CY = 1275, DECO_W = 660, DECO_H = 60,
+    TEXT_X = 540, TEXT_Y = 1275,
     FONT = 40,
     R = 0x45, G = 0x45, B = 0x45,
     TEXT = "神器背包",
 }
 
 local REROLL_BTN = {
-    CX = 310, CY = 2129,
+    CX = 310, CY = 2174,
     W = 410, H = 100,
     FONT = 40,
 }
 
 local MERGE_BTN = {
-    CX = 773, CY = 2129,
+    CX = 773, CY = 2174,
     W = 410, H = 100,
     FONT = 40,
     NP_T = 20, NP_R = 20, NP_B = 20, NP_L = 20,
@@ -95,9 +97,10 @@ local GRID = {
     GAP = 30,
     COLS = 5,
     MARGIN_LEFT = 80,  -- (1080 - 5*160 - 4*30) / 2
-    CLIP_TOP = 1200,
-    CLIP_BOTTOM = 2020,
-    FIRST_ROW_TOP = 1200,
+    -- [行式布局] 下压 140；可视高 820→714（按钮仅下移 55，给底部页签栏留缝）
+    CLIP_TOP = 1340,
+    CLIP_BOTTOM = 2044,
+    FIRST_ROW_TOP = 1340,
 }
 
 GRID.CLIP_H = GRID.CLIP_BOTTOM - GRID.CLIP_TOP
@@ -491,11 +494,11 @@ function M.init(vg)
     ArtifactDetailPanel.setOnRefine(function(artifact)
         local Protocol = ctx_ and ctx_.getProtocol and ctx_.getProtocol() or nil
         if not Protocol then
-            showFloat("网络未连接", 540, 1430)
+            showFloat("网络未连接", 540, 1570)
             return
         end
         sendAction(Protocol.ACTION_TYPES.ARTIFACT_REFINE_VALUE, { artifactId = artifact.id })
-        showFloat("正在洗练神器数值", 540, 1430)
+        showFloat("正在洗练神器数值", 540, 1570)
     end)
 
     if img.topBg < 0 then

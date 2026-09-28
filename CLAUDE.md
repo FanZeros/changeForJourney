@@ -47,6 +47,8 @@
 - **验证**：新增 `scripts/tests/keyword_text_test.lua`（20 项全 PASS：词表/长词优先/拆段计数/热区坐标/点击开关弹窗/折行/显式\n）。LSP 全工作区 0 Error 0 Warning；官方 Build 成功；主入口 60 帧无 Lua 错误；战斗回归 `battle_stage_switch_test` 22 PASS/0 FAIL（退出码 124 是已知「测试自身不退出进程」行为）。6 个相关模块 smoke require 全 true。
 - **踩坑**：`--[[@as string[]]]` 注解会让引擎 LoadChunk 报 `'end' expected`（引擎 Lua 解析器不认这种行内 cast 写法，但 LSP 认）→ 改为 `---@type` 独立行 + 中间变量。**教训：引擎 LoadChunk 与 LSP 对注解容错不同，新文件务必用 headless Runtime 实跑一次 require，别只信 LSP。**
 - **待办/未验收**：① headless 离屏 NanoVG 截图未落盘（VG 上下文限制），关键词视觉效果（金色下划线、弹窗）尚未真人预览验收。② 转职页 `ChurchClassChange` 的 talentDesc 仍是纯 `nvgTextBox`，未接入关键词（可作下一步）。③ 装备词条/遗物/神器/通天塔 desc 等更多描述区未接入。④ 词表可继续扩充。
+- **追加修复（同轮）**：布局双重计宽 bug——普通文本累计期直接写 `cur.width`，addPiece 整段测量再加一次 → 行宽虚高、提前折行（LINE1 实测 1169 > 容器 837）。修复：累计期独立 `bufW`。新增回归：行宽不超容器 + 宽容器短文本不折行；22 项全 PASS；引擎真实字体 dump 验证 3 行 826/826/52 全部 ≤837。
+- **🔴 环境教训（截图链路）**：本机 Linux UrhoXRuntime 二进制**不支持离屏截图**——`-screenshot=` 参数无 `[Screenshot]` 标记（strings 二进制无该参数）、`Graphics:TakeScreenShot` 返回 false（surfaceless 无读回缓冲）、xvfb 未安装。headless 只能做逻辑验证（validate/print dump）；**视觉效果验收必须让用户在预览窗口真人查看**，不要再浪费时间尝试本机截图。
 
 ## 上次做了什么（2026-09-27，925 同步与存档再排查）
 

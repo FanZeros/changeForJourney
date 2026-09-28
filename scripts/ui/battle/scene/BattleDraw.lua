@@ -363,7 +363,9 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             drawTextStroke(vg, cx, cy + lvlOffY, "Lv." .. tostring(unit.level),
                 32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
 
-            -- 10) 状态效果视觉指示
+            -- 10) 状态效果视觉指示：仅整卡状态色罩，不再画 emoji 图标
+            --     （emoji 在部分字体集缺字会显示空白/豆腐块，且彩色 emoji 描边透脏黑边、
+            --      状态色染色无效；改为统一用色罩提示状态，见 SEM.getVisuals）
             local visuals = SEM.getVisuals(unit)
             if #visuals > 0 then
                 local v1 = visuals[1]
@@ -372,10 +374,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     CARD_W - 8, CARD_H - 8, 8)
                 nvgFillColor(vg, nvgRGBA(v1.r, v1.g, v1.b, 40))
                 nvgFill(vg)
-                for vi, vis in ipairs(visuals) do
-                    drawTextStroke(vg, cx - CARD_W * 0.5 + 28, cy - CARD_H * 0.5 + 28 + (vi - 1) * 36,
-                        vis.icon, 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, vis.r, vis.g, vis.b, 3)
-                end
             end
 
             -- 11) 征服层数（叠甲怪）

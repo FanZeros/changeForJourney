@@ -25,6 +25,16 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 🔴🔴 致命结构铁律：项目根必须是 `/workspace`（scripts/ 直接在根下）
+
+**2026-09-28 血的教训**：曾把仓库克隆到 `/workspace/repo/` 子目录开发，导致**预览完全看不到任何改动**（用户反馈"没看到关键词"）。
+
+- **build 工具硬锚定 `/workspace` 为项目根**：读 `/workspace/.project`，资源只扫 `/workspace/scripts` + `/workspace/assets`。代码放在 `repo/` 子目录时，即使传 `scriptsPath: repo/scripts`（LSP 诊断/测试能过，因为 LSP 用 `--path` 指向真目录），**打包阶段仍只扫空的 `/workspace/scripts`** → manifest `total_files: 2`、**0 个 Lua 入包**、日志报 `entry 'main.lua' 未找到对应资源`。
+- **正确结构**：`git clone` 后必须让 `.git`/`scripts`/`assets`/`.project`/`CLAUDE.md` 等**直接位于 `/workspace` 根**，不得有 `repo/` 中间层（CLAUDE.md 全局规则也写明"工作目录即项目根，不要在其与 scripts/ 之间插入额外层级"）。
+- **修复手法**（已执行，同文件系统 `mv` 秒级）：把 `repo/` 下所有项（含 `.git`）移到 `/workspace`，冲突目录（`.agent`/`tools`）合并保留两侧，`.project`/`scripts`/`.gitignore` 用 repo 版覆盖。迁移后 `git status` 应干净（无删除），build 打包 **365 个 Lua**，validate 0 lua_errors。
+- **每次 build 后**：build 工具会把 `.project/project.json` 的 `project_id` 重写成 SCE 服务器给本沙箱分配的 `m_gzu3`（仓库原值 `m_tfv3`）。这是构建生成的本地配置，**提交前用 `git checkout .project/project.json` 还原**，不要推上去。
+- **自检命令**：`ls /workspace/scripts/main.lua` 必须存在；`python3 -c "import json,glob,os;f=max(glob.glob('/workspace/dist/*/manifest-*.json'),key=os.path.getmtime);m=json.load(open(f));print('lua files:',len([x for x in m['files'] if x['fs_path'].endswith('.lua')]))"` 应 ≫ 0。
+
 ## 已合入备忘（feat926，2026-09-27）
 
 - `character-drag-save`：右栏拖拽跨栏取消、英雄名册数字键保留、跨队一次提交、离线经验不算空槽、存档写入失败重试。
@@ -49,6 +59,7 @@
 - **待办/未验收**：① headless 离屏 NanoVG 截图未落盘（VG 上下文限制），关键词视觉效果（金色下划线、弹窗）尚未真人预览验收。② 转职页 `ChurchClassChange` 的 talentDesc 仍是纯 `nvgTextBox`，未接入关键词（可作下一步）。③ 装备词条/遗物/神器/通天塔 desc 等更多描述区未接入。④ 词表可继续扩充。
 - **追加修复（同轮）**：布局双重计宽 bug——普通文本累计期直接写 `cur.width`，addPiece 整段测量再加一次 → 行宽虚高、提前折行（LINE1 实测 1169 > 容器 837）。修复：累计期独立 `bufW`。新增回归：行宽不超容器 + 宽容器短文本不折行；22 项全 PASS；引擎真实字体 dump 验证 3 行 826/826/52 全部 ≤837。
 - **🔴 环境教训（截图链路）**：本机 Linux UrhoXRuntime 二进制**不支持离屏截图**——`-screenshot=` 参数无 `[Screenshot]` 标记（strings 二进制无该参数）、`Graphics:TakeScreenShot` 返回 false（surfaceless 无读回缓冲）、xvfb 未安装。headless 只能做逻辑验证（validate/print dump）；**视觉效果验收必须让用户在预览窗口真人查看**，不要再浪费时间尝试本机截图。
+- **🔴 结构修复（同轮，用户发现）**：用户反馈"预览里没有关键词"并提示"script 位置是不是不在 workspace 下方"——确认克隆进 `/workspace/repo/` 子目录导致 build 打包 0 Lua（详见上方"致命结构铁律"）。已把整个项目（含 `.git`）迁移到 `/workspace` 根，`git status` 干净，重新 build 后 365 Lua 入包、validate 60 帧 0 lua_errors。预览验收待用户重测。
 
 ## 上次做了什么（2026-09-27，925 同步与存档再排查）
 

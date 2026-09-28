@@ -311,7 +311,9 @@ local canonicalImgs = {}
 local function getCanonicalImg(vg, name)
     local cached = canonicalImgs[name]
     if cached ~= nil then return cached end
-    local h = nvgCreateImage(vg, CANONICAL_PATHS[name] or "", 0)
+    -- nvgCreateImage 返回 integer?，归一化为非 nil 的 integer 再缓存/返回，
+    -- 避免 [return-type-mismatch]（声明 @return number，nil 会不匹配）
+    local h = nvgCreateImage(vg, CANONICAL_PATHS[name] or "", 0) or -1
     if h < 0 then
         print("[DarkIcon] WARN: 专属图标加载失败 " .. tostring(CANONICAL_PATHS[name]) .. "，回退矢量绘制")
     end

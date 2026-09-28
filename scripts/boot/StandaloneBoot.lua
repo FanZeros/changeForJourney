@@ -10,6 +10,7 @@ local EquipmentSystem   = require("systems.EquipmentSystem")
 local LootBoxSystem     = require("systems.LootBoxSystem")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local TopBar            = require("ui.hud.TopBar")
+local BattleStats       = require("systems.BattleStats")
 local BottomNav         = require("ui.hud.BottomNav")
 local BattleScene       = require("ui.battle.scene.BattleScene")
 local CharacterPanel    = require("ui.character.panel.CharacterPanel")
@@ -117,6 +118,13 @@ function M.run(rt)
     -- [三队并行] 回调携带 teamIdx：队1 同步战斗画面；队2/3 编队先本地生效（并行战斗 Phase 3 接入）
     CharacterPanel.setOnTeamChanged(function(teamIdx, otherTeamIdx)
         teamIdx = tonumber(teamIdx) or 1
+        -- [累计统计] 队伍编成变更 → 自动重置该队累计统计（含跨队拖拽的另一队）
+        BattleStats.resetAccumForTeam(teamIdx)
+        if otherTeamIdx and otherTeamIdx ~= teamIdx then
+            BattleStats.resetAccumForTeam(otherTeamIdx)
+        end
+        print("[Standalone] 编队变更，已重置队伍" .. teamIdx
+            .. (otherTeamIdx and otherTeamIdx ~= teamIdx and ("+" .. otherTeamIdx) or "") .. " 累计统计")
         local teamLayouts = { [teamIdx] = CharacterPanel.getTeamSlotLayout(teamIdx) }
         if otherTeamIdx and otherTeamIdx ~= teamIdx then
             teamLayouts[otherTeamIdx] = CharacterPanel.getTeamSlotLayout(otherTeamIdx)

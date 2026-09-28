@@ -353,4 +353,5 @@ function Start()
         print("[battle_stage_switch_test] FAILURES=" .. #failures)
         for _, m in ipairs(failures) do print("  - " .. m) end
     end
+    engine:Exit()
 end

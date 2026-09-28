@@ -735,19 +735,36 @@ function BattleScene.draw(vg)
     drawImageCentered(vg, imgShadow, ENEMY_SHADOW_CX, ENEMY_SHADOW_CY,
         ENEMY_SHADOW_W, ENEMY_SHADOW_H, 1.0)
 
-    -- 3a. 地图词缀标签（仅首通模式显示，挂机模式不显示）
-    if isFirstClear and MAS.hasAffixes() then
-        local affixes = MAS.getActiveAffixes()
-        if affixes then
-            -- 每个词缀显示一行："词缀名: 简短说明"，从下往上排列
+    -- 3a. 地图词缀 + Boss 词缀标签（仅首通模式显示，挂机模式不显示）
+    --     地图词缀金色（折磨II+ 才有）；Boss 词缀绯红带"首领"前缀（Hard+ Boss 关才有）
+    if isFirstClear then
+        local lines = {}
+        if MAS.hasAffixes() then
+            local affixes = MAS.getActiveAffixes()
+            if affixes then
+                for _, affix in ipairs(affixes) do
+                    lines[#lines + 1] = { text = affix.name .. ": " .. affix.shortDesc, r = 255, g = 190, b = 80 }
+                end
+            end
+        end
+        local BAS = require("systems.BossAffixSystem")
+        if BAS.hasAffixes() then
+            local bossAffixes = BAS.getActiveAffixes()
+            if bossAffixes then
+                for _, affix in ipairs(bossAffixes) do
+                    lines[#lines + 1] = { text = "首领·" .. affix.name .. ": " .. affix.shortDesc, r = 235, g = 96, b = 96 }
+                end
+            end
+        end
+        if #lines > 0 then
+            -- 每个词缀显示一行，从下往上排列
             local lineH = 34
             local bottomY = 468  -- 最后一行Y位置（与剩余敌人Y=525保持57px间距）
-            local baseY = bottomY - (#affixes - 1) * lineH
-            for i, affix in ipairs(affixes) do
+            local baseY = bottomY - (#lines - 1) * lineH
+            for i, ln in ipairs(lines) do
                 local lineY = baseY + (i - 1) * lineH
-                local text = affix.name .. ": " .. affix.shortDesc
-                drawTextStroke(vg, 540, lineY, text, 28,
-                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 190, 80, 3)
+                drawTextStroke(vg, 540, lineY, ln.text, 28,
+                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, ln.r, ln.g, ln.b, 3)
             end
         end
     end
@@ -847,6 +864,16 @@ function BattleScene.draw(vg)
             if bPhase and bPhase >= 2 then bnR, bnG, bnB = 255, 70, 60 end  -- 二阶超级狂暴：红
             drawTextStroke(vg, 540, 660, bText, 38,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, bnR, bnG, bnB, 5, { alpha = bAlpha })
+        end
+    end
+
+    -- Boss 暴怒提示横幅（v2.64，Boss 词缀 enrage 触发；绯红，y=608 与狂暴错开）
+    do
+        local BAS = require("systems.BossAffixSystem")
+        local bossText, bossAlpha = BAS.getBanner()
+        if bossText then
+            drawTextStroke(vg, 540, 608, bossText, 36,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, 90, 90, 5, { alpha = bossAlpha })
         end
     end
 

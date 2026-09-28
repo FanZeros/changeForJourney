@@ -4,6 +4,7 @@
 -- ============================================================================
 
 local MAS = require("systems.MapAffixSystem")
+local BAS = require("systems.BossAffixSystem")
 local Diag = require("systems.BattleDiag")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
 local BattleEffects = require("ui.battle.combat.BattleEffects")
@@ -101,8 +102,17 @@ function M.load(ctx, stageId, skipBattleStart)
             for _, u in ipairs(ctx.enemyQueue) do allEnemiesToBuff[#allEnemiesToBuff+1] = u end
             MAS.applyStaticAffixes(allEnemiesToBuff)
         end
+        -- ---- Boss 词缀（v2.64）：Hard+ 章节 Boss 专属强化，仅首通 ----
+        BAS.onStageLoad(entry.chapter, stageConfig.getDifficulty(stageId))
+        if BAS.hasAffixes() then
+            local allEnemiesForBoss = {}
+            for _, u in ipairs(ctx.enemies) do allEnemiesForBoss[#allEnemiesForBoss+1] = u end
+            for _, u in ipairs(ctx.enemyQueue) do allEnemiesForBoss[#allEnemiesForBoss+1] = u end
+            BAS.applyToBosses(allEnemiesForBoss)
+        end
     else
         MAS.onStageLoad(0, ctx.allies)  -- 挂机模式：清除词缀
+        BAS.clear()                     -- 挂机模式：清除 Boss 词缀
     end
 
     -- [EnemyGuard] loadStage 重置 guard（每次加载新关都允许再次报警）

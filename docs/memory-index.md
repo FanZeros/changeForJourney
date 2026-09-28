@@ -17,18 +17,20 @@
 > **最新（2026-09-27，`workspace926`）**：用户要求新建 `workspace926`，合入 `workspace925` 与全部 `feat926/`：`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`。只推 `workspace926`，不推 `workspace` / `workspace925`。
 > **feat926/character-drag-save**：英雄名册数字键保留；右栏跨栏松手取消拖拽；跨队一次提交；离线经验不算空槽；存档写入失败重试。
 > **feat926/cleanup-unused-panels / remove-unused-diary**：删除旧日志页及无入口的遗物洗练、签到、旧任务、公告面板和专属图。保留城镇功绩 `TaskPage`、签到及任务服务/协议/存档、GM 公告配置、遗物奖励图标。
-> **最优先的用户流程**：不可自行取消/退出任务；每次完成或受阻都要先汇报，再使用 **AskUserQuestion（非纯文字）**提供明确的下一步选项并等待用户决定。不能在仓库/记忆保存访问令牌。本轮只推 `workspace926`。
+> **最优先的用户流程**：不可自行取消/退出任务；每次完成或受阻都要先汇报，再使用 **AskUserQuestion（非纯文字）**提供明确的下一步选项并等待用户决定。不能在仓库/记忆保存访问令牌。本轮只推 `workspace928`。
 
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-28 | 版本:v2.64-workspace926-artifact-audit
+> 更新时间:2026-09-28 | 版本:v2.65-workspace928-integration
 >
-> **当前基线 `workspace926`**：已合入 `origin/feat926/artifact-audit`（神器双格 30/60、礼拜堂 30 级、宝箱迁入教堂、铁匠铺锁标）。只推此分支。
+> **当前基线 `workspace928`**（基于 workspace926 新建）：依次合入 feat926/artifact-audit（神器双格 30/60、礼拜堂 30 级、宝箱迁入教堂、铁匠铺锁标、Tab切换裁剪+30级空格不可见两 bug 修复）、feat926/battle-lab（Hard+ Boss 差异化词缀）、art/hero-cards-926（暗黑卡面终稿）、feat/talent-more-paths-0928（护盾数值合并显示）、fix928/horizon-wheel-priority（横屏滚轮测试 mock）。**不含 feat926/unified-character-frame（用户指定排除）**。
 >
-> 更新时间:2026-09-28 | 版本:v2.63-smith-stage-lock-label
->
-> **本轮（`feat926/artifact-audit` 铁匠铺锁标显示解锁条件）**：用户问铁匠铺锁标为何不显示几级解锁。诊断：`drawBuildingLockOverlay(vg,cx,cy,key,tutorialControlled,...)` 当 `tutorialControlled=true` 时只画锁图标不画文字；铁匠铺走**关卡门控**(`TutorialManager.BUILDING_UNLOCK_THRESHOLDS.smith=204` 即通关2-4)，不是等级门控，且不在 `ExpTable.levelUnlocks` 里(`getBuildingUnlockLevel` 只返回默认1)，故原本无文字可显示——设计使然非 bug，但玩家看不到解锁条件。
+> **本轮（`feat926/artifact-audit` 神器页两个 UI bug 修复）**：用户实机反馈：(1) Tab 切换时装备空位显示到屏幕中间；(2) 30级子格看不到、只能看到60级格。
+>   - **Bug1 根因**：`ChurchArtifactPanel.drawContent` 背包网格用 `nvgScissor`（**绝对替换**）覆盖了 ChurchDraw 页签动画外层的横向裁剪 → 动画期间背包空格逃出裁剪区、以平移后位置画到屏幕中间。**修复**：改 `nvgIntersectScissor`（与外层动画裁剪求交）。
+>   - **Bug2 根因**：子格底图 `img.slotGrid`(UI_JTSQ_GZ.png) 字段初始化为 -1 后**从未被加载**（git 历史确认加载调用从来不存在），`drawImageCentered` 遇 -1 直接 return；空格子 `drawArtifactIcon(nil)` 也直接 return → **已解锁的空子格完全隐形**。玩家 30~59 级时：30级格已解锁但空(隐形)、60级格未解锁(有锁定遮罩+"60级"文字可见)——正是"只能看到60级"。**修复**：子格底改用与背包格一致的 `DarkIcon.drawNine(vg,"slot",...,radius=GRID.CELL_RADIUS)` 矢量凹槽，删除死字段 slotGrid。
+>   - 验证：LSP 0 Error(264文件)、battle_stage_switch_test 54 PASS/ALL PASS、官方 Build 成功、dist 含 IntersectScissor+DarkIcon slot 修复。**两处均为渲染层修复，测试不覆盖，需实机验收：Tab 切换动画期间无格子跑到中间、30级空格可见暗铁凹槽**。
+> **上轮（`feat926/artifact-audit` 铁匠铺锁标显示解锁条件）**：用户问铁匠铺锁标为何不显示几级解锁。诊断：`drawBuildingLockOverlay(vg,cx,cy,key,tutorialControlled,...)` 当 `tutorialControlled=true` 时只画锁图标不画文字；铁匠铺走**关卡门控**(`TutorialManager.BUILDING_UNLOCK_THRESHOLDS.smith=204` 即通关2-4)，不是等级门控，且不在 `ExpTable.levelUnlocks` 里(`getBuildingUnlockLevel` 只返回默认1)，故原本无文字可显示——设计使然非 bug，但玩家看不到解锁条件。
 >   - **修复**：`drawBuildingLockOverlay` 新增第7参 `labelOverride`(优先于等级文字)；新增 `getStageUnlockLabel(key)` 从 `_TM.getBuildingUnlockStageId(key)` 换算 stageId→"通关 chapter-stage 解锁"；`TutorialManager` 暴露 `getBuildingUnlockStageId(buildingKey)`(返回 `BUILDING_UNLOCK_THRESHOLDS[key]`，church/tavern 等引导解锁返回 nil)。铁匠铺锁标改传 `getStageUnlockLabel('smith')` → 显示"通关 2-4 解锁"(与教堂"Lv.30 解锁"风格一致)。酒馆 tavern 仍引导门控无 override(只锁图标)。
 >   - 验证：LSP 0 Error(264文件)、battle_stage_switch_test 54 PASS/ALL PASS、官方 Build 成功、dist 含 getStageUnlockLabel/getBuildingUnlockStageId。**锁标文字需实机验收**。
 > **上轮（`feat926/artifact-audit` 神器改双格 30/60 + 礼拜堂30级开放 + 行高压缩找回背包）**：用户两项反馈：(1) 160px 子格够大了，但**别把队伍行撑太高**——每队行只要两层160格+10padding(=330px)，剩下留给背包；提示文字上移。(2) 把神器格从 3 个(1/40/80级)改为 **2 个(30/60级)**；礼拜堂 **30 级开放**。

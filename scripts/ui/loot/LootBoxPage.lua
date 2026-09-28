@@ -10,6 +10,7 @@ local ImageCache = require("ui.widget.ImageCache")
 local QualityMark = require("ui.widget.QualityMark")
 local BF = require("systems.ButtonFeedback")
 local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+local NumberUtil = require("core.NumberUtil")
 local I18n = require("core.I18n")
 
 local LootBoxPage = {}
@@ -37,7 +38,7 @@ local state = {
     messages = {}, messageUntil = 0,
     hoverIndex = nil, hoverSince = 0, detailIndex = nil, detailPinned = false,
 }
-local imgName, imgBox, imgCheck = -1, -1, -1
+local imgName, imgBox, imgCheck, imgPower = -1, -1, -1, -1
 local inited = false
 ---@type fun(index: number)|nil
 local onClaimOne = nil
@@ -97,6 +98,7 @@ function LootBoxPage.init(vg)
     imgName = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0) or -1
     imgBox = nvgCreateImage(vg, "image/通用图标/ICON_CZ_YX.png", 0) or -1
     imgCheck = nvgCreateImage(vg, "image/货币道具/UI_icon_GOU.png", 0) or -1
+    imgPower = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0) or -1
 end
 
 function LootBoxPage.setOnClaimOne(cb) onClaimOne = cb end
@@ -351,10 +353,18 @@ local function drawEntry(vg, entry, index, cy)
         text(vg, 294, cy + 1, equip and ((q and q.name) or "品质待整理") or "装备内容待整理", 34,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 224, 217, 201, 2)
     end
-    -- 旧的完整装备没有 source 字段，沿用背包溢出的展示语义。
-    local sourceText = entry.source == "idle" and "挂机掉落 · 装备已暂存" or "背包溢出 · 原装备暂存"
-    text(vg, 294, cy + 59, equip and sourceText or "暂不可领取或回收", 28,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 181, 166, 143, 2)
+    -- 第三行：确定装备显示战力（与装备详情同口径）；待整理条目保留不可操作提示。
+    if equip then
+        local powerStr = NumberUtil.format(EquipmentDetail.calcEquipPower(equip, nil))
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 30)
+        DrawUtil.drawImageCentered(vg, imgPower, 294 + 15, cy + 59, 30, 30, 1)
+        text(vg, 294 + 30 + 8, cy + 59, powerStr, 30,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 214, 102, 2)
+    else
+        text(vg, 294, cy + 59, "暂不可领取或回收", 28,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 181, 166, 143, 2)
+    end
     nvgRestore(vg)
     drawButton(vg, "lbp_claim_" .. index,
         ACTION_CX, cy, ACTION_W, ACTION_H, equip and "领取" or "待整理",

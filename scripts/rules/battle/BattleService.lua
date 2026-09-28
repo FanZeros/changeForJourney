@@ -649,6 +649,7 @@ function BattleService.ClaimBattleRewards(uid, rewards)
 
     local totalGold = 0
     local heroExpMap = {}
+    local benchPerHeroBase = 0 -- 每次击杀的"每出战英雄份额"累计，未出战英雄按 10% 领取
     local totalPlayerExp = 0
     local currentStageId = tonumber(battle.currentStageId)
     local currentStageEntry = currentStageId and StageConfig.getStage(currentStageId)
@@ -687,7 +688,21 @@ function BattleService.ClaimBattleRewards(uid, rewards)
                 local numHid = tonumber(hid) or hid
                 heroExpMap[numHid] = (heroExpMap[numHid] or 0) + perHeroExp
             end
+            benchPerHeroBase = benchPerHeroBase + perHeroExp
             totalPlayerExp = totalPlayerExp + baseExp
+        end
+    end
+
+    -- 未出战英雄吃 10% 战斗经验：本批未参与任何击杀的在册英雄，各得每出战份额累计的 10%
+    if benchPerHeroBase > 0 then
+        local benchExp = math.floor(benchPerHeroBase * 0.1)
+        if benchExp > 0 then
+            for hid, hero in pairs(heroes.roster) do
+                local numHid = tonumber(hid) or hid
+                if type(hero) == "table" and hero.level and not heroExpMap[numHid] then
+                    heroExpMap[numHid] = benchExp
+                end
+            end
         end
     end
 

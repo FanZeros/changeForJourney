@@ -290,7 +290,8 @@ local function filterCenter(quality)
     return FILTER.x + FILTER.w * 0.5 + (quality - 1) * (FILTER.w + FILTER.gap), FILTER.cy
 end
 
---- 稀有度勾选条：1-6 档可多选，勾选=金框+对勾，未勾选=暗显；不再提供“全部”按钮（全不勾即全部）。
+--- 稀有度勾选条：1-6 档可多选；勾选=绿框+框内右下对勾，未勾选保持金框原样；
+--- 不再提供“全部”按钮（全不勾即全部），外侧也不额外描框。
 local function drawFilters(vg)
     for quality = 1, QualityMark.count() do
         local cx, cy = filterCenter(quality)
@@ -298,13 +299,12 @@ local function drawFilters(vg)
         local feedback = BF.begin(vg, "lbp_filter_" .. quality, cx, cy, FILTER.w, FILTER.h)
         DarkIcon.drawNine(vg, "btn", cx - FILTER.w * 0.5, cy - FILTER.h * 0.5,
             FILTER.w, FILTER.h, { accent = checked and "green" or "gold" })
-        if not QualityMark.draw(vg, quality, cx, cy, 52, checked and 1 or 0.45) then
+        if not QualityMark.draw(vg, quality, cx, cy, 52, 1) then
             local label = EquipmentConfig.QUALITY[quality].name
             text(vg, cx, cy, label, 24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
         end
         if checked and imgCheck >= 0 then
-            DrawUtil.drawImageCentered(vg, imgCheck,
-                cx + FILTER.w * 0.5 - 10, cy + FILTER.h * 0.5 - 10, 30, 30, 1)
+            DrawUtil.drawImageCentered(vg, imgCheck, cx + 30, cy + 16, 26, 26, 1)
         end
         BF.finish(vg, feedback)
     end

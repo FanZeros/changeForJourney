@@ -1005,20 +1005,11 @@ local function drawBody(vg)
             local cx = PZSX.FIRST_CX + (i - 1) * (PZSX.SIZE + PZSX.GAP)
             local didScale = BF.begin(vg, "bp_filter_" .. i, cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE)
             local checked = decomposeState.qualitySet[i] == true
-            if checked then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cx - PZSX.SIZE * 0.5 - 5, PZSX.CY - PZSX.SIZE * 0.5 - 5,
-                    PZSX.SIZE + 10, PZSX.SIZE + 10, 12)
-                nvgFillColor(vg, nvgRGBA(255, 214, 102, 60))
-                nvgFill(vg)
-                nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 235))
-                nvgStrokeWidth(vg, 3)
-                nvgStroke(vg)
-            end
-            QualityMark.draw(vg, i, cx, PZSX.CY, PZSX.SIZE, checked and 1.0 or 0.45)
+            -- 勾选=框内右下对勾；未勾选保持原样，外侧不额外描框
+            QualityMark.draw(vg, i, cx, PZSX.CY, PZSX.SIZE, 1.0)
             if checked and imgCheckmark >= 0 then
                 DrawUtil.drawImageCentered(vg, imgCheckmark,
-                    cx + PZSX.SIZE * 0.5 - 12, PZSX.CY + PZSX.SIZE * 0.5 - 12, 34, 34, 1.0)
+                    cx + PZSX.SIZE * 0.5 - 16, PZSX.CY + PZSX.SIZE * 0.5 - 16, 30, 30, 1.0)
             end
             BF.finish(vg, didScale)
         end

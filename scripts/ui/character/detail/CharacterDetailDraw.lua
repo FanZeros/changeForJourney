@@ -710,8 +710,12 @@ function M.draw(vg)
             nvgFill(vg)
         end
         -- [统一角色框] 卡面叠加品质描边（frameOnly：不画底与头像）
+        ---@type number
+        local cardW = CARD.W
+        ---@type number
+        local cardH = CARD.H
         HeroFrame.draw(vg, {
-            cx = 0, cy = 0, w = CARD.W, h = CARD.H,
+            cx = 0, cy = 0, w = cardW, h = cardH,
             heroId = id,
             state = owned and "owned" or "unowned",
             frameOnly = true,
@@ -1570,8 +1574,12 @@ function M.draw(vg)
                 nvgFill(vg)
             end
             -- [统一角色框] 卡面叠加品质描边
+            ---@type number
+            local cardW2 = CARD.W
+            ---@type number
+            local cardH2 = CARD.H
             HeroFrame.draw(vg, {
-                cx = 0, cy = 0, w = CARD.W, h = CARD.H,
+                cx = 0, cy = 0, w = cardW2, h = cardH2,
                 heroId = id,
                 state = owned and "owned" or "unowned",
                 frameOnly = true,

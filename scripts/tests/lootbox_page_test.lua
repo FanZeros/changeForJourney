@@ -91,7 +91,7 @@ function Start()
     entries[2].quality, entries[2].equip.quality = 6, 6
     entries[9].quality, entries[9].equip.quality = 6, 6
     Page.refresh(entries)
-    Page.handleInput(572, 286) -- 勾选稀有度 6 档（多选开关，第6个槽位中心）
+    Page.handleInput(975, 286) -- 勾选稀有度 6 档（多选开关，右上角第6个槽位中心）
     Page.handleRightClick(873, 542)
     eq(decomposed[#decomposed], 2, "筛选后的首行回收仍指向原索引2")
     Page.handleInput(873, 784)
@@ -106,17 +106,17 @@ function Start()
     Page.refresh(entries)
     Page.handleInput(873, 542)
     eq(claimed[#claimed], 2, "刷新保持当前勾选筛选")
-    Page.handleInput(72, 286) -- 追加勾选 1 档，形成多档混合
+    Page.handleInput(565, 286) -- 追加勾选 1 档，形成多档混合
     Page.handleInput(330, 2210)
     eq(claimQuality[1], true, "多档集合包含稀有度1")
     eq(claimQuality[6], true, "多档集合保留稀有度6")
-    Page.handleInput(572, 286) -- 取消 6 档
-    Page.handleInput(72, 286) -- 取消 1 档
-    Page.handleInput(272, 286) -- 勾选无装备的 3 档：列表空、批量按钮禁用
+    Page.handleInput(975, 286) -- 取消 6 档
+    Page.handleInput(565, 286) -- 取消 1 档
+    Page.handleInput(729, 286) -- 勾选无装备的 3 档：列表空、批量按钮禁用
     local beforeEmptyFilter = allClaims
     Page.handleInput(330, 2210)
     eq(allClaims, beforeEmptyFilter, "空筛选不领取")
-    Page.handleInput(272, 286) -- 取消勾选回到全部
+    Page.handleInput(729, 286) -- 取消勾选回到全部
     Page.handleInput(330, 2210)
     eq(allClaims, beforeEmptyFilter + 1, "取消全部勾选后恢复一键领取全部")
     eq(next(claimQuality), nil, "空集合表示不按稀有度限制")
@@ -142,7 +142,7 @@ function Start()
     local beforePending = #claimed
     Page.handleInput(873, 542)
     eq(#claimed, beforePending, "待整理条目不可领取")
-    Page.handleInput(572, 286) -- 勾选稀有度 6 档
+    Page.handleInput(975, 286) -- 勾选稀有度 6 档
     Page.handleInput(873, 542)
     eq(claimed[#claimed], 17, "筛选保留摘要携带的原存储索引")
     Page.handleInput(180, 542)

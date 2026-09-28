@@ -16,8 +16,8 @@ local I18n = require("core.I18n")
 local LootBoxPage = {}
 local W, H = 1080, 2400
 local LIST = { x = 48, y = 430, w = 984, h = 1690, rowH = 224, gap = 18 }
--- 七档品质贴在一起。名称牌占左上，说明改到右上。
-local FILTER = { x = 24, cy = 286, w = 96, h = 64, gap = 4 }
+-- 稀有度勾选条：右上角一排 6 档（与背包分解页同款同位置逻辑），名称牌占左上。
+local FILTER = { firstCX = 565, cy = 286, size = 70, gap = 12 }
 local BACK = { cx = 958, cy = 2308, w = 144, h = 120 }
 local ACTION_CX, ACTION_W, ACTION_H = 873, 202, 112
 local BTN_W, BTN_H, BTN_Y = 420, 108, 2210
@@ -289,24 +289,23 @@ local function drawButton(vg, id, cx, cy, w, h, label, accent, enabled)
 end
 
 local function filterCenter(quality)
-    return FILTER.x + FILTER.w * 0.5 + (quality - 1) * (FILTER.w + FILTER.gap), FILTER.cy
+    return FILTER.firstCX + (quality - 1) * (FILTER.size + FILTER.gap), FILTER.cy
 end
 
---- 稀有度勾选条：1-6 档可多选；勾选=绿框+框内右下对勾，未勾选保持金框原样；
---- 不再提供“全部”按钮（全不勾即全部），外侧也不额外描框。
+--- 稀有度勾选条：与背包分解页同款——右上角一排品质框（品质小图即框体），
+--- 1-6 档可多选；勾选=框内右下对勾；全不勾即全部，无“全部”按钮。
 local function drawFilters(vg)
     for quality = 1, QualityMark.count() do
         local cx, cy = filterCenter(quality)
         local checked = state.qualitySet[quality] == true
-        local feedback = BF.begin(vg, "lbp_filter_" .. quality, cx, cy, FILTER.w, FILTER.h)
-        DarkIcon.drawNine(vg, "btn", cx - FILTER.w * 0.5, cy - FILTER.h * 0.5,
-            FILTER.w, FILTER.h, { accent = checked and "green" or "gold" })
-        if not QualityMark.draw(vg, quality, cx, cy, 52, 1) then
+        local feedback = BF.begin(vg, "lbp_filter_" .. quality, cx, cy, FILTER.size, FILTER.size)
+        if not QualityMark.draw(vg, quality, cx, cy, FILTER.size, 1) then
             local label = EquipmentConfig.QUALITY[quality].name
             text(vg, cx, cy, label, 24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
         end
         if checked and imgCheck >= 0 then
-            DrawUtil.drawImageCentered(vg, imgCheck, cx + 30, cy + 16, 26, 26, 1)
+            DrawUtil.drawImageCentered(vg, imgCheck,
+                cx + FILTER.size * 0.5 - 16, cy + FILTER.size * 0.5 - 16, 30, 30, 1)
         end
         BF.finish(vg, feedback)
     end
@@ -533,7 +532,7 @@ function LootBoxPage.handleInput(dx, dy)
     if TownPageChrome.hitBack(dx, dy, BACK) then LootBoxPage.close() return true end
     for quality = 1, QualityMark.count() do
         local cx, cy = filterCenter(quality)
-        if DrawUtil.hitTest(dx, dy, cx, cy, FILTER.w, FILTER.h) then
+        if DrawUtil.hitTest(dx, dy, cx, cy, FILTER.size, FILTER.size) then
             BF.trigger("lbp_filter_" .. quality)
             toggleQuality(quality)
             print("[LootBoxPage] 稀有度勾选切换: " .. quality

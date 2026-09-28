@@ -23,12 +23,19 @@ local TutorialManager  = require("systems.TutorialManager")
 local I18n             = require("core.I18n")
 
 local BlacksmithConfig = require("config.BlacksmithConfig")
+local KeywordText      = require("ui.widget.KeywordText")
 local BlacksmithPage   = nil  -- 延迟加载，避免循环依赖
 local EquipmentBag     = nil  -- 延迟加载
 local BottomNav        = nil  -- 延迟加载
 local CharacterDetail  = nil  -- 延迟加载
 
 local EquipmentDetail = {}
+
+-- 套装词条关键词富文本（2件/4件/6件 三行各一实例；仅主面板交互，
+-- 绘制与输入同在 compact 0.92 变换坐标系，热区天然对齐，无需 setTransform）
+local setKw = {
+    KeywordText.new(), KeywordText.new(), KeywordText.new(),
+}
 
 -- ======================== 设计分辨率 ========================
 
@@ -1107,6 +1114,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
         nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
         nvgText(vg, leftX + 8, sectionTop + 22, setLines[1].text, nil)
         local rowTop = sectionTop + SET_TITLE_H
+        local mainPanel = (showActions ~= false)  -- 仅主面板关键词可点（对比/只读预览不交互）
         for i = 2, #setLines do
             local line = setLines[i]
             local tier, desc = line.text:match("^(%d件%s+)(.*)$")
@@ -1114,10 +1122,20 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
             nvgFontSize(vg, 26)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
             nvgText(vg, leftX + 8, rowTop + 2, tier or "", nil)
-            nvgFillColor(vg, line.active and nvgRGBA(244, 237, 224, 255)
-                or nvgRGBA(170, 158, 140, 210))
-            nvgFontSize(vg, 26)
-            nvgTextBox(vg, leftX + 78, rowTop + 2, panelW - 130, desc or line.text, nil)
+            if mainPanel then
+                local kw = setKw[i - 1]
+                if line.active then
+                    kw.textColor = { 244, 237, 224, 255 }
+                else
+                    kw.textColor = { 170, 158, 140, 210 }
+                end
+                kw:draw(vg, desc or line.text, leftX + 78, rowTop + 2, panelW - 130, 26, 32)
+            else
+                nvgFillColor(vg, line.active and nvgRGBA(244, 237, 224, 255)
+                    or nvgRGBA(170, 158, 140, 210))
+                nvgFontSize(vg, 26)
+                nvgTextBox(vg, leftX + 78, rowTop + 2, panelW - 130, desc or line.text, nil)
+            end
             rowTop = rowTop + compactSetRowHeight(line)
         end
     end
@@ -1193,6 +1211,7 @@ function EquipmentDetail.open(seq, slot, heroId, compactCorner, owner, anchorX, 
     detState.descDragging = false
     detState.lockHotspot = nil
     detState.layoutEquip = nil
+    for i = 1, 3 do setKw[i]:clear() end   -- 清上次装备的关键词状态
     print("[EquipmentDetail] open seq=" .. tostring(seq) .. " slot=" .. tostring(slot)
         .. " heroId=" .. tostring(heroId) .. " compact=" .. tostring(detState.compactCorner)
         .. " anchor=" .. tostring(detState.anchorX) .. "," .. tostring(detState.anchorY))
@@ -1227,6 +1246,7 @@ function EquipmentDetail.close()
         detState.pinned = false
         detState.layoutEquip = nil
         detState.lockHotspot = nil
+        for i = 1, 3 do setKw[i]:clear() end
         return
     end
     if detState.closing then return end
@@ -1348,6 +1368,21 @@ function EquipmentDetail.handleInput(dx, dy)
     -- 判断是否有对比装备
     local curEquip = getComparisonEquip()
     local hasCurrent = (not isEquipped) and (curEquip ~= nil)
+
+    -- 套装词条关键词（仅 compact 主面板交互；坐标已反变换到 compact 局部系，与热区对齐）
+    if detState.compactCorner then
+        for i = 1, 3 do
+            if setKw[i]:isOpen() then
+                setKw[i]:closePopup()
+                return true
+            end
+        end
+        for i = 1, 3 do
+            if setKw[i]:handleInput(dx, dy) then
+                return true
+            end
+        end
+    end
 
     -- 按钮位置与绘制一致：超出时钉在框底
     local btnCY = layoutButtons(newEquip)
@@ -1682,6 +1717,8 @@ function EquipmentDetail.draw(vg)
             nvgText(vg, REF_BG_CX + side * (COMPACT_BG_W + 16), 16, "当前装备", nil)
         end
         drawCompactPanel(vg, newEquip, btnText)
+        -- 套装词条关键词解释气泡（compact 局部坐标系，与热区对齐）
+        for i = 1, 3 do setKw[i]:drawPopup(vg) end
         nvgRestore(vg)
         return
     end
@@ -1772,6 +1809,7 @@ function EquipmentDetail.handleDragBegin(dx, dy)
         local ox, oy = compactOffset()
         ly = (dy - oy) / COMPACT_SCALE
     end
+    for i = 1, 3 do setKw[i]:closePopup() end   -- 拖拽时关关键词气泡
     detState.descDragging = true
     detState.descDragLastY = ly
     return true

@@ -9,12 +9,16 @@ local DrawUtil   = require("core.DrawUtil")
 local AKC        = require("config.AwakeningConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
 local I18n       = require("core.I18n")
+local KeywordText = require("ui.widget.KeywordText")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
 local BF = require("systems.ButtonFeedback")
 
 local M = {}
+
+-- 觉醒效果关键词富文本（白字与面板一致）；弹窗由 CharacterDetailDraw 帧末统一绘制
+M.kwText = KeywordText.new({ textColor = { 255, 255, 255 } })
 
 -- 全屏背景 / 顶栏
 local BG_CX, BG_CY = 540, 1200
@@ -228,6 +232,7 @@ end
 ---@param heroId? number
 function M.reset(heroId)
     selectedNode = 1
+    M.kwText:clear()   -- 切角色时清关键词弹窗/热区
     if heroId then
         local activated = getActivatedNodes(heroId)
         for i = 1, NODE_COUNT do
@@ -435,11 +440,10 @@ function M.draw(vg, heroId)
     nvgFillColor(vg, nvgRGBA(0xff, 0xef, 0x67, 255))
     nvgText(vg, SUB_TITLE_CX, SUB_TITLE_CY, nodeTitle, nil)
 
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, EFFECT_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgTextBox(vg, EFFECT_CX - EFFECT_W * 0.5, EFFECT_CY - EFFECT_H * 0.5, EFFECT_W, nodeEffect, nil)
+    -- 关键词富文本：觉醒效果说明中的机制词可点击弹出解释（弹窗由 CharacterDetailDraw 帧末绘制）
+    M.kwText:draw(vg, nodeEffect,
+        EFFECT_CX - EFFECT_W * 0.5, EFFECT_CY - EFFECT_H * 0.5, EFFECT_W,
+        EFFECT_FONT, nil, EFFECT_CX)
 
     local selectedCost = AKC.getShardCost(selectedNode)
     local shardSufficient = currentShards >= selectedCost and selectedCost > 0
@@ -488,6 +492,11 @@ function M.draw(vg, heroId)
 end
 
 function M.handleInput(dx, dy, heroId)
+    -- 效果描述关键词点击（弹窗的关闭由 CharacterDetail.handleInput 统一处理）
+    if M.kwText:handleInput(dx, dy) then
+        return true
+    end
+
     -- 切片命中（斜切平行四边形），重叠处优先当前选中
     local hits = {}
     for i = 1, NODE_COUNT do

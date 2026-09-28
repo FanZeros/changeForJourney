@@ -322,6 +322,12 @@ function CharacterDetail.setContext(ctx)
     AwakeningPanel.setOwnedDataGetter(ctx.getOwnedData)
 end
 
+--- 清空关键词组件的交互状态（弹窗/悬停/热区）
+local function clearKeywordUi()
+    if Draw.talentKwText then Draw.talentKwText:clear() end
+    if AwakeningPanel.kwText then AwakeningPanel.kwText:clear() end
+end
+
 --- 打开详情界面
 ---@param heroId number
 ---@param tab string|nil 初始页签 "attr"|"equip"|"awaken"，默认 "attr"
@@ -343,6 +349,7 @@ function CharacterDetail.open(heroId, tab)
     detailState.attrDragging  = false
     detailState.attrScrollVel = 0
     detailState.attrTip       = nil
+    clearKeywordUi()
     AwakeningPanel.reset(heroId)
     local heroCfg = HC.get(heroId)
     print("[CharacterDetail] 打开角色详情: " .. (heroCfg and heroCfg.name or "?"))
@@ -418,6 +425,7 @@ function CharacterDetail._switchHero(direction, keepDrag)
     detailState.attrDragging  = false
     detailState.attrScrollVel = 0
     detailState.attrTip       = nil
+    clearKeywordUi()
     AwakeningPanel.reset(nextHeroId)
     print("[CharacterDetail] 箭头切换角色: " .. tostring(detailState.heroId))
     -- 按住连续滑卡时不逐张触发情景，松手落定的那次（keepDrag=false）再播
@@ -484,6 +492,18 @@ end
 function CharacterDetail.handleInput(dx, dy)
     if not detailState.open then return false end
     if detailState.closing then return true end  -- 关闭动画中，消费事件但不处理
+
+    -- 关键词解释弹窗打开时：任意点击先关弹窗（弹窗是最上层交互）
+    local talentKw = Draw.talentKwText
+    local awakenKw = AwakeningPanel.kwText
+    if talentKw and talentKw:isOpen() then
+        talentKw:closePopup()
+        return true
+    end
+    if awakenKw and awakenKw:isOpen() then
+        awakenKw:closePopup()
+        return true
+    end
 
     -- 配装页小详情：格子点击优先（单击换一件 / 双击装备），再交给详情面板
     if CharacterDetail._EquipDetail.isOpen() then
@@ -636,6 +656,11 @@ function CharacterDetail.handleInput(dx, dy)
 
     -- === 属性区域点击检测（仅属性页） ===
     if detailState.tab == "attr" then
+        -- 天赋描述关键词：点击弹出解释（优先于属性行命中）
+        if Draw.talentKwText and Draw.talentKwText:handleInput(dx, dy) then
+            return true
+        end
+
         local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
         local cachedL = detailState.cachedLeft or {}
         local totalRows = #cachedL
@@ -741,6 +766,13 @@ end
 function CharacterDetail.handleHover(dx, dy)
     if not detailState.open or detailState.closing or detailState.tab ~= "equip" then
         CharacterDetail._EquipPanel.handleHover(-1, -1, detailState.heroId)
+        -- 关键词悬停加亮（attr 页天赋描述）
+        if detailState.open and not detailState.closing and detailState.tab == "attr"
+           and Draw.talentKwText then
+            Draw.talentKwText:setHover(dx, dy)
+        elseif Draw.talentKwText then
+            Draw.talentKwText:setHover(-1, -1)
+        end
         return
     end
     if CharacterDetail._EquipPanel.isItemDragging and CharacterDetail._EquipPanel.isItemDragging() then
@@ -767,6 +799,7 @@ function CharacterDetail.handleDragBegin(dx, dy)
         return EquipmentBag.handleDragBegin(dx, dy)
     end
     detailState.attrTip = nil  -- 拖拽时关闭气泡
+    clearKeywordUi()           -- 拖拽时同步关闭关键词弹窗
     -- 配装侧栏优先于属性区/格子拖拽，避免侧栏滑动触发其他交互。
     if detailState.tab == "equip" and CharacterDetail._EquipPanel.beginSideDrag(dx, dy) then
         detailState.sideDragging = true

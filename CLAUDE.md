@@ -2,6 +2,15 @@
 
 > 本文件由记忆系统维护（会话启动时先读本文件与 docs/memory-index.md）。
 
+## 🔴 协作铁律（每个会话、每次完成任务都必须遵守）
+
+1. **不能取消/退出任务**：任何情况下不得中途放弃用户交付的任务，必须推进到完成。
+2. **每次任务完成后，必须用 `AskUserQuestion` 工具以选项形式向用户提问下一步做什么**。
+   - ❌ 禁止用纯文本、开放式问题、或任何非 `AskUserQuestion` 的形式中断对话等待用户。
+   - ✅ 必须调用 `AskUserQuestion`，给出 2–4 个明确的下一步选项。
+3. **在本记忆中持续强化此规则**：每轮结束更新「上次做了什么」，并保留本节铁律不被覆盖。
+4. **分支纪律**：以新分支继续开发，完成后 push 到新分支；**绝不推送到 `workspace926`**（或任何基线分支）。
+
 ## 恢复指令
 
 1. 读 `docs/memory-index.md`（项目详细上下文）
@@ -22,6 +31,16 @@
 - 功能轮（均已 push）：奖励弹窗自动滚底+大数字缩字号；扫荡/副本扫荡奖励弹出时自动关原页；情景 82（首通 205 大狗嚼发 60 碎片→觉醒页引导）；教堂剧情重写为神器登记（24-30/41）；全 UI 按钮禁用态棕色 `0x8d5f41`；奖励弹窗任意点击可关+跟随左/中/右面板；教堂角标只看神器；天赋星图 +16 条双向边（多环路）；无编队行不显示敌人；编队未实质改变不重置战斗（按队 diff）。
 - 文档整理轮（本次）：11 份已完成/过时规划归档 `docs/archive/`；修订剧情总表（82/触发链 StoryPlayer/55-57 摘要）、memory-index（boot 入口/情景 1~82/待办过期项）、低差异规划与套装规划（标注已全部落地）、versions（补 2026-09-27~28 条目）、gameplay 权威文档（§1-20+附录按代码全面复核：横屏三栏/三队4槽/六契职业/教堂只神器/竞技场公会签到删除/离线24h软顶/装备6槽+套装/天赋209节点/引导12组/单机存档）。
 
+## 🔴🔴 致命结构铁律：项目根必须是 `/workspace`（scripts/ 直接在根下）
+
+**2026-09-28 血的教训**：曾把仓库克隆到 `/workspace/repo/` 子目录开发，导致**预览完全看不到任何改动**（用户反馈"没看到关键词"）。
+
+- **build 工具硬锚定 `/workspace` 为项目根**：读 `/workspace/.project`，资源只扫 `/workspace/scripts` + `/workspace/assets`。代码放在 `repo/` 子目录时，即使传 `scriptsPath: repo/scripts`（LSP 诊断/测试能过，因为 LSP 用 `--path` 指向真目录），**打包阶段仍只扫空的 `/workspace/scripts`** → manifest `total_files: 2`、**0 个 Lua 入包**、日志报 `entry 'main.lua' 未找到对应资源`。
+- **正确结构**：`git clone` 后必须让 `.git`/`scripts`/`assets`/`.project`/`CLAUDE.md` 等**直接位于 `/workspace` 根**，不得有 `repo/` 中间层（CLAUDE.md 全局规则也写明"工作目录即项目根，不要在其与 scripts/ 之间插入额外层级"）。
+- **修复手法**（已执行，同文件系统 `mv` 秒级）：把 `repo/` 下所有项（含 `.git`）移到 `/workspace`，冲突目录（`.agent`/`tools`）合并保留两侧，`.project`/`scripts`/`.gitignore` 用 repo 版覆盖。迁移后 `git status` 应干净（无删除），build 打包 **365 个 Lua**，validate 0 lua_errors。
+- **每次 build 后**：build 工具会把 `.project/project.json` 的 `project_id` 重写成 SCE 服务器给本沙箱分配的 `m_gzu3`（仓库原值 `m_tfv3`）。这是构建生成的本地配置，**提交前用 `git checkout .project/project.json` 还原**，不要推上去。
+- **自检命令**：`ls /workspace/scripts/main.lua` 必须存在；`python3 -c "import json,glob,os;f=max(glob.glob('/workspace/dist/*/manifest-*.json'),key=os.path.getmtime);m=json.load(open(f));print('lua files:',len([x for x in m['files'] if x['fs_path'].endswith('.lua')]))"` 应 ≫ 0。
+
 ## 已合入备忘（feat926，2026-09-27）
 
 - `character-drag-save`：右栏拖拽跨栏取消、英雄名册数字键保留、跨队一次提交、离线经验不算空槽、存档写入失败重试。
@@ -34,6 +53,22 @@
 - Electron 离线包在 `electron-shell/main.js` 关闭 `backgroundThrottling`，失焦时保持战斗帧更新。网页隐藏页仍需离线补算。Windows 失焦/最小化尚未实机验证。
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
+
+## 本轮进展（2026-09-27，`workspace927-keyword-system`）
+
+- **任务**：实现关键词系统——让描述文本内的机制关键词（如「回响」）可点击查看效果解释。基于 `workspace926` 新建 `workspace927-keyword-system` 分支，已 push（未动 workspace926）。
+- **新增 `scripts/config/KeywordConfig.lua`**：关键词百科表，覆盖六门契职业（封门人/拾骸者/裂隙使/回响客/换面人/司仪）、职业天赋（门缝/拾骸/裂隙/回响/换面/延缓）、战斗机制（骸骨/裂痕/仇恨/护甲克制/连击/超暴击/能量护盾）、锻造（腐化/腐化石/神圣石/洗练石/点金石/洗练）。文案逐条对照 `ClassConfig`/`AttributeDef`/`ClassGateRuntime`/`UnitAttributes`/`BlacksmithService` 实际实现核对。长词优先排序（「回响客」不被「回响」截胡）。
+- **新增 `scripts/ui/widget/KeywordText.lua`**：NanoVG 富文本组件。按词表拆段→逐字符折行（与 attrTip 一致，关键词整体不拆行）→关键词金色+下划线绘制→记录点击热区→点击弹解释气泡（风格复用 attrTip，支持上方空间不足自动翻下方）。排版结果按 text+width+fontSize 缓存；无引擎环境（回归测试）时 measure 退化为等宽估算。
+- **接入点**：① 角色详情 attr 页天赋描述区（`CharacterDetailDraw` 的 `M.talentKwText`）；② 觉醒面板效果描述（`AwakeningPanel` 的 `M.kwText`，居中排版）。弹窗帧末置顶统一绘制；`CharacterDetail.handleInput` 开头统一处理「弹窗开着→任意点击先关弹窗」；attr 页关键词点击优先于属性行命中；切角色/拖拽/打开面板调 `clearKeywordUi` 清状态；handleHover 悬停加亮。
+- **验证**：新增 `scripts/tests/keyword_text_test.lua`（20 项全 PASS：词表/长词优先/拆段计数/热区坐标/点击开关弹窗/折行/显式\n）。LSP 全工作区 0 Error 0 Warning；官方 Build 成功；主入口 60 帧无 Lua 错误；战斗回归 `battle_stage_switch_test` 22 PASS/0 FAIL（退出码 124 是已知「测试自身不退出进程」行为）。6 个相关模块 smoke require 全 true。
+- **踩坑**：`--[[@as string[]]]` 注解会让引擎 LoadChunk 报 `'end' expected`（引擎 Lua 解析器不认这种行内 cast 写法，但 LSP 认）→ 改为 `---@type` 独立行 + 中间变量。**教训：引擎 LoadChunk 与 LSP 对注解容错不同，新文件务必用 headless Runtime 实跑一次 require，别只信 LSP。**
+- **待办/未验收**：① headless 离屏 NanoVG 截图未落盘（VG 上下文限制），关键词视觉效果（金色下划线、弹窗）尚未真人预览验收。② ~~转职页 `ChurchClassChange` 的 talentDesc 仍是纯 `nvgTextBox`，未接入关键词~~（已接入确认弹窗，见下方"转职页接入"；转职树主页面的锁定提示文字无机制词，无需接入）。③ 装备词条/遗物/神器/通天塔 desc 等更多描述区未接入。④ 词表可继续扩充。
+- **追加修复（同轮）**：布局双重计宽 bug——普通文本累计期直接写 `cur.width`，addPiece 整段测量再加一次 → 行宽虚高、提前折行（LINE1 实测 1169 > 容器 837）。修复：累计期独立 `bufW`。新增回归：行宽不超容器 + 宽容器短文本不折行；22 项全 PASS；引擎真实字体 dump 验证 3 行 826/826/52 全部 ≤837。
+- **🔴 环境教训（截图链路）**：本机 Linux UrhoXRuntime 二进制**不支持离屏截图**——`-screenshot=` 参数无 `[Screenshot]` 标记（strings 二进制无该参数）、`Graphics:TakeScreenShot` 返回 false（surfaceless 无读回缓冲）、xvfb 未安装。headless 只能做逻辑验证（validate/print dump）；**视觉效果验收必须让用户在预览窗口真人查看**，不要再浪费时间尝试本机截图。
+- **🔴 结构修复（同轮，用户发现）**：用户反馈"预览里没有关键词"并提示"script 位置是不是不在 workspace 下方"——确认克隆进 `/workspace/repo/` 子目录导致 build 打包 0 Lua（详见上方"致命结构铁律"）。已把整个项目（含 `.git`）迁移到 `/workspace` 根，`git status` 干净，重新 build 后 365 Lua 入包、validate 60 帧 0 lua_errors。预览验收待用户重测。
+- **转职页接入（同轮，用户追问"转职里面的描述有没有"）**：`ChurchClassChange.drawConfirmPopup` 的天赋描述改用 KeywordText。弹窗带 scale 0.85→1.0 缩放动画 → KeywordText 新增 `setTransform`（输入屏幕坐标→热区空间逆变换）与 `setPopupTransform`（弹窗锚点→屏幕坐标正向变换，解释气泡在变换外绘制）；`measureHeight` 保留原自适应字号逻辑。回归测试扩到 26 项全 PASS。**新踩坑**：官方 build 的 LSP 检查比 lua_lsp_client 严格（return-type-mismatch 会被拒），提交前必须跑官方 build 验证。
+- **用户验收通过（三处）+ 第二轮接入（同轮）**：用户确认属性页/觉醒页/转职确认弹窗三处关键词全部正常。随后接入：① 通天塔三选一 `TowerBuffPick`（3 卡各一实例；关键词点击**优先于整卡选中**；调用方 TowerBattleScene 已做 fit 反变换，设计坐标系直接对齐）；② 装备详情 compact 主面板套装词条 2/4/6 件行（`showActions ~= false` 区分主面板，对比面板/只读预览保持原样；输入插在锁图标/按钮判定之前）；③ KeywordText textColor 支持 alpha（保留套装激活/未激活半透明）。验证：26 项回归 PASS、官方 Build 成功、validate 60 帧 0 lua_errors。已推送（共 8 提交）。
+- **调研结论（未接入区域及原因）**：遗物（RelicDefs 381 处命中最高）**UI 层无 desc 渲染点**——详情面板不存在，RewardPopup 只画图标，需先新建遗物详情 UI 才有挂载点；神器详情 ArtifactDetailPanel 仅 2 处命中且自有数值高亮机制（橙色数值+灰色比例）与关键词染色冲突，价值低暂缓；星图天赋 TalentNodeDefs 仅 3 处暂缓。
 
 ## 上次做了什么（2026-09-27，925 同步与存档再排查）
 

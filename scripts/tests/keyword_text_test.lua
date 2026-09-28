@@ -96,6 +96,17 @@ function Start()
     kt2:draw(nil, text, 0, 0, 120, 30)
     check(#kt2.hotspots == 3, "窄宽度折行后仍有 3 个关键词热区（实际 " .. #kt2.hotspots .. "）")
 
+    -- ── 行宽不超容器（回归：字符宽度曾被双重计入导致提前折行/行宽虚高）──
+    local layout = kt:_layout(nil, text, 900, 30)
+    local widthOk = true
+    for _, line in ipairs(layout.lines) do
+        if line.width > 900 + 0.01 then widthOk = false end
+    end
+    check(widthOk, "所有行宽不超过容器宽度")
+    -- 单行文本 + 宽容器 → 必须只有一行
+    local layout1 = kt:_layout(nil, "回响客的回响", 900, 30)
+    check(#layout1.lines == 1, "宽容器下短文本不折行（实际 " .. #layout1.lines .. " 行）")
+
     -- ── 显式换行符 ──
     local kt3 = KeywordText.new()
     kt3:draw(nil, "第一行回响\n第二行回响", 0, 0, 900, 30)

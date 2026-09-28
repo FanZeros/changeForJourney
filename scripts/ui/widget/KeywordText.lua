@@ -153,29 +153,38 @@ local function layoutText(vg, text, width, fontSize)
             addPiece(seg.text, true)
         else
             -- 普通段逐字符折行；支持显式 \n
+            -- ⚠️ bufW 单独累计：addPiece 会把整段测量宽度并入 cur.width，
+            --    若累计期就写 cur.width 会双重计入 → 提前折行且行宽虚高
             local s = seg.text
             local i, n = 1, #s
             local buf = {}
+            local bufW = 0
+            local function flushBuf()
+                if #buf > 0 then
+                    addPiece(table.concat(buf), false)
+                    buf = {}
+                    bufW = 0
+                end
+            end
             while i <= n do
                 local c = utf8.codepoint(s, i) --[[@as integer?]]
                 if not c then break end
                 local ch = utf8.char(c)
                 i = i + #ch
                 if ch == "\n" then
-                    if #buf > 0 then addPiece(table.concat(buf), false) buf = {} end
+                    flushBuf()
                     pushLine()
                 else
                     local chW = measure(vg, fontSize, ch)
-                    if cur.width + chW > width and (cur.width > 0 or #buf > 0) then
-                        if #buf > 0 then addPiece(table.concat(buf), false) buf = {} end
+                    if cur.width + bufW + chW > width and (cur.width > 0 or bufW > 0) then
+                        flushBuf()
                         pushLine()
                     end
                     buf[#buf + 1] = ch
-                    -- 先并入 cur.width，保证连续测量正确
-                    cur.width = cur.width + chW
+                    bufW = bufW + chW
                 end
             end
-            if #buf > 0 then addPiece(table.concat(buf), false) end
+            flushBuf()
         end
     end
     return { lines = lines, fontSize = fontSize }

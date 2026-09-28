@@ -19,6 +19,8 @@
 
 ## 项目足迹（追加去重）
 
+- 2026-09-28 终焉之门：推荐战力接入选关弹窗显示（v2.61b，玩家可见）。`StageSelectDialog` 中栏关卡行左中「推荐 N」20 号小字，三态：实测关与玩家总战力比较着色（达标绿/不足红/未知中性）、外推关「推荐≈N」蓝灰不比较、ml>46 无数据不绘制；未解锁行降透明同显。只读展示无门槛，宽度按左栏 ~124px 防御（22 号会撞卡面，降 20）。LSP 0 Error，主入口 validate lua_errors=0，切关回归 ALL PASS。五语词表与真人视觉验收待做，只推 `feat926/battle-lab`。[scope:project]
+
 - 2026-09-28 终焉之门：关卡推荐战力标定（v2.61）。新增 `tests/battle_lab_threshold.lua`（开荒三人组、首通、12 局定种，对 Normal 23 章节首关二分搜索 winRate≥50% 阈值，23/23 收敛：ml1/318 → ml23/2195）+ `_proc/fit_stage_recommend.py`（线性/二次/指数择优：官方战力指数 R²=0.9715）→ 生成 `config/StageRecommendPower.lua`（230 关推荐：115 实测 + 115 外推 x=true；实测范围内用实测值，ml>46=采样上限×2 不生成条目防指数发散）。新增 `tests/stage_recommend_test.lua` 15 断言 ALL PASS，LSP 0 Error，回归全绿。纯数据模块无 UI 接线，正式战力公式未改，只推 `feat926/battle-lab`。[scope:project]
 
 - 2026-09-28 终焉之门：OFF_FACTOR 跨难度带验证。新增 `tests/battle_lab_fit_expand.lua`（63 组：三职业 × L8/L16/L24 三带）+ `fit_power_estimate.py --mode expand`（分桶岭回归）。结论：跨带混池不成立（ALL R²=-5.5）必须分带；magical 三带 R²=0.63/0.68/0.96 全可信、off[phys] 均值 0.119≈0.10 → OFF_FACTOR 跨带稳定维持 0.10；physical 三带 R² 均低（战士 DPS 被衔骨狂天赋触发主导）无法回归标定，方向性由 A/B 实测保证。系数零改动，回归全绿，只推 `feat926/battle-lab`。[scope:project]

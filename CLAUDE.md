@@ -42,7 +42,8 @@
 
 ## 最新：关卡推荐战力标定（2026-09-28，v2.61）
 
-- **UI 接线（v2.61b）**：`ui/battle/stage/StageSelectDialog.lua` 中栏关卡行左中（y+84，关卡号与状态行之间）新增「推荐 N」小字（20 号，最长「推荐≈18110」~115px 不撞 CARD_X=455 卡面区）。三态：实测关（ml≤23）与 `GameState.getPower()` 玩家总战力比较着色（达标绿 0x7AC86E / 不足红 0xE05A5A / 战力未知中性）、外推关（ml 24..46）「推荐≈N」蓝灰 0x8FA8C0 不比较、无数据关（ml>46，SRP 无条目）不绘制。未解锁行同显（alpha 140/255）。只读展示、无门槛逻辑；I18n draw hook 会自动拦截 nvgText 走词表（新中文串未入词表时原文显示，不崩）。
+- **五语词表（v2.61c）**：v2.61b 遗留的翻译待办已闭环。`core/I18n.lua` 的 `T` 键值表五语块各新增 `rec_power`（简「推荐 {0}」/繁「推薦 {0}」/英「Rec. {0}」/日「推奨 {0}」/韩「추천 {0}」）与 `rec_power_approx`（同结构带「≈」）两键（共 10 条），沿用既有 `expedition_lv = "...LV.{0}"` 的 `{0}` 占位符范式。**关键**：含动态数字的串不能走 `installDrawHook` 的 nvgText 原文查表（数字变→查不到），必须走 `I18n.t(key, n)` 键值替换；`StageSelectDialog` 已改用 `I18n.t("rec_power"/"rec_power_approx", recPower)`。译后串（如 "Rec. 18110"）再经 draw-hook 的 `I18n.lookup` 查中文原文查不到会原样返回，无二次翻译风险。宽度：CJK「推荐≈18110」~115px、英文拉丁更窄，五语均 <124px 不需按语言调字号。验证：新增 `tests/i18n_rec_power_test.lua` 28 断言 ALL PASS（五语占位替换/非 key 回退/未知 key 回退），LSP I18n+StageSelectDialog 0 Error，主入口 validate lua_errors=0，切关回归 13 PASS ALL PASS。
+- **UI 接线（v2.61b）**：`ui/battle/stage/StageSelectDialog.lua` 中栏关卡行左中（y+84，关卡号与状态行之间）新增「推荐 N」小字（20 号，最长「推荐≈18110」~115px 不撞 CARD_X=455 卡面区）。三态：实测关（ml≤23）与 `GameState.getPower()` 玩家总战力比较着色（达标绿 0x7AC86E / 不足红 0xE05A5A / 战力未知中性）、外推关（ml 24..46）「推荐≈N」蓝灰 0x8FA8C0 不比较、无数据关（ml>46，SRP 无条目）不绘制。未解锁行同显（alpha 140/255）。只读展示、无门槛逻辑。
 - 目标：回答"能否为关卡确定推荐战力"。产出 `config/StageRecommendPower.lua`（纯数据 + 查询 API；v2.61b 已接线选关弹窗展示），正式战力公式未改。
 - 采样：`tests/battle_lab_threshold.lua`——开荒三人组（1/2/3）无装备、首通、12 局定种 926、timeLimit=120，对 Normal 23 个章节首关（101..2301，ml 1..23）二分搜索 winRate 跨过 50% 的最低英雄等级；阈值取保守侧（hi），23/23 收敛（ml1 L*=1/power 318 → ml23 L*=71/power 2195；ml13/17/21 因怪物构成有真实回落，非严格单调）。样本 `battle_lab_threshold_samples.json`（gitignore）。
 - 拟合：`_proc/fit_stage_recommend.py`——线性/二次/指数择优（官方战力→指数 R²=0.9715；预估→二次 R²=0.9705；最大残差 ml20 -269），正则解析全部 `StageConfig_*.lua`（1725 关，ml 最大 345）。
@@ -152,7 +153,7 @@
 
 - 当前任务分支 `feat926/battle-lab`：仅 push 此分支，不合并、不推送 `workspace925` 或其他 workspace 分支。交付后必须以 AskUserQuestion 选项提问下一步。
 - 战斗工作台需独立运行（`tests/battle_lab_ui.lua`），批量入口 `tests/battle_lab.lua`；在游戏主进程并行测试会污染共享战斗状态。下一步可验收鼠标操作与不同分辨率 UI，并按需增加玩家配装的隔离配置支持。
-- 关卡推荐战力表 `config/StageRecommendPower.lua`（v2.61）已接线选关弹窗（v2.61b，只读展示）；待真人预览验收：20 号字与行内其他元素的视觉密度、颜色对比、五语翻译（「推荐 N」新串需入 I18nDict）。候选下一步：扩采样到 Hard 难度与章节内 2..5 关消除近似。
+- 关卡推荐战力表 `config/StageRecommendPower.lua`（v2.61）已接线选关弹窗（v2.61b）+ 五语词表（v2.61c）；仅剩真人预览验收视觉密度/颜色对比。候选下一步：扩采样到 Hard 难度与章节内 2..5 关消除近似、或把推荐显示扩展到扫荡/结算界面。
 - `workspace925` 装备详情定位及套装效果区已调整；需要在实际游戏预览中确认左/右栏比较卡与最长套装说明的视觉效果。
 - Electron 已关后台节流，但未实机验证失焦/最小化。系统休眠仍需离线补算。
 - 配装页已下移留出词条空位，词条内容本身还没画。

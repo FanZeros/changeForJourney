@@ -15,6 +15,7 @@ local SRP               = require("config.StageRecommendPower")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DrawUtil          = require("core.DrawUtil")
 local GameState         = require("core.GameState")
+local I18n              = require("core.I18n")
 local BF                = require("systems.ButtonFeedback")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
@@ -575,15 +576,19 @@ function StageSelectDialog.draw(vg)
         -- 三态：实测(与玩家总战力比较着色) / 外推(≈前缀蓝灰) / 无数据(不绘制)。
         -- 字号 20：左栏可用宽 ~124px（CARD_X-MID_X-边距），最长文本
         -- 「推荐≈18110」(ml46 外推上限) 在 20 号字下 ~115px 不撞卡面。
+        -- 五语下 CJK（简/繁/日/韩「推荐≈」3 全角 + 5 位数字）最长 ~115px，
+        -- 英文「Rec.≈18110」拉丁更窄，均 < 124px，无需按语言调字号。
+        -- 文案走 I18n.t 键值表（rec_power/rec_power_approx 五语，{0} 占位数字）；
+        -- 含动态数字不能走 draw-hook 原文查表。译后串再经 hook 查不到会原样返回。
         local recPower, recExtr = SRP.get(id)
         if recPower then
             local rText, rr, rg, rb
             if recExtr then
                 -- 外推带（ml 24..46）：估算值，蓝灰 + ≈ 前缀，不与玩家战力比较
-                rText = "推荐≈" .. tostring(recPower)
+                rText = I18n.t("rec_power_approx", recPower)
                 rr, rg, rb = 0x8F, 0xA8, 0xC0
             else
-                rText = "推荐 " .. tostring(recPower)
+                rText = I18n.t("rec_power", recPower)
                 local playerPower = GameState.getPower() or 0
                 if playerPower <= 0 then
                     rr, rg, rb = 0xb6, 0xb0, 0x9d          -- 战力未知：中性色

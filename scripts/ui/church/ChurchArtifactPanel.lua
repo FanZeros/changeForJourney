@@ -46,11 +46,11 @@ local HINT = {
 -- [三队行式布局] 队伍1/2/3 各占一行同时显示（替代原页签切换）
 -- 每行 = 队标签 + 4 个号位列（每列 3 个子格纵向堆叠）
 local TEAM_ROW = {
-    HEADER_Y   = 292,                       -- 号位表头（1号位~4号位，只画一行，三队共用）
+    HEADER_Y   = 286,                       -- 号位表头（1号位~4号位，只画一行，三队共用）
     HEADER_FONT = 28,
-    ROW_CY     = { 519, 937, 1355 },        -- 每队行的 y 中心（行3底 1559 < 背包面板顶 1569）
+    ROW_CY     = { 508, 918, 1328 },        -- 每队行的 y 中心（行3底 1530 < 背包面板顶 1540）
     LABEL_X    = 76,                        -- 队标签中心 x
-    LABEL_W    = 100, LABEL_H = 408,        -- 队标签底板（行距 418，板间 10px 缝；子格栈高 398 收进板内）
+    LABEL_W    = 100, LABEL_H = 404,        -- 队标签底板（行距 410，板间 6px 缝；子格栈高 398 收进板内）
     LABEL_FONT = 26,
     LOCK_FONT  = 20,
     CX_LIST    = { 252, 476, 700, 924 },    -- 4 个号位列中心 x（间距 224）
@@ -60,17 +60,17 @@ local TEAM_ROW = {
 }
 
 -- 下半部分背景 UI_TJP_1（九宫格，与背包/遗物背包一致）
--- [行式布局 130px 大格] 面板顶 1569（行3底 1559 之下 10px），底部溢出屏幕被裁剪
+-- [行式布局 130px] 面板顶 1540（行3底 1530 之下 10px），底部溢出屏幕被裁剪
 local LOWER_PANEL = {
-    CX = 540, CY = 2280, W = 1080, H = 1422,
+    CX = 540, CY = 2251, W = 1080, H = 1422,
     IT = 200, IR = 10, IB = 200, IL = 10,
 }
 
 -- 标题装饰 + 文字
 local TITLE = {
-    -- [行式布局] 背包标题随三队行区加高整体下移（面板顶 1569 + 140）
-    DECO_CX = 540, DECO_CY = 1709, DECO_W = 660, DECO_H = 60,
-    TEXT_X = 540, TEXT_Y = 1709,
+    -- [行式布局] 背包标题贴近面板顶（1540 + 75），把纵向空间让给网格
+    DECO_CX = 540, DECO_CY = 1615, DECO_W = 660, DECO_H = 60,
+    TEXT_X = 540, TEXT_Y = 1615,
     FONT = 40,
     R = 0x45, G = 0x45, B = 0x45,
     TEXT = "神器背包",
@@ -97,10 +97,10 @@ local GRID = {
     GAP = 30,
     COLS = 5,
     MARGIN_LEFT = 80,  -- (1080 - 5*160 - 4*30) / 2
-    -- [行式布局] 网格顶随面板下压至 1765；可视高 279 ≈ 1.6 行（可滚动）
-    CLIP_TOP = 1765,
-    CLIP_BOTTOM = 2044,
-    FIRST_ROW_TOP = 1765,
+    -- [行式布局] 网格可视高 279→445（≈2.3 行，可滚动）：顶 1665 贴标题、底 2110 近按钮
+    CLIP_TOP = 1665,
+    CLIP_BOTTOM = 2110,
+    FIRST_ROW_TOP = 1665,
 }
 
 GRID.CLIP_H = GRID.CLIP_BOTTOM - GRID.CLIP_TOP
@@ -487,7 +487,7 @@ function M.init(vg)
             state.selectedTeam = nil
             state.selectedSlot = nil
             state.selectedSubSlot = nil
-            showFloat("请选择槽位安装神器（任一队伍行）", 540, 1540)
+            showFloat("请选择槽位安装神器（任一队伍行）", 540, 1620)
         end
         ArtifactDetailPanel.hide()
     end)

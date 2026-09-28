@@ -512,9 +512,12 @@ function BattleDraw.drawFloatingTexts(vg)
         local scale = 1.0 - 0.75 * t
         local fontSize = math.max(1, math.floor(ft.fontSize * scale))
 
+        -- [首伤延迟修复] 淡入从 10 帧(0.33s)缩到 3 帧(0.1s)：
+        -- 原 frame=0 时 alpha=0 完全不可见，需 0.33s 才清晰，而受击闪烁是即时的，
+        -- 造成"第一个伤害数字比受击反馈慢半拍"的观感。3 帧淡入几乎立即清晰，仍保留柔和。
         local alpha
-        if frame <= 10 then
-            alpha = math.floor(255 * (frame / 10))
+        if frame <= 3 then
+            alpha = math.floor(255 * (frame / 3))
         elseif frame <= 15 then
             alpha = 255
         else

@@ -295,7 +295,7 @@ function CharacterDetail._getQualityBg(quality)
 end
 
 --- 注入来自 CharacterPanel 的共享资源
----@param ctx table { imgHeroCards, imgClassIcons, imgPower, imgLvlBadge, imgExpBarBg, imgExpBarFill, getOwnedData, calcHeroPower, getHeroRoster }
+---@param ctx table { imgHeroCards, imgClassIcons, imgPower, imgLvlBadge, imgExpBarBg, imgExpBarFill, getOwnedData, calcHeroPower, calcHeroEstimate, getHeroRoster }
 function CharacterDetail.setContext(ctx)
     -- 保存 roster 获取函数（用于左右切换角色）
     CharacterDetail._getHeroRoster = ctx.getHeroRoster
@@ -304,6 +304,7 @@ function CharacterDetail.setContext(ctx)
         detailState       = detailState,
         getOwnedData      = ctx.getOwnedData,
         calcHeroPower     = ctx.calcHeroPower,
+        calcHeroEstimate  = ctx.calcHeroEstimate,
         CharacterDetail   = CharacterDetail,
         collectAttributes = collectAttributes,
         clampAttrScroll   = clampAttrScroll,
@@ -446,6 +447,13 @@ end
 --- 标记战斗力/装备缓存为脏（外部数据变化时由 CharacterPanel.refreshPowerCache 调用）
 function CharacterDetail.markPowerDirty()
     Draw.markPowerDirty()
+end
+
+--- 开/关卡面「实战预估」副行（分项计价原型，默认关闭）。
+--- 真人视觉验收卡面布局后再开启；见 systems/CombatPowerEstimate.lua 口径说明。
+---@param visible boolean
+function CharacterDetail.setEstimateVisible(visible)
+    Draw.setEstimateVisible(visible)
 end
 
 --- 判断点击是否在矩形区域内（中心坐标+尺寸）

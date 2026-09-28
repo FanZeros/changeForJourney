@@ -11,8 +11,15 @@
 - [scope:project] 分支推送以用户当前轮次授权为准。2026-09-27 已授权新建并推送 `workspace926`，合入 `workspace925` 与全部 `feat926/`。历史「只推某个 feat926、不推基线」不再覆盖本轮。远端并发提交先 fetch 核对，不强推。不在凭据 URL/Git 配置/记忆中保存 PAT。
 - [scope:project] 神器并行战线 `ArtifactRuntime.initBattle` 不能重置全局状态；`reset/update` 必须使用当前 allies。战斗效果为每次战斗独立状态，不能污染 `unit.artifactEffects`。亡魂计时在三行模式须逐队推进。
 - [scope:project] 2026-09-27 当轮授权是新建并推送 `workspace926`（已含 `feat926/artifact-audit`）。不推 `workspace` / `workspace925`，不强推。不在凭据 URL/Git 配置/记忆中保存 PAT。
+- [scope:project] 玩家可见数值/UI 改动必须非破坏性推进：v2.59 战力预估接线保持官方 `calcHeroPower` 数字零变化，新增预估副行用 `SHOW_ESTIMATE` 开关默认关闭，等真人视觉验收（本环境无法截图玩家 UI）再开。改 `CharacterPower` 时抽出共享 `buildHeroAttrs` 让战力与预估走同一管线，防止装备/遗物/神器应用逻辑漂移；改完必须跑 `tests/character_power_estimate_test.lua`（真实模块+mock 存档验证官方战力不回归）+ 主入口 validate（lua_errors=0，字体/图片缺失是 sparse checkout 无 assets 的环境噪音，不是代码错误）。
+
+- [scope:project] 用战斗模拟数据回归属性→强度系数时，**因变量必须用 DPS（输出/秒）而不是败局总输出**：败局总输出=存活时间×DPS，生存属性（HP/护甲）通过拉长存活时间混杂进总输出，直接回归会让生存组吞掉攻击组信号（实测 physical R²≈0.03、攻击组负系数），DPS 口径才能拿到可解释系数（R²=0.43/0.52）。全胜样本伤害被怪物总血量截断，同样必须剔除（winRate=100 不进回归）。
+- [scope:project] 战力系数回归**必须分难度带分桶，不能跨带混池**：L8/L16/L24 三带 DPS 量级差数倍，混池 ALL 桶 R² 为负、全部组系数被吞。分带后 magical 类三带 R²=0.63/0.68/0.96 全可信（off[phys] 0.33/0/0.028，均值≈0.12 支持 OFF_FACTOR=0.10 跨带稳定）；physical 类各带 R² 均低（战士 DPS 被衔骨狂天赋触发主导、武器扫描方差不足），不能靠回归标定，方向性只能由同种子 A/B 实测对照保证。速死带（<5s 阵亡）样本 DPS 噪声大，只作对照不作依据。
+- [scope:project] 治疗量拟合同样要先查**需求截断饱和**：治疗=min(供给,需求)，heal/taken 比值高（≥0.65）时 HPS 不再随治疗属性变化（实测 W68@17→32 HPS 仅 24.0→23.6、几乎不动即饱和铁证），这类样本必须按 healTakenRatio 剔除。单人牧师无输出不能击杀：稳定关全超时、难关全阵亡，不存在「阵亡且非饱和」带，只有超时带（时间固定、需求未满足）可拟合，样本量因此受限（n=8、R²=0.32），结论只能作方向性验证。
+- [scope:project] 战斗单位的攻击类型读 `unit.attrs.atkType`，不要读 `unit.atkType`：`HC.createHero` 构建的 unit 本体没有 atkType 字段（只有 dmgMainType/dmgSubType 中文名），`unit.atkType` 仅 ClassGateRuntime 战中转职时动态设置；`attrs.atkType` 由 UnitAttributes.create 从英雄配置写入，恒有值（nil 时 CombatFormula 回落 ATK_SLASH）。
 - [scope:gamedev] `File:WriteString(cjson.encode(data))` 会给 JSON 追加 NUL，Python json.load 读不出；与外部工具交换单行 JSON 用 `File:WriteLine`/`File:ReadLine`，并实际在 OS 层解析验证。
-- [scope:project] 战力校准样本必须先核对 `EquipmentConfig.ITEMS[templateId].levelRange`：C10/C4 模板最早 Lv.28，放在 Lv.1 虽能模拟却不属于正常掉落；跨种子 A/B 需模板等级合法、同装备品质、同一英雄/关卡，并避免在胜率全 0/全 100 时只靠胜率定权重。`BattleLab.prepare` 已加范围拒绝。
+- [scope:project] 战力校准样本必须先核对 `EquipmentConfig.ITEMS[templateId].levelRange`：C10/C4 模板最早 Lv.28，放在 Lv.1 虽能模拟却不属于正常掉落；跨种子 A/B 需模板等级合法、同装备品质、同一英雄/关卡，并避免在胜率全 0/全 100 时只靠胜率定权重。`BattleLab.prepare` 已加范围拒绝，回归见 `tests/battle_lab_boundary_test.lua`（改 prepare 校验必须同步过这个测试）。
+- [scope:project] 战力校准取样要先探难度悬崖再定关卡：Lv7 大狗嚼在 302 双侧全胜、303 双侧全败，饱和区内 A/B 胜率差恒为 0，白跑 40 局；非饱和样本出在 tier2 下边界 Lv8/303（3/40 vs 0/40）。取样顺序 = 先用 20 局探 2~3 个关卡找到「有一侧不全胜不全败」的组合，再扩到 40 局 + 第二个种子窗口复验；全饱和时改看场均输出/承伤/耗时并如实标注不可外推。
 - [scope:project] 战斗实验不要直接嵌入主游戏进程：MapAffixSystem/StageBerserk/遗物神器等共享模块级状态。新 Runtime 进程配模板英雄跑三行驱动；未经用户授权不要修改玩家编队/存档或发奖。
 - [scope:project] 装备详情小窗展开方向必须由 owner 区分：character（右栏）从鼠标左侧展开、对比继续向左；bag/backpack（左栏）从鼠标右侧展开、对比继续向右。别让边界夹取把小窗挤到鼠标另一侧；悬停锚点用鼠标坐标，钉住后不要用格子中心重设。
 - [scope:project] 套装详情必须按最后一条随机词条的底部计算起点，并同步面板高度、按钮和热区；中文描述要换行并保证字号可读。
@@ -69,3 +76,7 @@
 - [scope:project] 三行 HUD 行标签底条已在 workspace 暗黑化中去掉，不要为了加宽标签把黑条加回去
 
 - [scope:project] 2026-09-24：从 workspace924 新开 `workspace924-yixia-art`。只 push 这个功能分支，禁止推 workspace924 或其他分支。每步结束必须 AskUserQuestion，不能取消任务。
+- [scope:project] 用拟合曲线生成配置表时必须设**外推上限**并处理"数据不支持"态：关卡推荐战力第一版把指数曲线（R²=0.9715，实测 ml 1..23）直接外推到全关卡表 ml=345，产出 p≈2e16 的数学垃圾条目。正确做法：①实测范围内直接用实测阈值不用曲线值（曲线在低端系统性低估：ml1 拟合 280 < 实测 318）；②外推只允许到采样上限×2（extrapCap=46）并标 x=true；③超上限不生成条目、查询 API 返回 nil，让接入方显式处理"数据不支持"。生成表必须配 sanity 测试锁住这三条（`tests/stage_recommend_test.lua` 15 断言）。
+- [scope:project] 阈值二分搜索要先验证单调性与悬崖陡峭度：正式采样前用单关（1501）探测等级→胜率曲线，确认单调且过渡带窄（L32=0% → L36=92%）才适合"爬升+二分"；阈值记录取保守侧（hi，winRate≥50% 一侧），并同时记 lo 侧供区间宽度审计。章节首关阈值随 ml 非严格单调（ml13/17/21 因怪物构成回落）是真实数据，不要强行平滑。
+- [scope:project] 在既有 UI 行内加新文本前必须先算可用宽度并按最长内容定字号：选关弹窗左栏可用宽只有 ~124px（CARD_X−MID_X−边距），「推荐≈18110」（外推上限值）22 号字会溢出撞上敌人卡面，降到 20 号 ~115px 才安全。最长文本要按数据域的**上限值**估算（SRP extrapCap 边界），不是按常见值。
+- [scope:project] 终焉之门五语翻译分两条路，**含动态数字/变量的串必须走 `I18n.t(key, args)` 键值表**（`core/I18n.lua` 的 `T` 表 + `{0}` 占位符，如 `expedition_lv`/`rec_power`），**不能依赖 `installDrawHook` 的 nvgText 原文查表**——hook 按中文原文查 `I18nDict`，数字一变（「推荐 318」vs「推荐 480」）就查不到，五语下会漏翻成中文。纯静态中文串才走 draw-hook 自动查 `I18nDict`。译后串（如 "Rec. 18110"）再经 hook 查中文原文查不到会原样返回，无二次翻译风险。加动态文案时：在 `T` 五语块各加一个带 `{0}` 的 key，代码用 `I18n.t("key", n)`。

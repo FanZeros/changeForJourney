@@ -27,6 +27,7 @@ function M.bind(deps)
     local getItemIcon = deps.getItemIcon
     local getImgCheckmark = deps.getImgCheckmark
     local getImgLock = deps.getImgLock
+    local qualityChecked = deps.qualityChecked or function() return true end
     local getImgHeroIcons = deps.getImgHeroIcons
     local calcScrollMax = deps.calcScrollMax
     local clampScroll = deps.clampScroll
@@ -49,12 +50,14 @@ function M.bind(deps)
         local list = {}
         for seqStr, equip in pairs(equipData.inventory) do
             local tpl = EquipmentConfig.ITEMS[equip.templateId]
-            if tpl then
+            local quality = (equip and (equip.quality or (tpl and tpl.quality))) or 1
+            -- 常驻勾选筛选：勾选集合非空时只列出勾选档位的装备（全不勾=全部）
+            if tpl and qualityChecked(quality) then
                 list[#list + 1] = {
                     seq = tonumber(seqStr) or 0,
                     templateId = equip.templateId,
                     level = equip.level or 1,
-                    quality = equip.quality or tpl.quality or 1,
+                    quality = quality,
                     name = tpl.name or "",
                     type = equip.type or tpl.type or "",
                     enhanceLevel = equip.enhanceLevel or 0,

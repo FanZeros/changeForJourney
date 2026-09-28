@@ -80,7 +80,7 @@ function M.bind(deps)
                 .. " reward=" .. tostring(data.rewardName) .. "x" .. tostring(data.rewardCount)
                 .. " purchased=" .. tostring(data.purchased))
 
-            -- 特殊奖励展示：随机卷轴展示实际卷轴；随机遗物展示遗物；加速卡展示生效提示
+            -- 特殊奖励展示：随机卷轴展示实际卷轴；加速卡展示生效提示
             local detail = data.rewardDetail
             if detail then
                 local shownSpecial = false
@@ -110,15 +110,6 @@ function M.bind(deps)
                         RewardPopup.show("购买成功", {
                             { type = rewardKey, amount = detail.amount or 1 },
                         })
-                        shownSpecial = true
-                    end
-                elseif detail.relics then
-                    local rewards = {}
-                    for _, relic in ipairs(detail.relics) do
-                        rewards[#rewards + 1] = { type = "relic", relicType = relic.type or 1, quality = relic.quality or 2 }
-                    end
-                    if #rewards > 0 then
-                        RewardPopup.show("购买成功", rewards)
                         shownSpecial = true
                     end
                 elseif detail.speedCardExpireAt then

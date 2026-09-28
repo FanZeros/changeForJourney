@@ -572,7 +572,7 @@ function DungeonScene.open(opts)
         TAL.initUnit(u)
     end
 
-    -- 初始化遗物条件词条
+    -- 初始化条件词条运行时（免疫/增伤，由天赋等系统消费）
     local allUnitsForRCH = {}
     for _, u in ipairs(state.allies) do allUnitsForRCH[#allUnitsForRCH + 1] = u end
     for _, u in ipairs(state.enemies) do allUnitsForRCH[#allUnitsForRCH + 1] = u end
@@ -691,7 +691,6 @@ function DungeonScene.onActionResult(data)
         print("[DungeonBattleScene] 收到副本结算数据: dungeonId=" .. tostring(data.dungeonId)
             .. " gold=" .. tostring(data.gold)
             .. " dust=" .. tostring(data.dust)
-            .. " relics=" .. tostring(data.relics and #data.relics or 0)
             .. " firstClear=" .. tostring(data.firstClear))
     end
 end
@@ -887,24 +886,6 @@ function DungeonScene.update(dt)
                     if srvResult.dust and srvResult.dust > 0 then
                         rewards[#rewards + 1] = { type = "arcane_dust", amount = srvResult.dust }
                     end
-                    if srvResult.relics and #srvResult.relics > 0 then
-                        -- 逐个展示已随机出结果的遗物（带具体类型图标和品质）
-                        local RELIC_ICONS = {
-                            [1] = "image/遗物图标/ICON_YWX_GUI.png",   -- 岩龟
-                            [2] = "image/遗物图标/ICON_YWX_SHE.png",   -- 毒蛇
-                            [3] = "image/遗物图标/ICON_YWX_LU.png",    -- 白鹿
-                            [4] = "image/遗物图标/ICON_YWX_LANG.png",  -- 灰狼
-                            [5] = "image/遗物图标/ICON_YWX_YING.png",  -- 猎鹰
-                        }
-                        for _, r in ipairs(srvResult.relics) do
-                            rewards[#rewards + 1] = {
-                                type     = "relic",
-                                amount   = 1,
-                                quality  = r.quality or 4,
-                                iconPath = RELIC_ICONS[r.type] or "image/货币道具/ICON_SJYW.png",
-                            }
-                        end
-                    end
                     -- firstClear 仅是标记，不作为独立奖励项显示
                     -- （首通奖励已计入对应货币数量中）
                 end
@@ -962,7 +943,7 @@ function DungeonScene.update(dt)
         end
     end
 
-    -- 遗物条件
+    -- 条件词条运行时（RCH）
     local okRchAlly, rchAllyErr = pcall(RCH.update, state.allies, 0)
     if not okRchAlly then
         print("[DungeonBattleScene] RelicConditionHandler.update allies failed: " .. tostring(rchAllyErr))

@@ -26,7 +26,6 @@ handlers[Protocol.ACTION_TYPES.DUNGEON_SWEEP] = function(uid, params)
         sweepFloor = result.sweepFloor,
         gold       = result.gold,       -- gold_mine
         dust       = result.dust,       -- ancient_ruin
-        relics     = result.relics,     -- ancient_ruin
         dailyUsed  = result.dailyUsed,
         dailyMax   = result.dailyMax,
     }
@@ -53,8 +52,6 @@ handlers[Protocol.ACTION_TYPES.DUNGEON_CHALLENGE] = function(uid, params)
         monsters         = result.monsters,
         firstGold        = result.firstGold,        -- gold_mine
         firstDust        = result.firstDust,        -- ancient_ruin
-        firstRelicCount  = result.firstRelicCount,  -- ancient_ruin
-        qualityWeights   = result.qualityWeights,   -- ancient_ruin
         classBonus       = result.classBonus,
         classBonusValue  = result.classBonusValue,
         rageTime         = result.rageTime,
@@ -84,7 +81,6 @@ handlers[Protocol.ACTION_TYPES.DUNGEON_WIN] = function(uid, params)
         firstClear = result.firstClear,
         gold       = result.gold,       -- gold_mine
         dust       = result.dust,       -- ancient_ruin
-        relics     = result.relics,     -- ancient_ruin
         nextFloor  = result.nextFloor,
     }
 end

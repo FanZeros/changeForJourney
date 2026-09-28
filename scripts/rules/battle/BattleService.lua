@@ -16,9 +16,6 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 local CurrencyService  = require("rules.currency.CurrencyService")
 local MonsterConfig    = require("config.MonsterConfig")
 local HeroService      = require("rules.hero.HeroService")
-local RelicAffix       = require("systems.RelicAffix")
-local RelicDefs        = require("shared.relic.RelicDefs")
-local RelicService     = require("rules.relic.RelicService")
 local IdleSettleService = require("rules.offline.IdleSettleService")
 
 local BattleService = {}
@@ -960,10 +957,10 @@ local SCENARIO_REWARDS = {
     [39] = { type = "none" },   -- 首次全体阵亡·黄桃龙
     [40] = { type = "none" },   -- 首次全体阵亡·叮咚鸡
 
-    -- 亡誓公会解锁情景（首通 305）：奖励随机品质1遗物
-    [55] = { type = "relic", quality = 1, requiredHeroId = 1, requiredStageId = 1305 },
-    [56] = { type = "relic", quality = 1, requiredHeroId = 2, requiredStageId = 1305 },
-    [57] = { type = "relic", quality = 1, requiredHeroId = 3, requiredStageId = 1305 },
+    -- 亡誓公会解锁情景（首通 305）：纯对话（原遗物奖励已随遗物系统移除）
+    [55] = { type = "none", requiredHeroId = 1, requiredStageId = 1305 },
+    [56] = { type = "none", requiredHeroId = 2, requiredStageId = 1305 },
+    [57] = { type = "none", requiredHeroId = 3, requiredStageId = 1305 },
 
     -- 副本引导情景（首通 305）：纯对话，无奖励
     [58] = { type = "none", requiredHeroId = 1, requiredStageId = 305 },
@@ -1059,8 +1056,6 @@ function BattleService.ClaimScenarioReward(uid, scenarioId)
 
     if rewardDef.type == "hero" then
         return BattleService._claimHeroReward(uid, sessionData, scenarioKey, rewardDef)
-    elseif rewardDef.type == "relic" then
-        return BattleService._claimRelicReward(uid, sessionData, scenarioKey, rewardDef)
     else
         return BattleService._claimEquipReward(uid, sessionData, scenarioKey, rewardDef)
     end
@@ -1132,63 +1127,6 @@ function BattleService._claimHeroReward(uid, sessionData, scenarioKey, rewardDef
             name     = heroCfg and heroCfg.name or "未知",
             quality  = heroQuality,
             isNew    = isNew,
-        },
-    }
-end
-
---- 内部：领取遗物奖励（随机类型 + 指定品质）
-function BattleService._claimRelicReward(uid, sessionData, scenarioKey, rewardDef)
-    local relicData = PDM.GetModule(uid, "mod_relics")
-    if not relicData then
-        return false, "数据未加载"
-    end
-
-    -- 背包容量检查
-    if #relicData.bag >= RelicService.MAX_BAG then
-        return false, "遗物背包已满"
-    end
-
-    -- 随机遗物类型 1~5
-    local relicType = math.random(1, 5)
-    local quality = rewardDef.quality or 1
-
-    -- 随机词缀
-    local affixId = RelicAffix.rollAffix(relicType, quality, 1)
-    if not affixId then
-        return false, "词缀池为空 type=" .. relicType .. " q=" .. quality
-    end
-
-    -- 生成遗物对象
-    local id = relicData.nextId
-    relicData.nextId = id + 1
-
-    local relic = {
-        id      = tostring(id),
-        type    = relicType,
-        quality = quality,
-        affixId = affixId,
-    }
-
-    -- 加入背包
-    relicData.bag[#relicData.bag + 1] = relic
-
-    sessionData.claimedScenarios[scenarioKey] = true
-
-    PDM.MarkDirty(uid, "mod_relics")
-    PDM.MarkDirty(uid, "session")
-
-    local typeDef = RelicDefs.TYPES[relicType]
-    print("[BattleService] scenario relic uid=" .. tostring(uid)
-        .. " id=" .. relic.id
-        .. " type=" .. (typeDef and typeDef.name or tostring(relicType))
-        .. " q=" .. quality
-        .. " affix=" .. affixId)
-
-    return true, nil, {
-        rewardType = "relic",
-        reward = {
-            relicType = relicType,
-            quality   = quality,
         },
     }
 end

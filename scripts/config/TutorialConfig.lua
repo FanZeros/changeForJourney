@@ -30,8 +30,6 @@
 --   "character_new_hero"     — 角色面板新角色位置
 --   "smith_btn_enhance"      — 铁匠铺强化按钮
 --   "building_guild"         — 城镇亡誓公会建筑
---   "relic_tab"              — 公会页面遗物标签按钮
---   "relic_bag_btn"          — 遗物面板背包按钮
 -- ============================================================================
 
 local TutorialConfig = {}
@@ -220,16 +218,6 @@ TutorialConfig[14] = {
             text      = "进入亡誓公会",
             highlight = "building_guild",
             advanceOn = "enter_panel_guild",
-        },
-        {
-            text      = "点击遗物标签",
-            highlight = "relic_tab",
-            advanceOn = "enter_relic_panel",
-        },
-        {
-            text      = "打开遗物背包",
-            highlight = "relic_bag_btn",
-            advanceOn = "click_highlight",
         },
     },
 }

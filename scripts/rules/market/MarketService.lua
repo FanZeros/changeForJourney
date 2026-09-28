@@ -7,7 +7,6 @@
 
 local PDM             = require("rules.character.PlayerDataManager")
 local CurrencyService = require("rules.currency.CurrencyService")
-local RelicService    = require("rules.relic.RelicService")
 local StellarQuota    = require("shared.market.StellarDiamondQuota")
 
 local MarketService = {}
@@ -283,28 +282,6 @@ function MarketService.Buy(uid, itemId, quantity)
         rewardDetail = { speedCardExpireAt = currency_mod.speedCardExpireAt }
         print("[MarketService] speed_card activated uid=" .. tostring(uid)
             .. " expireAt=" .. tostring(currency_mod.speedCardExpireAt))
-    elseif item.rewardType == "random_quality_relic" then
-        local relicData = PDM.GetModule(uid, "mod_relics")
-        if not relicData then
-            CurrencyService.Add(uid, currField, actualCost)
-            return false, "遗物数据未加载"
-        end
-        if #relicData.bag + totalRewardCount > RelicService.MAX_BAG then
-            CurrencyService.Add(uid, currField, actualCost)
-            return false, "遗物背包已满"
-        end
-        local relics = {}
-        for _ = 1, totalRewardCount do
-            local okRelic, errRelic, resultRelic = RelicService.GmGiveRelic(uid, math.random(1, 5), 2)
-            if not okRelic then
-                CurrencyService.Add(uid, currField, actualCost)
-                return false, errRelic or "遗物生成失败"
-            end
-            if resultRelic and resultRelic.relic then
-                relics[#relics + 1] = resultRelic.relic
-            end
-        end
-        rewardDetail = { relics = relics }
     else
         local granted = CurrencyService.GrantReward(uid, { type = item.rewardType, amount = totalRewardCount })
         if not granted then

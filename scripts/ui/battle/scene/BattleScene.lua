@@ -1115,7 +1115,7 @@ local function resetBattle()
     TM.reset()   -- 清空仇恨表
     SEM.reset()  -- 清空状态效果
     TAL.reset()  -- 清空天赋运行时状态
-    RCH.reset()  -- 清空遗物条件状态
+    RCH.reset()  -- 清空条件词条运行时状态
     ART.reset(allies)  -- 只清理当前战斗单位的神器条件状态
     -- 重置所有己方单位（清除Buff → 重新应用装备 → 填满血）& 初始化天赋
     for _, u in ipairs(allies) do
@@ -1123,7 +1123,7 @@ local function resetBattle()
         resetAllyUnit(u)
         TAL.initUnit(u)
     end
-    RCH.initBattle(allies)  -- 重新初始化遗物条件词条
+    RCH.initBattle(allies)  -- 重新初始化条件词条运行时
     ART.initBattle(allies)  -- 重新初始化神器条件效果
     for _, u in ipairs(enemies) do
         Diag.installSentinel(u)
@@ -1487,12 +1487,6 @@ function BattleScene.refreshAllyStats()
                         if eqArmorType then
                             newUnit.armorType = eqArmorType
                         end
-                    end
-                    -- 应用遗物词条属性加成（与 getDeployedTeam 一致）
-                    local RelicBridge = require("systems.RelicBridge")
-                    local relicConds = RelicBridge.applyToUnit(newUnit.attrs, newUnit.classId or u.classId)
-                    if relicConds and #relicConds > 0 then
-                        u.relicConditions = relicConds
                     end
                     local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
                     if artifactEffects and #artifactEffects > 0 then

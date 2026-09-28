@@ -17,7 +17,6 @@ local EquipmentConfig  = require("config.EquipmentConfig")
 local TalentEffect     = require("systems.TalentEffect")
 local AwakeningConfig  = require("config.AwakeningConfig")
 local BottomNav        = require("ui.hud.BottomNav")
-local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
 local Draw             = require("ui.character.panel.CharacterPanelDraw2")
 local HeroResonance    = require("shared.heroes.HeroResonance")
@@ -212,7 +211,6 @@ local function bindPower()
         PlayerStore = PlayerStore,
         EquipmentSystem = EquipmentSystem,
         EquipmentConfig = EquipmentConfig,
-        RelicBridge = RelicBridge,
         ArtifactBridge = ArtifactBridge,
         AwakeningConfig = AwakeningConfig,
         TalentEffect = TalentEffect,
@@ -512,11 +510,6 @@ function CharacterPanel.init(vg)
 
     -- 监听天赋数据变更 → 立即刷新战斗力缓存（不能只标记脏，因为用户可能在教堂页面，CharacterPanel 不 draw）
     ClientDispatcher.subscribe("talents", function()
-        refreshPowerCache()
-    end)
-
-    -- 监听遗物数据变更 → 镶嵌/卸下/洗练后自动刷新战斗力缓存
-    PlayerStore.Subscribe("mod_relics", function()
         refreshPowerCache()
     end)
 
@@ -930,11 +923,6 @@ function CharacterPanel.getDeployedTeam(teamIdx)
                     local eqArmorType = applyEquippedItems(unit.attrs, slot.heroId, i)
                     if eqArmorType then
                         unit.armorType = eqArmorType
-                    end
-                    -- 应用遗物词条属性加成（A类无条件 + 返回B/C类条件词条供战斗运行时使用）
-                    local relicConds = RelicBridge.applyToUnit(unit.attrs, unit.classId)
-                    if relicConds and #relicConds > 0 then
-                        unit.relicConditions = relicConds
                     end
                     -- 应用神器属性加成与战斗运行时效果
                     local artifactEffects = ArtifactBridge.applyToUnit(unit.attrs, i)

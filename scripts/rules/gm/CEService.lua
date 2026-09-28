@@ -347,18 +347,6 @@ function CEService.lightAllTalents()
     return toast("已点亮全部天赋")
 end
 
-function CEService.giveRelicSet()
-    ensureReady()
-    local RelicService = require("rules.relic.RelicService")
-    local given = 0
-    for relicType = 1, 5 do
-        local ok = RelicService.GmGiveRelic(UID, relicType, 4)
-        if ok then given = given + 1 end
-    end
-    notifyOpenPages("mod_relics")
-    return toast("发放遗物 5 类品质4（成功 " .. given .. "）")
-end
-
 function CEService.testPack()
     CEService.giveAllResources()
     CEService.unlockAllHeroes()

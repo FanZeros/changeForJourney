@@ -12,7 +12,6 @@ function M.bind(deps)
     local EquipmentSystem = deps.EquipmentSystem
     local EquipmentConfig = deps.EquipmentConfig
     local EquipmentSetSystem = require("systems.EquipmentSetSystem")
-    local RelicBridge = deps.RelicBridge
     local ArtifactBridge = deps.ArtifactBridge
     local AwakeningConfig = deps.AwakeningConfig
     local TalentEffect = deps.TalentEffect
@@ -99,7 +98,6 @@ function M.bind(deps)
         local a = hero.attrs
 
         applyEquippedItems(a, heroId, partySlot)
-        RelicBridge.applyToUnit(a, hero.classId)
         if partySlot then
             ArtifactBridge.applyToUnit(a, partySlot)
         end

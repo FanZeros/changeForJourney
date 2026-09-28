@@ -45,7 +45,7 @@ function M.tick(ctx, logicDt)
     end
     end
 
-    -- ---- 遗物条件词条每帧检查（HP阈值、限时buff到期等） ----
+    -- ---- 条件词条运行时每帧检查（HP阈值、限时buff到期等） ----
     RCH.update(ctx.allies, 0)
 
     -- ---- 更新血条缓冲（白色拖尾） ----

@@ -916,7 +916,7 @@ local function performAttack(attacker, targetList, isAlly)
 
     TAL.onBeforeAttack(attacker)
 
-    -- 遗物条件词条：攻击前回调（初次攻击加成等）�?PVP 双向触发
+    -- 条件词条：攻击前回调（初次攻击加成等）�?PVP 双向触发
     local rchDmgMult = RCH.onBeforeAttack(attacker)
 
     playAttackCardAnim(attacker, isAlly)
@@ -1020,7 +1020,7 @@ local function performAttack(attacker, targetList, isAlly)
                 if result.isMiss then
                     addFloatingText("MISS", tgtCX, tgtCY, { 255, 122, 122 }, false)
                     setRecoil(curTarget, isAlly and -1 or 1)
-                    -- 遗物条件词条：触发闪避时仇恨值减少（被攻击方闪避）�?PVP 双向触发
+                    -- 条件词条：触发闪避时仇恨值减少（被攻击方闪避）�?PVP 双向触发
                     if curTarget then
                         RCH.onDodge(curTarget)
                         ART.onDodge(curTarget)
@@ -1137,7 +1137,7 @@ local function performAttack(attacker, targetList, isAlly)
                             TM.onHealingDone(attacker, actual)
                             BattleStats.recordHeal(attacker, actual, false)  -- 战斗统计：己方治疗输出
                         end
-                        -- 治疗触发的伤害天赋（惩戒飞弹等）可复用遗物初次攻击增伤
+                        -- 治疗触发的伤害天赋（惩戒飞弹等）可复用初次攻击增伤词条
                         result._talentDmgMult = 1.0
                         if rchDmgMult and rchDmgMult > 1.0 then
                             result._talentDmgMult = result._talentDmgMult * rchDmgMult
@@ -1215,7 +1215,7 @@ local function performAttack(attacker, targetList, isAlly)
                         end
                         local finalDmg = (semMult ~= 1.0) and math.floor(hit.damage * semMult) or hit.damage
 
-                        -- 遗物条件词条：攻击增伤（初次攻击 + 对低血量目标增伤）�?PVP 双向触发
+                        -- 条件词条：攻击增伤（初次攻击 + 对低血量目标增伤）�?PVP 双向触发
                         if rchDmgMult > 1.0 then
                             finalDmg = math.floor(finalDmg * rchDmgMult)
                         end
@@ -1241,7 +1241,7 @@ local function performAttack(attacker, targetList, isAlly)
                             finalDmg = math.floor(finalDmg * towerTakenMult)
                         end
 
-                        -- 遗物条件词条：受击免疫（战斗开始免疫N次伤害）�?PVP 双向触发
+                        -- 条件词条：受击免疫（战斗开始免疫N次伤害）�?PVP 双向触发
                         finalDmg = RCH.onBeforeTakeDamage(curTgt, finalDmg)
                         if finalDmg <= 0 then
                             addFloatingText("免疫", curTgtCX, curTgtCY, {200, 200, 255}, false)
@@ -1341,9 +1341,9 @@ local function performAttack(attacker, targetList, isAlly)
                             TM.onDamageDealt(attacker, result.totalDamage, includeBaseThreat)
                             if includeBaseThreat then baseThreatCounted = true end
                         end
-                        -- 遗物条件词条：攻击后仇恨加成（每次攻击获得仇恨�?X%）�?PVP 双向触发
+                        -- 条件词条：攻击后仇恨加成（每次攻击获得仇恨�?X%）�?PVP 双向触发
                         RCH.onAfterAttack(attacker, result.totalDamage)
-                        -- 遗物条件词条：终结机制（攻击低血量敌人有概率秒杀）�?PVP 双向触发
+                        -- 条件词条：终结机制（攻击低血量敌人有概率秒杀）�?PVP 双向触发
                         if curTgt.hp > 0 then
                             local executed = RCH.onAfterHit(attacker, curTgt)
                             if not executed then

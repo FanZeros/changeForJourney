@@ -2,7 +2,7 @@
  -- ============================================================================
  -- ClientMessageHandler.lua — 消息路由与数据桥接（从 Client.lua 拆分）
  -- 职责: 处理服务端推送的操作结果、状态更新、踢出、离线收益
- -- 拥有的状态: batchMerge_, pendingTutorialNotify_, pendingScenarioDialogue_, 等
+ -- 拥有的状态: pendingTutorialNotify_, pendingScenarioDialogue_, 等
  -- ============================================================================
 
 local Protocol         = require("shared.Protocol")
@@ -12,7 +12,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  local ExpTable         = require("config.ExpTable")
  local HeroConfig       = require("config.HeroConfig")
  local PlayerStore      = require("core.PlayerStore")
- local EventBus         = require("core.EventBus")
  local GameEvents       = require("config.GameEvents")
  local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig")
 
@@ -39,14 +38,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  --= 模块内部状态 ========================
 
  local sendAction_
-
- local batchMerge_ = {
-     active    = false,
-     expected  = 0,
-     results   = {},
-     timeout   = 0,
- }
- local BATCH_MERGE_TIMEOUT = 5.0
 
  --= 数据桥接状态 ========================
 
@@ -82,18 +73,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      RedeemCodePanel     = require("ui.hud.popup.RedeemCodePanel")
      LootBoxSystem       = require("systems.LootBoxSystem")
      TutorialManager         = require("systems.TutorialManager")
-
-     -- 批量合并监听
-     EventBus.on("RELIC_BATCH_MERGE_START", function(data)
-         local count = data and data.count or 0
-         if count > 0 then
-             batchMerge_.active   = true
-             batchMerge_.expected = count
-             batchMerge_.results  = {}
-             batchMerge_.timeout  = 0
-             print("[ClientMsgHandler] batchMerge started, expecting " .. count .. " results")
-         end
-     end)
  end
 
  --= 状态访问器（供 HandleUpdate_Client 消费）========================
@@ -123,26 +102,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      return v
  end
 
- --- 更新 batchMerge_ 超时计时器，返回是否超时
- ---@param dt number
- ---@return boolean
- function M.updateBatchMergeTimeout(dt)
-     if batchMerge_.active then
-         batchMerge_.timeout = batchMerge_.timeout + dt
-         if batchMerge_.timeout >= BATCH_MERGE_TIMEOUT then
-             -- 超时：强制弹出已有结果
-             if #batchMerge_.results > 0 then
-                 RewardPopup.show("合成结果", batchMerge_.results)
-             end
-             batchMerge_.active = false
-             batchMerge_.expected = 0
-             batchMerge_.results = {}
-             batchMerge_.timeout = 0
-             return true
-         end
-     end
-     return false
- end
 
  --= 数据桥接 ==============================
 
@@ -292,25 +251,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 
  --= 网络事件处理 ==========================
 
- --- 在 mod_relics 中查找遗物（bag + grid，兼容非连续数组）
- ---@param modData table|nil
- ---@param relicId string
- ---@return table|nil
- local function findRelicInModData(modData, relicId)
-     if not modData or not relicId then return nil end
-     relicId = tostring(relicId)
-     for _, list in ipairs({ modData.bag, modData.grid }) do
-         if list then
-             for _, r in ipairs(list) do
-                 if r and tostring(r.id) == relicId then return r end
-             end
-             for _, r in pairs(list) do
-                 if type(r) == "table" and tostring(r.id) == relicId then return r end
-             end
-         end
-     end
-     return nil
- end
 
  --- litNodes 中是否包含指定节点
  ---@param modData table|nil
@@ -533,20 +473,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if MarketPage.onActionResult then pcall(MarketPage.onActionResult, data) end
      if GMConsolePanel.onActionResult then pcall(GMConsolePanel.onActionResult, data) end
 
-     -- 遗物合成结果
-     if data.action == Protocol.ACTION_TYPES.RELIC_MERGE and data.relic then
-         local r = data.relic
-         if batchMerge_.active then
-             batchMerge_.results[#batchMerge_.results + 1] = { type = "relic", relicType = r.type, quality = r.quality }
-             if #batchMerge_.results >= batchMerge_.expected then
-                 RewardPopup.show("合成结果", batchMerge_.results)
-                 batchMerge_.active = false; batchMerge_.expected = 0; batchMerge_.results = {}; batchMerge_.timeout = 0
-             end
-         else
-             RewardPopup.show("合成结果", { { type = "relic", relicType = r.type, quality = r.quality } })
-         end
-     end
-
      -- 神器合成/置换结果
      if data.action == Protocol.ACTION_TYPES.ARTIFACT_MERGE or data.action == Protocol.ACTION_TYPES.ARTIFACT_REROLL then
          local artifacts = data.artifacts or (data.artifact and { data.artifact }) or nil
@@ -566,28 +492,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                  }
              end
              RewardPopup.show(data.action == Protocol.ACTION_TYPES.ARTIFACT_REROLL and "置换结果" or "合成结果", rewards)
-         end
-     end
-
-     -- 遗物锁定：失败时撤销乐观更新；成功时 pushModule 已持久化 locked 字段
-     if data.action == Protocol.ACTION_TYPES.RELIC_LOCK and data.relicId then
-         local relic = findRelicInModData(PlayerStore.Get("mod_relics"), data.relicId)
-         if relic then
-             if data.success then
-                 if data.locked then
-                     relic.locked = true
-                 else
-                     relic.locked = nil
-                 end
-             else
-                 if relic.locked then
-                     relic.locked = nil
-                 else
-                     relic.locked = true
-                 end
-                 print("[Client] relic lock failed, reverted optimistic state: "
-                     .. tostring(data.reason))
-             end
          end
      end
 
@@ -660,8 +564,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                          if heroConfig then M.pendingFollowUpDialogue_ = { config = heroConfig } end
                      end
                  })
-             elseif data.rewardType == "relic" then
-                 RewardPopup.show("远征奖励", { { type = "relic", relicType = data.reward.relicType, quality = data.reward.quality or 1 } }, { onClose = fireTutorial })
              else
                  RewardPopup.show("远征奖励", { { type = "equip", templateId = data.reward.templateId, quality = data.reward.quality or 1, level = data.reward.level or 1 } }, { onClose = fireTutorial })
              end
@@ -786,12 +688,6 @@ function M.handleStateUpdate(eventType, eventData)
      M.pendingScenarioDialogue_ = nil
      M.pendingFollowUpDialogue_ = nil
      M.pendingTutorialNotify_ = nil
-     batchMerge_ = {
-         active = false,
-         expected = 0,
-         results = {},
-         timeout = 0,
-     }
      print("[ClientMsgHandler] session bridge state reset")
  end
 

@@ -138,7 +138,7 @@ function M.load(ctx, stageId, skipBattleStart)
     ProjectileSystem.reset()
     TM.reset()   -- 清空仇恨表
     SEM.reset()  -- 清空状态效果
-    RCH.initBattle(ctx.allies)  -- 初始化遗物条件词条（战斗开始时效果在此触发）
+    RCH.initBattle(ctx.allies)  -- 初始化条件词条运行时（战斗开始时效果在此触发）
     ART.initBattle(ctx.allies)  -- 初始化神器战斗运行时效果
     for _, u in ipairs(ctx.allies) do
         u.atkProgress = 0

@@ -97,11 +97,6 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
                             newUnit.armorType = eqArmorType
                         end
                     end
-                    local RelicBridge = require("systems.RelicBridge")
-                    local relicConds = RelicBridge.applyToUnit(newUnit.attrs, newUnit.classId or u.classId)
-                    if relicConds and #relicConds > 0 then
-                        u.relicConditions = relicConds
-                    end
                     local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
                     if artifactEffects and #artifactEffects > 0 then
                         u.artifactEffects = artifactEffects

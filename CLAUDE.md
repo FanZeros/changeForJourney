@@ -61,6 +61,8 @@
 - **🔴 环境教训（截图链路）**：本机 Linux UrhoXRuntime 二进制**不支持离屏截图**——`-screenshot=` 参数无 `[Screenshot]` 标记（strings 二进制无该参数）、`Graphics:TakeScreenShot` 返回 false（surfaceless 无读回缓冲）、xvfb 未安装。headless 只能做逻辑验证（validate/print dump）；**视觉效果验收必须让用户在预览窗口真人查看**，不要再浪费时间尝试本机截图。
 - **🔴 结构修复（同轮，用户发现）**：用户反馈"预览里没有关键词"并提示"script 位置是不是不在 workspace 下方"——确认克隆进 `/workspace/repo/` 子目录导致 build 打包 0 Lua（详见上方"致命结构铁律"）。已把整个项目（含 `.git`）迁移到 `/workspace` 根，`git status` 干净，重新 build 后 365 Lua 入包、validate 60 帧 0 lua_errors。预览验收待用户重测。
 - **转职页接入（同轮，用户追问"转职里面的描述有没有"）**：`ChurchClassChange.drawConfirmPopup` 的天赋描述改用 KeywordText。弹窗带 scale 0.85→1.0 缩放动画 → KeywordText 新增 `setTransform`（输入屏幕坐标→热区空间逆变换）与 `setPopupTransform`（弹窗锚点→屏幕坐标正向变换，解释气泡在变换外绘制）；`measureHeight` 保留原自适应字号逻辑。回归测试扩到 26 项全 PASS。**新踩坑**：官方 build 的 LSP 检查比 lua_lsp_client 严格（return-type-mismatch 会被拒），提交前必须跑官方 build 验证。
+- **用户验收通过（三处）+ 第二轮接入（同轮）**：用户确认属性页/觉醒页/转职确认弹窗三处关键词全部正常。随后接入：① 通天塔三选一 `TowerBuffPick`（3 卡各一实例；关键词点击**优先于整卡选中**；调用方 TowerBattleScene 已做 fit 反变换，设计坐标系直接对齐）；② 装备详情 compact 主面板套装词条 2/4/6 件行（`showActions ~= false` 区分主面板，对比面板/只读预览保持原样；输入插在锁图标/按钮判定之前）；③ KeywordText textColor 支持 alpha（保留套装激活/未激活半透明）。验证：26 项回归 PASS、官方 Build 成功、validate 60 帧 0 lua_errors。已推送（共 8 提交）。
+- **调研结论（未接入区域及原因）**：遗物（RelicDefs 381 处命中最高）**UI 层无 desc 渲染点**——详情面板不存在，RewardPopup 只画图标，需先新建遗物详情 UI 才有挂载点；神器详情 ArtifactDetailPanel 仅 2 处命中且自有数值高亮机制（橙色数值+灰色比例）与关键词染色冲突，价值低暂缓；星图天赋 TalentNodeDefs 仅 3 处暂缓。
 
 ## 上次做了什么（2026-09-27，925 同步与存档再排查）
 

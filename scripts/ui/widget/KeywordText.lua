@@ -281,7 +281,7 @@ function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX)
             else
                 nvgFontSize(vg, fontSize)
                 local tc = self.textColor
-                nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], 255))
+                nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], tc[4] or 255))
                 nvgText(vg, cx, ly, p.text, nil)
             end
             cx = cx + p.w

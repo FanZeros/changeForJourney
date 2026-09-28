@@ -14,6 +14,7 @@ local MC                = require("config.MonsterConfig")
 local SRP               = require("config.StageRecommendPower")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DrawUtil          = require("core.DrawUtil")
+local DarkIcon          = require("core.DarkIcon")
 local GameState         = require("core.GameState")
 local I18n              = require("core.I18n")
 local BF                = require("systems.ButtonFeedback")
@@ -570,27 +571,23 @@ function StageSelectDialog.draw(vg)
         end
         nvgText(vg, x + 16, y + D.ROW_H - 34, sub, nil)
 
-        -- 推荐战力（行左中，v2.61 StageRecommendPower 接线）：
-        -- 口径 = battle-lab 开荒三人组无养成实测阈值（ml≤23 实测 / ml≤46 保守外推），
+        -- 推荐战力（行左中，v2.61 接线 / v2.63 图标化）：
+        -- 口径 = battle-lab 开荒三人组无养成实测阈值（ml≤46 实测 / ml≤92 保守外推），
         -- 带装备养成的玩家实际需求更低，因此只做「达标提示」不做硬性门槛。
-        -- v2.62：首关阈值经 PAVA 保序 + 最小梯度修正，章间严格递增、章内 2..5 关
-        -- 向下一章首关插值有梯度，因此每关 recPower 各不相同（非旧版同章同值）。
-        -- 三态：实测(与玩家总战力比较着色) / 外推(≈前缀蓝灰) / 无数据(不绘制)。
-        -- 字号 20：左栏可用宽 ~124px（CARD_X-MID_X-边距），最长文本
-        -- 「推荐≈19330」(ml46 外推上限) 在 20 号字下 ~115px 不撞卡面。
-        -- 五语下 CJK（简/繁/日/韩「推荐≈」3 全角 + 5 位数字）最长 ~115px，
-        -- 英文「Rec.≈19330」拉丁更窄，均 < 124px，无需按语言调字号。
-        -- 文案走 I18n.t 键值表（rec_power/rec_power_approx 五语，{0} 占位数字）；
-        -- 含动态数字不能走 draw-hook 原文查表。译后串再经 hook 查不到会原样返回。
+        -- v2.63（用户要求）：不再显示「推荐/推荐≈」文字，改为 power 火焰图标
+        --   + 纯数字（与 TopBar 玩家战力同图标，玩家一看即懂是战力比较）。
+        --   ≈ 模糊前缀取消——外推关仅以蓝灰数字色区分，不做文本标注。
+        -- 三态：实测(数字与玩家总战力比较着色) / 外推(蓝灰) / 无数据(不绘制)。
+        -- 布局：图标 18px 中心 (x+25, y+84)，数字左缘 x+38；左栏可用宽
+        -- ~124px（CARD_X-MID_X-边距），最长 5 位数（ml92 外推上限 ~2.9e4）
+        -- 20 号字 ~55px，38+55=93px < 124px 不撞卡面。
         local recPower, recExtr = SRP.get(id)
         if recPower then
-            local rText, rr, rg, rb
+            local rr, rg, rb
             if recExtr then
-                -- 外推带（ml 24..46）：估算值，蓝灰 + ≈ 前缀，不与玩家战力比较
-                rText = I18n.t("rec_power_approx", recPower)
+                -- 外推带（ml 47..92）：估算值，数字蓝灰，不与玩家战力比较
                 rr, rg, rb = 0x8F, 0xA8, 0xC0
             else
-                rText = I18n.t("rec_power", recPower)
                 local playerPower = GameState.getPower() or 0
                 if playerPower <= 0 then
                     rr, rg, rb = 0xb6, 0xb0, 0x9d          -- 战力未知：中性色
@@ -600,9 +597,11 @@ function StageSelectDialog.draw(vg)
                     rr, rg, rb = 0xE0, 0x5A, 0x5A          -- 不足：红（与 Boss 关同色系）
                 end
             end
-            drawTextStroke(vg, x + 16, y + 84, rText, 20,
+            local iconAlpha = (locked and 140 or 255) / 255
+            DarkIcon.draw(vg, "power", x + 25, y + 84, 18, iconAlpha)
+            drawTextStroke(vg, x + 38, y + 84, tostring(recPower), 20,
                 NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                rr, rg, rb, 2, { alpha = (locked and 140 or 255) / 255 })
+                rr, rg, rb, 2, { alpha = iconAlpha })
         end
 
         -- 敌人卡面（行右侧横排）

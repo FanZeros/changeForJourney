@@ -6,7 +6,7 @@ fit_stage_recommend.py — 关卡推荐战力拟合与生成（battle-lab 校准
 输入:
   battle_lab_threshold_samples.json（由 tests/battle_lab_threshold.lua 产出：
     开荒三人组 无装备，首通模式 winRate 跨过 50% 的阈值等级/战力样本，
-    覆盖 Normal 难度 23 个章节首关，monsterLevel 1..23）
+    覆盖 Normal + Hard 难度 46 个章节首关，monsterLevel 1..46）
   scripts/config/StageConfig_*.lua（全难度关卡表，正则提取 id/monsterLevel）
 
 输出:
@@ -33,8 +33,8 @@ fit_stage_recommend.py — 关卡推荐战力拟合与生成（battle-lab 校准
   * 阈值口径 = 开荒三人组（大狗嚼/黄桃龙/叮咚鸡）无装备无养成、首通模式、
     12 局固定种子 winRate≥50% 的最低英雄等级处战力。带装备/养成推进的
     玩家实际需求更低；不同队伍构成会偏移。
-  * 仅 Normal 难度实测（ml 1..23）；Hard+ 难度按同一曲线外推，未经采样
-    验证，产物中按 difficulty 分列并注明 extrapolated=true。
+  * Normal + Hard 难度实测（ml 1..46，v2.63 扩展）；Nightmare+ 难度按同一
+    曲线外推到 extrapCap=92（采样上限×2）并标 x=true，超上限不生成条目。
 """
 
 import json
@@ -245,21 +245,43 @@ def main():
     measured_e = {r["monsterLevel"]: v for r, v in zip(rows_sorted, final_e)}
 
     # 生成推荐表。
-    # 🔴 外推上限：指数曲线在 ml>23 后发散（ml=345 时 p≈2e16，纯数学垃圾），
-    # 因此只对 ml <= EXTRAP_CAP（实测上限的 2 倍）做保守外推并标 x=true；
-    # 超过上限的关卡不生成条目，SRP.get 返回 nil（诚实声明"数据不支持"）。
+    # 🔴 外推上限：曲线在高 ml 段发散，因此只对 ml <= EXTRAP_CAP（实测上限的
+    # 2 倍）做保守外推并标 x=true；超过上限的关卡不生成条目，SRP.get 返回 nil。
     extrap_cap = max(ml) * 2
 
+    # 构建全 ml 段（1..extrap_cap）的"章节首关"推荐序列，保证严格单调：
+    #   * 实测段（ml ≤ 采样上限）：用 PAVA + 最小梯度修正后的展示值；
+    #   * 外推段（ml > 采样上限）：拟合曲线值与"前一章首关 × 最小增长"取大者。
+    #     —— 单靠曲线会在衔接处倒挂（如 ml46 实测 8520 而二次曲线 pred(47)=7810），
+    #        取大者确保外推段从实测终点单调续接，不出现"下一章推荐更低"。
+    MIN_GROWTH = 1.02
+
+    def build_first_series(measured, pred_fn):
+        """measured: {ml -> display_value}。返回 {ml -> first_stage_value} 覆盖 1..extrap_cap。"""
+        ml_max_meas = max(measured)
+        series = {}
+        for v in range(1, extrap_cap + 1):
+            if v in measured:
+                series[v] = measured[v]
+            elif v <= ml_max_meas:
+                # 采样区间内的缺口（理论上无，防御）：曲线 vs 前一章最小增长取大
+                prev = series[v - 1]
+                series[v] = max(round_up_10(pred_fn(v)), round_up_10(prev * MIN_GROWTH))
+            else:
+                # 外推段：曲线值 vs 前一章最小增长，取大者
+                prev = series[v - 1]
+                series[v] = max(round_up_10(pred_fn(v)), round_up_10(prev * MIN_GROWTH))
+        return series
+
+    first_p_series = build_first_series(measured_p, pred_p)
+    first_e_series = build_first_series(measured_e, pred_e)
+
     def first_stage_p(v):
-        """ml=v 章节首关的官方口径推荐值（实测段用保序修正值，外推段用曲线）。"""
-        if v in measured_p:
-            return measured_p[v]
-        return round_up_10(pred_p(v))
+        """ml=v 章节首关的官方口径推荐值（实测段保序值 / 外推段单调续接）。"""
+        return first_p_series.get(v, round_up_10(pred_p(v)))
 
     def first_stage_e(v):
-        if v in measured_e:
-            return measured_e[v]
-        return round_up_10(pred_e(v))
+        return first_e_series.get(v, round_up_10(pred_e(v)))
 
     # 章内梯度：stage 2..5 向"下一章首关"插值（末章用曲线外推 ml+1 作虚拟下一章）
     stage_vals_cache = {}
@@ -319,7 +341,7 @@ def write_lua(by_stage, name_p, params_p, r2_p, name_e, params_e, r2_e,
     lines.append("--")
     lines.append("-- 口径：开荒三人组（大狗嚼/黄桃龙/叮咚鸡）无装备无养成、首通模式、")
     lines.append("-- 12 局固定种子 winRate≥50% 的最低英雄等级处战力（battle-lab 实测，")
-    lines.append(f"-- Normal 难度 ml {ml_min}..{ml_max} 采样）。带装备/养成推进的实际需求更低。")
+    lines.append(f"-- Normal+Hard 难度 ml {ml_min}..{ml_max} 采样）。带装备/养成推进的实际需求更低。")
     lines.append(f"-- 官方战力曲线: {name_p} R²={r2_p:.4f}；预估口径: {name_e} R²={r2_e:.4f}。")
     lines.append(f"-- monsterLevel > {ml_max} 的关卡为同曲线外推，未经实测验证，x = true；")
     lines.append(f"-- monsterLevel > {extrap_cap}（实测上限×2）的关卡指数外推不可信，不生成条目，")

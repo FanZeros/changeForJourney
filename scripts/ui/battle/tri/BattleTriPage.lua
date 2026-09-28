@@ -714,7 +714,8 @@ function BattleTriPage.handleInput(wx, wy)
         if allies then
             for i = 1, #allies do
                 local unit = allies[i]
-                if unit and unit.heroId then
+                -- [阵亡紧凑] 只响应存活且未退场的角色；已退到队尾的阵亡者不可点
+                if unit and unit.heroId and unit.hp > 0 and not unit._fallen then
                     local cx, cy = BattleLayout.cardPos("ally", i, #allies)
                     local sx = originX + cx * contentScale
                     local sy = originY + cy * contentScale

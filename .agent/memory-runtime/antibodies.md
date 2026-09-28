@@ -1,5 +1,8 @@
 # antibodies — 跨项目避雷清单(只增不减)
 
+- [scope:project] 2026-09-28 护盾成长层（`AD.SHIELD_SCALING` + `UnitAttributes.recalc` §5.5）：护盾三来源全是线性而 HP/伤害指数爆炸，中后期护盾占比塌到≈0。修法=在 recalc 末尾加附加层：护盾 += 最终HP×hpRatio(5%) + 派生护盾×((1+(lv-1)×0.02)-1)；门控 preGrowthES>0（无盾敌人不凭空加盾）；附加层不被 esBonus/finalESBonus 二次放大。等级经 cfg.unitLevel → attrs.unitLevel（clone 保留）。调平衡只改 AttributeDef.SHIELD_SCALING。回归=tests/shield_scaling_test.lua（15断言）+ character_power_estimate_test（战力不回归）+ _proc/shield_probe.lua（before/after 对照探针）。改任何成长/属性公式先跑 probe 留基线再改。
+- [通用] 2026-09-28 再次强化：不能取消/退出任务；每次交付或受阻必须先简报再**真正调用 AskUserQuestion**（选项形式）询问下一步并等待选择，禁止纯文字结尾或中断对话。clone 仓库后 remote URL 可能内嵌 PAT——推送用内联凭据 `git push https://<PAT>@...`，推完 `git remote set-url` 还原为干净 URL 并 `grep ghp_ .git/config` 验证 0 残留；提交前还原 build 自动改写的 `.project/project.json`（project_id 会变），meta 文件随代码一起提交。`git add` 未生成的 .meta 会 exit128 中断整条 `&&` 链——只 add 已存在文件。
+- [scope:project] 护盾成长层 A/B 验证结论（`_proc/shield_ab_lab.lua`，E档8%/5%，种子926×20局）：裸装英雄约束下 BattleLab **无「不全胜不全败」临界带**（要么碾压要么全败），胜率维度只能靠夹逼——①饱和胜局带(S0105/S0205含盾关)B臂胜率仍100%、耗时仅+0.9~2.1s（敌人加盾不破坏过关）；②全败带(S2405-Lv36)B臂存活+26%/承伤+37%（护盾劣势局真发挥作用）。改生存属性平衡时若找不到非饱和带，用「胜局不翻盘+败局更耐打」两端夹逼做方向性结论，别硬套胜率差。
 - [scope:project] `StandaloneSave.writeFile` 必须检查 `File:WriteString` 的 boolean 返回；失败后不能记成功快照，且须安排下一轮重试。直接覆盖旧档与损坏 JSON 恢复仍未解决；`FileSystem:Rename` 在隔离存储平台上的行为未经验证，不能仅凭声明视为原子落盘。
 - [scope:project] 离线英雄经验预览不能把编队中的 `0` 空槽、未拥有或重复 ID 算进平分分母；领取回退路径应使用同一有效名单规则。
 - [scope:project] `ModuleRegistry` 与 `HeroesSchema` 在单机收到 heroes 时连续规范化，数字名册键必须保留；跨队同步不可逐队回调：第一队推送触发面板刷新会覆盖第二队未提交的编队。0 是空槽而非角色，normalize 不得删除后续队伍的 0。

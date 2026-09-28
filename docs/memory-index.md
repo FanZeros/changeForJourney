@@ -25,11 +25,14 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-28 | 版本:v2.65-workspace928-integration
+> 更新时间:2026-09-28 | 版本:v2.66-first-damage-fade-fix
 >
 > **当前基线 `workspace928`**（基于 workspace926 新建）：依次合入 feat926/artifact-audit（神器双格 30/60、礼拜堂 30 级、宝箱迁入教堂、铁匠铺锁标、Tab切换裁剪+30级空格不可见两 bug 修复）、feat926/battle-lab（Hard+ Boss 差异化词缀）、art/hero-cards-926（暗黑卡面终稿）、feat/talent-more-paths-0928（护盾数值合并显示）、fix928/horizon-wheel-priority（横屏滚轮测试 mock）。**不含 feat926/unified-character-frame（用户指定排除）**。
 >
-> **本轮（`feat926/artifact-audit` 神器页两个 UI bug 修复）**：用户实机反馈：(1) Tab 切换时装备空位显示到屏幕中间；(2) 30级子格看不到、只能看到60级格。
+> **本轮（`fix928/first-damage-delay` 首个伤害飘字显示延迟修复，基于 workspace928）**：用户实机反馈"第一个伤害显示有延迟"。根因：`BattleDraw.drawFloatingTexts` 的淡入曲线 `frame<=10` 用 `alpha=255*(frame/10)`，**frame=0 时 alpha=0 完全不可见**，需 10 帧(=0.333s，FLOAT_TOTAL_FRAMES 20 / FLOAT_FPS 30)才到满不透明；而受击闪烁(setHitFlash)是**即时**的——于是每个伤害数字都比受击反馈/音效"慢半拍"才清晰，第一击尤其明显。**排查过的其他嫌疑(均非根因)**：飘字排队 pendingFt/ftSpawnCd(首条已 cd=0 立即出队，见 commit 29798135)、投射物飞行时长(0.4~0.7s，命中前的正常飞行，命中即触发飘字)、开战 atkProgress=0 需充能满 1 间隔(所有单位一致，非"第一个"特有)。
+>   - **修复**：淡入 10 帧→**3 帧**(`frame<=3` 用 `alpha=255*(frame/3)`)，0.333s→**0.1s** 即清晰；frame>15 的淡出段不变。保留 3 帧(而非 0 帧硬切)是为避免数字"硬弹出"的突兀感。改的是所有飘字(伤害/治疗/护盾/MISS/免疫)，非仅第一个。
+>   - 验证：LSP 0 Error、battle_stage_switch_test 52 PASS/ALL PASS、官方 Build 成功、dist 含 `frame <= 3` 且无 `frame <= 10`。**淡入是纯视觉曲线，测试不覆盖，需实机看伤害数字是否即时清晰**。
+> **上轮（`feat926/artifact-audit` 神器页两个 UI bug 修复）**：用户实机反馈：(1) Tab 切换时装备空位显示到屏幕中间；(2) 30级子格看不到、只能看到60级格。
 >   - **Bug1 根因**：`ChurchArtifactPanel.drawContent` 背包网格用 `nvgScissor`（**绝对替换**）覆盖了 ChurchDraw 页签动画外层的横向裁剪 → 动画期间背包空格逃出裁剪区、以平移后位置画到屏幕中间。**修复**：改 `nvgIntersectScissor`（与外层动画裁剪求交）。
 >   - **Bug2 根因**：子格底图 `img.slotGrid`(UI_JTSQ_GZ.png) 字段初始化为 -1 后**从未被加载**（git 历史确认加载调用从来不存在），`drawImageCentered` 遇 -1 直接 return；空格子 `drawArtifactIcon(nil)` 也直接 return → **已解锁的空子格完全隐形**。玩家 30~59 级时：30级格已解锁但空(隐形)、60级格未解锁(有锁定遮罩+"60级"文字可见)——正是"只能看到60级"。**修复**：子格底改用与背包格一致的 `DarkIcon.drawNine(vg,"slot",...,radius=GRID.CELL_RADIUS)` 矢量凹槽，删除死字段 slotGrid。
 >   - 验证：LSP 0 Error(264文件)、battle_stage_switch_test 54 PASS/ALL PASS、官方 Build 成功、dist 含 IntersectScissor+DarkIcon slot 修复。**两处均为渲染层修复，测试不覆盖，需实机验收：Tab 切换动画期间无格子跑到中间、30级空格可见暗铁凹槽**。

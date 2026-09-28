@@ -48,6 +48,7 @@ local CharacterDetail    = require("ui.character.detail.CharacterDetail")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
 local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
+local TutorialManager    = require("systems.TutorialManager")  -- [横屏接线 0928] 新手引导
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
 local UiToast            = require("core.UiToast")
@@ -246,6 +247,41 @@ local function HorizonDrawIntroOverlay()
         nvgTranslate(vg(), (lw - 1080 * ss) * 0.5, (lh - 2400 * ss) * 0.5)
         nvgScale(vg(), ss, ss)
         IntroCutscene.draw(vg())
+    end
+    nvgRestore(vg())
+end
+
+--- [横屏接线 0928] 新手引导蒙层：按当前高亮热点所属面板的 Viewport 变换绘制，
+--- 热点 design 坐标即与该面板内容精确对齐（'modal' 上下文走全窗 letterbox，同副本页模态）
+local function HorizonDrawTutorialOverlay()
+    if not TutorialManager.isActive() then return end
+    if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then return end
+    if DarkTitleScreen.isOpen() then return end
+    -- 全屏战斗期间不绘制（与旧 ClientRender 的 towerBattleOpen 守卫一致）
+    if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
+    local panel = TutorialManager.getHotspotPanel()
+    nvgSave(vg())
+    nvgResetTransform(vg())
+    applyFrame()
+    local function drawLetterboxed()
+        local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
+        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+        nvgTranslate(vg(), (logicalW() - DESIGN_W() * fit) * 0.5, (logicalH() - DESIGN_H() * fit) * 0.5)
+        nvgScale(vg(), fit, fit)
+        TutorialManager.draw()
+    end
+    if panel == 'modal' then
+        drawLetterboxed()
+    elseif Viewport.beginFromNote(vg(), panel) then
+        -- 蒙层矩形精确等于面板区域不会溢出；解除面板裁剪让高亮/气泡可越出栏外
+        -- （装备详情 compactCorner 浮层画在栏外，其按钮高亮须同样不被裁切）
+        nvgResetScissor(vg())
+        TutorialManager.draw()
+        Viewport.finish(vg())
+    else
+        -- 面板无 note（如 tri 三行模式下的 center）：回退全窗 letterbox，
+        -- 保证 invisible 步骤的跳过按钮始终可见可点（防卡死）
+        drawLetterboxed()
     end
     nvgRestore(vg())
 end
@@ -657,6 +693,8 @@ function HandleNanoVGRenderHorizon()
         -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
         HorizonDrawIntroOverlay()
         drawEquipDetailOverlay()
+        -- [横屏接线 0928] 新手引导蒙层（装备详情浮层之上，装备引导步骤高亮可见）
+        HorizonDrawTutorialOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
         finishFrame()
@@ -697,6 +735,8 @@ function HandleNanoVGRenderHorizon()
     HorizonDrawIntroOverlay()
     UiToast.draw(vg(), logicalW(), logicalH())
     drawEquipDetailOverlay()
+    -- [横屏接线 0928] 新手引导蒙层（装备详情浮层之上）
+    HorizonDrawTutorialOverlay()
     EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
 
@@ -1330,6 +1370,21 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
             ScenarioDialogue.advance()
         end
         return
+    end
+    -- [横屏接线 0928] 新手引导激活时接管 tap：高亮区域推进并穿透，非目标区域/面板吞掉
+    if TutorialManager.isActive() and isTap then
+        local tdx, tdy = dx, dy
+        if pid == 'tri' or pid == 'none' then
+            -- 引导层在 tri 模式下走全窗 letterbox 绘制：把窗口坐标转为 letterbox design 坐标，
+            -- 保证跳过按钮在战斗三栏期间也可点（防卡死）
+            local mp = input:GetMousePosition()
+            local sx2, sy2 = toDesign(mp.x / dpr(), mp.y / dpr())
+            tdx, tdy = playerInfoDesignCoords(sx2, sy2)
+        end
+        if TutorialManager.handleClick(tdx, tdy, pid) then
+            pressValid = false
+            return
+        end
     end
     if wasLootPress and pid ~= 'left' then return end
     if pid == 'none' then return end

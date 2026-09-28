@@ -262,8 +262,10 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
 
         local TM = require("systems.TutorialManager")
         if TM.isActive() then
+            -- [横屏接线 0928] 页签条仅在非 tri 模式绘制(此时 TopBar 位于中栏 viewport)，
+            -- 故热点固定归属 'center'（tri 模式页签隐藏，不注册）
             for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
-                TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H)
+                TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H, "center")
             end
         end
     end

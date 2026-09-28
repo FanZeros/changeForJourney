@@ -115,8 +115,23 @@ local CELL = {
     BG_A = 26,
     COLS = 4,
     ROWS = 7,
+    SPACING_X = 40,   -- 列间距（收紧：原按 GRID_AREA.W 派生 ≈69px）
     SPACING_Y = 16,
 }
+
+-- 裁剪外扩余量：选中金色边框画在格子外 4px（描边 4，外缘 ~6px），
+-- 裁剪区不外扩会把首行/边缘格子的选中框切掉
+local GRID_PAD = 8
+
+--- 网格布局共享度量（绘制与点击命中必须同源）
+--- 网格整体按 SPACING_X 收紧后在 GRID_AREA 内水平居中
+local function gridMetrics()
+    local cols = CELL.COLS
+    local gridW = cols * CELL.SIZE + (cols - 1) * CELL.SPACING_X
+    local areaLeft = GRID_AREA.CX - gridW * 0.5
+    local areaTop  = GRID_AREA.CY - GRID_AREA.H * 0.5
+    return cols, gridW, areaLeft, areaTop
+end
 
 -- 穿戴按钮
 local WEAR_BTN = {
@@ -213,8 +228,10 @@ end
 --- 触摸/鼠标拖拽开始
 function AvatarSelectPanel.handleDragBegin(dx, dy)
     if not state.open or state.closing then return false end
-    -- 检查是否在网格区域内
-    if not hitTest(dx, dy, GRID_AREA.CX, GRID_AREA.CY, GRID_AREA.W, GRID_AREA.H) then
+    -- 检查是否在网格区域内（与绘制/点击同源度量）
+    local _, gridW, areaLeft, areaTop = gridMetrics()
+    if not (dx >= areaLeft - GRID_PAD and dx <= areaLeft + gridW + GRID_PAD
+        and dy >= areaTop - GRID_PAD and dy <= areaTop + GRID_AREA.H + GRID_PAD) then
         return false
     end
     state.dragging = true
@@ -263,19 +280,17 @@ function AvatarSelectPanel.handleInput(dx, dy)
         return true
     end
 
-    -- 头像网格点击（考虑滚动偏移）
-    local cols = CELL.COLS
-    local areaLeft = GRID_AREA.CX - GRID_AREA.W * 0.5
-    local areaTop  = GRID_AREA.CY - GRID_AREA.H * 0.5
-    local spacingX = (GRID_AREA.W - cols * CELL.SIZE) / (cols - 1)
+    -- 头像网格点击（考虑滚动偏移；度量与绘制同源 gridMetrics）
+    local cols, gridW, areaLeft, areaTop = gridMetrics()
 
-    -- 先检查点击是否在网格区域内
-    if hitTest(dx, dy, GRID_AREA.CX, GRID_AREA.CY, GRID_AREA.W, GRID_AREA.H) then
+    -- 先检查点击是否在网格区域内（水平按收紧后的 gridW 判定，含外扩余量）
+    if dx >= areaLeft - GRID_PAD and dx <= areaLeft + gridW + GRID_PAD
+        and dy >= areaTop - GRID_PAD and dy <= areaTop + GRID_AREA.H + GRID_PAD then
         local allIds = HeroConfig.getAllIds()
         for idx, heroId in ipairs(allIds) do
             local row = math.ceil(idx / cols)
             local col = ((idx - 1) % cols) + 1
-            local cx = areaLeft + (col - 1) * (CELL.SIZE + spacingX) + CELL.SIZE * 0.5
+            local cx = areaLeft + (col - 1) * (CELL.SIZE + CELL.SPACING_X) + CELL.SIZE * 0.5
             local cy = areaTop  + (row - 1) * (CELL.SIZE + CELL.SPACING_Y) + CELL.SIZE * 0.5 - state.scrollY
             if cy + CELL.SIZE * 0.5 >= areaTop and cy - CELL.SIZE * 0.5 <= areaTop + GRID_AREA.H then
                 if hitTest(dx, dy, cx, cy, CELL.SIZE, CELL.SIZE) then
@@ -406,14 +421,16 @@ function AvatarSelectPanel.draw(vg)
     nvgFill(vg)
 
     -- ── 下半部分：头像网格 ──
-    local cols = CELL.COLS
-    local areaLeft = GRID_AREA.CX - GRID_AREA.W * 0.5
-    local areaTop  = GRID_AREA.CY - GRID_AREA.H * 0.5
-    local spacingX = (GRID_AREA.W - cols * CELL.SIZE) / (cols - 1)
+    local cols, gridW, areaLeft, areaTop = gridMetrics()
 
-    -- 裁剪到网格区域
+    -- 裁剪到网格区域（外扩 GRID_PAD，避免选中金框被裁掉；列间距收紧后网格更窄，
+    -- 左右本就留白，此处外扩主要保护首行顶边与末行底边的选中框）
+    local clipX = areaLeft - GRID_PAD
+    local clipY = areaTop - GRID_PAD
+    local clipW = gridW + GRID_PAD * 2
+    local clipH = GRID_AREA.H + GRID_PAD * 2
     nvgSave(vg)
-    nvgScissor(vg, areaLeft, areaTop, GRID_AREA.W, GRID_AREA.H)
+    nvgScissor(vg, clipX, clipY, clipW, clipH)
 
     do
         local allIds = HeroConfig.getAllIds()
@@ -422,13 +439,13 @@ function AvatarSelectPanel.draw(vg)
         for idx, heroId in ipairs(allIds) do
             local row = math.ceil(idx / cols)
             local col = ((idx - 1) % cols) + 1
-            local cx = areaLeft + (col - 1) * (CELL.SIZE + spacingX) + CELL.SIZE * 0.5
+            local cx = areaLeft + (col - 1) * (CELL.SIZE + CELL.SPACING_X) + CELL.SIZE * 0.5
             local cy = areaTop  + (row - 1) * (CELL.SIZE + CELL.SPACING_Y) + CELL.SIZE * 0.5 - state.scrollY
             local cellLeft = cx - CELL.SIZE * 0.5
             local cellTop  = cy - CELL.SIZE * 0.5
 
-            -- 跳过不在可见区域内的格子（裁剪优化）
-            if cy + CELL.SIZE * 0.5 < areaTop or cy - CELL.SIZE * 0.5 > areaTop + GRID_AREA.H then
+            -- 跳过不在可见区域内的格子（裁剪优化，按外扩后的裁剪带判定）
+            if cy + CELL.SIZE * 0.5 < clipY or cy - CELL.SIZE * 0.5 > clipY + clipH then
                 goto continue_cell
             end
 

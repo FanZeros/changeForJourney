@@ -114,15 +114,11 @@ function M.bind(deps)
         local tabT = math.min(1.0, tabElapsed / TAB.ANIM_DUR)
         local tabEased = easeInOutCubic(tabT)
 
-        local direction = 0
-        if tabIdx ~= fromIdx then
-            direction = (tabIdx < fromIdx) and -1 or 1
-        end
-        -- 垂直滑动: 转职(idx=1)在上，天赋(idx=2)在下
-        -- tianfu→zhuanzhi: direction=-1, 旧页下滑(+Y), 新页从上进入(-Y→0)
-        -- zhuanzhi→tianfu: direction=1, 旧页上滑(-Y), 新页从下进入(+Y→0)
-        local newOY_tab = DESIGN_H * direction * (1 - tabEased)
-        local oldOY_tab = -DESIGN_H * direction * tabEased
+        -- 水平滑动：神器/宝箱切换一律「从左边滑入」（用户要求）
+        -- 旧页 0 → +屏宽（向右滑出）；新页 -屏宽 → 0（从左滑入）
+        -- 与页签左右次序无关，方向固定，视觉一致
+        local newOX_tab = -DESIGN_W * (1 - tabEased)
+        local oldOX_tab = DESIGN_W * tabEased
         local isAnimating = (tabT < 1.0 and tabIdx ~= fromIdx)
 
         -- 延迟清除：Tab 切换动画结束后清除旧 Tab 的英雄选中态
@@ -135,19 +131,10 @@ function M.bind(deps)
         -- === 槽位上移偏移 ===
         local slotLiftOY = -ANIM.SLOT_LIFT * state.slotLiftProgress
 
-        -- 计算教堂上半部分（属于转职视图）在 tab 动画期间的垂直偏移
-        local upperTabOY = 0
-        if isAnimating then
-            if state.tabFrom == "zhuanzhi" then
-                upperTabOY = oldOY_tab  -- 转职是旧 tab，跟着滑出
-            elseif state.tab == "zhuanzhi" then
-                upperTabOY = newOY_tab  -- 转职是新 tab，跟着滑入
-            end
-        end
-
+        -- 转职页已迁出，教堂上半部分不再有独立的 tab 垂直偏移（神器/宝箱切换走水平滑动，只作用于下半内容）
         -- ================== 上半部分（从上方滑入） ==================
         nvgSave(vg)
-        nvgTranslate(vg, upperOX, upperTabOY)
+        nvgTranslate(vg, upperOX, 0)
 
         local isArtifactTab = (state.tab == "shenqi" or state.tab == "baoxiang")
 
@@ -341,24 +328,24 @@ function M.bind(deps)
         nvgSave(vg)
         nvgTranslate(vg, lowerOX, 0)
         if isAnimating then
-            -- 旧 tab 背景（垂直滑出）：先裁剪到屏幕可见区域，再纵向平移
-            local oVisTop = math.max(0, oldOY_tab)
-            local oVisBot = math.min(DESIGN_H, oldOY_tab + DESIGN_H)
-            if oVisBot > oVisTop then
+            -- 旧 tab 背景（向右滑出）：横向裁剪到可见区域，再水平平移
+            local oVisL = math.max(0, oldOX_tab)
+            local oVisR = math.min(DESIGN_W, oldOX_tab + DESIGN_W)
+            if oVisR > oVisL then
                 nvgSave(vg)
-                nvgScissor(vg, 0, oVisTop, DESIGN_W, oVisBot - oVisTop)
-                nvgTranslate(vg, 0, oldOY_tab)
+                nvgScissor(vg, oVisL, 0, oVisR - oVisL, DESIGN_H)
+                nvgTranslate(vg, oldOX_tab, 0)
                 if state.tabFrom == "shenqi" then ArtifactPanel.drawBg(vg)
                 elseif state.tabFrom == "baoxiang" then ArtifactDrawPanel.drawBg(vg) end
                 nvgRestore(vg)
             end
-            -- 新 tab 背景（垂直滑入）
-            local nVisTop = math.max(0, newOY_tab)
-            local nVisBot = math.min(DESIGN_H, newOY_tab + DESIGN_H)
-            if nVisBot > nVisTop then
+            -- 新 tab 背景（从左滑入）
+            local nVisL = math.max(0, newOX_tab)
+            local nVisR = math.min(DESIGN_W, newOX_tab + DESIGN_W)
+            if nVisR > nVisL then
                 nvgSave(vg)
-                nvgScissor(vg, 0, nVisTop, DESIGN_W, nVisBot - nVisTop)
-                nvgTranslate(vg, 0, newOY_tab)
+                nvgScissor(vg, nVisL, 0, nVisR - nVisL, DESIGN_H)
+                nvgTranslate(vg, newOX_tab, 0)
                 if state.tab == "shenqi" then ArtifactPanel.drawBg(vg)
                 elseif state.tab == "baoxiang" then ArtifactDrawPanel.drawBg(vg) end
                 nvgRestore(vg)
@@ -388,27 +375,27 @@ function M.bind(deps)
             elseif tabKey == "baoxiang" then ArtifactDrawPanel.drawContent(vg) end
         end
 
-        -- 绘制旧面板内容（垂直滑出，仅动画中）
+        -- 绘制旧面板内容（向右滑出，仅动画中）
         if isAnimating then
-            local oVisTop = math.max(clipTop, clipTop + oldOY_tab)
-            local oVisBot = math.min(clipTop + clipH, clipTop + oldOY_tab + clipH)
-            if oVisBot > oVisTop then
+            local oVisL = math.max(0, oldOX_tab)
+            local oVisR = math.min(DESIGN_W, oldOX_tab + DESIGN_W)
+            if oVisR > oVisL then
                 nvgSave(vg)
-                nvgScissor(vg, 0, oVisTop, DESIGN_W, oVisBot - oVisTop)
-                nvgTranslate(vg, 0, oldOY_tab)
+                nvgScissor(vg, oVisL, clipTop, oVisR - oVisL, clipH)
+                nvgTranslate(vg, oldOX_tab, 0)
                 drawTabContent(state.tabFrom)
                 nvgRestore(vg)
             end
         end
 
-        -- 绘制新面板内容（垂直滑入）
+        -- 绘制新面板内容（从左滑入）
         if isAnimating then
-            local nVisTop = math.max(clipTop, clipTop + newOY_tab)
-            local nVisBot = math.min(clipTop + clipH, clipTop + newOY_tab + clipH)
-            if nVisBot > nVisTop then
+            local nVisL = math.max(0, newOX_tab)
+            local nVisR = math.min(DESIGN_W, newOX_tab + DESIGN_W)
+            if nVisR > nVisL then
                 nvgSave(vg)
-                nvgScissor(vg, 0, nVisTop, DESIGN_W, nVisBot - nVisTop)
-                nvgTranslate(vg, 0, newOY_tab)
+                nvgScissor(vg, nVisL, clipTop, nVisR - nVisL, clipH)
+                nvgTranslate(vg, newOX_tab, 0)
                 drawTabContent(state.tab)
                 nvgRestore(vg)
             end

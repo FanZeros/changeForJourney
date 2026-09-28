@@ -182,7 +182,10 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                  BattleScene.setAllies(team)
                  local BattleTriPage = require("ui.battle.tri.BattleTriPage")
                  if BattleTriPage.invalidateTeams then
-                     BattleTriPage.invalidateTeams()
+                     -- [三队隔离] deployed 仅代表 team1；只失效 team1，
+                     -- 避免无参调用把三队全部签名清 nil 导致未变动队也重启。
+                     -- team2/3 的精确失效由 CharacterHeroSync.invalidateTeams(changed) 处理。
+                     BattleTriPage.invalidateTeams({ [1] = true })
                  end
              else
                  print("[DIAG-HERO] WARNING: getDeployedTeam returned EMPTY! deployed=" .. snapshot)

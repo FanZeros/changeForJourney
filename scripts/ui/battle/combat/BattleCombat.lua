@@ -132,7 +132,7 @@ end
 local function statMetaFromProjOpts(projOpts)
     if not projOpts then return nil end
     if projOpts.isDot or projOpts.statCategory or projOpts.isCrit or projOpts.critEligible ~= nil
-        or projOpts.threatScale or projOpts.isRicochet then
+        or projOpts.threatScale or projOpts.isRicochet or projOpts.isNightSlash then
         return {
             isDot = projOpts.isDot,
             category = projOpts.statCategory,
@@ -140,6 +140,7 @@ local function statMetaFromProjOpts(projOpts)
             critEligible = projOpts.critEligible,
             threatScale = projOpts.threatScale,
             isRicochet = projOpts.isRicochet,
+            isNightSlash = projOpts.isNightSlash,
         }
     end
     return nil
@@ -426,6 +427,15 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
         target._killedBy = source
         if statMeta and statMeta.isRicochet then
             target._killedByRicochet = true
+        end
+        -- 暴击击杀归因（DOT/弹射/天赋等统一伤害路径；觉醒1 多元化用）
+        if statMeta and statMeta.isCrit then
+            target._killedByCrit = true
+        end
+        -- 通宵斩击杀归因（觉醒1 多元化 #11；精确挂在死亡敌人上，
+        -- 区别于 attacker._nightSlashKill 粘性标记——后者是觉醒2斩影既有逻辑）
+        if statMeta and statMeta.isNightSlash then
+            target._killedByNightSlash = true
         end
         if source and isTargetAlly == false then
             DungeonBattle.onEnemyKill(source)
@@ -1330,6 +1340,8 @@ local function performAttack(attacker, targetList, isAlly)
                             curTgt._overkillRatio = math.min(1.0, overkill / (curTgt.maxHp or hpBefore))
                             -- 击杀归因标记（供台词系统触发击杀台词�?
                             curTgt._killedBy = attacker
+                            -- 暴击击杀归因（觉醒1 多元化：老六/内鬼等按暴击击杀叠层）
+                            if hit.isCrit then curTgt._killedByCrit = true end
                         end
 
                         setRecoil(curTgt, isAlly and -1 or 1)

@@ -9,7 +9,8 @@
   "never_end_without_askuserquestion": true,
   "askuserquestion_rule": "不能擅自取消或退出任务；每次交付或遇到阻碍都先简报，再真正调用 AskUserQuestion 工具，以选项询问下一步并等待用户选择。禁止仅以文字结束；记忆不等同于自动 hook。",
   "dev_branch": "workspace926",
-  "push_policy": "分支操作以用户当前轮次授权为准。2026-09-28 本轮：护盾成长层在 feat926/shield-scaling-0928 开发，用户明确授权后 --no-ff 合入并推送 workspace926（merge 3fafff54）。不推 workspace/workspace925/其他分支，不强推。remote URL 不保留 PAT（内联凭据推送，grep ghp_ .git/config 验证 0）。不在远端 URL、代码或记忆中保存 PAT。",
+  "base_branch": "workspace926",
+  "push_policy": "分支操作以用户当前轮次授权为准。2026-09-28 已授权并合入 workspace926：feat926/shield-scaling-0928（merge 3fafff54）、feat928/rarity-unify-multi-filter（merge 392bcdc）、feat926/awakening-skill-review。不推 workspace/workspace925/其他分支，不强推。remote URL 不保留 PAT（内联凭据推送，grep ghp_ .git/config 验证 0）。不在远端 URL、代码或记忆中保存 PAT（用户对话中贴出的 PAT 应提示撤销轮换）。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

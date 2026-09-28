@@ -58,7 +58,8 @@ local img = {
     expBarBgS  = -1,  -- UI_JSMB_JYT1.png 卡片经验条背景
     expBarFillS= -1,  -- UI_JSMB_JYT2.png 卡片经验条填充
     settingBtn = -1,  -- UI_AN_SZ.png 设置按钮
-    redDot     = -1,  -- ICON_HD.png 红点提示
+    -- [图标统一 0928] 移除 redDot 句柄：ICON_HD.png 创建后从未绘制（白占显存）；
+    -- 红点统一走 DarkIcon.draw(vg,"reddot",...)（内部已贴图优先）
 }
 
 -- ======================== 布局常量 ========================
@@ -355,9 +356,6 @@ function PlayerInfoPanel.init(vg)
 
     -- 下半部分：设置按钮
     img.settingBtn = nvgCreateImage(vg, "image/按钮/UI_AN_SZ.png", 0)
-
-    -- 红点提示图标
-    img.redDot = nvgCreateImage(vg, "image/通用图标/ICON_HD.png", 0)
 
     if img.bg < 0 then print("[PlayerInfoPanel] WARN: UI_TY_EJQRK.png load failed") end
     if img.power < 0 then print("[PlayerInfoPanel] WARN: ICON_ZDL.png load failed") end

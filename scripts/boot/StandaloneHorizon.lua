@@ -19,6 +19,7 @@ local RewardPopup       = require("ui.hud.popup.RewardPopup")
 local TownScene         = require("ui.town.TownScene")
 local BlacksmithPage    = require("ui.blacksmith.BlacksmithPage")
 local ChurchPage        = require("ui.church.ChurchPage")
+local RelicPage         = require("ui.relic.RelicPage")
 local TalentPage        = require("ui.church.talent.TalentPage")
 local TavernPage        = require("ui.tavern.TavernPage")
 local MarketPage        = require("ui.market.MarketPage")
@@ -283,6 +284,8 @@ local function seamBackList()
         leftScale = TalentPage.getHorizonWidthScale()
     elseif ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
         leftAnim = { ChurchPage.getSeamAnim() }
+    elseif RelicPage.isOpen()      then leftClose = function() RelicPage.close() end
+        leftAnim = { RelicPage.getSeamAnim() }
     elseif BlacksmithPage.isOpen()  then leftClose = function() BlacksmithPage.close() end
         leftAnim = { BlacksmithPage.getSeamAnim() }
     elseif TavernPage.isOpen()      then leftClose = function() TavernPage.close() end
@@ -468,6 +471,7 @@ function HandleNanoVGRenderHorizon()
         TownScene.draw(vg())
         BlacksmithPage.draw(vg())
         ChurchPage.draw(vg())
+        RelicPage.draw(vg())
         if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
         MarketPage.draw(vg())
@@ -559,6 +563,7 @@ function HandleNanoVGRenderHorizon()
         TownScene.draw(vg())
         BlacksmithPage.draw(vg())
         ChurchPage.draw(vg())
+        RelicPage.draw(vg())
         if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
         MarketPage.draw(vg())
@@ -567,7 +572,7 @@ function HandleNanoVGRenderHorizon()
         TaskPage.draw(vg())
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
         -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
-        if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TalentPage.isOpen() or TavernPage.isOpen()
+        if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or RelicPage.isOpen() or TalentPage.isOpen() or TavernPage.isOpen()
             or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
             TopBar.draw(vg(), -30)
         end
@@ -628,6 +633,8 @@ function HandleNanoVGRenderHorizon()
         end
         -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
         HorizonDrawIntroOverlay()
+        -- 三行路径也要画全局 toast（遗物页等左栏二级页的操作失败提示走 UiToast）
+        UiToast.draw(vg(), logicalW(), logicalH())
         drawEquipDetailOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
@@ -949,6 +956,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         end
         if TalentPage.isOpen() then TalentPage.handleDragBegin(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
+        if RelicPage.isOpen() then RelicPage.handleDragBegin(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragBegin(dx, dy) return end
     elseif pid == 'center' then
@@ -1063,6 +1071,7 @@ function HandleMouseMoveHorizon(eventType, eventData)
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
         if TalentPage.isOpen() then TalentPage.handleDragMove(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragMove(dx, dy) return end
+        if RelicPage.isOpen() then RelicPage.handleDragMove(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragMove(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragMove(dx, dy) return end
     elseif pid == 'center' then
@@ -1297,7 +1306,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     -- 左面板：功能页组点击链
     if pid == 'left' then
         -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
-        if isTap and not (BackpackPanel.isOpen() or BlacksmithPage.isOpen() or ChurchPage.isOpen()
+        if isTap and not (BackpackPanel.isOpen() or BlacksmithPage.isOpen() or ChurchPage.isOpen() or RelicPage.isOpen()
             or TalentPage.isOpen() or TavernPage.isOpen() or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
             if TopBar.hitTestAvatar(dx, dy, -30) then
                 PlayerInfoPanel.open()
@@ -1341,6 +1350,12 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
             ChurchPage.handleDragEnd(dx, dy)
             if not isTap then return end
             ChurchPage.handleInput(dx, dy)
+            return
+        end
+        if RelicPage.isOpen() then
+            RelicPage.handleDragEnd(dx, dy)
+            if not isTap then return end
+            RelicPage.handleInput(dx, dy)
             return
         end
         if TavernPage.isOpen() then
@@ -1504,6 +1519,7 @@ function HandleMouseWheelHorizon(eventType, eventData)
         if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel, msx, msy) return end
         if TalentPage.isOpen() then TalentPage.handleScroll(wheel, msx, msy) return end
         if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel, msx, msy) return end
+        if RelicPage.isOpen() then RelicPage.handleScroll(wheel, msx, msy) return end
         if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end
         if MarketPage.isOpen() then MarketPage.handleScroll(wheel) return end
         return

@@ -222,6 +222,12 @@ function M.run(rt)
         TaskPage.init(vg)
         TaskPage.open()
     end)
+    -- 遗物祭坛点击 → 打开遗物页（背包网格 + 详情 + 洗练）
+    TownScene.setOnAltarClick(function()
+        local RelicPage = require("ui.relic.RelicPage")
+        RelicPage.init(vg)
+        RelicPage.open()
+    end)
 
     -- 5.24 装备数据初始化（Standalone 模式下 ClientDispatcher 不会收到 Server 推送）
     if not ClientDispatcher.get("equipment") then

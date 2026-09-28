@@ -294,7 +294,7 @@ local imgXlAfter   = -1   -- UI_TJP_XL_1.png（洗练后背景框）
 local imgReplaceBtn = -1  -- UI_AN_HUANG.png（替换按钮背景）
 local imgCheckmark = -1   -- UI_icon_GOU.png（选中打钩）
 local imgLvlBadge  = -1   -- UI_JSJM_DJ.png（等级徽章）
-local imgRedDot    = -1   -- ICON_HD.png（红点图标）
+-- [图标统一 0928] 移除 imgRedDot 死声明：红点统一走 DarkIcon.draw(vg,"reddot",...)
 local imgIconUp    = -1   -- ICON_UP.png（可强化角标）
 -- 一键强化确认弹窗专用图片
 local imgEnhDlgBg    = -1  -- UI_TY_EJQRK.png（弹窗背景）

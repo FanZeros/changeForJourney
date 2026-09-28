@@ -288,8 +288,56 @@ painters.gem = function(vg, cx, cy, s, alpha)
     nvgFill(vg)
 end
 
---- 战力（余烬火焰）
+-- ============================================================================
+-- 专属图标优先机制（图标统一 0928）
+-- power/reddot 此前存在双轨：部分页面用专属贴图（ICON_ZDL/ICON_HD），
+-- 部分页面用程序化矢量（余烬火焰/光点）。统一为"贴图优先、矢量回退"，
+-- 与 TopBar 金币图标的既有模式一致。句柄只创建一次，全局缓存。
+-- ============================================================================
+
+---@type table<string, string> 专属图标路径（统一基准）
+local CANONICAL_PATHS = {
+    power  = "image/通用图标/ICON_ZDL.png",
+    reddot = "image/通用图标/ICON_HD.png",
+}
+
+---@type table<string, number> 专属图标句柄缓存（-1 = 加载失败，走矢量回退）
+local canonicalImgs = {}
+
+--- 获取专属图标句柄（首次调用创建，之后走缓存）
+---@param vg any NanoVG 上下文
+---@param name string 图标名
+---@return number nvgImage handle (-1 = 不可用)
+local function getCanonicalImg(vg, name)
+    local cached = canonicalImgs[name]
+    if cached ~= nil then return cached end
+    local h = nvgCreateImage(vg, CANONICAL_PATHS[name] or "", 0)
+    if h < 0 then
+        print("[DarkIcon] WARN: 专属图标加载失败 " .. tostring(CANONICAL_PATHS[name]) .. "，回退矢量绘制")
+    end
+    canonicalImgs[name] = h
+    return h
+end
+
+--- 以专属贴图绘制图标（成功返回 true；失败返回 false 由调用方回退矢量）
+---@param vg any
+---@param name string
+---@return boolean ok 是否已成功绘制
+local function drawCanonical(vg, name, cx, cy, s, alpha)
+    local img = getCanonicalImg(vg, name)
+    if not img or img < 0 then return false end
+    local x, y = cx - s * 0.5, cy - s * 0.5
+    local paint = nvgImagePattern(vg, x, y, s, s, 0, img, alpha)
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, s, s)
+    nvgFillPaint(vg, paint)
+    nvgFill(vg)
+    return true
+end
+
+--- 战力（专属图标 ICON_ZDL.png 优先；加载失败回退余烬火焰矢量）
 painters.power = function(vg, cx, cy, s, alpha)
+    if drawCanonical(vg, "power", cx, cy, s, alpha) then return end
     -- 外焰
     flamePath(vg, cx, cy, s)
     nvgFillPaint(vg, vGrad(vg, cy - s * 0.48, cy + s * 0.44,
@@ -307,8 +355,9 @@ painters.power = function(vg, cx, cy, s, alpha)
     nvgFill(vg)
 end
 
---- 红点（余烬光点 + 白色感叹号）
+--- 红点（专属图标 ICON_HD.png 优先；加载失败回退余烬光点矢量）
 painters.reddot = function(vg, cx, cy, s, alpha)
+    if drawCanonical(vg, "reddot", cx, cy, s, alpha) then return end
     -- 外辉光
     nvgBeginPath(vg)
     nvgCircle(vg, cx, cy, s * 0.48)

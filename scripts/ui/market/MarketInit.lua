@@ -43,7 +43,8 @@ function M.bind(deps)
         img.btnMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
         img.btnPlus = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
         -- [暗黑化 P1-B5] 原 image/界面底板/商店/UI_SD_AN.png 贴图加载已移除（矢量绘制替代）
-        img.diamondIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
+        -- [图标统一 0928] diamondIcon 与 gem 同贴图，复用句柄避免重复加载（无 delete，复用安全）
+        img.diamondIcon = img.gem
         for i = 1, 6 do
         -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
         end

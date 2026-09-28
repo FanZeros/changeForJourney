@@ -155,8 +155,8 @@ local img = {
     diamondBig    = -1,
     ticketBig     = -1,
     ticketBigStellar = -1,
-    diamondBg     = -1,
-    ticketQBg     = -1,
+    -- [图标统一 0928] 移除死句柄 diamondBg/ticketQBg：重复加载 UI_icon_ZBBJ_5 且创建后从未绘制
+    -- （品质底框已由 DarkIcon.drawQualityBg(vg, 5, ...) 统一接管）
 }
 
 -- ======================== 缓动函数 ========================
@@ -636,8 +636,6 @@ function M.init(vg)
     if img.ticketBigStellar < 0 then
         img.ticketBigStellar = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_2.png", 0)
     end
-    img.diamondBg     = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_5.png", 0)
-    img.ticketQBg     = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_5.png", 0)
     print("[TavernPopups] init OK")
 end
 

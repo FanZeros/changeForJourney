@@ -278,7 +278,7 @@ local img = {
     resetConfBg = -1,    -- UI_TY_EJQRK.png 重置确认九宫格背景
     goldCoin    = -1,    -- UI_icon_JB_X.png 金币图标
     iconUp      = -1,    -- ICON_UP.png 可提升角标（绿色箭头）
-    redDot      = -1,    -- ICON_HD.png 红点角标
+    -- [图标统一 0928] 移除 redDot 死字段：红点统一走 DarkIcon.draw(vg,"reddot",...)
     -- 资源栏
     resGold     = -1,    -- UI_icon_JB_X.png
     resDiamond  = -1,    -- UI_icon_SJ_X.png

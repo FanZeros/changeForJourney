@@ -47,7 +47,7 @@ local imgIconMarket = -1 -- 市场图标
 
 local imgIconUp   = -1   -- ICON_UP.png 可转职角标
 local imgLock     = -1   -- UI_ICON_SUO.png 锁图标
-local imgRedDot   = -1   -- ICON_HD.png 红点图标
+-- [图标统一 0928] 移除 imgRedDot 死声明：红点统一走 DarkIcon.draw(vg,"reddot",...)
 
 -- ======================== 外部驱动标志 ========================
 local smithDecomposeRedDot = false  -- 铁匠铺分解红点（背包满时）

@@ -29,9 +29,12 @@ local function findBagIndex(data, artifactId)
     return nil, nil
 end
 
-local function isEquipped(data, artifactId)
-    return ArtifactSchema.findEquippedSlot(data, artifactId)
+--- [三队适配] 任意队伍是否已装配（返回 teamIdx, slot, subSlot）
+local function findEquippedAnyTeam(data, artifactId)
+    return ArtifactSchema.findEquippedSlotAnyTeam(data, artifactId)
 end
+
+
 
 local function getArtifactRefineRatio(artifact)
     if not artifact then return nil end
@@ -98,14 +101,14 @@ local function countBagTypesAfterRemove(data, removeArtifacts)
     return counts
 end
 
-local function hasSameTypeInSlot(data, slot, artifact, ignoreSubSlot)
+local function hasSameTypeInSlot(data, slot, artifact, ignoreSubSlot, teamIdx)
     if not artifact then return false end
     local artifactType = tonumber(artifact.artifactId) or tonumber(artifact.type) or 0
     if artifactType <= 0 then return false end
     local artifactInstanceId = tostring(artifact.id or "")
     for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
         if subSlot ~= ignoreSubSlot then
-            local equippedId = ArtifactSchema.getEquippedId(data, slot, subSlot)
+            local equippedId = ArtifactSchema.getEquippedId(data, slot, subSlot, teamIdx)
             local equippedArtifact = equippedId and select(2, findBagIndex(data, equippedId)) or nil
             local equippedType = equippedArtifact and (tonumber(equippedArtifact.artifactId) or tonumber(equippedArtifact.type) or 0) or 0
             if equippedArtifact and equippedType == artifactType and tostring(equippedArtifact.id or "") ~= artifactInstanceId then
@@ -130,7 +133,10 @@ local function validateMergeGroup(data, artifactIds, usedIds)
         end
         local idx, artifact = findBagIndex(data, idStr)
         if not artifact then return nil, nil, nil, nil, "神器不在背包中: " .. idStr end
-        if isEquipped(data, artifact.id) then return nil, nil, nil, nil, "已安装神器不能合成" end
+        -- [三队适配] 任一队伍已装配的实例都不能合成
+        if findEquippedAnyTeam(data, artifact.id) then
+            return nil, nil, nil, nil, "已安装神器不能合成"
+        end
         artifacts[#artifacts + 1] = artifact
         bagIndices[#bagIndices + 1] = idx
         if usedIds then usedIds[idStr] = true end
@@ -379,9 +385,11 @@ function ArtifactService.Draw(uid, count, payType)
     }
 end
 
-function ArtifactService.Equip(uid, artifactId, slot, subSlot)
+--- [三队适配] 装配到指定队伍（teamIdx 缺省 1；同一实例可同时装到多支队伍）
+function ArtifactService.Equip(uid, artifactId, slot, subSlot, teamIdx)
     slot = tonumber(slot)
     subSlot = tonumber(subSlot) or 1
+    teamIdx = ArtifactSchema.normalizeTeamIdx(teamIdx)
     if not isValidSlotIndex(slot, ArtifactSchema.SLOT_COUNT) then
         return false, "无效的槽位"
     end
@@ -401,31 +409,35 @@ function ArtifactService.Equip(uid, artifactId, slot, subSlot)
     local _idx, artifact = findBagIndex(data, artifactId)
     if not artifact then return false, "神器不存在" end
 
-    if hasSameTypeInSlot(data, slot, artifact, subSlot) then
+    if hasSameTypeInSlot(data, slot, artifact, subSlot, teamIdx) then
         return false, "同一槽位不能佩戴相同类型神器"
     end
 
-    local currentSlot, currentSubSlot = isEquipped(data, artifact.id)
+    -- 只在目标队伍内移动：该实例若已装在本队其他位置，先卸下（其他队伍的装配不受影响）
+    local currentSlot, currentSubSlot = ArtifactSchema.findEquippedSlot(data, artifact.id, teamIdx)
     if currentSlot then
-        ArtifactSchema.setEquippedId(data, currentSlot, currentSubSlot or 1, nil)
+        ArtifactSchema.setEquippedId(data, currentSlot, currentSubSlot or 1, nil, teamIdx)
     end
-    ArtifactSchema.setEquippedId(data, slot, subSlot, artifact.id)
+    ArtifactSchema.setEquippedId(data, slot, subSlot, artifact.id, teamIdx)
 
     ArtifactSchema.normalizeModule(data)
     PDM.MarkDirty(uid, "artifacts")
     PDM.FlushImmediate(uid)
 
     print("[ArtifactService] EQUIP uid=" .. tostring(uid)
+        .. " team=" .. tostring(teamIdx)
         .. " slot=" .. tostring(slot)
         .. " subSlot=" .. tostring(subSlot)
         .. " artifactId=" .. tostring(artifact.id))
 
-    return true, nil, { artifactId = tostring(artifact.id), slot = slot, subSlot = subSlot }
+    return true, nil, { artifactId = tostring(artifact.id), slot = slot, subSlot = subSlot, teamIdx = teamIdx }
 end
 
-function ArtifactService.Unequip(uid, slot, subSlot)
+--- [三队适配] 卸下指定队伍的装配（teamIdx 缺省 1）
+function ArtifactService.Unequip(uid, slot, subSlot, teamIdx)
     slot = tonumber(slot)
     subSlot = tonumber(subSlot) or 1
+    teamIdx = ArtifactSchema.normalizeTeamIdx(teamIdx)
     if not isValidSlotIndex(slot, ArtifactSchema.SLOT_COUNT) then
         return false, "无效的槽位"
     end
@@ -435,19 +447,20 @@ function ArtifactService.Unequip(uid, slot, subSlot)
 
     local data = ensureData(uid)
     if not data then return false, "神器数据未加载" end
-    local artifactId = ArtifactSchema.getEquippedId(data, slot, subSlot)
-    ArtifactSchema.setEquippedId(data, slot, subSlot, nil)
+    local artifactId = ArtifactSchema.getEquippedId(data, slot, subSlot, teamIdx)
+    ArtifactSchema.setEquippedId(data, slot, subSlot, nil, teamIdx)
 
     ArtifactSchema.normalizeModule(data)
     PDM.MarkDirty(uid, "artifacts")
     PDM.FlushImmediate(uid)
 
     print("[ArtifactService] UNEQUIP uid=" .. tostring(uid)
+        .. " team=" .. tostring(teamIdx)
         .. " slot=" .. tostring(slot)
         .. " subSlot=" .. tostring(subSlot)
         .. " artifactId=" .. tostring(artifactId))
 
-    return true, nil, { artifactId = artifactId, slot = slot, subSlot = subSlot }
+    return true, nil, { artifactId = artifactId, slot = slot, subSlot = subSlot, teamIdx = teamIdx }
 end
 
 function ArtifactService.RefineValue(uid, artifactId)
@@ -512,7 +525,8 @@ function ArtifactService.Reroll(uid, artifactIds)
         used[idStr] = true
         local idx, artifact = findBagIndex(data, idStr)
         if not artifact then return false, "神器不在背包中: " .. idStr end
-        if isEquipped(data, artifact.id) then return false, "已安装神器不能置换" end
+        -- [三队适配] 任一队伍已装配的实例都不能置换（实例可跨队复用，装配中受保护）
+        if findEquippedAnyTeam(data, artifact.id) then return false, "已安装神器不能置换" end
         artifacts[#artifacts + 1] = artifact
         bagIndices[#bagIndices + 1] = idx
     end

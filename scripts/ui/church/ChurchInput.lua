@@ -12,6 +12,7 @@ function M.bind(deps)
     local ClassChange = deps.ClassChange  -- 转职已迁出，保留注入但不使用
     local TalentPanel = deps.TalentPanel
     local ArtifactPanel = deps.ArtifactPanel
+    local ArtifactDrawPanel = deps.ArtifactDrawPanel
     local TownPageChrome = deps.TownPageChrome
     local TAB_ITEMS = deps.TAB_ITEMS
     local TAB_KEYS = deps.TAB_KEYS
@@ -56,6 +57,19 @@ function M.bind(deps)
         if state.tab == "shenqi" then
             local consumed = ArtifactPanel.handleTabInput(dx, dy)
             if consumed then return true end
+        end
+
+        -- ========== 神器宝箱 Tab 交互 → 委托 ArtifactDrawPanel ==========
+        -- （钥匙补购弹窗为模态，优先消费；返回键/页签栏点击放行给下方公共逻辑）
+        if state.tab == "baoxiang" then
+            if ArtifactDrawPanel.isKeyConfirmVisible and ArtifactDrawPanel.isKeyConfirmVisible() then
+                return ArtifactDrawPanel.handleTabInput(dx, dy)
+            end
+            local tabHit = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
+            local backHit = TownPageChrome.hitBack(dx, dy)
+            if not tabHit and not backHit then
+                return ArtifactDrawPanel.handleTabInput(dx, dy)
+            end
         end
 
         -- 返回按钮（三行模式由中缝层接管）

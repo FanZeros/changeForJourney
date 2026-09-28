@@ -78,7 +78,9 @@ function M.bind(deps)
         return ownData and ownData.level or 1
     end
 
-    local function calcHeroPower(heroId, partySlot)
+    --- [三队适配] teamIdx 指定按哪支队伍的装配表应用神器（缺省 1；
+    --- partySlot 缺省时回落到当前激活队槽位查找，行为与旧版一致）
+    local function calcHeroPower(heroId, partySlot, teamIdx)
         local teamSlots = get("teamSlots")
         if not partySlot then
             for i = 1, MAX_SLOTS do
@@ -101,7 +103,7 @@ function M.bind(deps)
         applyEquippedItems(a, heroId, partySlot)
         RelicBridge.applyToUnit(a, hero.classId)
         if partySlot then
-            ArtifactBridge.applyToUnit(a, partySlot)
+            ArtifactBridge.applyToUnit(a, partySlot, nil, teamIdx)
         end
 
         local total = 0
@@ -138,7 +140,8 @@ function M.bind(deps)
                 for i = 1, MAX_SLOTS do
                     local slot = slots[i]
                     if slot.state == "occupied" and slot.heroId then
-                        cache[i] = calcHeroPower(slot.heroId, i)
+                        -- [三队适配] 每队战力按本队神器装配计算
+                        cache[i] = calcHeroPower(slot.heroId, i, t)
                         if t == 1 then deployedCount = deployedCount + 1 end
                     else
                         cache[i] = 0

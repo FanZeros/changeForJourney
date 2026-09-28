@@ -77,8 +77,8 @@ Protocol.ACTION_TYPES = {
 
     -- 神器操作
     ARTIFACT_DRAW    = "artifact_draw",    -- 神器宝箱抽取（params: { count = 1|10 }）
-    ARTIFACT_EQUIP   = "artifact_equip",   -- 装配神器到出战槽位（params: { artifactId, slot, subSlot? }）
-    ARTIFACT_UNEQUIP = "artifact_unequip", -- 卸下指定出战槽位神器（params: { slot, subSlot? }）
+    ARTIFACT_EQUIP   = "artifact_equip",   -- 装配神器到出战槽位（params: { artifactId, slot, subSlot?, teamIdx? }；teamIdx 1~3 缺省 1）
+    ARTIFACT_UNEQUIP = "artifact_unequip", -- 卸下指定出战槽位神器（params: { slot, subSlot?, teamIdx? }）
     ARTIFACT_MERGE   = "artifact_merge",   -- 神器合成（3个同神器同品质→1个高品质）
     ARTIFACT_REROLL  = "artifact_reroll",  -- 神器置换（2个同品质神器→1个同品质不同类型神器）
     ARTIFACT_REFINE_VALUE = "artifact_refine_value", -- 神器洗练数值（消耗特权点，重新roll当前词缀数值）

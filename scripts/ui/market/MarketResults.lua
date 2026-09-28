@@ -2,8 +2,6 @@
 -- MarketResults - MarketPage.onActionResult / setMarketData / resetSessionData
 -- ============================================================================
 
-local ArtifactDefs = require("shared.artifact.ArtifactDefs")
-local PlayerStore = require("core.PlayerStore")
 local RewardPopup = require("ui.hud.popup.RewardPopup")
 
 local M = {}
@@ -11,52 +9,12 @@ local M = {}
 function M.bind(deps)
     local state = deps.state
     local Protocol = deps.Protocol
-    local COL = deps.COL
     local getShopItemById = deps.getShopItemById
     local getDayId = deps.getDayId
     local SHOP_CONFIG_VERSION = deps.SHOP_CONFIG_VERSION
 
     local function onActionResult(data)
-        if data.action == Protocol.ACTION_TYPES.ARTIFACT_DRAW then
-            if data.success then
-                local artifactData = PlayerStore.Get("artifacts")
-                if artifactData then
-                    if data.pityRare ~= nil then artifactData.pityRare = data.pityRare end
-                    if data.pityEpic ~= nil then artifactData.pityEpic = data.pityEpic end
-                end
-
-                if data.dailyFreeDrawDayId ~= nil then
-                    state.artifactFreeDrawDayId = data.dailyFreeDrawDayId
-                    local ad = PlayerStore.Get("artifacts")
-                    if ad then ad.dailyFreeDrawDayId = data.dailyFreeDrawDayId end
-                end
-                local rewards = {}
-                for _, artifact in ipairs(data.artifacts or {}) do
-                    rewards[#rewards + 1] = {
-                        type = "artifact",
-                        id = artifact.id,
-                        artifactId = artifact.artifactId,
-                        name = ArtifactDefs.getName(artifact),
-                        quality = artifact.quality or 1,
-                        value = artifact.value or 0,
-                        valueRatio = artifact.valueRatio,
-                        threatClearValue = artifact.threatClearValue,
-                        threatClearRatio = artifact.threatClearRatio,
-                    }
-                end
-                if #rewards > 0 then
-                    RewardPopup.show("神器宝箱", rewards)
-                end
-                state.floatText = "获得" .. tostring(#rewards) .. "件神器"
-            else
-                state.floatText = data.reason or "抽取失败"
-            end
-            state.floatTextX = 540
-            state.floatTextY = COL.BTN_Y - 120
-            state.floatTextTime = time.elapsedTime
-            return
-        end
-
+        -- 神器宝箱抽取（ARTIFACT_DRAW）结果已迁移至教堂 ChurchResults
         if data.action ~= Protocol.ACTION_TYPES.MARKET_BUY then return end
 
         if data.success then
@@ -166,11 +124,8 @@ function M.bind(deps)
     local function resetSessionData()
         state.purchased = {}
         state.shopConfigVersion = 0
-        state.artifactFreeDrawDayId = 0
         state.dialogOpen = false
         state.dialogItemIdx = nil
-        state.keyConfirmVisible = false
-        state.keyConfirmClosing = false
         print("[MarketPage] session data reset")
     end
 

@@ -12,11 +12,9 @@ function M.bind(deps)
     local BF = deps.BF
     local CARD_STEP_X = deps.CARD_STEP_X
     local CARD_STEP_Y = deps.CARD_STEP_Y
-    local COL = deps.COL
     local DLG = deps.DLG
     local GRID_LEFT = deps.GRID_LEFT
     local GameState = deps.GameState
-    local KEY_CF = deps.KEY_CF
     local MarketPage = deps.MarketPage
     local Protocol = deps.Protocol
     local SCROLL_BOT = deps.SCROLL_BOT
@@ -25,48 +23,15 @@ function M.bind(deps)
     local SL = deps.SL
     local TAB = deps.TAB
     local TownPageChrome = deps.TownPageChrome
-    local checkKeyAndDraw = deps.checkKeyAndDraw
-    local closeKeyConfirm = deps.closeKeyConfirm
     local getActualPrice = deps.getActualPrice
     local getPurchased = deps.getPurchased
     local hitTest = deps.hitTest
-    local isArtifactChestUnlocked = deps.isArtifactChestUnlocked
     local isSoldOut = deps.isSoldOut
     local sendAction_ = deps.sendAction_
-    local sendArtifactDraw = deps.sendArtifactDraw
     local state = deps.state
 
 local function handleInput(dx, dy)
     if not state.open or state.closing then return false end
-
-    -- 黄金钥匙快速购买确认框
-    if state.keyConfirmVisible then
-        if state.keyConfirmClosing then return true end
-        if time.elapsedTime - state.keyConfirmAnimTime < 0.05 then return true end
-
-        if hitTest(dx, dy, KEY_CF.BUY_CX, KEY_CF.BUY_CY, KEY_CF.BUY_W, KEY_CF.BUY_H) then
-            BF.trigger("market_key_confirm")
-            if GameState.getGems() < state.keyConfirmDiamondCost then
-                state.floatText = "黑晶不足"
-                state.floatTextX = KEY_CF.BUY_CX
-                state.floatTextY = KEY_CF.BUY_CY - 80
-                state.floatTextTime = time.elapsedTime
-                return true
-            end
-            local drawCount = state.keyConfirmCount
-            closeKeyConfirm()
-            sendArtifactDraw(drawCount)
-            state.floatText = "正在开启宝箱"
-            state.floatTextX = drawCount == 10 and COL.BTN_TEN_X or COL.BTN_ONE_X
-            state.floatTextY = COL.BTN_Y - 120
-            state.floatTextTime = time.elapsedTime
-            return true
-        end
-        if not hitTest(dx, dy, KEY_CF.CX, KEY_CF.CY, KEY_CF.W, KEY_CF.H) then
-            closeKeyConfirm()
-        end
-        return true
-    end
 
     -- 弹窗优先
     if state.dialogOpen then
@@ -168,25 +133,7 @@ local function handleInput(dx, dy)
         end
     end
 
-    -- 典藏 Tab：神器宝箱抽取按钮
-    if state.tab == "collection" then
-        if not isArtifactChestUnlocked() then
-            return true
-        end
-        local drawCount, btnId, btnCX = nil, nil, nil
-        if hitTest(dx, dy, COL.BTN_ONE_X, COL.BTN_Y, COL.BTN_W, COL.BTN_H) then
-            drawCount, btnId, btnCX = 1, "collection_draw_1", COL.BTN_ONE_X
-        elseif hitTest(dx, dy, COL.BTN_TEN_X, COL.BTN_Y, COL.BTN_W, COL.BTN_H) then
-            drawCount, btnId, btnCX = 10, "collection_draw_10", COL.BTN_TEN_X
-        end
-        if drawCount then
-            BF.trigger(btnId)
-            checkKeyAndDraw(drawCount)
-            return true
-        end
-    end
-
-    -- 道具 Tab：商品购买按钮
+    -- 道具 Tab：商品购买按钮（典藏页签已迁移至教堂·神器宝箱）
     if state.tab == "items" then
         for idx, item in ipairs(SHOP_ITEMS) do
             local col = ((idx - 1) % SL.CARD_COLS)
@@ -277,7 +224,7 @@ end
 
 local function handleScroll(wheel)
     if not state.open or state.closing then return false end
-    if state.dialogOpen or state.popupClosing or state.keyConfirmVisible then return true end
+    if state.dialogOpen or state.popupClosing then return true end
     if state.tab == "items" then
         state.scrollY = state.scrollY - wheel * 60
     end

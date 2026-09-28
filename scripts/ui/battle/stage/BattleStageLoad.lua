@@ -138,6 +138,7 @@ function M.load(ctx, stageId, skipBattleStart)
 
     -- 重置战斗状态
     ctx.battleActive = true
+    ctx.battleTimeoutElapsed = 0   -- 新的一场战斗：超时增伤计时清零
     if ctx.isFirstClear then
         ctx.firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     else
@@ -148,7 +149,7 @@ function M.load(ctx, stageId, skipBattleStart)
     ProjectileSystem.reset()
     TM.reset()   -- 清空仇恨表
     SEM.reset()  -- 清空状态效果
-    RCH.initBattle(ctx.allies)  -- 初始化遗物条件词条（战斗开始时效果在此触发）
+    RCH.initBattle(ctx.allies)  -- 初始化条件词条运行时（战斗开始时效果在此触发）
     ART.initBattle(ctx.allies)  -- 初始化神器战斗运行时效果
     for _, u in ipairs(ctx.allies) do
         u.atkProgress = 0

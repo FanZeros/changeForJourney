@@ -231,7 +231,7 @@ end
 
 local function itemAccent(item)
     local q = 2
-    if item.type == "equip" or item.type == "hero" or item.type == "relic"
+    if item.type == "equip" or item.type == "hero"
         or item.type == "artifact" or item.type == "seed" then
         q = item.quality or 1
     elseif item.type == "shard" and item.heroId then
@@ -246,7 +246,7 @@ local function itemAccent(item)
 end
 
 local function playObtainSfx(item)
-    if item and (item.type == "equip" or item.type == "artifact" or item.type == "relic") then
+    if item and (item.type == "equip" or item.type == "artifact") then
         GameSFX.play("install")
     elseif item and item.type == "hero" then
         GameSFX.play("level_up")
@@ -293,16 +293,6 @@ local resourceIconCache = {}
 -- 角色头像图标缓存: [heroId] = nvgImage handle
 local heroIconCache = {}
 
--- 遗物类型图标缓存: [relicType] = nvgImage handle
-local relicIconCache = {}
-local RELIC_ICON_PATHS = {
-    [1] = "image/遗物图标/ICON_YWX_GUI.png",   -- 岩龟
-    [2] = "image/遗物图标/ICON_YWX_SHE.png",   -- 毒蛇
-    [3] = "image/遗物图标/ICON_YWX_LU.png",    -- 白鹿
-    [4] = "image/遗物图标/ICON_YWX_LANG.png",  -- 灰狼
-    [5] = "image/遗物图标/ICON_YWX_YING.png",  -- 猎鹰
-}
-
 -- 装备图标/品质背景缓存已迁移至 ImageCache 共享模块（LRU 淘汰，防止 VRAM 累积）
 
 local cachedVg = nil
@@ -344,18 +334,6 @@ local function getHeroIcon(heroId)
     local path = "image/角色图标/UI_icon_hero_" .. heroId .. ".png"
     local img = nvgCreateImage(cachedVg, path, 0)
     heroIconCache[heroId] = img
-    return img
-end
-
---- 获取遗物类型图标（懒加载）
-local function getRelicIcon(relicType)
-    local cached = relicIconCache[relicType]
-    if cached then return cached end
-    if not cachedVg then return -1 end
-    local path = RELIC_ICON_PATHS[relicType]
-    if not path then return -1 end
-    local img = nvgCreateImage(cachedVg, path, 0)
-    relicIconCache[relicType] = img
     return img
 end
 
@@ -432,19 +410,16 @@ function RewardPopup.show(title, rewards, opts)
     -- 跟随触发面板：显式 opts.panel 优先，否则取横屏当前焦点面板（全局 H_focusPanel）
     state.panel = (opts and opts.panel) or (H_focusPanel or nil)
 
-    -- 排序：资源类排前，角色/装备/遗物类排后
+    -- 排序：资源类排前，角色/装备类排后
     local resources = {}
     local heroes = {}
     local equips = {}
-    local relics = {}
     local artifacts = {}
     for _, item in ipairs(rewards) do
         if item.type == "hero" then
             heroes[#heroes + 1] = item
         elseif item.type == "equip" then
             equips[#equips + 1] = item
-        elseif item.type == "relic" then
-            relics[#relics + 1] = item
         elseif item.type == "artifact" then
             artifacts[#artifacts + 1] = item
         else
@@ -469,13 +444,6 @@ function RewardPopup.show(title, rewards, opts)
         return la > lb
     end)
 
-    -- 遗物按品质降序排列
-    table.sort(relics, function(a, b)
-        local qa = a.quality or 1
-        local qb = b.quality or 1
-        return qa > qb
-    end)
-
     -- 神器按品质降序排列
     table.sort(artifacts, function(a, b)
         local qa = a.quality or 1
@@ -483,7 +451,7 @@ function RewardPopup.show(title, rewards, opts)
         return qa > qb
     end)
 
-    -- 合并：资源在前，角色居中，装备在后，遗物/神器最后
+    -- 合并：资源在前，角色居中，装备在后，神器最后
     state.items = {}
     for _, item in ipairs(resources) do
         state.items[#state.items + 1] = item
@@ -492,9 +460,6 @@ function RewardPopup.show(title, rewards, opts)
         state.items[#state.items + 1] = item
     end
     for _, item in ipairs(equips) do
-        state.items[#state.items + 1] = item
-    end
-    for _, item in ipairs(relics) do
         state.items[#state.items + 1] = item
     end
     for _, item in ipairs(artifacts) do
@@ -1101,24 +1066,6 @@ function RewardPopup.drawContent(vg)
                     nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
                     nvgText(vg, nameX, nameY, nameText, nil)
                 end
-            elseif item.type == "relic" then
-                -- ========== 遗物图标（品质背景 + 类型图标）==========
-                local q = item.quality or 1
-
-                -- 品质背景框
-                local qBgImg = getQualityBg(q)
-                if qBgImg >= 0 then
-                    drawImageCentered(vg, qBgImg, cx, cy, ICON_SIZE, ICON_SIZE, 1.0)
-                end
-
-                -- 遗物类型图标（内缩 12px）
-                local relicImg = getRelicIcon(item.relicType)
-                if relicImg >= 0 then
-                    local iconPadding = 12
-                    local iconInner = ICON_SIZE - iconPadding * 2
-                    drawImageCentered(vg, relicImg, cx, cy, iconInner, iconInner, 1.0)
-                end
-
             elseif item.type == "artifact" then
                 ArtifactAssetUtil.drawIcon(vg, item, cx, cy, ICON_SIZE, {})
 

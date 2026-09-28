@@ -555,7 +555,7 @@ function M.bind(deps)
                         critDmg  = critDmg,
                     })
 
-                    -- 遗物/副本等来自触发普攻的增伤（与 BattleCombat._talentDmgMult 一致）
+                    -- 副本等来自触发普攻的增伤（与 BattleCombat._talentDmgMult 一致）
                     if result._talentDmgMult and result._talentDmgMult > 1.0 then
                         missileDmg = math.floor(missileDmg * result._talentDmgMult + 0.5)
                     end

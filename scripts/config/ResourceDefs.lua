@@ -35,7 +35,6 @@ ResourceDefs.DEFS = {
     golden_key        = { iconPath = "image/货币道具/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙" },
     corrupt_stone     = { iconPath = "image/货币道具/UI_icon_FHS.png",    quality = 3, name = "腐化石" },
     sacred_stone      = { iconPath = "image/货币道具/UI_icon_SSS.png",    quality = 6, name = "神圣石" },
-    relic             = { iconPath = "image/货币道具/ICON_SJYW.png",      quality = 4, name = "遗物" },      -- 上古遗迹掉落（随机遗物图标）
 }
 
 --- 数字 ID（来自资源配置表序号）→ snake_case type 映射

@@ -277,6 +277,10 @@ local BG_DRIFT_Y_PERIOD = 5.0   -- 垂直漂移周期（秒）
 -- 战斗是否进行中（init 不再预加载关卡，等 setBattleData 首次到达后启动）
 local battleActive = false
 
+-- 战斗超时增伤计时（秒，战斗逻辑时间；随每场战斗/每波重开清零）
+local battleTimeoutElapsed = 0
+local BattleTimeout = require("systems.BattleTimeout")
+
 -- 挂机收益缓存（每分钟）—— 直接由 OfflineCalc 统一公式计算
 local cachedGoldPerMin = 0
 local cachedExpPerMin  = 0
@@ -456,6 +460,7 @@ local function setupBattleCombatContext()
         getEnemies  = function() return enemies end,
         ALLY_CARD_CY  = ALLY_CARD_CY,
         ENEMY_CARD_CY = ENEMY_CARD_CY,
+        globalDmgMult = 1.0,   -- 战斗超时增伤倍率（update 每帧按 battleTimeoutElapsed 回写）
         -- 暴击回调：触发暴击台词
         onCrit = function(attacker, isAlly)
             if isAlly then
@@ -526,6 +531,7 @@ local function loadStage(stageId, skipBattleStart)
         _enemyGuardFired = _enemyGuardFired, battleActive = battleActive,
         firstClearTimeLeft = firstClearTimeLeft, onStageLoadedCallback = onStageLoadedCallback,
         clearedStages = clearedStages,
+        battleTimeoutElapsed = battleTimeoutElapsed,
         ensureBattleCards = ensureBattleCards, getStageConfig = getStageConfig,
         recalcIdleIncome = recalcIdleIncome, resetWaveTimers = resetWaveTimers,
         generateIdleEnemyList = generateIdleEnemyList, generateEnemyList = generateEnemyList,
@@ -551,6 +557,7 @@ local function loadStage(stageId, skipBattleStart)
     _enemyGuardFired = ctx._enemyGuardFired
     battleActive = ctx.battleActive
     firstClearTimeLeft = ctx.firstClearTimeLeft
+    battleTimeoutElapsed = ctx.battleTimeoutElapsed or 0
     print("[BattleScene] stage loaded id=" .. tostring(stageId))
     require("systems.StoryPlayer").onStage(stageId, "enter")
 end
@@ -1017,6 +1024,15 @@ function BattleScene.update(dt)
     if StageBerserk.isActive() then
         StageBerserk.update(logicDt, enemies, allies)
     end
+
+    -- 战斗超时增伤：累计本场时长，每帧回写全局伤害倍率（敌我双方同时生效）
+    battleTimeoutElapsed = battleTimeoutElapsed + logicDt
+    local _toMult = BattleTimeout.calcMult(battleTimeoutElapsed)
+    local _bcs = BattleCombat.mountedState()
+    if _bcs and _bcs.ctx then
+        _bcs.ctx.globalDmgMult = _toMult
+    end
+
     ART.update(logicDt, allies)
 
 
@@ -1130,6 +1146,7 @@ end
 --- 重置战斗状态（新单位加入时调用）
 local function resetBattle()
     battleActive = true
+    battleTimeoutElapsed = 0
     if isFirstClear then
         firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     else
@@ -1143,7 +1160,7 @@ local function resetBattle()
     TM.reset()   -- 清空仇恨表
     SEM.reset()  -- 清空状态效果
     TAL.reset()  -- 清空天赋运行时状态
-    RCH.reset()  -- 清空遗物条件状态
+    RCH.reset()  -- 清空条件词条运行时状态
     ART.reset(allies)  -- 只清理当前战斗单位的神器条件状态
     -- 重置所有己方单位（清除Buff → 重新应用装备 → 填满血）& 初始化天赋
     for _, u in ipairs(allies) do
@@ -1151,7 +1168,7 @@ local function resetBattle()
         resetAllyUnit(u)
         TAL.initUnit(u)
     end
-    RCH.initBattle(allies)  -- 重新初始化遗物条件词条
+    RCH.initBattle(allies)  -- 重新初始化条件词条运行时
     ART.initBattle(allies)  -- 重新初始化神器条件效果
     for _, u in ipairs(enemies) do
         Diag.installSentinel(u)
@@ -1516,12 +1533,8 @@ function BattleScene.refreshAllyStats()
                             newUnit.armorType = eqArmorType
                         end
                     end
-                    -- 应用遗物词条属性加成（与 getDeployedTeam 一致）
-                    local RelicBridge = require("systems.RelicBridge")
-                    local relicConds = RelicBridge.applyToUnit(newUnit.attrs, newUnit.classId or u.classId)
-                    if relicConds and #relicConds > 0 then
-                        u.relicConditions = relicConds
-                    end
+                    -- [927 遗物后端移除] RelicBridge 已删除，不再应用遗物词条
+                    -- [928 三队并行] ArtifactBridge 保留 teamIdx 参数（多队神器数据隔离）
                     local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot, nil, u.artifactTeamIdx or 1)
                     if artifactEffects and #artifactEffects > 0 then
                         u.artifactEffects = artifactEffects

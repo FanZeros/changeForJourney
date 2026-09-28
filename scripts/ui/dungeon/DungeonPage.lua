@@ -32,7 +32,6 @@ local imgCard3       = -1   -- UI_FBRK_3.png   副本卡片背景（通天塔）
 local imgGold        = -1   -- UI_icon_JB_X.png 金币图标
 local imgGem         = -1   -- UI_icon_SJ_X.png 宝石图标
 local imgDust        = -1   -- UI_icon_ASFC.png 奥术尘图标
-local imgRelic       = -1   -- ICON_SJYW.png 遗物图标
 local imgQualityBg   = {}   -- UI_icon_ZBBJ_N.png 品质背景 (1-5)
 
 -- 详情面板图片
@@ -213,7 +212,6 @@ local dungeonList = {
         maxDaily = 2,
         rewards = {
             { type = "dust",  icon = "image/货币道具/UI_icon_ASFC.png", quality = 3, label = "奥术尘" },
-            { type = "relic", icon = "image/货币道具/ICON_SJYW.png", quality = 4, label = "遗物" },
         },
     },
     {
@@ -242,7 +240,7 @@ local function getFloorRewards(dungeonId, floor)
     elseif dungeonId == "ancient_ruin" then
         local floorData = require("config.DungeonConfig").getAncientRuinFloor(floor)
         if floorData then
-            return floorData.sweepDust, floorData.firstRelicCount
+            return floorData.sweepDust, floorData.firstDust or 0
         end
     end
     return 0, 0
@@ -488,7 +486,6 @@ function DungeonPage.init(vg)
     imgGold       = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     imgGem        = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     imgDust       = nvgCreateImage(vg, "image/货币道具/UI_icon_ASFC.png", 0)
-    imgRelic      = nvgCreateImage(vg, "image/货币道具/ICON_SJYW.png", 0)
     -- 加载品质背景 1-6
     for i = 1, 6 do
         imgQualityBg[i] = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_" .. tostring(i) .. ".png", 0)
@@ -1111,7 +1108,6 @@ function DungeonPage.onActionResult(data)
             print("[DungeonPage] SWEEP OK: floor=" .. tostring(data.sweepFloor)
                 .. " gold=" .. tostring(data.gold)
                 .. " dust=" .. tostring(data.dust)
-                .. " relics=" .. tostring(data.relics and #data.relics or 0)
                 .. " daily=" .. tostring(data.dailyUsed) .. "/" .. tostring(data.dailyMax))
             -- 更新本地显示数据
             dailyUsed = data.dailyUsed or dailyUsed
@@ -1131,11 +1127,8 @@ function DungeonPage.onActionResult(data)
             if (data.dust or 0) > 0 then
                 rewards[#rewards + 1] = { type = "arcane_dust", amount = data.dust }
             end
-            if data.relics and #data.relics > 0 then
-                for _, r in ipairs(data.relics) do
-                    rewards[#rewards + 1] = { type = "relic", relicType = r.type, quality = r.quality or 4 }
-                end
-            end
+            -- [927 遗物后端移除] data.relics 遗物奖励分支已删除
+            -- [928 修复] 奖励弹出前自动离开副本页，避免奖励被模态页盖住
             leaveDungeonPageForReward()
             require("ui.hud.popup.RewardPopup").show("扫荡奖励", rewards)
         else
@@ -1290,7 +1283,6 @@ function DungeonPage.onActionResult(data)
                 .. " firstClear=" .. tostring(data.firstClear)
                 .. " gold=" .. tostring(data.gold)
                 .. " dust=" .. tostring(data.dust)
-                .. " relics=" .. tostring(data.relics and #data.relics or 0)
                 .. " nextFloor=" .. tostring(data.nextFloor))
             -- 更新本地楼层显示
             local dId = data.dungeonId or "gold_mine"

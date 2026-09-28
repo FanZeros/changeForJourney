@@ -10,7 +10,6 @@ local PlayerStore      = require("core.PlayerStore")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
-local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
 local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 
@@ -168,8 +167,6 @@ local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqD
             EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
     end
 
-    RelicBridge.applyToUnit(attrs, classId)
-
     local partySlotForArtifact = EquipmentSystem.findPartySlotInTeams(heroesData, heroId)
     if partySlotForArtifact then
         ArtifactBridge.applyToUnit(attrs, partySlotForArtifact)
@@ -288,7 +285,7 @@ function M.collectAttributes(heroId, heroCfg, level)
     end
     local attrs = hero.attrs
 
-    -- === 应用已穿戴装备、遗物、神器属性（与战斗/战力口径一致） ===
+    -- === 应用已穿戴装备、神器属性（与战斗/战力口径一致） ===
     local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
     applyDetailRuntimeBonuses(attrs, heroId, heroCfg.classId, heroesData, eqData)
 

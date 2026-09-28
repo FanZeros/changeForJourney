@@ -13,7 +13,7 @@ function M.bind(deps)
     local EquipmentConfig = deps.EquipmentConfig
     local EquipmentSetSystem = require("systems.EquipmentSetSystem")
     local CPE = require("systems.CombatPowerEstimate")
-    local RelicBridge = deps.RelicBridge
+    -- [927 遗物后端移除] RelicBridge 已删除，不再从 deps 取用
     local ArtifactBridge = deps.ArtifactBridge
     local AwakeningConfig = deps.AwakeningConfig
     local TalentEffect = deps.TalentEffect
@@ -104,7 +104,6 @@ function M.bind(deps)
         local a = hero.attrs
 
         applyEquippedItems(a, heroId, partySlot)
-        RelicBridge.applyToUnit(a, hero.classId)
         if partySlot then
             ArtifactBridge.applyToUnit(a, partySlot, nil, teamIdx)
         end

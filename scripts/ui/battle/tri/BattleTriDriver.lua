@@ -133,6 +133,8 @@ function BattleTriDriver.new(teamIdx, options)
             getEnemies = function() return drv.enemies end,
             ALLY_CARD_CY  = BattleLayout.FIELD_CY,
             ENEMY_CARD_CY = BattleLayout.FIELD_CY,
+            -- 战斗超时增伤：本场已持续时间 → 敌我双方全局伤害倍率
+            globalDmgMult = require("systems.BattleTimeout").calcMult(drv._timeoutElapsed or 0),
             -- [三战场独立发音] 攻击命中回调：投射物表现 + 音效（与行1 BattleScene 同逻辑；
             -- spawn 落到本行 mount 的 psState，各行互不干扰）
             onAttackHit = function(attacker, target, atkCX, atkCY, tgtCX, tgtCY, result, applyHit)
@@ -209,6 +211,7 @@ function BattleTriDriver.new(teamIdx, options)
         self._labTimedOut = false
         self._labElapsed = 0
         self._labTimeLimit = options.timeLimit or 300
+        self._timeoutElapsed = 0   -- 战斗超时增伤计时（每场重开清零）
         self:activate()
         if self.battleLab then TAL.reset() end
         -- 清理旧战线单位的临时效果，不触碰其他队的神器状态
@@ -448,6 +451,7 @@ function BattleTriDriver.new(teamIdx, options)
     function drv:tick(dt)
         if not self.active then return end
         self._tickDt = dt
+        self._timeoutElapsed = (self._timeoutElapsed or 0) + dt   -- 超时增伤计时
         self:tickRewards(dt)
         local allies, enemies = self.allies, self.enemies
         if #allies == 0 then return end

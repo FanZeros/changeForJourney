@@ -97,11 +97,8 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
                             newUnit.armorType = eqArmorType
                         end
                     end
-                    local RelicBridge = require("systems.RelicBridge")
-                    local relicConds = RelicBridge.applyToUnit(newUnit.attrs, newUnit.classId or u.classId)
-                    if relicConds and #relicConds > 0 then
-                        u.relicConditions = relicConds
-                    end
+                    -- [927 遗物后端移除] RelicBridge 已删除，不再应用遗物条件
+                    -- [928 三队并行] ArtifactBridge 保留 teamIdx 参数（多队神器数据隔离）
                     local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot, nil, u.artifactTeamIdx or 1)
                     if artifactEffects and #artifactEffects > 0 then
                         u.artifactEffects = artifactEffects

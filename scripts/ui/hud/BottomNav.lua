@@ -96,7 +96,7 @@ function BottomNav.getBadge(tabIndex)
     return tabBadges[tabIndex] == true, tabBadgeStyle[tabIndex]
 end
 
---- 刷新城镇标签(Tab 4)角标：古树(天赋) + 教堂(转职/神器) + 铁匠铺(可强化) + 遗物
+--- 刷新城镇标签(Tab 4)角标：古树(天赋) + 教堂(转职/神器) + 铁匠铺(可强化)
 function BottomNav.refreshTownBadge()
     -- 古树天赋点未用 → 箭头
     local okTP, TP = pcall(require, "ui.church.talent.TalentPage")
@@ -125,15 +125,7 @@ function BottomNav.refreshTownBadge()
             return
         end
     end
-    -- 遗物角标（可强化→箭头，新遗物→红点）
-    local okRS, RS = pcall(require, "systems.RelicSystem")
-    if okRS and RS and RS.getRelicBadgeInfo then
-        local show, style = RS.getRelicBadgeInfo()
-        if show then
-            BottomNav.setBadge(4, true, style)
-            return
-        end
-    end
+
     -- 都没有→清除
     BottomNav.setBadge(4, false, nil)
 end

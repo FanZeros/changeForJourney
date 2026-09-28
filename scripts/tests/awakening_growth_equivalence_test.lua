@@ -32,8 +32,10 @@ local function makeExtra()
 end
 
 --- 构造击杀上下文；statuses = { burning=true, ... } 模拟 SEM.has
-local function makeCtx(killerFlags, statuses)
-    local deadEnemy = { statuses = statuses or {}, _killedBy = nil }
+--- killerFlags 挂 attacker；deadFlags 挂死亡敌人（_killedByCrit/_killedByRicochet/_killedByNightSlash）
+local function makeCtx(killerFlags, statuses, deadFlags)
+    local deadEnemy = { statuses = statuses or {} }
+    for k, v in pairs(deadFlags or {}) do deadEnemy[k] = v end
     local killer = {}
     for k, v in pairs(killerFlags or {}) do killer[k] = v end
     deadEnemy._killedBy = killer
@@ -49,11 +51,54 @@ function Start()
     print("[awakening_growth_equivalence_test] start")
     local ok, err = pcall(function()
         -- ========== 1) 无条件击杀叠层（旧: if n1 then bump() end） ==========
-        for _, hid in ipairs({ 1, 3, 4, 5, 7, 11, 12, 13, 14, 18, 19, 24, 25 }) do
+        -- 注意：11/13/14/18 已改为专属口径（杠杆②），不在此列表
+        for _, hid in ipairs({ 1, 3, 4, 5, 7, 12, 19, 24, 25 }) do
             local extra = makeExtra()
             local applied = AG.applyGrowth(hid, extra, makeCtx())
             check(applied and extra.stacks == 1,
                 string.format("hero%d 任意击杀 stacks 0→1", hid))
+        end
+
+        -- ========== 1b) 杠杆②：专属口径 ×2（新条件触发才叠，且叠 2 层） ==========
+        do -- #18 老六 / #14 内鬼：暴击击杀 ×2
+            for _, hid in ipairs({ 14, 18 }) do
+                local eCrit = makeExtra()
+                local hit = AG.applyGrowth(hid, eCrit, makeCtx(nil, {}, { _killedByCrit = true }))
+                check(hit and eCrit.stacks == 2, string.format("hero%d 暴击击杀 stacks+2", hid))
+                local eNorm = makeExtra()
+                local miss = AG.applyGrowth(hid, eNorm, makeCtx())
+                check(not miss and eNorm.stacks == 0, string.format("hero%d 非暴击击杀不叠层", hid))
+            end
+        end
+        do -- #11 熬夜冠军：通宵斩击杀 ×2（读 deadEnemy._killedByNightSlash 精确标记，
+             --        不读 attacker._nightSlashKill 粘性标记）
+            local eHit = makeExtra()
+            local hit = AG.applyGrowth(11, eHit, makeCtx(nil, {}, { _killedByNightSlash = true }))
+            check(hit and eHit.stacks == 2, "hero11 通宵斩击杀 stacks+2")
+            -- 回归防护：粘性标记挂在 killer 上时不得误触发
+            local eSticky = makeExtra()
+            local missSticky = AG.applyGrowth(11, eSticky, makeCtx({ _nightSlashKill = true }))
+            check(not missSticky and eSticky.stacks == 0,
+                "hero11 attacker 粘性 _nightSlashKill 不误触发(防回归)")
+            local eNorm = makeExtra()
+            check(not AG.applyGrowth(11, eNorm, makeCtx()) and eNorm.stacks == 0,
+                "hero11 普通击杀不叠层")
+        end
+        do -- #13 弹弹弹：弹射击杀 ×2
+            local eHit = makeExtra()
+            local hit = AG.applyGrowth(13, eHit, makeCtx(nil, {}, { _killedByRicochet = true }))
+            check(hit and eHit.stacks == 2, "hero13 弹射击杀 stacks+2")
+            local eNorm = makeExtra()
+            check(not AG.applyGrowth(13, eNorm, makeCtx()) and eNorm.stacks == 0,
+                "hero13 非弹射击杀不叠层")
+        end
+        do -- #8 愤怒的小雀：标记击杀 ×2（原 ×1，杠杆②提倍率）
+            local eHit = makeExtra()
+            local hit = AG.applyGrowth(8, eHit, makeCtx(nil, { marked = true }))
+            check(hit and eHit.stacks == 2, "hero8 标记击杀 stacks+2")
+            local eNorm = makeExtra()
+            check(not AG.applyGrowth(8, eNorm, makeCtx()) and eNorm.stacks == 0,
+                "hero8 非标记击杀不叠层")
         end
 
         -- ========== 2) 条件击杀叠层 ==========
@@ -73,12 +118,7 @@ function Start()
             check(not AG.applyGrowth(6, e2, makeCtx(nil, { burning = true }))
                 and e2.shockKills == 0, "hero6 燃烧(非感电)击杀不叠层")
         end
-        do -- #8 愤怒的小雀：仅标记击杀
-            local e1 = makeExtra()
-            local hit = AG.applyGrowth(8, e1, makeCtx(nil, { marked = true }))
-            check(hit and e1.stacks == 1, "hero8 标记击杀 stacks+1")
-            local e2 = makeExtra()
-            check(not AG.applyGrowth(8, e2, makeCtx()) and e2.stacks == 0, "hero8 非标记击杀不叠层")
+        do -- #8 愤怒的小雀：标记口径断言已移至 1b 节（杠杆② ×2）
         end
         do -- #21 闪电卖鸡：仅氮气击杀
             local e1 = makeExtra()

@@ -37,6 +37,13 @@ AG.CONDITIONS = {
     marked    = function(c) return c.hasStatus(c.deadEnemy, "marked") end,
     --- 氮气冲刺击杀（#21 闪电卖鸡）
     nitroKill = function(c) return c.killer ~= nil and c.killer._nitroKill == true end,
+    --- 暴击击杀（#14 内鬼 / #18 老六）——死亡敌人身上由击杀归因写 _killedByCrit
+    critKill  = function(c) return c.deadEnemy ~= nil and c.deadEnemy._killedByCrit == true end,
+    --- 通宵斩击杀（#11 熬夜冠军）——死亡敌人身上写 _killedByNightSlash（精确一次性，
+    ---   不读 attacker._nightSlashKill 粘性标记，否则首次通宵斩后任意击杀都会误算）
+    nightSlashKill = function(c) return c.deadEnemy ~= nil and c.deadEnemy._killedByNightSlash == true end,
+    --- 弹射击杀（#13 弹弹弹）——死亡敌人身上由 dealDamageToUnit 写 _killedByRicochet
+    ricochetKill   = function(c) return c.deadEnemy ~= nil and c.deadEnemy._killedByRicochet == true end,
 }
 
 -- ======================== 击杀叠层规则（觉醒1） ========================
@@ -51,13 +58,18 @@ AG.RULES = {
     [5]  = { cond = "any",       fields = { { "stacks", 1 } } },
     [6]  = { cond = "shocked",   fields = { { "shockKills", 1 }, { "stacks", 1 } } },
     [7]  = { cond = "any",       fields = { { "stacks", 1 } } },
-    [8]  = { cond = "marked",    fields = { { "stacks", 1 } } },
-    [11] = { cond = "any",       fields = { { "stacks", 1 } } },
+    -- #8 愤怒的小雀（杠杆②）：标记击杀 ×2（原 ×1，已有门槛，提倍率补偿）
+    [8]  = { cond = "marked",    fields = { { "stacks", 2 } } },
+    -- #11 熬夜冠军（杠杆②）：通宵斩击杀 ×2（原任意击杀 ×1）
+    [11] = { cond = "nightSlashKill", fields = { { "stacks", 2 } } },
     [12] = { cond = "any",       fields = { { "stacks", 1 } } },
-    [13] = { cond = "any",       fields = { { "stacks", 1 } } },
-    [14] = { cond = "any",       fields = { { "stacks", 1 } } },
+    -- #13 弹弹弹（杠杆②）：弹射击杀 ×2（原任意击杀 ×1）
+    [13] = { cond = "ricochetKill",   fields = { { "stacks", 2 } } },
+    -- #14 内鬼（杠杆②）：暴击击杀 ×2（原任意击杀 ×1）
+    [14] = { cond = "critKill",  fields = { { "stacks", 2 } } },
     [16] = { cond = "any",       fields = { { "swordStacks", 1 }, { "stacks", 1 } } },
-    [18] = { cond = "any",       fields = { { "stacks", 1 } } },
+    -- #18 老六（杠杆②）：暴击击杀 ×2（原任意击杀 ×1）
+    [18] = { cond = "critKill",  fields = { { "stacks", 2 } } },
     [19] = { cond = "any",       fields = { { "stacks", 1 } } },
     [20] = { cond = "any",       fields = { { "gateStacks", 1 }, { "stacks", 1 } } },
     [21] = { cond = "nitroKill", fields = { { "nitroKills", 1 }, { "stacks", 1 } } },

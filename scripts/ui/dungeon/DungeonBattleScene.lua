@@ -565,6 +565,7 @@ function DungeonScene.open(opts)
         u._towerDeathNotified = nil
         u._fallen = nil
         u._fallenPending = nil
+        u._fallenAt = nil
         if u.attrs then
             u.attrs:fillHp()
             u.hp = u.attrs.final[AD.MAX_HP]
@@ -1120,6 +1121,7 @@ function DungeonScene.update(dt)
                 TM.removeUnit(unit)
                 SEM.removeUnit(unit)
                 unit._fallenPending = true
+                unit._fallenAt = time.elapsedTime
                 BattleCombat.setCardAnim(unit, {
                     state = "dying", timer = 0, lungeDir = 1,
                     knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
@@ -1128,32 +1130,8 @@ function DungeonScene.update(dt)
             end
         end
     end
-    -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格
-    do
-        local allies = state.allies
-        for i = #allies, 1, -1 do
-            local u = allies[i]
-            if u._fallenPending then
-                local st = BattleCombat.getAnimState(u)
-                if u.hp > 0 then
-                    -- 退场途中被拉起（训练木桩回血等）：取消紧凑，留在原位
-                    u._fallenPending = nil
-                elseif st == "gone" or st == nil then
-                    u._fallenPending = nil
-                    u._fallen = true
-                    table.remove(allies, i)
-                    table.insert(allies, u)
-                    for j = i, #allies - 1 do
-                        local moved = allies[j]
-                        if moved.hp > 0 then
-                            BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
-                                advanceDist = require("core.BattleLayout").STRIP_PITCH })
-                        end
-                    end
-                end
-            end
-        end
-    end
+    -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
+    require("ui.battle.scene.BattleAllyReset").compactFallen(state.allies, time.elapsedTime)
     allyAlive = BattleCombat.getAliveUnits(state.allies)
 
     if #allyAlive == 0 and #state.allies > 0 then
@@ -1165,6 +1143,7 @@ function DungeonScene.update(dt)
                     unit.atkProgress = 0
                     unit._fallen = nil
                     unit._fallenPending = nil
+                    unit._fallenAt = nil
                     unit._artifactDeathHandled = nil
                     BattleCombat.clearCardAnim(unit)
                     BattleCombat.clearHitFlash(unit)

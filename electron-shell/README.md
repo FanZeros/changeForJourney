@@ -225,6 +225,54 @@ pack_release.py                 --protect-scripts-root 同基准复核 → elect
 3. `prepare_local_dist.py` 的 `latest_prepare_source()` 取「最近一次 preview
    prepare 产物」——多工程并存时确认拿到的是混淆工作区那次。
 
+## 三档混淆强度实测（2026-09-28，相似度工具量化）
+
+用 `FanZeros/tempGame` 的 `compare_lua_similarity.py`（发布包 vs 工程源码，行级
+difflib 加权）量化不同混淆档的实际收益。**同一套源码**分别构建 dist 后与源码比对：
+
+| 档位 | 组成 | 对称相似度 | 逐字节一致文件 | 官方 Build | 备注 |
+|------|------|-----------|--------------|-----------|------|
+| 基线 | 未混淆 | **100.0%** | 361/361 | ✅ | 明文发布，拖出来就是源码 |
+| 档 A | 局部改名 + @param 同步（注释保留） | **46.0%** | 17/361 | ✅ | L1 原始档 |
+| 档 B | A + **剥离普通注释** | **39.3%** | 17/361 | ✅ | **推荐默认** |
+| 档 C | B + 私有字段/方法改名 | **38.4%** | 17/361 | ✅ | 实验，见下 |
+
+**关键结论**：
+1. **剥注释是性价比最高的一步**：46.0% → 39.3%（-6.7 个百分点），零风险
+   （不动任何标识符，只删普通注释；保留 `---@` 注解与 `--[[@as]]` 断言以过 LSP）。
+   故已设为 `protect_build.py` 默认行为。
+2. **字段/方法名改名收益极低**：39.3% → 38.4%（**-0.9 个百分点**），因为该工具是
+   **行级**比对，字段改名只改行内 token、不改行结构；而剥注释删的是整行。
+   同时它**改变模块 API 表面**（`getNodeCount` → `_f37_`），风险显著：
+   - 静态安全前提已做到：只改**单文件私有**字段（跨文件出现即排除）、排除引擎
+     `.emmylua`/`urhox-libs` 声明（23097 个 id）、排除所有出现在字符串字面量里的
+     名字（4934 个）、整体排除含动态拼接访问的 17 个文件（如
+     `GameState["get"..field]`）、排除 `_` 前缀元方法。
+   - 离线验证：69 个非引擎依赖文件 **0 真实回归**；但 **290 个引擎依赖文件离线测不了**，
+     且"单文件私有"无法证明没有运行时动态访问。
+   - 故 `--rename-fields` **默认关闭**，需完整实机回归后才考虑发行。
+3. 17 个逐字节一致文件 = 16 个纯数据表（无 local 可改）+ `core/DarkIcon.lua`
+   （luaparser 中文 token 解析失败，安全拒绝、保持明文）。
+
+**要把相似度进一步压向 0，唯一有效手段是 L2 字节码**：该工具对 `\x1bLua` 头的文件
+直接判 `kind=bytecode`、不参与行级比对（发布包无可读行）。前提是 Q1（WASM VM 是否
+接受字节码）在本机验证通过，见 `WINDOWS_PROTECT_CHECKLIST.md §4`。
+
+### 档位用法
+```bash
+# 档 B（默认：局部改名 + @param 同步 + 剥注释）
+python3 electron-shell/protect_build.py --source-root . --workspace-root .tmp/protected-workspace
+
+# 档 C（实验：再加私有字段改名，需 --emmylua-root 指向含引擎声明的根）
+python3 electron-shell/protect_build.py --source-root . --workspace-root .tmp/pw-fields \
+        --rename-fields --emmylua-root /path/to/engine-root
+
+# 混淆器单档直用
+python3 electron-shell/lua_obfuscator.py --source-root . --output-root ../out --strip-comments
+python3 electron-shell/lua_obfuscator.py --source-root . --output-root ../out2 \
+        --strip-comments --rename-fields --emmylua-root /path/to/engine-root
+```
+
 ## 一键脚本（推荐，本机跑）
 
 云端代理传 ~466MB zip 会被超时掐断，**打包和上传请在本机直连 GitHub**。

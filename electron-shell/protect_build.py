@@ -48,7 +48,7 @@ SHELL = Path(__file__).resolve().parent
 sys.path.insert(0, str(SHELL))
 
 try:
-    from lua_obfuscator import obfuscate_file_safe  # noqa: E402
+    from lua_obfuscator import obfuscate_file_enhanced, analyze_project  # noqa: E402
 except ImportError as e:  # pragma: no cover
     import sys as _sys
     raise SystemExit(
@@ -93,7 +93,8 @@ def link_or_copy_dir(src: Path, dst: Path, link: bool) -> str:
     return "symlink"
 
 
-def materialize(source_root: Path, ws: Path, link_assets: bool) -> dict:
+def materialize(source_root: Path, ws: Path, link_assets: bool,
+                rename_fields: bool = False, emmylua_root: Path = None) -> dict:
     if not (source_root / "scripts").is_dir():
         die("source-root 下没有 scripts/：%s" % source_root)
     for required in (".project", "assets"):
@@ -134,7 +135,15 @@ def materialize(source_root: Path, ws: Path, link_assets: bool) -> dict:
 
     # scripts: 物化混淆产物
     files = sorted((source_root / "scripts").rglob("*"))
-    report = {"changed": [], "unchanged": [], "rejected": [], "copied_non_lua": 0}
+    report = {"changed": [], "unchanged": [], "rejected": [], "copied_non_lua": 0,
+              "field_names": 0}
+    renameable = {}
+    if rename_fields:
+        emmy = (emmylua_root or source_root).resolve()
+        fa = analyze_project(emmy)
+        renameable = fa.get("renameable", {})
+        log("⚠️ --rename-fields【实验性】：单文件私有字段/方法改名，改变模块 API 表面；"
+            "须完整实机回归后才可用于发行。字段分析：%s" % fa.get("stats", {}))
     for src in files:
         if src.is_dir():
             continue
@@ -144,9 +153,12 @@ def materialize(source_root: Path, ws: Path, link_assets: bool) -> dict:
         raw = src.read_bytes()
         if src.suffix == ".lua":
             text = raw.decode("utf-8")
-            obf, status, detail = obfuscate_file_safe(text)
+            allowed = renameable.get(rel.as_posix()) if rename_fields else None
+            obf, status, detail, fmap = obfuscate_file_enhanced(
+                text, allowed_fields=allowed, strip_comments=True)
             out_bytes = obf.encode("utf-8")
             dst.write_bytes(out_bytes)
+            report["field_names"] += len(fmap)
             report[status].append({
                 "path": rel.as_posix(),
                 "detail": detail,
@@ -162,9 +174,11 @@ def materialize(source_root: Path, ws: Path, link_assets: bool) -> dict:
             report["copied_non_lua"] += 1
 
     n_lua = len(report["changed"]) + len(report["unchanged"]) + len(report["rejected"])
-    log("lua files=%d changed=%d unchanged=%d rejected=%d non_lua_copied=%d" % (
+    log("lua files=%d changed=%d unchanged=%d rejected=%d non_lua_copied=%d "
+        "field_names_renamed=%d (注释已剥离; 字段改名=%s)" % (
         n_lua, len(report["changed"]), len(report["unchanged"]),
-        len(report["rejected"]), report["copied_non_lua"]))
+        len(report["rejected"]), report["copied_non_lua"], report["field_names"],
+        "ON(实验)" if rename_fields else "off"))
     if n_lua == 0:
         die("没有找到任何 .lua 文件")
 
@@ -183,6 +197,9 @@ def materialize(source_root: Path, ws: Path, link_assets: bool) -> dict:
         "unchanged": len(report["unchanged"]),
         "rejected": len(report["rejected"]),
         "copied_non_lua": report["copied_non_lua"],
+        "field_names_renamed": report["field_names"],
+        "rename_fields": bool(rename_fields),
+        "strip_comments": True,
         "assets_mode": mode,
         "files": report,
     }
@@ -199,6 +216,12 @@ def main() -> int:
     ap.add_argument("--link-assets", action="store_true",
                     help="实验：assets/ 用符号链接/junction 代替真实复制（省 ~400MB 磁盘，"
                          "但官方 Build 实测不烘焙，资产闸门会拒包）")
+    ap.add_argument("--rename-fields", action="store_true",
+                    help="【实验性】除局部改名+剥注释外，再重命名单文件私有字段/方法名。"
+                         "改变模块 API 表面，需完整实机回归验证后才可发行；对行级相似度"
+                         "仅再降约 1%（收益低、风险高），默认关闭")
+    ap.add_argument("--emmylua-root", type=Path, default=None,
+                    help="--rename-fields 时引擎声明(.emmylua/urhox-libs)所在根；缺省用 source-root")
     args = ap.parse_args()
 
     source_root = args.source_root.resolve()
@@ -214,7 +237,9 @@ def main() -> int:
     if ws == source_root or ws in source_root.parents:
         die("workspace-root 不能等于 source-root、也不能包含 source-root（%s vs %s）" % (ws, source_root))
 
-    summary = materialize(source_root, ws, args.link_assets)
+    summary = materialize(source_root, ws, args.link_assets,
+                          rename_fields=args.rename_fields,
+                          emmylua_root=args.emmylua_root)
     log("完成。下一步：")
     log('  npx -y --package @taptap/maker@0.0.34 taptap-maker preview prepare --target-dir "%s" --json' % ws)
     log("  python electron-shell/prepare_local_dist.py --scripts-root %s" % (ws / "scripts"))

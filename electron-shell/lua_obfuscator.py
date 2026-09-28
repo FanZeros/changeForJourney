@@ -515,9 +515,37 @@ def token_fingerprint(code: str):
             names.append(tok.text)
         else:
             non_name.append(sym)
-            if sym == "STRING":
+            if sym in ("NORMALSTRING", "LONGSTRING"):
                 strings.append(tok.text)
     return non_name, names, strings
+
+
+def token_fingerprint_syntax(code: str):
+    """default channel(语法 token)指纹:剥注释/改空白不影响此序列。
+
+    返回 (非 NAME 语法 token 序列, NAME token 数, 字符串字面量序列)。
+    供增强版(剥注释+字段改名)校验;L1 逐字节版仍用 token_fingerprint。
+    """
+    lexer = LuaLexer(InputStream(code))
+    lexer.removeErrorListeners()
+    ts = CommonTokenStream(lexer)
+    ts.fill()
+    non_name = []
+    n_names = 0
+    strings = []
+    for tok in ts.tokens:
+        if tok.type < 0:
+            continue
+        if tok.channel != 0:
+            continue
+        sym = sym_of(tok.type)
+        if sym == "NAME":
+            n_names += 1
+        else:
+            non_name.append(sym)
+            if sym in ("NORMALSTRING", "LONGSTRING"):
+                strings.append(tok.text)
+    return non_name, n_names, strings
 
 
 def verify_equivalence(original: str, obfuscated: str):
@@ -570,7 +598,8 @@ def obfuscate_file_safe(code: str):
         return code, "rejected", "%s: %s" % (type(e).__name__, e)
 
 
-def run_all(source_root: Path, output_root: Path):
+def run_all(source_root: Path, output_root: Path, strip_comments: bool = False,
+            rename_fields: bool = False, field_analysis=None):
     scripts = source_root / "scripts"
     files = sorted(scripts.rglob("*.lua"))
     if not files:
@@ -581,15 +610,30 @@ def run_all(source_root: Path, output_root: Path):
             or output_root in source_root.parents:
         raise SystemExit("output must be outside the source tree")
 
+    renameable = {}
+    if rename_fields:
+        if field_analysis is None:
+            field_analysis = analyze_project(source_root)
+        renameable = field_analysis.get("renameable", {})
+        log_stats = field_analysis.get("stats", {})
+        print("field analysis: %s" % log_stats)
     stats = {"changed": 0, "unchanged": 0, "rejected": 0}
     in_bytes = out_bytes = 0
     rejected = []
+    field_total = 0
     for src in files:
         rel = src.relative_to(source_root)
         dst = output_root / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         code = src.read_text(encoding="utf-8")
-        obf, status, detail = obfuscate_file_safe(code)
+        if rename_fields or strip_comments:
+            rel_posix = rel.as_posix()
+            allowed = renameable.get(rel_posix) if rename_fields else None
+            obf, status, detail, fmap = obfuscate_file_enhanced(
+                code, allowed_fields=allowed, strip_comments=strip_comments)
+            field_total += len(fmap)
+        else:
+            obf, status, detail = obfuscate_file_safe(code)
         dst.write_text(obf, encoding="utf-8")
         stats[status] += 1
         in_bytes += len(code.encode("utf-8"))
@@ -598,6 +642,8 @@ def run_all(source_root: Path, output_root: Path):
             rejected.append((str(rel), detail))
     print("files=%d changed=%d unchanged=%d rejected=%d" %
           (len(files), stats["changed"], stats["unchanged"], stats["rejected"]))
+    if rename_fields:
+        print("distinct field names renamed (sum over files): %d" % field_total)
     print("bytes: %d -> %d (%.1f%%)" %
           (in_bytes, out_bytes, 100.0 * (out_bytes - in_bytes) / max(1, in_bytes)))
     print("output=%s" % (output_root / "scripts"))
@@ -612,6 +658,12 @@ def main():
     ap.add_argument("--source-root", type=Path)
     ap.add_argument("--output-root", type=Path)
     ap.add_argument("--file", type=Path, help="obfuscate a single file and print diagnostics")
+    ap.add_argument("--strip-comments", action="store_true",
+                    help="剥离普通注释(保留 ---@ EmmyLua 注解与 --[[@as]] 断言)")
+    ap.add_argument("--rename-fields", action="store_true",
+                    help="【实验性】重命名单文件私有字段/方法名;需完整实机回归验证后再用于发行")
+    ap.add_argument("--emmylua-root", type=Path, default=None,
+                    help="字段改名时引擎声明(.emmylua/urhox-libs)所在根;缺省用 source-root")
     args = ap.parse_args()
 
     if args.file:
@@ -625,7 +677,315 @@ def main():
 
     if not args.source_root or not args.output_root:
         ap.error("need --source-root and --output-root (or --file)")
-    run_all(args.source_root.resolve(), args.output_root.resolve())
+    fa = None
+    if args.rename_fields:
+        emmy = (args.emmylua_root or args.source_root).resolve()
+        fa = analyze_project(emmy)
+        print("field analysis (from %s): %s" % (emmy, fa["stats"]))
+    run_all(args.source_root.resolve(), args.output_root.resolve(),
+            strip_comments=args.strip_comments, rename_fields=args.rename_fields,
+            field_analysis=fa)
+
+
+# ===========================================================================
+# 扩展(2026-09-28):注释剥离 + 私有字段改名(方法名混淆)
+# ===========================================================================
+
+# 说明:所有 Lua 元方法都是 __ 前缀(__index/__add/__len...),已被下方
+# f.startswith("_") 规则排除。裸名 index/add/get/len/call 等是高频合法用户
+# 方法名,必须允许改名(它们通过 obj.add 访问,不经元表机制),故本集合留空。
+# 保留常量名仅为兼容引用点。
+LUA_MAGIC_FIELDS = set()
+
+
+def strip_comments_code(code):
+    """剥离普通注释,保留 EmmyLua `---` 注解与 `--[[@as ...]]` 断言(官方 LSP 需要)。
+
+    返回 (new_code, edits):edits 为 (start, stop, "") 删除区间,可与改名 edits 合并。
+    注释在 lexer 的独立 hidden channel,字符串里的 "--" 是 NORMALSTRING token,天然不误伤。
+    """
+    toks = _lex_all_tokens_raw(code)
+    edits = []
+    for tok in toks:
+        sym = sym_of(tok.type)
+        if sym not in ("LINE_COMMENT", "COMMENT"):
+            continue
+        text = tok.text
+        if text.startswith("---") and not text.startswith("----"):
+            continue  # EmmyLua 注解保留
+        if text.startswith("--[[@"):
+            continue  # 类型断言保留
+        start, stop = tok.start, tok.stop + 1
+        # 若整行只剩这个注释,连同行首缩进一起删(含行尾换行,保持行号无关性不要求)
+        line_start = code.rfind("\n", 0, start) + 1
+        prefix = code[line_start:start]
+        if prefix.strip() == "":
+            # 整行注释:删掉缩进+注释+换行
+            if prefix:
+                start = line_start
+            if stop < len(code) and code[stop] == "\n":
+                stop += 1
+        else:
+            # 行尾注释:连同注释前的行内空白一起删
+            ws_start = start
+            while ws_start > line_start and code[ws_start - 1] in " \t":
+                ws_start -= 1
+            start = ws_start
+        edits.append((start, stop, ""))
+    if not edits:
+        return code, []
+    return apply_edits(code, edits), edits
+
+
+def _lex_all_tokens_raw(code):
+    lexer = LuaLexer(InputStream(code))
+    lexer.removeErrorListeners()
+    ts = CommonTokenStream(lexer)
+    ts.fill()
+    return [tok for tok in ts.tokens if tok.type >= 0]
+
+
+def collect_field_names(code):
+    """收集文件内所有『字段位置』的名字:.F / :F 之后的 NAME、表构造器 NAME= 键、
+    ["F"] / ['F'] 字符串键(字符串键仅记录,不改名)。返回 set。"""
+    toks = _lex_all_tokens_raw(code)
+    fields = set()
+    prev_txt = None
+    for i, tok in enumerate(toks):
+        sym = sym_of(tok.type)
+        if sym == "NAME" and prev_txt in (".", ":"):
+            fields.add(tok.text)
+        if sym == "NAME":
+            # 表构造器键: NAME 后跟 '='(且非 '==')
+            if i + 1 < len(toks):
+                nxt = toks[i + 1]
+                if nxt.text == "=" and sym_of(nxt.type) == "EQ":
+                    fields.add(tok.text)
+        if sym in ("NORMALSTRING", "LONGSTRING") and prev_txt == "[":
+            s = tok.text
+            if len(s) > 2:
+                inner = s[1:-1]
+                if re.fullmatch(r"[A-Za-z_]\w*", inner or ""):
+                    fields.add(inner)
+        if tok.channel == 0:  # 只有默认通道的 token 才算『前一个语法 token』
+            prev_txt = tok.text
+    return fields
+
+
+# ---- 项目级分析(protect_build 调用一次,产出字段改名白名单) ----
+
+def analyze_project(source_root):
+    """扫描整个 scripts/ 树 + 外部排除源,产出可安全改名的字段集合与排除文件集。
+
+    返回 dict:
+      renameable: {relpath: set(字段名)}  —— 该文件内允许改名的私有字段
+      excluded_files: set(relpath)        —— 因动态拼接访问被整体排除的文件
+      stats: {...}
+    """
+    scripts = source_root / "scripts"
+    files = sorted(scripts.rglob("*.lua"))
+    rel = lambda p: p.relative_to(source_root).as_posix()
+
+    # 1) 字段 -> 出现文件集合
+    field_files = {}
+    # 2) 全项目字符串标识符集合
+    string_ids = set()
+    # 3) 动态拼接接收者 & 其模块解析
+    concat_files = set()
+    concat_module_targets = set()   # 被拼接访问的模块路径(相对 scripts/)
+    # 4) 每文件的 require 绑定 -> 模块路径
+    bindings = {}
+    str_pat = re.compile(r'"([^"]*)"|' + "'" + r"([^']*)'")
+    concat_pat = re.compile(r"(\w+)\s*\[[^\]]*\.\.[^\]]*\]")
+    req_pat = re.compile(r'local\s+(\w+)\s*=\s*require\s*\(?["\']([\w./-]+)')
+
+    per_file_fields = {}
+    for f in files:
+        code = f.read_text(encoding="utf-8")
+        r = rel(f)
+        per_file_fields[r] = collect_field_names(code)
+        for name in per_file_fields[r]:
+            field_files.setdefault(name, set()).add(r)
+        for m in str_pat.finditer(code):
+            s = m.group(1) if m.group(1) is not None else (m.group(2) or "")
+            string_ids.update(re.findall(r"[A-Za-z_]\w*", s))
+        file_binds = {mm.group(1): mm.group(2) for mm in req_pat.finditer(code)}
+        bindings[r] = file_binds
+        for m in concat_pat.finditer(code):
+            line_start = code.rfind("\n", 0, m.start()) + 1
+            line = code[line_start:code.find("\n", m.start())]
+            if line.strip().startswith("--"):
+                continue
+            concat_files.add(r)
+            recv = m.group(1)
+            mod = file_binds.get(recv)
+            if mod:
+                concat_module_targets.add(mod.replace(".", "/") + ".lua")
+
+    # 5) 外部排除集:.emmylua / urhox-libs / 引擎声明(可选目录)
+    external_ids = set()
+    for extra in (source_root / ".emmylua", source_root / "urhox-libs",
+                  source_root.parent / ".emmylua", source_root.parent / "urhox-libs"):
+        if extra.is_dir():
+            for ef in extra.rglob("*"):
+                if ef.suffix in (".lua",) and ef.is_file():
+                    try:
+                        txt = ef.read_text(encoding="utf-8", errors="replace")
+                    except OSError:
+                        continue
+                    external_ids.update(re.findall(r"[A-Za-z_]\w*", txt))
+
+    # Lua 标准库常用方法/字段(硬保底排除)
+    STDLIB = {
+        "byte","char","dump","find","format","gmatch","gsub","len","lower","match",
+        "pack","packsize","rep","reverse","sub","upper","unpack","abs","acos","asin",
+        "atan","ceil","cos","deg","exp","floor","fmod","huge","log","max","maxinteger",
+        "min","mininteger","modf","pi","rad","random","randomseed","sin","sqrt","tan",
+        "tointeger","type","ult","concat","insert","move","remove","sort","pack","unpack",
+        "append","extend","read","write","close","flush","lines","seek","setvbuf","tmpfile",
+        "add","band","bnot","bor","bxor","lrotate","lshift","rrotate","rshift","arshift",
+        "btest","extract","replace","idiv","mod","pow","div","mul","sub","unm","lt","le",
+        "eq","len","concat","call","index","newindex","tostring","pairs","ipairs","next",
+        "rawget","rawset","rawequal","rawlen","select","setmetatable","getmetatable",
+        "metatable","__index","__newindex","__tostring","__eq","__lt","__le","__add",
+        "__sub","__mul","__div","__mod","__pow","__unm","__idiv","__band","__bor",
+        "__bxor","__shl","__shr","__concat","__len","__call","__metatable","__mode",
+        "__gc","__close","__name","__pairs","isvalid","delete","remove","create","get",
+        "set","update","init","new","clone","enable","disable","show","hide","reset",
+        "start","stop","run","execute","apply","add","remove","insert","contains",
+        "clear","copy","tostring","todisplaystring","position","rotation","scale",
+        "enabled","visible","name","id","type","value","text","width","height","size",
+        "x","y","z","w","r","g","b","a","key","data","list","count","index","total",
+        "min","max","default","result","error","message","code","status","state",
+        "time","dt","delta","speed","alpha","color","font","style","align","anchor",
+        "parent","child","children","root","node","component","entity","scene",
+    }
+
+    excluded_files = set(concat_files)
+    # 被拼接访问的模块文件也排除(按 scripts/ 相对路径匹配)
+    for target in concat_module_targets:
+        excluded_files.add("scripts/" + target if not target.startswith("scripts/") else target)
+
+    renameable = {}
+    total_fields = 0
+    for r, fields in per_file_fields.items():
+        if r in excluded_files:
+            continue
+        allowed = set()
+        for name in fields:
+            if name in STDLIB or name in external_ids or name in string_ids:
+                continue
+            if name.startswith("_"):   # 私有约定名/元方法,不动
+                continue
+            fs = field_files.get(name, set())
+            if len(fs) != 1:
+                continue               # 跨文件出现 -> 改名需全局一致,高危,不改
+            allowed.add(name)
+        if allowed:
+            renameable[r] = allowed
+            total_fields += len(allowed)
+
+    return {
+        "renameable": renameable,
+        "excluded_files": sorted(excluded_files),
+        "stats": {
+            "files": len(files),
+            "field_names_total": len(field_files),
+            "renameable_fields": total_fields,
+            "files_with_renameable": len(renameable),
+            "excluded_files": len(excluded_files),
+            "string_ids": len(string_ids),
+            "external_ids": len(external_ids),
+        },
+    }
+
+
+def obfuscate_file_enhanced(code, allowed_fields=None, strip_comments=False, reserved_extra=None):
+    """增强版单文件混淆:局部改名 + 可选字段改名(.F/:F/构造器键) + 可选注释剥离。
+    每个 token 只改一次(按字符位置去重)。返回 (new_code, status, detail, field_map)。"""
+    try:
+        an = plan_renames(code)
+        edits = list(an.edits)
+        field_map = {}
+        local_positions = set(e[0] for e in an.edits)
+        field_positions = {}
+        if allowed_fields:
+            # 防御兜底:即使调用方误传,也绝不改元方法(__开头)与 Lua 魔术名。
+            # 元方法名由 VM 按固定字符串查找,改名即破坏 setmetatable/运算符重载。
+            allowed_fields = {
+                f for f in allowed_fields
+                if not f.startswith(chr(95)) and f not in LUA_MAGIC_FIELDS
+            }
+            toks = _lex_all_tokens_raw(code)
+            fcounter = [len(an.reserved)]
+            def _field_new(name):
+                if name in field_map:
+                    return field_map[name]
+                while True:
+                    cand = "_f%d_" % fcounter[0]
+                    fcounter[0] += 1
+                    if cand not in an.reserved:
+                        an.reserved.add(cand)
+                        field_map[name] = cand
+                        return cand
+            default_idx = [i for i, tk in enumerate(toks) if tk.channel == 0]
+            for pos, i in enumerate(default_idx):
+                tok = toks[i]
+                if sym_of(tok.type) != "NAME":
+                    continue
+                if tok.text not in allowed_fields:
+                    continue
+                if tok.start in local_positions:
+                    continue
+                prev_txt = toks[default_idx[pos - 1]].text if pos > 0 else None
+                is_member = prev_txt in (".", ":")
+                is_ctor_key = False
+                if not is_member and pos + 1 < len(default_idx):
+                    nxt = toks[default_idx[pos + 1]]
+                    if sym_of(nxt.type) == "EQ" and nxt.text == "=":
+                        is_ctor_key = True
+                if is_member or is_ctor_key:
+                    field_positions[tok.start] = _field_new(tok.text)
+            for pos_start, new in field_positions.items():
+                for i in default_idx:
+                    if toks[i].start == pos_start:
+                        edits.append((pos_start, toks[i].stop + 1, new))
+                        break
+        # doc 注释同步(plan_renames 已算好 comment_edits):@param 旧名 -> 新名,
+        # 必须在注释剥离前合并,保证保留下来的 EmmyLua 注解与实参一致(官方 LSP)。
+        all_edits = edits + list(getattr(an, "comment_edits", []))
+        result = apply_edits(code, all_edits) if all_edits else code
+        if strip_comments:
+            result, _c_edits = strip_comments_code(result)
+        verify_equivalence_enhanced(code, result)
+        detail = "%d local renames, %d field-tokens(%d fields), comments=%s" % (
+            len(an.edits), len(field_positions), len(field_map),
+            "stripped" if strip_comments else "kept")
+        status = "changed" if (edits or strip_comments) else "unchanged"
+        return result, status, detail, field_map
+    except Analyzer.Unsupported as e:
+        return code, "rejected", str(e), {}
+    except Exception as e:
+        return code, "rejected", "%s: %s" % (type(e).__name__, e), {}
+
+def verify_equivalence_enhanced(original, obfuscated):
+    """宽松版校验:允许 NAME 文本变化(字段改名),但要求:
+    ①重新解析成功 ②非 NAME token 序列一致(注释剥离不影响,指纹已排除注释)
+    ③字符串字面量一致 ④NAME token 数量一致 ⑤全局名集合不变。"""
+    parse_tree(obfuscated)
+    o_non, o_names, o_str = token_fingerprint_syntax(original)
+    n_non, n_names, n_str = token_fingerprint_syntax(obfuscated)
+    if o_non != n_non:
+        raise Analyzer.Unsupported("non-NAME syntax token sequence changed")
+    if o_str != n_str:
+        raise Analyzer.Unsupported("string literals changed")
+    if o_names != n_names:
+        raise Analyzer.Unsupported("NAME token count changed")
+    g_before = _global_names(original)
+    g_after = _global_names(obfuscated)
+    if g_before != g_after:
+        raise Analyzer.Unsupported("global name set changed: %s" %
+                                   str(sorted(g_before ^ g_after))[:200])
 
 
 if __name__ == "__main__":

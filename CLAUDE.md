@@ -29,6 +29,13 @@
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
 
+## 上次做了什么（2026-09-28，feat927 混淆增强三档：剥注释+字段改名）
+
+- 用户问「方法名可否改、注释为何没删」→ 实现 `--strip-comments`（默认，剥普通注释保留 `---@` 注解/`--[[@as]]`，@param 同步已接入）与 `--rename-fields`（实验，单文件私有字段改名，多重排除：跨文件/引擎声明/字符串出现/动态拼接文件/元方法）。
+- 相似度量化（tempGame 工具）：基线 100% → 改名 46% → +剥注释 39.3% → +字段改名 38.4%。**剥注释性价比最高（零风险 -6.7pp）；字段改名仅 -0.9pp 却改 API 表面，默认关闭**。三档均过官方 Build，行为等价 71/71、离线 0 真实回归。
+- 踩坑修复：token_fingerprint 误计 hidden channel WS/NL → 新增 syntax 指纹（只 default channel）；STRING 类型名 bug → NORMALSTRING/LONGSTRING；`__main__` 块位置 NameError → 移文件末尾。
+- protect_build.py 默认剥注释 + `--rename-fields/--emmylua-root` 开关。仍只 push feat927；完成后 AskUserQuestion；令牌不进仓库/记忆。
+
 ## 上次做了什么（2026-09-28，feat927 发布包源码相似度实测）
 
 - 用 tempGame 的 compare_lua_similarity.py 做 A/B：未混淆发布包 vs 源码 = **100% 对称相似/100% 逐字节行/361 exact**；L1 混淆发布包 vs 源码 = **46% 对称相似/2.8% 逐字节行/17 exact**（16 纯数据表 + DarkIcon 盲区）。

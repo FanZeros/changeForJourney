@@ -25,13 +25,18 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-28 | 版本:v2.66-first-damage-fade-fix
+> 更新时间:2026-09-28 | 版本:v2.67-workspace928-second-integration
 >
-> **当前基线 `workspace928`**（基于 workspace926 新建）：依次合入 feat926/artifact-audit（神器双格 30/60、礼拜堂 30 级、宝箱迁入教堂、铁匠铺锁标、Tab切换裁剪+30级空格不可见两 bug 修复）、feat926/battle-lab（Hard+ Boss 差异化词缀）、art/hero-cards-926（暗黑卡面终稿）、feat/talent-more-paths-0928（护盾数值合并显示）、fix928/horizon-wheel-priority（横屏滚轮测试 mock）。**不含 feat926/unified-character-frame（用户指定排除）**。
+> **当前基线 `workspace928`**：本轮已再合入 `fix928/first-damage-delay`（伤害飘字淡入 0.33s→0.1s）与 `feat928/talent-ring-cleanup`（天赋星图删16条短环边+顶部黄节点6条直连）。此前已含 unified-character-frame（见顶部最新记录）、artifact-audit、battle-lab、hero-cards、talent-more-paths(其16条边已被 talent-ring-cleanup 撤销)、horizon-wheel。
 >
 > **本轮（`fix928/first-damage-delay` 首个伤害飘字显示延迟修复，基于 workspace928）**：用户实机反馈"第一个伤害显示有延迟"。根因：`BattleDraw.drawFloatingTexts` 的淡入曲线 `frame<=10` 用 `alpha=255*(frame/10)`，**frame=0 时 alpha=0 完全不可见**，需 10 帧(=0.333s，FLOAT_TOTAL_FRAMES 20 / FLOAT_FPS 30)才到满不透明；而受击闪烁(setHitFlash)是**即时**的——于是每个伤害数字都比受击反馈/音效"慢半拍"才清晰，第一击尤其明显。**排查过的其他嫌疑(均非根因)**：飘字排队 pendingFt/ftSpawnCd(首条已 cd=0 立即出队，见 commit 29798135)、投射物飞行时长(0.4~0.7s，命中前的正常飞行，命中即触发飘字)、开战 atkProgress=0 需充能满 1 间隔(所有单位一致，非"第一个"特有)。
 >   - **修复**：淡入 10 帧→**3 帧**(`frame<=3` 用 `alpha=255*(frame/3)`)，0.333s→**0.1s** 即清晰；frame>15 的淡出段不变。保留 3 帧(而非 0 帧硬切)是为避免数字"硬弹出"的突兀感。改的是所有飘字(伤害/治疗/护盾/MISS/免疫)，非仅第一个。
 >   - 验证：LSP 0 Error、battle_stage_switch_test 52 PASS/ALL PASS、官方 Build 成功、dist 含 `frame <= 3` 且无 `frame <= 10`。**淡入是纯视觉曲线，测试不覆盖，需实机看伤害数字是否即时清晰**。
+> **上轮（`feat928/talent-ring-cleanup` 天赋星图小环清理 + 顶部黄色节点直连）**：基于 workspace928 开新分支。用户实机验收天赋星图后两点要求：(1) 环必须大于10个节点（短的无需连）；(2) 上方双色部分要连接，不然绕很远——经追问澄清为**黄色节点相连**，且冲突时**优先不绕远（允许中环）**、环长规则只管**初始位置明显的3/4节点环**。
+>   - **诊断**：合并进来的 ce0c5875（16条新增边）每条都形成 3~5 节点小环，≤10节点环从 320 暴增到 1252；其中 10 条在初始区（节点1/2/4/13/14/15/16/31/32/54/55），6 条在中部（25/26/29/30/42/43/49/50/51/61/62）。视觉层 LONG_EDGE_DIST=3.0 过滤后仍全边可见的环才算"肉眼可见闭合环"。
+>   - **修复**：**删掉全部 16 条 ce0c5875 边**（恢复基线拓扑，消除初始区所有明显 3/4 环）；**新增 6 条顶部黄色长连边**：168圣堂结界-60龟壳之境(原10跳→1跳)、54体魄-136妙手回春(6→1)、55冥想-129荆棘护肩(6→1)、80黄金铠甲-20圣徽(5→1)、201余烬回春-151灵能屏障(5→1)、202终焉圣愈-150坚韧骨甲(5→1)。每条新边成环 6 节点（≥5 中环，用户允许），几何距离均 ≤2.8 格（视觉层可见）。163-54/164-55/181-150/184-151 候选因成环 3~4 节点被跳过。
+>   - **同步修改两文件**（渲染层 TalentStarMap.lua 与服务端校验 TalentNodeDefs.lua 的 adj 必须一致，209 节点 diff=0 验证）。脚本验证：全图连通 209/209、初始区全可见 3/4 环=0、两文件 adj 完全一致、6 对黄节点 1 跳直达。201-208 终焉环占位的 8 条 asymmetric 是基线既有问题未动。LSP 0 Error(279文件)、battle_stage_switch_test 52 PASS、battle_ally_compaction_test ALL PASS、官方 Build 成功、dist 已验证新 adj。
+>   - **注意**：TalentService 邻接校验以 TalentNodeDefs 为准，删边会使依赖这些边的已点亮路径失效——若玩家已按 ce0c5875 的 16 条边点过天赋（如经 1-2 直连点亮），删边后该节点可能"孤悬"（已点亮但无相邻点亮链）。当前 ce0c5875 刚合并尚未发布，风险窗口极小；若有存量玩家需在 TalentService 校验时豁免已点亮节点。
 > **上轮（`feat926/artifact-audit` 神器页两个 UI bug 修复）**：用户实机反馈：(1) Tab 切换时装备空位显示到屏幕中间；(2) 30级子格看不到、只能看到60级格。
 >   - **Bug1 根因**：`ChurchArtifactPanel.drawContent` 背包网格用 `nvgScissor`（**绝对替换**）覆盖了 ChurchDraw 页签动画外层的横向裁剪 → 动画期间背包空格逃出裁剪区、以平移后位置画到屏幕中间。**修复**：改 `nvgIntersectScissor`（与外层动画裁剪求交）。
 >   - **Bug2 根因**：子格底图 `img.slotGrid`(UI_JTSQ_GZ.png) 字段初始化为 -1 后**从未被加载**（git 历史确认加载调用从来不存在），`drawImageCentered` 遇 -1 直接 return；空格子 `drawArtifactIcon(nil)` 也直接 return → **已解锁的空子格完全隐形**。玩家 30~59 级时：30级格已解锁但空(隐形)、60级格未解锁(有锁定遮罩+"60级"文字可见)——正是"只能看到60级"。**修复**：子格底改用与背包格一致的 `DarkIcon.drawNine(vg,"slot",...,radius=GRID.CELL_RADIUS)` 矢量凹槽，删除死字段 slotGrid。

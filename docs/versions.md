@@ -4,6 +4,17 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.55-docs-cleanup | 2026-09-28 | 文档整理：11 份已完成/过时规划归档至 `docs/archive/`（加归档头）；修订剧情总表（教堂神器登记文案、SCENARIO_82、触发链改 StoryPlayer、补 55-57 摘要）、memory-index（boot/Standalone 入口、情景 1~82、待办过期项）、低差异规划（三批全部落地标注）、套装规划（P1-P3 落地、转职入口迁移说明）与本文。 |
+| v2.55-battle-reset-diff | 2026-09-28 | 编队布局未实质改变（只动其他队/原位放回）不再重置三行战斗；CharacterHeroSync 按队 diff 后选择性失效签名。 |
+| v2.55-no-team-hide-enemies | 2026-09-28 | 无编队的战线完全不显示敌人（血条/名字也隐藏）；奖励弹窗跟随触发面板显示在左/中/右栏并接收对应输入。 |
+| v2.55-talent-more-paths | 2026-09-28 | 天赋星图新增 16 条双向连通边（含顶部 1-2 直连），形成多环路可选路径；UI 与服务器判定同源 TalentNodeDefs。 |
+| v2.55-church-badge-artifact | 2026-09-27 | 教堂角标只看神器可合成（绿箭头），移除转职红点；转职入口已迁角色详情页。 |
+| v2.55-reward-close-anywhere | 2026-09-27 | 合并远端 workspace926；奖励弹窗可被任意点击关闭（面板外/行外点击不再悬挂）。 |
+| v2.55-button-brown-disabled | 2026-09-27 | 全 UI 统一：按钮条件不满足时文字棕色 0x8d5f41，满足时亮色（23 个文件）。 |
+| v2.55-church-story-rewrite | 2026-09-27 | 教堂剧情重写为神器登记/嵌槽（祝福已不存在）：情景 24-30/41 文案更新。 |
+| v2.55-story-82-shard | 2026-09-27 | 新增情景 82：首通 2-5(205) 后大狗嚼剧情发碎片×60，领奖后自动打开角色详情觉醒页引导升潜能。 |
+| v2.55-sweep-autoclose | 2026-09-27 | 扫荡奖励弹出时自动关闭扫荡弹窗；副本扫荡奖励同时自动离开副本页，避免奖励被模态页盖住。 |
+| v2.55-reward-autoscroll | 2026-09-27 | 奖励内容超高时弹窗自动滚动到底（cascade 逐件跟随 + 非 cascade ease-out）；大数字徽章字号自适应缩小。 |
 | v2.54-workspace926 | 2026-09-27 | 新建 workspace926，合入 workspace925 与 feat926/character-drag-save、cleanup-unused-panels、remove-unused-diary、artifact-audit、battle-lab。 |
 | v2.53-offline-save-reliability | 2026-09-27 | 修复离线经验空槽摊薄与存档写入失败后重试。直接覆盖中断安全与损坏存档备份仍待验证。 |
 | v2.53-cleanup-unused-panels | 2026-09-27 | 删除四个无入口旧界面、专属接线及 14 张图片；保留功绩/签到数据/GM 配置/遗物奖励。 |

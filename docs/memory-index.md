@@ -1,5 +1,8 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+> **最新（2026-09-28，文档整理）**：`docs/` 已全面整理。**权威玩法口径 = `changeForJourney-gameplay.md`（§1-20+附录已按代码逐项复核）**；剧情口径 = `剧情总表.md`（SCENARIO_1~82，缺 54/66）。已完成/过时的 11 份规划移入 `docs/archive/`。
+> 现行关键事实：入口 `boot/Standalone.lua`（`network/` 已删）；横屏三栏（左=城镇+二级页 / 中=战斗+全屏页+弹窗 / 右=角色）；三队并行×每队4槽；六契职业（封门人/拾骸者/裂隙使/回响客/换面人/司仪）；教堂**只有神器**（转职迁角色详情、天赋迁终焉古树）；竞技场/公会/签到/公告/旧任务面板已删；离线 24h 软顶（超按50%）；装备 6 槽+8 套装；天赋 209 节点。
+>
 > **最新（2026-09-27，`workspace926`）**：用户要求新建 `workspace926`，合入 `workspace925` 与全部 `feat926/`：`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`。只推 `workspace926`，不推 `workspace` / `workspace925`。
 > **feat926/character-drag-save**：英雄名册数字键保留；右栏跨栏松手取消拖拽；跨队一次提交；离线经验不算空槽；存档写入失败重试。
 > **feat926/cleanup-unused-panels / remove-unused-diary**：删除旧日志页及无入口的遗物洗练、签到、旧任务、公告面板和专属图。保留城镇功绩 `TaskPage`、签到及任务服务/协议/存档、GM 公告配置、遗物奖励图标。
@@ -75,12 +78,12 @@
 
 ## 1. 项目概况
 
-- **引擎**:UrhoX(星火编辑器),Lua 5.4,单机模式(`.project/settings.json` multiplayer.enabled=false → 走 `network/Standalone.lua`,横屏 HORIZON_MODE=true)
+- **引擎**:UrhoX(星火编辑器),Lua 5.4,单机模式(`.project/settings.json` multiplayer.enabled=false → 走 `boot/Standalone.lua`,横屏 HORIZON_MODE=true)
 - **原游戏**:《宿命旅途 Destiny Brigade》竖屏放置 RPG,20 个正经风冒险家角色
 - **改造方向**(用户拍板):① 全角色玩梗化 ② 整体转**暗黑风格**(游戏名/标题/背景/人物图)③ 横屏标题页+背景视频化(视频未做)
 - **新游戏名**:《终焉之门 Gate of Finality》
 - **玩家称呼**:远征长(组织:远征队)
-- **关键文件入口**:`scripts/config/HeroConfig.lua`(角色)、`scripts/ui/DarkTitleScreen.lua`(横屏标题)、`scripts/ui/story/gate/LetterIntro.lua`(外祖父遗产信)、`scripts/network/Standalone.lua`(单机主循环)、`scripts/config/DialogueConfig.lua`(战斗台词)、`scripts/config/ScenarioDialogueConfig.lua`(剧情对话)
+- **关键文件入口**:`scripts/config/HeroConfig.lua`(角色)、`scripts/ui/DarkTitleScreen.lua`(横屏标题)、`scripts/ui/story/gate/LetterIntro.lua`(外祖父遗产信)、`scripts/boot/Standalone.lua`(单机主循环)、`scripts/config/DialogueConfig.lua`(战斗台词)、`scripts/config/ScenarioDialogueConfig.lua`(剧情对话)、`scripts/systems/StoryPlayer.lua`(后续情景排队触发)
 
 ## 2. 决策时间线(为什么做成这样)
 
@@ -217,8 +220,8 @@ timeout 280 ./.cli/UrhoXRuntime <script>.lua -tapcode_dir=/workspace -tool_mode 
 4. **[P1] 图标 P3**:20 个 `UI_icon_hero_{id}.png` 从新卡面/立绘裁切
 5. **[P1] 标题背景视频化**:以终焉之门图为首帧(紫光呼吸/云层流动),`create_video_task`
 6. **[P1] 入队台词**(挂起):DialogueConfig 加 join 触发(24 角色)+ RecruitAnim 招募展示接入(调研到一半:`RecruitAnim.lua` 卡牌展示,`TavernPopups.lua` 15:11 后未被并行会话编辑)
-7. **[P2] 牢大角色**:高风险(真人逝者梗),建议黑曼巴蛇拟人替代,用户未定;新角色槽位 17 或 24,需要 HeroConfig+TalentManager+素材三件套+GachaConfig+TavernConfig+ArenaAITemplates
-8. **[P2] 竖屏 StartScreen fallback 的旧 LOGO**(横屏下已被跳过,代码保留)
+7. **[P2] 牢大角色**:高风险(真人逝者梗),建议黑曼巴蛇拟人替代,用户未定;新角色槽位 17 或 24,需要 HeroConfig+TalentManager+素材三件套+GachaConfig+TavernConfig(竞技场/ArenaAITemplates 已随多人壳删除)
+8. **[P2] 竖屏 StartScreen 已删除**:横屏化后 `ui/StartScreen.lua` 不再存在,旧 LOGO fallback 一并移除;标题载体是 `ui/DarkTitleScreen.lua`
 9. **[观察] 人物图暗黑化**:用户说"或许还要影响到人物图"——立绘暗黑化试点未做,等用户拍板
 
 ## 7. 坑与抗体(全部实测踩过)
@@ -237,7 +240,7 @@ timeout 280 ./.cli/UrhoXRuntime <script>.lua -tapcode_dir=/workspace -tool_mode 
 ## 8. 对话系统结构(改台词时看)
 
 - `DialogueConfig.lua`:LINES[heroId] = {entry/crit/kill/death/victory},`get(heroId, type)` 数组随机;24 角色全配
-- `ScenarioDialogueConfig.lua`:SCENARIO_1~73(无 66),mode=large/small,steps[].characterId(1=大狗嚼 2=黄桃龙 3=叮咚鸡 4=??? 5=神秘少女 6/7/8=假角色 9=村长 10=铁匠 11=卫兵 13=老板娘 21=圣女),rewards(equip/hero/scroll);触发在 `network/ClientScenarioHelper` + `Client.lua`(playFirstVisit(id, branchTable, cb),branchTable 按 heroId 分支)
+- `ScenarioDialogueConfig.lua`:SCENARIO_1~82(无 54、66),mode=large/small,steps[].characterId(1=大狗嚼 2=黄桃龙 3=叮咚鸡 4=??? 5=神秘少女 6/7/8=假角色 9=村长 10=铁匠 11=卫兵 13=老板娘 18=老六 19=哈基米 21=圣女 24=加载中 25=高ping战士),rewards(equip/hero/scroll/shard);触发排队在 `systems/StoryPlayer.lua`(STAGE_CLEAR/STAGE_ENTER/PLACE/FOLLOW/WIPE 表),播放在 `Standalone.tryPlayPendingStory_`,结束后 `claim_scenario_reward`;奖励发放在 `rules/battle/BattleService.lua` SCENARIO_REWARDS(82=大狗嚼碎片×60)
 - 战斗台词触发:`DialogueConfig.get` 由战斗系统调用(entry/crit/kill/death/victory)
 
 ## 9. 用户画像(observed,待下一 agent 续充)

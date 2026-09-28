@@ -5,16 +5,22 @@
 ## 恢复指令
 
 1. 读 `docs/memory-index.md`（项目详细上下文）
-2. 读 `docs/refactor-plan.md` + `docs/refactor-tasks.md`（重构进度）
-3. 自测：这是什么项目？上次做了什么？下一步做什么？
-4. 告知用户记忆恢复状态，开始工作
+2. 读 `docs/changeForJourney-gameplay.md`（玩法权威文档，2026-09-28 已按代码复核修订）
+3. 历史规划/交接文档已移至 `docs/archive/`（重构计划、职业迁移、装备升阶等，均已执行完毕）
+4. 自测：这是什么项目？上次做了什么？下一步做什么？
+5. 告知用户记忆恢复状态，开始工作
 
 ## 项目是什么
 
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
-- 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
+- 入口 `scripts/main.lua` → 只加载 `boot/Standalone.lua`（`network/` 目录已删除，无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
+
+## 上次做了什么（2026-09-28，`feat/talent-more-paths-0928` 及文档整理）
+
+- 功能轮（均已 push）：奖励弹窗自动滚底+大数字缩字号；扫荡/副本扫荡奖励弹出时自动关原页；情景 82（首通 205 大狗嚼发 60 碎片→觉醒页引导）；教堂剧情重写为神器登记（24-30/41）；全 UI 按钮禁用态棕色 `0x8d5f41`；奖励弹窗任意点击可关+跟随左/中/右面板；教堂角标只看神器；天赋星图 +16 条双向边（多环路）；无编队行不显示敌人；编队未实质改变不重置战斗（按队 diff）。
+- 文档整理轮（本次）：11 份已完成/过时规划归档 `docs/archive/`；修订剧情总表（82/触发链 StoryPlayer/55-57 摘要）、memory-index（boot 入口/情景 1~82/待办过期项）、低差异规划与套装规划（标注已全部落地）、versions（补 2026-09-27~28 条目）、gameplay 权威文档（§1-20+附录按代码全面复核：横屏三栏/三队4槽/六契职业/教堂只神器/竞技场公会签到删除/离线24h软顶/装备6槽+套装/天赋209节点/引导12组/单机存档）。
 
 ## 已合入备忘（feat926，2026-09-27）
 
@@ -119,11 +125,13 @@
 - T40：ChurchResults + MarketResults。Church 812 / Market 1045
 - T41：ChurchLifecycle + MarketInit。Church 790 / Market 1008
 - T42：CharacterDeploy + BackpackDialogs。Character 1733 / Backpack 1737
-- 天赋从教堂拆出：城镇中轴新建筑「终焉古树」打开 `TalentPage`；教堂只留转职/神器两 Tab
+- 天赋从教堂拆出：城镇中轴新建筑「终焉古树」打开 `TalentPage`；教堂曾留转职/神器两 Tab（2026-09-27 起转职迁角色详情页，教堂只剩神器单 Tab）
 - 星图视口改为 1:1（1080×1080 居中）；滚轮带鼠标坐标直接缩放
 
 ## likely_next_task
 
+- 本轮功能待游戏内验收：奖励弹窗跟随左/中/右面板+任意点击关闭+自动滚底；扫荡奖励自动关页；情景 82 碎片引导觉醒页；教堂神器角标；天赋星图多环路（16 新边）；无编队不显示敌人；编队未实质改变不重置战斗；按钮禁用棕色。
+- 文档已全面整理（2026-09-28）：权威口径 = `docs/changeForJourney-gameplay.md`（已按代码复核）+ `docs/剧情总表.md`（1~82）+ `docs/memory-index.md`；旧规划在 `docs/archive/` 仅供历史查阅。
 - 当前基线 `workspace926`：已合入 925 与全部 feat926。需要在游戏里验收拖拽编队、存档读回、旧面板已消失。
 - 神器审查已在 `workspace926`。每次交付前汇报结果，最后必须调用 AskUserQuestion 以选项提问下一步。
 - 战斗实验室已在 `workspace926`。交付后必须以 AskUserQuestion 选项提问下一步。
@@ -132,7 +140,7 @@
 - Electron 已关后台节流，但未实机验证失焦/最小化。系统休眠仍需离线补算。
 - 配装页已下移留出词条空位，词条内容本身还没画。
 
-- 预览验收：滚轮、右键装备、顶栏远征等级、五语、四人战斗、新 SE、未解锁职业标、左栏世界地图
+- 预览验收：滚轮、右键装备、顶栏远征等级、五语、四人战斗、新 SE、未解锁职业标（左栏世界地图页已于 56cee55 撤回，不再验收）
 - 四人入队/闲聊已接：情景 74–81。首次获得或第一次打开详情播放；闲聊每局每个角色一次
 - 四人立绘仍是替代图，正稿未做
 - 73 情景长剧情未进五语词表；全量暗黑立绘/卡面裁切/标题视频仍未做

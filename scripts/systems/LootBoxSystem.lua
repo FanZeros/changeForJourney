@@ -128,8 +128,15 @@ function LootBoxSystem.claimGroup(lootboxData, index, equipData)
     return { entry.equip }, false
 end
 
+--- quality 兼容两种筛选参数：数字（0=全部 / 1..6 单档，旧调用方与测试沿用）
+--- 或 table 集合（[q]=true 勾选档；空集合=全部，遗匣页多选筛选传入）。
 local function matchesQuality(entry, quality)
-    return entry.equip and (not quality or quality == 0 or entry.equip.quality == quality)
+    if not entry.equip then return false end
+    if type(quality) == "table" then
+        if not next(quality) then return true end
+        return quality[entry.equip.quality] == true
+    end
+    return not quality or quality == 0 or entry.equip.quality == quality
 end
 
 --- 可选品质只处理筛选范围，未显示品质不会被领取。

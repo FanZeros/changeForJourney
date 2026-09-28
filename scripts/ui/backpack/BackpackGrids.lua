@@ -5,6 +5,7 @@
 local DarkIcon        = require("core.DarkIcon")
 local DrawUtil        = require("core.DrawUtil")
 local ImageCache      = require("ui.widget.ImageCache")
+local QualityMark     = require("ui.widget.QualityMark")
 local NumberUtil      = require("core.NumberUtil")
 local PlayerStore     = require("core.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
@@ -129,6 +130,11 @@ function M.bind(deps)
                     nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
                     nvgText(vg, lvlX, lvlY, lvlText, nil)
                 end
+
+                -- 稀有度小图：与遗匣/铁匠共用的 QualityMark，左下角展示档位
+                -- （左上已被英雄/锁定角标占用，右上为强化等级，右下为等级）
+                QualityMark.draw(vg, equip.quality or 1,
+                    cx - GRID.CELL_SIZE * 0.5 + 27, cy + GRID.CELL_SIZE * 0.5 - 27, 44, 1.0)
 
                 if equip.enhanceLevel and equip.enhanceLevel > 0 then
                     local enhText = "+" .. equip.enhanceLevel

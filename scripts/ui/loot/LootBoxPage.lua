@@ -27,7 +27,9 @@ local text = DrawUtil.drawTextStroke
 
 local state = {
     open = false, closing = false, openTime = 0, closeTime = 0,
-    sourceSummary = {}, summary = {}, qualityFilter = 0,
+    sourceSummary = {}, summary = {},
+    ---@type table<number, boolean>
+    qualitySet = {}, -- [quality]=true 勾选的稀有度档；空集合=全部（不筛选）
     count = 0, pendingCount = 0, scrollY = 0, maxScrollY = 0,
     dragging = false, dragStartY = 0, dragStartScroll = 0, dragMoved = false,
     decompose = false, confirm = false,
@@ -35,15 +37,15 @@ local state = {
     messages = {}, messageUntil = 0,
     hoverIndex = nil, hoverSince = 0, detailIndex = nil, detailPinned = false,
 }
-local imgName, imgBox = -1, -1
+local imgName, imgBox, imgCheck = -1, -1, -1
 local inited = false
 ---@type fun(index: number)|nil
 local onClaimOne = nil
----@type fun(qualityFilter: number)|nil
+---@type fun(qualitySet: table<number, boolean>)|nil
 local onClaimAll = nil
 ---@type fun(index: number)|nil
 local onDecomposeOne = nil
----@type fun(qualityFilter: number)|nil
+---@type fun(qualitySet: table<number, boolean>)|nil
 local onDecomposeAll = nil
 ---@type fun()|nil
 local onClose = nil
@@ -94,6 +96,7 @@ function LootBoxPage.init(vg)
     EquipmentDetail.init(vg)
     imgName = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0) or -1
     imgBox = nvgCreateImage(vg, "image/通用图标/ICON_CZ_YX.png", 0) or -1
+    imgCheck = nvgCreateImage(vg, "image/货币道具/UI_icon_GOU.png", 0) or -1
 end
 
 function LootBoxPage.setOnClaimOne(cb) onClaimOne = cb end
@@ -106,17 +109,36 @@ function LootBoxPage.setOnOpenCallback(cb) onOpen = cb end
 -- 兼容旧接线；自动回收设置入口已撤下，本页只提供手动回收。
 function LootBoxPage.setOnAutoDecompose(_cb) end
 
+--- 当前勾选的稀有度集合（复制一份传出，避免外部改写页面状态）。
+---@return table<number, boolean>
+local function currentSet()
+    local set = {}
+    for quality, checked in pairs(state.qualitySet) do
+        if checked then set[quality] = true end
+    end
+    return set
+end
+
+--- 筛选范围描述（已翻译）：未勾选=全部品质；单档=品质名；多档=「共 N 种品质」。
 local function filterName()
-    return state.qualityFilter == 0 and "全部品质" or EquipmentConfig.QUALITY[state.qualityFilter].name
+    local picked = {}
+    for quality = 1, QualityMark.count() do
+        if state.qualitySet[quality] then picked[#picked + 1] = quality end
+    end
+    if #picked == 0 then return I18n.lookup("全部品质") end
+    if #picked == 1 then return I18n.lookup(EquipmentConfig.QUALITY[picked[1]].name) end
+    return string.format(I18n.lookup("共 %d 种品质"), #picked)
 end
 
 local function rebuildSummary()
     state.summary = {}
     state.count, state.pendingCount = 0, 0
+    local set = currentSet()
+    local selectAll = not next(set)
     for sourceIndex, entry in ipairs(state.sourceSummary) do
         local equip = entry.equip
         -- 旧种子仅在“全部”中展示待整理，不能冒充已确定品质的装备。
-        if state.qualityFilter == 0 or (equip and equip.quality == state.qualityFilter) then
+        if selectAll or (equip and set[equip.quality] == true) then
             local display = {}
             for key, value in pairs(entry) do display[key] = value end
             display.sourceIndex = entry.sourceIndex or sourceIndex
@@ -134,9 +156,14 @@ local function rebuildSummary()
     clearDetail()
 end
 
-local function setFilter(quality)
-    if state.qualityFilter == quality then return end
-    state.qualityFilter, state.scrollY = quality, 0
+--- 勾选/取消某一稀有度档（多选）；空集合即“全部”。
+local function toggleQuality(quality)
+    if state.qualitySet[quality] then
+        state.qualitySet[quality] = nil
+    else
+        state.qualitySet[quality] = true
+    end
+    state.scrollY = 0
     if state.dragging then state.dragMoved = true end
     state.dragging, state.confirm = false, false
     rebuildSummary()
@@ -156,7 +183,7 @@ end
 
 ---@param summary table[]|nil
 function LootBoxPage.open(summary)
-    state.qualityFilter, state.scrollY = 0, 0
+    state.qualitySet, state.scrollY = {}, 0
     LootBoxPage.refresh(summary or state.sourceSummary)
     if state.open and not state.closing then return end
     state.open, state.closing = true, false
@@ -260,26 +287,26 @@ local function drawButton(vg, id, cx, cy, w, h, label, accent, enabled)
 end
 
 local function filterCenter(quality)
-    return FILTER.x + FILTER.w * 0.5 + quality * (FILTER.w + FILTER.gap), FILTER.cy
+    return FILTER.x + FILTER.w * 0.5 + (quality - 1) * (FILTER.w + FILTER.gap), FILTER.cy
 end
 
+--- 稀有度勾选条：1-6 档可多选，勾选=金框+对勾，未勾选=暗显；不再提供“全部”按钮（全不勾即全部）。
 local function drawFilters(vg)
-    for quality = 0, 6 do
+    for quality = 1, QualityMark.count() do
         local cx, cy = filterCenter(quality)
-        local selected = state.qualityFilter == quality
-        if quality == 0 then
-            drawButton(vg, "lbp_filter_0", cx, cy, FILTER.w, FILTER.h,
-                "全部", selected and "green" or "gold", true)
-        else
-            local feedback = BF.begin(vg, "lbp_filter_" .. quality, cx, cy, FILTER.w, FILTER.h)
-            DarkIcon.drawNine(vg, "btn", cx - FILTER.w * 0.5, cy - FILTER.h * 0.5,
-                FILTER.w, FILTER.h, { accent = selected and "green" or "gold" })
-            if not QualityMark.draw(vg, quality, cx, cy, 52, 1) then
-                local label = EquipmentConfig.QUALITY[quality].name
-                text(vg, cx, cy, label, 24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
-            end
-            BF.finish(vg, feedback)
+        local checked = state.qualitySet[quality] == true
+        local feedback = BF.begin(vg, "lbp_filter_" .. quality, cx, cy, FILTER.w, FILTER.h)
+        DarkIcon.drawNine(vg, "btn", cx - FILTER.w * 0.5, cy - FILTER.h * 0.5,
+            FILTER.w, FILTER.h, { accent = checked and "green" or "gold" })
+        if not QualityMark.draw(vg, quality, cx, cy, 52, checked and 1 or 0.45) then
+            local label = EquipmentConfig.QUALITY[quality].name
+            text(vg, cx, cy, label, 24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
         end
+        if checked and imgCheck >= 0 then
+            DrawUtil.drawImageCentered(vg, imgCheck,
+                cx + FILTER.w * 0.5 - 10, cy + FILTER.h * 0.5 - 10, 30, 30, 1)
+        end
+        BF.finish(vg, feedback)
     end
 end
 
@@ -338,7 +365,7 @@ local function drawConfirmation(vg)
     DarkIcon.drawNine(vg, "panel", CONFIRM.cx - CONFIRM.w * 0.5,
         CONFIRM.cy - CONFIRM.h * 0.5, CONFIRM.w, CONFIRM.h, { titleH = 104 })
     text(vg, 540, 1035, "确认一键回收", 48, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 4)
-    text(vg, 540, 1150, string.format(I18n.lookup("回收范围：%s装备"), I18n.lookup(filterName())), 36,
+    text(vg, 540, 1150, string.format(I18n.lookup("回收范围：%s装备"), filterName()), 36,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
     text(vg, 540, 1210, string.format(I18n.lookup("共 %d 件，回收后无法撤回"), state.count), 34,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 226, 149, 135, 2)
@@ -364,7 +391,7 @@ function LootBoxPage.draw(vg)
     text(vg, 1044, 130, "旅途所得，暂存于此", 32,
         NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
     drawFilters(vg)
-    local statusText = string.format(I18n.lookup("%s · 待领取 %d 件"), I18n.lookup(filterName()), state.count)
+    local statusText = string.format(I18n.lookup("%s · 待领取 %d 件"), filterName(), state.count)
     if state.pendingCount > 0 then
         statusText = statusText .. string.format(I18n.lookup(" · 待整理 %d 件"), state.pendingCount)
     end
@@ -375,10 +402,11 @@ function LootBoxPage.draw(vg)
     nvgIntersectScissor(vg, LIST.x, LIST.y, LIST.w, LIST.h)
     if #state.summary == 0 then
         DrawUtil.drawImageCentered(vg, imgBox, 540, 1000, 260, 260, 0.7)
-        local emptyTitle = state.qualityFilter == 0 and "遗匣为空" or "暂无该稀有度装备"
-        local emptyHint = state.qualityFilter == 0 and "继续远征，新的战利品会存放在这里" or "切换其他品质或查看全部装备"
-        text(vg, 540, 1210, emptyTitle, 48, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
-        text(vg, 540, 1285, emptyHint, 32,
+        local hasFilter = next(state.qualitySet) ~= nil
+        local emptyTitle = hasFilter and "暂无该稀有度装备" or "遗匣为空"
+        local emptyHint = hasFilter and "调整上方勾选或取消全部勾选查看全部" or "继续远征，新的战利品会存放在这里"
+        text(vg, 540, 1210, I18n.lookup(emptyTitle), 48, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
+        text(vg, 540, 1285, I18n.lookup(emptyHint), 32,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 161, 152, 136, 2)
     else
         local first = math.max(1, math.floor(state.scrollY / (LIST.rowH + LIST.gap)) + 1)
@@ -395,10 +423,11 @@ function LootBoxPage.draw(vg)
         nvgFill(vg)
     end
     local hasItems = state.count > 0
+    local hasFilter = next(state.qualitySet) ~= nil
     drawButton(vg, "lbp_claim_all", BTN_CLAIM_CX, BTN_Y, BTN_W, BTN_H,
-        state.qualityFilter == 0 and "一键领取" or "领取筛选", "gold", hasItems)
+        hasFilter and "领取勾选" or "一键领取", "gold", hasItems)
     drawButton(vg, "lbp_decompose_all", BTN_DECOMPOSE_CX, BTN_Y, BTN_W, BTN_H,
-        state.qualityFilter == 0 and "一键回收" or "回收筛选", "red", hasItems)
+        hasFilter and "回收勾选" or "一键回收", "red", hasItems)
     TownPageChrome.drawBack(vg, BACK)
     if not state.confirm and state.detailIndex then
         local entry = state.summary[state.detailIndex]
@@ -477,7 +506,7 @@ function LootBoxPage.handleInput(dx, dy)
         elseif DrawUtil.hitTest(dx, dy, 750, CONFIRM.btnY, 330, 96) then
             BF.trigger("lbp_confirm")
             state.confirm = false
-            action("decomposeAll", onDecomposeAll, state.qualityFilter)
+            action("decomposeAll", onDecomposeAll, currentSet())
         end
         return true
     end
@@ -492,11 +521,13 @@ function LootBoxPage.handleInput(dx, dy)
         end
     end
     if TownPageChrome.hitBack(dx, dy, BACK) then LootBoxPage.close() return true end
-    for quality = 0, 6 do
+    for quality = 1, QualityMark.count() do
         local cx, cy = filterCenter(quality)
         if DrawUtil.hitTest(dx, dy, cx, cy, FILTER.w, FILTER.h) then
             BF.trigger("lbp_filter_" .. quality)
-            setFilter(quality)
+            toggleQuality(quality)
+            print("[LootBoxPage] 稀有度勾选切换: " .. quality
+                .. " checked=" .. tostring(state.qualitySet[quality] == true))
             return true
         end
     end
@@ -504,7 +535,7 @@ function LootBoxPage.handleInput(dx, dy)
         clearDetail()
         if state.count > 0 then
             BF.trigger("lbp_claim_all")
-            action("claimAll", onClaimAll, state.qualityFilter)
+            action("claimAll", onClaimAll, currentSet())
         end
         return true
     end

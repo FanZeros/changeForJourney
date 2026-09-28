@@ -70,9 +70,9 @@ local GRID_TITLE = {
     R = 0x45, G = 0x45, B = 0x45,
 }
 
--- 5b. 品质筛选按钮（装备 tab 专用，与铁匠铺分解界面一致）
+-- 5b. 品质筛选按钮（装备 tab 分解模式：1-6 档可多选勾选，与遗匣页同一交互）
 local PZSX = {
-    FIRST_CX = 558, CY = 610, SIZE = 80, GAP = 23,
+    FIRST_CX = 540, CY = 610, SIZE = 74, GAP = 16,
 }
 
 -- 6. 网格
@@ -259,8 +259,14 @@ local imgCheckmark = -1  -- UI_icon_GOU.png（选中勾选）
 local decomposeState = {
     active = false,        -- 是否处于分解操作模式
     selectedItems = {},    -- [idx] = true
+    qualitySet = {},       -- [quality]=true 勾选的稀有度档；空集合=不按稀有度限制
     pending = false,       -- 是否由背包页发起分解请求
 }
+
+--- 分解模式下某稀有度是否处于勾选范围（空集合=不限制，全部可选中）
+local function qualityChecked(quality)
+    return not next(decomposeState.qualitySet) or decomposeState.qualitySet[quality] == true
+end
 
 -- 道具图标缓存
 local itemIconCache = {}  -- [key] = nvgImage handle
@@ -993,12 +999,27 @@ local function drawBody(vg)
     nvgFillColor(vg, nvgRGBA(GRID_TITLE.R, GRID_TITLE.G, GRID_TITLE.B, 255))
     nvgText(vg, GRID_TITLE.X, GRID_TITLE.Y, gridTitleText, nil)
 
-    -- 5b. 品质筛选按钮（仅装备 tab + 分解模式激活时显示）
+    -- 5b. 品质筛选按钮（仅装备 tab + 分解模式激活时显示；1-6 档勾选，可多选）
     if state.tab == "equip" and decomposeState.active then
-        for i = 1, 5 do
+        for i = 1, 6 do
             local cx = PZSX.FIRST_CX + (i - 1) * (PZSX.SIZE + PZSX.GAP)
             local didScale = BF.begin(vg, "bp_filter_" .. i, cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE)
-            QualityMark.draw(vg, i, cx, PZSX.CY, PZSX.SIZE, 1.0)
+            local checked = decomposeState.qualitySet[i] == true
+            if checked then
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, cx - PZSX.SIZE * 0.5 - 5, PZSX.CY - PZSX.SIZE * 0.5 - 5,
+                    PZSX.SIZE + 10, PZSX.SIZE + 10, 12)
+                nvgFillColor(vg, nvgRGBA(255, 214, 102, 60))
+                nvgFill(vg)
+                nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 235))
+                nvgStrokeWidth(vg, 3)
+                nvgStroke(vg)
+            end
+            QualityMark.draw(vg, i, cx, PZSX.CY, PZSX.SIZE, checked and 1.0 or 0.45)
+            if checked and imgCheckmark >= 0 then
+                DrawUtil.drawImageCentered(vg, imgCheckmark,
+                    cx + PZSX.SIZE * 0.5 - 12, PZSX.CY + PZSX.SIZE * 0.5 - 12, 34, 34, 1.0)
+            end
             BF.finish(vg, didScale)
         end
     end
@@ -1338,19 +1359,27 @@ function Panel.handleInput(dx, dy)
         if decomposeState.active then
             -- ---- 分解模式激活中 ----
 
-            -- 品质快速勾选
-            for i = 1, 5 do
+            -- 稀有度勾选（1-6 档可多选）：切换该档，并把当前格子选中重置为勾选范围内的全部装备
+            for i = 1, 6 do
                 local cx = PZSX.FIRST_CX + (i - 1) * (PZSX.SIZE + PZSX.GAP)
                 if DrawUtil.hitTest(dx, dy, cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE) then
                     BF.trigger("bp_filter_" .. i)
+                    if decomposeState.qualitySet[i] then
+                        decomposeState.qualitySet[i] = nil
+                    else
+                        decomposeState.qualitySet[i] = true
+                    end
                     decomposeState.selectedItems = {}
                     local equipList = getEquipList()
                     for idx, equip in ipairs(equipList) do
-                        if (equip.quality or 1) <= i and not equip.locked and not equip.equippedByHeroId then
+                        if qualityChecked(equip.quality or 1)
+                            and not equip.locked and not equip.equippedByHeroId then
                             decomposeState.selectedItems[idx] = true
                         end
                     end
-                    print("[BackpackPanel] 品质筛选: <=" .. i)
+                    print("[BackpackPanel] 稀有度勾选切换: " .. i
+                        .. " checked=" .. tostring(decomposeState.qualitySet[i] == true)
+                        .. " selected=" .. tostring(#decomposeState.selectedItems))
                     return true
                 end
             end
@@ -1380,6 +1409,7 @@ function Panel.handleInput(dx, dy)
             if DrawUtil.hitTest(dx, dy, BTN_BATCH_DEC.CX, BTN_BATCH_DEC.CY, BTN_BATCH_DEC.W, BTN_BATCH_DEC.H) then
                 BF.trigger("bp_batch_dec")
                 decomposeState.selectedItems = {}
+                decomposeState.qualitySet = {}
                 decomposeState.active = false
                 print("[BackpackPanel] 取消分解模式")
                 return true
@@ -1391,7 +1421,8 @@ function Panel.handleInput(dx, dy)
                 local totalSlots = math.max(#equipList, 35)
                 for idx = 1, totalSlots do
                     local equip = equipList[idx]
-                    if equip and not equip.locked and not equip.equippedByHeroId then
+                    if equip and not equip.locked and not equip.equippedByHeroId
+                        and qualityChecked(equip.quality or 1) then
                         local col = ((idx - 1) % GRID.COLS) + 1
                         local row = math.floor((idx - 1) / GRID.COLS)
                         local cx = CELL_COL_CX[col]
@@ -1417,6 +1448,7 @@ function Panel.handleInput(dx, dy)
                 BF.trigger("bp_batch_dec")
                 decomposeState.active = true
                 decomposeState.selectedItems = {}
+                decomposeState.qualitySet = {}
                 print("[BackpackPanel] 进入分解模式")
                 return true
             end

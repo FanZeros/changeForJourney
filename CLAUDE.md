@@ -56,10 +56,11 @@
 - **接入点**：① 角色详情 attr 页天赋描述区（`CharacterDetailDraw` 的 `M.talentKwText`）；② 觉醒面板效果描述（`AwakeningPanel` 的 `M.kwText`，居中排版）。弹窗帧末置顶统一绘制；`CharacterDetail.handleInput` 开头统一处理「弹窗开着→任意点击先关弹窗」；attr 页关键词点击优先于属性行命中；切角色/拖拽/打开面板调 `clearKeywordUi` 清状态；handleHover 悬停加亮。
 - **验证**：新增 `scripts/tests/keyword_text_test.lua`（20 项全 PASS：词表/长词优先/拆段计数/热区坐标/点击开关弹窗/折行/显式\n）。LSP 全工作区 0 Error 0 Warning；官方 Build 成功；主入口 60 帧无 Lua 错误；战斗回归 `battle_stage_switch_test` 22 PASS/0 FAIL（退出码 124 是已知「测试自身不退出进程」行为）。6 个相关模块 smoke require 全 true。
 - **踩坑**：`--[[@as string[]]]` 注解会让引擎 LoadChunk 报 `'end' expected`（引擎 Lua 解析器不认这种行内 cast 写法，但 LSP 认）→ 改为 `---@type` 独立行 + 中间变量。**教训：引擎 LoadChunk 与 LSP 对注解容错不同，新文件务必用 headless Runtime 实跑一次 require，别只信 LSP。**
-- **待办/未验收**：① headless 离屏 NanoVG 截图未落盘（VG 上下文限制），关键词视觉效果（金色下划线、弹窗）尚未真人预览验收。② 转职页 `ChurchClassChange` 的 talentDesc 仍是纯 `nvgTextBox`，未接入关键词（可作下一步）。③ 装备词条/遗物/神器/通天塔 desc 等更多描述区未接入。④ 词表可继续扩充。
+- **待办/未验收**：① headless 离屏 NanoVG 截图未落盘（VG 上下文限制），关键词视觉效果（金色下划线、弹窗）尚未真人预览验收。② ~~转职页 `ChurchClassChange` 的 talentDesc 仍是纯 `nvgTextBox`，未接入关键词~~（已接入确认弹窗，见下方"转职页接入"；转职树主页面的锁定提示文字无机制词，无需接入）。③ 装备词条/遗物/神器/通天塔 desc 等更多描述区未接入。④ 词表可继续扩充。
 - **追加修复（同轮）**：布局双重计宽 bug——普通文本累计期直接写 `cur.width`，addPiece 整段测量再加一次 → 行宽虚高、提前折行（LINE1 实测 1169 > 容器 837）。修复：累计期独立 `bufW`。新增回归：行宽不超容器 + 宽容器短文本不折行；22 项全 PASS；引擎真实字体 dump 验证 3 行 826/826/52 全部 ≤837。
 - **🔴 环境教训（截图链路）**：本机 Linux UrhoXRuntime 二进制**不支持离屏截图**——`-screenshot=` 参数无 `[Screenshot]` 标记（strings 二进制无该参数）、`Graphics:TakeScreenShot` 返回 false（surfaceless 无读回缓冲）、xvfb 未安装。headless 只能做逻辑验证（validate/print dump）；**视觉效果验收必须让用户在预览窗口真人查看**，不要再浪费时间尝试本机截图。
 - **🔴 结构修复（同轮，用户发现）**：用户反馈"预览里没有关键词"并提示"script 位置是不是不在 workspace 下方"——确认克隆进 `/workspace/repo/` 子目录导致 build 打包 0 Lua（详见上方"致命结构铁律"）。已把整个项目（含 `.git`）迁移到 `/workspace` 根，`git status` 干净，重新 build 后 365 Lua 入包、validate 60 帧 0 lua_errors。预览验收待用户重测。
+- **转职页接入（同轮，用户追问"转职里面的描述有没有"）**：`ChurchClassChange.drawConfirmPopup` 的天赋描述改用 KeywordText。弹窗带 scale 0.85→1.0 缩放动画 → KeywordText 新增 `setTransform`（输入屏幕坐标→热区空间逆变换）与 `setPopupTransform`（弹窗锚点→屏幕坐标正向变换，解释气泡在变换外绘制）；`measureHeight` 保留原自适应字号逻辑。回归测试扩到 26 项全 PASS。**新踩坑**：官方 build 的 LSP 检查比 lua_lsp_client 严格（return-type-mismatch 会被拒），提交前必须跑官方 build 验证。
 
 ## 上次做了什么（2026-09-27，925 同步与存档再排查）
 

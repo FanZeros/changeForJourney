@@ -145,6 +145,7 @@ local state = {
     scrollVel = 0,
     followScroll = true,
     autoScroll = nil,  -- { t, dur, to } 非逐件弹出时开屏平滑滚到底部（显示最新/最下方奖励）
+    panel = nil,       -- 触发面板 'left'|'center'|'right'（横屏三面板跟随绘制/输入）；nil=全屏居中
     -- 动画状态
     animPhase  = "none",  -- "none"|"opening"|"open"|"closing"
     animStart  = 0,       -- 动画开始时刻（time.elapsedTime）
@@ -427,6 +428,8 @@ function RewardPopup.show(title, rewards, opts)
     state.followScroll = false
     state.onItemClick = opts and opts.onItemClick or nil
     state.onClose     = opts and opts.onClose     or nil
+    -- 跟随触发面板：显式 opts.panel 优先，否则取横屏当前焦点面板（全局 H_focusPanel）
+    state.panel = (opts and opts.panel) or (H_focusPanel or nil)
 
     -- 排序：资源类排前，角色/装备/遗物类排后
     local resources = {}
@@ -857,6 +860,11 @@ function RewardPopup.currentRowTag()
     return state.open and state.rowTag or nil
 end
 
+--- [三面板] 当前归属面板 'left'|'center'|'right'（nil=全屏居中）
+function RewardPopup.currentPanel()
+    return state.open and state.panel or nil
+end
+
 --- [三行并行] 行内输入：窗口坐标 → 设计空间，交给统一的 handleInput。
 --- 走这里才能保留同帧保护与「逐个获得未结束时先跳过动画」的行为；
 --- 直接调 close() 会让玩家通关后随手一点就把弹窗关掉，看起来像没弹。
@@ -875,9 +883,10 @@ function RewardPopup.handleInputRegion(wx, wy, rx, ry, rw, rh)
     return RewardPopup.handleInput(dx, dy)
 end
 
---- 全局绘制（无行归属时走原全屏路径）
+--- 全局绘制（无行归属时走原全屏路径；归属左/右面板时由 drawRegion 在面板视口内绘制）
 function RewardPopup.draw(vg)
     if not state.open or state.rowTag then return end
+    if state.panel and state.panel ~= 'center' then return end
 
     -- [暗黑化] 不再画全屏黑色叠加层，弹窗直接浮在场景上
     RewardPopup.drawContent(vg)

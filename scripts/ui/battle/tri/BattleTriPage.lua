@@ -58,9 +58,12 @@ function BattleTriPage.setOnStageClear(cb) triOnStageClear = cb end
 function BattleTriPage.isOpen() return isOpen_ end
 
 --- 存档阵容晚于战斗页到达时，清掉已记住的编队，下一帧按真实槽位重建。
-function BattleTriPage.invalidateTeams()
-    for _, drv in pairs(drivers) do
-        drv.teamSignature = nil
+---@param onlyTeams table<number, boolean>|nil 仅失效指定队伍；nil=全部（旧行为）
+function BattleTriPage.invalidateTeams(onlyTeams)
+    for idx, drv in pairs(drivers) do
+        if not onlyTeams or onlyTeams[idx] then
+            drv.teamSignature = nil
+        end
     end
 end
 
@@ -309,7 +312,9 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             local drv = drivers[row]
             if drv then
                 drv:activate()
-                BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies }, nil, true)
+                -- 无编队时完全不显示敌人（血条/名字等），只留空行提示
+                local enemiesShown = (#drv.allies > 0) and drv.enemies or {}
+                BattleView.draw(vg, { allies = drv.allies, enemies = enemiesShown }, nil, true)
             end
             nvgRestore(vg)
         end

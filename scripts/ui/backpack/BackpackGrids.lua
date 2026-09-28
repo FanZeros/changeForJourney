@@ -10,6 +10,7 @@ local PlayerStore     = require("core.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
 local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local M = {}
 
@@ -157,17 +158,16 @@ function M.bind(deps)
                         local badgeSize = 66
                         local badgeX = cx - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
                         local badgeY = cy - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
-                        nvgSave(vg)
-                        nvgBeginPath(vg)
-                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                        nvgFillPaint(vg, nvgImagePattern(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 0, ownerIcon, 1.0))
-                        nvgFill(vg)
-                        nvgBeginPath(vg)
-                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                        nvgStrokeColor(vg, nvgRGBA(0xff, 0xff, 0xff, 200))
-                        nvgStrokeWidth(vg, 2)
-                        nvgStroke(vg)
-                        nvgRestore(vg)
+                        -- [统一角色框] 已装备头像角标（白描边变体）
+                        ---@type number
+                        local ownerHeroId = equip.equippedByHeroId
+                        HeroFrame.draw(vg, {
+                            cx = badgeX, cy = badgeY, size = badgeSize, radius = 6,
+                            heroId = ownerHeroId,
+                            iconHandle = ownerIcon,
+                            state = "owned",
+                            borderOverride = { 255, 255, 255, 200, 2 },
+                        })
                     end
                 end
 

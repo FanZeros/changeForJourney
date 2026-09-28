@@ -12,6 +12,7 @@ local HeroAssetUtil    = require("config.HeroAssetUtil")
 local ClassConfig      = require("config.ClassConfig")
 local AD               = require("systems.AttributeDef")
 local PlayerStore      = require("core.PlayerStore")
+local HeroFrame        = require("ui.widget.HeroFrame")
 local AVC              = require("config.AdvancementConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
@@ -1196,23 +1197,19 @@ function EquipmentBag.draw(vg, opts)
                     nvgText(vg, 0, 0, "E", nil)
                     nvgRestore(vg)
                 elseif entry.equippedByHeroId then
-                    -- 其他英雄已装备 → 显示英雄头像角标
+                    -- 其他英雄已装备 → [统一角色框] 头像角标（白描边变体）
                     local ownerIcon = imgHeroIcons[entry.equippedByHeroId]
                     if ownerIcon and ownerIcon >= 0 then
                         local badgeSize = 66
                         local badgeX = cx - CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
                         local badgeY = cy - CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
-                        nvgSave(vg)
-                        nvgBeginPath(vg)
-                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                        nvgFillPaint(vg, nvgImagePattern(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 0, ownerIcon, 1.0))
-                        nvgFill(vg)
-                        nvgBeginPath(vg)
-                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                        nvgStrokeColor(vg, nvgRGBA(0xff, 0xff, 0xff, 200))
-                        nvgStrokeWidth(vg, 2)
-                        nvgStroke(vg)
-                        nvgRestore(vg)
+                        HeroFrame.draw(vg, {
+                            cx = badgeX, cy = badgeY, size = badgeSize, radius = 6,
+                            heroId = entry.equippedByHeroId,
+                            iconHandle = ownerIcon,
+                            state = "owned",
+                            borderOverride = { 255, 255, 255, 200, 2 },
+                        })
                     end
                 end
 

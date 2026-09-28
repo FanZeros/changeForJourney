@@ -9,6 +9,7 @@ local SpineCardEffect = require("ui.fx.SpineCardEffect")
 local ArtifactPanel = require("ui.church.ChurchArtifactPanel")
 local ArtifactDrawPanel = require("ui.church.ChurchArtifactDrawPanel")
 local I18n = require("core.I18n")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local M = {}
 
@@ -204,6 +205,13 @@ function M.bind(deps)
             if not state.selectAnim then
             local cardImg = getHeroCardImage(vg, state.selectedHeroId)
             DrawUtil.drawImageCover(vg, cardImg, cx, cy, CHAR_SLOT.W, CHAR_SLOT.H, 1.0)
+            -- [统一角色框] 卡面叠加品质色描边
+            HeroFrame.draw(vg, {
+                cx = cx, cy = cy, w = CHAR_SLOT.W, h = CHAR_SLOT.H,
+                heroId = state.selectedHeroId,
+                state = "owned",
+                frameOnly = true,
+            })
             end
 
             if heroCfg then
@@ -482,6 +490,13 @@ function M.bind(deps)
             nvgSave(vg)
             nvgGlobalAlpha(vg, 1.0)
             DrawUtil.drawImageCover(vg, cardImg, curX, curY, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
+            -- [统一角色框] 飞行卡同步品质描边
+            HeroFrame.draw(vg, {
+                cx = curX, cy = curY, w = ROSTER.CARD_W, h = ROSTER.CARD_H,
+                heroId = state.selectedHeroId,
+                state = "owned",
+                frameOnly = true,
+            })
             nvgRestore(vg)
         end
 

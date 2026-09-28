@@ -12,6 +12,7 @@ local NumberUtil        = require("core.NumberUtil")
 local BattleStats       = require("systems.BattleStats")
 local BF                = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -221,11 +222,14 @@ local function drawStatRow(vg, entry, cy, tab, mainVal, maxVal, totalVal)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, D.ROW_BG_A))
     nvgFill(vg)
 
-    -- 头像
+    -- [统一角色框] 头像带品质描边（原无框）
     local icon = getHeroIcon(entry.heroId)
-    if icon and icon >= 0 then
-        drawImageCentered(vg, icon, D.AVATAR_CX, cy, D.AVATAR_SZ, D.AVATAR_SZ, 1.0)
-    end
+    HeroFrame.draw(vg, {
+        cx = D.AVATAR_CX, cy = cy, size = D.AVATAR_SZ,
+        heroId = entry.heroId,
+        iconHandle = icon,
+        state = "owned",
+    })
 
     -- 名字（左上）
     drawTextStroke(vg, D.NAME_X, cy - 30, entry.name or "?", D.NAME_FONT,

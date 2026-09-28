@@ -15,6 +15,7 @@ local GachaConfig = require("config.GachaConfig")
 local UrGachaConfig = require("config.UrGachaConfig")
 local GameState = require("core.GameState")
 local HeroAssetUtil = require("config.HeroAssetUtil")
+local HeroFrame = require("ui.widget.HeroFrame")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawImageCenteredUtil = DrawUtil.drawImageCentered
 
@@ -610,8 +611,16 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
     local heroId = item.heroId
     local heroCfg = HC.get(heroId)
 
-    -- 无底板：透明立绘
+    -- 无底板：透明立绘（928 侧视觉）
     drawPortraitFit(vg, heroId, cx, cy, alpha)
+    -- [统一角色框] 招募英雄卡叠加品质色描边（feat926 侧，frameOnly 不画底板）
+    HeroFrame.draw(vg, {
+        cx = cx, cy = cy, w = CARD_W, h = CARD_H,
+        heroId = heroId,
+        state = "owned",
+        frameOnly = true,
+        alpha = alpha,
+    })
 
     -- 角色名称（上移25px：OFFSET从44增到69）
     local combinedAlpha = alpha * _fadeAlpha

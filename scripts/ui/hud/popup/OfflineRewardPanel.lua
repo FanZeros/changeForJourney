@@ -41,6 +41,7 @@ local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫�
 local RewardCascade = require("ui.widget.RewardCascade")  -- 奖励逐件弹出动画（与关卡奖励同款）
 ---@class RewardCascadeTimeline : table  逐件弹出时间轴（定义见 ui/widget/RewardCascade.lua）
 local GameSFX       = require("systems.GameSFX")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local Panel = {}
 
@@ -856,18 +857,18 @@ function self_drawHeroExpList(vg)
                 local iconCY = top + 16 + HERO_ROW.ICON * 0.5
                 local iconCX = cellCX
 
-                -- 头像（品质底 + 角色图标）
+                -- [统一角色框] 头像（品质色描边，替代 ZBBJ 贴图底）
                 local q = (item.quality and item.quality > 0) and item.quality or 2
-                local qBg = ImageCache.getQualityBg(q)
-                if qBg >= 0 then
-                    DrawUtil.drawImageCentered(vg, qBg, iconCX, iconCY,
-                        HERO_ROW.ICON, HERO_ROW.ICON, 1.0)
-                end
-                local heroImg = getHeroIcon(item.heroId)
-                if heroImg >= 0 then
-                    local inner = HERO_ROW.ICON - 10
-                    DrawUtil.drawImageCentered(vg, heroImg, iconCX, iconCY, inner, inner, 1.0)
-                end
+                ---@type number
+                local hid = item.heroId
+                local heroImg = getHeroIcon(hid)
+                HeroFrame.draw(vg, {
+                    cx = iconCX, cy = iconCY, size = HERO_ROW.ICON - 10,
+                    heroId = hid,
+                    iconHandle = heroImg,
+                    quality = q,
+                    state = "owned",
+                })
 
                 -- 经验进度条（头像下方，格子内居中）
                 local barW  = cellW - 36

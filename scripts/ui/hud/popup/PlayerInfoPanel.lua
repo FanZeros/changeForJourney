@@ -21,6 +21,7 @@ local CharacterDetail   = require("ui.character.detail.CharacterDetail")
 
 local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local HeroFrame = require("ui.widget.HeroFrame")
 local drawTextStroke     = DrawUtil.drawTextStroke
 local drawImageCentered  = DrawUtil.drawImageCentered
 local drawNineSlice      = DrawUtil.drawNineSlice
@@ -650,6 +651,13 @@ local function drawTeamCard(vg, cx, cy, slot, power)
     if cardImg and cardImg >= 0 then
         DrawUtil.drawImageCover(vg, cardImg, cx, cy, cw, ch, 1.0)
     end
+    -- [统一角色框] 队伍卡叠加品质色描边
+    HeroFrame.draw(vg, {
+        cx = cx, cy = cy, w = cw, h = ch,
+        heroId = heroId,
+        state = "owned",
+        frameOnly = true,
+    })
 
     -- b) 职业图标
     local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -782,9 +790,14 @@ function PlayerInfoPanel.draw(vg)
         TTL.FR, TTL.FG, TTL.FB, TTL.SW,
         { strokeColor = { TTL.SR, TTL.SG, TTL.SB } })
 
-    -- ── 5. 玩家头像 ──
+    -- ── 5. 玩家头像（[统一角色框] 品质色描边）──
     local _bf1 = BF.begin(vg, "pip_avatar", AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H)
-    drawImageCentered(vg, img.avatar, AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H, 1.0)
+    HeroFrame.draw(vg, {
+        cx = AVATAR.CX, cy = AVATAR.CY, w = AVATAR.W, h = AVATAR.H,
+        heroId = state.avatarHeroId or 1,
+        iconHandle = img.avatar,
+        state = "owned",
+    })
 
     BF.finish(vg, _bf1)
 

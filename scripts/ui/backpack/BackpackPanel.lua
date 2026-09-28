@@ -25,6 +25,7 @@ local Protocol         = require("shared.Protocol")
 local BF               = require("systems.ButtonFeedback")
 local BackpackDialogs  = require("ui.backpack.BackpackDialogs")
 local BackpackGrids    = require("ui.backpack.BackpackGrids")
+local HeroFrame        = require("ui.widget.HeroFrame")
 
 local Panel = {}
 
@@ -612,9 +613,20 @@ local function drawUrConvertDialog(vg)
         local cy = C.GRID_TOP + row * (C.CELL_SIZE + C.GAP_Y) + C.CELL_SIZE * 0.5
         if cy > C.CANCEL_CY - 110 then break end
 
-        local gridQuality = ({ [1] = 1, [2] = 3, [3] = 5, [4] = 6 })[item.quality] or 1
-        DarkIcon.drawQualityBg(vg, gridQuality, cx, cy, C.CELL_SIZE, C.CELL_SIZE, 1.0)  -- [暗黑化 P2-A]
-        DrawUtil.drawShardIcon(vg, item.heroId, cx, cy, C.CELL_SIZE - 10, 1.0)
+        -- [统一角色框] 英雄碎片格：按英雄品质色描边 + 左上碎片角标
+        local shardSize = C.CELL_SIZE - 10
+        HeroFrame.draw(vg, {
+            cx = cx, cy = cy, size = shardSize,
+            heroId = item.heroId,
+            state = "owned",
+        })
+        local badgeSize = math.floor(shardSize * 53 / 160 + 0.5)
+        if DrawUtil._shardBadgeImg and DrawUtil._shardBadgeImg >= 0 then
+            DrawUtil.drawImageCentered(vg, DrawUtil._shardBadgeImg,
+                cx - shardSize * 0.5 + badgeSize * 0.5,
+                cy - shardSize * 0.5 + badgeSize * 0.5,
+                badgeSize, badgeSize, 1.0)
+        end
     end
 
     if imgBtnGreen >= 0 then

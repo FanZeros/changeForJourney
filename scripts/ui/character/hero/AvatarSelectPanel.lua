@@ -10,6 +10,7 @@ local HeroAssetUtil     = require("config.HeroAssetUtil")
 local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local BF             = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -365,11 +366,15 @@ function AvatarSelectPanel.draw(vg)
     local heroCfg = HeroConfig.get(selHeroId)
     local isOwned = CharacterPanel.isOwned(selHeroId)
 
-    -- ── 5. 头像 ──
+    -- ── 5. 头像（[统一角色框] 大预览带品质描边）──
     local avatarImg = img.heroIcons[selHeroId]
-    if avatarImg and avatarImg >= 0 then
-        drawImageCentered(vg, avatarImg, AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H, 1.0)
-    end
+    HeroFrame.draw(vg, {
+        cx = AVATAR.CX, cy = AVATAR.CY, w = AVATAR.W, h = AVATAR.H,
+        heroId = selHeroId,
+        iconHandle = avatarImg,
+        state = isOwned and "owned" or "unowned",
+        lockOverlay = (not isOwned) or nil,
+    })
 
     -- ── 7. 名称（左对齐）──
     local displayName = heroCfg and heroCfg.name or "未知"
@@ -452,40 +457,15 @@ function AvatarSelectPanel.draw(vg)
             local heroOwned = CharacterPanel.isOwned(heroId)
             local iconImg = img.heroIcons[heroId]
 
-            -- 1) 内容背景框：160×160 圆角12 黑色10%
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cellLeft, cellTop, CELL.SIZE, CELL.SIZE, CELL.RADIUS)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, CELL.BG_A))
-            nvgFill(vg)
-
-            -- 2) 头像图标 160×160
-            if iconImg and iconImg >= 0 then
-                local iconAlpha = heroOwned and 1.0 or 0.4
-                drawImageCentered(vg, iconImg, cx, cy, CELL.SIZE, CELL.SIZE, iconAlpha)
-            end
-
-            -- 未拥有：半透明蒙版 + 锁定图标
-            if not heroOwned then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cellLeft, cellTop, CELL.SIZE, CELL.SIZE, CELL.RADIUS)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 100))
-                nvgFill(vg)
-
-                if img.lockIcon >= 0 then
-                    local lockSize = 40
-                    drawImageCentered(vg, img.lockIcon, cx, cy, lockSize, lockSize, 0.9)
-                end
-            end
-
-            -- 选中高亮边框
-            if heroId == state.selectedHeroId then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, cellLeft - 4, cellTop - 4,
-                    CELL.SIZE + 8, CELL.SIZE + 8, CELL.RADIUS + 2)
-                nvgStrokeColor(vg, nvgRGBA(0xFF, 0xD7, 0x00, 255))
-                nvgStrokeWidth(vg, 4)
-                nvgStroke(vg)
-            end
+            -- [统一角色框] 头像选择格：品质描边 + 未拥有黑罩锁图标 + 选中金高亮
+            HeroFrame.draw(vg, {
+                cx = cx, cy = cy, size = CELL.SIZE, radius = CELL.RADIUS,
+                heroId = heroId,
+                iconHandle = iconImg,
+                state = heroOwned and "owned" or "unowned",
+                lockOverlay = (not heroOwned) or nil,
+                selected = (heroId == state.selectedHeroId) or nil,
+            })
 
             ::continue_cell::
         end

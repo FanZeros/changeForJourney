@@ -11,6 +11,7 @@ local HeroConfig     = require("config.HeroConfig")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local BottomNav      = require("ui.hud.BottomNav")
 local I18n           = require("core.I18n")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local TopBar = {}
 
@@ -207,25 +208,18 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
     -- #1 头像背景框: center(239,139+oy), 382x136, black 70%, r=36
     drawRoundedRectCentered(vg, 239, 139 + oy, 382, 136, 36, 0, 0, 0, 178)
 
-    -- #2 玩家头像: center(98,136+oy), 150x150（裁剪为圆角矩形）
-    -- 始终先画灰色底作为底层背景
-    drawRoundedRectCentered(vg, 98, 136 + oy, 150, 150, 20, 80, 80, 100, 255)
+    -- #2 玩家头像: center(98,136+oy), 150x150（[统一角色框] 品质色描边）
     local avatarId = cachedAvatarHeroId or 1
     local avatarImg = HeroAssetUtil.ensureIcon(vg, imgHeroIcons, avatarId)
     if (not avatarImg or avatarImg < 0) and avatarId ~= 1 then
         avatarImg = HeroAssetUtil.ensureIcon(vg, imgHeroIcons, 1)
     end
-    if avatarImg and avatarImg >= 0 then
-        -- 用圆角裁剪绘制头像（覆盖在灰色底上）
-        local avCX, avCY, avW, avH = 98, 136 + oy, 150, 150
-        nvgSave(vg)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, avCX - avW * 0.5, avCY - avH * 0.5, avW, avH, 20)
-        local paint = nvgImagePattern(vg, avCX - avW * 0.5, avCY - avH * 0.5, avW, avH, 0, avatarImg, 1.0)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-        nvgRestore(vg)
-    end
+    HeroFrame.draw(vg, {
+        cx = 98, cy = 136 + oy, size = 150, radius = 20,
+        heroId = avatarId,
+        iconHandle = avatarImg,
+        state = "owned",
+    })
 
     -- #2e 页面入口：非三联旧布局才画战斗/副本；横屏三联已常驻，不再画
     if not hidePageTabs then

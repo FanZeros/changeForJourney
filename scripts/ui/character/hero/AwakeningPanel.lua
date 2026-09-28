@@ -10,6 +10,7 @@ local AKC        = require("config.AwakeningConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
 local I18n       = require("core.I18n")
 local KeywordText = require("ui.widget.KeywordText")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -86,7 +87,6 @@ local imgBg            = -1
 local imgTitleBg       = -1
 local imgActivateBtn   = -1
 local imgSelectArrow   = -1
-local imgBadges        = {}
 local imgClassIcons    = {}
 
 ---@type table<number, table>
@@ -196,10 +196,6 @@ function M.initImages(vg)
     imgTitleBg     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_1.png", 0)
     imgActivateBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgSelectArrow = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_JT.png", 0)
-
-    imgBadges["R"]   = nvgCreateImage(vg, "image/品质框/UI_PZBZ_R.png", 0)
-    imgBadges["SR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SR.png", 0)
-    imgBadges["SSR"] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SSR.png", 0)
 
     cgCache = {}
     print("[AwakeningPanel] initImages OK (mindscape slices)")
@@ -387,12 +383,22 @@ function M.draw(vg, heroId)
 
     drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
 
-    local qualityName = HC.QUALITY_INFO[heroCfg.quality]
-        and HC.QUALITY_INFO[heroCfg.quality].name or "R"
-    local badgeImg = imgBadges[qualityName]
-    if badgeImg and badgeImg >= 0 then
-        drawImageCentered(vg, badgeImg, BADGE_CX, BADGE_CY, BADGE_W, BADGE_H, 1.0)
-    end
+    -- [统一角色框] 品质徽章：贴图（旧名R/SR/SSR且缺UR）→ 品质色矢量铭牌
+    local qualityInfo = HC.QUALITY_INFO[heroCfg.quality]
+    local qualityName = qualityInfo and qualityInfo.name or "?"
+    local qr, qg, qb = HeroFrame.qualityColor(heroCfg.quality)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, BADGE_CX - BADGE_W * 0.5, BADGE_CY - BADGE_H * 0.5, BADGE_W, BADGE_H, 10)
+    nvgFillColor(vg, nvgRGBA(12, 10, 8, 210))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(qr, qg, qb, 230))
+    nvgStrokeWidth(vg, 3)
+    nvgStroke(vg)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 30)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(qr, qg, qb, 255))
+    nvgText(vg, BADGE_CX, BADGE_CY, qualityName, nil)
     drawImageCentered(vg, imgTitleBg, TITLE_BG_CX, TITLE_BG_CY, TITLE_BG_W, TITLE_BG_H, 1.0)
 
     local classIdx = CLASS_ICON_MAP[heroCfg.classId]

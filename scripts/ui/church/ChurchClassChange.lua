@@ -423,6 +423,8 @@ function M.drawContent(vg)
         { italic = true })
 
     -- 一转分叉线：未转职时两侧都可能通向 → 亮；已转职后只亮选中侧
+    -- 等级未解锁时遮罩只盖到线的一半，线推迟到遮罩之后统一灰度绘制（见 lockedLine1）
+    local lockedLine1 = heroLevel < ADV2.firstLevel
     local line1Alpha, line2Alpha = 1.0, 1.0
     if advBranch and advBranch.first then
         if advBranch.first == (branches and branches[1] and branches[1].id) then
@@ -431,7 +433,9 @@ function M.drawContent(vg)
             line1Alpha = 0.3
         end
     end
-    if line1Alpha == line2Alpha then
+    if lockedLine1 then
+        -- 跳过：遮罩后统一画
+    elseif line1Alpha == line2Alpha then
         drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
             BRANCH_LINE_W, BRANCH_LINE_H, line1Alpha)
     else
@@ -476,10 +480,14 @@ function M.drawContent(vg)
         local st2 = firstBranchState(advBranch, branches[2].id, heroLevel)
 
         -- 二转分叉线（先绘制，置于一转图标底层）：仅对应一转在路径上时亮
-        drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
-            ADV2.lineW, ADV2.lineH, (st1 ~= "off") and 1.0 or 0.3)
-        drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
-            ADV2.lineW, ADV2.lineH, (st2 ~= "off") and 1.0 or 0.3)
+        -- 二转未解锁时推迟到二转遮罩后统一灰度（避免半白半灰）
+        local lockedLine2 = heroLevel < ADV2.secondLevel
+        if not lockedLine2 then
+            drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
+                ADV2.lineW, ADV2.lineH, (st1 ~= "off") and 1.0 or 0.3)
+            drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
+                ADV2.lineW, ADV2.lineH, (st2 ~= "off") and 1.0 or 0.3)
+        end
 
         -- 分支1
         if st1 ~= "off" then
@@ -587,6 +595,18 @@ function M.drawContent(vg)
         nvgRect(vg, cx - w * 0.5, top, w, bot - top)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
         nvgFill(vg)
+        -- 一转分叉线上半在遮罩外：遮罩后统一灰度补画，避免半灰半白
+        if lockedLine1 then
+            drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
+                BRANCH_LINE_W, BRANCH_LINE_H, 0.35)
+            -- 二转分叉线同理（此状态下二转线也未画）
+            if branches then
+                drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
+                    ADV2.lineW, ADV2.lineH, 0.35)
+                drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
+                    ADV2.lineW, ADV2.lineH, 0.35)
+            end
+        end
         local lk1 = ADV2.lock1
         drawTextStroke(vg, lk1.titleCX, lk1.titleCY, "一转",
             ADV2.lockFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -613,6 +633,11 @@ function M.drawContent(vg)
         nvgRect(vg, lk.bgCX - lk.bgW * 0.5, lk.bgCY - lk.bgH * 0.5, lk.bgW, lk.bgH)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
         nvgFill(vg)
+        -- 二转分叉线上半在遮罩外：遮罩后统一灰度补画
+        drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
+            ADV2.lineW, ADV2.lineH, 0.35)
+        drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
+            ADV2.lineW, ADV2.lineH, 0.35)
         drawTextStroke(vg, lk.titleCX, lk.titleCY, "二转",
             ADV2.lockFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             classColor.r, classColor.g, classColor.b, 6,

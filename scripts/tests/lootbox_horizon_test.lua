@@ -7,6 +7,7 @@ function Start()
     time = { elapsedTime = 100 }
     local counters = { loot = 0, bag = 0, right = 0, reward = 0, close = 0, click = 0 }
     local globalReward = false
+    local hitRewardPanel = false -- 指针是否落在奖励弹窗矩形内（生产路径经 hitPanel 判定）
     local pageOpen = true
     local function noop() return false end
     local function mock(values)
@@ -39,10 +40,12 @@ function Start()
         ["ui.hud.popup.RewardPopup"] = mock({
             isOpen = function() return globalReward end,
             currentRowTag = function() return nil end,
+            hitPanel = function() return hitRewardPanel end,
             handleScroll = function() counters.reward = counters.reward + 1 return true end,
         }),
         ["core.DrawUtil"] = mock({
             SEAMBAR_ASPECT = 0.04,
+            SEAMBAR_ARROW_Y = 0.469, -- 与 DrawUtil 真实常量一致，中缝命中计算需要
             seamSlideX = function() return 0 end,
         }),
     }
@@ -68,10 +71,15 @@ function Start()
     cursor.x = 900
     HandleMouseWheelHorizon("MouseWheel", wheel)
     assert(counters.bag == 1, "中栏装备袋仍可滚动")
-    globalReward = true
+    -- 指针在弹窗矩形外：全局弹窗不吞滚轮，仍交给指针所在面板（中栏装备袋）
+    globalReward, hitRewardPanel = true, false
     HandleMouseWheelHorizon("MouseWheel", wheel)
-    assert(counters.reward == 1 and counters.bag == 1, "全局奖励滚轮优先于装备袋")
-    globalReward = false
+    assert(counters.reward == 0 and counters.bag == 2, "弹窗外滚轮不被全局弹窗吞掉")
+    -- 指针在弹窗矩形内：全局奖励滚轮优先于装备袋
+    hitRewardPanel = true
+    HandleMouseWheelHorizon("MouseWheel", wheel)
+    assert(counters.reward == 1 and counters.bag == 2, "全局奖励滚轮优先于装备袋")
+    globalReward, hitRewardPanel = false, false
 
     local button = { Button = { GetInt = function() return MOUSEB_LEFT end } }
     cursor.x, cursor.y = 200, 400

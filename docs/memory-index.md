@@ -1,5 +1,6 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+> **最新（2026-09-28，护盾成长层）**：`AD.SHIELD_SCALING`（hpRatio=8% / derivedLevelFactor=5%）+ `UnitAttributes.recalc` §5.5：护盾额外 = 最终HP×8% + 六围派生×(lv-1)×5%，门控 preGrowthES>0（无盾敌人不加盾），`enabled=false` 一键回退。调平衡只改 `AttributeDef.SHIELD_SCALING`；工具 = `_proc/shield_probe.lua`（基线探针）/ `shield_sweep.lua`（系数扫描）/ `shield_ab_lab.lua`（BattleLab A/B）；回归 = `tests/shield_scaling_test.lua`（15断言）。设计文档 **`docs/护盾成长层设计.md`**（含调参记录与 A/B 夹逼结论：胜局不翻盘、败局存活+26%）。已合入 `workspace926`（merge 3fafff54）。已知口子：回盾数值项 vit×2 仍线性；护盾 e15 大数 UI 未加缩写格式化。
 > **最新（2026-09-28，文档整理）**：`docs/` 已全面整理。**权威玩法口径 = `changeForJourney-gameplay.md`（§1-20+附录已按代码逐项复核）**；剧情口径 = `剧情总表.md`（SCENARIO_1~82，缺 54/66）。已完成/过时的 11 份规划移入 `docs/archive/`。
 > 现行关键事实：入口 `boot/Standalone.lua`（`network/` 已删）；横屏三栏（左=城镇+二级页 / 中=战斗+全屏页+弹窗 / 右=角色）；三队并行×每队4槽；六契职业（封门人/拾骸者/裂隙使/回响客/换面人/司仪）；教堂**只有神器**（转职迁角色详情、天赋迁终焉古树）；竞技场/公会/签到/公告/旧任务面板已删；离线 24h 软顶（超按50%）；装备 6 槽+8 套装；天赋 209 节点。
 >

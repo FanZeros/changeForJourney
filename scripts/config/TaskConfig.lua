@@ -54,7 +54,7 @@ local function nextReward(scale)
     scale = math.max(1, scale or 1)
     local kind = rewardSeq % 8
     if kind == 1 then
-        return { type = "gold", amount = scale * 800, icon = "image/货币道具/UI_icon_JB.png", quality = 2 }
+        return { type = "gold", amount = scale * 800, icon = "image/货币道具/UI_icon_JB_X.png", quality = 2 }
     elseif kind == 2 then
         return { type = "essence", amount = scale * 30, icon = "image/货币道具/UI_icon_JC.png", quality = 2 }
     elseif kind == 3 then

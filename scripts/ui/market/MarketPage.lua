@@ -138,7 +138,7 @@ local SHOP_ITEMS = {
         desc = "通用货币，用于装备强化和升阶。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 94,
-        icon = "image/货币道具/UI_icon_JB.png",
+        icon = "image/货币道具/UI_icon_JB_X.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
@@ -315,7 +315,7 @@ local img = {
     costIcons = {},
     -- 弹窗
     dialogBg = -1, buyBtnYellow = -1,
-    coinIcon = -1,     -- 弹窗消耗侧金币图标 (UI_icon_JB.png)
+    coinIcon = -1,     -- 弹窗消耗侧金币图标 (UI_icon_JB_X.png)
     diamondIcon = -1,  -- 弹窗消耗侧钻石图标 (UI_icon_SJ.png)
     qualityBg = {},    -- 品质1~6
     btnMinus = -1,     -- 减按钮(UI_AN_JIAN.png)

@@ -15,7 +15,7 @@ local TaskPage = {}
 local W, H = 1080, 2400
 local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
-local LIST = { x = 48, y = 430, w = 984, h = 1760, rowH = 210, gap = 16 }
+local LIST = { x = 48, y = 430, w = 984, h = 1760, rowH = 200, gap = 36 }
 local TABS = {
     { key = "clear", name = "通关", cx = 270, w = 280 },
     { key = "level", name = "远征", cx = 540, w = 280 },

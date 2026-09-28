@@ -6,28 +6,29 @@ local ArtifactSchema = {}
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 
 ArtifactSchema.SLOT_COUNT = 4
-ArtifactSchema.SUB_SLOT_COUNT = 3
+--- [双格改版] 每号位 2 个神器格（原 3 个）：Lv30 解锁第1格、Lv60 解锁第2格。
+--- 旧档第3格装配在 normalizeModule 时自动卸下（实例仍留在背包，不丢失）。
+ArtifactSchema.SUB_SLOT_COUNT = 2
 --- [三队适配] 装配表按队伍隔离；同一实例可同时装到多支队伍
 ArtifactSchema.TEAM_COUNT = 3
-ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL = 40
-ArtifactSchema.THIRD_SLOT_UNLOCK_LEVEL = 80
+ArtifactSchema.FIRST_SLOT_UNLOCK_LEVEL = 30
+ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL = 60
 
 function ArtifactSchema.getUnlockedSubSlotCount(playerLevel)
     playerLevel = tonumber(playerLevel) or 1
-    if playerLevel >= ArtifactSchema.THIRD_SLOT_UNLOCK_LEVEL then
-        return 3
-    end
     if playerLevel >= ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL then
         return 2
     end
-    return 1
+    if playerLevel >= ArtifactSchema.FIRST_SLOT_UNLOCK_LEVEL then
+        return 1
+    end
+    return 0
 end
 
 function ArtifactSchema.getSubSlotUnlockLevel(subSlot)
     subSlot = tonumber(subSlot) or 1
-    if subSlot <= 1 then return 1 end
+    if subSlot <= 1 then return ArtifactSchema.FIRST_SLOT_UNLOCK_LEVEL end
     if subSlot == 2 then return ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL end
-    if subSlot == 3 then return ArtifactSchema.THIRD_SLOT_UNLOCK_LEVEL end
     return nil
 end
 

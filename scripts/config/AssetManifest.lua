@@ -655,7 +655,6 @@ return {
     { "image/界面底板/签到任务/UI_MZQD_BJ.png", 1353482 },
     { "image/界面底板/商店/UI_SC_TQBJ.png", 1746902 },
     { "image/界面底板/终焉古树/UI_GS_TFBJ_dark.png", 1262800 },
-    { "image/界面底板/教堂转职/UI_JTSQ_BJ.png", 1945288 },
     { "image/界面底板/角色与觉醒/UI_JSJM_BJ.png", 2278443 },
     { "image/界面底板/角色与觉醒/UI_JSXQ_BJ.png", 2303758 },
     { "image/界面底板/角色与觉醒/UI_JSXQ_BJ_dark.png", 2253104 },

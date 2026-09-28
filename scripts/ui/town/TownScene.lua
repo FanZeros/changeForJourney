@@ -4,6 +4,20 @@
 -- ============================================================================
 
 local GameState  = require("core.GameState")
+
+-- [教堂30级开放] 缄默礼拜堂/终焉古树 需远征等级 30 才可进入；
+-- 引导豁免：新手引导组5-7 发生在低等级（点击教堂/古树推进），
+-- 因此引导进行中、或引导组5 已领取（早期玩家已走过该引导）时不受等级限制。
+local CHURCH_UNLOCK_LEVEL = 30
+local function isChurchAccessible()
+    -- 豁免仅限引导进行中（组5-7 连续链：点教堂→入堂→离堂，全程 isActive）；
+    -- 引导链结束后恢复等级门控，30 级正式开放。
+    local _TM = require("systems.TutorialManager")
+    if _TM.isActive() then
+        return true
+    end
+    return (tonumber(GameState.getLevel()) or 1) >= CHURCH_UNLOCK_LEVEL
+end
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local HorizonBg      = require("core.HorizonBg")  -- [横屏三联] 左右共享大背景
 local ExpTable   = require("config.ExpTable")
@@ -355,10 +369,10 @@ local LOCK_ICON_SIZE = 100
 
 --- 绘制建筑锁定遮罩（锁图标，等级解锁型附带解锁等级文字）
 --- @param tutorialControlled boolean|nil  true=由引导解锁（不显示等级文字），nil/false=显示等级文字
-local function drawBuildingLockOverlay(vg, cx, cy, buildingKey, tutorialControlled)
+local function drawBuildingLockOverlay(vg, cx, cy, buildingKey, tutorialControlled, levelOverride)
     drawImageCentered(vg, imgLock, cx, cy - 15, LOCK_ICON_SIZE, LOCK_ICON_SIZE, 0.85)
     if not tutorialControlled then
-        local unlockLv = ExpTable.getBuildingUnlockLevel(buildingKey)
+        local unlockLv = levelOverride or ExpTable.getBuildingUnlockLevel(buildingKey)
         local label
         if unlockLv <= 0 then
             label = "暂未开放"
@@ -522,8 +536,8 @@ function TownScene.draw(vg)
         WAREHOUSE_TEXT_X, WAREHOUSE_TEXT_Y, "尘封仓库")
     BF.finish(vg, _bfWarehouse)
 
-    -- 6) 教堂建筑
-    local churchLocked = not _TM.isBuildingUnlocked("church")
+    -- 6) 教堂建筑（30级开放 + 引导豁免）
+    local churchLocked = not _TM.isBuildingUnlocked("church") or not isChurchAccessible()
     local _bfChurch = (not churchLocked) and BF.begin(vg, "town_church", CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H) or false
     if churchLocked then
         drawImageSilhouette(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, 0.85)
@@ -536,7 +550,9 @@ function TownScene.draw(vg)
             CHURCH_TEXT_X, CHURCH_TEXT_Y, "缄默礼拜堂")
     end
     if churchLocked then
-        drawBuildingLockOverlay(vg, CHURCH_CX, CHURCH_CY, "church", true)
+        -- 引导未解锁时保持原样式；等级未达标时显示 "Lv.30 解锁"
+        local tutorialGated = not _TM.isBuildingUnlocked("church")
+        drawBuildingLockOverlay(vg, CHURCH_CX, CHURCH_CY, "church", tutorialGated, CHURCH_UNLOCK_LEVEL)
     end
     -- 教堂角标：转职/神器（天赋角标已移到古树）
     if not churchLocked and imgIconUp >= 0 and getChurchPage().hasAnyChurchBadge() then
@@ -703,8 +719,8 @@ function TownScene.handleInput(dx, dy)
     -- 教堂点击检测
     if dx >= CHURCH_CX - CHURCH_W * 0.5 and dx <= CHURCH_CX + CHURCH_W * 0.5
        and dy >= CHURCH_CY - CHURCH_H * 0.5 and dy <= CHURCH_CY + CHURCH_H * 0.5 then
-        if not _TM.isBuildingUnlocked("church") then
-            print("[TownScene] 教堂未被引导解锁")
+        if not _TM.isBuildingUnlocked("church") or not isChurchAccessible() then
+            print("[TownScene] 教堂未解锁（引导或等级30）")
             return true
         end
         print("[TownScene] 点击教堂")

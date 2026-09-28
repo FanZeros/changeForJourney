@@ -30,7 +30,7 @@ local M = {}
 
 -- 提示文字
 local HINT = {
-    X = 540, Y = 235,
+    X = 540, Y = 200,   -- [双格改版] 提示文字上移（原 235）
     FONT = 38,
     TEXT = "在对应槽位装配神器对该位置角色进行加成",
 }
@@ -40,29 +40,29 @@ local HINT = {
 local TEAM_ROW = {
     HEADER_Y   = 252,                       -- 号位表头（1号位~4号位，只画一行，三队共用）
     HEADER_FONT = 28,
-    ROW_CY     = { 518, 1016, 1514 },       -- 每队行的 y 中心（行距 498，行3底 1760 < 背包面板顶 1770）
+    ROW_CY     = { 465, 807, 1149 },        -- [双格改版] 每队行 y 中心（行距 342，行3底 1314 < 背包面板顶 1330）
     LABEL_X    = 76,                        -- 队标签中心 x
-    LABEL_W    = 100, LABEL_H = 492,        -- 队标签底板（子格栈高 3×160+2×4=488 收进板内）
+    LABEL_W    = 100, LABEL_H = 330,        -- 队标签底板（行高 = 2×160 子格 + 10 间距 = 330，用户指定）
     LABEL_FONT = 26,
     LOCK_FONT  = 20,
     CX_LIST    = { 252, 476, 700, 924 },    -- 4 个号位列中心 x（间距 224，格 160 列间留 64）
     SUB_SIZE   = 160,                       -- 子格边长（与下方背包格一致，用户要求）
-    SUB_GAP    = 4,
+    SUB_GAP    = 10,                        -- [双格改版] 两层子格间距 10（用户指定）
     CELL_LOCK_FONT = 28,
 }
 
 -- 下半部分背景 UI_TJP_1（九宫格，与背包/遗物背包一致）
--- [行式布局 160px] 面板顶 1770（行3底 1760 之下 10px），底部溢出屏幕被裁剪
+-- [双格改版] 行区压缩(3×330+间距)后面板顶 1330（行3底 1314 之下 16px），背包可视大幅增加
 local LOWER_PANEL = {
-    CX = 540, CY = 2481, W = 1080, H = 1422,
+    CX = 540, CY = 2041, W = 1080, H = 1422,
     IT = 200, IR = 10, IB = 200, IL = 10,
 }
 
 -- 标题装饰 + 文字
 local TITLE = {
-    -- [行式布局] 背包标题贴近面板顶（1770 + 66）
-    DECO_CX = 540, DECO_CY = 1836, DECO_W = 660, DECO_H = 60,
-    TEXT_X = 540, TEXT_Y = 1836,
+    -- [双格改版] 背包标题贴近面板顶（1330 + 66）
+    DECO_CX = 540, DECO_CY = 1396, DECO_W = 660, DECO_H = 60,
+    TEXT_X = 540, TEXT_Y = 1396,
     FONT = 40,
     R = 0x45, G = 0x45, B = 0x45,
     TEXT = "神器背包",
@@ -89,11 +89,10 @@ local GRID = {
     GAP = 30,
     COLS = 5,
     MARGIN_LEFT = 80,  -- (1080 - 5*160 - 4*30) / 2
-    -- [行式布局 160px] 网格可视高 224（≈1.2 行，可滚动）：顶 1886 贴标题、底 2110 近按钮
-    -- ⚠️ 子格放大到 160 后行区占用增大，背包可视区相应压缩（130px 时为 445）
-    CLIP_TOP = 1886,
+    -- [双格改版] 网格可视高 664（≈3.5 行，可滚动）：顶 1446 贴标题、底 2110 近按钮
+    CLIP_TOP = 1446,
     CLIP_BOTTOM = 2110,
-    FIRST_ROW_TOP = 1886,
+    FIRST_ROW_TOP = 1446,
 }
 
 GRID.CLIP_H = GRID.CLIP_BOTTOM - GRID.CLIP_TOP
@@ -479,18 +478,18 @@ function M.init(vg)
             state.selectedTeam = nil
             state.selectedSlot = nil
             state.selectedSubSlot = nil
-            showFloat("请选择槽位安装神器（任一队伍行）", 540, 1770)
+            showFloat("请选择槽位安装神器（任一队伍行）", 540, 1330)
         end
         ArtifactDetailPanel.hide()
     end)
     ArtifactDetailPanel.setOnRefine(function(artifact)
         local Protocol = ctx_ and ctx_.getProtocol and ctx_.getProtocol() or nil
         if not Protocol then
-            showFloat("网络未连接", 540, 2000)
+            showFloat("网络未连接", 540, 1700)
             return
         end
         sendAction(Protocol.ACTION_TYPES.ARTIFACT_REFINE_VALUE, { artifactId = artifact.id })
-        showFloat("正在洗练神器数值", 540, 2000)
+        showFloat("正在洗练神器数值", 540, 1700)
     end)
 
     print("[ChurchArtifactPanel] init OK")

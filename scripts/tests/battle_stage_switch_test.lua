@@ -224,10 +224,10 @@ local function testArtifactTeamSchema()
     ArtifactSchema.normalizeModule(data)
     ArtifactSchema.setEquippedId(data, 2, 1, "7", 1)
     ArtifactSchema.setEquippedId(data, 2, 1, "7", 2)
-    ArtifactSchema.setEquippedId(data, 3, 3, "7", 3)
+    ArtifactSchema.setEquippedId(data, 3, 2, "7", 3)
     check(ArtifactSchema.getEquippedId(data, 2, 1, 1) == "7"
         and ArtifactSchema.getEquippedId(data, 2, 1, 2) == "7"
-        and ArtifactSchema.getEquippedId(data, 3, 3, 3) == "7", "同一实例可同时装到三支队伍")
+        and ArtifactSchema.getEquippedId(data, 3, 2, 3) == "7", "同一实例可同时装到三支队伍")
 
     -- 各队独立查找/卸下
     check((ArtifactSchema.findEquippedSlot(data, "7", 1)) == 2, "队1 查找命中本队槽位")
@@ -257,8 +257,36 @@ local function testArtifactTeamSchema()
     for k, v in pairs(lean) do restored[k] = v end
     ArtifactSchema.normalizeModule(restored)
     check(ArtifactSchema.getEquippedId(restored, 1, 1, 2) == "7"
-        and ArtifactSchema.getEquippedId(restored, 3, 3, 3) == "7"
+        and ArtifactSchema.getEquippedId(restored, 3, 2, 3) == "7"
         and ArtifactSchema.getEquippedId(restored, 4, 1, 1) == "7", "存档 roundtrip 后各队装配一致")
+
+    -- [双格改版] 解锁等级：Lv30 第1格、Lv60 第2格，30 级前 0 格
+    check(ArtifactSchema.SUB_SLOT_COUNT == 2, "SUB_SLOT_COUNT 改为 2（双格）")
+    check(ArtifactSchema.getUnlockedSubSlotCount(1) == 0, "Lv1 未解锁任何子格")
+    check(ArtifactSchema.getUnlockedSubSlotCount(29) == 0, "Lv29 仍未解锁子格")
+    check(ArtifactSchema.getUnlockedSubSlotCount(30) == 1, "Lv30 解锁第1子格")
+    check(ArtifactSchema.getUnlockedSubSlotCount(59) == 1, "Lv59 仍只第1子格")
+    check(ArtifactSchema.getUnlockedSubSlotCount(60) == 2, "Lv60 解锁第2子格")
+    check(ArtifactSchema.getSubSlotUnlockLevel(1) == 30
+        and ArtifactSchema.getSubSlotUnlockLevel(2) == 60, "子格解锁等级 30/60")
+
+    -- [双格改版] 旧档第3格迁移：3格旧档归一化后第3格卸下，实例仍留背包不丢失
+    local legacy3 = {
+        bag = {
+            { id = "1", artifactId = 5, quality = 2, value = 50 },
+            { id = "2", artifactId = 6, quality = 2, value = 50 },
+            { id = "3", artifactId = 7, quality = 2, value = 50 },
+        },
+        equippedByTeam = { [1] = { [1] = { [1] = "1", [2] = "2", [3] = "3" } } },
+        nextId = 4,
+    }
+    ArtifactSchema.normalizeModule(legacy3)
+    check(ArtifactSchema.getEquippedId(legacy3, 1, 1, 1) == "1", "旧档3格迁移：第1格保留")
+    check(ArtifactSchema.getEquippedId(legacy3, 1, 2, 1) == "2", "旧档3格迁移：第2格保留")
+    check(ArtifactSchema.getEquippedId(legacy3, 1, 3, 1) == nil, "旧档3格迁移：第3格已卸下")
+    local bagHas3 = false
+    for _, a in ipairs(legacy3.bag) do if tostring(a.id) == "3" then bagHas3 = true end end
+    check(bagHas3, "旧档3格迁移：卸下的第3格实例仍在背包（不丢失）")
 end
 
 -- ── 6) [三队适配] ArtifactBridge 按队伍读取装配 ──

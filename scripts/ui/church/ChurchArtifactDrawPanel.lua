@@ -297,6 +297,14 @@ end
 --- 「宝箱」页签背景：不显示神器装配页的顶部背景图（UI_JTSQ_BJ），
 --- 改用一整块暗色底板铺满 Tab 内容区，让宝箱大图成为视觉主体。
 function M.drawBg(vg)
+    -- [背景兜底 0928] 宝箱 tab 下教堂背景图被 hideChurchBg 隐藏、名称牌/资源栏也不绘制，
+    -- 九宫格底板仅覆盖 y=200~2220，顶/底/圆角缺口会透出下层内容。
+    -- 先用纯色暗底铺满整屏作兜底，再叠九宫格底板，杜绝任何透出。
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+    nvgFillColor(vg, nvgRGBA(22, 20, 24, 255))
+    nvgFill(vg)
+
     DarkIcon.drawNine(vg, "plain", 0, 200, DESIGN_W, DESIGN_H - 200 - 180)
 end
 

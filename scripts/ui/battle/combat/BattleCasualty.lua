@@ -181,6 +181,7 @@ function M.process(ctx, logicDt)
 
                 unit.reviveTimer = 0       -- 标记已处理，防止重复调用
                 unit._fallenPending = true -- [阵亡紧凑] 退场完成后移至队尾
+                unit._fallenAt = time.elapsedTime
                 unit.atkProgress = 0
                 TM.removeUnit(unit)
                 SEM.removeUnit(unit)
@@ -193,27 +194,9 @@ function M.process(ctx, logicDt)
     end
     end
 
-    -- [阵亡紧凑] 阵亡英雄退场动画完成后移至队尾，存活英雄前移填位
+    -- [阵亡紧凑] 阵亡英雄退场动画完成后移至队尾，存活英雄前移填位（含卡住兜底）
     -- （单位对象保留：下一关 resetAllyUnit 全员重置复活）
-    for i = #allies, 1, -1 do
-    local u = allies[i]
-    if u._fallenPending then
-        local st = BattleCombat.getAnimState(u)
-        if st == "gone" or st == nil then
-            u._fallenPending = nil
-            u._fallen = true
-            table.remove(allies, i)
-            table.insert(allies, u)
-            for j = i, #allies - 1 do
-                local moved = allies[j]
-                if moved.hp > 0 then
-                    BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
-                        advanceDist = require("core.BattleLayout").STRIP_PITCH })
-                end
-            end
-        end
-    end
-    end
+    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, time.elapsedTime)
 
     -- 检查是否有存活单位
     local allyAlive  = getAliveUnits(allies)

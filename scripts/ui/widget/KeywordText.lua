@@ -64,7 +64,10 @@ local function measure(vg, fontSize, s)
     if vg and nvgTextBounds then
         nvgFontSize(vg, fontSize)
         ---@diagnostic disable-next-line: missing-parameter
-        return nvgTextBounds(vg, 0, 0, s)
+        local w = nvgTextBounds(vg, 0, 0, s)
+        ---@type number
+        local result = tonumber(w) or 0
+        return result
     end
     -- 测试兜底：CJK 约 1em，ASCII 约 0.55em
     local w = 0
@@ -295,13 +298,52 @@ function KeywordText:lastHeight()
     return self._lastLayoutH
 end
 
+--- 测量排版高度（不绘制、不清热区；用于自适应字号场景）
+---@param vg any
+---@param text string
+---@param width number
+---@param fontSize number
+---@param lineHeight number|nil 行高（默认 fontSize*1.35）
+---@return number height, integer lineCount
+function KeywordText:measureHeight(vg, text, width, fontSize, lineHeight)
+    local layout = self:_layout(vg, text, width, fontSize)
+    local lh = lineHeight or math.floor(fontSize * 1.35 + 0.5)
+    ---@type any[]
+    local lines = layout.lines
+    local lineCount = #lines
+    return lineCount * lh, lineCount
+end
+
+--- 设置热区坐标变换：把输入坐标映射到热区空间（热区在缩放/平移变换内绘制时用）
+---@param f fun(dx: number, dy: number): number, number
+function KeywordText:setTransform(f)
+    self._xform = f
+end
+
+--- 设置弹窗锚点变换：把热区空间的锚点坐标映射到 drawPopup 的绘制空间
+---（文本在缩放变换内绘制、而解释弹窗要在变换外绘制时用）
+---@param f fun(cx: number, topY: number): number, number
+function KeywordText:setPopupTransform(f)
+    self._popupXform = f
+end
+
+--- 应用坐标变换（未设置则原样返回）
+---@param dx number
+---@param dy number
+---@return number, number
+function KeywordText:_map(dx, dy)
+    if self._xform then return self._xform(dx, dy) end
+    return dx, dy
+end
+
 --- 悬停更新（可选调用；坐标与热区同空间）
 ---@param dx number
 ---@param dy number
 function KeywordText:setHover(dx, dy)
+    local mx, my = self:_map(dx, dy)
     local hitIdx = nil
     for i, h in ipairs(self.hotspots) do
-        if dx >= h.x1 and dx <= h.x2 and dy >= h.y1 - 4 and dy <= h.y2 + 4 then
+        if mx >= h.x1 and mx <= h.x2 and my >= h.y1 - 4 and my <= h.y2 + 4 then
             hitIdx = i
             break
         end
@@ -337,15 +379,21 @@ function KeywordText:handleInput(dx, dy)
         self.popup = nil
         return true
     end
+    local mx, my = self:_map(dx, dy)
     for _, h in ipairs(self.hotspots) do
-        if dx >= h.x1 and dx <= h.x2 and dy >= h.y1 - 4 and dy <= h.y2 + 4 then
+        if mx >= h.x1 and mx <= h.x2 and my >= h.y1 - 4 and my <= h.y2 + 4 then
             local def = KW.get(h.name)
             if def then
+                local anchorCX = (h.x1 + h.x2) * 0.5
+                local anchorY  = h.y1
+                if self._popupXform then
+                    anchorCX, anchorY = self._popupXform(anchorCX, anchorY)
+                end
                 self.popup = {
                     name  = def.title,
                     desc  = def.desc,
-                    cx    = (h.x1 + h.x2) * 0.5,
-                    topY  = h.y1,
+                    cx    = anchorCX,
+                    topY  = anchorY,
                 }
                 local ok, SFX = pcall(require, "systems.GameSFX")
                 if ok and SFX and SFX.play then SFX.play("click") end

@@ -115,6 +115,33 @@ function Start()
         check(kt3.hotspots[2].y1 > kt3.hotspots[1].y1, "\\n 后第二行 Y 更大")
     end
 
+    -- ── 坐标变换（转职确认弹窗缩放场景）──
+    local kt4 = KeywordText.new()
+    kt4:draw(nil, "点击回响查看", 0, 0, 900, 30)
+    local sp = kt4.hotspots[1]
+    -- 模拟弹窗 scale=0.85、中心(540,1157)：屏幕坐标 = (local-c)*s + c
+    local s, ccx, ccy = 0.85, 540, 1157
+    kt4:setTransform(function(sx, sy)
+        return (sx - ccx) / s + ccx, (sy - ccy) / s + ccy
+    end)
+    kt4:setPopupTransform(function(lx, ly)
+        return (lx - ccx) * s + ccx, (ly - ccy) * s + ccy
+    end)
+    -- 未变换的本地中心点在屏幕上偏移后点击，应命中
+    local localCX = (sp.x1 + sp.x2) * 0.5
+    local localCY = (sp.y1 + sp.y2) * 0.5
+    local screenX = (localCX - ccx) * s + ccx
+    local screenY = (localCY - ccy) * s + ccy
+    check(kt4:handleInput(screenX, screenY), "缩放变换下屏幕坐标命中关键词")
+    check(kt4:isOpen(), "变换场景弹窗打开")
+    -- 弹窗锚点已映射回屏幕空间
+    check(kt4.popup and math.abs(kt4.popup.cx - screenX) < 1
+          and math.abs(kt4.popup.topY - ((sp.y1 - ccy) * s + ccy)) < 1,
+        "弹窗锚点映射到屏幕空间")
+    kt4:closePopup()
+    -- 变换生效性：偏移出热区容差的屏幕坐标应不命中
+    check(not kt4:handleInput(screenX + 200, screenY), "热区外屏幕坐标不命中")
+
     if #failures == 0 then
         print("KEYWORD TESTS: ALL PASS (" .. "ok" .. ")")
     else

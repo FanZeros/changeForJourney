@@ -118,7 +118,6 @@ local ctx_ = nil
 -- ======================== 图片句柄 ========================
 
 local img = {
-    slotGrid = -1, -- UI_JTSQ_GZ.png
     lowerBg = -1,  -- UI_TJP_1.png
     titleDeco = -1, -- UI_JJC_BTBJ.png
     mergeBtn = -1, -- UI_AN_LV.png
@@ -601,7 +600,7 @@ function M.drawContent(vg)
             end
         end
 
-        -- 4 号位 × 3 子格
+        -- 4 号位 × 2 子格（30/60级）
         for i = 1, ArtifactSchema.SLOT_COUNT do
             for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
                 local subCx, subCy, subSize = getSlotCell(i, subSlot, t)
@@ -609,7 +608,11 @@ function M.drawContent(vg)
                 local selected = state.selectedTeam == t
                     and state.selectedSlot == i and state.selectedSubSlot == subSlot
                 local cellLocked = locked or subSlot > unlockedSubSlots
-                drawImageCentered(vg, img.slotGrid, subCx, subCy, subSize, subSize, 1.0)
+                -- [空格可见性修复] 原 img.slotGrid(UI_JTSQ_GZ) 从未加载(恒 -1)，
+                -- 已解锁的空子格完全隐形(只见锁定格的"60级"遮罩)；改用与背包一致的矢量凹槽
+                DarkIcon.drawNine(vg, "slot",
+                    subCx - subSize * 0.5, subCy - subSize * 0.5,
+                    subSize, subSize, { radius = GRID.CELL_RADIUS })
                 nvgGlobalAlpha(vg, cellLocked and 0.45 or 1.0)
                 drawArtifactIcon(vg, equipped, subCx, subCy, subSize, selected or pending)
                 nvgGlobalAlpha(vg, 1.0)
@@ -642,7 +645,9 @@ function M.drawContent(vg)
     clampScroll()
 
     nvgSave(vg)
-    nvgScissor(vg, 0, GRID.CLIP_TOP, DESIGN_W, GRID.CLIP_H)
+    -- [切换裁剪修复] 用 IntersectScissor 与 ChurchDraw 页签动画的横向裁剪求交；
+    -- 原 nvgScissor 是绝对替换，Tab 切换期间背包空格会逃出裁剪画到屏幕中间
+    nvgIntersectScissor(vg, 0, GRID.CLIP_TOP, DESIGN_W, GRID.CLIP_H)
     nvgTranslate(vg, 0, -state.scrollY)
 
     for idx = 1, totalSlots do

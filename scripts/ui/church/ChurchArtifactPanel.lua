@@ -58,10 +58,9 @@ local LOWER_PANEL = {
     IT = 200, IR = 10, IB = 200, IL = 10,
 }
 
--- 标题装饰 + 文字
+-- 标题文字
 local TITLE = {
     -- [双格改版] 背包标题贴近面板顶（1330 + 66）
-    DECO_CX = 540, DECO_CY = 1396, DECO_W = 660, DECO_H = 60,
     TEXT_X = 540, TEXT_Y = 1396,
     FONT = 40,
     R = 0x45, G = 0x45, B = 0x45,
@@ -119,7 +118,6 @@ local ctx_ = nil
 
 local img = {
     lowerBg = -1,  -- UI_TJP_1.png
-    titleDeco = -1, -- UI_JJC_BTBJ.png
     mergeBtn = -1, -- UI_AN_LV.png
     rerollBtn = -1, -- UI_AN_HUANG.png
     iconUp   = -1, -- ICON_UP.png 可提升角标
@@ -450,7 +448,6 @@ function M.init(vg)
     -- 顶部背景图 UI_JTSQ_BJ 已按用户要求删除（drawBg 改纯色暗底）
     -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
     img.lowerBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
-    img.titleDeco = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     img.mergeBtn  = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     img.rerollBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.iconUp    = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
@@ -631,7 +628,6 @@ function M.drawContent(vg)
     end
 
     -- 标题装饰 + 文字
-    drawImageCentered(vg, img.titleDeco, TITLE.DECO_CX, TITLE.DECO_CY, TITLE.DECO_W, TITLE.DECO_H, 1.0)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, TITLE.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)

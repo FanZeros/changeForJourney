@@ -19,7 +19,6 @@ function M.bind(deps)
         img.bg       = nvgCreateImage(vg, "image/界面底板/商店/UI_SCBJ.png", 0)
         img.nameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
         img.lowerBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
-        img.titleDeco = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
         img.gold     = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
         img.gem      = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
 

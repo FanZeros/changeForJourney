@@ -59,11 +59,6 @@ local LOWER_PANEL = {
     IT = 200, IR = 10, IB = 200, IL = 10,
 }
 
--- 4. 标题装饰 UI_JJC_BTBJ
-local DECO = {
-    CX = 540, CY = 614, W = 660, H = 60,
-}
-
 -- 5. 网格区域标题文字 "装备"/"道具"（跟随当前 tab）
 local GRID_TITLE = {
     X = 157, Y = 614,  -- 左对齐（与铁匠铺分解标题对齐）
@@ -247,7 +242,6 @@ local ITEM_DEFS = {
 
 local imgTopBg    = -1  -- UI_BB_BJ.png
 local imgTitleBg  = -1  -- UI_TJP_MC.png（标题背景，与教堂一致）
-local imgDeco     = -1  -- UI_JJC_BTBJ.png（标题装饰）
 local imgBtnBack  = -1  -- UI_AN_FH.png（返回按钮）
 local imgTabBg    = -1  -- UI_AN_1.png（Tab 背景）
 
@@ -822,7 +816,6 @@ function Panel.init(vg)
     vg_ = vg
     imgTopBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_BB_BJ.png", 0)
     imgTitleBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
-    imgDeco    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     imgTabBg   = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
@@ -998,11 +991,6 @@ local function drawBody(vg)
         LOWER_PANEL.CX - LOWER_PANEL.W * 0.5, LOWER_PANEL.CY - LOWER_PANEL.H * 0.5,
         LOWER_PANEL.W, LOWER_PANEL.H,
         { titleH = LOWER_PANEL.IT })
-
-    -- 4. 标题装饰（装备 tab 不显示，道具 tab 保留）
-    if state.tab ~= "equip" then
-        DrawUtil.drawImageCentered(vg, imgDeco, DECO.CX, DECO.CY, DECO.W, DECO.H, 1.0)
-    end
 
     -- 5. 网格标题文字（跟随 tab 切换，装备 tab 左对齐+品质筛选）
     local gridTitleText = (state.tab == "equip") and "装备" or "道具"

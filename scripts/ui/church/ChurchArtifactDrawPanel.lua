@@ -82,7 +82,6 @@ local function easeOutCubic(t) return 1 - (1 - t) * (1 - t) * (1 - t) end
 local function easeInCubic(t) return t * t * t end
 
 local img = {
-    titleDeco         = -1,
     collectionChestBg = -1,
     collectionDrawBtn = -1,
     goldenKey         = -1,
@@ -248,7 +247,6 @@ local function drawPityText(vg, x, y, leftCount, qualityText, qualityColor)
 end
 
 local function drawCollectionLockedContent(vg)
-    drawImageCentered(vg, img.titleDeco, COL.TITLE_CX, COL.TITLE_CY, COL.TITLE_W, COL.TITLE_H, 1.0)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, COL.TITLE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(COL.TITLE_R, COL.TITLE_G, COL.TITLE_B, 255))
@@ -306,7 +304,6 @@ function M.drawContent(vg)
         return
     end
 
-    drawImageCentered(vg, img.titleDeco, COL.TITLE_CX, COL.TITLE_CY, COL.TITLE_W, COL.TITLE_H, 1.0)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, COL.TITLE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(COL.TITLE_R, COL.TITLE_G, COL.TITLE_B, 255))
@@ -508,7 +505,6 @@ function M.setContext(ctx)
 end
 
 function M.init(vg)
-    img.titleDeco         = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     img.collectionChestBg = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_KC1.png", 0)
     img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_AN.png", 0)
     img.goldenKey         = nvgCreateImage(vg, "image/货币道具/UI_icon_HJYS.png", 0)

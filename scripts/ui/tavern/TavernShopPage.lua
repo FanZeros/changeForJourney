@@ -261,7 +261,6 @@ local CARD_STEP_Y  = L.CARD_H + L.CARD_GAP_Y
 
 local shopImg = {
     pageBg      = -1,  -- UI_TJP_1.png（页面背景框）
-    titleDeco   = -1,  -- UI_JJC_BTBJ.png（标题装饰）
     cardBg      = {},  -- 品质1~6 → UI_SDICONBJ_1~6.png
     buyBtn      = -1,  -- UI_SD_AN.png
     itemIcons   = {},  -- 每个商品图标
@@ -351,7 +350,6 @@ local DLG = {
 
 function TavernShopPage.init(vg)
     shopImg.pageBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png",    0)
-    shopImg.titleDeco = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     for i = 1, 6 do
         shopImg.cardBg[i]   = nvgCreateImage(vg, "image/界面底板/商店/UI_SDICONBJ_" .. i .. ".png", 0)
     end
@@ -667,9 +665,6 @@ function TavernShopPage.drawContent(vg)
     -- 背景框（九宫格：上200 左10 右10 下200）
     -- 原始标注：中心 X540 Y1371，尺寸 1080×2058
     DarkIcon.drawNine(vg, "plain", 540 - 1080 * 0.5, 1371 - 2058 * 0.5, 1080, 2058)
-
-    -- 标题装饰（UI_JJC_BTBJ.png，与竞技场相同位置 X540 Y497 W660 H60）
-    drawImageCentered(vg, shopImg.titleDeco, L.TITLE_CX, L.TITLE_CY, 660, 60, 1.0)
 
     -- 标题文字（叠在装饰上方）
     nvgFontFace(vg, "sans"); nvgFontSize(vg, L.TITLE_FONT)

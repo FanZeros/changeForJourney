@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.68-remove-title-deco | 2026-09-28 | 批量移除 5 个页面（背包/神器背包/神器宝箱×2处/商城/酒馆商店）标题栏下方黄色「菱形+横行+菱形」装饰图 UI_JJC_BTBJ.png 的绘制/加载/常量；LevelUpPopup 弹窗文字底图仍用同图故保留资源与清单条目。LSP 0 Error + 回归 ALL PASS + 官方 Build 成功 + dist 验证。 |
 | v2.66-first-damage-fade | 2026-09-28 | 修复首个伤害飘字显示延迟：BattleDraw.drawFloatingTexts 淡入曲线从 10 帧(0.33s, frame=0 时 alpha=0 不可见)缩到 3 帧(0.1s)，与即时的受击闪烁/音效同步。淡出段不变，对所有飘字类型生效。 |
 | v2.55-shield-scaling | 2026-09-28 | 护盾成长层：护盾锚定最终HP×8% + 六围派生每级+5%（`AD.SHIELD_SCALING`，recalc §5.5），修复中后期护盾占比塌陷（敌人雷神 Lv345 护盾 821→2.56e15=HP的8%）；无盾敌人门控不加盾、enabled=false 一键回退；15断言回归 + 官方战力测试 + BattleLab A/B（胜局不翻盘、败局存活+26%）。设计文档 `docs/护盾成长层设计.md`。 |
 | v2.55-docs-cleanup | 2026-09-28 | 文档整理：11 份已完成/过时规划归档至 `docs/archive/`（加归档头）；修订剧情总表（教堂神器登记文案、SCENARIO_82、触发链改 StoryPlayer、补 55-57 摘要）、memory-index（boot/Standalone 入口、情景 1~82、待办过期项）、低差异规划（三批全部落地标注）、套装规划（P1-P3 落地、转职入口迁移说明）与本文。 |

@@ -668,7 +668,15 @@ def main():
 
     if args.file:
         code = args.file.read_text(encoding="utf-8")
-        obf, status, detail = obfuscate_file_safe(code)
+        if args.rename_fields:
+            print("提示: --file 单文件模式不支持 --rename-fields(需要全项目分析上下文);"
+                  "请用 --source-root 全量模式。本次按 strip_comments=%s 处理。"
+                  % args.strip_comments)
+        if args.strip_comments:
+            obf, status, detail, _fmap = obfuscate_file_enhanced(
+                code, allowed_fields=None, strip_comments=True)
+        else:
+            obf, status, detail = obfuscate_file_safe(code)
         print("status=%s detail=%s" % (status, detail))
         if status == "changed":
             print("---- obfuscated ----")

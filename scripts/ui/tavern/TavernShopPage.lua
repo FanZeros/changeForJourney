@@ -563,7 +563,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
         nvgFill(vg)
         nvgFontFace(vg, "sans"); nvgFontSize(vg, L.BTN_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(180, 180, 180, 255))
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 售罄=棕色
         nvgText(vg, cx, btnCY, "已售罄", nil)
     elseif locked then
         nvgBeginPath(vg)
@@ -572,7 +572,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
         nvgFill(vg)
         nvgFontFace(vg, "sans"); nvgFontSize(vg, 34)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(180, 180, 180, 255))
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 未拥有=棕色
         nvgText(vg, cx, btnCY, "拥有后可买", nil)
     else
         local _bf = BF.begin(vg, "tsp_item_" .. idx, cx, btnCY, L.BTN_W, L.BTN_H)
@@ -870,7 +870,12 @@ drawPurchaseDialog = function(vg)
     DarkIcon.drawNine(vg, "btn", DLG.BUY_CX - DLG.BUY_W * 0.5, DLG.BUY_CY - DLG.BUY_H * 0.5, DLG.BUY_W, DLG.BUY_H, { accent = "gold" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.BUY_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, shopState.pendingBuy and 100 or 179))
+    -- 按钮文字：可购买=亮深棕，购买中=棕色禁用色
+    if shopState.pendingBuy then
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 179))
+    end
     nvgText(vg, DLG.BUY_CX, DLG.BUY_CY, shopState.pendingBuy and "购买中..." or "购买", nil)
     BF.finish(vg, _bfBuy)
 

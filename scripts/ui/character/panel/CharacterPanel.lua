@@ -255,6 +255,13 @@ local function calcHeroPower(heroId, partySlot, teamIdx)
     return ensurePower().calcHeroPower(heroId, partySlot, teamIdx)
 end
 
+-- 实战预估（分项计价原型，见 systems/CombatPowerEstimate.lua）：
+-- 官方战力不受影响；预估仅在详情页可选副行展示（默认关闭，验收后开启）
+local function calcHeroEstimate(heroId, partySlot)
+    local power = ensurePower()
+    return power.calcHeroEstimate and power.calcHeroEstimate(heroId, partySlot) or 0
+end
+
 local function refreshPowerCache()
     return ensurePower().refreshPowerCache()
 end
@@ -450,6 +457,7 @@ function CharacterPanel.init(vg)
         imgExpBarFill  = sharedImg.imgExpBarFill,
         getOwnedData      = function(heroId) return ownedSet[heroId] end,
         calcHeroPower     = calcHeroPower,
+        calcHeroEstimate  = calcHeroEstimate,
         getHeroRoster     = function() return heroRoster end,
     })
 

@@ -492,6 +492,7 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
         [AD.ATK_INTERVAL] = hero.atkInterval,
         armorType         = armorType,
         atkType           = hero.atkType,
+        unitLevel         = level,   -- 护盾成长层派生等级因子用
     }
     -- 根据伤害主类型分配 ATK 成长：物理 → physAtk，魔法/治疗 → magAtk
     if category == "physical" then

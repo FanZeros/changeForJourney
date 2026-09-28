@@ -8,8 +8,9 @@
   "never_cancel_task": true,
   "never_end_without_askuserquestion": true,
   "askuserquestion_rule": "不能擅自取消或退出任务；每次交付或遇到阻碍都先简报，再真正调用 AskUserQuestion 工具，以选项询问下一步并等待用户选择。禁止仅以文字结束；记忆不等同于自动 hook。",
-  "dev_branch": "workspace926",
-  "push_policy": "分支操作以用户当前轮次授权为准。2026-09-27 本轮授权新建并推送 workspace926（合入 workspace925 与全部 feat926/），不推 workspace/workspace925，不强推。不在远端 URL、代码或记忆中保存 PAT。",
+  "dev_branch": "按当前轮次指定的基线新建独立任务分支",
+  "base_branch": "workspace926",
+  "push_policy": "当前轮次优先：基于指定基线新建独立分支；有提交时只推该新分支，绝不推 workspace 系列基线（除非用户当轮明确授权），不强推、不覆盖并发改动。历史：2026-09-28 已授权并合入 workspace926：feat926/shield-scaling-0928（merge 3fafff54）、feat928/rarity-unify-multi-filter（merge 392bcdc）、feat926/awakening-skill-review、feat/talent-more-paths-0928（三分支合并+死亡补位+投掷物抛物线）。每次交付或受阻先简报，再调用 AskUserQuestion 提供下一步选项；不把 PAT 写入仓库、远端 URL、日志或记忆（用户对话中贴出的 PAT 应提示撤销轮换；推送用内联凭据，推完 set-url 还原并 grep ghp_ .git/config 验证 0）。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

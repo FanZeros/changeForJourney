@@ -780,10 +780,11 @@ function M.drawAll(vg)
             nvgStroke(vg)
         end
 
+        -- 按钮内黑晶角标：够=亮白，不够=棕色
         local diamondEnough = GameState.getGems() >= popupState.confirmDiamondCost
         local dBadgeR, dBadgeG, dBadgeB = 255, 255, 255
         if not diamondEnough then
-            dBadgeR, dBadgeG, dBadgeB = 255, 50, 50
+            dBadgeR, dBadgeG, dBadgeB = 0x8d, 0x5f, 0x41
         end
         drawTextStroke(vg,
             CF.DIAMOND_CX + CF.BADGE_OX,

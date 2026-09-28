@@ -12,6 +12,7 @@ function M.bind(deps)
     local EquipmentSystem = deps.EquipmentSystem
     local EquipmentConfig = deps.EquipmentConfig
     local EquipmentSetSystem = require("systems.EquipmentSetSystem")
+    local CPE = require("systems.CombatPowerEstimate")
     local RelicBridge = deps.RelicBridge
     local ArtifactBridge = deps.ArtifactBridge
     local AwakeningConfig = deps.AwakeningConfig
@@ -78,9 +79,11 @@ function M.bind(deps)
         return ownData and ownData.level or 1
     end
 
-    --- [三队适配] teamIdx 指定按哪支队伍的装配表应用神器（缺省 1；
-    --- partySlot 缺省时回落到当前激活队槽位查找，行为与旧版一致）
-    local function calcHeroPower(heroId, partySlot, teamIdx)
+    -- 构建一个已应用真实存档管线（装备/遗物/神器）的英雄单位。
+    -- calcHeroPower 与 calcHeroEstimate 共用，避免两条管线漂移。
+    -- teamIdx 指定按哪支队伍的装配表应用神器（缺省 1）。
+    ---@return table|nil hero 含 attrs/classId/awakening 的单位；失败返回 nil
+    local function buildHeroAttrs(heroId, partySlot, teamIdx)
         local teamSlots = get("teamSlots")
         if not partySlot then
             for i = 1, MAX_SLOTS do
@@ -97,7 +100,7 @@ function M.bind(deps)
         local advBranch = ownData and ownData.advBranch or nil
         local awakening = ownData and ownData.awakening or nil
         local hero = HC.createHero(heroId, level, advBranch, awakening, ownData and ownData.extraTalent)
-        if not hero or not hero.attrs then return 0 end
+        if not hero or not hero.attrs then return nil end
         local a = hero.attrs
 
         applyEquippedItems(a, heroId, partySlot)
@@ -105,6 +108,15 @@ function M.bind(deps)
         if partySlot then
             ArtifactBridge.applyToUnit(a, partySlot, nil, teamIdx)
         end
+
+        hero.awakening = awakening
+        return hero
+    end
+
+    local function calcHeroPower(heroId, partySlot, teamIdx)
+        local hero = buildHeroAttrs(heroId, partySlot, teamIdx)
+        if not hero then return 0 end
+        local a = hero.attrs
 
         local total = 0
         for key, meta in pairs(AD.META) do
@@ -117,10 +129,26 @@ function M.bind(deps)
                 end
             end
         end
-        total = total + AwakeningConfig.calcTotalCombatPower(heroId, awakening)
+        total = total + AwakeningConfig.calcTotalCombatPower(heroId, hero.awakening)
         total = total + (a.artifactPowerBonus or 0)
 
         return math.floor(total + 0.5)
+    end
+
+    -- 实战预估（分项计价原型）：与 calcHeroPower 走同一条真实存档管线
+    -- （装备/遗物/神器/觉醒），但按英雄伤害大类区别计价物攻/魔攻/治疗属性。
+    -- ⚠️ 原型口径，仅供并列参考展示，不替换官方战力，不含觉醒战力加成的
+    -- 分项拆分（觉醒/神器固定加成按官方原值并入，见下）。
+    local function calcHeroEstimate(heroId, partySlot, teamIdx)
+        local hero = buildHeroAttrs(heroId, partySlot, teamIdx)
+        if not hero then return 0 end
+        local a = hero.attrs
+        local base, _category = CPE.estimate(a, a.atkType)
+        -- 觉醒战力与神器加成沿用官方口径（原型不拆分其属性来源），保持与
+        -- calcHeroPower 的可比性：两者都叠加同一份觉醒/神器固定值。
+        local extra = AwakeningConfig.calcTotalCombatPower(heroId, hero.awakening)
+            + (a.artifactPowerBonus or 0)
+        return math.floor(base + extra + 0.5)
     end
 
     local function refreshPowerCache()
@@ -207,6 +235,7 @@ function M.bind(deps)
         applyEquippedItems = applyEquippedItems,
         getHeroLevel = getHeroLevel,
         calcHeroPower = calcHeroPower,
+        calcHeroEstimate = calcHeroEstimate,
         refreshPowerCache = refreshPowerCache,
         refreshUpgradeBadgeCache = refreshUpgradeBadgeCache,
         refreshNavBadge = refreshNavBadge,

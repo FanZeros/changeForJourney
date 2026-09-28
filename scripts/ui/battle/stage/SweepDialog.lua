@@ -50,28 +50,32 @@ local D = {
     SUB_R   = 0xb6, SUB_G   = 0xb0, SUB_B = 0x9d,
 
     -- 当前关卡区域背景
-    CUR_BG_CX = 540, CUR_BG_CY = 918,
+    CUR_BG_CX = 540, CUR_BG_CY = 900,
     CUR_BG_W  = 800, CUR_BG_H  = 80, CUR_BG_R = 16, CUR_BG_A = 13,
 
     -- "当前关卡" 标签（左对齐）
-    CUR_LBL_X = 169, CUR_LBL_Y = 918,
+    CUR_LBL_X = 169, CUR_LBL_Y = 900,
     CUR_LBL_FONT = 40,
     CUR_LBL_R = 0x8d, CUR_LBL_G = 0x5f, CUR_LBL_B = 0x41,
 
     -- 关卡名（右对齐）
-    CUR_VAL_X = 904, CUR_VAL_Y = 918,
+    CUR_VAL_X = 904, CUR_VAL_Y = 900,
     CUR_VAL_FONT = 40, CUR_VAL_SW = 6,
 
+    -- 扫荡对象小队选择行（经验发给所选队伍）
+    TEAM_CY = 968, TEAM_BTN_W = 170, TEAM_BTN_H = 48, TEAM_GAP = 24,
+    TEAM_FIRST_CX = 438, TEAM_FONT = 34,
+
     -- "预计奖励" 标题
-    REW_TT_X = 540, REW_TT_Y = 1008,
+    REW_TT_X = 540, REW_TT_Y = 1020,
     REW_TT_FONT = 40, REW_TT_SW = 6,
 
     -- 奖励区域背景
-    REW_BG_CX = 540, REW_BG_CY = 1119,
+    REW_BG_CX = 540, REW_BG_CY = 1131,
     REW_BG_W  = 800, REW_BG_H  = 220, REW_BG_R = 16, REW_BG_A = 13,
 
     -- 奖励图标行
-    REW_ICON_Y  = 1124,
+    REW_ICON_Y  = 1136,
     REW_ICON_SZ = 160,    -- 品质背景框尺寸
     REW_ICON_PAD = 12,    -- 图标内缩量
     REW_ICON_GAP = 30,    -- 图标间距
@@ -102,8 +106,8 @@ local D = {
 -- ======================== 奖励项定义 ========================
 -- 每个奖励项：{ quality, iconPath, label }
 local REWARD_ITEMS = {
-    { quality = 2, iconPath = "image/货币道具/UI_icon_JB.png",      label = "金币"     },
-    { quality = 2, iconPath = "image/货币道具/UI_icon_JB.png",      label = "随机装备",  isEquip = true  },
+    { quality = 2, iconPath = "image/货币道具/UI_icon_JB_X.png",    label = "金币"     },
+    { quality = 2, iconPath = "image/货币道具/UI_icon_JB_X.png",    label = "随机装备",  isEquip = true  },
     { quality = 3, iconPath = "image/货币道具/UI_icon_JZ_SJ.png",   label = "随机卷轴" },
 }
 -- 装备图标用固定的 B 品质背景占位
@@ -142,7 +146,33 @@ local state = {
     openTime  = 0,
     count     = 1,
     sliderDragging = false,
+    teamIdx   = 1, -- 扫荡经验发放目标小队（1~3）
 }
+
+--- 已解锁小队数（未解锁的不可选）
+local function unlockedTeams()
+    local ExpTable = require("config.ExpTable")
+    return math.min(3, ExpTable.getUnlockedTeamCount(GameState.getLevel()))
+end
+
+--- 所选小队的出战人数（排除空槽，与 SweepService 口径一致）
+local function teamDeployedCount(teamIdx)
+    local heroesData = PlayerStore.Get("heroes")
+    if not heroesData then return 0 end
+    local slots = heroesData.teams and heroesData.teams[teamIdx]
+        and heroesData.teams[teamIdx].slots
+    if not slots then slots = teamIdx == 1 and heroesData.deployed or nil end
+    if not slots then return 0 end
+    local n = 0
+    for _, slot in ipairs(slots) do
+        if (tonumber(slot) or 0) > 0 then n = n + 1 end
+    end
+    return n
+end
+
+local function teamCenter(index)
+    return D.TEAM_FIRST_CX + (index - 1) * (D.TEAM_BTN_W + D.TEAM_GAP), D.TEAM_CY
+end
 
 -- ======================== 动画常量 ========================
 
@@ -286,6 +316,10 @@ function SweepDialog.open()
     state.openTime = time.elapsedTime
     state.count    = 1
     state.sliderDragging = false
+    -- 默认扫当前激活小队
+    local CharacterPanel = require("ui.character.panel.CharacterPanel")
+    state.teamIdx = math.min(unlockedTeams(), CharacterPanel.getActiveTeamIdx() or 1)
+    _sweepRewardCache = nil
     print("[SweepDialog] open, tickets=" .. tostring(GameState.getSweepTicket() or 0)
         .. ", maxCount=" .. getMaxCount())
     -- 重新打开时清除预估奖励缓存，确保数据最新
@@ -341,9 +375,8 @@ local function getSweepRewardEstimate()
     end
     if _sweepRewardCache then return _sweepRewardCache end
 
-    -- 出战英雄数
-    local deployed  = heroesData and heroesData.deployed or {}
-    local heroCount = #deployed
+    -- 出战英雄数：按所选小队（排除空槽），与 SweepService 发放口径一致
+    local heroCount = teamDeployedCount(state.teamIdx)
     if heroCount == 0 then heroCount = 1 end
 
     -- 金币 & 经验 = 挂机收益/分钟 × N 分钟（与本地 SweepService 一致）
@@ -469,6 +502,35 @@ function SweepDialog.draw(vg)
         0x63, 0xff, 0x84, D.CUR_VAL_SW,
         { strokeColor = { 0, 0, 0 } })
 
+    -- 7b) 扫荡对象小队行：经验发给所选小队的出战角色
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, D.CUR_LBL_FONT)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(D.CUR_LBL_R, D.CUR_LBL_G, D.CUR_LBL_B, 255))
+    nvgText(vg, D.CUR_LBL_X, D.TEAM_CY, "扫荡小队", nil)
+    local unlocked = unlockedTeams()
+    for t = 1, 3 do
+        local cx, cy = teamCenter(t)
+        local locked = t > unlocked
+        local selected = state.teamIdx == t
+        local didScale = BF.begin(vg, "sweep_dlg_team_" .. t, cx, cy,
+            D.TEAM_BTN_W, D.TEAM_BTN_H)
+        if locked then nvgGlobalAlpha(vg, 0.35) end
+        DarkIcon.drawNine(vg, "btn", cx - D.TEAM_BTN_W * 0.5, cy - D.TEAM_BTN_H * 0.5,
+            D.TEAM_BTN_W, D.TEAM_BTN_H, { accent = selected and "gold" or nil })
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, D.TEAM_FONT)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        local cnt = teamDeployedCount(t)
+        local label = locked and ("小队" .. t .. " 未解锁")
+            or ("小队" .. t .. "(" .. cnt .. "人)")
+        nvgFillColor(vg, selected and nvgRGBA(0x6d, 0x4c, 0x1d, 255)
+            or nvgRGBA(244, 237, 224, 255))
+        nvgText(vg, cx, cy, label, nil)
+        if locked then nvgGlobalAlpha(vg, 1) end
+        BF.finish(vg, didScale)
+    end
+
     -- 8) "预计奖励" 标题（白色描边）
     drawTextStroke(vg, D.REW_TT_X, D.REW_TT_Y, "预计奖励",
         D.REW_TT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -561,10 +623,11 @@ function SweepDialog.draw(vg)
     local costStartX = D.BG_CX - costTotalW * 0.5
     drawImageCentered(vg, imgTicketIcon, costStartX + D.TKT_ICON_SZ * 0.5,
         D.TKT_ICON_CY, D.TKT_ICON_SZ, D.TKT_ICON_SZ, 1.0)
+    -- 消耗文字：券够=亮白，不够=棕色
     drawTextStroke(vg, costStartX + D.TKT_ICON_SZ + 4, D.TKT_ICON_CY, costStr,
         D.TKT_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        255, owned >= cost and 255 or 90,
-        owned >= cost and 255 or 90, 5, { strokeColor = { 0, 0, 0 } })
+        owned >= cost and 255 or 0x8d, owned >= cost and 255 or 0x5f,
+        owned >= cost and 255 or 0x41, 5, { strokeColor = { 0, 0, 0 } })
 
     -- 确认按钮（无券时禁用）
     local canSweep = maxCount >= 1
@@ -574,7 +637,12 @@ function SweepDialog.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, D.ACT_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(244, 237, 224, canSweep and 255 or 110))
+    -- 按钮文字：满足=亮骨白，不满足=棕色
+    if canSweep then
+        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    end
     nvgText(vg, D.ACT_CX, D.ACT_CY,
         canSweep and "扫荡" or (canSweepStage() and "扫荡券不足" or "尚无可扫荡关卡"), nil)
     BF.finish(vg, confirm)
@@ -613,14 +681,32 @@ function SweepDialog.handleInput(x, y)
         print("[SweepDialog] slider count=" .. state.count .. "/" .. maxCount)
         return true
     end
+    -- 小队选择（未解锁不可选）
+    for t = 1, 3 do
+        local cx, cy = teamCenter(t)
+        if hitTestRect(x, y, cx, cy, D.TEAM_BTN_W, D.TEAM_BTN_H) then
+            if t <= unlockedTeams() then
+                BF.trigger("sweep_dlg_team_" .. t)
+                state.teamIdx = t
+                _sweepRewardCache = nil
+                print("[SweepDialog] team=" .. t)
+            end
+            return true
+        end
+    end
     if hitTestRect(x, y, D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H) then
         if maxCount < 1 then
             print("[SweepDialog] sweep blocked: " .. (canSweepStage() and "扫荡券不足" or "当前关卡无法扫荡"))
             return true
         end
+        if teamDeployedCount(state.teamIdx) == 0 then
+            print("[SweepDialog] sweep blocked: 所选小队未出战英雄")
+            return true
+        end
         BF.trigger("sweep_dlg_confirm")
-        print("[SweepDialog] submit count=" .. state.count .. " tickets=" .. GameState.getSweepTicket())
-        if SweepDialog.onSweep then SweepDialog.onSweep(state.count) end
+        print("[SweepDialog] submit count=" .. state.count
+            .. " team=" .. state.teamIdx .. " tickets=" .. GameState.getSweepTicket())
+        if SweepDialog.onSweep then SweepDialog.onSweep(state.count, state.teamIdx) end
         return true
     end
     if not hitTestRect(x, y, D.BG_CX, D.BG_CY, D.BG_W, D.BG_H) then

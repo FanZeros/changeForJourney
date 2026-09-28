@@ -649,6 +649,7 @@ function BattleService.ClaimBattleRewards(uid, rewards)
 
     local totalGold = 0
     local heroExpMap = {}
+    local benchPerHeroBase = 0 -- 每次击杀的"每出战英雄份额"累计，未出战英雄按 10% 领取
     local totalPlayerExp = 0
     local currentStageId = tonumber(battle.currentStageId)
     local currentStageEntry = currentStageId and StageConfig.getStage(currentStageId)
@@ -687,7 +688,21 @@ function BattleService.ClaimBattleRewards(uid, rewards)
                 local numHid = tonumber(hid) or hid
                 heroExpMap[numHid] = (heroExpMap[numHid] or 0) + perHeroExp
             end
+            benchPerHeroBase = benchPerHeroBase + perHeroExp
             totalPlayerExp = totalPlayerExp + baseExp
+        end
+    end
+
+    -- 未出战英雄吃 10% 战斗经验：本批未参与任何击杀的在册英雄，各得每出战份额累计的 10%
+    if benchPerHeroBase > 0 then
+        local benchExp = math.floor(benchPerHeroBase * 0.1)
+        if benchExp > 0 then
+            for hid, hero in pairs(heroes.roster) do
+                local numHid = tonumber(hid) or hid
+                if type(hero) == "table" and hero.level and not heroExpMap[numHid] then
+                    heroExpMap[numHid] = benchExp
+                end
+            end
         end
     end
 
@@ -969,6 +984,9 @@ local SCENARIO_REWARDS = {
     [58] = { type = "none", requiredHeroId = 1, requiredStageId = 305 },
     [59] = { type = "none", requiredHeroId = 2, requiredStageId = 305 },
     [60] = { type = "none", requiredHeroId = 3, requiredStageId = 305 },
+
+    -- 第二章通关·大狗嚼潜能引导（首通 205）：大狗嚼碎片×60，引导升潜能/觉醒
+    [82] = { type = "shard", heroId = 1, amount = 60, requiredStageId = 205 },
 }
 
 --- 领取情景对话奖励
@@ -1038,6 +1056,37 @@ function BattleService.ClaimScenarioReward(uid, scenarioId)
         return true, nil, {
             rewardType = "currency",
             reward = { currencyKey = key, amount = amount },
+        }
+    end
+
+    -- 碎片奖励情景（如二章通关的大狗嚼潜能引导）：碎片加到对应英雄 roster 条目
+    if rewardDef.type == "shard" then
+        local heroes = PDM.GetModule(uid, "heroes")
+        if not heroes then
+            return false, "数据未加载"
+        end
+        if rewardDef.requiredStageId then
+            local battle = PDM.GetModule(uid, "battle")
+            if not battle or not battle.clearedStages
+                or not battle.clearedStages[tostring(rewardDef.requiredStageId)] then
+                return false, "关卡未通关"
+            end
+        end
+        if not heroes.roster then heroes.roster = {} end
+        local hid = rewardDef.heroId
+        if not heroes.roster[hid] then
+            heroes.roster[hid] = { shards = 0, _shardMigrated = true }
+        end
+        heroes.roster[hid].shards = (heroes.roster[hid].shards or 0) + (rewardDef.amount or 0)
+        sessionData.claimedScenarios[scenarioKey] = true
+        PDM.MarkDirty(uid, "heroes")
+        PDM.MarkDirty(uid, "session")
+        print("[BattleService] scenario shard uid=" .. tostring(uid)
+            .. " scenarioId=" .. tostring(scenarioId)
+            .. " heroId=" .. tostring(hid) .. " shards=+" .. tostring(rewardDef.amount))
+        return true, nil, {
+            rewardType = "shard",
+            reward = { heroId = hid, amount = rewardDef.amount or 0 },
         }
     end
 

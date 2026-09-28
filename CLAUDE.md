@@ -2,19 +2,44 @@
 
 > 本文件由记忆系统维护（会话启动时先读本文件与 docs/memory-index.md）。
 
+## 🔴 协作铁律（每个会话、每次完成任务都必须遵守）
+
+1. **不能取消/退出任务**：任何情况下不得中途放弃用户交付的任务，必须推进到完成。
+2. **每次任务完成后，必须用 `AskUserQuestion` 工具以选项形式向用户提问下一步做什么**。
+   - ❌ 禁止用纯文本、开放式问题、或任何非 `AskUserQuestion` 的形式中断对话等待用户。
+   - ✅ 必须调用 `AskUserQuestion`，给出 2–4 个明确的下一步选项。
+3. **在本记忆中持续强化此规则**：每轮结束更新「上次做了什么」，并保留本节铁律不被覆盖。
+4. **分支纪律**：以新分支继续开发，完成后 push 到新分支；**绝不推送到 `workspace926`**（或任何基线分支）。
+
 ## 恢复指令
 
 1. 读 `docs/memory-index.md`（项目详细上下文）
-2. 读 `docs/refactor-plan.md` + `docs/refactor-tasks.md`（重构进度）
-3. 自测：这是什么项目？上次做了什么？下一步做什么？
-4. 告知用户记忆恢复状态，开始工作
+2. 读 `docs/changeForJourney-gameplay.md`（玩法权威文档，2026-09-28 已按代码复核修订）
+3. 历史规划/交接文档已移至 `docs/archive/`（重构计划、职业迁移、装备升阶等，均已执行完毕）
+4. 自测：这是什么项目？上次做了什么？下一步做什么？
+5. 告知用户记忆恢复状态，开始工作
 
 ## 项目是什么
 
 - **终焉之门·单机版**：UrhoX Lua 卡牌放置 RPG，NanoVG 纯 2D，横屏三栏
-- 入口 `scripts/main.lua` → 只加载 `network/Standalone.lua`（已无多人 Client/Server 入口）
+- 入口 `scripts/main.lua` → 只加载 `boot/Standalone.lua`（`network/` 目录已删除，无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
+
+## 上次做了什么（2026-09-28，`feat/talent-more-paths-0928` 及文档整理）
+
+- 功能轮（均已 push）：奖励弹窗自动滚底+大数字缩字号；扫荡/副本扫荡奖励弹出时自动关原页；情景 82（首通 205 大狗嚼发 60 碎片→觉醒页引导）；教堂剧情重写为神器登记（24-30/41）；全 UI 按钮禁用态棕色 `0x8d5f41`；奖励弹窗任意点击可关+跟随左/中/右面板；教堂角标只看神器；天赋星图 +16 条双向边（多环路）；无编队行不显示敌人；编队未实质改变不重置战斗（按队 diff）。
+- 文档整理轮（本次）：11 份已完成/过时规划归档 `docs/archive/`；修订剧情总表（82/触发链 StoryPlayer/55-57 摘要）、memory-index（boot 入口/情景 1~82/待办过期项）、低差异规划与套装规划（标注已全部落地）、versions（补 2026-09-27~28 条目）、gameplay 权威文档（§1-20+附录按代码全面复核：横屏三栏/三队4槽/六契职业/教堂只神器/竞技场公会签到删除/离线24h软顶/装备6槽+套装/天赋209节点/引导12组/单机存档）。
+
+## 🔴🔴 致命结构铁律：项目根必须是 `/workspace`（scripts/ 直接在根下）
+
+**2026-09-28 血的教训**：曾把仓库克隆到 `/workspace/repo/` 子目录开发，导致**预览完全看不到任何改动**（用户反馈"没看到关键词"）。
+
+- **build 工具硬锚定 `/workspace` 为项目根**：读 `/workspace/.project`，资源只扫 `/workspace/scripts` + `/workspace/assets`。代码放在 `repo/` 子目录时，即使传 `scriptsPath: repo/scripts`（LSP 诊断/测试能过，因为 LSP 用 `--path` 指向真目录），**打包阶段仍只扫空的 `/workspace/scripts`** → manifest `total_files: 2`、**0 个 Lua 入包**、日志报 `entry 'main.lua' 未找到对应资源`。
+- **正确结构**：`git clone` 后必须让 `.git`/`scripts`/`assets`/`.project`/`CLAUDE.md` 等**直接位于 `/workspace` 根**，不得有 `repo/` 中间层（CLAUDE.md 全局规则也写明"工作目录即项目根，不要在其与 scripts/ 之间插入额外层级"）。
+- **修复手法**（已执行，同文件系统 `mv` 秒级）：把 `repo/` 下所有项（含 `.git`）移到 `/workspace`，冲突目录（`.agent`/`tools`）合并保留两侧，`.project`/`scripts`/`.gitignore` 用 repo 版覆盖。迁移后 `git status` 应干净（无删除），build 打包 **365 个 Lua**，validate 0 lua_errors。
+- **每次 build 后**：build 工具会把 `.project/project.json` 的 `project_id` 重写成 SCE 服务器给本沙箱分配的 `m_gzu3`（仓库原值 `m_tfv3`）。这是构建生成的本地配置，**提交前用 `git checkout .project/project.json` 还原**，不要推上去。
+- **自检命令**：`ls /workspace/scripts/main.lua` 必须存在；`python3 -c "import json,glob,os;f=max(glob.glob('/workspace/dist/*/manifest-*.json'),key=os.path.getmtime);m=json.load(open(f));print('lua files:',len([x for x in m['files'] if x['fs_path'].endswith('.lua')]))"` 应 ≫ 0。
 
 ## 已合入备忘（feat926，2026-09-27）
 
@@ -28,6 +53,80 @@
 - Electron 离线包在 `electron-shell/main.js` 关闭 `backgroundThrottling`，失焦时保持战斗帧更新。网页隐藏页仍需离线补算。Windows 失焦/最小化尚未实机验证。
 - PC 包 Lua 仍是明文；`electron-shell/obfuscation_trial.py` 只是外部试点，未接入正式发布。
 - 配装布局：属性页不显示装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移约 160px 给词条留空。拖拽穿戴仍以 925 为准。
+
+## 本轮进展（2026-09-27，`workspace927-keyword-system`）
+
+- **任务**：实现关键词系统——让描述文本内的机制关键词（如「回响」）可点击查看效果解释。基于 `workspace926` 新建 `workspace927-keyword-system` 分支，已 push（未动 workspace926）。
+- **新增 `scripts/config/KeywordConfig.lua`**：关键词百科表，覆盖六门契职业（封门人/拾骸者/裂隙使/回响客/换面人/司仪）、职业天赋（门缝/拾骸/裂隙/回响/换面/延缓）、战斗机制（骸骨/裂痕/仇恨/护甲克制/连击/超暴击/能量护盾）、锻造（腐化/腐化石/神圣石/洗练石/点金石/洗练）。文案逐条对照 `ClassConfig`/`AttributeDef`/`ClassGateRuntime`/`UnitAttributes`/`BlacksmithService` 实际实现核对。长词优先排序（「回响客」不被「回响」截胡）。
+- **新增 `scripts/ui/widget/KeywordText.lua`**：NanoVG 富文本组件。按词表拆段→逐字符折行（与 attrTip 一致，关键词整体不拆行）→关键词金色+下划线绘制→记录点击热区→点击弹解释气泡（风格复用 attrTip，支持上方空间不足自动翻下方）。排版结果按 text+width+fontSize 缓存；无引擎环境（回归测试）时 measure 退化为等宽估算。
+- **接入点**：① 角色详情 attr 页天赋描述区（`CharacterDetailDraw` 的 `M.talentKwText`）；② 觉醒面板效果描述（`AwakeningPanel` 的 `M.kwText`，居中排版）。弹窗帧末置顶统一绘制；`CharacterDetail.handleInput` 开头统一处理「弹窗开着→任意点击先关弹窗」；attr 页关键词点击优先于属性行命中；切角色/拖拽/打开面板调 `clearKeywordUi` 清状态；handleHover 悬停加亮。
+- **验证**：新增 `scripts/tests/keyword_text_test.lua`（20 项全 PASS：词表/长词优先/拆段计数/热区坐标/点击开关弹窗/折行/显式\n）。LSP 全工作区 0 Error 0 Warning；官方 Build 成功；主入口 60 帧无 Lua 错误；战斗回归 `battle_stage_switch_test` 22 PASS/0 FAIL（退出码 124 是已知「测试自身不退出进程」行为）。6 个相关模块 smoke require 全 true。
+- **踩坑**：`--[[@as string[]]]` 注解会让引擎 LoadChunk 报 `'end' expected`（引擎 Lua 解析器不认这种行内 cast 写法，但 LSP 认）→ 改为 `---@type` 独立行 + 中间变量。**教训：引擎 LoadChunk 与 LSP 对注解容错不同，新文件务必用 headless Runtime 实跑一次 require，别只信 LSP。**
+- **待办/未验收**：① headless 离屏 NanoVG 截图未落盘（VG 上下文限制），关键词视觉效果（金色下划线、弹窗）尚未真人预览验收。② ~~转职页 `ChurchClassChange` 的 talentDesc 仍是纯 `nvgTextBox`，未接入关键词~~（已接入确认弹窗，见下方"转职页接入"；转职树主页面的锁定提示文字无机制词，无需接入）。③ 装备词条/遗物/神器/通天塔 desc 等更多描述区未接入。④ 词表可继续扩充。
+- **追加修复（同轮）**：布局双重计宽 bug——普通文本累计期直接写 `cur.width`，addPiece 整段测量再加一次 → 行宽虚高、提前折行（LINE1 实测 1169 > 容器 837）。修复：累计期独立 `bufW`。新增回归：行宽不超容器 + 宽容器短文本不折行；22 项全 PASS；引擎真实字体 dump 验证 3 行 826/826/52 全部 ≤837。
+- **🔴 环境教训（截图链路）**：本机 Linux UrhoXRuntime 二进制**不支持离屏截图**——`-screenshot=` 参数无 `[Screenshot]` 标记（strings 二进制无该参数）、`Graphics:TakeScreenShot` 返回 false（surfaceless 无读回缓冲）、xvfb 未安装。headless 只能做逻辑验证（validate/print dump）；**视觉效果验收必须让用户在预览窗口真人查看**，不要再浪费时间尝试本机截图。
+- **🔴 结构修复（同轮，用户发现）**：用户反馈"预览里没有关键词"并提示"script 位置是不是不在 workspace 下方"——确认克隆进 `/workspace/repo/` 子目录导致 build 打包 0 Lua（详见上方"致命结构铁律"）。已把整个项目（含 `.git`）迁移到 `/workspace` 根，`git status` 干净，重新 build 后 365 Lua 入包、validate 60 帧 0 lua_errors。预览验收待用户重测。
+- **转职页接入（同轮，用户追问"转职里面的描述有没有"）**：`ChurchClassChange.drawConfirmPopup` 的天赋描述改用 KeywordText。弹窗带 scale 0.85→1.0 缩放动画 → KeywordText 新增 `setTransform`（输入屏幕坐标→热区空间逆变换）与 `setPopupTransform`（弹窗锚点→屏幕坐标正向变换，解释气泡在变换外绘制）；`measureHeight` 保留原自适应字号逻辑。回归测试扩到 26 项全 PASS。**新踩坑**：官方 build 的 LSP 检查比 lua_lsp_client 严格（return-type-mismatch 会被拒），提交前必须跑官方 build 验证。
+- **用户验收通过（三处）+ 第二轮接入（同轮）**：用户确认属性页/觉醒页/转职确认弹窗三处关键词全部正常。随后接入：① 通天塔三选一 `TowerBuffPick`（3 卡各一实例；关键词点击**优先于整卡选中**；调用方 TowerBattleScene 已做 fit 反变换，设计坐标系直接对齐）；② 装备详情 compact 主面板套装词条 2/4/6 件行（`showActions ~= false` 区分主面板，对比面板/只读预览保持原样；输入插在锁图标/按钮判定之前）；③ KeywordText textColor 支持 alpha（保留套装激活/未激活半透明）。验证：26 项回归 PASS、官方 Build 成功、validate 60 帧 0 lua_errors。已推送（共 8 提交）。
+- **调研结论（未接入区域及原因）**：遗物（RelicDefs 381 处命中最高）**UI 层无 desc 渲染点**——详情面板不存在，RewardPopup 只画图标，需先新建遗物详情 UI 才有挂载点；神器详情 ArtifactDetailPanel 仅 2 处命中且自有数值高亮机制（橙色数值+灰色比例）与关键词染色冲突，价值低暂缓；星图天赋 TalentNodeDefs 仅 3 处暂缓。
+
+## 上次做了什么（2026-09-28，feat927 混淆增强三档：剥注释+字段改名）
+
+- 用户问「方法名可否改、注释为何没删」→ 实现 `--strip-comments`（默认，剥普通注释保留 `---@` 注解/`--[[@as]]`，@param 同步已接入）与 `--rename-fields`（实验，单文件私有字段改名，多重排除：跨文件/引擎声明/字符串出现/动态拼接文件/元方法）。
+- 相似度量化（tempGame 工具）：基线 100% → 改名 46% → +剥注释 39.3% → +字段改名 38.4%。**剥注释性价比最高（零风险 -6.7pp）；字段改名仅 -0.9pp 却改 API 表面，默认关闭**。三档均过官方 Build，行为等价 71/71、离线 0 真实回归。
+- 踩坑修复：token_fingerprint 误计 hidden channel WS/NL → 新增 syntax 指纹（只 default channel）；STRING 类型名 bug → NORMALSTRING/LONGSTRING；`__main__` 块位置 NameError → 移文件末尾。
+- protect_build.py 默认剥注释 + `--rename-fields/--emmylua-root` 开关。仍只 push feat927；完成后 AskUserQuestion；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-28，feat927 发布包源码相似度实测）
+
+- 用 tempGame 的 compare_lua_similarity.py 做 A/B：未混淆发布包 vs 源码 = **100% 对称相似/100% 逐字节行/361 exact**；L1 混淆发布包 vs 源码 = **46% 对称相似/2.8% 逐字节行/17 exact**（16 纯数据表 + DarkIcon 盲区）。
+- 残留 46% = 刻意保留的注释/字符串/对外字段名/排版（保可运行 + 过 LSP 的代价）；报告 `docs/pc-obfuscation-similarity-0928.md`。
+- 结论：保守 L1 消除逐字节泄露（100%→2.8%）；行级相似要归零须靠 L2 字节码（脚本对 `\x1bLua` 判 bytecode 不计行相似），Q1 仍待本机验证。
+- 方法：/workspace 隔离工程用官方 Build 分别产混淆 dist 与基线 dist。仍只 push feat927；完成后 AskUserQuestion；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-28，feat927 修复 Windows SyntaxError）
+
+- 用户本机跑 bat 步骤 1 报 protect_build.py:109 `\\!=` SyntaxError；heredoc 转义 bug，已修（line 109 + sh shebang），双分支沙箱复测 PASS，推送 b204359。
+- **流程教训（必须遵守）**：heredoc/shell 生成的每个 py/sh，commit 前独立跑语法校验（勿串在会被中断的 && 链里）；新脚本每条分支实跑过再提交；用户报本机错误先全仓库 grep 同类模式。
+- 用户下一步：本机重跑 bat 继续清单 §1-§4，回报 manifest 统计/实机回归/Q1 VERDICT。仍只 push feat927；完成后 AskUserQuestion。
+
+## 上次做了什么（2026-09-27，feat927 本机验证清单）
+
+- 新增 `electron-shell/WINDOWS_PROTECT_CHECKLIST.md`：本机 Windows 逐步骤验证 --protect 全链 + 实机回归 + L2 Q1 判定（含成功标志/失败回报模板/决策表）。
+- `lua_bytecode_poc.py` 增发生成 `poc_entry.lua`（Start() 包裹可直接当官方 Build 入口；lupa 已验 VERDICT ACCEPTS）。
+- 等待用户本机执行清单并回报（尤其 Q1 VERDICT 与实机启动/存档结果）；回报后按决策表定 L2 去留。
+- 仍只 push feat927 分支；完成后 AskUserQuestion；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-27，feat927 L1 接入打包 --protect 四步链）
+
+- 新增 `protect_build.py`：物化混淆工作区（361 Lua 混淆 + 非 Lua 复制 + assets 真实复制 + protect-report.json）；不改仓库源码/dist/game。
+- `prepare_local_dist.py` +`--scripts-root` 与资产闸门（manifest 缺 png/ogg 拒包）；`pack_release.py` +`--protect-scripts-root`；一键入口 `build_protected_windows.bat/.sh`。
+- **关键发现：官方 Build 不烘焙符号链接 assets/**（symlink→manifest 只剩 lua+json；真实复制→1226 项全烘焙）。默认真实复制，闸门双向 PASS。
+- 官方 Build（混淆版）成功：dist lua 与混淆源码 361/361 逐字节一致，344 含混淆名。回归全绿（21/21、8/8、残留0、71/71）。
+- 待本机验证：taptap-maker CLI 全链 + Electron 实机回归；Windows junction 行为。仍只 push feat927；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-27，feat927 修复 @param + 官方 Build 通过）
+
+- 给 `lua_obfuscator.py` 加 doc 注释同步：紧邻函数声明上方的注释块里 `@param 旧名`→该形参新名（仅本函数形参；注释与函数间夹代码则不关联；字符串里的 @param 属 NORMALSTRING 天然不动；类型名/描述保留；匿名函数跳过，实测全项目 1373 个 @param doc 块无一匿名）。
+- **结果**：全量 361 文件 @param 残留不匹配 219→0；行为等价 71/71 PASS；**官方 MCP Build 成功 0 Error，dist/assets/*.lua 产物确认是混淆代码**。推翻旧「去注释试点 Build 报 undefined-global」结论——根因是隔离工程缺 268 个引擎 .emmylua 类型定义，非混淆本身。
+- ⚠️ LSP `textDocument/diagnostic` workspace 汇总对磁盘替换返回陈旧缓存(注入语法错误都不报)，只有 didOpen/官方 Build 读最新内容；结论以 Build+dist 为准，勿信那个汇总接口。
+- 剩余限制：`scripts/core/DarkIcon.lua` 因 luaparser 中文 token 解析失败被安全跳过(仍明文，361中仅1个)；L1 产物仍可读明文，去阅读难度须叠加 L2(Q1 待本机验证)。
+- 依赖：`python3 -m venv ~/luaenv && ~/luaenv/bin/pip install luaparser lupa`。全部未接入 pack_release/build_local。仍只 push `feat927/ele-protection-research-0927`；完成后必须 AskUserQuestion；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-27，feat927 L1 混淆器 + L2 字节码 POC）
+
+- 把调研的 L1（AST 作用域重命名）实现为 `electron-shell/lua_obfuscator.py`：基于 luaparser 内置 ANTLR 树做作用域解析，token 级 splice，只改局部绑定（local/参数/for 变量/local function），字段名/方法名/全局/require 路径/字符串/EmmyLua 注释逐字节保留；解析失败或不通过 5 项等价校验的文件拒绝改写、原样复制。
+- 验证：`test_lua_obfuscator.py` 21/21 行为等价 PASS；全量 361 文件 344 改名/17 未变（16 纯数据表 + DarkIcon 解析失败安全拒绝）；`verify_obfuscation_sample.py`（lupa Lua5.4 真跑 + 确定性深度序列化）71/71 PASS。
+- L2：`lua_bytecode_poc.py` 本地验证标准 Lua5.4 字节码往返（header 1b4c75615400，-22.8%），生成 `poc_loader.lua` 自包含探针（lupa 输出 VERDICT: VM ACCEPTS Q1=yes）。
+- **已知限制（接入官方 Build 前必须处理）**：`---@param/@return` 注释旧参数名不随实参改名（219 文件），会触发 LSP param 不匹配告警 → 需参数不改名或同步替换注释名；DarkIcon 仍明文；L1 产物仍可读明文，去阅读难度须叠加 L2。
+- **待真实环境验证**：Q1 WASM Lua VM 是否接受字节码、Q2 manifest hash 是否运行时强校验（沙箱无 wasm 资产跑不了；本地 lupa 字节码未必匹配引擎 Lua 版本，正式化用引擎自带 luac/VM 内 dump）。
+- 依赖：`python3 -m venv ~/luaenv && ~/luaenv/bin/pip install luaparser lupa`。全部未接入 pack_release/build_local。仍只 push `feat927/ele-protection-research-0927`；完成后必须 AskUserQuestion 问下一步；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-27，feat927/ele-protection-research-0927）
+
+- 基于 `feat926/ele-obfuscation-audit-0927` 建调研分支，只加文档不改流水线。
+- 产出 `docs/pc-protection-research-0927.md`：四级保护方案评估（L1 AST 混淆保留 EmmyLua 注释 / L2 Lua5.4 字节码需先 POC 验证 WASM VM 与 manifest 运行时校验 / L3 Electron 打包期静态加密+sendFile 内存解密+关 F12 / L4 完整性校验），路线图 P0-P4；P0=发布版关 DevTools，零成本高收益。
+- 本轮只 push `feat927/ele-protection-research-0927`；不推 workspace*。完成后必须 AskUserQuestion 问下一步，不得取消/退出任务，令牌不进仓库与记忆。
 
 ## 上次做了什么（2026-09-27，925 同步与存档再排查）
 
@@ -66,6 +165,60 @@
 - 更正：上一轮 `C10`/`C4` 用在 Lv.1 的 20 局对照超出两件装备模板的掉落等级下限 28；只作为公式演示，不作为正常掉落平衡证据。`BattleLab.prepare` 现在拒绝装备等级不在模板 `levelRange` 内的样本。
 - 合法样本：第 101 关首通，大狗嚼 Lv.1，均为普通 Lv.1 `C13`（秘识戒）A 与 `C1`（力量戒）B；显示战力同为 112。种子 926–965：A 14/40 胜、B 40/40；种子 3926–3965：A 10/40、B 40/40；第 103 关：A 22/40、B 40/40。第 102 关两者均 40/40，但平均耗时 A 34.82s、B 28.02s；队伍加黄桃龙后第 101 关均 40/40，A 22.04s、B 21.30s。不同职业的单人法师/游侠样本均 0/40，不可据它们的胜率比较适配，需看输出与生存；全量实测汇总在 `docs/memory-index.md` 顶部。
 - 建议：不要全局削减魔攻权重（会误伤魔法职业）；显示战力如要反映角色适配，应以角色攻击类别区别计价物攻/魔攻及专属伤害、暴击、穿透，治疗者独立考虑治疗量。先保留原始属性战力供详情/队伍展示，对“实战预估”新口径跨阵容、关卡、层级验证，避免仅由胜率饱和场景定权重。正式战力公式和战斗结算尚未改。
+
+## 最新：关卡推荐战力标定（2026-09-28，v2.61）
+
+- **五语词表（v2.61c）**：v2.61b 遗留的翻译待办已闭环。`core/I18n.lua` 的 `T` 键值表五语块各新增 `rec_power`（简「推荐 {0}」/繁「推薦 {0}」/英「Rec. {0}」/日「推奨 {0}」/韩「추천 {0}」）与 `rec_power_approx`（同结构带「≈」）两键（共 10 条），沿用既有 `expedition_lv = "...LV.{0}"` 的 `{0}` 占位符范式。**关键**：含动态数字的串不能走 `installDrawHook` 的 nvgText 原文查表（数字变→查不到），必须走 `I18n.t(key, n)` 键值替换；`StageSelectDialog` 已改用 `I18n.t("rec_power"/"rec_power_approx", recPower)`。译后串（如 "Rec. 18110"）再经 draw-hook 的 `I18n.lookup` 查中文原文查不到会原样返回，无二次翻译风险。宽度：CJK「推荐≈18110」~115px、英文拉丁更窄，五语均 <124px 不需按语言调字号。验证：新增 `tests/i18n_rec_power_test.lua` 28 断言 ALL PASS（五语占位替换/非 key 回退/未知 key 回退），LSP I18n+StageSelectDialog 0 Error，主入口 validate lua_errors=0，切关回归 13 PASS ALL PASS。
+- **UI 接线（v2.61b）**：`ui/battle/stage/StageSelectDialog.lua` 中栏关卡行左中（y+84，关卡号与状态行之间）新增「推荐 N」小字（20 号，最长「推荐≈18110」~115px 不撞 CARD_X=455 卡面区）。三态：实测关（ml≤23）与 `GameState.getPower()` 玩家总战力比较着色（达标绿 0x7AC86E / 不足红 0xE05A5A / 战力未知中性）、外推关（ml 24..46）「推荐≈N」蓝灰 0x8FA8C0 不比较、无数据关（ml>46，SRP 无条目）不绘制。未解锁行同显（alpha 140/255）。只读展示、无门槛逻辑。
+- 目标：回答"能否为关卡确定推荐战力"。产出 `config/StageRecommendPower.lua`（纯数据 + 查询 API；v2.61b 已接线选关弹窗展示），正式战力公式未改。
+- 采样：`tests/battle_lab_threshold.lua`——开荒三人组（1/2/3）无装备、首通、12 局定种 926、timeLimit=120，对 Normal 23 个章节首关（101..2301，ml 1..23）二分搜索 winRate 跨过 50% 的最低英雄等级；阈值取保守侧（hi），23/23 收敛（ml1 L*=1/power 318 → ml23 L*=71/power 2195；ml13/17/21 因怪物构成有真实回落，非严格单调）。样本 `battle_lab_threshold_samples.json`（gitignore）。
+- 拟合：`_proc/fit_stage_recommend.py`——线性/二次/指数择优（官方战力→指数 R²=0.9715；预估→二次 R²=0.9705；最大残差 ml20 -269），正则解析全部 `StageConfig_*.lua`（1725 关，ml 最大 345）。
+- 🔴 两条防御（第一版产物暴露后修复）：①实测 ml 范围内直接用实测阈值，不用曲线值（曲线低端低估：ml1 拟合 280 < 实测 318）；②**外推上限 extrapCap=46（采样上限×2）**——指数曲线 ml>23 后发散（ml=345 时 p≈2e16 是数学垃圾），超上限不生成条目、`SRP.get` 返回 nil，接入方必须处理。
+- 产物：230 关有推荐（115 实测 + 115 外推 x=true），1495 关 ml>46 无条目；章节内 2..5 关按同 ml 首关阈值近似（怪物数递增未单独采样）。口径=开荒队无养成，带装备/养成玩家实际需求更低。
+- API：`SRP.get(stageId)→power,extrapolated`、`SRP.getEstimate(stageId)`、`SRP.model`（拟合参数+sampledRange+extrapCap）。
+- 验证：`tests/stage_recommend_test.lua` 15 断言 ALL PASS（API 齐全/23 实测关=阈值取整且不打 x/趋势 p(2301)≥5×p(101)/ml24 与 ml46 x=true/ml47+ 与未知关 nil/全表 e<p）；LSP 新文件 0 Error；回归全绿（边界 ALL PASS、生产接线 9 断言、切关 13 PASS、默认 lab 20/20 v1）。
+
+## 最新：OFF_FACTOR 跨难度带验证（2026-09-28，v2.60）
+
+- 采样：`tests/battle_lab_fit_expand.lua`（63 组：战士/法师/游侠 × L8@303、L16@1501、L24@2301 三带 × 武器等级扫描/本异系饰品/裸装，runs=8）→ `battle_lab_fit_expand_samples.json`（gitignore）。
+- 回归：`fit_power_estimate.py --mode expand`（全量 + 按 band 分桶岭回归，汇总 R²≥0.3 可信桶的 off 系数波动）。
+- 结论：①跨带混池回归不成立（ALL 桶 R²=-5.5，三带 DPS 量级差数倍互相吞系数）——**系数标定必须分带**；②magical 类三带全可信（R²=0.63/0.68/0.96），off[phys]=0.330/0.000/0.028、均值 0.119≈0.10 → **OFF_FACTOR=0.10 跨带稳定，维持不变**（L8 的 0.33 为 n=6 小样本波动）；③physical 类三带 R² 均低（0.18/0.20/0.32、攻击组负截断，战士 DPS 被衔骨狂天赋触发主导）——无法回归标定，职业适配方向性由同种子 A/B 实测对照保证；④L24 带 21 组 <5s 速死为弱样本仅作对照。
+- 系数值零改动，仅补充验证依据（模块注释/antibodies/文档）。回归全绿（边界/切关/生产接线 9 断言/默认 lab 20/20 v1）。
+
+## 最新：战力预估生产接线（2026-09-28，v2.59，玩家可见但默认关闭）
+
+- **非破坏性接入**：官方 `calcHeroPower` 公式与数字完全不变；`ui/character/panel/CharacterPower.lua` 抽出共享 `buildHeroAttrs(heroId, partySlot)`（装备/遗物/神器/觉醒管线），战力与新增 `calcHeroEstimate` 共用，避免两条管线漂移。预估 = `CPE.estimate(attrs, attrs.atkType)` + 觉醒战力 + 神器加成（后两项沿用官方口径并入）。
+- 接线链：`CharacterPanel.calcHeroEstimate` → `CharacterDetail.setContext` → `Draw.setContext`（存 `calcHeroEstimateFn`）。展示：`CharacterDetailDraw` 卡面战力下「预估 N」副行（y=powerY+26），`SHOW_ESTIMATE` 模块开关**默认 false**——系数未跨全阵容标定、本环境无法截图验收玩家 UI，真人验收后 `Draw.setEstimateVisible(true)` 开启。`_estimateCache` 与战力共用 `markPowerDirty` 脏标记，关闭时不计算。
+- 验证：新增 `tests/character_power_estimate_test.lua`（真实模块+mock 存档）9 断言 ALL PASS：官方战力不回归（战士 Lv1=106、Lv50=479）、预估>0（战士75/法师74）、预估≤官方×1.5、未知英雄返回0不崩、重构后可重复；主入口 validate 30 帧 lua_errors=0；边界/切关/默认 lab 20/20 v1 全 ALL PASS。**当前玩家数值零变化**。
+- ⚠️ 开启副行前必须真人预览验收：卡面副行与等级徽章/职业标是否重叠、字色是否可读；开启后预估数值口径（不含觉醒分项拆分）需在 UI 说明或气泡中注明，避免玩家误解为官方战力。
+
+## 最新：治疗系数拟合（2026-09-27，v2.58）
+
+- 采样：`tests/battle_lab_fit_healer.lua`（22 组牧师：303 超时稳定带 + 304/305 阵亡带 × W67/W68 权杖等级 × C2/C8/C14/C20/C27 饰品）→ `battle_lab_fit_healer_samples.json`（gitignore）。
+- 回归：`fit_power_estimate.py --mode healing`（因变量 HPS，按 `healTakenRatio≥0.65` 剔除需求截断饱和样本）。关键发现：**治疗量=min(供给,需求)**——304/305 阵亡带 14 组全饱和（W68@17→32 HPS 仅 24.0→23.6），仅 303 关超时带 8 组非饱和可拟合。
+- 结果：HPS 岭回归 R²=0.32，phys/mag 输出组归一化系数 ≈0.48 → **确认初值 `HEALER_ATK_FACTOR=0.5` 与数据一致，保留 0.5**（方向性验证非精确标定，n=8 单关带）。至此 OFF_FACTOR(0.10)/HEALER_ATK_FACTOR(0.5) 两系数均有数据依据。
+- 样本局限：单人牧师无输出无法击杀，303 关全超时、304/305 全阵亡，不存在「阵亡且非饱和」带。回归全绿（边界/fit 采样复现/默认入口 20/20），正式公式未改。
+
+## 最新：分项计价系数拟合（2026-09-27，v2.57）
+
+- 采样：`tests/battle_lab_fit.lua`（31 组，四职业 × 武器等级 × 饰品，全取 303 关败局带，runs=10，走新 API `Lab.runSingle`）→ `battle_lab_fit_samples.json`（gitignore）。
+- 回归：`scripts/_proc/fit_power_estimate.py`（岭回归 λ=1、非负截断、剔除 winRate=100 饱和样本、DPS 与总输出双口径对照）。方法论要点：**败局总输出=存活时间×DPS，直接回归总输出会被 generic 生存组吞掉攻击信号**（physical 总输出 R²≈0.03、攻击组负系数）；DPS 口径 physical R²=0.43、magical R²=0.52。
+- 结论：可信拟合的异系攻击组系数均=0（异系攻击属性对 DPS 无可测贡献，其派生生存价值由 generic 组承载）→ `OFF_FACTOR` 0.25→**0.10**（保留小正值防止显示战力对异系装备归零）；方向断言复验更清晰（战士力量 128>智力 122、法师智力 126>力量 119）。healing 类 R² 为负（healer 局全超时）模型不成立，`HEALER_ATK_FACTOR=0.5` 保留初值，待牧师专属采样（短 timeLimit 制造非超时败局）再拟合。physical off[heal]=0.87 判为 C20(vit+spi) 单点共线噪声，已排除。
+- 报告新增 `heroPowers[].groups`（phys/mag/heal/generic 四组分解）；`CombatPowerEstimate.breakdown()` 为公开 API。回归全绿（边界/默认入口/切关），正式战力公式未改。
+
+## 最新：分项计价战力原型（2026-09-27，v2.56）
+
+- 新增 `scripts/systems/CombatPowerEstimate.lua`（原型，**仅 battle-lab 报告使用**，不接线角色页/队伍展示，正式战力公式未改）：与官方同一价值底座（AD.META.valueModel + pct/100），把属性分为 phys/mag/heal/generic 四组，按英雄伤害大类（`AD.getAtkCategory(attrs.atkType)`）给本系 1.0、异系输出 0.25（治疗系英雄对输出系 0.5）。
+- `tests/BattleLab.lua` 报告新增 `teamEstimate`、`heroPowers[].estimate/category`、`delta.teamEstimate`；CLI 摘要同步输出「预估」。schemaVersion 1/2 兼容，旧默认入口 20/20 胜回归通过。
+- 方向验证（与既有实测样本一致）：战士 Lv8/303 同官方战力 160，预估力量戒 133 > 智力戒 128（实测 3/40 vs 0/40、输出 2112 vs 1780）；法师 Lv1/101 同官方战力 112，预估智力戒 85 > 力量戒 83（实测输出 287 vs 193）。**原型能区分官方战力无法区分的职业适配方向。**
+- `tests/battle_lab_boundary_test.lua` 增加第 9 节：战士/法师/牧师类别、同战力区分、方向反转、atkType=nil 回落、estimateUnit 一致性，ALL PASS（自带退出 exit 0）。
+- ⚠️ 系数（0.25/0.5）未做跨阵容/关卡/层级回归拟合，只作方向性判断；后续如需精确「实战预估」口径，应按 v2.54 建议做分项计价拟合并验证治疗者独立口径。
+
+## 边界样本补齐（2026-09-27，v2.55）
+
+- 新增 `scripts/tests/battle_lab_boundary_test.lua`：只测 `Lab.prepare` 校验层（不跑战斗），覆盖 stageId/英雄列表/runs/seed/timeLimit 钳制、loadouts 结构、模板槽位与职业穿戴、双手+副手互斥、levelRange 边界（C1{1,7} Lv1/Lv7 合法、Lv0/Lv8/非整数/10000 拒绝；C2{8,9999} Lv7 拒绝、Lv8/Lv9999 合法）、ascendLevel 0/100 边界、quality/affixes 拒绝、历史反例 C10/C4 Lv1 必须被拒。headless 运行 ALL PASS（自带 `engine:Exit()`，exit 0，与旧测试的外层 timeout 124 不同）。
+- 真实边界校准（40 局/组，timeLimit=120，errors=0，复跑一致）：Lv7 大狗嚼 + C1/C13（tier1 上边界 Lv7）在 302 双侧全胜、303 双侧全败——单英雄难度悬崖在 302↔303 之间，饱和区胜率不可作判据；Lv8 + C2/C8（tier2 下边界 Lv8）在 303 得到唯一非饱和样本：同战力 160，力量戒 A 3/40 胜 vs 智力戒 B 0/40（种子 3926 复验 1/40 vs 0/40），A 场均输出 +333、承伤 -55，与 v2.54 Lv1 样本方向一致。探测：101/301/302/双人303 全胜，304/305/401/701 全败。
+- 正式战力公式、战斗结算未改；仅推 `feat926/battle-lab`。
 
 ## 上次做了什么（2026-09-26）
 
@@ -119,20 +272,23 @@
 - T40：ChurchResults + MarketResults。Church 812 / Market 1045
 - T41：ChurchLifecycle + MarketInit。Church 790 / Market 1008
 - T42：CharacterDeploy + BackpackDialogs。Character 1733 / Backpack 1737
-- 天赋从教堂拆出：城镇中轴新建筑「终焉古树」打开 `TalentPage`；教堂只留转职/神器两 Tab
+- 天赋从教堂拆出：城镇中轴新建筑「终焉古树」打开 `TalentPage`；教堂曾留转职/神器两 Tab（2026-09-27 起转职迁角色详情页，教堂只剩神器单 Tab）
 - 星图视口改为 1:1（1080×1080 居中）；滚轮带鼠标坐标直接缩放
 
 ## likely_next_task
 
+- 本轮功能待游戏内验收：奖励弹窗跟随左/中/右面板+任意点击关闭+自动滚底；扫荡奖励自动关页；情景 82 碎片引导觉醒页；教堂神器角标；天赋星图多环路（16 新边）；无编队不显示敌人；编队未实质改变不重置战斗；按钮禁用棕色。
+- 文档已全面整理（2026-09-28）：权威口径 = `docs/changeForJourney-gameplay.md`（已按代码复核）+ `docs/剧情总表.md`（1~82）+ `docs/memory-index.md`；旧规划在 `docs/archive/` 仅供历史查阅。
 - 当前基线 `workspace926`：已合入 925 与全部 feat926。需要在游戏里验收拖拽编队、存档读回、旧面板已消失。
 - 神器审查已在 `workspace926`。每次交付前汇报结果，最后必须调用 AskUserQuestion 以选项提问下一步。
 - 战斗实验室已在 `workspace926`。交付后必须以 AskUserQuestion 选项提问下一步。
 - 战斗工作台需独立运行（`tests/battle_lab_ui.lua`），批量入口 `tests/battle_lab.lua`；在游戏主进程并行测试会污染共享战斗状态。下一步可验收鼠标操作与不同分辨率 UI，并按需增加玩家配装的隔离配置支持。
+- 关卡推荐战力表 `config/StageRecommendPower.lua`（v2.61）已接线选关弹窗（v2.61b）+ 五语词表（v2.61c）；仅剩真人预览验收视觉密度/颜色对比。候选下一步：扩采样到 Hard 难度与章节内 2..5 关消除近似、或把推荐显示扩展到扫荡/结算界面。
 - `workspace925` 装备详情定位及套装效果区已调整；需要在实际游戏预览中确认左/右栏比较卡与最长套装说明的视觉效果。
 - Electron 已关后台节流，但未实机验证失焦/最小化。系统休眠仍需离线补算。
 - 配装页已下移留出词条空位，词条内容本身还没画。
 
-- 预览验收：滚轮、右键装备、顶栏远征等级、五语、四人战斗、新 SE、未解锁职业标、左栏世界地图
+- 预览验收：滚轮、右键装备、顶栏远征等级、五语、四人战斗、新 SE、未解锁职业标（左栏世界地图页已于 56cee55 撤回，不再验收）
 - 四人入队/闲聊已接：情景 74–81。首次获得或第一次打开详情播放；闲聊每局每个角色一次
 - 四人立绘仍是替代图，正稿未做
 - 73 情景长剧情未进五语词表；全量暗黑立绘/卡面裁切/标题视频仍未做

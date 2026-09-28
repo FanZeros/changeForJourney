@@ -668,9 +668,10 @@ function BattleScene.init(vg)
 
     -- 初始化扫荡弹窗
     SweepDialog.init(vg)
-    SweepDialog.onSweep = function(count)
+    SweepDialog.onSweep = function(count, teamIdx)
         require("runtime.GameAction").sendAction(
-            require("shared.Protocol").ACTION_TYPES.SWEEP, { count = count or 1 })
+            require("shared.Protocol").ACTION_TYPES.SWEEP,
+            { count = count or 1, teamIdx = teamIdx or 1 })
     end
 
     -- 初始化战斗统计面板

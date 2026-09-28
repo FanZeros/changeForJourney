@@ -15,6 +15,7 @@ local GameState      = require("core.GameState")
 local BF             = require("systems.ButtonFeedback")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local NumberUtil     = require("core.NumberUtil")
+local KeywordText    = require("ui.widget.KeywordText")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -24,6 +25,9 @@ local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 local M = {}
+
+-- 转职确认弹窗天赋描述关键词富文本（弹窗带缩放变换，输入需映射回弹窗空间）
+M.confirmKwText = KeywordText.new({ textColor = { 0x72, 0x58, 0x50 } })
 
 -- 当前转职页英雄（由详情页页签注入，不再依赖教堂选人槽）
 ---@type number|nil
@@ -286,7 +290,7 @@ function M.init(vg)
     img.titleBg    = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
     img.branchLine = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
     img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
-    img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+    img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     img.detailBg   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_BJ.png", 0)
 end
@@ -297,6 +301,7 @@ function M.setHero(id)
     if currentHeroId ~= id then
         pop.confirmPopup = false
         pop.resetConfPopup = false
+        M.confirmKwText:clear()   -- 切角色清关键词状态
     end
     currentHeroId = id
 end
@@ -533,6 +538,7 @@ function M.openConfirmPopup(advLevel, branchId, branchName, classNum, owned)
     pop.confirmOwned      = owned or false
     pop.confirmClosing    = false
     pop.confirmAnimT      = time.elapsedTime
+    M.confirmKwText:clear()   -- 清上次弹窗的关键词状态
     print("[ChurchClassChange] 打开转职确认: " .. branchName .. " (Lv" .. advLevel .. "转, owned=" .. tostring(pop.confirmOwned) .. ")")
 end
 
@@ -542,6 +548,7 @@ function M.closeConfirmPopup()
     if pop.confirmClosing then return end
     pop.confirmClosing = true
     pop.confirmAnimT = time.elapsedTime
+    M.confirmKwText:clear()   -- 关闭时清关键词解释气泡
     print("[ChurchClassChange] 关闭转职确认弹窗（动画）")
 end
 
@@ -667,32 +674,39 @@ function M.drawConfirmPopup(vg)
             C.talentNameFont, NVG_ALIGN_LEFT + NVG_ALIGN_TOP,
             classColor.r, classColor.g, classColor.b, 5)
 
-        -- 天赋效果文本（自适应缩放）
+        -- 天赋效果文本（自适应缩放 + 关键词可点击）
         local descLeft = C.talentBgLeft + C.talentDescPadLR
         local descTop  = talentBgTop + C.talentDescPadTop
         local descW    = talentBgW - C.talentDescPadLR * 2
         local maxDescH = C.talentBgBottom - descTop - C.talentDescPadBot
 
-        nvgFontFace(vg, "sans")
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-
+        local kt = M.confirmKwText
         local fontSize = C.talentDescFont
         local minFont  = 20
         while fontSize > minFont do
-            nvgFontSize(vg, fontSize)
-            local bounds = nvgTextBoxBounds(vg, descLeft, descTop, descW, talent.talentDesc)
-            if bounds and bounds[4] then
-                local textH = bounds[4] - descTop
-                if textH <= maxDescH then break end
-            else
-                break
-            end
+            local h = kt:measureHeight(vg, talent.talentDesc, descW, fontSize)
+            if h <= maxDescH then break end
             fontSize = fontSize - 2
         end
 
-        nvgFontSize(vg, fontSize)
-        nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-        nvgTextBox(vg, descLeft, descTop, descW, talent.talentDesc, nil)
+        -- 记录弹窗缩放，供输入坐标映射（绘制在缩放变换内，输入是屏幕设计坐标）
+        M._confirmPopScale = popScale
+        M._confirmPopCX    = C.bgCX
+        M._confirmPopCY    = C.bgCY
+        -- 输入屏幕坐标 → 弹窗缩放前坐标（热区所在空间）
+        kt:setTransform(function(sx, sy)
+            local lx = (sx - C.bgCX) / popScale + C.bgCX
+            local ly = (sy - C.bgCY) / popScale + C.bgCY
+            return lx, ly
+        end)
+        -- 弹窗锚点（缩放前坐标）→ 屏幕坐标（解释气泡在变换外绘制）
+        kt:setPopupTransform(function(lx, ly)
+            local sx = (lx - C.bgCX) * popScale + C.bgCX
+            local sy = (ly - C.bgCY) * popScale + C.bgCY
+            return sx, sy
+        end)
+
+        kt:draw(vg, talent.talentDesc, descLeft, descTop, descW, fontSize)
     end
 
     -- 底部区域
@@ -760,7 +774,7 @@ function M.drawConfirmPopup(vg)
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, C.costFont)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x80, 0x80, 0x80, 255))
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 锁定=棕色
             nvgText(vg, C.btnCX, C.btnCY, lockReason, nil)
         else
             -- 转职确认
@@ -792,13 +806,17 @@ function M.drawConfirmPopup(vg)
                 C.coinSize, C.coinSize, 1.0)
 
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, canAfford and nvgRGBA(0x46, 0x2f, 0x20, 255) or nvgRGBA(0x1e, 0x51, 0x37, 255))
+            -- 按钮内金币消耗：够=亮深棕，不够=棕色禁用色
+            nvgFillColor(vg, canAfford and nvgRGBA(0x46, 0x2f, 0x20, 255) or nvgRGBA(0x8d, 0x5f, 0x41, 255))
             nvgText(vg, coinStartX + C.coinSize + coinGap, C.btnCY, costStr, nil)
             BF.finish(vg, _bf2)
         end
     end
 
     nvgRestore(vg)
+
+    -- 关键词解释气泡（屏幕空间，盖在弹窗之上）
+    M.confirmKwText:drawPopup(vg)
 end
 
 -- ======================== 输入处理 ========================
@@ -810,6 +828,16 @@ end
 function M.handleConfirmInput(dx, dy)
     if not pop.confirmPopup then return false end
     if pop.confirmClosing then return true end
+
+    -- 关键词解释弹窗优先：开着→任意点击关闭；否则尝试命中关键词热区
+    local kt = M.confirmKwText
+    if kt:isOpen() then
+        kt:closePopup()
+        return true
+    end
+    if kt:handleInput(dx, dy) then
+        return true
+    end
 
     local C = CONFIRM
 

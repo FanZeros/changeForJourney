@@ -65,7 +65,7 @@ function M.bind(deps)
         -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
         -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_FANG.png 贴图加载已移除（矢量绘制替代）
         -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
-        img.goldCoin    = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+        img.goldCoin    = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
         img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
         img.resDiamond = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
 

@@ -461,8 +461,12 @@ function RedeemCodePanel.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CONFIRM_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    local btnTextAlpha = state.submitting and 140 or 255
-    nvgFillColor(vg, nvgRGBA(CONFIRM_TXT.R, CONFIRM_TXT.G, CONFIRM_TXT.B, btnTextAlpha))
+    -- 按钮文字：可提交=亮色，提交中=棕色禁用色
+    if state.submitting then
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(CONFIRM_TXT.R, CONFIRM_TXT.G, CONFIRM_TXT.B, 255))
+    end
     nvgText(vg, CONFIRM_TXT.X, CONFIRM_TXT.Y, state.submitting and "提交中..." or "确定", nil)
     BF.finish(vg, _bf1)
 

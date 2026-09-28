@@ -856,7 +856,7 @@ function DungeonPage.drawDetailPanel(vg)
     local dailyText = "今日次数:" .. dailyRemain .. "/" .. dailyMax
     local dtR, dtG, dtB = DT.DAILY_R, DT.DAILY_G, DT.DAILY_B
     if dailyRemain <= 0 then
-        dtR, dtG, dtB = 0xFF, 0x44, 0x44  -- 红色警告
+        dtR, dtG, dtB = 0x8d, 0x5f, 0x41  -- 耗尽=棕色
     end
     DrawUtil.drawTextStroke(vg, DT.DAILY_X, DT.DAILY_Y, dailyText,
         DT.DAILY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -868,14 +868,18 @@ function DungeonPage.drawDetailPanel(vg)
     nvgGlobalAlpha(vg, sweepDisabled and 0.45 or 1.0)
     DarkIcon.drawNine(vg, "btn", DT.SWEEP_CX - DT.SWEEP_W * 0.5, DT.SWEEP_CY - DT.SWEEP_H * 0.5, DT.SWEEP_W, DT.SWEEP_H, { accent = "gold" })
     BF.finish(vg, _bfSweep)
+    nvgGlobalAlpha(vg, 1.0)  -- 底图变暗即可恢复，文字单独按条件着色
 
-    -- 19. 扫荡按钮文本 "扫荡上一层"
+    -- 19. 扫荡按钮文本 "扫荡上一层"（禁用=棕色，可用=深色亮字）
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, DT.SWEEP_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, sweepDisabled and 100 or 191))
+    if sweepDisabled then
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+    end
     nvgText(vg, DT.SWEEP_CX, DT.SWEEP_CY, "扫荡上一层", nil)
-    nvgGlobalAlpha(vg, 1.0)  -- 恢复全局透明度
 
     -- 20. 挑战按钮背景 UI_AN_LV（九宫格）
     local _bfFight = BF.begin(vg, "dt_fight_btn", DT.FIGHT_CX, DT.FIGHT_CY, DT.FIGHT_W, DT.FIGHT_H)
@@ -1084,6 +1088,17 @@ end
 
 -- ======================== 网络响应处理 ========================
 
+--- 扫荡奖励弹出时自动离开副本页（回到主视图页签）。
+--- 横屏下副本页是全窗模态层，绘制在全局弹窗层之上；不离开的话
+--- 奖励弹窗会被副本页盖住，玩家看不到扫荡奖励。
+local function leaveDungeonPageForReward()
+    local BottomNav = require("ui.hud.BottomNav")
+    if BottomNav.getSelectedIndex() == 5 then
+        BottomNav.setSelectedIndex(3)
+        print("[DungeonPage] sweep reward shown, auto leave dungeon page -> tab 3")
+    end
+end
+
 --- 服务端操作结果回调（由 Client.lua 调用）
 ---@param data table { action, success, reason, ... }
 function DungeonPage.onActionResult(data)
@@ -1121,6 +1136,7 @@ function DungeonPage.onActionResult(data)
                     rewards[#rewards + 1] = { type = "relic", relicType = r.type, quality = r.quality or 4 }
                 end
             end
+            leaveDungeonPageForReward()
             require("ui.hud.popup.RewardPopup").show("扫荡奖励", rewards)
         else
             print("[DungeonPage] SWEEP FAIL: " .. tostring(data.reason))
@@ -1234,6 +1250,7 @@ function DungeonPage.onActionResult(data)
             if (data.diamondReward or 0) > 0 then
                 rewards[#rewards + 1] = { type = "diamond", amount = data.diamondReward }
             end
+            leaveDungeonPageForReward()
             require("ui.hud.popup.RewardPopup").show("扫荡奖励", rewards)
         else
             print("[DungeonPage] TOWER_SWEEP FAIL: " .. tostring(data.reason))

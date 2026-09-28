@@ -525,9 +525,10 @@ function M.drawDetailPanel(vg)
     local btnKey = isTerminal and "ctp_reset_single" or "ctp_activate"
     local btnAccent = isTerminal and "red" or "green"  -- [暗黑化 P1-B3] 重置=红 激活=绿
     local btnText = isTerminal and "重置" or (isLit and "已激活" or "激活")
+    -- 按钮文字：可操作=亮金，已激活不可再点=棕色
     local btnTextR, btnTextG, btnTextB = 255, 214, 102
     if isLit and not isTerminal then
-        btnTextR, btnTextG, btnTextB = 196, 160, 90
+        btnTextR, btnTextG, btnTextB = 0x8d, 0x5f, 0x41
     end
 
     local _bf2 = BF.begin(vg, btnKey, TFD.btnCX, TFD.btnCY, TFD.btnW, TFD.btnH)

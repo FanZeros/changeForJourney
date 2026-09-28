@@ -276,7 +276,7 @@ local img = {
     confirmBtn  = -1,    -- UI_AN_LV.png 确认按钮
     cancelBtn   = -1,    -- UI_AN_FANG.png 取消按钮（灰色）
     resetConfBg = -1,    -- UI_TY_EJQRK.png 重置确认九宫格背景
-    goldCoin    = -1,    -- UI_icon_JB.png 金币图标
+    goldCoin    = -1,    -- UI_icon_JB_X.png 金币图标
     iconUp      = -1,    -- ICON_UP.png 可提升角标（绿色箭头）
     redDot      = -1,    -- ICON_HD.png 红点角标
     -- 资源栏

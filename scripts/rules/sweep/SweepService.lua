@@ -31,12 +31,14 @@ SweepService.SWEEP_STAGE_COUNT = 1
 -- ======================== 执行扫荡 ========================
 
 --- 消耗 count 张扫荡券，只扫最高已通关，奖励按次数相乘
+--- 经验按指定队伍发放（默认队1）：扫哪队，哪队出战角色吃经验
 ---@param uid number
 ---@param count number|nil
+---@param teamIdx number|nil 队伍 1~3，默认 1
 ---@return boolean ok
 ---@return string|nil err
 ---@return table|nil result  { gold, heroExp, playerExp, equipCount, scrolls, stages }
-function SweepService.Sweep(uid, count)
+function SweepService.Sweep(uid, count, teamIdx)
     count = math.floor(tonumber(count) or 1)
     if count < 1 then count = 1 end
     if count > SweepService.MAX_COUNT then count = SweepService.MAX_COUNT end
@@ -88,11 +90,29 @@ function SweepService.Sweep(uid, count)
     end
     local sweepStages = { sweepEntry }
 
-    -- 出战英雄数
-    local deployed  = heroesData.deployed or {}
+    -- 出战英雄：按指定队伍取槽位（排除空槽 0）；队1 无 teams 结构时回退 deployed 镜像
+    teamIdx = math.tointeger(teamIdx or 1) or 1
+    if teamIdx < 1 or teamIdx > 3 then teamIdx = 1 end
+    local TeamSlots = require("shared.heroes.TeamSlots")
+    TeamSlots.normalize(heroesData)
+    local teamSlots = heroesData.teams and heroesData.teams[teamIdx]
+        and heroesData.teams[teamIdx].slots or nil
+    ---@type integer[]
+    local deployed = {}
+    if teamSlots then
+        for _, slot in ipairs(teamSlots) do
+            local num = tonumber(slot) or 0
+            if num > 0 then deployed[#deployed + 1] = num end
+        end
+    else
+        for _, slot in ipairs(heroesData.deployed or {}) do
+            local num = tonumber(slot) or 0
+            if num > 0 then deployed[#deployed + 1] = num end
+        end
+    end
     local heroCount = #deployed
     if heroCount == 0 then
-        return false, "未出战英雄"
+        return false, "该队伍未出战英雄"
     end
 
     -- ── 计算奖励（与挂机/离线统一走 IdleIncomeConfig） ──
@@ -262,6 +282,7 @@ function SweepService.Sweep(uid, count)
         scrollDrops     = scrollDrops,
         ticketLeft      = currency.sweepTicket,
         sweepStages     = sweepStageIds,  -- 实际扫荡的关卡列表
+        teamIdx         = teamIdx,        -- 经验发放队伍
     }
 end
 

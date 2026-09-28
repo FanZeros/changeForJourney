@@ -402,7 +402,12 @@ local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, locked and 36 or 48)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(160, 145, 120, locked and 140 or 200))
+        -- 空位"+"：可放=亮色，锁定=棕色
+        if locked then
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        else
+            nvgFillColor(vg, nvgRGBA(160, 145, 120, 200))
+        end
         if draggingSource and occupied then
             local icon = heroIconHandle(vg, slot.heroId)
             if icon and icon >= 0 then
@@ -547,7 +552,7 @@ function M.drawTeamTabs(vg)
         if isLocked then
             label = tostring(i)
             nvgFontSize(vg, 24)
-            nvgFillColor(vg, nvgRGBA(150, 150, 165, 255))
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 锁定=棕色
             if img.lock and img.lock >= 0 then
                 drawImageCentered(vg, img.lock, x + 22, y + TAB_H * 0.5, 28, 28, 0.8)
             end

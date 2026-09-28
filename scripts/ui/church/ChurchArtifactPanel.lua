@@ -729,7 +729,12 @@ function M.drawContent(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, MERGE_BTN.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(MERGE_BTN.TEXT_R, MERGE_BTN.TEXT_G, MERGE_BTN.TEXT_B, enabled and 255 or 180))
+    -- 按钮文字：可用=亮深绿，不可用=棕色
+    if enabled then
+        nvgFillColor(vg, nvgRGBA(MERGE_BTN.TEXT_R, MERGE_BTN.TEXT_G, MERGE_BTN.TEXT_B, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    end
     local label
     if state.rerollMode then
         label = "确认置换" .. tostring(rerollSelectedCount) .. "/2"

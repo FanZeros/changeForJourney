@@ -25,6 +25,9 @@ function UnitAttributes.create(cfg)
     -- 默认攻击类型
     self.atkType = cfg.atkType or AD.ATK_SLASH
 
+    -- 单位等级（不是数值属性，单独存放）；护盾成长层用它做派生等级因子
+    self.unitLevel = cfg.unitLevel or 1
+
     -- 四层数据表
     self.base    = {}   -- 基础值（等级/职业/面板数据）
     self.derived = {}   -- 六围派生贡献
@@ -169,6 +172,7 @@ function UnitAttributes:clone()
     -- 标量字段
     copy.armorType = self.armorType
     copy.atkType   = self.atkType
+    copy.unitLevel = self.unitLevel
     copy.atkCoeff  = self.atkCoeff
     copy.dmgSpread = self.dmgSpread
     copy._healFrac = self._healFrac
@@ -363,6 +367,29 @@ function UnitAttributes:recalc()
     local armor = math.max(0, self.final[AD.ARMOR] or 0)
     self.final[AD.RESISTANCE] = (0.01 * armor) / (0.01 * armor + 1) * 100
     self._uncapped[AD.RESISTANCE] = self.final[AD.RESISTANCE]
+
+    -- 5.5) 护盾成长层（Shield Scaling）—— 详见 AttributeDef.SHIELD_SCALING 注释
+    --   问题：护盾三来源全是线性增长，而 HP/伤害随等级指数爆炸，中后期护盾占比塌到≈0。
+    --   修法：把护盾锚定到指数增长的 HP（hpRatio），并给派生护盾一个随等级放大的因子。
+    --   门控：仅对「本身已有护盾来源」的单位生效（preGrowthES > 0），不给无盾单位凭空加盾。
+    local ss = AD.SHIELD_SCALING
+    if ss and ss.enabled then
+        local preGrowthES = self.final[AD.ENERGY_SHIELD] or 0
+        if preGrowthES > 0 then
+            local maxHpFinal = self.final[AD.MAX_HP] or 0
+            local derivedES  = self.derived[AD.ENERGY_SHIELD] or 0
+            local lvl = self.unitLevel or 1
+            if lvl < 1 then lvl = 1 end
+            local levelFactor = 1 + (lvl - 1) * (ss.derivedLevelFactor or 0)
+            -- HP 锚定 + 派生等级放大；附加层不再被 esBonus/finalESBonus 二次放大
+            local extra = maxHpFinal * (ss.hpRatio or 0) + derivedES * (levelFactor - 1)
+            if extra > 0 then
+                local newES = preGrowthES + extra
+                self.final[AD.ENERGY_SHIELD] = newES
+                self._uncapped[AD.ENERGY_SHIELD] = newES
+            end
+        end
+    end
 
     -- 6) 恢复战斗 HP（不让公式覆盖运行时血量）
     --    savedHp 为 nil 仅在首次 create → recalc 时，此时 final[HP] 保持公式值（由 fillHp 初始化）

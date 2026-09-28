@@ -195,6 +195,8 @@ local function initLaneUnits(lane)
         u._artifactDeathHandled = nil
         u._towerDeathNotified = nil
         u.reviveTimer = nil
+        u._fallen = nil
+        u._fallenPending = nil
         TAL.initUnit(u)
     end
     for _, u in ipairs(lane.enemies) do
@@ -286,12 +288,51 @@ local function tickLane(lane, dt)
                 unit._towerDeathNotified = true
                 DungeonBattle.onAllyDeath(unit)
             end
-            if not ART.onAllyDeath(unit) then
-                TAL.onAllyDeath(unit, lane.allies, BattleCombat.syncUnitHp)
+            local revived = ART.onAllyDeath(unit)
+            if not revived then
+                revived = TAL.onAllyDeath(unit, lane.allies, BattleCombat.syncUnitHp)
+            end
+            if not revived then
+                -- [阵亡紧凑] 救不回：退场动画 → 移队尾 → 存活者前移补位（与主线同规则）
+                unit.atkProgress = 0
+                TM.removeUnit(unit)
+                SEM.removeUnit(unit)
+                unit._fallenPending = true
+                BattleCombat.setCardAnim(unit, {
+                    state = "dying", timer = 0, lungeDir = 1,
+                    knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
+                    noTombstone = true,
+                })
+            end
+        elseif unit.hp > 0 then
+            unit._artifactDeathHandled = nil
+        end
+    end
+    -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格
+    local allies = lane.allies
+    for i = #allies, 1, -1 do
+        local u = allies[i]
+        if u._fallenPending then
+            local st = BattleCombat.getAnimState(u)
+            if u.hp > 0 then
+                -- 退场途中被拉起（防御）：取消紧凑
+                u._fallenPending = nil
+            elseif st == "gone" or st == nil then
+                u._fallenPending = nil
+                u._fallen = true
+                table.remove(allies, i)
+                table.insert(allies, u)
+                for j = i, #allies - 1 do
+                    local moved = allies[j]
+                    if moved.hp > 0 then
+                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
+                            advanceDist = BattleLayout.STRIP_PITCH })
+                    end
+                end
             end
         end
     end
-    local allyAlive = BattleCombat.getAliveUnits(lane.allies)
+    local allyAlive = BattleCombat.getAliveUnits(allies)
     if #allyAlive == 0 and #lane.allies > 0 then
         lane.wiped = true
         print(string.format("[TowerTriBattle] 队%d 全灭", lane.teamIdx))

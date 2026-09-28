@@ -58,9 +58,12 @@ function BattleTriPage.setOnStageClear(cb) triOnStageClear = cb end
 function BattleTriPage.isOpen() return isOpen_ end
 
 --- 存档阵容晚于战斗页到达时，清掉已记住的编队，下一帧按真实槽位重建。
-function BattleTriPage.invalidateTeams()
-    for _, drv in pairs(drivers) do
-        drv.teamSignature = nil
+---@param onlyTeams table<number, boolean>|nil 仅失效指定队伍；nil=全部（旧行为）
+function BattleTriPage.invalidateTeams(onlyTeams)
+    for idx, drv in pairs(drivers) do
+        if not onlyTeams or onlyTeams[idx] then
+            drv.teamSignature = nil
+        end
     end
 end
 
@@ -309,7 +312,9 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             local drv = drivers[row]
             if drv then
                 drv:activate()
-                BattleView.draw(vg, { allies = drv.allies, enemies = drv.enemies }, nil, true)
+                -- 无编队时完全不显示敌人（血条/名字等），只留空行提示
+                local enemiesShown = (#drv.allies > 0) and drv.enemies or {}
+                BattleView.draw(vg, { allies = drv.allies, enemies = enemiesShown }, nil, true)
             end
             nvgRestore(vg)
         end
@@ -591,12 +596,11 @@ function BattleTriPage.handleInput(wx, wy)
     local ix1, iy1, iw1, ih1 = interiorRect(1, logicalW, logicalH)
 
     -- [常驻] 行1 的获得弹窗：交给 RewardPopup 统一处理，保留同帧保护
-    -- （逐个获得未结束时点击只跳过动画）。此前直接 close() 会让通关后
-    -- 随手一点就把刚弹出的奖励关掉，看起来像「结算页不显示」。
+    -- （逐个获得未结束时点击只跳过动画）。弹窗打开时任意点击都消费：
+    -- 行内点击由 handleInputRegion 处理，行外点击也关闭弹窗，避免一直挂着。
     if RewardPopup.currentRowTag() then
-        if RewardPopup.handleInputRegion(wx, wy, ix1, iy1, iw1, ih1) then
-            return true
-        end
+        RewardPopup.handleInputRegion(wx, wy, ix1, iy1, iw1, ih1)
+        return true
     end
     local bs = require("ui.battle.scene.BattleScene")
 
@@ -710,7 +714,8 @@ function BattleTriPage.handleInput(wx, wy)
         if allies then
             for i = 1, #allies do
                 local unit = allies[i]
-                if unit and unit.heroId then
+                -- [阵亡紧凑] 只响应存活且未退场的角色；已退到队尾的阵亡者不可点
+                if unit and unit.heroId and unit.hp > 0 and not unit._fallen then
                     local cx, cy = BattleLayout.cardPos("ally", i, #allies)
                     local sx = originX + cx * contentScale
                     local sy = originY + cy * contentScale

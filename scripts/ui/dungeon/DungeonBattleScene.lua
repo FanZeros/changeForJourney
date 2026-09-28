@@ -561,6 +561,10 @@ function DungeonScene.open(opts)
     -- 初始化所有单位
     for _, u in ipairs(state.allies) do
         u.atkProgress = 0
+        u._artifactDeathHandled = nil
+        u._towerDeathNotified = nil
+        u._fallen = nil
+        u._fallenPending = nil
         if u.attrs then
             u.attrs:fillHp()
             u.hp = u.attrs.final[AD.MAX_HP]
@@ -1110,6 +1114,43 @@ function DungeonScene.update(dt)
                 end
                 local cx = getCardCX(state.allies, idx)
                 SpineCardEffect.playRevive(cx, ALLY_CARD_CY, nil, "dungeon")
+            else
+                -- [阵亡紧凑] 救不回：退场动画 → 移队尾 → 存活者前移补位（与主线同规则）
+                unit.atkProgress = 0
+                TM.removeUnit(unit)
+                SEM.removeUnit(unit)
+                unit._fallenPending = true
+                BattleCombat.setCardAnim(unit, {
+                    state = "dying", timer = 0, lungeDir = 1,
+                    knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
+                    noTombstone = true,
+                })
+            end
+        end
+    end
+    -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格
+    do
+        local allies = state.allies
+        for i = #allies, 1, -1 do
+            local u = allies[i]
+            if u._fallenPending then
+                local st = BattleCombat.getAnimState(u)
+                if u.hp > 0 then
+                    -- 退场途中被拉起（训练木桩回血等）：取消紧凑，留在原位
+                    u._fallenPending = nil
+                elseif st == "gone" or st == nil then
+                    u._fallenPending = nil
+                    u._fallen = true
+                    table.remove(allies, i)
+                    table.insert(allies, u)
+                    for j = i, #allies - 1 do
+                        local moved = allies[j]
+                        if moved.hp > 0 then
+                            BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
+                                advanceDist = require("core.BattleLayout").STRIP_PITCH })
+                        end
+                    end
+                end
             end
         end
     end
@@ -1122,6 +1163,9 @@ function DungeonScene.update(dt)
                     unit.attrs:fillHp()
                     syncUnitHp(unit)
                     unit.atkProgress = 0
+                    unit._fallen = nil
+                    unit._fallenPending = nil
+                    unit._artifactDeathHandled = nil
                     BattleCombat.clearCardAnim(unit)
                     BattleCombat.clearHitFlash(unit)
                 end

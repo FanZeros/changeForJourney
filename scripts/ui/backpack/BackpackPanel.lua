@@ -1007,11 +1007,10 @@ local function drawBody(vg)
             local cx = PZSX.FIRST_CX + (i - 1) * (PZSX.SIZE + PZSX.GAP)
             local didScale = BF.begin(vg, "bp_filter_" .. i, cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE)
             local checked = decomposeState.qualitySet[i] == true
-            -- 勾选=框内右下对勾；未勾选保持原样，外侧不额外描框
+            -- 勾选=框内居中对勾；未勾选保持原样，外侧不额外描框
             QualityMark.draw(vg, i, cx, PZSX.CY, PZSX.SIZE, 1.0)
             if checked and imgCheckmark >= 0 then
-                DrawUtil.drawImageCentered(vg, imgCheckmark,
-                    cx + PZSX.SIZE * 0.5 - 16, PZSX.CY + PZSX.SIZE * 0.5 - 16, 30, 30, 1.0)
+                DrawUtil.drawImageCentered(vg, imgCheckmark, cx, PZSX.CY, 40, 40, 1.0)
             end
             BF.finish(vg, didScale)
         end

@@ -293,7 +293,7 @@ local function filterCenter(quality)
 end
 
 --- 稀有度勾选条：与背包分解页同款——右上角一排品质框（品质小图即框体），
---- 1-6 档可多选；勾选=框内右下对勾；全不勾即全部，无“全部”按钮。
+--- 1-6 档可多选；勾选=框内居中对勾；全不勾即全部，无“全部”按钮。
 local function drawFilters(vg)
     for quality = 1, QualityMark.count() do
         local cx, cy = filterCenter(quality)
@@ -304,8 +304,7 @@ local function drawFilters(vg)
             text(vg, cx, cy, label, 24, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 2)
         end
         if checked and imgCheck >= 0 then
-            DrawUtil.drawImageCentered(vg, imgCheck,
-                cx + FILTER.size * 0.5 - 16, cy + FILTER.size * 0.5 - 16, 30, 30, 1)
+            DrawUtil.drawImageCentered(vg, imgCheck, cx, cy, 40, 40, 1)
         end
         BF.finish(vg, feedback)
     end

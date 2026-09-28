@@ -48,29 +48,29 @@ local HINT = {
 local TEAM_ROW = {
     HEADER_Y   = 292,                       -- 号位表头（1号位~4号位，只画一行，三队共用）
     HEADER_FONT = 28,
-    ROW_CY     = { 460, 792, 1124 },        -- 每队行的 y 中心（行底 1284，仍在顶部背景图 1349 内）
+    ROW_CY     = { 519, 937, 1355 },        -- 每队行的 y 中心（行3底 1559 < 背包面板顶 1569）
     LABEL_X    = 76,                        -- 队标签中心 x
-    LABEL_W    = 100, LABEL_H = 320,        -- 队标签底板（行距 332，板间 12px 缝；子格栈高 312 收进板内）
+    LABEL_W    = 100, LABEL_H = 408,        -- 队标签底板（行距 418，板间 10px 缝；子格栈高 398 收进板内）
     LABEL_FONT = 26,
     LOCK_FONT  = 20,
-    CX_LIST    = { 252, 476, 700, 924 },    -- 4 个号位列中心 x（间距 224，适配大格）
-    SUB_SIZE   = 100,                       -- 子格边长（80→100，接近原单队布局的 130）
-    SUB_GAP    = 6,
-    CELL_LOCK_FONT = 22,
+    CX_LIST    = { 252, 476, 700, 924 },    -- 4 个号位列中心 x（间距 224）
+    SUB_SIZE   = 130,                       -- 子格边长（与原单队布局一致的大格）
+    SUB_GAP    = 4,
+    CELL_LOCK_FONT = 26,
 }
 
 -- 下半部分背景 UI_TJP_1（九宫格，与背包/遗物背包一致）
--- [行式布局加大格子] CY 1689→2025：面板顶 1118→1314，给三队 100px 大格腾空间（底部溢出屏幕被裁剪）
+-- [行式布局 130px 大格] 面板顶 1569（行3底 1559 之下 10px），底部溢出屏幕被裁剪
 local LOWER_PANEL = {
-    CX = 540, CY = 2025, W = 1080, H = 1422,
+    CX = 540, CY = 2280, W = 1080, H = 1422,
     IT = 200, IR = 10, IB = 200, IL = 10,
 }
 
 -- 标题装饰 + 文字
 local TITLE = {
-    -- [行式布局] 背包标题随三队行区加高整体下移（面板顶 1314 + 156）
-    DECO_CX = 540, DECO_CY = 1470, DECO_W = 660, DECO_H = 60,
-    TEXT_X = 540, TEXT_Y = 1470,
+    -- [行式布局] 背包标题随三队行区加高整体下移（面板顶 1569 + 140）
+    DECO_CX = 540, DECO_CY = 1709, DECO_W = 660, DECO_H = 60,
+    TEXT_X = 540, TEXT_Y = 1709,
     FONT = 40,
     R = 0x45, G = 0x45, B = 0x45,
     TEXT = "神器背包",
@@ -97,10 +97,10 @@ local GRID = {
     GAP = 30,
     COLS = 5,
     MARGIN_LEFT = 80,  -- (1080 - 5*160 - 4*30) / 2
-    -- [行式布局] 网格顶随面板下压至 1530；可视高 514 ≈ 2.7 行（可滚动）
-    CLIP_TOP = 1530,
+    -- [行式布局] 网格顶随面板下压至 1765；可视高 279 ≈ 1.6 行（可滚动）
+    CLIP_TOP = 1765,
     CLIP_BOTTOM = 2044,
-    FIRST_ROW_TOP = 1530,
+    FIRST_ROW_TOP = 1765,
 }
 
 GRID.CLIP_H = GRID.CLIP_BOTTOM - GRID.CLIP_TOP
@@ -376,7 +376,7 @@ local function toggleRerollSelect(artifact)
     if not artifact then return end
     local id = tostring(artifact.id)
     if isArtifactEquippedAnyTeam(id) then
-        showFloat("已安装神器不能置换", 540, 1120)
+        showFloat("已安装神器不能置换", 540, 1700)
         return
     end
     for i, selectedId in ipairs(state.rerollSelectedIds) do
@@ -386,13 +386,13 @@ local function toggleRerollSelect(artifact)
         end
     end
     if #state.rerollSelectedIds >= 2 then
-        showFloat("最多选择2个神器", 540, 1120)
+        showFloat("最多选择2个神器", 540, 1700)
         return
     end
     if #state.rerollSelectedIds == 1 then
         local first = findArtifactById(state.rerollSelectedIds[1])
         if first and tonumber(first.quality) ~= tonumber(artifact.quality) then
-            showFloat("请选择同品质神器", 540, 1120)
+            showFloat("请选择同品质神器", 540, 1700)
             return
         end
     end
@@ -487,18 +487,18 @@ function M.init(vg)
             state.selectedTeam = nil
             state.selectedSlot = nil
             state.selectedSubSlot = nil
-            showFloat("请选择槽位安装神器（任一队伍行）", 540, 1400)
+            showFloat("请选择槽位安装神器（任一队伍行）", 540, 1540)
         end
         ArtifactDetailPanel.hide()
     end)
     ArtifactDetailPanel.setOnRefine(function(artifact)
         local Protocol = ctx_ and ctx_.getProtocol and ctx_.getProtocol() or nil
         if not Protocol then
-            showFloat("网络未连接", 540, 1620)
+            showFloat("网络未连接", 540, 1900)
             return
         end
         sendAction(Protocol.ACTION_TYPES.ARTIFACT_REFINE_VALUE, { artifactId = artifact.id })
-        showFloat("正在洗练神器数值", 540, 1620)
+        showFloat("正在洗练神器数值", 540, 1900)
     end)
 
     if img.topBg < 0 then
@@ -530,6 +530,17 @@ function M.drawBg(vg)
         nvgBeginPath(vg)
         nvgRect(vg, 0, 0, DESIGN_W, TOP_BG.H)
         nvgFillColor(vg, nvgRGBA(44, 42, 48, 255))
+        nvgFill(vg)
+    end
+
+    -- [130px 大格] 顶部背景图只到 y=1349，行区延伸到 y≈1559。
+    -- 图片底边(亮~116)与下方空白(黑)之间有明暗跳变；补一块暗色底衔接
+    -- 背景图底边与背包面板顶，遮住左右边距与行板缝隙处露出的跳变。
+    local lowerTop = LOWER_PANEL.CY - LOWER_PANEL.H * 0.5
+    if lowerTop > TOP_BG.H then
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, TOP_BG.H, DESIGN_W, lowerTop - TOP_BG.H)
+        nvgFillColor(vg, nvgRGBA(30, 28, 34, 255))
         nvgFill(vg)
     end
 
@@ -568,7 +579,14 @@ function M.drawContent(vg)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, 30, rowCy - TEAM_ROW.LABEL_H * 0.5,
             DESIGN_W - 60, TEAM_ROW.LABEL_H, 16)
-        nvgFillColor(vg, nvgRGBA(24, 22, 28, locked and 120 or 170))
+        -- [130px 大格] 行底板改为不透明：三队行区跨越顶部背景图底边(1349)，
+        -- 半透明底板会让行3 上下透出不同背景产生接缝；不透明后无视背景，彻底消除。
+        -- 未解锁行用更暗一档的纯色区分（不再靠 alpha）。
+        if locked then
+            nvgFillColor(vg, nvgRGBA(26, 24, 30, 255))
+        else
+            nvgFillColor(vg, nvgRGBA(40, 36, 46, 255))
+        end
         nvgFill(vg)
 
         -- 队标签（左侧竖块）

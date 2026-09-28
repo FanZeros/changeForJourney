@@ -683,7 +683,8 @@ function DungeonPage.draw(vg)
             local cardCX = CARD_X + CARD_W * 0.5  -- 540
             local cardY = CARD_Y  -- 210 (gold_mine)
             local cardCY = cardY + CARD_H * 0.5  -- 414
-            TM.registerHotspot("dungeon_gold_mine", cardCX, cardCY, CARD_W, CARD_H)
+            -- [横屏接线 0928] 副本页横屏走全窗 letterbox 模态，热点归属 'modal' 上下文
+            TM.registerHotspot("dungeon_gold_mine", cardCX, cardCY, CARD_W, CARD_H, "modal")
         end
     end
 

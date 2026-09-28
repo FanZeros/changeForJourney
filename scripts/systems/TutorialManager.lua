@@ -12,7 +12,6 @@ local TutorialConfig     = require("config.TutorialConfig")
 local DrawUtil           = require("core.DrawUtil")
 local GameConfig         = require("config.GameConfig")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
-local ViewportH          = require("core.Viewport")  -- 面板偏移换算（侧栏热点）
 
 local TutorialManager = {}
 
@@ -335,14 +334,16 @@ end
 ---@param cy number  中心 Y（设计坐标）
 ---@param w  number  宽度
 ---@param h  number  高度
----@param panelId? string 注册方所在面板 'left'|'right'|nil(=center 主渲染)
----   两个空间同为 DS 缩放：侧栏设计坐标只需平移面板 base 偏移差（486/栏）
+---@param panelId? string 注册方所在面板 'left'|'right'|'modal'|nil(=center)
+---   绘制时 boot 按此选择 Viewport 变换，热点坐标与面板内容自动对齐
 function TutorialManager.registerHotspot(key, cx, cy, w, h, panelId)
-    if panelId == 'left' or panelId == 'right' then
-        local V = ViewportH
-        cx = cx + (V.PANELS[panelId].bx - V.PANELS.center.bx)
-    end
-    hotspots_[key] = { cx = cx, cy = cy, w = w, h = h }
+    -- [横屏接线 0928] 存原始 design 坐标 + 所属面板；绘制时由 boot 用对应面板的
+    -- Viewport 变换包裹，热点坐标即与该面板内容对齐（修复此前 base 单位偏移混入 design 坐标的错位）
+    -- panel: 'left'/'right'=侧栏面板 viewport；'center'=中栏面板 viewport；
+    --        'modal'=全窗 letterbox（副本页等 HorizonDrawPageModal 绘制的元素）
+    local panel = panelId
+    if panel ~= 'left' and panel ~= 'right' and panel ~= 'modal' then panel = 'center' end
+    hotspots_[key] = { cx = cx, cy = cy, w = w, h = h, panel = panel }
 end
 
 --- 清空本帧热点缓存（在每帧 update 开始时调用，确保热点数据是最新帧注册的）
@@ -366,6 +367,17 @@ function TutorialManager.getCurrentHighlight()
     return step and step.highlight or nil
 end
 
+--- 获取当前步骤高亮热点所属面板（'left'|'right'|'center'）
+--- boot 据此选择 Viewport 变换绘制引导层，使 design 坐标热点与面板内容对齐
+---@return string panelId
+function TutorialManager.getHotspotPanel()
+    local step = getCurrentStep()
+    if not step or not step.highlight then return 'center' end
+    local hs = hotspots_[step.highlight]
+    if hs and hs.panel then return hs.panel end
+    return 'center'
+end
+
 --- 设置新获得英雄的 ID（用于 character_new_hero 热点定位）
 local newHeroId_ = nil
 ---@param heroId number|nil
@@ -385,6 +397,11 @@ end
 local function startGroupInternal(groupId, triggerScenarioId)
     local group = TutorialConfig[groupId]
     if not group then return end
+    -- [横屏接线 0928] 跳过已禁用引导组（依赖的 UI 在去多人化重构中删除，触发会永久卡屏）
+    if group.disabled then
+        print("[TutorialManager] group " .. tostring(groupId) .. " disabled, skip")
+        return
+    end
     -- 排除触发 id 本身，检查是否还有其他 triggerScenario 被 claimed（说明真的完成过了）
     if isGroupCompleted(groupId, triggerScenarioId) then
         return
@@ -441,11 +458,26 @@ end
 ---@param dx number 设计坐标 X
 ---@param dy number 设计坐标 Y
 ---@return boolean consumed
-function TutorialManager.handleClick(dx, dy)
+function TutorialManager.handleClick(dx, dy, pid)
     if not activeGroup_ or animState_ == "out" then return false end
 
-    -- 跳过按钮点击检测（延迟显示后才可点击）
-    if groupElapsed_ >= SKIP_BTN_DELAY then
+    -- [横屏接线 0928] 计算当前高亮热点所属面板
+    local step0 = getCurrentStep()
+    local hsPanel = 'center'
+    if step0 and step0.highlight then
+        local hs0 = hotspots_[step0.highlight]
+        if hs0 and hs0.panel then hsPanel = hs0.panel end
+    end
+    -- 面板门控仅对 click_highlight 步骤生效：
+    -- enter_panel_*/drag/gacha 类步骤必须放行（玩家要点页签/拖角色才能触发事件）
+    local gatePanel = step0 and step0.advanceOn == "click_highlight" and not step0.invisible
+    if gatePanel and pid and pid ~= hsPanel and pid ~= 'modal' then
+        return true
+    end
+
+    -- 跳过按钮点击检测：目标面板内或 letterbox 上下文（tri/modal，坐标由 boot 转换）
+    local skipCtxOk = (not pid) or pid == hsPanel or pid == 'tri' or pid == 'modal'
+    if skipCtxOk and groupElapsed_ >= SKIP_BTN_DELAY then
         if DrawUtil.hitTest(dx, dy, SKIP_BTN_CX, SKIP_BTN_CY, SKIP_BTN_W, SKIP_BTN_H) then
             print("[TutorialManager] skip button clicked, skipping group " .. tostring(activeGroup_))
             TutorialManager.skipCurrentGroup()

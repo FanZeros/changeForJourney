@@ -61,6 +61,7 @@ local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库 + 画廊验收页
 local StandaloneSave     = require("boot.StandaloneSave") -- [单机存档] 本地快照/恢复（无联网）
 local ClientMsgHandler   = require("runtime.ClientMessageHandler")
+local TutorialManager    = require("systems.TutorialManager")  -- [横屏接线 0928] 新手引导(去多人化重构时接线丢失,此处恢复)
 local LocalActionBridge  = require("runtime.LocalActionBridge")
 local StandaloneBoot     = require("boot.StandaloneBoot")
 local StandaloneRT       = require("boot.StandaloneRT")
@@ -376,6 +377,7 @@ function Standalone.Start()
         { "LevelUpPopup", function() LevelUpPopup.init(vg) end },
         { "PlayerInfoPanel", function() PlayerInfoPanel.init(vg) end },
         { "SpinePowerUp", function() SpinePowerUpEffect.init() end },
+        { "TutorialManager", function() TutorialManager.init(vg, PlayerStore) end },
         { "bootWiring", function() Standalone._bootWiring() end },
         { "firstStage", function()
             -- [启动优化] 初始阵容同步 + 关卡重载：独立一帧执行
@@ -633,6 +635,8 @@ local function tryPlayPendingStory_()
         onFinish = function()
             if scenarioId then
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
+                -- [横屏接线 0928] 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
+                ClientMsgHandler.setPendingTutorialNotify(scenarioId)
                 localSendAction("claim_scenario_reward", { scenarioId = scenarioId })
                 local followId = require("systems.StoryPlayer").followOf(scenarioId)
                 if followId then
@@ -897,6 +901,19 @@ function HandleUpdate(eventType, eventData)
     end
 
     BottomNav.update(dt)
+
+    -- [横屏接线 0928] 新手引导每帧驱动（原 ClientUpdate 接线，重构时丢失）
+    -- clearHotspots: 每帧清空热点缓存，本帧渲染时各 UI 模块重新注册
+    TutorialManager.clearHotspots()
+    TutorialManager.update(dt)
+    -- 通知引导当前所在面板（enter_panel_* 类步骤推进；tab2 日志页已移除不再通知）
+    do
+        local TAB_PANEL_EVENTS = { [3] = "enter_panel_battle", [5] = "enter_panel_dungeon" }
+        local tutTab = BottomNav.getSelectedIndex()
+        if TAB_PANEL_EVENTS[tutTab] then
+            TutorialManager.notifyEvent(TAB_PANEL_EVENTS[tutTab])
+        end
+    end
 
     -- ── BGM 轨道切换（优先级：城镇建筑 > 标签页）──
     -- [LetterIntro] 开场链（信/过场/情景1）期间不自动切轨，轨道由开场链自控

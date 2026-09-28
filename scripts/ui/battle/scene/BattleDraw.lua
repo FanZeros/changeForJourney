@@ -333,25 +333,19 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             local tempCur = unit.attrs and (unit.attrs.tempEnergyShield or 0) or 0
             local esMaxVal = unit.attrs and (unit.attrs.final["energyShield"] or 0) or 0
             if esMaxVal > 0 and (esCur > 0 or tempCur > 0) then
-                local esText = esCur > 0 and ("+" .. NumberUtil.format(math.floor(esCur))) or ""
-                local tempText = tempCur > 0 and ("+" .. NumberUtil.format(math.floor(tempCur))) or ""
+                -- 常规护盾 + 临时护盾合并为单一数值显示（不再 "+N+M" 拖长）
+                local shieldTotal = math.floor(esCur) + math.floor(tempCur)
+                local esText = shieldTotal > 0 and ("+" .. NumberUtil.format(shieldTotal)) or ""
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 28)
                 local hpW = nvgTextBounds(vg, 0, 0, hpText)
                 local esW = esText ~= "" and nvgTextBounds(vg, 0, 0, esText) or 0
-                local tempW = tempText ~= "" and nvgTextBounds(vg, 0, 0, tempText) or 0
-                local totalW = hpW + esW + tempW
+                local totalW = hpW + esW
                 local startX = cx - totalW * 0.5
                 drawTextStroke(vg, startX + hpW * 0.5, cy + hpValOffY, hpText,
                     28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0x66, 0xf8, 0x62, 4)
-                local shieldX = startX + hpW
                 if esText ~= "" then
-                    drawTextStroke(vg, shieldX + esW * 0.5, cy + hpValOffY, esText,
-                        28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-                    shieldX = shieldX + esW
-                end
-                if tempText ~= "" then
-                    drawTextStroke(vg, shieldX + tempW * 0.5, cy + hpValOffY, tempText,
+                    drawTextStroke(vg, startX + hpW + esW * 0.5, cy + hpValOffY, esText,
                         28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
                 end
             else

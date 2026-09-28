@@ -17,7 +17,7 @@ local function check(name, cond, detail)
 end
 
 local LANGS = { "zh_CN", "zh_TW", "en", "ja", "ko" }
-local N = 18110  -- 最长文本（ml46 外推上限），验占位替换 + 宽度
+local N = 19330  -- 最长文本（ml46 外推上限，v2.62），验占位替换 + 宽度
 
 for _, lang in ipairs(LANGS) do
     local ok = I18n.set(lang)

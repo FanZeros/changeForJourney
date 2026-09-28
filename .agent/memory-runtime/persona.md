@@ -19,6 +19,8 @@
 
 ## 项目足迹（追加去重）
 
+- 2026-09-28 终焉之门：推荐战力单调性修正 + 章节怪物继承 + 章内战力梯度（v2.62）。回答用户三问：①下一章推荐低于上一章——battle-lab 实测阈值有真实回落（ml13<ml12 等），拟合脚本 `_proc/fit_stage_recommend.py` 加 **PAVA 保序 + ×1.02 最小章间梯度**（ceil 10，偏差 ≤12% 测试锁死），章间严格递增；②章内 5 关同值——stage 2..5 改向下一章首关 0.2/0.4/0.6/0.8 插值（取整 5、非降、<下一章首关，末章用外推 ml+1 虚拟下一章）；③怪物零重叠——新增 `_proc/inject_chapter_inheritance.py`（幂等），**必须按全局 chapter 链 1..345 跨文件处理**（第一版只查单文件内 chapter-1，漏掉 14 个跨难度衔接点，被新测试抓出），为零重叠章 x-2/x-4 关注入上一章高频普通怪（排 boss、types<3 追加/==3 替换末位，不改总怪数），共注入 180 关，全 345 章零重叠清零。`stage_recommend_test.lua` 重写 21 断言 + 新增 `stage_inheritance_test.lua` 9 断言 ALL PASS，回归全绿（i18n 28/切关/边界/主入口 validate/官方 build/LSP Error=0）。⚠️ 采样 JSON 是 gitignore 中间产物、沙箱丢失，本轮从测试 MEASURED 表反向重建。正式战力公式/结算/UI 布局未改。只推 `feat926/battle-lab`。[scope:project]
+
 - 2026-09-28 终焉之门：推荐战力五语词表（v2.61c）。`core/I18n.lua` 键值表五语块各加 `rec_power`/`rec_power_approx`（简推荐/繁推薦/英 Rec./日推奨/韩추천 + ≈，共 10 条），沿用 `expedition_lv` 的 `{0}` 占位符范式。关键：动态数字串走 `I18n.t(key,n)` 键值替换而非 draw-hook 原文查表（数字变→查不到），StageSelectDialog 已改用 `I18n.t`；译后串再经 hook 查不到原样返回无二次翻译。新增 `tests/i18n_rec_power_test.lua` 28 断言 ALL PASS，LSP 0 Error，主入口 validate lua_errors=0，切关回归 ALL PASS。只推 `feat926/battle-lab`。[scope:project]
 
 - 2026-09-28 终焉之门：推荐战力接入选关弹窗显示（v2.61b，玩家可见）。`StageSelectDialog` 中栏关卡行左中「推荐 N」20 号小字，三态：实测关与玩家总战力比较着色（达标绿/不足红/未知中性）、外推关「推荐≈N」蓝灰不比较、ml>46 无数据不绘制；未解锁行降透明同显。只读展示无门槛，宽度按左栏 ~124px 防御（22 号会撞卡面，降 20）。LSP 0 Error，主入口 validate lua_errors=0，切关回归 ALL PASS。五语词表与真人视觉验收待做，只推 `feat926/battle-lab`。[scope:project]

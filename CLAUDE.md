@@ -70,6 +70,64 @@
 - **用户验收通过（三处）+ 第二轮接入（同轮）**：用户确认属性页/觉醒页/转职确认弹窗三处关键词全部正常。随后接入：① 通天塔三选一 `TowerBuffPick`（3 卡各一实例；关键词点击**优先于整卡选中**；调用方 TowerBattleScene 已做 fit 反变换，设计坐标系直接对齐）；② 装备详情 compact 主面板套装词条 2/4/6 件行（`showActions ~= false` 区分主面板，对比面板/只读预览保持原样；输入插在锁图标/按钮判定之前）；③ KeywordText textColor 支持 alpha（保留套装激活/未激活半透明）。验证：26 项回归 PASS、官方 Build 成功、validate 60 帧 0 lua_errors。已推送（共 8 提交）。
 - **调研结论（未接入区域及原因）**：遗物（RelicDefs 381 处命中最高）**UI 层无 desc 渲染点**——详情面板不存在，RewardPopup 只画图标，需先新建遗物详情 UI 才有挂载点；神器详情 ArtifactDetailPanel 仅 2 处命中且自有数值高亮机制（橙色数值+灰色比例）与关键词染色冲突，价值低暂缓；星图天赋 TalentNodeDefs 仅 3 处暂缓。
 
+## 上次做了什么（2026-09-28，feat927 混淆增强三档：剥注释+字段改名）
+
+- 用户问「方法名可否改、注释为何没删」→ 实现 `--strip-comments`（默认，剥普通注释保留 `---@` 注解/`--[[@as]]`，@param 同步已接入）与 `--rename-fields`（实验，单文件私有字段改名，多重排除：跨文件/引擎声明/字符串出现/动态拼接文件/元方法）。
+- 相似度量化（tempGame 工具）：基线 100% → 改名 46% → +剥注释 39.3% → +字段改名 38.4%。**剥注释性价比最高（零风险 -6.7pp）；字段改名仅 -0.9pp 却改 API 表面，默认关闭**。三档均过官方 Build，行为等价 71/71、离线 0 真实回归。
+- 踩坑修复：token_fingerprint 误计 hidden channel WS/NL → 新增 syntax 指纹（只 default channel）；STRING 类型名 bug → NORMALSTRING/LONGSTRING；`__main__` 块位置 NameError → 移文件末尾。
+- protect_build.py 默认剥注释 + `--rename-fields/--emmylua-root` 开关。仍只 push feat927；完成后 AskUserQuestion；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-28，feat927 发布包源码相似度实测）
+
+- 用 tempGame 的 compare_lua_similarity.py 做 A/B：未混淆发布包 vs 源码 = **100% 对称相似/100% 逐字节行/361 exact**；L1 混淆发布包 vs 源码 = **46% 对称相似/2.8% 逐字节行/17 exact**（16 纯数据表 + DarkIcon 盲区）。
+- 残留 46% = 刻意保留的注释/字符串/对外字段名/排版（保可运行 + 过 LSP 的代价）；报告 `docs/pc-obfuscation-similarity-0928.md`。
+- 结论：保守 L1 消除逐字节泄露（100%→2.8%）；行级相似要归零须靠 L2 字节码（脚本对 `\x1bLua` 判 bytecode 不计行相似），Q1 仍待本机验证。
+- 方法：/workspace 隔离工程用官方 Build 分别产混淆 dist 与基线 dist。仍只 push feat927；完成后 AskUserQuestion；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-28，feat927 修复 Windows SyntaxError）
+
+- 用户本机跑 bat 步骤 1 报 protect_build.py:109 `\\!=` SyntaxError；heredoc 转义 bug，已修（line 109 + sh shebang），双分支沙箱复测 PASS，推送 b204359。
+- **流程教训（必须遵守）**：heredoc/shell 生成的每个 py/sh，commit 前独立跑语法校验（勿串在会被中断的 && 链里）；新脚本每条分支实跑过再提交；用户报本机错误先全仓库 grep 同类模式。
+- 用户下一步：本机重跑 bat 继续清单 §1-§4，回报 manifest 统计/实机回归/Q1 VERDICT。仍只 push feat927；完成后 AskUserQuestion。
+
+## 上次做了什么（2026-09-27，feat927 本机验证清单）
+
+- 新增 `electron-shell/WINDOWS_PROTECT_CHECKLIST.md`：本机 Windows 逐步骤验证 --protect 全链 + 实机回归 + L2 Q1 判定（含成功标志/失败回报模板/决策表）。
+- `lua_bytecode_poc.py` 增发生成 `poc_entry.lua`（Start() 包裹可直接当官方 Build 入口；lupa 已验 VERDICT ACCEPTS）。
+- 等待用户本机执行清单并回报（尤其 Q1 VERDICT 与实机启动/存档结果）；回报后按决策表定 L2 去留。
+- 仍只 push feat927 分支；完成后 AskUserQuestion；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-27，feat927 L1 接入打包 --protect 四步链）
+
+- 新增 `protect_build.py`：物化混淆工作区（361 Lua 混淆 + 非 Lua 复制 + assets 真实复制 + protect-report.json）；不改仓库源码/dist/game。
+- `prepare_local_dist.py` +`--scripts-root` 与资产闸门（manifest 缺 png/ogg 拒包）；`pack_release.py` +`--protect-scripts-root`；一键入口 `build_protected_windows.bat/.sh`。
+- **关键发现：官方 Build 不烘焙符号链接 assets/**（symlink→manifest 只剩 lua+json；真实复制→1226 项全烘焙）。默认真实复制，闸门双向 PASS。
+- 官方 Build（混淆版）成功：dist lua 与混淆源码 361/361 逐字节一致，344 含混淆名。回归全绿（21/21、8/8、残留0、71/71）。
+- 待本机验证：taptap-maker CLI 全链 + Electron 实机回归；Windows junction 行为。仍只 push feat927；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-27，feat927 修复 @param + 官方 Build 通过）
+
+- 给 `lua_obfuscator.py` 加 doc 注释同步：紧邻函数声明上方的注释块里 `@param 旧名`→该形参新名（仅本函数形参；注释与函数间夹代码则不关联；字符串里的 @param 属 NORMALSTRING 天然不动；类型名/描述保留；匿名函数跳过，实测全项目 1373 个 @param doc 块无一匿名）。
+- **结果**：全量 361 文件 @param 残留不匹配 219→0；行为等价 71/71 PASS；**官方 MCP Build 成功 0 Error，dist/assets/*.lua 产物确认是混淆代码**。推翻旧「去注释试点 Build 报 undefined-global」结论——根因是隔离工程缺 268 个引擎 .emmylua 类型定义，非混淆本身。
+- ⚠️ LSP `textDocument/diagnostic` workspace 汇总对磁盘替换返回陈旧缓存(注入语法错误都不报)，只有 didOpen/官方 Build 读最新内容；结论以 Build+dist 为准，勿信那个汇总接口。
+- 剩余限制：`scripts/core/DarkIcon.lua` 因 luaparser 中文 token 解析失败被安全跳过(仍明文，361中仅1个)；L1 产物仍可读明文，去阅读难度须叠加 L2(Q1 待本机验证)。
+- 依赖：`python3 -m venv ~/luaenv && ~/luaenv/bin/pip install luaparser lupa`。全部未接入 pack_release/build_local。仍只 push `feat927/ele-protection-research-0927`；完成后必须 AskUserQuestion；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-27，feat927 L1 混淆器 + L2 字节码 POC）
+
+- 把调研的 L1（AST 作用域重命名）实现为 `electron-shell/lua_obfuscator.py`：基于 luaparser 内置 ANTLR 树做作用域解析，token 级 splice，只改局部绑定（local/参数/for 变量/local function），字段名/方法名/全局/require 路径/字符串/EmmyLua 注释逐字节保留；解析失败或不通过 5 项等价校验的文件拒绝改写、原样复制。
+- 验证：`test_lua_obfuscator.py` 21/21 行为等价 PASS；全量 361 文件 344 改名/17 未变（16 纯数据表 + DarkIcon 解析失败安全拒绝）；`verify_obfuscation_sample.py`（lupa Lua5.4 真跑 + 确定性深度序列化）71/71 PASS。
+- L2：`lua_bytecode_poc.py` 本地验证标准 Lua5.4 字节码往返（header 1b4c75615400，-22.8%），生成 `poc_loader.lua` 自包含探针（lupa 输出 VERDICT: VM ACCEPTS Q1=yes）。
+- **已知限制（接入官方 Build 前必须处理）**：`---@param/@return` 注释旧参数名不随实参改名（219 文件），会触发 LSP param 不匹配告警 → 需参数不改名或同步替换注释名；DarkIcon 仍明文；L1 产物仍可读明文，去阅读难度须叠加 L2。
+- **待真实环境验证**：Q1 WASM Lua VM 是否接受字节码、Q2 manifest hash 是否运行时强校验（沙箱无 wasm 资产跑不了；本地 lupa 字节码未必匹配引擎 Lua 版本，正式化用引擎自带 luac/VM 内 dump）。
+- 依赖：`python3 -m venv ~/luaenv && ~/luaenv/bin/pip install luaparser lupa`。全部未接入 pack_release/build_local。仍只 push `feat927/ele-protection-research-0927`；完成后必须 AskUserQuestion 问下一步；令牌不进仓库/记忆。
+
+## 上次做了什么（2026-09-27，feat927/ele-protection-research-0927）
+
+- 基于 `feat926/ele-obfuscation-audit-0927` 建调研分支，只加文档不改流水线。
+- 产出 `docs/pc-protection-research-0927.md`：四级保护方案评估（L1 AST 混淆保留 EmmyLua 注释 / L2 Lua5.4 字节码需先 POC 验证 WASM VM 与 manifest 运行时校验 / L3 Electron 打包期静态加密+sendFile 内存解密+关 F12 / L4 完整性校验），路线图 P0-P4；P0=发布版关 DevTools，零成本高收益。
+- 本轮只 push `feat927/ele-protection-research-0927`；不推 workspace*。完成后必须 AskUserQuestion 问下一步，不得取消/退出任务，令牌不进仓库与记忆。
+
 ## 上次做了什么（2026-09-27，925 同步与存档再排查）
 
 - 开始核对时 `workspace925@aaa53e7` 已是当前分支祖先，合并返回 `Already up to date`；提交前远端继续推进到 `c614ec0`，已在任务分支合并（含战斗通关、招募及右栏宽度改动），没有推送基线。合并后 LSP 0 Error、Build 成功，三项针对性引擎回归 PASS。

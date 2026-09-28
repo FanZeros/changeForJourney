@@ -8,8 +8,8 @@
   "never_cancel_task": true,
   "never_end_without_askuserquestion": true,
   "askuserquestion_rule": "不能擅自取消或退出任务；每次交付或遇到阻碍都先简报，再真正调用 AskUserQuestion 工具，以选项询问下一步并等待用户选择。禁止仅以文字结束；记忆不等同于自动 hook。",
-  "dev_branch": "workspace926",
-  "push_policy": "分支操作以用户当前轮次授权为准。2026-09-28 本轮：护盾成长层在 feat926/shield-scaling-0928 开发，用户明确授权后 --no-ff 合入并推送 workspace926（merge 3fafff54）。不推 workspace/workspace925/其他分支，不强推。remote URL 不保留 PAT（内联凭据推送，grep ghp_ .git/config 验证 0）。不在远端 URL、代码或记忆中保存 PAT。",
+  "dev_branch": "按当前轮次指定的基线新建独立任务分支",
+  "push_policy": "当前轮次优先：基于指定基线新建独立分支；有提交时只推该新分支，绝不推 workspace 系列基线（除非用户当轮明确授权），不强推、不覆盖并发改动。历史：2026-09-28 护盾成长层经用户授权 --no-ff 合入并推送 workspace926（merge 3fafff54）。每次交付或受阻先简报，再调用 AskUserQuestion 提供下一步选项；不把 PAT 写入仓库、远端 URL、日志或记忆。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

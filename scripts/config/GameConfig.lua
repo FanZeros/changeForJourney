@@ -99,6 +99,17 @@ GameConfig.Battle = {
     TIME_LIMIT_SEC = 300,   -- 5 分钟
 }
 
+-- 战斗超时增伤（全战斗类型通用，敌我双方伤害同时放大，防止拖场）
+-- 语义：单场战斗持续超过 GRACE_SEC 后，每过 STEP_SEC 秒双方伤害 +STEP_BONUS，
+--       倍率封顶 MAX_MULT。通过 BattleCombat ctx.globalDmgMult 注入（不影响治疗）。
+GameConfig.BattleTimeout = {
+    ENABLED   = true,   -- 总开关
+    GRACE_SEC = 60,     -- 宽限期（秒）：战斗前 60 秒不增伤
+    STEP_SEC  = 10,     -- 每阶间隔（秒）
+    STEP_BONUS = 0.05,  -- 每阶伤害加成 +5%
+    MAX_MULT  = 3.0,    -- 倍率上限（300% 封顶）
+}
+
 -- 首通狂暴机制（防止肉+奶无限磨血；须早于 Battle.TIME_LIMIT_SEC）
 GameConfig.StageBerserk = {
     RAGE_TIME       = 120,   -- 一阶狂暴：2 分钟（限时 40%）

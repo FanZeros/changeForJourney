@@ -8,8 +8,8 @@
   "never_cancel_task": true,
   "never_end_without_askuserquestion": true,
   "askuserquestion_rule": "不能擅自取消或退出任务；每次交付或遇到阻碍都先简报，再真正调用 AskUserQuestion 工具，以选项询问下一步并等待用户选择。禁止仅以文字结束；记忆不等同于自动 hook。",
-  "dev_branch": "workspace927-keyword-system",
-  "push_policy": "分支操作以用户当前轮次授权为准。2026-09-28 本轮工作分支 = workspace927-keyword-system（关键词系统）。遗物重建误操作已 revert（d7a92c0c）回到基线 ddcc8266。只推当前功能分支，不推 workspace/workspace925/workspace926，不强推。远端并发提交先 fetch 核对。remote URL 不保留 PAT（内联凭据推送，推完 grep ghp_ .git/config 验证 0）。",
+  "dev_branch": "chore927/relic-backend-cleanup-0928",
+  "push_policy": "分支操作以用户当前轮次授权为准。2026-09-28 遗物后端彻底清理已完成并推送分支 chore927/relic-backend-cleanup-0928（commit d5855a48，基于 workspace927-keyword-system）。删除 8 个纯遗物模块，保留 RelicConditionHandler（天赋免疫/增伤基础设施）。只推当前功能分支，不推 workspace/workspace925/workspace926/workspace927-keyword-system，不强推。远端并发提交先 fetch 核对。remote URL 不保留 PAT（内联凭据推送，推完 grep ghp_ .git/config 验证 0）。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

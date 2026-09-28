@@ -141,6 +141,8 @@ local function bindLaneContext(lane)
         getEnemies = function() return lane.enemies end,
         ALLY_CARD_CY  = BattleLayout.STRIP_CY,
         ENEMY_CARD_CY = BattleLayout.STRIP_CY,
+        -- 战斗超时增伤：复用 DungeonBattle.elapsed（通天塔与副本同走 DungeonBattle 计时）
+        globalDmgMult = require("systems.BattleTimeout").calcMult(DungeonBattle.getElapsed()),
         onAttackHit = function(attacker, target, atkCX, atkCY, tgtCX, tgtCY, result, applyHit)
             local hasHeroEffect = attacker.heroId
                 and ProjectileSystem.hasHeroEffect(attacker.heroId)

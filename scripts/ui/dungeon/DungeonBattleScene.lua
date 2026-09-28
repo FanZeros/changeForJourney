@@ -913,6 +913,16 @@ function DungeonScene.update(dt)
 
     -- DungeonBattle 计时（狂暴阶段检测，狂暴加成施加到怪物与己方单位）
     DungeonBattle.update(logicDt, state.enemies, state.allies)
+
+    -- 战斗超时增伤：复用 DungeonBattle.elapsed，每帧回写全局伤害倍率（木桩 DPS 测试豁免）
+    if not DungeonBattle.isTrainingDummy() then
+        local _toMult = require("systems.BattleTimeout").calcMult(DungeonBattle.getElapsed())
+        local _bcs = BattleCombat.mountedState()
+        if _bcs and _bcs.ctx then
+            _bcs.ctx.globalDmgMult = _toMult
+        end
+    end
+
     ART.update(logicDt, state.allies)
 
     -- 战斗限时：超时自动判负

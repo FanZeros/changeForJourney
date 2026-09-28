@@ -513,7 +513,8 @@ function M.init(vg)
     img.collectionDrawBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SCDC_AN.png", 0)
     img.goldenKey         = nvgCreateImage(vg, "image/货币道具/UI_icon_HJYS.png", 0)
     img.gem               = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
-    img.diamondBig        = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
+    -- [图标统一 0928] diamondBig 与 gem 同贴图，复用句柄避免重复加载（无 delete，复用安全）
+    img.diamondBig        = img.gem
     img.confirmArrow      = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
     if img.collectionChestBg < 0 then
         print("[ChurchArtifactDrawPanel] WARN: UI_SCDC_KC1.png load failed")

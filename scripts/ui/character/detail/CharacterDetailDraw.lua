@@ -509,7 +509,8 @@ function M.initImages(vg)
     imgQualityBadges["UR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_UR.png", 0)
 
     img.attrDeco = nvgCreateImage(vg, "image/通用图标/ICON_XX.png", 0)
-    img.midDiv2  = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_FGXJ.png", 0)
+    -- [图标统一 0928] midDiv2 与 midDiv1 同贴图，复用句柄避免重复加载（无 delete，复用安全）
+    img.midDiv2  = img.midDiv1
 
     for _, st in ipairs(STAT_LAYOUT) do
         imgStatIcons[st.icon] = nvgCreateImage(vg, "image/通用图标/" .. st.icon .. ".png", 0)

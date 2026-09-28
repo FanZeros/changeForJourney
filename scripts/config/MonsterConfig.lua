@@ -741,6 +741,7 @@ function MC.createMonster(monsterId, level, opts)
         [AD.ATK_INTERVAL] = template.atkInterval,
         armorType         = template.armorType,
         atkType           = template.atkType,
+        unitLevel         = level,   -- 护盾成长层派生等级因子用
     }
 
     if category == "physical" then

@@ -729,7 +729,7 @@ function DungeonScene.draw(vg)
         local dps = 0
         local dur = BattleStats.getDuration()
         if dur > 0.1 then
-            dps = math.floor(BattleStats.getTotal("totalDamage") / dur)
+            dps = math.floor(BattleStats.getTotal("totalDamage", false) / dur)  -- false=波次桶(非累计)
         end
         drawTextStroke(vg, DB.TIME_X, DB.TIME_Y,
             string.format("已测试 %.1fs · DPS %s", DungeonBattle.getElapsed(), require("core.NumberUtil").format(dps)),

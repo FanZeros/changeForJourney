@@ -220,7 +220,7 @@ end
 -- ======================== 查询接口 ========================
 
 --- 战斗有效时长（秒，从首次伤害到最后一次活动）
----@param useAccum boolean|nil true 时返回累计时长（统计面板累计口径）
+---@param useAccum? boolean true 时返回累计时长（统计面板累计口径）
 ---@return number
 function BattleStats.getDuration(useAccum)
     local b = useAccum and accumBucket() or bucket()
@@ -230,7 +230,7 @@ end
 
 --- 按指定字段降序排序，返回英雄统计列表
 ---@param sortKey string "totalDamage" | "totalHeal" | "takenDamage"
----@param useAccum boolean|nil [累计统计] true 时读累计桶（跨场次）
+---@param useAccum? boolean 累计统计 true 时读累计桶（跨场次）
 ---@return table[] 排序后的统计条目数组
 function BattleStats.getSorted(sortKey, useAccum)
     local list = {}
@@ -246,7 +246,7 @@ end
 
 --- 求某字段在所有英雄上的总和
 ---@param field string
----@param useAccum boolean|nil [累计统计] true 时读累计桶（跨场次）
+---@param useAccum? boolean 累计统计 true 时读累计桶（跨场次）
 ---@return number
 function BattleStats.getTotal(field, useAccum)
     local sum = 0
@@ -258,7 +258,7 @@ function BattleStats.getTotal(field, useAccum)
 end
 
 --- 是否已有任何统计数据
----@param useAccum boolean|nil [累计统计] true 时看累计桶
+---@param useAccum? boolean 累计统计 true 时看累计桶
 ---@return boolean
 function BattleStats.hasData(useAccum)
     local src = useAccum and accumStats() or stats()

@@ -369,20 +369,35 @@ local LOCK_ICON_SIZE = 100
 
 --- 绘制建筑锁定遮罩（锁图标，等级解锁型附带解锁等级文字）
 --- @param tutorialControlled boolean|nil  true=由引导解锁（不显示等级文字），nil/false=显示等级文字
-local function drawBuildingLockOverlay(vg, cx, cy, buildingKey, tutorialControlled, levelOverride)
+local function drawBuildingLockOverlay(vg, cx, cy, buildingKey, tutorialControlled, levelOverride, labelOverride)
     drawImageCentered(vg, imgLock, cx, cy - 15, LOCK_ICON_SIZE, LOCK_ICON_SIZE, 0.85)
-    if not tutorialControlled then
+    -- labelOverride 优先（关卡门控建筑如铁匠铺："通关 2-4 解锁"）；
+    -- 其次等级门控（tutorialControlled=false 时画 "Lv.X 解锁"）；
+    -- 引导门控（tutorialControlled=true 且无 override）只画锁图标。
+    local label = labelOverride
+    if not label and not tutorialControlled then
         local unlockLv = levelOverride or ExpTable.getBuildingUnlockLevel(buildingKey)
-        local label
         if unlockLv <= 0 then
             label = "暂未开放"
         else
             label = "Lv." .. unlockLv .. " 解锁"
         end
+    end
+    if label then
         drawTextStroke(vg, cx, cy + 50, label,
             30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 220, 120, 3)
     end
+end
+
+--- 关卡门控建筑的锁标文字（stageId → "通关 2-4 解锁"）；非关卡门控返回 nil
+local function getStageUnlockLabel(buildingKey)
+    local _TM = require("systems.TutorialManager")
+    local sid = _TM.getBuildingUnlockStageId and _TM.getBuildingUnlockStageId(buildingKey)
+    if not sid then return nil end
+    local chapter = math.floor(sid / 100)
+    local stage = sid % 100
+    return "通关 " .. chapter .. "-" .. stage .. " 解锁"
 end
 
 -- ======================== Public API ========================
@@ -454,7 +469,8 @@ function TownScene.draw(vg)
             SMITH_TEXT_X, SMITH_TEXT_Y, "狱火锻炉")
     end
     if smithLocked then
-        drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true)
+        -- [关卡门控] 铁匠铺按"通关 2-4"解锁，锁标显示具体条件（原先只有锁图标）
+        drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true, nil, getStageUnlockLabel("smith"))
     end
     -- 铁匠铺红点（背包满→提示去分解）
     if not smithLocked and smithDecomposeRedDot then

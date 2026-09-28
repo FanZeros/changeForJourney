@@ -241,6 +241,14 @@ local function getMaxStageId()
     return battleData and tonumber(battleData.maxStageId) or 0
 end
 
+--- 获取建筑的关卡解锁阈值（stageId = chapter*100+stage）
+--- 未配置阈值的建筑（church/tavern 等引导解锁）返回 nil
+---@param buildingKey string  如 "smith"
+---@return number|nil
+function TutorialManager.getBuildingUnlockStageId(buildingKey)
+    return BUILDING_UNLOCK_THRESHOLDS[buildingKey]
+end
+
 --- 检查某建筑是否已被解锁（基于 maxStageId 和 clearedStages 判断）
 --- 解锁条件（满足任一即可）：
 ---   1. maxStageId > threshold（玩家已前进到下一关）

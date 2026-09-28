@@ -3,9 +3,12 @@
 > 本文档面向**下一个 agent**:零上下文接手,先通读本文件,再按「待办清单」执行。
 > **配装布局（已合入 workspace925）**：属性页隐藏装备槽和一键按钮，保留切角；配装页批量按钮置顶，内容下移 160px 预留词条。拖拽穿戴以 925 为准。
 >
-> 更新时间:2026-09-28 | 版本:v2.62-artifact-dualslot-30-60
+> 更新时间:2026-09-28 | 版本:v2.63-smith-stage-lock-label
 >
-> **本轮（`feat926/artifact-audit` 神器改双格 30/60 + 礼拜堂30级开放 + 行高压缩找回背包）**：用户两项反馈：(1) 160px 子格够大了，但**别把队伍行撑太高**——每队行只要两层160格+10padding(=330px)，剩下留给背包；提示文字上移。(2) 把神器格从 3 个(1/40/80级)改为 **2 个(30/60级)**；礼拜堂 **30 级开放**。
+> **本轮（`feat926/artifact-audit` 铁匠铺锁标显示解锁条件）**：用户问铁匠铺锁标为何不显示几级解锁。诊断：`drawBuildingLockOverlay(vg,cx,cy,key,tutorialControlled,...)` 当 `tutorialControlled=true` 时只画锁图标不画文字；铁匠铺走**关卡门控**(`TutorialManager.BUILDING_UNLOCK_THRESHOLDS.smith=204` 即通关2-4)，不是等级门控，且不在 `ExpTable.levelUnlocks` 里(`getBuildingUnlockLevel` 只返回默认1)，故原本无文字可显示——设计使然非 bug，但玩家看不到解锁条件。
+>   - **修复**：`drawBuildingLockOverlay` 新增第7参 `labelOverride`(优先于等级文字)；新增 `getStageUnlockLabel(key)` 从 `_TM.getBuildingUnlockStageId(key)` 换算 stageId→"通关 chapter-stage 解锁"；`TutorialManager` 暴露 `getBuildingUnlockStageId(buildingKey)`(返回 `BUILDING_UNLOCK_THRESHOLDS[key]`，church/tavern 等引导解锁返回 nil)。铁匠铺锁标改传 `getStageUnlockLabel('smith')` → 显示"通关 2-4 解锁"(与教堂"Lv.30 解锁"风格一致)。酒馆 tavern 仍引导门控无 override(只锁图标)。
+>   - 验证：LSP 0 Error(264文件)、battle_stage_switch_test 54 PASS/ALL PASS、官方 Build 成功、dist 含 getStageUnlockLabel/getBuildingUnlockStageId。**锁标文字需实机验收**。
+> **上轮（`feat926/artifact-audit` 神器改双格 30/60 + 礼拜堂30级开放 + 行高压缩找回背包）**：用户两项反馈：(1) 160px 子格够大了，但**别把队伍行撑太高**——每队行只要两层160格+10padding(=330px)，剩下留给背包；提示文字上移。(2) 把神器格从 3 个(1/40/80级)改为 **2 个(30/60级)**；礼拜堂 **30 级开放**。
 >   - **ArtifactSchema**：`SUB_SLOT_COUNT` 3→**2**；解锁等级 `FIRST_SLOT_UNLOCK_LEVEL=30`/`SECOND_SLOT_UNLOCK_LEVEL=60`（删 `THIRD_SLOT_UNLOCK_LEVEL`）；`getUnlockedSubSlotCount` 改 0(<30)/1(30~59)/2(≥60)；`getSubSlotUnlockLevel` 返回 30/60。**旧档迁移**：normalizeModule/dehydrate 的子格循环都按 `SUB_SLOT_COUNT` 动态遍历，旧 3 格档第 3 格自动卸下，实例仍在 `data.bag`（不丢失）——已加测试断言验证。
 >   - **TownScene**：新增 `CHURCH_UNLOCK_LEVEL=30` + `isChurchAccessible()`；教堂建筑绘制/点击门控 `= not _TM.isBuildingUnlocked('church') or not isChurchAccessible()`。**引导豁免**：`isChurchAccessible()` 在 `_TM.isActive()` 时直接放行（引导组5-7 低等级点教堂/古树推进不受等级限制）；引导链结束恢复等级门控。**终焉古树不门控**（与教堂共用 'church' key 但古树是独立天赋系统，仍只按引导解锁——tree gate 已回退，避免连带锁天赋）。锁图标 label 支持 `levelOverride` 传 30 显示 'Lv.30 解锁'。
 >   - **ChurchArtifactPanel 重排**：TEAM_ROW `SUB_GAP` 4→**10**、`LABEL_H` 492→**330**、`ROW_CY={465,807,1149}`（行距342、行3底1314）；HINT.Y 235→**200**（上移）；LOWER_PANEL CY 2481→**2041**（面板顶1330）；TITLE DECO/TEXT_Y 1836→**1396**；GRID CLIP 1886/2110→**1446/2110**（背包可视 **224→664px≈3.5行**，可滚动）、FIRST_ROW_TOP=1446；飘字 1770/2000→1330/1700。子格栈 2×160+10=330 恰好收进 LABEL_H=330。

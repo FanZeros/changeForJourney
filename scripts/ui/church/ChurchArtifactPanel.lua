@@ -28,14 +28,6 @@ local M = {}
 
 -- ======================== 布局常量 ========================
 
--- 顶部背景 UI_JTSQ_BJ：素材实际大小 1080×1349，顶端对齐、X 居中
-local TOP_BG = {
-    CX = 540,
-    CY = 674.5,
-    W = 1080,
-    H = 1349,
-}
-
 -- 提示文字
 local HINT = {
     X = 540, Y = 235,
@@ -46,31 +38,31 @@ local HINT = {
 -- [三队行式布局] 队伍1/2/3 各占一行同时显示（替代原页签切换）
 -- 每行 = 队标签 + 4 个号位列（每列 3 个子格纵向堆叠）
 local TEAM_ROW = {
-    HEADER_Y   = 286,                       -- 号位表头（1号位~4号位，只画一行，三队共用）
+    HEADER_Y   = 252,                       -- 号位表头（1号位~4号位，只画一行，三队共用）
     HEADER_FONT = 28,
-    ROW_CY     = { 508, 918, 1328 },        -- 每队行的 y 中心（行3底 1530 < 背包面板顶 1540）
+    ROW_CY     = { 518, 1016, 1514 },       -- 每队行的 y 中心（行距 498，行3底 1760 < 背包面板顶 1770）
     LABEL_X    = 76,                        -- 队标签中心 x
-    LABEL_W    = 100, LABEL_H = 404,        -- 队标签底板（行距 410，板间 6px 缝；子格栈高 398 收进板内）
+    LABEL_W    = 100, LABEL_H = 492,        -- 队标签底板（子格栈高 3×160+2×4=488 收进板内）
     LABEL_FONT = 26,
     LOCK_FONT  = 20,
-    CX_LIST    = { 252, 476, 700, 924 },    -- 4 个号位列中心 x（间距 224）
-    SUB_SIZE   = 130,                       -- 子格边长（与原单队布局一致的大格）
+    CX_LIST    = { 252, 476, 700, 924 },    -- 4 个号位列中心 x（间距 224，格 160 列间留 64）
+    SUB_SIZE   = 160,                       -- 子格边长（与下方背包格一致，用户要求）
     SUB_GAP    = 4,
-    CELL_LOCK_FONT = 26,
+    CELL_LOCK_FONT = 28,
 }
 
 -- 下半部分背景 UI_TJP_1（九宫格，与背包/遗物背包一致）
--- [行式布局 130px] 面板顶 1540（行3底 1530 之下 10px），底部溢出屏幕被裁剪
+-- [行式布局 160px] 面板顶 1770（行3底 1760 之下 10px），底部溢出屏幕被裁剪
 local LOWER_PANEL = {
-    CX = 540, CY = 2251, W = 1080, H = 1422,
+    CX = 540, CY = 2481, W = 1080, H = 1422,
     IT = 200, IR = 10, IB = 200, IL = 10,
 }
 
 -- 标题装饰 + 文字
 local TITLE = {
-    -- [行式布局] 背包标题贴近面板顶（1540 + 75），把纵向空间让给网格
-    DECO_CX = 540, DECO_CY = 1615, DECO_W = 660, DECO_H = 60,
-    TEXT_X = 540, TEXT_Y = 1615,
+    -- [行式布局] 背包标题贴近面板顶（1770 + 66）
+    DECO_CX = 540, DECO_CY = 1836, DECO_W = 660, DECO_H = 60,
+    TEXT_X = 540, TEXT_Y = 1836,
     FONT = 40,
     R = 0x45, G = 0x45, B = 0x45,
     TEXT = "神器背包",
@@ -97,10 +89,11 @@ local GRID = {
     GAP = 30,
     COLS = 5,
     MARGIN_LEFT = 80,  -- (1080 - 5*160 - 4*30) / 2
-    -- [行式布局] 网格可视高 279→445（≈2.3 行，可滚动）：顶 1665 贴标题、底 2110 近按钮
-    CLIP_TOP = 1665,
+    -- [行式布局 160px] 网格可视高 224（≈1.2 行，可滚动）：顶 1886 贴标题、底 2110 近按钮
+    -- ⚠️ 子格放大到 160 后行区占用增大，背包可视区相应压缩（130px 时为 445）
+    CLIP_TOP = 1886,
     CLIP_BOTTOM = 2110,
-    FIRST_ROW_TOP = 1665,
+    FIRST_ROW_TOP = 1886,
 }
 
 GRID.CLIP_H = GRID.CLIP_BOTTOM - GRID.CLIP_TOP
@@ -126,7 +119,6 @@ local ctx_ = nil
 -- ======================== 图片句柄 ========================
 
 local img = {
-    topBg   = -1,  -- UI_JTSQ_BJ.png
     slotGrid = -1, -- UI_JTSQ_GZ.png
     lowerBg = -1,  -- UI_TJP_1.png
     titleDeco = -1, -- UI_JJC_BTBJ.png
@@ -457,7 +449,7 @@ function M.init(vg)
     ImageCache.init(vg)
     ArtifactAssetUtil.preloadIcons()
 
-    img.topBg     = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTSQ_BJ.png", 0)
+    -- 顶部背景图 UI_JTSQ_BJ 已按用户要求删除（drawBg 改纯色暗底）
     -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TJP_1.png 贴图加载已移除（矢量绘制替代）
     img.lowerBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png", 0)
     img.titleDeco = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
@@ -487,24 +479,21 @@ function M.init(vg)
             state.selectedTeam = nil
             state.selectedSlot = nil
             state.selectedSubSlot = nil
-            showFloat("请选择槽位安装神器（任一队伍行）", 540, 1620)
+            showFloat("请选择槽位安装神器（任一队伍行）", 540, 1770)
         end
         ArtifactDetailPanel.hide()
     end)
     ArtifactDetailPanel.setOnRefine(function(artifact)
         local Protocol = ctx_ and ctx_.getProtocol and ctx_.getProtocol() or nil
         if not Protocol then
-            showFloat("网络未连接", 540, 1900)
+            showFloat("网络未连接", 540, 2000)
             return
         end
         sendAction(Protocol.ACTION_TYPES.ARTIFACT_REFINE_VALUE, { artifactId = artifact.id })
-        showFloat("正在洗练神器数值", 540, 1900)
+        showFloat("正在洗练神器数值", 540, 2000)
     end)
 
-    if img.topBg < 0 then
-        print("[ChurchArtifactPanel] WARN: UI_JTSQ_BJ.png load failed")
-    end
-    print("[ChurchArtifactPanel] init OK (topBg " .. TOP_BG.W .. "x" .. TOP_BG.H .. ")")
+    print("[ChurchArtifactPanel] init OK")
 end
 
 function M.reset()
@@ -523,26 +512,14 @@ function M.reset()
 end
 
 --- 绘制神器 Tab 全屏背景（在 Tab 内容下层）
+--- 顶部背景图 UI_JTSQ_BJ 已按用户要求删除：上半区改纯色暗底，
+--- 既不再受背景图 1349 高度约束，也无需补明暗接缝。
 function M.drawBg(vg)
-    if img.topBg >= 0 then
-        drawImageCentered(vg, img.topBg, TOP_BG.CX, TOP_BG.CY, TOP_BG.W, TOP_BG.H, 1.0)
-    else
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, DESIGN_W, TOP_BG.H)
-        nvgFillColor(vg, nvgRGBA(44, 42, 48, 255))
-        nvgFill(vg)
-    end
-
-    -- [130px 大格] 顶部背景图只到 y=1349，行区延伸到 y≈1559。
-    -- 图片底边(亮~116)与下方空白(黑)之间有明暗跳变；补一块暗色底衔接
-    -- 背景图底边与背包面板顶，遮住左右边距与行板缝隙处露出的跳变。
     local lowerTop = LOWER_PANEL.CY - LOWER_PANEL.H * 0.5
-    if lowerTop > TOP_BG.H then
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, TOP_BG.H, DESIGN_W, lowerTop - TOP_BG.H)
-        nvgFillColor(vg, nvgRGBA(30, 28, 34, 255))
-        nvgFill(vg)
-    end
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, DESIGN_W, math.max(0, lowerTop))
+    nvgFillColor(vg, nvgRGBA(30, 28, 34, 255))
+    nvgFill(vg)
 
     DarkIcon.drawNine(vg, "plain", LOWER_PANEL.CX - LOWER_PANEL.W * 0.5, LOWER_PANEL.CY - LOWER_PANEL.H * 0.5, LOWER_PANEL.W, LOWER_PANEL.H)
 end

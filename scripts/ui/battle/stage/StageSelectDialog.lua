@@ -11,8 +11,11 @@
 local GameConfig        = require("config.GameConfig")
 local SC                = require("config.StageConfig")
 local MC                = require("config.MonsterConfig")
+local SRP               = require("config.StageRecommendPower")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DrawUtil          = require("core.DrawUtil")
+local GameState         = require("core.GameState")
+local I18n              = require("core.I18n")
 local BF                = require("systems.ButtonFeedback")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
@@ -567,6 +570,39 @@ function StageSelectDialog.draw(vg)
             nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
         end
         nvgText(vg, x + 16, y + D.ROW_H - 34, sub, nil)
+
+        -- 推荐战力（行左中，v2.61 StageRecommendPower 接线）：
+        -- 口径 = battle-lab 开荒三人组无养成实测阈值（ml≤23 实测 / ml≤46 保守外推），
+        -- 带装备养成的玩家实际需求更低，因此只做「达标提示」不做硬性门槛。
+        -- 三态：实测(与玩家总战力比较着色) / 外推(≈前缀蓝灰) / 无数据(不绘制)。
+        -- 字号 20：左栏可用宽 ~124px（CARD_X-MID_X-边距），最长文本
+        -- 「推荐≈18110」(ml46 外推上限) 在 20 号字下 ~115px 不撞卡面。
+        -- 五语下 CJK（简/繁/日/韩「推荐≈」3 全角 + 5 位数字）最长 ~115px，
+        -- 英文「Rec.≈18110」拉丁更窄，均 < 124px，无需按语言调字号。
+        -- 文案走 I18n.t 键值表（rec_power/rec_power_approx 五语，{0} 占位数字）；
+        -- 含动态数字不能走 draw-hook 原文查表。译后串再经 hook 查不到会原样返回。
+        local recPower, recExtr = SRP.get(id)
+        if recPower then
+            local rText, rr, rg, rb
+            if recExtr then
+                -- 外推带（ml 24..46）：估算值，蓝灰 + ≈ 前缀，不与玩家战力比较
+                rText = I18n.t("rec_power_approx", recPower)
+                rr, rg, rb = 0x8F, 0xA8, 0xC0
+            else
+                rText = I18n.t("rec_power", recPower)
+                local playerPower = GameState.getPower() or 0
+                if playerPower <= 0 then
+                    rr, rg, rb = 0xb6, 0xb0, 0x9d          -- 战力未知：中性色
+                elseif playerPower >= recPower then
+                    rr, rg, rb = 0x7A, 0xC8, 0x6E          -- 达标：绿
+                else
+                    rr, rg, rb = 0xE0, 0x5A, 0x5A          -- 不足：红（与 Boss 关同色系）
+                end
+            end
+            drawTextStroke(vg, x + 16, y + 84, rText, 20,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+                rr, rg, rb, 2, { alpha = (locked and 140 or 255) / 255 })
+        end
 
         -- 敌人卡面（行右侧横排）
         local mids = stageMonsterCards(entry)

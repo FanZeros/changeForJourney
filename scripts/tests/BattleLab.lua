@@ -9,6 +9,7 @@ local AD = require("systems.AttributeDef")
 local EC = require("config.EquipmentConfig")
 local ES = require("systems.EquipmentSystem")
 local Sets = require("systems.EquipmentSetSystem")
+local CPE = require("systems.CombatPowerEstimate")
 
 local POWER_SKIP = {
     [AD.STR] = true, [AD.AGI] = true, [AD.INT] = true,
@@ -231,14 +232,26 @@ local function runPrepared(cfg, loadout, progress)
         note = "独立测试进程的模板英雄（可选纯配置普通装备/套装，不含词缀、遗物、神器、觉醒、玩家存档）；真实三行驱动的技能与伤害，首通含地图词缀与狂暴；挂机只测本关敌人列表，不含主线前五关混合出怪与完整 BattleScene 结算。",
     }
     local teamPower = 0
+    local teamEstimate = 0
     local heroPowers = {}
     for _, hero in ipairs(cfg.heroes) do
         local unit = makeUnit(hero, loadout and loadout[hero.id])
         local power = powerOf(unit.attrs)
-        heroPowers[#heroPowers + 1] = { heroId = hero.id, power = power }
+        -- 实战预估原型：按英雄攻击类别分项计价（仅报告展示，不改正式公式）
+        -- 注意：createHero 的战斗单位没有 unit.atkType（仅 ClassGateRuntime 战中会设），
+        -- 类型固定取 attrs.atkType（UnitAttributes.create 从配置写入，恒有值）。
+        local estimate, category = CPE.estimate(unit.attrs, unit.attrs.atkType)
+        -- 四组分解（官方价值底座，未乘类别系数）：供 fit_power_estimate.py 回归拟合
+        local groups = CPE.breakdown(unit.attrs, unit.attrs.atkType)
+        heroPowers[#heroPowers + 1] = { heroId = hero.id, power = power,
+            estimate = estimate, category = category,
+            groups = { phys = groups.phys, mag = groups.mag,
+                heal = groups.heal, generic = groups.generic } }
         teamPower = teamPower + power
+        teamEstimate = teamEstimate + estimate
     end
     report.teamPower = teamPower
+    report.teamEstimate = teamEstimate
     report.heroPowers = heroPowers
     for i = 1, cfg.runs do
         local one = runOne(cfg, i, loadout)
@@ -293,6 +306,33 @@ local function runPrepared(cfg, loadout, progress)
     return report
 end
 
+--- 单方案运行入口：只跑一套配装（config.loadouts.A，或未传 loadouts 时裸英雄）。
+--- 供拟合采样器等批量场景使用，避免 Lab.run 的 A/B 路径把同一配装跑两遍。
+---@param config table 同 Lab.run 的 JSON 配置
+---@param progress fun(done:integer, total:integer, battle:table)|nil
+---@return table|nil report schemaVersion=1 报告
+---@return string|nil errorMessage
+function Lab.runSingle(config, progress)
+    local cfg, errorMessage = Lab.prepare(config)
+    if not cfg then return nil, errorMessage end
+    local oldLayout = Layout.MODE
+    local oldBucket = Stats.mountedTeam()
+    local SFX = require("systems.GameSFX")
+    local oldSound = SFX.isTeamMuted(926)
+    Layout.setMode("strip")
+    SFX.setTeamMuted(926, true)
+    local report
+    local ok, err = xpcall(function()
+        report = runPrepared(cfg, cfg.loadouts and cfg.loadouts.A or nil, progress)
+    end, debug.traceback)
+    require("ui.battle.stage.StageBerserk").exit()
+    SFX.setTeamMuted(926, oldSound)
+    Stats.mount(oldBucket or 0)
+    Layout.setMode(oldLayout or "strip")
+    if not ok then return nil, err end
+    return report
+end
+
 function Lab.run(config, progress)
     local cfg, errorMessage = Lab.prepare(config)
     if not cfg then return nil, errorMessage end
@@ -321,12 +361,13 @@ function Lab.run(config, progress)
                 mode = cfg.mode, seed = cfg.seed, requestedRuns = cfg.runs,
                 loadouts = cfg.loadouts, A = a, B = b, paired = paired,
                 delta = { teamPower = b.teamPower - a.teamPower,
+                    teamEstimate = b.teamEstimate - a.teamEstimate,
                     winRate = b.winRate - a.winRate,
                     avgSeconds = b.avgSeconds - a.avgSeconds,
                     avgDamage = b.avgDamage - a.avgDamage,
                     avgHealing = b.avgHealing - a.avgHealing,
                     avgTaken = b.avgTaken - a.avgTaken },
-                note = "同种子配对，仅输入 RNG 状态相同；不同配装会改变战斗分支与后续随机消耗，不能视为相同随机事件。战力按角色页属性权重计算，不含存档/觉醒/神器/遗物/星图。",
+                note = "同种子配对，仅输入 RNG 状态相同；不同配装会改变战斗分支与后续随机消耗，不能视为相同随机事件。战力按角色页属性权重计算，不含存档/觉醒/神器/遗物/星图。teamEstimate 为分项计价原型（按英雄伤害类别区分物攻/魔攻/治疗属性），仅实验参考，不是正式战力。",
             }
         else
             report = runPrepared(cfg, nil, progress)

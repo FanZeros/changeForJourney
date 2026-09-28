@@ -286,7 +286,7 @@ local imgTabBg    = -1   -- UI_AN_1.png
 
 local imgArrow    = -1   -- UI_TJP_JIANTOU.png（提升箭头）
 local imgEnhBtn   = -1   -- UI_AN_LV.png（强化按钮背景）
-local imgGoldIcon = -1   -- UI_icon_JB.png（金币图标）
+local imgGoldIcon = -1   -- UI_icon_JB_X.png（金币图标）
 local imgGoldQBg  = -1   -- UI_icon_ZBBJ_2.png（金币品质背景框, quality=2）
 local imgEssenceIcon = -1 -- UI_icon_JC.png（精粹图标）
 local imgXlBefore  = -1   -- UI_TJP_XL_2.png（洗练前背景框）
@@ -797,7 +797,7 @@ function BlacksmithPage.init(vg)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     imgArrow    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
     imgEnhBtn   = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     imgGoldQBg  = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_2.png", 0)
     imgEssenceIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JC.png", 0)
     imgXlBefore  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_XL_2.png", 0)

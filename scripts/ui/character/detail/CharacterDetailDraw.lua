@@ -388,19 +388,34 @@ local imgLvlBadge    = -1
 local detailState       = nil   -- 详情状态表（引用，draw 可直接修改）
 local getOwnedData      = nil   -- function(heroId) → ownData or nil
 local calcHeroPowerFn   = nil   -- function(heroId) → number
+local calcHeroEstimateFn = nil  -- function(heroId) → number 实战预估（分项计价原型）
 local CharacterDetailRef = nil  -- CharacterDetail 模块引用（访问 _hasUpgradeForSlot 等）
 local collectAttributes = nil   -- DetailAttrs.collectAttributes
 local clampAttrScroll   = nil   -- 限制属性滚动
 
+-- 实战预估副行开关：默认关闭。原型口径（systems/CombatPowerEstimate.lua），
+-- 系数已做方向性拟合（OFF_FACTOR=0.10 / HEALER_ATK_FACTOR=0.5）但未跨全阵容
+-- 标定；玩家可见 UI 需真人视觉验收后由 M.setEstimateVisible(true) 开启。
+local SHOW_ESTIMATE = false
+
+--- 开/关详情页卡面的「实战预估」副行（验收用）
+---@param visible boolean
+function M.setEstimateVisible(visible)
+    SHOW_ESTIMATE = visible and true or false
+end
+
 -- ======================== 性能缓存（避免每帧重计算） ========================
 -- calcHeroPower 缓存：按英雄分别记录，滚动卡面每张都要显示自己的战力
 local _powerCache = { dirty = true, values = {} }
+-- 实战预估缓存：与战力共用脏标记（markPowerDirty 一并置脏）
+local _estimateCache = { dirty = true, values = {} }
 -- _hasUpgradeForSlot 缓存：仅当 heroId 变化或装备数据脏时重算
 local _upgradeCache = { heroId = nil, results = {}, dirty = true }  -- results[slotName] = bool
 
 --- 标记战斗力缓存为脏（外部数据变化时调用）
 function M.markPowerDirty()
     _powerCache.dirty = true
+    _estimateCache.dirty = true
     _upgradeCache.dirty = true
 end
 
@@ -409,6 +424,8 @@ local function getCachedPower(heroId)
     if _powerCache.dirty then
         _powerCache.dirty = false
         _powerCache.values = {}
+        _estimateCache.dirty = false
+        _estimateCache.values = {}
     end
     ---@type table<number, number>
     local values = _powerCache.values
@@ -417,6 +434,20 @@ local function getCachedPower(heroId)
     local power = calcHeroPowerFn and calcHeroPowerFn(heroId) or 0
     values[heroId] = power
     return power
+end
+
+--- 获取缓存的实战预估（与战力共用脏标记，SHOW_ESTIMATE 关闭时不计算）
+local function getCachedEstimate(heroId)
+    if not SHOW_ESTIMATE then return 0 end
+    if _estimateCache.dirty then
+        _estimateCache.dirty = false
+        _estimateCache.values = {}
+    end
+    local cached = _estimateCache.values[heroId]
+    if cached then return cached end
+    local estimate = calcHeroEstimateFn and calcHeroEstimateFn(heroId) or 0
+    _estimateCache.values[heroId] = estimate
+    return estimate
 end
 
 --- 获取缓存的可提升判断（仅在 heroId 变化或脏标记时重算）
@@ -441,6 +472,7 @@ function M.setContext(ctx)
     detailState       = ctx.detailState
     getOwnedData      = ctx.getOwnedData
     calcHeroPowerFn     = ctx.calcHeroPower
+    calcHeroEstimateFn  = ctx.calcHeroEstimate
     CharacterDetailRef = ctx.CharacterDetail
     collectAttributes = ctx.collectAttributes
     clampAttrScroll   = ctx.clampAttrScroll
@@ -635,6 +667,13 @@ function M.draw(vg)
             CARD.POWER_ICON_SIZE, CARD.POWER_ICON_SIZE, 1.0)
         drawTextStroke(vg, pcX + CARD.POWER_ICON_SIZE + POWER_GAP, powerY, powerStr,
             30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 247, 254, 119, 4)
+        -- 实战预估副行（默认关闭，M.setEstimateVisible(true) 验收后开启）：
+        -- 分项计价原型口径，按英雄伤害类别区别计价物攻/魔攻/治疗属性
+        if SHOW_ESTIMATE then
+            local estimate = getCachedEstimate(id)
+            drawTextStroke(vg, 0, powerY + 26, "预估 " .. tostring(estimate),
+                18, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 178, 216, 255, 3)
+        end
         -- 职业标（右下）
         local iconIdx = CLASS_ICON_MAP[cfg.classId]
         if iconIdx and imgClassIcons[iconIdx] then
@@ -1097,6 +1136,16 @@ function M.draw(vg)
     for i = 1, #rightAttrs do
         attrRows[#attrRows + 1] = rightAttrs[i]
     end
+    -- 按重要程度稳定排序（未列出的属性保持原相对顺序，排在最后）
+    local orderIdx = DetailAttrs.displayOrderIndex()
+    for i, row in ipairs(attrRows) do row._origIdx = i end
+    table.sort(attrRows, function(a, b)
+        local oa = orderIdx[a.key] or 9999
+        local ob = orderIdx[b.key] or 9999
+        if oa ~= ob then return oa < ob end
+        return (a._origIdx or 0) < (b._origIdx or 0)
+    end)
+    for _, row in ipairs(attrRows) do row._origIdx = nil end
     local totalRows = #attrRows
 
     detailState.cachedLeft  = attrRows

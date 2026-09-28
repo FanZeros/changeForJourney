@@ -45,17 +45,19 @@ function Start()
         if report.A then
             for _, name in ipairs({ "A", "B" }) do
                 local result = report[name]
-                print(string.format("[BattleLab] 配装%s 战力%d 胜%d/%d (%.1f%%) 场均%.1fs 输出%.0f 治疗%.0f 承伤%.0f",
-                    name, result.teamPower, result.wins, result.completedRuns,
+                print(string.format("[BattleLab] 配装%s 战力%d 预估%d 胜%d/%d (%.1f%%) 场均%.1fs 输出%.0f 治疗%.0f 承伤%.0f",
+                    name, result.teamPower, result.teamEstimate or 0, result.wins, result.completedRuns,
                     result.winRate, result.avgSeconds, result.avgDamage, result.avgHealing, result.avgTaken))
             end
-            print(string.format("[BattleLab] B-A 战力%+d 胜率%+.1f百分点 耗时%+.1fs 输出%+.0f 治疗%+.0f 承伤%+.0f",
-                report.delta.teamPower, report.delta.winRate, report.delta.avgSeconds,
+            print(string.format("[BattleLab] B-A 战力%+d 预估%+d 胜率%+.1f百分点 耗时%+.1fs 输出%+.0f 治疗%+.0f 承伤%+.0f",
+                report.delta.teamPower, report.delta.teamEstimate or 0,
+                report.delta.winRate, report.delta.avgSeconds,
                 report.delta.avgDamage, report.delta.avgHealing, report.delta.avgTaken))
         else
-            print(string.format("[BattleLab] %s #%d: %d/%d 胜(%.1f%%) 负%d 超时%d 平均%.1fs",
+            print(string.format("[BattleLab] %s #%d: %d/%d 胜(%.1f%%) 负%d 超时%d 平均%.1fs 战力%d 预估%d",
                 report.stageName, report.stageId, report.wins, report.completedRuns,
-                report.winRate, report.losses, report.timeouts, report.avgSeconds))
+                report.winRate, report.losses, report.timeouts, report.avgSeconds,
+                report.teamPower, report.teamEstimate or 0))
             for _, stat in ipairs(report.heroStats) do
                 print(string.format("[BattleLab] %s: 场均输出 %.0f 治疗 %.0f 承伤 %.0f 暴击 %.1f%%",
                     stat.name, stat.avgDamage, stat.avgHealing, stat.avgTaken, stat.critRate))

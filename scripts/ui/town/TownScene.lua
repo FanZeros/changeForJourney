@@ -25,7 +25,6 @@ local imgLootBox = -1       -- 遗匣地点立绘 UI_CZ_YX
 local imgIconLoot = -1      -- 遗匣名牌图标 ICON_CZ_YX
 local imgTask = -1          -- 功绩地点立绘 UI_CZ_GJ
 local imgIconTask = -1      -- 功绩名牌图标 ICON_CZ_GJ
-local imgIconAltar = -1     -- 遗物祭坛图标 ICON_CZ_MXZGH
 
 local imgIconChurch = -1 -- 教堂图标
 local imgIconTree   = -1 -- 古树图标
@@ -119,15 +118,6 @@ local LOOT_SHIFT_X = 70
 local LOOT_CX, LOOT_CY, LOOT_W, LOOT_H = 540 + LOOT_SHIFT_X, 1940, 260, 260
 local LOOT_LBL_CY = 2090
 local LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H = 540 + LOOT_SHIFT_X, 2010, 380, 440
-
--- 遗物祭坛（遗物背包/详情/洗练入口）：中轴空地（教堂与酒馆之间）。
--- 立绘素材缺失，用 DarkIcon 矢量底板 + ICON_CZ_MXZGH 图标呈现（与遗匣/功绩地点风格一致）。
--- 热区收窄到教堂(x≤383)与酒馆(x≥633)之间的空隙，避免抢占两侧建筑点击。
-local ALTAR_CX, ALTAR_CY = 510, 1520
-local ALTAR_W,  ALTAR_H  = 200, 240
-local ALTAR_ICON_SZ = 110
-local ALTAR_LBL_CY = 1668
-local ALTAR_HIT_CX, ALTAR_HIT_CY, ALTAR_HIT_W, ALTAR_HIT_H = 510, 1560, 240, 360
 -- 功绩：左下角地点，整体右移，避开教堂热区和遗匣热区。
 local TASK_SHIFT_X = 50
 local TASK_CX, TASK_CY, TASK_W, TASK_H = 180 + TASK_SHIFT_X, 2050, 245, 245
@@ -401,7 +391,6 @@ local function ensureTownImages(vg)
     imgIconLoot    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_YX.png", 0) or -1
     imgTask        = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_GJ.png", 0) or -1
     imgIconTask    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_GJ.png", 0) or -1
-    imgIconAltar   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_MXZGH.png", 0) or -1
     imgSmith       = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_TJP.png", 0)
     imgIconSmith   = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_TJP.png", 0)
     imgChurch      = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_JT.png", 0)
@@ -608,32 +597,6 @@ function TownScene.draw(vg)
         DarkIcon.draw(vg, "reddot", TASK_CX + 169, TASK_LBL_CY - 45, 36, 1.0)
     end
     BF.finish(vg, taskFeedback)
-
-    -- 第8个地点：遗物祭坛（遗物背包/详情/洗练入口，无门槛）。
-    -- 立绘缺失，用矢量底板 + ICON_CZ_MXZGH 图标呈现；有可合成组时名牌挂红点。
-    local altarFeedback = BF.begin(vg, "town_altar", ALTAR_HIT_CX, ALTAR_HIT_CY, ALTAR_HIT_W, ALTAR_HIT_H)
-    DarkIcon.drawNine(vg, "panel",
-        ALTAR_CX - ALTAR_W * 0.5, ALTAR_CY - ALTAR_H * 0.5,
-        ALTAR_W, ALTAR_H, { accent = "gold" })
-    if imgIconAltar >= 0 then
-        drawImageCentered(vg, imgIconAltar, ALTAR_CX, ALTAR_CY - 10,
-            ALTAR_ICON_SZ, ALTAR_ICON_SZ, 1.0)
-    end
-    drawBuildingLabel(vg, ALTAR_CX, ALTAR_LBL_CY, 361, 113,
-        ALTAR_CX - 90, ALTAR_LBL_CY - 6, 64, -1, ALTAR_CX + 45, ALTAR_LBL_CY - 6, "遗物祭坛")
-    local altarOk, RelicSystemForBadge = pcall(require, "systems.RelicSystem")
-    if altarOk and RelicSystemForBadge.getRelicBadgeInfo then
-        local showBadge, badgeStyle = RelicSystemForBadge.getRelicBadgeInfo()
-        if showBadge then
-            if badgeStyle == "redDot" then
-                DarkIcon.draw(vg, "reddot", ALTAR_CX + 169, ALTAR_LBL_CY - 45, 36, 1.0)
-            elseif imgIconUp >= 0 then
-                -- 绿箭头（有可升级遗物）：与古树可操作角标同图标
-                drawImageCentered(vg, imgIconUp, ALTAR_CX + 150, ALTAR_LBL_CY - 48, 40, 40, 1.0)
-            end
-        end
-    end
-    BF.finish(vg, altarFeedback)
 end
 
 --- 回调：点击铁匠铺
@@ -682,7 +645,6 @@ end
 ---@type fun()|nil
 local onLootBoxClick = nil
 local onTaskClick = nil
-local onAltarClick = nil
 
 function TownScene.setOnLootBoxClick(fn)
     onLootBoxClick = fn
@@ -690,11 +652,6 @@ end
 
 function TownScene.setOnTaskClick(fn)
     onTaskClick = fn
-end
-
---- 回调：点击遗物祭坛（遗物背包/详情/洗练入口）
-function TownScene.setOnAltarClick(fn)
-    onAltarClick = fn
 end
 
 function TownScene.handleInput(dx, dy)
@@ -712,15 +669,6 @@ function TownScene.handleInput(dx, dy)
         triggerClickAnim("task")
         print("[TownScene] 点击功绩")
         if onTaskClick then deferAction(CLICK_CALLBACK_DELAY, onTaskClick) end
-        return true
-    end
-    -- 遗物祭坛点击检测（无解锁门槛）
-    if math.abs(dx - ALTAR_HIT_CX) <= ALTAR_HIT_W * 0.5
-        and math.abs(dy - ALTAR_HIT_CY) <= ALTAR_HIT_H * 0.5 then
-        BF.trigger("town_altar")
-        triggerClickAnim("altar")
-        print("[TownScene] 点击遗物祭坛")
-        if onAltarClick then deferAction(CLICK_CALLBACK_DELAY, onAltarClick) end
         return true
     end
     local _TM = require("systems.TutorialManager")

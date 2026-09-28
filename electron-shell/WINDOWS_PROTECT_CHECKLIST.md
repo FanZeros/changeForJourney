@@ -5,6 +5,90 @@
 > ①`--protect` 四步链全跑通并打出可玩的混淆包；②实机启动/存档回归；③L2 字节码 Q1 判定。
 > 预计耗时：首次 40-70 分钟（大头是 npm 下 Electron 二进制 + preview prepare + 复制 assets）。
 
+## 0.5 本机快速测试命令（Windows cmd，从切分支开始）
+
+> 分五段：A 切分支装依赖 → B 四套测试 → C 效果预览/全量 → D --protect 打包全链 → E 相似度验证。
+> B/C 纯本地（只需 Python + luaparser/lupa），D/E 需要本机 Maker 绑定与打包环境。
+
+### A. 切分支 & 装依赖
+```bat
+cd /d C:\Users\fanzero\Desktop\GameMaking\changeForJourney
+git fetch origin
+git checkout feat927/ele-protection-research-0927
+git pull
+git log --oneline -3
+REM 顶部应见: 925c68b feat: --file 单文件模式支持 --strip-comments
+
+python -c "import sys; print(sys.executable)"
+python -m pip install luaparser lupa
+python -c "import luaparser, lupa; print('deps OK')"
+```
+
+### B. 四套回归测试（纯本地，约 2 分钟）
+```bat
+python electron-shell\test_lua_obfuscator.py
+REM 期望: == behavior equivalence: 21 passed, 0 failed, 0 rejected ==
+
+python electron-shell\test_lua_obfuscator_docsync.py
+REM 期望: ==== OVERALL: ALL PASS ====
+
+python electron-shell\test_field_rename.py
+REM 期望: == synthetic field-rename: 8 passed, 0 failed ==
+
+python electron-shell\test_strip_comments.py
+REM 期望: == strip comments: ALL PASS ==
+```
+
+### C. 效果预览 & 全量产物
+```bat
+REM C1 单文件(默认档:仅改名,注释保留)
+python electron-shell\lua_obfuscator.py --file scripts\shared\StageUtils.lua
+
+REM C2 单文件(交付档:改名+剥注释+@param同步) —— 推荐先看这个
+python electron-shell\lua_obfuscator.py --file scripts\shared\StageUtils.lua --strip-comments
+
+REM C3 全量档A/档B 输出到仓库外目录(各约 5-8 分钟,耐心等)
+python electron-shell\lua_obfuscator.py --source-root . --output-root ..\out-A
+python electron-shell\lua_obfuscator.py --source-root . --output-root ..\out-B --strip-comments
+REM 期望: files=361 changed=344 unchanged=16 rejected=1
+REM       (rejected=DarkIcon.lua 解析失败保持明文,预期内)
+
+REM C4 @param 残留校验(应 0)
+python electron-shell\check_param_residual.py ..\out-B
+REM 期望: checked=361 parse_fail=1 residual_param_mismatch=0
+
+REM C5 全量行为等价抽样(需 lupa)
+python electron-shell\verify_obfuscation_sample.py ..\out-B .
+REM 期望: behavior sample: tested=71 passed=71 mismatch=0
+
+REM C6(可选)档C 字段改名: 需 --emmylua-root 指向含 .emmylua/urhox-libs 的 Maker 工程根
+REM python electron-shell\lua_obfuscator.py --source-root . --output-root ..\out-C --strip-comments --rename-fields --emmylua-root <你的Maker工程根>
+```
+
+### D. --protect 打包全链（出 Windows 成品包）
+```bat
+REM 前提: 仓库根有 .maker-mcp(本机 Maker 绑定生成)。没有则先双击 maker-mcp\update-maker-mcp.bat
+dir /a .maker-mcp
+
+electron-shell\build_protected_windows.bat
+REM 四步成功标志逐条对照本清单 §1;产物在 electron-shell\release\*.zip
+```
+
+### E. 相似度验证（需 D 的成品包）
+```bat
+REM E1 克隆工具仓库(若本机没有)
+cd /d C:\Users\fanzero\Desktop\GameMaking
+git clone https://github.com/FanZeros/tempGame.git
+
+REM E2 解压成品包 zip 到 ..\zip-test 后,比对"包内 game"与"工程源码"
+cd changeForJourney
+python ..\tempGame\skills\source-similarity\scripts\compare_lua_similarity.py --game ..\zip-test\resources\game --scripts scripts
+REM 期望(交付档B): symmetric similarity ~39%, exact ~17
+
+REM E3(可选)基线对照: 未混淆 dist(Maker Build 仓库根 dist) vs 源码,应 100%
+python ..\tempGame\skills\source-similarity\scripts\compare_lua_similarity.py --game dist --scripts scripts
+```
+
 ## 0. 准备（一次性）
 
 - [ ] 装好 Python 3.10+（`python --version`）与 Node.js（`npx --version`）

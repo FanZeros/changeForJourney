@@ -199,6 +199,7 @@ local function initLaneUnits(lane)
         u.reviveTimer = nil
         u._fallen = nil
         u._fallenPending = nil
+        u._fallenAt = nil
         TAL.initUnit(u)
     end
     for _, u in ipairs(lane.enemies) do
@@ -300,6 +301,7 @@ local function tickLane(lane, dt)
                 TM.removeUnit(unit)
                 SEM.removeUnit(unit)
                 unit._fallenPending = true
+                unit._fallenAt = time.elapsedTime
                 BattleCombat.setCardAnim(unit, {
                     state = "dying", timer = 0, lungeDir = 1,
                     knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
@@ -310,30 +312,9 @@ local function tickLane(lane, dt)
             unit._artifactDeathHandled = nil
         end
     end
-    -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格
+    -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
     local allies = lane.allies
-    for i = #allies, 1, -1 do
-        local u = allies[i]
-        if u._fallenPending then
-            local st = BattleCombat.getAnimState(u)
-            if u.hp > 0 then
-                -- 退场途中被拉起（防御）：取消紧凑
-                u._fallenPending = nil
-            elseif st == "gone" or st == nil then
-                u._fallenPending = nil
-                u._fallen = true
-                table.remove(allies, i)
-                table.insert(allies, u)
-                for j = i, #allies - 1 do
-                    local moved = allies[j]
-                    if moved.hp > 0 then
-                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
-                            advanceDist = BattleLayout.STRIP_PITCH })
-                    end
-                end
-            end
-        end
-    end
+    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, time.elapsedTime)
     local allyAlive = BattleCombat.getAliveUnits(allies)
     if #allyAlive == 0 and #lane.allies > 0 then
         lane.wiped = true

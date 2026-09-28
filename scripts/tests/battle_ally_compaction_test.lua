@@ -115,9 +115,42 @@ local function testRescueCancelsCompaction()
         "被拉起的单位保持原位 → ab，实得 " .. table.concat(order, ""))
 end
 
+-- ── 4) 动画状态卡住（永远停在 dying）→ 时间兜底强制紧凑 ──
+local function testStuckAnimFallbackCompacts()
+    local Driver = require("ui.battle.tri.BattleTriDriver")
+    local BattleCombat = require("ui.battle.combat.BattleCombat")
+    local Reset = require("ui.battle.scene.BattleAllyReset")
+    local drv = Driver.new(2)
+    drv.stageId = 101
+    local a, b, c = mkAlly("a", 100), mkAlly("b", 0), mkAlly("c", 100)
+    drv.allies = { a, b, c }
+    drv.enemies = { mkEnemy("e", 50) }
+    drv.enemyQueue = {}
+    drv.active = true
+    drv.mount()
+    drv.bindContext()
+
+    -- 手工构造"退场登记后动画被卡住"：dying 永不到 gone（不 tick 动画更新）
+    b.hp = 0
+    b._fallenPending = true
+    b._fallenAt = 100.0
+    BattleCombat.setCardAnim(b, { state = "dying", timer = 0, lungeDir = 1 })
+
+    -- now 远超兜底宽限（退场时长+0.3）→ 强制紧凑
+    Reset.compactFallen(drv.allies, 100.0 + 5.0)
+    check(b._fallen == true, "卡住动画被兜底强制紧凑（_fallen）")
+    local order = {}
+    for _, u in ipairs(drv.allies) do order[#order + 1] = u.name end
+    check(table.concat(order, "") == "acb",
+        "兜底紧凑后存活者前移 → acb，实得 " .. table.concat(order, ""))
+    check(BattleCombat.getAnimState(c) == "advance",
+        "兜底紧凑给前移者播 advance 动画")
+end
+
 testCompactionMovesDeadToTail()
 testInterceptReviveStaysInPlace()
 testRescueCancelsCompaction()
+testStuckAnimFallbackCompacts()
 
 if #failures > 0 then
     print(string.format("[battle_ally_compaction_test] FAILURES=%d", #failures))

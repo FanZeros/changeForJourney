@@ -493,6 +493,7 @@ function BattleTriDriver.new(teamIdx, options)
                         SEM.removeUnit(u)
                         -- [阵亡紧凑] 退场动画播完后移至队尾，存活者前移补位
                         u._fallenPending = true
+                        u._fallenAt = time.elapsedTime
                         BattleCombat.setCardAnim(u, { state = "dying", timer = 0, lungeDir = 1,
                             knockbackMult = 1.0 + (u._overkillRatio or 0) * 2.0, noTombstone = true })
                     end
@@ -500,29 +501,8 @@ function BattleTriDriver.new(teamIdx, options)
                     u._triDeathHandled = nil
                 end
             end
-            -- [阵亡紧凑] 与主线 BattleCasualty 同规则：退场完成 → 移队尾 → 存活者前移一格
-            for i = #allies, 1, -1 do
-                local u = allies[i]
-                if u._fallenPending then
-                    local st = BattleCombat.getAnimState(u)
-                    if u.hp > 0 then
-                        -- 退场途中被拉起（理论上仅拦截复活，此处防御）：取消紧凑
-                        u._fallenPending = nil
-                    elseif st == "gone" or st == nil then
-                        u._fallenPending = nil
-                        u._fallen = true
-                        table.remove(allies, i)
-                        table.insert(allies, u)
-                        for j = i, #allies - 1 do
-                            local moved = allies[j]
-                            if moved.hp > 0 then
-                                BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
-                                    advanceDist = BattleLayout.STRIP_PITCH })
-                            end
-                        end
-                    end
-                end
-            end
+            -- [阵亡紧凑] 与主线 BattleCasualty 同规则：退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
+            require("ui.battle.scene.BattleAllyReset").compactFallen(allies, time.elapsedTime)
         end
 
         -- 存活统计

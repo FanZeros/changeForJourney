@@ -116,7 +116,7 @@ AG.ATTR_MAP = {
 
 --- 按配置叠一次觉醒1成长层（调用方保证已点 n1）。
 ---@param heroId number
----@param extra ExtraTalentData 归一化后的追加技存档表（就地修改）
+---@param extra ExtraTalentData 归一化后的追加技存档表（就地修改；定义见 systems.ExtraTalentSystem）
 ---@param ctx table { deadEnemy, killer, enemies, hasStatus }
 ---@return boolean applied 是否命中触发条件并叠层
 function AG.applyGrowth(heroId, extra, ctx)

@@ -331,6 +331,61 @@ local function drawBranchOverlay(vg, cx, cy, w, h, canAdv)
     end
 end
 
+-- ======================== 转职树路径点亮 ========================
+-- 规则：英雄当前转职路径上的节点（初始职业、已转分支、当前可转的下一分支）
+-- 加金色光晕 + 亮黄名称；非路径节点图标压暗 + 名称灰暗，一眼看出"通向哪"。
+
+local PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B = 0xff, 0xc4, 0x2e  -- 金色光晕
+local PATH_NAME_R, PATH_NAME_G, PATH_NAME_B = 0xff, 0xd7, 0x4a  -- 点亮名称（亮黄）
+local DIM_NAME_R,  DIM_NAME_G,  DIM_NAME_B  = 0x8a, 0x84, 0x78  -- 非路径名称（灰暗）
+local DIM_ICON_ALPHA = 0.45                                     -- 非路径图标透明度
+
+--- 绘制路径节点的金色外发光（径向渐变光晕 + 金色描边）
+---@param vg any
+---@param cx number
+---@param cy number
+---@param w number
+---@param h number
+local function drawPathGlow(vg, cx, cy, w, h)
+    local r = math.max(w, h) * 0.5
+    nvgBeginPath(vg)
+    nvgCircle(vg, cx, cy, r * 1.45)
+    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, r * 0.85, r * 1.45,
+        nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 110),
+        nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 0)))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cx - w * 0.5 - 4, cy - h * 0.5 - 4, w + 8, h + 8, 29)
+    nvgStrokeColor(vg, nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 235))
+    nvgStrokeWidth(vg, 5)
+    nvgStroke(vg)
+end
+
+--- 一转节点状态：owned=已转 / avail=可转 / off=非路径（等级不足也算 off）
+---@param advBranch table|nil
+---@param branchId number
+---@param heroLevel number
+---@return string
+local function firstBranchState(advBranch, branchId, heroLevel)
+    if heroLevel < ADV2.firstLevel then return "off" end
+    if advBranch and advBranch.first == branchId then return "owned" end
+    if not advBranch or not advBranch.first then return "avail" end
+    return "off"
+end
+
+--- 二转节点状态：owned=已转 / avail=已选一转下可转 / off=非路径
+---@param advBranch table|nil
+---@param parentFirstId number
+---@param branchId number
+---@param heroLevel number
+---@return string
+local function secondBranchState(advBranch, parentFirstId, branchId, heroLevel)
+    if heroLevel < ADV2.secondLevel then return "off" end
+    if advBranch and advBranch.second == branchId then return "owned" end
+    if advBranch and advBranch.first == parentFirstId and not advBranch.second then return "avail" end
+    return "off"
+end
+
 -- ======================== 绘制 API ========================
 
 --- 绘制转职页背景（与觉醒页同款 UI_JX_BJ，铺满整页）
@@ -367,62 +422,110 @@ function M.drawContent(vg)
         6,
         { italic = true })
 
-    -- 一转分叉线
-    drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
-        BRANCH_LINE_W, BRANCH_LINE_H, 1.0)
+    -- 一转分叉线：未转职时两侧都可能通向 → 亮；已转职后只亮选中侧
+    local line1Alpha, line2Alpha = 1.0, 1.0
+    if advBranch and advBranch.first then
+        if advBranch.first == (branches and branches[1] and branches[1].id) then
+            line2Alpha = 0.3
+        else
+            line1Alpha = 0.3
+        end
+    end
+    if line1Alpha == line2Alpha then
+        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_W, BRANCH_LINE_H, line1Alpha)
+    else
+        -- 单张贴图 = 中干 + 左右两臂：裁三段各用各的亮度（中干随在路径的一侧亮）
+        -- 贴图实测中干外沿半宽 ≈ 图宽 2.5%
+        local halfW = BRANCH_LINE_W * 0.5
+        local tw    = BRANCH_LINE_W * 0.025
+        local top   = BRANCH_LINE_CY - BRANCH_LINE_H
+        local hh    = BRANCH_LINE_H * 2
+        nvgSave(vg)
+        nvgScissor(vg, BRANCH_LINE_CX - halfW, top, halfW - tw, hh)
+        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_W, BRANCH_LINE_H, line1Alpha)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgScissor(vg, BRANCH_LINE_CX + tw, top, halfW - tw, hh)
+        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_W, BRANCH_LINE_H, line2Alpha)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgScissor(vg, BRANCH_LINE_CX - tw, top, tw * 2, hh)
+        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_W, BRANCH_LINE_H, math.max(line1Alpha, line2Alpha))
+        nvgRestore(vg)
+    end
 
-    -- 初始职业图标
+    -- 初始职业图标（路径起点，恒定亮）
     local initIconId = CLASS_NUM[classId] or 1
+    drawPathGlow(vg, INIT_ICON_CX, INIT_ICON_CY, INIT_ICON_W, INIT_ICON_H)
     drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, initIconId) or -1, INIT_ICON_CX, INIT_ICON_CY,
         INIT_ICON_W, INIT_ICON_H, 1.0)
 
-    -- 初始职业名称
+    -- 初始职业名称（点亮黄色）
     drawTextStroke(vg, INIT_NAME_CX, INIT_NAME_CY, className,
         INIT_NAME_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 6)
+        PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
 
     -- 一转分支
     if branches then
-        -- 二转分叉线（先绘制，置于一转图标底层）
+        local st1 = firstBranchState(advBranch, branches[1].id, heroLevel)
+        local st2 = firstBranchState(advBranch, branches[2].id, heroLevel)
+
+        -- 二转分叉线（先绘制，置于一转图标底层）：仅对应一转在路径上时亮
         drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
-            ADV2.lineW, ADV2.lineH, 1.0)
+            ADV2.lineW, ADV2.lineH, (st1 ~= "off") and 1.0 or 0.3)
         drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
-            ADV2.lineW, ADV2.lineH, 1.0)
+            ADV2.lineW, ADV2.lineH, (st2 ~= "off") and 1.0 or 0.3)
 
         -- 分支1
-        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[1].id) or -1, BR1_ICON_CX, BR1_ICON_CY,
-            BR1_ICON_W, BR1_ICON_H, 1.0)
-        if heroLevel >= ADV2.firstLevel then
-            if advBranch and advBranch.first == branches[1].id then
-                -- 已转职：无遮罩
-            elseif not advBranch or not advBranch.first then
-                drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, true)
-            else
-                drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, false)
-            end
+        if st1 ~= "off" then
+            drawPathGlow(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H)
         end
-        drawTextStroke(vg, BR1_NAME_CX, BR1_NAME_CY, branches[1].name,
-            BR1_NAME_FONT,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 6)
+        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[1].id) or -1, BR1_ICON_CX, BR1_ICON_CY,
+            BR1_ICON_W, BR1_ICON_H, (st1 == "off") and DIM_ICON_ALPHA or 1.0)
+        if st1 == "avail" then
+            drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, true)
+        elseif st1 == "off" then
+            drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, false)
+        end
+        if st1 ~= "off" then
+            drawTextStroke(vg, BR1_NAME_CX, BR1_NAME_CY, branches[1].name,
+                BR1_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
+        else
+            drawTextStroke(vg, BR1_NAME_CX, BR1_NAME_CY, branches[1].name,
+                BR1_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                DIM_NAME_R, DIM_NAME_G, DIM_NAME_B, 6)
+        end
 
         -- 分支2
-        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[2].id) or -1, BR2_ICON_CX, BR2_ICON_CY,
-            BR2_ICON_W, BR2_ICON_H, 1.0)
-        if heroLevel >= ADV2.firstLevel then
-            if advBranch and advBranch.first == branches[2].id then
-                -- 已转职：无遮罩
-            elseif not advBranch or not advBranch.first then
-                drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, true)
-            else
-                drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, false)
-            end
+        if st2 ~= "off" then
+            drawPathGlow(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H)
         end
-        drawTextStroke(vg, BR2_NAME_CX, BR2_NAME_CY, branches[2].name,
-            BR2_NAME_FONT,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 6)
+        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[2].id) or -1, BR2_ICON_CX, BR2_ICON_CY,
+            BR2_ICON_W, BR2_ICON_H, (st2 == "off") and DIM_ICON_ALPHA or 1.0)
+        if st2 == "avail" then
+            drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, true)
+        elseif st2 == "off" then
+            drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, false)
+        end
+        if st2 ~= "off" then
+            drawTextStroke(vg, BR2_NAME_CX, BR2_NAME_CY, branches[2].name,
+                BR2_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
+        else
+            drawTextStroke(vg, BR2_NAME_CX, BR2_NAME_CY, branches[2].name,
+                BR2_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                DIM_NAME_R, DIM_NAME_G, DIM_NAME_B, 6)
+        end
 
         -- 二转分支（4个）
         local secBranches = {}
@@ -445,25 +548,31 @@ function M.drawContent(vg)
             local sb = secBranches[i]
             local pos = ADV2.pos[i]
             if sb and pos then
-                drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, sb.id) or -1, pos.iconCX, pos.iconCY,
-                    ADV2.iconW, ADV2.iconH, 1.0)
-                if heroLevel >= ADV2.secondLevel then
-                    local parentFirstId = (i <= 2) and branches[1].id or branches[2].id
-                    if advBranch and advBranch.second == sb.id then
-                        -- 已转职：无遮罩
-                    elseif advBranch and advBranch.first == parentFirstId
-                           and not advBranch.second then
-                        drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
-                            ADV2.iconW, ADV2.iconH, true)
-                    else
-                        drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
-                            ADV2.iconW, ADV2.iconH, false)
-                    end
+                local parentFirstId = (i <= 2) and branches[1].id or branches[2].id
+                local st = secondBranchState(advBranch, parentFirstId, sb.id, heroLevel)
+                if st ~= "off" then
+                    drawPathGlow(vg, pos.iconCX, pos.iconCY, ADV2.iconW, ADV2.iconH)
                 end
-                drawTextStroke(vg, pos.nameCX, pos.nameCY, sb.name,
-                    ADV2.nameFontSize,
-                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 6)
+                drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, sb.id) or -1, pos.iconCX, pos.iconCY,
+                    ADV2.iconW, ADV2.iconH, (st == "off") and DIM_ICON_ALPHA or 1.0)
+                if st == "avail" then
+                    drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
+                        ADV2.iconW, ADV2.iconH, true)
+                elseif st == "off" then
+                    drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
+                        ADV2.iconW, ADV2.iconH, false)
+                end
+                if st ~= "off" then
+                    drawTextStroke(vg, pos.nameCX, pos.nameCY, sb.name,
+                        ADV2.nameFontSize,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                        PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
+                else
+                    drawTextStroke(vg, pos.nameCX, pos.nameCY, sb.name,
+                        ADV2.nameFontSize,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                        DIM_NAME_R, DIM_NAME_G, DIM_NAME_B, 6)
+                end
             end
         end
     end

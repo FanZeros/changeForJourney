@@ -1,5 +1,8 @@
 # antibodies — 跨项目避雷清单(只增不减)
 
+- [scope:project] 🔴 **遗物（Relic）系统是「已丢弃内容」，禁止重建其 UI**（2026-09-28 教训）。礼拜堂（ChurchPage）底部只有「神器」Tab，用的是 **Artifact 神器系统**（`ChurchArtifactPanel`/`ArtifactDefs`/`mod_artifacts`/槽位装配+神器置换+洗练数值），与「遗物」是两套独立系统。遗物（Relic）= 五兽封兽祭阵/本座阵眼/合成升品（`RelicBagPanel`/`RelicDefs`/`mod_relics`），其 UI 面板在 workspace927 基线（ddcc8266）**本就已删除**，用户已确认丢弃。本次误从 git 历史（3cd2f48d）恢复重建了 RelicPage/RelicBagPanel/RelicDetailPanel/RelicReforgePanel + 城镇祭坛入口 + 关键词接入，已整体 revert（commit d7a92c0c 撤销 3597da37/3e407b60/73a3a0bb）。**教训：用户说"我把X放礼拜堂了"要先核对代码——「神器」≠「遗物」，别把术语当同一物；从 git 历史恢复"被删文件"前必须先问用户该功能是否已废弃。** 遗物后端（RelicSystem/RelicDefs/RelicService/RelicAltar/RelicBridge/RelicAffix/RelicConditionHandler + rules/relic + shared/relic）仍是基线自带、深度接入战斗/天赋/市场/副本（58 文件引用），未删；是否清理待用户单独决策。
+- [scope:project] 分支并发：本会话工作分支是 `workspace927-keyword-system`（关键词系统）。撤错方向时用 `git revert --no-commit <新>..<旧>` 汇总撤销再一次性提交，**不强推**（记忆规则）。revert 会连记忆文件更新一起回退，撤销后需重新写正确教训。
+
 - [scope:project] `StandaloneSave.writeFile` 必须检查 `File:WriteString` 的 boolean 返回；失败后不能记成功快照，且须安排下一轮重试。直接覆盖旧档与损坏 JSON 恢复仍未解决；`FileSystem:Rename` 在隔离存储平台上的行为未经验证，不能仅凭声明视为原子落盘。
 - [scope:project] 离线英雄经验预览不能把编队中的 `0` 空槽、未拥有或重复 ID 算进平分分母；领取回退路径应使用同一有效名单规则。
 - [scope:project] `ModuleRegistry` 与 `HeroesSchema` 在单机收到 heroes 时连续规范化，数字名册键必须保留；跨队同步不可逐队回调：第一队推送触发面板刷新会覆盖第二队未提交的编队。0 是空槽而非角色，normalize 不得删除后续队伍的 0。

@@ -8,8 +8,9 @@
   "never_cancel_task": true,
   "never_end_without_askuserquestion": true,
   "askuserquestion_rule": "不能擅自取消或退出任务；每次交付或遇到阻碍都先简报，再真正调用 AskUserQuestion 工具，以选项询问下一步并等待用户选择。禁止仅以文字结束；记忆不等同于自动 hook。",
-  "dev_branch": "workspace926",
-  "push_policy": "分支操作以用户当前轮次授权为准。2026-09-27 本轮授权新建并推送 workspace926（合入 workspace925 与全部 feat926/），不推 workspace/workspace925，不强推。不在远端 URL、代码或记忆中保存 PAT。",
+  "dev_branch": "feat926/awakening-skill-review",
+  "base_branch": "workspace926",
+  "push_policy": "分支操作以用户当前轮次授权为准。2026-09-28 本轮授权：从基线 workspace926 新建 feat926/awakening-skill-review，完成改动后 push 该功能分支；不推 workspace/workspace925/基线，不强推。不在远端 URL、代码或记忆中保存 PAT（用户对话中贴出的 PAT 应提示撤销轮换）。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

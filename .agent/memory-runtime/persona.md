@@ -1,6 +1,6 @@
 # persona（随行记忆 · 跨项目）
 
-> latest-wins 合并；[scope] 标记见条目尾。更新：2026-09-27
+> latest-wins 合并；[scope] 标记见条目尾。更新：2026-09-28
 
 ## 基础画像
 
@@ -18,6 +18,8 @@
 - 审美：暗黑+金饰+水墨古风，接受玩梗与黑色幽默 [observed]
 
 ## 项目足迹（追加去重）
+
+- 2026-09-28 终焉之门：Hard+ Boss 真差异化词缀系统（v2.64）。用户拍板"给 Hard+ Boss 做真差异化"（v2.63b 已查明纯角色复用）。新增 `config/BossAffixConfig.lua`（6 词缀：守护之盾/强化体魄/狂暴姿态/暴怒/生命汲取/荆棘之体；参数 base+perTier×难度 tier(hard=1..annih5=14) clamp cap；数量阶梯 1/2/3；`pickAffixIds` 按 chapter 确定性轮转零随机；Normal 无词缀）+ `systems/BossAffixSystem.lua`（静态注入 ENERGY_SHIELD/MAX_HP 同步当前血/ATK_SPEED 重算 atkInterval；tick 驱动 regen 每秒回血 + enrage 40% 血线一次性触发 DMG_BONUS/ATK_SPEED/横幅；`onBossDamaged` 荆棘反弹，dealDamageFn 可注入便于测试、防重入）。接线 5 处：BattleStageLoad/BattleSceneTick/BattleCombat.performAttack/BattleScene UI（绯红「首领·」前缀+暴怒横幅）/BattleTriDriver（lab 同链路）。Boss 词缀不进推荐战力采样（采样打 stage1 无 Boss），StageRecommendPower 无需重跑。测试 37+12 断言 ALL PASS（smoke 用真实 BattleLab.runSingle 端到端确认暴怒触发）；平衡 A/B：warden_shield/thorns Δwin+0、enrage -12pt 温和不碾压（一次性调参脚本已删）。⚠️ 踩坑：battle_stage_switch_test 假挂起——断言全过 ALL PASS 后进程不退，根因缺 `engine:Exit()`（补上 3/3 稳定），stash 二分排除 v2.64 逻辑。回归 recommend 24/inheritance 9/切关 13 ALL PASS、LSP 287 文件 Error=0、build 成功。只推 `feat926/battle-lab`。[scope:project]
 
 - 2026-09-28 终焉之门：困难难度 Boss 调查 + 配置修复（v2.63b）。用户问"困难新 Boss 特殊还是复用"→调查确认**纯角色复用**：Hard 23 章 Boss 与 Normal 同 bossId，isBoss 只影响 UI 红字/出场位置/套装攻条削减减半/一天赋判定，无专属技能，难度差异只靠 monsterLevel 缩放。顺带修 2 处配置异常：①3105(困难·断魂裂谷8-5) bossId 22→28——罴(22)是 q1 普通怪、全 345 章 Boss 唯一非 q5，HP 仅应有值 5.7%，疑似 2**8**→2**2** 手误；②Hard ch10「荒芜高原」→「悬魂瀑布」(5 关)+3305 boss 52→25——其余 14 难度该章均悬魂瀑布+当康，Hard 是旧版残留孤例。修复后全 345 章 Boss 100% q5、Hard/Normal 章名+Boss 0 差异。回归 inheritance 9+recommend 24+切关 ALL PASS+build 成功。推荐表无需重跑(Boss 只影响 stage5)。只推 `feat926/battle-lab`。[scope:project]
 

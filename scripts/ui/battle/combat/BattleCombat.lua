@@ -1283,6 +1283,10 @@ local function performAttack(attacker, targetList, isAlly)
                             MAS.onAllyHit(curTgt)
                         else
                             MAS.onEnemyDamaged(curTgt)
+                            -- Boss 词缀钩子（v2.64）：荆棘之体反弹（仅己方攻击命中 Boss）
+                            if curTgt.isBoss then
+                                require("systems.BossAffixSystem").onBossDamaged(curTgt, attacker, actual)
+                            end
                         end
 
                         -- 飘字配色：普通白色 / 暴击红色（物理魔法不再分色，格挡由前缀表达）

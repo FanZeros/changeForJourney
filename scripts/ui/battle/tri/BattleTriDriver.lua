@@ -252,6 +252,19 @@ function BattleTriDriver.new(teamIdx, options)
                 for _, u in ipairs(self.enemyQueue) do wave[#wave + 1] = u end
                 MAS.applyStaticAffixes(wave)
             end
+            -- Boss 词缀（v2.64）：battle-lab 首通同样模拟 Hard+ Boss 强化
+            local BAS = require("systems.BossAffixSystem")
+            if self.firstClear and entry then
+                BAS.onStageLoad(entry.chapter or 0, SC.getDifficulty(stageId))
+                if BAS.hasAffixes() then
+                    local wave = {}
+                    for _, u in ipairs(self.enemies) do wave[#wave + 1] = u end
+                    for _, u in ipairs(self.enemyQueue) do wave[#wave + 1] = u end
+                    BAS.applyToBosses(wave)
+                end
+            else
+                BAS.clear()
+            end
         end
         -- 单位初始化
         for _, u in ipairs(self.allies) do
@@ -565,6 +578,10 @@ function BattleTriDriver.new(teamIdx, options)
         if self.battleLab then
             ART.update(dt)
             require("systems.MapAffixSystem").tick(dt, allies, enemies)
+            local BAS = require("systems.BossAffixSystem")
+            if self.firstClear and BAS.hasAffixes() then
+                BAS.tick(dt, enemies)
+            end
             if self.firstClear then
                 require("ui.battle.stage.StageBerserk").update(dt, enemies, allies)
             end

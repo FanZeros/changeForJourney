@@ -40,6 +40,15 @@
 - 合法样本：第 101 关首通，大狗嚼 Lv.1，均为普通 Lv.1 `C13`（秘识戒）A 与 `C1`（力量戒）B；显示战力同为 112。种子 926–965：A 14/40 胜、B 40/40；种子 3926–3965：A 10/40、B 40/40；第 103 关：A 22/40、B 40/40。第 102 关两者均 40/40，但平均耗时 A 34.82s、B 28.02s；队伍加黄桃龙后第 101 关均 40/40，A 22.04s、B 21.30s。不同职业的单人法师/游侠样本均 0/40，不可据它们的胜率比较适配，需看输出与生存；全量实测汇总在 `docs/memory-index.md` 顶部。
 - 建议：不要全局削减魔攻权重（会误伤魔法职业）；显示战力如要反映角色适配，应以角色攻击类别区别计价物攻/魔攻及专属伤害、暴击、穿透，治疗者独立考虑治疗量。先保留原始属性战力供详情/队伍展示，对“实战预估”新口径跨阵容、关卡、层级验证，避免仅由胜率饱和场景定权重。正式战力公式和战斗结算尚未改。
 
+## 最新：Hard+ Boss 真差异化词缀系统（2026-09-28，v2.64）
+
+- **背景**：v2.63b 调查确认 Hard Boss 纯角色复用（零专属机制）后，用户拍板"给 Hard+ Boss 做真差异化"。本版为 Hard+ 难度 Boss 落地机制层词缀系统，Normal 不受影响。
+- **新增 `config/BossAffixConfig.lua`**：6 词缀——守护之盾（开局护盾 shieldPct）、强化体魄（hpPct）、狂暴姿态（攻速）、暴怒（血线阈值一次性触发攻速+伤害强化）、生命汲取（每秒回血）、荆棘之体（受击反弹）。参数=base+perTier×难度 tier（hard=1..annihilation5=14）clamp 到 cap；词缀数量阶梯 tier≤2→1/≤5→2/else→3；`pickAffixIds` 按 chapter 确定性轮转（**零随机**，可复现可测）；`getAffixesForBoss` Normal 返回 nil。
+- **新增 `systems/BossAffixSystem.lua`**：静态注入（ENERGY_SHIELD/MAX_HP 同步当前血/ATK_SPEED 重算 atkInterval）+ `tick` 驱动 regen 与 enrage（40% 血线一次性触发带横幅）+ `onBossDamaged` 荆棘反弹（dealDamageFn 可注入便于测试、`_thornsReflecting` 防重入、仅 isBoss）。
+- **接线 5 处**：BattleStageLoad（首通加载/非首通 clear）、BattleSceneTick（tick）、BattleCombat.performAttack（命中 Boss 钩子）、BattleScene（词缀行绯红「首领·」前缀 + 暴怒横幅）、BattleTriDriver（battle-lab 首通同链路，采样与真实战斗一致模拟）。Boss 词缀不进推荐战力采样（采样打 stage1 无 Boss），StageRecommendPower 无需重跑。
+- **测试与平衡**：`boss_affix_test.lua` 37 断言 + `boss_affix_smoke_test.lua` 12 断言（真实 BattleLab.runSingle 端到端，确认实战暴怒触发）ALL PASS。平衡 A/B：warden_shield Δwin+0 / thorns Δwin+0 Δtime+1.8s / enrage Δwin-12pt——温和加难度不碾压（一次性调参脚本已删）。
+- **踩坑**：battle_stage_switch_test"假挂起"——13 断言全过 ALL PASS 后进程不退出被误判超时；根因是文件缺 `engine:Exit()`（补上后 3/3 稳定），stash 二分确认与 v2.64 逻辑无关。回归：recommend 24 / inheritance 9 / 切关 13 ALL PASS；LSP 287 文件 Error=0；官方 build 成功。
+
 ## 最新：困难难度 Boss 调查与配置修复（2026-09-28，v2.63b）
 
 - **调查结论（用户问"困难新 Boss 有啥特殊/还是角色复用"）**：纯角色复用。Hard 23 章 Boss 与 Normal 完全同 bossId，无任何专属技能/词缀/阶段机制；`isBoss` 标志只影响 UI 红字、出场插入敌列中部、套装攻条削减减半（0.2 vs 0.6）、gate_104_peel 天赋判定。难度差异只靠 monsterLevel 缩放（Hard ml24..46）。全 15 难度共用同一批 ~17 个 q5 传说 Boss（雷神/诸犍/烛龙/应龙等）。
@@ -179,7 +188,7 @@
 
 - 当前任务分支 `feat926/battle-lab`：仅 push 此分支，不合并、不推送 `workspace925` 或其他 workspace 分支。交付后必须以 AskUserQuestion 选项提问下一步。
 - 战斗工作台需独立运行（`tests/battle_lab_ui.lua`），批量入口 `tests/battle_lab.lua`；在游戏主进程并行测试会污染共享战斗状态。下一步可验收鼠标操作与不同分辨率 UI，并按需增加玩家配装的隔离配置支持。
-- 关卡推荐战力表 `config/StageRecommendPower.lua`（v2.61）已接线选关弹窗（v2.61b）+ 五语词表（v2.61c）+ 单调性/章内梯度修正（v2.62）+ Hard 实测扩样与图标化（v2.63）；困难 Boss 配置异常已修（v2.63b：3105 罴→黄能、Hard ch10 荒芜高原→悬魂瀑布）。当前实测覆盖 ml 1..46（Normal+Hard），ml 47..92 外推。候选下一步：真人预览验收图标化后的视觉密度与继承怪卡面效果、扩采样到 Nightmare（ml 47..69，替换外推段）、Hard 段采样噪声复测（ml37 反常低于 ml34，可加大局数或多种子复采）、给 Hard+ Boss 做真差异化（专属词缀/机制，目前是纯数值缩放）、或把推荐显示扩展到扫荡/结算界面。
+- 关卡推荐战力表 `config/StageRecommendPower.lua`（v2.61）已接线选关弹窗（v2.61b）+ 五语词表（v2.61c）+ 单调性/章内梯度修正（v2.62）+ Hard 实测扩样与图标化（v2.63）；困难 Boss 配置异常已修（v2.63b：3105 罴→黄能、Hard ch10 荒芜高原→悬魂瀑布）；Hard+ Boss 真差异化词缀系统已落地（v2.64：BossAffixConfig 6 词缀 + BossAffixSystem + 5 处接线 + 37/12 断言）。当前实测覆盖 ml 1..46（Normal+Hard），ml 47..92 外推。候选下一步：真人预览验收 Boss 词缀标签/暴怒横幅与图标化推荐战力的视觉效果、词缀数值平衡微调（enrage -12pt 是否要加强/减弱或给玩家提示词缀效果）、扩采样到 Nightmare（ml 47..69，替换外推段）、Hard 段采样噪声复测（ml37 反常低于 ml34）、把推荐显示扩展到扫荡/结算界面、或给 Boss 词缀加图鉴/预告界面。
 - `workspace925` 装备详情定位及套装效果区已调整；需要在实际游戏预览中确认左/右栏比较卡与最长套装说明的视觉效果。
 - Electron 已关后台节流，但未实机验证失焦/最小化。系统休眠仍需离线补算。
 - 配装页已下移留出词条空位，词条内容本身还没画。

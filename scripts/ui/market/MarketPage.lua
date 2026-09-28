@@ -60,8 +60,6 @@ local P1 = {
     -- 下方面板
     LOWER_CX = 540, LOWER_CY = 1371, LOWER_W = 1080, LOWER_H = 2058,
     LOWER_IT = 200, LOWER_IR = 10, LOWER_IB = 200, LOWER_IL = 10,
-    -- 标题装饰
-    DECO_CX = 540, DECO_CY = 497, DECO_W = 660, DECO_H = 60,
     -- 标题文字
     TITLE_CX = 540, TITLE_CY = 497, TITLE_FONT = 42,
     TITLE_R = 0x7b, TITLE_G = 0x53, TITLE_B = 0x39,
@@ -258,7 +256,7 @@ local easeInOutCubic = TownPageChrome.easeInOutCubic
 -- ======================== 图片句柄 ========================
 
 local img = {
-    bg = -1, nameBg = -1, lowerBg = -1, titleDeco = -1,
+    bg = -1, nameBg = -1, lowerBg = -1,
     gold = -1, gem = -1,
     btnBack = -1, tabBg = -1, slider = -1,
     -- 商品
@@ -557,7 +555,6 @@ end
 
 local function drawItemsContent(vg)
     -- 标题
-    drawImageCentered(vg, img.titleDeco, P1.DECO_CX, P1.DECO_CY, P1.DECO_W, P1.DECO_H, 1.0)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, SL.TITLE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(SL.TITLE_R, SL.TITLE_G, SL.TITLE_B, 255))

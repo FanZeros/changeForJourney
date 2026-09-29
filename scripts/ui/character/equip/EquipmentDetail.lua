@@ -1001,6 +1001,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
     if EquipmentSystem.getAscendLevel(equip) > 0 then
         nameStr = nameStr .. " +" .. EquipmentSystem.getAscendLevel(equip)
     end
+    nameStr = nameStr .. "  Lv." .. tostring(equip.level or 1)
     drawTextStroke(vg, leftX, COMPACT_NAME_Y, nameStr, 44,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
     if imgLock >= 0 then
@@ -1040,26 +1041,14 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
 
     local powerStr = require("core.NumberUtil").format(calcEquipPower(equip, detState.heroId))
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 22)
+    nvgFontSize(vg, 36)
     local powerW = nvgTextBounds(vg, 0, 0, powerStr)
-    local lvStr = "LV " .. tostring(equip.level or 1)
-    nvgFontSize(vg, 20)
-    local lvW = nvgTextBounds(vg, 0, 0, lvStr)
-    local badgeW = 28 + powerW + 18 + lvW + 22
-    local badgeX = rightX - badgeW
-    local badgeY = COMPACT_NAME_Y
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, badgeX, badgeY - 18, badgeW, 36, 18)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
-    nvgFill(vg)
-    drawImageCentered(vg, imgPowerIcon, badgeX + 18, badgeY, 22, 22, 1.0)
-    drawTextStroke(vg, badgeX + 34, badgeY, powerStr, 22,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 0xf7, 0xfe, 0x77, 2)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 20)
-    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(220, 214, 200, 255))
-    nvgText(vg, rightX - 10, badgeY, lvStr, nil)
+    local powerIconSize = 36
+    local powerX = rightX - powerW
+    drawImageCentered(vg, imgPowerIcon, powerX - 12 - powerIconSize * 0.5, COMPACT_NAME_Y,
+        powerIconSize, powerIconSize, 1.0)
+    drawTextStroke(vg, powerX, COMPACT_NAME_Y, powerStr, 36,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 0xf7, 0xfe, 0x77, 3)
 
     local bottom = COMPACT_QUALITY_Y + 18
     if equip.baseStats and #equip.baseStats > 0 then

@@ -89,7 +89,7 @@ local imgActivateBtn   = -1
 local imgSelectArrow   = -1
 local imgClassIcons    = {}
 
----@type table<number, table>
+---@type table<number, integer>
 local cgCache = {}
 
 local selectedNode = 1
@@ -144,26 +144,20 @@ end
 
 -- ======================== CG 资源 ========================
 
---- 解析角色 CG：正式 CG -> 立绘 -> 卡牌；同时取对应灰度版
+--- 解析角色 CG：正式 CG -> 立绘 -> 卡牌。未解锁态绘制时染色，不再加载灰度图。
 ---@return integer colorHandle 彩色句柄，缺失为 -1
----@return integer grayHandle 灰度句柄，缺失为 -1
 local function resolveCG(vg, heroId)
     local cached = cgCache[heroId]
-    if cached then return cached.color, cached.gray end
+    if cached then return cached end
     local color = nvgCreateImage(vg, string.format("image/角色CG/CG_H%d.png", heroId), 0) or -1
-    local gray = -1
-    if color >= 0 then
-        gray = nvgCreateImage(vg, string.format("image/角色CG/CG_H%d_gray.png", heroId), 0) or -1
-    else
+    if color < 0 then
         color = nvgCreateImage(vg, HeroAssetUtil.getPortraitPath(heroId), 0) or -1
-        if color >= 0 then
-            gray = nvgCreateImage(vg, string.format("image/角色CG/FALLBACK_H%d_gray.png", heroId), 0) or -1
-        else
-            color = nvgCreateImage(vg, HeroAssetUtil.getCardPath(heroId), 0) or -1
-        end
     end
-    cgCache[heroId] = { color = color, gray = gray }
-    return color, gray
+    if color < 0 then
+        color = nvgCreateImage(vg, HeroAssetUtil.getCardPath(heroId), 0) or -1
+    end
+    cgCache[heroId] = color
+    return color
 end
 
 --- CG cover 到切片总幅，返回 (dw, dh, v0)
@@ -182,10 +176,14 @@ local function cgLayout(vg, img)
 end
 
 --- 第 i 条的取样 paint：显示 CG 第 i 列，竖向公共窗 v0
-local function slicePaint(vg, img, i, dw, dh, v0, alpha)
+local function slicePaint(vg, img, i, dw, dh, v0, alpha, gray)
     if not img or img < 0 or alpha <= 0.01 then return nil end
     local ox = sliceX(i) - dw * (i - 1) / NODE_COUNT
     local oy = sliceY(i) - v0
+    if gray then
+        local tone = math.floor(168 * alpha)
+        return nvgImagePatternTinted(vg, ox, oy, dw, dh, 0, img, nvgRGBA(tone, tone, tone, 255))
+    end
     return nvgImagePattern(vg, ox, oy, dw, dh, 0, img, alpha)
 end
 
@@ -257,7 +255,7 @@ end
 ---@param i number 1~3
 ---@param state string "active" 已嵌合 | "next" 可嵌合 | "locked" 未解锁
 ---@param isSelected boolean
-local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
+local function drawSlice(vg, i, state, isSelected, cgImg, dw, dh, v0)
     local col = NODE_FILL[i] or { 180, 180, 180 }
     local t = time.elapsedTime
     local breathe = (math.sin(t * 2.4 + i * 0.9) + 1.0) * 0.5
@@ -267,9 +265,8 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
     nvgFillColor(vg, nvgRGBA(8, 10, 18, 235))
     nvgFill(vg)
 
-    -- 2) CG 片：解锁=彩色，未解锁=灰度
-    local img = (state == "active") and cgImg or (grayImg >= 0 and grayImg or cgImg)
-    local paint = slicePaint(vg, img, i, dw, dh, v0, 1.0)
+    -- 2) CG 片：解锁=彩色，未解锁=绘制时染灰
+    local paint = slicePaint(vg, cgImg, i, dw, dh, v0, 1.0, state ~= "active")
     if paint then
         slicePath(vg, i)
         nvgFillPaint(vg, paint)
@@ -283,7 +280,7 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
     else
         -- 未解锁：压暗 + 轻灰罩，保证灰片可读
         slicePath(vg, i)
-        if grayImg >= 0 then
+        if cgImg and cgImg >= 0 then
             nvgFillColor(vg, nvgRGBA(8, 10, 20, 110))
         else
             nvgFillColor(vg, nvgRGBA(14, 14, 18, 200))
@@ -413,7 +410,7 @@ function M.draw(vg, heroId)
         { strokeColor = { 0x31, 0x24, 0x24 } })
 
     -- 影画切片
-    local cgImg, grayImg = resolveCG(vg, heroId)
+    local cgImg = resolveCG(vg, heroId)
     local dw, dh, v0
     if cgImg and cgImg >= 0 then
         dw, dh, v0 = cgLayout(vg, cgImg)
@@ -422,12 +419,12 @@ function M.draw(vg, heroId)
     for i = 1, NODE_COUNT do
         local state = activated[i] and "active" or (i == nextNode and "next" or "locked")
         if i ~= selectedNode then
-            drawSlice(vg, i, state, false, cgImg, grayImg, dw, dh, v0)
+            drawSlice(vg, i, state, false, cgImg, dw, dh, v0)
         end
     end
     local selState = activated[selectedNode] and "active"
         or (selectedNode == nextNode and "next" or "locked")
-    drawSlice(vg, selectedNode, selState, true, cgImg, grayImg, dw, dh, v0)
+    drawSlice(vg, selectedNode, selState, true, cgImg, dw, dh, v0)
 
     -- 选中切片上浮箭头
     local selX = sliceX(selectedNode) + SLICES.W * 0.5 + SLICES.SLANT * 0.5

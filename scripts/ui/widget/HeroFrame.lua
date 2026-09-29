@@ -138,7 +138,7 @@ local function drawIconClipped(vg, icon, x, y, w, h, r, alpha)
     nvgSave(vg)
     nvgBeginPath(vg)
     nvgRoundedRect(vg, x, y, w, h, r)
-    nvgScissor(vg, x, y, w, h)
+    nvgIntersectScissor(vg, x, y, w, h)
     drawImageCentered(vg, icon, x + w * 0.5, y + h * 0.5, w, h, alpha)
     nvgRestore(vg)
 end
@@ -222,7 +222,7 @@ function M.draw(vg, opts)
             end
             if opts.lockOverlay and state == "unowned" then
                 nvgSave(vg)
-                nvgScissor(vg, x, y, w, h)
+                nvgIntersectScissor(vg, x, y, w, h)
                 nvgBeginPath(vg)
                 nvgRect(vg, x, y, w, h)
                 nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(alpha * 100)))

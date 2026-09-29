@@ -783,9 +783,6 @@ end
 
 -- ======================== 辅助方法 ========================
 
---- 获取怪物名称
----@param monsterId number
----@return string
 --- 还没有正式立绘的怪物，战斗卡面临时借用同攻击类型的已有敌人图。
 --- 名字、属性和怪物 ID 不变，只换显示用的图片 ID。
 MC.CARD_ART = {
@@ -794,6 +791,8 @@ MC.CARD_ART = {
     [1007] = 7,  -- 叮咚鸡? 林地远程，借用九尾狐，不用蛇形巴蛇
 }
 
+---@param monsterId number
+---@return number
 function MC.getCardArtId(monsterId)
     return MC.CARD_ART[monsterId] or monsterId
 end

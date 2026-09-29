@@ -134,8 +134,8 @@ local function applyLayout(compact)
     end
     if compact then
         LOWER_PANEL.CY, LOWER_PANEL.H = 1300, 2100
-        GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 430, 2060
-        GRID_TITLE.Y, PZSX.CY = 380, 375
+        GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 470, 1980
+        GRID_TITLE.Y, PZSX.CY = 330, 325
         BTN_CONFIRM_DEC.CY, BTN_BATCH_DEC.CY = 2160, 2160
         CAP_TEXT.Y = 2230
     else

@@ -108,6 +108,16 @@ function M.bind(deps)
                 break
             end
 
+            local cellTop = cy - GRID.CELL_SIZE * 0.5
+            local cellBottom = cy + GRID.CELL_SIZE * 0.5
+            local clipCell = cellTop < CLIP_TOP or cellBottom > GRID.CLIP_BOTTOM
+            if clipCell then
+                nvgSave(vg)
+                local visTop = math.max(cellTop, CLIP_TOP)
+                local visBot = math.min(cellBottom, GRID.CLIP_BOTTOM)
+                nvgIntersectScissor(vg, cx - GRID.CELL_SIZE * 0.5, visTop, GRID.CELL_SIZE, math.max(0, visBot - visTop))
+            end
+
             local equip = equipList[idx]
             if equip then
                 DarkIcon.drawQualityBg(vg, equip.quality, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
@@ -201,6 +211,9 @@ function M.bind(deps)
                 nvgStrokeColor(vg, nvgRGBA(232, 204, 140, 210))
                 nvgStrokeWidth(vg, 3)
                 nvgStroke(vg)
+            end
+            if clipCell then
+                nvgRestore(vg)
             end
             ::continue_equip::
         end

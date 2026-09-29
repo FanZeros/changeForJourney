@@ -529,7 +529,7 @@ return {
     { "image/角色卡牌/KP_YX_15.png", 504283 },
     { "image/角色卡牌/KP_YX_16.png", 489266 },
     { "image/角色卡牌/KP_YX_17.png", 460696 },
-    { "image/角色卡牌/KP_YX_18.png", 371431 },
+    { "image/角色卡牌/KP_YX_18.png", 587878 },
     { "image/角色卡牌/KP_YX_19.png", 477971 },
     { "image/角色卡牌/KP_YX_2.png", 416225 },
     { "image/角色卡牌/KP_YX_20.png", 517763 },

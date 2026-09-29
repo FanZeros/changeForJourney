@@ -144,6 +144,17 @@ BattleDraw.drawProgressBar = drawProgressBar
 
 -- ======================== 卡片组渲染 ========================
 
+-- [统一角色框-928] 规范画布(600x1010)卡面走锚定显示：框体对齐槽位、图放大、出框不裁；
+-- 旧版卡面(非规范画布)仍走 cover 兼容。文字/血条等槽位 UI 不受影响。
+local function drawCardImage(vg, img, cx, cy, alpha)
+    local srcW, srcH = nvgImageSize(vg, img)
+    if srcW == 600 and srcH == 1010 then
+        DrawUtil.drawImageAnchored(vg, img, cx, cy, CARD_W, CARD_H, alpha)
+    else
+        DrawUtil.drawImageCover(vg, img, cx, cy, CARD_W, CARD_H, alpha)
+    end
+end
+
 --- 绘制卡片组（敌方或己方）
 function BattleDraw.drawCardGroup(vg, units, baseCY,
     tagOffY, nameOffY, hpBgOffY, hpValOffY, atkBgOffY, lvlOffY,
@@ -204,7 +215,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             -- [阵亡紧凑] 已退场英雄不渲染（保留在队尾供复活/关卡重置）
         elseif isDying then
             -- 死亡淡出：显示原卡牌向上/向下滑出
-            DrawUtil.drawImageCover(vg, cardImage(vg, unit), cx, cy, CARD_W, CARD_H, transAlpha)
+            drawCardImage(vg, cardImage(vg, unit), cx, cy, transAlpha)
 
         elseif isDead or isGone then
             -- 死亡单位不留黄条。下一只敌人由战斗驱动补上。
@@ -213,7 +224,7 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             local alpha = (isReviving or isEntering) and transAlpha or 1.0
 
             -- 1) 卡片背景
-            DrawUtil.drawImageCover(vg, cardImage(vg, unit), cx, cy, CARD_W, CARD_H, alpha)
+            drawCardImage(vg, cardImage(vg, unit), cx, cy, alpha)
 
             -- 受击闪烁
             if not isReviving and not isEntering then

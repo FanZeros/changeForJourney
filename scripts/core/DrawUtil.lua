@@ -1,3 +1,29 @@
+--- [统一角色框-928] 锚定显示：把源图中"框体区域"精确映射到目标槽矩形，
+--- 图整体等比放大、框对齐槽位；框外出框元素照常绘制（不裁切）。
+--- 源图规范画布 600x1010，框体 bbox 固定 (102,67)-(498,943)（=2×槽 396x876）。
+---@param vg any
+---@param img number
+---@param cx number 槽中心 X
+---@param cy number 槽中心 Y
+---@param w number 槽宽
+---@param h number 槽高
+---@param alpha number|nil
+function DrawUtil.drawImageAnchored(vg, img, cx, cy, w, h, alpha)
+    alpha = alpha or 1.0
+    if img < 0 or alpha <= 0.01 or w <= 0 or h <= 0 then return end
+    local CANON_W, CANON_H = 600, 1010
+    local FX0, FY0, FW, FH = 102, 67, 396, 876
+    local s = w / FW
+    local dw, dh = CANON_W * s, CANON_H * s
+    local x = (cx - w * 0.5) - FX0 * s
+    local y = (cy - h * 0.5) - FY0 * s
+    local paint = nvgImagePattern(vg, x, y, dw, dh, 0, img, alpha)
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, dw, dh)
+    nvgFillPaint(vg, paint)
+    nvgFill(vg)
+end
+
 -- ============================================================================
 -- DrawUtil  —— 全局文本/图形绘制工具
 -- 统一 drawTextStroke，避免各 UI 模块重复定义

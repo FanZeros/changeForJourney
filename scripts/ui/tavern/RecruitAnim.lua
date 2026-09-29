@@ -120,9 +120,6 @@ local cachedVg = nil
 
 local img = {
     resultBg     = -1,
-    glowSR       = -1,
-    glowSSR      = -1,
-    glowUR       = -1,
     cardBg       = {},
     qualityBadge = {},
     resIconBg    = {},
@@ -135,13 +132,6 @@ local img = {
     ticketIconStellar = -1,
     diamondIcon       = -1,
 }
-
-local function getGlowImg(quality)
-    if quality >= 4 then return img.glowUR end
-    if quality >= 3 then return img.glowSSR end
-    if quality >= 2 then return img.glowSR end
-    return nil
-end
 
 -- Spine 动画实例（单例模式：只创建一次，通过 SetAnimation 复用）
 local spineInst_       = nil   -- nvgSpineCreate 创建的实例（单例，生命周期同模块）
@@ -246,15 +236,7 @@ end
 function RecruitAnim.init(vg)
     cachedVg = vg
     img.resultBg = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_XKJM.png", 0)
-    img.glowSR  = nvgCreateImage(vg, "image/品质框/UI_PZG_SR.png", 0)
-    img.glowSSR = nvgCreateImage(vg, "image/品质框/UI_PZG_SSR.png", 0)
-    img.glowUR  = nvgCreateImage(vg, "image/品质框/UI_PZG_UR.png", 0)
-
     -- [暗黑化 P2-A] 卡底 KP_TY_N~UR 改由 drawCardBg 矢量绘制，贴图加载已移除
-    if img.glowUR < 0 then
-        img.glowUR = img.glowSSR
-        print("[RecruitAnim] UI_PZG_UR missing, fallback to SSR glow")
-    end
     for _, b in ipairs({ "R", "SR", "SSR", "UR" }) do
         img.qualityBadge[b] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_" .. b .. ".png", 0)
     end
@@ -759,44 +741,6 @@ function RecruitAnim.draw(vg)
     nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
     nvgFillColor(vg, nvgRGBA(8, 10, 16, math.floor(70 * bgAlpha)))
     nvgFill(vg)
-
-    -- 泛光（cards / fadeOut 阶段都绘制）
-    if (state.phase == "cards" or state.phase == "fadeOut") and state.glowStartT > 0 then
-        local glowElapsed = time.elapsedTime - state.glowStartT
-        local gt = math.min(1.0, glowElapsed / GLOW_ANIM_DURATION)
-        local glowEased = easeOutCubic(gt)
-        local glowHScale = GLOW_SQUISH_RATIO + (1.0 - GLOW_SQUISH_RATIO) * glowEased
-        local glowDrawH = GLOW_H * glowHScale
-        local glowAlpha = glowEased
-
-        local flashAlpha = 0
-        if glowElapsed < 0.25 then
-            local ft = glowElapsed / 0.25
-            flashAlpha = math.max(0, 1.0 - ft * ft)
-        end
-
-        local count = #state.results
-        local positions = getCardPositions(count)
-        for i, item in ipairs(state.results) do
-            if item.quality >= 2 then
-                local pos = positions[i]
-                if pos then
-                    local glowImg = getGlowImg(item.quality)
-                    if glowImg and glowImg >= 0 then
-                        drawImageCentered(vg, glowImg, pos.x, pos.y, GLOW_W, glowDrawH, glowAlpha)
-
-                        if flashAlpha > 0.01 then
-                            nvgSave(vg)
-                            nvgGlobalCompositeBlendFunc(vg, NVG_SRC_ALPHA, NVG_ONE)
-                            drawImageCentered(vg, glowImg, pos.x, pos.y, GLOW_W, glowDrawH, flashAlpha)
-                            nvgGlobalCompositeBlendFunc(vg, NVG_ONE, NVG_ONE_MINUS_SRC_ALPHA)
-                            nvgRestore(vg)
-                        end
-                    end
-                end
-            end
-        end
-    end
 
     -- 卡片（cards / fadeOut 阶段都绘制）
     if state.phase == "cards" or state.phase == "fadeOut" then

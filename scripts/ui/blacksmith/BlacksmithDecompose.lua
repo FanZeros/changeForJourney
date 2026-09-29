@@ -77,14 +77,15 @@ FJ.POP_CONFIRM_CX = 540; FJ.POP_CONFIRM_CY = 1301; FJ.POP_CONFIRM_W = 410; FJ.PO
 FJ.POP_CONFIRM_TEXT_FONT = 40
 FJ.POP_CONFIRM_TEXT_R = 0x6d; FJ.POP_CONFIRM_TEXT_G = 0x4c; FJ.POP_CONFIRM_TEXT_B = 0x1d
 
--- 7. 返还卷轴图标行（精粹文本与分解面板之间的空区，每行最多 5 个，超出换行）
-FJ.SCROLL_ROW1_CY = 672
+-- 7. 奖励图标行（精粹+返还卷轴同排，奖励槽下方，每行最多 5 个，超出换行）
+FJ.SCROLL_ROW1_CY = 570
 FJ.SCROLL_ROW_STEP = 116
 FJ.SCROLL_ICON_SIZE = 96
 FJ.SCROLL_GAP = 24
 FJ.SCROLL_MAX_PER_ROW = 5
 FJ.SCROLL_MAX_ROWS = 2
 FJ.SCROLL_BADGE_FONT = 32
+FJ.SCROLL_BADGE_FONT_MIN = 18
 FJ.SCROLL_BADGE_STROKE = 3
 
 -- 格子布局计算
@@ -185,7 +186,20 @@ local function getScrollIcon(vg, resType)
     return img
 end
 
---- 绘制返还卷轴图标行：整体居中，每行最多 5 个，超出换行
+--- 角标字号自适应：数字过长时缩小，保证不溢出图标宽度
+---@param vg any
+---@param text string
+---@return number
+local function fitScrollBadgeFont(vg, text)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, FJ.SCROLL_BADGE_FONT)
+    local w = nvgTextBounds(vg, 0, 0, text)
+    local maxW = FJ.SCROLL_ICON_SIZE - 12
+    if w <= maxW then return FJ.SCROLL_BADGE_FONT end
+    return math.max(FJ.SCROLL_BADGE_FONT_MIN, FJ.SCROLL_BADGE_FONT * maxW / w)
+end
+
+--- 绘制奖励图标行（精粹+返还卷轴）：整体居中，每行最多 5 个，超出换行
 ---@param vg any
 ---@param entries table[] { type: string, amount: number }
 local function drawScrollRefundIcons(vg, entries)
@@ -218,7 +232,7 @@ local function drawScrollRefundIcons(vg, entries)
         local amtX = cx + FJ.SCROLL_ICON_SIZE * 0.5 - 6
         local amtY = cy + FJ.SCROLL_ICON_SIZE * 0.5 - 4
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, FJ.SCROLL_BADGE_FONT)
+        nvgFontSize(vg, fitScrollBadgeFont(vg, amtText))
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
         local sStep = math.pi * 2 / 16
@@ -409,25 +423,31 @@ function M.drawUpperSlot(vg)
         end
     end
 
-    -- 显示文本
-    local rewardText
+    -- 奖励图标行：精粹与返还卷轴同排（整体居中，超过 5 个换行）
+    local essenceAmount = 0
     if selCount > 0 then
-        rewardText = "精粹 +" .. previewEssence
+        essenceAmount = previewEssence
     elseif fjState.lastRewardEssence then
-        rewardText = "精粹 +" .. fjState.lastRewardEssence
-    else
-        rewardText = "分解奖励"
+        essenceAmount = fjState.lastRewardEssence
     end
-    drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 30, rewardText,
-        36, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 4)
-    -- 卷轴返还改为图标行展示（整体居中，超过 5 个换行）
     local scrollEntries = BlacksmithConfig.collectScrollRefundEntries(previewScrolls)
     if #scrollEntries == 0 and selCount == 0 and fjState.lastScrollEntries then
         scrollEntries = fjState.lastScrollEntries
     end
-    if #scrollEntries > 0 then
-        drawScrollRefundIcons(vg, scrollEntries)
+    ---@type table[]
+    local entries = {}
+    if essenceAmount > 0 then
+        entries[#entries + 1] = { type = "essence", amount = essenceAmount }
+    end
+    for _, e in ipairs(scrollEntries) do
+        entries[#entries + 1] = e
+    end
+    if #entries > 0 then
+        drawScrollRefundIcons(vg, entries)
+    else
+        drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 30, "分解奖励",
+            36, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            255, 255, 255, 4)
     end
 end
 

@@ -34,7 +34,6 @@ local MAP = {
     ["BlacksmithDraw"] = "ui.blacksmith.BlacksmithDraw",
     ["BlacksmithEnhance"] = "ui.blacksmith.BlacksmithEnhance",
     ["BlacksmithEnhanceCache"] = "ui.blacksmith.BlacksmithEnhanceCache",
-    ["BlacksmithEquipSlots"] = "ui.blacksmith.BlacksmithEquipSlots",
     ["BlacksmithInput"] = "ui.blacksmith.BlacksmithInput",
     ["BlacksmithPage"] = "ui.blacksmith.BlacksmithPage",
     ["BlacksmithRefine"] = "ui.blacksmith.BlacksmithRefine",

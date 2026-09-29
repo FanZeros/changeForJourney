@@ -80,16 +80,16 @@ FJ.POP_CONFIRM_CX = 540; FJ.POP_CONFIRM_CY = 1330; FJ.POP_CONFIRM_W = 410; FJ.PO
 FJ.POP_CONFIRM_TEXT_FONT = 40
 FJ.POP_CONFIRM_TEXT_R = 0x6d; FJ.POP_CONFIRM_TEXT_G = 0x4c; FJ.POP_CONFIRM_TEXT_B = 0x1d
 
--- 7. 奖励图标行（精粹+返还卷轴同排，奖励槽下方，每行最多 5 个，超出换行）
-FJ.SCROLL_ROW1_CY = 570
-FJ.SCROLL_ROW_STEP = 116
-FJ.SCROLL_ICON_SIZE = 96
-FJ.SCROLL_GAP = 24
-FJ.SCROLL_MAX_PER_ROW = 5
-FJ.SCROLL_MAX_ROWS = 2
-FJ.SCROLL_BADGE_FONT = 32
-FJ.SCROLL_BADGE_FONT_MIN = 18
-FJ.SCROLL_BADGE_STROKE = 3
+-- 7. 奖励图标行（精粹+返还卷轴，占用顶部大槽位区域，每行最多 5 个，超出换行）
+FJ.REWARD_ROW1_CY = FJ.REWARD_CY
+FJ.REWARD_ROW_STEP = FJ.REWARD_SIZE + 24
+FJ.REWARD_ICON_SIZE = FJ.REWARD_SIZE
+FJ.REWARD_GAP = 24
+FJ.REWARD_MAX_PER_ROW = 5
+FJ.REWARD_MAX_ROWS = 2
+FJ.REWARD_BADGE_FONT = 40
+FJ.REWARD_BADGE_FONT_MIN = 22
+FJ.REWARD_BADGE_STROKE = 4
 
 -- 格子布局计算
 FJ.GRID_TOTAL_W = FJ.GRID_COLS * FJ.GRID_CELL + (FJ.GRID_COLS - 1) * FJ.GRID_GAP  -- 940
@@ -195,56 +195,65 @@ end
 ---@param vg any
 ---@param text string
 ---@return number
-local function fitScrollBadgeFont(vg, text)
+local function fitRewardBadgeFont(vg, text)
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, FJ.SCROLL_BADGE_FONT)
+    nvgFontSize(vg, FJ.REWARD_BADGE_FONT)
     local w = nvgTextBounds(vg, 0, 0, text)
-    local maxW = FJ.SCROLL_ICON_SIZE - 12
-    if w <= maxW then return FJ.SCROLL_BADGE_FONT end
-    return math.max(FJ.SCROLL_BADGE_FONT_MIN, FJ.SCROLL_BADGE_FONT * maxW / w)
+    local maxW = FJ.REWARD_ICON_SIZE - 16
+    if w <= maxW then return FJ.REWARD_BADGE_FONT end
+    return math.max(FJ.REWARD_BADGE_FONT_MIN, FJ.REWARD_BADGE_FONT * maxW / w)
 end
 
---- 绘制奖励图标行（精粹+返还卷轴）：整体居中，每行最多 5 个，超出换行
+--- 在顶部大槽位区域绘制奖励图标行（精粹+返还卷轴）：
+--- 单个时保持原槽位位置，多个时整体居中，每行最多 5 个，超出换行
 ---@param vg any
 ---@param entries table[] { type: string, amount: number }
-local function drawScrollRefundIcons(vg, entries)
-    local perRow = FJ.SCROLL_MAX_PER_ROW
-    local step = FJ.SCROLL_ICON_SIZE + FJ.SCROLL_GAP
-    local maxCount = perRow * FJ.SCROLL_MAX_ROWS
+local function drawRewardIcons(vg, entries)
+    local perRow = FJ.REWARD_MAX_PER_ROW
+    local step = FJ.REWARD_ICON_SIZE + FJ.REWARD_GAP
+    local maxCount = perRow * FJ.REWARD_MAX_ROWS
     local count = math.min(#entries, maxCount)
+    local totalRows = math.ceil(count / perRow)
+    -- 单行保持原槽位 Y；两行时压缩行距收纳进槽位区域
+    local rowStep = FJ.REWARD_ROW_STEP
+    local firstCY = FJ.REWARD_ROW1_CY
+    if totalRows > 1 then
+        rowStep = FJ.REWARD_ICON_SIZE + 8
+        firstCY = FJ.REWARD_CY - rowStep * 0.5
+    end
     for i = 1, count do
         local entry = entries[i]
         local row = math.ceil(i / perRow)
         local col = ((i - 1) % perRow) + 1
         local rowStart = (row - 1) * perRow + 1
-        local rowEnd = math.min(#entries, row * perRow)
+        local rowEnd = math.min(count, row * perRow)
         local rowItemCount = rowEnd - rowStart + 1
-        local rowW = rowItemCount * FJ.SCROLL_ICON_SIZE + (rowItemCount - 1) * FJ.SCROLL_GAP
-        local cx = FJ.REWARD_CX - rowW * 0.5 + FJ.SCROLL_ICON_SIZE * 0.5 + (col - 1) * step
-        local cy = FJ.SCROLL_ROW1_CY + (row - 1) * FJ.SCROLL_ROW_STEP
+        local rowW = rowItemCount * FJ.REWARD_ICON_SIZE + (rowItemCount - 1) * FJ.REWARD_GAP
+        local cx = FJ.REWARD_CX - rowW * 0.5 + FJ.REWARD_ICON_SIZE * 0.5 + (col - 1) * step
+        local cy = firstCY + (row - 1) * rowStep
 
         local def = ResourceDefs.DEFS[entry.type]
         local q = def and def.quality or 1
-        DarkIcon.drawQualityBg(vg, q, cx, cy, FJ.SCROLL_ICON_SIZE, FJ.SCROLL_ICON_SIZE, 1.0)
+        DarkIcon.drawQualityBg(vg, q, cx, cy, FJ.REWARD_ICON_SIZE, FJ.REWARD_ICON_SIZE, 1.0)
         local img = getScrollIcon(vg, entry.type)
         if img >= 0 then
-            local inner = FJ.SCROLL_ICON_SIZE - 12
+            local inner = FJ.REWARD_ICON_SIZE - 20
             drawImageCentered(vg, img, cx, cy, inner, inner, 1.0)
         end
 
         -- 数量角标（右下角，描边）
         local amtText = "×" .. tostring(entry.amount)
-        local amtX = cx + FJ.SCROLL_ICON_SIZE * 0.5 - 6
-        local amtY = cy + FJ.SCROLL_ICON_SIZE * 0.5 - 4
+        local amtX = cx + FJ.REWARD_ICON_SIZE * 0.5 - 8
+        local amtY = cy + FJ.REWARD_ICON_SIZE * 0.5 - 6
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, fitScrollBadgeFont(vg, amtText))
+        nvgFontSize(vg, fitRewardBadgeFont(vg, amtText))
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
         local sStep = math.pi * 2 / 16
         for si = 0, 15 do
             local sa = si * sStep
-            nvgText(vg, amtX + math.cos(sa) * FJ.SCROLL_BADGE_STROKE,
-                amtY + math.sin(sa) * FJ.SCROLL_BADGE_STROKE, amtText, nil)
+            nvgText(vg, amtX + math.cos(sa) * FJ.REWARD_BADGE_STROKE,
+                amtY + math.sin(sa) * FJ.REWARD_BADGE_STROKE, amtText, nil)
         end
         nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
         nvgText(vg, amtX, amtY, amtText, nil)
@@ -395,16 +404,6 @@ end
 
 --- 绘制上半部分奖励槽位内容
 function M.drawUpperSlot(vg)
-    -- 分解奖励图标槽位
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        FJ.REWARD_CX - FJ.REWARD_SIZE * 0.5, FJ.REWARD_CY - FJ.REWARD_SIZE * 0.5,
-        FJ.REWARD_SIZE, FJ.REWARD_SIZE, FJ.REWARD_RADIUS)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-    nvgFill(vg)
-    DarkIcon.drawQualityBg(vg, 2, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
-    drawImageCentered(vg, imgEssenceIcon, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)
-
     -- 计算选中装备的预估精粹奖励，以及升阶卷轴 70% 返还
     local previewEssence = 0
     local selCount = 0
@@ -451,8 +450,17 @@ function M.drawUpperSlot(vg)
         entries[#entries + 1] = e
     end
     if #entries > 0 then
-        drawScrollRefundIcons(vg, entries)
+        drawRewardIcons(vg, entries)
     else
+        -- 无奖励时保留原空槽位占位
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg,
+            FJ.REWARD_CX - FJ.REWARD_SIZE * 0.5, FJ.REWARD_CY - FJ.REWARD_SIZE * 0.5,
+            FJ.REWARD_SIZE, FJ.REWARD_SIZE, FJ.REWARD_RADIUS)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
+        nvgFill(vg)
+        DarkIcon.drawQualityBg(vg, 2, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
+        drawImageCentered(vg, imgEssenceIcon, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)
         drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 30, "分解奖励",
             36, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 4)

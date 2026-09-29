@@ -325,19 +325,20 @@ function M.isOverviewOpen()
     return state.tfOverviewOpen
 end
 
---- 古树背景四周：外圈 15% 全透，15% 到 30% 从全透过渡到不透明。
+--- 古树背景四周：外圈 7.5% 全透，7.5% 到 15% 过渡到不透明，中间 70% 保持原图。
 local function fadeTreeBgEdge(vg, x, y, w, h)
-    local outer = math.min(w, h) * 0.15
-    local band = math.min(w, h) * 0.15
+    local m = math.min(w, h)
+    local fade = m * 0.075
+    local edge = m * 0.1125
     local clear = nvgRGBA(0, 0, 0, 0)
     local solid = nvgRGBA(0, 0, 0, 255)
     nvgSave(vg)
     nvgGlobalCompositeOperation(vg, NVG_DESTINATION_IN)
     nvgBeginPath(vg)
-    nvgRect(vg, x + outer, y + outer, w - outer * 2, h - outer * 2)
+    nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, nvgBoxGradient(vg,
-        x + outer, y + outer, w - outer * 2, h - outer * 2,
-        0, band, solid, clear))
+        x + edge, y + edge, w - edge * 2, h - edge * 2,
+        0, fade, solid, clear))
     nvgFill(vg)
     nvgRestore(vg)
 end

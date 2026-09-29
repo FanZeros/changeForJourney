@@ -325,10 +325,33 @@ function M.isOverviewOpen()
     return state.tfOverviewOpen
 end
 
+--- 古树背景四周：外圈 15% 全透，15% 到 30% 从全透过渡到不透明。
+local function fadeTreeBgEdge(vg, x, y, w, h)
+    local outer = math.min(w, h) * 0.15
+    local band = math.min(w, h) * 0.15
+    local clear = nvgRGBA(0, 0, 0, 0)
+    local solid = nvgRGBA(0, 0, 0, 255)
+    nvgSave(vg)
+    nvgGlobalCompositeOperation(vg, NVG_DESTINATION_IN)
+    nvgBeginPath(vg)
+    nvgRect(vg, x + outer, y + outer, w - outer * 2, h - outer * 2)
+    nvgFillPaint(vg, nvgBoxGradient(vg,
+        x + outer, y + outer, w - outer * 2, h - outer * 2,
+        0, band, solid, clear))
+    nvgFill(vg)
+    nvgRestore(vg)
+end
+
 --- 绘制天赋背景（铺满全屏，在上半部分之前绘制）
 function M.drawBg(vg)
     local pageW = M.getPageWidth()
+    local x = 0
+    local y = TF.bgCY - TF.bgH * 0.5
+    nvgSave(vg)
+    nvgIntersectScissor(vg, x, y, pageW, TF.bgH)
     drawImageCentered(vg, img.tfBg, pageW * 0.5, TF.bgCY, pageW, TF.bgH, 1.0)
+    fadeTreeBgEdge(vg, x, y, pageW, TF.bgH)
+    nvgRestore(vg)
 end
 
 --- 绘制天赋 Tab 内容（受 scissor 裁剪的部分）

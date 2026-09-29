@@ -40,10 +40,6 @@ local DESIGN_H = 2400
 
 -- ======================== 布局常量（基于用户规格） ========================
 
--- 1. 结算背景
-local BG_CX, BG_CY = 540, 1192
-local BG_W, BG_H   = 1080, 1017
-
 -- 3. 消耗时间
 local TIME_CX, TIME_CY = 540, 827
 local TIME_FONT = 40
@@ -94,9 +90,6 @@ local BADGE_STROKE = 4
 local RESOURCE_DEFS = ResourceDefs.DEFS
 
 -- ======================== 图片句柄 ========================
-
-local imgWinBg   = -1   -- UI_JJCJS_ZDSL.png
-local imgLoseBg  = -1   -- UI_JJCJS_ZDSB.png
 
 -- 英雄头像缓存: heroId → nvgImage
 local heroIconCache = {}
@@ -178,8 +171,6 @@ end
 ---@param vg any NanoVG 上下文
 function BRP.init(vg)
     cachedVg = vg
-    imgWinBg    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJS_ZDSL.png", 0)
-    imgLoseBg   = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJS_ZDSB.png", 0)
     print("[BattleResultPanel] init OK")
 end
 
@@ -241,11 +232,7 @@ function BRP.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))  -- 50% = 255*0.5 ≈ 128
     nvgFill(vg)
 
-    -- === 2. 结算背景 ===
-    local bgImg = state.isWin and imgWinBg or imgLoseBg
-    drawImageCentered(vg, bgImg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
-
-    -- === 3. 消耗时间 ===
+    -- === 3. 消耗时间（结算底板已移除） ===
     local totalSecs = math.floor(state.elapsedSecs)
     local mins = math.floor(totalSecs / 60)
     local secs = totalSecs % 60

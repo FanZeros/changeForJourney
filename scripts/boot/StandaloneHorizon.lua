@@ -621,6 +621,11 @@ function HandleNanoVGRenderHorizon()
         end
         -- 玩家信息已画在左栏视口内。三行路径会提前 return，必须在这里再画一层全窗居中，
         -- 否则面板被左栏裁切，点外面也无法按面板外关闭。
+        if SpinePowerUpEffect.isPlaying() then
+            Viewport.begin(vg(), Viewport.PANELS.left, oxL, 0, ps)
+            SpinePowerUpEffect.draw(vg(), -30)
+            Viewport.finish(vg())
+        end
         if PlayerInfoPanel.isOpen() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())

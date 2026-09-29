@@ -441,14 +441,17 @@ function LevelUpPopup.draw(vg)
 
     -- 1) Spine 全屏背景
     if ensureSpineLoaded(vg) then
-        local dataCenterX = SPINE_DATA_X + SPINE_DATA_W * 0.5  -- 0
-        local dataCenterY = SPINE_DATA_Y + SPINE_DATA_H * 0.5  -- 0
-        local cx = DESIGN_W * 0.5   -- 540
-        local cy = DESIGN_H * 0.5   -- 1200
-
-        state.spineInst:SetScale(1.0, -1.0)
-        local posX = cx - dataCenterX   -- 540
-        local posY = cy + dataCenterY   -- 1200
+        local cardW, cardH = 1500, 760
+        local cardX = (DESIGN_W - cardW) * 0.5
+        local cardY = (DESIGN_H - cardH) * 0.5
+        local scale = math.min(cardW / SPINE_DATA_W, cardH / SPINE_DATA_H)
+        local drawW = SPINE_DATA_W * scale
+        local drawH = SPINE_DATA_H * scale
+        local boxX = cardX + (cardW - drawW) * 0.5
+        local boxY = cardY + (cardH - drawH) * 0.5
+        state.spineInst:SetScale(scale, -scale)
+        local posX = boxX - SPINE_DATA_X * scale
+        local posY = boxY + (SPINE_DATA_H + SPINE_DATA_Y) * scale
         state.spineInst:SetPosition(posX, posY)
 
         -- 出场时 Spine 也淡出

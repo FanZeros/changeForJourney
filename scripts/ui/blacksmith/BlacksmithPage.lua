@@ -22,6 +22,9 @@ local DrawUtil         = require("core.DrawUtil")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local TownPageChrome   = require("ui.town.TownPageChrome")
 local ExpTable         = require("config.ExpTable")
+local HeroAssetUtil    = require("config.HeroAssetUtil")
+local HeroConfig       = require("config.HeroConfig")
+local HeroFrame        = require("ui.widget.HeroFrame")
 
 -- 子模块
 local BlacksmithEnhance   = require("ui.blacksmith.BlacksmithEnhance")
@@ -173,6 +176,7 @@ local QUALITY_COST = require("config.BlacksmithConfig").QUALITY_COST
 
 local equipIconCache = {}  -- [templateId] = nvgImage handle
 local equipIconVg = nil    -- 缓存 vg 上下文
+local imgHeroIcons = {}    -- [heroId] = nvgImage handle, 角色头像角标（与背包一致）
 
 local function getEquipIconCached(templateId)
     if not templateId then return -1 end
@@ -329,6 +333,26 @@ local function deriveSelectedEquip()
     BlacksmithRefine.updateRefineData(nil)
 end
 
+--- 查询装备当前被哪个英雄穿戴（遍历出战+后备阵容）
+---@param equip table|nil
+---@return number|nil heroId
+local function getEquipOwnerHeroId(equip)
+    if not equip or not equip.seq then return nil end
+    local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
+    if not eqData or not eqData.equipped then return nil end
+    local seqStr = tostring(equip.seq)
+    for heroKey, slots in pairs(eqData.equipped) do
+        if slots then
+            for _, slotKey in ipairs(EQUIP_SLOT_ORDER) do
+                if tostring(slots[slotKey]) == seqStr then
+                    return tonumber(heroKey) or heroKey
+                end
+            end
+        end
+    end
+    return nil
+end
+
 -- ======================== 可强化检查（供角标绘制使用） ========================
 
 -- -------- 性能缓存：避免 draw 每帧重复计算 canEnhance --------
@@ -377,6 +401,8 @@ local function drawSelectedEquipSlot(vg, tabName)
     local slotCX, slotCY = SELECT_SLOT_CX, SELECT_SLOT_CY
     local slotSize = SELECT_SLOT_SIZE
 
+    local ownerHeroId = getEquipOwnerHeroId(equip)
+
     if equip then
         -- 品质底框 + 装备图标（160x160）[暗黑化 P2-A]
         local qIdx = math.max(1, math.min(6, equip.quality or 1))
@@ -420,6 +446,38 @@ local function drawSelectedEquipSlot(vg, tabName)
         drawTextStroke(vg, slotCX, slotCY + slotSize * 0.5 + 30, name,
             36, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 4)
+
+        -- 归属行（装备名下方）：已装备英雄 或 背包未装备提示
+        local ownerLine, oR, oG, oB
+        if ownerHeroId then
+            local heroInfo = HeroConfig.get(ownerHeroId)
+            ownerLine = "已装备: " .. (heroInfo and heroInfo.name or ("英雄" .. tostring(ownerHeroId)))
+            oR, oG, oB = 0xD8, 0xC9, 0xA3
+        else
+            ownerLine = "未装备(背包)"
+            oR, oG, oB = 0x99, 0x99, 0x99
+        end
+        nvgFontFace(vg, "sans")
+        drawTextStroke(vg, slotCX, slotCY + slotSize * 0.5 + 74, ownerLine,
+            26, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            oR, oG, oB, 3)
+
+        -- 归属英雄头像角标（左下角，与背包"他人已装备"白描边变体一致）
+        if ownerHeroId then
+            local ownerIcon = imgHeroIcons[ownerHeroId]
+            if ownerIcon and ownerIcon >= 0 then
+                local badgeSize = 66
+                HeroFrame.draw(vg, {
+                    cx = slotCX - slotSize * 0.5 + badgeSize * 0.5 + 1,
+                    cy = slotCY + slotSize * 0.5 - badgeSize * 0.5 - 1,
+                    size = badgeSize, radius = 6,
+                    heroId = ownerHeroId,
+                    iconHandle = ownerIcon,
+                    state = "owned",
+                    borderOverride = { 255, 255, 255, 200, 2 },
+                })
+            end
+        end
 
         -- 选中高亮边框
         nvgBeginPath(vg)
@@ -538,6 +596,8 @@ function BlacksmithPage.init(vg)
 
     -- 词缀锁定图标（洗练子模块经 ctx 使用）
     local imgLock   = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+    -- 角色头像角标（选择槽归属显示，与背包一致）
+    HeroAssetUtil.preloadIcons(vg, imgHeroIcons)
 
     -- 装备背包初始化
     EquipmentBag.init(vg)

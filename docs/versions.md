@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.93-remove-recruit-spine | 2026-09-29 | 招募不再播放开场 Spine。删除 UI_SPINE_JGZM 全套，结果卡直接展示。升级、卡面、锻造和战力 spine 保留。 |
 | v2.92-remove-unused-plates | 2026-09-29 | 删除脚本未引用的旧底板和图标：竞技场、服务器、商店装饰、进度条、方按钮、角色槽框、转职页、品质框 4、备用底板和若干货币图标。招募 spine 分页保留。 |
 | v2.91-remove-old-dialogue-plates | 2026-09-29 | 删除旧竖屏情景底板 UI_QJDH_1、UI_QJDH_BJ1 和继续箭头 ICON_SJX。情景对话只保留横屏矢量对话条。 |
 | v2.90-remove-reward-glow | 2026-09-29 | 删除未使用的奖励底板 UI_GXHD_1、UI_GXHD_2、UI_GXHD_2_dark、UI_GXHD_3 和箭头 UI_HSJT。结算不再转光效，奖励弹窗继续用 UI_GXHD_1_dark。 |

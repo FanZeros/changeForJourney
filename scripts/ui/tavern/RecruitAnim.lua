@@ -1,9 +1,8 @@
 -- ============================================================================
--- RecruitAnim.lua - 酒馆招募动画模块
--- 负责播放 Spine 招募动画 + 展示抽卡结果
+-- RecruitAnim.lua - 酒馆招募结果
+-- 直接展示抽卡结果，不再播放开场 Spine。
 -- ============================================================================
 ---@diagnostic disable: undefined-global
--- nvgSpineCreate / nvgSpineRender 是引擎内置全局函数（NanoVG Spine 扩展）
 
 local HC = require("config.HeroConfig")
 local CC = require("config.ClassConfig")
@@ -39,10 +38,6 @@ local QUALITY_TAG = {
 local function qualityToBadgeTag(quality)
     if quality == 4 then return "UR" end
     return QUALITY_TAG[quality] or "R"
-end
-
-local function qualityToSpineAnim(quality)
-    return qualityToBadgeTag(quality)
 end
 
 -- classId → 图标编号
@@ -90,9 +85,6 @@ local CARD_FADE_DURATION = 0.5
 local CARD_OFFSET_Y      = 290
 local FADE_OUT_DURATION  = 0.35  -- 关闭淡出时长
 
--- Spine 资源
-local SPINE_JSON = "image/spine/UI_SPINE_JGZM.json"
-
 -- 泛光动画
 local GLOW_ANIM_DURATION = 0.35
 local GLOW_SQUISH_RATIO  = 0.15
@@ -101,7 +93,7 @@ local GLOW_SQUISH_RATIO  = 0.15
 local RESOURCE_DEFS = ResourceDefs.DEFS
 
 -- ======================== 状态 ========================
--- phase: "idle" → "video" → "fadeIn" → "cards" → "fadeOut" → "idle"
+-- phase: "idle" → "cards" → "fadeOut" → "idle"
 
 local state = {
     phase         = "idle",
@@ -133,21 +125,9 @@ local img = {
     diamondIcon       = -1,
 }
 
--- Spine 动画实例（单例模式：只创建一次，通过 SetAnimation 复用）
-local spineInst_       = nil   -- nvgSpineCreate 创建的实例（单例，生命周期同模块）
-local spineLoaded_     = false -- 是否已成功 Load
-local spinePendingAnim_ = nil  -- 待播放的动画名（懒加载标记）
-local spineAnimStarted_ = false -- 本轮动画是否已通过 SetAnimation 启动（防止 update 先于 draw 误判完成）
-local spineCompleted_  = false -- 动画播完标记（由 SetCompleteListener 设置）
-local spineLoadFailed_ = false -- 加载失败标记（永久标记，避免反复尝试）
-local spineLastT_      = 0     -- 上一帧时间戳，用于计算 dt
-
 -- ======================== 资源管理说明 ========================
--- 1. img.heroCards / img.resIcons 作为模块级持久缓存，生命周期与模块相同。
---    禁止清空或 nvgDeleteImage（会导致共享纹理句柄泄漏）。
--- 2. spineInst_ 使用单例模式：首次 draw 时 nvgSpineCreate+Load，之后永久保留。
---    每次招募只调用 SetAnimation() 切换动画，不再反复 Create/Dispose。
---    ⚠️ 反复 Create/Dispose 会导致引擎内部 atlas 纹理泄漏 → 多次招募后卡死。
+-- img.heroCards / img.resIcons 作为模块级持久缓存，生命周期与模块相同。
+-- 禁止清空或 nvgDeleteImage（会导致共享纹理句柄泄漏）。
 
 -- ======================== 工具函数 ========================
 
@@ -292,17 +272,13 @@ function RecruitAnim.start(results, onClose, count, poolId)
         if q > state.highestQ then state.highestQ = q end
     end
 
-    -- 跳过 Spine 开场动画，直接展示抽卡结果
-    spinePendingAnim_ = nil
-    spineAnimStarted_ = false
-    spineCompleted_   = true
-    spineLastT_       = time.elapsedTime
+    -- 直接展示抽卡结果
     state.fadeOutStartT = 0
     state.fadeStartT = time.elapsedTime
     state.cardStartT = time.elapsedTime
     state.glowStartT = time.elapsedTime
     state.phase = "cards"
-    print("[RecruitAnim] start skip video, cards=" .. tostring(#state.results))
+    print("[RecruitAnim] start cards=" .. tostring(#state.results))
 end
 
 function RecruitAnim.isPlaying()
@@ -311,25 +287,6 @@ end
 
 function RecruitAnim.update(dt)
     if state.phase == "idle" then return end
-
-    if state.phase == "video" then
-        -- 主动轮询完成状态（listener 有时不触发，IsAnimationComplete 更可靠）
-        -- 必须等 draw() 中 SetAnimation 执行后才检查（spineAnimStarted_），
-        -- 否则单例复用时上一轮的 IsAnimationComplete=true 会立刻误触发跳转
-        if spineAnimStarted_ and spineInst_ and not spineCompleted_ then
-            if spineInst_:IsAnimationComplete(0) then
-                spineCompleted_ = true
-                print("[RecruitAnim] spine IsAnimationComplete(0)=true")
-            end
-        end
-        -- spine 动画播完或加载失败时进入 fadeIn
-        if spineCompleted_ or spineLoadFailed_ then
-            state.phase = "fadeIn"
-            state.fadeStartT = time.elapsedTime
-            local reason = spineCompleted_ and "completed" or "load_failed"
-            print("[RecruitAnim] video→fadeIn reason=" .. reason)
-        end
-    end
 
     if state.phase == "fadeIn" then
         local elapsed = time.elapsedTime - state.fadeStartT
@@ -352,8 +309,6 @@ function RecruitAnim.update(dt)
     if state.phase == "fadeOut" then
         local elapsed = time.elapsedTime - state.fadeOutStartT
         if elapsed >= FADE_OUT_DURATION then
-            -- 淡出完毕，真正关闭（不 Dispose spine 实例，单例复用）
-            spinePendingAnim_ = nil
             state.glowStartT = 0
             state.phase = "idle"
             state.results = {}
@@ -369,14 +324,6 @@ end
 ---@return boolean
 function RecruitAnim.handleInput(dx, dy)
     if state.phase == "idle" then return false end
-
-    -- 视频阶段已跳过；若残留则直接进结果
-    if state.phase == "video" then
-        state.phase = "cards"
-        state.cardStartT = time.elapsedTime
-        state.glowStartT = time.elapsedTime
-        return true
-    end
 
     if state.phase == "cards" then
         local elapsed = time.elapsedTime - state.cardStartT
@@ -397,9 +344,6 @@ function RecruitAnim.handleInput(dx, dy)
 end
 
 function RecruitAnim.close()
-    -- 不 Dispose spine 实例（单例复用，生命周期同模块）
-    spinePendingAnim_ = nil
-    spineCompleted_   = false
     state.glowStartT  = 0
     state.fadeOutStartT = 0
     state.phase = "idle"
@@ -649,75 +593,9 @@ function RecruitAnim.draw(vg)
         nvgGlobalAlpha(vg, globalAlpha)
     end
 
-    -- =================== 视频阶段（Spine 动画）===================
-    if state.phase == "video" then
-        -- 单例懒加载：首次创建并永久保留，后续只切换动画
-        if spinePendingAnim_ then
-            if not spineInst_ and not spineLoadFailed_ then
-                -- 首次创建实例
-                local inst = nvgSpineCreate(vg)
-                if inst then
-                    local loadOk = inst:Load(SPINE_JSON)
-                    if loadOk then
-                        inst:SetPremultipliedAlpha(true)
-                        inst:SetDefaultMix(0)
-                        inst:SetSpeed(1.0)
-                        inst:SetCompleteListener(function()
-                            spineCompleted_ = true
-                            print("[RecruitAnim] spine CompleteListener fired")
-                        end)
-                        spineInst_ = inst
-                        spineLoaded_ = true
-                        print("[RecruitAnim] spine instance created OK")
-                    else
-                        inst:Dispose()
-                        spineLoadFailed_ = true
-                        print("[RecruitAnim] spine load FAILED path=" .. SPINE_JSON)
-                    end
-                else
-                    spineLoadFailed_ = true
-                    print("[RecruitAnim] nvgSpineCreate returned nil")
-                end
-            end
+    -- =================== cards / fadeOut 阶段 ===================
 
-            -- 实例已就绪，设置新动画
-            if spineInst_ then
-                spineInst_:SetAnimation(0, spinePendingAnim_, false)
-                spineAnimStarted_ = true  -- 允许 update() 开始检测完成状态
-                spineLastT_ = time.elapsedTime
-                print("[RecruitAnim] spine SetAnimation anim=" .. spinePendingAnim_)
-            end
-            spinePendingAnim_ = nil  -- 只触发一次
-        end
-
-        -- 黑色背景
-        nvgBeginPath(vg)
-        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-        nvgFill(vg)
-
-        -- 渲染 spine 动画
-        if spineInst_ then
-            local now = time.elapsedTime
-            local dt = now - spineLastT_
-            spineLastT_ = now
-            if dt > 0 then
-                spineInst_:Update(dt)
-            end
-            -- Spine Y-up → NanoVG Y-down 需要 Y 轴翻转
-            -- 骨架 center = (0,0)，全屏中心 = (540, 1200)
-            spineInst_:SetScale(1.0, -1.0)
-            spineInst_:SetPosition(540, 1200)
-            nvgSpineRender(vg, spineInst_)
-        end
-
-        nvgRestore(vg)
-        return
-    end
-
-    -- =================== fadeIn / cards / fadeOut 阶段 ===================
-
-    -- 背景：黑色（spine 动画结束后不保留帧）
+    -- 背景：黑色
     nvgBeginPath(vg)
     nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))

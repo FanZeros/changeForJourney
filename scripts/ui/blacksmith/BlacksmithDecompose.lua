@@ -61,19 +61,18 @@ FJ.POP_DESC_CX = 540; FJ.POP_DESC_CY = 925; FJ.POP_DESC_FONT = 38; FJ.POP_DESC_M
 FJ.POP_DESC_R = 0xb6; FJ.POP_DESC_G = 0xb0; FJ.POP_DESC_B = 0x9d
 -- 品质方框选择行（6 个品质图标方框，与分解页品质筛选同款小图）
 FJ.POP_QBOX_COUNT = 6
-FJ.POP_QBOX_SIZE = 100; FJ.POP_QBOX_GAP = 24; FJ.POP_QBOX_CY = 1035; FJ.POP_QBOX_R = 16
+FJ.POP_QBOX_SIZE = 100; FJ.POP_QBOX_GAP = 24; FJ.POP_QBOX_CY = 1060; FJ.POP_QBOX_R = 16
 FJ.POP_QBOX_ICON_SIZE = 76
 FJ.POP_QBOX_TOTAL_W = FJ.POP_QBOX_COUNT * FJ.POP_QBOX_SIZE + (FJ.POP_QBOX_COUNT - 1) * FJ.POP_QBOX_GAP  -- 720
 FJ.POP_QBOX_FIRST_CX = 540 - FJ.POP_QBOX_TOTAL_W * 0.5 + FJ.POP_QBOX_SIZE * 0.5  -- 230
 FJ.POP_QBOX_SEL_STROKE = 5
 -- 等级筛选行：减/加按钮 + 滑条（与市场购买弹窗同款交互）
-FJ.POP_LEVEL_CY = 1170
+FJ.POP_LEVEL_CY = 1185
 FJ.POP_MINUS_CX = 240; FJ.POP_MINUS_CY = FJ.POP_LEVEL_CY; FJ.POP_MINUS_W = 84; FJ.POP_MINUS_H = 84
 FJ.POP_PLUS_CX = 840; FJ.POP_PLUS_CY = FJ.POP_LEVEL_CY; FJ.POP_PLUS_W = 84; FJ.POP_PLUS_H = 84
 FJ.POP_SLIDER_CX = 540; FJ.POP_SLIDER_CY = FJ.POP_LEVEL_CY; FJ.POP_SLIDER_W = 400; FJ.POP_SLIDER_H = 24; FJ.POP_SLIDER_R = 12
 FJ.POP_KNOB_SIZE = 36
 FJ.POP_KNOB_STROKE_R = 0x44; FJ.POP_KNOB_STROKE_G = 0x2d; FJ.POP_KNOB_STROKE_B = 0x19; FJ.POP_KNOB_STROKE_W = 6
-FJ.POP_LEVEL_TEXT_CY = FJ.POP_LEVEL_CY - 62; FJ.POP_LEVEL_TEXT_FONT = 36; FJ.POP_LEVEL_STROKE = 5
 FJ.POP_LEVEL_STEP = 1
 FJ.POP_LEVEL_MAX = 60
 -- 设置完成按钮
@@ -754,26 +753,19 @@ function M.drawAutoDecomposePopup(vg)
         BF.finish(vg, didScaleQ)
     end
 
-    -- 6. 等级文本
-    local levelText = fjState.autoLevel == 0 and "等级：无"
-        or ("等级：" .. tostring(fjState.autoLevel) .. "级及以下")
-    drawTextStroke(vg, FJ.POP_SLIDER_CX, FJ.POP_LEVEL_TEXT_CY, levelText,
-        FJ.POP_LEVEL_TEXT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, FJ.POP_LEVEL_STROKE)
-
-    -- 7. 减按钮（0 档时半透明）
+    -- 6. 减按钮（0 档时半透明）
     local didScaleMinus = BF.begin(vg, "bsd_minus", FJ.POP_MINUS_CX, FJ.POP_MINUS_CY, FJ.POP_MINUS_W, FJ.POP_MINUS_H)
     drawImageCentered(vg, imgBtnMinus, FJ.POP_MINUS_CX, FJ.POP_MINUS_CY,
         FJ.POP_MINUS_W, FJ.POP_MINUS_H, fjState.autoLevel <= 0 and 0.4 or 1.0)
     BF.finish(vg, didScaleMinus)
 
-    -- 8. 加按钮（满档时半透明）
+    -- 7. 加按钮（满档时半透明）
     local didScalePlus = BF.begin(vg, "bsd_plus", FJ.POP_PLUS_CX, FJ.POP_PLUS_CY, FJ.POP_PLUS_W, FJ.POP_PLUS_H)
     drawImageCentered(vg, imgBtnPlus, FJ.POP_PLUS_CX, FJ.POP_PLUS_CY,
         FJ.POP_PLUS_W, FJ.POP_PLUS_H, fjState.autoLevel >= FJ.POP_LEVEL_MAX and 0.4 or 1.0)
     BF.finish(vg, didScalePlus)
 
-    -- 9. 滑条背景
+    -- 8. 滑条背景
     local sliderL = FJ.POP_SLIDER_CX - FJ.POP_SLIDER_W * 0.5
     nvgBeginPath(vg)
     nvgRoundedRect(vg, sliderL, FJ.POP_SLIDER_CY - FJ.POP_SLIDER_H * 0.5,
@@ -792,7 +784,7 @@ function M.drawAutoDecomposePopup(vg)
         nvgFill(vg)
     end
 
-    -- 10. 滑块（圆形，纯白+描边）
+    -- 9. 滑块（圆形，纯白+描边）
     local knobX = sliderL + FJ.POP_SLIDER_W * frac
     nvgBeginPath(vg)
     nvgCircle(vg, knobX, FJ.POP_SLIDER_CY, FJ.POP_KNOB_SIZE * 0.5)
@@ -802,7 +794,7 @@ function M.drawAutoDecomposePopup(vg)
     nvgStrokeWidth(vg, FJ.POP_KNOB_STROKE_W)
     nvgStroke(vg)
 
-    -- 11. 设置完成按钮
+    -- 10. 设置完成按钮
     local didScaleConfirm = BF.begin(vg, "bsd_confirm", FJ.POP_CONFIRM_CX, FJ.POP_CONFIRM_CY, FJ.POP_CONFIRM_W, FJ.POP_CONFIRM_H)
     drawImageCentered(vg, imgReplaceBtn, FJ.POP_CONFIRM_CX, FJ.POP_CONFIRM_CY,
         FJ.POP_CONFIRM_W, FJ.POP_CONFIRM_H, 1.0)

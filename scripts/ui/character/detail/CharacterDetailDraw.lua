@@ -378,7 +378,6 @@ local img = {
 }
 
 local imgQualityBadges = {}
-local imgStatIcons     = {}
 
 -- 来自 CharacterPanel 的共享图片（通过 setContext 注入）
 local imgHeroCards   = {}
@@ -512,10 +511,6 @@ function M.initImages(vg)
     img.attrDeco = nvgCreateImage(vg, "image/通用图标/ICON_XX.png", 0)
     -- [图标统一 0928] midDiv2 与 midDiv1 同贴图，复用句柄避免重复加载（无 delete，复用安全）
     img.midDiv2  = img.midDiv1
-
-    for _, st in ipairs(STAT_LAYOUT) do
-        imgStatIcons[st.icon] = nvgCreateImage(vg, "image/通用图标/" .. st.icon .. ".png", 0)
-    end
 
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv     = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)

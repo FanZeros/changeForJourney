@@ -236,6 +236,18 @@ local DLG = {
     BUY_CX = 540, BUY_CY = 1503, BUY_W = 410, BUY_H = 100, BUY_FONT = 40,
 }
 
+-- 悬停说明浮窗（参照背包道具详情的说明样式，轻量浮窗版）
+local TIP = {
+    DELAY = 0.3,          -- 悬停多久后显示
+    W = 380, PAD = 20,    -- 浮窗宽与内边距
+    FONT = 30, LINE_H = 42, MAX_LINES = 3,
+    R = 14,               -- 圆角
+    BG_R = 0x2a, BG_G = 0x1d, BG_B = 0x14, BG_A = 235,
+    TXT_R = 0xe8, TXT_G = 0xdd, TXT_B = 0xcc,
+    NAME_FONT = 34, NAME_SW = 4,
+    GAP_ABOVE = 14,       -- 浮窗与卡片间距
+}
+
 -- ======================== 动画参数 ========================
 
 local ANIM_DUR       = 0.45
@@ -287,6 +299,8 @@ local state = {
     -- 批量购买
     buyQuantity = 1, buyMaxQuantity = 1,
     sliderDragging = false,
+    -- 商品悬停说明浮窗
+    hoverIdx = nil, hoverSince = 0,
     -- 浮动提示
     floatText = nil, floatTextX = 0, floatTextY = 0, floatTextTime = 0,
 }
@@ -590,6 +604,143 @@ end
 
 local TAB_DRAW = { items = drawItemsContent }
 
+-- ======================== 悬停说明浮窗 ========================
+
+--- 命中检测：返回指针下的商品索引（仅可见网格区域）
+---@param dx number
+---@param dy number
+---@return integer|nil
+local function hitCardAt(dx, dy)
+    if dy < SCROLL_TOP or dy > SCROLL_BOT then return nil end
+    for idx = 1, #SHOP_ITEMS do
+        local col = ((idx - 1) % SL.CARD_COLS)
+        local row = math.floor((idx - 1) / SL.CARD_COLS)
+        local cx = GRID_LEFT + col * CARD_STEP_X
+        local cy = SL.GRID_TOP_CY + row * CARD_STEP_Y - state.scrollY
+        if hitTest(dx, dy, cx, cy, SL.CARD_W, SL.CARD_H) then
+            return idx
+        end
+    end
+    return nil
+end
+
+--- 悬停更新（-1,-1 表示指针离开市场区域）
+---@param dx number
+---@param dy number
+function MarketPage.handleHover(dx, dy)
+    if not state.open or state.closing or state.dialogOpen or state.popupClosing
+        or state.tab ~= "items" or dx < 0 then
+        state.hoverIdx = nil
+        return
+    end
+    local idx = hitCardAt(dx, dy)
+    if idx ~= state.hoverIdx then
+        state.hoverIdx = idx
+        state.hoverSince = time.elapsedTime
+    end
+end
+
+--- 文本换行：按最大宽度拆行，超出 MAX_LINES 截断加省略号
+---@param vg any
+---@param text string
+---@param maxW number
+---@return string[]
+local function wrapDescLines(vg, text, maxW)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, TIP.FONT)
+    local lines, cur, curW = {}, "", 0
+    local i = 1
+    while i <= #text do
+        -- 按 UTF-8 首字节确定字符字节数，整字符测量避免拆字
+        local b = text:byte(i)
+        local len = 1
+        if b >= 0xF0 then len = 4
+        elseif b >= 0xE0 then len = 3
+        elseif b >= 0xC0 then len = 2
+        end
+        local piece = text:sub(i, i + len - 1)
+        i = i + len
+        local w = nvgTextBounds(vg, 0, 0, piece)
+        if curW + w > maxW and cur ~= "" then
+            lines[#lines + 1] = cur
+            cur, curW = piece, w
+            if #lines == TIP.MAX_LINES then break end
+        else
+            cur = cur .. piece
+            curW = curW + w
+        end
+    end
+    if #lines < TIP.MAX_LINES and cur ~= "" then
+        lines[#lines + 1] = cur
+    elseif #lines == TIP.MAX_LINES and cur ~= "" then
+        lines[TIP.MAX_LINES] = lines[TIP.MAX_LINES] .. "…"
+    end
+    return lines
+end
+
+--- 绘制悬停说明浮窗（页面最上层）
+---@param vg any
+function MarketPage.drawHoverTip(vg)
+    local idx = state.hoverIdx
+    if not idx then return end
+    local item = SHOP_ITEMS[idx]
+    if not item or not item.desc or item.desc == "" then return end
+    local elapsed = time.elapsedTime - state.hoverSince
+    if elapsed < TIP.DELAY then return end
+    local fade = math.min(1, (elapsed - TIP.DELAY) / 0.15)
+
+    -- 卡片屏幕位置
+    local col = ((idx - 1) % SL.CARD_COLS)
+    local row = math.floor((idx - 1) / SL.CARD_COLS)
+    local cx = GRID_LEFT + col * CARD_STEP_X
+    local screenCY = SL.GRID_TOP_CY + row * CARD_STEP_Y - state.scrollY
+    local cardTop = screenCY - SL.CARD_H * 0.5
+    local cardBot = screenCY + SL.CARD_H * 0.5
+
+    -- 换行测量
+    local lines = wrapDescLines(vg, item.desc or "", TIP.W - TIP.PAD * 2)
+    local nameH = TIP.NAME_FONT + 6
+    local h = TIP.PAD * 2 + nameH + #lines * TIP.LINE_H
+
+    -- 位置：默认卡片上方，放不下则翻到下方；X 夹紧在屏幕内
+    local tipY = cardTop - TIP.GAP_ABOVE - h * 0.5
+    if tipY - h * 0.5 < SCROLL_TOP then
+        tipY = cardBot + TIP.GAP_ABOVE + h * 0.5
+    end
+    local tipX = math.max(20 + TIP.W * 0.5, math.min(DESIGN_W - 20 - TIP.W * 0.5, cx))
+
+    nvgGlobalAlpha(vg, fade)
+
+    -- 背景
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, tipX - TIP.W * 0.5, tipY - h * 0.5, TIP.W, h, TIP.R)
+    nvgFillColor(vg, nvgRGBA(TIP.BG_R, TIP.BG_G, TIP.BG_B, TIP.BG_A))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0x6b, 0x4f, 0x36, 200))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    -- 名称
+    local textX = tipX - TIP.W * 0.5 + TIP.PAD
+    local textY = tipY - h * 0.5 + TIP.PAD + nameH * 0.5
+    drawTextStroke(vg, textX, textY, item.name, TIP.NAME_FONT,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, TIP.NAME_SW,
+        { strokeColor = { 0, 0, 0 } })
+
+    -- 描述行
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, TIP.FONT)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(TIP.TXT_R, TIP.TXT_G, TIP.TXT_B, 255))
+    local lineY = tipY - h * 0.5 + TIP.PAD + nameH + TIP.LINE_H * 0.5
+    for _, line in ipairs(lines) do
+        nvgText(vg, textX, lineY, line, nil)
+        lineY = lineY + TIP.LINE_H
+    end
+
+    nvgGlobalAlpha(vg, 1)
+end
+
 -- ======================== Public API ========================
 
 local _marketInit
@@ -632,6 +783,7 @@ function MarketPage.open()
     state.dialogOpen = false
     state.dialogItemIdx = nil
     state.popupClosing = false
+    state.hoverIdx = nil
     print("[MarketPage] 打开市场")
 end
 
@@ -822,6 +974,10 @@ function MarketPage.draw(vg)
         nvgTranslate(vg, ox, 0)
     end
     drawPageImpl(vg)
+    -- 悬停说明浮窗置顶绘制（弹窗打开时 hoverIdx 已被清空，不会绘制）
+    if not state.closing then
+        MarketPage.drawHoverTip(vg)
+    end
     if ox ~= 0 then
         nvgRestore(vg)
     end

@@ -440,18 +440,21 @@ end
 -- ======================== 自动分解设置 ========================
 
 ---@param uid number
----@param autoQuality number  品质阈值 (0=关闭, 1~5=该品质及以下自动分解)
----@param autoLevel   number  等级阈值  (0=关闭, N=N级及以下自动分解)
+---@param autoQuality number  品质阈值 (0=关闭, 1~6=该品质及以下自动分解；6=至臻)
+---@param autoLevel   number  等级阈值  (0=关闭, 1~60=N级及以下自动分解)
 ---@return boolean ok
 ---@return string|nil reason
+---@return integer|nil clampedQuality 钳制后的品质阈值
+---@return integer|nil clampedLevel 钳制后的等级阈值
 function EquipmentService.SetAutoDecompose(uid, autoQuality, autoLevel)
     local equipData = PDM.GetModule(uid, "equipment")
     if not equipData then
         return false, "数据未加载"
     end
 
-    autoQuality = math.max(0, math.min(5, math.floor(tonumber(autoQuality) or 0)))
-    autoLevel   = math.max(0, math.min(100, math.floor(tonumber(autoLevel) or 0)))
+    -- 品质 6 档（至臻）、等级 0-60，与 UI/共享判定一致；此前钳 5/100 会导致至臻永不分解
+    autoQuality = math.max(0, math.min(6, math.floor(tonumber(autoQuality) or 0)))
+    autoLevel   = math.max(0, math.min(60, math.floor(tonumber(autoLevel) or 0)))
 
     if not equipData.settings then
         equipData.settings = {}
@@ -462,7 +465,7 @@ function EquipmentService.SetAutoDecompose(uid, autoQuality, autoLevel)
 
     print("[EquipmentService] SetAutoDecompose uid=" .. tostring(uid)
         .. " autoQuality=" .. autoQuality .. " autoLevel=" .. autoLevel)
-    return true, nil
+    return true, nil, autoQuality, autoLevel
 end
 
 --- 切换装备锁定状态（锁定后无法被分解）

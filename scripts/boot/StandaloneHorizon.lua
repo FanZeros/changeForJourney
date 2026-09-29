@@ -1130,6 +1130,11 @@ function HandleMouseMoveHorizon(eventType, eventData)
             if CharacterPanel.handleHover then CharacterPanel.handleHover(-1, -1) end
         end
         if pid == 'left' then
+            if MarketPage.isOpen and MarketPage.isOpen() and MarketPage.handleHover then
+                MarketPage.handleHover(dx, dy)
+            elseif MarketPage.handleHover then
+                MarketPage.handleHover(-1, -1)
+            end
             if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
                 BackpackPanel.handleHover(dx, dy)
             elseif BackpackPanel.handleHover then
@@ -1141,6 +1146,7 @@ function HandleMouseMoveHorizon(eventType, eventData)
                 EquipmentBag.handleHover(-1, -1)
             end
         else
+            if MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
             if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
             if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
         end
@@ -1179,6 +1185,9 @@ function HandleEquipmentHoverTickHorizon()
         CharacterPanel.handleHover(-1, -1)
     end
     if pid == 'left' then
+        if MarketPage.isOpen and MarketPage.isOpen() and MarketPage.handleHover then
+            MarketPage.handleHover(dx, dy)
+        end
         if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
             BackpackPanel.handleHover(dx, dy)
         end
@@ -1186,6 +1195,7 @@ function HandleEquipmentHoverTickHorizon()
             EquipmentBag.handleHover(dx, dy)
         end
     else
+        if MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
         if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
         if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
     end

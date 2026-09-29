@@ -10,6 +10,7 @@ local StageProvider    = require("shared.StageProvider")
 local ExpTable         = require("config.ExpTable")
 local HeroConfig       = require("config.HeroConfig")
 local LootBoxSystem    = require("systems.LootBoxSystem")
+local BlacksmithConfig = require("config.BlacksmithConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local CurrencyService  = require("rules.currency.CurrencyService")
 local HeroService      = require("rules.hero.HeroService")
@@ -551,14 +552,28 @@ function OfflineService.OnPlayerDisconnect(uid)
                             HeroService.SyncHeroLevelsToPlayerLevel(uid, playerData.level)
                         end
 
-                        -- 装备种子
+                        -- 装备种子（符合自动分解条件的直接转精粹，与击杀掉落同一语义）
+                        local equipData = PDM.GetModule(uid, "equipment")
+                        local autoSettings = (equipData and equipData.settings) or nil
+                        local autoEssence = 0
                         for _, seed in ipairs(rewards.equipSeeds or {}) do
                             local count = seed.count or 1
                             for _ = 1, count do
-                                LootBoxSystem.addSeed(lootbox, seed.stageId, seed.quality, seed.level)
+                                local q, lv = seed.quality or 1, seed.level or 1
+                                if BlacksmithConfig.shouldAutoDecompose(autoSettings, q, lv) then
+                                    local essence = BlacksmithConfig.calcAutoDecomposeEssence(q, lv)
+                                    autoEssence = autoEssence + essence
+                                    BlacksmithConfig.recordAutoDecompose(lootbox, q, lv, essence)
+                                else
+                                    LootBoxSystem.addSeed(lootbox, seed.stageId, q, lv)
+                                end
                             end
                         end
                         PDM.MarkDirty(uid, "lootbox")
+                        if autoEssence > 0 then
+                            CurrencyService.Add(uid, "essence", autoEssence)
+                            print("[Offline] auto-decompose essence=+" .. autoEssence .. " uid=" .. tostring(uid))
+                        end
 
                         -- 卷轴
                         for scrollField, count in pairs(rewards.scrollDrops or {}) do

@@ -935,13 +935,18 @@ function BlacksmithService.DecomposeEquip(uid, seqs)
         return false, "未选择装备"
     end
 
-    -- 验证所有装备存在且未穿戴
+    -- 验证所有装备存在且未穿戴（seq 去重：重复提交同一 seq 不得重复计奖）
     local toRemove = {}
+    local seenSeqs = {}
     for _, seq in ipairs(seqs) do
         seq = tonumber(seq)
         if not seq then
             return false, "无效的装备序列号"
         end
+        if seenSeqs[seq] then
+            return false, "装备序列号重复: " .. tostring(seq)
+        end
+        seenSeqs[seq] = true
         local seqStr = tostring(seq)
         local equip = equipData.inventory and equipData.inventory[seqStr]
         if not equip then

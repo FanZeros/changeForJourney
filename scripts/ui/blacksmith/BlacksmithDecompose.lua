@@ -818,9 +818,10 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function M.handlePopupInput(dx, dy)
-    -- 装备详情面板优先拦截
+    -- 装备详情面板优先拦截（详情打开期间无条件消费，防穿透到弹窗/背包）
     if EquipmentDetail.isOpen() then
-        return EquipmentDetail.handleInput(dx, dy)
+        EquipmentDetail.handleInput(dx, dy)
+        return true
     end
     if not fjState.autoPopupOpen then return false end
 
@@ -960,20 +961,22 @@ function M.handleInput(dx, dy)
             local col = ((idx - 1) % FJ.GRID_COLS) + 1
             local cx = FJ.GRID_FIRST_CX + (col - 1) * FJ.GRID_COL_STEP
             local cy = FJ.GRID_FIRST_CY + (row - 1) * FJ.GRID_ROW_STEP - fjState.scrollY
-            if hitTest(dx, dy, cx, cy, FJ.GRID_CELL, FJ.GRID_CELL) then
-                local topY = FJ.GRID_FIRST_CY - FJ.GRID_CELL * 0.5
-                local botY = FJ.GRID_BOTTOM_Y
-                if cy >= topY and cy <= botY then
-                    local item = backpackItems[idx]
-                    if item and item.locked then
-                        -- 锁定的装备不可选择分解
-                        BF.trigger("bsd_cell_" .. idx)
-                        print("[BlacksmithDecompose] 背包格子已锁定，无法选择: " .. idx)
-                    else
-                        BF.trigger("bsd_cell_" .. idx)
-                        fjState.selectedItems[idx] = not fjState.selectedItems[idx] or nil
-                        print("[BlacksmithDecompose] 背包格子点击: " .. idx)
-                    end
+            -- 命中区取裁剪后可见部分：半可见格子可点可见区，完全出屏不可点
+            local topY = FJ.GRID_FIRST_CY - FJ.GRID_CELL * 0.5
+            local botY = FJ.GRID_BOTTOM_Y
+            local visTop = math.max(cy - FJ.GRID_CELL * 0.5, topY)
+            local visBot = math.min(cy + FJ.GRID_CELL * 0.5, botY)
+            if visBot - visTop > 8
+                and hitTest(dx, dy, cx, (visTop + visBot) * 0.5, FJ.GRID_CELL, visBot - visTop) then
+                local item = backpackItems[idx]
+                if item and item.locked then
+                    -- 锁定的装备不可选择分解
+                    BF.trigger("bsd_cell_" .. idx)
+                    print("[BlacksmithDecompose] 背包格子已锁定，无法选择: " .. idx)
+                else
+                    BF.trigger("bsd_cell_" .. idx)
+                    fjState.selectedItems[idx] = not fjState.selectedItems[idx] or nil
+                    print("[BlacksmithDecompose] 背包格子点击: " .. idx)
                 end
                 return true
             end
@@ -987,7 +990,10 @@ end
 
 --- 拖拽开始
 function M.handleDragBegin(dx, dy)
-    if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragBegin(dx, dy) end
+    if EquipmentDetail.isOpen() then
+        EquipmentDetail.handleDragBegin(dx, dy)
+        return true
+    end
     -- 自动分解弹窗打开时：滑条拖拽优先，且不滚动背包
     if fjState.autoPopupOpen then
         if hitTest(dx, dy, FJ.POP_SLIDER_CX, FJ.POP_SLIDER_CY, FJ.POP_SLIDER_W + FJ.POP_KNOB_SIZE, sliderHitH()) then
@@ -1013,13 +1019,15 @@ function M.handleDragBegin(dx, dy)
         local col = ((idx - 1) % FJ.GRID_COLS) + 1
         local cx = FJ.GRID_FIRST_CX + (col - 1) * FJ.GRID_COL_STEP
         local cy = FJ.GRID_FIRST_CY + (row - 1) * FJ.GRID_ROW_STEP - fjState.scrollY
-        if hitTest(dx, dy, cx, cy, FJ.GRID_CELL, FJ.GRID_CELL) then
-            local topY = FJ.GRID_FIRST_CY - FJ.GRID_CELL * 0.5
-            local botY = FJ.GRID_BOTTOM_Y
-            if cy >= topY and cy <= botY then
-                fjState.longPressCellIdx = idx
-                fjState.longPressActive = true
-            end
+        -- 长按命中同样只取裁剪后可见部分（与点击命中一致）
+        local topY = FJ.GRID_FIRST_CY - FJ.GRID_CELL * 0.5
+        local botY = FJ.GRID_BOTTOM_Y
+        local visTop = math.max(cy - FJ.GRID_CELL * 0.5, topY)
+        local visBot = math.min(cy + FJ.GRID_CELL * 0.5, botY)
+        if visBot - visTop > 8
+            and hitTest(dx, dy, cx, (visTop + visBot) * 0.5, FJ.GRID_CELL, visBot - visTop) then
+            fjState.longPressCellIdx = idx
+            fjState.longPressActive = true
             break
         end
     end
@@ -1027,7 +1035,10 @@ end
 
 --- 拖拽移动
 function M.handleDragMove(dx, dy)
-    if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragMove(dx, dy) end
+    if EquipmentDetail.isOpen() then
+        EquipmentDetail.handleDragMove(dx, dy)
+        return true
+    end
     -- 滑条拖拽中：跟随 X 更新等级
     if fjState.levelSliderDragging then
         fjState.autoLevel = levelFromSliderX(dx)
@@ -1055,7 +1066,10 @@ end
 
 --- 拖拽结束
 function M.handleDragEnd(dx, dy)
-    if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragEnd(dx, dy) end
+    if EquipmentDetail.isOpen() then
+        EquipmentDetail.handleDragEnd(dx, dy)
+        return true
+    end
     if fjState.levelSliderDragging then
         fjState.levelSliderDragging = false
         print("[BlacksmithDecompose] 滑条拖拽结束，等级: " .. (fjState.autoLevel == 0 and "无" or fjState.autoLevel))
@@ -1093,10 +1107,12 @@ end
 --- 处理分解结果（成功和失败都会调用，用于释放门控）
 ---@param data table action result 数据
 function M.onActionResult(data)
-    -- 无论成功/失败，都释放门控锁
-    if pendingDecompose then
+    -- 仅分解请求的响应释放门控锁：无关响应（锁定/强化等）不得提前解锁导致重复提交
+    local isDecomposeResp = data.action == nil
+        or data.action == getProtocol().ACTION_TYPES.DECOMPOSE_EQUIP
+    if pendingDecompose and isDecomposeResp then
         pendingDecompose = false
-        print("[BlacksmithDecompose] 门控释放" .. (data.decomposed and "（成功）" or "（失败/无关）"))
+        print("[BlacksmithDecompose] 门控释放" .. (data.decomposed and "（成功）" or "（失败）"))
     end
     if not data.decomposed then return end
     local essenceReward = data.essenceReward or 0

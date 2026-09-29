@@ -26,6 +26,13 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-29 续，古树背景重绘，已 push `4559fd8`）
+
+- **任务**：`UI_GS_TFBJ_dark.png`（终焉古树天赋页背景）横向拉伸。根因：绘制框 `pageW×TF.bgH = 1080×1.8(HORIZON_WIDTH_SCALE)×2400 = 1944×2400`，原图 1080×2400 → 横向拉 1.8 倍。
+- **方法**：该素材是**无 alpha 满幅 RGB**（中心纯黑即页面内容区），无需抠图——示意图法（PIL 画黑心+藤边+四角结 810×1000）→ generate_image 按 4:5 出稿（工具实出 1944×2916，归一 1944×2400 纵向压 18% 可接受）→ 直接覆盖。
+- **教训**：重绘前先确认素材有无 alpha——无 alpha 满幅背景跳过黑白抠图，省一轮 edit+差分。
+- 推送前远端多一个提交 `900c9df`（chore: 删除旧竖屏情景底板），rebase 无冲突后推送。
+
 ## 上次做了什么（2026-09-29，`workspace928` 通用面板底板重绘，已 push）
 
 - **任务**：9 张通用面板底板（XYGB/XYGA/XYG/MAPYY/HS/EJQRK/TJP_XL_1/TJP_XL_2/EJBB）全部用黑白抠图法重绘；用户两轮反馈：①"只给参考、明确不要旧拉伸图"②"做最简示意图然后直接出稿，不再参考已有"。

@@ -77,8 +77,6 @@ return {
     { "image/界面底板/通用面板/UI_YWJM_XYG2.png", 7072 },
     { "image/界面底板/酒馆抽卡/UI_JG_SMBJ.png", 18419 },
     { "image/界面底板/角色与觉醒/UI_JSXQ_FGXJ.png", 18628 },
-    { "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 18676 },
-    { "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 19044 },
     { "image/按钮/UI_AN_FANG.png", 44573 },
     { "image/界面底板/商店/UI_SD_AN.png", 44470 },
     { "image/货币道具/UI_icon_JB_X.png", 9268 },

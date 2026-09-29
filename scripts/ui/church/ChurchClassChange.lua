@@ -50,7 +50,6 @@ local pop = {
 -- 转职页图片（模块自管，init 时加载）
 local img = {
     classIcons2 = {},
-    branchLine = -1, branchLine2 = -1,
     goldCoin = -1, iconUp = -1,
     detailBg = -1,
 }
@@ -107,9 +106,15 @@ local BTN_RESET_FONT = 40
 local INIT_LABEL_CX, INIT_LABEL_CY = 542, 1178
 local INIT_LABEL_FONT               = 40
 
--- 一转分叉线
+-- 一转分叉线（代码绘制直角分叉线，几何取自旧贴图 UI_ZZXT_1Z 实测：内容边距 7px）
 local BRANCH_LINE_CX, BRANCH_LINE_CY = 540, 1464
 local BRANCH_LINE_W, BRANCH_LINE_H   = 498, 312
+local BRANCH_LINE_BODY_W = BRANCH_LINE_W - 14   -- 线体实际宽 484
+local BRANCH_LINE_BODY_H = BRANCH_LINE_H - 14   -- 线体实际高 298
+-- 横杆中心占线体高度比例（旧贴图实测：横杆中心在内容顶下 152/298 处）
+local BRANCH_LINE_BAR_RATIO = 152 / 298
+-- 分叉线线宽（旧贴图实测 12px）
+local LINE_THICK = 12
 
 -- 初始职业图标 & 名称
 local INIT_ICON_CX, INIT_ICON_CY = 540, 1295
@@ -131,10 +136,13 @@ local BR2_NAME_FONT             = 40
 
 -- 二转 & 锁定遮罩布局
 local ADV2 = {
-    -- 二转分叉线
+    -- 二转分叉线（代码绘制，几何取自旧贴图 UI_ZZXT_2Z 实测：内容边距 7px）
     line1CX = 307, line1CY = 1793,
     line2CX = 775, line2CY = 1793,
     lineW   = 261, lineH   = 277,
+    lineBodyW = 247,   -- 线体实际宽 261-14
+    lineBodyH = 263,   -- 线体实际高 277-14
+    lineBarRatio = 132 / 263,   -- 横杆中心占比（旧贴图实测 132/263）
     -- 二转分支位置（4个）
     iconW = 166, iconH = 166, nameFontSize = 40,
     pos = {
@@ -287,8 +295,7 @@ function M.init(vg)
     if inited then return end
     inited = true
     savedVg = vg
-    img.branchLine = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
-    img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
+    -- 转职树分叉线已改为代码矢量绘制（drawBranchLineVector），不再加载 UI_ZZXT_1Z/2Z 贴图
     img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     img.detailBg   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_BJ.png", 0)
@@ -328,6 +335,41 @@ local function drawBranchOverlay(vg, cx, cy, w, h, canAdv)
         local upY = cy - h * 0.5 + upSize * 0.5
         drawImageCentered(vg, img.iconUp, upX, upY, upSize, upSize, 1.0)
     end
+end
+
+--- 代码绘制直角分叉线（┬ 形：顶部中干 + 中部横杆 + 左右双腿）
+--- 替代旧贴图 UI_ZZXT_1Z / UI_ZZXT_2Z；线体为纯白，亮度由 alpha 控制。
+---@param vg any
+---@param cx number 包围盒中心X
+---@param cy number 包围盒中心Y
+---@param bodyW number 线体宽（含双腿外沿）
+---@param bodyH number 线体高（中干顶→腿底）
+---@param thick number 线宽
+---@param alpha number 0~1 亮度
+---@param barRatio number|nil 横杆中心占线体高比例（缺省用一转比例）
+local function drawBranchLineVector(vg, cx, cy, bodyW, bodyH, thick, alpha, barRatio)
+    local a = math.floor(alpha * 255 + 0.5)
+    if a <= 0 then return end
+    local halfW = bodyW * 0.5
+    local top   = cy - bodyH * 0.5
+    local bot   = cy + bodyH * 0.5
+    -- 横杆中心：按旧贴图实测比例（一转 152/298，二转 132/263）
+    local barCY = top + bodyH * (barRatio or BRANCH_LINE_BAR_RATIO)
+    local halfT = thick * 0.5
+    nvgFillColor(vg, nvgRGBA(255, 255, 255, a))
+    -- 中干：顶部 → 横杆下沿
+    nvgBeginPath(vg)
+    nvgRect(vg, cx - halfT, top, thick, (barCY + halfT) - top)
+    nvgFill(vg)
+    -- 横杆：贯通左右腿外沿
+    nvgBeginPath(vg)
+    nvgRect(vg, cx - halfW, barCY - halfT, bodyW, thick)
+    nvgFill(vg)
+    -- 左腿 / 右腿：横杆上沿 → 底部
+    nvgBeginPath(vg)
+    nvgRect(vg, cx - halfW, barCY - halfT, thick, bot - (barCY - halfT))
+    nvgRect(vg, cx + halfW - thick, barCY - halfT, thick, bot - (barCY - halfT))
+    nvgFill(vg)
 end
 
 -- ======================== 转职树路径点亮 ========================
@@ -435,29 +477,28 @@ function M.drawContent(vg)
     if lockedLine1 then
         -- 跳过：遮罩后统一画
     elseif line1Alpha == line2Alpha then
-        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
-            BRANCH_LINE_W, BRANCH_LINE_H, line1Alpha)
+        drawBranchLineVector(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, line1Alpha)
     else
-        -- 单张贴图 = 中干 + 左右两臂：裁三段各用各的亮度（中干随在路径的一侧亮）
-        -- 贴图实测中干外沿半宽 ≈ 图宽 2.5%
-        local halfW = BRANCH_LINE_W * 0.5
-        local tw    = BRANCH_LINE_W * 0.025
-        local top   = BRANCH_LINE_CY - BRANCH_LINE_H
-        local hh    = BRANCH_LINE_H * 2
+        -- 左右两臂各用各的亮度（中干随在路径的一侧亮）：裁三段分别绘制
+        local halfW = BRANCH_LINE_BODY_W * 0.5
+        local halfT = LINE_THICK * 0.5
+        local top   = BRANCH_LINE_CY - BRANCH_LINE_BODY_H * 0.5
+        local hh    = BRANCH_LINE_BODY_H
         nvgSave(vg)
-        nvgScissor(vg, BRANCH_LINE_CX - halfW, top, halfW - tw, hh)
-        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
-            BRANCH_LINE_W, BRANCH_LINE_H, line1Alpha)
+        nvgScissor(vg, BRANCH_LINE_CX - halfW, top, halfW - halfT, hh)
+        drawBranchLineVector(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, line1Alpha)
         nvgRestore(vg)
         nvgSave(vg)
-        nvgScissor(vg, BRANCH_LINE_CX + tw, top, halfW - tw, hh)
-        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
-            BRANCH_LINE_W, BRANCH_LINE_H, line2Alpha)
+        nvgScissor(vg, BRANCH_LINE_CX + halfT, top, halfW - halfT, hh)
+        drawBranchLineVector(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, line2Alpha)
         nvgRestore(vg)
         nvgSave(vg)
-        nvgScissor(vg, BRANCH_LINE_CX - tw, top, tw * 2, hh)
-        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
-            BRANCH_LINE_W, BRANCH_LINE_H, math.max(line1Alpha, line2Alpha))
+        nvgScissor(vg, BRANCH_LINE_CX - halfT, top, halfT * 2, hh)
+        drawBranchLineVector(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, math.max(line1Alpha, line2Alpha))
         nvgRestore(vg)
     end
 
@@ -482,10 +523,12 @@ function M.drawContent(vg)
         -- 二转未解锁时推迟到二转遮罩后统一灰度（避免半白半灰）
         local lockedLine2 = heroLevel < ADV2.secondLevel
         if not lockedLine2 then
-            drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
-                ADV2.lineW, ADV2.lineH, (st1 ~= "off") and 1.0 or 0.3)
-            drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
-                ADV2.lineW, ADV2.lineH, (st2 ~= "off") and 1.0 or 0.3)
+            drawBranchLineVector(vg, ADV2.line1CX, ADV2.line1CY,
+                ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, (st1 ~= "off") and 1.0 or 0.3,
+                ADV2.lineBarRatio)
+            drawBranchLineVector(vg, ADV2.line2CX, ADV2.line2CY,
+                ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, (st2 ~= "off") and 1.0 or 0.3,
+                ADV2.lineBarRatio)
         end
 
         -- 分支1
@@ -596,14 +639,14 @@ function M.drawContent(vg)
         nvgFill(vg)
         -- 一转分叉线上半在遮罩外：遮罩后统一灰度补画，避免半灰半白
         if lockedLine1 then
-            drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
-                BRANCH_LINE_W, BRANCH_LINE_H, 0.35)
+            drawBranchLineVector(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
+                BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, 0.35)
             -- 二转分叉线同理（此状态下二转线也未画）
             if branches then
-                drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
-                    ADV2.lineW, ADV2.lineH, 0.35)
-                drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
-                    ADV2.lineW, ADV2.lineH, 0.35)
+                drawBranchLineVector(vg, ADV2.line1CX, ADV2.line1CY,
+                    ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, 0.35, ADV2.lineBarRatio)
+                drawBranchLineVector(vg, ADV2.line2CX, ADV2.line2CY,
+                    ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, 0.35, ADV2.lineBarRatio)
             end
         end
         local lk1 = ADV2.lock1
@@ -633,10 +676,10 @@ function M.drawContent(vg)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
         nvgFill(vg)
         -- 二转分叉线上半在遮罩外：遮罩后统一灰度补画
-        drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
-            ADV2.lineW, ADV2.lineH, 0.35)
-        drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
-            ADV2.lineW, ADV2.lineH, 0.35)
+        drawBranchLineVector(vg, ADV2.line1CX, ADV2.line1CY,
+            ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, 0.35, ADV2.lineBarRatio)
+        drawBranchLineVector(vg, ADV2.line2CX, ADV2.line2CY,
+            ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, 0.35, ADV2.lineBarRatio)
         drawTextStroke(vg, lk.titleCX, lk.titleCY, "二转",
             ADV2.lockFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             classColor.r, classColor.g, classColor.b, 6,

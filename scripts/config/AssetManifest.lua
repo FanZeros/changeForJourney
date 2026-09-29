@@ -584,7 +584,6 @@ return {
     { "image/角色卡牌/KP_YX_11.png", 564399 },
     { "image/角色卡牌/KP_YX_9.png", 533061 },
     { "image/角色卡牌/KP_YX_21.png", 524875 },
-    { "image/spine/UI_SPINE_TFBJ_2.png", 493566 },
     { "image/界面底板/通用面板/UI_BB_BJ.png", 872683 },
     { "image/界面底板/副本秘境/UI_FBRK_1.png", 551668 },
     { "image/界面底板/副本秘境/UI_FBRK_2.png", 523332 },

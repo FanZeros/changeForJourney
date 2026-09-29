@@ -560,6 +560,7 @@ return {
     { "image/怪物卡牌/KP_GW_8.png", 1450147 },
     { "image/怪物卡牌/KP_GW_9.png", 1483012 },
     { "image/角色卡牌/框/frame_D_396x876.png", 290911 },
+    { "image/界面底板/备用底板/frame_user_768x1365.png", 1041553 },
     { "image/角色卡牌/KP_YX_1.png", 509451 },
     { "image/角色卡牌/KP_YX_10.png", 541427 },
     { "image/角色卡牌/KP_YX_12.png", 628742 },

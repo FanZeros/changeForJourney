@@ -4,7 +4,7 @@
 --
 -- 【使用说明】
 -- 通用结算面板，可用于竞技场、副本等任何战斗结束后的结算展示。
--- 竞技场专用元素（竞技分变动）通过 arenaMode 标志控制显示。
+-- 副本和通天塔共用的战斗结算。
 --
 --   local BattleResultPanel = require("ui.battle.popup.BattleResultPanel")
 --
@@ -17,9 +17,6 @@
 --       elapsedSecs  = 51,
 --       heroStats    = { { heroId=1, quality=3, totalDamage=12345 }, ... },
 --       rewards      = { { type="tavern_coin", amount=20 } },
---       -- 竞技场专用（可选）
---       arenaMode    = true,
---       scoreChange  = 15,
 --   })
 --
 --   -- draw / update / handleInput 在渲染循环中调用
@@ -75,14 +72,6 @@ local HERO_DMG_FONT = 40
 local OBTAIN_LABEL_X, OBTAIN_LABEL_Y = 93, 1270
 local OBTAIN_LABEL_FONT = 40
 
--- 10. 竞技分图标（竞技场专用）
-local SCORE_ICON_CX, SCORE_ICON_CY = 903, 1263
-local SCORE_ICON_W, SCORE_ICON_H   = 70, 70
-
--- 11. 竞技分增减文本（竞技场专用）
-local SCORE_TEXT_X, SCORE_TEXT_Y = 977, 1263
-local SCORE_TEXT_FONT = 40
-
 -- 12. 获得奖励背景框
 local REWARD_BG_CX, REWARD_BG_CY = 540, 1462
 local REWARD_BG_W, REWARD_BG_H   = 968, 310
@@ -108,7 +97,6 @@ local RESOURCE_DEFS = ResourceDefs.DEFS
 
 local imgWinBg   = -1   -- UI_JJCJS_ZDSL.png
 local imgLoseBg  = -1   -- UI_JJCJS_ZDSB.png
-local imgScoreIcon = -1 -- UI_icon_JJCFS_X.png
 
 -- 英雄头像缓存: heroId → nvgImage
 local heroIconCache = {}
@@ -125,8 +113,6 @@ local state = {
     elapsedSecs = 0,
     heroStats   = {},     -- { heroId, quality, totalDamage }[]
     rewards     = {},     -- { type, amount }[]
-    arenaMode   = false,
-    scoreChange = 0,
     -- 关闭回调
     onClose     = nil,
 }
@@ -194,12 +180,11 @@ function BRP.init(vg)
     cachedVg = vg
     imgWinBg    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJS_ZDSL.png", 0)
     imgLoseBg   = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJS_ZDSB.png", 0)
-    imgScoreIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCFS_X.png", 0)
     print("[BattleResultPanel] init OK")
 end
 
 --- 展示结算面板
----@param opts table { isWin, elapsedSecs, heroStats, rewards, arenaMode, scoreChange, onClose }
+---@param opts table { isWin, elapsedSecs, heroStats, rewards, onClose }
 function BRP.show(opts)
     opts = opts or {}
     state.open        = true
@@ -207,13 +192,10 @@ function BRP.show(opts)
     state.elapsedSecs = opts.elapsedSecs or 0
     state.heroStats   = opts.heroStats or {}
     state.rewards     = opts.rewards or {}
-    state.arenaMode   = opts.arenaMode or false
-    state.scoreChange = opts.scoreChange or 0
     state.onClose     = opts.onClose
     print("[BattleResultPanel] show: " .. (state.isWin and "WIN" or "LOSE")
         .. " heroes=" .. #state.heroStats
-        .. " rewards=" .. #state.rewards
-        .. " arena=" .. tostring(state.arenaMode))
+        .. " rewards=" .. #state.rewards)
 end
 
 --- 关闭结算面板
@@ -322,29 +304,6 @@ function BRP.draw(vg)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xb1, 0xb1, 0xb1, 255))
     nvgText(vg, OBTAIN_LABEL_X, OBTAIN_LABEL_Y, "获得", nil)
-
-    -- === 10~11. 竞技分变动（竞技场专用） ===
-    if state.arenaMode then
-        -- 10. 竞技分图标
-        drawImageCentered(vg, imgScoreIcon, SCORE_ICON_CX, SCORE_ICON_CY,
-            SCORE_ICON_W, SCORE_ICON_H, 1.0)
-
-        -- 11. 竞技分增减文本
-        local sc = state.scoreChange
-        local scoreText, scoreR, scoreG, scoreB
-        if sc >= 0 then
-            scoreText = "+" .. tostring(sc)
-            scoreR, scoreG, scoreB = 0x90, 0xff, 0x8a  -- 绿色
-        else
-            scoreText = tostring(sc)
-            scoreR, scoreG, scoreB = 0xff, 0x78, 0x78  -- 红色
-        end
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, SCORE_TEXT_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(scoreR, scoreG, scoreB, 255))
-        nvgText(vg, SCORE_TEXT_X, SCORE_TEXT_Y, scoreText, nil)
-    end
 
     -- === 12. 获得奖励背景框（纯黑20%不透明度） ===
     nvgBeginPath(vg)

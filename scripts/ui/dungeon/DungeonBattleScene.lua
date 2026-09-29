@@ -901,8 +901,6 @@ function DungeonScene.update(dt)
                     elapsedSecs = elapsedSecs,
                     heroStats   = heroStats,
                     rewards     = rewards,
-                    arenaMode   = false,
-                    scoreChange = 0,
                     onClose     = function()
                         if state.onClose then state.onClose() end
                         DungeonScene.close()

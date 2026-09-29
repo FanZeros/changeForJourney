@@ -141,7 +141,6 @@ return {
     { "image/界面底板/副本秘境/UI_TTTSXY_2.png", 24737 },
     { "image/按钮/UI_AN_1.png", 176221 },
     { "image/按钮/UI_AN_DA.png", 119807 },
-    { "image/界面底板/城镇世界/UI_CZ_BQ.png", 26162 },
     { "image/界面底板/通用面板/UI_YWJM_HS.png", 51083 },
     { "image/界面底板/通用面板/UI_YWJM_XYG.png", 283 },
     { "image/界面底板/通用面板/UI_YWJM_XYGB.png", 71520 },

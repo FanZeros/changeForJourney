@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.82-remove-town-tag | 2026-09-29 | 删除未引用的城镇标签底 UI_CZ_BQ。UI_WORLD_BG 与 UI_CZ_BJ 仍作横屏和城镇背景。 |
 | v2.81-remove-old-nav | 2026-09-29 | 删除未使用的旧导航图 ICON_GN_2-5、ICON_GN_BAN。正式导航已是矢量。词缀等级标 ICON_CZBZ 保留。 |
 | v2.80-remove-recruit-glow | 2026-09-29 | 抽卡结果不再显示 SR/SSR/UR 品质光框 UI_PZG，并删除这三张图。 |
 | v2.79-remove-old-frames | 2026-09-29 | 删除未使用的旧品质框 UI_ZBTS_1-6 与卡底 KP_TY_N/R/SR/SSR/UR。卡底已改矢量绘制。 |

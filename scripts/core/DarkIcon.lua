@@ -830,18 +830,23 @@ function DarkIcon.drawNine(vg, style, x, y, w, h, opts)
         nvgRoundedRectVarying(vg, x, y + bandH, w, h - bandH, 0, 0, r, r)
         nvgFillPaint(vg, vGrad(vg, y + bandH, y + h, { 28, 23, 18 }, { 16, 13, 10 }, a))
         nvgFill(vg)
-        -- 3) 语义饰线 + 端点菱形
+        -- 3) 语义饰线 + 端点菱形。两端收进圆角，避免菱形顶出面板外沿
+        local lineInset = math.max(r * 1.6, u * 0.055)
+        local maxInset = w * 0.22
+        if lineInset > maxInset then lineInset = maxInset end
+        local lineL = x + lineInset
+        local lineR = x + w - lineInset
         nvgBeginPath(vg)
-        nvgMoveTo(vg, x + r * 0.4, y + bandH)
-        nvgLineTo(vg, x + w - r * 0.4, y + bandH)
+        nvgMoveTo(vg, lineL, y + bandH)
+        nvgLineTo(vg, lineR, y + bandH)
         strokeC(vg, a, accent[1], accent[2], accent[3], 0.9)
         nvgStrokeWidth(vg, math.max(1.5, u * 0.006))
         nvgStroke(vg)
-        if opts.studs ~= false and w > 220 then
-            diamondPath(vg, x + r * 0.4, y + bandH, u * 0.028)
+        if opts.studs ~= false and w > 220 and lineR > lineL + u * 0.08 then
+            diamondPath(vg, lineL, y + bandH, u * 0.028)
             fillC(vg, a, accent[1], accent[2], accent[3], 1)
             nvgFill(vg)
-            diamondPath(vg, x + w - r * 0.4, y + bandH, u * 0.028)
+            diamondPath(vg, lineR, y + bandH, u * 0.028)
             fillC(vg, a, accent[1], accent[2], accent[3], 1)
             nvgFill(vg)
         end

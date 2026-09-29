@@ -56,7 +56,7 @@ local FJ = {
 FJ.POP_MASK_ALPHA = 128
 FJ.POP_BG_CX = 540; FJ.POP_BG_CY = 1111; FJ.POP_BG_W = 950; FJ.POP_BG_H = 720
 FJ.POP_TITLE_CX = 540; FJ.POP_TITLE_CY = 830; FJ.POP_TITLE_FONT = 60; FJ.POP_TITLE_STROKE = 4
-FJ.POP_DESC_CX = 540; FJ.POP_DESC_CY = 925; FJ.POP_DESC_FONT = 38
+FJ.POP_DESC_CX = 540; FJ.POP_DESC_CY = 925; FJ.POP_DESC_FONT = 38; FJ.POP_DESC_MAX_W = 820
 FJ.POP_DESC_R = 0xb6; FJ.POP_DESC_G = 0xb0; FJ.POP_DESC_B = 0x9d
 -- 品质方框选择行（6 个品质图标方框，与分解页品质筛选同款小图）
 FJ.POP_QBOX_COUNT = 6
@@ -73,7 +73,7 @@ FJ.POP_SLIDER_CX = 540; FJ.POP_SLIDER_CY = FJ.POP_LEVEL_CY; FJ.POP_SLIDER_W = 40
 FJ.POP_KNOB_SIZE = 36
 FJ.POP_KNOB_STROKE_R = 0x44; FJ.POP_KNOB_STROKE_G = 0x2d; FJ.POP_KNOB_STROKE_B = 0x19; FJ.POP_KNOB_STROKE_W = 6
 FJ.POP_LEVEL_TEXT_CY = FJ.POP_LEVEL_CY - 62; FJ.POP_LEVEL_TEXT_FONT = 36; FJ.POP_LEVEL_STROKE = 5
-FJ.POP_LEVEL_STEP = 5
+FJ.POP_LEVEL_STEP = 1
 FJ.POP_LEVEL_MAX = 60
 -- 设置完成按钮
 FJ.POP_CONFIRM_CX = 540; FJ.POP_CONFIRM_CY = 1330; FJ.POP_CONFIRM_W = 410; FJ.POP_CONFIRM_H = 100
@@ -547,6 +547,23 @@ local function sliderHitH()
     return math.max(FJ.POP_SLIDER_H, FJ.POP_KNOB_SIZE) + 20
 end
 
+--- 按当前选中条件生成描述文本（"符合需求"替换为具体条件）
+---@return string
+local function buildConditionDesc()
+    local parts = {}
+    if fjState.autoQuality > 0 then
+        local qCfg = QUALITY_CONFIG[fjState.autoQuality]
+        parts[#parts + 1] = (qCfg and qCfg.name or "") .. "级及以下"
+    end
+    if fjState.autoLevel > 0 then
+        parts[#parts + 1] = tostring(fjState.autoLevel) .. "级及以下"
+    end
+    if #parts == 0 then
+        return "未设置条件，掉落装备不会自动分解"
+    end
+    return table.concat(parts, "且") .. "的装备会在掉落时自动分解"
+end
+
 --- 绘制自动分解弹窗
 function M.drawAutoDecomposePopup(vg)
     if not fjState.autoPopupOpen then return end
@@ -565,12 +582,17 @@ function M.drawAutoDecomposePopup(vg)
         FJ.POP_TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, FJ.POP_TITLE_STROKE)
 
-    -- 4. 描述文本
+    -- 4. 描述文本（动态显示当前选中的分解条件，超宽自动缩字号）
+    local descText = buildConditionDesc()
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, FJ.POP_DESC_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    local descW = nvgTextBounds(vg, 0, 0, descText)
+    if descW > FJ.POP_DESC_MAX_W then
+        nvgFontSize(vg, math.max(26, math.floor(FJ.POP_DESC_FONT * FJ.POP_DESC_MAX_W / descW)))
+    end
     nvgFillColor(vg, nvgRGBA(FJ.POP_DESC_R, FJ.POP_DESC_G, FJ.POP_DESC_B, 255))
-    nvgText(vg, FJ.POP_DESC_CX, FJ.POP_DESC_CY, "符合需求的装备会在掉落时自动分解", nil)
+    nvgText(vg, FJ.POP_DESC_CX, FJ.POP_DESC_CY, descText, nil)
 
     -- 5. 品质方框选择（6 个品质图标方框，选中高亮描边）
     for i = 1, FJ.POP_QBOX_COUNT do

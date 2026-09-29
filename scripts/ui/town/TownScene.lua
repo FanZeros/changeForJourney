@@ -470,12 +470,7 @@ function TownScene.draw(vg)
         -- [关卡门控] 铁匠铺按"通关 2-4"解锁，锁标显示具体条件（原先只有锁图标）
         drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true, nil, getStageUnlockLabel("smith"))
     end
-    -- 铁匠铺红点（背包满→提示去分解）
-    if not smithLocked and smithDecomposeRedDot then
-        local rdSz = 40
-        local rdX = SMITH_LBL_CX + SMITH_LBL_W * 0.5 - rdSz * 0.3
-        local rdY = SMITH_LBL_CY - SMITH_LBL_H * 0.5 + rdSz * 0.3
-        DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
+    -- [分解入仓 0929] 背包满红点已迁到仓库建筑（分解入口在仓库），铁匠铺不再显示
     -- 铁匠铺可强化角标（任意槽位满足强化消耗条件）
     if not smithLocked and not smithDecomposeRedDot and imgIconUp >= 0 then
         local ok, canEnh = pcall(function() return getBlacksmithPage().canEnhanceAny() end)
@@ -548,6 +543,13 @@ function TownScene.draw(vg)
         WAREHOUSE_LBL_CX, WAREHOUSE_LBL_CY, WAREHOUSE_LBL_W, WAREHOUSE_LBL_H,
         WAREHOUSE_ICON_CX, WAREHOUSE_ICON_CY, WAREHOUSE_ICON_SZ, imgIconWarehouse,
         WAREHOUSE_TEXT_X, WAREHOUSE_TEXT_Y, "尘封仓库")
+    -- [分解入仓 0929] 背包满红点（分解入口在仓库"分解"tab）
+    if smithDecomposeRedDot then
+        local rdSz = 40
+        local rdX = WAREHOUSE_LBL_CX + WAREHOUSE_LBL_W * 0.5 - rdSz * 0.3
+        local rdY = WAREHOUSE_LBL_CY - WAREHOUSE_LBL_H * 0.5 + rdSz * 0.3
+        DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)
+    end
     BF.finish(vg, _bfWarehouse)
 
     -- 6) 教堂建筑（30级开放 + 引导豁免）

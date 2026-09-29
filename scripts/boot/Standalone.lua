@@ -662,7 +662,9 @@ function Standalone.requestResetToStartScreen()
     -- 2. 关闭所有打开的面板/弹窗
     if MarketPage.isOpen()          then MarketPage.close()          end
     if TavernPage.isOpen()          then TavernPage.close()          end
-    if BlacksmithPage.isOpen()      then BlacksmithPage.close()      end
+    -- [锻炉双页 0929] 锻炉强制关闭（联动仓库由其 closeAutoWarehouse 处理，这里再兜底关仓库）
+    if BlacksmithPage.isOpen()      then BlacksmithPage.forceClose() end
+    if BackpackPanel.isOpen()       then BackpackPanel.close()       end
     if ChurchPage.isOpen()          then ChurchPage.close()          end
     if TalentPage.isOpen()          then TalentPage.close()          end
     if HeroRosterPanel.isVisible()  then HeroRosterPanel.hide()      end

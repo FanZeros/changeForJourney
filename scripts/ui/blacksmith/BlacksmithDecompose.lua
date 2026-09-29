@@ -1,7 +1,9 @@
 -- ============================================================================
 -- BlacksmithDecompose.lua
--- 铁匠铺 - 分解子模块：背包格子、品质筛选、自动分解弹窗
+-- 分解子模块：背包格子、品质筛选、自动分解弹窗
 -- 从 BlacksmithPage.lua 拆分而来
+-- [分解入仓 0929] 宿主从铁匠铺分解 tab 迁移到仓库（BackpackPanel）分解 tab；
+-- 支持两套布局 profile："smith"（旧铁匠铺布局，保留兼容）/ "warehouse"（仓库紧凑布局）
 -- ============================================================================
 
 ---@diagnostic disable: undefined-global
@@ -83,6 +85,48 @@ FJ.GRID_FIRST_CX = FJ.GRID_LEFT + FJ.GRID_CELL * 0.5  -- 150
 FJ.GRID_ROW_STEP = FJ.GRID_CELL + FJ.GRID_GAP  -- 195
 FJ.GRID_COL_STEP = FJ.GRID_CELL + FJ.GRID_GAP  -- 195
 FJ.GRID_FIRST_CY = FJ.PZSX_CY + FJ.PZSX_SIZE * 0.5 + 40 + FJ.GRID_CELL * 0.5  -- 1060
+
+-- [分解入仓 0929] 装备详情 owner（长按格子打开详情时传给 EquipmentDetail.open）
+FJ.DETAIL_OWNER = "smith"
+-- [分解入仓 0929] 奖励预览是否用单行文本（仓库布局没有上半大图区域）
+FJ.REWARD_TEXT_MODE = false
+FJ.REWARD_TEXT_Y = 410
+
+-- ======================== 布局 Profile ========================
+-- "smith"（默认）：旧铁匠铺分解 tab 布局（上半奖励槽 + Y905 标题 + 大格子网格）
+-- "warehouse"：仓库分解 tab 紧凑布局（与 BackpackPanel 左栏网格对齐）
+local FJ_PROFILE_ORIG = nil
+local function recalcGridDerived()
+    FJ.GRID_TOTAL_W = FJ.GRID_COLS * FJ.GRID_CELL + (FJ.GRID_COLS - 1) * FJ.GRID_GAP
+    FJ.GRID_LEFT = (DESIGN_W - FJ.GRID_TOTAL_W) * 0.5
+    FJ.GRID_FIRST_CX = FJ.GRID_LEFT + FJ.GRID_CELL * 0.5
+    FJ.GRID_ROW_STEP = FJ.GRID_CELL + FJ.GRID_GAP
+    FJ.GRID_COL_STEP = FJ.GRID_CELL + FJ.GRID_GAP
+end
+
+--- 切换布局 profile（宿主页 open 时调用一次）
+---@param name string "smith"|"warehouse"
+function M.applyProfile(name)
+    if not FJ_PROFILE_ORIG then
+        FJ_PROFILE_ORIG = {}
+        for k, v in pairs(FJ) do FJ_PROFILE_ORIG[k] = v end
+    end
+    if name == "warehouse" then
+        FJ.REWARD_TEXT_MODE = true
+        FJ.REWARD_TEXT_Y = 2050  -- 替代仓库"背包上限"文本行（按钮上方）
+        FJ.TITLE_X, FJ.TITLE_Y = 157, 330
+        FJ.PZSX_FIRST_CX, FJ.PZSX_CY, FJ.PZSX_SIZE, FJ.PZSX_GAP = 565, 328, 70, 12
+        FJ.GRID_COLS, FJ.GRID_CELL, FJ.GRID_GAP = 5, 160, 30
+        FJ.GRID_BOTTOM_Y = 1980
+        FJ.GRID_FIRST_CY = 550  -- 网格顶 470 + 半格（与仓库装备 tab FIRST_ROW_TOP 对齐）
+        FJ.AUTO_BTN_CX, FJ.AUTO_BTN_CY = 310, 2160
+        FJ.DEC_BTN_CX, FJ.DEC_BTN_CY = 773, 2160
+        FJ.DETAIL_OWNER = "backpack"
+        recalcGridDerived()
+    else
+        for k, v in pairs(FJ_PROFILE_ORIG) do FJ[k] = v end
+    end
+end
 
 -- 品质名称和颜色映射
 local QUALITY_CONFIG = {
@@ -176,13 +220,22 @@ function M.setContext(ctx)
 end
 
 --- 初始化分解界面专属图片
+local decomposeInited_ = false
 function M.init(vg)
     QualityMark.init(vg)
+    EquipmentDetail.init(vg)
+    if decomposeInited_ then return end
+    decomposeInited_ = true
     -- 整图拉伸绘制（950x647），使用 POP 副本，调整原图不影响九宫格用法
     imgPopupBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK_POP.png", 0)
     imgPopupArrow = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_JT.png", 0)
     imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
-    EquipmentDetail.init(vg)
+end
+
+--- 是否已完成图片初始化
+---@return boolean
+function M.isInited()
+    return decomposeInited_
 end
 
 -- ======================== 背包数据管理 ========================
@@ -264,6 +317,7 @@ end
 function M.onTabSwitch()
     fjState.scrollY = 0
     fjState.selectedItems = {}
+    fjState.autoPopupOpen = false
     pendingDecompose = false   -- 重置门控
     M.refreshBackpackItems()
 end
@@ -293,19 +347,9 @@ end
 
 -- ======================== 绘制 ========================
 
---- 绘制上半部分奖励槽位内容
-function M.drawUpperSlot(vg)
-    -- 分解奖励图标槽位
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        FJ.REWARD_CX - FJ.REWARD_SIZE * 0.5, FJ.REWARD_CY - FJ.REWARD_SIZE * 0.5,
-        FJ.REWARD_SIZE, FJ.REWARD_SIZE, FJ.REWARD_RADIUS)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-    nvgFill(vg)
-    DarkIcon.drawQualityBg(vg, 2, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
-    drawImageCentered(vg, imgEssenceIcon, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)
-
-    -- 计算选中装备的预估精粹奖励，以及升阶卷轴 70% 返还
+--- 计算选中装备的预估精粹奖励与升阶卷轴返还
+---@return number previewEssence, integer selCount, string|nil scrollHint
+local function calcRewardPreview()
     local previewEssence = 0
     local selCount = 0
     local previewScrolls = {}
@@ -330,6 +374,16 @@ function M.drawUpperSlot(vg)
             end
         end
     end
+    local scrollHint = BlacksmithConfig.formatScrollRefund(previewScrolls)
+    if not scrollHint and fjState.lastScrollHint and selCount == 0 then
+        scrollHint = fjState.lastScrollHint
+    end
+    return previewEssence, selCount, scrollHint
+end
+
+--- 绘制上半部分奖励槽位内容
+function M.drawUpperSlot(vg)
+    local previewEssence, selCount, scrollHint = calcRewardPreview()
 
     -- 显示文本
     local rewardText
@@ -340,13 +394,33 @@ function M.drawUpperSlot(vg)
     else
         rewardText = "分解奖励"
     end
+
+    -- [分解入仓 0929] 仓库布局：无上半大图区域，奖励预览用单行文本（标题行下方）
+    if FJ.REWARD_TEXT_MODE then
+        drawTextStroke(vg, DESIGN_W * 0.5, FJ.REWARD_TEXT_Y, rewardText,
+            34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            255, 255, 255, 4)
+        if scrollHint then
+            drawTextStroke(vg, DESIGN_W * 0.5, FJ.REWARD_TEXT_Y + 44, scrollHint,
+            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            255, 214, 102, 3)
+        end
+        return
+    end
+
+    -- 分解奖励图标槽位（铁匠铺旧布局）
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg,
+        FJ.REWARD_CX - FJ.REWARD_SIZE * 0.5, FJ.REWARD_CY - FJ.REWARD_SIZE * 0.5,
+        FJ.REWARD_SIZE, FJ.REWARD_SIZE, FJ.REWARD_RADIUS)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
+    nvgFill(vg)
+    DarkIcon.drawQualityBg(vg, 2, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
+    drawImageCentered(vg, imgEssenceIcon, FJ.REWARD_CX, FJ.REWARD_CY, FJ.REWARD_SIZE, FJ.REWARD_SIZE, 1.0)
+
     drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 30, rewardText,
         36, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
-    local scrollHint = BlacksmithConfig.formatScrollRefund(previewScrolls)
-    if not scrollHint and fjState.lastScrollHint and selCount == 0 then
-        scrollHint = fjState.lastScrollHint
-    end
     if scrollHint then
         drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 72, scrollHint,
             32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -366,7 +440,7 @@ function M.drawPanel(vg)
             if cellIdx > 0 and cellIdx <= #backpackItems then
                 local item = backpackItems[cellIdx]
                 if item and item.seq then
-                    EquipmentDetail.open(item.seq, nil, nil, true, "smith")
+                    EquipmentDetail.open(item.seq, nil, nil, true, FJ.DETAIL_OWNER)
                     print("[BlacksmithDecompose] 长按打开装备详情 idx=" .. cellIdx .. " seq=" .. item.seq)
                 end
             end
@@ -875,13 +949,18 @@ end
 -- ======================== 结果处理 ========================
 
 --- 处理分解结果（成功和失败都会调用，用于释放门控）
+--- [分解入仓 0929] 加 pendingDecompose 门控过滤：仅处理由本模块发起的分解请求。
+--- EquipmentDetail「立即分解」等其他入口有自己的回执处理（detState.pendingDecompose），
+--- ClientMessageHandler 会广播给多个模块，靠门控避免双重弹奖励。
 ---@param data table action result 数据
 function M.onActionResult(data)
+    local wasPending = pendingDecompose
     -- 无论成功/失败，都释放门控锁
     if pendingDecompose then
         pendingDecompose = false
         print("[BlacksmithDecompose] 门控释放" .. (data.decomposed and "（成功）" or "（失败/无关）"))
     end
+    if not wasPending then return end
     if not data.decomposed then return end
     local essenceReward = data.essenceReward or 0
     local goldReward = data.goldReward or 0

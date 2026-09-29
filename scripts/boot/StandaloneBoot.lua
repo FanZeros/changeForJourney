@@ -428,11 +428,13 @@ function M.run(rt)
     LootBox.setOnDecomposeAll(function(quality) decomposeLoot(nil, quality) end)
     LootBox.setOnDecomposeOne(decomposeLoot)
 
-    -- 5.249 自动分解设置回调：打开铁匠铺分解弹窗
+    -- 5.249 自动分解设置回调：[分解入仓 0929] 打开仓库分解 tab 并弹出自动分解设置
     LootBox.setOnAutoDecompose(function()
         LootBoxPage.hide()
         BottomNav.setSelectedIndex(4)
-        BlacksmithPage.openToAutoDecompose()
+        BackpackPanel.open("left", "decompose")
+        local BlacksmithDecompose = require("ui.blacksmith.BlacksmithDecompose")
+        BlacksmithDecompose.openAutoPopup()
     end)
 
     -- 5.24 轮回回调：倒计时结束 → 播放开场动画 → 完成关卡加载

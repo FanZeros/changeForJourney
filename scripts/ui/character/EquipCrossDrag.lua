@@ -73,6 +73,39 @@ local function rightDesign(sx, sy)
     return dx, dy
 end
 
+--- [锻炉双页 0929] 中栏设计坐标（锻炉工作台所在面板）
+---@param sx number
+---@param sy number
+---@return number|nil dx
+---@return number|nil dy
+local function centerDesign(sx, sy)
+    local note = Viewport.getNote("center")
+    if not note then return nil, nil end
+    local panel = Viewport.PANELS.center
+    local cs = note.s * Viewport.DS
+    if cs == 0 then return nil, nil end
+    local dx = (sx - (note.ox + panel.bx * note.s)) / cs
+    local dy = (sy - (note.oy + panel.by * note.s)) / cs
+    return dx, dy
+end
+
+--- [锻炉双页 0929] 拖拽是否落在锻炉工作台槽上（锻炉页打开时）
+---@return boolean overWorkbench 指针在锻炉工作台命中区
+---@return boolean smithOpen 锻炉页是否打开
+local function overBlacksmithWorkbench(sx, sy)
+    local ok, BlacksmithPage = pcall(require, "ui.blacksmith.BlacksmithPage")
+    if not ok or not BlacksmithPage.isOpen or not BlacksmithPage.isOpen() then
+        return false, false
+    end
+    local wb = BlacksmithPage.WORKBENCH
+    if not wb then return false, true end
+    local dx, dy = centerDesign(sx, sy)
+    if not dx or not dy then return false, true end
+    local half = wb.size * 0.5
+    local hit = math.abs(dx - wb.cx) <= half and math.abs(dy - wb.cy) <= half
+    return hit, true
+end
+
 ---@param equipSlot string|nil
 ---@param grip string|nil
 ---@param target string
@@ -185,9 +218,25 @@ local function reject(reason)
 end
 
 local function tryDrop()
+    -- [锻炉双页 0929] 锻炉工作台优先：拖到中栏锻炉工作台槽 → 放入工作台（强化/洗练）
+    local overWB, smithOpen = overBlacksmithWorkbench(session.sx, session.sy)
+    if smithOpen and overWB then
+        local BlacksmithPage = require("ui.blacksmith.BlacksmithPage")
+        if BlacksmithPage.setEquipBySeq(session.seq) then
+            require("systems.GameSFX").playUIClick(1)
+            print("[EquipCrossDrag] 放入锻炉工作台 seq=" .. tostring(session.seq))
+        end
+        return
+    end
     local CharacterDetail = require("ui.character.detail.CharacterDetail")
     local heroId = CharacterDetail.getHeroId and CharacterDetail.getHeroId() or nil
     if not heroId then
+        -- [锻炉双页 0929] 锻炉开着但没投中工作台：给明确提示而不是"请先打开角色"
+        if smithOpen then
+            require("core.UiToast").show("拖到锻炉工作台或角色装备槽")
+            print("[EquipCrossDrag] 锻炉打开但未命中工作台")
+            return
+        end
         reject("请先打开角色")
         return
     end
@@ -248,6 +297,32 @@ function EquipCrossDrag.draw(vg)
     if not session.dragging then return end
     nvgSave(vg)
     nvgResetScissor(vg)
+
+    -- [锻炉双页 0929] 锻炉工作台高亮：拖拽经过中栏工作台槽时画金色呼吸框
+    local overWB, smithOpen = overBlacksmithWorkbench(session.sx, session.sy)
+    if smithOpen then
+        local note = Viewport.getNote("center")
+        local okBS, BlacksmithPage = pcall(require, "ui.blacksmith.BlacksmithPage")
+        local wb = okBS and BlacksmithPage.WORKBENCH or nil
+        if note and wb then
+            local panel = Viewport.PANELS.center
+            local cs = note.s * Viewport.DS
+            nvgSave(vg)
+            nvgTranslate(vg, note.ox + panel.bx * note.s, note.oy + panel.by * note.s)
+            nvgScale(vg, note.scaleX or cs, cs)
+            local half = wb.size * 0.5
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, wb.cx - half - 10, wb.cy - half - 10, wb.size + 20, wb.size + 20, 28)
+            nvgStrokeWidth(vg, overWB and 9 or 5)
+            if overWB then
+                nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 235))
+            else
+                nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 110))
+            end
+            nvgStroke(vg)
+            nvgRestore(vg)
+        end
+    end
 
     local dx, dy = rightDesign(session.sx, session.sy)
     local note = Viewport.getNote("right")

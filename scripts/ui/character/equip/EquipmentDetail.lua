@@ -1419,9 +1419,9 @@ function EquipmentDetail.handleInput(dx, dy)
             detState.closing = false
             detState.snapshot = nil
             if EquipmentBag.isOpen() then EquipmentBag.close() end
-            local BackpackPanel = require("ui.backpack.BackpackPanel")
-            if BackpackPanel.isOpen() then BackpackPanel.close() end
+            -- [锻炉双页 0929] 仓库保持打开（作为锻炉左栏）；未开时由 BlacksmithPage.open 自动联动打开
             if CharacterDetail.isOpen() then CharacterDetail.forceClose() end
+            newEquip.seq = tonumber(detState.equipSeq)  -- inventory 项不带 seq，工作台需要
             BlacksmithPage.open(newEquip, "xilian")
             print("[EquipmentDetail] 小窗前往洗练 seq=" .. tostring(detState.equipSeq))
             return true
@@ -1466,13 +1466,10 @@ function EquipmentDetail.handleInput(dx, dy)
         detState.closing = false
         detState.snapshot = nil
 
-        -- 2) 关闭背包（EquipmentBag 或 BackpackPanel）
+        -- 2) 关闭 EquipmentBag（[锻炉双页 0929] 仓库保持打开作为锻炉左栏，
+        --    未开时由 BlacksmithPage.open 自动联动打开）
         if EquipmentBag.isOpen() then
             EquipmentBag.close()
-        end
-        local BackpackPanel = require("ui.backpack.BackpackPanel")
-        if BackpackPanel.isOpen() then
-            BackpackPanel.close()
         end
 
         -- 3) 强制关闭角色详情（跳过动画，否则 isDetailOpen()=true 会阻止 BottomNav 绘制）
@@ -1480,7 +1477,8 @@ function EquipmentDetail.handleInput(dx, dy)
             CharacterDetail.forceClose()
         end
 
-        -- 4) 打开铁匠铺洗练面板并预选装备（铁匠铺常驻左栏，无需切换中栏页）
+        -- 4) 打开铁匠铺洗练面板并预选装备（锻炉在中栏、仓库在左栏）
+        newEquip.seq = tonumber(detState.equipSeq)  -- inventory 项不带 seq，工作台需要
         BlacksmithPage.open(newEquip, "xilian")
         print("[EquipmentDetail] 前往洗练 → 打开铁匠铺洗练面板，装备: " .. (newEquip.name or "?"))
         return true

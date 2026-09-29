@@ -306,56 +306,79 @@ end
 
 --- [三队并行] 中缝返回键列表：左页‹（左框柱）/ 详情›（右框柱），两级二级页可同时存在
 --- 各占一个框柱位，互不竞争（此前 if/else 单按钮，左右同开时只能活一个）
+--- [锻炉双页 0929] 锻炉页移中栏：其返回条挂在锻炉右缘（中栏右分界线），三行/非三行都绘制
 local function seamBackList()
     local list = {}
-    if not BattleTriPage.isOpen() then return list end
+    local tri = BattleTriPage.isOpen()
     local psL = logicalH() / 1080
     local cs = psL * 0.45                    -- 面板内容缩放(设计→窗口),与 Viewport.DS 一致
     local barW = logicalH() * DrawUtil.SEAMBAR_ASPECT  -- 素材实际等比,与绘制共用;条中心骑在页面分界线上
     local DIST = 1080                         -- 页面设计宽:滑入全程
-    -- 右框柱 ›：角色详情——条整体让出页面:中心在分界线左侧(中缝侧),条右缘贴详情页左缘
-    if CharacterDetail.isOpen() then
-        local ot, ct, od, cd = CharacterDetail.getSeamAnim()
+
+    if tri then
+        -- 右框柱 ›：角色详情——条整体让出页面:中心在分界线左侧(中缝侧),条右缘贴详情页左缘
+        if CharacterDetail.isOpen() then
+            local ot, ct, od, cd = CharacterDetail.getSeamAnim()
+            local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
+            list[#list + 1] = {
+                cx = (logicalW() - 486 * psL) - barW * 0.5 + oxWin,
+                sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "right",
+                close = function() CharacterDetail.close() end,
+            }
+        end
+    end
+
+    -- [锻炉双页 0929] 锻炉右框柱 ›：锻炉页在中栏，取消竖栏挂其右缘（中/右栏分界线）
+    -- 三行与非三行都绘制（锻炉页内不再画返回键）；点击关闭锻炉（联动关仓库）
+    if BlacksmithPage.isOpen() then
+        local ot, ct, od, cd = BlacksmithPage.getSeamAnim()
         local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
+        -- 中/右栏分界线窗口坐标：三行 = 972*ps；非三行 = H_ox + 972*H_s
+        local seamX = tri and (972 * psL) or (H_ox + 972 * H_s)
         list[#list + 1] = {
-            cx = (logicalW() - 486 * psL) - barW * 0.5 + oxWin,
+            cx = seamX + barW * 0.5 + oxWin,
             sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "right",
-            close = function() CharacterDetail.close() end,
+            close = function() BlacksmithPage.close() end,
         }
     end
-    -- 左框柱 ‹：左栏二级页（背包/教堂/铁匠/酒馆/市场）——条贴页面右缘(前缘),同步推进
-    local leftClose, leftAnim, leftScale
-    if LootBoxPage.isOpen() then
-        leftClose = function() LootBoxPage.close() end
-        leftAnim = { LootBoxPage.getSeamAnim() }
-    elseif TaskPage.isOpen() then
-        leftClose = function() TaskPage.close() end
-        leftAnim = { TaskPage.getSeamAnim() }
-    elseif BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
-        leftClose = function() BackpackPanel.close() end
-        leftAnim = { BackpackPanel.getSeamAnim() }
-    elseif TalentPage.isOpen()     then leftClose = function() TalentPage.close() end
-        leftAnim = { TalentPage.getSeamAnim() }
-        leftScale = TalentPage.getHorizonWidthScale()
-    elseif ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
-        leftAnim = { ChurchPage.getSeamAnim() }
-    elseif BlacksmithPage.isOpen()  then leftClose = function() BlacksmithPage.close() end
-        leftAnim = { BlacksmithPage.getSeamAnim() }
-    elseif TavernPage.isOpen()      then leftClose = function() TavernPage.close() end
-        leftAnim = { TavernPage.getSeamAnim() }
-    elseif MarketPage.isOpen()      then leftClose = function() MarketPage.close() end
-        leftAnim = { MarketPage.getSeamAnim() }
-    end
-    if leftClose then
-        local scale = leftScale or 1
-        if scale < 1 then scale = 1 end
-        local dist = 1080 * scale
-        local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], dist) * cs
-        list[#list + 1] = {
-            cx = 486 * psL * scale + barW * 0.5 + oxWin,
-            sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
-            close = leftClose,
-        }
+
+    -- 左框柱 ‹：左栏二级页（仓库/教堂/酒馆/市场）——条贴页面右缘(前缘),同步推进
+    -- [锻炉双页 0929] 锻炉打开时仓库左栏条不画（双页整体由锻炉右侧竖栏一键关闭）
+    if tri then
+        local leftClose, leftAnim, leftScale
+        if LootBoxPage.isOpen() then
+            leftClose = function() LootBoxPage.close() end
+            leftAnim = { LootBoxPage.getSeamAnim() }
+        elseif TaskPage.isOpen() then
+            leftClose = function() TaskPage.close() end
+            leftAnim = { TaskPage.getSeamAnim() }
+        elseif BackpackPanel.isOpen() and BackpackPanel.isLeftMode()
+            and not BlacksmithPage.isOpen() then
+            leftClose = function() BackpackPanel.close() end
+            leftAnim = { BackpackPanel.getSeamAnim() }
+        elseif TalentPage.isOpen()     then leftClose = function() TalentPage.close() end
+            leftAnim = { TalentPage.getSeamAnim() }
+            leftScale = TalentPage.getHorizonWidthScale()
+        elseif ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
+            leftAnim = { ChurchPage.getSeamAnim() }
+        elseif TavernPage.isOpen()      then leftClose = function() TavernPage.close() end
+            leftAnim = { TavernPage.getSeamAnim() }
+        elseif MarketPage.isOpen()      then leftClose = function() MarketPage.close() end
+            leftAnim = { MarketPage.getSeamAnim() }
+        end
+        if leftClose then
+            local scale = leftScale or 1
+            if scale < 1 then scale = 1 end
+            local dist = 1080 * scale
+            local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], dist) * cs
+            -- 左面板右缘窗口坐标：三行 = 486*ps*scale；非三行 = H_ox + 486*H_s*scale
+            local leftEdge = tri and (486 * psL * scale) or (H_ox + 486 * H_s * scale)
+            list[#list + 1] = {
+                cx = leftEdge + barW * 0.5 + oxWin,
+                sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
+                close = leftClose,
+            }
+        end
     end
     return list
 end
@@ -381,7 +404,9 @@ drawEquipDetailOverlay = function()
     local ok, EquipmentDetail = pcall(require, "ui.character.equip.EquipmentDetail")
     if not ok or not EquipmentDetail.isCompactCorner or not EquipmentDetail.isCompactCorner() then return end
     local owner = EquipmentDetail.getOwner and EquipmentDetail.getOwner() or "character"
-    local panelId = (owner == "character") and "right" or "left"
+    -- [锻炉双页 0929] smith owner（锻炉工作台详情）挂中栏；其余非 character 挂左栏
+    local panelId = (owner == "character") and "right"
+        or (owner == "smith") and "center" or "left"
     local note = Viewport.getNote(panelId)
     if not note then return end
     local panel = Viewport.PANELS[panelId]
@@ -397,7 +422,9 @@ equipOverlayDesign = function(sx, sy)
     local ok, EquipmentDetail = pcall(require, "ui.character.equip.EquipmentDetail")
     if not ok or not EquipmentDetail.isCompactCorner or not EquipmentDetail.isCompactCorner() then return nil end
     local owner = EquipmentDetail.getOwner and EquipmentDetail.getOwner() or "character"
-    local panelId = (owner == "character") and "right" or "left"
+    -- [锻炉双页 0929] smith owner（锻炉工作台详情）挂中栏；其余非 character 挂左栏
+    local panelId = (owner == "character") and "right"
+        or (owner == "smith") and "center" or "left"
     local note = Viewport.getNote(panelId)
     if not note then return nil end
     local panel = Viewport.PANELS[panelId]
@@ -494,9 +521,9 @@ function HandleNanoVGRenderHorizon()
 
     if not BattleTriPage.isOpen() then
         -- 左面板：功能页组（城镇 + 二级页）
+        -- [锻炉双页 0929] BlacksmithPage 已移至中面板绘制（左栏让给仓库）
         Viewport.begin(vg(), Viewport.PANELS.left, H_ox, H_oy, H_s)
         TownScene.draw(vg())
-        BlacksmithPage.draw(vg())
         ChurchPage.draw(vg())
         if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
@@ -539,13 +566,23 @@ function HandleNanoVGRenderHorizon()
         else
             TownScene.draw(vg())
         end
+        -- [锻炉双页 0929] 锻炉页绘制在中面板（盖在主视图之上；左栏同时开着仓库）
+        BlacksmithPage.draw(vg())
         -- [底栏移除] 三行布局 TopBar 只画左栏；非三行旧布局仍画中栏顶部
         local detailOpen = CharacterPanel.isDetailOpen()
-        if not detailOpen and not BattleTriPage.isOpen() then
+        if not detailOpen and not BattleTriPage.isOpen() and not BlacksmithPage.isOpen() then
             TopBar.draw(vg())
         end
     end
     Viewport.finish(vg())
+
+    -- [锻炉双页 0929] 非三行模式的中缝返回条（锻炉右缘 ›；三行模式见 BattleTriPage 分支）
+    if not BattleTriPage.isOpen() then
+        for _, seamBtn in ipairs(seamBackList()) do
+            DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
+                seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
+        end
+    end
 
     if talentPageUsesWideLayout() and not BattleTriPage.isOpen() then
         drawWideTalentPage(H_ox, H_oy, H_s)
@@ -589,7 +626,6 @@ function HandleNanoVGRenderHorizon()
         BattleTriPage.drawL0(vg(), logicalW(), logicalH())          -- [暗黑替换] L0 框体图（透明框内透出 L1）
         Viewport.begin(vg(), Viewport.PANELS.left, oxL, 0, ps)
         TownScene.draw(vg())
-        BlacksmithPage.draw(vg())
         ChurchPage.draw(vg())
         if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
@@ -613,6 +649,13 @@ function HandleNanoVGRenderHorizon()
         -- [行1 HUD] 宿主最终层级绘制：速度/扫荡/统计/选关按钮——
         -- 确保位于一切战斗行背景与框柱之上（用户实测按钮被行1背景穿帮）
         BattleTriPage.drawHud(vg(), logicalW(), logicalH())
+        -- [锻炉双页 0929] 锻炉页绘制在 tri 中栏区域（盖在战斗行之上，紧邻左栏仓库；
+        -- 关闭竖栏挂在锻炉右缘，见 seamBackList）
+        if BlacksmithPage.isOpen() then
+            Viewport.begin(vg(), Viewport.PANELS.center, oxL, 0, ps)
+            BlacksmithPage.draw(vg())
+            Viewport.finish(vg())
+        end
         drawWideTalentPage(0, 0, logicalH() / 1080)
         -- [三队并行] 中缝返回条（窗口坐标，页面视口之外）：全高门柱边条，左页‹ / 详情›，两级并存各自绘制
         for _, seamBtn in ipairs(seamBackList()) do
@@ -824,6 +867,16 @@ local function HorizonResolveMouse()
             return 'tri', sx, sy
         end
         local ps = logicalH() / 1080
+        -- [锻炉双页 0929] 锻炉页占据中栏（Viewport.center，窗口 x∈[486ps,972ps]）：
+        -- 命中该区返回 'center' + 设计坐标，交给 BlacksmithPage 输入链。
+        -- 注意 tri 模式右栏被挪到窗口右缘，不能用 Viewport.hit（其 right 区与实际不符）
+        if BlacksmithPage.isOpen() then
+            local leftW = 486 * ps
+            if sx >= leftW and sx < leftW + 486 * ps then
+                local cs = ps * Viewport.DS
+                return 'center', (sx - leftW) / cs, sy / cs
+            end
+        end
         if talentPageUsesWideLayout() then
             local rightEdge = talentPageRightEdge(0, ps)
             if sx >= 0 and sx < rightEdge then
@@ -926,9 +979,6 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
                 LootBoxPage.handleRightClick(dx, dy)
                 return
             end
-            if BlacksmithPage.isOpen() and EquipmentBag.isOpen() then
-                EquipmentBag.handleRightClick(dx, dy)
-            end
             return
         end
         return
@@ -1022,24 +1072,14 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             BackpackPanel.handleDragBegin(dx, dy)
             return
         end
-        if BlacksmithPage.isOpen() then
-            if EquipmentBag.isOpen() and not EquipmentBag.hasOverlayRegion() then
-                local mousePos = input:GetMousePosition()
-                local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
-                local peek = EquipmentBag.peekAt(dx, dy)
-                if peek then
-                    EquipCrossDrag.arm(peek, sx, sy, "bag")
-                    print("[Horizon] 左栏装备背包按下 seq=" .. tostring(peek.seq))
-                end
-            end
-            BlacksmithPage.handleDragBegin(dx, dy)
-            return
-        end
+        -- [锻炉双页 0929] 锻炉页已移中栏（center/tri 分支处理），左栏不再接管
         if TalentPage.isOpen() then TalentPage.handleDragBegin(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragBegin(dx, dy) return end
     elseif pid == 'center' then
+        -- [锻炉双页 0929] 锻炉页在中栏：优先接管
+        if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
         if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragBegin(dx, dy) end
     elseif pid == 'right' then
         CharacterPanel.handleDragBegin(dx, dy)
@@ -1124,7 +1164,8 @@ function HandleMouseMoveHorizon(eventType, eventData)
             if pid == 'left' then LootBoxPage.handleHover(dx, dy)
             else LootBoxPage.handleHover(-1, -1) end
         end
-        if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+        if pid == 'right'
+            or (pid == 'center' and BottomNav.getSelectedIndex() == 1 and not BlacksmithPage.isOpen()) then
             if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
         else
             if CharacterPanel.handleHover then CharacterPanel.handleHover(-1, -1) end
@@ -1154,12 +1195,13 @@ function HandleMouseMoveHorizon(eventType, eventData)
         if LootBoxPage.isOpen() then return end -- 非遗匣起始的拖拽不能穿透其下方页面
         if TaskPage.isOpen() then TaskPage.handleDragMove(dx, dy) return end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragMove(dx, dy) return end
-        if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
         if TalentPage.isOpen() then TalentPage.handleDragMove(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragMove(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragMove(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragMove(dx, dy) return end
     elseif pid == 'center' then
+        -- [锻炉双页 0929] 锻炉页在中栏：优先接管
+        if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
         if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragMove(dx, dy) end
     elseif pid == 'right' then
         CharacterPanel.handleDragMove(dx, dy)
@@ -1173,7 +1215,8 @@ function HandleEquipmentHoverTickHorizon()
         or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
         or EquipCrossDrag.isArmed() then return end
     local pid, dx, dy = HorizonResolveMouse()
-    if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+    if pid == 'right'
+        or (pid == 'center' and BottomNav.getSelectedIndex() == 1 and not BlacksmithPage.isOpen()) then
         if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
     elseif CharacterPanel.handleHover then
         CharacterPanel.handleHover(-1, -1)
@@ -1446,12 +1489,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
             BackpackPanel.handleInput(dx, dy)
             return
         end
-        if BlacksmithPage.isOpen() then
-            BlacksmithPage.handleDragEnd(dx, dy)
-            if not isTap then return end
-            BlacksmithPage.handleInput(dx, dy)
-            return
-        end
+        -- [锻炉双页 0929] 锻炉页已移中栏（center 分支处理），左栏链不再接管
         if TalentPage.isOpen() then
             TalentPage.handleDragEnd(dx, dy)
             if not isTap then return end
@@ -1502,6 +1540,12 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         and RewardPopup.currentPanel() == 'center' then
         RewardPopup.handleDragEnd(dx, dy)
         if isTap then RewardPopup.handleInput(dx, dy) end
+        return
+    end
+    -- [锻炉双页 0929] 锻炉页在中栏：优先接管（tri 模式下中段命中映射到 center 设计坐标）
+    if pid == 'center' and BlacksmithPage.isOpen() then
+        BlacksmithPage.handleDragEnd(dx, dy)
+        if isTap then BlacksmithPage.handleInput(dx, dy) end
         return
     end
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
@@ -1655,7 +1699,6 @@ function HandleMouseWheelHorizon(eventType, eventData)
         if LootBoxPage.isOpen() then LootBox.handleScroll(wheel) return end
         if TaskPage.isOpen() then TaskPage.handleScroll(wheel) return end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleScroll(wheel, msx, msy) return end
-        if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel, msx, msy) return end
         if TalentPage.isOpen() then TalentPage.handleScroll(wheel, msx, msy) return end
         if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel, msx, msy) return end
         if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end
@@ -1674,6 +1717,11 @@ function HandleMouseWheelHorizon(eventType, eventData)
     end
 
     -- center：主视图 Tab 页
+    -- [锻炉双页 0929] 锻炉页在中栏：优先接管
+    if BlacksmithPage.isOpen() then
+        BlacksmithPage.handleScroll(wheel, msx, msy)
+        return
+    end
     local tab = BottomNav.getSelectedIndex()
     if tab == 1 then
         CharacterPanel.handleScroll(wheel, msx, msy)

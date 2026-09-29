@@ -12,6 +12,7 @@ local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local BlacksmithConfig = require("config.BlacksmithConfig")
+local ResourceDefs     = require("config.ResourceDefs")
 local PlayerStore      = require("core.PlayerStore")
 local RewardPopup      = require("ui.hud.popup.RewardPopup")
 local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
@@ -75,6 +76,16 @@ FJ.POP_LEVEL_STEP = 5
 FJ.POP_CONFIRM_CX = 540; FJ.POP_CONFIRM_CY = 1301; FJ.POP_CONFIRM_W = 410; FJ.POP_CONFIRM_H = 100
 FJ.POP_CONFIRM_TEXT_FONT = 40
 FJ.POP_CONFIRM_TEXT_R = 0x6d; FJ.POP_CONFIRM_TEXT_G = 0x4c; FJ.POP_CONFIRM_TEXT_B = 0x1d
+
+-- 7. 返还卷轴图标行（精粹文本与分解面板之间的空区，每行最多 5 个，超出换行）
+FJ.SCROLL_ROW1_CY = 672
+FJ.SCROLL_ROW_STEP = 116
+FJ.SCROLL_ICON_SIZE = 96
+FJ.SCROLL_GAP = 24
+FJ.SCROLL_MAX_PER_ROW = 5
+FJ.SCROLL_MAX_ROWS = 2
+FJ.SCROLL_BADGE_FONT = 32
+FJ.SCROLL_BADGE_STROKE = 3
 
 -- 格子布局计算
 FJ.GRID_TOTAL_W = FJ.GRID_COLS * FJ.GRID_CELL + (FJ.GRID_COLS - 1) * FJ.GRID_GAP  -- 940
@@ -153,6 +164,73 @@ local getProtocol      -- 延迟加载 Protocol
 local imgPopupBg = -1     -- 弹窗背景
 local imgPopupArrow = -1  -- 箭头
 local imgLock = -1        -- 锁定角标 UI_ICON_SUO
+
+-- 返还卷轴图标懒加载缓存（type -> nvg 图片句柄）
+---@type table<string, number>
+local scrollIconCache = {}
+
+---@param vg any
+---@param resType string
+---@return number
+local function getScrollIcon(vg, resType)
+    local cached = scrollIconCache[resType]
+    if cached then return cached end
+    local def = ResourceDefs.DEFS[resType]
+    ---@type integer
+    local img = -1
+    if def then
+        img = nvgCreateImage(vg, def.iconPath, 0) or -1
+    end
+    scrollIconCache[resType] = img
+    return img
+end
+
+--- 绘制返还卷轴图标行：整体居中，每行最多 5 个，超出换行
+---@param vg any
+---@param entries table[] { type: string, amount: number }
+local function drawScrollRefundIcons(vg, entries)
+    local perRow = FJ.SCROLL_MAX_PER_ROW
+    local step = FJ.SCROLL_ICON_SIZE + FJ.SCROLL_GAP
+    local maxCount = perRow * FJ.SCROLL_MAX_ROWS
+    local count = math.min(#entries, maxCount)
+    for i = 1, count do
+        local entry = entries[i]
+        local row = math.ceil(i / perRow)
+        local col = ((i - 1) % perRow) + 1
+        local rowStart = (row - 1) * perRow + 1
+        local rowEnd = math.min(#entries, row * perRow)
+        local rowItemCount = rowEnd - rowStart + 1
+        local rowW = rowItemCount * FJ.SCROLL_ICON_SIZE + (rowItemCount - 1) * FJ.SCROLL_GAP
+        local cx = FJ.REWARD_CX - rowW * 0.5 + FJ.SCROLL_ICON_SIZE * 0.5 + (col - 1) * step
+        local cy = FJ.SCROLL_ROW1_CY + (row - 1) * FJ.SCROLL_ROW_STEP
+
+        local def = ResourceDefs.DEFS[entry.type]
+        local q = def and def.quality or 1
+        DarkIcon.drawQualityBg(vg, q, cx, cy, FJ.SCROLL_ICON_SIZE, FJ.SCROLL_ICON_SIZE, 1.0)
+        local img = getScrollIcon(vg, entry.type)
+        if img >= 0 then
+            local inner = FJ.SCROLL_ICON_SIZE - 12
+            drawImageCentered(vg, img, cx, cy, inner, inner, 1.0)
+        end
+
+        -- 数量角标（右下角，描边）
+        local amtText = "×" .. tostring(entry.amount)
+        local amtX = cx + FJ.SCROLL_ICON_SIZE * 0.5 - 6
+        local amtY = cy + FJ.SCROLL_ICON_SIZE * 0.5 - 4
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, FJ.SCROLL_BADGE_FONT)
+        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
+        local sStep = math.pi * 2 / 16
+        for si = 0, 15 do
+            local sa = si * sStep
+            nvgText(vg, amtX + math.cos(sa) * FJ.SCROLL_BADGE_STROKE,
+                amtY + math.sin(sa) * FJ.SCROLL_BADGE_STROKE, amtText, nil)
+        end
+        nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
+        nvgText(vg, amtX, amtY, amtText, nil)
+    end
+end
 
 --- 注入共享上下文
 ---@param ctx table 由 BlacksmithPage 构造的共享上下文
@@ -343,14 +421,13 @@ function M.drawUpperSlot(vg)
     drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 30, rewardText,
         36, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
-    local scrollHint = BlacksmithConfig.formatScrollRefund(previewScrolls)
-    if not scrollHint and fjState.lastScrollHint and selCount == 0 then
-        scrollHint = fjState.lastScrollHint
+    -- 卷轴返还改为图标行展示（整体居中，超过 5 个换行）
+    local scrollEntries = BlacksmithConfig.collectScrollRefundEntries(previewScrolls)
+    if #scrollEntries == 0 and selCount == 0 and fjState.lastScrollEntries then
+        scrollEntries = fjState.lastScrollEntries
     end
-    if scrollHint then
-        drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 72, scrollHint,
-            32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 214, 102, 3)
+    if #scrollEntries > 0 then
+        drawScrollRefundIcons(vg, scrollEntries)
     end
 end
 
@@ -898,7 +975,8 @@ function M.onActionResult(data)
         rewards[#rewards + 1] = { type = "gold", amount = goldReward }
     end
     BlacksmithConfig.appendScrollRewardItems(rewards, data.scrollRewards)
-    fjState.lastScrollHint = BlacksmithConfig.formatScrollRefund(data.scrollRewards)
+    local entries = BlacksmithConfig.collectScrollRefundEntries(data.scrollRewards)
+    fjState.lastScrollEntries = #entries > 0 and entries or nil
     if #rewards > 0 then
         RewardPopup.show("分解奖励", rewards)
     end

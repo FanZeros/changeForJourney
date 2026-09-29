@@ -217,6 +217,22 @@ function BlacksmithConfig.formatScrollRefund(scrollRewards)
     return "返还卷轴 " .. table.concat(parts, " ")
 end
 
+--- 把部位卷轴返还整理成有序图标条目列表（供 UI 绘制图标行）
+---@param scrollRewards table|nil
+---@return table[] { type: string, amount: number }
+function BlacksmithConfig.collectScrollRefundEntries(scrollRewards)
+    local entries = {}
+    if not scrollRewards then return entries end
+    for _, field in ipairs(ASCEND_SCROLL_ORDER) do
+        local n = math.floor(tonumber(scrollRewards[field]) or 0)
+        local popupType = BlacksmithConfig.SCROLL_POPUP_TYPE[field]
+        if n > 0 and popupType then
+            entries[#entries + 1] = { type = popupType, amount = n }
+        end
+    end
+    return entries
+end
+
 --- 把部位卷轴返还追加进奖励弹窗列表
 ---@param rewards table
 ---@param scrollRewards table|nil

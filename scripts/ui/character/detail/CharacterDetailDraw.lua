@@ -286,6 +286,7 @@ local CARD = {
     TAG_SIZE=60, TAG_DX=63,  -- 职业标识右下角，与等级徽章(-63)左右对应
     POWER_BOTTOM_UP=83, POWER_ICON_SIZE=36,
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BOTTOM_UP=38,
+    NAME_TOP=26, NAME_FONT=22, NAME_MAX_W=150,
 }
 M.ARROW_BG_LEFT_CX  = DT_CARD_CX - CARD.SIDE_DX
 M.ARROW_BG_RIGHT_CX = DT_CARD_CX + CARD.SIDE_DX
@@ -668,6 +669,27 @@ function M.draw(vg)
             CARD.POWER_ICON_SIZE, CARD.POWER_ICON_SIZE, 1.0)
         drawTextStroke(vg, pcX + CARD.POWER_ICON_SIZE + POWER_GAP, powerY, powerStr,
             30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 247, 254, 119, 4)
+        -- 名字放在卡面顶部饰条内。超出饰条宽度时横向滚动。
+        local heroName = cfg.name or ""
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, CARD.NAME_FONT)
+        local nameW = nvgTextBounds(vg, 0, 0, heroName)
+        local nameY = -CARD.H * 0.5 + CARD.NAME_TOP
+        if nameW <= CARD.NAME_MAX_W then
+            drawTextStroke(vg, 0, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+        else
+            local gap = 28
+            local cycle = nameW + gap
+            local shift = (time.elapsedTime * 28) % cycle
+            nvgSave(vg)
+            nvgIntersectScissor(vg, -CARD.NAME_MAX_W * 0.5, nameY - 16, CARD.NAME_MAX_W, 32)
+            drawTextStroke(vg, -shift, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+            drawTextStroke(vg, -shift + cycle, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+            nvgRestore(vg)
+        end
         -- 实战预估副行（默认关闭，M.setEstimateVisible(true) 验收后开启）：
         -- 分项计价原型口径，按英雄伤害类别区别计价物攻/魔攻/治疗属性
         if SHOW_ESTIMATE then
@@ -970,22 +992,7 @@ function M.draw(vg)
     if detailState.tab == "equip" then
         nvgTranslate(vg, 0, EQUIP_LOWER_OFFSET)
     end
-    -- 配装页分段画底板：保留顶部金属外框 + 下方皮革，跳过图内菱形金饰小横条
-    if detailState.tab == "equip" and img.midBg and img.midBg >= 0 then
-        local midTop = MID_BG_CY - MID_BG_H * 0.5
-        local frameH = 100
-        local barEnd = 125
-        nvgSave(vg)
-        nvgIntersectScissor(vg, 0, midTop, DESIGN_W, frameH)
-        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
-        nvgRestore(vg)
-        nvgSave(vg)
-        nvgIntersectScissor(vg, 0, midTop + barEnd, DESIGN_W, MID_BG_H - barEnd)
-        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
-        nvgRestore(vg)
-    else
-        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
-    end
+    drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
 
     -- === 7) 标题：属性页「角色详情」，配装页显示当前部位名 ===
     local titleText = I18n.t("hero_detail")
@@ -1022,13 +1029,6 @@ function M.draw(vg)
     local textBlur = detailState.switchDir and (1 - progress) or 0
     nvgSave(vg)
     nvgGlobalAlpha(vg, 1 - textBlur * 0.55)
-    if not isAwakenTab and not isClassTab and detailState.tab ~= "equip" then
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 42)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 255))
-    nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name, nil)
-    end
 
     -- === 9~17) 经验/品质/职业/分割线：属性页专属 ===
     if detailState.tab == "attr" then
@@ -1391,10 +1391,6 @@ function M.draw(vg)
             nvgTranslate(vg, pass * 3 * textBlur, 0)
             nvgGlobalAlpha(vg, textBlur * 0.16)
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 42)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-            nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name or "", nil)
             nvgFontSize(vg, 28)
             nvgText(vg, MID_EXP_CX, MID_EXP_CY, "Lv." .. tostring(heroLevel), nil)
             nvgRestore(vg)
@@ -1676,15 +1672,6 @@ function M.draw(vg)
         if EquipmentDetail.isOpen() then
             EquipmentDetail.drawIf(vg, "character")
         end
-    end
-
-    -- 配装页角色名画在详情之上，随下方界面一同下移
-    if not isAwakenTab and detailState.tab == "equip" and heroCfg and heroCfg.name then
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 42)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 255))
-        nvgText(vg, MID_NAME_CX, MID_NAME_CY + EQUIP_LOWER_OFFSET, heroCfg.name, nil)
     end
 
     -- === 关键词解释弹窗（最上层，盖住页签与装备浮层）===

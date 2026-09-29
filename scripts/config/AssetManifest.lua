@@ -189,7 +189,7 @@ return {
     { "image/界面底板/通用面板/UI_TY_EJQRK.png", 35938 },
     { "image/通用图标/UI_ICON_XG.png", 14079 },
     { "image/界面底板/通用面板/UI_TJP_1.png", 43736 },
-    { "image/界面底板/角色与觉醒/UI_JSJM_0.png", 356950697 },
+    { "image/界面底板/角色与觉醒/UI_JSJM_0.png", 2686328 },
     { "image/通用图标/ICON_UP_big.png", 44573 },
     { "image/特效投射物/EF_ATK_1.png", 13201 },
     { "image/特效投射物/EF_ATK_10.png", 15527 },

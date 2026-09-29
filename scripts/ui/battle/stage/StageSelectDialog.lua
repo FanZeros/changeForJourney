@@ -216,7 +216,8 @@ local monsterCards = {}
 local function ensureMonsterCard(vg, monsterId)
     local img = monsterCards[monsterId]
     if img and img >= 0 then return img end
-    img = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", monsterId), 0)
+    local artId = require("config.MonsterConfig").getCardArtId(monsterId)
+    img = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", artId), 0)
     if img and img >= 0 then
         monsterCards[monsterId] = img
         return img

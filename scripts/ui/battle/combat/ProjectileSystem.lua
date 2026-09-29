@@ -412,13 +412,16 @@ local DEFAULT_TRAIL = { 235, 235, 245 }
 ---@return number cy
 local function arcPoint(proj, t)
     local lift = (proj.arcLift or 0) * renderScale
+    local bow = math.sin(t * math.pi)
+    local lx = proj.laneX or 0
+    local ly = proj.laneY or 0
     if lift <= 0.5 then
-        local lx = proj.startX + (proj.endX - proj.startX) * t
-        local ly = proj.startY + (proj.endY - proj.startY) * t
-        return lx, ly
+        local x = proj.startX + (proj.endX - proj.startX) * t + lx * bow
+        local y = proj.startY + (proj.endY - proj.startY) * t + ly * bow
+        return x, y
     end
-    local midX = (proj.startX + proj.endX) * 0.5
-    local midY = (proj.startY + proj.endY) * 0.5
+    local midX = (proj.startX + proj.endX) * 0.5 + lx
+    local midY = (proj.startY + proj.endY) * 0.5 + ly
     return bezier2(proj.startX, proj.startY, midX, midY - lift, proj.endX, proj.endY, t)
 end
 
@@ -538,27 +541,65 @@ local function arcStyleOf(cfg)
     return "straight"
 end
 
-local function arcLiftFor(cfg, dist)
+local function arcLiftFor(cfg, dist, lane, slot)
     local style = arcStyleOf(cfg)
+    lane = lane or 0
+    slot = slot or 0
     if style == "straight" then return 0 end
+    local lift
     if style == "shallow" then
-        return math.max(14, math.min(56, dist * 0.06))
+        lift = math.max(28, math.min(72, dist * 0.10))
     elseif style == "lob" then
-        return math.max(30, math.min(130, dist * 0.18))
+        lift = math.max(70, math.min(150, dist * 0.24))
     elseif style == "heal" then
-        return math.max(40, math.min(108, dist * 0.22))
+        lift = math.max(88, math.min(168, dist * 0.28))
     elseif style == "float" then
-        return math.max(18, math.min(64, dist * 0.11))
+        lift = math.max(48, math.min(110, dist * 0.16))
+    else
+        return 0
     end
-    return 0
+    -- 同时在飞的弹按出生顺序分三层高度，避免叠成一条线
+    local band = slot % 3
+    if band == 1 then
+        lift = lift * 1.38
+    elseif band == 2 then
+        lift = lift * 0.68
+    end
+    return lift
+end
+
+local function assignFlightLane(proj)
+    local slot = #PS_BCS.projectiles
+    proj.flightSlot = slot
+    local lane = (slot % 5) - 2
+    proj.lane = lane
+    local dx = proj.endX - proj.startX
+    local dy = proj.endY - proj.startY
+    local dist = math.sqrt(dx * dx + dy * dy)
+    if dist < 1 then dist = 1 end
+    local side = lane * math.min(34, dist * 0.045)
+    local nx = -dy / dist * side
+    local ny = dx / dist * side
+    proj.endX = proj.endX + nx * 0.15
+    proj.endY = proj.endY + ny * 0.15
+    proj.laneX = nx
+    proj.laneY = ny
+    local base = proj.cfg.duration or 0.5
+    proj.durationScale = 0.86 + (slot % 4) * 0.09
+    if proj.cfg.arc == "lob" or proj.cfg.type == "bezier" then
+        proj.durationScale = proj.durationScale + 0.08
+    end
+    proj.arcLift = arcLiftFor(proj.cfg, dist, lane, slot)
 end
 
 local function prepareArc(proj)
     local dx = proj.endX - proj.startX
     local dy = proj.endY - proj.startY
     local dist = math.sqrt(dx * dx + dy * dy)
-    local lift = arcLiftFor(proj.cfg, dist)
-    proj.arcLift = lift
+    if not proj.arcLift then
+        proj.arcLift = arcLiftFor(proj.cfg, dist, proj.lane, proj.flightSlot)
+    end
+    local lift = proj.arcLift
     local key = tostring(proj.cfg.imgKey or proj.cfg.type)
     if not ARC_LOGGED[key] then
         ARC_LOGGED[key] = true
@@ -583,9 +624,10 @@ local function updateAndDrawBezier(proj, vg, t)
         dist = 1
     end
 
-    local lift = (proj.arcLift or arcLiftFor(cfg, dist)) * renderScale
-    local midX = (proj.startX + effEndX) * 0.5
-    local midY = (proj.startY + effEndY) * 0.5
+    local lift = (proj.arcLift or arcLiftFor(cfg, dist, proj.lane, proj.flightSlot)) * renderScale
+    local bow = 1
+    local midX = (proj.startX + effEndX) * 0.5 + (proj.laneX or 0) * bow
+    local midY = (proj.startY + effEndY) * 0.5 + (proj.laneY or 0) * bow
     local ctrlX = midX
     local ctrlY = midY - lift
 
@@ -1045,6 +1087,7 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
     if cfg.type == "bezier" then
         proj.bezierSide = 1
     end
+    assignFlightLane(proj)
     prepareArc(proj)
 
     -- [看情况抛物线] 直线弹按弧高决定要不要抬成抛物线，弧顶始终向上
@@ -1102,6 +1145,7 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
     if cfg.type == "bezier" then
         proj.bezierSide = 1
     end
+    assignFlightLane(proj)
     prepareArc(proj)
 
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
@@ -1183,6 +1227,7 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
         proj.ringY = startY + math.sin(angleOnRing) * radius
         proj.spawnAngle = math.atan(endY - startY, endX - startX)
     end
+    assignFlightLane(proj)
     prepareArc(proj)
 
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
@@ -1220,6 +1265,7 @@ function ProjectileSystem.spawnTalent(talentProjKey, startX, startY, endX, endY,
             proj.bezierSide = (math.random() > 0.5) and 1 or -1
         end
     end
+    assignFlightLane(proj)
     prepareArc(proj)
 
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
@@ -1240,7 +1286,7 @@ function ProjectileSystem.update(dt)
 
         -- [单发穿透] 按飞行进度依次触发沿线命中事件
         if proj.pierceEvents and not proj.arrived then
-            local pdur = (proj.cfg and proj.cfg.duration) or 0.5
+            local pdur = ((proj.cfg and proj.cfg.duration) or 0.5) * (proj.durationScale or 1)
             if pdur <= 0 then pdur = 0.01 end
             local pt = math.min(1, proj.timer / pdur)
             while proj.nextEventIdx <= #proj.pierceEvents
@@ -1269,7 +1315,7 @@ function ProjectileSystem.update(dt)
 
         -- 到达时触发回调（仅一次）
         -- hitRatio: 闪电链等视觉先到达的投射物，按比例提前触发伤害
-        local duration = (proj.cfg and proj.cfg.duration) or 0.01
+        local duration = ((proj.cfg and proj.cfg.duration) or 0.01) * (proj.durationScale or 1)
         if duration <= 0 then duration = 0.01 end
         local hitTime = duration
         if proj.cfg.hitRatio then
@@ -1346,7 +1392,7 @@ end
 --- 绘制所有活跃投射物
 function ProjectileSystem.draw(vg)
     for _, proj in ipairs(PS_BCS.projectiles) do
-        local duration = (proj.cfg and proj.cfg.duration) or 0.01
+        local duration = ((proj.cfg and proj.cfg.duration) or 0.01) * (proj.durationScale or 1)
         if duration <= 0 then duration = 0.01 end
         local t = math.min(1, proj.timer / duration)
         -- [抛物线轨迹] fly/pierce/shake/bezier 均在各自绘制函数内按 arcPoint 走弧

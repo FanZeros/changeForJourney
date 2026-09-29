@@ -78,7 +78,8 @@ local function cardImage(vg, unit)
         if cached and cached >= 0 then return cached end
         local direct = directCards.monster[unit.monsterId]
         if direct == nil then
-            direct = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", unit.monsterId), 0)
+            local MC = require("config.MonsterConfig")
+            direct = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", MC.getCardArtId(unit.monsterId)), 0)
             directCards.monster[unit.monsterId] = direct
         end
         return direct

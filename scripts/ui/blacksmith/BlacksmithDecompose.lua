@@ -547,21 +547,33 @@ local function sliderHitH()
     return math.max(FJ.POP_SLIDER_H, FJ.POP_KNOB_SIZE) + 20
 end
 
---- 按当前选中条件生成描述文本（"符合需求"替换为具体条件）
----@return string
-local function buildConditionDesc()
-    local parts = {}
+--- 按当前选中条件生成描述分段（品质名用品质色，其余灰白）
+---@return {text:string, r:integer, g:integer, b:integer}[]
+local function buildConditionSegments()
+    local gr, gg, gb = FJ.POP_DESC_R, FJ.POP_DESC_G, FJ.POP_DESC_B
+    local segs = {}
+    local function addGray(text)
+        segs[#segs + 1] = { text = text, r = gr, g = gg, b = gb }
+    end
     if fjState.autoQuality > 0 then
         local qCfg = QUALITY_CONFIG[fjState.autoQuality]
-        parts[#parts + 1] = (qCfg and qCfg.name or "") .. "级及以下"
+        if qCfg then
+            segs[#segs + 1] = { text = qCfg.name, r = qCfg.r, g = qCfg.g, b = qCfg.b }
+        end
+        addGray("级及以下")
+    end
+    if fjState.autoQuality > 0 and fjState.autoLevel > 0 then
+        addGray("且")
     end
     if fjState.autoLevel > 0 then
-        parts[#parts + 1] = tostring(fjState.autoLevel) .. "级及以下"
+        addGray(tostring(fjState.autoLevel) .. "级及以下")
     end
-    if #parts == 0 then
-        return "未设置条件，掉落装备不会自动分解"
+    if #segs == 0 then
+        addGray("未设置条件，掉落装备不会自动分解")
+        return segs
     end
-    return table.concat(parts, "且") .. "的装备会在掉落时自动分解"
+    addGray("的装备会在掉落时自动分解")
+    return segs
 end
 
 --- 绘制自动分解弹窗
@@ -582,17 +594,30 @@ function M.drawAutoDecomposePopup(vg)
         FJ.POP_TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, FJ.POP_TITLE_STROKE)
 
-    -- 4. 描述文本（动态显示当前选中的分解条件，超宽自动缩字号）
-    local descText = buildConditionDesc()
+    -- 4. 描述文本（分段绘制：品质名品质色，其余灰白；超宽自动缩字号）
+    local segs = buildConditionSegments()
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, FJ.POP_DESC_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    local descW = nvgTextBounds(vg, 0, 0, descText)
-    if descW > FJ.POP_DESC_MAX_W then
-        nvgFontSize(vg, math.max(26, math.floor(FJ.POP_DESC_FONT * FJ.POP_DESC_MAX_W / descW)))
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    local function measureSegs()
+        local total = 0
+        for _, s in ipairs(segs) do
+            s.w = nvgTextBounds(vg, 0, 0, s.text)
+            total = total + s.w
+        end
+        return total
     end
-    nvgFillColor(vg, nvgRGBA(FJ.POP_DESC_R, FJ.POP_DESC_G, FJ.POP_DESC_B, 255))
-    nvgText(vg, FJ.POP_DESC_CX, FJ.POP_DESC_CY, descText, nil)
+    local totalW = measureSegs()
+    if totalW > FJ.POP_DESC_MAX_W then
+        nvgFontSize(vg, math.max(26, math.floor(FJ.POP_DESC_FONT * FJ.POP_DESC_MAX_W / totalW)))
+        totalW = measureSegs()
+    end
+    local segX = FJ.POP_DESC_CX - totalW * 0.5
+    for _, s in ipairs(segs) do
+        nvgFillColor(vg, nvgRGBA(s.r, s.g, s.b, 255))
+        nvgText(vg, segX, FJ.POP_DESC_CY, s.text, nil)
+        segX = segX + s.w
+    end
 
     -- 5. 品质方框选择（6 个品质图标方框，选中高亮描边）
     for i = 1, FJ.POP_QBOX_COUNT do

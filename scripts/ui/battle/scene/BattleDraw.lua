@@ -78,7 +78,8 @@ local function cardImage(vg, unit)
         if cached and cached >= 0 then return cached end
         local direct = directCards.monster[unit.monsterId]
         if direct == nil then
-            direct = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", unit.monsterId), 0)
+            local MC = require("config.MonsterConfig")
+            direct = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", MC.getCardArtId(unit.monsterId)), 0)
             directCards.monster[unit.monsterId] = direct
         end
         return direct
@@ -333,25 +334,19 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             local tempCur = unit.attrs and (unit.attrs.tempEnergyShield or 0) or 0
             local esMaxVal = unit.attrs and (unit.attrs.final["energyShield"] or 0) or 0
             if esMaxVal > 0 and (esCur > 0 or tempCur > 0) then
-                local esText = esCur > 0 and ("+" .. NumberUtil.format(math.floor(esCur))) or ""
-                local tempText = tempCur > 0 and ("+" .. NumberUtil.format(math.floor(tempCur))) or ""
+                -- 常规护盾 + 临时护盾合并为单一数值显示（不再 "+N+M" 拖长）
+                local shieldTotal = math.floor(esCur) + math.floor(tempCur)
+                local esText = shieldTotal > 0 and ("+" .. NumberUtil.format(shieldTotal)) or ""
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 28)
                 local hpW = nvgTextBounds(vg, 0, 0, hpText)
                 local esW = esText ~= "" and nvgTextBounds(vg, 0, 0, esText) or 0
-                local tempW = tempText ~= "" and nvgTextBounds(vg, 0, 0, tempText) or 0
-                local totalW = hpW + esW + tempW
+                local totalW = hpW + esW
                 local startX = cx - totalW * 0.5
                 drawTextStroke(vg, startX + hpW * 0.5, cy + hpValOffY, hpText,
                     28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0x66, 0xf8, 0x62, 4)
-                local shieldX = startX + hpW
                 if esText ~= "" then
-                    drawTextStroke(vg, shieldX + esW * 0.5, cy + hpValOffY, esText,
-                        28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-                    shieldX = shieldX + esW
-                end
-                if tempText ~= "" then
-                    drawTextStroke(vg, shieldX + tempW * 0.5, cy + hpValOffY, tempText,
+                    drawTextStroke(vg, startX + hpW + esW * 0.5, cy + hpValOffY, esText,
                         28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
                 end
             else
@@ -369,7 +364,9 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             drawTextStroke(vg, cx, cy + lvlOffY, "Lv." .. tostring(unit.level),
                 32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
 
-            -- 10) 状态效果视觉指示
+            -- 10) 状态效果视觉指示：仅整卡状态色罩，不再画 emoji 图标
+            --     （emoji 在部分字体集缺字会显示空白/豆腐块，且彩色 emoji 描边透脏黑边、
+            --      状态色染色无效；改为统一用色罩提示状态，见 SEM.getVisuals）
             local visuals = SEM.getVisuals(unit)
             if #visuals > 0 then
                 local v1 = visuals[1]
@@ -378,10 +375,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     CARD_W - 8, CARD_H - 8, 8)
                 nvgFillColor(vg, nvgRGBA(v1.r, v1.g, v1.b, 40))
                 nvgFill(vg)
-                for vi, vis in ipairs(visuals) do
-                    drawTextStroke(vg, cx - CARD_W * 0.5 + 28, cy - CARD_H * 0.5 + 28 + (vi - 1) * 36,
-                        vis.icon, 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, vis.r, vis.g, vis.b, 3)
-                end
             end
 
             -- 11) 征服层数（叠甲怪）
@@ -518,9 +511,12 @@ function BattleDraw.drawFloatingTexts(vg)
         local scale = 1.0 - 0.75 * t
         local fontSize = math.max(1, math.floor(ft.fontSize * scale))
 
+        -- [首伤延迟修复] 淡入从 10 帧(0.33s)缩到 3 帧(0.1s)：
+        -- 原 frame=0 时 alpha=0 完全不可见，需 0.33s 才清晰，而受击闪烁是即时的，
+        -- 造成"第一个伤害数字比受击反馈慢半拍"的观感。3 帧淡入几乎立即清晰，仍保留柔和。
         local alpha
-        if frame <= 10 then
-            alpha = math.floor(255 * (frame / 10))
+        if frame <= 3 then
+            alpha = math.floor(255 * (frame / 3))
         elseif frame <= 15 then
             alpha = 255
         else

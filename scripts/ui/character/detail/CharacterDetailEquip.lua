@@ -19,6 +19,7 @@ local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local ImageCache      = require("ui.widget.ImageCache")
 local AVC             = require("config.AdvancementConfig")
 local BF              = require("systems.ButtonFeedback")
+local HeroFrame       = require("ui.widget.HeroFrame")
 
 local M = {}
 
@@ -739,24 +740,19 @@ function M.draw(vg, heroId, detailState)
                 nvgText(vg, 0, 0, "E", nil)
                 nvgRestore(vg)
             elseif item.ownerHeroId and item.ownerHeroId ~= heroId then
-                -- 其他英雄已装备 → 英雄头像圆形角标
+                -- 其他英雄已装备 → [统一角色框] 头像角标（白描边变体）
                 local ownerIcon = imgHeroIcons[item.ownerHeroId]
                 if ownerIcon and ownerIcon >= 0 then
                     local badgeSize = 66
                     local badgeX = cx - GRID_CELL * 0.5 + badgeSize * 0.5 + 1
                     local badgeY = cy - GRID_CELL * 0.5 + badgeSize * 0.5 + 1
-                    -- 圆形裁剪绘制头像
-                    nvgSave(vg)
-                    nvgBeginPath(vg)
-                    nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                    nvgFillPaint(vg, nvgImagePattern(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 0, ownerIcon, 1.0))
-                    nvgFill(vg)
-                    nvgBeginPath(vg)
-                    nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                    nvgStrokeColor(vg, nvgRGBA(0xff, 0xff, 0xff, 200))
-                    nvgStrokeWidth(vg, 2)
-                    nvgStroke(vg)
-                    nvgRestore(vg)
+                    HeroFrame.draw(vg, {
+                        cx = badgeX, cy = badgeY, size = badgeSize, radius = 6,
+                        heroId = item.ownerHeroId,
+                        iconHandle = ownerIcon,
+                        state = "owned",
+                        borderOverride = { 255, 255, 255, 200, 2 },
+                    })
                 end
             end
 

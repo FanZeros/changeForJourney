@@ -340,7 +340,8 @@ function M.clear(BCS, unit)
     BCS.cardAnims[unit] = nil
 end
 
-function M.playEnter(BCS, units, lungeDir)
+function M.playEnter(BCS, units, lungeDir, opts)
+    if opts and opts.skip then return end
     for i, unit in ipairs(units) do
         BCS.cardAnims[unit] = {
             state    = "entering",

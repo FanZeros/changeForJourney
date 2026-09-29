@@ -25,6 +25,7 @@ local Protocol         = require("shared.Protocol")
 local BF               = require("systems.ButtonFeedback")
 local BackpackDialogs  = require("ui.backpack.BackpackDialogs")
 local BackpackGrids    = require("ui.backpack.BackpackGrids")
+local HeroFrame        = require("ui.widget.HeroFrame")
 
 local Panel = {}
 
@@ -58,11 +59,6 @@ local LOWER_PANEL = {
     IT = 200, IR = 10, IB = 200, IL = 10,
 }
 
--- 4. 标题装饰 UI_JJC_BTBJ
-local DECO = {
-    CX = 540, CY = 614, W = 660, H = 60,
-}
-
 -- 5. 网格区域标题文字 "装备"/"道具"（跟随当前 tab）
 local GRID_TITLE = {
     X = 157, Y = 614,  -- 左对齐（与铁匠铺分解标题对齐）
@@ -70,9 +66,9 @@ local GRID_TITLE = {
     R = 0x45, G = 0x45, B = 0x45,
 }
 
--- 5b. 品质筛选按钮（装备 tab 专用，与铁匠铺分解界面一致）
+-- 5b. 品质筛选按钮（装备 tab 分解模式：右上角一排 6 档可多选勾选，与遗匣页同一交互/样式）
 local PZSX = {
-    FIRST_CX = 558, CY = 610, SIZE = 80, GAP = 23,
+    FIRST_CX = 565, CY = 610, SIZE = 70, GAP = 12,
 }
 
 -- 6. 网格
@@ -138,8 +134,8 @@ local function applyLayout(compact)
     end
     if compact then
         LOWER_PANEL.CY, LOWER_PANEL.H = 1300, 2100
-        GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 430, 2060
-        GRID_TITLE.Y, PZSX.CY = 380, 375
+        GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 470, 1980
+        GRID_TITLE.Y, PZSX.CY = 330, 325
         BTN_CONFIRM_DEC.CY, BTN_BATCH_DEC.CY = 2160, 2160
         CAP_TEXT.Y = 2230
     else
@@ -219,7 +215,7 @@ local easeInOutCubic = TownPageChrome.easeInOutCubic
 
 -- key → { iconPath, quality, name, source, desc, getter }
 local ITEM_DEFS = {
-    { key = "gold",          iconPath = "image/货币道具/UI_icon_JB.png",     quality = 2, name = "金币",       source = "击杀/通关/任务",         desc = "强化武器，购买资源",                                       getter = function() return GameState.getGold() end },
+    { key = "gold",          iconPath = "image/货币道具/UI_icon_JB_X.png",   quality = 2, name = "金币",       source = "击杀/通关/任务",         desc = "强化武器，购买资源",                                       getter = function() return GameState.getGold() end },
     { key = "gems",          iconPath = "image/货币道具/UI_icon_SJ_X.png",     quality = 5, name = "黑晶",       source = "成就/首通/活动",         desc = "酒馆招募抽卡",                                             getter = function() return GameState.getGems() end },
     { key = "essence",       iconPath = "image/货币道具/UI_icon_JC.png",     quality = 2, name = "精粹",       source = "分解装备获得",           desc = "用于洗练装备",                                             getter = function() return GameState.getEssence() end },
     { key = "enhanceStone",  iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石",     source = "市场购买/任务",          desc = "洗练时使用可以只洗练数值高低，不洗练属性",                  getter = function() return GameState.getEnhanceStone() end },
@@ -236,7 +232,7 @@ local ITEM_DEFS = {
     { key = "goldenKey", iconPath = "image/货币道具/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙", source = "首通奖励/市场购买", desc = "开启神器宝箱", getter = function() return GameState.getGoldenKey() end },
     { key = "sweepTicket",   iconPath = "image/货币道具/UI_icon_SDQ.png",    quality = 4, name = "扫荡券",     source = "活动获得/看广告获得",    desc = "可以立即扫荡获得半小时的离线收益",                          getter = function() return GameState.getSweepTicket() end },
     { key = "tavernCoin",    iconPath = "image/UI_icon_JGB.png",    quality = 3, name = "酒馆币",     source = "非UR满觉醒碎片分解",  desc = "在酒馆商店兑换自选",                                       getter = function() return GameState.getTavernCoin() end },
-    { key = "arcaneDust",    iconPath = "image/货币道具/UI_icon_ASFC.png", quality = 3, name = "奥术粉尘",   source = "活动/任务获得",         desc = "用于遗物洗练消耗",                                         getter = function() return GameState.getArcaneDust() end },
+    { key = "arcaneDust",    iconPath = "image/货币道具/UI_icon_ASFC.png", quality = 3, name = "奥术粉尘",   source = "上古遗迹首通/扫荡",     desc = "上古遗迹产出的神秘粉尘",                                   getter = function() return GameState.getArcaneDust() end },
     { key = "corruptStone",  iconPath = "image/货币道具/UI_icon_FHS.png", quality = 3, name = "腐化石",     source = "关卡首通/活动/市场",      desc = "可将装备进行魔化，可能会发生预想不到的事情",                 getter = function() return GameState.getCorruptStone() end },
     { key = "sacredStone",   iconPath = "image/货币道具/UI_icon_SSS.png", quality = 6, name = "神圣石",     source = "关卡首通/活动/市场",      desc = "可对已经被魔化的装备净化一次，使其去除魔化效果回到普通状态，每件装备只能被净化一次", getter = function() return GameState.getSacredStone() end },
     { key = "speedCard",     iconPath = "image/货币道具/UI_icon_JSK.png",  quality = 5, name = "加速卡",     source = "市场购买获得",          desc = "提升20%在线挂机收益，包括金币/经验/装备等；获得时即刻开始生效，持续24小时。", getter = function() return GameState.getSpeedCardDisplayCount() end, amountTextGetter = function() return GameState.formatSpeedCardRemain() end, detailAmountTextGetter = function() return "剩余:" .. GameState.formatSpeedCardRemain() end, descGetter = function() return "提升20%在线挂机收益，包括金币/经验/装备等；当前剩余时间：" .. GameState.formatSpeedCardRemain() end },
@@ -246,7 +242,6 @@ local ITEM_DEFS = {
 
 local imgTopBg    = -1  -- UI_BB_BJ.png
 local imgTitleBg  = -1  -- UI_TJP_MC.png（标题背景，与教堂一致）
-local imgDeco     = -1  -- UI_JJC_BTBJ.png（标题装饰）
 local imgBtnBack  = -1  -- UI_AN_FH.png（返回按钮）
 local imgTabBg    = -1  -- UI_AN_1.png（Tab 背景）
 
@@ -259,8 +254,14 @@ local imgCheckmark = -1  -- UI_icon_GOU.png（选中勾选）
 local decomposeState = {
     active = false,        -- 是否处于分解操作模式
     selectedItems = {},    -- [idx] = true
+    qualitySet = {},       -- [quality]=true 勾选的稀有度档；空集合=不按稀有度限制
     pending = false,       -- 是否由背包页发起分解请求
 }
+
+--- 分解模式下某稀有度是否处于勾选范围（空集合=不限制，全部可选中）
+local function qualityChecked(quality)
+    return not next(decomposeState.qualitySet) or decomposeState.qualitySet[quality] == true
+end
 
 -- 道具图标缓存
 local itemIconCache = {}  -- [key] = nvgImage handle
@@ -443,6 +444,7 @@ local function bindBackpackGrids()
         getItemIcon = getItemIcon,
         getImgCheckmark = function() return imgCheckmark end,
         getImgLock = function() return imgLock end,
+        qualityChecked = qualityChecked,
         getImgHeroIcons = function() return imgHeroIcons end,
         calcScrollMax = calcScrollMax,
         clampScroll = clampScroll,
@@ -605,9 +607,20 @@ local function drawUrConvertDialog(vg)
         local cy = C.GRID_TOP + row * (C.CELL_SIZE + C.GAP_Y) + C.CELL_SIZE * 0.5
         if cy > C.CANCEL_CY - 110 then break end
 
-        local gridQuality = ({ [1] = 1, [2] = 3, [3] = 5, [4] = 6 })[item.quality] or 1
-        DarkIcon.drawQualityBg(vg, gridQuality, cx, cy, C.CELL_SIZE, C.CELL_SIZE, 1.0)  -- [暗黑化 P2-A]
-        DrawUtil.drawShardIcon(vg, item.heroId, cx, cy, C.CELL_SIZE - 10, 1.0)
+        -- [统一角色框] 英雄碎片格：按英雄品质色描边 + 左上碎片角标
+        local shardSize = C.CELL_SIZE - 10
+        HeroFrame.draw(vg, {
+            cx = cx, cy = cy, size = shardSize,
+            heroId = item.heroId,
+            state = "owned",
+        })
+        local badgeSize = math.floor(shardSize * 53 / 160 + 0.5)
+        if DrawUtil._shardBadgeImg and DrawUtil._shardBadgeImg >= 0 then
+            DrawUtil.drawImageCentered(vg, DrawUtil._shardBadgeImg,
+                cx - shardSize * 0.5 + badgeSize * 0.5,
+                cy - shardSize * 0.5 + badgeSize * 0.5,
+                badgeSize, badgeSize, 1.0)
+        end
     end
 
     if imgBtnGreen >= 0 then
@@ -749,7 +762,12 @@ local function drawItemDetail(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, UR_CONVERT_BTN.FONT_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, itemDetState.urConvertPending and 120 or 191))
+        -- 按钮文字：可转化=亮深棕，处理中=棕色禁用色
+        if itemDetState.urConvertPending then
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        else
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+        end
         local btnText
         if itemDetState.urConvertPending then
             btnText = "处理中..."
@@ -798,7 +816,6 @@ function Panel.init(vg)
     vg_ = vg
     imgTopBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_BB_BJ.png", 0)
     imgTitleBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
-    imgDeco    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
     imgBtnBack = nvgCreateImage(vg, "image/按钮/UI_AN_FH.png", 0)
     imgTabBg   = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
@@ -975,11 +992,6 @@ local function drawBody(vg)
         LOWER_PANEL.W, LOWER_PANEL.H,
         { titleH = LOWER_PANEL.IT })
 
-    -- 4. 标题装饰（装备 tab 不显示，道具 tab 保留）
-    if state.tab ~= "equip" then
-        DrawUtil.drawImageCentered(vg, imgDeco, DECO.CX, DECO.CY, DECO.W, DECO.H, 1.0)
-    end
-
     -- 5. 网格标题文字（跟随 tab 切换，装备 tab 左对齐+品质筛选）
     local gridTitleText = (state.tab == "equip") and "装备" or "道具"
     nvgFontFace(vg, "sans")
@@ -988,12 +1000,18 @@ local function drawBody(vg)
     nvgFillColor(vg, nvgRGBA(GRID_TITLE.R, GRID_TITLE.G, GRID_TITLE.B, 255))
     nvgText(vg, GRID_TITLE.X, GRID_TITLE.Y, gridTitleText, nil)
 
-    -- 5b. 品质筛选按钮（仅装备 tab + 分解模式激活时显示）
-    if state.tab == "equip" and decomposeState.active then
-        for i = 1, 5 do
+    -- 5b. 品质勾选条（装备 tab 常驻，右上角一排 6 档，可多选）
+    -- 默认模式=显示筛选；分解模式=勾选范围（进入时按可见范围预置选中）
+    if state.tab == "equip" then
+        for i = 1, 6 do
             local cx = PZSX.FIRST_CX + (i - 1) * (PZSX.SIZE + PZSX.GAP)
             local didScale = BF.begin(vg, "bp_filter_" .. i, cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE)
+            local checked = decomposeState.qualitySet[i] == true
+            -- 勾选=框内居中对勾；未勾选保持原样，外侧不额外描框
             QualityMark.draw(vg, i, cx, PZSX.CY, PZSX.SIZE, 1.0)
+            if checked and imgCheckmark >= 0 then
+                DrawUtil.drawImageCentered(vg, imgCheckmark, cx, PZSX.CY, 40, 40, 1.0)
+            end
             BF.finish(vg, didScale)
         end
     end
@@ -1330,25 +1348,36 @@ function Panel.handleInput(dx, dy)
 
     -- 装备 tab 分解相关按钮
     if state.tab == "equip" then
-        if decomposeState.active then
-            -- ---- 分解模式激活中 ----
-
-            -- 品质快速勾选
-            for i = 1, 5 do
-                local cx = PZSX.FIRST_CX + (i - 1) * (PZSX.SIZE + PZSX.GAP)
-                if DrawUtil.hitTest(dx, dy, cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE) then
-                    BF.trigger("bp_filter_" .. i)
+        -- 稀有度勾选（1-6 档可多选，装备 tab 常驻）：
+        -- 默认模式=显示筛选；分解模式额外把格子选中重置为当前可见（勾选范围内）的全部装备
+        for i = 1, 6 do
+            local cx = PZSX.FIRST_CX + (i - 1) * (PZSX.SIZE + PZSX.GAP)
+            if DrawUtil.hitTest(dx, dy, cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE) then
+                BF.trigger("bp_filter_" .. i)
+                if decomposeState.qualitySet[i] then
+                    decomposeState.qualitySet[i] = nil
+                else
+                    decomposeState.qualitySet[i] = true
+                end
+                state.scrollY = 0
+                if decomposeState.active then
                     decomposeState.selectedItems = {}
                     local equipList = getEquipList()
                     for idx, equip in ipairs(equipList) do
-                        if (equip.quality or 1) <= i and not equip.locked and not equip.equippedByHeroId then
+                        if not equip.locked and not equip.equippedByHeroId then
                             decomposeState.selectedItems[idx] = true
                         end
                     end
-                    print("[BackpackPanel] 品质筛选: <=" .. i)
-                    return true
                 end
+                print("[BackpackPanel] 稀有度勾选切换: " .. i
+                    .. " checked=" .. tostring(decomposeState.qualitySet[i] == true)
+                    .. " selected=" .. tostring(#decomposeState.selectedItems))
+                return true
             end
+        end
+
+        if decomposeState.active then
+            -- ---- 分解模式激活中 ----
 
             -- 确认分解按钮（左）
             if DrawUtil.hitTest(dx, dy, BTN_CONFIRM_DEC.CX, BTN_CONFIRM_DEC.CY, BTN_CONFIRM_DEC.W, BTN_CONFIRM_DEC.H) then
@@ -1374,6 +1403,7 @@ function Panel.handleInput(dx, dy)
             -- 取消分解按钮（右）
             if DrawUtil.hitTest(dx, dy, BTN_BATCH_DEC.CX, BTN_BATCH_DEC.CY, BTN_BATCH_DEC.W, BTN_BATCH_DEC.H) then
                 BF.trigger("bp_batch_dec")
+                -- 勾选筛选在默认模式仍生效，取消分解只清选中
                 decomposeState.selectedItems = {}
                 decomposeState.active = false
                 print("[BackpackPanel] 取消分解模式")
@@ -1386,7 +1416,8 @@ function Panel.handleInput(dx, dy)
                 local totalSlots = math.max(#equipList, 35)
                 for idx = 1, totalSlots do
                     local equip = equipList[idx]
-                    if equip and not equip.locked and not equip.equippedByHeroId then
+                    if equip and not equip.locked and not equip.equippedByHeroId
+                        and qualityChecked(equip.quality or 1) then
                         local col = ((idx - 1) % GRID.COLS) + 1
                         local row = math.floor((idx - 1) / GRID.COLS)
                         local cx = CELL_COL_CX[col]
@@ -1411,8 +1442,15 @@ function Panel.handleInput(dx, dy)
             if DrawUtil.hitTest(dx, dy, btnCX, BTN_BATCH_DEC.CY, BTN_BATCH_DEC.W, BTN_BATCH_DEC.H) then
                 BF.trigger("bp_batch_dec")
                 decomposeState.active = true
+                -- 保留当前勾选筛选；选中预置为当前可见（勾选范围内）的可分解装备
                 decomposeState.selectedItems = {}
-                print("[BackpackPanel] 进入分解模式")
+                local equipList = getEquipList()
+                for idx, equip in ipairs(equipList) do
+                    if not equip.locked and not equip.equippedByHeroId then
+                        decomposeState.selectedItems[idx] = true
+                    end
+                end
+                print("[BackpackPanel] 进入分解模式 selected=" .. tostring(#decomposeState.selectedItems))
                 return true
             end
         end

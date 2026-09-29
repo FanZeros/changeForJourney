@@ -132,7 +132,7 @@ end
 local function statMetaFromProjOpts(projOpts)
     if not projOpts then return nil end
     if projOpts.isDot or projOpts.statCategory or projOpts.isCrit or projOpts.critEligible ~= nil
-        or projOpts.threatScale or projOpts.isRicochet then
+        or projOpts.threatScale or projOpts.isRicochet or projOpts.isNightSlash then
         return {
             isDot = projOpts.isDot,
             category = projOpts.statCategory,
@@ -140,6 +140,7 @@ local function statMetaFromProjOpts(projOpts)
             critEligible = projOpts.critEligible,
             threatScale = projOpts.threatScale,
             isRicochet = projOpts.isRicochet,
+            isNightSlash = projOpts.isNightSlash,
         }
     end
     return nil
@@ -426,6 +427,15 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
         target._killedBy = source
         if statMeta and statMeta.isRicochet then
             target._killedByRicochet = true
+        end
+        -- 暴击击杀归因（DOT/弹射/天赋等统一伤害路径；觉醒1 多元化用）
+        if statMeta and statMeta.isCrit then
+            target._killedByCrit = true
+        end
+        -- 通宵斩击杀归因（觉醒1 多元化 #11；精确挂在死亡敌人上，
+        -- 区别于 attacker._nightSlashKill 粘性标记——后者是觉醒2斩影既有逻辑）
+        if statMeta and statMeta.isNightSlash then
+            target._killedByNightSlash = true
         end
         if source and isTargetAlly == false then
             DungeonBattle.onEnemyKill(source)
@@ -916,7 +926,7 @@ local function performAttack(attacker, targetList, isAlly)
 
     TAL.onBeforeAttack(attacker)
 
-    -- 遗物条件词条：攻击前回调（初次攻击加成等）�?PVP 双向触发
+    -- 条件词条：攻击前回调（初次攻击加成等）�?PVP 双向触发
     local rchDmgMult = RCH.onBeforeAttack(attacker)
 
     playAttackCardAnim(attacker, isAlly)
@@ -1020,7 +1030,7 @@ local function performAttack(attacker, targetList, isAlly)
                 if result.isMiss then
                     addFloatingText("MISS", tgtCX, tgtCY, { 255, 122, 122 }, false)
                     setRecoil(curTarget, isAlly and -1 or 1)
-                    -- 遗物条件词条：触发闪避时仇恨值减少（被攻击方闪避）�?PVP 双向触发
+                    -- 条件词条：触发闪避时仇恨值减少（被攻击方闪避）�?PVP 双向触发
                     if curTarget then
                         RCH.onDodge(curTarget)
                         ART.onDodge(curTarget)
@@ -1137,7 +1147,7 @@ local function performAttack(attacker, targetList, isAlly)
                             TM.onHealingDone(attacker, actual)
                             BattleStats.recordHeal(attacker, actual, false)  -- 战斗统计：己方治疗输出
                         end
-                        -- 治疗触发的伤害天赋（惩戒飞弹等）可复用遗物初次攻击增伤
+                        -- 治疗触发的伤害天赋（惩戒飞弹等）可复用初次攻击增伤词条
                         result._talentDmgMult = 1.0
                         if rchDmgMult and rchDmgMult > 1.0 then
                             result._talentDmgMult = result._talentDmgMult * rchDmgMult
@@ -1215,7 +1225,7 @@ local function performAttack(attacker, targetList, isAlly)
                         end
                         local finalDmg = (semMult ~= 1.0) and math.floor(hit.damage * semMult) or hit.damage
 
-                        -- 遗物条件词条：攻击增伤（初次攻击 + 对低血量目标增伤）�?PVP 双向触发
+                        -- 条件词条：攻击增伤（初次攻击 + 对低血量目标增伤）�?PVP 双向触发
                         if rchDmgMult > 1.0 then
                             finalDmg = math.floor(finalDmg * rchDmgMult)
                         end
@@ -1241,7 +1251,7 @@ local function performAttack(attacker, targetList, isAlly)
                             finalDmg = math.floor(finalDmg * towerTakenMult)
                         end
 
-                        -- 遗物条件词条：受击免疫（战斗开始免疫N次伤害）�?PVP 双向触发
+                        -- 条件词条：受击免疫（战斗开始免疫N次伤害）�?PVP 双向触发
                         finalDmg = RCH.onBeforeTakeDamage(curTgt, finalDmg)
                         if finalDmg <= 0 then
                             addFloatingText("免疫", curTgtCX, curTgtCY, {200, 200, 255}, false)
@@ -1283,6 +1293,10 @@ local function performAttack(attacker, targetList, isAlly)
                             MAS.onAllyHit(curTgt)
                         else
                             MAS.onEnemyDamaged(curTgt)
+                            -- Boss 词缀钩子（v2.64）：荆棘之体反弹（仅己方攻击命中 Boss）
+                            if curTgt.isBoss then
+                                require("systems.BossAffixSystem").onBossDamaged(curTgt, attacker, actual)
+                            end
                         end
 
                         -- 飘字配色：普通白色 / 暴击红色（物理魔法不再分色，格挡由前缀表达）
@@ -1330,6 +1344,8 @@ local function performAttack(attacker, targetList, isAlly)
                             curTgt._overkillRatio = math.min(1.0, overkill / (curTgt.maxHp or hpBefore))
                             -- 击杀归因标记（供台词系统触发击杀台词�?
                             curTgt._killedBy = attacker
+                            -- 暴击击杀归因（觉醒1 多元化：老六/内鬼等按暴击击杀叠层）
+                            if hit.isCrit then curTgt._killedByCrit = true end
                         end
 
                         setRecoil(curTgt, isAlly and -1 or 1)
@@ -1341,9 +1357,9 @@ local function performAttack(attacker, targetList, isAlly)
                             TM.onDamageDealt(attacker, result.totalDamage, includeBaseThreat)
                             if includeBaseThreat then baseThreatCounted = true end
                         end
-                        -- 遗物条件词条：攻击后仇恨加成（每次攻击获得仇恨�?X%）�?PVP 双向触发
+                        -- 条件词条：攻击后仇恨加成（每次攻击获得仇恨�?X%）�?PVP 双向触发
                         RCH.onAfterAttack(attacker, result.totalDamage)
-                        -- 遗物条件词条：终结机制（攻击低血量敌人有概率秒杀）�?PVP 双向触发
+                        -- 条件词条：终结机制（攻击低血量敌人有概率秒杀）�?PVP 双向触发
                         if curTgt.hp > 0 then
                             local executed = RCH.onAfterHit(attacker, curTgt)
                             if not executed then
@@ -1597,8 +1613,8 @@ function BattleCombat.clearCardAnim(unit)
     BattleCombatAnim.clear(BCS, unit)
 end
 
-function BattleCombat.playEnterAnims(units, lungeDir)
-    BattleCombatAnim.playEnter(BCS, units, lungeDir)
+function BattleCombat.playEnterAnims(units, lungeDir, opts)
+    BattleCombatAnim.playEnter(BCS, units, lungeDir, opts)
 end
 
 -- ======================== 浮动文字更新 ========================

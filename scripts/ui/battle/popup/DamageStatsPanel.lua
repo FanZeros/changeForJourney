@@ -1,8 +1,9 @@
 -- ============================================================================
--- DamageStatsPanel - 战斗伤害/治疗/承伤统计面板
+-- DamageStatsPanel - 战斗伤害/治疗/承伤统计面板（累计口径）
 -- 入口：战斗界面扫荡按钮左侧的「统计」按钮
--- 功能：实时展示本次战斗中每个己方英雄的输出 / 治疗 / 承受伤害排行
--- 数据：来自 systems.BattleStats（随每波战斗清零）
+-- 功能：展示当前队伍「跨场次累计」的输出 / 治疗 / 承受伤害排行
+-- 数据：来自 systems.BattleStats 累计桶（跨波不清零；面板内「重置」按钮
+--       或队伍编成变更时清空，见 BattleStats.resetAccum / resetAccumForTeam）
 -- 范式：复用 SweepDialog 弹窗结构（遮罩 + 九宫格 + 弹性缩放 + 点击空白关闭）
 -- ============================================================================
 
@@ -12,6 +13,7 @@ local NumberUtil        = require("core.NumberUtil")
 local BattleStats       = require("systems.BattleStats")
 local BF                = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -72,6 +74,11 @@ local D = {
 
     -- 空数据提示
     EMPTY_Y   = 1180, EMPTY_FONT = 40,
+
+    -- [累计统计] 底部重置按钮
+    RST_CX    = 540,  RST_CY   = 1640,
+    RST_W     = 300,  RST_H    = 92,
+    RST_FONT  = 38,
 }
 
 -- ======================== Tab 定义 ========================
@@ -221,11 +228,14 @@ local function drawStatRow(vg, entry, cy, tab, mainVal, maxVal, totalVal)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, D.ROW_BG_A))
     nvgFill(vg)
 
-    -- 头像
+    -- [统一角色框] 头像带品质描边（原无框）
     local icon = getHeroIcon(entry.heroId)
-    if icon and icon >= 0 then
-        drawImageCentered(vg, icon, D.AVATAR_CX, cy, D.AVATAR_SZ, D.AVATAR_SZ, 1.0)
-    end
+    HeroFrame.draw(vg, {
+        cx = D.AVATAR_CX, cy = cy, size = D.AVATAR_SZ,
+        heroId = entry.heroId,
+        iconHandle = icon,
+        state = "owned",
+    })
 
     -- 名字（左上）
     drawTextStroke(vg, D.NAME_X, cy - 30, entry.name or "?", D.NAME_FONT,
@@ -262,7 +272,7 @@ local function drawStatRow(vg, entry, cy, tab, mainVal, maxVal, totalVal)
     -- 右下副信息（白色 + 黑描边，确保清晰）
     local subStr
     if tab.key == "damage" then
-        local dur = BattleStats.getDuration()
+        local dur = BattleStats.getDuration(true)  -- [累计统计] 累计时长
         local dps = (dur > 0.1) and (mainVal / dur) or mainVal
         local critDenom = entry.critHitCount or 0
         local critRate = (critDenom > 0) and (entry.critCount / critDenom * 100) or 0
@@ -339,22 +349,22 @@ function DamageStatsPanel.draw(vg)
         D.TT_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, D.TT_SW, { strokeColor = { D.TT_SR, D.TT_SG, D.TT_SB } })
 
-    -- 5) 副标题：本次战斗时长
-    local dur = BattleStats.getDuration()
+    -- 5) 副标题：[累计统计] 累计时长（跨场次，重置按钮/编队变更清零）
+    local dur = BattleStats.getDuration(true)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, D.SUB_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(D.SUB_R, D.SUB_G, D.SUB_B, 255))
-    nvgText(vg, D.BG_CX, D.SUB_Y, string.format("本次战斗 · 时长 %.1f 秒", dur), nil)
+    nvgText(vg, D.BG_CX, D.SUB_Y, string.format("累计 · 时长 %.1f 秒", dur), nil)
 
     -- 6) Tab 行
     for i, tab in ipairs(TABS) do
         drawTab(vg, tab, getTabCX(i), tab.key == state.tab)
     end
 
-    -- 7) 列表
+    -- 7) 列表（[累计统计] 读累计桶）
     local tab = getCurrentTab()
-    local sorted = BattleStats.getSorted(tab.sortKey)
+    local sorted = BattleStats.getSorted(tab.sortKey, true)
     -- 过滤掉该 Tab 主数值为 0 的英雄
     local rows = {}
     for _, e in ipairs(sorted) do
@@ -369,13 +379,25 @@ function DamageStatsPanel.draw(vg)
         nvgText(vg, D.BG_CX, D.EMPTY_Y, "暂无数据", nil)
     else
         local maxVal = rows[1][tab.sortKey] or 0
-        local totalVal = BattleStats.getTotal(tab.sortKey)
+        local totalVal = BattleStats.getTotal(tab.sortKey, true)
         local count = math.min(#rows, D.MAX_ROWS)
         for i = 1, count do
             local entry = rows[i]
             local cy = D.ROW_FIRST_CY + (i - 1) * D.ROW_STEP
             drawStatRow(vg, entry, cy, tab, entry[tab.sortKey] or 0, maxVal, totalVal)
         end
+    end
+
+    -- 8) [累计统计] 底部重置按钮（清空当前队伍累计数据）
+    do
+        local rx = D.RST_CX - D.RST_W * 0.5
+        local ry = D.RST_CY - D.RST_H * 0.5
+        local didScale = BF.begin(vg, "dmgstat_reset", D.RST_CX, D.RST_CY, D.RST_W, D.RST_H)
+        DarkIcon.drawNine(vg, "btn", rx, ry, D.RST_W, D.RST_H, { alpha = 0.85 })
+        drawTextStroke(vg, D.RST_CX, D.RST_CY, "重置统计", D.RST_FONT,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 4,
+            { strokeColor = { 0, 0, 0 } })
+        BF.finish(vg, didScale)
     end
 
     nvgRestore(vg)
@@ -401,6 +423,16 @@ function DamageStatsPanel.handleInput(x, y)
             end
             return true
         end
+    end
+
+    -- [累计统计] 重置按钮：清空面板所属队伍的累计数据
+    -- 用 resetAccumForTeam(state.teamIdx) 而非 resetAccum()：点击时 activeKey
+    -- 可能被战斗驱动切到别的桶（每帧 mount），显式按面板队伍重置更可靠
+    if hitTestRect(x, y, D.RST_CX, D.RST_CY, D.RST_W, D.RST_H) then
+        BF.trigger("dmgstat_reset")
+        BattleStats.resetAccumForTeam(state.teamIdx or 0)
+        print("[DamageStatsPanel] 累计统计已重置 teamIdx=" .. tostring(state.teamIdx))
+        return true
     end
 
     -- 点击背景外关闭

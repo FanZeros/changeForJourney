@@ -15,6 +15,7 @@ local GameState      = require("core.GameState")
 local BF             = require("systems.ButtonFeedback")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local NumberUtil     = require("core.NumberUtil")
+local KeywordText    = require("ui.widget.KeywordText")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -24,6 +25,9 @@ local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 local M = {}
+
+-- 转职确认弹窗天赋描述关键词富文本（弹窗带缩放变换，输入需映射回弹窗空间）
+M.confirmKwText = KeywordText.new({ textColor = { 0x72, 0x58, 0x50 } })
 
 -- 当前转职页英雄（由详情页页签注入，不再依赖教堂选人槽）
 ---@type number|nil
@@ -46,7 +50,7 @@ local pop = {
 -- 转职页图片（模块自管，init 时加载）
 local img = {
     classIcons2 = {},
-    titleBg = -1, branchLine = -1, branchLine2 = -1,
+    branchLine = -1, branchLine2 = -1,
     goldCoin = -1, iconUp = -1,
     detailBg = -1,
 }
@@ -283,10 +287,9 @@ function M.init(vg)
     if inited then return end
     inited = true
     savedVg = vg
-    img.titleBg    = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
     img.branchLine = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
     img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
-    img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+    img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     img.detailBg   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_BJ.png", 0)
 end
@@ -297,6 +300,7 @@ function M.setHero(id)
     if currentHeroId ~= id then
         pop.confirmPopup = false
         pop.resetConfPopup = false
+        M.confirmKwText:clear()   -- 切角色清关键词状态
     end
     currentHeroId = id
 end
@@ -324,6 +328,61 @@ local function drawBranchOverlay(vg, cx, cy, w, h, canAdv)
         local upY = cy - h * 0.5 + upSize * 0.5
         drawImageCentered(vg, img.iconUp, upX, upY, upSize, upSize, 1.0)
     end
+end
+
+-- ======================== 转职树路径点亮 ========================
+-- 规则：英雄当前转职路径上的节点（初始职业、已转分支、当前可转的下一分支）
+-- 加金色光晕 + 亮黄名称；非路径节点图标压暗 + 名称灰暗，一眼看出"通向哪"。
+
+local PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B = 0xff, 0xc4, 0x2e  -- 金色光晕
+local PATH_NAME_R, PATH_NAME_G, PATH_NAME_B = 0xff, 0xd7, 0x4a  -- 点亮名称（亮黄）
+local DIM_NAME_R,  DIM_NAME_G,  DIM_NAME_B  = 0x8a, 0x84, 0x78  -- 非路径名称（灰暗）
+local DIM_ICON_ALPHA = 0.45                                     -- 非路径图标透明度
+
+--- 绘制路径节点的金色外发光（径向渐变光晕 + 金色描边）
+---@param vg any
+---@param cx number
+---@param cy number
+---@param w number
+---@param h number
+local function drawPathGlow(vg, cx, cy, w, h)
+    local r = math.max(w, h) * 0.5
+    nvgBeginPath(vg)
+    nvgCircle(vg, cx, cy, r * 1.45)
+    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, r * 0.85, r * 1.45,
+        nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 110),
+        nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 0)))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cx - w * 0.5 - 4, cy - h * 0.5 - 4, w + 8, h + 8, 29)
+    nvgStrokeColor(vg, nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 235))
+    nvgStrokeWidth(vg, 5)
+    nvgStroke(vg)
+end
+
+--- 一转节点状态：owned=已转 / avail=可转 / off=非路径（等级不足也算 off）
+---@param advBranch table|nil
+---@param branchId number
+---@param heroLevel number
+---@return string
+local function firstBranchState(advBranch, branchId, heroLevel)
+    if heroLevel < ADV2.firstLevel then return "off" end
+    if advBranch and advBranch.first == branchId then return "owned" end
+    if not advBranch or not advBranch.first then return "avail" end
+    return "off"
+end
+
+--- 二转节点状态：owned=已转 / avail=已选一转下可转 / off=非路径
+---@param advBranch table|nil
+---@param parentFirstId number
+---@param branchId number
+---@param heroLevel number
+---@return string
+local function secondBranchState(advBranch, parentFirstId, branchId, heroLevel)
+    if heroLevel < ADV2.secondLevel then return "off" end
+    if advBranch and advBranch.second == branchId then return "owned" end
+    if advBranch and advBranch.first == parentFirstId and not advBranch.second then return "avail" end
+    return "off"
 end
 
 -- ======================== 绘制 API ========================
@@ -362,62 +421,118 @@ function M.drawContent(vg)
         6,
         { italic = true })
 
-    -- 一转分叉线
-    drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
-        BRANCH_LINE_W, BRANCH_LINE_H, 1.0)
+    -- 一转分叉线：未转职时两侧都可能通向 → 亮；已转职后只亮选中侧
+    -- 等级未解锁时遮罩只盖到线的一半，线推迟到遮罩之后统一灰度绘制（见 lockedLine1）
+    local lockedLine1 = heroLevel < ADV2.firstLevel
+    local line1Alpha, line2Alpha = 1.0, 1.0
+    if advBranch and advBranch.first then
+        if advBranch.first == (branches and branches[1] and branches[1].id) then
+            line2Alpha = 0.3
+        else
+            line1Alpha = 0.3
+        end
+    end
+    if lockedLine1 then
+        -- 跳过：遮罩后统一画
+    elseif line1Alpha == line2Alpha then
+        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_W, BRANCH_LINE_H, line1Alpha)
+    else
+        -- 单张贴图 = 中干 + 左右两臂：裁三段各用各的亮度（中干随在路径的一侧亮）
+        -- 贴图实测中干外沿半宽 ≈ 图宽 2.5%
+        local halfW = BRANCH_LINE_W * 0.5
+        local tw    = BRANCH_LINE_W * 0.025
+        local top   = BRANCH_LINE_CY - BRANCH_LINE_H
+        local hh    = BRANCH_LINE_H * 2
+        nvgSave(vg)
+        nvgScissor(vg, BRANCH_LINE_CX - halfW, top, halfW - tw, hh)
+        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_W, BRANCH_LINE_H, line1Alpha)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgScissor(vg, BRANCH_LINE_CX + tw, top, halfW - tw, hh)
+        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_W, BRANCH_LINE_H, line2Alpha)
+        nvgRestore(vg)
+        nvgSave(vg)
+        nvgScissor(vg, BRANCH_LINE_CX - tw, top, tw * 2, hh)
+        drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_W, BRANCH_LINE_H, math.max(line1Alpha, line2Alpha))
+        nvgRestore(vg)
+    end
 
-    -- 初始职业图标
+    -- 初始职业图标（路径起点，恒定亮）
     local initIconId = CLASS_NUM[classId] or 1
+    drawPathGlow(vg, INIT_ICON_CX, INIT_ICON_CY, INIT_ICON_W, INIT_ICON_H)
     drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, initIconId) or -1, INIT_ICON_CX, INIT_ICON_CY,
         INIT_ICON_W, INIT_ICON_H, 1.0)
 
-    -- 初始职业名称
+    -- 初始职业名称（点亮黄色）
     drawTextStroke(vg, INIT_NAME_CX, INIT_NAME_CY, className,
         INIT_NAME_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 6)
+        PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
 
     -- 一转分支
     if branches then
-        -- 二转分叉线（先绘制，置于一转图标底层）
-        drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
-            ADV2.lineW, ADV2.lineH, 1.0)
-        drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
-            ADV2.lineW, ADV2.lineH, 1.0)
+        local st1 = firstBranchState(advBranch, branches[1].id, heroLevel)
+        local st2 = firstBranchState(advBranch, branches[2].id, heroLevel)
+
+        -- 二转分叉线（先绘制，置于一转图标底层）：仅对应一转在路径上时亮
+        -- 二转未解锁时推迟到二转遮罩后统一灰度（避免半白半灰）
+        local lockedLine2 = heroLevel < ADV2.secondLevel
+        if not lockedLine2 then
+            drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
+                ADV2.lineW, ADV2.lineH, (st1 ~= "off") and 1.0 or 0.3)
+            drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
+                ADV2.lineW, ADV2.lineH, (st2 ~= "off") and 1.0 or 0.3)
+        end
 
         -- 分支1
-        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[1].id) or -1, BR1_ICON_CX, BR1_ICON_CY,
-            BR1_ICON_W, BR1_ICON_H, 1.0)
-        if heroLevel >= ADV2.firstLevel then
-            if advBranch and advBranch.first == branches[1].id then
-                -- 已转职：无遮罩
-            elseif not advBranch or not advBranch.first then
-                drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, true)
-            else
-                drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, false)
-            end
+        if st1 ~= "off" then
+            drawPathGlow(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H)
         end
-        drawTextStroke(vg, BR1_NAME_CX, BR1_NAME_CY, branches[1].name,
-            BR1_NAME_FONT,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 6)
+        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[1].id) or -1, BR1_ICON_CX, BR1_ICON_CY,
+            BR1_ICON_W, BR1_ICON_H, (st1 == "off") and DIM_ICON_ALPHA or 1.0)
+        if st1 == "avail" then
+            drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, true)
+        elseif st1 == "off" then
+            drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, false)
+        end
+        if st1 ~= "off" then
+            drawTextStroke(vg, BR1_NAME_CX, BR1_NAME_CY, branches[1].name,
+                BR1_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
+        else
+            drawTextStroke(vg, BR1_NAME_CX, BR1_NAME_CY, branches[1].name,
+                BR1_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                DIM_NAME_R, DIM_NAME_G, DIM_NAME_B, 6)
+        end
 
         -- 分支2
-        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[2].id) or -1, BR2_ICON_CX, BR2_ICON_CY,
-            BR2_ICON_W, BR2_ICON_H, 1.0)
-        if heroLevel >= ADV2.firstLevel then
-            if advBranch and advBranch.first == branches[2].id then
-                -- 已转职：无遮罩
-            elseif not advBranch or not advBranch.first then
-                drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, true)
-            else
-                drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, false)
-            end
+        if st2 ~= "off" then
+            drawPathGlow(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H)
         end
-        drawTextStroke(vg, BR2_NAME_CX, BR2_NAME_CY, branches[2].name,
-            BR2_NAME_FONT,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 6)
+        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[2].id) or -1, BR2_ICON_CX, BR2_ICON_CY,
+            BR2_ICON_W, BR2_ICON_H, (st2 == "off") and DIM_ICON_ALPHA or 1.0)
+        if st2 == "avail" then
+            drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, true)
+        elseif st2 == "off" then
+            drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, false)
+        end
+        if st2 ~= "off" then
+            drawTextStroke(vg, BR2_NAME_CX, BR2_NAME_CY, branches[2].name,
+                BR2_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
+        else
+            drawTextStroke(vg, BR2_NAME_CX, BR2_NAME_CY, branches[2].name,
+                BR2_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                DIM_NAME_R, DIM_NAME_G, DIM_NAME_B, 6)
+        end
 
         -- 二转分支（4个）
         local secBranches = {}
@@ -440,25 +555,31 @@ function M.drawContent(vg)
             local sb = secBranches[i]
             local pos = ADV2.pos[i]
             if sb and pos then
-                drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, sb.id) or -1, pos.iconCX, pos.iconCY,
-                    ADV2.iconW, ADV2.iconH, 1.0)
-                if heroLevel >= ADV2.secondLevel then
-                    local parentFirstId = (i <= 2) and branches[1].id or branches[2].id
-                    if advBranch and advBranch.second == sb.id then
-                        -- 已转职：无遮罩
-                    elseif advBranch and advBranch.first == parentFirstId
-                           and not advBranch.second then
-                        drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
-                            ADV2.iconW, ADV2.iconH, true)
-                    else
-                        drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
-                            ADV2.iconW, ADV2.iconH, false)
-                    end
+                local parentFirstId = (i <= 2) and branches[1].id or branches[2].id
+                local st = secondBranchState(advBranch, parentFirstId, sb.id, heroLevel)
+                if st ~= "off" then
+                    drawPathGlow(vg, pos.iconCX, pos.iconCY, ADV2.iconW, ADV2.iconH)
                 end
-                drawTextStroke(vg, pos.nameCX, pos.nameCY, sb.name,
-                    ADV2.nameFontSize,
-                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 6)
+                drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, sb.id) or -1, pos.iconCX, pos.iconCY,
+                    ADV2.iconW, ADV2.iconH, (st == "off") and DIM_ICON_ALPHA or 1.0)
+                if st == "avail" then
+                    drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
+                        ADV2.iconW, ADV2.iconH, true)
+                elseif st == "off" then
+                    drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
+                        ADV2.iconW, ADV2.iconH, false)
+                end
+                if st ~= "off" then
+                    drawTextStroke(vg, pos.nameCX, pos.nameCY, sb.name,
+                        ADV2.nameFontSize,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                        PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
+                else
+                    drawTextStroke(vg, pos.nameCX, pos.nameCY, sb.name,
+                        ADV2.nameFontSize,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                        DIM_NAME_R, DIM_NAME_G, DIM_NAME_B, 6)
+                end
             end
         end
     end
@@ -473,6 +594,18 @@ function M.drawContent(vg)
         nvgRect(vg, cx - w * 0.5, top, w, bot - top)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
         nvgFill(vg)
+        -- 一转分叉线上半在遮罩外：遮罩后统一灰度补画，避免半灰半白
+        if lockedLine1 then
+            drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
+                BRANCH_LINE_W, BRANCH_LINE_H, 0.35)
+            -- 二转分叉线同理（此状态下二转线也未画）
+            if branches then
+                drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
+                    ADV2.lineW, ADV2.lineH, 0.35)
+                drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
+                    ADV2.lineW, ADV2.lineH, 0.35)
+            end
+        end
         local lk1 = ADV2.lock1
         drawTextStroke(vg, lk1.titleCX, lk1.titleCY, "一转",
             ADV2.lockFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -499,6 +632,11 @@ function M.drawContent(vg)
         nvgRect(vg, lk.bgCX - lk.bgW * 0.5, lk.bgCY - lk.bgH * 0.5, lk.bgW, lk.bgH)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
         nvgFill(vg)
+        -- 二转分叉线上半在遮罩外：遮罩后统一灰度补画
+        drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
+            ADV2.lineW, ADV2.lineH, 0.35)
+        drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
+            ADV2.lineW, ADV2.lineH, 0.35)
         drawTextStroke(vg, lk.titleCX, lk.titleCY, "二转",
             ADV2.lockFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             classColor.r, classColor.g, classColor.b, 6,
@@ -533,6 +671,7 @@ function M.openConfirmPopup(advLevel, branchId, branchName, classNum, owned)
     pop.confirmOwned      = owned or false
     pop.confirmClosing    = false
     pop.confirmAnimT      = time.elapsedTime
+    M.confirmKwText:clear()   -- 清上次弹窗的关键词状态
     print("[ChurchClassChange] 打开转职确认: " .. branchName .. " (Lv" .. advLevel .. "转, owned=" .. tostring(pop.confirmOwned) .. ")")
 end
 
@@ -542,6 +681,7 @@ function M.closeConfirmPopup()
     if pop.confirmClosing then return end
     pop.confirmClosing = true
     pop.confirmAnimT = time.elapsedTime
+    M.confirmKwText:clear()   -- 关闭时清关键词解释气泡
     print("[ChurchClassChange] 关闭转职确认弹窗（动画）")
 end
 
@@ -667,43 +807,50 @@ function M.drawConfirmPopup(vg)
             C.talentNameFont, NVG_ALIGN_LEFT + NVG_ALIGN_TOP,
             classColor.r, classColor.g, classColor.b, 5)
 
-        -- 天赋效果文本（自适应缩放）
+        -- 天赋效果文本（自适应缩放 + 关键词可点击）
         local descLeft = C.talentBgLeft + C.talentDescPadLR
         local descTop  = talentBgTop + C.talentDescPadTop
         local descW    = talentBgW - C.talentDescPadLR * 2
         local maxDescH = C.talentBgBottom - descTop - C.talentDescPadBot
 
-        nvgFontFace(vg, "sans")
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-
+        local kt = M.confirmKwText
         local fontSize = C.talentDescFont
         local minFont  = 20
         while fontSize > minFont do
-            nvgFontSize(vg, fontSize)
-            local bounds = nvgTextBoxBounds(vg, descLeft, descTop, descW, talent.talentDesc)
-            if bounds and bounds[4] then
-                local textH = bounds[4] - descTop
-                if textH <= maxDescH then break end
-            else
-                break
-            end
+            local h = kt:measureHeight(vg, talent.talentDesc, descW, fontSize)
+            if h <= maxDescH then break end
             fontSize = fontSize - 2
         end
 
-        nvgFontSize(vg, fontSize)
-        nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-        nvgTextBox(vg, descLeft, descTop, descW, talent.talentDesc, nil)
+        -- 记录弹窗缩放，供输入坐标映射（绘制在缩放变换内，输入是屏幕设计坐标）
+        M._confirmPopScale = popScale
+        M._confirmPopCX    = C.bgCX
+        M._confirmPopCY    = C.bgCY
+        -- 输入屏幕坐标 → 弹窗缩放前坐标（热区所在空间）
+        kt:setTransform(function(sx, sy)
+            local lx = (sx - C.bgCX) / popScale + C.bgCX
+            local ly = (sy - C.bgCY) / popScale + C.bgCY
+            return lx, ly
+        end)
+        -- 弹窗锚点（缩放前坐标）→ 屏幕坐标（解释气泡在变换外绘制）
+        kt:setPopupTransform(function(lx, ly)
+            local sx = (lx - C.bgCX) * popScale + C.bgCX
+            local sy = (ly - C.bgCY) * popScale + C.bgCY
+            return sx, sy
+        end)
+
+        kt:draw(vg, talent.talentDesc, descLeft, descTop, descW, fontSize)
     end
 
     -- 底部区域
     if pop.confirmOwned then
         -- 已拥有模式
         local _bf1 = BF.begin(vg, "ccc_confirm", C.btnCX, C.btnCY, C.btnW, C.btnH)
-        DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH, { accent = "green" })
+        DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH, { accent = "gold" })
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, C.costFont)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x1e, 0x51, 0x37, 255))
+        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
         nvgText(vg, C.btnCX, C.btnCY, "已拥有", nil)
         BF.finish(vg, _bf1)
     else
@@ -760,7 +907,7 @@ function M.drawConfirmPopup(vg)
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, C.costFont)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x80, 0x80, 0x80, 255))
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 锁定=棕色
             nvgText(vg, C.btnCX, C.btnCY, lockReason, nil)
         else
             -- 转职确认
@@ -792,13 +939,17 @@ function M.drawConfirmPopup(vg)
                 C.coinSize, C.coinSize, 1.0)
 
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, canAfford and nvgRGBA(0x46, 0x2f, 0x20, 255) or nvgRGBA(0x1e, 0x51, 0x37, 255))
+            -- 按钮内金币消耗：够=亮深棕，不够=棕色禁用色
+            nvgFillColor(vg, canAfford and nvgRGBA(0x46, 0x2f, 0x20, 255) or nvgRGBA(0x8d, 0x5f, 0x41, 255))
             nvgText(vg, coinStartX + C.coinSize + coinGap, C.btnCY, costStr, nil)
             BF.finish(vg, _bf2)
         end
     end
 
     nvgRestore(vg)
+
+    -- 关键词解释气泡（屏幕空间，盖在弹窗之上）
+    M.confirmKwText:drawPopup(vg)
 end
 
 -- ======================== 输入处理 ========================
@@ -810,6 +961,16 @@ end
 function M.handleConfirmInput(dx, dy)
     if not pop.confirmPopup then return false end
     if pop.confirmClosing then return true end
+
+    -- 关键词解释弹窗优先：开着→任意点击关闭；否则尝试命中关键词热区
+    local kt = M.confirmKwText
+    if kt:isOpen() then
+        kt:closePopup()
+        return true
+    end
+    if kt:handleInput(dx, dy) then
+        return true
+    end
 
     local C = CONFIRM
 

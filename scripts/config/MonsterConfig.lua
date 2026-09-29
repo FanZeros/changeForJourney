@@ -741,6 +741,7 @@ function MC.createMonster(monsterId, level, opts)
         [AD.ATK_INTERVAL] = template.atkInterval,
         armorType         = template.armorType,
         atkType           = template.atkType,
+        unitLevel         = level,   -- 护盾成长层派生等级因子用
     }
 
     if category == "physical" then
@@ -785,6 +786,18 @@ end
 --- 获取怪物名称
 ---@param monsterId number
 ---@return string
+--- 还没有正式立绘的怪物，战斗卡面临时借用同攻击类型的已有敌人图。
+--- 名字、属性和怪物 ID 不变，只换显示用的图片 ID。
+MC.CARD_ART = {
+    [1005] = 9,  -- 大狗嚼? 困难林地追加近战，借用同章 Boss 诸犍，不用终焉帝江
+    [1006] = 52, -- 黄桃龙? 火焰远程，借用朱厌
+    [1007] = 7,  -- 叮咚鸡? 林地远程，借用九尾狐，不用蛇形巴蛇
+}
+
+function MC.getCardArtId(monsterId)
+    return MC.CARD_ART[monsterId] or monsterId
+end
+
 function MC.getName(monsterId)
     local t = MC.MONSTERS[monsterId]
     return t and t.name or ("未知#" .. tostring(monsterId))

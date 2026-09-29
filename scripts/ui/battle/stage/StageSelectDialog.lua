@@ -11,8 +11,12 @@
 local GameConfig        = require("config.GameConfig")
 local SC                = require("config.StageConfig")
 local MC                = require("config.MonsterConfig")
+local SRP               = require("config.StageRecommendPower")
 local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DrawUtil          = require("core.DrawUtil")
+local DarkIcon          = require("core.DarkIcon")
+local GameState         = require("core.GameState")
+local I18n              = require("core.I18n")
 local BF                = require("systems.ButtonFeedback")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
@@ -212,7 +216,8 @@ local monsterCards = {}
 local function ensureMonsterCard(vg, monsterId)
     local img = monsterCards[monsterId]
     if img and img >= 0 then return img end
-    img = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", monsterId), 0)
+    local artId = require("config.MonsterConfig").getCardArtId(monsterId)
+    img = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", artId), 0)
     if img and img >= 0 then
         monsterCards[monsterId] = img
         return img
@@ -479,10 +484,11 @@ function StageSelectDialog.draw(vg)
         end
 
         local cx = x + D.CH_W * 0.5
-        local nameA = chapterLocked and 150 or 255
+        -- 章节按钮文字：解锁=亮色，锁定=棕色
+        local chR, chG, chB = 235, 230, 210
+        if chapterLocked then chR, chG, chB = 0x8d, 0x5f, 0x41 end
         drawTextStroke(vg, cx, y + D.CH_BTN_H * 0.36, g.name, 28,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, 230, 210, 3,
-            { alpha = nameA / 255 })
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, chR, chG, chB, 3)
         if chapterLocked and imgLock >= 0 then
             drawImageCentered(vg, imgLock, x + D.CH_W - 22, y + 22, 30, 30, 0.9)
         end
@@ -534,13 +540,13 @@ function StageSelectDialog.draw(vg)
             nvgStroke(vg)
         end
 
-        -- 关卡号（行左上）
+        -- 关卡号（行左上）：解锁=亮色（Boss红），锁定=棕色
         local fr, fg, fb = 255, 255, 255
         if isBoss then fr, fg, fb = 0xE0, 0x5A, 0x5A end
-        local txtA = locked and 140 or 255
+        if locked then fr, fg, fb = 0x8d, 0x5f, 0x41 end
         drawTextStroke(vg, x + 16, y + 34, shortStageLabel(id), 30,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            fr, fg, fb, 2, { alpha = txtA / 255 })
+            fr, fg, fb, 2)
 
         -- 状态（行左下）
         local sub
@@ -561,11 +567,44 @@ function StageSelectDialog.draw(vg)
         if isCur then
             nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 255))
         elseif locked then
-            nvgFillColor(vg, nvgRGBA(0x8a, 0x84, 0x74, 220))
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 未解锁=棕色
         else
             nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
         end
         nvgText(vg, x + 16, y + D.ROW_H - 34, sub, nil)
+
+        -- 推荐战力（行左中，v2.61 接线 / v2.63 图标化）：
+        -- 口径 = battle-lab 开荒三人组无养成实测阈值（ml≤46 实测 / ml≤92 保守外推），
+        -- 带装备养成的玩家实际需求更低，因此只做「达标提示」不做硬性门槛。
+        -- v2.63（用户要求）：不再显示「推荐/推荐≈」文字，改为 power 火焰图标
+        --   + 纯数字（与 TopBar 玩家战力同图标，玩家一看即懂是战力比较）。
+        --   ≈ 模糊前缀取消——外推关仅以蓝灰数字色区分，不做文本标注。
+        -- 三态：实测(数字与玩家总战力比较着色) / 外推(蓝灰) / 无数据(不绘制)。
+        -- 布局：图标 18px 中心 (x+25, y+84)，数字左缘 x+38；左栏可用宽
+        -- ~124px（CARD_X-MID_X-边距），最长 5 位数（ml92 外推上限 ~2.9e4）
+        -- 20 号字 ~55px，38+55=93px < 124px 不撞卡面。
+        local recPower, recExtr = SRP.get(id)
+        if recPower then
+            local rr, rg, rb
+            if recExtr then
+                -- 外推带（ml 47..92）：估算值，数字蓝灰，不与玩家战力比较
+                rr, rg, rb = 0x8F, 0xA8, 0xC0
+            else
+                local playerPower = GameState.getPower() or 0
+                if playerPower <= 0 then
+                    rr, rg, rb = 0xb6, 0xb0, 0x9d          -- 战力未知：中性色
+                elseif playerPower >= recPower then
+                    rr, rg, rb = 0x7A, 0xC8, 0x6E          -- 达标：绿
+                else
+                    rr, rg, rb = 0xE0, 0x5A, 0x5A          -- 不足：红（与 Boss 关同色系）
+                end
+            end
+            local iconAlpha = (locked and 140 or 255) / 255
+            DarkIcon.draw(vg, "power", x + 25, y + 84, 18, iconAlpha)
+            drawTextStroke(vg, x + 38, y + 84, tostring(recPower), 20,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+                rr, rg, rb, 2, { alpha = iconAlpha })
+        end
 
         -- 敌人卡面（行右侧横排）
         local mids = stageMonsterCards(entry)

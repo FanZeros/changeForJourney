@@ -242,6 +242,7 @@ local BlacksmithEquipSlots = require("ui.blacksmith.BlacksmithEquipSlots")
 local BlacksmithDraw = require("ui.blacksmith.BlacksmithDraw")
 local BlacksmithInput = require("ui.blacksmith.BlacksmithInput")
 local BlacksmithResults = require("ui.blacksmith.BlacksmithResults")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local function formatAffixValue(key, value, affixId)
     local numeric = EquipmentSystem.normalizeAffixNumericValue(value)
@@ -286,7 +287,7 @@ local imgTabBg    = -1   -- UI_AN_1.png
 
 local imgArrow    = -1   -- UI_TJP_JIANTOU.png（提升箭头）
 local imgEnhBtn   = -1   -- UI_AN_LV.png（强化按钮背景）
-local imgGoldIcon = -1   -- UI_icon_JB.png（金币图标）
+local imgGoldIcon = -1   -- UI_icon_JB_X.png（金币图标）
 local imgGoldQBg  = -1   -- UI_icon_ZBBJ_2.png（金币品质背景框, quality=2）
 local imgEssenceIcon = -1 -- UI_icon_JC.png（精粹图标）
 local imgXlBefore  = -1   -- UI_TJP_XL_2.png（洗练前背景框）
@@ -294,7 +295,7 @@ local imgXlAfter   = -1   -- UI_TJP_XL_1.png（洗练后背景框）
 local imgReplaceBtn = -1  -- UI_AN_HUANG.png（替换按钮背景）
 local imgCheckmark = -1   -- UI_icon_GOU.png（选中打钩）
 local imgLvlBadge  = -1   -- UI_JSJM_DJ.png（等级徽章）
-local imgRedDot    = -1   -- ICON_HD.png（红点图标）
+-- [图标统一 0928] 移除 imgRedDot 死声明：红点统一走 DarkIcon.draw(vg,"reddot",...)
 local imgIconUp    = -1   -- ICON_UP.png（可强化角标）
 -- 一键强化确认弹窗专用图片
 local imgEnhDlgBg    = -1  -- UI_TY_EJQRK.png（弹窗背景）
@@ -588,13 +589,13 @@ local function drawUpperSlotContent(vg, tabName)
         local slotState = slotData and slotData.state or "locked"
         local isSelected = (i == state.selectedPartySlot)
 
-        -- 选中高亮底框
+        -- 选中高亮底框（[统一角色框] 金色高亮常量）
         if isSelected then
             nvgBeginPath(vg)
             nvgRoundedRect(vg, cx - CARD_W * 0.5 - 4, cy - CARD_H * 0.5 - 4,
                 CARD_W + 8, CARD_H + 8, 16)
-            nvgStrokeColor(vg, nvgRGBA(0xff, 0xd7, 0x00, 200))
-            nvgStrokeWidth(vg, 4)
+            nvgStrokeColor(vg, nvgRGBA(HeroFrame.GOLD_HI[1], HeroFrame.GOLD_HI[2], HeroFrame.GOLD_HI[3], 230))
+            nvgStrokeWidth(vg, 5)
             nvgStroke(vg)
         end
 
@@ -629,6 +630,13 @@ local function drawUpperSlotContent(vg, tabName)
             if cardImg and cardImg >= 0 then
                 DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
             end
+            -- [统一角色框] 卡面叠加品质色描边
+            HeroFrame.draw(vg, {
+                cx = cx, cy = cy, w = CARD_W, h = CARD_H,
+                heroId = heroId,
+                state = "owned",
+                frameOnly = true,
+            })
 
             -- 职业图标（卡片顶部）
             if heroInfo and heroInfo.classId then
@@ -797,7 +805,7 @@ function BlacksmithPage.init(vg)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     imgArrow    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
     imgEnhBtn   = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
-    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     imgGoldQBg  = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_2.png", 0)
     imgEssenceIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JC.png", 0)
     imgXlBefore  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_XL_2.png", 0)

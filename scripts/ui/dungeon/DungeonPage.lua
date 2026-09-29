@@ -32,7 +32,6 @@ local imgCard3       = -1   -- UI_FBRK_3.png   副本卡片背景（通天塔）
 local imgGold        = -1   -- UI_icon_JB_X.png 金币图标
 local imgGem         = -1   -- UI_icon_SJ_X.png 宝石图标
 local imgDust        = -1   -- UI_icon_ASFC.png 奥术尘图标
-local imgRelic       = -1   -- ICON_SJYW.png 遗物图标
 local imgQualityBg   = {}   -- UI_icon_ZBBJ_N.png 品质背景 (1-5)
 
 -- 详情面板图片
@@ -213,7 +212,6 @@ local dungeonList = {
         maxDaily = 2,
         rewards = {
             { type = "dust",  icon = "image/货币道具/UI_icon_ASFC.png", quality = 3, label = "奥术尘" },
-            { type = "relic", icon = "image/货币道具/ICON_SJYW.png", quality = 4, label = "遗物" },
         },
     },
     {
@@ -242,7 +240,7 @@ local function getFloorRewards(dungeonId, floor)
     elseif dungeonId == "ancient_ruin" then
         local floorData = require("config.DungeonConfig").getAncientRuinFloor(floor)
         if floorData then
-            return floorData.sweepDust, floorData.firstRelicCount
+            return floorData.sweepDust, floorData.firstDust or 0
         end
     end
     return 0, 0
@@ -488,7 +486,6 @@ function DungeonPage.init(vg)
     imgGold       = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     imgGem        = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     imgDust       = nvgCreateImage(vg, "image/货币道具/UI_icon_ASFC.png", 0)
-    imgRelic      = nvgCreateImage(vg, "image/货币道具/ICON_SJYW.png", 0)
     -- 加载品质背景 1-6
     for i = 1, 6 do
         imgQualityBg[i] = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_" .. tostring(i) .. ".png", 0)
@@ -686,7 +683,8 @@ function DungeonPage.draw(vg)
             local cardCX = CARD_X + CARD_W * 0.5  -- 540
             local cardY = CARD_Y  -- 210 (gold_mine)
             local cardCY = cardY + CARD_H * 0.5  -- 414
-            TM.registerHotspot("dungeon_gold_mine", cardCX, cardCY, CARD_W, CARD_H)
+            -- [横屏接线 0928] 副本页横屏走全窗 letterbox 模态，热点归属 'modal' 上下文
+            TM.registerHotspot("dungeon_gold_mine", cardCX, cardCY, CARD_W, CARD_H, "modal")
         end
     end
 
@@ -856,7 +854,7 @@ function DungeonPage.drawDetailPanel(vg)
     local dailyText = "今日次数:" .. dailyRemain .. "/" .. dailyMax
     local dtR, dtG, dtB = DT.DAILY_R, DT.DAILY_G, DT.DAILY_B
     if dailyRemain <= 0 then
-        dtR, dtG, dtB = 0xFF, 0x44, 0x44  -- 红色警告
+        dtR, dtG, dtB = 0x8d, 0x5f, 0x41  -- 耗尽=棕色
     end
     DrawUtil.drawTextStroke(vg, DT.DAILY_X, DT.DAILY_Y, dailyText,
         DT.DAILY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -868,14 +866,18 @@ function DungeonPage.drawDetailPanel(vg)
     nvgGlobalAlpha(vg, sweepDisabled and 0.45 or 1.0)
     DarkIcon.drawNine(vg, "btn", DT.SWEEP_CX - DT.SWEEP_W * 0.5, DT.SWEEP_CY - DT.SWEEP_H * 0.5, DT.SWEEP_W, DT.SWEEP_H, { accent = "gold" })
     BF.finish(vg, _bfSweep)
+    nvgGlobalAlpha(vg, 1.0)  -- 底图变暗即可恢复，文字单独按条件着色
 
-    -- 19. 扫荡按钮文本 "扫荡上一层"
+    -- 19. 扫荡按钮文本 "扫荡上一层"（禁用=棕色，可用=深色亮字）
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, DT.SWEEP_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, sweepDisabled and 100 or 191))
+    if sweepDisabled then
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
+    end
     nvgText(vg, DT.SWEEP_CX, DT.SWEEP_CY, "扫荡上一层", nil)
-    nvgGlobalAlpha(vg, 1.0)  -- 恢复全局透明度
 
     -- 20. 挑战按钮背景 UI_AN_LV（九宫格）
     local _bfFight = BF.begin(vg, "dt_fight_btn", DT.FIGHT_CX, DT.FIGHT_CY, DT.FIGHT_W, DT.FIGHT_H)
@@ -1084,6 +1086,17 @@ end
 
 -- ======================== 网络响应处理 ========================
 
+--- 扫荡奖励弹出时自动离开副本页（回到主视图页签）。
+--- 横屏下副本页是全窗模态层，绘制在全局弹窗层之上；不离开的话
+--- 奖励弹窗会被副本页盖住，玩家看不到扫荡奖励。
+local function leaveDungeonPageForReward()
+    local BottomNav = require("ui.hud.BottomNav")
+    if BottomNav.getSelectedIndex() == 5 then
+        BottomNav.setSelectedIndex(3)
+        print("[DungeonPage] sweep reward shown, auto leave dungeon page -> tab 3")
+    end
+end
+
 --- 服务端操作结果回调（由 Client.lua 调用）
 ---@param data table { action, success, reason, ... }
 function DungeonPage.onActionResult(data)
@@ -1096,7 +1109,6 @@ function DungeonPage.onActionResult(data)
             print("[DungeonPage] SWEEP OK: floor=" .. tostring(data.sweepFloor)
                 .. " gold=" .. tostring(data.gold)
                 .. " dust=" .. tostring(data.dust)
-                .. " relics=" .. tostring(data.relics and #data.relics or 0)
                 .. " daily=" .. tostring(data.dailyUsed) .. "/" .. tostring(data.dailyMax))
             -- 更新本地显示数据
             dailyUsed = data.dailyUsed or dailyUsed
@@ -1116,11 +1128,9 @@ function DungeonPage.onActionResult(data)
             if (data.dust or 0) > 0 then
                 rewards[#rewards + 1] = { type = "arcane_dust", amount = data.dust }
             end
-            if data.relics and #data.relics > 0 then
-                for _, r in ipairs(data.relics) do
-                    rewards[#rewards + 1] = { type = "relic", relicType = r.type, quality = r.quality or 4 }
-                end
-            end
+            -- [927 遗物后端移除] data.relics 遗物奖励分支已删除
+            -- [928 修复] 奖励弹出前自动离开副本页，避免奖励被模态页盖住
+            leaveDungeonPageForReward()
             require("ui.hud.popup.RewardPopup").show("扫荡奖励", rewards)
         else
             print("[DungeonPage] SWEEP FAIL: " .. tostring(data.reason))
@@ -1234,6 +1244,7 @@ function DungeonPage.onActionResult(data)
             if (data.diamondReward or 0) > 0 then
                 rewards[#rewards + 1] = { type = "diamond", amount = data.diamondReward }
             end
+            leaveDungeonPageForReward()
             require("ui.hud.popup.RewardPopup").show("扫荡奖励", rewards)
         else
             print("[DungeonPage] TOWER_SWEEP FAIL: " .. tostring(data.reason))
@@ -1273,7 +1284,6 @@ function DungeonPage.onActionResult(data)
                 .. " firstClear=" .. tostring(data.firstClear)
                 .. " gold=" .. tostring(data.gold)
                 .. " dust=" .. tostring(data.dust)
-                .. " relics=" .. tostring(data.relics and #data.relics or 0)
                 .. " nextFloor=" .. tostring(data.nextFloor))
             -- 更新本地楼层显示
             local dId = data.dungeonId or "gold_mine"

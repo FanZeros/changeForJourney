@@ -10,6 +10,7 @@ function M.bind(deps)
     local CHAR_SLOT = deps.CHAR_SLOT
     local getProtocol = deps.getProtocol
     local ArtifactPanel = deps.ArtifactPanel
+    local ArtifactDrawPanel = deps.ArtifactDrawPanel
     local CharacterPanel = deps.CharacterPanel
     local SpineCardEffect = deps.SpineCardEffect
     local clearPowerCache = deps.clearPowerCache
@@ -42,6 +43,19 @@ function M.bind(deps)
 
         -- 神器装配结果
         local Protocol = getProtocol()
+
+        -- 神器宝箱抽取结果（市场典藏迁移至教堂）
+        if data.action == Protocol.ACTION_TYPES.ARTIFACT_DRAW then
+            if data.success then
+                local rewards = ArtifactDrawPanel.onArtifactDrawSuccess(data)
+                setFloat("获得" .. tostring(#rewards) .. "件神器")
+            else
+                setFloat(data.reason or "抽取失败")
+            end
+            refreshTownBadge()
+            return
+        end
+
         if data.action == Protocol.ACTION_TYPES.ARTIFACT_EQUIP and data.success then
             setFloat("神器安装成功，下波战斗生效")
             ArtifactPanel.onArtifactEquipResult(true)

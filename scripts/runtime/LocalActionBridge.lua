@@ -46,7 +46,6 @@ local function loadHandlers()
         { "rules.market.MarketHandler", nil },
         { "rules.loot.LootHandler", nil },
         { "rules.sweep.SweepHandler", "actionHandlers" },
-        { "rules.relic.RelicHandler", "actionHandlers" },
         { "rules.artifact.ArtifactHandler", "actionHandlers" },
         { "rules.dungeon.DungeonHandler", "actionHandlers" },
         { "rules.offline.OfflineHandler", "actionHandlers" },
@@ -289,9 +288,6 @@ function M.init()
     end)
     ensureModule("talents", function()
         return defaultFromSchema("talents")
-    end)
-    ensureModule("mod_relics", function()
-        return defaultFromSchema("mod_relics")
     end)
     ensureModule("artifacts", function()
         return defaultFromSchema("artifacts")

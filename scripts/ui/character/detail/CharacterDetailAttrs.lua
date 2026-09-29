@@ -10,7 +10,6 @@ local PlayerStore      = require("core.PlayerStore")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
-local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
 local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 
@@ -80,15 +79,60 @@ M.ATTR_RIGHT_PRIORITY = {
     AD.HEAL_CRIT_DMG,
 }
 
+-- ======================== 面板展示排序（重要程度优先） ========================
+-- 合并左右列后按此顺序展示；未列出的属性保持原有相对顺序排在最后。
+M.ATTR_DISPLAY_ORDER = {
+    -- 核心战斗
+    AD.MAX_HP,
+    AD.PHYS_ATK, AD.MAG_ATK, AD.HEAL_AMOUNT,   -- 本职攻击/治疗
+    AD.ATK_SPEED,
+    "_effCritRate", "_effCritDmg",
+    AD.COMBO_RATE, AD.COMBO_DMG_UP,
+    -- 输出向
+    AD.PHYS_PEN, AD.MAG_PEN,
+    AD.PHYS_DMG_BONUS, AD.MAG_DMG_BONUS, AD.DMG_BONUS, AD.FINAL_DAMAGE_BONUS,
+    AD.MAX_DMG_BONUS, AD.MIN_DMG_BONUS,
+    -- 防御核心
+    AD.ARMOR, AD.RESISTANCE, AD.ENERGY_SHIELD,
+    -- 生存/辅助
+    AD.HIT_VALUE, AD.DODGE,
+    AD.PHYS_BLOCK_RATE, AD.MAG_BLOCK_RATE, AD.PHYS_BLOCK_RATIO, AD.MAG_BLOCK_RATIO,
+    AD.ABNORMAL_RES, AD.HP_REGEN, AD.ATK_HEAL, AD.THREAT,
+    -- 加成/最终类
+    AD.ARMOR_BONUS, AD.FINAL_ARMOR_BONUS,
+    AD.ES_BONUS, AD.FINAL_ENERGY_SHIELD_BONUS,
+    AD.DODGE_BONUS, AD.FINAL_DODGE_BONUS,
+    AD.HP_BONUS, AD.FINAL_HP_BONUS,
+    AD.PHYS_ATK_BONUS, AD.MAG_ATK_BONUS, AD.FINAL_PHYS_ATK_BONUS, AD.FINAL_MAG_ATK_BONUS,
+    AD.HEAL_BONUS, AD.HEAL_CRIT_RATE, AD.HEAL_CRIT_DMG,
+    AD.FINAL_STR_BONUS, AD.FINAL_AGI_BONUS, AD.FINAL_INT_BONUS,
+    AD.FINAL_VIT_BONUS, AD.FINAL_LUK_BONUS, AD.FINAL_SPI_BONUS,
+    -- 基础信息
+    "_atkType", AD.ATK_INTERVAL, "_atkTargets",
+    -- 特殊机制/神器
+    "_melissaStarGateResonance", "_melissaStarGatePen",
+    "_artifactCritRateMult", "_artifactCritDmgMult", "_artifactIgnoreArmor",
+    "_artifactChaosDamage", "_artifactExtraDamage", "_artifactBlockCap", "_artifactNoHeal",
+}
+
+local DISPLAY_ORDER_INDEX = {}
+for i, key in ipairs(M.ATTR_DISPLAY_ORDER) do DISPLAY_ORDER_INDEX[key] = i end
+
+--- 展示排序索引（key → 序号，未列出返回 nil）
+---@return table<string|number, number>
+function M.displayOrderIndex()
+    return DISPLAY_ORDER_INDEX
+end
+
 -- ======================== 六围排列定义 ========================
 
 M.STAT_LAYOUT = {
-    { col = 1, row = 1, key = AD.STR, name = "力量", icon = "ICON_SX_LL" },
-    { col = 1, row = 2, key = AD.AGI, name = "敏捷", icon = "ICON_SX_MJ" },
-    { col = 1, row = 3, key = AD.INT, name = "秘识", icon = "ICON_SX_ZH" },
-    { col = 2, row = 1, key = AD.VIT, name = "体质", icon = "ICON_SX_TZ" },
-    { col = 2, row = 2, key = AD.LUK, name = "命数", icon = "ICON_SX_YQ" },
-    { col = 2, row = 3, key = AD.SPI, name = "魂火", icon = "ICON_SX_JS" },
+    { col = 1, row = 1, key = AD.STR, name = "力量" },
+    { col = 1, row = 2, key = AD.AGI, name = "敏捷" },
+    { col = 1, row = 3, key = AD.INT, name = "秘识" },
+    { col = 2, row = 1, key = AD.VIT, name = "体质" },
+    { col = 2, row = 2, key = AD.LUK, name = "命数" },
+    { col = 2, row = 3, key = AD.SPI, name = "魂火" },
 }
 
 -- ======================== 属性收集 ========================
@@ -122,8 +166,6 @@ local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqD
             attrs, eqData, heroId,
             EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
     end
-
-    RelicBridge.applyToUnit(attrs, classId)
 
     local partySlotForArtifact = EquipmentSystem.findPartySlotInTeams(heroesData, heroId)
     if partySlotForArtifact then
@@ -243,7 +285,7 @@ function M.collectAttributes(heroId, heroCfg, level)
     end
     local attrs = hero.attrs
 
-    -- === 应用已穿戴装备、遗物、神器属性（与战斗/战力口径一致） ===
+    -- === 应用已穿戴装备、神器属性（与战斗/战力口径一致） ===
     local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
     applyDetailRuntimeBonuses(attrs, heroId, heroCfg.classId, heroesData, eqData)
 

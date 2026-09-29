@@ -102,7 +102,7 @@ local EB = {
     -- 强化按钮（左侧）
     ENH_BTN_CX = 307, ENH_BTN_CY = 2129, ENH_BTN_W = 410, ENH_BTN_H = 100,
     ENH_TEXT_FONT_SIZE = 40,
-    ENH_TEXT_R = 0x25, ENH_TEXT_G = 0x55, ENH_TEXT_B = 0x3d,
+    ENH_TEXT_R = 255, ENH_TEXT_G = 214, ENH_TEXT_B = 102,
     -- 一键强化按钮（右侧）
     ENH_MAX_BTN_CX = 770, ENH_MAX_BTN_CY = 2129, ENH_MAX_BTN_W = 410, ENH_MAX_BTN_H = 100,
 }
@@ -503,10 +503,11 @@ local function drawResourceCount(vg, cx, owned, cost)
 
     local ownedW = nvgTextBounds(vg, 0, 0, ownedStr)
     local sx = cx - tw * 0.5
+    -- 不足=棕色（全局统一），足够=亮绿
     nvgFillColor(vg, nvgRGBA(
-        enough and EB.ENOUGH_R or EB.SHORT_R,
-        enough and EB.ENOUGH_G or EB.SHORT_G,
-        enough and EB.ENOUGH_B or EB.SHORT_B, 255))
+        enough and EB.ENOUGH_R or 0x8d,
+        enough and EB.ENOUGH_G or 0x5f,
+        enough and EB.ENOUGH_B or 0x41, 255))
     nvgText(vg, sx, EB.RES_COUNT_BG_CY, ownedStr, nil)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, sx + ownedW, EB.RES_COUNT_BG_CY, "/" .. costStr, nil)
@@ -583,7 +584,12 @@ function M.drawPanelBottom(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, EB.ENH_TEXT_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(EB.ENH_TEXT_R, EB.ENH_TEXT_G, EB.ENH_TEXT_B, canMaxEnhance and 255 or 128))
+    -- 按钮文字：可强化=金黄，不可=棕色
+    if canMaxEnhance then
+        nvgFillColor(vg, nvgRGBA(EB.ENH_TEXT_R, EB.ENH_TEXT_G, EB.ENH_TEXT_B, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    end
     nvgText(vg, EB.ENH_MAX_BTN_CX, EB.ENH_MAX_BTN_CY, "一键强化", nil)
     BF.finish(vg, didScaleMax)
 end
@@ -862,7 +868,12 @@ function M.drawConfirmDialog(vg)
     nvgGlobalAlpha(vg, 1.0)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, EMDLG.CONFIRM_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x25, 0x55, 0x3d, canConfirm and 255 or 100))
+    -- 按钮文字：可确认=金黄，不可=棕色
+    if canConfirm then
+        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    end
     nvgText(vg, EMDLG.CONFIRM_CX, EMDLG.CONFIRM_CY, "强化", nil)
     BF.finish(vg, _sc)
 

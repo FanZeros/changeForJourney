@@ -28,6 +28,13 @@ add("一键回收", "一鍵回收", "Salvage all", "一括回収", "일괄 회�
 add("一键领取", "一鍵領取", "Claim all", "一括受取", "일괄 수령")
 add("领取筛选", "領取篩選", "Claim filtered", "絞込分を受取", "필터 수령")
 add("回收筛选", "回收篩選", "Salvage filtered", "絞込分を回収", "필터 회수")
+add("扫荡小队", "掃蕩小隊", "Sweep squad", "掃討小隊", "소탕 소대")
+add("领取勾选", "領取勾選", "Claim checked", "チェック分を受取", "체크 수령")
+add("回收勾选", "回收勾選", "Salvage checked", "チェック分を回収", "체크 회수")
+add("共 %d 种品质", "共 %d 種品質", "%d rarities", "全%dレア度", "희귀도 %d종")
+add("调整上方勾选或取消全部勾选查看全部", "調整上方勾選或取消全部勾選查看全部",
+    "Adjust the checks above, or clear them all to view everything",
+    "上部のチェックを調整、または全て外すと全表示", "위 체크를 조정하거나 모두 해제하면 전체 표시")
 add("暂无该稀有度装备", "暫無該稀有度裝備", "No gear of this rarity", "このレア度の装備なし", "해당 희귀도 장비 없음")
 add("回收", "回收", "Salvage", "回収", "회수")
 add("取消回收", "取消回收", "Cancel salvage", "回収解除", "회수 취소")

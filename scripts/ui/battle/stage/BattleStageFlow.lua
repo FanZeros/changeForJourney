@@ -96,7 +96,8 @@ function M.ensureBattleCards(ctx, queue)
     for id = 201, 206 do monsterIds[#monsterIds + 1] = id end
     for _, id in ipairs(monsterIds) do
         q[#q + 1] = {
-            path = string.format("image/怪物卡牌/KP_GW_%d.png", id),
+            local artId = require("config.MonsterConfig").getCardArtId(id)
+            path = string.format("image/怪物卡牌/KP_GW_%d.png", artId),
             apply = function(h) imgMonsterCards[id] = h end,
         }
     end

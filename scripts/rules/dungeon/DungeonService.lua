@@ -6,7 +6,6 @@
 
 local PDM           = require("rules.character.PlayerDataManager")
 local DungeonConfig = require("config.DungeonConfig")
-local RelicAffix    = require("systems.RelicAffix")
 
 local DungeonService = {}
 
@@ -26,70 +25,6 @@ local function checkDailyReset(subData)
         subData.dailyUsed = 0
         subData.dailyDay  = today
     end
-end
-
---- 根据品质权重数组随机一个品质 (1~4)
----@param qualityWeights number[] {q1weight, q2weight, q3weight, q4weight} 总和=100
----@return number quality 1~4
-local function rollQuality(qualityWeights)
-    local roll = math.random(1, 100)
-    local cumulative = 0
-    for q = 1, 4 do
-        cumulative = cumulative + (qualityWeights[q] or 0)
-        if roll <= cumulative then
-            return q
-        end
-    end
-    return 1  -- fallback
-end
-
---- 为副本生成遗物奖励（直接写入背包）
----@param uid number
----@param count number 生成数量
----@param qualityWeights number[] 品质权重
----@return table[] relics 生成的遗物列表（精简信息，用于客户端展示）
-local function generateRelicRewards(uid, count, qualityWeights)
-    local relicData = PDM.GetModule(uid, "mod_relics")
-    if not relicData then return {} end
-
-    local results = {}
-    for i = 1, count do
-        -- 背包容量检查
-        if #relicData.bag >= 200 then
-            print("[DungeonService] WARN relic bag full, skip remaining. uid=" .. tostring(uid))
-            break
-        end
-
-        local quality = rollQuality(qualityWeights)
-        local relicType = math.random(1, 5)  -- 随机类型 1~5
-
-        -- 随机词缀
-        local affixId = RelicAffix.rollAffix(relicType, quality, 1)
-        if not affixId then
-            print("[DungeonService] WARN affix pool empty type=" .. relicType .. " q=" .. quality)
-            affixId = 1  -- fallback
-        end
-
-        -- 生成遗物对象
-        local id = relicData.nextId
-        relicData.nextId = id + 1
-
-        local relic = {
-            id      = tostring(id),
-            type    = relicType,
-            quality = quality,
-            affixId = affixId,
-        }
-
-        relicData.bag[#relicData.bag + 1] = relic
-        results[#results + 1] = { id = relic.id, type = relicType, quality = quality, affixId = affixId }
-    end
-
-    if #results > 0 then
-        PDM.MarkDirty(uid, "mod_relics")
-    end
-
-    return results
 end
 
 -- ======================== 获取副本子数据 ========================
@@ -196,18 +131,13 @@ function DungeonService.Sweep(uid, dungeonId)
             PDM.MarkDirty(uid, "currency")
         end
 
-        -- 遗物奖励
-        local relicCount = floorData.sweepRelicCount or 1
-        local relics = generateRelicRewards(uid, relicCount, floorData.qualityWeights)
-
-        print(string.format("[DungeonService] uid=%s sweep ancient_ruin floor=%d dust=%d relics=%d dailyUsed=%d/%d",
-            tostring(uid), sweepFloor, dustReward, #relics, subData.dailyUsed, dailyLimit))
+        print(string.format("[DungeonService] uid=%s sweep ancient_ruin floor=%d dust=%d dailyUsed=%d/%d",
+            tostring(uid), sweepFloor, dustReward, subData.dailyUsed, dailyLimit))
 
         return true, nil, {
             dungeonId  = dungeonId,
             sweepFloor = sweepFloor,
             dust       = dustReward,
-            relics     = relics,
             dailyUsed  = subData.dailyUsed,
             dailyMax   = dailyLimit,
         }
@@ -294,8 +224,6 @@ function DungeonService.Challenge(uid, dungeonId, floor)
         result.firstGold = floorData.firstGold
     else
         result.firstDust       = floorData.firstDust
-        result.firstRelicCount = floorData.firstRelicCount
-        result.qualityWeights  = floorData.qualityWeights
     end
 
     return true, nil, result
@@ -378,26 +306,21 @@ function DungeonService.Win(uid, dungeonId, floor)
         end
 
         local dustReward = 0
-        local relics = {}
 
         if isFirstClear then
             dustReward = floorData.firstDust
             currency.arcaneDust = (currency.arcaneDust or 0) + dustReward
             PDM.MarkDirty(uid, "currency")
-
-            -- 首通遗物奖励
-            relics = generateRelicRewards(uid, floorData.firstRelicCount, floorData.qualityWeights)
         end
 
-        print(string.format("[DungeonService] uid=%s win ancient_ruin floor=%d firstClear=%s dust=%d relics=%d nextFloor=%d",
-            tostring(uid), floor, tostring(isFirstClear), dustReward, #relics, subData.floor))
+        print(string.format("[DungeonService] uid=%s win ancient_ruin floor=%d firstClear=%s dust=%d nextFloor=%d",
+            tostring(uid), floor, tostring(isFirstClear), dustReward, subData.floor))
 
         return true, nil, {
             dungeonId  = dungeonId,
             floor      = floor,
             firstClear = isFirstClear,
             dust       = dustReward,
-            relics     = relics,
             nextFloor  = subData.floor,
         }
     end

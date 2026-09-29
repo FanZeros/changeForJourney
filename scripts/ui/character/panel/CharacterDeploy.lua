@@ -61,7 +61,7 @@ function M.bind(deps)
                     if slot.state == "occupied" and slot.heroId and slot.heroId ~= heroId then
                         otherSlots[i] = slot
                         if teamPowerCaches[otherTeam] then
-                            teamPowerCaches[otherTeam][i] = calcHeroPower(slot.heroId, i)
+                            teamPowerCaches[otherTeam][i] = calcHeroPower(slot.heroId, i, otherTeam)
                         end
                         print(string.format("[CharacterPanel] 英雄%d 与队伍%d槽%d 交换", heroId, otherTeam, i))
                     else
@@ -97,7 +97,7 @@ function M.bind(deps)
             exp    = ownData.exp,
             maxExp = ownData.maxExp,
         }
-        slotPowerCache[slotIdx] = calcHeroPower(heroId, slotIdx)
+        slotPowerCache[slotIdx] = calcHeroPower(heroId, slotIdx, activeTeamIdx)
 
         local heroCfg = HC.get(heroId)
         print("[CharacterPanel] 部署 " .. (heroCfg and heroCfg.name or "?") .. " 到槽位 " .. slotIdx)

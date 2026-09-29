@@ -14,6 +14,7 @@ function M.bind(deps)
     local TalentPanel = deps.TalentPanel
     local ClassChange = deps.ClassChange  -- 转职已迁出，保留注入但不使用
     local ArtifactPanel = deps.ArtifactPanel
+    local ArtifactDrawPanel = deps.ArtifactDrawPanel
     local getDispatcher = deps.getDispatcher
     local getClient = deps.getClient
     local getProtocol = deps.getProtocol
@@ -43,7 +44,6 @@ function M.bind(deps)
         img.plus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
 
         -- 转职相关图片（彩色职业背景 UI_ZZBJ 已删除）
-        img.titleBg    = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
         img.branchLine  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
         img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
         -- 职业图标（基础/一转/二转）按需加载，避免启动同步解码 42 张
@@ -64,7 +64,7 @@ function M.bind(deps)
         -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
         -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_FANG.png 贴图加载已移除（矢量绘制替代）
         -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
-        img.goldCoin    = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
+        img.goldCoin    = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
         img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
         img.resDiamond = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
 
@@ -72,12 +72,6 @@ function M.bind(deps)
         img.tfBg          = nvgCreateImage(vg, "image/界面底板/终焉古树/UI_GS_TFBJ_dark.png", 0)
         img.tfPointGlow   = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HG.png", 0)
         img.tfSliderThumb = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HK.png", 0)
-
-        -- 天赋详情面板背景（5种颜色）
-        local colorFileMap = { ["红"]="HONG", ["绿"]="LV", ["黄"]="HUANG", ["蓝"]="LAN", ["紫"]="ZI" }
-        for colorName, fileSuffix in pairs(colorFileMap) do
-            img.tfDetailBg[colorName] = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_TFWBK_" .. fileSuffix .. ".png", 0)
-        end
 
         -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HONG.png 贴图加载已移除（矢量绘制替代）
         img.tfInfoIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
@@ -129,6 +123,9 @@ function M.bind(deps)
         -- 转职页已迁到右侧栏角色详情，图片与状态由 ChurchClassChange 自管
         ArtifactPanel.setContext(ctx)
         ArtifactPanel.init(vg)
+        -- 神器宝箱页签（市场典藏迁移）：注入同一共享上下文
+        ArtifactDrawPanel.setContext(ctx)
+        ArtifactDrawPanel.init(vg)
 
         print("[ChurchPage] init OK")
     end

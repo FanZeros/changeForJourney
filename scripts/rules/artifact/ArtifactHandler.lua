@@ -19,7 +19,7 @@ handlers[Protocol.ACTION_TYPES.ARTIFACT_DRAW] = function(uid, params)
 end
 
 handlers[Protocol.ACTION_TYPES.ARTIFACT_EQUIP] = function(uid, params)
-    local ok, err, result = ArtifactService.Equip(uid, params and params.artifactId, params and params.slot, params and params.subSlot)
+    local ok, err, result = ArtifactService.Equip(uid, params and params.artifactId, params and params.slot, params and params.subSlot, params and params.teamIdx)
     if not ok then
         return { success = false, reason = err, action = Protocol.ACTION_TYPES.ARTIFACT_EQUIP }
     end
@@ -29,7 +29,7 @@ handlers[Protocol.ACTION_TYPES.ARTIFACT_EQUIP] = function(uid, params)
 end
 
 handlers[Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP] = function(uid, params)
-    local ok, err, result = ArtifactService.Unequip(uid, params and params.slot, params and params.subSlot)
+    local ok, err, result = ArtifactService.Unequip(uid, params and params.slot, params and params.subSlot, params and params.teamIdx)
     if not ok then
         return { success = false, reason = err, action = Protocol.ACTION_TYPES.ARTIFACT_UNEQUIP }
     end

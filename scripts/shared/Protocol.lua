@@ -62,23 +62,11 @@ Protocol.ACTION_TYPES = {
     -- 装备（GM / 测试�?
     GM_GIVE_EQUIP  = "gm_give_equip",   -- GM 给装备（指定模板/等级/品质�?
     GM_GIVE_RANDOM = "gm_give_random",  -- GM 随机给装�?
-    GM_GIVE_RELIC  = "gm_give_relic",   -- GM 给遗物（指定类型/品质�?
-
-    -- 遗物操作
-    RELIC_REFORGE  = "relic_reforge",   -- 遗物洗练（消耗奥术粉尘，生成候选词缀）
-    RELIC_REFORGE_CONFIRM = "relic_reforge_confirm", -- 确认替换洗练候选词缀
-    RELIC_PLACE    = "relic_place",     -- 遗物镶嵌到祭阵座位
-    RELIC_REMOVE   = "relic_remove",    -- 从祭阵取下遗物
-    RELIC_BATCH_ADJUST = "relic_batch_adjust", -- 调整模式批量移动（原子化 REMOVE+PLACE）
-    RELIC_MERGE    = "relic_merge",      -- 遗物合成（3个同类型同品质→1个高品质，可指定保留词缀）
-    RELIC_UPGRADE  = "relic_upgrade",   -- 遗物升级（消耗奥术粉尘提升等级）
-    RELIC_REPLACE  = "relic_replace",
-    RELIC_LOCK     = "relic_lock",       -- 切换遗物锁定（锁定后无法参与合成）
 
     -- 神器操作
     ARTIFACT_DRAW    = "artifact_draw",    -- 神器宝箱抽取（params: { count = 1|10 }）
-    ARTIFACT_EQUIP   = "artifact_equip",   -- 装配神器到出战槽位（params: { artifactId, slot, subSlot? }）
-    ARTIFACT_UNEQUIP = "artifact_unequip", -- 卸下指定出战槽位神器（params: { slot, subSlot? }）
+    ARTIFACT_EQUIP   = "artifact_equip",   -- 装配神器到出战槽位（params: { artifactId, slot, subSlot?, teamIdx? }；teamIdx 1~3 缺省 1）
+    ARTIFACT_UNEQUIP = "artifact_unequip", -- 卸下指定出战槽位神器（params: { slot, subSlot?, teamIdx? }）
     ARTIFACT_MERGE   = "artifact_merge",   -- 神器合成（3个同神器同品质→1个高品质）
     ARTIFACT_REROLL  = "artifact_reroll",  -- 神器置换（2个同品质神器→1个同品质不同类型神器）
     ARTIFACT_REFINE_VALUE = "artifact_refine_value", -- 神器洗练数值（消耗特权点，重新roll当前词缀数值）

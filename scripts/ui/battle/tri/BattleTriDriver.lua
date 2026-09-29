@@ -5,7 +5,8 @@
 -- 与 BattleScene（栏1 全引擎）的分工:
 --   栏1 = BattleScene（完整关卡进度/首通/终焉/掉落等）
 --   栏2/3 = 本驱动器的轻量实现: 自动战斗、击杀奖励走 onKill 回调、
---           通关自动推进下一关、己方阵亡 3 秒后原地满血复活（挂机风格）
+--           通关自动推进下一关；己方阵亡无倒计时复活（仅神器/天赋瞬时拦截，
+--           原地复活），救不回的退场后由后排补位（与主线 BattleCasualty 同规则）
 -- 依赖 Phase 2b 的 mount API: 本驱动 update/draw 前先 mount 自己的状态集。
 -- ============================================================================
 local BattleCombat      = require("ui.battle.combat.BattleCombat")
@@ -132,6 +133,8 @@ function BattleTriDriver.new(teamIdx, options)
             getEnemies = function() return drv.enemies end,
             ALLY_CARD_CY  = BattleLayout.FIELD_CY,
             ENEMY_CARD_CY = BattleLayout.FIELD_CY,
+            -- 战斗超时增伤：本场已持续时间 → 敌我双方全局伤害倍率
+            globalDmgMult = require("systems.BattleTimeout").calcMult(drv._timeoutElapsed or 0),
             -- [三战场独立发音] 攻击命中回调：投射物表现 + 音效（与行1 BattleScene 同逻辑；
             -- spawn 落到本行 mount 的 psState，各行互不干扰）
             onAttackHit = function(attacker, target, atkCX, atkCY, tgtCX, tgtCY, result, applyHit)
@@ -208,6 +211,7 @@ function BattleTriDriver.new(teamIdx, options)
         self._labTimedOut = false
         self._labElapsed = 0
         self._labTimeLimit = options.timeLimit or 300
+        self._timeoutElapsed = 0   -- 战斗超时增伤计时（每场重开清零）
         self:activate()
         if self.battleLab then TAL.reset() end
         -- 清理旧战线单位的临时效果，不触碰其他队的神器状态
@@ -256,6 +260,19 @@ function BattleTriDriver.new(teamIdx, options)
                 for _, u in ipairs(self.enemyQueue) do wave[#wave + 1] = u end
                 MAS.applyStaticAffixes(wave)
             end
+            -- Boss 词缀（v2.64）：battle-lab 首通同样模拟 Hard+ Boss 强化
+            local BAS = require("systems.BossAffixSystem")
+            if self.firstClear and entry then
+                BAS.onStageLoad(entry.chapter or 0, SC.getDifficulty(stageId))
+                if BAS.hasAffixes() then
+                    local wave = {}
+                    for _, u in ipairs(self.enemies) do wave[#wave + 1] = u end
+                    for _, u in ipairs(self.enemyQueue) do wave[#wave + 1] = u end
+                    BAS.applyToBosses(wave)
+                end
+            else
+                BAS.clear()
+            end
         end
         -- 单位初始化
         for _, u in ipairs(self.allies) do
@@ -274,9 +291,14 @@ function BattleTriDriver.new(teamIdx, options)
             local Berserk = require("ui.battle.stage.StageBerserk")
             if self.firstClear then Berserk.enter(self.enemies, self.allies) else Berserk.exit() end
         end
+        local skipAllyEnter = self._skipAllyEnter == true
+        self._skipAllyEnter = nil
         BattleCombat.playEnterAnims(self.enemies, -1)
-        BattleCombat.playEnterAnims(self.allies, 1)
-        local enterCount = math.max(#self.allies, #self.enemies)
+        BattleCombat.playEnterAnims(self.allies, 1, { skip = skipAllyEnter })
+        local enterCount = #self.enemies
+        if not skipAllyEnter then
+            enterCount = math.max(#self.allies, #self.enemies)
+        end
         self.introTimer = ENTER_ANIM_DURATION + math.max(0, enterCount - 1) * ENTER_STAGGER
         self.bindContext()
         self.active = true
@@ -425,6 +447,7 @@ function BattleTriDriver.new(teamIdx, options)
             self.teamIdx, tostring(clearedId), tostring(nextId)))
         self._syncedMainStage = nextId
         self._clearReported = false
+        self._skipAllyEnter = true
         local BattleScene = require("ui.battle.scene.BattleScene")
         if BattleScene.beginMapMarch then BattleScene.beginMapMarch(MARCH_DURATION) end
         self:start(nextId)
@@ -434,6 +457,7 @@ function BattleTriDriver.new(teamIdx, options)
     function drv:tick(dt)
         if not self.active then return end
         self._tickDt = dt
+        self._timeoutElapsed = (self._timeoutElapsed or 0) + dt   -- 超时增伤计时
         self:tickRewards(dt)
         local allies, enemies = self.allies, self.enemies
         if #allies == 0 then return end
@@ -453,7 +477,7 @@ function BattleTriDriver.new(teamIdx, options)
             end
         end
 
-        -- 倒下的人留在场上。只有神器或天赋能在本场拉起来，没有倒计时复活。
+        -- 倒下的人先试瞬时拦截复活（神器/天赋，原地复活）；救不回的退场，由后排补位。
         if not self.battleLab then
             for _, u in ipairs(allies) do
                 if u.hp <= 0 and not u._triDeathHandled then
@@ -462,19 +486,29 @@ function BattleTriDriver.new(teamIdx, options)
                         revived = TAL.onAllyDeath(u, allies, BattleCombat.syncUnitHp)
                     end
                     if revived then
-                        local cx, cy = BattleLayout.cardPos("ally", 1)
+                        local idx = 1
+                        for ai, a in ipairs(allies) do
+                            if a == u then idx = ai break end
+                        end
+                        local cx, cy = BattleCombat.getCardPos(allies, idx)
                         BattleCombat.addFloatingText("复活", cx, cy, { 120, 255, 160 }, false)
                     else
                         u._triDeathHandled = true
                         u.atkProgress = 0
                         TM.removeUnit(u)
                         SEM.removeUnit(u)
-                        BattleCombat.setCardAnim(u, { state = "dying", timer = 0, lungeDir = 1, noTombstone = true })
+                        -- [阵亡紧凑] 退场动画播完后移至队尾，存活者前移补位
+                        u._fallenPending = true
+                        u._fallenAt = time.elapsedTime
+                        BattleCombat.setCardAnim(u, { state = "dying", timer = 0, lungeDir = 1,
+                            knockbackMult = 1.0 + (u._overkillRatio or 0) * 2.0, noTombstone = true })
                     end
                 elseif u.hp > 0 then
                     u._triDeathHandled = nil
                 end
             end
+            -- [阵亡紧凑] 与主线 BattleCasualty 同规则：退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
+            require("ui.battle.scene.BattleAllyReset").compactFallen(allies, time.elapsedTime)
         end
 
         -- 存活统计
@@ -571,6 +605,10 @@ function BattleTriDriver.new(teamIdx, options)
         if self.battleLab then
             ART.update(dt)
             require("systems.MapAffixSystem").tick(dt, allies, enemies)
+            local BAS = require("systems.BossAffixSystem")
+            if self.firstClear and BAS.hasAffixes() then
+                BAS.tick(dt, enemies)
+            end
             if self.firstClear then
                 require("ui.battle.stage.StageBerserk").update(dt, enemies, allies)
             end

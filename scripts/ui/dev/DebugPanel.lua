@@ -153,16 +153,6 @@ local equipLevel      = 1    -- 1~99
 local MAX_EQUIP_QUALITY  = 5
 local MAX_EQUIP_LEVEL    = 99
 
--- 遗物生成参数
-local relicType    = 1    -- 1~5 (岩龟/毒蛇/白鹿/灰狼/猎鹰)
-local relicQuality = 1    -- 1~6
-local MAX_RELIC_TYPE    = 5
-local MAX_RELIC_QUALITY = 6
-local RELIC_TYPE_NAMES  = { "岩龟", "毒蛇", "白鹿", "灰狼", "猎鹰" }
-local RELIC_QUALITY_NAMES = { "普通", "优质", "稀有", "史诗", "传说", "至臻" }
--- [B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表
-local RELIC_QUALITY_COLORS = DarkIcon.QUALITY_TRIM
-
 -- 资源获取选择器
 local selectedResIdx = 1   -- 当前选中的资源索引 (1~#GameConfig.Resources)
 
@@ -603,53 +593,6 @@ function DebugPanel.draw(vg, designOffsetX, screenDesignW)
     registerBtn("equip_lv_inc", rightX, curY, arrowW, BTN_H)
     curY = curY + BTN_H + SECTION_GAP
 
-    -- ==================== 遗物生成 ====================
-    nvgFontSize(vg, 22)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(LABEL_COLOR[1], LABEL_COLOR[2], LABEL_COLOR[3], LABEL_COLOR[4]))
-    nvgText(vg, btnX, curY + 10, "遗物生成", nil)
-    curY = curY + 20
-
-    -- 类型选择器: [◀] [类型名] [▶]
-    drawRoundedBtn(vg, btnX, curY, arrowW, BTN_H, 80, 80, 100, 255, "◀", 8)
-    registerBtn("relic_t_dec", btnX, curY, arrowW, BTN_H)
-    midX = btnX + arrowW + 4
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, midX, curY, midW, BTN_H, 8)
-    nvgFillColor(vg, nvgRGBA(50, 50, 65, 255))
-    nvgFill(vg)
-    nvgFontSize(vg, 24)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, midX + midW * 0.5, curY + BTN_H * 0.5, "类型: " .. RELIC_TYPE_NAMES[relicType], nil)
-    rightX = midX + midW + 4
-    drawRoundedBtn(vg, rightX, curY, arrowW, BTN_H, 80, 80, 100, 255, "▶", 8)
-    registerBtn("relic_t_inc", rightX, curY, arrowW, BTN_H)
-    curY = curY + BTN_H + BTN_GAP
-
-    -- 品质选择器: [◀] [品质名 + 颜色] [▶]
-    drawRoundedBtn(vg, btnX, curY, arrowW, BTN_H, 80, 80, 100, 255, "◀", 8)
-    registerBtn("relic_q_dec", btnX, curY, arrowW, BTN_H)
-    midX = btnX + arrowW + 4
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, midX, curY, midW, BTN_H, 8)
-    nvgFillColor(vg, nvgRGBA(50, 50, 65, 255))
-    nvgFill(vg)
-    local rqc = RELIC_QUALITY_COLORS[relicQuality] or { 255, 255, 255 }
-    nvgFontSize(vg, 24)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(rqc[1], rqc[2], rqc[3], 255))
-    nvgText(vg, midX + midW * 0.5, curY + BTN_H * 0.5, "品质: " .. RELIC_QUALITY_NAMES[relicQuality], nil)
-    rightX = midX + midW + 4
-    drawRoundedBtn(vg, rightX, curY, arrowW, BTN_H, 80, 80, 100, 255, "▶", 8)
-    registerBtn("relic_q_inc", rightX, curY, arrowW, BTN_H)
-    curY = curY + BTN_H + BTN_GAP
-
-    -- [生成遗物] 按钮
-    drawRoundedBtn(vg, btnX, curY, btnW, BTN_H, 60, 140, 120, 255, "生成遗物", 8)
-    registerBtn("relic_gen", btnX, curY, btnW, BTN_H)
-    curY = curY + BTN_H + SECTION_GAP
-
     -- ==================== 资源获取 ====================
     nvgFontSize(vg, 22)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -927,27 +870,6 @@ function DebugPanel.handleInput(sx, sy)
                 equipLevel = equipLevel + 1
                 if equipLevel > MAX_EQUIP_LEVEL then equipLevel = 1 end
 
-            -- ====== 遗物生成 ======
-            elseif btn.id == "relic_t_dec" then
-                relicType = relicType - 1
-                if relicType < 1 then relicType = MAX_RELIC_TYPE end
-            elseif btn.id == "relic_t_inc" then
-                relicType = relicType + 1
-                if relicType > MAX_RELIC_TYPE then relicType = 1 end
-            elseif btn.id == "relic_q_dec" then
-                relicQuality = relicQuality - 1
-                if relicQuality < 1 then relicQuality = MAX_RELIC_QUALITY end
-            elseif btn.id == "relic_q_inc" then
-                relicQuality = relicQuality + 1
-                if relicQuality > MAX_RELIC_QUALITY then relicQuality = 1 end
-            elseif btn.id == "relic_gen" then
-                getClient().sendAction(getProtocol().ACTION_TYPES.GM_GIVE_RELIC, {
-                    relicType = relicType,
-                    quality   = relicQuality,
-                })
-                print("[Debug] 生成遗物 type=" .. RELIC_TYPE_NAMES[relicType]
-                    .. " quality=" .. RELIC_QUALITY_NAMES[relicQuality])
-
             elseif btn.id == "res_dec" then
                 local total = #GameConfig.Resources
                 selectedResIdx = selectedResIdx - 1
@@ -1054,8 +976,6 @@ function DebugPanel.handleInput(sx, sy)
                 equipNums = { weapon = 1, offhand = 1, armor = 1, helmet = 1, shoes = 1, accessory = 1 }
                 equipQuality = 1
                 equipLevel = 1
-                relicType = 1
-                relicQuality = 1
                 selectedResIdx = 1
 
                 -- 3. 调用 Standalone 的重启流程（重置所有客户端状态 + 回到横屏标题）

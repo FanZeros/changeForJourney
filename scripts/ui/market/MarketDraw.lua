@@ -24,7 +24,6 @@ function M.bind(deps)
     local TownPageChrome = deps.TownPageChrome
     local UPPER_DIST = deps.UPPER_DIST
     local drawImageCentered = deps.drawImageCentered
-    local drawKeyConfirmDialog = deps.drawKeyConfirmDialog
     local drawPurchaseDialog = deps.drawPurchaseDialog
     local drawTextStroke = deps.drawTextStroke
     local easeInCubic = deps.easeInCubic
@@ -198,8 +197,8 @@ function M.bind(deps)
     })
 
     -- 弹窗（在裁剪区域外绘制，遮罩覆盖全屏）
+    -- 神器宝箱钥匙补购弹窗已迁移至教堂·神器宝箱页签
     drawPurchaseDialog(vg)
-    drawKeyConfirmDialog(vg)
 
     nvgRestore(vg)  -- 下半部分 end
 

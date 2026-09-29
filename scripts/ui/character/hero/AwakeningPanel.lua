@@ -9,12 +9,17 @@ local DrawUtil   = require("core.DrawUtil")
 local AKC        = require("config.AwakeningConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
 local I18n       = require("core.I18n")
+local KeywordText = require("ui.widget.KeywordText")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
 local BF = require("systems.ButtonFeedback")
 
 local M = {}
+
+-- 觉醒效果关键词富文本（白字与面板一致）；弹窗由 CharacterDetailDraw 帧末统一绘制
+M.kwText = KeywordText.new({ textColor = { 255, 255, 255 } })
 
 -- 全屏背景 / 顶栏
 local BG_CX, BG_CY = 540, 1200
@@ -82,7 +87,6 @@ local imgBg            = -1
 local imgTitleBg       = -1
 local imgActivateBtn   = -1
 local imgSelectArrow   = -1
-local imgBadges        = {}
 local imgClassIcons    = {}
 
 ---@type table<number, table>
@@ -193,10 +197,6 @@ function M.initImages(vg)
     imgActivateBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgSelectArrow = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_JT.png", 0)
 
-    imgBadges["R"]   = nvgCreateImage(vg, "image/品质框/UI_PZBZ_R.png", 0)
-    imgBadges["SR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SR.png", 0)
-    imgBadges["SSR"] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SSR.png", 0)
-
     cgCache = {}
     print("[AwakeningPanel] initImages OK (mindscape slices)")
 end
@@ -228,6 +228,7 @@ end
 ---@param heroId? number
 function M.reset(heroId)
     selectedNode = 1
+    M.kwText:clear()   -- 切角色时清关键词弹窗/热区
     if heroId then
         local activated = getActivatedNodes(heroId)
         for i = 1, NODE_COUNT do
@@ -382,12 +383,22 @@ function M.draw(vg, heroId)
 
     drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
 
-    local qualityName = HC.QUALITY_INFO[heroCfg.quality]
-        and HC.QUALITY_INFO[heroCfg.quality].name or "R"
-    local badgeImg = imgBadges[qualityName]
-    if badgeImg and badgeImg >= 0 then
-        drawImageCentered(vg, badgeImg, BADGE_CX, BADGE_CY, BADGE_W, BADGE_H, 1.0)
-    end
+    -- [统一角色框] 品质徽章：贴图（旧名R/SR/SSR且缺UR）→ 品质色矢量铭牌
+    local qualityInfo = HC.QUALITY_INFO[heroCfg.quality]
+    local qualityName = qualityInfo and qualityInfo.name or "?"
+    local qr, qg, qb = HeroFrame.qualityColor(heroCfg.quality)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, BADGE_CX - BADGE_W * 0.5, BADGE_CY - BADGE_H * 0.5, BADGE_W, BADGE_H, 10)
+    nvgFillColor(vg, nvgRGBA(12, 10, 8, 210))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(qr, qg, qb, 230))
+    nvgStrokeWidth(vg, 3)
+    nvgStroke(vg)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 30)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(qr, qg, qb, 255))
+    nvgText(vg, BADGE_CX, BADGE_CY, qualityName, nil)
     drawImageCentered(vg, imgTitleBg, TITLE_BG_CX, TITLE_BG_CY, TITLE_BG_W, TITLE_BG_H, 1.0)
 
     local classIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -435,11 +446,10 @@ function M.draw(vg, heroId)
     nvgFillColor(vg, nvgRGBA(0xff, 0xef, 0x67, 255))
     nvgText(vg, SUB_TITLE_CX, SUB_TITLE_CY, nodeTitle, nil)
 
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, EFFECT_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgTextBox(vg, EFFECT_CX - EFFECT_W * 0.5, EFFECT_CY - EFFECT_H * 0.5, EFFECT_W, nodeEffect, nil)
+    -- 关键词富文本：觉醒效果说明中的机制词可点击弹出解释（弹窗由 CharacterDetailDraw 帧末绘制）
+    M.kwText:draw(vg, nodeEffect,
+        EFFECT_CX - EFFECT_W * 0.5, EFFECT_CY - EFFECT_H * 0.5, EFFECT_W,
+        EFFECT_FONT, nil, EFFECT_CX)
 
     local selectedCost = AKC.getShardCost(selectedNode)
     local shardSufficient = currentShards >= selectedCost and selectedCost > 0
@@ -447,7 +457,8 @@ function M.draw(vg, heroId)
     local costText = selectedCost > 0 and ("/" .. selectedCost) or ""
     local fullText = shardNumText .. costText
     DrawUtil.drawShardIcon(vg, heroId, SHARD_ICON_CX, SHARD_ROW_CY, SHARD_ICON_SIZE, 1.0)
-    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0xaa, 0xaa, 0xaa }
+    -- 碎片数量：够=亮青，不够=棕色
+    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8d, 0x5f, 0x41 }
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 66)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -455,29 +466,31 @@ function M.draw(vg, heroId)
     nvgText(vg, SHARD_ICON_CX + SHARD_ICON_SIZE * 0.5 + 18, SHARD_ROW_CY, fullText, nil)
 
     local currentNodeActive = activated[selectedNode]
-    local btnText, btnAlpha, btnTextAlpha
+    local btnText, btnAlpha, btnDisabled
     if currentNodeActive then
         btnText = "已嵌合"
         btnAlpha = 0.5
-        btnTextAlpha = 0.38
+        btnDisabled = true
     elseif selectedNode > nextNode then
         btnText = "需先嵌合前阶"
         btnAlpha = 0.5
-        btnTextAlpha = 0.38
+        btnDisabled = true
     elseif not shardSufficient then
         btnText = "碎片不足"
         btnAlpha = 0.5
-        btnTextAlpha = 0.38
+        btnDisabled = true
     else
         btnText = "嵌合"
         btnAlpha = 1.0
-        btnTextAlpha = 0.75
+        btnDisabled = false
     end
     local _bfAct = BF.begin(vg, "awp_activate", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, imgActivateBtn, BTN_CX, BTN_CY, BTN_W, BTN_H, btnAlpha)
-    local tr = math.floor(244 * btnTextAlpha)
-    local tg = math.floor(237 * btnTextAlpha)
-    local tb = math.floor(224 * btnTextAlpha)
+    -- 按钮文字：可嵌合=亮骨白，禁用=棕色
+    local tr, tg, tb = 244, 237, 224
+    if btnDisabled then
+        tr, tg, tb = 0x8d, 0x5f, 0x41
+    end
     drawTextStroke(vg, BTN_CX, BTN_CY, btnText, BTN_TEXT_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4,
         { strokeColor = { 0x2a, 0x1c, 0x14 } })
@@ -485,6 +498,11 @@ function M.draw(vg, heroId)
 end
 
 function M.handleInput(dx, dy, heroId)
+    -- 效果描述关键词点击（弹窗的关闭由 CharacterDetail.handleInput 统一处理）
+    if M.kwText:handleInput(dx, dy) then
+        return true
+    end
+
     -- 切片命中（斜切平行四边形），重叠处优先当前选中
     local hits = {}
     for i = 1, NODE_COUNT do

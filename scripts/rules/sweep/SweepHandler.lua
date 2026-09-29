@@ -13,7 +13,8 @@ local handlers = {}
 
 handlers[Protocol.ACTION_TYPES.SWEEP] = function(uid, params)
     local count = params and (params.count or params.times) or 1
-    local ok, err, result = SweepService.Sweep(uid, count)
+    local teamIdx = params and params.teamIdx or nil
+    local ok, err, result = SweepService.Sweep(uid, count, teamIdx)
     if not ok then
         return { success = false, reason = err }
     end

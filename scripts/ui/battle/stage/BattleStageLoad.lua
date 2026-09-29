@@ -4,6 +4,7 @@
 -- ============================================================================
 
 local MAS = require("systems.MapAffixSystem")
+local BAS = require("systems.BossAffixSystem")
 local Diag = require("systems.BattleDiag")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
 local BattleEffects = require("ui.battle.combat.BattleEffects")
@@ -101,8 +102,17 @@ function M.load(ctx, stageId, skipBattleStart)
             for _, u in ipairs(ctx.enemyQueue) do allEnemiesToBuff[#allEnemiesToBuff+1] = u end
             MAS.applyStaticAffixes(allEnemiesToBuff)
         end
+        -- ---- Boss 词缀（v2.64）：Hard+ 章节 Boss 专属强化，仅首通 ----
+        BAS.onStageLoad(entry.chapter, stageConfig.getDifficulty(stageId))
+        if BAS.hasAffixes() then
+            local allEnemiesForBoss = {}
+            for _, u in ipairs(ctx.enemies) do allEnemiesForBoss[#allEnemiesForBoss+1] = u end
+            for _, u in ipairs(ctx.enemyQueue) do allEnemiesForBoss[#allEnemiesForBoss+1] = u end
+            BAS.applyToBosses(allEnemiesForBoss)
+        end
     else
         MAS.onStageLoad(0, ctx.allies)  -- 挂机模式：清除词缀
+        BAS.clear()                     -- 挂机模式：清除 Boss 词缀
     end
 
     -- [EnemyGuard] loadStage 重置 guard（每次加载新关都允许再次报警）
@@ -128,6 +138,7 @@ function M.load(ctx, stageId, skipBattleStart)
 
     -- 重置战斗状态
     ctx.battleActive = true
+    ctx.battleTimeoutElapsed = 0   -- 新的一场战斗：超时增伤计时清零
     if ctx.isFirstClear then
         ctx.firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     else
@@ -138,7 +149,7 @@ function M.load(ctx, stageId, skipBattleStart)
     ProjectileSystem.reset()
     TM.reset()   -- 清空仇恨表
     SEM.reset()  -- 清空状态效果
-    RCH.initBattle(ctx.allies)  -- 初始化遗物条件词条（战斗开始时效果在此触发）
+    RCH.initBattle(ctx.allies)  -- 初始化条件词条运行时（战斗开始时效果在此触发）
     ART.initBattle(ctx.allies)  -- 初始化神器战斗运行时效果
     for _, u in ipairs(ctx.allies) do
         u.atkProgress = 0
@@ -147,9 +158,9 @@ function M.load(ctx, stageId, skipBattleStart)
         u.atkProgress = 0
     end
 
-    -- 入场动画（交错滑入）
+    -- 入场动画（交错滑入）。前进切关时己方刚在走路，不再重播角色入场。
     BattleCombat.playEnterAnims(ctx.enemies, -1)  -- 敌方从上方滑入
-    BattleCombat.playEnterAnims(ctx.allies, 1)    -- 己方从下方滑入
+    BattleCombat.playEnterAnims(ctx.allies, 1, { skip = skipBattleStart == true })
 
     -- 重置台词气泡
     SpeechBubble.reset()

@@ -70,8 +70,13 @@ local CONFIGS = {
         arc = "shallow",
     },
     [8] = {
-        type = "melee", imgKey = "EF_ATK_8",
-        imgW = 200, imgH = 200, duration = 0.45,
+        -- 愤怒的小雀：蓝色小鸟投掷物（EF_ATK_8_BLUE），抛物线抛投 + 蓝色拖尾 + 自转
+        type = "fly", imgKey = "EF_ATK_8_BLUE",
+        sfxKey = "EF_ATK_8",   -- 贴图改名后音效仍用原 EF_ATK_8
+        imgW = 200, imgH = 200, duration = 0.55,
+        trail = { 90, 160, 255 },
+        arc = "lob",
+        rotate = true,
     },
     -- 9: 自然蝴蝶 — 贝塞尔曲线
     [9] = {
@@ -303,11 +308,6 @@ function ProjectileSystem.prewarmOne(key)
     getImage(key)
 end
 
--- [看情况抛物线] fly 直线弹的飞行距离 ≥ ARC_TRIGGER_DIST 时升级为贝塞尔弧线
--- （条带空间: 前排对峙≈193px 直线，跨场≈800px 弧线；可按观感调整）
-local ARC_TRIGGER_DIST = 300
-function ProjectileSystem.setArcTriggerDist(d) ARC_TRIGGER_DIST = d or 300 end
-
 --- 绘制投射物图片（居中，支持旋转/缩放/透明度）
 --- 素材默认朝右(+X方向)，angle=0时朝右，angle=-π/2时朝上
 local function drawProjectileImage(vg, imgHandle, cx, cy, w, h, angle, alpha)
@@ -404,24 +404,58 @@ local function drawTrail(vg, cx, cy, prevCX, prevCY, color, t, size)
     nvgFill(vg)
 end
 
+-- [抛物线轨迹] 所有投掷物的默认拖尾色（配置未指定 trail 时使用）
+local DEFAULT_TRAIL = { 235, 235, 245 }
+
+--- 抛物线（二次贝塞尔，弧顶向上）上的点
+---@return number cx
+---@return number cy
+local function arcPoint(proj, t)
+    local lift = (proj.arcLift or 0) * renderScale
+    local bow = math.sin(t * math.pi)
+    local lx = proj.laneX or 0
+    local ly = proj.laneY or 0
+    if lift <= 0.5 then
+        local x = proj.startX + (proj.endX - proj.startX) * t + lx * bow
+        local y = proj.startY + (proj.endY - proj.startY) * t + ly * bow
+        return x, y
+    end
+    local midX = (proj.startX + proj.endX) * 0.5 + lx
+    local midY = (proj.startY + proj.endY) * 0.5 + ly
+    return bezier2(proj.startX, proj.startY, midX, midY - lift, proj.endX, proj.endY, t)
+end
+
+--- 抛物线在 t 处的切线角度（无弧时退化为直线角度）
+local function arcAngle(proj, t)
+    local lift = (proj.arcLift or 0) * renderScale
+    local dx = proj.endX - proj.startX
+    local dy = proj.endY - proj.startY
+    if lift <= 0.5 then
+        return math.atan(dy, dx)
+    end
+    local midX = (proj.startX + proj.endX) * 0.5
+    local midY = (proj.startY + proj.endY) * 0.5
+    local ctrlX, ctrlY = midX, midY - lift
+    local u = 1 - t
+    local tx = 2 * u * (ctrlX - proj.startX) + 2 * t * (proj.endX - ctrlX)
+    local ty = 2 * u * (ctrlY - proj.startY) + 2 * t * (proj.endY - ctrlY)
+    return math.atan(ty, tx)
+end
+
 -- ======================== 各类型绘制函数 ========================
 
---- 直线飞行投射物
---- 方向策略：素材朝右(+X), 用 atan2 得到飞行角度直接旋转
+--- 直线/抛物线飞行投射物
+--- [抛物线轨迹] 位置沿 arcPoint（有 arcLift 时为二次贝塞尔上抛弧），朝向取切线
 local function updateAndDrawFly(proj, vg, t)
     local cfg = proj.cfg
 
-    -- 线性插值（恒定速度）
-    local cx = proj.startX + (proj.endX - proj.startX) * t
-    local cy = proj.startY + (proj.endY - proj.startY) * t
+    -- 抛物线插值（无弧时 arcPoint 退化为直线）
+    local cx, cy = arcPoint(proj, t)
 
-    -- 飞行角度：atan2(dy, dx)
-    -- 素材朝右 = 角度0, 所以直接用这个角度旋转即可
-    local dx = proj.endX - proj.startX
-    local dy = proj.endY - proj.startY
-    local flyAngle = math.atan(dy, dx)
+    -- 飞行角度：抛物线切线
+    local flyAngle = arcAngle(proj, t)
 
-    -- 旋转效果（飞镖等）: 在飞行角度基础上叠加自转
+    -- 旋转效果（飞镖/小鸟等）: 在飞行角度基础上叠加自转
     local drawAngle = flyAngle
     if cfg.rotate then
         drawAngle = drawAngle + t * math.pi * 8
@@ -443,13 +477,11 @@ local function updateAndDrawFly(proj, vg, t)
         alpha = 1.0 - (t - 0.8) / 0.2
     end
 
-    -- 绘制拖尾
-    if cfg.trail then
-        local prevT = math.max(0, t - 0.08)
-        local prevX = proj.startX + (proj.endX - proj.startX) * prevT
-        local prevY = proj.startY + (proj.endY - proj.startY) * prevT
-        drawTrail(vg, cx, cy, prevX, prevY, cfg.trail, t, cfg.imgW * 0.5)
-    end
+    -- 拖尾（未配置时用默认轨迹色，保证所有投掷物都有抛物线轨迹）
+    local trail = cfg.trail or DEFAULT_TRAIL
+    local prevT = math.max(0, t - 0.08)
+    local prevX, prevY = arcPoint(proj, prevT)
+    drawTrail(vg, cx, cy, prevX, prevY, trail, t, cfg.imgW * 0.5)
 
     -- 绘制投射物
     local imgHandle = getImage(cfg.imgKey)
@@ -465,11 +497,10 @@ local function updateAndDrawShake(proj, vg, t)
     local dx = proj.endX - proj.startX
     local dy = proj.endY - proj.startY
     local dist = math.sqrt(dx * dx + dy * dy)
-    local flyAngle = math.atan(dy, dx)
 
-    -- 线性插值基准位置
-    local baseX = proj.startX + dx * t
-    local baseY = proj.startY + dy * t
+    -- [抛物线轨迹] 基准位置沿抛物线（无弧时退化为直线）
+    local baseX, baseY = arcPoint(proj, t)
+    local flyAngle = arcAngle(proj, t)
 
     -- 垂直于飞行方向的抖动偏移
     local perpX = -dy / math.max(dist, 1)
@@ -487,6 +518,12 @@ local function updateAndDrawShake(proj, vg, t)
         alpha = 1.0 - (t - 0.8) / 0.2
     end
 
+    -- [抛物线轨迹] 默认拖尾（配置有 trail 时用配置色）
+    local trail = cfg.trail or DEFAULT_TRAIL
+    local prevT = math.max(0, t - 0.08)
+    local pX, pY = arcPoint(proj, prevT)
+    drawTrail(vg, cx, cy, pX, pY, trail, t, cfg.imgW * 0.4)
+
     local imgHandle = getImage(cfg.imgKey)
     drawProjectileImage(vg, imgHandle, cx, cy, cfg.imgW, cfg.imgH, flyAngle, alpha)
 end
@@ -499,33 +536,70 @@ local function arcStyleOf(cfg)
     if cfg.arc then return cfg.arc end
     if cfg.type == "bezier" then return "lob" end
     if cfg.type == "fly" then return "shallow" end
+    -- [抛物线轨迹] 抖动弹/穿透弹也补一段浅弧，避免贴地直线显得呆板
+    if cfg.type == "shake" or cfg.type == "pierce" then return "shallow" end
     return "straight"
 end
 
-local function arcLiftFor(cfg, dist)
+local function arcLiftFor(cfg, dist, lane, slot)
     local style = arcStyleOf(cfg)
+    lane = lane or 0
+    slot = slot or 0
     if style == "straight" then return 0 end
+    local lift
     if style == "shallow" then
-        return math.max(14, math.min(56, dist * 0.06))
+        lift = math.max(28, math.min(72, dist * 0.10))
     elseif style == "lob" then
-        return math.max(30, math.min(130, dist * 0.18))
+        lift = math.max(70, math.min(150, dist * 0.24))
     elseif style == "heal" then
-        return math.max(40, math.min(108, dist * 0.22))
+        lift = math.max(88, math.min(168, dist * 0.28))
     elseif style == "float" then
-        return math.max(18, math.min(64, dist * 0.11))
+        lift = math.max(48, math.min(110, dist * 0.16))
+    else
+        return 0
     end
-    return 0
+    -- 同时在飞的弹按出生顺序分三层高度，避免叠成一条线
+    local band = slot % 3
+    if band == 1 then
+        lift = lift * 1.38
+    elseif band == 2 then
+        lift = lift * 0.68
+    end
+    return lift
+end
+
+local function assignFlightLane(proj)
+    local slot = #PS_BCS.projectiles
+    proj.flightSlot = slot
+    local lane = (slot % 5) - 2
+    proj.lane = lane
+    local dx = proj.endX - proj.startX
+    local dy = proj.endY - proj.startY
+    local dist = math.sqrt(dx * dx + dy * dy)
+    if dist < 1 then dist = 1 end
+    local side = lane * math.min(34, dist * 0.045)
+    local nx = -dy / dist * side
+    local ny = dx / dist * side
+    proj.endX = proj.endX + nx * 0.15
+    proj.endY = proj.endY + ny * 0.15
+    proj.laneX = nx
+    proj.laneY = ny
+    local base = proj.cfg.duration or 0.5
+    proj.durationScale = 0.86 + (slot % 4) * 0.09
+    if proj.cfg.arc == "lob" or proj.cfg.type == "bezier" then
+        proj.durationScale = proj.durationScale + 0.08
+    end
+    proj.arcLift = arcLiftFor(proj.cfg, dist, lane, slot)
 end
 
 local function prepareArc(proj)
     local dx = proj.endX - proj.startX
     local dy = proj.endY - proj.startY
     local dist = math.sqrt(dx * dx + dy * dy)
-    local lift = arcLiftFor(proj.cfg, dist)
-    proj.arcLift = lift
-    if lift > 6 and proj.cfg.type == "fly" then
-        proj.arcUpgrade = true
+    if not proj.arcLift then
+        proj.arcLift = arcLiftFor(proj.cfg, dist, proj.lane, proj.flightSlot)
     end
+    local lift = proj.arcLift
     local key = tostring(proj.cfg.imgKey or proj.cfg.type)
     if not ARC_LOGGED[key] then
         ARC_LOGGED[key] = true
@@ -550,9 +624,10 @@ local function updateAndDrawBezier(proj, vg, t)
         dist = 1
     end
 
-    local lift = (proj.arcLift or arcLiftFor(cfg, dist)) * renderScale
-    local midX = (proj.startX + effEndX) * 0.5
-    local midY = (proj.startY + effEndY) * 0.5
+    local lift = (proj.arcLift or arcLiftFor(cfg, dist, proj.lane, proj.flightSlot)) * renderScale
+    local bow = 1
+    local midX = (proj.startX + effEndX) * 0.5 + (proj.laneX or 0) * bow
+    local midY = (proj.startY + effEndY) * 0.5 + (proj.laneY or 0) * bow
     local ctrlX = midX
     local ctrlY = midY - lift
 
@@ -580,8 +655,9 @@ local function updateAndDrawBezier(proj, vg, t)
         alpha = 1.0 - (t - 0.85) / 0.15
     end
 
-    -- 拖尾（金色发光）
-    drawTrail(vg, cx, cy, prevX, prevY, { 255, 220, 100 }, t, cfg.imgW * 0.4)
+    -- 拖尾（未配置时金色发光；配置了 trail 用配置色）
+    local trail = cfg.trail or { 255, 220, 100 }
+    drawTrail(vg, cx, cy, prevX, prevY, trail, t, cfg.imgW * 0.4)
 
     local imgHandle = getImage(cfg.imgKey)
     drawProjectileImage(vg, imgHandle, cx, cy, cfg.imgW, cfg.imgH, flyAngle, alpha)
@@ -922,22 +998,27 @@ function ProjectileSystem.hasMonsterProjectile(effectKey)
     return effectKey ~= nil and MONSTER_CONFIGS[effectKey] ~= nil
 end
 
+--- 音效键：优先 cfg.sfxKey（贴图改名时保留原音），回退 imgKey
+local function sfxKeyOf(cfg)
+    return cfg and (cfg.sfxKey or cfg.imgKey) or nil
+end
+
 --- 近战/闪电出手即播；远程弹在命中时再播，避免飞到一半才听见
 local function playAtkSfxOnSpawn(cfg)
-    if not cfg or not cfg.imgKey then return end
+    if not cfg or not sfxKeyOf(cfg) then return end
     local t = cfg.type
     if t == "melee" or t == "lightning" then
-        GameSFX.play(cfg.imgKey, BattleStats.mountedTeam())
+        GameSFX.play(sfxKeyOf(cfg), BattleStats.mountedTeam())
     end
 end
 
 local function playAtkSfxOnHit(proj)
     if not proj or proj.sfxPlayed then return end
     local cfg = proj.cfg
-    if not cfg or not cfg.imgKey then return end
+    if not cfg or not sfxKeyOf(cfg) then return end
     local t = cfg.type
     if t ~= "melee" and t ~= "lightning" then
-        GameSFX.play(cfg.imgKey, BattleStats.mountedTeam())
+        GameSFX.play(sfxKeyOf(cfg), BattleStats.mountedTeam())
     end
     proj.sfxPlayed = true
 end
@@ -1006,6 +1087,7 @@ function ProjectileSystem.spawnByKey(effectKey, startX, startY, endX, endY, onAr
     if cfg.type == "bezier" then
         proj.bezierSide = 1
     end
+    assignFlightLane(proj)
     prepareArc(proj)
 
     -- [看情况抛物线] 直线弹按弧高决定要不要抬成抛物线，弧顶始终向上
@@ -1063,6 +1145,7 @@ function ProjectileSystem.spawn(heroId, startX, startY, endX, endY, onArrive, op
     if cfg.type == "bezier" then
         proj.bezierSide = 1
     end
+    assignFlightLane(proj)
     prepareArc(proj)
 
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
@@ -1099,6 +1182,7 @@ function ProjectileSystem.spawnPierce(source, startX, startY, endX, endY, hitEve
         onArrive     = opts and opts.onArrive or nil,
         arrived      = false,
     }
+    prepareArc(proj)  -- [抛物线轨迹] 穿透弹也按浅弧飞行
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
     return true
 end
@@ -1143,6 +1227,7 @@ function ProjectileSystem.spawnSkill(heroId, startX, startY, endX, endY, onArriv
         proj.ringY = startY + math.sin(angleOnRing) * radius
         proj.spawnAngle = math.atan(endY - startY, endX - startX)
     end
+    assignFlightLane(proj)
     prepareArc(proj)
 
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
@@ -1180,6 +1265,7 @@ function ProjectileSystem.spawnTalent(talentProjKey, startX, startY, endX, endY,
             proj.bezierSide = (math.random() > 0.5) and 1 or -1
         end
     end
+    assignFlightLane(proj)
     prepareArc(proj)
 
     PS_BCS.projectiles[#PS_BCS.projectiles + 1] = proj
@@ -1200,7 +1286,7 @@ function ProjectileSystem.update(dt)
 
         -- [单发穿透] 按飞行进度依次触发沿线命中事件
         if proj.pierceEvents and not proj.arrived then
-            local pdur = (proj.cfg and proj.cfg.duration) or 0.5
+            local pdur = ((proj.cfg and proj.cfg.duration) or 0.5) * (proj.durationScale or 1)
             if pdur <= 0 then pdur = 0.01 end
             local pt = math.min(1, proj.timer / pdur)
             while proj.nextEventIdx <= #proj.pierceEvents
@@ -1229,7 +1315,7 @@ function ProjectileSystem.update(dt)
 
         -- 到达时触发回调（仅一次）
         -- hitRatio: 闪电链等视觉先到达的投射物，按比例提前触发伤害
-        local duration = (proj.cfg and proj.cfg.duration) or 0.01
+        local duration = ((proj.cfg and proj.cfg.duration) or 0.01) * (proj.durationScale or 1)
         if duration <= 0 then duration = 0.01 end
         local hitTime = duration
         if proj.cfg.hitRatio then
@@ -1306,12 +1392,11 @@ end
 --- 绘制所有活跃投射物
 function ProjectileSystem.draw(vg)
     for _, proj in ipairs(PS_BCS.projectiles) do
-        local duration = (proj.cfg and proj.cfg.duration) or 0.01
+        local duration = ((proj.cfg and proj.cfg.duration) or 0.01) * (proj.durationScale or 1)
         if duration <= 0 then duration = 0.01 end
         local t = math.min(1, proj.timer / duration)
-        local trajType = proj.cfg.type
-        if proj.arcUpgrade then trajType = "bezier" end  -- [看情况抛物线]
-        local drawFunc = DRAW_FUNCS[trajType]
+        -- [抛物线轨迹] fly/pierce/shake/bezier 均在各自绘制函数内按 arcPoint 走弧
+        local drawFunc = DRAW_FUNCS[proj.cfg.type]
         if drawFunc then
             nvgSave(vg)
             drawFunc(proj, vg, t)

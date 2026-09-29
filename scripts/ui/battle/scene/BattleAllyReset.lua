@@ -71,6 +71,7 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
     u.reviveTimer = nil
     u._fallen = nil
     u._fallenPending = nil
+    u._fallenAt = nil
     BattleCombat.clearCardAnim(u)
     if u.attrs then
         local restored = M.restoreFromSnapshot(u)
@@ -97,12 +98,9 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
                             newUnit.armorType = eqArmorType
                         end
                     end
-                    local RelicBridge = require("systems.RelicBridge")
-                    local relicConds = RelicBridge.applyToUnit(newUnit.attrs, newUnit.classId or u.classId)
-                    if relicConds and #relicConds > 0 then
-                        u.relicConditions = relicConds
-                    end
-                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
+                    -- [927 遗物后端移除] RelicBridge 已删除，不再应用遗物条件
+                    -- [928 三队并行] ArtifactBridge 保留 teamIdx 参数（多队神器数据隔离）
+                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot, nil, u.artifactTeamIdx or 1)
                     if artifactEffects and #artifactEffects > 0 then
                         u.artifactEffects = artifactEffects
                     else
@@ -143,6 +141,47 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
                 tostring(u.name), tostring(u.heroId),
                 healAmt, baseH, snapH, u.hp, u.maxHp or 0
             ))
+        end
+    end
+end
+
+--- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格（四条战斗线共用）
+--- 时间兜底：动画状态若卡住不到 gone（anim 被覆盖/清除/特效开关等），
+--- 退场登记后超过 退场时长+0.3s 仍悬挂就强制紧凑，杜绝"空槽不前移"卡死。
+---@param allies table[]
+---@param now number time.elapsedTime
+function M.compactFallen(allies, now)
+    local BattleCombatAnim = require("ui.battle.combat.BattleCombatAnim")
+    local BattleLayout = require("core.BattleLayout")
+    local grace = (BattleCombatAnim.DEATH_ANIM_DURATION or 0.5) + 0.3
+    for i = #allies, 1, -1 do
+        local u = allies[i]
+        if u._fallenPending then
+            local st = BattleCombat.getAnimState(u)
+            if u.hp > 0 then
+                -- 退场途中被拉起：取消紧凑，留在原位
+                u._fallenPending = nil
+                u._fallenAt = nil
+            elseif st == "gone" or st == nil
+                or (u._fallenAt ~= nil and now - u._fallenAt >= grace) then
+                if st ~= "gone" and st ~= nil then
+                    print(string.format("[AllyCompact] 动画状态卡住兜底: name=%s st=%s 悬挂%.2fs → 强制紧凑",
+                        tostring(u.name), tostring(st), now - u._fallenAt))
+                    BattleCombat.clearCardAnim(u)
+                end
+                u._fallenPending = nil
+                u._fallenAt = nil
+                u._fallen = true
+                table.remove(allies, i)
+                table.insert(allies, u)
+                for j = i, #allies - 1 do
+                    local moved = allies[j]
+                    if moved.hp > 0 then
+                        BattleCombat.setCardAnim(moved, { state = "advance", timer = 0, lungeDir = 1,
+                            advanceDist = BattleLayout.STRIP_PITCH })
+                    end
+                end
+            end
         end
     end
 end

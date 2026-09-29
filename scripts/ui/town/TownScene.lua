@@ -4,6 +4,20 @@
 -- ============================================================================
 
 local GameState  = require("core.GameState")
+
+-- [教堂30级开放] 缄默礼拜堂/终焉古树 需远征等级 30 才可进入；
+-- 引导豁免：新手引导组5-7 发生在低等级（点击教堂/古树推进），
+-- 因此引导进行中、或引导组5 已领取（早期玩家已走过该引导）时不受等级限制。
+local CHURCH_UNLOCK_LEVEL = 30
+local function isChurchAccessible()
+    -- 豁免仅限引导进行中（组5-7 连续链：点教堂→入堂→离堂，全程 isActive）；
+    -- 引导链结束后恢复等级门控，30 级正式开放。
+    local _TM = require("systems.TutorialManager")
+    if _TM.isActive() then
+        return true
+    end
+    return (tonumber(GameState.getLevel()) or 1) >= CHURCH_UNLOCK_LEVEL
+end
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local HorizonBg      = require("core.HorizonBg")  -- [横屏三联] 左右共享大背景
 local ExpTable   = require("config.ExpTable")
@@ -14,7 +28,6 @@ local TownScene = {}
 
 -- ======================== 图片句柄 ========================
 
-local imgBg       = -1   -- 城镇背景
 local imgChurch   = -1   -- 教堂建筑
 local imgTree     = -1   -- 终焉古树（天赋入口）
 local imgTavern   = -1   -- 酒馆建筑
@@ -33,7 +46,7 @@ local imgIconMarket = -1 -- 市场图标
 
 local imgIconUp   = -1   -- ICON_UP.png 可转职角标
 local imgLock     = -1   -- UI_ICON_SUO.png 锁图标
-local imgRedDot   = -1   -- ICON_HD.png 红点图标
+-- [图标统一 0928] 移除 imgRedDot 死声明：红点统一走 DarkIcon.draw(vg,"reddot",...)
 
 -- ======================== 外部驱动标志 ========================
 local smithDecomposeRedDot = false  -- 铁匠铺分解红点（背包满时）
@@ -355,20 +368,35 @@ local LOCK_ICON_SIZE = 100
 
 --- 绘制建筑锁定遮罩（锁图标，等级解锁型附带解锁等级文字）
 --- @param tutorialControlled boolean|nil  true=由引导解锁（不显示等级文字），nil/false=显示等级文字
-local function drawBuildingLockOverlay(vg, cx, cy, buildingKey, tutorialControlled)
+local function drawBuildingLockOverlay(vg, cx, cy, buildingKey, tutorialControlled, levelOverride, labelOverride)
     drawImageCentered(vg, imgLock, cx, cy - 15, LOCK_ICON_SIZE, LOCK_ICON_SIZE, 0.85)
-    if not tutorialControlled then
-        local unlockLv = ExpTable.getBuildingUnlockLevel(buildingKey)
-        local label
+    -- labelOverride 优先（关卡门控建筑如铁匠铺："通关 2-4 解锁"）；
+    -- 其次等级门控（tutorialControlled=false 时画 "Lv.X 解锁"）；
+    -- 引导门控（tutorialControlled=true 且无 override）只画锁图标。
+    local label = labelOverride
+    if not label and not tutorialControlled then
+        local unlockLv = levelOverride or ExpTable.getBuildingUnlockLevel(buildingKey)
         if unlockLv <= 0 then
             label = "暂未开放"
         else
             label = "Lv." .. unlockLv .. " 解锁"
         end
+    end
+    if label then
         drawTextStroke(vg, cx, cy + 50, label,
             30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 220, 120, 3)
     end
+end
+
+--- 关卡门控建筑的锁标文字（stageId → "通关 2-4 解锁"）；非关卡门控返回 nil
+local function getStageUnlockLabel(buildingKey)
+    local _TM = require("systems.TutorialManager")
+    local sid = _TM.getBuildingUnlockStageId and _TM.getBuildingUnlockStageId(buildingKey)
+    if not sid then return nil end
+    local chapter = math.floor(sid / 100)
+    local stage = sid % 100
+    return "通关 " .. chapter .. "-" .. stage .. " 解锁"
 end
 
 -- ======================== Public API ========================
@@ -385,8 +413,7 @@ local function ensureTownImages(vg)
     local ctx = vg or townVg_
     if not ctx then return end
     townImgsLoaded_ = true
-    -- 遗匣用专属立绘，功绩用日记入口图。
-    imgBg          = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
+    -- 遗匣用专属立绘，功绩用日记入口图。城镇大底已改由 HorizonBg 纯色铺底。
     imgLootBox     = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_YX.png", 0) or -1
     imgIconLoot    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_YX.png", 0) or -1
     imgTask        = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_GJ.png", 0) or -1
@@ -440,7 +467,8 @@ function TownScene.draw(vg)
             SMITH_TEXT_X, SMITH_TEXT_Y, "狱火锻炉")
     end
     if smithLocked then
-        drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true)
+        -- [关卡门控] 铁匠铺按"通关 2-4"解锁，锁标显示具体条件（原先只有锁图标）
+        drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true, nil, getStageUnlockLabel("smith"))
     end
     -- 铁匠铺红点（背包满→提示去分解）
     if not smithLocked and smithDecomposeRedDot then
@@ -522,8 +550,8 @@ function TownScene.draw(vg)
         WAREHOUSE_TEXT_X, WAREHOUSE_TEXT_Y, "尘封仓库")
     BF.finish(vg, _bfWarehouse)
 
-    -- 6) 教堂建筑
-    local churchLocked = not _TM.isBuildingUnlocked("church")
+    -- 6) 教堂建筑（30级开放 + 引导豁免）
+    local churchLocked = not _TM.isBuildingUnlocked("church") or not isChurchAccessible()
     local _bfChurch = (not churchLocked) and BF.begin(vg, "town_church", CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H) or false
     if churchLocked then
         drawImageSilhouette(vg, imgChurch, CHURCH_CX, CHURCH_CY, CHURCH_W, CHURCH_H, 0.85)
@@ -536,9 +564,11 @@ function TownScene.draw(vg)
             CHURCH_TEXT_X, CHURCH_TEXT_Y, "缄默礼拜堂")
     end
     if churchLocked then
-        drawBuildingLockOverlay(vg, CHURCH_CX, CHURCH_CY, "church", true)
+        -- 引导未解锁时保持原样式；等级未达标时显示 "Lv.30 解锁"
+        local tutorialGated = not _TM.isBuildingUnlocked("church")
+        drawBuildingLockOverlay(vg, CHURCH_CX, CHURCH_CY, "church", tutorialGated, CHURCH_UNLOCK_LEVEL)
     end
-    -- 教堂角标：转职/神器（天赋角标已移到古树）
+    -- 教堂角标：仅神器可合成（转职已迁角色详情、天赋角标已移到古树）
     if not churchLocked and imgIconUp >= 0 and getChurchPage().hasAnyChurchBadge() then
         local upSize = 40
         local upX = CHURCH_LBL_CX + CHURCH_LBL_W * 0.5 - upSize * 0.15
@@ -703,8 +733,8 @@ function TownScene.handleInput(dx, dy)
     -- 教堂点击检测
     if dx >= CHURCH_CX - CHURCH_W * 0.5 and dx <= CHURCH_CX + CHURCH_W * 0.5
        and dy >= CHURCH_CY - CHURCH_H * 0.5 and dy <= CHURCH_CY + CHURCH_H * 0.5 then
-        if not _TM.isBuildingUnlocked("church") then
-            print("[TownScene] 教堂未被引导解锁")
+        if not _TM.isBuildingUnlocked("church") or not isChurchAccessible() then
+            print("[TownScene] 教堂未解锁（引导或等级30）")
             return true
         end
         print("[TownScene] 点击教堂")

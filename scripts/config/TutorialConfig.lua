@@ -30,8 +30,6 @@
 --   "character_new_hero"     — 角色面板新角色位置
 --   "smith_btn_enhance"      — 铁匠铺强化按钮
 --   "building_guild"         — 城镇亡誓公会建筑
---   "relic_tab"              — 公会页面遗物标签按钮
---   "relic_bag_btn"          — 遗物面板背包按钮
 -- ============================================================================
 
 local TutorialConfig = {}
@@ -213,6 +211,10 @@ TutorialConfig[11] = {
 -- 触发：情景55/56/57（首通1305）结束后
 -- 解锁：亡誓公会
 TutorialConfig[14] = {
+    -- [横屏接线 0928] 亡誓公会页(GuildPage)已在去多人化重构中删除，
+    -- building_guild/relic_tab 热点与 enter_panel_guild/enter_relic_panel 事件均无注册方，
+    -- 触发会永久卡屏。标记 disabled 由 startGroupInternal 跳过（保留配置以便公会功能回归时复用）
+    disabled = true,
     triggerScenarios = { 55, 56, 57 },
     unlocks = { "guild" },
     steps = {
@@ -220,16 +222,6 @@ TutorialConfig[14] = {
             text      = "进入亡誓公会",
             highlight = "building_guild",
             advanceOn = "enter_panel_guild",
-        },
-        {
-            text      = "点击遗物标签",
-            highlight = "relic_tab",
-            advanceOn = "enter_relic_panel",
-        },
-        {
-            text      = "打开遗物背包",
-            highlight = "relic_bag_btn",
-            advanceOn = "click_highlight",
         },
     },
 }

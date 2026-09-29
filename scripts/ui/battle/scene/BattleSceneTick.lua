@@ -8,6 +8,7 @@ local RCH = require("systems.RelicConditionHandler")
 local TM  = require("systems.ThreatManager")
 local TAL = require("systems.TalentManager")
 local MAS = require("systems.MapAffixSystem")
+local BAS = require("systems.BossAffixSystem")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
 
 local M = {}
@@ -45,7 +46,7 @@ function M.tick(ctx, logicDt)
     end
     end
 
-    -- ---- 遗物条件词条每帧检查（HP阈值、限时buff到期等） ----
+    -- ---- 条件词条运行时每帧检查（HP阈值、限时buff到期等） ----
     RCH.update(ctx.allies, 0)
 
     -- ---- 更新血条缓冲（白色拖尾） ----
@@ -117,6 +118,11 @@ function M.tick(ctx, logicDt)
     -- ---- 地图词缀动态 tick（仅首通模式） ----
     if ctx.isFirstClear and MAS.hasAffixes() then
     MAS.tick(logicDt, ctx.allies, ctx.enemies)
+    end
+
+    -- ---- Boss 词缀动态 tick（v2.64，仅首通；暴怒/再生） ----
+    if ctx.isFirstClear and BAS.hasAffixes() then
+        BAS.tick(logicDt, ctx.enemies)
     end
 
     -- ---- 能量护盾恢复 tick ----

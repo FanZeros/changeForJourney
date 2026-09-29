@@ -35,8 +35,8 @@ end
 -- 裁剪区放宽到完整设计稿，面板完整显示 1080x2400
 Viewport._notes = {}
 
-function Viewport.note(id, ox, oy, s)
-    Viewport._notes[id] = { ox = ox, oy = oy, s = s }
+function Viewport.note(id, ox, oy, s, scaleX)
+    Viewport._notes[id] = { ox = ox, oy = oy, s = s, scaleX = scaleX }
 end
 
 function Viewport.getNote(id)
@@ -45,7 +45,7 @@ end
 
 function Viewport.begin(vg, p, ox, oy, s, scaleX)
     if p and p.id then
-        Viewport.note(p.id, ox, oy, s)
+        Viewport.note(p.id, ox, oy, s, scaleX)
     end
     nvgSave(vg)
     nvgTranslate(vg, ox + p.bx * s, oy + p.by * s)
@@ -56,6 +56,23 @@ end
 
 function Viewport.finish(vg)
     nvgRestore(vg)
+end
+
+--- [横屏接线 0928] 按本帧 begin 记录的变换重建指定面板的设计空间。
+--- 供新手引导层在各面板内容之上、用与内容一致的坐标绘制高亮/蒙层。
+--- @param vg any
+--- @param id string 面板 id ('left'|'center'|'right')
+--- @return boolean ok 是否成功进入（无记录时返回 false）
+function Viewport.beginFromNote(vg, id)
+    local n = Viewport._notes[id]
+    local p = Viewport.PANELS[id]
+    if not n or not p then return false end
+    nvgSave(vg)
+    nvgTranslate(vg, n.ox + p.bx * n.s, n.oy + p.by * n.s)
+    local cs = n.s * Viewport.DS
+    nvgScale(vg, n.scaleX or cs, cs)
+    nvgIntersectScissor(vg, 0, 0, Viewport.DESIGN_W, Viewport.DESIGN_H)
+    return true
 end
 
 -- 屏幕逻辑坐标 -> 命中面板与该面板设计坐标（除数与 begin 的内容缩放一致）

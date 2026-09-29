@@ -36,7 +36,7 @@ local SC = {}
 ---@field fcExp           number
 ---@field fcDiamond       number
 ---@field fcEssence       number   -- 首通精粹（洗练装备）
----@field fcArcaneDust    number   -- 首通奥术粉尘（遗物洗练，chapter<13 为 0）
+---@field fcArcaneDust    number   -- 首通奥术粉尘（chapter<13 为 0）
 ---@field fcEquip         number
 ---@field fcMinQ          number
 ---@field fcScroll        number

@@ -24,6 +24,7 @@ local SpineCardEffect  = require("ui.fx.SpineCardEffect")
 local TalentPanel      = require("ui.church.talent.ChurchTalentPanel")
 local ClassChange      = require("ui.church.ChurchClassChange")
 local ArtifactPanel    = require("ui.church.ChurchArtifactPanel")
+local ArtifactDrawPanel = require("ui.church.ChurchArtifactDrawPanel")
 local AVC              = require("config.AdvancementConfig")
 local ChurchDraw       = require("ui.church.ChurchDraw")
 local ChurchInput      = require("ui.church.ChurchInput")
@@ -78,23 +79,24 @@ local BTN_BACK = {
     CX = 958, CY = 1150, W = 184, H = 143,
 }
 
--- 4. Tab 栏（转职已迁到右侧栏角色详情，教堂只留神器）
+-- 4. Tab 栏（转职已迁到右侧栏角色详情；神器宝箱从市场·典藏迁入 → 装配/宝箱双页签）
 local TAB = {
-    BG_CX = 540, BG_CY = 2308, BG_W = 810, BG_H = 143,
-    SLIDER_W = 810, SLIDER_H = 143,
+    BG_CX = 540, BG_CY = 2312, BG_W = 600, BG_H = 112,
+    SLIDER_W = 300, SLIDER_H = 112,
     INSET_TOP = 10, INSET_BOTTOM = 10, INSET_LEFT = 70, INSET_RIGHT = 70,
-    FONT_SIZE = 40,
+    FONT_SIZE = 32,
     ACTIVE_R = 0xD8, ACTIVE_G = 0xC9, ACTIVE_B = 0xA3,  -- [fix] 深色滑块上深棕不可读 → 骨白
     INACTIVE_R = 255, INACTIVE_G = 255, INACTIVE_B = 255,
     ANIM_DUR = 0.35,
 }
 
--- 5. 页签只留神器，打开直接显示
+-- 5. 页签：神器装配 / 神器宝箱（市场典藏迁移而来）
 local TAB_ITEMS = {
-    { name = "神器", cx = 540, cy = 2308, textX = 540, textY = 2302 },
+    { name = "神器", cx = 390, cy = 2312, textX = 390, textY = 2308 },
+    { name = "宝箱", cx = 690, cy = 2312, textX = 690, textY = 2308 },
 }
 
-local TAB_KEYS = { "shenqi" }
+local TAB_KEYS = { "shenqi", "baoxiang" }
 
 -- 6. 动画常量
 local ANIM = {
@@ -255,7 +257,6 @@ local img = {
     plus        = -1,   -- UI_ICON_JIA.png
     -- 转职相关
     -- 彩色职业背景 UI_ZZBJ 已删除
-    titleBg     = -1,    -- UI_ZBT1.png
     branchLine  = -1,    -- UI_ZZXT_1Z.png
     branchLine2 = -1,    -- UI_ZZXT_2Z.png（二转分叉线）
     classIcons2 = {},    -- UI_icon_ZY_{序号}.png（按职业序号索引）
@@ -274,9 +275,9 @@ local img = {
     confirmBtn  = -1,    -- UI_AN_LV.png 确认按钮
     cancelBtn   = -1,    -- UI_AN_FANG.png 取消按钮（灰色）
     resetConfBg = -1,    -- UI_TY_EJQRK.png 重置确认九宫格背景
-    goldCoin    = -1,    -- UI_icon_JB.png 金币图标
+    goldCoin    = -1,    -- UI_icon_JB_X.png 金币图标
     iconUp      = -1,    -- ICON_UP.png 可提升角标（绿色箭头）
-    redDot      = -1,    -- ICON_HD.png 红点角标
+    -- [图标统一 0928] 移除 redDot 死字段：红点统一走 DarkIcon.draw(vg,"reddot",...)
     -- 资源栏
     resGold     = -1,    -- UI_icon_JB_X.png
     resDiamond  = -1,    -- UI_icon_SJ_X.png
@@ -285,7 +286,6 @@ local img = {
     tfPointGlow   = -1,  -- UI_JTTF_HG.png
     tfSliderThumb = -1,  -- UI_JTTF_HK.png
     -- 天赋详情面板背景（按颜色索引）
-    tfDetailBg    = {},  -- tfDetailBg["红"]=handle, ...
     tfResetBtn    = -1,  -- UI_AN_HONG.png 单节点重置按钮（红色）
     tfInfoIcon    = -1,  -- UI_icon_TS.png 天赋效果总览（感叹号）
 }
@@ -469,9 +469,10 @@ end
 
 -- ======================== Public API ========================
 
---- Tab 键名映射到索引（转职已迁出，只留神器）
+--- Tab 键名映射到索引（神器装配 / 宝箱）
 local TAB_MAP = {
     shenqi = 1,
+    baoxiang = 2,
 }
 
 --- 将存档中的天赋数据同步到 TalentStarMap 渲染状态 + HeroConfig 默认天赋
@@ -509,6 +510,7 @@ local function bindChurchInit()
         TalentPanel = TalentPanel,
         ClassChange = ClassChange,
         ArtifactPanel = ArtifactPanel,
+        ArtifactDrawPanel = ArtifactDrawPanel,
         getDispatcher = getDispatcher,
         getClient = getClient,
         getProtocol = getProtocol,
@@ -533,6 +535,7 @@ local function bindChurchLifecycle()
         easeInCubic = easeInCubic,
         TalentStarMap = TalentStarMap,
         ArtifactPanel = ArtifactPanel,
+        ArtifactDrawPanel = ArtifactDrawPanel,
         resetRosterScrollState = resetRosterScrollState,
         syncTalentLitNodes = syncTalentLitNodes,
         ensureInit = function()
@@ -645,6 +648,7 @@ local function bindInput()
         ClassChange = ClassChange,
         TalentPanel = TalentPanel,
         ArtifactPanel = ArtifactPanel,
+        ArtifactDrawPanel = ArtifactDrawPanel,
         TownPageChrome = TownPageChrome,
         TAB_ITEMS = TAB_ITEMS,
         TAB_KEYS = TAB_KEYS,
@@ -715,6 +719,7 @@ local function bindPageDraw()
         TAB_KEYS = TAB_KEYS,
         TAB_MAP = TAB_MAP,
         TownPageChrome = TownPageChrome,
+        ArtifactDrawPanel = ArtifactDrawPanel,
         clampRosterScroll = clampRosterScroll,
         drawImageCentered = drawImageCentered,
         drawRosterList = drawRosterList,
@@ -753,6 +758,7 @@ local function bindChurchResults()
         CHAR_SLOT = CHAR_SLOT,
         getProtocol = getProtocol,
         ArtifactPanel = ArtifactPanel,
+        ArtifactDrawPanel = ArtifactDrawPanel,
         CharacterPanel = CharacterPanel,
         SpineCardEffect = SpineCardEffect,
         clearPowerCache = clearPowerCache,

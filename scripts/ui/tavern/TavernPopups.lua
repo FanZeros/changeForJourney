@@ -155,8 +155,8 @@ local img = {
     diamondBig    = -1,
     ticketBig     = -1,
     ticketBigStellar = -1,
-    diamondBg     = -1,
-    ticketQBg     = -1,
+    -- [图标统一 0928] 移除死句柄 diamondBg/ticketQBg：重复加载 UI_icon_ZBBJ_5 且创建后从未绘制
+    -- （品质底框已由 DarkIcon.drawQualityBg(vg, 5, ...) 统一接管）
 }
 
 -- ======================== 缓动函数 ========================
@@ -636,8 +636,6 @@ function M.init(vg)
     if img.ticketBigStellar < 0 then
         img.ticketBigStellar = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_2.png", 0)
     end
-    img.diamondBg     = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_5.png", 0)
-    img.ticketQBg     = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_5.png", 0)
     print("[TavernPopups] init OK")
 end
 
@@ -780,10 +778,11 @@ function M.drawAll(vg)
             nvgStroke(vg)
         end
 
+        -- 按钮内黑晶角标：够=亮白，不够=棕色
         local diamondEnough = GameState.getGems() >= popupState.confirmDiamondCost
         local dBadgeR, dBadgeG, dBadgeB = 255, 255, 255
         if not diamondEnough then
-            dBadgeR, dBadgeG, dBadgeB = 255, 50, 50
+            dBadgeR, dBadgeG, dBadgeB = 0x8d, 0x5f, 0x41
         end
         drawTextStroke(vg,
             CF.DIAMOND_CX + CF.BADGE_OX,

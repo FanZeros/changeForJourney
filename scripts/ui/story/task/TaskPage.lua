@@ -15,7 +15,7 @@ local TaskPage = {}
 local W, H = 1080, 2400
 local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
-local LIST = { x = 48, y = 430, w = 984, h = 1760, rowH = 210, gap = 16 }
+local LIST = { x = 48, y = 430, w = 984, h = 1760, rowH = 200, gap = 36 }
 local TABS = {
     { key = "clear", name = "通关", cx = 270, w = 280 },
     { key = "level", name = "远征", cx = 540, w = 280 },
@@ -249,7 +249,12 @@ local function drawRow(vg, task, y)
     nvgRoundedRect(vg, LIST.x + LIST.w - 210, y - 36, 180, 72, 10)
     nvgFillColor(vg, nvgRGBA(r, g, b, 230))
     nvgFill(vg)
-    text(vg, LIST.x + LIST.w - 120, y, label, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 244, 220, 2)
+    -- 按钮文字：可领取=亮色，不可领=棕色
+    local lr, lg, lb = 255, 244, 220
+    if status ~= TaskConfig.STATUS.CLAIMABLE then
+        lr, lg, lb = 0x8d, 0x5f, 0x41
+    end
+    text(vg, LIST.x + LIST.w - 120, y, label, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, lr, lg, lb, 2)
 end
 
 function TaskPage.draw(vg)
@@ -274,8 +279,11 @@ function TaskPage.draw(vg)
     nvgFillColor(vg, claimCount > 0 and nvgRGBA(176, 132, 48, 230) or nvgRGBA(62, 56, 48, 200))
     nvgFill(vg)
     local claimLabel = claimCount > 0 and ("一键领取 " .. claimCount) or "一键领取"
+    -- 按钮文字：有可领=亮色，无可领=棕色
+    local caR, caG, caB = 255, 244, 220
+    if claimCount <= 0 then caR, caG, caB = 0x8d, 0x5f, 0x41 end
     text(vg, CLAIM_ALL.cx, CLAIM_ALL.cy, claimLabel, 28,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 244, 220, 2)
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, caR, caG, caB, 2)
     for _, tab in ipairs(TABS) do
         local on = state.tab == tab.key
         local half = (tab.w or 168) * 0.5

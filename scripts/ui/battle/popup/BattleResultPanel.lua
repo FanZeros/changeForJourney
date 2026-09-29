@@ -30,6 +30,7 @@ local DrawUtil     = require("core.DrawUtil")
 local DarkIcon     = require("core.DarkIcon")  -- [暗黑化 P2-A] 品质底框矢量绘制
 local ImageCache   = require("ui.widget.ImageCache")
 local ResourceDefs = require("config.ResourceDefs")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
@@ -72,8 +73,7 @@ local HERO_ROW_Y = { 995, 1135 }
 local HERO_DMG_OFFSET_X = 81  -- 228 - 147 = 81
 local HERO_DMG_FONT = 40
 
--- 品质映射：英雄品质 1=R → 框3, 2=SR → 框4, 3=SSR → 框5
-local HERO_QUALITY_TO_FRAME = { [1] = 3, [2] = 4, [3] = 5 }
+-- [统一角色框] 英雄品质→框映射删除（原 {1→3,2→4,3→5} 缺 UR），改由 HeroFrame 品质色统一
 
 -- 9. 文本"获得"
 local OBTAIN_LABEL_X, OBTAIN_LABEL_Y = 93, 1270
@@ -333,15 +333,15 @@ function BRP.draw(vg)
         local cx = HERO_COL_X[col]
         local cy = HERO_ROW_Y[row]
 
-        -- 6.1) 品质背景框 [暗黑化 P2-A]
-        local frameQ = HERO_QUALITY_TO_FRAME[hero.quality] or 3
-        DarkIcon.drawQualityBg(vg, frameQ, cx, cy, HERO_ICON_SIZE, HERO_ICON_SIZE, 1.0)
-
-        -- 6.2) 角色头像（与品质框同尺寸）
+        -- 6.1+6.2) [统一角色框] 品质色描边 + 头像（替代 ZBBJ 贴图映射，修复缺 UR 映射）
         local heroImg = getHeroIcon(hero.heroId)
-        if heroImg >= 0 then
-            drawImageCentered(vg, heroImg, cx, cy, HERO_ICON_SIZE, HERO_ICON_SIZE, 1.0)
-        end
+        HeroFrame.draw(vg, {
+            cx = cx, cy = cy, size = HERO_ICON_SIZE,
+            heroId = hero.heroId,
+            iconHandle = heroImg,
+            quality = hero.quality,
+            state = "owned",
+        })
 
         -- 6.3) 累计输出数值
         local dmgText = NumberUtil.format(hero.totalDamage or 0)

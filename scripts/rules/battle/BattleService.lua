@@ -16,9 +16,6 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 local CurrencyService  = require("rules.currency.CurrencyService")
 local MonsterConfig    = require("config.MonsterConfig")
 local HeroService      = require("rules.hero.HeroService")
-local RelicAffix       = require("systems.RelicAffix")
-local RelicDefs        = require("shared.relic.RelicDefs")
-local RelicService     = require("rules.relic.RelicService")
 local IdleSettleService = require("rules.offline.IdleSettleService")
 
 local BattleService = {}
@@ -649,6 +646,7 @@ function BattleService.ClaimBattleRewards(uid, rewards)
 
     local totalGold = 0
     local heroExpMap = {}
+    local benchPerHeroBase = 0 -- 每次击杀的"每出战英雄份额"累计，未出战英雄按 10% 领取
     local totalPlayerExp = 0
     local currentStageId = tonumber(battle.currentStageId)
     local currentStageEntry = currentStageId and StageConfig.getStage(currentStageId)
@@ -687,7 +685,21 @@ function BattleService.ClaimBattleRewards(uid, rewards)
                 local numHid = tonumber(hid) or hid
                 heroExpMap[numHid] = (heroExpMap[numHid] or 0) + perHeroExp
             end
+            benchPerHeroBase = benchPerHeroBase + perHeroExp
             totalPlayerExp = totalPlayerExp + baseExp
+        end
+    end
+
+    -- 未出战英雄吃 10% 战斗经验：本批未参与任何击杀的在册英雄，各得每出战份额累计的 10%
+    if benchPerHeroBase > 0 then
+        local benchExp = math.floor(benchPerHeroBase * 0.1)
+        if benchExp > 0 then
+            for hid, hero in pairs(heroes.roster) do
+                local numHid = tonumber(hid) or hid
+                if type(hero) == "table" and hero.level and not heroExpMap[numHid] then
+                    heroExpMap[numHid] = benchExp
+                end
+            end
         end
     end
 
@@ -960,15 +972,18 @@ local SCENARIO_REWARDS = {
     [39] = { type = "none" },   -- 首次全体阵亡·黄桃龙
     [40] = { type = "none" },   -- 首次全体阵亡·叮咚鸡
 
-    -- 亡誓公会解锁情景（首通 305）：奖励随机品质1遗物
-    [55] = { type = "relic", quality = 1, requiredHeroId = 1, requiredStageId = 1305 },
-    [56] = { type = "relic", quality = 1, requiredHeroId = 2, requiredStageId = 1305 },
-    [57] = { type = "relic", quality = 1, requiredHeroId = 3, requiredStageId = 1305 },
+    -- 亡誓公会解锁情景（首通 305）：纯对话（原遗物奖励已随遗物系统移除）
+    [55] = { type = "none", requiredHeroId = 1, requiredStageId = 1305 },
+    [56] = { type = "none", requiredHeroId = 2, requiredStageId = 1305 },
+    [57] = { type = "none", requiredHeroId = 3, requiredStageId = 1305 },
 
     -- 副本引导情景（首通 305）：纯对话，无奖励
     [58] = { type = "none", requiredHeroId = 1, requiredStageId = 305 },
     [59] = { type = "none", requiredHeroId = 2, requiredStageId = 305 },
     [60] = { type = "none", requiredHeroId = 3, requiredStageId = 305 },
+
+    -- 第二章通关·大狗嚼潜能引导（首通 205）：大狗嚼碎片×60，引导升潜能/觉醒
+    [82] = { type = "shard", heroId = 1, amount = 60, requiredStageId = 205 },
 }
 
 --- 领取情景对话奖励
@@ -1041,6 +1056,37 @@ function BattleService.ClaimScenarioReward(uid, scenarioId)
         }
     end
 
+    -- 碎片奖励情景（如二章通关的大狗嚼潜能引导）：碎片加到对应英雄 roster 条目
+    if rewardDef.type == "shard" then
+        local heroes = PDM.GetModule(uid, "heroes")
+        if not heroes then
+            return false, "数据未加载"
+        end
+        if rewardDef.requiredStageId then
+            local battle = PDM.GetModule(uid, "battle")
+            if not battle or not battle.clearedStages
+                or not battle.clearedStages[tostring(rewardDef.requiredStageId)] then
+                return false, "关卡未通关"
+            end
+        end
+        if not heroes.roster then heroes.roster = {} end
+        local hid = rewardDef.heroId
+        if not heroes.roster[hid] then
+            heroes.roster[hid] = { shards = 0, _shardMigrated = true }
+        end
+        heroes.roster[hid].shards = (heroes.roster[hid].shards or 0) + (rewardDef.amount or 0)
+        sessionData.claimedScenarios[scenarioKey] = true
+        PDM.MarkDirty(uid, "heroes")
+        PDM.MarkDirty(uid, "session")
+        print("[BattleService] scenario shard uid=" .. tostring(uid)
+            .. " scenarioId=" .. tostring(scenarioId)
+            .. " heroId=" .. tostring(hid) .. " shards=+" .. tostring(rewardDef.amount))
+        return true, nil, {
+            rewardType = "shard",
+            reward = { heroId = hid, amount = rewardDef.amount or 0 },
+        }
+    end
+
     -- 以下为需要英雄关卡校验的情景（角色专属装备/英雄奖励）
     -- 校验初始英雄
     local initialHeroId = sessionData.initialHeroId
@@ -1059,8 +1105,6 @@ function BattleService.ClaimScenarioReward(uid, scenarioId)
 
     if rewardDef.type == "hero" then
         return BattleService._claimHeroReward(uid, sessionData, scenarioKey, rewardDef)
-    elseif rewardDef.type == "relic" then
-        return BattleService._claimRelicReward(uid, sessionData, scenarioKey, rewardDef)
     else
         return BattleService._claimEquipReward(uid, sessionData, scenarioKey, rewardDef)
     end
@@ -1132,63 +1176,6 @@ function BattleService._claimHeroReward(uid, sessionData, scenarioKey, rewardDef
             name     = heroCfg and heroCfg.name or "未知",
             quality  = heroQuality,
             isNew    = isNew,
-        },
-    }
-end
-
---- 内部：领取遗物奖励（随机类型 + 指定品质）
-function BattleService._claimRelicReward(uid, sessionData, scenarioKey, rewardDef)
-    local relicData = PDM.GetModule(uid, "mod_relics")
-    if not relicData then
-        return false, "数据未加载"
-    end
-
-    -- 背包容量检查
-    if #relicData.bag >= RelicService.MAX_BAG then
-        return false, "遗物背包已满"
-    end
-
-    -- 随机遗物类型 1~5
-    local relicType = math.random(1, 5)
-    local quality = rewardDef.quality or 1
-
-    -- 随机词缀
-    local affixId = RelicAffix.rollAffix(relicType, quality, 1)
-    if not affixId then
-        return false, "词缀池为空 type=" .. relicType .. " q=" .. quality
-    end
-
-    -- 生成遗物对象
-    local id = relicData.nextId
-    relicData.nextId = id + 1
-
-    local relic = {
-        id      = tostring(id),
-        type    = relicType,
-        quality = quality,
-        affixId = affixId,
-    }
-
-    -- 加入背包
-    relicData.bag[#relicData.bag + 1] = relic
-
-    sessionData.claimedScenarios[scenarioKey] = true
-
-    PDM.MarkDirty(uid, "mod_relics")
-    PDM.MarkDirty(uid, "session")
-
-    local typeDef = RelicDefs.TYPES[relicType]
-    print("[BattleService] scenario relic uid=" .. tostring(uid)
-        .. " id=" .. relic.id
-        .. " type=" .. (typeDef and typeDef.name or tostring(relicType))
-        .. " q=" .. quality
-        .. " affix=" .. affixId)
-
-    return true, nil, {
-        rewardType = "relic",
-        reward = {
-            relicType = relicType,
-            quality   = quality,
         },
     }
 end

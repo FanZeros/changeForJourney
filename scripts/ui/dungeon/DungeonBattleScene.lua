@@ -561,6 +561,11 @@ function DungeonScene.open(opts)
     -- 初始化所有单位
     for _, u in ipairs(state.allies) do
         u.atkProgress = 0
+        u._artifactDeathHandled = nil
+        u._towerDeathNotified = nil
+        u._fallen = nil
+        u._fallenPending = nil
+        u._fallenAt = nil
         if u.attrs then
             u.attrs:fillHp()
             u.hp = u.attrs.final[AD.MAX_HP]
@@ -572,7 +577,7 @@ function DungeonScene.open(opts)
         TAL.initUnit(u)
     end
 
-    -- 初始化遗物条件词条
+    -- 初始化条件词条运行时（免疫/增伤，由天赋等系统消费）
     local allUnitsForRCH = {}
     for _, u in ipairs(state.allies) do allUnitsForRCH[#allUnitsForRCH + 1] = u end
     for _, u in ipairs(state.enemies) do allUnitsForRCH[#allUnitsForRCH + 1] = u end
@@ -691,7 +696,6 @@ function DungeonScene.onActionResult(data)
         print("[DungeonBattleScene] 收到副本结算数据: dungeonId=" .. tostring(data.dungeonId)
             .. " gold=" .. tostring(data.gold)
             .. " dust=" .. tostring(data.dust)
-            .. " relics=" .. tostring(data.relics and #data.relics or 0)
             .. " firstClear=" .. tostring(data.firstClear))
     end
 end
@@ -725,7 +729,7 @@ function DungeonScene.draw(vg)
         local dps = 0
         local dur = BattleStats.getDuration()
         if dur > 0.1 then
-            dps = math.floor(BattleStats.getTotal("totalDamage") / dur)
+            dps = math.floor(BattleStats.getTotal("totalDamage", false) / dur)  -- false=波次桶(非累计)
         end
         drawTextStroke(vg, DB.TIME_X, DB.TIME_Y,
             string.format("已测试 %.1fs · DPS %s", DungeonBattle.getElapsed(), require("core.NumberUtil").format(dps)),
@@ -887,24 +891,6 @@ function DungeonScene.update(dt)
                     if srvResult.dust and srvResult.dust > 0 then
                         rewards[#rewards + 1] = { type = "arcane_dust", amount = srvResult.dust }
                     end
-                    if srvResult.relics and #srvResult.relics > 0 then
-                        -- 逐个展示已随机出结果的遗物（带具体类型图标和品质）
-                        local RELIC_ICONS = {
-                            [1] = "image/遗物图标/ICON_YWX_GUI.png",   -- 岩龟
-                            [2] = "image/遗物图标/ICON_YWX_SHE.png",   -- 毒蛇
-                            [3] = "image/遗物图标/ICON_YWX_LU.png",    -- 白鹿
-                            [4] = "image/遗物图标/ICON_YWX_LANG.png",  -- 灰狼
-                            [5] = "image/遗物图标/ICON_YWX_YING.png",  -- 猎鹰
-                        }
-                        for _, r in ipairs(srvResult.relics) do
-                            rewards[#rewards + 1] = {
-                                type     = "relic",
-                                amount   = 1,
-                                quality  = r.quality or 4,
-                                iconPath = RELIC_ICONS[r.type] or "image/货币道具/ICON_SJYW.png",
-                            }
-                        end
-                    end
                     -- firstClear 仅是标记，不作为独立奖励项显示
                     -- （首通奖励已计入对应货币数量中）
                 end
@@ -932,6 +918,16 @@ function DungeonScene.update(dt)
 
     -- DungeonBattle 计时（狂暴阶段检测，狂暴加成施加到怪物与己方单位）
     DungeonBattle.update(logicDt, state.enemies, state.allies)
+
+    -- 战斗超时增伤：复用 DungeonBattle.elapsed，每帧回写全局伤害倍率（木桩 DPS 测试豁免）
+    if not DungeonBattle.isTrainingDummy() then
+        local _toMult = require("systems.BattleTimeout").calcMult(DungeonBattle.getElapsed())
+        local _bcs = BattleCombat.mountedState()
+        if _bcs and _bcs.ctx then
+            _bcs.ctx.globalDmgMult = _toMult
+        end
+    end
+
     ART.update(logicDt, state.allies)
 
     -- 战斗限时：超时自动判负
@@ -962,7 +958,7 @@ function DungeonScene.update(dt)
         end
     end
 
-    -- 遗物条件
+    -- 条件词条运行时（RCH）
     local okRchAlly, rchAllyErr = pcall(RCH.update, state.allies, 0)
     if not okRchAlly then
         print("[DungeonBattleScene] RelicConditionHandler.update allies failed: " .. tostring(rchAllyErr))
@@ -1110,9 +1106,23 @@ function DungeonScene.update(dt)
                 end
                 local cx = getCardCX(state.allies, idx)
                 SpineCardEffect.playRevive(cx, ALLY_CARD_CY, nil, "dungeon")
+            else
+                -- [阵亡紧凑] 救不回：退场动画 → 移队尾 → 存活者前移补位（与主线同规则）
+                unit.atkProgress = 0
+                TM.removeUnit(unit)
+                SEM.removeUnit(unit)
+                unit._fallenPending = true
+                unit._fallenAt = time.elapsedTime
+                BattleCombat.setCardAnim(unit, {
+                    state = "dying", timer = 0, lungeDir = 1,
+                    knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
+                    noTombstone = true,
+                })
             end
         end
     end
+    -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
+    require("ui.battle.scene.BattleAllyReset").compactFallen(state.allies, time.elapsedTime)
     allyAlive = BattleCombat.getAliveUnits(state.allies)
 
     if #allyAlive == 0 and #state.allies > 0 then
@@ -1122,6 +1132,10 @@ function DungeonScene.update(dt)
                     unit.attrs:fillHp()
                     syncUnitHp(unit)
                     unit.atkProgress = 0
+                    unit._fallen = nil
+                    unit._fallenPending = nil
+                    unit._fallenAt = nil
+                    unit._artifactDeathHandled = nil
                     BattleCombat.clearCardAnim(unit)
                     BattleCombat.clearHitFlash(unit)
                 end

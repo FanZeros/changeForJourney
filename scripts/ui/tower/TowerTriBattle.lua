@@ -141,6 +141,8 @@ local function bindLaneContext(lane)
         getEnemies = function() return lane.enemies end,
         ALLY_CARD_CY  = BattleLayout.STRIP_CY,
         ENEMY_CARD_CY = BattleLayout.STRIP_CY,
+        -- 战斗超时增伤：复用 DungeonBattle.elapsed（通天塔与副本同走 DungeonBattle 计时）
+        globalDmgMult = require("systems.BattleTimeout").calcMult(DungeonBattle.getElapsed()),
         onAttackHit = function(attacker, target, atkCX, atkCY, tgtCX, tgtCY, result, applyHit)
             local hasHeroEffect = attacker.heroId
                 and ProjectileSystem.hasHeroEffect(attacker.heroId)
@@ -195,6 +197,9 @@ local function initLaneUnits(lane)
         u._artifactDeathHandled = nil
         u._towerDeathNotified = nil
         u.reviveTimer = nil
+        u._fallen = nil
+        u._fallenPending = nil
+        u._fallenAt = nil
         TAL.initUnit(u)
     end
     for _, u in ipairs(lane.enemies) do
@@ -286,12 +291,31 @@ local function tickLane(lane, dt)
                 unit._towerDeathNotified = true
                 DungeonBattle.onAllyDeath(unit)
             end
-            if not ART.onAllyDeath(unit) then
-                TAL.onAllyDeath(unit, lane.allies, BattleCombat.syncUnitHp)
+            local revived = ART.onAllyDeath(unit)
+            if not revived then
+                revived = TAL.onAllyDeath(unit, lane.allies, BattleCombat.syncUnitHp)
             end
+            if not revived then
+                -- [阵亡紧凑] 救不回：退场动画 → 移队尾 → 存活者前移补位（与主线同规则）
+                unit.atkProgress = 0
+                TM.removeUnit(unit)
+                SEM.removeUnit(unit)
+                unit._fallenPending = true
+                unit._fallenAt = time.elapsedTime
+                BattleCombat.setCardAnim(unit, {
+                    state = "dying", timer = 0, lungeDir = 1,
+                    knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
+                    noTombstone = true,
+                })
+            end
+        elseif unit.hp > 0 then
+            unit._artifactDeathHandled = nil
         end
     end
-    local allyAlive = BattleCombat.getAliveUnits(lane.allies)
+    -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
+    local allies = lane.allies
+    require("ui.battle.scene.BattleAllyReset").compactFallen(allies, time.elapsedTime)
+    local allyAlive = BattleCombat.getAliveUnits(allies)
     if #allyAlive == 0 and #lane.allies > 0 then
         lane.wiped = true
         print(string.format("[TowerTriBattle] 队%d 全灭", lane.teamIdx))

@@ -14,6 +14,8 @@ local ResourceDefs = require("config.ResourceDefs")
 local GachaConfig = require("config.GachaConfig")
 local UrGachaConfig = require("config.UrGachaConfig")
 local GameState = require("core.GameState")
+local HeroAssetUtil = require("config.HeroAssetUtil")
+local HeroFrame = require("ui.widget.HeroFrame")
 local drawTextStroke = DrawUtil.drawTextStroke
 local drawImageCenteredUtil = DrawUtil.drawImageCentered
 
@@ -37,18 +39,6 @@ local QUALITY_TAG = {
 local function qualityToBadgeTag(quality)
     if quality == 4 then return "UR" end
     return QUALITY_TAG[quality] or "R"
-end
-
-local function qualityToCardTag(quality)
-    return qualityToBadgeTag(quality)
-end
-
--- [暗黑化 P2-A] 卡面品质 tag → drawQualityFrame 品质号（1粗铁 2青铜 3秘银 4符文 5黄金 6血钻）
-local CARD_TAG_QUALITY = { N = 1, R = 2, SR = 3, SSR = 5, UR = 6 }
-
---- 品质卡底矢量绘制（替代 KP_TY_N~UR 贴图，任意拉伸、零贴图依赖）
-local function drawCardBg(vg, qTag, cx, cy, w, h, alpha)
-    DarkIcon.drawQualityBg(vg, CARD_TAG_QUALITY[qTag] or 1, cx, cy, w, h, alpha)
 end
 
 local function qualityToSpineAnim(quality)
@@ -130,24 +120,18 @@ local cachedVg = nil
 
 local img = {
     resultBg     = -1,
-    glowSR       = -1,
-    glowSSR      = -1,
-    glowUR       = -1,
     cardBg       = {},
     qualityBadge = {},
     resIconBg    = {},
     classIcons   = {},
     heroCards    = {},
     resIcons     = {},
+    portraits    = {},
     shardIcon    = -1,
+    ticketIcon        = -1,
+    ticketIconStellar = -1,
+    diamondIcon       = -1,
 }
-
-local function getGlowImg(quality)
-    if quality >= 4 then return img.glowUR end
-    if quality >= 3 then return img.glowSSR end
-    if quality >= 2 then return img.glowSR end
-    return nil
-end
 
 -- Spine 动画实例（单例模式：只创建一次，通过 SetAnimation 复用）
 local spineInst_       = nil   -- nvgSpineCreate 创建的实例（单例，生命周期同模块）
@@ -190,6 +174,31 @@ local function getHeroCardImage(vg, heroId)
     return cardImg
 end
 
+--- 透明立绘懒加载；缺失时回退卡面
+local function getPortraitImage(vg, heroId)
+    if img.portraits[heroId] ~= nil then return img.portraits[heroId] end
+    local h = nvgCreateImage(vg, HeroAssetUtil.getPortraitPath(heroId), 0)
+    if not h or h < 0 then
+        h = getHeroCardImage(vg, heroId)
+    end
+    img.portraits[heroId] = h or -1
+    return img.portraits[heroId]
+end
+
+--- 无底板立绘：按卡片槽高度适配，底部留出名字区
+local function drawPortraitFit(vg, heroId, cx, cy, alpha)
+    local portrait = getPortraitImage(vg, heroId)
+    if not portrait or portrait < 0 then return end
+    local nameArea = 90
+    local iw, ih = nvgImageSize(vg, portrait)
+    if not iw or iw <= 0 or not ih or ih <= 0 then
+        iw, ih = CARD_W, CARD_H
+    end
+    local scale = math.min(CARD_W / iw, (CARD_H - nameArea) / ih)
+    local w, h = iw * scale, ih * scale
+    drawImageCentered(vg, portrait, cx, cy - nameArea * 0.5, w, h, alpha)
+end
+
 local function getResIcon(vg, resType)
     if img.resIcons[resType] then return img.resIcons[resType] end
     local def = RESOURCE_DEFS[resType]
@@ -227,15 +236,7 @@ end
 function RecruitAnim.init(vg)
     cachedVg = vg
     img.resultBg = nvgCreateImage(vg, "image/界面底板/酒馆抽卡/UI_XKJM.png", 0)
-    img.glowSR  = nvgCreateImage(vg, "image/品质框/UI_PZG_SR.png", 0)
-    img.glowSSR = nvgCreateImage(vg, "image/品质框/UI_PZG_SSR.png", 0)
-    img.glowUR  = nvgCreateImage(vg, "image/品质框/UI_PZG_UR.png", 0)
-
     -- [暗黑化 P2-A] 卡底 KP_TY_N~UR 改由 drawCardBg 矢量绘制，贴图加载已移除
-    if img.glowUR < 0 then
-        img.glowUR = img.glowSSR
-        print("[RecruitAnim] UI_PZG_UR missing, fallback to SSR glow")
-    end
     for _, b in ipairs({ "R", "SR", "SSR", "UR" }) do
         img.qualityBadge[b] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_" .. b .. ".png", 0)
     end
@@ -244,6 +245,10 @@ function RecruitAnim.init(vg)
         img.classIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
     end
     img.shardIcon = nvgCreateImage(vg, "image/货币道具/ICON_SP.png", 0)
+    -- 招募消耗图标（与 TavernPage 一致）
+    img.ticketIcon        = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_X.png", 0)
+    img.ticketIconStellar = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ2_X.png", 0)
+    img.diamondIcon       = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     print("[RecruitAnim] init OK")
 end
 
@@ -412,11 +417,10 @@ end
 local _fadeAlpha = 1.0
 
 local function drawResourceCard(vg, cx, cy, item, alpha)
-    local qTag = qualityToCardTag(item.quality)
     local def  = RESOURCE_DEFS[item.resType]
     local resQuality = def and def.quality or 1
 
-    drawCardBg(vg, qTag, cx, cy, CARD_W, CARD_H, alpha)
+    -- 无底板：只显示图标与数量
 
     local iconBgIdx = math.max(1, math.min(5, resQuality))
     local iconCY = cy + RES_ICON_OFFSET_Y
@@ -461,10 +465,8 @@ end
 --- 碎片类卡片（type="shard"）：图标+角标样式（与资源卡风格一致）
 local function drawShardCard(vg, cx, cy, item, alpha)
     local heroId  = item.heroId
-    local qTag    = qualityToCardTag(item.quality)
 
-    -- 卡面背景（品质边框）[暗黑化 P2-A]
-    drawCardBg(vg, qTag, cx, cy, CARD_W, CARD_H, alpha)
+    -- 无底板：只显示图标与数量
 
     -- 图标底图（按英雄品质映射：1→1, 2→3, 3→5）
     local qualityToIconBg = { [1] = 1, [2] = 3, [3] = 5 }
@@ -500,12 +502,9 @@ end
 local function drawDupeToShardCard(vg, cx, cy, item, alpha)
     local heroId  = item.heroId
     local heroCfg = HC.get(heroId)
-    local qTag    = qualityToCardTag(item.quality)
 
-    -- 正常英雄卡
-    local cardImg = getHeroCardImage(vg, heroId)
-    drawCardBg(vg, qTag, cx, cy, CARD_W, CARD_H, alpha)
-    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
+    -- 无底板：透明立绘（dupe_to_shard）
+    drawPortraitFit(vg, heroId, cx, cy, alpha)
 
     -- [稀有度显示] 烧字徽章不再显示
 
@@ -549,11 +548,9 @@ end
 local function drawDecomposeCard(vg, cx, cy, item, alpha)
     local heroId  = item.heroId
     local heroCfg = HC.get(heroId)
-    local bgTag = qualityToCardTag(item.quality)
-    local bgImg   = img.cardBg[bgTag] or img.cardBg["SSR"]
-    local cardImg = getHeroCardImage(vg, heroId)
-    drawImageCentered(vg, bgImg, cx, cy, CARD_W, CARD_H, alpha)
-    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
+
+    -- 无底板：透明立绘（decompose）
+    drawPortraitFit(vg, heroId, cx, cy, alpha)
 
     -- [稀有度显示] 烧字徽章不再显示
 
@@ -596,8 +593,16 @@ local function drawCharacterCard(vg, cx, cy, item, alpha)
     local heroId = item.heroId
     local heroCfg = HC.get(heroId)
 
-    local cardImg = getHeroCardImage(vg, heroId)
-    DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, alpha)
+    -- 无底板：透明立绘（928 侧视觉）
+    drawPortraitFit(vg, heroId, cx, cy, alpha)
+    -- [统一角色框] 招募英雄卡叠加品质色描边（feat926 侧，frameOnly 不画底板）
+    HeroFrame.draw(vg, {
+        cx = cx, cy = cy, w = CARD_W, h = CARD_H,
+        heroId = heroId,
+        state = "owned",
+        frameOnly = true,
+        alpha = alpha,
+    })
 
     -- 角色名称（上移25px：OFFSET从44增到69）
     local combinedAlpha = alpha * _fadeAlpha
@@ -737,44 +742,6 @@ function RecruitAnim.draw(vg)
     nvgFillColor(vg, nvgRGBA(8, 10, 16, math.floor(70 * bgAlpha)))
     nvgFill(vg)
 
-    -- 泛光（cards / fadeOut 阶段都绘制）
-    if (state.phase == "cards" or state.phase == "fadeOut") and state.glowStartT > 0 then
-        local glowElapsed = time.elapsedTime - state.glowStartT
-        local gt = math.min(1.0, glowElapsed / GLOW_ANIM_DURATION)
-        local glowEased = easeOutCubic(gt)
-        local glowHScale = GLOW_SQUISH_RATIO + (1.0 - GLOW_SQUISH_RATIO) * glowEased
-        local glowDrawH = GLOW_H * glowHScale
-        local glowAlpha = glowEased
-
-        local flashAlpha = 0
-        if glowElapsed < 0.25 then
-            local ft = glowElapsed / 0.25
-            flashAlpha = math.max(0, 1.0 - ft * ft)
-        end
-
-        local count = #state.results
-        local positions = getCardPositions(count)
-        for i, item in ipairs(state.results) do
-            if item.quality >= 2 then
-                local pos = positions[i]
-                if pos then
-                    local glowImg = getGlowImg(item.quality)
-                    if glowImg and glowImg >= 0 then
-                        drawImageCentered(vg, glowImg, pos.x, pos.y, GLOW_W, glowDrawH, glowAlpha)
-
-                        if flashAlpha > 0.01 then
-                            nvgSave(vg)
-                            nvgGlobalCompositeBlendFunc(vg, NVG_SRC_ALPHA, NVG_ONE)
-                            drawImageCentered(vg, glowImg, pos.x, pos.y, GLOW_W, glowDrawH, flashAlpha)
-                            nvgGlobalCompositeBlendFunc(vg, NVG_ONE, NVG_ONE_MINUS_SRC_ALPHA)
-                            nvgRestore(vg)
-                        end
-                    end
-                end
-            end
-        end
-    end
-
     -- 卡片（cards / fadeOut 阶段都绘制）
     if state.phase == "cards" or state.phase == "fadeOut" then
         local count = #state.results
@@ -827,19 +794,38 @@ function RecruitAnim.draw(vg)
                 or ((count == 10) and GachaConfig.Cost.TEN_DIAMOND or GachaConfig.Cost.SINGLE_DIAMOND)
             local owned = stellar and GameState.getStellarRecruitTicket() or GameState.getRecruitTicket()
             local tickets = math.min(owned or 0, ticketCost)
-            local gems = (ticketCost - tickets) * gemCost / ticketCost
+            local gems = math.floor((ticketCost - tickets) * gemCost / ticketCost + 0.5)
+            local icon = img.diamondIcon
             local costText = tostring(gems)
             if tickets > 0 then
+                icon = (stellar and img.ticketIconStellar and img.ticketIconStellar >= 0)
+                    and img.ticketIconStellar or img.ticketIcon
                 costText = tostring(tickets)
                 if gems > 0 then costText = costText .. "+" .. tostring(gems) end
             end
-            DarkIcon.drawNine(vg, "btn", 300, DESIGN_H - 274, 480, 88, { accent = "gold" })
-            nvgFontSize(vg, 34)
+            local btnX, btnY, btnW, btnH = 300, DESIGN_H - 274, 480, 88
+            DarkIcon.drawNine(vg, "btn", btnX, btnY, btnW, btnH, { accent = "gold" })
+            local bcx, bcy = btnX + btnW * 0.5, btnY + btnH * 0.5
+            nvgFontFace(vg, "sans")
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFontSize(vg, 36)
+            local labelW = nvgTextBounds(vg, 0, 0, againText)
+            nvgFontSize(vg, 32)
+            local costW = nvgTextBounds(vg, 0, 0, costText)
+            local ICON, GAP = 40, 12
+            local left = bcx - (labelW + GAP + ICON + 8 + costW) * 0.5
+            nvgFontSize(vg, 36)
             nvgFillColor(vg, nvgRGBA(255, 236, 190, 255))
-            nvgText(vg, DESIGN_W * 0.5 - 90, DESIGN_H - 230, againText, nil)
-            nvgFontSize(vg, 28)
-            nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-            nvgText(vg, DESIGN_W * 0.5 + 125, DESIGN_H - 230, costText, nil)
+            nvgText(vg, left, bcy, againText, nil)
+            if icon and icon >= 0 then
+                drawImageCentered(vg, icon, left + labelW + GAP + ICON * 0.5, bcy, ICON, ICON, 1.0)
+            end
+            local enough = tickets >= ticketCost or (GameState.getGems() or 0) >= gems
+            local r, g, b = 255, 255, 255
+            if not enough then r, g, b = 255, 90, 90 end
+            drawTextStroke(vg, left + labelW + GAP + ICON + 8, bcy, costText, 32,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, r, g, b, 3)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFontSize(vg, 40)
             nvgFillColor(vg, nvgRGBA(255, 255, 255, 180))
             nvgText(vg, DESIGN_W * 0.5, DESIGN_H - 120, "点击任意处继续", nil)

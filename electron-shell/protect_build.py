@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""终焉之门 · --protect 打包第一步：物化「混淆工作区」。
+
+流程定位（详见 electron-shell/README.md §「--protect 受保护打包」）：
+
+    protect_build.py            ← 本脚本：生成混淆工作区（仓库外，不改任何源文件）
+      → taptap-maker preview prepare --target-dir <混淆工作区>
+      → prepare_local_dist.py --scripts-root <混淆工作区>/scripts
+      → pack_release.py --prepare-dist
+
+为什么混淆必须发生在官方 Build **之前**：
+  * `dist/assets/*.lua` 受 manifest hash/size 约束，事后替换会破坏资源校验；
+  * `prepare_local_dist.verify_lua` 与 `pack_release.verify_prepare_dist` 都要求
+    dist 中 Lua 与某棵源码树逐字节一致——本脚本产出的混淆工作区就是那棵树。
+
+工作区内容：
+  scripts/   361 个 .lua → L1 混淆产物（内置 5 项等价校验，任一失败即拒绝改写、
+             原样复制并计入 rejected）；非 .lua（.meta/.py/.png/…）逐字节复制。
+  .project/  逐字节复制（版本校验需要）。
+  assets/    **真实复制**（默认且推荐）。实测官方 Build 对符号链接的 assets/
+             不烘焙（dist manifest 只剩 361 lua + 4 json），换成真实复制后
+             1226 个资源全部烘焙成功；故 --link-assets 仅作为磁盘紧张时的
+             实验选项保留，且会在报告中打醒目警告。prepare_local_dist 侧有
+             资产闸门兜底（manifest 缺图片/音频即拒包）。
+
+安全承诺：
+  * 绝不修改仓库源码 / 仓库根 dist / electron-shell/game；
+  * 混淆失败的文件保持明文并在报告中显著列出（宁可漏保护，不可错保护）；
+  * protect-report.json 记录每个文件的处置（changed/unchanged/rejected）与 SHA256。
+
+用法：
+  python3 protect_build.py --source-root . --workspace-root .tmp/protected-workspace
+  python3 protect_build.py --source-root . --workspace-root ../protected --link-assets  # 实验:省磁盘但 Build 烘焙会失败
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+SHELL = Path(__file__).resolve().parent
+sys.path.insert(0, str(SHELL))
+
+try:
+    from lua_obfuscator import obfuscate_file_enhanced, analyze_project  # noqa: E402
+except ImportError as e:  # pragma: no cover
+    import sys as _sys
+    raise SystemExit(
+        "缺少依赖：%s\n"
+        "当前解释器：%s\n"
+        "请用【同一个解释器】安装依赖（关键：用 python -m pip，避免 pip 与 python 不是同一个）：\n"
+        "    python -m pip install luaparser lupa\n"
+        "（Linux/macOS 建议 venv：python3 -m venv ~/luaenv && ~/luaenv/bin/pip install luaparser lupa）"
+        % (e, _sys.executable))
+
+
+def log(msg: str) -> None:
+    print("[protect] %s" % msg, flush=True)
+
+
+def die(msg: str) -> None:
+    print("[protect] ERROR: %s" % msg, file=sys.stderr)
+    raise SystemExit(1)
+
+
+def sha256_bytes(b: bytes) -> str:
+    return hashlib.sha256(b).hexdigest()
+
+
+def link_or_copy_dir(src: Path, dst: Path, link: bool) -> str:
+    """把 src 目录以复制(默认)或链接方式放到 dst。返回方式描述。"""
+    if dst.exists() or dst.is_symlink():
+        if dst.is_symlink() or dst.is_file():
+            dst.unlink()
+        else:
+            shutil.rmtree(dst)
+    if not link:
+        shutil.copytree(src, dst)
+        return "copied"
+    if os.name == "nt":
+        # junction 不需要管理员权限；symlink 需要
+        subprocess.check_call(
+            ["cmd", "/c", "mklink", "/J", str(dst), str(src)],
+            stdout=subprocess.DEVNULL)
+        return "junction"
+    os.symlink(src.resolve(), dst, target_is_directory=True)
+    return "symlink"
+
+
+def materialize(source_root: Path, ws: Path, link_assets: bool,
+                rename_fields: bool = False, emmylua_root: Path = None) -> dict:
+    if not (source_root / "scripts").is_dir():
+        die("source-root 下没有 scripts/：%s" % source_root)
+    for required in (".project", "assets"):
+        if not (source_root / required).is_dir():
+            die("source-root 下缺少 %s/（官方 Build 需要）" % required)
+
+    if ws.exists():
+        # 防止误删用户目录：只接受含 protect-report.json 的旧工作区
+        if not (ws / "protect-report.json").is_file():
+            die("workspace-root 已存在但不是本工具生成的工作区：%s" % ws)
+        log("清理旧工作区 %s" % ws)
+        shutil.rmtree(ws)
+    ws.mkdir(parents=True)
+
+    # assets: 默认真实复制（官方 Build 对符号链接 assets 不烘焙，实测证实）
+    mode = link_or_copy_dir(source_root / "assets", ws / "assets", link_assets)
+    log("assets/ -> %s (%s)" % (mode, source_root / "assets"))
+    if mode != "copied":
+        log("⚠️⚠️ --link-assets：官方 Build 实测不烘焙符号链接 assets/，dist 将缺全部"
+            "图片/音频，prepare_local_dist 资产闸门会拒包。仅供实验。")
+
+    # .project: 复制（小且需要写权限）
+    shutil.copytree(source_root / ".project", ws / ".project")
+    log(".project/ -> copied")
+
+    # Maker 绑定/工具目录：官方 preview prepare 要求 target-dir 是「已绑定 Maker
+    # 的工程」，缺 .maker-mcp/config.json 会直接 FAIL。这些目录是本地绑定产物
+    # （通常被 gitignore，各机器内容不同），存在即复制，绝不修改仓库原件。
+    for name in (".maker-mcp", ".maker", ".installer", ".cli", ".sce"):
+        src_dir = source_root / name
+        if src_dir.is_dir():
+            shutil.copytree(src_dir, ws / name)
+            log("%s/ -> copied (Maker 绑定/工具目录)" % name)
+        elif name == ".maker-mcp":
+            log("⚠️ source-root 下没有 .maker-mcp/：官方 preview prepare 会报 "
+                "\"Preview requires a bound Maker project\"。请确认本机 Maker 已绑定"
+                "该工程（.maker-mcp/config.json 存在），或把 --source-root 指向绑定过的仓库根。")
+
+    # scripts: 物化混淆产物
+    files = sorted((source_root / "scripts").rglob("*"))
+    report = {"changed": [], "unchanged": [], "rejected": [], "copied_non_lua": 0,
+              "field_names": 0}
+    renameable = {}
+    if rename_fields:
+        emmy = (emmylua_root or source_root).resolve()
+        fa = analyze_project(emmy)
+        renameable = fa.get("renameable", {})
+        log("⚠️ --rename-fields【实验性】：单文件私有字段/方法改名，改变模块 API 表面；"
+            "须完整实机回归后才可用于发行。字段分析：%s" % fa.get("stats", {}))
+    for src in files:
+        if src.is_dir():
+            continue
+        rel = src.relative_to(source_root)
+        dst = ws / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        raw = src.read_bytes()
+        if src.suffix == ".lua":
+            text = raw.decode("utf-8")
+            allowed = renameable.get(rel.as_posix()) if rename_fields else None
+            obf, status, detail, fmap = obfuscate_file_enhanced(
+                text, allowed_fields=allowed, strip_comments=True)
+            out_bytes = obf.encode("utf-8")
+            dst.write_bytes(out_bytes)
+            report["field_names"] += len(fmap)
+            report[status].append({
+                "path": rel.as_posix(),
+                "detail": detail,
+                "src_sha256": sha256_bytes(raw),
+                "out_sha256": sha256_bytes(out_bytes),
+            })
+            if status in ("unchanged", "rejected"):
+                # 双重保险：未改写的文件必须与源逐字节一致
+                if out_bytes != raw:
+                    die("%s 标记 %s 但输出与源不一致（内部错误）" % (rel, status))
+        else:
+            dst.write_bytes(raw)
+            report["copied_non_lua"] += 1
+
+    n_lua = len(report["changed"]) + len(report["unchanged"]) + len(report["rejected"])
+    log("lua files=%d changed=%d unchanged=%d rejected=%d non_lua_copied=%d "
+        "field_names_renamed=%d (注释已剥离; 字段改名=%s)" % (
+        n_lua, len(report["changed"]), len(report["unchanged"]),
+        len(report["rejected"]), report["copied_non_lua"], report["field_names"],
+        "ON(实验)" if rename_fields else "off"))
+    if n_lua == 0:
+        die("没有找到任何 .lua 文件")
+
+    main_lua = ws / "scripts" / "main.lua"
+    if not main_lua.is_file():
+        die("混淆工作区缺少 scripts/main.lua（入口）")
+
+    if report["rejected"]:
+        log("⚠️ 以下文件被拒绝改写（保持明文，需要人工跟进）：")
+        for item in report["rejected"]:
+            log("   %s : %s" % (item["path"], item["detail"]))
+
+    summary = {
+        "lua_total": n_lua,
+        "changed": len(report["changed"]),
+        "unchanged": len(report["unchanged"]),
+        "rejected": len(report["rejected"]),
+        "copied_non_lua": report["copied_non_lua"],
+        "field_names_renamed": report["field_names"],
+        "rename_fields": bool(rename_fields),
+        "strip_comments": True,
+        "assets_mode": mode,
+        "files": report,
+    }
+    (ws / "protect-report.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=1), encoding="utf-8")
+    log("report -> %s" % (ws / "protect-report.json"))
+    return summary
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="物化 L1 混淆工作区（--protect 打包第一步）")
+    ap.add_argument("--source-root", type=Path, required=True, help="仓库根（含 scripts/.project/assets）")
+    ap.add_argument("--workspace-root", type=Path, required=True, help="混淆工作区输出目录（仓库外或 .tmp 下）")
+    ap.add_argument("--link-assets", action="store_true",
+                    help="实验：assets/ 用符号链接/junction 代替真实复制（省 ~400MB 磁盘，"
+                         "但官方 Build 实测不烘焙，资产闸门会拒包）")
+    ap.add_argument("--rename-fields", action="store_true",
+                    help="【实验性】除局部改名+剥注释外，再重命名单文件私有字段/方法名。"
+                         "改变模块 API 表面，需完整实机回归验证后才可发行；对行级相似度"
+                         "仅再降约 1%（收益低、风险高），默认关闭")
+    ap.add_argument("--emmylua-root", type=Path, default=None,
+                    help="--rename-fields 时引擎声明(.emmylua/urhox-libs)所在根；缺省用 source-root")
+    args = ap.parse_args()
+
+    source_root = args.source_root.resolve()
+    ws = args.workspace_root.resolve()
+    # 安全边界：
+    #  - ws == source_root：禁止（会污染源码树）
+    #  - source_root in ws.parents（ws 是 source 的祖先，包含源码）：禁止
+    #  - ws 位于 source_root 内部（如 .tmp/protected-workspace）：允许——
+    #    物化只读 scripts/.project/assets，ws 内容由本工具全新生成并整目录重建，
+    #    .tmp/ 已被 .gitignore 排除；这也是 build_protected_windows.bat 的默认位置。
+    # 注意方向：ws in source_root.parents 表示 ws 是 source 的祖先（包含源码）→ 禁止。
+    # source_root in ws.parents 表示 ws 在 source 内部（如 .tmp/ 下）→ 允许。
+    if ws == source_root or ws in source_root.parents:
+        die("workspace-root 不能等于 source-root、也不能包含 source-root（%s vs %s）" % (ws, source_root))
+
+    summary = materialize(source_root, ws, args.link_assets,
+                          rename_fields=args.rename_fields,
+                          emmylua_root=args.emmylua_root)
+    log("完成。下一步：")
+    log('  npx -y --package @taptap/maker@0.0.34 taptap-maker preview prepare --target-dir "%s" --json' % ws)
+    log("  python electron-shell/prepare_local_dist.py --scripts-root %s" % (ws / "scripts"))
+    log("  python electron-shell/pack_release.py --prepare-dist")
+    return 0 if summary["lua_total"] > 0 else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

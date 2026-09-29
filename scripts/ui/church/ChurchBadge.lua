@@ -61,18 +61,16 @@ function M.bind(deps)
     end
 
     local function hasAnyChurchBadge()
-        -- 天赋角标已独立到古树，教堂只显示转职/神器
-        return hasAnyAdvance() or ArtifactPanel.canUpgradeAnyArtifact()
+        -- 教堂现只有神器（转职已迁角色详情、天赋已独立古树），角标只看神器可合成
+        return ArtifactPanel.canUpgradeAnyArtifact()
     end
 
     local function getChurchBadgeInfo()
+        -- 神器可合成→绿色箭头；不再有转职红点（转职不在教堂）
         if ArtifactPanel.canUpgradeAnyArtifact() then
-            return true, nil        -- 绿色箭头
-        elseif hasAnyAdvance() then
-            return true, "redDot"   -- 红点
-        else
-            return false, nil
+            return true, nil
         end
+        return false, nil
     end
 
     return {

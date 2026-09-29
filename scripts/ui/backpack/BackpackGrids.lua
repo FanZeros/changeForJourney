@@ -10,6 +10,7 @@ local PlayerStore     = require("core.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
 local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local M = {}
 
@@ -27,6 +28,7 @@ function M.bind(deps)
     local getItemIcon = deps.getItemIcon
     local getImgCheckmark = deps.getImgCheckmark
     local getImgLock = deps.getImgLock
+    local qualityChecked = deps.qualityChecked or function() return true end
     local getImgHeroIcons = deps.getImgHeroIcons
     local calcScrollMax = deps.calcScrollMax
     local clampScroll = deps.clampScroll
@@ -49,12 +51,14 @@ function M.bind(deps)
         local list = {}
         for seqStr, equip in pairs(equipData.inventory) do
             local tpl = EquipmentConfig.ITEMS[equip.templateId]
-            if tpl then
+            local quality = (equip and (equip.quality or (tpl and tpl.quality))) or 1
+            -- 常驻勾选筛选：勾选集合非空时只列出勾选档位的装备（全不勾=全部）
+            if tpl and qualityChecked(quality) then
                 list[#list + 1] = {
                     seq = tonumber(seqStr) or 0,
                     templateId = equip.templateId,
                     level = equip.level or 1,
-                    quality = equip.quality or tpl.quality or 1,
+                    quality = quality,
                     name = tpl.name or "",
                     type = equip.type or tpl.type or "",
                     enhanceLevel = equip.enhanceLevel or 0,
@@ -102,6 +106,16 @@ function M.bind(deps)
             end
             if screenY > GRID.CLIP_BOTTOM + GRID.CELL_SIZE then
                 break
+            end
+
+            local cellTop = cy - GRID.CELL_SIZE * 0.5
+            local cellBottom = cy + GRID.CELL_SIZE * 0.5
+            local clipCell = cellTop < CLIP_TOP or cellBottom > GRID.CLIP_BOTTOM
+            if clipCell then
+                nvgSave(vg)
+                local visTop = math.max(cellTop, CLIP_TOP)
+                local visBot = math.min(cellBottom, GRID.CLIP_BOTTOM)
+                nvgIntersectScissor(vg, cx - GRID.CELL_SIZE * 0.5, visTop, GRID.CELL_SIZE, math.max(0, visBot - visTop))
             end
 
             local equip = equipList[idx]
@@ -154,17 +168,16 @@ function M.bind(deps)
                         local badgeSize = 66
                         local badgeX = cx - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
                         local badgeY = cy - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
-                        nvgSave(vg)
-                        nvgBeginPath(vg)
-                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                        nvgFillPaint(vg, nvgImagePattern(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 0, ownerIcon, 1.0))
-                        nvgFill(vg)
-                        nvgBeginPath(vg)
-                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                        nvgStrokeColor(vg, nvgRGBA(0xff, 0xff, 0xff, 200))
-                        nvgStrokeWidth(vg, 2)
-                        nvgStroke(vg)
-                        nvgRestore(vg)
+                        -- [统一角色框] 已装备头像角标（白描边变体）
+                        ---@type number
+                        local ownerHeroId = equip.equippedByHeroId
+                        HeroFrame.draw(vg, {
+                            cx = badgeX, cy = badgeY, size = badgeSize, radius = 6,
+                            heroId = ownerHeroId,
+                            iconHandle = ownerIcon,
+                            state = "owned",
+                            borderOverride = { 255, 255, 255, 200, 2 },
+                        })
                     end
                 end
 
@@ -198,6 +211,9 @@ function M.bind(deps)
                 nvgStrokeColor(vg, nvgRGBA(232, 204, 140, 210))
                 nvgStrokeWidth(vg, 3)
                 nvgStroke(vg)
+            end
+            if clipCell then
+                nvgRestore(vg)
             end
             ::continue_equip::
         end

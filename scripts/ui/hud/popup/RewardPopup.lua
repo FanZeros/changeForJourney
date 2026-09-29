@@ -51,6 +51,7 @@ local ArtifactAssetUtil = require("config.ArtifactAssetUtil")
 local ResourceDefs      = require("config.ResourceDefs")
 local GameSFX           = require("systems.GameSFX")
 local RewardCascade     = require("ui.widget.RewardCascade")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local RewardPopup = {}
 
@@ -116,6 +117,17 @@ local HINT_TEXT = "点击空白处关闭"
 local BADGE_FONT   = 40
 local BADGE_STROKE = 4
 
+-- 角标字号自适应：按实际文本宽度测量，太长（大数值/长名字）时等比缩小，避免溢出图标
+local BADGE_FONT_MIN = 24
+local function fitBadgeFont(vg, text)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, BADGE_FONT)
+    local w = nvgTextBounds(vg, 0, 0, text)
+    local maxW = ICON_SIZE - 20
+    if w <= maxW then return BADGE_FONT end
+    return math.max(BADGE_FONT_MIN, BADGE_FONT * maxW / w)
+end
+
 -- ======================== 资源定义表（统一引用中央注册表） ========================
 local RESOURCE_DEFS = ResourceDefs.DEFS
 
@@ -133,6 +145,8 @@ local state = {
     dragLastY = 0,
     scrollVel = 0,
     followScroll = true,
+    autoScroll = nil,  -- { t, dur, to } 非逐件弹出时开屏平滑滚到底部（显示最新/最下方奖励）
+    panel = nil,       -- 触发面板 'left'|'center'|'right'（横屏三面板跟随绘制/输入）；nil=全屏居中
     -- 动画状态
     animPhase  = "none",  -- "none"|"opening"|"open"|"closing"
     animStart  = 0,       -- 动画开始时刻（time.elapsedTime）
@@ -217,7 +231,7 @@ end
 
 local function itemAccent(item)
     local q = 2
-    if item.type == "equip" or item.type == "hero" or item.type == "relic"
+    if item.type == "equip" or item.type == "hero"
         or item.type == "artifact" or item.type == "seed" then
         q = item.quality or 1
     elseif item.type == "shard" and item.heroId then
@@ -232,7 +246,7 @@ local function itemAccent(item)
 end
 
 local function playObtainSfx(item)
-    if item and (item.type == "equip" or item.type == "artifact" or item.type == "relic") then
+    if item and (item.type == "equip" or item.type == "artifact") then
         GameSFX.play("install")
     elseif item and item.type == "hero" then
         GameSFX.play("level_up")
@@ -279,16 +293,6 @@ local resourceIconCache = {}
 -- 角色头像图标缓存: [heroId] = nvgImage handle
 local heroIconCache = {}
 
--- 遗物类型图标缓存: [relicType] = nvgImage handle
-local relicIconCache = {}
-local RELIC_ICON_PATHS = {
-    [1] = "image/遗物图标/ICON_YWX_GUI.png",   -- 岩龟
-    [2] = "image/遗物图标/ICON_YWX_SHE.png",   -- 毒蛇
-    [3] = "image/遗物图标/ICON_YWX_LU.png",    -- 白鹿
-    [4] = "image/遗物图标/ICON_YWX_LANG.png",  -- 灰狼
-    [5] = "image/遗物图标/ICON_YWX_YING.png",  -- 猎鹰
-}
-
 -- 装备图标/品质背景缓存已迁移至 ImageCache 共享模块（LRU 淘汰，防止 VRAM 累积）
 
 local cachedVg = nil
@@ -333,18 +337,6 @@ local function getHeroIcon(heroId)
     return img
 end
 
---- 获取遗物类型图标（懒加载）
-local function getRelicIcon(relicType)
-    local cached = relicIconCache[relicType]
-    if cached then return cached end
-    if not cachedVg then return -1 end
-    local path = RELIC_ICON_PATHS[relicType]
-    if not path then return -1 end
-    local img = nvgCreateImage(cachedVg, path, 0)
-    relicIconCache[relicType] = img
-    return img
-end
-
 --- 获取装备图标（委托 ImageCache 共享缓存）
 local function getEquipIcon(templateId)
     return ImageCache.getEquipIcon(templateId)
@@ -364,6 +356,14 @@ end
 
 local function syncCascadeScroll()
     if not state.cascade or state.dragging or not state.followScroll then return end
+    if cascadeFinished() then
+        -- 全部出场后停到最底部，保证看到的是最新（最下方）的奖励
+        if state.scrollMax > 0 then
+            state.scrollY = state.scrollMax
+            state.scrollVel = 0
+        end
+        return
+    end
     local elapsed = cascadeElapsed() + 0.04
     if elapsed < 0 then return end
     local shown = cascadeShownCount(elapsed)
@@ -407,20 +407,19 @@ function RewardPopup.show(title, rewards, opts)
     state.followScroll = false
     state.onItemClick = opts and opts.onItemClick or nil
     state.onClose     = opts and opts.onClose     or nil
+    -- 跟随触发面板：显式 opts.panel 优先，否则取横屏当前焦点面板（全局 H_focusPanel）
+    state.panel = (opts and opts.panel) or (H_focusPanel or nil)
 
-    -- 排序：资源类排前，角色/装备/遗物类排后
+    -- 排序：资源类排前，角色/装备类排后
     local resources = {}
     local heroes = {}
     local equips = {}
-    local relics = {}
     local artifacts = {}
     for _, item in ipairs(rewards) do
         if item.type == "hero" then
             heroes[#heroes + 1] = item
         elseif item.type == "equip" then
             equips[#equips + 1] = item
-        elseif item.type == "relic" then
-            relics[#relics + 1] = item
         elseif item.type == "artifact" then
             artifacts[#artifacts + 1] = item
         else
@@ -445,13 +444,6 @@ function RewardPopup.show(title, rewards, opts)
         return la > lb
     end)
 
-    -- 遗物按品质降序排列
-    table.sort(relics, function(a, b)
-        local qa = a.quality or 1
-        local qb = b.quality or 1
-        return qa > qb
-    end)
-
     -- 神器按品质降序排列
     table.sort(artifacts, function(a, b)
         local qa = a.quality or 1
@@ -459,7 +451,7 @@ function RewardPopup.show(title, rewards, opts)
         return qa > qb
     end)
 
-    -- 合并：资源在前，角色居中，装备在后，遗物/神器最后
+    -- 合并：资源在前，角色居中，装备在后，神器最后
     state.items = {}
     for _, item in ipairs(resources) do
         state.items[#state.items + 1] = item
@@ -468,9 +460,6 @@ function RewardPopup.show(title, rewards, opts)
         state.items[#state.items + 1] = item
     end
     for _, item in ipairs(equips) do
-        state.items[#state.items + 1] = item
-    end
-    for _, item in ipairs(relics) do
         state.items[#state.items + 1] = item
     end
     for _, item in ipairs(artifacts) do
@@ -487,6 +476,12 @@ function RewardPopup.show(title, rewards, opts)
     state.animStart = time.elapsedTime
     closedAt_ = 0  -- 重置关闭保护（重新打开时清除残留）
     state.cascade = wantsCascade(state.title, opts)
+    -- 非逐件弹出（整屏立即显示）且内容超出一屏时：开屏自动平滑滚到最底部，
+    -- 让玩家直接看到最新（最下方）的奖励；手动拖拽/滚轮会取消该动画。
+    state.autoScroll = nil
+    if not state.cascade and state.scrollMax > 0 then
+        state.autoScroll = { t = 0, dur = 0.5, to = state.scrollMax }
+    end
     cascade = RewardCascade.new(#state.items, {
         interval     = CASCADE_INTERVAL,
         intervalTail = CASCADE_INTERVAL_TAIL,
@@ -603,6 +598,19 @@ function RewardPopup.update(dt)
         syncCascadeScroll()
     end
 
+    -- 非逐件弹出：开屏平滑滚到底部（显示最下方的最新奖励）
+    local as = state.autoScroll
+    if as and not state.dragging then
+        as.t = as.t + dt
+        local k = math.min(1, as.t / as.dur)
+        state.scrollY = as.to * (1 - (1 - k) * (1 - k))  -- ease-out quad
+        if k >= 1 then
+            state.scrollY = as.to
+            state.autoScroll = nil
+        end
+        state.scrollVel = 0
+    end
+
     -- 惯性滚动
     if not state.dragging and math.abs(state.scrollVel) > SCROLL_MIN_VEL then
         state.scrollY = state.scrollY + state.scrollVel
@@ -644,11 +652,13 @@ function RewardPopup.handleInput(dx, dy)
     -- 逐个获得未结束时，点击只跳过动画，避免奖励还没看完就被关掉
     if skipCascade() then return true end
 
-    -- 点面板外面不关闭，也不拦截战斗操作。
+    -- 任何点击都能关闭奖励弹窗：面板外点击同样关闭并消费事件，
+    -- 避免弹窗一直挂着挡住后续操作。
     local inPanel = dx >= PANEL_CX - PANEL_W * 0.5 and dx <= PANEL_CX + PANEL_W * 0.5
                 and dy >= GLOW_CY - GLOW_H * 0.5 and dy <= PANEL_CY + PANEL_H * 0.5
     if not inPanel then
-        return false
+        RewardPopup.close()
+        return true
     end
 
     -- 点击物品图标检测（仅在裁剪区域内且有回调时）
@@ -715,6 +725,7 @@ function RewardPopup.handleDragBegin(dx, dy)
         state.dragMoved = 0
         state.scrollVel = 0
         state.followScroll = false
+        state.autoScroll = nil  -- 手动拖拽取消开屏自动滚动
     end
 
     return true
@@ -771,6 +782,7 @@ function RewardPopup.handleScroll(wheel)
     if not state.open then return end
     state.scrollY = state.scrollY - wheel * 60
     state.followScroll = false
+    state.autoScroll = nil  -- 手动滚轮取消开屏自动滚动
     clampScroll()
     state.scrollVel = 0
 end
@@ -814,6 +826,11 @@ function RewardPopup.currentRowTag()
     return state.open and state.rowTag or nil
 end
 
+--- [三面板] 当前归属面板 'left'|'center'|'right'（nil=全屏居中）
+function RewardPopup.currentPanel()
+    return state.open and state.panel or nil
+end
+
 --- [三行并行] 行内输入：窗口坐标 → 设计空间，交给统一的 handleInput。
 --- 走这里才能保留同帧保护与「逐个获得未结束时先跳过动画」的行为；
 --- 直接调 close() 会让玩家通关后随手一点就把弹窗关掉，看起来像没弹。
@@ -832,9 +849,10 @@ function RewardPopup.handleInputRegion(wx, wy, rx, ry, rw, rh)
     return RewardPopup.handleInput(dx, dy)
 end
 
---- 全局绘制（无行归属时走原全屏路径）
+--- 全局绘制（无行归属时走原全屏路径；归属左/右面板时由 drawRegion 在面板视口内绘制）
 function RewardPopup.draw(vg)
     if not state.open or state.rowTag then return end
+    if state.panel and state.panel ~= 'center' then return end
 
     -- [暗黑化] 不再画全屏黑色叠加层，弹窗直接浮在场景上
     RewardPopup.drawContent(vg)
@@ -1006,7 +1024,7 @@ function RewardPopup.drawContent(vg)
                         local lvlX = cx + ICON_SIZE * 0.5 - 8
                         local lvlY = cy + ICON_SIZE * 0.5 - 8
                         nvgFontFace(vg, "sans")
-                        nvgFontSize(vg, BADGE_FONT)
+                        nvgFontSize(vg, fitBadgeFont(vg, lvlText))
                         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                         nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                         local sStep = math.pi * 2 / 16
@@ -1019,22 +1037,17 @@ function RewardPopup.drawContent(vg)
                     end
                 end
             elseif item.type == "hero" then
-                -- ========== 角色头像图标 ==========
-                local q = item.quality or 3
-
-                -- 品质背景框
-                local qBgImg = getQualityBg(q)
-                if qBgImg >= 0 then
-                    drawImageCentered(vg, qBgImg, cx, cy, ICON_SIZE, ICON_SIZE, 1.0)
-                end
-
-                -- 角色头像图标（内缩 12px）
+                -- ========== 角色头像图标（[统一角色框] 品质色描边，替代 ZBBJ 贴图底） ==========
+                local iconPadding = 12
+                local iconInner = ICON_SIZE - iconPadding * 2
                 local heroImg = getHeroIcon(item.heroId)
-                if heroImg >= 0 then
-                    local iconPadding = 12
-                    local iconInner = ICON_SIZE - iconPadding * 2
-                    drawImageCentered(vg, heroImg, cx, cy, iconInner, iconInner, 1.0)
-                end
+                HeroFrame.draw(vg, {
+                    cx = cx, cy = cy, size = iconInner,
+                    heroId = item.heroId,
+                    iconHandle = heroImg,
+                    quality = item.quality or 3,
+                    state = "owned",
+                })
 
                 -- 名称角标（右下角，描边）
                 if item.name then
@@ -1042,7 +1055,7 @@ function RewardPopup.drawContent(vg)
                     local nameX = cx + ICON_SIZE * 0.5 - 8
                     local nameY = cy + ICON_SIZE * 0.5 - 8
                     nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, BADGE_FONT)
+                    nvgFontSize(vg, fitBadgeFont(vg, nameText))
                     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                     local sStep = math.pi * 2 / 16
@@ -1053,24 +1066,6 @@ function RewardPopup.drawContent(vg)
                     nvgFillColor(vg, nvgRGBA(0xff, 0xff, 0xff, 255))
                     nvgText(vg, nameX, nameY, nameText, nil)
                 end
-            elseif item.type == "relic" then
-                -- ========== 遗物图标（品质背景 + 类型图标）==========
-                local q = item.quality or 1
-
-                -- 品质背景框
-                local qBgImg = getQualityBg(q)
-                if qBgImg >= 0 then
-                    drawImageCentered(vg, qBgImg, cx, cy, ICON_SIZE, ICON_SIZE, 1.0)
-                end
-
-                -- 遗物类型图标（内缩 12px）
-                local relicImg = getRelicIcon(item.relicType)
-                if relicImg >= 0 then
-                    local iconPadding = 12
-                    local iconInner = ICON_SIZE - iconPadding * 2
-                    drawImageCentered(vg, relicImg, cx, cy, iconInner, iconInner, 1.0)
-                end
-
             elseif item.type == "artifact" then
                 ArtifactAssetUtil.drawIcon(vg, item, cx, cy, ICON_SIZE, {})
 
@@ -1107,7 +1102,7 @@ function RewardPopup.drawContent(vg)
                     local amtX = cx + ICON_SIZE * 0.5 - 8
                     local amtY = cy + ICON_SIZE * 0.5 - 8
                     nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, BADGE_FONT)
+                    nvgFontSize(vg, fitBadgeFont(vg, amtText))
                     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                     local bStep = math.pi * 2 / 16
@@ -1124,12 +1119,21 @@ function RewardPopup.drawContent(vg)
                 local heroDef = HeroConfig.get(heroId)
                 local q = heroDef and heroDef.quality or 3
 
-                local qBgImg = getQualityBg(q)
-                if qBgImg >= 0 then
-                    drawImageCentered(vg, qBgImg, cx, cy, ICON_SIZE, ICON_SIZE, 1.0)
+                -- [统一角色框] 碎片：品质色描边头像 + 左上碎片角标
+                local shardSize = ICON_SIZE - 12
+                HeroFrame.draw(vg, {
+                    cx = cx, cy = cy, size = shardSize,
+                    heroId = heroId,
+                    quality = q,
+                    state = "owned",
+                })
+                local badgeSize = math.floor(shardSize * 53 / 160 + 0.5)
+                if DrawUtil._shardBadgeImg and DrawUtil._shardBadgeImg >= 0 then
+                    drawImageCentered(vg, DrawUtil._shardBadgeImg,
+                        cx - shardSize * 0.5 + badgeSize * 0.5,
+                        cy - shardSize * 0.5 + badgeSize * 0.5,
+                        badgeSize, badgeSize, 1.0)
                 end
-
-                DrawUtil.drawShardIcon(vg, heroId, cx, cy, ICON_SIZE - 12, 1.0)
 
                 if item.amount and item.amount > 0 then
                     do
@@ -1137,7 +1141,7 @@ function RewardPopup.drawContent(vg)
                         local amtX = cx + ICON_SIZE * 0.5 - 8
                         local amtY = cy + ICON_SIZE * 0.5 - 8
                         nvgFontFace(vg, "sans")
-                        nvgFontSize(vg, BADGE_FONT)
+                        nvgFontSize(vg, fitBadgeFont(vg, amtText))
                         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                         nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                         local bStep = math.pi * 2 / 16
@@ -1174,7 +1178,7 @@ function RewardPopup.drawContent(vg)
                         local amtX = cx + ICON_SIZE * 0.5 - 8
                         local amtY = cy + ICON_SIZE * 0.5 - 8
                         nvgFontFace(vg, "sans")
-                        nvgFontSize(vg, BADGE_FONT)
+                        nvgFontSize(vg, fitBadgeFont(vg, amtText))
                         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
                         nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                         local sStep = math.pi * 2 / 16

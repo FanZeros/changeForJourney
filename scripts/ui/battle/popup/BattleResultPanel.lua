@@ -47,10 +47,6 @@ local DESIGN_H = 2400
 local BG_CX, BG_CY = 540, 1192
 local BG_W, BG_H   = 1080, 1017
 
--- 2. 闪光动态背景（旋转）
-local GLOW_CX, GLOW_CY = 540, 876
-local GLOW_W, GLOW_H   = 908, 909
-
 -- 3. 消耗时间
 local TIME_CX, TIME_CY = 540, 827
 local TIME_FONT = 40
@@ -105,9 +101,6 @@ local HINT_FONT = 50
 local BADGE_FONT   = 40
 local BADGE_STROKE = 4
 
--- 光晕旋转速度（弧度/秒）
-local GLOW_ROTATE_SPEED = 0.5
-
 -- ======================== 资源定义表（统一引用中央注册表） ========================
 local RESOURCE_DEFS = ResourceDefs.DEFS
 
@@ -115,8 +108,6 @@ local RESOURCE_DEFS = ResourceDefs.DEFS
 
 local imgWinBg   = -1   -- UI_JJCJS_ZDSL.png
 local imgLoseBg  = -1   -- UI_JJCJS_ZDSB.png
-local imgWinGlow = -1   -- UI_GXHD_2.png
-local imgLoseGlow = -1  -- UI_GXHD_3.png
 local imgScoreIcon = -1 -- UI_icon_JJCFS_X.png
 
 -- 英雄头像缓存: heroId → nvgImage
@@ -136,8 +127,6 @@ local state = {
     rewards     = {},     -- { type, amount }[]
     arenaMode   = false,
     scoreChange = 0,
-    -- 动画
-    glowAngle   = 0,
     -- 关闭回调
     onClose     = nil,
 }
@@ -153,22 +142,6 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
     nvgFill(vg)
-end
-
---- 绘制旋转图片
-local function drawImageRotated(vg, img, cx, cy, w, h, angle, alpha)
-    if img < 0 or alpha <= 0.01 then return end
-    nvgSave(vg)
-    nvgTranslate(vg, cx, cy)
-    nvgRotate(vg, angle)
-    local x = -w * 0.5
-    local y = -h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, h)
-    nvgFillPaint(vg, paint)
-    nvgFill(vg)
-    nvgRestore(vg)
 end
 
 --- 获取英雄头像（懒加载）
@@ -221,8 +194,6 @@ function BRP.init(vg)
     cachedVg = vg
     imgWinBg    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJS_ZDSL.png", 0)
     imgLoseBg   = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJS_ZDSB.png", 0)
-    imgWinGlow  = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_2.png", 0)
-    imgLoseGlow = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_3.png", 0)
     imgScoreIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCFS_X.png", 0)
     print("[BattleResultPanel] init OK")
 end
@@ -239,7 +210,6 @@ function BRP.show(opts)
     state.arenaMode   = opts.arenaMode or false
     state.scoreChange = opts.scoreChange or 0
     state.onClose     = opts.onClose
-    state.glowAngle   = 0
     print("[BattleResultPanel] show: " .. (state.isWin and "WIN" or "LOSE")
         .. " heroes=" .. #state.heroStats
         .. " rewards=" .. #state.rewards
@@ -262,11 +232,9 @@ function BRP.isOpen()
     return state.open
 end
 
---- 更新（光晕旋转动画）
----@param dt number
-function BRP.update(dt)
-    if not state.open then return end
-    state.glowAngle = state.glowAngle + GLOW_ROTATE_SPEED * dt
+--- 更新（结算面板不再播旋转光效）
+---@param _dt number
+function BRP.update(_dt)
 end
 
 --- 处理点击（点击任意位置关闭）
@@ -290,10 +258,6 @@ function BRP.draw(vg)
     nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))  -- 50% = 255*0.5 ≈ 128
     nvgFill(vg)
-
-    -- === 1. 闪光动态背景（旋转，在结算背景后面） ===
-    local glowImg = state.isWin and imgWinGlow or imgLoseGlow
-    drawImageRotated(vg, glowImg, GLOW_CX, GLOW_CY, GLOW_W, GLOW_H, state.glowAngle, 1.0)
 
     -- === 2. 结算背景 ===
     local bgImg = state.isWin and imgWinBg or imgLoseBg

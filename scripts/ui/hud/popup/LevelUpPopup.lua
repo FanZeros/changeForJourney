@@ -137,9 +137,6 @@ local state = {
     spineLoaded = false,
     spineFinished = false,  -- 动画是否已播完
     spineLastTime = 0,
-    -- 图片
-    imgTextBg  = -1,      -- UI_JJC_BTBJ.png
-    imgArrow   = -1,      -- UI_HSJT.png
     -- 缓存
     cachedVg   = nil,
     -- 闪烁效果
@@ -241,10 +238,6 @@ end
 ---@param vg any NanoVG 上下文
 function LevelUpPopup.init(vg)
     state.cachedVg = vg
-    state.imgTextBg = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
-    state.imgArrow  = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_HSJT.png", 0)
-    if state.imgTextBg < 0 then print("[LevelUpPopup] WARN: UI_JJC_BTBJ.png load failed") end
-    if state.imgArrow  < 0 then print("[LevelUpPopup] WARN: UI_HSJT.png load failed") end
 end
 
 --- 展示等级提升弹窗

@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.77-remove-unused-icons | 2026-09-29 | 删除未引用的排行榜冠亚季图标和宝箱图标 ICON_PHB_TOP1-3、ICON_BX。 |
 | v2.76-remove-unused-spine | 2026-09-29 | 删除未加载的天赋背景 Spine UI_SPINE_TFBJ 整套及清单条目。其余 Spine 特效仍在使用。 |
 | v2.75-remove-rank-icons | 2026-09-29 | 删除未使用的段位图标 ICON_DW_1-8 及 AssetManifest、暗黑合图清单引用。 |
 | v2.74-boss-art-arcs | 2026-09-29 | 困难首通追加怪 1005/1006/1007 暂用帝江/朱厌/巴蛇正式卡面。投掷物按同时在飞的数量左右分道、分三层弧高，并错开飞行时间。 |

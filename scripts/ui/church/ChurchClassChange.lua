@@ -50,7 +50,7 @@ local pop = {
 -- 转职页图片（模块自管，init 时加载）
 local img = {
     classIcons2 = {},
-    titleBg = -1, branchLine = -1, branchLine2 = -1,
+    branchLine = -1, branchLine2 = -1,
     goldCoin = -1, iconUp = -1,
     detailBg = -1,
 }
@@ -287,7 +287,6 @@ function M.init(vg)
     if inited then return end
     inited = true
     savedVg = vg
-    img.titleBg    = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
     img.branchLine = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
     img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
     img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)

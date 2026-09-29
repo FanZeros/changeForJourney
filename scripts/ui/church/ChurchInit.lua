@@ -44,7 +44,6 @@ function M.bind(deps)
         img.plus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
 
         -- 转职相关图片（彩色职业背景 UI_ZZBJ 已删除）
-        img.titleBg    = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZBT1.png", 0)
         img.branchLine  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
         img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
         -- 职业图标（基础/一转/二转）按需加载，避免启动同步解码 42 张
@@ -73,12 +72,6 @@ function M.bind(deps)
         img.tfBg          = nvgCreateImage(vg, "image/界面底板/终焉古树/UI_GS_TFBJ_dark.png", 0)
         img.tfPointGlow   = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HG.png", 0)
         img.tfSliderThumb = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HK.png", 0)
-
-        -- 天赋详情面板背景（5种颜色）
-        local colorFileMap = { ["红"]="HONG", ["绿"]="LV", ["黄"]="HUANG", ["蓝"]="LAN", ["紫"]="ZI" }
-        for colorName, fileSuffix in pairs(colorFileMap) do
-            img.tfDetailBg[colorName] = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_TFWBK_" .. fileSuffix .. ".png", 0)
-        end
 
         -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HONG.png 贴图加载已移除（矢量绘制替代）
         img.tfInfoIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)

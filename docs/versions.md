@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.83-remove-church-frames | 2026-09-29 | 删除未绘制的转职彩框 UI_TFWBK 五色、标题底 UI_ZBT1、天赋背景 UI_JTTF_BJ/BJGY。光晕和滑块保留。 |
 | v2.82-remove-town-tag | 2026-09-29 | 删除未引用的城镇标签底 UI_CZ_BQ。UI_WORLD_BG 与 UI_CZ_BJ 仍作横屏和城镇背景。 |
 | v2.81-remove-old-nav | 2026-09-29 | 删除未使用的旧导航图 ICON_GN_2-5、ICON_GN_BAN。正式导航已是矢量。词缀等级标 ICON_CZBZ 保留。 |
 | v2.80-remove-recruit-glow | 2026-09-29 | 抽卡结果不再显示 SR/SSR/UR 品质光框 UI_PZG，并删除这三张图。 |

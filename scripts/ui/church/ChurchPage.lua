@@ -257,7 +257,6 @@ local img = {
     plus        = -1,   -- UI_ICON_JIA.png
     -- 转职相关
     -- 彩色职业背景 UI_ZZBJ 已删除
-    titleBg     = -1,    -- UI_ZBT1.png
     branchLine  = -1,    -- UI_ZZXT_1Z.png
     branchLine2 = -1,    -- UI_ZZXT_2Z.png（二转分叉线）
     classIcons2 = {},    -- UI_icon_ZY_{序号}.png（按职业序号索引）
@@ -287,7 +286,6 @@ local img = {
     tfPointGlow   = -1,  -- UI_JTTF_HG.png
     tfSliderThumb = -1,  -- UI_JTTF_HK.png
     -- 天赋详情面板背景（按颜色索引）
-    tfDetailBg    = {},  -- tfDetailBg["红"]=handle, ...
     tfResetBtn    = -1,  -- UI_AN_HONG.png 单节点重置按钮（红色）
     tfInfoIcon    = -1,  -- UI_icon_TS.png 天赋效果总览（感叹号）
 }

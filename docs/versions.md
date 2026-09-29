@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.79-remove-old-frames | 2026-09-29 | 删除未使用的旧品质框 UI_ZBTS_1-6 与卡底 KP_TY_N/R/SR/SSR/UR。卡底已改矢量绘制。 |
 | v2.78-remove-stat-icons | 2026-09-29 | 删除六维属性图标 ICON_SX。雷达图只画文字，去掉只加载不绘制的句柄。 |
 | v2.77-remove-unused-icons | 2026-09-29 | 删除未引用的排行榜冠亚季图标和宝箱图标 ICON_PHB_TOP1-3、ICON_BX。 |
 | v2.76-remove-unused-spine | 2026-09-29 | 删除未加载的天赋背景 Spine UI_SPINE_TFBJ 整套及清单条目。其余 Spine 特效仍在使用。 |

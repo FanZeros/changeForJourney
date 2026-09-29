@@ -26,6 +26,15 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-29，`workspace928` 通用面板底板重绘，已 push）
+
+- **任务**：9 张通用面板底板（XYGB/XYGA/XYG/MAPYY/HS/EJQRK/TJP_XL_1/TJP_XL_2/EJBB）全部用黑白抠图法重绘；用户两轮反馈：①"只给参考、明确不要旧拉伸图"②"做最简示意图然后直接出稿，不再参考已有"。
+- **最终方法（示意图直接出稿法）**：PIL 程序化画 6 张最简平面示意图（色块锚定外框/填充/铆钉/标题带/菱形/缺口位置比例，存 `.tmp/sketches/`，引用前必须 cp 到 `assets/image/_sketch/` 否则 generate_image 报路径无效）→ AI 按示意图渲染材质出白底 → 黑白差分抠图；**popup/ground 两例黑底替换失败（背景没换黑→差分全不透明→白角烤入）改白底亮度阈值抠图+反预乘去白边+口袋填洞**。归一到运行时尺寸。
+- **11 文件 = 6 画稿 + 5 派生**：XYGA=btn 去饱和35%、XYG=btn 去饱和25%+压暗85%、XL2=XL1 去饱和45%+压暗80%、EJQRK_POP=EJQRK 同稿 950×647、MAPYY_SHADOW=ground 同稿 1080×556。运行时尺寸：按钮232×226、弹窗827×569、横条970×260、背包996×1590、地面1080×610、竖板158×226（HS 无 live 加载备用）。
+- **复用结论**：MAPYY/HS 原图零 live 加载（只有 SHADOW 副本在用）是死素材；旧 SHADOW 顶部有白残片瑕疵已随重绘消失。是否删文件改引用未落地（用户未选）。
+- **推送**：rebase 时 BattleStageFlow.lua 冲突（远端 hoist require vs 本地内联，保留 hoist）；沙箱 git 身份未配置报 128 → 仓库级 `git config user.name/email` 沿用历史作者 `Maker <maker@local>`；push 用用户 PAT 一次性 URL（不进配置/记忆）。提交 `88d24ce`（素材）+ `8395cc2`（Lua WIP 死加载清理），已推 `workspace928`。
+- **教训**：edit_image 换黑底不保证生效，管线必须校验黑底图四角像素是否近黑，否则差分产物 alpha 全 255 白角烤入；从已抠透明图不能再做阈值抠图（白底检测失效），派生副本必须从白底原图抠。
+
 ## 上次做了什么（2026-09-28，`feat/talent-more-paths-0928` 及文档整理）
 
 - 功能轮（均已 push）：奖励弹窗自动滚底+大数字缩字号；扫荡/副本扫荡奖励弹出时自动关原页；情景 82（首通 205 大狗嚼发 60 碎片→觉醒页引导）；教堂剧情重写为神器登记（24-30/41）；全 UI 按钮禁用态棕色 `0x8d5f41`；奖励弹窗任意点击可关+跟随左/中/右面板；教堂角标只看神器；天赋星图 +16 条双向边（多环路）；无编队行不显示敌人；编队未实质改变不重置战斗（按队 diff）。

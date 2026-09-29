@@ -514,6 +514,35 @@ function EquipmentSystem.generateRandom(level, quality)
     return EquipmentSystem.generateBySlot(slot, level, quality)
 end
 
+-- ======================== 等级穿戴限制 ========================
+
+--- 读取英雄当前等级（roster 数据，兼容 cjson 字符串 key）
+---@param heroesData table|nil heroes 模块数据（含 roster）
+---@param heroId number|string
+---@return number level 找不到时返回 1
+function EquipmentSystem.getHeroLevel(heroesData, heroId)
+    if not heroesData or not heroesData.roster then return 1 end
+    local n = tonumber(heroId)
+    local hd = (n and heroesData.roster[n])
+        or heroesData.roster[heroId]
+        or (n and heroesData.roster[tostring(n)])
+    local lv = math.floor(tonumber(hd and hd.level) or 1)
+    if lv < 1 then lv = 1 end
+    return lv
+end
+
+--- 等级穿戴门槛：角色（英雄）等级低于装备等级时不可装备
+---@param heroLevel number 英雄等级
+---@param equip table|number 装备实例或装备等级
+---@return boolean ok true=可装备
+---@return number requiredLevel 装备需求等级
+function EquipmentSystem.checkLevelGate(heroLevel, equip)
+    local rawLevel = (type(equip) == "table") and equip.level or equip
+    local requiredLevel = math.max(1, math.floor(tonumber(rawLevel) or 1))
+    local hl = math.max(1, math.floor(tonumber(heroLevel) or 1))
+    return hl >= requiredLevel, requiredLevel
+end
+
 -- ======================== 槽位强化加成 ========================
 
 local BlacksmithConfig = require("config.BlacksmithConfig")
@@ -816,6 +845,17 @@ function EquipmentSystem.applyEquip(equipData, seq, heroId, slot, heroesData)
     end
     if not equip.slot then
         EquipmentSystem.hydrate(equip)
+    end
+
+    -- 等级穿戴门槛：英雄等级低于装备等级 → 拒绝（服务端权威校验）
+    if heroesData then
+        local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+        local gateOk, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+        if not gateOk then
+            print("[EquipmentSystem] applyEquip REJECTED level gate: heroLv="
+                .. tostring(heroLevel) .. " < equipLv=" .. tostring(requiredLevel))
+            return false, "角色等级不足，需要等级 " .. tostring(requiredLevel)
+        end
     end
 
     local seqStr = tostring(seq)

@@ -296,6 +296,9 @@ function EquipmentService.EquipAllBest(uid, heroId)
     local advBranch = hd and hd.advBranch
     local dualMode = AVC.getDualWieldMode(advBranch)
 
+    -- 等级穿戴门槛：英雄等级低于装备等级的候选直接跳过
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+
     -- 按顺序处理：weapon → armor → helmet → shoes → accessory → offhand
     local SLOT_ORDER = { "weapon", "armor", "helmet", "shoes", "accessory", "offhand" }
     local changed = 0
@@ -349,6 +352,9 @@ function EquipmentService.EquipAllBest(uid, heroId)
 
             -- 跳过已被任何英雄装备的
             if equippedSeqNums[seqNum] then goto continue_item end
+
+            -- 等级穿戴门槛：装备等级高于英雄等级则不可作为候选
+            if not (EquipmentSystem.checkLevelGate(heroLevel, equip)) then goto continue_item end
 
             -- 槽位匹配
             local matchSlot = false

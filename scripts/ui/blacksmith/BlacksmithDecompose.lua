@@ -41,6 +41,8 @@ local FJ = {
     -- 5. 背包格子
     GRID_COLS = 5, GRID_CELL = 160, GRID_GAP = 35, GRID_RADIUS = 24,
     GRID_BOTTOM_Y = 2025,
+    -- 滚轮步长：整行(195)过猛，取半行左右与其他页面(60-100)手感对齐
+    WHEEL_SCROLL_STEP = 100,
     -- 选中遮罩
     SEL_MASK_ALPHA = 128,
     SEL_CHECK_SIZE = 80,
@@ -1074,7 +1076,7 @@ function M.handleScroll(wheel, dx, dy)
             return
         end
     end
-    local scrollStep = FJ.GRID_ROW_STEP
+    local scrollStep = FJ.WHEEL_SCROLL_STEP
     local totalSlots = EquipmentSystem.MAX_INVENTORY
     local totalRows = math.ceil(totalSlots / FJ.GRID_COLS)
     local visibleH = FJ.GRID_BOTTOM_Y - (FJ.GRID_FIRST_CY - FJ.GRID_CELL * 0.5)

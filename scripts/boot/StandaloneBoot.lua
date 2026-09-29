@@ -8,6 +8,7 @@ local StageConfig       = require("config.StageConfig")
 local DropSystem        = require("systems.DropSystem")
 local EquipmentSystem   = require("systems.EquipmentSystem")
 local LootBoxSystem     = require("systems.LootBoxSystem")
+local BlacksmithConfig  = require("config.BlacksmithConfig")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local TopBar            = require("ui.hud.TopBar")
 local BattleStats       = require("systems.BattleStats")
@@ -320,16 +321,27 @@ function M.run(rt)
             end
             return
         end
-        -- 装备掉落（挂机）
+        -- 装备掉落（挂机）：符合自动分解条件直接转精粹，与多人服务端同一语义
         if quality then
             local level = stageEntry.monsterLevel or 1
             local lootboxData = ClientDispatcher.get("lootbox")
             if lootboxData then
-                LootBoxSystem.addSeed(lootboxData, data.stageId, quality, level)
-                LootBox.addSeedHint(quality, level)
-                LootBox.updateSeedData(lootboxData)
-                print("[Standalone] seed added: q=" .. quality .. " lv=" .. level
-                    .. " total=" .. LootBoxSystem.getTotalCount(lootboxData))
+                local equipData = PlayerStore.Get("equipment")
+                local autoSettings = (equipData and equipData.settings) or nil
+                if BlacksmithConfig.shouldAutoDecompose(autoSettings, quality, level) then
+                    local essence = BlacksmithConfig.calcAutoDecomposeEssence(quality, level)
+                    GameState.setEssence(GameState.getEssence() + essence)
+                    BlacksmithConfig.recordAutoDecompose(lootboxData, quality, level, essence)
+                    LootBox.updateSeedData(lootboxData)
+                    print("[Standalone] auto-decompose: q=" .. quality .. " lv=" .. level
+                        .. " essence=+" .. essence)
+                else
+                    LootBoxSystem.addSeed(lootboxData, data.stageId, quality, level)
+                    LootBox.addSeedHint(quality, level)
+                    LootBox.updateSeedData(lootboxData)
+                    print("[Standalone] seed added: q=" .. quality .. " lv=" .. level
+                        .. " total=" .. LootBoxSystem.getTotalCount(lootboxData))
+                end
             end
         end
         -- 卷轴掉落（挂机直接加入货币）

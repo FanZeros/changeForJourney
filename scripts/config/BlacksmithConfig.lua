@@ -351,5 +351,51 @@ function BlacksmithConfig.calcTotalRefineSpent(quality, equipLv, refineCount, gr
     return totalSpent
 end
 
+-- ======================== 自动分解共享判定 ========================
+-- 掉落入口（击杀/在线挂机/离线/单机）统一走这里，保证行为一致。
+-- 语义与 UI 文案一致：至少启用一个维度；已启用维度全部满足才分解；0 = 该维度不限制。
+
+--- 是否应对该掉落执行自动分解
+---@param settings table|nil 装备模块 settings（autoQuality/autoLevel）
+---@param quality number 掉落品质
+---@param level number 掉落等级
+---@return boolean
+function BlacksmithConfig.shouldAutoDecompose(settings, quality, level)
+    if not settings then return false end
+    local autoQuality = tonumber(settings.autoQuality) or 0
+    local autoLevel = tonumber(settings.autoLevel) or 0
+    if autoQuality <= 0 and autoLevel <= 0 then return false end
+    local q = tonumber(quality) or 1
+    local lv = tonumber(level) or 1
+    local qualityMatch = autoQuality <= 0 or q <= autoQuality
+    local levelMatch = autoLevel <= 0 or lv <= autoLevel
+    return qualityMatch and levelMatch
+end
+
+--- 自动分解单件精粹产出（与手动分解基础公式一致）
+---@param quality number
+---@param level number
+---@return integer
+function BlacksmithConfig.calcAutoDecomposeEssence(quality, level)
+    local qCost = BlacksmithConfig.QUALITY_COST[quality] or BlacksmithConfig.QUALITY_COST[1]
+    return math.floor(qCost.decBase * (1 + (level or 1) * qCost.decScale))
+end
+
+--- 在 lootbox 模块上记录自动分解瞬态通知（随下次 MarkDirty 推送给客户端展示）
+---@param lootboxData table lootbox 模块数据引用
+---@param quality number
+---@param level number
+---@param essence integer
+function BlacksmithConfig.recordAutoDecompose(lootboxData, quality, level, essence)
+    lootboxData.autoDecomposeNotice = lootboxData.autoDecomposeNotice or { seq = 0, count = 0, essence = 0 }
+    local notice = lootboxData.autoDecomposeNotice
+    notice.seq = (notice.seq or 0) + 1
+    notice.count = (notice.count or 0) + 1
+    notice.essence = (notice.essence or 0) + essence
+    notice.quality = quality
+    notice.level = level
+    notice.time = os.time()  -- 客户端据此忽略登录时读到的过期通知
+end
+
 return BlacksmithConfig
 

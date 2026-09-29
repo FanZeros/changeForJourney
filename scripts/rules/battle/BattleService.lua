@@ -755,12 +755,8 @@ function BattleService.ClaimBattleRewards(uid, rewards)
     local droppedSeeds = {}
     local autoDecomposeEssence = 0
     local scrollDrops = {}
-    -- 读取自动分解设置（0 = 关闭）
-    local autoQuality, autoLevel = 0, 0
-    if equipData and equipData.settings then
-        autoQuality = equipData.settings.autoQuality or 0
-        autoLevel   = equipData.settings.autoLevel   or 0
-    end
+    -- 读取自动分解设置（共享判定，与挂机/离线/单机掉落同一语义）
+    local autoSettings = (equipData and equipData.settings) or nil
     if lootboxData then
         for _, entry in ipairs(rewards) do
             local sid = entry.stageId
@@ -771,15 +767,11 @@ function BattleService.ClaimBattleRewards(uid, rewards)
                     local quality = DropSystem.rollKillDrop(stageEntry)
                     if quality then
                         local level = stageEntry.monsterLevel or 1
-                        -- 检查自动分解条件：至少启用一个维度，且所有已启用的维度都满足才触发（0 = 该维度不启用不参与判断）
-                        local qualityMatch = autoQuality == 0 or quality <= autoQuality
-                        local levelMatch   = autoLevel   == 0 or level   <= autoLevel
-                        local anyEnabled   = autoQuality > 0 or autoLevel > 0
-                        if anyEnabled and qualityMatch and levelMatch then
+                        if BlacksmithConfig.shouldAutoDecompose(autoSettings, quality, level) then
                             -- 自动分解：直接给精粹，不入战利品区
-                            local qCost = BlacksmithConfig.QUALITY_COST[quality] or BlacksmithConfig.QUALITY_COST[1]
-                            local essence = math.floor(qCost.decBase * (1 + level * qCost.decScale))
+                            local essence = BlacksmithConfig.calcAutoDecomposeEssence(quality, level)
                             autoDecomposeEssence = autoDecomposeEssence + essence
+                            BlacksmithConfig.recordAutoDecompose(lootboxData, quality, level, essence)
                             print("[BattleService] auto-decompose uid=" .. tostring(uid)
                                 .. " q=" .. quality .. " lv=" .. level .. " essence=+" .. essence)
                         else

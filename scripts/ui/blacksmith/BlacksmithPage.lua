@@ -21,10 +21,10 @@ local SpineResultEffect = require("ui.fx.SpineResultEffect")
 local DrawUtil         = require("core.DrawUtil")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local TownPageChrome   = require("ui.town.TownPageChrome")
-local HeroAssetUtil    = require("config.HeroAssetUtil")
-local CharacterPanel   = require("ui.character.panel.CharacterPanel")
-local HeroConfig       = require("config.HeroConfig")
 local ExpTable         = require("config.ExpTable")
+local HeroAssetUtil    = require("config.HeroAssetUtil")
+local HeroConfig       = require("config.HeroConfig")
+local HeroFrame        = require("ui.widget.HeroFrame")
 
 -- 子模块
 local BlacksmithEnhance   = require("ui.blacksmith.BlacksmithEnhance")
@@ -65,47 +65,12 @@ local NAME_BG_W, NAME_BG_H   = 294, 123
 local NAME_TEXT_CX, NAME_TEXT_CY = 173, 130
 local NAME_FONT_SIZE              = 50
 
--- 4. 编队卡片区域（从 CharacterPanel 搬来，Y 轴改为 449）
-local CARD_W        = 198
-local CARD_H        = 438
-local CARD_SPACING  = 7
-local CARD_CY       = 449   -- 卡片 Y 中心（计划书指定）
-local MAX_PARTY     = 5     -- 编队最多 5 个槽位
+-- 4. 强化/洗练共用的装备选择槽（上半部分居中单槽，点击打开装备背包）
+local SELECT_SLOT_CX, SELECT_SLOT_CY = 540, 431
+local SELECT_SLOT_SIZE               = 160
 
--- 卡片内部偏移（参考 CharacterPanelDraw）
-local CARD_TAG_OFFSET_Y  = -215
-local CARD_TAG_SIZE      = 60
-local CARD_NAME_BG_DY    = 253
-local CARD_NAME_BG_W     = 193
-local CARD_NAME_BG_H     = 48
-local CARD_NAME_BG_RADIUS = 24
-local CARD_LVL_BADGE_DX  = -63
-local CARD_LVL_BADGE_DY  = 181
-local CARD_LVL_BADGE_SIZE = 56
-local CARD_EXP_BAR_DX    = 12
-local CARD_EXP_BAR_DY    = 183
-local CARD_EXP_BAR_BG_W  = 148
-local CARD_EXP_BAR_BG_H  = 28
-local CARD_EXP_BAR_PAD   = 4
-local CARD_EXP_FILL_LEFT  = CARD_EXP_BAR_PAD  -- 与 PAD 保持一致，四边均为 4px
-local CARD_POWER_Y        = 585   -- CARD_CY(449) + 偏移(136)，与 CharacterPanelDraw 中 POWER_Y(680)-CARD_CY(544)=136 一致
-local CARD_POWER_ICON_SIZE = 36
-local CARD_LOCK_ICON_SIZE  = 64
-local CARD_PLUS_ICON_SIZE  = 64
-
--- 5. 装备槽位区域（2 行 × 3 槽）
-local EQUIP_SLOT_SIZE    = 160
-local EQUIP_SLOT_SPACING = 40
-local EQUIP_SLOT_RADIUS  = 24
-local EQUIP_ROW1_Y       = 900
-local EQUIP_ROW2_Y       = 1080
-local EQUIP_LV_X_OFFSET  = 3
-local EQUIP_LV_Y_OFFSET  = -78
 local EQUIP_LV_FONT_SIZE = 38
 local EQUIP_SLOT_ORDER   = { "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }
-local EQUIP_ROW_COUNT    = 3
-local EQUIP_ROW_W        = EQUIP_ROW_COUNT * EQUIP_SLOT_SIZE + (EQUIP_ROW_COUNT - 1) * EQUIP_SLOT_SPACING
-local EQUIP_SLOT_FIRST_X = 540 - EQUIP_ROW_W * 0.5 + EQUIP_SLOT_SIZE * 0.5
 
 -- 7. 下方背景板
 local LOWER_BG_CX, LOWER_BG_W, LOWER_BG_H = 540, 1080, 1670
@@ -164,10 +129,9 @@ local state = {
     tab        = "qianghua",
     tabFrom    = "qianghua",
     tabSwitchTime = 0,
-    -- 编队/装备槽选择
-    selectedPartySlot = 1,           -- 当前选中的编队槽位索引 (1~5)
+    -- 装备槽选择（强化/洗练共用，单槽）
     selectedEquipSlot = "weapon",    -- 当前选中的装备槽位 key
-    -- 已选装备（由 partySlot + equipSlot 自动推导）
+    -- 已选装备（由 selectedEquipSlot 从玩家身上推导）
     selectedEquip = nil,
     -- 洗练缓存：服务端返回的新词缀（用于"替换"按钮）
     pendingRefineAffixes = nil,   -- table[] | nil
@@ -212,6 +176,7 @@ local QUALITY_COST = require("config.BlacksmithConfig").QUALITY_COST
 
 local equipIconCache = {}  -- [templateId] = nvgImage handle
 local equipIconVg = nil    -- 缓存 vg 上下文
+local imgHeroIcons = {}    -- [heroId] = nvgImage handle, 角色头像角标（与背包一致）
 
 local function getEquipIconCached(templateId)
     if not templateId then return -1 end
@@ -238,11 +203,9 @@ local function formatCompact(n)
 end
 
 local EquipmentSystem = require("systems.EquipmentSystem")
-local BlacksmithEquipSlots = require("ui.blacksmith.BlacksmithEquipSlots")
 local BlacksmithDraw = require("ui.blacksmith.BlacksmithDraw")
 local BlacksmithInput = require("ui.blacksmith.BlacksmithInput")
 local BlacksmithResults = require("ui.blacksmith.BlacksmithResults")
-local HeroFrame = require("ui.widget.HeroFrame")
 
 local function formatAffixValue(key, value, affixId)
     local numeric = EquipmentSystem.normalizeAffixNumericValue(value)
@@ -301,27 +264,6 @@ local imgIconUp    = -1   -- ICON_UP.png（可强化角标）
 local imgEnhDlgMinus = -1  -- UI_AN_JIAN.png（减按钮）
 local imgEnhDlgPlus  = -1  -- UI_AN_JIA.png（加按钮）
 
--- ======================== 编队卡片图片 ========================
-local imgHeroCards  = {}  -- [1..15] 英雄卡牌图
-local imgClassIcons = {}  -- [1..6] 职业图标
-local imgDeployed   = -1  -- 编队已部署标记
-local imgLock       = -1  -- 锁定图标
-local imgPlusCard   = -1  -- 加号图标（空卡位）
-local imgPower      = -1  -- 战力图标
-local imgLvlBadgeCard = -1 -- 等级徽章
-local imgExpBarBg   = -1  -- 经验条背景
-local imgExpBarFill = -1  -- 经验条填充
-
--- 装备槽位背景图
-local imgSlotBg       = {}  -- { weapon=.., offhand=.., armor=.., accessory=.. }
-local imgSlotSelected = -1  -- UI_TJPXZTBBJ.png（装备槽选中底图）
-
--- CLASS_ICON_MAP（与 CharacterPanelDraw 一致）
-local CLASS_ICON_MAP = {
-    knight=1, seal=1, warrior=2, spoil=2, mage=3, rift=3,
-    ranger=4, echo=4, assassin=5, mask=5, priest=6, debt=6,
-}
-
 -- ======================== 外部驱动标志 ========================
 local decomposeRedDot = false  -- 分解标签红点（背包满时）
 local imgQualityBg = {}   -- UI_icon_ZBBJ_1~5（品质背景框，按品质索引）
@@ -348,84 +290,67 @@ local drawNineSlice = DrawUtil.drawNineSlice
 --- hitTest（中心坐标 + 尺寸）
 local hitTest = DrawUtil.hitTest
 
--- ======================== 编队卡片辅助函数 ========================
+-- ======================== 选中装备推导 ========================
 
---- 计算第 index 个卡片的中心 X 坐标（1-based）
-local function getCardSlotCX(index)
-    local count = MAX_PARTY
-    local totalW = count * CARD_W + (count - 1) * CARD_SPACING
-    local startCX = (DESIGN_W - totalW) * 0.5 + CARD_W * 0.5
-    return startCX + (index - 1) * (CARD_W + CARD_SPACING)
-end
-
---- 计算第 index 个装备槽的中心坐标（1-based, 2 行 × 3 列）
-local function getEquipSlotCX(index)
-    local col = ((index - 1) % EQUIP_ROW_COUNT) + 1
-    return EQUIP_SLOT_FIRST_X + (col - 1) * (EQUIP_SLOT_SIZE + EQUIP_SLOT_SPACING)
-end
-
-local function getEquipSlotCY(index)
-    if index <= EQUIP_ROW_COUNT then
-        return EQUIP_ROW1_Y
-    end
-    return EQUIP_ROW2_Y
-end
-
---- 根据当前 selectedPartySlot + selectedEquipSlot 自动推导 selectedEquip
+--- 根据 selectedEquipSlot 从出战英雄身上推导 selectedEquip（双手武器镜像到 offhand）
 local function deriveSelectedEquip()
-    local teamSlots = CharacterPanel.getTeamSlotsData()
-    if not teamSlots then
-        state.selectedEquip = nil
-        return
-    end
-    local slot = teamSlots[state.selectedPartySlot]
-    if not slot or slot.state ~= "occupied" or not slot.heroId then
-        state.selectedEquip = nil
-        BlacksmithEnhance.updateEnhanceData(nil)
-        BlacksmithRefine.updateRefineData(nil)
-        return
-    end
     local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-    if not eqData or not eqData.equipped then
-        state.selectedEquip = nil
-        return
-    end
-    local heroEquipped = EquipmentSystem.getHeroSlots(eqData, slot.heroId)
-    if not heroEquipped then
+    if not eqData or not eqData.equipped or not eqData.inventory then
         state.selectedEquip = nil
         BlacksmithEnhance.updateEnhanceData(nil)
         BlacksmithRefine.updateRefineData(nil)
         return
     end
-    local seq = heroEquipped[state.selectedEquipSlot]
-    if seq and eqData.inventory then
-        local equip = eqData.inventory[tostring(seq)]
-        if equip then
-            state.selectedEquip = equip
-            equip.seq = tonumber(seq)
-            state.selectedSeq = equip.seq
-            BlacksmithEnhance.updateEnhanceData(equip)
-            BlacksmithRefine.updateRefineData(equip)
-            return
-        end
-    end
-    -- 双手武器镜像：offhand 无装备时检查 weapon 是否双手
-    if state.selectedEquipSlot == "offhand" and eqData.inventory then
-        local weaponSeq = heroEquipped["weapon"]
-        if weaponSeq then
-            local weaponEquip = eqData.inventory[tostring(weaponSeq)]
-            if weaponEquip and weaponEquip.grip == "twohand" then
-                state.selectedEquip = weaponEquip
-                BlacksmithEnhance.updateEnhanceData(weaponEquip)
-                BlacksmithRefine.updateRefineData(weaponEquip)
+    local heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
+    local deployed = heroes and heroes.deployed or {}
+    for i = 1, #deployed do
+        local heroId = deployed[i]
+        local heroEquipped = EquipmentSystem.getHeroSlots(eqData, heroId)
+        if heroEquipped then
+            local seq = heroEquipped[state.selectedEquipSlot]
+            -- 双手武器镜像：offhand 无装备时检查 weapon 是否双手
+            if not seq and state.selectedEquipSlot == "offhand" then
+                local weaponSeq = heroEquipped["weapon"]
+                local weaponEquip = weaponSeq and eqData.inventory[tostring(weaponSeq)]
+                if weaponEquip and weaponEquip.grip == "twohand" then
+                    seq = weaponSeq
+                end
+            end
+            local equip = seq and eqData.inventory[tostring(seq)]
+            if equip then
+                state.selectedEquip = equip
+                equip.seq = tonumber(seq)
+                state.selectedSeq = equip.seq
+                BlacksmithEnhance.updateEnhanceData(equip)
+                BlacksmithRefine.updateRefineData(equip)
                 return
             end
         end
     end
-    -- 该槽位无装备
+    -- 无英雄在该槽位装备
     state.selectedEquip = nil
     BlacksmithEnhance.updateEnhanceData(nil)
     BlacksmithRefine.updateRefineData(nil)
+end
+
+--- 查询装备当前被哪个英雄穿戴（遍历出战+后备阵容）
+---@param equip table|nil
+---@return number|nil heroId
+local function getEquipOwnerHeroId(equip)
+    if not equip or not equip.seq then return nil end
+    local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
+    if not eqData or not eqData.equipped then return nil end
+    local seqStr = tostring(equip.seq)
+    for heroKey, slots in pairs(eqData.equipped) do
+        if slots then
+            for _, slotKey in ipairs(EQUIP_SLOT_ORDER) do
+                if tostring(slots[slotKey]) == seqStr then
+                    return tonumber(heroKey) or heroKey
+                end
+            end
+        end
+    end
+    return nil
 end
 
 -- ======================== 可强化检查（供角标绘制使用） ========================
@@ -433,10 +358,8 @@ end
 -- -------- 性能缓存：避免 draw 每帧重复计算 canEnhance --------
 local _enhanceCache = {
     dirty = true,
-    --- partyCanEnhance[i] = bool  出战位 i 是否有任意槽可强化
-    partyCanEnhance = {},
-    --- slotCanEnhance[partySlot][equipSlot] = bool
-    slotCanEnhance  = {},
+    --- canEnhance(equip) = bool  单件装备是否可强化
+    canEnhance = nil,
 }
 
 local _enhCache
@@ -445,11 +368,8 @@ local function bindEnhanceCache()
         ClientDispatcher = ClientDispatcher,
         PlayerStore = PlayerStore,
         GameState = GameState,
-        CharacterPanel = CharacterPanel,
         ExpTable = ExpTable,
         BlacksmithEnhance = BlacksmithEnhance,
-        EQUIP_SLOT_ORDER = EQUIP_SLOT_ORDER,
-        MAX_PARTY = MAX_PARTY,
         cache = _enhanceCache,
     })
 end
@@ -459,38 +379,29 @@ function BlacksmithPage.markEnhanceDirty()
     _enhanceCache.dirty = true
 end
 
-local function canEnhanceSlot(partySlot, equipSlot, slotEnhanceData, gold)
-    if not _enhCache then bindEnhanceCache() end
-    return _enhCache.canEnhanceSlot(partySlot, equipSlot, slotEnhanceData, gold)
-end
-
-local function canEnhancePartySlot(partySlot, slotEnhanceData, gold)
-    if not _enhCache then bindEnhanceCache() end
-    return _enhCache.canEnhancePartySlot(partySlot, slotEnhanceData, gold)
-end
-
 local function refreshEnhanceCache()
     if not _enhCache then bindEnhanceCache() end
     return _enhCache.refreshEnhanceCache()
 end
 
-local function getCachedPartyCanEnhance(partySlot)
-    if not _enhCache then bindEnhanceCache() end
-    return _enhCache.getCachedPartyCanEnhance(partySlot)
-end
-
-local function getCachedSlotCanEnhance(partySlot, equipSlot)
-    if not _enhCache then bindEnhanceCache() end
-    return _enhCache.getCachedSlotCanEnhance(partySlot, equipSlot)
+--- 选中装备当前是否可强化（选择槽角标用）
+local function getCachedSelectedCanEnhance()
+    refreshEnhanceCache()
+    if not _enhanceCache.canEnhance then return false end
+    return _enhanceCache.canEnhance(state.selectedEquip) or false
 end
 
 -- ======================== 上半部分绘制 ========================
 
---- 绘制洗练上半部分（单个装备槽位）
-local function drawRefineUpperSlot(vg)
+--- 绘制上半部分选中装备槽（强化/洗练共用，点击打开装备背包选择）
+---@param vg any
+---@param tabName string "qianghua" | "xilian"（空状态提示文案不同）
+local function drawSelectedEquipSlot(vg, tabName)
     local equip = state.selectedEquip
-    local slotCX, slotCY = 540, 431
-    local slotSize = 160
+    local slotCX, slotCY = SELECT_SLOT_CX, SELECT_SLOT_CY
+    local slotSize = SELECT_SLOT_SIZE
+
+    local ownerHeroId = getEquipOwnerHeroId(equip)
 
     if equip then
         -- 品质底框 + 装备图标（160x160）[暗黑化 P2-A]
@@ -536,6 +447,38 @@ local function drawRefineUpperSlot(vg)
             36, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 255, 255, 4)
 
+        -- 归属行（装备名下方）：已装备英雄 或 背包未装备提示
+        local ownerLine, oR, oG, oB
+        if ownerHeroId then
+            local heroInfo = HeroConfig.get(ownerHeroId)
+            ownerLine = "已装备: " .. (heroInfo and heroInfo.name or ("英雄" .. tostring(ownerHeroId)))
+            oR, oG, oB = 0xD8, 0xC9, 0xA3
+        else
+            ownerLine = "未装备(背包)"
+            oR, oG, oB = 0x99, 0x99, 0x99
+        end
+        nvgFontFace(vg, "sans")
+        drawTextStroke(vg, slotCX, slotCY + slotSize * 0.5 + 74, ownerLine,
+            26, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            oR, oG, oB, 3)
+
+        -- 归属英雄头像角标（左下角，与背包"他人已装备"白描边变体一致）
+        if ownerHeroId then
+            local ownerIcon = imgHeroIcons[ownerHeroId]
+            if ownerIcon and ownerIcon >= 0 then
+                local badgeSize = 66
+                HeroFrame.draw(vg, {
+                    cx = slotCX - slotSize * 0.5 + badgeSize * 0.5 + 1,
+                    cy = slotCY + slotSize * 0.5 - badgeSize * 0.5 - 1,
+                    size = badgeSize, radius = 6,
+                    heroId = ownerHeroId,
+                    iconHandle = ownerIcon,
+                    state = "owned",
+                    borderOverride = { 255, 255, 255, 200, 2 },
+                })
+            end
+        end
+
         -- 选中高亮边框
         nvgBeginPath(vg)
         nvgRoundedRect(vg, slotCX - slotSize * 0.5 - 3, slotCY - slotSize * 0.5 - 3,
@@ -543,6 +486,15 @@ local function drawRefineUpperSlot(vg)
         nvgStrokeColor(vg, nvgRGBA(0xff, 0xd7, 0x00, 200))
         nvgStrokeWidth(vg, 3)
         nvgStroke(vg)
+
+        -- 可强化角标（强化 tab，右上角）
+        if tabName == "qianghua" and imgIconUp >= 0 and getCachedSelectedCanEnhance() then
+            local upSize = 40
+            DrawUtil.drawImageCentered(vg, imgIconUp,
+                slotCX + slotSize * 0.5 - upSize * 0.3,
+                slotCY - slotSize * 0.5 + upSize * 0.3,
+                upSize, upSize, 1.0)
+        end
     else
         -- 空状态：纯黑色 80% 不透明度圆角矩形
         nvgBeginPath(vg)
@@ -559,7 +511,8 @@ local function drawRefineUpperSlot(vg)
         nvgFontSize(vg, 28)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(255, 255, 255, 128))
-        nvgText(vg, slotCX, slotCY + slotSize * 0.5 + 30, "选择装备进行洗练", nil)
+        nvgText(vg, slotCX, slotCY + slotSize * 0.5 + 30,
+            tabName == "qianghua" and "选择装备进行强化" or "选择装备进行洗练", nil)
     end
 end
 
@@ -570,193 +523,8 @@ local function drawUpperSlotContent(vg, tabName)
         return
     end
 
-    if tabName == "xilian" then
-        drawRefineUpperSlot(vg)
-        return
-    end
-
-    -- ===== 强化：5 张编队卡片，下面一排身上优先的升阶候选 =====
-    BlacksmithEnhance.rebuildCandidates()
-    local teamSlots, slotPowerCache = CharacterPanel.getTeamSlotsData()
-    local playerLevel = GameState.getLevel and GameState.getLevel() or 1
-
-    -- —— 绘制 5 张编队卡片 ——
-    for i = 1, MAX_PARTY do
-        local cx = getCardSlotCX(i)
-        local cy = CARD_CY
-        local slotData = teamSlots and teamSlots[i]
-        local slotState = slotData and slotData.state or "locked"
-        local isSelected = (i == state.selectedPartySlot)
-
-        -- 选中高亮底框（[统一角色框] 金色高亮常量）
-        if isSelected then
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - CARD_W * 0.5 - 4, cy - CARD_H * 0.5 - 4,
-                CARD_W + 8, CARD_H + 8, 16)
-            nvgStrokeColor(vg, nvgRGBA(HeroFrame.GOLD_HI[1], HeroFrame.GOLD_HI[2], HeroFrame.GOLD_HI[3], 230))
-            nvgStrokeWidth(vg, 5)
-            nvgStroke(vg)
-        end
-
-        if slotState == "locked" then
-            -- 锁定状态：黑色半透明 + 锁图标 + 解锁提示
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - CARD_W * 0.5, cy - CARD_H * 0.5, CARD_W, CARD_H, 12)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-            nvgFill(vg)
-            drawImageCentered(vg, imgLock, cx, cy - 16, CARD_LOCK_ICON_SIZE, CARD_LOCK_ICON_SIZE, 1.0)
-            local unlockLv = ExpTable.getSlotUnlockLevel(i)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 22)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(255, 255, 255, 180))
-            nvgText(vg, cx, cy + 40, "远征等级" .. unlockLv .. "解锁", nil)
-
-        elseif slotState == "empty" then
-            -- 空槽位：黑色半透明 + 加号
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - CARD_W * 0.5, cy - CARD_H * 0.5, CARD_W, CARD_H, 12)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-            nvgFill(vg)
-            drawImageCentered(vg, imgPlusCard, cx, cy, CARD_PLUS_ICON_SIZE, CARD_PLUS_ICON_SIZE, 1.0)
-
-        elseif slotState == "occupied" then
-            -- 已部署：英雄卡牌背景
-            local heroId = slotData.heroId
-            local heroInfo = HeroConfig.get(heroId)
-            local cardIdx = heroId or 1
-            local cardImg = HeroAssetUtil.ensureCard(vg, imgHeroCards, cardIdx)
-            if cardImg and cardImg >= 0 then
-                DrawUtil.drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
-            end
-            -- [统一角色框] 卡面叠加品质色描边
-            HeroFrame.draw(vg, {
-                cx = cx, cy = cy, w = CARD_W, h = CARD_H,
-                heroId = heroId,
-                state = "owned",
-                frameOnly = true,
-            })
-
-            -- 职业图标（卡片顶部）
-            if heroInfo and heroInfo.classId then
-                local clsIdx = CLASS_ICON_MAP[heroInfo.classId]
-                if clsIdx and imgClassIcons[clsIdx] and imgClassIcons[clsIdx] >= 0 then
-                    drawImageCentered(vg, imgClassIcons[clsIdx],
-                        cx, cy + CARD_TAG_OFFSET_Y, CARD_TAG_SIZE, CARD_TAG_SIZE, 1.0)
-                end
-            end
-
-            -- 战力图标 + 数值（与 CharacterPanelDraw 一致）
-            local power = slotPowerCache and slotPowerCache[i] or 0
-            if power > 0 then
-                local powerStr = require("core.NumberUtil").format(power)
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 30)
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                local pwTextW = nvgTextBounds(vg, 0, 0, powerStr)
-                local pwTotalW = CARD_POWER_ICON_SIZE + 4 + pwTextW
-                local pwStartX = cx - pwTotalW * 0.5
-                DarkIcon.draw(vg, "power", pwStartX + CARD_POWER_ICON_SIZE * 0.5, CARD_POWER_Y, CARD_POWER_ICON_SIZE, 1.0)local textX = pwStartX + CARD_POWER_ICON_SIZE + 4
-                drawTextStroke(vg, textX, CARD_POWER_Y, powerStr,
-                    30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                    247, 254, 119, 4)
-            end
-
-            -- 经验条背景 + 填充
-            local expBarCX = cx + CARD_EXP_BAR_DX
-            local expBarCY = cy + CARD_EXP_BAR_DY
-            drawImageCentered(vg, imgExpBarBg, expBarCX, expBarCY, CARD_EXP_BAR_BG_W, CARD_EXP_BAR_BG_H, 1.0)
-            local exp = slotData.exp or 0
-            local maxExp = slotData.maxExp or 1
-            local expRatio = math.min(1.0, exp / math.max(1, maxExp))
-            if expRatio > 0 then
-                local fillMaxW = CARD_EXP_BAR_BG_W - CARD_EXP_BAR_PAD * 2
-                local fillW = math.max(1, fillMaxW * expRatio)
-                local fillH = CARD_EXP_BAR_BG_H - CARD_EXP_BAR_PAD * 2
-                local fillX = expBarCX - CARD_EXP_BAR_BG_W * 0.5 + CARD_EXP_FILL_LEFT
-                local fillY = expBarCY - fillH * 0.5
-                nvgSave(vg)
-                nvgScissor(vg, fillX, fillY, fillW, fillH)
-                drawImageCentered(vg, imgExpBarFill, expBarCX, expBarCY, CARD_EXP_BAR_BG_W, CARD_EXP_BAR_BG_H, 1.0)
-                nvgResetScissor(vg)
-                nvgRestore(vg)
-            end
-
-            -- 等级徽章 + 等级数字（与 CharacterPanelDraw 一致）
-            local lvlBadgeCX = cx + CARD_LVL_BADGE_DX
-            local lvlBadgeCY = cy + CARD_LVL_BADGE_DY
-            drawImageCentered(vg, imgLvlBadgeCard, lvlBadgeCX, lvlBadgeCY,
-                CARD_LVL_BADGE_SIZE, CARD_LVL_BADGE_SIZE, 1.0)
-            nvgFontFace(vg, "sans")
-            drawTextStroke(vg, lvlBadgeCX, lvlBadgeCY, tostring(slotData.level or 1),
-                28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                255, 255, 255, 4)
-
-            -- 名字背景 + 名字文本（与 CharacterPanelDraw 一致）
-            local nameBgCY = cy + CARD_NAME_BG_DY
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - CARD_NAME_BG_W * 0.5, nameBgCY - CARD_NAME_BG_H * 0.5,
-                CARD_NAME_BG_W, CARD_NAME_BG_H, CARD_NAME_BG_RADIUS)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-            nvgFill(vg)
-
-            -- 选中时显示"强化中"，未选中显示角色名
-            if isSelected then
-                nvgFontFace(vg, "sans")
-                drawTextStroke(vg, cx, nameBgCY, "强化中",
-                    38, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                    0x67, 0xff, 0x75, 4,
-                    { strokeColor = { 0x23, 0x23, 0x23 } })
-            else
-                local heroName = heroInfo and heroInfo.name or ("英雄" .. heroId)
-                nvgFontFace(vg, "sans")
-                drawTextStroke(vg, cx, nameBgCY, heroName,
-                    28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 4)
-            end
-
-            -- 可强化角标（右上角，该出战位有任意装备槽可强化时显示）
-            if imgIconUp >= 0 and getCachedPartyCanEnhance(i) then
-                local upSize = 40
-                local upX = cx + CARD_W * 0.5 - upSize * 0.3
-                local upY = cy - CARD_H * 0.5 + upSize * 0.3
-                DrawUtil.drawImageCentered(vg, imgIconUp, upX, upY, upSize, upSize, 1.0)
-            end
-        end
-    end
-    BlacksmithEnhance.drawCandidates(vg)
-end
-
---- 绘制 4 个装备槽位（强化 tab 专用，放在下半部分避免被 lower BG 覆盖）
-local _eqSlots
-local function bindEquipSlots()
-    _eqSlots = BlacksmithEquipSlots.bind({
-        CharacterPanel = CharacterPanel,
-        ClientDispatcher = ClientDispatcher,
-        DarkIcon = DarkIcon,
-        DrawUtil = DrawUtil,
-        EQUIP_LV_FONT_SIZE = EQUIP_LV_FONT_SIZE,
-        EQUIP_LV_Y_OFFSET = EQUIP_LV_Y_OFFSET,
-        EQUIP_SLOT_ORDER = EQUIP_SLOT_ORDER,
-        EQUIP_SLOT_SIZE = EQUIP_SLOT_SIZE,
-        EquipmentSystem = EquipmentSystem,
-        PlayerStore = PlayerStore,
-        drawImageCentered = drawImageCentered,
-        drawTextStroke = drawTextStroke,
-        getCachedSlotCanEnhance = getCachedSlotCanEnhance,
-        getEquipIconCached = getEquipIconCached,
-        getEquipSlotCX = getEquipSlotCX,
-        getEquipSlotCY = getEquipSlotCY,
-        imgIconUp = imgIconUp,
-        imgSlotBg = imgSlotBg,
-        imgSlotSelected = imgSlotSelected,
-        state = state
-    })
-end
-
-local function drawEquipSlots(vg)
-    bindEquipSlots()
-    return _eqSlots.drawEquipSlots(vg)
+    -- 强化/洗练：共用"选装备"单槽，点击打开装备背包
+    drawSelectedEquipSlot(vg, tabName)
 end
 
 --- 绘制下半部分 Tab 面板内容（按 tab 类型）
@@ -812,6 +580,7 @@ function BlacksmithPage.init(vg)
     imgReplaceBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgCheckmark = nvgCreateImage(vg, "image/货币道具/UI_icon_GOU.png", 0)
     imgLvlBadge  = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_DJ.png", 0)
+    imgIconUp    = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     -- 一键强化确认弹窗图片
     imgEnhDlgMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
     imgEnhDlgPlus  = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
@@ -825,24 +594,10 @@ function BlacksmithPage.init(vg)
         imgGrade[g] = nvgCreateImage(vg, "image/通用图标/ICON_CZBZ_" .. g .. ".png", 0)
     end
 
-    -- 编队卡片图片：按需加载，避免启动同步解码全部 KP_YX
-    for i = 1, 6 do
-        imgClassIcons[i] = nvgCreateImage(vg, "image/通用图标/ICON_ZY_" .. i .. ".png", 0)
-    end
-    imgDeployed     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_CZZ.png", 0)
-    imgLock         = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
-    imgPlusCard     = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
-    imgExpBarBg     = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT1.png", 0)
-    imgExpBarFill   = nvgCreateImage(vg, "image/进度条/UI_JSMB_JYT2.png", 0)
-
-    -- 装备槽位背景图
-    imgSlotBg.weapon    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_WQ.png", 0)
-    imgSlotBg.offhand   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_FS.png", 0)
-    imgSlotBg.armor     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_HJ.png", 0)
-    imgSlotBg.helmet    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_TK.png", 0)
-    imgSlotBg.shoes     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_XZ.png", 0)
-    imgSlotBg.accessory = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_ZBL_SP.png", 0)
-    imgSlotSelected     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJPXZTBBJ.png", 0)
+    -- 词缀锁定图标（洗练子模块经 ctx 使用）
+    local imgLock   = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
+    -- 角色头像角标（选择槽归属显示，与背包一致）
+    HeroAssetUtil.preloadIcons(vg, imgHeroIcons)
 
     -- 装备背包初始化
     EquipmentBag.init(vg)
@@ -929,46 +684,42 @@ function BlacksmithPage.open(preSelectEquip, initialTab)
     BlacksmithDecompose.onOpen()
     -- 重置强化子模块门控状态
     BlacksmithEnhance.onOpen()
-    -- 初始化编队/装备槽选择
-    state.selectedPartySlot = 1
+    -- 初始化装备槽选择
     state.selectedEquipSlot = "weapon"
     -- 预选装备：自动放入对应 tab 槽位
     if preSelectEquip then
         state.selectedEquip = preSelectEquip
+        state.selectedSeq = preSelectEquip.seq
+        if preSelectEquip.slot then state.selectedEquipSlot = preSelectEquip.slot end
         BlacksmithEnhance.updateEnhanceData(preSelectEquip)
         BlacksmithRefine.updateRefineData(preSelectEquip)
         print("[BlacksmithPage] 打开铁匠铺 tab=" .. tab .. "（预选装备: " .. (preSelectEquip.name or "?") .. "）")
     else
-        -- 自动选择第一个有装备的英雄槽+装备槽，避免默认选中空槽导致引导卡死。
-        -- 若英雄1的 weapon 槽为空，则依次尝试其他装备槽；若英雄1全空则切到下一个英雄。
-        local teamSlots = CharacterPanel.getTeamSlotsData()
-        local eqData    = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-        if teamSlots and eqData and eqData.equipped then
-            local found = false
-            for partySlot = 1, 5 do
-                local slot = teamSlots[partySlot]
-                if slot and slot.state == "occupied" and slot.heroId then
-                    local heroEquipped = EquipmentSystem.getHeroSlots(eqData, slot.heroId)
-                    if heroEquipped then
-                        for _, slotKey in ipairs(EQUIP_SLOT_ORDER) do
-                            local seq = heroEquipped[slotKey]
-                            if seq and eqData.inventory and eqData.inventory[tostring(seq)] then
-                                state.selectedPartySlot = partySlot
-                                state.selectedEquipSlot = slotKey
-                                found = true
-                                break
-                            end
+        -- 自动选择第一个有已装备装备的槽位，避免默认选中空槽导致引导卡死。
+        local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
+        local heroes = ClientDispatcher.get("heroes") or PlayerStore.Get("heroes")
+        local deployed = heroes and heroes.deployed or {}
+        local found = false
+        if eqData and eqData.equipped and eqData.inventory then
+            for i = 1, #deployed do
+                local heroEquipped = EquipmentSystem.getHeroSlots(eqData, deployed[i])
+                if heroEquipped then
+                    for _, slotKey in ipairs(EQUIP_SLOT_ORDER) do
+                        local seq = heroEquipped[slotKey]
+                        if seq and eqData.inventory[tostring(seq)] then
+                            state.selectedEquipSlot = slotKey
+                            found = true
+                            break
                         end
                     end
                 end
                 if found then break end
             end
-            if found then
-                print("[BlacksmithPage] 打开铁匠铺，自动选中槽位 partySlot="
-                    .. state.selectedPartySlot .. " equipSlot=" .. state.selectedEquipSlot)
-            else
-                print("[BlacksmithPage] 打开铁匠铺，未找到已装备装备，保持默认槽位")
-            end
+        end
+        if found then
+            print("[BlacksmithPage] 打开铁匠铺，自动选中装备槽=" .. state.selectedEquipSlot)
+        else
+            print("[BlacksmithPage] 打开铁匠铺，未找到已装备装备，保持默认槽位")
         end
         deriveSelectedEquip()
         print("[BlacksmithPage] 打开铁匠铺")
@@ -1060,20 +811,13 @@ local function bindInput()
         forceClose = BlacksmithPage.forceClose,
         closePage = BlacksmithPage.close,
         BlacksmithPage = BlacksmithPage,
-        CharacterPanel = CharacterPanel,
         EquipmentDetail = EquipmentDetail,
-        getEquipSlotCX = getEquipSlotCX,
-        getEquipSlotCY = getEquipSlotCY,
-        EQUIP_SLOT_ORDER = EQUIP_SLOT_ORDER,
         SLIDER_W = SLIDER_W,
         SLIDER_H = SLIDER_H,
         hitTest = hitTest,
-        CARD_CY = CARD_CY,
-        CARD_W = CARD_W,
-        CARD_H = CARD_H,
-        EQUIP_SLOT_SIZE = EQUIP_SLOT_SIZE,
-        MAX_PARTY = MAX_PARTY,
-        getCardSlotCX = getCardSlotCX,
+        SELECT_SLOT_CX = SELECT_SLOT_CX,
+        SELECT_SLOT_CY = SELECT_SLOT_CY,
+        SELECT_SLOT_SIZE = SELECT_SLOT_SIZE,
         deriveSelectedEquip = deriveSelectedEquip,
     })
 end
@@ -1152,15 +896,14 @@ local function bindPageDraw()
         TownPageChrome = TownPageChrome,
         UPPER_SLIDE_DIST = UPPER_SLIDE_DIST,
         decomposeRedDot = decomposeRedDot,
-        drawEquipSlots = drawEquipSlots,
         drawImageCentered = drawImageCentered,
         drawTabContent = drawTabContent,
         drawUpperSlotContent = drawUpperSlotContent,
         easeInCubic = easeInCubic,
         easeInOutCubic = easeInOutCubic,
         easeOutCubic = easeOutCubic,
-        getEquipSlotCX = getEquipSlotCX,
-        getEquipSlotCY = getEquipSlotCY,
+        SELECT_SLOT_CX = SELECT_SLOT_CX,
+        SELECT_SLOT_CY = SELECT_SLOT_CY,
         imgBg = imgBg,
         imgIconUp = imgIconUp,
         imgLowerBg = imgLowerBg,
@@ -1185,8 +928,8 @@ function BlacksmithPage.setDecomposeRedDot(show)
     decomposeRedDot = show
 end
 
---- 检查是否有任意出战槽位的装备槽位满足强化条件
---- 遍历 5 个出战位 × 4 个装备槽，只要有一个当前金币+卷轴足够升级就返回 true
+--- 检查是否有任意装备（含背包）满足强化条件
+--- 只要有一件当前金币+卷轴足够升一级就返回 true（城镇 Tab 角标用）
 ---@return boolean
 function BlacksmithPage.canEnhanceAny()
     if not _enhCache then bindEnhanceCache() end

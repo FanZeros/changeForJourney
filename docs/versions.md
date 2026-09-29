@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.91-remove-old-dialogue-plates | 2026-09-29 | 删除旧竖屏情景底板 UI_QJDH_1、UI_QJDH_BJ1 和继续箭头 ICON_SJX。情景对话只保留横屏矢量对话条。 |
 | v2.90-remove-reward-glow | 2026-09-29 | 删除未使用的奖励底板 UI_GXHD_1、UI_GXHD_2、UI_GXHD_2_dark、UI_GXHD_3 和箭头 UI_HSJT。结算不再转光效，奖励弹窗继续用 UI_GXHD_1_dark。 |
 | v2.89-remove-wax-seal | 2026-09-29 | 删除已停用的火漆特写 GF_KF07。先祖来信只保留书斋桌案。 |
 | v2.88-remove-shop-card-bg | 2026-09-29 | 删除未绘制的商店品质底 UI_SDICONBJ_1-6，并去掉黑市与酒馆商店的加载。 |

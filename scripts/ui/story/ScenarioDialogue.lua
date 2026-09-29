@@ -16,35 +16,11 @@ local DH = GameConfig.Design.HEIGHT  -- 2400
 
 -- ======================== 模板布局参数 ========================
 
---- 大/小模板共享 UI 元素
-local COMMON = {
-    -- 文本背景：UI_QJDH_BJ1.png, 1080×668, X540, Y底部对齐
-    textBG   = { cx = 540, cy = DH - 668 * 0.5, w = 1080, h = 668 },
-    -- 角色名背景：UI_QJDH_1.png, X290 Y1913, 370×70
-    nameBG   = { cx = 290, cy = 1913, w = 370, h = 70 },
-    -- 角色名文本：X290 Y1892, 字号56, 纯白, 描边#312424 大小6
-    nameText = { cx = 290, cy = 1892, fontSize = 56,
-                 color = { 255, 255, 255 },
-                 strokeColor = { 0x31, 0x24, 0x24 }, strokeSize = 6 },
-    -- 对话文本区域：X547 Y2172, 879×322, 字号48, 颜色#5f3737, 上左对齐
-    textArea = { cx = 547, cy = 2172, w = 879, h = 322,
-                 fontSize = 48, color = { 0x5f, 0x37, 0x37 } },
-    -- 箭头：ICON_SJX, X947 Y2312, 48×43
-    arrow    = { cx = 947, cy = 2312, w = 48, h = 43 },
-}
-
---- 大情景立绘：半身，约占设计宽 62%，不再铺出屏幕
-local PORTRAIT_LARGE = { cx = 250, cy = 1280, w = 680, h = 1020 }
-
---- 小情景立绘：更小的半身，贴在对话框左侧
-local PORTRAIT_SMALL = { cx = 210, cy = 1500, w = 460, h = 690 }
+--- 旧竖屏底板已删除。对话只走横屏矢量条。
 
 -- ======================== 打字机参数 ========================
 local TYPEWRITER_CPS     = 10    -- 字/秒
 local ARROW_BLINK_SPEED  = 1.2   -- 箭头闪烁频率 (Hz)
-local ARROW_BOUNCE_AMP   = 4     -- 箭头弹跳幅度 (px)
-local ARROW_BOUNCE_SPEED = 3.0   -- 箭头弹跳频率 (rad/s)
-local TEXT_LINE_HEIGHT    = 1.4   -- 文本行高倍数
 
 -- ======================== 立绘动画参数 ========================
 local PORTRAIT_ANIM_DUR   = 0.25   -- 单阶段动画时长 (秒)
@@ -76,9 +52,6 @@ local totalChars_  = 0
 local prevCharsShown_ = 0  -- 上一帧已显示字符数，用于检测新字符触发 blip
 
 -- 图片句柄
-local imgTextBG_  = -1   -- UI_QJDH_BJ1.png
-local imgNameBG_  = -1   -- UI_QJDH_1.png
-local imgArrow_   = -1   -- ICON_SJX.png
 local imgBG_      = -1   -- 大情景全屏背景图
 
 --- 立绘缓存: [characterId] = nvgImage handle
@@ -102,7 +75,6 @@ local cgCache_         = {}
 local dismissing_      = false   -- 是否正在播放消失动画
 local dismissT_        = 0       -- 消失动画计时器
 local DISMISS_DUR      = 0.3     -- 消失动画时长 (秒)
-local DISMISS_SLIDE    = 80      -- 下滑距离 (设计像素)
 
 -- ======================== UTF-8 工具 ========================
 
@@ -200,150 +172,6 @@ local function getPortraitImage(characterId)
     return handle or -1
 end
 
---- 获取当前模板的立绘布局参数
----@return table {cx, cy, w, h}
-local function getPortraitLayout()
-    return mode_ == "small" and PORTRAIT_SMALL or PORTRAIT_LARGE
-end
-
---- 绘制角色立绘（带水平偏移和透明度）
----@param characterId number
----@param alpha number 0~1
----@param offsetX number|nil 水平偏移 (设计像素)
-local function drawPortrait(characterId, alpha, offsetX)
-    if not characterId or alpha <= 0.01 then return end
-    local img = getPortraitImage(characterId)
-    if img < 0 then return end
-
-    local p = getPortraitLayout()
-    local cx = p.cx + (offsetX or 0)
-    DrawUtil.drawImageCover(vg_, img, cx, p.cy, p.w, p.h, alpha)
-end
-
---- 绘制带动画的立绘
----@param characterId number 当前步骤的角色 ID
-local function drawPortraitAnimated(characterId)
-    if portraitAnimState_ == "idle" then
-        drawPortrait(characterId, 1.0, 0)
-
-    elseif portraitAnimState_ == "exiting" then
-        local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
-        local ease = easeInCubic(prog)
-        drawPortrait(exitCharId_ or characterId, 1.0 - ease, -PORTRAIT_SLIDE_DIST * ease)
-
-    elseif portraitAnimState_ == "entering" then
-        local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
-        local ease = easeOutCubic(prog)
-        drawPortrait(characterId, ease, PORTRAIT_SLIDE_DIST * (1.0 - ease))
-    end
-end
-
---- 绘制全屏背景（大情景专用）
-local function drawFullscreenBG()
-    -- 纯黑底色，确保完全遮盖底层
-    nvgBeginPath(vg_)
-    nvgRect(vg_, 0, 0, DW, DH)
-    nvgFillColor(vg_, nvgRGBA(0, 0, 0, 255))
-    nvgFill(vg_)
-
-    -- 地图背景
-    if imgBG_ >= 0 then
-        DrawUtil.drawImageCentered(vg_, imgBG_, DW * 0.5, DH * 0.5, DW, DH, 1.0)
-    end
-end
-
---- 绘制上下"眼皮"遮罩（从 IntroCutscene 移入）
----@param openness number 0=完全闭合, 1=完全睁开
-local function drawEyelids(openness)
-    local halfH = DH * 0.5
-    local lidH = halfH * (1 - openness)
-    if lidH < 1 then return end
-
-    -- 上眼皮
-    nvgBeginPath(vg_)
-    nvgRect(vg_, 0, 0, DW, lidH)
-    nvgFillColor(vg_, nvgRGBA(0, 0, 0, 255))
-    nvgFill(vg_)
-
-    -- 下眼皮
-    nvgBeginPath(vg_)
-    nvgRect(vg_, 0, DH - lidH, DW, lidH)
-    nvgFillColor(vg_, nvgRGBA(0, 0, 0, 255))
-    nvgFill(vg_)
-end
-
---- 绘制文本背景
----@param alpha number 0~1
-local function drawTextBG(alpha)
-    if imgTextBG_ < 0 or alpha <= 0.01 then return end
-    local l = COMMON.textBG
-    DrawUtil.drawImageCentered(vg_, imgTextBG_, l.cx, l.cy, l.w, l.h, alpha)
-end
-
---- 绘制角色名背景
----@param alpha number 0~1
-local function drawNameBG(alpha)
-    if imgNameBG_ < 0 or alpha <= 0.01 then return end
-    local l = COMMON.nameBG
-    DrawUtil.drawImageCentered(vg_, imgNameBG_, l.cx, l.cy, l.w, l.h, alpha)
-end
-
---- 绘制角色名（带描边）
----@param name string
----@param alpha number 0~1
-local function drawName(name, alpha)
-    if not name or alpha <= 0.01 then return end
-    local l = COMMON.nameText
-    DrawUtil.drawTextStroke(vg_, l.cx, l.cy, name, l.fontSize,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        l.color[1], l.color[2], l.color[3],
-        l.strokeSize,
-        { alpha = alpha, strokeColor = l.strokeColor })
-end
-
---- 绘制对话文本（打字机逐字显示 + 区域内自动换行）
----@param text string
----@param elapsed number 从本步骤开始的计时
----@param alpha number 0~1
-local function drawDialogueText(text, elapsed, alpha)
-    if not text or alpha <= 0.01 or elapsed <= 0 then return end
-
-    local charCount = utf8.len(text) or 0
-    if charCount == 0 then return end
-
-    local charsToShow = math.floor(elapsed * TYPEWRITER_CPS)
-    if charsToShow > charCount then charsToShow = charCount end
-    if charsToShow <= 0 then return end
-
-    local visibleText = utf8sub(text, 1, charsToShow)
-
-    local l = COMMON.textArea
-    local areaLeft = l.cx - l.w * 0.5
-    local areaTop  = l.cy - l.h * 0.5
-
-    nvgFontFace(vg_, "sans")
-    nvgFontSize(vg_, l.fontSize)
-    nvgTextLineHeight(vg_, TEXT_LINE_HEIGHT)
-    nvgTextAlign(vg_, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-    nvgFillColor(vg_, nvgRGBA(l.color[1], l.color[2], l.color[3],
-                               math.floor(alpha * 255)))
-    nvgTextBox(vg_, areaLeft, areaTop, l.w, visibleText, nil)
-end
-
---- 绘制继续箭头（打字完成后闪烁 + 轻微弹跳）
----@param alpha number 0~1
-local function drawArrow(alpha)
-    if imgArrow_ < 0 or alpha <= 0.01 then return end
-    local l = COMMON.arrow
-
-    local blink = 0.65 + 0.35 * math.sin(textElapsed_ * ARROW_BLINK_SPEED * math.pi * 2)
-    local finalAlpha = alpha * blink
-
-    local bounceY = math.sin(textElapsed_ * ARROW_BOUNCE_SPEED) * ARROW_BOUNCE_AMP
-
-    DrawUtil.drawImageCentered(vg_, imgArrow_, l.cx, l.cy + bounceY, l.w, l.h, finalAlpha)
-end
-
 -- ======================== 公开接口 ========================
 
 --- 初始化：加载共享 UI 图片（只需调用一次）
@@ -352,11 +180,7 @@ end
 function ScenarioDialogue.init(vg, sceneRef)
     vg_ = vg
     scene_ = sceneRef
-    imgTextBG_ = nvgCreateImage(vg, "image/界面底板/剧情日记/UI_QJDH_BJ1.png", 0)
-    imgNameBG_ = nvgCreateImage(vg, "image/界面底板/剧情日记/UI_QJDH_1.png", 0)
-    imgArrow_  = nvgCreateImage(vg, "image/通用图标/ICON_SJX.png", 0)
-    print("[ScenarioDialogue] init: textBG=" .. imgTextBG_
-        .. " nameBG=" .. imgNameBG_ .. " arrow=" .. imgArrow_)
+    print("[ScenarioDialogue] init")
 end
 
 --- 开始情景对话
@@ -691,73 +515,16 @@ local function drawLandscape(w, h)
     nvgRestore(vg_)
 end
 
---- 绘制（在 NanoVGRender 回调中调用）
---- 传入逻辑宽高且为横屏时走横屏对话条；否则保留 1080×2400 竖屏布局。
+--- 绘制（在 NanoVGRender 回调中调用）。只走横屏矢量对话条。
 ---@param frameW number|nil
 ---@param frameH number|nil
 function ScenarioDialogue.draw(frameW, frameH)
-    if type(frameW) == "number" and type(frameH) == "number"
-        and frameW > 0 and frameH > 0 and frameW > frameH * 1.15 then
-        drawLandscape(frameW, frameH)
-        return
+    local w = frameW
+    local h = frameH
+    if type(w) ~= "number" or type(h) ~= "number" or w <= 0 or h <= 0 then
+        w, h = DH, DW
     end
-    if not active_ or stepIndex_ < 1 or stepIndex_ > #steps_ then return end
-
-    local step = steps_[stepIndex_]
-
-    -- 消失动画：计算淡出和下滑
-    local dismissAlpha  = 1.0
-    local dismissSlideY = 0
-    if dismissing_ then
-        local prog = easeInCubic(math.min(1, dismissT_ / DISMISS_DUR))
-        dismissAlpha  = 1.0 - prog
-        dismissSlideY = DISMISS_SLIDE * prog
-    end
-
-    nvgSave(vg_)
-    nvgScissor(vg_, 0, 0, DW, DH)
-
-    -- 消失动画时整体下移
-    if dismissSlideY > 0 then
-        nvgTranslate(vg_, 0, dismissSlideY)
-    end
-
-    -- 0. 大情景：绘制全屏背景（黑底 + 地图），完全覆盖底层所有内容
-    if mode_ == "large" then
-        drawFullscreenBG()
-    end
-
-    -- 1. 角色立绘（带滑入/滑出动画）
-    if dismissing_ then
-        drawPortrait(step.characterId, dismissAlpha, 0)
-    else
-        drawPortraitAnimated(step.characterId)
-    end
-
-    -- 2. 文本背景
-    drawTextBG(dismissAlpha)
-
-    -- 3. 角色名背景
-    drawNameBG(dismissAlpha)
-
-    -- 4. 角色名（带描边）
-    drawName(step.name, dismissAlpha)
-
-    -- 5. 对话文本（打字机效果）
-    drawDialogueText(step.text, textElapsed_, dismissAlpha)
-
-    -- 6. 箭头（打字完成后显示，消失时隐藏）
-    if typingDone_ and not dismissing_ then
-        drawArrow(1.0)
-    end
-
-    -- 7. 睁眼入场遮罩：上下眼皮覆盖在所有内容之上
-    if eyeOpenActive_ then
-        drawEyelids(eyeOpenness_)
-    end
-
-    nvgResetScissor(vg_)
-    nvgRestore(vg_)
+    drawLandscape(w, h)
 end
 
 --- 点击推进对话

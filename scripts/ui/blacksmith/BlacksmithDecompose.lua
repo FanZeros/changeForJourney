@@ -909,12 +909,12 @@ function M.handleInput(dx, dy)
             BF.trigger("bsd_filter_" .. i)
             fjState.selectedItems = {}
             for idx, item in ipairs(backpackItems) do
-                -- 锁定的装备不参与一键选择
-                if (item.quality or 1) <= i and not item.locked then
+                -- 锁定的装备不参与一键选择；仅选中当前品质
+                if (item.quality or 1) == i and not item.locked then
                     fjState.selectedItems[idx] = true
                 end
             end
-            print("[BlacksmithDecompose] 品质筛选点击: <=" .. QUALITY_CONFIG[i].name)
+            print("[BlacksmithDecompose] 品质筛选点击: =" .. QUALITY_CONFIG[i].name)
             return true
         end
     end

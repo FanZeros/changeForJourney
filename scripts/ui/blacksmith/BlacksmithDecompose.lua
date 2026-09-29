@@ -213,14 +213,9 @@ local function drawRewardIcons(vg, entries)
     local step = FJ.REWARD_ICON_SIZE + FJ.REWARD_GAP
     local maxCount = perRow * FJ.REWARD_MAX_ROWS
     local count = math.min(#entries, maxCount)
-    local totalRows = math.ceil(count / perRow)
-    -- 单行保持原槽位 Y；两行时压缩行距收纳进槽位区域
+    -- 首行保持原槽位 Y；第二行允许下移到槽位与面板之间的空区
     local rowStep = FJ.REWARD_ROW_STEP
     local firstCY = FJ.REWARD_ROW1_CY
-    if totalRows > 1 then
-        rowStep = FJ.REWARD_ICON_SIZE + 8
-        firstCY = FJ.REWARD_CY - rowStep * 0.5
-    end
     for i = 1, count do
         local entry = entries[i]
         local row = math.ceil(i / perRow)

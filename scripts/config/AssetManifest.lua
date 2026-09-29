@@ -137,6 +137,7 @@ return {
     { "image/品质框/UI_icon_ZBBJ_1.png", 2027 },
     { "image/品质框/UI_icon_ZBBJ_2.png", 1971 },
     { "image/品质框/UI_icon_ZBBJ_3.png", 2087 },
+    { "image/品质框/UI_icon_ZBBJ_4.png", 2187 },
     { "image/品质框/UI_icon_ZBBJ_5.png", 2118 },
     { "image/品质框/UI_icon_ZBBJ_6.png", 1903 },
     { "image/货币道具/UI_icon_ZMQ_1.png", 21343 },

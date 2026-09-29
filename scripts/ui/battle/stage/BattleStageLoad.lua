@@ -158,9 +158,9 @@ function M.load(ctx, stageId, skipBattleStart)
         u.atkProgress = 0
     end
 
-    -- 入场动画（交错滑入）
+    -- 入场动画（交错滑入）。前进切关时己方刚在走路，不再重播角色入场。
     BattleCombat.playEnterAnims(ctx.enemies, -1)  -- 敌方从上方滑入
-    BattleCombat.playEnterAnims(ctx.allies, 1)    -- 己方从下方滑入
+    BattleCombat.playEnterAnims(ctx.allies, 1, { skip = skipBattleStart == true })
 
     -- 重置台词气泡
     SpeechBubble.reset()

@@ -291,9 +291,14 @@ function BattleTriDriver.new(teamIdx, options)
             local Berserk = require("ui.battle.stage.StageBerserk")
             if self.firstClear then Berserk.enter(self.enemies, self.allies) else Berserk.exit() end
         end
+        local skipAllyEnter = self._skipAllyEnter == true
+        self._skipAllyEnter = nil
         BattleCombat.playEnterAnims(self.enemies, -1)
-        BattleCombat.playEnterAnims(self.allies, 1)
-        local enterCount = math.max(#self.allies, #self.enemies)
+        BattleCombat.playEnterAnims(self.allies, 1, { skip = skipAllyEnter })
+        local enterCount = #self.enemies
+        if not skipAllyEnter then
+            enterCount = math.max(#self.allies, #self.enemies)
+        end
         self.introTimer = ENTER_ANIM_DURATION + math.max(0, enterCount - 1) * ENTER_STAGGER
         self.bindContext()
         self.active = true
@@ -442,6 +447,7 @@ function BattleTriDriver.new(teamIdx, options)
             self.teamIdx, tostring(clearedId), tostring(nextId)))
         self._syncedMainStage = nextId
         self._clearReported = false
+        self._skipAllyEnter = true
         local BattleScene = require("ui.battle.scene.BattleScene")
         if BattleScene.beginMapMarch then BattleScene.beginMapMarch(MARCH_DURATION) end
         self:start(nextId)

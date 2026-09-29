@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.72-march-enter-offline-sync | 2026-09-29 | 前进进入下一场不再重播己方入场滑入；离线奖励的队员升级与物品获得同时开始显示。 |
 | v2.71-panel-title-line | 2026-09-29 | 矢量面板标题金线两端内收，菱形不再顶出面板外沿。DarkIcon.drawNine panel 一处生效，所有弹窗标题饰线一起变短。 |
 | v2.70-button-text-gold | 2026-09-29 | 可点按钮旧绿字改为金黄 #FFD666：铁匠分解/强化/一键强化/洗练、强化确认、装备穿戴、神器合成与置换、转职「已拥有」。禁用态仍为棕色 #8d5f41。 |
 | v2.69-equip-drag-hidden-tab | 2026-09-29 | 修复不显示配装页时从左侧仓库拖装备仍能不可见地拖入右栏原装备位的 bug：EquipCrossDrag 门控从「非觉醒页」收紧为「必须配装页」（新增 CharacterDetail.isEquipTab，tryDrop/draw 两处同步）；属性/转职页拖装弹「请先切到配装页」且不发 EQUIP_ITEM。LSP 0 Error + 回归 ALL PASS + 官方 Build + dist 验证。 |

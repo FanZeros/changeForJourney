@@ -545,9 +545,12 @@ function Panel.show(data)
         intervalFaster = CASCADE_INTERVAL_FASTER,
         fasterAfter    = CASCADE_FASTER_AFTER,
         popDur         = CASCADE_POP_DUR,
-        lead           = CASCADE_LEAD,
+        lead           = HERO_ANIM_DELAY,
     })
     state.cascadeSfx = 0
+    if #state.rewards > 0 then
+        state.cascade:start(time.elapsedTime)
+    end
     print("[OfflineRewardPanel] show: offline=" .. state.offlineSeconds .. "s, rewards=" .. #state.rewards
         .. ", heroPreview=" .. #state.heroExpPreview)
 end
@@ -594,14 +597,9 @@ function Panel.update(dt)
     -- 队员升级动画
     updateHeroAnim(dt)
 
-    -- 奖励逐件弹出：等队员经验全部发完（或本来就没有队员行）再开始
+    -- 奖励逐件弹出与队员升级同时开始（show 里已 start）
     if state.cascade then
-        if state.cascade.revealStart == 0 then
-            if #state.heroAnim == 0 or heroAnimDone() then
-                state.cascade:start(time.elapsedTime)
-                print("[OfflineRewardPanel] cascade start, items=" .. tostring(#state.rewards))
-            end
-        else
+        if state.cascade.revealStart ~= 0 then
             -- 逐件入场音
             local due = state.cascade:shownCount()
             while state.cascadeSfx < due do

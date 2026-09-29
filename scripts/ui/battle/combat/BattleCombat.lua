@@ -1613,8 +1613,8 @@ function BattleCombat.clearCardAnim(unit)
     BattleCombatAnim.clear(BCS, unit)
 end
 
-function BattleCombat.playEnterAnims(units, lungeDir)
-    BattleCombatAnim.playEnter(BCS, units, lungeDir)
+function BattleCombat.playEnterAnims(units, lungeDir, opts)
+    BattleCombatAnim.playEnter(BCS, units, lungeDir, opts)
 end
 
 -- ======================== 浮动文字更新 ========================

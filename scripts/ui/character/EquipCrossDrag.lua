@@ -187,8 +187,13 @@ end
 local function tryDrop()
     local CharacterDetail = require("ui.character.detail.CharacterDetail")
     local heroId = CharacterDetail.getHeroId and CharacterDetail.getHeroId() or nil
-    if not heroId or (CharacterDetail.isAwakenTab and CharacterDetail.isAwakenTab()) then
+    if not heroId then
         reject("请先打开角色")
+        return
+    end
+    -- 仅配装页可拖入：属性/转职/觉醒页时装备槽不绘制，禁止不可见穿装
+    if not (CharacterDetail.isEquipTab and CharacterDetail.isEquipTab()) then
+        reject("请先切到配装页")
         return
     end
     local dx, dy = rightDesign(session.sx, session.sy)
@@ -250,7 +255,7 @@ function EquipCrossDrag.draw(vg)
         local panel = Viewport.PANELS.right
         local CharacterDetail = require("ui.character.detail.CharacterDetail")
         local heroId = CharacterDetail.getHeroId and CharacterDetail.getHeroId() or nil
-        if heroId and not (CharacterDetail.isAwakenTab and CharacterDetail.isAwakenTab()) then
+        if heroId and CharacterDetail.isEquipTab and CharacterDetail.isEquipTab() then
             local target = hitSlot(dx, dy)
             local Draw = require("ui.character.detail.CharacterDetailDraw")
             nvgSave(vg)

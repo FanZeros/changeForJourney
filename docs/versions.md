@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.69-equip-drag-hidden-tab | 2026-09-29 | 修复不显示配装页时从左侧仓库拖装备仍能不可见地拖入右栏原装备位的 bug：EquipCrossDrag 门控从「非觉醒页」收紧为「必须配装页」（新增 CharacterDetail.isEquipTab，tryDrop/draw 两处同步）；属性/转职页拖装弹「请先切到配装页」且不发 EQUIP_ITEM。LSP 0 Error + 回归 ALL PASS + 官方 Build + dist 验证。 |
 | v2.68-remove-title-deco | 2026-09-28 | 批量移除 5 个页面（背包/神器背包/神器宝箱×2处/商城/酒馆商店）标题栏下方黄色「菱形+横行+菱形」装饰图 UI_JJC_BTBJ.png 的绘制/加载/常量；LevelUpPopup 弹窗文字底图仍用同图故保留资源与清单条目。LSP 0 Error + 回归 ALL PASS + 官方 Build 成功 + dist 验证。 |
 | v2.66-first-damage-fade | 2026-09-28 | 修复首个伤害飘字显示延迟：BattleDraw.drawFloatingTexts 淡入曲线从 10 帧(0.33s, frame=0 时 alpha=0 不可见)缩到 3 帧(0.1s)，与即时的受击闪烁/音效同步。淡出段不变，对所有飘字类型生效。 |
 | v2.55-shield-scaling | 2026-09-28 | 护盾成长层：护盾锚定最终HP×8% + 六围派生每级+5%（`AD.SHIELD_SCALING`，recalc §5.5），修复中后期护盾占比塌陷（敌人雷神 Lv345 护盾 821→2.56e15=HP的8%）；无盾敌人门控不加盾、enabled=false 一键回退；15断言回归 + 官方战力测试 + BattleLab A/B（胜局不翻盘、败局存活+26%）。设计文档 `docs/护盾成长层设计.md`。 |

@@ -452,6 +452,11 @@ function CharacterDetail.isAwakenTab()
     return detailState.tab == "awaken"
 end
 
+---@return boolean 配装页（tab=="equip"）是否当前可见
+function CharacterDetail.isEquipTab()
+    return detailState.tab == "equip"
+end
+
 --- 标记战斗力/装备缓存为脏（外部数据变化时由 CharacterPanel.refreshPowerCache 调用）
 function CharacterDetail.markPowerDirty()
     Draw.markPowerDirty()

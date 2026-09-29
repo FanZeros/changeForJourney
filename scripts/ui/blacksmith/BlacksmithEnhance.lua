@@ -142,7 +142,6 @@ local getClient        -- 延迟加载 Client
 local getProtocol      -- 延迟加载 Protocol
 
 -- 弹窗专属图片（由 BlacksmithPage 注入）
-local imgDialogBg      -- 二级确认弹窗背景 (UI_TY_EJQRK.png)
 local imgBtnYellow     -- 黄色确认按钮 (UI_AN_HUANG.png)
 local imgBtnMinus      -- 减按钮 (UI_AN_JIAN.png)
 local imgBtnPlus       -- 加按钮 (UI_AN_JIA.png)
@@ -177,7 +176,6 @@ function M.setContext(ctx)
     getClient          = ctx.getClient
     getProtocol        = ctx.getProtocol
     -- 弹窗图片
-    imgDialogBg        = ctx.imgDialogBg
     imgBtnYellow       = ctx.imgBtnYellow
     imgBtnMinus        = ctx.imgBtnMinus
     imgBtnPlus         = ctx.imgBtnPlus

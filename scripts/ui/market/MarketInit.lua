@@ -34,7 +34,7 @@ function M.bind(deps)
         end
 
         -- 弹窗
-        img.dialogBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+        -- [清理 0929] UI_TY_EJQRK.png 加载已移除：弹窗背景改由 DarkIcon.drawNine 矢量绘制，贴图从未使用
         img.buyBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
         img.btnMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
         img.btnPlus = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)

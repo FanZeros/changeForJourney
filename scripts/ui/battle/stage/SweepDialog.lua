@@ -13,7 +13,6 @@ local DrawUtil          = require("core.DrawUtil")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 
 local BF = require("systems.ButtonFeedback")
 local SweepDialog = {}
@@ -125,7 +124,6 @@ local SWEEP_COST = 1   -- 每次扫荡消耗扫荡券数
 -- ======================== 图片句柄 ========================
 
 local imgBtnSweep   = -1   -- UI_ICON_SD.png（入口按钮图标）
-local imgBg         = -1   -- UI_TY_EJQRK.png（弹窗九宫格背景）
 local imgTicketIcon = -1   -- UI_icon_SDQ_X.png（扫荡券图标）
 local imgMinus     = -1   -- UI_AN_JIAN.png
 local imgPlus      = -1   -- UI_AN_JIA.png
@@ -289,7 +287,6 @@ end
 function SweepDialog.init(vg)
     cachedVg = vg
     imgBtnSweep = nvgCreateImage(vg, "image/通用图标/UI_ICON_SD.png", 0)
-    imgBg       = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
 
     -- 预加载奖励图标（装备用 "?" 文字绘制，无需加载图片）
     for i, item in ipairs(REWARD_ITEMS) do
@@ -463,9 +460,7 @@ function SweepDialog.draw(vg)
     nvgTranslate(vg, -D.BG_CX, -D.BG_CY)
 
     -- 2) 弹窗背景框（九宫格）
-    if imgBg >= 0 then
-        DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
-    end
+    DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
 
     -- 3) 标题 "主线扫荡"
     drawTextStroke(vg, D.TT_X, D.TT_Y, "主线扫荡",

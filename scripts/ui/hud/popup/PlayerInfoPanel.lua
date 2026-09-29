@@ -336,7 +336,7 @@ end
 function PlayerInfoPanel.init(vg)
     cachedVg = vg
     -- 上半部分
-    img.bg      = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    -- [清理 0929] UI_TY_EJQRK.png 加载已移除：本面板背景改由 DarkIcon.drawNine 矢量绘制，贴图从未使用
     img.avatar  = nvgCreateImage(vg, "image/角色图标/UI_icon_hero_1.png", 0)
     img.power   = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
     img.expBg   = nvgCreateImage(vg, "image/进度条/UI_WJXX_JDT.png", 0)
@@ -358,7 +358,6 @@ function PlayerInfoPanel.init(vg)
     -- 下半部分：设置按钮
     img.settingBtn = nvgCreateImage(vg, "image/按钮/UI_AN_SZ.png", 0)
 
-    if img.bg < 0 then print("[PlayerInfoPanel] WARN: UI_TY_EJQRK.png load failed") end
     if img.power < 0 then print("[PlayerInfoPanel] WARN: ICON_ZDL.png load failed") end
     if img.settingBtn < 0 then print("[PlayerInfoPanel] WARN: UI_AN_SZ.png load failed") end
 

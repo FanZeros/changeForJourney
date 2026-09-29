@@ -374,7 +374,6 @@ local img = {
     tabSlider     = -1,
     btnHong       = -1,
     btnLv         = -1,
-    arrowBg       = -1,   -- 切换箭头背景 UI_YWJM_HS
     arrowIcon     = -1,   -- 切换箭头图标 UI_YWJM_XYG2（默认向右）
 }
 
@@ -519,7 +518,6 @@ function M.initImages(vg)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.tabSlider = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
-    img.arrowBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_HS.png", 0)
     img.arrowIcon = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG2.png", 0)
     img.slotSelected = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJPXZTBBJ.png", 0)
 end

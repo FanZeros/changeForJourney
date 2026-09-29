@@ -298,7 +298,6 @@ local imgLvlBadge  = -1   -- UI_JSJM_DJ.png（等级徽章）
 -- [图标统一 0928] 移除 imgRedDot 死声明：红点统一走 DarkIcon.draw(vg,"reddot",...)
 local imgIconUp    = -1   -- ICON_UP.png（可强化角标）
 -- 一键强化确认弹窗专用图片
-local imgEnhDlgBg    = -1  -- UI_TY_EJQRK.png（弹窗背景）
 local imgEnhDlgMinus = -1  -- UI_AN_JIAN.png（减按钮）
 local imgEnhDlgPlus  = -1  -- UI_AN_JIA.png（加按钮）
 
@@ -814,7 +813,6 @@ function BlacksmithPage.init(vg)
     imgCheckmark = nvgCreateImage(vg, "image/货币道具/UI_icon_GOU.png", 0)
     imgLvlBadge  = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_DJ.png", 0)
     -- 一键强化确认弹窗图片
-    imgEnhDlgBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgEnhDlgMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
     imgEnhDlgPlus  = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)
     for i = 1, 6 do
@@ -867,7 +865,7 @@ function BlacksmithPage.init(vg)
         imgReplaceBtn    = imgReplaceBtn,
         imgPlus          = imgPlus,
         -- 一键强化确认弹窗图片
-        imgDialogBg      = imgEnhDlgBg,
+        imgDialogBg      = -1,  -- 弹窗背景已改 DarkIcon.drawNine 矢量绘制，无贴图
         imgBtnYellow     = imgReplaceBtn,   -- 复用黄色按钮背景
         imgBtnMinus      = imgEnhDlgMinus,
         imgBtnPlus       = imgEnhDlgPlus,

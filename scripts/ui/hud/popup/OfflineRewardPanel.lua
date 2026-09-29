@@ -482,14 +482,13 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     cachedVg = vg
-    img.bg            = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    -- [清理 0929] UI_TY_EJQRK.png 加载已移除：背景改由 DarkIcon.drawNine 矢量绘制，贴图从未使用
     img.progBg        = nvgCreateImage(vg, "image/进度条/UI_LXSYJDT_2.png", 0)
     img.progFill      = nvgCreateImage(vg, "image/进度条/UI_XDZJDT.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnGreen      = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
 
-    if img.bg < 0 then print("[OfflineRewardPanel] WARN: UI_TY_EJQRK.png load failed") end
     print("[OfflineRewardPanel] init OK")
 end
 

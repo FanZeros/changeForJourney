@@ -17,7 +17,6 @@ local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 
 local DamageStatsPanel = {}
 
@@ -96,7 +95,6 @@ local COLOR_MAG  = { 113, 253, 255 }   -- 魔法：青
 -- ======================== 图片句柄 ========================
 
 local imgBtn = -1          -- UI_ICON_TJ.png（入口按钮图标）
-local imgBg  = -1          -- UI_TY_EJQRK.png（弹窗九宫格背景）
 local heroIconCache = {}   -- [heroId] = nvgImage handle
 local cachedVg = nil
 
@@ -152,7 +150,6 @@ end
 function DamageStatsPanel.init(vg)
     cachedVg = vg
     imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_TJ.png", 0)
-    imgBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     print("[DamageStatsPanel] init OK")
 end
 
@@ -340,9 +337,7 @@ function DamageStatsPanel.draw(vg)
     nvgTranslate(vg, -D.BG_CX, -D.BG_CY)
 
     -- 3) 九宫格背景
-    if imgBg >= 0 then
-        DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
-    end
+    DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
 
     -- 4) 标题
     drawTextStroke(vg, D.BG_CX, D.TT_Y, "战斗统计",

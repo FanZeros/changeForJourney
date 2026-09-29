@@ -178,7 +178,8 @@ end
 --- 初始化分解界面专属图片
 function M.init(vg)
     QualityMark.init(vg)
-    imgPopupBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    -- 整图拉伸绘制（950x647），使用 POP 副本，调整原图不影响九宫格用法
+    imgPopupBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK_POP.png", 0)
     imgPopupArrow = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_JT.png", 0)
     imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
     EquipmentDetail.init(vg)

@@ -290,6 +290,7 @@ end
 ---@param vg any
 function StageSelectDialog.init(vg)
     imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_XG.png", 0)
+    -- 九宫格拉伸用法（950x1117），保留原图；整图拉伸用法（950x647）走 UI_TY_EJQRK_POP 副本
     imgBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgAct = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)

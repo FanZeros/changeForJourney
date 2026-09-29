@@ -603,12 +603,13 @@ local function drawLandscape(w, h)
     nvgStrokeWidth(vg_, math.max(1.5, h * 0.002))
     nvgStroke(vg_)
 
-    local avatarSize = cgOnly and 0 or math.max(54, h * 0.078)
+    local showAvatar = step.characterId ~= nil
+    local avatarSize = showAvatar and math.max(54, h * 0.078) or 0
     local avatarX = barX + w * 0.018
     local avatarY = barY - avatarSize * 0.34
-    local avatarImg = getAvatarImage(step.characterId)
-    -- [统一角色框] 剧情头像：实心金填充框改为品质色描边（名牌 chip 保留）
-    if not cgOnly then
+    local avatarImg = showAvatar and getAvatarImage(step.characterId) or -1
+    -- [统一角色框] 剧情头像：CG 句也保留角色头像，不再只留名字。旁白没有角色则不画空框。
+    if showAvatar then
         HeroFrame.draw(vg_, {
             cx = avatarX + avatarSize * 0.5, cy = avatarY + avatarSize * 0.5,
             size = avatarSize, radius = (avatarSize + 6) * 0.18,

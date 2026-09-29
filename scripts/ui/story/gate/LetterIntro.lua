@@ -3,8 +3,7 @@
 -- 玩法：暗色横信逐行显墨（4 段）→ 火漆印「终」→ 交给门厅点卯（ScenarioDialogue.OPENING）。
 -- 绘制：全窗口逻辑坐标。横屏信笺偏左、矮而宽，右边留出书斋桌案。
 -- 素材（本地路径，不走 URL）：
---   image/界面底板/剧情日记/GF_KF06.png  书斋桌案（信封+帽）
---   image/界面底板/剧情日记/GF_KF07.png     火漆特写「终」
+--   image/界面底板/剧情日记/GF_KF06.png  书斋桌案（信封+帽），全程不切火漆特写
 -- ============================================================================
 
 ---@class LetterIntro
@@ -49,7 +48,6 @@ local C_BG   = { 4, 4, 7 }
 -- ======================== 状态 ========================
 local vg_       = nil
 local imgDesk_  = -1
-local imgSeal_  = -1
 local active    = false
 local state     = "reveal"   -- reveal | sealed | fading
 local blockIdx  = 1
@@ -92,14 +90,6 @@ local function ensureLetterImages()
             print("[LetterIntro] WARN: GF_KF06 load failed")
         else
             print("[LetterIntro] desk relics loaded")
-        end
-    end
-    if imgSeal_ < 0 then
-        imgSeal_ = nvgCreateImage(vg_, "image/界面底板/剧情日记/GF_KF07.png", 0)
-        if imgSeal_ < 0 then
-            print("[LetterIntro] WARN: GF_KF07 load failed")
-        else
-            print("[LetterIntro] wax seal loaded")
         end
     end
 end
@@ -210,23 +200,11 @@ local function drawLetter(vg, w, h)
     nvgFillColor(vg, nvgRGBA(C_BG[1], C_BG[2], C_BG[3], 255 * fade))
     nvgFill(vg)
 
-    -- 2) 背景：reveal 用书斋桌案，sealed 叠火漆特写（16:9 cover 铺满）
+    -- 2) 背景：全程书斋桌案，不切火漆特写
     local imgAR = 16 / 9
     local dx, dy, dw, dh = coverRect(w, h, imgAR)
     local bgImg = imgDesk_
     local bgA = fade * flicker
-    if state == "sealed" and imgSeal_ >= 0 then
-        local p = math.min(1, sealedT / SEAL_DUR)
-        if imgDesk_ >= 0 then
-            local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, imgDesk_, bgA * (1 - p))
-            nvgBeginPath(vg)
-            nvgRect(vg, 0, 0, w, h)
-            nvgFillPaint(vg, paint)
-            nvgFill(vg)
-        end
-        bgImg = imgSeal_
-        bgA = fade * (0.85 + 0.15 * p)
-    end
     if bgImg >= 0 then
         local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, bgImg, bgA)
         nvgBeginPath(vg)

@@ -147,6 +147,8 @@ local state = {
     followScroll = true,
     autoScroll = nil,  -- { t, dur, to } 非逐件弹出时开屏平滑滚到底部（显示最新/最下方奖励）
     panel = nil,       -- 触发面板 'left'|'center'|'right'（横屏三面板跟随绘制/输入）；nil=全屏居中
+    layoutScale = 1.0, -- 布局自适应缩放：少量物品时整体等比缩小，避免 1 件物品撑满大面板
+    gridRowOffset = 0, -- 显示行数不足两行时网格整体下移量（垂直居中）
     -- 动画状态
     animPhase  = "none",  -- "none"|"opening"|"open"|"closing"
     animStart  = 0,       -- 动画开始时刻（time.elapsedTime）
@@ -347,11 +349,55 @@ local function getQualityBg(quality)
     return ImageCache.getQualityBg(quality)
 end
 
---- 获取格子中心坐标
+--- 获取格子中心坐标（含不足两行时的垂直居中偏移）
 local function getCellCenter(row, col)
     local cx = COL_CX[col]
     local cy = FIRST_ROW_TOP + ICON_SIZE * 0.5 + (row - 1) * (ICON_SIZE + ROW_GAP)
+        + (state.gridRowOffset or 0)
     return cx, cy
+end
+
+-- ======================== 布局自适应 ========================
+-- 物品少时整套布局（面板/标题/网格/提示）等比缩小并垂直居中，
+-- 避免 1~2 件物品占据两行大面板显得空荡。绘制层包一层缩放变换，
+-- 输入层用逆变换算回设计坐标，滚动/级联逻辑全部无需改动。
+
+local LAYOUT_ANCHOR_Y = PANEL_CY  -- 布局缩放锚点（面板中心）
+local LAYOUT_MIN = 0.66
+
+--- 按当前物品数重算布局缩放与网格垂直偏移（show/removeItem 后调用）
+local function recomputeLayoutScale()
+    local visibleRows = math.min(2, math.max(1, math.ceil(math.max(#state.items, 1) / COLS)))
+    local fullH = 2 * ICON_SIZE + ROW_GAP
+    local visH = visibleRows * ICON_SIZE + (visibleRows - 1) * ROW_GAP
+    -- 面板高度按可见行数比例收缩后再留一点余量，整体再缩一档让少量物品更精致
+    local scale = (visH + 260) / (fullH + 260)
+    scale = math.max(LAYOUT_MIN, math.min(1.0, scale))
+    if visibleRows >= 2 then scale = 1.0 end
+    state.layoutScale = scale
+    state.gridRowOffset = (GRID_H - visH) * 0.5
+end
+
+--- 绘制层：以面板中心为锚点应用布局缩放（调用方需配对一个 nvgRestore）
+local function applyLayoutTransform(vg)
+    local s = state.layoutScale or 1.0
+    if s == 1.0 then return end
+    nvgSave(vg)
+    nvgTranslate(vg, DESIGN_W * 0.5, LAYOUT_ANCHOR_Y)
+    nvgScale(vg, s, s)
+    nvgTranslate(vg, -DESIGN_W * 0.5, -LAYOUT_ANCHOR_Y)
+end
+
+--- 输入层：屏幕设计坐标 → 布局坐标系
+local function invLayoutX(x)
+    local s = state.layoutScale or 1.0
+    if s == 1.0 then return x end
+    return (x - DESIGN_W * 0.5) / s + DESIGN_W * 0.5
+end
+local function invLayoutY(y)
+    local s = state.layoutScale or 1.0
+    if s == 1.0 then return y end
+    return (y - LAYOUT_ANCHOR_Y) / s + LAYOUT_ANCHOR_Y
 end
 
 local function syncCascadeScroll()
@@ -470,6 +516,7 @@ function RewardPopup.show(title, rewards, opts)
     local totalRows = math.ceil(math.max(#state.items, 1) / COLS)
     local totalContentH = totalRows * ICON_SIZE + (totalRows - 1) * ROW_GAP
     state.scrollMax = math.max(0, totalContentH - GRID_H)
+    recomputeLayoutScale()
 
     state.open = true
     state.animPhase = "opening"
@@ -517,6 +564,8 @@ end
 ---@return boolean
 function RewardPopup.hitPanel(dx, dy)
     if not state.open then return false end
+    dx = invLayoutX(dx)
+    dy = invLayoutY(dy)
     local bottom = math.max(PANEL_CY + PANEL_H * 0.5, HINT_CY + HINT_FONT)
     return dx >= PANEL_CX - PANEL_W * 0.5 and dx <= PANEL_CX + PANEL_W * 0.5
         and dy >= GLOW_CY - GLOW_H * 0.5 and dy <= bottom + 24
@@ -543,6 +592,7 @@ function RewardPopup.removeItem(index)
     local totalRows = math.ceil(math.max(#state.items, 1) / COLS)
     local totalContentH = totalRows * ICON_SIZE + (totalRows - 1) * ROW_GAP
     state.scrollMax = math.max(0, totalContentH - GRID_H)
+    recomputeLayoutScale()
     clampScroll()
     -- 如果物品已全部领取，自动关闭弹窗
     if #state.items == 0 then
@@ -652,6 +702,10 @@ function RewardPopup.handleInput(dx, dy)
     -- 逐个获得未结束时，点击只跳过动画，避免奖励还没看完就被关掉
     if skipCascade() then return true end
 
+    -- 屏幕设计坐标 → 布局坐标系（与绘制层缩放对应）
+    dx = invLayoutX(dx)
+    dy = invLayoutY(dy)
+
     -- 任何点击都能关闭奖励弹窗：面板外点击同样关闭并消费事件，
     -- 避免弹窗一直挂着挡住后续操作。
     local inPanel = dx >= PANEL_CX - PANEL_W * 0.5 and dx <= PANEL_CX + PANEL_W * 0.5
@@ -717,6 +771,10 @@ function RewardPopup.handleDragBegin(dx, dy)
         return false
     end
 
+    -- 屏幕设计坐标 → 布局坐标系
+    dx = invLayoutX(dx)
+    dy = invLayoutY(dy)
+
     -- 在图标区域内开始拖拽 → 滚动
     if dx >= CLIP_LEFT and dx <= CLIP_RIGHT
        and dy >= CLIP_TOP and dy <= CLIP_BOTTOM then
@@ -744,14 +802,14 @@ function RewardPopup.handleDragMove(dx, dy)
     end
 
     if state.dragging then
-        local delta = state.dragLastY - dy
+        local delta = state.dragLastY - invLayoutY(dy)
         state.dragMoved = (state.dragMoved or 0) + math.abs(delta)
         if state.scrollMax > 0 then
             state.scrollY = state.scrollY + delta
             state.scrollVel = delta
             clampScroll()
         end
-        state.dragLastY = dy
+        state.dragLastY = invLayoutY(dy)
     end
 
     return true
@@ -886,6 +944,9 @@ function RewardPopup.drawContent(vg)
     nvgScale(vg, animScale, animScale)
     nvgTranslate(vg, -pivotX, -pivotY)
     nvgGlobalAlpha(vg, animAlpha)
+
+    -- 布局自适应缩放（少量物品时整体缩小，最内层变换）
+    applyLayoutTransform(vg)
 
     if state.cascade and not cascadeFinished() then
         local elapsed = cascadeElapsed()
@@ -1227,7 +1288,8 @@ function RewardPopup.drawContent(vg)
     nvgFillColor(vg, nvgRGBA(0xC8, 0xC0, 0xB0, 200))
     nvgText(vg, HINT_CX, HINT_CY, hint, nil)
 
-    -- 恢复缩放/透明变换
+    -- 恢复布局缩放，再恢复缩放/透明变换
+    if (state.layoutScale or 1.0) ~= 1.0 then nvgRestore(vg) end
     nvgGlobalAlpha(vg, 1.0)
     nvgRestore(vg)
 end

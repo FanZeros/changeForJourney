@@ -72,11 +72,11 @@ local LABEL_INSET_LEFT   = 100
 -- 铁匠铺（上移，给古树让出中轴）
 local SMITH_CX,  SMITH_CY  = 525,  390
 local SMITH_W,   SMITH_H   = 330,  365
-local SMITH_LBL_CX, SMITH_LBL_CY = 534, 285
+local SMITH_LBL_CX, SMITH_LBL_CY = 534, 560
 local SMITH_LBL_W,  SMITH_LBL_H  = 361, 113
-local SMITH_ICON_CX, SMITH_ICON_CY = 444, 279
+local SMITH_ICON_CX, SMITH_ICON_CY = 444, 554
 local SMITH_ICON_SZ = 64
-local SMITH_TEXT_X,  SMITH_TEXT_Y  = 569, 279
+local SMITH_TEXT_X,  SMITH_TEXT_Y  = 569, 554
 
 -- 终焉古树（天赋入口，画面中轴；尺寸避开仓库/酒馆热区）
 local TREE_CX,  TREE_CY  = 540,  1040
@@ -704,7 +704,8 @@ function TownScene.handleInput(dx, dy)
     local _TM = require("systems.TutorialManager")
     -- 铁匠铺点击检测
     if dx >= SMITH_CX - SMITH_W * 0.5 and dx <= SMITH_CX + SMITH_W * 0.5
-       and dy >= SMITH_CY - SMITH_H * 0.5 and dy <= SMITH_CY + SMITH_H * 0.5 then
+       and dy >= SMITH_CY - SMITH_H * 0.5
+       and dy <= SMITH_LBL_CY + SMITH_LBL_H * 0.5 then
         if not _TM.isBuildingUnlocked("smith") then
             print("[TownScene] 铁匠铺未被引导解锁")
             return true

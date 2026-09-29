@@ -78,7 +78,7 @@ local MERGE_BTN = {
     W = 410, H = 100,
     FONT = 40,
     NP_T = 20, NP_R = 20, NP_B = 20, NP_L = 20,
-    TEXT_R = 0x25, TEXT_G = 0x55, TEXT_B = 0x3d,
+    TEXT_R = 255, TEXT_G = 214, TEXT_B = 102,
 }
 
 -- 背包网格
@@ -730,7 +730,7 @@ function M.drawContent(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, MERGE_BTN.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    -- 按钮文字：可用=亮深绿，不可用=棕色
+    -- 按钮文字：可用=金黄，不可用=棕色
     if enabled then
         nvgFillColor(vg, nvgRGBA(MERGE_BTN.TEXT_R, MERGE_BTN.TEXT_G, MERGE_BTN.TEXT_B, 255))
     else

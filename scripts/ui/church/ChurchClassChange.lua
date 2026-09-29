@@ -847,11 +847,11 @@ function M.drawConfirmPopup(vg)
     if pop.confirmOwned then
         -- 已拥有模式
         local _bf1 = BF.begin(vg, "ccc_confirm", C.btnCX, C.btnCY, C.btnW, C.btnH)
-        DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH, { accent = "green" })
+        DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH, { accent = "gold" })
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, C.costFont)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x1e, 0x51, 0x37, 255))
+        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
         nvgText(vg, C.btnCX, C.btnCY, "已拥有", nil)
         BF.finish(vg, _bf1)
     else

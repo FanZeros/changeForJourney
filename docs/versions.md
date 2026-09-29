@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.70-button-text-gold | 2026-09-29 | 可点按钮旧绿字改为金黄 #FFD666：铁匠分解/强化/一键强化/洗练、强化确认、装备穿戴、神器合成与置换、转职「已拥有」。禁用态仍为棕色 #8d5f41。 |
 | v2.69-equip-drag-hidden-tab | 2026-09-29 | 修复不显示配装页时从左侧仓库拖装备仍能不可见地拖入右栏原装备位的 bug：EquipCrossDrag 门控从「非觉醒页」收紧为「必须配装页」（新增 CharacterDetail.isEquipTab，tryDrop/draw 两处同步）；属性/转职页拖装弹「请先切到配装页」且不发 EQUIP_ITEM。LSP 0 Error + 回归 ALL PASS + 官方 Build + dist 验证。 |
 | v2.68-remove-title-deco | 2026-09-28 | 批量移除 5 个页面（背包/神器背包/神器宝箱×2处/商城/酒馆商店）标题栏下方黄色「菱形+横行+菱形」装饰图 UI_JJC_BTBJ.png 的绘制/加载/常量；LevelUpPopup 弹窗文字底图仍用同图故保留资源与清单条目。LSP 0 Error + 回归 ALL PASS + 官方 Build 成功 + dist 验证。 |
 | v2.66-first-damage-fade | 2026-09-28 | 修复首个伤害飘字显示延迟：BattleDraw.drawFloatingTexts 淡入曲线从 10 帧(0.33s, frame=0 时 alpha=0 不可见)缩到 3 帧(0.1s)，与即时的受击闪烁/音效同步。淡出段不变，对所有飘字类型生效。 |

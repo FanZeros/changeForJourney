@@ -951,10 +951,6 @@ local OLD_PATHS = {
     power        = "image/通用图标/ICON_ZDL.png",
     reddot       = "image/通用图标/ICON_HD.png",
     nav_hero     = "image/通用图标/ICON_GN_1.png",
-    nav_log      = "image/通用图标/ICON_GN_2.png",
-    nav_battle   = "image/通用图标/ICON_GN_3.png",
-    nav_town     = "image/通用图标/ICON_GN_4.png",
-    nav_dungeon  = "image/通用图标/ICON_GN_5.png",
 }
 
 ---@type table<string, number> 旧图标句柄缓存

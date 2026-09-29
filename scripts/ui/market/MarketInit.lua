@@ -26,10 +26,7 @@ function M.bind(deps)
         img.tabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
         img.slider   = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
-        -- 商品卡片
-        for i = 1, 6 do
-            img.cardBg[i] = nvgCreateImage(vg, "image/界面底板/商店/UI_SDICONBJ_" .. i .. ".png", 0)
-        end
+        -- 商品品质底已改矢量，不再加载 UI_SDICONBJ。
         img.buyBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SD_AN.png", 0)
         for idx, item in ipairs(SHOP_ITEMS) do
             img.itemIcons[idx] = nvgCreateImage(vg, item.icon, 0)

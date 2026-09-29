@@ -261,7 +261,6 @@ local CARD_STEP_Y  = L.CARD_H + L.CARD_GAP_Y
 
 local shopImg = {
     pageBg      = -1,  -- UI_TJP_1.png（页面背景框）
-    cardBg      = {},  -- 品质1~6 → UI_SDICONBJ_1~6.png
     buyBtn      = -1,  -- UI_SD_AN.png
     itemIcons   = {},  -- 每个商品图标
     costIcons   = {},  -- 每个商品消耗图标
@@ -350,12 +349,6 @@ local DLG = {
 
 function TavernShopPage.init(vg)
     shopImg.pageBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png",    0)
-    for i = 1, 6 do
-        shopImg.cardBg[i]   = nvgCreateImage(vg, "image/界面底板/商店/UI_SDICONBJ_" .. i .. ".png", 0)
-    end
-    for i = 1, 6 do
-    -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
-    end
     shopImg.buyBtn      = nvgCreateImage(vg, "image/界面底板/商店/UI_SD_AN.png",       0)
     -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）

@@ -260,7 +260,6 @@ local img = {
     gold = -1, gem = -1,
     btnBack = -1, tabBg = -1, slider = -1,
     -- 商品
-    cardBg = {},       -- 品质1~6
     buyBtn = -1,
     itemIcons = {},
     costIcons = {},

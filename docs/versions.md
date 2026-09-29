@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.86-fix-stage-flow-load | 2026-09-29 | 修复战斗卡面预载把 local 写进表构造器，导致 BattleStageFlow 无法加载、主入口起不来。 |
 | v2.85-card-name-scroll | 2026-09-29 | 替换角色详情底板 UI_JSJM_0，顶部饰条露出。角色名从底板下方改到卡面顶部，超出饰条宽度时横向滚动。 |
 | v2.84-remove-world-town-bg | 2026-09-29 | 去掉横屏世界大底 UI_WORLD_BG 和城镇大图 UI_CZ_BJ 的加载与绘制，露出处改纯色。可见画面仍由三行石框、关卡图和各页底板覆盖。 |
 | v2.83-remove-church-frames | 2026-09-29 | 删除未绘制的转职彩框 UI_TFWBK 五色、标题底 UI_ZBT1、天赋背景 UI_JTTF_BJ/BJGY。光晕和滑块保留。 |

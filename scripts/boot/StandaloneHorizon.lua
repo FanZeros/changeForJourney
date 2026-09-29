@@ -455,37 +455,11 @@ function HandleNanoVGRenderHorizon()
         return
     end
 
-    -- 横屏背景：世界大背景图（cover 铺满；战斗页/标题页自带背景会覆盖此处）
-    -- [fix] 只尝试一次：缺图时每帧重试会刷屏报错；缺图回退城镇大图，再失败走下方纯色兜底
-    --       （不要用 cache:Exists 预判——Web 预览运行时对 pak 资源返回 false，会误伤正常加载）
-    if RT.imgWorldBg_ < 0 and not RT.worldBgTried_ then
-        RT.worldBgTried_ = true
-        RT.imgWorldBg_ = nvgCreateImage(vg(), RT.WORLD_BG_PATH, 0)
-        if RT.imgWorldBg_ < 0 then
-            print("[Standalone] WARN: world bg missing(" .. RT.WORLD_BG_PATH .. "), fallback -> " .. RT.WORLD_BG_FALLBACK)
-            RT.imgWorldBg_ = nvgCreateImage(vg(), RT.WORLD_BG_FALLBACK, 0)
-            if RT.imgWorldBg_ < 0 then
-                print("[Standalone] WARN: world bg fallback failed, use solid color")
-            end
-        end
-    end
-    if RT.imgWorldBg_ >= 0 then
-        local iw, ih = nvgImageSize(vg(), RT.imgWorldBg_)
-        if iw and iw > 0 then
-            local s = math.max(logicalW() / iw, logicalH() / ih)
-            local dw, dh = iw * s, ih * s
-            local paint = nvgImagePattern(vg(), (logicalW() - dw) * 0.5, (logicalH() - dh) * 0.5, dw, dh, 0, RT.imgWorldBg_, 1.0)
-            nvgBeginPath(vg())
-            nvgRect(vg(), 0, 0, logicalW(), logicalH())
-            nvgFillPaint(vg(), paint)
-            nvgFill(vg())
-        end
-    else
-        nvgBeginPath(vg())
-        nvgRect(vg(), 0, 0, logicalW(), logicalH())
-        nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
-        nvgFill(vg())
-    end
+    -- 横屏底色。石框、关卡图和各页底板负责可见画面，不再铺 UI_WORLD_BG。
+    nvgBeginPath(vg())
+    nvgRect(vg(), 0, 0, logicalW(), logicalH())
+    nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
+    nvgFill(vg())
 
     -- 调试跳过：进主流程
     if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then

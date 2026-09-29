@@ -28,7 +28,6 @@ local TownScene = {}
 
 -- ======================== 图片句柄 ========================
 
-local imgBg       = -1   -- 城镇背景
 local imgChurch   = -1   -- 教堂建筑
 local imgTree     = -1   -- 终焉古树（天赋入口）
 local imgTavern   = -1   -- 酒馆建筑
@@ -414,8 +413,7 @@ local function ensureTownImages(vg)
     local ctx = vg or townVg_
     if not ctx then return end
     townImgsLoaded_ = true
-    -- 遗匣用专属立绘，功绩用日记入口图。
-    imgBg          = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_BJ.png", 0)
+    -- 遗匣用专属立绘，功绩用日记入口图。城镇大底已改由 HorizonBg 纯色铺底。
     imgLootBox     = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_YX.png", 0) or -1
     imgIconLoot    = nvgCreateImage(ctx, "image/通用图标/ICON_CZ_YX.png", 0) or -1
     imgTask        = nvgCreateImage(ctx, "image/界面底板/城镇世界/UI_CZ_GJ.png", 0) or -1

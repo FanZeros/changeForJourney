@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v2.84-remove-world-town-bg | 2026-09-29 | 去掉横屏世界大底 UI_WORLD_BG 和城镇大图 UI_CZ_BJ 的加载与绘制，露出处改纯色。可见画面仍由三行石框、关卡图和各页底板覆盖。 |
 | v2.83-remove-church-frames | 2026-09-29 | 删除未绘制的转职彩框 UI_TFWBK 五色、标题底 UI_ZBT1、天赋背景 UI_JTTF_BJ/BJGY。光晕和滑块保留。 |
 | v2.82-remove-town-tag | 2026-09-29 | 删除未引用的城镇标签底 UI_CZ_BQ。UI_WORLD_BG 与 UI_CZ_BJ 仍作横屏和城镇背景。 |
 | v2.81-remove-old-nav | 2026-09-29 | 删除未使用的旧导航图 ICON_GN_2-5、ICON_GN_BAN。正式导航已是矢量。词缀等级标 ICON_CZBZ 保留。 |

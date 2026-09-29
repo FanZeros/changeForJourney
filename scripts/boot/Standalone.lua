@@ -189,13 +189,7 @@ end
 local DESIGN_W = GameConfig.Design.WIDTH
 local DESIGN_H = GameConfig.Design.HEIGHT
 
--- [终焉之门] 全窗口世界大背景（横屏路径底图，战斗页自有背景不受影响）
--- 部署环境可能缺图：只尝试一次，失败则回退城镇大图 UI_CZ_BJ，再失败用纯色兜底
--- （原实现每帧重试 nvgCreateImage，缺图时刷屏 "Could not find resource"）
-local imgWorldBg_ = -1
-local worldBgTried_ = false
-local WORLD_BG_PATH = "image/界面底板/城镇世界/UI_WORLD_BG.png"
-local WORLD_BG_FALLBACK = "image/界面底板/城镇世界/UI_CZ_BJ.png"
+-- 全窗口底色。UI_WORLD_BG / UI_CZ_BJ 已被三行石框、关卡图和各页底板盖住，不再加载。
 
 -- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
 -- （maxStageId_/clearedStages）每秒比对一次，变化才经 handleStateUpdate 写入，
@@ -269,12 +263,6 @@ local function RecalcLayout()
     StandaloneRT.DESIGN_H = DESIGN_H
     StandaloneRT.DrawPreloadOverlay = DrawPreloadOverlay
     StandaloneRT.preload_ = preload_
-    if StandaloneRT.imgWorldBg_ == nil then
-        StandaloneRT.imgWorldBg_ = imgWorldBg_
-        StandaloneRT.worldBgTried_ = worldBgTried_
-    end
-    StandaloneRT.WORLD_BG_PATH = WORLD_BG_PATH
-    StandaloneRT.WORLD_BG_FALLBACK = WORLD_BG_FALLBACK
     scale = math.min(logicalW / DESIGN_W, logicalH / DESIGN_H)
     screenDesignW = logicalW / scale
     screenDesignH = logicalH / scale

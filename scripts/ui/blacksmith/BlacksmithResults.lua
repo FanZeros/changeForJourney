@@ -20,8 +20,8 @@ function M.bind(deps)
         -- 刷新分解页面背包数据
         BlacksmithDecompose.refreshBackpackItems()
 
-        -- 洗练 tab 下：按 seq 从最新 inventory 中刷新独立选中的装备，不走 deriveSelectedEquip
-        if state.tab == "xilian" and state.selectedEquip then
+        -- 强化/洗练 tab：按 seq 从最新 inventory 中刷新选中的装备，不走 deriveSelectedEquip
+        if (state.tab == "xilian" or state.tab == "qianghua") and state.selectedEquip then
             local seq = state.selectedEquip.seq
             if seq then
                 local eqData = equipmentData or ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
@@ -29,25 +29,27 @@ function M.bind(deps)
                     local refreshed = eqData.inventory[tostring(seq)]
                     if refreshed then
                         state.selectedEquip = refreshed
-                        if BlacksmithRefine.hasPreview() then
+                        if state.tab == "xilian" and BlacksmithRefine.hasPreview() then
                             -- 有洗练预览时仅重算消耗，避免覆盖预览/动画状态
                             BlacksmithRefine.refreshCostOnly()
                         else
                             BlacksmithRefine.updateRefineData(refreshed)
+                            BlacksmithEnhance.updateEnhanceData(refreshed)
                         end
-                        print("[BlacksmithPage] 洗练tab: 按seq=" .. tostring(seq) .. "刷新装备数据+消耗")
+                        print("[BlacksmithPage] " .. state.tab .. "tab: 按seq=" .. tostring(seq) .. "刷新装备数据+消耗")
                     else
                         -- 装备可能已被分解/删除
                         state.selectedEquip = nil
                         BlacksmithRefine.updateRefineData(nil)
-                        print("[BlacksmithPage] 洗练tab: seq=" .. tostring(seq) .. "装备已不存在，重置")
+                        BlacksmithEnhance.updateEnhanceData(nil)
+                        print("[BlacksmithPage] " .. state.tab .. "tab: seq=" .. tostring(seq) .. "装备已不存在，重置")
                     end
                 end
             end
             return
         end
 
-        -- 强化/分解 tab：重新推导当前选中装备（服务端推送后英雄装备可能变化）
+        -- 分解 tab：重新推导当前选中装备（服务端推送后英雄装备可能变化）
         deriveSelectedEquip()
         print("[BlacksmithPage] 装备数据已刷新（deriveSelectedEquip）")
     end

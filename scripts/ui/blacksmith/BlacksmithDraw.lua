@@ -2,13 +2,8 @@
 -- BlacksmithDraw - BlacksmithPage.drawPageImpl 抽出（玩法不变）
 -- ============================================================================
 
-local DarkIcon = require("core.DarkIcon")
 local DrawUtil = require("core.DrawUtil")
-local GameState = require("core.GameState")
 local TownPageChrome = require("ui.town.TownPageChrome")
-local CharacterPanel = require("ui.character.panel.CharacterPanel")
-local ClientDispatcher = require("runtime.ClientDispatcher")
-local PlayerStore = require("core.PlayerStore")
 local EquipmentBag = require("ui.character.equip.EquipmentBag")
 local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
 local I18n = require("core.I18n")
@@ -30,7 +25,6 @@ function M.bind(deps)
     local DESIGN_W = deps.DESIGN_W
     local DarkIcon = deps.DarkIcon
     local DrawUtil = deps.DrawUtil
-    local EQUIP_SLOT_ORDER = deps.EQUIP_SLOT_ORDER
     local EquipmentBag = deps.EquipmentBag
     local EquipmentDetail = deps.EquipmentDetail
     local LOWER_BG_CX = deps.LOWER_BG_CX
@@ -62,15 +56,14 @@ function M.bind(deps)
     local TownPageChrome = deps.TownPageChrome
     local UPPER_SLIDE_DIST = deps.UPPER_SLIDE_DIST
     local decomposeRedDot = deps.decomposeRedDot
-    local drawEquipSlots = deps.drawEquipSlots
     local drawImageCentered = deps.drawImageCentered
     local drawTabContent = deps.drawTabContent
     local drawUpperSlotContent = deps.drawUpperSlotContent
     local easeInCubic = deps.easeInCubic
     local easeInOutCubic = deps.easeInOutCubic
     local easeOutCubic = deps.easeOutCubic
-    local getEquipSlotCX = deps.getEquipSlotCX
-    local getEquipSlotCY = deps.getEquipSlotCY
+    local SELECT_SLOT_CX = deps.SELECT_SLOT_CX
+    local SELECT_SLOT_CY = deps.SELECT_SLOT_CY
     local imgBg = deps.imgBg
     local imgIconUp = deps.imgIconUp
     local imgLowerBg = deps.imgLowerBg
@@ -174,6 +167,11 @@ function M.bind(deps)
         drawUpperSlotContent(vg, state.tab)
     end
 
+    -- 强化结果特效（叠加在选择槽上）
+    if state.tab == "qianghua" and SpineResultEffect.isPlaying() then
+        SpineResultEffect.draw(vg, SELECT_SLOT_CX, SELECT_SLOT_CY)
+    end
+
     nvgRestore(vg)  -- 结束上半部分偏移
 
     -- ================== 下半部分（从下方滑入） ==================
@@ -182,49 +180,6 @@ function M.bind(deps)
 
     -- 7. 下方背景板
     drawImageCentered(vg, imgLowerBg, LOWER_BG_CX, LOWER_BG_CY, LOWER_BG_W, LOWER_BG_H, 1.0)
-
-    -- 7.5 装备槽位（仅强化 tab，带滑动动画，绘制在 lower BG 之上避免被覆盖）
-    do
-        local curIsQH = (state.tab == "qianghua")
-        local oldIsQH = (state.tabFrom == "qianghua")
-        if isAnimating and (curIsQH or oldIsQH) then
-            -- 动画中：旧/新面板分别绘制装备槽位并带滑动
-            nvgSave(vg)
-            nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-            if oldIsQH then
-                nvgSave(vg)
-                nvgTranslate(vg, oldOX, 0)
-                drawEquipSlots(vg)
-                nvgRestore(vg)
-            end
-            if curIsQH then
-                nvgSave(vg)
-                nvgTranslate(vg, newOX, 0)
-                drawEquipSlots(vg)
-                -- Spine 强化结果特效
-                if SpineResultEffect.isPlaying() then
-                    local eqIdx = 1
-                    for i, k in ipairs(EQUIP_SLOT_ORDER) do
-                        if k == state.selectedEquipSlot then eqIdx = i; break end
-                    end
-                    SpineResultEffect.draw(vg, getEquipSlotCX(eqIdx), getEquipSlotCY(eqIdx))
-                end
-                nvgRestore(vg)
-            end
-            nvgResetScissor(vg)
-            nvgRestore(vg)
-        elseif curIsQH then
-            -- 非动画：直接绘制
-            drawEquipSlots(vg)
-            if SpineResultEffect.isPlaying() then
-                local eqIdx = 1
-                for i, k in ipairs(EQUIP_SLOT_ORDER) do
-                    if k == state.selectedEquipSlot then eqIdx = i; break end
-                end
-                SpineResultEffect.draw(vg, getEquipSlotCX(eqIdx), getEquipSlotCY(eqIdx))
-            end
-        end
-    end
 
     -- 下方内容剪裁区域（背景板范围内，Tab 栏以上）
     local clipTop = LOWER_BG_CY - LOWER_BG_H * 0.5

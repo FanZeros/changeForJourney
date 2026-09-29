@@ -15,21 +15,29 @@ function M.bind(deps)
     local forceClose = deps.forceClose
     local closePage = deps.closePage
     local BlacksmithPage = deps.BlacksmithPage
-    local CharacterPanel = deps.CharacterPanel
     local EquipmentDetail = deps.EquipmentDetail
-    local getEquipSlotCX = deps.getEquipSlotCX
-    local getEquipSlotCY = deps.getEquipSlotCY
-    local EQUIP_SLOT_ORDER = deps.EQUIP_SLOT_ORDER
     local SLIDER_W = deps.SLIDER_W
     local SLIDER_H = deps.SLIDER_H
     local hitTest = deps.hitTest
-    local CARD_CY = deps.CARD_CY
-    local CARD_W = deps.CARD_W
-    local CARD_H = deps.CARD_H
-    local EQUIP_SLOT_SIZE = deps.EQUIP_SLOT_SIZE
-    local MAX_PARTY = deps.MAX_PARTY
-    local getCardSlotCX = deps.getCardSlotCX
+    local SELECT_SLOT_CX = deps.SELECT_SLOT_CX
+    local SELECT_SLOT_CY = deps.SELECT_SLOT_CY
+    local SELECT_SLOT_SIZE = deps.SELECT_SLOT_SIZE
     local deriveSelectedEquip = deps.deriveSelectedEquip
+
+    --- 打开装备背包选择装备（强化/洗练共用；slot=nil 显示全部装备）
+    local function openEquipBagPicker()
+        EquipmentBag.open(nil, "全部装备", nil, function(seq, equip)
+            if equip then
+                state.selectedEquip = equip
+                state.selectedSeq = equip.seq
+                if equip.slot then state.selectedEquipSlot = equip.slot end
+                BlacksmithEnhance.updateEnhanceData(equip)
+                BlacksmithRefine.updateRefineData(equip)
+                print("[BlacksmithPage] 选择装备: seq=" .. tostring(seq)
+                    .. " slot=" .. tostring(equip.slot) .. " name=" .. (equip.name or "?"))
+            end
+        end)
+    end
 
     local function handleDragBegin(dx, dy)
         if not state.open or state.closing then return true end
@@ -140,47 +148,10 @@ function M.bind(deps)
             return true
         end
 
-        -- 编队卡片 + 装备槽点击（仅强化 tab）
-        if state.tab == "qianghua" then
-            -- 5 张编队卡片点击
-            for i = 1, MAX_PARTY do
-                local cx = getCardSlotCX(i)
-                if hitTest(dx, dy, cx, CARD_CY, CARD_W, CARD_H) then
-                    if i ~= state.selectedPartySlot then
-                        state.selectedPartySlot = i
-                        deriveSelectedEquip()
-                        print("[BlacksmithPage] 选中编队槽位: " .. i)
-                    end
-                    return true
-                end
-            end
-            -- 6 个装备槽点击
-            for i, slotKey in ipairs(EQUIP_SLOT_ORDER) do
-                local cx = getEquipSlotCX(i)
-                local cy = getEquipSlotCY(i)
-                if hitTest(dx, dy, cx, cy, EQUIP_SLOT_SIZE, EQUIP_SLOT_SIZE) then
-                    if slotKey ~= state.selectedEquipSlot then
-                        state.selectedEquipSlot = slotKey
-                        deriveSelectedEquip()
-                        print("[BlacksmithPage] 选中装备槽: " .. slotKey)
-                    end
-                    return true
-                end
-            end
-        end
-
-        -- 洗练 tab：单个装备槽点击（打开装备背包选择）
-        if state.tab == "xilian" then
-            local slotCX, slotCY, slotSize = 540, 431, 160
-            if hitTest(dx, dy, slotCX, slotCY, slotSize, slotSize) then
-                -- 洗练独立板块：slot=nil 显示全部装备（已装备+未装备），heroId=nil 不限英雄
-                EquipmentBag.open(nil, "全部装备", nil, function(seq, equip)
-                    if equip then
-                        state.selectedEquip = equip
-                        BlacksmithRefine.updateRefineData(equip)
-                        print("[BlacksmithPage] 洗练选择装备: seq=" .. tostring(seq) .. " name=" .. (equip.name or "?"))
-                    end
-                end)
+        -- 强化/洗练 tab：点击选择槽打开装备背包（与洗练一致的选装备交互）
+        if state.tab == "qianghua" or state.tab == "xilian" then
+            if hitTest(dx, dy, SELECT_SLOT_CX, SELECT_SLOT_CY, SELECT_SLOT_SIZE, SELECT_SLOT_SIZE) then
+                openEquipBagPicker()
                 return true
             end
         end
@@ -196,14 +167,14 @@ function M.bind(deps)
                     state.tabSwitchTime = time.elapsedTime
                     state.tab = newTab
                     require("systems.GameSFX").playUIMove(2)
-                    -- 切换到强化 tab 时恢复装备选择（洗练 tab 会清空 selectedEquip）
-                    if newTab == "qianghua" then
-                        deriveSelectedEquip()
-                    end
-                    -- 切换到洗练 tab 时重置装备选择（洗练槽位独立选择，不继承强化面板）
-                    if newTab == "xilian" then
-                        state.selectedEquip = nil
-                        BlacksmithRefine.updateRefineData(nil)
+                    -- 强化/洗练共用 selectedEquip：切换到这两个 tab 时确保数据已刷新
+                    if newTab == "qianghua" or newTab == "xilian" then
+                        if state.selectedEquip then
+                            BlacksmithEnhance.updateEnhanceData(state.selectedEquip)
+                            BlacksmithRefine.updateRefineData(state.selectedEquip)
+                        else
+                            deriveSelectedEquip()
+                        end
                     end
                     -- 切换到分解 tab 时重置分解状态
                     if newTab == "fenjie" then

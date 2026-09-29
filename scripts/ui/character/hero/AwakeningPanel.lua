@@ -24,8 +24,6 @@ M.kwText = KeywordText.new({ textColor = { 255, 255, 255 } })
 -- 全屏背景 / 顶栏
 local BG_CX, BG_CY = 540, 1200
 local BG_W, BG_H   = 1080, 2400
-local BADGE_CX, BADGE_CY = 540, 269
-local BADGE_W, BADGE_H   = 107, 49
 local TITLE_BG_CX, TITLE_BG_CY = 595, 319
 local TITLE_BG_W, TITLE_BG_H   = 480, 90
 local CLASS_ICON_CX, CLASS_ICON_CY = 353, 319
@@ -380,22 +378,6 @@ function M.draw(vg, heroId)
 
     drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
 
-    -- [统一角色框] 品质徽章：贴图（旧名R/SR/SSR且缺UR）→ 品质色矢量铭牌
-    local qualityInfo = HC.QUALITY_INFO[heroCfg.quality]
-    local qualityName = qualityInfo and qualityInfo.name or "?"
-    local qr, qg, qb = HeroFrame.qualityColor(heroCfg.quality)
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, BADGE_CX - BADGE_W * 0.5, BADGE_CY - BADGE_H * 0.5, BADGE_W, BADGE_H, 10)
-    nvgFillColor(vg, nvgRGBA(12, 10, 8, 210))
-    nvgFill(vg)
-    nvgStrokeColor(vg, nvgRGBA(qr, qg, qb, 230))
-    nvgStrokeWidth(vg, 3)
-    nvgStroke(vg)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 30)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(qr, qg, qb, 255))
-    nvgText(vg, BADGE_CX, BADGE_CY, qualityName, nil)
     drawImageCentered(vg, imgTitleBg, TITLE_BG_CX, TITLE_BG_CY, TITLE_BG_W, TITLE_BG_H, 1.0)
 
     local classIdx = CLASS_ICON_MAP[heroCfg.classId]

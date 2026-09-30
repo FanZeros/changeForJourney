@@ -26,6 +26,16 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30，`feat/refine-fixed-cost-side-by-side` 洗练三调整，已 push `66fdbc25`）
+
+- **任务（用户三点）**：①洗练不随次数变贵；②洗练不再显示百分比；③洗练前后改横屏左右排布。基于 `workspace930` 开新分支。
+- **①固定单价**：`BlacksmithConfig` 删 `refInc` 字段与 `getRefineBillCount`；`calcRefineEssenceCost(quality, equipLv, grip)` 三参固定价 = `refBase×(1+lv×refLvScale)`（×2 双手保留）；`calcTotalRefineSpent` = 单价×次数（封顶 20，分解 50% 返还语义不变）；服务端 `BlacksmithService` 与 UI `recalcRefineEssenceCost` 调用点同步；次数文案删「费用已满，可继续洗练」；KeywordConfig「洗练」词条与 gameplay 文档同步口径。
+- **②去百分比**：删 `formatRefineRatio`/`getAffixRefineRatioText` 及 4 处 `ratioText` 赋值与绘制块（洗练页不再显示「（xx.x%）」；神器页 ArtifactDetailPanel 自有同名函数未动）。
+- **③左右排布**：`BlacksmithRefine` XL 常量改半幅双面板（洗练前 cx282 / 洗练后 cx798，各 464×560，素材原 970×260 九宫格式直接拉伸不变形）；箭头去 90° 旋转指向右；`drawRefineAttrRows` 增 panelLeft 参数改面板相对坐标（图标 62/名 90/值右对齐 376/锁 428），词缀名超 250px 缩 28→24 号；单行垂直居中、两行起 firstY=1082；替换动画改左移 -516、refine 滑入改面板内 ±260；腐化 compareText 改数值下第二行小字；锁命中坐标同步 panelLeft。
+- **验证**：新增 `tests/refine_cost_fixed_test.lua` 12 断言 ALL PASS（固定价/双手×2/锁×1.5/累计=单价×次数/封顶）；`auto_decompose_regress` ALL PASS；LSP 全工作区 0 Error；官方 Build 成功；主入口 headless 75s 无 Lua 错。
+- **流程**：push 用一次性 PAT URL，推完 `git remote set-url` 还原 + 清分支 remote 配置，仓库无令牌残留；`.project/project.json` build 改写已 `git checkout` 还原。
+- **待验收**：洗练页左右布局视觉效果（半幅面板字密度）需真人预览确认。
+
 ## 上次做了什么（2026-09-29 续，古树背景重绘，已 push `4559fd8`）
 
 - **任务**：`UI_GS_TFBJ_dark.png`（终焉古树天赋页背景）横向拉伸。根因：绘制框 `pageW×TF.bgH = 1080×1.8(HORIZON_WIDTH_SCALE)×2400 = 1944×2400`，原图 1080×2400 → 横向拉 1.8 倍。

@@ -206,7 +206,7 @@ end
 local imgBg       = -1   -- UI_JSXQ_BJ_dark.png（暗黑石墙，替换过亮的 UI_TJP_CH_1）
 local imgNameBg   = -1   -- UI_TJP_MC.png
 local imgPlus     = -1   -- UI_ICON_TJP_JIA.png
-local imgLowerBg  = -1   -- UI_GXHD_1_dark.png（暗金面板，替换米色 UI_TJP_1）
+local imgLowerBg  = -1   -- UI_JSXQ_BJ_dark.png（暗黑石墙，替换米色 UI_TJP_1；纹理图拉伸无形变）
 local imgTabBg    = -1   -- UI_AN_1.png
 
 local imgArrow    = -1   -- UI_TJP_JIANTOU.png（提升箭头）
@@ -551,7 +551,7 @@ function BlacksmithPage.init(vg)
     imgBg       = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_BJ_dark.png", 0)
     imgNameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     imgPlus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_TJP_JIA.png", 0)
-    imgLowerBg  = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_1_dark.png", 0)
+    imgLowerBg  = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_BJ_dark.png", 0)
     imgTabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
     imgArrow    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
     imgEnhBtn   = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)

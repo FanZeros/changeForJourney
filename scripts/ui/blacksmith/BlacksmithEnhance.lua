@@ -415,8 +415,61 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
     end
 end
 
+--- 绘制占位词条行：金色》在中间升级效果列（属性行小箭头位）+ 升阶后绿色值框内 ??? +? 并排
+---@param vg any NanoVG context
+---@param rowY number 该行 Y 中心坐标
+---@param preview { name: string, val: string } 占位词条内容
+local function drawAffixPreviewRow(vg, rowY, preview)
+    -- 金色》：中间升级效果位置（与属性行提升箭头同列）
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 40)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(0xc4, 0x9a, 0x2e, 255))
+    nvgText(vg, ATTR_ARROW_CX, rowY, "》", nil)
+
+    -- 升阶后绿色半透明值框
+    local nextBgX = ATTR_NEXT_BG_CX - ATTR_NEXT_BG_W * 0.5
+    local nextBgY = rowY - ATTR_NEXT_BG_H * 0.5
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, nextBgX, nextBgY, ATTR_NEXT_BG_W, ATTR_NEXT_BG_H, ATTR_BG_RADIUS)
+    nvgFillColor(vg, nvgRGBA(0x56, 0xcb, 0x90, 51))
+    nvgFill(vg)
+
+    -- 框内 ??? +? 并排居中（属性名棕、数值深灰，均不透明）
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 30)
+    local nameW = nvgTextBounds(vg, 0, 0, preview.name)
+    local valW  = nvgTextBounds(vg, 0, 0, preview.val)
+    local gap   = 14
+    local sx    = ATTR_NEXT_BG_CX - (nameW + gap + valW) * 0.5
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(ATTR_NAME_COLOR_R, ATTR_NAME_COLOR_G, ATTR_NAME_COLOR_B, 255))
+    nvgText(vg, sx, rowY, preview.name, nil)
+    nvgFillColor(vg, nvgRGBA(ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B, 255))
+    nvgText(vg, sx + nameW + gap, rowY, preview.val, nil)
+end
+
+--- 构建占位词条行内容（纯函数，便于回归测试）
+--- 下一阶恰为里程碑阶且普通词条未满员 → 返回 { name = "???", val = "+?" }，否则 nil
+---@param data table enhanceData（含 isMaxLevel / nextLevel）
+---@param selectedEquip table|nil 当前选中装备
+---@return { name: string, val: string }|nil
+function M.buildAffixPreview(data, selectedEquip)
+    local normalCount = 0
+    for _, affix in ipairs(selectedEquip and selectedEquip.affixes or {}) do
+        if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
+    end
+    local interval = BlacksmithConfig.ASCEND_AFFIX_INTERVAL or 5
+    local limit    = BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT or 4
+    local nextIsMilestone = (not data.isMaxLevel) and ((data.nextLevel % interval) == 0)
+    if nextIsMilestone and normalCount < limit then
+        return { name = "???", val = "+?" }
+    end
+    return nil
+end
+
 --- 构建词条状态提示（纯函数，便于回归测试）
---- 需求①：下一阶恰为 +5 里程碑且未满员 → 「升至 +N 将新增 1 条随机词条」（模糊提示，不锁定具体词条）
+--- 里程碑新增词条信息由占位词条行（》 ??? +?）承载，不再输出小字
 --- 需求②：满员/常规提示均右对齐显示，不再居中独占整行
 ---@param data table enhanceData（含 isMaxLevel / nextLevel）
 ---@param selectedEquip table|nil 当前选中装备
@@ -430,16 +483,10 @@ function M.buildAffixHint(data, selectedEquip)
     local limit    = BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT or 4
     local multPct  = math.floor((BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10) * 100 + 0.5)
     local isFull   = normalCount >= limit
-    local nextIsMilestone = (not data.isMaxLevel) and ((data.nextLevel % interval) == 0)
     if isFull then
         return {
             text = string.format("词条已满 · 每升%d阶倍率+%d%%（洗练不丢）", interval, multPct),
             r = 0xbc, g = 0x9b, b = 0x58,
-        }
-    elseif nextIsMilestone then
-        return {
-            text = string.format("升至 +%d 将新增 1 条随机词条", data.nextLevel),
-            r = 0x7a, g = 0xc8, b = 0x6e,
         }
     end
     return {
@@ -503,6 +550,11 @@ function M.drawPanel(vg)
         local curIcon = imgGrade[affix.curGrade] or -1
         drawAttrRow(vg, affixY, affix.name, affix.curVal, affix.nextVal, curIcon, nil, false, affix.isCorrupt)
         affixY = affixY + AFFIX_ROW_STEP
+    end
+    -- 里程碑将新增词条 → 占位行（》 ??? +?）替代原绿色小字提示
+    local preview = M.buildAffixPreview(data, state.selectedEquip)
+    if preview then
+        drawAffixPreviewRow(vg, affixY, preview)
     end
     nvgRestore(vg)
     -- 词条状态提示：右对齐显示在词条区下沿，不再居中独占整行（需求①②见 buildAffixHint）

@@ -644,6 +644,23 @@ end
 
 -- ======================== 绘制函数 ========================
 
+--- 星图区边缘淡出系数：外圈 10% 带内完全透明（节点/连线不画），
+--- 其后 12% 过渡带线性渐显到不透明；背景不受影响（仅作用于星图元素）
+---@param sx number 屏幕坐标 X
+---@param sy number 屏幕坐标 Y
+---@return number 0..1 alpha 倍率
+local function edgeFade(sx, sy)
+    local m = math.min(viewW, viewH)
+    local zero = m * 0.10   -- 外圈完全透明带
+    local ramp = m * 0.12   -- 过渡带宽度
+    local dx = math.min(sx - viewOffX, viewOffX + viewW - sx)
+    local dy = math.min(sy - viewOffY, viewOffY + viewH - sy)
+    local d = math.min(dx, dy)
+    if d <= zero then return 0.0 end
+    if d >= zero + ramp then return 1.0 end
+    return (d - zero) / ramp
+end
+
 --- 绘制连接线（两端都在视口外则跳过）
 local function drawEdges(vg)
     nvgLineCap(vg, NVG_ROUND)
@@ -687,6 +704,11 @@ local function drawEdges(vg)
                 r, g, b, a = 46, 38, 28, 210
             end
 
+            -- 边缘淡出：取两端中更靠边者的系数
+            local fade = math.min(edgeFade(sax, say), edgeFade(sbx, sby))
+            if fade <= 0.01 then goto continue_edge end
+            a = math.floor(a * fade + 0.5)
+
             nvgBeginPath(vg)
             nvgStrokeWidth(vg, LINE_WIDTH * zoom)
             nvgStrokeColor(vg, nvgRGBA(r, g, b, a))
@@ -716,9 +738,13 @@ local function drawNode(vg, node)
 
     local isLit = litNodes[node.id] or false
 
+    -- 边缘淡出：靠近星图区边缘的节点整体渐隐
+    local fade = edgeFade(sx, sy)
+    if fade <= 0.01 then return end
+
     -- [暗黑化 P2-10] 矢量天赋符号（金属铭牌 + 系色效果符号），替代 85 张 KTX 贴图
     -- 点亮态全亮；未点亮态整体 55% 透明（铭牌自带暗铁底，无需原遮罩 blend）
-    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, sx, sy, iconSize * 0.70, isLit and 1.0 or 0.55)
+    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, sx, sy, iconSize * 0.70, (isLit and 1.0 or 0.55) * fade)
 end
 
 --- 绘制所有节点

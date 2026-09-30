@@ -36,6 +36,13 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续10，升阶占位词条行 》??? +?，已 merge 回 930）
+
+- **任务**：用户要求升阶面板「随机词条不用小字显示，而是直接显示个》然后后面接上属性 ??? +?」（截图黄框位置=词条区下一行）。AskUserQuestion 三选项均选推荐：词条行同格式、移除里程碑小字、一键升阶弹窗不改。
+- **实现**：`BlacksmithEnhance.lua` 新增纯函数 `M.buildAffixPreview`（下一阶为里程碑且普通词条未满员 → `{name="???",val="+?"}`，否则 nil）+ `drawAffixPreviewRow`（金色》在等级图标列 366 / ??? 名称列半透明 / +? 升阶后绿色半透明值框，字号 34/30）；`drawPanel` 词缀循环后按 `affixY` 续行绘制；`buildAffixHint` 删除里程碑分支（小字仅保留满员/常规两态）。一键升阶弹窗 `EMDLG` 文案未动。
+- **验证**：`ascend_hint_test.lua` 改写为 hint+preview 双函数回归 23 断言 ALL PASS；`equip_ascend_affix_test` ALL PASS；LSP 两文件 0 Error；官方 Build 成功；主入口 headless 70s 0 Lua 错（boot 18/18 + 存档落盘）。沙箱首次装 `.cli/UrhoXRuntime`（install 脚本一次 502 重试即全）。
+- **流程**：基线 workspace930（tip db378463）→ 任务分支 `feat930/ascend-affix-preview-row` 推送 `168e1057`/`5634437d`；用户授权后 merge 回 930——930 先前进到 `156541bb`（并行会话洗练锁定阶梯计费+古树透明等 10 提交），代码零重叠、仅 CLAUDE.md 记忆块冲突（对方续9 vs 我方续9，我方改编号续10 双保留；amend 修掉一处漏删的 `>>>>>>>` 残留）；推送前再 fetch 又撞 `e2f33fc0`（星图渐隐带加宽），二次 merge 无冲突，最终 ff 推 930 至 `72229687`。合并态回归 4 套 ALL PASS（ascend_hint 23 / equip_ascend_affix / refine_cost_fixed / auto_decompose）；Build 成功；主入口冒烟 0 Lua 错。部署：repo 代码 cp 到 /workspace 根（scripts/assets 313M/i18n）。PAT 走一次性 URL，origin 已 set-url 清洗为零残留。⚠️ 用户提供的 PAT 应在任务后撤销更换。
+
 ## 上次做了什么（2026-09-30 续9，分解页品质筛选补第 6 档至臻红）
 
 - **用户反馈**：「分解页面为啥和前面的装备页面不一样少了红色稀有度？」——分解页筛选行绘制与点击两处 `for i = 1, 5`，缺第 6 档至臻（红）；装备 tab 是 `1..6`。
@@ -91,6 +98,14 @@
 - **回归**：battle_stage_switch ALL PASS、battle_ally_compaction ALL PASS、boss_affix_test(37断言) ALL PASS、boss_affix_smoke ALL PASS、shield_scaling ALL PASS、character_team_sync PASS；LSP 全工作区 275 文件 Error=0；官方 Build 成功（382 Lua 入包，含 TerminalRaid + terminal_raid_test）；主入口 60 帧无 Lua 逻辑错误（仅既有 UI 品质框贴图缺失，非本轮）。
 - **⚠️ 遗留未修（非本轮范围，rebase 时处理）**：`chapter_team_offline_test` 失败——工作区 `StageSelectDialog` 把终焉从单组 `"T"` 拆成 14 个逐难度独立组（与远端 `4b43cd36` **同源但不同实现**：远端带 `subLabel` 难度名 + `TT_Y=732/ROW_Y0=790` 布局，工作区无 subLabel + `TT_Y=690/ROW_Y0=756`），但该测试断言还停在旧 `TOTAL_CHAPTERS+1` 与旧坐标。已 `git checkout` 还原测试文件，**不留半成品**；rebase 远端时应整体采用远端 StageSelectDialog + 远端测试版本（两套拆分二选一），否则断言无法干净通过。
 - **视觉验收待办**：共享血条/倒计时/失守灰字的真人预览验收（本机 surfaceless 无法截图）。
+## 上次做了什么（2026-09-30 续9，古树边缘透明语义再纠正，已 push `b7d35803`）
+
+- **用户再纠正**：续8 又做反了——要的是**上层技能树节点/连线在边缘透明**，背景保持全不透明；续8 的素材中心烘焙 alpha 撤销（从 `026aac7d^` 恢复 RGB + alpha=255 满幅）。
+- **正确实现**：`TalentStarMap.edgeFade(sx, sy)`——星图区边缘 `max(64, min(w,h)*10%)` 带内 alpha 线性渐隐到 0；节点 `drawTalentGlyphByName` alpha×fade、fade≤0.01 直接 return；连线取两端更靠边者 alpha×fade 并 skip。`ChurchTalentPanel` 删 `drawMapEdgeFade` 色块渐隐（那会盖住背景）及调用、删其 cast。
+- **并行会话第五次插队**：推送前远端 930 前进到 d8f3c6d6，含 `7dd0f376` 洗练锁定词缀**阶梯累乘计费**（每条×1.5，最多 3 条×3.375，`applyRefineLockCostMult` 改 `1.5^n`）——与我的固定单价正交（固定单价指不随**次数**涨；锁定倍率是另一维度），对方已同步更新 `refine_cost_fixed_test`，合并后 ALL PASS。
+- **验证**：LSP 0 Error；refine_cost ALL PASS；官方 Build 成功；dist 素材哈希更新为全不透明版。
+- **续9 追加（用户反馈"带应该更宽、边缘10%内应完全透明"，已 push `3489c08b`）**：`edgeFade` 改为双段——外圈 `min(w,h)×10%` 带内返回 0（节点/连线完全不画），其后 `×12%` 过渡带线性渐显到 1（原单段从 0 起渐隐改为平台+斜坡）。
+
 ## 上次做了什么（2026-09-30 续8，古树背景节点区透明，已 push `6f7a9400`）
 
 - **用户纠正意图**：之前两版渐隐（35009423/f9ee9ef7）做反了——用户要的是**节点显示周围透明**（星图中心区透出下层），不是背景四周变透明。

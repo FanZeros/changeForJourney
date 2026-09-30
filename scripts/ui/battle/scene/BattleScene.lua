@@ -1308,6 +1308,37 @@ function BattleScene.adoptStageProgress(stageId)
     isFirstClear = not clearedStages[stageId]
 end
 
+--- [终焉协同] 三队共享生命池打空后调用：等价主线「终焉胜利 → 轮回」。
+--- 奖励去重：只有该终焉关此前未通关时才触发首通回调（重打已通关的终焉
+--- 不再重复发 fcExp/首通奖励，与主线 BattleCasualty 的 isFirstClear 门槛一致）。
+function BattleScene.completeTriTerminal(stageId)
+    if not SC.isTerminalTemple(stageId) or currentStageId ~= stageId then return false end
+    local targetId = SC.getReincarnationTarget(SC.getDifficulty(stageId))
+    if not targetId then return false end
+    local wasFirstClear = not (clearedStages[stageId] or clearedStages[tostring(stageId)])
+    clearedStages[stageId] = true
+    maxStageId_ = math.max(maxStageId_, targetId)
+    loadStage(targetId, true)
+    for _, u in ipairs(allies) do resetAllyUnit(u) end
+    startBattleTalents()
+    BottomNav.setAllLocked(false)
+    require("systems.GameBGM").setScene("battle")
+    if onStageChangedCallback then onStageChangedCallback(targetId) end
+    local ClientDispatcher = require("runtime.ClientDispatcher")
+    local battle = ClientDispatcher.get("battle")
+    if type(battle) == "table" then
+        battle.currentStageId = targetId
+        battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, targetId)
+        battle.clearedStages = battle.clearedStages or {}
+        battle.clearedStages[tostring(stageId)] = true
+        local targetCleared = battle.clearedStages[tostring(targetId)] == true
+        battle.battleMode = targetCleared and "idle" or "firstClear"
+        require("boot.StandaloneSave").Flush()
+    end
+    if wasFirstClear and onFirstClearCallback then onFirstClearCallback(stageId) end
+    return true
+end
+
 --- 触发敌方击杀回调 [修复] BattleTriPage 三队战斗驱动依赖（与主战斗内部调用同构）
 ---@param data table { expReward, goldReward, allyCount, expMult, heroIds, stageId }
 function BattleScene.onEnemyKill(data)

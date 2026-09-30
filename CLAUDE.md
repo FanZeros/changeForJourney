@@ -45,7 +45,8 @@
 - **LSP 4 Error 为远端基线自带**（ChurchClassChange 444/445 + UpdateNoticePopup 154，nvgRGBA number vs NVGcolor param-type-mismatch），两文件与远端逐字节一致，非本轮引入，不阻塞 Build，未擅改。
 - **🔴 `chapter_team_offline_test` 失败是远端基线自带**：用 git worktree 在纯 `origin/workspace930` 上实跑同样失败（`当前关不切换: 1/0`），与本轮合并无关。该测试 mock BattleScene 但远端 handleInput 改动后 mock 口径不匹配。**不要在 feat 分支上修它**（属远端问题），可在 PR 描述中注明。
 - **远端删除的模块**（AssetManifest/SaveManager/VersionConfig/DamageGlyph）已确认与本轮文件零引用。
-- **下一步**：推送 feat 分支 + 开 PR（需用户 PAT 一次性 URL，不进配置/记忆；沙箱无 gh CLI）。备份：合并前 HEAD = f5485ee1。
+- **已推送 + PR 已开（2026-09-30）**：`feat/final-boss-three-teams-0930` 已推远端（3 提交：f5485ee1 功能 / 433fa171 合并 / a3743bc7 记忆）；**PR #4** https://github.com/FanZeros/changeForJourney/pull/4 （base=workspace930，open）。PAT 走一次性 URL + API 创建，验证零残留（remote URL 干净、临时文件已删）。⚠️ 用户提供的 PAT 应提醒撤销更换。备份：合并前 HEAD = f5485ee1。
+- **下一步**：等 PR #4 审阅/合并；共享血条/倒计时/失守灰字真人预览验收。
 
 ## 上次做了什么（2026-09-30，`feat/final-boss-three-teams-0930` 终焉三队协同战，已提交 `f5485ee1` 并合并远端 `433fa171`）
 

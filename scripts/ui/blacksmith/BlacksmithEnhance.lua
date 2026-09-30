@@ -415,33 +415,38 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
     end
 end
 
---- 绘制占位词条行（与词条行同格式）：金色》在等级图标列 + ??? 名称列 + 升阶后绿色值框 +?
+--- 绘制占位词条行：金色》在中间升级效果列（属性行小箭头位）+ 升阶后绿色值框内 ??? +? 并排
 ---@param vg any NanoVG context
 ---@param rowY number 该行 Y 中心坐标
 ---@param preview { name: string, val: string } 占位词条内容
 local function drawAffixPreviewRow(vg, rowY, preview)
+    -- 金色》：中间升级效果位置（与属性行提升箭头同列）
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 34)
+    nvgFontSize(vg, 40)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xc4, 0x9a, 0x2e, 255))
-    nvgText(vg, AFFIX_GRADE_CUR_CX, rowY, "》", nil)
+    nvgText(vg, ATTR_ARROW_CX, rowY, "》", nil)
 
-    nvgFontSize(vg, 30)
-    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(ATTR_NAME_COLOR_R, ATTR_NAME_COLOR_G, ATTR_NAME_COLOR_B, 160))
-    nvgText(vg, ATTR_NAME_X, rowY, preview.name, nil)
-
+    -- 升阶后绿色半透明值框
     local nextBgX = ATTR_NEXT_BG_CX - ATTR_NEXT_BG_W * 0.5
     local nextBgY = rowY - ATTR_NEXT_BG_H * 0.5
     nvgBeginPath(vg)
     nvgRoundedRect(vg, nextBgX, nextBgY, ATTR_NEXT_BG_W, ATTR_NEXT_BG_H, ATTR_BG_RADIUS)
     nvgFillColor(vg, nvgRGBA(0x56, 0xcb, 0x90, 51))
     nvgFill(vg)
+
+    -- 框内 ??? +? 并排居中（属性名棕、数值深灰，均不透明）
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 30)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B, 200))
-    nvgText(vg, ATTR_NEXT_BG_CX, rowY, preview.val, nil)
+    local nameW = nvgTextBounds(vg, 0, 0, preview.name)
+    local valW  = nvgTextBounds(vg, 0, 0, preview.val)
+    local gap   = 14
+    local sx    = ATTR_NEXT_BG_CX - (nameW + gap + valW) * 0.5
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(ATTR_NAME_COLOR_R, ATTR_NAME_COLOR_G, ATTR_NAME_COLOR_B, 255))
+    nvgText(vg, sx, rowY, preview.name, nil)
+    nvgFillColor(vg, nvgRGBA(ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B, 255))
+    nvgText(vg, sx + nameW + gap, rowY, preview.val, nil)
 end
 
 --- 构建占位词条行内容（纯函数，便于回归测试）

@@ -565,11 +565,11 @@ local function drawResourceCount(vg, cx, owned, cost)
 
     local ownedW = nvgTextBounds(vg, 0, 0, ownedStr)
     local sx = cx - tw * 0.5
-    -- 不足=棕色（全局统一），足够=亮绿
+    -- 不足=灰蓝色（全局统一），足够=亮绿
     nvgFillColor(vg, nvgRGBA(
-        enough and EB.ENOUGH_R or 0x8d,
-        enough and EB.ENOUGH_G or 0x5f,
-        enough and EB.ENOUGH_B or 0x41, 255))
+        enough and EB.ENOUGH_R or 0x8b,
+        enough and EB.ENOUGH_G or 0x95,
+        enough and EB.ENOUGH_B or 0xa5, 255))
     nvgText(vg, sx, EB.RES_COUNT_BG_CY, ownedStr, nil)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, sx + ownedW, EB.RES_COUNT_BG_CY, "/" .. costStr, nil)
@@ -651,7 +651,7 @@ function M.drawPanelBottom(vg)
     if canMaxEnhance then
         nvgFillColor(vg, nvgRGBA(EB.ENH_TEXT_R, EB.ENH_TEXT_G, EB.ENH_TEXT_B, 255))
     else
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
     end
     nvgText(vg, EB.ENH_MAX_BTN_CX, EB.ENH_MAX_BTN_CY, "一键升阶", nil)
     BF.finish(vg, didScaleMax)
@@ -958,7 +958,7 @@ function M.drawConfirmDialog(vg)
     if canConfirm then
         nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
     else
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
     end
     nvgText(vg, EMDLG.CONFIRM_CX, EMDLG.CONFIRM_CY, "强化", nil)
     BF.finish(vg, _sc)

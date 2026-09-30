@@ -499,9 +499,9 @@ function StageSelectDialog.draw(vg)
         end
 
         local cx = x + D.CH_W * 0.5
-        -- 章节按钮文字：解锁=亮色，锁定=棕色
+        -- 章节按钮文字：解锁=亮色，锁定=灰蓝色
         local chR, chG, chB = 235, 230, 210
-        if chapterLocked then chR, chG, chB = 0x8d, 0x5f, 0x41 end
+        if chapterLocked then chR, chG, chB = 0x8b, 0x95, 0xa5 end
         drawTextStroke(vg, cx, y + D.CH_BTN_H * 0.36, g.name, 28,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, chR, chG, chB, 3)
         if chapterLocked and imgLock >= 0 then
@@ -554,7 +554,7 @@ function StageSelectDialog.draw(vg)
         -- 关卡号（行左上）：解锁=亮色（Boss红），锁定=棕色
         local fr, fg, fb = 255, 255, 255
         if isBoss then fr, fg, fb = 0xE0, 0x5A, 0x5A end
-        if locked then fr, fg, fb = 0x8d, 0x5f, 0x41 end
+        if locked then fr, fg, fb = 0x8b, 0x95, 0xa5 end
         drawTextStroke(vg, x + 16, y + 34, shortStageLabel(id), 30,
             NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
             fr, fg, fb, 2)
@@ -578,7 +578,7 @@ function StageSelectDialog.draw(vg)
         if isCur then
             nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 255))
         elseif locked then
-            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 未解锁=棕色
+            nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))  -- 未解锁=灰蓝色
         else
             nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
         end

@@ -980,9 +980,9 @@ local function drawPageImpl(vg)
             nvgFillColor(vg, nvgRGBA(BTN_TEXT_R, BTN_TEXT_G, BTN_TEXT_B, 255))
             nvgText(vg, x, cy, label, nil)
             x = x + labelW + GAP
-            -- 按钮内消耗：够=亮白，不够=棕色
+            -- 按钮内消耗：够=亮白，不够=灰蓝色
             local r, g, b = 255, 255, 255
-            if not enough then r, g, b = 0x8d, 0x5f, 0x41 end
+            if not enough then r, g, b = 0x8b, 0x95, 0xa5 end
             for i = 1, #parts do
                 if i > 1 then x = x + gap end
                 drawImageCentered(vg, parts[i].icon, x + iconSize * 0.5, cy, iconSize, iconSize, 1.0)

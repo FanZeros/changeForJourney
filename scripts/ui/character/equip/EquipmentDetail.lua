@@ -176,18 +176,22 @@ local BASE_STAT_SET = {}
 for _, k in ipairs(AD.BASE_STATS) do BASE_STAT_SET[k] = true end
 
 --- 计算单个属性贡献的战斗力值
+--- [fix 930] 六围一律按派生表折算（有 excluded 时排除异系派生）。
+---   旧逻辑仅在 heroId 非 nil 时走派生表，导致背包/战利品/铁匠铺视角
+---   （heroId=nil）六围按 valueModel=5 满额计价——戒指/吊坠等六围饰品
+---   战力虚高 3.3 倍（设计调平值 ≈1.5/点，见模板 4.28×1.5≈6.43）。
 ---@param key string 属性 key
 ---@param value number 属性数值
 ---@param excluded table|nil 排除集合
 ---@return number 战斗力贡献
 local function calcStatPower(key, value, excluded)
-    -- 六围属性且存在排除规则 → 按派生表部分计算
-    if excluded and BASE_STAT_SET[key] then
+    -- 六围属性 → 恒按派生表折算有效战斗力
+    if BASE_STAT_SET[key] then
         local derivatives = AD.DERIVATIVES and AD.DERIVATIVES[key]
         if derivatives then
             local effectiveVM = 0
             for _, d in ipairs(derivatives) do
-                if not excluded[d.attr] then
+                if not (excluded and excluded[d.attr]) then
                     local dMeta = AD.META[d.attr]
                     if dMeta and dMeta.valueModel and dMeta.valueModel > 0 then
                         -- perPoint 是每点六围增加的派生属性量

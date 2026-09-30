@@ -55,7 +55,7 @@ local D = {
     -- "当前关卡" 标签（左对齐）
     CUR_LBL_X = 169, CUR_LBL_Y = 900,
     CUR_LBL_FONT = 40,
-    CUR_LBL_R = 0x8d, CUR_LBL_G = 0x5f, CUR_LBL_B = 0x41,
+    CUR_LBL_R = 0x8b, CUR_LBL_G = 0x95, CUR_LBL_B = 0xa5,
 
     -- 关卡名（右对齐）
     CUR_VAL_X = 904, CUR_VAL_Y = 900,
@@ -85,7 +85,7 @@ local D = {
     INF_LBL_X  = 169,
     INF_VAL_X  = 904,
     INF_BG_W   = 800, INF_BG_H = 80, INF_BG_R = 16, INF_BG_A = 13,
-    INF_LBL_R  = 0x8d, INF_LBL_G = 0x5f, INF_LBL_B = 0x41,
+    INF_LBL_R  = 0x8b, INF_LBL_G = 0x95, INF_LBL_B = 0xa5,
 
     -- 扫荡次数（沿用购买道具弹窗的数量控件）
     QTY_CX = 540, QTY_CY = 1440, QTY_FONT = 40,
@@ -618,11 +618,11 @@ function SweepDialog.draw(vg)
     local costStartX = D.BG_CX - costTotalW * 0.5
     drawImageCentered(vg, imgTicketIcon, costStartX + D.TKT_ICON_SZ * 0.5,
         D.TKT_ICON_CY, D.TKT_ICON_SZ, D.TKT_ICON_SZ, 1.0)
-    -- 消耗文字：券够=亮白，不够=棕色
+    -- 消耗文字：券够=亮白，不够=灰蓝色
     drawTextStroke(vg, costStartX + D.TKT_ICON_SZ + 4, D.TKT_ICON_CY, costStr,
         D.TKT_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        owned >= cost and 255 or 0x8d, owned >= cost and 255 or 0x5f,
-        owned >= cost and 255 or 0x41, 5, { strokeColor = { 0, 0, 0 } })
+        owned >= cost and 255 or 0x8b, owned >= cost and 255 or 0x95,
+        owned >= cost and 255 or 0xa5, 5, { strokeColor = { 0, 0, 0 } })
 
     -- 确认按钮（无券时禁用）
     local canSweep = maxCount >= 1
@@ -636,7 +636,7 @@ function SweepDialog.draw(vg)
     if canSweep then
         nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
     else
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
     end
     nvgText(vg, D.ACT_CX, D.ACT_CY,
         canSweep and "扫荡" or (canSweepStage() and "扫荡券不足" or "尚无可扫荡关卡"), nil)

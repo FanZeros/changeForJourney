@@ -90,7 +90,7 @@ function M.bind(deps)
         nvgFill(vg)
         nvgFontFace(vg, "sans"); nvgFontSize(vg, SL.BTN_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 售罄=棕色
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))  -- 售罄=灰蓝色
         nvgText(vg, cx, btnCY, "已售罄", nil)
     else
         DarkIcon.drawNine(vg, "btn", cx - SL.BTN_W * 0.5, btnCY - SL.BTN_H * 0.5, SL.BTN_W, SL.BTN_H, { accent = "gold" })

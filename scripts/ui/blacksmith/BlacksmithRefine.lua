@@ -918,7 +918,7 @@ local function drawResCount(vg, cx, ownedVal, costVal)
     if enough then
         oR, oG, oB = XL.ENOUGH_R, XL.ENOUGH_G, XL.ENOUGH_B
     else
-        oR, oG, oB = 0x8d, 0x5f, 0x41  -- 不足=棕色（全局统一）
+        oR, oG, oB = 0x8b, 0x95, 0xa5  -- 不足=灰蓝色（全局统一）
     end
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 30)

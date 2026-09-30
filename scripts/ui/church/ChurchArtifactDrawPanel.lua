@@ -259,7 +259,7 @@ local function drawCollectionLockedContent(vg)
 
     nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(141, 95, 65, 255))
+    nvgFillColor(vg, nvgRGBA(139, 149, 165, 255))
     nvgText(vg, 540, 1320 + CONTENT_OY, "抵达噩梦难度后开放", nil)
 
     local progress = StageConfig.formatProgressDisplay(

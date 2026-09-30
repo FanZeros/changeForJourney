@@ -703,9 +703,9 @@ local function drawItemDetail(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, UR_CONVERT_BTN.FONT_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        -- 按钮文字：可转化=亮深棕，处理中=棕色禁用色
+        -- 按钮文字：可转化=亮深棕，处理中=灰蓝色禁用色
         if itemDetState.urConvertPending then
-            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+            nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
         else
             nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
         end

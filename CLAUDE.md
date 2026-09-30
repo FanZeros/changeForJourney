@@ -26,6 +26,13 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 傍晚，同分支：升阶页词条预告+满员文案右移，已 push `37d442e6`）
+
+- **需求（用户原话）**：①「词条在五级的升级时候显示升级后的效果（新词条）」→ AskUserQuestion 拍板选**仅模糊提示（不锁定随机结果）**；②「词条满的文字改成右侧显示不要一行显示」→ 拍板放**词条区右侧**。
+- **实现** `ui/blacksmith/BlacksmithEnhance.lua`：文案逻辑抽成纯函数 `M.buildAffixHint(data, equip)` 返回 `{text,r,g,b}`。三分支：满员→「词条已满 · 每升5阶倍率+10%（洗练不丢）」金棕；下一阶是 +5 里程碑且未满员→「升至 +N 将新增 1 条随机词条」亮绿 0x7ac86e；否则常规规则文案。绘制从居中(540,y1710,23号)改**右对齐**(x=1000,y=1712,22号)，不独占整行、不与词条行/「升阶需求」标题(y1737)重叠。魔化词条不占满员计数（复用 isCorruptAffix）。
+- **未做**（用户拍板不做）：预 roll 锁定式精确预览（洗练 pendingRefines 范式）——词条仍真随机，提示只是预告数量。
+- **验证**：新增 `tests/ascend_hint_test.lua` 15 断言 ALL PASS（含满级/nil 装备/0词条/3普通+1魔化边界）；升阶词条回归 74 断言仍 ALL PASS；validate lua_errors=0（UI_ZBTS 18 处为基线既有死加载）；官方 Build 380 Lua，buildAffixHint 进 dist。project.json 已还原。
+
 ## 上次做了什么（2026-09-30 下午，同分支：合入远端930 + 铁匠铺图标空白修复，已 push `e1aa9f49`）
 
 - **任务1（合并）**：用户要求把远端 `workspace930` 领先的 18 提交（离线7日硬顶/装备等级门槛/4死模块清理/浮选拖拽修复等）合入 `feat930/equip-ascend-random-affixes`。4 代码文件自动合并，唯一冲突 `docs/memory-index.md`（双方追加条目）手工双保留。合并提交 `3ea9c556`。回归全绿（升阶词条74/分解38/战力10/切关53/遗匣18/浮选拖拽 PASS）；`chapter_team_offline_test` FAIL 经 **worktree 对照实跑证明是远端基线自带 headless 环境性失败**（文件与 origin 逐字节一致、StageSelectDialog 不依赖装备模块、纯净基线报同错），与合并无关。官方 Build 378 Lua、死模块已移除、affixMult 进包。

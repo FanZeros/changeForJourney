@@ -36,6 +36,12 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续9，分解页品质筛选补第 6 档至臻红）
+
+- **用户反馈**：「分解页面为啥和前面的装备页面不一样少了红色稀有度？」——分解页筛选行绘制与点击两处 `for i = 1, 5`，缺第 6 档至臻（红）；装备 tab 是 `1..6`。
+- **修复**：两循环改 `1..6`（布局自检：warehouse 第 6 图标右缘 565+5×82+35=1010 ≤1080 不越界、与标题行不撞；smith profile 为死布局不影响）。自动分解弹窗本就是 `POP_QBOX_COUNT=6` 六档，无需改；服务端 shouldAutoDecompose 支持 6 档（测试有断言）。
+- **验证**：LSP 0 Error；auto_decompose ALL PASS；官方 Build 成功。改完按用户既定流程提交推送 + ff merge 回 workspace930。
+
 ## 上次做了什么（2026-09-30 续8，分解预览加「当前分解可获得」字样，改完直接 merge 回 930）
 
 - **任务**：用户要求选中装备后图标行显示「当前分解可获得」字样，改完直接 merge。

@@ -614,19 +614,28 @@ local function findBagEntryAt(dx, dy)
 end
 
 ---@param entry table
----@return boolean
+---@return boolean canWear
+---@return boolean levelLocked 是否因等级不足被锁
+---@return number|nil requiredLevel 装备需求等级（仅 levelLocked 时）
 local function canWearBagEntry(entry)
-    if not entry or not entry.equip then return false end
+    if not entry or not entry.equip then return false, false, nil end
     local heroId = bagState.heroId
-    if not heroId then return true end
-    local slot = bagState.filter or bagState.slot or entry.equip.slot
-    local wearableSet = buildWearableSet(heroId, slot)
-    if not wearableSet then return true end
+    if not heroId then return true, false, nil end
     local equip = entry.equip
     if not equip.type or not equip.slot then
         EquipmentSystem.hydrate(equip)
     end
-    return wearableSet[equip.type] == true
+    -- 等级穿戴门槛：角色等级低于装备等级 → 不可穿戴
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+    local levelOk, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+    if not levelOk then
+        return false, true, requiredLevel
+    end
+    local slot = bagState.filter or bagState.slot or entry.equip.slot
+    local wearableSet = buildWearableSet(heroId, slot)
+    if not wearableSet then return true, false, nil end
+    return wearableSet[equip.type] == true, false, nil
 end
 
 ---@param entry table
@@ -640,8 +649,14 @@ local function quickEquipEntry(entry)
         return true
     end
     if not bagState.heroId then return false end
-    if not canWearBagEntry(entry) then
-        Toast.show(I18n.t("cannot_wear"))
+    local wearOk, levelLocked, requiredLevel = canWearBagEntry(entry)
+    if not wearOk then
+        -- 等级穿戴门槛：给出明确的等级不足提示
+        if levelLocked then
+            Toast.show(I18n.t("level_not_enough_equip", tostring(requiredLevel or 1)))
+        else
+            Toast.show(I18n.t("cannot_wear"))
+        end
         require("systems.GameSFX").playUIClick(1)
         BF.trigger("equip_deny")
         return true
@@ -969,6 +984,8 @@ function EquipmentBag.draw(vg, opts)
     local equippedPower = 0
     local offhandPower = 0   -- 副手战斗力（仅 weapon 槽使用，供双手武器对比）
     local heroId = bagState.heroId
+    -- 等级穿戴门槛：ICON_UP 角标与快速穿戴均以此为准
+    local heroLevel = EquipmentSystem.getHeroLevel(PlayerStore.Get("heroes"), heroId)
     local equipData = heroId and PlayerStore.Get("equipment") or nil
     local heroEquipped = equipData and EquipmentSystem.getHeroSlots(equipData, heroId)
     if heroEquipped and equipData.inventory then
@@ -1214,7 +1231,9 @@ function EquipmentBag.draw(vg, opts)
                 end
 
                 -- ICON_UP 角标（左上角，战斗力高于当前已装备时显示；有角色头像角标时不显示避免重叠）
-                if not entry.equipped and not entry.equippedByHeroId and heroId and imgIconUp >= 0 then
+                -- 等级穿戴门槛：装备等级高于英雄等级时不显示升级箭头
+                if not entry.equipped and not entry.equippedByHeroId and heroId and imgIconUp >= 0
+                    and (EquipmentSystem.checkLevelGate(heroLevel, equip)) then
                     local itemPower = EquipmentDetail.calcEquipPower(equip, heroId)
                     -- 双手武器替换主手+副手，基准用两者之和
                     local baseline = equippedPower

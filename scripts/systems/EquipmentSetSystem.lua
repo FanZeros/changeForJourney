@@ -2,7 +2,7 @@
 -- EquipmentSetSystem - 套装计数与 2 件属性注入
 -- 规则：
 --   · 按 template.setId 计件，品质/强化无关
---   · 双手武器占用副手：副手不计件；twoHandCountsAsSix 的套 5 槽按 6
+--   · 双手武器占用副手：只计有效槽；本套双手主手 + 其余四槽才五算六
 --   · 两套 2 件可同时亮；4/6 件互斥（件数最多者，并列取 setId 字典序）
 --   · P1 只落地 2 件纯属性；4/6 件只在 summary 里标记
 -- ============================================================================
@@ -42,30 +42,35 @@ function EquipmentSetSystem.countSets(eqData, heroId, getFromInventory, getHeroS
     end
 
     local seenSeq = {}
+    local mainSetId = nil
     for _, slotKey in ipairs(EquipmentConfig.SLOTS) do
         local seq = slots[slotKey]
-        if seq and not seenSeq[seq] then
-            seenSeq[seq] = true
+        if seq and not seenSeq[tostring(seq)] then
+            seenSeq[tostring(seq)] = true
             local equip = getFromInventory(eqData, seq)
             if equip then
+                -- 双手占用副手；脏档若两槽同时有数据，跳过无效副手。
+                if slotKey == "offhand" and twoHandWorn then
+                    goto continue_slot
+                end
+                local setId = setIdOfEquip(equip)
                 if slotKey == "weapon" and equip.grip == "twohand" then
                     twoHandWorn = true
+                    mainSetId = setId
                 end
-                -- 双手占用的副手槽：seq 不会出现（被卸空），无需额外跳过
-                local setId = setIdOfEquip(equip)
                 if setId then
                     counts[setId] = (counts[setId] or 0) + 1
                 end
             end
         end
+        ::continue_slot::
     end
 
-    if twoHandWorn then
-        for setId, n in pairs(counts) do
-            local def = EquipmentSetConfig.get(setId)
-            if def and def.twoHandCountsAsSix and n >= 5 then
-                counts[setId] = 6
-            end
+    if twoHandWorn and slots.offhand == nil and mainSetId then
+        local n = counts[mainSetId] or 0
+        local def = EquipmentSetConfig.get(mainSetId)
+        if def and def.twoHandCountsAsSix and n == 5 then
+            counts[mainSetId] = 6
         end
     end
     return counts, twoHandWorn

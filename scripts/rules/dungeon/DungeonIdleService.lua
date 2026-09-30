@@ -47,6 +47,9 @@ end
 local function capAccumSec(sec)
     sec = math.floor(sec)
     if sec < 0 then return 0 end
+    -- [7日硬顶] 累积时长封顶，超出部分不再产生收益
+    local cap = DungeonIdleConfig.HARD_CAP_SEC
+    if cap and sec > cap then return cap end
     return sec
 end
 

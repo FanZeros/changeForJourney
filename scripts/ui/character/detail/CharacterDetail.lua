@@ -183,12 +183,17 @@ function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData)
         -- accessory: wearableSet 保持 nil，不限制
     end
 
+    -- 3.5) 等级穿戴门槛：英雄等级低于装备等级的候选不参与红点判断
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+
     -- 4) 遍历背包，找到任一可穿戴且战斗力更高的未装备装备即返回 true
     for seq, equip in pairs(inventory) do
         local seqNum = tonumber(seq)
         if equip.slot == slotName and seqNum and not equippedSeqNums[seqNum] then
-            -- 可穿戴类型检查
-            if not wearableSet or wearableSet[equip.type] then
+            -- 可穿戴类型检查 + 等级穿戴门槛
+            if (not wearableSet or wearableSet[equip.type])
+                and (EquipmentSystem.checkLevelGate(heroLevel, equip)) then
                 local itemPower = CharacterDetail._EquipDetail.calcEquipPower(equip, heroId)
                 -- 双手武器替换主手+副手，基准用两者之和（与 EquipmentBag 一致）
                 local baseline = equippedPower

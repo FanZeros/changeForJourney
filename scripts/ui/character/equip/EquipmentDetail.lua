@@ -534,6 +534,7 @@ local function compactSetLines(equip)
     local def = setId and EquipmentSetConfig.get(setId) or nil
     if not def then return nil, {} end
     local count = 0
+    local twoActive, fourActive, sixActive = false, false, false
     local eqData = PlayerStore.Get("equipment")
     if eqData and detState.heroId then
         local counts = EquipmentSetSystem.countSets(
@@ -541,12 +542,20 @@ local function compactSetLines(equip)
             EquipmentSystem.getFromInventory,
             function(data, hid) return EquipmentSystem.getHeroSlots(data, hid) end)
         count = counts[setId] or 0
+        local rows = EquipmentSetSystem.summarize(counts)
+        for i = 1, #rows do
+            local row = rows[i]
+            if row.setId == setId then
+                twoActive, fourActive, sixActive = row.twoActive, row.fourActive, row.sixActive
+                break
+            end
+        end
     end
     local lines = {
         { text = string.format("%s  %d/6", def.name, count), active = true },
-        { text = "2件  " .. (def.desc2 or ""), active = count >= 2 },
-        { text = "4件  " .. (def.desc4 or ""), active = count >= 4 },
-        { text = "6件  " .. (def.desc6 or ""), active = count >= 6 },
+        { text = "2件  " .. (def.desc2 or ""), active = twoActive },
+        { text = "4件  " .. (def.desc4 or ""), active = fourActive },
+        { text = "6件  " .. (def.desc6 or ""), active = sixActive },
     }
     return def, lines
 end
@@ -1298,6 +1307,37 @@ isClickedEquipEquipped = function()
     return false, nil
 end
 
+--- 等级穿戴门槛：角色等级低于装备等级时不可穿戴
+---@return boolean ok true=可穿戴
+---@return number|nil requiredLevel 装备需求等级（仅等级不足时）
+local function checkDetailLevelGate()
+    if not detState.heroId or not detState.equipSeq then return true, nil end
+    local equipData = PlayerStore.Get("equipment")
+    local equip = equipData and equipData.inventory and equipData.inventory[detState.equipSeq]
+    if not equip then return true, nil end
+    if not equip.type or not equip.slot then
+        EquipmentSystem.hydrate(equip)
+    end
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, detState.heroId)
+    local ok, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+    return ok, requiredLevel
+end
+
+--- 穿戴前统一拦截：等级不足时提示并拒绝
+---@return boolean blocked true=已拦截（调用方应中止穿戴）
+local function blockIfLevelLocked()
+    local ok, requiredLevel = checkDetailLevelGate()
+    if ok then return false end
+    local Toast = require("core.UiToast")
+    Toast.show(I18n.t("level_not_enough_equip", tostring(requiredLevel or 1)))
+    require("systems.GameSFX").playUIClick(1)
+    BF.trigger("equip_deny")
+    print("[EquipmentDetail] 等级不足拒绝穿戴 seq=" .. tostring(detState.equipSeq)
+        .. " 需Lv." .. tostring(requiredLevel))
+    return true
+end
+
 --- 获取用于对比的"当前装备"（处理副手对比双手武器场景）
 ---@return table|nil curEquip, number|nil curSeq
 getComparisonEquip = function()
@@ -1436,6 +1476,9 @@ function EquipmentDetail.handleInput(dx, dy)
                         heroId = detState.heroId,
                         slot = equippedSlot or detState.slot,
                     })
+                elseif blockIfLevelLocked() then
+                    -- 等级穿戴门槛：等级不足，已提示，中止穿戴且不关闭面板
+                    return true
                 else
                     Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {
                         seq = tonumber(detState.equipSeq),
@@ -1519,6 +1562,9 @@ function EquipmentDetail.handleInput(dx, dy)
                     slot   = equippedSlot or detState.slot,
                 })
                 print("[EquipmentDetail] 发送卸下请求 slot=" .. tostring(equippedSlot or detState.slot))
+            elseif blockIfLevelLocked() then
+                -- 等级穿戴门槛：等级不足，已提示，中止穿戴且不关闭面板
+                return true
             else
                 -- 穿戴/更换装备
                 Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {

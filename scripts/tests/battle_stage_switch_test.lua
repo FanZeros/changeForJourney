@@ -45,7 +45,116 @@ local function testRestoreOrder()
     check(true, "restoreOrder 边界输入不报错")
 end
 
--- ── 2) 失败回退分支不再把过期的 battleActive=false 写回 ──
+-- ── 2) 套装高阶标记在战斗快照和待更新快照中保留 ──
+local function testSetSnapshot()
+    local AD = require("systems.AttributeDef")
+    local UA = require("systems.UnitAttributes")
+    local Sets = require("systems.EquipmentSetSystem")
+    local Reset = require("ui.battle.scene.BattleAllyReset")
+    local attrs = UA.create({ [AD.MAX_HP] = 1000, atkType = AD.ATK_SLASH })
+    Sets.applyTwoPieceToUnit(attrs, { ironwall = 6 })
+    attrs._setFour = "ironwall"
+    attrs._setSix = "ironwall"
+    attrs._setRows = { { setId = "ironwall", count = 6, twoActive = true,
+        fourActive = true, sixActive = true, color = { 1, 2, 3, 255 } } }
+    local ally = { attrs = attrs, armorType = attrs.armorType }
+    Reset.createSnapshot(ally)
+    check(ally._baseSnapshot._setSix == "ironwall", "初始快照保留六件套标记")
+    check(ally._baseSnapshot.modifiers.set2_ironwall ~= nil, "初始快照保留两件套属性")
+    check(Reset.restoreFromSnapshot(ally)
+        and select(2, Sets.activeHighSets(ally)) == "ironwall",
+        "首次恢复后战斗六件套继续生效")
+    ally.attrs._setRows[1].color[1] = 99
+    check(ally._baseSnapshot._setRows[1].color[1] == 1,
+        "摘要颜色深拷贝，不污染基线快照")
+
+    local pending = attrs:clone()
+    pending._setFour, pending._setSix = "gambler", "gambler"
+    pending._setRows = { { setId = "gambler", count = 6, fourActive = true, sixActive = true } }
+    ally._pendingSnapshot = pending
+    check(Reset.restoreFromSnapshot(ally)
+        and select(2, Sets.activeHighSets(ally)) == "gambler",
+        "装备切换待定快照恢复后六件套切换")
+    check(ally.attrs._setRows ~= pending._setRows
+        and ally.attrs._setRows[1] ~= pending._setRows[1],
+        "待定快照恢复后摘要行独立")
+end
+
+-- ── 3) 统一穿戴入口执行职业、双持与双手互斥校验 ──
+local function testEquipGuards()
+    local ES = require("systems.EquipmentSystem")
+    local function makeData(ids)
+        local inventory = {}
+        for i, templateId in ipairs(ids) do
+            inventory[tostring(i)] = ES.generate(templateId, 85, 1)
+        end
+        return { inventory = inventory, equipped = {} }
+    end
+    local function wear(data, seq, heroId, slot, heroes)
+        local ok, err = ES.applyEquip(data, seq, heroId, slot, heroes)
+        return ok, err or ""
+    end
+
+    local warrior = makeData({ "W31", "W1", "O13", "A55", "A31", "O7", "W7" })
+    local ok, err = wear(warrior, 1, 1, "weapon")
+    check(not ok and err:find("无法穿戴", 1, true) ~= nil,
+        "战士主手魔杖被职业限制拒绝")
+    ok, err = wear(warrior, 3, 1, "offhand")
+    check(not ok and err:find("无法穿戴", 1, true) ~= nil,
+        "战士副手魔典被职业限制拒绝")
+    ok, err = wear(warrior, 4, 1, "armor")
+    check(not ok and err:find("无法穿戴", 1, true) ~= nil,
+        "战士布甲被职业限制拒绝")
+    check(wear(warrior, 2, 1, "weapon") == true
+        and wear(warrior, 5, 1, "armor") == true
+        and wear(warrior, 6, 1, "offhand") == true,
+        "战士正常单手剑、重甲、重盾可穿")
+    local before = warrior.equipped[1].offhand
+    ok, err = wear(warrior, 1, 1, "offhand")
+    check(not ok and warrior.equipped[1].offhand == before,
+        "无双持天赋时魔杖不能占副手，失败不改原槽")
+    check(wear(warrior, 7, 1, "weapon") == true
+        and warrior.equipped[1].offhand == nil,
+        "换双手剑会自动卸副手")
+
+    local sameHeroes = { roster = { [18] = { advBranch = { first = 110, second = 220 } } } }
+    local same = makeData({ "W61", "W62", "W55", "O1" })
+    ok, err = wear(same, 4, 18, "offhand", sameHeroes)
+    check(not ok and err:find("常规副手", 1, true) ~= nil,
+        "220 双持角色不能再穿普通轻盾")
+    ok, err = wear(same, 2, 18, "offhand", sameHeroes)
+    check(not ok and err:find("主手", 1, true) ~= nil,
+        "220 同类型双持缺主手时拒绝")
+    check(wear(same, 1, 18, "weapon", sameHeroes) == true
+        and wear(same, 2, 18, "offhand", sameHeroes) == true,
+        "220 同类型细剑可双持")
+    ok, err = wear(same, 3, 18, "offhand", sameHeroes)
+    check(not ok and err:find("相同类型", 1, true) ~= nil,
+        "220 不同类型武器副手被拒绝")
+    check(wear(same, 3, 18, "weapon", sameHeroes) == false
+        and same.equipped[18].weapon == 1,
+        "220 已持同类型副手时替换主手为异类被拒绝")
+
+    local diffHeroes = { roster = { [1] = { advBranch = { first = 104, second = 207 } } } }
+    local different = makeData({ "W1", "W13", "W2", "O7", "W31", "W14" })
+    check(wear(different, 1, 1, "weapon", diffHeroes) == true
+        and wear(different, 2, 1, "offhand", diffHeroes) == true,
+        "207 不同类型剑斧可双持")
+    ok, err = wear(different, 3, 1, "offhand", diffHeroes)
+    check(not ok and err:find("不同类型", 1, true) ~= nil,
+        "207 相同类型剑副手被拒绝")
+    ok, err = wear(different, 4, 1, "offhand", diffHeroes)
+    check(not ok and err:find("常规副手", 1, true) ~= nil,
+        "207 角色不能穿普通重盾")
+    ok, err = wear(different, 5, 1, "offhand", diffHeroes)
+    check(not ok and err:find("无法穿戴", 1, true) ~= nil,
+        "207 副手魔杖仍受英雄武器类型约束")
+    check(wear(different, 6, 1, "weapon", diffHeroes) == false
+        and different.equipped[1].weapon == 1,
+        "207 已持异类型副手时替换主手为同类型被拒绝")
+end
+
+-- ── 4) 失败回退分支不再把过期的 battleActive=false 写回 ──
 local function testDefeatRollbackKeepsBattleActive()
     local Phases = require("ui.battle.scene.BattleScenePhases")
 
@@ -337,6 +446,8 @@ function Start()
     print("[battle_stage_switch_test] start")
     local ok, err = pcall(function()
         testRestoreOrder()
+        testSetSnapshot()
+        testEquipGuards()
         testDefeatRollbackKeepsBattleActive()
         testTriDriverWipeFallback()
         testArtifactRuntimeIsolation()

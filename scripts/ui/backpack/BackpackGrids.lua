@@ -17,9 +17,11 @@ local M = {}
 function M.bind(deps)
     local GRID = deps.GRID
     local CELL_COL_CX = deps.CELL_COL_CX
-    local CLIP_TOP = deps.CLIP_TOP
-    local CLIP_H = deps.CLIP_H
     local DESIGN_W = deps.DESIGN_W
+    -- 裁剪常量从 GRID 表取活值：宿主 applyLayout 切换 inline/left 布局时会改写
+    -- GRID.FIRST_ROW_TOP / GRID.CLIP_BOTTOM，bind 时按值快照会拿到过期布局。
+    local function clipTop() return GRID.FIRST_ROW_TOP end
+    local function clipH() return GRID.CLIP_BOTTOM - GRID.FIRST_ROW_TOP end
     local DarkIcon = deps.DarkIcon or DarkIcon
     local DrawUtil = deps.DrawUtil or DrawUtil
     local state = deps.state
@@ -83,7 +85,7 @@ function M.bind(deps)
         clampScroll()
 
         nvgSave(vg)
-        nvgScissor(vg, 0, CLIP_TOP, DESIGN_W, CLIP_H)
+        nvgScissor(vg, 0, clipTop(), DESIGN_W, clipH())
         nvgTranslate(vg, 0, -state.scrollY)
 
         for idx = 1, totalSlots do
@@ -101,22 +103,17 @@ function M.bind(deps)
                 end
             end
 
-            if screenY < CLIP_TOP - GRID.CELL_SIZE then
+            if screenY < clipTop() - GRID.CELL_SIZE then
                 goto continue_equip
             end
             if screenY > GRID.CLIP_BOTTOM + GRID.CELL_SIZE then
                 break
             end
 
-            local cellTop = cy - GRID.CELL_SIZE * 0.5
-            local cellBottom = cy + GRID.CELL_SIZE * 0.5
-            local clipCell = cellTop < CLIP_TOP or cellBottom > GRID.CLIP_BOTTOM
-            if clipCell then
-                nvgSave(vg)
-                local visTop = math.max(cellTop, CLIP_TOP)
-                local visBot = math.min(cellBottom, GRID.CLIP_BOTTOM)
-                nvgIntersectScissor(vg, cx - GRID.CELL_SIZE * 0.5, visTop, GRID.CELL_SIZE, math.max(0, visBot - visTop))
-            end
+            -- 边缘半格裁剪由外层 nvgScissor（屏幕坐标，translate 之前设置）统一负责。
+            -- ⚠️ 不要在这里加逐格 nvgIntersectScissor：cy 是 translate 后的内容坐标，
+            -- 与屏幕坐标 CLIP_TOP/CLIP_BOTTOM 比较必然错位，滚动后会把可见格子裁空
+            -- （历史 bug：仓库只显示第一页，下滑全空白）。
 
             local equip = equipList[idx]
             if equip then
@@ -212,9 +209,6 @@ function M.bind(deps)
                 nvgStrokeWidth(vg, 3)
                 nvgStroke(vg)
             end
-            if clipCell then
-                nvgRestore(vg)
-            end
             ::continue_equip::
         end
 
@@ -261,7 +255,7 @@ function M.bind(deps)
         clampScroll()
 
         nvgSave(vg)
-        nvgScissor(vg, 0, CLIP_TOP, DESIGN_W, CLIP_H)
+        nvgScissor(vg, 0, clipTop(), DESIGN_W, clipH())
         nvgTranslate(vg, 0, -state.scrollY)
 
         for idx, def in ipairs(itemList) do

@@ -5,11 +5,20 @@
 ## 🔴 协作铁律（每个会话、每次完成任务都必须遵守）
 
 1. **不能取消/退出任务**：任何情况下不得中途放弃用户交付的任务，必须推进到完成。
-2. **每次任务完成后，必须用 `AskUserQuestion` 工具以选项形式向用户提问下一步做什么**。
+2. **每次任务完成、规划完成、提交完成以及任何对话收尾，都必须用 `AskUserQuestion` 工具以选项形式向用户提问下一步做什么**。
    - ❌ 禁止用纯文本、开放式问题、或任何非 `AskUserQuestion` 的形式中断对话等待用户。
    - ✅ 必须调用 `AskUserQuestion`，给出 2–4 个明确的下一步选项。
 3. **在本记忆中持续强化此规则**：每轮结束更新「上次做了什么」，并保留本节铁律不被覆盖。
-4. **分支纪律**：以新分支继续开发，完成后 push 到新分支；**绝不推送到 `workspace926`**（或任何基线分支）。
+4. **分支纪律**：以本轮指定基线 `workspace930` 新建任务分支，完成后只 push 新分支；**绝不推送到 `workspace930`**（或任何其他基线分支）。
+
+## 本轮交接（2026-09-30，`feat930/equipment-set-coverage-plan-0930`）
+
+- 用户指定基线 `workspace930`，本轮从该分支新建独立规划分支；游戏已部署在 `/workspace` 根，官方 Build 成功（380 个 Lua 入包）。不把 PAT 写入仓库、记忆或 Git 配置；用户提供的 PAT 应在任务后撤销并更换。
+- 用户请求核实套装归属与六槽覆盖；`workspace930` 基线 318 个装备模板、12 套，171 个有归属、147 个无归属。2026-09-30 在独立分支分两轮给 9 套补 35 件模板：当前 353 个模板，206 个有归属；原 318 件 ID 和归属不变。高压水脉／赛道硝烟／帝国铁壁在 65–80 和 81+ 可凑六件，其余六套在 81+ 可凑六件，巡林用单手弩＋轻盾六实体件，万剑双手五实体件算六。所有新增件按同档数值且复用已有图标。测试配装见 `scripts/tests/battle_lab_boundary_test.lua`。
+- **三处正确性修复已落地（本地提交 `ec0eb5d`，未推送）**：① `UnitAttributes:clone` 复制 `_setFour`/`_setSix` 并深拷贝 `_setRows`（战斗快照/恢复不再丢高阶套装标记）；② `countSets` 收紧双手五算六（仅主手同套且副手空置生效；脏档数字/字符串重复序号按 tostring 归一不虚增）；③ `applyEquip` 统一穿戴校验（职业可穿戴类型、双持 same/different 主副手互验、双持角色拒常规副手、双手互斥卸副手、失败不改原槽）；④ `EquipmentDetail` compact 档位亮灯改用 `summarize` 互斥结果（四件并列不再双亮）。回归：battle_stage_switch_test 新增快照保留+穿戴校验两节 ALL PASS；battle_lab_boundary_test 整份 ALL PASS——原两条「力量/智力戒官方战力严格相等」断言改为 ±2 容差（探针证实差 1 点源于六围→派生职业转换不对称，str 走物攻/护甲、int 走护盾/魔攻，严格相等本就不成立，属基线已知口径问题）。LSP 全工作区 0 Error；官方 Build 成功 380 Lua 入包；`.project` 本地生成配置已还原。git 身份已配置仓库级 `Maker <maker@local>`（沙箱重建后需重配）。分支仍在本地，未推送。
+- **已合入最新 workspace930 并推送任务分支（`840bdcba`，2026-09-30）**：用户授权合入 `workspace930` 基线后推送任务分支。fetch 发现远端 `workspace930` 已领先我旧基线 `2d423b8` **1203 提交**（净 36 文件：offline-cap 离线7日硬顶、audit929 死模块清理删 AssetManifest/SaveManager/VersionConfig/DamageGlyph、**装备等级穿戴门槛 `checkLevelGate`**、浮选装备详情拖拽修复等）。合并 exit 0 **无冲突**（仅 EquipmentSystem/EquipmentDetail 2 文件重叠，git 三方合并自动处理：远端等级门槛在 `seqStr` 之前、我的职业/双持校验在之后，逻辑互补共存）。**合并引入的测试适配**：远端等级门槛在 applyEquip 中位于职业校验之前，testEquipGuards 双持组 roster 原只写 advBranch 无 level（默认1级）、装备85级 → 被门槛先拦下；给 sameHeroes/diffHeroes 补 level=100 修复（warrior 组不传 heroesData 自动跳过门槛，覆盖「无 heroesData 不做门槛」分支，保持不变）。回归全绿：切关 ALL PASS / 边界 ALL PASS / 滚动 10 断言 ALL PASS / 远端新增拖拽 PASS；官方 Build 成功 378 Lua 入包。**遗留 2 个 LSP Error 在 `UpdateNoticePopup.lua:154`（nvgLinearGradient 的 nvgRGBA 返回 number vs 期望 NVGcolor），是远端基线提交 `3c920ab7` 自带、与我 diff 为空、不阻塞 Build，未擅改他人文件**。PAT 走一次性 URL 推送，零残留（remote/配置/工作区文件均搜不到），远端 workspace930 仍 ebdd4084 未动。⚠️ 用户提供的 PAT 应在任务后撤销更换。备份分支 `backup-feat930-premerge`（合并前 HEAD 5820217）保留。
+- **仓库滚动全空白 bug 已修（`be4dd2a`）**：用户报「仓库只显示第一页装备，下面都是空显示」。根因是 `BackpackGrids.drawEquipGrid` 在 `nvgTranslate(0,-scrollY)` 内做逐格 `nvgIntersectScissor`，用**内容坐标** cy 与**屏幕坐标** CLIP_TOP/CLIP_BOTTOM 比较判定 clipCell，且裁剪矩形又被 transform 再平移——双重错位；scrollY=0 时两套坐标重合（第一页正常），下滑后可见格被错位/空交集裁剪框整格裁掉。修复=删除逐格 clipCell 块（外层屏幕 scissor 已足够）+ CLIP_TOP/CLIP_H 从 bind 按值快照改为 GRID 表活值（顺带修 applyLayout 切布局后用过期常量的隐患，道具网格同享）。新增 `scripts/tests/backpack_grid_scroll_test.lua`（stub nvg 模拟 scissor+transform 语义）：修复前 6 FAIL 复现、修复后 10 断言 ALL PASS、stash 二分确认敏感性。**教训：NanoVG 里 nvgScissor/nvgIntersectScissor 的矩形按设置时的 transform 变换——在 translate 内调用就必须传内容坐标；绘制路径混用屏幕/内容坐标是这类"滚动后空白"bug 的固定根因。输入命中（如 BlacksmithDecompose 的 visTop/visBot）用已减 scrollY 的屏幕坐标是对的，勿抄进绘制。**
+- **交付、规划、提交或任何对话结束前，都必须先简报，再真正调用 `AskUserQuestion` 给 2–4 个选项询问下一步；不能用普通文字结尾。**
 
 ## 恢复指令
 

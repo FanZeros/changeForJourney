@@ -859,35 +859,48 @@ function EquipmentSystem.applyEquip(equipData, seq, heroId, slot, heroesData)
     end
 
     local seqStr = tostring(seq)
-    if equip.slot ~= slot then
-        if slot == "offhand" and equip.slot == "weapon" and equip.grip == "onehand" then
-            local dualMode = nil
-            if heroesData and heroesData.roster then
-                local hd = heroesData.roster[heroId] or heroesData.roster[tostring(heroId)]
-                local AVC = require("config.AdvancementConfig")
-                dualMode = AVC.getDualWieldMode(hd and hd.advBranch)
-            end
-            if not dualMode then
-                return false, "槽位不匹配"
-            end
-            local heroSlots = EquipmentSystem.getHeroSlots(equipData, heroId)
-            local mainWeaponSeq = heroSlots and heroSlots["weapon"]
-            local mainWeaponType = nil
-            if mainWeaponSeq then
-                local mainWeapon = EquipmentSystem.getFromInventory(equipData, mainWeaponSeq)
-                mainWeaponType = mainWeapon and mainWeapon.type
-            end
-            if dualMode == "different" and mainWeaponType and equip.type == mainWeaponType then
-                return false, "武器精通：副手必须装备不同类型的武器"
-            elseif dualMode == "same" and mainWeaponType and equip.type ~= mainWeaponType then
-                return false, "双刃精通：副手必须装备相同类型的武器"
-            end
-        else
-            return false, "槽位不匹配"
+    local heroCfg = require("config.HeroConfig").get(heroId)
+    if not heroCfg then return false, "英雄不存在" end
+    local wearable = EquipmentSystem.getWearableTypeSet(heroId, slot)
+    local hd = heroesData and heroesData.roster
+        and (heroesData.roster[heroId] or heroesData.roster[tostring(heroId)])
+    local AVC = require("config.AdvancementConfig")
+    local dualMode = AVC.getDualWieldMode(hd and hd.advBranch)
+    local isOffhandWeapon = slot == "offhand" and equip.slot == "weapon" and equip.grip == "onehand"
+
+    if isOffhandWeapon then
+        if not dualMode then return false, "槽位不匹配" end
+        wearable = EquipmentSystem.getWearableTypeSet(heroId, "weapon")
+        local heroSlots = EquipmentSystem.getHeroSlots(equipData, heroId)
+        local mainSeq = heroSlots and heroSlots.weapon
+        local mainEquip = mainSeq and EquipmentSystem.getFromInventory(equipData, mainSeq)
+        if dualMode == "same" and (not mainEquip or mainEquip.type ~= equip.type) then
+            return false, "双刃精通：副手必须装备与主手相同类型的武器"
+        elseif dualMode == "different" and mainEquip and mainEquip.type == equip.type then
+            return false, "武器精通：副手必须装备不同类型的武器"
         end
+    elseif equip.slot ~= slot then
+        return false, "槽位不匹配"
+    elseif slot == "offhand" and dualMode then
+        return false, "双持天赋无法装备常规副手"
+    end
+
+    if wearable and not wearable[equip.type] then
+        return false, "该英雄无法穿戴此类型装备"
     end
 
     local slots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
+    if slot == "weapon" and equip.grip == "onehand" and dualMode then
+        local offSeq = slots.offhand
+        local offEquip = offSeq and EquipmentSystem.getFromInventory(equipData, offSeq)
+        if offEquip and offEquip.slot == "weapon" then
+            if dualMode == "same" and offEquip.type ~= equip.type then
+                return false, "双刃精通：主手必须与副手武器同类型"
+            elseif dualMode == "different" and offEquip.type == equip.type then
+                return false, "武器精通：主手必须与副手武器不同类型"
+            end
+        end
+    end
 
     if equipData.equipped then
         for hid, hslots in pairs(equipData.equipped) do

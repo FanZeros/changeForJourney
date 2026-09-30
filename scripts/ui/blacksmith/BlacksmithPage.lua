@@ -198,7 +198,7 @@ end
 
 -- ======================== 图片句柄（共享） ========================
 
-local imgBg       = -1   -- UI_JSXQ_BJ_dark.png（暗黑石墙，替换过亮的 UI_TJP_CH_1）
+local imgBg       = -1   -- UI_SMITH_BG_FULL.png（整页狱火锻炉背景：上场景+下暗板）
 local imgNameBg   = -1   -- UI_TJP_MC.png
 local imgPlus     = -1   -- UI_ICON_TJP_JIA.png
 local imgTabBg    = -1   -- UI_AN_1.png
@@ -541,7 +541,7 @@ function BlacksmithPage.init(vg)
     blacksmithInited_ = true
     blacksmithVg_ = vg
     -- 共享图片
-    imgBg       = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_BJ_dark.png", 0)
+    imgBg       = nvgCreateImage(vg, "image/界面底板/狱火锻炉/UI_SMITH_BG_FULL.png", 0)
     imgNameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     imgPlus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_TJP_JIA.png", 0)
     imgTabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)

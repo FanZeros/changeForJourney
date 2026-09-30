@@ -76,10 +76,11 @@ function M.bind(deps)
         nvgFillColor(vg, nvgRGBA(0x14, 0x12, 0x10, 255))
         nvgFill(vg)
 
-        -- === 整页单一暗黑背景（等比 cover 全屏，无形变）+ 名牌 + 工作台槽 ===
+        -- === 整页单一背景（UI_SMITH_BG_FULL 按设计分辨率对齐拉伸：比例差仅1.6%，
+        --    保证背景暗板框与 UI 元素坐标精确对齐）+ 名牌 + 工作台槽 ===
         nvgSave(vg)
         nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-        DrawUtil.drawImageCover(vg, imgBg, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
+        DrawUtil.drawImageCentered(vg, imgBg, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
         nvgResetScissor(vg)
         nvgRestore(vg)
 

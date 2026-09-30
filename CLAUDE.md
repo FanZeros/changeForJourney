@@ -97,6 +97,7 @@
 - **正确实现**：`TalentStarMap.edgeFade(sx, sy)`——星图区边缘 `max(64, min(w,h)*10%)` 带内 alpha 线性渐隐到 0；节点 `drawTalentGlyphByName` alpha×fade、fade≤0.01 直接 return；连线取两端更靠边者 alpha×fade 并 skip。`ChurchTalentPanel` 删 `drawMapEdgeFade` 色块渐隐（那会盖住背景）及调用、删其 cast。
 - **并行会话第五次插队**：推送前远端 930 前进到 d8f3c6d6，含 `7dd0f376` 洗练锁定词缀**阶梯累乘计费**（每条×1.5，最多 3 条×3.375，`applyRefineLockCostMult` 改 `1.5^n`）——与我的固定单价正交（固定单价指不随**次数**涨；锁定倍率是另一维度），对方已同步更新 `refine_cost_fixed_test`，合并后 ALL PASS。
 - **验证**：LSP 0 Error；refine_cost ALL PASS；官方 Build 成功；dist 素材哈希更新为全不透明版。
+- **续9 追加（用户反馈"带应该更宽、边缘10%内应完全透明"，已 push `3489c08b`）**：`edgeFade` 改为双段——外圈 `min(w,h)×10%` 带内返回 0（节点/连线完全不画），其后 `×12%` 过渡带线性渐显到 1（原单段从 0 起渐隐改为平台+斜坡）。
 
 ## 上次做了什么（2026-09-30 续8，古树背景节点区透明，已 push `6f7a9400`）
 

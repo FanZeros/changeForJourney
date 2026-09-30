@@ -436,6 +436,7 @@ local function compactSetLines(equip)
     local def = setId and EquipmentSetConfig.get(setId) or nil
     if not def then return nil, {} end
     local count = 0
+    local twoActive, fourActive, sixActive = false, false, false
     local eqData = PlayerStore.Get("equipment")
     if eqData and detState.heroId then
         local counts = EquipmentSetSystem.countSets(
@@ -443,12 +444,20 @@ local function compactSetLines(equip)
             EquipmentSystem.getFromInventory,
             function(data, hid) return EquipmentSystem.getHeroSlots(data, hid) end)
         count = counts[setId] or 0
+        local rows = EquipmentSetSystem.summarize(counts)
+        for i = 1, #rows do
+            local row = rows[i]
+            if row.setId == setId then
+                twoActive, fourActive, sixActive = row.twoActive, row.fourActive, row.sixActive
+                break
+            end
+        end
     end
     local lines = {
         { text = string.format("%s  %d/6", def.name, count), active = true },
-        { text = "2件  " .. (def.desc2 or ""), active = count >= 2 },
-        { text = "4件  " .. (def.desc4 or ""), active = count >= 4 },
-        { text = "6件  " .. (def.desc6 or ""), active = count >= 6 },
+        { text = "2件  " .. (def.desc2 or ""), active = twoActive },
+        { text = "4件  " .. (def.desc4 or ""), active = fourActive },
+        { text = "6件  " .. (def.desc6 or ""), active = sixActive },
     }
     return def, lines
 end

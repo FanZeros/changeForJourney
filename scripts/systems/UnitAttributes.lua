@@ -188,6 +188,24 @@ function UnitAttributes:clone()
     copy.artifactChaosDefenseDisabled = self.artifactChaosDefenseDisabled
     copy.artifactPowerBonus = self.artifactPowerBonus
     copy.artifactNoHeal = self.artifactNoHeal
+    copy._setFour = self._setFour
+    copy._setSix = self._setSix
+    if self._setRows then
+        copy._setRows = {}
+        for i, row in ipairs(self._setRows) do
+            local clonedRow = {}
+            for key, value in pairs(row) do
+                if key == "color" and type(value) == "table" then
+                    local color = {}
+                    for j, component in ipairs(value) do color[j] = component end
+                    clonedRow.color = color
+                else
+                    clonedRow[key] = value
+                end
+            end
+            copy._setRows[i] = clonedRow
+        end
+    end
 
     -- 浅拷贝数值层表（key 为字符串常量，value 为数字）
     copy.base    = {}; for k, v in pairs(self.base)    do copy.base[k]    = v end

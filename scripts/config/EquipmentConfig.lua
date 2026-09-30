@@ -39,8 +39,7 @@ EquipmentConfig.ITEMS = {}
 
 local ITEMS = EquipmentConfig.ITEMS
 
--- 每个槽位独立编号，使用前缀字符串 ID
--- 武器: W1~W72, 副手: O1~O30, 护甲: A1~A60, 头盔: H1~, 鞋子: S1~, 饰品: C1~C36
+-- 每个槽位独立编号，使用前缀字符串 ID；新增模板只在表尾续号，旧 ID 永不变
 local SLOT_PREFIX = {
     weapon    = "W",
     offhand   = "O",
@@ -75,7 +74,9 @@ end
 ---@param grip string|nil 握持方式 "onehand"/"twohand"（仅武器）
 ---@param statKeys string[] 属性 key 列表
 ---@param tiers table[] 每个层级: { n=名称, lv={min,max}, v={val1,val2,...} }
-local function addGroup(slot, typeName, grip, statKeys, tiers)
+---@param setId string|nil 显式套装归属（新增套装模板使用）
+---@param iconTemplateId string|nil 复用已有模板图标
+local function addGroup(slot, typeName, grip, statKeys, tiers, setId, iconTemplateId)
     for _, t in ipairs(tiers) do
         local id = nextSlotId(slot)
         local stats = {}
@@ -92,6 +93,8 @@ local function addGroup(slot, typeName, grip, statKeys, tiers)
             grip = grip,
             levelRange = t.lv,
             stats = stats,
+            setId = setId,
+            iconTemplateId = iconTemplateId,
         }
     end
 end
@@ -102,7 +105,9 @@ end
 ---@param slot string
 ---@param lv table {min,max}
 ---@param stats table[] { {key,value}, ... }
-local function addItem(name, typeName, slot, lv, stats)
+---@param setId string|nil 显式套装归属
+---@param iconTemplateId string|nil 复用已有模板图标
+local function addItem(name, typeName, slot, lv, stats, setId, iconTemplateId)
     local id = nextSlotId(slot)
     ITEMS[id] = {
         id = id,
@@ -111,6 +116,8 @@ local function addItem(name, typeName, slot, lv, stats)
         slot = slot,
         levelRange = lv,
         stats = stats,
+        setId = setId,
+        iconTemplateId = iconTemplateId,
     }
 end
 
@@ -639,6 +646,124 @@ addItem("羽制耳环",   "耳环", "accessory", {28,9999}, {{"magAtk", 12.86}, 
 addItem("碎玉之环",   "耳环", "accessory", {38,9999}, {{"physPen", 12.86}, {"magPen", 5.14}})  -- [主] physPen, [次1] magPen
 addItem("水晶耳环",   "耳环", "accessory", {48,9999}, {{"agi", 4.28}, {"comboRate", 8.6}})     -- [主] agi, [次1] comboRate
 
+-- 补齐三套的单手主手/副手：沿用同档基础数值与已有图标，不改变旧模板的归属。
+-- 高压水脉：魔杖可与法珠同穿（法杖是双手，不能用来凑第六件）。
+addGroup("weapon", "魔杖", "onehand", {"magAtk", "hitValue", "atkSpeed"}, {
+    { n = "潮汐魔杖", lv = {65,80}, v = {16.34, 2.09, 4.1} },
+    { n = "深潮魔杖", lv = {81,9999}, v = {18.86, 2.41, 4.9} },
+}, "tidepress", "W31")
+
+-- 赛道硝烟：单手弩可与轻盾同穿；高阶弩独立成套，保留水晶手弩的原归属。
+addGroup("weapon", "单手弩", "onehand", {"physAtk", "atkSpeed", "hitValue"}, {
+    { n = "极速手弩", lv = {81,9999}, v = {18.86, 4.9, 2.41} },
+}, "nitros", "W43")
+addGroup("offhand", "轻盾", nil, {"dodge", "atkSpeed", "physBlockRate"}, {
+    { n = "硝烟疾风盾", lv = {65,80}, v = {8.18, 4.0, 3.3} },
+    { n = "硝烟镜盾", lv = {81,9999}, v = {9.43, 4.8, 3.8} },
+}, "nitros", "O1")
+
+-- 帝国铁壁：单手剑与重盾同穿；不占用叠甲剑或水晶剑的原套装名额。
+addGroup("weapon", "单手剑", "onehand", {"physAtk", "hitValue", "atkSpeed"}, {
+    { n = "铁壁佩剑", lv = {65,80}, v = {16.34, 2.09, 4.1} },
+    { n = "帝国佩剑", lv = {81,9999}, v = {18.86, 2.41, 4.9} },
+}, "ironwall", "W1")
+addGroup("offhand", "重盾", nil, {"armor", "physBlockRate", "magBlockRate"}, {
+    { n = "帝国守卫盾", lv = {65,80}, v = {11.68, 3.3, 3.3} },
+}, "ironwall", "O7")
+
+-- 后续套装只补 81+ 档，保留全部旧模板及其套装归属。
+-- 巡林余烬：单手弩 + 轻盾 + 皮甲三件 + 饰品，六件实体，不启用双手五算六。
+addGroup("weapon", "单手弩", "onehand", {"physAtk", "atkSpeed", "hitValue"}, {
+    { n = "余烬手弩", lv = {81,9999}, v = {18.86, 4.9, 2.41} },
+}, "emberscout", "W43")
+addGroup("offhand", "轻盾", nil, {"dodge", "atkSpeed", "physBlockRate"}, {
+    { n = "巡林叶盾", lv = {81,9999}, v = {9.43, 4.8, 3.8} },
+}, "emberscout", "O1")
+addGroup("armor", "皮甲", nil, {"maxHp", "dodge"}, {
+    { n = "余烬猎衣", lv = {81,9999}, v = {303, 3.65} },
+}, "emberscout", "A1")
+addGroup("helmet", "皮甲", nil, {"hitValue", "maxHp"}, {
+    { n = "余烬猎帽", lv = {81,9999}, v = {2.40, 90} },
+}, "emberscout", "H1")
+addGroup("shoes", "皮甲", nil, {"atkSpeed", "agi"}, {
+    { n = "余烬猎靴", lv = {81,9999}, v = {4.6, 2.40} },
+}, "emberscout", "S1")
+addItem("巡林余烬坠", "项链", "accessory", {81,9999},
+    {{"hitValue", 8.04}, {"atkSpeed", 6.4}}, "emberscout", "C19")
+
+-- 万剑门扉：已有 W12 双手剑 + C23 饰品，补重甲三件即可按现有五槽特例计六件。
+addGroup("armor", "重甲", nil, {"maxHp", "armor", "hpBonus"}, {
+    { n = "门扉重铠", lv = {81,9999}, v = {303, 2.60, 3.1} },
+}, "swordgate", "A31")
+addGroup("helmet", "重甲", nil, {"hitValue", "maxHp"}, {
+    { n = "门扉战盔", lv = {81,9999}, v = {2.40, 90} },
+}, "swordgate", "H25")
+addGroup("shoes", "重甲", nil, {"atkSpeed", "agi"}, {
+    { n = "门扉战靴", lv = {81,9999}, v = {4.6, 2.40} },
+}, "swordgate", "S25")
+
+-- 衔骨饥渴：新增 81+ 单手斧、重盾与重甲三件，六个实体槽位均可穿。
+addGroup("weapon", "单手斧", "onehand", {"physAtk", "str"}, {
+    { n = "衔骨利斧", lv = {81,9999}, v = {18.86, 2.57} },
+}, "bonehunger", "W13")
+addGroup("offhand", "重盾", nil, {"armor", "physBlockRate", "magBlockRate"}, {
+    { n = "衔骨巨盾", lv = {81,9999}, v = {13.47, 3.8, 3.8} },
+}, "bonehunger", "O7")
+addGroup("armor", "重甲", nil, {"maxHp", "armor", "hpBonus"}, {
+    { n = "饥渴重铠", lv = {81,9999}, v = {303, 2.60, 3.1} },
+}, "bonehunger", "A31")
+addGroup("helmet", "重甲", nil, {"hitValue", "maxHp"}, {
+    { n = "饥渴战盔", lv = {81,9999}, v = {2.40, 90} },
+}, "bonehunger", "H25")
+addGroup("shoes", "重甲", nil, {"atkSpeed", "agi"}, {
+    { n = "饥渴战靴", lv = {81,9999}, v = {4.6, 2.40} },
+}, "bonehunger", "S25")
+
+-- 裂隙水晶：水晶魔杖 W36 与饰品 C12 已有，补不抢水脉法珠的魔典及布甲三件。
+addGroup("offhand", "魔典", nil, {"armor", "magPen", "magDmgBonus"}, {
+    { n = "裂晶魔典", lv = {81,9999}, v = {13.47, 3.78, 6.2} },
+}, "riftcrystal", "O13")
+addGroup("armor", "布甲", nil, {"energyShield", "esBonus"}, {
+    { n = "裂晶法袍", lv = {81,9999}, v = {91.07, 3.1} },
+}, "riftcrystal", "A55")
+addGroup("helmet", "布甲", nil, {"energyShield", "esBonus"}, {
+    { n = "裂晶法冠", lv = {81,9999}, v = {30.00, 3.00} },
+}, "riftcrystal", "H55")
+addGroup("shoes", "布甲", nil, {"dodge", "agi"}, {
+    { n = "裂晶法靴", lv = {81,9999}, v = {3.00, 2.40} },
+}, "riftcrystal", "S55")
+
+-- 无光星图：魔典 O18 与饰品 C32 已有，补单手魔杖及布甲三件。
+addGroup("weapon", "魔杖", "onehand", {"magAtk", "hitValue", "atkSpeed"}, {
+    { n = "无光魔杖", lv = {81,9999}, v = {18.86, 2.41, 4.9} },
+}, "starless", "W31")
+addGroup("armor", "布甲", nil, {"maxHp", "energyShield"}, {
+    { n = "星图法袍", lv = {81,9999}, v = {303, 36.43} },
+}, "starless", "A49")
+addGroup("helmet", "布甲", nil, {"hitValue", "maxHp"}, {
+    { n = "星图法冠", lv = {81,9999}, v = {2.40, 90} },
+}, "starless", "H49")
+addGroup("shoes", "布甲", nil, {"atkSpeed", "agi"}, {
+    { n = "星图法靴", lv = {81,9999}, v = {4.6, 2.40} },
+}, "starless", "S49")
+
+-- 赌徒残响：保留四件旧饰品的归属，新增主手、魔典和皮甲三件，由同一刺客穿齐。
+addGroup("weapon", "手铳", "onehand", {"magAtk", "hitValue", "comboRate"}, {
+    { n = "轮盘手铳", lv = {81,9999}, v = {18.86, 2.41, 6.4} },
+}, "gambler", "W49")
+addGroup("offhand", "魔典", nil, {"armor", "magPen", "magDmgBonus"}, {
+    { n = "赔率魔典", lv = {81,9999}, v = {13.47, 3.78, 6.2} },
+}, "gambler", "O13")
+addGroup("armor", "皮甲", nil, {"maxHp", "armor", "energyShield"}, {
+    { n = "荷官外衣", lv = {81,9999}, v = {303, 2.60, 18.22} },
+}, "gambler", "A7")
+addGroup("helmet", "皮甲", nil, {"energyShield", "armor"}, {
+    { n = "掷骰面罩", lv = {81,9999}, v = {15.00, 2.10} },
+}, "gambler", "H7")
+addGroup("shoes", "皮甲", nil, {"dodge", "agi"}, {
+    { n = "走桌软靴", lv = {81,9999}, v = {3.00, 2.40} },
+}, "gambler", "S7")
+
 -- ======================== 索引构建 ========================
 
 --- 按槽位分组的模板 ID 列表（用于随机掉落）
@@ -683,7 +808,9 @@ end
 ---@param templateId string 模板 ID（如 "W1", "O5", "A12", "C3"）
 ---@return string 图标资源路径
 function EquipmentConfig.getIconPath(templateId)
-    return "image/装备图标/UI_icon_ZB_" .. templateId .. ".png"
+    local tpl = EquipmentConfig.ITEMS[templateId]
+    local iconId = tpl and tpl.iconTemplateId or templateId
+    return "image/装备图标/UI_icon_ZB_" .. iconId .. ".png"
 end
 
 --- 根据品质等级获取品质背景框路径

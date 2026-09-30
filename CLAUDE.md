@@ -26,7 +26,7 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
-## 上次做了什么（2026-09-30，`feat930/equip-ascend-random-affixes` 装备升阶随机词条，已验证待 push）
+## 上次做了什么（2026-09-30，`feat930/equip-ascend-random-affixes` 装备升阶随机词条，已 push `91ba3952`）
 
 - **任务**：用户要求「装备升阶时多出随机词条」，拍板规则=**所有品质可参与；每跨过 +5 的倍数阶必得 1 条普通词条；普通词条总数上限 4；魔化词条不占普通上限**。基于 `workspace930` 新建 `feat930/equip-ascend-random-affixes`。
 - **核心实现** `rules/blacksmith/BlacksmithService.lua`：新增 `rollAscendAffixes(equip, fromLevel, toLevel)`，单阶 `AscendEquip` 与一键 `AscendEquipToLevel` **共用同一逐阶抽取逻辑**（按 `level % ASCEND_AFFIX_INTERVAL == 0` 判里程碑，复用 `EquipmentSystem.rollAffixes` 排除已有 key）。配置 `config/BlacksmithConfig.lua` 加 `ASCEND_AFFIX_INTERVAL=5`/`ASCEND_NORMAL_AFFIX_LIMIT=4`。

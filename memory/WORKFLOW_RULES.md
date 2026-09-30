@@ -11,12 +11,12 @@
 ## 当前状态（2026-09-30）
 
 - 仓库：https://github.com/FanZeros/changeForJourney.git（PAT 见用户指令）
-- 当前分支：`feat930/warehouse-relic-set-filter`（从 workspace930 拉出；PR #8 → workspace930；push 到本分支，禁止推 workspace930）
+- 当前分支：`feat930/warehouse-relic-set-filter`（PR #8 **已合并进 workspace930**，合并提交 f76102e3）
 - 活跃分支：`dev/ui-fixes-930a`（PR #6，装备详情UI优化 + 万单位改k/M/B，已合并最新 workspace930 解冲突）；`dev/930-story-detail-investigate`（PR #7，**已合并进 workspace930**）
-- PR：https://github.com/FanZeros/changeForJourney/pull/8（feat930/warehouse-relic-set-filter → workspace930）；https://github.com/FanZeros/changeForJourney/pull/6（dev/ui-fixes-930a → workspace930，用户指示提 PR 而非直接推送）
-- PR 创建方式备忘：GitHub API `POST /repos/FanZeros/changeForJourney/pulls`（PAT 认证 + 代理 http://127.0.0.1:1080），body 里 head=开发分支 base=workspace930；PR dirty 时本地 merge origin/workspace930 解冲突再 push
+- PR：https://github.com/FanZeros/changeForJourney/pull/8（**已合并**）；https://github.com/FanZeros/changeForJourney/pull/6（dev/ui-fixes-930a → workspace930，用户指示提 PR 而非直接推送）
+- PR 创建方式备忘：GitHub API `POST /repos/FanZeros/changeForJourney/pulls`（PAT 认证 + 代理 http://127.0.0.1:1080），body 里 head=开发分支 base=workspace930；PR dirty 时本地 merge origin/workspace930 解冲突再 push；合并用 `PUT /pulls/{n}/merge`（用户确认后执行）
 
-- 已完成任务9（2026-09-30，分支 feat930/warehouse-relic-set-filter，PR #8）：仓库/遗匣装备套装筛选（弹窗多选，品质+套装 AND 组合）
+- 已完成任务9（2026-09-30，分支 feat930/warehouse-relic-set-filter，PR #8 已合并）：仓库/遗匣装备套装筛选（弹窗多选，品质+套装 AND 组合）
   - 新组件 `scripts/ui/widget/SetFilterDialog.lua`：12 套装+「无套装」多选弹窗，套装色圆点、勾选实时写回调用方集合表、清空/完成、模态消费全部输入；NONE_KEY="none"
   - `scripts/config/EquipmentSetConfig.lua`：新增 SET_ORDER 固定展示顺序 + orderedSetIds()
   - 遗匣 `LootBoxPage.lua`：state.setFilter；入口按钮「套装·N」(cx=190,cy=286)；rebuildSummary 品质+套装 AND；批量领取/回收透传 (qualitySet, setFilter)；状态行/确认弹窗/空态文案联动

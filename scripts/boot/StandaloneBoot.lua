@@ -469,13 +469,21 @@ function M.run(rt)
                 if not battle.clearedStages then battle.clearedStages = {} end
                 battle.clearedStages[tostring(clearedNum)] = true
                 local nextId = StageConfig.getNextStageId(clearedNum)
-                if nextId then
+                if StageConfig.isTerminalTemple(clearedNum) then
+                    local reincarnationStage = StageConfig.getReincarnationTarget(StageConfig.getDifficulty(clearedNum))
+                    battle.currentStageId = reincarnationStage
+                    battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, reincarnationStage)
+                    battle.battleMode = "firstClear"
+                elseif nextId and not StageConfig.isTerminalTemple(nextId) then
                     battle.currentStageId = nextId
                     if nextId > (tonumber(battle.maxStageId) or 0) then
                         battle.maxStageId = nextId
                     end
                     local nextCleared = battle.clearedStages[tostring(nextId)] == true
                     battle.battleMode = nextCleared and "idle" or "firstClear"
+                else
+                    battle.currentStageId = clearedNum
+                    battle.battleMode = "idle"
                 end
                 print(string.format("[Standalone] 首通进度已写入 current=%s max=%s",
                     tostring(battle.currentStageId), tostring(battle.maxStageId)))

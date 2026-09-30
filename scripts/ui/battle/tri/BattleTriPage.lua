@@ -21,6 +21,8 @@ local RewardPopup  = require("ui.hud.popup.RewardPopup")
 local SweepDialog       = require("ui.battle.stage.SweepDialog")
 local DamageStatsPanel  = require("ui.battle.popup.DamageStatsPanel")
 local StageSelectDialog = require("ui.battle.stage.StageSelectDialog")
+local TerminalConfirmDialog = require("ui.battle.popup.TerminalConfirmDialog")
+local TerminalRaid = require("ui.battle.tri.TerminalRaid")
 local SoundToggle       = require("ui.widget.SoundToggle")  -- [音效开关] 行1 HUD 快捷按钮
 local EquipmentBag      = require("ui.character.equip.EquipmentBag")
 local StageConfig       = require("config.StageConfig")
@@ -39,6 +41,7 @@ local COL_COUNT = ExpTable.TEAM_COUNT or 3
 local isOpen_ = false
 local inited = false
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
+local terminalRaid = nil
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local triOnStageClear = nil -- function(teamIdx, clearedStageId)
@@ -68,6 +71,9 @@ function BattleTriPage.invalidateTeams(onlyTeams)
 end
 
 
+-- [终焉协同] 前向声明：ensureDrivers 的终焉接管分支引用（定义在下方）
+local startTerminalRaid
+
 --- 创建新解锁队伍的战斗驱动；已存在的驱动保留关卡进度。
 --- 小队1跟主线 BattleScene 的当前关，避免共用驱动后从第一关重开。
 local function ensureDrivers()
@@ -91,7 +97,8 @@ local function ensureDrivers()
                 -- 先把主线关卡切到下一关，再发首通。否则存档已是 1-2，
                 -- BattleScene 仍停在 1-1，下一帧同步会把第一队拉回去。
                 local nextId = StageConfig.getNextStageId(clearedStageId)
-                if nextId and BattleScene.getStageId() ~= nextId then
+                if nextId and not StageConfig.isTerminalTemple(nextId)
+                    and BattleScene.getStageId() ~= nextId then
                     BattleScene.adoptStageProgress(nextId)
                 end
                 if BattleScene.onFirstClear then
@@ -109,6 +116,13 @@ local function ensureDrivers()
     end
     local teamOne = drivers[1]
     local mainStage = BattleScene.getStageId()
+    -- [终焉协同] 主线经单队路径进入终焉（BattleScene 确认框）后打开三行页：
+    -- 三行页接管为协同战，队一绝不单独 start(终焉)（会按普通规则清关闭环）。
+    if mainStage and StageConfig.isTerminalTemple(mainStage) and not terminalRaid then
+        print("[BattleTriPage] 主线停在终焉 " .. tostring(mainStage) .. "，接管为三队协同战")
+        startTerminalRaid(mainStage)
+        return unlocked
+    end
     if teamOne and mainStage and teamOne.stageId ~= mainStage
         and teamOne.stageId == teamOne._syncedMainStage then
         teamOne._syncedMainStage = mainStage
@@ -117,6 +131,81 @@ local function ensureDrivers()
         teamOne._syncedMainStage = teamOne.stageId
     end
     return unlocked
+end
+
+local function clearTerminalRaid()
+    if not terminalRaid then return end
+    terminalRaid:release()
+    for row = 1, COL_COUNT do
+        if drivers[row] then drivers[row].terminalRaid = nil end
+    end
+    terminalRaid = nil
+end
+
+startTerminalRaid = function(stageId)
+    clearTerminalRaid()
+    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    for row = 1, math.min(COL_COUNT, unlocked) do
+        drivers[row]:start(stageId)
+        drivers[row]._syncedMainStage = stageId
+    end
+    terminalRaid = TerminalRaid.new(stageId, drivers)
+    for row = 1, math.min(COL_COUNT, unlocked) do
+        drivers[row].terminalRaid = terminalRaid
+    end
+    if terminalRaid.maxHp <= 0 then
+        terminalRaid:finish(false)
+    end
+end
+
+--- 胜利时按战线结算 Boss 击杀奖励（经验/金币）。
+--- 共享池被打空 = 三路 Boss 同时死亡，与主线「敌人死亡即上报击杀」等价；
+--- 每路取该队当时存活英雄作为经验分配名单（全灭队只计金币/玩家经验）。
+local function settleRaidKillRewards(raid)
+    for row = 1, COL_COUNT do
+        local enemy = raid.lines[row]
+        local drv = drivers[row]
+        if enemy and drv and triOnKill then
+            local heroIds = {}
+            for _, u in ipairs(drv.allies) do
+                if u.hp > 0 and u.heroId then heroIds[#heroIds + 1] = u.heroId end
+            end
+            triOnKill({
+                teamIdx = row,
+                stageId = raid.stageId,
+                expReward = enemy.expReward or 0,
+                goldReward = enemy.goldReward or 0,
+                heroIds = heroIds,
+                allyCount = #heroIds,
+            })
+        end
+    end
+end
+
+local function finishTerminalRaid(won)
+    local raid = terminalRaid
+    if not raid then return end
+    local stageId = raid.stageId
+    clearTerminalRaid()
+    local BattleScene = require("ui.battle.scene.BattleScene")
+    if won then
+        settleRaidKillRewards(raid)
+        BattleScene.completeTriTerminal(stageId)
+    else
+        local previous = StageConfig.getTerminalPrevStageId(stageId)
+        BattleScene.adoptStageProgress(previous)
+        BattleTriPage.gotoTeamStage(1, previous)
+        -- 进终焉时导航被锁定（NavLogic gotoStage），失败退回必须解锁
+        require("ui.hud.BottomNav").setAllLocked(false)
+        require("systems.GameBGM").setScene("battle")
+    end
+    for row = 2, COL_COUNT do
+        if drivers[row] then
+            drivers[row]:start(won and (StageConfig.getReincarnationTarget(StageConfig.getDifficulty(stageId)) or stageId)
+                or (StageConfig.getTerminalPrevStageId(stageId) or stageId))
+        end
+    end
+    print(string.format("[BattleTriPage] 终焉%s，三队协同结束 stage=%d", won and "胜利" or "失败", stageId))
 end
 
 --- 打开三行战斗（懒建驱动器；已解锁队伍自动开战）
@@ -192,6 +281,18 @@ function BattleTriPage.update(dt)
         local drv = drivers[t]
         if drv then drv:update(dt) end
     end
+    if terminalRaid and not terminalRaid.finished then
+        terminalRaid.elapsed = terminalRaid.elapsed + dt
+        if terminalRaid.hp <= 0 then
+            terminalRaid:finish(true)
+        elseif terminalRaid.elapsed >= require("config.GameConfig").Battle.TIME_LIMIT_SEC then
+            terminalRaid:finish(false)
+        end
+    end
+    if terminalRaid and terminalRaid.finished then
+        finishTerminalRaid(terminalRaid.won)
+    end
+    TerminalConfirmDialog.update()
     -- 三行结束后恢复默认状态，避免后续单场界面读到最后一队的数据。
     BattleStats.mount(0)
     BattleCombat.mount(nil)
@@ -328,7 +429,11 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgFontSize(vg, 22)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local stageText
-        if drivers[row] then
+        if terminalRaid and row <= unlocked then
+            -- [终焉协同] 行标签追加失守状态；共享池进度替代普通关卡进度
+            local raidTag = (terminalRaid.defeated[row]) and "（已失守）" or ""
+            stageText = string.format("【小队%d】终焉神殿%s", row, raidTag)
+        elseif drivers[row] then
             stageText = string.format("【小队%d】%s", row, stageDisplayName(drivers[row].stageId))
         elseif row <= unlocked then
             stageText = string.format("【小队%d】准备中", row)
@@ -337,10 +442,50 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         end
         -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上
         nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
+        if terminalRaid and terminalRaid.defeated[row] then
+            nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
+        end
         nvgText(vg, ix + 28, iy + 25, stageText, nil)
 
+        -- [终焉协同] 每行底部进度条替换为共享生命池（绯红），行1 附加数值与倒计时
+        if terminalRaid and row <= unlocked and terminalRaid.maxHp > 0 then
+            local ratio = math.max(0, math.min(1, terminalRaid.hp / terminalRaid.maxHp))
+            local barW = math.min(iw * 0.62, 280)
+            local barH = 10
+            local barX = ix + (iw - barW) * 0.5
+            local barY = iy + ih - 8
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, barX, barY, barW, barH, 5)
+            nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
+            nvgFill(vg)
+            if ratio > 0 then
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, barX, barY, math.max(barH, barW * ratio), barH, 5)
+                nvgFillColor(vg, nvgRGBA(196, 62, 62, 235))
+                nvgFill(vg)
+            end
+            if row == 1 then
+                -- 行1 显示共享池数值 + 剩余时限（行2/3 只显示同步血条，避免文字堆叠）
+                local NumberUtil = require("core.NumberUtil")
+                nvgFontSize(vg, 16)
+                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+                nvgFillColor(vg, nvgRGBA(255, 205, 195, 255))
+                nvgText(vg, ix + iw * 0.5, barY - 12,
+                    string.format("共享生命 %s / %s",
+                        NumberUtil.format(terminalRaid.hp), NumberUtil.format(terminalRaid.maxHp)), nil)
+                local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
+                local left = math.max(0, math.ceil(timeLimit - terminalRaid.elapsed))
+                nvgFontSize(vg, 22)
+                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+                nvgFillColor(vg, left <= 30 and nvgRGBA(255, 120, 110, 255)
+                    or nvgRGBA(236, 226, 198, 255))
+                nvgText(vg, ix + 28, iy + 55,
+                    string.format("限时 %d:%02d", left // 60, left % 60), nil)
+            end
+        end
+
         local killed, total
-        if row <= unlocked and drivers[row] and #drivers[row].allies > 0 then
+        if not terminalRaid and row <= unlocked and drivers[row] and #drivers[row].allies > 0 then
             killed, total = drivers[row].kills, drivers[row].stageTotal
         end
         if killed and total and total > 0 then
@@ -385,8 +530,9 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         end
     end
 
-    -- [对话框覆盖] 选关/扫荡/统计：按当前横屏可用区域放大到 2 倍。
-    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
+    -- [对话框覆盖] 选关/扫荡/统计/终焉确认：按当前横屏可用区域放大到 2 倍。
+    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
+        or TerminalConfirmDialog.isOpen() then
         local fit = math.min(logicalW / 1080, logicalH / 2400) * 2
         nvgSave(vg)
         nvgScissor(vg, 0, 0, logicalW, logicalH)
@@ -396,6 +542,9 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         if SweepDialog.isOpen() then SweepDialog.draw(vg) end
         if DamageStatsPanel.isOpen() then DamageStatsPanel.draw(vg) end
         if StageSelectDialog.isOpen() then StageSelectDialog.draw(vg) end
+        if TerminalConfirmDialog.isOpen() then
+            TerminalConfirmDialog.draw(vg, BattleScene.getStageId(), function() return StageConfig end)
+        end
         nvgRestore(vg)
     end
 
@@ -427,10 +576,25 @@ end
 ---@param stageId number
 ---@return boolean
 function BattleTriPage.gotoTeamStage(teamIdx, stageId)
+    local BattleScene = require("ui.battle.scene.BattleScene")
+    if StageConfig.isTerminalTemple(stageId) then
+        if terminalRaid then return false end
+        local previous = StageConfig.getTerminalPrevStageId(stageId)
+        local cleared = BattleScene.getClearedStages()
+        local maxStage = BattleScene.getMaxStageId()
+        if not previous or maxStage < previous
+            or not (cleared[previous] or cleared[tostring(previous)]) then
+            return false
+        end
+        if not BattleScene.gotoStage(stageId) then return false end
+        startTerminalRaid(stageId)
+        require("systems.GameBGM").setScene("samsara", { fromStart = true })
+        return true
+    end
+    if terminalRaid then return false end
     local drv = drivers[teamIdx]
     if not drv then return false end
     if teamIdx == 1 then
-        local BattleScene = require("ui.battle.scene.BattleScene")
         if not BattleScene.gotoStage(stageId) then return false end
     end
     drv:start(stageId)
@@ -443,7 +607,8 @@ end
 --- 已解锁的其他队伍与第一行保持同一套按钮。
 function BattleTriPage.drawHud(vg, logicalW, logicalH)
     if not isOpen_ then return end
-    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen() then
+    if SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
+        or TerminalConfirmDialog.isOpen() or terminalRaid then
         return
     end
     local BattleScene = require("ui.battle.scene.BattleScene")
@@ -568,6 +733,15 @@ end
 ---@return boolean
 function BattleTriPage.handleInput(wx, wy)
     if not isOpen_ then return false end
+
+    if TerminalConfirmDialog.isOpen() then
+        local dx, dy = dialogToDesign(wx, wy)
+        TerminalConfirmDialog.handleInput(dx, dy, function(nextId)
+            BattleTriPage.gotoTeamStage(1, nextId)
+        end)
+        return true
+    end
+    if terminalRaid then return true end
 
     -- 全窗扫荡弹窗优先于装备背包覆盖层处理
     if SweepDialog.isOpen() then

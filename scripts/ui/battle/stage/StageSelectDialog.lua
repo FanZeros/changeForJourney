@@ -142,7 +142,7 @@ local function collectChapterGroups()
     for _, id in ipairs(ids) do
         local key
         if SC.isTerminalTemple(id) then
-            key = "T"
+            key = "T" .. tostring(id)
         else
             key = math.floor(id / 100)
         end
@@ -151,7 +151,7 @@ local function collectChapterGroups()
             gi = #groups + 1
             indexOf[key] = gi
             local name
-            if key == "T" then
+            if type(key) == "string" then
                 name = "终焉"
             else
                 name = SC.getChapterName(key)
@@ -178,13 +178,21 @@ local function ensureCache()
     if not maxStage or maxStage < 1 then
         maxStage = SC.NORMAL_FIRST_STAGE or 101
     end
-    if not state.cacheGroups or state.cacheMaxStage ~= maxStage then
+    local nextId = SC.getNextStageId(maxStage)
+    local cleared = BS.getClearedStages()
+    local terminalUnlocked = nextId and SC.isTerminalTemple(nextId)
+        and (cleared[maxStage] or cleared[tostring(maxStage)])
+    if not state.cacheGroups or state.cacheMaxStage ~= maxStage
+        or state.cacheTerminalUnlocked ~= terminalUnlocked then
         local groups, order = collectChapterGroups()
         state.cacheGroups = groups
         state.cacheOrder = order
         state.cacheMaxStage = maxStage
-        -- 解锁基准: maxStage 的链序; 链上找不到(如转生后 id)则视为全解锁
+        state.cacheTerminalUnlocked = terminalUnlocked
         state.cacheMaxOrder = (maxStage and order[maxStage]) or ids_of(groups)
+        if terminalUnlocked then
+            state.cacheMaxOrder = order[nextId] or state.cacheMaxOrder
+        end
     end
     return state.cacheGroups, state.cacheMaxOrder
 end
@@ -314,7 +322,7 @@ function StageSelectDialog.open(teamIdx)
     -- 定位到当前关所在章节
     local curKey
     if curStage and SC.isTerminalTemple(curStage) then
-        curKey = "T"
+        curKey = "T" .. tostring(curStage)
     elseif curStage then
         curKey = math.floor(curStage / 100)
     end
@@ -494,7 +502,7 @@ function StageSelectDialog.draw(vg)
             drawImageCentered(vg, imgLock, x + D.CH_W - 22, y + 22, 30, 30, 0.9)
         end
         local rel
-        if g.key == "T" then
+        if type(g.key) == "string" then
             rel = "终焉"
         else
             rel = tostring(SC.getRelativeChapter(g.key)) .. " 章"
@@ -710,7 +718,9 @@ function StageSelectDialog.handleInput(x, y)
                 end
                 if id == currentStageId() then return true end
                 local ok
-                if state.targetTeam then
+                if SC.isTerminalTemple(id) then
+                    ok = require("ui.battle.tri.BattleTriPage").gotoTeamStage(1, id)
+                elseif state.targetTeam then
                     local BattleTriPage = require("ui.battle.tri.BattleTriPage")
                     ok = BattleTriPage.gotoTeamStage(state.targetTeam, id)
                 else

@@ -26,6 +26,18 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30，`feat/final-boss-three-teams-0930` 终焉三队协同战，**未提交，工作区**）
+
+- **背景**：分支基点 `workspace930@2d423b8`，**远端 origin/workspace930 已领先 1203 提交**（离线7日硬顶、装备等级门槛、终焉单难度独立组 `4b43cd36` 等）。本轮全部改动仍在工作区未提交，推送前必须先 rebase/merge 核对。
+- **已实现（上一轮遗留 + 本轮补齐）**：终焉神殿（999/1999/…）三队协同战——`ui/battle/tri/TerminalRaid.lua` 三 Boss 共享生命池（包装 `attrs.takeDamage/heal`，任一路受击→池扣血→`sync()` 回写三路显示 HP，池空即全队胜利）；`BattleTriPage` 的 `startTerminalRaid/finishTerminalRaid/clearTerminalRaid` 接线；`BattleTriDriver` raid 模式分支（单队全灭=`onTeamDefeated` 停摆不退关、关逐tick击杀上报/补位/自动推进、池空break攻击推进）；胜→`BattleScene.completeTriTerminal`（轮回目标+存档+首通回调），败→退终焉前关。
+- **本轮补齐三项待办**：① **共享血条 UI**——`BattleTriPage.draw` raid 期间三行底部进度条换绯红共享池血条，行1 显示「共享生命 X/Y」+「限时 M:SS」倒计时（≤30s 转红），行标签追加失守态；② **胜利奖励去重**——`completeTriTerminal` 仅 `wasFirstClear`（该终焉此前未通关）时触发 `onFirstClearCallback`，重打不再重复发 fcExp；`battleMode` 按轮回目标关是否已通关决定 idle/firstClear；③ **击杀奖励结算**——`settleRaidKillRewards` 胜利时按 `raid.lines[row]` 逐战线上报 Boss exp/gold（终焉 Boss `dropRate=0` 无掉落、`fcEquip=0`，不与首通回调重复发装备）。
+- **额外修的 bug**：失败分支补 `BottomNav.setAllLocked(false)`（进终焉时 NavLogic 锁了导航，否则失败后底部导航永久锁死）；`ensureDrivers` 加终焉接管兜底（主线经单队路径停终焉关、打开三行页时自动 `startTerminalRaid`，队一绝不单独 start(终焉) 否则按普通规则清关闭环循环）——为此 `startTerminalRaid` 改**前向声明**（`local startTerminalRaid` + 下方 `startTerminalRaid = function(...)`，已验证未泄漏 `_G`）。
+- **读档恢复结论**：`BattleSchema` 的 `terminalFallback` 已保证存档层不持久化终焉关（重登回退该难度末关），无需额外字段；运行时兜底由 `ensureDrivers` 接管。队二/三 stageId 仍不持久化（本就不入库），重登后回 101。
+- **测试**：新增 `scripts/tests/terminal_raid_test.lua`（**ALL PASS**，含 `engine:Exit()` 不挂起）：池=三Boss HP和/三路同步/takeDamage-heal 回池/release 还原/单队失守停摆不退关/失守队 tick 停摆/池空任一路判胜/finish 幂等/全员失守判败/终焉每队仅1 Boss/completeTriTerminal 轮回推进+奖励去重(首通回调恰好1次)。**踩坑**：终焉 Boss 自带能量护盾全额吸收小额伤害，测试需先清 `energyShield/tempEnergyShield` 再断言 takeDamage>0。
+- **回归**：battle_stage_switch ALL PASS、battle_ally_compaction ALL PASS、boss_affix_test(37断言) ALL PASS、boss_affix_smoke ALL PASS、shield_scaling ALL PASS、character_team_sync PASS；LSP 全工作区 275 文件 Error=0；官方 Build 成功（382 Lua 入包，含 TerminalRaid + terminal_raid_test）；主入口 60 帧无 Lua 逻辑错误（仅既有 UI 品质框贴图缺失，非本轮）。
+- **⚠️ 遗留未修（非本轮范围，rebase 时处理）**：`chapter_team_offline_test` 失败——工作区 `StageSelectDialog` 把终焉从单组 `"T"` 拆成 14 个逐难度独立组（与远端 `4b43cd36` **同源但不同实现**：远端带 `subLabel` 难度名 + `TT_Y=732/ROW_Y0=790` 布局，工作区无 subLabel + `TT_Y=690/ROW_Y0=756`），但该测试断言还停在旧 `TOTAL_CHAPTERS+1` 与旧坐标。已 `git checkout` 还原测试文件，**不留半成品**；rebase 远端时应整体采用远端 StageSelectDialog + 远端测试版本（两套拆分二选一），否则断言无法干净通过。
+- **视觉验收待办**：共享血条/倒计时/失守灰字的真人预览验收（本机 surfaceless 无法截图）。
+
 ## 上次做了什么（2026-09-29 续，古树背景重绘，已 push `4559fd8`）
 
 - **任务**：`UI_GS_TFBJ_dark.png`（终焉古树天赋页背景）横向拉伸。根因：绘制框 `pageW×TF.bgH = 1080×1.8(HORIZON_WIDTH_SCALE)×2400 = 1944×2400`，原图 1080×2400 → 横向拉 1.8 倍。

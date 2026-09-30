@@ -439,11 +439,14 @@ local DIM_ICON_ALPHA = 0.45                                     -- 非路径图�
 ---@param h number
 local function drawPathGlow(vg, cx, cy, w, h)
     local r = math.max(w, h) * 0.5
+    -- 测试桩会把全局 nvgRGBA 覆写为返回 number，LSP 推联合类型；cast 收窄
+    local glowIn = nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 110)
+    ---@cast glowIn NVGcolor
+    local glowOut = nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 0)
+    ---@cast glowOut NVGcolor
     nvgBeginPath(vg)
     nvgCircle(vg, cx, cy, r * 1.45)
-    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, r * 0.85, r * 1.45,
-        nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 110),
-        nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 0)))
+    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, r * 0.85, r * 1.45, glowIn, glowOut))
     nvgFill(vg)
     nvgBeginPath(vg)
     nvgRoundedRect(vg, cx - w * 0.5 - 4, cy - h * 0.5 - 4, w + 8, h + 8, 29)

@@ -1,16 +1,22 @@
 # changeForJourney（终焉之门）项目工作铁律
 
-> 强化记忆：以下规则在每轮任务中必须遵守。
+> 强化记忆：以下规则在每轮任务中必须遵守。**每轮开始工作前先重读本节。**
 
 1. **不能取消/退出任务**：必须持续推进直到完成。
-2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。
-3. **以新分支继续开发**：如 workspace928 → workspace929 → workspace930...，每次完成后 commit + push 到当前工作分支。
-4. **部署位置**：游戏项目内容直接放 /workspace 根目录（不嵌套子目录），修改代码后调用官方 build 工具构建。
+2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。这是硬性收尾动作，任何任务（包括纯调研）完成后都必须调用 AskUserQuestion。
+3. **以新分支继续开发**：基于 workspace930 拉新分支（当前：`dev/930-story-detail-investigate`），每次完成后 commit + push 到该开发分支；**禁止 push 到 workspace930 分支本身**（用户明确要求）。
+4. **部署位置**：仓库克隆在 `/workspace/changeForJourney`，游戏项目根即该目录（scripts/、assets/ 在其下），修改代码后调用官方 build 工具构建。
 
 ## 当前状态（2026-09-30）
 
 - 仓库：https://github.com/FanZeros/changeForJourney.git（PAT 见用户指令）
-- 当前分支：workspace930
+- 当前分支：dev/930-story-detail-investigate（基于 workspace930 @4a152ca8）
+- 已完成任务5（2026-09-30）：**调研"角色点击详情一直显示剧情"**，报告见 `docs/角色详情剧情显示调研-0930.md`
+  - 唯一入口：CharacterDetail.open/_switchHero → HeroScenario.onOpenHero，仅玩梗四人 18/19/24/25 生效
+  - 根因：闲聊剧情 78–81 只记在**内存表 idleSeen_**（不落档），设计上"每局进程每角色播一次"→ 每次重启 build/预览后点详情必弹
+  - 次生问题：showScenario 忙时 enqueue 进 pending_，但 pending_ 只在下次 onOpenHero/onRecruitResults 时才 drain（ScenarioDialogue 播完无广播）→ 延迟到"下次点详情"突然补播，体感每点必弹
+  - 入队 74–77 已落档（markClaimed→claimedScenarios→Flush），跨进程只播一次；4a152ca8 已给 markClaimed 加 pcall 保护
+  - 候选修复：A 闲聊也 markClaimed 落档（终身一次）/ B session 独立字段 / C 对话结束广播驱动 drainPending / D 详情页不播闲聊；推荐 A+C
 - 已完成任务：锻炉页等阶角标统一右上显示
   - `scripts/ui/blacksmith/BlacksmithPage.lua`：工作台槽升阶角标 "+N" 从左上（drawTextStroke 绿 0x67ff75）改为右上（NVG_ALIGN_RIGHT+TOP、字体36、绿 0x00ff60 + 黑描边），与仓库格子 BackpackGrids.lua:143 的角标位置/样式完全一致；删除无用常量 EQUIP_LV_FONT_SIZE
   - 同轮梳理洗练四石逻辑（见下方"洗练石头逻辑速览"）

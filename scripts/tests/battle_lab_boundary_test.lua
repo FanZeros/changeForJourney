@@ -285,7 +285,7 @@ local function testMode()
     check(prepared and prepared.mode == "firstClear", "未知 mode → firstClear")
 end
 
--- ── 9) 三套六槽：两档装备均同级可得、同职业可穿、实际计为六件 ──
+-- ── 9) 套装六槽：同级可得、同英雄可穿，五槽特例需真双手 ──
 local function testSetCoverage()
     local EC = require("config.EquipmentConfig")
     local SC = require("config.EquipmentSetConfig")
@@ -298,9 +298,18 @@ local function testSetCoverage()
         { "nitros", 13, 85, { weapon="W75", offhand="O32", armor="A18", helmet="H18", shoes="S18", accessory="C22" } },
         { "ironwall", 10, 70, { weapon="W76", offhand="O33", armor="A41", helmet="H41", shoes="S41", accessory="C30" } },
         { "ironwall", 10, 85, { weapon="W77", offhand="O12", armor="A48", helmet="H48", shoes="S48", accessory="C30" } },
+        { "emberscout", 13, 85, { weapon="W78", offhand="O34", armor="A61", helmet="H61", shoes="S61", accessory="C37" } },
+        { "swordgate", 16, 85, { weapon="W12", armor="A62", helmet="H62", shoes="S62", accessory="C23" } },
+        { "bonehunger", 1, 85, { weapon="W79", offhand="O35", armor="A63", helmet="H63", shoes="S63", accessory="C14" } },
+        { "riftcrystal", 20, 85, { weapon="W36", offhand="O36", armor="A64", helmet="H64", shoes="S64", accessory="C12" } },
+        { "starless", 20, 85, { weapon="W80", offhand="O18", armor="A65", helmet="H65", shoes="S65", accessory="C32" } },
+        { "gambler", 14, 85, { weapon="W81", offhand="O37", armor="A66", helmet="H66", shoes="S66", accessory="C33" } },
     }
-    check(EC.TOTAL_COUNT == 326 and EC.SLOT_COUNT.weapon == 77 and EC.SLOT_COUNT.offhand == 33,
-        "三套新增八个模板，不改变旧模板 ID")
+    check(EC.TOTAL_COUNT == 353 and EC.SLOT_COUNT.weapon == 81
+        and EC.SLOT_COUNT.offhand == 37 and EC.SLOT_COUNT.armor == 66
+        and EC.SLOT_COUNT.helmet == 66 and EC.SLOT_COUNT.shoes == 66
+        and EC.SLOT_COUNT.accessory == 37,
+        "原模板 ID 不变，当前共 353 个模板")
     check(SC.getSetIdForTemplate(EC.ITEMS.W36) == "riftcrystal"
         and SC.getSetIdForTemplate(EC.ITEMS.W48) == "riftcrystal"
         and SC.getSetIdForTemplate(EC.ITEMS.W5) == "carapace"
@@ -320,22 +329,37 @@ local function testSetCoverage()
         local label = setId .. " Lv" .. level
         if prepared then
             local data = { inventory = {}, equipped = { [heroId] = {} } }
+            local equippedCount = 0
             for index, slot in ipairs(EC.SLOTS) do
                 local tid = loadout[slot]
-                data.inventory[tostring(index)] = ES.generate(tid, level, 1)
-                data.equipped[heroId][slot] = index
-                check(SC.getSetIdForTemplate(EC.ITEMS[tid]) == setId,
-                    label .. " " .. slot .. " 模板确实归属本套")
-                check(EC.getIconPath(tid) ~= nil, label .. " " .. slot .. " 图标路径可取得")
+                if tid then
+                    local tpl = EC.ITEMS[tid]
+                    check(tpl ~= nil and level >= tpl.levelRange[1] and level <= tpl.levelRange[2],
+                        label .. " " .. slot .. " 等级范围匹配")
+                    data.inventory[tostring(index)] = ES.generate(tid, level, 1)
+                    data.equipped[heroId][slot] = index
+                    equippedCount = equippedCount + 1
+                    check(SC.getSetIdForTemplate(tpl) == setId,
+                        label .. " " .. slot .. " 模板确实归属本套")
+                    local iconId = tpl.iconTemplateId or tid
+                    check(EC.getIconPath(tid) == EC.getIconPath(iconId),
+                        label .. " " .. slot .. " 图标映射到 " .. iconId)
+                end
             end
             local counts, twoHand = Sets.countSets(data, heroId, ES.getFromInventory, ES.getHeroSlots)
             local rows = Sets.summarize(counts)
-            check(counts[setId] == 6 and not twoHand and #rows == 1
+            local isTwoHand = loadout.offhand == nil
+            check(equippedCount == (isTwoHand and 5 or 6)
+                and counts[setId] == 6 and twoHand == isTwoHand and #rows == 1
                 and rows[1].fourActive and rows[1].sixActive,
-                label .. " 实际六件、4/6 效果已激活")
-            data.equipped[heroId].offhand = nil
+                label .. " 满套实际激活（" .. equippedCount .. " 件装备）")
+            if isTwoHand then
+                data.equipped[heroId].accessory = nil
+            else
+                data.equipped[heroId].offhand = nil
+            end
             local fiveCounts = Sets.countSets(data, heroId, ES.getFromInventory, ES.getHeroSlots)
-            check(fiveCounts[setId] == 5, label .. " 卸副手后只剩五件")
+            check(fiveCounts[setId] < 6, label .. " 卸一件后六件效果失效")
         end
     end
 end

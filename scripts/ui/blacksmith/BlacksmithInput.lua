@@ -125,6 +125,14 @@ function M.bind(deps)
                     state.tabFrom = state.tab
                     state.tabSwitchTime = time.elapsedTime
                     state.tab = newTab
+                    -- 切 tab 时刷新目标子模块数据（如升阶后切洗练要显示最新词缀）
+                    if state.selectedEquip then
+                        if newTab == "xilian" then
+                            BlacksmithRefine.updateRefineData(state.selectedEquip)
+                        else
+                            BlacksmithEnhance.updateEnhanceData(state.selectedEquip)
+                        end
+                    end
                     require("systems.GameSFX").playUIMove(2)
                     print("[BlacksmithPage] 切换到: " .. TAB_ITEMS[i].name)
                 end

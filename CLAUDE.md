@@ -39,9 +39,9 @@
 ## 上次做了什么（2026-09-30 续10，升阶占位词条行 》??? +?，已 merge 回 930）
 
 - **任务**：用户要求升阶面板「随机词条不用小字显示，而是直接显示个》然后后面接上属性 ??? +?」（截图黄框位置=词条区下一行）。AskUserQuestion 三选项均选推荐：词条行同格式、移除里程碑小字、一键升阶弹窗不改。
-- **实现**：`BlacksmithEnhance.lua` 新增纯函数 `M.buildAffixPreview`（下一阶为里程碑且普通词条未满员 → `{name="???",val="+?"}`，否则 nil）+ `drawAffixPreviewRow`（金色》在等级图标列 366 / ??? 名称列半透明 / +? 升阶后绿色半透明值框，字号 34/30）；`drawPanel` 词缀循环后按 `affixY` 续行绘制；`buildAffixHint` 删除里程碑分支（小字仅保留满员/常规两态）。一键升阶弹窗 `EMDLG` 文案未动。
+- **实现**：`BlacksmithEnhance.lua` 新增纯函数 `M.buildAffixPreview`（下一阶为里程碑且普通词条未满员 → `{name="???",val="+?"}`，否则 nil）+ `drawAffixPreviewRow` 最终形态：??? 名称列（与上方词条名同位同号、不透明棕）→ 中间 `imgArrow` 箭头图（同属性行提升箭头同列同尺寸）→ 升阶后绿色半透明值框内 +?（不透明深灰）；`drawPanel` 词缀循环后按 `affixY` 续行绘制；`buildAffixHint` 删除里程碑分支（小字仅保留满员/常规两态）。一键升阶弹窗 `EMDLG` 文案未动。
 - **验证**：`ascend_hint_test.lua` 改写为 hint+preview 双函数回归 23 断言 ALL PASS；`equip_ascend_affix_test` ALL PASS；LSP 两文件 0 Error；官方 Build 成功；主入口 headless 70s 0 Lua 错（boot 18/18 + 存档落盘）。沙箱首次装 `.cli/UrhoXRuntime`（install 脚本一次 502 重试即全）。
-- **流程**：基线 workspace930（tip db378463）→ 任务分支 `feat930/ascend-affix-preview-row` 推送 `168e1057`/`5634437d`；用户授权后 merge 回 930——930 先前进到 `156541bb`（并行会话洗练锁定阶梯计费+古树透明等 10 提交），代码零重叠、仅 CLAUDE.md 记忆块冲突（对方续9 vs 我方续9，我方改编号续10 双保留；amend 修掉一处漏删的 `>>>>>>>` 残留）；推送前再 fetch 又撞 `e2f33fc0`（星图渐隐带加宽），二次 merge 无冲突，最终 ff 推 930 至 `72229687`。合并态回归 4 套 ALL PASS（ascend_hint 23 / equip_ascend_affix / refine_cost_fixed / auto_decompose）；Build 成功；主入口冒烟 0 Lua 错。部署：repo 代码 cp 到 /workspace 根（scripts/assets 313M/i18n）。PAT 走一次性 URL，origin 已 set-url 清洗为零残留。⚠️ 用户提供的 PAT 应在任务后撤销更换。
+- **流程**：基线 workspace930（tip db378463）→ 任务分支 `feat930/ascend-affix-preview-row` 推送 `168e1057`/`5634437d`；用户授权后 merge 回 930——930 先前进到 `156541bb`（并行会话洗练锁定阶梯计费+古树透明等 10 提交），代码零重叠、仅 CLAUDE.md 记忆块冲突（对方续9 vs 我方续9，我方改编号续10 双保留；amend 修掉一处漏删的 `>>>>>>>` 残留）；推送前再 fetch 又撞 `e2f33fc0`（星图渐隐带加宽），二次 merge 无冲突，最终 ff 推 930 至 `72229687`。合并态回归 4 套 ALL PASS（ascend_hint 23 / equip_ascend_affix / refine_cost_fixed / auto_decompose）；Build 成功；主入口冒烟 0 Lua 错。**视觉两轮纠偏**：初版 》画文字在等级图标列被否——用户要的是「中间升级效果」位的**箭头图**（`imgArrow`，同属性行提升箭头同列同尺寸），??? 留在名称列（与上方词条名同位同号、不透明棕），+? 在升阶后绿色值框；最终形态 `3da2376e` 已 ff 入 930（`91199760`，中途又 merge 并行会话 `0b2975ae` 补 meta，零冲突）。部署：repo 代码 cp 到 /workspace 根（scripts/assets 313M/i18n）。PAT 走一次性 URL，origin 已 set-url 清洗为零残留。⚠️ 用户提供的 PAT 应在任务后撤销更换。
 
 ## 上次做了什么（2026-09-30 续9，分解页品质筛选补第 6 档至臻红）
 

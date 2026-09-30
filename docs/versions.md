@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v3.10-smith-corrupt-display-cleanup | 2026-09-30 | 魔化词条显示精简：洗练/强化页魔化词条名称+数值改紫色 #ef79ff（评级标不变），去掉 [魔化词条]/[魔化转换] 标签与旧→新百分比对比行；删除状态行诅咒百分比提示与腐化结果"基础属性 ×a→×b"行（只留"诅咒 N/3 层"）；删除升阶页"每升5阶必得词条/词条已满倍率"常驻小字及其测试 ascend_hint_test.lua（一键升阶弹窗内的新增预览保留）；》双箭头从深色位图改程序化亮金 chevron（DrawUtil.drawDoubleChevron，洗练/强化/占位行三处）。 |
 | v3.09-smith-single-bg | 2026-09-30 | 锻炉页上下合并为单一背景：删除下半独立背景板绘制与 imgLowerBg/BG_* 尺寸常量，整页用 UI_JSXQ_BJ_dark 全屏等比 cover（drawImageCover，无形变）；下半内容 clip 区域保持不变。 |
 | v3.08-smith-dark-theme | 2026-09-30 | 锻炉页整体暗黑化：上半背景与下半面板弃用亮色 UI_TJP_CH_1/米色 UI_TJP_1，统一换暗黑石墙 UI_JSXQ_BJ_dark（纹理拉伸无形变）；洗练/强化属性文字提亮（名称米金 #d8c9a3、数值亮白 #e8e4da，原来深色字在暗框上不可见）；洗练需求框压暗 25% 形成区域感。 |
 | v3.07-stone-floor-and-toast-fix | 2026-09-30 | 洗练石加保底只升不降（逐条取新旧较高者）；点金石品质达进度上限后不再拒绝，转为随机一条普通词缀品级+1（最高S，回包 affixGradeUp 并弹展示）；修复洗练拒绝原因提示被抽卡页消息队列静默丢弃导致「点洗练完全无反应」的 bug（showRefineToast 在非抽卡页回退全局 UiToast）。corrupt_convert_test 扩至7组全 PASS。 |

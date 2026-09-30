@@ -206,7 +206,6 @@ local imgNameBg   = -1   -- UI_TJP_MC.png
 local imgPlus     = -1   -- UI_ICON_TJP_JIA.png
 local imgTabBg    = -1   -- UI_AN_1.png
 
-local imgArrow    = -1   -- UI_TJP_JIANTOU.png（提升箭头）
 local imgEnhBtn   = -1   -- UI_AN_LV.png（强化按钮背景）
 local imgGoldIcon = -1   -- UI_icon_JB_X.png（金币图标）
 local imgGoldQBg  = -1   -- UI_icon_ZBBJ_2.png（金币品质背景框, quality=2）
@@ -549,7 +548,6 @@ function BlacksmithPage.init(vg)
     imgNameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     imgPlus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_TJP_JIA.png", 0)
     imgTabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
-    imgArrow    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
     imgEnhBtn   = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
     imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     imgGoldQBg  = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_2.png", 0)
@@ -579,7 +577,6 @@ function BlacksmithPage.init(vg)
     local ctx = {
         state            = state,
         QUALITY_COST     = QUALITY_COST,
-        imgArrow         = imgArrow,
         imgEnhBtn        = imgEnhBtn,
         imgGoldIcon      = imgGoldIcon,
         imgGoldQBg       = imgGoldQBg,

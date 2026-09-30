@@ -25,8 +25,6 @@ local M = {}
 local MAX_CORRUPT_COUNT = 3
 -- 构筑模型 2026-09-30：腐化后仍可洗练，精粹 ×2（与服务端 CORRUPTED_ESSENCE_MULT 一致）
 local CORRUPTED_ESSENCE_MULT = 2
--- 每层腐化诅咒对基础属性的倍率（与服务端 CORRUPT_LAYER_BASE_PENALTY 一致）
-local CORRUPT_LAYER_BASE_PENALTY = 0.90
 
 ---@param equip table|nil
 ---@return number
@@ -39,11 +37,10 @@ local CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B = 0xef, 0x79, 0xff
 local CORRUPT_COMPARE_R, CORRUPT_COMPARE_G, CORRUPT_COMPARE_B = 0xef, 0x79, 0xff
 
 ---@param equip table|nil
----@return table meta { scaleByIndex, convertedByIndex, originalAffixCount, baseMult }
+---@return table meta { scaleByIndex, originalAffixCount, baseMult }
 local function parseCorruptRevertMeta(equip)
     local meta = {
         scaleByIndex = {},
-        convertedByIndex = {},
         originalAffixCount = 0,
         baseMult = nil,
     }
@@ -54,28 +51,9 @@ local function parseCorruptRevertMeta(equip)
     for _, patch in ipairs(rev.patches or {}) do
         if patch[1] == "s" and patch[2] then
             meta.scaleByIndex[patch[2]] = patch[3]
-        elseif patch[1] == "c" and patch[2] then
-            meta.convertedByIndex[patch[2]] = patch[3]
         end
     end
     return meta
-end
-
----@param equip table|nil
----@return string|nil 腐化诅咒提示（每层基础 -10%；旧档强化型腐化显示 +%d%%）
-local function getCorruptBaseMultHint(equip)
-    if not equip then return nil end
-    local mult = tonumber(equip.corruptBaseMult) or 1
-    if math.abs(mult - 1) < 0.001 then return nil end
-    if mult < 1 then
-        local layers = getCorruptCount(equip)
-        local perPct = math.floor((1 - CORRUPT_LAYER_BASE_PENALTY) * 100 + 0.5)
-        return string.format("腐化诅咒：基础属性 -%d%%/层（当前 %d 层）", perPct, layers)
-    end
-    -- 旧档强化型腐化（baseMult>1）
-    local pct = math.floor((mult - 1) * 100 + 0.5)
-    if pct <= 0 then return nil end
-    return string.format("基础属性腐化强化 +%d%%", pct)
 end
 
 local function showRefineToast(msg)
@@ -193,7 +171,6 @@ local XL = {
     TITLE_CX = 540, TITLE_CY = 886, TITLE_FONT_SIZE = 40,
     -- 腐化次数提示（标题下方）
     CORRUPT_TEXT_CX = 540, CORRUPT_TEXT_Y = 940, CORRUPT_TEXT_FONT = 32,
-    CORRUPT_BASE_HINT_Y = 972, CORRUPT_BASE_HINT_FONT = 28,
     CORRUPT_TAG_FONT = 22,
     -- 2. 单一背景框：洗练前/后内容共用一个框，左右并排（无「洗练前/后」标题字）
     FRAME_CX = 540, FRAME_CY = 1240, FRAME_W = 970, FRAME_H = 560,
@@ -323,7 +300,6 @@ local CORRUPT_RESULT_DISPLAY_DURATION = 4.0
 
 -- ======================== ctx 引用（由 setContext 注入） ========================
 
-local imgArrow         -- 提升箭头
 local imgLock          -- 词缀锁定图标
 local imgEnhBtn        -- 洗练按钮背景（绿色）
 local imgReplaceBtn    -- 替换按钮背景（黄色）
@@ -343,7 +319,6 @@ local getProtocol      -- 延迟加载 Protocol
 --- 注入共享上下文
 ---@param ctx table 由 BlacksmithPage 构造的共享上下文
 function M.setContext(ctx)
-    imgArrow           = ctx.imgArrow
     imgLock            = ctx.imgLock
     imgEnhBtn          = ctx.imgEnhBtn
     imgReplaceBtn      = ctx.imgReplaceBtn
@@ -400,18 +375,11 @@ end
 ---@param equip table|nil
 ---@param corruptMeta table|nil
 local function annotateAffixCorruptRow(row, index, affix, equip, corruptMeta)
+    -- 魔化词条只显示紫色名称/数值（品级标不变），不附加标签与百分比对比
+    if AffixConfig.isCorruptAffix(affix) then
+        return row
+    end
     if corruptMeta then
-        local convertedFrom = corruptMeta.convertedByIndex[index]
-        if convertedFrom and type(convertedFrom) == "table" then
-            row.corruptTag = "魔化转换"
-            local beforeEff = tonumber(convertedFrom.value) or 0
-            if equip and not AffixConfig.isCorruptAffix(convertedFrom) then
-                beforeEff = beforeEff * EquipmentSystem.getAffixMult(equip)
-            end
-            local beforeFmt = formatAffixValue(convertedFrom.key, beforeEff, convertedFrom.affixId)
-            row.compareText = (convertedFrom.name or "?") .. " " .. beforeFmt .. " → " .. row.value
-            return row
-        end
         local beforeVal = corruptMeta.scaleByIndex[index]
         if beforeVal ~= nil then
             local beforeEff = beforeVal
@@ -461,10 +429,12 @@ local function affixToDisplayRow(affix, equip, index, corruptMeta)
         grade = qDef and qDef.name or "D",
         isCorrupt = isCorrupt,
     }
+    if isCorrupt then
+        row.nameColor = { CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B }
+        row.valueColor = { CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B }
+    end
     if index and corruptMeta then
         annotateAffixCorruptRow(row, index, affix, equip, corruptMeta)
-    elseif isCorrupt then
-        row.corruptTag = row.corruptTag or "魔化词条"
     end
     return row
 end
@@ -496,15 +466,7 @@ local function buildCorruptAfterRows(detail, beforeAffixes, afterAffixes, equip)
         local row = affixToDisplayRow(affix, equip, i, nil)
         local ch = changeByIndex[i]
         if ch then
-            if ch.kind == "converted" then
-                row.corruptTag = "魔化转换"
-                local beforeEff = ch.beforeValue
-                if equip and ch.beforeKey and not AffixConfig.isCorruptAffix({ affixId = ch.affixId, key = ch.beforeKey }) then
-                    beforeEff = ch.beforeValue * EquipmentSystem.getAffixMult(equip)
-                end
-                local beforeFmt = formatAffixValue(ch.beforeKey, beforeEff, nil)
-                row.compareText = (ch.beforeName or "?") .. " " .. beforeFmt .. " → " .. row.value
-            elseif ch.kind == "added" then
+            if ch.kind == "added" then
                 row.corruptTag = "魔化词条"
             elseif ch.kind == "scale" then
                 local beforeEff = ch.beforeValue
@@ -525,16 +487,6 @@ local function buildCorruptAfterRows(detail, beforeAffixes, afterAffixes, equip)
     return rows
 end
 
----@param detail table|nil
----@return string
-local function getCorruptEffectSummary(detail)
-    if not detail then return "魔化完成" end
-    if detail.summary and detail.summary ~= "" then
-        return detail.summary
-    end
-    return detail.effectName or "魔化完成"
-end
-
 -- ======================== 数据更新 ========================
 
 --- 是否已有洗练预览（等待替换）
@@ -549,7 +501,6 @@ local function applyRefineDisplayFromEquip(equip)
 
     local corruptMeta = getCorruptCount(equip) > 0 and parseCorruptRevertMeta(equip) or nil
     refineData.before = buildAffixDisplayRows(equip.affixes, equip, corruptMeta)
-    refineData.corruptBaseHint = getCorruptBaseMultHint(equip)
 
     local after = {}
     for i = 1, #refineData.before do
@@ -568,7 +519,6 @@ function M.updateRefineData(equip)
     if not equip then
         refineData.before       = {}
         refineData.after        = {}
-        refineData.corruptBaseHint = nil
         refineData.hasPreview   = false
         refineData.refineCount  = 0
         refineData.costEssence  = 0
@@ -642,7 +592,8 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
             nameW = nvgTextBounds(vg, 0, 0, attr.name)
         end
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(XL.ATTR_NAME_R, XL.ATTR_NAME_G, XL.ATTR_NAME_B, a))
+        local nameRGB = attr.nameColor or { XL.ATTR_NAME_R, XL.ATTR_NAME_G, XL.ATTR_NAME_B }
+        nvgFillColor(vg, nvgRGBA(nameRGB[1], nameRGB[2], nameRGB[3], a))
         nvgText(vg, panelLeft + XL.ATTR_NAME_X + offsetX, rowY, attr.name, nil)
 
         -- 腐化标签（词缀名右侧）
@@ -655,7 +606,8 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
         -- 数值（右对齐）：腐化对比时数值行下移一行展示「旧 → 新」
         local valueText = tostring(attr.value or "")
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B, a))
+        local valRGB = attr.valueColor or { XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B }
+        nvgFillColor(vg, nvgRGBA(valRGB[1], valRGB[2], valRGB[3], a))
         nvgText(vg, panelLeft + XL.ATTR_VALUE_X + offsetX, rowY, valueText, nil)
 
         if attr.compareText then
@@ -763,12 +715,6 @@ function M.drawPanel(vg)
             corruptText = corruptText .. "（需神圣石洗除）"
         end
         nvgText(vg, XL.CORRUPT_TEXT_CX, XL.CORRUPT_TEXT_Y, corruptText, nil)
-        local baseHint = refineData.corruptBaseHint or getCorruptBaseMultHint(state.selectedEquip)
-        if baseHint then
-            nvgFontSize(vg, XL.CORRUPT_BASE_HINT_FONT)
-            nvgFillColor(vg, nvgRGBA(CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B, 220))
-            nvgText(vg, XL.CORRUPT_TEXT_CX, XL.CORRUPT_BASE_HINT_Y, baseHint, nil)
-        end
     end
 
     -- 2. 单一背景框（洗练前/后内容共用，无「洗练前/后」标题字）
@@ -885,16 +831,10 @@ function M.drawPanel(vg)
         nvgFillColor(vg, nvgRGBA(CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B, alpha))
         nvgText(vg, XL.RIGHT_HALF_CX, 1066, ci.effectName or "魔化完成", nil)
 
-        if ci.baseMultHint then
-            nvgFontSize(vg, 26)
-            nvgFillColor(vg, nvgRGBA(CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B, math.floor(alpha * 0.9)))
-            nvgText(vg, XL.RIGHT_HALF_CX, 1098, ci.baseMultHint, nil)
-        end
-
         local afterRows = ci.afterRows
         if afterRows and #afterRows > 0 then
             local afterLeft = frameLeft + XL.RIGHT_PANEL_LEFT
-            local firstY = refineRowFirstY(#afterRows) + (ci.baseMultHint and 56 or 36)
+            local firstY = refineRowFirstY(#afterRows) + 36
             drawRefineAttrRows(vg, afterRows, firstY, afterLeft, 0, alpha)
         else
             nvgFontSize(vg, 28)
@@ -946,18 +886,8 @@ function M.drawPanel(vg)
     end
 
     -- 5. 亮色箭头最后绘制：滑行动画的词条行从其下方穿过，箭头保持可见
-    if imgArrow and imgArrow >= 0 then
-        -- 测试桩覆写全局 nvgRGBA 返回 number，LSP 推联合类型；cast 收窄
-        local arrowTint = nvgRGBA(255, 214, 102, 255)
-        ---@cast arrowTint NVGcolor
-        local paint = nvgImagePatternTinted(vg,
-            XL.ARROW_CX - XL.ARROW_W * 0.5, XL.ARROW_CY - XL.ARROW_H * 0.5,
-            XL.ARROW_W, XL.ARROW_H, 0, imgArrow, arrowTint)
-        nvgBeginPath(vg)
-        nvgRect(vg, XL.ARROW_CX - XL.ARROW_W * 0.5, XL.ARROW_CY - XL.ARROW_H * 0.5, XL.ARROW_W, XL.ARROW_H)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-    end
+    -- 程序化亮金双 chevron（原深色位图在暗底上不可见）
+    DrawUtil.drawDoubleChevron(vg, XL.ARROW_CX, XL.ARROW_CY, XL.ARROW_W, XL.ARROW_H, 0xff, 0xd6, 0x66)
 end
 
 --- 绘制资源数量 "owned/cost" 居中于指定 cx
@@ -1488,30 +1418,16 @@ function M.onActionResult(data)
 
             refineData.before = buildAffixDisplayRows(beforeAffixes, state.selectedEquip, nil)
             refineData.after = buildCorruptAfterRows(detail, beforeAffixes, afterAffixes, state.selectedEquip)
-            refineData.corruptBaseHint = getCorruptBaseMultHint(state.selectedEquip)
             refineData.hasPreview = false
 
             state.pendingRefineAffixes = nil
             state.pendingRefineSeq = nil
             qualityUpgradeInfo = nil
 
-            local baseMultHint = nil
-            if detail and detail.baseMultChange then
-                local b = detail.baseMultChange.before or 1
-                local a = detail.baseMultChange.after or 1
-                local pct = math.floor((a / b - 1) * 100 + 0.5)
-                if pct ~= 0 then
-                    baseMultHint = string.format("基础属性：×%.2f → ×%.2f（%s%d%%）",
-                        b, a, pct > 0 and "+" or "", pct)
-                end
-            end
-
             corruptResultInfo = {
                 title = "腐化结果",
-                effectName = getCorruptEffectSummary(detail) or data.corruptEffectName or "魔化完成",
-                hint = "诅咒层数 " .. tostring(data.corruptCount or 0) .. "/3",
+                effectName = "魔化转换",
                 afterRows = refineData.after,
-                baseMultHint = baseMultHint,
                 startTime = time.elapsedTime,
             }
 

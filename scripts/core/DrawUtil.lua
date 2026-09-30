@@ -108,6 +108,43 @@ function DrawUtil.drawImageCentered(vg, img, cx, cy, w, h, alpha)
     nvgFill(vg)
 end
 
+--- 程序化双 chevron 箭头「》」：替代深色位图箭头（nvgImagePatternTinted 为相乘混合，
+--- 深灰字形无法提亮），直接矢量绘制亮色
+---@param vg any NanoVG context
+---@param cx number 中心 X
+---@param cy number 中心 Y
+---@param w number 总宽
+---@param h number 总高
+---@param r integer 红 0-255
+---@param g integer 绿 0-255
+---@param b integer 蓝 0-255
+---@param alpha number|nil 0-255，默认 255
+function DrawUtil.drawDoubleChevron(vg, cx, cy, w, h, r, g, b, alpha)
+    local a = alpha or 255
+    if a <= 1 then return end
+    local left = cx - w * 0.5
+    local top = cy - h * 0.5
+    local bottom = top + h
+    -- 单个 chevron：外 V + 内 V（水平厚度 t）围成的厚折线；两枚并排 + 间隙 = 总宽
+    local chevronW = w * 0.34
+    local t = w * 0.12
+    local span = chevronW + t
+    local gap = w - span * 2
+    nvgFillColor(vg, nvgRGBA(r, g, b, a))
+    for i = 0, 1 do
+        local x0 = left + i * (span + gap)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x0, top)
+        nvgLineTo(vg, x0 + chevronW, cy)
+        nvgLineTo(vg, x0, bottom)
+        nvgLineTo(vg, x0 + t, bottom)
+        nvgLineTo(vg, x0 + t + chevronW, cy)
+        nvgLineTo(vg, x0 + t, top)
+        nvgClosePath(vg)
+        nvgFill(vg)
+    end
+end
+
 --- 等比 cover：保持原图比例填满目标框，超出部分居中裁切
 ---@param vg any
 ---@param img number

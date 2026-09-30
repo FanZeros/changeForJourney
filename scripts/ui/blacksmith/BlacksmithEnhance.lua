@@ -132,7 +132,6 @@ local enhanceData = {
 
 -- ======================== ctx 引用（由 setContext 注入） ========================
 
-local imgArrow         -- 提升箭头
 local imgEnhBtn        -- 强化按钮背景 (UI_AN_LV.png)
 local imgGoldIcon      -- 金币图标
 local imgGoldQBg       -- 金币品质背景框
@@ -167,7 +166,6 @@ local SCROLL_GETTER = {
 --- 注入共享上下文
 ---@param ctx table 由 BlacksmithPage 构造的共享上下文
 function M.setContext(ctx)
-    imgArrow           = ctx.imgArrow
     imgEnhBtn          = ctx.imgEnhBtn
     imgGoldIcon        = ctx.imgGoldIcon
     imgGoldQBg         = ctx.imgGoldQBg
@@ -352,12 +350,19 @@ end
 ---@param isCorrupt boolean|nil 魔化词条：用紫色圆标替代 D~S 品质图
 local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGradeIcon, showArrow, isCorrupt)
     if showArrow == nil then showArrow = true end
+    -- 魔化词条：名称与数值紫色（评级标不变）
+    local textR, textG, textB = ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B
+    local nameR, nameG, nameB = ATTR_NAME_COLOR_R, ATTR_NAME_COLOR_G, ATTR_NAME_COLOR_B
+    if isCorrupt then
+        textR, textG, textB = 0xef, 0x79, 0xff
+        nameR, nameG, nameB = 0xef, 0x79, 0xff
+    end
 
     -- 属性名称（右对齐）
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, (curGradeIcon or isCorrupt) and 30 or ATTR_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(ATTR_NAME_COLOR_R, ATTR_NAME_COLOR_G, ATTR_NAME_COLOR_B, 255))
+    nvgFillColor(vg, nvgRGBA(nameR, nameG, nameB, 255))
     nvgText(vg, ATTR_NAME_X, rowY, name, nil)
 
     -- 当前属性值背景框
@@ -372,12 +377,12 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, (curGradeIcon or isCorrupt) and 30 or ATTR_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B, 255))
+    nvgFillColor(vg, nvgRGBA(textR, textG, textB, 255))
     nvgText(vg, ATTR_CUR_BG_CX, rowY, curVal, nil)
 
     if showArrow then
-        -- 提升箭头-小
-        drawImageCentered(vg, imgArrow, ATTR_ARROW_CX, rowY, ATTR_ARROW_W, ATTR_ARROW_H, 1.0)
+        -- 提升箭头-小（程序化亮金 chevron）
+        DrawUtil.drawDoubleChevron(vg, ATTR_ARROW_CX, rowY, ATTR_ARROW_W, ATTR_ARROW_H, 0xff, 0xd6, 0x66)
 
         -- 提升后属性值背景框
         local nextBgX = ATTR_NEXT_BG_CX - ATTR_NEXT_BG_W * 0.5
@@ -427,8 +432,8 @@ local function drawAffixPreviewRow(vg, rowY, preview)
     nvgFillColor(vg, nvgRGBA(ATTR_NAME_COLOR_R, ATTR_NAME_COLOR_G, ATTR_NAME_COLOR_B, 255))
     nvgText(vg, ATTR_NAME_X, rowY, preview.name, nil)
 
-    -- 中间升级效果：复用属性行提升箭头图（同列同尺寸）
-    drawImageCentered(vg, imgArrow, ATTR_ARROW_CX, rowY, ATTR_ARROW_W, ATTR_ARROW_H, 1.0)
+    -- 中间升级效果：程序化亮金 chevron（同列同尺寸）
+    DrawUtil.drawDoubleChevron(vg, ATTR_ARROW_CX, rowY, ATTR_ARROW_W, ATTR_ARROW_H, 0xff, 0xd6, 0x66)
 
     -- 升阶后绿色半透明值框 + +?（与上方提升后数值同色，不透明）
     local nextBgX = ATTR_NEXT_BG_CX - ATTR_NEXT_BG_W * 0.5
@@ -463,33 +468,6 @@ function M.buildAffixPreview(data, selectedEquip)
     return nil
 end
 
---- 构建词条状态提示（纯函数，便于回归测试）
---- 里程碑新增词条信息由占位词条行（》 ??? +?）承载，不再输出小字
---- 需求②：满员/常规提示均右对齐显示，不再居中独占整行
----@param data table enhanceData（含 isMaxLevel / nextLevel）
----@param selectedEquip table|nil 当前选中装备
----@return { text: string, r: integer, g: integer, b: integer }
-function M.buildAffixHint(data, selectedEquip)
-    local normalCount = 0
-    for _, affix in ipairs(selectedEquip and selectedEquip.affixes or {}) do
-        if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
-    end
-    local interval = BlacksmithConfig.ASCEND_AFFIX_INTERVAL or 5
-    local limit    = BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT or 4
-    local multPct  = math.floor((BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10) * 100 + 0.5)
-    local isFull   = normalCount >= limit
-    if isFull then
-        return {
-            text = string.format("词条已满 · 每升%d阶倍率+%d%%（洗练不丢）", interval, multPct),
-            r = 0xbc, g = 0x9b, b = 0x58,
-        }
-    end
-    return {
-        text = string.format("每升%d阶必得1条随机词条（最多%d条）", interval, limit),
-        r = 0xbc, g = 0x9b, b = 0x58,
-    }
-end
-
 --- 绘制强化界面上半部分（等级 + 属性预览）
 function M.drawPanel(vg)
     local data = enhanceData
@@ -517,8 +495,8 @@ function M.drawPanel(vg)
         nvgFillColor(vg, nvgRGBA(ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B, 255))
         nvgText(vg, ENH_CUR_LV_CX, ENH_CUR_LV_CY, "+" .. data.curLevel, nil)
 
-        -- 3. 提升箭头-大
-        drawImageCentered(vg, imgArrow, ENH_ARROW_CX, ENH_ARROW_CY, ENH_ARROW_W, ENH_ARROW_H, 1.0)
+        -- 3. 提升箭头-大（程序化亮金 chevron）
+        DrawUtil.drawDoubleChevron(vg, ENH_ARROW_CX, ENH_ARROW_CY, ENH_ARROW_W, ENH_ARROW_H, 0xff, 0xd6, 0x66)
 
         -- 4. 下一强化等级
         nvgFontFace(vg, "sans")
@@ -552,13 +530,6 @@ function M.drawPanel(vg)
         drawAffixPreviewRow(vg, affixY, preview)
     end
     nvgRestore(vg)
-    -- 词条状态提示：右对齐显示在词条区下沿，不再居中独占整行（需求①②见 buildAffixHint）
-    local hintInfo = M.buildAffixHint(data, state.selectedEquip)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 22)
-    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(hintInfo.r, hintInfo.g, hintInfo.b, 255))
-    nvgText(vg, 1000, 1712, hintInfo.text, nil)
 end
 
 --- 绘制资源数量（拥有/需要）

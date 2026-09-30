@@ -96,31 +96,6 @@ local function resetBox()
     return cx, cy, w, h
 end
 
-local function drawMapEdgeFade(vg, x, y, w, h)
-    local fade = math.max(72, math.min(w, h) * 0.16)
-    -- 测试桩覆写全局 nvgRGBA 返回 number，LSP 推联合类型；cast 收窄
-    local edge = nvgRGBA(5, 4, 3, 200)
-    ---@cast edge NVGcolor
-    local clear = nvgRGBA(5, 4, 3, 0)
-    ---@cast clear NVGcolor
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, fade, h)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x + fade, y, edge, clear))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgRect(vg, x + w - fade, y, fade, h)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x + w, y, x + w - fade, y, edge, clear))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, fade * 0.85)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x, y + fade * 0.85, edge, clear))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y + h - fade * 0.85, w, fade * 0.85)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y + h, x, y + h - fade * 0.85, edge, clear))
-    nvgFill(vg)
-end
-
 -- ======================== 天赋详情面板布局常量 ========================
 
 local TFD = {
@@ -349,8 +324,6 @@ function M.drawContent(vg)
     local pageW = M.getPageWidth()
     local map = mapLayout()
     TalentStarMap.draw(vg, 0, map.top, pageW, map.h)
-    -- 星图边缘虚化，避免节点在页面边界被硬切
-    drawMapEdgeFade(vg, 0, map.top, pageW, map.h)
 
     -- 新手引导热点：整个天赋星图区域
     local _TM = require("systems.TutorialManager")

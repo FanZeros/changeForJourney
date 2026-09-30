@@ -1110,6 +1110,18 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
         if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragBegin(dx, dy) end
     elseif pid == 'right' then
+        -- [0930] 配装页装备（含角色六装备槽已装备）可跨栏拖到锻炉工作台/换槽
+        local CharacterDetail = require("ui.character.detail.CharacterDetail")
+        if CharacterDetail.isOpen() and CharacterDetail.isEquipTab and CharacterDetail.isEquipTab() then
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local EquipPanel = require("ui.character.detail.CharacterDetailEquip")
+            local peek = EquipPanel.peekSlotEquipAt(dx, dy) or EquipPanel.peekItemAt(dx, dy)
+            if peek then
+                EquipCrossDrag.arm(peek, sx, sy, "rightpanel")
+                print("[Horizon] 右栏配装按下 seq=" .. tostring(peek.seq))
+            end
+        end
         CharacterPanel.handleDragBegin(dx, dy)
     end
 end
@@ -1137,6 +1149,8 @@ function HandleMouseMoveHorizon(eventType, eventData)
         local source = EquipCrossDrag.getSource()
         if source == "overlay" then
             if pid ~= "tri" then return end
+        elseif source == "rightpanel" then
+            if pid ~= "right" then return end
         elseif pid ~= "left" then
             return
         end

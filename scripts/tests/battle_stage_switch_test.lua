@@ -117,7 +117,8 @@ local function testEquipGuards()
         and warrior.equipped[1].offhand == nil,
         "换双手剑会自动卸副手")
 
-    local sameHeroes = { roster = { [18] = { advBranch = { first = 110, second = 220 } } } }
+    -- level 给足（≥装备 85 级）以越过远端新增的等级穿戴门槛，本组只测职业/双持校验。
+    local sameHeroes = { roster = { [18] = { level = 100, advBranch = { first = 110, second = 220 } } } }
     local same = makeData({ "W61", "W62", "W55", "O1" })
     ok, err = wear(same, 4, 18, "offhand", sameHeroes)
     check(not ok and err:find("常规副手", 1, true) ~= nil,
@@ -135,7 +136,7 @@ local function testEquipGuards()
         and same.equipped[18].weapon == 1,
         "220 已持同类型副手时替换主手为异类被拒绝")
 
-    local diffHeroes = { roster = { [1] = { advBranch = { first = 104, second = 207 } } } }
+    local diffHeroes = { roster = { [1] = { level = 100, advBranch = { first = 104, second = 207 } } } }
     local different = makeData({ "W1", "W13", "W2", "O7", "W31", "W14" })
     check(wear(different, 1, 1, "weapon", diffHeroes) == true
         and wear(different, 2, 1, "offhand", diffHeroes) == true,

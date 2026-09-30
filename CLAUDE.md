@@ -36,6 +36,13 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续8，分解预览加「当前分解可获得」字样，改完直接 merge 回 930）
+
+- **任务**：用户要求选中装备后图标行显示「当前分解可获得」字样，改完直接 merge。
+- **实现**：`drawRewardIconRow` 增 `showLabel` 参数——选中预览（selCount>0）画金色 26 号字样于 RW_LABEL_CY=2000；**回落上次结果不画**（避免「当前」误导）；空状态提示改 RW_EMPTY_CY=2045 居中。条带两行化：图标 88→80、RW_ICON_CY 2040→2056、数量角标 30→28（自检：标签底 2013 / 图标顶 2016 / 图标底 2096 / 角标底 ~2098 / 按钮顶 2110 均不撞）。
+- **验证**：LSP 0 Error；auto_decompose ALL PASS；官方 Build 成功。
+- **流程**：dev 分支提交推送后 ff merge 回 workspace930 并推送（930 未前进，ff 零冲突）。
+
 ## 上次做了什么（2026-09-30 续7，合入 workspace930，已 push）
 
 - **任务**：用户要求「拉取 930 并且合入」当前分支 `feat/decompose-reward-icon-row`。930 tip=e2108b93（终焉神殿三队协同战 TerminalRaid PR#4 + nvgImagePatternTinted cast 修复），8 提交全在 battle/tri 区，与分解图标行零文件重叠。

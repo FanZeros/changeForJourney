@@ -6,6 +6,7 @@
 
 local GameConfig       = require("config.GameConfig")
 local EquipmentConfig  = require("config.EquipmentConfig")
+local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local DrawUtil         = require("core.DrawUtil")
 local TownPageChrome   = require("ui.town.TownPageChrome")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1] 矢量九宫格
@@ -13,6 +14,7 @@ local GameState        = require("core.GameState")
 local PlayerStore      = require("core.PlayerStore")
 local ImageCache       = require("ui.widget.ImageCache")
 local QualityMark      = require("ui.widget.QualityMark")
+local SetFilterDialog  = require("ui.widget.SetFilterDialog")
 local NumberUtil       = require("core.NumberUtil")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local BlacksmithConfig = require("config.BlacksmithConfig")
@@ -71,6 +73,11 @@ local PZSX = {
     FIRST_CX = 565, CY = 610, SIZE = 70, GAP = 12,
 }
 
+-- 5c. 套装筛选入口按钮（装备 tab 常驻；品质条左侧，点击弹出多选面板）
+local SET_BTN = {
+    CX = 396, CY = 610, W = 240, H = 70,
+}
+
 -- 6. 网格
 local GRID = {
     CELL_SIZE = 160,
@@ -120,7 +127,7 @@ local function applyLayout(compact)
         LAYOUT_ORIG = {
             lowerCY = LOWER_PANEL.CY, lowerH = LOWER_PANEL.H,
             firstRow = GRID.FIRST_ROW_TOP, clipBottom = GRID.CLIP_BOTTOM,
-            titleY = GRID_TITLE.Y, pzCy = PZSX.CY,
+            titleY = GRID_TITLE.Y, pzCy = PZSX.CY, setBtnCy = SET_BTN.CY,
             capY = CAP_TEXT.Y,
         }
     end
@@ -128,11 +135,13 @@ local function applyLayout(compact)
         LOWER_PANEL.CY, LOWER_PANEL.H = 1300, 2100
         GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 470, 1980
         GRID_TITLE.Y, PZSX.CY = 330, 325
+        SET_BTN.CY = 325
         CAP_TEXT.Y = 2230
     else
         LOWER_PANEL.CY, LOWER_PANEL.H = LAYOUT_ORIG.lowerCY, LAYOUT_ORIG.lowerH
         GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = LAYOUT_ORIG.firstRow, LAYOUT_ORIG.clipBottom
         GRID_TITLE.Y, PZSX.CY = LAYOUT_ORIG.titleY, LAYOUT_ORIG.pzCy
+        SET_BTN.CY = LAYOUT_ORIG.setBtnCy
         CAP_TEXT.Y = LAYOUT_ORIG.capY
     end
     CLIP_TOP = GRID.FIRST_ROW_TOP
@@ -219,11 +228,28 @@ local imgCheckmark = -1  -- UI_icon_GOU.png（选中勾选）
 --- 分解功能整体迁移到独立的"分解"tab（复用 BlacksmithDecompose 模块）
 local decomposeState = {
     qualitySet = {},       -- [quality]=true 勾选的稀有度档；空集合=不按稀有度限制
+    setFilter = {},        -- [setId]=true / ["none"]=true 勾选的套装；空集合=不按套装限制
 }
 
 --- 分解模式下某稀有度是否处于勾选范围（空集合=不限制，全部可选中）
 local function qualityChecked(quality)
     return not next(decomposeState.qualitySet) or decomposeState.qualitySet[quality] == true
+end
+
+--- 装备实例/模板的套装 id；无归属返回 SetFilterDialog.NONE_KEY。
+---@param templateId any
+---@return string
+local function setIdOfTemplate(templateId)
+    local tpl = EquipmentConfig.ITEMS[templateId]
+        or EquipmentConfig.ITEMS[tostring(templateId)]
+    return EquipmentSetConfig.getSetIdForTemplate(tpl) or SetFilterDialog.NONE_KEY
+end
+
+--- 套装筛选：某装备是否处于勾选范围（空集合=不限制）
+---@param templateId any
+local function setChecked(templateId)
+    if not next(decomposeState.setFilter) then return true end
+    return decomposeState.setFilter[setIdOfTemplate(templateId)] == true
 end
 
 -- 道具图标缓存
@@ -408,6 +434,7 @@ local function bindBackpackGrids()
         getImgCheckmark = function() return imgCheckmark end,
         getImgLock = function() return imgLock end,
         qualityChecked = qualityChecked,
+        setChecked = setChecked,
         getImgHeroIcons = function() return imgHeroIcons end,
         calcScrollMax = calcScrollMax,
         clampScroll = clampScroll,
@@ -829,6 +856,8 @@ function Panel.open(mode, initialTab)
     state.scrollMax = 0
     state.dragging = false
     state.scrollVel = 0
+    -- 筛选勾选跨次打开保留（与品质勾选一致），但弹窗本身必须复位
+    SetFilterDialog.close()
     if tab == "decompose" then
         BlacksmithDecompose.onOpen()
     end
@@ -848,6 +877,7 @@ function Panel.close()
     state.closing = true
     state.closeTime = time.elapsedTime
     state.dragging = false
+    SetFilterDialog.close()
     Panel._hoverSeq = nil
     Panel._hoverSince = nil
     if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
@@ -989,6 +1019,21 @@ local function drawBody(vg)
             end
             BF.finish(vg, didScale)
         end
+
+        -- 5c. 套装筛选入口按钮（点击弹出多选面板；选中数 >0 时显示计数并变绿）
+        do
+            local selected = SetFilterDialog.countSelected(decomposeState.setFilter)
+            local didScale = BF.begin(vg, "bp_set_filter", SET_BTN.CX, SET_BTN.CY, SET_BTN.W, SET_BTN.H)
+            DarkIcon.drawNine(vg, "btn", SET_BTN.CX - SET_BTN.W * 0.5, SET_BTN.CY - SET_BTN.H * 0.5,
+                SET_BTN.W, SET_BTN.H, { accent = selected > 0 and "green" or "gold" })
+            local label = selected > 0 and ("套装 · " .. selected) or "套装"
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 34)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+            nvgText(vg, SET_BTN.CX, SET_BTN.CY, label, nil)
+            BF.finish(vg, didScale)
+        end
     end
 
     -- 6. 网格内容（根据 tab）
@@ -1045,6 +1090,9 @@ local function drawBody(vg)
 
     -- 道具详情弹窗（覆盖在最上层）
     drawItemDetail(vg)
+
+    -- 套装筛选弹窗（最顶层模态）
+    SetFilterDialog.draw(vg)
 end
 
 function Panel.draw(vg)
@@ -1125,6 +1173,15 @@ end
 ---@return boolean 是否消费了事件
 function Panel.handleInput(dx, dy)
     if not state.open then return false end
+
+    -- 套装筛选弹窗最优先（模态：打开时消费全部点击）
+    if SetFilterDialog.isOpen() then
+        local consumed = SetFilterDialog.handleInput(dx, dy)
+        if consumed then
+            state.scrollY = 0
+            return true
+        end
+    end
 
     -- 道具详情弹窗优先处理
     if itemDetState.open then
@@ -1308,6 +1365,15 @@ function Panel.handleInput(dx, dy)
 
     -- 装备 tab：稀有度勾选（1-6 档可多选，常驻显示筛选）
     if state.tab == "equip" then
+        -- 套装筛选入口按钮（弹窗内勾选实时生效，网格随 setChecked 过滤）
+        if DrawUtil.hitTest(dx, dy, SET_BTN.CX, SET_BTN.CY, SET_BTN.W, SET_BTN.H) then
+            BF.trigger("bp_set_filter")
+            SetFilterDialog.open(decomposeState.setFilter, {
+                onChange = function() state.scrollY = 0 end,
+            })
+            print("[BackpackPanel] 打开套装筛选弹窗")
+            return true
+        end
         for i = 1, 6 do
             local cx = PZSX.FIRST_CX + (i - 1) * (PZSX.SIZE + PZSX.GAP)
             if DrawUtil.hitTest(dx, dy, cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE) then
@@ -1392,6 +1458,7 @@ end
 ---@return table|nil
 function Panel.peekEquipAt(dx, dy)
     if not state.open or state.tab ~= "equip" then return nil end
+    if SetFilterDialog.isOpen() then return nil end  -- 套装弹窗打开时禁止拖拽装备
     if dy < CLIP_TOP or dy > GRID.CLIP_BOTTOM then return nil end
     local equipList = getEquipList()
     for idx, equip in ipairs(equipList) do
@@ -1438,6 +1505,13 @@ end
 
 function Panel.handleHover(dx, dy)
     if not state.open then
+        Panel._hoverSeq = nil
+        Panel._hoverSince = nil
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
+        return
+    end
+    -- 套装筛选弹窗打开时禁止网格悬停详情（弹窗只在装备 tab 打开）
+    if SetFilterDialog.isOpen() then
         Panel._hoverSeq = nil
         Panel._hoverSince = nil
         if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
@@ -1500,6 +1574,7 @@ end
 
 function Panel.handleDragBegin(dx, dy)
     if not state.open then return false end
+    if SetFilterDialog.isOpen() then return true end  -- 套装弹窗打开时禁止列表拖拽
     if itemDetState.open then return true end
     if EquipmentDetail.isOpen() then
         return EquipmentDetail.handleDragBegin(dx, dy)
@@ -1521,6 +1596,7 @@ end
 
 function Panel.handleDragMove(dx, dy)
     if not state.open then return false end
+    if SetFilterDialog.isOpen() then return true end
     if itemDetState.open then return true end
     if EquipmentDetail.isOpen() then
         return EquipmentDetail.handleDragMove(dx, dy)
@@ -1542,6 +1618,7 @@ end
 
 function Panel.handleDragEnd(dx, dy)
     if not state.open then return false end
+    if SetFilterDialog.isOpen() then return true end
     if itemDetState.open then return true end
     if EquipmentDetail.isOpen() then
         return EquipmentDetail.handleDragEnd(dx, dy)
@@ -1556,6 +1633,7 @@ end
 
 function Panel.handleScroll(wheel, dx, dy)
     if not state.open then return false end
+    if SetFilterDialog.isOpen() then return true end  -- 套装弹窗打开时消费但不滚动列表
     if itemDetState.open then return true end
     if EquipmentDetail.isOpen() then
         if dx == nil or EquipmentDetail.containsPoint(dx, dy) then

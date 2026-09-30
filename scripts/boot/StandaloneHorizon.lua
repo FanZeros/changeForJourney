@@ -328,16 +328,17 @@ local function seamBackList()
         end
     end
 
-    -- [锻炉双页 0929] 锻炉右框柱 ›：锻炉页在中栏，取消竖栏挂其右缘（中/右栏分界线）
-    -- 三行与非三行都绘制（锻炉页内不再画返回键）；点击关闭锻炉（联动关仓库）
+    -- [双页方向 0930] 锻炉返回条 ‹：双页(仓库+锻炉)都属左栏组，返回方向反转——
+    -- 条仍挂锻炉前缘(中/右栏分界线)，但箭头朝左、随页面向左滑出；点击关闭锻炉（联动关仓库）。
+    -- 三行与非三行都绘制（锻炉页内不再画返回键）
     if BlacksmithPage.isOpen() then
         local ot, ct, od, cd = BlacksmithPage.getSeamAnim()
-        local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
+        local oxWin = DrawUtil.seamSlideX(-1, ot, ct, od, cd, DIST) * cs
         -- 中/右栏分界线窗口坐标：三行 = 972*ps；非三行 = H_ox + 972*H_s
         local seamX = tri and (972 * psL) or (H_ox + 972 * H_s)
         list[#list + 1] = {
             cx = seamX + barW * 0.5 + oxWin,
-            sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "right",
+            sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
             close = function() BlacksmithPage.close() end,
         }
     end

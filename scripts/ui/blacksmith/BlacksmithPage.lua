@@ -104,6 +104,9 @@ local TAB_INACTIVE_R, TAB_INACTIVE_G, TAB_INACTIVE_B = 255, 255, 255
 local TAB_ANIM_DURATION   = 0.35  -- Tab 切换动画时长
 local ANIM_DURATION       = 0.45  -- 打开动画时长（seam 滑入）
 local CLOSE_ANIM_DURATION = 0.38  -- 关闭动画时长（seam 滑出）
+-- [双页方向 0930] 依次出现错峰：仓库(左栏)先滑入，锻炉(中栏)延迟此刻长再从左滑入。
+-- seamSlideX 对 openTime 在未来时返回边缘位（t<=0 → dirSign*dist），天然支持延迟启动。
+local OPEN_STAGGER        = 0.12
 
 -- ======================== 状态 ========================
 
@@ -817,15 +820,17 @@ local function bindPageDraw()
     })
 end
 
---- [水平滑入] 整页从右缘滑入/滑出（与锻炉右侧中缝返回条同步）；0=完全展开
+--- [水平滑入] 整页从左缘滑入/滑出（与锻炉右侧中缝返回条同步）；0=完全展开
+--- [双页方向 0930] openTime 附加错峰延迟：仓库(左栏)先滑入，锻炉随后从左滑入，
+--- 双页整体呈"从左到右依次出现"；关闭仍按 closeTime 立即滑出(向左)。
 function BlacksmithPage.getSeamAnim()
-    return state.openTime, state.closeTime, ANIM_DURATION, CLOSE_ANIM_DURATION
+    return state.openTime + OPEN_STAGGER, state.closeTime, ANIM_DURATION, CLOSE_ANIM_DURATION
 end
 
 function BlacksmithPage.draw(vg)
     local ot, ct, od, cd = BlacksmithPage.getSeamAnim()
-    -- [锻炉双页 0929] dirSign=+1：从中栏右缘滑入（仓库在其左侧）
-    local ox = DrawUtil.seamSlideX(1, ot, ct, od, cd, 1080)
+    -- [双页方向 0930] dirSign=-1：双页都属左栏组，锻炉也从左缘滑入/滑出（返回方向反转）
+    local ox = DrawUtil.seamSlideX(-1, ot, ct, od, cd, 1080)
     if ox ~= 0 then
         nvgSave(vg)
         nvgTranslate(vg, ox, 0)

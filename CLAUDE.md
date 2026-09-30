@@ -59,6 +59,78 @@
 - **回归**：battle_stage_switch ALL PASS、battle_ally_compaction ALL PASS、boss_affix_test(37断言) ALL PASS、boss_affix_smoke ALL PASS、shield_scaling ALL PASS、character_team_sync PASS；LSP 全工作区 275 文件 Error=0；官方 Build 成功（382 Lua 入包，含 TerminalRaid + terminal_raid_test）；主入口 60 帧无 Lua 逻辑错误（仅既有 UI 品质框贴图缺失，非本轮）。
 - **⚠️ 遗留未修（非本轮范围，rebase 时处理）**：`chapter_team_offline_test` 失败——工作区 `StageSelectDialog` 把终焉从单组 `"T"` 拆成 14 个逐难度独立组（与远端 `4b43cd36` **同源但不同实现**：远端带 `subLabel` 难度名 + `TT_Y=732/ROW_Y0=790` 布局，工作区无 subLabel + `TT_Y=690/ROW_Y0=756`），但该测试断言还停在旧 `TOTAL_CHAPTERS+1` 与旧坐标。已 `git checkout` 还原测试文件，**不留半成品**；rebase 远端时应整体采用远端 StageSelectDialog + 远端测试版本（两套拆分二选一），否则断言无法干净通过。
 - **视觉验收待办**：共享血条/倒计时/失守灰字的真人预览验收（本机 surfaceless 无法截图）。
+## 上次做了什么（2026-09-30 续5，双 tip 合入 + 基线 LSP 修复，已 push `38a69ef7`）
+
+- **任务**：用户问 `0d62a09e`（升阶页词条预告+满员文案右移，在 `feat930/equip-ascend-random-affixes`）是否已合入 → 未合入（我方今早合的是它的前驱 dd6599df）；且 `workspace930` 也前进到 c8c393e9（套装覆盖规划 PR#2/#3 + 转职树金线）。用户选「两个 tip 都合入」。
+- **合并**：930 tip 冲突仅 `preferences.json`（同一规则两种措辞→手工合并为更完整版）；升阶 tip 冲突仅 CLAUDE.md 记忆双保留，Enhance 自动并入（里程碑预告 + ascend_hint_test 15 断言 ALL PASS）。
+- **顺手修 930 基线 LSP 2 Error**：`ChurchClassChange.lua:444` 金色光晕 `nvgFillPaint(nvgRadialGradient(nvgRGBA(...)))` 报 param-type-mismatch——根因 `tests/backpack_grid_scroll_test.lua:90` 全局覆写 `nvgRGBA = function(...) return number end`（测试桩污染工作区类型推断，BattleEffects 同用法未报错是缓存/推断差异）。修：中间变量 + `---@cast glowIn/glowOut NVGcolor` 独立行（`---@type NVGcolor` 赋值方向报错，cast 方向才收窄）。官方 Build 本来就不拦这两个 Error。
+- **验证**：ascend_hint 15 ALL PASS；LSP 单文件+全工作区 0 Error；官方 Build 成功；切关/boundary/图标 fallback 回归后台复跑中。
+
+## 上次做了什么（2026-09-30 续4，合入锻炉双页分支，已 push `c449a59d`）
+
+- **任务**：用户要求排查洗练/锻炉相关分支后合入 `feat928/furnace-warehouse-dual-page`（今天 14:17，锻炉双页架构：分解 tab 迁仓库、中栏锻炉+左栏仓库双页、工作台槽拖拽选装、右缘滑入）。排查结论：fix928 三条分解修复内容已随 930 在本分支；**锻炉双页是唯一未并入的今日分支**。
+- **合并策略（31 冲突块）**：Draw/Input 取对方全文（新架构 owner；我方对其无独有功能——Spine 特效对方已移植 WORKBENCH 版）；Decompose 块1/2 取对方（calcRewardPreview 抽出+仓库文本模式为超集）+ 删我方旧布局图标链死码（drawRewardIcons/fitRewardBadgeFont/getScrollIcon/scrollIconCache/REWARD_ROW* 常量，新架构零调用）；块3 门控锁**双防线合一**：`wasPending = pendingDecompose and isDecomposeResp`（我方防无关响应提前解锁 + 对方防他入口广播双重弹奖）。
+- **Page 取对方全文后补三补丁**：①图标缓存委托 `ImageCache.getEquipIcon`（组首图 fallback，e1aa9f49 修复防回归——注意加 `---@param templateId string|number|nil` 注解会触发 LSP param-type-mismatch，因 ImageCache 声明无注解，故委托函数不写注解）；②归属显示补回（getEquipOwnerHeroId + 归属行 + HeroFrame 头像角标 + HeroAssetUtil.preloadIcons——对方重构时静默删除的 925 功能）；③imgXlAfter 死句柄清理。
+- **验证**：LSP 291 文件 0 Error；auto_decompose/equip_ascend(74)/refine_cost(12)/equip_detail_drag/lootbox(18) 全 ALL PASS；官方 Build 成功；主入口 headless 70s boot complete 零 Lua 错。
+- **教训**：大架构合并后必须检查**静默丢失**——对方全文覆盖会丢掉我方非冲突功能（归属显示），需对照 HEAD 版 grep 关键功能链补回。
+
+## 上次做了什么（2026-09-30 续3，EquipmentDetail 死加载清理，已 push `26f576b5`）
+
+- **用户问**：基线问题（`EquipmentDetail.lua` 加载已删除的 `UI_ZBTS_1~6.png`，validate 18 处贴图失败）是否在其他分支已解决？
+- **排查**：`git grep UI_ZBTS_` 逐远端分支查——近基线分支 workspace926/928/929/930、audit929/dead-module-scan、feat930/equip-ascend **全部未修**（各 1 处命中）；assets/品质框/ 只有 `UI_PZBZ_*` 与 `UI_icon_ZBBJ_1~6`，确实无此素材。
+- **修复**：死代码整链删除（-101 行）——init 加载循环、`imgBg` 声明、`NS_TOP/RIGHT/BOTTOM/LEFT` 常量、私有 `drawNineSlice` 函数（全链零使用点，`DrawUtil.drawNineSlice` 才是活的那个）。
+- **验证**：LSP 该文件 0 Error；`equip_detail_drag_horizon_test` PASS；官方 Build 成功。
+- **教训**：删死代码前先 grep 使用点链（声明→加载→绘制→insets 常量），确认 DrawUtil 同名函数非本文件这份。
+
+## 上次做了什么（2026-09-30 续2，洗练单框化，已 push `914cc689`）
+
+- **用户反馈三点**：①要一个框显示内容而非两个框背景；②中间箭头改亮色；③「洗练前/洗练后」六字标题删除。
+- **实现**：`XL` 双框常量合并为单框 `FRAME 970×560`（cy1240）+ `LEFT/RIGHT_PANEL_LEFT=55/555`（框内左右两半相对左缘）+ `LEFT/RIGHT_HALF_CX=313/786`（空状态/结果展示中心）；行内坐标改半幅相对（图标34/名60/值330/锁366，NAME_MAX_W 210）——自检：左半可用 110..516、右半 610..1009，锁 476 不撞箭头 516..564；箭头改 `nvgImagePatternTinted` 亮金 `(255,214,102)` 且**最后绘制**（滑行动画行从箭头下穿过）；提品/腐化结果/空状态全部改 RIGHT_HALF_CX；`imgXlAfter` 死句柄三处清理（Refine 声明/ctx、Page 加载/传递）。
+- **验证**：LSP 291 文件 0 Error；refine_cost_fixed + equip_ascend_affix 全 ALL PASS；官方 Build 成功。
+- **教训**：半幅行内坐标必须以「框内缘 + 箭头分隔带」为边界重新推算，不能沿用上一版半框口径（锁图标会出框/撞箭头）。
+
+## 上次做了什么（2026-09-30 续，合入 930 + equip-ascend，已 push `f69d12c2`）
+
+- **任务**：用户要求把 `workspace930` 与 `feat930/equip-ascend-random-affixes` 合入 `feat/refine-fixed-cost-side-by-side`。930 已是祖先（Already up to date）；升阶分支 dd6599df 真合并。
+- **冲突取舍（BlacksmithRefine 9 块 + CLAUDE.md 1 块）**：保留对方**功能**改动——`effectiveAffixValue`/`getAffixMult` 生效值显示（4 处）、腐化对比 before 值 ×mult；丢弃对方**旧竖版布局**改动（168 压缩 step、scissor 裁剪、lockStep）与 `ratioText`（用户要求②已删）；布局一律我的左右排布。CLAUDE.md 记忆快照双保留。
+- **自动合并暗坑**：对方的 `step`/`nvgIntersectScissor(55, firstY-24, 970, 216)`/`nvgRestore` 被 git 自动并进我重写的 `drawRefineAttrRows` 而未产生冲突标记——216px 裁剪会切掉新布局第 4/5 行，手动移除恢复 `XL.ATTR_ROW_STEP`。**教训：合并后必须 diff 全文找"静默混入"的对方代码，不能只看冲突标记。**
+- **`refineRowFirstY` 升级**：N 行整体垂直居中（`BEFORE_BG_CY - (n-1)*step*0.5`），升阶带来的 4~5 词条在新 560 高面板自然排开，替代对方旧压缩方案。
+- **验证**：`equip_ascend_affix` 74 ALL PASS + `refine_cost_fixed` 12 ALL PASS + `auto_decompose` ALL PASS；LSP 291 文件 0 Error；官方 Build 成功。`.project/project.json` 已还原。
+
+## 上次做了什么（2026-09-30，`feat/refine-fixed-cost-side-by-side` 洗练三调整，已 push `66fdbc25`）
+
+- **任务（用户三点）**：①洗练不随次数变贵；②洗练不再显示百分比；③洗练前后改横屏左右排布。基于 `workspace930` 开新分支。
+- **①固定单价**：`BlacksmithConfig` 删 `refInc` 字段与 `getRefineBillCount`；`calcRefineEssenceCost(quality, equipLv, grip)` 三参固定价 = `refBase×(1+lv×refLvScale)`（×2 双手保留）；`calcTotalRefineSpent` = 单价×次数（封顶 20，分解 50% 返还语义不变）；服务端 `BlacksmithService` 与 UI `recalcRefineEssenceCost` 调用点同步；次数文案删「费用已满，可继续洗练」；KeywordConfig「洗练」词条与 gameplay 文档同步口径。
+- **②去百分比**：删 `formatRefineRatio`/`getAffixRefineRatioText` 及 4 处 `ratioText` 赋值与绘制块（洗练页不再显示「（xx.x%）」；神器页 ArtifactDetailPanel 自有同名函数未动）。
+- **③左右排布**：`BlacksmithRefine` XL 常量改半幅双面板（洗练前 cx282 / 洗练后 cx798，各 464×560，素材原 970×260 九宫格式直接拉伸不变形）；箭头去 90° 旋转指向右；`drawRefineAttrRows` 增 panelLeft 参数改面板相对坐标（图标 62/名 90/值右对齐 376/锁 428），词缀名超 250px 缩 28→24 号；单行垂直居中、两行起 firstY=1082；替换动画改左移 -516、refine 滑入改面板内 ±260；腐化 compareText 改数值下第二行小字；锁命中坐标同步 panelLeft。
+- **验证**：新增 `tests/refine_cost_fixed_test.lua` 12 断言 ALL PASS（固定价/双手×2/锁×1.5/累计=单价×次数/封顶）；`auto_decompose_regress` ALL PASS；LSP 全工作区 0 Error；官方 Build 成功；主入口 headless 75s 无 Lua 错。
+- **流程**：push 用一次性 PAT URL，推完 `git remote set-url` 还原 + 清分支 remote 配置，仓库无令牌残留；`.project/project.json` build 改写已 `git checkout` 还原。
+- **待验收**：洗练页左右布局视觉效果（半幅面板字密度）需真人预览确认。
+## 上次做了什么（2026-09-30 傍晚，同分支：升阶页词条预告+满员文案右移，已 push `37d442e6`）
+
+- **需求（用户原话）**：①「词条在五级的升级时候显示升级后的效果（新词条）」→ AskUserQuestion 拍板选**仅模糊提示（不锁定随机结果）**；②「词条满的文字改成右侧显示不要一行显示」→ 拍板放**词条区右侧**。
+- **实现** `ui/blacksmith/BlacksmithEnhance.lua`：文案逻辑抽成纯函数 `M.buildAffixHint(data, equip)` 返回 `{text,r,g,b}`。三分支：满员→「词条已满 · 每升5阶倍率+10%（洗练不丢）」金棕；下一阶是 +5 里程碑且未满员→「升至 +N 将新增 1 条随机词条」亮绿 0x7ac86e；否则常规规则文案。绘制从居中(540,y1710,23号)改**右对齐**(x=1000,y=1712,22号)，不独占整行、不与词条行/「升阶需求」标题(y1737)重叠。魔化词条不占满员计数（复用 isCorruptAffix）。
+- **未做**（用户拍板不做）：预 roll 锁定式精确预览（洗练 pendingRefines 范式）——词条仍真随机，提示只是预告数量。
+- **验证**：新增 `tests/ascend_hint_test.lua` 15 断言 ALL PASS（含满级/nil 装备/0词条/3普通+1魔化边界）；升阶词条回归 74 断言仍 ALL PASS；validate lua_errors=0（UI_ZBTS 18 处为基线既有死加载）；官方 Build 380 Lua，buildAffixHint 进 dist。project.json 已还原。
+
+## 上次做了什么（2026-09-30 下午，同分支：合入远端930 + 铁匠铺图标空白修复，已 push `e1aa9f49`）
+
+- **任务1（合并）**：用户要求把远端 `workspace930` 领先的 18 提交（离线7日硬顶/装备等级门槛/4死模块清理/浮选拖拽修复等）合入 `feat930/equip-ascend-random-affixes`。4 代码文件自动合并，唯一冲突 `docs/memory-index.md`（双方追加条目）手工双保留。合并提交 `3ea9c556`。回归全绿（升阶词条74/分解38/战力10/切关53/遗匣18/浮选拖拽 PASS）；`chapter_team_offline_test` FAIL 经 **worktree 对照实跑证明是远端基线自带 headless 环境性失败**（文件与 origin 逐字节一致、StageSelectDialog 不依赖装备模块、纯净基线报同错），与合并无关。官方 Build 378 Lua、死模块已移除、affixMult 进包。
+- **任务2（图标修复）**：用户反馈"分解页装备图片看不到"。**根因**：装备图标为组首图制——318 模板 ID（W1~W72/O1~O30/A,H,S各60/C1~C36）共用 **53 张组首 png**（每 6 个一组 W1/W7/W13…）；`ImageCache.getEquipIcon`（背包/角色详情用）有组首 fallback `floor((num-1)/6)*6+1` 所以正常；**铁匠铺 `BlacksmithPage.getEquipIconCached` 私有缓存无 fallback**→265 个非组首 ID `nvgCreateImage` 失败返回≤0→被 `if eqIcon > 0` 跳过→分解/升阶/洗练页格子只剩品质底框。**修复**：`getEquipIconCached` 改为委托 `ImageCache.getEquipIcon`（删私有 equipIconCache/equipIconVg，init 处补 `ImageCache.init(vg)` 幂等），公开 API 名不变下游零改动。新增 `tests/equipment_icon_fallback_test.lua` 6 断言 ALL PASS（318 ID 全解析/W2 触达 W1/缓存幂等）；validate lua_errors=0；Build 成功。提交 `e1aa9f49` 已 push（一次性 PAT URL，token 未进配置/记忆）。
+- **已知基线问题（未修，与本轮无关）**：`EquipmentDetail.lua:1164` 加载已删除的 `UI_ZBTS_1~5.png`（品质框九宫格），validate 每次 18 处贴图失败——死加载可顺手清理但用户未选。
+- **环境技巧**：headless 测试进程不自退出且 timeout 会吞命令输出——用 `setsid ... &` 后台跑写日志再单独读；`grep -c` 无匹配时 exit 1 会截断 && 链，统计命令用 `|| true` 兜底。
+
+## 上次做了什么（2026-09-30，`feat930/equip-ascend-random-affixes` 装备升阶随机词条，已 push `91ba3952`）
+
+- **任务**：用户要求「装备升阶时多出随机词条」，拍板规则=**所有品质可参与；每跨过 +5 的倍数阶必得 1 条普通词条；普通词条总数上限 4；魔化词条不占普通上限**。基于 `workspace930` 新建 `feat930/equip-ascend-random-affixes`。
+- **核心实现** `rules/blacksmith/BlacksmithService.lua`：新增 `rollAscendAffixes(equip, fromLevel, toLevel)`，单阶 `AscendEquip` 与一键 `AscendEquipToLevel` **共用同一逐阶抽取逻辑**（按 `level % ASCEND_AFFIX_INTERVAL == 0` 判里程碑，复用 `EquipmentSystem.rollAffixes` 排除已有 key）。配置 `config/BlacksmithConfig.lua` 加 `ASCEND_AFFIX_INTERVAL=5`/`ASCEND_NORMAL_AFFIX_LIMIT=4`。
+- **腐化兼容（关键）**：腐化态升阶时新词条**插入 `corruptRevert.affixCount` 保留段内**并同步平移 `"s"` patch 索引、`affixCount+1`——确保神圣石净化只删腐化新增、**保留升阶所得词条**；旧版 `corruptOriginalAffixes` 快照先 `migrateLegacyCorruptSnapshot` 迁移。升阶成功清 `pendingRefines[uid][seq]`（防旧洗练预览覆盖新词条）。
+- **洗练门槛放开**：普通品质(q1,affixCount=0)升阶后有词条即可洗练——`RefineEquip` 校验从「按品质 `qDef.affixCount`」改为「按装备实际 `#equip.affixes`」；点金石补条排除已有 key（原传空表会重复）。洗练石/普通洗练 `maxAffixQuality` 对 q1 用 `math.max(1,...)` 兜底（q1 的 maxAffixQuality=0 会让 rollAffixQuality 退化）。
+- **UI**：`BlacksmithEnhance` 升阶页词条行距压缩（4 行收进固定区）+ 满员/规则提示文案 + 一键弹窗「将新增 N 条」；`BlacksmithRefine` 洗练页词条行 step 自适应（≤5 行）+ scissor 裁剪防溢出 + 锁定图标行距同步；文案「强化」→「升阶」。成功 toast「升阶获得：xxx」。
+- **验证全绿**：新增 `tests/equip_ascend_affix_test.lua` **48 断言 ALL PASS**（里程碑必得/满员封顶/单阶=一键同种子逐条一致/key 互斥/魔化不占额/腐化净化保留升阶词条+patch 索引正确/脱水JSON水合往返/computeModifierEntries 生效/q1 升阶后可洗练/+4→+5 得 +5→+9 不得）；既有回归 auto_decompose/lootbox_overflow(18)/battle_stage_switch/character_power_estimate 全 ALL PASS；主入口 validate **lua_errors=0、engine_errors=19、total=25 与基线逐项一致**（首跑 22 为冷启动波动，复跑=19）；官方 Build 成功 381 Lua 入包；LSP 我改的 6 文件 0 Error（全仓唯一 error 是基线既有 `Standalone.lua:806` 跨文件全局，未动）。
+- **环境**：headless 运行时用 `python3 .cli/install-urhox-runtime.py --dest /workspace/.cli` 安装（sh 无执行权限、py 默认 dest 推导到根 /.cli 无权限，必须显式 --dest）；测试跑法 `cd /workspace && ./.cli/UrhoXRuntime tests/xxx.lua -tapcode_dir=. -tool_mode -graphicsheadless`（EXIT=124 是测试不退出进程的已知行为，看 ALL PASS）。
+- **待实机验收**（headless 测不了渲染）：升阶页 4 词条+提示排版、洗练页 5 词条（4普通+1魔化）不溢出、一键弹窗「将新增 N 条」、升阶成功 toast、q1 装备升阶后洗练入口可用。
+- **本轮续（同日，词条满员后改倍率升级，已 push `9462c2d4`）**：用户拍板「满了后改为词条倍率升级（栏位倍率，不会随洗练丢失）」。装备实例新增 `affixMult` 字段（默认 nil=1）：满 4 条后每个 +5 里程碑 `affixMult += ASCEND_AFFIX_MULT_STEP(0.10)`，四舍五入到千分位防浮点漂移。**核心设计=倍率与词条 value 解耦**：词条 `value` 永远是基础 roll 值（洗练重随/腐化改值/净化恢复都不碰倍率），生效值经 `EquipmentSystem.effectiveAffixValue(equip,affix)`（普通词条 ×affixMult，魔化不乘）统一计算。接入点=属性管线 `computeModifierEntries` + 战力 `EquipmentService.calcEquipPower`/`EquipmentDetail.calcEquipPower` + 显示 `EquipmentDetail`×2/`CharacterDetailEquip` 汇总/`BlacksmithEnhance`/`BlacksmithRefine`（含腐化对比 before 值同乘倍率保持口径一致；`getAffixRefineRatioText` 品质比例仍基于基础 value——倍率不写入 value 故无需除回）。持久化：dehydrate 写 `affixMult`（=1 省略）/hydrate 规范化（≤1 清 nil）；`rollAscendAffixes` 返回 `gained, multUps`，回包带 `multUps/affixMult`；UI 满员提示改「每升5阶词条倍率+10%（当前 ×N，洗练不丢）」、一键弹窗预览「N 条词条、倍率 ×a→×b」、toast 合并显示。测试扩到 **74 断言 ALL PASS**（新增第10节：满员转倍率/生效值=value×1.2/魔化不乘/computeModifierEntries 含放大值/洗练+洗练石+替换不丢倍率/脱水JSON往返/倍率=1省略字段/18层累加=2.8无漂移/腐化态倍率累加+净化不丢）。既有回归 lootbox18/分解/切关/战力全 ALL PASS；validate lua_errors=0（engine_errors 19↔21 为 headless shader 编译非确定性波动，两次错误行相同均环境性，与 Lua 改动无关）；官方 Build 381 Lua，dist 含 getAffixMult。
 
 ## 上次做了什么（2026-09-29 续，古树背景重绘，已 push `4559fd8`）
 

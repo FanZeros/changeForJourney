@@ -147,7 +147,6 @@ local function recalcRefineEssenceCost()
     local baseCost = BlacksmithConfig.calcRefineEssenceCost(
         equip.quality or 1,
         equip.level or 1,
-        refineData.refineCount,
         equip.grip)
     local lockedCount = 0
     if not (selectedExtraRes and (selectedExtraRes.key == "destroyStone" or selectedExtraRes.key == "corruptStone" or selectedExtraRes.key == "sacredStone")) then
@@ -189,42 +188,46 @@ end
 
 -- ======================== 洗练界面常量 ========================
 
--- ---- 洗练界面 - 上半部分 ----
+-- ---- 洗练界面 - 上半部分（横屏左右排布：洗练前左 / 洗练后右） ----
 local XL = {
     -- 1. "洗练装备" 标题
     TITLE_CX = 540, TITLE_CY = 886, TITLE_FONT_SIZE = 40,
     -- 腐化次数提示（标题下方）
     CORRUPT_TEXT_CX = 540, CORRUPT_TEXT_Y = 940, CORRUPT_TEXT_FONT = 32,
     CORRUPT_BASE_HINT_Y = 972, CORRUPT_BASE_HINT_FONT = 28,
-    CORRUPT_TAG_FONT = 26,
-    -- 2. 洗练前属性区域
-    ATTR_ICON_CX = 180, ATTR_ICON_SIZE = 44,
-    ATTR_NAME_X = 212, ATTR_FONT_SIZE = 36,
+    CORRUPT_TAG_FONT = 22,
+    -- 2. 单一背景框：洗练前/后内容共用一个框，左右并排（无「洗练前/后」标题字）
+    FRAME_CX = 540, FRAME_CY = 1240, FRAME_W = 970, FRAME_H = 560,
+    -- 左右两半内容的面板相对左缘 / 半幅中心（空状态提示与结果展示用）
+    -- 左半可用 110..516、右半可用 610..1009（箭头 516..564 居中分隔）
+    LEFT_PANEL_LEFT = 55, RIGHT_PANEL_LEFT = 555,
+    LEFT_HALF_CX = 313, RIGHT_HALF_CX = 786,
+    -- 3. 两半之间的箭头（向右，亮色染色绘制）
+    ARROW_CX = 540, ARROW_CY = 1240, ARROW_W = 48, ARROW_H = 48,
+    -- 5. 属性行（半幅内相对坐标：相对各半左缘）
+    ATTR_ICON_CX = 34, ATTR_ICON_SIZE = 40,
+    ATTR_NAME_X = 60, ATTR_FONT_SIZE = 28, ATTR_NAME_FONT_SMALL = 24,
+    ATTR_NAME_MAX_W = 210,
     ATTR_NAME_R = 0x72, ATTR_NAME_G = 0x58, ATTR_NAME_B = 0x50,
-    ATTR_VALUE_X = 900,
-    ATTR_RATIO_GAP = 12,
-    ATTR_RATIO_R = 0x99, ATTR_RATIO_G = 0x92, ATTR_RATIO_B = 0x8a,
-    LOCK_ICON_CX = 980, LOCK_ICON_SIZE = 40,
+    ATTR_VALUE_X = 330,
+    LOCK_ICON_CX = 366, LOCK_ICON_SIZE = 38,
     ATTR_VAL_R = 0x45, ATTR_VAL_G = 0x45, ATTR_VAL_B = 0x45,
-    -- 3. 洗练前背景框
-    BEFORE_BG_CX = 540, BEFORE_BG_CY = 1111, BEFORE_BG_W = 970, BEFORE_BG_H = 260,
-    -- 4. "洗练前" 文本
-    BEFORE_TEXT_CX = 540, BEFORE_TEXT_CY = 1018,
-    -- 5. 第一行属性 Y（洗练前）
-    ATTR_FIRST_Y = 1089,
-    -- 6. 属性图标尺寸（已在上方 ATTR_ICON_SIZE）
-    -- 7. 行间距
-    ATTR_ROW_GAP = 19,
-    -- 8. 箭头
-    ARROW_CX = 540, ARROW_CY = 1287, ARROW_W = 54, ARROW_H = 54,
-    -- 9. 洗练后背景框
-    AFTER_BG_CX = 540, AFTER_BG_CY = 1458, AFTER_BG_W = 970, AFTER_BG_H = 260,
-    -- 10. "洗练后" 文本
-    AFTER_TEXT_CX = 540, AFTER_TEXT_CY = 1365,
+    -- 腐化对比行（第二行 旧→新）
+    COMPARE_FONT = 24,
+    COMPARE_LINE_DY = 18,
+    -- 6. 行间距
+    ATTR_ROW_GAP = 28,
 }
--- 计算行步进和洗练后属性行Y
-XL.ATTR_ROW_STEP = XL.ATTR_ICON_SIZE + XL.ATTR_ROW_GAP  -- 63
-XL.AFTER_ATTR_FIRST_Y = XL.AFTER_BG_CY + (XL.ATTR_FIRST_Y - XL.BEFORE_BG_CY)  -- 1436
+-- 计算行步进
+XL.ATTR_ROW_STEP = XL.ATTR_ICON_SIZE + XL.ATTR_ROW_GAP  -- 68
+
+--- 属性行首行 Y：N 行整体垂直居中于单框中心
+---@param rowCount number
+---@return number
+local function refineRowFirstY(rowCount)
+    local n = math.max(1, math.floor(tonumber(rowCount) or 1))
+    return XL.FRAME_CY - (n - 1) * XL.ATTR_ROW_STEP * 0.5
+end
 
 -- ---- 洗练界面 - 下半部分 ----
 -- 1. "洗练需求"
@@ -327,8 +330,7 @@ local imgEnhBtn        -- 洗练按钮背景（绿色）
 local imgReplaceBtn    -- 替换按钮背景（黄色）
 local imgEssenceIcon   -- 精粹图标
 local imgGoldQBg       -- 精粹品质背景框
-local imgXlBefore      -- 洗练前背景框图
-local imgXlAfter       -- 洗练后背景框图
+local imgXlBefore      -- 洗练前/后共用单框背景图
 local imgGrade         -- 词缀等级图标 table
 local imgPlus          -- 加号图标
 local imgQualityBg     -- 品质背景框 table {[1]~[5]}
@@ -349,7 +351,6 @@ function M.setContext(ctx)
     imgEssenceIcon     = ctx.imgEssenceIcon
     imgGoldQBg         = ctx.imgGoldQBg
     imgXlBefore        = ctx.imgXlBefore
-    imgXlAfter         = ctx.imgXlAfter
     imgGrade           = ctx.imgGrade
     imgPlus            = ctx.imgPlus
     imgQualityBg       = ctx.imgQualityBg
@@ -382,11 +383,6 @@ local function easeOutCubic(t)
     return t * t * t + 1
 end
 
-local function formatRefineRatio(ratio)
-    ratio = math.max(0, math.min(1, tonumber(ratio) or 0))
-    return string.format("（%.1f%%）", ratio * 100)
-end
-
 local function getAffixTemplate(affix)
     if not affix then return nil end
     local affixId = tonumber(affix.affixId) or affix.affixId
@@ -399,35 +395,6 @@ local function getAffixTemplate(affix)
     return nil
 end
 
-local function getAffixRefineRatioText(affix, equip)
-    if not affix or not equip then return nil end
-    if AffixConfig.isCorruptAffix(affix) then return nil end
-    local numeric = EquipmentSystem.normalizeAffixNumericValue(affix.value)
-    if numeric == nil then return nil end
-
-    local tpl = getAffixTemplate(affix)
-    local qDef = AffixConfig.QUALITY[tonumber(affix.quality) or 1]
-    local baseValue = tpl and tonumber(tpl.baseValue) or nil
-    if not tpl or not qDef or not baseValue or baseValue == 0 then return nil end
-
-    local eqQDef = EquipmentConfig.QUALITY[tonumber(equip.quality) or 1]
-    local randomStrength = eqQDef and (tonumber(eqQDef.randomStrength) or 1.0) or 1.0
-    local itemTpl = equip.templateId and EquipmentConfig.ITEMS[equip.templateId] or nil
-    local grip = equip.grip or (itemTpl and itemTpl.grip)
-    local gripMult = (grip == "twohand") and 2 or 1
-    local level = math.max(1, tonumber(equip.level) or 1)
-    local levelScale = 1 + (level - 1) * (EquipmentConfig.LEVEL_SCALE or 0)
-
-    local minMult = tonumber(qDef.minMult) or 1
-    local maxMult = tonumber(qDef.maxMult) or minMult
-    local minValue = baseValue * math.min(minMult, maxMult) * levelScale * randomStrength * gripMult
-    local maxValue = baseValue * math.max(minMult, maxMult) * levelScale * randomStrength * gripMult
-    if maxValue <= minValue then return nil end
-
-    local ratio = (numeric - minValue) / (maxValue - minValue)
-    return formatRefineRatio(ratio)
-end
-
 ---@param row table
 ---@param index number
 ---@param affix table
@@ -437,7 +404,11 @@ local function annotateAffixCorruptRow(row, index, affix, equip, corruptMeta)
     if corruptMeta then
         local beforeVal = corruptMeta.scaleByIndex[index]
         if beforeVal ~= nil then
-            local beforeFmt = formatAffixValue(affix.key, beforeVal, affix.affixId)
+            local beforeEff = beforeVal
+            if equip and not AffixConfig.isCorruptAffix(affix) then
+                beforeEff = beforeVal * EquipmentSystem.getAffixMult(equip)
+            end
+            local beforeFmt = formatAffixValue(affix.key, beforeEff, affix.affixId)
             local afterFmt = row.value
             local av = tonumber(affix.value) or 0
             if av > beforeVal * 1.01 then
@@ -473,10 +444,10 @@ local function affixToDisplayRow(affix, equip, index, corruptMeta)
     end
     local isCorrupt = AffixConfig.isCorruptAffix(affix)
     local qDef = AffixConfig.QUALITY[affix.quality]
+    local effVal = equip and EquipmentSystem.effectiveAffixValue(equip, affix) or affix.value
     local row = {
         name = affix.name or affix.key or "?",
-        value = formatAffixValue(affix.key, affix.value, affix.affixId),
-        ratioText = (not isCorrupt and equip) and getAffixRefineRatioText(affix, equip) or nil,
+        value = formatAffixValue(affix.key, effVal, affix.affixId),
         grade = qDef and qDef.name or "D",
         isCorrupt = isCorrupt,
     }
@@ -518,7 +489,11 @@ local function buildCorruptAfterRows(detail, beforeAffixes, afterAffixes, equip)
             if ch.kind == "added" then
                 row.corruptTag = (detail and detail.effectId == 7) and "魔化词条" or "腐化新增"
             elseif ch.kind == "scale" then
-                local beforeFmt = formatAffixValue(ch.key, ch.beforeValue, ch.affixId)
+                local beforeEff = ch.beforeValue
+                if equip and not AffixConfig.isCorruptAffix(affix) then
+                    beforeEff = ch.beforeValue * EquipmentSystem.getAffixMult(equip)
+                end
+                local beforeFmt = formatAffixValue(ch.key, beforeEff, ch.affixId)
                 if ch.afterValue > ch.beforeValue then
                     row.corruptTag = "腐化强化"
                 else
@@ -604,14 +579,15 @@ end
 
 -- ======================== 绘制函数 ========================
 
---- 绘制洗练属性行列表（洗练前/洗练后通用）
+--- 绘制洗练属性行列表（洗练前/洗练后通用，左右排布后的半幅面板）
 ---@param vg any NanoVG context
 ---@param attrs table 属性列表 { {name, value, grade}, ... }
 ---@param firstY number 第一行 Y 中心
+---@param panelLeft number 面板左缘 X（行内元素按面板相对坐标定位）
 ---@param offsetX number|nil X偏移量（动画用，默认0）
 ---@param alpha number|nil 透明度 0-255（动画用，默认255）
 ---@param lockOpts table|nil { showLocks=true, lockedSet=table }
-local function drawRefineAttrRows(vg, attrs, firstY, offsetX, alpha, lockOpts)
+local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, lockOpts)
     offsetX = offsetX or 0
     alpha = alpha or 255
     local a = math.floor(math.max(0, math.min(255, alpha)))
@@ -624,60 +600,57 @@ local function drawRefineAttrRows(vg, attrs, firstY, offsetX, alpha, lockOpts)
         if attr.isCorrupt then
             local r = XL.ATTR_ICON_SIZE * 0.22
             nvgBeginPath(vg)
-            nvgCircle(vg, XL.ATTR_ICON_CX + offsetX, rowY, r)
+            nvgCircle(vg, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, r)
             nvgFillColor(vg, nvgRGBA(0x9B, 0x4D, 0xFF, a))
             nvgFill(vg)
             nvgBeginPath(vg)
-            nvgCircle(vg, XL.ATTR_ICON_CX + offsetX, rowY, r)
+            nvgCircle(vg, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, r)
             nvgStrokeWidth(vg, 2)
             nvgStrokeColor(vg, nvgRGBA(0xE0, 0xB0, 0xFF, math.floor(a * 0.85)))
             nvgStroke(vg)
         else
             local gradeIcon = imgGrade[attr.grade] or -1
             if gradeIcon >= 0 then
-                drawImageCentered(vg, gradeIcon, XL.ATTR_ICON_CX + offsetX, rowY, XL.ATTR_ICON_SIZE, XL.ATTR_ICON_SIZE, a / 255)
+                drawImageCentered(vg, gradeIcon, panelLeft + XL.ATTR_ICON_CX + offsetX, rowY, XL.ATTR_ICON_SIZE, XL.ATTR_ICON_SIZE, a / 255)
             end
         end
 
-        -- 属性名（左对齐）
+        -- 属性名（左对齐，超长缩字号）
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, XL.ATTR_FONT_SIZE)
+        local nameW = nvgTextBounds(vg, 0, 0, attr.name)
+        if nameW > XL.ATTR_NAME_MAX_W then
+            nvgFontSize(vg, XL.ATTR_NAME_FONT_SMALL)
+            nameW = nvgTextBounds(vg, 0, 0, attr.name)
+        end
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(XL.ATTR_NAME_R, XL.ATTR_NAME_G, XL.ATTR_NAME_B, a))
-        nvgText(vg, XL.ATTR_NAME_X + offsetX, rowY, attr.name, nil)
+        nvgText(vg, panelLeft + XL.ATTR_NAME_X + offsetX, rowY, attr.name, nil)
 
         -- 腐化标签（词缀名右侧）
         if attr.corruptTag and attr.corruptTag ~= "" then
-            local nameW = nvgTextBounds(vg, 0, 0, attr.name)
             nvgFontSize(vg, XL.CORRUPT_TAG_FONT)
             nvgFillColor(vg, nvgRGBA(CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B, a))
-            nvgText(vg, XL.ATTR_NAME_X + offsetX + nameW + 8, rowY, "[" .. attr.corruptTag .. "]", nil)
-            nvgFontSize(vg, XL.ATTR_FONT_SIZE)
+            nvgText(vg, panelLeft + XL.ATTR_NAME_X + offsetX + nameW + 6, rowY, "[" .. attr.corruptTag .. "]", nil)
         end
 
-        -- 数值（右对齐）：腐化对比优先展示「旧 → 新」
-        local valueText = attr.compareText or tostring(attr.value or "")
-        local valueX = XL.ATTR_VALUE_X + offsetX
+        -- 数值（右对齐）：腐化对比时数值行下移一行展示「旧 → 新」
+        local valueText = tostring(attr.value or "")
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-        if attr.compareText then
-            nvgFillColor(vg, nvgRGBA(CORRUPT_COMPARE_R, CORRUPT_COMPARE_G, CORRUPT_COMPARE_B, a))
-        else
-            nvgFillColor(vg, nvgRGBA(XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B, a))
-        end
-        nvgText(vg, valueX, rowY, valueText, nil)
+        nvgFillColor(vg, nvgRGBA(XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B, a))
+        nvgText(vg, panelLeft + XL.ATTR_VALUE_X + offsetX, rowY, valueText, nil)
 
-        -- 洗练比例（显示在数值前方；腐化对比行不重复展示比例）
-        if not attr.compareText and attr.ratioText and attr.ratioText ~= "" then
-            local valueW = nvgTextBounds(vg, 0, 0, valueText)
-            nvgFillColor(vg, nvgRGBA(XL.ATTR_RATIO_R, XL.ATTR_RATIO_G, XL.ATTR_RATIO_B, a))
-            nvgText(vg, valueX - valueW - XL.ATTR_RATIO_GAP, rowY, attr.ratioText, nil)
+        if attr.compareText then
+            nvgFontSize(vg, XL.COMPARE_FONT)
+            nvgFillColor(vg, nvgRGBA(CORRUPT_COMPARE_R, CORRUPT_COMPARE_G, CORRUPT_COMPARE_B, a))
+            nvgText(vg, panelLeft + XL.ATTR_VALUE_X + offsetX, rowY + XL.COMPARE_LINE_DY, attr.compareText, nil)
         end
 
         -- 词缀锁定图标（仅洗练前区域）
         if lockOpts and lockOpts.showLocks and imgLock and imgLock >= 0 then
             local locked = lockOpts.lockedSet and lockOpts.lockedSet[i]
             local lockAlpha = (locked and 1.0 or 0.35) * (a / 255)
-            drawImageCentered(vg, imgLock, XL.LOCK_ICON_CX + offsetX, rowY,
+            drawImageCentered(vg, imgLock, panelLeft + XL.LOCK_ICON_CX + offsetX, rowY,
                 XL.LOCK_ICON_SIZE, XL.LOCK_ICON_SIZE, lockAlpha)
         end
     end
@@ -742,15 +715,16 @@ function M.drawPanel(vg)
         end
     end
 
-    -- 替换动画的 Y 偏移量（洗练后区域整体上移到洗练前位置）
-    local replaceYOffset = 0   -- 洗练后区域的 Y 偏移
-    local replaceAlpha = 255   -- 洗练前区域淡出透明度
-    local beforeYDelta = XL.AFTER_BG_CY - XL.BEFORE_BG_CY  -- 347
+    -- 替换动画的 X 偏移量（单框内：右半洗练后内容左移到左半位置）
+    local replaceXOffset = 0   -- 洗练后内容的 X 偏移
+    local replaceAlpha = 255   -- 洗练前内容淡出透明度
+    local beforeXDelta = XL.RIGHT_PANEL_LEFT - XL.LEFT_PANEL_LEFT  -- 500
     if animType == "replace" then
         local eased = easeOutCubic(animT)
-        replaceYOffset = -beforeYDelta * eased   -- 从 0 移到 -347（上移）
+        replaceXOffset = -beforeXDelta * eased   -- 从 0 移到 -500（左移）
         replaceAlpha = math.floor(255 * (1 - eased))  -- 洗练前淡出
     end
+    local frameLeft = XL.FRAME_CX - XL.FRAME_W * 0.5
 
     -- 1. 标题：点金石路径叫提品，避免和装备升阶、普通洗练混在一起
     nvgFontFace(vg, "sans")
@@ -779,65 +753,25 @@ function M.drawPanel(vg)
         end
     end
 
-    -- 2. 洗练前背景框
-    if animType == "replace" then
-        drawImageCentered(vg, imgXlBefore, XL.BEFORE_BG_CX, XL.BEFORE_BG_CY, XL.BEFORE_BG_W, XL.BEFORE_BG_H, replaceAlpha / 255)
-    else
-        drawImageCentered(vg, imgXlBefore, XL.BEFORE_BG_CX, XL.BEFORE_BG_CY, XL.BEFORE_BG_W, XL.BEFORE_BG_H, 1.0)
-    end
+    -- 2. 单一背景框（洗练前/后内容共用，无「洗练前/后」标题字）
+    drawImageCentered(vg, imgXlBefore, XL.FRAME_CX, XL.FRAME_CY, XL.FRAME_W, XL.FRAME_H, 1.0)
 
-    -- 3. "洗练前" 文本
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, XL.ATTR_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    if animType == "replace" then
-        nvgFillColor(vg, nvgRGBA(XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B, replaceAlpha))
-    else
-        nvgFillColor(vg, nvgRGBA(XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B, 255))
-    end
-    nvgText(vg, XL.BEFORE_TEXT_CX, XL.BEFORE_TEXT_CY, isRaiseRarity() and "当前" or "洗练前", nil)
-
-    -- 4-7. 洗练前属性行
+    -- 3. 洗练前属性行（框内左半）
+    local beforeLeft = frameLeft + XL.LEFT_PANEL_LEFT
     local beforeLockOpts = getBeforeLockDrawOpts()
     if #data.before > 0 then
+        local firstY = refineRowFirstY(#data.before)
         if animType == "replace" then
-            drawRefineAttrRows(vg, data.before, XL.ATTR_FIRST_Y, 0, replaceAlpha, beforeLockOpts)
+            drawRefineAttrRows(vg, data.before, firstY, beforeLeft, 0, replaceAlpha, beforeLockOpts)
         else
-            drawRefineAttrRows(vg, data.before, XL.ATTR_FIRST_Y, 0, 255, beforeLockOpts)
+            drawRefineAttrRows(vg, data.before, firstY, beforeLeft, 0, 255, beforeLockOpts)
         end
     else
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 30)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, 180))
-        nvgText(vg, XL.BEFORE_BG_CX, XL.BEFORE_BG_CY, "当前装备无可洗练词缀", nil)
-    end
-
-    -- 8. 箭头（向下旋转90°）
-    nvgSave(vg)
-    nvgTranslate(vg, XL.ARROW_CX, XL.ARROW_CY)
-    nvgRotate(vg, math.rad(90))
-    drawImageCentered(vg, imgArrow, 0, 0, XL.ARROW_W, XL.ARROW_H, 1.0)
-    nvgRestore(vg)
-
-    -- 9. 洗练后背景框（替换动画时上移）
-    local afterBgCY = XL.AFTER_BG_CY + replaceYOffset
-    if animType == "replace" then
-        drawImageCentered(vg, imgXlAfter, XL.AFTER_BG_CX, afterBgCY, XL.AFTER_BG_W, XL.AFTER_BG_H, 1.0)
-    else
-        drawImageCentered(vg, imgXlAfter, XL.AFTER_BG_CX, XL.AFTER_BG_CY, XL.AFTER_BG_W, XL.AFTER_BG_H, 1.0)
-    end
-
-    -- 10. "洗练后" 文本（替换动画时上移）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, XL.ATTR_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B, 255))
-    local afterTitle = (qualityUpgradeInfo or isRaiseRarity()) and "提品" or "洗练后"
-    if animType == "replace" then
-        nvgText(vg, XL.AFTER_TEXT_CX, XL.AFTER_TEXT_CY + replaceYOffset, afterTitle, nil)
-    else
-        nvgText(vg, XL.AFTER_TEXT_CX, XL.AFTER_TEXT_CY, afterTitle, nil)
+        nvgText(vg, XL.LEFT_HALF_CX, XL.FRAME_CY, "当前装备无可洗练词缀", nil)
     end
 
     -- 11. 洗练后属性行
@@ -882,14 +816,14 @@ function M.drawPanel(vg)
         local tR, tG, tB = hexToRGB(toColor)
 
         local alpha = math.floor(255 * fadeIn)
-        local centerY = XL.AFTER_BG_CY
+        local centerY = XL.FRAME_CY
 
         -- "提品" 标题（点金石提品，不叫升阶）
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 34)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0xbc, 0xb8, 0xaa, alpha))
-        nvgText(vg, XL.AFTER_BG_CX, centerY - 40, "提品", nil)
+        nvgText(vg, XL.RIGHT_HALF_CX, centerY - 40, "提品", nil)
 
         -- "旧品质 → 新品质" 展示
         nvgFontSize(vg, 42)
@@ -898,7 +832,7 @@ function M.drawPanel(vg)
         local arrowW = nvgTextBounds(vg, 0, 0, arrowStr)
         local toW = nvgTextBounds(vg, 0, 0, toName)
         local totalW = fromW + arrowW + toW
-        local startX = XL.AFTER_BG_CX - totalW * 0.5
+        local startX = XL.RIGHT_HALF_CX - totalW * 0.5
 
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         -- 旧品质名
@@ -915,9 +849,9 @@ function M.drawPanel(vg)
         nvgFontSize(vg, 28)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, math.floor(alpha * 0.7)))
-        nvgText(vg, XL.AFTER_BG_CX, centerY + 60, "词缀已自动生成", nil)
+        nvgText(vg, XL.RIGHT_HALF_CX, centerY + 60, "词缀已自动生成", nil)
     elseif corruptResultInfo then
-        -- 腐化石结果展示：词缀前后对比 + 效果说明
+        -- 腐化石结果展示：词缀前后对比 + 效果说明（单框右半）
         local ci = corruptResultInfo
         local elapsed = time.elapsedTime - ci.startTime
         local fadeIn = math.min(1.0, elapsed / 0.3)
@@ -927,26 +861,27 @@ function M.drawPanel(vg)
         nvgFontSize(vg, 34)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0xbc, 0xb8, 0xaa, alpha))
-        nvgText(vg, XL.AFTER_TEXT_CX, XL.AFTER_TEXT_CY, "腐化结果", nil)
+        nvgText(vg, XL.RIGHT_HALF_CX, 1030, "腐化结果", nil)
 
         nvgFontSize(vg, 28)
         nvgFillColor(vg, nvgRGBA(CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B, alpha))
-        nvgText(vg, XL.AFTER_BG_CX, XL.AFTER_TEXT_CY + 36, ci.effectName or "魔化完成", nil)
+        nvgText(vg, XL.RIGHT_HALF_CX, 1066, ci.effectName or "魔化完成", nil)
 
         if ci.baseMultHint then
             nvgFontSize(vg, 26)
             nvgFillColor(vg, nvgRGBA(CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B, math.floor(alpha * 0.9)))
-            nvgText(vg, XL.AFTER_BG_CX, XL.AFTER_TEXT_CY + 68, ci.baseMultHint, nil)
+            nvgText(vg, XL.RIGHT_HALF_CX, 1098, ci.baseMultHint, nil)
         end
 
         local afterRows = ci.afterRows
         if afterRows and #afterRows > 0 then
-            local firstY = ci.baseMultHint and (XL.AFTER_ATTR_FIRST_Y + 24) or XL.AFTER_ATTR_FIRST_Y
-            drawRefineAttrRows(vg, afterRows, firstY, 0, alpha)
+            local afterLeft = frameLeft + XL.RIGHT_PANEL_LEFT
+            local firstY = refineRowFirstY(#afterRows) + (ci.baseMultHint and 56 or 36)
+            drawRefineAttrRows(vg, afterRows, firstY, afterLeft, 0, alpha)
         else
             nvgFontSize(vg, 28)
             nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, math.floor(alpha * 0.75)))
-            nvgText(vg, XL.AFTER_BG_CX, XL.AFTER_BG_CY, ci.hint or "效果已直接应用到装备", nil)
+            nvgText(vg, XL.RIGHT_HALF_CX, XL.FRAME_CY, ci.hint or "效果已直接应用到装备", nil)
         end
     elseif #data.before == 0 then
         -- 无词缀装备
@@ -954,38 +889,53 @@ function M.drawPanel(vg)
         nvgFontSize(vg, 30)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, 180))
-        nvgText(vg, XL.AFTER_BG_CX, XL.AFTER_BG_CY, "当前装备无可洗练词缀", nil)
+        nvgText(vg, XL.RIGHT_HALF_CX, XL.FRAME_CY, "当前装备无可洗练词缀", nil)
     elseif animType == "replace" then
-        -- 替换动画：洗练后区域上移（使用快照数据）
+        -- 替换动画：右半洗练后内容左移到左半（使用快照数据）
         local snapshot = refineAnim.replaceSnapshot or data.after
-        local afterFirstY = XL.AFTER_ATTR_FIRST_Y + replaceYOffset
-        drawRefineAttrRows(vg, snapshot, afterFirstY)
+        local afterLeft = frameLeft + XL.RIGHT_PANEL_LEFT
+        local afterFirstY = refineRowFirstY(#snapshot)
+        drawRefineAttrRows(vg, snapshot, afterFirstY, afterLeft + replaceXOffset)
     elseif animType == "refine" then
-        -- 洗练刷新动画：旧词条右滑出，新词条左滑入
+        -- 洗练刷新动画：旧词条右滑出，新词条左滑入（单框右半内）
         local eased = easeOutCubic(animT)
-        local slideRange = 400  -- 滑动距离
+        local slideRange = 240  -- 滑动距离（右半幅内）
+        local afterLeft = frameLeft + XL.RIGHT_PANEL_LEFT
+        local afterFirstY = refineRowFirstY(math.max(#data.after, 1))
         -- 旧词条右滑出（淡出）
         local oldData = refineAnim.oldAfter
         if oldData and #oldData > 0 then
-            local oldOffX = slideRange * eased          -- 0 → 400
+            local oldOffX = slideRange * eased          -- 0 → 240
             local oldAlpha = 255 * (1 - eased)          -- 255 → 0
-            drawRefineAttrRows(vg, oldData, XL.AFTER_ATTR_FIRST_Y, oldOffX, oldAlpha)
+            drawRefineAttrRows(vg, oldData, refineRowFirstY(#oldData), afterLeft, oldOffX, oldAlpha)
         end
         -- 新词条左滑入（淡入）
-        local newOffX = -slideRange * (1 - eased)       -- -400 → 0
+        local newOffX = -slideRange * (1 - eased)       -- -240 → 0
         local newAlpha = 255 * eased                    -- 0 → 255
-        drawRefineAttrRows(vg, data.after, XL.AFTER_ATTR_FIRST_Y, newOffX, newAlpha)
+        drawRefineAttrRows(vg, data.after, afterFirstY, afterLeft, newOffX, newAlpha)
     elseif not data.hasPreview then
         -- 未洗练状态：显示提示文本
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 30)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, 180))
-        nvgText(vg, XL.AFTER_BG_CX, XL.AFTER_BG_CY,
+        nvgText(vg, XL.RIGHT_HALF_CX, XL.FRAME_CY,
             isRaiseRarity() and "请点击提品，提升装备品质" or "请点击洗练按钮来刷出新词条", nil)
     else
-        -- 正常显示洗练后属性行
-        drawRefineAttrRows(vg, data.after, XL.AFTER_ATTR_FIRST_Y)
+        -- 正常显示洗练后属性行（单框右半）
+        local afterLeft = frameLeft + XL.RIGHT_PANEL_LEFT
+        drawRefineAttrRows(vg, data.after, refineRowFirstY(#data.after), afterLeft)
+    end
+
+    -- 5. 亮色箭头最后绘制：滑行动画的词条行从其下方穿过，箭头保持可见
+    if imgArrow and imgArrow >= 0 then
+        local paint = nvgImagePatternTinted(vg,
+            XL.ARROW_CX - XL.ARROW_W * 0.5, XL.ARROW_CY - XL.ARROW_H * 0.5,
+            XL.ARROW_W, XL.ARROW_H, 0, imgArrow, nvgRGBA(255, 214, 102, 255))
+        nvgBeginPath(vg)
+        nvgRect(vg, XL.ARROW_CX - XL.ARROW_W * 0.5, XL.ARROW_CY - XL.ARROW_H * 0.5, XL.ARROW_W, XL.ARROW_H)
+        nvgFillPaint(vg, paint)
+        nvgFill(vg)
     end
 end
 
@@ -1119,14 +1069,9 @@ function M.drawPanelBottom(vg)
     nvgFillColor(vg, nvgRGBA(XL.REQ_TITLE_R, XL.REQ_TITLE_G, XL.REQ_TITLE_B, 255))
     nvgText(vg, XL.REQ_TITLE_X, XL.REQ_TITLE_Y, isRaiseRarity() and "提品需求" or "洗练需求", nil)
 
-    -- 2. "当前装备累计洗练XX次"（右对齐）
+    -- 2. "当前装备累计洗练XX次"（右对齐；费用固定，次数仅统计）
     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-    local countText = tostring(data.refineCount)
-    if data.refineCount >= BlacksmithConfig.REFINE_COUNT_CAP then
-        countText = countText .. "次(费用已满，可继续洗练)"
-    else
-        countText = countText .. "次"
-    end
+    local countText = tostring(data.refineCount) .. "次"
     nvgText(vg, XL.REQ_COUNT_X, XL.REQ_COUNT_Y, "当前装备累计洗练" .. countText, nil)
 
     -- 3. 洗练需求背景框（纯黑 5%）
@@ -1254,12 +1199,14 @@ function M.handleInput(dx, dy)
         return true
     end
 
-    -- ===== 2. 洗练前词缀锁定（点金石路径不显示锁） =====
+    -- ===== 2. 洗练前词缀锁定（点金石路径不显示锁；左侧面板内坐标） =====
     if shouldShowAffixLocks() and state.selectedEquip and #refineData.before > 0 then
         local seq = state.selectedEquip.seq
+        local lockX = XL.FRAME_CX - XL.FRAME_W * 0.5 + XL.LEFT_PANEL_LEFT + XL.LOCK_ICON_CX
+        local firstY = refineRowFirstY(#refineData.before)
         for i = 1, #refineData.before do
-            local rowY = XL.ATTR_FIRST_Y + (i - 1) * XL.ATTR_ROW_STEP
-            if hitTest(dx, dy, XL.LOCK_ICON_CX, rowY, XL.LOCK_ICON_SIZE, XL.LOCK_ICON_SIZE) then
+            local rowY = firstY + (i - 1) * XL.ATTR_ROW_STEP
+            if hitTest(dx, dy, lockX, rowY, XL.LOCK_ICON_SIZE, XL.LOCK_ICON_SIZE) then
                 toggleAffixLock(seq, i)
                 print("[BlacksmithRefine] 词缀锁定切换 seq=" .. tostring(seq) .. " index=" .. i
                     .. " locked=" .. tostring(getAffixLockSet(seq)[i] == true))
@@ -1353,10 +1300,11 @@ function M.onActionResult(data)
                 end
                 local qDef2 = AffixConfig.QUALITY[affix.quality]
                 local gradeName = qDef2 and qDef2.name or "D"
+                local effVal = state.selectedEquip
+                    and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
                 before[#before + 1] = {
                     name = affix.name or affix.key or "?",
-                    value = formatAffixValue(affix.key, affix.value, affix.affixId),
-                    ratioText = getAffixRefineRatioText(affix, state.selectedEquip),
+                    value = formatAffixValue(affix.key, effVal, affix.affixId),
                     grade = gradeName,
                 }
             end
@@ -1415,10 +1363,11 @@ function M.onActionResult(data)
                 end
                 local qDef2 = AffixConfig.QUALITY[affix.quality]
                 local gradeName = qDef2 and qDef2.name or "D"
+                local effVal = state.selectedEquip
+                    and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
                 before[#before + 1] = {
                     name = affix.name or affix.key or "?",
-                    value = formatAffixValue(affix.key, affix.value, affix.affixId),
-                    ratioText = getAffixRefineRatioText(affix, state.selectedEquip),
+                    value = formatAffixValue(affix.key, effVal, affix.affixId),
                     grade = gradeName,
                 }
             end
@@ -1526,10 +1475,11 @@ function M.onActionResult(data)
             EquipmentSystem.ensureAffixValue(affix, state.selectedEquip or {})
             local qDef = AffixConfig.QUALITY[affix.quality]
             local gradeName = qDef and qDef.name or "D"
+            local effVal = state.selectedEquip
+                and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
             after[#after + 1] = {
                 name = affix.name or affix.key or "?",
-                value = formatAffixValue(affix.key, affix.value, affix.affixId),
-                ratioText = getAffixRefineRatioText(affix, state.selectedEquip),
+                value = formatAffixValue(affix.key, effVal, affix.affixId),
                 grade = gradeName,
             }
         end

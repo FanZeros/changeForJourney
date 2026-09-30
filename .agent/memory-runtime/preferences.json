@@ -7,7 +7,7 @@
   "always_askuserquestion": true,
   "never_cancel_task": true,
   "never_end_without_askuserquestion": true,
-  "askuserquestion_rule": "每次完成任务、给出规划、提交后，以及所有对话收尾时，先简报，再真正调用 AskUserQuestion 工具给出 2–4 个明确选项，询问下一步并等待用户选择；禁止仅用文字或开放式问题结尾。受阻时亦然。记忆不等同于自动 hook。",
+  "askuserquestion_rule": "不能擅自取消或退出任务；完成任务后、给出规划后、提交后，以及所有对话收尾（含受阻时），均先简要报告已核实的结果，再真正调用 AskUserQuestion 工具提供 2–4 个明确选项询问下一步并等待选择；严禁仅以普通文字或开放式问题结尾。记忆不等同于自动 hook。",
   "dev_branch": "按当前轮次指定的基线新建独立任务分支",
   "base_branch": "workspace930",
   "push_policy": "当前轮次优先：基于指定基线新建独立分支；有提交时只推该新分支，绝不推 workspace 系列基线（除非用户当轮明确授权），不强推、不覆盖并发改动。历史：2026-09-28 已授权并合入 workspace926：feat926/shield-scaling-0928（merge 3fafff54）、feat928/rarity-unify-multi-filter（merge 392bcdc）、feat926/awakening-skill-review、feat/talent-more-paths-0928（三分支合并+死亡补位+投掷物抛物线）。每次交付或受阻先简报，再调用 AskUserQuestion 提供下一步选项；不把 PAT 写入仓库、远端 URL、日志或记忆（用户对话中贴出的 PAT 应提示撤销轮换；推送用内联凭据，推完 set-url 还原并 grep ghp_ .git/config 验证 0）。",

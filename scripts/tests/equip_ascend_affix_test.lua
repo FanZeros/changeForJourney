@@ -249,6 +249,88 @@ function Start()
         eq(#res9b.gainedAffixes, 0, "+5→+9 无里程碑不得词条")
         local _, _, res9c = BS.AscendEquip(UID, e9.seq)
         eq(#res9c.gainedAffixes, 1, "+9→+10 单阶得 1 条")
+
+        -- ========== 10) 满员后里程碑转为栏位倍率升级（洗练不丢） ==========
+        newModules()
+        local e10 = putEquip(makeWeapon(4))
+        eq(normalAffixCount(e10), 2, "q4 初始 2 词条")
+        eq(EquipmentSystem.getAffixMult(e10), 1, "初始倍率=1")
+        local _, _, r10a = BS.AscendEquipToLevel(UID, e10.seq, 10)   -- 里程碑 +5/+10 → 满 4 条
+        eq(normalAffixCount(e10), 4, "两个里程碑补满 4 条")
+        eq(r10a.multUps, 0, "未满员阶段无倍率升级")
+        eq(EquipmentSystem.getAffixMult(e10), 1, "倍率仍=1")
+
+        local _, _, r10b = BS.AscendEquipToLevel(UID, e10.seq, 20)   -- +15/+20 → 2 次倍率
+        eq(#r10b.gainedAffixes, 0, "满员后不再新增词条")
+        eq(r10b.multUps, 2, "两个里程碑转倍率升级 ×2")
+        eq(EquipmentSystem.getAffixMult(e10), 1.2, "倍率=1.2（每层+10%）")
+        eq(r10b.affixMult, 1.2, "回包携带 affixMult")
+
+        -- 生效值 = 基础值 × 倍率（普通词条）；魔化词条不吃倍率
+        local normal = e10.affixes[1]
+        local eff = EquipmentSystem.effectiveAffixValue(e10, normal)
+        check(math.abs(eff - normal.value * 1.2) < 1e-9, "普通词条生效值=value×1.2")
+        local corruptAffix = { affixId = 1001, quality = 0, value = 7, key = "finalPhysAtkBonus", name = "最终物攻" }
+        eq(EquipmentSystem.effectiveAffixValue(e10, corruptAffix), 7, "魔化词条不吃倍率")
+
+        -- 战斗属性管线吃到倍率
+        local entriesM = EquipmentSystem.computeModifierEntries(e10, 0)
+        local foundScaled = false
+        for _, en in ipairs(entriesM) do
+            if en.key == normal.key and math.abs(en.flat - normal.value * 1.2) < 1e-9 then
+                foundScaled = true
+            end
+        end
+        check(foundScaled, "computeModifierEntries 输出含倍率放大值")
+
+        -- 洗练（普通重随 + 替换）不丢倍率
+        local okW, errW = BS.RefineEquip(UID, e10.seq, nil)
+        check(okW, "满员装备可洗练: " .. tostring(errW))
+        local okRep = BS.RefineReplace(UID, e10.seq)
+        check(okRep, "洗练替换成功")
+        eq(EquipmentSystem.getAffixMult(e10), 1.2, "洗练+替换后倍率不丢")
+        eq(normalAffixCount(e10), 4, "洗练后词条数不变")
+
+        -- 洗练石（保种类重随数值）同样不丢倍率
+        local okS = BS.RefineEquip(UID, e10.seq, "enhanceStone")
+        check(okS, "洗练石可用")
+        BS.RefineReplace(UID, e10.seq)
+        eq(EquipmentSystem.getAffixMult(e10), 1.2, "洗练石路径倍率不丢")
+
+        -- 存档往返保留倍率
+        local lean10 = EquipmentSystem.dehydrate(e10)
+        eq(lean10.affixMult, 1.2, "脱水保留 affixMult")
+        local restored10 = cjson.decode(cjson.encode(lean10))
+        EquipmentSystem.hydrate(restored10)
+        eq(EquipmentSystem.getAffixMult(restored10), 1.2, "JSON 往返后倍率=1.2")
+        local leanNoMult = EquipmentSystem.dehydrate(makeWeapon(1))
+        eq(leanNoMult.affixMult, nil, "倍率=1 时脱水省略字段")
+
+        -- 浮点精度：多层累加不漂移（0→100 共 20 里程碑，q4 补 2 条后 18 层 → 1+1.8=2.8）
+        newModules()
+        local e11 = putEquip(makeWeapon(4))
+        BS.AscendEquipToLevel(UID, e11.seq, 100)
+        eq(normalAffixCount(e11), 4, "e11 词条补满")
+        eq(EquipmentSystem.getAffixMult(e11), 2.8, "18 层倍率累加=2.8（无浮点漂移）")
+
+        -- 腐化装备满员后倍率升级也生效，且净化不丢倍率
+        newModules()
+        local e12 = putEquip(makeWeapon(5))
+        e12.affixes = {
+            { affixId = 1, quality = 3, value = 10, key = "str", name = "力量" },
+            { affixId = 2, quality = 3, value = 10, key = "agi", name = "敏捷" },
+            { affixId = 3, quality = 3, value = 10, key = "int", name = "秘识" },
+            { affixId = 4, quality = 3, value = 10, key = "vit", name = "体质" },
+        }
+        BS.AscendEquipToLevel(UID, e12.seq, 5)
+        eq(EquipmentSystem.getAffixMult(e12), 1.1, "满员4条后里程碑→倍率1.1")
+        local okC12 = BS.RefineEquip(UID, e12.seq, "corruptStone")
+        check(okC12, "腐化成功")
+        BS.AscendEquipToLevel(UID, e12.seq, 10)
+        eq(EquipmentSystem.getAffixMult(e12), 1.2, "腐化态满员升阶倍率继续累加")
+        local okC12b = BS.RefineEquip(UID, e12.seq, "sacredStone")
+        check(okC12b, "净化成功")
+        eq(EquipmentSystem.getAffixMult(e12), 1.2, "净化不丢倍率")
     end)
     if not ok then
         print(PREFIX .. "[FAIL] 测试抛异常: " .. tostring(err))

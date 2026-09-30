@@ -341,7 +341,7 @@ local function calcEquipPower(equip, heroId)
     end
 
     for _, affix in ipairs(equip.affixes or {}) do
-        power = power + calcStatPower(affix.key, affix.value, excluded)
+        power = power + calcStatPower(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix), excluded)
     end
 
     return math.floor(power)
@@ -897,8 +897,8 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
             nvgText(vg, REF_AFFIX_TEXT_X + offsetX, affixY, affName, nil)
 
-            -- 词缀数值 - 右对齐 X1016 字号34 白色 描边4（与基础属性相同）
-            local affVal = "+" .. formatStatValue(affix.key, affix.value)
+            -- 词缀数值 - 右对齐 X1016 字号34 白色 描边4（与基础属性相同；生效值含栏位倍率）
+            local affVal = "+" .. formatStatValue(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix))
             drawTextStroke(vg, REF_STAT_VAL_X + offsetX, affixY, affVal,
                 REF_STAT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
                 255, 255, 255, 4)
@@ -1076,7 +1076,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
             nvgText(vg, leftX, y, affix.name or "?", nil)
-            drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, affix.value), 36,
+            drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix)), 36,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
             bottom = y + REF_AFFIX_ROW_H * 0.5
         end

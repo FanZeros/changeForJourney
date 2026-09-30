@@ -190,7 +190,8 @@ local function collectEquipSide(heroId)
                 addTotal(totals, order, key, val)
             end
             for _, affix in ipairs(equip.affixes or {}) do
-                addTotal(totals, order, affix.key, affix.value or 0)
+                addTotal(totals, order, affix.key,
+                    EquipmentSystem.effectiveAffixValue(equip, affix))
             end
         end
     end

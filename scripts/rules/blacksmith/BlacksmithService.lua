@@ -44,6 +44,7 @@ end
 local function rollAscendAffixes(equip, fromLevel, toLevel)
     EquipmentSystem.migrateLegacyCorruptSnapshot(equip)
     local gained = {}
+    local multUps = 0
     local affixes = equip.affixes or {}
     local normalCount = 0
     local exclude = {}
@@ -53,35 +54,45 @@ local function rollAscendAffixes(equip, fromLevel, toLevel)
     end
     local qDef = EquipmentConfig.QUALITY[equip.quality]
     for level = fromLevel + 1, toLevel do
-        if level % BlacksmithConfig.ASCEND_AFFIX_INTERVAL == 0
-            and normalCount < BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT then
-            local rolled = EquipmentSystem.rollAffixes(1,
-                math.max(1, qDef.maxAffixQuality or 0), equip.level or 1,
-                exclude, qDef.randomStrength or 1.0, equip.grip)
-            if rolled[1] then
-                local affix = rolled[1]
-                local rev = equip.corruptRevert
-                if rev then
-                    -- 腐化新增词条留在尾部；升阶词条插入净化保留段。
-                    local insertAt = math.min(#affixes + 1, rev.affixCount + 1)
-                    table.insert(affixes, insertAt, affix)
-                    for _, patch in ipairs(rev.patches or {}) do
-                        if patch[1] == "s" and patch[2] >= insertAt then
-                            patch[2] = patch[2] + 1
+        if level % BlacksmithConfig.ASCEND_AFFIX_INTERVAL == 0 then
+            if normalCount < BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT then
+                local rolled = EquipmentSystem.rollAffixes(1,
+                    math.max(1, qDef.maxAffixQuality or 0), equip.level or 1,
+                    exclude, qDef.randomStrength or 1.0, equip.grip)
+                if rolled[1] then
+                    local affix = rolled[1]
+                    local rev = equip.corruptRevert
+                    if rev then
+                        -- 腐化新增词条留在尾部；升阶词条插入净化保留段。
+                        local insertAt = math.min(#affixes + 1, rev.affixCount + 1)
+                        table.insert(affixes, insertAt, affix)
+                        for _, patch in ipairs(rev.patches or {}) do
+                            if patch[1] == "s" and patch[2] >= insertAt then
+                                patch[2] = patch[2] + 1
+                            end
                         end
+                        rev.affixCount = rev.affixCount + 1
+                    else
+                        affixes[#affixes + 1] = affix
                     end
-                    rev.affixCount = rev.affixCount + 1
-                else
-                    affixes[#affixes + 1] = affix
+                    gained[#gained + 1] = affix
+                    normalCount = normalCount + 1
+                    exclude[affix.key] = true
                 end
-                gained[#gained + 1] = affix
-                normalCount = normalCount + 1
-                exclude[affix.key] = true
+            else
+                -- 普通词条已满：里程碑改为栏位倍率升级（洗练不丢）
+                multUps = multUps + 1
             end
         end
     end
+    if multUps > 0 then
+        local step = BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10
+        local cur = tonumber(equip.affixMult) or 1
+        local nextMult = math.floor((cur + step * multUps) * 1000 + 0.5) / 1000
+        equip.affixMult = nextMult
+    end
     equip.affixes = affixes
-    return gained
+    return gained, multUps
 end
 
 --- 按 seq 升 1 阶。消耗为原强化表的 60%。
@@ -117,7 +128,7 @@ function BlacksmithService.AscendEquip(uid, seq)
     currency[scrollField] = currency[scrollField] - cost.scroll
     equip.ascendLevel = nextLv
     equip.enhanceLevel = nextLv
-    local gainedAffixes = rollAscendAffixes(equip, currentLv, nextLv)
+    local gainedAffixes, multUps = rollAscendAffixes(equip, currentLv, nextLv)
     if pendingRefines[uid] then pendingRefines[uid][tostring(seq)] = nil end
     PDM.MarkDirty(uid, "currency")
     PDM.MarkDirty(uid, "equipment")
@@ -131,6 +142,8 @@ function BlacksmithService.AscendEquip(uid, seq)
         newLevel = nextLv,
         ascendLevel = nextLv,
         gainedAffixes = gainedAffixes,
+        multUps = multUps,
+        affixMult = equip.affixMult,
         affixes = equip.affixes,
     }
 end
@@ -165,7 +178,7 @@ function BlacksmithService.AscendEquipToLevel(uid, seq, targetLevel)
     currency[scrollField] = currency[scrollField] - totalScroll
     equip.ascendLevel = targetLevel
     equip.enhanceLevel = targetLevel
-    local gainedAffixes = rollAscendAffixes(equip, currentLv, targetLevel)
+    local gainedAffixes, multUps = rollAscendAffixes(equip, currentLv, targetLevel)
     if pendingRefines[uid] then pendingRefines[uid][tostring(seq)] = nil end
     PDM.MarkDirty(uid, "currency")
     PDM.MarkDirty(uid, "equipment")
@@ -180,6 +193,8 @@ function BlacksmithService.AscendEquipToLevel(uid, seq, targetLevel)
         ascendLevel = targetLevel,
         levelsGained = targetLevel - currentLv,
         gainedAffixes = gainedAffixes,
+        multUps = multUps,
+        affixMult = equip.affixMult,
         affixes = equip.affixes,
     }
 end

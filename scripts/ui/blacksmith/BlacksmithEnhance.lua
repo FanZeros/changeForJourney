@@ -18,6 +18,7 @@ local SpineResultEffect = require("ui.fx.SpineResultEffect")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local PlayerStore       = require("core.PlayerStore")
 local BF                = require("systems.ButtonFeedback")
+local EquipmentSystem   = require("systems.EquipmentSystem")
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
@@ -302,16 +303,17 @@ function M.updateEnhanceData(equip)
         end
     end
 
-    -- 词缀（不随升阶变化，仅显示当前值）
+    -- 词缀（显示生效值：普通词条吃栏位倍率，魔化不吃）
     local affixes = {}
     for _, affix in ipairs(equip.affixes or {}) do
         local isCorrupt = AffixConfig.isCorruptAffix(affix)
         local qDef = AffixConfig.QUALITY[affix.quality]
         local gradeName = qDef and qDef.name or "D"
+        local effVal = EquipmentSystem.effectiveAffixValue(equip, affix)
         affixes[#affixes + 1] = {
             name     = affix.name or affix.key,
-            curVal   = formatAffixValue(affix.key, affix.value),
-            nextVal  = formatAffixValue(affix.key, affix.value),
+            curVal   = formatAffixValue(affix.key, effVal),
+            nextVal  = formatAffixValue(affix.key, effVal),
             curGrade = gradeName,
             nextGrade = gradeName,
             isCorrupt = isCorrupt,
@@ -474,9 +476,14 @@ function M.drawPanel(vg)
     for _, affix in ipairs(state.selectedEquip and state.selectedEquip.affixes or {}) do
         if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
     end
-    local hint = normalCount >= BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT
-        and "普通词条已满（4/4）"
-        or "每升5阶必得1条随机词条（普通词条最多4条）"
+    local affixMult = EquipmentSystem.getAffixMult(state.selectedEquip)
+    local multPct = math.floor((BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10) * 100 + 0.5)
+    local hint
+    if normalCount >= BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT then
+        hint = string.format("词条已满：每升5阶词条倍率+%d%%（当前 ×%.2f，洗练不丢）", multPct, affixMult)
+    else
+        hint = "每升5阶必得1条随机词条（普通词条最多4条）"
+    end
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 23)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -790,10 +797,20 @@ function M.drawConfirmDialog(vg)
         for _, affix in ipairs(state.selectedEquip and state.selectedEquip.affixes or {}) do
             if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
         end
-        local gained = math.min(milestoneCount, math.max(0, BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT - normalCount))
+        local room = math.max(0, BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT - normalCount)
+        local gained = math.min(milestoneCount, room)
+        local multUps = milestoneCount - gained
+        local previewParts = {}
+        if gained > 0 then previewParts[#previewParts + 1] = gained .. " 条随机词条" end
+        if multUps > 0 then
+            local curMult = EquipmentSystem.getAffixMult(state.selectedEquip)
+            local step = BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10
+            local nextMult = math.floor((curMult + step * multUps) * 1000 + 0.5) / 1000
+            previewParts[#previewParts + 1] = string.format("词条倍率 ×%.2f → ×%.2f", curMult, nextMult)
+        end
         nvgFontSize(vg, 26)
         nvgFillColor(vg, nvgRGBA(0xbc, 0x9b, 0x58, 255))
-        nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY - 55, "将新增 " .. gained .. " 条随机词条", nil)
+        nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY - 55, "将新增 " .. table.concat(previewParts, "、"), nil)
     end
 
     -- 减按钮
@@ -1124,13 +1141,20 @@ function M.onActionResult(data)
             state.selectedEquip.ascendLevel = data.newLevel
             state.selectedEquip.enhanceLevel = data.newLevel
             if data.affixes then state.selectedEquip.affixes = data.affixes end
+            if data.affixMult then state.selectedEquip.affixMult = data.affixMult end
         end
-        if data.gainedAffixes and #data.gainedAffixes > 0 then
-            local names = {}
-            for _, affix in ipairs(data.gainedAffixes) do
-                names[#names + 1] = affix.name or affix.key or "随机词条"
+        do
+            local parts = {}
+            for _, affix in ipairs(data.gainedAffixes or {}) do
+                parts[#parts + 1] = affix.name or affix.key or "随机词条"
             end
-            require("core.UiToast").show("升阶获得：" .. table.concat(names, "、"))
+            if (data.multUps or 0) > 0 then
+                parts[#parts + 1] = string.format("词条倍率 ×%.2f",
+                    tonumber(data.affixMult) or EquipmentSystem.getAffixMult(state.selectedEquip))
+            end
+            if #parts > 0 then
+                require("core.UiToast").show("升阶获得：" .. table.concat(parts, "、"))
+            end
         end
         M.updateEnhanceData(state.selectedEquip)
         SpineResultEffect.play(true)

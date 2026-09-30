@@ -18,16 +18,28 @@ local OfflineCalc = {}
 
 OfflineCalc.IDLE_KILL_RATE    = 1/3     -- 固定杀怪效率：每 3 秒 1 只（在线/离线通用）
 OfflineCalc.FULL_RATE_SECONDS = 86400   -- 离线前 24 小时按满额计
-OfflineCalc.TAIL_RATIO        = 0.5     -- 超过 24 小时的部分按 50% 计，不封顶
+OfflineCalc.TAIL_RATIO        = 0.5     -- 超过 24 小时的部分按 50% 计
+OfflineCalc.HARD_CAP_SECONDS  = 86400 * 7  -- 硬顶：离线收益最多累积 7 日，超出部分不再产生任何收益
 OfflineCalc.MAX_SECONDS       = OfflineCalc.FULL_RATE_SECONDS  -- 兼容旧字段：进度条满格点
 OfflineCalc.MIN_SECONDS       = 60      -- 最少 1 分钟才产生收益（离线入口使用）
 OfflineCalc.SWEEP_STAGE_COUNT = 5       -- 覆盖关卡数（与扫荡一致）
 
---- 离线有效秒数：前 FULL_RATE_SECONDS 满额，超出部分按 TAIL_RATIO，无硬顶
+--- 把实际离线秒数收敛到硬顶内（收益与掉落共用同一上限）
+---@param seconds number
+---@return number capped
+function OfflineCalc.capSeconds(seconds)
+    local raw = math.max(0, seconds)
+    if raw > OfflineCalc.HARD_CAP_SECONDS then
+        return OfflineCalc.HARD_CAP_SECONDS
+    end
+    return raw
+end
+
+--- 离线有效秒数：先按 HARD_CAP_SECONDS 截断，前 FULL_RATE_SECONDS 满额，超出部分按 TAIL_RATIO
 ---@param seconds number
 ---@return number effective
 function OfflineCalc.effectiveOfflineSeconds(seconds)
-    local raw = math.max(0, seconds)
+    local raw = OfflineCalc.capSeconds(seconds)
     local full = OfflineCalc.FULL_RATE_SECONDS
     if raw <= full then return raw end
     return full + (raw - full) * OfflineCalc.TAIL_RATIO
@@ -504,7 +516,7 @@ local function _calcIdleCore(seconds, incomeStageId, heroCount, dropStageId, sta
 end
 
 --- 【入口 A】离线面板结算
---- 前 24 小时满额，超出部分按 TAIL_RATIO 计，无硬顶。门槛仍是 MIN_SECONDS。
+--- 前 24 小时满额，超出部分按 TAIL_RATIO 计，硬顶 HARD_CAP_SECONDS（7 日）。门槛仍是 MIN_SECONDS。
 ---@param seconds number  实际离线秒数
 ---@param incomeStageId number  金币/经验锚点
 ---@param heroCount number
@@ -512,18 +524,22 @@ end
 ---@param stageConfig table|nil
 ---@return table|nil rewards
 function OfflineCalc.calcOfflineIdleRewards(seconds, incomeStageId, heroCount, dropStageId, stageConfig)
-    local raw = math.max(0, seconds)
-    if raw < OfflineCalc.MIN_SECONDS then return nil end
+    local rawActual = math.max(0, seconds)
+    if rawActual < OfflineCalc.MIN_SECONDS then return nil end
+    -- 硬顶：超过 7 日的部分不计收益也不计掉落
+    local raw = OfflineCalc.capSeconds(rawActual)
     local effective = OfflineCalc.effectiveOfflineSeconds(raw)
-    -- 金币/经验吃折算时长；装备和卷轴按实际离线时长掉，避免长时间离线反而少掉东西
+    -- 金币/经验吃折算时长；装备和卷轴按封顶后的离线时长掉，避免长时间离线反而少掉东西
     local rewards = _calcIdleCore(effective, incomeStageId, heroCount, dropStageId, stageConfig, raw)
     if rewards then
-        rewards.rawSeconds = raw
+        rewards.rawSeconds = rawActual
         rewards.seconds = raw
         rewards.effectiveSeconds = effective
         rewards.fullRateSeconds = OfflineCalc.FULL_RATE_SECONDS
         rewards.tailRatio = OfflineCalc.TAIL_RATIO
         rewards.maxSeconds = OfflineCalc.FULL_RATE_SECONDS
+        rewards.hardCapSeconds = OfflineCalc.HARD_CAP_SECONDS
+        rewards.cappedByHardCap = rawActual > raw
     end
     return rewards
 end

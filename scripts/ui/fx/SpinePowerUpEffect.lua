@@ -87,9 +87,17 @@ local function ensureLoaded(vg)
     if loaded and spineInstance then return true end
     if not vg then return false end
 
+    -- 旧版 TapTap 客户端无 Spine 扩展（全局函数缺失）→ 提醒更新（进程内仅弹一次）
+    if type(nvgSpineCreate) ~= "function" then
+        print("[SpinePowerUpEffect] nvgSpineCreate unavailable (old client?)")
+        require("ui.hud.popup.UpdateNoticePopup").notifyOnce()
+        return false
+    end
+
     spineInstance = nvgSpineCreate(vg)
     if not spineInstance then
         print("[SpinePowerUpEffect] nvgSpineCreate failed")
+        require("ui.hud.popup.UpdateNoticePopup").notifyOnce()
         return false
     end
 

@@ -606,6 +606,83 @@ end
 
 -- ======================== Public API ========================
 
+--- 配装网格命中（供跨栏拖拽 arm / 悬停浮选）
+---@param dx number 右栏设计坐标 X
+---@param dy number 右栏设计坐标 Y
+---@return table|nil info { seq, templateId, quality, slot, grip, equipType }
+function M.peekItemAt(dx, dy)
+    if panelState.dirty then refreshItems() end
+    local items = panelState.items
+    for idx = 1, #items do
+        local row = math.ceil(idx / GRID_COLS)
+        local col = ((idx - 1) % GRID_COLS) + 1
+        local cx = GRID_FIRST_CX + (col - 1) * GRID_COL_STEP
+        local cy = GRID_TOP_Y + (row - 1) * GRID_ROW_STEP - panelState.scrollY
+        if cy + GRID_CELL * 0.5 >= CLIP_TOP and cy - GRID_CELL * 0.5 <= CLIP_TOP + CLIP_HEIGHT
+            and hitTest(dx, dy, cx, cy, GRID_CELL, GRID_CELL) then
+            local item = items[idx]
+            local equip = item and item.equip
+            if item and item.seq and equip then
+                if not equip.slot or not equip.type then
+                    EquipmentSystem.hydrate(equip)
+                end
+                return {
+                    seq = item.seq,
+                    templateId = equip.templateId,
+                    quality = equip.quality or 1,
+                    slot = equip.slot,
+                    grip = equip.grip,
+                    equipType = equip.type,
+                }
+            end
+            return nil
+        end
+    end
+    return nil
+end
+
+--- 角色六装备槽命中（已装备的装备可拖去锻炉/换槽）
+---@param dx number 右栏设计坐标 X
+---@param dy number 右栏设计坐标 Y
+---@return table|nil info { seq, templateId, quality, slot, grip, equipType }
+function M.peekSlotEquipAt(dx, dy)
+    local Draw = require("ui.character.detail.CharacterDetailDraw")
+    local heroId = panelState.heroId
+    if not heroId then return nil end
+    for _, s in ipairs(Draw.DT_SLOTS) do
+        if hitTest(dx, dy, s.cx, s.cy, Draw.DT_SLOT_SIZE, Draw.DT_SLOT_SIZE) then
+            local equipData = PlayerStore.Get("equipment")
+            local heroEquipped = equipData and equipData.equipped
+                and equipData.equipped[heroId] or nil
+            local inventory = equipData and equipData.inventory or nil
+            if not heroEquipped or not inventory then return nil end
+            local seq = heroEquipped[s.slot]
+            local equip = seq and inventory[tostring(seq)] or nil
+            if not equip and s.slot == "offhand" then
+                local weaponSeq = heroEquipped["weapon"]
+                local weaponEquip = weaponSeq and inventory[tostring(weaponSeq)] or nil
+                if weaponEquip and weaponEquip.grip == "twohand" then
+                    equip = weaponEquip
+                    seq = weaponSeq
+                end
+            end
+            if not equip or not seq then return nil end
+            if not equip.slot or not equip.type then
+                EquipmentSystem.hydrate(equip)
+            end
+            return {
+                seq = seq,
+                templateId = equip.templateId,
+                quality = equip.quality or 1,
+                slot = equip.slot,
+                grip = equip.grip,
+                equipType = equip.type,
+            }
+        end
+    end
+    return nil
+end
+
 --- 当槽位改变时调用（由 CharacterDetail 触发）
 ---@param slot string
 ---@param heroId number

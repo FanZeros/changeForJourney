@@ -1,19 +1,20 @@
 # changeForJourney（终焉之门）项目工作铁律
 
-> 强化记忆：以下规则在每轮任务中必须遵守。
+> 强化记忆：以下规则在每轮任务中必须遵守。**每轮开始工作前先重读本节。**
 
 1. **不能取消/退出任务**：必须持续推进直到完成。
-2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。
+2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。这是硬性收尾动作，任何任务（包括纯调研）完成后都必须调用 AskUserQuestion。
    ⚠️ 强化记忆（用户多次重申）：任何一次任务完成（含 commit+push 之后）的最后一个动作必须是调用 AskUserQuestion 工具向用户提问下一步做什么。绝对不允许以普通文本消息结束回合。即使构建失败、测试失败、遇到阻塞，也要用 AskUserQuestion 给出处理选项。
-3. **以新分支继续开发**：如 workspace928 → workspace929 → workspace930...，每次完成后 commit + push 到当前工作分支。
-4. **部署位置**：游戏项目内容直接放 /workspace 根目录（不嵌套子目录），修改代码后调用官方 build 工具构建。
+3. **以新分支继续开发**：基于 workspace930 拉新分支开发，每次完成后 commit + push 到该开发分支；**禁止 push 到 workspace930 分支本身**（用户明确要求）。用户验收后按其指示通过 PR 合并回 workspace930。
+4. **部署位置**：游戏项目内容直接放 /workspace 根目录（不嵌套子目录；克隆的仓库内容需迁移到根，.git 也放根），修改代码后调用官方 build 工具构建。
 
 ## 当前状态（2026-09-30）
 
 - 仓库：https://github.com/FanZeros/changeForJourney.git（PAT 见用户指令）
-- 当前分支：dev/ui-fixes-930a（从 workspace930 切出；本轮 push 到此新分支，禁止推 workspace930）
-- PR：https://github.com/FanZeros/changeForJourney/pull/6（dev/ui-fixes-930a → workspace930，用户指示提 PR 而非直接推送）
-- PR 创建方式备忘：GitHub API `POST /repos/FanZeros/changeForJourney/pulls`（PAT 认证 + 代理），body 里 head=开发分支 base=workspace930
+- 当前分支：dev/ui-fixes-930a（从 workspace930 切出；push 到此开发分支，禁止直推 workspace930；合并走 PR）
+- PR：https://github.com/FanZeros/changeForJourney/pull/6（dev/ui-fixes-930a → workspace930，用户指示提 PR；2026-09-30 用户确认合并）
+- PR 创建方式备忘：GitHub API `POST /repos/FanZeros/changeForJourney/pulls`（PAT 认证 + 代理），body 里 head=开发分支 base=workspace930；合并用 `PUT /pulls/6/merge`
+- 注意：workspace930 有并行开发会话（如 dev/930-story-detail-investigate 剧情修复分支），memory/WORKFLOW_RULES.md 常冲突，合并时保留双方任务记录
 
 - 已完成任务6（2026-09-30，分支 dev/ui-fixes-930a）：全游戏"万"单位改 k/M/B
   - `scripts/ui/battle/stage/SweepDialog.lua` getStageRewardStr：`%.1f万` → `NumberUtil.format(v)`（<10000 原样、10k/1.2M/3.4B 短表示）
@@ -28,6 +29,18 @@
   - 关键词系统去横线：KeywordText:draw 移除关键词下划线绘制（金色高亮与悬停加亮保留），删除 UNDERLINE_W 常量；keyword_text_test headless 回归 ALL PASS；三文件 LSP Error=0；build 通过
   - I18nDict 中"前往洗练"词条保留未删（其他语言包仍引用；nvgText hook 会把"强化"翻译为 D.en["强化"]="Enhance" 等，无需新增词条）
 
+- 已完成任务5-剧情线（2026-09-30，分支 dev/930-story-detail-investigate，已合入 workspace930）：**调研"角色点击详情一直显示剧情"**，报告见 `docs/角色详情剧情显示调研-0930.md`
+  - 唯一入口：CharacterDetail.open/_switchHero → HeroScenario.onOpenHero，仅玩梗四人 18/19/24/25 生效
+  - 根因：闲聊剧情 78–81 只记在**内存表 idleSeen_**（不落档），设计上"每局进程每角色播一次"→ 每次重启 build/预览后点详情必弹
+  - 次生问题：showScenario 忙时 enqueue 进 pending_，但 pending_ 只在下次 onOpenHero/onRecruitResults 时才 drain（ScenarioDialogue 播完无广播）→ 延迟到"下次点详情"突然补播，体感每点必弹
+  - 入队 74–77 已落档（markClaimed→claimedScenarios→Flush），跨进程只播一次；4a152ca8 已给 markClaimed 加 pcall 保护
+- 已完成任务6-剧情线（2026-09-30）：**用户选定方案A+C 修复**（commit bded6a08）
+  - 方案A：`HeroScenario.playIdle` 改为查 `isClaimed(idleId)` 落档记录（闲聊终身一次），播出后 `markClaimed(idleId)`；idleSeen_ 降级为落档失败时的进程内兜底
+  - 方案C：`ScenarioDialogue` 三处结束路径（dismiss 完成/large 播完/skip）`EventBus.emit("scenario_dialogue_finished")`；HeroScenario 模块加载时订阅该事件调 drainPending → 积压请求即时补播，不再等下次点击
+  - **意外抓出真实 bug**：`local function drainPending()` 重新声明遮蔽前向声明的 local → playIdle/playJoinThenIdle 捕获的 upvalue 恒为 nil，busy 兜底路径必崩（attempt to call a nil value）；已改为 `drainPending = function()` 赋值写法
+  - 新增回归测试 `scripts/tests/hero_scenario_claim_test.lua`（9用例 ALL PASS）；mock 要点：**引擎 require 忽略 package.loaded 预注入、且有内部缓存无法重载模块** → 必须替换全局 require + 自带 loadedCache + mocks 表，测试全程共用唯一模块实例、每角色只走一条流程，"重启"场景用预置存档 claimed 模拟
+  - 既有回归 corrupt_convert / refine_cost_fixed / equip_ascend_affix 全 PASS；LSP 0 错误；build 成功
+  - 部署：项目内容已复制到 /workspace 根（scripts/assets/.project/i18n/game_material），本地 .project/project.json 已剥离 project_id/author/developer_id（不提交 git）
 - 已完成任务：锻炉页等阶角标统一右上显示
   - `scripts/ui/blacksmith/BlacksmithPage.lua`：工作台槽升阶角标 "+N" 从左上（drawTextStroke 绿 0x67ff75）改为右上（NVG_ALIGN_RIGHT+TOP、字体36、绿 0x00ff60 + 黑描边），与仓库格子 BackpackGrids.lua:143 的角标位置/样式完全一致；删除无用常量 EQUIP_LV_FONT_SIZE
   - 同轮梳理洗练四石逻辑（见下方"洗练石头逻辑速览"）

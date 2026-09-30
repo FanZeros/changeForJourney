@@ -175,7 +175,7 @@ local function ensureState(unit)
             starGateLastAttackComboCount = 0,
             starGateSpeedFactor = 0,
             starGateInterval = 2.6,
-            -- Hero21 闪电卖鸡: 氮气
+            -- Hero21 雷电麦坤: 氮气
             silverLightProgressBoost = false,
             silverFlashChecked = false,
             nitroStacks = 0,

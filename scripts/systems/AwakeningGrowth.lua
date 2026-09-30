@@ -35,7 +35,7 @@ AG.CONDITIONS = {
     shocked   = function(c) return c.hasStatus(c.deadEnemy, "shocked") end,
     --- 击杀被标记的敌人
     marked    = function(c) return c.hasStatus(c.deadEnemy, "marked") end,
-    --- 氮气冲刺击杀（#21 闪电卖鸡）
+    --- 氮气冲刺击杀（#21 雷电麦坤）
     nitroKill = function(c) return c.killer ~= nil and c.killer._nitroKill == true end,
     --- 暴击击杀（#14 内鬼 / #18 老六）——死亡敌人身上由击杀归因写 _killedByCrit
     critKill  = function(c) return c.deadEnemy ~= nil and c.deadEnemy._killedByCrit == true end,

@@ -89,7 +89,7 @@ ResourceDefs.REWARD_NAMES["113"] = "弹弹弹碎片"
 ResourceDefs.REWARD_NAMES["114"] = "内鬼碎片"
 ResourceDefs.REWARD_NAMES["115"] = "复活吧爱人碎片"
 ResourceDefs.REWARD_NAMES["116"] = "万剑归宗碎片"
-ResourceDefs.REWARD_NAMES["121"] = "闪电卖鸡碎片"
+ResourceDefs.REWARD_NAMES["121"] = "雷电麦坤碎片"
 ResourceDefs.REWARD_NAMES["122"] = "小黑子碎片"
 ResourceDefs.REWARD_NAMES["123"] = "真布诗人碎片"
 

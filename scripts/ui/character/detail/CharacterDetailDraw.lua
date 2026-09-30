@@ -633,7 +633,34 @@ function M.draw(vg)
         return true
     end
 
-    --- 卡面底部信息：等级徽章、战力、职业标。未获得只写文字并压灰。
+    --- 卡面顶部名字（超出饰条宽度时横向滚动）；未获得角色也显示名字
+    ---@param id number 英雄 id
+    local function drawCardName(id)
+        local cfg = HC.get(id)
+        if not cfg then return end
+        local heroName = cfg.name or ""
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, CARD.NAME_FONT)
+        local nameW = nvgTextBounds(vg, 0, 0, heroName)
+        local nameY = -CARD.H * 0.5 + CARD.NAME_TOP
+        if nameW <= CARD.NAME_MAX_W then
+            drawTextStroke(vg, 0, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+        else
+            local gap = 28
+            local cycle = nameW + gap
+            local shift = (time.elapsedTime * 28) % cycle
+            nvgSave(vg)
+            nvgIntersectScissor(vg, -CARD.NAME_MAX_W * 0.5, nameY - 16, CARD.NAME_MAX_W, 32)
+            drawTextStroke(vg, -shift, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+            drawTextStroke(vg, -shift + cycle, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+            nvgRestore(vg)
+        end
+    end
+
+    --- 卡面底部信息：等级徽章、战力、职业标。未获得写"未获得"但仍显示名字。
     ---@param id number 英雄 id
     local function drawCardBadges(id)
         local cfg = HC.get(id)
@@ -641,6 +668,7 @@ function M.draw(vg)
         if not heroOwned(id) then
             drawTextStroke(vg, 0, CARD.H * 0.5 - CARD.LVL_BOTTOM_UP, "未获得",
                 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 190, 190, 190, 4)
+            drawCardName(id)
             return
         end
         local level = heroLevel
@@ -668,26 +696,7 @@ function M.draw(vg)
         drawTextStroke(vg, pcX + CARD.POWER_ICON_SIZE + POWER_GAP, powerY, powerStr,
             30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 247, 254, 119, 4)
         -- 名字放在卡面顶部饰条内。超出饰条宽度时横向滚动。
-        local heroName = cfg.name or ""
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, CARD.NAME_FONT)
-        local nameW = nvgTextBounds(vg, 0, 0, heroName)
-        local nameY = -CARD.H * 0.5 + CARD.NAME_TOP
-        if nameW <= CARD.NAME_MAX_W then
-            drawTextStroke(vg, 0, nameY, heroName,
-                CARD.NAME_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
-        else
-            local gap = 28
-            local cycle = nameW + gap
-            local shift = (time.elapsedTime * 28) % cycle
-            nvgSave(vg)
-            nvgIntersectScissor(vg, -CARD.NAME_MAX_W * 0.5, nameY - 16, CARD.NAME_MAX_W, 32)
-            drawTextStroke(vg, -shift, nameY, heroName,
-                CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
-            drawTextStroke(vg, -shift + cycle, nameY, heroName,
-                CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
-            nvgRestore(vg)
-        end
+        drawCardName(id)
         -- 实战预估副行（默认关闭，M.setEstimateVisible(true) 验收后开启）：
         -- 分项计价原型口径，按英雄伤害类别区别计价物攻/魔攻/治疗属性
         if SHOW_ESTIMATE then

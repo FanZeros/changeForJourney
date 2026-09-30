@@ -63,6 +63,8 @@ local function appendEquipPreviewItems(list, equips)
             quality    = equip.quality,
             level      = equip.level,
             slot       = equip.slot,
+            -- [奖励可点击] 附带完整装备实例，供弹窗点击查看只读详情（纯 table，可序列化）
+            equip      = equip,
         }
     end
 end
@@ -286,6 +288,11 @@ function OfflineService.CalcOnEnter(uid)
         adventurerExp  = rewards.adventurerExp,
         heroExpPreview = buildHeroExpPreview(heroesData, rewards.adventurerExp),
         rewards        = {},
+        -- [7日硬顶] 面板展示封顶信息
+        hardCapSeconds  = rewards.hardCapSeconds or OfflineCalc.HARD_CAP_SECONDS,
+        cappedByHardCap = rewards.cappedByHardCap or false,
+        tailRatio       = rewards.tailRatio or OfflineCalc.TAIL_RATIO,
+        rawSeconds      = rewards.rawSeconds,
     }
 
     -- 金币

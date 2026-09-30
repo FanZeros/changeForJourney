@@ -475,6 +475,10 @@ local function showOfflineRewardPanel_()
         adventurerExp  = panelData.adventurerExp,
         heroExpPreview = panelData.heroExpPreview,
         rewards        = panelData.rewards,
+        -- [7日硬顶] 封顶提示
+        hardCapSeconds  = panelData.hardCapSeconds,
+        cappedByHardCap = panelData.cappedByHardCap,
+        tailRatio       = panelData.tailRatio,
         onClaim = function()
             local handled = localSendAction("claim_offline_rewards", {})
             if handled and not OfflineService.HasPendingRewards(1) then

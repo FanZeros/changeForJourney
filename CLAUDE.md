@@ -36,6 +36,13 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续9，升阶占位词条行 》??? +?，任务分支已推送未 merge）
+
+- **任务**：用户要求升阶面板「随机词条不用小字显示，而是直接显示个》然后后面接上属性 ??? +?」（截图黄框位置=词条区下一行）。AskUserQuestion 三选项均选推荐：词条行同格式、移除里程碑小字、一键升阶弹窗不改。
+- **实现**：`BlacksmithEnhance.lua` 新增纯函数 `M.buildAffixPreview`（下一阶为里程碑且普通词条未满员 → `{name="???",val="+?"}`，否则 nil）+ `drawAffixPreviewRow`（金色》在等级图标列 366 / ??? 名称列半透明 / +? 升阶后绿色半透明值框，字号 34/30）；`drawPanel` 词缀循环后按 `affixY` 续行绘制；`buildAffixHint` 删除里程碑分支（小字仅保留满员/常规两态）。一键升阶弹窗 `EMDLG` 文案未动。
+- **验证**：`ascend_hint_test.lua` 改写为 hint+preview 双函数回归 23 断言 ALL PASS；`equip_ascend_affix_test` ALL PASS；LSP 两文件 0 Error；官方 Build 成功；主入口 headless 70s 0 Lua 错（boot 18/18 + 存档落盘）。沙箱首次装 `.cli/UrhoXRuntime`（install 脚本一次 502 重试即全）。
+- **流程**：基线 workspace930（tip db378463）→ 任务分支 `feat930/ascend-affix-preview-row` 提交 `168e1057` 已推送；**未 merge 回 930**（用户未授权）。部署：repo 代码 cp 到 /workspace 根（scripts/assets 313M/i18n）。PAT 走一次性 URL，origin 已 set-url 清洗为零残留。⚠️ 用户提供的 PAT 应在任务后撤销更换。
+
 ## 上次做了什么（2026-09-30 续8，分解预览加「当前分解可获得」字样，改完直接 merge 回 930）
 
 - **任务**：用户要求选中装备后图标行显示「当前分解可获得」字样，改完直接 merge。

@@ -606,8 +606,10 @@ function BlacksmithPage.init(vg)
     BlacksmithRefine.init(vg)
 
     -- 装备或货币变化时刷新可强化角标缓存
-    PlayerStore.Subscribe("equipment", function()
+    PlayerStore.Subscribe("equipment", function(data)
         _enhanceCache.dirty = true
+        -- 升阶/洗练替换等服务端改动落地后，按 seq 刷新选中装备与洗练/升阶展示
+        BlacksmithPage.onEquipmentDataUpdate(data)
     end)
     PlayerStore.Subscribe("currency", function()
         _enhanceCache.dirty = true

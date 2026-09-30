@@ -42,6 +42,7 @@
 - **冲突**：仅 CLAUDE.md 记忆快照一块（我方续6 vs 930 方三条），双保留手工解决。
 - **验证**：terminal_raid(52)/auto_decompose/refine_cost/battle_stage_switch 四回归 ALL PASS；LSP 全工作区 0 Error；官方 Build 成功；主入口 headless 70s 0 Lua 错。
 - **🔴 教训（再犯）**：worktree 合并/改码后**必须先 rsync 到 /workspace 根再跑测试**——首跑 terminal_raid 报 `Could not find resource` 因新文件只在 worktree。顺序=改/合 → rsync → 测试/Build。
+- **续（同日，用户授权 merge 回 930）**：930 tip 未再前进（e2108b93 是本分支祖先）→ `checkout -B workspace930 origin/workspace930` 后 merge feat 分支为**纯 fast-forward**（零冲突），push `e2108b93..9e8fff74`。930 现含分解图标行+终焉协同战全部；feat/decompose-reward-icon-row 与 930 同指 9e8fff74（+本记忆提交）。
 
 ## 上次做了什么（2026-09-30 续6，分解页奖励预览图标行，已 push `f3514839`）
 

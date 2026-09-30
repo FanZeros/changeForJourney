@@ -8,15 +8,14 @@ local M = {}
 
 function M.bind(deps)
     local ANIM_DURATION = deps.ANIM_DURATION
-    local BG_CX, BG_CY, BG_W, BG_H = deps.BG_CX, deps.BG_CY, deps.BG_W, deps.BG_H
     local BlacksmithEnhance = deps.BlacksmithEnhance
     local BlacksmithPage = deps.BlacksmithPage
     local CLOSE_ANIM_DURATION = deps.CLOSE_ANIM_DURATION
     local DESIGN_W, DESIGN_H = deps.DESIGN_W, deps.DESIGN_H
     local DrawUtil = deps.DrawUtil
     local I18n = deps.I18n
-    local LOWER_BG_CX, LOWER_BG_CY = deps.LOWER_BG_CX, deps.LOWER_BG_CY
-    local LOWER_BG_W, LOWER_BG_H = deps.LOWER_BG_W, deps.LOWER_BG_H
+    local LOWER_BG_CY = deps.LOWER_BG_CY
+    local LOWER_BG_H = deps.LOWER_BG_H
     local NAME_FONT_SIZE = deps.NAME_FONT_SIZE
     local NAME_TEXT_CX, NAME_TEXT_CY = deps.NAME_TEXT_CX, deps.NAME_TEXT_CY
     local SLIDER_W, SLIDER_H = deps.SLIDER_W, deps.SLIDER_H
@@ -30,7 +29,6 @@ function M.bind(deps)
     local TAB_MAP = deps.TAB_MAP
     local TAB_TEXT_Y = deps.TAB_TEXT_Y
     local TownPageChrome = deps.TownPageChrome
-    local drawImageCentered = deps.drawImageCentered
     local drawTabContent = deps.drawTabContent
     local drawWorkbenchSlot = deps.drawWorkbenchSlot
     local easeInCubic = deps.easeInCubic
@@ -38,7 +36,6 @@ function M.bind(deps)
     local easeOutCubic = deps.easeOutCubic
     local imgBg = deps.imgBg
     local imgIconUp = deps.imgIconUp
-    local imgLowerBg = deps.imgLowerBg
     local imgNameBg = deps.imgNameBg
     local imgTabBg = deps.imgTabBg
     local WORKBENCH_CX, WORKBENCH_CY = deps.WORKBENCH_CX, deps.WORKBENCH_CY
@@ -79,10 +76,10 @@ function M.bind(deps)
         nvgFillColor(vg, nvgRGBA(0x14, 0x12, 0x10, 255))
         nvgFill(vg)
 
-        -- === 上半部分：背景图 + 名牌 + 工作台槽 ===
+        -- === 整页单一暗黑背景（等比 cover 全屏，无形变）+ 名牌 + 工作台槽 ===
         nvgSave(vg)
         nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-        drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
+        DrawUtil.drawImageCover(vg, imgBg, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
         nvgResetScissor(vg)
         nvgRestore(vg)
 
@@ -97,9 +94,7 @@ function M.bind(deps)
             SpineResultEffect.draw(vg, WORKBENCH_CX, WORKBENCH_CY)
         end
 
-        -- === 下半部分：背景板 + tab 内容 + tab 栏 ===
-        drawImageCentered(vg, imgLowerBg, LOWER_BG_CX, LOWER_BG_CY, LOWER_BG_W, LOWER_BG_H, 1.0)
-
+        -- === 下半部分：tab 内容 + tab 栏（背景由整页单一暗黑底提供）===
         local clipTop = LOWER_BG_CY - LOWER_BG_H * 0.5
         local clipBottom = TAB_BG_CY - TAB_BG_H * 0.5
         nvgSave(vg)

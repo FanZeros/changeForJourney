@@ -55,9 +55,7 @@ local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 -- ======================== 布局常量 ========================
 
--- 1. 铁匠铺背景图
-local BG_CX, BG_CY = 540, 453
-local BG_W, BG_H   = 1278, 1050
+-- 1. 铁匠铺整页单一暗黑背景（全屏 cover，无需独立尺寸常量）
 
 -- 2. 铁匠铺名称背景（中心点坐标）
 local NAME_BG_CX, NAME_BG_CY = 147, 136
@@ -81,7 +79,7 @@ BlacksmithPage.WORKBENCH = {
 }
 
 -- 7. 下方背景板
-local LOWER_BG_CX, LOWER_BG_W, LOWER_BG_H = 540, 1080, 1670
+local LOWER_BG_H = 1670  -- 仅用于下半内容 clip 顶边
 local LOWER_BG_CY = DESIGN_H - LOWER_BG_H * 0.5  -- 2400 - 835 = 1565
 
 -- 9. 页面选项滑块背景
@@ -206,7 +204,6 @@ end
 local imgBg       = -1   -- UI_JSXQ_BJ_dark.png（暗黑石墙，替换过亮的 UI_TJP_CH_1）
 local imgNameBg   = -1   -- UI_TJP_MC.png
 local imgPlus     = -1   -- UI_ICON_TJP_JIA.png
-local imgLowerBg  = -1   -- UI_JSXQ_BJ_dark.png（暗黑石墙，替换米色 UI_TJP_1；纹理图拉伸无形变）
 local imgTabBg    = -1   -- UI_AN_1.png
 
 local imgArrow    = -1   -- UI_TJP_JIANTOU.png（提升箭头）
@@ -551,7 +548,6 @@ function BlacksmithPage.init(vg)
     imgBg       = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_BJ_dark.png", 0)
     imgNameBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_MC.png", 0)
     imgPlus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_TJP_JIA.png", 0)
-    imgLowerBg  = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_BJ_dark.png", 0)
     imgTabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
     imgArrow    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_JIANTOU.png", 0)
     imgEnhBtn   = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
@@ -832,7 +828,6 @@ local _pageDraw
 local function bindPageDraw()
     _pageDraw = require("ui.blacksmith.BlacksmithDraw").bind({
         ANIM_DURATION = ANIM_DURATION,
-        BG_CX = BG_CX, BG_CY = BG_CY, BG_W = BG_W, BG_H = BG_H,
         BlacksmithEnhance = BlacksmithEnhance,
         BlacksmithPage = BlacksmithPage,
         CLOSE_ANIM_DURATION = CLOSE_ANIM_DURATION,
@@ -840,8 +835,8 @@ local function bindPageDraw()
         DarkIcon = DarkIcon,
         DrawUtil = DrawUtil,
         I18n = I18n,
-        LOWER_BG_CX = LOWER_BG_CX, LOWER_BG_CY = LOWER_BG_CY,
-        LOWER_BG_W = LOWER_BG_W, LOWER_BG_H = LOWER_BG_H,
+        LOWER_BG_CY = LOWER_BG_CY,
+        LOWER_BG_H = LOWER_BG_H,
         NAME_FONT_SIZE = NAME_FONT_SIZE,
         NAME_TEXT_CX = NAME_TEXT_CX, NAME_TEXT_CY = NAME_TEXT_CY,
         SLIDER_W = SLIDER_W, SLIDER_H = SLIDER_H,
@@ -855,7 +850,6 @@ local function bindPageDraw()
         TAB_MAP = TAB_MAP,
         TAB_TEXT_Y = TAB_TEXT_Y,
         TownPageChrome = TownPageChrome,
-        drawImageCentered = drawImageCentered,
         drawTextStroke = drawTextStroke,
         drawTabContent = drawTabContent,
         drawWorkbenchSlot = drawWorkbenchSlot,
@@ -865,7 +859,6 @@ local function bindPageDraw()
         getEquipIconCached = getEquipIconCached,
         imgBg = imgBg,
         imgIconUp = imgIconUp,
-        imgLowerBg = imgLowerBg,
         imgNameBg = imgNameBg,
         imgTabBg = imgTabBg,
         WORKBENCH_CX = WORKBENCH_CX, WORKBENCH_CY = WORKBENCH_CY,

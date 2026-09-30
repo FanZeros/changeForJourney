@@ -207,10 +207,10 @@ local XL = {
     ATTR_ICON_CX = 34, ATTR_ICON_SIZE = 40,
     ATTR_NAME_X = 60, ATTR_FONT_SIZE = 28, ATTR_NAME_FONT_SMALL = 24,
     ATTR_NAME_MAX_W = 210,
-    ATTR_NAME_R = 0x72, ATTR_NAME_G = 0x58, ATTR_NAME_B = 0x50,
+    ATTR_NAME_R = 0xd8, ATTR_NAME_G = 0xc9, ATTR_NAME_B = 0xa3,  -- 亮米金（暗底可读）
     ATTR_VALUE_X = 330,
     LOCK_ICON_CX = 366, LOCK_ICON_SIZE = 38,
-    ATTR_VAL_R = 0x45, ATTR_VAL_G = 0x45, ATTR_VAL_B = 0x45,
+    ATTR_VAL_R = 0xe8, ATTR_VAL_G = 0xe4, ATTR_VAL_B = 0xda,      -- 亮白数值（暗底可读）
     -- 腐化对比行（第二行 旧→新）
     COMPARE_FONT = 24,
     COMPARE_LINE_DY = 18,
@@ -1095,11 +1095,11 @@ function M.drawPanelBottom(vg)
     local countText = tostring(data.refineCount) .. "次"
     nvgText(vg, XL.REQ_COUNT_X, XL.REQ_COUNT_Y, "当前装备累计洗练" .. countText, nil)
 
-    -- 3. 洗练需求背景框（纯黑 5%）
+    -- 3. 洗练需求背景框（暗底上压暗 25% 形成区域感）
     nvgBeginPath(vg)
     nvgRoundedRect(vg, XL.REQ_BG_CX - XL.REQ_BG_W * 0.5, XL.REQ_BG_CY - XL.REQ_BG_H * 0.5,
         XL.REQ_BG_W, XL.REQ_BG_H, XL.REQ_BG_RADIUS)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 13))
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 64))
     nvgFill(vg)
 
     -- 4. 精粹资源图标（左侧）

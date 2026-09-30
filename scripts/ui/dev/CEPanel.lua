@@ -28,7 +28,7 @@ local buttons_ = {}
 local function actions()
     return {
         { id = "pack", label = "一键测试包" },
-        { id = "res", label = "全资源+100万" },
+        { id = "res", label = "全资源+1M" },
         { id = "heroes", label = "解锁全部英雄" },
         { id = "lv10", label = "全员等级+10" },
         { id = "awk", label = "全员觉醒+1" },

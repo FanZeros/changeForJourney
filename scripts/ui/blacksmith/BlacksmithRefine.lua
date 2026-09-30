@@ -33,21 +33,23 @@ local function getCorruptCount(equip)
     return math.max(0, math.floor(tonumber(equip.corruptCount) or 0))
 end
 
-local CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B = 0xef, 0x79, 0xff
-local CORRUPT_COMPARE_R, CORRUPT_COMPARE_G, CORRUPT_COMPARE_B = 0xef, 0x79, 0xff
+local CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B = 0xef, 0x79, 0xff        -- 魔化亮紫
+local CORRUPT_DIM_R, CORRUPT_DIM_G, CORRUPT_DIM_B = 0x8a, 0x46, 0x9c        -- 魔化弱化暗紫
+
+--- 是否为四种石头之一（精粹不算石头）；置于文件前部供 recalc 闭包捕获
+---@param key string|nil
+---@return boolean
+local function isStoneKey(key)
+    return key == "enhanceStone" or key == "destroyStone"
+        or key == "corruptStone" or key == "sacredStone"
+end
 
 ---@param equip table|nil
----@return table meta { scaleByIndex, originalAffixCount, baseMult }
+---@return table meta { scaleByIndex } 旧档改值 patch（仅用于魔化词条弱化判色，不再展示标签/对比）
 local function parseCorruptRevertMeta(equip)
-    local meta = {
-        scaleByIndex = {},
-        originalAffixCount = 0,
-        baseMult = nil,
-    }
+    local meta = { scaleByIndex = {} }
     local rev = equip and equip.corruptRevert
     if not rev then return meta end
-    meta.originalAffixCount = rev.affixCount or 0
-    meta.baseMult = rev.baseMult
     for _, patch in ipairs(rev.patches or {}) do
         if patch[1] == "s" and patch[2] then
             meta.scaleByIndex[patch[2]] = patch[3]
@@ -124,13 +126,14 @@ local function recalcRefineEssenceCost()
     if not (selectedExtraRes and (selectedExtraRes.key == "destroyStone" or selectedExtraRes.key == "corruptStone" or selectedExtraRes.key == "sacredStone")) then
         lockedCount = getLockedCountForSeq(equip.seq)
     end
-    if selectedExtraRes and selectedExtraRes.key == "sacredStone" then
+    local extraKey = selectedExtraRes and selectedExtraRes.key or nil
+    -- 选任意石头：不再消耗精粹（与服务端 chargesEssence 一致：仅普通洗练/选精粹收精粹）
+    if isStoneKey(extraKey) then
         refineData.costEssence = 0
         return
     end
-    -- 腐化诅咒：洗练精粹 ×2（与服务端一致；腐化石/点金石路径不加价）
-    local extraKey = selectedExtraRes and selectedExtraRes.key or nil
-    if getCorruptCount(equip) > 0 and extraKey ~= "destroyStone" and extraKey ~= "corruptStone" then
+    -- 腐化诅咒：洗练精粹 ×2（与服务端一致）
+    if getCorruptCount(equip) > 0 then
         baseCost = baseCost * CORRUPTED_ESSENCE_MULT
     end
     refineData.costEssence = BlacksmithConfig.applyRefineLockCostMult(baseCost, lockedCount)
@@ -169,9 +172,8 @@ end
 local XL = {
     -- 1. "洗练装备" 标题
     TITLE_CX = 540, TITLE_CY = 886, TITLE_FONT_SIZE = 40,
-    -- 腐化次数提示（标题下方）
-    CORRUPT_TEXT_CX = 540, CORRUPT_TEXT_Y = 940, CORRUPT_TEXT_FONT = 32,
-    CORRUPT_TAG_FONT = 22,
+    -- 腐化次数提示；2026-09-30 下移 7.5% 页高（940→1120）
+    CORRUPT_TEXT_CX = 540, CORRUPT_TEXT_Y = 1120, CORRUPT_TEXT_FONT = 32,
     -- 2. 单一背景框：洗练前/后内容共用一个框，左右并排（无「洗练前/后」标题字）
     -- 2026-09-30：整体下移 8% 页高（+192），落入新背景暗板中部
     FRAME_CX = 540, FRAME_CY = 1432, FRAME_W = 970, FRAME_H = 560,
@@ -189,9 +191,6 @@ local XL = {
     ATTR_VALUE_X = 330,
     LOCK_ICON_CX = 366, LOCK_ICON_SIZE = 38,
     ATTR_VAL_R = 0xe8, ATTR_VAL_G = 0xe4, ATTR_VAL_B = 0xda,      -- 亮白数值（暗底可读）
-    -- 腐化对比行（第二行 旧→新）
-    COMPARE_FONT = 24,
-    COMPARE_LINE_DY = 18,
     -- 6. 行间距
     ATTR_ROW_GAP = 28,
 }
@@ -207,18 +206,11 @@ local function refineRowFirstY(rowCount)
 end
 
 -- ---- 洗练界面 - 下半部分 ----
--- 1. "洗练需求"
-XL.REQ_TITLE_X = 134; XL.REQ_TITLE_Y = 1737; XL.REQ_TITLE_FONT_SIZE = 40
-XL.REQ_TITLE_R = 0xbc; XL.REQ_TITLE_G = 0xb8; XL.REQ_TITLE_B = 0xaa
--- 2. "当前装备累计洗练XX次"
-XL.REQ_COUNT_X = 1024; XL.REQ_COUNT_Y = 1737
+-- 1/2. "洗练需求"标题与累计次数行已删除（2026-09-30）
 -- 3. 洗练需求背景框
 XL.REQ_BG_CX = 540; XL.REQ_BG_CY = 1905; XL.REQ_BG_W = 970; XL.REQ_BG_H = 260; XL.REQ_BG_RADIUS = 48
--- 4. 资源需求图标（精粹 - 居中）
-XL.RES_ICON_CX = 540; XL.RES_ICON_CY = 1889; XL.RES_ICON_SIZE = 160
--- 4b. 额外资源槽位（右侧 - 洗练石/点金石）
+-- 4b. 资源槽位（精粹/选中的石头）
 XL.EXTRA_ICON_CX = 719; XL.EXTRA_ICON_CY = 1889; XL.EXTRA_ICON_SIZE = 160
-XL.EXTRA_BG_RADIUS = 24; XL.EXTRA_PLUS_SIZE = 92
 -- 5. 资源消耗数值背景框
 XL.RES_COUNT_BG_CX = 540; XL.RES_COUNT_BG_CY = 1977; XL.RES_COUNT_BG_W = 158; XL.RES_COUNT_BG_H = 47; XL.RES_COUNT_BG_RADIUS = 16
 -- 5b. 额外资源消耗数值背景框
@@ -258,8 +250,9 @@ refineData = {
 
 -- ======================== 额外资源选择状态 ========================
 
---- 额外资源定义
+--- 额外资源定义（2026-09-30：精粹入列，替代原左侧固定精粹显示；选精粹=无附加效果）
 local EXTRA_RES_OPTIONS = {
+    { key = "essence", name = "精粹", iconPath = "image/货币道具/UI_icon_JC.png", quality = 2, cost = nil },
     { key = "enhanceStone", name = "洗练石", iconPath = "image/货币道具/UI_icon_QH_1.png", quality = 3, cost = 1 },
     { key = "destroyStone", name = "点金石", iconPath = "image/货币道具/UI_icon_QH_3.png", quality = 5, cost = nil },  -- cost 动态：当前品质即为消耗数
     { key = "corruptStone", name = "腐化石", iconPath = "image/货币道具/UI_icon_FHS.png", quality = 3, cost = 1 },
@@ -370,48 +363,6 @@ local function getAffixTemplate(affix)
     return nil
 end
 
----@param row table
----@param index number
----@param affix table
----@param equip table|nil
----@param corruptMeta table|nil
-local function annotateAffixCorruptRow(row, index, affix, equip, corruptMeta)
-    -- 魔化词条只显示紫色名称/数值（品级标不变），不附加标签与百分比对比
-    if AffixConfig.isCorruptAffix(affix) then
-        return row
-    end
-    if corruptMeta then
-        local beforeVal = corruptMeta.scaleByIndex[index]
-        if beforeVal ~= nil then
-            local beforeEff = beforeVal
-            if equip and not AffixConfig.isCorruptAffix(affix) then
-                beforeEff = beforeVal * EquipmentSystem.getAffixMult(equip)
-            end
-            local beforeFmt = formatAffixValue(affix.key, beforeEff, affix.affixId)
-            local afterFmt = row.value
-            local av = tonumber(affix.value) or 0
-            if av > beforeVal * 1.01 then
-                row.corruptTag = "腐化强化"
-            elseif av < beforeVal * 0.99 then
-                row.corruptTag = "腐化削弱"
-            else
-                row.corruptTag = "腐化变化"
-            end
-            row.compareText = beforeFmt .. " → " .. afterFmt
-        elseif index > (corruptMeta.originalAffixCount or 0) then
-            local isCorruptAffix = false
-            for _, tpl in ipairs(AffixConfig.CORRUPT_AFFIXES or {}) do
-                if tpl.id == affix.affixId or tpl.key == affix.key then
-                    isCorruptAffix = true
-                    break
-                end
-            end
-            row.corruptTag = isCorruptAffix and "魔化词条" or "腐化新增"
-        end
-    end
-    return row
-end
-
 ---@param affix table
 ---@param equip table|nil
 ---@param index number|nil
@@ -430,12 +381,20 @@ local function affixToDisplayRow(affix, equip, index, corruptMeta)
         grade = qDef and qDef.name or "D",
         isCorrupt = isCorrupt,
     }
+    -- 魔化词条：亮紫；旧档被腐化弱化的魔化词条用暗紫（不再显示标签/数值变动）
     if isCorrupt then
-        row.nameColor = { CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B }
-        row.valueColor = { CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B }
-    end
-    if index and corruptMeta then
-        annotateAffixCorruptRow(row, index, affix, equip, corruptMeta)
+        local weakened = false
+        local beforeVal = index and corruptMeta and corruptMeta.scaleByIndex[index] or nil
+        if beforeVal ~= nil and (tonumber(affix.value) or 0) < beforeVal * 0.99 then
+            weakened = true
+        end
+        if weakened then
+            row.nameColor = { CORRUPT_DIM_R, CORRUPT_DIM_G, CORRUPT_DIM_B }
+            row.valueColor = { CORRUPT_DIM_R, CORRUPT_DIM_G, CORRUPT_DIM_B }
+        else
+            row.nameColor = { CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B }
+            row.valueColor = { CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B }
+        end
     end
     return row
 end
@@ -458,32 +417,10 @@ end
 ---@param equip table|nil
 ---@return table[]
 local function buildCorruptAfterRows(detail, beforeAffixes, afterAffixes, equip)
-    local changeByIndex = {}
-    for _, ch in ipairs(detail and detail.affixChanges or {}) do
-        changeByIndex[ch.index] = ch
-    end
+    -- 2026-09-30：不再输出标签/数值变动对比；魔化词条颜色由 affixToDisplayRow 统一处理
     local rows = {}
     for i, affix in ipairs(afterAffixes or {}) do
-        local row = affixToDisplayRow(affix, equip, i, nil)
-        local ch = changeByIndex[i]
-        if ch then
-            if ch.kind == "added" then
-                row.corruptTag = "魔化词条"
-            elseif ch.kind == "scale" then
-                local beforeEff = ch.beforeValue
-                if equip and not AffixConfig.isCorruptAffix(affix) then
-                    beforeEff = ch.beforeValue * EquipmentSystem.getAffixMult(equip)
-                end
-                local beforeFmt = formatAffixValue(ch.key, beforeEff, ch.affixId)
-                if ch.afterValue > ch.beforeValue then
-                    row.corruptTag = "腐化强化"
-                else
-                    row.corruptTag = "腐化削弱"
-                end
-                row.compareText = beforeFmt .. " → " .. row.value
-            end
-        end
-        rows[#rows + 1] = row
+        rows[#rows + 1] = affixToDisplayRow(affix, equip, i, nil)
     end
     return rows
 end
@@ -597,12 +534,7 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
         nvgFillColor(vg, nvgRGBA(nameRGB[1], nameRGB[2], nameRGB[3], a))
         nvgText(vg, panelLeft + XL.ATTR_NAME_X + offsetX, rowY, attr.name, nil)
 
-        -- 腐化标签（词缀名右侧）
-        if attr.corruptTag and attr.corruptTag ~= "" then
-            nvgFontSize(vg, XL.CORRUPT_TAG_FONT)
-            nvgFillColor(vg, nvgRGBA(CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B, a))
-            nvgText(vg, panelLeft + XL.ATTR_NAME_X + offsetX + nameW + 6, rowY, "[" .. attr.corruptTag .. "]", nil)
-        end
+        -- 腐化标签已移除（2026-09-30）：魔化/弱化状态只通过名称与数值颜色表达
 
         -- 数值（右对齐）：腐化对比时数值行下移一行展示「旧 → 新」
         local valueText = tostring(attr.value or "")
@@ -611,11 +543,7 @@ local function drawRefineAttrRows(vg, attrs, firstY, panelLeft, offsetX, alpha, 
         nvgFillColor(vg, nvgRGBA(valRGB[1], valRGB[2], valRGB[3], a))
         nvgText(vg, panelLeft + XL.ATTR_VALUE_X + offsetX, rowY, valueText, nil)
 
-        if attr.compareText then
-            nvgFontSize(vg, XL.COMPARE_FONT)
-            nvgFillColor(vg, nvgRGBA(CORRUPT_COMPARE_R, CORRUPT_COMPARE_G, CORRUPT_COMPARE_B, a))
-            nvgText(vg, panelLeft + XL.ATTR_VALUE_X + offsetX, rowY + XL.COMPARE_LINE_DY, attr.compareText, nil)
-        end
+        -- 数值变动对比行已移除（2026-09-30）
 
         -- 词缀锁定图标（仅洗练前区域）
         if lockOpts and lockOpts.showLocks and imgLock and imgLock >= 0 then
@@ -974,23 +902,18 @@ local function drawExtraResPopup(vg)
             drawImageCentered(vg, icon, iconX, itemY, 56, 56, 1.0)
         end
 
-        -- 名称
+        -- 名称（2026-09-30：点金石不再显示"提品"小字）
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 34)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(240, 230, 210, 255))
-        if opt.key == "destroyStone" then
-            nvgText(vg, textX, itemY - 12, opt.name, nil)
-            nvgFontSize(vg, 22)
-            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-            nvgText(vg, textX, itemY + 16, "提品", nil)
-        else
-            nvgText(vg, textX, itemY, opt.name, nil)
-        end
+        nvgText(vg, textX, itemY, opt.name, nil)
 
         -- 拥有数量（右侧）
         local ownedCount = 0
-        if opt.key == "enhanceStone" then
+        if opt.key == "essence" then
+            ownedCount = GameState.getEssence()
+        elseif opt.key == "enhanceStone" then
             ownedCount = GameState.getEnhanceStone()
         elseif opt.key == "destroyStone" then
             ownedCount = GameState.getDestroyStone()
@@ -1009,17 +932,7 @@ end
 function M.drawPanelBottom(vg)
     local data = refineData
 
-    -- 1. "洗练需求" 文本（居中对齐）
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, XL.REQ_TITLE_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(XL.REQ_TITLE_R, XL.REQ_TITLE_G, XL.REQ_TITLE_B, 255))
-    nvgText(vg, XL.REQ_TITLE_X, XL.REQ_TITLE_Y, isRaiseRarity() and "提品需求" or "洗练需求", nil)
-
-    -- 2. "当前装备累计洗练XX次"（右对齐；费用固定，次数仅统计）
-    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-    local countText = tostring(data.refineCount) .. "次"
-    nvgText(vg, XL.REQ_COUNT_X, XL.REQ_COUNT_Y, "当前装备累计洗练" .. countText, nil)
+    -- 1/2. "洗练需求"标题与累计次数行已隐藏（2026-09-30 用户要求整行不显示）
 
     -- 3. 洗练需求背景框（暗底上压暗 25% 形成区域感）
     nvgBeginPath(vg)
@@ -1028,26 +941,22 @@ function M.drawPanelBottom(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 64))
     nvgFill(vg)
 
-    -- 4. 精粹资源图标（左侧）
-    DarkIcon.drawQualityBg(vg, 2, XL.RES_ICON_CX, XL.RES_ICON_CY, XL.RES_ICON_SIZE, XL.RES_ICON_SIZE, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_2
-    drawImageCentered(vg, imgEssenceIcon, XL.RES_ICON_CX, XL.RES_ICON_CY, XL.RES_ICON_SIZE, XL.RES_ICON_SIZE, 1.0)
-
-    -- 5. 精粹资源数量（实时读取，与额外资源保持一致）
-    -- 防御性重算：如果 costEssence 为 0 但有装备选中，强制重算
-    if data.costEssence == 0 and state and state.selectedEquip then
+    -- 4/5. 原左侧固定精粹图标+数量已删除（2026-09-30：精粹改为可选"石头"之一）
+    -- 防御性重算：如果 costEssence 为 0 但有装备选中且未选石头，强制重算
+    if data.costEssence == 0 and state and state.selectedEquip
+        and not isStoneKey(selectedExtraRes and selectedExtraRes.key) then
         recalcRefineEssenceCost()
     end
-    drawResCount(vg, XL.RES_COUNT_BG_CX, GameState.getEssence(), data.costEssence)
 
-    -- 4b. 额外资源槽位（右侧）
-    if selectedExtraRes then
-        -- 已选择：显示品质背景 + 资源图标 [暗黑化 P2-A]
+    -- 4b. 资源槽位：选中石头显示石头消耗；未选/选精粹显示精粹消耗
+    if selectedExtraRes and selectedExtraRes.key ~= "essence" then
+        -- 已选择石头：显示品质背景 + 资源图标 [暗黑化 P2-A]
         DarkIcon.drawQualityBg(vg, selectedExtraRes.quality, XL.EXTRA_ICON_CX, XL.EXTRA_ICON_CY, XL.EXTRA_ICON_SIZE, XL.EXTRA_ICON_SIZE, 1.0)
         local icon = imgExtraRes[selectedExtraRes.key]
         if icon and icon >= 0 then
             drawImageCentered(vg, icon, XL.EXTRA_ICON_CX, XL.EXTRA_ICON_CY, XL.EXTRA_ICON_SIZE, XL.EXTRA_ICON_SIZE, 1.0)
         end
-        -- 额外资源数量
+        -- 石头数量
         local extraOwned = 0
         if selectedExtraRes.key == "enhanceStone" then
             extraOwned = GameState.getEnhanceStone()
@@ -1058,22 +967,14 @@ function M.drawPanelBottom(vg)
         elseif selectedExtraRes.key == "sacredStone" then
             extraOwned = GameState.getSacredStone()
         end
-        -- 点金石消耗=当前品质，洗练石=固定1
+        -- 点金石消耗=当前品质，洗练石/腐化石/神圣石=固定1
         local extraCost = selectedExtraRes.cost or (state.selectedEquip and state.selectedEquip.quality or 1)
         drawResCount(vg, XL.EXTRA_COUNT_BG_CX, extraOwned, extraCost)
     else
-        -- 未选择：显示黑色半透明背景 + 加号图标
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg,
-            XL.EXTRA_ICON_CX - XL.EXTRA_ICON_SIZE * 0.5,
-            XL.EXTRA_ICON_CY - XL.EXTRA_ICON_SIZE * 0.5,
-            XL.EXTRA_ICON_SIZE, XL.EXTRA_ICON_SIZE, XL.EXTRA_BG_RADIUS)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 102))  -- 40% opacity
-        nvgFill(vg)
-        -- 加号图标
-        if imgPlus and imgPlus >= 0 then
-            drawImageCentered(vg, imgPlus, XL.EXTRA_ICON_CX, XL.EXTRA_ICON_CY, XL.EXTRA_PLUS_SIZE, XL.EXTRA_PLUS_SIZE, 0.6)
-        end
+        -- 未选/选精粹：槽位显示精粹图标 + 拥有/消耗
+        DarkIcon.drawQualityBg(vg, 2, XL.EXTRA_ICON_CX, XL.EXTRA_ICON_CY, XL.EXTRA_ICON_SIZE, XL.EXTRA_ICON_SIZE, 1.0)
+        drawImageCentered(vg, imgEssenceIcon, XL.EXTRA_ICON_CX, XL.EXTRA_ICON_CY, XL.EXTRA_ICON_SIZE, XL.EXTRA_ICON_SIZE, 1.0)
+        drawResCount(vg, XL.EXTRA_COUNT_BG_CX, GameState.getEssence(), data.costEssence)
     end
 
     -- 7. 替换按钮背景 UI_AN_HUANG

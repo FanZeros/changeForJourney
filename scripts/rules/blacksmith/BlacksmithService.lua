@@ -587,6 +587,12 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
     local q = equip.quality or 1
     local qDef = EquipmentConfig.QUALITY[q]
 
+    -- 2026-09-30：精粹入列可选资源；选精粹=普通洗练（消耗精粹），选四种石头不再消耗精粹
+    local chargesEssence = (extraResource == nil or extraResource == "" or extraResource == "essence")
+    if extraResource == "essence" then
+        extraResource = nil
+    end
+
     -- 校验额外资源
     local extraDef = nil
     if extraResource and extraResource ~= "" then
@@ -683,21 +689,24 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         return false, "至少保留1条词缀未锁定"
     end
 
-    local essenceCost = BlacksmithConfig.calcRefineEssenceCost(q, equipLv, equip.grip)
-    -- 腐化诅咒：洗练精粹 ×2（腐化石/点金石路径不加价，与锁定倍率不叠加）
-    if corruptCount > 0 and extraResource ~= "destroyStone" and extraResource ~= "corruptStone" then
-        essenceCost = essenceCost * CORRUPTED_ESSENCE_MULT
-    end
-    if extraResource ~= "destroyStone" and extraResource ~= "corruptStone" then
+    -- 精粹消耗：仅普通洗练/选精粹路径（石头路径不再需要精粹）
+    local essenceCost = 0
+    if chargesEssence then
+        essenceCost = BlacksmithConfig.calcRefineEssenceCost(q, equipLv, equip.grip)
+        -- 腐化诅咒：洗练精粹 ×2（与锁定倍率不叠加）
+        if corruptCount > 0 then
+            essenceCost = essenceCost * CORRUPTED_ESSENCE_MULT
+        end
         essenceCost = BlacksmithConfig.applyRefineLockCostMult(essenceCost, lockedCount)
-    end
-
-    if (currency.essence or 0) < essenceCost then
-        return false, "精粹不足"
+        if (currency.essence or 0) < essenceCost then
+            return false, "精粹不足"
+        end
     end
 
     -- 扣精粹 & 累计洗练次数（费用固定单价，次数仅作统计展示）
-    currency.essence = currency.essence - essenceCost
+    if chargesEssence then
+        currency.essence = currency.essence - essenceCost
+    end
     equip.refineCount = BlacksmithConfig.nextRefineCount(refineCount)
 
     -- 扣额外资源（点金石消耗=当前品质，洗练石=固定1）

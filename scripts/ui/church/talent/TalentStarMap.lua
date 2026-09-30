@@ -644,19 +644,21 @@ end
 
 -- ======================== 绘制函数 ========================
 
---- 星图区边缘淡出系数：节点/连线靠近星图区边缘时 alpha 渐隐到 0，
---- 避免在页面边界被硬切；背景不受影响（仅作用于星图元素）
+--- 星图区边缘淡出系数：外圈 10% 带内完全透明（节点/连线不画），
+--- 其后 12% 过渡带线性渐显到不透明；背景不受影响（仅作用于星图元素）
 ---@param sx number 屏幕坐标 X
 ---@param sy number 屏幕坐标 Y
 ---@return number 0..1 alpha 倍率
 local function edgeFade(sx, sy)
-    local fade = math.max(64, math.min(viewW, viewH) * 0.10)
+    local m = math.min(viewW, viewH)
+    local zero = m * 0.10   -- 外圈完全透明带
+    local ramp = m * 0.12   -- 过渡带宽度
     local dx = math.min(sx - viewOffX, viewOffX + viewW - sx)
     local dy = math.min(sy - viewOffY, viewOffY + viewH - sy)
     local d = math.min(dx, dy)
-    if d >= fade then return 1.0 end
-    if d <= 0 then return 0.0 end
-    return d / fade
+    if d <= zero then return 0.0 end
+    if d >= zero + ramp then return 1.0 end
+    return (d - zero) / ramp
 end
 
 --- 绘制连接线（两端都在视口外则跳过）

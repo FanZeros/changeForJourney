@@ -173,13 +173,14 @@ local XL = {
     CORRUPT_TEXT_CX = 540, CORRUPT_TEXT_Y = 940, CORRUPT_TEXT_FONT = 32,
     CORRUPT_TAG_FONT = 22,
     -- 2. 单一背景框：洗练前/后内容共用一个框，左右并排（无「洗练前/后」标题字）
-    FRAME_CX = 540, FRAME_CY = 1240, FRAME_W = 970, FRAME_H = 560,
+    -- 2026-09-30：整体下移 8% 页高（+192），落入新背景暗板中部
+    FRAME_CX = 540, FRAME_CY = 1432, FRAME_W = 970, FRAME_H = 560,
     -- 左右两半内容的面板相对左缘 / 半幅中心（空状态提示与结果展示用）
     -- 左半可用 110..516、右半可用 610..1009（箭头 516..564 居中分隔）
     LEFT_PANEL_LEFT = 55, RIGHT_PANEL_LEFT = 555,
     LEFT_HALF_CX = 313, RIGHT_HALF_CX = 786,
     -- 3. 两半之间的箭头（向右，亮色染色绘制）
-    ARROW_CX = 540, ARROW_CY = 1240, ARROW_W = 48, ARROW_H = 48,
+    ARROW_CX = 540, ARROW_CY = 1432, ARROW_W = 48, ARROW_H = 48,  -- 与 FRAME_CY 同步下移
     -- 5. 属性行（半幅内相对坐标：相对各半左缘）
     ATTR_ICON_CX = 34, ATTR_ICON_SIZE = 40,
     ATTR_NAME_X = 60, ATTR_FONT_SIZE = 28, ATTR_NAME_FONT_SMALL = 24,
@@ -696,12 +697,7 @@ function M.drawPanel(vg)
     end
     local frameLeft = XL.FRAME_CX - XL.FRAME_W * 0.5
 
-    -- 1. 标题：点金石路径叫提品，避免和装备升阶、普通洗练混在一起
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, XL.TITLE_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(XL.ATTR_VAL_R, XL.ATTR_VAL_G, XL.ATTR_VAL_B, 255))
-    nvgText(vg, XL.TITLE_CX, XL.TITLE_CY, isRaiseRarity() and "提品" or "洗练装备", nil)
+    -- 1. 标题已隐藏（2026-09-30 用户要求不显示"洗练装备"四字）
 
     -- 腐化次数（已腐化装备显示）
     local corruptCount = getCorruptCount(state and state.selectedEquip)
@@ -825,11 +821,11 @@ function M.drawPanel(vg)
         nvgFontSize(vg, 34)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0xbc, 0xb8, 0xaa, alpha))
-        nvgText(vg, XL.RIGHT_HALF_CX, 1030, "腐化结果", nil)
+        nvgText(vg, XL.RIGHT_HALF_CX, XL.FRAME_CY - 210, "腐化结果", nil)
 
         nvgFontSize(vg, 28)
         nvgFillColor(vg, nvgRGBA(CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B, alpha))
-        nvgText(vg, XL.RIGHT_HALF_CX, 1066, ci.effectName or "魔化完成", nil)
+        nvgText(vg, XL.RIGHT_HALF_CX, XL.FRAME_CY - 174, ci.effectName or "魔化完成", nil)
 
         local afterRows = ci.afterRows
         if afterRows and #afterRows > 0 then

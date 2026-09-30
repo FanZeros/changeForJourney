@@ -8,6 +8,8 @@ local BlacksmithConfig = {}
 
 --- 最大强化等级
 BlacksmithConfig.MAX_ENHANCE_LEVEL = 100
+BlacksmithConfig.ASCEND_AFFIX_INTERVAL = 5
+BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT = 4
 
 --- 槽位强化配置（100 级）
 --- 每行: { goldCost, scrollCost, attrBoostPct }

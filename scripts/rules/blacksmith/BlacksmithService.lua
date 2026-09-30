@@ -41,6 +41,49 @@ local function findEquip(equipData, seq)
     return equipData.inventory[key] or equipData.inventory[seq]
 end
 
+local function rollAscendAffixes(equip, fromLevel, toLevel)
+    EquipmentSystem.migrateLegacyCorruptSnapshot(equip)
+    local gained = {}
+    local affixes = equip.affixes or {}
+    local normalCount = 0
+    local exclude = {}
+    for _, affix in ipairs(affixes) do
+        if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
+        if affix.key then exclude[affix.key] = true end
+    end
+    local qDef = EquipmentConfig.QUALITY[equip.quality]
+    for level = fromLevel + 1, toLevel do
+        if level % BlacksmithConfig.ASCEND_AFFIX_INTERVAL == 0
+            and normalCount < BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT then
+            local rolled = EquipmentSystem.rollAffixes(1,
+                math.max(1, qDef.maxAffixQuality or 0), equip.level or 1,
+                exclude, qDef.randomStrength or 1.0, equip.grip)
+            if rolled[1] then
+                local affix = rolled[1]
+                local rev = equip.corruptRevert
+                if rev then
+                    -- 腐化新增词条留在尾部；升阶词条插入净化保留段。
+                    local insertAt = math.min(#affixes + 1, rev.affixCount + 1)
+                    table.insert(affixes, insertAt, affix)
+                    for _, patch in ipairs(rev.patches or {}) do
+                        if patch[1] == "s" and patch[2] >= insertAt then
+                            patch[2] = patch[2] + 1
+                        end
+                    end
+                    rev.affixCount = rev.affixCount + 1
+                else
+                    affixes[#affixes + 1] = affix
+                end
+                gained[#gained + 1] = affix
+                normalCount = normalCount + 1
+                exclude[affix.key] = true
+            end
+        end
+    end
+    equip.affixes = affixes
+    return gained
+end
+
 --- 按 seq 升 1 阶。消耗为原强化表的 60%。
 ---@param uid number
 ---@param seq number
@@ -74,6 +117,8 @@ function BlacksmithService.AscendEquip(uid, seq)
     currency[scrollField] = currency[scrollField] - cost.scroll
     equip.ascendLevel = nextLv
     equip.enhanceLevel = nextLv
+    local gainedAffixes = rollAscendAffixes(equip, currentLv, nextLv)
+    if pendingRefines[uid] then pendingRefines[uid][tostring(seq)] = nil end
     PDM.MarkDirty(uid, "currency")
     PDM.MarkDirty(uid, "equipment")
     TaskService.UpdateProgress(uid, "enhance", 1)
@@ -85,6 +130,8 @@ function BlacksmithService.AscendEquip(uid, seq)
         seq = seq,
         newLevel = nextLv,
         ascendLevel = nextLv,
+        gainedAffixes = gainedAffixes,
+        affixes = equip.affixes,
     }
 end
 
@@ -118,6 +165,8 @@ function BlacksmithService.AscendEquipToLevel(uid, seq, targetLevel)
     currency[scrollField] = currency[scrollField] - totalScroll
     equip.ascendLevel = targetLevel
     equip.enhanceLevel = targetLevel
+    local gainedAffixes = rollAscendAffixes(equip, currentLv, targetLevel)
+    if pendingRefines[uid] then pendingRefines[uid][tostring(seq)] = nil end
     PDM.MarkDirty(uid, "currency")
     PDM.MarkDirty(uid, "equipment")
     TaskService.UpdateProgress(uid, "enhance", targetLevel - currentLv)
@@ -130,6 +179,8 @@ function BlacksmithService.AscendEquipToLevel(uid, seq, targetLevel)
         newLevel = targetLevel,
         ascendLevel = targetLevel,
         levelsGained = targetLevel - currentLv,
+        gainedAffixes = gainedAffixes,
+        affixes = equip.affixes,
     }
 end
 
@@ -582,9 +633,6 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
 
         -- 洗练石特殊校验：装备必须有词缀才能洗数值
         if extraResource == "enhanceStone" then
-            if not qDef or (qDef.affixCount or 0) <= 0 then
-                return false, "该品质装备无词缀，无法使用洗练石"
-            end
             if not equip.affixes or #equip.affixes == 0 then
                 return false, "装备无词缀，无法使用洗练石"
             end
@@ -644,8 +692,8 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
 
     -- 非点金石/神圣石洗练时，装备本身必须有词缀
     if extraResource ~= "destroyStone" and extraResource ~= "sacredStone" then
-        if not qDef or (qDef.affixCount or 0) <= 0 then
-            return false, "该品质装备无法洗练"
+        if not qDef or not equip.affixes or #equip.affixes == 0 then
+            return false, "装备无词缀，无法洗练"
         end
     end
 
@@ -687,10 +735,8 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
     local corruptBaseMultBefore = nil
     local extraLog = ""
 
-    local excludeKeys = {}
-
     if extraResource == "enhanceStone" then
-        local maxAffixQ = qDef.maxAffixQuality
+        local maxAffixQ = math.max(1, qDef.maxAffixQuality or 0)
         local randomStrength = qDef.randomStrength or 1.0
         newAffixes = EquipmentSystem.rerollAffixValuesWithLocks(
             equip.affixes, maxAffixQ, equipLv, randomStrength, equip.grip, lockedSet)
@@ -716,9 +762,9 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         if #newAffixes < newAffixCount then
             local maxAffixQ = newQDef.maxAffixQuality or 1
             local randomStrength = newQDef.randomStrength or 1.0
-            -- 补充生成缺少的词缀
             local extraAffixes = EquipmentSystem.rollAffixes(
-                newAffixCount - #newAffixes, maxAffixQ, equipLv, excludeKeys, randomStrength, equip.grip
+                newAffixCount - #newAffixes, maxAffixQ, equipLv,
+                buildExcludeKeysFromAffixes(newAffixes), randomStrength, equip.grip
             )
             for _, af in ipairs(extraAffixes) do
                 newAffixes[#newAffixes + 1] = af
@@ -745,7 +791,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
 
     else
         -- ── 普通洗练：未锁定槽重随机 ──
-        local maxAffixQ  = qDef.maxAffixQuality
+        local maxAffixQ  = math.max(1, qDef.maxAffixQuality or 0)
         local normalRandomStrength = qDef.randomStrength or 1.0
         newAffixes = EquipmentSystem.rollAffixesForRefine(
             equip.affixes, lockedSet, maxAffixQ, equipLv, normalRandomStrength, equip.grip)

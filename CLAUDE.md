@@ -26,6 +26,17 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30，`feat930/equip-ascend-random-affixes` 装备升阶随机词条，已验证待 push）
+
+- **任务**：用户要求「装备升阶时多出随机词条」，拍板规则=**所有品质可参与；每跨过 +5 的倍数阶必得 1 条普通词条；普通词条总数上限 4；魔化词条不占普通上限**。基于 `workspace930` 新建 `feat930/equip-ascend-random-affixes`。
+- **核心实现** `rules/blacksmith/BlacksmithService.lua`：新增 `rollAscendAffixes(equip, fromLevel, toLevel)`，单阶 `AscendEquip` 与一键 `AscendEquipToLevel` **共用同一逐阶抽取逻辑**（按 `level % ASCEND_AFFIX_INTERVAL == 0` 判里程碑，复用 `EquipmentSystem.rollAffixes` 排除已有 key）。配置 `config/BlacksmithConfig.lua` 加 `ASCEND_AFFIX_INTERVAL=5`/`ASCEND_NORMAL_AFFIX_LIMIT=4`。
+- **腐化兼容（关键）**：腐化态升阶时新词条**插入 `corruptRevert.affixCount` 保留段内**并同步平移 `"s"` patch 索引、`affixCount+1`——确保神圣石净化只删腐化新增、**保留升阶所得词条**；旧版 `corruptOriginalAffixes` 快照先 `migrateLegacyCorruptSnapshot` 迁移。升阶成功清 `pendingRefines[uid][seq]`（防旧洗练预览覆盖新词条）。
+- **洗练门槛放开**：普通品质(q1,affixCount=0)升阶后有词条即可洗练——`RefineEquip` 校验从「按品质 `qDef.affixCount`」改为「按装备实际 `#equip.affixes`」；点金石补条排除已有 key（原传空表会重复）。洗练石/普通洗练 `maxAffixQuality` 对 q1 用 `math.max(1,...)` 兜底（q1 的 maxAffixQuality=0 会让 rollAffixQuality 退化）。
+- **UI**：`BlacksmithEnhance` 升阶页词条行距压缩（4 行收进固定区）+ 满员/规则提示文案 + 一键弹窗「将新增 N 条」；`BlacksmithRefine` 洗练页词条行 step 自适应（≤5 行）+ scissor 裁剪防溢出 + 锁定图标行距同步；文案「强化」→「升阶」。成功 toast「升阶获得：xxx」。
+- **验证全绿**：新增 `tests/equip_ascend_affix_test.lua` **48 断言 ALL PASS**（里程碑必得/满员封顶/单阶=一键同种子逐条一致/key 互斥/魔化不占额/腐化净化保留升阶词条+patch 索引正确/脱水JSON水合往返/computeModifierEntries 生效/q1 升阶后可洗练/+4→+5 得 +5→+9 不得）；既有回归 auto_decompose/lootbox_overflow(18)/battle_stage_switch/character_power_estimate 全 ALL PASS；主入口 validate **lua_errors=0、engine_errors=19、total=25 与基线逐项一致**（首跑 22 为冷启动波动，复跑=19）；官方 Build 成功 381 Lua 入包；LSP 我改的 6 文件 0 Error（全仓唯一 error 是基线既有 `Standalone.lua:806` 跨文件全局，未动）。
+- **环境**：headless 运行时用 `python3 .cli/install-urhox-runtime.py --dest /workspace/.cli` 安装（sh 无执行权限、py 默认 dest 推导到根 /.cli 无权限，必须显式 --dest）；测试跑法 `cd /workspace && ./.cli/UrhoXRuntime tests/xxx.lua -tapcode_dir=. -tool_mode -graphicsheadless`（EXIT=124 是测试不退出进程的已知行为，看 ALL PASS）。
+- **待实机验收**（headless 测不了渲染）：升阶页 4 词条+提示排版、洗练页 5 词条（4普通+1魔化）不溢出、一键弹窗「将新增 N 条」、升阶成功 toast、q1 装备升阶后洗练入口可用。
+
 ## 上次做了什么（2026-09-29 续，古树背景重绘，已 push `4559fd8`）
 
 - **任务**：`UI_GS_TFBJ_dark.png`（终焉古树天赋页背景）横向拉伸。根因：绘制框 `pageW×TF.bgH = 1080×1.8(HORIZON_WIDTH_SCALE)×2400 = 1944×2400`，原图 1080×2400 → 横向拉 1.8 倍。

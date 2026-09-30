@@ -512,7 +512,7 @@ local function drawSelectedEquipSlot(vg, tabName)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(255, 255, 255, 128))
         nvgText(vg, slotCX, slotCY + slotSize * 0.5 + 30,
-            tabName == "qianghua" and "选择装备进行强化" or "选择装备进行洗练", nil)
+            tabName == "qianghua" and "选择装备进行升阶" or "选择装备进行洗练", nil)
     end
 end
 

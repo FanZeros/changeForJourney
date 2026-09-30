@@ -197,9 +197,9 @@ local XL = {
     CORRUPT_TEXT_CX = 540, CORRUPT_TEXT_Y = 940, CORRUPT_TEXT_FONT = 32,
     CORRUPT_BASE_HINT_Y = 972, CORRUPT_BASE_HINT_FONT = 28,
     CORRUPT_TAG_FONT = 26,
-    -- 2. 洗练前属性区域
-    ATTR_ICON_CX = 180, ATTR_ICON_SIZE = 44,
-    ATTR_NAME_X = 212, ATTR_FONT_SIZE = 36,
+    -- 词条列表收进现有底板
+    ATTR_ICON_CX = 180, ATTR_ICON_SIZE = 36,
+    ATTR_NAME_X = 212, ATTR_FONT_SIZE = 32,
     ATTR_NAME_R = 0x72, ATTR_NAME_G = 0x58, ATTR_NAME_B = 0x50,
     ATTR_VALUE_X = 900,
     ATTR_RATIO_GAP = 12,
@@ -211,10 +211,10 @@ local XL = {
     -- 4. "洗练前" 文本
     BEFORE_TEXT_CX = 540, BEFORE_TEXT_CY = 1018,
     -- 5. 第一行属性 Y（洗练前）
-    ATTR_FIRST_Y = 1089,
+    ATTR_FIRST_Y = 1055,
     -- 6. 属性图标尺寸（已在上方 ATTR_ICON_SIZE）
     -- 7. 行间距
-    ATTR_ROW_GAP = 19,
+    ATTR_ROW_GAP = 6,
     -- 8. 箭头
     ARROW_CX = 540, ARROW_CY = 1287, ARROW_W = 54, ARROW_H = 54,
     -- 9. 洗练后背景框
@@ -223,8 +223,8 @@ local XL = {
     AFTER_TEXT_CX = 540, AFTER_TEXT_CY = 1365,
 }
 -- 计算行步进和洗练后属性行Y
-XL.ATTR_ROW_STEP = XL.ATTR_ICON_SIZE + XL.ATTR_ROW_GAP  -- 63
-XL.AFTER_ATTR_FIRST_Y = XL.AFTER_BG_CY + (XL.ATTR_FIRST_Y - XL.BEFORE_BG_CY)  -- 1436
+XL.ATTR_ROW_STEP = XL.ATTR_ICON_SIZE + XL.ATTR_ROW_GAP
+XL.AFTER_ATTR_FIRST_Y = XL.AFTER_BG_CY + (XL.ATTR_FIRST_Y - XL.BEFORE_BG_CY)
 
 -- ---- 洗练界面 - 下半部分 ----
 -- 1. "洗练需求"
@@ -617,8 +617,11 @@ local function drawRefineAttrRows(vg, attrs, firstY, offsetX, alpha, lockOpts)
     local a = math.floor(math.max(0, math.min(255, alpha)))
     if a <= 0 then return end
 
+    local step = math.min(XL.ATTR_ROW_STEP, (#attrs > 1) and (168 / (#attrs - 1)) or XL.ATTR_ROW_STEP)
+    nvgSave(vg)
+    nvgIntersectScissor(vg, 55, firstY - 24, 970, 216)
     for i, attr in ipairs(attrs) do
-        local rowY = firstY + (i - 1) * XL.ATTR_ROW_STEP
+        local rowY = firstY + (i - 1) * step
 
         -- 品质图标 / 魔化紫色圆标
         if attr.isCorrupt then
@@ -681,6 +684,7 @@ local function drawRefineAttrRows(vg, attrs, firstY, offsetX, alpha, lockOpts)
                 XL.LOCK_ICON_SIZE, XL.LOCK_ICON_SIZE, lockAlpha)
         end
     end
+    nvgRestore(vg)
 end
 
 --- 洗练前词缀行是否显示锁定按钮（点金石提品/腐化石魔化/神圣石净化不涉及锁词缀）
@@ -941,8 +945,7 @@ function M.drawPanel(vg)
 
         local afterRows = ci.afterRows
         if afterRows and #afterRows > 0 then
-            local firstY = ci.baseMultHint and (XL.AFTER_ATTR_FIRST_Y + 24) or XL.AFTER_ATTR_FIRST_Y
-            drawRefineAttrRows(vg, afterRows, firstY, 0, alpha)
+            drawRefineAttrRows(vg, afterRows, XL.AFTER_ATTR_FIRST_Y + 20, 0, alpha)
         else
             nvgFontSize(vg, 28)
             nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, math.floor(alpha * 0.75)))
@@ -1257,8 +1260,10 @@ function M.handleInput(dx, dy)
     -- ===== 2. 洗练前词缀锁定（点金石路径不显示锁） =====
     if shouldShowAffixLocks() and state.selectedEquip and #refineData.before > 0 then
         local seq = state.selectedEquip.seq
+        local lockStep = math.min(XL.ATTR_ROW_STEP,
+            (#refineData.before > 1) and (168 / (#refineData.before - 1)) or XL.ATTR_ROW_STEP)
         for i = 1, #refineData.before do
-            local rowY = XL.ATTR_FIRST_Y + (i - 1) * XL.ATTR_ROW_STEP
+            local rowY = XL.ATTR_FIRST_Y + (i - 1) * lockStep
             if hitTest(dx, dy, XL.LOCK_ICON_CX, rowY, XL.LOCK_ICON_SIZE, XL.LOCK_ICON_SIZE) then
                 toggleAffixLock(seq, i)
                 print("[BlacksmithRefine] 词缀锁定切换 seq=" .. tostring(seq) .. " index=" .. i

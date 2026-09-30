@@ -565,6 +565,26 @@ function EquipmentSystem.getAscendBoost(equip)
     return BlacksmithConfig.getEnhanceBoost(EquipmentSystem.getAscendLevel(equip))
 end
 
+--- 词条栏位倍率（升阶满员后里程碑累加；跟装备走，洗练不丢）。
+---@param equip table|nil
+---@return number mult >= 1
+function EquipmentSystem.getAffixMult(equip)
+    if not equip then return 1 end
+    local m = tonumber(equip.affixMult) or 1
+    if m < 1 then return 1 end
+    return m
+end
+
+--- 词条生效值：普通词条吃栏位倍率，魔化词条不吃（与"魔化不吃品质增幅"同原则）。
+---@param equip table|nil
+---@param affix table|nil
+---@return number
+function EquipmentSystem.effectiveAffixValue(equip, affix)
+    local v = tonumber(affix and affix.value) or 0
+    if not affix or AffixConfig.isCorruptAffix(affix) then return v end
+    return v * EquipmentSystem.getAffixMult(equip)
+end
+
 --- 通过 deployed 数组反查 heroId 所在的 partySlot 索引
 ---@param deployed table 出战英雄 ID 数组 { heroId1, heroId2, ... }
 ---@param heroId number
@@ -630,9 +650,9 @@ function EquipmentSystem.computeModifierEntries(equip, slotBoost)
         entries[#entries + 1] = { key = key, flat = val }
     end
 
-    -- 词缀属性
+    -- 词缀属性（普通词条吃栏位倍率 affixMult，魔化词条不吃）
     for _, affix in ipairs(equip.affixes or {}) do
-        entries[#entries + 1] = { key = affix.key, flat = affix.value }
+        entries[#entries + 1] = { key = affix.key, flat = EquipmentSystem.effectiveAffixValue(equip, affix) }
     end
 
     return entries
@@ -1174,6 +1194,15 @@ function EquipmentSystem.hydrate(equip)
     equip.ascendLevel = ascend
     equip.enhanceLevel = ascend
 
+    if equip.affixMult ~= nil then
+        local am = tonumber(equip.affixMult) or 1
+        if am <= 1 then
+            equip.affixMult = nil
+        else
+            equip.affixMult = am
+        end
+    end
+
     if equip.refineCount ~= nil then
         equip.refineCount = BlacksmithConfig.clampRefineCount(equip.refineCount)
     end
@@ -1253,6 +1282,7 @@ function EquipmentSystem.dehydrate(equip)
         quality    = equip.quality,
         locked     = equip.locked or nil,  -- 锁定状态需持久化（false/nil 时省略，保持精简）
         ascendLevel = (tonumber(equip.ascendLevel) or 0) > 0 and math.floor(tonumber(equip.ascendLevel)) or nil,
+        affixMult = (tonumber(equip.affixMult) or 1) > 1 and tonumber(equip.affixMult) or nil,
         corruptCount = (equip.corruptCount and equip.corruptCount > 0) and equip.corruptCount or nil,
         corruptBaseMult = (equip.corruptBaseMult and equip.corruptBaseMult ~= 1) and equip.corruptBaseMult or nil,
         -- baseStats 省略：可从 templateId+level+quality+腐化基础倍率确定性推导，hydrate 时重算

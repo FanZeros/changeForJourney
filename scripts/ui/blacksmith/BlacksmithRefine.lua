@@ -215,20 +215,18 @@ local XL = {
     -- 腐化对比行（第二行 旧→新）
     COMPARE_FONT = 24,
     COMPARE_LINE_DY = 18,
-    -- 6. 第一行属性 Y（两行以上时）；单行时垂直居中于面板
-    ATTR_FIRST_Y = 1082,
-    -- 7. 行间距
+    -- 6. 行间距
     ATTR_ROW_GAP = 28,
 }
 -- 计算行步进
 XL.ATTR_ROW_STEP = XL.ATTR_ICON_SIZE + XL.ATTR_ROW_GAP  -- 68
 
---- 属性行首行 Y：单行时垂直居中于面板中心
+--- 属性行首行 Y：N 行整体垂直居中于面板中心
 ---@param rowCount number
 ---@return number
 local function refineRowFirstY(rowCount)
-    if rowCount == 1 then return XL.BEFORE_BG_CY end
-    return XL.ATTR_FIRST_Y
+    local n = math.max(1, math.floor(tonumber(rowCount) or 1))
+    return XL.BEFORE_BG_CY - (n - 1) * XL.ATTR_ROW_STEP * 0.5
 end
 
 -- ---- 洗练界面 - 下半部分 ----
@@ -408,7 +406,11 @@ local function annotateAffixCorruptRow(row, index, affix, equip, corruptMeta)
     if corruptMeta then
         local beforeVal = corruptMeta.scaleByIndex[index]
         if beforeVal ~= nil then
-            local beforeFmt = formatAffixValue(affix.key, beforeVal, affix.affixId)
+            local beforeEff = beforeVal
+            if equip and not AffixConfig.isCorruptAffix(affix) then
+                beforeEff = beforeVal * EquipmentSystem.getAffixMult(equip)
+            end
+            local beforeFmt = formatAffixValue(affix.key, beforeEff, affix.affixId)
             local afterFmt = row.value
             local av = tonumber(affix.value) or 0
             if av > beforeVal * 1.01 then
@@ -444,9 +446,10 @@ local function affixToDisplayRow(affix, equip, index, corruptMeta)
     end
     local isCorrupt = AffixConfig.isCorruptAffix(affix)
     local qDef = AffixConfig.QUALITY[affix.quality]
+    local effVal = equip and EquipmentSystem.effectiveAffixValue(equip, affix) or affix.value
     local row = {
         name = affix.name or affix.key or "?",
-        value = formatAffixValue(affix.key, affix.value, affix.affixId),
+        value = formatAffixValue(affix.key, effVal, affix.affixId),
         grade = qDef and qDef.name or "D",
         isCorrupt = isCorrupt,
     }
@@ -488,7 +491,11 @@ local function buildCorruptAfterRows(detail, beforeAffixes, afterAffixes, equip)
             if ch.kind == "added" then
                 row.corruptTag = (detail and detail.effectId == 7) and "魔化词条" or "腐化新增"
             elseif ch.kind == "scale" then
-                local beforeFmt = formatAffixValue(ch.key, ch.beforeValue, ch.affixId)
+                local beforeEff = ch.beforeValue
+                if equip and not AffixConfig.isCorruptAffix(affix) then
+                    beforeEff = ch.beforeValue * EquipmentSystem.getAffixMult(equip)
+                end
+                local beforeFmt = formatAffixValue(ch.key, beforeEff, ch.affixId)
                 if ch.afterValue > ch.beforeValue then
                     row.corruptTag = "腐化强化"
                 else
@@ -908,7 +915,7 @@ function M.drawPanel(vg)
         local afterRows = ci.afterRows
         if afterRows and #afterRows > 0 then
             local afterLeft = XL.AFTER_BG_CX - XL.AFTER_BG_W * 0.5
-            local firstY = ci.baseMultHint and (XL.ATTR_FIRST_Y + 24) or XL.ATTR_FIRST_Y
+            local firstY = refineRowFirstY(#afterRows) + (ci.baseMultHint and 24 or 0)
             drawRefineAttrRows(vg, afterRows, firstY, afterLeft, 0, alpha)
         else
             nvgFontSize(vg, 28)
@@ -1321,9 +1328,11 @@ function M.onActionResult(data)
                 end
                 local qDef2 = AffixConfig.QUALITY[affix.quality]
                 local gradeName = qDef2 and qDef2.name or "D"
+                local effVal = state.selectedEquip
+                    and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
                 before[#before + 1] = {
                     name = affix.name or affix.key or "?",
-                    value = formatAffixValue(affix.key, affix.value, affix.affixId),
+                    value = formatAffixValue(affix.key, effVal, affix.affixId),
                     grade = gradeName,
                 }
             end
@@ -1382,9 +1391,11 @@ function M.onActionResult(data)
                 end
                 local qDef2 = AffixConfig.QUALITY[affix.quality]
                 local gradeName = qDef2 and qDef2.name or "D"
+                local effVal = state.selectedEquip
+                    and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
                 before[#before + 1] = {
                     name = affix.name or affix.key or "?",
-                    value = formatAffixValue(affix.key, affix.value, affix.affixId),
+                    value = formatAffixValue(affix.key, effVal, affix.affixId),
                     grade = gradeName,
                 }
             end
@@ -1492,9 +1503,11 @@ function M.onActionResult(data)
             EquipmentSystem.ensureAffixValue(affix, state.selectedEquip or {})
             local qDef = AffixConfig.QUALITY[affix.quality]
             local gradeName = qDef and qDef.name or "D"
+            local effVal = state.selectedEquip
+                and EquipmentSystem.effectiveAffixValue(state.selectedEquip, affix) or affix.value
             after[#after + 1] = {
                 name = affix.name or affix.key or "?",
-                value = formatAffixValue(affix.key, affix.value, affix.affixId),
+                value = formatAffixValue(affix.key, effVal, affix.affixId),
                 grade = gradeName,
             }
         end

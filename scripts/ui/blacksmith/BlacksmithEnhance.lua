@@ -18,6 +18,7 @@ local SpineResultEffect = require("ui.fx.SpineResultEffect")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local PlayerStore       = require("core.PlayerStore")
 local BF                = require("systems.ButtonFeedback")
+local EquipmentSystem   = require("systems.EquipmentSystem")
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
@@ -75,7 +76,8 @@ local ATTR_NEXT_BG_H    = 58
 local ATTR_ROW_SPACING   = 9
 
 -- 7. 随机词缀：第一行 Y 轴中心
-local AFFIX_FIRST_Y      = 1561
+local AFFIX_FIRST_Y      = 1460
+local AFFIX_ROW_STEP     = 48
 
 -- 8. 词缀等级 ICON 位置 X
 local AFFIX_GRADE_CUR_CX  = 366
@@ -108,7 +110,7 @@ local EB = {
 }
 
 -- 词缀等级图标尺寸
-local AFFIX_GRADE_ICON_SIZE = 44
+local AFFIX_GRADE_ICON_SIZE = 36
 
 -- ======================== 强化界面数据 ========================
 
@@ -301,16 +303,17 @@ function M.updateEnhanceData(equip)
         end
     end
 
-    -- 词缀（不随强化变化，仅显示当前值）
+    -- 词缀（显示生效值：普通词条吃栏位倍率，魔化不吃）
     local affixes = {}
     for _, affix in ipairs(equip.affixes or {}) do
         local isCorrupt = AffixConfig.isCorruptAffix(affix)
         local qDef = AffixConfig.QUALITY[affix.quality]
         local gradeName = qDef and qDef.name or "D"
+        local effVal = EquipmentSystem.effectiveAffixValue(equip, affix)
         affixes[#affixes + 1] = {
             name     = affix.name or affix.key,
-            curVal   = formatAffixValue(affix.key, affix.value),
-            nextVal  = formatAffixValue(affix.key, affix.value),
+            curVal   = formatAffixValue(affix.key, effVal),
+            nextVal  = formatAffixValue(affix.key, effVal),
             curGrade = gradeName,
             nextGrade = gradeName,
             isCorrupt = isCorrupt,
@@ -352,7 +355,7 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
 
     -- 属性名称（右对齐）
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, ATTR_FONT_SIZE)
+    nvgFontSize(vg, (curGradeIcon or isCorrupt) and 30 or ATTR_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(ATTR_NAME_COLOR_R, ATTR_NAME_COLOR_G, ATTR_NAME_COLOR_B, 255))
     nvgText(vg, ATTR_NAME_X, rowY, name, nil)
@@ -367,7 +370,7 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
 
     -- 当前数值文本
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, ATTR_FONT_SIZE)
+    nvgFontSize(vg, (curGradeIcon or isCorrupt) and 30 or ATTR_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B, 255))
     nvgText(vg, ATTR_CUR_BG_CX, rowY, curVal, nil)
@@ -459,13 +462,33 @@ function M.drawPanel(vg)
         rowY = rowY + ATTR_ROW_HEIGHT + ATTR_ROW_SPACING
     end
 
-    -- 7-8. 随机词缀区域（不随强化变化，不显示提升箭头）
-    local affixY = AFFIX_FIRST_Y
+    -- 7-8. 随机词缀区域
+    local affixY = math.max(AFFIX_FIRST_Y, rowY + 4)
+    nvgSave(vg)
+    nvgIntersectScissor(vg, 80, affixY - 24, 920, 1695 - affixY + 24)
     for _, affix in ipairs(data.affixes) do
         local curIcon = imgGrade[affix.curGrade] or -1
         drawAttrRow(vg, affixY, affix.name, affix.curVal, affix.nextVal, curIcon, nil, false, affix.isCorrupt)
-        affixY = affixY + ATTR_ROW_HEIGHT + ATTR_ROW_SPACING
+        affixY = affixY + AFFIX_ROW_STEP
     end
+    nvgRestore(vg)
+    local normalCount = 0
+    for _, affix in ipairs(state.selectedEquip and state.selectedEquip.affixes or {}) do
+        if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
+    end
+    local affixMult = EquipmentSystem.getAffixMult(state.selectedEquip)
+    local multPct = math.floor((BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10) * 100 + 0.5)
+    local hint
+    if normalCount >= BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT then
+        hint = string.format("词条已满：每升5阶词条倍率+%d%%（当前 ×%.2f，洗练不丢）", multPct, affixMult)
+    else
+        hint = "每升5阶必得1条随机词条（普通词条最多4条）"
+    end
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 23)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(0xbc, 0x9b, 0x58, 255))
+    nvgText(vg, 540, 1710, hint, nil)
 end
 
 --- 绘制资源数量（拥有/需要）
@@ -521,7 +544,7 @@ function M.drawPanelBottom(vg)
         nvgFontSize(vg, 36)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0x99, 0x99, 0x99, 180))
-        nvgText(vg, 540, 1850, "已达到最高强化等级", nil)
+        nvgText(vg, 540, 1850, "已达到最高升阶等级", nil)
         return
     end
 
@@ -530,7 +553,7 @@ function M.drawPanelBottom(vg)
     nvgFontSize(vg, EB.REQ_TITLE_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(EB.REQ_TITLE_R, EB.REQ_TITLE_G, EB.REQ_TITLE_B, 255))
-    nvgText(vg, EB.REQ_TITLE_X, EB.REQ_TITLE_Y, "强化需求", nil)
+    nvgText(vg, EB.REQ_TITLE_X, EB.REQ_TITLE_Y, "升阶需求", nil)
 
     -- 9. 需求背景框
     nvgBeginPath(vg)
@@ -568,7 +591,7 @@ function M.drawPanelBottom(vg)
     nvgFontSize(vg, EB.ENH_TEXT_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(EB.ENH_TEXT_R, EB.ENH_TEXT_G, EB.ENH_TEXT_B, 255))
-    nvgText(vg, EB.ENH_BTN_CX, EB.ENH_BTN_CY, "强化", nil)
+    nvgText(vg, EB.ENH_BTN_CX, EB.ENH_BTN_CY, "升阶", nil)
     BF.finish(vg, didScale)
     local _TM = require("systems.TutorialManager")
     if _TM.isActive() then _TM.registerHotspot("smith_btn_enhance", EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H, "left") end
@@ -588,7 +611,7 @@ function M.drawPanelBottom(vg)
     else
         nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
     end
-    nvgText(vg, EB.ENH_MAX_BTN_CX, EB.ENH_MAX_BTN_CY, "一键强化", nil)
+    nvgText(vg, EB.ENH_MAX_BTN_CX, EB.ENH_MAX_BTN_CY, "一键升阶", nil)
     BF.finish(vg, didScaleMax)
 end
 
@@ -737,7 +760,7 @@ function M.drawConfirmDialog(vg)
         { titleH = EMDLG.BG_IT })
 
     -- 标题"一键强化"
-    drawStroke(vg, EMDLG.TITLE_CX, EMDLG.TITLE_CY, "一键强化",
+    drawStroke(vg, EMDLG.TITLE_CX, EMDLG.TITLE_CY, "一键升阶",
         EMDLG.TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, EMDLG.TITLE_SW)
 
@@ -745,7 +768,7 @@ function M.drawConfirmDialog(vg)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, EMDLG.SUB_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(EMDLG.SUB_R, EMDLG.SUB_G, EMDLG.SUB_B, 255))
-    nvgText(vg, EMDLG.SUB_CX, EMDLG.SUB_CY, "选择目标强化等级", nil)
+    nvgText(vg, EMDLG.SUB_CX, EMDLG.SUB_CY, "选择目标升阶等级", nil)
 
     -- 内容框背景（与 MarketPage CONTENT 区域一致）
     nvgBeginPath(vg)
@@ -766,6 +789,29 @@ function M.drawConfirmDialog(vg)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(EMDLG.SUB_R, EMDLG.SUB_G, EMDLG.SUB_B, 255))
     nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY, "+" .. data.curLevel .. " → +" .. dlg.targetLevel, nil)
+
+    local milestoneCount = math.floor(dlg.targetLevel / BlacksmithConfig.ASCEND_AFFIX_INTERVAL)
+        - math.floor(data.curLevel / BlacksmithConfig.ASCEND_AFFIX_INTERVAL)
+    if milestoneCount > 0 then
+        local normalCount = 0
+        for _, affix in ipairs(state.selectedEquip and state.selectedEquip.affixes or {}) do
+            if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
+        end
+        local room = math.max(0, BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT - normalCount)
+        local gained = math.min(milestoneCount, room)
+        local multUps = milestoneCount - gained
+        local previewParts = {}
+        if gained > 0 then previewParts[#previewParts + 1] = gained .. " 条随机词条" end
+        if multUps > 0 then
+            local curMult = EquipmentSystem.getAffixMult(state.selectedEquip)
+            local step = BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10
+            local nextMult = math.floor((curMult + step * multUps) * 1000 + 0.5) / 1000
+            previewParts[#previewParts + 1] = string.format("词条倍率 ×%.2f → ×%.2f", curMult, nextMult)
+        end
+        nvgFontSize(vg, 26)
+        nvgFillColor(vg, nvgRGBA(0xbc, 0x9b, 0x58, 255))
+        nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY - 55, "将新增 " .. table.concat(previewParts, "、"), nil)
+    end
 
     -- 减按钮
     local minusAlpha = dlg.targetLevel <= data.curLevel + 1 and 0.4 or 1.0
@@ -1088,10 +1134,27 @@ function M.onActionResult(data)
 
     local outcome = data.enhanceOutcome
     if outcome == "success" then
-        print("[BlacksmithEnhance] ascend success lv=" .. tostring(data.newLevel))
-        if data.newLevel and state.selectedEquip then
+        print("[BlacksmithEnhance] ascend success lv=" .. tostring(data.newLevel)
+            .. " affixes=" .. tostring(#(data.gainedAffixes or {})))
+        if data.newLevel and state.selectedEquip
+            and tostring(state.selectedEquip.seq) == tostring(data.seq) then
             state.selectedEquip.ascendLevel = data.newLevel
             state.selectedEquip.enhanceLevel = data.newLevel
+            if data.affixes then state.selectedEquip.affixes = data.affixes end
+            if data.affixMult then state.selectedEquip.affixMult = data.affixMult end
+        end
+        do
+            local parts = {}
+            for _, affix in ipairs(data.gainedAffixes or {}) do
+                parts[#parts + 1] = affix.name or affix.key or "随机词条"
+            end
+            if (data.multUps or 0) > 0 then
+                parts[#parts + 1] = string.format("词条倍率 ×%.2f",
+                    tonumber(data.affixMult) or EquipmentSystem.getAffixMult(state.selectedEquip))
+            end
+            if #parts > 0 then
+                require("core.UiToast").show("升阶获得：" .. table.concat(parts, "、"))
+            end
         end
         M.updateEnhanceData(state.selectedEquip)
         SpineResultEffect.play(true)

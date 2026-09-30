@@ -35,6 +35,24 @@
 - **验证**：新增 `tests/refine_cost_fixed_test.lua` 12 断言 ALL PASS（固定价/双手×2/锁×1.5/累计=单价×次数/封顶）；`auto_decompose_regress` ALL PASS；LSP 全工作区 0 Error；官方 Build 成功；主入口 headless 75s 无 Lua 错。
 - **流程**：push 用一次性 PAT URL，推完 `git remote set-url` 还原 + 清分支 remote 配置，仓库无令牌残留；`.project/project.json` build 改写已 `git checkout` 还原。
 - **待验收**：洗练页左右布局视觉效果（半幅面板字密度）需真人预览确认。
+## 上次做了什么（2026-09-30 下午，同分支：合入远端930 + 铁匠铺图标空白修复，已 push `e1aa9f49`）
+
+- **任务1（合并）**：用户要求把远端 `workspace930` 领先的 18 提交（离线7日硬顶/装备等级门槛/4死模块清理/浮选拖拽修复等）合入 `feat930/equip-ascend-random-affixes`。4 代码文件自动合并，唯一冲突 `docs/memory-index.md`（双方追加条目）手工双保留。合并提交 `3ea9c556`。回归全绿（升阶词条74/分解38/战力10/切关53/遗匣18/浮选拖拽 PASS）；`chapter_team_offline_test` FAIL 经 **worktree 对照实跑证明是远端基线自带 headless 环境性失败**（文件与 origin 逐字节一致、StageSelectDialog 不依赖装备模块、纯净基线报同错），与合并无关。官方 Build 378 Lua、死模块已移除、affixMult 进包。
+- **任务2（图标修复）**：用户反馈"分解页装备图片看不到"。**根因**：装备图标为组首图制——318 模板 ID（W1~W72/O1~O30/A,H,S各60/C1~C36）共用 **53 张组首 png**（每 6 个一组 W1/W7/W13…）；`ImageCache.getEquipIcon`（背包/角色详情用）有组首 fallback `floor((num-1)/6)*6+1` 所以正常；**铁匠铺 `BlacksmithPage.getEquipIconCached` 私有缓存无 fallback**→265 个非组首 ID `nvgCreateImage` 失败返回≤0→被 `if eqIcon > 0` 跳过→分解/升阶/洗练页格子只剩品质底框。**修复**：`getEquipIconCached` 改为委托 `ImageCache.getEquipIcon`（删私有 equipIconCache/equipIconVg，init 处补 `ImageCache.init(vg)` 幂等），公开 API 名不变下游零改动。新增 `tests/equipment_icon_fallback_test.lua` 6 断言 ALL PASS（318 ID 全解析/W2 触达 W1/缓存幂等）；validate lua_errors=0；Build 成功。提交 `e1aa9f49` 已 push（一次性 PAT URL，token 未进配置/记忆）。
+- **已知基线问题（未修，与本轮无关）**：`EquipmentDetail.lua:1164` 加载已删除的 `UI_ZBTS_1~5.png`（品质框九宫格），validate 每次 18 处贴图失败——死加载可顺手清理但用户未选。
+- **环境技巧**：headless 测试进程不自退出且 timeout 会吞命令输出——用 `setsid ... &` 后台跑写日志再单独读；`grep -c` 无匹配时 exit 1 会截断 && 链，统计命令用 `|| true` 兜底。
+
+## 上次做了什么（2026-09-30，`feat930/equip-ascend-random-affixes` 装备升阶随机词条，已 push `91ba3952`）
+
+- **任务**：用户要求「装备升阶时多出随机词条」，拍板规则=**所有品质可参与；每跨过 +5 的倍数阶必得 1 条普通词条；普通词条总数上限 4；魔化词条不占普通上限**。基于 `workspace930` 新建 `feat930/equip-ascend-random-affixes`。
+- **核心实现** `rules/blacksmith/BlacksmithService.lua`：新增 `rollAscendAffixes(equip, fromLevel, toLevel)`，单阶 `AscendEquip` 与一键 `AscendEquipToLevel` **共用同一逐阶抽取逻辑**（按 `level % ASCEND_AFFIX_INTERVAL == 0` 判里程碑，复用 `EquipmentSystem.rollAffixes` 排除已有 key）。配置 `config/BlacksmithConfig.lua` 加 `ASCEND_AFFIX_INTERVAL=5`/`ASCEND_NORMAL_AFFIX_LIMIT=4`。
+- **腐化兼容（关键）**：腐化态升阶时新词条**插入 `corruptRevert.affixCount` 保留段内**并同步平移 `"s"` patch 索引、`affixCount+1`——确保神圣石净化只删腐化新增、**保留升阶所得词条**；旧版 `corruptOriginalAffixes` 快照先 `migrateLegacyCorruptSnapshot` 迁移。升阶成功清 `pendingRefines[uid][seq]`（防旧洗练预览覆盖新词条）。
+- **洗练门槛放开**：普通品质(q1,affixCount=0)升阶后有词条即可洗练——`RefineEquip` 校验从「按品质 `qDef.affixCount`」改为「按装备实际 `#equip.affixes`」；点金石补条排除已有 key（原传空表会重复）。洗练石/普通洗练 `maxAffixQuality` 对 q1 用 `math.max(1,...)` 兜底（q1 的 maxAffixQuality=0 会让 rollAffixQuality 退化）。
+- **UI**：`BlacksmithEnhance` 升阶页词条行距压缩（4 行收进固定区）+ 满员/规则提示文案 + 一键弹窗「将新增 N 条」；`BlacksmithRefine` 洗练页词条行 step 自适应（≤5 行）+ scissor 裁剪防溢出 + 锁定图标行距同步；文案「强化」→「升阶」。成功 toast「升阶获得：xxx」。
+- **验证全绿**：新增 `tests/equip_ascend_affix_test.lua` **48 断言 ALL PASS**（里程碑必得/满员封顶/单阶=一键同种子逐条一致/key 互斥/魔化不占额/腐化净化保留升阶词条+patch 索引正确/脱水JSON水合往返/computeModifierEntries 生效/q1 升阶后可洗练/+4→+5 得 +5→+9 不得）；既有回归 auto_decompose/lootbox_overflow(18)/battle_stage_switch/character_power_estimate 全 ALL PASS；主入口 validate **lua_errors=0、engine_errors=19、total=25 与基线逐项一致**（首跑 22 为冷启动波动，复跑=19）；官方 Build 成功 381 Lua 入包；LSP 我改的 6 文件 0 Error（全仓唯一 error 是基线既有 `Standalone.lua:806` 跨文件全局，未动）。
+- **环境**：headless 运行时用 `python3 .cli/install-urhox-runtime.py --dest /workspace/.cli` 安装（sh 无执行权限、py 默认 dest 推导到根 /.cli 无权限，必须显式 --dest）；测试跑法 `cd /workspace && ./.cli/UrhoXRuntime tests/xxx.lua -tapcode_dir=. -tool_mode -graphicsheadless`（EXIT=124 是测试不退出进程的已知行为，看 ALL PASS）。
+- **待实机验收**（headless 测不了渲染）：升阶页 4 词条+提示排版、洗练页 5 词条（4普通+1魔化）不溢出、一键弹窗「将新增 N 条」、升阶成功 toast、q1 装备升阶后洗练入口可用。
+- **本轮续（同日，词条满员后改倍率升级，已 push `9462c2d4`）**：用户拍板「满了后改为词条倍率升级（栏位倍率，不会随洗练丢失）」。装备实例新增 `affixMult` 字段（默认 nil=1）：满 4 条后每个 +5 里程碑 `affixMult += ASCEND_AFFIX_MULT_STEP(0.10)`，四舍五入到千分位防浮点漂移。**核心设计=倍率与词条 value 解耦**：词条 `value` 永远是基础 roll 值（洗练重随/腐化改值/净化恢复都不碰倍率），生效值经 `EquipmentSystem.effectiveAffixValue(equip,affix)`（普通词条 ×affixMult，魔化不乘）统一计算。接入点=属性管线 `computeModifierEntries` + 战力 `EquipmentService.calcEquipPower`/`EquipmentDetail.calcEquipPower` + 显示 `EquipmentDetail`×2/`CharacterDetailEquip` 汇总/`BlacksmithEnhance`/`BlacksmithRefine`（含腐化对比 before 值同乘倍率保持口径一致；`getAffixRefineRatioText` 品质比例仍基于基础 value——倍率不写入 value 故无需除回）。持久化：dehydrate 写 `affixMult`（=1 省略）/hydrate 规范化（≤1 清 nil）；`rollAscendAffixes` 返回 `gained, multUps`，回包带 `multUps/affixMult`；UI 满员提示改「每升5阶词条倍率+10%（当前 ×N，洗练不丢）」、一键弹窗预览「N 条词条、倍率 ×a→×b」、toast 合并显示。测试扩到 **74 断言 ALL PASS**（新增第10节：满员转倍率/生效值=value×1.2/魔化不乘/computeModifierEntries 含放大值/洗练+洗练石+替换不丢倍率/脱水JSON往返/倍率=1省略字段/18层累加=2.8无漂移/腐化态倍率累加+净化不丢）。既有回归 lootbox18/分解/切关/战力全 ALL PASS；validate lua_errors=0（engine_errors 19↔21 为 headless shader 编译非确定性波动，两次错误行相同均环境性，与 Lua 改动无关）；官方 Build 381 Lua，dist 含 getAffixMult。
 
 ## 上次做了什么（2026-09-29 续，古树背景重绘，已 push `4559fd8`）
 

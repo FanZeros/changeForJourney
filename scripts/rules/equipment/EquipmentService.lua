@@ -86,7 +86,7 @@ local function calcEquipPower(equip, heroId)
         power = power + calcStatPower(s[1], val, excluded)
     end
     for _, affix in ipairs(equip.affixes or {}) do
-        power = power + calcStatPower(affix.key, affix.value, excluded)
+        power = power + calcStatPower(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix), excluded)
     end
     return math.floor(power)
 end

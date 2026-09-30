@@ -26,6 +26,13 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续2，洗练单框化，已 push `914cc689`）
+
+- **用户反馈三点**：①要一个框显示内容而非两个框背景；②中间箭头改亮色；③「洗练前/洗练后」六字标题删除。
+- **实现**：`XL` 双框常量合并为单框 `FRAME 970×560`（cy1240）+ `LEFT/RIGHT_PANEL_LEFT=55/555`（框内左右两半相对左缘）+ `LEFT/RIGHT_HALF_CX=313/786`（空状态/结果展示中心）；行内坐标改半幅相对（图标34/名60/值330/锁366，NAME_MAX_W 210）——自检：左半可用 110..516、右半 610..1009，锁 476 不撞箭头 516..564；箭头改 `nvgImagePatternTinted` 亮金 `(255,214,102)` 且**最后绘制**（滑行动画行从箭头下穿过）；提品/腐化结果/空状态全部改 RIGHT_HALF_CX；`imgXlAfter` 死句柄三处清理（Refine 声明/ctx、Page 加载/传递）。
+- **验证**：LSP 291 文件 0 Error；refine_cost_fixed + equip_ascend_affix 全 ALL PASS；官方 Build 成功。
+- **教训**：半幅行内坐标必须以「框内缘 + 箭头分隔带」为边界重新推算，不能沿用上一版半框口径（锁图标会出框/撞箭头）。
+
 ## 上次做了什么（2026-09-30 续，合入 930 + equip-ascend，已 push `f69d12c2`）
 
 - **任务**：用户要求把 `workspace930` 与 `feat930/equip-ascend-random-affixes` 合入 `feat/refine-fixed-cost-side-by-side`。930 已是祖先（Already up to date）；升阶分支 dd6599df 真合并。

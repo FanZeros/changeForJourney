@@ -594,7 +594,8 @@ function M.drawPanelBottom(vg)
     nvgText(vg, EB.ENH_BTN_CX, EB.ENH_BTN_CY, "升阶", nil)
     BF.finish(vg, didScale)
     local _TM = require("systems.TutorialManager")
-    if _TM.isActive() then _TM.registerHotspot("smith_btn_enhance", EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H, "left") end
+    -- [锻炉双页 0929] 锻炉页移中栏：热点面板从 "left" 改为 "center"
+    if _TM.isActive() then _TM.registerHotspot("smith_btn_enhance", EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H, "center") end
 
     -- 一键强化按钮（右侧）
     local maxReachLevel = calcMaxAffordableLevel(data.curLevel, data.ownedGold, data.ownedScroll)
@@ -1064,6 +1065,7 @@ end
 ---@param dy number 设计坐标 Y
 ---@return boolean consumed 是否消费了该事件
 function M.handleInput(dx, dy)
+    -- [锻炉双页 0929] 候选条已移除（选装备改为仓库拖拽），不再响应 handleCandidateClick
     -- 强化按钮（升一级）
     if hitTest(dx, dy, EB.ENH_BTN_CX, EB.ENH_BTN_CY, EB.ENH_BTN_W, EB.ENH_BTN_H) then
         BF.trigger("bse_enhance")

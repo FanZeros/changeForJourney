@@ -181,14 +181,7 @@ function M.bind(deps)
                     end
                 end
 
-                if decomposeState.active and decomposeState.selectedItems[idx] then
-                    nvgBeginPath(vg)
-                    nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                        GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS)
-                    nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-                    nvgFill(vg)
-                    DrawUtil.drawImageCentered(vg, getImgCheckmark(), cx, cy, 80, 80, 1.0)
-                end
+                -- [分解入仓 0929] 旧"批量分解模式"选中遮罩已移除（分解迁移到独立 tab）
 
                 if equip.locked and getImgLock() >= 0 then
                     local lockSize = 56

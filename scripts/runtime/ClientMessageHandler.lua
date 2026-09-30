@@ -373,7 +373,9 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              end
          end
              if data.action == Protocol.ACTION_TYPES.CONVERT_UR_SHARD
-             or data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT then
+             or data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT
+             or data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP then
+             -- [分解入仓 0929] 分解失败也要转发仓库（BlacksmithDecompose 释放门控）
              local BackpackPanel = require("ui.backpack.BackpackPanel")
              if BackpackPanel.onActionResult then BackpackPanel.onActionResult(data) end
          end

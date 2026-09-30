@@ -86,15 +86,8 @@ local GRID = {
     CLIP_BOTTOM = 2020,
 }
 
--- 6b. 分解按钮区（装备 tab 专用，与铁匠铺分解按钮Y对齐）
-local BTN_CONFIRM_DEC = {
-    CX = 310, CY = 2129, W = 410, H = 100,
-    TEXT_R = 0x6d, TEXT_G = 0x4c, TEXT_B = 0x1d,
-}
-local BTN_BATCH_DEC = {
-    CX = 773, CY = 2129, W = 410, H = 100,
-    TEXT_R = 255, TEXT_G = 214, TEXT_B = 102,
-}
+-- 6b. [分解入仓 0929] 旧"确认分解/取消分解/批量分解"按钮常量已移除
+-- （分解功能迁移到独立"分解"tab，按钮由 BlacksmithDecompose warehouse profile 绘制）
 
 -- 预计算列中心 X
 local CELL_COL_CX = {}
@@ -128,7 +121,6 @@ local function applyLayout(compact)
             lowerCY = LOWER_PANEL.CY, lowerH = LOWER_PANEL.H,
             firstRow = GRID.FIRST_ROW_TOP, clipBottom = GRID.CLIP_BOTTOM,
             titleY = GRID_TITLE.Y, pzCy = PZSX.CY,
-            btnDecY = BTN_CONFIRM_DEC.CY, btnBatchY = BTN_BATCH_DEC.CY,
             capY = CAP_TEXT.Y,
         }
     end
@@ -136,13 +128,11 @@ local function applyLayout(compact)
         LOWER_PANEL.CY, LOWER_PANEL.H = 1300, 2100
         GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = 470, 1980
         GRID_TITLE.Y, PZSX.CY = 330, 325
-        BTN_CONFIRM_DEC.CY, BTN_BATCH_DEC.CY = 2160, 2160
         CAP_TEXT.Y = 2230
     else
         LOWER_PANEL.CY, LOWER_PANEL.H = LAYOUT_ORIG.lowerCY, LAYOUT_ORIG.lowerH
         GRID.FIRST_ROW_TOP, GRID.CLIP_BOTTOM = LAYOUT_ORIG.firstRow, LAYOUT_ORIG.clipBottom
         GRID_TITLE.Y, PZSX.CY = LAYOUT_ORIG.titleY, LAYOUT_ORIG.pzCy
-        BTN_CONFIRM_DEC.CY, BTN_BATCH_DEC.CY = LAYOUT_ORIG.btnDecY, LAYOUT_ORIG.btnBatchY
         CAP_TEXT.Y = LAYOUT_ORIG.capY
     end
     CLIP_TOP = GRID.FIRST_ROW_TOP
@@ -154,10 +144,10 @@ local BTN_BACK = {
     CX = 122, CY = 2308, W = 184, H = 143,
 }
 
--- 9. Tab 栏（与签到面板一致）
+-- 9. Tab 栏（[分解入仓 0929] 三页签：装备/道具/分解，TAB3 样式，整组居中 1080 中线）
 local TAB = {
-    BG_CX = 639, BG_CY = 2308, BG_W = 810, BG_H = 143,
-    SLIDER_W = 410, SLIDER_H = 143,
+    BG_CX = 540, BG_CY = 2308, BG_W = 810, BG_H = 143,
+    SLIDER_W = 277, SLIDER_H = 143,
     INSET_TOP = 10, INSET_BOTTOM = 10, INSET_LEFT = 70, INSET_RIGHT = 70,
     FONT_SIZE = 40,
     ACTIVE_R = 0x81, ACTIVE_G = 0x57, ACTIVE_B = 0x3c,
@@ -167,36 +157,10 @@ local TAB = {
 
 ---@type {key: string, name: string, cx: number, cy: number, textX: number, textY: number}[]
 local TAB_ITEMS = {
-    { key = "equip", name = "装备", cx = 439, cy = 2308, textX = 439, textY = 2302 },
-    { key = "item",  name = "道具", cx = 839, cy = 2308, textX = 839, textY = 2302 },
+    { key = "equip",     name = "装备", cx = 274, cy = 2308, textX = 274, textY = 2302 },
+    { key = "item",      name = "道具", cx = 540, cy = 2308, textX = 540, textY = 2302 },
+    { key = "decompose", name = "分解", cx = 806, cy = 2308, textX = 806, textY = 2302 },
 }
-
--- 左栏不画页内返回键，底栏页签不再为返回键让位，整组收到 1080 中线。
-local TAB_LAYOUT_ORIG = nil
-local function applyTabLayout(compact)
-    if not TAB_LAYOUT_ORIG then
-        TAB_LAYOUT_ORIG = {
-            bgCX = TAB.BG_CX,
-            cxs = { TAB_ITEMS[1].cx, TAB_ITEMS[2].cx },
-            txs = { TAB_ITEMS[1].textX, TAB_ITEMS[2].textX },
-        }
-    end
-    if compact then
-        local shift = 540 - TAB_LAYOUT_ORIG.bgCX
-        TAB.BG_CX = 540
-        for i = 1, #TAB_ITEMS do
-            TAB_ITEMS[i].cx = TAB_LAYOUT_ORIG.cxs[i] + shift
-            TAB_ITEMS[i].textX = TAB_LAYOUT_ORIG.txs[i] + shift
-        end
-        print("[BackpackPanel] 左栏装备/道具页签居中 shift=" .. tostring(shift))
-    else
-        TAB.BG_CX = TAB_LAYOUT_ORIG.bgCX
-        for i = 1, #TAB_ITEMS do
-            TAB_ITEMS[i].cx = TAB_LAYOUT_ORIG.cxs[i]
-            TAB_ITEMS[i].textX = TAB_LAYOUT_ORIG.txs[i]
-        end
-    end
-end
 
 -- 品质边框颜色：[B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表（粗铁/青铜/秘银/符文/黄金/血钻）
 local QUALITY_BORDER = DarkIcon.QUALITY_TRIM
@@ -250,12 +214,11 @@ local imgBtnGreen  = -1 -- UI_AN_LV.png（批量分解/确认分解按钮绿色�
 -- 品质筛选小图由 QualityMark 统一加载，背包不再单独持有句柄。
 local imgCheckmark = -1  -- UI_icon_GOU.png（选中勾选）
 
---- 分解模式状态（装备 tab 专用）
+--- 装备 tab 品质筛选状态
+--- [分解入仓 0929] 旧"批量分解模式"（active/selectedItems/pending）已移除，
+--- 分解功能整体迁移到独立的"分解"tab（复用 BlacksmithDecompose 模块）
 local decomposeState = {
-    active = false,        -- 是否处于分解操作模式
-    selectedItems = {},    -- [idx] = true
     qualitySet = {},       -- [quality]=true 勾选的稀有度档；空集合=不按稀有度限制
-    pending = false,       -- 是否由背包页发起分解请求
 }
 
 --- 分解模式下某稀有度是否处于勾选范围（空集合=不限制，全部可选中）
@@ -464,30 +427,8 @@ local function getEquipList()
     return ensureGrids().getEquipList()
 end
 
---- 分解确认前，按选中装备的升阶消耗预览 70% 卷轴返还
----@return string|nil
-local function previewDecomposeScrollHint()
-    if not decomposeState.active then return nil end
-    local equipList = getEquipList()
-    local scrolls = {}
-    for idx, selected in pairs(decomposeState.selectedItems) do
-        local equip = selected and equipList[idx]
-        if equip then
-            local slot = equip.slot
-            if not slot and equip.templateId then
-                local tpl = EquipmentConfig.ITEMS[equip.templateId]
-                    or EquipmentConfig.ITEMS[tostring(equip.templateId)]
-                slot = tpl and tpl.slot
-            end
-            local field = slot and BlacksmithConfig.SLOT_SCROLL_MAP[slot]
-            local refund = BlacksmithConfig.calcAscendScrollRefund(EquipmentSystem.getAscendLevel(equip))
-            if field and refund > 0 then
-                scrolls[field] = (scrolls[field] or 0) + refund
-            end
-        end
-    end
-    return BlacksmithConfig.formatScrollRefund(scrolls)
-end
+-- [分解入仓 0929] previewDecomposeScrollHint 已移除：
+-- 卷轴返还预览由 BlacksmithDecompose.drawUpperSlot（warehouse 文本模式）负责
 
 -- ======================== 绘制: 装备 / 道具 tab ========================
 
@@ -835,9 +776,38 @@ function Panel.init(vg)
     print("[BackpackPanel] init OK")
 end
 
+-- ======================== [分解入仓 0929] 分解 tab（复用 BlacksmithDecompose） ========================
+
+local BlacksmithDecompose = require("ui.blacksmith.BlacksmithDecompose")
+local decomposeReady_ = false
+
+--- 首次进入分解 tab 前：注入共享上下文并初始化图片（幂等）
+local function ensureDecomposeReady()
+    if decomposeReady_ then return end
+    if not vg_ then return end
+    BlacksmithDecompose.setContext({
+        imgEssenceIcon = -1,  -- warehouse profile 走文本模式，不用精粹大图
+        imgEnhBtn      = imgBtnGreen,    -- 分解按钮（绿）
+        imgReplaceBtn  = imgBtnYellow,   -- 自动分解按钮（黄）
+        imgCheckmark   = imgCheckmark,
+        imgQualityBg   = {},
+        getEquipIconCached = function(templateId)
+            return ImageCache.getEquipIcon(templateId)
+        end,
+        QUALITY_COST   = BlacksmithConfig.QUALITY_COST,
+        getClient      = function() return require("runtime.GameAction") end,
+        getProtocol    = function() return Protocol end,
+    })
+    BlacksmithDecompose.init(vg_)
+    BlacksmithDecompose.applyProfile("warehouse")
+    decomposeReady_ = true
+    print("[BackpackPanel] 分解模块(warehouse profile)就绪")
+end
+
 --- 打开面板
 ---@param mode? boolean|"left" true=全窗居中模态；"left"=横屏左栏页；nil/false=内嵌
-function Panel.open(mode)
+---@param initialTab? string "equip"|"item"|"decompose"，默认 "equip"
+function Panel.open(mode, initialTab)
     if mode == "left" then
         hostMode_ = "left"
     elseif mode then
@@ -846,18 +816,22 @@ function Panel.open(mode)
         hostMode_ = "inline"
     end
     applyLayout(isCompact())
-    applyTabLayout(isCompact())
+    ensureDecomposeReady()
     state.open = true
     state.closing = false
     state.openTime = time.elapsedTime
     require("systems.GameSFX").playUIMove(1)
-    state.tab = "equip"
-    state.tabFrom = "equip"
+    local tab = initialTab or "equip"
+    state.tab = tab
+    state.tabFrom = tab
     state.tabSwitchTime = 0
     state.scrollY = 0
     state.scrollMax = 0
     state.dragging = false
     state.scrollVel = 0
+    if tab == "decompose" then
+        BlacksmithDecompose.onOpen()
+    end
     -- 关闭道具详情
     itemDetState.open = false
     itemDetState.def = nil
@@ -865,7 +839,7 @@ function Panel.open(mode)
     closeUrConvertDialog()
     itemDetState.transferPending = false
     itemDetState.urConvertPending = false
-    print("[BackpackPanel] open")
+    print("[BackpackPanel] open tab=" .. tab)
 end
 
 --- 关闭面板
@@ -911,7 +885,6 @@ function Panel.update(dt)
             state.open = false
             state.closing = false
             applyLayout(false)  -- 恢复竖版原布局
-            applyTabLayout(false)
             print("[BackpackPanel] closed (anim done)")
         end
         return
@@ -992,13 +965,15 @@ local function drawBody(vg)
         LOWER_PANEL.W, LOWER_PANEL.H,
         { titleH = LOWER_PANEL.IT })
 
-    -- 5. 网格标题文字（跟随 tab 切换，装备 tab 左对齐+品质筛选）
-    local gridTitleText = (state.tab == "equip") and "装备" or "道具"
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, GRID_TITLE.FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(GRID_TITLE.R, GRID_TITLE.G, GRID_TITLE.B, 255))
-    nvgText(vg, GRID_TITLE.X, GRID_TITLE.Y, gridTitleText, nil)
+    -- 5. 网格标题文字（跟随 tab 切换；[分解入仓 0929] 分解 tab 标题由 BlacksmithDecompose 绘制）
+    if state.tab ~= "decompose" then
+        local gridTitleText = (state.tab == "equip") and "装备" or "道具"
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, GRID_TITLE.FONT_SIZE)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(GRID_TITLE.R, GRID_TITLE.G, GRID_TITLE.B, 255))
+        nvgText(vg, GRID_TITLE.X, GRID_TITLE.Y, gridTitleText, nil)
+    end
 
     -- 5b. 品质勾选条（装备 tab 常驻，右上角一排 6 档，可多选）
     -- 默认模式=显示筛选；分解模式=勾选范围（进入时按可见范围预置选中）
@@ -1017,63 +992,27 @@ local function drawBody(vg)
     end
 
     -- 6. 网格内容（根据 tab）
-    if state.tab == "equip" then
-        drawEquipGrid(vg)
+    -- [分解入仓 0929] 分解 tab：整体委托给 BlacksmithDecompose（warehouse profile），
+    -- 自带标题、品质筛选、格子网格、奖励预览、自动分解/分解按钮
+    if state.tab == "decompose" then
+        ensureDecomposeReady()
+        BlacksmithDecompose.drawUpperSlot(vg)  -- 奖励预览文本（warehouse 模式）
+        BlacksmithDecompose.drawPanel(vg)
     else
-        drawItemGrid(vg)
-    end
+        if state.tab == "equip" then
+            drawEquipGrid(vg)
+        else
+            drawItemGrid(vg)
+        end
 
-    -- 7. 背包上限文字 + 分解按钮（装备 tab）
-    local curCount = getInventoryCount()
-    local capStr = "背包上限" .. curCount .. "/" .. BAG_MAX
-    local scrollHint = previewDecomposeScrollHint()
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, scrollHint and 30 or 32)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    if scrollHint then
-        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-        nvgText(vg, CAP_TEXT.X, 2050, scrollHint, nil)
-    else
+        -- 7. 背包上限文字（装备/道具 tab；分解 tab 该位置由奖励预览占用）
+        local curCount = getInventoryCount()
+        local capStr = "背包上限" .. curCount .. "/" .. BAG_MAX
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 32)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(CAP_TEXT.R, CAP_TEXT.G, CAP_TEXT.B, 255))
         nvgText(vg, CAP_TEXT.X, 2050, capStr, nil)
-    end
-
-    -- 7b. 分解按钮（装备 tab 专用）
-    if state.tab == "equip" then
-        if decomposeState.active then
-            -- 分解模式：显示「确认分解」+「取消分解」
-            local _bf1 = BF.begin(vg, "bp_confirm_dec", BTN_CONFIRM_DEC.CX, BTN_CONFIRM_DEC.CY, BTN_CONFIRM_DEC.W, BTN_CONFIRM_DEC.H)
-            DarkIcon.drawNine(vg, "btn",
-                BTN_CONFIRM_DEC.CX - BTN_CONFIRM_DEC.W * 0.5, BTN_CONFIRM_DEC.CY - BTN_CONFIRM_DEC.H * 0.5,
-                BTN_CONFIRM_DEC.W, BTN_CONFIRM_DEC.H, { accent = "gold" })
-            nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(BTN_CONFIRM_DEC.TEXT_R, BTN_CONFIRM_DEC.TEXT_G, BTN_CONFIRM_DEC.TEXT_B, 255))
-            nvgText(vg, BTN_CONFIRM_DEC.CX, BTN_CONFIRM_DEC.CY, "确认分解", nil)
-            BF.finish(vg, _bf1)
-
-            local _bf2 = BF.begin(vg, "bp_batch_dec", BTN_BATCH_DEC.CX, BTN_BATCH_DEC.CY, BTN_BATCH_DEC.W, BTN_BATCH_DEC.H)
-            DarkIcon.drawNine(vg, "btn",
-                BTN_BATCH_DEC.CX - BTN_BATCH_DEC.W * 0.5, BTN_BATCH_DEC.CY - BTN_BATCH_DEC.H * 0.5,
-                BTN_BATCH_DEC.W, BTN_BATCH_DEC.H, { accent = "green" })
-            nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(BTN_BATCH_DEC.TEXT_R, BTN_BATCH_DEC.TEXT_G, BTN_BATCH_DEC.TEXT_B, 255))
-            nvgText(vg, BTN_BATCH_DEC.CX, BTN_BATCH_DEC.CY, "取消分解", nil)
-            BF.finish(vg, _bf2)
-        else
-            -- 默认模式：仅显示「批量分解」（居中）
-            local btnCX = 540
-            local _bf2 = BF.begin(vg, "bp_batch_dec", btnCX, BTN_BATCH_DEC.CY, BTN_BATCH_DEC.W, BTN_BATCH_DEC.H)
-            DarkIcon.drawNine(vg, "btn",
-                btnCX - BTN_BATCH_DEC.W * 0.5, BTN_BATCH_DEC.CY - BTN_BATCH_DEC.H * 0.5,
-                BTN_BATCH_DEC.W, BTN_BATCH_DEC.H, { accent = "green" })
-            nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(BTN_BATCH_DEC.TEXT_R, BTN_BATCH_DEC.TEXT_G, BTN_BATCH_DEC.TEXT_B, 255))
-            nvgText(vg, btnCX, BTN_BATCH_DEC.CY, "批量分解", nil)
-            BF.finish(vg, _bf2)
-        end
     end
 
     -- 8. 返回按钮（[横屏左栏] 窗口模式由宿主中缝侧边返回条接管，页内不画）
@@ -1081,7 +1020,7 @@ local function drawBody(vg)
 
     -- 9-11. 底栏 Tab
     local tabIdx, fromIdx, tabEased = TownPageChrome.tabSlide(state, {
-        equip = 1, item = 2,
+        equip = 1, item = 2, decompose = 3,
     }, TAB.ANIM_DUR)
     TownPageChrome.drawTabBar(vg, imgTabBg, {
         items = TAB_ITEMS,
@@ -1095,6 +1034,11 @@ local function drawBody(vg)
     })
 
     nvgRestore(vg)
+
+    -- [分解入仓 0929] 自动分解设置弹窗（分解 tab，最顶层，不受滑动偏移影响）
+    if state.tab == "decompose" then
+        BlacksmithDecompose.drawAutoDecomposePopup(vg)
+    end
 
     -- 装备详情面板（覆盖在最上层）
     EquipmentDetail.drawIf(vg, "backpack")
@@ -1330,6 +1274,11 @@ function Panel.handleInput(dx, dy)
         return true
     end
 
+    -- [分解入仓 0929] 自动分解弹窗最优先（模态）
+    if state.tab == "decompose" and BlacksmithDecompose.isPopupOpen() then
+        return BlacksmithDecompose.handlePopupInput(dx, dy)
+    end
+
     -- Tab 切换
     do
         local i = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
@@ -1340,16 +1289,25 @@ function Panel.handleInput(dx, dy)
                 state.tabSwitchTime = time.elapsedTime
                 state.tab = item.key
                 state.scrollY = 0
+                if item.key == "decompose" then
+                    ensureDecomposeReady()
+                    BlacksmithDecompose.onTabSwitch()
+                end
                 print("[BackpackPanel] 切换到 " .. item.name)
             end
             return true
         end
     end
 
-    -- 装备 tab 分解相关按钮
+    -- [分解入仓 0929] 分解 tab：其余输入全部委托 BlacksmithDecompose
+    -- （品质筛选、分解/自动分解按钮、格子勾选；未命中也消费防止穿透）
+    if state.tab == "decompose" then
+        BlacksmithDecompose.handleInput(dx, dy)
+        return true
+    end
+
+    -- 装备 tab：稀有度勾选（1-6 档可多选，常驻显示筛选）
     if state.tab == "equip" then
-        -- 稀有度勾选（1-6 档可多选，装备 tab 常驻）：
-        -- 默认模式=显示筛选；分解模式额外把格子选中重置为当前可见（勾选范围内）的全部装备
         for i = 1, 6 do
             local cx = PZSX.FIRST_CX + (i - 1) * (PZSX.SIZE + PZSX.GAP)
             if DrawUtil.hitTest(dx, dy, cx, PZSX.CY, PZSX.SIZE, PZSX.SIZE) then
@@ -1360,97 +1318,8 @@ function Panel.handleInput(dx, dy)
                     decomposeState.qualitySet[i] = true
                 end
                 state.scrollY = 0
-                if decomposeState.active then
-                    decomposeState.selectedItems = {}
-                    local equipList = getEquipList()
-                    for idx, equip in ipairs(equipList) do
-                        if not equip.locked and not equip.equippedByHeroId then
-                            decomposeState.selectedItems[idx] = true
-                        end
-                    end
-                end
                 print("[BackpackPanel] 稀有度勾选切换: " .. i
-                    .. " checked=" .. tostring(decomposeState.qualitySet[i] == true)
-                    .. " selected=" .. tostring(#decomposeState.selectedItems))
-                return true
-            end
-        end
-
-        if decomposeState.active then
-            -- ---- 分解模式激活中 ----
-
-            -- 确认分解按钮（左）
-            if DrawUtil.hitTest(dx, dy, BTN_CONFIRM_DEC.CX, BTN_CONFIRM_DEC.CY, BTN_CONFIRM_DEC.W, BTN_CONFIRM_DEC.H) then
-                BF.trigger("bp_confirm_dec")
-                local selectedSeqs = {}
-                local equipList = getEquipList()
-                for idx, selected in pairs(decomposeState.selectedItems) do
-                    if selected and equipList[idx] then
-                        selectedSeqs[#selectedSeqs + 1] = equipList[idx].seq
-                    end
-                end
-                if #selectedSeqs > 0 then
-                    local Client = require("runtime.GameAction")
-                    decomposeState.pending = true
-                    Client.sendAction(Protocol.ACTION_TYPES.DECOMPOSE_EQUIP, { seqs = selectedSeqs })
-                    print("[BackpackPanel] 确认分解 " .. #selectedSeqs .. " 件装备")
-                end
-                decomposeState.selectedItems = {}
-                decomposeState.active = false
-                return true
-            end
-
-            -- 取消分解按钮（右）
-            if DrawUtil.hitTest(dx, dy, BTN_BATCH_DEC.CX, BTN_BATCH_DEC.CY, BTN_BATCH_DEC.W, BTN_BATCH_DEC.H) then
-                BF.trigger("bp_batch_dec")
-                -- 勾选筛选在默认模式仍生效，取消分解只清选中
-                decomposeState.selectedItems = {}
-                decomposeState.active = false
-                print("[BackpackPanel] 取消分解模式")
-                return true
-            end
-
-            -- 格子点击：切换选中状态
-            if dy >= CLIP_TOP and dy <= GRID.CLIP_BOTTOM then
-                local equipList = getEquipList()
-                local totalSlots = math.max(#equipList, 35)
-                for idx = 1, totalSlots do
-                    local equip = equipList[idx]
-                    if equip and not equip.locked and not equip.equippedByHeroId
-                        and qualityChecked(equip.quality or 1) then
-                        local col = ((idx - 1) % GRID.COLS) + 1
-                        local row = math.floor((idx - 1) / GRID.COLS)
-                        local cx = CELL_COL_CX[col]
-                        local rawCY = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5
-                        local cy = rawCY - state.scrollY
-                        if cy >= CLIP_TOP - GRID.CELL_SIZE * 0.5
-                           and cy <= GRID.CLIP_BOTTOM + GRID.CELL_SIZE * 0.5
-                           and DrawUtil.hitTest(dx, dy, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE) then
-                            if decomposeState.selectedItems[idx] then
-                                decomposeState.selectedItems[idx] = nil
-                            else
-                                decomposeState.selectedItems[idx] = true
-                            end
-                            return true
-                        end
-                    end
-                end
-            end
-        else
-            -- ---- 默认模式：点击「批量分解」进入分解模式 ----
-            local btnCX = 540
-            if DrawUtil.hitTest(dx, dy, btnCX, BTN_BATCH_DEC.CY, BTN_BATCH_DEC.W, BTN_BATCH_DEC.H) then
-                BF.trigger("bp_batch_dec")
-                decomposeState.active = true
-                -- 保留当前勾选筛选；选中预置为当前可见（勾选范围内）的可分解装备
-                decomposeState.selectedItems = {}
-                local equipList = getEquipList()
-                for idx, equip in ipairs(equipList) do
-                    if not equip.locked and not equip.equippedByHeroId then
-                        decomposeState.selectedItems[idx] = true
-                    end
-                end
-                print("[BackpackPanel] 进入分解模式 selected=" .. tostring(#decomposeState.selectedItems))
+                    .. " checked=" .. tostring(decomposeState.qualitySet[i] == true))
                 return true
             end
         end
@@ -1517,12 +1386,12 @@ end
 
 -- ======================== 拖拽/滚轮 ========================
 
---- 装备格命中，供左栏拖到角色槽。分解模式不拖。
+--- 装备格命中，供左栏拖到角色槽/锻炉工作台。
 ---@param dx number
 ---@param dy number
 ---@return table|nil
 function Panel.peekEquipAt(dx, dy)
-    if not state.open or state.tab ~= "equip" or decomposeState.active then return nil end
+    if not state.open or state.tab ~= "equip" then return nil end
     if dy < CLIP_TOP or dy > GRID.CLIP_BOTTOM then return nil end
     local equipList = getEquipList()
     for idx, equip in ipairs(equipList) do
@@ -1623,6 +1492,11 @@ function Panel.handleDragBegin(dx, dy)
     if EquipmentDetail.isOpen() then
         return EquipmentDetail.handleDragBegin(dx, dy)
     end
+    -- [分解入仓 0929] 分解 tab：滚动+长按委托 BlacksmithDecompose
+    if state.tab == "decompose" then
+        BlacksmithDecompose.handleDragBegin(dx, dy)
+        return true
+    end
     -- 检查是否在网格区域内
     if dy >= CLIP_TOP and dy <= GRID.CLIP_BOTTOM then
         state.dragging = true
@@ -1638,6 +1512,10 @@ function Panel.handleDragMove(dx, dy)
     if itemDetState.open then return true end
     if EquipmentDetail.isOpen() then
         return EquipmentDetail.handleDragMove(dx, dy)
+    end
+    if state.tab == "decompose" then
+        BlacksmithDecompose.handleDragMove(dx, dy)
+        return true
     end
     if state.dragging then
         local delta = state.lastDragY - dy
@@ -1656,6 +1534,10 @@ function Panel.handleDragEnd(dx, dy)
     if EquipmentDetail.isOpen() then
         return EquipmentDetail.handleDragEnd(dx, dy)
     end
+    if state.tab == "decompose" then
+        BlacksmithDecompose.handleDragEnd(dx, dy)
+        return true
+    end
     state.dragging = false
     return true
 end
@@ -1668,6 +1550,10 @@ function Panel.handleScroll(wheel, dx, dy)
             return EquipmentDetail.handleScroll(wheel, dx, dy)
         end
     end
+    if state.tab == "decompose" then
+        BlacksmithDecompose.handleScroll(wheel, dx, dy)
+        return true
+    end
     state.scrollY = state.scrollY - wheel * SCROLL_WHEEL_STEP
     clampScroll()
     return true
@@ -1677,22 +1563,12 @@ end
 ---@param data table
 function Panel.onActionResult(data)
     if data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP then
-        if not decomposeState.pending then return end
-        decomposeState.pending = false
-        if not data.decomposed then return end
-
-        local essenceReward = data.essenceReward or 0
-        local RewardPopup = require("ui.hud.popup.RewardPopup")
-        local rewards = {}
-        if essenceReward > 0 then
-            rewards[#rewards + 1] = { type = "essence", amount = essenceReward }
+        -- [分解入仓 0929] 分解请求由 BlacksmithDecompose（仓库分解 tab）发出，
+        -- 回执转发给它（内部 pendingDecompose 门控保证只处理自己发起的请求，
+        -- 与 ClientMessageHandler 同时广播给 BlacksmithPage 的路径互不重复弹奖）
+        if decomposeReady_ then
+            BlacksmithDecompose.onActionResult(data)
         end
-        BlacksmithConfig.appendScrollRewardItems(rewards, data.scrollRewards)
-        if #rewards > 0 then
-            RewardPopup.show("分解奖励", rewards)
-        end
-        print("[BackpackPanel] 分解完成，精粹+" .. essenceReward
-            .. " 卷轴+" .. tostring(data.scrollReward or 0))
         return
     end
 

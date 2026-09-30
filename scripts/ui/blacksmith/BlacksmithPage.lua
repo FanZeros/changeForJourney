@@ -247,8 +247,7 @@ local imgEnhBtn   = -1   -- UI_AN_LV.png（强化按钮背景）
 local imgGoldIcon = -1   -- UI_icon_JB_X.png（金币图标）
 local imgGoldQBg  = -1   -- UI_icon_ZBBJ_2.png（金币品质背景框, quality=2）
 local imgEssenceIcon = -1 -- UI_icon_JC.png（精粹图标）
-local imgXlBefore  = -1   -- UI_TJP_XL_2.png（洗练前背景框）
-local imgXlAfter   = -1   -- UI_TJP_XL_1.png（洗练后背景框）
+local imgXlBefore  = -1   -- UI_TJP_XL_2.png（洗练前/后共用单框背景）
 local imgReplaceBtn = -1  -- UI_AN_HUANG.png（替换按钮背景）
 local imgCheckmark = -1   -- UI_icon_GOU.png（选中打钩）
 local imgLvlBadge  = -1   -- UI_JSJM_DJ.png（等级徽章）
@@ -570,7 +569,6 @@ function BlacksmithPage.init(vg)
     imgGoldQBg  = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_2.png", 0)
     imgEssenceIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JC.png", 0)
     imgXlBefore  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_XL_2.png", 0)
-    imgXlAfter   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_XL_1.png", 0)
     imgReplaceBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgCheckmark = nvgCreateImage(vg, "image/货币道具/UI_icon_GOU.png", 0)
     imgLvlBadge  = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSJM_DJ.png", 0)
@@ -610,7 +608,6 @@ function BlacksmithPage.init(vg)
         imgGoldQBg       = imgGoldQBg,
         imgEssenceIcon   = imgEssenceIcon,
         imgXlBefore      = imgXlBefore,
-        imgXlAfter       = imgXlAfter,
         imgReplaceBtn    = imgReplaceBtn,
         imgPlus          = imgPlus,
         -- 一键强化确认弹窗图片

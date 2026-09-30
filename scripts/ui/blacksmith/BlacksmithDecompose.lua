@@ -94,9 +94,15 @@ FJ.GRID_FIRST_CY = FJ.PZSX_CY + FJ.PZSX_SIZE * 0.5 + 40 + FJ.GRID_CELL * 0.5  --
 
 -- [分解入仓 0929] 装备详情 owner（长按格子打开详情时传给 EquipmentDetail.open）
 FJ.DETAIL_OWNER = "smith"
--- [分解入仓 0929] 奖励预览是否用单行文本（仓库布局没有上半大图区域）
+-- [分解入仓 0929] 仓库布局没有上半大图区域，奖励预览改画图标行（锻炉样式）
 FJ.REWARD_TEXT_MODE = false
-FJ.REWARD_TEXT_Y = 410
+-- [分解预览图标化 0930] 仓库布局奖励图标行（网格底 1980 与按钮顶 2110 之间的条带）
+FJ.RW_ICON_CY = 2040
+FJ.RW_ICON_SIZE = 88
+FJ.RW_ICON_GAP = 26
+FJ.RW_MAX_ICONS = 8        -- 精粹+金币+6 部位卷轴，最多 8 个，恒为一行
+FJ.RW_NUM_FONT = 30
+FJ.RW_EMPTY_FONT = 32
 
 -- ======================== 布局 Profile ========================
 -- "smith"（默认）：旧铁匠铺分解 tab 布局（上半奖励槽 + Y905 标题 + 大格子网格）
@@ -119,7 +125,6 @@ function M.applyProfile(name)
     end
     if name == "warehouse" then
         FJ.REWARD_TEXT_MODE = true
-        FJ.REWARD_TEXT_Y = 2050  -- 替代仓库"背包上限"文本行（按钮上方）
         FJ.TITLE_X, FJ.TITLE_Y = 157, 330
         FJ.PZSX_FIRST_CX, FJ.PZSX_CY, FJ.PZSX_SIZE, FJ.PZSX_GAP = 565, 328, 70, 12
         FJ.GRID_COLS, FJ.GRID_CELL, FJ.GRID_GAP = 5, 160, 30
@@ -205,7 +210,11 @@ local imgPopupBg = -1     -- 弹窗背景
 local imgBtnMinus = -1    -- 减按钮 UI_AN_JIAN
 local imgBtnPlus = -1     -- 加按钮 UI_AN_JIA
 local imgLock = -1        -- 锁定角标 UI_ICON_SUO
-
+-- [分解预览图标化 0930] 奖励图标行：vg 句柄 + 资源图标缓存（路径 → nvg 图像句柄）
+---@type any
+local vgHandle = nil
+---@type table<string, integer>
+local rewardIconCache = {}
 
 --- 注入共享上下文
 ---@param ctx table 由 BlacksmithPage 构造的共享上下文
@@ -233,6 +242,7 @@ local decomposeInited_ = false
 function M.init(vg)
     QualityMark.init(vg)
     EquipmentDetail.init(vg)
+    vgHandle = vg  -- 奖励图标行按需创建图像句柄
     if decomposeInited_ then return end
     decomposeInited_ = true
     -- 整图拉伸绘制（950x647），使用 POP 副本，调整原图不影响九宫格用法
@@ -309,6 +319,7 @@ function M.onOpen()
     fjState.selectedItems = {}
     fjState.lastRewardEssence = nil
     fjState.lastRewardGold = nil
+    fjState.lastScrolls = nil
     fjState.autoPopupOpen = false
     fjState.levelSliderDragging = false
     pendingDecompose = false   -- 重置门控
@@ -360,7 +371,7 @@ end
 -- ======================== 绘制 ========================
 
 --- 计算选中装备的预估精粹奖励与升阶卷轴返还
----@return number previewEssence, integer selCount, string|nil scrollHint
+---@return number previewEssence, integer selCount, string|nil scrollHint, table[] entries
 local function calcRewardPreview()
     local previewEssence = 0
     local selCount = 0
@@ -387,15 +398,87 @@ local function calcRewardPreview()
         end
     end
     local scrollHint = BlacksmithConfig.formatScrollRefund(previewScrolls)
-    if not scrollHint and fjState.lastScrollHint and selCount == 0 then
-        scrollHint = fjState.lastScrollHint
+    -- 未选中时回落到上一次分解结果（图标行与文本提示同口径）
+    local scrolls = previewScrolls
+    if selCount == 0 and fjState.lastScrolls then
+        scrolls = fjState.lastScrolls
+        if not scrollHint then scrollHint = fjState.lastScrollHint end
     end
-    return previewEssence, selCount, scrollHint
+    local essenceShown = previewEssence
+    local goldShown = 0
+    if selCount == 0 then
+        essenceShown = fjState.lastRewardEssence or 0
+        goldShown = fjState.lastRewardGold or 0
+    end
+    local entries = {}
+    if essenceShown > 0 then
+        entries[#entries + 1] = { type = "essence", amount = essenceShown }
+    end
+    if goldShown > 0 then
+        entries[#entries + 1] = { type = "gold", amount = goldShown }
+    end
+    for _, e in ipairs(BlacksmithConfig.collectScrollRefundEntries(scrolls)) do
+        entries[#entries + 1] = e
+    end
+    return previewEssence, selCount, scrollHint, entries
+end
+
+local function getRewardIcon(path)
+    local cached = rewardIconCache[path]
+    if cached then return cached end
+    local img = nvgCreateImage(vgHandle, path, 0)
+    rewardIconCache[path] = img
+    return img
+end
+
+--- [分解预览图标化 0930] 绘制锻炉样式奖励图标行（品质框+图标+数量角标，居中一行）
+---@param vg any
+---@param entries table[] { type: string, amount: number }
+local function drawRewardIconRow(vg, entries)
+    local n = #entries
+    if n > FJ.RW_MAX_ICONS then n = FJ.RW_MAX_ICONS end
+    if n == 0 then
+        drawTextStroke(vg, DESIGN_W * 0.5, FJ.RW_ICON_CY, "勾选装备预览分解所得",
+            FJ.RW_EMPTY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            0xb6, 0xb0, 0x9d, 3)
+        return
+    end
+    local step = FJ.RW_ICON_SIZE + FJ.RW_ICON_GAP
+    local firstCX = DESIGN_W * 0.5 - (n - 1) * step * 0.5
+    local numY = FJ.RW_ICON_CY + FJ.RW_ICON_SIZE * 0.5 - 2
+    for i = 1, n do
+        local entry = entries[i]
+        local def = ResourceDefs.DEFS[entry.type]
+        local cx = firstCX + (i - 1) * step
+        local q = (def and def.quality) or 2
+        DarkIcon.drawQualityBg(vg, q, cx, FJ.RW_ICON_CY, FJ.RW_ICON_SIZE, FJ.RW_ICON_SIZE, 1.0)
+        if def then
+            local img = getRewardIcon(def.iconPath)
+            if img and img > 0 then
+                drawImageCentered(vg, img, cx, FJ.RW_ICON_CY,
+                    FJ.RW_ICON_SIZE - 16, FJ.RW_ICON_SIZE - 16, 1.0)
+            end
+        end
+        -- 数量角标（右下，黑描边白字，与格子等级角标同风格）
+        local numText = tostring(entry.amount)
+        local numX = cx + FJ.RW_ICON_SIZE * 0.5 - 4
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, FJ.RW_NUM_FONT)
+        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
+        local sStep = math.pi * 2 / 16
+        for si = 0, 15 do
+            local sa = si * sStep
+            nvgText(vg, numX + math.cos(sa) * 3, numY + math.sin(sa) * 3, numText, nil)
+        end
+        nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
+        nvgText(vg, numX, numY, numText, nil)
+    end
 end
 
 --- 绘制上半部分奖励槽位内容
 function M.drawUpperSlot(vg)
-    local previewEssence, selCount, scrollHint = calcRewardPreview()
+    local previewEssence, selCount, scrollHint, entries = calcRewardPreview()
 
     -- 显示文本
     local rewardText
@@ -407,16 +490,9 @@ function M.drawUpperSlot(vg)
         rewardText = "分解奖励"
     end
 
-    -- [分解入仓 0929] 仓库布局：无上半大图区域，奖励预览用单行文本（标题行下方）
+    -- [分解入仓 0929] 仓库布局：无上半大图区域，奖励预览画锻炉样式图标行（网格与按钮之间）
     if FJ.REWARD_TEXT_MODE then
-        drawTextStroke(vg, DESIGN_W * 0.5, FJ.REWARD_TEXT_Y, rewardText,
-            34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4)
-        if scrollHint then
-            drawTextStroke(vg, DESIGN_W * 0.5, FJ.REWARD_TEXT_Y + 44, scrollHint,
-            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 214, 102, 3)
-        end
+        drawRewardIconRow(vg, entries)
         return
     end
 
@@ -1102,6 +1178,7 @@ function M.onActionResult(data)
     local goldReward = data.goldReward or 0
     fjState.lastRewardEssence = essenceReward
     fjState.lastRewardGold = goldReward
+    fjState.lastScrolls = data.scrollRewards
     fjState.selectedItems = {}
     M.refreshBackpackItems()
     -- 弹出奖励提示框

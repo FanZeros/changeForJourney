@@ -42,7 +42,9 @@ local D = {
 
     BG_CX   = 540,  BG_CY  = 1195,
     BG_W    = 950,  BG_H   = 1117,
-    BG_IT   = 180,  BG_IR  = 40,  BG_IB = 50,  BG_IL = 40,
+    -- 九宫格边距必须完整包住源图(827x569)四角铜铆钉(铆钉延伸至 ~x68 / ~y500)，
+    -- 否则铆钉被切进中块随面板拉伸变形
+    BG_IT   = 180,  BG_IR  = 72,  BG_IB = 72,  BG_IL = 72,
 
     TT_Y    = 732,  -- 标题下移半行（章节行高 84 的一半；原 690）
     TT_FONT = 50,  TT_SW = 6,
@@ -152,7 +154,8 @@ local function collectChapterGroups()
             local chapter = math.floor(id / 100)
             key = chapter
             name = SC.getChapterName(chapter)
-            subLabel = tostring(SC.getRelativeChapter(chapter)) .. " 章"
+            -- 绝对章号（困难从 24 章起显示 24 章，而非相对 1 章）
+            subLabel = tostring(chapter) .. " 章"
         end
         local gi = indexOf[key]
         if not gi then
@@ -208,6 +211,14 @@ local function chapterHue(key)
     return CH_HUES[((n - 1) % #CH_HUES) + 1]
 end
 
+--- 选关显示的章号：绝对章号（困难第 24 章显示 24-1，与普通 1-23 连续）；
+--- 普通难度相对章与绝对章相同，显示不变
+---@param id number
+---@return number
+local function displayChapter(id)
+    return math.floor(id / 100)
+end
+
 local function shortStageLabel(id)
     if SC.isTerminalTemple(id) then
         local entry = SC.getStage(id)
@@ -215,7 +226,7 @@ local function shortStageLabel(id)
     end
     local entry = SC.getStage(id)
     if not entry then return tostring(id) end
-    local rel = SC.getRelativeChapter(entry.chapter)
+    local rel = displayChapter(id)
     return string.format("%d-%d", rel, entry.stage)
 end
 
@@ -583,6 +594,16 @@ function StageSelectDialog.draw(vg)
             nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
         end
         nvgText(vg, x + 16, y + D.ROW_H - 34, sub, nil)
+
+        -- 终焉神殿额外说明：三队协同战（TerminalRaid 三队共池机制）
+        -- 单独一行放在 sub 下方：卡面与 xN 计数占满行右侧，同行放不下
+        if SC.isTerminalTemple(id) then
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 18)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, locked and 140 or 220))
+            nvgText(vg, x + 16, y + D.ROW_H - 14, "可三队一起上场", nil)
+        end
 
         -- 推荐战力（行左中，v2.61 接线 / v2.63 图标化）：
         -- 口径 = battle-lab 开荒三人组无养成实测阈值（ml≤46 实测 / ml≤92 保守外推），

@@ -26,6 +26,14 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续，合入 930 + equip-ascend，已 push `f69d12c2`）
+
+- **任务**：用户要求把 `workspace930` 与 `feat930/equip-ascend-random-affixes` 合入 `feat/refine-fixed-cost-side-by-side`。930 已是祖先（Already up to date）；升阶分支 dd6599df 真合并。
+- **冲突取舍（BlacksmithRefine 9 块 + CLAUDE.md 1 块）**：保留对方**功能**改动——`effectiveAffixValue`/`getAffixMult` 生效值显示（4 处）、腐化对比 before 值 ×mult；丢弃对方**旧竖版布局**改动（168 压缩 step、scissor 裁剪、lockStep）与 `ratioText`（用户要求②已删）；布局一律我的左右排布。CLAUDE.md 记忆快照双保留。
+- **自动合并暗坑**：对方的 `step`/`nvgIntersectScissor(55, firstY-24, 970, 216)`/`nvgRestore` 被 git 自动并进我重写的 `drawRefineAttrRows` 而未产生冲突标记——216px 裁剪会切掉新布局第 4/5 行，手动移除恢复 `XL.ATTR_ROW_STEP`。**教训：合并后必须 diff 全文找"静默混入"的对方代码，不能只看冲突标记。**
+- **`refineRowFirstY` 升级**：N 行整体垂直居中（`BEFORE_BG_CY - (n-1)*step*0.5`），升阶带来的 4~5 词条在新 560 高面板自然排开，替代对方旧压缩方案。
+- **验证**：`equip_ascend_affix` 74 ALL PASS + `refine_cost_fixed` 12 ALL PASS + `auto_decompose` ALL PASS；LSP 291 文件 0 Error；官方 Build 成功。`.project/project.json` 已还原。
+
 ## 上次做了什么（2026-09-30，`feat/refine-fixed-cost-side-by-side` 洗练三调整，已 push `66fdbc25`）
 
 - **任务（用户三点）**：①洗练不随次数变贵；②洗练不再显示百分比；③洗练前后改横屏左右排布。基于 `workspace930` 开新分支。

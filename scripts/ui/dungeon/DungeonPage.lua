@@ -911,9 +911,10 @@ function DungeonPage.drawDetailPanel(vg)
         accumSec = accumSec or 0
         local timeTxt
         local maxHourText = getIdleMaxHourText()
+        local capDays = math.floor((DungeonIdleConfig.HARD_CAP_SEC or 604800) / 86400)
         if DungeonIdleConfig.getFillRatio(accumSec) >= 1 then
             local tailPct = math.floor((DungeonIdleConfig.TAIL_RATIO or 0.5) * 100 + 0.5)
-            timeTxt = "超过" .. maxHourText .. "，超出按" .. tailPct .. "%"
+            timeTxt = "超过" .. maxHourText .. "按" .. tailPct .. "%，" .. capDays .. "日封顶"
         else
             timeTxt = "挂机 " .. formatIdleDuration(accumSec) .. "/" .. maxHourText
         end

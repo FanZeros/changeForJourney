@@ -397,6 +397,11 @@ local function seamBackList()
             }
         end
     end
+    -- [UI 0930] 返回条朝所属页面方向收 2px：左栏条向左、右栏条向右，
+    -- 让条与页面边缘轻微重叠，消除中缝留缝（hit 与 draw 共用此列表，自动同步）
+    for _, b in ipairs(list) do
+        b.cx = b.cx + ((b.dir == "left") and -2 or 2)
+    end
     return list
 end
 

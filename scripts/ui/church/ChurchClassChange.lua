@@ -295,7 +295,7 @@ function M.init(vg)
     if inited then return end
     inited = true
     savedVg = vg
-    -- 转职树分叉线已改为代码矢量绘制（drawBranchLineVector），不再加载 UI_ZZXT_1Z/2Z 贴图
+    -- 转职树分叉线已改为代码矢量绘制（drawBranchLine，支持路径金色分段着色），不再加载 UI_ZZXT_1Z/2Z 贴图
     img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
     img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     img.detailBg   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_BJ.png", 0)
@@ -337,39 +337,89 @@ local function drawBranchOverlay(vg, cx, cy, w, h, canAdv)
     end
 end
 
---- 代码绘制直角分叉线（┬ 形：顶部中干 + 中部横杆 + 左右双腿）
---- 替代旧贴图 UI_ZZXT_1Z / UI_ZZXT_2Z；线体为纯白，亮度由 alpha 控制。
+-- 连线颜色：金色与节点路径光晕（PATH_GLOW 0xffc42e）一致，白色=未选定/可转，暗白=非路径
+local LINE_WHITE = { 255, 255, 255 }
+local LINE_GOLD  = { 0xff, 0xc4, 0x2e }
+
+--- 内部：按段状态填充一个矩形（seg = { alpha, gold }）
+local function fillLineSeg(vg, x, y, w, h, seg)
+    local a = math.floor((seg.alpha or 0) * 255 + 0.5)
+    if a <= 0 then return end
+    local c = seg.gold and LINE_GOLD or LINE_WHITE
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, w, h)
+    nvgFillColor(vg, nvgRGBA(c[1], c[2], c[3], a))
+    nvgFill(vg)
+end
+
+--- 代码绘制直角分叉线（┬ 形：中干 + 横杆 + 左右腿），支持分段着色。
+--- 当前职业路径上的段用金色（seg.gold=true），其余白色；alpha 控制明暗。
+--- 横杆左半随左腿、右半随右腿着色；中干最后绘制以覆盖横杆中心交点，
+--- 使"初始职业→分叉点"这段路径必经线显示为金色。
 ---@param vg any
 ---@param cx number 包围盒中心X
 ---@param cy number 包围盒中心Y
 ---@param bodyW number 线体宽（含双腿外沿）
 ---@param bodyH number 线体高（中干顶→腿底）
 ---@param thick number 线宽
----@param alpha number 0~1 亮度
 ---@param barRatio number|nil 横杆中心占线体高比例（缺省用一转比例）
-local function drawBranchLineVector(vg, cx, cy, bodyW, bodyH, thick, alpha, barRatio)
-    local a = math.floor(alpha * 255 + 0.5)
-    if a <= 0 then return end
+---@param trunk table {alpha, gold} 中干
+---@param legL table {alpha, gold} 左腿（含横杆左半）
+---@param legR table {alpha, gold} 右腿（含横杆右半）
+local function drawBranchLine(vg, cx, cy, bodyW, bodyH, thick, barRatio, trunk, legL, legR)
     local halfW = bodyW * 0.5
     local top   = cy - bodyH * 0.5
     local bot   = cy + bodyH * 0.5
     -- 横杆中心：按旧贴图实测比例（一转 152/298，二转 132/263）
     local barCY = top + bodyH * (barRatio or BRANCH_LINE_BAR_RATIO)
     local halfT = thick * 0.5
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, a))
-    -- 中干：顶部 → 横杆下沿
-    nvgBeginPath(vg)
-    nvgRect(vg, cx - halfT, top, thick, (barCY + halfT) - top)
-    nvgFill(vg)
-    -- 横杆：贯通左右腿外沿
-    nvgBeginPath(vg)
-    nvgRect(vg, cx - halfW, barCY - halfT, bodyW, thick)
-    nvgFill(vg)
+    -- 横杆左半 / 右半（各随对应腿着色）
+    fillLineSeg(vg, cx - halfW, barCY - halfT, halfW, thick, legL)
+    fillLineSeg(vg, cx, barCY - halfT, halfW, thick, legR)
     -- 左腿 / 右腿：横杆上沿 → 底部
-    nvgBeginPath(vg)
-    nvgRect(vg, cx - halfW, barCY - halfT, thick, bot - (barCY - halfT))
-    nvgRect(vg, cx + halfW - thick, barCY - halfT, thick, bot - (barCY - halfT))
-    nvgFill(vg)
+    fillLineSeg(vg, cx - halfW, barCY - halfT, thick, bot - (barCY - halfT), legL)
+    fillLineSeg(vg, cx + halfW - thick, barCY - halfT, thick, bot - (barCY - halfT), legR)
+    -- 中干：顶部 → 横杆下沿（最后画，覆盖横杆中心交点）
+    fillLineSeg(vg, cx - halfT, top, thick, (barCY + halfT) - top, trunk)
+end
+
+--- 便捷：整条线同一状态（等级锁定遮罩后的灰度补画用）
+local function drawBranchLineSolid(vg, cx, cy, bodyW, bodyH, thick, barRatio, alpha)
+    drawBranchLine(vg, cx, cy, bodyW, bodyH, thick, barRatio,
+        { alpha = alpha, gold = false },
+        { alpha = alpha, gold = false },
+        { alpha = alpha, gold = false })
+end
+
+--- 计算分叉线三段（中干/左腿/右腿）着色状态
+---@param active boolean 该线是否处于可选路径（false → 整条暗，如未选中对应一转的二转线）
+---@param turned boolean 是否已选中经过此分叉（true → 中干金 + 选中腿金 + 另一腿暗）
+---@param selIsLeft boolean|nil turned 时选中左腿还是右腿
+---@return table trunk
+---@return table legL
+---@return table legR
+local function branchLineParts(active, turned, selIsLeft)
+    if not active then
+        return { alpha = 0.3, gold = false },
+               { alpha = 0.3, gold = false },
+               { alpha = 0.3, gold = false }
+    end
+    if not turned then
+        -- 未选中：整条白（两侧都可能是去向）
+        return { alpha = 1, gold = false },
+               { alpha = 1, gold = false },
+               { alpha = 1, gold = false }
+    end
+    -- 已选中：中干金 + 选中腿金 + 另一腿暗白
+    if selIsLeft then
+        return { alpha = 1, gold = true },
+               { alpha = 1, gold = true },
+               { alpha = 0.3, gold = false }
+    else
+        return { alpha = 1, gold = true },
+               { alpha = 0.3, gold = false },
+               { alpha = 1, gold = true }
+    end
 end
 
 -- ======================== 转职树路径点亮 ========================
@@ -463,43 +513,19 @@ function M.drawContent(vg)
         6,
         { italic = true })
 
-    -- 一转分叉线：未转职时两侧都可能通向 → 亮；已转职后只亮选中侧
-    -- 等级未解锁时遮罩只盖到线的一半，线推迟到遮罩之后统一灰度绘制（见 lockedLine1）
+    -- 一转分叉线：未转职时两侧都可能通向 → 整条白亮；已转职后当前职业路径
+    -- （中干 + 选中腿）用金色，另一腿压暗。等级未解锁时推迟到遮罩后统一灰度绘制。
     local lockedLine1 = heroLevel < ADV2.firstLevel
-    local line1Alpha, line2Alpha = 1.0, 1.0
-    if advBranch and advBranch.first then
-        if advBranch.first == (branches and branches[1] and branches[1].id) then
-            line2Alpha = 0.3
-        else
-            line1Alpha = 0.3
-        end
+    local firstTurned = (advBranch and advBranch.first) and true or false
+    local selIsLeft = false
+    if firstTurned then
+        selIsLeft = advBranch.first == (branches and branches[1] and branches[1].id)
     end
-    if lockedLine1 then
-        -- 跳过：遮罩后统一画
-    elseif line1Alpha == line2Alpha then
-        drawBranchLineVector(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
-            BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, line1Alpha)
-    else
-        -- 左右两臂各用各的亮度（中干随在路径的一侧亮）：裁三段分别绘制
-        local halfW = BRANCH_LINE_BODY_W * 0.5
-        local halfT = LINE_THICK * 0.5
-        local top   = BRANCH_LINE_CY - BRANCH_LINE_BODY_H * 0.5
-        local hh    = BRANCH_LINE_BODY_H
-        nvgSave(vg)
-        nvgScissor(vg, BRANCH_LINE_CX - halfW, top, halfW - halfT, hh)
-        drawBranchLineVector(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
-            BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, line1Alpha)
-        nvgRestore(vg)
-        nvgSave(vg)
-        nvgScissor(vg, BRANCH_LINE_CX + halfT, top, halfW - halfT, hh)
-        drawBranchLineVector(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
-            BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, line2Alpha)
-        nvgRestore(vg)
-        nvgSave(vg)
-        nvgScissor(vg, BRANCH_LINE_CX - halfT, top, halfT * 2, hh)
-        drawBranchLineVector(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
-            BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, math.max(line1Alpha, line2Alpha))
-        nvgRestore(vg)
+    if not lockedLine1 then
+        local trunk, legL, legR = branchLineParts(true, firstTurned, selIsLeft)
+        drawBranchLine(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, nil,
+            trunk, legL, legR)
     end
 
     -- 初始职业图标（路径起点，恒定亮）
@@ -519,16 +545,29 @@ function M.drawContent(vg)
         local st1 = firstBranchState(advBranch, branches[1].id, heroLevel)
         local st2 = firstBranchState(advBranch, branches[2].id, heroLevel)
 
-        -- 二转分叉线（先绘制，置于一转图标底层）：仅对应一转在路径上时亮
-        -- 二转未解锁时推迟到二转遮罩后统一灰度（避免半白半灰）
+        -- 二转分叉线（先绘制，置于一转图标底层）：
+        -- 对应一转已转 → 二转已选中腿走金色路径；一转已选但二转未选 → 整条白亮；
+        -- 非路径 → 整条暗。二转未解锁时推迟到二转遮罩后统一灰度（避免半白半灰）。
         local lockedLine2 = heroLevel < ADV2.secondLevel
         if not lockedLine2 then
-            drawBranchLineVector(vg, ADV2.line1CX, ADV2.line1CY,
-                ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, (st1 ~= "off") and 1.0 or 0.3,
-                ADV2.lineBarRatio)
-            drawBranchLineVector(vg, ADV2.line2CX, ADV2.line2CY,
-                ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, (st2 ~= "off") and 1.0 or 0.3,
-                ADV2.lineBarRatio)
+            local secondTurned = (advBranch and advBranch.second) and true or false
+            -- 已选二转是否落在该一转的左子分支
+            local function secLeftOf(firstBranch)
+                if not secondTurned then return false end
+                local sb = SECOND_ADV_BRANCHES[firstBranch.id]
+                if not sb or not sb[1] then return false end
+                return advBranch.second == sb[1].id
+            end
+            local trunkL, legLL, legRL = branchLineParts(
+                st1 ~= "off", secondTurned and st1 == "owned", secLeftOf(branches[1]))
+            drawBranchLine(vg, ADV2.line1CX, ADV2.line1CY,
+                ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio,
+                trunkL, legLL, legRL)
+            local trunkR, legLR, legRR = branchLineParts(
+                st2 ~= "off", secondTurned and st2 == "owned", secLeftOf(branches[2]))
+            drawBranchLine(vg, ADV2.line2CX, ADV2.line2CY,
+                ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio,
+                trunkR, legLR, legRR)
         end
 
         -- 分支1
@@ -639,14 +678,14 @@ function M.drawContent(vg)
         nvgFill(vg)
         -- 一转分叉线上半在遮罩外：遮罩后统一灰度补画，避免半灰半白
         if lockedLine1 then
-            drawBranchLineVector(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
-                BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, 0.35)
+            drawBranchLineSolid(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
+                BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, nil, 0.35)
             -- 二转分叉线同理（此状态下二转线也未画）
             if branches then
-                drawBranchLineVector(vg, ADV2.line1CX, ADV2.line1CY,
-                    ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, 0.35, ADV2.lineBarRatio)
-                drawBranchLineVector(vg, ADV2.line2CX, ADV2.line2CY,
-                    ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, 0.35, ADV2.lineBarRatio)
+                drawBranchLineSolid(vg, ADV2.line1CX, ADV2.line1CY,
+                    ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio, 0.35)
+                drawBranchLineSolid(vg, ADV2.line2CX, ADV2.line2CY,
+                    ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio, 0.35)
             end
         end
         local lk1 = ADV2.lock1
@@ -676,10 +715,10 @@ function M.drawContent(vg)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
         nvgFill(vg)
         -- 二转分叉线上半在遮罩外：遮罩后统一灰度补画
-        drawBranchLineVector(vg, ADV2.line1CX, ADV2.line1CY,
-            ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, 0.35, ADV2.lineBarRatio)
-        drawBranchLineVector(vg, ADV2.line2CX, ADV2.line2CY,
-            ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, 0.35, ADV2.lineBarRatio)
+        drawBranchLineSolid(vg, ADV2.line1CX, ADV2.line1CY,
+            ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio, 0.35)
+        drawBranchLineSolid(vg, ADV2.line2CX, ADV2.line2CY,
+            ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio, 0.35)
         drawTextStroke(vg, lk.titleCX, lk.titleCY, "二转",
             ADV2.lockFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             classColor.r, classColor.g, classColor.b, 6,

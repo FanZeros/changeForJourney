@@ -4,6 +4,10 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v3.07-stone-floor-and-toast-fix | 2026-09-30 | 洗练石加保底只升不降（逐条取新旧较高者）；点金石品质达进度上限后不再拒绝，转为随机一条普通词缀品级+1（最高S，回包 affixGradeUp 并弹展示）；修复洗练拒绝原因提示被抽卡页消息队列静默丢弃导致「点洗练完全无反应」的 bug（showRefineToast 在非抽卡页回退全局 UiToast）。corrupt_convert_test 扩至7组全 PASS。 |
+| v3.06-corrupt-build-model | 2026-09-30 | 腐化构筑模型大改：腐化石废弃随机7效果，改为一条普通词缀转同类型魔化词条（数值×1.8，AffixConfig.NORMAL_TO_CORRUPT_KEY 19组映射）并叠加一层诅咒（基础×0.9/层，最多3层）；神圣石从全量回滚改为逐层洗除最上层诅咒（魔化词条保留，3层需3颗）；解除腐化硬禁——腐化后普通洗练/洗练石可用但精粹×2，魔化词条在重随中固定；旧档快照走一次性全清兼容。新增 tests/corrupt_convert_test.lua；KeywordConfig/背包/洗练页文案同步。 |
+| v3.05-refine-lock-tier | 2026-09-30 | 洗练锁定词缀精粹消耗从「锁任意条一律×1.5」改为按锁定条数阶梯累乘：1条×1.5 / 2条×2.25 / 3条×3.375（BlacksmithConfig.applyRefineLockCostMult）；UI 费用展示与服务端扣费共用同一函数。refine_cost_fixed_test 断言更新为三档全 PASS。 |
+| v3.04-smith-ascend-badge-topright | 2026-09-30 | 锻炉工作台槽升阶等阶角标「+N」从左上移到右上，样式对齐仓库格子（右/顶对齐、字号36、亮绿+黑描边）；删除无用常量 EQUIP_LV_FONT_SIZE。 |
 | v3.03-merit-tab-clearance | 2026-09-29 | 功绩名牌缩小，通关、远征、队员选项下移，避免被名牌挡住。 |
 | v3.02-backpack-owner-clip | 2026-09-29 | 仓库已装备角色头像改为与装备格子同一裁剪层，滚出列表后不再盖住底栏。 |
 | v3.01-smith-label-below | 2026-09-29 | 狱火锻炉名牌从建筑上方移到下方，点击热区同步下移。 |

@@ -22,6 +22,15 @@
 - 环境注意2：远端 workspace930 常有并发提交，push 被拒时先 fetch + merge --no-edit → build → 再 push
 - 环境注意3：离线测试用 `./.cli/UrhoXRuntime tests/xxx.lua -tapcode_dir=. -tool_mode -graphicsheadless`，runtime 缺失时先 `bash .cli/install-urhox-runtime.sh`（需代理）
 
+- 已完成任务3（2026-09-30）：腐化构筑模型大改（用户选定方案二）
+  - 腐化石：随机7效果废弃 → 一条普通词缀转同类型魔化词条（AffixConfig.NORMAL_TO_CORRUPT_KEY 映射，数值 max(原×1.8, 模板×1.8)）+ 叠一层诅咒（corruptBaseMult=0.9^层，最多3层）；patch 记录带 layer 标记 {"c", idx, 原词条, layer}
+  - 神圣石：全量回滚废弃 → 逐层洗除最上层诅咒（cleansed 结果带剩余 corruptCount + corruptRevert），魔化词条保留
+  - 解除腐化硬禁：腐化后普通洗练/洗练石可用，精粹 ×2（CORRUPTED_ESSENCE_MULT，UI/服务端双端一致）；魔化词条在洗练/洗练石重随中固定（rerollKeepCorrupt wrapper）
+  - 旧档兼容：corruptOriginalAffixes / 无 layer 的 patches 走一次性全清分支
+  - 新增测试 tests/corrupt_convert_test.lua（ALL PASS）；equip_ascend_affix_test e12 fixture 改为 5 普通词条（转换后恰满员4）
+  - 文案同步：KeywordConfig 腐化/腐化石/神圣石、BackpackPanel 资源描述、洗练页状态行"诅咒 N/3 层"
+  - 关键文件：scripts/rules/blacksmith/BlacksmithService.lua、scripts/ui/blacksmith/BlacksmithRefine.lua、scripts/config/AffixConfig.lua
+
 ## 洗练石头逻辑速览（BlacksmithService.RefineEquip）
 
 - 入口：洗练 tab 选额外资源 → RefineEquip(uid, seq, extraResource, lockedIndices)
@@ -29,9 +38,9 @@
 - 无石（普通洗练）：未锁定词缀重随机（种类+数值），结果存 pendingRefines 待玩家点"替换"；锁定数必须 < 词缀总数
 - 洗练石 enhanceStone（1个）：词缀种类不变只重随数值/品质等级（rerollAffixValuesWithLocks），同样待替换
 - 点金石 destroyStone（消耗=当前品质N个）：提品 +1（上限按最高通关难度：普通→4史诗/困难→5传说/噩梦及以后→6），保留原词缀、槽位不足补 roll；**直接生效**无需替换；无词缀装备也可用
-- 腐化石 corruptStone（1个）：按权重 roll 7 种魔化效果（无变化25/单条-50% 20/新增第三条20/单条+50% 20/两条+50% 5/基础属性+50% 5/魔化词条5），**直接生效**；corruptCount+1，最多3次；首次腐化记录 corruptRevert 基线供净化回滚
-- 神圣石 sacredStone（1个）：净化腐化（按 revert 基线回滚词缀与基础倍率、清 corruptCount），不耗精粹、不加洗练次数，直接生效
-- 互斥规则：corruptCount>0 时禁止普通洗练/洗练石/点金石，只允许腐化石继续腐化或神圣石净化
+- 腐化石 corruptStone（1个）：一条普通词缀转同类型魔化词条（数值×1.8）+ 叠一层诅咒（基础×0.9^层，最多3层），**直接生效**；需至少一条可转换普通词缀（NORMAL_TO_CORRUPT_KEY 映射）
+- 神圣石 sacredStone（1个）：洗除最上层诅咒（基础属性恢复、该层转换还原），魔化词条保留；不耗精粹、不加洗练次数；3层需3颗
+- 腐化共存规则（构筑模型 2026-09-30）：corruptCount>0 时普通洗练/洗练石仍可用但精粹×2；魔化词条在重随中固定；点金石不受影响
 
 ## 标准收尾流程
 

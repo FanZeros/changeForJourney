@@ -183,6 +183,31 @@ local function testTemplateWearable()
         offhand = { templateId = "O1", level = 1 } } }, B = {} } }),
         "单手剑 + 轻盾组合合法")
     check(prepared and prepared.loadouts.A[1].offhand ~= nil, "单手 + 副手归一化保留")
+
+    -- 三套各挑一件新增模板验证掉落等级与职业可穿类型。
+    prepared = expectAccept(baseConfig({ heroes = { { id = 17, level = 70 } },
+        loadouts = { A = { ["17"] = {
+            weapon = { templateId = "W73", level = 70 },
+            offhand = { templateId = "O23", level = 70 } } }, B = {} } }),
+        "水脉单手魔杖 + 法珠同穿合法")
+    check(prepared and prepared.loadouts.A[17].weapon.templateId == "W73",
+        "水脉新武器在 Lab 中正常归一化")
+
+    prepared = expectAccept(baseConfig({ heroes = { { id = 13, level = 85 } },
+        loadouts = { A = { ["13"] = {
+            weapon = { templateId = "W75", level = 85 },
+            offhand = { templateId = "O32", level = 85 } } }, B = {} } }),
+        "硝烟单手弩 + 轻盾同穿合法")
+    check(prepared and prepared.loadouts.A[13].offhand.templateId == "O32",
+        "硝烟新副手在 Lab 中正常归一化")
+
+    prepared = expectAccept(baseConfig({ heroes = { { id = 10, level = 70 } },
+        loadouts = { A = { ["10"] = {
+            weapon = { templateId = "W76", level = 70 },
+            offhand = { templateId = "O33", level = 70 } } }, B = {} } }),
+        "铁壁单手剑 + 重盾同穿合法")
+    check(prepared and prepared.loadouts.A[10].weapon.templateId == "W76",
+        "铁壁新武器在 Lab 中正常归一化")
 end
 
 -- ── 6) 装备等级 levelRange 边界（本轮核心：战力校准样本合法性）──
@@ -260,7 +285,62 @@ local function testMode()
     check(prepared and prepared.mode == "firstClear", "未知 mode → firstClear")
 end
 
--- ── 9) CombatPowerEstimate 分项计价原型：同官方战力下按职业区分适配 ──
+-- ── 9) 三套六槽：两档装备均同级可得、同职业可穿、实际计为六件 ──
+local function testSetCoverage()
+    local EC = require("config.EquipmentConfig")
+    local SC = require("config.EquipmentSetConfig")
+    local ES = require("systems.EquipmentSystem")
+    local Sets = require("systems.EquipmentSetSystem")
+    local cases = {
+        { "tidepress", 17, 70, { weapon="W73", offhand="O23", armor="A53", helmet="H53", shoes="S53", accessory="C10" } },
+        { "tidepress", 17, 85, { weapon="W74", offhand="O24", armor="A54", helmet="H54", shoes="S54", accessory="C10" } },
+        { "nitros", 13, 70, { weapon="W47", offhand="O31", armor="A17", helmet="H17", shoes="S17", accessory="C21" } },
+        { "nitros", 13, 85, { weapon="W75", offhand="O32", armor="A18", helmet="H18", shoes="S18", accessory="C22" } },
+        { "ironwall", 10, 70, { weapon="W76", offhand="O33", armor="A41", helmet="H41", shoes="S41", accessory="C30" } },
+        { "ironwall", 10, 85, { weapon="W77", offhand="O12", armor="A48", helmet="H48", shoes="S48", accessory="C30" } },
+    }
+    check(EC.TOTAL_COUNT == 326 and EC.SLOT_COUNT.weapon == 77 and EC.SLOT_COUNT.offhand == 33,
+        "三套新增八个模板，不改变旧模板 ID")
+    check(SC.getSetIdForTemplate(EC.ITEMS.W36) == "riftcrystal"
+        and SC.getSetIdForTemplate(EC.ITEMS.W48) == "riftcrystal"
+        and SC.getSetIdForTemplate(EC.ITEMS.W5) == "carapace"
+        and SC.getSetIdForTemplate(EC.ITEMS.O11) == "bonehunger"
+        and SC.getSetIdForTemplate(EC.ITEMS.O5) == "faceless",
+        "原装备套装归属保持不变")
+
+    for _, case in ipairs(cases) do
+        local setId, heroId, level, loadout = case[1], case[2], case[3], case[4]
+        local prepared = expectAccept(baseConfig({ heroes = { { id = heroId, level = level } },
+            loadouts = { A = { [tostring(heroId)] = (function()
+                local spec = {}
+                for slot, tid in pairs(loadout) do spec[slot] = { templateId = tid, level = level } end
+                return spec
+            end)() }, B = {} } }),
+            setId .. " Lv" .. level .. " 同职业同等级六槽配装")
+        local label = setId .. " Lv" .. level
+        if prepared then
+            local data = { inventory = {}, equipped = { [heroId] = {} } }
+            for index, slot in ipairs(EC.SLOTS) do
+                local tid = loadout[slot]
+                data.inventory[tostring(index)] = ES.generate(tid, level, 1)
+                data.equipped[heroId][slot] = index
+                check(SC.getSetIdForTemplate(EC.ITEMS[tid]) == setId,
+                    label .. " " .. slot .. " 模板确实归属本套")
+                check(EC.getIconPath(tid) ~= nil, label .. " " .. slot .. " 图标路径可取得")
+            end
+            local counts, twoHand = Sets.countSets(data, heroId, ES.getFromInventory, ES.getHeroSlots)
+            local rows = Sets.summarize(counts)
+            check(counts[setId] == 6 and not twoHand and #rows == 1
+                and rows[1].fourActive and rows[1].sixActive,
+                label .. " 实际六件、4/6 效果已激活")
+            data.equipped[heroId].offhand = nil
+            local fiveCounts = Sets.countSets(data, heroId, ES.getFromInventory, ES.getHeroSlots)
+            check(fiveCounts[setId] == 5, label .. " 卸副手后只剩五件")
+        end
+    end
+end
+
+-- ── 10) CombatPowerEstimate 分项计价原型：同官方战力下按职业区分适配 ──
 local function testEstimate()
     local HC = require("config.HeroConfig")
     local EC = require("config.EquipmentConfig")
@@ -346,6 +426,7 @@ function Start()
         testLevelRange()
         testAscendAndDeterminism()
         testMode()
+        testSetCoverage()
         testEstimate()
     end)
     if not ok then

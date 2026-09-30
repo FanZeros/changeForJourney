@@ -40,7 +40,8 @@ EquipmentConfig.ITEMS = {}
 local ITEMS = EquipmentConfig.ITEMS
 
 -- 每个槽位独立编号，使用前缀字符串 ID
--- 武器: W1~W72, 副手: O1~O30, 护甲: A1~A60, 头盔: H1~, 鞋子: S1~, 饰品: C1~C36
+-- 武器: W1~W77（W73~W77 为补套模板）, 副手: O1~O33（O31~O33 为补套模板）
+-- 护甲: A1~A60, 头盔: H1~H60, 鞋子: S1~S60, 饰品: C1~C36
 local SLOT_PREFIX = {
     weapon    = "W",
     offhand   = "O",
@@ -75,7 +76,9 @@ end
 ---@param grip string|nil 握持方式 "onehand"/"twohand"（仅武器）
 ---@param statKeys string[] 属性 key 列表
 ---@param tiers table[] 每个层级: { n=名称, lv={min,max}, v={val1,val2,...} }
-local function addGroup(slot, typeName, grip, statKeys, tiers)
+---@param setId string|nil 显式套装归属（新增套装模板使用）
+---@param iconTemplateId string|nil 复用已有模板图标
+local function addGroup(slot, typeName, grip, statKeys, tiers, setId, iconTemplateId)
     for _, t in ipairs(tiers) do
         local id = nextSlotId(slot)
         local stats = {}
@@ -92,6 +95,8 @@ local function addGroup(slot, typeName, grip, statKeys, tiers)
             grip = grip,
             levelRange = t.lv,
             stats = stats,
+            setId = setId,
+            iconTemplateId = iconTemplateId,
         }
     end
 end
@@ -639,6 +644,31 @@ addItem("羽制耳环",   "耳环", "accessory", {28,9999}, {{"magAtk", 12.86}, 
 addItem("碎玉之环",   "耳环", "accessory", {38,9999}, {{"physPen", 12.86}, {"magPen", 5.14}})  -- [主] physPen, [次1] magPen
 addItem("水晶耳环",   "耳环", "accessory", {48,9999}, {{"agi", 4.28}, {"comboRate", 8.6}})     -- [主] agi, [次1] comboRate
 
+-- 补齐三套的单手主手/副手：沿用同档基础数值与已有图标，不改变旧模板的归属。
+-- 高压水脉：魔杖可与法珠同穿（法杖是双手，不能用来凑第六件）。
+addGroup("weapon", "魔杖", "onehand", {"magAtk", "hitValue", "atkSpeed"}, {
+    { n = "潮汐魔杖", lv = {65,80}, v = {16.34, 2.09, 4.1} },
+    { n = "深潮魔杖", lv = {81,9999}, v = {18.86, 2.41, 4.9} },
+}, "tidepress", "W31")
+
+-- 赛道硝烟：单手弩可与轻盾同穿；高阶弩独立成套，保留水晶手弩的原归属。
+addGroup("weapon", "单手弩", "onehand", {"physAtk", "atkSpeed", "hitValue"}, {
+    { n = "极速手弩", lv = {81,9999}, v = {18.86, 4.9, 2.41} },
+}, "nitros", "W43")
+addGroup("offhand", "轻盾", nil, {"dodge", "atkSpeed", "physBlockRate"}, {
+    { n = "硝烟疾风盾", lv = {65,80}, v = {8.18, 4.0, 3.3} },
+    { n = "硝烟镜盾", lv = {81,9999}, v = {9.43, 4.8, 3.8} },
+}, "nitros", "O1")
+
+-- 帝国铁壁：单手剑与重盾同穿；不占用叠甲剑或水晶剑的原套装名额。
+addGroup("weapon", "单手剑", "onehand", {"physAtk", "hitValue", "atkSpeed"}, {
+    { n = "铁壁佩剑", lv = {65,80}, v = {16.34, 2.09, 4.1} },
+    { n = "帝国佩剑", lv = {81,9999}, v = {18.86, 2.41, 4.9} },
+}, "ironwall", "W1")
+addGroup("offhand", "重盾", nil, {"armor", "physBlockRate", "magBlockRate"}, {
+    { n = "帝国守卫盾", lv = {65,80}, v = {11.68, 3.3, 3.3} },
+}, "ironwall", "O7")
+
 -- ======================== 索引构建 ========================
 
 --- 按槽位分组的模板 ID 列表（用于随机掉落）
@@ -683,7 +713,9 @@ end
 ---@param templateId string 模板 ID（如 "W1", "O5", "A12", "C3"）
 ---@return string 图标资源路径
 function EquipmentConfig.getIconPath(templateId)
-    return "image/装备图标/UI_icon_ZB_" .. templateId .. ".png"
+    local tpl = EquipmentConfig.ITEMS[templateId]
+    local iconId = tpl and tpl.iconTemplateId or templateId
+    return "image/装备图标/UI_icon_ZB_" .. iconId .. ".png"
 end
 
 --- 根据品质等级获取品质背景框路径

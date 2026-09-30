@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v3.14-hero-rename-unowned-name | 2026-09-30 | 角色 #21「闪电卖鸡」全量改名「雷电麦坤」：HeroConfig/Dialogue/Gacha/Tavern/ResourceDefs/I18nDictExtra/公告/天赋注释等 22 处文本 + 立绘文件重命名（角色立绘/雷电麦坤_透明立绘.png，HeroAssetUtil 按 cfg.name 拼路径）；角色详情轮播卡未获得角色现在也显示名字（drawCardName 抽出，未获得分支不再 early-return，底部仍标"未获得"）。 |
 | v3.13-equip-drag-from-character-decompose-hover | 2026-09-30 | 配装页装备可跨栏拖到锻炉：右栏按下 arm EquipCrossDrag（source=rightpanel），含角色六装备槽已装备（CharacterDetailEquip.peekSlotEquipAt/peekItemAt，双手武器占副手同绘制规则）；move 门控加 rightpanel 源；分解 tab 支持悬停浮选装备详情（BlacksmithDecompose.handleHover/peekCellAt，与仓库装备 tab 同 0.3s 语义，BackpackPanel.handleHover 分流，点击勾选仍由 handleInput 优先让浮选面板处理）。equip_detail_drag_horizon_test PASS。 |
 | v3.12-awaken-shard-10-30-50 | 2026-09-30 | 角色觉醒三阶碎片消耗从 60/90/130（合计280）改为 10/30/50（合计90），AwakeningConfig.SHARD_COST 单点修改，UI/服务端/详情全走 getShardCost 自动生效。 |
 | v3.11-smith-nameplate-center-scenario-freeze-guard | 2026-09-30 | 锻炉名牌水平居中（drawNamePlate 新增 bgCX/bgCY 参数，其余页面不受影响）；修角色详情页播剧情卡死的两条真卡死路径：HeroScenario.drainPending 在 showScenario 持续失败时 enqueue→drain 无限递归爆栈（加深度封顶8+丢请求）、markClaimed 的同步状态更新/落盘异常中断打开流程（pcall 包裹仅记日志）。scenario_flow 模拟 show→advance→dismiss→onFinish 全链路 ALL PASS。 |

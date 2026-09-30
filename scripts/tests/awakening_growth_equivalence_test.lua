@@ -120,7 +120,7 @@ function Start()
         end
         do -- #8 愤怒的小雀：标记口径断言已移至 1b 节（杠杆② ×2）
         end
-        do -- #21 闪电卖鸡：仅氮气击杀
+        do -- #21 雷电麦坤：仅氮气击杀
             local e1 = makeExtra()
             local hit = AG.applyGrowth(21, e1, makeCtx({ _nitroKill = true }))
             check(hit and e1.nitroKills == 1 and e1.stacks == 1, "hero21 氮气击杀 nitroKills+1 stacks+1")

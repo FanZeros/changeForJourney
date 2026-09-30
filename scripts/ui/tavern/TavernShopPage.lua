@@ -146,7 +146,7 @@ local SHOP_ITEMS = {
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
-        id = 17, name = "闪电卖鸡-碎片", quality = 5,
+        id = 17, name = "雷电麦坤-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_21.png",
         costIcon = "image/货币道具/UI_icon_JGB_X.png",

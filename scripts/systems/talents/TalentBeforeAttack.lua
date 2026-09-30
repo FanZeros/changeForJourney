@@ -314,13 +314,13 @@ function M.bind(deps)
         -- 217 瞬杀: 5秒未受击→暴击25%（由update管理)
         -- 218 千面: 5秒未受击→攻速50%,伤害+10%（由update管理)
 
-        -- #21 闪电卖鸡 银光：觉醒5 上次触发后填充15%攻击进度；每轮攻击只判定一次银光
+        -- #21 雷电麦坤 银光：觉醒5 上次触发后填充15%攻击进度；每轮攻击只判定一次银光
         if heroId == 21 then
             s.silverFlashChecked = false
             if s.silverLightProgressBoost then
                 attacker.atkProgress = math.min(1.0, (attacker.atkProgress or 0) + 0.15)
                 s.silverLightProgressBoost = false
-                talentLog("[Talent] 闪电卖鸡 觉醒5：攻击进度+15%")
+                talentLog("[Talent] 雷电麦坤 觉醒5：攻击进度+15%")
             end
             -- 觉醒6：每80命中+5护甲（战斗内动态，与命中值挂钩）
             if hasAwaken(attacker, 6) and attacker.attrs then

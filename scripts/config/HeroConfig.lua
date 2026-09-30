@@ -282,7 +282,7 @@ HC.HEROES = {
     },
     [21] = {
         quality = 3, classId = CC.WARRIOR,
-        title = "赛道之王", name = "闪电卖鸡",
+        title = "赛道之王", name = "雷电麦坤",
         talentName = "氮气", talentDesc = "每次攻击有25%概率触发氮气：额外造成相当于本次物理伤害150%的雷电伤害，麻痹目标0.3秒，并贯穿另一名敌人。每次触发使自身攻击速度+8%（最多5层）；每80点命中值使触发概率+2%（最多+20%）。",
         talentId = "alex_silver_flash",
         gender = "male",
@@ -382,7 +382,7 @@ local DMG_TYPE_DATA = {
     [16] = { HC.DMG_PHYSICAL, "穿刺" },   -- 万剑归宗
     [17] = { HC.DMG_MAGICAL,  "冰霜" },   -- 蓝色大肥鱼
     [20] = { HC.DMG_MAGICAL,  "暗影" },   -- 摘星星星人
-    [21] = { HC.DMG_PHYSICAL, "斩击" },   -- 闪电卖鸡
+    [21] = { HC.DMG_PHYSICAL, "斩击" },   -- 雷电麦坤
     [22] = { HC.DMG_MAGICAL,  "闪电" },   -- 小黑子
     [23] = { HC.DMG_HEALING,  "神圣" },   -- 真布诗人
     [18] = { HC.DMG_PHYSICAL, "暗影" },   -- 老六
@@ -421,7 +421,7 @@ local WEARABLE_DATA = {
     [16] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 万剑归宗(战士)
     [17] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 蓝色大肥鱼(法师)
     [20] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 摘星星星人(法师)
-    [21] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 闪电卖鸡(战士)
+    [21] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 雷电麦坤(战士)
     [22] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 小黑子(法师)
     [23] = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 真布诗人(牧师)
     [18] = { w = {"细剑","匕首","单手剑"},                    o = {"轻盾"} },             -- 老六(换面人)
@@ -631,7 +631,7 @@ function HC._applyHeroTalent(heroId, attrs, awakening)
         if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.DODGE, flat = 15 }
         end
-    -- 战士 闪电卖鸡 #21: 旧觉醒2 → 新 1 命中+30
+    -- 战士 雷电麦坤 #21: 旧觉醒2 → 新 1 命中+30
     elseif heroId == 21 then
         if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.HIT_VALUE, flat = 30 }

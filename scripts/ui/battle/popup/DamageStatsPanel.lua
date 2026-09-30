@@ -45,8 +45,8 @@ local D = {
     TT_Y    = 705,  TT_FONT = 60,  TT_SW = 6,
     TT_SR   = 0x46, TT_SG  = 0x2f, TT_SB = 0x20,
 
-    -- 副标题（时长 / DPS）
-    SUB_Y   = 800,  SUB_FONT = 34,
+    -- 副标题（时长 / DPS）；2026-09-30 上移半行（800→760）贴近标题
+    SUB_Y   = 760,  SUB_FONT = 34,
     SUB_R   = 0xb6, SUB_G  = 0xb0, SUB_B = 0x9d,
 
     -- Tab 行
@@ -350,7 +350,7 @@ function DamageStatsPanel.draw(vg)
     nvgFontSize(vg, D.SUB_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(D.SUB_R, D.SUB_G, D.SUB_B, 255))
-    nvgText(vg, D.BG_CX, D.SUB_Y, string.format("累计 · 时长 %.1f 秒", dur), nil)
+    nvgText(vg, D.BG_CX, D.SUB_Y, string.format("累计 · 时长 %d 秒", math.floor(dur)), nil)
 
     -- 6) Tab 行
     for i, tab in ipairs(TABS) do

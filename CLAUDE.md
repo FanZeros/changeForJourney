@@ -59,6 +59,14 @@
 - **回归**：battle_stage_switch ALL PASS、battle_ally_compaction ALL PASS、boss_affix_test(37断言) ALL PASS、boss_affix_smoke ALL PASS、shield_scaling ALL PASS、character_team_sync PASS；LSP 全工作区 275 文件 Error=0；官方 Build 成功（382 Lua 入包，含 TerminalRaid + terminal_raid_test）；主入口 60 帧无 Lua 逻辑错误（仅既有 UI 品质框贴图缺失，非本轮）。
 - **⚠️ 遗留未修（非本轮范围，rebase 时处理）**：`chapter_team_offline_test` 失败——工作区 `StageSelectDialog` 把终焉从单组 `"T"` 拆成 14 个逐难度独立组（与远端 `4b43cd36` **同源但不同实现**：远端带 `subLabel` 难度名 + `TT_Y=732/ROW_Y0=790` 布局，工作区无 subLabel + `TT_Y=690/ROW_Y0=756`），但该测试断言还停在旧 `TOTAL_CHAPTERS+1` 与旧坐标。已 `git checkout` 还原测试文件，**不留半成品**；rebase 远端时应整体采用远端 StageSelectDialog + 远端测试版本（两套拆分二选一），否则断言无法干净通过。
 - **视觉验收待办**：共享血条/倒计时/失守灰字的真人预览验收（本机 surfaceless 无法截图）。
+## 上次做了什么（2026-09-30 续6，功能分支合入 workspace930，已 push `02d8c254`）
+
+- **任务（用户本轮明确授权推 930）**：把 `feat/refine-fixed-cost-side-by-side`（洗练三调整+单框化+死加载清理+锻炉双页+双 tip）合入 `workspace930`。
+- **930 又前进**：fetch 发现 `c8c393e9 → 33e86578`（PR #4 终焉神殿三队协同战 `TerminalRaid`，改动全在 battle/tri 区与铁匠铺零重叠）。本地 930 先 ff 对齐 tip 再合并功能分支，冲突仅 CLAUDE.md 记忆双保留。
+- **顺手修 2 个同类 LSP Error**（测试桩 `backpack_grid_scroll_test.lua:90` 覆写全局 nvgRGBA 致联合类型）：我的亮色箭头 tint 与 930 新增 `TownScene.drawImageDarkTint` 均改中间变量 + `---@cast ... NVGcolor`。
+- **验证**：终焉协同战 `terminal_raid_test` 52 断言 ALL PASS（930 新功能在合并态不回归）；切关 75 ALL PASS；LSP 295 文件 0 Error；官方 Build 成功。
+- **推送**：`workspace930` 33e86578..02d8c254（合并提交 + cast 修复）；功能分支停 `ea4e659f` 不再动；PAT 一次性 URL、零残留、remote 已还原。
+
 ## 上次做了什么（2026-09-30 续5，双 tip 合入 + 基线 LSP 修复，已 push `38a69ef7`）
 
 - **任务**：用户问 `0d62a09e`（升阶页词条预告+满员文案右移，在 `feat930/equip-ascend-random-affixes`）是否已合入 → 未合入（我方今早合的是它的前驱 dd6599df）；且 `workspace930` 也前进到 c8c393e9（套装覆盖规划 PR#2/#3 + 转职树金线）。用户选「两个 tip 都合入」。

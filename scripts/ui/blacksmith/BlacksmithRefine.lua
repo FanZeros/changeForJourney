@@ -23,7 +23,10 @@ local BF                = require("systems.ButtonFeedback")
 local M = {}
 
 local MAX_CORRUPT_COUNT = 3
-local CORRUPTED_REFINE_BLOCKED_MSG = "该装备已被腐化，无法洗练，请使用神圣石净化或继续腐化"
+-- 构筑模型 2026-09-30：腐化后仍可洗练，精粹 ×2（与服务端 CORRUPTED_ESSENCE_MULT 一致）
+local CORRUPTED_ESSENCE_MULT = 2
+-- 每层腐化诅咒对基础属性的倍率（与服务端 CORRUPT_LAYER_BASE_PENALTY 一致）
+local CORRUPT_LAYER_BASE_PENALTY = 0.90
 
 ---@param equip table|nil
 ---@return number
@@ -32,33 +35,15 @@ local function getCorruptCount(equip)
     return math.max(0, math.floor(tonumber(equip.corruptCount) or 0))
 end
 
---- 已腐化装备仅允许腐化石/神圣石，禁止普通洗练、洗练石、点金石
----@param equip table|nil
----@param extraKey string|nil
----@return boolean
-local function isCorruptRefineBlocked(equip, extraKey)
-    if getCorruptCount(equip) <= 0 then return false end
-    return extraKey ~= "corruptStone" and extraKey ~= "sacredStone"
-end
-
 local CORRUPT_TAG_R, CORRUPT_TAG_G, CORRUPT_TAG_B = 0xef, 0x79, 0xff
 local CORRUPT_COMPARE_R, CORRUPT_COMPARE_G, CORRUPT_COMPARE_B = 0xef, 0x79, 0xff
 
-local CORRUPT_EFFECT_HINTS = {
-    [1] = "本次腐化未改变词缀或基础属性",
-    [2] = "随机一条词缀效果降低 50%",
-    [3] = "新增一条普通词缀",
-    [4] = "随机一条词缀效果提升 50%",
-    [5] = "两条现有词缀效果各提升 50%",
-    [6] = "装备基础属性提升 50%",
-    [7] = "新增一条魔化词条",
-}
-
 ---@param equip table|nil
----@return table meta { scaleByIndex, originalAffixCount, baseMult }
+---@return table meta { scaleByIndex, convertedByIndex, originalAffixCount, baseMult }
 local function parseCorruptRevertMeta(equip)
     local meta = {
         scaleByIndex = {},
+        convertedByIndex = {},
         originalAffixCount = 0,
         baseMult = nil,
     }
@@ -69,23 +54,26 @@ local function parseCorruptRevertMeta(equip)
     for _, patch in ipairs(rev.patches or {}) do
         if patch[1] == "s" and patch[2] then
             meta.scaleByIndex[patch[2]] = patch[3]
+        elseif patch[1] == "c" and patch[2] then
+            meta.convertedByIndex[patch[2]] = patch[3]
         end
     end
     return meta
 end
 
 ---@param equip table|nil
----@return string|nil
+---@return string|nil 腐化诅咒提示（每层基础 -10%；旧档强化型腐化显示 +%d%%）
 local function getCorruptBaseMultHint(equip)
     if not equip then return nil end
     local mult = tonumber(equip.corruptBaseMult) or 1
-    if mult <= 1.001 then return nil end
-    local baseline = 1
-    local rev = equip.corruptRevert
-    if rev and rev.baseMult and rev.baseMult > 0 then
-        baseline = rev.baseMult
+    if math.abs(mult - 1) < 0.001 then return nil end
+    if mult < 1 then
+        local layers = getCorruptCount(equip)
+        local perPct = math.floor((1 - CORRUPT_LAYER_BASE_PENALTY) * 100 + 0.5)
+        return string.format("腐化诅咒：基础属性 -%d%%/层（当前 %d 层）", perPct, layers)
     end
-    local pct = math.floor((mult / baseline - 1) * 100 + 0.5)
+    -- 旧档强化型腐化（baseMult>1）
+    local pct = math.floor((mult - 1) * 100 + 0.5)
     if pct <= 0 then return nil end
     return string.format("基础属性腐化强化 +%d%%", pct)
 end
@@ -155,6 +143,11 @@ local function recalcRefineEssenceCost()
     if selectedExtraRes and selectedExtraRes.key == "sacredStone" then
         refineData.costEssence = 0
         return
+    end
+    -- 腐化诅咒：洗练精粹 ×2（与服务端一致；腐化石/点金石路径不加价）
+    local extraKey = selectedExtraRes and selectedExtraRes.key or nil
+    if getCorruptCount(equip) > 0 and extraKey ~= "destroyStone" and extraKey ~= "corruptStone" then
+        baseCost = baseCost * CORRUPTED_ESSENCE_MULT
     end
     refineData.costEssence = BlacksmithConfig.applyRefineLockCostMult(baseCost, lockedCount)
 end
@@ -402,6 +395,17 @@ end
 ---@param corruptMeta table|nil
 local function annotateAffixCorruptRow(row, index, affix, equip, corruptMeta)
     if corruptMeta then
+        local convertedFrom = corruptMeta.convertedByIndex[index]
+        if convertedFrom and type(convertedFrom) == "table" then
+            row.corruptTag = "魔化转换"
+            local beforeEff = tonumber(convertedFrom.value) or 0
+            if equip and not AffixConfig.isCorruptAffix(convertedFrom) then
+                beforeEff = beforeEff * EquipmentSystem.getAffixMult(equip)
+            end
+            local beforeFmt = formatAffixValue(convertedFrom.key, beforeEff, convertedFrom.affixId)
+            row.compareText = (convertedFrom.name or "?") .. " " .. beforeFmt .. " → " .. row.value
+            return row
+        end
         local beforeVal = corruptMeta.scaleByIndex[index]
         if beforeVal ~= nil then
             local beforeEff = beforeVal
@@ -486,8 +490,16 @@ local function buildCorruptAfterRows(detail, beforeAffixes, afterAffixes, equip)
         local row = affixToDisplayRow(affix, equip, i, nil)
         local ch = changeByIndex[i]
         if ch then
-            if ch.kind == "added" then
-                row.corruptTag = (detail and detail.effectId == 7) and "魔化词条" or "腐化新增"
+            if ch.kind == "converted" then
+                row.corruptTag = "魔化转换"
+                local beforeEff = ch.beforeValue
+                if equip and ch.beforeKey and not AffixConfig.isCorruptAffix({ affixId = ch.affixId, key = ch.beforeKey }) then
+                    beforeEff = ch.beforeValue * EquipmentSystem.getAffixMult(equip)
+                end
+                local beforeFmt = formatAffixValue(ch.beforeKey, beforeEff, nil)
+                row.compareText = (ch.beforeName or "?") .. " " .. beforeFmt .. " → " .. row.value
+            elseif ch.kind == "added" then
+                row.corruptTag = "魔化词条"
             elseif ch.kind == "scale" then
                 local beforeEff = ch.beforeValue
                 if equip and not AffixConfig.isCorruptAffix(affix) then
@@ -514,7 +526,7 @@ local function getCorruptEffectSummary(detail)
     if detail.summary and detail.summary ~= "" then
         return detail.summary
     end
-    return CORRUPT_EFFECT_HINTS[detail.effectId] or detail.effectName or "魔化完成"
+    return detail.effectName or "魔化完成"
 end
 
 -- ======================== 数据更新 ========================
@@ -740,9 +752,9 @@ function M.drawPanel(vg)
         nvgFontSize(vg, XL.CORRUPT_TEXT_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0xef, 0x79, 0xff, 255))
-        local corruptText = string.format("腐化状态：已腐化 %d/%d 次", corruptCount, MAX_CORRUPT_COUNT)
+        local corruptText = string.format("腐化状态：诅咒 %d/%d 层", corruptCount, MAX_CORRUPT_COUNT)
         if corruptCount >= MAX_CORRUPT_COUNT then
-            corruptText = corruptText .. "（需神圣石净化）"
+            corruptText = corruptText .. "（需神圣石洗除）"
         end
         nvgText(vg, XL.CORRUPT_TEXT_CX, XL.CORRUPT_TEXT_Y, corruptText, nil)
         local baseHint = refineData.corruptBaseHint or getCorruptBaseMultHint(state.selectedEquip)
@@ -1233,9 +1245,7 @@ function M.handleInput(dx, dy)
             local extraKey = selectedExtraRes and selectedExtraRes.key or nil
             local affixCount = #(state.selectedEquip.affixes or {})
             local lockedCount = getLockedCountForSeq(seq)
-            if isCorruptRefineBlocked(state.selectedEquip, extraKey) then
-                showRefineToast(CORRUPTED_REFINE_BLOCKED_MSG)
-            elseif extraKey ~= "destroyStone" and extraKey ~= "corruptStone" and extraKey ~= "sacredStone" and affixCount > 0 and lockedCount >= affixCount then
+            if extraKey ~= "destroyStone" and extraKey ~= "corruptStone" and extraKey ~= "sacredStone" and affixCount > 0 and lockedCount >= affixCount then
                 showRefineToast("至少保留1条词缀未锁定")
             elseif GameState.getEssence() < refineData.costEssence then
                 showRefineToast("精粹不足，无法洗练")
@@ -1343,13 +1353,14 @@ function M.onActionResult(data)
             return true
         end
 
-        -- 神圣石路径：服务端已直接净化，清空腐化状态并恢复腐化前属性
+        -- 神圣石路径：服务端已洗除一层诅咒（逐层回退；剩余层数由 data.corruptCount 给出）
         if data.autoReplaced and data.cleansed then
+            local remaining = data.corruptCount or 0
             if state.selectedEquip then
                 state.selectedEquip.affixes = data.refinePreview
-                state.selectedEquip.corruptCount = nil
+                state.selectedEquip.corruptCount = remaining > 0 and remaining or nil
                 state.selectedEquip.corruptBaseMult = data.corruptBaseMult
-                state.selectedEquip.corruptRevert = nil
+                state.selectedEquip.corruptRevert = data.corruptRevert
                 state.selectedEquip.corruptOriginalAffixes = nil
                 state.selectedEquip.corruptOriginalBaseMult = nil
                 if data.newQuality then
@@ -1382,9 +1393,13 @@ function M.onActionResult(data)
             state.pendingRefineSeq = nil
             qualityUpgradeInfo = nil
             corruptResultInfo = {
-                title = "净化完成",
-                effectName = "腐化状态已清空",
-                hint = "已移除此前腐化添加的效果",
+                title = "洗除诅咒",
+                effectName = remaining > 0
+                    and ("已洗除 1 层诅咒，剩余 " .. remaining .. " 层")
+                    or "腐化诅咒已全部洗除",
+                hint = remaining > 0
+                    and "魔化词条保留，可继续洗除剩余层数"
+                    or "魔化词条保留，装备已无诅咒减益",
                 startTime = time.elapsedTime,
             }
 
@@ -1438,15 +1453,16 @@ function M.onActionResult(data)
                 local b = detail.baseMultChange.before or 1
                 local a = detail.baseMultChange.after or 1
                 local pct = math.floor((a / b - 1) * 100 + 0.5)
-                if pct > 0 then
-                    baseMultHint = string.format("基础属性：×%.2f → ×%.2f（+%d%%）", b, a, pct)
+                if pct ~= 0 then
+                    baseMultHint = string.format("基础属性：×%.2f → ×%.2f（%s%d%%）",
+                        b, a, pct > 0 and "+" or "", pct)
                 end
             end
 
             corruptResultInfo = {
                 title = "腐化结果",
                 effectName = getCorruptEffectSummary(detail) or data.corruptEffectName or "魔化完成",
-                hint = "腐化次数 " .. tostring(data.corruptCount or 0) .. "/3",
+                hint = "诅咒层数 " .. tostring(data.corruptCount or 0) .. "/3",
                 afterRows = refineData.after,
                 baseMultHint = baseMultHint,
                 startTime = time.elapsedTime,

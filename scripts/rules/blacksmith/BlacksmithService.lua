@@ -212,41 +212,55 @@ local EXTRA_RES_DEFS = {
 }
 
 local MAX_CORRUPT_COUNT = 3
-local CORRUPTED_REFINE_BLOCKED_MSG = "该装备已被腐化，无法洗练，请使用神圣石净化或继续腐化"
+-- 腐化后仍可洗练：精粹消耗 ×2（构筑模型 2026-09-30，原硬禁已取消）
+local CORRUPTED_ESSENCE_MULT = 2
+-- 腐化石：普通词条转同类型魔化词条时的数值倍率
+local CORRUPT_CONVERT_VALUE_MULT = 1.8
+-- 腐化石：每层腐化对装备基础属性的倍率（诅咒，可被神圣石逐层洗除）
+local CORRUPT_LAYER_BASE_PENALTY = 0.90
 
 local function getCorruptCount(equip)
     return math.max(0, math.floor(tonumber(equip.corruptCount) or 0))
 end
 
-local function isCorruptRefineAllowed(extraResource)
-    return extraResource == "corruptStone" or extraResource == "sacredStone"
-end
-
-local CORRUPT_EFFECTS = {
-    { id = 1, weight = 25, name = "无变化" },
-    { id = 2, weight = 20, name = "某一条词缀-50%效果" },
-    { id = 3, weight = 20, name = "新增第三条词缀" },
-    { id = 4, weight = 20, name = "某一条词缀+50%效果" },
-    { id = 5, weight = 5,  name = "现有2条词缀+50%效果" },
-    { id = 6, weight = 5,  name = "基础属性+50%效果" },
-    { id = 7, weight = 5,  name = "出现魔化词条" },
-}
-
-local CORRUPT_EFFECT_TOTAL_WEIGHT = 0
-for _, effect in ipairs(CORRUPT_EFFECTS) do
-    CORRUPT_EFFECT_TOTAL_WEIGHT = CORRUPT_EFFECT_TOTAL_WEIGHT + effect.weight
-end
-
-local function rollCorruptEffect()
-    local roll = math.random() * CORRUPT_EFFECT_TOTAL_WEIGHT
-    local acc = 0
-    for _, effect in ipairs(CORRUPT_EFFECTS) do
-        acc = acc + effect.weight
-        if roll <= acc then
-            return effect
+--- 腐化石转换：从普通（非魔化）词缀中随机选一条可转换的
+---@param affixes table[]
+---@return number|nil index, table|nil corruptTpl
+local function pickConvertibleAffix(affixes)
+    local candidates = {}
+    for i, affix in ipairs(affixes or {}) do
+        if not AffixConfig.isCorruptAffix(affix) then
+            local corruptKey = AffixConfig.NORMAL_TO_CORRUPT_KEY[affix.key]
+            if corruptKey and AffixConfig.BY_KEY[corruptKey] then
+                candidates[#candidates + 1] = i
+            end
         end
     end
-    return CORRUPT_EFFECTS[#CORRUPT_EFFECTS]
+    if #candidates == 0 then return nil, nil end
+    local idx = candidates[math.random(1, #candidates)]
+    return idx, AffixConfig.BY_KEY[AffixConfig.NORMAL_TO_CORRUPT_KEY[affixes[idx].key]]
+end
+
+--- 腐化石转换：把指定普通词缀替换为同类型魔化词条（数值 = 原数值 ×1.8，按模板口径重算后取高）
+---@param affix table 原普通词缀
+---@param corruptTpl table 魔化模板
+---@param equip table
+---@return table newAffix
+local function buildConvertedAffix(affix, corruptTpl, equip)
+    local oldValue = tonumber(affix.value) or 0
+    local tplValue = EquipmentSystem.calcCorruptAffixValue(corruptTpl, equip)
+    local value = math.max(oldValue * CORRUPT_CONVERT_VALUE_MULT, tplValue * CORRUPT_CONVERT_VALUE_MULT)
+    if corruptTpl.dataType == "int" then
+        value = math.floor(value + 0.5)
+    end
+    return {
+        affixId = corruptTpl.id,
+        quality = 0,
+        value   = value,
+        key     = corruptTpl.key,
+        name    = corruptTpl.name,
+        convertedFrom = affix.key,
+    }
 end
 
 local function copyAffix(affix)
@@ -261,25 +275,6 @@ end
 
 local recalcBaseStatsForEquip
 
-local function rollWeightedAffixTemplate(list, totalWeight)
-    if not list or #list == 0 then return nil end
-    local roll = math.random() * (totalWeight or 0)
-    local acc = 0
-    for _, item in ipairs(list) do
-        acc = acc + (item.weight or 0)
-        if roll <= acc then
-            return item
-        end
-    end
-    return list[#list]
-end
-
-local function scaleAffixValue(affix, mult)
-    local copied = copyAffix(affix)
-    copied.value = (tonumber(copied.value) or 0) * mult
-    return copied
-end
-
 local function copyAffixList(affixes)
     local copied = {}
     for _, affix in ipairs(affixes or {}) do
@@ -288,53 +283,24 @@ local function copyAffixList(affixes)
     return copied
 end
 
---- 存档用：腐化前基础倍率（1 或 nil 不写入）
-local function normalizeStoredBaseMult(mult)
-    mult = tonumber(mult)
-    if mult == nil or mult == 1 then return nil end
-    return mult
-end
-
---- 首次腐化前记录 revert 基线（词缀条数 + 基础倍率），不复制整份词缀
-local function ensureCorruptRevertBaseline(equip)
-    if equip.corruptOriginalAffixes then return end
-    local rev = equip.corruptRevert
-    if rev and rev.affixCount ~= nil then return end
-    equip.corruptRevert = {
-        baseMult = normalizeStoredBaseMult(equip.corruptBaseMult),
-        affixCount = #(equip.affixes or {}),
-        patches = {},
-    }
-end
-
-local function findScalePatch(rev, idx)
-    for _, patch in ipairs(rev.patches or {}) do
-        if patch[1] == "s" and patch[2] == idx then
-            return patch
-        end
+--- 确保 corruptRevert 存在（新档 patches 带 layer 标记；旧档快照结构由 cleanse 兼容分支处理）
+local function ensureCorruptRevert(equip)
+    if not equip.corruptRevert then
+        equip.corruptRevert = {
+            baseMult = nil,
+            affixCount = #(equip.affixes or {}),
+            patches = {},
+        }
     end
-    return nil
+    return equip.corruptRevert
 end
 
---- 改值类腐化：仅记录该条词缀「第一次被改前」的数值
-local function recordScalePatchBefore(rev, idx, affix)
-    if not rev or not affix or findScalePatch(rev, idx) then return end
-    rev.patches[#rev.patches + 1] = { "s", idx, tonumber(affix.value) or 0 }
-end
-
-local function recordAddPatch(rev)
-    if not rev then return end
-    rev.patches[#rev.patches + 1] = { "a" }
-end
-
-local function hasCorruptRevertData(equip)
-    if equip.corruptOriginalAffixes then return true end
-    local rev = equip.corruptRevert
-    return rev ~= nil and rev.affixCount ~= nil
-end
-
-local function applySacredCleanse(equip)
-    -- 旧档：整份词缀快照
+--- 神圣石：洗除最上层腐化诅咒（逐层回退，构筑模型 2026-09-30）
+--- 新档 patches 带 layer 标记，仅回退该层；旧档 patches 无 layer，回退为一次性全清（迁移兼容）
+---@param equip table
+---@return number newCorruptCount
+local function cleanseOneCorruptLayer(equip)
+    -- 旧档：整份词缀快照 → 一次性全清
     if equip.corruptOriginalAffixes then
         equip.affixes = copyAffixList(equip.corruptOriginalAffixes)
         equip.corruptCount = nil
@@ -346,38 +312,77 @@ local function applySacredCleanse(equip)
             equip.corruptBaseMult = nil
         end
         recalcBaseStatsForEquip(equip)
-        return
+        return 0
     end
 
     local rev = equip.corruptRevert
-    if not rev then return end
+    local layer = getCorruptCount(equip)
+    if layer <= 0 then
+        equip.corruptCount = nil
+        equip.corruptBaseMult = nil
+        equip.corruptRevert = nil
+        return 0
+    end
+
+    if not rev then
+        -- 无回退记录：仅降层数与诅咒倍率
+        layer = layer - 1
+        equip.corruptCount = layer > 0 and layer or nil
+        equip.corruptBaseMult = layer > 0 and (CORRUPT_LAYER_BASE_PENALTY ^ layer) or nil
+        recalcBaseStatsForEquip(equip)
+        return layer
+    end
 
     local affixes = equip.affixes or {}
-    for _, patch in ipairs(rev.patches or {}) do
-        if patch[1] == "s" then
-            local idx = patch[2]
-            local v0 = patch[3]
-            if affixes[idx] then
-                affixes[idx] = copyAffix(affixes[idx])
-                affixes[idx].value = v0
+    local patches = rev.patches or {}
+    local hasLayerTag = false
+    for _, patch in ipairs(patches) do
+        if patch.layer then hasLayerTag = true; break end
+    end
+
+    if hasLayerTag then
+        -- 新档：仅回退最上层的转换 patch（"c" 型：整条还原）
+        local kept = {}
+        for _, patch in ipairs(patches) do
+            if patch.layer == layer and patch[1] == "c" then
+                local idx = patch[2]
+                local orig = patch[3]
+                if affixes[idx] and orig then
+                    affixes[idx] = copyAffix(orig)
+                end
+            else
+                kept[#kept + 1] = patch
             end
         end
+        rev.patches = kept
+    else
+        -- 旧档无 layer：一次性全清（改值 patch 还原 + 截断新增段）
+        for _, patch in ipairs(patches) do
+            if patch[1] == "s" then
+                local idx = patch[2]
+                local v0 = patch[3]
+                if affixes[idx] then
+                    affixes[idx] = copyAffix(affixes[idx])
+                    affixes[idx].value = v0
+                end
+            end
+        end
+        local keepCount = rev.affixCount or #affixes
+        while #affixes > keepCount do
+            table.remove(affixes)
+        end
+        layer = 0
     end
 
-    local keepCount = rev.affixCount or #affixes
-    while #affixes > keepCount do
-        table.remove(affixes)
-    end
     equip.affixes = affixes
-
-    equip.corruptBaseMult = rev.baseMult
-    if equip.corruptBaseMult == nil or equip.corruptBaseMult == 1 then
-        equip.corruptBaseMult = nil
+    layer = layer - 1
+    equip.corruptCount = layer > 0 and layer or nil
+    equip.corruptBaseMult = layer > 0 and (CORRUPT_LAYER_BASE_PENALTY ^ layer) or nil
+    if layer <= 0 then
+        equip.corruptRevert = nil
     end
-    equip.corruptCount = nil
-    equip.corruptRevert = nil
-    equip.corruptOriginalBaseMult = nil
     recalcBaseStatsForEquip(equip)
+    return layer
 end
 
 local function buildExcludeKeysFromAffixes(affixes)
@@ -388,42 +393,23 @@ local function buildExcludeKeysFromAffixes(affixes)
     return exclude
 end
 
-local function appendNormalAffix(affixes, equip, qDef)
-    local exclude = buildExcludeKeysFromAffixes(affixes)
-    local maxAffixQ = qDef and qDef.maxAffixQuality or 1
-    local randomStrength = qDef and qDef.randomStrength or 1.0
-    local extra = EquipmentSystem.rollAffixes(1, maxAffixQ, equip.level or 1, exclude, randomStrength, equip.grip)
-    if extra and extra[1] then
-        affixes[#affixes + 1] = extra[1]
-        return true
+--- 腐化石主构建：复制词缀列表并把选中的一条普通词缀转为同类型魔化词条
+---@param equip table
+---@param rev table corruptRevert
+---@return table[] newAffixes, table|nil convertedInfo { index, before, after }
+local function buildConvertedAffixes(equip, rev)
+    local source = equip.affixes or {}
+    local result = {}
+    for _, affix in ipairs(source) do
+        result[#result + 1] = copyAffix(affix)
     end
-    return false
-end
-
-local function appendCorruptAffix(affixes, equip)
-    local exclude = buildExcludeKeysFromAffixes(affixes)
-    local candidates = {}
-    local totalWeight = 0
-    for _, tpl in ipairs(AffixConfig.CORRUPT_AFFIXES or {}) do
-        if not exclude[tpl.key] then
-            candidates[#candidates + 1] = tpl
-            totalWeight = totalWeight + (tpl.weight or 0)
-        end
-    end
-    local tpl = rollWeightedAffixTemplate(candidates, totalWeight)
-    if not tpl then return false end
-
-    -- 魔化词条不吃 D~S 词缀品质增幅 / 装备 randomStrength
-    local value = EquipmentSystem.calcCorruptAffixValue(tpl, equip)
-
-    affixes[#affixes + 1] = {
-        affixId = tpl.id,
-        quality = 0,
-        value   = value,
-        key     = tpl.key,
-        name    = tpl.name,
-    }
-    return true
+    local idx, corruptTpl = pickConvertibleAffix(result)
+    if not idx then return result, nil end
+    local layer = getCorruptCount(equip) + 1
+    local before = copyAffix(result[idx])
+    result[idx] = buildConvertedAffix(before, corruptTpl, equip)
+    rev.patches[#rev.patches + 1] = { "c", idx, before, layer = layer }
+    return result, { index = idx, before = before, after = result[idx] }
 end
 
 recalcBaseStatsForEquip = function(equip)
@@ -438,115 +424,38 @@ recalcBaseStatsForEquip = function(equip)
     end
 end
 
-local function buildCorruptedAffixes(equip, effect, qDef, rev)
-    local source = equip.affixes or {}
-    local result = {}
-    for _, affix in ipairs(source) do
-        result[#result + 1] = copyAffix(affix)
-    end
-
-    if effect.id == 1 then
-        return result, false
-    elseif effect.id == 2 then
-        if #result <= 0 then return result, false end
-        local idx = math.random(1, #result)
-        recordScalePatchBefore(rev, idx, result[idx])
-        result[idx] = scaleAffixValue(result[idx], 0.5)
-        return result, true
-    elseif effect.id == 3 then
-        if #result >= 3 then return result, false end
-        local added = appendNormalAffix(result, equip, qDef)
-        if added then recordAddPatch(rev) end
-        return result, added
-    elseif effect.id == 4 then
-        if #result <= 0 then return result, false end
-        local idx = math.random(1, #result)
-        recordScalePatchBefore(rev, idx, result[idx])
-        result[idx] = scaleAffixValue(result[idx], 1.5)
-        return result, true
-    elseif effect.id == 5 then
-        if #result <= 0 then return result, false end
-        local indices = {}
-        for i = 1, #result do indices[#indices + 1] = i end
-        for i = #indices, 2, -1 do
-            local j = math.random(1, i)
-            indices[i], indices[j] = indices[j], indices[i]
-        end
-        local count = math.min(2, #indices)
-        for i = 1, count do
-            local idx = indices[i]
-            recordScalePatchBefore(rev, idx, result[idx])
-            result[idx] = scaleAffixValue(result[idx], 1.5)
-        end
-        return result, count > 0
-    elseif effect.id == 7 then
-        if #result >= 3 then return result, false end
-        local added = appendCorruptAffix(result, equip)
-        if added then recordAddPatch(rev) end
-        return result, added
-    end
-
-    return result, false
-end
-
---- 构建腐化效果详情（供客户端展示前后对比）
-local function buildCorruptEffectDetail(effect, beforeAffixes, afterAffixes, beforeBaseMult, afterBaseMult)
-    local detail = {
-        effectId = effect.id,
-        effectName = effect.name,
-        affixChanges = {},
-    }
+--- 构建腐化转换详情（供客户端展示前后对比；构筑模型）
+local function buildConvertEffectDetail(convertedInfo, beforeAffixes, afterAffixes, beforeBaseMult, afterBaseMult)
+    local detail = { affixChanges = {} }
     beforeBaseMult = tonumber(beforeBaseMult) or 1
     afterBaseMult = tonumber(afterBaseMult) or 1
 
-    if effect.id == 1 then
-        detail.summary = "本次腐化未改变词缀或基础属性"
-    elseif effect.id == 6 then
-        detail.baseMultChange = {
-            before = beforeBaseMult,
-            after = afterBaseMult,
+    if convertedInfo then
+        local b = convertedInfo.before
+        local a = convertedInfo.after
+        detail.effectId = 100
+        detail.effectName = string.format("%s → %s（魔化）", tostring(b.name), tostring(a.name))
+        detail.summary = string.format("一条词缀转为同类型魔化词条，数值 %.2f → %.2f",
+            tonumber(b.value) or 0, tonumber(a.value) or 0)
+        detail.affixChanges[#detail.affixChanges + 1] = {
+            index = convertedInfo.index,
+            kind = "converted",
+            affixId = a.affixId,
+            key = a.key,
+            name = a.name,
+            beforeName = b.name,
+            beforeKey = b.key,
+            beforeValue = tonumber(b.value) or 0,
+            afterValue = tonumber(a.value) or 0,
         }
-        detail.summary = "装备基础属性提升 50%"
     else
-        for i = 1, math.max(#beforeAffixes, #afterAffixes) do
-            local b = beforeAffixes[i]
-            local a = afterAffixes[i]
-            if not b and a then
-                detail.affixChanges[#detail.affixChanges + 1] = {
-                    index = i,
-                    kind = "added",
-                    affixId = a.affixId,
-                    key = a.key,
-                    name = a.name,
-                    afterValue = tonumber(a.value) or 0,
-                }
-            elseif b and a then
-                local bv = tonumber(b.value) or 0
-                local av = tonumber(a.value) or 0
-                if math.abs(av - bv) > 0.0001 then
-                    detail.affixChanges[#detail.affixChanges + 1] = {
-                        index = i,
-                        kind = "scale",
-                        affixId = a.affixId,
-                        key = a.key or b.key,
-                        name = a.name or b.name,
-                        beforeValue = bv,
-                        afterValue = av,
-                    }
-                end
-            end
-        end
-        if effect.id == 2 then
-            detail.summary = "随机一条词缀效果降低 50%"
-        elseif effect.id == 3 then
-            detail.summary = "新增一条普通词缀"
-        elseif effect.id == 4 then
-            detail.summary = "随机一条词缀效果提升 50%"
-        elseif effect.id == 5 then
-            detail.summary = "两条现有词缀效果各提升 50%"
-        elseif effect.id == 7 then
-            detail.summary = "新增一条魔化词条"
-        end
+        detail.effectId = 101
+        detail.effectName = "无可转换词缀"
+        detail.summary = "装备没有可转换的普通词缀，本次腐化未生效"
+    end
+
+    if math.abs(afterBaseMult - beforeBaseMult) > 0.0001 then
+        detail.baseMultChange = { before = beforeBaseMult, after = afterBaseMult }
     end
     return detail
 end
@@ -601,7 +510,48 @@ local function normalizeLockedIndices(lockedIndices, affixCount)
     return lockedSet, lockedCount
 end
 
---- 洗练装备（消耗精粹，可选额外资源：洗练石=只洗数值/点金石=提品/腐化石=随机魔化效果/神圣石=净化腐化）
+--- 普通洗练/洗练石重随机时保持魔化词条固定（构筑模型）：
+--- 先拆出魔化词条，对剩余普通词条 reroll（锁定索引重映射），再把魔化词条插回原位置
+---@param existingAffixes table[]
+---@param lockedSet table|nil
+---@param rollFn fun(list:table[], locks:table|nil):table[]
+---@return table[]
+local function rerollKeepCorrupt(existingAffixes, lockedSet, rollFn)
+    local corruptIdx, corruptAffixes = {}, {}
+    local plainAffixes, remap = {}, {}
+    for i, affix in ipairs(existingAffixes or {}) do
+        if AffixConfig.isCorruptAffix(affix) then
+            corruptIdx[#corruptIdx + 1] = i
+            corruptAffixes[#corruptAffixes + 1] = affix
+        else
+            plainAffixes[#plainAffixes + 1] = affix
+            remap[i] = #plainAffixes
+        end
+    end
+    if #corruptAffixes == 0 then
+        return rollFn(existingAffixes, lockedSet)
+    end
+    local mappedLocks = nil
+    if lockedSet then
+        mappedLocks = {}
+        for idx in pairs(lockedSet) do
+            local ni = remap[idx]
+            if ni then mappedLocks[ni] = true end
+        end
+    end
+    local rolled = rollFn(plainAffixes, mappedLocks)
+    local result = {}
+    for i = 1, #rolled do
+        result[i] = rolled[i]
+    end
+    for j, origIdx in ipairs(corruptIdx) do
+        table.insert(result, origIdx, corruptAffixes[j])
+    end
+    return result
+end
+
+--- 洗练装备（消耗精粹，可选额外资源：洗练石=只洗数值/点金石=提品/腐化石=同类型魔化转换+诅咒层/神圣石=洗除一层诅咒）
+--- 构筑模型 2026-09-30：腐化后仍可洗练（精粹 ×2），魔化词条在洗练/洗练石中保持固定
 ---@param uid number
 ---@param seq number
 ---@param extraResource string|nil 额外资源 key ("enhanceStone"/"destroyStone"/"corruptStone"/"sacredStone"/nil)
@@ -653,35 +603,32 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
             end
         end
 
-        -- 腐化石特殊校验：装备最多腐化 3 次
+        -- 腐化石特殊校验：最多 3 层诅咒 + 至少一条可转换普通词缀
         if extraResource == "corruptStone" then
             local currentCorruptCount = math.max(0, math.floor(tonumber(equip.corruptCount) or 0))
             if currentCorruptCount >= MAX_CORRUPT_COUNT then
-                return false, "该装备已腐化3次，需要先使用神圣石净化"
+                return false, "该装备已腐化3层，需要先使用神圣石洗除诅咒"
+            end
+            if not pickConvertibleAffix(equip.affixes) then
+                return false, "装备没有可转换的普通词缀，无法使用腐化石"
             end
         end
 
-        -- 神圣石特殊校验：只净化已腐化装备
+        -- 神圣石特殊校验：只洗除已腐化装备的诅咒层
         if extraResource == "sacredStone" then
             local currentCorruptCount = math.max(0, math.floor(tonumber(equip.corruptCount) or 0))
             if currentCorruptCount <= 0 then
                 return false, "该装备未处于腐化状态"
             end
-            if not hasCorruptRevertData(equip) then
-                return false, "该装备缺少腐化前记录，无法净化"
-            end
         end
     end
 
     local corruptCount = getCorruptCount(equip)
-    if corruptCount > 0 and not isCorruptRefineAllowed(extraResource) then
-        return false, CORRUPTED_REFINE_BLOCKED_MSG
-    end
 
-    -- 神圣石：净化腐化状态，不消耗精粹，不增加洗练次数
+    -- 神圣石：洗除最上层腐化诅咒（逐层回退），不消耗精粹，不增加洗练次数
     if extraResource == "sacredStone" then
         currency.sacredStone = (currency.sacredStone or 0) - 1
-        applySacredCleanse(equip)
+        local newCorruptCount = cleanseOneCorruptLayer(equip)
 
         if pendingRefines[uid] then
             pendingRefines[uid][seqStr] = nil
@@ -692,15 +639,16 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         PDM.FlushImmediate(uid)
 
         print("[BlacksmithService] REFINE+CLEANSE uid=" .. tostring(uid)
-            .. " seq=" .. seqStr .. " sacredStone=-1")
+            .. " seq=" .. seqStr .. " sacredStone=-1 corrupt " .. corruptCount .. "→" .. newCorruptCount)
 
         return true, nil, {
             refinePreview = equip.affixes,
             refineSeq = seq,
             autoReplaced = true,
             cleansed = true,
-            corruptCount = 0,
+            corruptCount = newCorruptCount,
             corruptBaseMult = equip.corruptBaseMult,
+            corruptRevert = equip.corruptRevert,
             newQuality = equip.quality,
         }
     end
@@ -723,6 +671,10 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
     end
 
     local essenceCost = BlacksmithConfig.calcRefineEssenceCost(q, equipLv, equip.grip)
+    -- 腐化诅咒：洗练精粹 ×2（腐化石/点金石路径不加价，与锁定倍率不叠加）
+    if corruptCount > 0 and extraResource ~= "destroyStone" and extraResource ~= "corruptStone" then
+        essenceCost = essenceCost * CORRUPTED_ESSENCE_MULT
+    end
     if extraResource ~= "destroyStone" and extraResource ~= "corruptStone" then
         essenceCost = BlacksmithConfig.applyRefineLockCostMult(essenceCost, lockedCount)
     end
@@ -745,7 +697,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
 
     local newAffixes
     local upgradedQuality = nil    -- 仅点金石时非 nil
-    local corruptEffect = nil      -- 仅腐化石时非 nil
+    local convertedInfo = nil      -- 仅腐化石时非 nil
     local corruptBeforeAffixes = nil
     local corruptBaseMultBefore = nil
     local extraLog = ""
@@ -753,8 +705,10 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
     if extraResource == "enhanceStone" then
         local maxAffixQ = math.max(1, qDef.maxAffixQuality or 0)
         local randomStrength = qDef.randomStrength or 1.0
-        newAffixes = EquipmentSystem.rerollAffixValuesWithLocks(
-            equip.affixes, maxAffixQ, equipLv, randomStrength, equip.grip, lockedSet)
+        newAffixes = rerollKeepCorrupt(equip.affixes, lockedSet, function(list, locks)
+            return EquipmentSystem.rerollAffixValuesWithLocks(
+                list, maxAffixQ, equipLv, randomStrength, equip.grip, locks)
+        end)
         extraLog = " extra=洗练石(rerollValues)"
         if lockedCount > 0 then
             extraLog = extraLog .. " locked=" .. lockedCount
@@ -789,27 +743,28 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         extraLog = " extra=点金石(upgrade " .. q .. "→" .. newQ .. " maxQ=" .. maxQ .. " affixes=" .. #newAffixes .. ")"
 
     elseif extraResource == "corruptStone" then
-        -- ── 腐化石：随机魔化效果，直接应用结果 ──
-        ensureCorruptRevertBaseline(equip)
-        local corruptRev = equip.corruptRevert
+        -- ── 腐化石：一条普通词缀转同类型魔化词条 + 叠加一层诅咒（直接应用）──
+        local corruptRev = ensureCorruptRevert(equip)
         corruptBeforeAffixes = copyAffixList(equip.affixes)
         corruptBaseMultBefore = tonumber(equip.corruptBaseMult) or 1
-        corruptEffect = rollCorruptEffect()
-        if corruptEffect.id == 6 then
-            newAffixes = copyAffixList(equip.affixes)
-            equip.corruptBaseMult = corruptBaseMultBefore * 1.5
+        newAffixes, convertedInfo = buildConvertedAffixes(equip, corruptRev)
+        if convertedInfo then
+            local newLayer = math.min(MAX_CORRUPT_COUNT, corruptCount + 1)
+            equip.corruptCount = newLayer
+            equip.corruptBaseMult = CORRUPT_LAYER_BASE_PENALTY ^ newLayer
             recalcBaseStatsForEquip(equip)
-        else
-            newAffixes = buildCorruptedAffixes(equip, corruptEffect, qDef, corruptRev)
         end
-        extraLog = " extra=腐化石(effect=" .. tostring(corruptEffect.id) .. ":" .. corruptEffect.name .. ")"
+        extraLog = " extra=腐化石(convert=" .. (convertedInfo and tostring(convertedInfo.before.name) or "none")
+            .. " layer=" .. tostring(equip.corruptCount or 0) .. ")"
 
     else
-        -- ── 普通洗练：未锁定槽重随机 ──
+        -- ── 普通洗练：未锁定槽重随机（魔化词条保持固定）──
         local maxAffixQ  = math.max(1, qDef.maxAffixQuality or 0)
         local normalRandomStrength = qDef.randomStrength or 1.0
-        newAffixes = EquipmentSystem.rollAffixesForRefine(
-            equip.affixes, lockedSet, maxAffixQ, equipLv, normalRandomStrength, equip.grip)
+        newAffixes = rerollKeepCorrupt(equip.affixes, lockedSet, function(list, locks)
+            return EquipmentSystem.rollAffixesForRefine(
+                list, locks, maxAffixQ, equipLv, normalRandomStrength, equip.grip)
+        end)
         if lockedCount > 0 then
             extraLog = " locked=" .. lockedCount
         end
@@ -847,10 +802,9 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         }
     end
 
-    -- 腐化石：直接应用随机魔化结果（无需手动点替换）
+    -- 腐化石：直接应用转换结果（无需手动点替换；层数/诅咒在效果分支已写入）
     if extraResource == "corruptStone" then
         equip.affixes = newAffixes
-        equip.corruptCount = math.min(MAX_CORRUPT_COUNT, math.max(0, math.floor(tonumber(equip.corruptCount) or 0)) + 1)
 
         if pendingRefines[uid] then
             pendingRefines[uid][seqStr] = nil
@@ -868,8 +822,8 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         TaskService.UpdateProgress(uid, "refine", 1)
 
         local corruptBaseMultAfter = tonumber(equip.corruptBaseMult) or 1
-        local corruptEffectDetail = buildCorruptEffectDetail(
-            corruptEffect,
+        local corruptEffectDetail = buildConvertEffectDetail(
+            convertedInfo,
             corruptBeforeAffixes,
             newAffixes,
             corruptBaseMultBefore,
@@ -881,8 +835,8 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
             refineSeq = seq,
             autoReplaced = true,
             corrupted = true,
-            corruptEffectId = corruptEffect and corruptEffect.id or nil,
-            corruptEffectName = corruptEffect and corruptEffect.name or nil,
+            corruptEffectId = corruptEffectDetail.effectId,
+            corruptEffectName = corruptEffectDetail.effectName,
             corruptEffectDetail = corruptEffectDetail,
             corruptBeforeAffixes = corruptBeforeAffixes,
             corruptBaseMultBefore = corruptBaseMultBefore,

@@ -553,8 +553,8 @@ function M.drawPanel(vg)
     nvgFillColor(vg, nvgRGBA(FJ.TITLE_R, FJ.TITLE_G, FJ.TITLE_B, 255))
     nvgText(vg, FJ.TITLE_X, FJ.TITLE_Y, "分解装备", nil)
 
-    -- 2. 品质筛选图标
-    for i = 1, 5 do
+    -- 2. 品质筛选图标（6 档，与装备 tab 一致：含至臻红）
+    for i = 1, 6 do
         local cx = FJ.PZSX_FIRST_CX + (i - 1) * (FJ.PZSX_SIZE + FJ.PZSX_GAP)
         local didScale = BF.begin(vg, "bsd_filter_" .. i, cx, FJ.PZSX_CY, FJ.PZSX_SIZE, FJ.PZSX_SIZE)
         QualityMark.draw(vg, i, cx, FJ.PZSX_CY, FJ.PZSX_SIZE, 1.0)
@@ -966,8 +966,8 @@ function M.handleInput(dx, dy)
         pendingDecompose = false
     end
 
-    -- 品质筛选图标点击
-    for i = 1, 5 do
+    -- 品质筛选图标点击（6 档，与绘制一致）
+    for i = 1, 6 do
         local cx = FJ.PZSX_FIRST_CX + (i - 1) * (FJ.PZSX_SIZE + FJ.PZSX_GAP)
         if hitTest(dx, dy, cx, FJ.PZSX_CY, FJ.PZSX_SIZE, FJ.PZSX_SIZE) then
             BF.trigger("bsd_filter_" .. i)

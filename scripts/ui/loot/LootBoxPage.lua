@@ -6,8 +6,10 @@ local DrawUtil = require("core.DrawUtil")
 local TownPageChrome = require("ui.town.TownPageChrome")
 local DarkIcon = require("core.DarkIcon")
 local EquipmentConfig = require("config.EquipmentConfig")
+local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local ImageCache = require("ui.widget.ImageCache")
 local QualityMark = require("ui.widget.QualityMark")
+local SetFilterDialog = require("ui.widget.SetFilterDialog")
 local BF = require("systems.ButtonFeedback")
 local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
 local NumberUtil = require("core.NumberUtil")
@@ -18,6 +20,8 @@ local W, H = 1080, 2400
 local LIST = { x = 48, y = 430, w = 984, h = 1690, rowH = 224, gap = 18 }
 -- 稀有度勾选条：右上角一排 6 档（与背包分解页同款同位置逻辑），名称牌占左上。
 local FILTER = { firstCX = 565, cy = 286, size = 70, gap = 12 }
+-- 套装筛选入口按钮：与稀有度勾选条同行，左侧空位。
+local SET_BTN = { cx = 190, cy = 286, w = 280, h = 70 }
 local BACK = { cx = 958, cy = 2308, w = 144, h = 120 }
 local ACTION_CX, ACTION_W, ACTION_H = 873, 202, 112
 local BTN_W, BTN_H, BTN_Y = 420, 108, 2210
@@ -31,6 +35,8 @@ local state = {
     sourceSummary = {}, summary = {},
     ---@type table<number, boolean>
     qualitySet = {}, -- [quality]=true 勾选的稀有度档；空集合=全部（不筛选）
+    ---@type table<string, boolean>
+    setFilter = {}, -- [setId]=true / ["none"]=true 勾选的套装；空集合=全部（不筛选）
     count = 0, pendingCount = 0, scrollY = 0, maxScrollY = 0,
     dragging = false, dragStartY = 0, dragStartScroll = 0, dragMoved = false,
     decompose = false, confirm = false,
@@ -42,11 +48,11 @@ local imgName, imgBox, imgCheck, imgPower = -1, -1, -1, -1
 local inited = false
 ---@type fun(index: number)|nil
 local onClaimOne = nil
----@type fun(qualitySet: table<number, boolean>)|nil
+---@type fun(qualitySet: table<number, boolean>, setFilter: table<string, boolean>)|nil
 local onClaimAll = nil
 ---@type fun(index: number)|nil
 local onDecomposeOne = nil
----@type fun(qualitySet: table<number, boolean>)|nil
+---@type fun(qualitySet: table<number, boolean>, setFilter: table<string, boolean>)|nil
 local onDecomposeAll = nil
 ---@type fun()|nil
 local onClose = nil
@@ -84,6 +90,7 @@ end
 
 local function finishClose()
     clearDetail()
+    SetFilterDialog.close()
     state.open, state.closing, state.dragging = false, false, false
     state.confirm, state.dragMoved, state.messages = false, false, {}
     if onClose then onClose() end
@@ -121,26 +128,69 @@ local function currentSet()
     return set
 end
 
---- 筛选范围描述（已翻译）：未勾选=全部品质；单档=品质名；多档=「共 N 种品质」。
+--- 当前勾选的套装集合（复制一份传出）。
+---@return table<string, boolean>
+local function currentSetFilter()
+    local set = {}
+    for setId, checked in pairs(state.setFilter) do
+        if checked then set[setId] = true end
+    end
+    return set
+end
+
+--- 装备实例的套装 id；无归属返回 SetFilterDialog.NONE_KEY。
+---@param equip table|nil
+---@return string
+local function setIdOfEquip(equip)
+    if not equip then return SetFilterDialog.NONE_KEY end
+    local tpl = EquipmentConfig.ITEMS[equip.templateId]
+        or EquipmentConfig.ITEMS[tostring(equip.templateId)]
+    return EquipmentSetConfig.getSetIdForTemplate(tpl) or SetFilterDialog.NONE_KEY
+end
+
+--- 套装筛选范围描述（已翻译）：未勾选=全部套装；单套=套装名；多套=「共 N 种套装」。
+local function setFilterName()
+    local picked = {}
+    for setId, checked in pairs(state.setFilter) do
+        if checked then picked[#picked + 1] = setId end
+    end
+    if #picked == 0 then return nil end
+    if #picked == 1 then
+        if picked[1] == SetFilterDialog.NONE_KEY then return I18n.lookup("无套装") end
+        local def = EquipmentSetConfig.get(picked[1])
+        return def and I18n.lookup(def.name) or picked[1]
+    end
+    return string.format(I18n.lookup("共 %d 种套装"), #picked)
+end
+
+--- 品质+套装组合筛选范围描述（状态行用）。
 local function filterName()
     local picked = {}
     for quality = 1, QualityMark.count() do
         if state.qualitySet[quality] then picked[#picked + 1] = quality end
     end
-    if #picked == 0 then return I18n.lookup("全部品质") end
-    if #picked == 1 then return I18n.lookup(EquipmentConfig.QUALITY[picked[1]].name) end
-    return string.format(I18n.lookup("共 %d 种品质"), #picked)
+    local qualityText
+    if #picked == 0 then qualityText = I18n.lookup("全部品质")
+    elseif #picked == 1 then qualityText = I18n.lookup(EquipmentConfig.QUALITY[picked[1]].name)
+    else qualityText = string.format(I18n.lookup("共 %d 种品质"), #picked) end
+    local setText = setFilterName()
+    if setText then return qualityText .. " · " .. setText end
+    return qualityText
 end
 
 local function rebuildSummary()
     state.summary = {}
     state.count, state.pendingCount = 0, 0
     local set = currentSet()
-    local selectAll = not next(set)
+    local setFilter = currentSetFilter()
+    local allQuality = not next(set)
+    local allSet = not next(setFilter)
     for sourceIndex, entry in ipairs(state.sourceSummary) do
         local equip = entry.equip
-        -- 旧种子仅在“全部”中展示待整理，不能冒充已确定品质的装备。
-        if selectAll or (equip and set[equip.quality] == true) then
+        -- 旧种子仅在“全部”中展示待整理，不能冒充已确定品质/套装的装备。
+        local qualityOK = allQuality or (equip and set[equip.quality] == true)
+        local setOK = allSet or (equip and setFilter[setIdOfEquip(equip)] == true)
+        if qualityOK and setOK then
             local display = {}
             for key, value in pairs(entry) do display[key] = value end
             display.sourceIndex = entry.sourceIndex or sourceIndex
@@ -185,7 +235,8 @@ end
 
 ---@param summary table[]|nil
 function LootBoxPage.open(summary)
-    state.qualitySet, state.scrollY = {}, 0
+    state.qualitySet, state.setFilter, state.scrollY = {}, {}, 0
+    SetFilterDialog.close()
     LootBoxPage.refresh(summary or state.sourceSummary)
     if state.open and not state.closing then return end
     state.open, state.closing = true, false
@@ -201,6 +252,7 @@ function LootBoxPage.close()
     if not state.open or state.closing then return end
     state.closing, state.closeTime = true, time.elapsedTime
     state.dragging, state.confirm = false, false
+    SetFilterDialog.close()
     clearDetail()
     print("[LootBoxPage] close")
 end
@@ -292,9 +344,24 @@ local function filterCenter(quality)
     return FILTER.firstCX + (quality - 1) * (FILTER.size + FILTER.gap), FILTER.cy
 end
 
+--- 套装筛选入口：与稀有度勾选条同行左侧；显示当前选中数（0=「套装」，N=「套装·N」）。
+local function drawSetFilterButton(vg)
+    local selected = SetFilterDialog.countSelected(state.setFilter)
+    local feedback = BF.begin(vg, "lbp_set_filter", SET_BTN.cx, SET_BTN.cy, SET_BTN.w, SET_BTN.h)
+    DarkIcon.drawNine(vg, "btn", SET_BTN.cx - SET_BTN.w * 0.5, SET_BTN.cy - SET_BTN.h * 0.5,
+        SET_BTN.w, SET_BTN.h, { accent = selected > 0 and "green" or "gold" })
+    local label = selected > 0 and ("套装 · " .. selected) or "套装"
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 34)
+    text(vg, SET_BTN.cx, SET_BTN.cy, label, 34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        244, 237, 224, 3)
+    BF.finish(vg, feedback)
+end
+
 --- 稀有度勾选条：与背包分解页同款——右上角一排品质框（品质小图即框体），
 --- 1-6 档可多选；勾选=框内居中对勾；全不勾即全部，无“全部”按钮。
 local function drawFilters(vg)
+    drawSetFilterButton(vg)
     for quality = 1, QualityMark.count() do
         local cx, cy = filterCenter(quality)
         local checked = state.qualitySet[quality] == true
@@ -410,8 +477,8 @@ function LootBoxPage.draw(vg)
     nvgIntersectScissor(vg, LIST.x, LIST.y, LIST.w, LIST.h)
     if #state.summary == 0 then
         DrawUtil.drawImageCentered(vg, imgBox, 540, 1000, 260, 260, 0.7)
-        local hasFilter = next(state.qualitySet) ~= nil
-        local emptyTitle = hasFilter and "暂无该稀有度装备" or "遗匣为空"
+        local hasFilter = next(state.qualitySet) ~= nil or next(state.setFilter) ~= nil
+        local emptyTitle = hasFilter and "暂无符合筛选的装备" or "遗匣为空"
         local emptyHint = hasFilter and "调整上方勾选或取消全部勾选查看全部" or "继续远征，新的战利品会存放在这里"
         text(vg, 540, 1210, I18n.lookup(emptyTitle), 48, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 3)
         text(vg, 540, 1285, I18n.lookup(emptyHint), 32,
@@ -431,7 +498,7 @@ function LootBoxPage.draw(vg)
         nvgFill(vg)
     end
     local hasItems = state.count > 0
-    local hasFilter = next(state.qualitySet) ~= nil
+    local hasFilter = next(state.qualitySet) ~= nil or next(state.setFilter) ~= nil
     drawButton(vg, "lbp_claim_all", BTN_CLAIM_CX, BTN_Y, BTN_W, BTN_H,
         hasFilter and "领取勾选" or "一键领取", "gold", hasItems)
     drawButton(vg, "lbp_decompose_all", BTN_DECOMPOSE_CX, BTN_Y, BTN_W, BTN_H,
@@ -445,15 +512,17 @@ function LootBoxPage.draw(vg)
         end
     end
     if state.confirm then drawConfirmation(vg) end
+    -- 套装筛选弹窗（最顶层模态）
+    SetFilterDialog.draw(vg)
     drawMessages(vg)
     nvgRestore(vg)
 end
 
--- 单件参数是原 seeds 索引；批量参数是品质筛选（0 全部，1..6 精确匹配）。
+-- 单件参数是原 seeds 索引；批量参数是品质集合+套装集合（空集合=不限制）。
 -- 批量接收方只处理已有 equip 的条目，待整理残留不参与领取或回收。
-local function action(name, callback, value)
+local function action(name, callback, value, value2)
     print("[LootBoxPage] action=" .. name .. " value=" .. tostring(value))
-    if callback then callback(value) end
+    if callback then callback(value, value2) end
 end
 
 local function entryAt(dx, dy)
@@ -468,7 +537,9 @@ local function entryAt(dx, dy)
 end
 
 function LootBoxPage.handleHover(dx, dy)
-    if not ready() or state.confirm or state.dragging then clearDetail() return end
+    if not ready() or state.confirm or state.dragging or SetFilterDialog.isOpen() then
+        clearDetail() return
+    end
     if state.detailIndex then
         local selected = state.summary[state.detailIndex]
         if selected and selected.equip then
@@ -493,7 +564,9 @@ function LootBoxPage.handleHover(dx, dy)
 end
 
 function LootBoxPage.handleRightClick(dx, dy)
-    if not state.open or not ready() or state.confirm then return false end
+    if not state.open or not ready() or state.confirm or SetFilterDialog.isOpen() then
+        return false
+    end
     local entry = entryAt(dx, dy)
     if not entry or not entry.equip then return true end
     clearDetail()
@@ -505,6 +578,8 @@ end
 function LootBoxPage.handleInput(dx, dy)
     if not state.open then return false end
     if not ready() then return true end
+    -- 套装筛选弹窗模态优先（打开时消费全部点击）
+    if SetFilterDialog.isOpen() then return SetFilterDialog.handleInput(dx, dy) end
     if state.dragMoved then state.dragMoved = false return true end
     state.lastClickX, state.lastClickY = dx, dy
     if state.confirm then
@@ -514,7 +589,7 @@ function LootBoxPage.handleInput(dx, dy)
         elseif DrawUtil.hitTest(dx, dy, 750, CONFIRM.btnY, 330, 96) then
             BF.trigger("lbp_confirm")
             state.confirm = false
-            action("decomposeAll", onDecomposeAll, currentSet())
+            action("decomposeAll", onDecomposeAll, currentSet(), currentSetFilter())
         end
         return true
     end
@@ -529,6 +604,19 @@ function LootBoxPage.handleInput(dx, dy)
         end
     end
     if TownPageChrome.hitBack(dx, dy, BACK) then LootBoxPage.close() return true end
+    -- 套装筛选入口按钮（弹窗内勾选实时生效）
+    if DrawUtil.hitTest(dx, dy, SET_BTN.cx, SET_BTN.cy, SET_BTN.w, SET_BTN.h) then
+        BF.trigger("lbp_set_filter")
+        clearDetail()
+        SetFilterDialog.open(state.setFilter, {
+            onChange = function()
+                state.scrollY = 0
+                state.dragging, state.confirm = false, false
+                rebuildSummary()
+            end,
+        })
+        return true
+    end
     for quality = 1, QualityMark.count() do
         local cx, cy = filterCenter(quality)
         if DrawUtil.hitTest(dx, dy, cx, cy, FILTER.size, FILTER.size) then
@@ -543,7 +631,7 @@ function LootBoxPage.handleInput(dx, dy)
         clearDetail()
         if state.count > 0 then
             BF.trigger("lbp_claim_all")
-            action("claimAll", onClaimAll, currentSet())
+            action("claimAll", onClaimAll, currentSet(), currentSetFilter())
         end
         return true
     end
@@ -574,7 +662,9 @@ end
 
 function LootBoxPage.handleDragBegin(dx, dy)
     state.dragMoved = false
-    if not ready() or state.confirm or not insideList(dx, dy) then return false end
+    if not ready() or state.confirm or SetFilterDialog.isOpen() or not insideList(dx, dy) then
+        return false
+    end
     state.dragging = true
     state.dragStartY, state.dragStartScroll = dy, state.scrollY
     return true
@@ -598,6 +688,7 @@ end
 function LootBoxPage.handleScroll(wheel)
     if not state.open then return false end
     if not ready() or state.confirm then return true end
+    if SetFilterDialog.isOpen() then return true end  -- 弹窗打开时消费但不滚动列表
     if state.dragging then state.dragMoved = true end
     state.dragging = false
     clearDetail()

@@ -4,7 +4,8 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
-| v3.20-refine-essence-option-cleanup | 2026-09-30 | 洗练页大清理：腐化状态行下移7.5%页高（940→1120）；魔化词条数值/名称改亮紫，被腐化弱化的魔化词条暗紫（scaleByIndex 判色），删除[腐化强化/削弱/魔化词条]标签与旧→新数值对比行；删除"洗练需求/累计洗练次数"整行文字；点金石弹窗不再显示"提品"小字；精粹改为可选资源入列（弹窗第一项，含拥有数），原左侧固定精粹图标+数量删除，未选/选精粹时资源槽显示精粹拥有/消耗；服务端计费改为 chargesEssence：仅普通洗练与选精粹收精粹，选四种石头只耗石头不耗精粹（腐化×2/锁定阶梯仍作用于精粹路径）。KeywordConfig/gameplay 文档同步。三回归 ALL PASS。 |
+| v3.21-refine-essence-option-cleanup | 2026-09-30 | 洗练页大清理：腐化状态行下移7.5%页高（940→1120）；魔化词条数值/名称改亮紫，被腐化弱化的魔化词条暗紫（scaleByIndex 判色），删除[腐化强化/削弱/魔化词条]标签与旧→新数值对比行；删除"洗练需求/累计洗练次数"整行文字；点金石弹窗不再显示"提品"小字；精粹改为可选资源入列（弹窗第一项，含拥有数），原左侧固定精粹图标+数量删除，未选/选精粹时资源槽显示精粹拥有/消耗；服务端计费改为 chargesEssence：仅普通洗练与选精粹收精粹，选四种石头只耗石头不耗精粹（腐化×2/锁定阶梯仍作用于精粹路径）。KeywordConfig/gameplay 文档同步。三回归 ALL PASS。 |
+| v3.20-set-filter-warehouse-lootbox | 2026-09-30 | 仓库/遗匣装备新增套装筛选：共用弹窗组件 ui/widget/SetFilterDialog（12 套装+无套装，套装色圆点+多选勾选+清空/完成，模态消费全部输入）；入口按钮「套装·N」位于品质勾选条左侧（仓库装备 tab 与遗匣页同款位置）。筛选语义与品质勾选一致（空=全部、AND 组合）；遗匣批量领取/回收透传套装集合（LootBoxSystem.claimAll/decomposeAll 新增 setFilter 参数，旧签名兼容），确认弹窗/状态行/空态文案随组合范围联动；仓库装备网格经 BackpackGrids setChecked 过滤。EquipmentSetConfig 新增 SET_ORDER 固定展示顺序；I18nDictExtra 补 7 条五语词条。新增 tests/lootbox_set_filter_test（模板归属自检+弹窗交互+系统层过滤 24 断言全过）；lootbox_page/overflow/horizon、backpack_grid_scroll 回归全过；LSP 0 Error；build 通过。 |
 | v3.19-stats-duration-integer | 2026-09-30 | 战斗统计副标题时长只显示整秒（%.1f→%d 取整），并上移半行（SUB_Y 800→760）贴近标题。 |
 | v3.18-smith-underlay-workbench-empty | 2026-09-30 | 穿帮修复：锻炉打开时左栏仓库下垫同款不透明背景（BlacksmithPage.drawUnderlay，插在城镇组之上/仓库之下，两条横屏绘制路径都接），半透明仓库不再透出城镇；工作台槽右移/下移 2% 竖屏页（540,431→562,479）落入新背景熔炉门前平台；打开锻炉默认空工作台（清空 selectedEquip/Seq/Slot），仅教程激活期保留自动选件（"点击强化"步骤依赖非空）。三回归 ALL PASS。 |
 | v3.17-refine-frame-shift | 2026-09-30 | 洗练页隐藏"洗练装备/提品"标题文字；属性单框+箭头整体下移 8% 页高（FRAME_CY/ARROW_CY 1240→1432），腐化结果标题改相对 FRAME_CY 定位自动跟随；提品展示 centerY 派生自 FRAME_CY 同步下移。 |

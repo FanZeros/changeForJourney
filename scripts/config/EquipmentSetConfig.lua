@@ -253,4 +253,18 @@ function ESC.get(setId)
     return ESC.SETS[setId]
 end
 
+-- 固定展示顺序（SETS 是 hash 表无序；筛选列表等 UI 按此顺序渲染）。
+-- 新增套装时同步追加到本表末尾。
+ESC.SET_ORDER = {
+    "carapace", "faceless", "riftcrystal", "last_rite",
+    "tidepress", "nitros", "swordgate", "starless",
+    "ironwall", "emberscout", "gambler", "bonehunger",
+}
+
+--- 按固定顺序返回全部套装 id
+---@return string[]
+function ESC.orderedSetIds()
+    return ESC.SET_ORDER
+end
+
 return ESC

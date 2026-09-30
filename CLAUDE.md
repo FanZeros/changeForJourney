@@ -36,6 +36,13 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续7，合入 workspace930，已 push）
+
+- **任务**：用户要求「拉取 930 并且合入」当前分支 `feat/decompose-reward-icon-row`。930 tip=e2108b93（终焉神殿三队协同战 TerminalRaid PR#4 + nvgImagePatternTinted cast 修复），8 提交全在 battle/tri 区，与分解图标行零文件重叠。
+- **冲突**：仅 CLAUDE.md 记忆快照一块（我方续6 vs 930 方三条），双保留手工解决。
+- **验证**：terminal_raid(52)/auto_decompose/refine_cost/battle_stage_switch 四回归 ALL PASS；LSP 全工作区 0 Error；官方 Build 成功；主入口 headless 70s 0 Lua 错。
+- **🔴 教训（再犯）**：worktree 合并/改码后**必须先 rsync 到 /workspace 根再跑测试**——首跑 terminal_raid 报 `Could not find resource` 因新文件只在 worktree。顺序=改/合 → rsync → 测试/Build。
+
 ## 上次做了什么（2026-09-30 续6，分解页奖励预览图标行，已 push `f3514839`）
 
 - **任务**：用户附截图要求「分解页面做成原本锻炉那样，图标显示会获得的精粹及其他资源」。截图左栏=仓库分解 tab（warehouse 布局），原预览仅「精粹 +N」单行文本。

@@ -36,6 +36,16 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续6，分解页奖励预览图标行，已 push `f3514839`）
+
+- **任务**：用户附截图要求「分解页面做成原本锻炉那样，图标显示会获得的精粹及其他资源」。截图左栏=仓库分解 tab（warehouse 布局），原预览仅「精粹 +N」单行文本。
+- **环境排查**：/workspace 根**不是 git 仓库**——仓库在 `.tmp/changeForJourney/`（worktree，此前 feat928 双页分支的开发地）；截图 UI 属已合入 refine 线的 warehouse 布局（远端 refine 已前进到 ea4e659f，含 Decompose 433 行重构，预览区文本与我方旧基线逐字相同）。
+- **实现**（新分支 `feat/decompose-reward-icon-row`，基于 origin/feat/refine...）：`calcRewardPreview` 增第 4 返回值 entries（精粹+金币+`collectScrollRefundEntries` 部位卷轴；未选中回落 `fjState.lastScrolls`/lastReward* 显示上次分解结果）；新增 `drawRewardIconRow`（DarkIcon 品质框+ResourceDefs 图标+右下黑描边数量角标，最多 8 个居中一行，`RW_ICON_CY=2040` 落在网格底 1980 与按钮顶 2110 间隙）；`drawUpperSlot` warehouse 分支改画图标行；init 存 vgHandle、onActionResult/onOpen 存/清 lastScrolls；删死常量 REWARD_TEXT_Y。图标句柄按路径懒加载缓存（rewardIconCache）。
+- **注意**：续4 合并时旧 smith 布局图标链（drawRewardIcons/REWARD_ROW*/scrollIconCache）已作死码删除——本实现是基于 ResourceDefs 的新图标行，非恢复旧码。
+- **同步**：worktree 改完后 `rsync -a --exclude=.git --exclude=.project .tmp/changeForJourney/ /workspace/`（根非 git，build/预览只认根；root 独有的教堂转职 2 图与 1 个 meta 保留不删）。
+- **验证**：LSP 2 文件 0 Error；auto_decompose/refine_cost/battle_stage_switch 全 ALL PASS；主入口 headless 75s 0 Lua 错（4 条 headless shader ERROR 为基线噪音）；官方 Build 成功；push f3514839 后 remote URL 已去 PAT。
+- **待真人验收**：图标行视觉效果（88px 图标+角标在左栏的可读性、分解后回落展示上次结果）。
+
 ## 上次做了什么（2026-09-30 续5，双 tip 合入 + 基线 LSP 修复，已 push `38a69ef7`）
 
 - **任务**：用户问 `0d62a09e`（升阶页词条预告+满员文案右移，在 `feat930/equip-ascend-random-affixes`）是否已合入 → 未合入（我方今早合的是它的前驱 dd6599df）；且 `workspace930` 也前进到 c8c393e9（套装覆盖规划 PR#2/#3 + 转职树金线）。用户选「两个 tip 都合入」。

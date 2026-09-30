@@ -31,6 +31,7 @@ local LootBoxPage       = require("ui.loot.LootBoxPage")
 local TaskPage          = require("ui.story.task.TaskPage")
 local LevelUpPopup      = require("ui.hud.popup.LevelUpPopup")
 local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
+local UpdateNoticePopup = require("ui.hud.popup.UpdateNoticePopup")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
 local StartScreen       = require("ui.story.gate.StartScreen")
 local DarkTitleScreen   = require("ui.story.gate.DarkTitleScreenGate")
@@ -103,6 +104,20 @@ local function drawRewardInPanel(pid)
     RewardPopup.drawRegion(vg(), 0, 0, 1080, 2400, nil)
 end
 
+--- [UpdateNoticePopup] 更新提醒全窗模态（1080×2400 设计稿 letterbox 居中，同 PlayerInfoPanel）。
+--- 放在 finishFrame 收尾统一绘制：所有 early-return 渲染路径都能盖到，且位于业务面板之上。
+local function drawUpdateNotice()
+    if not UpdateNoticePopup.isOpen() then return end
+    local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+    nvgSave(vg())
+    nvgResetScissor(vg())
+    nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+    nvgScale(vg(), fit, fit)
+    UpdateNoticePopup.draw(vg())
+    nvgRestore(vg())
+end
+
 local function finishFrame()
     nvgSave(vg())
     nvgResetTransform(vg())
@@ -110,6 +125,7 @@ local function finishFrame()
     nvgResetScissor(vg())
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     drawOrphanRowReward()
+    drawUpdateNotice()
     CEPanel.draw(vg(), logicalW(), logicalH())
     nvgRestore(vg())
     nvgEndFrame(vg())
@@ -876,6 +892,12 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         end
     end
     if not bootReady_() then return end
+    -- [UpdateNoticePopup] 全窗模态：弹窗期间吞掉按下，点击穿透不到下层面板（关闭由 ButtonUp 触发）
+    if UpdateNoticePopup.isOpen() then
+        pressValid = true
+        pressStartDX, pressStartDY = 0, 0
+        return
+    end
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
     if DarkTitleScreen.isOpen() then return end
     -- [LetterIntro] 开场期也要记 pressValid，否则抬起被当成无效点击
@@ -1047,6 +1069,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
 end
 
 function HandleMouseMoveHorizon(eventType, eventData)
+    if UpdateNoticePopup.isOpen() then return end  -- 全窗模态：屏蔽下层 hover
     if DarkTitleScreen.isOpen() then return end
     if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local pid, dx, dy = HorizonResolveMouse()
@@ -1258,6 +1281,19 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         end
     end
     if not bootReady_() then return end
+    -- [UpdateNoticePopup] 全窗模态：任意释放 = 关闭弹窗并消费事件（优先于标题/业务层）
+    if UpdateNoticePopup.isOpen() then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        -- 还原 letterbox 设计坐标（同 drawUpdateNotice 的逆变换），点击任意处均可关闭
+        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+        if fit <= 0 then fit = 1 end
+        local dx = (sx - (logicalW() - 1080 * fit) * 0.5) / fit
+        local dy = (sy - (logicalH() - 2400 * fit) * 0.5) / fit
+        UpdateNoticePopup.handleInput(dx, dy)
+        pressValid = false
+        return
+    end
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续
     if DarkTitleScreen.isOpen() then
         local mousePos = input:GetMousePosition()
@@ -1559,6 +1595,8 @@ function HandleTouchMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseWheelHorizon(eventType, eventData)
+    -- [UpdateNoticePopup] 全窗模态吞掉滚轮
+    if UpdateNoticePopup.isOpen() then return end
     -- [DarkTitleScreen] 标题期吞掉滚轮
     if DarkTitleScreen.isOpen() then return end
     if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end

@@ -26,6 +26,14 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续3，EquipmentDetail 死加载清理，已 push `26f576b5`）
+
+- **用户问**：基线问题（`EquipmentDetail.lua` 加载已删除的 `UI_ZBTS_1~6.png`，validate 18 处贴图失败）是否在其他分支已解决？
+- **排查**：`git grep UI_ZBTS_` 逐远端分支查——近基线分支 workspace926/928/929/930、audit929/dead-module-scan、feat930/equip-ascend **全部未修**（各 1 处命中）；assets/品质框/ 只有 `UI_PZBZ_*` 与 `UI_icon_ZBBJ_1~6`，确实无此素材。
+- **修复**：死代码整链删除（-101 行）——init 加载循环、`imgBg` 声明、`NS_TOP/RIGHT/BOTTOM/LEFT` 常量、私有 `drawNineSlice` 函数（全链零使用点，`DrawUtil.drawNineSlice` 才是活的那个）。
+- **验证**：LSP 该文件 0 Error；`equip_detail_drag_horizon_test` PASS；官方 Build 成功。
+- **教训**：删死代码前先 grep 使用点链（声明→加载→绘制→insets 常量），确认 DrawUtil 同名函数非本文件这份。
+
 ## 上次做了什么（2026-09-30 续2，洗练单框化，已 push `914cc689`）
 
 - **用户反馈三点**：①要一个框显示内容而非两个框背景；②中间箭头改亮色；③「洗练前/洗练后」六字标题删除。

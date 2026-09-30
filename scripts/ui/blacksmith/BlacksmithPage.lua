@@ -64,7 +64,8 @@ local NAME_FONT_SIZE              = 50
 
 -- 4. [锻炉双页 0929] 装备工作台槽（上半部分唯一槽位，强化/洗练共用）
 -- 从左侧仓库拖装备到此槽即选中；已选中时点击可查看装备详情
-local WORKBENCH_CX, WORKBENCH_CY = 540, 431
+-- 2026-09-30：相对竖屏页面右移/下移 2%（+21.6/+48），落入新背景熔炉门前平台
+local WORKBENCH_CX, WORKBENCH_CY = 562, 479
 local WORKBENCH_SIZE    = 220
 local WORKBENCH_RADIUS  = 24
 local EQUIP_SLOT_ORDER   = { "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }
@@ -658,14 +659,22 @@ function BlacksmithPage.open(preSelectEquip, initialTab)
     state.tabFrom = tab
     state.tabSwitchTime = 0
 
-    -- 工作台装备：预选优先，否则自动挑一件（教程"点击强化"依赖非空工作台）
+    -- 2026-09-30：打开默认空工作台（玩家自行拖入）；仅教程激活时保留自动选件
+    -- （教程"点击强化"步骤依赖非空工作台）
+    state.selectedEquip = nil
+    state.selectedSeq = nil
+    state.selectedEquipSlot = nil
+
+    -- 工作台装备：预选优先，其次教程期自动挑一件
     if preSelectEquip then
         applySelectedEquip(preSelectEquip)
         print("[BlacksmithPage] 打开铁匠铺 tab=" .. tab
             .. "（预选装备: " .. (preSelectEquip.name or "?") .. "）")
-    else
+    elseif require("systems.TutorialManager").isActive() then
         autoSelectDefaultEquip()
-        print("[BlacksmithPage] 打开铁匠铺 tab=" .. tab)
+        print("[BlacksmithPage] 打开铁匠铺 tab=" .. tab .. "（教程期自动选件）")
+    else
+        print("[BlacksmithPage] 打开铁匠铺 tab=" .. tab .. "（工作台默认空）")
     end
     BlacksmithEnhance.onOpen()
 
@@ -885,6 +894,15 @@ function BlacksmithPage.draw(vg)
     _pageDraw.drawPageImpl(vg)
     if ox ~= 0 then
         nvgRestore(vg)
+    end
+end
+
+--- [0930 穿帮修复] 左栏垫底：锻炉打开时在仓库面板下铺同款不透明背景
+---@param vg any
+function BlacksmithPage.drawUnderlay(vg)
+    bindPageDraw()
+    if _pageDraw.drawUnderlay then
+        _pageDraw.drawUnderlay(vg)
     end
 end
 

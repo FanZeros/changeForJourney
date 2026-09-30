@@ -36,6 +36,24 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续7，合入 workspace930，已 push）
+
+- **任务**：用户要求「拉取 930 并且合入」当前分支 `feat/decompose-reward-icon-row`。930 tip=e2108b93（终焉神殿三队协同战 TerminalRaid PR#4 + nvgImagePatternTinted cast 修复），8 提交全在 battle/tri 区，与分解图标行零文件重叠。
+- **冲突**：仅 CLAUDE.md 记忆快照一块（我方续6 vs 930 方三条），双保留手工解决。
+- **验证**：terminal_raid(52)/auto_decompose/refine_cost/battle_stage_switch 四回归 ALL PASS；LSP 全工作区 0 Error；官方 Build 成功；主入口 headless 70s 0 Lua 错。
+- **🔴 教训（再犯）**：worktree 合并/改码后**必须先 rsync 到 /workspace 根再跑测试**——首跑 terminal_raid 报 `Could not find resource` 因新文件只在 worktree。顺序=改/合 → rsync → 测试/Build。
+- **续（同日，用户授权 merge 回 930）**：930 tip 未再前进（e2108b93 是本分支祖先）→ `checkout -B workspace930 origin/workspace930` 后 merge feat 分支为**纯 fast-forward**（零冲突），push `e2108b93..9e8fff74`。930 现含分解图标行+终焉协同战全部；feat/decompose-reward-icon-row 与 930 同指 9e8fff74（+本记忆提交）。
+
+## 上次做了什么（2026-09-30 续6，分解页奖励预览图标行，已 push `f3514839`）
+
+- **任务**：用户附截图要求「分解页面做成原本锻炉那样，图标显示会获得的精粹及其他资源」。截图左栏=仓库分解 tab（warehouse 布局），原预览仅「精粹 +N」单行文本。
+- **环境排查**：/workspace 根**不是 git 仓库**——仓库在 `.tmp/changeForJourney/`（worktree，此前 feat928 双页分支的开发地）；截图 UI 属已合入 refine 线的 warehouse 布局（远端 refine 已前进到 ea4e659f，含 Decompose 433 行重构，预览区文本与我方旧基线逐字相同）。
+- **实现**（新分支 `feat/decompose-reward-icon-row`，基于 origin/feat/refine...）：`calcRewardPreview` 增第 4 返回值 entries（精粹+金币+`collectScrollRefundEntries` 部位卷轴；未选中回落 `fjState.lastScrolls`/lastReward* 显示上次分解结果）；新增 `drawRewardIconRow`（DarkIcon 品质框+ResourceDefs 图标+右下黑描边数量角标，最多 8 个居中一行，`RW_ICON_CY=2040` 落在网格底 1980 与按钮顶 2110 间隙）；`drawUpperSlot` warehouse 分支改画图标行；init 存 vgHandle、onActionResult/onOpen 存/清 lastScrolls；删死常量 REWARD_TEXT_Y。图标句柄按路径懒加载缓存（rewardIconCache）。
+- **注意**：续4 合并时旧 smith 布局图标链（drawRewardIcons/REWARD_ROW*/scrollIconCache）已作死码删除——本实现是基于 ResourceDefs 的新图标行，非恢复旧码。
+- **同步**：worktree 改完后 `rsync -a --exclude=.git --exclude=.project .tmp/changeForJourney/ /workspace/`（根非 git，build/预览只认根；root 独有的教堂转职 2 图与 1 个 meta 保留不删）。
+- **验证**：LSP 2 文件 0 Error；auto_decompose/refine_cost/battle_stage_switch 全 ALL PASS；主入口 headless 75s 0 Lua 错（4 条 headless shader ERROR 为基线噪音）；官方 Build 成功；push f3514839 后 remote URL 已去 PAT。
+- **待真人验收**：图标行视觉效果（88px 图标+角标在左栏的可读性、分解后回落展示上次结果）。
+
 ## 上次做了什么（2026-09-30 续，终焉协同战提交 + 合并远端 + PR 推进中）
 
 - **"领先1203"是浅克隆假象**：本地是 shallow clone（`.git/shallow` 只有基点 `2d423b8`），fetch 拉全远端历史后 merge-base 无法穿透浅边界，把 1192 个共同祖先误算成领先；实际真实新提交仅 11 个（后变 36 个，含远端 PR #2/#3 合入）。`git fetch --unshallow` 后已补全（深度 1199，非浅仓库）。

@@ -428,7 +428,7 @@ local function getEquipList()
 end
 
 -- [分解入仓 0929] previewDecomposeScrollHint 已移除：
--- 卷轴返还预览由 BlacksmithDecompose.drawUpperSlot（warehouse 文本模式）负责
+-- 卷轴返还预览由 BlacksmithDecompose.drawUpperSlot（warehouse 图标行模式）负责
 
 -- ======================== 绘制: 装备 / 道具 tab ========================
 
@@ -996,7 +996,7 @@ local function drawBody(vg)
     -- 自带标题、品质筛选、格子网格、奖励预览、自动分解/分解按钮
     if state.tab == "decompose" then
         ensureDecomposeReady()
-        BlacksmithDecompose.drawUpperSlot(vg)  -- 奖励预览文本（warehouse 模式）
+        BlacksmithDecompose.drawUpperSlot(vg)  -- 奖励预览图标行（warehouse 模式）
         BlacksmithDecompose.drawPanel(vg)
     else
         if state.tab == "equip" then

@@ -194,6 +194,46 @@ function Start()
     local ok9, err9 = BS.RefineEquip(UID, e3.seq, "corruptStone")
     check(not ok9, "无可转换词缀被拒绝: " .. tostring(err9))
 
+    -- ========== 6) 洗练石保底只升不降 ==========
+    newModules()
+    local e4 = putEquip(makeWeapon(5))
+    e4.affixes = {
+        { affixId = 5, quality = 3, value = 100, key = "str", name = "力量" },
+        { affixId = 6, quality = 3, value = 100, key = "agi", name = "敏捷" },
+    }
+    local okE, errE, resE = BS.RefineEquip(UID, e4.seq, "enhanceStone")
+    check(okE, "洗练石可用: " .. tostring(errE))
+    local noDown = true
+    for i, aff in ipairs(resE.refinePreview or {}) do
+        local oldV = e4.affixes[i] and e4.affixes[i].value or 0
+        if (tonumber(aff.value) or 0) < oldV - 0.001 then noDown = false end
+    end
+    check(noDown, "洗练石结果逐条不低于原值（保底只升不降）")
+
+    -- ========== 7) 点金石后期出口：品质上限后转词缀提品 ==========
+    newModules()
+    -- maxStageId=0 → getUpgradeMaxQuality=4（史诗），装备 q4 即达上限
+    local e5 = putEquip(makeWeapon(4))
+    e5.affixes = {
+        { affixId = 5, quality = 2, value = 10, key = "str", name = "力量" },
+    }
+    local okD, errD, resD = BS.RefineEquip(UID, e5.seq, "destroyStone")
+    check(okD, "点金石品质上限后仍可用: " .. tostring(errD))
+    check(resD and resD.affixGradeUp ~= nil, "回包携带 affixGradeUp")
+    eq(e5.quality, 4, "品质不变（仍为上限4）")
+    eq(e5.affixes[1].quality, 3, "单条词缀品级 2→3（确定性）")
+    local okD2, _, resD2 = BS.RefineEquip(UID, e5.seq, "destroyStone")
+    check(okD2 and resD2.affixGradeUp and resD2.affixGradeUp.afterQ == 4, "第二次提品 3→4")
+
+    -- 全 S 品后拒绝
+    newModules()
+    local e6 = putEquip(makeWeapon(4))
+    e6.affixes = {
+        { affixId = 5, quality = 5, value = 10, key = "str", name = "力量" },
+    }
+    local okD3, errD3 = BS.RefineEquip(UID, e6.seq, "destroyStone")
+    check(not okD3, "全S品且品质上限后点金石被拒绝: " .. tostring(errD3))
+
     if #failures == 0 then
         print(PREFIX .. "RESULT ALL PASS")
     else

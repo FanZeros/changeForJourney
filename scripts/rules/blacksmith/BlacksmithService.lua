@@ -223,6 +223,20 @@ local function getCorruptCount(equip)
     return math.max(0, math.floor(tonumber(equip.corruptCount) or 0))
 end
 
+--- 点金石后期出口：从普通（非魔化）词缀中随机选一条品级可提升的（quality < 5）
+---@param affixes table[]
+---@return number|nil index
+local function pickUpgradableAffix(affixes)
+    local candidates = {}
+    for i, affix in ipairs(affixes or {}) do
+        if not AffixConfig.isCorruptAffix(affix) and (tonumber(affix.quality) or 1) < 5 then
+            candidates[#candidates + 1] = i
+        end
+    end
+    if #candidates == 0 then return nil end
+    return candidates[math.random(1, #candidates)]
+end
+
 --- 腐化石转换：从普通（非魔化）词缀中随机选一条可转换的
 ---@param affixes table[]
 ---@return number|nil index, table|nil corruptTpl
@@ -587,12 +601,11 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
             return false, extraDef.name .. "不足（需要" .. actualCost .. "个）"
         end
 
-        -- 点金石特殊校验：装备已达当前进度允许的最高品质
+        -- 点金石特殊校验：达当前进度最高品质后转为词缀提品（后期出口），需至少一条可提品词缀
         if extraResource == "destroyStone" then
             local maxQ = getUpgradeMaxQuality(uid)
-            if q >= maxQ then
-                local qName = EquipmentConfig.QUALITY[maxQ] and EquipmentConfig.QUALITY[maxQ].name or "最高"
-                return false, "装备已达" .. qName .. "品质，无法再提品"
+            if q >= maxQ and not pickUpgradableAffix(equip.affixes) then
+                return false, "装备品质已达上限且无可提品词缀（普通词缀均已 S 品）"
             end
         end
 
@@ -696,7 +709,8 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
     -- === 根据额外资源类型决定效果 ===
 
     local newAffixes
-    local upgradedQuality = nil    -- 仅点金石时非 nil
+    local upgradedQuality = nil    -- 仅点金石提品时非 nil
+    local affixGradeUp = nil       -- 仅点金石后期出口（词缀提品）时非 nil
     local convertedInfo = nil      -- 仅腐化石时非 nil
     local corruptBeforeAffixes = nil
     local corruptBaseMultBefore = nil
@@ -705,42 +719,72 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
     if extraResource == "enhanceStone" then
         local maxAffixQ = math.max(1, qDef.maxAffixQuality or 0)
         local randomStrength = qDef.randomStrength or 1.0
-        newAffixes = rerollKeepCorrupt(equip.affixes, lockedSet, function(list, locks)
+        local oldAffixes = equip.affixes
+        newAffixes = rerollKeepCorrupt(oldAffixes, lockedSet, function(list, locks)
             return EquipmentSystem.rerollAffixValuesWithLocks(
                 list, maxAffixQ, equipLv, randomStrength, equip.grip, locks)
         end)
-        extraLog = " extra=洗练石(rerollValues)"
+        -- 保底只升不降：逐条取新旧较高者（魔化词条固定不变，锁定槽同值无影响）
+        local kept = 0
+        for i, newAff in ipairs(newAffixes) do
+            local oldAff = oldAffixes and oldAffixes[i]
+            if oldAff and not AffixConfig.isCorruptAffix(oldAff)
+                and (tonumber(oldAff.value) or 0) > (tonumber(newAff.value) or 0) then
+                newAffixes[i] = copyAffix(oldAff)
+                kept = kept + 1
+            end
+        end
+        extraLog = " extra=洗练石(rerollValues+keepHigher)"
+        if kept > 0 then
+            extraLog = extraLog .. " kept=" .. kept
+        end
         if lockedCount > 0 then
             extraLog = extraLog .. " locked=" .. lockedCount
         end
 
     elseif extraResource == "destroyStone" then
-        -- ── 点金石：提品 +1，保留原有词缀不变 ──
         local maxQ = getUpgradeMaxQuality(uid)
-        local newQ = math.min(q + 1, maxQ)
-        -- 安全降级：若目标品质尚未配置（如至臻品质6），回退到已有最高品质
-        local newQDef = EquipmentConfig.QUALITY[newQ]
-        if not newQDef then
-            newQ = #EquipmentConfig.QUALITY  -- 回退到已配置的最高品质
-            newQDef = EquipmentConfig.QUALITY[newQ]
-        end
-
-        -- 保留原有词缀，若新品质词缀槽位更多则补充生成
-        newAffixes = equip.affixes or {}
-        local newAffixCount = newQDef.affixCount or 0
-        if #newAffixes < newAffixCount then
-            local maxAffixQ = newQDef.maxAffixQuality or 1
-            local randomStrength = newQDef.randomStrength or 1.0
-            local extraAffixes = EquipmentSystem.rollAffixes(
-                newAffixCount - #newAffixes, maxAffixQ, equipLv,
-                buildExcludeKeysFromAffixes(newAffixes), randomStrength, equip.grip
-            )
-            for _, af in ipairs(extraAffixes) do
-                newAffixes[#newAffixes + 1] = af
+        if q < maxQ then
+            -- ── 点金石：提品 +1，保留原有词缀不变 ──
+            local newQ = math.min(q + 1, maxQ)
+            -- 安全降级：若目标品质尚未配置（如至臻品质6），回退到已有最高品质
+            local newQDef = EquipmentConfig.QUALITY[newQ]
+            if not newQDef then
+                newQ = #EquipmentConfig.QUALITY  -- 回退到已配置的最高品质
+                newQDef = EquipmentConfig.QUALITY[newQ]
             end
+
+            -- 保留原有词缀，若新品质词缀槽位更多则补充生成
+            newAffixes = equip.affixes or {}
+            local newAffixCount = newQDef.affixCount or 0
+            if #newAffixes < newAffixCount then
+                local maxAffixQ = newQDef.maxAffixQuality or 1
+                local randomStrength = newQDef.randomStrength or 1.0
+                local extraAffixes = EquipmentSystem.rollAffixes(
+                    newAffixCount - #newAffixes, maxAffixQ, equipLv,
+                    buildExcludeKeysFromAffixes(newAffixes), randomStrength, equip.grip
+                )
+                for _, af in ipairs(extraAffixes) do
+                    newAffixes[#newAffixes + 1] = af
+                end
+            end
+            upgradedQuality = newQ
+            extraLog = " extra=点金石(upgrade " .. q .. "→" .. newQ .. " maxQ=" .. maxQ .. " affixes=" .. #newAffixes .. ")"
+        else
+            -- ── 点金石后期出口：品质已达进度上限 → 随机一条普通词缀品级 +1（最高 S=5）──
+            newAffixes = copyAffixList(equip.affixes)
+            local idx = pickUpgradableAffix(newAffixes)
+            if not idx then
+                return false, "装备品质已达上限且无可提品词缀（普通词缀均已 S 品）"
+            end
+            local before = copyAffix(newAffixes[idx])
+            local afterQ = math.min(5, (tonumber(before.quality) or 1) + 1)
+            newAffixes[idx].quality = afterQ
+            affixGradeUp = { index = idx, before = before, afterQ = afterQ }
+            upgradedQuality = nil
+            extraLog = " extra=点金石(affixGradeUp " .. tostring(before.name)
+                .. " q" .. tostring(before.quality) .. "→" .. afterQ .. ")"
         end
-        upgradedQuality = newQ
-        extraLog = " extra=点金石(upgrade " .. q .. "→" .. newQ .. " maxQ=" .. maxQ .. " affixes=" .. #newAffixes .. ")"
 
     elseif extraResource == "corruptStone" then
         -- ── 腐化石：一条普通词缀转同类型魔化词条 + 叠加一层诅咒（直接应用）──
@@ -770,10 +814,12 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end
     end
 
-    -- 点金石：直接应用结果（无需手动点替换）
+    -- 点金石：直接应用结果（无需手动点替换；后期出口仅改词缀品级，不动品质）
     if extraResource == "destroyStone" then
         equip.affixes = newAffixes
-        equip.quality = upgradedQuality
+        if upgradedQuality then
+            equip.quality = upgradedQuality
+        end
 
         -- 用新品质和已有腐化基础倍率重算基础属性
         recalcBaseStatsForEquip(equip)
@@ -797,8 +843,9 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
             refinePreview = newAffixes,
             refineSeq = seq,
             upgradedQuality = upgradedQuality,
+            affixGradeUp = affixGradeUp,
             autoReplaced = true,
-            newQuality = upgradedQuality,
+            newQuality = upgradedQuality or q,
         }
     end
 

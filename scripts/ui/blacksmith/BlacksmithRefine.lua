@@ -79,9 +79,15 @@ local function getCorruptBaseMultHint(equip)
 end
 
 local function showRefineToast(msg)
+    -- 抽卡页开着时进其消息队列，否则走全局 UiToast（LootBoxPage.showToast 在页面关闭时静默丢弃）
     local ok, LootBoxPage = pcall(require, "ui.loot.LootBoxPage")
-    if ok and LootBoxPage.showToast then
+    if ok and LootBoxPage.isOpen and LootBoxPage.isOpen() and LootBoxPage.showToast then
         LootBoxPage.showToast(msg)
+        return
+    end
+    local ok2, UiToast = pcall(require, "core.UiToast")
+    if ok2 and UiToast.show then
+        UiToast.show(msg)
     else
         print("[BlacksmithRefine] " .. tostring(msg))
     end
@@ -1294,6 +1300,47 @@ function M.onActionResult(data)
 
     -- 洗练结果预览（缓存新词缀，等待"替换"确认）
     if data.refinePreview then
+        -- 点金石后期出口：品质不变，随机一条普通词缀品级 +1
+        if data.autoReplaced and data.affixGradeUp and not data.upgradedQuality then
+            if state.selectedEquip then
+                state.selectedEquip.affixes = data.refinePreview
+                if data.newQuality then
+                    state.selectedEquip.quality = data.newQuality
+                end
+                EquipmentSystem.hydrate(state.selectedEquip)
+            end
+            refineData.before = buildAffixDisplayRows(data.refinePreview, state.selectedEquip, nil)
+            refineData.after = {}
+            refineData.hasPreview = false
+            state.pendingRefineAffixes = nil
+            state.pendingRefineSeq = nil
+            qualityUpgradeInfo = nil
+
+            local gu = data.affixGradeUp
+            local beforeName = (gu.before and gu.before.name) or "?"
+            local beforeGrade = (AffixConfig.QUALITY[(gu.before and gu.before.quality) or 1] or {}).name or "D"
+            local afterGrade = (AffixConfig.QUALITY[gu.afterQ or 1] or {}).name or "S"
+            corruptResultInfo = {
+                title = "提品",
+                effectName = string.format("词缀「%s」品级 %s → %s", beforeName, beforeGrade, afterGrade),
+                hint = "装备品质已达进度上限，点金石转为提升词缀品级",
+                startTime = time.elapsedTime,
+            }
+
+            if cancelCurrencyWatch_ then cancelCurrencyWatch_() end
+            cancelCurrencyWatch_ = PlayerStore.WaitForChange("currency", {
+                timeout = 2.0,
+                onChange = function()
+                    cancelCurrencyWatch_ = nil
+                    refineData.ownedEssence = GameState.getEssence()
+                end,
+            })
+
+            bumpRefineCountAndCost(state)
+            print("[BlacksmithRefine] 点金石词缀提品: " .. beforeName .. " " .. beforeGrade .. "→" .. afterGrade)
+            return true
+        end
+
         -- 点金石路径：词缀不变，只提升品质，展示品质提升效果
         if data.autoReplaced and data.upgradedQuality then
             local oldQ = state.selectedEquip and (state.selectedEquip.quality or 1) or 1

@@ -36,6 +36,13 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续5，双 tip 合入 + 基线 LSP 修复，已 push `38a69ef7`）
+
+- **任务**：用户问 `0d62a09e`（升阶页词条预告+满员文案右移，在 `feat930/equip-ascend-random-affixes`）是否已合入 → 未合入（我方今早合的是它的前驱 dd6599df）；且 `workspace930` 也前进到 c8c393e9（套装覆盖规划 PR#2/#3 + 转职树金线）。用户选「两个 tip 都合入」。
+- **合并**：930 tip 冲突仅 `preferences.json`（同一规则两种措辞→手工合并为更完整版）；升阶 tip 冲突仅 CLAUDE.md 记忆双保留，Enhance 自动并入（里程碑预告 + ascend_hint_test 15 断言 ALL PASS）。
+- **顺手修 930 基线 LSP 2 Error**：`ChurchClassChange.lua:444` 金色光晕 `nvgFillPaint(nvgRadialGradient(nvgRGBA(...)))` 报 param-type-mismatch——根因 `tests/backpack_grid_scroll_test.lua:90` 全局覆写 `nvgRGBA = function(...) return number end`（测试桩污染工作区类型推断，BattleEffects 同用法未报错是缓存/推断差异）。修：中间变量 + `---@cast glowIn/glowOut NVGcolor` 独立行（`---@type NVGcolor` 赋值方向报错，cast 方向才收窄）。官方 Build 本来就不拦这两个 Error。
+- **验证**：ascend_hint 15 ALL PASS；LSP 单文件+全工作区 0 Error；官方 Build 成功；切关/boundary/图标 fallback 回归后台复跑中。
+
 ## 上次做了什么（2026-09-30 续4，合入锻炉双页分支，已 push `c449a59d`）
 
 - **任务**：用户要求排查洗练/锻炉相关分支后合入 `feat928/furnace-warehouse-dual-page`（今天 14:17，锻炉双页架构：分解 tab 迁仓库、中栏锻炉+左栏仓库双页、工作台槽拖拽选装、右缘滑入）。排查结论：fix928 三条分解修复内容已随 930 在本分支；**锻炉双页是唯一未并入的今日分支**。

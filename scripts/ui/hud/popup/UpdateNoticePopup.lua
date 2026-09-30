@@ -61,6 +61,7 @@ local fontId_ = -1
 -- ======================== API ========================
 
 function UpdateNoticePopup.init(vg)
+    if vg_ and fontId_ >= 0 then return end  -- 幂等：字体只创建一次
     vg_ = vg
     fontId_ = nvgCreateFont(vg, "upd-notice", "Fonts/MiSans-Regular.ttf")
 end
@@ -69,6 +70,14 @@ function UpdateNoticePopup.show()
     if isOpen_ then return end
     isOpen_ = true
     print("[UpdateNoticePopup] shown — please update TapTap client")
+end
+
+--- 一次性提醒：整个进程生命周期内只弹一次（关闭后不再因后续失败重复弹出）
+local notified_ = false
+function UpdateNoticePopup.notifyOnce()
+    if notified_ then return end
+    notified_ = true
+    UpdateNoticePopup.show()
 end
 
 function UpdateNoticePopup.isOpen()
@@ -82,6 +91,7 @@ end
 
 function UpdateNoticePopup.draw(vg)
     if not isOpen_ then return end
+    if fontId_ < 0 then UpdateNoticePopup.init(vg) end  -- 懒初始化护栏：字体缺失时补建
 
     local cx = PANEL_CX
     local cy = PANEL_CY

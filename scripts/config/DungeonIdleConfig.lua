@@ -13,11 +13,14 @@ local TowerConfig   = require("config.TowerConfig")
 
 local DungeonIdleConfig = {}
 
---- 进度条满格点（24 小时）。超过后仍继续累积，收益减半，不封顶。
+--- 进度条满格点（24 小时）。超过后仍继续累积，收益减半，直到 HARD_CAP_SEC 硬顶。
 DungeonIdleConfig.FULL_RATE_SEC = 86400
 
 --- 超过满格点的收益比例
 DungeonIdleConfig.TAIL_RATIO = 0.5
+
+--- 硬顶（7 日）：离线补算与累积最多到此时长，超出部分不再产生收益
+DungeonIdleConfig.HARD_CAP_SEC = 86400 * 7
 
 --- 兼容旧字段：进度条满格与「挂机已满」文案仍读这个
 DungeonIdleConfig.MAX_ACCUM_SEC = DungeonIdleConfig.FULL_RATE_SEC
@@ -88,11 +91,13 @@ function DungeonIdleConfig.getFillRatio(accumSec)
     return math.min(1, accumSec / DungeonIdleConfig.MAX_ACCUM_SEC)
 end
 
---- 收益用的有效秒数：满格前原样，超出部分按 TAIL_RATIO，无硬顶
+--- 收益用的有效秒数：先按 HARD_CAP_SEC（7 日）截断，满格前原样，超出部分按 TAIL_RATIO
 ---@param accumSec number
 ---@return number
 function DungeonIdleConfig.effectiveSeconds(accumSec)
     local raw = math.max(0, math.floor(tonumber(accumSec) or 0))
+    local cap = DungeonIdleConfig.HARD_CAP_SEC
+    if raw > cap then raw = cap end
     local full = DungeonIdleConfig.FULL_RATE_SEC
     if raw <= full then return raw end
     return full + math.floor((raw - full) * DungeonIdleConfig.TAIL_RATIO)

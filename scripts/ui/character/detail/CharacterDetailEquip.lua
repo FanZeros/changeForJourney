@@ -360,10 +360,16 @@ local function equipItemNow(item, heroId, slot)
     local Toast = require("core.UiToast")
     local BF = require("systems.ButtonFeedback")
     if not item.canWear then
-        Toast.show(I18n.t("cannot_wear"))
+        -- 等级穿戴门槛：给出明确的等级不足提示
+        if item.levelLocked then
+            Toast.show(I18n.t("level_not_enough_equip", item.requiredLevel))
+        else
+            Toast.show(I18n.t("cannot_wear"))
+        end
         require("systems.GameSFX").playUIClick(1)
         BF.trigger("equip_deny")
-        print("[EquipPanel] 不可穿戴 seq=" .. tostring(item.seq))
+        print("[EquipPanel] 不可穿戴 seq=" .. tostring(item.seq)
+            .. (item.levelLocked and (" (等级不足, 需Lv." .. tostring(item.requiredLevel) .. ")") or ""))
         return true
     end
     local Client = require("runtime.GameAction")
@@ -498,6 +504,10 @@ refreshItems = function()
 
     local wearableSet, dualWieldMode = buildWearableSet(heroId, slot)
 
+    -- 等级穿戴门槛：英雄等级低于装备等级 → 不可穿戴（置灰 + 专用提示）
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+
     -- 收集全局已装备 seq（用于判断是否被其他角色穿戴）
     local equippedByHero = {}  -- [seqStr] = heroId
     if equipData.equipped then
@@ -539,6 +549,13 @@ refreshItems = function()
             canWear = false
         end
 
+        -- 等级穿戴门槛：角色等级低于装备等级 → 不可穿戴
+        local levelOk, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+        local levelLocked = not levelOk
+        if levelLocked then
+            canWear = false
+        end
+
         -- 判断是否是当前英雄已装备
         local isEquipped = (currentEquipSeq ~= nil and tostring(currentEquipSeq) == seqStr)
 
@@ -549,6 +566,8 @@ refreshItems = function()
             seq       = seq,
             equip     = equip,
             canWear   = canWear,
+            levelLocked   = levelLocked,
+            requiredLevel = requiredLevel,
             equipped  = isEquipped,
             ownerHeroId = ownerHeroId,
         }

@@ -27,7 +27,24 @@ function Start()
         local key, value = debug.getupvalue(Stage.handleInput, i)
         if key == "state" then stageState = value break end
     end
-    eq(#stageState.cacheGroups, SC.TOTAL_CHAPTERS + 1, "章节列表包含所有难度和终焉")
+    -- [单难度终焉] 终焉不再合并为一个 "T" 组：345 章 + 14 座单难度终焉组
+    eq(#stageState.cacheGroups, SC.TOTAL_CHAPTERS + 14, "章节列表包含所有难度和逐难度终焉")
+    -- 困难终焉组应紧跟困难 23 章（chain: 普通23章 → 普通终焉 → 困难23章 → 困难终焉 → 噩梦1章）
+    local function groupIndexOf(gkey)
+        for i, g in ipairs(stageState.cacheGroups) do
+            if tostring(g.key) == tostring(gkey) then return i end
+        end
+        return nil
+    end
+    local hardLastCh = SC.HARD_CHAPTERS.last          -- 46
+    local hardTerminalKey = "T" .. tostring(SC.TERMINAL_HARD)  -- "T1999"
+    local giHardLast = groupIndexOf(hardLastCh)
+    local giHardTerm = groupIndexOf(hardTerminalKey)
+    local giNighFirst = groupIndexOf(SC.NIGHTMARE_CHAPTERS.first)  -- 47
+    eq(giHardTerm, giHardLast + 1, "困难终焉紧跟困难23章之后")
+    eq(giNighFirst, giHardTerm + 1, "困难终焉之后是噩梦1章")
+    eq(stageState.cacheGroups[giHardTerm].name, "终焉", "困难终焉组名为终焉")
+    eq(stageState.cacheGroups[giHardTerm].subLabel, "困难", "困难终焉组副标题为难度名")
     Stage.handleInput(370, 1060) -- 1-1：当前关无需切换
     eq(jumps, 0, "当前关不切换")
     Stage.handleInput(480, 1060) -- 1-2：首次点击仅展开确认

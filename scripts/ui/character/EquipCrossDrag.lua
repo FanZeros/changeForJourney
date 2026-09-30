@@ -83,6 +83,23 @@ local function slotAccepts(equipSlot, grip, target)
     return target == "offhand" and equipSlot == "weapon" and grip == "onehand"
 end
 
+--- 等级穿戴门槛：角色等级低于装备等级不可拖入穿戴
+---@param heroId number|string
+---@return boolean ok
+---@return number|nil requiredLevel
+local function checkDropLevelGate(heroId)
+    local seq = tonumber(session.seq)
+    if not seq then return true, nil end
+    local equipData = PlayerStore.Get("equipment")
+    local equip = equipData and equipData.inventory
+        and (equipData.inventory[tostring(seq)] or equipData.inventory[seq])
+    if not equip then return true, nil end
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+    local ok, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+    return ok, requiredLevel
+end
+
 ---@param heroId number|string
 ---@param equipType string|nil
 ---@param equipSlot string|nil
@@ -91,6 +108,7 @@ end
 ---@return boolean
 local function canDrop(heroId, equipType, equipSlot, grip, target)
     if not slotAccepts(equipSlot, grip, target) then return false end
+    if not (checkDropLevelGate(heroId)) then return false end
     if target == "offhand" and equipSlot == "weapon" and grip == "onehand" then
         local heroes = PlayerStore.Get("heroes")
         local roster = heroes and heroes.roster
@@ -207,7 +225,13 @@ local function tryDrop()
         return
     end
     if not canDrop(heroId, session.equipType, session.slot, session.grip, target) then
-        reject(require("core.I18n").t("cannot_wear"))
+        -- 等级穿戴门槛：等级不足时给出专用提示
+        local levelOk, requiredLevel = checkDropLevelGate(heroId)
+        if not levelOk then
+            reject(require("core.I18n").t("level_not_enough_equip", tostring(requiredLevel or 1)))
+        else
+            reject(require("core.I18n").t("cannot_wear"))
+        end
         return
     end
     local Client = require("runtime.GameAction")

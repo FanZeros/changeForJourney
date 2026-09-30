@@ -12,7 +12,8 @@
 
 - 仓库：https://github.com/FanZeros/changeForJourney.git（PAT 见用户指令）
 - 活跃分支：`dev/ui-fixes-930a`（PR #6，装备详情UI优化 + 万单位改k/M/B，已合并最新 workspace930 解冲突；2026-09-30 用户确认合并 PR）；`dev/930-story-detail-investigate`（PR #7，**已合并进 workspace930**）
-- PR：https://github.com/FanZeros/changeForJourney/pull/6（dev/ui-fixes-930a → workspace930，用户指示提 PR 而非直接推送）
+- PR：https://github.com/FanZeros/changeForJourney/pull/6（dev/ui-fixes-930a → workspace930）**已于 2026-09-30 合并成功**（merge commit 5b23a41）；合并前经历两轮解冲突：①远端 workspace930 并发提交（PR#5/#7 已合入）②远端 dev/ui-fixes-930a 被并行会话也推了合并提交（fd28150），均 merge 解冲突后 push 再合并
+- 下一轮任务需从最新 workspace930 切新分支（如 dev/xxx-930b），本分支使命已完成
 - PR 创建方式备忘：GitHub API `POST /repos/FanZeros/changeForJourney/pulls`（PAT 认证 + 代理 http://127.0.0.1:1080），body 里 head=开发分支 base=workspace930；合并用 `PUT /pulls/6/merge`；PR dirty 时本地 merge origin/workspace930 解冲突再 push
 - 注意：workspace930 有并行开发会话（剧情修复等分支），memory/WORKFLOW_RULES.md 常冲突，合并时保留双方任务记录
 

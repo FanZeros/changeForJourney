@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v3.12-awaken-shard-10-30-50 | 2026-09-30 | 角色觉醒三阶碎片消耗从 60/90/130（合计280）改为 10/30/50（合计90），AwakeningConfig.SHARD_COST 单点修改，UI/服务端/详情全走 getShardCost 自动生效。 |
 | v3.11-smith-nameplate-center-scenario-freeze-guard | 2026-09-30 | 锻炉名牌水平居中（drawNamePlate 新增 bgCX/bgCY 参数，其余页面不受影响）；修角色详情页播剧情卡死的两条真卡死路径：HeroScenario.drainPending 在 showScenario 持续失败时 enqueue→drain 无限递归爆栈（加深度封顶8+丢请求）、markClaimed 的同步状态更新/落盘异常中断打开流程（pcall 包裹仅记日志）。scenario_flow 模拟 show→advance→dismiss→onFinish 全链路 ALL PASS。 |
 | v3.10-smith-corrupt-display-cleanup | 2026-09-30 | 魔化词条显示精简：洗练/强化页魔化词条名称+数值改紫色 #ef79ff（评级标不变），去掉 [魔化词条]/[魔化转换] 标签与旧→新百分比对比行；删除状态行诅咒百分比提示与腐化结果"基础属性 ×a→×b"行（只留"诅咒 N/3 层"）；删除升阶页"每升5阶必得词条/词条已满倍率"常驻小字及其测试 ascend_hint_test.lua（一键升阶弹窗内的新增预览保留）；》双箭头从深色位图改程序化亮金 chevron（DrawUtil.drawDoubleChevron，洗练/强化/占位行三处）。 |
 | v3.09-smith-single-bg | 2026-09-30 | 锻炉页上下合并为单一背景：删除下半独立背景板绘制与 imgLowerBg/BG_* 尺寸常量，整页用 UI_JSXQ_BJ_dark 全屏等比 cover（drawImageCover，无形变）；下半内容 clip 区域保持不变。 |

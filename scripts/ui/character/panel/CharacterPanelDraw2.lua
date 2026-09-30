@@ -313,6 +313,18 @@ end
 --- 站位名：1 号最靠右是前锋，4 号最靠左是后排
 local SLOT_POS_NAME = { "前锋", "中锋", "中卫", "后卫" }
 
+--- 队伍配色（右栏三队行/页签共用，便于分辨出战队伍）；未解锁灰
+local TEAM_COLORS = {
+    { 0x5a, 0xaa, 0xff },  -- 队1 蓝
+    { 0x6e, 0xdc, 0x8c },  -- 队2 绿
+    { 0xc0, 0x84, 0xfc },  -- 队3 紫
+}
+local TEAM_COLOR_GRAY = { 0x96, 0x8c, 0x7d }
+local function teamColor(idx, locked)
+    if locked then return TEAM_COLOR_GRAY end
+    return TEAM_COLORS[idx] or TEAM_COLOR_GRAY
+end
+
 --- 第 teamIdx 队第 slotIdx 个头像的中心
 --- 右侧为前锋（1 号），与战斗条带里我方从右向左排布一致
 ---@param teamIdx number
@@ -376,26 +388,22 @@ function M.drawTeamAvatars(vg)
         local frameY = rowCy - AV_SIZE * 0.5 - AV_PAD_Y - AV_LABEL_H - 10
         local frameW = rowW + 40
         local frameH = AV_LABEL_H + AV_PAD_Y + AV_SIZE + 20
+        local tc = teamColor(t, locked)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, frameX, frameY, frameW, frameH, 16)
-        if t == activeIdx then
-            nvgFillColor(vg, nvgRGBA(48, 36, 18, 170))
-            nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(212, 175, 90, 230))
-            nvgStrokeWidth(vg, 3)
-        else
-            nvgFillColor(vg, nvgRGBA(12, 10, 8, locked and 80 or 130))
-            nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(120, 100, 70, locked and 90 or 170))
-            nvgStrokeWidth(vg, 2)
-        end
+        -- 队伍色底调：暗色混入队伍色，active 时描边更亮更粗
+        nvgFillColor(vg, nvgRGBA(math.floor(tc[1] * 0.16), math.floor(tc[2] * 0.16),
+            math.floor(tc[3] * 0.16), locked and 80 or 150))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(tc[1], tc[2], tc[3],
+            t == activeIdx and 235 or (locked and 90 or 150)))
+        nvgStrokeWidth(vg, t == activeIdx and 3 or 2)
         nvgStroke(vg)
-        -- 「小队N」标题，左上角
+        -- 「小队N」标题，左上角（队伍色）
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 30)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, t == activeIdx and nvgRGBA(255, 214, 102, 255)
-            or (locked and nvgRGBA(150, 140, 125, 170) or nvgRGBA(244, 237, 224, 235)))
+        nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], locked and 170 or 255))
         nvgText(vg, frameX + 20, frameY + AV_LABEL_H * 0.5,
             locked and ("小队" .. t .. "  未解锁") or ("小队" .. t), nil)
         local powerCaches = getTeamPowerCaches and getTeamPowerCaches() or {}
@@ -464,6 +472,14 @@ function M.drawTeamTabs(vg)
             DarkIcon.drawNine(vg, "btn", x, y, TAB_W, TAB_H, { alpha = 0.38 })
         else
             DarkIcon.drawNine(vg, "btn", x, y, TAB_W, TAB_H, { accent = "gold", alpha = 0.62 })
+        end
+        -- 队伍色圆点（与右栏三队行同色，便于分辨；锁定时让位给锁图标）
+        if not isLocked then
+            local tc = teamColor(i, false)
+            nvgBeginPath(vg)
+            nvgCircle(vg, x + 20, y + TAB_H * 0.5, 9)
+            nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], 255))
+            nvgFill(vg)
         end
 
         -- 文案

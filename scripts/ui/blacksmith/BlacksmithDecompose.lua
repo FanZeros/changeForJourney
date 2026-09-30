@@ -1144,6 +1144,69 @@ function M.handleDragEnd(dx, dy)
     fjState.longPressCellIdx = 0
 end
 
+--- 分解网格命中（供悬停浮选详情）
+---@param dx number 左栏设计坐标 X
+---@param dy number 左栏设计坐标 Y
+---@return table|nil item
+function M.peekCellAt(dx, dy)
+    local topY = FJ.GRID_FIRST_CY - FJ.GRID_CELL * 0.5
+    if dy < topY or dy > FJ.GRID_BOTTOM_Y then return nil end
+    for idx = 1, #backpackItems do
+        local row = math.ceil(idx / FJ.GRID_COLS)
+        local col = ((idx - 1) % FJ.GRID_COLS) + 1
+        local cx = FJ.GRID_FIRST_CX + (col - 1) * FJ.GRID_COL_STEP
+        local cy = FJ.GRID_FIRST_CY + (row - 1) * FJ.GRID_ROW_STEP - fjState.scrollY
+        if cy + FJ.GRID_CELL * 0.5 >= topY and cy - FJ.GRID_CELL * 0.5 <= FJ.GRID_BOTTOM_Y
+            and dx >= cx - FJ.GRID_CELL * 0.5 and dx <= cx + FJ.GRID_CELL * 0.5
+            and dy >= cy - FJ.GRID_CELL * 0.5 and dy <= cy + FJ.GRID_CELL * 0.5 then
+            return backpackItems[idx]
+        end
+    end
+    return nil
+end
+
+--- 悬停浮选装备详情（与仓库装备 tab 同语义：悬停 0.3s 弹出，移开 dismiss）
+---@param dx number 左栏设计坐标 X
+---@param dy number 左栏设计坐标 Y
+function M.handleHover(dx, dy)
+    if fjState.autoPopupOpen then return end
+    local item = M.peekCellAt(dx, dy)
+    if not item or not item.seq then
+        fjState.hoverSeq = nil
+        fjState.hoverSince = nil
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover(FJ.DETAIL_OWNER) end
+        return
+    end
+    local seq = tostring(item.seq)
+    if fjState.hoverSeq ~= seq then
+        fjState.hoverSeq = seq
+        fjState.hoverSince = time.elapsedTime
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover(FJ.DETAIL_OWNER) end
+        return
+    end
+    if (time.elapsedTime - (fjState.hoverSince or 0)) < 0.3 then
+        return
+    end
+    if EquipmentDetail.isOpen and EquipmentDetail.isOpen() then
+        if EquipmentDetail.getOwner and EquipmentDetail.getOwner() ~= FJ.DETAIL_OWNER then return end
+        if EquipmentDetail.isPinned and EquipmentDetail.isPinned() then return end
+        return
+    end
+    local cx, cy = 0, 0
+    for idx = 1, #backpackItems do
+        if backpackItems[idx] == item then
+            local row = math.ceil(idx / FJ.GRID_COLS)
+            local col = ((idx - 1) % FJ.GRID_COLS) + 1
+            cx = FJ.GRID_FIRST_CX + (col - 1) * FJ.GRID_COL_STEP
+            cy = FJ.GRID_FIRST_CY + (row - 1) * FJ.GRID_ROW_STEP - fjState.scrollY
+            break
+        end
+    end
+    EquipmentDetail.open(item.seq, nil, nil, true, FJ.DETAIL_OWNER,
+        cx + FJ.GRID_CELL * 0.5, cy - FJ.GRID_CELL * 0.5)
+    print("[BlacksmithDecompose] 悬停详情 seq=" .. seq)
+end
+
 --- 鼠标滚轮。详情只在鼠标落在弹窗上时接管。
 ---@param wheel number
 ---@param dx number|nil

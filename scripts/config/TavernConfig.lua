@@ -41,7 +41,7 @@ TavernConfig.SHOP_ITEMS = {
     { id = 14, name = "弹弹弹-碎片",  limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 13, rewardCount = 1 },
     { id = 15, name = "内鬼-碎片",    limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 14, rewardCount = 1 },
     { id = 16, name = "复活吧爱人-碎片", limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 15, rewardCount = 1 },
-    { id = 17, name = "闪电卖鸡-碎片", limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 21, rewardCount = 1 },
+    { id = 17, name = "雷电麦坤-碎片", limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 21, rewardCount = 1 },
     { id = 18, name = "小黑子-碎片",    limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 22, rewardCount = 1 },
     { id = 19, name = "真布诗人-碎片",  limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 23, rewardCount = 1 },
     { id = 22, name = "加载中-碎片",    limitCycle = "daily", limitCount = -1, price = 250, rewardType = "shard", rewardHeroId = 24, rewardCount = 1 },

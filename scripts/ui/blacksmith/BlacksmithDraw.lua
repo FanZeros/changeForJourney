@@ -76,10 +76,11 @@ function M.bind(deps)
         nvgFillColor(vg, nvgRGBA(0x14, 0x12, 0x10, 255))
         nvgFill(vg)
 
-        -- === 整页单一暗黑背景（等比 cover 全屏，无形变）+ 名牌 + 工作台槽 ===
+        -- === 整页单一背景（UI_SMITH_BG_FULL 按设计分辨率对齐拉伸：比例差仅1.6%，
+        --    保证背景暗板框与 UI 元素坐标精确对齐）+ 名牌 + 工作台槽 ===
         nvgSave(vg)
         nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
-        DrawUtil.drawImageCover(vg, imgBg, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
+        DrawUtil.drawImageCentered(vg, imgBg, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
         nvgResetScissor(vg)
         nvgRestore(vg)
 
@@ -135,7 +136,23 @@ function M.bind(deps)
         end
     end
 
-    return { drawPageImpl = drawPageImpl }
+    --- [0930 穿帮修复] 左栏垫底：锻炉打开时仓库面板是半透明的，城镇会透出；
+    --- 在左栏先铺锻炉同款不透明底+背景图，仓库内容叠在其上。仅画背景，不含 UI。
+    ---@param vg any
+    local function drawUnderlay(vg)
+        if not state.open then return end
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+        nvgFillColor(vg, nvgRGBA(0x14, 0x12, 0x10, 255))
+        nvgFill(vg)
+        nvgSave(vg)
+        nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
+        DrawUtil.drawImageCentered(vg, imgBg, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
+        nvgResetScissor(vg)
+        nvgRestore(vg)
+    end
+
+    return { drawPageImpl = drawPageImpl, drawUnderlay = drawUnderlay }
 end
 
 return M

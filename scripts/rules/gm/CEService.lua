@@ -60,7 +60,7 @@ function CEService.giveAllResources()
         if ok then given = given + 1 end
     end
     GM.GiveResource(UID, "speedCardExpireAt", 7 * 86400)
-    return toast("全资源 +100万，加速卡 +7天（" .. given .. " 项）")
+    return toast("全资源 +1M，加速卡 +7天（" .. given .. " 项）")
 end
 
 function CEService.unlockAllHeroes()

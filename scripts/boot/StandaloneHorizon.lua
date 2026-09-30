@@ -397,6 +397,11 @@ local function seamBackList()
             }
         end
     end
+    -- [UI 0930] 返回条朝所属页面方向收 2px：左栏条向左、右栏条向右，
+    -- 让条与页面边缘轻微重叠，消除中缝留缝（hit 与 draw 共用此列表，自动同步）
+    for _, b in ipairs(list) do
+        b.cx = b.cx + ((b.dir == "left") and -2 or 2)
+    end
     return list
 end
 
@@ -545,6 +550,8 @@ function HandleNanoVGRenderHorizon()
         if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
         MarketPage.draw(vg())
+        -- [0930 穿帮修复] 锻炉打开时仓库下铺锻炉背景垫底（城镇组之上、仓库之下）
+        BlacksmithPage.drawUnderlay(vg())
         BackpackPanel.draw(vg())
         LootBox.drawPage(vg())
         TaskPage.draw(vg())
@@ -647,6 +654,8 @@ function HandleNanoVGRenderHorizon()
         if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
         MarketPage.draw(vg())
+        -- [0930 穿帮修复] 锻炉打开时仓库下铺锻炉背景垫底（城镇组之上、仓库之下）
+        BlacksmithPage.drawUnderlay(vg())
         BackpackPanel.draw(vg())
         LootBox.drawPage(vg())
         TaskPage.draw(vg())
@@ -1110,6 +1119,18 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
         if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragBegin(dx, dy) end
     elseif pid == 'right' then
+        -- [0930] 配装页装备（含角色六装备槽已装备）可跨栏拖到锻炉工作台/换槽
+        local CharacterDetail = require("ui.character.detail.CharacterDetail")
+        if CharacterDetail.isOpen() and CharacterDetail.isEquipTab and CharacterDetail.isEquipTab() then
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local EquipPanel = require("ui.character.detail.CharacterDetailEquip")
+            local peek = EquipPanel.peekSlotEquipAt(dx, dy) or EquipPanel.peekItemAt(dx, dy)
+            if peek then
+                EquipCrossDrag.arm(peek, sx, sy, "rightpanel")
+                print("[Horizon] 右栏配装按下 seq=" .. tostring(peek.seq))
+            end
+        end
         CharacterPanel.handleDragBegin(dx, dy)
     end
 end
@@ -1137,6 +1158,8 @@ function HandleMouseMoveHorizon(eventType, eventData)
         local source = EquipCrossDrag.getSource()
         if source == "overlay" then
             if pid ~= "tri" then return end
+        elseif source == "rightpanel" then
+            if pid ~= "right" then return end
         elseif pid ~= "left" then
             return
         end

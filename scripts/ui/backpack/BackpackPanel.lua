@@ -1504,7 +1504,26 @@ function Panel.haltScroll()
 end
 
 function Panel.handleHover(dx, dy)
-    if not state.open or state.tab ~= "equip" or SetFilterDialog.isOpen() then
+    if not state.open then
+        Panel._hoverSeq = nil
+        Panel._hoverSince = nil
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
+        return
+    end
+    -- 套装筛选弹窗打开时禁止网格悬停详情（弹窗只在装备 tab 打开）
+    if SetFilterDialog.isOpen() then
+        Panel._hoverSeq = nil
+        Panel._hoverSince = nil
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end
+        return
+    end
+    -- [0930] 分解 tab：委托 BlacksmithDecompose 悬停浮选详情
+    if state.tab == "decompose" then
+        ensureDecomposeReady()
+        BlacksmithDecompose.handleHover(dx, dy)
+        return
+    end
+    if state.tab ~= "equip" then
         Panel._hoverSeq = nil
         Panel._hoverSince = nil
         if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("backpack") end

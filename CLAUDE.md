@@ -84,6 +84,14 @@
 - **回归**：battle_stage_switch ALL PASS、battle_ally_compaction ALL PASS、boss_affix_test(37断言) ALL PASS、boss_affix_smoke ALL PASS、shield_scaling ALL PASS、character_team_sync PASS；LSP 全工作区 275 文件 Error=0；官方 Build 成功（382 Lua 入包，含 TerminalRaid + terminal_raid_test）；主入口 60 帧无 Lua 逻辑错误（仅既有 UI 品质框贴图缺失，非本轮）。
 - **⚠️ 遗留未修（非本轮范围，rebase 时处理）**：`chapter_team_offline_test` 失败——工作区 `StageSelectDialog` 把终焉从单组 `"T"` 拆成 14 个逐难度独立组（与远端 `4b43cd36` **同源但不同实现**：远端带 `subLabel` 难度名 + `TT_Y=732/ROW_Y0=790` 布局，工作区无 subLabel + `TT_Y=690/ROW_Y0=756`），但该测试断言还停在旧 `TOTAL_CHAPTERS+1` 与旧坐标。已 `git checkout` 还原测试文件，**不留半成品**；rebase 远端时应整体采用远端 StageSelectDialog + 远端测试版本（两套拆分二选一），否则断言无法干净通过。
 - **视觉验收待办**：共享血条/倒计时/失守灰字的真人预览验收（本机 surfaceless 无法截图）。
+## 上次做了什么（2026-09-30 续7，升阶后洗练不刷新修复 + 并行会话双推送，已 push `db378463`）
+
+- **用户报**：强化（升阶）后洗练页属性显示没刷新。
+- **根因两处**：①锻炉双页重构把 `BlacksmithPage.onEquipmentDataUpdate` 的调用方删光了（API 零调用方）——服务端装备推送落地后洗练/升阶展示永不重建；②锻炉版 Input 切 tab 无子模块数据刷新。`Enhance.onActionResult` 只升 `updateEnhanceData` 不碰 Refine；`onActionResult` 里 Refine 的 `hasPreview` 分支只 `refreshCostOnly` 也是同症。
+- **修复**：①`BlacksmithPage.init` 的 `PlayerStore.Subscribe("equipment")` 回调里补接 `BlacksmithPage.onEquipmentDataUpdate(data)`（Results 的 hasPreview 保护仍在：有预览仅重算消耗）；②Input 切 tab 时按目标 tab 调 `updateRefineData/updateEnhanceData(state.selectedEquip)`。拖放路径 `applySelectedEquip` 本就双刷新未动。
+- **并行会话注意**：推送时远端 930 两次前进（另一会话推了分解预览图标行 `f3514839`+选中态金字 `ef35113e`）——两次 fetch+merge 再推，均无代码冲突（对方新图标行 `drawRewardIconRow` 与我删的旧死码 `drawRewardIcons` 是两套实现不冲突）。**多会话并行推 930 时每推前必 fetch-merge**。
+- **验证**：auto_decompose 两次 ALL PASS、refine_cost 12 ALL PASS、切关 75 ALL PASS、terminal_raid 52 ALL PASS；LSP 0 Error；官方 Build 成功。
+
 ## 上次做了什么（2026-09-30 续6，功能分支合入 workspace930，已 push `02d8c254`）
 
 - **任务（用户本轮明确授权推 930）**：把 `feat/refine-fixed-cost-side-by-side`（洗练三调整+单框化+死加载清理+锻炉双页+双 tip）合入 `workspace930`。

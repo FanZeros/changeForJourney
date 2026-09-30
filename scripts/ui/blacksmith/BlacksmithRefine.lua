@@ -929,9 +929,12 @@ function M.drawPanel(vg)
 
     -- 5. 亮色箭头最后绘制：滑行动画的词条行从其下方穿过，箭头保持可见
     if imgArrow and imgArrow >= 0 then
+        -- 测试桩覆写全局 nvgRGBA 返回 number，LSP 推联合类型；cast 收窄
+        local arrowTint = nvgRGBA(255, 214, 102, 255)
+        ---@cast arrowTint NVGcolor
         local paint = nvgImagePatternTinted(vg,
             XL.ARROW_CX - XL.ARROW_W * 0.5, XL.ARROW_CY - XL.ARROW_H * 0.5,
-            XL.ARROW_W, XL.ARROW_H, 0, imgArrow, nvgRGBA(255, 214, 102, 255))
+            XL.ARROW_W, XL.ARROW_H, 0, imgArrow, arrowTint)
         nvgBeginPath(vg)
         nvgRect(vg, XL.ARROW_CX - XL.ARROW_W * 0.5, XL.ARROW_CY - XL.ARROW_H * 0.5, XL.ARROW_W, XL.ARROW_H)
         nvgFillPaint(vg, paint)

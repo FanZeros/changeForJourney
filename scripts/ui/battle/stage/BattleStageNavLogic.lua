@@ -134,9 +134,18 @@ function M.bind(deps)
     end
 
     local function gotoStage(stageId)
+        local stageConfig = getStageConfig()
         stageId = tonumber(stageId)
         if not stageId or stageId < 1 then return false, "无效关卡" end
-        if stageId > get("maxStageId_") then return false, "关卡尚未解锁" end
+        if stageConfig.isTerminalTemple(stageId) then
+            local prevId = stageConfig.getTerminalPrevStageId(stageId)
+            local cleared = get("clearedStages")
+            if not prevId or get("maxStageId_") < prevId or not cleared[prevId] then
+                return false, "终焉尚未解锁"
+            end
+        elseif stageId > get("maxStageId_") then
+            return false, "关卡尚未解锁"
+        end
         -- 与前进/后退对齐：选关同样要清定时器并复位阵容。
         -- 此前只 loadStage 不复位，阵亡紧凑打乱的顺序会带进新关卡，
         -- 表现为「选关后角色位置变了」。
@@ -151,6 +160,10 @@ function M.bind(deps)
         startBattleTalents()
         local cb = get("onStageChangedCallback")
         if cb then cb(stageId) end
+        if stageConfig.isTerminalTemple(stageId) then
+            BottomNav.setAllLocked(true)
+            require("systems.GameBGM").setScene("samsara", { fromStart = true })
+        end
         return true
     end
 

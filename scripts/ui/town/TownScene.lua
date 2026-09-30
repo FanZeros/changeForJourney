@@ -238,8 +238,10 @@ local function drawImageDarkTint(vg, img, cx, cy, w, h, alpha)
     if img < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img,
-        nvgRGBA(222, 211, 196, math.floor(255 * alpha)))
+    -- 测试桩覆写全局 nvgRGBA 返回 number，LSP 推联合类型；cast 收窄
+    local tint = nvgRGBA(222, 211, 196, math.floor(255 * alpha))
+    ---@cast tint NVGcolor
+    local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img, tint)
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)

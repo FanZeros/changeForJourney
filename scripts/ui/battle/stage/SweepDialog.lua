@@ -401,8 +401,8 @@ local function getStageRewardStr(field)
     local v = rewards[field]
     if not v or v <= 0 then return "---" end
     v = v * (state.count or 1)
-    if v >= 10000 then return string.format("%.1f万", v / 10000) end
-    return tostring(math.floor(v))
+    -- [万→k/M/B 0930] 大数统一走 NumberUtil（10k/1.2M/3.4B），不再用"万"单位
+    return require("core.NumberUtil").format(v)
 end
 
 --- 绘制单个奖励图标（品质背景 + 内容图标 + 文字标签）

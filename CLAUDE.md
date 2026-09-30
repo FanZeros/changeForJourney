@@ -26,6 +26,14 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 续4，合入锻炉双页分支，已 push `c449a59d`）
+
+- **任务**：用户要求排查洗练/锻炉相关分支后合入 `feat928/furnace-warehouse-dual-page`（今天 14:17，锻炉双页架构：分解 tab 迁仓库、中栏锻炉+左栏仓库双页、工作台槽拖拽选装、右缘滑入）。排查结论：fix928 三条分解修复内容已随 930 在本分支；**锻炉双页是唯一未并入的今日分支**。
+- **合并策略（31 冲突块）**：Draw/Input 取对方全文（新架构 owner；我方对其无独有功能——Spine 特效对方已移植 WORKBENCH 版）；Decompose 块1/2 取对方（calcRewardPreview 抽出+仓库文本模式为超集）+ 删我方旧布局图标链死码（drawRewardIcons/fitRewardBadgeFont/getScrollIcon/scrollIconCache/REWARD_ROW* 常量，新架构零调用）；块3 门控锁**双防线合一**：`wasPending = pendingDecompose and isDecomposeResp`（我方防无关响应提前解锁 + 对方防他入口广播双重弹奖）。
+- **Page 取对方全文后补三补丁**：①图标缓存委托 `ImageCache.getEquipIcon`（组首图 fallback，e1aa9f49 修复防回归——注意加 `---@param templateId string|number|nil` 注解会触发 LSP param-type-mismatch，因 ImageCache 声明无注解，故委托函数不写注解）；②归属显示补回（getEquipOwnerHeroId + 归属行 + HeroFrame 头像角标 + HeroAssetUtil.preloadIcons——对方重构时静默删除的 925 功能）；③imgXlAfter 死句柄清理。
+- **验证**：LSP 291 文件 0 Error；auto_decompose/equip_ascend(74)/refine_cost(12)/equip_detail_drag/lootbox(18) 全 ALL PASS；官方 Build 成功；主入口 headless 70s boot complete 零 Lua 错。
+- **教训**：大架构合并后必须检查**静默丢失**——对方全文覆盖会丢掉我方非冲突功能（归属显示），需对照 HEAD 版 grep 关键功能链补回。
+
 ## 上次做了什么（2026-09-30 续3，EquipmentDetail 死加载清理，已 push `26f576b5`）
 
 - **用户问**：基线问题（`EquipmentDetail.lua` 加载已删除的 `UI_ZBTS_1~6.png`，validate 18 处贴图失败）是否在其他分支已解决？

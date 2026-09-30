@@ -25,6 +25,7 @@ local ExpTable         = require("config.ExpTable")
 local HeroAssetUtil    = require("config.HeroAssetUtil")
 local HeroConfig       = require("config.HeroConfig")
 local HeroFrame        = require("ui.widget.HeroFrame")
+local ImageCache       = require("ui.widget.ImageCache")  -- 共享装备图标缓存（含组首图 fallback）
 
 -- 子模块
 local BlacksmithEnhance   = require("ui.blacksmith.BlacksmithEnhance")
@@ -174,19 +175,12 @@ local QUALITY_COST = require("config.BlacksmithConfig").QUALITY_COST
 
 -- ======================== 装备图标缓存 ========================
 
-local equipIconCache = {}  -- [templateId] = nvgImage handle
-local equipIconVg = nil    -- 缓存 vg 上下文
 local imgHeroIcons = {}    -- [heroId] = nvgImage handle, 角色头像角标（与背包一致）
 
+--- 装备图标：委托共享 ImageCache（含组首图 fallback——318 个模板 ID 共用 53 张组首图，
+--- 旧实现无 fallback 导致 W2~W6 等非组首 ID 加载失败、分解/升阶页图标空白）
 local function getEquipIconCached(templateId)
-    if not templateId then return -1 end
-    local cached = equipIconCache[templateId]
-    if cached then return cached end
-    if not equipIconVg then return -1 end
-    local path = EquipmentConfig.getIconPath(templateId)
-    local img = nvgCreateImage(equipIconVg, path, 0)
-    equipIconCache[templateId] = img
-    return img
+    return ImageCache.getEquipIcon(templateId)
 end
 
 -- ======================== 词缀值格式化 ========================
@@ -601,7 +595,7 @@ function BlacksmithPage.init(vg)
 
     -- 装备背包初始化
     EquipmentBag.init(vg)
-    equipIconVg = vg
+    ImageCache.init(vg)  -- 幂等：背包面板启动时也 init 同一 vg，重复调用只是覆盖同一上下文
 
     -- 构建共享上下文并注入子模块
     local ctx = {

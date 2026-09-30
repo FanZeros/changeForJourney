@@ -527,6 +527,14 @@ ModuleRegistry.modules = {
                 end
                 data.claimedScenarios = fixed
             end
+            -- 奖励已发放账本同样用字符串 key（防重启后 cjson 数字 key 绕过防刷）
+            if data.scenarioRewardsGranted then
+                local fixedGranted = {}
+                for k, v in pairs(data.scenarioRewardsGranted) do
+                    fixedGranted[tostring(k)] = v
+                end
+                data.scenarioRewardsGranted = fixedGranted
+            end
         end,
     },
 

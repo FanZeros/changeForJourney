@@ -492,6 +492,12 @@ function M.run(rt)
                 require("boot.StandaloneSave").Flush()
             end
         end
+        -- [首通情景接线修复 2026-09-30] 0922 删除 Client/Server 联网壳（4e184304）时，
+        -- 原 ClientBoot.setOnFirstClear 里的 lastClearedStageId_ 赋值 + NEXT_STAGE 触发链
+        -- 没有搬进单机版，导致所有"首通触发"的情景（5-22/35-37/44-46/51-53/55-60/62/69/82）
+        -- 在单机永不入队。这里直接调 StoryPlayer.onStage(id,"clear") 补回接线：
+        -- 情景先入队，等首通奖励弹窗关闭后由 tryPlayPendingStory_ 逐段播出并领奖。
+        require("systems.StoryPlayer").onStage(clearedStageId, "clear")
         local stageEntry = StageConfig.getStage(clearedStageId)
         if not stageEntry then return end
 

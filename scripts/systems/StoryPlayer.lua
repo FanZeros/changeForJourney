@@ -164,6 +164,36 @@ function StoryPlayer.followOf(id)
     return resolve(FOLLOW[id])
 end
 
+--- [旧档补播 2026-09-30] 0922 联网壳删除后"首通触发情景"接线断裂，
+--- 期间已首通关卡的老玩家（如已通 205 却从未见过情景 82）永远不会再触发。
+--- 启动时扫描 battle.clearedStages，把已首通但未领取（claimedScenarios 无记录）
+--- 的情景按关卡顺序补入队；enqueue 内部自带 introCompleted/isClaimed/去重守卫。
+---@return integer 新入队数量
+function StoryPlayer.backfillCleared()
+    local battle = ClientDispatcher.get("battle") or {}
+    local cleared = battle.clearedStages
+    if type(cleared) ~= "table" then return 0 end
+    local ids = {}
+    for k in pairs(cleared) do
+        local n = tonumber(k)
+        if n then ids[#ids + 1] = math.floor(n) end
+    end
+    table.sort(ids)
+    local added = 0
+    for _, id in ipairs(ids) do
+        local spec = STAGE_CLEAR[id]
+        if spec then
+            local before = #queue_
+            enqueueSpec(spec)
+            added = added + (#queue_ - before)
+        end
+    end
+    if added > 0 then
+        print("[StoryPlayer] backfill cleared stages enqueued=" .. added)
+    end
+    return added
+end
+
 --- 取出下一段可播放情景。没有则返回 nil。
 ---@return table|nil
 function StoryPlayer.take()

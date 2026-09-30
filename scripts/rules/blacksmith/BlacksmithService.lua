@@ -659,7 +659,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         return false, "至少保留1条词缀未锁定"
     end
 
-    local essenceCost = BlacksmithConfig.calcRefineEssenceCost(q, equipLv, refineCount, equip.grip)
+    local essenceCost = BlacksmithConfig.calcRefineEssenceCost(q, equipLv, equip.grip)
     if extraResource ~= "destroyStone" and extraResource ~= "corruptStone" then
         essenceCost = BlacksmithConfig.applyRefineLockCostMult(essenceCost, lockedCount)
     end
@@ -668,7 +668,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         return false, "精粹不足"
     end
 
-    -- 扣精粹 & 累计洗练次数（上限 20，之后仍可洗练但不再涨消耗）
+    -- 扣精粹 & 累计洗练次数（费用固定单价，次数仅作统计展示）
     currency.essence = currency.essence - essenceCost
     equip.refineCount = BlacksmithConfig.nextRefineCount(refineCount)
 

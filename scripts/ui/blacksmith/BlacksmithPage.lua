@@ -169,7 +169,7 @@ local ENHANCE_TABLE = {
 
 -- 装备品质消耗配置（用于洗练/分解）
 -- decBase/decScale: 分解精粹奖励基础与等级缩放
--- refBase/refInc/refLvScale: 洗练精粹消耗基础、递增、等级缩放
+-- refBase/refLvScale: 洗练精粹固定单价基础与等级缩放
 local QUALITY_COST = require("config.BlacksmithConfig").QUALITY_COST
 
 -- ======================== 装备图标缓存 ========================

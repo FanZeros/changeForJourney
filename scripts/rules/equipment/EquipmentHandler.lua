@@ -145,9 +145,10 @@ handlers[Protocol.ACTION_TYPES.SET_AUTO_DECOMPOSE] = function(uid, params)
     if autoQuality == nil or autoLevel == nil then
         return { success = false, reason = "缺少 autoQuality 或 autoLevel 参数" }
     end
-    local ok, err = EquipmentService.SetAutoDecompose(uid, autoQuality, autoLevel)
+    local ok, err, clampedQ, clampedL = EquipmentService.SetAutoDecompose(uid, autoQuality, autoLevel)
     if not ok then return { success = false, reason = err } end
-    return { success = true, autoQuality = autoQuality, autoLevel = autoLevel }
+    -- 返回钳制后的值，客户端以此回显，避免 UI 与服务端存储不一致
+    return { success = true, autoQuality = clampedQ, autoLevel = clampedL }
 end
 
 EquipmentHandler.actionHandlers = handlers

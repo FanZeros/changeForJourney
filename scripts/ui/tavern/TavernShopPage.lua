@@ -264,7 +264,6 @@ local shopImg = {
     buyBtn      = -1,  -- UI_SD_AN.png
     itemIcons   = {},  -- 每个商品图标
     costIcons   = {},  -- 每个商品消耗图标
-    coinBarIcon = -1,  -- UI_icon_JGB_X.png（顶部货币栏）
     -- 二级弹窗
     dialogBg     = -1, -- UI_TY_EJQRK.png
     buyBtnYellow = -1, -- UI_AN_HUANG.png
@@ -686,8 +685,8 @@ function TavernShopPage.drawContent(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, RES_BG_A))
     nvgFill(vg)
 
-    -- 货币图标
-    drawImageCentered(vg, shopImg.coinBarIcon,
+    -- 货币图标（与购买弹窗同图 UI_icon_JGB_X.png）
+    drawImageCentered(vg, shopImg.coinIcon,
         RES_ICON_CX, RES_ICON_CY, RES_ICON_W, RES_ICON_H, 1.0)
 
     -- 数值（白字深色描边）

@@ -44,7 +44,8 @@ local D = {
     BG_W    = 950,  BG_H   = 1117,
     BG_IT   = 180,  BG_IR  = 40,  BG_IB = 50,  BG_IL = 40,
 
-    TT_Y    = 690,  TT_FONT = 50,  TT_SW = 6,
+    TT_Y    = 732,  -- 标题下移半行（章节行高 84 的一半；原 690）
+    TT_FONT = 50,  TT_SW = 6,
     TT_SR   = 0x00, TT_SG  = 0x00, TT_SB = 0x00,
 
     -- 左栏: 章节列表
@@ -58,7 +59,7 @@ local D = {
     -- 中栏：关卡竖排（5-1 在上，5-5 在下），每行直接展示敌人卡面
     MID_X     = 315,
     MID_W     = 580,
-    ROW_Y0    = 756,     -- 第一行顶边
+    ROW_Y0    = 790,     -- 第一行顶边（整体下移 20% 行高 ≈34；原 756）
     ROW_H     = 168,     -- 一行高度
     ROW_GAP   = 10,
     CARD_W    = 92,      -- 敌人卡面宽
@@ -84,7 +85,7 @@ local imgLock = -1
 local state = {
     open      = false,
     openTime  = 0,
-    selKey    = nil,   -- 选中章节 key（chapter number 或 "T"=终焉神殿组）
+    selKey    = nil,   -- 选中章节 key（chapter number 或 "T<神殿id>"=单难度终焉组）
     chScroll  = 0,     -- 左栏滚动起点（0-based）
     chDragY   = nil,   -- 左栏按下位置
     chDragScroll = 0, -- 按下时滚动起点
@@ -133,30 +134,31 @@ local function collectAllIds()
     return ids, order
 end
 
---- 章节组：{{ key=chapter|"T", name=, ids={} } 按进度顺序}
+--- 章节组：{{ key=chapter|"T<神殿id>", name=, subLabel=, ids={} } 按进度顺序}
+--- [单难度终焉] 终焉神殿不再合并成一个 "T" 组，每座神殿独立成组，
+--- 沿关卡链自然追加在对应难度第 23 章之后（如困难 23 章 → 困难终焉 → 噩梦 1 章）
 local function collectChapterGroups()
     local ids, order = collectAllIds()
     local groups = {}
     ---@type table<any, number>
     local indexOf = {}
     for _, id in ipairs(ids) do
-        local key
+        local key, name, subLabel
         if SC.isTerminalTemple(id) then
-            key = "T"
+            key = "T" .. tostring(id)
+            name = "终焉"
+            subLabel = SC.getDifficultyDisplayName(SC.getDifficulty(id))
         else
-            key = math.floor(id / 100)
+            local chapter = math.floor(id / 100)
+            key = chapter
+            name = SC.getChapterName(chapter)
+            subLabel = tostring(SC.getRelativeChapter(chapter)) .. " 章"
         end
         local gi = indexOf[key]
         if not gi then
             gi = #groups + 1
             indexOf[key] = gi
-            local name
-            if key == "T" then
-                name = "终焉"
-            else
-                name = SC.getChapterName(key)
-            end
-            groups[gi] = { key = key, name = name, ids = {} }
+            groups[gi] = { key = key, name = name, subLabel = subLabel, ids = {} }
         end
         local g = groups[gi]
         g.ids[#g.ids + 1] = id
@@ -190,7 +192,11 @@ local function ensureCache()
 end
 
 local function chapterHue(key)
-    local n = (type(key) == "number") and key or 23
+    -- 终焉组 key 形如 "T999"，提取神殿 id 参与取色，让各难度终焉色调互异
+    local n = key
+    if type(key) == "string" then
+        n = tonumber(key:match("^T(%d+)$")) or 23
+    end
     return CH_HUES[((n - 1) % #CH_HUES) + 1]
 end
 
@@ -311,10 +317,10 @@ function StageSelectDialog.open(teamIdx)
         local BattleTriPage = require("ui.battle.tri.BattleTriPage")
         curStage = BattleTriPage.getTeamStageId(state.targetTeam) or curStage
     end
-    -- 定位到当前关所在章节
+    -- 定位到当前关所在章节（终焉神殿 → 对应单难度终焉组 "T<id>"）
     local curKey
     if curStage and SC.isTerminalTemple(curStage) then
-        curKey = "T"
+        curKey = "T" .. tostring(curStage)
     elseif curStage then
         curKey = math.floor(curStage / 100)
     end
@@ -493,12 +499,8 @@ function StageSelectDialog.draw(vg)
         if chapterLocked and imgLock >= 0 then
             drawImageCentered(vg, imgLock, x + D.CH_W - 22, y + 22, 30, 30, 0.9)
         end
-        local rel
-        if g.key == "T" then
-            rel = "终焉"
-        else
-            rel = tostring(SC.getRelativeChapter(g.key)) .. " 章"
-        end
+        -- 副标题：普通章节 = "N 章"；单难度终焉 = 难度名（如 "困难"/"噩梦"）
+        local rel = g.subLabel or tostring(SC.getRelativeChapter(g.key)) .. " 章"
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 20)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)

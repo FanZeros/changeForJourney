@@ -18,6 +18,7 @@ local SpineResultEffect = require("ui.fx.SpineResultEffect")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local PlayerStore       = require("core.PlayerStore")
 local BF                = require("systems.ButtonFeedback")
+local EquipmentSystem   = require("systems.EquipmentSystem")
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
@@ -75,7 +76,8 @@ local ATTR_NEXT_BG_H    = 58
 local ATTR_ROW_SPACING   = 9
 
 -- 7. 随机词缀：第一行 Y 轴中心
-local AFFIX_FIRST_Y      = 1561
+local AFFIX_FIRST_Y      = 1460
+local AFFIX_ROW_STEP     = 48
 
 -- 8. 词缀等级 ICON 位置 X
 local AFFIX_GRADE_CUR_CX  = 366
@@ -108,7 +110,7 @@ local EB = {
 }
 
 -- 词缀等级图标尺寸
-local AFFIX_GRADE_ICON_SIZE = 44
+local AFFIX_GRADE_ICON_SIZE = 36
 
 -- ======================== 强化界面数据 ========================
 
@@ -137,7 +139,7 @@ local imgGoldQBg       -- 金币品质背景框
 local imgGrade         -- 词缀等级图标 table
 local formatCompact    -- 大数值缩写函数
 local formatAffixValue -- 词缀值格式化函数
-local state            -- 共享状态 (selectedEquipSlot, selectedPartySlot 等)
+local state            -- 共享状态 (selectedEquip, selectedSeq, selectedEquipSlot)
 local getClient        -- 延迟加载 Client
 local getProtocol      -- 延迟加载 Protocol
 
@@ -301,16 +303,17 @@ function M.updateEnhanceData(equip)
         end
     end
 
-    -- 词缀（不随强化变化，仅显示当前值）
+    -- 词缀（显示生效值：普通词条吃栏位倍率，魔化不吃）
     local affixes = {}
     for _, affix in ipairs(equip.affixes or {}) do
         local isCorrupt = AffixConfig.isCorruptAffix(affix)
         local qDef = AffixConfig.QUALITY[affix.quality]
         local gradeName = qDef and qDef.name or "D"
+        local effVal = EquipmentSystem.effectiveAffixValue(equip, affix)
         affixes[#affixes + 1] = {
             name     = affix.name or affix.key,
-            curVal   = formatAffixValue(affix.key, affix.value),
-            nextVal  = formatAffixValue(affix.key, affix.value),
+            curVal   = formatAffixValue(affix.key, effVal),
+            nextVal  = formatAffixValue(affix.key, effVal),
             curGrade = gradeName,
             nextGrade = gradeName,
             isCorrupt = isCorrupt,
@@ -352,7 +355,7 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
 
     -- 属性名称（右对齐）
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, ATTR_FONT_SIZE)
+    nvgFontSize(vg, (curGradeIcon or isCorrupt) and 30 or ATTR_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(ATTR_NAME_COLOR_R, ATTR_NAME_COLOR_G, ATTR_NAME_COLOR_B, 255))
     nvgText(vg, ATTR_NAME_X, rowY, name, nil)
@@ -367,7 +370,7 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
 
     -- 当前数值文本
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, ATTR_FONT_SIZE)
+    nvgFontSize(vg, (curGradeIcon or isCorrupt) and 30 or ATTR_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B, 255))
     nvgText(vg, ATTR_CUR_BG_CX, rowY, curVal, nil)
@@ -459,13 +462,33 @@ function M.drawPanel(vg)
         rowY = rowY + ATTR_ROW_HEIGHT + ATTR_ROW_SPACING
     end
 
-    -- 7-8. 随机词缀区域（不随强化变化，不显示提升箭头）
-    local affixY = AFFIX_FIRST_Y
+    -- 7-8. 随机词缀区域
+    local affixY = math.max(AFFIX_FIRST_Y, rowY + 4)
+    nvgSave(vg)
+    nvgIntersectScissor(vg, 80, affixY - 24, 920, 1695 - affixY + 24)
     for _, affix in ipairs(data.affixes) do
         local curIcon = imgGrade[affix.curGrade] or -1
         drawAttrRow(vg, affixY, affix.name, affix.curVal, affix.nextVal, curIcon, nil, false, affix.isCorrupt)
-        affixY = affixY + ATTR_ROW_HEIGHT + ATTR_ROW_SPACING
+        affixY = affixY + AFFIX_ROW_STEP
     end
+    nvgRestore(vg)
+    local normalCount = 0
+    for _, affix in ipairs(state.selectedEquip and state.selectedEquip.affixes or {}) do
+        if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
+    end
+    local affixMult = EquipmentSystem.getAffixMult(state.selectedEquip)
+    local multPct = math.floor((BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10) * 100 + 0.5)
+    local hint
+    if normalCount >= BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT then
+        hint = string.format("词条已满：每升5阶词条倍率+%d%%（当前 ×%.2f，洗练不丢）", multPct, affixMult)
+    else
+        hint = "每升5阶必得1条随机词条（普通词条最多4条）"
+    end
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 23)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(0xbc, 0x9b, 0x58, 255))
+    nvgText(vg, 540, 1710, hint, nil)
 end
 
 --- 绘制资源数量（拥有/需要）
@@ -521,7 +544,7 @@ function M.drawPanelBottom(vg)
         nvgFontSize(vg, 36)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(0x99, 0x99, 0x99, 180))
-        nvgText(vg, 540, 1850, "已达到最高强化等级", nil)
+        nvgText(vg, 540, 1850, "已达到最高升阶等级", nil)
         return
     end
 
@@ -530,7 +553,7 @@ function M.drawPanelBottom(vg)
     nvgFontSize(vg, EB.REQ_TITLE_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(EB.REQ_TITLE_R, EB.REQ_TITLE_G, EB.REQ_TITLE_B, 255))
-    nvgText(vg, EB.REQ_TITLE_X, EB.REQ_TITLE_Y, "强化需求", nil)
+    nvgText(vg, EB.REQ_TITLE_X, EB.REQ_TITLE_Y, "升阶需求", nil)
 
     -- 9. 需求背景框
     nvgBeginPath(vg)
@@ -568,7 +591,7 @@ function M.drawPanelBottom(vg)
     nvgFontSize(vg, EB.ENH_TEXT_FONT_SIZE)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(EB.ENH_TEXT_R, EB.ENH_TEXT_G, EB.ENH_TEXT_B, 255))
-    nvgText(vg, EB.ENH_BTN_CX, EB.ENH_BTN_CY, "强化", nil)
+    nvgText(vg, EB.ENH_BTN_CX, EB.ENH_BTN_CY, "升阶", nil)
     BF.finish(vg, didScale)
     local _TM = require("systems.TutorialManager")
     -- [锻炉双页 0929] 锻炉页移中栏：热点面板从 "left" 改为 "center"
@@ -589,7 +612,7 @@ function M.drawPanelBottom(vg)
     else
         nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
     end
-    nvgText(vg, EB.ENH_MAX_BTN_CX, EB.ENH_MAX_BTN_CY, "一键强化", nil)
+    nvgText(vg, EB.ENH_MAX_BTN_CX, EB.ENH_MAX_BTN_CY, "一键升阶", nil)
     BF.finish(vg, didScaleMax)
 end
 
@@ -738,7 +761,7 @@ function M.drawConfirmDialog(vg)
         { titleH = EMDLG.BG_IT })
 
     -- 标题"一键强化"
-    drawStroke(vg, EMDLG.TITLE_CX, EMDLG.TITLE_CY, "一键强化",
+    drawStroke(vg, EMDLG.TITLE_CX, EMDLG.TITLE_CY, "一键升阶",
         EMDLG.TITLE_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, EMDLG.TITLE_SW)
 
@@ -746,7 +769,7 @@ function M.drawConfirmDialog(vg)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, EMDLG.SUB_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(EMDLG.SUB_R, EMDLG.SUB_G, EMDLG.SUB_B, 255))
-    nvgText(vg, EMDLG.SUB_CX, EMDLG.SUB_CY, "选择目标强化等级", nil)
+    nvgText(vg, EMDLG.SUB_CX, EMDLG.SUB_CY, "选择目标升阶等级", nil)
 
     -- 内容框背景（与 MarketPage CONTENT 区域一致）
     nvgBeginPath(vg)
@@ -767,6 +790,29 @@ function M.drawConfirmDialog(vg)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(EMDLG.SUB_R, EMDLG.SUB_G, EMDLG.SUB_B, 255))
     nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY, "+" .. data.curLevel .. " → +" .. dlg.targetLevel, nil)
+
+    local milestoneCount = math.floor(dlg.targetLevel / BlacksmithConfig.ASCEND_AFFIX_INTERVAL)
+        - math.floor(data.curLevel / BlacksmithConfig.ASCEND_AFFIX_INTERVAL)
+    if milestoneCount > 0 then
+        local normalCount = 0
+        for _, affix in ipairs(state.selectedEquip and state.selectedEquip.affixes or {}) do
+            if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
+        end
+        local room = math.max(0, BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT - normalCount)
+        local gained = math.min(milestoneCount, room)
+        local multUps = milestoneCount - gained
+        local previewParts = {}
+        if gained > 0 then previewParts[#previewParts + 1] = gained .. " 条随机词条" end
+        if multUps > 0 then
+            local curMult = EquipmentSystem.getAffixMult(state.selectedEquip)
+            local step = BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10
+            local nextMult = math.floor((curMult + step * multUps) * 1000 + 0.5) / 1000
+            previewParts[#previewParts + 1] = string.format("词条倍率 ×%.2f → ×%.2f", curMult, nextMult)
+        end
+        nvgFontSize(vg, 26)
+        nvgFillColor(vg, nvgRGBA(0xbc, 0x9b, 0x58, 255))
+        nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY - 55, "将新增 " .. table.concat(previewParts, "、"), nil)
+    end
 
     -- 减按钮
     local minusAlpha = dlg.targetLevel <= data.curLevel + 1 and 0.4 or 1.0
@@ -929,13 +975,11 @@ function M.handleDialogInput(dx, dy)
         closeDlg()
         pendingEnhance     = true
         pendingEnhanceTime = time.elapsedTime or 0
-        local partySlot    = state.selectedPartySlot
         local equipSlot    = state.selectedEquipSlot
-        print("[BlacksmithEnhance] 一键强化确认 partySlot=" .. tostring(partySlot)
+        print("[BlacksmithEnhance] 一键强化确认 seq=" .. tostring(state.selectedSeq)
             .. " equipSlot=" .. tostring(equipSlot) .. " targetLevel=" .. dlg.targetLevel)
         getClient().sendAction(getProtocol().ACTION_TYPES.ENHANCE_EQUIP_MAX, {
             seq = state.selectedSeq or (state.selectedEquip and state.selectedEquip.seq),
-            partySlot   = partySlot,
             equipSlot   = equipSlot,
             targetLevel = dlg.targetLevel,
         })
@@ -1016,99 +1060,6 @@ checkAndSetGate = function()
     return true
 end
 
-local CAND_Y = 700
-local CAND_SIZE = 64
-local candCache = {}
-
-function M.rebuildCandidates()
-    candCache = {}
-    local ClientDispatcher = require("runtime.ClientDispatcher")
-    local eq = ClientDispatcher.get("equipment") or require("core.PlayerStore").Get("equipment")
-    local heroes = ClientDispatcher.get("heroes") or require("core.PlayerStore").Get("heroes")
-    if not eq or not eq.inventory then return candCache end
-    local seen = {}
-    local function push(seq, worn)
-        local key = tostring(seq)
-        if seen[key] then return end
-        local equip = eq.inventory[key] or eq.inventory[seq]
-        if not equip then return end
-        seen[key] = true
-        equip.seq = tonumber(seq)
-        candCache[#candCache + 1] = { seq = equip.seq, equip = equip, worn = worn }
-    end
-    local deployed = heroes and heroes.deployed or {}
-    for i = 1, #deployed do
-        local heroId = deployed[i]
-        local slots = eq.equipped and (eq.equipped[heroId] or eq.equipped[tostring(heroId)])
-        if slots then
-            for _, slotKey in ipairs({ "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }) do
-                if slots[slotKey] then push(slots[slotKey], true) end
-            end
-        end
-    end
-    local bag = {}
-    for key, equip in pairs(eq.inventory) do
-        if not seen[tostring(key)] then
-            bag[#bag + 1] = tonumber(key) or 0
-        end
-    end
-    table.sort(bag)
-    for i = 1, #bag do
-        if bag[i] > 0 then push(bag[i], false) end
-    end
-    print("[BlacksmithEnhance] candidates worn+bag=" .. #candCache)
-    return candCache
-end
-
-function M.drawCandidates(vg)
-    if #candCache == 0 then M.rebuildCandidates() end
-    local startX = 80
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 22)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(232, 200, 120, 220))
-    nvgText(vg, startX, CAND_Y - 36, "身上优先，其后为背包", nil)
-    for i = 1, math.min(#candCache, 12) do
-        local row = candCache[i]
-        local cx = startX + (i - 1) * (CAND_SIZE + 8) + CAND_SIZE * 0.5
-        local selected = state.selectedSeq == row.seq
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, cx - CAND_SIZE * 0.5, CAND_Y - CAND_SIZE * 0.5, CAND_SIZE, CAND_SIZE, 8)
-        nvgFillColor(vg, nvgRGBA(row.worn and 40 or 20, 24, 16, 220))
-        nvgFill(vg)
-        if selected then
-            nvgStrokeColor(vg, nvgRGBA(255, 215, 0, 230))
-            nvgStrokeWidth(vg, 3)
-            nvgStroke(vg)
-        end
-        local plus = require("systems.EquipmentSystem").getAscendLevel(row.equip)
-        nvgFontSize(vg, 18)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(255, 236, 196, 255))
-        nvgText(vg, cx, CAND_Y, (row.worn and "穿" or "包") .. (plus > 0 and ("+" .. plus) or ""), nil)
-    end
-end
-
-function M.handleCandidateClick(dx, dy)
-    if #candCache == 0 then return false end
-    local startX = 80
-    for i = 1, math.min(#candCache, 12) do
-        local row = candCache[i]
-        local cx = startX + (i - 1) * (CAND_SIZE + 8) + CAND_SIZE * 0.5
-        if math.abs(dx - cx) <= CAND_SIZE * 0.5 and math.abs(dy - CAND_Y) <= CAND_SIZE * 0.5 then
-            state.selectedEquip = row.equip
-            state.selectedSeq = row.seq
-            state.selectedEquipSlot = row.equip.slot or state.selectedEquipSlot
-            M.updateEnhanceData(row.equip)
-            print("[BlacksmithEnhance] pick seq=" .. tostring(row.seq)
-                .. " worn=" .. tostring(row.worn)
-                .. " ascend=" .. require("systems.EquipmentSystem").getAscendLevel(row.equip))
-            return true
-        end
-    end
-    return false
-end
-
 --- 处理强化需求区域的点击
 ---@param dx number 设计坐标 X
 ---@param dy number 设计坐标 Y
@@ -1134,12 +1085,10 @@ function M.handleInput(dx, dy)
         end
         pendingEnhance = true
         pendingEnhanceTime = time.elapsedTime or 0
-        local partySlot = state.selectedPartySlot
         local equipSlot = state.selectedEquipSlot
-        print("[BlacksmithEnhance] 强化请求 partySlot=" .. tostring(partySlot) .. " equipSlot=" .. tostring(equipSlot))
+        print("[BlacksmithEnhance] 强化请求 seq=" .. tostring(state.selectedSeq) .. " equipSlot=" .. tostring(equipSlot))
         getClient().sendAction(getProtocol().ACTION_TYPES.ENHANCE_EQUIP, {
             seq = state.selectedSeq or (state.selectedEquip and state.selectedEquip.seq),
-            partySlot = partySlot,
             equipSlot = equipSlot,
         })
         return true
@@ -1187,12 +1136,28 @@ function M.onActionResult(data)
 
     local outcome = data.enhanceOutcome
     if outcome == "success" then
-        print("[BlacksmithEnhance] ascend success lv=" .. tostring(data.newLevel))
-        if data.newLevel and state.selectedEquip then
+        print("[BlacksmithEnhance] ascend success lv=" .. tostring(data.newLevel)
+            .. " affixes=" .. tostring(#(data.gainedAffixes or {})))
+        if data.newLevel and state.selectedEquip
+            and tostring(state.selectedEquip.seq) == tostring(data.seq) then
             state.selectedEquip.ascendLevel = data.newLevel
             state.selectedEquip.enhanceLevel = data.newLevel
+            if data.affixes then state.selectedEquip.affixes = data.affixes end
+            if data.affixMult then state.selectedEquip.affixMult = data.affixMult end
         end
-        M.rebuildCandidates()
+        do
+            local parts = {}
+            for _, affix in ipairs(data.gainedAffixes or {}) do
+                parts[#parts + 1] = affix.name or affix.key or "随机词条"
+            end
+            if (data.multUps or 0) > 0 then
+                parts[#parts + 1] = string.format("词条倍率 ×%.2f",
+                    tonumber(data.affixMult) or EquipmentSystem.getAffixMult(state.selectedEquip))
+            end
+            if #parts > 0 then
+                require("core.UiToast").show("升阶获得：" .. table.concat(parts, "、"))
+            end
+        end
         M.updateEnhanceData(state.selectedEquip)
         SpineResultEffect.play(true)
         -- 刷新城镇Tab角标（强化后金币/卷轴消耗，可强化状态可能变化）

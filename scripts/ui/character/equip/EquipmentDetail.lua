@@ -341,7 +341,7 @@ local function calcEquipPower(equip, heroId)
     end
 
     for _, affix in ipairs(equip.affixes or {}) do
-        power = power + calcStatPower(affix.key, affix.value, excluded)
+        power = power + calcStatPower(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix), excluded)
     end
 
     return math.floor(power)
@@ -897,8 +897,8 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
             nvgText(vg, REF_AFFIX_TEXT_X + offsetX, affixY, affName, nil)
 
-            -- 词缀数值 - 右对齐 X1016 字号34 白色 描边4（与基础属性相同）
-            local affVal = "+" .. formatStatValue(affix.key, affix.value)
+            -- 词缀数值 - 右对齐 X1016 字号34 白色 描边4（与基础属性相同；生效值含栏位倍率）
+            local affVal = "+" .. formatStatValue(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix))
             drawTextStroke(vg, REF_STAT_VAL_X + offsetX, affixY, affVal,
                 REF_STAT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
                 255, 255, 255, 4)
@@ -1076,7 +1076,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
             nvgText(vg, leftX, y, affix.name or "?", nil)
-            drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, affix.value), 36,
+            drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix)), 36,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
             bottom = y + REF_AFFIX_ROW_H * 0.5
         end
@@ -1298,6 +1298,37 @@ isClickedEquipEquipped = function()
     return false, nil
 end
 
+--- 等级穿戴门槛：角色等级低于装备等级时不可穿戴
+---@return boolean ok true=可穿戴
+---@return number|nil requiredLevel 装备需求等级（仅等级不足时）
+local function checkDetailLevelGate()
+    if not detState.heroId or not detState.equipSeq then return true, nil end
+    local equipData = PlayerStore.Get("equipment")
+    local equip = equipData and equipData.inventory and equipData.inventory[detState.equipSeq]
+    if not equip then return true, nil end
+    if not equip.type or not equip.slot then
+        EquipmentSystem.hydrate(equip)
+    end
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, detState.heroId)
+    local ok, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+    return ok, requiredLevel
+end
+
+--- 穿戴前统一拦截：等级不足时提示并拒绝
+---@return boolean blocked true=已拦截（调用方应中止穿戴）
+local function blockIfLevelLocked()
+    local ok, requiredLevel = checkDetailLevelGate()
+    if ok then return false end
+    local Toast = require("core.UiToast")
+    Toast.show(I18n.t("level_not_enough_equip", tostring(requiredLevel or 1)))
+    require("systems.GameSFX").playUIClick(1)
+    BF.trigger("equip_deny")
+    print("[EquipmentDetail] 等级不足拒绝穿戴 seq=" .. tostring(detState.equipSeq)
+        .. " 需Lv." .. tostring(requiredLevel))
+    return true
+end
+
 --- 获取用于对比的"当前装备"（处理副手对比双手武器场景）
 ---@return table|nil curEquip, number|nil curSeq
 getComparisonEquip = function()
@@ -1436,6 +1467,9 @@ function EquipmentDetail.handleInput(dx, dy)
                         heroId = detState.heroId,
                         slot = equippedSlot or detState.slot,
                     })
+                elseif blockIfLevelLocked() then
+                    -- 等级穿戴门槛：等级不足，已提示，中止穿戴且不关闭面板
+                    return true
                 else
                     Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {
                         seq = tonumber(detState.equipSeq),
@@ -1517,6 +1551,9 @@ function EquipmentDetail.handleInput(dx, dy)
                     slot   = equippedSlot or detState.slot,
                 })
                 print("[EquipmentDetail] 发送卸下请求 slot=" .. tostring(equippedSlot or detState.slot))
+            elseif blockIfLevelLocked() then
+                -- 等级穿戴门槛：等级不足，已提示，中止穿戴且不关闭面板
+                return true
             else
                 -- 穿戴/更换装备
                 Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {

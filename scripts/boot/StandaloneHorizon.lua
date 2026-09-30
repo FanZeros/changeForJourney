@@ -31,6 +31,7 @@ local LootBoxPage       = require("ui.loot.LootBoxPage")
 local TaskPage          = require("ui.story.task.TaskPage")
 local LevelUpPopup      = require("ui.hud.popup.LevelUpPopup")
 local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
+local UpdateNoticePopup = require("ui.hud.popup.UpdateNoticePopup")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
 local StartScreen       = require("ui.story.gate.StartScreen")
 local DarkTitleScreen   = require("ui.story.gate.DarkTitleScreenGate")
@@ -103,6 +104,20 @@ local function drawRewardInPanel(pid)
     RewardPopup.drawRegion(vg(), 0, 0, 1080, 2400, nil)
 end
 
+--- [UpdateNoticePopup] 更新提醒全窗模态（1080×2400 设计稿 letterbox 居中，同 PlayerInfoPanel）。
+--- 放在 finishFrame 收尾统一绘制：所有 early-return 渲染路径都能盖到，且位于业务面板之上。
+local function drawUpdateNotice()
+    if not UpdateNoticePopup.isOpen() then return end
+    local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+    nvgSave(vg())
+    nvgResetScissor(vg())
+    nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+    nvgScale(vg(), fit, fit)
+    UpdateNoticePopup.draw(vg())
+    nvgRestore(vg())
+end
+
 local function finishFrame()
     nvgSave(vg())
     nvgResetTransform(vg())
@@ -110,6 +125,7 @@ local function finishFrame()
     nvgResetScissor(vg())
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     drawOrphanRowReward()
+    drawUpdateNotice()
     CEPanel.draw(vg(), logicalW(), logicalH())
     nvgRestore(vg())
     nvgEndFrame(vg())
@@ -918,10 +934,12 @@ local function HorizonResolveMouse()
 end
 
 local equipOverlayPress = false
-
-local equipOverlayPress = false
+-- [浮选详情修复] 本次按下刚顺手关掉了浮选详情：按下继续下放给底层页面（恢复拖拽），
+-- 但松开时不按 tap 派发点击，避免"点空白关详情"误触页面按钮。
+local detailDismissPress = false
 
 function HandleMouseButtonDownHorizon(eventType, eventData)
+    detailDismissPress = false  -- [浮选详情修复] 每次按下先复位，防早退路径残留误抑制下次 tap
     if vg() then
         local mousePos = input:GetMousePosition()
         local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
@@ -930,6 +948,12 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         end
     end
     if not bootReady_() then return end
+    -- [UpdateNoticePopup] 全窗模态：弹窗期间吞掉按下，点击穿透不到下层面板（关闭由 ButtonUp 触发）
+    if UpdateNoticePopup.isOpen() then
+        pressValid = true
+        pressStartDX, pressStartDY = 0, 0
+        return
+    end
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
     if DarkTitleScreen.isOpen() then return end
     -- [LetterIntro] 开场期也要记 pressValid，否则抬起被当成无效点击
@@ -940,6 +964,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     end
     local button = eventData["Button"]:GetInt()
     if button == MOUSEB_LEFT then
+        detailDismissPress = false
         local mousePos = input:GetMousePosition()
         local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
         local dx, dy, ED = equipOverlayDesign(sx, sy)
@@ -950,16 +975,18 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             print("[Horizon] 详情浮层按下")
             return
         end
-        -- 详情开着时，点任意空白先关掉，不把这次点击传给后面的页面
+        -- [浮选详情修复] 详情开着时按下空白：关掉详情，但不再吞掉这次按下——
+        -- 继续走下方正常路由，让底层页面收到 handleDragBegin（列表拖拽/装备拖拽可用）。
+        -- 松开时由 detailDismissPress 抑制 tap 派发，保留“第一次点击只关详情、不误触按钮”语义。
         local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
         if EquipmentDetail.isCompactCorner() then
             EquipmentDetail.close()
             equipOverlayPress = false
-            pressValid = false
-            print("[Horizon] 点击空白关闭装备详情")
-            return
+            detailDismissPress = true
+            print("[Horizon] 按下关闭装备详情并下放拖拽")
+        else
+            equipOverlayPress = false
         end
-        equipOverlayPress = false
     end
     if button == MOUSEB_RIGHT then
         local pid, dx, dy = HorizonResolveMouse()
@@ -1088,6 +1115,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
 end
 
 function HandleMouseMoveHorizon(eventType, eventData)
+    if UpdateNoticePopup.isOpen() then return end  -- 全窗模态：屏蔽下层 hover
     if DarkTitleScreen.isOpen() then return end
     if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local pid, dx, dy = HorizonResolveMouse()
@@ -1172,6 +1200,11 @@ function HandleMouseMoveHorizon(eventType, eventData)
             if CharacterPanel.handleHover then CharacterPanel.handleHover(-1, -1) end
         end
         if pid == 'left' then
+            if MarketPage.isOpen and MarketPage.isOpen() and MarketPage.handleHover then
+                MarketPage.handleHover(dx, dy)
+            elseif MarketPage.handleHover then
+                MarketPage.handleHover(-1, -1)
+            end
             if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
                 BackpackPanel.handleHover(dx, dy)
             elseif BackpackPanel.handleHover then
@@ -1183,6 +1216,7 @@ function HandleMouseMoveHorizon(eventType, eventData)
                 EquipmentBag.handleHover(-1, -1)
             end
         else
+            if MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
             if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
             if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
         end
@@ -1223,6 +1257,9 @@ function HandleEquipmentHoverTickHorizon()
         CharacterPanel.handleHover(-1, -1)
     end
     if pid == 'left' then
+        if MarketPage.isOpen and MarketPage.isOpen() and MarketPage.handleHover then
+            MarketPage.handleHover(dx, dy)
+        end
         if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
             BackpackPanel.handleHover(dx, dy)
         end
@@ -1230,6 +1267,7 @@ function HandleEquipmentHoverTickHorizon()
             EquipmentBag.handleHover(dx, dy)
         end
     else
+        if MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
         if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
         if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
     end
@@ -1292,6 +1330,19 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         end
     end
     if not bootReady_() then return end
+    -- [UpdateNoticePopup] 全窗模态：任意释放 = 关闭弹窗并消费事件（优先于标题/业务层）
+    if UpdateNoticePopup.isOpen() then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        -- 还原 letterbox 设计坐标（同 drawUpdateNotice 的逆变换），点击任意处均可关闭
+        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+        if fit <= 0 then fit = 1 end
+        local dx = (sx - (logicalW() - 1080 * fit) * 0.5) / fit
+        local dy = (sy - (logicalH() - 2400 * fit) * 0.5) / fit
+        UpdateNoticePopup.handleInput(dx, dy)
+        pressValid = false
+        return
+    end
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续
     if DarkTitleScreen.isOpen() then
         local mousePos = input:GetMousePosition()
@@ -1335,6 +1386,12 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if pressValid then
         local dist = math.abs(dx - pressStartDX) + math.abs(dy - pressStartDY)
         isTap = dist < TAP_THRESHOLD
+    end
+    -- [浮选详情修复] 这次按下用于关闭浮选详情：拖拽已下放给页面，但松开不派发点击，
+    -- 避免“点空白关详情”顺手触发页面按钮（领取/回收/筛选等）。
+    if detailDismissPress then
+        detailDismissPress = false
+        isTap = false
     end
     pressValid = false
     if isTap then
@@ -1594,6 +1651,8 @@ function HandleTouchMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseWheelHorizon(eventType, eventData)
+    -- [UpdateNoticePopup] 全窗模态吞掉滚轮
+    if UpdateNoticePopup.isOpen() then return end
     -- [DarkTitleScreen] 标题期吞掉滚轮
     if DarkTitleScreen.isOpen() then return end
     if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end

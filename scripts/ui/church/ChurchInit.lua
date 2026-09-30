@@ -44,8 +44,7 @@ function M.bind(deps)
         img.plus     = nvgCreateImage(vg, "image/通用图标/UI_ICON_JIA.png", 0)
 
         -- 转职相关图片（彩色职业背景 UI_ZZBJ 已删除）
-        img.branchLine  = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_1Z.png", 0)
-        img.branchLine2 = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_ZZXT_2Z.png", 0)
+        -- 转职树分叉线已改为代码矢量绘制，UI_ZZXT_1Z/2Z 贴图不再加载
         -- 职业图标（基础/一转/二转）按需加载，避免启动同步解码 42 张
 
         -- 角色列表背景（与角色面板相同）

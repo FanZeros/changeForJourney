@@ -257,8 +257,7 @@ local img = {
     plus        = -1,   -- UI_ICON_JIA.png
     -- 转职相关
     -- 彩色职业背景 UI_ZZBJ 已删除
-    branchLine  = -1,    -- UI_ZZXT_1Z.png
-    branchLine2 = -1,    -- UI_ZZXT_2Z.png（二转分叉线）
+    -- 转职树分叉线已改为代码矢量绘制（UI_ZZXT_1Z/2Z 贴图已删除）
     classIcons2 = {},    -- UI_icon_ZY_{序号}.png（按职业序号索引）
     heroCards   = {},    -- 角色卡牌图片缓存
     -- 角色列表

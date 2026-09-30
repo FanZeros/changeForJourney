@@ -33,6 +33,7 @@ local BackpackPanel      = require("ui.backpack.BackpackPanel")
 local LootBox           = require("ui.loot.LootBox")
 local LootBoxPage       = require("ui.loot.LootBoxPage")
 local LevelUpPopup      = require("ui.hud.popup.LevelUpPopup")
+local UpdateNoticePopup = require("ui.hud.popup.UpdateNoticePopup")
 local BattleCombat      = require("ui.battle.combat.BattleCombat")
 local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
@@ -363,6 +364,7 @@ function Standalone.Start()
         { "RewardPopup", function() RewardPopup.init(vg) end },
         { "OfflineRewardPanel", function() OfflineRewardPanel.init(vg) end },
         { "LevelUpPopup", function() LevelUpPopup.init(vg) end },
+        { "UpdateNoticePopup", function() UpdateNoticePopup.init(vg) end },
         { "PlayerInfoPanel", function() PlayerInfoPanel.init(vg) end },
         { "SpinePowerUp", function() SpinePowerUpEffect.init() end },
         { "TutorialManager", function() TutorialManager.init(vg, PlayerStore) end },
@@ -475,6 +477,10 @@ local function showOfflineRewardPanel_()
         adventurerExp  = panelData.adventurerExp,
         heroExpPreview = panelData.heroExpPreview,
         rewards        = panelData.rewards,
+        -- [7日硬顶] 封顶提示
+        hardCapSeconds  = panelData.hardCapSeconds,
+        cappedByHardCap = panelData.cappedByHardCap,
+        tailRatio       = panelData.tailRatio,
         onClaim = function()
             local handled = localSendAction("claim_offline_rewards", {})
             if handled and not OfflineService.HasPendingRewards(1) then

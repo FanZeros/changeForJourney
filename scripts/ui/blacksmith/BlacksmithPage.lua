@@ -24,6 +24,7 @@ local DrawUtil         = require("core.DrawUtil")
 local TownPageChrome   = require("ui.town.TownPageChrome")
 local ExpTable         = require("config.ExpTable")
 local I18n             = require("core.I18n")
+local ImageCache       = require("ui.widget.ImageCache")  -- [图标修复 0930] 共享装备图标缓存（含组首图 fallback）
 
 -- 子模块（[锻炉双页 0929] BlacksmithDecompose 已迁至仓库分解 tab，不再由本页驱动）
 local BlacksmithEnhance   = require("ui.blacksmith.BlacksmithEnhance")
@@ -145,18 +146,10 @@ local QUALITY_COST = require("config.BlacksmithConfig").QUALITY_COST
 
 -- ======================== 装备图标缓存 ========================
 
-local equipIconCache = {}  -- [templateId] = nvgImage handle
-local equipIconVg = nil    -- 缓存 vg 上下文
-
+--- [图标修复 0930] 装备图标：委托共享 ImageCache（含组首图 fallback——318 个模板 ID 共用 53 张组首图，
+--- 旧实现无 fallback 导致 W2~W6 等非组首 ID 加载失败、分解/升阶页图标空白）
 local function getEquipIconCached(templateId)
-    if not templateId then return -1 end
-    local cached = equipIconCache[templateId]
-    if cached then return cached end
-    if not equipIconVg then return -1 end
-    local path = EquipmentConfig.getIconPath(templateId)
-    local img = nvgCreateImage(equipIconVg, path, 0)
-    equipIconCache[templateId] = img
-    return img
+    return ImageCache.getEquipIcon(templateId)
 end
 
 -- ======================== 词缀值格式化 ========================
@@ -520,7 +513,7 @@ function BlacksmithPage.init(vg)
         imgGrade[g] = nvgCreateImage(vg, "image/通用图标/ICON_CZBZ_" .. g .. ".png", 0)
     end
 
-    equipIconVg = vg
+    ImageCache.init(vg)  -- [图标修复 0930] 幂等：背包面板启动时也 init 同一 vg，重复调用只是覆盖同一上下文
 
     -- 构建共享上下文并注入子模块
     local ctx = {

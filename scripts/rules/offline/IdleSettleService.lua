@@ -11,6 +11,8 @@ local StageProvider = require("shared.StageProvider")
 local ExpTable      = require("config.ExpTable")
 local LootBoxSystem = require("systems.LootBoxSystem")
 local HeroService   = require("rules.hero.HeroService")
+local BlacksmithConfig = require("config.BlacksmithConfig")
+local CurrencyService  = require("rules.currency.CurrencyService")
 
 local IdleSettleService = {}
 
@@ -82,16 +84,30 @@ local function grantIdleRewards(uid, rewards)
         end
     end
 
-    -- 4) 装备种子 → 战利品缓冲
+    -- 4) 装备种子 → 战利品缓冲（符合自动分解条件的直接转精粹，与击杀掉落同一语义）
+    local equipData = PDM.GetModule(uid, "equipment")
+    local autoSettings = (equipData and equipData.settings) or nil
+    local autoEssence = 0
     local equipSeeds = rewards.equipSeeds or {}
     if #equipSeeds > 0 then
         for _, seed in ipairs(equipSeeds) do
             local count = seed.count or 1
             for _ = 1, count do
-                LootBoxSystem.addSeed(lootbox, seed.stageId, seed.quality, seed.level)
+                local q, lv = seed.quality or 1, seed.level or 1
+                if BlacksmithConfig.shouldAutoDecompose(autoSettings, q, lv) then
+                    local essence = BlacksmithConfig.calcAutoDecomposeEssence(q, lv)
+                    autoEssence = autoEssence + essence
+                    BlacksmithConfig.recordAutoDecompose(lootbox, q, lv, essence)
+                else
+                    LootBoxSystem.addSeed(lootbox, seed.stageId, q, lv)
+                end
             end
         end
         PDM.MarkDirty(uid, "lootbox")
+    end
+    if autoEssence > 0 then
+        CurrencyService.Add(uid, "essence", autoEssence)
+        print("[IdleSettle] auto-decompose essence=+" .. autoEssence .. " uid=" .. tostring(uid))
     end
 
     -- 5) 卷轴掉落 → 货币

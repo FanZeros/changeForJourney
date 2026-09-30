@@ -954,13 +954,17 @@ end
 --- ClientMessageHandler 会广播给多个模块，靠门控避免双重弹奖励。
 ---@param data table action result 数据
 function M.onActionResult(data)
+    -- [门控修复 0930] 仅分解请求的响应释放门控锁：无关响应（锁定/强化等）不得提前解锁，
+    -- 否则真正的分解回执到达时门控已清、wasPending=false 会丢失奖励弹窗。
+    local isDecomposeResp = data.action == nil
+        or data.action == getProtocol().ACTION_TYPES.DECOMPOSE_EQUIP
     local wasPending = pendingDecompose
-    -- 无论成功/失败，都释放门控锁
-    if pendingDecompose then
+    if pendingDecompose and isDecomposeResp then
         pendingDecompose = false
-        print("[BlacksmithDecompose] 门控释放" .. (data.decomposed and "（成功）" or "（失败/无关）"))
+        print("[BlacksmithDecompose] 门控释放" .. (data.decomposed and "（成功）" or "（失败）"))
     end
     if not wasPending then return end
+    if not isDecomposeResp then return end
     if not data.decomposed then return end
     local essenceReward = data.essenceReward or 0
     local goldReward = data.goldReward or 0

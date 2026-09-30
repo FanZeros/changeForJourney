@@ -888,7 +888,7 @@ ScenarioDialogueConfig.SCENARIO_77 = {
 }
 
 --- 情景 78：老六闲聊
---- 出现条件: 已看过入队后，本局第一次打开或切换到老六
+--- 出现条件: 已看过入队后，第一次打开或切换到老六（终身一次，落档 claimedScenarios，2026-09-30 起）
 ScenarioDialogueConfig.SCENARIO_78 = {
     mode = "small",
     steps = {
@@ -898,7 +898,7 @@ ScenarioDialogueConfig.SCENARIO_78 = {
 }
 
 --- 情景 79：哈基米闲聊
---- 出现条件: 已看过入队后，本局第一次打开或切换到哈基米
+--- 出现条件: 已看过入队后，第一次打开或切换到哈基米（终身一次，落档 claimedScenarios，2026-09-30 起）
 ScenarioDialogueConfig.SCENARIO_79 = {
     mode = "small",
     steps = {
@@ -908,7 +908,7 @@ ScenarioDialogueConfig.SCENARIO_79 = {
 }
 
 --- 情景 80：加载中闲聊
---- 出现条件: 已看过入队后，本局第一次打开或切换到加载中
+--- 出现条件: 已看过入队后，第一次打开或切换到加载中（终身一次，落档 claimedScenarios，2026-09-30 起）
 ScenarioDialogueConfig.SCENARIO_80 = {
     mode = "small",
     steps = {
@@ -918,7 +918,7 @@ ScenarioDialogueConfig.SCENARIO_80 = {
 }
 
 --- 情景 81：高ping战士闲聊
---- 出现条件: 已看过入队后，本局第一次打开或切换到高ping战士
+--- 出现条件: 已看过入队后，第一次打开或切换到高ping战士（终身一次，落档 claimedScenarios，2026-09-30 起）
 ScenarioDialogueConfig.SCENARIO_81 = {
     mode = "small",
     steps = {

@@ -808,6 +808,15 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
             nvgText(vg, REF_AFFIX_TEXT_X + offsetX, affixY, affName, nil)
 
+            -- 升阶副属性加成标记（金色小字"升阶"，ascBonus>0 时显示）
+            local ascB = tonumber(affix.ascBonus) or 0
+            if ascB > 0 and not isCorrupt then
+                local nameW = nvgTextBounds(vg, 0, 0, affName) or 0
+                nvgFontSize(vg, 22)
+                nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 235))
+                nvgText(vg, REF_AFFIX_TEXT_X + offsetX + nameW + 8, affixY, "升阶", nil)
+            end
+
             -- 词缀数值 - 右对齐 X1016 字号34 白色 描边4（与基础属性相同；生效值含栏位倍率）
             local affVal = "+" .. formatStatValue(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix))
             drawTextStroke(vg, REF_STAT_VAL_X + offsetX, affixY, affVal,
@@ -986,7 +995,16 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
             nvgFontSize(vg, 36)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
-            nvgText(vg, leftX, y, affix.name or "?", nil)
+            local cName = affix.name or "?"
+            nvgText(vg, leftX, y, cName, nil)
+            -- 升阶副属性加成标记（金色小字"升阶"，ascBonus>0 时显示）
+            local cAscB = tonumber(affix.ascBonus) or 0
+            if cAscB > 0 and not AffixConfig.isCorruptAffix(affix) then
+                local cNameW = nvgTextBounds(vg, 0, 0, cName) or 0
+                nvgFontSize(vg, 20)
+                nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 235))
+                nvgText(vg, leftX + cNameW + 6, y, "升阶", nil)
+            end
             drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix)), 36,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
             bottom = y + REF_AFFIX_ROW_H * 0.5

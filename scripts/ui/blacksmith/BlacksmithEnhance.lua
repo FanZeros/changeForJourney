@@ -834,15 +834,16 @@ function M.drawConfirmDialog(vg)
 
     local milestoneCount = math.floor(dlg.targetLevel / BlacksmithConfig.ASCEND_AFFIX_INTERVAL)
         - math.floor(data.curLevel / BlacksmithConfig.ASCEND_AFFIX_INTERVAL)
+    local ascendLevels = dlg.targetLevel - data.curLevel
+    local normalCount = 0
+    for _, affix in ipairs(state.selectedEquip and state.selectedEquip.affixes or {}) do
+        if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
+    end
+    local previewParts = {}
     if milestoneCount > 0 then
-        local normalCount = 0
-        for _, affix in ipairs(state.selectedEquip and state.selectedEquip.affixes or {}) do
-            if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
-        end
         local room = math.max(0, BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT - normalCount)
         local gained = math.min(milestoneCount, room)
         local multUps = milestoneCount - gained
-        local previewParts = {}
         if gained > 0 then previewParts[#previewParts + 1] = gained .. " 条随机词条" end
         if multUps > 0 then
             local curMult = EquipmentSystem.getAffixMult(state.selectedEquip)
@@ -850,6 +851,13 @@ function M.drawConfirmDialog(vg)
             local nextMult = math.floor((curMult + step * multUps) * 1000 + 0.5) / 1000
             previewParts[#previewParts + 1] = string.format("词条倍率 ×%.2f → ×%.2f", curMult, nextMult)
         end
+    end
+    -- 升阶副属性递增预览：每阶轮转 1 条普通词条强化
+    if ascendLevels > 0 and normalCount > 0
+        and (BlacksmithConfig.ASCEND_SUB_STAT_RATIO or 0) > 0 then
+        previewParts[#previewParts + 1] = string.format("副属性轮转强化 %d 次", ascendLevels)
+    end
+    if #previewParts > 0 then
         nvgFontSize(vg, 26)
         nvgFillColor(vg, nvgRGBA(0xbc, 0x9b, 0x58, 255))
         nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY - 55, "将新增 " .. table.concat(previewParts, "、"), nil)

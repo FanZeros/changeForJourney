@@ -96,12 +96,16 @@ FJ.GRID_FIRST_CY = FJ.PZSX_CY + FJ.PZSX_SIZE * 0.5 + 40 + FJ.GRID_CELL * 0.5  --
 FJ.DETAIL_OWNER = "smith"
 -- [分解入仓 0929] 仓库布局没有上半大图区域，奖励预览改画图标行（锻炉样式）
 FJ.REWARD_TEXT_MODE = false
--- [分解预览图标化 0930] 仓库布局奖励图标行（网格底 1980 与按钮顶 2110 之间的条带）
-FJ.RW_ICON_CY = 2040
-FJ.RW_ICON_SIZE = 88
+-- [分解预览图标化 0930] 仓库布局奖励预览条带（网格底 1980 与按钮顶 2110 之间）
+-- 两行：选中时上行「当前分解可获得」字样 + 下行图标行；未选中时单行空状态提示居中
+FJ.RW_LABEL_CY = 2000
+FJ.RW_LABEL_FONT = 26
+FJ.RW_ICON_CY = 2056
+FJ.RW_ICON_SIZE = 80
 FJ.RW_ICON_GAP = 26
 FJ.RW_MAX_ICONS = 8        -- 精粹+金币+6 部位卷轴，最多 8 个，恒为一行
-FJ.RW_NUM_FONT = 30
+FJ.RW_NUM_FONT = 28
+FJ.RW_EMPTY_CY = 2045
 FJ.RW_EMPTY_FONT = 32
 
 -- ======================== 布局 Profile ========================
@@ -434,14 +438,21 @@ end
 --- [分解预览图标化 0930] 绘制锻炉样式奖励图标行（品质框+图标+数量角标，居中一行）
 ---@param vg any
 ---@param entries table[] { type: string, amount: number }
-local function drawRewardIconRow(vg, entries)
+---@param showLabel boolean 选中预览时画「当前分解可获得」字样；回落上次结果时不画
+local function drawRewardIconRow(vg, entries, showLabel)
     local n = #entries
     if n > FJ.RW_MAX_ICONS then n = FJ.RW_MAX_ICONS end
     if n == 0 then
-        drawTextStroke(vg, DESIGN_W * 0.5, FJ.RW_ICON_CY, "勾选装备预览分解所得",
+        drawTextStroke(vg, DESIGN_W * 0.5, FJ.RW_EMPTY_CY, "勾选装备预览分解所得",
             FJ.RW_EMPTY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             0xb6, 0xb0, 0x9d, 3)
         return
+    end
+    -- [0930 续8] 选中预览时在图标行上方加标题字样
+    if showLabel then
+        drawTextStroke(vg, DESIGN_W * 0.5, FJ.RW_LABEL_CY, "当前分解可获得",
+            FJ.RW_LABEL_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            255, 214, 102, 3)
     end
     local step = FJ.RW_ICON_SIZE + FJ.RW_ICON_GAP
     local firstCX = DESIGN_W * 0.5 - (n - 1) * step * 0.5
@@ -492,7 +503,7 @@ function M.drawUpperSlot(vg)
 
     -- [分解入仓 0929] 仓库布局：无上半大图区域，奖励预览画锻炉样式图标行（网格与按钮之间）
     if FJ.REWARD_TEXT_MODE then
-        drawRewardIconRow(vg, entries)
+        drawRewardIconRow(vg, entries, selCount > 0)
         return
     end
 

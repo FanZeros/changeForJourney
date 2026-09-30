@@ -98,8 +98,11 @@ end
 
 local function drawMapEdgeFade(vg, x, y, w, h)
     local fade = math.max(72, math.min(w, h) * 0.16)
+    -- 测试桩覆写全局 nvgRGBA 返回 number，LSP 推联合类型；cast 收窄
     local edge = nvgRGBA(5, 4, 3, 200)
+    ---@cast edge NVGcolor
     local clear = nvgRGBA(5, 4, 3, 0)
+    ---@cast clear NVGcolor
     nvgBeginPath(vg)
     nvgRect(vg, x, y, fade, h)
     nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x + fade, y, edge, clear))
@@ -325,25 +328,8 @@ function M.isOverviewOpen()
     return state.tfOverviewOpen
 end
 
---- 古树背景四周：外圈 7.5% 全透，7.5% 到 15% 过渡到不透明，中间 70% 保持原图。
-local function fadeTreeBgEdge(vg, x, y, w, h)
-    local m = math.min(w, h)
-    local fade = m * 0.075
-    local edge = m * 0.1125
-    local clear = nvgRGBA(0, 0, 0, 0)
-    local solid = nvgRGBA(0, 0, 0, 255)
-    nvgSave(vg)
-    nvgGlobalCompositeOperation(vg, NVG_DESTINATION_IN)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, h)
-    nvgFillPaint(vg, nvgBoxGradient(vg,
-        x + edge, y + edge, w - edge * 2, h - edge * 2,
-        0, fade, solid, clear))
-    nvgFill(vg)
-    nvgRestore(vg)
-end
-
 --- 绘制天赋背景（铺满全屏，在上半部分之前绘制）
+-- 素材自带 alpha：外圈藤边不透明、中心透明（节点区透出下层），无需运行时混合
 function M.drawBg(vg)
     local pageW = M.getPageWidth()
     local x = 0
@@ -351,7 +337,6 @@ function M.drawBg(vg)
     nvgSave(vg)
     nvgIntersectScissor(vg, x, y, pageW, TF.bgH)
     drawImageCentered(vg, img.tfBg, pageW * 0.5, TF.bgCY, pageW, TF.bgH, 1.0)
-    fadeTreeBgEdge(vg, x, y, pageW, TF.bgH)
     nvgRestore(vg)
 end
 

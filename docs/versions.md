@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v3.17-refine-frame-shift | 2026-09-30 | 洗练页隐藏"洗练装备/提品"标题文字；属性单框+箭头整体下移 8% 页高（FRAME_CY/ARROW_CY 1240→1432），腐化结果标题改相对 FRAME_CY 定位自动跟随；提品展示 centerY 派生自 FRAME_CY 同步下移。 |
 | v3.16-smith-full-bg-art | 2026-09-30 | 狱火锻炉整页背景换成用户提供原画（归档为 assets/image/界面底板/狱火锻炉/UI_SMITH_BG_FULL.png）：上半熔炉场景+下半暗金框暗板一体图，按设计分辨率对齐拉伸（图比例0.457 vs 设计0.45，差1.6%可忽略，保证暗板框与UI坐标对齐）；替换 v3.09 的石墙 cover 方案。 |
 | v3.15-team-color-rows | 2026-09-30 | 右栏角色面板三队行加队伍配色：队1蓝/队2绿/队3紫（未解锁灰），行底条填队伍色暗调+描边、"小队N"标题用队伍色、当前出战队描边加粗；队伍页签加同色圆点（锁定让位锁图标）。TEAM_COLORS 集中在 CharacterPanelDraw2。 |
 | v3.14-hero-rename-unowned-name | 2026-09-30 | 角色 #21「闪电卖鸡」全量改名「雷电麦坤」：HeroConfig/Dialogue/Gacha/Tavern/ResourceDefs/I18nDictExtra/公告/天赋注释等 22 处文本 + 立绘文件重命名（角色立绘/雷电麦坤_透明立绘.png，HeroAssetUtil 按 cfg.name 拼路径）；角色详情轮播卡未获得角色现在也显示名字（drawCardName 抽出，未获得分支不再 early-return，底部仍标"未获得"）。 |

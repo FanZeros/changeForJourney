@@ -91,6 +91,13 @@
 - **回归**：battle_stage_switch ALL PASS、battle_ally_compaction ALL PASS、boss_affix_test(37断言) ALL PASS、boss_affix_smoke ALL PASS、shield_scaling ALL PASS、character_team_sync PASS；LSP 全工作区 275 文件 Error=0；官方 Build 成功（382 Lua 入包，含 TerminalRaid + terminal_raid_test）；主入口 60 帧无 Lua 逻辑错误（仅既有 UI 品质框贴图缺失，非本轮）。
 - **⚠️ 遗留未修（非本轮范围，rebase 时处理）**：`chapter_team_offline_test` 失败——工作区 `StageSelectDialog` 把终焉从单组 `"T"` 拆成 14 个逐难度独立组（与远端 `4b43cd36` **同源但不同实现**：远端带 `subLabel` 难度名 + `TT_Y=732/ROW_Y0=790` 布局，工作区无 subLabel + `TT_Y=690/ROW_Y0=756`），但该测试断言还停在旧 `TOTAL_CHAPTERS+1` 与旧坐标。已 `git checkout` 还原测试文件，**不留半成品**；rebase 远端时应整体采用远端 StageSelectDialog + 远端测试版本（两套拆分二选一），否则断言无法干净通过。
 - **视觉验收待办**：共享血条/倒计时/失守灰字的真人预览验收（本机 surfaceless 无法截图）。
+## 上次做了什么（2026-09-30 续9，古树边缘透明语义再纠正，已 push `b7d35803`）
+
+- **用户再纠正**：续8 又做反了——要的是**上层技能树节点/连线在边缘透明**，背景保持全不透明；续8 的素材中心烘焙 alpha 撤销（从 `026aac7d^` 恢复 RGB + alpha=255 满幅）。
+- **正确实现**：`TalentStarMap.edgeFade(sx, sy)`——星图区边缘 `max(64, min(w,h)*10%)` 带内 alpha 线性渐隐到 0；节点 `drawTalentGlyphByName` alpha×fade、fade≤0.01 直接 return；连线取两端更靠边者 alpha×fade 并 skip。`ChurchTalentPanel` 删 `drawMapEdgeFade` 色块渐隐（那会盖住背景）及调用、删其 cast。
+- **并行会话第五次插队**：推送前远端 930 前进到 d8f3c6d6，含 `7dd0f376` 洗练锁定词缀**阶梯累乘计费**（每条×1.5，最多 3 条×3.375，`applyRefineLockCostMult` 改 `1.5^n`）——与我的固定单价正交（固定单价指不随**次数**涨；锁定倍率是另一维度），对方已同步更新 `refine_cost_fixed_test`，合并后 ALL PASS。
+- **验证**：LSP 0 Error；refine_cost ALL PASS；官方 Build 成功；dist 素材哈希更新为全不透明版。
+
 ## 上次做了什么（2026-09-30 续8，古树背景节点区透明，已 push `6f7a9400`）
 
 - **用户纠正意图**：之前两版渐隐（35009423/f9ee9ef7）做反了——用户要的是**节点显示周围透明**（星图中心区透出下层），不是背景四周变透明。

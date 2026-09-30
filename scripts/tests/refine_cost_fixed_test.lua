@@ -3,7 +3,7 @@
 -- 验证：
 --   1) calcRefineEssenceCost 与已洗练次数无关（0/5/19/100 次同价）
 --   2) 等级缩放与双手翻倍仍生效
---   3) 锁定倍率 ×1.5 独立生效
+--   3) 锁定倍率按条数阶梯生效（每条 ×1.5 累乘）
 --   4) calcTotalRefineSpent = 单次固定价 × 次数（次数封顶 20）
 --   5) nextRefineCount 封顶 20
 -- 跑法: ./.cli/UrhoXRuntime tests/refine_cost_fixed_test.lua \
@@ -37,9 +37,11 @@ function Start()
     local c2h = BlacksmithConfig.calcRefineEssenceCost(5, 30, "twohand")
     eq(c2h, c0 * 2, "双手武器消耗 ×2")
 
-    -- 3) 锁定倍率
+    -- 3) 锁定倍率（按锁定条数累乘 ×1.5）
     eq(BlacksmithConfig.applyRefineLockCostMult(c0, 0), c0, "无锁定不加价")
-    eq(BlacksmithConfig.applyRefineLockCostMult(c0, 2), math.floor(c0 * 1.5 + 0.5), "锁定 ×1.5")
+    eq(BlacksmithConfig.applyRefineLockCostMult(c0, 1), math.floor(c0 * 1.5 + 0.5), "锁1条 ×1.5")
+    eq(BlacksmithConfig.applyRefineLockCostMult(c0, 2), math.floor(c0 * 2.25 + 0.5), "锁2条 ×2.25")
+    eq(BlacksmithConfig.applyRefineLockCostMult(c0, 3), math.floor(c0 * 3.375 + 0.5), "锁3条 ×3.375")
 
     -- 4) 分解返还累计 = 固定价 × 次数
     eq(BlacksmithConfig.calcTotalRefineSpent(5, 30, 7), c0 * 7, "累计消耗=单价×7")

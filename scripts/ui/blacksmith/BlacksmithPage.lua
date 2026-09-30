@@ -72,7 +72,6 @@ local NAME_FONT_SIZE              = 50
 local WORKBENCH_CX, WORKBENCH_CY = 540, 431
 local WORKBENCH_SIZE    = 220
 local WORKBENCH_RADIUS  = 24
-local EQUIP_LV_FONT_SIZE = 38
 local EQUIP_SLOT_ORDER   = { "weapon", "offhand", "armor", "helmet", "shoes", "accessory" }
 local MAX_PARTY          = 5   -- BlacksmithEnhanceCache 仍按编队扫描可强化角标
 
@@ -408,14 +407,22 @@ local function drawWorkbenchSlot(vg)
             DarkIcon.drawIconDark(vg, eqIcon, slotCX, slotCY, slotSize - 20, slotSize - 20, 1.0)
         end
 
-        -- 升阶等级角标 "+N"（左上）
+        -- 升阶等阶角标 "+N"（右上，与背包格子角标位置/样式统一）
         local enhLv = EquipmentSystem.getAscendLevel(equip) or 0
         if enhLv > 0 then
-            local lvX = slotCX - slotSize * 0.5 + 6
-            local lvY = slotCY - slotSize * 0.5 + 26
-            drawTextStroke(vg, lvX, lvY, "+" .. enhLv,
-                EQUIP_LV_FONT_SIZE, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                0x67, 0xff, 0x75, 5)
+            local lvX = slotCX + slotSize * 0.5 - 8
+            local lvY = slotCY - slotSize * 0.5 + 8
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 36)
+            nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
+            local sStep = math.pi * 2 / 16
+            for si = 0, 15 do
+                local sa = si * sStep
+                nvgText(vg, lvX + math.cos(sa) * 3, lvY + math.sin(sa) * 3, "+" .. enhLv, nil)
+            end
+            nvgFillColor(vg, nvgRGBA(0x00, 0xff, 0x60, 255))
+            nvgText(vg, lvX, lvY, "+" .. enhLv, nil)
         end
 
         -- 装备等级角标 "Lv.X"（右下）

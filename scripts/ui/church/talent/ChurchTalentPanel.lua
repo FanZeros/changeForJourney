@@ -96,28 +96,6 @@ local function resetBox()
     return cx, cy, w, h
 end
 
-local function drawMapEdgeFade(vg, x, y, w, h)
-    local fade = math.max(72, math.min(w, h) * 0.16)
-    local edge = nvgRGBA(5, 4, 3, 200)
-    local clear = nvgRGBA(5, 4, 3, 0)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, fade, h)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x + fade, y, edge, clear))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgRect(vg, x + w - fade, y, fade, h)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x + w, y, x + w - fade, y, edge, clear))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, fade * 0.85)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x, y + fade * 0.85, edge, clear))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y + h - fade * 0.85, w, fade * 0.85)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y + h, x, y + h - fade * 0.85, edge, clear))
-    nvgFill(vg)
-end
-
 -- ======================== 天赋详情面板布局常量 ========================
 
 local TFD = {
@@ -325,25 +303,8 @@ function M.isOverviewOpen()
     return state.tfOverviewOpen
 end
 
---- 古树背景四周：外圈 7.5% 全透，7.5% 到 15% 过渡到不透明，中间 70% 保持原图。
-local function fadeTreeBgEdge(vg, x, y, w, h)
-    local m = math.min(w, h)
-    local fade = m * 0.075
-    local edge = m * 0.1125
-    local clear = nvgRGBA(0, 0, 0, 0)
-    local solid = nvgRGBA(0, 0, 0, 255)
-    nvgSave(vg)
-    nvgGlobalCompositeOperation(vg, NVG_DESTINATION_IN)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, h)
-    nvgFillPaint(vg, nvgBoxGradient(vg,
-        x + edge, y + edge, w - edge * 2, h - edge * 2,
-        0, fade, solid, clear))
-    nvgFill(vg)
-    nvgRestore(vg)
-end
-
 --- 绘制天赋背景（铺满全屏，在上半部分之前绘制）
+-- 素材自带 alpha：外圈藤边不透明、中心透明（节点区透出下层），无需运行时混合
 function M.drawBg(vg)
     local pageW = M.getPageWidth()
     local x = 0
@@ -351,7 +312,6 @@ function M.drawBg(vg)
     nvgSave(vg)
     nvgIntersectScissor(vg, x, y, pageW, TF.bgH)
     drawImageCentered(vg, img.tfBg, pageW * 0.5, TF.bgCY, pageW, TF.bgH, 1.0)
-    fadeTreeBgEdge(vg, x, y, pageW, TF.bgH)
     nvgRestore(vg)
 end
 
@@ -364,8 +324,6 @@ function M.drawContent(vg)
     local pageW = M.getPageWidth()
     local map = mapLayout()
     TalentStarMap.draw(vg, 0, map.top, pageW, map.h)
-    -- 星图边缘虚化，避免节点在页面边界被硬切
-    drawMapEdgeFade(vg, 0, map.top, pageW, map.h)
 
     -- 新手引导热点：整个天赋星图区域
     local _TM = require("systems.TutorialManager")

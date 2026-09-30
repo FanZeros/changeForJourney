@@ -280,7 +280,7 @@ BlacksmithConfig.QUALITY_COST = {
 --- 单件装备洗练次数统计上限（仅计数展示与存档封顶，不影响费用）
 BlacksmithConfig.REFINE_COUNT_CAP = 20
 
---- 洗练时锁定词缀：精粹消耗倍率（锁定任意一条即整体 ×1.5）
+--- 洗练时锁定词缀：每条锁定词缀的精粹消耗倍率（按锁定条数累乘：1条×1.5 / 2条×2.25 / 3条×3.375）
 BlacksmithConfig.REFINE_LOCK_COST_MULT = 1.5
 
 --- 洗练后写入的累计次数（不超过上限）
@@ -314,15 +314,16 @@ function BlacksmithConfig.calcRefineEssenceCost(quality, equipLv, grip)
     return cost
 end
 
---- 锁定词缀后的洗练精粹消耗（lockedCount > 0 时整体 ×REFINE_LOCK_COST_MULT）
+--- 锁定词缀后的洗练精粹消耗（每锁定一条累乘一次 REFINE_LOCK_COST_MULT）
 ---@param cost number
 ---@param lockedCount number|nil
 ---@return number
 function BlacksmithConfig.applyRefineLockCostMult(cost, lockedCount)
-    if lockedCount and lockedCount > 0 then
-        return math.floor(cost * BlacksmithConfig.REFINE_LOCK_COST_MULT + 0.5)
+    local n = math.floor(tonumber(lockedCount) or 0)
+    if n <= 0 then
+        return cost
     end
-    return cost
+    return math.floor(cost * (BlacksmithConfig.REFINE_LOCK_COST_MULT ^ n) + 0.5)
 end
 
 --- 分解时累计洗练精粹消耗（用于 50% 返还；固定单价 × 次数）

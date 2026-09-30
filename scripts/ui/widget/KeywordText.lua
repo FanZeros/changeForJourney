@@ -2,7 +2,7 @@
 -- ============================================================================
 -- KeywordText - 可点击关键词富文本组件（NanoVG）
 -- ----------------------------------------------------------------------------
--- 把描述文本按 KeywordConfig 词表拆段：普通文本用常规色，关键词用金色+下划线，
+-- 把描述文本按 KeywordConfig 词表拆段：普通文本用常规色，关键词用金色高亮（无下划线），
 -- 点击关键词弹出解释气泡（风格与属性说明气泡 attrTip 一致）。
 --
 -- 用法：
@@ -36,7 +36,6 @@ KeywordText.__index = KeywordText
 local KEYWORD_COLOR   = { 0xFF, 0xD7, 0x6E }           -- 金色（与 attrTip 标题一致）
 local KEYWORD_HOVER   = { 0xFF, 0xEF, 0x9E }           -- 悬停更亮
 local DEFAULT_TEXT    = { 0xE8, 0xDC, 0xC8 }           -- 常规描述色
-local UNDERLINE_W     = 2
 
 local POP_PAD_X       = 24
 local POP_PAD_TOP     = 16
@@ -270,14 +269,7 @@ function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX)
                 nvgFontSize(vg, fontSize)
                 nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
                 nvgText(vg, cx, ly, p.text, nil)
-                -- 下划线
-                local uy = ly + fontSize - 2
-                nvgBeginPath(vg)
-                nvgMoveTo(vg, cx, uy)
-                nvgLineTo(vg, cx + p.w, uy)
-                nvgStrokeColor(vg, nvgRGBA(col[1], col[2], col[3], hovered and 255 or 190))
-                nvgStrokeWidth(vg, UNDERLINE_W)
-                nvgStroke(vg)
+                -- [UI 0930] 关键词不再画下划线横线，仅保留金色高亮（悬停加亮）
             else
                 nvgFontSize(vg, fontSize)
                 local tc = self.textColor

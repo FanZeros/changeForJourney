@@ -289,7 +289,7 @@ local REF_BG_H   = 1380
 local COMPACT_BG_W = 600
 local COMPACT_BTN_H = 64
 local COMPACT_BTN_GAP = 14
-local COMPACT_BTN_W = COMPACT_BG_W - 56
+local COMPACT_BTN_W = 300   -- [UI 0930] 按钮收窄（原 COMPACT_BG_W - 56 过宽）
 
 -- 装备名称（左对齐）
 local REF_NAME_X = 470    -- 左对齐基准
@@ -367,9 +367,9 @@ local REF_BTN_W   = 410
 local REF_BTN_H   = 100
 local REF_BTN_FONT = 40
 
--- 前往洗练按钮（装备详情背景底边下方 18px）
+-- 强化按钮（装备详情背景底边下方 18px）[UI 0930] 宽度收窄
 local REF_ENH_BTN_GAP  = 18   -- 与背景底边间距
-local REF_ENH_BTN_W    = 410
+local REF_ENH_BTN_W    = 300
 local REF_ENH_BTN_H    = 100
 local REF_ENH_BTN_FONT = 40
 
@@ -404,7 +404,8 @@ local COMPACT_CONTENT_BOTTOM_PAD = 24
 ---@param equip table|nil
 ---@return number
 local function compactContentBottom(equip)
-    local bottom = COMPACT_QUALITY_Y + 18
+    -- [UI 0930] 稀有度下方新增 Lv 行（中心 +40，字号 28），底部随之下移
+    local bottom = COMPACT_QUALITY_Y + 58
     local statCount = equip and equip.baseStats and #equip.baseStats or 0
     if statCount > 0 then
         bottom = COMPACT_STAT_Y0 + (statCount - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
@@ -598,12 +599,9 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
         bgX, bgY, bgW, bgH,
         { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
 
-    -- 2) 装备名称 - 左对齐 X578 Y625 字号40 纯白 描边4；等级直接接在名字后面
+    -- 2) 装备名称 - 左对齐 X578 Y625 字号40 纯白 描边4
+    -- [UI 0930] 名称只显示纯名字：+N 升阶由图标右上角标展示，Lv 移到稀有度下方
     local nameStr = equip.name or "???"
-    if EquipmentSystem.getAscendLevel(equip) > 0 then
-        nameStr = nameStr .. " +" .. EquipmentSystem.getAscendLevel(equip)
-    end
-    nameStr = nameStr .. "  Lv." .. (equip.level or 1)
     drawTextStroke(vg, REF_NAME_X + offsetX, REF_NAME_Y, nameStr,
         REF_NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
@@ -647,6 +645,12 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
     drawTextStroke(vg, REF_QUALITY_X + offsetX, REF_QUALITY_Y, qualityName,
         REF_QUALITY_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         qColor[1], qColor[2], qColor[3], 4)
+
+    -- 4.5) 等级 - 显示在稀有度下方 [UI 0930]
+    drawTextStroke(vg, REF_QUALITY_X + offsetX, REF_QUALITY_Y + 48,
+        "Lv." .. (equip.level or 1),
+        REF_QUALITY_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        255, 255, 255, 4)
 
     -- 5-7) 战斗力 - 右上角，字号与属性行一致
     local equipPower = calcEquipPower(equip, detState.heroId)
@@ -848,7 +852,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             else
                 enhBtnCY = bgCY + bgH * 0.5 + REF_ENH_BTN_GAP + REF_ENH_BTN_H * 0.5
             end
-            local _bf2 = BF.begin(vg, "ed_enhance", REF_BTN_CX + offsetX, enhBtnCY, REF_BTN_W, REF_BTN_H)
+            local _bf2 = BF.begin(vg, "ed_enhance", REF_BTN_CX + offsetX, enhBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H)
             drawImageCentered(vg, imgBtnYellow,
                 REF_BTN_CX + offsetX, enhBtnCY,
                 REF_ENH_BTN_W, REF_ENH_BTN_H, 1.0)
@@ -857,7 +861,7 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             nvgFontSize(vg, REF_ENH_BTN_FONT)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-            nvgText(vg, REF_BTN_CX + offsetX, enhBtnCY, "前往洗练", nil)
+            nvgText(vg, REF_BTN_CX + offsetX, enhBtnCY, "强化", nil)
             BF.finish(vg, _bf2)
 
             -- 23-24) 立即分解按钮（背包未穿戴装备，前往洗练下方）
@@ -908,11 +912,8 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
         { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
     if showActions ~= false then detState.lockHotspot = nil end
 
+    -- [UI 0930] 名称只显示纯名字：+N 升阶由图标右上角标展示，Lv 移到稀有度下方
     local nameStr = equip.name or "???"
-    if EquipmentSystem.getAscendLevel(equip) > 0 then
-        nameStr = nameStr .. " +" .. EquipmentSystem.getAscendLevel(equip)
-    end
-    nameStr = nameStr .. "  Lv." .. tostring(equip.level or 1)
     drawTextStroke(vg, leftX, COMPACT_NAME_Y, nameStr, 44,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
     if imgLock >= 0 then
@@ -938,6 +939,10 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
     local qualityDef = EquipmentConfig.QUALITY[q]
     drawTextStroke(vg, leftX, COMPACT_QUALITY_Y, qualityDef and qualityDef.name or "普通", 28,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, qColor[1], qColor[2], qColor[3], 3)
+
+    -- [UI 0930] 等级显示在稀有度下方
+    drawTextStroke(vg, leftX, COMPACT_QUALITY_Y + 40, "Lv." .. tostring(equip.level or 1), 28,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
 
     local iconCX = panelX + panelW - 96
     local icon = getEquipIcon(equip.templateId)
@@ -1061,7 +1066,7 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
         nvgFontSize(vg, 30)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-        nvgText(vg, cx, refineCY, "前往洗练", nil)
+        nvgText(vg, cx, refineCY, "强化", nil)
         BF.finish(vg, feedback)
     end
 end

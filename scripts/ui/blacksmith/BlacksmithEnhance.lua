@@ -415,6 +415,39 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
     end
 end
 
+--- 构建词条状态提示（纯函数，便于回归测试）
+--- 需求①：下一阶恰为 +5 里程碑且未满员 → 「升至 +N 将新增 1 条随机词条」（模糊提示，不锁定具体词条）
+--- 需求②：满员/常规提示均右对齐显示，不再居中独占整行
+---@param data table enhanceData（含 isMaxLevel / nextLevel）
+---@param selectedEquip table|nil 当前选中装备
+---@return { text: string, r: integer, g: integer, b: integer }
+function M.buildAffixHint(data, selectedEquip)
+    local normalCount = 0
+    for _, affix in ipairs(selectedEquip and selectedEquip.affixes or {}) do
+        if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
+    end
+    local interval = BlacksmithConfig.ASCEND_AFFIX_INTERVAL or 5
+    local limit    = BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT or 4
+    local multPct  = math.floor((BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10) * 100 + 0.5)
+    local isFull   = normalCount >= limit
+    local nextIsMilestone = (not data.isMaxLevel) and ((data.nextLevel % interval) == 0)
+    if isFull then
+        return {
+            text = string.format("词条已满 · 每升%d阶倍率+%d%%（洗练不丢）", interval, multPct),
+            r = 0xbc, g = 0x9b, b = 0x58,
+        }
+    elseif nextIsMilestone then
+        return {
+            text = string.format("升至 +%d 将新增 1 条随机词条", data.nextLevel),
+            r = 0x7a, g = 0xc8, b = 0x6e,
+        }
+    end
+    return {
+        text = string.format("每升%d阶必得1条随机词条（最多%d条）", interval, limit),
+        r = 0xbc, g = 0x9b, b = 0x58,
+    }
+end
+
 --- 绘制强化界面上半部分（等级 + 属性预览）
 function M.drawPanel(vg)
     local data = enhanceData
@@ -472,23 +505,13 @@ function M.drawPanel(vg)
         affixY = affixY + AFFIX_ROW_STEP
     end
     nvgRestore(vg)
-    local normalCount = 0
-    for _, affix in ipairs(state.selectedEquip and state.selectedEquip.affixes or {}) do
-        if not AffixConfig.isCorruptAffix(affix) then normalCount = normalCount + 1 end
-    end
-    local affixMult = EquipmentSystem.getAffixMult(state.selectedEquip)
-    local multPct = math.floor((BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10) * 100 + 0.5)
-    local hint
-    if normalCount >= BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT then
-        hint = string.format("词条已满：每升5阶词条倍率+%d%%（当前 ×%.2f，洗练不丢）", multPct, affixMult)
-    else
-        hint = "每升5阶必得1条随机词条（普通词条最多4条）"
-    end
+    -- 词条状态提示：右对齐显示在词条区下沿，不再居中独占整行（需求①②见 buildAffixHint）
+    local hintInfo = M.buildAffixHint(data, state.selectedEquip)
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 23)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xbc, 0x9b, 0x58, 255))
-    nvgText(vg, 540, 1710, hint, nil)
+    nvgFontSize(vg, 22)
+    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(hintInfo.r, hintInfo.g, hintInfo.b, 255))
+    nvgText(vg, 1000, 1712, hintInfo.text, nil)
 end
 
 --- 绘制资源数量（拥有/需要）

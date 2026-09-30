@@ -26,6 +26,13 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-09-30 下午，同分支：合入远端930 + 铁匠铺图标空白修复，已 push `e1aa9f49`）
+
+- **任务1（合并）**：用户要求把远端 `workspace930` 领先的 18 提交（离线7日硬顶/装备等级门槛/4死模块清理/浮选拖拽修复等）合入 `feat930/equip-ascend-random-affixes`。4 代码文件自动合并，唯一冲突 `docs/memory-index.md`（双方追加条目）手工双保留。合并提交 `3ea9c556`。回归全绿（升阶词条74/分解38/战力10/切关53/遗匣18/浮选拖拽 PASS）；`chapter_team_offline_test` FAIL 经 **worktree 对照实跑证明是远端基线自带 headless 环境性失败**（文件与 origin 逐字节一致、StageSelectDialog 不依赖装备模块、纯净基线报同错），与合并无关。官方 Build 378 Lua、死模块已移除、affixMult 进包。
+- **任务2（图标修复）**：用户反馈"分解页装备图片看不到"。**根因**：装备图标为组首图制——318 模板 ID（W1~W72/O1~O30/A,H,S各60/C1~C36）共用 **53 张组首 png**（每 6 个一组 W1/W7/W13…）；`ImageCache.getEquipIcon`（背包/角色详情用）有组首 fallback `floor((num-1)/6)*6+1` 所以正常；**铁匠铺 `BlacksmithPage.getEquipIconCached` 私有缓存无 fallback**→265 个非组首 ID `nvgCreateImage` 失败返回≤0→被 `if eqIcon > 0` 跳过→分解/升阶/洗练页格子只剩品质底框。**修复**：`getEquipIconCached` 改为委托 `ImageCache.getEquipIcon`（删私有 equipIconCache/equipIconVg，init 处补 `ImageCache.init(vg)` 幂等），公开 API 名不变下游零改动。新增 `tests/equipment_icon_fallback_test.lua` 6 断言 ALL PASS（318 ID 全解析/W2 触达 W1/缓存幂等）；validate lua_errors=0；Build 成功。提交 `e1aa9f49` 已 push（一次性 PAT URL，token 未进配置/记忆）。
+- **已知基线问题（未修，与本轮无关）**：`EquipmentDetail.lua:1164` 加载已删除的 `UI_ZBTS_1~5.png`（品质框九宫格），validate 每次 18 处贴图失败——死加载可顺手清理但用户未选。
+- **环境技巧**：headless 测试进程不自退出且 timeout 会吞命令输出——用 `setsid ... &` 后台跑写日志再单独读；`grep -c` 无匹配时 exit 1 会截断 && 链，统计命令用 `|| true` 兜底。
+
 ## 上次做了什么（2026-09-30，`feat930/equip-ascend-random-affixes` 装备升阶随机词条，已 push `91ba3952`）
 
 - **任务**：用户要求「装备升阶时多出随机词条」，拍板规则=**所有品质可参与；每跨过 +5 的倍数阶必得 1 条普通词条；普通词条总数上限 4；魔化词条不占普通上限**。基于 `workspace930` 新建 `feat930/equip-ascend-random-affixes`。

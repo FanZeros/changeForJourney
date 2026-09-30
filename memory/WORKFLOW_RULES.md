@@ -10,7 +10,18 @@
 ## 当前状态（2026-09-30）
 
 - 仓库：https://github.com/FanZeros/changeForJourney.git（PAT 见用户指令）
-- 当前分支：workspace930
+- 当前分支：feat930/warehouse-relic-set-filter（从 workspace930 拉出；push 到本分支，禁止推 workspace930）
+
+- 已完成任务5（2026-09-30）：仓库/遗匣装备套装筛选（弹窗多选，品质+套装 AND 组合）
+  - 新组件 `scripts/ui/widget/SetFilterDialog.lua`：12 套装+「无套装」多选弹窗，套装色圆点、勾选实时写回调用方集合表、清空/完成、模态消费全部输入；NONE_KEY="none"
+  - `scripts/config/EquipmentSetConfig.lua`：新增 SET_ORDER 固定展示顺序 + orderedSetIds()
+  - 遗匣 `LootBoxPage.lua`：state.setFilter；入口按钮「套装·N」(cx=190,cy=286)；rebuildSummary 品质+套装 AND；批量领取/回收透传 (qualitySet, setFilter)；状态行/确认弹窗/空态文案联动
+  - 系统 `LootBoxSystem.lua`：claimAll/decomposeAll 新增第 4/3 参 setFilter（旧签名兼容；matchesSet 用 getSetIdForTemplate 判归属）
+  - 仓库 `BackpackPanel.lua` + `BackpackGrids.lua`：decomposeState.setFilter；入口按钮 (cx=396,cy=610，紧凑布局 cy=325)；setChecked 注入网格过滤；弹窗打开时禁拖拽/hover/滚轮
+  - `StandaloneBoot.lua`：claimLoot/decomposeLoot 接线透传 setFilter
+  - I18nDictExtra 补 7 条五语词条；测试 `tests/lootbox_set_filter_test.lua`（24 断言 ALL PASS）；4 个既有回归全过；LSP 0 Error；build 通过
+  - ⚠️ 新工作区注意：.project/project.json 需剥离 project_id/author/developer_id 后才能 build（本次已剥离，勿提交该文件改动）
+
 - 已完成任务：锻炉页等阶角标统一右上显示
   - `scripts/ui/blacksmith/BlacksmithPage.lua`：工作台槽升阶角标 "+N" 从左上（drawTextStroke 绿 0x67ff75）改为右上（NVG_ALIGN_RIGHT+TOP、字体36、绿 0x00ff60 + 黑描边），与仓库格子 BackpackGrids.lua:143 的角标位置/样式完全一致；删除无用常量 EQUIP_LV_FONT_SIZE
   - 同轮梳理洗练四石逻辑（见下方"洗练石头逻辑速览"）

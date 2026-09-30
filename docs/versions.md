@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v3.12-set-filter-warehouse-lootbox | 2026-09-30 | 仓库/遗匣装备新增套装筛选：共用弹窗组件 ui/widget/SetFilterDialog（12 套装+无套装，套装色圆点+多选勾选+清空/完成，模态消费全部输入）；入口按钮「套装·N」位于品质勾选条左侧（仓库装备 tab 与遗匣页同款位置）。筛选语义与品质勾选一致（空=全部、AND 组合）；遗匣批量领取/回收透传套装集合（LootBoxSystem.claimAll/decomposeAll 新增 setFilter 参数，旧签名兼容），确认弹窗/状态行/空态文案随组合范围联动；仓库装备网格经 BackpackGrids setChecked 过滤。EquipmentSetConfig 新增 SET_ORDER 固定展示顺序；I18nDictExtra 补 7 条五语词条。新增 tests/lootbox_set_filter_test（模板归属自检+弹窗交互+系统层过滤 24 断言全过）；lootbox_page/overflow/horizon、backpack_grid_scroll 回归全过；LSP 0 Error；build 通过。 |
 | v3.11-smith-nameplate-center-scenario-freeze-guard | 2026-09-30 | 锻炉名牌水平居中（drawNamePlate 新增 bgCX/bgCY 参数，其余页面不受影响）；修角色详情页播剧情卡死的两条真卡死路径：HeroScenario.drainPending 在 showScenario 持续失败时 enqueue→drain 无限递归爆栈（加深度封顶8+丢请求）、markClaimed 的同步状态更新/落盘异常中断打开流程（pcall 包裹仅记日志）。scenario_flow 模拟 show→advance→dismiss→onFinish 全链路 ALL PASS。 |
 | v3.10-smith-corrupt-display-cleanup | 2026-09-30 | 魔化词条显示精简：洗练/强化页魔化词条名称+数值改紫色 #ef79ff（评级标不变），去掉 [魔化词条]/[魔化转换] 标签与旧→新百分比对比行；删除状态行诅咒百分比提示与腐化结果"基础属性 ×a→×b"行（只留"诅咒 N/3 层"）；删除升阶页"每升5阶必得词条/词条已满倍率"常驻小字及其测试 ascend_hint_test.lua（一键升阶弹窗内的新增预览保留）；》双箭头从深色位图改程序化亮金 chevron（DrawUtil.drawDoubleChevron，洗练/强化/占位行三处）。 |
 | v3.09-smith-single-bg | 2026-09-30 | 锻炉页上下合并为单一背景：删除下半独立背景板绘制与 imgLowerBg/BG_* 尺寸常量，整页用 UI_JSXQ_BJ_dark 全屏等比 cover（drawImageCover，无形变）；下半内容 clip 区域保持不变。 |

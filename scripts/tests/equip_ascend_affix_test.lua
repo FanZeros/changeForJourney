@@ -313,7 +313,8 @@ function Start()
         eq(normalAffixCount(e11), 4, "e11 词条补满")
         eq(EquipmentSystem.getAffixMult(e11), 2.8, "18 层倍率累加=2.8（无浮点漂移）")
 
-        -- 腐化装备满员后倍率升级也生效，且净化不丢倍率
+        -- 腐化装备满员后倍率升级也生效，且洗除诅咒不丢倍率
+        -- 构筑模型：腐化石会把 1 条普通转魔化，故夹具用 5 普通，转换后普通恰好满员 4
         newModules()
         local e12 = putEquip(makeWeapon(5))
         e12.affixes = {
@@ -321,16 +322,18 @@ function Start()
             { affixId = 2, quality = 3, value = 10, key = "agi", name = "敏捷" },
             { affixId = 3, quality = 3, value = 10, key = "int", name = "秘识" },
             { affixId = 4, quality = 3, value = 10, key = "vit", name = "体质" },
+            { affixId = 9, quality = 3, value = 10, key = "luk", name = "运气" },
         }
         BS.AscendEquipToLevel(UID, e12.seq, 5)
-        eq(EquipmentSystem.getAffixMult(e12), 1.1, "满员4条后里程碑→倍率1.1")
+        eq(EquipmentSystem.getAffixMult(e12), 1.1, "满员后里程碑→倍率1.1")
         local okC12 = BS.RefineEquip(UID, e12.seq, "corruptStone")
         check(okC12, "腐化成功")
+        eq(normalAffixCount(e12), 4, "转换后普通恰满员 4")
         BS.AscendEquipToLevel(UID, e12.seq, 10)
         eq(EquipmentSystem.getAffixMult(e12), 1.2, "腐化态满员升阶倍率继续累加")
         local okC12b = BS.RefineEquip(UID, e12.seq, "sacredStone")
-        check(okC12b, "净化成功")
-        eq(EquipmentSystem.getAffixMult(e12), 1.2, "净化不丢倍率")
+        check(okC12b, "洗除诅咒成功")
+        eq(EquipmentSystem.getAffixMult(e12), 1.2, "洗除诅咒不丢倍率")
     end)
     if not ok then
         print(PREFIX .. "[FAIL] 测试抛异常: " .. tostring(err))

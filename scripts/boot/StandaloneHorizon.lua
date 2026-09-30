@@ -864,10 +864,12 @@ local function HorizonResolveMouse()
 end
 
 local equipOverlayPress = false
-
-local equipOverlayPress = false
+-- [浮选详情修复] 本次按下刚顺手关掉了浮选详情：按下继续下放给底层页面（恢复拖拽），
+-- 但松开时不按 tap 派发点击，避免"点空白关详情"误触页面按钮。
+local detailDismissPress = false
 
 function HandleMouseButtonDownHorizon(eventType, eventData)
+    detailDismissPress = false  -- [浮选详情修复] 每次按下先复位，防早退路径残留误抑制下次 tap
     if vg() then
         local mousePos = input:GetMousePosition()
         local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
@@ -886,6 +888,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     end
     local button = eventData["Button"]:GetInt()
     if button == MOUSEB_LEFT then
+        detailDismissPress = false
         local mousePos = input:GetMousePosition()
         local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
         local dx, dy, ED = equipOverlayDesign(sx, sy)
@@ -896,16 +899,18 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             print("[Horizon] 详情浮层按下")
             return
         end
-        -- 详情开着时，点任意空白先关掉，不把这次点击传给后面的页面
+        -- [浮选详情修复] 详情开着时按下空白：关掉详情，但不再吞掉这次按下——
+        -- 继续走下方正常路由，让底层页面收到 handleDragBegin（列表拖拽/装备拖拽可用）。
+        -- 松开时由 detailDismissPress 抑制 tap 派发，保留“第一次点击只关详情、不误触按钮”语义。
         local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
         if EquipmentDetail.isCompactCorner() then
             EquipmentDetail.close()
             equipOverlayPress = false
-            pressValid = false
-            print("[Horizon] 点击空白关闭装备详情")
-            return
+            detailDismissPress = true
+            print("[Horizon] 按下关闭装备详情并下放拖拽")
+        else
+            equipOverlayPress = false
         end
-        equipOverlayPress = false
     end
     if button == MOUSEB_RIGHT then
         local pid, dx, dy = HorizonResolveMouse()
@@ -1301,6 +1306,12 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if pressValid then
         local dist = math.abs(dx - pressStartDX) + math.abs(dy - pressStartDY)
         isTap = dist < TAP_THRESHOLD
+    end
+    -- [浮选详情修复] 这次按下用于关闭浮选详情：拖拽已下放给页面，但松开不派发点击，
+    -- 避免“点空白关详情”顺手触发页面按钮（领取/回收/筛选等）。
+    if detailDismissPress then
+        detailDismissPress = false
+        isTap = false
     end
     pressValid = false
     if isTap then

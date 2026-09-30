@@ -36,9 +36,20 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
-## 上次做了什么（2026-09-30，`feat/final-boss-three-teams-0930` 终焉三队协同战，**未提交，工作区**）
+## 上次做了什么（2026-09-30 续，终焉协同战提交 + 合并远端 + PR 推进中）
 
-- **背景**：分支基点 `workspace930@2d423b8`，**远端 origin/workspace930 已领先 1203 提交**（离线7日硬顶、装备等级门槛、终焉单难度独立组 `4b43cd36` 等）。本轮全部改动仍在工作区未提交，推送前必须先 rebase/merge 核对。
+- **"领先1203"是浅克隆假象**：本地是 shallow clone（`.git/shallow` 只有基点 `2d423b8`），fetch 拉全远端历史后 merge-base 无法穿透浅边界，把 1192 个共同祖先误算成领先；实际真实新提交仅 11 个（后变 36 个，含远端 PR #2/#3 合入）。`git fetch --unshallow` 后已补全（深度 1199，非浅仓库）。
+- **已提交**：`f5485ee1 feat: 终焉神殿三队协同战（共享生命池）`（11 文件 +667/-23，含 TerminalRaid.lua、terminal_raid_test.lua、CLAUDE.md 记忆）。
+- **已合并远端**：`433fa171 Merge origin/workspace930 into feat/final-boss-three-teams-0930`。唯一冲突 `StageSelectDialog.lua` 3 块，全部采用远端 `4b43cd36` 实现（subLabel 难度名副标题 + getDifficultyDisplayName），保留本轮两处终焉协同逻辑（ensureCache 的 terminalUnlocked 缓存失效、handleInput 终焉关走 `gotoTeamStage(1,id)` 开协同战）。合并后领先远端 2 提交、落后 0。
+- **合并后回归全绿**：terminal_raid ALL PASS、battle_stage_switch ALL PASS、battle_ally_compaction ALL PASS、boss_affix_test ALL PASS、shield_scaling ALL PASS、character_team_sync PASS、battle_lab_boundary ALL PASS、远端新增 backpack_grid_scroll 10 断言 ALL PASS、equip_detail_drag_horizon PASS；官方 Build 成功；主入口 60 帧无 Lua 逻辑错误。
+- **LSP 4 Error 为远端基线自带**（ChurchClassChange 444/445 + UpdateNoticePopup 154，nvgRGBA number vs NVGcolor param-type-mismatch），两文件与远端逐字节一致，非本轮引入，不阻塞 Build，未擅改。
+- **🔴 `chapter_team_offline_test` 失败是远端基线自带**：用 git worktree 在纯 `origin/workspace930` 上实跑同样失败（`当前关不切换: 1/0`），与本轮合并无关。该测试 mock BattleScene 但远端 handleInput 改动后 mock 口径不匹配。**不要在 feat 分支上修它**（属远端问题），可在 PR 描述中注明。
+- **远端删除的模块**（AssetManifest/SaveManager/VersionConfig/DamageGlyph）已确认与本轮文件零引用。
+- **下一步**：推送 feat 分支 + 开 PR（需用户 PAT 一次性 URL，不进配置/记忆；沙箱无 gh CLI）。备份：合并前 HEAD = f5485ee1。
+
+## 上次做了什么（2026-09-30，`feat/final-boss-three-teams-0930` 终焉三队协同战，已提交 `f5485ee1` 并合并远端 `433fa171`）
+
+- **背景**：分支基点 `workspace930@2d423b8`（浅克隆）。功能实现已提交 `f5485ee1`、已合并远端 `433fa171`，详见上方「续」条目（"领先1203"系浅克隆假象，真实新提交 36 个）。
 - **已实现（上一轮遗留 + 本轮补齐）**：终焉神殿（999/1999/…）三队协同战——`ui/battle/tri/TerminalRaid.lua` 三 Boss 共享生命池（包装 `attrs.takeDamage/heal`，任一路受击→池扣血→`sync()` 回写三路显示 HP，池空即全队胜利）；`BattleTriPage` 的 `startTerminalRaid/finishTerminalRaid/clearTerminalRaid` 接线；`BattleTriDriver` raid 模式分支（单队全灭=`onTeamDefeated` 停摆不退关、关逐tick击杀上报/补位/自动推进、池空break攻击推进）；胜→`BattleScene.completeTriTerminal`（轮回目标+存档+首通回调），败→退终焉前关。
 - **本轮补齐三项待办**：① **共享血条 UI**——`BattleTriPage.draw` raid 期间三行底部进度条换绯红共享池血条，行1 显示「共享生命 X/Y」+「限时 M:SS」倒计时（≤30s 转红），行标签追加失守态；② **胜利奖励去重**——`completeTriTerminal` 仅 `wasFirstClear`（该终焉此前未通关）时触发 `onFirstClearCallback`，重打不再重复发 fcExp；`battleMode` 按轮回目标关是否已通关决定 idle/firstClear；③ **击杀奖励结算**——`settleRaidKillRewards` 胜利时按 `raid.lines[row]` 逐战线上报 Boss exp/gold（终焉 Boss `dropRate=0` 无掉落、`fcEquip=0`，不与首通回调重复发装备）。
 - **额外修的 bug**：失败分支补 `BottomNav.setAllLocked(false)`（进终焉时 NavLogic 锁了导航，否则失败后底部导航永久锁死）；`ensureDrivers` 加终焉接管兜底（主线经单队路径停终焉关、打开三行页时自动 `startTerminalRaid`，队一绝不单独 start(终焉) 否则按普通规则清关闭环循环）——为此 `startTerminalRaid` 改**前向声明**（`local startTerminalRaid` + 下方 `startTerminalRaid = function(...)`，已验证未泄漏 `_G`）。

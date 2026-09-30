@@ -11,9 +11,8 @@
 ## 当前状态（2026-09-30）
 
 - 仓库：https://github.com/FanZeros/changeForJourney.git（PAT 见用户指令）
-- 活跃分支：`dev/ui-fixes-930a`（PR #6，装备详情UI优化 + 万单位改k/M/B，已合并最新 workspace930 解冲突）；`dev/930-story-detail-investigate`（PR #7，**已合并进 workspace930**）
-- PR：https://github.com/FanZeros/changeForJourney/pull/6（dev/ui-fixes-930a → workspace930，用户指示提 PR 而非直接推送）
-- PR 创建方式备忘：GitHub API `POST /repos/FanZeros/changeForJourney/pulls`（PAT 认证 + 代理 http://127.0.0.1:1080），body 里 head=开发分支 base=workspace930；PR dirty 时本地 merge origin/workspace930 解冲突再 push
+- 分支状态：PR #6（dev/ui-fixes-930a，装备详情UI优化+万单位k/M/B）**已合并进 workspace930**（合并提交 5b23a41b，用户授权 API 代合并）；PR #7（dev/930-story-detail-investigate，剧情落档修复）已合并（67e67d69）。当前无 open PR，本地在 workspace930@5b23a41b
+- PR 创建方式备忘：GitHub API `POST /repos/FanZeros/changeForJourney/pulls`（PAT 认证 + 代理 http://127.0.0.1:1080），body 里 head=开发分支 base=workspace930；PR dirty 时本地 merge origin/workspace930 解冲突再 push；代合并用 `PUT /pulls/{n}/merge`（merge_method=merge）；mergeable=None 时 GitHub 计算有延迟，用本地 `git merge --no-commit --no-ff` 模拟验证即可
 
 - 已完成任务8（2026-09-30，分支 dev/ui-fixes-930a）：全游戏"万"单位改 k/M/B
   - `scripts/ui/battle/stage/SweepDialog.lua` getStageRewardStr：`%.1f万` → `NumberUtil.format(v)`（<10000 原样、10k/1.2M/3.4B 短表示）

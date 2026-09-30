@@ -4,6 +4,7 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| v3.15-team-color-rows | 2026-09-30 | 右栏角色面板三队行加队伍配色：队1蓝/队2绿/队3紫（未解锁灰），行底条填队伍色暗调+描边、"小队N"标题用队伍色、当前出战队描边加粗；队伍页签加同色圆点（锁定让位锁图标）。TEAM_COLORS 集中在 CharacterPanelDraw2。 |
 | v3.14-hero-rename-unowned-name | 2026-09-30 | 角色 #21「闪电卖鸡」全量改名「雷电麦坤」：HeroConfig/Dialogue/Gacha/Tavern/ResourceDefs/I18nDictExtra/公告/天赋注释等 22 处文本 + 立绘文件重命名（角色立绘/雷电麦坤_透明立绘.png，HeroAssetUtil 按 cfg.name 拼路径）；角色详情轮播卡未获得角色现在也显示名字（drawCardName 抽出，未获得分支不再 early-return，底部仍标"未获得"）。 |
 | v3.13-equip-drag-from-character-decompose-hover | 2026-09-30 | 配装页装备可跨栏拖到锻炉：右栏按下 arm EquipCrossDrag（source=rightpanel），含角色六装备槽已装备（CharacterDetailEquip.peekSlotEquipAt/peekItemAt，双手武器占副手同绘制规则）；move 门控加 rightpanel 源；分解 tab 支持悬停浮选装备详情（BlacksmithDecompose.handleHover/peekCellAt，与仓库装备 tab 同 0.3s 语义，BackpackPanel.handleHover 分流，点击勾选仍由 handleInput 优先让浮选面板处理）。equip_detail_drag_horizon_test PASS。 |
 | v3.12-awaken-shard-10-30-50 | 2026-09-30 | 角色觉醒三阶碎片消耗从 60/90/130（合计280）改为 10/30/50（合计90），AwakeningConfig.SHARD_COST 单点修改，UI/服务端/详情全走 getShardCost 自动生效。 |

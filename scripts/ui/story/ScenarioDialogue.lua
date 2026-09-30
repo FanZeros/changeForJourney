@@ -7,8 +7,17 @@
 local DrawUtil = require("core.DrawUtil")
 local GameConfig = require("config.GameConfig")
 local HeroFrame = require("ui.widget.HeroFrame")
+local EventBus = require("core.EventBus")
 
 local ScenarioDialogue = {}
+
+--- 对话真正结束（自然播完/跳过）时广播。
+--- 排队类调用方（如 HeroScenario.pending_）订阅此事件及时补播，
+--- 避免"积压请求要等下次交互才被消化"的延迟补播体感。
+--- reset()（硬清场）不广播。
+local function emitFinished_(reason)
+    EventBus.emit("scenario_dialogue_finished", { reason = reason, mode = mode_ })
+end
 
 -- ======================== 设计常量 ========================
 local DW = GameConfig.Design.WIDTH   -- 1080
@@ -261,6 +270,8 @@ function ScenarioDialogue.update(dt)
                 onFinishCb_()
                 onFinishCb_ = nil
             end
+            -- 先跑 onFinish（可能链播下一段），再广播结束供排队方消化
+            emitFinished_("dismissed")
         end
         return
     end
@@ -575,6 +586,7 @@ function ScenarioDialogue.advance()
                 onFinishCb_()
                 onFinishCb_ = nil
             end
+            emitFinished_("finished")
         end
     else
         -- 重置为新步骤
@@ -619,6 +631,7 @@ function ScenarioDialogue.skip()
         onFinishCb_()
         onFinishCb_ = nil
     end
+    emitFinished_("skipped")
 end
 
 --- 获取当前进度

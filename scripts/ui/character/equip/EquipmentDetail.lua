@@ -81,13 +81,6 @@ local function easeInCubic(t)
     return t * t * t
 end
 
--- ======================== 九宫格 insets (UI_ZBTS) ========================
-
-local NS_TOP    = 400
-local NS_RIGHT  = 93
-local NS_BOTTOM = 93
-local NS_LEFT   = 93
-
 -- ======================== 品质边框/文本颜色 ========================
 -- [B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表
 local QUALITY_COLOR = DarkIcon.QUALITY_TRIM
@@ -97,7 +90,6 @@ local AFFIX_BADGE_KEY = { "D", "C", "B", "A", "S" }
 
 -- ======================== 图片资源 ========================
 
-local imgBg          = {}   -- [1..5] 品质背景九宫格
 local imgPowerIcon   = -1
 local imgArrowUp     = -1
 local imgArrowDown   = -1
@@ -152,96 +144,6 @@ end
 
 --- 描边文字（16方向采样）
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
-
--- ======================== 九宫格绘制 ========================
-
---- 绘制九宫格拉伸图片
----@param vg any NanoVG 上下文
----@param img number 图片句柄
----@param dx number 目标区域左上角 X
----@param dy number 目标区域左上角 Y
----@param dw number 目标区域宽
----@param dh number 目标区域高
----@param iTop number 上边距 inset
----@param iRight number 右边距 inset
----@param iBottom number 下边距 inset
----@param iLeft number 左边距 inset
-local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLeft)
-    if img < 0 then return end
-
-    local srcW, srcH = nvgImageSize(vg, img)
-    if srcW <= 0 or srcH <= 0 then return end
-
-    local sL = iLeft
-    local sR = iRight
-    local sT = iTop
-    local sB = iBottom
-    local sMW = srcW - sL - sR
-    local sMH = srcH - sT - sB
-
-    local dL = math.min(iLeft, dw * 0.5)
-    local dR = math.min(iRight, dw * 0.5)
-    local dT = math.min(iTop, dh * 0.5)
-    local dB = math.min(iBottom, dh * 0.5)
-
-    if sMW <= 0 or sMH <= 0 then
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, img, 1.0)
-        nvgBeginPath(vg)
-        nvgRect(vg, dx, dy, dw, dh)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-        return
-    end
-
-    -- 整数分界点
-    local ix0 = math.floor(dx + 0.5)
-    local iy0 = math.floor(dy + 0.5)
-    local ix1 = math.floor(dx + dL + 0.5)
-    local iy1 = math.floor(dy + dT + 0.5)
-    local ix2 = math.floor(dx + dw - dR + 0.5)
-    local iy2 = math.floor(dy + dh - dB + 0.5)
-    local ix3 = math.floor(dx + dw + 0.5)
-    local iy3 = math.floor(dy + dh + 0.5)
-
-    -- 9个patch: {destX, destY, destW, destH, srcX, srcY, srcW, srcH}
-    -- 绘制顺序：中心→边→角，后画的覆盖先画的，用1px重叠消除缝隙
-    local OV = 1  -- 重叠像素
-    local patches = {
-        -- 中心（四向各扩1px）
-        { ix1 - OV, iy1 - OV, ix2 - ix1 + OV * 2, iy2 - iy1 + OV * 2, sL, sT, sMW, sMH },
-        -- 四条边（朝中心方向扩1px）
-        { ix1 - OV, iy0,      ix2 - ix1 + OV * 2, iy1 - iy0 + OV,     sL,       0,        sMW, sT  }, -- 上
-        { ix1 - OV, iy2 - OV, ix2 - ix1 + OV * 2, iy3 - iy2 + OV,     sL,       sT + sMH, sMW, sB  }, -- 下
-        { ix0,      iy1 - OV, ix1 - ix0 + OV,     iy2 - iy1 + OV * 2, 0,        sT,       sL,  sMH }, -- 左
-        { ix2 - OV, iy1 - OV, ix3 - ix2 + OV,     iy2 - iy1 + OV * 2, sL + sMW, sT,       sR,  sMH }, -- 右
-        -- 四个角（朝中心方向扩1px，最后绘制覆盖边的重叠区）
-        { ix0,      iy0,      ix1 - ix0 + OV, iy1 - iy0 + OV, 0,        0,        sL, sT  }, -- 左上
-        { ix2 - OV, iy0,      ix3 - ix2 + OV, iy1 - iy0 + OV, sL + sMW, 0,        sR, sT  }, -- 右上
-        { ix0,      iy2 - OV, ix1 - ix0 + OV, iy3 - iy2 + OV, 0,        sT + sMH, sL, sB  }, -- 左下
-        { ix2 - OV, iy2 - OV, ix3 - ix2 + OV, iy3 - iy2 + OV, sL + sMW, sT + sMH, sR, sB  }, -- 右下
-    }
-
-    nvgShapeAntiAlias(vg, 0)
-    for _, p in ipairs(patches) do
-        local px, py, pw, ph = p[1], p[2], p[3], p[4]
-        local sx, sy, sw, sh = p[5], p[6], p[7], p[8]
-        if pw > 0 and ph > 0 and sw > 0 and sh > 0 then
-            local scaleX = pw / sw
-            local scaleY = ph / sh
-            local paint = nvgImagePattern(vg,
-                px - sx * scaleX,
-                py - sy * scaleY,
-                srcW * scaleX,
-                srcH * scaleY,
-                0, img, 1.0)
-            nvgBeginPath(vg)
-            nvgRect(vg, px, py, pw, ph)
-            nvgFillPaint(vg, paint)
-            nvgFill(vg)
-        end
-    end
-    nvgShapeAntiAlias(vg, 1)
-end
 
 -- ======================== 战斗力计算 ========================
 
@@ -1160,9 +1062,6 @@ end
 --- 初始化（加载图片资源）
 ---@param vg any NanoVG 上下文
 function EquipmentDetail.init(vg)
-    for i = 1, 6 do
-        imgBg[i] = nvgCreateImage(vg, "image/品质框/UI_ZBTS_" .. i .. ".png", 0)
-    end
     imgPowerIcon = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
     imgArrowUp   = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     imgArrowDown = nvgCreateImage(vg, "image/通用图标/ICON_down.png", 0)

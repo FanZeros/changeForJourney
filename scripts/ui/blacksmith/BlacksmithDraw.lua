@@ -84,7 +84,8 @@ function M.bind(deps)
         nvgRestore(vg)
 
         TownPageChrome.drawNamePlate(vg, imgNameBg, I18n.t("blacksmith"),
-            { textCX = NAME_TEXT_CX, textCY = NAME_TEXT_CY, font = NAME_FONT_SIZE })
+            { textCX = NAME_TEXT_CX, textCY = NAME_TEXT_CY, font = NAME_FONT_SIZE,
+              bgCX = deps.NAME_BG_CX, bgCY = deps.NAME_BG_CY })
 
         -- 装备工作台槽（强化/洗练共用）
         drawWorkbenchSlot(vg)

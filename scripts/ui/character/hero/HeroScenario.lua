@@ -65,11 +65,20 @@ local function markClaimed(id)
         updated[k] = v
     end
     updated.claimedScenarios = claimed
-    ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
+    -- 同步状态更新可能重入 UI 刷新；异常不得中断打开/播放流程
+    local okApply, errApply = pcall(function()
+        ClientDispatcher.handleStateUpdate(cjson.encode({ modules = { session = updated } }))
+    end)
+    if not okApply then
+        print("[HeroScenario] markClaimed state update failed: " .. tostring(errApply))
+    end
     -- 入队只该播一次：立刻落档，避免播放中途退出后重启重播
     local okSave, StandaloneSave = pcall(require, "boot.StandaloneSave")
     if okSave and StandaloneSave and StandaloneSave.Flush then
-        StandaloneSave.Flush()
+        local okFlush, errFlush = pcall(StandaloneSave.Flush)
+        if not okFlush then
+            print("[HeroScenario] save flush failed: " .. tostring(errFlush))
+        end
     end
     print("[HeroScenario] claimed scenario " .. tostring(id))
 end
@@ -146,10 +155,24 @@ local function playJoinThenIdle(heroId, onFinish)
 end
 
 --- 当前对话结束后把排队的入队/闲聊补上
+--- 防卡死：showScenario 持续失败（配置缺失等）时 enqueue→drain 会无限递归爆栈，
+--- 用重试计数封顶，超限直接丢弃该请求
+local drainDepth_ = 0
+local DRAIN_MAX_DEPTH = 8
 local function drainPending()
     if ScenarioDialogue.isActive() or #pending_ == 0 then return end
+    if drainDepth_ >= DRAIN_MAX_DEPTH then
+        print("[HeroScenario] drain depth cap reached, drop " .. tostring(pending_[1]))
+        table.remove(pending_, 1)
+        return
+    end
+    drainDepth_ = drainDepth_ + 1
     local heroId = table.remove(pending_, 1)
-    playJoinThenIdle(heroId, drainPending)
+    playJoinThenIdle(heroId, function()
+        drainDepth_ = 0
+        drainPending()
+    end)
+    drainDepth_ = drainDepth_ - 1
 end
 
 --- 招募结果里 isNew 的四人，播入队再接闲聊

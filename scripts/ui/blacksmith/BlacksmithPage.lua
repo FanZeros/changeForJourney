@@ -57,12 +57,9 @@ local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 -- 1. 铁匠铺整页单一暗黑背景（全屏 cover，无需独立尺寸常量）
 
--- 2. 铁匠铺名称背景（中心点坐标）
-local NAME_BG_CX, NAME_BG_CY = 147, 136
-local NAME_BG_W, NAME_BG_H   = 294, 123
-
--- 3. 文本"铁匠铺"（中心点坐标）
-local NAME_TEXT_CX, NAME_TEXT_CY = 173, 130
+-- 2/3. 铁匠铺名牌（水平居中于页面）
+local NAME_BG_CX, NAME_BG_CY = 540, 136
+local NAME_TEXT_CX, NAME_TEXT_CY = 540, 130
 local NAME_FONT_SIZE              = 50
 
 -- 4. [锻炉双页 0929] 装备工作台槽（上半部分唯一槽位，强化/洗练共用）
@@ -835,6 +832,7 @@ local function bindPageDraw()
         LOWER_BG_CY = LOWER_BG_CY,
         LOWER_BG_H = LOWER_BG_H,
         NAME_FONT_SIZE = NAME_FONT_SIZE,
+        NAME_BG_CX = NAME_BG_CX, NAME_BG_CY = NAME_BG_CY,
         NAME_TEXT_CX = NAME_TEXT_CX, NAME_TEXT_CY = NAME_TEXT_CY,
         SLIDER_W = SLIDER_W, SLIDER_H = SLIDER_H,
         SpineResultEffect = SpineResultEffect,

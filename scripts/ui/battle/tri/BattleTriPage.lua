@@ -42,6 +42,8 @@ local isOpen_ = false
 local inited = false
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
 local terminalRaid = nil
+local l1Img = {}          -- [row] = nvg image handle
+local l1Chapter = {}      -- [row] = 已加载的地图章 1..23
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local triOnStageClear = nil -- function(teamIdx, clearedStageId)
@@ -221,7 +223,7 @@ end
 function BattleTriPage.close() isOpen_ = false end
 
 --- 幂等初始化（贴图）
-local imgL0, imgL1 = nil, {}   -- [三行并行] L0 整套大背景 + L1 行内容背景
+local imgL0 = nil
 
 -- [修复] 锁定行专用空状态: 锁定行绘制前挂载, 避免把行1 的飘字/特效/投射物
 -- 重复画到行2/3（此前未挂载, BCS 上残留的是最近一次更新的状态）
@@ -250,15 +252,61 @@ function BattleTriPage.mountEmpty()
     SEM.mount(emptyStates.sem)
 end
 
+-- 章 1 用现有林景；2–23 用按章重出的满幅背景。难度章按 23 循环。
+local CHAPTER_BG = {
+    [1]  = "image/暗黑/L1_row1_forest.png",
+    [2]  = "image/战斗背景/幽烬林地.png",
+    [3]  = "image/战斗背景/哑雾沼泽.png",
+    [4]  = "image/战斗背景/巨木之冢.png",
+    [5]  = "image/战斗背景/哀嚎沙丘.png",
+    [6]  = "image/战斗背景/蚀骨荒漠.png",
+    [7]  = "image/战斗背景/焦土平原.png",
+    [8]  = "image/战斗背景/断魂裂谷.png",
+    [9]  = "image/战斗背景/蛊语山洞.png",
+    [10] = "image/战斗背景/悬魂瀑布.png",
+    [11] = "image/战斗背景/霜噬雪岭.png",
+    [12] = "image/战斗背景/沉眠冰原.png",
+    [13] = "image/战斗背景/血晶溶洞.png",
+    [14] = "image/战斗背景/枯枫遗迹.png",
+    [15] = "image/战斗背景/烬暮湖畔.png",
+    [16] = "image/战斗背景/废弃营地.png",
+    [17] = "image/战斗背景/古代遗迹.png",
+    [18] = "image/战斗背景/沉没神殿.png",
+    [19] = "image/战斗背景/哭泣峭壁.png",
+    [20] = "image/战斗背景/恶灵岔路.png",
+    [21] = "image/战斗背景/遗忘墓穴.png",
+    [22] = "image/战斗背景/亡灵墓穴.png",
+    [23] = "image/战斗背景/烛龙之巢.png",
+}
+
+local function mapChapterOf(stageId)
+    local entry = stageId and StageConfig.getStage(tonumber(stageId) or 0)
+    local chapter = (entry and entry.chapter) or 1
+    return ((chapter - 1) % 23) + 1
+end
+
+local function ensureRowBg(vg, row)
+    -- 三行都取各自驱动的当前关卡，不能用主线全局替代队一进度。
+    local chapter = mapChapterOf(BattleTriPage.getTeamStageId(row))
+    if l1Img[row] and l1Chapter[row] == chapter then
+        return l1Img[row]
+    end
+    if l1Img[row] and l1Img[row] >= 0 then
+        nvgDeleteImage(vg, l1Img[row])
+    end
+    local path = CHAPTER_BG[chapter] or CHAPTER_BG[1]
+    local img = nvgCreateImage(vg, path, 0) or -1
+    l1Img[row] = img
+    l1Chapter[row] = chapter
+    print(string.format("[BattleTriPage] row %d bg chapter %d -> %s (%d)", row, chapter, path, img))
+    return img
+end
+
 function BattleTriPage.init(vg)
     if inited then return end
     inited = true
     BattleView.init(vg)
-    -- [暗黑替换] L0 整套大背景 + L1 行内容背景（森林/荒原/深渊）
-    imgL0      = nvgCreateImage(vg, "image/暗黑/L0_stone_frame.png", 0)  -- 石框三行底，左右石墙
-    imgL1[1]   = nvgCreateImage(vg, "image/暗黑/L1_row1_forest.png", 0)
-    imgL1[2]   = nvgCreateImage(vg, "image/暗黑/L1_row2_bonefield.png", 0)
-    imgL1[3]   = nvgCreateImage(vg, "image/暗黑/L1_row3_abyss.png", 0)
+    imgL0 = nvgCreateImage(vg, "image/暗黑/L0_stone_frame.png", 0)
     StageSelectDialog.init(vg)
     SoundToggle.initImages(vg)
 end
@@ -366,8 +414,9 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
         -- L1 cover-fit
         local s = math.max(iw / 1896, ih / 720)
         local dw, dh = 1896 * s, 720 * s
+        local bg = ensureRowBg(vg, row)
         local paint = nvgImagePattern(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5,
-            dw, dh, 0, imgL1[row], 1.0)
+            dw, dh, 0, bg, 1.0)
         nvgBeginPath(vg)
         nvgRect(vg, ix, iy, iw, ih)
         nvgFillPaint(vg, paint)

@@ -111,7 +111,7 @@ local function sliceY(i)
 end
 
 --- 第 i 条在进度 t（0=顶，1=底）处的左右缘
---- 上分割线向右下斜、下分割线向左下斜，三栏顶底齐平
+--- 相邻切片共用分割线，避免选中后覆盖邻片而改变显示范围。
 local function sliceEdges(i, t)
     local x = sliceX(i)
     local s = SLICES.SLANT * t
@@ -121,7 +121,7 @@ local function sliceEdges(i, t)
     elseif i == NODE_COUNT then
         left, right = x - s, x + SLICES.W
     else
-        left, right = x - s, x + SLICES.W + s
+        left, right = x + s, x + SLICES.W - s
     end
     return left, right
 end
@@ -150,8 +150,8 @@ local function pointInSlice(px, py, i)
     if py < y0 or py > y1 then return false end
     local t = (py - y0) / SLICES.H
     local left, right = sliceEdges(i, t)
-    local pad = 8
-    return px >= left - pad and px <= right + pad
+    -- 分割线归右侧切片；外缘闭合，不扩张热区造成重复命中。
+    return px >= left and (px < right or (i == NODE_COUNT and px <= right))
 end
 
 -- ======================== CG 资源 ========================
@@ -195,7 +195,9 @@ local function slicePaint(vg, img, i, dw, dh, v0, sw, alpha, gray)
     local oy = SLICES.SY - v0
     if gray then
         local tone = math.floor(168 * alpha)
-        return nvgImagePatternTinted(vg, ox, oy, dw, dh, 0, img, nvgRGBA(tone, tone, tone, 255))
+        local tint = nvgRGBA(tone, tone, tone, 255)
+        ---@cast tint NVGcolor
+        return nvgImagePatternTinted(vg, ox, oy, dw, dh, 0, img, tint)
     end
     return nvgImagePattern(vg, ox, oy, dw, dh, 0, img, alpha)
 end
@@ -311,7 +313,7 @@ local function drawSlice(vg, i, state, isSelected, cgImg, dw, dh, v0, sw)
                 nvgStroke(vg)
             end
         end
-        slicePath(vg, i, 4)
+        slicePath(vg, i)
         nvgStrokeColor(vg, nvgRGBA(0xff, 0xef, 0x67, 235))
         nvgStrokeWidth(vg, 4)
         nvgStroke(vg)
@@ -416,15 +418,11 @@ function M.draw(vg, heroId)
         dw, dh, v0, sw = cgLayout(vg, cgImg)
     end
 
+    -- 固定绘制顺序；选中只改变描边，不改变任何切片的图片覆盖范围。
     for i = 1, NODE_COUNT do
         local state = activated[i] and "active" or (i == nextNode and "next" or "locked")
-        if i ~= selectedNode then
-            drawSlice(vg, i, state, false, cgImg, dw, dh, v0, sw)
-        end
+        drawSlice(vg, i, state, i == selectedNode, cgImg, dw, dh, v0, sw)
     end
-    local selState = activated[selectedNode] and "active"
-        or (selectedNode == nextNode and "next" or "locked")
-    drawSlice(vg, selectedNode, selState, true, cgImg, dw, dh, v0, sw)
 
     -- 选中切片上浮箭头（居中于斜切条顶部）
     local selL, selR = sliceEdges(selectedNode, 0)
@@ -502,26 +500,15 @@ function M.handleInput(dx, dy, heroId)
         return true
     end
 
-    -- 切片命中与 Z 形斜切路径一致，重叠处优先当前选中
-    local hits = {}
+    -- 点击与固定切片范围一致，不随当前选中阶段变化。
     for i = 1, NODE_COUNT do
         if pointInSlice(dx, dy, i) then
-            hits[#hits + 1] = i
-        end
-    end
-    if #hits > 0 then
-        local pick = hits[1]
-        for _, i in ipairs(hits) do
-            if i == selectedNode then
-                pick = i
-                break
+            if selectedNode ~= i then
+                selectedNode = i
+                print("[AwakeningPanel] 选中切片 " .. i)
             end
+            return true
         end
-        if selectedNode ~= pick then
-            selectedNode = pick
-            print("[AwakeningPanel] 选中切片 " .. pick)
-        end
-        return true
     end
 
     if DrawUtil.hitTest(dx, dy, BTN_CX, BTN_CY, BTN_W, BTN_H) then

@@ -91,6 +91,7 @@ local vg = nil
 local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen 使用
 local startScreenWasOpen_ = false
 local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发一次（等标题关闭）
+local storyBackfilled_ = false    -- [旧档补播] 已首通关卡的未领情景只补排队一次
 local startFlowBegun_ = false     -- 标题已关，BGM 已起；离线结算可能还在等角色刷新
 local fontNormal = -1
 local bootQueue_ = nil
@@ -631,7 +632,10 @@ local function tryPlayPendingStory_()
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
                 -- [横屏接线 0928] 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
                 ClientMsgHandler.setPendingTutorialNotify(scenarioId)
-                localSendAction("claim_scenario_reward", { scenarioId = scenarioId })
+                -- [预标记冲突修复 2026-10-01] 播放前已预写 claimedScenarios（13df6a95 防中途退出重播），
+                -- 单机 PDM 与 ClientDispatcher 共享同一张 session 表 → 不跳过防重复会拒发奖励。
+                -- preClaimed=true 告知服务端"这是播完后的首次真实领取"。
+                localSendAction("claim_scenario_reward", { scenarioId = scenarioId, preClaimed = true })
                 local followId = require("systems.StoryPlayer").followOf(scenarioId)
                 if followId then
                     print("[Standalone] enqueue follow scenario " .. tostring(followId))
@@ -733,6 +737,7 @@ function Standalone.requestResetToStartScreen()
     -- 11. 设置标志：重新进入开始界面流程（等标题关闭后再走开场链）
     startScreenWasOpen_ = true
     postStartFlowDone_ = false
+    storyBackfilled_ = false
     startFlowBegun_ = false
     print(string.format("%s step11: startScreenWasOpen_=true clock=%.4f", TAG, os.clock()))
 
@@ -952,6 +957,17 @@ function HandleUpdate(eventType, eventData)
     if ScenarioDialogue.isActive() then
         ScenarioDialogue.update(dt)
     else
+        -- [旧档补播] 进游戏后一次性把已首通但未领取的情景补入队（如情景82）；
+        -- 等数据齐（battle/session 恢复）再扫，随后由 tryPlayPendingStory_ 自然播出
+        if postStartFlowDone_ and not storyBackfilled_ and ClientDispatcher.hasData() then
+            storyBackfilled_ = true
+            local okBf, errBf = pcall(function()
+                require("systems.StoryPlayer").backfillCleared()
+            end)
+            if not okBf then
+                print("[Standalone] story backfill failed: " .. tostring(errBf))
+            end
+        end
         tryPlayPendingStory_()
     end
 

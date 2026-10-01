@@ -981,8 +981,38 @@ local SCENARIO_REWARDS = {
 --- 领取情景对话奖励
 ---@param uid number
 ---@param scenarioId number
+---@param preClaimed boolean|nil 客户端播放前已预写 claimedScenarios（单机 Standalone
+---   tryPlayPendingStory_ 的防中途退出重播机制，且单机 PDM 与客户端共享同一张表）。
+---   为 true 时跳过"奖励已领取"防重复拦截——否则预标记会让播完后的真实领取永远被拒。
 ---@return boolean ok, string? err, table? result
-function BattleService.ClaimScenarioReward(uid, scenarioId)
+function BattleService.ClaimScenarioReward(uid, scenarioId, preClaimed)
+    local sessionData = PDM.GetModule(uid, "session")
+    if not sessionData then
+        return false, "数据未加载"
+    end
+    if not sessionData.scenarioRewardsGranted then
+        sessionData.scenarioRewardsGranted = {}
+    end
+    local scenarioKey = tostring(scenarioId)
+    -- 防刷账本：奖励真正发放过一次就永久拒绝（preClaimed 也无法二次领取）
+    if sessionData.scenarioRewardsGranted[scenarioKey] then
+        return false, "奖励已领取"
+    end
+    local ok, err, result = BattleService._claimScenarioRewardCore(uid, scenarioId, preClaimed)
+    -- 只有成功发放才记账；失败（关卡未通关/角色不匹配/数据未加载等）保留可重试
+    if ok then
+        sessionData.scenarioRewardsGranted[scenarioKey] = true
+        PDM.MarkDirty(uid, "session")
+    end
+    return ok, err, result
+end
+
+--- 领取情景对话奖励（核心发放逻辑，成功/失败由外层 ClaimScenarioReward 记账）
+---@param uid number
+---@param scenarioId number
+---@param preClaimed boolean|nil
+---@return boolean ok, string? err, table? result
+function BattleService._claimScenarioRewardCore(uid, scenarioId, preClaimed)
     local rewardDef = SCENARIO_REWARDS[scenarioId]
 
     local sessionData = PDM.GetModule(uid, "session")
@@ -1014,7 +1044,10 @@ function BattleService.ClaimScenarioReward(uid, scenarioId)
         sessionData.claimedScenarios = {}
     end
     local scenarioKey = tostring(scenarioId)
-    if sessionData.claimedScenarios[scenarioKey] then
+    -- preClaimed=true：客户端播放前已预写标记（单机共享同一张 session 表），
+    -- 此处是播完后的首次真实领取，不能按 claimedScenarios 拦截（外层已用
+    -- scenarioRewardsGranted 账本防刷）。无预标记但已 claim → 旧档历史已领，拒绝。
+    if not preClaimed and sessionData.claimedScenarios[scenarioKey] then
         return false, "奖励已领取"
     end
 

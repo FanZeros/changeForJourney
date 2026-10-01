@@ -12,7 +12,8 @@ function M.bind(deps)
     local EquipmentSystem = deps.EquipmentSystem
     local EquipmentConfig = deps.EquipmentConfig
     local EquipmentSetSystem = require("systems.EquipmentSetSystem")
-    local RelicBridge = deps.RelicBridge
+    local CPE = require("systems.CombatPowerEstimate")
+    -- [927 遗物后端移除] RelicBridge 已删除，不再从 deps 取用
     local ArtifactBridge = deps.ArtifactBridge
     local AwakeningConfig = deps.AwakeningConfig
     local TalentEffect = deps.TalentEffect
@@ -78,7 +79,11 @@ function M.bind(deps)
         return ownData and ownData.level or 1
     end
 
-    local function calcHeroPower(heroId, partySlot)
+    -- 构建一个已应用真实存档管线（装备/遗物/神器）的英雄单位。
+    -- calcHeroPower 与 calcHeroEstimate 共用，避免两条管线漂移。
+    -- teamIdx 指定按哪支队伍的装配表应用神器（缺省 1）。
+    ---@return table|nil hero 含 attrs/classId/awakening 的单位；失败返回 nil
+    local function buildHeroAttrs(heroId, partySlot, teamIdx)
         local teamSlots = get("teamSlots")
         if not partySlot then
             for i = 1, MAX_SLOTS do
@@ -95,14 +100,22 @@ function M.bind(deps)
         local advBranch = ownData and ownData.advBranch or nil
         local awakening = ownData and ownData.awakening or nil
         local hero = HC.createHero(heroId, level, advBranch, awakening, ownData and ownData.extraTalent)
-        if not hero or not hero.attrs then return 0 end
+        if not hero or not hero.attrs then return nil end
         local a = hero.attrs
 
         applyEquippedItems(a, heroId, partySlot)
-        RelicBridge.applyToUnit(a, hero.classId)
         if partySlot then
-            ArtifactBridge.applyToUnit(a, partySlot)
+            ArtifactBridge.applyToUnit(a, partySlot, nil, teamIdx)
         end
+
+        hero.awakening = awakening
+        return hero
+    end
+
+    local function calcHeroPower(heroId, partySlot, teamIdx)
+        local hero = buildHeroAttrs(heroId, partySlot, teamIdx)
+        if not hero then return 0 end
+        local a = hero.attrs
 
         local total = 0
         for key, meta in pairs(AD.META) do
@@ -115,10 +128,26 @@ function M.bind(deps)
                 end
             end
         end
-        total = total + AwakeningConfig.calcTotalCombatPower(heroId, awakening)
+        total = total + AwakeningConfig.calcTotalCombatPower(heroId, hero.awakening)
         total = total + (a.artifactPowerBonus or 0)
 
         return math.floor(total + 0.5)
+    end
+
+    -- 实战预估（分项计价原型）：与 calcHeroPower 走同一条真实存档管线
+    -- （装备/遗物/神器/觉醒），但按英雄伤害大类区别计价物攻/魔攻/治疗属性。
+    -- ⚠️ 原型口径，仅供并列参考展示，不替换官方战力，不含觉醒战力加成的
+    -- 分项拆分（觉醒/神器固定加成按官方原值并入，见下）。
+    local function calcHeroEstimate(heroId, partySlot, teamIdx)
+        local hero = buildHeroAttrs(heroId, partySlot, teamIdx)
+        if not hero then return 0 end
+        local a = hero.attrs
+        local base, _category = CPE.estimate(a, a.atkType)
+        -- 觉醒战力与神器加成沿用官方口径（原型不拆分其属性来源），保持与
+        -- calcHeroPower 的可比性：两者都叠加同一份觉醒/神器固定值。
+        local extra = AwakeningConfig.calcTotalCombatPower(heroId, hero.awakening)
+            + (a.artifactPowerBonus or 0)
+        return math.floor(base + extra + 0.5)
     end
 
     local function refreshPowerCache()
@@ -138,7 +167,8 @@ function M.bind(deps)
                 for i = 1, MAX_SLOTS do
                     local slot = slots[i]
                     if slot.state == "occupied" and slot.heroId then
-                        cache[i] = calcHeroPower(slot.heroId, i)
+                        -- [三队适配] 每队战力按本队神器装配计算
+                        cache[i] = calcHeroPower(slot.heroId, i, t)
                         if t == 1 then deployedCount = deployedCount + 1 end
                     else
                         cache[i] = 0
@@ -171,12 +201,16 @@ function M.bind(deps)
     local function refreshUpgradeBadgeCache()
         local ownedSet = get("ownedSet")
         local upgradeBadgeCache = {}
+        -- 转职已迁到角色详情页签，可转职也计入角色页角标
+        local okChurch, ChurchPage = pcall(require, "ui.church.ChurchPage")
+        local canAdvance = (okChurch and ChurchPage.hasAdvanceForHero) and ChurchPage.hasAdvanceForHero or nil
         for heroId, _ in pairs(ownedSet) do
+            local advance = canAdvance and canAdvance(heroId) or false
             if CharacterPanel.isHeroDeployed(heroId) then
                 upgradeBadgeCache[heroId] = CharacterDetail.hasAnyUpgradeForHero(heroId)
-                    or CharacterDetail.hasAwakeningUpgrade(heroId)
+                    or CharacterDetail.hasAwakeningUpgrade(heroId) or advance
             else
-                upgradeBadgeCache[heroId] = CharacterDetail.hasAwakeningUpgrade(heroId)
+                upgradeBadgeCache[heroId] = CharacterDetail.hasAwakeningUpgrade(heroId) or advance
             end
         end
         set("upgradeBadgeCache", upgradeBadgeCache)
@@ -200,6 +234,7 @@ function M.bind(deps)
         applyEquippedItems = applyEquippedItems,
         getHeroLevel = getHeroLevel,
         calcHeroPower = calcHeroPower,
+        calcHeroEstimate = calcHeroEstimate,
         refreshPowerCache = refreshPowerCache,
         refreshUpgradeBadgeCache = refreshUpgradeBadgeCache,
         refreshNavBadge = refreshNavBadge,

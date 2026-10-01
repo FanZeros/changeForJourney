@@ -5,9 +5,11 @@
 local AD = require("systems.AttributeDef")
 local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local SpineCardEffect = require("ui.fx.SpineCardEffect")
-local ClassChange = require("ui.church.ChurchClassChange")
+-- 转职已迁到右侧栏角色详情，教堂不再绘制转职页
 local ArtifactPanel = require("ui.church.ChurchArtifactPanel")
+local ArtifactDrawPanel = require("ui.church.ChurchArtifactDrawPanel")
 local I18n = require("core.I18n")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local M = {}
 
@@ -113,15 +115,11 @@ function M.bind(deps)
         local tabT = math.min(1.0, tabElapsed / TAB.ANIM_DUR)
         local tabEased = easeInOutCubic(tabT)
 
-        local direction = 0
-        if tabIdx ~= fromIdx then
-            direction = (tabIdx < fromIdx) and -1 or 1
-        end
-        -- 垂直滑动: 转职(idx=1)在上，天赋(idx=2)在下
-        -- tianfu→zhuanzhi: direction=-1, 旧页下滑(+Y), 新页从上进入(-Y→0)
-        -- zhuanzhi→tianfu: direction=1, 旧页上滑(-Y), 新页从下进入(+Y→0)
-        local newOY_tab = DESIGN_H * direction * (1 - tabEased)
-        local oldOY_tab = -DESIGN_H * direction * tabEased
+        -- 水平滑动：神器/宝箱切换一律「从左边滑入」（用户要求）
+        -- 旧页 0 → +屏宽（向右滑出）；新页 -屏宽 → 0（从左滑入）
+        -- 与页签左右次序无关，方向固定，视觉一致
+        local newOX_tab = -DESIGN_W * (1 - tabEased)
+        local oldOX_tab = DESIGN_W * tabEased
         local isAnimating = (tabT < 1.0 and tabIdx ~= fromIdx)
 
         -- 延迟清除：Tab 切换动画结束后清除旧 Tab 的英雄选中态
@@ -134,25 +132,16 @@ function M.bind(deps)
         -- === 槽位上移偏移 ===
         local slotLiftOY = -ANIM.SLOT_LIFT * state.slotLiftProgress
 
-        -- 计算教堂上半部分（属于转职视图）在 tab 动画期间的垂直偏移
-        local upperTabOY = 0
-        if isAnimating then
-            if state.tabFrom == "zhuanzhi" then
-                upperTabOY = oldOY_tab  -- 转职是旧 tab，跟着滑出
-            elseif state.tab == "zhuanzhi" then
-                upperTabOY = newOY_tab  -- 转职是新 tab，跟着滑入
-            end
-        end
-
+        -- 转职页已迁出，教堂上半部分不再有独立的 tab 垂直偏移（神器/宝箱切换走水平滑动，只作用于下半内容）
         -- ================== 上半部分（从上方滑入） ==================
         nvgSave(vg)
-        nvgTranslate(vg, upperOX, upperTabOY)
+        nvgTranslate(vg, upperOX, 0)
 
-        local isArtifactTab = (state.tab == "shenqi")
+        local isArtifactTab = (state.tab == "shenqi" or state.tab == "baoxiang")
 
-        -- 1. 教堂背景图（神器 Tab 隐藏，避免遮挡 UI_JTSQ_BJ）
+        -- 1. 教堂背景图（神器/宝箱 Tab 隐藏，避免遮挡全屏 Tab 背景）
         local hideChurchBg = isArtifactTab
-            and not (isAnimating and state.tabFrom == "shenqi")
+            and not (isAnimating and (state.tabFrom == "shenqi" or state.tabFrom == "baoxiang"))
         if not hideChurchBg then
             nvgSave(vg)
             nvgTranslate(vg, 0, slotLiftOY)
@@ -216,11 +205,18 @@ function M.bind(deps)
             if not state.selectAnim then
             local cardImg = getHeroCardImage(vg, state.selectedHeroId)
             DrawUtil.drawImageCover(vg, cardImg, cx, cy, CHAR_SLOT.W, CHAR_SLOT.H, 1.0)
+            -- [统一角色框] 卡面叠加品质色描边
+            HeroFrame.draw(vg, {
+                cx = cx, cy = cy, w = CHAR_SLOT.W, h = CHAR_SLOT.H,
+                heroId = state.selectedHeroId,
+                state = "owned",
+                frameOnly = true,
+            })
             end
 
             if heroCfg then
                 -- b) 职业图标（左上角，60x60）
-                local iconIdx = ClassChange.CLASS_NUM[heroCfg.classId]
+                local iconIdx = heroCfg.classId
                 if iconIdx and img.classIcons[iconIdx] then
                     drawImageCentered(vg, img.classIcons[iconIdx], cx, cy + ROSTER.TAG_OFFSET_Y, 60, 60, 1.0)
                 end
@@ -340,31 +336,31 @@ function M.bind(deps)
         nvgSave(vg)
         nvgTranslate(vg, lowerOX, 0)
         if isAnimating then
-            -- 旧 tab 背景（垂直滑出）：先裁剪到屏幕可见区域，再纵向平移
-            local oVisTop = math.max(0, oldOY_tab)
-            local oVisBot = math.min(DESIGN_H, oldOY_tab + DESIGN_H)
-            if oVisBot > oVisTop then
+            -- 旧 tab 背景（向右滑出）：横向裁剪到可见区域，再水平平移
+            local oVisL = math.max(0, oldOX_tab)
+            local oVisR = math.min(DESIGN_W, oldOX_tab + DESIGN_W)
+            if oVisR > oVisL then
                 nvgSave(vg)
-                nvgScissor(vg, 0, oVisTop, DESIGN_W, oVisBot - oVisTop)
-                nvgTranslate(vg, 0, oldOY_tab)
-                if state.tabFrom == "zhuanzhi" then ClassChange.drawBg(vg) end
-                if state.tabFrom == "shenqi" then ArtifactPanel.drawBg(vg) end
+                nvgScissor(vg, oVisL, 0, oVisR - oVisL, DESIGN_H)
+                nvgTranslate(vg, oldOX_tab, 0)
+                if state.tabFrom == "shenqi" then ArtifactPanel.drawBg(vg)
+                elseif state.tabFrom == "baoxiang" then ArtifactDrawPanel.drawBg(vg) end
                 nvgRestore(vg)
             end
-            -- 新 tab 背景（垂直滑入）
-            local nVisTop = math.max(0, newOY_tab)
-            local nVisBot = math.min(DESIGN_H, newOY_tab + DESIGN_H)
-            if nVisBot > nVisTop then
+            -- 新 tab 背景（从左滑入）
+            local nVisL = math.max(0, newOX_tab)
+            local nVisR = math.min(DESIGN_W, newOX_tab + DESIGN_W)
+            if nVisR > nVisL then
                 nvgSave(vg)
-                nvgScissor(vg, 0, nVisTop, DESIGN_W, nVisBot - nVisTop)
-                nvgTranslate(vg, 0, newOY_tab)
-                if state.tab == "zhuanzhi" then ClassChange.drawBg(vg) end
-                if state.tab == "shenqi" then ArtifactPanel.drawBg(vg) end
+                nvgScissor(vg, nVisL, 0, nVisR - nVisL, DESIGN_H)
+                nvgTranslate(vg, newOX_tab, 0)
+                if state.tab == "shenqi" then ArtifactPanel.drawBg(vg)
+                elseif state.tab == "baoxiang" then ArtifactDrawPanel.drawBg(vg) end
                 nvgRestore(vg)
             end
         else
-            if state.tab == "zhuanzhi" then ClassChange.drawBg(vg) end
-            if state.tab == "shenqi" then ArtifactPanel.drawBg(vg) end
+            if state.tab == "shenqi" then ArtifactPanel.drawBg(vg)
+            elseif state.tab == "baoxiang" then ArtifactDrawPanel.drawBg(vg) end
         end
         nvgRestore(vg)
 
@@ -383,31 +379,31 @@ function M.bind(deps)
 
         -- drawTabContent 内联委托
         local function drawTabContent(tabKey)
-            if tabKey == "zhuanzhi" then ClassChange.drawContent(vg) end
-            if tabKey == "shenqi" then ArtifactPanel.drawContent(vg) end
+            if tabKey == "shenqi" then ArtifactPanel.drawContent(vg)
+            elseif tabKey == "baoxiang" then ArtifactDrawPanel.drawContent(vg) end
         end
 
-        -- 绘制旧面板内容（垂直滑出，仅动画中）
+        -- 绘制旧面板内容（向右滑出，仅动画中）
         if isAnimating then
-            local oVisTop = math.max(clipTop, clipTop + oldOY_tab)
-            local oVisBot = math.min(clipTop + clipH, clipTop + oldOY_tab + clipH)
-            if oVisBot > oVisTop then
+            local oVisL = math.max(0, oldOX_tab)
+            local oVisR = math.min(DESIGN_W, oldOX_tab + DESIGN_W)
+            if oVisR > oVisL then
                 nvgSave(vg)
-                nvgScissor(vg, 0, oVisTop, DESIGN_W, oVisBot - oVisTop)
-                nvgTranslate(vg, 0, oldOY_tab)
+                nvgScissor(vg, oVisL, clipTop, oVisR - oVisL, clipH)
+                nvgTranslate(vg, oldOX_tab, 0)
                 drawTabContent(state.tabFrom)
                 nvgRestore(vg)
             end
         end
 
-        -- 绘制新面板内容（垂直滑入）
+        -- 绘制新面板内容（从左滑入）
         if isAnimating then
-            local nVisTop = math.max(clipTop, clipTop + newOY_tab)
-            local nVisBot = math.min(clipTop + clipH, clipTop + newOY_tab + clipH)
-            if nVisBot > nVisTop then
+            local nVisL = math.max(0, newOX_tab)
+            local nVisR = math.min(DESIGN_W, newOX_tab + DESIGN_W)
+            if nVisR > nVisL then
                 nvgSave(vg)
-                nvgScissor(vg, 0, nVisTop, DESIGN_W, nVisBot - nVisTop)
-                nvgTranslate(vg, 0, newOY_tab)
+                nvgScissor(vg, nVisL, clipTop, nVisR - nVisL, clipH)
+                nvgTranslate(vg, newOX_tab, 0)
                 drawTabContent(state.tab)
                 nvgRestore(vg)
             end
@@ -433,9 +429,7 @@ function M.bind(deps)
             activePred = function(i, _) return state.tab == TAB_KEYS[i] end,
             drawBadge = function(vg, i, item, textX, textY)
                 local showTabBadge = false
-                if i == 1 then
-                    showTabBadge = hasAnyAdvance()
-                elseif i == 2 then
+                if TAB_KEYS[i] == "shenqi" then
                     showTabBadge = ArtifactPanel.canUpgradeAnyArtifact()
                 end
                 if showTabBadge and img.iconUp >= 0 then
@@ -460,7 +454,7 @@ function M.bind(deps)
 
         -- ================== 角色列表浮层（独立绘制，不被下半部分遮盖） ==================
         -- 仅在展开状态（slotExpanded）时绘制；选中远征队员后 slotExpanded=false 但 slotLiftProgress 保持1.0
-        if (state.slotExpanded or state.rosterSlideProgress > 0.01) and state.slotLiftProgress > 0.01 and state.tab == "zhuanzhi" then
+        if false and (state.slotExpanded or state.rosterSlideProgress > 0.01) and state.slotLiftProgress > 0.01 then
             local rosterAlpha = state.slotLiftProgress * state.rosterSlideProgress
             nvgSave(vg)
             nvgGlobalAlpha(vg, rosterAlpha)
@@ -496,19 +490,25 @@ function M.bind(deps)
             nvgSave(vg)
             nvgGlobalAlpha(vg, 1.0)
             DrawUtil.drawImageCover(vg, cardImg, curX, curY, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
+            -- [统一角色框] 飞行卡同步品质描边
+            HeroFrame.draw(vg, {
+                cx = curX, cy = curY, w = ROSTER.CARD_W, h = ROSTER.CARD_H,
+                heroId = state.selectedHeroId,
+                state = "owned",
+                frameOnly = true,
+            })
             nvgRestore(vg)
         end
 
         -- 天赋详情/总览已移至 TalentPage
 
-        -- ================== 转职确认弹窗（最顶层） ==================
-        ClassChange.drawConfirmPopup(vg)
+        -- 转职确认/重置弹窗已随转职页迁到右侧栏角色详情
 
-        -- ================== 重置确认弹窗（最顶层） ==================
-        ClassChange.drawResetConfirmPopup(vg)
+        -- ================== 神器宝箱·钥匙补购确认弹窗（模态，Tab 内容之上） ==================
+        ArtifactDrawPanel.drawKeyConfirmDialog(vg)
 
         -- ================== Spine 卡牌特效 ==================
-        SpineCardEffect.draw(vg)
+        SpineCardEffect.draw(vg, "church")
 
         -- ================== 飘字提示（最最顶层） ==================
         if state.floatText then

@@ -26,8 +26,9 @@ local function findArtifactById(data, artifactId)
     return nil
 end
 
-local function getEquippedArtifact(data, slot, subSlot)
-    local artifactId = ArtifactSchema.getEquippedId(data, slot, subSlot or 1)
+--- [三队适配] teamIdx 透传给 Schema；缺省 1（旧调用兼容）
+local function getEquippedArtifact(data, slot, subSlot, teamIdx)
+    local artifactId = ArtifactSchema.getEquippedId(data, slot, subSlot or 1, teamIdx)
     if not artifactId then return nil end
     return findArtifactById(data, artifactId)
 end
@@ -136,11 +137,13 @@ local function applyArtifactToTarget(attrs, artifact, ownerSlot, targetSlot, run
 end
 
 --- 应用影响指定出战槽位的神器效果。
+--- [三队适配] teamIdx 指定读取哪支队伍的装配表（缺省 1，主线战斗旧行为不变）
 ---@param attrs table UnitAttributes
 ---@param partySlot number 出战槽位 1~4
 ---@param artifactData table|nil 可选神器模块数据
+---@param teamIdx? number 队伍索引 1~3，缺省 1
 ---@return table[] runtimeEffects 需要战斗运行时处理的效果
-function ArtifactBridge.applyToUnit(attrs, partySlot, artifactData)
+function ArtifactBridge.applyToUnit(attrs, partySlot, artifactData, teamIdx)
     if not attrs or not partySlot then return {} end
     local data = artifactData or getArtifactData()
     if not data then return {} end
@@ -149,7 +152,7 @@ function ArtifactBridge.applyToUnit(attrs, partySlot, artifactData)
 
     for slot = 1, ArtifactSchema.SLOT_COUNT do
         for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
-            local artifact = getEquippedArtifact(data, slot, subSlot)
+            local artifact = getEquippedArtifact(data, slot, subSlot, teamIdx)
             if artifact then
                 if slot == partySlot then
                     applyArtifactToTarget(attrs, artifact, slot, partySlot, runtimeEffects)

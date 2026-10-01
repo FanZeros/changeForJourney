@@ -17,7 +17,6 @@ local EquipmentConfig  = require("config.EquipmentConfig")
 local TalentEffect     = require("systems.TalentEffect")
 local AwakeningConfig  = require("config.AwakeningConfig")
 local BottomNav        = require("ui.hud.BottomNav")
-local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
 local Draw             = require("ui.character.panel.CharacterPanelDraw2")
 local HeroResonance    = require("shared.heroes.HeroResonance")
@@ -50,8 +49,6 @@ local DESIGN_H     = GameConfig.Design.HEIGHT  -- 2400
 
 ---@type fun(index: number): number
 local getSlotCX       = Draw.getSlotCX
----@type fun(dx: number, dy: number): number?
-local hitTestTeamSlot = Draw.hitTestTeamSlot
 
 -- ======================== 队伍数据 ========================
 -- [三队并行] 3 支队伍，每队 4 槽（Draw.MAX_SLOTS）；teamSlots 恒指向当前激活队的槽位数组，
@@ -63,6 +60,7 @@ local TEAM_COUNT = ExpTable.TEAM_COUNT or 3
 local teams = {}
 local activeTeamIdx = 1
 local teamSlots = {}       -- = teams[activeTeamIdx].slots（切换页签时重指向）
+local heroesDataApplied = false  -- setHeroesData 已用存档覆盖默认开局阵容
 
 --- 构建一支队伍的默认槽位
 ---@param teamIdx number
@@ -75,9 +73,9 @@ local function buildDefaultSlots(teamIdx)
     end
     if teamIdx == 1 then
         -- 队1 保留旧版默认开局阵容（服务端数据到达后会被 setHeroesData 覆盖）
-        slots[1] = { state = "occupied", heroId = 1, level = 5, exp = 60, maxExp = ExpTable.getHeroExpForLevel(5) or 40 }
-        slots[2] = { state = "occupied", heroId = 3, level = 3, exp = 30, maxExp = ExpTable.getHeroExpForLevel(3) or 18 }
-        slots[3] = { state = "empty" }
+        slots[1] = { state = "occupied", heroId = 1, level = 1, exp = 0, maxExp = ExpTable.getHeroExpForLevel(1) or 5 }
+        slots[2] = { state = "occupied", heroId = 2, level = 1, exp = 0, maxExp = ExpTable.getHeroExpForLevel(1) or 5 }
+        slots[3] = { state = "occupied", heroId = 3, level = 1, exp = 0, maxExp = ExpTable.getHeroExpForLevel(1) or 5 }
         slots[4] = { state = "locked" }
     end
     return slots
@@ -188,6 +186,7 @@ local dragState = {
     heroId   = nil,     -- 被拖拽的英雄 ID
     rosterIdx = nil,    -- 被拖拽的 roster 索引（从列表拖拽时有值）
     fromSlot  = nil,    -- 被拖拽的槽位索引（从出战槽位拖拽时有值）
+    fromTeam  = nil,    -- 被拖拽头像所属队伍（跨队拖放保持源队正确）
     cx       = 0,       -- 当前拖拽位置 X（设计空间）
     cy       = 0,       -- 当前拖拽位置 Y（设计空间）
     startX   = 0,       -- 拖拽起始 X
@@ -212,7 +211,6 @@ local function bindPower()
         PlayerStore = PlayerStore,
         EquipmentSystem = EquipmentSystem,
         EquipmentConfig = EquipmentConfig,
-        RelicBridge = RelicBridge,
         ArtifactBridge = ArtifactBridge,
         AwakeningConfig = AwakeningConfig,
         TalentEffect = TalentEffect,
@@ -250,8 +248,16 @@ local function getHeroLevel(heroId)
     return ensurePower().getHeroLevel(heroId)
 end
 
-local function calcHeroPower(heroId, partySlot)
-    return ensurePower().calcHeroPower(heroId, partySlot)
+--- [三队适配] teamIdx 透传：按该队伍的装配表计算神器加成战力（缺省 1）
+local function calcHeroPower(heroId, partySlot, teamIdx)
+    return ensurePower().calcHeroPower(heroId, partySlot, teamIdx)
+end
+
+-- 实战预估（分项计价原型，见 systems/CombatPowerEstimate.lua）：
+-- 官方战力不受影响；预估仅在详情页可选副行展示（默认关闭，验收后开启）
+local function calcHeroEstimate(heroId, partySlot)
+    local power = ensurePower()
+    return power.calcHeroEstimate and power.calcHeroEstimate(heroId, partySlot) or 0
 end
 
 local function refreshPowerCache()
@@ -276,24 +282,32 @@ local function isHeroDeployed(heroId)
     return false
 end
 
---- 获取英雄在出战槽位中的索引（用于排序），未出战返回 MAX_SLOTS+1
-local function getDeployedSlotIndex(heroId)
-    for i = 1, MAX_SLOTS do
-        local slot = teamSlots[i]
-        if slot.state == "occupied" and slot.heroId == heroId then
-            return i
+--- 英雄是否在任意队伍出战（用于名册排序）。只看全部队伍，不跟当前选中小队走。
+---@param heroId number
+---@return boolean
+local function isDeployedInAnyTeam(heroId)
+    for t = 1, TEAM_COUNT do
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, #slots do
+                local slot = slots[i]
+                if slot.state == "occupied" and slot.heroId == heroId then
+                    return true
+                end
+            end
         end
     end
-    return MAX_SLOTS + 1
+    return false
 end
 
 -- 前向声明（rebuildRoster 需要调用 recalcScrollMax）
 local recalcScrollMax
 
 --- 重建 heroRoster 列表（全部英雄，按排序规则排列）
---- 排序：拥有且出战 > 拥有未出战（品质高→低，等级高→低）> 未拥有（品质高→低）
+--- 排序：拥有且任一队出战 > 拥有未出战（品质高→低，等级高→低）> 未拥有（品质高→低）
+--- 出战判定覆盖全部队伍，切换当前小队不改变下方名册顺序。
 local function rebuildRoster()
-    heroRoster = {}
+    for i = #heroRoster, 1, -1 do heroRoster[i] = nil end
     local allIds = HC.getAllIds()
     for _, id in ipairs(allIds) do
         local ownData = ownedSet[id]
@@ -325,13 +339,13 @@ local function rebuildRoster()
             return a.owned
         end
         if a.owned then
-            -- 2) 已出战排最前，且按槽位顺序排列
-            local aSlot = getDeployedSlotIndex(a.heroId)
-            local bSlot = getDeployedSlotIndex(b.heroId)
-            if aSlot ~= bSlot then
-                return aSlot < bSlot
+            -- 任一队出战的角色固定排在未出战角色前；不按当前小队、也不按槽位重排。
+            local aDeployed = isDeployedInAnyTeam(a.heroId)
+            local bDeployed = isDeployedInAnyTeam(b.heroId)
+            if aDeployed ~= bDeployed then
+                return aDeployed
             end
-            -- 3) 品质从高到低
+            -- 品质从高到低
             local aq = HC.get(a.heroId).quality or 0
             local bq = HC.get(b.heroId).quality or 0
             if aq ~= bq then return aq > bq end
@@ -366,7 +380,8 @@ recalcScrollMax = function()
     end
     -- 最后一行的名字背景底边 + 底部留白
     local lastRowCY = ROW1_CY + (numRows - 1) * ROW_SPACING
-    local contentBottom = lastRowCY + NAME_BG_DY + NAME_BG_H * 0.5 + 50  -- 50px 底部边距
+    -- 名字在图标下方 22，保证滚到底名字完整
+    local contentBottom = lastRowCY + 148 * 0.5 + 50
     scrollMaxY = math.max(0, contentBottom - SCROLL_BOTTOM)
 end
 
@@ -380,6 +395,9 @@ end
 ---@param dy number 设计空间 Y
 ---@return number|nil roster 索引
 local function hitTestRosterCard(dx, dy)
+    -- 名册右移 5%、下移 6%，命中换算回未偏移坐标。
+    dx = dx - DESIGN_W * 0.05
+    dy = dy - DESIGN_H * 0.06
     local rosterCount = #heroRoster
     for idx = 1, rosterCount do
         local row = math.ceil(idx / MAX_PER_ROW)
@@ -388,12 +406,14 @@ local function hitTestRosterCard(dx, dy)
         local rowEnd   = math.min(row * MAX_PER_ROW, rosterCount)
         local rowCount = rowEnd - rowStart + 1
         local rowCY = ROW1_CY + (row - 1) * ROW_SPACING - scrollY
-        local totalW = rowCount * CARD_W + (rowCount - 1) * CARD_SPACING
-        local startCX = (DESIGN_W - totalW) * 0.5 + CARD_W * 0.5
-        local cx = startCX + (col - 1) * (CARD_W + CARD_SPACING)
+        local iconSize = 148
+        local iconGap = 24
+        local totalW = rowCount * iconSize + (rowCount - 1) * iconGap
+        local startCX = (DESIGN_W - totalW) * 0.5 + iconSize * 0.5
+        local cx = startCX + (col - 1) * (iconSize + iconGap)
         local cy = rowCY
-        if dx >= cx - CARD_W * 0.5 and dx <= cx + CARD_W * 0.5
-           and dy >= cy - CARD_H * 0.5 and dy <= cy + CARD_H * 0.5
+        if dx >= cx - iconSize * 0.5 and dx <= cx + iconSize * 0.5
+           and dy >= cy - iconSize * 0.5 and dy <= cy + iconSize * 0.5 + 28
            and dy >= SCROLL_TOP and dy <= SCROLL_BOTTOM then
             return idx
         end
@@ -418,6 +438,8 @@ function CharacterPanel.init(vg)
         getActiveTeamIdx     = function() return activeTeamIdx end,
         getUnlockedTeamCount = function() return ExpTable.getUnlockedTeamCount(GameState.getLevel()) end,
         getTeamOccupiedCounts = function() return CharacterPanel.getTeamOccupiedCounts() end,
+        getTeams = function() return teams end,
+        getTeamPowerCaches = function() return teamPowerCaches end,
     })
     Draw.initImages(vg)
 
@@ -433,6 +455,7 @@ function CharacterPanel.init(vg)
         imgExpBarFill  = sharedImg.imgExpBarFill,
         getOwnedData      = function(heroId) return ownedSet[heroId] end,
         calcHeroPower     = calcHeroPower,
+        calcHeroEstimate  = calcHeroEstimate,
         getHeroRoster     = function() return heroRoster end,
     })
 
@@ -499,11 +522,6 @@ function CharacterPanel.init(vg)
         refreshPowerCache()
     end)
 
-    -- 监听遗物数据变更 → 镶嵌/卸下/洗练后自动刷新战斗力缓存
-    PlayerStore.Subscribe("mod_relics", function()
-        refreshPowerCache()
-    end)
-
     -- 监听神器数据变更 → 装配/卸下后刷新战斗力与战斗待定快照
     PlayerStore.Subscribe("artifacts", function()
         refreshPowerCache()
@@ -524,7 +542,7 @@ end
 
 function CharacterPanel.draw(vg)
     -- 委托给 Draw 子模块绘制主界面（编队槽位 + 角色列表 + 拖拽浮层）
-    Draw.draw(vg, scrollY)
+    Draw.draw(vg, scrollY, CharacterDetail.isOpen and CharacterDetail.isOpen() or false)
 
     -- 角色详情二级界面（覆盖在一切之上）
     CharacterDetail.draw(vg)
@@ -583,6 +601,8 @@ end
 -- ======================== 输入处理 ========================
 
 local function isInScrollArea(dx, dy)
+    dx = dx - DESIGN_W * 0.05
+    dy = dy - DESIGN_H * 0.06
     return dx >= SCROLL_LEFT and dx <= SCROLL_RIGHT
        and dy >= SCROLL_TOP  and dy <= SCROLL_BOTTOM
 end
@@ -593,12 +613,13 @@ local function bindInput()
         CharacterDetail = CharacterDetail,
         Draw = Draw,
         CharacterPanel = CharacterPanel,
-        hitTestTeamSlot = hitTestTeamSlot,
         hitTestRosterCard = hitTestRosterCard,
         getTeamSlots = function() return teamSlots end,
         getSlotPowerCache = function() return slotPowerCache end,
         getDragState = function() return dragState end,
         getSelectSlotState = function() return selectSlotState end,
+        getTeams = function() return teams end,
+        getTeamPowerCaches = function() return teamPowerCaches end,
         getHeroRoster = function() return heroRoster end,
         getShardMap = function() return shardMap end,
         getActiveTeamIdx = function() return activeTeamIdx end,
@@ -849,6 +870,38 @@ function CharacterPanel.getHeroDeployTeams(heroId)
     return result
 end
 
+--- 槽位阵容签名：只包含英雄 ID 与槽位顺序，经验/属性刷新不应重开战斗
+---@param teamIdx number
+---@return number
+function CharacterPanel.getTeamSignature(teamIdx)
+    local slots = (teams[teamIdx] and teams[teamIdx].slots) or {}
+    local sig = 0
+    for i = 1, MAX_SLOTS do
+        local slot = slots[i]
+        local id = (slot and slot.state == "occupied" and slot.heroId) or 0
+        sig = sig * 1000 + (tonumber(id) or 0)
+    end
+    return sig
+end
+
+--- 按槽位导出编队。空位记 0，避免保存时被挤到前面。
+---@param teamIdx? number
+---@return integer[]
+function CharacterPanel.getTeamSlotLayout(teamIdx)
+    teamIdx = tonumber(teamIdx) or 1
+    local slots = (teams[teamIdx] and teams[teamIdx].slots) or {}
+    local ids = {}
+    for i = 1, MAX_SLOTS do
+        local slot = slots[i]
+        if slot and slot.state == "occupied" and slot.heroId then
+            ids[i] = slot.heroId
+        else
+            ids[i] = 0
+        end
+    end
+    return ids
+end
+
 --- 获取指定队伍的战斗单位列表（供 BattleScene / 三栏并行战斗使用）
 --- [三队并行] 缺省 teamIdx=1（主线战斗沿用队1，与旧行为一致）
 ---@param teamIdx? number 队伍索引（1~3），缺省 1
@@ -880,16 +933,13 @@ function CharacterPanel.getDeployedTeam(teamIdx)
                     if eqArmorType then
                         unit.armorType = eqArmorType
                     end
-                    -- 应用遗物词条属性加成（A类无条件 + 返回B/C类条件词条供战斗运行时使用）
-                    local relicConds = RelicBridge.applyToUnit(unit.attrs, unit.classId)
-                    if relicConds and #relicConds > 0 then
-                        unit.relicConditions = relicConds
-                    end
                     -- 应用神器属性加成与战斗运行时效果
-                    local artifactEffects = ArtifactBridge.applyToUnit(unit.attrs, i)
+                    -- [三队适配] 按本队装配表读取神器（旧版三队共享队1装配）
+                    local artifactEffects = ArtifactBridge.applyToUnit(unit.attrs, i, nil, teamIdx)
                     if artifactEffects and #artifactEffects > 0 then
                         unit.artifactEffects = artifactEffects
                     end
+                    unit.artifactTeamIdx = teamIdx
                     -- 装备可能增加 maxHp，recalc 不会自动抬升 HP，需重新满血
                     unit.attrs:fillHp()
                     -- 重新同步 flat 字段
@@ -982,6 +1032,32 @@ function CharacterPanel.getActiveTeamIdx()
     return activeTeamIdx
 end
 
+--- 存档英雄数据是否已刷新到面板。离线结算必须等它为真，避免用默认开局阵容。
+---@return boolean
+function CharacterPanel.isHeroesDataApplied()
+    return heroesDataApplied
+end
+
+--- 各队当前上阵英雄 ID，供离线奖励在存档 teams 未就绪时使用。
+---@return table[]
+function CharacterPanel.getTeamSlotIds()
+    local result = {}
+    for t = 1, TEAM_COUNT do
+        local ids = {}
+        local slots = teams[t] and teams[t].slots
+        if slots then
+            for i = 1, #slots do
+                local slot = slots[i]
+                if slot.state == "occupied" and slot.heroId then
+                    ids[#ids + 1] = slot.heroId
+                end
+            end
+        end
+        result[t] = { slots = ids }
+    end
+    return result
+end
+
 --- 已解锁的队伍数量
 ---@return number
 function CharacterPanel.getUnlockedTeamCount()
@@ -1025,6 +1101,7 @@ function CharacterPanel.setActiveTeam(idx)
     dragState.heroId = nil
     dragState.rosterIdx = nil
     dragState.fromSlot = nil
+    dragState.fromTeam = nil
     selectSlotState.active = false
     selectSlotState.slotIndex = nil
     rebuildRoster()
@@ -1077,7 +1154,8 @@ local function bindHeroSync()
             return nil
         end,
         set = function(k, v)
-            if k == "ownedSet" then ownedSet = v
+            if k == "heroesDataApplied" then heroesDataApplied = v
+            elseif k == "ownedSet" then ownedSet = v
             elseif k == "shardMap" then shardMap = v
             elseif k == "teamSlots" then teamSlots = v
             elseif k == "slotPowerCache" then slotPowerCache = v

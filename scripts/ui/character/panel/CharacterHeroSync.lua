@@ -22,6 +22,22 @@ function M.bind(deps)
     local function setHeroesData(data)
         if not data then return end
 
+        -- 记录覆盖前的各队槽位布局（英雄ID序列），用于只失效真正改过编队的行：
+        -- 等级/经验/装备等数据推送不应重启未改编队的战斗
+        local prevLayout = {}
+        do
+            local oldTeams = get("teams")
+            for t = 1, TEAM_COUNT do
+                local ids = {}
+                local slots = oldTeams[t] and oldTeams[t].slots or {}
+                for i = 1, MAX_SLOTS do
+                    local s = slots[i]
+                    ids[i] = (s and s.state == "occupied" and s.heroId) or 0
+                end
+                prevLayout[t] = ids
+            end
+        end
+
         do
             local deployedStr = "nil"
             if data.deployed and type(data.deployed) == "table" then
@@ -86,9 +102,11 @@ function M.bind(deps)
             for i = 1, MAX_SLOTS do
                 slots[i] = { state = (i <= unlocked) and "empty" or "locked" }
             end
-            for idx, heroId in ipairs(ids or {}) do
-                local numId = tonumber(heroId) or heroId
-                if idx <= MAX_SLOTS then
+            local idCount = ids and #ids or 0
+            for idx = 1, idCount do
+                local heroId = ids[idx]
+                local numId = tonumber(heroId) or 0
+                if idx <= MAX_SLOTS and numId ~= 0 then
                     local ownData = ownedSet[numId]
                     if ownData then
                         slots[idx] = {
@@ -154,6 +172,48 @@ function M.bind(deps)
         end
         set("teamSlots", teams[activeTeamIdx].slots)
         set("slotPowerCache", teamPowerCaches[activeTeamIdx])
+        set("heroesDataApplied", true)
+        rebuildRoster()
+        -- 只失效编队布局真正变化的队伍：其他行保持战斗进度不重置
+        local changed = {}
+        local anyChanged = false
+        local teams = get("teams")
+        for t = 1, TEAM_COUNT do
+            local ids = {}
+            local slots = teams[t] and teams[t].slots or {}
+            for i = 1, MAX_SLOTS do
+                local s = slots[i]
+                ids[i] = (s and s.state == "occupied" and s.heroId) or 0
+            end
+            local old = prevLayout[t] or {}
+            for i = 1, MAX_SLOTS do
+                if (ids[i] or 0) ~= (old[i] or 0) then
+                    changed[t] = true
+                    anyChanged = true
+                    break
+                end
+            end
+        end
+        local okTri, BattleTriPage = pcall(require, "ui.battle.tri.BattleTriPage")
+        if okTri and BattleTriPage.invalidateTeams then
+            if anyChanged then
+                BattleTriPage.invalidateTeams(changed)
+                local list = {}
+                for t in pairs(changed) do list[#list + 1] = t end
+                table.sort(list)
+                print("[CharacterHeroSync] 编队布局变化队伍: " .. table.concat(list, ","))
+            else
+                print("[CharacterHeroSync] 编队布局未变化，战斗不重置")
+            end
+        end
+        local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
+        if OfflineRewardPanel.isOpen() and OfflineRewardPanel.refreshHeroPreview then
+            local OfflineService = require("rules.offline.OfflineService")
+            local preview = OfflineService.RebuildHeroPreview and OfflineService.RebuildHeroPreview(1)
+            if preview then
+                OfflineRewardPanel.refreshHeroPreview(preview)
+            end
+        end
 
         do
             local teamsInfo = {}
@@ -182,6 +242,7 @@ function M.bind(deps)
             teamPowerCaches[t] = {}
         end
         set("activeTeamIdx", 1)
+        set("heroesDataApplied", false)
         set("teamSlots", teams[1].slots)
         set("slotPowerCache", teamPowerCaches[1])
         set("runtimeOnlyPowerCache", 0)
@@ -198,6 +259,7 @@ function M.bind(deps)
         dragState.heroId = nil
         dragState.rosterIdx = nil
         dragState.fromSlot = nil
+        dragState.fromTeam = nil
         local selectSlotState = get("selectSlotState")
         selectSlotState.active = false
         selectSlotState.slotIndex = nil

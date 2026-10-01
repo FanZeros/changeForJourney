@@ -31,8 +31,8 @@ local LootBoxPage       = require("ui.loot.LootBoxPage")
 local TaskPage          = require("ui.story.task.TaskPage")
 local LevelUpPopup      = require("ui.hud.popup.LevelUpPopup")
 local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
+local UpdateNoticePopup = require("ui.hud.popup.UpdateNoticePopup")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
-local DiaryPage         = require("ui.story.task.DiaryPage")
 local StartScreen       = require("ui.story.gate.StartScreen")
 local DarkTitleScreen   = require("ui.story.gate.DarkTitleScreenGate")
 local BattleTriPage     = require("ui.battle.tri.BattleTriPage")
@@ -49,6 +49,7 @@ local CharacterDetail    = require("ui.character.detail.CharacterDetail")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
 local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
+local TutorialManager    = require("systems.TutorialManager")  -- [横屏接线 0928] 新手引导
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
 local UiToast            = require("core.UiToast")
@@ -68,12 +69,83 @@ local function applyFrame()
 end
 
 --- CE 面板画在帧变换后的逻辑坐标里，避免被面板 viewport 带走。
+--- 归属战斗行的奖励弹窗（row=1）在离开三行战斗页时会失去唯一绘制路径
+--- （drawRegion 只在 BattleTriPage.draw 内调用）。这里在收尾统一兜底绘制，
+--- 避免「弹窗 open 了但看不见」。三行页打开时由 drawRegion 负责，不重复画。
+local function drawOrphanRowReward()
+    if not RewardPopup.isOpen() or not RewardPopup.currentRowTag() then return end
+    if BattleTriPage.isOpen() then return end
+    local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+    nvgSave(vg())
+    nvgResetScissor(vg())
+    nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+    nvgScale(vg(), fit, fit)
+    RewardPopup.drawRegion(vg(), 0, 0, 1080, 2400, RewardPopup.currentRowTag())
+    nvgRestore(vg())
+end
+
+--- [三面板] 在指定面板视口内绘制归属该面板的奖励弹窗（须在 Viewport.begin/finish 之间调用）
+local function drawRewardInPanel(pid)
+    if not pid then return end
+    if not (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then return end
+    if RewardPopup.currentPanel() ~= pid then return end
+    -- 三行模式的中栏不走 Viewport：直接全窗 letterbox 居中绘制
+    if pid == 'center' and BattleTriPage.isOpen() then
+        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+        nvgSave(vg())
+        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+        nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+        nvgScale(vg(), fit, fit)
+        RewardPopup.draw(vg())
+        nvgRestore(vg())
+        return
+    end
+    RewardPopup.drawRegion(vg(), 0, 0, 1080, 2400, nil)
+end
+
+--- [UpdateNoticePopup] 更新提醒全窗模态（1080×2400 设计稿 letterbox 居中，同 PlayerInfoPanel）。
+--- 放在 finishFrame 收尾统一绘制：所有 early-return 渲染路径都能盖到，且位于业务面板之上。
+local function drawUpdateNotice()
+    if not UpdateNoticePopup.isOpen() then return end
+    local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+    nvgSave(vg())
+    nvgResetScissor(vg())
+    nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+    nvgScale(vg(), fit, fit)
+    UpdateNoticePopup.draw(vg())
+    nvgRestore(vg())
+end
+
+--- 离线收益全窗模态：三行、通天塔、非三行共用一套 letterbox 和深色遮罩。
+--- 面板已加宽到 1760 设计单位，只裁整个横屏，不能裁到 1080 宽而截掉两侧。
+local function drawOfflineReward()
+    if not OfflineRewardPanel.isOpen() then return end
+    local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+    if fit <= 0 then return end
+    nvgSave(vg())
+    nvgResetScissor(vg())
+    nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    nvgBeginPath(vg())
+    nvgRect(vg(), 0, 0, logicalW(), logicalH())
+    nvgFillColor(vg(), nvgRGBA(0, 0, 0, 150))
+    nvgFill(vg())
+    nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+    nvgScale(vg(), fit, fit)
+    OfflineRewardPanel.draw(vg())
+    nvgRestore(vg())
+end
+
 local function finishFrame()
     nvgSave(vg())
     nvgResetTransform(vg())
     applyFrame()
     nvgResetScissor(vg())
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    drawOrphanRowReward()
+    drawOfflineReward()
+    drawUpdateNotice()
     CEPanel.draw(vg(), logicalW(), logicalH())
     nvgRestore(vg())
     nvgEndFrame(vg())
@@ -142,7 +214,7 @@ local lootPress = false
 -- 右面板：角色固定
 -- 一期限制：弹窗为模态（绘制于中面板空间）；同一页面只在一个面板
 -- ============================================================================
-H_SKIP_START = true   -- 调试：跳过开始画面直接进主界面
+H_SKIP_START = false  -- 240db7b 打开调试跳过后会和暗黑标题互相卡住，表现为黑屏
 H_skipDone = false
 H_AUTO_DISMISS_TITLE = false  -- DarkTitleScreen 验收已通过：关闭无输入环境自动淡出钩子
 -- 截图验收钩子默认值（由外部 _validate_entry.lua 运行时覆写；此处定义避免 LSP 未定义全局）
@@ -150,6 +222,7 @@ H_AUTO_TAB = false
 H_AUTO_OPEN_PANEL = false
 H_ox, H_oy, H_s = 0, 0, 1
 H_lastPanel = 'center'
+H_focusPanel = 'center'  -- 当前焦点面板（left/center/right），奖励弹窗 show 时记录触发面板
 H_lastTopBarPower = nil  -- [三队并行] TopBar 战力逐帧比对缓存
 H_SEAM_BACK = false      -- [三队并行] 三行模式=true：返回键由中缝层绘制，页面内不画
 
@@ -169,11 +242,10 @@ local function HorizonUpdateTransform()
     end
 end
 
--- [底栏移除] 横屏日志(2)/副本(5)页：竖版设计全窗等比铺（模态层）
+-- [底栏移除] 横屏副本(5)页：竖版设计全窗等比铺（模态层）
 -- 全屏弹窗/战斗覆盖打开时不画（它们自带层级与让位逻辑）
 local function HorizonDrawPageModal(_unused_vg)
-    local tabIndex = BottomNav.getSelectedIndex()
-    if tabIndex ~= 2 and tabIndex ~= 5 then return end
+    if BottomNav.getSelectedIndex() ~= 5 then return end
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
     local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
     local ox = (logicalW() - DESIGN_W() * fit) * 0.5
@@ -187,7 +259,7 @@ local function HorizonDrawPageModal(_unused_vg)
     nvgScissor(vg(), ox, oy, DESIGN_W() * fit, DESIGN_H() * fit)
     nvgTranslate(vg(), ox, oy)
     nvgScale(vg(), fit, fit)
-    if tabIndex == 2 then DiaryPage.draw(vg()) else DungeonPage.draw(vg()) end
+    DungeonPage.draw(vg())
     nvgRestore(vg())
 end
 
@@ -215,12 +287,47 @@ local function HorizonDrawIntroOverlay()
     nvgRestore(vg())
 end
 
+--- [横屏接线 0928] 新手引导蒙层：按当前高亮热点所属面板的 Viewport 变换绘制，
+--- 热点 design 坐标即与该面板内容精确对齐（'modal' 上下文走全窗 letterbox，同副本页模态）
+local function HorizonDrawTutorialOverlay()
+    if not TutorialManager.isActive() then return end
+    if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then return end
+    if DarkTitleScreen.isOpen() then return end
+    -- 全屏战斗期间不绘制（与旧 ClientRender 的 towerBattleOpen 守卫一致）
+    if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
+    local panel = TutorialManager.getHotspotPanel()
+    nvgSave(vg())
+    nvgResetTransform(vg())
+    applyFrame()
+    local function drawLetterboxed()
+        local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
+        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+        nvgTranslate(vg(), (logicalW() - DESIGN_W() * fit) * 0.5, (logicalH() - DESIGN_H() * fit) * 0.5)
+        nvgScale(vg(), fit, fit)
+        TutorialManager.draw()
+    end
+    if panel == 'modal' then
+        drawLetterboxed()
+    elseif Viewport.beginFromNote(vg(), panel) then
+        -- 蒙层矩形精确等于面板区域不会溢出；解除面板裁剪让高亮/气泡可越出栏外
+        -- （装备详情 compactCorner 浮层画在栏外，其按钮高亮须同样不被裁切）
+        nvgResetScissor(vg())
+        TutorialManager.draw()
+        Viewport.finish(vg())
+    else
+        -- 面板无 note（如 tri 三行模式下的 center）：回退全窗 letterbox，
+        -- 保证 invisible 步骤的跳过按钮始终可见可点（防卡死）
+        drawLetterboxed()
+    end
+    nvgRestore(vg())
+end
+
 --- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（基屏幕空间，绘制于侧栏之后、中面板之前）
 local function HorizonDimSidePanels()
     local modalOpen =
         HeroRosterPanel.isVisible() or PlayerInfoPanel.isOpen() or
         RewardPopup.isOpen() or
-        OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() or
+        LevelUpPopup.isOpen() or
         SpinePowerUpEffect.isPlaying() or IntroCutscene.isActive()
     if not modalOpen then return end
 
@@ -235,56 +342,85 @@ end
 
 --- [三队并行] 中缝返回键列表：左页‹（左框柱）/ 详情›（右框柱），两级二级页可同时存在
 --- 各占一个框柱位，互不竞争（此前 if/else 单按钮，左右同开时只能活一个）
+--- [锻炉双页 0929] 锻炉页移中栏：其返回条挂在锻炉右缘（中栏右分界线），三行/非三行都绘制
 local function seamBackList()
     local list = {}
-    if not BattleTriPage.isOpen() then return list end
+    local tri = BattleTriPage.isOpen()
     local psL = logicalH() / 1080
     local cs = psL * 0.45                    -- 面板内容缩放(设计→窗口),与 Viewport.DS 一致
     local barW = logicalH() * DrawUtil.SEAMBAR_ASPECT  -- 素材实际等比,与绘制共用;条中心骑在页面分界线上
     local DIST = 1080                         -- 页面设计宽:滑入全程
-    -- 右框柱 ›：角色详情——条整体让出页面:中心在分界线左侧(中缝侧),条右缘贴详情页左缘
-    if CharacterDetail.isOpen() then
-        local ot, ct, od, cd = CharacterDetail.getSeamAnim()
-        local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
-        list[#list + 1] = {
-            cx = (logicalW() - 486 * psL) - barW * 0.5 + oxWin,
-            sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "right",
-            close = function() CharacterDetail.close() end,
-        }
+
+    if tri then
+        -- 右框柱 ›：角色详情——条整体让出页面:中心在分界线左侧(中缝侧),条右缘贴详情页左缘
+        if CharacterDetail.isOpen() then
+            local ot, ct, od, cd = CharacterDetail.getSeamAnim()
+            local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
+            list[#list + 1] = {
+                cx = (logicalW() - 486 * psL) - barW * 0.5 + oxWin,
+                sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "right",
+                close = function() CharacterDetail.close() end,
+            }
+        end
     end
-    -- 左框柱 ‹：左栏二级页（背包/教堂/铁匠/酒馆/市场）——条贴页面右缘(前缘),同步推进
-    local leftClose, leftAnim, leftScale
-    if LootBoxPage.isOpen() then
-        leftClose = function() LootBoxPage.close() end
-        leftAnim = { LootBoxPage.getSeamAnim() }
-    elseif TaskPage.isOpen() then
-        leftClose = function() TaskPage.close() end
-        leftAnim = { TaskPage.getSeamAnim() }
-    elseif BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
-        leftClose = function() BackpackPanel.close() end
-        leftAnim = { BackpackPanel.getSeamAnim() }
-    elseif TalentPage.isOpen()     then leftClose = function() TalentPage.close() end
-        leftAnim = { TalentPage.getSeamAnim() }
-        leftScale = TalentPage.getHorizonWidthScale()
-    elseif ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
-        leftAnim = { ChurchPage.getSeamAnim() }
-    elseif BlacksmithPage.isOpen()  then leftClose = function() BlacksmithPage.close() end
-        leftAnim = { BlacksmithPage.getSeamAnim() }
-    elseif TavernPage.isOpen()      then leftClose = function() TavernPage.close() end
-        leftAnim = { TavernPage.getSeamAnim() }
-    elseif MarketPage.isOpen()      then leftClose = function() MarketPage.close() end
-        leftAnim = { MarketPage.getSeamAnim() }
-    end
-    if leftClose then
-        local scale = leftScale or 1
-        if scale < 1 then scale = 1 end
-        local dist = 1080 * scale
-        local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], dist) * cs
+
+    -- [双页方向 0930] 锻炉返回条 ‹：双页(仓库+锻炉)都属左栏组，返回方向反转——
+    -- 条仍挂锻炉前缘(中/右栏分界线)，但箭头朝左、随页面向左滑出；点击关闭锻炉（联动关仓库）。
+    -- 三行与非三行都绘制（锻炉页内不再画返回键）
+    if BlacksmithPage.isOpen() then
+        local ot, ct, od, cd = BlacksmithPage.getSeamAnim()
+        local oxWin = DrawUtil.seamSlideX(-1, ot, ct, od, cd, DIST) * cs
+        -- 中/右栏分界线窗口坐标：三行 = 972*ps；非三行 = H_ox + 972*H_s
+        local seamX = tri and (972 * psL) or (H_ox + 972 * H_s)
         list[#list + 1] = {
-            cx = 486 * psL * scale + barW * 0.5 + oxWin,
+            cx = seamX + barW * 0.5 + oxWin,
             sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
-            close = leftClose,
+            close = function() BlacksmithPage.close() end,
         }
+    end
+
+    -- 左框柱 ‹：左栏二级页（仓库/教堂/酒馆/市场）——条贴页面右缘(前缘),同步推进
+    -- [锻炉双页 0929] 锻炉打开时仓库左栏条不画（双页整体由锻炉右侧竖栏一键关闭）
+    if tri then
+        local leftClose, leftAnim, leftScale
+        if LootBoxPage.isOpen() then
+            leftClose = function() LootBoxPage.close() end
+            leftAnim = { LootBoxPage.getSeamAnim() }
+        elseif TaskPage.isOpen() then
+            leftClose = function() TaskPage.close() end
+            leftAnim = { TaskPage.getSeamAnim() }
+        elseif BackpackPanel.isOpen() and BackpackPanel.isLeftMode()
+            and not BlacksmithPage.isOpen() then
+            leftClose = function() BackpackPanel.close() end
+            leftAnim = { BackpackPanel.getSeamAnim() }
+        elseif TalentPage.isOpen()     then leftClose = function() TalentPage.close() end
+            leftAnim = { TalentPage.getSeamAnim() }
+            leftScale = TalentPage.getHorizonWidthScale()
+        elseif ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
+            leftAnim = { ChurchPage.getSeamAnim() }
+        elseif TavernPage.isOpen()      then leftClose = function() TavernPage.close() end
+            leftAnim = { TavernPage.getSeamAnim() }
+        elseif MarketPage.isOpen()      then leftClose = function() MarketPage.close() end
+            leftAnim = { MarketPage.getSeamAnim() }
+        end
+        if leftClose then
+            local scale = leftScale or 1
+            if scale < 1 then scale = 1 end
+            local dist = 1080 * scale
+            local oxWin = DrawUtil.seamSlideX(-1, leftAnim[1], leftAnim[2], leftAnim[3], leftAnim[4], dist) * cs
+            -- 左面板右缘窗口坐标：三行 = 486*ps*scale；非三行 = H_ox + 486*H_s*scale
+            local leftEdge = tri and (486 * psL * scale) or (H_ox + 486 * H_s * scale)
+            list[#list + 1] = {
+                cx = leftEdge + barW * 0.5 + oxWin,
+                sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
+                close = leftClose,
+            }
+        end
+    end
+    -- [UI 0930] 返回条朝所属页面方向收 2px：左栏条向左、右栏条向右，
+    -- 让条与页面边缘轻微重叠，消除中缝留缝（hit 与 draw 共用此列表，自动同步）
+    for _, b in ipairs(list) do
+        b.cx = b.cx + ((b.dir == "left") and -2 or 2)
     end
     return list
 end
@@ -295,8 +431,10 @@ end
 ---@return table|nil
 local function seamHitAt(sx, sy)
     for _, seamBtn in ipairs(seamBackList()) do
+        local arrowY = seamBtn.sh * DrawUtil.SEAMBAR_ARROW_Y
+        local arrowH = seamBtn.sh * 0.16
         if math.abs(sx - seamBtn.cx) <= seamBtn.sw * 0.5
-            and math.abs(sy - logicalH() * 0.5) <= seamBtn.sh * 0.5 then
+            and math.abs(sy - arrowY) <= arrowH * 0.5 then
             return seamBtn
         end
     end
@@ -308,7 +446,9 @@ drawEquipDetailOverlay = function()
     local ok, EquipmentDetail = pcall(require, "ui.character.equip.EquipmentDetail")
     if not ok or not EquipmentDetail.isCompactCorner or not EquipmentDetail.isCompactCorner() then return end
     local owner = EquipmentDetail.getOwner and EquipmentDetail.getOwner() or "character"
-    local panelId = (owner == "character") and "right" or "left"
+    -- [锻炉双页 0929] smith owner（锻炉工作台详情）挂中栏；其余非 character 挂左栏
+    local panelId = (owner == "character") and "right"
+        or (owner == "smith") and "center" or "left"
     local note = Viewport.getNote(panelId)
     if not note then return end
     local panel = Viewport.PANELS[panelId]
@@ -324,7 +464,9 @@ equipOverlayDesign = function(sx, sy)
     local ok, EquipmentDetail = pcall(require, "ui.character.equip.EquipmentDetail")
     if not ok or not EquipmentDetail.isCompactCorner or not EquipmentDetail.isCompactCorner() then return nil end
     local owner = EquipmentDetail.getOwner and EquipmentDetail.getOwner() or "character"
-    local panelId = (owner == "character") and "right" or "left"
+    -- [锻炉双页 0929] smith owner（锻炉工作台详情）挂中栏；其余非 character 挂左栏
+    local panelId = (owner == "character") and "right"
+        or (owner == "smith") and "center" or "left"
     local note = Viewport.getNote(panelId)
     if not note then return nil end
     local panel = Viewport.PANELS[panelId]
@@ -354,11 +496,6 @@ function HandleNanoVGRenderHorizon()
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
         nvgFill(vg())
-        if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
-            H_skipDone = true
-            StartScreen.skipForReconnect()
-            DarkTitleScreen.open()
-        end
         if DarkTitleScreen.isOpen() then
             DarkTitleScreen.draw(vg(), logicalW(), logicalH())
         elseif StartScreen.isOpen() then
@@ -376,11 +513,6 @@ function HandleNanoVGRenderHorizon()
     -- 标题未淡出：只画标题。bootReady_() 提前解锁后默认 tab 仍是战斗，
     -- 但 BattleTriPage 要等标题关闭才 open；若此时画中栏会闪一帧竖屏 BattleScene。
     if DarkTitleScreen.isOpen() and not DarkTitleScreen.isFading() then
-        if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
-            H_skipDone = true
-            StartScreen.skipForReconnect()
-            DarkTitleScreen.open()
-        end
         nvgBeginPath(vg())
         nvgRect(vg(), 0, 0, logicalW(), logicalH())
         nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
@@ -392,46 +524,17 @@ function HandleNanoVGRenderHorizon()
         return
     end
 
-    -- 横屏背景：世界大背景图（cover 铺满；战斗页/标题页自带背景会覆盖此处）
-    -- [fix] 只尝试一次：缺图时每帧重试会刷屏报错；缺图回退城镇大图，再失败走下方纯色兜底
-    --       （不要用 cache:Exists 预判——Web 预览运行时对 pak 资源返回 false，会误伤正常加载）
-    if RT.imgWorldBg_ < 0 and not RT.worldBgTried_ then
-        RT.worldBgTried_ = true
-        RT.imgWorldBg_ = nvgCreateImage(vg(), RT.WORLD_BG_PATH, 0)
-        if RT.imgWorldBg_ < 0 then
-            print("[Standalone] WARN: world bg missing(" .. RT.WORLD_BG_PATH .. "), fallback -> " .. RT.WORLD_BG_FALLBACK)
-            RT.imgWorldBg_ = nvgCreateImage(vg(), RT.WORLD_BG_FALLBACK, 0)
-            if RT.imgWorldBg_ < 0 then
-                print("[Standalone] WARN: world bg fallback failed, use solid color")
-            end
-        end
-    end
-    if RT.imgWorldBg_ >= 0 then
-        local iw, ih = nvgImageSize(vg(), RT.imgWorldBg_)
-        if iw and iw > 0 then
-            local s = math.max(logicalW() / iw, logicalH() / ih)
-            local dw, dh = iw * s, ih * s
-            local paint = nvgImagePattern(vg(), (logicalW() - dw) * 0.5, (logicalH() - dh) * 0.5, dw, dh, 0, RT.imgWorldBg_, 1.0)
-            nvgBeginPath(vg())
-            nvgRect(vg(), 0, 0, logicalW(), logicalH())
-            nvgFillPaint(vg(), paint)
-            nvgFill(vg())
-        end
-    else
-        nvgBeginPath(vg())
-        nvgRect(vg(), 0, 0, logicalW(), logicalH())
-        nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
-        nvgFill(vg())
-    end
+    -- 横屏底色。石框、关卡图和各页底板负责可见画面，不再铺 UI_WORLD_BG。
+    nvgBeginPath(vg())
+    nvgRect(vg(), 0, 0, logicalW(), logicalH())
+    nvgFillColor(vg(), nvgRGBA(14, 14, 22, 255))
+    nvgFill(vg())
 
     -- 调试跳过：进主流程
     if H_SKIP_START and not H_skipDone and StartScreen.isOpen() then
         H_skipDone = true
         StartScreen.skipForReconnect()
-        DarkTitleScreen.open()  -- [DarkTitleScreen] 竖屏标题被跳过，改以横屏暗黑标题呈现
-        if H_AUTO_DISMISS_TITLE and DarkTitleScreen.isReady() then
-            DarkTitleScreen.handleTap()  -- 临时验证入口: 无输入环境自动淡出标题
-        end
+        -- 调试跳过开始画面时直接进主界面。提前打开暗黑标题会在资源未就绪时吞点击，表现为黑屏卡死。
     end
 
     -- 开始画面：全窗口居中（2400 高画布，适配横屏高度）
@@ -453,23 +556,32 @@ function HandleNanoVGRenderHorizon()
     -- [三行并行守卫] 三行战斗模式打开时，左右面板由下方 BattleTriPage 分支按
     -- 三行布局重新绘制（viewport 变换不同）；此处跳过，避免右侧「我的远征队员」
     -- 面板与左侧城镇建筑名牌各被绘制两次。
+    if not bootReady_() then
+        finishFrame()
+        return
+    end
+
     if not BattleTriPage.isOpen() then
         -- 左面板：功能页组（城镇 + 二级页）
+        -- [锻炉双页 0929] BlacksmithPage 已移至中面板绘制（左栏让给仓库）
         Viewport.begin(vg(), Viewport.PANELS.left, H_ox, H_oy, H_s)
         TownScene.draw(vg())
-        BlacksmithPage.draw(vg())
         ChurchPage.draw(vg())
         if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
         MarketPage.draw(vg())
+        -- [0930 穿帮修复] 锻炉打开时仓库下铺锻炉背景垫底（城镇组之上、仓库之下）
+        BlacksmithPage.drawUnderlay(vg())
         BackpackPanel.draw(vg())
         LootBox.drawPage(vg())
         TaskPage.draw(vg())
+        drawRewardInPanel('left')
         Viewport.finish(vg())
 
         -- 右面板：角色固定（先于中面板绘制，便于弹窗时统一压暗侧栏）
         Viewport.begin(vg(), Viewport.PANELS.right, H_ox, H_oy, H_s)
         CharacterPanel.draw(vg())
+        drawRewardInPanel('right')
         Viewport.finish(vg())
 
         -- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（在侧栏之上、中面板之下）
@@ -488,8 +600,6 @@ function HandleNanoVGRenderHorizon()
         local tabIndex = BottomNav.getSelectedIndex()
         if tabIndex == 1 then
             CharacterPanel.draw(vg())
-        elseif tabIndex == 2 then
-            -- [底栏移除] 日志页横屏全窗绘制，见 Viewport.finish 之后
         elseif tabIndex == 3 then
             if not BattleTriPage.isOpen() then
                 BattleScene.draw(vg())
@@ -500,13 +610,23 @@ function HandleNanoVGRenderHorizon()
         else
             TownScene.draw(vg())
         end
+        -- [锻炉双页 0929] 锻炉页绘制在中面板（盖在主视图之上；左栏同时开着仓库）
+        BlacksmithPage.draw(vg())
         -- [底栏移除] 三行布局 TopBar 只画左栏；非三行旧布局仍画中栏顶部
         local detailOpen = CharacterPanel.isDetailOpen()
-        if not detailOpen and not BattleTriPage.isOpen() then
+        if not detailOpen and not BattleTriPage.isOpen() and not BlacksmithPage.isOpen() then
             TopBar.draw(vg())
         end
     end
     Viewport.finish(vg())
+
+    -- [锻炉双页 0929] 非三行模式的中缝返回条（锻炉右缘 ›；三行模式见 BattleTriPage 分支）
+    if not BattleTriPage.isOpen() then
+        for _, seamBtn in ipairs(seamBackList()) do
+            DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
+                seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
+        end
+    end
 
     if talentPageUsesWideLayout() and not BattleTriPage.isOpen() then
         drawWideTalentPage(H_ox, H_oy, H_s)
@@ -514,6 +634,21 @@ function HandleNanoVGRenderHorizon()
 
     if towerBattleOpen then
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
+        if LevelUpPopup.isOpen()
+            or (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then
+            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+            nvgSave(vg())
+            nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+            nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+            nvgScale(vg(), fit, fit)
+            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+                RewardPopup.draw(vg())
+            end
+            if LevelUpPopup.isOpen() then
+                LevelUpPopup.draw(vg())
+            end
+            nvgRestore(vg())
+        end
         drawEquipDetailOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
@@ -525,16 +660,19 @@ function HandleNanoVGRenderHorizon()
     if BattleTriPage.isOpen() then
         local ps = logicalH() / 1080                -- 面板缩放（高适配）
         local oxL = 0
-        local oxR = logicalW() - 1458 * ps          -- 右面板: ox + 972*ps = 右缘 - 486*ps
+        -- 右栏与左栏同宽。横向再放大 5% 会把方形角色框拉成扁的。
+        local rightW = 486 * ps
+        local oxR = logicalW() - (972 * ps + rightW)
         BattleTriPage.drawL1Underlay(vg(), logicalW(), logicalH())  -- [暗黑替换] L1 行内容背景垫底（框内 clip）
         BattleTriPage.drawL0(vg(), logicalW(), logicalH())          -- [暗黑替换] L0 框体图（透明框内透出 L1）
         Viewport.begin(vg(), Viewport.PANELS.left, oxL, 0, ps)
         TownScene.draw(vg())
-        BlacksmithPage.draw(vg())
         ChurchPage.draw(vg())
         if not talentPageUsesWideLayout() then TalentPage.draw(vg()) end
         TavernPage.draw(vg())
         MarketPage.draw(vg())
+        -- [0930 穿帮修复] 锻炉打开时仓库下铺锻炉背景垫底（城镇组之上、仓库之下）
+        BlacksmithPage.drawUnderlay(vg())
         BackpackPanel.draw(vg())
         LootBox.drawPage(vg())
         TaskPage.draw(vg())
@@ -544,8 +682,9 @@ function HandleNanoVGRenderHorizon()
             or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
             TopBar.draw(vg(), -30)
         end
+        -- 三行战斗的玩家信息在后面全窗居中重画，这里不画，避免左栏裁切出半个面板。
         Viewport.finish(vg())
-        Viewport.begin(vg(), Viewport.PANELS.right, oxR, 0, ps)
+        Viewport.begin(vg(), Viewport.PANELS.right, oxR, 0, ps, rightW / 1080)
         CharacterPanel.draw(vg())
         Viewport.finish(vg())
         -- 三行战斗内容 + UI 层（窗口坐标; 战斗内容 clip 在各框内矩形）
@@ -553,13 +692,26 @@ function HandleNanoVGRenderHorizon()
         -- [行1 HUD] 宿主最终层级绘制：速度/扫荡/统计/选关按钮——
         -- 确保位于一切战斗行背景与框柱之上（用户实测按钮被行1背景穿帮）
         BattleTriPage.drawHud(vg(), logicalW(), logicalH())
+        -- [锻炉双页 0929] 锻炉页绘制在 tri 中栏区域（盖在战斗行之上，紧邻左栏仓库；
+        -- 关闭竖栏挂在锻炉右缘，见 seamBackList）
+        if BlacksmithPage.isOpen() then
+            Viewport.begin(vg(), Viewport.PANELS.center, oxL, 0, ps)
+            BlacksmithPage.draw(vg())
+            Viewport.finish(vg())
+        end
         drawWideTalentPage(0, 0, logicalH() / 1080)
         -- [三队并行] 中缝返回条（窗口坐标，页面视口之外）：全高门柱边条，左页‹ / 详情›，两级并存各自绘制
         for _, seamBtn in ipairs(seamBackList()) do
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
-        -- [修复] 玩家信息面板（点头像打开）——横屏此前从未绘制，open 成功但不可见
+        -- 玩家信息已画在左栏视口内。三行路径会提前 return，必须在这里再画一层全窗居中，
+        -- 否则面板被左栏裁切，点外面也无法按面板外关闭。
+        if SpinePowerUpEffect.isPlaying() then
+            Viewport.begin(vg(), Viewport.PANELS.left, oxL, 0, ps)
+            SpinePowerUpEffect.draw(vg(), -30)
+            Viewport.finish(vg())
+        end
         if PlayerInfoPanel.isOpen() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
@@ -570,17 +722,29 @@ function HandleNanoVGRenderHorizon()
             nvgRestore(vg())
         end
         -- 全局奖励仍在窗口居中覆盖，遗匣仅在上方左栏链绘制。
-        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        -- 离线收益由 finishFrame 统一绘制，不随三行路径重复画。
+        if (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) or LevelUpPopup.isOpen() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
             nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
             nvgScale(vg(), fit, fit)
-            RewardPopup.draw(vg())
+            if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+                and not RewardPopup.currentPanel() then
+                RewardPopup.draw(vg())
+            end
+            if LevelUpPopup.isOpen() then
+                LevelUpPopup.draw(vg())
+            end
             nvgRestore(vg())
         end
-        -- [底栏移除] 日志/副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
+        -- [底栏移除] 副本页全窗竖版模态（盖在三行战斗之上、标题/开场之下）
         HorizonDrawPageModal(vg())
+        -- [三面板] 三行模式：归属面板的奖励弹窗随触发面板绘制（左/中/右）；
+        -- 非三行模式左/右已在各自视口内绘制、中栏由全局弹窗层绘制，此处不重复
+        if BattleTriPage.isOpen() then
+            drawRewardInPanel(RewardPopup.currentPanel())
+        end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面
         if DarkTitleScreen.isOpen() then
@@ -591,6 +755,8 @@ function HandleNanoVGRenderHorizon()
         -- [LetterIntro] 开场覆盖必须在标题之后，否则信件被大门挡住且点击被吞
         HorizonDrawIntroOverlay()
         drawEquipDetailOverlay()
+        -- [横屏接线 0928] 新手引导蒙层（装备详情浮层之上，装备引导步骤高亮可见）
+        HorizonDrawTutorialOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
         finishFrame()
@@ -606,25 +772,6 @@ function HandleNanoVGRenderHorizon()
     LevelUpPopup.draw(vg())
     Viewport.finish(vg())
 
-    -- 离线收益：全窗 letterbox 居中（与玩家信息面板同一套 1080×2400 适配），
-    -- 不再塞进 486 宽的中栏，遮罩铺满整个横屏
-    if OfflineRewardPanel.isOpen() then
-        local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
-        local ox = (logicalW() - DESIGN_W() * fit) * 0.5
-        local oy = (logicalH() - DESIGN_H() * fit) * 0.5
-        nvgSave(vg())
-        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
-        nvgBeginPath(vg())
-        nvgRect(vg(), 0, 0, logicalW(), logicalH())
-        nvgFillColor(vg(), nvgRGBA(0, 0, 0, 150))
-        nvgFill(vg())
-        nvgScissor(vg(), ox, oy, DESIGN_W() * fit, DESIGN_H() * fit)
-        nvgTranslate(vg(), ox, oy)
-        nvgScale(vg(), fit, fit)
-        OfflineRewardPanel.draw(vg())
-        nvgRestore(vg())
-    end
-
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
     if DarkIcon.SHOWCASE then
         nvgSave(vg())
@@ -636,17 +783,8 @@ function HandleNanoVGRenderHorizon()
         nvgRestore(vg())
     end
 
-    -- [修复] 玩家信息面板（非三行横屏路径同样漏画）
-    if PlayerInfoPanel.isOpen() then
-        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
-        nvgSave(vg())
-        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
-        nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
-        nvgScale(vg(), fit, fit)
-        PlayerInfoPanel.draw(vg())
-        nvgRestore(vg())
-    end
-    -- [底栏移除] 日志/副本页全窗竖版模态
+    -- 玩家信息已由中栏弹窗层绘制，不再用竖屏坐标居中重画。
+    -- [底栏移除] 副本页全窗竖版模态
     HorizonDrawPageModal(vg())
     -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
     if DarkTitleScreen.isOpen() then
@@ -658,16 +796,17 @@ function HandleNanoVGRenderHorizon()
     HorizonDrawIntroOverlay()
     UiToast.draw(vg(), logicalW(), logicalH())
     drawEquipDetailOverlay()
+    -- [横屏接线 0928] 新手引导蒙层（装备详情浮层之上）
+    HorizonDrawTutorialOverlay()
     EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
 
     finishFrame()
 end
 
--- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态是否激活（全屏弹窗打开时让位）
+-- [底栏移除] 横屏副本(5)页全窗竖版模态是否激活（全屏弹窗打开时让位）
 local function HorizonPageModalActive()
-    local tabIndex = BottomNav.getSelectedIndex()
-    if tabIndex ~= 2 and tabIndex ~= 5 then return false end
+    if BottomNav.getSelectedIndex() ~= 5 then return false end
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return false end
     if PlayerInfoPanel.isOpen() or LevelUpPopup.isOpen()
         or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() then
@@ -676,9 +815,43 @@ local function HorizonPageModalActive()
     return true
 end
 
---- 玩家信息面板横屏 letterbox：窗口坐标 → 1080×2400 设计坐标
+--- 玩家信息面板坐标。三行战斗里面板是全窗居中重画的，点击必须用同一套 letterbox。
 local function playerInfoDesignCoords(sx, sy)
+    if BattleTriPage.isOpen() then
+        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+        return (sx - (logicalW() - 1080 * fit) * 0.5) / fit,
+               (sy - (logicalH() - 2400 * fit) * 0.5) / fit
+    end
+    local note = Viewport.getNote("center")
+    if note then
+        local cs = note.s * Viewport.DS
+        return (sx - note.ox - Viewport.PANELS.center.bx * note.s) / cs,
+               (sy - note.oy) / cs
+    end
     local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+    return (sx - (logicalW() - 1080 * fit) * 0.5) / fit,
+           (sy - (logicalH() - 2400 * fit) * 0.5) / fit
+end
+
+--- 归属面板奖励弹窗的设计坐标：左/右栏走各自 Viewport note，中栏（三行模式）走全窗 letterbox
+local function rewardPopupDesignCoords(sx, sy, pid)
+    if pid == 'center' and BattleTriPage.isOpen() then
+        return playerInfoDesignCoords(sx, sy)
+    end
+    local note = Viewport.getNote(pid)
+    local pdef = Viewport.PANELS[pid]
+    if note and pdef then
+        local cs = note.s * Viewport.DS
+        return (sx - note.ox - pdef.bx * note.s) / cs,
+               (sy - note.oy - pdef.by * note.s) / cs
+    end
+    return playerInfoDesignCoords(sx, sy)
+end
+
+--- 离线收益始终走全窗 letterbox，不复用非三行玩家信息的中栏 Viewport note。
+local function offlineRewardDesignCoords(sx, sy)
+    local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+    if fit <= 0 then fit = 1 end
     return (sx - (logicalW() - 1080 * fit) * 0.5) / fit,
            (sy - (logicalH() - 2400 * fit) * 0.5) / fit
 end
@@ -687,23 +860,48 @@ end
 local function HorizonResolveMouse()
     local mousePos = input:GetMousePosition()
     local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+    -- 离线收益覆盖全部业务面板；各渲染路径的点击/拖拽使用同一套逆变换。
+    if OfflineRewardPanel.isOpen() then
+        local pdx, pdy = offlineRewardDesignCoords(sx, sy)
+        return 'offline', pdx, pdy
+    end
     -- 玩家信息是全窗 letterbox，不能走左/中/右栏换算，否则点面板中部会被当成点外面
     if PlayerInfoPanel.isOpen() then
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
         return 'playerinfo', pdx, pdy
     end
-    -- 离线收益同样是全窗 letterbox，必须用同一套坐标，否则点击会落到中栏坐标上
-    if OfflineRewardPanel.isOpen() then
-        local pdx, pdy = playerInfoDesignCoords(sx, sy)
-        return 'offline', pdx, pdy
-    end
-    -- 三行全局奖励使用居中的 1080×2400 letterbox，优先于所有左栏页面。
-    if BattleTriPage.isOpen()
-        and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+    -- 三行 / 通天塔升级弹窗沿用原有坐标路由；离线收益已在上方独立接管。
+    if LevelUpPopup.isOpen()
+        and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
         return 'modal', pdx, pdy
     end
-    -- [底栏移除] 横屏日志(2)/副本(5)页全窗竖版模态：中段命中映射到设计坐标；
+    -- 全局奖励弹窗：归属面板时点击路由到该面板（面板内任意点击可交互/关闭，
+    -- 面板外点击 rp_out 关闭）；无归属时所有点击都路由给它（任意点击可关闭）
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        local rpanel = RewardPopup.currentPanel()
+        if rpanel then
+            local pid2
+            if BattleTriPage.isOpen() then
+                local ps = logicalH() / 1080
+                local leftW = 486 * ps
+                if sx < leftW then pid2 = 'left'
+                elseif sx > logicalW() - leftW then pid2 = 'right'
+                else pid2 = 'center' end
+            else
+                pid2 = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
+            end
+            if pid2 == rpanel then
+                local mx, my = rewardPopupDesignCoords(sx, sy, pid2)
+                H_focusPanel = pid2
+                return pid2, mx, my
+            end
+            return 'rp_out', 0, 0
+        end
+        local pdx, pdy = playerInfoDesignCoords(sx, sy)
+        return 'modal', pdx, pdy
+    end
+    -- [底栏移除] 横屏副本(5)页全窗竖版模态：中段命中映射到设计坐标；
     -- 左右栏让出（TopBar 页签/角色面板仍可点），全屏弹窗打开时让位
     if HorizonPageModalActive() then
         local ps = logicalH() / 1080
@@ -721,6 +919,16 @@ local function HorizonResolveMouse()
             return 'tri', sx, sy
         end
         local ps = logicalH() / 1080
+        -- [锻炉双页 0929] 锻炉页占据中栏（Viewport.center，窗口 x∈[486ps,972ps]）：
+        -- 命中该区返回 'center' + 设计坐标，交给 BlacksmithPage 输入链。
+        -- 注意 tri 模式右栏被挪到窗口右缘，不能用 Viewport.hit（其 right 区与实际不符）
+        if BlacksmithPage.isOpen() then
+            local leftW = 486 * ps
+            if sx >= leftW and sx < leftW + 486 * ps then
+                local cs = ps * Viewport.DS
+                return 'center', (sx - leftW) / cs, sy / cs
+            end
+        end
         if talentPageUsesWideLayout() then
             local rightEdge = talentPageRightEdge(0, ps)
             if sx >= 0 and sx < rightEdge then
@@ -729,10 +937,11 @@ local function HorizonResolveMouse()
             end
         end
         local leftW = 486 * ps
+        local rightW = leftW
         if sx < leftW then
             return 'left', sx / (ps * 0.45), sy / (ps * 0.45)
-        elseif sx > logicalW() - leftW then
-            return 'right', (sx - (logicalW() - 486 * ps)) / (ps * 0.45), sy / (ps * 0.45)
+        elseif sx > logicalW() - rightW then
+            return 'right', (sx - (logicalW() - rightW)) / (rightW / 1080), sy / (ps * 0.45)
         end
         return 'tri', sx, sy
     end
@@ -750,19 +959,22 @@ local function HorizonResolveMouse()
     if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
     if DungeonBattleScene.isOpen()
         or LevelUpPopup.isOpen() or PlayerInfoPanel.isOpen()
-        or OfflineRewardPanel.isOpen() or RewardPopup.isOpen() then
+        or OfflineRewardPanel.isOpen() then
         return 'modal', dx or 0, dy or 0
     end
     if not pid then return 'none', 0, 0 end
+    H_focusPanel = pid  -- 当前焦点面板（奖励弹窗 show 时记录触发面板用）
     H_lastPanel = pid
     return pid, dx, dy
 end
 
 local equipOverlayPress = false
-
-local equipOverlayPress = false
+-- [浮选详情修复] 本次按下刚顺手关掉了浮选详情：按下继续下放给底层页面（恢复拖拽），
+-- 但松开时不按 tap 派发点击，避免"点空白关详情"误触页面按钮。
+local detailDismissPress = false
 
 function HandleMouseButtonDownHorizon(eventType, eventData)
+    detailDismissPress = false  -- [浮选详情修复] 每次按下先复位，防早退路径残留误抑制下次 tap
     if vg() then
         local mousePos = input:GetMousePosition()
         local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
@@ -771,6 +983,12 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         end
     end
     if not bootReady_() then return end
+    -- [UpdateNoticePopup] 全窗模态：弹窗期间吞掉按下，点击穿透不到下层面板（关闭由 ButtonUp 触发）
+    if UpdateNoticePopup.isOpen() then
+        pressValid = true
+        pressStartDX, pressStartDY = 0, 0
+        return
+    end
     -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
     if DarkTitleScreen.isOpen() then return end
     -- [LetterIntro] 开场期也要记 pressValid，否则抬起被当成无效点击
@@ -780,7 +998,17 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         return
     end
     local button = eventData["Button"]:GetInt()
+    if OfflineRewardPanel.isOpen() then
+        if button == MOUSEB_LEFT then
+            local _, dx, dy = HorizonResolveMouse()
+            pressStartDX, pressStartDY = dx, dy
+            pressValid = true
+            OfflineRewardPanel.handleDragBegin(dx, dy)
+        end
+        return
+    end
     if button == MOUSEB_LEFT then
+        detailDismissPress = false
         local mousePos = input:GetMousePosition()
         local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
         local dx, dy, ED = equipOverlayDesign(sx, sy)
@@ -791,7 +1019,18 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             print("[Horizon] 详情浮层按下")
             return
         end
-        equipOverlayPress = false
+        -- [浮选详情修复] 详情开着时按下空白：关掉详情，但不再吞掉这次按下——
+        -- 继续走下方正常路由，让底层页面收到 handleDragBegin（列表拖拽/装备拖拽可用）。
+        -- 松开时由 detailDismissPress 抑制 tap 派发，保留“第一次点击只关详情、不误触按钮”语义。
+        local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+        if EquipmentDetail.isCompactCorner() then
+            EquipmentDetail.close()
+            equipOverlayPress = false
+            detailDismissPress = true
+            print("[Horizon] 按下关闭装备详情并下放拖拽")
+        else
+            equipOverlayPress = false
+        end
     end
     if button == MOUSEB_RIGHT then
         local pid, dx, dy = HorizonResolveMouse()
@@ -808,9 +1047,9 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             return
         end
         if pid == 'left' then
-            if LootBoxPage.isOpen() then return end
-            if BlacksmithPage.isOpen() and EquipmentBag.isOpen() then
-                EquipmentBag.handleRightClick(dx, dy)
+            if LootBoxPage.isOpen() then
+                LootBoxPage.handleRightClick(dx, dy)
+                return
             end
             return
         end
@@ -831,6 +1070,10 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     if pid == 'tri' then
         pressStartDX, pressStartDY = dx or 0, dy or 0
         pressValid = true
+        if SweepDialog.isOpen() then
+            BattleTriPage.handleDragBegin(dx, dy)
+            return
+        end
         if EquipmentBag.shouldBattleOverlay() and EquipmentBag.hasOverlayRegion()
             and EquipmentBag.hitOverlayWindow(dx, dy) then
             local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
@@ -854,17 +1097,32 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     pressStartDX, pressStartDY = dx or 0, dy or 0
     pressValid = (pid ~= 'none')
     if pid == 'modal' and HorizonPageModalActive() then
-        -- [底栏移除] 日志页全窗模态：拖拽起点（列表滚动）
-        if BottomNav.getSelectedIndex() == 2 then
-            DiaryPage.handleDragBegin(dx, dy)
-        end
         return
+    end
+    if pid == 'modal' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        if OfflineRewardPanel.isOpen() then
+            OfflineRewardPanel.handleDragBegin(dx, dy)
+            return
+        end
+        if LevelUpPopup.isOpen() then
+            return
+        end
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            RewardPopup.handleDragBegin(dx, dy)
+            return
+        end
     end
     if pid == 'modal' and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         RewardPopup.handleDragBegin(dx, dy)
         return
     end
     if pid == 'none' then return end
+    -- 归属面板的奖励弹窗：其面板内按下先交给弹窗（拖拽滚动等）
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        and RewardPopup.currentPanel() == pid then
+        RewardPopup.handleDragBegin(dx, dy)
+        return
+    end
     if pid == 'left' then
         if LootBoxPage.isOpen() then
             lootPress = true
@@ -886,34 +1144,41 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             BackpackPanel.handleDragBegin(dx, dy)
             return
         end
-        if BlacksmithPage.isOpen() then
-            if EquipmentBag.isOpen() and not EquipmentBag.hasOverlayRegion() then
-                local mousePos = input:GetMousePosition()
-                local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
-                local peek = EquipmentBag.peekAt(dx, dy)
-                if peek then
-                    EquipCrossDrag.arm(peek, sx, sy, "bag")
-                    print("[Horizon] 左栏装备背包按下 seq=" .. tostring(peek.seq))
-                end
-            end
-            BlacksmithPage.handleDragBegin(dx, dy)
-            return
-        end
+        -- [锻炉双页 0929] 锻炉页已移中栏（center/tri 分支处理），左栏不再接管
         if TalentPage.isOpen() then TalentPage.handleDragBegin(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragBegin(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragBegin(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragBegin(dx, dy) return end
     elseif pid == 'center' then
+        -- [锻炉双页 0929] 锻炉页在中栏：优先接管
+        if BlacksmithPage.isOpen() then BlacksmithPage.handleDragBegin(dx, dy) return end
         if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragBegin(dx, dy) end
     elseif pid == 'right' then
+        -- [0930] 配装页装备（含角色六装备槽已装备）可跨栏拖到锻炉工作台/换槽
+        local CharacterDetail = require("ui.character.detail.CharacterDetail")
+        if CharacterDetail.isOpen() and CharacterDetail.isEquipTab and CharacterDetail.isEquipTab() then
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local EquipPanel = require("ui.character.detail.CharacterDetailEquip")
+            local peek = EquipPanel.peekSlotEquipAt(dx, dy) or EquipPanel.peekItemAt(dx, dy)
+            if peek then
+                EquipCrossDrag.arm(peek, sx, sy, "rightpanel")
+                print("[Horizon] 右栏配装按下 seq=" .. tostring(peek.seq))
+            end
+        end
         CharacterPanel.handleDragBegin(dx, dy)
     end
 end
 
 function HandleMouseMoveHorizon(eventType, eventData)
+    if UpdateNoticePopup.isOpen() then return end  -- 全窗模态：屏蔽下层 hover
     if DarkTitleScreen.isOpen() then return end
     if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
     local pid, dx, dy = HorizonResolveMouse()
+    if pid == 'offline' then
+        OfflineRewardPanel.handleDragMove(dx, dy)
+        return
+    end
     if lootPress then
         if pid == 'left' and pressValid then
             LootBox.handleDragMove(dx, dy)
@@ -932,6 +1197,8 @@ function HandleMouseMoveHorizon(eventType, eventData)
         local source = EquipCrossDrag.getSource()
         if source == "overlay" then
             if pid ~= "tri" then return end
+        elseif source == "rightpanel" then
+            if pid ~= "right" then return end
         elseif pid ~= "left" then
             return
         end
@@ -941,15 +1208,27 @@ function HandleMouseMoveHorizon(eventType, eventData)
         PlayerInfoPanel.handleDragMove(dx, dy)
         return
     end
-    if pid == 'offline' then
-        OfflineRewardPanel.handleDragMove(dx, dy)
+    -- 归属面板的奖励弹窗：其面板内拖拽交给弹窗滚动
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        and RewardPopup.currentPanel() == pid then
+        RewardPopup.handleDragMove(dx, dy)
         return
     end
-    if pid == 'modal' and HorizonPageModalActive() then
-        -- [底栏移除] 日志页全窗模态：拖拽滚动
-        if BottomNav.getSelectedIndex() == 2 then
-            DiaryPage.handleDragMove(dx, dy)
+    -- 三行 / 通天塔离线收益是全窗 letterbox，拖拽必须在左栏/战斗区之前消费。
+    if pid == 'modal' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        if OfflineRewardPanel.isOpen() then
+            OfflineRewardPanel.handleDragMove(dx, dy)
+            return
         end
+        if LevelUpPopup.isOpen() then
+            return
+        end
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            RewardPopup.handleDragMove(dx, dy)
+            return
+        end
+    end
+    if pid == 'modal' and HorizonPageModalActive() then
         return
     end
     if pid == 'modal' then
@@ -968,21 +1247,44 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if not pressValid then
-        if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+        if SweepDialog.isOpen() and pid == 'tri' then
+            BattleTriPage.handleDragMove(dx, dy)
+            return
+        end
+        if LootBoxPage.isOpen() then
+            if pid == 'left' then LootBoxPage.handleHover(dx, dy)
+            else LootBoxPage.handleHover(-1, -1) end
+        end
+        if pid == 'right'
+            or (pid == 'center' and BottomNav.getSelectedIndex() == 1 and not BlacksmithPage.isOpen()) then
             if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
+        else
+            if CharacterPanel.handleHover then CharacterPanel.handleHover(-1, -1) end
         end
         if pid == 'left' then
+            if MarketPage.isOpen and MarketPage.isOpen() and MarketPage.handleHover then
+                MarketPage.handleHover(dx, dy)
+            elseif MarketPage.handleHover then
+                MarketPage.handleHover(-1, -1)
+            end
             if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
                 BackpackPanel.handleHover(dx, dy)
+            elseif BackpackPanel.handleHover then
+                BackpackPanel.handleHover(-1, -1)
             end
             if EquipmentBag.isOpen and EquipmentBag.isOpen() and EquipmentBag.handleHover then
                 EquipmentBag.handleHover(dx, dy)
+            elseif EquipmentBag.handleHover then
+                EquipmentBag.handleHover(-1, -1)
             end
+        else
+            if MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
+            if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
+            if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
         end
         return
     end
     if pid == 'tri' then
-
         BattleTriPage.handleDragMove(dx, dy)
         return
     end
@@ -990,15 +1292,46 @@ function HandleMouseMoveHorizon(eventType, eventData)
         if LootBoxPage.isOpen() then return end -- 非遗匣起始的拖拽不能穿透其下方页面
         if TaskPage.isOpen() then TaskPage.handleDragMove(dx, dy) return end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleDragMove(dx, dy) return end
-        if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
         if TalentPage.isOpen() then TalentPage.handleDragMove(dx, dy) return end
         if ChurchPage.isOpen() then ChurchPage.handleDragMove(dx, dy) return end
         if TavernPage.isOpen() then TavernPage.handleDragMove(dx, dy) return end
         if MarketPage.isOpen() then MarketPage.handleDragMove(dx, dy) return end
     elseif pid == 'center' then
+        -- [锻炉双页 0929] 锻炉页在中栏：优先接管
+        if BlacksmithPage.isOpen() then BlacksmithPage.handleDragMove(dx, dy) return end
         if BottomNav.getSelectedIndex() == 1 then CharacterPanel.handleDragMove(dx, dy) end
     elseif pid == 'right' then
         CharacterPanel.handleDragMove(dx, dy)
+    end
+end
+
+-- 鼠标静止时也推进装备悬停计时（Standalone.HandleUpdate 每帧调用）。
+-- 移到其他格子由命中检测立即收起旧说明。
+function HandleEquipmentHoverTickHorizon()
+    if DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
+        or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
+        or EquipCrossDrag.isArmed() then return end
+    local pid, dx, dy = HorizonResolveMouse()
+    if pid == 'right'
+        or (pid == 'center' and BottomNav.getSelectedIndex() == 1 and not BlacksmithPage.isOpen()) then
+        if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
+    elseif CharacterPanel.handleHover then
+        CharacterPanel.handleHover(-1, -1)
+    end
+    if pid == 'left' then
+        if MarketPage.isOpen and MarketPage.isOpen() and MarketPage.handleHover then
+            MarketPage.handleHover(dx, dy)
+        end
+        if BackpackPanel.isOpen and BackpackPanel.isOpen() and BackpackPanel.handleHover then
+            BackpackPanel.handleHover(dx, dy)
+        end
+        if EquipmentBag.isOpen and EquipmentBag.isOpen() and EquipmentBag.handleHover then
+            EquipmentBag.handleHover(dx, dy)
+        end
+    else
+        if MarketPage.handleHover then MarketPage.handleHover(-1, -1) end
+        if BackpackPanel.handleHover then BackpackPanel.handleHover(-1, -1) end
+        if EquipmentBag.handleHover then EquipmentBag.handleHover(-1, -1) end
     end
 end
 
@@ -1041,8 +1374,37 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
                 return
             end
         end
+        -- 角色拖拽由起始面板持有；松手即结算，不能按落点分栏遗留拖拽态。
+        if CharacterPanel.isDraggingCard() then
+            local pid, dx, dy = HorizonResolveMouse()
+            if pid ~= 'right' and not (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+                dx, dy = -1, -1  -- 跨栏/弹窗外释放仅取消，不得命中其它栏的槽位
+            end
+            CharacterPanel.handleInput(dx, dy)
+            CharacterPanel.handleDragEnd(dx, dy)
+            pressValid = false
+            return
+        end
+        -- 滚动/未达拖拽阈值的角色按压跨栏松开时也要清除起点状态。
+        local pid, dx, dy = HorizonResolveMouse()
+        if pid ~= 'right' and not (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+            CharacterPanel.handleDragEnd(-1, -1)
+        end
     end
     if not bootReady_() then return end
+    -- [UpdateNoticePopup] 全窗模态：任意释放 = 关闭弹窗并消费事件（优先于标题/业务层）
+    if UpdateNoticePopup.isOpen() then
+        local mousePos = input:GetMousePosition()
+        local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+        -- 还原 letterbox 设计坐标（同 drawUpdateNotice 的逆变换），点击任意处均可关闭
+        local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+        if fit <= 0 then fit = 1 end
+        local dx = (sx - (logicalW() - 1080 * fit) * 0.5) / fit
+        local dy = (sy - (logicalH() - 2400 * fit) * 0.5) / fit
+        UpdateNoticePopup.handleInput(dx, dy)
+        pressValid = false
+        return
+    end
     -- [DarkTitleScreen] 标题期任意释放 = 点击继续
     if DarkTitleScreen.isOpen() then
         local mousePos = input:GetMousePosition()
@@ -1064,10 +1426,15 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     local mousePos = input:GetMousePosition()
     local seamX, seamY = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
     local seamBtn = seamHitAt(seamX, seamY)
-    if seamBtn then
+    if seamBtn and not OfflineRewardPanel.isOpen() then
         local now = time.elapsedTime
         if now - lastTapTime >= MIN_TAP_INTERVAL then
             lastTapTime = now
+            local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+            if EquipmentDetail.isCompactCorner() then
+                EquipmentDetail.close()
+                print("[SeamBack] 返回同时关闭装备详情")
+            end
             print("[SeamBack] close dir=" .. tostring(seamBtn.dir)
                 .. string.format(" at %.0f,%.0f", seamX, seamY))
             seamBtn.close()
@@ -1082,11 +1449,22 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         local dist = math.abs(dx - pressStartDX) + math.abs(dy - pressStartDY)
         isTap = dist < TAP_THRESHOLD
     end
+    -- [浮选详情修复] 这次按下用于关闭浮选详情：拖拽已下放给页面，但松开不派发点击，
+    -- 避免“点空白关详情”顺手触发页面按钮（领取/回收/筛选等）。
+    if detailDismissPress then
+        detailDismissPress = false
+        isTap = false
+    end
     pressValid = false
     if isTap then
         local now = time.elapsedTime
         if now - lastTapTime < MIN_TAP_INTERVAL then isTap = false
         else lastTapTime = now end
+    end
+    if pid == 'offline' then
+        OfflineRewardPanel.handleDragEnd(dx, dy)
+        if isTap then OfflineRewardPanel.handleInput(dx, dy) end
+        return
     end
     -- 玩家信息全窗模态：坐标已是 1080×2400 设计空间
     if pid == 'playerinfo' then
@@ -1094,7 +1472,28 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if isTap then PlayerInfoPanel.handleInput(dx, dy) end
         return
     end
-    -- 全局领奖必须在中缝返回与左栏页面之前消费。
+    -- 归属面板的奖励弹窗：点击其面板之外 → 关闭弹窗并消费事件
+    if pid == 'rp_out' then
+        if RewardPopup.isOpen() then RewardPopup.close() end
+        return
+    end
+    -- 全局领奖 / 离线收益必须在中缝返回与左栏页面之前消费。
+    if pid == 'modal' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        if OfflineRewardPanel.isOpen() then
+            OfflineRewardPanel.handleDragEnd(dx, dy)
+            if isTap then OfflineRewardPanel.handleInput(dx, dy) end
+            return
+        end
+        if LevelUpPopup.isOpen() then
+            if isTap then LevelUpPopup.handleInput(dx, dy) end
+            return
+        end
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            RewardPopup.handleDragEnd(dx, dy)
+            if isTap then RewardPopup.handleInput(dx, dy) end
+            return
+        end
+    end
     if pid == 'modal' and BattleTriPage.isOpen()
         and RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
         RewardPopup.handleDragEnd(dx, dy)
@@ -1119,6 +1518,21 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         end
         return
     end
+    -- [横屏接线 0928] 新手引导激活时接管 tap：高亮区域推进并穿透，非目标区域/面板吞掉
+    if TutorialManager.isActive() and isTap then
+        local tdx, tdy = dx, dy
+        if pid == 'tri' or pid == 'none' then
+            -- 引导层在 tri 模式下走全窗 letterbox 绘制：把窗口坐标转为 letterbox design 坐标，
+            -- 保证跳过按钮在战斗三栏期间也可点（防卡死）
+            local mp = input:GetMousePosition()
+            local sx2, sy2 = toDesign(mp.x / dpr(), mp.y / dpr())
+            tdx, tdy = playerInfoDesignCoords(sx2, sy2)
+        end
+        if TutorialManager.handleClick(tdx, tdy, pid) then
+            pressValid = false
+            return
+        end
+    end
     if wasLootPress and pid ~= 'left' then return end
     if pid == 'none' then return end
     if pid == 'tri' then
@@ -1126,21 +1540,10 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         if isTap then BattleTriPage.handleInput(dx, dy) end
         return
     end
-    if pid == 'offline' then
-        OfflineRewardPanel.handleDragEnd(dx, dy)
-        if isTap then OfflineRewardPanel.handleInput(dx, dy) end
-        return
-    end
     if pid == 'modal' then
-        -- [底栏移除] 日志/副本页全窗模态点击（设计坐标）
+        -- [底栏移除] 副本页全窗模态点击（设计坐标）
         if HorizonPageModalActive() then
-            local tab = BottomNav.getSelectedIndex()
-            if tab == 2 then
-                DiaryPage.handleDragEnd(dx, dy)
-                if isTap then DiaryPage.handleInput(dx, dy) end
-            elseif tab == 5 then
-                if isTap then DungeonPage.handleInput(dx, dy) end
-            end
+            if isTap then DungeonPage.handleInput(dx, dy) end
             return
         end
         if TowerBattleScene.isActive() then
@@ -1175,6 +1578,13 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     -- 左面板：功能页组点击链
     if pid == 'left' then
+        -- 归属左栏的奖励弹窗：左栏内任意点击交给弹窗（可交互/关闭）
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+            and RewardPopup.currentPanel() == 'left' then
+            RewardPopup.handleDragEnd(dx, dy)
+            if isTap then RewardPopup.handleInput(dx, dy) end
+            return
+        end
         -- [三行并行] 头像热区（TopBar 绘制在左面板时 oy=-30，热区同步）：仅城镇主视图（无二级页）时
         if isTap and not (BackpackPanel.isOpen() or BlacksmithPage.isOpen() or ChurchPage.isOpen()
             or TalentPage.isOpen() or TavernPage.isOpen() or MarketPage.isOpen() or LootBoxPage.isOpen() or TaskPage.isOpen()) then
@@ -1204,12 +1614,7 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
             BackpackPanel.handleInput(dx, dy)
             return
         end
-        if BlacksmithPage.isOpen() then
-            BlacksmithPage.handleDragEnd(dx, dy)
-            if not isTap then return end
-            BlacksmithPage.handleInput(dx, dy)
-            return
-        end
+        -- [锻炉双页 0929] 锻炉页已移中栏（center 分支处理），左栏链不再接管
         if TalentPage.isOpen() then
             TalentPage.handleDragEnd(dx, dy)
             if not isTap then return end
@@ -1239,6 +1644,13 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     end
     -- 右面板：角色链
     if pid == 'right' then
+        -- 归属右栏的奖励弹窗：右栏内任意点击交给弹窗（可交互/关闭）
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+            and RewardPopup.currentPanel() == 'right' then
+            RewardPopup.handleDragEnd(dx, dy)
+            if isTap then RewardPopup.handleInput(dx, dy) end
+            return
+        end
         if CharacterPanel.isDraggingCard() then
             CharacterPanel.handleInput(dx, dy)
             CharacterPanel.handleDragEnd(dx, dy)
@@ -1249,6 +1661,18 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         return
     end
     -- 中面板：主视图链
+    if pid == 'center' and RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+        and RewardPopup.currentPanel() == 'center' then
+        RewardPopup.handleDragEnd(dx, dy)
+        if isTap then RewardPopup.handleInput(dx, dy) end
+        return
+    end
+    -- [锻炉双页 0929] 锻炉页在中栏：优先接管（tri 模式下中段命中映射到 center 设计坐标）
+    if pid == 'center' and BlacksmithPage.isOpen() then
+        BlacksmithPage.handleDragEnd(dx, dy)
+        if isTap then BlacksmithPage.handleInput(dx, dy) end
+        return
+    end
     if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
     local tabIndex = BottomNav.getSelectedIndex()
     -- [底栏移除] 非三行旧布局：中栏顶部 TopBar 页签入口（三行布局画左栏、走左栏链）
@@ -1294,6 +1718,8 @@ function HandleTouchMoveHorizon(eventType, eventData)
 end
 
 function HandleMouseWheelHorizon(eventType, eventData)
+    -- [UpdateNoticePopup] 全窗模态吞掉滚轮
+    if UpdateNoticePopup.isOpen() then return end
     -- [DarkTitleScreen] 标题期吞掉滚轮
     if DarkTitleScreen.isOpen() then return end
     if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
@@ -1304,7 +1730,37 @@ function HandleMouseWheelHorizon(eventType, eventData)
     local sy = mousePos.y / dpr()
     local csx, csy = toDesign(sx, sy)
     if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
-    if RewardPopup.isOpen() then RewardPopup.handleScroll(wheel) return end
+    if OfflineRewardPanel.isOpen() then
+        OfflineRewardPanel.handleScroll(wheel)
+        return
+    end
+    -- 归属面板的奖励弹窗：指针在其面板内且命中面板时滚轮滚弹窗列表
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag() and RewardPopup.currentPanel() then
+        local pid2
+        if BattleTriPage.isOpen() then
+            local ps = logicalH() / 1080
+            local leftW = 486 * ps
+            if csx < leftW then pid2 = 'left'
+            elseif csx > logicalW() - leftW then pid2 = 'right'
+            else pid2 = 'center' end
+        else
+            pid2 = Viewport.hit(csx, csy, H_ox, H_oy, H_s)
+        end
+        if pid2 == RewardPopup.currentPanel() then
+            local mx, my = rewardPopupDesignCoords(csx, csy, pid2)
+            if RewardPopup.hitPanel(mx, my) then
+                RewardPopup.handleScroll(wheel)
+                return
+            end
+        end
+    end
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        local pdx, pdy = playerInfoDesignCoords(csx, csy)
+        if RewardPopup.hitPanel(pdx, pdy) then
+            RewardPopup.handleScroll(wheel)
+            return
+        end
+    end
 
     -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
     if TalentPage.isOpen() then
@@ -1317,12 +1773,27 @@ function HandleMouseWheelHorizon(eventType, eventData)
         end
     end
 
-    -- 全局领奖覆盖三栏时先消费滚轮，不能被中栏装备袋抢走。
-    if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
-        RewardPopup.handleScroll(wheel)
+    -- 全局领奖 / 离线收益覆盖三栏时先消费滚轮，不能被中栏装备袋抢走。
+    if OfflineRewardPanel.isOpen() then
+        OfflineRewardPanel.handleScroll(wheel)
         return
     end
+    if LevelUpPopup.isOpen() and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
+        return
+    end
+    if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+        local pdx, pdy = playerInfoDesignCoords(csx, csy)
+        if RewardPopup.hitPanel(pdx, pdy) then
+            RewardPopup.handleScroll(wheel)
+            return
+        end
+    end
 
+    -- 弹窗横跨三栏；任何位置的滚轮都交给选关，避免误滚角色列表。
+    if BattleTriPage.isOpen() and StageSelectDialog.isOpen() then
+        BattleTriPage.handleScroll(wheel, sx, sy)
+        return
+    end
     -- 装备袋只吃覆盖矩形内的滚轮，左右栏仍滚自己的列表
     if BattleTriPage.handleScroll(wheel, sx, sy) then return end
 
@@ -1339,14 +1810,9 @@ function HandleMouseWheelHorizon(eventType, eventData)
         PlayerInfoPanel.handleScroll(wheel, msx, msy)
         return
     end
-    if pid == 'offline' then
-        OfflineRewardPanel.handleScroll(wheel)
-        return
-    end
 
-    -- [底栏移除] 日志页全窗模态：列表滚动
+    -- [底栏移除] 副本页全窗模态：不透传滚轮
     if pid == 'modal' and HorizonPageModalActive() then
-        if BottomNav.getSelectedIndex() == 2 then DiaryPage.handleScroll(wheel, msx, msy) end
         return
     end
 
@@ -1364,7 +1830,6 @@ function HandleMouseWheelHorizon(eventType, eventData)
         if LootBoxPage.isOpen() then LootBox.handleScroll(wheel) return end
         if TaskPage.isOpen() then TaskPage.handleScroll(wheel) return end
         if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then BackpackPanel.handleScroll(wheel, msx, msy) return end
-        if BlacksmithPage.isOpen() then BlacksmithPage.handleScroll(wheel, msx, msy) return end
         if TalentPage.isOpen() then TalentPage.handleScroll(wheel, msx, msy) return end
         if ChurchPage.isOpen() then ChurchPage.handleScroll(wheel, msx, msy) return end
         if TavernPage.isOpen() then TavernPage.handleScroll(wheel) return end
@@ -1383,11 +1848,14 @@ function HandleMouseWheelHorizon(eventType, eventData)
     end
 
     -- center：主视图 Tab 页
+    -- [锻炉双页 0929] 锻炉页在中栏：优先接管
+    if BlacksmithPage.isOpen() then
+        BlacksmithPage.handleScroll(wheel, msx, msy)
+        return
+    end
     local tab = BottomNav.getSelectedIndex()
     if tab == 1 then
         CharacterPanel.handleScroll(wheel, msx, msy)
-    elseif tab == 2 then
-        DiaryPage.handleScroll(wheel, msx, msy)
     end
 end
 

@@ -1,13 +1,16 @@
 -- ============================================================================
 -- AwakeningPanel - 觉醒面板（绝区零影画式）
 -- 角色 CG 切成三竖条错位排布：未解锁灰度渲染，解锁显示原色
--- Ⅰ 粗暴 / Ⅱ 机制 / Ⅲ 进化；点切片查看，底部嵌合
+-- Ⅰ 初醒 / Ⅱ 共鸣 / Ⅲ 蜕变；点切片查看，底部嵌合
 -- ============================================================================
 
 local HC         = require("config.HeroConfig")
 local DrawUtil   = require("core.DrawUtil")
 local AKC        = require("config.AwakeningConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
+local I18n       = require("core.I18n")
+local KeywordText = require("ui.widget.KeywordText")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -15,12 +18,13 @@ local BF = require("systems.ButtonFeedback")
 
 local M = {}
 
+-- 觉醒效果关键词富文本（白字与面板一致）；弹窗由 CharacterDetailDraw 帧末统一绘制
+M.kwText = KeywordText.new({ textColor = { 255, 255, 255 } })
+
 -- 全屏背景 / 顶栏
 local BG_CX, BG_CY = 540, 1200
 local BG_W, BG_H   = 1080, 2400
 -- 称号行固定在页顶（阶段代号之上）
-local BADGE_CX, BADGE_CY = 540, 150
-local BADGE_W, BADGE_H   = 107, 49
 local TITLE_BG_CX, TITLE_BG_CY = 595, 200
 local TITLE_BG_W, TITLE_BG_H   = 480, 90
 local CLASS_ICON_CX, CLASS_ICON_CY = 353, 200
@@ -29,7 +33,7 @@ local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 200
 local TITLE_FONT_SIZE              = 50
 
 local NODE_COUNT = AKC.NODE_COUNT
-local NODE_NAMES  = { "粗暴", "机制", "进化" }
+local NODE_NAMES  = { "初醒", "共鸣", "蜕变" }
 local NODE_ROMANS = { "Ⅰ", "Ⅱ", "Ⅲ" }
 
 -- 影画切片：上条向右下斜、下条向左下斜（Z 形分割）
@@ -83,10 +87,9 @@ local imgBg            = -1
 local imgTitleBg       = -1
 local imgActivateBtn   = -1
 local imgSelectArrow   = -1
-local imgBadges        = {}
 local imgClassIcons    = {}
 
----@type table<number, table>
+---@type table<number, integer>
 local cgCache = {}
 
 local selectedNode = 1
@@ -154,26 +157,20 @@ end
 
 -- ======================== CG 资源 ========================
 
---- 解析角色 CG：正式 CG -> 立绘 -> 卡牌；同时取对应灰度版
+--- 解析角色 CG：正式 CG -> 立绘 -> 卡牌。未解锁态绘制时染色，不再加载灰度图。
 ---@return integer colorHandle 彩色句柄，缺失为 -1
----@return integer grayHandle 灰度句柄，缺失为 -1
 local function resolveCG(vg, heroId)
     local cached = cgCache[heroId]
-    if cached then return cached.color, cached.gray end
+    if cached then return cached end
     local color = nvgCreateImage(vg, string.format("image/角色CG/CG_H%d.png", heroId), 0) or -1
-    local gray = -1
-    if color >= 0 then
-        gray = nvgCreateImage(vg, string.format("image/角色CG/CG_H%d_gray.png", heroId), 0) or -1
-    else
+    if color < 0 then
         color = nvgCreateImage(vg, HeroAssetUtil.getPortraitPath(heroId), 0) or -1
-        if color >= 0 then
-            gray = nvgCreateImage(vg, string.format("image/角色CG/FALLBACK_H%d_gray.png", heroId), 0) or -1
-        else
-            color = nvgCreateImage(vg, HeroAssetUtil.getCardPath(heroId), 0) or -1
-        end
     end
-    cgCache[heroId] = { color = color, gray = gray }
-    return color, gray
+    if color < 0 then
+        color = nvgCreateImage(vg, HeroAssetUtil.getCardPath(heroId), 0) or -1
+    end
+    cgCache[heroId] = color
+    return color
 end
 
 --- CG 按高度铺满切片，返回 (dw, dh, v0, sw)
@@ -195,12 +192,16 @@ end
 --- 第 i 条的取样 paint
 --- 取样列宽 = 图宽/栏数 + 斜边对应的源图像素，窗口左缘按
 --- (列起点 - 该条左缘) 对齐，缝两侧取到同一列源像素，跨缝连续
-local function slicePaint(vg, img, i, dw, dh, v0, sw, alpha)
+local function slicePaint(vg, img, i, dw, dh, v0, sw, alpha, gray)
     if not img or img < 0 or alpha <= 0.01 or not sw then return nil end
     local colW = dw / NODE_COUNT + SLICES.SLANT * (dh / SLICES.H) * (dw / sw)
     local left = sliceEdges(i, 0)
     local ox = left - (i - 1) * (sw / NODE_COUNT) * (dw / sw)
     local oy = sliceY(i) - v0
+    if gray then
+        local tone = math.floor(168 * alpha)
+        return nvgImagePatternTinted(vg, ox, oy, colW, dh, 0, img, nvgRGBA(tone, tone, tone, 255))
+    end
     return nvgImagePattern(vg, ox, oy, colW, dh, 0, img, alpha)
 end
 
@@ -211,10 +212,6 @@ function M.initImages(vg)
     imgTitleBg     = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_1.png", 0)
     imgActivateBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgSelectArrow = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_JT.png", 0)
-
-    imgBadges["R"]   = nvgCreateImage(vg, "image/品质框/UI_PZBZ_R.png", 0)
-    imgBadges["SR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SR.png", 0)
-    imgBadges["SSR"] = nvgCreateImage(vg, "image/品质框/UI_PZBZ_SSR.png", 0)
 
     cgCache = {}
     print("[AwakeningPanel] initImages OK (mindscape slices)")
@@ -247,6 +244,7 @@ end
 ---@param heroId? number
 function M.reset(heroId)
     selectedNode = 1
+    M.kwText:clear()   -- 切角色时清关键词弹窗/热区
     if heroId then
         local activated = getActivatedNodes(heroId)
         for i = 1, NODE_COUNT do
@@ -264,7 +262,7 @@ end
 ---@param heroId number
 ---@return string, string
 local function getNodeInfo(nodeIndex, heroCfg, heroId)
-    local title = (NODE_ROMANS[nodeIndex] or "") .. "  " .. (NODE_NAMES[nodeIndex] or "觉醒")
+    local title = (NODE_ROMANS[nodeIndex] or "") .. "  " .. I18n.lookup(NODE_NAMES[nodeIndex] or "觉醒")
     local effect = AKC.getNodeEffect(heroId, nodeIndex) or "效果待配置"
     return title, effect
 end
@@ -275,7 +273,7 @@ end
 ---@param i number 1~3
 ---@param state string "active" 已嵌合 | "next" 可嵌合 | "locked" 未解锁
 ---@param isSelected boolean
-local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0, sw)
+local function drawSlice(vg, i, state, isSelected, cgImg, dw, dh, v0, sw)
     local col = NODE_FILL[i] or { 180, 180, 180 }
     local t = time.elapsedTime
     local breathe = (math.sin(t * 2.4 + i * 0.9) + 1.0) * 0.5
@@ -285,9 +283,8 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0, s
     nvgFillColor(vg, nvgRGBA(8, 10, 18, 235))
     nvgFill(vg)
 
-    -- 2) CG 片：解锁=彩色，未解锁=灰度
-    local img = (state == "active") and cgImg or (grayImg >= 0 and grayImg or cgImg)
-    local paint = slicePaint(vg, img, i, dw, dh, v0, sw, 1.0)
+    -- 2) CG 片：解锁=彩色，未解锁=绘制时染灰（两态共用斜切取样几何）
+    local paint = slicePaint(vg, cgImg, i, dw, dh, v0, sw, 1.0, state ~= "active")
     if paint then
         slicePath(vg, i)
         nvgFillPaint(vg, paint)
@@ -301,7 +298,7 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0, s
     else
         -- 未解锁：压暗 + 轻灰罩，保证灰片可读
         slicePath(vg, i)
-        if grayImg >= 0 then
+        if cgImg and cgImg >= 0 then
             nvgFillColor(vg, nvgRGBA(8, 10, 20, 110))
         else
             nvgFillColor(vg, nvgRGBA(14, 14, 18, 200))
@@ -404,12 +401,6 @@ function M.draw(vg, heroId)
 
     drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
 
-    local qualityName = HC.QUALITY_INFO[heroCfg.quality]
-        and HC.QUALITY_INFO[heroCfg.quality].name or "R"
-    local badgeImg = imgBadges[qualityName]
-    if badgeImg and badgeImg >= 0 then
-        drawImageCentered(vg, badgeImg, BADGE_CX, BADGE_CY, BADGE_W, BADGE_H, 1.0)
-    end
     drawImageCentered(vg, imgTitleBg, TITLE_BG_CX, TITLE_BG_CY, TITLE_BG_W, TITLE_BG_H, 1.0)
 
     local classIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -424,7 +415,7 @@ function M.draw(vg, heroId)
         { strokeColor = { 0x31, 0x24, 0x24 } })
 
     -- 影画切片
-    local cgImg, grayImg = resolveCG(vg, heroId)
+    local cgImg = resolveCG(vg, heroId)
     local dw, dh, v0, sw
     if cgImg and cgImg >= 0 then
         dw, dh, v0, sw = cgLayout(vg, cgImg)
@@ -433,12 +424,12 @@ function M.draw(vg, heroId)
     for i = 1, NODE_COUNT do
         local state = activated[i] and "active" or (i == nextNode and "next" or "locked")
         if i ~= selectedNode then
-            drawSlice(vg, i, state, false, cgImg, grayImg, dw, dh, v0, sw)
+            drawSlice(vg, i, state, false, cgImg, dw, dh, v0, sw)
         end
     end
     local selState = activated[selectedNode] and "active"
         or (selectedNode == nextNode and "next" or "locked")
-    drawSlice(vg, selectedNode, selState, true, cgImg, grayImg, dw, dh, v0, sw)
+    drawSlice(vg, selectedNode, selState, true, cgImg, dw, dh, v0, sw)
 
     -- 选中切片上浮箭头（居中于斜切条顶部）
     local selL, selR = sliceEdges(selectedNode, 0)
@@ -459,11 +450,10 @@ function M.draw(vg, heroId)
     nvgFillColor(vg, nvgRGBA(0xff, 0xef, 0x67, 255))
     nvgText(vg, SUB_TITLE_CX, SUB_TITLE_CY, nodeTitle, nil)
 
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, EFFECT_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgTextBox(vg, EFFECT_CX - EFFECT_W * 0.5, EFFECT_CY - EFFECT_H * 0.5, EFFECT_W, nodeEffect, nil)
+    -- 关键词富文本：觉醒效果说明中的机制词可点击弹出解释（弹窗由 CharacterDetailDraw 帧末绘制）
+    M.kwText:draw(vg, nodeEffect,
+        EFFECT_CX - EFFECT_W * 0.5, EFFECT_CY - EFFECT_H * 0.5, EFFECT_W,
+        EFFECT_FONT, nil, EFFECT_CX)
 
     local selectedCost = AKC.getShardCost(selectedNode)
     local shardSufficient = currentShards >= selectedCost and selectedCost > 0
@@ -471,7 +461,8 @@ function M.draw(vg, heroId)
     local costText = selectedCost > 0 and ("/" .. selectedCost) or ""
     local fullText = shardNumText .. costText
     DrawUtil.drawShardIcon(vg, heroId, SHARD_ICON_CX, SHARD_ROW_CY, SHARD_ICON_SIZE, 1.0)
-    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0xaa, 0xaa, 0xaa }
+    -- 碎片数量：够=亮青，不够=棕色
+    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8d, 0x5f, 0x41 }
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 66)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -479,29 +470,31 @@ function M.draw(vg, heroId)
     nvgText(vg, SHARD_ICON_CX + SHARD_ICON_SIZE * 0.5 + 18, SHARD_ROW_CY, fullText, nil)
 
     local currentNodeActive = activated[selectedNode]
-    local btnText, btnAlpha, btnTextAlpha
+    local btnText, btnAlpha, btnDisabled
     if currentNodeActive then
         btnText = "已嵌合"
         btnAlpha = 0.5
-        btnTextAlpha = 0.38
+        btnDisabled = true
     elseif selectedNode > nextNode then
         btnText = "需先嵌合前阶"
         btnAlpha = 0.5
-        btnTextAlpha = 0.38
+        btnDisabled = true
     elseif not shardSufficient then
         btnText = "碎片不足"
         btnAlpha = 0.5
-        btnTextAlpha = 0.38
+        btnDisabled = true
     else
         btnText = "嵌合"
         btnAlpha = 1.0
-        btnTextAlpha = 0.75
+        btnDisabled = false
     end
     local _bfAct = BF.begin(vg, "awp_activate", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, imgActivateBtn, BTN_CX, BTN_CY, BTN_W, BTN_H, btnAlpha)
-    local tr = math.floor(244 * btnTextAlpha)
-    local tg = math.floor(237 * btnTextAlpha)
-    local tb = math.floor(224 * btnTextAlpha)
+    -- 按钮文字：可嵌合=亮骨白，禁用=棕色
+    local tr, tg, tb = 244, 237, 224
+    if btnDisabled then
+        tr, tg, tb = 0x8d, 0x5f, 0x41
+    end
     drawTextStroke(vg, BTN_CX, BTN_CY, btnText, BTN_TEXT_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4,
         { strokeColor = { 0x2a, 0x1c, 0x14 } })
@@ -509,7 +502,12 @@ function M.draw(vg, heroId)
 end
 
 function M.handleInput(dx, dy, heroId)
-    -- 切片命中（斜切平行四边形），重叠处优先当前选中
+    -- 效果描述关键词点击（弹窗的关闭由 CharacterDetail.handleInput 统一处理）
+    if M.kwText:handleInput(dx, dy) then
+        return true
+    end
+
+    -- 切片命中与 Z 形斜切路径一致，重叠处优先当前选中
     local hits = {}
     for i = 1, NODE_COUNT do
         if pointInSlice(dx, dy, i) then

@@ -43,7 +43,8 @@ local STAGE_CLEAR = {
     [105] = { [1] = 20, [2] = 21, [3] = 22 },
     [201] = { [1] = 35, [2] = 36, [3] = 37 },
     [204] = { [1] = 44, [2] = 45, [3] = 46 },
-    [205] = { [1] = 51, [2] = 52, [3] = 53 },
+    -- 205（第二章收尾）：原有角色分支情景之后追加 82（大狗嚼潜能引导，全角色通用）
+    [205] = { [1] = 51, [2] = 52, [3] = 53, extra = { 82 } },
     [305] = { [1] = 58, [2] = 59, [3] = 60 },
     [999] = 62,
     [1305] = { [1] = 55, [2] = 56, [3] = 57 },
@@ -103,11 +104,29 @@ end
 
 ---@param spec number|table|nil
 local function enqueueSpec(spec)
+    -- 全角色通用的追加情景（spec.extra = { id, ... }），与角色分支情景一起排队
+    if type(spec) == "table" and type(spec.extra) == "table" then
+        for _, extraId in ipairs(spec.extra) do
+            StoryPlayer.enqueue(extraId)
+        end
+    end
     local id = resolve(spec)
     if not id then return end
-    if (id == 11 or id == 12 or id == 13) and session().starterTrioReady then
-        print("[StoryPlayer] skip recruit scenario " .. tostring(id))
-        return
+    if id == 11 or id == 12 or id == 13 then
+        local heroes = ClientDispatcher.get("heroes") or {}
+        local roster = heroes.roster or {}
+        local starterCount = 0
+        for _, heroId in ipairs({ 1, 2, 3 }) do
+            local hero = roster[heroId] or roster[tostring(heroId)]
+            if type(hero) == "table" and hero.level then
+                starterCount = starterCount + 1
+            end
+        end
+        if session().starterTrioReady == true or isClaimed(id) or starterCount >= 3 then
+            print("[StoryPlayer] skip recruit scenario " .. tostring(id)
+                .. " starters=" .. tostring(starterCount))
+            return
+        end
     end
     StoryPlayer.enqueue(id)
 end

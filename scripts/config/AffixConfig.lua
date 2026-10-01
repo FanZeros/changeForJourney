@@ -130,6 +130,30 @@ for _, affix in ipairs(AffixConfig.CORRUPT_AFFIXES) do
     AffixConfig.CORRUPT_ID_SET[tostring(affix.id)] = true
 end
 
+-- 腐化石「同类型转换」映射：普通词缀 key → 魔化词缀 key（构筑模型 2026-09-30）
+-- 魔化词条不吃品质增幅，baseValue 1.7 自带约 ×1.7 强度，腐化层数值再 ×1.8 后显著强于原词条
+AffixConfig.NORMAL_TO_CORRUPT_KEY = {
+    physAtk        = "finalPhysAtkBonus",
+    magAtk         = "finalMagAtkBonus",
+    maxHp          = "finalHpBonus",
+    dmgBonus       = "finalDamageBonus",
+    str            = "finalStrBonus",
+    agi            = "finalAgiBonus",
+    int            = "finalIntBonus",
+    vit            = "finalVitBonus",
+    luk            = "finalLukBonus",
+    spi            = "finalSpiBonus",
+    armor          = "finalArmorBonus",
+    energyShield   = "finalEnergyShieldBonus",
+    dodge          = "finalDodgeBonus",
+    physAtkBonus   = "finalPhysAtkBonus",
+    magAtkBonus    = "finalMagAtkBonus",
+    hpBonus        = "finalHpBonus",
+    armorBonus     = "finalArmorBonus",
+    esBonus        = "finalEnergyShieldBonus",
+    dodgeBonus     = "finalDodgeBonus",
+}
+
 --- 是否为魔化词条（id 1001+ 或 word 模板）
 ---@param affixOrId table|number|string|nil
 ---@return boolean

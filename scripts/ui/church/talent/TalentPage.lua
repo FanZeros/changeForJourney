@@ -120,10 +120,6 @@ function TalentPage.init(vg)
     img.tfBg          = nvgCreateImage(vg, "image/界面底板/终焉古树/UI_GS_TFBJ_dark.png", 0)
     img.tfPointGlow   = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HG.png", 0)
     img.tfSliderThumb = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_JTTF_HK.png", 0)
-    local colorFileMap = { ["红"] = "HONG", ["绿"] = "LV", ["黄"] = "HUANG", ["蓝"] = "LAN", ["紫"] = "ZI" }
-    for colorName, fileSuffix in pairs(colorFileMap) do
-        img.tfDetailBg[colorName] = nvgCreateImage(vg, "image/界面底板/教堂转职/UI_TFWBK_" .. fileSuffix .. ".png", 0)
-    end
     img.tfInfoIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_TS.png", 0)
 
     TalentStarMap.init(vg)

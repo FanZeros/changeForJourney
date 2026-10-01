@@ -7,7 +7,6 @@
 
 local PDM             = require("rules.character.PlayerDataManager")
 local CurrencyService = require("rules.currency.CurrencyService")
-local RelicService    = require("rules.relic.RelicService")
 local StellarQuota    = require("shared.market.StellarDiamondQuota")
 
 local MarketService = {}
@@ -25,19 +24,19 @@ local COOLDOWN_SECONDS = {
 }
 
 --- 商品配置版本号：每次调整 SHOP_ITEMS 序号时递增，登录时对比此版本号清除旧购买记录
-local SHOP_CONFIG_VERSION = 7  -- 去掉每日折扣货，永久商品定价 /2
+local SHOP_CONFIG_VERSION = 8  -- 招募券与抽卡统一，资源数量取整
 
 --- 服务端商品表
 --- rewardType 统一使用 CurrencyService.REWARD_TO_CURRENCY 的 key（canonical 名称），特殊奖励在 Buy 内分支处理
 local SHOP_ITEMS = {
     -- 钻石商品（永久，不限购；定价已 /2）
-    [12] = { name = "远征招募券",   rewardType = "adventure_ticket",      currency = "diamond", price = 90,  rewardCount = 1,    restockType = "permanent", limitCount = -1 },
+    [12] = { name = "远征招募券",   rewardType = "adventure_ticket",      currency = "diamond", price = 180, rewardCount = 1,    restockType = "permanent", limitCount = -1 },
     [13] = { name = "洗练石",       rewardType = "enhance_star",          currency = "diamond", price = 90,  rewardCount = 2,    restockType = "permanent", limitCount = -1 },
     [14] = { name = "点金石",       rewardType = "break_protect",         currency = "diamond", price = 250, rewardCount = 1,    restockType = "permanent", limitCount = -1 },
     [22] = { name = "腐化石",       rewardType = "corrupt_stone",         currency = "diamond", price = 250, rewardCount = 1,    restockType = "permanent", limitCount = -1 },
-    [15] = { name = "奥术粉尘",     rewardType = "arcane_dust",           currency = "diamond", price = 90,  rewardCount = 288,  restockType = "permanent", limitCount = -1 },
-    [16] = { name = "金币",         rewardType = "gold",                  currency = "diamond", price = 94,  rewardCount = 6666, restockType = "permanent", limitCount = -1 },
-    [17] = { name = "精粹",         rewardType = "essence",               currency = "diamond", price = 94,  rewardCount = 666,  restockType = "permanent", limitCount = -1 },
+    [15] = { name = "奥术粉尘",     rewardType = "arcane_dust",           currency = "diamond", price = 90,  rewardCount = 300,  restockType = "permanent", limitCount = -1 },
+    [16] = { name = "金币",         rewardType = "gold",                  currency = "diamond", price = 94,  rewardCount = 6000, restockType = "permanent", limitCount = -1 },
+    [17] = { name = "精粹",         rewardType = "essence",               currency = "diamond", price = 94,  rewardCount = 600,  restockType = "permanent", limitCount = -1 },
     [20] = { name = "黄金钥匙",     rewardType = "golden_key",            currency = "diamond", price = 300, rewardCount = 1,    restockType = "permanent", limitCount = -1 },
 }
 
@@ -283,28 +282,6 @@ function MarketService.Buy(uid, itemId, quantity)
         rewardDetail = { speedCardExpireAt = currency_mod.speedCardExpireAt }
         print("[MarketService] speed_card activated uid=" .. tostring(uid)
             .. " expireAt=" .. tostring(currency_mod.speedCardExpireAt))
-    elseif item.rewardType == "random_quality_relic" then
-        local relicData = PDM.GetModule(uid, "mod_relics")
-        if not relicData then
-            CurrencyService.Add(uid, currField, actualCost)
-            return false, "遗物数据未加载"
-        end
-        if #relicData.bag + totalRewardCount > RelicService.MAX_BAG then
-            CurrencyService.Add(uid, currField, actualCost)
-            return false, "遗物背包已满"
-        end
-        local relics = {}
-        for _ = 1, totalRewardCount do
-            local okRelic, errRelic, resultRelic = RelicService.GmGiveRelic(uid, math.random(1, 5), 2)
-            if not okRelic then
-                CurrencyService.Add(uid, currField, actualCost)
-                return false, errRelic or "遗物生成失败"
-            end
-            if resultRelic and resultRelic.relic then
-                relics[#relics + 1] = resultRelic.relic
-            end
-        end
-        rewardDetail = { relics = relics }
     else
         local granted = CurrencyService.GrantReward(uid, { type = item.rewardType, amount = totalRewardCount })
         if not granted then

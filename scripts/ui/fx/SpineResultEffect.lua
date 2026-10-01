@@ -117,12 +117,12 @@ end
 
 --- 每帧绘制（在 NanoVG 渲染函数中调用）
 --- 自动处理 update + render，调用方只需提供绘制中心
---- 【约定】所有 Spine 动画统一使用 1:1 缩放（设计稿像素 = Spine 像素），
----        除非有特别说明需要自定义缩放比例。
+--- 缩放到调用方给出的槽位尺寸，并按骨架边界居中。
 ---@param vg any NanoVG 上下文
 ---@param cx number 绘制中心 X（设计坐标）
 ---@param cy number 绘制中心 Y（设计坐标）
-function SpineResultEffect.draw(vg, cx, cy)
+---@param size number|nil 目标边长，默认按装备槽 160
+function SpineResultEffect.draw(vg, cx, cy, size)
     if not playing then return end
 
     -- 懒加载
@@ -144,14 +144,15 @@ function SpineResultEffect.draw(vg, cx, cy)
     -- 更新骨架动画
     spineInstance:Update(dt)
 
-    -- 1:1 缩放，Spine Y 轴朝上需翻转
-    spineInstance:SetScale(1.0, -1.0)
-
-    -- 定位：骨架数据中心 = (DATA_X + DATA_W/2, DATA_Y + DATA_H/2) = (0, 0)
-    local dataCenterX = DATA_X + DATA_W * 0.5   -- 0
-    local dataCenterY = DATA_Y + DATA_H * 0.5   -- 0
-    local posX = cx - dataCenterX               -- cx
-    local posY = cy + dataCenterY               -- cy (Y翻转所以 +)
+    local target = size or 160
+    local scale = math.min(target / DATA_W, target / DATA_H)
+    spineInstance:SetScale(scale, -scale)
+    local drawW = DATA_W * scale
+    local drawH = DATA_H * scale
+    local boxX = cx - drawW * 0.5
+    local boxY = cy - drawH * 0.5
+    local posX = boxX - DATA_X * scale
+    local posY = boxY + (DATA_H + DATA_Y) * scale
     spineInstance:SetPosition(posX, posY)
 
     -- 渲染

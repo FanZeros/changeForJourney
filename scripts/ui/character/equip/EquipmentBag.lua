@@ -12,6 +12,7 @@ local HeroAssetUtil    = require("config.HeroAssetUtil")
 local ClassConfig      = require("config.ClassConfig")
 local AD               = require("systems.AttributeDef")
 local PlayerStore      = require("core.PlayerStore")
+local HeroFrame        = require("ui.widget.HeroFrame")
 local AVC              = require("config.AdvancementConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
@@ -333,6 +334,9 @@ function EquipmentBag.close()
     if bagState.closing then return end
     bagState.closing  = true
     bagState.closeTime = time.elapsedTime
+    EquipmentBag._hoverSeq = nil
+    EquipmentBag._hoverSince = nil
+    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("bag") end
     print("[EquipmentBag] close")
 end
 
@@ -610,19 +614,28 @@ local function findBagEntryAt(dx, dy)
 end
 
 ---@param entry table
----@return boolean
+---@return boolean canWear
+---@return boolean levelLocked 是否因等级不足被锁
+---@return number|nil requiredLevel 装备需求等级（仅 levelLocked 时）
 local function canWearBagEntry(entry)
-    if not entry or not entry.equip then return false end
+    if not entry or not entry.equip then return false, false, nil end
     local heroId = bagState.heroId
-    if not heroId then return true end
-    local slot = bagState.filter or bagState.slot or entry.equip.slot
-    local wearableSet = buildWearableSet(heroId, slot)
-    if not wearableSet then return true end
+    if not heroId then return true, false, nil end
     local equip = entry.equip
     if not equip.type or not equip.slot then
         EquipmentSystem.hydrate(equip)
     end
-    return wearableSet[equip.type] == true
+    -- 等级穿戴门槛：角色等级低于装备等级 → 不可穿戴
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+    local levelOk, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+    if not levelOk then
+        return false, true, requiredLevel
+    end
+    local slot = bagState.filter or bagState.slot or entry.equip.slot
+    local wearableSet = buildWearableSet(heroId, slot)
+    if not wearableSet then return true, false, nil end
+    return wearableSet[equip.type] == true, false, nil
 end
 
 ---@param entry table
@@ -636,8 +649,14 @@ local function quickEquipEntry(entry)
         return true
     end
     if not bagState.heroId then return false end
-    if not canWearBagEntry(entry) then
-        Toast.show(I18n.t("cannot_wear"))
+    local wearOk, levelLocked, requiredLevel = canWearBagEntry(entry)
+    if not wearOk then
+        -- 等级穿戴门槛：给出明确的等级不足提示
+        if levelLocked then
+            Toast.show(I18n.t("level_not_enough_equip", tostring(requiredLevel or 1)))
+        else
+            Toast.show(I18n.t("cannot_wear"))
+        end
         require("systems.GameSFX").playUIClick(1)
         BF.trigger("equip_deny")
         return true
@@ -717,14 +736,22 @@ function EquipmentBag.handleInput(dx, dy)
         return true
     end
 
-    local entry = findBagEntryAt(dx, dy)
+    local entry, cx, cy = findBagEntryAt(dx, dy)
     if entry then
         if bagState.onSelect then
             bagState.onSelect(entry.seq, entry.equip)
             EquipmentBag.close()
         else
-            local _, cx, cy = findBagEntryAt(dx, dy)
-            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", cx, cy)
+            local cellSize = overlayRegion and LAND.CELL or CELL_SIZE
+            local anchorX, anchorY = cx + cellSize * 0.5, cy - cellSize * 0.5
+            if overlayRegion then
+                local fit = overlayFit()
+                local wx = overlayRegion.x + overlayRegion.w * 0.5 + (anchorX - 540) * fit
+                local wy = overlayRegion.y + overlayRegion.h * 0.5 + (anchorY - LAND.BG_H * 0.5) * fit
+                anchorX, anchorY = EquipmentBag.overlayToDetail(wx, wy)
+            end
+            EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", anchorX, anchorY)
+            if EquipmentDetail.pin then EquipmentDetail.pin() end
             print("[EquipmentBag] 打开详情 seq=" .. tostring(entry.seq))
         end
         return true
@@ -957,6 +984,8 @@ function EquipmentBag.draw(vg, opts)
     local equippedPower = 0
     local offhandPower = 0   -- 副手战斗力（仅 weapon 槽使用，供双手武器对比）
     local heroId = bagState.heroId
+    -- 等级穿戴门槛：ICON_UP 角标与快速穿戴均以此为准
+    local heroLevel = EquipmentSystem.getHeroLevel(PlayerStore.Get("heroes"), heroId)
     local equipData = heroId and PlayerStore.Get("equipment") or nil
     local heroEquipped = equipData and EquipmentSystem.getHeroSlots(equipData, heroId)
     if heroEquipped and equipData.inventory then
@@ -1185,28 +1214,26 @@ function EquipmentBag.draw(vg, opts)
                     nvgText(vg, 0, 0, "E", nil)
                     nvgRestore(vg)
                 elseif entry.equippedByHeroId then
-                    -- 其他英雄已装备 → 显示英雄头像角标
+                    -- 其他英雄已装备 → [统一角色框] 头像角标（白描边变体）
                     local ownerIcon = imgHeroIcons[entry.equippedByHeroId]
                     if ownerIcon and ownerIcon >= 0 then
                         local badgeSize = 66
                         local badgeX = cx - CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
                         local badgeY = cy - CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
-                        nvgSave(vg)
-                        nvgBeginPath(vg)
-                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                        nvgFillPaint(vg, nvgImagePattern(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 0, ownerIcon, 1.0))
-                        nvgFill(vg)
-                        nvgBeginPath(vg)
-                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                        nvgStrokeColor(vg, nvgRGBA(0xff, 0xff, 0xff, 200))
-                        nvgStrokeWidth(vg, 2)
-                        nvgStroke(vg)
-                        nvgRestore(vg)
+                        HeroFrame.draw(vg, {
+                            cx = badgeX, cy = badgeY, size = badgeSize, radius = 6,
+                            heroId = entry.equippedByHeroId,
+                            iconHandle = ownerIcon,
+                            state = "owned",
+                            borderOverride = { 255, 255, 255, 200, 2 },
+                        })
                     end
                 end
 
                 -- ICON_UP 角标（左上角，战斗力高于当前已装备时显示；有角色头像角标时不显示避免重叠）
-                if not entry.equipped and not entry.equippedByHeroId and heroId and imgIconUp >= 0 then
+                -- 等级穿戴门槛：装备等级高于英雄等级时不显示升级箭头
+                if not entry.equipped and not entry.equippedByHeroId and heroId and imgIconUp >= 0
+                    and (EquipmentSystem.checkLevelGate(heroLevel, equip)) then
                     local itemPower = EquipmentDetail.calcEquipPower(equip, heroId)
                     -- 双手武器替换主手+副手，基准用两者之和
                     local baseline = equippedPower
@@ -1268,16 +1295,44 @@ end
 
 
 function EquipmentBag.handleHover(dx, dy)
-    if not EquipmentBag.isOpen() then return end
-    local entry, cx, cy = findBagEntryAt(dx, dy)
-    if not entry then return end
-    local seq = tostring(entry.seq)
-    if EquipmentBag._hoverSeq == seq then
-        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
+    if not EquipmentBag.isOpen() then
+        EquipmentBag._hoverSeq = nil
+        EquipmentBag._hoverSince = nil
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("bag") end
         return
     end
-    EquipmentBag._hoverSeq = seq
-    EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", cx, cy)
+    local entry, cx, cy = findBagEntryAt(dx, dy)
+    if not entry then
+        EquipmentBag._hoverSeq = nil
+        EquipmentBag._hoverSince = nil
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("bag") end
+        return
+    end
+    local seq = tostring(entry.seq)
+    if EquipmentBag._hoverSeq ~= seq then
+        EquipmentBag._hoverSeq = seq
+        EquipmentBag._hoverSince = time.elapsedTime
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("bag") end
+        return
+    end
+    if (time.elapsedTime - (EquipmentBag._hoverSince or 0)) < 0.3 then
+        return
+    end
+    local cellSize = overlayRegion and LAND.CELL or CELL_SIZE
+    local anchorX, anchorY = cx + cellSize * 0.5, cy - cellSize * 0.5
+    if overlayRegion then
+        local fit = overlayFit()
+        local wx = overlayRegion.x + overlayRegion.w * 0.5 + (anchorX - 540) * fit
+        local wy = overlayRegion.y + overlayRegion.h * 0.5 + (anchorY - LAND.BG_H * 0.5) * fit
+        anchorX, anchorY = EquipmentBag.overlayToDetail(wx, wy)
+    end
+    if EquipmentDetail.isOpen and EquipmentDetail.isOpen() then
+        if EquipmentDetail.getOwner and EquipmentDetail.getOwner() ~= "bag" then return end
+        if EquipmentDetail.isPinned and EquipmentDetail.isPinned() then return end
+        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(anchorX, anchorY) end
+        return
+    end
+    EquipmentDetail.open(entry.seq, bagState.filter or entry.equip.slot, bagState.heroId, true, "bag", anchorX, anchorY)
     print("[EquipmentBag] 悬停详情 seq=" .. seq)
 end
 

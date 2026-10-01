@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import argparse
 import importlib.util
 import json
 import shutil
@@ -15,6 +16,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SHELL = ROOT / "electron-shell"
 GAME = SHELL / "game"
+# --protect 流程：Lua 校验基准源码树（混淆工作区的 scripts/）。默认仓库 scripts/。
+SCRIPTS_ROOT = ROOT / "scripts"
 TEMPLATE = SHELL / "index.template.html"
 FORBIDDEN = ("__preview-bridge", "mac-token", "user_info", "login_token", "token", "secret")
 ANCHORS = (
@@ -47,14 +50,14 @@ def verify_lua(dist: Path, version: str) -> int:
     ]
     built = {item["fs_path"] for item in items}
     source = {
-        path.relative_to(ROOT / "scripts").as_posix()
-        for path in (ROOT / "scripts").rglob("*.lua")
+        path.relative_to(SCRIPTS_ROOT).as_posix()
+        for path in SCRIPTS_ROOT.rglob("*.lua")
     }
     errors = []
     for item in items:
         rel = item["fs_path"]
         built_file = dist / "assets" / (item["uuid"] + "-" + item["hash"] + ".lua")
-        source_file = ROOT / "scripts" / rel
+        source_file = SCRIPTS_ROOT / rel
         same = source_file.is_file() and built_file.is_file() and source_file.read_bytes() == built_file.read_bytes()
         if not same:
             errors.append(rel)
@@ -62,8 +65,25 @@ def verify_lua(dist: Path, version: str) -> int:
     extra = sorted(built - source)
     if errors or missing or extra or "main.lua" not in built:
         sample=errors[:5] or missing[:5] or extra[:5]
-        fail("lua mismatch errors=%d missing=%d extra=%d sample=%s" % (len(errors), len(missing), len(extra), sample))
+        fail("lua mismatch errors=%d missing=%d extra=%d missing_files=%s sample=%s dist=%s" % (len(errors), len(missing), len(extra), missing[:5], sample, dist))
     return len(items)
+
+
+def verify_assets_present(dist: Path, version: str) -> None:
+    """--protect 闸门：烘焙产物必须含图片与音频。工作区 assets/ 缺失或用符号链接
+    （官方 Build 实测不烘焙 symlink assets）时，manifest 里非 Lua 资源会缺失，必须拒包。"""
+    manifest = json.loads((dist / version / "manifest-origin.json").read_text(encoding="utf-8"))
+    exts = {}
+    for item in manifest["files"]:
+        ext = item.get("ext")
+        if ext and ext != ".lua":
+            exts[ext] = exts.get(ext, 0) + 1
+    missing = [e for e in (".png", ".ogg") if exts.get(e, 0) == 0]
+    if missing:
+        fail("manifest 缺少 %s 资源（实际非 Lua 分布：%s）：工作区 assets/ 缺失或为符号链接"
+             "（官方 Build 不烘焙符号链接 assets）。--protect 流程请用 protect_build.py 默认的真实复制。"
+             % (missing, exts))
+    print("assets_gate_ok non_lua=%s" % exts)
 
 
 def verify_build_files(dist: Path, version: str) -> None:
@@ -118,6 +138,16 @@ def sync_game(dist: Path) -> None:
 
 
 def main() -> int:
+    global SCRIPTS_ROOT
+    parser = argparse.ArgumentParser(description="从最近一次 preview prepare 产物打补丁生成 game/")
+    parser.add_argument("--scripts-root", type=Path, default=None,
+                        help="Lua 校验基准源码树（--protect 混淆工作区的 scripts/）；默认仓库 scripts/")
+    args = parser.parse_args()
+    if args.scripts_root is not None:
+        SCRIPTS_ROOT = args.scripts_root.resolve()
+        if not (SCRIPTS_ROOT / "main.lua").is_file():
+            fail("scripts-root 下没有 main.lua: %s" % SCRIPTS_ROOT)
+        print("scripts_root", SCRIPTS_ROOT)
     source = latest_prepare_source()
     dist = source / "dist"
     latest = json.loads((dist / "latest.json").read_text(encoding="utf-8"))
@@ -126,6 +156,7 @@ def main() -> int:
     if not version == str(project["version"]):
         fail("version mismatch")
     verify_build_files(dist, version)
+    verify_assets_present(dist, version)
     lua_count = verify_lua(dist, version)
     index_bytes = write_index(dist)
     sync_game(dist)

@@ -2,7 +2,7 @@
 -- MarketPage - 城镇市场界面（道具商店）
 -- 从城镇页面点击市场进入的二级界面
 -- 职责：市场UI 背景、资源展示、道具商品列表、购买交互
--- 包含两个 Tab：道具 / 典藏
+-- 单 Tab：道具（典藏·神器宝箱已迁移至教堂·神器页「宝箱」子页签）
 -- ============================================================================
 
 local GameConfig = require("config.GameConfig")
@@ -16,13 +16,10 @@ local BF = require("systems.ButtonFeedback")
 local RewardPopup = require("ui.hud.popup.RewardPopup")
 
 local NumberUtil   = require("core.NumberUtil")
-local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 local PlayerStore  = require("core.PlayerStore")
-local StageConfig  = require("config.StageConfig")
 local MarketShopCard = require("ui.market.MarketShopCard")
 local MarketDraw = require("ui.market.MarketDraw")
 local MarketInput = require("ui.market.MarketInput")
-local MarketCollection = require("ui.market.MarketCollection")
 local MarketResults = require("ui.market.MarketResults")
 local MarketInit = require("ui.market.MarketInit")
 
@@ -63,8 +60,6 @@ local P1 = {
     -- 下方面板
     LOWER_CX = 540, LOWER_CY = 1371, LOWER_W = 1080, LOWER_H = 2058,
     LOWER_IT = 200, LOWER_IR = 10, LOWER_IB = 200, LOWER_IL = 10,
-    -- 标题装饰
-    DECO_CX = 540, DECO_CY = 497, DECO_W = 660, DECO_H = 60,
     -- 标题文字
     TITLE_CX = 540, TITLE_CY = 497, TITLE_FONT = 42,
     TITLE_R = 0x7b, TITLE_G = 0x53, TITLE_B = 0x39,
@@ -81,12 +76,12 @@ local TAB = {
     ACT_R = 0x81, ACT_G = 0x57, ACT_B = 0x3c,
     INA_R = 255, INA_G = 255, INA_B = 255,
     ANIM_DUR = 0.35,
+    -- 典藏（神器宝箱）已迁移至教堂·神器页「宝箱」子页签，市场只留道具
     ITEMS = {
-        { name = "道具",   cx = 505, cy = 2308 },
-        { name = "典藏",   cx = 772, cy = 2308 },
+        { name = "道具",   cx = 540, cy = 2308 },
     },
-    MAP   = { items = 1, collection = 2 },
-    KEYS  = { "items", "collection" },
+    MAP   = { items = 1 },
+    KEYS  = { "items" },
 }
 
 -- ======================== 商品配置 ========================
@@ -95,13 +90,15 @@ local SHOP_ITEMS = {
     -- ===== 钻石商品（永久，不限购；定价已 /2） =====
     {
         id = 12, name = "远征招募券", quality = 5, rewardCount = 1,
+        desc = "用于远征招募，每次消耗1张。",
         restockType = "permanent", limitCount = -1,
-        currency = "diamond", price = 90,
+        currency = "diamond", price = 180,
         icon = "image/货币道具/UI_icon_ZMQ_1.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
         id = 13, name = "洗练石", quality = 3, rewardCount = 2,
+        desc = "用于装备洗练，重新随机词条。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 90,
         icon = "image/货币道具/UI_icon_QH_1.png",
@@ -109,6 +106,7 @@ local SHOP_ITEMS = {
     },
     {
         id = 14, name = "点金石", quality = 5, rewardCount = 1,
+        desc = "装备升阶失败时保护装备不掉级。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 250,
         icon = "image/货币道具/UI_icon_QH_3.png",
@@ -116,27 +114,31 @@ local SHOP_ITEMS = {
     },
     {
         id = 22, name = "腐化石", quality = 5, rewardCount = 1,
+        desc = "用于腐化装备，随机改变词条。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 250,
         icon = "image/货币道具/UI_icon_FHS.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
-        id = 15, name = "奥术粉尘", quality = 3, rewardCount = 288,
+        id = 15, name = "奥术粉尘", quality = 3, rewardCount = 300,
+        desc = "用于神器升级。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 90,
         icon = "image/货币道具/UI_icon_ASFC.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
-        id = 16, name = "金币", quality = 1, rewardCount = 6666,
+        id = 16, name = "金币", quality = 1, rewardCount = 6000,
+        desc = "通用货币，用于装备强化和升阶。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 94,
-        icon = "image/货币道具/UI_icon_JB.png",
+        icon = "image/货币道具/UI_icon_JB_X.png",
         costIcon = "image/货币道具/UI_icon_SJ_X.png",
     },
     {
-        id = 17, name = "精粹", quality = 2, rewardCount = 666,
+        id = 17, name = "精粹", quality = 2, rewardCount = 600,
+        desc = "用于装备洗练。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 94,
         icon = "image/货币道具/UI_icon_JC.png",
@@ -144,6 +146,7 @@ local SHOP_ITEMS = {
     },
     {
         id = 20, name = "黄金钥匙", quality = 6, rewardCount = 1,
+        desc = "用于开启黄金宝箱。",
         restockType = "permanent", limitCount = -1,
         currency = "diamond", price = 300,
         icon = "image/货币道具/UI_icon_HJYS.png",
@@ -152,7 +155,7 @@ local SHOP_ITEMS = {
 }
 
 --- 与服务端 MarketService.SHOP_CONFIG_VERSION 保持一致；版本升级时会清空购买记录
-local SHOP_CONFIG_VERSION = 7
+local SHOP_CONFIG_VERSION = 8
 
 --- 按商品 id 索引（SHOP_ITEMS 为展示顺序数组，禁止用 itemId 当下标）
 local SHOP_ITEMS_BY_ID = {}
@@ -198,50 +201,6 @@ local CARD_STEP_Y = SL.CARD_H + SL.CARD_GAP_Y
 local SCROLL_TOP = 610
 local SCROLL_BOT = 2240
 
-local QUALITY_COLORS = {
-    normal = { 181, 181, 181 },
-    good   = { 162, 255, 148 },
-    rare   = { 114, 242, 245 },
-    epic   = { 239, 121, 255 },
-}
-
-local COL = {
-    TITLE_CX = 540, TITLE_CY = 497, TITLE_FONT = 42,
-    TITLE_R = 0x7b, TITLE_G = 0x53, TITLE_B = 0x39,
-    CHEST_CX = 536, CHEST_CY = 883, CHEST_W = 984, CHEST_H = 616,
-    NAME_X = 795, NAME_Y = 647, NAME_FONT = 70,
-    DESC_X = 788, DESC_Y = 746, DESC_FONT = 30,
-    PITY_W = 380, PITY_H = 70, PITY_R = 35, PITY_A = 128,
-    RARE_PITY_X = 782, RARE_PITY_Y = 850,
-    EPIC_PITY_X = 782, EPIC_PITY_Y = 934,
-    PITY_FONT = 30,
-    BTN_ONE_X = 323, BTN_TEN_X = 783, BTN_Y = 1081,
-    BTN_W = 316, BTN_H = 122,
-    BTN_TEXT_Y = 1058, BTN_FONT = 32,
-    COST_ICON_Y = 1111, COST_ICON_SIZE = 58,
-    COST_TEXT_Y = 1111, COST_FONT = 30,
-    ONE_KEY = ArtifactDefs.DRAW_KEY_COST[1],
-    TEN_KEY = ArtifactDefs.DRAW_KEY_COST[10],
-    RARE_PITY_LEFT = 10, EPIC_PITY_LEFT = 50,
-}
-
--- 神器宝箱：黄金钥匙不足时的快速购买确认框（布局参考 TavernPopups）
-local KEY_CF = {
-    MASK_A = 128,
-    CX = 540, CY = 1110, W = 950, H = 647,
-    TITLE_CX = 540, TITLE_CY = 856, TITLE_SIZE = 50, TITLE_STROKE_W = 6,
-    SUB_CX = 540, SUB_CY = 967, SUB_SIZE = 40,
-    SUB_R = 0xB6, SUB_G = 0xB0, SUB_B = 0x9D,
-    CONTENT_CX = 540, CONTENT_CY = 1121, CONTENT_W = 800, CONTENT_H = 218, CONTENT_R = 16, CONTENT_A = 13,
-    ARROW_CX = 540, ARROW_CY = 1123, ARROW_W = 48, ARROW_H = 48,
-    DIAMOND_CX = 415, DIAMOND_CY = 1122, DIAMOND_W = 160, DIAMOND_H = 160,
-    KEY_CX = 664, KEY_CY = 1122, KEY_W = 160, KEY_H = 160,
-    BADGE_SIZE = 40, BADGE_STROKE_W = 5, BADGE_OX = 60, BADGE_OY = 55,
-    BUY_CX = 540, BUY_CY = 1301, BUY_W = 410, BUY_H = 100,
-    BUY_TEXT_SIZE = 40, BUY_TEXT_R = 0x64, BUY_TEXT_G = 0x51, BUY_TEXT_B = 0x29,
-    BTN_INSET_TOP = 10, BTN_INSET_BOTTOM = 10, BTN_INSET_LEFT = 40, BTN_INSET_RIGHT = 40,
-}
-
 -- ======================== 二级弹窗布局 ========================
 
 local DLG = {
@@ -277,6 +236,18 @@ local DLG = {
     BUY_CX = 540, BUY_CY = 1503, BUY_W = 410, BUY_H = 100, BUY_FONT = 40,
 }
 
+-- 悬停说明浮窗（参照背包道具详情的说明样式，轻量浮窗版）
+local TIP = {
+    DELAY = 0.3,          -- 悬停多久后显示
+    W = 380, PAD = 20,    -- 浮窗宽与内边距
+    FONT = 30, LINE_H = 42, MAX_LINES = 3,
+    R = 14,               -- 圆角
+    BG_R = 0x2a, BG_G = 0x1d, BG_B = 0x14, BG_A = 235,
+    TXT_R = 0xe8, TXT_G = 0xdd, TXT_B = 0xcc,
+    NAME_FONT = 34, NAME_SW = 4,
+    GAP_ABOVE = 14,       -- 浮窗与卡片间距
+}
+
 -- ======================== 动画参数 ========================
 
 local ANIM_DUR       = 0.45
@@ -297,27 +268,20 @@ local easeInOutCubic = TownPageChrome.easeInOutCubic
 -- ======================== 图片句柄 ========================
 
 local img = {
-    bg = -1, nameBg = -1, lowerBg = -1, titleDeco = -1,
+    bg = -1, nameBg = -1, lowerBg = -1,
     gold = -1, gem = -1,
     btnBack = -1, tabBg = -1, slider = -1,
     -- 商品
-    cardBg = {},       -- 品质1~6
     buyBtn = -1,
     itemIcons = {},
     costIcons = {},
     -- 弹窗
     dialogBg = -1, buyBtnYellow = -1,
-    coinIcon = -1,     -- 弹窗消耗侧金币图标 (UI_icon_JB.png)
+    coinIcon = -1,     -- 弹窗消耗侧金币图标 (UI_icon_JB_X.png)
     diamondIcon = -1,  -- 弹窗消耗侧钻石图标 (UI_icon_SJ.png)
     qualityBg = {},    -- 品质1~6
     btnMinus = -1,     -- 减按钮(UI_AN_JIAN.png)
     btnPlus = -1,      -- 加按钮(UI_AN_JIA.png)
-    -- 典藏
-    collectionChestBg = -1, -- UI_SCDC_KC1.png
-    collectionDrawBtn = -1, -- UI_SCDC_AN.png
-    goldenKey = -1,
-    diamondBig = -1,
-    confirmArrow = -1,
 }
 
 -- ======================== 状态========================
@@ -335,17 +299,10 @@ local state = {
     -- 批量购买
     buyQuantity = 1, buyMaxQuantity = 1,
     sliderDragging = false,
+    -- 商品悬停说明浮窗
+    hoverIdx = nil, hoverSince = 0,
     -- 浮动提示
     floatText = nil, floatTextX = 0, floatTextY = 0, floatTextTime = 0,
-    -- 神器宝箱：黄金钥匙快速购买确认框
-    keyConfirmVisible = false,
-    keyConfirmClosing = false,
-    keyConfirmAnimTime = 0,
-    keyConfirmCloseTime = 0,
-    keyConfirmCount = 1,
-    keyConfirmNeedKeys = 0,
-    keyConfirmDiamondCost = 0,
-    artifactFreeDrawDayId = 0,
 }
 
 -- ======================== 工具函数 ========================
@@ -384,12 +341,6 @@ local COOLDOWN_SECONDS = { ["2h"] = 7200 }
 --- 获取当天编号（UTC+8，与服务端getDayId 保持一致）
 local function getDayId()
     return math.floor((os.time() + 28800) / 86400)
-end
-
-local function hasArtifactFreeDraw()
-    local artifacts = PlayerStore.Get("artifacts") or {}
-    local usedDayId = tonumber(artifacts.dailyFreeDrawDayId) or tonumber(state.artifactFreeDrawDayId) or 0
-    return usedDayId ~= getDayId()
 end
 
 --- 获取冷却型商品剩余补货秒数（0 = 无冷却或已到期）
@@ -492,7 +443,14 @@ drawPurchaseDialog = function(vg)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.SUB_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(DLG.SUB_R, DLG.SUB_G, DLG.SUB_B, 255))
-    nvgText(vg, DLG.SUB_CX, DLG.SUB_CY, "是否购买此物品", nil)
+    local desc = item.name .. "：" .. (item.desc or "购买后获得该道具。")
+    local descSize = DLG.SUB_FONT
+    local descW = nvgTextBounds(vg, 0, 0, desc)
+    if descW > 760 then
+        descSize = math.max(24, math.floor(DLG.SUB_FONT * 760 / descW))
+        nvgFontSize(vg, descSize)
+    end
+    nvgText(vg, DLG.SUB_CX, DLG.SUB_CY, desc, nil)
 
     -- 4. 商品背景图
     nvgBeginPath(vg)
@@ -608,73 +566,8 @@ end
 
 -- ======================== Tab 内容绘制 ========================
 
-local _collection
-local function bindCollection()
-    _collection = MarketCollection.bind({
-        COL = COL,
-        P1 = P1,
-        KEY_CF = KEY_CF,
-        DESIGN_W = DESIGN_W,
-        DESIGN_H = DESIGN_H,
-        BF = BF,
-        img = img,
-        state = state,
-        QUALITY_COLORS = QUALITY_COLORS,
-        POPUP_OPEN_DUR = POPUP_OPEN_DUR,
-        POPUP_CLOSE_DUR = POPUP_CLOSE_DUR,
-        POPUP_SCALE_FROM = POPUP_SCALE_FROM,
-        POPUP_SCALE_TO = POPUP_SCALE_TO,
-        easeOutCubic = easeOutCubic,
-        easeInCubic = easeInCubic,
-        drawImageCentered = drawImageCentered,
-        drawTextStroke = drawTextStroke,
-        Protocol = Protocol,
-        getSendAction = function() return sendAction_ end,
-        getDayId = getDayId,
-        hasArtifactFreeDraw = hasArtifactFreeDraw,
-    })
-end
-
-local function ensureCollection()
-    if not _collection then bindCollection() end
-    return _collection
-end
-
-local function drawLockedContent(vg)
-    return ensureCollection().drawLockedContent(vg)
-end
-
-local function isArtifactChestUnlocked()
-    return ensureCollection().isArtifactChestUnlocked()
-end
-
-local function getKeyCost(count)
-    return ensureCollection().getKeyCost(count)
-end
-
-local function checkKeyAndDraw(count)
-    return ensureCollection().checkKeyAndDraw(count)
-end
-
-local function closeKeyConfirm()
-    return ensureCollection().closeKeyConfirm()
-end
-
-local function drawKeyConfirmDialog(vg)
-    return ensureCollection().drawKeyConfirmDialog(vg)
-end
-
-local function drawCollectionContent(vg)
-    return ensureCollection().drawCollectionContent(vg)
-end
-
-local function sendArtifactDraw(count)
-    return ensureCollection().sendArtifactDraw(count)
-end
-
 local function drawItemsContent(vg)
     -- 标题
-    drawImageCentered(vg, img.titleDeco, P1.DECO_CX, P1.DECO_CY, P1.DECO_W, P1.DECO_H, 1.0)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, SL.TITLE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(SL.TITLE_R, SL.TITLE_G, SL.TITLE_B, 255))
@@ -709,7 +602,144 @@ local function drawItemsContent(vg)
     nvgRestore(vg)
 end
 
-local TAB_DRAW = { collection = drawCollectionContent, items = drawItemsContent }
+local TAB_DRAW = { items = drawItemsContent }
+
+-- ======================== 悬停说明浮窗 ========================
+
+--- 命中检测：返回指针下的商品索引（仅可见网格区域）
+---@param dx number
+---@param dy number
+---@return integer|nil
+local function hitCardAt(dx, dy)
+    if dy < SCROLL_TOP or dy > SCROLL_BOT then return nil end
+    for idx = 1, #SHOP_ITEMS do
+        local col = ((idx - 1) % SL.CARD_COLS)
+        local row = math.floor((idx - 1) / SL.CARD_COLS)
+        local cx = GRID_LEFT + col * CARD_STEP_X
+        local cy = SL.GRID_TOP_CY + row * CARD_STEP_Y - state.scrollY
+        if hitTest(dx, dy, cx, cy, SL.CARD_W, SL.CARD_H) then
+            return idx
+        end
+    end
+    return nil
+end
+
+--- 悬停更新（-1,-1 表示指针离开市场区域）
+---@param dx number
+---@param dy number
+function MarketPage.handleHover(dx, dy)
+    if not state.open or state.closing or state.dialogOpen or state.popupClosing
+        or state.tab ~= "items" or dx < 0 then
+        state.hoverIdx = nil
+        return
+    end
+    local idx = hitCardAt(dx, dy)
+    if idx ~= state.hoverIdx then
+        state.hoverIdx = idx
+        state.hoverSince = time.elapsedTime
+    end
+end
+
+--- 文本换行：按最大宽度拆行，超出 MAX_LINES 截断加省略号
+---@param vg any
+---@param text string
+---@param maxW number
+---@return string[]
+local function wrapDescLines(vg, text, maxW)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, TIP.FONT)
+    local lines, cur, curW = {}, "", 0
+    local i = 1
+    while i <= #text do
+        -- 按 UTF-8 首字节确定字符字节数，整字符测量避免拆字
+        local b = text:byte(i)
+        local len = 1
+        if b >= 0xF0 then len = 4
+        elseif b >= 0xE0 then len = 3
+        elseif b >= 0xC0 then len = 2
+        end
+        local piece = text:sub(i, i + len - 1)
+        i = i + len
+        local w = nvgTextBounds(vg, 0, 0, piece)
+        if curW + w > maxW and cur ~= "" then
+            lines[#lines + 1] = cur
+            cur, curW = piece, w
+            if #lines == TIP.MAX_LINES then break end
+        else
+            cur = cur .. piece
+            curW = curW + w
+        end
+    end
+    if #lines < TIP.MAX_LINES and cur ~= "" then
+        lines[#lines + 1] = cur
+    elseif #lines == TIP.MAX_LINES and cur ~= "" then
+        lines[TIP.MAX_LINES] = lines[TIP.MAX_LINES] .. "…"
+    end
+    return lines
+end
+
+--- 绘制悬停说明浮窗（页面最上层）
+---@param vg any
+function MarketPage.drawHoverTip(vg)
+    local idx = state.hoverIdx
+    if not idx then return end
+    local item = SHOP_ITEMS[idx]
+    if not item or not item.desc or item.desc == "" then return end
+    local elapsed = time.elapsedTime - state.hoverSince
+    if elapsed < TIP.DELAY then return end
+    local fade = math.min(1, (elapsed - TIP.DELAY) / 0.15)
+
+    -- 卡片屏幕位置
+    local col = ((idx - 1) % SL.CARD_COLS)
+    local row = math.floor((idx - 1) / SL.CARD_COLS)
+    local cx = GRID_LEFT + col * CARD_STEP_X
+    local screenCY = SL.GRID_TOP_CY + row * CARD_STEP_Y - state.scrollY
+    local cardTop = screenCY - SL.CARD_H * 0.5
+    local cardBot = screenCY + SL.CARD_H * 0.5
+
+    -- 换行测量
+    local lines = wrapDescLines(vg, item.desc or "", TIP.W - TIP.PAD * 2)
+    local nameH = TIP.NAME_FONT + 6
+    local h = TIP.PAD * 2 + nameH + #lines * TIP.LINE_H
+
+    -- 位置：默认卡片上方，放不下则翻到下方；X 夹紧在屏幕内
+    local tipY = cardTop - TIP.GAP_ABOVE - h * 0.5
+    if tipY - h * 0.5 < SCROLL_TOP then
+        tipY = cardBot + TIP.GAP_ABOVE + h * 0.5
+    end
+    local tipX = math.max(20 + TIP.W * 0.5, math.min(DESIGN_W - 20 - TIP.W * 0.5, cx))
+
+    nvgGlobalAlpha(vg, fade)
+
+    -- 背景
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, tipX - TIP.W * 0.5, tipY - h * 0.5, TIP.W, h, TIP.R)
+    nvgFillColor(vg, nvgRGBA(TIP.BG_R, TIP.BG_G, TIP.BG_B, TIP.BG_A))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0x6b, 0x4f, 0x36, 200))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    -- 名称
+    local textX = tipX - TIP.W * 0.5 + TIP.PAD
+    local textY = tipY - h * 0.5 + TIP.PAD + nameH * 0.5
+    drawTextStroke(vg, textX, textY, item.name, TIP.NAME_FONT,
+        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, TIP.NAME_SW,
+        { strokeColor = { 0, 0, 0 } })
+
+    -- 描述行
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, TIP.FONT)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(TIP.TXT_R, TIP.TXT_G, TIP.TXT_B, 255))
+    local lineY = tipY - h * 0.5 + TIP.PAD + nameH + TIP.LINE_H * 0.5
+    for _, line in ipairs(lines) do
+        nvgText(vg, textX, lineY, line, nil)
+        lineY = lineY + TIP.LINE_H
+    end
+
+    nvgGlobalAlpha(vg, 1)
+end
 
 -- ======================== Public API ========================
 
@@ -753,6 +783,7 @@ function MarketPage.open()
     state.dialogOpen = false
     state.dialogItemIdx = nil
     state.popupClosing = false
+    state.hoverIdx = nil
     print("[MarketPage] 打开市场")
 end
 
@@ -766,8 +797,6 @@ function MarketPage.close()
         state.dialogItemIdx = nil
         state.popupClosing = false
     end
-    state.keyConfirmVisible = false
-    state.keyConfirmClosing = false
     print("[MarketPage] 关闭市场（动画）")
 end
 
@@ -830,7 +859,6 @@ local function bindPageDraw()
         TownPageChrome = TownPageChrome,
         UPPER_DIST = UPPER_DIST,
         drawImageCentered = drawImageCentered,
-        drawKeyConfirmDialog = drawKeyConfirmDialog,
         drawPurchaseDialog = drawPurchaseDialog,
         drawTextStroke = drawTextStroke,
         easeInCubic = easeInCubic,
@@ -855,11 +883,9 @@ local function bindInput()
         BF = BF,
         CARD_STEP_X = CARD_STEP_X,
         CARD_STEP_Y = CARD_STEP_Y,
-        COL = COL,
         DLG = DLG,
         GRID_LEFT = GRID_LEFT,
         GameState = GameState,
-        KEY_CF = KEY_CF,
         MarketPage = MarketPage,
         Protocol = Protocol,
         SCROLL_BOT = SCROLL_BOT,
@@ -868,15 +894,11 @@ local function bindInput()
         SL = SL,
         TAB = TAB,
         TownPageChrome = TownPageChrome,
-        checkKeyAndDraw = checkKeyAndDraw,
-        closeKeyConfirm = closeKeyConfirm,
         getActualPrice = getActualPrice,
         getPurchased = getPurchased,
         hitTest = hitTest,
-        isArtifactChestUnlocked = isArtifactChestUnlocked,
         isSoldOut = isSoldOut,
         sendAction_ = sendAction_,
-        sendArtifactDraw = sendArtifactDraw,
         state = state
     })
 end
@@ -913,7 +935,6 @@ local function bindMarketResults()
     _marketResults = MarketResults.bind({
         state = state,
         Protocol = Protocol,
-        COL = COL,
         getShopItemById = getShopItemById,
         getDayId = getDayId,
         SHOP_CONFIG_VERSION = SHOP_CONFIG_VERSION,
@@ -953,6 +974,10 @@ function MarketPage.draw(vg)
         nvgTranslate(vg, ox, 0)
     end
     drawPageImpl(vg)
+    -- 悬停说明浮窗置顶绘制（弹窗打开时 hoverIdx 已被清空，不会绘制）
+    if not state.closing then
+        MarketPage.drawHoverTip(vg)
+    end
     if ox ~= 0 then
         nvgRestore(vg)
     end

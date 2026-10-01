@@ -1,5 +1,5 @@
 -- ============================================================================
--- RelicConditionHandler - 遗物条件词条运行时触发器
+-- RelicConditionHandler - 条件词条运行时触发器（历史名称；现为天赋免疫/增伤基础设施）
 -- 处理 B 类（条件型）和 C 类（特殊机制）词条在战斗中的实时生效/失效
 -- ============================================================================
 
@@ -9,7 +9,7 @@ local TM = require("systems.ThreatManager")
 ---@class RelicConditionHandler
 local RCH = {}
 
--- 百分比加成类属性：词条文本带 %，但应写入 flat 而非 pct（与 RelicBridge 常驻词条一致）
+-- 百分比加成类属性：词条文本带 %，但应写入 flat 而非 pct（与常驻词条一致）
 local BONUS_PCT_KEYS = {
     [AD.HP_BONUS]        = true,
     [AD.ARMOR_BONUS]     = true,
@@ -37,7 +37,7 @@ local function newUnitState(unit)
         conditions = unit.relicConditions or {},
         activeModIds = {},
         triggered = {},
-        immunityCount = 0,      -- 免疫伤害剩余次数（遗物/天赋等共用）
+        immunityCount = 0,      -- 免疫伤害剩余次数（天赋等共用）
         firstAttackBonus = 0,
         firstAttackUsed = false,
         timedBuffs = {},
@@ -63,7 +63,7 @@ local function ensureUnitState(unit)
     return state
 end
 
---- 追加免疫伤害次数（与遗物 affix 67 等同池，由 onBeforeTakeDamage 统一消费）
+--- 追加免疫伤害次数（由 onBeforeTakeDamage 统一消费）
 ---@param unit table
 ---@param count number
 function RCH.addImmunityCharges(unit, count)
@@ -102,7 +102,7 @@ function RCH._applyBattleStartEffects(unit, state)
         elseif cond.kind == "lu_overheal_shield" then
             state.overhealShieldPct = state.overhealShieldPct + ((cond.value or 0) / 100)
         elseif cond.kind == "life_gate" then
-            -- 治疗加成已由 RelicBridge 写入，这里只开过量治疗转全队护盾
+            -- 治疗加成已由常驻词条管线写入，这里只开过量治疗转全队护盾
             state.lifeGate = true
         elseif cond.kind == "heaven_earth" then
             state.openGuard = state.openGuard + (cond.value or 0)

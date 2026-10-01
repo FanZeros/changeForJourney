@@ -11,6 +11,7 @@ local HeroConfig     = require("config.HeroConfig")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P0] 矢量图标库
 local BottomNav      = require("ui.hud.BottomNav")
 local I18n           = require("core.I18n")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local TopBar = {}
 
@@ -69,8 +70,9 @@ local drawTextStroke = require("core.DrawUtil").drawTextStroke
 function TopBar.init(vg)
     imgExpBg   = nvgCreateImage(vg, "image/进度条/UI_JYT_1.png", 0)
     imgExpFill = nvgCreateImage(vg, "image/进度条/UI_JYT_2.png", 0)
-    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB.png", 0)
-    imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
+    imgGoldIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
+    imgGemIcon  = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
+    if not imgGoldIcon or imgGoldIcon < 0 then print("[TopBar] WARN: UI_icon_JB_X.png load failed, using vector icon") end
     -- 加载角色头像图标
     HeroAssetUtil.preloadIcons(vg, imgHeroIcons)
 
@@ -171,20 +173,17 @@ end
 --- 每帧绘制（在设计空间 1080x2400 内调用）
 
 -- 页面入口（替代底栏五键）。通栏放在头像行正下方，避开金币/钻石。
--- 页面入口：横屏三栏下 角色常驻右栏 / 城镇常驻左栏，入口键冗余已删；
--- 仅保留中栏页面：日志 / 战斗 / 副本
+-- 页面入口：横屏三栏下角色常驻右栏、城镇常驻左栏；旧日志页已移除。
 local PAGE_TABS = {
-    [2] = { index = 2, nameKey = "tab_log",     icon = "nav_log",     hotspot = "tab_log" },
     [3] = { index = 3, nameKey = "tab_battle",  icon = "nav_battle",  hotspot = "tab_battle" },
     [5] = { index = 5, nameKey = "tab_dungeon", icon = "nav_dungeon", hotspot = "tab_dungeon" },
 }
-local PAGE_TAB_ORDER = { 2, 3, 5 }
+local PAGE_TAB_ORDER = { 3, 5 }
 local PAGE_BTN_W, PAGE_BTN_H = 196, 64
 local PAGE_BTN_GAP = 12
 local PAGE_BTN_CY = 244
 local PAGE_BTN_START_CX = 108
 local PAGE_HOTSPOT_KEYS = {
-    tab_log = 2,
     tab_battle = 3,
     tab_dungeon = 5,
 }
@@ -193,7 +192,7 @@ local function pageBtnCenterX(i)
     return PAGE_BTN_START_CX + (i - 1) * (PAGE_BTN_W + PAGE_BTN_GAP)
 end
 
---- 横屏三联已常驻城镇/战斗/角色，页签条（日志/战斗/副本）不再显示
+--- 横屏三联已常驻城镇/战斗/角色，页签条不再显示
 local function shouldHidePageTabs(hidePageTabs)
     if hidePageTabs then return true end
     local ok, BTP = pcall(require, "ui.battle.tri.BattleTriPage")
@@ -203,38 +202,26 @@ end
 
 function TopBar.draw(vg, offsetY, hidePageTabs)
     -- 可选纵向偏移：三行并行左面板调用时上移头像区（热区同步用 TopBar.hitTestAvatar）
-    -- hidePageTabs：横屏三联布局下城镇/战斗/角色已常驻，不再画日志/战斗/副本页签
+    -- hidePageTabs：横屏三联布局下城镇/战斗/角色已常驻，不再画旧页签条
     local oy = tonumber(offsetY) or 0
     hidePageTabs = shouldHidePageTabs(hidePageTabs)
     -- #1 头像背景框: center(239,139+oy), 382x136, black 70%, r=36
     drawRoundedRectCentered(vg, 239, 139 + oy, 382, 136, 36, 0, 0, 0, 178)
 
-    -- #2 玩家头像: center(98,136+oy), 150x150（裁剪为圆角矩形）
-    -- 始终先画灰色底作为底层背景
-    drawRoundedRectCentered(vg, 98, 136 + oy, 150, 150, 20, 80, 80, 100, 255)
+    -- #2 玩家头像: center(98,136+oy), 150x150（[统一角色框] 品质色描边）
     local avatarId = cachedAvatarHeroId or 1
     local avatarImg = HeroAssetUtil.ensureIcon(vg, imgHeroIcons, avatarId)
     if (not avatarImg or avatarImg < 0) and avatarId ~= 1 then
         avatarImg = HeroAssetUtil.ensureIcon(vg, imgHeroIcons, 1)
     end
-    if avatarImg and avatarImg >= 0 then
-        -- 用圆角裁剪绘制头像（覆盖在灰色底上）
-        local avCX, avCY, avW, avH = 98, 136 + oy, 150, 150
-        nvgSave(vg)
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, avCX - avW * 0.5, avCY - avH * 0.5, avW, avH, 20)
-        local paint = nvgImagePattern(vg, avCX - avW * 0.5, avCY - avH * 0.5, avW, avH, 0, avatarImg, 1.0)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-        nvgRestore(vg)
-    end
+    HeroFrame.draw(vg, {
+        cx = 98, cy = 136 + oy, size = 150, radius = 20,
+        heroId = avatarId,
+        iconHandle = avatarImg,
+        state = "owned",
+    })
 
-    -- #2c 红点提示（有可更换头像时显示）[暗黑化 P0: 余烬光点]
-    if TopBar.hasAvailableAvatar() then
-        DarkIcon.draw(vg, "reddot", 160, 74, 74, 1)
-    end
-
-    -- #2e 页面入口：非三联旧布局才画日志/战斗/副本；横屏三联已常驻，不再画
+    -- #2e 页面入口：非三联旧布局才画战斗/副本；横屏三联已常驻，不再画
     if not hidePageTabs then
         local selectedTab = BottomNav.getSelectedIndex()
         local allLocked = BottomNav.isAllLocked()
@@ -256,7 +243,7 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
             if isSel then
                 tr, tg, tb = 240, 199, 94
             elseif locked then
-                tr, tg, tb = 110, 100, 80
+                tr, tg, tb = 0x8d, 0x5f, 0x41  -- 锁定=棕色
             end
             drawTextStroke(vg, cx, cy + 20, I18n.t(tab.nameKey), 20,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 3,
@@ -269,8 +256,10 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
 
         local TM = require("systems.TutorialManager")
         if TM.isActive() then
+            -- [横屏接线 0928] 页签条仅在非 tri 模式绘制(此时 TopBar 位于中栏 viewport)，
+            -- 故热点固定归属 'center'（tri 模式页签隐藏，不注册）
             for _pi, idx in ipairs(PAGE_TAB_ORDER) do local i, tab = _pi, PAGE_TABS[idx]
-                TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H)
+                TM.registerHotspot(tab.hotspot, pageBtnCenterX(i), PAGE_BTN_CY + oy, PAGE_BTN_W, PAGE_BTN_H, "center")
             end
         end
     end
@@ -340,7 +329,11 @@ function TopBar.draw(vg, offsetY, hidePageTabs)
     drawRoundedRectCentered(vg, goldBgCX, goldBgCY, goldBgW, goldBgH, 18, 0, 0, 0, 204)
 
     -- #10 金币图标: center(653,100), 73x73 [三队并行] 以角色详情页图标为准
-    drawImageCentered(vg, imgGoldIcon, 653, 100, 73, 73, 1.0)
+    if imgGoldIcon and imgGoldIcon >= 0 then
+        drawImageCentered(vg, imgGoldIcon, 653, 100, 73, 73)
+    else
+        DarkIcon.draw(vg, "gold", 653, 100, 73, 1)
+    end
 
     -- #11 金币数值: left=goldBgLeft+44, Y=100, font 33, white, stroke 4
     local displayGold = GameState.getGold()  -- [修复] 直读实时值(此前 cachedGold 推送一次后恒旧, 花费不更新)

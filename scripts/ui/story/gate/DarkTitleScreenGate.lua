@@ -3,9 +3,8 @@
 -- 全窗口（逻辑分辨率坐标）绘制：终焉之门大门背景 + 透明 LOGO 叠加 + 余烬粒子 +
 -- 金饰角标 + "轻触屏幕继续" 脉冲。点击任意位置淡出进入游戏。
 --
--- 背景：竖屏 StartScreen（1080×2400 视频标题）在横屏三联布局下被
---       H_skipDone/skipForReconnect 跳过，导致 H5 无标题瞬间。
---       本模块以横屏原生比例补上标题仪式感，素材全部取自本地 workspace。
+-- 背景：竖屏 StartScreen（1080×2400 视频标题）已移除，横屏标题为唯一标题界面。
+--       本模块以横屏原生比例提供标题仪式感，素材全部取自本地 workspace。
 -- 素材：image/界面底板/标题与加载/UI_TITLE_BG_GATE.png（1920×1080 大门背景）
 --       image/界面底板/标题与加载/UI_LOGO_TM.png（1920×1080 透明 LOGO，与背景同构图对位）
 -- 接入：Client.lua / Standalone.lua 的 HORIZON 渲染与输入路径（见各文件标记
@@ -52,7 +51,7 @@ function DarkTitleScreen.init(vg)
     end
 end
 
---- 打开标题（横屏路径首帧调用）
+--- 打开标题（首次启动时由 Standalone.Start 调用）
 function DarkTitleScreen.open()
     if isOpen_ then return end
     isOpen_  = true
@@ -61,6 +60,18 @@ function DarkTitleScreen.open()
     fadeA_   = 1.0
     langOpen_ = false
     print("[DarkTitleScreen] open")
+end
+
+--- 重新打开标题（清除存档后由 Standalone.requestResetToTitleScreen 调用）
+--- 此时游戏已启动完毕，资源必然就绪，直接解锁点击
+function DarkTitleScreen.reopen()
+    isOpen_   = true
+    timer_    = 0
+    fadeOut_  = false
+    fadeA_    = 1.0
+    langOpen_ = false
+    ready_    = true
+    print("[DarkTitleScreen] reopen")
 end
 
 function DarkTitleScreen.isOpen()

@@ -44,7 +44,7 @@ end
 function M.startBattleTalents(allies, enemies)
     RCH.reset()
     RCH.initBattle(allies)
-    ART.reset()
+    ART.reset(allies)
     ART.initBattle(allies)
     TAL.reset()
     for _, u in ipairs(allies) do
@@ -94,9 +94,11 @@ function M.ensureBattleCards(ctx, queue)
         monsterIds[#monsterIds + 1] = id
     end
     for id = 201, 206 do monsterIds[#monsterIds + 1] = id end
+    local MonsterConfig = require("config.MonsterConfig")
     for _, id in ipairs(monsterIds) do
+        local artId = MonsterConfig.getCardArtId(id)
         q[#q + 1] = {
-            path = string.format("image/怪物卡牌/KP_GW_%d.png", id),
+            path = string.format("image/怪物卡牌/KP_GW_%d.png", artId),
             apply = function(h) imgMonsterCards[id] = h end,
         }
     end
@@ -116,27 +118,15 @@ end
 ---@return table[]|nil remaining
 function M.pumpBattleCards(queue, vg)
     if not queue then return nil end
-    local cache = GetCache()
     local t0 = time.elapsedTime
     local i = 1
     while i <= #queue and time.elapsedTime - t0 < 0.008 do
-        local job = queue[i]
-        local st = cache:GetDownloadState(job.path)
-        if st == DOWNLOAD_COMPLETED or st == DOWNLOAD_FAILED or job.downloadSkip then
-            if st == DOWNLOAD_FAILED and not job.downloadSkip then
-                job.downloadSkip = true
-                i = i + 1
-            else
-                table.remove(queue, i)
-                if job.fn then
-                    job.fn()
-                else
-                    local h = nvgCreateImage(vg, job.path, 0)
-                    if job.apply then job.apply(h) end
-                end
-            end
+        local job = table.remove(queue, i)
+        if job.fn then
+            job.fn()
         else
-            i = i + 1
+            local h = nvgCreateImage(vg, job.path, 0)
+            if job.apply then job.apply(h) end
         end
     end
     if #queue == 0 then

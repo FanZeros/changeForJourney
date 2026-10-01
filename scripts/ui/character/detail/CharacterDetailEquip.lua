@@ -19,6 +19,7 @@ local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local ImageCache      = require("ui.widget.ImageCache")
 local AVC             = require("config.AdvancementConfig")
 local BF              = require("systems.ButtonFeedback")
+local HeroFrame       = require("ui.widget.HeroFrame")
 
 local M = {}
 
@@ -61,7 +62,7 @@ local GRID_FIRST_CX = GRID_MARGIN_LEFT + GRID_CELL * 0.5  -- 150
 local CLIP_TOP    = GRID_TOP_Y - GRID_CELL * 0.5   -- 1224
 local CLIP_HEIGHT = GRID_BOTTOM_Y - CLIP_TOP        -- 1006
 
-local GRID_MIN_ROWS = 5   -- 固定 5 行 = 25 格
+local GRID_MIN_ROWS = 7   -- 固定 7 行 = 35 格
 
 -- 滚动参数
 local SCROLL_FRICTION   = 0.90
@@ -88,9 +89,14 @@ local panelState = {
     itemDragging  = false,
     setCodexId = nil,       -- 打开的套装图鉴 id
     setHits    = {},        -- { {setId, x, y, w, h} }
+    sideScroll = { left = 0, right = 0, leftMax = 0, rightMax = 0 },
+    sideHits   = { left = nil, right = nil },
+    sideDragKey = nil,
+    sideDragLastY = 0,
 }
 
 local DOUBLE_CLICK_SEC = 0.35
+local HOVER_DELAY = 0.3
 local ITEM_DRAG_PX     = 28
 
 -- ======================== 工具函数 ========================
@@ -115,26 +121,238 @@ local function clampScroll()
     panelState.scrollY = math.max(0, math.min(panelState.scrollMax, panelState.scrollY))
 end
 
+-- 配装页左右栏：左套装效果，右装备属性。顶边与鞋子槽平齐，宽高按上一版收一档。
+local SIDE_TOP = 710
+local SIDE_H = 228
+local SIDE_LEFT_X, SIDE_LEFT_W = 42, 414
+local SIDE_RIGHT_X, SIDE_RIGHT_W = 624, 414
+local SIDE_ROW = 40
+
+local function formatEquipValue(key, value)
+    local meta = AD.META[key]
+    if not meta then return string.format("%.1f", value or 0) end
+    if meta.dataType == AD.TYPE_PCT then
+        return string.format("%.1f%%", value or 0)
+    elseif meta.dataType == AD.TYPE_INT then
+        return tostring(math.floor(value or 0))
+    end
+    return string.format("%.1f", value or 0)
+end
+
+local function statName(key)
+    local meta = AD.META[key]
+    return meta and meta.name or tostring(key)
+end
+
+--- 按显示宽度拆行。中文按字切，避免套装长句被栏宽裁掉。
+local function wrapText(vg, text, fontSize, maxW)
+    local src = tostring(text or "")
+    if src == "" then return { "" } end
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, fontSize)
+    local lines = {}
+    local line = ""
+    for _, char in utf8.codes(src) do
+        local piece = utf8.char(char)
+        local trial = line .. piece
+        if line ~= "" and nvgTextBounds(vg, 0, 0, trial) > maxW then
+            lines[#lines + 1] = line
+            line = piece
+        else
+            line = trial
+        end
+    end
+    if line ~= "" then lines[#lines + 1] = line end
+    if #lines == 0 then lines[1] = "" end
+    return lines
+end
+
+local function addTotal(totals, order, key, val)
+    if not key or not val or val == 0 then return end
+    if not totals[key] then order[#order + 1] = key end
+    totals[key] = (totals[key] or 0) + val
+end
+
+local function collectEquipSide(heroId)
+    local totals = {}
+    local order = {}
+    local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
+    if not eqData then return {}, {}, eqData end
+    local slots = EquipmentSystem.getHeroSlots(eqData, heroId) or {}
+    for _, seq in pairs(slots) do
+        local equip = EquipmentSystem.getFromInventory(eqData, seq)
+        if equip then
+            local boost = EquipmentSystem.getAscendBoost and EquipmentSystem.getAscendBoost(equip) or 0
+            for i, s in ipairs(equip.baseStats or {}) do
+                local key, val = s[1], s[2] or 0
+                if i == 1 and boost > 0 then val = val * (1 + boost) end
+                if key == "atkInterval" then val = -val end
+                addTotal(totals, order, key, val)
+            end
+            for _, affix in ipairs(equip.affixes or {}) do
+                addTotal(totals, order, affix.key,
+                    EquipmentSystem.effectiveAffixValue(equip, affix))
+            end
+        end
+    end
+    local statRows = {}
+    for i = 1, #order do
+        local key = order[i]
+        if math.abs(totals[key] or 0) > 0.001 then
+            statRows[#statRows + 1] = { key = key, value = totals[key] }
+        end
+    end
+
+    local setRows = {}
+    local counts = EquipmentSetSystem.countSets(
+        eqData, heroId,
+        EquipmentSystem.getFromInventory,
+        function(data, hid)
+            return EquipmentSystem.getHeroSlots(data, hid)
+        end)
+    local summarized = EquipmentSetSystem.summarize(counts)
+    for i = 1, #summarized do
+        local row = summarized[i]
+        local def = EquipmentSetConfig.get(row.setId)
+        if def then
+            setRows[#setRows + 1] = {
+                setId = row.setId,
+                title = string.format("%s %d/6", row.name, row.count),
+                lines = {},
+                row = row,
+            }
+        end
+    end
+    return setRows, statRows, eqData
+end
+
+local function drawStatColumn(vg, x, y, w, h, title, rows, scroll)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, x, y, w, h, 12)
+    nvgFillColor(vg, nvgRGBA(12, 10, 8, 150))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 90))
+    nvgStrokeWidth(vg, 1.5)
+    nvgStroke(vg)
+
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 28)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 230))
+    nvgText(vg, x + 16, y + 24, title, nil)
+
+    local contentTop = y + 44
+    local contentH = h - 52
+    nvgSave(vg)
+    nvgIntersectScissor(vg, x + 4, contentTop, w - 8, contentH)
+    if #rows == 0 then
+        nvgFontSize(vg, 20)
+        nvgFillColor(vg, nvgRGBA(0x9A, 0x90, 0x80, 180))
+        nvgText(vg, x + 16, contentTop + 18, "暂无", nil)
+    else
+        for i = 1, #rows do
+            local row = rows[i]
+            local ry = contentTop + 16 + (i - 1) * SIDE_ROW - scroll
+            if ry > contentTop - SIDE_ROW and ry < contentTop + contentH + SIDE_ROW then
+                local name = statName(row.key)
+                local val = (row.value >= 0 and "+" or "") .. formatEquipValue(row.key, row.value)
+                nvgFontSize(vg, 26)
+                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+                nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 230))
+                nvgText(vg, x + 16, ry, name, nil)
+                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+                nvgFillColor(vg, nvgRGBA(0xF7, 0xFE, 0x77, 230))
+                nvgText(vg, x + w - 16, ry, val, nil)
+            end
+        end
+    end
+    nvgRestore(vg)
+    local maxScroll = math.max(0, #rows * SIDE_ROW - contentH)
+    return maxScroll
+end
+
+local function drawSetColumn(vg, x, y, w, h, sets, scroll)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, x, y, w, h, 12)
+    nvgFillColor(vg, nvgRGBA(12, 10, 8, 170))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 90))
+    nvgStrokeWidth(vg, 1.5)
+    nvgStroke(vg)
+
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 30)
+    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 230))
+    nvgText(vg, x + 14, y + 24, "套装效果", nil)
+
+    local contentTop = y + 42
+    local contentH = h - 44
+    local hits = {}
+    local cursor = 0
+    nvgSave(vg)
+    nvgIntersectScissor(vg, x + 4, contentTop, w - 8, contentH)
+    if #sets == 0 then
+        nvgFontSize(vg, 24)
+        nvgFillColor(vg, nvgRGBA(0x9A, 0x90, 0x80, 180))
+        nvgText(vg, x + 14, contentTop + 18, "暂无", nil)
+    else
+        for i = 1, #sets do
+            local set = sets[i]
+            local wrapped = {}
+            local blockH = 36
+            for li = 1, #set.lines do
+                wrapped[li] = wrapText(vg, set.lines[li].text, 24, w - 36)
+                blockH = blockH + math.max(1, #wrapped[li]) * 30 + 8
+            end
+            blockH = blockH + 8
+            local by = contentTop + cursor - scroll
+            if by + blockH > contentTop and by < contentTop + contentH then
+                nvgFontSize(vg, 26)
+                nvgFillColor(vg, nvgRGBA(0xF7, 0xFE, 0x77, 240))
+                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+                nvgText(vg, x + 14, by + 16, set.title, nil)
+                local lineY = by + 42
+                for li = 1, #set.lines do
+                    local line = set.lines[li]
+                    local col = line.on and { 0xF4, 0xED, 0xE0 } or { 0x7A, 0x72, 0x64 }
+                    nvgFontSize(vg, 24)
+                    nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], line.on and 240 or 170))
+                    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+                    for wi = 1, #wrapped[li] do
+                        nvgText(vg, x + 14, lineY, wrapped[li][wi], nil)
+                        lineY = lineY + 30
+                    end
+                    lineY = lineY + 8
+                end
+            end
+            hits[#hits + 1] = {
+                setId = set.setId,
+                x = x, y = by, w = w, h = blockH, row = set.row,
+            }
+            cursor = cursor + blockH
+        end
+    end
+    nvgRestore(vg)
+    return math.max(0, cursor - contentH), hits
+end
+
 ---@type fun()
 local refreshItems
 
 local function findItemAt(dx, dy)
     if panelState.dirty then refreshItems() end
     local items = panelState.items
-    local bestItem, bestCX, bestCY, bestDist = nil, nil, nil, nil
     for idx = 1, #items do
         local row = math.ceil(idx / GRID_COLS)
         local col = ((idx - 1) % GRID_COLS) + 1
         local cx = GRID_FIRST_CX + (col - 1) * GRID_COL_STEP
         local cy = GRID_TOP_Y + (row - 1) * GRID_ROW_STEP - panelState.scrollY
         if hitTest(dx, dy, cx, cy, GRID_CELL, GRID_CELL) then
-            local dist = math.abs(dx - cx) + math.abs(dy - cy)
-            if not bestDist or dist < bestDist then
-                bestItem, bestCX, bestCY, bestDist = items[idx], cx, cy, dist
-            end
+            return items[idx], cx, cy
         end
     end
-    return bestItem, bestCX, bestCY
+    return nil
 end
 
 local function equipItemNow(item, heroId, slot)
@@ -143,10 +361,16 @@ local function equipItemNow(item, heroId, slot)
     local Toast = require("core.UiToast")
     local BF = require("systems.ButtonFeedback")
     if not item.canWear then
-        Toast.show(I18n.t("cannot_wear"))
+        -- 等级穿戴门槛：给出明确的等级不足提示
+        if item.levelLocked then
+            Toast.show(I18n.t("level_not_enough_equip", item.requiredLevel))
+        else
+            Toast.show(I18n.t("cannot_wear"))
+        end
         require("systems.GameSFX").playUIClick(1)
         BF.trigger("equip_deny")
-        print("[EquipPanel] 不可穿戴 seq=" .. tostring(item.seq))
+        print("[EquipPanel] 不可穿戴 seq=" .. tostring(item.seq)
+            .. (item.levelLocked and (" (等级不足, 需Lv." .. tostring(item.requiredLevel) .. ")") or ""))
         return true
     end
     local Client = require("runtime.GameAction")
@@ -281,6 +505,10 @@ refreshItems = function()
 
     local wearableSet, dualWieldMode = buildWearableSet(heroId, slot)
 
+    -- 等级穿戴门槛：英雄等级低于装备等级 → 不可穿戴（置灰 + 专用提示）
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+
     -- 收集全局已装备 seq（用于判断是否被其他角色穿戴）
     local equippedByHero = {}  -- [seqStr] = heroId
     if equipData.equipped then
@@ -322,6 +550,13 @@ refreshItems = function()
             canWear = false
         end
 
+        -- 等级穿戴门槛：角色等级低于装备等级 → 不可穿戴
+        local levelOk, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+        local levelLocked = not levelOk
+        if levelLocked then
+            canWear = false
+        end
+
         -- 判断是否是当前英雄已装备
         local isEquipped = (currentEquipSeq ~= nil and tostring(currentEquipSeq) == seqStr)
 
@@ -332,6 +567,8 @@ refreshItems = function()
             seq       = seq,
             equip     = equip,
             canWear   = canWear,
+            levelLocked   = levelLocked,
+            requiredLevel = requiredLevel,
             equipped  = isEquipped,
             ownerHeroId = ownerHeroId,
         }
@@ -368,6 +605,83 @@ refreshItems = function()
 end
 
 -- ======================== Public API ========================
+
+--- 配装网格命中（供跨栏拖拽 arm / 悬停浮选）
+---@param dx number 右栏设计坐标 X
+---@param dy number 右栏设计坐标 Y
+---@return table|nil info { seq, templateId, quality, slot, grip, equipType }
+function M.peekItemAt(dx, dy)
+    if panelState.dirty then refreshItems() end
+    local items = panelState.items
+    for idx = 1, #items do
+        local row = math.ceil(idx / GRID_COLS)
+        local col = ((idx - 1) % GRID_COLS) + 1
+        local cx = GRID_FIRST_CX + (col - 1) * GRID_COL_STEP
+        local cy = GRID_TOP_Y + (row - 1) * GRID_ROW_STEP - panelState.scrollY
+        if cy + GRID_CELL * 0.5 >= CLIP_TOP and cy - GRID_CELL * 0.5 <= CLIP_TOP + CLIP_HEIGHT
+            and hitTest(dx, dy, cx, cy, GRID_CELL, GRID_CELL) then
+            local item = items[idx]
+            local equip = item and item.equip
+            if item and item.seq and equip then
+                if not equip.slot or not equip.type then
+                    EquipmentSystem.hydrate(equip)
+                end
+                return {
+                    seq = item.seq,
+                    templateId = equip.templateId,
+                    quality = equip.quality or 1,
+                    slot = equip.slot,
+                    grip = equip.grip,
+                    equipType = equip.type,
+                }
+            end
+            return nil
+        end
+    end
+    return nil
+end
+
+--- 角色六装备槽命中（已装备的装备可拖去锻炉/换槽）
+---@param dx number 右栏设计坐标 X
+---@param dy number 右栏设计坐标 Y
+---@return table|nil info { seq, templateId, quality, slot, grip, equipType }
+function M.peekSlotEquipAt(dx, dy)
+    local Draw = require("ui.character.detail.CharacterDetailDraw")
+    local heroId = panelState.heroId
+    if not heroId then return nil end
+    for _, s in ipairs(Draw.DT_SLOTS) do
+        if hitTest(dx, dy, s.cx, s.cy, Draw.DT_SLOT_SIZE, Draw.DT_SLOT_SIZE) then
+            local equipData = PlayerStore.Get("equipment")
+            local heroEquipped = equipData and equipData.equipped
+                and equipData.equipped[heroId] or nil
+            local inventory = equipData and equipData.inventory or nil
+            if not heroEquipped or not inventory then return nil end
+            local seq = heroEquipped[s.slot]
+            local equip = seq and inventory[tostring(seq)] or nil
+            if not equip and s.slot == "offhand" then
+                local weaponSeq = heroEquipped["weapon"]
+                local weaponEquip = weaponSeq and inventory[tostring(weaponSeq)] or nil
+                if weaponEquip and weaponEquip.grip == "twohand" then
+                    equip = weaponEquip
+                    seq = weaponSeq
+                end
+            end
+            if not equip or not seq then return nil end
+            if not equip.slot or not equip.type then
+                EquipmentSystem.hydrate(equip)
+            end
+            return {
+                seq = seq,
+                templateId = equip.templateId,
+                quality = equip.quality or 1,
+                slot = equip.slot,
+                grip = equip.grip,
+                equipType = equip.type,
+            }
+        end
+    end
+    return nil
+end
 
 --- 当槽位改变时调用（由 CharacterDetail 触发）
 ---@param slot string
@@ -523,24 +837,19 @@ function M.draw(vg, heroId, detailState)
                 nvgText(vg, 0, 0, "E", nil)
                 nvgRestore(vg)
             elseif item.ownerHeroId and item.ownerHeroId ~= heroId then
-                -- 其他英雄已装备 → 英雄头像圆形角标
+                -- 其他英雄已装备 → [统一角色框] 头像角标（白描边变体）
                 local ownerIcon = imgHeroIcons[item.ownerHeroId]
                 if ownerIcon and ownerIcon >= 0 then
                     local badgeSize = 66
                     local badgeX = cx - GRID_CELL * 0.5 + badgeSize * 0.5 + 1
                     local badgeY = cy - GRID_CELL * 0.5 + badgeSize * 0.5 + 1
-                    -- 圆形裁剪绘制头像
-                    nvgSave(vg)
-                    nvgBeginPath(vg)
-                    nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                    nvgFillPaint(vg, nvgImagePattern(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 0, ownerIcon, 1.0))
-                    nvgFill(vg)
-                    nvgBeginPath(vg)
-                    nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                    nvgStrokeColor(vg, nvgRGBA(0xff, 0xff, 0xff, 200))
-                    nvgStrokeWidth(vg, 2)
-                    nvgStroke(vg)
-                    nvgRestore(vg)
+                    HeroFrame.draw(vg, {
+                        cx = badgeX, cy = badgeY, size = badgeSize, radius = 6,
+                        heroId = item.ownerHeroId,
+                        iconHandle = ownerIcon,
+                        state = "owned",
+                        borderOverride = { 255, 255, 255, 200, 2 },
+                    })
                 end
             end
 
@@ -558,106 +867,20 @@ function M.draw(vg, heroId, detailState)
     end
 
     nvgRestore(vg)
-    -- 套装进度（可点开图鉴）[槽位顶栏标题已按 704be5a 移除，不再叠加]
-    panelState.setHits = {}
-    local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
-    if eqData then
-        local counts = EquipmentSetSystem.countSets(
-            eqData, heroId,
-            EquipmentSystem.getFromInventory,
-            function(data, hid)
-                return EquipmentSystem.getHeroSlots(data, hid)
-            end)
-        local rows = EquipmentSetSystem.summarize(counts)
-        if #rows > 0 then
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 22)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            local labels = {}
-            local totalW = 0
-            local gap = 28
-            for i = 1, math.min(3, #rows) do
-                local r = rows[i]
-                local lab = string.format("%s %d/6", r.name, r.count)
-                local w = nvgTextBounds(vg, 0, 0, lab)
-                labels[#labels + 1] = { row = r, lab = lab, w = w }
-                totalW = totalW + w
-            end
-            totalW = totalW + gap * (#labels - 1)
-            local x = DESIGN_W * 0.5 - totalW * 0.5
-            local y = 1070 -- 与配装页下方底板同步下移
-            for i = 1, #labels do
-                local it = labels[i]
-                local col = it.row.twoActive and { 0xE8, 0xDC, 0xC8 } or { 0x9A, 0x90, 0x80 }
-                nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 220))
-                nvgText(vg, x + 2, y + 2, it.lab, nil)
-                nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
-                nvgText(vg, x, y, it.lab, nil)
-                panelState.setHits[#panelState.setHits + 1] = {
-                    setId = it.row.setId, x = x, y = y - 16, w = it.w, h = 32, row = it.row,
-                }
-                x = x + it.w + gap
-            end
-        end
-    end
+    -- 退出格子裁剪后再画，否则套装说明会被裁掉。
+    -- 左：套装效果；右：基础属性+词条合计。避开鞋子槽和仓库
+    local setRows, statRows = collectEquipSide(heroId)
+    local side = panelState.sideScroll
+    local setMax, setHits = drawSetColumn(vg, SIDE_LEFT_X, SIDE_TOP, SIDE_LEFT_W, SIDE_H, setRows, side.left)
+    side.leftMax = setMax
+    side.rightMax = drawStatColumn(vg, SIDE_RIGHT_X, SIDE_TOP, SIDE_RIGHT_W, SIDE_H,
+        "装备属性", statRows, side.right)
+    side.left = math.max(0, math.min(side.leftMax, side.left))
+    side.right = math.max(0, math.min(side.rightMax, side.right))
+    panelState.sideHits.left = { x = SIDE_LEFT_X, y = SIDE_TOP, w = SIDE_LEFT_W, h = SIDE_H }
+    panelState.sideHits.right = { x = SIDE_RIGHT_X, y = SIDE_TOP, w = SIDE_RIGHT_W, h = SIDE_H }
+    panelState.setHits = setHits
 
-    -- 套装图鉴浮层
-    if panelState.setCodexId then
-        local def = EquipmentSetConfig.get(panelState.setCodexId)
-        local hitRow = nil
-        for i = 1, #panelState.setHits do
-            if panelState.setHits[i].setId == panelState.setCodexId then
-                hitRow = panelState.setHits[i].row
-                break
-            end
-        end
-        if def then
-            local boxW, boxH = 820, 420
-            local bx, by = (DESIGN_W - boxW) * 0.5, 1140
-            nvgBeginPath(vg)
-            nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
-            nvgFill(vg)
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, bx, by, boxW, boxH, 18)
-            nvgFillColor(vg, nvgRGBA(0x1A, 0x14, 0x12, 240))
-            nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 200))
-            nvgStrokeWidth(vg, 2)
-            nvgStroke(vg)
-
-            local title = def.name .. (hitRow and string.format("  %d/6", hitRow.count) or "")
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 34)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0xF7, 0xFE, 0x77, 255))
-            nvgText(vg, DESIGN_W * 0.5, by + 46, title, nil)
-
-            local lines = {
-                { n = 2, text = def.desc2 or "", on = hitRow and hitRow.twoActive },
-                { n = 4, text = def.desc4 or "", on = hitRow and hitRow.fourActive },
-                { n = 6, text = def.desc6 or "", on = hitRow and hitRow.sixActive },
-            }
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-            for i = 1, 3 do
-                local ln = lines[i]
-                local ly = by + 90 + (i - 1) * 90
-                local r, g, b = 0x9A, 0x90, 0x80
-                if ln.on then r, g, b = 0xF4, 0xED, 0xE0 end
-                nvgFontSize(vg, 26)
-                nvgFillColor(vg, nvgRGBA(r, g, b, 255))
-                local tag = ln.n .. "件" .. (ln.on and " 已激活" or "")
-                nvgText(vg, bx + 40, ly, tag, nil)
-                nvgFontSize(vg, 24)
-                nvgFillColor(vg, nvgRGBA(r, g, b, 230))
-                nvgText(vg, bx + 40, ly + 34, ln.text or "", nil)
-            end
-            nvgFontSize(vg, 20)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0xC8, 0xC0, 0xB0, 180))
-            nvgText(vg, DESIGN_W * 0.5, by + boxH - 28, "点击空白关闭", nil)
-        end
-    end
     drawDragGhost(vg)
 end
 
@@ -680,25 +903,17 @@ function drawDragGhost(vg)
             break
         end
     end
-    -- 拖起后直接标出全部可穿戴槽，不必等指针先落到槽上。
-    for _, s in ipairs(DrawMod.DT_SLOTS) do
-        if panelState.dragItem.canWear and slotAccepts(equip, s.slot) then
-            nvgBeginPath(vg)
-            nvgCircle(vg, s.cx, s.cy, DrawMod.DT_SLOT_SIZE * 0.5 + 8)
-            nvgStrokeWidth(vg, 7)
-            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 235))
-            nvgStroke(vg)
-        end
-    end
     if over then
+        local ok = panelState.dragItem.canWear and slotAccepts(equip, over.slot)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, over.cx - 88, over.cy - 88, 176, 176, 20)
         nvgStrokeWidth(vg, 6)
-        local accepted = panelState.dragItem.canWear and slotAccepts(equip, over.slot)
-        if not accepted then
+        if ok then
+            nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 230))
+        else
             nvgStrokeColor(vg, nvgRGBA(180, 70, 70, 220))
-            nvgStroke(vg)
         end
+        nvgStroke(vg)
     end
     local icon = equip and ImageCache.getEquipIcon(equip.templateId) or -1
     if icon and icon >= 0 then
@@ -710,36 +925,43 @@ end
 --- 鼠标悬停格子时打开装备详情；离开未钉住的详情就关掉
 function M.handleHover(dx, dy, heroId)
     if panelState.itemDragging then return end
-    local item = nil
+    local item, cx, cy = nil, nil, nil
     if dy >= CLIP_TOP and dy <= CLIP_TOP + CLIP_HEIGHT
         and dx >= GRID_MARGIN_LEFT and dx <= DESIGN_W - GRID_MARGIN_LEFT then
-        item = findItemAt(dx, dy)
-    end
-    if not item and dx >= GRID_MARGIN_LEFT and dx <= DESIGN_W - GRID_MARGIN_LEFT then
-        -- 首行常贴着裁剪边上沿，指针略高时仍应命中第一件。
-        local probeY = math.max(dy, CLIP_TOP + 8)
-        if probeY <= CLIP_TOP + GRID_CELL then
-            item = findItemAt(dx, probeY)
-        end
+        item, cx, cy = findItemAt(dx, dy)
     end
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
-    if not item then return end
-    local seqStr = tostring(item.seq)
-    local _, cx, cy = item, nil, nil
-    if dy >= CLIP_TOP then
-        _, cx, cy = findItemAt(dx, dy)
-    end
-    if not cx then
-        _, cx, cy = findItemAt(dx, math.max(dy, CLIP_TOP + 8))
-    end
-    if panelState.hoverSeq == seqStr then
-        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx, cy) end
+    if not item then
+        panelState.hoverSeq = nil
+        panelState.hoverSince = nil
+        if not panelState.hoverPinned and EquipmentDetail.dismissHover then
+            EquipmentDetail.dismissHover("character")
+        end
         return
     end
-    panelState.hoverSeq = seqStr
-    panelState.hoverPinned = false
-    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
-    print("[EquipPanel] 悬停详情 seq=" .. seqStr .. " at " .. tostring(cx) .. "," .. tostring(cy))
+    local seqStr = tostring(item.seq)
+    if panelState.hoverSeq ~= seqStr then
+        panelState.hoverSeq = seqStr
+        panelState.hoverSince = time.elapsedTime
+        panelState.hoverPinned = false
+        if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover("character") end
+        return
+    end
+    if panelState.hoverPinned then
+        return
+    end
+    if (time.elapsedTime - (panelState.hoverSince or 0)) < HOVER_DELAY then
+        return
+    end
+    if EquipmentDetail.isOpen and EquipmentDetail.isOpen() then
+        if EquipmentDetail.getOwner and EquipmentDetail.getOwner() ~= "character" then return end
+        if EquipmentDetail.isPinned and EquipmentDetail.isPinned() then return end
+        if EquipmentDetail.setAnchor then EquipmentDetail.setAnchor(cx - GRID_CELL * 0.5, cy - GRID_CELL * 0.5) end
+        return
+    end
+    local anchorX, anchorY = cx - GRID_CELL * 0.5, cy - GRID_CELL * 0.5
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", anchorX, anchorY)
+    print("[EquipPanel] 悬停详情 seq=" .. seqStr .. " anchor=" .. tostring(anchorX) .. "," .. tostring(anchorY))
 end
 
 --- 处理输入（单击详情 / 双击穿戴）
@@ -754,12 +976,16 @@ function M.handleInput(dx, dy, heroId, detailState)
         panelState.setCodexId = nil
         return true
     end
-    -- 点套名打开图鉴
-    for i = 1, #(panelState.setHits or {}) do
-        local h = panelState.setHits[i]
-        if dx >= h.x and dx <= h.x + h.w and dy >= h.y and dy <= h.y + h.h then
-            panelState.setCodexId = h.setId
-            return true
+    -- 点套名打开图鉴（只响应栏内可见的内容）。
+    local leftHit = panelState.sideHits.left
+    if leftHit and dx >= leftHit.x and dx <= leftHit.x + leftHit.w
+        and dy >= leftHit.y + 42 and dy <= leftHit.y + leftHit.h then
+        for i = 1, #panelState.setHits do
+            local h = panelState.setHits[i]
+            if dy >= h.y and dy <= h.y + h.h then
+                panelState.setCodexId = h.setId
+                return true
+            end
         end
     end
     -- 仅处理格子区域内的点击
@@ -770,7 +996,7 @@ function M.handleInput(dx, dy, heroId, detailState)
         return false
     end
 
-    local item = findItemAt(dx, dy)
+    local item, cx, cy = findItemAt(dx, dy)
     if not item then
         local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
         if EquipmentDetail.isCompactCorner and EquipmentDetail.isCompactCorner() then
@@ -793,12 +1019,14 @@ function M.handleInput(dx, dy, heroId, detailState)
         return true
     end
 
-    -- 单击：右栏内侧小详情，朝向中栏战斗区（无阴影）
+    -- 单击：右栏详情以格子左上角为基准向左展开，已装备对比继续排在左侧。
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
     panelState.hoverSeq = seqStr
     panelState.hoverPinned = true
-    local _, cx, cy = findItemAt(dx, dy)
-    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character", cx, cy)
+    panelState.hoverSince = time.elapsedTime
+    EquipmentDetail.open(item.seq, panelState.slot, heroId, true, "character",
+        cx - GRID_CELL * 0.5, cy - GRID_CELL * 0.5)
+    if EquipmentDetail.pin then EquipmentDetail.pin() end
     print("[EquipPanel] 单击详情 seq=" .. seqStr)
     return true
 end
@@ -915,7 +1143,118 @@ function M.isInGridArea(dy)
     return dy >= CLIP_TOP and dy <= CLIP_TOP + CLIP_HEIGHT
 end
 
+--- 从侧栏按下时锁定目标；拖出侧栏后仍继续滚动该栏。
+function M.beginSideDrag(dx, dy)
+    for _, key in ipairs({ "left", "right" }) do
+        local hit = panelState.sideHits[key]
+        if hit and dx >= hit.x and dx <= hit.x + hit.w
+            and dy >= hit.y and dy <= hit.y + hit.h then
+            panelState.sideDragKey = key
+            panelState.sideDragLastY = dy
+            print("[EquipPanel] 开始拖动" .. (key == "left" and "套装效果" or "装备属性"))
+            return true
+        end
+    end
+    return false
+end
+
+function M.moveSideDrag(dy)
+    local key = panelState.sideDragKey
+    if not key then return end
+    local side = panelState.sideScroll
+    local maxV = side[key .. "Max"] or 0
+    side[key] = math.max(0, math.min(maxV, side[key] + panelState.sideDragLastY - dy))
+    panelState.sideDragLastY = dy
+end
+
+function M.endSideDrag()
+    panelState.sideDragKey = nil
+end
+
+--- 鼠标落在左右栏时滚动对应栏，返回是否吃掉滚轮
+---@param wheel number
+---@param dx number
+---@param dy number
+---@return boolean
+function M.handleSideScroll(wheel, dx, dy)
+    if not dx or not dy then return false end
+    local step = (wheel or 0) * 48
+    local side = panelState.sideScroll
+    for _, key in ipairs({ "left", "right" }) do
+        local hit = panelState.sideHits[key]
+        if hit and dx >= hit.x and dx <= hit.x + hit.w and dy >= hit.y and dy <= hit.y + hit.h then
+            local cur = side[key] - step
+            local maxV = side[key .. "Max"] or 0
+            side[key] = math.max(0, math.min(maxV, cur))
+            return true
+        end
+    end
+    return false
+end
+
 --- 重置面板状态（角色切换时）
+
+--- 套装详情浮层。由详情页在最上层调用，避免被底部页签盖住。
+function M.drawSetCodex(vg)
+    if not panelState.setCodexId then return end
+    if panelState.setCodexId then
+        local def = EquipmentSetConfig.get(panelState.setCodexId)
+        local hitRow = nil
+        for i = 1, #panelState.setHits do
+            if panelState.setHits[i].setId == panelState.setCodexId then
+                hitRow = panelState.setHits[i].row
+                break
+            end
+        end
+        if def then
+            local boxW, boxH = 820, 420
+            local bx, by = (DESIGN_W - boxW) * 0.5, 1320
+            nvgBeginPath(vg)
+            nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
+            nvgFill(vg)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, bx, by, boxW, boxH, 18)
+            nvgFillColor(vg, nvgRGBA(0x1A, 0x14, 0x12, 240))
+            nvgFill(vg)
+            nvgStrokeColor(vg, nvgRGBA(0xC4, 0xA0, 0x5A, 200))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
+
+            local title = def.name .. (hitRow and string.format("  %d/6", hitRow.count) or "")
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 34)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0xF7, 0xFE, 0x77, 255))
+            nvgText(vg, DESIGN_W * 0.5, by + 46, title, nil)
+
+            local lines = {
+                { n = 2, text = def.desc2 or "", on = hitRow and hitRow.twoActive },
+                { n = 4, text = def.desc4 or "", on = hitRow and hitRow.fourActive },
+                { n = 6, text = def.desc6 or "", on = hitRow and hitRow.sixActive },
+            }
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+            for i = 1, 3 do
+                local ln = lines[i]
+                local ly = by + 90 + (i - 1) * 90
+                local r, g, b = 0x9A, 0x90, 0x80
+                if ln.on then r, g, b = 0xF4, 0xED, 0xE0 end
+                nvgFontSize(vg, 26)
+                nvgFillColor(vg, nvgRGBA(r, g, b, 255))
+                local tag = ln.n .. "件" .. (ln.on and " 已激活" or "")
+                nvgText(vg, bx + 40, ly, tag, nil)
+                nvgFontSize(vg, 24)
+                nvgFillColor(vg, nvgRGBA(r, g, b, 230))
+                nvgText(vg, bx + 40, ly + 34, ln.text or "", nil)
+            end
+            nvgFontSize(vg, 20)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0xC8, 0xC0, 0xB0, 180))
+            nvgText(vg, DESIGN_W * 0.5, by + boxH - 28, "点击空白关闭", nil)
+        end
+    end
+end
+
 function M.reset(heroId, slot)
     panelState.heroId  = heroId
     panelState.slot    = slot or "weapon"

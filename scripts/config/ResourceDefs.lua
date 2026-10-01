@@ -1,7 +1,7 @@
 -- ResourceDefs.lua — 资源定义中央注册表（唯一真相源）
 -- ============================================================
 -- 所有 UI 面板（RewardPopup / MailPanel / BattleResultPanel / OfflineRewardPanel /
--- RecruitAnim / SignInPanel / GMConsolePanel 等）统一 require 此文件，
+-- RecruitAnim / GMConsolePanel 等）统一 require 此文件，
 -- 新增资源只需在此文件添加一行即可全局生效。
 -- ============================================================
 
@@ -11,8 +11,8 @@ local ResourceDefs = {}
 --- key = snake_case type 字符串（与奖励协议 payload 一致）
 --- value = { iconPath, quality, name }
 ResourceDefs.DEFS = {
-    gold              = { iconPath = "image/货币道具/UI_icon_JB.png",     quality = 2, name = "金币" },
-    diamond           = { iconPath = "image/货币道具/UI_icon_SJ.png",     quality = 5, name = "钻石" },
+    gold              = { iconPath = "image/货币道具/UI_icon_JB_X.png",   quality = 2, name = "金币" },
+    diamond           = { iconPath = "image/货币道具/UI_icon_SJ_X.png",     quality = 5, name = "黑晶" },
     essence           = { iconPath = "image/货币道具/UI_icon_JC.png",     quality = 2, name = "精粹" },
     enhance_star      = { iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石" },
     refine_stone      = { iconPath = "image/货币道具/UI_icon_QH_1.png",   quality = 3, name = "洗练石" },  -- 别名
@@ -35,7 +35,6 @@ ResourceDefs.DEFS = {
     golden_key        = { iconPath = "image/货币道具/UI_icon_HJYS.png", quality = 6, name = "黄金钥匙" },
     corrupt_stone     = { iconPath = "image/货币道具/UI_icon_FHS.png",    quality = 3, name = "腐化石" },
     sacred_stone      = { iconPath = "image/货币道具/UI_icon_SSS.png",    quality = 6, name = "神圣石" },
-    relic             = { iconPath = "image/货币道具/ICON_SJYW.png",      quality = 4, name = "遗物" },      -- 上古遗迹掉落（随机遗物图标）
 }
 
 --- 数字 ID（来自资源配置表序号）→ snake_case type 映射
@@ -90,7 +89,7 @@ ResourceDefs.REWARD_NAMES["113"] = "弹弹弹碎片"
 ResourceDefs.REWARD_NAMES["114"] = "内鬼碎片"
 ResourceDefs.REWARD_NAMES["115"] = "复活吧爱人碎片"
 ResourceDefs.REWARD_NAMES["116"] = "万剑归宗碎片"
-ResourceDefs.REWARD_NAMES["121"] = "闪电卖鸡碎片"
+ResourceDefs.REWARD_NAMES["121"] = "雷电麦坤碎片"
 ResourceDefs.REWARD_NAMES["122"] = "小黑子碎片"
 ResourceDefs.REWARD_NAMES["123"] = "真布诗人碎片"
 

@@ -10,6 +10,7 @@ local TAL = require("systems.TalentManager")
 local ART = require("systems.ArtifactRuntime")
 local NumberUtil = require("core.NumberUtil")
 local BattleStats = require("systems.BattleStats")
+local GameSFX = require("systems.GameSFX")
 
 local M = {}
 
@@ -117,7 +118,7 @@ function M.bind(deps)
         finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, comboTgtIsAlly, syncUnitHp, result.category)
         result.damageDealt = finalDmg
         local shieldBefore = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
-        local actual = curTgt.attrs:takeDamage(finalDmg)
+        local actual = curTgt.attrs:takeDamage(finalDmg, result.resistance)
         local shieldAfter = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
         local takenForStats = actual + math.max(0, shieldBefore - shieldAfter)
         ART.checkShieldBreak(curTgt, shieldBefore)
@@ -138,13 +139,13 @@ function M.bind(deps)
         -- 护盾吸收灰色飘字（完全吸收时不显示 -0）
         local shieldAbsorb = math.max(0, (takenForStats or 0) - (actual or 0))
         if actual > 0 then
-            addFloatingText(prefix .. "-" .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit, nil, true)
+            addFloatingText(prefix .. NumberUtil.format(actual), curTgtCX, curTgtCY, color, hit.isCrit, nil, true)
             if shieldAbsorb > 0 then
-                addFloatingText("-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+                addFloatingText(NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
                     { 168, 168, 168 }, false, nil, true)
             end
         elseif shieldAbsorb > 0 then
-            addFloatingText(prefix .. "-" .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
+            addFloatingText(prefix .. NumberUtil.format(shieldAbsorb), curTgtCX, curTgtCY,
                 { 168, 168, 168 }, false, nil, true)
         end
 
@@ -155,7 +156,7 @@ function M.bind(deps)
 
         setRecoil(curTgt, isAlly and -1 or 1)
         setHitFlash(curTgt)
-        if actual > 0 then require("systems.GameSFX").play("hit") end
+        if actual > 0 then GameSFX.play("hit", BattleStats.mountedTeam()) end
         -- 累计伤害统计（结算面板用�?
         getBCS().unitDamageAccum[attacker] = (getBCS().unitDamageAccum[attacker] or 0) + takenForStats
 

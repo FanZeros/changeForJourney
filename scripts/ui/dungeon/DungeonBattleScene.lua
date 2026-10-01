@@ -485,7 +485,8 @@ function DungeonScene.init(vg)
     imgMapGoldMine   = nvgCreateImage(vg, "image/关卡地图/MAP_FB1.png", 0)
     imgMapAncientRuin = nvgCreateImage(vg, "image/关卡地图/MAP_FB2.png", 0)
     imgMapBabelTower = nvgCreateImage(vg, "image/关卡地图/MAP_FB3.png", 0)
-    imgShadow        = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY.png", 0)
+    -- 阴影板绘制为 1080x556（源图 1080x610 压扁），使用 SHADOW 副本，调整原图不影响其他用法
+    imgShadow        = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY_SHADOW.png", 0)
     imgRetreatBtn    = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
     imgSpeedIcon     = nvgCreateImage(vg, "image/通用图标/UI_ICON_kong.png", 0)
     imgEnemyTag      = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
@@ -494,7 +495,6 @@ function DungeonScene.init(vg)
     end
 
     -- 确认弹窗图片
-    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgBtnRed    = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_hong.png", 0)
     imgBtnGray   = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
     BattleEffects.init(vg)
@@ -556,11 +556,16 @@ function DungeonScene.open(opts)
     SEM.reset()
     TAL.reset()
     RCH.reset()
-    ART.reset()
+    ART.reset(state.allies)
 
     -- 初始化所有单位
     for _, u in ipairs(state.allies) do
         u.atkProgress = 0
+        u._artifactDeathHandled = nil
+        u._towerDeathNotified = nil
+        u._fallen = nil
+        u._fallenPending = nil
+        u._fallenAt = nil
         if u.attrs then
             u.attrs:fillHp()
             u.hp = u.attrs.final[AD.MAX_HP]
@@ -572,7 +577,7 @@ function DungeonScene.open(opts)
         TAL.initUnit(u)
     end
 
-    -- 初始化遗物条件词条
+    -- 初始化条件词条运行时（免疫/增伤，由天赋等系统消费）
     local allUnitsForRCH = {}
     for _, u in ipairs(state.allies) do allUnitsForRCH[#allUnitsForRCH + 1] = u end
     for _, u in ipairs(state.enemies) do allUnitsForRCH[#allUnitsForRCH + 1] = u end
@@ -654,7 +659,7 @@ function DungeonScene.close()
     MapAffixSystem.reset(state.allies)
     DungeonBattle.exit()
     RCH.reset()
-    ART.reset()
+    ART.reset(state.allies)
     -- 恢复主战斗的 BattleCombat 上下文和 TAL/TM 天赋状态
     -- 修复: 副本 open 时覆盖了 ctx.getAllies/getEnemies 指向副本单位，
     -- 导致主战斗恢复后治疗者遍历的是副本的满血单位列表，治疗量计算为 0
@@ -675,7 +680,7 @@ function DungeonScene.forceClose()
     state.confirmClosing = false
     DungeonBattle.exit()
     RCH.reset()
-    ART.reset()
+    ART.reset(state.allies)
     BattleScene.restoreContext()
     print("[DungeonBattleScene] forceClose (tower wave transition)")
 end
@@ -691,7 +696,6 @@ function DungeonScene.onActionResult(data)
         print("[DungeonBattleScene] 收到副本结算数据: dungeonId=" .. tostring(data.dungeonId)
             .. " gold=" .. tostring(data.gold)
             .. " dust=" .. tostring(data.dust)
-            .. " relics=" .. tostring(data.relics and #data.relics or 0)
             .. " firstClear=" .. tostring(data.firstClear))
     end
 end
@@ -725,7 +729,7 @@ function DungeonScene.draw(vg)
         local dps = 0
         local dur = BattleStats.getDuration()
         if dur > 0.1 then
-            dps = math.floor(BattleStats.getTotal("totalDamage") / dur)
+            dps = math.floor(BattleStats.getTotal("totalDamage", false) / dur)  -- false=波次桶(非累计)
         end
         drawTextStroke(vg, DB.TIME_X, DB.TIME_Y,
             string.format("已测试 %.1fs · DPS %s", DungeonBattle.getElapsed(), require("core.NumberUtil").format(dps)),
@@ -816,6 +820,7 @@ function DungeonScene.draw(vg)
         ProjectileSystem.drawStarGates(vg, state.enemies, ENEMY_CARD_CY, getCardCX, false)
         BattleEffects.draw(vg)
         ProjectileSystem.draw(vg)
+        SpineCardEffect.draw(vg, "dungeon")
     end
 
     -- 11. 浮动伤害文字
@@ -886,24 +891,6 @@ function DungeonScene.update(dt)
                     if srvResult.dust and srvResult.dust > 0 then
                         rewards[#rewards + 1] = { type = "arcane_dust", amount = srvResult.dust }
                     end
-                    if srvResult.relics and #srvResult.relics > 0 then
-                        -- 逐个展示已随机出结果的遗物（带具体类型图标和品质）
-                        local RELIC_ICONS = {
-                            [1] = "image/遗物图标/ICON_YWX_GUI.png",   -- 岩龟
-                            [2] = "image/遗物图标/ICON_YWX_SHE.png",   -- 毒蛇
-                            [3] = "image/遗物图标/ICON_YWX_LU.png",    -- 白鹿
-                            [4] = "image/遗物图标/ICON_YWX_LANG.png",  -- 灰狼
-                            [5] = "image/遗物图标/ICON_YWX_YING.png",  -- 猎鹰
-                        }
-                        for _, r in ipairs(srvResult.relics) do
-                            rewards[#rewards + 1] = {
-                                type     = "relic",
-                                amount   = 1,
-                                quality  = r.quality or 4,
-                                iconPath = RELIC_ICONS[r.type] or "image/货币道具/ICON_SJYW.png",
-                            }
-                        end
-                    end
                     -- firstClear 仅是标记，不作为独立奖励项显示
                     -- （首通奖励已计入对应货币数量中）
                 end
@@ -914,8 +901,6 @@ function DungeonScene.update(dt)
                     elapsedSecs = elapsedSecs,
                     heroStats   = heroStats,
                     rewards     = rewards,
-                    arenaMode   = false,
-                    scoreChange = 0,
                     onClose     = function()
                         if state.onClose then state.onClose() end
                         DungeonScene.close()
@@ -931,7 +916,17 @@ function DungeonScene.update(dt)
 
     -- DungeonBattle 计时（狂暴阶段检测，狂暴加成施加到怪物与己方单位）
     DungeonBattle.update(logicDt, state.enemies, state.allies)
-    ART.update(logicDt)
+
+    -- 战斗超时增伤：复用 DungeonBattle.elapsed，每帧回写全局伤害倍率（木桩 DPS 测试豁免）
+    if not DungeonBattle.isTrainingDummy() then
+        local _toMult = require("systems.BattleTimeout").calcMult(DungeonBattle.getElapsed())
+        local _bcs = BattleCombat.mountedState()
+        if _bcs and _bcs.ctx then
+            _bcs.ctx.globalDmgMult = _toMult
+        end
+    end
+
+    ART.update(logicDt, state.allies)
 
     -- 战斗限时：超时自动判负
     if DungeonBattle.isTimeLimitExceeded() then
@@ -961,7 +956,7 @@ function DungeonScene.update(dt)
         end
     end
 
-    -- 遗物条件
+    -- 条件词条运行时（RCH）
     local okRchAlly, rchAllyErr = pcall(RCH.update, state.allies, 0)
     if not okRchAlly then
         print("[DungeonBattleScene] RelicConditionHandler.update allies failed: " .. tostring(rchAllyErr))
@@ -1108,10 +1103,24 @@ function DungeonScene.update(dt)
                     if ally == unit then idx = ai; break end
                 end
                 local cx = getCardCX(state.allies, idx)
-                SpineCardEffect.playRevive(cx, ALLY_CARD_CY)
+                SpineCardEffect.playRevive(cx, ALLY_CARD_CY, nil, "dungeon")
+            else
+                -- [阵亡紧凑] 救不回：退场动画 → 移队尾 → 存活者前移补位（与主线同规则）
+                unit.atkProgress = 0
+                TM.removeUnit(unit)
+                SEM.removeUnit(unit)
+                unit._fallenPending = true
+                unit._fallenAt = time.elapsedTime
+                BattleCombat.setCardAnim(unit, {
+                    state = "dying", timer = 0, lungeDir = 1,
+                    knockbackMult = 1.0 + (unit._overkillRatio or 0) * 2.0,
+                    noTombstone = true,
+                })
             end
         end
     end
+    -- [阵亡紧凑] 退场完成 → 移队尾 → 存活者前移一格（含卡住兜底）
+    require("ui.battle.scene.BattleAllyReset").compactFallen(state.allies, time.elapsedTime)
     allyAlive = BattleCombat.getAliveUnits(state.allies)
 
     if #allyAlive == 0 and #state.allies > 0 then
@@ -1121,6 +1130,10 @@ function DungeonScene.update(dt)
                     unit.attrs:fillHp()
                     syncUnitHp(unit)
                     unit.atkProgress = 0
+                    unit._fallen = nil
+                    unit._fallenPending = nil
+                    unit._fallenAt = nil
+                    unit._artifactDeathHandled = nil
                     BattleCombat.clearCardAnim(unit)
                     BattleCombat.clearHitFlash(unit)
                 end

@@ -54,7 +54,7 @@ local function nextReward(scale)
     scale = math.max(1, scale or 1)
     local kind = rewardSeq % 8
     if kind == 1 then
-        return { type = "gold", amount = scale * 800, icon = "image/货币道具/UI_icon_JB.png", quality = 2 }
+        return { type = "gold", amount = scale * 800, icon = "image/货币道具/UI_icon_JB_X.png", quality = 2 }
     elseif kind == 2 then
         return { type = "essence", amount = scale * 30, icon = "image/货币道具/UI_icon_JC.png", quality = 2 }
     elseif kind == 3 then
@@ -68,7 +68,7 @@ local function nextReward(scale)
     elseif kind == 7 then
         return { type = "stellar_ticket", amount = 1, icon = "image/货币道具/UI_icon_ZMQ_2.png", quality = 6 }
     end
-    return { type = "diamond", amount = 40 + scale * 8, icon = "image/货币道具/UI_icon_SJ.png", quality = 5 }
+    return { type = "diamond", amount = 40 + scale * 8, icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5 }
 end
 
 local function addClear(stageId, difficulty, amount)
@@ -120,19 +120,17 @@ for _, lv in ipairs({ 5, 10, 20, 30, 50, 80, 100, 150, 200 }) do
     addRecord("a_plv_" .. lv, "远征勋记", "远征等级达到" .. lv, "player_level", lv, "level", nextReward(lv))
 end
 
-for _, n in ipairs({ 3, 6, 10, 16, 20 }) do
+for _, n in ipairs({ 4, 6, 10, 16, 20 }) do
     addRecord("a_hero_" .. n, "集结令", "拥有" .. n .. "名远征队员", "hero_count", n, "hero", nextReward(n * 2))
 end
 for _, n in ipairs({ 1, 3, 5, 8 }) do
-    addRecord("a_sr_" .. n, "稀有集结", "拥有" .. n .. "名稀有远征队员", "sr_count", n, "hero", nextReward(n * 3))
+    addRecord("a_adv1_" .. n, "一转集结", "完成一转的队员达到" .. n .. "名", "adv1_count", n, "hero", nextReward(n * 3))
 end
 for _, n in ipairs({ 1, 2, 3, 5 }) do
-    addRecord("a_ssr_" .. n, "史诗集结", "拥有" .. n .. "名史诗远征队员", "ssr_count", n, "hero", nextReward(n * 6))
+    addRecord("a_adv2_" .. n, "二转集结", "完成二转的队员达到" .. n .. "名", "adv2_count", n, "hero", nextReward(n * 6))
 end
 for _, n in ipairs({ 1, 2, 3 }) do
-    addRecord("a_awk_r_" .. n, "觉醒印", "任意普通队员觉醒至" .. n .. "阶", "awk_r_max", n, "hero", nextReward(n * 2))
-    addRecord("a_awk_sr_" .. n, "稀有觉醒", "任意稀有队员觉醒至" .. n .. "阶", "awk_sr_max", n, "hero", nextReward(n * 4))
-    addRecord("a_awk_ssr_" .. n, "史诗觉醒", "任意史诗队员觉醒至" .. n .. "阶", "awk_ssr_max", n, "hero", nextReward(n * 8))
+    addRecord("a_awk_" .. n, "觉醒印", "任意队员觉醒至" .. n .. "阶", "awk_max", n, "hero", nextReward(n * 4))
 end
 
 -- ======================== 按 ID 快速查找 ========================

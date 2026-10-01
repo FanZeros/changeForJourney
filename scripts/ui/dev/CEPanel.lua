@@ -28,7 +28,7 @@ local buttons_ = {}
 local function actions()
     return {
         { id = "pack", label = "一键测试包" },
-        { id = "res", label = "全资源+100万" },
+        { id = "res", label = "全资源+1M" },
         { id = "heroes", label = "解锁全部英雄" },
         { id = "lv10", label = "全员等级+10" },
         { id = "awk", label = "全员觉醒+1" },
@@ -44,7 +44,6 @@ local function actions()
         { id = "dungeon", label = "副本/塔层+5" },
         { id = "loot", label = "遗匣塞各品质" },
         { id = "talent", label = "点亮全部天赋" },
-        { id = "relic", label = "遗物各1件" },
         { id = "reset", label = resetArm_ > 0 and "再点确认清档" or "重置存档" },
     }
 end
@@ -269,8 +268,6 @@ function CEPanel.run(id)
         CEService.fillLootbox()
     elseif id == "talent" then
         CEService.lightAllTalents()
-    elseif id == "relic" then
-        CEService.giveRelicSet()
     elseif id == "reset" then
         local now = os.clock()
         if resetArm_ == 0 or now - resetArm_ > 3 then

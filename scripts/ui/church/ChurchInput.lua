@@ -9,9 +9,10 @@ local M = {}
 function M.bind(deps)
     local ANIM = deps.ANIM
     local CHAR_SLOT = deps.CHAR_SLOT
-    local ClassChange = deps.ClassChange
+    local ClassChange = deps.ClassChange  -- 转职已迁出，保留注入但不使用
     local TalentPanel = deps.TalentPanel
     local ArtifactPanel = deps.ArtifactPanel
+    local ArtifactDrawPanel = deps.ArtifactDrawPanel
     local TownPageChrome = deps.TownPageChrome
     local TAB_ITEMS = deps.TAB_ITEMS
     local TAB_KEYS = deps.TAB_KEYS
@@ -48,15 +49,7 @@ function M.bind(deps)
             return true
         end
 
-        -- ========== 重置确认弹窗（模态，优先拦截）→ 委托 ClassChange ==========
-        if state.resetConfPopup then
-            return ClassChange.handleResetConfirmInput(dx, dy)
-        end
-
-        -- ========== 转职确认弹窗（模态，优先拦截）→ 委托 ClassChange ==========
-        if state.confirmPopup then
-            return ClassChange.handleConfirmInput(dx, dy)
-        end
+        -- 转职确认/重置弹窗已随转职页迁到右侧栏角色详情
 
         -- 天赋详情/总览已独立到 TalentPage
 
@@ -66,15 +59,27 @@ function M.bind(deps)
             if consumed then return true end
         end
 
+        -- ========== 神器宝箱 Tab 交互 → 委托 ArtifactDrawPanel ==========
+        -- （钥匙补购弹窗为模态，优先消费；返回键/页签栏点击放行给下方公共逻辑）
+        if state.tab == "baoxiang" then
+            if ArtifactDrawPanel.isKeyConfirmVisible and ArtifactDrawPanel.isKeyConfirmVisible() then
+                return ArtifactDrawPanel.handleTabInput(dx, dy)
+            end
+            local tabHit = TownPageChrome.hitTab(dx, dy, TAB_ITEMS, TAB.SLIDER_W, TAB.SLIDER_H)
+            local backHit = TownPageChrome.hitBack(dx, dy)
+            if not tabHit and not backHit then
+                return ArtifactDrawPanel.handleTabInput(dx, dy)
+            end
+        end
+
         -- 返回按钮（三行模式由中缝层接管）
         if TownPageChrome.hitBack(dx, dy) then
             closeChurch() -- close church page
             return true
         end
 
-        -- 角色列表中的点击检测（展开且在转职tab时）
-        -- roster 使用屏幕设计坐标（独立浮层，不跟随上半部分偏移）
-        if state.slotExpanded and state.tab == "zhuanzhi" and state.slotLiftProgress > 0.9 then
+        -- 转职选人已迁出，教堂不再展开角色列表
+        if false and state.slotExpanded and state.slotLiftProgress > 0.9 then
             local ownedList = getOwnedHeroList()
             local rosterCount = #ownedList
             local scrollOff = state.rosterScrollY
@@ -100,8 +105,8 @@ function M.bind(deps)
             end
         end
 
-        -- 角色选择框点击（仅在转职 tab 中，跟随上移偏移）
-        if state.tab == "zhuanzhi" then
+        -- 角色选择框已随转职页迁出
+        if false then
             local slotOY = -ANIM.SLOT_LIFT * state.slotLiftProgress
             local slotCY = CHAR_SLOT.CY + slotOY
             if hitTest(dx, dy, CHAR_SLOT.CX, slotCY, CHAR_SLOT.W, CHAR_SLOT.H) then
@@ -127,8 +132,8 @@ function M.bind(deps)
             end
         end
 
-        -- ========== 点击列表上方空白区域 → 收起"我的远征队员"面板 ==========
-        if state.tab == "zhuanzhi" and not state.selectAnim then
+        -- 转职角色列表面板已迁出
+        if false and not state.selectAnim then
             local listTopY = ROSTER.LIST_BG_CY - ROSTER.LIST_BG_H * 0.5
             if state.slotExpanded and state.rosterSlideProgress > 0.5 then
                 -- 列表展开时，点击列表背景上方区域 → 列表向下滑出
@@ -162,12 +167,7 @@ function M.bind(deps)
             end
         end
 
-        -- ========== 转职分支图标点击 → 委托 ClassChange ==========
-        if state.tab == "zhuanzhi" and state.selectedHeroId and not state.slotExpanded
-           and state.slotLiftProgress > 0.9 and not state.selectAnim then
-            local consumed = ClassChange.handleBranchInput(dx, dy)
-            if consumed then return true end
-        end
+        -- 转职分支点击已随转职页迁到右侧栏角色详情
 
         -- Tab 切换检测
         do
@@ -180,8 +180,7 @@ function M.bind(deps)
                     state.tab = newTab
                     require("systems.GameSFX").playUIMove(2)
 
-                    -- 切换到非转职 tab 时：延迟清除英雄态，让旧 Tab 滑出期间仍渲染职业背景
-                    if newTab ~= "zhuanzhi" then
+                    if newTab ~= "shenqi" then
                         state._deferClearHero = true
                         -- 冻结槽位动画（不独立收起，整体跟 tab 一起滑走）
                         if state.slotExpanded then

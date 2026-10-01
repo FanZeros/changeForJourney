@@ -2,7 +2,7 @@
  -- ============================================================================
  -- ClientMessageHandler.lua — 消息路由与数据桥接（从 Client.lua 拆分）
  -- 职责: 处理服务端推送的操作结果、状态更新、踢出、离线收益
- -- 拥有的状态: batchMerge_, pendingTutorialNotify_, pendingScenarioDialogue_, 等
+ -- 拥有的状态: pendingTutorialNotify_, pendingScenarioDialogue_, 等
  -- ============================================================================
 
 local Protocol         = require("shared.Protocol")
@@ -12,7 +12,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  local ExpTable         = require("config.ExpTable")
  local HeroConfig       = require("config.HeroConfig")
  local PlayerStore      = require("core.PlayerStore")
- local EventBus         = require("core.EventBus")
  local GameEvents       = require("config.GameEvents")
  local ScenarioDialogueConfig = require("config.ScenarioDialogueConfig")
 
@@ -21,10 +20,10 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  local LootBox, LootBoxPage
  local BlacksmithPage, ChurchPage, TalentPage, TavernPage
  local MarketPage, DungeonPage, DungeonBattleScene
- local GMConsolePanel, RelicReforgePanel, AnnouncementPanel
+ local GMConsolePanel
  local TopBar, BattleScene, CharacterPanel
  local EquipmentDetail
- local RedeemCodePanel, SignInPanel, LootBoxSystem
+ local RedeemCodePanel, LootBoxSystem
  local TutorialManager
 
  local M = {}
@@ -39,14 +38,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
  --= 模块内部状态 ========================
 
  local sendAction_
-
- local batchMerge_ = {
-     active    = false,
-     expected  = 0,
-     results   = {},
-     timeout   = 0,
- }
- local BATCH_MERGE_TIMEOUT = 5.0
 
  --= 数据桥接状态 ========================
 
@@ -75,28 +66,13 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      DungeonPage         = require("ui.dungeon.DungeonPage")
      DungeonBattleScene  = require("ui.dungeon.DungeonBattleScene")
      GMConsolePanel      = require("ui.dev.GMConsolePanel")
-     RelicReforgePanel   = require("ui.relic.RelicReforgePanel")
      TopBar              = require("ui.hud.TopBar")
      BattleScene         = require("ui.battle.scene.BattleScene")
      CharacterPanel      = require("ui.character.panel.CharacterPanel")
      EquipmentDetail     = require("ui.character.equip.EquipmentDetail")
      RedeemCodePanel     = require("ui.hud.popup.RedeemCodePanel")
-     SignInPanel         = require("ui.story.task.SignInPanel")
      LootBoxSystem       = require("systems.LootBoxSystem")
      TutorialManager         = require("systems.TutorialManager")
-    AnnouncementPanel       = require("ui.story.task.AnnouncementPanel")
-
-     -- 批量合并监听
-     EventBus.on("RELIC_BATCH_MERGE_START", function(data)
-         local count = data and data.count or 0
-         if count > 0 then
-             batchMerge_.active   = true
-             batchMerge_.expected = count
-             batchMerge_.results  = {}
-             batchMerge_.timeout  = 0
-             print("[ClientMsgHandler] batchMerge started, expecting " .. count .. " results")
-         end
-     end)
  end
 
  --= 状态访问器（供 HandleUpdate_Client 消费）========================
@@ -126,26 +102,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      return v
  end
 
- --- 更新 batchMerge_ 超时计时器，返回是否超时
- ---@param dt number
- ---@return boolean
- function M.updateBatchMergeTimeout(dt)
-     if batchMerge_.active then
-         batchMerge_.timeout = batchMerge_.timeout + dt
-         if batchMerge_.timeout >= BATCH_MERGE_TIMEOUT then
-             -- 超时：强制弹出已有结果
-             if #batchMerge_.results > 0 then
-                 RewardPopup.show("合成结果", batchMerge_.results)
-             end
-             batchMerge_.active = false
-             batchMerge_.expected = 0
-             batchMerge_.results = {}
-             batchMerge_.timeout = 0
-             return true
-         end
-     end
-     return false
- end
 
  --= 数据桥接 ==============================
 
@@ -224,6 +180,13 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              end
              if #team > 0 then
                  BattleScene.setAllies(team)
+                 local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+                 if BattleTriPage.invalidateTeams then
+                     -- [三队隔离] deployed 仅代表 team1；只失效 team1，
+                     -- 避免无参调用把三队全部签名清 nil 导致未变动队也重启。
+                     -- team2/3 的精确失效由 CharacterHeroSync.invalidateTeams(changed) 处理。
+                     BattleTriPage.invalidateTeams({ [1] = true })
+                 end
              else
                  print("[DIAG-HERO] WARNING: getDeployedTeam returned EMPTY! deployed=" .. snapshot)
                  BattleScene.setAllies({})
@@ -291,85 +254,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 
  --= 网络事件处理 ==========================
 
- --- 在 mod_relics 中查找遗物（bag + grid，兼容非连续数组）
- ---@param modData table|nil
- ---@param relicId string
- ---@return table|nil
- local function findRelicInModData(modData, relicId)
-     if not modData or not relicId then return nil end
-     relicId = tostring(relicId)
-     for _, list in ipairs({ modData.bag, modData.grid }) do
-         if list then
-             for _, r in ipairs(list) do
-                 if r and tostring(r.id) == relicId then return r end
-             end
-             for _, r in pairs(list) do
-                 if type(r) == "table" and tostring(r.id) == relicId then return r end
-             end
-         end
-     end
-     return nil
- end
-
- --- 洗练确认是否已同步到客户端（词缀已替换且 pending 已清）
- ---@param modData table|nil
- ---@param relicId string
- ---@param newAffixId number|nil
- ---@return boolean
- local function isReforgeConfirmSynced(modData, relicId, newAffixId)
-     local relic = findRelicInModData(modData, relicId)
-     if not relic then return false end
-     if newAffixId and tonumber(relic.affixId) ~= tonumber(newAffixId) then
-         return false
-     end
-     return relic.pendingReforgeAffixId == nil
- end
-
- --- 等待 mod_relics 同步后再关闭洗练面板（避免结果事件先于数据 / 重连旧包覆盖）
- ---@param relicId string|nil
- ---@param newAffixId number|nil
- local function finishReforgeConfirmWhenSynced(relicId, newAffixId)
-     if not relicId then
-         pcall(RelicReforgePanel.setConfirmResult, true, nil)
-         return
-     end
-     relicId = tostring(relicId)
-
-     local function applyResult(modData)
-         if findRelicInModData(modData, relicId) then
-             pcall(RelicReforgePanel.setConfirmResult, true, nil)
-         else
-             print("[ClientMsgHandler] REFORGE_CONFIRM relic missing after sync id=" .. relicId)
-             pcall(RelicReforgePanel.setConfirmResult, false, "遗物数据同步异常，请重新打开背包查看")
-         end
-     end
-
-     local cur = PlayerStore.Get("mod_relics")
-     if isReforgeConfirmSynced(cur, relicId, newAffixId) then
-         applyResult(cur)
-         return
-     end
-
-     PlayerStore.WaitForChange("mod_relics", {
-         timeout = 5.0,
-         compare = function(old, new)
-             if new == old then return false end
-             return isReforgeConfirmSynced(new, relicId, newAffixId)
-         end,
-         onChange = function(newVal)
-             applyResult(newVal)
-         end,
-         onTimeout = function()
-             local latest = PlayerStore.Get("mod_relics")
-             if isReforgeConfirmSynced(latest, relicId, newAffixId) then
-                 applyResult(latest)
-             else
-                 print("[ClientMsgHandler] REFORGE_CONFIRM sync timeout id=" .. relicId)
-                 applyResult(latest)
-             end
-         end,
-     })
- end
 
  --- litNodes 中是否包含指定节点
  ---@param modData table|nil
@@ -476,12 +360,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          if EquipmentDetail.onActionResult then EquipmentDetail.onActionResult(data) end
          if ChurchPage.onActionResult then ChurchPage.onActionResult(data) end
          if DungeonPage.onActionResult then DungeonPage.onActionResult(data) end
-         if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE then
-             pcall(RelicReforgePanel.setReforgeResult, nil)
-         end
-         if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE_CONFIRM then
-             pcall(RelicReforgePanel.setConfirmResult, false, data.reason)
-         end
          if data.action == Protocol.ACTION_TYPES.ACTIVATE_TALENT
              or data.action == Protocol.ACTION_TYPES.RESET_SINGLE_TALENT
              or data.action == Protocol.ACTION_TYPES.RESET_TALENTS then
@@ -495,7 +373,9 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
              end
          end
              if data.action == Protocol.ACTION_TYPES.CONVERT_UR_SHARD
-             or data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT then
+             or data.action == Protocol.ACTION_TYPES.RESTORE_UR_SHARD_CONVERT
+             or data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP then
+             -- [分解入仓 0929] 分解失败也要转发仓库（BlacksmithDecompose 释放门控）
              local BackpackPanel = require("ui.backpack.BackpackPanel")
              if BackpackPanel.onActionResult then BackpackPanel.onActionResult(data) end
          end
@@ -512,9 +392,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          return
      end
 
-     if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE_CONFIRM then
-         finishReforgeConfirmWhenSynced(data.relicId, data.newAffixId)
-     end
      if data.action == Protocol.ACTION_TYPES.ACTIVATE_TALENT and data.nodeId then
          finishTalentActionWhenSynced({ mode = "activate", nodeId = data.nodeId })
      end
@@ -586,8 +463,8 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
 
      -- 兑换码
      if (data.redeemAction or data.action == Protocol.ACTION_TYPES.REDEEM_CODE) and RedeemCodePanel.onActionResult then RedeemCodePanel.onActionResult(data) end
+     -- 无玩家入口的旧公告面板已移除，公告推送不再转发给 UI。
      if data.announcementPush and data.announcements then
-         AnnouncementPanel.setAnnouncementData(data.announcements)
          return
      end
 
@@ -600,23 +477,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if DungeonBattleScene.onActionResult then pcall(DungeonBattleScene.onActionResult, data) end
      if MarketPage.onActionResult then pcall(MarketPage.onActionResult, data) end
      if GMConsolePanel.onActionResult then pcall(GMConsolePanel.onActionResult, data) end
-     if data.action == Protocol.ACTION_TYPES.RELIC_REFORGE and data.newAffixId then
-         pcall(RelicReforgePanel.setReforgeResult, data.newAffixId)
-     end
-
-     -- 遗物合成结果
-     if data.action == Protocol.ACTION_TYPES.RELIC_MERGE and data.relic then
-         local r = data.relic
-         if batchMerge_.active then
-             batchMerge_.results[#batchMerge_.results + 1] = { type = "relic", relicType = r.type, quality = r.quality }
-             if #batchMerge_.results >= batchMerge_.expected then
-                 RewardPopup.show("合成结果", batchMerge_.results)
-                 batchMerge_.active = false; batchMerge_.expected = 0; batchMerge_.results = {}; batchMerge_.timeout = 0
-             end
-         else
-             RewardPopup.show("合成结果", { { type = "relic", relicType = r.type, quality = r.quality } })
-         end
-     end
 
      -- 神器合成/置换结果
      if data.action == Protocol.ACTION_TYPES.ARTIFACT_MERGE or data.action == Protocol.ACTION_TYPES.ARTIFACT_REROLL then
@@ -637,28 +497,6 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                  }
              end
              RewardPopup.show(data.action == Protocol.ACTION_TYPES.ARTIFACT_REROLL and "置换结果" or "合成结果", rewards)
-         end
-     end
-
-     -- 遗物锁定：失败时撤销乐观更新；成功时 pushModule 已持久化 locked 字段
-     if data.action == Protocol.ACTION_TYPES.RELIC_LOCK and data.relicId then
-         local relic = findRelicInModData(PlayerStore.Get("mod_relics"), data.relicId)
-         if relic then
-             if data.success then
-                 if data.locked then
-                     relic.locked = true
-                 else
-                     relic.locked = nil
-                 end
-             else
-                 if relic.locked then
-                     relic.locked = nil
-                 else
-                     relic.locked = true
-                 end
-                 print("[Client] relic lock failed, reverted optimistic state: "
-                     .. tostring(data.reason))
-             end
          end
      end
 
@@ -731,8 +569,20 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
                          if heroConfig then M.pendingFollowUpDialogue_ = { config = heroConfig } end
                      end
                  })
-             elseif data.rewardType == "relic" then
-                 RewardPopup.show("远征奖励", { { type = "relic", relicType = data.reward.relicType, quality = data.reward.quality or 1 } }, { onClose = fireTutorial })
+             elseif data.rewardType == "shard" then
+                 -- 潜能引导碎片：领完自动打开该角色的觉醒（潜能）页，引导玩家去嵌合
+                 -- （relic 遗物奖励分支已随 927 遗物后端移除一并删除）
+                 local shardHeroId = data.reward.heroId
+                 RewardPopup.show("远征奖励", { { type = "shard", heroId = shardHeroId, amount = data.reward.amount or 0 } }, {
+                     onClose = function()
+                         fireTutorial()
+                         local okCd, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
+                         if okCd and CharacterDetail then
+                             CharacterDetail.open(shardHeroId, "awaken")
+                             print("[ClientMessageHandler] shard reward: opened awakening page for hero " .. tostring(shardHeroId))
+                         end
+                     end,
+                 })
              else
                  RewardPopup.show("远征奖励", { { type = "equip", templateId = data.reward.templateId, quality = data.reward.quality or 1, level = data.reward.level or 1 } }, { onClose = fireTutorial })
              end
@@ -770,16 +620,24 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if data.action == Protocol.ACTION_TYPES.SWEEP and data.success then
          local rewards = {}
          if (data.gold or 0) > 0 then rewards[#rewards + 1] = { type = "gold", amount = data.gold } end
-         local EQUIP_BY_QUALITY = data.equipByQuality or {}
-         for q = 5, 1, -1 do
-             local cnt = EQUIP_BY_QUALITY[q] or EQUIP_BY_QUALITY[tostring(q)]
-             if cnt and cnt > 0 then rewards[#rewards + 1] = { type = "seed", quality = q, amount = cnt } end
+         for _, equip in ipairs(data.equips or {}) do
+             rewards[#rewards + 1] = {
+                 type = "equip",
+                 templateId = equip.templateId,
+                 quality = equip.quality,
+                 level = equip.level,
+             }
          end
-         if (data.equipCount or 0) > 0 then LootBox.refreshPage() end
          for scrollField, count in pairs(data.scrollDrops or {}) do
              local SCROLL_MAP = { weaponScroll = "weapon_scroll", offhandScroll = "offhand_scroll", armorScroll = "armor_scroll", accessoryScroll = "accessory_scroll", helmetScroll = "helmet_scroll", shoesScroll = "shoes_scroll" }
              local rk = SCROLL_MAP[scrollField]
              if rk and count > 0 then rewards[#rewards + 1] = { type = rk, amount = count } end
+         end
+         -- 奖励弹窗出现时自动关闭扫荡弹窗，避免两层弹窗叠在一起
+         local SweepDialog = require("ui.battle.stage.SweepDialog")
+         if SweepDialog.isOpen() then
+             SweepDialog.close()
+             print("[ClientMessageHandler] sweep reward popup shown, SweepDialog auto-closed")
          end
          RewardPopup.show("扫荡奖励", rewards)
      end
@@ -855,12 +713,6 @@ function M.handleStateUpdate(eventType, eventData)
      M.pendingScenarioDialogue_ = nil
      M.pendingFollowUpDialogue_ = nil
      M.pendingTutorialNotify_ = nil
-     batchMerge_ = {
-         active = false,
-         expected = 0,
-         results = {},
-         timeout = 0,
-     }
      print("[ClientMsgHandler] session bridge state reset")
  end
 

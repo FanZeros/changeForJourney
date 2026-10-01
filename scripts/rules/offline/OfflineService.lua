@@ -8,7 +8,9 @@ local PDM              = require("rules.character.PlayerDataManager")
 local OfflineCalc      = require("systems.OfflineCalc")
 local StageProvider    = require("shared.StageProvider")
 local ExpTable         = require("config.ExpTable")
+local HeroConfig       = require("config.HeroConfig")
 local LootBoxSystem    = require("systems.LootBoxSystem")
+local BlacksmithConfig = require("config.BlacksmithConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local CurrencyService  = require("rules.currency.CurrencyService")
 local HeroService      = require("rules.hero.HeroService")
@@ -21,8 +23,6 @@ local pendingRewards = {}
 
 -- ======================== 常量 ========================
 
-local IDLE_SETTLE_INTERVAL = 60  -- 在线结算周期（秒），用于崩溃恢复判定
-
 -- 卷轴掉落（reward type 用 snake_case 与 RESOURCE_DEFS 对齐）
 local SCROLL_TO_REWARD = {
     weaponScroll    = "weapon_scroll",
@@ -31,19 +31,124 @@ local SCROLL_TO_REWARD = {
     accessoryScroll = "accessory_scroll",
     helmetScroll    = "helmet_scroll",
     shoesScroll     = "shoes_scroll",
+    sweepTicket     = "sweep_ticket",
 }
 
-local function appendEquipPreviewItems(list, equipSeeds)
+--- 把离线装备种子立刻生成真实装备。展示和领取共用同一批实例。
+---@param equipSeeds table|nil
+---@return table[]
+local function materializeEquipSeeds(equipSeeds)
+    local equips = {}
     for _, seed in ipairs(equipSeeds or {}) do
-        local previewEquip = EquipmentSystem.generateRandom(seed.level, seed.quality)
+        local count = math.floor(tonumber(seed.count) or 1)
+        if count < 1 then count = 1 end
+        for _ = 1, count do
+            local equip = EquipmentSystem.generateRandom(seed.level, seed.quality)
+            if equip then
+                equips[#equips + 1] = equip
+            else
+                print("[OfflineService][WARN] generateRandom failed level="
+                    .. tostring(seed.level) .. " quality=" .. tostring(seed.quality))
+            end
+        end
+    end
+    return equips
+end
+
+local function appendEquipPreviewItems(list, equips)
+    for _, equip in ipairs(equips or {}) do
         list[#list + 1] = {
             type       = "equip",
-            templateId = previewEquip and previewEquip.templateId or nil,
-            quality    = seed.quality,
-            level      = seed.level,
-            count      = seed.count,
+            templateId = equip.templateId,
+            quality    = equip.quality,
+            level      = equip.level,
+            slot       = equip.slot,
+            -- [奖励可点击] 附带完整装备实例，供弹窗点击查看只读详情（纯 table，可序列化）
+            equip      = equip,
         }
     end
+end
+
+--- 构建出战队员的升级预览（只读，不改数据；领取时才真正发经验）
+--- 经验与 ClaimRewards 一致：总量平分给出战队员，各自套用自己的等级曲线。
+--- 弹窗按队伍分行：有 teams 时按队1..3 的槽位顺序排，并带上 teamIdx；
+--- 没有 teams 的旧数据全部归到队1。
+---@param heroesData table|nil
+---@param totalHeroExp number 队员经验总合
+---@return table[] { heroId, name, quality, teamIdx, startLevel, startExp, level, exp, maxExp, levelGain, expGain, capped }
+local function buildHeroExpPreview(heroesData, totalHeroExp)
+    local preview = {}
+    if not heroesData then return preview end
+
+    -- 先收集 (heroId, teamIdx)，保持队伍顺序
+    local entries = {}
+    local seen = {}
+    local function addHero(heroId, teamIdx)
+        local id = tonumber(heroId)
+        if id and id > 0 and not seen[id] and heroesData.roster and heroesData.roster[id] then
+            seen[id] = true
+            entries[#entries + 1] = { id = id, team = teamIdx }
+        end
+    end
+    local liveTeams = {}
+    local liveCount = 0
+    local okPanel, CharacterPanel = pcall(require, "ui.character.panel.CharacterPanel")
+    if okPanel and CharacterPanel.getTeamSlotIds then
+        liveTeams = CharacterPanel.getTeamSlotIds() or {}
+        for _, team in ipairs(liveTeams) do
+            liveCount = liveCount + #(team.slots or {})
+        end
+    end
+    -- 面板还停在默认开局阵容时，不用它，改用存档里的队伍。
+    local heroesReady = okPanel and CharacterPanel.isHeroesDataApplied
+        and CharacterPanel.isHeroesDataApplied()
+    local teams = (heroesReady and liveCount > 0) and liveTeams or heroesData.teams
+    local hasTeams = type(teams) == "table"
+    if hasTeams then
+        for t = 1, ExpTable.TEAM_COUNT do
+            local slots = teams[t] and teams[t].slots
+            if type(slots) == "table" then
+                for _, heroId in ipairs(slots) do
+                    addHero(heroId, t)
+                end
+            end
+        end
+    end
+    if #entries == 0 then
+        for _, heroId in ipairs(heroesData.deployed or {}) do
+            addHero(heroId, 1)
+        end
+    end
+    if #entries == 0 then return preview end
+
+    local total = math.floor(totalHeroExp or 0)
+    local perHeroExp = math.floor(total / #entries + 0.5)
+
+    for _, entry in ipairs(entries) do
+        local numId = entry.id
+        local heroData = heroesData.roster and heroesData.roster[numId]
+        if heroData then
+            local beforeLv = heroData.level or 1
+            local beforeExp = heroData.exp or 0
+            local sim = ExpTable.simulateHeroExp(beforeLv, beforeExp, perHeroExp)
+            local cfg = HeroConfig.get(numId)
+            preview[#preview + 1] = {
+                heroId     = numId,
+                name       = (cfg and cfg.name) or ("#" .. tostring(numId)),
+                quality    = cfg and cfg.quality or 1,
+                teamIdx    = entry.team,
+                startLevel = beforeLv,
+                startExp   = beforeExp,
+                level      = sim.level,
+                exp        = sim.exp,
+                maxExp     = sim.maxExp,
+                levelGain  = sim.gain,
+                expGain    = perHeroExp,
+                capped     = sim.capped,
+            }
+        end
+    end
+    return preview
 end
 
 local function appendScrollPreviewItems(list, scrollDrops)
@@ -67,6 +172,20 @@ local function getTodayDateStr()
     return os.date("!%Y-%m-%d", t)
 end
 
+
+--- 阵容晚于弹窗到达时，按当前槽位重算队员经验预览。
+---@param uid number
+---@return table[]|nil
+function OfflineService.RebuildHeroPreview(uid)
+    local pending = pendingRewards[uid]
+    if not pending or not pending.rewards then return nil end
+    local heroesData = PDM.GetModule(uid, "heroes")
+    if not heroesData then return nil end
+    local preview = buildHeroExpPreview(heroesData, pending.rewards.adventurerExp)
+    if #preview == 0 then return nil end
+    pending.panelData.heroExpPreview = preview
+    return preview
+end
 
 --- 玩家进入游戏后计算离线收益，返回面板数据（不做网络 IO）
 ---@param uid number
@@ -114,32 +233,12 @@ function OfflineService.CalcOnEnter(uid)
         return
     end
 
-    local offlineSeconds = now - lastOnline
-
-    -- ══════════ 崩溃恢复：检测 lastIdleClaimTime 遗漏 ══════════
+    local offlineSeconds = math.max(0, now - lastOnline)
     local battleData = PDM.GetModule(uid, "battle")
-    if battleData then
-        local lastClaim = battleData.lastIdleClaimTime or 0
-        if lastClaim > 0 and lastOnline > lastClaim then
-            -- 存在未结算窗口（崩溃/热更导致 idleAccumSec 未结算）
-            local missedSeconds = lastOnline - lastClaim
-            if missedSeconds > 0 and missedSeconds < IDLE_SETTLE_INTERVAL * 2 then
-                -- 合理范围内（最多 ~120 秒遗漏），并入离线时长一起结算
-                offlineSeconds = offlineSeconds + missedSeconds
-                print(string.format(
-                    "[OfflineService] crash recovery: added %d missed seconds uid=%s",
-                    missedSeconds, tostring(uid)))
-            end
-        end
-        -- 重置累积器（上一轮残留的 idleAccumSec 已合并到 offlineSeconds）
-        if (battleData.idleAccumSec or 0) > 0 then
-            offlineSeconds = offlineSeconds + battleData.idleAccumSec
-            print(string.format(
-                "[OfflineService] merging residual idleAccumSec=%d uid=%s",
-                math.floor(battleData.idleAccumSec), tostring(uid)))
-            battleData.idleAccumSec = 0
-            PDM.MarkDirty(uid, "battle")
-        end
+    -- 单机在线战斗已按击杀发奖；旧在线累积器不应再计入离线时长。
+    if battleData and (battleData.idleAccumSec or 0) > 0 then
+        battleData.idleAccumSec = 0
+        PDM.MarkDirty(uid, "battle")
     end
 
     -- 不满足最低离线时间
@@ -187,7 +286,13 @@ function OfflineService.CalcOnEnter(uid)
         totalKills     = rewards.kills,
         adventureExp   = rewards.adventureExp,
         adventurerExp  = rewards.adventurerExp,
+        heroExpPreview = buildHeroExpPreview(heroesData, rewards.adventurerExp),
         rewards        = {},
+        -- [7日硬顶] 面板展示封顶信息
+        hardCapSeconds  = rewards.hardCapSeconds or OfflineCalc.HARD_CAP_SECONDS,
+        cappedByHardCap = rewards.cappedByHardCap or false,
+        tailRatio       = rewards.tailRatio or OfflineCalc.TAIL_RATIO,
+        rawSeconds      = rewards.rawSeconds,
     }
 
     -- 金币
@@ -198,8 +303,10 @@ function OfflineService.CalcOnEnter(uid)
         }
     end
 
-    -- 装备种子（展示为装备图标）
-    appendEquipPreviewItems(panelData.rewards, rewards.equipSeeds)
+    -- 装备种子立刻生成真实装备，展示和领取共用同一批
+    local grantedEquips = materializeEquipSeeds(rewards.equipSeeds)
+    rewards.grantedEquips = grantedEquips
+    appendEquipPreviewItems(panelData.rewards, grantedEquips)
 
     -- 卷轴掉落
     appendScrollPreviewItems(panelData.rewards, rewards.scrollDrops)
@@ -234,10 +341,13 @@ function OfflineService.ClaimRewards(uid)
     local currency   = PDM.GetModule(uid, "currency")
     local heroesData = PDM.GetModule(uid, "heroes")
     local playerData = PDM.GetModule(uid, "player")
-    local lootbox    = PDM.GetModule(uid, "lootbox")
+    local equipData  = PDM.GetModule(uid, "equipment")
 
-    if not currency or not heroesData or not playerData or not lootbox then
+    if not currency or not heroesData or not playerData or not equipData then
         return false, "数据未加载"
+    end
+    if not equipData.inventory then
+        equipData.inventory = {}
     end
 
     -- 1) 金币
@@ -246,16 +356,37 @@ function OfflineService.ClaimRewards(uid)
     currency.gold = (currency.gold or 0) + goldAmount
     PDM.MarkDirty(uid, "currency")
 
-    -- 2) 英雄经验（平分给出战英雄）
-    local deployed = heroesData.deployed or {}
-    local heroCount = #deployed
+    -- 2) 英雄经验（平分给全部队伍的出战英雄，与预览同一份名单）
+    local recipients = {}
+    local preview = pending.panelData and pending.panelData.heroExpPreview
+    if type(preview) == "table" and #preview > 0 then
+        local seen = {}
+        for _, item in ipairs(preview) do
+            local numId = tonumber(item.heroId) or item.heroId
+            if numId and not seen[numId] then
+                seen[numId] = true
+                recipients[#recipients + 1] = numId
+            end
+        end
+    end
+    if #recipients == 0 then
+        local seen = {}
+        for _, heroId in ipairs(heroesData.deployed or {}) do
+            local numId = tonumber(heroId)
+            if numId and numId > 0 and not seen[numId]
+                and heroesData.roster and heroesData.roster[numId] then
+                seen[numId] = true
+                recipients[#recipients + 1] = numId
+            end
+        end
+    end
+    local heroCount = #recipients
     local perHeroExp = 0
     if heroCount > 0 then
         local totalHeroExp = rewards.adventurerExp
         totalHeroExp = math.floor(totalHeroExp)
         perHeroExp = math.floor(totalHeroExp / heroCount + 0.5)
-        for _, heroId in ipairs(deployed) do
-            local numId = tonumber(heroId) or heroId
+        for _, numId in ipairs(recipients) do
             local heroData = heroesData.roster[numId]
             if heroData then
                 heroData.exp = (heroData.exp or 0) + perHeroExp
@@ -277,20 +408,23 @@ function OfflineService.ClaimRewards(uid)
         HeroService.SyncHeroLevelsToPlayerLevel(uid, playerData.level)
     end
 
-    -- 4) 装备种子 → 战利品缓冲
-    local equipSeedGroups = { rewards.equipSeeds }
-    local equipDirty = false
-    for _, equipSeeds in ipairs(equipSeedGroups) do
-        for _, seed in ipairs(equipSeeds or {}) do
-            local count = seed.count or 1
-            for _ = 1, count do
-                LootBoxSystem.addSeed(lootbox, seed.stageId, seed.quality, seed.level)
-            end
-            equipDirty = true
+    -- 4) 展示时已生成的真实装备 → 背包
+    local grantedCount = 0
+    local skippedFull = 0
+    for _, equip in ipairs(rewards.grantedEquips or {}) do
+        if EquipmentSystem.isInventoryFull(equipData) then
+            skippedFull = skippedFull + 1
+        else
+            EquipmentSystem.addToInventory(equipData, equip)
+            grantedCount = grantedCount + 1
         end
     end
-    if equipDirty then
-        PDM.MarkDirty(uid, "lootbox")
+    if grantedCount > 0 then
+        PDM.MarkDirty(uid, "equipment")
+    end
+    if skippedFull > 0 then
+        print("[OfflineService][WARN] inventory full, skipped equips=" .. skippedFull
+            .. " uid=" .. tostring(uid))
     end
 
     -- 5) 卷轴掉落 → 货币
@@ -425,14 +559,28 @@ function OfflineService.OnPlayerDisconnect(uid)
                             HeroService.SyncHeroLevelsToPlayerLevel(uid, playerData.level)
                         end
 
-                        -- 装备种子
+                        -- 装备种子（符合自动分解条件的直接转精粹，与击杀掉落同一语义）
+                        local equipData = PDM.GetModule(uid, "equipment")
+                        local autoSettings = (equipData and equipData.settings) or nil
+                        local autoEssence = 0
                         for _, seed in ipairs(rewards.equipSeeds or {}) do
                             local count = seed.count or 1
                             for _ = 1, count do
-                                LootBoxSystem.addSeed(lootbox, seed.stageId, seed.quality, seed.level)
+                                local q, lv = seed.quality or 1, seed.level or 1
+                                if BlacksmithConfig.shouldAutoDecompose(autoSettings, q, lv) then
+                                    local essence = BlacksmithConfig.calcAutoDecomposeEssence(q, lv)
+                                    autoEssence = autoEssence + essence
+                                    BlacksmithConfig.recordAutoDecompose(lootbox, q, lv, essence)
+                                else
+                                    LootBoxSystem.addSeed(lootbox, seed.stageId, q, lv)
+                                end
                             end
                         end
                         PDM.MarkDirty(uid, "lootbox")
+                        if autoEssence > 0 then
+                            CurrencyService.Add(uid, "essence", autoEssence)
+                            print("[Offline] auto-decompose essence=+" .. autoEssence .. " uid=" .. tostring(uid))
+                        end
 
                         -- 卷轴
                         for scrollField, count in pairs(rewards.scrollDrops or {}) do
@@ -469,10 +617,20 @@ function OfflineService.OnPlayerDisconnect(uid)
         PDM.MarkDirty(uid, "battle")
     end
 
-    -- 4. 更新 lastOnlineTime
+    OfflineService.MarkOnline(uid)
+end
+
+-- ======================== 在线时间边界 ========================
+
+--- 仅推进在线时刻，不额外结算挂机收益；单机战斗收益已按击杀发放。
+---@param uid number
+function OfflineService.MarkOnline(uid)
+    if pendingRewards[uid] then return end
     local sessionData = PDM.GetModule(uid, "session")
-    if sessionData then
-        sessionData.lastOnlineTime = os.time()
+    if not sessionData or (sessionData.lastOnlineTime or 0) <= 0 then return end
+    local now = os.time()
+    if now > sessionData.lastOnlineTime then
+        sessionData.lastOnlineTime = now
         PDM.MarkDirty(uid, "session")
     end
 end

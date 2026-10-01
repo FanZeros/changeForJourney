@@ -9,6 +9,7 @@ local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")   -- [三队并行] 页签复用按钮条背景
 local ExpTable = require("config.ExpTable")
 local TutorialManager = require("systems.TutorialManager")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawImageCentered  = DrawUtil.drawImageCentered
 local drawImageCover     = DrawUtil.drawImageCover
@@ -89,21 +90,22 @@ local LIST_BG_CY     = DESIGN_H - LIST_BG_H * 0.5   -- 底部对齐: 2400 - 789.
 
 -- 队伍总战斗力（与详情页「角色详情」同高 Y=860）
 local TOTAL_POWER_CX = 540
-local TOTAL_POWER_CY = 860
+local TOTAL_POWER_CY = 660
 local TOTAL_POWER_ICON_SIZE = 36
 local TOTAL_POWER_GAP = 4
 
 -- "远征团"标题：与点进角色后的名字同位置（CharacterDetailDraw MID_NAME_CY=995）
 local MY_HEROES_CX   = 540
-local MY_HEROES_CY   = 995
+local MY_HEROES_CY   = 680
 
--- 角色卡片行
-local ROW1_CY        = 1291    -- 第一排 Y 中心
+-- 下方名册：图标网格，点图标才打开角色卡面
+local ROSTER_ICON = 148
+local ROSTER_GAP = 24
+local ROW1_CY        = 1090
 local MAX_PER_ROW    = 5
 
 -- 行间距
-local ROW2_CY        = 1725    -- [卡高4/5] 第二排 Y 中心(1291+434)
-local ROW_SPACING    = ROW2_CY - ROW1_CY  -- 543
+local ROW_SPACING    = ROSTER_ICON + 64
 
 -- 角色名背景（相对卡片行 Y 中心的偏移）
 local NAME_BG_DY     = CARD_H * 0.5 + 34  -- [卡高4/5] 名牌中心=卡底下方34(原253)
@@ -120,7 +122,7 @@ local DEPLOYED_TXT_DY = -120  -- [卡高4/5] 原-149
 
 -- ======================== 滚动区域 ========================
 
-local SCROLL_TOP     = 1050   -- 标题下方
+local SCROLL_TOP     = 990   -- 三队头像边框下方
 local SCROLL_BOTTOM  = 2400   -- 屏幕底边（与 ChurchPage 名册一致；避免底部大片留白）
 local SCROLL_LEFT    = 0
 local SCROLL_RIGHT   = DESIGN_W
@@ -177,6 +179,8 @@ local getUpgradeBadgeCache -- function() return upgradeBadgeCache end
 local getActiveTeamIdx    -- [三队并行] function() return activeTeamIdx end
 local getUnlockedTeamCount -- [三队并行] function() return unlockedCount end
 local getTeamOccupiedCounts -- [三队并行] function() return counts[] end
+local getTeams             -- function() return teams end
+local getTeamPowerCaches   -- function() return teamPowerCaches end
 
 --- 注入来自 CharacterPanel 的共享状态
 function M.setContext(ctx)
@@ -192,6 +196,8 @@ function M.setContext(ctx)
     getActiveTeamIdx     = ctx.getActiveTeamIdx
     getUnlockedTeamCount = ctx.getUnlockedTeamCount
     getTeamOccupiedCounts = ctx.getTeamOccupiedCounts
+    getTeams             = ctx.getTeams
+    getTeamPowerCaches   = ctx.getTeamPowerCaches
 end
 
 -- ======================== 图片初始化 ========================
@@ -260,8 +266,19 @@ end
 
 -- ======================== [三队并行] 队伍页签 ========================
 
-local TAB_W, TAB_H, TAB_GAP = 240, 54, 16
+local TAB_W, TAB_H, TAB_GAP = 132, 54, 12
 local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px 间隙）
+
+-- 右侧栏只显示图标：三队头像同时显示，点进去才打开角色卡面
+local heroIconCache = {}  ---@type table<number, integer>
+-- 头像放大到接近名册图标。标题独占一行，头像另起一行，避免和标题挤在一起被压扁
+local AV_SIZE = 176
+local AV_GAP = 16
+local AV_LABEL_H = 56   -- 「小队N」标题行高
+local AV_PAD_Y = 30     -- 标题行与头像之间的空隙（留给站位名）
+local AV_ROW_GAP = 28   -- 队与队之间的间距
+local AV_ROW_H = AV_LABEL_H + AV_PAD_Y + AV_SIZE + AV_ROW_GAP
+local AV_TOP = 28
 
 --- 计算第 idx 个页签的左上角 X
 ---@param idx number
@@ -269,6 +286,170 @@ local TAB_Y = 258   -- 页签顶边（槽位卡上边缘 325 之上，留 13px �
 local function teamTabX(idx)
     local totalW = M.TEAM_TAB_COUNT * TAB_W + (M.TEAM_TAB_COUNT - 1) * TAB_GAP
     return (DESIGN_W - totalW) * 0.5 + (idx - 1) * (TAB_W + TAB_GAP)
+end
+
+--- 角色头像句柄，按需加载并缓存。必须用当前帧 vg，失败不缓存，避免永久空白。
+---@param vg any
+---@param heroId number
+---@return number
+local function heroIconHandle(vg, heroId)
+    local cached = heroIconCache[heroId]
+    if cached and cached > 0 then return cached end
+    local handle = HeroAssetUtil.ensureIcon(vg, heroIconCache, heroId)
+    if not handle or handle <= 0 then
+        heroIconCache[heroId] = nil
+        return -1
+    end
+    return handle
+end
+
+--- 头像编队一行的左上角 X（4 个头像水平居中）
+---@return number
+local function avatarRowX()
+    local rowW = M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
+    return (DESIGN_W - rowW) * 0.5
+end
+
+--- 站位名：1 号最靠右是前锋，4 号最靠左是后排
+local SLOT_POS_NAME = { "前锋", "中锋", "中卫", "后卫" }
+
+--- 队伍配色（右栏三队行/页签共用，便于分辨出战队伍）；未解锁灰
+local TEAM_COLORS = {
+    { 0x5a, 0xaa, 0xff },  -- 队1 蓝
+    { 0x6e, 0xdc, 0x8c },  -- 队2 绿
+    { 0xc0, 0x84, 0xfc },  -- 队3 紫
+}
+local TEAM_COLOR_GRAY = { 0x96, 0x8c, 0x7d }
+local function teamColor(idx, locked)
+    if locked then return TEAM_COLOR_GRAY end
+    return TEAM_COLORS[idx] or TEAM_COLOR_GRAY
+end
+
+--- 第 teamIdx 队第 slotIdx 个头像的中心
+--- 右侧为前锋（1 号），与战斗条带里我方从右向左排布一致
+---@param teamIdx number
+---@param slotIdx number
+---@return number cx, number cy
+local function avatarCenter(teamIdx, slotIdx)
+    local x0 = avatarRowX()
+    local visual = M.MAX_SLOTS - slotIdx
+    local cx = x0 + visual * (AV_SIZE + AV_GAP) + AV_SIZE * 0.5
+    -- 标题独占一行，头像在标题行下方另起一行
+    local cy = AV_TOP + (teamIdx - 1) * AV_ROW_H + AV_LABEL_H + AV_PAD_Y + AV_SIZE * 0.5
+    return cx, cy
+end
+
+--- 绘制单个头像槽：已上阵显示头像，空位虚框
+---@param vg any
+---@param slotIdx number
+---@param slot table|nil
+---@param locked boolean
+local function drawAvatarSlot(vg, teamIdx, slotIdx, slot, locked)
+    local cx, cy = avatarCenter(teamIdx, slotIdx)
+    local dragState = getDragState and getDragState()
+    local draggingSource = dragState and dragState.active
+        and dragState.fromTeam == teamIdx and dragState.fromSlot == slotIdx
+    local occupied = slot and slot.state == "occupied" and slot.heroId
+    local lvl = 1
+    if occupied and not locked then
+        local okLvl, CharacterPanel = pcall(require, "ui.character.panel.CharacterPanel")
+        if okLvl and CharacterPanel.getEffectiveLevel then
+            lvl = CharacterPanel.getEffectiveLevel(slot.heroId) or 1
+        end
+    end
+    -- [统一角色框] HeroFrame：品质色描边 + 等级/职业角标 + 拖拽高亮 + 站位名
+    HeroFrame.draw(vg, {
+        cx = cx, cy = cy, size = AV_SIZE,
+        heroId = occupied and slot.heroId or nil,
+        iconHandle = occupied and heroIconHandle(vg, slot.heroId) or nil,
+        state = locked and "locked" or (occupied and "owned" or "empty"),
+        showLevel = (occupied and not draggingSource) and true or nil,
+        level = lvl,
+        showClass = (occupied and not draggingSource) and true or nil,
+        dragSource = draggingSource and true or nil,
+        posLabel = (not locked) and SLOT_POS_NAME[slotIdx] or nil,
+    })
+end
+
+--- 三队头像同时显示。右侧栏不画角色整卡，点头像才进卡面。
+---@param vg any
+function M.drawTeamAvatars(vg)
+    if not getTeams or not getUnlockedTeamCount then return end
+    local teams = getTeams()
+    local unlockedCnt = getUnlockedTeamCount() or 1
+    local activeIdx = getActiveTeamIdx and getActiveTeamIdx() or 1
+    for t = 1, M.TEAM_TAB_COUNT do
+        local locked = t > unlockedCnt
+        local _, rowCy = avatarCenter(t, 1)
+        local rowX = avatarRowX()
+        local rowW = M.MAX_SLOTS * AV_SIZE + (M.MAX_SLOTS - 1) * AV_GAP
+        -- 底条包住标题行和头像行
+        local frameX = rowX - 20
+        local frameY = rowCy - AV_SIZE * 0.5 - AV_PAD_Y - AV_LABEL_H - 10
+        local frameW = rowW + 40
+        local frameH = AV_LABEL_H + AV_PAD_Y + AV_SIZE + 20
+        local tc = teamColor(t, locked)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, frameX, frameY, frameW, frameH, 16)
+        -- 队伍色底调：暗色混入队伍色，active 时描边更亮更粗
+        nvgFillColor(vg, nvgRGBA(math.floor(tc[1] * 0.16), math.floor(tc[2] * 0.16),
+            math.floor(tc[3] * 0.16), locked and 80 or 150))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(tc[1], tc[2], tc[3],
+            t == activeIdx and 235 or (locked and 90 or 150)))
+        nvgStrokeWidth(vg, t == activeIdx and 3 or 2)
+        nvgStroke(vg)
+        -- 「小队N」标题，左上角（队伍色）
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 30)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], locked and 170 or 255))
+        nvgText(vg, frameX + 20, frameY + AV_LABEL_H * 0.5,
+            locked and ("小队" .. t .. "  未解锁") or ("小队" .. t), nil)
+        local powerCaches = getTeamPowerCaches and getTeamPowerCaches() or {}
+        local teamPower = 0
+        local cache = powerCaches[t]
+        if cache then
+            for i = 1, M.MAX_SLOTS do
+                teamPower = teamPower + (cache[i] or 0)
+            end
+        end
+        local powerStr = require("core.NumberUtil").format(teamPower)
+        local labelCY = frameY + AV_LABEL_H * 0.5
+        nvgFontSize(vg, 26)
+        nvgFillColor(vg, locked and nvgRGBA(140, 130, 115, 160) or nvgRGBA(247, 254, 119, 255))
+        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+        nvgText(vg, frameX + frameW - 16, labelCY, powerStr, nil)
+        local powerTextW = nvgTextBounds(vg, 0, 0, powerStr)
+        if img.power and img.power >= 0 then
+            drawImageCentered(vg, img.power, frameX + frameW - 16 - powerTextW - 22, labelCY,
+                30, 30, locked and 0.45 or 1)
+        end
+        local slots = teams[t] and teams[t].slots
+        for s = 1, M.MAX_SLOTS do
+            drawAvatarSlot(vg, t, s, slots and slots[s], locked)
+        end
+    end
+end
+
+--- 头像槽命中：返回队伍与槽位，未解锁队伍不响应
+---@param dx number
+---@param dy number
+---@return number|nil teamIdx, number|nil slotIdx
+function M.hitTestAvatarSlot(dx, dy, detailOpen)
+    -- 内容右移 5%、下移 6%，命中换算回未偏移坐标。
+    dx = dx - DESIGN_W * 0.05
+    dy = dy - DESIGN_H * 0.06
+    local unlockedCnt = getUnlockedTeamCount and getUnlockedTeamCount() or 1
+    for t = 1, math.min(M.TEAM_TAB_COUNT, unlockedCnt) do
+        for s = 1, M.MAX_SLOTS do
+            local cx, cy = avatarCenter(t, s)
+            if math.abs(dx - cx) <= AV_SIZE * 0.5 and math.abs(dy - cy) <= AV_SIZE * 0.5 then
+                return t, s
+            end
+        end
+    end
+    return nil, nil
 end
 
 --- 绘制三队页签（队1/队2/队3，含解锁状态与上阵人数角标）
@@ -292,18 +473,28 @@ function M.drawTeamTabs(vg)
         else
             DarkIcon.drawNine(vg, "btn", x, y, TAB_W, TAB_H, { accent = "gold", alpha = 0.62 })
         end
+        -- 队伍色圆点（与右栏三队行同色，便于分辨；锁定时让位给锁图标）
+        if not isLocked then
+            local tc = teamColor(i, false)
+            nvgBeginPath(vg)
+            nvgCircle(vg, x + 20, y + TAB_H * 0.5, 9)
+            nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], 255))
+            nvgFill(vg)
+        end
 
         -- 文案
         nvgFontFace(vg, "sans")
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         local label
         if isLocked then
-            local needLv = ExpTable.getTeamUnlockLevel(i)
-            label = string.format("队%d · Lv%s解锁", i, tostring(needLv or "?"))
-            nvgFontSize(vg, 22)
-            nvgFillColor(vg, nvgRGBA(150, 150, 165, 255))
+            label = tostring(i)
+            nvgFontSize(vg, 24)
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 锁定=棕色
+            if img.lock and img.lock >= 0 then
+                drawImageCentered(vg, img.lock, x + 22, y + TAB_H * 0.5, 28, 28, 0.8)
+            end
         else
-            label = string.format("队%d（%d/%d）", i, counts[i] or 0, M.MAX_SLOTS)
+            label = string.format("%d  %d/%d", i, counts[i] or 0, M.MAX_SLOTS)
             nvgFontSize(vg, 24)
             nvgFillColor(vg, isActive and nvgRGBA(255, 255, 255, 255) or nvgRGBA(205, 210, 225, 255))
         end
@@ -331,7 +522,7 @@ end
 --- CharacterDetail.draw() 由 CharacterPanel 在调用本函数之后单独调用
 ---@param vg any NanoVG 上下文
 ---@param scrollY number 当前滚动偏移
-function M.draw(vg, scrollY)
+function M.draw(vg, scrollY, detailOpen)
     local teamSlots       = getTeamSlots()
     local heroRoster      = getHeroRoster()
     local slotPowerCache  = getSlotPowerCache()
@@ -352,10 +543,15 @@ function M.draw(vg, scrollY)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-    -- 1.5) [三队并行] 绘制三队页签
-    M.drawTeamTabs(vg)
+    -- 1.5) 三队头像同时显示。右侧栏不画整卡，点头像才进卡面。
+    -- 列表下移 6%、右移栏宽的 5%。详情打开后铺满右栏，不再右移。
+    local contentShiftX = DESIGN_W * 0.05
+    nvgSave(vg)
+    nvgTranslate(vg, contentShiftX, DESIGN_H * 0.06)
+    M.drawTeamAvatars(vg)
 
-    -- 2) 绘制编队槽位
+    -- 2) 整卡槽位已改为头像，保留块结构供下方列表复用局部变量
+    if false then
     -- 拖拽中：计算鼠标悬停的目标槽位（用于高亮提示）
     local dragHoverSlot = nil
     if dragState.active and dragState.heroId then
@@ -516,41 +712,40 @@ function M.draw(vg, scrollY)
 
         ::continueSlot::
     end
+    end
 
     -- ================================================================
     -- 下半部分：角色列表
     -- ================================================================
 
-    -- 3) 角色列表背景
-    drawImageCentered(vg, img.listBg, LIST_BG_CX, LIST_BG_CY, LIST_BG_W, LIST_BG_H, 1.0)
+    -- 3) 角色框图片背景先去掉，背景稍后另定
+    -- 4) 总战力已改到各队头像后方
+    -- 5) 不显示“远征团”
 
-    -- 4) 队伍总战斗力（图标+数值，水平居中）
-    local totalPower = 0
-    for i = 1, M.MAX_SLOTS do
-        totalPower = totalPower + (slotPowerCache[i] or 0)
-    end
-    local totalPowerStr = require("core.NumberUtil").format(totalPower)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 30)
-    local tpTextW = nvgTextBounds(vg, 0, 0, totalPowerStr)
-    local tpComboW = TOTAL_POWER_ICON_SIZE + TOTAL_POWER_GAP + tpTextW
-    local tpStartX = TOTAL_POWER_CX - tpComboW * 0.5
-    drawImageCentered(vg, img.power, tpStartX + TOTAL_POWER_ICON_SIZE * 0.5, TOTAL_POWER_CY,
-        TOTAL_POWER_ICON_SIZE, TOTAL_POWER_ICON_SIZE, 1.0)
-    drawTextStroke(vg, tpStartX + TOTAL_POWER_ICON_SIZE + TOTAL_POWER_GAP, TOTAL_POWER_CY,
-        totalPowerStr, 30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        247, 254, 119, 4)
-
-    -- 5) "远征团"标题（白色描边，贴列表背景顶边下方）
-    drawTextStroke(vg, MY_HEROES_CX, MY_HEROES_CY, "远征团",
-        42, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 4)
-
-    -- 6) 角色卡片行（可滚动区域，裁剪到可视范围）
+    -- 6) 角色图标行（可滚动区域，裁剪到可视范围）
     nvgSave(vg)
     nvgScissor(vg, SCROLL_LEFT, SCROLL_TOP, SCROLL_RIGHT - SCROLL_LEFT, SCROLL_BOTTOM - SCROLL_TOP)
 
     local rosterCount = #heroRoster
+    if rosterCount > 0 then
+        local numRows = math.ceil(rosterCount / MAX_PER_ROW)
+        local cols = math.min(rosterCount, MAX_PER_ROW)
+        local gridW = cols * ROSTER_ICON + (cols - 1) * ROSTER_GAP
+        local pad = 16
+        local frameX = (DESIGN_W - gridW) * 0.5 - pad
+        local firstTop = ROW1_CY - ROSTER_ICON * 0.5 - scrollY
+        local lastCY = ROW1_CY + (numRows - 1) * ROW_SPACING - scrollY
+        local frameY = firstTop - pad
+        -- 名字在图标下方 22，底框包住名字即可
+        local frameBottom = lastCY + ROSTER_ICON * 0.5 + 36 + pad
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, frameX, frameY, gridW + pad * 2, frameBottom - frameY, 16)
+        nvgFillColor(vg, nvgRGBA(8, 7, 6, 150))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(186, 154, 92, 180))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
+    end
     for idx = 1, rosterCount do
         local entry = heroRoster[idx]
         local heroCfg = HC.get(entry.heroId)
@@ -568,172 +763,59 @@ function M.draw(vg, scrollY)
         -- 行的 Y 中心（应用滚动偏移）
         local rowCY = ROW1_CY + (row - 1) * ROW_SPACING - scrollY
 
-        -- 快速跳过完全不可见的行（卡片+名字的上下边界）
-        local cardTop    = rowCY - CARD_H * 0.5 + TAG_OFFSET_Y
-        local cardBottom = rowCY + NAME_BG_DY + NAME_BG_H * 0.5
+        -- 快速跳过完全不可见的行（图标+名字）
+        local cardTop    = rowCY - ROSTER_ICON * 0.5
+        local cardBottom = rowCY + ROSTER_ICON * 0.5 + 36
         if cardBottom < SCROLL_TOP or cardTop > SCROLL_BOTTOM then
             goto continueRoster
         end
 
-        -- 顶部渐隐[放缓]：卡片顶边触及裁剪上边界才开始淡出，完全出界才消失
-        -- （原：中心到边界即全隐——半张卡还在视野内就变白）
         local fadeAlpha = 1.0
-        local distToExit = (rowCY + CARD_H * 0.5) - SCROLL_TOP  -- 卡片底缘到上边界距离
-        if distToExit < CARD_H then
-            fadeAlpha = math.max(0, distToExit / CARD_H)
+        local distToExit = (rowCY + ROSTER_ICON * 0.5) - SCROLL_TOP
+        if distToExit < ROSTER_ICON then
+            fadeAlpha = math.max(0, distToExit / ROSTER_ICON)
         end
         nvgGlobalAlpha(vg, fadeAlpha)
 
-        -- 水平居中分布（与编队槽位同算法，按实际卡片数居中）
-        local totalW = rowCount * CARD_W + (rowCount - 1) * CARD_SPACING
-        local startCX = (DESIGN_W - totalW) * 0.5 + CARD_W * 0.5
-        local cx = startCX + (col - 1) * (CARD_W + CARD_SPACING)
+        local totalW = rowCount * ROSTER_ICON + (rowCount - 1) * ROSTER_GAP
+        local startCX = (DESIGN_W - totalW) * 0.5 + ROSTER_ICON * 0.5
+        local cx = startCX + (col - 1) * (ROSTER_ICON + ROSTER_GAP)
         local cy = rowCY
-
-        -- a) 角色卡片背景
-        local cardVg = img.vg or vg
-        local cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, entry.heroId)
-        if (not cardImg or cardImg < 0) and entry.heroId ~= 1 then
-            cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, 1)
-        end
         local isOwned = entry.owned
-        drawImageCover(vg, cardImg, cx, cy, CARD_W, CARD_H, 1.0)
-
-        -- a2) 未拥有角色遮罩：纯黑 50% 透明度
-        if not isOwned then
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, cx - CARD_W * 0.5, cy - CARD_H * 0.5, CARD_W, CARD_H, 20)
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-            nvgFill(vg)
-        end
-
-        -- c-shard) 未拥有角色：碎片进度条（复用经验条素材，ICON_SP 替代等级徽章）
-        if not isOwned then
-            local shards = entry.shards or 0
-            if shards > 0 then
-                local canSynth = shards >= HC.SHARD_SYNTHESIZE_COST
-                local shardMax = HC.SHARD_SYNTHESIZE_COST  -- 10
-
-                -- 碎片进度条（与经验条同位置/同尺寸）
-                local sBarCX = cx + EXP_BAR_DX
-                local sBarCY = cy + EXP_BAR_DY
-                drawImageCentered(vg, img.expBarBg, sBarCX, sBarCY, EXP_BAR_BG_W, EXP_BAR_BG_H, 1.0)
-
-                local sProgress = math.min(1, shards / shardMax)
-                local sFillW = EXP_BAR_BG_W - EXP_BAR_PADDING * 2 - EXP_FILL_LEFT_INSET
-                local sFillH = EXP_BAR_BG_H - EXP_BAR_PADDING * 2
-                local sFillX = sBarCX - EXP_BAR_BG_W * 0.5 + EXP_BAR_PADDING + EXP_FILL_LEFT_INSET
-                local sFillY = sBarCY - EXP_BAR_BG_H * 0.5 + EXP_BAR_PADDING
-                local sClipW = sFillW * sProgress
-                if sClipW > 0 and img.expBarFill >= 0 then
-                    nvgSave(vg)
-                    nvgIntersectScissor(vg, sFillX, sFillY, sClipW, sFillH)
-                    local sPaint = nvgImagePattern(vg, sFillX, sFillY, sFillW, sFillH, 0, img.expBarFill, 1.0)
-                    nvgBeginPath(vg)
-                    nvgRect(vg, sFillX, sFillY, sFillW, sFillH)
-                    nvgFillPaint(vg, sPaint)
-                    nvgFill(vg)
-                    nvgRestore(vg)
-                end
-
-                -- ICON_SP 碎片图标（替代等级徽章，同位置 50×50）
-                local spCX = cx + LVL_BADGE_DX
-                local spCY = cy + LVL_BADGE_DY
-                drawImageCentered(vg, img.shardSp, spCX, spCY, 50, 50, 1.0)
-
-                -- 碎片进度文字（显示在进度条上方）
-                local shardLabel = shards .. "/" .. shardMax
-                drawTextStroke(vg, sBarCX + 10, sBarCY, shardLabel,
-                    20, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 3)
-
-                -- 可合成文本（进度条上方）
-                if canSynth then
-                    local synthY = sBarCY - EXP_BAR_BG_H * 0.5 - 36
-                    drawTextStroke(vg, cx, synthY, "可合成",
-                        28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                        0x44, 0xff, 0x5e, 3)
-                end
-            end
-        end
-
-        -- b) 职业标志图标（右下角，与等级徽章左右对应；未拥有同样显示）
-        local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
-        if iconIdx and img.classIcons[iconIdx] then
-            drawImageCentered(vg, img.classIcons[iconIdx], cx + TAG_DX, cy + LVL_BADGE_DY, TAG_SIZE, TAG_SIZE, 1.0)
-        end
-
-        -- c/e 仅已拥有角色显示战斗力、等级（经验条已删）
-        if isOwned then
-            -- c) 战斗力图标+数值
-            local power = rosterPowerCache[idx] or 0
-            local powerStr = require("core.NumberUtil").format(power)
-            local POWER_GAP = 4
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 30)
-            local ptW = nvgTextBounds(vg, 0, 0, powerStr)
-            local pcW = POWER_ICON_SIZE + POWER_GAP + ptW
-            local pcX = cx - pcW * 0.5
-            drawImageCentered(vg, img.power, pcX + POWER_ICON_SIZE * 0.5,
-                cy + (POWER_Y - CARD_CY), POWER_ICON_SIZE, POWER_ICON_SIZE, 1.0)
-            drawTextStroke(vg, pcX + POWER_ICON_SIZE + POWER_GAP,
-                cy + (POWER_Y - CARD_CY), powerStr,
-                30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-                247, 254, 119, 4)
-
-
-            -- e) 等级徽章
-            local badgeCX = cx + LVL_BADGE_DX
-            local badgeCY = cy + LVL_BADGE_DY
-            drawImageCentered(vg, img.lvlBadge, badgeCX, badgeCY, LVL_BADGE_SIZE, LVL_BADGE_SIZE, 1.0)
-            drawTextStroke(vg, badgeCX, badgeCY,
-                tostring(entry.level or 1),
-                28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                255, 255, 255, 4)
-        end
-
-        -- f) 角色名背景
-        local nameBgCY = cy + NAME_BG_DY
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, cx - NAME_BG_W * 0.5, nameBgCY - NAME_BG_H * 0.5,
-            NAME_BG_W, NAME_BG_H, NAME_BG_RADIUS)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-        nvgFill(vg)
-
-        -- g) 角色名文字
-        drawTextStroke(vg, cx, nameBgCY, heroCfg.name,
-            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4)
-
-        -- h) 出战中标识（[三队并行] 显示所属队伍：队1/队2/队3）
+        local draggingThis = dragState and dragState.active and dragState.heroId == entry.heroId
+        -- [统一角色框] 名册网格：品质描边 + 全套角标（等级/职业/队伍/碎片/可提升）+ 名字
         local deployTeams = getHeroDeployTeams and getHeroDeployTeams(entry.heroId) or nil
+        local teamTag = nil
         if deployTeams and #deployTeams > 0 then
             local labels = {}
-            for i, t in ipairs(deployTeams) do labels[i] = "队" .. t end
-            drawImageCentered(vg, img.deployed, cx + DEPLOYED_DX, cy + DEPLOYED_DY, DEPLOYED_W, DEPLOYED_H, 1.0)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, #deployTeams > 1 and 22 or 28)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-            nvgText(vg, cx + DEPLOYED_DX, cy + DEPLOYED_TXT_DY, table.concat(labels, "·"), nil)
+            for i, t in ipairs(deployTeams) do labels[i] = tostring(t) end
+            teamTag = table.concat(labels, "·")
         end
-
-        -- i) 可提升角标（右上角，所有已拥有角色）：从缓存查找
-        if isOwned and img.iconUp >= 0 and getUpgradeBadgeCache()[entry.heroId] then
-            local upSize = 40
-            local upX = cx + CARD_W * 0.5 - upSize * 0.5 - 2
-            local upY = cy - CARD_H * 0.5 + upSize * 0.5 + 2
-            drawImageCentered(vg, img.iconUp, upX, upY, upSize, upSize, 1.0)
-        end
+        HeroFrame.draw(vg, {
+            cx = cx, cy = cy, size = ROSTER_ICON,
+            heroId = entry.heroId,
+            iconHandle = heroIconHandle(vg, entry.heroId),
+            state = isOwned and "owned" or "unowned",
+            showLevel = isOwned or nil,
+            level = entry.level or 1,
+            showClass = true,
+            showShards = (not isOwned) or nil,
+            shards = entry.shards or 0,
+            showTeamTag = teamTag and true or nil,
+            teamTag = teamTag,
+            showUpgrade = (isOwned and getUpgradeBadgeCache()[entry.heroId]) and true or nil,
+            dragSource = draggingThis or nil,
+            nameLabel = heroCfg.name,
+        })
 
         -- 新手引导热点：第一个 roster 卡片槽 / 新获得英雄卡片
         if TutorialManager.isActive() then
             if idx == 1 then
-                TutorialManager.registerHotspot("character_slot_1", cx, cy, CARD_W, CARD_H, "right")
+                TutorialManager.registerHotspot("character_slot_1", cx, cy, ROSTER_ICON, ROSTER_ICON, "right")
             end
             local _newId = TutorialManager.getNewHeroId()
             if _newId and entry.heroId == _newId then
-                TutorialManager.registerHotspot("character_new_hero", cx, cy, CARD_W, CARD_H, "right")
+                TutorialManager.registerHotspot("character_new_hero", cx, cy, ROSTER_ICON, ROSTER_ICON, "right")
             end
         end
 
@@ -744,24 +826,30 @@ function M.draw(vg, scrollY)
     nvgResetScissor(vg)
     nvgRestore(vg)
 
-
+    nvgRestore(vg)  -- 结束内容下移/右移
 
     -- 7) 拖拽中的浮动卡片（绘制在最上层）
     if dragState.active and dragState.heroId then
-        local cardVg = img.vg or vg
-        local cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, dragState.heroId)
-        if (not cardImg or cardImg < 0) and dragState.heroId ~= 1 then
-            cardImg = HeroAssetUtil.ensureCard(cardVg, img.heroCards, 1)
+        -- [统一角色框] 浮动拖拽卡：半透明头像 + 金高亮描边
+        HeroFrame.draw(vg, {
+            cx = dragState.cx, cy = dragState.cy, size = 148,
+            heroId = dragState.heroId,
+            iconHandle = heroIconHandle(vg, dragState.heroId),
+            state = "owned",
+            dragSource = true,
+            alpha = 0.92,
+        })
+        local hoverTeam, hoverSlot = M.hitTestAvatarSlot(dragState.cx, dragState.cy, detailOpen)
+        if hoverTeam and hoverSlot then
+            local hx, hy = avatarCenter(hoverTeam, hoverSlot)
+            hx = hx + DESIGN_W * 0.05
+            hy = hy + DESIGN_H * 0.06
+            HeroFrame.draw(vg, {
+                cx = hx, cy = hy, size = AV_SIZE,
+                hoverTarget = true,
+                frameOnly = true,
+            })
         end
-        -- 半透明浮动卡片
-        drawImageCover(vg, cardImg, dragState.cx, dragState.cy, CARD_W * 1.05, CARD_H * 1.05, 0.8)
-        -- 高亮边框
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, dragState.cx - CARD_W * 0.525, dragState.cy - CARD_H * 0.525,
-            CARD_W * 1.05, CARD_H * 1.05, 10)
-        nvgStrokeColor(vg, nvgRGBA(255, 220, 80, 200))
-        nvgStrokeWidth(vg, 3)
-        nvgStroke(vg)
     end
 end
 

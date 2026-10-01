@@ -71,13 +71,22 @@ end
 ---@param vg userdata
 ---@param img number
 ---@param title string
----@param opts table|nil { textCX, textCY, font }
+---@param opts table|nil { textCX, textCY, font, scale, bgCX, bgCY }
 function M.drawNamePlate(vg, img, title, opts)
     opts = opts or {}
     local N = M.NAME
-    DrawUtil.drawImageCentered(vg, img, N.BG_CX, N.BG_CY, N.BG_W, N.BG_H, 1.0)
+    local scale = opts.scale or 1
+    DrawUtil.drawImageCentered(vg, img, opts.bgCX or N.BG_CX, opts.bgCY or N.BG_CY,
+        N.BG_W * scale, N.BG_H * scale, 1.0)
+    local font = opts.font or N.FONT
+    local titleLen = utf8.len(title or "") or 0
+    if titleLen >= 8 then
+        font = math.min(font, 32)
+    elseif titleLen >= 5 then
+        font = math.min(font, 40)
+    end
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, opts.font or N.FONT)
+    nvgFontSize(vg, font)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, opts.textCX or N.TEXT_CX, opts.textCY or N.TEXT_CY, title, nil)

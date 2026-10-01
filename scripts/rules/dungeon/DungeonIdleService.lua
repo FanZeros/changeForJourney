@@ -46,10 +46,10 @@ end
 
 local function capAccumSec(sec)
     sec = math.floor(sec)
-    if sec > DungeonIdleConfig.MAX_ACCUM_SEC then
-        return DungeonIdleConfig.MAX_ACCUM_SEC
-    end
     if sec < 0 then return 0 end
+    -- [7日硬顶] 累积时长封顶，超出部分不再产生收益
+    local cap = DungeonIdleConfig.HARD_CAP_SEC
+    if cap and sec > cap then return cap end
     return sec
 end
 
@@ -123,7 +123,7 @@ function DungeonIdleService.HandleIdleAccum(uid, dt)
             local sub = getSub(dungeon, dungeonId)
             local idleFloor = DungeonIdleConfig.getIdleFloorFromSub(sub)
             if idleFloor > 0 and DungeonIdleConfig.getIdlePerMin(dungeonId, idleFloor) > 0 then
-                if sub.idleAccumSec < DungeonIdleConfig.MAX_ACCUM_SEC then
+                do
                     local before = sub.idleAccumSec
                     local frac = (fracByDungeon[dungeonId] or 0) + dt
                     local whole = math.floor(frac)
@@ -134,8 +134,6 @@ function DungeonIdleService.HandleIdleAccum(uid, dt)
                             dirty = true
                         end
                     end
-                else
-                    fracByDungeon[dungeonId] = 0
                 end
             else
                 fracByDungeon[dungeonId] = 0

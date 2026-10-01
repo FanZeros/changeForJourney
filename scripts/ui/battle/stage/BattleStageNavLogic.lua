@@ -4,8 +4,20 @@
 
 local BottomNav = require("ui.hud.BottomNav")
 local TerminalConfirmDialog = require("ui.battle.popup.TerminalConfirmDialog")
+local BattleAllyReset = require("ui.battle.scene.BattleAllyReset")
 
 local M = {}
+
+--- 切关后恢复己方阵容：先还原出场顺序（阵亡紧凑会打乱），再重置各单位的血量/状态。
+--- 顺序必须最先还原：resetAllyUnit 内部会按「在 allies 中的下标」重新套用装备/神器
+--- （partySlot），顺序不对会把装备属性套到错误的位置。
+---@param getAllies fun(): table[]
+---@param resetAllyUnit fun(u: table)
+local function restoreAllies(getAllies, resetAllyUnit)
+    local allies = getAllies()
+    BattleAllyReset.restoreOrder(allies)
+    for _, u in ipairs(allies) do resetAllyUnit(u) end
+end
 
 function M.bind(deps)
     local getStageConfig = deps.getStageConfig
@@ -25,7 +37,7 @@ function M.bind(deps)
         set("bgTransAnim", { timer = 0, zoomTarget = zoomTarget })
         loadStage(stageId, true)
         set("regenAccum", 0)
-        for _, u in ipairs(getAllies()) do resetAllyUnit(u) end
+        restoreAllies(getAllies, resetAllyUnit)
         startBattleTalents()
         local cb = get("onStageChangedCallback")
         if cb then cb(stageId) end
@@ -36,6 +48,49 @@ function M.bind(deps)
         applyStageSwitch(nextId, get("BG_ZOOM_FWD_TARGET"), "确认进入终焉神殿")
         BottomNav.setAllLocked(true)
         require("systems.GameBGM").setScene("samsara", { fromStart = true })
+    end
+
+    local nextStage
+    local function beginVictoryMarch()
+        if get("victoryMarch") then return end
+        local stageConfig = getStageConfig()
+        local nextId = stageConfig.getNextStageId(get("currentStageId"))
+        if not nextId then
+            nextStage()
+            return
+        end
+        set("victoryMarch", { nextId = nextId, timer = 0 })
+        set("battleActive", false)
+        set("bgTransAnim", { timer = 0, zoomTarget = get("BG_ZOOM_FWD_TARGET"), duration = 2.0 })
+        local BattleCombat = require("ui.battle.combat.BattleCombat")
+        for _, unit in ipairs(getAllies()) do
+            if unit.hp > 0 then
+                BattleCombat.setCardAnim(unit, { state = "march", timer = 0, lungeDir = -1, marchStep = 7 })
+            end
+        end
+        BattleCombat.addFloatingText("正在前进中", 540, 1500, { 255, 230, 160 }, false)
+    end
+
+    local function tickVictoryMarch(dt)
+        local march = get("victoryMarch")
+        if not march then return end
+        march.timer = march.timer + dt
+        local BattleCombat = require("ui.battle.combat.BattleCombat")
+        for _, unit in ipairs(getAllies()) do
+            if unit.hp > 0 then
+                BattleCombat.setCardAnim(unit, {
+                    state = "march", timer = 0, lungeDir = -1,
+                    marchStep = math.sin(march.timer * 10) * 7,
+                })
+            end
+        end
+        if march.timer < 2.0 then return end
+        local nextId = march.nextId
+        set("victoryMarch", nil)
+        nextStage()
+        if get("currentStageId") ~= nextId then
+            print("[BattleScene] 前进结束，但未进入预约关卡 " .. tostring(nextId))
+        end
     end
 
     local function nextStage()
@@ -79,13 +134,36 @@ function M.bind(deps)
     end
 
     local function gotoStage(stageId)
+        local stageConfig = getStageConfig()
         stageId = tonumber(stageId)
         if not stageId or stageId < 1 then return false, "无效关卡" end
-        if stageId > get("maxStageId_") then return false, "关卡尚未解锁" end
+        if stageConfig.isTerminalTemple(stageId) then
+            local prevId = stageConfig.getTerminalPrevStageId(stageId)
+            local cleared = get("clearedStages")
+            if not prevId or get("maxStageId_") < prevId or not cleared[prevId] then
+                return false, "终焉尚未解锁"
+            end
+        elseif stageId > get("maxStageId_") then
+            return false, "关卡尚未解锁"
+        end
+        -- 与前进/后退对齐：选关同样要清定时器并复位阵容。
+        -- 此前只 loadStage 不复位，阵亡紧凑打乱的顺序会带进新关卡，
+        -- 表现为「选关后角色位置变了」。
+        set("searchingTimer", nil)
+        set("defeatTimer", nil)
+        set("reincarnationTimer", nil)
+        set("pendingReincarnation", nil)
         set("bgTransAnim", { timer = 0, zoomTarget = get("BG_ZOOM_FWD_TARGET") })
         loadStage(stageId, true)
+        set("regenAccum", 0)
+        restoreAllies(getAllies, resetAllyUnit)
+        startBattleTalents()
         local cb = get("onStageChangedCallback")
         if cb then cb(stageId) end
+        if stageConfig.isTerminalTemple(stageId) then
+            BottomNav.setAllLocked(true)
+            require("systems.GameBGM").setScene("samsara", { fromStart = true })
+        end
         return true
     end
 
@@ -110,7 +188,7 @@ function M.bind(deps)
         set("bgTransAnim", { timer = 0, zoomTarget = get("BG_ZOOM_FWD_TARGET") })
         loadStage(pr.targetStageId, true)
         set("regenAccum", 0)
-        for _, u in ipairs(getAllies()) do resetAllyUnit(u) end
+        restoreAllies(getAllies, resetAllyUnit)
         startBattleTalents()
         local cb = get("onStageChangedCallback")
         if cb then cb(pr.targetStageId) end
@@ -121,6 +199,8 @@ function M.bind(deps)
     return {
         doEnterTerminalTemple = doEnterTerminalTemple,
         nextStage = nextStage,
+        beginVictoryMarch = beginVictoryMarch,
+        tickVictoryMarch = tickVictoryMarch,
         prevStage = prevStage,
         gotoStage = gotoStage,
         completeReincarnation = completeReincarnation,

@@ -596,7 +596,7 @@ EFFECT_TYPES[5] = {
 }
 
 -- ============================================================================
--- 银光闪光（闪电卖鸡 #21 天赋触发）
+-- 银光闪光（雷电麦坤 #21 天赋触发）
 -- 银白色斜向长线切割怪物卡片
 -- ============================================================================
 local SILVER_FLASH_CARD_HW = 99
@@ -701,7 +701,6 @@ local SILVER_FLASH_EFFECT = {
             end
         end
 
-        nvgResetScissor(vg)
         nvgRestore(vg)
     end,
 }
@@ -739,7 +738,7 @@ function BattleEffects.spawn(armorType, tgtX, tgtY)
     BE_BCS.effects[#BE_BCS.effects + 1] = fx
 end
 
---- 闪电卖鸡「银光」触发闪光
+--- 雷电麦坤「银光」触发闪光
 ---@param tgtX number
 ---@param tgtY number
 function BattleEffects.spawnSilverFlash(tgtX, tgtY)

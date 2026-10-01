@@ -272,7 +272,7 @@ HC.HEROES = {
     [20] = {
         quality = 4, classId = CC.MAGE,
         title = "太空出差人", name = "摘星星星人",
-        talentName = "出差星门", talentDesc = "开战生成1扇星门，每2.6秒造成300%魔法伤害且不产生仇恨。继承自身与队友的魔法伤害、魔法穿透的150%；攻击速度和连击会缩短间隔，最多40%。连击积累星痕，每层使下次星门伤害+12%，最多5层。",
+        talentName = "出差星门", talentDesc = "开战生成1扇星门，每2.6秒造成300%魔法伤害。星门继承自身与队友的魔法伤害加成和魔法穿透；自身攻击速度和连击可缩短星门攻击间隔。连击积累星痕，每层使下次星门伤害+12%，最多5层。",
         talentId = "melissa_star_gate",
         gender = "female",
         atkType = AD.ATK_SHADOW, atkInterval = 3.0, atkTargets = 1,
@@ -282,8 +282,8 @@ HC.HEROES = {
     },
     [21] = {
         quality = 3, classId = CC.WARRIOR,
-        title = "赛道之王", name = "闪电卖鸡",
-        talentName = "氮气", talentDesc = "每次攻击有25%概率触发氮气：额外造成物理伤害150%的雷电伤害，麻痹0.3秒，并贯穿另一名敌人，同时自身攻击速度+8%（最多5层）。每拥有80点命中值，触发概率+2%（最多再+20%）。",
+        title = "赛道之王", name = "雷电麦坤",
+        talentName = "氮气", talentDesc = "每次攻击有25%概率触发氮气：额外造成相当于本次物理伤害150%的雷电伤害，麻痹目标0.3秒，并贯穿另一名敌人。每次触发使自身攻击速度+8%（最多5层）；每80点命中值使触发概率+2%（最多+20%）。",
         talentId = "alex_silver_flash",
         gender = "male",
         atkType = AD.ATK_SLASH, atkInterval = 3.0, atkTargets = 2,
@@ -305,7 +305,7 @@ HC.HEROES = {
     [23] = {
         quality = 3, classId = CC.PRIEST,
         title = "即兴说唱王", name = "真布诗人",
-        talentName = "护盾说唱", talentDesc = "治疗溢出全部转为护盾；再溢出的部分转为临时护盾（不超过目标护盾上限的50%）。有护盾的队友下次攻击附带治疗量20%的神圣伤害。",
+        talentName = "护盾说唱", talentDesc = "过量治疗先补足目标护盾，超过护盾上限的部分再转为临时护盾（最多为目标护盾上限的50%）。觉醒共鸣后，有盾队友的下次攻击可附带本次治疗量20%的额外伤害。",
         talentId = "elwyn_energy_blessing",
         gender = "male",
         atkType = AD.ATK_HOLY, atkInterval = 1.5, atkTargets = 3,
@@ -327,7 +327,7 @@ HC.HEROES = {
     [19] = {
         quality = 1, classId = CC.PRIEST,
         title = "南北路多", name = "哈基米",
-        talentName = "功德+1", talentDesc = "每次成功治疗功德+1，满5层清空，给治疗目标3秒清心：受伤-18%。不改变死亡。",
+        talentName = "功德+1", talentDesc = "每次成功治疗获得1层功德；叠满5层时消耗全部功德，为目标施加持续3秒的清心，使其受到的伤害降低18%。",
         talentId = "hakimi_merit",
         gender = "female",
         atkType = AD.ATK_HOLY, atkInterval = 2.1, atkTargets = 2,
@@ -338,7 +338,7 @@ HC.HEROES = {
     [24] = {
         quality = 3, classId = CC.KNIGHT,
         title = "转圈暂存", name = "加载中",
-        talentName = "缓冲圈", talentDesc = "受到伤害的25%写入加载条（容量=最大生命10%）。条满或6秒未写入时，对当前目标打出条内粉碎伤害并产仇恨。",
+        talentName = "缓冲圈", talentDesc = "受到伤害时，按本次伤害的25%积累加载条（容量为最大生命的10%，不会因此减免伤害）。加载条填满或6秒未继续积累时，对一名存活敌人释放等量粉碎伤害，并吸引敌人攻击。",
         talentId = "loading_buffer",
         gender = "male",
         atkType = AD.ATK_CRUSH, atkInterval = 2.4, atkTargets = 1,
@@ -349,7 +349,7 @@ HC.HEROES = {
     [25] = {
         quality = 4, classId = CC.RANGER,
         title = "999ms", name = "高ping战士",
-        talentName = "高延迟", talentDesc = "普攻命中后再延迟1.5秒打出45%额外穿刺伤害（10%仇恨）。若结算时目标生命百分比低于出手时，该延迟伤害+35%。",
+        talentName = "高延迟", talentDesc = "普通攻击命中1.5秒后，对目标追加相当于原伤害45%的延迟伤害（仅产生通常10%的仇恨）。结算时若目标生命比例低于出手时，该次延迟伤害+35%。",
         talentId = "highping_lag",
         gender = "male",
         atkType = AD.ATK_PIERCE, atkInterval = 1.6, atkTargets = 1,
@@ -382,7 +382,7 @@ local DMG_TYPE_DATA = {
     [16] = { HC.DMG_PHYSICAL, "穿刺" },   -- 万剑归宗
     [17] = { HC.DMG_MAGICAL,  "冰霜" },   -- 蓝色大肥鱼
     [20] = { HC.DMG_MAGICAL,  "暗影" },   -- 摘星星星人
-    [21] = { HC.DMG_PHYSICAL, "斩击" },   -- 闪电卖鸡
+    [21] = { HC.DMG_PHYSICAL, "斩击" },   -- 雷电麦坤
     [22] = { HC.DMG_MAGICAL,  "闪电" },   -- 小黑子
     [23] = { HC.DMG_HEALING,  "神圣" },   -- 真布诗人
     [18] = { HC.DMG_PHYSICAL, "暗影" },   -- 老六
@@ -421,7 +421,7 @@ local WEARABLE_DATA = {
     [16] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 万剑归宗(战士)
     [17] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 蓝色大肥鱼(法师)
     [20] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 摘星星星人(法师)
-    [21] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 闪电卖鸡(战士)
+    [21] = { w = {"单手剑","双手剑","单手斧","双手斧"},       o = {"轻盾","重盾"} },       -- 雷电麦坤(战士)
     [22] = { w = {"法杖","魔杖"},                             o = {"魔典","法珠"} },       -- 小黑子(法师)
     [23] = { w = {"权杖"},                                    o = {"轻盾","圣物"} },       -- 真布诗人(牧师)
     [18] = { w = {"细剑","匕首","单手剑"},                    o = {"轻盾"} },             -- 老六(换面人)
@@ -492,6 +492,7 @@ function HC.createHero(heroId, level, advBranch, awakening, extraTalent)
         [AD.ATK_INTERVAL] = hero.atkInterval,
         armorType         = armorType,
         atkType           = hero.atkType,
+        unitLevel         = level,   -- 护盾成长层派生等级因子用
     }
     -- 根据伤害主类型分配 ATK 成长：物理 → physAtk，魔法/治疗 → magAtk
     if category == "physical" then
@@ -630,7 +631,7 @@ function HC._applyHeroTalent(heroId, attrs, awakening)
         if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.DODGE, flat = 15 }
         end
-    -- 战士 闪电卖鸡 #21: 旧觉醒2 → 新 1 命中+30
+    -- 战士 雷电麦坤 #21: 旧觉醒2 → 新 1 命中+30
     elseif heroId == 21 then
         if AC.hasNode(awk, 2) then
             entries[#entries + 1] = { key = AD.HIT_VALUE, flat = 30 }

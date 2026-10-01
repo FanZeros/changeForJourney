@@ -2,6 +2,8 @@
 -- ChurchRosterDraw - ChurchPage.drawRosterList 抽出（玩法不变）
 -- ============================================================================
 
+local HeroFrame = require("ui.widget.HeroFrame")
+
 local M = {}
 
 function M.bind(deps)
@@ -90,6 +92,13 @@ function M.bind(deps)
             -- a) 角色卡片
             local cardImg = getHeroCardImage(vg, entry.heroId)
             DrawUtil.drawImageCover(vg, cardImg, cx, cy, ROSTER.CARD_W, ROSTER.CARD_H, 1.0)
+            -- [统一角色框] 远征团列表卡叠加品质色描边
+            HeroFrame.draw(vg, {
+                cx = cx, cy = cy, w = ROSTER.CARD_W, h = ROSTER.CARD_H,
+                heroId = entry.heroId,
+                state = entry.owned == false and "unowned" or "owned",
+                frameOnly = true,
+            })
 
             -- b) 职业图标（左上角，60x60）
             local iconIdx = ClassChange.CLASS_NUM[heroCfg.classId]

@@ -96,28 +96,6 @@ local function resetBox()
     return cx, cy, w, h
 end
 
-local function drawMapEdgeFade(vg, x, y, w, h)
-    local fade = math.max(72, math.min(w, h) * 0.16)
-    local edge = nvgRGBA(5, 4, 3, 200)
-    local clear = nvgRGBA(5, 4, 3, 0)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, fade, h)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x + fade, y, edge, clear))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgRect(vg, x + w - fade, y, fade, h)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x + w, y, x + w - fade, y, edge, clear))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, fade * 0.85)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y, x, y + fade * 0.85, edge, clear))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y + h - fade * 0.85, w, fade * 0.85)
-    nvgFillPaint(vg, nvgLinearGradient(vg, x, y + h, x, y + h - fade * 0.85, edge, clear))
-    nvgFill(vg)
-end
-
 -- ======================== 天赋详情面板布局常量 ========================
 
 local TFD = {
@@ -326,9 +304,15 @@ function M.isOverviewOpen()
 end
 
 --- 绘制天赋背景（铺满全屏，在上半部分之前绘制）
+-- 素材自带 alpha：外圈藤边不透明、中心透明（节点区透出下层），无需运行时混合
 function M.drawBg(vg)
     local pageW = M.getPageWidth()
+    local x = 0
+    local y = TF.bgCY - TF.bgH * 0.5
+    nvgSave(vg)
+    nvgIntersectScissor(vg, x, y, pageW, TF.bgH)
     drawImageCentered(vg, img.tfBg, pageW * 0.5, TF.bgCY, pageW, TF.bgH, 1.0)
+    nvgRestore(vg)
 end
 
 --- 绘制天赋 Tab 内容（受 scissor 裁剪的部分）
@@ -340,8 +324,6 @@ function M.drawContent(vg)
     local pageW = M.getPageWidth()
     local map = mapLayout()
     TalentStarMap.draw(vg, 0, map.top, pageW, map.h)
-    -- 星图边缘虚化，避免节点在页面边界被硬切
-    drawMapEdgeFade(vg, 0, map.top, pageW, map.h)
 
     -- 新手引导热点：整个天赋星图区域
     local _TM = require("systems.TutorialManager")
@@ -525,9 +507,10 @@ function M.drawDetailPanel(vg)
     local btnKey = isTerminal and "ctp_reset_single" or "ctp_activate"
     local btnAccent = isTerminal and "red" or "green"  -- [暗黑化 P1-B3] 重置=红 激活=绿
     local btnText = isTerminal and "重置" or (isLit and "已激活" or "激活")
+    -- 按钮文字：可操作=亮金，已激活不可再点=棕色
     local btnTextR, btnTextG, btnTextB = 255, 214, 102
     if isLit and not isTerminal then
-        btnTextR, btnTextG, btnTextB = 196, 160, 90
+        btnTextR, btnTextG, btnTextB = 0x8d, 0x5f, 0x41
     end
 
     local _bf2 = BF.begin(vg, btnKey, TFD.btnCX, TFD.btnCY, TFD.btnW, TFD.btnH)

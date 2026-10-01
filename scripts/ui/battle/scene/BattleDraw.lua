@@ -9,6 +9,7 @@ local NumberUtil = require("core.NumberUtil")
 local BattleLayout = require("core.BattleLayout")
 local DrawUtil = require("core.DrawUtil")
 local ETS = require("systems.ExtraTalentSystem")
+local HeroAssetUtil = require("config.HeroAssetUtil")
 
 local BattleDraw = {}
 
@@ -56,6 +57,34 @@ local imgCtx = {}   -- 图片句柄
 function BattleDraw.setContext(context)
     combat = context.combat
     imgCtx = context
+end
+
+local directCards = { hero = {}, monster = {} }
+
+--- 分帧队列没完成时，按场上单位直接读本地卡面。
+local function cardImage(vg, unit)
+    if unit.heroId then
+        local cached = imgCtx.imgHeroCards and imgCtx.imgHeroCards[unit.heroId]
+        if cached and cached >= 0 then return cached end
+        local direct = directCards.hero[unit.heroId]
+        if direct == nil then
+            direct = nvgCreateImage(vg, HeroAssetUtil.getCardPath(unit.heroId), 0)
+            directCards.hero[unit.heroId] = direct
+        end
+        return direct
+    end
+    if unit.monsterId then
+        local cached = imgCtx.imgMonsterCards and imgCtx.imgMonsterCards[unit.monsterId]
+        if cached and cached >= 0 then return cached end
+        local direct = directCards.monster[unit.monsterId]
+        if direct == nil then
+            local MC = require("config.MonsterConfig")
+            direct = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", MC.getCardArtId(unit.monsterId)), 0)
+            directCards.monster[unit.monsterId] = direct
+        end
+        return direct
+    end
+    return -1
 end
 
 -- ======================== 工具绘制函数 ========================
@@ -108,7 +137,6 @@ local function drawProgressBar(vg, imgBg, imgFill, cx, cy, bgW, bgH, padding, pr
         nvgRect(vg, fillX, fillY, fillW, fillH)
         nvgFillPaint(vg, paint)
         nvgFill(vg)
-        nvgResetScissor(vg)
         nvgRestore(vg)
     end
 end
@@ -135,9 +163,10 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
         local cx, cy
         if stripMode then
             -- [三行并行] 条带坐标: 我左/敌右单线, 朝向敌方轴映射到 X
+            -- 卡片随后还会乘 CARD_SCALE，纵向弧线按倒数放大，否则缩成看不出的几像素
             cx, cy = BattleLayout.cardPos(group, idx)
             cx = cx - animOff
-            cy = cy + arcY
+            cy = cy + arcY / BattleLayout.CARD_SCALE
         else
             -- classic: 原竖屏行阵, 朝向敌方轴为 Y
             cx, cy = BattleLayout.cardPos(group, idx, count)
@@ -175,39 +204,16 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             -- [阵亡紧凑] 已退场英雄不渲染（保留在队尾供复活/关卡重置）
         elseif isDying then
             -- 死亡淡出：显示原卡牌向上/向下滑出
-            local cardBgImg
-            if unit.heroId then
-                cardBgImg = imgCtx.imgHeroCards[unit.heroId] or imgCtx.imgHeroCards[1]
-            elseif unit.monsterId then
-                cardBgImg = imgCtx.imgMonsterCards[unit.monsterId] or imgCtx.imgMonsterCards[1]
-            else
-                cardBgImg = imgCtx.imgHeroCards[1]
-            end
-            DrawUtil.drawImageCover(vg, cardBgImg, cx, cy, CARD_W, CARD_H, transAlpha)
+            DrawUtil.drawImageCover(vg, cardImage(vg, unit), cx, cy, CARD_W, CARD_H, transAlpha)
 
         elseif isDead or isGone then
-            -- 已删除墓碑图：死亡/空位不画卡面；通天塔补位等待只留进度条
-            if not isAllyGroup then
-                local reviveProg = unit.atkProgress or 0
-                if reviveProg > 0 then
-                    drawProgressBar(vg, imgCtx.imgAtkBg, imgCtx.imgAtkFill, cx, cy + atkBgOffY,
-                        ATK_BAR_W, ATK_BAR_H, ATK_BAR_PADDING, reviveProg)
-                end
-            end
+            -- 死亡单位不留黄条。下一只敌人由战斗驱动补上。
         else
             -- 正常存活渲染
             local alpha = (isReviving or isEntering) and transAlpha or 1.0
 
             -- 1) 卡片背景
-            local cardBgImg
-            if unit.heroId then
-                cardBgImg = imgCtx.imgHeroCards[unit.heroId] or imgCtx.imgHeroCards[1]
-            elseif unit.monsterId then
-                cardBgImg = imgCtx.imgMonsterCards[unit.monsterId] or imgCtx.imgMonsterCards[1]
-            else
-                cardBgImg = imgCtx.imgHeroCards[1]
-            end
-            DrawUtil.drawImageCover(vg, cardBgImg, cx, cy, CARD_W, CARD_H, alpha)
+            DrawUtil.drawImageCover(vg, cardImage(vg, unit), cx, cy, CARD_W, CARD_H, alpha)
 
             -- 受击闪烁
             if not isReviving and not isEntering then
@@ -273,7 +279,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     nvgStrokeColor(vg, nvgRGBA(0x9a, 0xff, 0x8c, 140))
                     nvgStrokeWidth(vg, 1)
                     nvgStroke(vg)
-                    nvgResetScissor(vg)
                     nvgRestore(vg)
                 end
 
@@ -302,7 +307,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                         nvgStrokeColor(vg, nvgRGBA(255, 255, 255, 160))
                         nvgStrokeWidth(vg, 1)
                         nvgStroke(vg)
-                        nvgResetScissor(vg)
                         nvgRestore(vg)
                     end
                     -- 临时护盾跟在常规护盾之后（更亮的青色，同一刻度，同样不越界）
@@ -318,7 +322,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                             nvgRect(vg, tempX, fillY, tempClipW, fillH)
                             nvgFillColor(vg, nvgRGBA(255, 255, 255, 200))
                             nvgFill(vg)
-                            nvgResetScissor(vg)
                             nvgRestore(vg)
                         end
                     end
@@ -331,25 +334,19 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             local tempCur = unit.attrs and (unit.attrs.tempEnergyShield or 0) or 0
             local esMaxVal = unit.attrs and (unit.attrs.final["energyShield"] or 0) or 0
             if esMaxVal > 0 and (esCur > 0 or tempCur > 0) then
-                local esText = esCur > 0 and ("+" .. NumberUtil.format(math.floor(esCur))) or ""
-                local tempText = tempCur > 0 and ("+" .. NumberUtil.format(math.floor(tempCur))) or ""
+                -- 常规护盾 + 临时护盾合并为单一数值显示（不再 "+N+M" 拖长）
+                local shieldTotal = math.floor(esCur) + math.floor(tempCur)
+                local esText = shieldTotal > 0 and ("+" .. NumberUtil.format(shieldTotal)) or ""
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 28)
                 local hpW = nvgTextBounds(vg, 0, 0, hpText)
                 local esW = esText ~= "" and nvgTextBounds(vg, 0, 0, esText) or 0
-                local tempW = tempText ~= "" and nvgTextBounds(vg, 0, 0, tempText) or 0
-                local totalW = hpW + esW + tempW
+                local totalW = hpW + esW
                 local startX = cx - totalW * 0.5
                 drawTextStroke(vg, startX + hpW * 0.5, cy + hpValOffY, hpText,
                     28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0x66, 0xf8, 0x62, 4)
-                local shieldX = startX + hpW
                 if esText ~= "" then
-                    drawTextStroke(vg, shieldX + esW * 0.5, cy + hpValOffY, esText,
-                        28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
-                    shieldX = shieldX + esW
-                end
-                if tempText ~= "" then
-                    drawTextStroke(vg, shieldX + tempW * 0.5, cy + hpValOffY, tempText,
+                    drawTextStroke(vg, startX + hpW + esW * 0.5, cy + hpValOffY, esText,
                         28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
                 end
             else
@@ -367,7 +364,9 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
             drawTextStroke(vg, cx, cy + lvlOffY, "Lv." .. tostring(unit.level),
                 32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
 
-            -- 10) 状态效果视觉指示
+            -- 10) 状态效果视觉指示：仅整卡状态色罩，不再画 emoji 图标
+            --     （emoji 在部分字体集缺字会显示空白/豆腐块，且彩色 emoji 描边透脏黑边、
+            --      状态色染色无效；改为统一用色罩提示状态，见 SEM.getVisuals）
             local visuals = SEM.getVisuals(unit)
             if #visuals > 0 then
                 local v1 = visuals[1]
@@ -376,10 +375,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                     CARD_W - 8, CARD_H - 8, 8)
                 nvgFillColor(vg, nvgRGBA(v1.r, v1.g, v1.b, 40))
                 nvgFill(vg)
-                for vi, vis in ipairs(visuals) do
-                    drawTextStroke(vg, cx - CARD_W * 0.5 + 28, cy - CARD_H * 0.5 + 28 + (vi - 1) * 36,
-                        vis.icon, 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, vis.r, vis.g, vis.b, 3)
-                end
             end
 
             -- 11) 征服层数（叠甲怪）
@@ -407,6 +402,103 @@ end
 
 -- ======================== 浮动文字渲染 ========================
 
+local function drawFloatIcon(vg, kind, x, y, s, a)
+    if not kind then return 0 end
+    local function ink(r, g, b)
+        nvgFillColor(vg, nvgRGBA(r, g, b, a))
+        nvgStrokeColor(vg, nvgRGBA(20, 12, 8, a))
+    end
+    local function blade()
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x - s * 0.08, y - s * 0.46)
+        nvgLineTo(vg, x + s * 0.16, y - s * 0.22)
+        nvgLineTo(vg, x + s * 0.04, y + s * 0.08)
+        nvgLineTo(vg, x - s * 0.20, y - s * 0.16)
+        nvgClosePath(vg)
+        nvgFill(vg)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.06))
+        nvgStroke(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x - s * 0.05, y + s * 0.06, s * 0.22, s * 0.07, s * 0.02)
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x + s * 0.02, y + s * 0.12, s * 0.06, s * 0.22, s * 0.02)
+        nvgFill(vg)
+    end
+    if kind:find("phys", 1, true) then
+        ink(236, 232, 220)
+        blade()
+    elseif kind:find("magic", 1, true) then
+        ink(150, 220, 255)
+        nvgBeginPath(vg)
+        nvgCircle(vg, x, y + s * 0.04, s * 0.22)
+        nvgFill(vg)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.06))
+        nvgStroke(vg)
+        ink(230, 250, 255)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x, y - s * 0.42)
+        nvgLineTo(vg, x + s * 0.08, y - s * 0.08)
+        nvgLineTo(vg, x - s * 0.08, y - s * 0.08)
+        nvgClosePath(vg)
+        nvgFill(vg)
+    elseif kind:find("burn", 1, true) then
+        ink(255, 150, 40)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x, y + s * 0.38)
+        nvgQuadTo(vg, x + s * 0.42, y + s * 0.18, x + s * 0.12, y - s * 0.08)
+        nvgQuadTo(vg, x + s * 0.28, y - s * 0.34, x, y - s * 0.48)
+        nvgQuadTo(vg, x - s * 0.06, y - s * 0.16, x - s * 0.16, y - s * 0.02)
+        nvgQuadTo(vg, x - s * 0.42, y + s * 0.16, x, y + s * 0.38)
+        nvgClosePath(vg)
+        nvgFill(vg)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.05))
+        nvgStroke(vg)
+        ink(255, 230, 140)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x, y + s * 0.22)
+        nvgQuadTo(vg, x + s * 0.12, y, x, y - s * 0.18)
+        nvgQuadTo(vg, x - s * 0.10, y + s * 0.02, x, y + s * 0.22)
+        nvgClosePath(vg)
+        nvgFill(vg)
+    elseif kind:find("block", 1, true) or kind:find("shield", 1, true) then
+        ink(190, 198, 214)
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, x, y - s * 0.44)
+        nvgLineTo(vg, x + s * 0.32, y - s * 0.18)
+        nvgQuadTo(vg, x + s * 0.28, y + s * 0.28, x, y + s * 0.44)
+        nvgQuadTo(vg, x - s * 0.28, y + s * 0.28, x - s * 0.32, y - s * 0.18)
+        nvgClosePath(vg)
+        nvgFill(vg)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.06))
+        nvgStroke(vg)
+    elseif kind:find("heal", 1, true) then
+        ink(90, 230, 130)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x - s * 0.09, y - s * 0.32, s * 0.18, s * 0.64, s * 0.05)
+        nvgRoundedRect(vg, x - s * 0.32, y - s * 0.09, s * 0.64, s * 0.18, s * 0.05)
+        nvgFill(vg)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.05))
+        nvgStroke(vg)
+    end
+    if kind:find("crit", 1, true) then
+        ink(255, 80, 70)
+        nvgBeginPath(vg)
+        for i = 0, 7 do
+            local ang = i * math.pi / 4 - math.pi / 2
+            local rad = (i % 2 == 0) and s * 0.42 or s * 0.16
+            local px = x + math.cos(ang) * rad
+            local py = y + math.sin(ang) * rad
+            if i == 0 then nvgMoveTo(vg, px, py) else nvgLineTo(vg, px, py) end
+        end
+        nvgClosePath(vg)
+        nvgFill(vg)
+        nvgStrokeWidth(vg, math.max(1.5, s * 0.05))
+        nvgStroke(vg)
+    end
+    return s * 0.72
+end
+
 function BattleDraw.drawFloatingTexts(vg)
     local texts = combat.getFloatingTexts()
     for _, ft in ipairs(texts) do
@@ -419,9 +511,12 @@ function BattleDraw.drawFloatingTexts(vg)
         local scale = 1.0 - 0.75 * t
         local fontSize = math.max(1, math.floor(ft.fontSize * scale))
 
+        -- [首伤延迟修复] 淡入从 10 帧(0.33s)缩到 3 帧(0.1s)：
+        -- 原 frame=0 时 alpha=0 完全不可见，需 0.33s 才清晰，而受击闪烁是即时的，
+        -- 造成"第一个伤害数字比受击反馈慢半拍"的观感。3 帧淡入几乎立即清晰，仍保留柔和。
         local alpha
-        if frame <= 10 then
-            alpha = math.floor(255 * (frame / 10))
+        if frame <= 3 then
+            alpha = math.floor(255 * (frame / 3))
         elseif frame <= 15 then
             alpha = 255
         else
@@ -432,9 +527,30 @@ function BattleDraw.drawFloatingTexts(vg)
         if alpha > 0 then
             nvgSave(vg)
             nvgGlobalAlpha(vg, alpha / 255)
-            drawTextStroke(vg, drawX, drawY, ft.text,
+            local textW = 0
+            if ft.text and ft.text ~= "" then
+                nvgFontFace(vg, "sans")
+                nvgFontSize(vg, fontSize)
+                textW = nvgTextBounds(vg, 0, 0, ft.text) or fontSize
+            end
+            local iconSize = math.max(22, fontSize * 0.92)
+            local tr, tg, tb = ft.color[1], ft.color[2], ft.color[3]
+            local kind = ft.kind or ""
+            if kind:find("burn", 1, true) then tr, tg, tb = 255, 140, 40
+            elseif kind:find("magic", 1, true) then tr, tg, tb = 120, 220, 255
+            elseif kind:find("phys", 1, true) then tr, tg, tb = 255, 236, 170
+            elseif kind:find("heal", 1, true) then tr, tg, tb = 90, 235, 130
+            elseif kind:find("crit", 1, true) then tr, tg, tb = 255, 70, 70
+            end
+            local gap = 2
+            local iconW = ft.kind and iconSize * 0.72 or 0
+            local textX = drawX + (ft.kind and (iconW + gap) * 0.5 or 0)
+            drawTextStroke(vg, textX, drawY, ft.text,
                 fontSize, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                ft.color[1], ft.color[2], ft.color[3], 5)
+                tr, tg, tb, 5)
+            if ft.kind then
+                drawFloatIcon(vg, ft.kind, textX - textW * 0.5 - gap - iconW * 0.5, drawY, iconSize, alpha)
+            end
             nvgRestore(vg)
         end
     end

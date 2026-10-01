@@ -48,18 +48,6 @@ handlers[Protocol.ACTION_TYPES.GACHA_PULL] = function(uid, params)
     }
 end
 
---- 指定招募：设置保底目标英雄
-handlers[Protocol.ACTION_TYPES.TARGET_RECRUIT] = function(uid, params)
-    if not params or not params.heroId then
-        return { success = false, reason = "缺少英雄ID" }
-    end
-    local ok, err = GachaService.SetTargetRecruit(uid, tonumber(params.heroId))
-    if not ok then
-        return { success = false, reason = err }
-    end
-    return { success = true }
-end
-
 --- 星辉指定UP角色：设置UR命中时50%概率转为的目标角色
 handlers[Protocol.ACTION_TYPES.STELLAR_TARGET_UP] = function(uid, params)
     if not params or not params.heroId then

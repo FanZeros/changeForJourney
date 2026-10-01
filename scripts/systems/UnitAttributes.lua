@@ -25,6 +25,9 @@ function UnitAttributes.create(cfg)
     -- 默认攻击类型
     self.atkType = cfg.atkType or AD.ATK_SLASH
 
+    -- 单位等级（不是数值属性，单独存放）；护盾成长层用它做派生等级因子
+    self.unitLevel = cfg.unitLevel or 1
+
     -- 四层数据表
     self.base    = {}   -- 基础值（等级/职业/面板数据）
     self.derived = {}   -- 六围派生贡献
@@ -169,6 +172,7 @@ function UnitAttributes:clone()
     -- 标量字段
     copy.armorType = self.armorType
     copy.atkType   = self.atkType
+    copy.unitLevel = self.unitLevel
     copy.atkCoeff  = self.atkCoeff
     copy.dmgSpread = self.dmgSpread
     copy._healFrac = self._healFrac
@@ -184,6 +188,24 @@ function UnitAttributes:clone()
     copy.artifactChaosDefenseDisabled = self.artifactChaosDefenseDisabled
     copy.artifactPowerBonus = self.artifactPowerBonus
     copy.artifactNoHeal = self.artifactNoHeal
+    copy._setFour = self._setFour
+    copy._setSix = self._setSix
+    if self._setRows then
+        copy._setRows = {}
+        for i, row in ipairs(self._setRows) do
+            local clonedRow = {}
+            for key, value in pairs(row) do
+                if key == "color" and type(value) == "table" then
+                    local color = {}
+                    for j, component in ipairs(value) do color[j] = component end
+                    clonedRow.color = color
+                else
+                    clonedRow[key] = value
+                end
+            end
+            copy._setRows[i] = clonedRow
+        end
+    end
 
     -- 浅拷贝数值层表（key 为字符串常量，value 为数字）
     copy.base    = {}; for k, v in pairs(self.base)    do copy.base[k]    = v end
@@ -364,6 +386,29 @@ function UnitAttributes:recalc()
     self.final[AD.RESISTANCE] = (0.01 * armor) / (0.01 * armor + 1) * 100
     self._uncapped[AD.RESISTANCE] = self.final[AD.RESISTANCE]
 
+    -- 5.5) 护盾成长层（Shield Scaling）—— 详见 AttributeDef.SHIELD_SCALING 注释
+    --   问题：护盾三来源全是线性增长，而 HP/伤害随等级指数爆炸，中后期护盾占比塌到≈0。
+    --   修法：把护盾锚定到指数增长的 HP（hpRatio），并给派生护盾一个随等级放大的因子。
+    --   门控：仅对「本身已有护盾来源」的单位生效（preGrowthES > 0），不给无盾单位凭空加盾。
+    local ss = AD.SHIELD_SCALING
+    if ss and ss.enabled then
+        local preGrowthES = self.final[AD.ENERGY_SHIELD] or 0
+        if preGrowthES > 0 then
+            local maxHpFinal = self.final[AD.MAX_HP] or 0
+            local derivedES  = self.derived[AD.ENERGY_SHIELD] or 0
+            local lvl = self.unitLevel or 1
+            if lvl < 1 then lvl = 1 end
+            local levelFactor = 1 + (lvl - 1) * (ss.derivedLevelFactor or 0)
+            -- HP 锚定 + 派生等级放大；附加层不再被 esBonus/finalESBonus 二次放大
+            local extra = maxHpFinal * (ss.hpRatio or 0) + derivedES * (levelFactor - 1)
+            if extra > 0 then
+                local newES = preGrowthES + extra
+                self.final[AD.ENERGY_SHIELD] = newES
+                self._uncapped[AD.ENERGY_SHIELD] = newES
+            end
+        end
+    end
+
     -- 6) 恢复战斗 HP（不让公式覆盖运行时血量）
     --    savedHp 为 nil 仅在首次 create → recalc 时，此时 final[HP] 保持公式值（由 fillHp 初始化）
     if self._forceFullHpOnRecalc then
@@ -396,13 +441,13 @@ end
 --- 扣血（不低于 0）
 ---@param amount number 伤害量
 ---@return number 实际扣除量
-function UnitAttributes:takeDamage(amount)
+function UnitAttributes:takeDamage(amount, resistance)
     amount = math.max(0, math.floor(amount))
     if amount <= 0 then return 0 end
-    -- 受到任何伤害都重置能量护盾恢复冷却（未受伤2秒后才开始恢复）
+    -- 受伤重置护盾回复冷却。体质越高，冷却越短。
     local maxES = self.final[AD.ENERGY_SHIELD] or 0
     if maxES > 0 then
-        self.esRegenCooldown = self.final[AD.ES_REGEN_INTERVAL] or 1.2
+        self.esRegenCooldown = self:getShieldRegenCooldown()
     end
     -- 能量护盾伤害减免：任一护盾存在时生效
     local es = self.energyShield or 0
@@ -428,30 +473,56 @@ function UnitAttributes:takeDamage(amount)
             amount = amount - absorbed
         end
     end
+    -- 护盾按原伤吸收。打穿护盾后剩下的部分才吃护甲抗性。
+    local resist = tonumber(resistance) or 0
+    if resist > 0 and amount > 0 then
+        if resist > 0.95 then resist = 0.95 end
+        amount = math.max(1, math.floor(amount * (1 - resist) + 0.5))
+    end
     local hp = self.final[AD.HP]
     local actual = math.min(hp, amount)
     self.final[AD.HP] = hp - actual
     return actual
 end
 
+--- 护盾回复跟体质挂钩。
+--- 0 体质：冷却 1.6 秒，每秒回上限的 40%。
+--- 40 体质：冷却 0.8 秒，每秒回满。
+--- 80 体质及以上：受伤后立即回复，每秒回上限的 160%。
+---@return number cooldown
+---@return number ratePerSec  每秒回复的上限比例
+function UnitAttributes:getShieldRegenProfile()
+    local vit = self:get(AD.VIT) or 0
+    local t = vit / 40
+    if t < 0 then t = 0 end
+    if t > 2 then t = 2 end
+    local cooldown = 1.6 - t * 0.8
+    if cooldown < 0 then cooldown = 0 end
+    local rate = 0.4 + t * 0.6
+    -- 数值回复：每点体质每秒 2 点，和盾的厚度无关。
+    local flatPerSec = vit * 2
+    return cooldown, rate, flatPerSec
+end
+
+function UnitAttributes:getShieldRegenCooldown()
+    local cooldown = self:getShieldRegenProfile()
+    return cooldown
+end
+
 --- 能量护盾恢复 tick（每帧调用）
---- 冷却结束后以 maxES/秒 的速度逐渐恢复
 ---@param dt number 帧间隔（秒）
 function UnitAttributes:tickEnergyShield(dt)
     local maxES = self.final[AD.ENERGY_SHIELD] or 0
     if maxES <= 0 then return end
     local es = self.energyShield or 0
-    if es >= maxES then return end  -- 已满
-    -- 恢复冷却倒计时
+    if es >= maxES then return end
     local cd = self.esRegenCooldown or 0
     if cd > 0 then
         self.esRegenCooldown = cd - dt
         return
     end
-    -- 逐渐恢复（基础速率 = maxES/秒，受 esRegenSpeed% 加成）
-    local regenSpeedBonus = self.final[AD.ES_REGEN_SPEED] or 0
-    local regenRate = maxES * (1 + regenSpeedBonus / 100)
-    self.energyShield = math.min(maxES, es + regenRate * dt)
+    local _, rate, flatPerSec = self:getShieldRegenProfile()
+    self.energyShield = math.min(maxES, es + (maxES * rate + flatPerSec) * dt)
 end
 
 --- 初始化能量护盾（创建单位 / 重新计算属性后调用）

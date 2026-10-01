@@ -9,6 +9,7 @@ local I18n           = require("core.I18n")
 local DrawUtil       = require("core.DrawUtil")
 local StageConfig    = require("config.StageConfig")
 local PlayerStore    = require("core.PlayerStore")
+local NumberUtil     = require("core.NumberUtil")
 local CharacterPanel    = require("ui.character.panel.CharacterPanel")
 local HeroConfig        = require("config.HeroConfig")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
@@ -20,6 +21,7 @@ local CharacterDetail   = require("ui.character.detail.CharacterDetail")
 
 local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local HeroFrame = require("ui.widget.HeroFrame")
 local drawTextStroke     = DrawUtil.drawTextStroke
 local drawImageCentered  = DrawUtil.drawImageCentered
 local drawNineSlice      = DrawUtil.drawNineSlice
@@ -57,7 +59,8 @@ local img = {
     expBarBgS  = -1,  -- UI_JSMB_JYT1.png 卡片经验条背景
     expBarFillS= -1,  -- UI_JSMB_JYT2.png 卡片经验条填充
     settingBtn = -1,  -- UI_AN_SZ.png 设置按钮
-    redDot     = -1,  -- ICON_HD.png 红点提示
+    -- [图标统一 0928] 移除 redDot 句柄：ICON_HD.png 创建后从未绘制（白占显存）；
+    -- 红点统一走 DarkIcon.draw(vg,"reddot",...)（内部已贴图优先）
 }
 
 -- ======================== 布局常量 ========================
@@ -89,14 +92,19 @@ local AVATAR = {
     CX = 245, CY = 499, W = 160, H = 160,
 }
 
--- 游玩时间（原玩家名称位；名字不再显示）
+-- 游玩时间（与头像并排）
 local PLAY_TIME = {
-    X = 355, Y = 432, FONT = 36,
+    X = 355, Y = 430, FONT = 36,
+}
+
+-- 资源统计改为全宽三行，避免挤在头像右侧
+local RESOURCE_STATS = {
+    COL_X = { 155, 430, 700 }, FIRST_Y = 650, LINE_GAP = 56, COL_W = 265,
 }
 
 -- 区服名（原 UID 位置）
 local UID = {
-    X = 355, Y = 492, FONT = 38,
+    X = 355, Y = 490, FONT = 32,
     R = 0x50, G = 0x2c, B = 0x15,
 }
 
@@ -114,7 +122,7 @@ local TOAST = {
 
 -- 战力背景框
 local PWR_BG = {
-    CX = 453, CY = 559, W = 200, H = 50, R = 17,
+    CX = 455, CY = 560, W = 200, H = 50, R = 17,
     CR = 0x64, CG = 0x35, CB = 0x16,  -- 643516
     A = 128,  -- 50%
 }
@@ -129,7 +137,7 @@ local PWR = {
 
 -- 关卡进度背景框（宽度按文案加长，避免「湮灭III12-5」溢出）
 local STG_BG = {
-    CX = 700, CY = 559, W = 280, H = 50, R = 17,
+    CX = 760, CY = 560, W = 280, H = 50, R = 17,
     CR = 0x64, CG = 0x35, CB = 0x16,
     A = 128,
 }
@@ -143,21 +151,21 @@ local STG = {
 
 -- 远征等级文本
 local ADV_LV = {
-    X = 143, Y = 655, FONT = 38,
+    X = 143, Y = 865, FONT = 38,
     FR = 255, FG = 255, FB = 255,
     SW = 5, SR = 0, SG = 0, SB = 0,
 }
 
 -- 远征等级经验数值
 local ADV_EXP = {
-    X = 940, Y = 656, FONT = 38,
+    X = 940, Y = 865, FONT = 38,
     FR = 255, FG = 255, FB = 255,
     SW = 5, SR = 0, SG = 0, SB = 0,
 }
 
 -- 经验进度条背景
 local EXP_BAR = {
-    CX = 540, CY = 699, W = 804, H = 30,
+    CX = 540, CY = 909, W = 804, H = 30,
     PAD = 6,  -- 内间距
 }
 
@@ -328,7 +336,7 @@ end
 function PlayerInfoPanel.init(vg)
     cachedVg = vg
     -- 上半部分
-    img.bg      = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    -- [清理 0929] UI_TY_EJQRK.png 加载已移除：本面板背景改由 DarkIcon.drawNine 矢量绘制，贴图从未使用
     img.avatar  = nvgCreateImage(vg, "image/角色图标/UI_icon_hero_1.png", 0)
     img.power   = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
     img.expBg   = nvgCreateImage(vg, "image/进度条/UI_WJXX_JDT.png", 0)
@@ -350,10 +358,6 @@ function PlayerInfoPanel.init(vg)
     -- 下半部分：设置按钮
     img.settingBtn = nvgCreateImage(vg, "image/按钮/UI_AN_SZ.png", 0)
 
-    -- 红点提示图标
-    img.redDot = nvgCreateImage(vg, "image/通用图标/ICON_HD.png", 0)
-
-    if img.bg < 0 then print("[PlayerInfoPanel] WARN: UI_TY_EJQRK.png load failed") end
     if img.power < 0 then print("[PlayerInfoPanel] WARN: ICON_ZDL.png load failed") end
     if img.settingBtn < 0 then print("[PlayerInfoPanel] WARN: UI_AN_SZ.png load failed") end
 
@@ -410,6 +414,11 @@ end
 --- 打开面板
 function PlayerInfoPanel.open()
     if state.open then return end
+    -- 右侧角色详情还开着时会抢走全屏点击，先关掉
+    if CharacterDetail.isOpen() then
+        CharacterDetail.close()
+        print("[PlayerInfoPanel] 打开前关闭角色详情")
+    end
     state.open = true
     state.closing = false
     state.animTime = time.elapsedTime
@@ -471,11 +480,6 @@ end
 function PlayerInfoPanel.handleInput(dx, dy)
     if not state.open then return false end
     if state.closing then return true end
-
-    -- 角色详情在面板之上打开时优先接管（与 CharacterPanel 模式一致）
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleInput(dx, dy)
-    end
 
     -- GMConsolePanel 优先拦截（最顶层）
     if GMConsolePanel.isOpen() then
@@ -540,16 +544,14 @@ function PlayerInfoPanel.handleInput(dx, dy)
         return true
     end
 
-    -- 弹窗内部点击消费事件防穿透
+    -- 未命中任何可交互控件（包括面板内留白）时关闭，不透传到底层
+    PlayerInfoPanel.close()
     return true
 end
 
 --- 拖拽开始（转发给子面板）
 function PlayerInfoPanel.handleDragBegin(dx, dy)
     if not state.open or state.closing then return false end
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleDragBegin(dx, dy)
-    end
     if GMConsolePanel.isOpen() then
         return GMConsolePanel.handleDragBegin and GMConsolePanel.handleDragBegin(dx, dy) or true
     end
@@ -565,9 +567,6 @@ end
 --- 拖拽移动（转发给子面板）
 function PlayerInfoPanel.handleDragMove(dx, dy)
     if not state.open or state.closing then return false end
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleDragMove(dx, dy)
-    end
     if GMConsolePanel.isOpen() then
         return GMConsolePanel.handleDragMove and GMConsolePanel.handleDragMove(dx, dy) or true
     end
@@ -583,9 +582,6 @@ end
 --- 拖拽结束（转发给子面板）
 function PlayerInfoPanel.handleDragEnd(dx, dy)
     if not state.open or state.closing then return false end
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleDragEnd(dx, dy)
-    end
     if GMConsolePanel.isOpen() then
         if GMConsolePanel.handleDragEnd then GMConsolePanel.handleDragEnd(dx, dy) end
         return true
@@ -604,10 +600,6 @@ end
 ---@param wheel number 滚轮值（正=向上滚）
 function PlayerInfoPanel.handleScroll(wheel, dx, dy)
     if not state.open or state.closing then return false end
-    -- 角色详情优先接管滚轮（与 CharacterPanel 模式一致）
-    if CharacterDetail.isOpen() then
-        return CharacterDetail.handleScroll(wheel, dx, dy)
-    end
     -- AvatarSelectPanel 优先拦截滚轮
     if AvatarSelectPanel.isOpen() then
         return AvatarSelectPanel.handleWheel(wheel)
@@ -658,6 +650,13 @@ local function drawTeamCard(vg, cx, cy, slot, power)
     if cardImg and cardImg >= 0 then
         DrawUtil.drawImageCover(vg, cardImg, cx, cy, cw, ch, 1.0)
     end
+    -- [统一角色框] 队伍卡叠加品质色描边
+    HeroFrame.draw(vg, {
+        cx = cx, cy = cy, w = cw, h = ch,
+        heroId = heroId,
+        state = "owned",
+        frameOnly = true,
+    })
 
     -- b) 职业图标
     local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -666,7 +665,7 @@ local function drawTeamCard(vg, cx, cy, slot, power)
     end
 
     -- c) 战斗力图标 + 数值
-    local powerStr = require("core.NumberUtil").format(power or 0)
+    local powerStr = tostring(power or 0)
     local POWER_GAP = 4
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 30)
@@ -790,19 +789,15 @@ function PlayerInfoPanel.draw(vg)
         TTL.FR, TTL.FG, TTL.FB, TTL.SW,
         { strokeColor = { TTL.SR, TTL.SG, TTL.SB } })
 
-    -- ── 5. 玩家头像 ──
+    -- ── 5. 玩家头像（[统一角色框] 品质色描边）──
     local _bf1 = BF.begin(vg, "pip_avatar", AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H)
-    drawImageCentered(vg, img.avatar, AVATAR.CX, AVATAR.CY, AVATAR.W, AVATAR.H, 1.0)
+    HeroFrame.draw(vg, {
+        cx = AVATAR.CX, cy = AVATAR.CY, w = AVATAR.W, h = AVATAR.H,
+        heroId = state.avatarHeroId or 1,
+        iconHandle = img.avatar,
+        state = "owned",
+    })
 
-    -- ── 6b. 头像红点（有新头像时显示）──
-    if img.redDot >= 0 and TopBar.hasAvailableAvatar() then
-        local RD_SIZE = 50
-        local RD_INSET = 10
-        drawImageCentered(vg, img.redDot,
-            AVATAR.CX + AVATAR.W * 0.5 - RD_INSET,
-            AVATAR.CY - AVATAR.H * 0.5 + RD_INSET,
-            RD_SIZE, RD_SIZE, 1.0)
-    end
     BF.finish(vg, _bf1)
 
     -- ── 7. 游玩时间（名字与装饰下划线已移除）──
@@ -810,6 +805,45 @@ function PlayerInfoPanel.draw(vg)
         PLAY_TIME.FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         244, 237, 224, 4,
         { strokeColor = { 0x3a, 0x24, 0x0c } })
+
+    -- ── 9.6 资源统计：独占头像下方全宽三行，文字自适应每列宽度 ──
+    do
+        local session = PlayerStore.Get("session") or {}
+        local days = tonumber(session.playDays) or 1
+        local heroes = PlayerStore.Get("heroes") or {}
+        local heroCount = 0
+        for _ in pairs(heroes.roster or {}) do heroCount = heroCount + 1 end
+        local equipData = PlayerStore.Get("equipment")
+        local bagCount = 0
+        if equipData and equipData.inventory then
+            for _ in pairs(equipData.inventory) do bagCount = bagCount + 1 end
+        end
+        local stats = {
+            { "金币 " .. NumberUtil.format(GameState.getGold()),
+              "黑晶 " .. NumberUtil.format(GameState.getGems()), "第" .. days .. "天" },
+            { "精粹 " .. NumberUtil.format(GameState.getEssence()),
+              "扫荡券 " .. NumberUtil.format(GameState.getSweepTicket()),
+              "招募券 " .. NumberUtil.format(GameState.getRecruitTicket()) },
+            { "钥匙 " .. NumberUtil.format(GameState.getGoldenKey()),
+              "队员 " .. heroCount, "背包 " .. bagCount },
+        }
+        nvgFontFace(vg, "sans")
+        for row, entries in ipairs(stats) do
+            for col, text in ipairs(entries) do
+                local fontSize = 29
+                nvgFontSize(vg, fontSize)
+                while nvgTextBounds(vg, 0, 0, text) > RESOURCE_STATS.COL_W and fontSize > 21 do
+                    fontSize = fontSize - 1
+                    nvgFontSize(vg, fontSize)
+                end
+                drawTextStroke(vg, RESOURCE_STATS.COL_X[col],
+                    RESOURCE_STATS.FIRST_Y + (row - 1) * RESOURCE_STATS.LINE_GAP,
+                    text, fontSize, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+                    216, 201, 163, 3,
+                    { strokeColor = { 0x3a, 0x24, 0x0c } })
+            end
+        end
+    end
 
     -- ── 9.5 当前区服名称 ──
     if cachedServerName then
@@ -830,7 +864,7 @@ function PlayerInfoPanel.draw(vg)
 
     -- ── 12. 战力图标 + 战力数值（组合居中在战力背景框内）──
     local displayPower = CharacterPanel.getTotalPower()
-    local powerStr = require("core.NumberUtil").format(displayPower)
+    local powerStr = tostring(displayPower)
 
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, PWR.FONT)
@@ -874,7 +908,7 @@ function PlayerInfoPanel.draw(vg)
     -- ── 16. 远征等级经验进度数值 ──
     local advExp    = GameState.getExp()
     local advMaxExp = GameState.getMaxExp()
-    local expText = require("core.NumberUtil").format(advExp) .. "/" .. require("core.NumberUtil").format(advMaxExp)
+    local expText = tostring(advExp) .. "/" .. tostring(advMaxExp)
     drawTextStroke(vg, ADV_EXP.X, ADV_EXP.Y, expText,
         ADV_EXP.FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         ADV_EXP.FR, ADV_EXP.FG, ADV_EXP.FB, ADV_EXP.SW,
@@ -961,9 +995,7 @@ function PlayerInfoPanel.draw(vg)
 
     nvgRestore(vg)
 
-    -- 在 PlayerInfoPanel 变换之外绘制子面板（它们有自己的遮罩和缩放）
-    -- 角色详情覆盖在队伍卡之上（从队伍卡点击打开）
-    CharacterDetail.draw(vg)
+    -- 横屏角色详情由 CharacterPanel 绘制。这里再画会用竖屏坐标叠出第二份。
     AvatarSelectPanel.draw(vg)
     GMConsolePanel.draw(vg)
 end

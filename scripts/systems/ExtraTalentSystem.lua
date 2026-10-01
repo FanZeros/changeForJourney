@@ -8,6 +8,7 @@ local AD = require("systems.AttributeDef")
 local SEM = require("systems.StatusEffectManager")
 local BattleLayout = require("core.BattleLayout")
 local Protocol = require("shared.Protocol")
+local AG = require("systems.AwakeningGrowth")
 
 local ETS = {}
 
@@ -305,76 +306,20 @@ function ETS.getDesc(heroId, extra)
     if not name then return "" end
     local awk = ownedAwakening(heroId)
     local unlocked = awkHas(awk, 1) or awkHas(awk, 4) or awkHas(awk, 7)
+    -- 未觉醒时只给一行解锁提示；已觉醒直接展示效果，不再重复"觉醒后解锁"
     if not unlocked then
         return name .. "（觉醒后解锁）"
     end
-    return name .. "  Lv." .. tostring(extra.stacks) .. "\n" .. ETS.getStatusLine(heroId, extra)
+    return ETS.getStatusLine(heroId, extra)
 end
 
+--- 觉醒1 永久成长层 → 属性 modifier 条目
+--- 已配置化：等价委托 AwakeningGrowth.buildAttrEntries（数值零变化）。
+---@param heroId number
+---@param data ExtraTalentData
+---@return table[]
 local function bruteEntries(heroId, data)
-    local entries = {}
-    if heroId == 1 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.MAX_HP, flat = data.stacks }
-    end
-    if heroId == 2 and data.burnKills > 0 then
-        entries[#entries + 1] = { key = AD.MAG_ATK, flat = data.burnKills * 0.2 }
-    end
-    if heroId == 3 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.PHYS_ATK, flat = data.stacks * 0.2 }
-    end
-    if heroId == 4 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.MAX_HP, flat = data.stacks * 0.5 }
-    end
-    if heroId == 5 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.ARMOR, flat = data.stacks * 0.2 }
-    end
-    if heroId == 6 and data.shockKills > 0 then
-        entries[#entries + 1] = { key = AD.MAG_ATK, flat = data.shockKills * 0.2 }
-    end
-    if heroId == 7 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.COMBO_RATE, flat = data.stacks * 0.1 }
-    end
-    if heroId == 8 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.DMG_BONUS, flat = data.stacks * 0.15 }
-    end
-    if heroId == 9 and data.overflowCount > 0 then
-        entries[#entries + 1] = { key = AD.SPI, flat = data.overflowCount * 0.05 }
-    end
-    if heroId == 10 and data.shareCount > 0 then
-        entries[#entries + 1] = { key = AD.MAX_HP, flat = data.shareCount * 3 }
-    end
-    if heroId == 11 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.PHYS_ATK, flat = data.stacks * 0.3 }
-    end
-    if heroId == 12 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.MAG_ATK, flat = data.stacks * 0.2 }
-    end
-    if heroId == 13 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.PHYS_ATK, flat = data.stacks * 0.25 }
-    end
-    if heroId == 14 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.PHYS_ATK_BONUS, flat = data.stacks * 0.1 }
-        entries[#entries + 1] = { key = AD.MAG_ATK_BONUS, flat = data.stacks * 0.1 }
-    end
-    if heroId == 15 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.MAX_HP, flat = data.stacks * 2 }
-    end
-    if heroId == 23 and data.shieldStacks > 0 then
-        entries[#entries + 1] = { key = AD.ENERGY_SHIELD, flat = data.shieldStacks }
-    end
-    if heroId == 18 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.CRIT_RATE, flat = data.stacks * 0.1 }
-    end
-    if heroId == 19 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.SPI, flat = data.stacks * 0.05 }
-    end
-    if heroId == 24 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.MAX_HP, flat = data.stacks }
-    end
-    if heroId == 25 and data.stacks > 0 then
-        entries[#entries + 1] = { key = AD.PHYS_ATK, flat = data.stacks * 0.3 }
-    end
-    return entries
+    return AG.buildAttrEntries(heroId, data)
 end
 
 ---@param heroId number
@@ -627,98 +572,44 @@ function ETS.onEnemyDeath(deadEnemy, allies, enemies)
     local n7 = ETS.hasNode(killer, 7)
     if not n1 and not n4 and not n7 then return end
 
-    local function bump()
-        extra.stacks = extra.stacks + 1
+    -- 觉醒1 永久成长层：配置驱动（等价旧 if heroId==N then bump() 链）
+    local growthCtx = {
+        deadEnemy = deadEnemy, killer = killer, enemies = enemies,
+        hasStatus = function(u, k) return SEM.has(u, k) end,
+    }
+    if n1 then
+        AG.applyGrowth(heroId, extra, growthCtx)
     end
 
-    if heroId == 1 then
-        if n1 then bump() end
-        if n4 then
-            local atkType = tonumber(deadEnemy.atkType)
-            if atkType and atkType >= 1 and atkType <= 8 then
-                extra.biteTypes[tostring(atkType)] = true
-            end
+    -- 觉醒2/3 机制分支（英雄特有玩法，带专属条件/副作用，保留原逻辑）
+    if heroId == 1 and n4 then
+        local atkType = tonumber(deadEnemy.atkType)
+        if atkType and atkType >= 1 and atkType <= 8 then
+            extra.biteTypes[tostring(atkType)] = true
         end
     end
-    if heroId == 2 then
-        if SEM.has(deadEnemy, SEM.BURNING) then
-            if n1 then extra.burnKills = extra.burnKills + 1; bump() end
-        end
+    if heroId == 3 and n4 and killer._preciseKill then
+        extra.preciseStored = math.min(5, extra.preciseStored + 1)
     end
-    if heroId == 3 then
-        if n1 then bump() end
-        if n4 and killer._preciseKill then
-            extra.preciseStored = math.min(5, extra.preciseStored + 1)
-        end
+    if heroId == 5 and n4 and killer._conquerFullKill then
+        extra.conquerCarry = math.min(15, extra.conquerCarry + 1)
     end
-    if heroId == 4 then
-        if n1 then bump() end
+    if heroId == 7 and n4 then
+        extra.beamCharges = math.min(3, extra.beamCharges + 1)
     end
-    if heroId == 5 then
-        if n1 then bump() end
-        if n4 and killer._conquerFullKill then
-            extra.conquerCarry = math.min(15, extra.conquerCarry + 1)
-        end
+    if heroId == 8 and n4 and SEM.has(deadEnemy, SEM.MARKED) then
+        local t = tostring(deadEnemy.atkType or deadEnemy.name or "?")
+        extra.markTypes[t] = true
     end
-    if heroId == 6 then
-        if SEM.has(deadEnemy, SEM.SHOCKED) then
-            if n1 then extra.shockKills = extra.shockKills + 1; bump() end
-        end
+    if heroId == 11 and n4 and killer._nightSlashKill then
+        extra.slashShadows = math.min(4, extra.slashShadows + 1)
     end
-    if heroId == 7 then
-        if n1 then bump() end
-        if n4 then extra.beamCharges = math.min(3, extra.beamCharges + 1) end
+    if heroId == 12 and n4 and SEM.has(deadEnemy, SEM.FROZEN) then
+        extra.iceStatues = math.min(3, extra.iceStatues + 1)
+        spawnIceStatue(deadEnemy, enemies, killer)
     end
-    if heroId == 8 then
-        if SEM.has(deadEnemy, SEM.MARKED) then
-            if n1 then bump() end
-            if n4 then
-                local t = tostring(deadEnemy.atkType or deadEnemy.name or "?")
-                extra.markTypes[t] = true
-            end
-        end
-    end
-    if heroId == 11 then
-        if n1 then bump() end
-        if n4 and killer._nightSlashKill then
-            extra.slashShadows = math.min(4, extra.slashShadows + 1)
-        end
-    end
-    if heroId == 12 then
-        if n1 then bump() end
-        if n4 and SEM.has(deadEnemy, SEM.FROZEN) then
-            extra.iceStatues = math.min(3, extra.iceStatues + 1)
-            spawnIceStatue(deadEnemy, enemies, killer)
-        end
-    end
-    if heroId == 13 then
-        if n1 then bump() end
-        if n4 and deadEnemy._killedByRicochet then
-            extra.splitKills = extra.splitKills + 1
-        end
-    end
-    if heroId == 14 then
-        if n1 then bump() end
-    end
-    if heroId == 16 then
-        if n1 then extra.swordStacks = extra.swordStacks + 1; bump() end
-    end
-    if heroId == 20 then
-        if n1 then extra.gateStacks = extra.gateStacks + 1; bump() end
-    end
-    if heroId == 21 then
-        if killer._nitroKill then
-            if n1 then extra.nitroKills = extra.nitroKills + 1; bump() end
-        end
-    end
-    if heroId == 22 then
-        if n1 then extra.gatlingKills = extra.gatlingKills + 1; bump() end
-    end
-    if heroId == 18 or heroId == 19 or heroId == 24 then
-        if n1 then bump() end
-    end
-    if heroId == 25 then
-        if n1 then bump() end
+    if heroId == 13 and n4 and deadEnemy._killedByRicochet then
+        extra.splitKills = extra.splitKills + 1
     end
 
     commit(killer, extra)

@@ -315,6 +315,17 @@ function HeroService.GrantStarterTrio(uid)
     if not heroes then return false, "数据未加载" end
     if type(heroes.roster) ~= "table" then heroes.roster = {} end
 
+    local ownedCount = 0
+    for _, hero in pairs(heroes.roster) do
+        if type(hero) == "table" and hero.level then
+            ownedCount = ownedCount + 1
+        end
+    end
+    if ownedCount > 1 then
+        print("[HeroService] starter skip, roster already has " .. tostring(ownedCount))
+        return true, nil, { skipped = true, owned = ownedCount }
+    end
+
     local starterIds = { 1, 2, 3 }
     local startLv = HeroService.GetNewHeroStartLevel(uid)
     for i = 1, #starterIds do
@@ -346,7 +357,8 @@ function HeroService.GrantStarterTrio(uid)
     end
 
     local TeamSlots = require("shared.heroes.TeamSlots")
-    TeamSlots.setTeam(heroes, 1, starterIds)
+    -- 开局就占满 4 个槽位：三人在前，第四格是空位。否则右侧栏没有可交换的空槽。
+    TeamSlots.setTeam(heroes, 1, { starterIds[1], starterIds[2], starterIds[3], 0 })
     PDM.MarkDirty(uid, "heroes")
 
     local sessionData = PDM.GetModule(uid, "session")
@@ -642,32 +654,14 @@ end
 ---@param uid number
 ---@param newPlayerLevel number 提升后的远征等级
 ---@return number boostedCount 被提升的英雄数量
+--- 已移除：远征升级不再把低等级英雄同步拉升到玩家等级。
+--- 英雄等级完全由战斗/扫荡/离线经验成长（新英雄 Lv1 起步、未出战吃 10% 战斗经验）。
+--- 保留空实现以免 5 处调用点（战斗/离线/挂机结算）报 nil call。
+---@param uid number
+---@param newPlayerLevel number
+---@return number boostedCount 恒为 0
 function HeroService.SyncHeroLevelsToPlayerLevel(uid, newPlayerLevel)
-    local heroes = PDM.GetModule(uid, "heroes")
-    if not heroes or not heroes.roster then return 0 end
-
-    local targetLevel = math.min(newPlayerLevel, ExpTable.HERO_MAX_LEVEL)
-    local boostedCount = 0
-
-    for heroId, hero in pairs(heroes.roster) do
-        -- 只处理已解锁的英雄（有 level 字段）
-        if hero.level and hero.level < targetLevel then
-            hero.level = targetLevel
-            hero.exp = 0
-            hero.maxExp = ExpTable.getHeroExpForLevel(targetLevel) or 0
-            boostedCount = boostedCount + 1
-        end
-    end
-
-    if boostedCount > 0 then
-        PDM.MarkDirty(uid, "heroes")
-        print("[HeroService] SYNC_HERO_LEVELS uid=" .. tostring(uid)
-            .. " playerLv=" .. tostring(newPlayerLevel)
-            .. " boosted=" .. tostring(boostedCount))
-        HeroService.ApplyResonanceSync(uid)
-    end
-
-    return boostedCount
+    return 0
 end
 
 --- 共鸣同步：将低于共鸣地板的英雄 level 提升到共鸣等级
@@ -688,13 +682,11 @@ function HeroService.ApplyResonanceSync(uid)
     return boosted, resonance
 end
 
---- 获取新英雄的起始等级（取远征等级和 1 的较大值）
+--- 新获得英雄的起始等级：一律 Lv1 起步（成长靠战斗/扫荡/离线经验；未出战另有 10% 战斗经验）
 ---@param uid number
 ---@return number startLevel
 function HeroService.GetNewHeroStartLevel(uid)
-    local player = PDM.GetModule(uid, "player")
-    if not player then return 1 end
-    return math.max(1, player.level or 1)
+    return 1
 end
 
 --- 获取共鸣等级（全队前 5 高等级中的最低值）

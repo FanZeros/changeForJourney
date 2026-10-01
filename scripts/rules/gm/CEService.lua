@@ -37,6 +37,20 @@ local function toast(text)
     return text
 end
 
+--- 通知已打开的页面重读。不能走整表替换，否则英雄觉醒、副本层数这类嵌套表会被拆开。
+local function notifyOpenPages(moduleName)
+    local Dispatcher = require("runtime.ClientDispatcher")
+    if Dispatcher.notifySubscribers then
+        Dispatcher.notifySubscribers(moduleName)
+    end
+    if moduleName == "dungeon" then
+        local ok, DungeonPage = pcall(require, "ui.dungeon.DungeonPage")
+        if ok and DungeonPage and DungeonPage.refreshFromStore then
+            DungeonPage.refreshFromStore()
+        end
+    end
+end
+
 function CEService.giveAllResources()
     ensureReady()
     local GM = require("rules.gm.GMService")
@@ -46,7 +60,7 @@ function CEService.giveAllResources()
         if ok then given = given + 1 end
     end
     GM.GiveResource(UID, "speedCardExpireAt", 7 * 86400)
-    return toast("全资源 +100万，加速卡 +7天（" .. given .. " 项）")
+    return toast("全资源 +1M，加速卡 +7天（" .. given .. " 项）")
 end
 
 function CEService.unlockAllHeroes()
@@ -79,6 +93,7 @@ function CEService.unlockAllHeroes()
     end
     PDM.MarkDirty(UID, "heroes")
     HeroService.ApplyResonanceSync(UID)
+    notifyOpenPages("heroes")
     return toast("解锁英雄 +" .. added .. "，已拥有的未改等级")
 end
 
@@ -104,6 +119,7 @@ function CEService.levelAllHeroes(steps)
     end
     PDM.MarkDirty(UID, "heroes")
     HeroService.ApplyResonanceSync(UID)
+    notifyOpenPages("heroes")
     return toast("全员等级 +" .. steps .. "（" .. changed .. " 人）")
 end
 
@@ -292,6 +308,7 @@ function CEService.boostDungeons(steps)
         end
     end
     PDM.MarkDirty(UID, "dungeon")
+    notifyOpenPages("dungeon")
     return toast("副本/塔层 +" .. steps .. " " .. table.concat(parts, " "))
 end
 
@@ -326,18 +343,8 @@ function CEService.lightAllTalents()
     talents.litNodes = ids
     TalentsSchema.normalizeModule(talents)
     PDM.MarkDirty(UID, "talents")
-    return toast("已点亮全部天赋，重开古树查看")
-end
-
-function CEService.giveRelicSet()
-    ensureReady()
-    local RelicService = require("rules.relic.RelicService")
-    local given = 0
-    for relicType = 1, 5 do
-        local ok = RelicService.GmGiveRelic(UID, relicType, 4)
-        if ok then given = given + 1 end
-    end
-    return toast("发放遗物 5 类品质4（成功 " .. given .. "）")
+    notifyOpenPages("talents")
+    return toast("已点亮全部天赋")
 end
 
 function CEService.testPack()
@@ -353,6 +360,7 @@ function CEService.resetSave()
     local GM = require("rules.gm.GMService")
     local ok, reason = GM.ResetSave(UID)
     if not ok then return toast("清档失败: " .. tostring(reason)) end
+    require("boot.StandaloneSave").Wipe()
     local standalone = require("boot.Standalone")
     if standalone.requestResetToStartScreen then
         standalone.requestResetToStartScreen()

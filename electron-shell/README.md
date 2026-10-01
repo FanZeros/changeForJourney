@@ -41,6 +41,238 @@ python3 electron-shell/obfuscation_trial.py --source-root . --output-root ../pc-
 
 **尚未通过整游戏启动/存档验收，禁止把此试验接入正式打包或上传 Release。** 未混淆的原版入口跑 60 帧已经报 `[systems/StoryPlayer]:7 Module not found: network.ClientDispatcher`；试验版出现相同错误，属于基线故障而非本试验引入。既有 `tests/lootbox_page_test.lua:173` 的存档断言和 `tests/lootbox_horizon_test.lua:49` 的旧模块路径也在当前分支基线上失败。需要先让基线测试恢复可用，再试更多模块与 Windows 离线包回归。
 
+## 全量隔离压缩试点（2026-09-27，尚未接入发行）
+
+`obfuscation_trial.py --all-scripts` 在工程之外的新目录生成全部 361 个 Lua 文件的**注释清理/缩排压缩副本**，保留文件名、所有代码、字符串、长字符串及供官方 LSP 使用的 EmmyLua 注释。输出目录必须不存在、且不能与源码树互相包含；仓库源码、`dist/` 和 `electron-shell/game/` 不会被修改。该模式**不会重命名全量变量、编译字节码、加密或保护资源**；原有不带 `--all-scripts` 的单模块试点保持不变。请勿把试点直接当成正式 PC 包保护方案。
+
+```bash
+python3 electron-shell/obfuscation_trial.py --all-scripts --source-root . --output-root ../pc-all-lua-trial
+# 用独立项目副本补齐 assets/ 和 .project/，再对其 scripts/ 运行官方 Build 与运行时回归。
+```
+
+本次隔离副本从 6,008,895 字节变为 4,653,072 字节（减少约 22.6%，361/361 文件内容变化），原版和压缩版 60 帧 Runtime 验证均为 PASS、0 Lua/资源错误。当前副本放在 `.tmp` 下，官方 Build 的 LSP 检查报大量缺少引擎声明的 `undefined-global`，不能宣称它已通过正式 Build；待在正常可识别引擎类型定义的独立工程内完成完整 LSP、Build、存档及 Windows 成品包回归。所有处理后 Lua 仍是可读明文，当前发布流水线依然完全没有调用此脚本。
+
+## L1 作用域安全混淆器 + L2 字节码 POC（2026-09-27，`feat927/ele-protection-research-0927`）
+
+调研结论见 `docs/pc-protection-research-0927.md`。本节是把其中 **L1（AST 重命名）**
+落地为可用脚本，并为 **L2（Lua 5.4 字节码）** 准备可行性探针。**均未接入正式打包流水线**，
+`pack_release.py` / `build_local_windows.bat` 完全没调用它们。
+
+### L1：`lua_obfuscator.py`（作用域安全重命名）
+
+基于 luaparser 内置 ANTLR 语法树做标准 Lua 作用域解析，**只重命名局部绑定**
+（文件级 local、函数参数、for 循环变量、local function、嵌套匿名函数的 local），
+用 token 级 splice 改写，其余（注释、字符串、数字、空白、排版）**从原文逐字节拷贝**。
+
+- **永不改名**：全局名（引擎 API、`require` 到的模块、未声明标识符）、
+  所有字段名与方法名（`.` / `:` 之后、表构造器 key、`function a.b.c:d()` 中
+  `.`/`:` 之后的部分）、`require` 路径字符串、goto label。
+- **保留** EmmyLua `---` 注释（官方 LSP 依赖），但注释里的 `---@param 旧名`
+  **不会跟着实参一起改**（见下方已知限制）。
+- **安全策略**：任何解析失败、含未知语法形态、或未通过等价校验的文件，
+  一律拒绝改写并原样复制——宁可漏混淆也不冒运行期破坏的风险。
+
+```bash
+# 依赖：python3 -m venv ~/luaenv && ~/luaenv/bin/pip install luaparser lupa
+# 单文件诊断（打印混淆结果）：
+python3 electron-shell/lua_obfuscator.py --file scripts/shared/StageProvider.lua
+# 全量（输出必须在源码树之外）：
+python3 electron-shell/lua_obfuscator.py --source-root . --output-root ../obf-out
+```
+
+**等价校验（内置，逐文件强制）**：混淆后必须①重新解析成功；②非 NAME token 序列
+逐一致（保证只动标识符文本）；③字符串字面量完全一致；④NAME token 数量一致；
+⑤全局名集合不变。任一不满足即 `rejected` 原样复制。
+
+**本轮实测**（本分支源码）：
+- 单元/行为等价测试 `test_lua_obfuscator.py`：21/21 PASS（覆盖递归、upvalue 闭包、
+  shadowing、`self` 方法、数值/泛型 for、goto label、repeat-until、`<const>`、
+  多重赋值、varargs、do-block、字段 vs 局部同名等）。
+- 全量 361 文件：**344 改名 / 17 未变**（16 个纯数据表 StageConfig/AssetManifest
+  无 local 绑定；`scripts/core/DarkIcon.lua` 因 luaparser 对某中文 token 解析失败
+  被安全拒绝、原样复制）。体积 6,008,895 → 5,843,096 字节（-2.76%，因保留注释
+  与排版，本就不是压缩目标）。
+- 行为等价抽样 `verify_obfuscation_sample.py`（lupa Lua 5.4 真跑 + 确定性深度序列化
+  比对返回值）：**71/71 PASS，0 mismatch**，290 个依赖引擎全局的文件离线跳过。
+
+```bash
+python3 electron-shell/test_lua_obfuscator.py          # 单元/行为等价
+python3 electron-shell/verify_obfuscation_sample.py ../obf-out .   # 全量抽样行为等价
+```
+
+**已修复：`---@param` 注释同步改名（2026-09-27）**：混淆器现在会解析紧邻函数声明
+上方的 doc 注释块，把其中的 `@param <旧名>` 同步为该形参的新名（仅当旧名确是
+该函数形参；注释块与函数之间夹任何代码则判定「非本函数 doc」而不关联，绝不跨代码
+误伤；字符串里的 `---@param` 因属 `NORMALSTRING` token 而非注释 token，天然不动）。
+`@param` 后的**类型名与描述文字保留不变**（那不是参数名）。匿名函数
+（`local g = function(x)`）的 doc 注释锚点有歧义故跳过——实测本项目 1373 个
+`@param` doc 块**全部**紧邻命名函数/`local function`，无一匿名，跳过是安全的。
+
+**本轮实测（doc 同步后）**：
+- 全量 361 文件重新混淆后，`@param` 残留不匹配 **219 文件 → 0**（残留校验脚本逐函数
+  核对注释 `@param` 名是否都在实参表内）。
+- 行为等价抽样 **71/71 PASS，0 mismatch**（同步注释未破坏任何代码）。
+- **官方 Build 成功（0 Error）**：把混淆产物 + 268 个引擎 `.emmylua` 类型定义放入
+  隔离工程跑官方 MCP Build，构建通过，且 `dist/assets/*.lua` 产物确认就是混淆后
+  代码（嵌套闭包 `_z0_/_z1_/_z11_` 等正确改名）。这直接推翻了「去注释试点在 .tmp
+  Build 报大量 undefined-global」的旧结论——**根因是缺引擎类型定义，不是混淆本身**。
+  ⚠️ LSP `textDocument/diagnostic` 的 workspace 汇总接口对**磁盘替换**返回陈旧缓存
+  （实测注入语法错误都不报），只有 `didOpen`（编辑器缓冲）或官方 Build 进程才读最新
+  内容；本结论以官方 Build + dist 产物为准，不以那个汇总接口为准。
+
+**剩余已知限制**：
+1. **`DarkIcon.lua` 被跳过**（luaparser 对某中文 token 解析失败），仍是明文；
+   需换 parser 或手工处理该文件（361 中仅此 1 个）。
+2. **仍是可读明文源码**：L1 只去掉变量名语义，控制流与字符串依旧可读。要显著提高
+   阅读难度必须叠加 L2（字节码）——但 L2 有前置未知，见下。
+
+### L2：`lua_bytecode_poc.py`（字节码可行性探针）
+
+把 Lua 源码 `string.dump` 成 Lua 5.4 字节码。**本地已验证**标准 Lua 5.4 可往返
+（header `1b 4c 75 61 54 00` = `\x1bLua` + 版本 0x54），体积 -22.8%。
+
+```bash
+python3 electron-shell/lua_bytecode_poc.py --file scripts/shared/StageProvider.lua --out-dir .tmp/bc-poc
+```
+
+生成 `.luac` 字节码 + `poc_loader.lua` 自包含探针（把 `return 42` 编译成字节码，
+与业务模块解耦）。本地 lupa Lua 5.4 跑探针输出
+`VERDICT: VM ACCEPTS bytecode (Q1=yes), returned 42`。
+
+**两个前置未知必须在真实引擎上验证（沙箱无 WASM 引擎资产，跑不了）**：
+- **Q1**：UrhoX 的 **WASM Lua VM 是否接受字节码 chunk**？
+  把 `poc_loader.lua` 贴进官方 Runtime / 预览 Console 运行：
+  打印 `VM ACCEPTS (Q1=yes)` → L2 可行；`VM REJECTS (Q1=no)` → **L2 作废，退回纯 L1**。
+- **Q2**：`dist/assets/*.lua` 的 manifest hash/size 是否被引擎**运行时强校验**？
+  若是，字节码化必须发生在官方 Build **之前**（对源码副本混淆+编译 → 用副本走 Build，
+  manifest 天然一致），不能事后替换 `dist`（会破坏校验，README 早有结论）。
+- **版本锁死风险**：字节码与 Lua 版本/字长/endianness 绑定；本地 5.4 编的字节码
+  未必匹配引擎 WASM Lua 版本。引擎升级即可能失效，需在 CI/打包机用引擎自带 `luac`
+  或 VM 内 `string.dump` 生成，而非本地 lupa。
+
+### 建议的下一步顺序（供决策，不代表已执行）
+1. **P0**：发布版关 F12 DevTools（`main.js:172`）——当前等于官方送提取器，一行改动。
+2. **Q1-POC**：在本机 Windows 用官方 Runtime 跑 `poc_loader.lua`，定 L2 生死。
+3. 若 L2 可行：`源码 → L1 混淆 → luac 字节码 → 官方 Build`（解决 `---@param` 后）。
+4. 若 L2 不可行：`源码 → L1 混淆（修 @param）→ 官方 Build`，可选叠加 L3 静态加密。
+
+## --protect 受保护打包（2026-09-27，`feat927/ele-protection-research-0927`）
+
+L1 混淆已接入打包流程（默认关闭，不影响现有一键脚本）。**四步链**：
+
+```
+protect_build.py                物化「混淆工作区」：361 个 Lua 全部 L1 混淆
+                                + .meta/.py 逐字节复制 + assets/ 真实复制 + .project/ 复制
+                                + .maker-mcp/ 等 Maker 绑定目录复制（官方 preview
+                                prepare 要求 target-dir 已绑定 Maker，缺
+                                .maker-mcp/config.json 会 FAIL）
+  ↓
+taptap-maker preview prepare    官方 Build 跑在混淆工作区上（LSP/烘焙/manifest 全走正式流程）
+  ↓
+prepare_local_dist.py           --scripts-root 指向混淆工作区：校验 dist Lua 与混淆源码
+  --scripts-root <ws>/scripts   逐字节一致 + 资产闸门（manifest 必须含 png/ogg，
+                                缺资源即拒包）→ 打补丁 → game/
+  ↓
+pack_release.py                 --protect-scripts-root 同基准复核 → electron-builder → zip
+  --prepare-dist
+  --protect-scripts-root <ws>/scripts
+```
+
+一键入口：
+
+| 文件 | 平台 | 说明 |
+|------|------|------|
+| `build_protected_windows.bat` | Windows | 四步链一键；混淆工作区在 `.tmp/protected-workspace`（.gitignore 已排除） |
+| `build_protected_windows.sh` | Linux/macOS | 同上；`PYTHON=~/luaenv/bin/python` 指定解释器 |
+
+依赖：`pip install luaparser`（lupa 仅测试需要）。
+
+### 本轮实测（沙箱内完成的部分）
+
+- `protect_build.py` 小规模工作区端到端 PASS：混淆产物、`@param` 同步、
+  非 Lua 逐字节复制、protect-report.json（含每文件处置与 SHA256）。
+- **官方 Build（混淆 scripts + 真实 assets 复制）成功**：manifest 1226 项
+  （361 lua + 770 png + 77 ogg + 6 atlas + 字体），dist lua 与混淆源码
+  **361/361 逐字节一致**，344 个文件确认含混淆名。
+- **关键发现：官方 Build 不烘焙符号链接的 assets/**——工作区 assets 用
+  symlink 时 manifest 只剩 361 lua + 4 json（游戏必然黑屏缺图）。故
+  `protect_build.py` 默认**真实复制** assets（+398MB），`--link-assets`
+  降级为实验选项并打醒目警告；`prepare_local_dist.py` 新增资产闸门
+  （manifest 缺 .png/.ogg 即拒包），闸门双向测试 PASS（真实 dist 通过、
+  伪造 lua-only manifest 拒包）。
+- `verify_prepare_dist` 加 `--protect-scripts-root` 后：无覆盖时正确拒绝
+  混淆 dist（与仓库原版源码不一致），有覆盖时通过（361 文件逐字节一致）。
+
+### 本机实跑修复记录（2026-09-28）
+- `protect_build.py:109` 反斜杠感叹号 SyntaxError → 已修（b204359）。
+- pip/python 解释器错位致 `No module named antlr4` → bat/sh 加 [0/4] 预检 +
+  报错打印 sys.executable（dda8be7）；修复用 `python -m pip install luaparser lupa`。
+- 工作区守卫方向写反，误拒 `.tmp/protected-workspace` → 已修（22257b9）。
+- 步骤 2 报 `Preview requires a bound Maker project with .maker-mcp/config.json`
+  → protect_build 现自动复制 `.maker-mcp/.maker/.installer/.cli/.sce`（存在即复制）；
+  若仓库根本身没有 `.maker-mcp/`，先在仓库根跑一次 `maker-mcp\update-maker-mcp.bat`
+  完成 Maker 绑定再重跑本链。
+
+### 尚未验证（需本机 Windows 实机）
+
+**逐步骤验证清单见 `electron-shell/WINDOWS_PROTECT_CHECKLIST.md`**（含成功标志、
+包内容抽检、实机回归项、L2 Q1 判定与失败回报模板）。
+
+1. **成品包回归**：`build_protected_windows.bat` 全链 + Electron zip +
+   实机启动/存档/战斗 60 帧（沙箱没有 npx taptap-maker CLI 与 Electron）。
+2. **junction 行为**：Windows 上 assets 真实复制耗磁盘 ~400MB；若改用
+   junction 需实测官方 Build 是否跟随（Linux symlink 已证实不跟随）。
+3. `prepare_local_dist.py` 的 `latest_prepare_source()` 取「最近一次 preview
+   prepare 产物」——多工程并存时确认拿到的是混淆工作区那次。
+
+## 三档混淆强度实测（2026-09-28，相似度工具量化）
+
+用 `FanZeros/tempGame` 的 `compare_lua_similarity.py`（发布包 vs 工程源码，行级
+difflib 加权）量化不同混淆档的实际收益。**同一套源码**分别构建 dist 后与源码比对：
+
+| 档位 | 组成 | 对称相似度 | 逐字节一致文件 | 官方 Build | 备注 |
+|------|------|-----------|--------------|-----------|------|
+| 基线 | 未混淆 | **100.0%** | 361/361 | ✅ | 明文发布，拖出来就是源码 |
+| 档 A | 局部改名 + @param 同步（注释保留） | **46.0%** | 17/361 | ✅ | L1 原始档 |
+| 档 B | A + **剥离普通注释** | **39.3%** | 17/361 | ✅ | **推荐默认** |
+| 档 C | B + 私有字段/方法改名 | **38.4%** | 17/361 | ✅ | 实验，见下 |
+
+**关键结论**：
+1. **剥注释是性价比最高的一步**：46.0% → 39.3%（-6.7 个百分点），零风险
+   （不动任何标识符，只删普通注释；保留 `---@` 注解与 `--[[@as]]` 断言以过 LSP）。
+   故已设为 `protect_build.py` 默认行为。
+2. **字段/方法名改名收益极低**：39.3% → 38.4%（**-0.9 个百分点**），因为该工具是
+   **行级**比对，字段改名只改行内 token、不改行结构；而剥注释删的是整行。
+   同时它**改变模块 API 表面**（`getNodeCount` → `_f37_`），风险显著：
+   - 静态安全前提已做到：只改**单文件私有**字段（跨文件出现即排除）、排除引擎
+     `.emmylua`/`urhox-libs` 声明（23097 个 id）、排除所有出现在字符串字面量里的
+     名字（4934 个）、整体排除含动态拼接访问的 17 个文件（如
+     `GameState["get"..field]`）、排除 `_` 前缀元方法。
+   - 离线验证：69 个非引擎依赖文件 **0 真实回归**；但 **290 个引擎依赖文件离线测不了**，
+     且"单文件私有"无法证明没有运行时动态访问。
+   - 故 `--rename-fields` **默认关闭**，需完整实机回归后才考虑发行。
+3. 17 个逐字节一致文件 = 16 个纯数据表（无 local 可改）+ `core/DarkIcon.lua`
+   （luaparser 中文 token 解析失败，安全拒绝、保持明文）。
+
+**要把相似度进一步压向 0，唯一有效手段是 L2 字节码**：该工具对 `\x1bLua` 头的文件
+直接判 `kind=bytecode`、不参与行级比对（发布包无可读行）。前提是 Q1（WASM VM 是否
+接受字节码）在本机验证通过，见 `WINDOWS_PROTECT_CHECKLIST.md §4`。
+
+### 档位用法
+```bash
+# 档 B（默认：局部改名 + @param 同步 + 剥注释）
+python3 electron-shell/protect_build.py --source-root . --workspace-root .tmp/protected-workspace
+
+# 档 C（实验：再加私有字段改名，需 --emmylua-root 指向含引擎声明的根）
+python3 electron-shell/protect_build.py --source-root . --workspace-root .tmp/pw-fields \
+        --rename-fields --emmylua-root /path/to/engine-root
+
+# 混淆器单档直用
+python3 electron-shell/lua_obfuscator.py --source-root . --output-root ../out --strip-comments
+python3 electron-shell/lua_obfuscator.py --source-root . --output-root ../out2 \
+        --strip-comments --rename-fields --emmylua-root /path/to/engine-root
+```
+
 ## 一键脚本（推荐，本机跑）
 
 云端代理传 ~466MB zip 会被超时掐断，**打包和上传请在本机直连 GitHub**。
@@ -52,11 +284,21 @@ Windows 双击：
 | `../maker-mcp/update-maker-mcp.bat` | **本机 Maker MCP + 本地 Runtime**（官方口径，单机不用远端构建） |
 | `update_runtime.bat` | Electron 离线包：拉最新 `dist-snapshot` → 打补丁 → 打 zip |
 | `push_dist_snapshot.bat` | **云端 Build 后**：把 `dist/` 分片传到 `dist-snapshot`（80s 限时，反复点即可续传） |
+| `build_local_windows.bat` | **本机一键**：preview prepare → 校验并补入口 → Electron 打包；不读仓库根 dist、不上传 |
 | `pack_release.bat` | **仅本地**：校验当前源码与 `dist/` 中全部 Lua 一致 → 打补丁 → electron-builder → zip；不拉快照、不上传 |
 | `pack_and_upload.bat` | 原有远端快照检查 + 打包 + 上传 GitHub Release `win64-v{version}`；**不是**本地专用入口 |
 | `upload_only.bat` | 已有 zip 只上传（不重打） |
 
 命令行：
+
+本机无仓库根 dist 时，在仓库根目录双击 `electron-shell/build_local_windows.bat`，或执行：
+
+```bat
+electron-shell\build_local_windows.bat
+```
+
+它依次运行 preview prepare、prepare_local_dist.py、pack_release.py --prepare-dist。
+成功标志是 `ok 1.0.7 lua 364`，最终 zip 在 `electron-shell/release/`。
 
 ```bat
 cd electron-shell

@@ -146,7 +146,7 @@ local SHOP_ITEMS = {
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
     },
     {
-        id = 17, name = "闪电卖鸡-碎片", quality = 5,
+        id = 17, name = "雷电麦坤-碎片", quality = 5,
         limitCycle = "daily", limitCount = -1, price = 250,
         icon = "image/角色图标/UI_icon_hero_21.png",
         costIcon = "image/货币道具/UI_icon_JGB_X.png",
@@ -261,12 +261,9 @@ local CARD_STEP_Y  = L.CARD_H + L.CARD_GAP_Y
 
 local shopImg = {
     pageBg      = -1,  -- UI_TJP_1.png（页面背景框）
-    titleDeco   = -1,  -- UI_JJC_BTBJ.png（标题装饰）
-    cardBg      = {},  -- 品质1~6 → UI_SDICONBJ_1~6.png
     buyBtn      = -1,  -- UI_SD_AN.png
     itemIcons   = {},  -- 每个商品图标
     costIcons   = {},  -- 每个商品消耗图标
-    coinBarIcon = -1,  -- UI_icon_JGB_X.png（顶部货币栏）
     -- 二级弹窗
     dialogBg     = -1, -- UI_TY_EJQRK.png
     buyBtnYellow = -1, -- UI_AN_HUANG.png
@@ -351,13 +348,6 @@ local DLG = {
 
 function TavernShopPage.init(vg)
     shopImg.pageBg    = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJP_1.png",    0)
-    shopImg.titleDeco = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
-    for i = 1, 6 do
-        shopImg.cardBg[i]   = nvgCreateImage(vg, "image/界面底板/商店/UI_SDICONBJ_" .. i .. ".png", 0)
-    end
-    for i = 1, 6 do
-    -- [暗黑化 P2-A] 原 ZBBJ 贴图加载已移除（矢量品质框替代）
-    end
     shopImg.buyBtn      = nvgCreateImage(vg, "image/界面底板/商店/UI_SD_AN.png",       0)
     -- [暗黑化 P1-B5] 原 image/界面底板/通用面板/UI_TY_EJQRK.png 贴图加载已移除（矢量绘制替代）
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
@@ -563,7 +553,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
         nvgFill(vg)
         nvgFontFace(vg, "sans"); nvgFontSize(vg, L.BTN_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(180, 180, 180, 255))
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 售罄=棕色
         nvgText(vg, cx, btnCY, "已售罄", nil)
     elseif locked then
         nvgBeginPath(vg)
@@ -572,7 +562,7 @@ local function drawShopCard(vg, idx, item, cx, cy)
         nvgFill(vg)
         nvgFontFace(vg, "sans"); nvgFontSize(vg, 34)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(180, 180, 180, 255))
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 未拥有=棕色
         nvgText(vg, cx, btnCY, "拥有后可买", nil)
     else
         local _bf = BF.begin(vg, "tsp_item_" .. idx, cx, btnCY, L.BTN_W, L.BTN_H)
@@ -668,9 +658,6 @@ function TavernShopPage.drawContent(vg)
     -- 原始标注：中心 X540 Y1371，尺寸 1080×2058
     DarkIcon.drawNine(vg, "plain", 540 - 1080 * 0.5, 1371 - 2058 * 0.5, 1080, 2058)
 
-    -- 标题装饰（UI_JJC_BTBJ.png，与竞技场相同位置 X540 Y497 W660 H60）
-    drawImageCentered(vg, shopImg.titleDeco, L.TITLE_CX, L.TITLE_CY, 660, 60, 1.0)
-
     -- 标题文字（叠在装饰上方）
     nvgFontFace(vg, "sans"); nvgFontSize(vg, L.TITLE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -698,8 +685,8 @@ function TavernShopPage.drawContent(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, RES_BG_A))
     nvgFill(vg)
 
-    -- 货币图标
-    drawImageCentered(vg, shopImg.coinBarIcon,
+    -- 货币图标（与购买弹窗同图 UI_icon_JGB_X.png）
+    drawImageCentered(vg, shopImg.coinIcon,
         RES_ICON_CX, RES_ICON_CY, RES_ICON_W, RES_ICON_H, 1.0)
 
     -- 数值（白字深色描边）
@@ -870,7 +857,12 @@ drawPurchaseDialog = function(vg)
     DarkIcon.drawNine(vg, "btn", DLG.BUY_CX - DLG.BUY_W * 0.5, DLG.BUY_CY - DLG.BUY_H * 0.5, DLG.BUY_W, DLG.BUY_H, { accent = "gold" })
     nvgFontFace(vg, "sans"); nvgFontSize(vg, DLG.BUY_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, shopState.pendingBuy and 100 or 179))
+    -- 按钮文字：可购买=亮深棕，购买中=棕色禁用色
+    if shopState.pendingBuy then
+        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+    else
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, 179))
+    end
     nvgText(vg, DLG.BUY_CX, DLG.BUY_CY, shopState.pendingBuy and "购买中..." or "购买", nil)
     BF.finish(vg, _bfBuy)
 
@@ -977,7 +969,13 @@ function TavernShopPage.handleInput(dx, dy)
             shopState.popupClosing  = false
             shopState.sliderDragging = false
             shopState.buyQuantity   = 1
-            shopState.buyMaxQuantity = math.max(1, item.limitCount - getPurchased(item.id))
+            local price = math.max(1, item.price or 1)
+            local affordable = math.floor((tonumber(GameState.getTavernCoin()) or 0) / price)
+            local cap = math.max(1, affordable)
+            if item.limitCount and item.limitCount >= 0 then
+                cap = math.min(cap, math.max(0, item.limitCount - getPurchased(item.id)))
+            end
+            shopState.buyMaxQuantity = math.max(1, cap)
             return true
         end
     end

@@ -7,6 +7,7 @@ local HC = require("config.HeroConfig")
 local CC = require("config.ClassConfig")
 local HeroAssetUtil = require("config.HeroAssetUtil")
 local DrawUtil = require("core.DrawUtil")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local Panel = {}
 
@@ -31,12 +32,7 @@ local CLOSE_SIZE = 50
 
 -- ======================== 颜色 ========================
 
-local QUALITY_COLORS = {
-    [1] = { 160, 160, 160 },   -- R: 灰
-    [2] = { 162, 140, 255 },   -- SR: 紫蓝
-    [3] = { 255, 220, 40 },    -- SSR: 金
-    [4] = { 255, 106, 0 },     -- UR: 橙红
-}
+-- [统一角色框] 品质色改由 HeroFrame.qualityColor 统一提供（HeroConfig 为唯一色源），删除本地重复色表
 
 local COLOR_BG        = { 15, 15, 25, 230 }
 local COLOR_CARD_BG   = { 38, 38, 55, 240 }
@@ -147,7 +143,7 @@ function Panel.draw(vg)
             goto continue
         end
 
-        local qc = QUALITY_COLORS[hero.quality] or { 200, 200, 200 }
+        local qc = { HeroFrame.qualityColor(hero.quality) }
 
         -- 卡片背景（使用对应英雄卡片图片，等比裁切不拉伸）
         ---@diagnostic disable-next-line: param-type-mismatch  -- imgHeroCards 额外存 .vg 上下文（init 写入）

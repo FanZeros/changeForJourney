@@ -8,12 +8,14 @@ function M.bind(deps)
     local CharacterDetail = deps.CharacterDetail
     local Draw = deps.Draw
     local CharacterPanel = deps.CharacterPanel
-    local hitTestTeamSlot = deps.hitTestTeamSlot
     local hitTestRosterCard = deps.hitTestRosterCard
     local getTeamSlots = deps.getTeamSlots
     local getSlotPowerCache = deps.getSlotPowerCache
     local getDragState = deps.getDragState
     local getSelectSlotState = deps.getSelectSlotState
+    local selectSlotState = getSelectSlotState()
+    local getTeams = deps.getTeams
+    local getTeamPowerCaches = deps.getTeamPowerCaches
     local getHeroRoster = deps.getHeroRoster
     local getShardMap = deps.getShardMap
     local getActiveTeamIdx = deps.getActiveTeamIdx
@@ -44,12 +46,6 @@ function M.bind(deps)
             return CharacterDetail.handleInput(dx, dy)
         end
 
-        local tabIdx = Draw.hitTestTeamTabs(dx, dy)
-        if tabIdx then
-            CharacterPanel.setActiveTeam(tabIdx)
-            return true
-        end
-
         local dragState = getDragState()
         local teamSlots = getTeamSlots()
         local slotPowerCache = getSlotPowerCache()
@@ -57,54 +53,89 @@ function M.bind(deps)
         local onTeamChangedCallback = getOnTeamChanged()
 
         if dragState.active then
-            local slotIdx = hitTestTeamSlot(dx, dy)
-            if slotIdx and dragState.fromSlot then
+            -- 头像行内移动时，仍按槽位命中处理交换/部署。
+            local draggedHeroId = dragState.heroId
+            local dropTeam, dropSlot = Draw.hitTestAvatarSlot(dx, dy)
+            if dropTeam then
+                local srcTeam = dragState.fromTeam or activeTeamIdx
                 local srcIdx = dragState.fromSlot
-                if slotIdx ~= srcIdx then
-                    local srcSlot = teamSlots[srcIdx]
-                    local dstSlot = teamSlots[slotIdx]
-                    if dstSlot.state == "locked" then
-                        print("[CharacterPanel] 目标槽位 " .. slotIdx .. " 未解锁，无法交换")
-                    elseif dstSlot.state == "empty" then
-                        teamSlots[slotIdx] = srcSlot
-                        teamSlots[srcIdx] = { state = "empty" }
-                        slotPowerCache[slotIdx] = slotPowerCache[srcIdx] or 0
-                        slotPowerCache[srcIdx] = 0
-                        print("[CharacterPanel] 移动槽位 " .. srcIdx .. " → " .. slotIdx)
+                local teams = getTeams()
+                local powerCaches = getTeamPowerCaches()
+                local srcSlots = teams[srcTeam] and teams[srcTeam].slots
+                local dstSlots = teams[dropTeam] and teams[dropTeam].slots
+                local srcCache = powerCaches[srcTeam]
+                local dstCache = powerCaches[dropTeam]
+                local dstSlot = dstSlots and dstSlots[dropSlot]
+                if not dstSlot or dstSlot.state == "locked" then
+                    print("[CharacterPanel] 目标槽位 " .. dropSlot .. " 未解锁，无法交换")
+                elseif srcIdx and srcSlots then
+                    -- 槽位之间拖拽：同队或跨队都直接交换/移动，不切队
+                    if not (srcTeam == dropTeam and dropSlot == srcIdx) then
+                        local srcSlot = srcSlots[srcIdx]
+                        if dstSlot.state == "empty" then
+                            dstSlots[dropSlot] = srcSlot
+                            srcSlots[srcIdx] = { state = "empty" }
+                            if dstCache then dstCache[dropSlot] = (srcCache and srcCache[srcIdx]) or 0 end
+                            if srcCache then srcCache[srcIdx] = 0 end
+                            print(string.format("[CharacterPanel] 移动 队%d槽%d → 队%d槽%d",
+                                srcTeam, srcIdx, dropTeam, dropSlot))
+                        else
+                            srcSlots[srcIdx], dstSlots[dropSlot] = dstSlots[dropSlot], srcSlots[srcIdx]
+                            if srcCache and dstCache then
+                                srcCache[srcIdx], dstCache[dropSlot] = dstCache[dropSlot], srcCache[srcIdx]
+                            end
+                            print(string.format("[CharacterPanel] 交换 队%d槽%d ↔ 队%d槽%d",
+                                srcTeam, srcIdx, dropTeam, dropSlot))
+                        end
                         rebuildRoster()
+                        refreshPowerCache()
                         refreshNavBadge()
-                        if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
+                        if onTeamChangedCallback then
+                            -- 跨队交换必须一次性提交两队，逐队同步会在第一轮刷新时覆盖第二队槽位。
+                            onTeamChangedCallback(srcTeam, dropTeam ~= srcTeam and dropTeam or nil)
+                        end
+                    end
+                else
+                    -- 从名册拖上来：编入目标队（跨队唯一性由部署函数处理）
+                    if dropTeam ~= getActiveTeamIdx() and not CharacterPanel.setActiveTeam(dropTeam) then
+                        print("[CharacterPanel] 目标队伍未解锁，取消拖拽")
                     else
-                        teamSlots[srcIdx], teamSlots[slotIdx] = teamSlots[slotIdx], teamSlots[srcIdx]
-                        slotPowerCache[srcIdx], slotPowerCache[slotIdx] = slotPowerCache[slotIdx], slotPowerCache[srcIdx]
-                        print("[CharacterPanel] 交换槽位 " .. srcIdx .. " ↔ " .. slotIdx)
-                        rebuildRoster()
-                        refreshNavBadge()
-                        if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
+                        deployHeroToSlot(draggedHeroId, dropSlot)
                     end
                 end
-            elseif slotIdx and not dragState.fromSlot then
-                local slot = teamSlots[slotIdx]
-                if slot.state == "empty" or slot.state == "occupied" then
-                    deployHeroToSlot(dragState.heroId, slotIdx)
-                end
-            elseif not slotIdx and dragState.fromSlot then
-                local srcIdx = dragState.fromSlot
-                local srcSlot = teamSlots[srcIdx]
-                if srcSlot.state == "occupied" then
-                    print("[CharacterPanel] 解除出战 槽位 " .. srcIdx .. " 英雄 " .. (srcSlot.heroId or "?"))
-                    teamSlots[srcIdx] = { state = "empty" }
-                    slotPowerCache[srcIdx] = 0
-                    rebuildRoster()
-                    refreshPowerCache()
-                    refreshNavBadge()
-                    if onTeamChangedCallback then onTeamChangedCallback(activeTeamIdx) end
-                end
+            elseif dragState.fromSlot then
+                -- 松手在非槽位处只取消本次拖拽；切换队伍不能顺带卸下英雄。
+                print("[CharacterPanel] 取消头像拖拽 hero=" .. tostring(draggedHeroId))
             end
             dragState.active = false
             dragState.heroId = nil
             dragState.rosterIdx = nil
             dragState.fromSlot = nil
+            dragState.fromTeam = nil
+            return true
+        end
+
+        local tabIdx = Draw.hitTestTeamTabs(dx, dy)
+        if tabIdx then
+            CharacterPanel.setActiveTeam(tabIdx)
+            return true
+        end
+
+        -- 头像编队：点哪一队的头像就切到哪一队，空位进入选人
+        local avatarTeam, avatarSlot = Draw.hitTestAvatarSlot(dx, dy)
+        if avatarTeam then
+            if avatarTeam ~= getActiveTeamIdx() then
+                CharacterPanel.setActiveTeam(avatarTeam)
+            end
+            local teams = getTeams()
+            local slot = teams[avatarTeam] and teams[avatarTeam].slots[avatarSlot]
+            if slot and slot.state == "occupied" and slot.heroId then
+                require("systems.GameSFX").play("ui_pick")
+                CharacterDetail.open(slot.heroId)
+            elseif slot and slot.state == "empty" then
+                selectSlotState.active = true
+                selectSlotState.slotIndex = avatarSlot
+            end
             return true
         end
 
@@ -131,26 +162,12 @@ function M.bind(deps)
             selectSlotState.slotIndex = nil
         end
 
-        local slotIdx = hitTestTeamSlot(dx, dy)
-        if slotIdx then
-            local slot = teamSlots[slotIdx]
-            if slot.state == "locked" then
-                print("[CharacterPanel] 槽位 " .. slotIdx .. " 未解锁")
-            elseif slot.state == "empty" then
-                selectSlotState.active = true
-                selectSlotState.slotIndex = slotIdx
-                print("[CharacterPanel] 槽位 " .. slotIdx .. " 已选中，请点击下方角色出战")
-            elseif slot.state == "occupied" then
-                print("[CharacterPanel] 查看已出战角色详情: heroId=" .. tostring(slot.heroId))
-                require("systems.GameSFX").play("ui_pick")
-                CharacterDetail.open(slot.heroId)
-            end
-            return true
-        end
-
         local rosterIdx = hitTestRosterCard(dx, dy)
         if rosterIdx then
             local entry = heroRoster[rosterIdx]
+            if dragState.moved or dragState.active then
+                return true
+            end
             if entry and entry.owned then
                 local _TM = require("systems.TutorialManager")
                 if _TM.isActive() and _TM.getCurrentHighlight() == "character_new_hero" then
@@ -166,12 +183,10 @@ function M.bind(deps)
                 if shards >= HC.SHARD_SYNTHESIZE_COST then
                     CharacterPanel.requestSynthesizeHero(entry.heroId)
                     return true
-                else
-                    local heroCfg = HC.get(entry.heroId)
-                    print("[CharacterPanel] " .. (heroCfg and heroCfg.name or "?")
-                        .. " 碎片不足，需要 " .. HC.SHARD_SYNTHESIZE_COST
-                        .. " 个，当前 " .. shards .. " 个")
                 end
+                -- 碎片不够时仍可查看属性，配装和转职在详情里禁用。
+                require("systems.GameSFX").play("ui_pick")
+                CharacterDetail.open(entry.heroId)
                 return true
             end
         end
@@ -185,10 +200,9 @@ function M.bind(deps)
         end
 
         local dragState = getDragState()
-        local teamSlots = getTeamSlots()
-        local slotIdx = hitTestTeamSlot(dx, dy)
-        if slotIdx then
-            local slot = teamSlots[slotIdx]
+        local avatarTeam, slotIdx = Draw.hitTestAvatarSlot(dx, dy)
+        if avatarTeam then
+            local slot = getTeams()[avatarTeam].slots[slotIdx]
             if slot.state == "occupied" and slot.heroId then
                 dragState.startX = dx
                 dragState.startY = dy
@@ -196,6 +210,7 @@ function M.bind(deps)
                 dragState.cy = dy
                 dragState.heroId = slot.heroId
                 dragState.fromSlot = slotIdx
+                dragState.fromTeam = avatarTeam
                 dragState.rosterIdx = nil
                 dragState.active = false
                 dragState.moved = false
@@ -216,6 +231,7 @@ function M.bind(deps)
                     dragState.heroId = entry.heroId
                     dragState.rosterIdx = rosterIdx
                     dragState.fromSlot = nil
+                    dragState.fromTeam = nil
                     dragState.active = false
                     dragState.moved = false
                 end
@@ -249,7 +265,8 @@ function M.bind(deps)
                     require("systems.GameSFX").play("ui_pick")
                 end
             else
-                if distY > DRAG_THRESHOLD and (dragState.startY - dy) > DRAG_THRESHOLD then
+                -- 任意方向超过阈值都算拖拽上阵，避免松手被当成点击打开详情
+                if distX > DRAG_THRESHOLD or distY > DRAG_THRESHOLD then
                     dragState.active = true
                     dragState.moved = true
                     require("systems.GameSFX").play("ui_pick")
@@ -285,6 +302,7 @@ function M.bind(deps)
             dragState.heroId = nil
             dragState.rosterIdx = nil
             dragState.fromSlot = nil
+            dragState.fromTeam = nil
             CharacterDetail.handleDragEnd(dx, dy)
             return true
         end
@@ -294,6 +312,9 @@ function M.bind(deps)
             dragState.heroId = nil
             dragState.rosterIdx = nil
             dragState.fromSlot = nil
+            dragState.fromTeam = nil
+        elseif dragState.moved or dragState.active then
+            dragState.moved = true
         end
 
         if getIsDragging() then
@@ -318,7 +339,35 @@ function M.bind(deps)
         if CharacterDetail.isOpen() then
             return CharacterDetail.handleRightClick(dx, dy)
         end
-        return false
+
+        -- 编队槽右键卸下，回到下方名册。空槽和锁定槽不处理。
+        local avatarTeam, slotIdx = Draw.hitTestAvatarSlot(dx, dy)
+        if not avatarTeam then return false end
+        local teams = getTeams()
+        local slots = teams[avatarTeam] and teams[avatarTeam].slots
+        local slot = slots and slots[slotIdx]
+        if not slot or slot.state ~= "occupied" or not slot.heroId then return false end
+
+        local heroId = slot.heroId
+        slots[slotIdx] = { state = "empty" }
+        local caches = getTeamPowerCaches()
+        if caches[avatarTeam] then caches[avatarTeam][slotIdx] = 0 end
+
+        local dragState = getDragState()
+        dragState.active = false
+        dragState.heroId = nil
+        dragState.rosterIdx = nil
+        dragState.fromSlot = nil
+        dragState.fromTeam = nil
+
+        rebuildRoster()
+        refreshPowerCache()
+        refreshNavBadge()
+        local cb = getOnTeamChanged()
+        if cb then cb(avatarTeam) end
+        require("systems.GameSFX").play("ui_loosen")
+        print(string.format("[CharacterPanel] 右键卸下 英雄%d 队伍%d 槽位%d", heroId, avatarTeam, slotIdx))
+        return true
     end
 
     return {

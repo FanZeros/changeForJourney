@@ -8,7 +8,7 @@ local CF = require("systems.CombatFormula")
 
 local ArtifactRuntime = {}
 
-local unitStates = {}
+local unitStates = setmetatable({}, { __mode = "k" })
 
 local function getUnitHp(unit)
     if unit and unit.attrs then
@@ -72,16 +72,35 @@ end
 local function addEffect(unit, effect)
     local state = ensureState(unit)
     if not state then return end
-    state.effects[#state.effects + 1] = effect
+    local runtimeEffect = {}
+    for key, value in pairs(effect) do runtimeEffect[key] = value end
+    state.effects[#state.effects + 1] = runtimeEffect
 end
 
-function ArtifactRuntime.reset()
-    unitStates = {}
+local function clearUnitState(unit)
+    local state = unitStates[unit]
+    if state then
+        for id in pairs(state.activeModIds) do
+            removeTempModifier(unit, state, id)
+        end
+        for id in pairs(state.activeExtraDamageMults) do
+            removeTempExtraDamageMult(unit, state, id)
+        end
+        unitStates[unit] = nil
+    end
+    unit.artifactUntargetable = nil
+    unit.artifactJudgmentStacks = nil
+end
+
+function ArtifactRuntime.reset(allies)
+    for _, unit in ipairs(allies or {}) do
+        clearUnitState(unit)
+    end
 end
 
 function ArtifactRuntime.initBattle(allies)
-    unitStates = {}
     for _, unit in ipairs(allies or {}) do
+        clearUnitState(unit)
         if unit.artifactEffects and #unit.artifactEffects > 0 then
             for _, effect in ipairs(unit.artifactEffects) do
                 addEffect(unit, effect)
@@ -100,7 +119,7 @@ function ArtifactRuntime._applyBattleStart(unit, state)
                 local startValue = 200
                 addTempModifier(unit, state, modId, { { key = AD.DODGE_BONUS, flat = startValue } })
                 effect.remaining = startValue
-                effect.step = math.max(0, decay)
+                effect.step = math.max(0, decay) * startValue / 100
                 effect.modId = modId
             end
         end
@@ -247,6 +266,9 @@ function ArtifactRuntime.onAfterAttack(attacker, target, result)
     for _, effect in ipairs(state.effects) do
         if effect.effectType == "judgment_res_down" then
             if effect.lastTarget ~= target then
+                if attacker.artifactJudgmentStacks then
+                    attacker.artifactJudgmentStacks[effect.lastTarget] = nil
+                end
                 effect.lastTarget = target
                 effect.stacks = 0
             end
@@ -260,19 +282,22 @@ function ArtifactRuntime.onAfterAttack(attacker, target, result)
     end
 end
 
-function ArtifactRuntime.update(dt)
+function ArtifactRuntime.update(dt, allies)
     dt = tonumber(dt) or 0
-    for unit, state in pairs(unitStates) do
-        for _, effect in ipairs(state.effects) do
-            if effect.effectType == "ghost_damage_bonus" and effect.ghostTimer then
-                effect.ghostTimer = effect.ghostTimer - dt
-                if effect.ghostTimer <= 0 then
-                    effect.ghostTimer = nil
-                    unit.artifactUntargetable = nil
-                    removeTempExtraDamageMult(unit, state, effect.modId)
-                    if unit.attrs and unit.hp > 0 then
-                        unit.attrs.final[AD.HP] = 0
-                        syncUnitHp(unit)
+    for _, unit in ipairs(allies or {}) do
+        local state = unitStates[unit]
+        if state then
+            for _, effect in ipairs(state.effects) do
+                if effect.effectType == "ghost_damage_bonus" and effect.ghostTimer then
+                    effect.ghostTimer = effect.ghostTimer - dt
+                    if effect.ghostTimer <= 0 then
+                        effect.ghostTimer = nil
+                        unit.artifactUntargetable = nil
+                        removeTempExtraDamageMult(unit, state, effect.modId)
+                        if unit.attrs and unit.hp > 0 then
+                            unit.attrs.final[AD.HP] = 0
+                            syncUnitHp(unit)
+                        end
                     end
                 end
             end

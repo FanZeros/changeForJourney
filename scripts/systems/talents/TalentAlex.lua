@@ -82,11 +82,11 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
             { key = AD.ATK_SPEED, flat = nitroSpd },
         })
         attacker.atkInterval = attacker.attrs:getActualInterval()
-        talentLog(string.format("[Talent] 闪电卖鸡 氮气叠速 ×%d (+%d%%)", stacks, nitroSpd))
+        talentLog(string.format("[Talent] 雷电麦坤 氮气叠速 ×%d (+%d%%)", stacks, nitroSpd))
         attacker._nitroKill = true
     end
 
-    talentLog(string.format("[Talent] 闪电卖鸡 氮气 → %s (%.0f伤害, 麻痹%.1fs)",
+    talentLog(string.format("[Talent] 雷电麦坤 氮气 → %s (%.0f伤害, 麻痹%.1fs)",
         target.name or "?", bonusDmg, paralyzeDur))
 end
 

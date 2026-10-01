@@ -261,21 +261,6 @@ handlers[Protocol.ACTION_TYPES.GM_GIVE_EQUIP] = GMLogger.WrapGMAction(
     end
 )
 
---- GM: 给遗物（DebugPanel 遗物生成用）
---- params: { relicType: number, quality: number }
-handlers[Protocol.ACTION_TYPES.GM_GIVE_RELIC] = GMLogger.WrapGMAction(
-    Protocol.ACTION_TYPES.GM_GIVE_RELIC,
-    function(uid, params)
-        if not checkGMAuth(uid) then return { success = false, reason = "权限不足" } end
-        local RelicService = require("rules.relic.RelicService")
-        local relicType = params and tonumber(params.relicType) or 1
-        local quality = params and tonumber(params.quality) or 1
-        local ok, reason, result = RelicService.GmGiveRelic(uid, relicType, quality)
-        if not ok then return { success = false, reason = reason } end
-        return { success = true }
-    end
-)
-
 -- ======================== 导出 ========================
 
 -- handlers 作为子表供 registerHandlers 使用

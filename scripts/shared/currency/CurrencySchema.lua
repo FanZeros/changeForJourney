@@ -71,9 +71,6 @@ CurrencySchema.Fields = {
                 urPitySR  = 0,
                 urPitySSR = 0,
                 urPityUR  = 0,
-                -- 指定招募（保底计数持久化）
-                targetRecruitHeroId = nil,  -- 当前指定的SSR英雄ID
-                targetRecruitRemain = 0,    -- 剩余保底次数
                 stellarTargetUpHeroId = nil, -- 星辉指定UP角色ID（UR命中时50%概率转为该角色）
             }
         end,

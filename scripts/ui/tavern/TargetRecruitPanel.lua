@@ -19,6 +19,7 @@ local hitTest                 = DrawUtil.hitTest
 
 local PlayerStore   = require("core.PlayerStore")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local M = {}
 
@@ -171,17 +172,14 @@ end
 --- 打开面板
 ---@param mode string|nil "standard" | "stellar"
 function M.open(mode)
-    state.mode = (mode == "stellar") and "stellar" or "standard"
-
-    local targetId
-    local remain
-    if state.mode == "stellar" then
-        targetId = PlayerStore.GetField("currency", "stellarTargetUpHeroId")
-        remain = 0
-    else
-        targetId = PlayerStore.GetField("currency", "targetRecruitHeroId")
-        remain   = PlayerStore.GetField("currency", "targetRecruitRemain")
+    if mode ~= "stellar" then
+        print("[TargetRecruitPanel] 指定招募已取消")
+        return
     end
+    state.mode = "stellar"
+
+    local targetId = PlayerStore.GetField("currency", "stellarTargetUpHeroId")
+    local remain = 0
 
     state.confirmedHeroId = targetId
     state.pityRemain = (remain and remain > 0) and remain or 3
@@ -223,8 +221,8 @@ function M.draw(vg)
     -- 背景九宫格
     DarkIcon.drawNine(vg, "panel", BG_CX - BG_W * 0.5, BG_CY - BG_H * 0.5, BG_W, BG_H, { titleH = BG_INSET_TOP })
 
-    local isStellarMode = state.mode == "stellar"
-    local titleText = isStellarMode and "指定UP角色" or "指定招募"
+    local isStellarMode = true
+    local titleText = "指定UP角色"
     local qualityFrame = getQualityFrame(state.mode)
     local activeHeroes = getActiveHeroes()
 
@@ -299,14 +297,14 @@ function M.draw(vg)
             nvgFill(vg)
         end
 
-        -- 品质框 [暗黑化 P2-A]
-        DarkIcon.drawQualityBg(vg, qualityFrame, cx, cy, AVATAR_SIZE, AVATAR_SIZE, 1.0)
-
-        -- 英雄头像（160x160 与品质框同尺寸）
+        -- [统一角色框] 英雄头像 + 品质色描边（原池品质贴图框改为按英雄自身品质）
         local heroIcon = img.heroIcons[hero.id]
-        if heroIcon and heroIcon >= 0 then
-            drawImageCentered(vg, heroIcon, cx, cy, AVATAR_SIZE, AVATAR_SIZE, 1.0)
-        end
+        HeroFrame.draw(vg, {
+            cx = cx, cy = cy, size = AVATAR_SIZE,
+            heroId = hero.id,
+            iconHandle = heroIcon,
+            state = "owned",
+        })
 
         -- 职业图标（右上角）
         local badgeImg = img.classBadge[hero.classIdx]
@@ -324,12 +322,13 @@ function M.draw(vg)
     local displayId = state.selectedHeroId or state.confirmedHeroId
     if displayId then
         local heroIcon = img.heroIcons[displayId]
-        if qualityFrame then
-            DarkIcon.drawQualityBg(vg, qualityFrame, CHOSEN_AVATAR_CX, CHOSEN_AVATAR_CY, AVATAR_SIZE, AVATAR_SIZE, 1.0)  -- [暗黑化 P2-A]
-        end
-        if heroIcon and heroIcon >= 0 then
-            drawImageCentered(vg, heroIcon, CHOSEN_AVATAR_CX, CHOSEN_AVATAR_CY, AVATAR_SIZE, AVATAR_SIZE, 1.0)
-        end
+        -- [统一角色框] 已指定头像：品质色描边
+        HeroFrame.draw(vg, {
+            cx = CHOSEN_AVATAR_CX, cy = CHOSEN_AVATAR_CY, size = AVATAR_SIZE,
+            heroId = displayId,
+            iconHandle = heroIcon,
+            state = "owned",
+        })
 
         -- 已指定文本
         local heroCfg = HeroConfig.HEROES[displayId]
@@ -386,27 +385,17 @@ function M.handleInput(dx, dy)
                 .. " heroId=" .. tostring(state.selectedHeroId))
             -- 发送服务端请求
             local Protocol = require("shared.Protocol")
-            local action = (state.mode == "stellar")
-                and Protocol.ACTION_TYPES.STELLAR_TARGET_UP
-                or Protocol.ACTION_TYPES.TARGET_RECRUIT
-            require("runtime.GameAction").sendAction(action, {
+            require("runtime.GameAction").sendAction(Protocol.ACTION_TYPES.STELLAR_TARGET_UP, {
                 heroId = state.selectedHeroId,
             })
             -- 乐观更新：立即刷新 TavernPage 显示
             local TavernPage = require("ui.tavern.TavernPage")
             local HeroConfig = require("config.HeroConfig")
             local heroCfg = HeroConfig.get(state.selectedHeroId)
-            if state.mode == "stellar" then
-                TavernPage.setStellarTargetUp(
-                    state.selectedHeroId,
-                    heroCfg and heroCfg.name or "未知"
-                )
-            else
-                TavernPage.setTargetRecruit(
-                    state.selectedHeroId,
-                    heroCfg and heroCfg.name or "未知"
-                )
-            end
+            TavernPage.setStellarTargetUp(
+                state.selectedHeroId,
+                heroCfg and heroCfg.name or "未知"
+            )
         end
         M.close()
         return true

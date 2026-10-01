@@ -102,6 +102,8 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
         + attacker.attrs:get(AD.PHYS_CRIT_RATE)
     local critDmg = attacker.attrs:get(AD.CRIT_DMG)
         + attacker.attrs:get(AD.PHYS_CRIT_DMG)
+    -- 与普攻一致：暴击率溢出转为暴击伤害
+    critRate, critDmg = CF.applyCritOverflow(critRate, critDmg)
 
     -- 类型倍率（熬夜冠军 ATK_SLASH）
     local atkType = attacker.atkType or AD.ATK_SLASH
@@ -141,6 +143,7 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
             isCrit = isCrit,
             statCategory = "physical",
             critEligible = true,
+            isNightSlash = true,
         }
         if allSame then
             opts.bezierSide = sides[si] or (si % 2 == 1 and 1 or -1)

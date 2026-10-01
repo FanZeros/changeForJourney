@@ -86,7 +86,7 @@ local function calcEquipPower(equip, heroId)
         power = power + calcStatPower(s[1], val, excluded)
     end
     for _, affix in ipairs(equip.affixes or {}) do
-        power = power + calcStatPower(affix.key, affix.value, excluded)
+        power = power + calcStatPower(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix), excluded)
     end
     return math.floor(power)
 end
@@ -296,6 +296,9 @@ function EquipmentService.EquipAllBest(uid, heroId)
     local advBranch = hd and hd.advBranch
     local dualMode = AVC.getDualWieldMode(advBranch)
 
+    -- 等级穿戴门槛：英雄等级低于装备等级的候选直接跳过
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+
     -- 按顺序处理：weapon → armor → helmet → shoes → accessory → offhand
     local SLOT_ORDER = { "weapon", "armor", "helmet", "shoes", "accessory", "offhand" }
     local changed = 0
@@ -349,6 +352,9 @@ function EquipmentService.EquipAllBest(uid, heroId)
 
             -- 跳过已被任何英雄装备的
             if equippedSeqNums[seqNum] then goto continue_item end
+
+            -- 等级穿戴门槛：装备等级高于英雄等级则不可作为候选
+            if not (EquipmentSystem.checkLevelGate(heroLevel, equip)) then goto continue_item end
 
             -- 槽位匹配
             local matchSlot = false
@@ -440,18 +446,21 @@ end
 -- ======================== 自动分解设置 ========================
 
 ---@param uid number
----@param autoQuality number  品质阈值 (0=关闭, 1~5=该品质及以下自动分解)
----@param autoLevel   number  等级阈值  (0=关闭, N=N级及以下自动分解)
+---@param autoQuality number  品质阈值 (0=关闭, 1~6=该品质及以下自动分解；6=至臻)
+---@param autoLevel   number  等级阈值  (0=关闭, 1~60=N级及以下自动分解)
 ---@return boolean ok
 ---@return string|nil reason
+---@return integer|nil clampedQuality 钳制后的品质阈值
+---@return integer|nil clampedLevel 钳制后的等级阈值
 function EquipmentService.SetAutoDecompose(uid, autoQuality, autoLevel)
     local equipData = PDM.GetModule(uid, "equipment")
     if not equipData then
         return false, "数据未加载"
     end
 
-    autoQuality = math.max(0, math.min(5, math.floor(tonumber(autoQuality) or 0)))
-    autoLevel   = math.max(0, math.min(100, math.floor(tonumber(autoLevel) or 0)))
+    -- 品质 6 档（至臻）、等级 0-60，与 UI/共享判定一致；此前钳 5/100 会导致至臻永不分解
+    autoQuality = math.max(0, math.min(6, math.floor(tonumber(autoQuality) or 0)))
+    autoLevel   = math.max(0, math.min(60, math.floor(tonumber(autoLevel) or 0)))
 
     if not equipData.settings then
         equipData.settings = {}
@@ -462,7 +471,7 @@ function EquipmentService.SetAutoDecompose(uid, autoQuality, autoLevel)
 
     print("[EquipmentService] SetAutoDecompose uid=" .. tostring(uid)
         .. " autoQuality=" .. autoQuality .. " autoLevel=" .. autoLevel)
-    return true, nil
+    return true, nil, autoQuality, autoLevel
 end
 
 --- 切换装备锁定状态（锁定后无法被分解）

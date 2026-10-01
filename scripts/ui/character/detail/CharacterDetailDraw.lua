@@ -4,6 +4,7 @@
 -- ============================================================================
 
 local HC               = require("config.HeroConfig")
+local HeroAssetUtil    = require("config.HeroAssetUtil")
 local CC               = require("config.ClassConfig")
 local GameConfig        = require("config.GameConfig")
 local ExpTable          = require("config.ExpTable")
@@ -12,6 +13,8 @@ local PlayerStore       = require("core.PlayerStore")
 local EquipmentConfig   = require("config.EquipmentConfig")
 local DetailAttrs       = require("ui.character.detail.CharacterDetailAttrs")
 local DrawUtil          = require("core.DrawUtil")
+local HeroFrame         = require("ui.widget.HeroFrame")
+local HeroAssetUtil     = require("config.HeroAssetUtil")
 local AwakeningPanel    = require("ui.character.hero.AwakeningPanel")
 local ClientDispatcher  = require("runtime.ClientDispatcher")
 local EquipmentSystem   = require("systems.EquipmentSystem")
@@ -19,10 +22,14 @@ local BF                 = require("systems.ButtonFeedback")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local ETS = require("systems.ExtraTalentSystem")
 local I18n = require("core.I18n")
+local KeywordText = require("ui.widget.KeywordText")
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
 local M = {}
+
+-- 天赋描述关键词富文本（可点击关键词弹出解释）；输入侧经 M.talentKwText 访问
+M.talentKwText = KeywordText.new()
 
 ---@type fun(vg: any, heroId: number, detailState: table)|nil
 M._drawEquipPanel = nil
@@ -49,7 +56,7 @@ local DT_SLOTS = {
     { name = "头盔",   cx = 540, cy = 185, img = "helmet",    slot = "helmet" },
     { name = "饰品",   cx = 755, cy = 316, img = "accessory", slot = "accessory" },
     { name = "副武器", cx = 755, cy = 578, img = "offhand",   slot = "offhand" },
-    { name = "鞋子",   cx = 540, cy = 709, img = "shoes",     slot = "shoes" },
+    { name = "鞋子",   cx = 540, cy = 790, img = "shoes",     slot = "shoes" },
     { name = "主武器", cx = 325, cy = 578, img = "weapon",    slot = "weapon" },
     { name = "护甲",   cx = 325, cy = 316, img = "armor",     slot = "armor" },
 }
@@ -74,8 +81,12 @@ local MID_QUALITY_LABEL_X  = 121
 local MID_QUALITY_LABEL_Y  = 1175
 local MID_QUALITY_ICON_RIGHT_X = 509
 
-local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 770, 1175
-local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 440, 60
+local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 540, 1175
+local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 900, 60
+M.MID_CLASS_BOX_CX = MID_CLASS_BOX_CX
+M.MID_CLASS_BOX_CY = MID_CLASS_BOX_CY
+M.MID_CLASS_BOX_W = MID_CLASS_BOX_W
+M.MID_CLASS_BOX_H = MID_CLASS_BOX_H
 local MID_CLASS_LABEL_X  = 580
 local MID_CLASS_LABEL_Y  = 1175
 local MID_CLASS_COMBO_RIGHT_X = 967
@@ -105,12 +116,13 @@ local ATTR_FONT_SIZE     = 35
 local ATTR_FONT_SIZE_MIN = 22
 local ATTR_NAME_VAL_GAP  = 15
 
-local ATTR_VISIBLE_ROWS = 4
+-- 左列单列，右侧留给雷达图。可见 8 行，超出继续滚动。
+local ATTR_VISIBLE_ROWS = 8
 local ATTR_SCROLL_FRICTION = 0.90
 local ATTR_SCROLL_MIN_VEL  = 0.3
 local ATTR_SCROLL_WHEEL_STEP = 60
 local ATTR_CLIP_TOP    = ATTR_FIRST_ROW_Y - ATTR_BOX_H * 0.5
-local ATTR_CLIP_HEIGHT = ATTR_VISIBLE_ROWS * ATTR_BOX_H + (ATTR_VISIBLE_ROWS - 1) * ATTR_ROW_GAP
+local ATTR_CLIP_HEIGHT = 1840 - 24 - ATTR_CLIP_TOP
 
 -- 导出给 handleInput 使用
 M.ATTR_BOX_W        = ATTR_BOX_W
@@ -123,10 +135,11 @@ M.ATTR_CLIP_TOP     = ATTR_CLIP_TOP
 M.ATTR_CLIP_HEIGHT  = ATTR_CLIP_HEIGHT
 M.ATTR_SCROLL_WHEEL_STEP = ATTR_SCROLL_WHEEL_STEP
 
-local MID_DIV2_CX, MID_DIV2_CY = 540, 1565
+local MID_DIV2_CX, MID_DIV2_CY = 540, 1840
 local MID_DIV2_W, MID_DIV2_H   = 1010, 37
 
 -- ======================== 六围区域布局常量 ========================
+-- 雷达图占位仍按旧的 2 列 × 3 行盒子算高度，避免把下面的天赋区顶开。
 
 local STAT_BOX_W, STAT_BOX_H = 437, 95
 local STAT_BOX_RADIUS        = 20
@@ -136,6 +149,24 @@ local STAT_COL_GAP           = 26
 local STAT_ROW_GAP_STAT      = 16
 local STAT_COL2_CX           = STAT_COL1_CX + STAT_BOX_W + STAT_COL_GAP
 local STAT_ROW_STEP          = STAT_BOX_H + STAT_ROW_GAP_STAT
+
+-- 雷达图放在右列，高度对齐分割线以上的属性区
+local HEX_CX = 800
+local HEX_CY = ATTR_FIRST_ROW_Y + (ATTR_VISIBLE_ROWS - 1) * (ATTR_BOX_H + ATTR_ROW_GAP) * 0.5
+local HEX_R  = 175
+local HEX_LABEL_R = 230
+-- 顶点顺序：上起顺时针。力量在上，其余按战斗直觉绕圈。
+local HEX_NAMES = { "力量", "敏捷", "体质", "魂火", "命数", "秘识" }
+local HEX_KEYS = { ["力量"] = "str", ["敏捷"] = "agi", ["体质"] = "vit", ["魂火"] = "spi", ["命数"] = "luk", ["秘识"] = "int" }
+-- 六维各自的颜色：力量赤、敏捷绿、体质褐、魂火紫、命数金、秘识青
+local HEX_COLORS = {
+    ["力量"] = { 0xE2, 0x4A, 0x3B },
+    ["敏捷"] = { 0x3D, 0xDC, 0x6E },
+    ["体质"] = { 0xC4, 0x8A, 0x3A },
+    ["魂火"] = { 0xC0, 0x58, 0xE8 },
+    ["命数"] = { 0xFF, 0xD2, 0x3A },
+    ["秘识"] = { 0x3E, 0xC6, 0xE0 },
+}
 
 local STAT_ICON_BG_DX   = 132 - 301
 local STAT_ICON_BG_DY   = 0
@@ -161,16 +192,20 @@ M.STAT_COL2_CX  = STAT_COL2_CX
 M.STAT_ROW1_CY  = STAT_ROW1_CY
 M.STAT_ROW_STEP = STAT_ROW_STEP
 M.STAT_LAYOUT   = STAT_LAYOUT
+M.HEX_CX        = HEX_CX
+M.HEX_CY        = HEX_CY
+M.HEX_LABEL_R   = HEX_LABEL_R
+M.HEX_NAMES     = HEX_NAMES
 
 -- ======================== 天赋技能区域布局常量 ========================
 
-local TALENT_BG_CX, TALENT_BG_CY = 540, 2057
-local TALENT_BG_W, TALENT_BG_H   = 903, 250
+local TALENT_BG_CX, TALENT_BG_CY = 540, 2045
+local TALENT_BG_W, TALENT_BG_H   = 903, 210
 local TALENT_BG_RADIUS            = 20
 
-local TALENT_NAME_X, TALENT_NAME_Y = 121.5, 1976
+local TALENT_NAME_Y = 1918
 local TALENT_TEXT_LEFT   = TALENT_BG_CX - TALENT_BG_W * 0.5 + 33
-local TALENT_TEXT_TOP    = TALENT_BG_CY - TALENT_BG_H * 0.5 + 81
+local TALENT_TEXT_TOP    = TALENT_NAME_Y + 36
 local TALENT_TEXT_RIGHT  = TALENT_BG_CX + TALENT_BG_W * 0.5 - 33
 local TALENT_TEXT_WIDTH  = TALENT_TEXT_RIGHT - TALENT_TEXT_LEFT
 
@@ -200,15 +235,17 @@ local BTN_BACK_W, BTN_BACK_H   = 184, 143
 local BTN_TAB_BG_CX, BTN_TAB_BG_CY = 540, 2308
 local BTN_TAB_BG_W, BTN_TAB_BG_H   = 810, 143
 
--- 3-Tab 布局（参考铁匠铺 SLIDER_W=277）
-local BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H = 277, 143
-local BTN_TAB_ATTR_CX, BTN_TAB_ATTR_CY     = 274, 2308
-local BTN_TAB_EQUIP_CX, BTN_TAB_EQUIP_CY   = 540, 2308
-local BTN_TAB_AWAKEN_CX, BTN_TAB_AWAKEN_CY = 806, 2308
+-- 4-Tab 布局：属性 / 配装 / 转职 / 觉醒
+local BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H = 200, 143
+local BTN_TAB_ATTR_CX, BTN_TAB_ATTR_CY     = 255, 2308
+local BTN_TAB_EQUIP_CX, BTN_TAB_EQUIP_CY   = 445, 2308
+local BTN_TAB_CLASS_CX, BTN_TAB_CLASS_CY   = 635, 2308
+local BTN_TAB_AWAKEN_CX, BTN_TAB_AWAKEN_CY = 825, 2308
 
-local TEXT_ATTR_CX, TEXT_ATTR_CY     = 274, 2302
-local TEXT_EQUIP_CX, TEXT_EQUIP_CY   = 540, 2302
-local TEXT_AWAKEN_CX, TEXT_AWAKEN_CY = 806, 2302
+local TEXT_ATTR_CX, TEXT_ATTR_CY     = 255, 2302
+local TEXT_EQUIP_CX, TEXT_EQUIP_CY   = 445, 2302
+local TEXT_CLASS_CX, TEXT_CLASS_CY   = 635, 2302
+local TEXT_AWAKEN_CX, TEXT_AWAKEN_CY = 825, 2302
 
 -- 导出给 handleInput 使用
 M.BTN_BACK_CX  = BTN_BACK_CX
@@ -221,6 +258,8 @@ M.BTN_TAB_ATTR_CX  = BTN_TAB_ATTR_CX
 M.BTN_TAB_ATTR_CY  = BTN_TAB_ATTR_CY
 M.BTN_TAB_EQUIP_CX = BTN_TAB_EQUIP_CX
 M.BTN_TAB_EQUIP_CY = BTN_TAB_EQUIP_CY
+M.BTN_TAB_CLASS_CX = BTN_TAB_CLASS_CX
+M.BTN_TAB_CLASS_CY = BTN_TAB_CLASS_CY
 M.BTN_TAB_AWAKEN_CX = BTN_TAB_AWAKEN_CX
 M.BTN_TAB_AWAKEN_CY = BTN_TAB_AWAKEN_CY
 
@@ -243,15 +282,19 @@ local CARD = {
     -- [复用角色展示/编队页卡片] 同尺寸 198x350 + 卡底锚定（战力上83/等级38/经验36），随卡高联动
     -- （卡 272..622：头盔槽底 265 / 鞋子槽顶 629，各留 7px；名牌不画——MID 名称行两页均显示）
     W=198, H=350, CY=544,
-    SIDE_SCALE=0.72, SIDE_DX=250, SIDE_SQUASH=0.62, SIDE_TILT=0.22,
+    SIDE_SCALE=0.92, SIDE_DX=250, CENTER_SCALE=1.18, YAW_SQUASH=0.86,
     TAG_SIZE=60, TAG_DX=63,  -- 职业标识右下角，与等级徽章(-63)左右对应
     POWER_BOTTOM_UP=83, POWER_ICON_SIZE=36,
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BOTTOM_UP=38,
+    NAME_TOP=26, NAME_FONT=22, NAME_MAX_W=150,
 }
 M.ARROW_BG_LEFT_CX  = DT_CARD_CX - CARD.SIDE_DX
 M.ARROW_BG_RIGHT_CX = DT_CARD_CX + CARD.SIDE_DX
-M.SIDE_CARD_W = CARD.W * CARD.SIDE_SCALE * CARD.SIDE_SQUASH
+M.SIDE_CARD_W = CARD.W * CARD.SIDE_SCALE * CARD.YAW_SQUASH
 M.SIDE_CARD_H = CARD.H * CARD.SIDE_SCALE
+M.SIDE_CARD_STEP = CARD.SIDE_DX
+M.CARD_TOP_CY = CARD.CY
+M.CARD_BOT_CY = CARD.CY
 M.ARROW_CY = CARD.CY
 
 -- 职业图标映射
@@ -331,12 +374,10 @@ local img = {
     tabSlider     = -1,
     btnHong       = -1,
     btnLv         = -1,
-    arrowBg       = -1,   -- 切换箭头背景 UI_YWJM_HS
     arrowIcon     = -1,   -- 切换箭头图标 UI_YWJM_XYG2（默认向右）
 }
 
 local imgQualityBadges = {}
-local imgStatIcons     = {}
 
 -- 来自 CharacterPanel 的共享图片（通过 setContext 注入）
 local imgHeroCards   = {}
@@ -351,33 +392,66 @@ local imgLvlBadge    = -1
 local detailState       = nil   -- 详情状态表（引用，draw 可直接修改）
 local getOwnedData      = nil   -- function(heroId) → ownData or nil
 local calcHeroPowerFn   = nil   -- function(heroId) → number
+local calcHeroEstimateFn = nil  -- function(heroId) → number 实战预估（分项计价原型）
 local CharacterDetailRef = nil  -- CharacterDetail 模块引用（访问 _hasUpgradeForSlot 等）
 local collectAttributes = nil   -- DetailAttrs.collectAttributes
 local clampAttrScroll   = nil   -- 限制属性滚动
 
+-- 实战预估副行开关：默认关闭。原型口径（systems/CombatPowerEstimate.lua），
+-- 系数已做方向性拟合（OFF_FACTOR=0.10 / HEALER_ATK_FACTOR=0.5）但未跨全阵容
+-- 标定；玩家可见 UI 需真人视觉验收后由 M.setEstimateVisible(true) 开启。
+local SHOW_ESTIMATE = false
+
+--- 开/关详情页卡面的「实战预估」副行（验收用）
+---@param visible boolean
+function M.setEstimateVisible(visible)
+    SHOW_ESTIMATE = visible and true or false
+end
+
 -- ======================== 性能缓存（避免每帧重计算） ========================
--- calcHeroPower 缓存：仅当 heroId/level 变化或数据脏时重算
-local _powerCache = { heroId = nil, level = nil, value = 0, dirty = true }
+-- calcHeroPower 缓存：按英雄分别记录，滚动卡面每张都要显示自己的战力
+local _powerCache = { dirty = true, values = {} }
+-- 实战预估缓存：与战力共用脏标记（markPowerDirty 一并置脏）
+local _estimateCache = { dirty = true, values = {} }
 -- _hasUpgradeForSlot 缓存：仅当 heroId 变化或装备数据脏时重算
 local _upgradeCache = { heroId = nil, results = {}, dirty = true }  -- results[slotName] = bool
 
 --- 标记战斗力缓存为脏（外部数据变化时调用）
 function M.markPowerDirty()
     _powerCache.dirty = true
+    _estimateCache.dirty = true
     _upgradeCache.dirty = true
 end
 
---- 获取缓存的战斗力（仅在 heroId/level 变化或脏标记时重算）
-local function getCachedPower(heroId, level)
-    if _powerCache.heroId == heroId and _powerCache.level == level and not _powerCache.dirty then
-        return _powerCache.value
+--- 获取缓存的战斗力（数据变脏时整表重算，否则按英雄取缓存）
+local function getCachedPower(heroId)
+    if _powerCache.dirty then
+        _powerCache.dirty = false
+        _powerCache.values = {}
+        _estimateCache.dirty = false
+        _estimateCache.values = {}
     end
+    ---@type table<number, number>
+    local values = _powerCache.values
+    local cached = values[heroId]
+    if cached then return cached end
     local power = calcHeroPowerFn and calcHeroPowerFn(heroId) or 0
-    _powerCache.heroId = heroId
-    _powerCache.level = level
-    _powerCache.value = power
-    _powerCache.dirty = false
+    values[heroId] = power
     return power
+end
+
+--- 获取缓存的实战预估（与战力共用脏标记，SHOW_ESTIMATE 关闭时不计算）
+local function getCachedEstimate(heroId)
+    if not SHOW_ESTIMATE then return 0 end
+    if _estimateCache.dirty then
+        _estimateCache.dirty = false
+        _estimateCache.values = {}
+    end
+    local cached = _estimateCache.values[heroId]
+    if cached then return cached end
+    local estimate = calcHeroEstimateFn and calcHeroEstimateFn(heroId) or 0
+    _estimateCache.values[heroId] = estimate
+    return estimate
 end
 
 --- 获取缓存的可提升判断（仅在 heroId 变化或脏标记时重算）
@@ -402,6 +476,7 @@ function M.setContext(ctx)
     detailState       = ctx.detailState
     getOwnedData      = ctx.getOwnedData
     calcHeroPowerFn     = ctx.calcHeroPower
+    calcHeroEstimateFn  = ctx.calcHeroEstimate
     CharacterDetailRef = ctx.CharacterDetail
     collectAttributes = ctx.collectAttributes
     clampAttrScroll   = ctx.clampAttrScroll
@@ -434,11 +509,8 @@ function M.initImages(vg)
     imgQualityBadges["UR"]  = nvgCreateImage(vg, "image/品质框/UI_PZBZ_UR.png", 0)
 
     img.attrDeco = nvgCreateImage(vg, "image/通用图标/ICON_XX.png", 0)
-    img.midDiv2  = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JSXQ_FGXJ.png", 0)
-
-    for _, st in ipairs(STAT_LAYOUT) do
-        imgStatIcons[st.icon] = nvgCreateImage(vg, "image/通用图标/" .. st.icon .. ".png", 0)
-    end
+    -- [图标统一 0928] midDiv2 与 midDiv1 同贴图，复用句柄避免重复加载（无 delete，复用安全）
+    img.midDiv2  = img.midDiv1
 
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv     = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
@@ -446,7 +518,6 @@ function M.initImages(vg)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.tabSlider = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
-    img.arrowBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_HS.png", 0)
     img.arrowIcon = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG2.png", 0)
     img.slotSelected = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJPXZTBBJ.png", 0)
 end
@@ -494,6 +565,7 @@ function M.draw(vg)
         lowerProgress = 1.0  -- 下半部分不做垂直滑入
         if rawT >= 1.0 then
             detailState.switchDir = nil  -- 动画结束，清除标记
+            detailState.switchFrom = nil
             -- 修正抖动：确保下一帧进入 else 分支时 elapsed/ANIM_DURATION >= 1.0
             detailState.openTime = time.elapsedTime - ANIM_DURATION
         end
@@ -546,13 +618,102 @@ function M.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, upperOX, 0)
 
-    -- 觉醒页由 AwakeningPanel 整页接管，以下 1~7 节/8~17 节全部被其背景遮挡，
-    -- 统一跳过绘制（含装备槽引导热点注册），避免无效绘制与幽灵热点
+    -- 觉醒页由 AwakeningPanel 整页接管，以下 1~7 节/8~17 节全部被其背景遮挡，统一跳过绘制。
+    -- 转职页复用属性页背景与角色横滑，只跳过属性区内容。
     local isAwakenTab = (detailState.tab == "awaken")
+    local isClassTab = (detailState.tab == "class")
     local stepAngle = math.pi * 2 / 16  -- 16向描边步进角（7节标题/10节等级共用）
 
-    -- === 1) 背景图 ===
-    if not isAwakenTab then
+    local function heroOwned(id)
+        local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
+        if not roster then return true end
+        for _, entry in ipairs(roster) do
+            if entry.heroId == id then return entry.owned == true end
+        end
+        return true
+    end
+
+    --- 卡面顶部名字（超出饰条宽度时横向滚动）；未获得角色也显示名字
+    ---@param id number 英雄 id
+    local function drawCardName(id)
+        local cfg = HC.get(id)
+        if not cfg then return end
+        local heroName = cfg.name or ""
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, CARD.NAME_FONT)
+        local nameW = nvgTextBounds(vg, 0, 0, heroName)
+        local nameY = -CARD.H * 0.5 + CARD.NAME_TOP
+        if nameW <= CARD.NAME_MAX_W then
+            drawTextStroke(vg, 0, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+        else
+            local gap = 28
+            local cycle = nameW + gap
+            local shift = (time.elapsedTime * 28) % cycle
+            nvgSave(vg)
+            nvgIntersectScissor(vg, -CARD.NAME_MAX_W * 0.5, nameY - 16, CARD.NAME_MAX_W, 32)
+            drawTextStroke(vg, -shift, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+            drawTextStroke(vg, -shift + cycle, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+            nvgRestore(vg)
+        end
+    end
+
+    --- 卡面底部信息：等级徽章、战力、职业标。未获得写"未获得"但仍显示名字。
+    ---@param id number 英雄 id
+    local function drawCardBadges(id)
+        local cfg = HC.get(id)
+        if not cfg then return end
+        if not heroOwned(id) then
+            drawTextStroke(vg, 0, CARD.H * 0.5 - CARD.LVL_BOTTOM_UP, "未获得",
+                28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 190, 190, 190, 4)
+            drawCardName(id)
+            return
+        end
+        local level = heroLevel
+        if id ~= heroId then
+            local ok, CharacterPanel = pcall(require, "ui.character.panel.CharacterPanel")
+            level = (ok and CharacterPanel.getEffectiveLevel and CharacterPanel.getEffectiveLevel(id)) or 1
+        end
+        local bottomY = CARD.H * 0.5 - CARD.LVL_BOTTOM_UP
+        -- 等级徽章（左下）
+        local badgeCX = CARD.LVL_BADGE_DX
+        drawImageCentered(vg, imgLvlBadge, badgeCX, bottomY, CARD.LVL_BADGE_SIZE, CARD.LVL_BADGE_SIZE, 1.0)
+        drawTextStroke(vg, badgeCX, bottomY, tostring(level),
+            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 4)
+        -- 战力（底部居中）
+        local power = getCachedPower(id)
+        local powerStr = tostring(power)
+        local POWER_GAP = 4
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 30)
+        local ptW = nvgTextBounds(vg, 0, 0, powerStr)
+        local pcX = -(CARD.POWER_ICON_SIZE + POWER_GAP + ptW) * 0.5
+        local powerY = CARD.H * 0.5 - CARD.POWER_BOTTOM_UP
+        drawImageCentered(vg, imgPower, pcX + CARD.POWER_ICON_SIZE * 0.5, powerY,
+            CARD.POWER_ICON_SIZE, CARD.POWER_ICON_SIZE, 1.0)
+        drawTextStroke(vg, pcX + CARD.POWER_ICON_SIZE + POWER_GAP, powerY, powerStr,
+            30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 247, 254, 119, 4)
+        -- 名字放在卡面顶部饰条内。超出饰条宽度时横向滚动。
+        drawCardName(id)
+        -- 实战预估副行（默认关闭，M.setEstimateVisible(true) 验收后开启）：
+        -- 分项计价原型口径，按英雄伤害类别区别计价物攻/魔攻/治疗属性
+        if SHOW_ESTIMATE then
+            local estimate = getCachedEstimate(id)
+            drawTextStroke(vg, 0, powerY + 26, "预估 " .. tostring(estimate),
+                18, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 178, 216, 255, 3)
+        end
+        -- 职业标（右下）
+        local iconIdx = CLASS_ICON_MAP[cfg.classId]
+        if iconIdx and imgClassIcons[iconIdx] then
+            drawImageCentered(vg, imgClassIcons[iconIdx], CARD.TAG_DX, bottomY,
+                CARD.TAG_SIZE, CARD.TAG_SIZE, 1.0)
+        end
+    end
+
+    -- === 1) 背景图（转职页另用觉醒页的整页背景）===
+    if not isAwakenTab and not isClassTab then
         nvgSave(vg)
         nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
         drawImageCentered(vg, img.detailBg, DT_BG_CX, DT_BG_CY, DT_BG_W, DT_BG_H, 1.0)
@@ -564,11 +725,10 @@ function M.draw(vg)
 
     -- === 动态内容开始（箭头切换时水平滑入+淡入） ===
     nvgSave(vg)
-    nvgTranslate(vg, switchOX, 0)
-    nvgGlobalAlpha(vg, switchAlpha)
+    nvgGlobalAlpha(vg, 1)
 
-    if not isAwakenTab then
-    -- === 4) 角色卡片：中卡放大，左右侧卡沿圆弧侧转 ===
+    if not isAwakenTab and not isClassTab then
+    -- === 4) 角色卡片：X 轴排列，绕竖直 Y 轴转向，不做画面旋转 ===
     local function neighborId(dir)
         local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
         if not roster then return nil end
@@ -582,70 +742,73 @@ function M.draw(vg)
             idx = idx + dir
             if idx < 1 then idx = #roster end
             if idx > #roster then idx = 1 end
-            if roster[idx].owned then return roster[idx].heroId end
+            return roster[idx].heroId
         end
         return nil
     end
     local function drawCarouselCard(id, slot, alpha)
         if not id or alpha <= 0.01 then return end
-        local imgCard = imgHeroCards[id] or imgHeroCards[1]
+        -- 编队页已改头像，不再预热卡图；详情页按需加载，避免卡片空白
+        local imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, id)
+        if (not imgCard or imgCard < 0) and id ~= 1 then
+            imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, 1)
+        end
         if not imgCard or imgCard < 0 then return end
-        local slide = detailState.switchDir and (1 - progress) or 0
-        local pos = slot + (detailState.switchDir or 0) * slide
-        local ax = math.abs(pos)
-        local scale = 1.08 - 0.36 * math.min(1, ax)
-        local squash = 1 - (1 - CARD.SIDE_SQUASH) * math.min(1, ax)
-        local tilt = -pos * CARD.SIDE_TILT
-        local x = DT_CARD_CX + pos * CARD.SIDE_DX
+        local slide = detailState.cardDragVisual or 0
+        if detailState.switchDir then
+            -- 松手时从拖动位置继续滑到中间，不再先跳回 0 再从屏外滑入。
+            local from = (detailState.switchDir or 0) + (detailState.switchFrom or 0)
+            slide = from * (1 - progress)
+        end
+        local pos = slot + slide
+        local ax = math.min(1, math.abs(pos))
+        local scale = CARD.CENTER_SCALE - (CARD.CENTER_SCALE - CARD.SIDE_SCALE) * ax
+        local yaw = 1 - (1 - CARD.YAW_SQUASH) * ax
         nvgSave(vg)
-        nvgTranslate(vg, x, CARD.CY + 18 * math.min(1, ax))
-        nvgRotate(vg, tilt)
-        nvgScale(vg, scale * squash, scale)
+        local cardY = CARD.CY - ((detailState.tab == "equip") and 70 or 0)
+        nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, cardY)
+        nvgScale(vg, scale * yaw, scale)
         nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
-        DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, 1.0)
+        local owned = heroOwned(id)
+        DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
+        if not owned then
+            nvgBeginPath(vg)
+            nvgRect(vg, -CARD.W * 0.5, -CARD.H * 0.5, CARD.W, CARD.H)
+            nvgFillColor(vg, nvgRGBA(28, 28, 28, 120))
+            nvgFill(vg)
+        end
+        -- [统一角色框] 卡面叠加品质描边（frameOnly：不画底与头像）
+        ---@type number
+        local cardW = CARD.W
+        ---@type number
+        local cardH = CARD.H
+        HeroFrame.draw(vg, {
+            cx = 0, cy = 0, w = cardW, h = cardH,
+            heroId = id,
+            state = owned and "owned" or "unowned",
+            frameOnly = true,
+        })
+        drawCardBadges(id)
         nvgRestore(vg)
     end
-    if detailState.tab == "attr" then
-        drawCarouselCard(neighborId(-1), -1, 1)
-        drawCarouselCard(neighborId(1), 1, 1)
+    if detailState.tab == "attr" or detailState.tab == "class" then
+        local leftId = neighborId(-1)
+        local rightId = neighborId(1)
+        -- 往一侧拖时，再外侧的那张也要在场，否则露出空白。
+        local function secondNeighbor(firstId, dir)
+            if not firstId then return nil end
+            local saved = heroId
+            heroId = firstId
+            local id = neighborId(dir)
+            heroId = saved
+            return id
+        end
+        drawCarouselCard(secondNeighbor(leftId, -1), -2, 1)
+        drawCarouselCard(leftId, -1, 1)
+        drawCarouselCard(rightId, 1, 1)
+        drawCarouselCard(secondNeighbor(rightId, 1), 2, 1)
     end
     drawCarouselCard(heroId, 0, 1)
-    local cx, cy = DT_CARD_CX, CARD.CY
-
-    -- 职业标志图标
-    local iconIdx = CLASS_ICON_MAP[heroCfg.classId]
-    if iconIdx and imgClassIcons[iconIdx] then
-        drawImageCentered(vg, imgClassIcons[iconIdx], cx + CARD.TAG_DX,
-            cy + (CARD.H * 0.5 - CARD.LVL_BOTTOM_UP), CARD.TAG_SIZE, CARD.TAG_SIZE, 1.0)
-    end
-
-    -- 战斗力图标+数值（使用缓存，避免每帧重算）
-    local power = getCachedPower(heroId, heroLevel)
-    local powerStr = tostring(power)
-    local POWER_GAP = 4
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 30)
-    local ptW = nvgTextBounds(vg, 0, 0, powerStr)
-    local pcW = CARD.POWER_ICON_SIZE + POWER_GAP + ptW
-    local pcX = cx - pcW * 0.5
-    drawImageCentered(vg, imgPower, pcX + CARD.POWER_ICON_SIZE * 0.5,
-        cy + (CARD.H * 0.5 - CARD.POWER_BOTTOM_UP), CARD.POWER_ICON_SIZE, CARD.POWER_ICON_SIZE, 1.0)
-    drawTextStroke(vg, pcX + CARD.POWER_ICON_SIZE + POWER_GAP,
-        cy + (CARD.H * 0.5 - CARD.POWER_BOTTOM_UP), powerStr,
-        30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        247, 254, 119, 4)
-
-    -- 等级徽章（卡片小经验条已删，经验见名称下大经验条）
-    do
-        -- 等级徽章
-        local badgeCX = cx + CARD.LVL_BADGE_DX
-        local badgeCY = cy + (CARD.H * 0.5 - CARD.LVL_BOTTOM_UP)
-        drawImageCentered(vg, imgLvlBadge, badgeCX, badgeCY, CARD.LVL_BADGE_SIZE, CARD.LVL_BADGE_SIZE, 1.0)
-        drawTextStroke(vg, badgeCX, badgeCY, tostring(heroLevel),
-            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4)
-
-    end
 
     if detailState.tab == "equip" then
     -- === 5) 装备槽位 ===
@@ -658,11 +821,6 @@ function M.draw(vg)
     end
 
     for _, slot in ipairs(DT_SLOTS) do
-        -- 配装tab下：选中槽位绘制选中底图
-        if slot.slot == detailState.equipSlot and img.slotSelected >= 0 then
-            drawImageCentered(vg, img.slotSelected, slot.cx, slot.cy, 234, 234, 1.0)
-        end
-
         local slotImg
         if slot.img == "weapon" then
             slotImg = img.slotWeapon
@@ -679,6 +837,10 @@ function M.draw(vg)
         end
         if slotImg and slotImg >= 0 then
             drawImageCentered(vg, slotImg, slot.cx, slot.cy, DT_SLOT_SIZE, DT_SLOT_SIZE, 1.0)
+        end
+        -- 选中四角放在装备图标下面，避免挡住图标和等级
+        if slot.slot == detailState.equipSlot and img.slotSelected >= 0 then
+            drawImageCentered(vg, img.slotSelected, slot.cx, slot.cy, 234, 234, 1.0)
         end
 
         local equippedEquip = nil
@@ -821,7 +983,7 @@ function M.draw(vg)
         if _TM.isActive() then _TM.registerHotspot("equip_btn_auto", BTN_EQUIP_CX, BTN_EQUIP_CY, BTN_BATCH_W, BTN_BATCH_H, "right") end
     end
     end  -- if detailState.tab == "equip"（装备槽与批量按钮）
-    end  -- if not isAwakenTab（4~6 节）
+    end  -- if not isAwakenTab and not isClassTab（4~6 节）
 
     nvgRestore(vg)  -- 结束动态内容偏移（switchOX/switchAlpha）
 
@@ -831,28 +993,13 @@ function M.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, lowerOX, 0)
 
-    if not isAwakenTab then
+    if not isAwakenTab and not isClassTab then
     -- === 6) 角色详情属性背景图（静态，不参与切换动画） ===
     -- 配装页底板及标题整体下移，给上半部装备词条留位置
     if detailState.tab == "equip" then
         nvgTranslate(vg, 0, EQUIP_LOWER_OFFSET)
     end
-    -- 配装页分段画底板：保留顶部金属外框 + 下方皮革，跳过图内菱形金饰小横条
-    if detailState.tab == "equip" and img.midBg and img.midBg >= 0 then
-        local midTop = MID_BG_CY - MID_BG_H * 0.5
-        local frameH = 100
-        local barEnd = 125
-        nvgSave(vg)
-        nvgIntersectScissor(vg, 0, midTop, DESIGN_W, frameH)
-        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
-        nvgRestore(vg)
-        nvgSave(vg)
-        nvgIntersectScissor(vg, 0, midTop + barEnd, DESIGN_W, MID_BG_H - barEnd)
-        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
-        nvgRestore(vg)
-    else
-        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
-    end
+    drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
 
     -- === 7) 标题：属性页「角色详情」，配装页显示当前部位名 ===
     local titleText = I18n.t("hero_detail")
@@ -872,23 +1019,23 @@ function M.draw(vg)
     end
     nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
     nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, titleText, nil)
-    end  -- if not isAwakenTab（6b~7 节）
+    end  -- if not isAwakenTab and not isClassTab（6b~7 节）
 
     if detailState.tab == "equip" then
         nvgTranslate(vg, 0, -EQUIP_LOWER_OFFSET)
+    end
+
+    -- 转职页背景不参与角色切换淡入，换角色时保持不动
+    if detailState.tab == "class" then
+        local ClassChange = require("ui.church.ChurchClassChange")
+        ClassChange.init(vg)
+        ClassChange.drawBg(vg)
     end
 
     -- === 下方文本：原地交叉淡化。旧文本由 drawLowerText 末尾重绘模糊残影 ===
     local textBlur = detailState.switchDir and (1 - progress) or 0
     nvgSave(vg)
     nvgGlobalAlpha(vg, 1 - textBlur * 0.55)
-    if not isAwakenTab and detailState.tab ~= "equip" then
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 42)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 255))
-    nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name, nil)
-    end
 
     -- === 9~17) 经验/品质/职业/分割线：属性页专属 ===
     if detailState.tab == "attr" then
@@ -932,33 +1079,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, MID_EXP_CX, MID_EXP_CY, lvlText, nil)
 
-    -- === 11) 品质内容背景框 ===
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg,
-        MID_QUALITY_BOX_CX - MID_QUALITY_BOX_W * 0.5,
-        MID_QUALITY_BOX_CY - MID_QUALITY_BOX_H * 0.5,
-        MID_QUALITY_BOX_W, MID_QUALITY_BOX_H, 20)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-    nvgFill(vg)
-
-    -- === 12) "品质"文本 ===
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 35)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-    nvgText(vg, MID_QUALITY_LABEL_X, MID_QUALITY_LABEL_Y, I18n.t("quality"), nil)
-
-    -- === 13) 品质文字图标 ===
-    local qualityName = HC.QUALITY_INFO[heroCfg.quality]
-        and HC.QUALITY_INFO[heroCfg.quality].name or "R"
-    local qBadge = imgQualityBadges[qualityName]
-    if qBadge and qBadge >= 0 then
-        local qImgW, qImgH = nvgImageSize(vg, qBadge)
-        local qDrawCX = MID_QUALITY_ICON_RIGHT_X - qImgW * 0.5
-        drawImageCentered(vg, qBadge, qDrawCX, MID_QUALITY_LABEL_Y, qImgW, qImgH, 1.0)
-    end
-
-    -- === 14) 职业内容背景框 ===
+    -- === 14) 职业内容背景框（品质行已去掉，职业条居中拉满） ===
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
         MID_CLASS_BOX_CX - MID_CLASS_BOX_W * 0.5,
@@ -967,14 +1088,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
     nvgFill(vg)
 
-    -- === 15) "职业"文本 ===
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 35)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-    nvgText(vg, MID_CLASS_LABEL_X, MID_CLASS_LABEL_Y, I18n.t("class_label"), nil)
-
-    -- === 16) 职业图标 + 文字组合 ===
+    -- === 15) 职业图标 + 名称，整条居中 ===
     local classCfg = CC.get(heroCfg.classId)
     local className = classCfg and classCfg.name or "未知"
     local classIconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -983,19 +1097,19 @@ function M.draw(vg)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 34)
     local classTextW = nvgTextBounds(vg, 0, 0, className)
-    local classGap = 6
-    local comboW = MID_CLASS_ICON_SIZE + classGap + classTextW
-    local comboRightX = MID_CLASS_COMBO_RIGHT_X
-    local comboLeftX  = comboRightX - comboW
-    local classIconCX = comboLeftX + MID_CLASS_ICON_SIZE * 0.5
-    local classTextX  = comboLeftX + MID_CLASS_ICON_SIZE + classGap
+    local classGap = 8
+    local iconW = classIcon >= 0 and MID_CLASS_ICON_SIZE or 0
+    local comboW = iconW + (iconW > 0 and classGap or 0) + classTextW
+    local comboLeftX = MID_CLASS_BOX_CX - comboW * 0.5
+    local classIconCX = comboLeftX + iconW * 0.5
+    local classTextX = comboLeftX + iconW + (iconW > 0 and classGap or 0) + classTextW * 0.5
 
     if classIcon >= 0 then
         drawImageCentered(vg, classIcon, classIconCX, MID_CLASS_LABEL_Y,
             MID_CLASS_ICON_SIZE, MID_CLASS_ICON_SIZE, 1.0)
     end
     drawTextStroke(vg, classTextX, MID_CLASS_LABEL_Y, className,
-        34, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
 
     -- === 17) 分割线1 ===
@@ -1010,6 +1124,13 @@ function M.draw(vg)
     if detailState.tab == "awaken" then
         -- 觉醒面板绘制
         AwakeningPanel.draw(vg, heroId)
+
+    elseif detailState.tab == "class" then
+        -- 转职页（从教堂迁入，整页接管）
+        local ClassChange = require("ui.church.ChurchClassChange")
+        ClassChange.init(vg)
+        ClassChange.setHero(heroId)
+        ClassChange.drawContent(vg)
 
     elseif detailState.tab == "equip" then
         -- 配装面板绘制（由 CharacterDetailEquip 子模块负责）
@@ -1026,29 +1147,47 @@ function M.draw(vg)
     local attrData = collectAttributes(heroId, heroCfg, heroLevel)
     local leftAttrs  = attrData.left
     local rightAttrs = attrData.right
-    local totalRows  = math.max(#leftAttrs, #rightAttrs)
+    -- 防御属性在前，攻击和额外属性接在后面，同一列滚动。
+    local attrRows = {}
+    for i = 1, #leftAttrs do
+        attrRows[#attrRows + 1] = leftAttrs[i]
+    end
+    for i = 1, #rightAttrs do
+        attrRows[#attrRows + 1] = rightAttrs[i]
+    end
+    -- 按重要程度稳定排序（未列出的属性保持原相对顺序，排在最后）
+    local orderIdx = DetailAttrs.displayOrderIndex()
+    for i, row in ipairs(attrRows) do row._origIdx = i end
+    table.sort(attrRows, function(a, b)
+        local oa = orderIdx[a.key] or 9999
+        local ob = orderIdx[b.key] or 9999
+        if oa ~= ob then return oa < ob end
+        return (a._origIdx or 0) < (b._origIdx or 0)
+    end)
+    for _, row in ipairs(attrRows) do row._origIdx = nil end
+    local totalRows = #attrRows
 
-    detailState.cachedLeft  = leftAttrs
-    detailState.cachedRight = rightAttrs
+    detailState.cachedLeft  = attrRows
+    detailState.cachedRight = {}
 
-    local attrClipY = ATTR_FIRST_ROW_Y - ATTR_BOX_H * 0.5
-    local attrClipH = ATTR_VISIBLE_ROWS * ATTR_BOX_H + (ATTR_VISIBLE_ROWS - 1) * ATTR_ROW_GAP
+    local attrClipY = ATTR_CLIP_TOP
+    local attrClipH = ATTR_CLIP_HEIGHT
 
     local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
-    local totalContentH = totalRows * ATTR_BOX_H + (totalRows - 1) * ATTR_ROW_GAP
-    detailState.attrScrollMax = math.max(0, totalContentH - attrClipH)
+    local contentBottom = ATTR_FIRST_ROW_Y + math.max(0, totalRows - 1) * rowStep + ATTR_BOX_H * 0.5
+    local viewBottom = attrClipY + attrClipH
+    detailState.attrScrollMax = math.max(0, contentBottom - viewBottom)
 
     nvgSave(vg)
-    nvgScissor(vg, 0, attrClipY, DESIGN_W, attrClipH)
+    nvgScissor(vg, 40, attrClipY, 500, attrClipH)
 
     for row = 1, totalRows do
         local rowY = ATTR_FIRST_ROW_Y + (row - 1) * rowStep - detailState.attrScrollY
 
         if rowY >= attrClipY - ATTR_BOX_H and rowY <= attrClipY + attrClipH + ATTR_BOX_H then
 
-            -- === 左列属性 ===
-            if row <= #leftAttrs then
-                local attr = leftAttrs[row]
+            local attr = attrRows[row]
+            if attr then
                 local colCX = ATTR_COL1_CX
 
                 nvgBeginPath(vg)
@@ -1081,41 +1220,6 @@ function M.draw(vg)
                     255, 255, 255, 4)
             end
 
-            -- === 右列属性 ===
-            if row <= #rightAttrs then
-                local attr = rightAttrs[row]
-                local colCX = ATTR_COL2_CX
-
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg,
-                    colCX - ATTR_BOX_W * 0.5, rowY - ATTR_BOX_H * 0.5,
-                    ATTR_BOX_W, ATTR_BOX_H, ATTR_BOX_RADIUS)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-                nvgFill(vg)
-
-                drawImageCentered(vg, img.attrDeco, ATTR_DECO_X + ATTR_DECO_DX, rowY,
-                    ATTR_DECO_SIZE, ATTR_DECO_SIZE, 1.0)
-
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, ATTR_FONT_SIZE)
-                local rNameW = nvgTextBounds(vg, 0, 0, attr.name)
-                local rValW  = nvgTextBounds(vg, 0, 0, attr.value)
-                local rMaxNameW = (ATTR_VAL_RIGHT_X + ATTR_DECO_DX)
-                    - (ATTR_NAME_LEFT_X + ATTR_DECO_DX) - rValW - ATTR_NAME_VAL_GAP
-                local rNameFS = ATTR_FONT_SIZE
-                if rMaxNameW > 0 and rNameW > rMaxNameW then
-                    rNameFS = math.max(ATTR_FONT_SIZE_MIN,
-                        math.floor(ATTR_FONT_SIZE * rMaxNameW / rNameW))
-                    nvgFontSize(vg, rNameFS)
-                end
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-                nvgText(vg, ATTR_NAME_LEFT_X + ATTR_DECO_DX, rowY, attr.name, nil)
-
-                drawTextStroke(vg, ATTR_VAL_RIGHT_X + ATTR_DECO_DX, rowY, attr.value,
-                    ATTR_FONT_SIZE, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 4)
-            end
         end
     end
 
@@ -1126,51 +1230,125 @@ function M.draw(vg)
     drawImageCentered(vg, img.midDiv2, MID_DIV2_CX, MID_DIV2_CY, MID_DIV2_W, MID_DIV2_H, 1.0)
 
     -- ================================================================
-    -- ===                  六围区域（2列×3行）                      ===
+    -- ===                  六围雷达图                                ===
     -- ================================================================
 
     local statValues = attrData.stats
-
+    local statByKey = {}
     for _, st in ipairs(STAT_LAYOUT) do
-        local boxCX = (st.col == 1) and STAT_COL1_CX or STAT_COL2_CX
-        local boxCY = STAT_ROW1_CY + (st.row - 1) * STAT_ROW_STEP
+        statByKey[st.key] = st
+    end
 
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg,
-            boxCX - STAT_BOX_W * 0.5, boxCY - STAT_BOX_H * 0.5,
-            STAT_BOX_W, STAT_BOX_H, STAT_BOX_RADIUS)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-        nvgFill(vg)
+    local function hexPoint(i, radius)
+        local ang = -math.pi * 0.5 + (i - 1) * (math.pi / 3)
+        return HEX_CX + math.cos(ang) * radius, HEX_CY + math.sin(ang) * radius
+    end
 
-        local ibCX = boxCX + STAT_ICON_BG_DX
-        local ibCY = boxCY + STAT_ICON_BG_DY
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg,
-            ibCX - STAT_ICON_BG_SIZE * 0.5, ibCY - STAT_ICON_BG_SIZE * 0.5,
-            STAT_ICON_BG_SIZE, STAT_ICON_BG_SIZE, STAT_ICON_BG_R)
-        nvgFillColor(vg, nvgRGBA(0xa9, 0xa0, 0x8f, 255))
-        nvgFill(vg)
-
-        local iconImg = imgStatIcons[st.icon] or -1
-        if iconImg >= 0 then
-            local icCX = boxCX + STAT_ICON_DX
-            local icCY = boxCY + STAT_ICON_DY
-            drawImageCentered(vg, iconImg, icCX, icCY, STAT_ICON_SIZE, STAT_ICON_SIZE, 1.0)
+    local function strokeDashed(x1, y1, x2, y2, dash, gap)
+        local dx, dy = x2 - x1, y2 - y1
+        local len = math.sqrt(dx * dx + dy * dy)
+        if len <= 0 then return end
+        local ux, uy = dx / len, dy / len
+        local pos = 0
+        while pos < len do
+            local seg = math.min(dash, len - pos)
+            nvgBeginPath(vg)
+            nvgMoveTo(vg, x1 + ux * pos, y1 + uy * pos)
+            nvgLineTo(vg, x1 + ux * (pos + seg), y1 + uy * (pos + seg))
+            nvgStroke(vg)
+            pos = pos + dash + gap
         end
+    end
 
-        local nmX = boxCX + STAT_NAME_DX
-        local nmY = boxCY + STAT_NAME_DY
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 35)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-        nvgText(vg, nmX, nmY, st.name, nil)
+    -- 满格跟当前六维走：取六项最大值再留 25% 空，主属性接近外圈，弱项明显内收。
+    local hexPeak = 1
+    for _, item in pairs(statByKey) do
+        local val = statValues[item.key] or 0
+        if val > hexPeak then hexPeak = val end
+    end
+    local hexMax = math.max(8, hexPeak / 0.82)
 
-        local valY = boxCY + STAT_VAL_DY
-        local valStr = tostring(statValues[st.key] or 0)
-        drawTextStroke(vg, nmX, valY, valStr,
-            35, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 4)
+    nvgBeginPath(vg)
+    nvgCircle(vg, HEX_CX, HEX_CY, HEX_LABEL_R + 28)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
+    nvgFill(vg)
+
+    -- 外圈实线，内两圈虚线
+    for ring = 1, 3 do
+        local rr = HEX_R * ring / 3
+        nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, ring == 3 and 170 or 110))
+        nvgStrokeWidth(vg, ring == 3 and 2 or 1.5)
+        local pts = {}
+        for i = 1, 6 do
+            pts[i] = { hexPoint(i, rr) }
+        end
+        for i = 1, 6 do
+            local a = pts[i]
+            local b = pts[i % 6 + 1]
+            if ring == 3 then
+                nvgBeginPath(vg)
+                nvgMoveTo(vg, a[1], a[2])
+                nvgLineTo(vg, b[1], b[2])
+                nvgStroke(vg)
+            else
+                strokeDashed(a[1], a[2], b[1], b[2], 7, 5)
+            end
+        end
+    end
+
+    -- 六条轴线用虚线
+    nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, 120))
+    nvgStrokeWidth(vg, 1.5)
+    for i = 1, 6 do
+        local x, y = hexPoint(i, HEX_R)
+        strokeDashed(HEX_CX, HEX_CY, x, y, 6, 5)
+    end
+
+    nvgBeginPath(vg)
+    for i, name in ipairs(HEX_NAMES) do
+        local stFill = nil
+        for _, item in pairs(statByKey) do
+            if item.name == name then stFill = item break end
+        end
+        local val = stFill and statValues[stFill.key] or 0
+        local ratio = val / hexMax
+        if ratio < 0.08 then ratio = 0.08 end
+        if ratio > 1 then ratio = 1 end
+        local x, y = hexPoint(i, HEX_R * ratio)
+        if i == 1 then nvgMoveTo(vg, x, y) else nvgLineTo(vg, x, y) end
+    end
+    nvgClosePath(vg)
+    nvgFillColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 70))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 200))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    nvgBeginPath(vg)
+    nvgCircle(vg, HEX_CX, HEX_CY, 5)
+    nvgFillColor(vg, nvgRGBA(0xFF, 0xF4, 0xD6, 255))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgCircle(vg, HEX_CX, HEX_CY, 5)
+    nvgStrokeColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 255))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+
+    nvgFontFace(vg, "sans")
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    for i, name in ipairs(HEX_NAMES) do
+        local st = nil
+        for _, item in pairs(statByKey) do
+            if item.name == name then st = item break end
+        end
+        local color = HEX_COLORS[name] or { 0xE8, 0xDC, 0xC8 }
+        local lx, ly = hexPoint(i, HEX_LABEL_R)
+        nvgFontSize(vg, 26)
+        nvgFillColor(vg, nvgRGBA(color[1], color[2], color[3], 255))
+        nvgText(vg, lx, ly - 24, st and st.name or "", nil)
+        drawTextStroke(vg, lx, ly + 16, tostring(st and statValues[st.key] or 0),
+            34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            color[1], color[2], color[3], 3)
     end
 
     -- ================================================================
@@ -1185,7 +1363,7 @@ function M.draw(vg)
     nvgFill(vg)
 
     local talentName = heroCfg.talentName or ""
-    drawTextStroke(vg, TALENT_NAME_X, TALENT_NAME_Y, talentName .. "：",
+    drawTextStroke(vg, TALENT_TEXT_LEFT, TALENT_NAME_Y, talentName .. "：",
         40, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         0x66, 0xf8, 0x62, 5)
 
@@ -1194,11 +1372,10 @@ function M.draw(vg)
     if extraLine ~= "" then
         talentDesc = talentDesc .. "\n" .. extraLine
     end
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, extraLine ~= "" and 28 or 34)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-    nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-    nvgTextBox(vg, TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH, talentDesc, nil)
+    -- 关键词富文本：可点击的机制词（如「回响」）弹解释气泡；热区写入 talentKwText
+    M.talentKwText:draw(vg, talentDesc,
+        TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH,
+        extraLine ~= "" and 28 or 34)
 
     end -- if detailState.tab == "awaken" / "attr"
 
@@ -1221,10 +1398,6 @@ function M.draw(vg)
             nvgTranslate(vg, pass * 3 * textBlur, 0)
             nvgGlobalAlpha(vg, textBlur * 0.16)
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 42)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-            nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name or "", nil)
             nvgFontSize(vg, 28)
             nvgText(vg, MID_EXP_CX, MID_EXP_CY, "Lv." .. tostring(heroLevel), nil)
             nvgRestore(vg)
@@ -1249,7 +1422,7 @@ function M.draw(vg)
 
     drawImageCentered(vg, img.tabBg, BTN_TAB_BG_CX, BTN_TAB_BG_CY, BTN_TAB_BG_W, BTN_TAB_BG_H, 1.0)
 
-    local TAB_CX_MAP = { attr = BTN_TAB_ATTR_CX, equip = BTN_TAB_EQUIP_CX, awaken = BTN_TAB_AWAKEN_CX }
+    local TAB_CX_MAP = { attr = BTN_TAB_ATTR_CX, equip = BTN_TAB_EQUIP_CX, class = BTN_TAB_CLASS_CX, awaken = BTN_TAB_AWAKEN_CX }
     local targetCX = TAB_CX_MAP[detailState.tab] or BTN_TAB_ATTR_CX
     local fromCX   = TAB_CX_MAP[detailState.tabFrom] or BTN_TAB_ATTR_CX
     local tabElapsed = time.elapsedTime - detailState.tabSwitchTime
@@ -1272,8 +1445,24 @@ function M.draw(vg)
     nvgFillColor(vg, curTab == "attr" and activeColor or inactiveColor)
     nvgText(vg, TEXT_ATTR_CX, TEXT_ATTR_CY, I18n.t("tab_attr"), nil)
 
-    nvgFillColor(vg, curTab == "equip" and activeColor or inactiveColor)
+    local ownedHero = getOwnedData and getOwnedData(heroId) ~= nil
+    local lockedColor = nvgRGBA(0x8d, 0x5f, 0x41, 255)  -- 未拥有=棕色禁用色
+    nvgFillColor(vg, not ownedHero and lockedColor or (curTab == "equip" and activeColor or inactiveColor))
     nvgText(vg, TEXT_EQUIP_CX, TEXT_EQUIP_CY, I18n.t("tab_equip"), nil)
+
+    nvgFillColor(vg, not ownedHero and lockedColor or (curTab == "class" and activeColor or inactiveColor))
+    nvgText(vg, TEXT_CLASS_CX, TEXT_CLASS_CY, I18n.t("tab_class"), nil)
+
+    -- 转职Tab角标：当前英雄可转职时显示红点
+    do
+        local okBadge, ChurchPage = pcall(require, "ui.church.ChurchPage")
+        if okBadge and ChurchPage.hasAdvanceForHero and ChurchPage.hasAdvanceForHero(heroId) then
+            nvgBeginPath(vg)
+            nvgCircle(vg, TEXT_CLASS_CX + 42, TEXT_CLASS_CY - 20, 9)
+            nvgFillColor(vg, nvgRGBA(0xE2, 0x3A, 0x2E, 255))
+            nvgFill(vg)
+        end
+    end
 
     nvgFillColor(vg, curTab == "awaken" and activeColor or inactiveColor)
     nvgText(vg, TEXT_AWAKEN_CX, TEXT_AWAKEN_CY, I18n.t("tab_awaken"), nil)
@@ -1306,7 +1495,7 @@ function M.draw(vg)
         local TIP_GAP     = 6
         local TIP_FONT    = 28
         local TIP_NAME_FONT = 30
-        local TIP_MAX_W   = 420
+        local TIP_MAX_W   = 546
         local TIP_LINE_H  = 36
 
         nvgFontFace(vg, "sans")
@@ -1388,8 +1577,101 @@ function M.draw(vg)
 
     nvgRestore(vg)  -- 结束下半部分偏移
 
+    -- === 转职页角色横滑重绘在转职树之上，避免被职业图标盖住 ===
+    if detailState.tab == "class" then
+        local function neighborId(dir)
+            local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
+            if not roster then return nil end
+            local cur = nil
+            for i, entry in ipairs(roster) do
+                if entry.heroId == heroId then cur = i break end
+            end
+            if not cur then return nil end
+            local idx = cur
+            for _ = 1, #roster - 1 do
+                idx = idx + dir
+                if idx < 1 then idx = #roster end
+                if idx > #roster then idx = 1 end
+                return roster[idx].heroId
+            end
+            return nil
+        end
+        local function drawCarouselCard(id, slot, alpha)
+            if not id or alpha <= 0.01 then return end
+            local imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, id)
+            if (not imgCard or imgCard < 0) and id ~= 1 then
+                imgCard = HeroAssetUtil.ensureCard(vg, imgHeroCards, 1)
+            end
+            if not imgCard or imgCard < 0 then return end
+            local slide = detailState.cardDragVisual or 0
+            if detailState.switchDir then
+                local from = (detailState.switchDir or 0) + (detailState.switchFrom or 0)
+                slide = from * (1 - progress)
+            end
+            local pos = slot + slide
+            local ax = math.min(1, math.abs(pos))
+            local scale = CARD.CENTER_SCALE - (CARD.CENTER_SCALE - CARD.SIDE_SCALE) * ax
+            local yaw = 1 - (1 - CARD.YAW_SQUASH) * ax
+            nvgSave(vg)
+            nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, CARD.CY)
+            nvgScale(vg, scale * yaw, scale)
+            nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
+            local owned = heroOwned(id)
+            DrawUtil.drawImageCover(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
+            if not owned then
+                nvgBeginPath(vg)
+                nvgRect(vg, -CARD.W * 0.5, -CARD.H * 0.5, CARD.W, CARD.H)
+                nvgFillColor(vg, nvgRGBA(28, 28, 28, 120))
+                nvgFill(vg)
+            end
+            -- [统一角色框] 卡面叠加品质描边
+            ---@type number
+            local cardW2 = CARD.W
+            ---@type number
+            local cardH2 = CARD.H
+            HeroFrame.draw(vg, {
+                cx = 0, cy = 0, w = cardW2, h = cardH2,
+                heroId = id,
+                state = owned and "owned" or "unowned",
+                frameOnly = true,
+            })
+            drawCardBadges(id)
+            nvgRestore(vg)
+        end
+        local leftId = neighborId(-1)
+        local rightId = neighborId(1)
+        local function secondNeighbor(firstId, dir)
+            if not firstId then return nil end
+            local saved = heroId
+            heroId = firstId
+            local id = neighborId(dir)
+            heroId = saved
+            return id
+        end
+        drawCarouselCard(secondNeighbor(leftId, -1), -2, 1)
+        drawCarouselCard(leftId, -1, 1)
+        drawCarouselCard(rightId, 1, 1)
+        drawCarouselCard(secondNeighbor(rightId, 1), 2, 1)
+        drawCarouselCard(heroId, 0, 1)
+    end
+
+    -- === 转职确认/重置弹窗、飘字与转职 Spine 特效（转职页最上层）===
+    if detailState.tab == "class" then
+        local ClassChange = require("ui.church.ChurchClassChange")
+        ClassChange.drawConfirmPopup(vg)
+        ClassChange.drawResetConfirmPopup(vg)
+        ClassChange.drawFloatText(vg)
+        require("ui.fx.SpineCardEffect").draw(vg, "church")
+    end
+
     -- === 装备背包覆盖层 ===
     EquipmentBag.draw(vg)
+
+    -- === 套装详情浮层，盖住底部页签 ===
+    if detailState.tab == "equip" and CharacterDetailRef and CharacterDetailRef._EquipPanel
+        and CharacterDetailRef._EquipPanel.drawSetCodex then
+        CharacterDetailRef._EquipPanel.drawSetCodex(vg)
+    end
 
     -- === 装备详情弹窗（配装面板点击时显示）===
     if not EquipmentBag.isOpen() then
@@ -1399,13 +1681,12 @@ function M.draw(vg)
         end
     end
 
-    -- 配装页角色名画在详情之上，随下方界面一同下移
-    if not isAwakenTab and detailState.tab == "equip" and heroCfg and heroCfg.name then
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 42)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 255))
-        nvgText(vg, MID_NAME_CX, MID_NAME_CY + EQUIP_LOWER_OFFSET, heroCfg.name, nil)
+    -- === 关键词解释弹窗（最上层，盖住页签与装备浮层）===
+    if detailState.tab == "awaken" then
+        local AwakeningKw = require("ui.character.hero.AwakeningPanel").kwText
+        if AwakeningKw then AwakeningKw:drawPopup(vg) end
+    else
+        M.talentKwText:drawPopup(vg)
     end
 end
 

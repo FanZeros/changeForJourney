@@ -288,8 +288,58 @@ painters.gem = function(vg, cx, cy, s, alpha)
     nvgFill(vg)
 end
 
---- 战力（余烬火焰）
+-- ============================================================================
+-- 专属图标优先机制（图标统一 0928）
+-- power/reddot 此前存在双轨：部分页面用专属贴图（ICON_ZDL/ICON_HD），
+-- 部分页面用程序化矢量（余烬火焰/光点）。统一为"贴图优先、矢量回退"，
+-- 与 TopBar 金币图标的既有模式一致。句柄只创建一次，全局缓存。
+-- ============================================================================
+
+---@type table<string, string> 专属图标路径（统一基准）
+local CANONICAL_PATHS = {
+    power  = "image/通用图标/ICON_ZDL.png",
+    reddot = "image/通用图标/ICON_HD.png",
+}
+
+---@type table<string, number> 专属图标句柄缓存（-1 = 加载失败，走矢量回退）
+local canonicalImgs = {}
+
+--- 获取专属图标句柄（首次调用创建，之后走缓存）
+---@param vg any NanoVG 上下文
+---@param name string 图标名
+---@return number nvgImage handle (-1 = 不可用)
+local function getCanonicalImg(vg, name)
+    local cached = canonicalImgs[name]
+    if cached ~= nil then return cached end
+    -- nvgCreateImage 返回 integer?，归一化为非 nil 的 integer 再缓存/返回，
+    -- 避免 [return-type-mismatch]（声明 @return number，nil 会不匹配）
+    local h = nvgCreateImage(vg, CANONICAL_PATHS[name] or "", 0) or -1
+    if h < 0 then
+        print("[DarkIcon] WARN: 专属图标加载失败 " .. tostring(CANONICAL_PATHS[name]) .. "，回退矢量绘制")
+    end
+    canonicalImgs[name] = h
+    return h
+end
+
+--- 以专属贴图绘制图标（成功返回 true；失败返回 false 由调用方回退矢量）
+---@param vg any
+---@param name string
+---@return boolean ok 是否已成功绘制
+local function drawCanonical(vg, name, cx, cy, s, alpha)
+    local img = getCanonicalImg(vg, name)
+    if not img or img < 0 then return false end
+    local x, y = cx - s * 0.5, cy - s * 0.5
+    local paint = nvgImagePattern(vg, x, y, s, s, 0, img, alpha)
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, s, s)
+    nvgFillPaint(vg, paint)
+    nvgFill(vg)
+    return true
+end
+
+--- 战力（专属图标 ICON_ZDL.png 优先；加载失败回退余烬火焰矢量）
 painters.power = function(vg, cx, cy, s, alpha)
+    if drawCanonical(vg, "power", cx, cy, s, alpha) then return end
     -- 外焰
     flamePath(vg, cx, cy, s)
     nvgFillPaint(vg, vGrad(vg, cy - s * 0.48, cy + s * 0.44,
@@ -307,8 +357,9 @@ painters.power = function(vg, cx, cy, s, alpha)
     nvgFill(vg)
 end
 
---- 红点（余烬光点 + 白色感叹号）
+--- 红点（专属图标 ICON_HD.png 优先；加载失败回退余烬光点矢量）
 painters.reddot = function(vg, cx, cy, s, alpha)
+    if drawCanonical(vg, "reddot", cx, cy, s, alpha) then return end
     -- 外辉光
     nvgBeginPath(vg)
     nvgCircle(vg, cx, cy, s * 0.48)
@@ -779,18 +830,23 @@ function DarkIcon.drawNine(vg, style, x, y, w, h, opts)
         nvgRoundedRectVarying(vg, x, y + bandH, w, h - bandH, 0, 0, r, r)
         nvgFillPaint(vg, vGrad(vg, y + bandH, y + h, { 28, 23, 18 }, { 16, 13, 10 }, a))
         nvgFill(vg)
-        -- 3) 语义饰线 + 端点菱形
+        -- 3) 语义饰线 + 端点菱形。两端收进圆角，避免菱形顶出面板外沿
+        local lineInset = math.max(r * 1.6, u * 0.055)
+        local maxInset = w * 0.22
+        if lineInset > maxInset then lineInset = maxInset end
+        local lineL = x + lineInset
+        local lineR = x + w - lineInset
         nvgBeginPath(vg)
-        nvgMoveTo(vg, x + r * 0.4, y + bandH)
-        nvgLineTo(vg, x + w - r * 0.4, y + bandH)
+        nvgMoveTo(vg, lineL, y + bandH)
+        nvgLineTo(vg, lineR, y + bandH)
         strokeC(vg, a, accent[1], accent[2], accent[3], 0.9)
         nvgStrokeWidth(vg, math.max(1.5, u * 0.006))
         nvgStroke(vg)
-        if opts.studs ~= false and w > 220 then
-            diamondPath(vg, x + r * 0.4, y + bandH, u * 0.028)
+        if opts.studs ~= false and w > 220 and lineR > lineL + u * 0.08 then
+            diamondPath(vg, lineL, y + bandH, u * 0.028)
             fillC(vg, a, accent[1], accent[2], accent[3], 1)
             nvgFill(vg)
-            diamondPath(vg, x + w - r * 0.4, y + bandH, u * 0.028)
+            diamondPath(vg, lineR, y + bandH, u * 0.028)
             fillC(vg, a, accent[1], accent[2], accent[3], 1)
             nvgFill(vg)
         end
@@ -895,10 +951,6 @@ local OLD_PATHS = {
     power        = "image/通用图标/ICON_ZDL.png",
     reddot       = "image/通用图标/ICON_HD.png",
     nav_hero     = "image/通用图标/ICON_GN_1.png",
-    nav_log      = "image/通用图标/ICON_GN_2.png",
-    nav_battle   = "image/通用图标/ICON_GN_3.png",
-    nav_town     = "image/通用图标/ICON_GN_4.png",
-    nav_dungeon  = "image/通用图标/ICON_GN_5.png",
 }
 
 ---@type table<string, number> 旧图标句柄缓存

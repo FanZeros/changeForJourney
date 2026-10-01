@@ -19,6 +19,7 @@
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local GameState        = require("core.GameState")
 local BattleScene      = require("ui.battle.scene.BattleScene")
+local OfflineService   = require("rules.offline.OfflineService")
 
 local StandaloneSave = {}
 
@@ -33,17 +34,40 @@ local lastSnapshot = nil
 local snapshotAcc = 0.0
 ---@type number|nil  防抖写盘剩余时间（nil = 无待写变更）
 local flushTimer = nil
+local restoredSavedAt = 0  -- 当前进程启动前最后一次落盘；用于兼容旧存档的在线边界
+local restoredSave = false
+local offlineChecked = false
+local lastSavedAt = 0
+
+--- 数字键会被 cjson 存成数组，读回来就丢掉英雄编号。落盘前改成字符串键。
+---@param roster table|nil
+---@return table|nil
+local function rosterForSave(roster)
+    if type(roster) ~= "table" then return roster end
+    local out = {}
+    for heroId, hero in pairs(roster) do
+        out["h" .. tostring(heroId)] = hero
+    end
+    return out
+end
 
 --- 收集当前全部可持久化数据 → 存档表
 local function buildSaveData()
     local all = ClientDispatcher.snapshotAll()
     local modules = {}
     for name, data in pairs(all) do
-        modules[name] = data
+        if name == "heroes" and type(data) == "table" then
+            local copy = {}
+            for k, v in pairs(data) do copy[k] = v end
+            copy.roster = rosterForSave(data.roster)
+            modules[name] = copy
+        else
+            modules[name] = data
+        end
     end
     return {
         version   = SAVE_VERSION,
-        savedAt   = os.time(),
+        savedAt   = lastSavedAt,
         gameState = GameState.exportSave(),
         modules   = modules,
     }
@@ -59,18 +83,27 @@ local function encodeSave()
     return json
 end
 
---- 写盘（不传 json 则实时编码）
-local function writeFile(json)
-    if not json then
-        json = encodeSave()
-        if not json then return false end
+--- 离线收益还没领时，不推进在线时间，避免把待领时长清掉。
+--- 角色、关卡和首通标记仍要落盘，否则重启就像丢档，首通也能再领一次。
+local function writeFile()
+    if offlineChecked and not OfflineService.HasPendingRewards(1) then
+        OfflineService.MarkOnline(1)
+        lastSavedAt = os.time()
     end
+    local json = encodeSave()
+    if not json then return false end
     local file = File(SAVE_FILE, FILE_WRITE)
     if not file or not file:IsOpen() then
+        flushTimer = FLUSH_DEBOUNCE
         print("[StandaloneSave] 写档失败(无法打开): " .. SAVE_FILE)
         return false
     end
-    file:WriteString(json)
+    if not file:WriteString(json) then
+        file:Close()
+        flushTimer = FLUSH_DEBOUNCE
+        print("[StandaloneSave] 写档失败(写入未完成): " .. SAVE_FILE)
+        return false
+    end
     file:Close()
     lastSnapshot = json
     print("[StandaloneSave] 存档落盘 bytes=" .. #json)
@@ -82,6 +115,13 @@ end
 --- （各系统初始化均为 "if not ClientDispatcher.get(x)" 守卫，先注入即跳过默认值）
 ---@return boolean 是否恢复了存档
 function StandaloneSave.RestoreData()
+    offlineChecked = false
+    restoredSave = false
+    restoredSavedAt = 0
+    lastSavedAt = 0
+    lastSnapshot = nil
+    flushTimer = nil
+    snapshotAcc = 0
     if not fileSystem or not fileSystem:FileExists(SAVE_FILE) then
         print("[StandaloneSave] 无本地存档，开始新档")
         return false
@@ -110,9 +150,40 @@ function StandaloneSave.RestoreData()
         names[#names + 1] = name
     end
 
+    restoredSavedAt = tonumber(saveData.savedAt) or 0
+    lastSavedAt = restoredSavedAt
+    restoredSave = true
     lastSnapshot = nil  -- 恢复后重建基线，防止把恢复内容误判为变更
     print("[StandaloneSave] 存档已恢复: " .. #names .. " 个模块 savedAt=" .. tostring(saveData.savedAt))
     return true
+end
+
+--- 旧存档的 lastOnlineTime 长期未推进时，以已落盘的在线快照时刻作离线起点。
+--- 必须在本轮 CalcOnEnter 之前调用，不能使用本轮新写入的 savedAt。
+function StandaloneSave.ReconcileOfflineBoundary()
+    local session = ClientDispatcher.get("session")
+    if not restoredSave or type(session) ~= "table" or (session.lastOnlineTime or 0) <= 0 then
+        restoredSavedAt = 0
+        return
+    end
+    local boundary = math.min(restoredSavedAt, os.time())
+    if boundary > session.lastOnlineTime then
+        print("[StandaloneSave] 恢复在线边界 lastOnline=" .. tostring(session.lastOnlineTime)
+            .. " savedAt=" .. tostring(boundary))
+        session.lastOnlineTime = boundary
+        local battle = ClientDispatcher.get("battle")
+        if type(battle) == "table" then
+            battle.idleAccumSec = 0
+        end
+    end
+    restoredSavedAt = 0
+end
+
+--- 离线收益已核算；只有不存在待领取奖励时才允许写档和推进在线边界。
+function StandaloneSave.OfflineChecked()
+    offlineChecked = true
+    lastSnapshot = nil
+    print("[StandaloneSave] 离线时间边界已核算")
 end
 
 --- 回灌战斗进度（切关/首通标记/挂机模式判定）
@@ -160,6 +231,20 @@ function StandaloneSave.Update(dt)
 end
 
 --- 立即落盘（退出时调用）
+function StandaloneSave.Wipe()
+    restoredSavedAt = 0
+    lastSavedAt = 0
+    restoredSave = false
+    offlineChecked = false
+    lastSnapshot = nil
+    snapshotAcc = 0
+    flushTimer = nil
+    if fileSystem and fileSystem.Delete then
+        fileSystem:Delete(SAVE_FILE)
+    end
+    print("[StandaloneSave] wiped " .. SAVE_FILE)
+end
+
 function StandaloneSave.Flush()
     writeFile()
 end

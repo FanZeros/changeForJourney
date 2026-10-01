@@ -10,15 +10,18 @@ local PlayerStore     = require("core.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
 local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
+local HeroFrame = require("ui.widget.HeroFrame")
 
 local M = {}
 
 function M.bind(deps)
     local GRID = deps.GRID
     local CELL_COL_CX = deps.CELL_COL_CX
-    local CLIP_TOP = deps.CLIP_TOP
-    local CLIP_H = deps.CLIP_H
     local DESIGN_W = deps.DESIGN_W
+    -- 裁剪常量从 GRID 表取活值：宿主 applyLayout 切换 inline/left 布局时会改写
+    -- GRID.FIRST_ROW_TOP / GRID.CLIP_BOTTOM，bind 时按值快照会拿到过期布局。
+    local function clipTop() return GRID.FIRST_ROW_TOP end
+    local function clipH() return GRID.CLIP_BOTTOM - GRID.FIRST_ROW_TOP end
     local DarkIcon = deps.DarkIcon or DarkIcon
     local DrawUtil = deps.DrawUtil or DrawUtil
     local state = deps.state
@@ -27,6 +30,9 @@ function M.bind(deps)
     local getItemIcon = deps.getItemIcon
     local getImgCheckmark = deps.getImgCheckmark
     local getImgLock = deps.getImgLock
+    local qualityChecked = deps.qualityChecked or function() return true end
+    -- 套装筛选（装备 tab 显示过滤）：空集合=不限制
+    local setChecked = deps.setChecked or function() return true end
     local getImgHeroIcons = deps.getImgHeroIcons
     local calcScrollMax = deps.calcScrollMax
     local clampScroll = deps.clampScroll
@@ -49,12 +55,14 @@ function M.bind(deps)
         local list = {}
         for seqStr, equip in pairs(equipData.inventory) do
             local tpl = EquipmentConfig.ITEMS[equip.templateId]
-            if tpl then
+            local quality = (equip and (equip.quality or (tpl and tpl.quality))) or 1
+            -- 常驻勾选筛选：品质/套装勾选集合非空时只列出命中的装备（全不勾=全部）
+            if tpl and qualityChecked(quality) and setChecked(equip.templateId) then
                 list[#list + 1] = {
                     seq = tonumber(seqStr) or 0,
                     templateId = equip.templateId,
                     level = equip.level or 1,
-                    quality = equip.quality or tpl.quality or 1,
+                    quality = quality,
                     name = tpl.name or "",
                     type = equip.type or tpl.type or "",
                     enhanceLevel = equip.enhanceLevel or 0,
@@ -79,7 +87,7 @@ function M.bind(deps)
         clampScroll()
 
         nvgSave(vg)
-        nvgScissor(vg, 0, CLIP_TOP, DESIGN_W, CLIP_H)
+        nvgScissor(vg, 0, clipTop(), DESIGN_W, clipH())
         nvgTranslate(vg, 0, -state.scrollY)
 
         for idx = 1, totalSlots do
@@ -97,12 +105,17 @@ function M.bind(deps)
                 end
             end
 
-            if screenY < CLIP_TOP - GRID.CELL_SIZE then
+            if screenY < clipTop() - GRID.CELL_SIZE then
                 goto continue_equip
             end
             if screenY > GRID.CLIP_BOTTOM + GRID.CELL_SIZE then
                 break
             end
+
+            -- 边缘半格裁剪由外层 nvgScissor（屏幕坐标，translate 之前设置）统一负责。
+            -- ⚠️ 不要在这里加逐格 nvgIntersectScissor：cy 是 translate 后的内容坐标，
+            -- 与屏幕坐标 CLIP_TOP/CLIP_BOTTOM 比较必然错位，滚动后会把可见格子裁空
+            -- （历史 bug：仓库只显示第一页，下滑全空白）。
 
             local equip = equipList[idx]
             if equip then
@@ -154,28 +167,20 @@ function M.bind(deps)
                         local badgeSize = 66
                         local badgeX = cx - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
                         local badgeY = cy - GRID.CELL_SIZE * 0.5 + badgeSize * 0.5 + 1
-                        nvgSave(vg)
-                        nvgBeginPath(vg)
-                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                        nvgFillPaint(vg, nvgImagePattern(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 0, ownerIcon, 1.0))
-                        nvgFill(vg)
-                        nvgBeginPath(vg)
-                        nvgRoundedRect(vg, badgeX - badgeSize * 0.5, badgeY - badgeSize * 0.5, badgeSize, badgeSize, 6)
-                        nvgStrokeColor(vg, nvgRGBA(0xff, 0xff, 0xff, 200))
-                        nvgStrokeWidth(vg, 2)
-                        nvgStroke(vg)
-                        nvgRestore(vg)
+                        -- [统一角色框] 已装备头像角标（白描边变体）
+                        ---@type number
+                        local ownerHeroId = equip.equippedByHeroId
+                        HeroFrame.draw(vg, {
+                            cx = badgeX, cy = badgeY, size = badgeSize, radius = 6,
+                            heroId = ownerHeroId,
+                            iconHandle = ownerIcon,
+                            state = "owned",
+                            borderOverride = { 255, 255, 255, 200, 2 },
+                        })
                     end
                 end
 
-                if decomposeState.active and decomposeState.selectedItems[idx] then
-                    nvgBeginPath(vg)
-                    nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                        GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS)
-                    nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-                    nvgFill(vg)
-                    DrawUtil.drawImageCentered(vg, getImgCheckmark(), cx, cy, 80, 80, 1.0)
-                end
+                -- [分解入仓 0929] 旧"批量分解模式"选中遮罩已移除（分解迁移到独立 tab）
 
                 if equip.locked and getImgLock() >= 0 then
                     local lockSize = 56
@@ -245,7 +250,7 @@ function M.bind(deps)
         clampScroll()
 
         nvgSave(vg)
-        nvgScissor(vg, 0, CLIP_TOP, DESIGN_W, CLIP_H)
+        nvgScissor(vg, 0, clipTop(), DESIGN_W, clipH())
         nvgTranslate(vg, 0, -state.scrollY)
 
         for idx, def in ipairs(itemList) do

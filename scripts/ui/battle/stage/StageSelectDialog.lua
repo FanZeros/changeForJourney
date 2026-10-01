@@ -10,7 +10,13 @@
 
 local GameConfig        = require("config.GameConfig")
 local SC                = require("config.StageConfig")
+local MC                = require("config.MonsterConfig")
+local SRP               = require("config.StageRecommendPower")
+local BattleEnemySpawn  = require("ui.battle.stage.BattleEnemySpawn")
 local DrawUtil          = require("core.DrawUtil")
+local DarkIcon          = require("core.DarkIcon")
+local GameState         = require("core.GameState")
+local I18n              = require("core.I18n")
 local BF                = require("systems.ButtonFeedback")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
@@ -36,9 +42,12 @@ local D = {
 
     BG_CX   = 540,  BG_CY  = 1195,
     BG_W    = 950,  BG_H   = 1117,
-    BG_IT   = 180,  BG_IR  = 40,  BG_IB = 50,  BG_IL = 40,
+    -- 九宫格边距必须完整包住源图(827x569)四角铜铆钉(铆钉延伸至 ~x68 / ~y500)，
+    -- 否则铆钉被切进中块随面板拉伸变形
+    BG_IT   = 180,  BG_IR  = 72,  BG_IB = 72,  BG_IL = 72,
 
-    TT_Y    = 690,  TT_FONT = 50,  TT_SW = 6,
+    TT_Y    = 732,  -- 标题下移半行（章节行高 84 的一半；原 690）
+    TT_FONT = 50,  TT_SW = 6,
     TT_SR   = 0x00, TT_SG  = 0x00, TT_SB = 0x00,
 
     -- 左栏: 章节列表
@@ -46,19 +55,19 @@ local D = {
     CH_W      = 190,
     CH_BTN_H  = 84,
     CH_GAP    = 10,
-    CH_Y0     = 756,     -- 第一个章节按钮顶边
-    CH_VISIBLE = 8,      -- 可视章节数（超出滚动）
+    CH_Y0     = 836,     -- 第一个章节按钮顶边（给上箭头和弹窗标题留空）
+    CH_VISIBLE = 7,      -- 可视章节数（下移后仍留在弹窗内，超出滚动）
 
-    -- 中栏
+    -- 中栏：关卡竖排（5-1 在上，5-5 在下），每行直接展示敌人卡面
     MID_X     = 315,
     MID_W     = 580,
-    PREV_Y    = 756,     -- 预览图顶边
-    PREV_H    = 232,
-    GRID_Y0   = 1020,    -- 网格顶边
-    CELL_W    = 106,
-    CELL_H    = 92,
-    CELL_GAP  = 8,
-    GRID_COLS = 5,
+    ROW_Y0    = 790,     -- 第一行顶边（整体下移 20% 行高 ≈34；原 756）
+    ROW_H     = 168,     -- 一行高度
+    ROW_GAP   = 10,
+    CARD_W    = 92,      -- 敌人卡面宽
+    CARD_H    = 104,     -- 敌人卡面高
+    CARD_GAP  = 8,
+    CARD_X    = 455,     -- 卡面区左缘（标签右侧）
 
 }
 
@@ -73,12 +82,16 @@ local CH_HUES = {
 local imgBtn = -1
 local imgBg  = -1
 local imgAct = -1
+local imgLock = -1
 
 local state = {
     open      = false,
     openTime  = 0,
-    selKey    = nil,   -- 选中章节 key（chapter number 或 "T"=终焉神殿组）
+    selKey    = nil,   -- 选中章节 key（chapter number 或 "T<神殿id>"=单难度终焉组）
     chScroll  = 0,     -- 左栏滚动起点（0-based）
+    chDragY   = nil,   -- 左栏按下位置
+    chDragScroll = 0, -- 按下时滚动起点
+    chDragMoved = false,
 
     -- [选关 v3] 全链数据缓存（ensureCache 维护, 随 maxStage 变化重建）
     cacheGroups   = nil,  ---@type table[] 章节组列表
@@ -98,7 +111,7 @@ local function getAnimScale()
     return t * (1.0 + 0.08 * math.sin(t * math.pi))
 end
 
---- 沿官方关卡链收集全链（不随进度截断；不跟随转生跨难度回环）
+--- 沿官方关卡链收集全链（不随进度截断，终焉神殿后进入下一难度）
 --- 返回 ids 与链序表 order[id]=序号
 local function collectAllIds()
     local ids = {}
@@ -114,36 +127,41 @@ local function collectAllIds()
             order[cur] = #ids
         end
         local nxt = SC.getNextStageId(cur)
+        if not nxt and SC.isTerminalTemple(cur) then
+            nxt = SC.getReincarnationTarget(SC.getDifficulty(cur))
+        end
         if not nxt then break end
         cur = nxt
     end
     return ids, order
 end
 
---- 章节组：{{ key=chapter|"T", name=, ids={} } 按进度顺序}
+--- 章节组：{{ key=chapter|"T<神殿id>", name=, subLabel=, ids={} } 按进度顺序}
+--- [单难度终焉] 终焉神殿不再合并成一个 "T" 组，每座神殿独立成组，
+--- 沿关卡链自然追加在对应难度第 23 章之后（如困难 23 章 → 困难终焉 → 噩梦 1 章）
 local function collectChapterGroups()
     local ids, order = collectAllIds()
     local groups = {}
     ---@type table<any, number>
     local indexOf = {}
     for _, id in ipairs(ids) do
-        local key
+        local key, name, subLabel
         if SC.isTerminalTemple(id) then
-            key = "T"
+            key = "T" .. tostring(id)
+            name = "终焉"
+            subLabel = SC.getDifficultyDisplayName(SC.getDifficulty(id))
         else
-            key = math.floor(id / 100)
+            local chapter = math.floor(id / 100)
+            key = chapter
+            name = SC.getChapterName(chapter)
+            -- 绝对章号（困难从 24 章起显示 24 章，而非相对 1 章）
+            subLabel = tostring(chapter) .. " 章"
         end
         local gi = indexOf[key]
         if not gi then
             gi = #groups + 1
             indexOf[key] = gi
-            local name
-            if key == "T" then
-                name = "终焉"
-            else
-                name = SC.getChapterName(key)
-            end
-            groups[gi] = { key = key, name = name, ids = {} }
+            groups[gi] = { key = key, name = name, subLabel = subLabel, ids = {} }
         end
         local g = groups[gi]
         g.ids[#g.ids + 1] = id
@@ -165,20 +183,40 @@ local function ensureCache()
     if not maxStage or maxStage < 1 then
         maxStage = SC.NORMAL_FIRST_STAGE or 101
     end
-    if not state.cacheGroups or state.cacheMaxStage ~= maxStage then
+    local nextId = SC.getNextStageId(maxStage)
+    local cleared = BS.getClearedStages()
+    local terminalUnlocked = nextId and SC.isTerminalTemple(nextId)
+        and (cleared[maxStage] or cleared[tostring(maxStage)])
+    if not state.cacheGroups or state.cacheMaxStage ~= maxStage
+        or state.cacheTerminalUnlocked ~= terminalUnlocked then
         local groups, order = collectChapterGroups()
         state.cacheGroups = groups
         state.cacheOrder = order
         state.cacheMaxStage = maxStage
-        -- 解锁基准: maxStage 的链序; 链上找不到(如转生后 id)则视为全解锁
+        state.cacheTerminalUnlocked = terminalUnlocked
         state.cacheMaxOrder = (maxStage and order[maxStage]) or ids_of(groups)
+        if terminalUnlocked then
+            state.cacheMaxOrder = order[nextId] or state.cacheMaxOrder
+        end
     end
     return state.cacheGroups, state.cacheMaxOrder
 end
 
 local function chapterHue(key)
-    local n = (type(key) == "number") and key or 23
+    -- 终焉组 key 形如 "T999"，提取神殿 id 参与取色，让各难度终焉色调互异
+    local n = key
+    if type(key) == "string" then
+        n = tonumber(key:match("^T(%d+)$")) or 23
+    end
     return CH_HUES[((n - 1) % #CH_HUES) + 1]
+end
+
+--- 选关显示的章号：绝对章号（困难第 24 章显示 24-1，与普通 1-23 连续）；
+--- 普通难度相对章与绝对章相同，显示不变
+---@param id number
+---@return number
+local function displayChapter(id)
+    return math.floor(id / 100)
 end
 
 local function shortStageLabel(id)
@@ -188,33 +226,74 @@ local function shortStageLabel(id)
     end
     local entry = SC.getStage(id)
     if not entry then return tostring(id) end
-    local rel = SC.getRelativeChapter(entry.chapter)
+    local rel = displayChapter(id)
     return string.format("%d-%d", rel, entry.stage)
 end
 
---- 预览图句柄缓存（懒加载，键=相对章节号或 mapBg 文件名）
----@type table<any, integer>
-local mapImgs = {}
+--- 敌人卡面句柄缓存（懒加载，键=怪物 id）
+---@type table<number, integer>
+local monsterCards = {}
 
-local function ensureMapImg(vg, group)
-    local firstId = group.ids[1]
-    local entry = firstId and SC.getStage(firstId)
-    if entry and entry.mapBg then
-        local img = mapImgs[entry.mapBg]
-        if img == nil then
-            img = nvgCreateImage(vg, "image/关卡地图/" .. entry.mapBg, 0)
-            mapImgs[entry.mapBg] = img
-        end
+--- 取怪物卡面，失败不缓存，避免永久空白
+---@param vg any
+---@param monsterId number
+---@return integer
+local function ensureMonsterCard(vg, monsterId)
+    local img = monsterCards[monsterId]
+    if img and img >= 0 then return img end
+    local artId = require("config.MonsterConfig").getCardArtId(monsterId)
+    img = nvgCreateImage(vg, string.format("image/怪物卡牌/KP_GW_%d.png", artId), 0)
+    if img and img >= 0 then
+        monsterCards[monsterId] = img
         return img
     end
-    local chapter = (group.key ~= "T") and group.key or 23
-    local n = ((chapter - 1) % 23) + 1
-    local img = mapImgs[n]
-    if img == nil then
-        img = nvgCreateImage(vg, "image/关卡地图/MAP_" .. n .. ".png", 0)
-        mapImgs[n] = img
+    monsterCards[monsterId] = nil
+    return -1
+end
+
+--- 一关实际出场的敌人 id：常规怪 + 首领 + 首通附加怪
+---@param entry table|nil
+---@return number[]
+local function stageMonsterCards(entry)
+    local cards = {}
+    local counts = {}
+    if not entry then return cards end
+    local total = entry.firstCount or entry.idleCount or 0
+    local types = entry.monsters or {}
+    local normalCount = total
+    if entry.bossId and entry.bossId > 0 then
+        normalCount = math.max(0, total - 1)
     end
-    return img
+    for i = 1, normalCount do
+        local monsterId = types[((i - 1) % math.max(1, #types)) + 1]
+        if monsterId then counts[monsterId] = (counts[monsterId] or 0) + 1 end
+    end
+    if entry.bossId and entry.bossId > 0 then
+        counts[entry.bossId] = (counts[entry.bossId] or 0) + 1
+    end
+    local bonusIds = BattleEnemySpawn.getFirstClearBonusMonsterIds(entry)
+    for _, monsterId in ipairs(bonusIds or {}) do
+        counts[monsterId] = (counts[monsterId] or 0) + 1
+    end
+    local function push(monsterId)
+        if monsterId and counts[monsterId] and not cards["_" .. monsterId] then
+            cards["_" .. monsterId] = true
+            cards[#cards + 1] = { id = monsterId, count = counts[monsterId] }
+        end
+    end
+    for _, monsterId in ipairs(types) do push(monsterId) end
+    push(entry.bossId)
+    for _, monsterId in ipairs(bonusIds or {}) do push(monsterId) end
+    return cards
+end
+
+local function currentStageId()
+    if state.targetTeam then
+        local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+        return BattleTriPage.getTeamStageId(state.targetTeam)
+            or require("ui.battle.scene.BattleScene").getStageId()
+    end
+    return require("ui.battle.scene.BattleScene").getStageId()
 end
 
 local function selectedGroup(groups)
@@ -224,26 +303,43 @@ local function selectedGroup(groups)
     return groups[1]
 end
 
+local function chapterListBounds(groups)
+    local needScroll = #groups > D.CH_VISIBLE
+    local top = D.CH_Y0 + (needScroll and 30 or 0)
+    local bottom = top + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
+    return top, bottom
+end
+
 -- ======================== Public API ========================
 
 ---@param vg any
 function StageSelectDialog.init(vg)
     imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_XG.png", 0)
+    -- 九宫格拉伸用法（950x1117），保留原图；整图拉伸用法（950x647）走 UI_TY_EJQRK_POP 副本
     imgBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgAct = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
+    imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
     print("[StageSelectDialog] init OK")
 end
 
-function StageSelectDialog.open()
+---@param teamIdx number|nil 多队战斗行号；大于 1 时确认后切该队自己的关卡
+function StageSelectDialog.open(teamIdx)
     if state.open then return end
     state.open     = true
     state.openTime = time.elapsedTime
+    state.chDragY = nil
+    state.chDragMoved = false
+    state.targetTeam = teamIdx
     local BS = require("ui.battle.scene.BattleScene")
     local curStage = BS.getStageId()
-    -- 定位到当前关所在章节
+    if state.targetTeam then
+        local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+        curStage = BattleTriPage.getTeamStageId(state.targetTeam) or curStage
+    end
+    -- 定位到当前关所在章节（终焉神殿 → 对应单难度终焉组 "T<id>"）
     local curKey
     if curStage and SC.isTerminalTemple(curStage) then
-        curKey = "T"
+        curKey = "T" .. tostring(curStage)
     elseif curStage then
         curKey = math.floor(curStage / 100)
     end
@@ -261,6 +357,7 @@ end
 
 function StageSelectDialog.close()
     state.open = false
+    state.chDragY = nil
 end
 
 function StageSelectDialog.isOpen()
@@ -273,6 +370,52 @@ function StageSelectDialog.toggle()
     else
         StageSelectDialog.open()
     end
+end
+
+function StageSelectDialog.handleScroll(wheel, x, y)
+    if not state.open then return false end
+    local groups = ensureCache()
+    local top, bottom = chapterListBounds(groups)
+    -- 覆盖整列章节和上下箭头，不要求正好落在按钮高度内。
+    if x >= D.CH_X - 20 and x <= D.CH_X + D.CH_W + 20
+        and y >= top - 70 and y <= bottom + 70 then
+        local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
+        state.chScroll = math.max(0, math.min(maxScroll, state.chScroll - wheel))
+    end
+    return true
+end
+
+function StageSelectDialog.handleDragBegin(x, y)
+    if not state.open then return false end
+    state.chDragMoved = false
+    local groups = ensureCache()
+    local top, bottom = chapterListBounds(groups)
+    if x >= D.CH_X and x <= D.CH_X + D.CH_W and y >= top and y <= bottom then
+        state.chDragY = y
+        state.chDragScroll = state.chScroll
+        state.chDragMoved = false
+    end
+    return true
+end
+
+function StageSelectDialog.handleDragMove(_, y)
+    if not state.open then return false end
+    if state.chDragY then
+        local delta = state.chDragY - y
+        if math.abs(delta) >= 15 then state.chDragMoved = true end
+        local groups = ensureCache()
+        local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
+        local step = D.CH_BTN_H + D.CH_GAP
+        state.chScroll = math.max(0, math.min(maxScroll,
+            state.chDragScroll + math.floor(delta / step + 0.5)))
+    end
+    return true
+end
+
+function StageSelectDialog.handleDragEnd()
+    if not state.open then return false end
+    state.chDragY = nil
+    return true
 end
 
 -- ======================== 绘制入口按钮 ========================
@@ -301,9 +444,8 @@ function StageSelectDialog.draw(vg)
     local scale = getAnimScale()
     if scale <= 0.01 then return end
 
-    local BS = require("ui.battle.scene.BattleScene")
     local groups, maxOrder = ensureCache()
-    local curStage = BS.getStageId()
+    local curStage = currentStageId()
     local sel = selectedGroup(groups)
     if not sel then return end
 
@@ -330,17 +472,13 @@ function StageSelectDialog.draw(vg)
     if state.chScroll < 0 then state.chScroll = 0 end
 
     local needScroll = maxScroll > 0
-    local arrowCX = D.CH_X + D.CH_W * 0.5
+    local arrowCX = D.CH_X + 28
     local listTop = D.CH_Y0
-    if needScroll then
-        -- 上箭头
-        if state.chScroll > 0 then
-            drawImageCentered(vg, imgAct, arrowCX, D.CH_Y0 - 26, 64, 40, 1.0)
-            drawTextStroke(vg, arrowCX, D.CH_Y0 - 26, "▲", 24,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-        end
-        listTop = D.CH_Y0 + 30
-        -- 下箭头位置在列表底部之后
+    local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
+    if needScroll and state.chScroll > 0 then
+        drawImageCentered(vg, imgAct, arrowCX, listTop - 34, 52, 32, 1.0)
+        drawTextStroke(vg, arrowCX, listTop - 34, "▲", 22,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 2)
     end
 
     for vi = 1, D.CH_VISIBLE do
@@ -351,6 +489,9 @@ function StageSelectDialog.draw(vg)
         local y = listTop + (vi - 1) * (D.CH_BTN_H + D.CH_GAP)
         local isSel = (tostring(g.key) == tostring(sel.key))
         local hue = chapterHue(g.key)
+        local firstId = g.ids and g.ids[1]
+        local firstOrder = firstId and state.cacheOrder and state.cacheOrder[firstId]
+        local chapterLocked = (firstOrder == nil) or (maxOrder == nil) or (firstOrder > maxOrder)
 
         nvgBeginPath(vg)
         nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
@@ -369,14 +510,16 @@ function StageSelectDialog.draw(vg)
         end
 
         local cx = x + D.CH_W * 0.5
+        -- 章节按钮文字：解锁=亮色，锁定=棕色
+        local chR, chG, chB = 235, 230, 210
+        if chapterLocked then chR, chG, chB = 0x8d, 0x5f, 0x41 end
         drawTextStroke(vg, cx, y + D.CH_BTN_H * 0.36, g.name, 28,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, 230, 210, 3)
-        local rel
-        if g.key == "T" then
-            rel = "终焉"
-        else
-            rel = tostring(SC.getRelativeChapter(g.key)) .. " 章"
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, chR, chG, chB, 3)
+        if chapterLocked and imgLock >= 0 then
+            drawImageCentered(vg, imgLock, x + D.CH_W - 22, y + 22, 30, 30, 0.9)
         end
+        -- 副标题：普通章节 = "N 章"；单难度终焉 = 难度名（如 "困难"/"噩梦"）
+        local rel = g.subLabel or tostring(SC.getRelativeChapter(g.key)) .. " 章"
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 20)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -384,86 +527,50 @@ function StageSelectDialog.draw(vg)
         nvgText(vg, cx, y + D.CH_BTN_H * 0.74, rel, nil)
     end
 
-    if needScroll then
-        local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
-        if state.chScroll < maxScroll then
-            drawImageCentered(vg, imgAct, arrowCX, listBottom + 26, 64, 40, 1.0)
-            drawTextStroke(vg, arrowCX, listBottom + 26, "▼", 24,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-        end
+    if needScroll and state.chScroll < maxScroll then
+        drawImageCentered(vg, imgAct, arrowCX, listBottom + 34, 52, 32, 1.0)
+        drawTextStroke(vg, arrowCX, listBottom + 34, "▼", 22,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 2)
     end
 
-    -- ===================== 中栏：预览图 + 关卡网格 =====================
-    -- 章节预览图（cover 填充，圆角裁切由 ImagePattern 矩形保证）
-    local pvX = D.MID_X
-    local pvY = D.PREV_Y
-    local mapImg = ensureMapImg(vg, sel)
-    if mapImg and mapImg >= 0 then
-        drawImageCover(vg, mapImg, pvX + D.MID_W * 0.5, pvY + D.PREV_H * 0.5,
-            D.MID_W, D.PREV_H, 1.0)
-    else
-        nvgBeginPath(vg)
-        nvgRect(vg, pvX, pvY, D.MID_W, D.PREV_H)
-        nvgFillColor(vg, nvgRGBA(18, 18, 24, 255))
-        nvgFill(vg)
-    end
-    -- 预览图压暗遮罩 + 章名
-    nvgBeginPath(vg)
-    nvgRect(vg, pvX, pvY, D.MID_W, D.PREV_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 70))
-    nvgFill(vg)
-    drawTextStroke(vg, pvX + D.MID_W * 0.5, pvY + D.PREV_H * 0.5 - 12, sel.name, 44,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 240, 232, 208, 5)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 24)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xd8, 0xc9, 0xa3, 255))
-    nvgText(vg, pvX + D.MID_W * 0.5, pvY + D.PREV_H * 0.5 + 28,
-        string.format("%d 个关卡 · 点击下方小关切换", #sel.ids), nil)
-
-    -- 关卡网格（5 列）
-    local cols = D.GRID_COLS
-    local cellW, cellH, gap = D.CELL_W, D.CELL_H, D.CELL_GAP
+    -- ===================== 中栏：关卡竖排 + 敌人卡面 =====================
+    nvgSave(vg)
+    nvgIntersectScissor(vg, D.MID_X, D.ROW_Y0 - 4, D.MID_W, 5 * (D.ROW_H + D.ROW_GAP))
     for i, id in ipairs(sel.ids) do
-        local col = (i - 1) % cols
-        local row = math.floor((i - 1) / cols)
-        local x = pvX + col * (cellW + gap)
-        local y = D.GRID_Y0 + row * (cellH + gap)
-        local cx, cy = x + cellW * 0.5, y + cellH * 0.5
+        local y = D.ROW_Y0 + (i - 1) * (D.ROW_H + D.ROW_GAP)
+        local x = D.MID_X
         local isCur = (id == curStage)
         local isBoss = SC.hasBoss(id) or SC.isTerminalTemple(id)
-        -- 未解锁: 链序超过玩家解锁进度
         local ord = state.cacheOrder and state.cacheOrder[id] or nil
         local locked = (ord == nil) or (maxOrder == nil) or (ord > maxOrder)
+        local entry = SC.getStage(id)
 
+        -- 行底
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, x, y, cellW, cellH, 12)
+        nvgRoundedRect(vg, x, y, D.MID_W, D.ROW_H, 12)
         if isCur then
-            nvgFillColor(vg, nvgRGBA(201, 151, 59, 48))
+            nvgFillColor(vg, nvgRGBA(201, 151, 59, 40))
         else
-            nvgFillColor(vg, nvgRGBA(0, 0, 0, locked and 60 or 26))
+            nvgFillColor(vg, nvgRGBA(0, 0, 0, locked and 70 or 40))
         end
         nvgFill(vg)
         if isCur then
             nvgBeginPath(vg)
-            nvgRoundedRect(vg, x, y, cellW, cellH, 12)
+            nvgRoundedRect(vg, x, y, D.MID_W, D.ROW_H, 12)
             nvgStrokeColor(vg, nvgRGBA(201, 151, 59, 235))
             nvgStrokeWidth(vg, 3)
             nvgStroke(vg)
         end
 
-        local label = shortStageLabel(id)
-        local fr, fg, fb = 0, 0, 0
-        if isCur then
-            fr, fg, fb = 0, 0, 0
-        elseif isBoss then
-            fr, fg, fb = 0xA6, 0x1E, 0x1E
-        end
-        local txtA = locked and 150 or 255
-        drawTextStroke(vg, cx, cy - 12, label, 28,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            txtA, txtA, txtA, 4, { strokeColor = { fr, fg, fb } })
+        -- 关卡号（行左上）：解锁=亮色（Boss红），锁定=棕色
+        local fr, fg, fb = 255, 255, 255
+        if isBoss then fr, fg, fb = 0xE0, 0x5A, 0x5A end
+        if locked then fr, fg, fb = 0x8d, 0x5f, 0x41 end
+        drawTextStroke(vg, x + 16, y + 34, shortStageLabel(id), 30,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+            fr, fg, fb, 2)
 
+        -- 状态（行左下）
         local sub
         if isCur then
             sub = "当前"
@@ -477,17 +584,97 @@ function StageSelectDialog.draw(vg)
             sub = SC.getDifficultyDisplayName(SC.getDifficulty(id))
         end
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 20)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFontSize(vg, 22)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         if isCur then
             nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 255))
         elseif locked then
-            nvgFillColor(vg, nvgRGBA(0x8a, 0x84, 0x74, 220))
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 未解锁=棕色
         else
             nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
         end
-        nvgText(vg, cx, cy + 20, sub, nil)
+        nvgText(vg, x + 16, y + D.ROW_H - 34, sub, nil)
+
+        -- 终焉神殿额外说明：三队协同战（TerminalRaid 三队共池机制）
+        -- 单独一行放在 sub 下方：卡面与 xN 计数占满行右侧，同行放不下
+        if SC.isTerminalTemple(id) then
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 18)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, locked and 140 or 220))
+            nvgText(vg, x + 16, y + D.ROW_H - 14, "可三队一起上场", nil)
+        end
+
+        -- 推荐战力（行左中，v2.61 接线 / v2.63 图标化）：
+        -- 口径 = battle-lab 开荒三人组无养成实测阈值（ml≤46 实测 / ml≤92 保守外推），
+        -- 带装备养成的玩家实际需求更低，因此只做「达标提示」不做硬性门槛。
+        -- v2.63（用户要求）：不再显示「推荐/推荐≈」文字，改为 power 火焰图标
+        --   + 纯数字（与 TopBar 玩家战力同图标，玩家一看即懂是战力比较）。
+        --   ≈ 模糊前缀取消——外推关仅以蓝灰数字色区分，不做文本标注。
+        -- 三态：实测(数字与玩家总战力比较着色) / 外推(蓝灰) / 无数据(不绘制)。
+        -- 布局：图标 18px 中心 (x+25, y+84)，数字左缘 x+38；左栏可用宽
+        -- ~124px（CARD_X-MID_X-边距），最长 5 位数（ml92 外推上限 ~2.9e4）
+        -- 20 号字 ~55px，38+55=93px < 124px 不撞卡面。
+        local recPower, recExtr = SRP.get(id)
+        if recPower then
+            local rr, rg, rb
+            if recExtr then
+                -- 外推带（ml 47..92）：估算值，数字蓝灰，不与玩家战力比较
+                rr, rg, rb = 0x8F, 0xA8, 0xC0
+            else
+                local playerPower = GameState.getPower() or 0
+                if playerPower <= 0 then
+                    rr, rg, rb = 0xb6, 0xb0, 0x9d          -- 战力未知：中性色
+                elseif playerPower >= recPower then
+                    rr, rg, rb = 0x7A, 0xC8, 0x6E          -- 达标：绿
+                else
+                    rr, rg, rb = 0xE0, 0x5A, 0x5A          -- 不足：红（与 Boss 关同色系）
+                end
+            end
+            local iconAlpha = (locked and 140 or 255) / 255
+            DarkIcon.draw(vg, "power", x + 25, y + 84, 18, iconAlpha)
+            drawTextStroke(vg, x + 38, y + 84, tostring(recPower), 20,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+                rr, rg, rb, 2, { alpha = iconAlpha })
+        end
+
+        -- 敌人卡面（行右侧横排）
+        local mids = stageMonsterCards(entry)
+        local cardCY = y + 62
+        for ci, info in ipairs(mids) do
+            local monsterId = info.id
+            local cardCX = D.CARD_X + (ci - 1) * (D.CARD_W + D.CARD_GAP) + D.CARD_W * 0.5
+            local card = ensureMonsterCard(vg, monsterId)
+            if card >= 0 then
+                drawImageCover(vg, card, cardCX, cardCY, D.CARD_W, D.CARD_H, locked and 0.4 or 1.0)
+            else
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, cardCX - D.CARD_W * 0.5, cardCY - D.CARD_H * 0.5,
+                    D.CARD_W, D.CARD_H, 8)
+                nvgFillColor(vg, nvgRGBA(30, 26, 22, 200))
+                nvgFill(vg)
+            end
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, cardCX - D.CARD_W * 0.5, cardCY - D.CARD_H * 0.5,
+                D.CARD_W, D.CARD_H, 8)
+            nvgStrokeColor(vg, nvgRGBA(201, 151, 59, locked and 90 or 200))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
+            local name = MC.getName(monsterId)
+            nvgSave(vg)
+            nvgIntersectScissor(vg, cardCX - D.CARD_W * 0.5, cardCY - D.CARD_H * 0.5,
+                D.CARD_W, D.CARD_H)
+            drawTextStroke(vg, cardCX, cardCY - D.CARD_H * 0.5 + 14, name, 16,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 236, 226, 198, 2,
+                { alpha = locked and 0.55 or 1 })
+            nvgRestore(vg)
+            drawTextStroke(vg, cardCX, cardCY + D.CARD_H * 0.5 + 12,
+                "x" .. tostring(info.count), 18,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 214, 120, 2,
+                { alpha = locked and 0.55 or 1 })
+        end
     end
+    nvgRestore(vg)
 
     nvgRestore(vg)
 end
@@ -502,22 +689,26 @@ function StageSelectDialog.handleInput(x, y)
 
     local BS = require("ui.battle.scene.BattleScene")
     local groups, maxOrder = ensureCache()
+    if state.chDragMoved then
+        state.chDragMoved = false
+        return true
+    end
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
     local needScroll = maxScroll > 0
 
-    local listTop = D.CH_Y0 + (needScroll and 30 or 0)
-    local arrowCX = D.CH_X + D.CH_W * 0.5
+    local arrowCX = D.CH_X + 28
+    local listTop = D.CH_Y0
     local listBottom = listTop + D.CH_VISIBLE * (D.CH_BTN_H + D.CH_GAP) - D.CH_GAP
 
-    -- 左栏滚动箭头
+    -- 左栏滚动箭头（列表外侧，不压章节名）
     if needScroll and state.chScroll > 0
-        and hitTestRect(x, y, arrowCX, D.CH_Y0 - 26, 72, 44) then
+        and hitTestRect(x, y, arrowCX, listTop - 34, 64, 40) then
         BF.trigger("stage_sel_chup")
         state.chScroll = state.chScroll - 1
         return true
     end
     if needScroll and state.chScroll < maxScroll
-        and hitTestRect(x, y, arrowCX, listBottom + 26, 72, 44) then
+        and hitTestRect(x, y, arrowCX, listBottom + 34, 64, 40) then
         BF.trigger("stage_sel_chdown")
         state.chScroll = state.chScroll + 1
         return true
@@ -537,24 +728,29 @@ function StageSelectDialog.handleInput(x, y)
         end
     end
 
-    -- 关卡网格
+    -- 关卡行：点击直接前往，不再弹确认
     local sel = selectedGroup(groups)
     if sel then
-        local cols = D.GRID_COLS
         for i, id in ipairs(sel.ids) do
-            local col = (i - 1) % cols
-            local row = math.floor((i - 1) / cols)
-            local x0 = D.MID_X + col * (D.CELL_W + D.CELL_GAP)
-            local y0 = D.GRID_Y0 + row * (D.CELL_H + D.CELL_GAP)
-            if x >= x0 and x <= x0 + D.CELL_W and y >= y0 and y <= y0 + D.CELL_H then
+            local y0 = D.ROW_Y0 + (i - 1) * (D.ROW_H + D.ROW_GAP)
+            if x >= D.MID_X and x <= D.MID_X + D.MID_W and y >= y0 and y <= y0 + D.ROW_H then
                 BF.trigger("stage_sel_cell")
-                -- 未解锁: 吞掉点击不跳转
                 local ord = state.cacheOrder and state.cacheOrder[id] or nil
                 if (ord == nil) or (maxOrder == nil) or (ord > maxOrder) then
                     return true
                 end
-                local ok = BS.gotoStage(id)
+                if id == currentStageId() then return true end
+                local ok
+                if SC.isTerminalTemple(id) then
+                    ok = require("ui.battle.tri.BattleTriPage").gotoTeamStage(1, id)
+                elseif state.targetTeam then
+                    local BattleTriPage = require("ui.battle.tri.BattleTriPage")
+                    ok = BattleTriPage.gotoTeamStage(state.targetTeam, id)
+                else
+                    ok = BS.gotoStage(id)
+                end
                 if ok then StageSelectDialog.close() end
+                print("[StageSelectDialog] 前往关卡: " .. tostring(id))
                 return true
             end
         end
@@ -569,11 +765,11 @@ end
 ---@param x number
 ---@param y number
 ---@return boolean
-function StageSelectDialog.handleButtonInput(x, y)
+function StageSelectDialog.handleButtonInput(x, y, teamIdx)
     if state.open then return false end
     if hitTestRect(x, y, BTN_CX, BTN_CY, BTN_W, BTN_H) then
         BF.trigger("stage_sel_btn")
-        StageSelectDialog.open()
+        StageSelectDialog.open(teamIdx)
         return true
     end
     return false

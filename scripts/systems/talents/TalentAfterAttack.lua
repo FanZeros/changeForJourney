@@ -457,7 +457,7 @@ function M.bind(deps)
 
         -- #20 摘星星星人 星之守护：星门已改为固定间隔自动发射；其他魔法角色不再立即触发星门，避免回到攻速/连击协同
 
-        -- #21 闪电卖鸡 银光（每轮攻击仅判定一次，避免多目标重复触发）
+        -- #21 雷电麦坤 银光（每轮攻击仅判定一次，避免多目标重复触发）
         if heroId == 21 and dealDmgFn and target and not result.isMiss and result.category ~= "healing" then
             if not s.silverFlashChecked then
                 s.silverFlashChecked = true
@@ -555,7 +555,7 @@ function M.bind(deps)
                         critDmg  = critDmg,
                     })
 
-                    -- 遗物/副本等来自触发普攻的增伤（与 BattleCombat._talentDmgMult 一致）
+                    -- 副本等来自触发普攻的增伤（与 BattleCombat._talentDmgMult 一致）
                     if result._talentDmgMult and result._talentDmgMult > 1.0 then
                         missileDmg = math.floor(missileDmg * result._talentDmgMult + 0.5)
                     end

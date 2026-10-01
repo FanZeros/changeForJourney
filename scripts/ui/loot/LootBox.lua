@@ -4,7 +4,12 @@
 local LootBoxPage = require("ui.loot.LootBoxPage")
 local LootBoxSystem = require("systems.LootBoxSystem")
 local DrawUtil = require("core.DrawUtil")
+local RewardPopup = require("ui.hud.popup.RewardPopup")
 local LootBox = {}
+
+-- 自动分解瞬态通知去重：seq 变化且为新鲜通知（10s 内）才弹获得提示
+local lastNoticeSeq = -1
+local NOTICE_FRESH_SEC = 10
 
 local seedCount = 0
 local seedSummary = {}
@@ -54,6 +59,17 @@ end
 
 function LootBox.updateSeedData(lootboxData)
     lootboxData_ = (lootboxData and lootboxData.seeds) and lootboxData or { seeds = {} }
+    local notice = lootboxData_.autoDecomposeNotice
+    if notice and notice.seq and notice.seq ~= lastNoticeSeq then
+        local fresh = not notice.time or (os.time() - notice.time) < NOTICE_FRESH_SEC
+        lastNoticeSeq = notice.seq
+        if fresh and (notice.count or 0) > 0 and (notice.essence or 0) > 0 then
+            RewardPopup.show("自动分解 " .. notice.count .. " 件",
+                { { type = "essence", amount = notice.essence } })
+            print("[LootBox] 自动分解获得提示: 件数=" .. notice.count
+                .. " 精粹=+" .. notice.essence)
+        end
+    end
     syncSummary()
 end
 
@@ -76,6 +92,7 @@ function LootBox.isPageOpen() return LootBoxPage.isOpen() end
 function LootBox.drawPage(vg) LootBoxPage.draw(vg) end
 function LootBox.update(dt) LootBoxPage.update(dt) end
 function LootBox.handleInput(dx, dy) return LootBoxPage.handleInput(dx, dy) end
+function LootBox.handleRightClick(dx, dy) return LootBoxPage.handleRightClick(dx, dy) end
 function LootBox.handleDragBegin(dx, dy) return LootBoxPage.handleDragBegin(dx, dy) end
 function LootBox.handleDragMove(dx, dy) return LootBoxPage.handleDragMove(dx, dy) end
 function LootBox.handleDragEnd(dx, dy) return LootBoxPage.handleDragEnd(dx, dy) end

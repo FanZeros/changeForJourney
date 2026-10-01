@@ -514,6 +514,35 @@ function EquipmentSystem.generateRandom(level, quality)
     return EquipmentSystem.generateBySlot(slot, level, quality)
 end
 
+-- ======================== 等级穿戴限制 ========================
+
+--- 读取英雄当前等级（roster 数据，兼容 cjson 字符串 key）
+---@param heroesData table|nil heroes 模块数据（含 roster）
+---@param heroId number|string
+---@return number level 找不到时返回 1
+function EquipmentSystem.getHeroLevel(heroesData, heroId)
+    if not heroesData or not heroesData.roster then return 1 end
+    local n = tonumber(heroId)
+    local hd = (n and heroesData.roster[n])
+        or heroesData.roster[heroId]
+        or (n and heroesData.roster[tostring(n)])
+    local lv = math.floor(tonumber(hd and hd.level) or 1)
+    if lv < 1 then lv = 1 end
+    return lv
+end
+
+--- 等级穿戴门槛：角色（英雄）等级低于装备等级时不可装备
+---@param heroLevel number 英雄等级
+---@param equip table|number 装备实例或装备等级
+---@return boolean ok true=可装备
+---@return number requiredLevel 装备需求等级
+function EquipmentSystem.checkLevelGate(heroLevel, equip)
+    local rawLevel = (type(equip) == "table") and equip.level or equip
+    local requiredLevel = math.max(1, math.floor(tonumber(rawLevel) or 1))
+    local hl = math.max(1, math.floor(tonumber(heroLevel) or 1))
+    return hl >= requiredLevel, requiredLevel
+end
+
 -- ======================== 槽位强化加成 ========================
 
 local BlacksmithConfig = require("config.BlacksmithConfig")
@@ -534,6 +563,26 @@ end
 ---@return number
 function EquipmentSystem.getAscendBoost(equip)
     return BlacksmithConfig.getEnhanceBoost(EquipmentSystem.getAscendLevel(equip))
+end
+
+--- 词条栏位倍率（升阶满员后里程碑累加；跟装备走，洗练不丢）。
+---@param equip table|nil
+---@return number mult >= 1
+function EquipmentSystem.getAffixMult(equip)
+    if not equip then return 1 end
+    local m = tonumber(equip.affixMult) or 1
+    if m < 1 then return 1 end
+    return m
+end
+
+--- 词条生效值：普通词条吃栏位倍率，魔化词条不吃（与"魔化不吃品质增幅"同原则）。
+---@param equip table|nil
+---@param affix table|nil
+---@return number
+function EquipmentSystem.effectiveAffixValue(equip, affix)
+    local v = tonumber(affix and affix.value) or 0
+    if not affix or AffixConfig.isCorruptAffix(affix) then return v end
+    return v * EquipmentSystem.getAffixMult(equip)
 end
 
 --- 通过 deployed 数组反查 heroId 所在的 partySlot 索引
@@ -601,9 +650,9 @@ function EquipmentSystem.computeModifierEntries(equip, slotBoost)
         entries[#entries + 1] = { key = key, flat = val }
     end
 
-    -- 词缀属性
+    -- 词缀属性（普通词条吃栏位倍率 affixMult，魔化词条不吃）
     for _, affix in ipairs(equip.affixes or {}) do
-        entries[#entries + 1] = { key = affix.key, flat = affix.value }
+        entries[#entries + 1] = { key = affix.key, flat = EquipmentSystem.effectiveAffixValue(equip, affix) }
     end
 
     return entries
@@ -818,36 +867,60 @@ function EquipmentSystem.applyEquip(equipData, seq, heroId, slot, heroesData)
         EquipmentSystem.hydrate(equip)
     end
 
-    local seqStr = tostring(seq)
-    if equip.slot ~= slot then
-        if slot == "offhand" and equip.slot == "weapon" and equip.grip == "onehand" then
-            local dualMode = nil
-            if heroesData and heroesData.roster then
-                local hd = heroesData.roster[heroId] or heroesData.roster[tostring(heroId)]
-                local AVC = require("config.AdvancementConfig")
-                dualMode = AVC.getDualWieldMode(hd and hd.advBranch)
-            end
-            if not dualMode then
-                return false, "槽位不匹配"
-            end
-            local heroSlots = EquipmentSystem.getHeroSlots(equipData, heroId)
-            local mainWeaponSeq = heroSlots and heroSlots["weapon"]
-            local mainWeaponType = nil
-            if mainWeaponSeq then
-                local mainWeapon = EquipmentSystem.getFromInventory(equipData, mainWeaponSeq)
-                mainWeaponType = mainWeapon and mainWeapon.type
-            end
-            if dualMode == "different" and mainWeaponType and equip.type == mainWeaponType then
-                return false, "武器精通：副手必须装备不同类型的武器"
-            elseif dualMode == "same" and mainWeaponType and equip.type ~= mainWeaponType then
-                return false, "双刃精通：副手必须装备相同类型的武器"
-            end
-        else
-            return false, "槽位不匹配"
+    -- 等级穿戴门槛：英雄等级低于装备等级 → 拒绝（服务端权威校验）
+    if heroesData then
+        local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+        local gateOk, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+        if not gateOk then
+            print("[EquipmentSystem] applyEquip REJECTED level gate: heroLv="
+                .. tostring(heroLevel) .. " < equipLv=" .. tostring(requiredLevel))
+            return false, "角色等级不足，需要等级 " .. tostring(requiredLevel)
         end
     end
 
+    local seqStr = tostring(seq)
+    local heroCfg = require("config.HeroConfig").get(heroId)
+    if not heroCfg then return false, "英雄不存在" end
+    local wearable = EquipmentSystem.getWearableTypeSet(heroId, slot)
+    local hd = heroesData and heroesData.roster
+        and (heroesData.roster[heroId] or heroesData.roster[tostring(heroId)])
+    local AVC = require("config.AdvancementConfig")
+    local dualMode = AVC.getDualWieldMode(hd and hd.advBranch)
+    local isOffhandWeapon = slot == "offhand" and equip.slot == "weapon" and equip.grip == "onehand"
+
+    if isOffhandWeapon then
+        if not dualMode then return false, "槽位不匹配" end
+        wearable = EquipmentSystem.getWearableTypeSet(heroId, "weapon")
+        local heroSlots = EquipmentSystem.getHeroSlots(equipData, heroId)
+        local mainSeq = heroSlots and heroSlots.weapon
+        local mainEquip = mainSeq and EquipmentSystem.getFromInventory(equipData, mainSeq)
+        if dualMode == "same" and (not mainEquip or mainEquip.type ~= equip.type) then
+            return false, "双刃精通：副手必须装备与主手相同类型的武器"
+        elseif dualMode == "different" and mainEquip and mainEquip.type == equip.type then
+            return false, "武器精通：副手必须装备不同类型的武器"
+        end
+    elseif equip.slot ~= slot then
+        return false, "槽位不匹配"
+    elseif slot == "offhand" and dualMode then
+        return false, "双持天赋无法装备常规副手"
+    end
+
+    if wearable and not wearable[equip.type] then
+        return false, "该英雄无法穿戴此类型装备"
+    end
+
     local slots = EquipmentSystem.ensureHeroSlots(equipData, heroId)
+    if slot == "weapon" and equip.grip == "onehand" and dualMode then
+        local offSeq = slots.offhand
+        local offEquip = offSeq and EquipmentSystem.getFromInventory(equipData, offSeq)
+        if offEquip and offEquip.slot == "weapon" then
+            if dualMode == "same" and offEquip.type ~= equip.type then
+                return false, "双刃精通：主手必须与副手武器同类型"
+            elseif dualMode == "different" and offEquip.type == equip.type then
+                return false, "武器精通：主手必须与副手武器不同类型"
+            end
+        end
+    end
 
     if equipData.equipped then
         for hid, hslots in pairs(equipData.equipped) do
@@ -1134,6 +1207,15 @@ function EquipmentSystem.hydrate(equip)
     equip.ascendLevel = ascend
     equip.enhanceLevel = ascend
 
+    if equip.affixMult ~= nil then
+        local am = tonumber(equip.affixMult) or 1
+        if am <= 1 then
+            equip.affixMult = nil
+        else
+            equip.affixMult = am
+        end
+    end
+
     if equip.refineCount ~= nil then
         equip.refineCount = BlacksmithConfig.clampRefineCount(equip.refineCount)
     end
@@ -1213,6 +1295,7 @@ function EquipmentSystem.dehydrate(equip)
         quality    = equip.quality,
         locked     = equip.locked or nil,  -- 锁定状态需持久化（false/nil 时省略，保持精简）
         ascendLevel = (tonumber(equip.ascendLevel) or 0) > 0 and math.floor(tonumber(equip.ascendLevel)) or nil,
+        affixMult = (tonumber(equip.affixMult) or 1) > 1 and tonumber(equip.affixMult) or nil,
         corruptCount = (equip.corruptCount and equip.corruptCount > 0) and equip.corruptCount or nil,
         corruptBaseMult = (equip.corruptBaseMult and equip.corruptBaseMult ~= 1) and equip.corruptBaseMult or nil,
         -- baseStats 省略：可从 templateId+level+quality+腐化基础倍率确定性推导，hydrate 时重算

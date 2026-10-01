@@ -111,9 +111,11 @@ function M.drawNavButtons(vg, ctx)
         local backAlpha = ctx.isTerminal and 0.3 or 1.0
         BattleDraw.drawImageMirrored(vg, ctx.imgBtnBack, NAV.BACK_BG_CX, NAV.BACK_BG_CY, NAV.BACK_BG_W, NAV.BACK_BG_H, backAlpha)
         BattleDraw.drawImageMirrored(vg, ctx.imgBtnIcon, NAV.BACK_ICON_CX, NAV.BACK_ICON_CY, NAV.BACK_ICON_W, NAV.BACK_ICON_H, backAlpha)
-        local backC = ctx.isTerminal and 100 or 255
+        -- 按钮文字：可用=亮白，终点禁用=棕色
+        local backR, backG, backB = 255, 255, 255
+        if ctx.isTerminal then backR, backG, backB = 0x8d, 0x5f, 0x41 end
         BattleDraw.drawTextStroke(vg, NAV.BACK_TEXT_CX, NAV.BACK_TEXT_CY, "后退", 40,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, backC, backC, backC, 4)
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, backR, backG, backB, 4)
     end
 
     if not ctx.isFirstClear then
@@ -129,9 +131,14 @@ function M.drawNavButtons(vg, ctx)
         local fwdBlink = fwdFloating and (0.5 + 0.5 * math.sin(time.elapsedTime * 10.0)) or 1.0
         local fwdIconAlpha = fwdAlpha * (fwdFloating and (0.55 + 0.45 * fwdBlink) or 1.0)
         BattleDraw.drawImageCentered(vg, ctx.imgBtnIcon, NAV.FWD_ICON_CX + fwdFloatX, NAV.FWD_ICON_CY, NAV.FWD_ICON_W, NAV.FWD_ICON_H, fwdIconAlpha)
-        local fwdCBase = canAdvance and 255 or 150
-        local fwdCg = fwdFloating and math.floor(220 + (255 - 220) * fwdBlink) or fwdCBase
-        local fwdCb = fwdFloating and math.floor(60  + (255 - 60)  * fwdBlink) or fwdCBase
+        -- 按钮文字：可前进=亮白（浮动态闪烁），终点禁用=棕色
+        local fwdCBase, fwdCg, fwdCb = 255, 255, 255
+        if not canAdvance then
+            fwdCBase, fwdCg, fwdCb = 0x8d, 0x5f, 0x41
+        elseif fwdFloating then
+            fwdCg = math.floor(220 + (255 - 220) * fwdBlink)
+            fwdCb = math.floor(60  + (255 - 60)  * fwdBlink)
+        end
         BattleDraw.drawTextStroke(vg, NAV.FWD_TEXT_CX + fwdFloatX, NAV.FWD_TEXT_CY, "前进", 40,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, fwdCBase, fwdCg, fwdCb, 4)
     end

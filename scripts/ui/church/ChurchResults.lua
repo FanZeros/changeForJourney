@@ -10,6 +10,7 @@ function M.bind(deps)
     local CHAR_SLOT = deps.CHAR_SLOT
     local getProtocol = deps.getProtocol
     local ArtifactPanel = deps.ArtifactPanel
+    local ArtifactDrawPanel = deps.ArtifactDrawPanel
     local CharacterPanel = deps.CharacterPanel
     local SpineCardEffect = deps.SpineCardEffect
     local clearPowerCache = deps.clearPowerCache
@@ -29,10 +30,32 @@ function M.bind(deps)
     end
 
     local function onActionResult(data)
-        if not state.open then return end
+        -- 转职结果与教堂开关无关（转职页在右侧栏角色详情）
+        local ProtocolEarly = getProtocol()
+        if data.action == ProtocolEarly.ACTION_TYPES.ADVANCE_CLASS
+            or data.action == ProtocolEarly.ACTION_TYPES.RESET_CLASS
+            or (data.branchId and data.advLevel) then
+            -- 继续往下处理
+        elseif not state.open then
+            return
+        end
+        if not data.success and not state.open then return end
 
         -- 神器装配结果
         local Protocol = getProtocol()
+
+        -- 神器宝箱抽取结果（市场典藏迁移至教堂）
+        if data.action == Protocol.ACTION_TYPES.ARTIFACT_DRAW then
+            if data.success then
+                local rewards = ArtifactDrawPanel.onArtifactDrawSuccess(data)
+                setFloat("获得" .. tostring(#rewards) .. "件神器")
+            else
+                setFloat(data.reason or "抽取失败")
+            end
+            refreshTownBadge()
+            return
+        end
+
         if data.action == Protocol.ACTION_TYPES.ARTIFACT_EQUIP and data.success then
             setFloat("神器安装成功，下波战斗生效")
             ArtifactPanel.onArtifactEquipResult(true)
@@ -73,6 +96,7 @@ function M.bind(deps)
         end
 
         -- 转职成功结果（由 ADVANCE_CLASS handler 返回，含 branchId + advLevel + branchName）
+        -- 转职页已迁到右侧栏角色详情，结果处理与教堂打开状态无关
         if data.branchId and data.advLevel then
             print("[ChurchPage] 转职成功: " .. tostring(data.branchName)
                 .. " heroId=" .. tostring(data.heroId)
@@ -85,9 +109,12 @@ function M.bind(deps)
             clearPowerCache()
             -- 刷新城镇Tab角标（转职后可能不再有可转职英雄）
             refreshTownBadge()
-            -- 转职成功 Spine 特效：在角色卡片当前位置播放（卡片已上移 ANIM.SLOT_LIFT）
-            local cardActualCY = CHAR_SLOT.CY - ANIM.SLOT_LIFT * state.slotLiftProgress
-            SpineCardEffect.playJobChange(CHAR_SLOT.CX, cardActualCY)
+            local okDetail, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
+            if okDetail and CharacterDetail.getHeroId and CharacterDetail.getHeroId() == data.heroId then
+                CharacterDetail.markPowerDirty()
+            end
+            local ClassChange = require("ui.church.ChurchClassChange")
+            ClassChange.showFloat("转职成功")
         end
 
         -- 重置转职成功结果（由 RESET_CLASS handler 返回）
@@ -99,6 +126,11 @@ function M.bind(deps)
             clearPowerCache()
             -- 刷新城镇Tab角标
             refreshTownBadge()
+            local okDetail, CharacterDetail = pcall(require, "ui.character.detail.CharacterDetail")
+            if okDetail and CharacterDetail.markPowerDirty then
+                CharacterDetail.markPowerDirty()
+            end
+            require("ui.church.ChurchClassChange").showFloat("已重置转职")
         end
     end
 

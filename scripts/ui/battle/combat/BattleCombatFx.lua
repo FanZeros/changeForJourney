@@ -34,14 +34,14 @@ local function releaseFt(BCS, ft)
     BCS.ftPool[#BCS.ftPool + 1] = ft
 end
 
-function M.addFloatingText(BCS, text, cx, cy, color, isCrit, fontSize, deferred)
+function M.addFloatingText(BCS, text, cx, cy, color, isCrit, fontSize, deferred, kind)
     if deferred then
         if #BCS.pendingFt >= 20 then
             table.remove(BCS.pendingFt, 1)
         end
         BCS.pendingFt[#BCS.pendingFt + 1] = {
             text = text, cx = cx, cy = cy,
-            color = color, isCrit = isCrit or false, fontSize = fontSize,
+            color = color, isCrit = isCrit or false, fontSize = fontSize, kind = kind,
         }
         if #BCS.pendingFt == 1 then
             BCS.ftSpawnCd = 0
@@ -73,6 +73,7 @@ function M.addFloatingText(BCS, text, cx, cy, color, isCrit, fontSize, deferred)
     entry.color    = color
     entry.isCrit   = isCrit or false
     entry.fontSize = baseSize
+    entry.kind = kind
     BCS.floatingTexts[#BCS.floatingTexts + 1] = entry
 end
 
@@ -81,7 +82,7 @@ function M.updateFloatingTexts(BCS, dt, spawnFn)
         BCS.ftSpawnCd = BCS.ftSpawnCd - dt
         if BCS.ftSpawnCd <= 0 then
             local p = table.remove(BCS.pendingFt, 1)
-            spawnFn(p.text, p.cx, p.cy, p.color, p.isCrit, p.fontSize, false)
+            spawnFn(p.text, p.cx, p.cy, p.color, p.isCrit, p.fontSize, false, p.kind)
             BCS.ftSpawnCd = 0.1
         end
     end

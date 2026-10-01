@@ -155,8 +155,8 @@ local img = {
     diamondBig    = -1,
     ticketBig     = -1,
     ticketBigStellar = -1,
-    diamondBg     = -1,
-    ticketQBg     = -1,
+    -- [图标统一 0928] 移除死句柄 diamondBg/ticketQBg：重复加载 UI_icon_ZBBJ_5 且创建后从未绘制
+    -- （品质底框已由 DarkIcon.drawQualityBg(vg, 5, ...) 统一接管）
 }
 
 -- ======================== 缓动函数 ========================
@@ -175,9 +175,7 @@ end
 --- 打开指定弹窗
 local function openPopup(name)
     if name == "history" then
-        popupState.historyVisible = true
-        popupState.historyScrollY = 0
-        popupState.historyTouchY = nil
+        return
     elseif name == "info" then
         popupState.infoVisible = true
         popupState.infoScrollY = 0
@@ -261,7 +259,7 @@ local QUOTA_FAIL_TEXT = "剩余购买次数不足"
 function M.formatGachaFailReason(reason)
     if not reason then return "招募失败" end
     local text = tostring(reason)
-    if text:find("钻石购买星辉") or text:find("购买上限") or text == QUOTA_FAIL_TEXT then
+    if text:find("黑晶购买星辉") or text:find("钻石购买星辉") or text:find("购买上限") or text == QUOTA_FAIL_TEXT then
         return QUOTA_FAIL_TEXT
     end
     return text
@@ -566,13 +564,13 @@ local function drawInfoRuleText(vg, poolId)
             {},
             { { text = "各品质基础概率：", r = tr, g = tg, b = tb } },
             { { text = "杂项: ", r = tr, g = tg, b = tb },
-              { text = "71%", r = hr, g = hg, b = hb } },
+              { text = "55%", r = hr, g = hg, b = hb } },
             { { text = "普通: ", r = tr, g = tg, b = tb },
-              { text = "18%", r = hr, g = hg, b = hb } },
+              { text = "25%", r = hr, g = hg, b = hb } },
             { { text = "稀有: ", r = tr, g = tg, b = tb },
-              { text = "10%", r = hr, g = hg, b = hb } },
+              { text = "15%", r = hr, g = hg, b = hb } },
             { { text = "史诗: ", r = tr, g = tg, b = tb },
-              { text = "1%", r = hr, g = hg, b = hb } },
+              { text = "5%", r = hr, g = hg, b = hb } },
         }
     end
 
@@ -628,25 +626,22 @@ end
 
 --- 初始化弹窗资源
 function M.init(vg)
-    img.confirmBg     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    -- 整图拉伸绘制（950x647），使用 POP 副本，调整原图不影响九宫格用法
+    img.confirmBg     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK_POP.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.confirmBtnBuy = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
-    img.diamondBig    = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ.png", 0)
+    img.diamondBig    = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
     img.ticketBig     = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_1.png", 0)
     local stellarTicketPath = UrGachaConfig.UI.ticketIconPath or "image/货币道具/UI_icon_ZMQ2_X.png"
     img.ticketBigStellar = nvgCreateImage(vg, stellarTicketPath, 0)
     if img.ticketBigStellar < 0 then
         img.ticketBigStellar = nvgCreateImage(vg, "image/货币道具/UI_icon_ZMQ_2.png", 0)
     end
-    img.diamondBg     = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_5.png", 0)
-    img.ticketQBg     = nvgCreateImage(vg, "image/品质框/UI_icon_ZBBJ_5.png", 0)
     print("[TavernPopups] init OK")
 end
 
---- 打开历史招募弹窗
+--- 历史招募已取消
 function M.openHistory()
-    openPopup("history")
-    print("[TavernPopups] 打开历史招募弹窗")
 end
 
 --- 打开招募说明弹窗
@@ -754,7 +749,7 @@ function M.drawAll(vg)
         nvgFontSize(vg, CF.SUB_SIZE)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(CF.SUB_R, CF.SUB_G, CF.SUB_B, 255))
-        nvgText(vg, CF.SUB_CX, CF.SUB_CY, "是否使用钻石快速购买", nil)
+        nvgText(vg, CF.SUB_CX, CF.SUB_CY, "是否使用黑晶快速购买", nil)
 
         drawRoundedRectCentered(vg,
             CF.CONTENT_CX, CF.CONTENT_CY,
@@ -762,7 +757,6 @@ function M.drawAll(vg)
             12,
             0, 0, 0, CF.CONTENT_A)
 
-        drawImageCentered(vg, img.confirmArrow, CF.ARROW_CX, CF.ARROW_CY, CF.ARROW_W, CF.ARROW_H, 1.0)
         DarkIcon.drawQualityBg(vg, 5, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_5
         drawImageCentered(vg, img.diamondBig, CF.DIAMOND_CX, CF.DIAMOND_CY, CF.DIAMOND_W, CF.DIAMOND_H, 1.0)
         DarkIcon.drawQualityBg(vg, 5, CF.TICKET_CX, CF.TICKET_CY, CF.TICKET_W, CF.TICKET_H, 1.0)  -- [暗黑化 P2-A] 原 UI_icon_ZBBJ_5
@@ -771,11 +765,25 @@ function M.drawAll(vg)
             confirmTicketIcon = img.ticketBigStellar
         end
         drawImageCentered(vg, confirmTicketIcon, CF.TICKET_CX, CF.TICKET_CY, CF.TICKET_W, CF.TICKET_H, 1.0)
+        -- 贴图带实心底色，夹在两个图标中间会挡住。按同样的双箭头形状直接画。
+        nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 255))
+        nvgStrokeWidth(vg, 7)
+        nvgLineCap(vg, NVG_ROUND)
+        nvgLineJoin(vg, NVG_ROUND)
+        for i = 0, 1 do
+            local ax = CF.ARROW_CX - 16 + i * 24
+            nvgBeginPath(vg)
+            nvgMoveTo(vg, ax - 12, CF.ARROW_CY - 18)
+            nvgLineTo(vg, ax + 8, CF.ARROW_CY)
+            nvgLineTo(vg, ax - 12, CF.ARROW_CY + 18)
+            nvgStroke(vg)
+        end
 
+        -- 按钮内黑晶角标：够=亮白，不够=棕色
         local diamondEnough = GameState.getGems() >= popupState.confirmDiamondCost
         local dBadgeR, dBadgeG, dBadgeB = 255, 255, 255
         if not diamondEnough then
-            dBadgeR, dBadgeG, dBadgeB = 255, 50, 50
+            dBadgeR, dBadgeG, dBadgeB = 0x8d, 0x5f, 0x41
         end
         drawTextStroke(vg,
             CF.DIAMOND_CX + CF.BADGE_OX,

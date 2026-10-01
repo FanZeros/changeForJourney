@@ -174,10 +174,29 @@ function GameSFX.start()
     end)() .. " 种")
 end
 
---- 播放指定音效
+local teamMuted = {}
+
+--- 多队战斗各自静音。未传队伍时沿用全局音效开关。
+---@param teamIdx number|nil
+---@param muted boolean|nil
+function GameSFX.setTeamMuted(teamIdx, muted)
+    teamIdx = tonumber(teamIdx)
+    if not teamIdx then return end
+    teamMuted[teamIdx] = muted == true
+end
+
+---@param teamIdx number|nil
+---@return boolean
+function GameSFX.isTeamMuted(teamIdx)
+    return teamMuted[tonumber(teamIdx) or 0] == true
+end
+
+--- 播放指定音效。teamIdx 有值时尊重该队自己的音效开关。
 ---@param key string  音效键（见 SFX_DEFS）
-function GameSFX.play(key)
+---@param teamIdx number|nil
+function GameSFX.play(key, teamIdx)
     if not started_ then return end
+    if teamIdx and GameSFX.isTeamMuted(teamIdx) then return end
     local def = SFX_DEFS[key]
     local list = sounds_[key]
     if not def or not list or #list == 0 then

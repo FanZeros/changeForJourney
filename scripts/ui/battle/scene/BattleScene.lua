@@ -277,6 +277,10 @@ local BG_DRIFT_Y_PERIOD = 5.0   -- 垂直漂移周期（秒）
 -- 战斗是否进行中（init 不再预加载关卡，等 setBattleData 首次到达后启动）
 local battleActive = false
 
+-- 战斗超时增伤计时（秒，战斗逻辑时间；随每场战斗/每波重开清零）
+local battleTimeoutElapsed = 0
+local BattleTimeout = require("systems.BattleTimeout")
+
 -- 挂机收益缓存（每分钟）—— 直接由 OfflineCalc 统一公式计算
 local cachedGoldPerMin = 0
 local cachedExpPerMin  = 0
@@ -456,6 +460,7 @@ local function setupBattleCombatContext()
         getEnemies  = function() return enemies end,
         ALLY_CARD_CY  = ALLY_CARD_CY,
         ENEMY_CARD_CY = ENEMY_CARD_CY,
+        globalDmgMult = 1.0,   -- 战斗超时增伤倍率（update 每帧按 battleTimeoutElapsed 回写）
         -- 暴击回调：触发暴击台词
         onCrit = function(attacker, isAlly)
             if isAlly then
@@ -473,12 +478,7 @@ local function setupBattleCombatContext()
                     print(string.format("[HealDiag4] hitCallback FIRED healer=%s target=%s hp=%.0f applyHit=%s",
                         tostring(attacker.name), tostring(target.name), target.hp or -1, tostring(applyHit ~= nil)))
                 end
-                if applyHit then
-                    local ok, err = pcall(applyHit)
-                    if not ok then
-                        print("[HealDiag4] applyHit ERROR: " .. tostring(err))
-                    end
-                end
+                if applyHit then applyHit() end
                 if result.category ~= "healing" and target.attrs then
                     local armorType = target.attrs.armorType or 1
                     BattleEffects.spawn(armorType, tgtCX, tgtCY)
@@ -531,6 +531,7 @@ local function loadStage(stageId, skipBattleStart)
         _enemyGuardFired = _enemyGuardFired, battleActive = battleActive,
         firstClearTimeLeft = firstClearTimeLeft, onStageLoadedCallback = onStageLoadedCallback,
         clearedStages = clearedStages,
+        battleTimeoutElapsed = battleTimeoutElapsed,
         ensureBattleCards = ensureBattleCards, getStageConfig = getStageConfig,
         recalcIdleIncome = recalcIdleIncome, resetWaveTimers = resetWaveTimers,
         generateIdleEnemyList = generateIdleEnemyList, generateEnemyList = generateEnemyList,
@@ -556,6 +557,7 @@ local function loadStage(stageId, skipBattleStart)
     _enemyGuardFired = ctx._enemyGuardFired
     battleActive = ctx.battleActive
     firstClearTimeLeft = ctx.firstClearTimeLeft
+    battleTimeoutElapsed = ctx.battleTimeoutElapsed or 0
     print("[BattleScene] stage loaded id=" .. tostring(stageId))
     require("systems.StoryPlayer").onStage(stageId, "enter")
 end
@@ -615,7 +617,8 @@ function BattleScene.init(vg)
     vg_ = vg  -- 缓存，供 loadStage 切换地图背景
     -- 地图背景延后到 loadStage / 首次绘制，避免启动解码 1MB+ MAP_1
     currentChapter = 1
-    imgShadow   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY.png", 0)
+    -- 阴影板绘制为 1080x556（源图 1080x610 压扁），使用 SHADOW 副本，调整原图不影响其他用法
+    imgShadow   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY_SHADOW.png", 0)
     -- [卡牌惰性加载] 英雄卡/怪物卡大图改为首次进战斗时加载（ensureBattleCards）
     -- ⚠️ 新增怪物 ID 时必须补充到 ensureBattleCards 的加载清单！
     -- 否则 BattleDraw 会 fallback 到 imgMonsterCards[1]（怪物1的贴图）。
@@ -673,9 +676,10 @@ function BattleScene.init(vg)
 
     -- 初始化扫荡弹窗
     SweepDialog.init(vg)
-    SweepDialog.onSweep = function()
+    SweepDialog.onSweep = function(count, teamIdx)
         require("runtime.GameAction").sendAction(
-            require("shared.Protocol").ACTION_TYPES.SWEEP, {})
+            require("shared.Protocol").ACTION_TYPES.SWEEP,
+            { count = count or 1, teamIdx = teamIdx or 1 })
     end
 
     -- 初始化战斗统计面板
@@ -700,41 +704,75 @@ function BattleScene.draw(vg)
     local driftY = -BG_DRIFT_Y_AMP * (1.0 - math.cos(bgAnimTimer * 2 * math.pi / BG_DRIFT_Y_PERIOD)) * 0.5
     local mapScale = 1.0
     local walkY = 0
+    local mapAlpha = 1.0
+    local alignRight = false
     if bgTransAnim then
-        local t = math.min(bgTransAnim.timer / BG_TRANS_DURATION, 1.0)
-        -- 0→1→0 的迈步鼓包，峰值在中点
-        local bump = math.sin(t * math.pi)
+        local duration = bgTransAnim.duration or BG_TRANS_DURATION
+        local t = math.min(bgTransAnim.timer / duration, 1.0)
         local peak = bgTransAnim.zoomTarget or BG_ZOOM_FWD_TARGET
         if peak < 1.0 then
-            peak = 2.0 - peak  -- 旧「缩小淡出」值转成放大
+            peak = 2.0 - peak
         end
-        mapScale = 1.0 + (peak - 1.0) * bump
-        walkY = -36.0 * bump  -- 同步微微上移，模拟迈步
+        if t < 0.45 then
+            -- 右边缘对齐放大，模拟往画面右侧迈出
+            local u = t / 0.45
+            mapScale = 1.0 + (peak - 1.0) * (u * u)
+            alignRight = true
+            mapAlpha = 1.0
+        else
+            -- 透明淡入回原本大小
+            local u = (t - 0.45) / 0.55
+            local fade = u * u * (3 - 2 * u)
+            mapScale = peak + (1.0 - peak) * fade
+            mapAlpha = fade
+            alignRight = true
+        end
+    end
+    local mapX = MAP_CX
+    if alignRight then
+        mapX = MAP_CX + MAP_W * 0.5 - MAP_W * mapScale * 0.5
     end
     -- 裁进设计画布，放大时不溢到邻栏
     nvgSave(vg)
     nvgIntersectScissor(vg, MAP_CX - MAP_W * 0.5, MAP_CY - MAP_H * 0.5, MAP_W, MAP_H)
-    DarkIcon.drawDarkScene(vg, imgMap, MAP_CX, MAP_CY + driftY + walkY,
-        MAP_W * mapScale, MAP_H * mapScale, 1.0)
+    DarkIcon.drawDarkScene(vg, imgMap, mapX, MAP_CY + driftY + walkY,
+        MAP_W * mapScale, MAP_H * mapScale, mapAlpha)
     nvgRestore(vg)
 
     -- 2. 敌方战场阴影
     drawImageCentered(vg, imgShadow, ENEMY_SHADOW_CX, ENEMY_SHADOW_CY,
         ENEMY_SHADOW_W, ENEMY_SHADOW_H, 1.0)
 
-    -- 3a. 地图词缀标签（仅首通模式显示，挂机模式不显示）
-    if isFirstClear and MAS.hasAffixes() then
-        local affixes = MAS.getActiveAffixes()
-        if affixes then
-            -- 每个词缀显示一行："词缀名: 简短说明"，从下往上排列
+    -- 3a. 地图词缀 + Boss 词缀标签（仅首通模式显示，挂机模式不显示）
+    --     地图词缀金色（折磨II+ 才有）；Boss 词缀绯红带"首领"前缀（Hard+ Boss 关才有）
+    if isFirstClear then
+        local lines = {}
+        if MAS.hasAffixes() then
+            local affixes = MAS.getActiveAffixes()
+            if affixes then
+                for _, affix in ipairs(affixes) do
+                    lines[#lines + 1] = { text = affix.name .. ": " .. affix.shortDesc, r = 255, g = 190, b = 80 }
+                end
+            end
+        end
+        local BAS = require("systems.BossAffixSystem")
+        if BAS.hasAffixes() then
+            local bossAffixes = BAS.getActiveAffixes()
+            if bossAffixes then
+                for _, affix in ipairs(bossAffixes) do
+                    lines[#lines + 1] = { text = "首领·" .. affix.name .. ": " .. affix.shortDesc, r = 235, g = 96, b = 96 }
+                end
+            end
+        end
+        if #lines > 0 then
+            -- 每个词缀显示一行，从下往上排列
             local lineH = 34
             local bottomY = 468  -- 最后一行Y位置（与剩余敌人Y=525保持57px间距）
-            local baseY = bottomY - (#affixes - 1) * lineH
-            for i, affix in ipairs(affixes) do
+            local baseY = bottomY - (#lines - 1) * lineH
+            for i, ln in ipairs(lines) do
                 local lineY = baseY + (i - 1) * lineH
-                local text = affix.name .. ": " .. affix.shortDesc
-                drawTextStroke(vg, 540, lineY, text, 28,
-                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 190, 80, 3)
+                drawTextStroke(vg, 540, lineY, ln.text, 28,
+                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, ln.r, ln.g, ln.b, 3)
             end
         end
     end
@@ -801,7 +839,7 @@ function BattleScene.draw(vg)
         BattleEffects.draw(vg)
 
         -- 卡片 Spine 特效（升级/复活，在攻击特效之上）
-        require("ui.fx.SpineCardEffect").draw(vg)
+        require("ui.fx.SpineCardEffect").draw(vg, "battle")
     end
 
     -- 15. 浮动伤害数字
@@ -837,6 +875,16 @@ function BattleScene.draw(vg)
         end
     end
 
+    -- Boss 暴怒提示横幅（v2.64，Boss 词缀 enrage 触发；绯红，y=608 与狂暴错开）
+    do
+        local BAS = require("systems.BossAffixSystem")
+        local bossText, bossAlpha = BAS.getBanner()
+        if bossText then
+            drawTextStroke(vg, 540, 608, bossText, 36,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 235, 90, 90, 5, { alpha = bossAlpha })
+        end
+    end
+
     -- 16. 战斗结束提示 / 寻怪中进度条 / 失败倒计时
     BattleTransitionHud.draw(vg, {
         battleActive = battleActive,
@@ -864,6 +912,12 @@ function BattleScene.draw(vg)
 
     -- ---- 长按怪物属性弹窗（最最顶层） ----
     MonsterInfoPopup.draw(vg)
+end
+
+--- 三队页面不再走 BattleScene.update，但仍要分帧加载角色/怪物卡面。
+function BattleScene.pumpBattleCards()
+    if vg_ then ensureBattleCards(vg_) end
+    pumpBattleCards()
 end
 
 function BattleScene.update(dt)
@@ -971,7 +1025,16 @@ function BattleScene.update(dt)
     if StageBerserk.isActive() then
         StageBerserk.update(logicDt, enemies, allies)
     end
-    ART.update(logicDt)
+
+    -- 战斗超时增伤：累计本场时长，每帧回写全局伤害倍率（敌我双方同时生效）
+    battleTimeoutElapsed = battleTimeoutElapsed + logicDt
+    local _toMult = BattleTimeout.calcMult(battleTimeoutElapsed)
+    local _bcs = BattleCombat.mountedState()
+    if _bcs and _bcs.ctx then
+        _bcs.ctx.globalDmgMult = _toMult
+    end
+
+    ART.update(logicDt, allies)
 
 
     -- ---- 敌人死亡处理 / 己方阵亡紧凑 / 胜负判定（委托 BattleCasualty） ----
@@ -990,6 +1053,7 @@ function BattleScene.update(dt)
         terminalDefeatPending = terminalDefeatPending, defeatByTimeout = defeatByTimeout,
         settleWaveEfficiency = settleWaveEfficiency, resetWaveTimers = resetWaveTimers,
         nextStage = BattleScene.nextStage,
+        beginVictoryMarch = BattleScene.beginVictoryMarch,
     }
     local stageIdBeforeCas = currentStageId
     local _casConsumed = BattleCasualty.process(_casCtx, logicDt)
@@ -1052,9 +1116,13 @@ function BattleScene.update(dt)
     -- ---- 更新背景过渡动画 ----
     if bgTransAnim then
         bgTransAnim.timer = bgTransAnim.timer + dt
-        if bgTransAnim.timer >= BG_TRANS_DURATION then
+        local duration = bgTransAnim.duration or BG_TRANS_DURATION
+        if bgTransAnim.timer >= duration then
             bgTransAnim = nil
         end
+    end
+    if _navLogic and _navLogic.tickVictoryMarch then
+        _navLogic.tickVictoryMarch(dt)
     end
 end
 
@@ -1079,6 +1147,7 @@ end
 --- 重置战斗状态（新单位加入时调用）
 local function resetBattle()
     battleActive = true
+    battleTimeoutElapsed = 0
     if isFirstClear then
         firstClearTimeLeft = require("config.GameConfig").Battle.TIME_LIMIT_SEC
     else
@@ -1092,15 +1161,15 @@ local function resetBattle()
     TM.reset()   -- 清空仇恨表
     SEM.reset()  -- 清空状态效果
     TAL.reset()  -- 清空天赋运行时状态
-    RCH.reset()  -- 清空遗物条件状态
-    ART.reset()  -- 清空神器条件状态
+    RCH.reset()  -- 清空条件词条运行时状态
+    ART.reset(allies)  -- 只清理当前战斗单位的神器条件状态
     -- 重置所有己方单位（清除Buff → 重新应用装备 → 填满血）& 初始化天赋
     for _, u in ipairs(allies) do
         Diag.installSentinel(u)
         resetAllyUnit(u)
         TAL.initUnit(u)
     end
-    RCH.initBattle(allies)  -- 重新初始化遗物条件词条
+    RCH.initBattle(allies)  -- 重新初始化条件词条运行时
     ART.initBattle(allies)  -- 重新初始化神器条件效果
     for _, u in ipairs(enemies) do
         Diag.installSentinel(u)
@@ -1146,6 +1215,11 @@ function BattleScene.setAllies(list)
         allies = trimmed
     else
         allies = list
+    end
+    -- [站位顺序] 记录编队槽位序号：战斗中途「阵亡紧凑」会打乱数组顺序，
+    -- 切关时用 _slotOrder 还原，避免角色站位与编队不一致（见 BattleAllyReset.restoreOrder）
+    for i, u in ipairs(allies) do
+        u._slotOrder = i
     end
     -- 为所有 ally 创建初始基线快照（此时 unit 已含全部持久性 modifier + 装备）
     for _, u in ipairs(allies) do
@@ -1221,6 +1295,50 @@ function BattleScene.getStageId()
     return currentStageId
 end
 
+--- 三行第一队通关后，只同步主线关卡号，不重开 BattleScene 自己的战斗。
+--- 否则存档已到下一关，BattleScene 仍停在旧关，下一帧会把第一队拉回去。
+---@param stageId number
+function BattleScene.adoptStageProgress(stageId)
+    stageId = tonumber(stageId)
+    if not stageId or not getStageConfig().getStage(stageId) then return end
+    if stageId > maxStageId_ then
+        maxStageId_ = stageId
+    end
+    currentStageId = stageId
+    isFirstClear = not clearedStages[stageId]
+end
+
+--- [终焉协同] 三队共享生命池打空后调用：等价主线「终焉胜利 → 轮回」。
+--- 奖励去重：只有该终焉关此前未通关时才触发首通回调（重打已通关的终焉
+--- 不再重复发 fcExp/首通奖励，与主线 BattleCasualty 的 isFirstClear 门槛一致）。
+function BattleScene.completeTriTerminal(stageId)
+    if not SC.isTerminalTemple(stageId) or currentStageId ~= stageId then return false end
+    local targetId = SC.getReincarnationTarget(SC.getDifficulty(stageId))
+    if not targetId then return false end
+    local wasFirstClear = not (clearedStages[stageId] or clearedStages[tostring(stageId)])
+    clearedStages[stageId] = true
+    maxStageId_ = math.max(maxStageId_, targetId)
+    loadStage(targetId, true)
+    for _, u in ipairs(allies) do resetAllyUnit(u) end
+    startBattleTalents()
+    BottomNav.setAllLocked(false)
+    require("systems.GameBGM").setScene("battle")
+    if onStageChangedCallback then onStageChangedCallback(targetId) end
+    local ClientDispatcher = require("runtime.ClientDispatcher")
+    local battle = ClientDispatcher.get("battle")
+    if type(battle) == "table" then
+        battle.currentStageId = targetId
+        battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, targetId)
+        battle.clearedStages = battle.clearedStages or {}
+        battle.clearedStages[tostring(stageId)] = true
+        local targetCleared = battle.clearedStages[tostring(targetId)] == true
+        battle.battleMode = targetCleared and "idle" or "firstClear"
+        require("boot.StandaloneSave").Flush()
+    end
+    if wasFirstClear and onFirstClearCallback then onFirstClearCallback(stageId) end
+    return true
+end
+
 --- 触发敌方击杀回调 [修复] BattleTriPage 三队战斗驱动依赖（与主战斗内部调用同构）
 ---@param data table { expReward, goldReward, allyCount, expMult, heroIds, stageId }
 function BattleScene.onEnemyKill(data)
@@ -1282,6 +1400,15 @@ end
 function BattleScene.nextStage()
     if not _navLogic then bindBattleExtracts() end
     return _navLogic.nextStage()
+end
+
+function BattleScene.beginMapMarch(duration)
+    bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET, duration = duration or 2.0 }
+end
+
+function BattleScene.beginVictoryMarch()
+    if not _navLogic then bindBattleExtracts() end
+    return _navLogic.beginVictoryMarch()
 end
 
 --- 后退到上一关
@@ -1359,6 +1486,14 @@ function BattleScene.setOnFirstClear(callback)
     onFirstClearCallback = callback
 end
 
+--- 三行战斗通关后复用首通奖励弹窗。
+---@param clearedStageId number
+function BattleScene.onFirstClear(clearedStageId)
+    if onFirstClearCallback then
+        onFirstClearCallback(clearedStageId)
+    end
+end
+
 --- 注册关卡加载完成回调（每次 loadStage 结束时触发）
 ---@param callback function|nil  function(stageId, isFirstClear)
 function BattleScene.setOnStageLoaded(callback)
@@ -1430,13 +1565,9 @@ function BattleScene.refreshAllyStats()
                             newUnit.armorType = eqArmorType
                         end
                     end
-                    -- 应用遗物词条属性加成（与 getDeployedTeam 一致）
-                    local RelicBridge = require("systems.RelicBridge")
-                    local relicConds = RelicBridge.applyToUnit(newUnit.attrs, newUnit.classId or u.classId)
-                    if relicConds and #relicConds > 0 then
-                        u.relicConditions = relicConds
-                    end
-                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot)
+                    -- [927 遗物后端移除] RelicBridge 已删除，不再应用遗物词条
+                    -- [928 三队并行] ArtifactBridge 保留 teamIdx 参数（多队神器数据隔离）
+                    local artifactEffects = require("systems.ArtifactBridge").applyToUnit(newUnit.attrs, partySlot, nil, u.artifactTeamIdx or 1)
                     if artifactEffects and #artifactEffects > 0 then
                         u.artifactEffects = artifactEffects
                     else
@@ -1546,8 +1677,9 @@ function BattleScene.reloadStage(opts)
         searchingTimer = 0
         print("[BattleScene] 首次进入，以寻怪模式启动")
     else
-        -- 常规重载：skipBattleStart → resetAllyUnit → startBattleTalents
+        -- 常规重载：skipBattleStart → 还原站位顺序 → resetAllyUnit → startBattleTalents
         loadStage(currentStageId, true)
+        BattleAllyReset.restoreOrder(allies)
         for _, u in ipairs(allies) do resetAllyUnit(u) end
         startBattleTalents()
     end
@@ -1574,7 +1706,7 @@ function BattleScene.resetToDefault()
     SEM.reset()
     TAL.reset()
     RCH.reset()
-    ART.reset()
+    ART.reset(allies)
     BattleCombat.reset()
     ProjectileSystem.reset()
     -- 解锁导航（防止终焉神殿锁定残留）

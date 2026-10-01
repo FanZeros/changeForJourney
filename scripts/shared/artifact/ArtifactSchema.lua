@@ -6,27 +6,59 @@ local ArtifactSchema = {}
 local ArtifactDefs = require("shared.artifact.ArtifactDefs")
 
 ArtifactSchema.SLOT_COUNT = 4
-ArtifactSchema.SUB_SLOT_COUNT = 3
-ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL = 40
-ArtifactSchema.THIRD_SLOT_UNLOCK_LEVEL = 80
+--- [双格改版] 每号位 2 个神器格（原 3 个）：Lv30 解锁第1格、Lv60 解锁第2格。
+--- 旧档第3格装配在 normalizeModule 时自动卸下（实例仍留在背包，不丢失）。
+ArtifactSchema.SUB_SLOT_COUNT = 2
+--- [三队适配] 装配表按队伍隔离；同一实例可同时装到多支队伍
+ArtifactSchema.TEAM_COUNT = 3
+ArtifactSchema.FIRST_SLOT_UNLOCK_LEVEL = 30
+ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL = 60
 
 function ArtifactSchema.getUnlockedSubSlotCount(playerLevel)
     playerLevel = tonumber(playerLevel) or 1
-    if playerLevel >= ArtifactSchema.THIRD_SLOT_UNLOCK_LEVEL then
-        return 3
-    end
     if playerLevel >= ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL then
         return 2
     end
-    return 1
+    if playerLevel >= ArtifactSchema.FIRST_SLOT_UNLOCK_LEVEL then
+        return 1
+    end
+    return 0
 end
 
 function ArtifactSchema.getSubSlotUnlockLevel(subSlot)
     subSlot = tonumber(subSlot) or 1
-    if subSlot <= 1 then return 1 end
+    if subSlot <= 1 then return ArtifactSchema.FIRST_SLOT_UNLOCK_LEVEL end
     if subSlot == 2 then return ArtifactSchema.SECOND_SLOT_UNLOCK_LEVEL end
-    if subSlot == 3 then return ArtifactSchema.THIRD_SLOT_UNLOCK_LEVEL end
     return nil
+end
+
+--- 归一化队伍索引（非法值回落 1，与旧存档/旧调用兼容）
+---@param teamIdx number|nil
+---@return number
+function ArtifactSchema.normalizeTeamIdx(teamIdx)
+    teamIdx = tonumber(teamIdx)
+    if not teamIdx or teamIdx ~= teamIdx
+        or teamIdx == math.huge or teamIdx == -math.huge then
+        return 1
+    end
+    teamIdx = math.floor(teamIdx)
+    if teamIdx < 1 or teamIdx > ArtifactSchema.TEAM_COUNT then
+        return 1
+    end
+    return teamIdx
+end
+
+local function getTeamEquipped(data, teamIdx, create)
+    teamIdx = ArtifactSchema.normalizeTeamIdx(teamIdx)
+    data.equippedByTeam = data.equippedByTeam or {}
+    local team = data.equippedByTeam[teamIdx] or data.equippedByTeam[tostring(teamIdx)]
+    if type(team) ~= "table" then
+        if not create then return nil end
+        team = {}
+        data.equippedByTeam[teamIdx] = team
+        data.equippedByTeam[tostring(teamIdx)] = nil
+    end
+    return team
 end
 
 local function isValidIndex(value, maxValue)
@@ -37,15 +69,22 @@ local function isValidIndex(value, maxValue)
     return value == math.floor(value) and value >= 1 and value <= maxValue
 end
 
-function ArtifactSchema.getEquippedId(data, slot, subSlot)
-    if type(data) ~= "table" or type(data.equipped) ~= "table" then return nil end
+--- [三队适配] 读取指定队伍的装配（teamIdx 缺省 1，旧调用兼容）
+function ArtifactSchema.getEquippedId(data, slot, subSlot, teamIdx)
+    if type(data) ~= "table" then return nil end
+    local ti = ArtifactSchema.normalizeTeamIdx(teamIdx)
+    -- 旧档兼容回落：仅队1 允许回落到未迁移的全局 equipped；队2/3 无独立装配即为空
+    local equipped = getTeamEquipped(data, ti, false)
+        or (ti == 1 and type(data.equipped) == "table" and data.equipped)
+        or nil
+    if type(equipped) ~= "table" then return nil end
     slot = tonumber(slot)
     subSlot = tonumber(subSlot) or 1
     if not isValidIndex(slot, ArtifactSchema.SLOT_COUNT)
         or not isValidIndex(subSlot, ArtifactSchema.SUB_SLOT_COUNT) then
         return nil
     end
-    local row = data.equipped[slot] or data.equipped[tostring(slot)]
+    local row = equipped[slot] or equipped[tostring(slot)]
     if type(row) == "table" then
         return row[subSlot] or row[tostring(subSlot)]
     end
@@ -55,9 +94,10 @@ function ArtifactSchema.getEquippedId(data, slot, subSlot)
     return nil
 end
 
-function ArtifactSchema.setEquippedId(data, slot, subSlot, artifactId)
+--- [三队适配] 写入指定队伍的装配（teamIdx 缺省 1）
+function ArtifactSchema.setEquippedId(data, slot, subSlot, artifactId, teamIdx)
     if type(data) ~= "table" then return end
-    data.equipped = data.equipped or {}
+    local equipped = getTeamEquipped(data, teamIdx, true)
     slot = tonumber(slot)
     subSlot = tonumber(subSlot) or 1
     if not isValidIndex(slot, ArtifactSchema.SLOT_COUNT)
@@ -77,25 +117,57 @@ function ArtifactSchema.setEquippedId(data, slot, subSlot, artifactId)
             row[1] = row[1] or tostring(src)
         end
     end
-    mergeRow(data.equipped[slot])
-    mergeRow(data.equipped[tostring(slot)])
-    data.equipped[slot] = row
-    data.equipped[tostring(slot)] = nil
+    mergeRow(equipped[slot])
+    mergeRow(equipped[tostring(slot)])
+    equipped[slot] = row
+    equipped[tostring(slot)] = nil
     if artifactId == nil or tostring(artifactId) == "" then
         row[subSlot] = nil
         if not next(row) then
-            data.equipped[slot] = nil
+            equipped[slot] = nil
         end
     else
-        row[subSlot] = tostring(artifactId)
+        local idStr = tostring(artifactId)
+        -- 先写入新位置，再做同队唯一性清理。
+        -- ⚠️ 顺序不能反：row 就是 equipped[slot] 本身，若先清理，
+        -- 空 row 会被当成旧位删除，导致装配写入丢失。
+        row[subSlot] = idStr
+        -- [三队适配] 同一队内实例唯一：清掉本队其他位置的同一实例
+        -- （只影响本队；该实例在其他队伍的装配保持不变）
+        for s = 1, ArtifactSchema.SLOT_COUNT do
+            local other = equipped[s]
+            if type(other) == "table" then
+                for ss = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                    if not (s == slot and ss == subSlot)
+                        and tostring(other[ss] or "") == idStr then
+                        other[ss] = nil
+                    end
+                end
+                if s ~= slot and not next(other) then equipped[s] = nil end
+            end
+        end
+    end
+    local ti = ArtifactSchema.normalizeTeamIdx(teamIdx)
+    if not next(equipped) then
+        data.equippedByTeam[ti] = nil
+    end
+    -- data.equipped 是队1 的兼容视图，保持引用一致
+    if ti == 1 then
+        data.equipped = data.equippedByTeam[1] or {}
     end
 end
 
-function ArtifactSchema.findEquippedSlot(data, artifactId)
+--- [三队适配] 在指定队伍中查找装配位置（teamIdx 缺省 1）
+function ArtifactSchema.findEquippedSlot(data, artifactId, teamIdx)
     artifactId = tostring(artifactId or "")
-    if artifactId == "" or type(data) ~= "table" or type(data.equipped) ~= "table" then return nil, nil end
+    if artifactId == "" or type(data) ~= "table" then return nil, nil end
+    local ti = ArtifactSchema.normalizeTeamIdx(teamIdx)
+    local equipped = getTeamEquipped(data, ti, false)
+        or (ti == 1 and type(data.equipped) == "table" and data.equipped)
+        or nil
+    if type(equipped) ~= "table" then return nil, nil end
     for slot = 1, ArtifactSchema.SLOT_COUNT do
-        local row = data.equipped[slot] or data.equipped[tostring(slot)]
+        local row = equipped[slot] or equipped[tostring(slot)]
         if type(row) == "table" then
             for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
                 local id = row[subSlot] or row[tostring(subSlot)]
@@ -108,6 +180,19 @@ function ArtifactSchema.findEquippedSlot(data, artifactId)
         end
     end
     return nil, nil
+end
+
+--- [三队适配] 在所有队伍中查找装配位置（合成/置换守卫：任一队已装即视为已装配）
+---@return number|nil teamIdx
+---@return number|nil slot
+---@return number|nil subSlot
+function ArtifactSchema.findEquippedSlotAnyTeam(data, artifactId)
+    if type(data) ~= "table" then return nil, nil, nil end
+    for teamIdx = 1, ArtifactSchema.TEAM_COUNT do
+        local slot, subSlot = ArtifactSchema.findEquippedSlot(data, artifactId, teamIdx)
+        if slot then return teamIdx, slot, subSlot end
+    end
+    return nil, nil, nil
 end
 
 local function normalizeCountMap(map)
@@ -186,6 +271,7 @@ function ArtifactSchema.normalizeModule(data)
     if type(data) ~= "table" then return end
     if data.b ~= nil then data.bag = data.b end
     if data.e ~= nil then data.equipped = data.e end
+    if data.et ~= nil then data.equippedByTeam = data.et end
     if data.n ~= nil then data.nextId = data.n end
     if data.r ~= nil then data.pityRare = data.r end
     if data.p ~= nil then data.pityEpic = data.p end
@@ -195,6 +281,12 @@ function ArtifactSchema.normalizeModule(data)
     local ratioMode = data.av == 1 or data.av == true or data.valueMode == "ratio"
 
     if not data.bag then data.bag = {} end
+    -- [三队适配] 旧档迁移：无 equippedByTeam 时把旧的全局 equipped 视为队1
+    if type(data.equippedByTeam) ~= "table" then data.equippedByTeam = {} end
+    if type(data.equipped) == "table" and next(data.equipped) ~= nil
+        and next(data.equippedByTeam) == nil then
+        data.equippedByTeam[1] = data.equipped
+    end
     if not data.equipped then data.equipped = {} end
     if not data.nextId then data.nextId = 1 end
     if not data.pityRare then data.pityRare = 0 end
@@ -219,42 +311,55 @@ function ArtifactSchema.normalizeModule(data)
         end
     end
 
-    local fixedEquipped = {}
-    local usedEquippedIds = {}
-    for slot = 1, ArtifactSchema.SLOT_COUNT do
-        local v = data.equipped[slot] or data.equipped[tostring(slot)]
-        local row = {}
-        local slotTypes = {}
-        local function keepEquippedId(subSlot, id)
-            id = tostring(id or "")
-            local artifact = bagById[id]
-            if id == "" or not artifact or usedEquippedIds[id] then
-                return
-            end
-            local artifactType = tonumber(artifact.artifactId) or 0
-            if artifactType > 0 and slotTypes[artifactType] then
-                return
-            end
-            usedEquippedIds[id] = true
-            if artifactType > 0 then slotTypes[artifactType] = true end
-            row[subSlot] = id
-        end
-        if type(v) == "table" then
-            for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
-                local id = v[subSlot] or v[tostring(subSlot)]
-                if id ~= nil and tostring(id) ~= "" then
-                    keepEquippedId(subSlot, id)
+    -- [三队适配] 逐队归一化装配：实例 ID 必须存在于背包；
+    -- 同一队内同槽位类型不重复；同一实例在同一队内只能出现一次。
+    -- 实例允许跨队复用，因此 usedEquippedIds 按队重置。
+    local fixedByTeam = {}
+    for teamIdx = 1, ArtifactSchema.TEAM_COUNT do
+        local teamSrc = data.equippedByTeam[teamIdx] or data.equippedByTeam[tostring(teamIdx)]
+        if type(teamSrc) == "table" and next(teamSrc) ~= nil then
+            local usedEquippedIds = {}
+            local fixedEquipped = {}
+            for slot = 1, ArtifactSchema.SLOT_COUNT do
+                local v = teamSrc[slot] or teamSrc[tostring(slot)]
+                local row = {}
+                local slotTypes = {}
+                local function keepEquippedId(subSlot, id)
+                    id = tostring(id or "")
+                    local artifact = bagById[id]
+                    if id == "" or not artifact or usedEquippedIds[id] then
+                        return
+                    end
+                    local artifactType = tonumber(artifact.artifactId) or 0
+                    if artifactType > 0 and slotTypes[artifactType] then
+                        return
+                    end
+                    usedEquippedIds[id] = true
+                    if artifactType > 0 then slotTypes[artifactType] = true end
+                    row[subSlot] = id
                 end
+                if type(v) == "table" then
+                    for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                        local id = v[subSlot] or v[tostring(subSlot)]
+                        if id ~= nil and tostring(id) ~= "" then
+                            keepEquippedId(subSlot, id)
+                        end
+                    end
+                elseif v ~= nil and tostring(v) ~= "" then
+                    keepEquippedId(1, v)
+                end
+                if next(row) then fixedEquipped[slot] = row end
             end
-        elseif v ~= nil and tostring(v) ~= "" then
-            keepEquippedId(1, v)
+            if next(fixedEquipped) then fixedByTeam[teamIdx] = fixedEquipped end
         end
-        if next(row) then fixedEquipped[slot] = row end
     end
-    data.equipped = fixedEquipped
+    data.equippedByTeam = fixedByTeam
+    -- data.equipped 保留为队1 的兼容视图（旧 UI/桥接代码回落用），不再单独维护
+    data.equipped = fixedByTeam[1] or {}
 
     data.b = nil
     data.e = nil
+    data.et = nil
     data.n = nil
     data.r = nil
     data.p = nil
@@ -282,28 +387,39 @@ function ArtifactSchema.dehydrateModule(data)
         leanBag[i] = row
     end
 
-    local leanEquipped = {}
-    for slot, row in pairs(data.equipped or {}) do
-        local leanRow = {}
-        if type(row) == "table" then
-            for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
-                local id = row[subSlot] or row[tostring(subSlot)]
-                if id ~= nil and tostring(id) ~= "" then
-                    leanRow[tostring(subSlot)] = tonumber(id) or id
+    local function dehydrateTeamEquipped(teamSrc)
+        local leanEquipped = {}
+        for slot, row in pairs(teamSrc or {}) do
+            local leanRow = {}
+            if type(row) == "table" then
+                for subSlot = 1, ArtifactSchema.SUB_SLOT_COUNT do
+                    local id = row[subSlot] or row[tostring(subSlot)]
+                    if id ~= nil and tostring(id) ~= "" then
+                        leanRow[tostring(subSlot)] = tonumber(id) or id
+                    end
                 end
+            elseif row ~= nil and tostring(row) ~= "" then
+                leanRow["1"] = tonumber(row) or row
             end
-        elseif row ~= nil and tostring(row) ~= "" then
-            leanRow["1"] = tonumber(row) or row
+            if next(leanRow) then
+                leanEquipped[tostring(slot)] = leanRow
+            end
         end
-        if next(leanRow) then
-            leanEquipped[tostring(slot)] = leanRow
+        return leanEquipped
+    end
+
+    local leanByTeam = {}
+    for teamIdx = 1, ArtifactSchema.TEAM_COUNT do
+        local leanEquipped = dehydrateTeamEquipped(data.equippedByTeam[teamIdx])
+        if next(leanEquipped) then
+            leanByTeam[tostring(teamIdx)] = leanEquipped
         end
     end
 
     return {
         av = 1,
         b = leanBag,
-        e = leanEquipped,
+        et = leanByTeam,
         n = tonumber(data.nextId) or 1,
         r = tonumber(data.pityRare) or 0,
         p = tonumber(data.pityEpic) or 0,
@@ -323,6 +439,7 @@ ArtifactSchema.Fields = {
             return {
                 bag        = {},
                 equipped   = {},
+                equippedByTeam = {},
                 nextId     = 1,
                 pityRare   = 0,
                 pityEpic   = 0,

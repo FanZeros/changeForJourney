@@ -6,8 +6,16 @@
 local DrawUtil = require("core.DrawUtil")
 local BF       = require("systems.ButtonFeedback")
 local Protocol = require("shared.Protocol")
+local KeywordText = require("ui.widget.KeywordText")
 
 local Panel = {}
+
+-- 每张卡一个关键词富文本实例（热区独立；draw/handleClick 都在 1080×2400 设计坐标系，
+-- 调用方 TowerBattleScene 已做 fit 反变换，无需 setTransform）
+local kwCards = {}
+for i = 1, 3 do
+    kwCards[i] = KeywordText.new({ textColor = { 0x5f, 0x37, 0x37 } })
+end
 
 -- ======================== 设计分辨率 ========================
 
@@ -105,6 +113,7 @@ function Panel.open(floor, choices, onPick)
     state.floor = floor or 1
     state.choices = choices or {}
     state.onPick = onPick
+    for i = 1, 3 do kwCards[i]:clear() end   -- 清上次打开的关键词状态
     print("[TowerBuffPick] open floor=" .. state.floor .. " choices=" .. #state.choices)
 end
 
@@ -112,6 +121,7 @@ function Panel.close()
     state.open = false
     state.choices = {}
     state.onPick = nil
+    for i = 1, 3 do kwCards[i]:clear() end
 end
 
 function Panel.isOpen()
@@ -182,20 +192,21 @@ function Panel.draw(vg)
             qDisplay.r, qDisplay.g, qDisplay.b, CARD.QUALITY_SW,
             { strokeColor = { CARD.NAME_STROKE_R, CARD.NAME_STROKE_G, CARD.NAME_STROKE_B } })
 
-        -- 5.4) 介绍文本段落区域
+        -- 5.4) 介绍文本段落区域（关键词可点击）
         local descY = cardTop + CARD.DESC_Y_OFF
         local descLeft = CARD.DESC_CX - CARD.DESC_W * 0.5
         nvgSave(vg)
         nvgScissor(vg, descLeft, descY, CARD.DESC_W, CARD.DESC_H)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, CARD.DESC_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-        nvgFillColor(vg, nvgRGBA(CARD.DESC_R, CARD.DESC_G, CARD.DESC_B, 255))
-        nvgTextBox(vg, descLeft, descY, CARD.DESC_W, choice.desc or "", nil)
+        kwCards[i]:draw(vg, choice.desc or "", descLeft, descY, CARD.DESC_W, CARD.DESC_FONT)
         nvgResetScissor(vg)
         nvgRestore(vg)
 
         BF.finish(vg, _bf)
+    end
+
+    -- 6. 关键词解释气泡（最上层，盖住所有卡片）
+    for i = 1, 3 do
+        kwCards[i]:drawPopup(vg)
     end
 end
 
@@ -203,6 +214,20 @@ end
 
 function Panel.handleClick(dx, dy)
     if not state.open then return false end
+
+    -- 关键词优先：任一卡片解释气泡开着 → 任意点击先关气泡（不选卡）
+    for i = 1, 3 do
+        if kwCards[i]:isOpen() then
+            kwCards[i]:closePopup()
+            return true
+        end
+    end
+    -- 命中关键词 → 弹解释（必须先于整卡 hitTest，否则点 desc 关键词会误选卡）
+    for i = 1, 3 do
+        if kwCards[i]:handleInput(dx, dy) then
+            return true
+        end
+    end
 
     -- 检测点击了哪张卡片
     for i, choice in ipairs(state.choices) do

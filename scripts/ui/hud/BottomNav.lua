@@ -13,7 +13,7 @@ local TAB_COUNT = 5
 
 local tabs = {
     { name = "角色", locked = true },  -- 由引导1解锁
-    { name = "日志", locked = true },  -- 由引导3解锁
+    false,                       -- 旧日志页已移除，保留页码以兼容其他标签
     { name = "战斗", locked = false },
     { name = "城镇", locked = true },  -- 由引导4解锁
     { name = "副本", locked = true },  -- 首通0305解锁
@@ -67,7 +67,7 @@ function BottomNav.getSelectedIndex()
 end
 
 function BottomNav.setSelectedIndex(index)
-    if index >= 1 and index <= TAB_COUNT and not tabs[index].locked then
+    if index >= 1 and index <= TAB_COUNT and tabs[index] and not tabs[index].locked then
         selectedIndex = index
     end
 end
@@ -77,8 +77,7 @@ end
 ---@return boolean
 function BottomNav.isTabLocked(index)
     local tab = tabs[index]
-    if not tab then return false end
-    return tab.locked and true or false
+    return not tab or tab.locked and true or false
 end
 
 --- 设置指定标签的角标显示状态
@@ -97,7 +96,7 @@ function BottomNav.getBadge(tabIndex)
     return tabBadges[tabIndex] == true, tabBadgeStyle[tabIndex]
 end
 
---- 刷新城镇标签(Tab 4)角标：古树(天赋) + 教堂(转职/神器) + 铁匠铺(可强化) + 遗物
+--- 刷新城镇标签(Tab 4)角标：古树(天赋) + 教堂(转职/神器) + 铁匠铺(可强化)
 function BottomNav.refreshTownBadge()
     -- 古树天赋点未用 → 箭头
     local okTP, TP = pcall(require, "ui.church.talent.TalentPage")
@@ -108,7 +107,7 @@ function BottomNav.refreshTownBadge()
             return
         end
     end
-    -- 教堂角标（神器→箭头，转职→红点）
+    -- 教堂角标（仅神器可合成→箭头；转职已迁角色详情，不再出红点）
     local okCP, CP = pcall(require, "ui.church.ChurchPage")
     if okCP and CP and CP.getChurchBadgeInfo then
         local show, style = CP.getChurchBadgeInfo()
@@ -126,15 +125,7 @@ function BottomNav.refreshTownBadge()
             return
         end
     end
-    -- 遗物角标（可强化→箭头，新遗物→红点）
-    local okRS, RS = pcall(require, "systems.RelicSystem")
-    if okRS and RS and RS.getRelicBadgeInfo then
-        local show, style = RS.getRelicBadgeInfo()
-        if show then
-            BottomNav.setBadge(4, true, style)
-            return
-        end
-    end
+
     -- 都没有→清除
     BottomNav.setBadge(4, false, nil)
 end
@@ -183,14 +174,13 @@ function BottomNav.refreshDungeonBadge()
     BottomNav.setBadge(5, false, nil)
 end
 
---- 根据引导完成状态刷新标签 1/2/4 的锁定状态
+--- 根据引导完成状态刷新标签 1/4 的锁定状态
 --- 在 init() 时调用一次，引导完成后也会通过 setTabLocked 实时解锁
 function BottomNav.refreshUnlockState()
     local ok, TM = pcall(require, "systems.TutorialManager")
     if not ok then return end
 
     if TM.isPanelUnlocked("character_panel") then tabs[1].locked = false end
-    if TM.isPanelUnlocked("log_panel")      then tabs[2].locked = false end
     if TM.isPanelUnlocked("town_panel")     then tabs[4].locked = false end
 
     -- tab5：副本（首通通关0305解锁）
@@ -203,7 +193,7 @@ end
 ---@param tabIndex number 标签索引 (1~5)
 ---@param locked boolean
 function BottomNav.setTabLocked(tabIndex, locked)
-    if tabIndex < 1 or tabIndex > TAB_COUNT then return end
+    if tabIndex < 1 or tabIndex > TAB_COUNT or not tabs[tabIndex] then return end
     tabs[tabIndex].locked = locked
     -- 若解锁后当前选中的是锁定标签，切回战斗
     if not locked and selectedIndex == tabIndex then return end

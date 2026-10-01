@@ -15,14 +15,14 @@ local TaskPage = {}
 local W, H = 1080, 2400
 local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
-local LIST = { x = 48, y = 430, w = 984, h = 1760, rowH = 210, gap = 16 }
+local LIST = { x = 48, y = 470, w = 984, h = 1720, rowH = 200, gap = 36 }
 local TABS = {
     { key = "clear", name = "通关", cx = 270, w = 280 },
     { key = "level", name = "远征", cx = 540, w = 280 },
     { key = "hero", name = "队员", cx = 810, w = 280 },
 }
 local DIFF_MARK = { normal = "普通", hard = "困难", nightmare = "噩梦" }
-local CLAIM_ALL = { cx = 820, cy = 250, w = 240, h = 64 }
+local CLAIM_ALL = { cx = 860, cy = 300, w = 240, h = 64 }
 
 local state = {
     open = false, closing = false, openTime = 0, closeTime = 0,
@@ -95,18 +95,32 @@ local function sortRows(rows)
     return out
 end
 
-local function listForTab()
+local function listForKey(tabKey)
     local out = {}
     for _, task in ipairs(TaskConfig.ACHIEVEMENT) do
-        if state.tab == "level" or state.tab == "hero" then
-            if task.group == state.tab then
+        if tabKey == "level" or tabKey == "hero" then
+            if task.group == tabKey then
                 out[#out + 1] = task
             end
         elseif task.difficulty == "normal" or task.difficulty == "hard" or task.difficulty == "nightmare" then
             out[#out + 1] = task
         end
     end
-    return sortRows(out)
+    return out
+end
+
+local function claimableForKey(tabKey)
+    local count = 0
+    for _, task in ipairs(listForKey(tabKey)) do
+        if statusOf(task) == TaskConfig.STATUS.CLAIMABLE then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function listForTab()
+    return sortRows(listForKey(state.tab))
 end
 
 local function tabScope()
@@ -114,13 +128,7 @@ local function tabScope()
 end
 
 local function claimableInTab()
-    local count = 0
-    for _, task in ipairs(listForTab()) do
-        if statusOf(task) == TaskConfig.STATUS.CLAIMABLE then
-            count = count + 1
-        end
-    end
-    return count
+    return claimableForKey(state.tab)
 end
 
 local function refreshScroll(count)
@@ -222,12 +230,12 @@ local function drawRow(vg, task, y)
     if reward then
         local rcx = LIST.x + LIST.w - 300
         local rcy = y - 8
-        DarkIcon.drawQualityBg(vg, reward.quality or 1, rcx, rcy, 78, 78, claimed and 0.55 or 1)
+        DarkIcon.drawQualityBg(vg, reward.quality or 1, rcx, rcy, 124, 124, claimed and 0.55 or 1)
         local icon = rewardIcon(vg, reward.icon)
         if icon >= 0 then
-            DrawUtil.drawImageCentered(vg, icon, rcx, rcy, 52, 52, claimed and 0.55 or 1)
+            DrawUtil.drawImageCentered(vg, icon, rcx, rcy, 96, 96, claimed and 0.55 or 1)
         end
-        text(vg, rcx + 24, rcy + 28, require("core.NumberUtil").format(reward.amount or 0), 20,
+        text(vg, rcx + 55, rcy + 55, require("core.NumberUtil").format(reward.amount or 0), 26,
             NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, 255, 244, 220, 2)
     end
     local label = "未完成"
@@ -241,7 +249,12 @@ local function drawRow(vg, task, y)
     nvgRoundedRect(vg, LIST.x + LIST.w - 210, y - 36, 180, 72, 10)
     nvgFillColor(vg, nvgRGBA(r, g, b, 230))
     nvgFill(vg)
-    text(vg, LIST.x + LIST.w - 120, y, label, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 244, 220, 2)
+    -- 按钮文字：可领取=亮色，不可领=棕色
+    local lr, lg, lb = 255, 244, 220
+    if status ~= TaskConfig.STATUS.CLAIMABLE then
+        lr, lg, lb = 0x8d, 0x5f, 0x41
+    end
+    text(vg, LIST.x + LIST.w - 120, y, label, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, lr, lg, lb, 2)
 end
 
 function TaskPage.draw(vg)
@@ -257,8 +270,8 @@ function TaskPage.draw(vg)
     nvgRect(vg, 0, 0, W, H)
     nvgFillColor(vg, nvgRGBA(18, 16, 22, 255))
     nvgFill(vg)
-    TownPageChrome.drawNamePlate(vg, imgName, "功绩")
-    text(vg, 360, 250, "终焉功绩", 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
+    TownPageChrome.drawNamePlate(vg, imgName, "功绩", { scale = 0.72 })
+    text(vg, 300, 300, "终焉功绩", 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
     local claimCount = claimableInTab()
     nvgBeginPath(vg)
     nvgRoundedRect(vg, CLAIM_ALL.cx - CLAIM_ALL.w * 0.5, CLAIM_ALL.cy - CLAIM_ALL.h * 0.5,
@@ -266,16 +279,27 @@ function TaskPage.draw(vg)
     nvgFillColor(vg, claimCount > 0 and nvgRGBA(176, 132, 48, 230) or nvgRGBA(62, 56, 48, 200))
     nvgFill(vg)
     local claimLabel = claimCount > 0 and ("一键领取 " .. claimCount) or "一键领取"
+    -- 按钮文字：有可领=亮色，无可领=棕色
+    local caR, caG, caB = 255, 244, 220
+    if claimCount <= 0 then caR, caG, caB = 0x8d, 0x5f, 0x41 end
     text(vg, CLAIM_ALL.cx, CLAIM_ALL.cy, claimLabel, 28,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 244, 220, 2)
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, caR, caG, caB, 2)
     for _, tab in ipairs(TABS) do
         local on = state.tab == tab.key
         local half = (tab.w or 168) * 0.5
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, tab.cx - half, 304, tab.w or 168, 72, 10)
+        nvgRoundedRect(vg, tab.cx - half, 360, tab.w or 168, 72, 10)
         nvgFillColor(vg, on and nvgRGBA(176, 132, 48, 230) or nvgRGBA(42, 36, 28, 220))
         nvgFill(vg)
-        text(vg, tab.cx, 340, tab.name, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 245, 232, 200, 2)
+        text(vg, tab.cx, 396, tab.name, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 245, 232, 200, 2)
+        local badgeCount = claimableForKey(tab.key)
+        if badgeCount > 0 then
+            local badgeX = tab.cx + half - 8
+            local badgeY = 368
+            DarkIcon.draw(vg, "reddot", badgeX, badgeY, 42, 1)
+            text(vg, badgeX, badgeY, badgeCount > 99 and "99+" or tostring(badgeCount), 24,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 244, 220, 2)
+        end
     end
     local rows = listForTab()
     refreshScroll(#rows)
@@ -315,7 +339,7 @@ function TaskPage.handleInput(dx, dy)
         return true
     end
     for _, tab in ipairs(TABS) do
-        if math.abs(dx - tab.cx) <= (tab.w or 168) * 0.5 and math.abs(dy - 340) <= 36 then
+        if math.abs(dx - tab.cx) <= (tab.w or 168) * 0.5 and math.abs(dy - 396) <= 36 then
             state.tab = tab.key
             state.scrollY = 0
             print("[TaskPage] tab " .. tab.key)

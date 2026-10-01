@@ -11,6 +11,7 @@ function M.bind(deps)
     local easeInCubic = deps.easeInCubic
     local TalentStarMap = deps.TalentStarMap
     local ArtifactPanel = deps.ArtifactPanel
+    local ArtifactDrawPanel = deps.ArtifactDrawPanel
     local resetRosterScrollState = deps.resetRosterScrollState
     local syncTalentLitNodes = deps.syncTalentLitNodes
     local ensureInit = deps.ensureInit
@@ -34,8 +35,8 @@ function M.bind(deps)
                 TP.forceClose()
             end
         end
-        state.tab = "zhuanzhi"
-        state.tabFrom = "zhuanzhi"
+        state.tab = "shenqi"
+        state.tabFrom = "shenqi"
         state.tabSwitchTime = 0
         state.selectedHeroId = nil
         state.slotExpanded = false
@@ -57,6 +58,7 @@ function M.bind(deps)
         state.tfDetailClosing = false
         state.confirmClosing = false
         ArtifactPanel.reset()
+        ArtifactDrawPanel.reset()
         print("[ChurchPage] 打开教堂")
     end
 

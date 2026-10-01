@@ -93,7 +93,7 @@ local ITEM4_CY = 1370
 local ITEM5_CY = 1480
 
 local TOGGLE = {
-    CX = 795, W = 150, H = 56, R = 28,
+    CX = 820, W = 96, H = 48, R = 24,
     KNOB_SIZE = 46,
     -- 开启用暖金，和语言芯片同一套，不再用绿色
     ON_R = 0xC4, ON_G = 0xA0, ON_B = 0x5A,
@@ -103,21 +103,26 @@ local TOGGLE = {
 
 -- 9. 兑换码按钮
 local CODE_BTN = {
-    CX = 540, CY = 1590, W = 410, H = 100,
+    CX = 540, CY = 1660, W = 410, H = 100,
 }
 
 -- 10. 兑换码文本
 local CODE_TXT = {
-    X = 540, Y = 1590, FONT = 40,
+    X = 540, Y = 1660, FONT = 40,
     A = 179,  -- 纯黑 70%
 }
 
 local LANG_CHIP_W, LANG_CHIP_H, LANG_CHIP_GAP = 150, 44, 10
 local LANG_ROW_GAP = 10
 local LANG_PER_ROW = 2
-local LANG_ROWS = 3
+local LANG_ROWS = math.ceil(#I18n.LANGS / LANG_PER_ROW)
 -- 语言三行比单行多占的高度（兑换码按钮与弹窗底边据此下移）
 local LANG_EXTRA_H = (LANG_ROWS - 1) * (LANG_CHIP_H + LANG_ROW_GAP)
+-- 三行从语言条目原中心向下排，避免首行侵入上一条特效开关的点击区。
+local LANGUAGE_CY = ITEM5_CY + LANG_EXTRA_H * 0.5
+-- 930 将兑换码按钮下移；弹窗绘制与点击边界需同时覆盖按钮及底部留白。
+local PANEL_EXTRA_H = math.max(LANG_EXTRA_H,
+    CODE_BTN.CY + LANG_EXTRA_H + CODE_BTN.H * 0.5 + BG.IB - (BG.CY + BG.H * 0.5))
 
 -- ======================== 本地设置持久化 ========================
 
@@ -389,7 +394,7 @@ function SettingsPanel.handleInput(dx, dy)
     if time.elapsedTime - state.animTime < 0.05 then return true end
 
     -- 点击弹窗外部 → 关闭（语言三行后弹窗向下加高）
-    if not hitTest(dx, dy, BG.CX, BG.CY + LANG_EXTRA_H * 0.5, BG.W, BG.H + LANG_EXTRA_H) then
+    if not hitTest(dx, dy, BG.CX, BG.CY + PANEL_EXTRA_H * 0.5, BG.W, BG.H + PANEL_EXTRA_H) then
         SettingsPanel.close()
         return true
     end
@@ -426,7 +431,7 @@ function SettingsPanel.handleInput(dx, dy)
         return true
     end
 
-    if hitLanguageChips(dx, dy, ITEM5_CY) then
+    if hitLanguageChips(dx, dy, LANGUAGE_CY) then
         return true
     end
 
@@ -597,17 +602,6 @@ local function drawToggleItem(vg, itemCY, label, enabled)
     nvgStrokeWidth(vg, 4)
     nvgStroke(vg)
 
-    -- 文字避开旋钮：开时在左，关时在右
-    local labelX = enabled and (x + TOGGLE.H * 0.62) or (x + TOGGLE.W - TOGGLE.H * 0.62)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, TOGGLE.TEXT_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    if enabled then
-        nvgFillColor(vg, nvgRGBA(0x1a, 0x12, 0x0a, 255))
-    else
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 230))
-    end
-    nvgText(vg, labelX, itemCY, enabled and I18n.t("on") or I18n.t("off"), nil)
 end
 
 -- ============================================================================
@@ -651,7 +645,7 @@ function SettingsPanel.draw(vg)
 
     -- ── 2. 弹窗背景框（九宫格，语言三行后加高）──
     DarkIcon.drawNine(vg, "panel", BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
-        BG.W, BG.H + LANG_EXTRA_H, { titleH = BG.IT })
+        BG.W, BG.H + PANEL_EXTRA_H, { titleH = BG.IT })
 
     -- ── 3. 标题 "设置" ──
     drawTextStroke(vg, TTL.X, TTL.Y, I18n.t("settings"),
@@ -672,7 +666,7 @@ function SettingsPanel.draw(vg)
     drawToggleItem(vg, ITEM4_CY, I18n.t("show_effects"), state.showEffects ~= false)
 
     -- ── 8.3 语言 ──
-    drawLanguageItem(vg, ITEM5_CY)
+    drawLanguageItem(vg, LANGUAGE_CY)
 
     -- ── 9. 兑换码按钮（暖金，不再用绿色贴图）──
     local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H)
@@ -694,9 +688,8 @@ function SettingsPanel.draw(vg)
     RedeemCodePanel.draw(vg)
 end
 
---- 嵌入玩家信息页：设置项 Y 偏移（相对独立设置弹窗）
---- 独立页 ITEM1_CY=1040，经验条在 699，下移到约 820 起排
-local EMBED_Y_OFFSET = -220
+-- 嵌入玩家信息页：统计和经验条下移后，设置项从 1080 开始排
+local EMBED_Y_OFFSET = 40
 
 --- 嵌入绘制：无遮罩、无独立弹窗，仅绘制设置条目 + 兑换码
 ---@param vg any
@@ -709,16 +702,16 @@ function SettingsPanel.drawEmbedded(vg, yOffset)
     drawSettingsItem(vg, ITEM2_CY, I18n.t("sfx"), state.sfxVolume)
     drawToggleItem(vg, ITEM3_CY, I18n.t("damage_numbers"), state.showDamageNumbers ~= false)
     drawToggleItem(vg, ITEM4_CY, I18n.t("show_effects"), state.showEffects ~= false)
-    drawLanguageItem(vg, ITEM5_CY)
-    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + oy, CODE_BTN.W, CODE_BTN.H)
+    drawLanguageItem(vg, LANGUAGE_CY)
+    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H + oy, CODE_BTN.W, CODE_BTN.H)
     DarkIcon.drawNine(vg, "btn",
-        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY - CODE_BTN.H * 0.5,
+        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY + LANG_EXTRA_H - CODE_BTN.H * 0.5,
         CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, CODE_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-    nvgText(vg, CODE_TXT.X, CODE_TXT.Y, I18n.t("redeem_code"), nil)
+    nvgText(vg, CODE_TXT.X, CODE_TXT.Y + LANG_EXTRA_H, I18n.t("redeem_code"), nil)
     BF.finish(vg, _bf1)
     nvgRestore(vg)
     RedeemCodePanel.draw(vg)
@@ -758,10 +751,10 @@ function SettingsPanel.handleEmbeddedInput(dx, dy, yOffset)
         toggleEffects()
         return true
     end
-    if hitLanguageChips(dx, ly, ITEM5_CY) then
+    if hitLanguageChips(dx, ly, LANGUAGE_CY) then
         return true
     end
-    if hitTest(dx, ly, CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H) then
+    if hitTest(dx, ly, CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H) then
         BF.trigger("set_code")
         RedeemCodePanel.open()
         return true

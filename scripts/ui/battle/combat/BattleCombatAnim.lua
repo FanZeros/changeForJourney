@@ -19,7 +19,7 @@ local RECOIL_DISTANCE  = 30
 local CHARGE_START     = 0.7
 local CHARGE_DISTANCE  = 25
 
--- 纵向弧线抖动（弧顶高度，像素）：攻击冲刺/回位、受击后退、蓄力前摇
+-- 纵向弧线（屏幕像素）：攻击冲刺/回位、受击后退、蓄力前摇
 local LUNGE_ARC_HEIGHT  = 18
 local RECOIL_ARC_HEIGHT = 10
 local CHARGE_ARC_HEIGHT = 6
@@ -162,6 +162,8 @@ function M.update(BCS, dt)
             if anim.timer >= ADVANCE_DURATION then
                 toRemove[#toRemove + 1] = unit
             end
+        elseif anim.state == "march" then
+            -- 通关前进由战斗驱动每帧刷新，不在这里结束
         end
         ::continue::
     end
@@ -222,6 +224,8 @@ function M.getOffsetY(BCS, unit)
         local t = math.min(1, anim.timer / ENTER_ANIM_DURATION)
         t = 1 - (1 - t) * (1 - t)
         return anim.lungeDir * ENTER_ANIM_DISTANCE * (1 - t)
+    elseif anim.state == "march" then
+        return anim.marchStep or 0
     elseif anim.state == "advance" then
         if BattleLayout.MODE ~= "strip" then return 0 end
         local dist = anim.advanceDist or 0
@@ -336,7 +340,8 @@ function M.clear(BCS, unit)
     BCS.cardAnims[unit] = nil
 end
 
-function M.playEnter(BCS, units, lungeDir)
+function M.playEnter(BCS, units, lungeDir, opts)
+    if opts and opts.skip then return end
     for i, unit in ipairs(units) do
         BCS.cardAnims[unit] = {
             state    = "entering",

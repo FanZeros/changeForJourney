@@ -10,7 +10,6 @@ local PlayerStore      = require("core.PlayerStore")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
-local RelicBridge      = require("systems.RelicBridge")
 local ArtifactBridge   = require("systems.ArtifactBridge")
 local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 
@@ -21,7 +20,6 @@ local M = {}
 --- 左列候选属性（按优先级排列，hero不具有的属性跳过）
 M.ATTR_LEFT_PRIORITY = {
     AD.MAX_HP,
-    AD.MAX_MANA,
     AD.PHYS_ARMOR,
     AD.MAG_ARMOR,
     AD.DODGE,
@@ -81,15 +79,60 @@ M.ATTR_RIGHT_PRIORITY = {
     AD.HEAL_CRIT_DMG,
 }
 
+-- ======================== 面板展示排序（重要程度优先） ========================
+-- 合并左右列后按此顺序展示；未列出的属性保持原有相对顺序排在最后。
+M.ATTR_DISPLAY_ORDER = {
+    -- 核心战斗
+    AD.MAX_HP,
+    AD.PHYS_ATK, AD.MAG_ATK, AD.HEAL_AMOUNT,   -- 本职攻击/治疗
+    AD.ATK_SPEED,
+    "_effCritRate", "_effCritDmg",
+    AD.COMBO_RATE, AD.COMBO_DMG_UP,
+    -- 输出向
+    AD.PHYS_PEN, AD.MAG_PEN,
+    AD.PHYS_DMG_BONUS, AD.MAG_DMG_BONUS, AD.DMG_BONUS, AD.FINAL_DAMAGE_BONUS,
+    AD.MAX_DMG_BONUS, AD.MIN_DMG_BONUS,
+    -- 防御核心
+    AD.ARMOR, AD.RESISTANCE, AD.ENERGY_SHIELD,
+    -- 生存/辅助
+    AD.HIT_VALUE, AD.DODGE,
+    AD.PHYS_BLOCK_RATE, AD.MAG_BLOCK_RATE, AD.PHYS_BLOCK_RATIO, AD.MAG_BLOCK_RATIO,
+    AD.ABNORMAL_RES, AD.HP_REGEN, AD.ATK_HEAL, AD.THREAT,
+    -- 加成/最终类
+    AD.ARMOR_BONUS, AD.FINAL_ARMOR_BONUS,
+    AD.ES_BONUS, AD.FINAL_ENERGY_SHIELD_BONUS,
+    AD.DODGE_BONUS, AD.FINAL_DODGE_BONUS,
+    AD.HP_BONUS, AD.FINAL_HP_BONUS,
+    AD.PHYS_ATK_BONUS, AD.MAG_ATK_BONUS, AD.FINAL_PHYS_ATK_BONUS, AD.FINAL_MAG_ATK_BONUS,
+    AD.HEAL_BONUS, AD.HEAL_CRIT_RATE, AD.HEAL_CRIT_DMG,
+    AD.FINAL_STR_BONUS, AD.FINAL_AGI_BONUS, AD.FINAL_INT_BONUS,
+    AD.FINAL_VIT_BONUS, AD.FINAL_LUK_BONUS, AD.FINAL_SPI_BONUS,
+    -- 基础信息
+    "_atkType", AD.ATK_INTERVAL, "_atkTargets",
+    -- 特殊机制/神器
+    "_melissaStarGateResonance", "_melissaStarGatePen",
+    "_artifactCritRateMult", "_artifactCritDmgMult", "_artifactIgnoreArmor",
+    "_artifactChaosDamage", "_artifactExtraDamage", "_artifactBlockCap", "_artifactNoHeal",
+}
+
+local DISPLAY_ORDER_INDEX = {}
+for i, key in ipairs(M.ATTR_DISPLAY_ORDER) do DISPLAY_ORDER_INDEX[key] = i end
+
+--- 展示排序索引（key → 序号，未列出返回 nil）
+---@return table<string|number, number>
+function M.displayOrderIndex()
+    return DISPLAY_ORDER_INDEX
+end
+
 -- ======================== 六围排列定义 ========================
 
 M.STAT_LAYOUT = {
-    { col = 1, row = 1, key = AD.STR, name = "力量", icon = "ICON_SX_LL" },
-    { col = 1, row = 2, key = AD.AGI, name = "敏捷", icon = "ICON_SX_MJ" },
-    { col = 1, row = 3, key = AD.INT, name = "秘识", icon = "ICON_SX_ZH" },
-    { col = 2, row = 1, key = AD.VIT, name = "体质", icon = "ICON_SX_TZ" },
-    { col = 2, row = 2, key = AD.LUK, name = "命数", icon = "ICON_SX_YQ" },
-    { col = 2, row = 3, key = AD.SPI, name = "魂火", icon = "ICON_SX_JS" },
+    { col = 1, row = 1, key = AD.STR, name = "力量" },
+    { col = 1, row = 2, key = AD.AGI, name = "敏捷" },
+    { col = 1, row = 3, key = AD.INT, name = "秘识" },
+    { col = 2, row = 1, key = AD.VIT, name = "体质" },
+    { col = 2, row = 2, key = AD.LUK, name = "命数" },
+    { col = 2, row = 3, key = AD.SPI, name = "魂火" },
 }
 
 -- ======================== 属性收集 ========================
@@ -123,8 +166,6 @@ local function applyDetailRuntimeBonuses(attrs, heroId, classId, heroesData, eqD
             attrs, eqData, heroId,
             EquipmentSystem.getFromInventory, EquipmentSystem.getHeroSlots)
     end
-
-    RelicBridge.applyToUnit(attrs, classId)
 
     local partySlotForArtifact = EquipmentSystem.findPartySlotInTeams(heroesData, heroId)
     if partySlotForArtifact then
@@ -244,7 +285,7 @@ function M.collectAttributes(heroId, heroCfg, level)
     end
     local attrs = hero.attrs
 
-    -- === 应用已穿戴装备、遗物、神器属性（与战斗/战力口径一致） ===
+    -- === 应用已穿戴装备、神器属性（与战斗/战力口径一致） ===
     local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
     applyDetailRuntimeBonuses(attrs, heroId, heroCfg.classId, heroesData, eqData)
 
@@ -261,12 +302,41 @@ function M.collectAttributes(heroId, heroCfg, level)
         left[#left + 1] = { key = AD.HEAL_AMOUNT, name = "治疗量", value = tostring(math.floor(attrs:get(AD.HEAL_AMOUNT))) }
     end
 
+    -- 基础值在前，对应加成紧跟后面。0 也保留，避免列表提前结束。
+    local alwaysLeft = {
+        { key = AD.ARMOR, name = "护甲" },
+        { key = AD.ARMOR_BONUS, name = "护甲加成" },
+        { key = AD.FINAL_ARMOR_BONUS, name = "最终护甲" },
+        { key = AD.RESISTANCE, name = "伤害抗性" },
+        { key = AD.ENERGY_SHIELD, name = "护盾上限" },
+        { key = AD.ES_BONUS, name = "护盾加成" },
+        { key = AD.FINAL_ENERGY_SHIELD_BONUS, name = "最终护盾" },
+        { key = AD.HIT_VALUE, name = "命中值" },
+        { key = AD.DODGE, name = "闪避值" },
+        { key = AD.DODGE_BONUS, name = "闪避加成" },
+        { key = AD.FINAL_DODGE_BONUS, name = "最终闪避" },
+        { key = AD.HP_BONUS, name = "生命加成" },
+        { key = AD.FINAL_HP_BONUS, name = "最终生命" },
+    }
+    local alwaysLeftSet = {}
+    for _, item in ipairs(alwaysLeft) do
+        alwaysLeftSet[item.key] = true
+        local val = attrs:getUncapped(item.key)
+        left[#left + 1] = {
+            key = item.key,
+            name = item.name,
+            value = AD.formatAttrDisplayValue(item.key, val),
+        }
+    end
+
     for _, key in ipairs(M.ATTR_LEFT_PRIORITY) do
-        local val = attrs:getUncapped(key)
-        local meta = AD.getMeta(key)
-        if meta and val ~= 0 and val ~= (meta.default or 0) then
-            if key ~= AD.MAX_HP then
-                left[#left + 1] = { key = key, name = meta.name, value = AD.formatAttrDisplayValue(key, val) }
+        if not alwaysLeftSet[key] then
+            local val = attrs:getUncapped(key)
+            local meta = AD.getMeta(key)
+            if meta and val ~= 0 and val ~= (meta.default or 0) then
+                if key ~= AD.MAX_HP then
+                    left[#left + 1] = { key = key, name = meta.name, value = AD.formatAttrDisplayValue(key, val) }
+                end
             end
         end
     end
@@ -297,6 +367,13 @@ function M.collectAttributes(heroId, heroCfg, level)
     right[#right + 1] = { key = "_atkTargets", name = "攻击目标", value = tostring(heroCfg.atkTargets),
         desc = "普攻每次可命中的敌方目标数量" }
 
+    -- 只显示本职攻击力。物理不看魔法，魔法不看物理，治疗不看两边攻击力。
+    right[#right + 1] = {
+        key = AD.ATK_SPEED,
+        name = "攻击速度",
+        value = AD.formatAttrDisplayValue(AD.ATK_SPEED, attrs:get(AD.ATK_SPEED)),
+    }
+
     -- 暴击率：合并通用+类型，与战斗公式/统计口径一致（展示截断前实际值）
     local effCrit = AD.getEffectiveCritRate(attrs, category)
     if category ~= "healing" then
@@ -315,7 +392,7 @@ function M.collectAttributes(heroId, heroCfg, level)
     if effCrit > 0 then
         local critDesc = (category == "healing")
             and "治疗暴击判定使用的暴击率"
-            or "通用暴击率 + 类型暴击率，与战斗中普攻/连击暴击判定一致；神器倍率已计入"
+            or "通用暴击率 + 类型暴击率，与战斗中普攻/连击暴击判定一致；神器倍率已计入。超过 100% 的部分按 1:1 转为暴击伤害"
         right[#right + 1] = {
             key = "_effCritRate",
             name = (category == "healing") and "治疗暴击率" or "暴击率",
@@ -338,12 +415,23 @@ function M.collectAttributes(heroId, heroCfg, level)
     if attrs.artifactCritDmgMult then
         effCritDmg = effCritDmg * attrs.artifactCritDmgMult
     end
+    -- 暴击溢出：超过 100% 的暴击率按 1:1 转为暴击伤害，面板与实战口径一致
+    local overflowPct = 0
+    if category ~= "healing" and effCrit and effCrit > 100 then
+        overflowPct = effCrit - 100
+        effCritDmg = effCritDmg * (1 + overflowPct / 100)
+    end
     if effCritDmg and effCritDmg > 0 then
+        local dmgDesc = "实战暴击伤害倍率；神器倍率已计入。"
+        if overflowPct > 0 then
+            dmgDesc = string.format(
+                "实战暴击伤害倍率；其中 %.1f%% 由溢出暴击率按 1:1 转化而来。", overflowPct)
+        end
         right[#right + 1] = {
             key = "_effCritDmg",
             name = (category == "healing") and "治疗暴击伤害" or "暴击伤害",
             value = string.format("%.1f%%", effCritDmg),
-            desc = "实战暴击伤害倍率；神器倍率已计入。",
+            desc = dmgDesc,
         }
     end
 
@@ -366,6 +454,7 @@ function M.collectAttributes(heroId, heroCfg, level)
     end
 
     local skipCritKeys = {
+        [AD.ATK_SPEED] = true,
         [AD.CRIT_RATE] = true,
         [AD.PHYS_CRIT_RATE] = true,
         [AD.MAG_CRIT_RATE] = true,
@@ -373,6 +462,34 @@ function M.collectAttributes(heroId, heroCfg, level)
         [AD.PHYS_CRIT_DMG] = true,
         [AD.MAG_CRIT_DMG] = true,
     }
+    if category == "physical" then
+        skipCritKeys[AD.MAG_ATK] = true
+        skipCritKeys[AD.MAG_ATK_BONUS] = true
+        skipCritKeys[AD.MAG_PEN] = true
+        skipCritKeys[AD.MAG_DMG_BONUS] = true
+        skipCritKeys[AD.FINAL_MAG_ATK_BONUS] = true
+        skipCritKeys[AD.HEAL_AMOUNT] = true
+        skipCritKeys[AD.HEAL_BONUS] = true
+    elseif category == "magical" then
+        skipCritKeys[AD.PHYS_ATK] = true
+        skipCritKeys[AD.PHYS_ATK_BONUS] = true
+        skipCritKeys[AD.PHYS_PEN] = true
+        skipCritKeys[AD.PHYS_DMG_BONUS] = true
+        skipCritKeys[AD.FINAL_PHYS_ATK_BONUS] = true
+        skipCritKeys[AD.HEAL_AMOUNT] = true
+        skipCritKeys[AD.HEAL_BONUS] = true
+    elseif category == "healing" then
+        skipCritKeys[AD.PHYS_ATK] = true
+        skipCritKeys[AD.MAG_ATK] = true
+        skipCritKeys[AD.PHYS_ATK_BONUS] = true
+        skipCritKeys[AD.MAG_ATK_BONUS] = true
+        skipCritKeys[AD.PHYS_PEN] = true
+        skipCritKeys[AD.MAG_PEN] = true
+        skipCritKeys[AD.PHYS_DMG_BONUS] = true
+        skipCritKeys[AD.MAG_DMG_BONUS] = true
+        skipCritKeys[AD.FINAL_PHYS_ATK_BONUS] = true
+        skipCritKeys[AD.FINAL_MAG_ATK_BONUS] = true
+    end
     if category == "healing" then
         skipCritKeys[AD.HEAL_CRIT_RATE] = true
         skipCritKeys[AD.HEAL_CRIT_DMG] = true

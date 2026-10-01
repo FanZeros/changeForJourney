@@ -26,10 +26,10 @@ GachaConfig.QUALITY_SSR = 3
 
 -- 基础概率（百分比）
 GachaConfig.Probability = {
-    [GachaConfig.QUALITY_N]   = 71.0,
-    [GachaConfig.QUALITY_R]   = 18.0,
-    [GachaConfig.QUALITY_SR]  = 10.0,
-    [GachaConfig.QUALITY_SSR] = 1.0,
+    [GachaConfig.QUALITY_N]   = 55.0,
+    [GachaConfig.QUALITY_R]   = 25.0,
+    [GachaConfig.QUALITY_SR]  = 15.0,
+    [GachaConfig.QUALITY_SSR] = 5.0,
 }
 
 -- ======================== 保底配置 ========================
@@ -89,7 +89,7 @@ GachaConfig.Pool = {
     { quality = 2, type = "shard", heroId = 13, amount = 1, weight = 100, stardustValue = 100 },  -- 弹弹弹碎片
     { quality = 2, type = "shard", heroId = 14, amount = 1, weight = 100, stardustValue = 100 },  -- 内鬼碎片
     { quality = 2, type = "shard", heroId = 15, amount = 1, weight = 100, stardustValue = 100 },  -- 复活吧爱人碎片
-    { quality = 2, type = "shard", heroId = 21, amount = 1, weight = 100, stardustValue = 100 },  -- 闪电卖鸡碎片
+    { quality = 2, type = "shard", heroId = 21, amount = 1, weight = 100, stardustValue = 100 },  -- 雷电麦坤碎片
     { quality = 2, type = "shard", heroId = 22, amount = 1, weight = 100, stardustValue = 100 },  -- 小黑子碎片
     { quality = 2, type = "shard", heroId = 23, amount = 1, weight = 100, stardustValue = 100 },  -- 真布诗人碎片
     { quality = 2, type = "shard", heroId = 24, amount = 1, weight = 100, stardustValue = 100 },  -- 加载中碎片
@@ -101,7 +101,7 @@ GachaConfig.Pool = {
     { quality = 3, type = "hero", heroId = 13, weight = 100, stardustValue = 1000 }, -- 弹弹弹
     { quality = 3, type = "hero", heroId = 14, weight = 100, stardustValue = 1000 }, -- 内鬼
     { quality = 3, type = "hero", heroId = 15, weight = 100, stardustValue = 1000 }, -- 复活吧爱人
-    { quality = 3, type = "hero", heroId = 21, weight = 100, stardustValue = 1000 }, -- 闪电卖鸡
+    { quality = 3, type = "hero", heroId = 21, weight = 100, stardustValue = 1000 }, -- 雷电麦坤
     { quality = 3, type = "hero", heroId = 22, weight = 100, stardustValue = 1000 }, -- 小黑子
     { quality = 3, type = "hero", heroId = 23, weight = 100, stardustValue = 1000 }, -- 真布诗人
     { quality = 3, type = "hero", heroId = 24, weight = 100, stardustValue = 1000 }, -- 加载中

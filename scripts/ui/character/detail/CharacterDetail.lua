@@ -46,6 +46,8 @@ local BTN_TAB_ATTR_CX        = Draw.BTN_TAB_ATTR_CX
 local BTN_TAB_ATTR_CY        = Draw.BTN_TAB_ATTR_CY
 local BTN_TAB_EQUIP_CX       = Draw.BTN_TAB_EQUIP_CX
 local BTN_TAB_EQUIP_CY       = Draw.BTN_TAB_EQUIP_CY
+local BTN_TAB_CLASS_CX       = Draw.BTN_TAB_CLASS_CX
+local BTN_TAB_CLASS_CY       = Draw.BTN_TAB_CLASS_CY
 local BTN_TAB_AWAKEN_CX      = Draw.BTN_TAB_AWAKEN_CX
 local BTN_TAB_AWAKEN_CY      = Draw.BTN_TAB_AWAKEN_CY
 local ATTR_BOX_W              = Draw.ATTR_BOX_W
@@ -64,8 +66,8 @@ local STAT_COL2_CX             = Draw.STAT_COL2_CX
 local STAT_ROW1_CY             = Draw.STAT_ROW1_CY
 local STAT_ROW_STEP            = Draw.STAT_ROW_STEP
 local STAT_LAYOUT              = Draw.STAT_LAYOUT
-local ARROW_BG_W               = Draw.SIDE_CARD_W
-local ARROW_BG_H               = Draw.SIDE_CARD_H
+local ARROW_BG_W               = Draw.SIDE_CARD_W * 0.78
+local ARROW_BG_H               = Draw.SIDE_CARD_H * 0.78
 local ARROW_CY                 = Draw.ARROW_CY
 local ARROW_LEFT_CX            = Draw.ARROW_LEFT_CX
 local ARROW_RIGHT_CX           = Draw.ARROW_RIGHT_CX
@@ -84,6 +86,7 @@ local detailState = {
     tabFrom       = "attr",   -- Tab 切换前的页签
     tabSwitchTime = 0,        -- Tab 切换时刻
     equipSlot     = "weapon", -- 配装页当前选中槽位
+    sideDragging  = false,    -- 配装页左右侧栏拖拽
     -- 属性区域滚动
     attrScrollY   = 0,        -- 像素滚动偏移（>0 表示内容上移）
     attrScrollMax = 0,        -- 最大滚动值
@@ -180,12 +183,17 @@ function CharacterDetail._hasUpgradeForSlot(heroId, slotName, equipData)
         -- accessory: wearableSet 保持 nil，不限制
     end
 
+    -- 3.5) 等级穿戴门槛：英雄等级低于装备等级的候选不参与红点判断
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+
     -- 4) 遍历背包，找到任一可穿戴且战斗力更高的未装备装备即返回 true
     for seq, equip in pairs(inventory) do
         local seqNum = tonumber(seq)
         if equip.slot == slotName and seqNum and not equippedSeqNums[seqNum] then
-            -- 可穿戴类型检查
-            if not wearableSet or wearableSet[equip.type] then
+            -- 可穿戴类型检查 + 等级穿戴门槛
+            if (not wearableSet or wearableSet[equip.type])
+                and (EquipmentSystem.checkLevelGate(heroLevel, equip)) then
                 local itemPower = CharacterDetail._EquipDetail.calcEquipPower(equip, heroId)
                 -- 双手武器替换主手+副手，基准用两者之和（与 EquipmentBag 一致）
                 local baseline = equippedPower
@@ -292,7 +300,7 @@ function CharacterDetail._getQualityBg(quality)
 end
 
 --- 注入来自 CharacterPanel 的共享资源
----@param ctx table { imgHeroCards, imgClassIcons, imgPower, imgLvlBadge, imgExpBarBg, imgExpBarFill, getOwnedData, calcHeroPower, getHeroRoster }
+---@param ctx table { imgHeroCards, imgClassIcons, imgPower, imgLvlBadge, imgExpBarBg, imgExpBarFill, getOwnedData, calcHeroPower, calcHeroEstimate, getHeroRoster }
 function CharacterDetail.setContext(ctx)
     -- 保存 roster 获取函数（用于左右切换角色）
     CharacterDetail._getHeroRoster = ctx.getHeroRoster
@@ -301,6 +309,7 @@ function CharacterDetail.setContext(ctx)
         detailState       = detailState,
         getOwnedData      = ctx.getOwnedData,
         calcHeroPower     = ctx.calcHeroPower,
+        calcHeroEstimate  = ctx.calcHeroEstimate,
         CharacterDetail   = CharacterDetail,
         collectAttributes = collectAttributes,
         clampAttrScroll   = clampAttrScroll,
@@ -318,16 +327,26 @@ function CharacterDetail.setContext(ctx)
     AwakeningPanel.setOwnedDataGetter(ctx.getOwnedData)
 end
 
+--- 清空关键词组件的交互状态（弹窗/悬停/热区）
+local function clearKeywordUi()
+    if Draw.talentKwText then Draw.talentKwText:clear() end
+    if AwakeningPanel.kwText then AwakeningPanel.kwText:clear() end
+end
+
 --- 打开详情界面
 ---@param heroId number
-function CharacterDetail.open(heroId)
+---@param tab string|nil 初始页签 "attr"|"equip"|"awaken"，默认 "attr"
+function CharacterDetail.open(heroId, tab)
     detailState.open = true
     detailState.closing = false
     detailState.heroId = heroId
-    detailState.tab = "attr"
-    detailState.tabFrom = "attr"
+    local initTab = (tab == "equip" or tab == "awaken") and tab or "attr"
+    detailState.tab = initTab
+    detailState.tabFrom = initTab
     detailState.tabSwitchTime = 0
     detailState.openTime = time.elapsedTime
+    detailState.sideDragging = false
+    CharacterDetail._EquipPanel.endSideDrag()
     detailState.seamOpenTime = time.elapsedTime  -- [水平滑入] 页面滑入基准(切换英雄不重置)
     detailState.switchDir = nil  -- 普通打开：使用垂直滑入动画
     detailState.attrScrollY   = 0
@@ -335,6 +354,7 @@ function CharacterDetail.open(heroId)
     detailState.attrDragging  = false
     detailState.attrScrollVel = 0
     detailState.attrTip       = nil
+    clearKeywordUi()
     AwakeningPanel.reset(heroId)
     local heroCfg = HC.get(heroId)
     print("[CharacterDetail] 打开角色详情: " .. (heroCfg and heroCfg.name or "?"))
@@ -346,6 +366,8 @@ function CharacterDetail.close()
     if detailState.closing then return end
     detailState.closing = true
     detailState.closeTime = time.elapsedTime
+    local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+    if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
     print("[CharacterDetail] 关闭角色详情（动画）")
 end
 
@@ -358,7 +380,7 @@ function CharacterDetail.forceClose()
 end
 
 --- 切换到前/后一个角色（direction: -1=上一个, 1=下一个）
-function CharacterDetail._switchHero(direction)
+function CharacterDetail._switchHero(direction, keepDrag)
     local getRoster = CharacterDetail._getHeroRoster
     if not getRoster then return end
     local roster = getRoster()
@@ -374,37 +396,47 @@ function CharacterDetail._switchHero(direction)
     end
     if not curIdx then return end
 
-    -- 循环切换（跳过未解锁角色）
-    local nextIdx = curIdx
-    for _ = 1, #roster - 1 do
-        nextIdx = nextIdx + direction
-        if nextIdx < 1 then nextIdx = #roster end
-        if nextIdx > #roster then nextIdx = 1 end
-        if roster[nextIdx].owned then
-            break
-        end
-    end
-    -- 如果绕了一圈没有找到其他已拥有角色，不切换
-    if nextIdx == curIdx or not roster[nextIdx].owned then return end
+    -- 循环切换，未获得的角色也可以看属性。
+    local nextIdx = curIdx + direction
+    if nextIdx < 1 then nextIdx = #roster end
+    if nextIdx > #roster then nextIdx = 1 end
+    if nextIdx == curIdx then return end
 
     local nextHeroId = roster[nextIdx].heroId
+    -- 未获得角色只能看属性，滑过去时从配装/转职退回。
+    if not roster[nextIdx].owned and detailState.tab ~= "attr" and detailState.tab ~= "awaken" then
+        detailState.tab = "attr"
+        detailState.tabFrom = "attr"
+        detailState.tabSwitchTime = 0
+    end
     -- 切换角色：使用水平滑动动画，保持当前tab不变
     local currentTab = detailState.tab
     detailState.heroId = nextHeroId
     detailState.tab = currentTab
     detailState.tabFrom = currentTab
     detailState.tabSwitchTime = 0
-    detailState.openTime = time.elapsedTime
-    detailState.switchDir = direction  -- -1=左切, 1=右切（触发水平滑入动画）
     detailState.prevHeroId = roster[curIdx].heroId
+    if keepDrag then
+        -- 手指还按着：越过一张后立刻接上下一张，不播松手滑入。
+        detailState.switchDir = nil
+        detailState.switchFrom = nil
+    else
+        detailState.openTime = time.elapsedTime
+        detailState.switchDir = direction  -- -1=左切, 1=右切（触发水平滑入动画）
+        detailState.switchFrom = detailState.cardDragVisual or 0
+    end
     detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0
     detailState.attrDragging  = false
     detailState.attrScrollVel = 0
     detailState.attrTip       = nil
+    clearKeywordUi()
     AwakeningPanel.reset(nextHeroId)
     print("[CharacterDetail] 箭头切换角色: " .. tostring(detailState.heroId))
-    require("ui.character.hero.HeroScenario").onOpenHero(nextHeroId)
+    -- 按住连续滑卡时不逐张触发情景，松手落定的那次（keepDrag=false）再播
+    if not keepDrag then
+        require("ui.character.hero.HeroScenario").onOpenHero(nextHeroId)
+    end
 end
 
 --- 是否打开
@@ -425,9 +457,21 @@ function CharacterDetail.isAwakenTab()
     return detailState.tab == "awaken"
 end
 
+---@return boolean 配装页（tab=="equip"）是否当前可见
+function CharacterDetail.isEquipTab()
+    return detailState.tab == "equip"
+end
+
 --- 标记战斗力/装备缓存为脏（外部数据变化时由 CharacterPanel.refreshPowerCache 调用）
 function CharacterDetail.markPowerDirty()
     Draw.markPowerDirty()
+end
+
+--- 开/关卡面「实战预估」副行（分项计价原型，默认关闭）。
+--- 真人视觉验收卡面布局后再开启；见 systems/CombatPowerEstimate.lua 口径说明。
+---@param visible boolean
+function CharacterDetail.setEstimateVisible(visible)
+    Draw.setEstimateVisible(visible)
 end
 
 --- 判断点击是否在矩形区域内（中心坐标+尺寸）
@@ -458,6 +502,18 @@ end
 function CharacterDetail.handleInput(dx, dy)
     if not detailState.open then return false end
     if detailState.closing then return true end  -- 关闭动画中，消费事件但不处理
+
+    -- 关键词解释弹窗打开时：任意点击先关弹窗（弹窗是最上层交互）
+    local talentKw = Draw.talentKwText
+    local awakenKw = AwakeningPanel.kwText
+    if talentKw and talentKw:isOpen() then
+        talentKw:closePopup()
+        return true
+    end
+    if awakenKw and awakenKw:isOpen() then
+        awakenKw:closePopup()
+        return true
+    end
 
     -- 配装页小详情：格子点击优先（单击换一件 / 双击装备），再交给详情面板
     if CharacterDetail._EquipDetail.isOpen() then
@@ -522,14 +578,12 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- 左箭头切换上一个角色（仅属性页）
-    if detailState.tab == "attr" and hitTest(dx, dy, ARROW_BG_LEFT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
+    -- 左卡=上一个，右卡=下一个（仅属性页）
+    if detailState.tab == "attr" and hitTest(dx, dy, Draw.ARROW_BG_LEFT_CX, Draw.ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
         CharacterDetail._switchHero(-1)
         return true
     end
-
-    -- 右箭头切换下一个角色（仅属性页）
-    if detailState.tab == "attr" and hitTest(dx, dy, ARROW_BG_RIGHT_CX, ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
+    if detailState.tab == "attr" and hitTest(dx, dy, Draw.ARROW_BG_RIGHT_CX, Draw.ARROW_CY, ARROW_BG_W, ARROW_BG_H) then
         CharacterDetail._switchHero(1)
         return true
     end
@@ -551,13 +605,26 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- Tab 切换 —— 配装区域
+    -- Tab 切换 —— 配装区域（未获得角色只能看属性）
     if hitTest(dx, dy, BTN_TAB_EQUIP_CX, BTN_TAB_EQUIP_CY, BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H) then
+        if not require("ui.character.panel.CharacterPanel").getOwnedHero(detailState.heroId) then return true end
         if detailState.tab ~= "equip" then
             detailState.tabFrom = detailState.tab
             detailState.tabSwitchTime = time.elapsedTime
             detailState.tab = "equip"
             print("[CharacterDetail] 切换到配装页")
+        end
+        return true
+    end
+
+    -- Tab 切换 —— 转职区域（未获得角色只能看属性）
+    if hitTest(dx, dy, BTN_TAB_CLASS_CX, BTN_TAB_CLASS_CY, BTN_TAB_SLIDER_W, BTN_TAB_SLIDER_H) then
+        if not require("ui.character.panel.CharacterPanel").getOwnedHero(detailState.heroId) then return true end
+        if detailState.tab ~= "class" then
+            detailState.tabFrom = detailState.tab
+            detailState.tabSwitchTime = time.elapsedTime
+            detailState.tab = "class"
+            print("[CharacterDetail] 切换到转职页")
         end
         return true
     end
@@ -581,6 +648,17 @@ function CharacterDetail.handleInput(dx, dy)
         return false
     end
 
+    -- === 转职面板输入委托（绘制已是屏幕坐标，不再额外下移）===
+    if detailState.tab == "class" then
+        local ClassChange = require("ui.church.ChurchClassChange")
+        ClassChange.setHero(detailState.heroId)
+        if ClassChange.handleResetConfirmInput(dx, dy) then return true end
+        if ClassChange.handleConfirmInput(dx, dy) then return true end
+        if ClassChange.handleResetButton(dx, dy) then return true end
+        if ClassChange.handleBranchInput(dx, dy) then return true end
+        return true
+    end
+
     -- === 觉醒面板输入委托 ===
     if detailState.tab == "awaken" then
         return AwakeningPanel.handleInput(dx, dy, detailState.heroId)
@@ -588,17 +666,21 @@ function CharacterDetail.handleInput(dx, dy)
 
     -- === 属性区域点击检测（仅属性页） ===
     if detailState.tab == "attr" then
+        -- 天赋描述关键词：点击弹出解释（优先于属性行命中）
+        if Draw.talentKwText and Draw.talentKwText:handleInput(dx, dy) then
+            return true
+        end
+
         local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
         local cachedL = detailState.cachedLeft or {}
-        local cachedR = detailState.cachedRight or {}
-        local totalRows = math.max(#cachedL, #cachedR)
+        local totalRows = #cachedL
 
         -- 杂项属性区域（可滚动）
-        if dy >= ATTR_CLIP_TOP and dy <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT then
+        if dx >= 40 and dx <= 540
+           and dy >= ATTR_CLIP_TOP and dy <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT then
             for row = 1, totalRows do
                 local rowY = ATTR_FIRST_ROW_Y + (row - 1) * rowStep - detailState.attrScrollY
-                if rowY >= ATTR_CLIP_TOP - ATTR_BOX_H * 0.5
-                   and rowY <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT + ATTR_BOX_H * 0.5 then
+                if rowY >= ATTR_CLIP_TOP and rowY <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT then
                     -- 左列
                     if row <= #cachedL and math.abs(dx - ATTR_COL1_CX) <= ATTR_BOX_W * 0.5
                        and math.abs(dy - rowY) <= ATTR_BOX_H * 0.5 then
@@ -612,33 +694,63 @@ function CharacterDetail.handleInput(dx, dy)
                         end
                         return true
                     end
-                    -- 右列
-                    if row <= #cachedR and math.abs(dx - ATTR_COL2_CX) <= ATTR_BOX_W * 0.5
-                       and math.abs(dy - rowY) <= ATTR_BOX_H * 0.5 then
-                        local attr = cachedR[row]
-                        local desc = attr.desc or AD.getDesc(attr.key)
-                        if desc and desc ~= "" then
-                            detailState.attrTip = {
-                                boxCX = ATTR_COL2_CX, boxTopY = rowY - ATTR_BOX_H * 0.5,
-                                desc = desc, name = attr.name, area = "attr",
-                            }
-                        end
-                        return true
-                    end
                 end
             end
         end
 
-        -- 六围区域点击检测
-        for _, st in ipairs(STAT_LAYOUT) do
-            local boxCX = (st.col == 1) and STAT_COL1_CX or STAT_COL2_CX
-            local boxCY = STAT_ROW1_CY + (st.row - 1) * STAT_ROW_STEP
-            if math.abs(dx - boxCX) <= STAT_BOX_W * 0.5
-               and math.abs(dy - boxCY) <= STAT_BOX_H * 0.5 then
+        -- 职业框：和六围一样弹出说明浮窗
+        local heroCfg = HC.get(detailState.heroId)
+        if math.abs(dx - Draw.MID_CLASS_BOX_CX) <= Draw.MID_CLASS_BOX_W * 0.5
+           and math.abs(dy - Draw.MID_CLASS_BOX_CY) <= Draw.MID_CLASS_BOX_H * 0.5 then
+            local classCfg = CC.get(heroCfg and heroCfg.classId)
+            if classCfg then
+                local desc = classCfg.talentDesc or ""
+                if classCfg.talentName and classCfg.talentName ~= "" then
+                    desc = classCfg.talentName .. "：" .. desc
+                end
+                detailState.attrTip = {
+                    boxCX = Draw.MID_CLASS_BOX_CX,
+                    boxTopY = Draw.MID_CLASS_BOX_CY - Draw.MID_CLASS_BOX_H * 0.5,
+                    desc = desc ~= "" and desc or "暂无职业说明",
+                    name = classCfg.name or "职业",
+                    area = "class",
+                }
+            end
+            return true
+        end
+
+        -- 六维雷达图：点在图内才弹出最近顶点的说明，点外面不拦截
+        local hexCX, hexCY = Draw.HEX_CX, Draw.HEX_CY
+        local hitR = Draw.HEX_LABEL_R + 36
+        local hitDx, hitDy = dx - hexCX, dy - hexCY
+        if hitDx * hitDx + hitDy * hitDy > hitR * hitR then
+            return true
+        end
+        local bestIdx, bestDist = nil, hitR * hitR
+        for i, name in ipairs(Draw.HEX_NAMES) do
+            local ang = -math.pi * 0.5 + (i - 1) * (math.pi / 3)
+            local vx = hexCX + math.cos(ang) * Draw.HEX_LABEL_R
+            local vy = hexCY + math.sin(ang) * Draw.HEX_LABEL_R
+            local ddx, ddy = dx - vx, dy - vy
+            local dist = ddx * ddx + ddy * ddy
+            if dist < bestDist then
+                bestDist = dist
+                bestIdx = i
+            end
+        end
+        if bestIdx then
+            local name = Draw.HEX_NAMES[bestIdx]
+            local st = nil
+            for _, item in ipairs(STAT_LAYOUT) do
+                if item.name == name then st = item break end
+            end
+            if st then
                 local desc = AD.getDesc(st.key)
                 if desc ~= "" then
+                    local ang = -math.pi * 0.5 + (bestIdx - 1) * (math.pi / 3)
                     detailState.attrTip = {
-                        boxCX = boxCX, boxTopY = boxCY - STAT_BOX_H * 0.5,
+                        boxCX = hexCX + math.cos(ang) * Draw.HEX_LABEL_R,
+                        boxTopY = hexCY + math.sin(ang) * Draw.HEX_LABEL_R - 20,
                         desc = desc, name = st.name, area = "stat",
                     }
                 end
@@ -662,8 +774,17 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function CharacterDetail.handleHover(dx, dy)
-    if not detailState.open or detailState.closing then return end
-    if detailState.tab ~= "equip" or not CharacterDetail._EquipPanel then return end
+    if not detailState.open or detailState.closing or detailState.tab ~= "equip" then
+        CharacterDetail._EquipPanel.handleHover(-1, -1, detailState.heroId)
+        -- 关键词悬停加亮（attr 页天赋描述）
+        if detailState.open and not detailState.closing and detailState.tab == "attr"
+           and Draw.talentKwText then
+            Draw.talentKwText:setHover(dx, dy)
+        elseif Draw.talentKwText then
+            Draw.talentKwText:setHover(-1, -1)
+        end
+        return
+    end
     if CharacterDetail._EquipPanel.isItemDragging and CharacterDetail._EquipPanel.isItemDragging() then
         return
     end
@@ -675,13 +796,25 @@ end
 function CharacterDetail.handleDragBegin(dx, dy)
 
     if not detailState.open or detailState.closing then return true end
+    -- 转职页除角色横滑外不拖拽滚动，避免穿透
     if CharacterDetail._EquipDetail.isOpen() then
+        if detailState.tab == "equip" and not CharacterDetail._EquipDetail.containsPoint(dx, dy)
+            and CharacterDetail._EquipPanel.beginSideDrag(dx, dy) then
+            detailState.sideDragging = true
+            return true
+        end
         return CharacterDetail._EquipDetail.handleDragBegin(dx, dy)
     end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleDragBegin(dx, dy)
     end
     detailState.attrTip = nil  -- 拖拽时关闭气泡
+    clearKeywordUi()           -- 拖拽时同步关闭关键词弹窗
+    -- 配装侧栏优先于属性区/格子拖拽，避免侧栏滑动触发其他交互。
+    if detailState.tab == "equip" and CharacterDetail._EquipPanel.beginSideDrag(dx, dy) then
+        detailState.sideDragging = true
+        return true
+    end
     -- 配装面板：按下格子可滚动，位移够大则改成拖装备
     if detailState.tab == "equip" and CharacterDetail._EquipPanel then
         if CharacterDetail._EquipPanel.isInGridArea(dy) then
@@ -689,6 +822,13 @@ function CharacterDetail.handleDragBegin(dx, dy)
             CharacterDetail._EquipPanel.beginPointer(dx, dy)
             return true
         end
+    end
+    if (detailState.tab == "attr" or detailState.tab == "class")
+        and dx >= Draw.ARROW_BG_LEFT_CX - 120 and dx <= Draw.ARROW_BG_RIGHT_CX + 120
+        and dy >= Draw.ARROW_CY - 230 and dy <= Draw.ARROW_CY + 230 then
+        detailState.cardDragX = dx
+        detailState.cardDragMoved = 0
+        return true
     end
     if isInAttrArea(dx, dy) then
         detailState.attrDragging  = true
@@ -705,6 +845,10 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragMove(dx, dy)
     if not detailState.open or detailState.closing then return true end
+    if detailState.sideDragging then
+        CharacterDetail._EquipPanel.moveSideDrag(dy)
+        return true
+    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragMove(dx, dy)
     end
@@ -722,6 +866,25 @@ function CharacterDetail.handleDragMove(dx, dy)
         panel.setDragLastY(dy)
         return true
     end
+    if detailState.cardDragX then
+        detailState.cardDragMoved = dx - detailState.cardDragX
+        local step = Draw.SIDE_CARD_STEP or 180
+        local visual = detailState.cardDragMoved / step
+        while visual <= -1 do
+            CharacterDetail._switchHero(1, true)
+            detailState.cardDragX = detailState.cardDragX - step
+            detailState.cardDragMoved = dx - detailState.cardDragX
+            visual = detailState.cardDragMoved / step
+        end
+        while visual >= 1 do
+            CharacterDetail._switchHero(-1, true)
+            detailState.cardDragX = detailState.cardDragX + step
+            detailState.cardDragMoved = dx - detailState.cardDragX
+            visual = detailState.cardDragMoved / step
+        end
+        detailState.cardDragVisual = visual
+        return true
+    end
     if detailState.attrDragging then
         local delta = detailState.attrDragLastY - dy
         detailState.attrScrollY = detailState.attrScrollY + delta
@@ -737,7 +900,24 @@ end
 ---@param dy number 设计空间 Y
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragEnd(dx, dy)
+    if detailState.cardDragX then
+        local moved = detailState.cardDragMoved or 0
+        detailState.cardDragX = nil
+        detailState.cardDragMoved = 0
+        if moved <= -50 then
+            CharacterDetail._switchHero(1)
+        elseif moved >= 50 then
+            CharacterDetail._switchHero(-1)
+        end
+        detailState.cardDragVisual = 0
+        return true
+    end
     if not detailState.open then return false end
+    if detailState.sideDragging then
+        detailState.sideDragging = false
+        CharacterDetail._EquipPanel.endSideDrag()
+        return true
+    end
     if CharacterDetail._EquipDetail.isOpen() then
         return CharacterDetail._EquipDetail.handleDragEnd(dx, dy)
     end
@@ -796,11 +976,22 @@ function CharacterDetail.handleScroll(wheel, dx, dy)
     end
     local equipPanel = CharacterDetail._EquipPanel
     if detailState.tab == "equip" and equipPanel then
+        if equipPanel.handleSideScroll and equipPanel.handleSideScroll(wheel, dx, dy) then
+            return
+        end
         if dx == nil or equipPanel.isInGridArea(dy) then
             -- onDrag 是拖拽增量（向下拖为负）。滚轮正值应减小 scrollY，所以取反。
             equipPanel.onDrag(-(wheel or 0) * ATTR_SCROLL_WHEEL_STEP)
             return
         end
+    end
+    local onCards = dx and dy and (detailState.tab == "attr" or detailState.tab == "class")
+        and dx >= Draw.ARROW_BG_LEFT_CX - 120 and dx <= Draw.ARROW_BG_RIGHT_CX + 120
+        and dy >= Draw.ARROW_CY - 230 and dy <= Draw.ARROW_CY + 230
+    if onCards then
+        if (wheel or 0) > 0 then CharacterDetail._switchHero(-1)
+        elseif (wheel or 0) < 0 then CharacterDetail._switchHero(1) end
+        return
     end
     if dx == nil or isInAttrArea(dx, dy) then
         detailState.attrScrollY = detailState.attrScrollY - (wheel or 0) * ATTR_SCROLL_WHEEL_STEP

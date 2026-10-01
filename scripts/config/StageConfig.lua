@@ -36,7 +36,7 @@ local SC = {}
 ---@field fcExp           number
 ---@field fcDiamond       number
 ---@field fcEssence       number   -- 首通精粹（洗练装备）
----@field fcArcaneDust    number   -- 首通奥术粉尘（遗物洗练，chapter<13 为 0）
+---@field fcArcaneDust    number   -- 首通奥术粉尘（chapter<13 为 0）
 ---@field fcEquip         number
 ---@field fcMinQ          number
 ---@field fcScroll        number
@@ -334,6 +334,7 @@ local CHAPTER_RANGES = {
     { diff = SC.DIFFICULTY_HELL,      range = SC.HELL_CHAPTERS },
     { diff = SC.DIFFICULTY_NIGHTMARE, range = SC.NIGHTMARE_CHAPTERS },
     { diff = SC.DIFFICULTY_HARD,      range = SC.HARD_CHAPTERS },
+    { diff = SC.DIFFICULTY_NORMAL,    range = SC.NORMAL_CHAPTERS },
 }
 
 for _, s in ipairs(SC.STAGES) do

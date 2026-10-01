@@ -855,7 +855,7 @@ local function withBoot(bagCount, body)
     ui("ui.town.TownScene", { "setOnSmithClick", "setOnChurchClick", "setOnTreeClick",
         "setOnTavernClick", "setOnMarketClick", "setOnWarehouseClick", "setOnLootBoxClick" })
     for _, name in ipairs({ "ui.blacksmith.BlacksmithPage", "ui.church.ChurchPage", "ui.tavern.TavernPage", "ui.market.MarketPage",
-        "ui.story.gate.IntroCutscene", "ui.story.task.TaskPanel", "ui.story.task.SignInPanel", "ui.backpack.BackpackPanel" }) do
+        "ui.story.gate.IntroCutscene", "ui.backpack.BackpackPanel" }) do
         ui(name)
     end
     ui("ui.hud.popup.RewardPopup")
@@ -1068,28 +1068,29 @@ local function testBootIdleAndClaimCallbacks()
             spy.forbidden = true
             h.notify("lootbox")
             for _ = 1, 3 do assertSummary(h.data.lootbox) end
+            local beforeToasts = #h.toasts
             h.fire("ui.loot.LootBox", "setOnClaimAll", 5)
             eq(EquipmentSystem.getInventoryCount(h.data.equipment), 200, "Boot claim respects capacity")
             countIs(h.data.lootbox, 1, 1, "Boot partial claim retains complete idle equipment")
-            eq(#h.popups, 1, "idle claim uses separate popup")
-            eq(h.popups[1].title, "遗匣领取", "遗匣领取使用独立标题")
-            same(rewardTotals(h.popups[1]), { equip = 1 }, "claim popup includes inserted equipment only")
-            eq(h.popups[1].rewards[1].quality, 5, "claim popup uses insertion quality")
-            eq(h.popups[1].rewards[1].level, 60, "claim popup uses insertion level")
+            -- 领取反馈为页内 toast（件数 + 背包满提示），不再弹 RewardPopup。
+            eq(#h.toasts, beforeToasts + 2, "claim reports count and bag-full toasts")
+            eq(h.toasts[beforeToasts + 1], "已领取 1 件装备", "claim toast reports actual count")
+            eq(h.toasts[beforeToasts + 2], "背包已满，其余装备保留在遗匣", "claim toast reports remaining gear")
             for _, generated in ipairs(h.generated) do
                 assertBootEquipDelivered(h, generated.equip, generated.snapshot)
             end
+            beforeToasts = #h.toasts
             h.fire("ui.loot.LootBox", "setOnClaimAll", 5)
-            eq(#h.popups, 1, "full repeated claim cannot display duplicate reward")
+            eq(#h.toasts, beforeToasts + 1, "full repeated claim reports bag full only")
+            eq(h.toasts[#h.toasts], "背包已满，其余装备保留在遗匣", "full claim keeps gear in coffer")
             countIs(h.data.lootbox, 1, 1, "full repeated claim retains complete reward")
-            assert(#h.toasts > 0, "Boot still reports full inventory")
+            beforeToasts = #h.toasts
             h.fire("ui.loot.LootBox", "setOnDecomposeAll", 5)
             eq(h.currency.Essence, essenceFor(5, 60, 1), "Boot recycles at original insertion quality/level")
-            eq(#h.popups, 2, "recycle reward shown once")
-            eq(h.popups[2].title, "回收奖励", "回收使用新标题")
+            eq(#h.toasts, beforeToasts + 1, "recycle reports via toast")
             h.fire("ui.loot.LootBox", "setOnDecomposeAll", 5)
             eq(h.currency.Essence, essenceFor(5, 60, 1), "repeated Boot recycle cannot pay twice")
-            eq(#h.popups, 2, "repeated Boot recycle has no duplicate popup")
+            eq(#h.toasts, beforeToasts + 1, "repeated Boot recycle has no duplicate toast")
             eq(#h.generated, 2, "Boot summary/claim/recycle cannot regenerate idle drops")
             countIs(h.data.lootbox, 0, 0, "Boot claim and recycle drain each reward once")
         end)
@@ -1169,19 +1170,16 @@ local function testBootQualityCallbackForwarding()
                     local hidden = hiddenEntries(h.data.lootbox, quality)
                     local hiddenSnapshot = copy(hidden)
                     local beforeBag = EquipmentSystem.getInventoryCount(h.data.equipment)
-                    local beforePopup, beforeGenerated = #h.popups, #h.generated
+                    local beforeToast, beforeGenerated = #h.toasts, #h.generated
                     h.fire("ui.loot.LootBox", "setOnClaimAll", quality)
                     eq(claimCalls[#claimCalls].quality, quality, "Boot claim callback forwards 0..6 unchanged")
                     eq(EquipmentSystem.getInventoryCount(h.data.equipment), beforeBag + (quality == 0 and 12 or 2),
                         "Boot claims only exact selection")
                     assertHiddenEntries(h.data.lootbox, hidden, hiddenSnapshot)
-                    eq(#h.popups, beforePopup + 1, "Boot filtered claim shows one popup")
-                    eq(h.popups[#h.popups].title, "遗匣领取", "filtered claim category")
-                    for _, reward in ipairs(h.popups[#h.popups].rewards) do
-                        assert(quality == 0 or reward.quality == quality, "claim popup excludes hidden quality")
-                    end
+                    -- 领取反馈为页内 toast：成功一件/一批报一条件数 toast。
+                    eq(#h.toasts, beforeToast + 1, "Boot filtered claim reports one toast")
                     h.fire("ui.loot.LootBox", "setOnClaimAll", quality)
-                    eq(#h.popups, beforePopup + 1, "repeated selected claim produces no reward popup")
+                    eq(#h.toasts, beforeToast + 2, "repeated selected claim reports empty coffer toast")
                     assertHiddenEntries(h.data.lootbox, hidden, hiddenSnapshot)
                     eq(#h.generated, beforeGenerated, "Boot filtered claim cannot generateRandom")
 
@@ -1195,17 +1193,15 @@ local function testBootQualityCallbackForwarding()
                         end
                     end
                     local beforeEssence = h.currency.Essence
-                    beforePopup, beforeGenerated = #h.popups, #h.generated
+                    beforeToast, beforeGenerated = #h.toasts, #h.generated
                     h.fire("ui.loot.LootBox", "setOnDecomposeAll", quality)
                     eq(recycleCalls[#recycleCalls].quality, quality, "Boot recycle callback forwards 0..6 unchanged")
                     eq(h.currency.Essence, beforeEssence + expectedEssence, "Boot credits only filtered essence")
                     assertHiddenEntries(h.data.lootbox, hidden, hiddenSnapshot)
-                    eq(#h.popups, beforePopup + 1, "filtered recycle shows one popup")
-                    eq(h.popups[#h.popups].title, "回收奖励", "filtered recycle uses new title")
-                    same(rewardTotals(h.popups[#h.popups]), { essence = expectedEssence }, "filtered recycle popup amount")
+                    eq(#h.toasts, beforeToast + 1, "filtered recycle reports one toast")
                     h.fire("ui.loot.LootBox", "setOnDecomposeAll", quality)
                     eq(h.currency.Essence, beforeEssence + expectedEssence, "repeated selection cannot pay twice")
-                    eq(#h.popups, beforePopup + 1, "empty selected recycle has no popup")
+                    eq(#h.toasts, beforeToast + 1, "empty selected recycle has no toast")
                     assertHiddenEntries(h.data.lootbox, hidden, hiddenSnapshot)
                     eq(#h.generated, beforeGenerated, "Boot filtered recycle cannot generateRandom")
                 end

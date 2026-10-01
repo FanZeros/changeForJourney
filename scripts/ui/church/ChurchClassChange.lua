@@ -8,21 +8,65 @@ local GameConfig     = require("config.GameConfig")
 local DrawUtil       = require("core.DrawUtil")
 local HC             = require("config.HeroConfig")
 local CC             = require("config.ClassConfig")
+local AVC            = require("config.AdvancementConfig")
+local AD             = require("systems.AttributeDef")
 local CharacterPanel = require("ui.character.panel.CharacterPanel")
 local GameState      = require("core.GameState")
 local BF             = require("systems.ButtonFeedback")
 local DarkIcon       = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local NumberUtil     = require("core.NumberUtil")
+local KeywordText    = require("ui.widget.KeywordText")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 local hitTest           = DrawUtil.hitTest
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 local M = {}
+
+-- 转职确认弹窗天赋描述关键词富文本（弹窗带缩放变换，输入需映射回弹窗空间）
+M.confirmKwText = KeywordText.new({ textColor = { 0x72, 0x58, 0x50 } })
+
+-- 当前转职页英雄（由详情页页签注入，不再依赖教堂选人槽）
+---@type number|nil
+local currentHeroId = nil
+
+local function heroId()
+    return currentHeroId
+end
+
+-- 弹窗与飘字状态（模块自管，不再挂在教堂 state 上）
+local pop = {
+    confirmPopup = false, confirmAdvLevel = 0, confirmBranchId = 0,
+    confirmBranchName = "", confirmClassNum = 1, confirmOwned = false,
+    confirmAnimT = 0, confirmClosing = false,
+    resetConfPopup = false, resetConfRefund = 0,
+    resetConfAnimT = 0, resetConfClosing = false,
+    floatText = nil, floatTextX = 0, floatTextY = 0, floatTextTime = 0,
+}
+
+-- 转职页图片（模块自管，init 时加载）
+local img = {
+    classIcons2 = {},
+    goldCoin = -1, iconUp = -1,
+    detailBg = -1,
+}
+local inited = false
+local savedVg = nil
+
+local function getClassIcon2(vg, classId)
+    local h = img.classIcons2[classId]
+    if h ~= nil then return h end
+    if not vg or not classId then
+        img.classIcons2[classId] = -1
+        return -1
+    end
+    local icon = nvgCreateImage(vg, "image/职业图标/UI_icon_ZY_" .. classId .. ".png", 0)
+    img.classIcons2[classId] = icon or -1
+    return img.classIcons2[classId]
+end
 
 --- 转职门槛等级：与战斗/角色页一致，使用有效等级（含远征等级、共鸣等级）
 ---@param heroId number
@@ -37,10 +81,11 @@ end
 
 -- ======================== 转职界面布局常量 ========================
 
--- 职业背景图
-local CLASS_BG_W, CLASS_BG_H   = 1080, 1700
-local CLASS_BG_CX              = 540
-local CLASS_BG_CY              = DESIGN_H - CLASS_BG_H * 0.5
+-- 背景与觉醒页同款，铺满整页（UI_JX_BJ，1080x2400）
+local CLASS_BG_W, CLASS_BG_H   = 1080, 2400
+local CLASS_BG_CX, CLASS_BG_CY = 540, 1200
+-- drawContent 把整棵转职树上移这么多；点击必须用同一偏移，重置按钮不在平移内。
+local TREE_SHIFT_Y = -300
 
 -- 标题背景
 local TITLE_BG_CX, TITLE_BG_CY = 540, 1092
@@ -50,9 +95,9 @@ local TITLE_BG_W, TITLE_BG_H   = 660, 60
 local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 1092
 local TITLE_FONT_SIZE              = 40
 
--- 重置按钮（位于"转职"标题上方）
+-- 重置按钮：二转图标（1941）下方再留一个按钮位，随转职树一起上移
 local BTN_RESET_CX   = 540
-local BTN_RESET_CY   = 1000   -- 标题顶边(1062) - 间距12 - 半高50 = 1000
+local BTN_RESET_CY   = 2240
 local BTN_RESET_W    = 410
 local BTN_RESET_H    = 100
 local BTN_RESET_FONT = 40
@@ -61,9 +106,15 @@ local BTN_RESET_FONT = 40
 local INIT_LABEL_CX, INIT_LABEL_CY = 542, 1178
 local INIT_LABEL_FONT               = 40
 
--- 一转分叉线
+-- 一转分叉线（代码绘制直角分叉线，几何取自旧贴图 UI_ZZXT_1Z 实测：内容边距 7px）
 local BRANCH_LINE_CX, BRANCH_LINE_CY = 540, 1464
 local BRANCH_LINE_W, BRANCH_LINE_H   = 498, 312
+local BRANCH_LINE_BODY_W = BRANCH_LINE_W - 14   -- 线体实际宽 484
+local BRANCH_LINE_BODY_H = BRANCH_LINE_H - 14   -- 线体实际高 298
+-- 横杆中心占线体高度比例（旧贴图实测：横杆中心在内容顶下 152/298 处）
+local BRANCH_LINE_BAR_RATIO = 152 / 298
+-- 分叉线线宽（旧贴图实测 12px）
+local LINE_THICK = 12
 
 -- 初始职业图标 & 名称
 local INIT_ICON_CX, INIT_ICON_CY = 540, 1295
@@ -85,10 +136,13 @@ local BR2_NAME_FONT             = 40
 
 -- 二转 & 锁定遮罩布局
 local ADV2 = {
-    -- 二转分叉线
+    -- 二转分叉线（代码绘制，几何取自旧贴图 UI_ZZXT_2Z 实测：内容边距 7px）
     line1CX = 307, line1CY = 1793,
     line2CX = 775, line2CY = 1793,
     lineW   = 261, lineH   = 277,
+    lineBodyW = 247,   -- 线体实际宽 261-14
+    lineBodyH = 263,   -- 线体实际高 277-14
+    lineBarRatio = 132 / 263,   -- 横杆中心占比（旧贴图实测 132/263）
     -- 二转分支位置（4个）
     iconW = 166, iconH = 166, nameFontSize = 40,
     pos = {
@@ -111,7 +165,7 @@ local ADV2 = {
 
 -- ======================== 转职数据表 ========================
 
---- classId → 编号（用于背景图文件名 UI_ZZBJ_X.png）
+--- classId → 职业序号（图标与转职分支用）
 local CLASS_NUM = {
     [CC.KNIGHT]   = 1,
     [CC.WARRIOR]  = 2,
@@ -131,139 +185,43 @@ local CLASS_COLORS = {
     [CC.PRIEST]   = { r = 0xfc, g = 0xff, b = 0x00 },
 }
 
---- classId → 基础职业中文名
-local CLASS_DISPLAY_NAMES = {
-    [CC.KNIGHT]   = "守誓者",
-    [CC.WARRIOR]  = "破阵者",
-    [CC.MAGE]     = "咒术师",
-    [CC.RANGER]   = "夜猎者",
-    [CC.ASSASSIN] = "无痕者",
-    [CC.PRIEST]   = "提灯者",
-}
+--- 职业与分支显示名直接取现行六契配置，保留原有分支 id/图标顺序。
+local CLASS_DISPLAY_NAMES = {}
+local FIRST_ADV_BRANCHES = {}
+local SECOND_ADV_BRANCHES = {}
+for classId, branchIds in pairs(AVC.FIRST_BRANCHES) do
+    local baseClass = CC.get(classId)
+    CLASS_DISPLAY_NAMES[classId] = baseClass and baseClass.name or "未知"
+    local firstBranches = {}
+    for _, firstId in ipairs(branchIds) do
+        firstBranches[#firstBranches + 1] = { id = firstId, name = AVC.get(firstId).name }
+        local secondBranches = {}
+        for _, secondId in ipairs(AVC.SECOND_BRANCHES[firstId]) do
+            secondBranches[#secondBranches + 1] = { id = secondId, name = AVC.get(secondId).name }
+        end
+        SECOND_ADV_BRANCHES[firstId] = secondBranches
+    end
+    FIRST_ADV_BRANCHES[classId] = firstBranches
+end
 
---- classId → 一转分支 { { id, name }, { id, name } }
-local FIRST_ADV_BRANCHES = {
-    [CC.KNIGHT]   = { { id = 101, name = "圣骑士" },  { id = 102, name = "龙骑士" } },
-    [CC.WARRIOR]  = { { id = 103, name = "狂战士" },  { id = 104, name = "决斗者" } },
-    [CC.MAGE]     = { { id = 105, name = "咒术师" },  { id = 106, name = "魔导师" } },
-    [CC.RANGER]   = { { id = 107, name = "巡林客" },  { id = 108, name = "弓箭手" } },
-    [CC.ASSASSIN] = { { id = 109, name = "暗杀者" },  { id = 110, name = "影袭者" } },
-    [CC.PRIEST]   = { { id = 111, name = "大祭祀" },  { id = 112, name = "大主教" } },
-}
+-- 转职属性直接按配置表展示，不重复维护与实效脱节的旧加成。
+local function getBranchAttrs(branchId, classId)
+    local cfg = AVC.get(branchId) or (classId and CC.get(classId))
+    local attrs = {}
+    for _, bonus in ipairs(cfg and cfg.statBonus or {}) do
+        local meta = AD.getMeta(bonus.key)
+        local name = (meta and meta.name) or bonus.key
+        local value = bonus.flat or 0
+        attrs[#attrs + 1] = {
+            name = name,
+            value = string.format("+%g%s", value, meta and meta.dataType == "pct" and "%" or ""),
+        }
+    end
+    return attrs
+end
 
---- 一转分支 id → 二转分支 { { id, name }, { id, name } }
-local SECOND_ADV_BRANCHES = {
-    [101] = { { id = 201, name = "圣堂骑士" }, { id = 202, name = "传颂骑士" } },
-    [102] = { { id = 203, name = "十字之军" }, { id = 204, name = "怒龙骑士" } },
-    [103] = { { id = 205, name = "疾风剑狂" }, { id = 206, name = "嗜血狂徒" } },
-    [104] = { { id = 207, name = "武器大师" }, { id = 208, name = "幻影剑士" } },
-    [105] = { { id = 209, name = "瘟疫巫师" }, { id = 210, name = "诅咒术士" } },
-    [106] = { { id = 211, name = "智慧学者" }, { id = 212, name = "奥能大师" } },
-    [107] = { { id = 213, name = "风灵使者" }, { id = 214, name = "林间猎手" } },
-    [108] = { { id = 215, name = "鹰眼箭神" }, { id = 216, name = "重弩炮手" } },
-    [109] = { { id = 217, name = "瞬狱杀手" }, { id = 218, name = "千面刺客" } },
-    [110] = { { id = 219, name = "致命之刃" }, { id = 220, name = "双刃刺客" } },
-    [111] = { { id = 221, name = "祝祭神官" }, { id = 222, name = "黑衣祭祀" } },
-    [112] = { { id = 223, name = "神之使徒" }, { id = 224, name = "惩戒牧师" } },
-}
-
---- 分支 id → 转职属性加成 { { name, value }, ... }
-local ADV_BRANCH_ATTRS = {
-    -- ===== 基础职业 =====
-    [1] = { { name = "体质", value = "+5" } },
-    [2] = { { name = "力量", value = "+5" } },
-    [3] = { { name = "智慧", value = "+5" } },
-    [4] = { { name = "敏捷", value = "+5" } },
-    [5] = { { name = "运气", value = "+5" } },
-    [6] = { { name = "精神", value = "+5" } },
-    -- ===== 一转 =====
-    [101] = { { name = "体质", value = "+5" }, { name = "精神", value = "+5" } },
-    [102] = { { name = "体质", value = "+5" }, { name = "力量", value = "+5" } },
-    [103] = { { name = "力量", value = "+5" }, { name = "体质", value = "+5" } },
-    [104] = { { name = "力量", value = "+5" }, { name = "智慧", value = "+5" } },
-    [105] = { { name = "智慧", value = "+5" }, { name = "精神", value = "+5" } },
-    [106] = { { name = "智慧", value = "+5" }, { name = "运气", value = "+5" } },
-    [107] = { { name = "敏捷", value = "+5" }, { name = "力量", value = "+5" } },
-    [108] = { { name = "敏捷", value = "+5" }, { name = "运气", value = "+5" } },
-    [109] = { { name = "运气", value = "+5" }, { name = "敏捷", value = "+5" } },
-    [110] = { { name = "运气", value = "+5" }, { name = "力量", value = "+5" } },
-    [111] = { { name = "精神", value = "+5" }, { name = "运气", value = "+5" } },
-    [112] = { { name = "精神", value = "+5" }, { name = "体质", value = "+5" } },
-    -- ===== 二转 =====
-    [201] = { { name = "精神", value = "+5" }, { name = "体质", value = "+5" }, { name = "治疗加成", value = "+20%" } },
-    [202] = { { name = "体质", value = "+5" }, { name = "力量", value = "+5" }, { name = "护盾", value = "+49" } },
-    [203] = { { name = "体质", value = "+5" }, { name = "力量", value = "+5" }, { name = "护甲", value = "+7" } },
-    [204] = { { name = "体质", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "物理暴击率", value = "+6.25%" } },
-    [205] = { { name = "力量", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "物理暴击率", value = "+6.25%" } },
-    [206] = { { name = "力量", value = "+5" }, { name = "体质", value = "+5" }, { name = "暴击伤害", value = "+25%" } },
-    [207] = { { name = "力量", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "物理穿透", value = "+10" } },
-    [208] = { { name = "力量", value = "+5" }, { name = "运气", value = "+5" }, { name = "物理暴击伤害", value = "+33%" } },
-    [209] = { { name = "智慧", value = "+5" }, { name = "体质", value = "+5" }, { name = "魔法穿透", value = "+10" } },
-    [210] = { { name = "智慧", value = "+5" }, { name = "精神", value = "+5" }, { name = "魔法暴击率", value = "+6.25%" } },
-    [211] = { { name = "智慧", value = "+5" }, { name = "精神", value = "+5" }, { name = "魔法暴击率", value = "+6.25%" } },
-    [212] = { { name = "智慧", value = "+5" }, { name = "运气", value = "+5" }, { name = "魔法穿透", value = "+10" } },
-    [213] = { { name = "敏捷", value = "+5" }, { name = "力量", value = "+5" }, { name = "攻击速度", value = "+15%" } },
-    [214] = { { name = "敏捷", value = "+5" }, { name = "运气", value = "+5" }, { name = "暴击伤害", value = "+33%" } },
-    [215] = { { name = "敏捷", value = "+5" }, { name = "运气", value = "+5" }, { name = "物理穿透", value = "+10" } },
-    [216] = { { name = "力量", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "暴击伤害", value = "+25%" } },
-    [217] = { { name = "运气", value = "+5" }, { name = "力量", value = "+5" }, { name = "暴击伤害", value = "+33%" } },
-    [218] = { { name = "敏捷", value = "+5" }, { name = "运气", value = "+5" }, { name = "物理穿透", value = "+10" } },
-    [219] = { { name = "运气", value = "+5" }, { name = "敏捷", value = "+5" }, { name = "暴击率", value = "+6.25%" } },
-    [220] = { { name = "运气", value = "+5" }, { name = "力量", value = "+5" }, { name = "物理穿透", value = "+10" } },
-    [221] = { { name = "精神", value = "+5" }, { name = "智慧", value = "+5" }, { name = "治疗加成", value = "+20%" } },
-    [222] = { { name = "精神", value = "+5" }, { name = "运气", value = "+5" }, { name = "治疗暴击率", value = "+6.25%" } },
-    [223] = { { name = "精神", value = "+5" }, { name = "体质", value = "+5" }, { name = "治疗加成", value = "+20%" } },
-    [224] = { { name = "精神", value = "+5" }, { name = "智慧", value = "+5" }, { name = "魔法穿透", value = "+10" } },
-}
-
---- 分支 id → 天赋 { name, desc }
-local ADV_BRANCH_TALENT = {
-    -- ===== 基础职业天赋 =====
-    [1] = { name = "阵前叫嚣", desc = "每场战斗开始时，第一次攻击获得20倍仇恨值" },
-    [2] = { name = "物理精通", desc = "物理伤害加成+10%" },
-    [3] = { name = "魔法精通", desc = "魔法伤害加成+10%" },
-    [4] = { name = "远程攻击", desc = "在有骑士/战士存在时，仇恨获得倍率降低80%" },
-    [5] = { name = "精准", desc = "暴击率+5%" },
-    [6] = { name = "疗愈", desc = "治疗加成+10%" },
-    -- ===== 一转天赋 =====
-    [101] = { name = "圣光术", desc = "每10秒释放圣光术恢复自己10%生命" },
-    [102] = { name = "龙之血", desc = "在战斗开始时和每10秒进行嘲讽，获得相当于模拟平A伤害×50的仇恨值，强制嘲讽3秒；仇恨值保持己方最高时每秒恢复2%已损失生命值" },
-    [103] = { name = "狂暴之血", desc = "当前生命值每损失5%，物理攻击加成+2.5%" },
-    [104] = { name = "战场决斗", desc = "攻击速度+15%，每5次攻击只会攻击同一个敌人，不会受仇恨值影响，对锁定目标伤害加成+5%" },
-    [105] = { name = "易伤诅咒", desc = "每10秒对一个敌人施加持续8秒的[易伤]，使受到额外伤害+20%（乘法计算）" },
-    [106] = { name = "奥术飞弹", desc = "每次造成攻击伤害时，有35%概率对随机敌人发射奥术飞弹，造成魔法攻击力*100%的暗影伤害" },
-    [107] = { name = "巡游射击", desc = "每当怪物攻击其他角色后1秒，该角色有25%概率无视攻击进度条立即对该怪物进行攻击" },
-    [108] = { name = "阵前提速", desc = "战斗开始时获得10层[提速]，每层提供8%攻击速度，每次攻击后减少1层" },
-    [109] = { name = "隐匿", desc = "每过去10秒后立即清空仇恨值，清空后获得5秒[暗影]状态：暴击率+15%，暴击伤害+30%" },
-    [110] = { name = "影袭", desc = "每当有敌人死亡时，立即填充100%当前攻击进度条，并使下一次攻击伤害加成+30%" },
-    [111] = { name = "激励", desc = "每次进行攻击治疗时，立即填充目标25%的攻击进度条，并使目标获得持续3秒的治疗加成+10%" },
-    [112] = { name = "团队治疗", desc = "每次进行攻击治疗时，将治疗量的10%为整个团队所有远征队员进行治疗" },
-    -- ===== 二转天赋 =====
-    [201] = { name = "进阶圣光术", desc = "一转效果[圣光术]治疗的血量提升至三倍，在初次生命值低于50%/20%时立即释放一次[圣光术]" },
-    [202] = { name = "传颂祝福", desc = "在战斗中每累计损失10%生命值时，为所有远征队员增加7%伤害加成，最多增加98%" },
-    [203] = { name = "十字盾守", desc = "每当受到伤害时提升2点护甲，最多能叠加50次" },
-    [204] = { name = "怒龙反击", desc = "每次受到攻击时，立即填充40%当前攻击进度条" },
-    [205] = { name = "狂风骤雨", desc = "当前生命值每损失5%，攻击速度+3%，物理暴击率+1.5%" },
-    [206] = { name = "嗜血狂怒", desc = "物理攻击加成+35%，当生命值高于50%时每次攻击时减少3%当前生命值" },
-    [207] = { name = "武器精通", desc = "无法再装备常规副手，但可在副手装备与主手不同类型的武器" },
-    [208] = { name = "幻影剑斩", desc = "攻击同一个敌人时，每次攻击获得1层[连击]，每层[连击]提供10%连击概率和2%连击增伤，最多叠加至10层；切换攻击目标时失去2层[连击]" },
-    [209] = { name = "群体诅咒术", desc = "每次诅咒时同时诅咒所有敌人，且[易伤诅咒]的效果提升至25%" },
-    [210] = { name = "蚀骨诅咒", desc = "[易伤诅咒]的持续时间延长至15秒。带有诅咒的敌人，每次受到伤害时，都会额外受到一次相当于该角色魔法攻击力*80%的暗影伤害（此效果每1秒最多触发1次）" },
-    [211] = { name = "奥术智慧", desc = "[奥术飞弹]的触发概率提升至50%。飞弹现在会优先攻击生命值百分比最低的敌人，且对生命值低于40%的敌人造成的伤害提升100%。当目标生命值低于20%时，[奥术飞弹]必定触发。" },
-    [212] = { name = "奥能充盈", desc = "[奥术飞弹]的伤害提升至魔法攻击力*200%。每次触发飞弹时，有30%几率使本次飞弹爆炸，对目标及其相邻单位造成等量伤害。" },
-    [213] = { name = "风之气息", desc = "[巡游射击]的触发概率提升至35%。每当触发此效果获得1层[风之气息]，自身攻击速度提升12%，持续5秒，此效果最多叠加3层。" },
-    [214] = { name = "林间之眼", desc = "[巡游射击]必定造成暴击，每当进行普通攻击时获得1层[暴击提升]，暴击伤害+8%，持续10秒，此效果最多叠加20层" },
-    [215] = { name = "鹰眼", desc = "[阵前提速]获得的[提速]层数+5，每层[提速]额外提供6物理穿透" },
-    [216] = { name = "重火力", desc = "攻击速度固定为100%；多余的攻击速度按照1:2转化为物理伤害加成" },
-    [217] = { name = "瞬杀", desc = "保持5秒未受到攻击时，暴击概率+25%" },
-    [218] = { name = "千面", desc = "保持5秒未受到攻击时，攻击速度+50%，伤害加成+10%" },
-    [219] = { name = "致命", desc = "攻击造成暴击时，其攻击进度条立即前进100%，暴击伤害+25%" },
-    [220] = { name = "双刃精通", desc = "无法再装备常规副手，但可在副手装备与主手相同类型的武器" },
-    [221] = { name = "战争之祭", desc = "[激励]的效果提升至40%。当目标因[激励]效果而立即进行攻击后，其此次攻击造成的伤害提升25%（乘法计算）" },
-    [222] = { name = "嗜血祭祀", desc = "[激励]的效果提升至100%，但[激励]变为40%概率触发，因[激励]效果而立即攻击后，被[激励]的单位将恢复本次攻击造成的伤害值的生命值" },
-    [223] = { name = "神之赐福", desc = "[团队治疗]治疗量提升至三倍，并且对当前生命值低于20%的远征队员必定造成治疗暴击" },
-    [224] = { name = "神圣惩戒", desc = "每当进行任意治疗时，有40%概率对一个随机敌人发射惩戒飞弹，造成治疗量*400%的暗影伤害" },
-}
+-- 确认弹窗直接使用 ClassConfig / AdvancementConfig 的实际职业天赋说明，
+-- 不在界面重复维护一份旧职业文案。
 
 --- 转职消耗金币
 local ADV_COST = {
@@ -323,33 +281,44 @@ M.ADV2                 = ADV2
 M.FIRST_ADV_BRANCHES   = FIRST_ADV_BRANCHES
 M.SECOND_ADV_BRANCHES  = SECOND_ADV_BRANCHES
 
--- ======================== ctx 注入的共享状态 ========================
+-- ======================== 弹窗动画常量 ========================
 
----@type table
-local state           -- ChurchPage 主 state 表
-local img             -- ChurchPage 主 img 表
-local getClassIcon2   -- 转职职业图标按需加载
-local easeOutCubic    -- easing 函数
-local easeInCubic     -- easing 函数
-local POPUP_ANIM_DUR  -- 弹窗动画时长
-local POPUP_SCALE_FROM -- 弹窗缩放起始值
-local getClient       -- 网络延迟加载
-local getProtocol     -- 协议延迟加载
-local getDispatcher   -- 事件分发延迟加载
+local POPUP_ANIM_DUR   = 0.22
+local POPUP_SCALE_FROM = 0.85
 
---- 注入共享上下文
----@param ctx table { state, img, easeOutCubic, easeInCubic, POPUP_ANIM_DUR, POPUP_SCALE_FROM, getClient, getProtocol, getDispatcher }
-function M.setContext(ctx)
-    state           = ctx.state
-    img             = ctx.img
-    easeOutCubic    = ctx.easeOutCubic
-    easeInCubic     = ctx.easeInCubic
-    POPUP_ANIM_DUR  = ctx.POPUP_ANIM_DUR
-    POPUP_SCALE_FROM = ctx.POPUP_SCALE_FROM
-    getClient       = ctx.getClient
-    getProtocol     = ctx.getProtocol
-    getDispatcher   = ctx.getDispatcher
-    getClassIcon2   = ctx.getClassIcon2
+local function easeOutCubic(t) return 1 - (1 - t) ^ 3 end
+local function easeInCubic(t) return t * t * t end
+
+--- 加载转职页图片（幂等，详情页首次打开时调用）
+---@param vg any
+function M.init(vg)
+    if inited then return end
+    inited = true
+    savedVg = vg
+    -- 转职树分叉线已改为代码矢量绘制（drawBranchLine，支持路径金色分段着色），不再加载 UI_ZZXT_1Z/2Z 贴图
+    img.goldCoin   = nvgCreateImage(vg, "image/货币道具/UI_icon_JB_X.png", 0)
+    img.iconUp     = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
+    img.detailBg   = nvgCreateImage(vg, "image/界面底板/角色与觉醒/UI_JX_BJ.png", 0)
+end
+
+--- 设置当前转职页英雄（详情页页签切换/换角色时调用）
+---@param id number|nil
+function M.setHero(id)
+    if currentHeroId ~= id then
+        pop.confirmPopup = false
+        pop.resetConfPopup = false
+        M.confirmKwText:clear()   -- 切角色清关键词状态
+    end
+    currentHeroId = id
+end
+
+--- 转职成功后的飘字提示
+---@param text string
+function M.showFloat(text)
+    pop.floatText = text
+    pop.floatTextX = DESIGN_W * 0.5
+    pop.floatTextY = DESIGN_H * 0.45
+    pop.floatTextTime = time.elapsedTime
 end
 
 -- ======================== 内部函数 ========================
@@ -368,56 +337,176 @@ local function drawBranchOverlay(vg, cx, cy, w, h, canAdv)
     end
 end
 
+-- 连线颜色：金色与节点路径光晕（PATH_GLOW 0xffc42e）一致，白色=未选定/可转，暗白=非路径
+local LINE_WHITE = { 255, 255, 255 }
+local LINE_GOLD  = { 0xff, 0xc4, 0x2e }
+
+--- 内部：按段状态填充一个矩形（seg = { alpha, gold }）
+local function fillLineSeg(vg, x, y, w, h, seg)
+    local a = math.floor((seg.alpha or 0) * 255 + 0.5)
+    if a <= 0 then return end
+    local c = seg.gold and LINE_GOLD or LINE_WHITE
+    nvgBeginPath(vg)
+    nvgRect(vg, x, y, w, h)
+    nvgFillColor(vg, nvgRGBA(c[1], c[2], c[3], a))
+    nvgFill(vg)
+end
+
+--- 代码绘制直角分叉线（┬ 形：中干 + 横杆 + 左右腿），支持分段着色。
+--- 当前职业路径上的段用金色（seg.gold=true），其余白色；alpha 控制明暗。
+--- 横杆左半随左腿、右半随右腿着色；中干最后绘制以覆盖横杆中心交点，
+--- 使"初始职业→分叉点"这段路径必经线显示为金色。
+---@param vg any
+---@param cx number 包围盒中心X
+---@param cy number 包围盒中心Y
+---@param bodyW number 线体宽（含双腿外沿）
+---@param bodyH number 线体高（中干顶→腿底）
+---@param thick number 线宽
+---@param barRatio number|nil 横杆中心占线体高比例（缺省用一转比例）
+---@param trunk table {alpha, gold} 中干
+---@param legL table {alpha, gold} 左腿（含横杆左半）
+---@param legR table {alpha, gold} 右腿（含横杆右半）
+local function drawBranchLine(vg, cx, cy, bodyW, bodyH, thick, barRatio, trunk, legL, legR)
+    local halfW = bodyW * 0.5
+    local top   = cy - bodyH * 0.5
+    local bot   = cy + bodyH * 0.5
+    -- 横杆中心：按旧贴图实测比例（一转 152/298，二转 132/263）
+    local barCY = top + bodyH * (barRatio or BRANCH_LINE_BAR_RATIO)
+    local halfT = thick * 0.5
+    -- 横杆左半 / 右半（各随对应腿着色）
+    fillLineSeg(vg, cx - halfW, barCY - halfT, halfW, thick, legL)
+    fillLineSeg(vg, cx, barCY - halfT, halfW, thick, legR)
+    -- 左腿 / 右腿：横杆上沿 → 底部
+    fillLineSeg(vg, cx - halfW, barCY - halfT, thick, bot - (barCY - halfT), legL)
+    fillLineSeg(vg, cx + halfW - thick, barCY - halfT, thick, bot - (barCY - halfT), legR)
+    -- 中干：顶部 → 横杆下沿（最后画，覆盖横杆中心交点）
+    fillLineSeg(vg, cx - halfT, top, thick, (barCY + halfT) - top, trunk)
+end
+
+--- 便捷：整条线同一状态（等级锁定遮罩后的灰度补画用）
+local function drawBranchLineSolid(vg, cx, cy, bodyW, bodyH, thick, barRatio, alpha)
+    drawBranchLine(vg, cx, cy, bodyW, bodyH, thick, barRatio,
+        { alpha = alpha, gold = false },
+        { alpha = alpha, gold = false },
+        { alpha = alpha, gold = false })
+end
+
+--- 计算分叉线三段（中干/左腿/右腿）着色状态
+---@param active boolean 该线是否处于可选路径（false → 整条暗，如未选中对应一转的二转线）
+---@param turned boolean 是否已选中经过此分叉（true → 中干金 + 选中腿金 + 另一腿暗）
+---@param selIsLeft boolean|nil turned 时选中左腿还是右腿
+---@return table trunk
+---@return table legL
+---@return table legR
+local function branchLineParts(active, turned, selIsLeft)
+    if not active then
+        return { alpha = 0.3, gold = false },
+               { alpha = 0.3, gold = false },
+               { alpha = 0.3, gold = false }
+    end
+    if not turned then
+        -- 未选中：整条白（两侧都可能是去向）
+        return { alpha = 1, gold = false },
+               { alpha = 1, gold = false },
+               { alpha = 1, gold = false }
+    end
+    -- 已选中：中干金 + 选中腿金 + 另一腿暗白
+    if selIsLeft then
+        return { alpha = 1, gold = true },
+               { alpha = 1, gold = true },
+               { alpha = 0.3, gold = false }
+    else
+        return { alpha = 1, gold = true },
+               { alpha = 0.3, gold = false },
+               { alpha = 1, gold = true }
+    end
+end
+
+-- ======================== 转职树路径点亮 ========================
+-- 规则：英雄当前转职路径上的节点（初始职业、已转分支、当前可转的下一分支）
+-- 加金色光晕 + 亮黄名称；非路径节点图标压暗 + 名称灰暗，一眼看出"通向哪"。
+
+local PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B = 0xff, 0xc4, 0x2e  -- 金色光晕
+local PATH_NAME_R, PATH_NAME_G, PATH_NAME_B = 0xff, 0xd7, 0x4a  -- 点亮名称（亮黄）
+local DIM_NAME_R,  DIM_NAME_G,  DIM_NAME_B  = 0x8a, 0x84, 0x78  -- 非路径名称（灰暗）
+local DIM_ICON_ALPHA = 0.45                                     -- 非路径图标透明度
+
+--- 绘制路径节点的金色外发光（径向渐变光晕 + 金色描边）
+---@param vg any
+---@param cx number
+---@param cy number
+---@param w number
+---@param h number
+local function drawPathGlow(vg, cx, cy, w, h)
+    local r = math.max(w, h) * 0.5
+    -- 测试桩会把全局 nvgRGBA 覆写为返回 number，LSP 推联合类型；cast 收窄
+    local glowIn = nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 110)
+    ---@cast glowIn NVGcolor
+    local glowOut = nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 0)
+    ---@cast glowOut NVGcolor
+    nvgBeginPath(vg)
+    nvgCircle(vg, cx, cy, r * 1.45)
+    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, r * 0.85, r * 1.45, glowIn, glowOut))
+    nvgFill(vg)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, cx - w * 0.5 - 4, cy - h * 0.5 - 4, w + 8, h + 8, 29)
+    nvgStrokeColor(vg, nvgRGBA(PATH_GLOW_R, PATH_GLOW_G, PATH_GLOW_B, 235))
+    nvgStrokeWidth(vg, 5)
+    nvgStroke(vg)
+end
+
+--- 一转节点状态：owned=已转 / avail=可转 / off=非路径（等级不足也算 off）
+---@param advBranch table|nil
+---@param branchId number
+---@param heroLevel number
+---@return string
+local function firstBranchState(advBranch, branchId, heroLevel)
+    if heroLevel < ADV2.firstLevel then return "off" end
+    if advBranch and advBranch.first == branchId then return "owned" end
+    if not advBranch or not advBranch.first then return "avail" end
+    return "off"
+end
+
+--- 二转节点状态：owned=已转 / avail=已选一转下可转 / off=非路径
+---@param advBranch table|nil
+---@param parentFirstId number
+---@param branchId number
+---@param heroLevel number
+---@return string
+local function secondBranchState(advBranch, parentFirstId, branchId, heroLevel)
+    if heroLevel < ADV2.secondLevel then return "off" end
+    if advBranch and advBranch.second == branchId then return "owned" end
+    if advBranch and advBranch.first == parentFirstId and not advBranch.second then return "avail" end
+    return "off"
+end
+
 -- ======================== 绘制 API ========================
 
---- 绘制转职职业背景图（不受 scissor 裁剪，单独调用）
+--- 绘制转职页背景（与觉醒页同款 UI_JX_BJ，铺满整页）
 function M.drawBg(vg)
-    if not state.selectedHeroId then return end
-    local heroCfg = HC.get(state.selectedHeroId)
-    if not heroCfg then return end
-    local classNum = CLASS_NUM[heroCfg.classId] or 1
-    local bgImg = img.classBg[classNum]
-    if bgImg and bgImg >= 0 then
-        drawImageCentered(vg, bgImg, CLASS_BG_CX, CLASS_BG_CY, CLASS_BG_W, CLASS_BG_H, 1.0)
+    if img.detailBg and img.detailBg >= 0 then
+        drawImageCentered(vg, img.detailBg, CLASS_BG_CX, CLASS_BG_CY, CLASS_BG_W, CLASS_BG_H, 1.0)
     end
 end
 
 --- 绘制转职 Tab 内容（标题、图标、分支等，不含背景图）
 function M.drawContent(vg)
-    if not state.selectedHeroId then return end
-    local heroCfg = HC.get(state.selectedHeroId)
+    if not heroId() then return end
+    local heroCfg = HC.get(heroId())
     if not heroCfg then return end
+    -- 转职树整体上移，并裁到页签上方，避免二转图标压住底部按钮
+    nvgSave(vg)
+    nvgTranslate(vg, 0, TREE_SHIFT_Y)
+    nvgScissor(vg, 0, 0, DESIGN_W, 2236)
 
     local classId = heroCfg.classId
     local classColor = CLASS_COLORS[classId] or { r = 255, g = 255, b = 255 }
     local className = CLASS_DISPLAY_NAMES[classId] or "未知"
     local branches = FIRST_ADV_BRANCHES[classId]
 
-    local ownData = CharacterPanel.getOwnedHero(state.selectedHeroId)
-    local heroLevel = getAdvanceHeroLevel(state.selectedHeroId)
+    local ownData = CharacterPanel.getOwnedHero(heroId())
+    local heroLevel = getAdvanceHeroLevel(heroId())
     local advBranch = ownData and ownData.advBranch
-
-    -- 标题背景
-    drawImageCentered(vg, img.titleBg, TITLE_BG_CX, TITLE_BG_CY, TITLE_BG_W, TITLE_BG_H, 1.0)
-
-    -- 标题文字 "转职"
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, TITLE_FONT_SIZE)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, TITLE_TEXT_CX, TITLE_TEXT_CY, "转职", nil)
-
-    -- 重置按钮（UI_AN_LV.png，410×100，字号40，纯黑70%不透明）
-    do
-        local _bfReset = BF.begin(vg, "ccc_reset", BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H)
-        drawImageCentered(vg, img.confirmBtn, BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H, 1.0)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, BTN_RESET_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-        nvgText(vg, BTN_RESET_CX, BTN_RESET_CY, "重置", nil)
-        BF.finish(vg, _bfReset)
-    end
 
     -- "初始职业"
     drawTextStroke(vg, INIT_LABEL_CX, INIT_LABEL_CY, "初始职业",
@@ -427,62 +516,108 @@ function M.drawContent(vg)
         6,
         { italic = true })
 
-    -- 一转分叉线
-    drawImageCentered(vg, img.branchLine, BRANCH_LINE_CX, BRANCH_LINE_CY,
-        BRANCH_LINE_W, BRANCH_LINE_H, 1.0)
+    -- 一转分叉线：未转职时两侧都可能通向 → 整条白亮；已转职后当前职业路径
+    -- （中干 + 选中腿）用金色，另一腿压暗。等级未解锁时推迟到遮罩后统一灰度绘制。
+    local lockedLine1 = heroLevel < ADV2.firstLevel
+    local firstTurned = (advBranch and advBranch.first) and true or false
+    local selIsLeft = false
+    if firstTurned then
+        selIsLeft = advBranch.first == (branches and branches[1] and branches[1].id)
+    end
+    if not lockedLine1 then
+        local trunk, legL, legR = branchLineParts(true, firstTurned, selIsLeft)
+        drawBranchLine(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
+            BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, nil,
+            trunk, legL, legR)
+    end
 
-    -- 初始职业图标
+    -- 初始职业图标（路径起点，恒定亮）
     local initIconId = CLASS_NUM[classId] or 1
+    drawPathGlow(vg, INIT_ICON_CX, INIT_ICON_CY, INIT_ICON_W, INIT_ICON_H)
     drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, initIconId) or -1, INIT_ICON_CX, INIT_ICON_CY,
         INIT_ICON_W, INIT_ICON_H, 1.0)
 
-    -- 初始职业名称
+    -- 初始职业名称（点亮黄色）
     drawTextStroke(vg, INIT_NAME_CX, INIT_NAME_CY, className,
         INIT_NAME_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 6)
+        PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
 
     -- 一转分支
     if branches then
-        -- 二转分叉线（先绘制，置于一转图标底层）
-        drawImageCentered(vg, img.branchLine2, ADV2.line1CX, ADV2.line1CY,
-            ADV2.lineW, ADV2.lineH, 1.0)
-        drawImageCentered(vg, img.branchLine2, ADV2.line2CX, ADV2.line2CY,
-            ADV2.lineW, ADV2.lineH, 1.0)
+        local st1 = firstBranchState(advBranch, branches[1].id, heroLevel)
+        local st2 = firstBranchState(advBranch, branches[2].id, heroLevel)
+
+        -- 二转分叉线（先绘制，置于一转图标底层）：
+        -- 对应一转已转 → 二转已选中腿走金色路径；一转已选但二转未选 → 整条白亮；
+        -- 非路径 → 整条暗。二转未解锁时推迟到二转遮罩后统一灰度（避免半白半灰）。
+        local lockedLine2 = heroLevel < ADV2.secondLevel
+        if not lockedLine2 then
+            local secondTurned = (advBranch and advBranch.second) and true or false
+            -- 已选二转是否落在该一转的左子分支
+            local function secLeftOf(firstBranch)
+                if not secondTurned then return false end
+                local sb = SECOND_ADV_BRANCHES[firstBranch.id]
+                if not sb or not sb[1] then return false end
+                return advBranch.second == sb[1].id
+            end
+            local trunkL, legLL, legRL = branchLineParts(
+                st1 ~= "off", secondTurned and st1 == "owned", secLeftOf(branches[1]))
+            drawBranchLine(vg, ADV2.line1CX, ADV2.line1CY,
+                ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio,
+                trunkL, legLL, legRL)
+            local trunkR, legLR, legRR = branchLineParts(
+                st2 ~= "off", secondTurned and st2 == "owned", secLeftOf(branches[2]))
+            drawBranchLine(vg, ADV2.line2CX, ADV2.line2CY,
+                ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio,
+                trunkR, legLR, legRR)
+        end
 
         -- 分支1
-        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[1].id) or -1, BR1_ICON_CX, BR1_ICON_CY,
-            BR1_ICON_W, BR1_ICON_H, 1.0)
-        if heroLevel >= ADV2.firstLevel then
-            if advBranch and advBranch.first == branches[1].id then
-                -- 已转职：无遮罩
-            elseif not advBranch or not advBranch.first then
-                drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, true)
-            else
-                drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, false)
-            end
+        if st1 ~= "off" then
+            drawPathGlow(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H)
         end
-        drawTextStroke(vg, BR1_NAME_CX, BR1_NAME_CY, branches[1].name,
-            BR1_NAME_FONT,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 6)
+        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[1].id) or -1, BR1_ICON_CX, BR1_ICON_CY,
+            BR1_ICON_W, BR1_ICON_H, (st1 == "off") and DIM_ICON_ALPHA or 1.0)
+        if st1 == "avail" then
+            drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, true)
+        elseif st1 == "off" then
+            drawBranchOverlay(vg, BR1_ICON_CX, BR1_ICON_CY, BR1_ICON_W, BR1_ICON_H, false)
+        end
+        if st1 ~= "off" then
+            drawTextStroke(vg, BR1_NAME_CX, BR1_NAME_CY, branches[1].name,
+                BR1_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
+        else
+            drawTextStroke(vg, BR1_NAME_CX, BR1_NAME_CY, branches[1].name,
+                BR1_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                DIM_NAME_R, DIM_NAME_G, DIM_NAME_B, 6)
+        end
 
         -- 分支2
-        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[2].id) or -1, BR2_ICON_CX, BR2_ICON_CY,
-            BR2_ICON_W, BR2_ICON_H, 1.0)
-        if heroLevel >= ADV2.firstLevel then
-            if advBranch and advBranch.first == branches[2].id then
-                -- 已转职：无遮罩
-            elseif not advBranch or not advBranch.first then
-                drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, true)
-            else
-                drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, false)
-            end
+        if st2 ~= "off" then
+            drawPathGlow(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H)
         end
-        drawTextStroke(vg, BR2_NAME_CX, BR2_NAME_CY, branches[2].name,
-            BR2_NAME_FONT,
-            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 255, 255, 6)
+        drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, branches[2].id) or -1, BR2_ICON_CX, BR2_ICON_CY,
+            BR2_ICON_W, BR2_ICON_H, (st2 == "off") and DIM_ICON_ALPHA or 1.0)
+        if st2 == "avail" then
+            drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, true)
+        elseif st2 == "off" then
+            drawBranchOverlay(vg, BR2_ICON_CX, BR2_ICON_CY, BR2_ICON_W, BR2_ICON_H, false)
+        end
+        if st2 ~= "off" then
+            drawTextStroke(vg, BR2_NAME_CX, BR2_NAME_CY, branches[2].name,
+                BR2_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
+        else
+            drawTextStroke(vg, BR2_NAME_CX, BR2_NAME_CY, branches[2].name,
+                BR2_NAME_FONT,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                DIM_NAME_R, DIM_NAME_G, DIM_NAME_B, 6)
+        end
 
         -- 二转分支（4个）
         local secBranches = {}
@@ -505,25 +640,31 @@ function M.drawContent(vg)
             local sb = secBranches[i]
             local pos = ADV2.pos[i]
             if sb and pos then
-                drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, sb.id) or -1, pos.iconCX, pos.iconCY,
-                    ADV2.iconW, ADV2.iconH, 1.0)
-                if heroLevel >= ADV2.secondLevel then
-                    local parentFirstId = (i <= 2) and branches[1].id or branches[2].id
-                    if advBranch and advBranch.second == sb.id then
-                        -- 已转职：无遮罩
-                    elseif advBranch and advBranch.first == parentFirstId
-                           and not advBranch.second then
-                        drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
-                            ADV2.iconW, ADV2.iconH, true)
-                    else
-                        drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
-                            ADV2.iconW, ADV2.iconH, false)
-                    end
+                local parentFirstId = (i <= 2) and branches[1].id or branches[2].id
+                local st = secondBranchState(advBranch, parentFirstId, sb.id, heroLevel)
+                if st ~= "off" then
+                    drawPathGlow(vg, pos.iconCX, pos.iconCY, ADV2.iconW, ADV2.iconH)
                 end
-                drawTextStroke(vg, pos.nameCX, pos.nameCY, sb.name,
-                    ADV2.nameFontSize,
-                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 6)
+                drawImageCentered(vg, getClassIcon2 and getClassIcon2(vg, sb.id) or -1, pos.iconCX, pos.iconCY,
+                    ADV2.iconW, ADV2.iconH, (st == "off") and DIM_ICON_ALPHA or 1.0)
+                if st == "avail" then
+                    drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
+                        ADV2.iconW, ADV2.iconH, true)
+                elseif st == "off" then
+                    drawBranchOverlay(vg, pos.iconCX, pos.iconCY,
+                        ADV2.iconW, ADV2.iconH, false)
+                end
+                if st ~= "off" then
+                    drawTextStroke(vg, pos.nameCX, pos.nameCY, sb.name,
+                        ADV2.nameFontSize,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                        PATH_NAME_R, PATH_NAME_G, PATH_NAME_B, 6)
+                else
+                    drawTextStroke(vg, pos.nameCX, pos.nameCY, sb.name,
+                        ADV2.nameFontSize,
+                        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                        DIM_NAME_R, DIM_NAME_G, DIM_NAME_B, 6)
+                end
             end
         end
     end
@@ -538,6 +679,18 @@ function M.drawContent(vg)
         nvgRect(vg, cx - w * 0.5, top, w, bot - top)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
         nvgFill(vg)
+        -- 一转分叉线上半在遮罩外：遮罩后统一灰度补画，避免半灰半白
+        if lockedLine1 then
+            drawBranchLineSolid(vg, BRANCH_LINE_CX, BRANCH_LINE_CY,
+                BRANCH_LINE_BODY_W, BRANCH_LINE_BODY_H, LINE_THICK, nil, 0.35)
+            -- 二转分叉线同理（此状态下二转线也未画）
+            if branches then
+                drawBranchLineSolid(vg, ADV2.line1CX, ADV2.line1CY,
+                    ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio, 0.35)
+                drawBranchLineSolid(vg, ADV2.line2CX, ADV2.line2CY,
+                    ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio, 0.35)
+            end
+        end
         local lk1 = ADV2.lock1
         drawTextStroke(vg, lk1.titleCX, lk1.titleCY, "一转",
             ADV2.lockFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -564,6 +717,11 @@ function M.drawContent(vg)
         nvgRect(vg, lk.bgCX - lk.bgW * 0.5, lk.bgCY - lk.bgH * 0.5, lk.bgW, lk.bgH)
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 204))
         nvgFill(vg)
+        -- 二转分叉线上半在遮罩外：遮罩后统一灰度补画
+        drawBranchLineSolid(vg, ADV2.line1CX, ADV2.line1CY,
+            ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio, 0.35)
+        drawBranchLineSolid(vg, ADV2.line2CX, ADV2.line2CY,
+            ADV2.lineBodyW, ADV2.lineBodyH, LINE_THICK, ADV2.lineBarRatio, 0.35)
         drawTextStroke(vg, lk.titleCX, lk.titleCY, "二转",
             ADV2.lockFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             classColor.r, classColor.g, classColor.b, 6,
@@ -574,6 +732,11 @@ function M.drawContent(vg)
             255, 255, 255, 6,
             { italic = true })
     end
+
+    -- 重置按钮放在二转下方（按钮中心 2190 超出裁剪线，临时放开裁剪）
+    nvgResetScissor(vg)
+    M.drawResetButton(vg)
+    nvgRestore(vg)  -- 结束转职树上移
 end
 
 -- ======================== 确认弹窗 ========================
@@ -585,45 +748,47 @@ end
 ---@param classNum number 职业序号 1~6
 ---@param owned boolean? 是否已拥有
 function M.openConfirmPopup(advLevel, branchId, branchName, classNum, owned)
-    state.confirmPopup      = true
-    state.confirmAdvLevel   = advLevel
-    state.confirmBranchId   = branchId
-    state.confirmBranchName = branchName
-    state.confirmClassNum   = classNum
-    state.confirmOwned      = owned or false
-    state.confirmClosing    = false
-    state.confirmAnimT      = time.elapsedTime
-    print("[ChurchClassChange] 打开转职确认: " .. branchName .. " (Lv" .. advLevel .. "转, owned=" .. tostring(state.confirmOwned) .. ")")
+    pop.confirmPopup      = true
+    pop.confirmAdvLevel   = advLevel
+    pop.confirmBranchId   = branchId
+    pop.confirmBranchName = branchName
+    pop.confirmClassNum   = classNum
+    pop.confirmOwned      = owned or false
+    pop.confirmClosing    = false
+    pop.confirmAnimT      = time.elapsedTime
+    M.confirmKwText:clear()   -- 清上次弹窗的关键词状态
+    print("[ChurchClassChange] 打开转职确认: " .. branchName .. " (Lv" .. advLevel .. "转, owned=" .. tostring(pop.confirmOwned) .. ")")
 end
 
 --- 关闭转职确认弹窗（带动画）
 function M.closeConfirmPopup()
-    if not state.confirmPopup then return end
-    if state.confirmClosing then return end
-    state.confirmClosing = true
-    state.confirmAnimT = time.elapsedTime
+    if not pop.confirmPopup then return end
+    if pop.confirmClosing then return end
+    pop.confirmClosing = true
+    pop.confirmAnimT = time.elapsedTime
+    M.confirmKwText:clear()   -- 关闭时清关键词解释气泡
     print("[ChurchClassChange] 关闭转职确认弹窗（动画）")
 end
 
 --- 绘制转职确认弹窗
 function M.drawConfirmPopup(vg)
-    if not state.confirmPopup then return end
+    if not pop.confirmPopup then return end
 
     local C = CONFIRM
-    local branchId   = state.confirmBranchId
-    local branchName = state.confirmBranchName
-    local advLevel   = state.confirmAdvLevel
-    local classNum   = state.confirmClassNum
+    local branchId   = pop.confirmBranchId
+    local branchName = pop.confirmBranchName
+    local advLevel   = pop.confirmAdvLevel
+    local classNum   = pop.confirmClassNum
 
     -- 动画进度
-    local elapsed = time.elapsedTime - state.confirmAnimT
+    local elapsed = time.elapsedTime - pop.confirmAnimT
     local rawT = math.min(1.0, elapsed / POPUP_ANIM_DUR)
     local popProgress
-    if state.confirmClosing then
+    if pop.confirmClosing then
         popProgress = 1.0 - easeInCubic(rawT)
         if rawT >= 1.0 then
-            state.confirmPopup = false
-            state.confirmClosing = false
+            pop.confirmPopup = false
+            pop.confirmClosing = false
             return
         end
     else
@@ -633,14 +798,14 @@ function M.drawConfirmPopup(vg)
 
     -- 获取角色名和等级
     local heroName = ""
-    local heroLevel = state.selectedHeroId and getAdvanceHeroLevel(state.selectedHeroId) or 1
-    if state.selectedHeroId then
-        local heroCfg = HC.get(state.selectedHeroId)
+    local heroLevel = heroId() and getAdvanceHeroLevel(heroId()) or 1
+    if heroId() then
+        local heroCfg = HC.get(heroId())
         if heroCfg then heroName = heroCfg.name end
     end
 
     -- 获取职业颜色
-    local heroCfg = state.selectedHeroId and HC.get(state.selectedHeroId)
+    local heroCfg = heroId() and HC.get(heroId())
     local classId = heroCfg and heroCfg.classId
     local classColor = classId and CLASS_COLORS[classId] or { r = 255, g = 255, b = 255 }
 
@@ -657,9 +822,9 @@ function M.drawConfirmPopup(vg)
     nvgTranslate(vg, -C.bgCX, -C.bgCY)
     nvgGlobalAlpha(vg, popProgress)
 
-    -- 弹窗面板背景
-    local bgImg = img.confirmBg[classNum] or img.confirmBg[1]
-    drawImageCentered(vg, bgImg, C.bgCX, C.bgCY, C.bgW, C.bgH, 1.0)
+    -- 弹窗面板背景（彩色职业底图已删除，改用深色矢量面板）
+    DarkIcon.drawNine(vg, "panel",
+        C.bgCX - C.bgW * 0.5, C.bgCY - C.bgH * 0.5, C.bgW, C.bgH)
 
     -- 职业名称
     drawTextStroke(vg, C.nameCX, C.nameCY, branchName,
@@ -678,7 +843,7 @@ function M.drawConfirmPopup(vg)
         { strokeColor = { 0x28, 0x28, 0x28 } })
 
     -- 基础属性列表
-    local attrs = ADV_BRANCH_ATTRS[branchId] or {}
+    local attrs = getBranchAttrs(branchId, classId)
     local attrCount = #attrs
     for i, attr in ipairs(attrs) do
         local ay = C.attrStartY + (i - 1) * C.attrSpacing
@@ -719,50 +884,58 @@ function M.drawConfirmPopup(vg)
     nvgFill(vg)
 
     -- 天赋名称
-    local talent = ADV_BRANCH_TALENT[branchId]
+    local branchCfg = AVC.get(branchId)
+    local talent = branchCfg or (advLevel == 0 and classId and CC.get(classId))
     if talent then
         local talentNameY = talentBgTop + C.talentNameGapTop
-        drawTextStroke(vg, C.talentNameX, talentNameY, talent.name,
+        drawTextStroke(vg, C.talentNameX, talentNameY, talent.talentName,
             C.talentNameFont, NVG_ALIGN_LEFT + NVG_ALIGN_TOP,
             classColor.r, classColor.g, classColor.b, 5)
 
-        -- 天赋效果文本（自适应缩放）
+        -- 天赋效果文本（自适应缩放 + 关键词可点击）
         local descLeft = C.talentBgLeft + C.talentDescPadLR
         local descTop  = talentBgTop + C.talentDescPadTop
         local descW    = talentBgW - C.talentDescPadLR * 2
         local maxDescH = C.talentBgBottom - descTop - C.talentDescPadBot
 
-        nvgFontFace(vg, "sans")
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-
+        local kt = M.confirmKwText
         local fontSize = C.talentDescFont
         local minFont  = 20
         while fontSize > minFont do
-            nvgFontSize(vg, fontSize)
-            local bounds = nvgTextBoxBounds(vg, descLeft, descTop, descW, talent.desc)
-            if bounds and bounds[4] then
-                local textH = bounds[4] - descTop
-                if textH <= maxDescH then break end
-            else
-                break
-            end
+            local h = kt:measureHeight(vg, talent.talentDesc, descW, fontSize)
+            if h <= maxDescH then break end
             fontSize = fontSize - 2
         end
 
-        nvgFontSize(vg, fontSize)
-        nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-        nvgTextBox(vg, descLeft, descTop, descW, talent.desc, nil)
+        -- 记录弹窗缩放，供输入坐标映射（绘制在缩放变换内，输入是屏幕设计坐标）
+        M._confirmPopScale = popScale
+        M._confirmPopCX    = C.bgCX
+        M._confirmPopCY    = C.bgCY
+        -- 输入屏幕坐标 → 弹窗缩放前坐标（热区所在空间）
+        kt:setTransform(function(sx, sy)
+            local lx = (sx - C.bgCX) / popScale + C.bgCX
+            local ly = (sy - C.bgCY) / popScale + C.bgCY
+            return lx, ly
+        end)
+        -- 弹窗锚点（缩放前坐标）→ 屏幕坐标（解释气泡在变换外绘制）
+        kt:setPopupTransform(function(lx, ly)
+            local sx = (lx - C.bgCX) * popScale + C.bgCX
+            local sy = (ly - C.bgCY) * popScale + C.bgCY
+            return sx, sy
+        end)
+
+        kt:draw(vg, talent.talentDesc, descLeft, descTop, descW, fontSize)
     end
 
     -- 底部区域
-    if state.confirmOwned then
+    if pop.confirmOwned then
         -- 已拥有模式
         local _bf1 = BF.begin(vg, "ccc_confirm", C.btnCX, C.btnCY, C.btnW, C.btnH)
-        drawImageCentered(vg, img.confirmBtn, C.btnCX, C.btnCY, C.btnW, C.btnH, 1.0)
+        DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH, { accent = "gold" })
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, C.costFont)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x1e, 0x51, 0x37, 255))
+        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
         nvgText(vg, C.btnCX, C.btnCY, "已拥有", nil)
         BF.finish(vg, _bf1)
     else
@@ -778,8 +951,8 @@ function M.drawConfirmPopup(vg)
             lockReason = "需要Lv" .. ADV2.secondLevel
         end
         -- 已走另一条路线判断
-        if not locked and advLevel > 0 and state.selectedHeroId then
-            local ownData = CharacterPanel.getOwnedHero(state.selectedHeroId)
+        if not locked and advLevel > 0 and heroId() then
+            local ownData = CharacterPanel.getOwnedHero(heroId())
             local ab = ownData and ownData.advBranch
             if ab then
                 if advLevel == 1 and ab.first and ab.first ~= branchId then
@@ -787,7 +960,7 @@ function M.drawConfirmPopup(vg)
                     lockReason = "不可转职"
                 elseif advLevel == 2 then
                     local parentFirstId = nil
-                    local heroCfg2 = HC.get(state.selectedHeroId)
+                    local heroCfg2 = HC.get(heroId())
                     local cid = heroCfg2 and heroCfg2.classId
                     if cid then
                         local br = FIRST_ADV_BRANCHES[cid]
@@ -815,11 +988,11 @@ function M.drawConfirmPopup(vg)
 
         if locked then
             -- 不可转职 / 等级不足
-            drawImageCentered(vg, img.confirmBtn, C.btnCX, C.btnCY, C.btnW, C.btnH, 0.4)
+            DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH, { alpha = 0.4 })
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, C.costFont)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x80, 0x80, 0x80, 255))
+            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 锁定=棕色
             nvgText(vg, C.btnCX, C.btnCY, lockReason, nil)
         else
             -- 转职确认
@@ -832,10 +1005,12 @@ function M.drawConfirmPopup(vg)
 
             -- 确认按钮背景
             local _bf2 = BF.begin(vg, "ccc_confirm", C.btnCX, C.btnCY, C.btnW, C.btnH)
-            drawImageCentered(vg, img.confirmBtn, C.btnCX, C.btnCY, C.btnW, C.btnH, 1.0)
+            local cost = ADV_COST[advLevel] or 5000
+            local canAfford = GameState.getGold() >= cost
+            DarkIcon.drawNine(vg, "btn", C.btnCX - C.btnW * 0.5, C.btnCY - C.btnH * 0.5, C.btnW, C.btnH,
+                canAfford and { accent = "gold" } or { accent = { 120, 145, 125 }, alpha = 0.7 })
 
             -- 金币图标+消耗
-            local cost = ADV_COST[advLevel] or 5000
             local costStr = formatGold(cost)
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, C.costFont)
@@ -849,13 +1024,17 @@ function M.drawConfirmPopup(vg)
                 C.coinSize, C.coinSize, 1.0)
 
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x1e, 0x51, 0x37, 255))
+            -- 按钮内金币消耗：够=亮深棕，不够=棕色禁用色
+            nvgFillColor(vg, canAfford and nvgRGBA(0x46, 0x2f, 0x20, 255) or nvgRGBA(0x8d, 0x5f, 0x41, 255))
             nvgText(vg, coinStartX + C.coinSize + coinGap, C.btnCY, costStr, nil)
             BF.finish(vg, _bf2)
         end
     end
 
     nvgRestore(vg)
+
+    -- 关键词解释气泡（屏幕空间，盖在弹窗之上）
+    M.confirmKwText:drawPopup(vg)
 end
 
 -- ======================== 输入处理 ========================
@@ -865,73 +1044,84 @@ end
 ---@param dy number 设计坐标Y
 ---@return boolean consumed
 function M.handleConfirmInput(dx, dy)
-    if not state.confirmPopup then return false end
-    if state.confirmClosing then return true end
+    if not pop.confirmPopup then return false end
+    if pop.confirmClosing then return true end
+
+    -- 关键词解释弹窗优先：开着→任意点击关闭；否则尝试命中关键词热区
+    local kt = M.confirmKwText
+    if kt:isOpen() then
+        kt:closePopup()
+        return true
+    end
+    if kt:handleInput(dx, dy) then
+        return true
+    end
 
     local C = CONFIRM
 
     -- 确认按钮
     if hitTest(dx, dy, C.btnCX, C.btnCY, C.btnW, C.btnH) then
-        if state.confirmOwned then
+        if pop.confirmOwned then
             BF.trigger("ccc_confirm")
-            print("[ChurchClassChange] 关闭已拥有职业信息: " .. state.confirmBranchName)
+            print("[ChurchClassChange] 关闭已拥有职业信息: " .. pop.confirmBranchName)
             M.closeConfirmPopup()
         else
             -- 判断是否已走另一条路线
             local clickLocked = false
-            if state.confirmAdvLevel > 0 and state.selectedHeroId then
-                local od = CharacterPanel.getOwnedHero(state.selectedHeroId)
+            if pop.confirmAdvLevel > 0 and heroId() then
+                local od = CharacterPanel.getOwnedHero(heroId())
                 local ab = od and od.advBranch
                 if ab then
-                    if state.confirmAdvLevel == 1 and ab.first and ab.first ~= state.confirmBranchId then
+                    if pop.confirmAdvLevel == 1 and ab.first and ab.first ~= pop.confirmBranchId then
                         clickLocked = true
-                    elseif state.confirmAdvLevel == 2 then
+                    elseif pop.confirmAdvLevel == 2 then
                         if ab.first then
                             local pid = nil
-                            local hc = HC.get(state.selectedHeroId)
+                            local hc = HC.get(heroId())
                             local cid = hc and hc.classId
                             if cid and FIRST_ADV_BRANCHES[cid] then
                                 for _, b in ipairs(FIRST_ADV_BRANCHES[cid]) do
                                     local sb = SECOND_ADV_BRANCHES[b.id]
                                     if sb then
                                         for _, s in ipairs(sb) do
-                                            if s.id == state.confirmBranchId then pid = b.id end
+                                            if s.id == pop.confirmBranchId then pid = b.id end
                                         end
                                     end
                                 end
                             end
                             if pid and ab.first ~= pid then clickLocked = true end
                         end
-                        if not clickLocked and ab.second and ab.second ~= state.confirmBranchId then
+                        if not clickLocked and ab.second and ab.second ~= pop.confirmBranchId then
                             clickLocked = true
                         end
                     end
                 end
             end
             if clickLocked then
-                print("[ChurchClassChange] 不可转职（已走另一条路线）: " .. state.confirmBranchName)
+                print("[ChurchClassChange] 不可转职（已走另一条路线）: " .. pop.confirmBranchName)
                 M.closeConfirmPopup()
                 return true
             end
             BF.trigger("ccc_confirm")
             -- 检查金币
-            local cost = ADV_COST[state.confirmAdvLevel] or 5000
+            local cost = ADV_COST[pop.confirmAdvLevel] or 5000
             local gold = GameState.getGold()
             if gold < cost then
-                state.floatText = "金币不足"
-                state.floatTextX = C.btnCX
-                state.floatTextY = C.btnCY
-                state.floatTextTime = time.elapsedTime
+                pop.floatText = "金币不足"
+                pop.floatTextX = C.btnCX
+                pop.floatTextY = C.btnCY
+                pop.floatTextTime = time.elapsedTime
                 print("[ChurchClassChange] 金币不足: 需要" .. cost .. " 拥有" .. gold)
             else
-                print("[ChurchClassChange] 确认转职: " .. state.confirmBranchName
-                    .. " heroId=" .. tostring(state.selectedHeroId)
-                    .. " branchId=" .. tostring(state.confirmBranchId)
-                    .. " advLevel=" .. tostring(state.confirmAdvLevel))
-                getClient().sendAction(getProtocol().ACTION_TYPES.ADVANCE_CLASS, {
-                    heroId   = state.selectedHeroId,
-                    branchId = state.confirmBranchId,
-                    advLevel = state.confirmAdvLevel,
+                print("[ChurchClassChange] 确认转职: " .. pop.confirmBranchName
+                    .. " heroId=" .. tostring(heroId())
+                    .. " branchId=" .. tostring(pop.confirmBranchId)
+                    .. " advLevel=" .. tostring(pop.confirmAdvLevel))
+                require("runtime.GameAction").sendAction(
+                    require("shared.Protocol").ACTION_TYPES.ADVANCE_CLASS, {
+                    heroId   = heroId(),
+                    branchId = pop.confirmBranchId,
+                    advLevel = pop.confirmAdvLevel,
                 })
                 M.closeConfirmPopup()
             end
@@ -940,7 +1130,7 @@ function M.handleConfirmInput(dx, dy)
     end
 
     -- 同帧保护：防止 openConfirmPopup() 同帧的点击事件立即关闭弹窗
-    if time.elapsedTime - state.confirmAnimT < 0.05 then return true end
+    if time.elapsedTime - pop.confirmAnimT < 0.05 then return true end
 
     -- 点击面板外部 → 关闭弹窗
     if not hitTest(dx, dy, C.bgCX, C.bgCY, C.bgW, C.bgH) then
@@ -957,14 +1147,15 @@ end
 ---@param dy number 设计坐标Y
 ---@return boolean consumed
 function M.handleBranchInput(dx, dy)
-    if not state.selectedHeroId then return false end
+    if not heroId() then return false end
+    dy = dy - TREE_SHIFT_Y
 
-    local heroCfg = HC.get(state.selectedHeroId)
+    local heroCfg = HC.get(heroId())
     local classId = heroCfg and heroCfg.classId
     local classNum = classId and CLASS_NUM[classId] or 1
     local className = classId and CLASS_DISPLAY_NAMES[classId] or "未知"
-    local heroLevel = getAdvanceHeroLevel(state.selectedHeroId)
-    local ownData = CharacterPanel.getOwnedHero(state.selectedHeroId)
+    local heroLevel = getAdvanceHeroLevel(heroId())
+    local ownData = CharacterPanel.getOwnedHero(heroId())
 
     -- 基础职业图标
     if classId then
@@ -1021,16 +1212,32 @@ function M.handleBranchInput(dx, dy)
         end
     end
 
-    -- 重置按钮 → 打开二级确认弹窗
-    if hitTest(dx, dy, BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H) then
-        BF.trigger("ccc_reset")
-        if state.selectedHeroId then
-            M.openResetConfirmPopup()
-        end
-        return true
-    end
-
     return false
+end
+
+--- 重置按钮（屏幕坐标，位于角色横滑上方）
+function M.drawResetButton(vg)
+    local _bfReset = BF.begin(vg, "ccc_reset", BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H)
+    DarkIcon.drawNine(vg, "btn", BTN_RESET_CX - BTN_RESET_W * 0.5, BTN_RESET_CY - BTN_RESET_H * 0.5, BTN_RESET_W, BTN_RESET_H)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, BTN_RESET_FONT)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
+    nvgText(vg, BTN_RESET_CX, BTN_RESET_CY, "重置", nil)
+    BF.finish(vg, _bfReset)
+end
+
+--- 重置按钮点击（屏幕坐标，调用方不要做转职树下移换算）
+---@return boolean
+function M.handleResetButton(dx, dy)
+    if not hitTest(dx, dy, BTN_RESET_CX, BTN_RESET_CY, BTN_RESET_W, BTN_RESET_H) then
+        return false
+    end
+    BF.trigger("ccc_reset")
+    if heroId() then
+        M.openResetConfirmPopup()
+    end
+    return true
 end
 
 -- ======================== 重置转职二级确认弹窗 ========================
@@ -1057,8 +1264,8 @@ local RC = {
 --- 计算当前英雄重置时可返还的金币
 ---@return number refundGold
 local function calcResetRefund()
-    if not state.selectedHeroId then return 0 end
-    local ownData = CharacterPanel.getOwnedHero(state.selectedHeroId)
+    if not heroId() then return 0 end
+    local ownData = CharacterPanel.getOwnedHero(heroId())
     if not ownData or not ownData.advBranch then return 0 end
     local refund = 0
     if ownData.advBranch.first then
@@ -1072,34 +1279,34 @@ end
 
 --- 打开重置转职确认弹窗
 function M.openResetConfirmPopup()
-    state.resetConfPopup   = true
-    state.resetConfClosing = false
-    state.resetConfAnimT   = time.elapsedTime
-    state.resetConfRefund  = calcResetRefund()
-    print("[ChurchClassChange] 打开重置确认弹窗 refund=" .. tostring(state.resetConfRefund))
+    pop.resetConfPopup   = true
+    pop.resetConfClosing = false
+    pop.resetConfAnimT   = time.elapsedTime
+    pop.resetConfRefund  = calcResetRefund()
+    print("[ChurchClassChange] 打开重置确认弹窗 refund=" .. tostring(pop.resetConfRefund))
 end
 
 --- 关闭重置转职确认弹窗（带动画）
 function M.closeResetConfirmPopup()
-    if not state.resetConfPopup then return end
-    if state.resetConfClosing then return end
-    state.resetConfClosing = true
-    state.resetConfAnimT   = time.elapsedTime
+    if not pop.resetConfPopup then return end
+    if pop.resetConfClosing then return end
+    pop.resetConfClosing = true
+    pop.resetConfAnimT   = time.elapsedTime
 end
 
 --- 绘制重置转职确认弹窗
 function M.drawResetConfirmPopup(vg)
-    if not state.resetConfPopup then return end
+    if not pop.resetConfPopup then return end
 
     -- 动画进度
-    local elapsed = time.elapsedTime - state.resetConfAnimT
+    local elapsed = time.elapsedTime - pop.resetConfAnimT
     local rawT = math.min(1.0, elapsed / POPUP_ANIM_DUR)
     local popProgress
-    if state.resetConfClosing then
+    if pop.resetConfClosing then
         popProgress = 1.0 - easeInCubic(rawT)
         if rawT >= 1.0 then
-            state.resetConfPopup = false
-            state.resetConfClosing = false
+            pop.resetConfPopup = false
+            pop.resetConfClosing = false
             return
         end
     else
@@ -1142,7 +1349,7 @@ function M.drawResetConfirmPopup(vg)
     nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
     nvgText(vg, RC.BG_CX, RC.LINE1_CY, "重置后将清除所有转职分支", nil)
 
-    local refund = state.resetConfRefund or 0
+    local refund = pop.resetConfRefund or 0
     local refundText = "返还50%已消耗金币: " .. formatGold(refund) .. " 金币"
     nvgFillColor(vg, nvgRGBA(0xc8, 0x96, 0x20, 255))  -- 金色高亮
     nvgText(vg, RC.BG_CX, RC.LINE2_CY, refundText, nil)
@@ -1173,16 +1380,17 @@ end
 ---@param dy number 设计坐标Y
 ---@return boolean consumed
 function M.handleResetConfirmInput(dx, dy)
-    if not state.resetConfPopup then return false end
-    if state.resetConfClosing then return true end
+    if not pop.resetConfPopup then return false end
+    if pop.resetConfClosing then return true end
 
     -- 确认按钮
     if hitTest(dx, dy, RC.OK_CX, RC.OK_CY, RC.OK_W, RC.OK_H) then
         BF.trigger("ccc_reset_confirm")
-        if state.selectedHeroId then
-            print("[ChurchClassChange] 确认重置转职 heroId=" .. tostring(state.selectedHeroId))
-            getClient().sendAction(getProtocol().ACTION_TYPES.RESET_CLASS, {
-                heroId = state.selectedHeroId,
+        if heroId() then
+            print("[ChurchClassChange] 确认重置转职 heroId=" .. tostring(heroId()))
+            require("runtime.GameAction").sendAction(
+                require("shared.Protocol").ACTION_TYPES.RESET_CLASS, {
+                heroId = heroId(),
             })
         end
         M.closeResetConfirmPopup()
@@ -1197,7 +1405,7 @@ function M.handleResetConfirmInput(dx, dy)
     end
 
     -- 同帧保护
-    if time.elapsedTime - state.resetConfAnimT < 0.05 then return true end
+    if time.elapsedTime - pop.resetConfAnimT < 0.05 then return true end
 
     -- 点击面板外部 → 关闭
     if not hitTest(dx, dy, RC.BG_CX, RC.BG_CY, RC.BG_W, RC.BG_H) then
@@ -1206,6 +1414,22 @@ function M.handleResetConfirmInput(dx, dy)
     end
 
     return true
+end
+
+--- 飘字提示（金币不足等），由详情页在弹窗之上绘制
+function M.drawFloatText(vg)
+    if not pop.floatText then return end
+    local FLOAT_DURATION = 1.5
+    local FLOAT_DIST = 100
+    local elapsed = time.elapsedTime - pop.floatTextTime
+    if elapsed >= FLOAT_DURATION then
+        pop.floatText = nil
+        return
+    end
+    local t = elapsed / FLOAT_DURATION
+    drawTextStroke(vg, pop.floatTextX, pop.floatTextY - FLOAT_DIST * t,
+        pop.floatText, 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 80, 80, 6, { alpha = 1.0 - t })
 end
 
 return M

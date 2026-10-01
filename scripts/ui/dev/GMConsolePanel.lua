@@ -1491,7 +1491,7 @@ function drawPlayerTab(vg, alpha)
             { label = "当前关卡", value = tostring(data.stage or "未知") },
             { label = "最高关卡", value = tostring(data.maxStage or "未知") },
             { label = "金币",     value = tostring(data.gold or 0) },
-            { label = "钻石",     value = tostring(data.gems or 0) },
+            { label = "黑晶",     value = tostring(data.gems or 0) },
             { label = "英雄数",   value = tostring(data.heroCount or 0) },
         }
 

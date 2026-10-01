@@ -233,6 +233,13 @@ local BUILDING_UNLOCK_THRESHOLDS = {
     smith   = 204,   -- 首通 2-4 后解锁（通 2-4 → maxStageId=205 > 204）
 }
 
+--- 建筑的关卡解锁阈值（stageId = 章*100+关），无配置返回 nil
+---@param buildingKey string
+---@return number|nil
+function TutorialManager.getBuildingUnlockStage(buildingKey)
+    return BUILDING_UNLOCK_THRESHOLDS[buildingKey]
+end
+
 --- 获取当前最远通关 stageId（0 表示未通关任何关卡）
 ---@return number
 local function getMaxStageId()

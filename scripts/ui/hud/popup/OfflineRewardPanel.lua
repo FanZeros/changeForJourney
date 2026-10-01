@@ -379,11 +379,8 @@ function Panel.draw(vg)
         animScale = 1.0 - easeInCubic(t) * 0.3
     end
 
-    -- 1. 全屏黑色遮罩 50%
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(MASK_ALPHA * animAlpha)))
-    nvgFill(vg)
+    -- 全屏遮罩由调用方按真实窗口铺（横屏全窗 / 竖屏帧内），面板内不再画，
+    -- 否则遮罩只盖住设计稿区域，横屏左右两侧会露底
 
     -- 缩放动画
     local pivotX, pivotY = BG.CX, BG.CY
@@ -407,15 +404,15 @@ function Panel.draw(vg)
         MULT_ROW.CX, MULT_ROW.CY, MULT_ROW.W, MULT_ROW.H, MULT_ROW.R,
         0, 0, 0, 13)  -- 纯黑 5% 不透明度
 
-    -- 5. "离线收益倍率" 文字（左对齐）
+    -- 5. "离线时长" 文字（左对齐；倍率系统已移除，行内显示本次离线时长）
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, MULT_ROW.LABEL_FONT)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(MULT_ROW.LABEL_R, MULT_ROW.LABEL_G, MULT_ROW.LABEL_B, 255))
-    nvgText(vg, MULT_ROW.LABEL_X, MULT_ROW.CY, "离线收益倍率", nil)
+    nvgText(vg, MULT_ROW.LABEL_X, MULT_ROW.CY, "离线时长", nil)
 
-    -- 6. 倍率值（右对齐，纯黑描边）
-    local multText = string.format("%.0f%%", state.multiplier * 100)
+    -- 6. 离线时长（右对齐，纯黑描边）
+    local multText = formatTime(state.offlineSeconds)
     DrawUtil.drawTextStroke(vg, MULT_ROW.VALUE_X, MULT_ROW.CY, multText,
         MULT_ROW.VALUE_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
         255, 255, 255, MULT_ROW.VALUE_SW)

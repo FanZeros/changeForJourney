@@ -112,7 +112,12 @@ local CODE_TXT = {
     A = 179,  -- 纯黑 70%
 }
 
-local LANG_CHIP_W, LANG_CHIP_H, LANG_CHIP_GAP = 88, 44, 6
+local LANG_CHIP_W, LANG_CHIP_H, LANG_CHIP_GAP = 150, 44, 10
+local LANG_ROW_GAP = 10
+local LANG_PER_ROW = 2
+local LANG_ROWS = 3
+-- 语言三行比单行多占的高度（兑换码按钮与弹窗底边据此下移）
+local LANG_EXTRA_H = (LANG_ROWS - 1) * (LANG_CHIP_H + LANG_ROW_GAP)
 
 -- ======================== 本地设置持久化 ========================
 
@@ -300,14 +305,19 @@ end
 ---@return table[]
 local function langChipRects(itemCY)
     local n = #I18n.LANGS
-    local total = n * LANG_CHIP_W + (n - 1) * LANG_CHIP_GAP
+    local rows = math.ceil(n / LANG_PER_ROW)
     local right = ITEM1_BG.CX + ITEM1_BG.W * 0.5 - 12
-    local x0 = right - total
     local rects = {}
     for i, lang in ipairs(I18n.LANGS) do
+        local row = math.floor((i - 1) / LANG_PER_ROW)
+        local col = (i - 1) % LANG_PER_ROW
+        local inRow = math.min(LANG_PER_ROW, n - row * LANG_PER_ROW)
+        local rowW = inRow * LANG_CHIP_W + (inRow - 1) * LANG_CHIP_GAP
+        local x0 = right - rowW
+        local y0 = itemCY - ((rows - 1) * (LANG_CHIP_H + LANG_ROW_GAP)) * 0.5
         rects[i] = {
-            x = x0 + (i - 1) * (LANG_CHIP_W + LANG_CHIP_GAP),
-            y = itemCY - LANG_CHIP_H * 0.5,
+            x = x0 + col * (LANG_CHIP_W + LANG_CHIP_GAP),
+            y = y0 + row * (LANG_CHIP_H + LANG_ROW_GAP) - LANG_CHIP_H * 0.5,
             w = LANG_CHIP_W,
             h = LANG_CHIP_H,
             id = lang.id,
@@ -378,8 +388,8 @@ function SettingsPanel.handleInput(dx, dy)
     -- 同帧保护：防止 open() 同帧的点击事件立即关闭弹窗
     if time.elapsedTime - state.animTime < 0.05 then return true end
 
-    -- 点击弹窗外部 → 关闭
-    if not hitTest(dx, dy, BG.CX, BG.CY, BG.W, BG.H) then
+    -- 点击弹窗外部 → 关闭（语言三行后弹窗向下加高）
+    if not hitTest(dx, dy, BG.CX, BG.CY + LANG_EXTRA_H * 0.5, BG.W, BG.H + LANG_EXTRA_H) then
         SettingsPanel.close()
         return true
     end
@@ -421,7 +431,7 @@ function SettingsPanel.handleInput(dx, dy)
     end
 
     -- 兑换码按钮
-    if hitTest(dx, dy, CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H) then
+    if hitTest(dx, dy, CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H) then
         BF.trigger("set_code")
         print("[SettingsPanel] 兑换码按钮被点击 → 打开兑换码面板")
         RedeemCodePanel.open()
@@ -639,8 +649,9 @@ function SettingsPanel.draw(vg)
     nvgScale(vg, animProgress, animProgress)
     nvgTranslate(vg, -BG.CX, -BG.CY)
 
-    -- ── 2. 弹窗背景框（九宫格）──
-    DarkIcon.drawNine(vg, "panel", BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5, BG.W, BG.H, { titleH = BG.IT })
+    -- ── 2. 弹窗背景框（九宫格，语言三行后加高）──
+    DarkIcon.drawNine(vg, "panel", BG.CX - BG.W * 0.5, BG.CY - BG.H * 0.5,
+        BG.W, BG.H + LANG_EXTRA_H, { titleH = BG.IT })
 
     -- ── 3. 标题 "设置" ──
     drawTextStroke(vg, TTL.X, TTL.Y, I18n.t("settings"),
@@ -664,9 +675,9 @@ function SettingsPanel.draw(vg)
     drawLanguageItem(vg, ITEM5_CY)
 
     -- ── 9. 兑换码按钮（暖金，不再用绿色贴图）──
-    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY, CODE_BTN.W, CODE_BTN.H)
+    local _bf1 = BF.begin(vg, "set_code", CODE_BTN.CX, CODE_BTN.CY + LANG_EXTRA_H, CODE_BTN.W, CODE_BTN.H)
     DarkIcon.drawNine(vg, "btn",
-        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY - CODE_BTN.H * 0.5,
+        CODE_BTN.CX - CODE_BTN.W * 0.5, CODE_BTN.CY + LANG_EXTRA_H - CODE_BTN.H * 0.5,
         CODE_BTN.W, CODE_BTN.H, { accent = "gold" })
 
     -- ── 10. "兑换码" 文本 ──
@@ -674,7 +685,7 @@ function SettingsPanel.draw(vg)
     nvgFontSize(vg, CODE_TXT.FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-    nvgText(vg, CODE_TXT.X, CODE_TXT.Y, I18n.t("redeem_code"), nil)
+    nvgText(vg, CODE_TXT.X, CODE_TXT.Y + LANG_EXTRA_H, I18n.t("redeem_code"), nil)
     BF.finish(vg, _bf1)
 
     nvgRestore(vg)

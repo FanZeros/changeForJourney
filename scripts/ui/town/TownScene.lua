@@ -353,22 +353,29 @@ end
 
 local LOCK_ICON_SIZE = 100
 
---- 绘制建筑锁定遮罩（锁图标，等级解锁型附带解锁等级文字）
---- @param tutorialControlled boolean|nil  true=由引导解锁（不显示等级文字），nil/false=显示等级文字
+--- 关卡阈值转玩家可读文字（204 → "通关 2-4 解锁"）
+local function stageUnlockLabel(stageId)
+    local chapter = math.floor(stageId / 100)
+    local stage = stageId % 100
+    return "通关 " .. chapter .. "-" .. stage .. " 解锁"
+end
+
+--- 绘制建筑锁定遮罩（锁图标 + 解锁条件文字）
+--- @param tutorialControlled boolean|nil  true=关卡/引导解锁，显示通关条件；nil/false=显示远征等级
 local function drawBuildingLockOverlay(vg, cx, cy, buildingKey, tutorialControlled)
     drawImageCentered(vg, imgLock, cx, cy - 15, LOCK_ICON_SIZE, LOCK_ICON_SIZE, 0.85)
-    if not tutorialControlled then
+    local label
+    if tutorialControlled then
+        local stageId = require("systems.TutorialManager").getBuildingUnlockStage(buildingKey)
+        if not stageId then return end
+        label = stageUnlockLabel(stageId)
+    else
         local unlockLv = ExpTable.getBuildingUnlockLevel(buildingKey)
-        local label
-        if unlockLv <= 0 then
-            label = "暂未开放"
-        else
-            label = "Lv." .. unlockLv .. " 解锁"
-        end
-        drawTextStroke(vg, cx, cy + 50, label,
-            30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            255, 220, 120, 3)
+        label = unlockLv <= 0 and "暂未开放" or ("Lv." .. unlockLv .. " 解锁")
     end
+    drawTextStroke(vg, cx, cy + 50, label,
+        30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        255, 220, 120, 3)
 end
 
 -- ======================== Public API ========================
@@ -571,12 +578,11 @@ function TownScene.draw(vg)
 
     -- 第7个地点：遗匣（没有等级/引导门槛）。立绘与名牌图标分开，名牌沿用地点图标尺寸。
     local lootFeedback = BF.begin(vg, "town_lootbox", LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H)
-    DarkIcon.drawNine(vg, "plain", 390 + LOOT_SHIFT_X, 2010, 300, 64)
     drawImageDarkTint(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, 1.0)
     drawFlashOverlay(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, getClickFlashAlpha("lootbox"))
     drawBuildingLabel(vg, 540 + LOOT_SHIFT_X, LOOT_LBL_CY, 361, 113,
-        450 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, 64, -1, 585 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, "遗匣")
-    DarkIcon.draw(vg, "relicbox", 450 + LOOT_SHIFT_X + 32, LOOT_LBL_CY - 6, 64, 1.0)
+        467 + LOOT_SHIFT_X, LOOT_LBL_CY, 64, -1, 574 + LOOT_SHIFT_X, LOOT_LBL_CY, "遗匣")
+    DarkIcon.draw(vg, "relicbox", 467 + LOOT_SHIFT_X, LOOT_LBL_CY, 64, 1.0)
     local count = LootBox.getCount()
     if count > 0 then
         DarkIcon.draw(vg, "reddot", 709 + LOOT_SHIFT_X, LOOT_LBL_CY - 45, 44, 1.0)
@@ -589,9 +595,9 @@ function TownScene.draw(vg)
     local taskFeedback = BF.begin(vg, "town_task", TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
-    drawBuildingLabel(vg, 180 + TASK_SHIFT_X, TASK_LBL_CY, 420, 135,
-        15 + TASK_SHIFT_X, TASK_LBL_CY - 6, 78, -1, 225 + TASK_SHIFT_X, TASK_LBL_CY - 6, "功绩")
-    DarkIcon.draw(vg, "merit", 15 + TASK_SHIFT_X + 39, TASK_LBL_CY - 6, 78, 1.0)
+    drawBuildingLabel(vg, 180 + TASK_SHIFT_X, TASK_LBL_CY, 361, 113,
+        107 + TASK_SHIFT_X, TASK_LBL_CY, 64, -1, 214 + TASK_SHIFT_X, TASK_LBL_CY, "功绩")
+    DarkIcon.draw(vg, "merit", 107 + TASK_SHIFT_X, TASK_LBL_CY, 64, 1.0)
     local taskOk, TaskPage = pcall(require, "ui.story.task.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
         DarkIcon.draw(vg, "reddot", 300 + TASK_SHIFT_X, TASK_LBL_CY - 36, 36, 1.0)

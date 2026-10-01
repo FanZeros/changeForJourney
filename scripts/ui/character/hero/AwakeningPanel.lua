@@ -18,30 +18,32 @@ local M = {}
 -- 全屏背景 / 顶栏
 local BG_CX, BG_CY = 540, 1200
 local BG_W, BG_H   = 1080, 2400
-local BADGE_CX, BADGE_CY = 540, 269
+-- 称号行固定在页顶（阶段代号之上）
+local BADGE_CX, BADGE_CY = 540, 150
 local BADGE_W, BADGE_H   = 107, 49
-local TITLE_BG_CX, TITLE_BG_CY = 595, 319
+local TITLE_BG_CX, TITLE_BG_CY = 595, 200
 local TITLE_BG_W, TITLE_BG_H   = 480, 90
-local CLASS_ICON_CX, CLASS_ICON_CY = 353, 319
+local CLASS_ICON_CX, CLASS_ICON_CY = 353, 200
 local CLASS_ICON_SIZE              = 120
-local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 319
+local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 200
 local TITLE_FONT_SIZE              = 50
 
 local NODE_COUNT = AKC.NODE_COUNT
 local NODE_NAMES  = { "粗暴", "机制", "进化" }
 local NODE_ROMANS = { "Ⅰ", "Ⅱ", "Ⅲ" }
 
--- 影画切片：CG 三竖条直角对齐，无缝拼合
--- 面板为 1080x2400 设计页；切片区拉高让竖版 CG 尽量少裁
+-- 影画切片：上条向右下斜、下条向左下斜（Z 形分割）
+-- 斜切后横向跨度 = 条宽 + |倾斜|，正好吃掉方图按高度铺满时多出的横向，
+-- 不再裁切，跨缝内容连续
 local SLICES = {
-    W     = 336,     -- 单条宽
-    H     = 1150,    -- 单条高
-    GAP   = 0,       -- 条间距（三栏无缝拼合）
-    SX    = 36,      -- 左缘（(1080-3*336-0)/2）
-    SY    = 396,     -- 基准顶（标题栏 y~384 之下）
-    SLANT = 0,       -- 直角矩形，三栏顶底齐平
-    STAG  = { 0, 0, 0 }, -- 三栏纵向对齐，不再错位
-    V_BIAS = 0.18,   -- CG 纵向取窗偏上（保脸）
+    W      = 336,    -- 单条垂直跨度（三栏顶底对齐的列宽）
+    H      = 1512,   -- 单条高（大狗 CG 完整高度）
+    GAP    = 0,
+    SX     = 36,     -- 左缘（(1080-3*336)/2）
+    SY     = 300,    -- 基准顶：阶段代号(y~222)紧贴其下
+    SLANT  = 154,    -- 斜边横向偏移：上条向右下，下条向左下
+    STAG   = { 0, 0, 0 },
+    V_BIAS = 0.0,
 }
 
 local NODE_FILL = {
@@ -50,17 +52,17 @@ local NODE_FILL = {
     { 0xe0, 0x72, 0xff },
 }
 
--- 底栏
-local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1690
-local EFFECT_CX, EFFECT_CY = 540, 1830
+-- 底栏（切片底 = SY+H = 1812，文字区紧跟其下）
+local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1860
+local EFFECT_CX, EFFECT_CY = 540, 1930
 local EFFECT_W, EFFECT_H   = 910, 139
 local EFFECT_FONT           = 36
 -- 底栏操作：碎片标识在左、嵌合按钮在右（放大）
 local SHARD_ICON_SIZE = 114
 local SHARD_ICON_CX   = 196
-local SHARD_ROW_CY    = 2110
-local BTN_CX, BTN_CY = 720, 2110
-local BTN_W, BTN_H   = 520, 128
+local SHARD_ROW_CY    = 2040
+local BTN_CX, BTN_CY = 720, 2040
+local BTN_W, BTN_H   = 520, 100
 local BTN_TEXT_FONT  = 46
 
 M.BTN_CX = BTN_CX
@@ -106,19 +108,34 @@ local function sliceY(i)
     return SLICES.SY + (SLICES.STAG[i] or 0)
 end
 
---- 平行四边形路径：顶边相对底边右移 SLANT
+--- 第 i 条在进度 t（0=顶，1=底）处的左右缘
+--- 上分割线向右下斜、下分割线向左下斜，三栏顶底齐平
+local function sliceEdges(i, t)
+    local x = sliceX(i)
+    local s = SLICES.SLANT * t
+    local left, right
+    if i == 1 then
+        left, right = x, x + SLICES.W + s
+    elseif i == NODE_COUNT then
+        left, right = x - s, x + SLICES.W
+    else
+        left, right = x - s, x + SLICES.W + s
+    end
+    return left, right
+end
+
+--- 斜切条路径
 local function slicePath(vg, i, expand)
     local e = expand or 0
-    local x0 = sliceX(i) - e
-    local x1 = sliceX(i) + SLICES.W + e
     local y0 = sliceY(i) - e
     local y1 = sliceY(i) + SLICES.H + e
-    local s = SLICES.SLANT
+    local l0, r0 = sliceEdges(i, 0)
+    local l1, r1 = sliceEdges(i, 1)
     nvgBeginPath(vg)
-    nvgMoveTo(vg, x0 + s, y0)
-    nvgLineTo(vg, x1 + s, y0)
-    nvgLineTo(vg, x1, y1)
-    nvgLineTo(vg, x0, y1)
+    nvgMoveTo(vg, l0 - e, y0)
+    nvgLineTo(vg, r0 + e, y0)
+    nvgLineTo(vg, r1 + e, y1)
+    nvgLineTo(vg, l1 - e, y1)
     nvgClosePath(vg)
 end
 
@@ -126,15 +143,13 @@ end
 ---@param py number
 ---@return boolean
 local function pointInSlice(px, py, i)
-    local x0 = sliceX(i)
-    local x1 = x0 + SLICES.W
     local y0 = sliceY(i)
     local y1 = y0 + SLICES.H
     if py < y0 or py > y1 then return false end
     local t = (py - y0) / SLICES.H
-    local s = SLICES.SLANT * (1 - t)
+    local left, right = sliceEdges(i, t)
     local pad = 8
-    return px >= x0 + s - pad and px <= x1 + s + pad
+    return px >= left - pad and px <= right + pad
 end
 
 -- ======================== CG 资源 ========================
@@ -161,27 +176,32 @@ local function resolveCG(vg, heroId)
     return color, gray
 end
 
---- CG cover 到切片总幅，返回 (dw, dh, v0)
+--- CG 按高度铺满切片，返回 (dw, dh, v0, sw)
+--- 斜切吃掉方图多出的横向，竖向只在图比切片更高时才裁
 ---@return number|nil dw
 ---@return number|nil dh
 ---@return number|nil v0
+---@return number|nil sw
 local function cgLayout(vg, img)
     local sw, sh = nvgImageSize(vg, img)
     if not sw or sw <= 0 or not sh or sh <= 0 then return nil end
-    local totalW = SLICES.W * NODE_COUNT + SLICES.GAP * (NODE_COUNT - 1)
-    local scale = math.max(totalW / sw, SLICES.H / sh)
+    local scale = SLICES.H / sh
     local dw, dh = sw * scale, sh * scale
     local v0 = (dh - SLICES.H) * SLICES.V_BIAS
-    if v0 < 0 then v0 = (dh - SLICES.H) * 0.5 end
-    return dw, dh, v0
+    if v0 < 0 then v0 = 0 end
+    return dw, dh, v0, sw
 end
 
---- 第 i 条的取样 paint：显示 CG 第 i 列，竖向公共窗 v0
-local function slicePaint(vg, img, i, dw, dh, v0, alpha)
-    if not img or img < 0 or alpha <= 0.01 then return nil end
-    local ox = sliceX(i) - dw * (i - 1) / NODE_COUNT
+--- 第 i 条的取样 paint
+--- 取样列宽 = 图宽/栏数 + 斜边对应的源图像素，窗口左缘按
+--- (列起点 - 该条左缘) 对齐，缝两侧取到同一列源像素，跨缝连续
+local function slicePaint(vg, img, i, dw, dh, v0, sw, alpha)
+    if not img or img < 0 or alpha <= 0.01 or not sw then return nil end
+    local colW = dw / NODE_COUNT + SLICES.SLANT * (dh / SLICES.H) * (dw / sw)
+    local left = sliceEdges(i, 0)
+    local ox = left - (i - 1) * (sw / NODE_COUNT) * (dw / sw)
     local oy = sliceY(i) - v0
-    return nvgImagePattern(vg, ox, oy, dw, dh, 0, img, alpha)
+    return nvgImagePattern(vg, ox, oy, colW, dh, 0, img, alpha)
 end
 
 -- ======================== 初始化 ========================
@@ -255,7 +275,7 @@ end
 ---@param i number 1~3
 ---@param state string "active" 已嵌合 | "next" 可嵌合 | "locked" 未解锁
 ---@param isSelected boolean
-local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
+local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0, sw)
     local col = NODE_FILL[i] or { 180, 180, 180 }
     local t = time.elapsedTime
     local breathe = (math.sin(t * 2.4 + i * 0.9) + 1.0) * 0.5
@@ -267,7 +287,7 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
 
     -- 2) CG 片：解锁=彩色，未解锁=灰度
     local img = (state == "active") and cgImg or (grayImg >= 0 and grayImg or cgImg)
-    local paint = slicePaint(vg, img, i, dw, dh, v0, 1.0)
+    local paint = slicePaint(vg, img, i, dw, dh, v0, sw, 1.0)
     if paint then
         slicePath(vg, i)
         nvgFillPaint(vg, paint)
@@ -324,9 +344,10 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
         nvgStroke(vg)
     end
 
-    -- 4) 顶部阶段铭牌：罗马数字 + 名称
-    local cx = sliceX(i) + SLICES.W * 0.5 + SLICES.SLANT * 0.5
-    local topY = sliceY(i)
+    -- 4) 顶部阶段铭牌：罗马数字 + 名称（上移到切片上方，不压 CG）
+    local l0, r0 = sliceEdges(i, 0)
+    local cx = (l0 + r0) * 0.5
+    local topY = sliceY(i) - 78
     local nr, ng, nb = 150, 156, 172
     if state == "active" then
         nr, ng, nb = 255, 255, 255
@@ -342,7 +363,9 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
         nr, ng, nb, 4,
         { strokeColor = { 0x10, 0x0c, 0x18 } })
 
-    -- 5) 底部状态
+    -- 5) 底部状态（居中于斜切条底部）
+    local bl, br = sliceEdges(i, 1)
+    local cx = (bl + br) * 0.5
     local by = sliceY(i) + SLICES.H - 30
     if state == "active" then
         drawTextStroke(vg, cx, by, "已嵌合",
@@ -402,27 +425,29 @@ function M.draw(vg, heroId)
 
     -- 影画切片
     local cgImg, grayImg = resolveCG(vg, heroId)
-    local dw, dh, v0
+    local dw, dh, v0, sw
     if cgImg and cgImg >= 0 then
-        dw, dh, v0 = cgLayout(vg, cgImg)
+        dw, dh, v0, sw = cgLayout(vg, cgImg)
     end
 
     for i = 1, NODE_COUNT do
         local state = activated[i] and "active" or (i == nextNode and "next" or "locked")
         if i ~= selectedNode then
-            drawSlice(vg, i, state, false, cgImg, grayImg, dw, dh, v0)
+            drawSlice(vg, i, state, false, cgImg, grayImg, dw, dh, v0, sw)
         end
     end
     local selState = activated[selectedNode] and "active"
         or (selectedNode == nextNode and "next" or "locked")
-    drawSlice(vg, selectedNode, selState, true, cgImg, grayImg, dw, dh, v0)
+    drawSlice(vg, selectedNode, selState, true, cgImg, grayImg, dw, dh, v0, sw)
 
-    -- 选中切片上浮箭头
-    local selX = sliceX(selectedNode) + SLICES.W * 0.5 + SLICES.SLANT * 0.5
+    -- 选中切片上浮箭头（居中于斜切条顶部）
+    local selL, selR = sliceEdges(selectedNode, 0)
+    local selX = (selL + selR) * 0.5
     local selTop = sliceY(selectedNode)
     if imgSelectArrow >= 0 then
         local arrowFloatY = math.sin(time.elapsedTime * ARROW_FLOAT_SPEED) * ARROW_FLOAT_AMP
-        drawImageCentered(vg, imgSelectArrow, selX, selTop - ARROW_H * 0.3 - 6 + arrowFloatY,
+        -- 阶段代号已占切片上方，箭头改放到切片内部顶部
+        drawImageCentered(vg, imgSelectArrow, selX, selTop + ARROW_H * 0.5 + 8 + arrowFloatY,
             ARROW_W, ARROW_H, 1.0)
     end
 

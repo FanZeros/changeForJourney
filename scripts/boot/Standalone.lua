@@ -446,33 +446,21 @@ function Standalone.Stop()
     end
 end
 
---- [LetterIntro] StartScreen 关闭后的离线收益弹窗（原 StartScreen 关闭钩子内容提取）
+--- 老档进入：按真实离线时长结算并弹窗；不足门槛或无收益则不弹
 local function showOfflineRewardPanel_()
-    OfflineRewardPanel.show({
-        offlineSeconds  = 23025,
-        maxSeconds      = 43200,
-        multiplier      = 2.0,
-        adventureExp    = 128000,
-        adventurerExp   = 56000,
-        rewards = {
-            { type = "gold",    amount = 12500 },
-            { type = "diamond", amount = 80 },
-            { type = "essence", amount = 3200 },
-            { type = "equip", templateId = "W5", quality = 5, level = 12 },
-            { type = "equip", templateId = "W4", quality = 4, level = 8 },
-            { type = "equip", templateId = "A3", quality = 3, level = 5 },
-            { type = "equip", templateId = "W3", quality = 3, level = 7 },
-            { type = "equip", templateId = "A2", quality = 2, level = 3 },
-            { type = "equip", templateId = "W2", quality = 2, level = 4 },
-            { type = "equip", templateId = "W1", quality = 1, level = 1 },
-            { type = "equip", templateId = "A4", quality = 4, level = 10 },
-            { type = "equip", templateId = "A5", quality = 5, level = 15 },
-        },
-        onClaim = function(doubled)
-            print("[OfflineRewardPanel] claimed, doubled=" .. tostring(doubled))
-        end,
-    })
-    print("[Standalone] auto-showed OfflineRewardPanel after StartScreen closed")
+    local OfflineService = require("rules.offline.OfflineService")
+    local panelData = OfflineService.CalcOnEnter(0)
+    if not panelData then
+        print("[Standalone] no offline reward (too short or first login)")
+        return
+    end
+    panelData.onClaim = function()
+        local ok = localSendAction("claim_offline_rewards", {})
+        print("[Standalone] offline reward claimed handled=" .. tostring(ok))
+    end
+    OfflineRewardPanel.show(panelData)
+    print("[Standalone] offline reward shown seconds=" .. tostring(panelData.offlineSeconds)
+        .. " items=" .. tostring(#(panelData.rewards or {})))
 end
 
 --- [LetterIntro] 新档标记开场剧情完成（session 整表替换，必须带全字段）
@@ -507,7 +495,6 @@ local function finishIntro_()
     print("[Standalone] intro chain finished, unlock game")
     GameBGM.setScene("battle", { fromStart = true })
     markIntroCompleted_()
-    showOfflineRewardPanel_()
 end
 
 local function playJoinAt_(index)
@@ -556,8 +543,6 @@ local function startOpeningBriefing_()
         background = cfg.background,
         title = cfg.title,
         steps = cfg.steps,
-        eyeOpen = true,
-        eyeClose = true,
         onFinish = function()
             print("[Standalone] opening briefing finished, start joins")
             startStarterJoins_()

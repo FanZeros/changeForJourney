@@ -602,10 +602,28 @@ function HandleNanoVGRenderHorizon()
     HeroRosterPanel.draw(vg())
     PlayerInfoPanel.draw(vg())
     RewardPopup.draw(vg())
-    OfflineRewardPanel.draw(vg())
     SpinePowerUpEffect.draw(vg())
     LevelUpPopup.draw(vg())
     Viewport.finish(vg())
+
+    -- 离线收益：全窗 letterbox 居中（与玩家信息面板同一套 1080×2400 适配），
+    -- 不再塞进 486 宽的中栏，遮罩铺满整个横屏
+    if OfflineRewardPanel.isOpen() then
+        local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
+        local ox = (logicalW() - DESIGN_W() * fit) * 0.5
+        local oy = (logicalH() - DESIGN_H() * fit) * 0.5
+        nvgSave(vg())
+        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+        nvgBeginPath(vg())
+        nvgRect(vg(), 0, 0, logicalW(), logicalH())
+        nvgFillColor(vg(), nvgRGBA(0, 0, 0, 150))
+        nvgFill(vg())
+        nvgScissor(vg(), ox, oy, DESIGN_W() * fit, DESIGN_H() * fit)
+        nvgTranslate(vg(), ox, oy)
+        nvgScale(vg(), fit, fit)
+        OfflineRewardPanel.draw(vg())
+        nvgRestore(vg())
+    end
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
     if DarkIcon.SHOWCASE then
@@ -673,6 +691,11 @@ local function HorizonResolveMouse()
     if PlayerInfoPanel.isOpen() then
         local pdx, pdy = playerInfoDesignCoords(sx, sy)
         return 'playerinfo', pdx, pdy
+    end
+    -- 离线收益同样是全窗 letterbox，必须用同一套坐标，否则点击会落到中栏坐标上
+    if OfflineRewardPanel.isOpen() then
+        local pdx, pdy = playerInfoDesignCoords(sx, sy)
+        return 'offline', pdx, pdy
     end
     -- 三行全局奖励使用居中的 1080×2400 letterbox，优先于所有左栏页面。
     if BattleTriPage.isOpen()
@@ -918,6 +941,10 @@ function HandleMouseMoveHorizon(eventType, eventData)
         PlayerInfoPanel.handleDragMove(dx, dy)
         return
     end
+    if pid == 'offline' then
+        OfflineRewardPanel.handleDragMove(dx, dy)
+        return
+    end
     if pid == 'modal' and HorizonPageModalActive() then
         -- [底栏移除] 日志页全窗模态：拖拽滚动
         if BottomNav.getSelectedIndex() == 2 then
@@ -1097,6 +1124,11 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     if pid == 'tri' then
         BattleTriPage.handleDragEnd(dx, dy)
         if isTap then BattleTriPage.handleInput(dx, dy) end
+        return
+    end
+    if pid == 'offline' then
+        OfflineRewardPanel.handleDragEnd(dx, dy)
+        if isTap then OfflineRewardPanel.handleInput(dx, dy) end
         return
     end
     if pid == 'modal' then
@@ -1305,6 +1337,10 @@ function HandleMouseWheelHorizon(eventType, eventData)
     local pid, msx, msy = HorizonResolveMouse()
     if pid == 'playerinfo' then
         PlayerInfoPanel.handleScroll(wheel, msx, msy)
+        return
+    end
+    if pid == 'offline' then
+        OfflineRewardPanel.handleScroll(wheel)
         return
     end
 

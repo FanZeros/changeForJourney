@@ -8,6 +8,8 @@ local ImageCache      = require("ui.widget.ImageCache")
 local NumberUtil      = require("core.NumberUtil")
 local PlayerStore     = require("core.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
+local EquipmentSystem = require("systems.EquipmentSystem")
+local AdvancementConfig = require("config.AdvancementConfig")
 local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
 local HeroFrame = require("ui.widget.HeroFrame")
@@ -36,6 +38,29 @@ function M.bind(deps)
     local getImgHeroIcons = deps.getImgHeroIcons
     local calcScrollMax = deps.calcScrollMax
     local clampScroll = deps.clampScroll
+    local getEquipmentSlotFilter = deps.getEquipmentSlotFilter or function() return nil, nil end
+
+    -- 部位筛选只是仓库候选，不替代 applyEquip 的实际穿戴校验。
+    -- 常规副手始终保留；双持支线额外显示满足主手类型规则的单手武器。
+    local function slotChecked(equip, equipData, slot, heroId)
+        if not slot then return true end
+        if equip.slot == slot then return true end
+        if slot ~= "offhand" or equip.slot ~= "weapon" or equip.grip ~= "onehand" or not heroId then
+            return false
+        end
+        local heroes = PlayerStore.Get("heroes")
+        local roster = heroes and heroes.roster or {}
+        local hero = roster[heroId] or roster[tostring(heroId)]
+        local dualMode = AdvancementConfig.getDualWieldMode(hero and hero.advBranch)
+        if not dualMode then return false end
+        local wearable = EquipmentSystem.getWearableTypeSet(heroId, "weapon")
+        if wearable and not wearable[equip.type] then return false end
+        local slots = EquipmentSystem.getHeroSlots(equipData, heroId)
+        local main = slots and slots.weapon and EquipmentSystem.getFromInventory(equipData, slots.weapon)
+        if dualMode == "same" then return main ~= nil and main.type == equip.type end
+        if dualMode == "different" then return not main or main.type ~= equip.type end
+        return true
+    end
 
     local function getEquipList()
         local equipData = PlayerStore.Get("equipment")
@@ -53,11 +78,16 @@ function M.bind(deps)
         end
 
         local list = {}
+        local slotFilter, filterHeroId = getEquipmentSlotFilter()
         for seqStr, equip in pairs(equipData.inventory) do
             local tpl = EquipmentConfig.ITEMS[equip.templateId]
+            if tpl and (not equip.slot or not equip.type or not equip.grip) then
+                EquipmentSystem.hydrate(equip)
+            end
             local quality = (equip and (equip.quality or (tpl and tpl.quality))) or 1
-            -- 常驻勾选筛选：品质/套装勾选集合非空时只列出命中的装备（全不勾=全部）
-            if tpl and qualityChecked(quality) and setChecked(equip.templateId) then
+            -- 绘制/点击/hover/peek/拖拽共用此真源，三种筛选必须 AND。
+            if tpl and qualityChecked(quality) and setChecked(equip.templateId)
+                and slotChecked(equip, equipData, slotFilter, filterHeroId) then
                 list[#list + 1] = {
                     seq = tonumber(seqStr) or 0,
                     templateId = equip.templateId,
@@ -65,8 +95,10 @@ function M.bind(deps)
                     quality = quality,
                     name = tpl.name or "",
                     type = equip.type or tpl.type or "",
+                    slot = equip.slot or tpl.slot,
+                    grip = equip.grip or tpl.grip,
                     enhanceLevel = equip.enhanceLevel or 0,
-                    equippedByHeroId = equippedByHero[seqStr] or nil,
+                    equippedByHeroId = equippedByHero[tostring(seqStr)] or nil,
                     locked = equip.locked or nil,
                 }
             end

@@ -1774,6 +1774,16 @@ function EquipmentDetail.getOwner()
     return detState.owner
 end
 
+--- 只读选择快照：悬停与钉住共用同一真源，不暴露装备或可变面板状态。
+---@return table|nil
+function EquipmentDetail.getSelection()
+    if not detState.open or detState.closing then return nil end
+    return {
+        seq = detState.equipSeq, slot = detState.slot, heroId = detState.heroId,
+        owner = detState.owner, pinned = detState.pinned == true,
+    }
+end
+
 function EquipmentDetail.drawIf(vg, owner)
     if detState.compactCorner then return end
     if owner and detState.owner and detState.owner ~= owner then return end

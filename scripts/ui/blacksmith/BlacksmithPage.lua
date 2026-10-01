@@ -111,8 +111,7 @@ local OPEN_STAGGER        = 0.12
 
 local onCloseCallback_ = nil  -- 关闭动画完成后的回调
 local onOpenCallback_  = nil  -- 打开动画完成后的回调
---- [锻炉双页 0929] 打开锻炉时是否自动打开了左栏仓库（关闭时联动关闭）
-local autoOpenedWarehouse_ = false
+-- 仓库持有统一由 BackpackPanel 管理（owner="blacksmith"）；不保存自动开仓 bool。
 
 local state = {
     open       = false,
@@ -678,26 +677,13 @@ function BlacksmithPage.open(preSelectEquip, initialTab)
     end
     BlacksmithEnhance.onOpen()
 
-    -- [锻炉双页 0929] 左栏自动打开仓库（装备 tab，供拖拽）
-    local BackpackPanel = require("ui.backpack.BackpackPanel")
-    if not BackpackPanel.isOpen() then
-        BackpackPanel.open("left")
-        autoOpenedWarehouse_ = true
-        print("[BlacksmithPage] 双页联动：自动打开左栏仓库")
-    else
-        autoOpenedWarehouse_ = false
-    end
+    -- 仅打开边沿持有，已开的仓库不反复 open/reset；配装与锻炉可无缝交接。
+    require("ui.backpack.BackpackPanel").acquireWarehouse("blacksmith")
 end
 
 --- [锻炉双页 0929] 联动关闭自动打开的仓库
 local function closeAutoWarehouse()
-    if not autoOpenedWarehouse_ then return end
-    autoOpenedWarehouse_ = false
-    local BackpackPanel = require("ui.backpack.BackpackPanel")
-    if BackpackPanel.isOpen() then
-        BackpackPanel.close()
-        print("[BlacksmithPage] 双页联动：关闭左栏仓库")
-    end
+    require("ui.backpack.BackpackPanel").releaseWarehouse("blacksmith")
 end
 
 --- 关闭铁匠铺（启动关闭动画；动画完成后联动关闭仓库）

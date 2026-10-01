@@ -943,11 +943,14 @@ local function HorizonResolveMouse()
 end
 
 local equipOverlayPress = false
+local equipOverlayStartX, equipOverlayStartY = 0, 0
 -- [浮选详情修复] 本次按下刚顺手关掉了浮选详情：按下继续下放给底层页面（恢复拖拽），
 -- 但松开时不按 tap 派发点击，避免"点空白关详情"误触页面按钮。
 local detailDismissPress = false
+local equipmentPressPanel = nil
 
 function HandleMouseButtonDownHorizon(eventType, eventData)
+    equipmentPressPanel = nil
     detailDismissPress = false  -- [浮选详情修复] 每次按下先复位，防早退路径残留误抑制下次 tap
     if vg() then
         local mousePos = input:GetMousePosition()
@@ -979,6 +982,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         local dx, dy, ED = equipOverlayDesign(sx, sy)
         if dx then
             equipOverlayPress = true
+            equipOverlayStartX, equipOverlayStartY = sx, sy
             pressValid = true
             ED.handleDragBegin(dx, dy)
             print("[Horizon] 详情浮层按下")
@@ -988,7 +992,15 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         -- 继续走下方正常路由，让底层页面收到 handleDragBegin（列表拖拽/装备拖拽可用）。
         -- 松开时由 detailDismissPress 抑制 tap 派发，保留“第一次点击只关详情、不误触按钮”语义。
         local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
-        if EquipmentDetail.isCompactCorner() then
+        local preserveComparison = false
+        if EquipmentDetail.isPinned() and CharacterDetail.isEquipTab() then
+            local pid, px, py = HorizonResolveMouse()
+            if pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1) then
+                local panel = require("ui.character.detail.CharacterDetailEquip")
+                preserveComparison = panel.containsComparisonPoint(px, py)
+            end
+        end
+        if EquipmentDetail.isCompactCorner() and not preserveComparison then
             EquipmentDetail.close()
             equipOverlayPress = false
             detailDismissPress = true
@@ -1024,6 +1036,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
     lootPress = false
     LootBox.handleDragEnd(0, 0)
     local pid, dx, dy = HorizonResolveMouse()
+    equipmentPressPanel = pid
     -- 玩家信息全窗模态：按下也走设计坐标，避免抬起位移判定串栏
     if pid == 'playerinfo' then
         pressStartDX, pressStartDY = dx or 0, dy or 0
@@ -1208,6 +1221,10 @@ function HandleMouseMoveHorizon(eventType, eventData)
         return
     end
     if not pressValid then
+        -- 鼠标进浮选详情后保持候选，不让来源仓库的离开事件立即关闭它。
+        local mp = input:GetMousePosition()
+        local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+        if equipOverlayDesign(sx, sy) then return end
         if SweepDialog.isOpen() and pid == 'tri' then
             BattleTriPage.handleDragMove(dx, dy)
             return
@@ -1272,6 +1289,9 @@ function HandleEquipmentHoverTickHorizon()
     if DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
         or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
         or EquipCrossDrag.isArmed() then return end
+    local mp = input:GetMousePosition()
+    local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+    if equipOverlayDesign(sx, sy) then return end
     local pid, dx, dy = HorizonResolveMouse()
     if pid == 'right'
         or (pid == 'center' and BottomNav.getSelectedIndex() == 1 and not BlacksmithPage.isOpen()) then
@@ -1302,8 +1322,11 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         local mousePos = input:GetMousePosition()
         local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
         local dx, dy, ED = equipOverlayDesign(sx, sy)
-        if dx and ED then
-            ED.handleDragEnd()
+        local detail = ED or require("ui.character.equip.EquipmentDetail")
+        detail.handleDragEnd()
+        local moved = math.abs(sx - equipOverlayStartX) + math.abs(sy - equipOverlayStartY)
+        if dx and ED and moved < TAP_THRESHOLD
+            and eventData["Button"]:GetInt() == MOUSEB_LEFT then
             ED.handleInput(dx, dy)
             print("[Horizon] 详情浮层点击")
         end
@@ -1406,13 +1429,35 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
     local pid, dx, dy = HorizonResolveMouse()
     local isTap = false
     if wasLootPress and pid ~= 'left' then pressValid = false end
-    if pressValid then
+    if pressValid and (not equipmentPressPanel or equipmentPressPanel == pid) then
         local dist = math.abs(dx - pressStartDX) + math.abs(dy - pressStartDY)
         isTap = dist < TAP_THRESHOLD
+    elseif equipmentPressPanel == 'right' then
+        -- 跨栏结束右侧属性滚动；不能以两栏相同局部坐标伪装成点击。
+        CharacterPanel.handleDragEnd(-1, -1)
+    elseif equipmentPressPanel == 'left' and BackpackPanel.isOpen() then
+        BackpackPanel.handleDragEnd(-1, -1)
+    end
+    equipmentPressPanel = nil
+    -- 配装部位属于纯 UI 操作，详情外第一击也可立即选槽/取消；
+    -- 判定放在真跨栏拖拽已结算之后，绝不把拖放当成点击。
+    if isTap and not TutorialManager.isActive() and not RewardPopup.isOpen()
+        and (pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1)) then
+        local detail = require("ui.character.detail.CharacterDetail")
+        if detail.handleEquipmentSlotTap then detail.handleEquipmentSlotTap(dx, dy) end
     end
     -- [浮选详情修复] 这次按下用于关闭浮选详情：拖拽已下放给页面，但松开不派发点击，
     -- 避免“点空白关详情”顺手触发页面按钮（领取/回收/筛选等）。
     if detailDismissPress then
+        if isTap and not RewardPopup.isOpen() and not TutorialManager.isActive()
+            and (pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1)) then
+            CharacterDetail.handleNavigationTap(dx, dy)
+        elseif isTap and not RewardPopup.isOpen() and not TutorialManager.isActive()
+            and pid == 'left' and BackpackPanel.isOpen() and BackpackPanel.isLeftMode()
+            and BackpackPanel.peekEquipAt(dx, dy) then
+            -- 点悬停中的仓库装备应直接钉住它；只放行选中，不放行穿戴或其它按钮。
+            BackpackPanel.handleInput(dx, dy)
+        end
         detailDismissPress = false
         isTap = false
     end

@@ -1,8 +1,8 @@
 -- 套装图标审核稿：CPU 程序化金属徽章，不使用 AI 出图，不改游戏界面。
 -- 用法：UrhoXRuntime _proc/generate_set_icons.lua -tapcode_dir=. -tool_mode -graphicsheadless
--- 配色直接读取 EquipmentSetConfig；512px 绘制后降采样为256px透明 PNG。
+-- 配色直接读取 EquipmentSetConfig；保留 V1，V2 放大主体并追加材质刻纹。
 local Sets = require("config.EquipmentSetConfig")
-local OUT = "/workspace/assets/image/套装图标/"
+local OUT = "/workspace/assets/image/套装图标/v2/"
 local SIZE, SCALE = 512, 2
 local ORDER = { "carapace", "faceless", "riftcrystal", "last_rite", "tidepress", "nitros",
     "swordgate", "starless", "ironwall", "emberscout", "gambler", "bonehunger" }
@@ -14,10 +14,12 @@ end
 local function render(def)
     local red, green, blue, alpha = {}, {}, {}, {}
     local base = def.color
-    local light = mix(base, { 255, 245, 216 }, 0.68)
-    local shade = mix(base, { 15, 12, 18 }, 0.65)
-    local dark = { 10, 12, 17 }
-    local rim = mix(base, { 156, 142, 114 }, 0.38)
+    local light = mix(base, { 215, 211, 192 }, 0.36)
+    local shade = mix(base, { 13, 12, 16 }, 0.74)
+    local dark = { 7, 8, 12 }
+    local rim = mix(base, { 96, 89, 74 }, 0.52)
+    local subjectScale = 1
+    local function transform(v) return 128 + (v - 128) * subjectScale end
     local function blend(x, y, c, a)
         if a <= 0 then return end
         local i = y * SIZE + x + 1
@@ -40,11 +42,26 @@ local function render(def)
             local c = bottom and mix(top, bottom, t) or top
             for x = left, right do
                 local px = (x + 0.5) / SCALE
-                if inside(px, py) then blend(x, y, c, opacity or 1) end
+                if inside(px, py) then
+                    local color = c
+                    if subjectScale > 1 and bottom then
+                        -- 铜铁斑驳与局部高光，避免均匀渐变呈塑料质感。
+                        local seed = math.sin(math.floor(px * 1.5) * 12.9898 + math.floor(py * 1.5) * 78.233) * 43758.5453
+                        local grain = (seed - math.floor(seed)) * 2 - 1
+                        local mottled = math.sin(px * 0.23 + py * 0.17) * math.sin(py * 0.31 - px * 0.11)
+                        local keyLight = math.exp(-((px - 105) ^ 2 + (py - 81) ^ 2) / 2400)
+                        local factor = 0.86 + grain * 0.07 + mottled * 0.095 + keyLight * 0.22
+                        color = { c[1] * factor, c[2] * factor, c[3] * factor }
+                    end
+                    blend(x, y, color, opacity or 1)
+                end
             end
         end
     end
     local function poly(points, top, bottom, opacity)
+        local projected = {}
+        for _, p in ipairs(points) do projected[#projected + 1] = { transform(p[1]), transform(p[2]) } end
+        points = projected
         local x0, y0, x1, y1 = 256, 256, 0, 0
         for _, p in ipairs(points) do
             x0, y0 = math.min(x0, p[1]), math.min(y0, p[2])
@@ -63,11 +80,14 @@ local function render(def)
         end, top, bottom, opacity)
     end
     local function circle(cx, cy, radius, top, bottom, opacity)
+        cx, cy, radius = transform(cx), transform(cy), radius * subjectScale
         scan(cx - radius, cy - radius, cx + radius, cy + radius,
             function(x, y) return (x - cx) ^ 2 + (y - cy) ^ 2 <= radius ^ 2 end,
             top, bottom, opacity)
     end
     local function line(x0, y0, x1, y1, width, color, opacity)
+        x0, y0, x1, y1 = transform(x0), transform(y0), transform(x1), transform(y1)
+        width = width * subjectScale
         local vx, vy = x1 - x0, y1 - y0
         local len2 = vx * vx + vy * vy
         scan(math.min(x0, x1) - width, math.min(y0, y1) - width,
@@ -101,7 +121,7 @@ local function render(def)
     local function glyph(points, amount)
         stroke(points, 5, dark, true)
         poly(points, amount and mix(light, base, amount) or light, shade)
-        stroke(points, 1.6, light, true, 0.6)
+        stroke(points, 1.6, mix(light, { 225, 216, 191 }, 0.32), true, 0.72)
     end
     local function oct(inset, cut, dy)
         dy = dy or 0
@@ -110,25 +130,16 @@ local function render(def)
             { far, far - cut + dy }, { far - cut, far + dy }, { inset + cut, far + dy },
             { inset, far - cut + dy }, { inset, inset + cut + dy } }
     end
-    -- 切角金属框、冷黑珐琅底、细密刻线，角外透明。
-    poly(oct(14, 44, 5), { 0, 0, 0 }, nil, 0.55)
-    poly(oct(14, 44), mix(rim, { 238, 226, 202 }, 0.70), { 40, 33, 31 })
-    poly(oct(19, 42), { 20, 19, 23 }, { 7, 8, 12 })
-    poly(oct(23, 40), mix(rim, light, 0.35), shade)
-    poly(oct(27, 37), { 14, 16, 23 }, { 8, 10, 15 })
-    stroke(oct(31, 35), 1, base, true, 0.45)
-    -- 中心色光以多层透明圆叠加，避免整幅亮色块。
-    for i = 10, 1, -1 do circle(128, 127, 55 + i * 3, base, nil, 0.012) end
-    arc(128, 128, 77, 195, 270, 1.5, light, 0.15)
-    arc(128, 128, 77, 20, 82, 1.5, base, 0.20)
-    -- 框内四点及下方徽记槽，所有套装共享。
-    for _, p in ipairs({ { 45, 75 }, { 211, 75 }, { 45, 181 }, { 211, 181 } }) do
-        circle(p[1], p[2] + 1, 3.5, dark)
-        circle(p[1], p[2], 2.1, light, shade)
-    end
-    line(65, 34, 191, 34, 1.2, light, 0.70)
-    line(67, 222, 189, 222, 1, base, 0.55)
-    glyph({ { 121, 213 }, { 128, 208 }, { 135, 213 }, { 128, 218 } })
+    -- 暗铁薄框只做护边，留出更多面积给放大的主体。
+    poly(oct(7, 40, 4), { 0, 0, 0 }, nil, 0.55)
+    poly(oct(7, 40), mix(rim, { 171, 160, 134 }, 0.3), { 23, 22, 23 })
+    poly(oct(11, 38), { 18, 17, 21 }, { 7, 8, 12 })
+    stroke(oct(15, 36), 1.2, rim, true, 0.65)
+    for i = 8, 1, -1 do circle(128, 125, 65 + i * 3, base, nil, 0.009) end
+    line(57, 11, 196, 11, 1, light, 0.45)
+    line(57, 244, 196, 244, 1, base, 0.25)
+    -- 只变换后续主体，框体不随符号放大；主体轮廓约扩张22%。
+    subjectScale = 1.22
 
     if def.id == "carapace" then
         -- 对称甲虫壳：叠片、头角与三对肢节。
@@ -275,6 +286,100 @@ local function render(def)
         glyph({ { 92, 122 }, { 164, 122 }, { 169, 141 }, { 156, 151 }, { 100, 151 }, { 87, 141 } })
         poly({ { 106, 122 }, { 150, 122 }, { 148, 139 }, { 108, 139 } }, mix(light, { 255, 242, 215 }, 0.5), base)
         glyph({ { 106, 172 }, { 128, 194 }, { 150, 172 }, { 145, 185 }, { 128, 204 }, { 111, 185 } }, 0.3)
+    end
+    -- 主体二次刻画：套装各有独立结构，不只是同一平面符号换色。
+    local edge = mix(light, { 221, 213, 190 }, 0.48)
+    if def.id == "carapace" then
+        for _, y in ipairs({ 104, 125, 146, 164 }) do
+            for _, side in ipairs({ -1, 1 }) do
+                circle(128 + side * 21, y, 2.2, edge, shade)
+            end
+        end
+        stroke({ { 110, 96 }, { 104, 133 }, { 113, 166 } }, 2, edge, false, 0.75)
+        stroke({ { 135, 118 }, { 141, 125 }, { 136, 133 }, { 145, 143 } }, 1.6, dark)
+    elseif def.id == "faceless" then
+        poly({ { 102, 90 }, { 114, 88 }, { 109, 112 }, { 99, 113 } }, edge, shade, 0.48)
+        poly({ { 132, 84 }, { 151, 93 }, { 153, 108 }, { 139, 105 } }, base, shade, 0.55)
+        stroke({ { 88, 123 }, { 93, 150 }, { 111, 177 } }, 2, edge, false, 0.65)
+        stroke({ { 141, 86 }, { 136, 101 }, { 143, 110 } }, 1.5, dark)
+        stroke({ { 126, 161 }, { 124, 173 } }, 1.7, dark)
+    elseif def.id == "riftcrystal" then
+        poly({ { 128, 56 }, { 148, 88 }, { 132, 102 } }, edge, base, 0.85)
+        poly({ { 130, 108 }, { 151, 96 }, { 143, 155 } }, base, shade, 0.65)
+        stroke({ { 128, 120 }, { 120, 129 }, { 123, 144 }, { 113, 155 } }, 2, dark)
+        stroke({ { 88, 105 }, { 89, 133 }, { 85, 151 } }, 2, edge, false, 0.8)
+        line(168, 119, 162, 146, 1.6, edge)
+    elseif def.id == "last_rite" then
+        arc(128, 115, 27, 30, 150, 2, edge, 0.7)
+        stroke({ { 103, 109 }, { 109, 131 }, { 117, 138 } }, 2.5, edge, false, 0.75)
+        for _, x in ipairs({ 109, 128, 147 }) do
+            glyph({ { x, 116 }, { x + 3, 121 }, { x, 126 }, { x - 3, 121 } }, 0.5)
+        end
+        line(128, 155, 128, 174, 2, edge)
+        line(105, 187, 150, 187, 2, edge, 0.8)
+    elseif def.id == "tidepress" then
+        poly({ { 127, 60 }, { 116, 109 }, { 91, 137 }, { 104, 99 } }, edge, base, 0.45)
+        bezier({ 100, 160 }, { 116, 172 }, { 142, 168 }, { 156, 156 }, 2, edge, 0.85)
+        circle(144, 103, 3.5, edge, base)
+        circle(151, 113, 2.4, edge, base)
+        stroke({ { 132, 169 }, { 128, 177 }, { 137, 174 } }, 1.6, dark)
+    elseif def.id == "nitros" then
+        arc(133, 142, 35, 190, 305, 2, edge, 0.9)
+        for i = 0, 11 do
+            local a = i * math.pi / 6
+            line(133 + math.cos(a) * 40, 142 + math.sin(a) * 40,
+                133 + math.cos(a) * 44, 142 + math.sin(a) * 44, 2.5, dark)
+        end
+        poly({ { 115, 100 }, { 123, 76 }, { 133, 110 }, { 150, 98 }, { 143, 124 } }, edge, base, 0.55)
+        line(63, 156, 78, 156, 2, edge, 0.6)
+    elseif def.id == "swordgate" then
+        for _, p in ipairs({ { 82, 88 }, { 82, 151 }, { 174, 88 }, { 174, 151 } }) do
+            circle(p[1], p[2], 2.5, edge, shade)
+        end
+        for _, p in ipairs({ { 103, 104, 158 }, { 128, 90, 184 }, { 153, 104, 158 } }) do
+            line(p[1] - 1.6, p[2], p[1] - 1.6, p[3], 1.6, edge, 0.85)
+            line(p[1] + 2.5, p[2] + 3, p[1] + 2.5, p[3] - 5, 1.4, dark)
+        end
+        stroke({ { 100, 73 }, { 128, 62 }, { 158, 77 } }, 1.6, base, false, 0.9)
+    elseif def.id == "starless" then
+        arc(128, 126, 47, 195, 280, 1.7, shade, 0.7)
+        arc(128, 126, 76, 70, 155, 1.2, edge, 0.6)
+        for i = 0, 8 do
+            local a = (211 + i * 10) * math.pi / 180
+            line(128 + math.cos(a) * 61, 126 + math.sin(a) * 61,
+                128 + math.cos(a) * 66, 126 + math.sin(a) * 66, 1.5, edge, 0.8)
+        end
+        circle(128, 126, 4, edge, base)
+    elseif def.id == "ironwall" then
+        for _, p in ipairs({ { 93, 87 }, { 163, 87 }, { 99, 146 }, { 157, 146 }, { 128, 185 } }) do
+            circle(p[1], p[2], 3.1, edge, shade)
+        end
+        stroke({ { 93, 93 }, { 96, 136 }, { 112, 167 } }, 2, edge, false, 0.7)
+        line(110, 123, 145, 123, 1.5, dark)
+        line(137, 124, 137, 138, 1.5, dark)
+        stroke({ { 145, 151 }, { 139, 158 }, { 142, 161 } }, 2, dark)
+    elseif def.id == "emberscout" then
+        for i = 0, 5 do line(83 + i * 2, 108 + i * 6, 89 + i * 2, 112 + i * 6, 1.4, base) end
+        line(104, 135, 167, 90, 1.4, edge)
+        stroke({ { 173, 91 }, { 176, 80 }, { 181, 82 } }, 1.5, dark)
+        glyph({ { 94, 137 }, { 82, 134 }, { 83, 143 }, { 92, 145 } }, 0.4)
+        circle(186, 51, 2.2, edge)
+        circle(202, 71, 2, base)
+    elseif def.id == "gambler" then
+        stroke({ { 77, 99 }, { 123, 73 }, { 177, 102 } }, 2, edge, false, 0.8)
+        stroke({ { 78, 105 }, { 78, 156 }, { 118, 181 } }, 2, edge, false, 0.55)
+        stroke({ { 168, 116 }, { 162, 127 }, { 165, 134 } }, 1.7, dark)
+        for _, p in ipairs({ { 113, 91 }, { 139, 107 }, { 92, 127 }, { 103, 153 }, { 149, 140 }, { 164, 159 } }) do
+            circle(p[1] - 1.2, p[2] - 1.5, 1.7, edge, nil, 0.55)
+        end
+    elseif def.id == "bonehunger" then
+        stroke({ { 82, 80 }, { 87, 108 }, { 87, 142 } }, 2, edge, false, 0.7)
+        stroke({ { 174, 80 }, { 169, 108 }, { 169, 142 } }, 2, edge, false, 0.7)
+        stroke({ { 110, 126 }, { 112, 132 }, { 121, 131 }, { 124, 139 } }, 1.6, dark)
+        line(111, 141, 147, 141, 1.2, edge)
+        circle(92, 126, 3, shade)
+        circle(164, 126, 3, shade)
+        line(128, 192, 128, 199, 2, edge)
     end
     local img = Image()
     assert(img:SetSize(SIZE, SIZE, 4), "创建图像失败")

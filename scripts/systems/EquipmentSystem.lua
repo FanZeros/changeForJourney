@@ -241,11 +241,12 @@ end
 ---@return table
 local function copyAffixInstance(affix)
     return {
-        affixId = affix.affixId,
-        quality = affix.quality,
-        value   = affix.value,
-        key     = affix.key,
-        name    = affix.name,
+        affixId  = affix.affixId,
+        quality  = affix.quality,
+        value    = affix.value,
+        key      = affix.key,
+        name     = affix.name,
+        ascBonus = (tonumber(affix.ascBonus) or 0) > 0 and affix.ascBonus or nil,
     }
 end
 
@@ -575,14 +576,17 @@ function EquipmentSystem.getAffixMult(equip)
     return m
 end
 
---- 词条生效值：普通词条吃栏位倍率，魔化词条不吃（与"魔化不吃品质增幅"同原则）。
+--- 词条生效值：普通词条吃栏位倍率 + 升阶副属性加成（ascBonus，固定量不被倍率放大），
+--- 魔化词条两者都不吃（与"魔化不吃品质增幅"同原则）。
 ---@param equip table|nil
 ---@param affix table|nil
 ---@return number
 function EquipmentSystem.effectiveAffixValue(equip, affix)
-    local v = tonumber(affix and affix.value) or 0
-    if not affix or AffixConfig.isCorruptAffix(affix) then return v end
-    return v * EquipmentSystem.getAffixMult(equip)
+    if not affix or AffixConfig.isCorruptAffix(affix) then
+        return tonumber(affix and affix.value) or 0
+    end
+    local v = (tonumber(affix.value) or 0) * EquipmentSystem.getAffixMult(equip)
+    return v + (tonumber(affix.ascBonus) or 0)
 end
 
 --- 通过 deployed 数组反查 heroId 所在的 partySlot 索引
@@ -1274,6 +1278,14 @@ function EquipmentSystem.hydrate(equip)
                 affix.name = tplAffix.name
             end
             EquipmentSystem.ensureAffixValue(affix, equip)
+            -- 升阶投入按槽位保留，洗练可能换成低值词条，不能按当前 value 裁剪固定加成。
+            local ab = tonumber(affix.ascBonus)
+            if not ab or ab ~= ab or ab == math.huge or ab == -math.huge
+                or ab <= 0 or AffixConfig.isCorruptAffix(affix) then
+                affix.ascBonus = nil
+            else
+                affix.ascBonus = ab
+            end
         end
     end
 
@@ -1324,14 +1336,15 @@ function EquipmentSystem.dehydrate(equip)
         lean.refineCount = refineCount
     end
 
-    -- 词缀精简：只保留 affixId, quality, value
+    -- 词缀精简：保留 affixId, quality, value；升阶副属性加成 ascBonus>0 时持久化
     if equip.affixes then
         local leanAffixes = {}
         for i, affix in ipairs(equip.affixes) do
             leanAffixes[i] = {
-                affixId = affix.affixId,
-                quality = affix.quality,
-                value   = affix.value,
+                affixId  = affix.affixId,
+                quality  = affix.quality,
+                value    = affix.value,
+                ascBonus = (tonumber(affix.ascBonus) or 0) > 0 and tonumber(affix.ascBonus) or nil,
             }
         end
         lean.affixes = leanAffixes

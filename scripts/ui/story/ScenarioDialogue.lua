@@ -11,14 +11,6 @@ local EventBus = require("core.EventBus")
 
 local ScenarioDialogue = {}
 
---- 对话真正结束（自然播完/跳过）时广播。
---- 排队类调用方（如 HeroScenario.pending_）订阅此事件及时补播，
---- 避免"积压请求要等下次交互才被消化"的延迟补播体感。
---- reset()（硬清场）不广播。
-local function emitFinished_(reason)
-    EventBus.emit("scenario_dialogue_finished", { reason = reason, mode = mode_ })
-end
-
 -- ======================== 设计常量 ========================
 local DW = GameConfig.Design.WIDTH   -- 1080
 local DH = GameConfig.Design.HEIGHT  -- 2400
@@ -49,6 +41,13 @@ local active_     = false
 
 -- 对话配置
 local mode_       = "large"     -- "large" | "small"
+
+--- 对话真正结束（自然播完/跳过）时广播；硬重置不广播。
+--- 必须放在 mode_ 声明之后，闭包才能读取当前对话模式。
+local function emitFinished_(reason)
+    EventBus.emit("scenario_dialogue_finished", { reason = reason, mode = mode_ })
+end
+
 local steps_      = {}          -- { {characterId, name, text}, ... }
 local stepIndex_  = 0
 local onFinishCb_ = nil

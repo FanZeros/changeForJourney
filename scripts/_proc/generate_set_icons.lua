@@ -1,9 +1,13 @@
--- 套装图标审核稿：CPU 程序化金属徽章，不使用 AI 出图，不改游戏界面。
--- 用法：UrhoXRuntime _proc/generate_set_icons.lua -tapcode_dir=. -tool_mode -graphicsheadless
--- 配色直接读取 EquipmentSetConfig；V3 丰富主体结构，已接入的 V2 保持不变。
+-- 套装图标：CPU 程序化金属徽章，不使用 AI 出图。
+-- 完整V3：UrhoXRuntime _proc/generate_set_icons.lua -tapcode_dir=. -tool_mode -graphicsheadless
+-- 装备无框徽记：同命令追加 -set-badges，仅输出badge目录，不覆盖完整V3。
 local Sets = require("config.EquipmentSetConfig")
 local Details = require("_proc.SetIconDetails")
-local OUT = "/workspace/assets/image/套装图标/v3/"
+local badgeOnly = false
+for _, argument in ipairs(GetArguments()) do
+    if argument == "-set-badges" then badgeOnly = true end
+end
+local OUT = "/workspace/assets/image/套装图标/" .. (badgeOnly and "badge/" or "v3/")
 local SIZE, SCALE = 512, 2
 local ORDER = { "carapace", "faceless", "riftcrystal", "last_rite", "tidepress", "nitros",
     "swordgate", "starless", "ironwall", "emberscout", "gambler", "bonehunger" }
@@ -131,14 +135,16 @@ local function render(def)
             { far, far - cut + dy }, { far - cut, far + dy }, { inset + cut, far + dy },
             { inset, far - cut + dy }, { inset, inset + cut + dy } }
     end
-    -- 暗铁薄框只做护边，留出更多面积给放大的主体。
-    poly(oct(7, 40, 4), { 0, 0, 0 }, nil, 0.55)
-    poly(oct(7, 40), mix(rim, { 171, 160, 134 }, 0.3), { 23, 22, 23 })
-    poly(oct(11, 38), { 18, 17, 21 }, { 7, 8, 12 })
-    stroke(oct(15, 36), 1.2, rim, true, 0.65)
-    for i = 8, 1, -1 do circle(128, 125, 65 + i * 3, base, nil, 0.009) end
-    line(57, 11, 196, 11, 1, light, 0.45)
-    line(57, 244, 196, 244, 1, base, 0.25)
+    -- 装备角标不画八角框、黑底、背景泛光或上下装饰线，只保留主体。
+    if not badgeOnly then
+        poly(oct(7, 40, 4), { 0, 0, 0 }, nil, 0.55)
+        poly(oct(7, 40), mix(rim, { 171, 160, 134 }, 0.3), { 23, 22, 23 })
+        poly(oct(11, 38), { 18, 17, 21 }, { 7, 8, 12 })
+        stroke(oct(15, 36), 1.2, rim, true, 0.65)
+        for i = 8, 1, -1 do circle(128, 125, 65 + i * 3, base, nil, 0.009) end
+        line(57, 11, 196, 11, 1, light, 0.45)
+        line(57, 244, 196, 244, 1, base, 0.25)
+    end
     -- 只变换后续主体，框体不随符号放大；主体轮廓约扩张22%。
     subjectScale = 1.22
     if def.id == "starless" then
@@ -423,7 +429,7 @@ function Start()
             assert(def, "缺少套装：" .. id)
             render(def)
         end
-        print("[SetIcons] ALL PASS: 12套配色、透明PNG、256x256")
+        print("[SetIcons] ALL PASS: 12套配色、透明PNG、256x256，模式=" .. (badgeOnly and "无框装备徽记" or "完整V3"))
     end)
     if not ok then log:Write(LOG_ERROR, "[SetIcons] " .. tostring(err)) end
     engine:Exit()

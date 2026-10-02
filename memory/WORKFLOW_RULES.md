@@ -60,6 +60,15 @@ python3 .github/scripts/repository_policy.py --base origin/workspace930
 - 本轮只增加 workflow，不修改 GitHub 分支保护。因此检查会显示结果，但尚不强制阻止管理员合并；保护规则需要另行授权。
 - 不默认强制他人审批：单协作者不能批准自己的 PR。持续保留已有 GitHub secret scanning 和 push protection。
 
+## 装备套装徽记去框（2026-10-03）
+
+- 用户已自行处理 PR #19（远端确认已合并）；基于 `workspace930@c7cff542` 新建 `feat1003/equipment-set-badge-frameless`，只推新分支并通过 PR 交付，不推基线。
+- 用户要求仅装备上的套装图标不要框，只保留内部内容。统一八角框、黑底和背景泛光原本烘焙在 V3 PNG 内，不是绘制代码额外画框。
+- 原离线生成器新增 `-set-badges`，从同一 V3 主体/雕刻代码输出12张透明主体图到 `assets/image/套装图标/badge/`；原12张V3图片哈希不变。保留主体自有门框、盾沿、轮毂和星轨，不能把这些符号结构误删。
+- `EquipmentSetIcon.drawBadge` 使用独立无框图片缓存；`get/draw` 保持V3供筛选与套装正文。角标布局/等级/开关和所有装备入口不变，缺图时跳过而不回退带框图。
+- 验证：本轮3个Lua文件LSP无Error，官方Build成功；偏好26断言、全部角标66断言、滚动10断言、装备集成冒烟、遗匣筛选5套Runtime回归全过。真实离屏截图确认装备角标仅主体、下方完整图仍带原框；临时验收脚本已清理，不入包。
+- 完成后报告实际结果并调用 AskUserQuestion 选择下一步；不擅自合并、不给新任务沿用旧授权、不将本地预览身份或凭据提交。
+
 ## 本轮最小规范进展（2026-10-02）
 
 - 基线 `workspace930@eee25ef6`，新分支 `chore1002/repository-file-policy`，只推新分支并向 `workspace930` 提交 PR，不直接推基线。

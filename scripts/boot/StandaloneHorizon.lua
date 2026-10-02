@@ -1010,6 +1010,7 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
         end
     end
     if button == MOUSEB_RIGHT then
+        if RewardPopup.isOpen() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then return end
         local pid, dx, dy = HorizonResolveMouse()
         if pid == 'tri' then
             BattleTriPage.handleRightClick(dx, dy)
@@ -1027,6 +1028,9 @@ function HandleMouseButtonDownHorizon(eventType, eventData)
             if LootBoxPage.isOpen() then
                 LootBoxPage.handleRightClick(dx, dy)
                 return
+            end
+            if not TaskPage.isOpen() and BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
+                BackpackPanel.handleRightClick(dx, dy)
             end
             return
         end
@@ -1455,10 +1459,18 @@ function HandleMouseButtonUpHorizon(eventType, eventData)
         elseif isTap and not RewardPopup.isOpen() and not TutorialManager.isActive()
             and pid == 'left' and BackpackPanel.isOpen() and BackpackPanel.isLeftMode()
             and BackpackPanel.peekEquipAt(dx, dy) then
-            -- 点悬停中的仓库装备应直接钉住它；只放行选中，不放行穿戴或其它按钮。
+            -- 悬停关闭后的装备格仍走单击/双击时间窗，不重复派发其他按钮。
+            BackpackPanel.handleDragEnd(dx, dy)
             BackpackPanel.handleInput(dx, dy)
         end
         detailDismissPress = false
+        isTap = false
+    elseif isTap and pid == 'left' and not RewardPopup.isOpen() and not TutorialManager.isActive()
+        and not LootBoxPage.isOpen() and not TaskPage.isOpen()
+        and BackpackPanel.isOpen() and BackpackPanel.isLeftMode() and BackpackPanel.peekEquipAt(dx, dy) then
+        -- 装备格单击/双击自管时间窗，不受通用0.12秒按钮防抖吞掉第二击。
+        BackpackPanel.handleDragEnd(dx, dy)
+        BackpackPanel.handleInput(dx, dy)
         isTap = false
     end
     pressValid = false

@@ -1,5 +1,5 @@
 -- 仓库与配装/锻炉共享持有、临时部位筛选及网格指针接口。
--- 不驱动角色穿戴：详情仍以 slot=nil 打开，所有候选来自 getEquipList。
+-- 单击仅钉住候选；有效双击/右键经只读预检后走权威穿戴 action。
 local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
 local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")
@@ -15,6 +15,7 @@ local SLOT_NAMES = { weapon = "主手", offhand = "副手", armor = "护甲",
 function M.bind(deps)
     local EquipmentDetail = deps.EquipmentDetail or EquipmentDetail
     local DrawUtil = deps.DrawUtil or DrawUtil
+    local SetFilterDialog = deps.SetFilterDialog or SetFilterDialog
     local state, GRID = deps.state, deps.GRID
     local owners = {}
     local clearedPages = {}
@@ -29,9 +30,117 @@ function M.bind(deps)
     ---@type string|nil
     local hoverSeq = nil
     local hoverSince = 0
+    -- 双击历史独立于悬停/钉住状态；调用者仅把确认的 tap 交给 handleEquipClick。
+    ---@type {seq:string, hero:number|nil, slot:string|nil, time:number}|nil
+    local click = nil
+    ---@type {seq:number|string, hero:number, slot:string, time:number}|nil
+    local pending = nil
+    ---@type {x:number, y:number}|nil
+    local dragPress = nil
     local api = {}
 
+    function api.clearQuickClick() click = nil end
+
+    local function toast(text)
+        if deps.toast then deps.toast(text)
+        else require("core.UiToast").show(text) end
+    end
+    local function expirePending()
+        if pending and time.elapsedTime - pending.time >= 3 then
+            pending = nil
+            api.clearQuickClick()
+            toast("穿戴请求超时，请重试")
+        end
+    end
+    local function getCharacterDetail()
+        if deps.getCharacterDetail then return deps.getCharacterDetail() end
+        return require("ui.character.detail.CharacterDetail")
+    end
+    local function currentHero()
+        local detail = getCharacterDetail()
+        if not detail or not detail.isEquipTab or not detail.isEquipTab() then return nil end
+        return tonumber(detail.getHeroId())
+    end
+    local function getEquipmentData()
+        if deps.getEquipmentData then return deps.getEquipmentData() end
+        return require("core.PlayerStore").Get("equipment")
+    end
+    local function getHeroesData()
+        if deps.getHeroesData then return deps.getHeroesData() end
+        return require("core.PlayerStore").Get("heroes")
+    end
+    local function wearability()
+        return deps.EquipmentWearability or require("ui.character.detail.EquipmentWearability")
+    end
+    local function equipAction()
+        return require("shared.Protocol").ACTION_TYPES.EQUIP_ITEM
+    end
+    local function targetSlot(equip, heroId)
+        -- 临时筛选可能仍属于前一英雄，不能把旧副手槽应用到当前角色。
+        if heroId and filterHero == heroId and filterSlot then return filterSlot end
+        -- 源存档可能尚未水合，不能借用列表的 canWear/旧职业上下文。
+        local equipment = getEquipmentData()
+        local inventory = equipment and equipment.inventory
+        local source = inventory and (inventory[tostring(equip.seq)] or inventory[equip.seq]) or equip
+        local naturalSlot = wearability().getFields(source)
+        return naturalSlot
+    end
+    local function tryQuickEquip(equip, heroId, slot)
+        expirePending()
+        if not heroId then toast("请先打开角色配装页"); return false end
+        if pending then return true end -- 单一在途请求，右键/双击均不重入。
+        local equipment = getEquipmentData()
+        local ok, reason = wearability().canEquip(equipment, equip.seq, heroId, slot, getHeroesData())
+        if not ok then toast(reason or "无法穿戴"); return false end
+        local equipped = equipment and equipment.equipped
+        local slots = equipped and (equipped[heroId] or equipped[tostring(heroId)])
+        if slots and slots[slot] ~= nil and tostring(slots[slot]) == tostring(equip.seq) then
+            toast("已装备")
+            return true -- 快捷穿戴永远不是卸装/切换按钮。
+        end
+        if not slot then toast("参数缺失"); return false end
+        -- 必须在 dispatch 前登记：单机桥可能同步回调 onActionResult。
+        pending = { seq = equip.seq, hero = heroId, slot = slot, time = time.elapsedTime }
+        local send = deps.sendAction or require("runtime.GameAction").sendAction
+        local handled = send(equipAction(), { seq = equip.seq, heroId = heroId, slot = slot })
+        -- handled 仅表示路由接收，不代表业务成功；成功提示只由匹配回执触发。
+        if handled == false and pending then
+            pending = nil
+            toast("穿戴请求未处理，请重试")
+        end
+        return true
+    end
+
+    function api.onActionResult(data)
+        expirePending()
+        if not pending or not data or data.action ~= equipAction() then return end
+        if tostring(data.seq) ~= tostring(pending.seq) or tonumber(data.heroId) ~= pending.hero
+            or data.slot ~= pending.slot then return end
+        local request = pending
+        pending = nil
+        api.clearQuickClick()
+        if data.success == true then
+            -- 只关本请求的仓库候选；期间换选的另一件或他栏详情不得被回执误关。
+            local selection = EquipmentDetail.getSelection and EquipmentDetail.getSelection()
+            if EquipmentDetail.getOwner() == "backpack"
+                and (not selection or tostring(selection.seq) == tostring(request.seq)) then
+                api.clearCandidate(true)
+            end
+            if deps.markPanelDirty then deps.markPanelDirty()
+            else
+                local detail = getCharacterDetail()
+                if detail and detail.markPowerDirty then detail.markPowerDirty() end
+            end
+            toast("已装备")
+            if deps.GameSFX then deps.GameSFX.play("install")
+            else require("systems.GameSFX").play("install") end
+        else
+            toast(data.reason or "穿戴失败")
+        end
+    end
+
     function api.clearCandidate(includePinned)
+        api.clearQuickClick()
         hoverSeq, hoverSince = nil, 0
         if includePinned and EquipmentDetail.getOwner() == "backpack" then
             EquipmentDetail.close()
@@ -52,6 +161,7 @@ function M.bind(deps)
         api.clearCandidate(clearPinned)
     end
     function api.setEquipmentSlotFilter(slot, heroId)
+        api.clearQuickClick()
         if owners.equipment then
             owners.equipment.slot = SLOT_NAMES[slot] and slot or nil
             owners.equipment.heroId = tonumber(heroId)
@@ -126,6 +236,7 @@ function M.bind(deps)
     end
 
     function api.releaseWarehouse(owner)
+        api.clearQuickClick()
         if not owners[owner] then return end
         owners[owner] = nil
         local nextHolder = latestOwner()
@@ -166,7 +277,9 @@ function M.bind(deps)
         end
     end
     function api.update()
+        expirePending() -- 关仓/切页后仍回收在途锁，不依赖后续点击。
         if not state.open then
+            api.clearQuickClick()
             autoSession = false
             return
         end
@@ -236,6 +349,40 @@ function M.bind(deps)
             cx + GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5)
         if pinned and EquipmentDetail.pin then EquipmentDetail.pin() end
     end
+    function api.handleEquipClick(dx, dy)
+        expirePending()
+        if deps.itemDetState and deps.itemDetState.open then api.clearQuickClick(); return false end
+        local equip, cx, cy = api.cellAt(dx, dy)
+        if not equip then api.clearQuickClick(); return false end
+        local heroId = currentHero()
+        local slot = targetSlot(equip, heroId)
+        local seq, now = tostring(equip.seq), time.elapsedTime
+        local double = click and click.seq == seq and click.hero == heroId and click.slot == slot
+            and now >= click.time and now - click.time <= 0.35
+        if double then
+            api.clearQuickClick()
+            if heroId then
+                if not tryQuickEquip(equip, heroId, slot) then api.openCandidate(equip, cx, cy, true) end
+            else
+                api.openCandidate(equip, cx, cy, true)
+            end
+        else
+            click = { seq = seq, hero = heroId, slot = slot, time = now }
+            api.openCandidate(equip, cx, cy, true)
+        end
+        return true -- 只 consume 真实筛选网格格子，未命中仍留给原详情/筛选处理。
+    end
+    function api.handleRightClick(dx, dy)
+        api.clearQuickClick()
+        expirePending()
+        if deps.itemDetState and deps.itemDetState.open then return false end
+        local equip = api.cellAt(dx, dy)
+        if not equip then return false end
+        local heroId = currentHero()
+        tryQuickEquip(equip, heroId, targetSlot(equip, heroId))
+        return true
+    end
+
     function api.handleHover(dx, dy)
         if state.open and not state.closing and state.tab == "decompose" and not SetFilterDialog.isOpen() then
             deps.ensureDecomposeReady()
@@ -259,9 +406,15 @@ function M.bind(deps)
         api.openCandidate(equip, cx, cy, false)
     end
 
-    function api.haltScroll() state.dragging, state.scrollVel = false, 0 end
+    function api.haltScroll()
+        api.clearQuickClick()
+        dragPress = nil
+        state.dragging, state.scrollVel = false, 0
+    end
     function api.handleDragBegin(dx, dy)
         if not state.open then return false end
+        -- 每次按下只记起点，不清双击历史；真实移动/外层拖装 armed 才清。
+        dragPress = { x = dx, y = dy }
         if SetFilterDialog.isOpen() or deps.itemDetState.open then return true end
         if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragBegin(dx, dy) end
         if state.tab == "decompose" then deps.BlacksmithDecompose.handleDragBegin(dx, dy); return true end
@@ -272,6 +425,10 @@ function M.bind(deps)
     end
     function api.handleDragMove(dx, dy)
         if not state.open then return false end
+        if dragPress and (math.abs(dx - dragPress.x) > 12 or math.abs(dy - dragPress.y) > 12) then
+            api.clearQuickClick()
+            dragPress = nil
+        end
         if SetFilterDialog.isOpen() or deps.itemDetState.open then return true end
         if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragMove(dx, dy) end
         if state.tab == "decompose" then deps.BlacksmithDecompose.handleDragMove(dx, dy); return true end
@@ -283,6 +440,7 @@ function M.bind(deps)
         return true
     end
     function api.handleDragEnd(dx, dy)
+        dragPress = nil
         if not state.open then return false end
         if SetFilterDialog.isOpen() or deps.itemDetState.open then return true end
         if EquipmentDetail.isOpen() then return EquipmentDetail.handleDragEnd(dx, dy) end

@@ -1376,6 +1376,8 @@ function Panel.handleInput(dx, dy)
         return true
     end
     if equipLink.handleFilterInput(dx, dy) then return true end
+    -- 装备格优先识别双击；已钉住的详情不能拦截同格快捷装备。
+    if equipLink.handleEquipClick(dx, dy) then return true end
 
     -- 装备详情优先处理
     if EquipmentDetail.isOpen() then
@@ -1426,13 +1428,6 @@ function Panel.handleInput(dx, dy)
 
     if equipLink.clickItem(dx, dy) then return true end
 
-    -- 装备点击与 hover/drag 共用 getEquipList 与同一格命中。
-    local equip, cx, cy = equipLink.cellAt(dx, dy)
-    if equip then
-        equipLink.openCandidate(equip, cx, cy, true)
-        return true
-    end
-
     return true  -- 面板打开时消费所有事件
 end
 
@@ -1445,6 +1440,7 @@ end
 function Panel.peekEquipAt(dx, dy) return equipLink.peekEquipAt(dx, dy) end
 function Panel.haltScroll() equipLink.haltScroll() end
 function Panel.handleHover(dx, dy) equipLink.handleHover(dx, dy) end
+function Panel.handleRightClick(dx, dy) return equipLink.handleRightClick(dx, dy) end
 
 function Panel.handleDragBegin(dx, dy) return equipLink.handleDragBegin(dx, dy) end
 function Panel.handleDragMove(dx, dy) return equipLink.handleDragMove(dx, dy) end
@@ -1454,6 +1450,7 @@ function Panel.handleScroll(wheel, dx, dy) return equipLink.handleScroll(wheel, 
 --- 服务端操作结果回调
 ---@param data table
 function Panel.onActionResult(data)
+    equipLink.onActionResult(data)
     if data.action == Protocol.ACTION_TYPES.DECOMPOSE_EQUIP then
         -- [分解入仓 0929] 分解请求由 BlacksmithDecompose（仓库分解 tab）发出，
         -- 回执转发给它（内部 pendingDecompose 门控保证只处理自己发起的请求，

@@ -66,6 +66,15 @@ python3 .github/scripts/repository_policy.py --base origin/workspace930
 - 清理 5 个已确认源文件不存在的 `.meta`；`CharacterSchema.lua.meta` 从历史 `2ad68424` 恢复原 UUID，而非新生成。官方 Build 成功，manifest 已确认使用恢复的 UUID；剧情首通、战力、升阶、切关 4 套 Runtime 回归均退出 0、ALL PASS。Lua 逻辑未改，本地生成的 `.project` 身份/设置未暂存。
 - 新增只读 Git 快照校验器及独立临时仓库回归，36 个测试全部通过；本地暂存区检查 2473 路径，0 错误/警告。workflow 语法、只读权限与无 paths 过滤已校验。
 - 用户再次明确授权最小规范；不扩展为配置加载重构，不修改远端保护。完成后先报告真实验证结果，再调用 AskUserQuestion 选择下一步；不得擅自取消已授权任务，也不得忽略用户后续停止或权限拒绝。
+- 完整提交已推送，PR #19：https://github.com/FanZeros/changeForJourney/pull/19，目标 `workspace930`。用户补充 workflow 权限后成功推送；随后同步并发 PR #18（基线 `ce1d16f4`），仅工作记忆追加块冲突，双保留，不改对方弹窗功能。
+
+## 弹窗选择性提取确认（2026-10-02）
+
+- 用户在 PR #17 合入后选择“先提取弹窗修复”，工作分支 `fix/workspace930-fullscreen-popups-20261002` 基于 `eee25ef`。
+- 范围仅离线收益全窗绘制、统一输入坐标与防穿透、三行升级弹窗独立显示；不接入黑色全窗遮罩、时间文案、语言布局、城镇名牌、觉醒旧逻辑和旧素材。
+- 候选分支的 Up 拦截位于装备拖放之后，必须提前消费；触控用真实 TouchID/X/Y，不假设 Button 字段，保留 PR14 快装和只读预览。
+- 超长横屏宿主按渲染/输入拆分，保持所有 Handle*Horizon 全局接口；测试 require mock 必须透传新输入和离线覆盖模块。
+- 交付后仅推送新分支，以 **AskUserQuestion** 询问验收、合入或下一项需求，不据旧授权自动合入本轮改动。
 
 ## 本轮整合确认（2026-10-02）
 

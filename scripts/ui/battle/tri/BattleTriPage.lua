@@ -27,10 +27,12 @@ local SoundToggle       = require("ui.widget.SoundToggle")  -- [音效开关] �
 local EquipmentBag      = require("ui.character.equip.EquipmentBag")
 local StageConfig       = require("config.StageConfig")
 local BattleStats       = require("systems.BattleStats")
+local I18n              = require("core.I18n")
 
+-- 只在显示边界翻译；驱动进度、源关卡名和地图缓存仍使用原始配置。
 local function stageDisplayName(stageId)
     local entry = stageId and StageConfig.getStage(tonumber(stageId))
-    return (entry and entry.name) or tostring(stageId or "?")
+    return I18n.lookup((entry and entry.name) or tostring(stageId or "?"))
 end
 
 local BattleTriPage = {}
@@ -479,22 +481,42 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local stageText
         if terminalRaid and row <= unlocked then
-            -- [终焉协同] 行标签追加失守状态；共享池进度替代普通关卡进度
-            local raidTag = (terminalRaid.defeated[row]) and "（已失守）" or ""
-            stageText = string.format("【小队%d】终焉神殿%s", row, raidTag)
+            -- [终焉协同] 先翻译关卡，再组装小队/失守文案，不写回 raid 或驱动。
+            local raidStageText = stageDisplayName(terminalRaid.stageId)
+            if terminalRaid.defeated[row] then
+                raidStageText = I18n.format("%s（已失守）", raidStageText)
+            end
+            stageText = I18n.format("【小队%d】%s", row, raidStageText)
         elseif drivers[row] then
-            stageText = string.format("【小队%d】%s", row, stageDisplayName(drivers[row].stageId))
+            stageText = I18n.format("【小队%d】%s", row, stageDisplayName(drivers[row].stageId))
         elseif row <= unlocked then
-            stageText = string.format("【小队%d】准备中", row)
+            stageText = I18n.format("【小队%d】%s", row, I18n.lookup("准备中"))
         else
-            stageText = string.format("【小队%d】待解锁", row)
+            stageText = I18n.format("【小队%d】%s", row, I18n.lookup("待解锁"))
         end
         -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上
         nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
         if terminalRaid and terminalRaid.defeated[row] then
             nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
         end
-        nvgText(vg, ix + 28, iy + 25, stageText, nil)
+        -- 普通战斗给右上 HUD 留空；按最终译文测宽，不改行高/按钮热区。
+        local labelW = iw - 56
+        if not terminalRaid and row <= unlocked then
+            local hudCount = BattleScene.isSpeedButtonVisible() and 5 or 4
+            labelW = math.max(1, iw - 116 - (hudCount - 1) * 58)
+        end
+        local labelTextW = nvgTextBounds(vg, 0, 0, stageText, nil)
+        local labelFont = labelTextW > labelW and math.max(16, 22 * labelW / labelTextW) or 22
+        nvgSave(vg)
+        nvgIntersectScissor(vg, ix + 26, iy + 5, labelW + 4, 48)
+        nvgFontSize(vg, labelFont)
+        if labelTextW * labelFont / 22 > labelW then
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+            nvgTextBox(vg, ix + 28, iy + 9, labelW, stageText, nil)
+        else
+            nvgText(vg, ix + 28, iy + 25, stageText, nil)
+        end
+        nvgRestore(vg)
 
         -- [终焉协同] 每行底部进度条替换为共享生命池（绯红），行1 附加数值与倒计时
         if terminalRaid and row <= unlocked and terminalRaid.maxHp > 0 then
@@ -520,7 +542,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
                 nvgFillColor(vg, nvgRGBA(255, 205, 195, 255))
                 nvgText(vg, ix + iw * 0.5, barY - 12,
-                    string.format("共享生命 %s / %s",
+                    I18n.format("共享生命 %s / %s",
                         NumberUtil.format(terminalRaid.hp), NumberUtil.format(terminalRaid.maxHp)), nil)
                 local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
                 local left = math.max(0, math.ceil(timeLimit - terminalRaid.elapsed))
@@ -529,7 +551,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 nvgFillColor(vg, left <= 30 and nvgRGBA(255, 120, 110, 255)
                     or nvgRGBA(236, 226, 198, 255))
                 nvgText(vg, ix + 28, iy + 55,
-                    string.format("限时 %d:%02d", left // 60, left % 60), nil)
+                    I18n.format("限时 %d:%02d", left // 60, left % 60), nil)
             end
         end
 
@@ -558,7 +580,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgFontSize(vg, 16)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
-            nvgText(vg, ix + iw * 0.5, barY - 12, "关卡进度 " .. pctText, nil)
+            nvgText(vg, ix + iw * 0.5, barY - 12, I18n.format("关卡进度 %s", pctText), nil)
         end
 
         if row <= unlocked and drivers[row] and #drivers[row].allies == 0 then
@@ -575,7 +597,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgFontSize(vg, 44)
             nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
             nvgText(vg, ix + iw * 0.5, iy + ih * 0.5,
-                string.format("远征等级达到 %s 解锁", tostring(needLv or "?")), nil)
+                I18n.format("远征等级达到 %s 解锁", tostring(needLv or "?")), nil)
         end
     end
 

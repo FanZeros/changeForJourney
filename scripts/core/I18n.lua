@@ -5,6 +5,7 @@
 -- ============================================================================
 
 local I18n = {}
+local StageText = require("core.I18nStages")
 
 I18n.LANGS = {
     { id = "zh_CN", label = "简体" },
@@ -28,6 +29,10 @@ local hooked_ = false
 local rawNvgText_ = nil
 local rawNvgTextBox_ = nil
 local rawNvgTextBounds_ = nil
+local rawNvgTextBoxBounds_ = nil
+local lookupCache_ = {} ---@type table<string, table<string, string>>
+local LOOKUP_CACHE_LIMIT = 512
+local lookupCacheSizes_ = {} ---@type table<string, number>
 
 local function mergeLang(dst, src)
     if type(src) ~= "table" then return end
@@ -45,23 +50,57 @@ local function dict()
     if dict_ then return dict_ end
     dict_ = { zh_TW = {}, en = {}, ja = {}, ko = {} }
     local ok, d = pcall(require, "core.I18nDict")
-    if ok then mergeLang(dict_, d) end
+    if ok and type(d) == "table" then
+        mergeLang(dict_, d)
+    else
+        print("[I18n] 基础词典加载失败: " .. tostring(d))
+    end
     local ok2, extra = pcall(require, "core.I18nDictExtra")
-    if ok2 then mergeLang(dict_, extra) end
+    if ok2 and type(extra) == "table" then
+        mergeLang(dict_, extra)
+    else
+        print("[I18n] 扩展词典加载失败: " .. tostring(extra))
+    end
     return dict_
 end
 
---- 按中文原文查表；无条目则原样返回（梗名/剧情不翻）
+--- 按完整原文或已登记的关卡模板翻译；不修改业务数据，不猜测任意子串。
 ---@param text any
 ---@return any
 function I18n.lookup(text)
     if current_ == "zh_CN" then return text end
     if type(text) ~= "string" or text == "" then return text end
+    local cache = lookupCache_[current_]
+    if cache and cache[text] ~= nil then return cache[text] end
     local pack = dict()[current_]
-    if not pack then return text end
-    local hit = pack[text]
-    if hit then return hit end
-    return text
+    local hit = pack and pack[text]
+    -- 韩文序数前缀「第」的空串是既有排版规则，其余空译文回退原文。
+    if type(hit) ~= "string" or (hit == "" and not (current_ == "ko" and text == "第")) then
+        hit = StageText.lookup(text, current_) or text
+    end
+    if not cache or (lookupCacheSizes_[current_] or 0) >= LOOKUP_CACHE_LIMIT then
+        cache = {}
+        lookupCache_[current_] = cache
+        lookupCacheSizes_[current_] = 0
+    end
+    cache[text] = hit
+    lookupCacheSizes_[current_] = (lookupCacheSizes_[current_] or 0) + 1
+    return hit
+end
+
+--- printf 模板先翻译再格式化；字符串参数由显示调用方明确本地化。
+---@param source string
+---@param ... any
+---@return string
+function I18n.format(source, ...)
+    return string.format(I18n.lookup(source), ...)
+end
+
+--- 关卡难度专用入口，避免「普通」与装备品质 Common 共用译法。
+---@param source string
+---@return string
+function I18n.difficulty(source)
+    return StageText.difficulty(source, current_) or source
 end
 
 local T = {
@@ -350,18 +389,27 @@ function I18n.displayName(id)
     return I18n.DISPLAY[id] or id
 end
 
+--- 一次遍历原模板；参数里的百分号和占位符不参与二次替换。
+---@param template string
+---@param ... any
+---@return string
+function I18n.interpolate(template, ...)
+    local args = table.pack(...)
+    return (template:gsub("%{(%d+)%}", function(index)
+        local position = tonumber(index) + 1
+        if position > args.n then return "{" .. index .. "}" end
+        return tostring(args[position])
+    end))
+end
+
 ---@param key string
 ---@param ... string|number
 ---@return string
 function I18n.t(key, ...)
     local pack = T[current_] or T.zh_CN
-    local s = pack[key] or (T.zh_CN[key] or key)
-    local n = select("#", ...)
-    if n <= 0 then return s end
-    for i = 1, n do
-        s = s:gsub("%{" .. (i - 1) .. "%}", tostring(select(i, ...)))
-    end
-    return s
+    local s = pack[key]
+    if type(s) ~= "string" or s == "" then s = T.zh_CN[key] or key end
+    return I18n.interpolate(s, ...)
 end
 
 ---@param lang string
@@ -387,13 +435,14 @@ function I18n.cycle()
     return nextItem.id
 end
 
---- 拦截 nvgText / nvgTextBox / nvgTextBounds，绘制时按原文查表
+--- 拦截文字绘制和边界测量，保证两者收到同一译文。
 function I18n.installDrawHook()
     if hooked_ then return end
     if type(nvgText) ~= "function" then return end
     rawNvgText_ = nvgText
     rawNvgTextBox_ = nvgTextBox
     rawNvgTextBounds_ = nvgTextBounds
+    rawNvgTextBoxBounds_ = nvgTextBoxBounds
     nvgText = function(vg, x, y, text, endp)
         return rawNvgText_(vg, x, y, I18n.lookup(text), endp)
     end
@@ -403,12 +452,17 @@ function I18n.installDrawHook()
         end
     end
     if type(rawNvgTextBounds_) == "function" then
-        nvgTextBounds = function(vg, x, y, text, endp)
-            return rawNvgTextBounds_(vg, x, y, I18n.lookup(text), endp)
+        nvgTextBounds = function(vg, x, y, text, ...)
+            return rawNvgTextBounds_(vg, x, y, I18n.lookup(text), ...)
+        end
+    end
+    if type(rawNvgTextBoxBounds_) == "function" then
+        nvgTextBoxBounds = function(vg, x, y, breakRowWidth, text, ...)
+            return rawNvgTextBoxBounds_(vg, x, y, breakRowWidth, I18n.lookup(text), ...)
         end
     end
     hooked_ = true
-    print("[I18n] nvgText draw hook installed")
+    print("[I18n] 文字绘制与测量翻译已安装")
 end
 
 return I18n

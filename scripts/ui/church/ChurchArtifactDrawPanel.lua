@@ -14,6 +14,7 @@ local DrawUtil      = require("core.DrawUtil")
 local GameState     = require("core.GameState")
 local PlayerStore   = require("core.PlayerStore")
 local StageConfig   = require("config.StageConfig")
+local I18n          = require("core.I18n")
 local ArtifactDefs  = require("shared.artifact.ArtifactDefs")
 local RewardPopup   = require("ui.hud.popup.RewardPopup")
 local BF            = require("systems.ButtonFeedback")
@@ -260,13 +261,17 @@ local function drawCollectionLockedContent(vg)
     nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(139, 149, 165, 255))
-    nvgText(vg, 540, 1320 + CONTENT_OY, "抵达噩梦难度后开放", nil)
+    nvgText(vg, 540, 1320 + CONTENT_OY,
+        I18n.format("抵达%s难度后开放", I18n.difficulty("噩梦")), nil)
 
-    local progress = StageConfig.formatProgressDisplay(
-        (PlayerStore.Get("battle") or {}).maxStageId or 0)
+    local progress = I18n.lookup(StageConfig.formatProgressDisplay(
+        (PlayerStore.Get("battle") or {}).maxStageId or 0))
+    local progressText = I18n.format("当前进度：%s", progress)
     nvgFontSize(vg, 32)
+    local progressW = nvgTextBounds(vg, 0, 0, progressText, nil)
+    if progressW > 920 then nvgFontSize(vg, math.max(24, 32 * 920 / progressW)) end
     nvgFillColor(vg, nvgRGBA(150, 150, 150, 220))
-    nvgText(vg, 540, 1380 + CONTENT_OY, "当前进度：" .. progress, nil)
+    nvgText(vg, 540, 1380 + CONTENT_OY, progressText, nil)
 end
 
 local function drawCollectionDrawButton(vg, id, cx, countText, keyCost)

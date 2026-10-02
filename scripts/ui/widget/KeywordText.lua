@@ -17,13 +17,14 @@
 --   kt:clear()           -- 面板关闭/切角色时清状态
 --
 -- 说明：
---   * 排版结果按 text+width+fontSize 缓存，同一段文本只测量一次。
+--   * 排版按语言+text+width+fontSize 缓存，切换语言时清空旧布局与交互状态。
 --   * 换行规则与 attrTip 一致：逐字符测量；关键词作为整体不拆行。
 --   * 测量依赖全局 nvgTextBounds；无引擎环境（回归测试）时退化为等宽估算。
 -- ============================================================================
 
 local KW = require("config.KeywordConfig")
 local GameConfig = require("config.GameConfig")
+local I18n = require("core.I18n")
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
@@ -216,6 +217,14 @@ function KeywordText.new(opts)
     return self --[[@as KeywordTextInstance]]
 end
 
+function KeywordText:_syncLanguage()
+    local language = I18n.get()
+    if self._layoutLanguage ~= language then
+        self._layoutLanguage = language
+        self:clear()
+    end
+end
+
 --- 取（或构建）排版缓存
 ---@param vg any
 ---@param text string
@@ -223,7 +232,8 @@ end
 ---@param fontSize number
 ---@return table
 function KeywordText:_layout(vg, text, width, fontSize)
-    local key = text .. "\0" .. width .. "\0" .. fontSize
+    self:_syncLanguage()
+    local key = I18n.get() .. "\0" .. text .. "\0" .. width .. "\0" .. fontSize
     local hit = self._cache[key]
     if hit then return hit end
     local layout = layoutText(vg, text, width, fontSize)
@@ -332,6 +342,7 @@ end
 ---@param dx number
 ---@param dy number
 function KeywordText:setHover(dx, dy)
+    self:_syncLanguage()
     local mx, my = self:_map(dx, dy)
     local hitIdx = nil
     for i, h in ipairs(self.hotspots) do
@@ -359,6 +370,9 @@ function KeywordText:clear()
     self.popup = nil
     self.hoverIdx = nil
     self.hotspots = {}
+    self._cache = {}
+    self._cacheKeys = {}
+    self._lastLayoutH = 0
 end
 
 --- 点击输入。返回 true 表示消费事件。
@@ -367,6 +381,7 @@ end
 ---@param dy number
 ---@return boolean
 function KeywordText:handleInput(dx, dy)
+    self:_syncLanguage()
     if self.popup then
         self.popup = nil
         return true
@@ -400,6 +415,7 @@ end
 --- 帧末最上层绘制弹窗（风格与 attrTip 一致）
 ---@param vg any
 function KeywordText:drawPopup(vg)
+    self:_syncLanguage()
     local tip = self.popup
     if not tip then return end
 

@@ -67,7 +67,8 @@ handlers[Protocol.ACTION_TYPES.EQUIP_ITEM] = function(uid, params)
         params and params.slot
     )
     if not ok then
-        return { success = false, reason = err }
+        return { success = false, reason = err, seq = params and params.seq,
+            heroId = params and params.heroId, slot = params and params.slot }
     end
     return {
         success         = true,

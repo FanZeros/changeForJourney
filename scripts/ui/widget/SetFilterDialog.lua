@@ -9,6 +9,7 @@ local DarkIcon = require("core.DarkIcon")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local BF = require("systems.ButtonFeedback")
 local I18n = require("core.I18n")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 local SetFilterDialog = {}
 local text = DrawUtil.drawTextStroke
@@ -151,22 +152,19 @@ function SetFilterDialog.draw(vg)
         nvgRoundedRect(vg, ROW.x + 24, cy - ROW.h * 0.5 + 6, ROW.w - 48, ROW.h - 12, 12)
         nvgFillColor(vg, nvgRGBA(255, 244, 214, checked and 26 or 12))
         nvgFill(vg)
-        -- 套装色圆点（无套装=空心灰圈）
-        nvgBeginPath(vg)
-        nvgCircle(vg, DOT.cx + 24, cy, DOT.r)
-        if row.color then
-            nvgFillColor(vg, nvgRGBA(row.color[1], row.color[2], row.color[3], 255))
-            nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(20, 16, 12, 200))
-        else
-            nvgFillColor(vg, nvgRGBA(90, 84, 74, 255))
+        -- 套装徽记取代色点；无套装或加载失败保持灰圈/配色兜底。
+        if not row.color or not EquipmentSetIcon.draw(vg, row.key, DOT.cx + 24, cy, 58, 1) then
+            nvgBeginPath(vg)
+            nvgCircle(vg, DOT.cx + 24, cy, DOT.r)
+            local color = row.color or { 90, 84, 74 }
+            nvgFillColor(vg, nvgRGBA(color[1], color[2], color[3], 255))
             nvgFill(vg)
             nvgStrokeColor(vg, nvgRGBA(160, 150, 130, 200))
+            nvgStrokeWidth(vg, 2)
+            nvgStroke(vg)
         end
-        nvgStrokeWidth(vg, 2)
-        nvgStroke(vg)
         -- 名称
-        text(vg, NAME_X + 24, cy, row.name, 36, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        text(vg, NAME_X + 34, cy, row.name, 36, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
             row.color and row.color[1] or 181, row.color and row.color[2] or 166,
             row.color and row.color[3] or 143, 3)
         -- 勾选框

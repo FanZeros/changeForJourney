@@ -1110,15 +1110,18 @@ function EquipmentSystem.ensureAffixValue(affix, equip)
     if not affix then return end
     local affixId = tonumber(affix.affixId) or affix.affixId
     local tplAffix = affixId and getAffixById()[affixId] or nil
-    -- 魔化词条：强制回正，清除历史错误写入的 C~S 品质增幅
+    -- 魔化词条：修正旧档品质增幅，但保留新转换实例已经确定的数值。
     if AffixConfig.isCorruptAffix(affix) or (tplAffix and AffixConfig.isCorruptAffix(tplAffix)) then
         tplAffix = tplAffix or getAffixById()[affixId]
         if tplAffix then
+            local numeric = EquipmentSystem.normalizeAffixNumericValue(affix.value)
+            local convertedValue = tonumber(affix.quality) == 0 and numeric
+                and numeric > 0 and numeric == numeric and numeric < math.huge
             affix.affixId = tonumber(affix.affixId) or affix.affixId
             affix.key = tplAffix.key
             affix.name = tplAffix.name
             affix.quality = 0
-            affix.value = EquipmentSystem.calcCorruptAffixValue(tplAffix, equip)
+            affix.value = convertedValue and numeric or EquipmentSystem.calcCorruptAffixValue(tplAffix, equip)
         end
         return
     end
@@ -1185,6 +1188,18 @@ function EquipmentSystem.normalizeCorruptRevert(equip)
     rev.affixCount = math.max(0, math.floor(tonumber(rev.affixCount) or 0))
     if not rev.patches then
         rev.patches = {}
+    end
+    -- 带 layer 的混合表经 JSON 编解码后，数字索引会成为字符串键。
+    for _, patch in ipairs(rev.patches) do
+        for i = 1, 3 do
+            local key = tostring(i)
+            if patch[i] == nil and patch[key] ~= nil then
+                patch[i] = patch[key]
+            end
+            patch[key] = nil
+        end
+        if patch[2] ~= nil then patch[2] = tonumber(patch[2]) or patch[2] end
+        if patch.layer ~= nil then patch.layer = tonumber(patch.layer) or patch.layer end
     end
 end
 

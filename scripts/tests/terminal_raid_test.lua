@@ -241,16 +241,22 @@ local function testCompleteTriTerminal()
     BattleScene.setOnFirstClear = oldSetOnFirstClear
 end
 
-testRaidPoolBasics()
-testDriverRaidBranches()
-testAllTeamsDefeated()
-testTerminalStartSingleBoss()
-testCompleteTriTerminal()
-
-if #failures > 0 then
-    print(string.format("[terminal_raid_test] FAILURES=%d", #failures))
-    for _, f in ipairs(failures) do print("  - " .. f) end
-else
-    print("[terminal_raid_test] ALL PASS")
+function Start()
+    local ok, err = pcall(function()
+        testRaidPoolBasics()
+        testDriverRaidBranches()
+        testAllTeamsDefeated()
+        testTerminalStartSingleBoss()
+        testCompleteTriTerminal()
+    end)
+    if not ok then
+        check(false, "测试抛异常: " .. tostring(err))
+    end
+    if #failures > 0 then
+        print(string.format("[terminal_raid_test] FAILURES=%d", #failures))
+        for _, f in ipairs(failures) do print("  - " .. f) end
+    else
+        print("[terminal_raid_test] ALL PASS")
+    end
+    engine:Exit()
 end
-engine:Exit()

@@ -1,0 +1,66 @@
+-- 配装真实模块集成冒烟：初始化角色/仓库、实际读写协议保持不参与预览。
+local Dispatcher = require("runtime.ClientDispatcher")
+local Store = require("core.PlayerStore")
+local Eq = require("systems.EquipmentSystem")
+local CP = require("ui.character.panel.CharacterPanel")
+local Detail = require("ui.character.detail.CharacterDetail")
+local Backpack = require("ui.backpack.BackpackPanel")
+local ED = require("ui.character.equip.EquipmentDetail")
+local EquipPanel = require("ui.character.detail.CharacterDetailEquip")
+local Preview = require("ui.character.detail.EquipmentPreview")
+
+function Start()
+    local ok, err = pcall(function()
+        Store.Init()
+        local heroes = { roster = { [1] = { level = 60, exp = 0, shards = 0, awakening = {}, extraTalent = {} } }, deployed = { 1 } }
+        local equipment = { inventory = {}, equipped = { [1] = {} }, nextSeq = 4 }
+        equipment.inventory["1"] = Eq.generate("W1", 1, 1)
+        equipment.inventory["2"] = Eq.generate("W7", 1, 3)
+        equipment.inventory["3"] = Eq.generate("O1", 1, 1)
+        equipment.equipped[1] = { weapon = 1, offhand = 3 }
+        Dispatcher.handleStateUpdate(cjson.encode({ modules = { heroes = heroes, equipment = equipment,
+            artifacts = { bag = {} }, session = { introCompleted = true, claimedScenarios = { ["1"] = true } } } }))
+        local vg = nvgCreate(1)
+        assert(vg, "NanoVG 上下文创建失败")
+        nvgCreateFont(vg, "sans", "Fonts/NotoSansCJKkr-Bold.otf")
+        CP.init(vg)
+        Backpack.init(vg)
+        Detail.open(1, "equip")
+        assert(Backpack.isOpen() and Backpack.isLeftMode(), "配装入口未自动开启左仓库")
+        Detail.handleEquipmentSlotTap(540, 185)
+        assert(Backpack.getEquipmentSlotFilter() == "helmet", "头盔筛选未同步")
+        Detail.clearEquipmentSlot()
+        assert(Backpack.getEquipmentSlotFilter() == nil, "取消部位不同步")
+        ED.open(2, nil, nil, true, "backpack", 500, 900)
+        ED.pin()
+        assert(ED.getSelection().seq == "2" and ED.getSelection().pinned, "钉住候选快照丢失")
+        local data = Preview.build(1, 60, 2)
+        assert(data.preview and not data.error, "真实模板试穿被拒绝")
+        assert(Dispatcher.get("equipment").equipped[1].weapon == 1, "预览意外穿戴装备")
+        nvgBeginFrame(vg, 1080, 2400, 1)
+        Detail.draw(vg)
+        EquipPanel.drawSetCodex(vg)
+        nvgEndFrame(vg)
+        assert(EquipPanel.peekItemAt(150, 1304) == nil, "隐藏网格仍可命中")
+        Detail.handleDragBegin(80, 1800)
+        Detail.handleDragMove(80, 1720)
+        Detail.handleDragEnd(80, 1720)
+        Detail.handleScroll(-1, 80, 1800)
+        local runtimeTime = time
+        time = { elapsedTime = runtimeTime.elapsedTime }
+        Detail.handleInput(255, 2308)
+        time.elapsedTime = time.elapsedTime + 1
+        Backpack.update(1)
+        assert(not Backpack.isOpen(), "离开配装未隐藏自动仓库")
+        Backpack.open("left")
+        Detail.open(1, "equip")
+        Detail.forceClose()
+        Backpack.update(1)
+        assert(Backpack.isOpen(), "手动仓库被配装离开误关闭")
+        time = runtimeTime
+        nvgDelete(vg)
+    end)
+    if ok then print("[equipment_workspace_smoke_test] ALL PASS")
+    else print("[equipment_workspace_smoke_test] FAIL: " .. tostring(err)) end
+    engine:Exit()
+end

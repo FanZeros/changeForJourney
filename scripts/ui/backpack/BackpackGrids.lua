@@ -9,6 +9,7 @@ local NumberUtil      = require("core.NumberUtil")
 local PlayerStore     = require("core.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
 local EquipmentWearability = require("ui.character.detail.EquipmentWearability")
+local AdvancementConfig = require("config.AdvancementConfig")
 local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
 local HeroFrame = require("ui.widget.HeroFrame")
@@ -56,18 +57,25 @@ function M.bind(deps)
 
         local list = {}
         local slotFilter, filterHeroId = getEquipmentSlotFilter()
-        -- hero 非 nil 表示配装上下文；即使取消部位到全部，仍只显示自然槽位可穿的装备。
-        -- 每次查询重新读等级/主副手，保证升级或换装后绘制与命中同步，不缓存过期结果。
+        -- 可穿戴状态只决定灰显，不再过滤掉装备；实际穿戴仍由 applyEquip 校验。
+        local heroes = filterHeroId ~= nil and PlayerStore.Get("heroes") or nil
+        local hero = heroes and heroes.roster
+            and (heroes.roster[filterHeroId] or heroes.roster[tostring(filterHeroId)])
+        local dualMode = AdvancementConfig.getDualWieldMode(hero and hero.advBranch)
         local canEquip = filterHeroId ~= nil and EquipmentWearability.createChecker(
-            equipData, filterHeroId, PlayerStore.Get("heroes")) or nil
+            equipData, filterHeroId, heroes) or nil
         for seqStr, equip in pairs(equipData.inventory) do
             local tpl = EquipmentConfig.ITEMS[equip.templateId]
             local naturalSlot, equipType, grip, level = EquipmentWearability.getFields(equip)
             local quality = (equip and (equip.quality or (tpl and tpl.quality))) or 1
             local slotOk = not slotFilter or naturalSlot == slotFilter
-            if canEquip then slotOk = canEquip(seqStr, slotFilter) end
-            -- 绘制/点击/hover/peek/拖拽共用此真源，品质、套装、可穿戴筛选必须 AND。
+            if slotFilter == "offhand" and dualMode and naturalSlot == "weapon" and grip == "onehand" then
+                slotOk = true
+            end
+            -- 部位、品质与套装决定列表；不能穿的保留在同一绘制/点击/hover/peek真源内。
             if tpl and qualityChecked(quality) and setChecked(equip.templateId) and slotOk then
+                local canWear, cannotEquipReason = true, nil
+                if canEquip then canWear, cannotEquipReason = canEquip(seqStr, slotFilter) end
                 list[#list + 1] = {
                     seq = tonumber(seqStr) or 0,
                     templateId = equip.templateId,
@@ -80,6 +88,8 @@ function M.bind(deps)
                     enhanceLevel = equip.enhanceLevel or 0,
                     equippedByHeroId = equippedByHero[tostring(seqStr)] or nil,
                     locked = equip.locked or nil,
+                    canWear = canWear,
+                    cannotEquipReason = cannotEquipReason,
                 }
             end
         end
@@ -204,6 +214,15 @@ function M.bind(deps)
                         lockY = cy - GRID.CELL_SIZE * 0.5 + lockSize * 0.5 + 4
                     end
                     DrawUtil.drawImageCentered(vg, getImgLock(), lockX, lockY, lockSize, lockSize, 1.0)
+                end
+
+                -- 最后覆盖整格，品质、图标和角标一起灰显，但仍可查看详情。
+                if equip.canWear == false then
+                    nvgBeginPath(vg)
+                    nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
+                        GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS + 6)
+                    nvgFillColor(vg, nvgRGBA(38, 38, 38, 175))
+                    nvgFill(vg)
                 end
             else
                 nvgBeginPath(vg)

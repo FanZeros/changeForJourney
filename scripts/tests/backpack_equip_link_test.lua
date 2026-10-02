@@ -1,5 +1,5 @@
--- Mock 回归：仓库持有/配装筛选/锻炉交接，无需真实绘图或存档。
--- .cli/UrhoXRuntime scripts/tests/backpack_equip_link_test.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless
+-- Mock 回归：仓库持有/部位筛选/不可穿灰显/锻炉交接，无需真实绘图或存档。
+-- .cli/UrhoXRuntime tests/backpack_equip_link_test.lua -tapcode_dir=. -tool_mode -graphicsheadless
 local passes, failures = 0, 0
 local function check(ok, label)
     if ok then passes = passes + 1; print("[PASS] " .. label)
@@ -170,19 +170,22 @@ local Store = require("core.PlayerStore")
 local EC = require("config.EquipmentConfig")
 local ES = require("systems.EquipmentSystem")
 local HC = require("config.HeroConfig")
+local AC = require("config.AdvancementConfig")
 local Wearability = require("ui.character.detail.EquipmentWearability")
 local fake = { inventory = {}, equipped = {} }
+---@type table
 local heroes = { roster = {} }
 Store.Get = function(key) if key == "equipment" then return fake elseif key == "heroes" then return heroes end end
 local filterSlot, filterHero, quality, setTemplate = nil, nil, nil, nil
 local gridState = { open = true, tab = "equip", scrollY = 0 }
+local drawingHeroIcons, drawingLock = {}, -1
 local Grids = require("ui.backpack.BackpackGrids")
-local grids = Grids.bind({ GRID = GRID, CELL_COL_CX = cells, DESIGN_W = 1080,
+local grids = Grids.bind({ GRID = GRID, CELL_COL_CX = cells, DESIGN_W = 1080, DrawUtil = Draw,
     state = gridState, ITEM_DEFS = {},
     qualityChecked = function(q) return not quality or q == quality end,
     setChecked = function(tid) return not setTemplate or tid == setTemplate end,
     getEquipmentSlotFilter = function() return filterSlot, filterHero end,
-    getImgHeroIcons = function() return {} end, getImgLock = function() return -1 end,
+    getImgHeroIcons = function() return drawingHeroIcons end, getImgLock = function() return drawingLock end,
     calcScrollMax = function() return 0 end, clampScroll = function() end,
 })
 
@@ -220,9 +223,16 @@ local function equipProbe(source, seq, heroId)
     end
     return probe
 end
-local function contains(seq)
-    for _, equip in ipairs(grids.getEquipList()) do if equip.seq == seq then return true end end
-    return false
+local function listed(seq)
+    for _, equip in ipairs(grids.getEquipList()) do if equip.seq == seq then return equip end end
+    return nil
+end
+local function contains(seq) return listed(seq) ~= nil end
+local function hasWearability(seq, expected)
+    local equip = listed(seq)
+    if not equip or equip.canWear ~= expected then return false end
+    if expected then return equip.cannotEquipReason == nil end
+    return type(equip.cannotEquipReason) == "string" and equip.cannotEquipReason ~= ""
 end
 local seqByTemplate = {}
 local function context(heroId, slot, branch, main, off, level)
@@ -251,38 +261,56 @@ local function runFilter()
         "fixture includes exact templates from applyEquip regressions")
 
     context(1, nil, nil, nil, nil, 84)
-    check(#grids.getEquipList() == 0, "below equipment level excludes all even with nil slot")
+    local belowList = grids.getEquipList()
+    local allBelow = #belowList == seq
+    for _, equip in ipairs(belowList) do
+        if equip.canWear ~= false or type(equip.cannotEquipReason) ~= "string"
+            or not equip.cannotEquipReason:find("角色等级不足", 1, true) then allBelow = false end
+    end
+    check(allBelow, "below equipment level retains every item with level reason and grey flag")
+    check(hasWearability(sword, false), "legal sword is grey before reaching required level")
     heroes.roster["1"].level = 85
-    check(contains(sword) and not contains(seqByTemplate.W31), "exact level accepted, wrong-class weapon excluded")
-    check(contains(seqByTemplate.A31) and not contains(seqByTemplate.A55), "heavy armor legal, cloth armor illegal")
-    check(contains(shield) and not contains(tome), "ordinary offhand respects hero offhand types")
+    check(hasWearability(sword, true) and hasWearability(seqByTemplate.W31, false),
+        "level upgrade refreshes legal sword to true, wrong-class weapon remains listed grey")
+    check(hasWearability(seqByTemplate.A31, true) and hasWearability(seqByTemplate.A55, false),
+        "heavy armor normal, cloth armor retained grey")
+    check(hasWearability(shield, true) and hasWearability(tome, false),
+        "ordinary offhand respects hero types through grey flag, not removal")
     filterSlot = "helmet"
-    for _, equip in ipairs(grids.getEquipList()) do check(equip.slot == "helmet", "helmet context has only wearable helmets") end
+    for _, equip in ipairs(grids.getEquipList()) do check(equip.slot == "helmet", "helmet context structurally keeps only helmets") end
     context(2, "armor", nil)
-    check(contains(seqByTemplate.A55) and not contains(seqByTemplate.A31), "mage cloth armor legal, heavy armor illegal")
+    check(hasWearability(seqByTemplate.A55, true) and hasWearability(seqByTemplate.A31, false),
+        "mage cloth armor normal, heavy armor retained grey")
     context(1, "weapon", nil)
-    check(contains(sword) and contains(greatsword) and not contains(tome), "weapon context excludes ordinary offhands")
+    check(hasWearability(sword, true) and hasWearability(greatsword, true) and not contains(tome)
+        and hasWearability(seqByTemplate.W31, false), "weapon structure excludes ordinary offhand, retains wrong-class weapons grey")
     context(1, "offhand", nil, greatsword)
-    check(contains(shield) and not contains(sword), "ordinary offhand can replace twohand main, nondual weapon cannot")
+    check(hasWearability(shield, true) and hasWearability(tome, false) and not contains(sword),
+        "nondual offhand is ordinary offhand only, including wrong-class grey items")
 
     context(18, "offhand", same, nil)
-    check(not contains(rapier) and not contains(seqByTemplate.O1), "same dual without main rejects weapon and ordinary offhand")
+    check(hasWearability(rapier, false) and hasWearability(seqByTemplate.O1, false),
+        "same dual without main retains both weapon and ordinary offhand grey")
     context(18, nil, same, nil)
-    check(contains(rapier), "nil slot uses natural main: no-main same dual still accepts legal weapon")
+    check(hasWearability(rapier, true) and #grids.getEquipList() == seq,
+        "nil slot retains all inventory, legal same-dual weapon uses natural main")
     context(18, "offhand", same, rapier)
-    check(contains(rapier) and not contains(dagger) and not contains(seqByTemplate.O1),
-        "same dual requires same type and never accepts ordinary offhand")
+    check(hasWearability(rapier, true) and hasWearability(dagger, false) and hasWearability(seqByTemplate.O1, false),
+        "same dual retains mismatched onehand and ordinary offhand grey")
     context(18, "weapon", same, rapier, rapier)
-    check(contains(rapier) and not contains(dagger), "same dual main replacement checks existing offhand type")
+    check(hasWearability(rapier, true) and hasWearability(dagger, false),
+        "same dual main replacement retains wrong existing-offhand type grey")
     context(1, "offhand", different, sword)
-    check(contains(axe) and not contains(sword) and not contains(shield) and not contains(seqByTemplate.W31),
-        "different dual offhand checks type, class, grip and rejects ordinary offhand")
+    check(hasWearability(axe, true) and hasWearability(sword, false) and hasWearability(shield, false)
+        and hasWearability(seqByTemplate.W31, false) and not contains(greatsword),
+        "different dual offhand adds all onehands, wrong type/class and ordinary offhand grey, twohand excluded")
     context(1, "weapon", different, sword, axe)
-    check(contains(sword) and not contains(axe) and contains(greatsword),
-        "different dual main replacement checks offhand, twohand replacement remains legal")
+    check(hasWearability(sword, true) and hasWearability(axe, false) and hasWearability(greatsword, true),
+        "different dual main replacement retains mismatched onehand grey, twohand stays legal")
     context(1, nil, different, sword, axe)
-    check(contains(sword) and not contains(axe) and not contains(shield) and contains(greatsword),
-        "nil slot retains full natural-slot wearability, not just slot or class")
+    check(#grids.getEquipList() == seq and hasWearability(sword, true) and hasWearability(axe, false)
+        and hasWearability(shield, false) and hasWearability(greatsword, true),
+        "nil slot retains full inventory and marks natural-slot incompatibility grey")
 
     -- 全模板 × 上下文 × 六个目标槽 + natural，对照真实 applyEquip 的返回值和错误。
     -- 仅测试 oracle 深拷贝；生产预检没有 inventory 拷贝、applyEquip 或 print 替换。
@@ -311,6 +339,8 @@ local function runFilter()
         end
         local before, beforeHeroes = deepCopy(fake), deepCopy(heroes)
         local checker = Wearability.createChecker(fake, c.hero, heroes)
+        ---@type table<string, table<number, {ok:boolean, err:string|nil}>>
+        local expectedBySlot = {}
         for eqSeq, equip in pairs(fake.inventory) do
             local natural = EC.ITEMS[equip.templateId].slot
             for i = 1, #EC.SLOTS + 1 do
@@ -318,6 +348,9 @@ local function runFilter()
                 local previewOk, previewErr = checker(eqSeq, slot)
                 local probe = equipProbe(fake, eqSeq, c.hero)
                 local actualOk, actualErr = ES.applyEquip(probe, eqSeq, c.hero, slot or natural, heroes)
+                local slotKey = slot or "natural"
+                expectedBySlot[slotKey] = expectedBySlot[slotKey] or {}
+                expectedBySlot[slotKey][tonumber(eqSeq)] = { ok = actualOk, err = actualErr }
                 comparisons = comparisons + 1
                 if previewOk ~= actualOk or previewErr ~= actualErr then
                     mismatches = mismatches + 1
@@ -326,16 +359,34 @@ local function runFilter()
                 end
             end
         end
-        local expected = {}
-        for eqSeq, equip in pairs(before.inventory) do
-            local ok = ES.applyEquip(equipProbe(before, eqSeq, c.hero), eqSeq, c.hero, EC.ITEMS[equip.templateId].slot, heroes)
-            if ok then expected[tonumber(eqSeq)] = true end
+        -- 现在名单只做部位结构筛选；真实 applyEquip 结果必须反映为每项标记与原因。
+        local allListsAgree, listComparisons = true, 0
+        local dualMode = AC.getDualWieldMode(c.branch)
+        for i = 1, #EC.SLOTS + 1 do
+            filterSlot = EC.SLOTS[i]
+            local expected = expectedBySlot[filterSlot or "natural"]
+            local structurallyExpected, n = {}, 0
+            for eqSeq, equip in pairs(before.inventory) do
+                local tpl = EC.ITEMS[equip.templateId]
+                local slotOk = not filterSlot or tpl.slot == filterSlot
+                    or (filterSlot == "offhand" and dualMode and tpl.slot == "weapon" and tpl.grip == "onehand")
+                if slotOk then structurallyExpected[tonumber(eqSeq)] = true; n = n + 1 end
+            end
+            local list, seen = grids.getEquipList(), {}
+            if #list ~= n then allListsAgree = false end
+            for _, equip in ipairs(list) do
+                local result = expected[equip.seq]
+                listComparisons = listComparisons + 1
+                if not structurallyExpected[equip.seq] or seen[equip.seq] or not result
+                    or equip.canWear ~= result.ok or equip.cannotEquipReason ~= result.err then
+                    allListsAgree = false
+                end
+                seen[equip.seq] = true
+            end
+            for id in pairs(structurallyExpected) do if not seen[id] then allListsAgree = false end end
         end
-        local list = grids.getEquipList()
-        local agrees, n = true, 0
-        for id in pairs(expected) do n = n + 1 end
-        for _, equip in ipairs(list) do if not expected[equip.seq] then agrees = false end end
-        check(agrees and #list == n, "nil-slot list equals applyEquip natural set, hero=" .. c.hero)
+        check(allListsAgree, "all-slot lists retain structural set and match applyEquip flags/reasons, hero="
+            .. c.hero .. " items=" .. listComparisons)
         check(deepEqual(fake, before) and deepEqual(heroes, beforeHeroes),
             "all preview/list calls leave nested source unchanged, hero=" .. c.hero)
     end
@@ -349,19 +400,34 @@ local function runFilter()
     local keyChecker = Wearability.createChecker(fake, "1", heroes)
     local keyOk, keyErr = keyChecker(tostring(axe), "offhand")
     local actualKeyOk, actualKeyErr = ES.applyEquip(equipProbe(fake, axe, 1), axe, 1, "offhand", heroes)
-    check(keyOk == actualKeyOk and keyErr == actualKeyErr and contains(axe),
+    check(keyOk == actualKeyOk and keyErr == actualKeyErr and hasWearability(axe, true),
         "numeric inventory, string main seq and string hero id match actual applyEquip")
     check(deepEqual(fake, keyedBefore), "mixed-key lookup never hydrates source")
 
     context(1, "armor", nil)
     quality, setTemplate = 1, "A31"
-    check(#grids.getEquipList() == 0, "quality AND template filter cannot override wearability")
+    check(#grids.getEquipList() == 0, "quality AND template still filter candidates structurally")
     quality = 2
-    check(#grids.getEquipList() == 1 and contains(seqByTemplate.A31), "quality AND set AND wearable armor")
+    check(#grids.getEquipList() == 1 and hasWearability(seqByTemplate.A31, true), "quality AND set AND armor includes wearable item")
     setTemplate = "A55"
-    check(#grids.getEquipList() == 0, "manual set choice never reintroduces unwearable equipment")
+    check(#grids.getEquipList() == 1 and hasWearability(seqByTemplate.A55, false),
+        "quality AND set AND armor keeps selected unwearable item grey")
+    filterSlot = "helmet"
+    check(#grids.getEquipList() == 0, "slot AND quality AND set rejects wrong natural slot even if unwearable")
+    filterSlot = "armor"; quality = 1
+    check(#grids.getEquipList() == 0, "quality can hide grey candidate without altering its wearability")
     quality, setTemplate, filterSlot, filterHero = nil, nil, nil, nil
-    check(#grids.getEquipList() == seq, "exit equipment context restores complete ordinary warehouse")
+    local ordinaryList, allNormal = grids.getEquipList(), true
+    for _, equip in ipairs(ordinaryList) do
+        if equip.canWear ~= true or equip.cannotEquipReason ~= nil then allNormal = false end
+    end
+    check(#ordinaryList == seq and allNormal, "manual warehouse without hero retains complete inventory with no grey flags")
+    quality, setTemplate = 2, "A55"
+    check(#grids.getEquipList() == 1 and hasWearability(seqByTemplate.A55, true),
+        "manual warehouse still honors quality/set but ignores class compatibility")
+    quality, setTemplate = 1, nil
+    check(#grids.getEquipList() == 0, "manual no-hero quality filter remains active")
+    quality, setTemplate = nil, nil
     check(HC.get(1) ~= nil, "uses real hero configuration")
 end
 
@@ -383,22 +449,101 @@ local function runSourceParity()
     check(detailState.seq == list[1].seq and Detail.isOpen(), "hover resolves same filtered item")
     Detail.close()
     check(pointer.cellAt(cells[2], y) == nil and pointer.peekEquipAt(cells[2], y) == nil,
-        "filtered-out cell has no click/peek target")
+        "structurally filtered-out cell has no click/peek target")
 
-    local painted = {}
+    -- native nvgRGBA 保留：只在 fillColor stub 读取 NVGcolor，避免污染全工作区颜色类型。
+    local painted, events, masks = {}, {}, {}
+    local pathRect = {}
+    local greyFill = false
+    local function record(kind) events[#events + 1] = kind end
     local iconCache = require("ui.widget.ImageCache")
-    iconCache.getEquipIcon = function(tid) painted[#painted + 1] = tid; return 1 end
+    iconCache.getEquipIcon = function(tid) painted[#painted + 1] = tid; record("icon"); return 1 end
     local dark = require("core.DarkIcon")
-    dark.drawQualityBg, dark.drawIconDark = function() end, function() end
+    dark.drawQualityBg = function() record("quality") end
+    dark.drawIconDark = function() record("iconDraw") end
+    Draw.drawImageCentered = function() record("lock") end
+    local heroFrame = require("ui.widget.HeroFrame")
+    heroFrame.draw = function() record("ownerBadge") end
     package.preload["systems.TutorialManager"] = function() return { isActive = function() return false end } end
-    -- 不覆盖 nvgRGBA，以免测试桩污染整个工作区 NVGcolor 推断。
     nvgSave, nvgRestore, nvgScissor, nvgTranslate = function() end, function() end, function() end, function() end
-    nvgBeginPath, nvgRoundedRect, nvgFill, nvgStroke = function() end, function() end, function() end, function() end
-    nvgFillColor, nvgStrokeColor, nvgStrokeWidth = function() end, function() end, function() end
-    nvgFontFace, nvgFontSize, nvgTextAlign, nvgText = function() end, function() end, function() end, function() end
-    grids.drawEquipGrid({})
-    check(#painted == 1 and painted[1] == list[1].templateId, "draw uses same filtered item as click/hover/peek")
+    nvgBeginPath = function() pathRect = {} end
+    nvgRoundedRect = function(_, rx, ry, w, h, radius)
+        pathRect = { x = rx, y = ry, w = w, h = h, radius = radius }
+    end
+    ---@param color NVGcolor
+    nvgFillColor = function(_, color)
+        greyFill = math.abs(color.r * 255 - 38) < 0.01 and math.abs(color.g * 255 - 38) < 0.01
+            and math.abs(color.b * 255 - 38) < 0.01 and math.abs(color.a * 255 - 175) < 0.01
+    end
+    nvgFill = function()
+        if greyFill then record("greyMask"); masks[#masks + 1] = { rect = pathRect, eventIndex = #events } end
+    end
+    nvgStroke, nvgStrokeColor, nvgStrokeWidth = function() end, function() end, function() end
+    nvgFontFace, nvgFontSize, nvgTextAlign = function() end, function() end, function() end
+    nvgText = function() record("text") end
+    local function drawOnce()
+        painted, events, masks = {}, {}, {}
+        pathRect, greyFill = {}, false
+        grids.drawEquipGrid({})
+    end
+    drawOnce()
+    check(#painted == 1 and painted[1] == list[1].templateId and #masks == 0,
+        "wearable A31 draw matches click/hover/peek and has no grey overlay")
     check(deepEqual(fake, before), "draw/click/hover/peek do not hydrate or change source")
+
+    setTemplate = "A55"
+    list = grids.getEquipList()
+    cell, peek = pointer.cellAt(x, y), pointer.peekEquipAt(x, y)
+    check(#list == 1 and cell and cell.canWear == false and peek and peek.seq == list[1].seq,
+        "unwearable A55 remains cellAt/peek target with grey flag")
+    pointer.openCandidate(cell, x, y, true)
+    check(detailState.seq == list[1].seq and Detail.isPinned(), "unwearable grey item can open and pin detail")
+    Detail.close()
+    pointer.handleHover(x, y); clock.elapsedTime = clock.elapsedTime + 1; pointer.handleHover(x, y)
+    check(detailState.seq == list[1].seq and Detail.isOpen(), "unwearable grey item can hover-open detail")
+    Detail.close()
+    local actualOk, actualErr = ES.applyEquip(equipProbe(fake, list[1].seq, 1), list[1].seq, 1, "armor", heroes)
+    check(actualOk == false and actualErr == list[1].cannotEquipReason,
+        "grey display never relaxes real applyEquip rejection")
+    check(deepEqual(fake, before), "unwearable click/hover/peek and applyEquip probe leave source unchanged")
+
+    -- 人为准备锁、提升角标、归属角标；只读路径仍不得回写此快照。
+    local greySeq = list[1].seq
+    fake.inventory[tostring(greySeq)].locked = true
+    fake.inventory[tostring(greySeq)].enhanceLevel = 5
+    fake.equipped[99].armor = greySeq
+    drawingHeroIcons, drawingLock = { [99] = 1 }, 1
+    before = deepCopy(fake)
+    drawOnce()
+    check(#painted == 1 and painted[1] == "A55" and #masks == 1,
+        "unwearable A55 draws exactly one RGBA(38,38,38,175) grey mask")
+    local mask = masks[1]
+    local rect = mask and mask.rect
+    check(rect and rect.x == x - GRID.CELL_SIZE * 0.5 and rect.y == GRID.FIRST_ROW_TOP
+        and rect.w == GRID.CELL_SIZE and rect.h == GRID.CELL_SIZE and rect.radius == GRID.CELL_RADIUS + 6,
+        "grey mask covers full cell with same rounded corners")
+    local positions = {}
+    for index, event in ipairs(events) do positions[event] = index end
+    if not positions.ownerBadge or not positions.lock then
+        print("[greyMask order] " .. table.concat(events, ","))
+    end
+    check(mask and positions.quality and positions.iconDraw and positions.text and positions.ownerBadge and positions.lock
+        and mask.eventIndex > positions.quality and mask.eventIndex > positions.iconDraw
+        and mask.eventIndex > positions.text and mask.eventIndex > positions.ownerBadge and mask.eventIndex > positions.lock,
+        "full-card grey mask is drawn after icon, level/enhance text, owner badge and lock")
+    check(deepEqual(fake, before), "grey draw never modifies nested equipment source")
+    filterHero = nil
+    drawOnce()
+    check(#painted == 1 and painted[1] == "A55" and hasWearability(greySeq, true) and #masks == 0,
+        "manual no-hero A55 draw has no grey mask, even with lock and owner badge")
+    filterHero, setTemplate = 1, "A31"
+    heroes.roster["1"].level = 84
+    drawOnce()
+    check(hasWearability(seqByTemplate.A31, false) and #masks == 1, "level-gated A31 draws grey before upgrade")
+    heroes.roster["1"].level = 85
+    drawOnce()
+    check(hasWearability(seqByTemplate.A31, true) and #masks == 0, "upgrade refresh removes A31 grey mask without reopening")
+    check(deepEqual(fake, before), "manual and upgrade redraws leave inventory unchanged")
 end
 
 function Start()

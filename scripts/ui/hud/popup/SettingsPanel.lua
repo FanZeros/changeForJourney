@@ -31,6 +31,7 @@ local state = {
     muted = false,
     showDamageNumbers = true,
     showEffects = true,
+    showSetIcons = true,  -- 装备格左下角套装徽记
     -- 滑块拖拽
     draggingSlider = nil,  -- nil / "bgm" / "sfx"
 }
@@ -129,6 +130,7 @@ local function saveSettings()
             muted = state.muted == true,
             showDamageNumbers = state.showDamageNumbers ~= false,
             showEffects = state.showEffects ~= false,
+            showSetIcons = state.showSetIcons ~= false,
             language = I18n.get(),
         })
         if ok then
@@ -162,6 +164,7 @@ local function loadSettings()
         if type(data.showEffects) == "boolean" then
             state.showEffects = data.showEffects
         end
+        if type(data.showSetIcons) == "boolean" then state.showSetIcons = data.showSetIcons end
         if type(data.language) == "string" then
             I18n.set(data.language)
         end
@@ -254,6 +257,16 @@ end
 
 function SettingsPanel.isDamageNumbersEnabled()
     return state.showDamageNumbers ~= false
+end
+
+function SettingsPanel.isSetIconsEnabled()
+    return state.showSetIcons ~= false
+end
+
+function SettingsPanel.setSetIconsEnabled(enabled)
+    state.showSetIcons = enabled == true
+    saveSettings()
+    print("[SettingsPanel] 套装角标显示：" .. tostring(state.showSetIcons))
 end
 
 function SettingsPanel.isEffectsEnabled()

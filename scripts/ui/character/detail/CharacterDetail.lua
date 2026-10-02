@@ -85,7 +85,9 @@ local detailState = {
     closeTime     = 0,        -- 关闭时刻
     tabFrom       = "attr",   -- Tab 切换前的页签
     tabSwitchTime = 0,        -- Tab 切换时刻
-    equipSlot     = "weapon", -- 配装页当前选中槽位
+    equipSlot     = nil,      -- 未选部位时仓库显示全部装备
+    equipmentLinkActive = false,
+    equipmentLinkHero = nil,
     sideDragging  = false,    -- 配装页左右侧栏拖拽
     -- 属性区域滚动
     attrScrollY   = 0,        -- 像素滚动偏移（>0 表示内容上移）
@@ -327,6 +329,33 @@ function CharacterDetail.setContext(ctx)
     AwakeningPanel.setOwnedDataGetter(ctx.getOwnedData)
 end
 
+--- 配装仓库按进入/离开边沿申请，不在每帧重开；避免玩家关掉后被强制弹回。
+--- 懒加载仓库，绕开 BackpackPanel -> CharacterPanel -> CharacterDetail 的依赖环。
+local function syncEquipmentWarehouse()
+    local active = detailState.open and not detailState.closing and detailState.tab == "equip"
+    local warehouse = require("ui.backpack.BackpackPanel")
+    if active and not detailState.equipmentLinkActive then
+        detailState.equipmentLinkActive = true
+        detailState.equipmentLinkHero = detailState.heroId
+        detailState.equipSlot = nil
+        CharacterDetail._EquipPanel.reset(detailState.heroId, nil)
+        warehouse.acquireForEquipment(detailState.heroId, nil)
+    elseif not active and detailState.equipmentLinkActive then
+        detailState.equipmentLinkActive = false
+        detailState.equipmentLinkHero = nil
+        detailState.equipSlot = nil
+        detailState.equipDragging = false
+        detailState.sideDragging = false
+        CharacterDetail._EquipPanel.reset(nil, nil)
+        warehouse.releaseForEquipment()
+    elseif active and detailState.equipmentLinkHero ~= detailState.heroId then
+        detailState.equipmentLinkHero = detailState.heroId
+        detailState.equipSlot = nil
+        CharacterDetail._EquipPanel.reset(detailState.heroId, nil)
+        warehouse.setEquipmentSlotFilter(nil, detailState.heroId)
+    end
+end
+
 --- 清空关键词组件的交互状态（弹窗/悬停/热区）
 local function clearKeywordUi()
     if Draw.talentKwText then Draw.talentKwText:clear() end
@@ -356,6 +385,7 @@ function CharacterDetail.open(heroId, tab)
     detailState.attrTip       = nil
     clearKeywordUi()
     AwakeningPanel.reset(heroId)
+    syncEquipmentWarehouse()
     local heroCfg = HC.get(heroId)
     print("[CharacterDetail] 打开角色详情: " .. (heroCfg and heroCfg.name or "?"))
     require("ui.character.hero.HeroScenario").onOpenHero(heroId)
@@ -366,6 +396,7 @@ function CharacterDetail.close()
     if detailState.closing then return end
     detailState.closing = true
     detailState.closeTime = time.elapsedTime
+    syncEquipmentWarehouse()
     local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
     if EquipmentDetail.dismissHover then EquipmentDetail.dismissHover() end
     print("[CharacterDetail] 关闭角色详情（动画）")
@@ -376,6 +407,7 @@ function CharacterDetail.forceClose()
     detailState.open    = false
     detailState.closing = false
     detailState.heroId  = nil
+    syncEquipmentWarehouse()
     print("[CharacterDetail] 强制关闭角色详情（跳过动画）")
 end
 
@@ -432,6 +464,7 @@ function CharacterDetail._switchHero(direction, keepDrag)
     detailState.attrTip       = nil
     clearKeywordUi()
     AwakeningPanel.reset(nextHeroId)
+    syncEquipmentWarehouse()
     print("[CharacterDetail] 箭头切换角色: " .. tostring(detailState.heroId))
     -- 按住连续滑卡时不逐张触发情景，松手落定的那次（keepDrag=false）再播
     if not keepDrag then
@@ -459,12 +492,54 @@ end
 
 ---@return boolean 配装页（tab=="equip"）是否当前可见
 function CharacterDetail.isEquipTab()
-    return detailState.tab == "equip"
+    return detailState.open and not detailState.closing and detailState.tab == "equip"
+end
+
+--- 纯 UI 部位联动：仅在确定是点击后调用，绝不发穿戴 action。
+---@return boolean 命中了装备槽
+function CharacterDetail.handleEquipmentSlotTap(dx, dy)
+    if not CharacterDetail.isEquipTab() then return false end
+    local selectedSlot = nil
+    for _, s in ipairs(DT_SLOTS) do
+        if math.abs(dx - s.cx) <= DT_SLOT_SIZE * 0.5
+            and math.abs(dy - s.cy) <= DT_SLOT_SIZE * 0.5 then
+            selectedSlot = s.slot
+            break
+        end
+    end
+    if detailState.equipSlot ~= selectedSlot then
+        detailState.equipSlot = selectedSlot
+        CharacterDetail._EquipPanel.onSlotChanged(selectedSlot, detailState.heroId)
+        require("ui.backpack.BackpackPanel").setEquipmentSlotFilter(selectedSlot, detailState.heroId)
+    end
+    return selectedSlot ~= nil
+end
+
+--- 取消部位的统一入口，仓库按钮与右栏空白点击共用。
+function CharacterDetail.clearEquipmentSlot()
+    if not CharacterDetail.isEquipTab() then return false end
+    detailState.equipSlot = nil
+    CharacterDetail._EquipPanel.onSlotChanged(nil, detailState.heroId)
+    require("ui.backpack.BackpackPanel").setEquipmentSlotFilter(nil, detailState.heroId)
+    return true
+end
+
+--- 浮选外第一击允许页签导航，但不放行一键装备等实际操作。
+function CharacterDetail.handleNavigationTap(dx, dy)
+    if not detailState.open or detailState.closing then return false end
+    for _, cx in ipairs({ BTN_TAB_ATTR_CX, BTN_TAB_EQUIP_CX, BTN_TAB_CLASS_CX, BTN_TAB_AWAKEN_CX }) do
+        if math.abs(dx - cx) <= BTN_TAB_SLIDER_W * 0.5
+            and math.abs(dy - BTN_TAB_ATTR_CY) <= BTN_TAB_SLIDER_H * 0.5 then
+            return CharacterDetail.handleInput(dx, dy)
+        end
+    end
+    return false
 end
 
 --- 标记战斗力/装备缓存为脏（外部数据变化时由 CharacterPanel.refreshPowerCache 调用）
 function CharacterDetail.markPowerDirty()
     Draw.markPowerDirty()
+    CharacterDetail._EquipPanel.markDirty()
 end
 
 --- 开/关卡面「实战预估」副行（分项计价原型，默认关闭）。
@@ -515,13 +590,13 @@ function CharacterDetail.handleInput(dx, dy)
         return true
     end
 
-    -- 配装页小详情：格子点击优先（单击换一件 / 双击装备），再交给详情面板
-    if CharacterDetail._EquipDetail.isOpen() then
-        if detailState.tab == "equip" and CharacterDetail._EquipPanel then
-            if CharacterDetail._EquipPanel.handleInput(dx, dy, detailState.heroId, detailState) then
-                return true
-            end
-        end
+    -- 配装槽位与取消筛选先处理；详情浮层内部点击由横屏宿主接管。
+    if CharacterDetail.isEquipTab() and CharacterDetail.handleEquipmentSlotTap(dx, dy) then
+        return true
+    end
+    if CharacterDetail._EquipDetail.isOpen()
+        and not CharacterDetail._EquipDetail.isCompactCorner()
+        and CharacterDetail._EquipDetail.containsPoint(dx, dy) then
         return CharacterDetail._EquipDetail.handleInput(dx, dy)
     end
 
@@ -529,20 +604,6 @@ function CharacterDetail.handleInput(dx, dy)
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleInput(dx, dy)
     end
-
-    -- 装备槽位仅配装页可见、可点击
-    if detailState.tab == "equip" then
-    for _, s in ipairs(DT_SLOTS) do
-        if hitTest(dx, dy, s.cx, s.cy, DT_SLOT_SIZE, DT_SLOT_SIZE) then
-            -- 点击装备槽切换当前配装部位
-            detailState.equipSlot = s.slot
-            if CharacterDetail._EquipPanel then
-                CharacterDetail._EquipPanel.onSlotChanged(s.slot, detailState.heroId)
-            end
-            return true
-        end
-    end
-    end  -- if tab == "equip"
 
     -- 批量装备操作仅在配装页显示并响应
     if detailState.tab == "equip"
@@ -600,6 +661,7 @@ function CharacterDetail.handleInput(dx, dy)
             detailState.tabFrom = detailState.tab
             detailState.tabSwitchTime = time.elapsedTime
             detailState.tab = "attr"
+            syncEquipmentWarehouse()
             print("[CharacterDetail] 切换到属性页")
         end
         return true
@@ -612,6 +674,7 @@ function CharacterDetail.handleInput(dx, dy)
             detailState.tabFrom = detailState.tab
             detailState.tabSwitchTime = time.elapsedTime
             detailState.tab = "equip"
+            syncEquipmentWarehouse()
             print("[CharacterDetail] 切换到配装页")
         end
         return true
@@ -624,6 +687,7 @@ function CharacterDetail.handleInput(dx, dy)
             detailState.tabFrom = detailState.tab
             detailState.tabSwitchTime = time.elapsedTime
             detailState.tab = "class"
+            syncEquipmentWarehouse()
             print("[CharacterDetail] 切换到转职页")
         end
         return true
@@ -635,6 +699,7 @@ function CharacterDetail.handleInput(dx, dy)
             detailState.tabFrom = detailState.tab
             detailState.tabSwitchTime = time.elapsedTime
             detailState.tab = "awaken"
+            syncEquipmentWarehouse()
             print("[CharacterDetail] 切换到觉醒页")
         end
         return true
@@ -796,13 +861,14 @@ end
 function CharacterDetail.handleDragBegin(dx, dy)
 
     if not detailState.open or detailState.closing then return true end
-    -- 转职页除角色横滑外不拖拽滚动，避免穿透
-    if CharacterDetail._EquipDetail.isOpen() then
-        if detailState.tab == "equip" and not CharacterDetail._EquipDetail.containsPoint(dx, dy)
-            and CharacterDetail._EquipPanel.beginSideDrag(dx, dy) then
-            detailState.sideDragging = true
-            return true
-        end
+    -- 新配装属性/套装区域独立滚动，不让左栏浮选详情抢走右栏拖拽。
+    if CharacterDetail.isEquipTab() and CharacterDetail._EquipPanel.handleDragBegin(dx, dy) then
+        detailState.equipDragging = true
+        return true
+    end
+    if not CharacterDetail._EquipDetail.isCompactCorner()
+        and CharacterDetail._EquipDetail.isOpen()
+        and CharacterDetail._EquipDetail.containsPoint(dx, dy) then
         return CharacterDetail._EquipDetail.handleDragBegin(dx, dy)
     end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
@@ -810,19 +876,6 @@ function CharacterDetail.handleDragBegin(dx, dy)
     end
     detailState.attrTip = nil  -- 拖拽时关闭气泡
     clearKeywordUi()           -- 拖拽时同步关闭关键词弹窗
-    -- 配装侧栏优先于属性区/格子拖拽，避免侧栏滑动触发其他交互。
-    if detailState.tab == "equip" and CharacterDetail._EquipPanel.beginSideDrag(dx, dy) then
-        detailState.sideDragging = true
-        return true
-    end
-    -- 配装面板：按下格子可滚动，位移够大则改成拖装备
-    if detailState.tab == "equip" and CharacterDetail._EquipPanel then
-        if CharacterDetail._EquipPanel.isInGridArea(dy) then
-            detailState.equipDragging = true
-            CharacterDetail._EquipPanel.beginPointer(dx, dy)
-            return true
-        end
-    end
     if (detailState.tab == "attr" or detailState.tab == "class")
         and dx >= Draw.ARROW_BG_LEFT_CX - 120 and dx <= Draw.ARROW_BG_RIGHT_CX + 120
         and dy >= Draw.ARROW_CY - 230 and dy <= Draw.ARROW_CY + 230 then
@@ -845,6 +898,10 @@ end
 ---@return boolean 是否消费事件
 function CharacterDetail.handleDragMove(dx, dy)
     if not detailState.open or detailState.closing then return true end
+    if detailState.equipDragging then
+        CharacterDetail._EquipPanel.handleDragMove(dx, dy)
+        return true
+    end
     if detailState.sideDragging then
         CharacterDetail._EquipPanel.moveSideDrag(dy)
         return true
@@ -854,17 +911,6 @@ function CharacterDetail.handleDragMove(dx, dy)
     end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleDragMove(dx, dy)
-    end
-    -- 配装面板：拖装备或滚动列表
-    if detailState.equipDragging and CharacterDetail._EquipPanel then
-        local panel = CharacterDetail._EquipPanel
-        if panel.onPointerMove(dx, dy) then
-            return true
-        end
-        local delta = panel.getDragLastY() - dy
-        panel.onDrag(delta)
-        panel.setDragLastY(dy)
-        return true
     end
     if detailState.cardDragX then
         detailState.cardDragMoved = dx - detailState.cardDragX
@@ -913,6 +959,11 @@ function CharacterDetail.handleDragEnd(dx, dy)
         return true
     end
     if not detailState.open then return false end
+    if detailState.equipDragging then
+        detailState.equipDragging = false
+        CharacterDetail._EquipPanel.handleDragEnd(dx, dy)
+        return true
+    end
     if detailState.sideDragging then
         detailState.sideDragging = false
         CharacterDetail._EquipPanel.endSideDrag()
@@ -923,32 +974,6 @@ function CharacterDetail.handleDragEnd(dx, dy)
     end
     if EquipmentBag.isOpen() and not EquipmentBag.shouldBattleOverlay() then
         return EquipmentBag.handleDragEnd(dx, dy)
-    end
-    -- 配装面板：拖到槽位则装备，否则结束滚动
-    if detailState.equipDragging and CharacterDetail._EquipPanel then
-        local panel = CharacterDetail._EquipPanel
-        if panel.isItemDragging() then
-            local dropSlot = nil
-            for _, s in ipairs(DT_SLOTS) do
-                if hitTest(dx, dy, s.cx, s.cy, DT_SLOT_SIZE, DT_SLOT_SIZE) then
-                    dropSlot = s.slot
-                    break
-                end
-            end
-            if dropSlot then
-                panel.equipDragged(detailState.heroId, dropSlot)
-                if CharacterDetail._EquipDetail.isOpen() then
-                    CharacterDetail._EquipDetail.close()
-                end
-            else
-                panel.onDragEnd()
-            end
-            detailState.equipDragging = false
-            return true
-        end
-        detailState.equipDragging = false
-        panel.onDragEnd()
-        return true
     end
     if detailState.attrDragging then
         detailState.attrDragging = false
@@ -964,6 +989,9 @@ end
 ---@param dy number|nil
 function CharacterDetail.handleScroll(wheel, dx, dy)
     if not detailState.open or detailState.closing then return end
+    if CharacterDetail.isEquipTab() and CharacterDetail._EquipPanel.handleSideScroll(wheel, dx, dy) then
+        return
+    end
     if CharacterDetail._EquipDetail.isOpen() then
         if dx == nil or CharacterDetail._EquipDetail.containsPoint(dx, dy) then
             CharacterDetail._EquipDetail.handleScroll(wheel, dx, dy)

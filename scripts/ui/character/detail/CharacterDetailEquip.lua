@@ -208,10 +208,7 @@ end
 
 local function rowAt(dx, dy)
     if not Stats.contains(Stats.LAYOUT.attrs, dx, dy) then return nil end
-    local data = panelState.data
-    local rows = data and data.rows or {}
-    local index = math.floor((dy - Stats.LAYOUT.attrs.y + panelState.scroll.attrs.y) / Stats.LAYOUT.rowH) + 1
-    return rows[index], index
+    return Stats.rowAt(panelState.attrHits, dx, dy)
 end
 
 local function makeTip(row, dx, dy)

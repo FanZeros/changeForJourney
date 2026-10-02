@@ -7,6 +7,7 @@ local AD = require("systems.AttributeDef")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local DrawUtil = require("core.DrawUtil")
 local DetailAttrs = require("ui.character.detail.CharacterDetailAttrs")
+local AttributeView = require("ui.character.detail.CharacterAttributeView")
 
 local M = {}
 local drawTextStroke = DrawUtil.drawTextStroke
@@ -16,12 +17,15 @@ M.LAYOUT = {
     panel = { x = 24, y = 890, w = 1032, h = 1334 },
     titleY = 930,
     status = { x = 54, y = 956, w = 972, h = 54 },
-    attrs = { x = 54, y = 1068, w = 478, h = 620 },
-    radar = { x = 552, y = 1050, w = 474, h = 638, cx = 790, cy = 1384, r = 150, labelR = 190 },
-    sets = { x = 54, y = 1770, w = 972, h = 444 },
-    attrTitleY = 1034,
-    setTitleY = 1734,
-    rowH = 76,
+    attrs = { x = AttributeView.ATTRIBUTE_LAYOUT.x, y = 1050,
+        w = AttributeView.ATTRIBUTE_LAYOUT.w, h = AttributeView.ATTRIBUTE_LAYOUT.h },
+    radar = { x = 550, y = 1050, w = 530, h = 552, cx = 800, cy = 1320,
+        r = AttributeView.RADAR.r, labelR = AttributeView.RADAR.labelR },
+    sets = { x = 54, y = 1700, w = 972, h = 514 },
+    attrTitleY = 1010,
+    setTitleY = 1652,
+    rowH = AttributeView.STYLE.rowH,
+    rowStep = AttributeView.STYLE.rowStep,
 }
 
 local COLOR = {
@@ -56,12 +60,9 @@ end
 
 local function plate(vg, rect)
     nvgBeginPath(vg)
-    nvgRoundedRect(vg, rect.x, rect.y, rect.w, rect.h, 14)
-    nvgFillColor(vg, nvgRGBA(12, 10, 8, 145))
+    nvgRoundedRect(vg, rect.x, rect.y, rect.w, rect.h, AttributeView.STYLE.radius)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
     nvgFill(vg)
-    nvgStrokeWidth(vg, 1.5)
-    nvgStrokeColor(vg, nvgRGBA(196, 160, 90, 75))
-    nvgStroke(vg)
 end
 
 function M.contains(rect, x, y)
@@ -108,76 +109,15 @@ local function scrollbar(vg, rect, scroll, maxScroll)
     nvgFill(vg)
 end
 
-local function formattedValue(row)
-    -- API 的 value 是当前显示格式，保留暴击百分比、攻击秒数与溢出标注。
-    if row.value ~= nil then return tostring(row.value) end
-    if row.currentValue ~= nil then
-        if type(row.currentValue) == "number" then
-            if row.key == "atkInterval" then return string.format("%.2fs", row.currentValue) end
-            if AD.META[row.key] and AD.formatAttrDisplayValue then
-                return AD.formatAttrDisplayValue(row.key, row.currentValue)
-            end
-            return string.format("%.2f", row.currentValue):gsub("%.?0+$", "")
-        end
-        return tostring(row.currentValue)
-    end
-    return "—"
-end
+--- 属性页同一绘制API，配装只增加独立delta和滚动条。
+M.drawAttributeRows = AttributeView.drawAttributeRows
+M.ATTRIBUTE_STYLE = AttributeView.STYLE
+M.rowAt = AttributeView.rowAt
 
-local function deltaLabel(row)
-    local delta = tonumber(row.delta) or 0
-    if math.abs(delta) < 0.000001 then return "", COLOR.muted end
-    local label = row.deltaText
-    if not label or label == "" then
-        local numeric = math.abs(delta) >= 100 and string.format("%.0f", delta)
-            or string.format("%.1f", delta)
-        label = (delta > 0 and "+" or "") .. numeric
-    end
-    local beneficial = row.beneficial
-    if beneficial == nil then beneficial = delta > 0 end
-    return tostring(label), beneficial and COLOR.green or COLOR.red
-end
-
---- 展示当前数值 + 单独一行 delta，名称和大数值不会争同一条基线。
---- 返回 maxScroll 与仅可见行的属性说明命中。
 function M.drawRows(vg, rows, scroll)
     local rect = M.LAYOUT.attrs
-    local rowH = M.LAYOUT.rowH
-    local maxScroll = math.max(0, #rows * rowH - rect.h)
-    local offset = math.max(0, math.min(maxScroll, scroll or 0))
-    local hits = {}
-    plate(vg, rect)
-    nvgSave(vg)
-    nvgIntersectScissor(vg, rect.x + 4, rect.y, rect.w - 12, rect.h)
-    if #rows == 0 then
-        text(vg, rect.x + 20, rect.y + 35, "暂无属性", 26, COLOR.muted)
-    end
-    for i, row in ipairs(rows) do
-        local y = rect.y + (i - 1) * rowH - offset
-        if y + rowH > rect.y and y < rect.y + rect.h then
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, rect.x + 7, y + 4, rect.w - 21, rowH - 8, 8)
-            nvgFillColor(vg, nvgRGBA(196, 160, 90, i % 2 == 0 and 10 or 4))
-            nvgFill(vg)
-            fitText(vg, rect.x + 18, y + 23, row.name or row.key, 28, 22,
-                rect.w - 48, COLOR.text)
-            local delta, deltaColor = deltaLabel(row)
-            fitText(vg, rect.x + 18, y + 54, formattedValue(row), 29, 21,
-                rect.w * 0.59, COLOR.current)
-            fitText(vg, rect.x + rect.w - 24, y + 54, delta, 27, 20,
-                rect.w * 0.38, deltaColor, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-            local meta = AD.META[row.key]
-            hits[#hits + 1] = {
-                x = rect.x, y = math.max(rect.y, y), w = rect.w,
-                h = math.min(rect.y + rect.h, y + rowH) - math.max(rect.y, y),
-                name = row.name or (meta and meta.name) or tostring(row.key),
-                desc = row.desc or (meta and meta.desc) or "该属性为当前角色的最终面板数值。",
-                key = row.key,
-            }
-        end
-    end
-    nvgRestore(vg)
-    scrollbar(vg, rect, offset, maxScroll)
+    local maxScroll, hits = M.drawAttributeRows(vg, rows, scroll, rect, { showDelta = true })
+    scrollbar(vg, rect, math.max(0, math.min(maxScroll, scroll or 0)), maxScroll)
     return maxScroll, hits
 end
 
@@ -283,36 +223,19 @@ function M.drawSets(vg, sets, scroll, hasPreview)
 end
 
 function M.drawBackground(vg)
-    local rect = M.LAYOUT.panel
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, rect.x, rect.y, rect.w, rect.h, 24)
-    nvgFillPaint(vg, nvgLinearGradient(vg, 0, rect.y, 0, rect.y + rect.h,
-        nvgRGBA(31, 25, 19, 250) --[[@as NVGcolor]], nvgRGBA(16, 13, 10, 250) --[[@as NVGcolor]]))
-    nvgFill(vg)
-    nvgStrokeWidth(vg, 2)
-    nvgStrokeColor(vg, nvgRGBA(196, 160, 90, 120))
-    nvgStroke(vg)
+    AttributeView.drawBackground(vg, M.LAYOUT.panel.y)
 end
 
---- 原标题 16 向描边原样抽出，减少 Draw 主壳行数。
-function M.drawLegacyTitle(vg, x, y, title)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 30)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 255))
-    for i = 0, 15 do
-        local angle = i * math.pi * 2 / 16
-        nvgText(vg, x + math.cos(angle) * 4, y + math.sin(angle) * 4, title, nil)
-    end
-    nvgFillColor(vg, nvgRGBA(0xF7, 0xFE, 0x77, 255))
-    nvgText(vg, x, y, title, nil)
-end
+-- 属性页原标题绘图同一实现，字体/frame仍由外层管理。
+M.drawLegacyTitle = AttributeView.drawTitle
 
 function M.drawHeader(vg, candidate, errorMessage)
-    text(vg, 540, M.LAYOUT.titleY, "属性预览", 34, COLOR.gold, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    text(vg, M.LAYOUT.attrs.x, M.LAYOUT.attrTitleY, "角色属性 · 当前值 / 变化", 29, COLOR.gold)
-    text(vg, M.LAYOUT.radar.x + 20, M.LAYOUT.attrTitleY, "六围", 29, COLOR.gold)
-    text(vg, M.LAYOUT.sets.x, M.LAYOUT.setTitleY, "套装效果 · 2 / 4 / 6 件", 31, COLOR.gold)
+    AttributeView.drawTitle(vg, 540, M.LAYOUT.titleY, "角色属性")
+    AttributeView.drawDivider(vg, M.LAYOUT.attrs.y - 20)
+    AttributeView.drawDivider(vg, M.LAYOUT.setTitleY - 28)
+    drawTextStroke(vg, M.LAYOUT.sets.x + 20, M.LAYOUT.setTitleY + 4,
+        "套装效果 · 2 / 4 / 6 件", 31, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        0x66, 0xf8, 0x62, 4)
     local status, color = "当前已穿戴属性 · 选中或悬停装备以试穿", COLOR.muted
     if candidate then
         status = "试穿 · 未穿戴：" .. tostring(candidate.name or candidate.seq)
@@ -326,14 +249,14 @@ function M.drawHeader(vg, candidate, errorMessage)
     fitText(vg, rect.x, rect.y + rect.h * 0.5, status, 28, 22, rect.w, color)
 end
 
---- 配装雷达共用 max(当前六项、预览六项、8)/0.82，绝不分开归一化。
+--- 共用属性页归一化；有候选仅把并集peak放入同一尺度，不分别归一化。
 function M.radarScale(current, preview)
-    local peak = 8
+    local peak = 1
     for _, key in ipairs({ "str", "agi", "vit", "spi", "luk", "int" }) do
         peak = math.max(peak, tonumber(current and current[key]) or 0,
             tonumber(preview and preview[key]) or 0)
     end
-    return peak / 0.82
+    return math.max(8, peak / 0.82)
 end
 
 function M.drawTooltip(vg, tip)
@@ -365,7 +288,7 @@ M.LEGACY = {
     STAT_ROW1_CY = 1641, STAT_ROW_STEP = 111,
     STAT_LAYOUT = DetailAttrs.STAT_LAYOUT,
     HEX_CX = 800, HEX_CY = 1294 + 7 * 69 * 0.5,
-    HEX_R = 175, HEX_LABEL_R = 230,
+    HEX_R = AttributeView.RADAR.r, HEX_LABEL_R = AttributeView.RADAR.labelR,
     HEX_NAMES = { "力量", "敏捷", "体质", "魂火", "命数", "秘识" },
 }
 
@@ -458,9 +381,7 @@ end
 function M.drawLegacy(vg, statValues)
     local layout = M.LEGACY
     local values = statValues or {}
-    local peak = 1
-    for _, key in ipairs(HEX_KEYS) do peak = math.max(peak, values[key] or 0) end
-    local maxValue = math.max(8, peak / 0.82)
+    local maxValue = M.radarScale(values)
     radarGrid(vg, layout.HEX_CX, layout.HEX_CY, layout.HEX_R, layout.HEX_LABEL_R)
     radarOutline(vg, values, layout.HEX_CX, layout.HEX_CY, layout.HEX_R, maxValue,
         { 0xE8, 0xDC, 0xC8, 200 }, { 0xC4, 0x8A, 0x3A, 70 }, 2)
@@ -476,16 +397,15 @@ function M.drawLegacy(vg, statValues)
     end
 end
 
---- 配装双轮廓：当前中性灰，试穿青色。数字差值另起一行避免拥挤。
+--- 共用属性页雷达底网/淡金当前轮廓/彩色标签；试穿仅追加cyan轮廓与delta。
 function M.drawRadar(vg, current, preview)
     local layout = M.LAYOUT.radar
     local values = current or {}
     local maxValue = M.radarScale(values, preview)
-    nvgSave(vg)
-    nvgIntersectScissor(vg, layout.x, layout.y, layout.w, layout.h)
+    -- 不另设雷达scissor：最右标签cx≈999、数字完整保留在1080画布内。
     radarGrid(vg, layout.cx, layout.cy, layout.r, layout.labelR)
     radarOutline(vg, values, layout.cx, layout.cy, layout.r, maxValue,
-        COLOR.current, { 174, 167, 154, 25 }, 2.5)
+        { 0xE8, 0xDC, 0xC8, 200 }, { 0xC4, 0x8A, 0x3A, 70 }, 2)
     if preview then
         radarOutline(vg, preview, layout.cx, layout.cy, layout.r, maxValue,
             COLOR.cyan, { 73, 218, 230, 35 }, 3)
@@ -496,23 +416,19 @@ function M.drawRadar(vg, current, preview)
         local lx, ly = hexPoint(layout.cx, layout.cy, i, layout.labelR)
         local currentValue = tonumber(values[key]) or 0
         local nextValue = preview and tonumber(preview[key]) or currentValue
-        text(vg, lx, ly - 28, name, 25, HEX_COLORS[i], NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        fitText(vg, lx, ly + 2, string.format("%.0f", currentValue), 28, 20, 110,
-            COLOR.current, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        local color = HEX_COLORS[i]
+        text(vg, lx, ly - 24, name, 26, color, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        drawTextStroke(vg, lx, ly + 16, tostring(math.floor(currentValue)),
+            34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
         local delta = nextValue - currentValue
         if preview and math.abs(delta) > 0.000001 then
             local amount = math.abs(delta - math.floor(delta + 0.5)) < 0.000001
                 and string.format("%.0f", delta) or string.format("%.1f", delta)
             local deltaText = (delta > 0 and "+" or "") .. amount
-            fitText(vg, lx, ly + 33, deltaText, 25, 19, 110, delta > 0 and COLOR.green or COLOR.red,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+            fitText(vg, lx, ly + 52, deltaText, 25, 19, 110,
+                delta > 0 and COLOR.green or COLOR.red, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         end
     end
-    text(vg, layout.cx - 122, layout.y + layout.h - 24, "— 当前", 24, COLOR.current)
-    if preview then
-        text(vg, layout.cx + 28, layout.y + layout.h - 24, "— 试穿", 24, COLOR.cyan)
-    end
-    nvgRestore(vg)
 end
 
 return M

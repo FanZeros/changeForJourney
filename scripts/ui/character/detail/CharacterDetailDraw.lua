@@ -13,6 +13,7 @@ local PlayerStore       = require("core.PlayerStore")
 local EquipmentConfig   = require("config.EquipmentConfig")
 local DetailAttrs       = require("ui.character.detail.CharacterDetailAttrs")
 local EquipStats        = require("ui.character.detail.CharacterEquipStats")
+local AttributeView     = require("ui.character.detail.CharacterAttributeView")
 local DrawUtil          = require("core.DrawUtil")
 local HeroFrame         = require("ui.widget.HeroFrame")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
@@ -98,24 +99,15 @@ local MID_DIV1_W, MID_DIV1_H   = 1010, 37
 
 -- ======================== 属性区域布局常量 ========================
 
-local ATTR_BOX_W, ATTR_BOX_H = 440, 60
-local ATTR_BOX_RADIUS        = 20
-
-local ATTR_COL1_CX = 310
+local ATTR_BOX_W, ATTR_BOX_H = AttributeView.STYLE.boxW, AttributeView.STYLE.rowH
+local ATTR_COL1_CX = AttributeView.STYLE.boxCX
 local ATTR_COL2_CX = 770
-local ATTR_ROW_GAP = 9
-local ATTR_FIRST_ROW_Y = 1294
+local ATTR_ROW_GAP = AttributeView.STYLE.rowStep - ATTR_BOX_H
+local ATTR_FIRST_ROW_Y = AttributeView.ATTRIBUTE_LAYOUT.firstY
 
-local ATTR_DECO_X    = 137
-local ATTR_DECO_SIZE = 20
-local ATTR_DECO_DX   = ATTR_COL2_CX - ATTR_COL1_CX  -- 460
-
-local ATTR_NAME_LEFT_X = 167
-local ATTR_VAL_RIGHT_X = 510
-
-local ATTR_FONT_SIZE     = 35
-local ATTR_FONT_SIZE_MIN = 22
-local ATTR_NAME_VAL_GAP  = 15
+-- 两页同一绘图API，输入仍使用原 M.ATTR* 公开坐标。
+M.drawAttributeRows = AttributeView.drawAttributeRows
+M.ATTRIBUTE_STYLE = AttributeView.STYLE
 
 -- 左列单列，右侧留给雷达图；超出可见行继续滚动。
 local ATTR_SCROLL_FRICTION = 0.90
@@ -459,6 +451,7 @@ function M.initImages(vg)
     img.attrDeco = nvgCreateImage(vg, "image/通用图标/ICON_XX.png", 0)
     -- [图标统一 0928] midDiv2 与 midDiv1 同贴图，复用句柄避免重复加载（无 delete，复用安全）
     img.midDiv2  = img.midDiv1
+    AttributeView.setSharedImages({ background = img.midBg, divider = img.midDiv1, deco = img.attrDeco })
 
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv     = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
@@ -946,7 +939,7 @@ function M.draw(vg)
         EquipStats.drawBackground(vg)
     elseif detailState.tab == "attr" then
         -- 属性页原底板/标题位置与视觉不变。
-        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
+        AttributeView.drawBackground(vg, AttributeView.BACKGROUND.originalTop)
         EquipStats.drawLegacyTitle(vg, MID_TITLE_CX, MID_TITLE_CY, I18n.t("hero_detail"))
     end
 
@@ -1038,7 +1031,7 @@ function M.draw(vg)
         255, 255, 255, 4)
 
     -- === 17) 分割线1 ===
-    drawImageCentered(vg, img.midDiv1, MID_DIV1_CX, MID_DIV1_CY, MID_DIV1_W, MID_DIV1_H, 1.0)
+    AttributeView.drawDivider(vg, MID_DIV1_CY)
 
     end -- if tab ~= "equip"（隐藏 8~17: 名称/经验/品质/职业/分割线）
 
@@ -1090,69 +1083,15 @@ function M.draw(vg)
         return (a._origIdx or 0) < (b._origIdx or 0)
     end)
     for _, row in ipairs(attrRows) do row._origIdx = nil end
-    local totalRows = #attrRows
-
-    detailState.cachedLeft  = attrRows
+    detailState.cachedLeft = attrRows
     detailState.cachedRight = {}
-
-    local attrClipY = ATTR_CLIP_TOP
-    local attrClipH = ATTR_CLIP_HEIGHT
-
-    local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
-    local contentBottom = ATTR_FIRST_ROW_Y + math.max(0, totalRows - 1) * rowStep + ATTR_BOX_H * 0.5
-    local viewBottom = attrClipY + attrClipH
-    detailState.attrScrollMax = math.max(0, contentBottom - viewBottom)
-
-    nvgSave(vg)
-    nvgScissor(vg, 40, attrClipY, 500, attrClipH)
-
-    for row = 1, totalRows do
-        local rowY = ATTR_FIRST_ROW_Y + (row - 1) * rowStep - detailState.attrScrollY
-
-        if rowY >= attrClipY - ATTR_BOX_H and rowY <= attrClipY + attrClipH + ATTR_BOX_H then
-
-            local attr = attrRows[row]
-            if attr then
-                local colCX = ATTR_COL1_CX
-
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg,
-                    colCX - ATTR_BOX_W * 0.5, rowY - ATTR_BOX_H * 0.5,
-                    ATTR_BOX_W, ATTR_BOX_H, ATTR_BOX_RADIUS)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-                nvgFill(vg)
-
-                drawImageCentered(vg, img.attrDeco, ATTR_DECO_X, rowY,
-                    ATTR_DECO_SIZE, ATTR_DECO_SIZE, 1.0)
-
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, ATTR_FONT_SIZE)
-                local nameW = nvgTextBounds(vg, 0, 0, attr.name)
-                local valW  = nvgTextBounds(vg, 0, 0, attr.value)
-                local maxNameW = ATTR_VAL_RIGHT_X - ATTR_NAME_LEFT_X - valW - ATTR_NAME_VAL_GAP
-                local nameFontSize = ATTR_FONT_SIZE
-                if maxNameW > 0 and nameW > maxNameW then
-                    nameFontSize = math.max(ATTR_FONT_SIZE_MIN,
-                        math.floor(ATTR_FONT_SIZE * maxNameW / nameW))
-                    nvgFontSize(vg, nameFontSize)
-                end
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-                nvgText(vg, ATTR_NAME_LEFT_X, rowY, attr.name, nil)
-
-                drawTextStroke(vg, ATTR_VAL_RIGHT_X, rowY, attr.value,
-                    ATTR_FONT_SIZE, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 4)
-            end
-
-        end
-    end
-
-    nvgResetScissor(vg)
-    nvgRestore(vg)
+    local maxScroll, hits = M.drawAttributeRows(vg, attrRows,
+        detailState.attrScrollY, AttributeView.ATTRIBUTE_LAYOUT)
+    detailState.attrHits = hits
+    detailState.attrScrollMax = maxScroll
 
     -- === 18) 分割线2 ===
-    drawImageCentered(vg, img.midDiv2, MID_DIV2_CX, MID_DIV2_CY, MID_DIV2_W, MID_DIV2_H, 1.0)
+    AttributeView.drawDivider(vg, MID_DIV2_CY)
 
     -- 属性页六围：共享绘图但保留原视觉、布局与点击 API。
     EquipStats.drawLegacy(vg, attrData.stats)

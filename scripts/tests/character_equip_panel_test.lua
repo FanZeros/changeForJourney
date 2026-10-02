@@ -1,21 +1,34 @@
 -- 配装下部回归：纯 NanoVG 绘图探针，不依赖字体/贴图或存档。
 function Start()
     local originalRequire, originalTime = require, time
-    local savedGlobals, textCalls, paths = {}, {}, {}
+    local savedGlobals, textCalls, paths, rects, scissorCalls, imageCalls = {}, {}, {}, {}, {}, {}
     local color, path = {}, {}
+    local fontSize = 0
     local count = 0
     local function check(value, message)
         assert(value, message)
         count = count + 1
     end
     local function hook(name, fn)
-        savedGlobals[name] = _G[name]
+        if savedGlobals[name] == nil then savedGlobals[name] = _G[name] end
         _G[name] = fn
     end
     local function noop() end
     for _, name in ipairs({ "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgFill", "nvgStroke",
         "nvgStrokeColor", "nvgStrokeWidth", "nvgFillPaint", "nvgRoundedRect", "nvgCircle",
         "nvgSave", "nvgRestore", "nvgIntersectScissor", "nvgClosePath" }) do hook(name, noop) end
+    hook("nvgFontSize", function(vg, size) fontSize = size end)
+    hook("nvgRect", noop)
+    hook("nvgRoundedRect", function(vg, x, y, w, h, radius)
+        rects[#rects + 1] = { x = x, y = y, w = w, h = h, radius = radius }
+    end)
+    hook("nvgIntersectScissor", function(vg, x, y, w, h)
+        scissorCalls[#scissorCalls + 1] = { x = x, y = y, w = w, h = h }
+    end)
+    hook("nvgImagePattern", function(vg, x, y, w, h, angle, image)
+        imageCalls[#imageCalls + 1] = { x = x, y = y, w = w, h = h, image = image }
+        return {}
+    end)
     local nativeRGBA = nvgRGBA
     hook("nvgRGBA", function(r, g, b, a)
         color = { r, g, b, a }
@@ -24,7 +37,7 @@ function Start()
     hook("nvgFillColor", noop)
     hook("nvgTextBounds", function(vg, x, y, value) return utf8.len(tostring(value)) * 16 end)
     hook("nvgText", function(vg, x, y, value)
-        textCalls[#textCalls + 1] = { x = x, y = y, value = tostring(value), color = color }
+        textCalls[#textCalls + 1] = { x = x, y = y, value = tostring(value), color = color, fontSize = fontSize }
     end)
     hook("nvgBeginPath", function() path = {}; paths[#paths + 1] = path end)
     hook("nvgMoveTo", function(vg, x, y) path[#path + 1] = { x, y } end)
@@ -58,7 +71,11 @@ function Start()
     local mods = {
         ["systems.AttributeDef"] = AD,
         ["config.EquipmentSetConfig"] = { get = function() return cfg end },
-        ["core.DrawUtil"] = { drawTextStroke = function(vg, x, y, value) nvgText(vg, x, y, value) end },
+        ["core.DrawUtil"] = { drawTextStroke = function(vg, x, y, value, size, align, r, g, b)
+            nvgFontSize(vg, size)
+            nvgFillColor(vg, nvgRGBA(r or 255, g or 255, b or 255, 255))
+            nvgText(vg, x, y, value)
+        end },
         ["ui.character.detail.CharacterDetailAttrs"] = { STAT_LAYOUT = {}, displayOrderIndex = function() return {} end },
         ["core.PlayerStore"] = { Get = function(key)
             if key == "heroes" then return heroes end
@@ -83,17 +100,82 @@ function Start()
     require = function(name) return mods[name] or originalRequire(name) end
     local Stats = originalRequire("ui.character.detail.CharacterEquipStats")
     mods["ui.character.detail.CharacterEquipStats"] = Stats
+    local Shared = originalRequire("ui.character.detail.CharacterAttributeView")
+    for _, name in ipairs({ "config.HeroAssetUtil", "config.ClassConfig", "config.ExpTable",
+        "ui.character.equip.EquipmentBag", "config.EquipmentConfig", "ui.widget.HeroFrame",
+        "ui.character.hero.AwakeningPanel", "systems.ButtonFeedback", "core.DarkIcon",
+        "systems.ExtraTalentSystem", "core.I18n" }) do mods[name] = {} end
+    mods["config.GameConfig"] = { Design = { WIDTH = 1080, HEIGHT = 2400 } }
+    mods["ui.widget.KeywordText"] = { new = function() return {} end }
+    local Draw = originalRequire("ui.character.detail.CharacterDetailDraw")
     local Panel = originalRequire("ui.character.detail.CharacterDetailEquip")
+    local attrs, radar, sets = Stats.LAYOUT.attrs, Stats.LAYOUT.radar, Stats.LAYOUT.sets
+    local ax, ay = attrs.x + 100, attrs.y + 100
+    local sx, sy = sets.x + 100, sets.y + 100
+    local sharedPaths = {}
+    hook("nvgCreateImage", function(vg, filename)
+        sharedPaths[#sharedPaths + 1] = filename
+        return #sharedPaths
+    end)
+    Draw.initImages({})
 
     local function rendered(value)
         for _, call in ipairs(textCalls) do if call.value == value then return call end end
         return nil
     end
-    local function clearDraw() textCalls, paths = {}, {} end
+    local function clearDraw() textCalls, paths, rects, scissorCalls, imageCalls = {}, {}, {}, {}, {} end
     local function draw() clearDraw(); Panel.draw({}, 1, { equipSlot = requestedSlot }) end
 
+    check(Draw.drawAttributeRows == Stats.drawAttributeRows and Stats.drawAttributeRows == Shared.drawAttributeRows,
+        "两页调用同一个drawAttributeRows而非复制属性行")
+    check(Draw.ATTRIBUTE_STYLE == Stats.ATTRIBUTE_STYLE and Shared.STYLE.rowH == 60
+        and Shared.STYLE.rowStep == 69, "共用属性行风格对象60高69步长")
+    check(Draw.ATTR_FIRST_ROW_Y == Shared.ATTRIBUTE_LAYOUT.firstY
+        and Draw.ATTR_CLIP_TOP == Shared.ATTRIBUTE_LAYOUT.y
+        and Draw.ATTR_CLIP_HEIGHT == Shared.ATTRIBUTE_LAYOUT.h,
+        "属性页M.ATTR原输入坐标完全不变")
+    check(radar.r == Stats.LEGACY.HEX_R and radar.labelR == Stats.LEGACY.HEX_LABEL_R
+        and radar.r == 175 and radar.labelR == 230, "共用175雷达半径和230标签半径")
+    clearDraw(); Stats.drawBackground({})
+    check(#imageCalls == 1 and sharedPaths[imageCalls[1].image]:find("UI_JSJM_0.png", 1, true)
+        and imageCalls[1].y == Stats.LAYOUT.panel.y and imageCalls[1].w == 1080
+        and imageCalls[1].h == 1579, "配装复用原底板句柄1080x1579等比平移至890")
+    clearDraw(); Stats.drawHeader({}, nil, nil)
+    local dividerImages = 0
+    for _, call in ipairs(imageCalls) do
+        if sharedPaths[call.image]:find("UI_JSXQ_FGXJ.png", 1, true) then dividerImages = dividerImages + 1 end
+    end
+    check(dividerImages == 2, "配装标题和套装之间复用属性页同一分隔线句柄")
+    local sample = { { key = "a", name = "同样属性", value = "42" } }
+    clearDraw(); Draw.drawAttributeRows({}, sample, 0, Shared.ATTRIBUTE_LAYOUT)
+    local originalName, originalValue = rendered("同样属性"), rendered("42")
+    local originalRow = rects[1]
+    clearDraw(); Stats.drawRows({}, sample, 0)
+    local equipName, equipValue = rendered("同样属性"), rendered("42")
+    check(originalName.x == equipName.x and originalValue.x == equipValue.x
+        and originalName.y == originalValue.y and equipName.y == equipValue.y
+        and equipName.x == 167 and equipValue.x == 510, "同一行名称左数值右坐标完全复用")
+    check(originalValue.fontSize == 35 and equipValue.fontSize == 35
+        and equipValue.color[1] == 255 and equipName.color[1] == 0xE8,
+        "无delta同35号白数字和E8DCC8名称")
+    check(rects[1].w == originalRow.w and rects[1].h == originalRow.h
+        and rects[1].radius == originalRow.radius and rects[1].radius == 20,
+        "两页440x60圆角20行底完全同款")
+    check(scissorCalls[1].x == 40 and scissorCalls[1].w == 500,
+        "配装属性clip同属性页x40宽500")
+    check(#imageCalls == 1 and sharedPaths[imageCalls[1].image]:find("ICON_XX.png", 1, true),
+        "属性行装饰复用ICON_XX句柄")
+    local _, hits = Stats.drawRows({}, sample, 0)
+    check(Shared.rowAt(hits, ax, attrs.y + 30) == sample[1]
+        and Shared.rowAt(hits, ax, attrs.y + Stats.LAYOUT.rowH + 4) == nil,
+        "可见行hit匹配60高且行距不出现幽灵hit")
+    clearDraw(); Stats.drawRows({}, { { key = "d", name = "变化属性", value = "42", delta = 5 } }, 0)
+    check(rendered("变化属性").y == rendered("42").y and rendered("+5.0").y > rendered("42").y
+        and rendered("+5.0").y + rendered("+5.0").fontSize * 0.5 <= attrs.y + Shared.STYLE.rowH,
+        "变化行名称当前同baseline，delta在行内第二baseline不占更多行高")
+
     check(math.abs(Stats.radarScale(current.stats, preview.stats) - 20 / 0.82) < 0.000001, "双轮廓共用最大值尺度")
-    check(math.abs(Stats.radarScale({}, {}) - 8 / 0.82) < 0.000001, "雷达底线8也先进入共同尺度")
+    check(Stats.radarScale({}, {}) == 8, "无候选与属性页同样采用max(8,peak/.82)尺度")
     check(Stats.LEGACY.HEX_CY == 1535.5 and Stats.LEGACY.HEX_LABEL_R == 230, "属性页原雷达布局不变")
     clearDraw(); Stats.drawRadar({}, current.stats, preview.stats)
     local outline = {}
@@ -104,6 +186,17 @@ function Start()
     local afterR = layout.cy - outline[2][1][2]
     check(math.abs(afterR / beforeR - 2) < 0.000001, "相同尺度保留力量20/10的2倍轮廓关系")
     check(rendered("+10") and rendered("-3"), "六围标签显示正负numeric delta")
+    check(#scissorCalls == 0, "雷达不另设474宽scissor裁掉左右标签")
+    clearDraw(); Stats.drawLegacy({}, current.stats)
+    local legacyOutline = nil
+    for _, points in ipairs(paths) do if #points == 6 then legacyOutline = points; break end end
+    clearDraw(); Stats.drawRadar({}, current.stats, nil)
+    local equipOutline = nil
+    for _, points in ipairs(paths) do if #points == 6 then equipOutline = points; break end end
+    check(math.abs((Stats.LEGACY.HEX_CY - legacyOutline[1][2])
+        - (radar.cy - equipOutline[1][2])) < 0.000001, "无候选轮廓尺度与原属性页完全一致")
+    clearDraw(); Stats.drawRadar({}, { str = 38.745624, agi = 8 }, nil)
+    check(rendered("38") and not rendered("38.745624"), "雷达只显示整数避免raw六围长小数越出画布")
 
     local union = Stats.unionSets(summaries, previewSummaries)
     check(#union == 3, "不同套装取并集而非固定数量截断")
@@ -144,31 +237,32 @@ function Start()
     time.elapsedTime = 22; draw()
     check(buildCount == stableBuilds + 1, "候选原地升阶变化由签名使缓存失效")
 
-    check(Panel.peekItemAt(150, 1304) == nil and not Panel.isItemDragging(), "旧网格不再有装备peek或dragItem")
-    check(Panel.handleRightClick(150, 1304, 1) == false, "旧网格右击不穿装")
+    check(Panel.peekItemAt(ax, ay) == nil and not Panel.isItemDragging(), "旧网格不再有装备peek或dragItem")
+    check(Panel.handleRightClick(ax, ay, 1) == false, "旧网格右击不穿装")
     check(Panel.beginSideDrag(70, 750) == false and Panel.handleInput(70, 750, 1, {}) == false, "旧顶部侧栏无不可见热区")
-    check(Panel.handleInput(445, 2308, 1, {}) == false, "下部面板不吞配装页签")
-    check(Panel.handleInput(122, 1150, 1, {}) == true, "属性区内只管理自身说明")
-    check(Panel.containsComparisonPoint(150, 1200) and Panel.containsComparisonPoint(790, 1384)
-        and Panel.containsComparisonPoint(100, 1900), "比较命中覆盖attrs/radar/sets")
-    check(not Panel.containsComparisonPoint(540, 790) and not Panel.containsComparisonPoint(445, 2308), "比较命中排除六槽与页签")
-    check(not Panel.onPointerMove(700, 1700), "移动始终不进入装备拖拽")
+    check(Panel.handleInput(Draw.BTN_TAB_EQUIP_CX, Draw.BTN_TAB_EQUIP_CY, 1, {}) == false, "下部面板不吞配装页签")
+    check(Panel.handleInput(ax, ay, 1, {}) == true, "属性区内只管理自身说明")
+    check(Panel.containsComparisonPoint(ax, ay) and Panel.containsComparisonPoint(radar.cx, radar.cy)
+        and Panel.containsComparisonPoint(sx, sy), "比较命中覆盖attrs/radar/sets")
+    check(not Panel.containsComparisonPoint(540, 790)
+        and not Panel.containsComparisonPoint(Draw.BTN_TAB_EQUIP_CX, Draw.BTN_TAB_EQUIP_CY), "比较命中排除六槽与页签")
+    check(not Panel.onPointerMove(radar.cx, sets.y), "移动始终不进入装备拖拽")
 
-    check(Panel.handleSideScroll(-1000, 100, 1200), "属性wheel命中")
+    check(Panel.handleSideScroll(-1000, ax, ay), "属性wheel命中")
     draw(); check(rendered("属性12") ~= nil and not rendered("属性1"), "属性wheel向下钳制到最后行")
-    check(Panel.handleSideScroll(1000, 100, 1200), "属性wheel向上命中")
+    check(Panel.handleSideScroll(1000, ax, ay), "属性wheel向上命中")
     draw(); check(rendered("属性1") ~= nil, "属性wheel上界钳制归零")
-    check(Panel.handleDragBegin(100, 1200), "属性drag开始")
-    check(Panel.handleDragMove(100, -5000) and Panel.handleDragEnd(100, -5000), "属性drag移动结束")
+    check(Panel.handleDragBegin(ax, ay), "属性drag开始")
+    check(Panel.handleDragMove(ax, -5000) and Panel.handleDragEnd(ax, -5000), "属性drag移动结束")
     draw(); check(rendered("属性12") ~= nil, "属性drag下界钳制")
-    check(Panel.handleSideScroll(-1000, 100, 1900), "套装wheel独立命中")
+    check(Panel.handleSideScroll(-1000, sx, sy), "套装wheel独立命中")
     draw(); check(rendered("第二套装") ~= nil and rendered("属性12") ~= nil, "滚套装不改变属性scroll且可见最后不同套装")
-    check(Panel.handleDragBegin(100, 1900), "套装drag开始")
-    Panel.handleDragMove(100, 20000); Panel.handleDragEnd(100, 20000)
+    check(Panel.handleDragBegin(sx, sy), "套装drag开始")
+    Panel.handleDragMove(sx, 20000); Panel.handleDragEnd(sx, 20000)
     draw(); check(rendered("旧套装") ~= nil, "套装drag向下拖归零")
-    check(not Panel.handleDragBegin(790, 1384), "雷达不是拖装备或滚动区")
-    check(Panel.handleSideScroll(-1, 790, 1384), "雷达wheel消费但不借用旧scrollTarget")
-    check(not Panel.handleSideScroll(-1, 445, 2308), "wheel不吞页签")
+    check(not Panel.handleDragBegin(radar.cx, radar.cy), "雷达不是拖装备或滚动区")
+    check(Panel.handleSideScroll(-1, radar.cx, radar.cy), "雷达wheel消费但不借用旧scrollTarget")
+    check(not Panel.handleSideScroll(-1, Draw.BTN_TAB_EQUIP_CX, Draw.BTN_TAB_EQUIP_CY), "wheel不吞页签")
     Panel.clear(); draw(); check(rendered("属性1") ~= nil, "clear清滚动与候选缓存")
 
     require, time = originalRequire, originalTime

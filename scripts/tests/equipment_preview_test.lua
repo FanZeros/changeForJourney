@@ -101,8 +101,8 @@ function Start()
         local speed = row(explicit, AD.ATK_SPEED)
         check(close(speed.delta, 25) and speed.deltaText == "+25.0%", "词条倍率生效，百分比差值为百分点")
         local pen = row(explicit, AD.PHYS_PEN)
-        check(pen and close(pen.currentValue, 0) and close(pen.previewValue, 14.5), "新出现非零行包含当前0与精确预览数值")
-        check(pen.value == AD.formatAttrDisplayValue(AD.PHYS_PEN, 0), "新出现行 value 显示当前0，不冒充已穿戴数值")
+        check(pen and close(pen.currentValue, 0) and close(pen.previewValue, 14.5), "常驻穿透行包含当前0与精确预览数值")
+        check(pen.value == AD.formatAttrDisplayValue(AD.PHYS_PEN, 0), "常驻穿透行显示当前0，不冒充已穿戴数值")
         local interval = row(explicit, AD.ATK_INTERVAL)
         check(interval.delta < 0 and interval.beneficial == true and interval.deltaText:sub(1, 1) == "-", "实际攻击间隔下降为增益，差值带负号")
         check(close(interval.previewValue, explicit.preview.attrs:getActualInterval()), "攻击间隔数值复用真实属性公式")
@@ -119,7 +119,7 @@ function Start()
         active.equipment.equipped["1"].weapon = 2
         local removed = Preview.build(1, 70, 1, nil, active)
         check(row(removed, AD.PHYS_PEN).deltaText == "-14.5" and row(removed, AD.PHYS_PEN).previewValue == 0,
-            "消失非零行保留负差值，不被过滤")
+            "穿透回落为0仍保留行与负差值")
 
         -- 2) 六围保留小数，派生属性与最终倍率由同一管线重算。
         local six = fixture(1, 70)

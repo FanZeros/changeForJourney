@@ -43,7 +43,7 @@ end
 
 -- ======================== 属性排序定义 ========================
 
---- 左列候选属性（按优先级排列，hero不具有的属性跳过）
+--- 左列固定候选属性（包含 0/默认值；兼容别名按实际 key 去重）
 M.ATTR_LEFT_PRIORITY = {
     AD.MAX_HP,
     AD.PHYS_ARMOR,
@@ -362,14 +362,19 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         }
     end
 
+    -- 固定本职候选行，不以装备带来的数值决定可见性。
+    -- PHYS_ARMOR/MAG_ARMOR 是 ARMOR/ENERGY_SHIELD 的同 key 别名。
+    alwaysLeftSet[AD.MAX_HP] = true
+    if category == "physical" then alwaysLeftSet[AD.PHYS_ATK] = true
+    elseif category == "magical" then alwaysLeftSet[AD.MAG_ATK] = true
+    elseif category == "healing" then alwaysLeftSet[AD.HEAL_AMOUNT] = true end
     for _, key in ipairs(M.ATTR_LEFT_PRIORITY) do
         if not alwaysLeftSet[key] then
-            local val = attrs:getUncapped(key)
             local meta = AD.getMeta(key)
-            if meta and val ~= 0 and val ~= (meta.default or 0) then
-                if key ~= AD.MAX_HP then
-                    left[#left + 1] = { key = key, name = meta.name, value = AD.formatAttrDisplayValue(key, val) }
-                end
+            if meta then
+                local val = attrs:getUncapped(key)
+                left[#left + 1] = { key = key, name = meta.name, value = AD.formatAttrDisplayValue(key, val) }
+                alwaysLeftSet[key] = true
             end
         end
     end
@@ -425,7 +430,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
     if attrs.artifactCritRateMult then
         effCrit = effCrit * attrs.artifactCritRateMult
     end
-    if effCrit > 0 then
+    do -- 有效暴击率常驻，0% 也保留；不再随装备出现/消失。
         local critDesc = (category == "healing")
             and "治疗暴击判定使用的暴击率"
             or "通用暴击率 + 类型暴击率，与战斗中普攻/连击暴击判定一致；神器倍率已计入。超过 100% 的部分按 1:1 转为暴击伤害"
@@ -457,7 +462,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         overflowPct = effCrit - 100
         effCritDmg = effCritDmg * (1 + overflowPct / 100)
     end
-    if effCritDmg and effCritDmg > 0 then
+    do -- 有效暴击伤害常驻，格式与 numericValue 始终同源。
         local dmgDesc = "实战暴击伤害倍率；神器倍率已计入。"
         if overflowPct > 0 then
             dmgDesc = string.format(
@@ -479,7 +484,7 @@ function M.collectAttributes(heroId, heroCfg, level, options)
             value = string.format("×%.2f", starGateInfo.mult),
             desc = starGateInfo.desc,
         }
-        if starGateInfo.pen and starGateInfo.pen > 0 then
+        do -- 星门是英雄20的固有机制；其穿透为0时仍显示，其他英雄不显示。
             right[#right + 1] = {
                 key = "_melissaStarGatePen",
                 name = "星门魔穿",
@@ -526,17 +531,27 @@ function M.collectAttributes(heroId, heroCfg, level, options)
         skipCritKeys[AD.FINAL_PHYS_ATK_BONUS] = true
         skipCritKeys[AD.FINAL_MAG_ATK_BONUS] = true
     end
+    -- 治疗量已在左列；治疗暴击已合并为有效暴击，非治疗职业不展示治疗专属行。
+    skipCritKeys[AD.HEAL_AMOUNT] = true
+    skipCritKeys[AD.HEAL_CRIT_RATE] = true
+    skipCritKeys[AD.HEAL_CRIT_DMG] = true
     if category == "healing" then
-        skipCritKeys[AD.HEAL_CRIT_RATE] = true
-        skipCritKeys[AD.HEAL_CRIT_DMG] = true
+        skipCritKeys[AD.DMG_BONUS] = true
+        skipCritKeys[AD.FINAL_DAMAGE_BONUS] = true
+        skipCritKeys[AD.MAX_DMG_BONUS] = true
+        skipCritKeys[AD.MIN_DMG_BONUS] = true
+        -- 治疗普攻走 calcHealAttack（无连击、伤害浮动或伤害加成）。
+        skipCritKeys[AD.COMBO_RATE] = true
+        skipCritKeys[AD.COMBO_DMG_UP] = true
     end
 
     for _, key in ipairs(M.ATTR_RIGHT_PRIORITY) do
         if skipCritKeys[key] then goto continue_attr end
         local val = attrs:getUncapped(key)
         local meta = AD.getMeta(key)
-        if meta and val ~= 0 and val ~= (meta.default or 0) then
+        if meta then
             right[#right + 1] = { key = key, name = meta.name, value = AD.formatAttrDisplayValue(key, val) }
+            skipCritKeys[key] = true
         end
         ::continue_attr::
     end

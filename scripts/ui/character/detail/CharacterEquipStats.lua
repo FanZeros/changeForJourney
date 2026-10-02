@@ -19,12 +19,12 @@ M.LAYOUT = {
     titleY = 930,
     status = { x = 54, y = 956, w = 972, h = 54 },
     attrs = { x = AttributeView.ATTRIBUTE_LAYOUT.x, y = 1050,
-        w = AttributeView.ATTRIBUTE_LAYOUT.w, h = AttributeView.ATTRIBUTE_LAYOUT.h },
-    radar = { x = 550, y = 1050, w = 530, h = 552, cx = 800, cy = 1320,
+        w = AttributeView.ATTRIBUTE_LAYOUT.w, h = math.floor(AttributeView.ATTRIBUTE_LAYOUT.h * 1.30 + 0.5) },
+    radar = { x = 550, y = 1050, w = 530, h = 718, cx = 800, cy = 1403,
         r = AttributeView.RADAR.r, labelR = AttributeView.RADAR.labelR },
-    sets = { x = 54, y = 1700, w = 972, h = 514 },
+    sets = { x = 54, y = 1866, w = 972, h = 348 },
     attrTitleY = 1010,
-    setTitleY = 1652,
+    setTitleY = 1818,
     rowH = AttributeView.STYLE.rowH,
     rowStep = AttributeView.STYLE.rowStep,
 }
@@ -239,7 +239,8 @@ function M.drawHeader(vg, candidate, errorMessage)
     drawTextStroke(vg, M.LAYOUT.sets.x + 20, M.LAYOUT.setTitleY + 4,
         "套装效果 · 2 / 4 / 6 件", 31, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         0x66, 0xf8, 0x62, 4)
-    local status, color = "当前已穿戴属性 · 选中或悬停装备以试穿", COLOR.muted
+    -- 默认不再显示冗余的“当前已穿戴属性”描述，仅保留候选/失败提示。
+    local status, color = "", COLOR.muted
     if candidate then
         status = "试穿 · 未穿戴：" .. tostring(candidate.name or candidate.seq)
         color = COLOR.cyan
@@ -248,8 +249,10 @@ function M.drawHeader(vg, candidate, errorMessage)
         status = (candidate and "试穿失败：" or "预览提示：") .. tostring(errorMessage)
         color = COLOR.red
     end
-    local rect = M.LAYOUT.status
-    fitText(vg, rect.x, rect.y + rect.h * 0.5, status, 28, 22, rect.w, color)
+    if status ~= "" then
+        local rect = M.LAYOUT.status
+        fitText(vg, rect.x, rect.y + rect.h * 0.5, status, 28, 22, rect.w, color)
+    end
 end
 
 --- 共用属性页归一化；有候选仅把并集peak放入同一尺度，不分别归一化。
@@ -400,18 +403,55 @@ function M.drawLegacy(vg, statValues)
     end
 end
 
---- 共用属性页雷达底网/淡金当前轮廓/彩色标签；试穿仅追加cyan轮廓与delta。
+-- 只在配装雷达叠加差集；属性页 drawLegacy 的底图/比例保持原样。
+local RadarDiff = require("ui.character.detail.CharacterRadarDiff")
+
+---@param vertices CharacterRadarPoint[]
+local function radarPolygon(vg, vertices)
+    nvgBeginPath(vg)
+    for i, point in ipairs(vertices) do
+        if i == 1 then nvgMoveTo(vg, point.x, point.y) else nvgLineTo(vg, point.x, point.y) end
+    end
+    nvgClosePath(vg)
+end
+
+--- 淡金当前图不重染共享内区；仅增减面积/真正移动的试穿边分别用绿/红。
 function M.drawRadar(vg, current, preview)
     local layout = M.LAYOUT.radar
     local values = current or {}
     local maxValue = M.radarScale(values, preview)
+    -- 底图沿用属性页的 8% 视觉下限；差集比较同一对可见顶点，文本仍用原始数值。
+    local visualCurrent, visualPreview = {}, preview and {} or nil
+    for _, key in ipairs(HEX_KEYS) do
+        visualCurrent[key] = math.max(maxValue * 0.08, tonumber(values[key]) or 0)
+        if visualPreview then
+            visualPreview[key] = math.max(maxValue * 0.08, tonumber(preview[key]) or 0)
+        end
+    end
+    local comparison = RadarDiff.compare(visualCurrent, visualPreview,
+        layout.cx, layout.cy, layout.r, maxValue)
     -- 不另设雷达scissor：最右标签cx≈999、数字完整保留在1080画布内。
     radarGrid(vg, layout.cx, layout.cy, layout.r, layout.labelR)
-    radarOutline(vg, values, layout.cx, layout.cy, layout.r, maxValue,
-        { 0xE8, 0xDC, 0xC8, 200 }, { 0xC4, 0x8A, 0x3A, 70 }, 2)
-    if preview then
-        radarOutline(vg, preview, layout.cx, layout.cy, layout.r, maxValue,
-            COLOR.cyan, { 73, 218, 230, 35 }, 3)
+    radarPolygon(vg, comparison.oldVertices)
+    nvgFillColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 70))
+    nvgFill(vg)
+    nvgStrokeColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 200))
+    nvgStrokeWidth(vg, 2)
+    nvgStroke(vg)
+    for _, region in ipairs(comparison.regions) do
+        local color = region.sign > 0 and COLOR.green or COLOR.red
+        radarPolygon(vg, region.vertices)
+        nvgFillColor(vg, nvgRGBA(color[1], color[2], color[3], 75))
+        nvgFill(vg)
+    end
+    for _, edge in ipairs(comparison.edges) do
+        local color = edge.sign > 0 and COLOR.green or COLOR.red
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, edge.from.x, edge.from.y)
+        nvgLineTo(vg, edge.to.x, edge.to.y)
+        nvgStrokeColor(vg, nvgRGBA(color[1], color[2], color[3], 255))
+        nvgStrokeWidth(vg, 3)
+        nvgStroke(vg)
     end
     radarCenter(vg, layout.cx, layout.cy)
     for i, name in ipairs(M.LEGACY.HEX_NAMES) do
@@ -425,10 +465,17 @@ function M.drawRadar(vg, current, preview)
             34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
         local delta = nextValue - currentValue
         if preview and math.abs(delta) > 0.000001 then
-            local amount = math.abs(delta - math.floor(delta + 0.5)) < 0.000001
-                and string.format("%.0f", delta) or string.format("%.1f", delta)
+            local amount
+            if math.abs(delta - math.floor(delta + 0.5)) < 0.000001 then
+                amount = string.format("%.0f", delta)
+            elseif math.abs(delta) < 0.1 then
+                -- 小数变化不显示成 +0.0；不影响当前数值的字号和基线。
+                amount = string.format("%.6f", delta):gsub("0+$", ""):gsub("%.$", "")
+            else
+                amount = string.format("%.1f", delta)
+            end
             local deltaText = (delta > 0 and "+" or "") .. amount
-            fitText(vg, lx, ly + 52, deltaText, 25, 19, 110,
+            fitText(vg, lx, ly - 58, deltaText, 25, 19, 110,
                 delta > 0 and COLOR.green or COLOR.red, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         end
     end

@@ -80,7 +80,7 @@ local function deltaLabel(row)
 end
 
 --- 共用60px行/69px步长、名称左数值右、底色/装饰/字体/描边和可见行命中。
---- 变化仅在右侧第二基线显示，不增高行，不与名称/当前值或相邻行重叠。
+--- 差值叠加在数值上方；名称、当前值、字号和原有行高均保持不变。
 function M.drawAttributeRows(vg, rows, scroll, layout, options)
     local style = M.STYLE
     local rect = layout or M.ATTRIBUTE_LAYOUT
@@ -89,7 +89,7 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
     local bottom = firstY + math.max(0, #rows - 1) * style.rowStep + style.rowH * 0.5
     local maxScroll = math.max(0, bottom - rect.y - rect.h)
     local offset = math.max(0, math.min(maxScroll, scroll or 0))
-    local hits = {}
+    local hits, changes = {}, {}
     nvgSave(vg)
     nvgIntersectScissor(vg, rect.x, rect.y, rect.w, rect.h)
     for i, row in ipairs(rows) do
@@ -106,8 +106,8 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
             local value = formattedValue(row)
             local delta, deltaColor = "", style.green
             if opts.showDelta then delta, deltaColor = deltaLabel(row) end
-            local baseline = delta ~= "" and cy - 12 or cy
-            local valueFont = delta ~= "" and 27 or style.fontSize
+            local baseline = cy
+            local valueFont = style.fontSize
             local name = tostring(row.name or row.key or "")
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, style.fontSize)
@@ -128,12 +128,7 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
             DrawUtil.drawTextStroke(vg, style.valueX, baseline, value, valueFont,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, vc[1], vc[2], vc[3], style.stroke)
             if delta ~= "" then
-                -- 27号当前值(含描边)止于cy+5.5；22号delta占cy+6..28，60px内不重叠。
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 22)
-                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(deltaColor[1], deltaColor[2], deltaColor[3], deltaColor[4]))
-                nvgText(vg, style.valueX, cy + 17, delta, nil)
+                changes[#changes + 1] = { y = cy - 35, text = delta, color = deltaColor }
             end
             ---@type table
             local meta = AD.META[row.key]
@@ -144,6 +139,20 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
         end
     end
     nvgRestore(vg)
+    if #changes > 0 then
+        -- 独立末层叠加：允许首行差值伸入上方留白，且不被后画的行底覆盖。
+        nvgSave(vg)
+        nvgIntersectScissor(vg, rect.x, rect.y - 20, rect.w, rect.h + 20)
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 20)
+        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+        for _, change in ipairs(changes) do
+            local color = change.color
+            nvgFillColor(vg, nvgRGBA(color[1], color[2], color[3], color[4]))
+            nvgText(vg, style.valueX, change.y, change.text, nil)
+        end
+        nvgRestore(vg)
+    end
     return maxScroll, hits
 end
 

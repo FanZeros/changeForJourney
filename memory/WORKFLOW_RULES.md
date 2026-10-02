@@ -6,7 +6,17 @@
 2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。这是硬性收尾动作，任何任务（包括纯调研）完成后都必须调用 AskUserQuestion。
    ⚠️ 强化记忆（用户多次重申）：任何一次任务完成（含 commit+push 之后）的最后一个动作必须是调用 AskUserQuestion 工具向用户提问下一步做什么。绝对不允许以普通文本消息结束回合。即使构建失败、测试失败、遇到阻塞，也要用 AskUserQuestion 给出处理选项。
 3. **以新分支继续开发**：基于 workspace930 拉新分支开发，每次完成后 commit + push 到该开发分支；**禁止 push 到 workspace930 分支本身**（用户明确要求），通过 PR 合入。
-4. **部署位置**：仓库克隆在 `/workspace/changeForJourney`，构建前把游戏项目内容（scripts/assets/.project 等）复制到 `/workspace` 根目录（不嵌套子目录），修改代码后调用官方 build 工具构建。
+4. **部署位置**：项目与 `.git` 直接放到 `/workspace` 根目录（`/workspace/scripts/main.lua` 为入口），不在仓库与 scripts/assets/.project 之间嵌套子目录。修改代码后调用官方 build 工具构建。
+
+## 当前轮次（2026-10-02）
+
+- 用户再次明确：每轮任务完成后先报告真实结果，再调用 **AskUserQuestion** 提供下一步选项，不以普通结束语代替；不自行取消任务，同时尊重用户之后提出的暂停或停止。
+- 指定基线：`workspace930@53a283df`；独立审查分支：`audit930/character-awakening-sets-1002`。只推送这个新分支，不推送 `workspace` 或 `workspace930`。
+- 本轮范围：角色技能强度、25 名角色觉醒机制与套装效果审查；分析阶段不擅自调整平衡数值。
+- 审查已完成：完整25角色／12套及每项未实施差异化方向见 `docs/changeForJourney-gameplay.md` 第21节；新增专项探针实跑 `confirmed=17 healthy=0 harnessErrors=0`，含同根因与设计缺口，不是已修复17个独立bug。六个既有回归ALL PASS；优先修实际触发、三阶接口、成长与结算，再做强度采样。
+- 部署与最新官方 build 已完成，当前构建包包含 389 个 Lua 脚本（包括新增审计入口）。旧 TapTap 身份冲突通过仅本地清除旧绑定后重新初始化解决；本地生成的项目身份不提交。
+- 验证边界：新增探针单文件LSP零诊断，全仓仍有35个基线Error；主入口30秒无头冒烟无Lua traceback、观察到boot16/18，不宣称完整18/18启动或视觉交互验收。
+- 不保存或传播 PAT；GitHub 访问通过一次性内存凭据与 HTTP/HTTPS 代理完成，远程地址保持不含凭证。
 
 ## 当前状态（2026-10-01）
 

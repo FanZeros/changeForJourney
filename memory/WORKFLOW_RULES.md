@@ -15,6 +15,60 @@
 - PAT 不写入仓库、远端 URL、日志或长期记忆；用户在对话中公开过的凭据应提醒撤销并更换。
 - 导入配置的旧项目身份与当前工作区冲突时，本地配置须与源仓库提交分开；不得将当前工作区的身份回写到共享仓库。
 
+## 仓库文件提交规范（2026-10-02）
+
+### 资源元数据
+
+- 保留项目资源 `.meta`：它保存稳定 UUID，可能还含 `c_or_s`；不要增加全局 `*.meta` 忽略规则。
+- 新增、删除、移动构建资源时，同步处理对应 `.meta`。重命名保持原 UUID，不得仅为构建或合并重生成已有身份。自动检查保护同路径以及 Git 已识别重命名的 UUID；移动且大改内容导致 Git 无法识别时，仍需人工确认身份保留。
+- 校验 JSON、非空 UUID、全仓 UUID 唯一和源文件配对；开发配置 `.luarc.json` / `.luarc.jsonc` 不强制配元数据。运行资源 `.json` 只检查语法，不强制套用不完整的引擎 schema；`.jsonc` 不按普通 JSON 解析。
+- `assets/`、`scripts/`、`i18n/` 和 `.project/` 的明确构建资源扩展参与配对检查；普通文档、Python 工具不机械要求 `.meta`。`game_material/` 是上传发布素材目录，不是本项目构建资源根，不强制新增元数据。
+- 引擎参考目录的忽略规则必须根锚定，例如 `/schemas/`，不能用 `schemas/` 误排除 `scripts/shared/schemas/`；项目内同名业务目录正常追踪。
+- 验收图片放本地 `screenshots/`；需要提交的正式素材放 `assets/` 或 `game_material/`，不要混入临时目录。
+
+### 项目配置与本地身份
+
+- `.project/project.json`、`settings.json`、`resources.json`、`i18n.json` 继续版本管理，不整体忽略 `.project/`。
+- 普通功能提交不应改变 `project_id`、`author.id` 或 `taptap_publish` 下的 `app_id` / `developer_id` / `miniapp_id` / `client_id`。它们是项目绑定身份，不是秘密；本地预览重绑定不应带回共享仓库。
+- 入口、版本、发布方向等共享配置有业务需求时可正常改动；不把未经证实的 `project.local.json` 当作引擎已支持的配置覆盖方式。
+- 正式身份迁移须单独说明并明确授权；本地 `--allow-identity-change` 只用于核验迁移，不是绕过 CI 的许可。CI 默认不允许身份迁移，正式迁移需专门审阅调整规则，不能偷偷关闭整个检查。
+- 生成时间戳变化提示告警，提交前确认是否必要。
+
+### 禁止提交
+
+- 构建／缓存／依赖目录：`dist/`、`.build/`、`.cli/`、日志、临时目录、`node_modules/`、`__pycache__/`，以及 Electron 的 `game/`、`game_engine/`、`release/`。
+- 本地验收 `screenshots/`、根目录 `standalone_save.json`、`battle_lab_*.json`，包括这些产物的 `.meta`。
+- `.git-credentials`、`.netrc`、`.env`、含真实值的环境配置和私钥；无秘密值的 `.env.example` / `.env.sample` / `.env.template` 可提交。
+- 引擎提供的参考目录不作为项目源码提交。现有项目工具和协作记忆保留，不盲目删除已追踪的合法文件。
+- `.gitignore` 不影响已经追踪的文件；必须检查 Git 内容，不能只看文件是否被忽略。
+
+### 提交前检查与 CI
+
+```bash
+# 检查暂存区，比较 HEAD；不会读取未暂存的本地构建身份
+python3 .github/scripts/repository_policy.py --staged
+
+# 校验器自身回归（只用标准库与临时 Git 仓库）
+python3 -m unittest discover -s .github/scripts -p 'test_repository_policy.py' -v
+
+# 检查已提交 HEAD，相比目标分支；不读取工作区/暂存区
+python3 .github/scripts/repository_policy.py --base origin/workspace930
+```
+
+- GitHub Actions 的 `repository-policy` 对 `workspace930` 的 PR、推送及手动触发运行；不设 `paths` 过滤，避免后续作为必需检查时永久 Pending。
+- Actions 仅 `contents: read`，不持久化 checkout 凭据，不给 PR 检查传 PAT，不用 `pull_request_target` 检出并执行 PR 代码。
+- 本轮只增加 workflow，不修改 GitHub 分支保护。因此检查会显示结果，但尚不强制阻止管理员合并；保护规则需要另行授权。
+- 不默认强制他人审批：单协作者不能批准自己的 PR。持续保留已有 GitHub secret scanning 和 push protection。
+
+## 本轮最小规范进展（2026-10-02）
+
+- 基线 `workspace930@eee25ef6`，新分支 `chore1002/repository-file-policy`，只推新分支并向 `workspace930` 提交 PR，不直接推基线。
+- 清理 5 个已确认源文件不存在的 `.meta`；`CharacterSchema.lua.meta` 从历史 `2ad68424` 恢复原 UUID，而非新生成。官方 Build 成功，manifest 已确认使用恢复的 UUID；剧情首通、战力、升阶、切关 4 套 Runtime 回归均退出 0、ALL PASS。Lua 逻辑未改，本地生成的 `.project` 身份/设置未暂存。
+- 新增只读 Git 快照校验器及独立临时仓库回归，36 个测试全部通过；本地暂存区检查 2473 路径，0 错误/警告。workflow 语法、只读权限与无 paths 过滤已校验。
+- 用户再次明确授权最小规范；不扩展为配置加载重构，不修改远端保护。完成后先报告真实验证结果，再调用 AskUserQuestion 选择下一步；不得擅自取消已授权任务，也不得忽略用户后续停止或权限拒绝。
+- 完整提交已推送，PR #19：https://github.com/FanZeros/changeForJourney/pull/19，目标 `workspace930`。用户补充 workflow 权限后成功推送；随后同步并发 PR #18（基线 `ce1d16f4`），仅工作记忆追加块冲突，双保留，不改对方弹窗功能。
+- 2026-10-03 交付验证：PR #19 已无冲突，远端规范 CI 成功（https://github.com/FanZeros/changeForJourney/actions/runs/37031081154）；合并态本地 36 个规范测试与离线覆盖层 487 断言、配装手势、遗匣横屏、切关回归全部通过，官方 Build 成功。`workspace930` 保护仍未开启，PR 未自动合并。
+
 ## 弹窗选择性提取确认（2026-10-02）
 
 - 用户在 PR #17 合入后选择“先提取弹窗修复”，工作分支 `fix/workspace930-fullscreen-popups-20261002` 基于 `eee25ef`。

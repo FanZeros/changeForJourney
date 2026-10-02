@@ -853,7 +853,7 @@ function DungeonPage.drawDetailPanel(vg)
     local dailyText = "今日次数:" .. dailyRemain .. "/" .. dailyMax
     local dtR, dtG, dtB = DT.DAILY_R, DT.DAILY_G, DT.DAILY_B
     if dailyRemain <= 0 then
-        dtR, dtG, dtB = 0x8d, 0x5f, 0x41  -- 耗尽=棕色
+        dtR, dtG, dtB = 0x8b, 0x95, 0xa5  -- 耗尽=灰蓝色
     end
     DrawUtil.drawTextStroke(vg, DT.DAILY_X, DT.DAILY_Y, dailyText,
         DT.DAILY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -872,7 +872,7 @@ function DungeonPage.drawDetailPanel(vg)
     nvgFontSize(vg, DT.SWEEP_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     if sweepDisabled then
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
     else
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
     end

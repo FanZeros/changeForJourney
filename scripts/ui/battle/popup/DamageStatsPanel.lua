@@ -203,7 +203,7 @@ local function drawTab(vg, tab, cx, selected)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 38)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
         nvgText(vg, cx, D.TAB_Y, tab.label, nil)
     end
 end
@@ -370,7 +370,7 @@ function DamageStatsPanel.draw(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, D.EMPTY_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 220))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 220))
         nvgText(vg, D.BG_CX, D.EMPTY_Y, "暂无数据", nil)
     else
         local maxVal = rows[1][tab.sortKey] or 0

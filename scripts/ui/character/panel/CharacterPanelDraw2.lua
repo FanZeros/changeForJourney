@@ -489,7 +489,7 @@ function M.drawTeamTabs(vg)
         if isLocked then
             label = tostring(i)
             nvgFontSize(vg, 24)
-            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 锁定=棕色
+            nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))  -- 锁定=灰蓝色
             if img.lock and img.lock >= 0 then
                 drawImageCentered(vg, img.lock, x + 22, y + TAB_H * 0.5, 28, 28, 0.8)
             end

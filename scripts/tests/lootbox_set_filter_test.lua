@@ -5,7 +5,7 @@ local function eq(actual, expected, message)
     assert(actual == expected, message .. ": " .. tostring(actual) .. " / " .. tostring(expected))
 end
 
-function Start()
+local function runTests()
     local oldTime = time
     time = { elapsedTime = 10 }
     local oldSfx = package.loaded["systems.GameSFX"]
@@ -157,5 +157,13 @@ function Start()
     package.loaded["core.DarkIcon"] = oldIcons
     package.loaded["ui.character.equip.EquipmentDetail"] = oldDetail
     time = oldTime
-    print("[lootbox_set_filter_test] 套装筛选全部通过")
+    print("[lootbox_set_filter_test] ALL PASS：套装筛选全部通过")
+end
+
+function Start()
+    local ok, err = pcall(runTests)
+    if not ok then
+        print("[lootbox_set_filter_test] [FAIL] " .. tostring(err))
+    end
+    engine:Exit()
 end

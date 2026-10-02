@@ -92,6 +92,32 @@ function Start()
         local p1b = power.calcHeroPower(1, 1)
         check(p1b == p1, "buildHeroAttrs 重构后战力可重复（" .. p1b .. " == " .. p1 .. "）")
 
+        -- 7) 单件六维饰品在无角色视角也按派生属性折算，升阶投入只计算一次。
+        local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+        local function derivedPower(key, value)
+            local vm = 0
+            for _, derivative in ipairs(AD.DERIVATIVES[key] or {}) do
+                local meta = AD.META[derivative.attr]
+                if meta and meta.valueModel and meta.valueModel > 0 then
+                    local divisor = meta.dataType == AD.TYPE_PCT and 100 or 1
+                    vm = vm + derivative.perPoint * meta.valueModel / divisor
+                end
+            end
+            return value * vm
+        end
+        for _, key in ipairs(AD.BASE_STATS) do
+            local item = { baseStats = { { key, 4.28 } }, affixes = {}, ascendLevel = 0 }
+            check(EquipmentDetail.calcEquipPower(item, nil) == math.floor(derivedPower(key, 4.28)),
+                "无角色视角 " .. key .. " 按派生折算")
+        end
+        local bonusItem = {
+            baseStats = { { "str", 4.28 } }, ascendLevel = 0, affixMult = 1.2,
+            affixes = { { key = "str", value = 10, ascBonus = 40, affixId = 1 } },
+        }
+        local expectedBonus = math.floor(derivedPower("str", 4.28 + 10 * 1.2 + 40))
+        check(EquipmentDetail.calcEquipPower(bonusItem, nil) == expectedBonus,
+            "单件战力包含栏位倍率和升阶投入且不重复放大")
+
         print(string.format("[summary] 战士 Lv1 官方战力=%d 预估=%d | 法师 Lv1 预估=%d", p1, e1, e2))
     end)
     if not ok then

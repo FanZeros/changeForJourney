@@ -581,7 +581,7 @@ function ArtifactDetailPanel.draw(vg)
     if canRefine then
         nvgFillColor(vg, nvgRGBA(BTN_REFINE.TEXT_R, BTN_REFINE.TEXT_G, BTN_REFINE.TEXT_B, BTN_REFINE.TEXT_A))
     else
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
     end
     nvgText(vg, BTN_REFINE.CX, BTN_REFINE.CY, canRefine and "洗练数值" or "已满值", nil)
 
@@ -592,7 +592,7 @@ function ArtifactDetailPanel.draw(vg)
         nvgFillColor(vg, nvgRGBA(REFINE_COST.R, REFINE_COST.G, REFINE_COST.B, 220))
         nvgText(vg, REFINE_COST.X, REFINE_COST.Y, "消耗1点特权点", nil)
     else
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
         nvgText(vg, REFINE_COST.X, REFINE_COST.Y, "数值已达到上限", nil)
     end
 

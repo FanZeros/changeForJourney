@@ -13,6 +13,7 @@ local BlacksmithConfig = require("config.BlacksmithConfig")
 local ExpTable         = require("config.ExpTable")
 local TaskService      = require("rules.task.TaskService")
 local StageConfig      = require("config.StageConfig")
+local AD               = require("systems.AttributeDef")
 
 local QUALITY_COST  = BlacksmithConfig.QUALITY_COST
 
@@ -53,7 +54,28 @@ local function rollAscendAffixes(equip, fromLevel, toLevel)
         if affix.key then exclude[affix.key] = true end
     end
     local qDef = EquipmentConfig.QUALITY[equip.quality]
+    local subRatio = BlacksmithConfig.ASCEND_SUB_STAT_RATIO or 0
     for level = fromLevel + 1, toLevel do
+        -- 升阶副属性递增：每阶按"第 N 条普通词条"序轮转 1 条（魔化槽不占轮转位），
+        -- 追加其当前 value × 比例的固定加成；每阶现取位置，里程碑新增词条随即入轮转
+        if subRatio > 0 then
+            local cur = {}
+            for i, affix in ipairs(affixes) do
+                if not AffixConfig.isCorruptAffix(affix) then
+                    cur[#cur + 1] = i
+                end
+            end
+            local target = #cur > 0 and affixes[cur[((level - 1) % #cur) + 1]] or nil
+            if target then
+                local tv = tonumber(target.value) or 0
+                local meta = AD and AD.META and AD.META[target.key]
+                local inc = tv * subRatio
+                if meta and meta.dataType == AD.TYPE_INT then
+                    inc = math.max(1, math.floor(inc + 0.5))
+                end
+                target.ascBonus = (tonumber(target.ascBonus) or 0) + inc
+            end
+        end
         if level % BlacksmithConfig.ASCEND_AFFIX_INTERVAL == 0 then
             if normalCount < BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT then
                 local rolled = EquipmentSystem.rollAffixes(1,
@@ -279,11 +301,12 @@ end
 
 local function copyAffix(affix)
     return {
-        affixId = affix.affixId,
-        quality = affix.quality,
-        value   = affix.value,
-        key     = affix.key,
-        name    = affix.name,
+        affixId  = affix.affixId,
+        quality  = affix.quality,
+        value    = affix.value,
+        key      = affix.key,
+        name     = affix.name,
+        ascBonus = (tonumber(affix.ascBonus) or 0) > 0 and affix.ascBonus or nil,
     }
 end
 
@@ -717,6 +740,7 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
 
     -- === 根据额外资源类型决定效果 ===
 
+    local oldAffixList = equip.affixes
     local newAffixes
     local upgradedQuality = nil    -- 仅点金石提品时非 nil
     local affixGradeUp = nil       -- 仅点金石后期出口（词缀提品）时非 nil
@@ -820,6 +844,18 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end)
         if lockedCount > 0 then
             extraLog = " locked=" .. lockedCount
+        end
+    end
+
+    -- 升阶副属性加成按位置跟随（洗练重随/替换不丢玩家投入；魔化槽位不持有）
+    if newAffixes and oldAffixList then
+        for i, newAff in ipairs(newAffixes) do
+            local oldAff = oldAffixList[i]
+            if oldAff and newAff
+                and not AffixConfig.isCorruptAffix(oldAff)
+                and not AffixConfig.isCorruptAffix(newAff) then
+                newAff.ascBonus = oldAff.ascBonus
+            end
         end
     end
 

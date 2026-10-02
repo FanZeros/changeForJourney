@@ -87,7 +87,7 @@ nvgFontFace = function(_, _) end
 nvgFontSize = function(_, _) end
 nvgTextAlign = function(_, _) end
 nvgText = function(_, _, _, _) end
-nvgRGBA = function(r, g, b, a) return (a or 255) * 16777216 + b * 65536 + g * 256 + r end
+-- 颜色构造沿用引擎实现，避免数字 mock 污染全项目的 NVGcolor 类型推导。
 NVG_ALIGN_RIGHT = 4; NVG_ALIGN_BOTTOM = 8
 NVG_ALIGN_CENTER = 2; NVG_ALIGN_MIDDLE = 16
 NVG_ALIGN_LEFT = 1; NVG_ALIGN_TOP = 32

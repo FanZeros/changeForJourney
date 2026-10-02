@@ -13,7 +13,7 @@
 
 ## 上次做了什么（2026-10-02，套装筛选数量与六槽对称微调）
 
-- 基于 `feat930/equipment-attribute-preview@ec1d1940` 新建 `feat1002/equipment-filter-count-symmetric-slots`，源码及资源直接部署到 `/workspace` 根，不推 `workspace` 系列分支；向指定原分支提交 PR，不自动合并。
+- 基于 `feat930/equipment-attribute-preview@ec1d1940` 新建 `feat1002/equipment-filter-count-symmetric-slots`，源码及资源直接部署到 `/workspace` 根，不推 `workspace` 系列分支；功能提交 `1890577a` 已推送，PR #15 已创建：https://github.com/FanZeros/changeForJourney/pull/15（base=`feat930/equipment-attribute-preview`），未自动合并。
 - 仓库套装弹窗增加逐行数量：品质/部位/双持副手基础条件与列表共用，按库存实例统计，忽略套装勾选；锁定、已装备、不可穿戴灰显项仍计入，未知模板跳过，none 为无套装。遗匣共用弹窗亦接数量，按品质统计已确定 equip，待整理项不计入 none。getter 每帧一次，关闭/重开清理，名称/数量分列、长数缩字。
 - 六槽统一坐标表：头盔 y185→165，两侧上排316→336、下排578→598，鞋790不动；左右 x325/755 关于540镜像。绘制、点击、peek及跨栏拖放共用，无单独偏移。
 - 验证：官方 Build 成功；7套官方 Runtime 回归均退出0，无 FAIL（backpack259、set_icon92、gesture38、scroll10，另lootbox/lifecycle/真实集成冒烟）；本轮 Lua 文件 LSP 0 Error。全工作区48 Error属于基线未改文件（雷达跨文件类型、颜色测试桩污染、ScenarioDialogue mode_作用域），本轮不混修。

@@ -399,21 +399,16 @@ local function drawEntry(vg, entry, index, cy)
             DarkIcon.drawIconDark(vg, icon, 181, cy, 160, 160, 1.0)
         end
         if equip.level then
-            if EquipmentSetIcon.hasBadge(equip) then
-                local lvl = EquipmentSetIcon.levelLayout(equip, 181, cy, 174)
-                local lvlText = "Lv." .. tostring(equip.level)
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 28)
-                local badge = EquipmentSetIcon.badgeLayout(181, cy, 174)
-                local availableW = badge.x - lvl.x - 4
-                local textW = nvgTextBounds(vg, 0, 0, lvlText)
-                local font = textW > availableW and 28 * availableW / textW or 28
-                text(vg, lvl.x, lvl.y, lvlText, font,
-                    lvl.align, 255, 255, 255, 3)
-            else
-                text(vg, 181, cy + 69, "Lv." .. tostring(equip.level), 32,
-                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-            end
+            local lvl = EquipmentSetIcon.levelLayout(equip, 181, cy, 174)
+            local lvlText = "Lv." .. tostring(equip.level)
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 32)
+            local badge = EquipmentSetIcon.badgeLayout(181, cy, 174)
+            local availableW = lvl.x - (badge.x + badge.size) - 8
+            local textW = nvgTextBounds(vg, 0, 0, lvlText)
+            local font = textW > availableW and 32 * availableW / textW or 32
+            text(vg, lvl.x, cy + 69, lvlText, font,
+                NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
         end
         EquipmentSetIcon.drawBadge(vg, equip, 181, cy, 174, 1.0)
     else

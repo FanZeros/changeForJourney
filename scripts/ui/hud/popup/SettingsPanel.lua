@@ -31,7 +31,7 @@ local state = {
     muted = false,
     showDamageNumbers = true,
     showEffects = true,
-    showSetIcons = true,  -- 装备格右下角套装徽记
+    showSetIcons = true,  -- 装备格左下角套装徽记
     -- 滑块拖拽
     draggingSlider = nil,  -- nil / "bgm" / "sfx"
 }

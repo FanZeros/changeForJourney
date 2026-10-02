@@ -831,13 +831,11 @@ function M.draw(vg)
                 local lvlX, lvlY = lvl.x, lvl.y
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, lvl.fontSize)
-                if EquipmentSetIcon.hasBadge(equippedEquip) then
-                    local badge = EquipmentSetIcon.badgeLayout(scx, scy, DT_SLOT_SIZE)
-                    local availableW = badge.x - lvlX - 4
-                    local textW = nvgTextBounds(vg, 0, 0, lvlText)
-                    if textW > availableW then
-                        nvgFontSize(vg, lvl.fontSize * availableW / textW)
-                    end
+                local badge = EquipmentSetIcon.badgeLayout(scx, scy, DT_SLOT_SIZE)
+                local availableW = lvlX - (badge.x + badge.size) - 8
+                local textW = nvgTextBounds(vg, 0, 0, lvlText)
+                if textW > availableW then
+                    nvgFontSize(vg, lvl.fontSize * availableW / textW)
                 end
                 nvgTextAlign(vg, lvl.align)
                 nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))

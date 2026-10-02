@@ -155,13 +155,12 @@ function M.bind(deps)
                     local lvlX, lvlY = lvl.x, lvl.y
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, lvl.fontSize)
-                    if EquipmentSetIcon.hasBadge(equip) then
-                        local badge = EquipmentSetIcon.badgeLayout(cx, cy, GRID.CELL_SIZE)
-                        local availableW = badge.x - lvlX - 4
-                        local textW = nvgTextBounds(vg, 0, 0, lvlText)
-                        if textW > availableW then
-                            nvgFontSize(vg, lvl.fontSize * availableW / textW)
-                        end
+                    -- 固定预留左下角标位，显示开关不让等级移位或忽大忽小。
+                    local badge = EquipmentSetIcon.badgeLayout(cx, cy, GRID.CELL_SIZE)
+                    local availableW = lvlX - (badge.x + badge.size) - 8
+                    local textW = nvgTextBounds(vg, 0, 0, lvlText)
+                    if textW > availableW then
+                        nvgFontSize(vg, lvl.fontSize * availableW / textW)
                     end
                     nvgTextAlign(vg, lvl.align)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
@@ -215,7 +214,7 @@ function M.bind(deps)
 
                 if equip.locked and getImgLock() >= 0 then
                     local hasSetBadge = equip.equippedByHeroId and EquipmentSetIcon.hasBadge(equip)
-                    -- 三角标同存时缩小锁，放于头像与左下等级之间。
+                    -- 三角标同存时缩小锁，放于头像与左下套装徽记之间。
                     local lockSize = hasSetBadge and 32 or 56
                     local lockX = cx - GRID.CELL_SIZE * 0.5 + lockSize * 0.5 + 4
                     local lockY

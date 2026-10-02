@@ -150,6 +150,10 @@ local originalRequire = require
 local legacySetIcon = {
     drawBadge = function() return false end,
     hasBadge = function() return false end,
+    badgeLayout = function(cx, cy, size)
+        return { x = cx - size * 0.5 + size * 0.025,
+            y = cy + size * 0.5 - size * 0.3, size = size * 0.275 }
+    end,
     levelLayout = function(_, cx, cy, size)
         return { x = cx + size * 0.5 - 8, y = cy + size * 0.5 - 6,
             fontSize = 40, align = NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM }

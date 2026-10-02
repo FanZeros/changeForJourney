@@ -76,14 +76,33 @@ function Start()
         nvgCreateImage = function(_, path) loaded[#loaded + 1] = path; return #loaded end
         check(Icon.draw({}, "carapace", 100, 100, 46, 1), "套装正文图标不受角标关闭影响")
         Icon.draw({}, "carapace", 100, 100, 46, 1)
-        check(#loaded == 1 and loaded[1] == "image/套装图标/v2/SET_carapace.png", "采用V2且不逐帧加载重复图片")
+        check(#loaded == 1 and loaded[1] == "image/套装图标/v3/SET_carapace.png", "采用V3且不逐帧加载重复图片")
         check(not Icon.draw({}, "missing", 100, 100, 46, 1), "未知套装安全跳过")
         Settings.setSetIconsEnabled(true)
         check(Icon.hasBadge({ templateId = template }), "开启时真实套装角标可见")
         local badge = Icon.badgeLayout(80, 80, 160)
-        local level = Icon.levelLayout({ templateId = template }, 80, 80, 160)
-        check(badge.size == 44 and badge.x == 112 and badge.y == 112, "160格套装角标占右下44像素")
-        check(level.x == 8 and level.align == NVG_ALIGN_LEFT + NVG_ALIGN_BOTTOM, "显示角标时等级移到左下")
+        local equip = { templateId = template, level = 9999 }
+        local level = Icon.levelLayout(equip, 80, 80, 160)
+        check(badge.size == 44 and badge.x == 4 and badge.y == 112, "160格套装角标占左下44像素")
+        check(level.x == 152 and level.y == 154 and level.fontSize == 40
+            and level.align == NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM, "显示角标时等级固定右下40号")
+        Settings.setSetIconsEnabled(false)
+        local offLevel = Icon.levelLayout(equip, 80, 80, 160)
+        check(not Icon.hasBadge(equip) and offLevel.x == level.x and offLevel.y == level.y
+            and offLevel.fontSize == level.fontSize and offLevel.align == level.align,
+            "关闭偏好同装备Lv.9999布局完全不变")
+        local plainLevel = Icon.levelLayout({ templateId = "missing", level = 9999 }, 80, 80, 160)
+        check(plainLevel.x == level.x and plainLevel.y == level.y
+            and plainLevel.fontSize == level.fontSize and plainLevel.align == level.align,
+            "无套装不改变等级位置/字号/对齐")
+        local drawCount = #iconDraws
+        check(not Icon.drawBadge({}, equip, 80, 80, 160) and #iconDraws == drawCount,
+            "关闭偏好drawBadge安全跳过")
+        Settings.setSetIconsEnabled(true)
+        check(Icon.drawBadge({}, equip, 80, 80, 160), "开启偏好drawBadge可绘制真实装备")
+        local actual = iconDraws[#iconDraws]
+        check(actual.cx == badge.cx and actual.cy == badge.cy and actual.w == 44,
+            "drawBadge实际使用左下布局")
         local Filter = originalRequire("ui.widget.SetFilterDialog")
         Filter.open({}, { onChange = function() changes = changes + 1 end })
         Filter.handleInput(540, 610)

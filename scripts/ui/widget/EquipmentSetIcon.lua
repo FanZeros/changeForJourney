@@ -1,4 +1,4 @@
--- 套装徽记共享缓存与装备角标布局；默认采用用户审核通过的 V2 程序化素材。
+-- 套装徽记共享缓存与装备角标布局；采用用户审核通过的 V3 程序化素材。
 local SetConfig = require("config.EquipmentSetConfig")
 local EquipmentConfig = require("config.EquipmentConfig")
 local DrawUtil = require("core.DrawUtil")
@@ -25,7 +25,7 @@ function M.get(vg, setId)
     if not vg or not SetConfig.get(setId) then return -1 end
     local cached = cache[setId]
     if cached ~= nil then return cached end
-    local path = "image/套装图标/v2/SET_" .. setId .. ".png"
+    local path = "image/套装图标/v3/SET_" .. setId .. ".png"
     local image = nvgCreateImage(vg, path, 0)
     cache[setId] = image or -1
     if not image or image < 0 then print("[EquipmentSetIcon] 加载失败：" .. path) end
@@ -43,17 +43,17 @@ end
 function M.badgeLayout(cx, cy, cellSize)
     local size = cellSize * 0.275
     local pad = cellSize * 0.025
-    local x, y = cx + cellSize * 0.5 - pad - size, cy + cellSize * 0.5 - pad - size
+    local x, y = cx - cellSize * 0.5 + pad, cy + cellSize * 0.5 - pad - size
     return { x = x, y = y, size = size, cx = x + size * 0.5, cy = y + size * 0.5 }
 end
 
 function M.levelLayout(equip, cx, cy, cellSize)
-    local badge = M.hasBadge(equip)
+    -- 等级固定原右下位置，开关套装角标不改变等级的对齐和字号。
     return {
-        x = cx + (badge and -1 or 1) * (cellSize * 0.5 - cellSize * 0.05),
-        y = cy + cellSize * 0.5 - cellSize * 0.0375,
-        fontSize = cellSize * (badge and 0.20 or 0.25),
-        align = (badge and NVG_ALIGN_LEFT or NVG_ALIGN_RIGHT) + NVG_ALIGN_BOTTOM,
+        x = cx + cellSize * 0.45,
+        y = cy + cellSize * 0.4625,
+        fontSize = math.min(40, cellSize * 0.25),
+        align = NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM,
     }
 end
 

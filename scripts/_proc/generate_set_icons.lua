@@ -141,6 +141,12 @@ local function render(def)
     line(57, 244, 196, 244, 1, base, 0.25)
     -- 只变换后续主体，框体不随符号放大；主体轮廓约扩张22%。
     subjectScale = 1.22
+    if def.id == "starless" then
+        -- 只提亮星盘主体：保留原紫色配色与暗底，增强细轨和星芒的对比。
+        base = mix(base, { 206, 188, 242 }, 0.36)
+        light = mix(base, { 237, 230, 250 }, 0.52)
+        shade = mix(base, { 24, 20, 38 }, 0.60)
+    end
 
     if def.id == "carapace" then
         -- 对称甲虫壳：叠片、头角与三对肢节。

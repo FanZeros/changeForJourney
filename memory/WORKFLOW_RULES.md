@@ -5,12 +5,19 @@
 1. **不能取消/退出任务**：必须持续推进直到完成。
 2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。这是硬性收尾动作，任何任务（包括纯调研）完成后都必须调用 AskUserQuestion。
    ⚠️ 强化记忆（用户多次重申）：任何一次任务完成（含 commit+push 之后）的最后一个动作必须是调用 AskUserQuestion 工具向用户提问下一步做什么。绝对不允许以普通文本消息结束回合。即使构建失败、测试失败、遇到阻塞，也要用 AskUserQuestion 给出处理选项。
-3. **以新分支继续开发**：基于 workspace930 拉新分支开发，每次完成后 commit + push 到该开发分支；**禁止 push 到 workspace930 分支本身**（用户明确要求），通过 PR 合入。
-4. **部署位置**：仓库克隆在 `/workspace/changeForJourney`，构建前把游戏项目内容（scripts/assets/.project 等）复制到 `/workspace` 根目录（不嵌套子目录），修改代码后调用官方 build 工具构建。
+3. **以新分支继续开发**：基于 workspace930 拉新分支开发，每次完成后 commit + push 到该开发分支；**禁止 push 到 workspace 或 workspace930 分支本身**（用户明确要求），通过 PR 合入。推送时显式指定工作分支，不强推、不擅自合并 PR。
+4. **部署位置**：当前仓库和游戏项目直接位于 `/workspace` 根目录，scripts/assets/.project 等不再嵌套子目录；保护引擎提供的只读目录，修改代码后调用官方 build 工具构建。
 
-## 当前状态（2026-10-01）
+### 用户工作流确认（2026-10-02）
 
-- 仓库：https://github.com/FanZeros/changeForJourney.git（PAT 见用户指令）
+- 每轮汇报实际结果后，以 **AskUserQuestion** 具体选项询问下一步；已获明确授权的步骤持续推进，不擅自取消任务，也不忽略用户后来明确提出的停止要求。
+- 分支排查必须区分“分支最新提交未被完整合并”和“实际功能尚未合入”，避免把合并后追加的记忆文档当作遗漏功能。
+- PAT 不写入仓库、远端 URL、日志或长期记忆；用户在对话中公开过的凭据应提醒撤销并更换。
+- 导入配置的旧项目身份与当前工作区冲突时，本地配置须与源仓库提交分开；不得将当前工作区的身份回写到共享仓库。
+
+## 历史状态（2026-10-01，仅供参考）
+
+- 仓库：https://github.com/FanZeros/changeForJourney.git（凭据仅使用本次授权，禁止持久化）
 - 活跃分支：`dev/930-scenario82-check`（PR #9，首通情景接线修复）；已合并：PR #6（装备详情UI+万单位）、PR #7（剧情落档）、PR #8（仓库/遗匣套装筛选）
 - PR 创建方式备忘：GitHub API `POST /repos/FanZeros/changeForJourney/pulls`（PAT 认证 + 代理 http://127.0.0.1:1080），body 里 head=开发分支 base=workspace930；PR dirty 时本地 merge origin/workspace930 解冲突再 push
 

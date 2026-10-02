@@ -60,7 +60,10 @@ function Start()
     local current = { left = {}, right = {}, stats = { str = 10, agi = 8, vit = 6, spi = 4, luk = 3, int = 2 } }
     local preview = { left = {}, right = {}, stats = { str = 20, agi = 5, vit = 6, spi = 4, luk = 3, int = 2 } }
     local selection = nil
-    local buildCount, requestedSeq, requestedSlot = 0, nil, nil
+    local bonusRows = { { key = "equipBonus", name = "装备净增益", value = "+5.5", currentValue = 5.5,
+        desc = "装备来源说明", delta = 2, deltaText = "+2.0" } }
+    local bonuses = { rows = bonusRows, current = { stats = { str = 5.5 } }, preview = { stats = { str = 7.5 } } }
+    local buildCount, requestedSeq, requestedSlot, requestedBonuses = 0, nil, nil, false
     local summaries = {
         { setId = "A", name = "旧套装", count = 6, twoActive = true, fourActive = true, sixActive = true },
         { setId = "B", name = "第二套装", count = 1 },
@@ -96,10 +99,12 @@ function Start()
         ["systems.EquipmentSetSystem"] = {},
         ["ui.character.equip.EquipmentDetail"] = { getSelection = function() return selection end },
         ["ui.character.detail.EquipmentPreview"] = {
-            build = function(heroId, level, seq, slot)
+            build = function(heroId, level, seq, slot, options)
                 buildCount = buildCount + 1
                 requestedSeq, requestedSlot = seq, slot
+                requestedBonuses = options and options.includeEquipmentBonuses == true
                 return { current = current, preview = seq and preview or nil, rows = rows,
+                    equipmentBonuses = requestedBonuses and bonuses or nil,
                     currentSets = summaries, previewSets = previewSummaries,
                     candidate = seq and { seq = seq, slot = slot, name = "测试候选" } or nil }
             end,
@@ -426,6 +431,49 @@ function Start()
     check(Panel.handleSideScroll(-1, radar.cx, radar.cy), "雷达wheel消费但不借用旧scrollTarget")
     check(not Panel.handleSideScroll(-1, Draw.BTN_TAB_EQUIP_CX, Draw.BTN_TAB_EQUIP_CY), "wheel不吞页签")
     Panel.clear(); draw(); check(rendered("属性1") ~= nil, "clear清滚动与候选缓存")
+
+    local toggleX, toggleY = 540, Stats.LAYOUT.titleY
+    check(Panel.getAttributeMode() == "character" and not requestedBonuses,
+        "初始模式仍为角色总属性且不额外构建装备差分")
+    check(Panel.isAttributeTogglePoint(toggleX, toggleY) and Panel.containsComparisonPoint(toggleX, toggleY),
+        "标题属于切换与比较保留热区，钉住候选首击不被dismiss吞掉")
+    check(Panel.handleInput(toggleX, toggleY, 1, { equipSlot = "offhand" }), "标题单击消费并切换")
+    local toggleBuilds = buildCount
+    draw()
+    check(Panel.getAttributeMode() == "equipment" and requestedBonuses and buildCount == toggleBuilds + 1,
+        "切换装备加成触发一次按需重建")
+    check(rendered("装备加成") and rendered("装备净增益") and rendered("+5.5") and not rendered("属性1"),
+        "装备模式标题/列表/雷达只显示净贡献，不回退角色总属性")
+    local cachedBuilds = buildCount
+    draw(); check(buildCount == cachedBuilds, "装备模式后续帧继续命中缓存")
+    Panel.handleInput(ax, firstRowY, 1, {})
+    clearDraw(); Panel.drawSetCodex({})
+    check(rendered("装备来源说明"), "装备行说明使用来源口径")
+    Panel.handleInput(toggleX, toggleY, 1, {})
+    clearDraw(); Panel.drawSetCodex({})
+    check(#textCalls == 0 and Panel.getAttributeMode() == "character", "切回角色属性清理旧说明和热区")
+    draw(); check(rendered("角色属性") and rendered("属性1") and not requestedBonuses,
+        "切回后恢复总属性且滚动归顶")
+    Panel.handleInput(toggleX, toggleY, 1, {})
+    local oldBonusRows = bonuses.rows
+    bonuses.rows = {}
+    draw(); check(rendered("暂无装备增益") and not rendered("属性1"), "无增益显示空态，不展示基础数值")
+    bonuses.rows = oldBonusRows
+    Panel.handleInput(toggleX, toggleY, 1, {})
+    draw()
+    clearDraw(); Stats.drawRadar({}, {}, nil, true)
+    local zeroPolygons = radarPaths()
+    local allCentered = true
+    for _, point in ipairs(zeroPolygons[1]) do
+        if not near(point[1], radar.cx) or not near(point[2], radar.cy) then allCentered = false end
+    end
+    check(allCentered, "空装六围落中心而不是8%视觉下限虚构增益")
+    clearDraw(); Stats.drawRadar({}, { str = 2.8597845, agi = 0.012345 }, nil, true)
+    check(rendered("+2.9") and not rendered("+2.859785"), "装备六围正常值保留一位小数，不以长raw小数撑出栏外")
+    local narrow = rendered("+0.012345")
+    check(narrow and narrow.fontSize == 34, "微小六围增益不显示成+0或+0.0")
+    clearDraw(); Stats.drawRadar({}, { agi = 1234567890123 }, nil, true)
+    check(rendered("+1234567890123").fontSize < 34, "超长装备六围数值按栏内可用宽度缩放")
 
     print("[character_equip_panel_test] ALL PASS: " .. count .. " 个断言")
     end

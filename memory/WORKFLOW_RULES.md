@@ -20,7 +20,7 @@
 - `EquipmentPreview.build` 的 `includeEquipmentBonuses` 按需启用同人物穿装/裸装完整差分；两侧神器为空，排除神器来源；保留六围派生、普通词条倍率、魔化最终乘区、升阶和两件套面板属性。套装四/六件条件效果仍在摘要说明，不提前执行战斗触发。
 - 原试穿差值保留；标题归比较保留热区，不关闭钉住候选，不取消副手筛选，不发穿戴操作。显示模式进入缓存键，切换重置属性滚动和说明，后续帧继续命中缓存。同队转移装备时，当前和试穿世界分别构建裸装基准，星门共鸣净贡献与实际穿后保持一致。
 - 回归：装备预览 117 断言、配装绘图/缓存 97 断言、横屏手势 44 断言、稳定属性列表 55 断言、真实模块集成冒烟均通过。装备雷达小数保留有效精度并限制栏内宽度，避免长数值越界。主入口运行一分钟，初始化 18/18 完成，未出现 Lua 运行错误。修改文件 LSP 无 Error；官方 Build 成功，410 个 Lua 入包。首次集成测试失败因先选副手按既有筛选逻辑清了候选，修正 fixture（先选副手，再 open/pin）后通过，非显示切换缺陷。
-- 本地构建身份配置由引擎重建，不提交 `.project` 的生成改动。交付必须 commit + push 当前开发分支并向 `feat930/equipment-attribute-preview` 提交 PR；完成简报后仍必须真正调用 **AskUserQuestion** 询问下一步。
+- 已交付：功能提交 `923f547a` 已推送到 `feat930/equipment-bonus-toggle-1002`；PR #16（https://github.com/FanZeros/changeForJourney/pull/16）已创建，base 为 `feat930/equipment-attribute-preview`。未推 workspace 或原分支，未自动合并 PR。构建生成的 `.project` 改动仅留本地、不提交。视觉与设备触控等待人工预览验收；完成简报后仍必须真正调用 **AskUserQuestion** 询问下一步。
 
 
 ## 当前状态（2026-10-01）

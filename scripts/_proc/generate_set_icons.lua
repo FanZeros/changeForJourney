@@ -1,8 +1,9 @@
 -- 套装图标审核稿：CPU 程序化金属徽章，不使用 AI 出图，不改游戏界面。
 -- 用法：UrhoXRuntime _proc/generate_set_icons.lua -tapcode_dir=. -tool_mode -graphicsheadless
--- 配色直接读取 EquipmentSetConfig；保留 V1，V2 放大主体并追加材质刻纹。
+-- 配色直接读取 EquipmentSetConfig；V3 丰富主体结构，已接入的 V2 保持不变。
 local Sets = require("config.EquipmentSetConfig")
-local OUT = "/workspace/assets/image/套装图标/v2/"
+local Details = require("_proc.SetIconDetails")
+local OUT = "/workspace/assets/image/套装图标/v3/"
 local SIZE, SCALE = 512, 2
 local ORDER = { "carapace", "faceless", "riftcrystal", "last_rite", "tidepress", "nitros",
     "swordgate", "starless", "ironwall", "emberscout", "gambler", "bonehunger" }
@@ -381,6 +382,10 @@ local function render(def)
         circle(164, 126, 3, shade)
         line(128, 192, 128, 199, 2, edge)
     end
+    Details.draw(def.id, {
+        poly = poly, circle = circle, line = line, stroke = stroke, arc = arc, bezier = bezier,
+        glyph = glyph, mix = mix, base = base, light = light, shade = shade, dark = dark, edge = edge,
+    })
     local img = Image()
     assert(img:SetSize(SIZE, SIZE, 4), "创建图像失败")
     for y = 0, SIZE - 1 do

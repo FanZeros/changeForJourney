@@ -454,8 +454,8 @@ function M.draw(vg, heroId)
     local costText = selectedCost > 0 and ("/" .. selectedCost) or ""
     local fullText = shardNumText .. costText
     DrawUtil.drawShardIcon(vg, heroId, SHARD_ICON_CX, SHARD_ROW_CY, SHARD_ICON_SIZE, 1.0)
-    -- 碎片数量：够=亮青，不够=棕色
-    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8d, 0x5f, 0x41 }
+    -- 碎片数量：够=亮青，不够=灰蓝色
+    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8b, 0x95, 0xa5 }
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 66)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -483,10 +483,10 @@ function M.draw(vg, heroId)
     end
     local _bfAct = BF.begin(vg, "awp_activate", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, imgActivateBtn, BTN_CX, BTN_CY, BTN_W, BTN_H, btnAlpha)
-    -- 按钮文字：可嵌合/已嵌合=亮骨白；条件未满足才用棕色。
+    -- 按钮文字：可嵌合/已嵌合=亮骨白；条件未满足才用灰蓝色。
     local tr, tg, tb = 244, 237, 224
     if btnDisabled and not currentNodeActive then
-        tr, tg, tb = 0x8d, 0x5f, 0x41
+        tr, tg, tb = 0x8b, 0x95, 0xa5
     end
     drawTextStroke(vg, BTN_CX, BTN_CY, btnText, BTN_TEXT_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4,

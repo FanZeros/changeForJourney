@@ -177,18 +177,22 @@ local BASE_STAT_SET = {}
 for _, k in ipairs(AD.BASE_STATS) do BASE_STAT_SET[k] = true end
 
 --- 计算单个属性贡献的战斗力值
+--- [fix 930] 六围一律按派生表折算（有 excluded 时排除异系派生）。
+---   旧逻辑仅在 heroId 非 nil 时走派生表，导致背包/战利品/铁匠铺视角
+---   （heroId=nil）六围按 valueModel=5 满额计价——戒指/吊坠等六围饰品
+---   战力虚高 3.3 倍（设计调平值 ≈1.5/点，见模板 4.28×1.5≈6.43）。
 ---@param key string 属性 key
 ---@param value number 属性数值
 ---@param excluded table|nil 排除集合
 ---@return number 战斗力贡献
 local function calcStatPower(key, value, excluded)
-    -- 六围属性且存在排除规则 → 按派生表部分计算
-    if excluded and BASE_STAT_SET[key] then
+    -- 六围属性 → 恒按派生表折算有效战斗力
+    if BASE_STAT_SET[key] then
         local derivatives = AD.DERIVATIVES and AD.DERIVATIVES[key]
         if derivatives then
             local effectiveVM = 0
             for _, d in ipairs(derivatives) do
-                if not excluded[d.attr] then
+                if not (excluded and excluded[d.attr]) then
                     local dMeta = AD.META[d.attr]
                     if dMeta and dMeta.valueModel and dMeta.valueModel > 0 then
                         -- perPoint 是每点六围增加的派生属性量
@@ -815,6 +819,15 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
             nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
             nvgText(vg, REF_AFFIX_TEXT_X + offsetX, affixY, affName, nil)
 
+            -- 升阶副属性加成标记（金色小字"升阶"，ascBonus>0 时显示）
+            local ascB = tonumber(affix.ascBonus) or 0
+            if ascB > 0 and not isCorrupt then
+                local nameW = nvgTextBounds(vg, 0, 0, affName) or 0
+                nvgFontSize(vg, 22)
+                nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 235))
+                nvgText(vg, REF_AFFIX_TEXT_X + offsetX + nameW + 8, affixY, "升阶", nil)
+            end
+
             -- 词缀数值 - 右对齐 X1016 字号34 白色 描边4（与基础属性相同；生效值含栏位倍率）
             local affVal = "+" .. formatStatValue(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix))
             drawTextStroke(vg, REF_STAT_VAL_X + offsetX, affixY, affVal,
@@ -996,7 +1009,16 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
             nvgFontSize(vg, 36)
             nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
-            nvgText(vg, leftX, y, affix.name or "?", nil)
+            local cName = affix.name or "?"
+            nvgText(vg, leftX, y, cName, nil)
+            -- 升阶副属性加成标记（金色小字"升阶"，ascBonus>0 时显示）
+            local cAscB = tonumber(affix.ascBonus) or 0
+            if cAscB > 0 and not AffixConfig.isCorruptAffix(affix) then
+                local cNameW = nvgTextBounds(vg, 0, 0, cName) or 0
+                nvgFontSize(vg, 20)
+                nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 235))
+                nvgText(vg, leftX + cNameW + 6, y, "升阶", nil)
+            end
             drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix)), 36,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
             bottom = y + REF_AFFIX_ROW_H * 0.5

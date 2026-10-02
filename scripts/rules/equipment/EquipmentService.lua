@@ -39,13 +39,15 @@ local EXCLUDED_KEYS_BY_DMG_TYPE = {
 local BASE_STAT_SET = {}
 for _, k in ipairs(AD.BASE_STATS) do BASE_STAT_SET[k] = true end
 
+-- [fix 930] 与客户端 EquipmentDetail.calcStatPower 同步：
+-- 六围一律按派生表折算，消除 heroId=nil 视角下六围饰品战力虚高
 local function calcStatPower(key, value, excluded)
-    if excluded and BASE_STAT_SET[key] then
+    if BASE_STAT_SET[key] then
         local derivatives = AD.DERIVATIVES and AD.DERIVATIVES[key]
         if derivatives then
             local effectiveVM = 0
             for _, d in ipairs(derivatives) do
-                if not excluded[d.attr] then
+                if not (excluded and excluded[d.attr]) then
                     local dMeta = AD.META[d.attr]
                     if dMeta and dMeta.valueModel and dMeta.valueModel > 0 then
                         if dMeta.dataType == AD.TYPE_PCT then

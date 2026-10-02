@@ -42,13 +42,6 @@
       pointer-events: none;
     }
     
-    #loading-logo {
-      width: clamp(300px, 30vw, 400px);
-      height: auto;
-      margin-bottom: 6px;
-      filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.3));
-    }
-    
     #loading-container {
       width: clamp(300px, 60vw, 600px);
       display: flex;
@@ -149,12 +142,11 @@
 <body oncontextmenu="return false;">
 
   <div id="loading-screen">
-    <img id="loading-logo" src="https://tapcode-sce.spark.xd.com/src/web/src/LogoLarge.png" alt="UrhoX" onerror="this.style.display='none'">
     <div id="loading-container">
       <div id="loading-progress-bg">
         <div id="loading-progress-bar"></div>
       </div>
-      <div id="loading-status">Initializing...</div>
+      <div id="loading-status">初始化中</div>
       <div id="loading-percent">0%</div>
     </div>
   </div>
@@ -175,6 +167,22 @@
     </div>
   </div>
 
+  <!-- 运行时 updateStatus 会把状态覆写为「加载中/Loading...」，统一改写为「初始化中」；
+       监听整棵文档，脚本置于 head/body 均生效（pack 对旧 dist 也注入同一段） -->
+  <script id="loading-status-fix">
+    (function () {
+      var MAP = { '加载中': '初始化中', 'Loading...': '初始化中', 'Initializing...': '初始化中' };
+      function fix() {
+        var el = document.getElementById('loading-status');
+        if (!el) return;
+        var t = MAP[el.textContent];
+        if (t) el.textContent = t;
+      }
+      fix();
+      new MutationObserver(fix).observe(document.documentElement,
+        { childList: true, characterData: true, subtree: true });
+    })();
+  </script>
   <script src="https://tapcode-sce.spark.xd.com/src/web/src/index.min.js"></script>
 
 </body>

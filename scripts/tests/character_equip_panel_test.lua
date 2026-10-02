@@ -71,6 +71,8 @@ function Start()
     local mods = {
         ["systems.AttributeDef"] = AD,
         ["config.EquipmentSetConfig"] = { get = function() return cfg end },
+        -- 本测试只验配装布局，套装图标由独立 set_icon_badge_test 覆盖。
+        ["ui.widget.EquipmentSetIcon"] = { draw = function() return false end },
         ["core.DrawUtil"] = { drawTextStroke = function(vg, x, y, value, size, align, r, g, b)
             nvgFontSize(vg, size)
             nvgFillColor(vg, nvgRGBA(r or 255, g or 255, b or 255, 255))

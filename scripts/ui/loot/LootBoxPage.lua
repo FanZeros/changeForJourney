@@ -8,6 +8,7 @@ local DarkIcon = require("core.DarkIcon")
 local EquipmentConfig = require("config.EquipmentConfig")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local ImageCache = require("ui.widget.ImageCache")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 local QualityMark = require("ui.widget.QualityMark")
 local SetFilterDialog = require("ui.widget.SetFilterDialog")
 local BF = require("systems.ButtonFeedback")
@@ -398,9 +399,23 @@ local function drawEntry(vg, entry, index, cy)
             DarkIcon.drawIconDark(vg, icon, 181, cy, 160, 160, 1.0)
         end
         if equip.level then
-            text(vg, 181, cy + 69, "Lv." .. tostring(equip.level), 32,
-                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+            if EquipmentSetIcon.hasBadge(equip) then
+                local lvl = EquipmentSetIcon.levelLayout(equip, 181, cy, 174)
+                local lvlText = "Lv." .. tostring(equip.level)
+                nvgFontFace(vg, "sans")
+                nvgFontSize(vg, 28)
+                local badge = EquipmentSetIcon.badgeLayout(181, cy, 174)
+                local availableW = badge.x - lvl.x - 4
+                local textW = nvgTextBounds(vg, 0, 0, lvlText)
+                local font = textW > availableW and 28 * availableW / textW or 28
+                text(vg, lvl.x, lvl.y, lvlText, font,
+                    lvl.align, 255, 255, 255, 3)
+            else
+                text(vg, 181, cy + 69, "Lv." .. tostring(equip.level), 32,
+                    NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
+            end
         end
+        EquipmentSetIcon.drawBadge(vg, equip, 181, cy, 174, 1.0)
     else
         text(vg, 181, cy, "待整理", 32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 181, 166, 143, 3)
     end

@@ -313,6 +313,26 @@ function M.bind(deps)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
         nvgText(vg, 80, cy, label, nil)
+        -- 中间留白放显示勾选，不改变筛选、列表或右侧取消部位按钮。
+        local enabled = require("ui.widget.EquipmentSetIcon").isEnabled()
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, 480, cy - 18, 36, 36, 6)
+        nvgFillColor(vg, nvgRGBA(16, 13, 10, 230))
+        nvgFill(vg)
+        nvgStrokeColor(vg, nvgRGBA(196, 160, 90, 220))
+        nvgStrokeWidth(vg, 2)
+        nvgStroke(vg)
+        if enabled then
+            nvgBeginPath(vg)
+            nvgMoveTo(vg, 488, cy)
+            nvgLineTo(vg, 496, cy + 8)
+            nvgLineTo(vg, 509, cy - 9)
+            nvgStrokeColor(vg, nvgRGBA(244, 226, 174, 255))
+            nvgStrokeWidth(vg, 3)
+            nvgStroke(vg)
+        end
+        nvgFillColor(vg, nvgRGBA(216, 201, 163, 255))
+        nvgText(vg, 530, cy, "套装图标", nil)
         if filterSlot then
             DarkIcon.drawNine(vg, "btn", 780, cy - 24, 220, 48, { accent = "gold" })
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -320,7 +340,13 @@ function M.bind(deps)
         end
     end
     function api.handleFilterInput(dx, dy)
-        if state.tab ~= "equip" or not filterSlot then return false end
+        if state.tab ~= "equip" then return false end
+        if DrawUtil.hitTest(dx, dy, 605, filterBarCY(), 250, 48) then
+            local settings = require("ui.hud.popup.SettingsPanel")
+            settings.setSetIconsEnabled(not settings.isSetIconsEnabled())
+            return true
+        end
+        if not filterSlot then return false end
         if not DrawUtil.hitTest(dx, dy, 890, filterBarCY(), 220, 48) then return false end
         api.setEquipmentSlotFilter(nil, filterHero)
         if deps.onClearEquipmentSlot then

@@ -145,6 +145,20 @@ end
 
 -- ======================== 绑定被测模块 ========================
 
+-- 本测试 fakeVG 只模拟裁剪；角标由独立测试覆盖，避免真实helper用fakeVG加载纹理。
+local originalRequire = require
+local legacySetIcon = {
+    drawBadge = function() return false end,
+    hasBadge = function() return false end,
+    levelLayout = function(_, cx, cy, size)
+        return { x = cx + size * 0.5 - 8, y = cy + size * 0.5 - 6,
+            fontSize = 40, align = NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM }
+    end,
+}
+require = function(name)
+    if name == "ui.widget.EquipmentSetIcon" then return legacySetIcon end
+    return originalRequire(name)
+end
 local BackpackGrids = require("ui.backpack.BackpackGrids")
 
 local GRID = {

@@ -28,6 +28,7 @@ local HeroAssetUtil    = require("config.HeroAssetUtil")
 local HeroConfig       = require("config.HeroConfig")
 local HeroFrame        = require("ui.widget.HeroFrame")
 local I18n             = require("core.I18n")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 -- 子模块（[锻炉双页 0929] BlacksmithDecompose 已迁至仓库分解 tab，不再由本页驱动）
 local BlacksmithEnhance   = require("ui.blacksmith.BlacksmithEnhance")
@@ -422,11 +423,19 @@ local function drawWorkbenchSlot(vg)
         local eqLv = equip.level or 1
         if eqLv >= 1 then
             local lvlText = "Lv." .. eqLv
-            local lvlX = slotCX + slotSize * 0.5 - 10
-            local lvlY = slotCY + slotSize * 0.5 - 8
+            local lvl = EquipmentSetIcon.levelLayout(equip, slotCX, slotCY, slotSize)
+            local lvlX, lvlY = lvl.x, lvl.y
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 40)
-            nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
+            nvgFontSize(vg, lvl.fontSize)
+            if EquipmentSetIcon.hasBadge(equip) then
+                local badge = EquipmentSetIcon.badgeLayout(slotCX, slotCY, slotSize)
+                local availableW = badge.x - lvlX - 4
+                local textW = nvgTextBounds(vg, 0, 0, lvlText)
+                if textW > availableW then
+                    nvgFontSize(vg, lvl.fontSize * availableW / textW)
+                end
+            end
+            nvgTextAlign(vg, lvl.align)
             nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
             local sStep = math.pi * 2 / 16
             for si = 0, 15 do
@@ -465,9 +474,13 @@ local function drawWorkbenchSlot(vg)
             local ownerIcon = imgHeroIcons[ownerHeroId]
             if ownerIcon and ownerIcon >= 0 then
                 local badgeSize = 66
+                local hasSetBadge = EquipmentSetIcon.hasBadge(equip)
+                local ownerCY = hasSetBadge
+                    and (slotCY - slotSize * 0.5 + badgeSize * 0.5 + 1)
+                    or (slotCY + slotSize * 0.5 - badgeSize * 0.5 - 1)
                 HeroFrame.draw(vg, {
                     cx = slotCX - slotSize * 0.5 + badgeSize * 0.5 + 1,
-                    cy = slotCY + slotSize * 0.5 - badgeSize * 0.5 - 1,
+                    cy = ownerCY,
                     size = badgeSize, radius = 6,
                     heroId = ownerHeroId,
                     iconHandle = ownerIcon,
@@ -476,6 +489,8 @@ local function drawWorkbenchSlot(vg)
                 })
             end
         end
+
+        EquipmentSetIcon.drawBadge(vg, equip, slotCX, slotCY, slotSize, 1.0)
 
         -- 选中高亮边框
         nvgBeginPath(vg)

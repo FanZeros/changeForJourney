@@ -13,6 +13,7 @@ local AdvancementConfig = require("config.AdvancementConfig")
 local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
 local HeroFrame = require("ui.widget.HeroFrame")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 local M = {}
 
@@ -150,11 +151,19 @@ function M.bind(deps)
 
                 do
                     local lvlText = "Lv." .. (equip.level or 1)
-                    local lvlX = cx + GRID.CELL_SIZE * 0.5 - 8
-                    local lvlY = cy + GRID.CELL_SIZE * 0.5 - 6
+                    local lvl = EquipmentSetIcon.levelLayout(equip, cx, cy, GRID.CELL_SIZE)
+                    local lvlX, lvlY = lvl.x, lvl.y
                     nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, 40)
-                    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
+                    nvgFontSize(vg, lvl.fontSize)
+                    if EquipmentSetIcon.hasBadge(equip) then
+                        local badge = EquipmentSetIcon.badgeLayout(cx, cy, GRID.CELL_SIZE)
+                        local availableW = badge.x - lvlX - 4
+                        local textW = nvgTextBounds(vg, 0, 0, lvlText)
+                        if textW > availableW then
+                            nvgFontSize(vg, lvl.fontSize * availableW / textW)
+                        end
+                    end
+                    nvgTextAlign(vg, lvl.align)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                     local sStep = math.pi * 2 / 16
                     for si = 0, 15 do
@@ -205,16 +214,23 @@ function M.bind(deps)
                 -- [分解入仓 0929] 旧"批量分解模式"选中遮罩已移除（分解迁移到独立 tab）
 
                 if equip.locked and getImgLock() >= 0 then
-                    local lockSize = 56
+                    local hasSetBadge = equip.equippedByHeroId and EquipmentSetIcon.hasBadge(equip)
+                    -- 三角标同存时缩小锁，放于头像与左下等级之间。
+                    local lockSize = hasSetBadge and 32 or 56
                     local lockX = cx - GRID.CELL_SIZE * 0.5 + lockSize * 0.5 + 4
                     local lockY
-                    if equip.equippedByHeroId then
+                    if hasSetBadge then
+                        lockY = cy + GRID.CELL_SIZE * (10 / 160)
+                    elseif equip.equippedByHeroId then
                         lockY = cy + GRID.CELL_SIZE * 0.5 - lockSize * 0.5 - 4
                     else
                         lockY = cy - GRID.CELL_SIZE * 0.5 + lockSize * 0.5 + 4
                     end
                     DrawUtil.drawImageCentered(vg, getImgLock(), lockX, lockY, lockSize, lockSize, 1.0)
                 end
+
+                -- 套装角标在数值/归属/锁之后，不可穿戴灰罩之前绘制。
+                EquipmentSetIcon.drawBadge(vg, equip, cx, cy, GRID.CELL_SIZE, 1.0)
 
                 -- 最后覆盖整格，品质、图标和角标一起灰显，但仍可查看详情。
                 if equip.canWear == false then

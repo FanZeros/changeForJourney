@@ -25,6 +25,7 @@ local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫�
 local ETS = require("systems.ExtraTalentSystem")
 local I18n = require("core.I18n")
 local KeywordText = require("ui.widget.KeywordText")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
@@ -826,11 +827,19 @@ function M.draw(vg)
 
             do
                 local lvlText = "Lv." .. tostring(equippedEquip.level)
-                local lvlX = scx + DT_SLOT_SIZE * 0.5 - 8
-                local lvlY = scy + DT_SLOT_SIZE * 0.5 - 8
+                local lvl = EquipmentSetIcon.levelLayout(equippedEquip, scx, scy, DT_SLOT_SIZE)
+                local lvlX, lvlY = lvl.x, lvl.y
                 nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 40)
-                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
+                nvgFontSize(vg, lvl.fontSize)
+                if EquipmentSetIcon.hasBadge(equippedEquip) then
+                    local badge = EquipmentSetIcon.badgeLayout(scx, scy, DT_SLOT_SIZE)
+                    local availableW = badge.x - lvlX - 4
+                    local textW = nvgTextBounds(vg, 0, 0, lvlText)
+                    if textW > availableW then
+                        nvgFontSize(vg, lvl.fontSize * availableW / textW)
+                    end
+                end
+                nvgTextAlign(vg, lvl.align)
                 nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                 local sStep = math.pi * 2 / 16
                 for si = 0, 15 do
@@ -858,6 +867,9 @@ function M.draw(vg)
                 nvgFillColor(vg, nvgRGBA(0x00, 0xff, 0x60, 255))
                 nvgText(vg, enhX, enhY, enhText, nil)
             end
+
+            -- 套装角标最后叠加于所有数值之上，双手占位灰罩仍覆盖整格。
+            EquipmentSetIcon.drawBadge(vg, equippedEquip, scx, scy, DT_SLOT_SIZE, 1.0)
 
             if isTwohandOccupied then
                 nvgBeginPath(vg)

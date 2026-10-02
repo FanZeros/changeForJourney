@@ -15,6 +15,7 @@ local GameConfig       = require("config.GameConfig")
 local PlayerStore      = require("core.PlayerStore")
 local HC               = require("config.HeroConfig")
 local ImageCache       = require("ui.widget.ImageCache")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 local BF               = require("systems.ButtonFeedback")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1-B5] 矢量九宫格
 local ExpTable         = require("config.ExpTable")
@@ -722,6 +723,8 @@ local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDif
         nvgText(vg, enhX, enhY, enhText, nil)
     end
 
+    EquipmentSetIcon.drawBadge(vg, equip, iconCX, iconCY, REF_ICON_SIZE, 1.0)
+
     -- 11-14) 基础属性 + 词缀：超出框内可视区时下滚
     local pinnedCY, scrollMax = layoutButtons(equip)
     detState.descScrollMax = scrollMax
@@ -954,6 +957,8 @@ local function drawCompactPanel(vg, equip, btnText, showActions)
         drawTextStroke(vg, iconCX + 48, COMPACT_ICON_CY - 52, "+" .. ascend, 28,
             NVG_ALIGN_RIGHT + NVG_ALIGN_TOP, 0, 255, 96, 3)
     end
+
+    EquipmentSetIcon.drawBadge(vg, equip, iconCX, COMPACT_ICON_CY, COMPACT_ICON_SIZE, 1.0)
 
     local powerStr = require("core.NumberUtil").format(calcEquipPower(equip, detState.heroId))
     nvgFontFace(vg, "sans")

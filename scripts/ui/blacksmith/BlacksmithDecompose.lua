@@ -19,6 +19,7 @@ local PlayerStore      = require("core.PlayerStore")
 local RewardPopup      = require("ui.hud.popup.RewardPopup")
 local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local QualityMark      = require("ui.widget.QualityMark")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -617,11 +618,19 @@ function M.drawPanel(vg)
             local itemLv = item.level or 1
             if itemLv >= 1 then
                 local lvlText = "Lv." .. itemLv
-                local lvlX = cx + FJ.GRID_CELL * 0.5 - 8
-                local lvlY = cy + FJ.GRID_CELL * 0.5 - 6
+                local lvl = EquipmentSetIcon.levelLayout(item, cx, cy, FJ.GRID_CELL)
+                local lvlX, lvlY = lvl.x, lvl.y
                 nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 40)
-                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
+                nvgFontSize(vg, lvl.fontSize)
+                if EquipmentSetIcon.hasBadge(item) then
+                    local badge = EquipmentSetIcon.badgeLayout(cx, cy, FJ.GRID_CELL)
+                    local availableW = badge.x - lvlX - 4
+                    local textW = nvgTextBounds(vg, 0, 0, lvlText)
+                    if textW > availableW then
+                        nvgFontSize(vg, lvl.fontSize * availableW / textW)
+                    end
+                end
+                nvgTextAlign(vg, lvl.align)
                 nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                 local sStep = math.pi * 2 / 16
                 for si = 0, 15 do
@@ -639,6 +648,8 @@ function M.drawPanel(vg)
                 local lockCY = cy - FJ.GRID_CELL * 0.5 + lockSize * 0.5 + 4
                 drawImageCentered(vg, imgLock, lockCX, lockCY, lockSize, lockSize, 1.0)
             end
+
+            EquipmentSetIcon.drawBadge(vg, item, cx, cy, FJ.GRID_CELL, 1.0)
 
             -- 选中状态
             if fjState.selectedItems[idx] then

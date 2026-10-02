@@ -8,6 +8,7 @@ local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local DrawUtil = require("core.DrawUtil")
 local DetailAttrs = require("ui.character.detail.CharacterDetailAttrs")
 local AttributeView = require("ui.character.detail.CharacterAttributeView")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 local M = {}
 local drawTextStroke = DrawUtil.drawTextStroke
@@ -198,7 +199,9 @@ function M.drawSets(vg, sets, scroll, hasPreview)
             local previewN = set.preview and set.preview.count or 0
             local counts = tostring(currentN) .. "/6"
             if hasPreview then counts = counts .. " → " .. tostring(previewN) .. "/6" end
-            text(vg, rect.x + 20, y + 28, set.name or (def and def.name) or set.setId, 31, COLOR.gold)
+            EquipmentSetIcon.draw(vg, set.setId, rect.x + 43, y + 28, 46, 1)
+            text(vg, rect.x + 80, y + 28, set.name or (def and def.name) or set.setId, 31,
+                def and def.color or COLOR.gold)
             text(vg, rect.x + rect.w - 24, y + 28, counts, 28, COLOR.current,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
             local lineY = y + 62

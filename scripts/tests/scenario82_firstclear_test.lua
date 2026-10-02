@@ -11,7 +11,7 @@
 --   3) ClaimScenarioReward 增 preClaimed 参数 + scenarioRewardsGranted 独立防刷账本
 -- 验证：
 --   1) backfillCleared 把已首通 205 的情景 82 补入队，take 能取到
---   2) preClaimed=true 领奖：在 claimed 已预标记下仍成功发 60 碎片
+--   2) preClaimed=true 领奖：在 claimed 已预标记下仍成功发 10 碎片
 --   3) 无 preClaimed 且已 claimed → 拒绝（证明预标记必须配 preClaimed）
 --   4) 重复领取被 scenarioRewardsGranted 账本拒绝（preClaimed 也无法刷第二次）
 --   5) 关卡未通关时领取失败不记账 → 补通关后可重试成功
@@ -84,6 +84,11 @@ end
 function Start()
     print(PREFIX .. "start")
 
+    local config = require("config.ScenarioDialogueConfig")
+    local awakening = require("config.AwakeningConfig")
+    eq(config.SCENARIO_82.rewards[1].amount, 10, "剧情展示配置为10碎片")
+    eq(awakening.getShardCost(1), 10, "首次觉醒仍消耗10碎片")
+
     -- 用例1：旧档补播——已首通 205，情景 82 未领 → backfillCleared 补入队，take 能取到
     resetModules({ cleared205 = true })
     local added = StoryPlayer.backfillCleared()
@@ -99,12 +104,13 @@ function Start()
     check(found82, "用例1: 补播队列含情景82（首通205大狗嚼引导）")
 
     -- 用例2：preClaimed=true 领奖——claimed[82] 已预标记（模拟客户端播放前预写），
-    --   关卡已通 → 仍应成功发 60 碎片（旧代码此处会被"已领取"拒绝）
+    --   关卡已通 → 仍应成功发 10 碎片（旧代码此处会被"已领取"拒绝）
     resetModules({ cleared205 = true, claimed82 = true, shards = 0 })
     local ok2, err2, res2 = BS.ClaimScenarioReward(UID, 82, true)
     check(ok2, "用例2: preClaimed=true 领奖成功: " .. tostring(err2))
     eq(res2 and res2.rewardType, "shard", "用例2: 奖励类型 shard")
-    eq(shardsOf(1), 60, "用例2: 大狗嚼碎片 +60")
+    eq(res2 and res2.reward and res2.reward.amount, 10, "用例2: 奖励回包数量10")
+    eq(shardsOf(1), 10, "用例2: 大狗嚼碎片 +10")
     check(grantedOf(82), "用例2: scenarioRewardsGranted 记账")
 
     -- 用例3：无 preClaimed 且已 claimed → 拒绝（证明预标记场景必须带 preClaimed）
@@ -115,10 +121,10 @@ function Start()
 
     -- 用例4：重复领取被账本拒绝（接用例2 已发放状态，再带 preClaimed 也刷不动）
     resetModules({ cleared205 = true, claimed82 = true, shards = 0 })
-    BS.ClaimScenarioReward(UID, 82, true)   -- 第一次发放（shards→60, granted[82]=true）
+    BS.ClaimScenarioReward(UID, 82, true)   -- 第一次发放（shards→10, granted[82]=true）
     local ok4, err4 = BS.ClaimScenarioReward(UID, 82, true)
     check(not ok4, "用例4: 重复领取（即便 preClaimed）被账本拒绝: " .. tostring(err4))
-    eq(shardsOf(1), 60, "用例4: 碎片仍为60（未重复发放）")
+    eq(shardsOf(1), 10, "用例4: 碎片仍为10（未重复发放）")
 
     -- 用例5：关卡未通关 → 领取失败且不记账；补通关后可重试成功
     resetModules({ cleared205 = false, shards = 0 })
@@ -128,7 +134,7 @@ function Start()
     modules.battle.clearedStages["205"] = true   -- 补通关
     local ok5b, err5b = BS.ClaimScenarioReward(UID, 82, true)
     check(ok5b, "用例5b: 补通关后重试成功: " .. tostring(err5b))
-    eq(shardsOf(1), 60, "用例5b: 重试发放 60 碎片")
+    eq(shardsOf(1), 10, "用例5b: 重试发放 10 碎片")
     check(grantedOf(82), "用例5b: 成功后记账")
 
     if #failures == 0 then

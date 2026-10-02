@@ -149,6 +149,22 @@ local function setIdOfEquip(equip)
     return EquipmentSetConfig.getSetIdForTemplate(tpl) or SetFilterDialog.NONE_KEY
 end
 
+--- 套装行数量仅统计已确定装备，忽略套装勾选；待整理项不能冒充无套装。
+---@return table<string, integer>
+local function getSetCounts()
+    local counts = { none = 0 }
+    for _, setId in ipairs(EquipmentSetConfig.orderedSetIds()) do counts[setId] = 0 end
+    local allQuality = not next(state.qualitySet)
+    for _, entry in ipairs(state.sourceSummary) do
+        local equip = entry.equip
+        if equip and (allQuality or state.qualitySet[equip.quality] == true) then
+            local setId = setIdOfEquip(equip)
+            counts[setId] = (counts[setId] or 0) + 1
+        end
+    end
+    return counts
+end
+
 --- 套装筛选范围描述（已翻译）：未勾选=全部套装；单套=套装名；多套=「共 N 种套装」。
 local function setFilterName()
     local picked = {}
@@ -619,6 +635,7 @@ function LootBoxPage.handleInput(dx, dy)
         BF.trigger("lbp_set_filter")
         clearDetail()
         SetFilterDialog.open(state.setFilter, {
+            getCounts = getSetCounts,
             onChange = function()
                 state.scrollY = 0
                 state.dragging, state.confirm = false, false

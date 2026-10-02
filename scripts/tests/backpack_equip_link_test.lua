@@ -431,6 +431,134 @@ local function runFilter()
     check(HC.get(1) ~= nil, "uses real hero configuration")
 end
 
+-- 独立计数夹具：恢复原 inventory/equipped/roster 引用及筛选，后续 source parity 不受影响。
+local function runSetCounts()
+    local SetConfig = require("config.EquipmentSetConfig")
+    local savedInventory, savedEquipped, savedRoster = fake.inventory, fake.equipped, heroes.roster
+    local savedSlot, savedHero, savedQuality, savedSet = filterSlot, filterHero, quality, setTemplate
+    local original, originalHeroes = deepCopy(fake), deepCopy(heroes)
+    local templatesBefore = deepCopy(EC.ITEMS)
+    fake.inventory = deepCopy(savedInventory)
+    local ok, err = pcall(function()
+        local sword, axe = seqByTemplate.W1, seqByTemplate.W13
+        context(1, nil, nil, sword, nil, 84)
+        fake.inventory[tostring(seqByTemplate.A55)].locked = true
+        local source, roster = deepCopy(fake), deepCopy(heroes)
+        -- oracle 只读真实模板；不借用生产列表/计数实现。
+        local function expectedCounts(allowOnehand)
+            local counts = { none = 0 }
+            for _, id in ipairs(SetConfig.orderedSetIds()) do counts[id] = 0 end
+            for _, equip in pairs(fake.inventory) do
+                local tpl = EC.ITEMS[equip.templateId]
+                if tpl and (not quality or (equip.quality or tpl.quality or 1) == quality)
+                    and (not filterSlot or tpl.slot == filterSlot
+                        or (allowOnehand and filterSlot == "offhand" and tpl.slot == "weapon" and tpl.grip == "onehand")) then
+                    local id = SetConfig.getSetIdForTemplate(tpl) or "none"
+                    counts[id] = counts[id] + 1
+                end
+            end
+            return counts
+        end
+        local function agrees(allowOnehand, label)
+            local actual = grids.getSetCounts()
+            check(deepEqual(actual, expectedCounts(allowOnehand)), label)
+            return actual
+        end
+        local all = agrees(false, "set counts cover complete base inventory, including grey/locked/equipped")
+        local total = all.none
+        check(all.none > 0, "none counts real templates without set affiliation")
+        for _, id in ipairs(SetConfig.orderedSetIds()) do
+            check(all[id] > 0, "every set has its instance count: " .. id)
+            total = total + all[id]
+        end
+        check(total == #grids.getEquipList() and hasWearability(seqByTemplate.A55, false)
+            and fake.inventory[tostring(seqByTemplate.A55)].locked
+            and fake.equipped["1"].weapon == sword,
+            "counts do not remove level/class grey, locked or already-equipped candidates")
+        check(deepEqual(fake, source) and deepEqual(heroes, roster), "counting leaves slim nested equipment and hero data read-only")
+
+        quality = 1
+        local zero = agrees(false, "unmatched quality gives explicit zeros for every set and none")
+        local allZero = true
+        for _, value in pairs(zero) do if value ~= 0 then allZero = false end end
+        check(allZero, "empty quality result keeps every count key at zero")
+        local helmetSeq
+        for tid, tpl in pairs(EC.ITEMS) do
+            if tpl.slot == "helmet" then helmetSeq = seqByTemplate[tid]; break end
+        end
+        check(helmetSeq ~= nil, "count fixture has a real helmet")
+        fake.inventory[tostring(helmetSeq)].quality = 3
+        fake.inventory[tostring(seqByTemplate.A31)].quality = 3
+        fake.inventory[tostring(seqByTemplate.A55)].quality = 3
+        quality, filterSlot = 3, "helmet"
+        local helmets = agrees(false, "quality AND helmet counts only the selected-quality helmet")
+        local helmetTotal = 0
+        for _, value in pairs(helmets) do helmetTotal = helmetTotal + value end
+        check(helmetTotal == 1, "quality AND slot never unions other-quality helmets or same-quality armor")
+        filterSlot = "armor"
+        agrees(false, "quality AND armor retains legal and wrong-class grey candidates")
+        filterSlot = "weapon"
+        local weapons = agrees(false, "quality AND weapon rejects same-quality nonweapon items")
+        check(deepEqual(weapons, zero), "disjoint quality/slot combination is all zero")
+
+        context(1, "offhand", nil, sword)
+        quality = 2
+        local ordinary = agrees(false, "ordinary offhand counts exclude mainhand weapons")
+        context(1, "offhand", { first = 104, second = 207 }, sword)
+        quality = 2
+        local dual = agrees(true, "different dual offhand extends counts to every onehand, never twohand")
+        local ordinaryTotal, dualTotal, onehands = 0, 0, 0
+        for _, value in pairs(ordinary) do ordinaryTotal = ordinaryTotal + value end
+        for _, value in pairs(dual) do dualTotal = dualTotal + value end
+        for _, tpl in pairs(EC.ITEMS) do
+            if tpl.slot == "weapon" and tpl.grip == "onehand" then onehands = onehands + 1 end
+        end
+        check(dualTotal == ordinaryTotal + onehands and hasWearability(axe, true)
+            and hasWearability(sword, false) and not contains(seqByTemplate.W7),
+            "dual counts add mismatched/grey onehands as base candidates but no twohands")
+        context(18, "offhand", { first = 110, second = 220 }, nil)
+        quality = 2
+        check(deepEqual(grids.getSetCounts(), dual), "same dual without main counts same base candidates despite all-grey offhands")
+
+        context(1, nil, nil)
+        local unselected = grids.getSetCounts()
+        local selectedSets = {}
+        for tid, tpl in pairs(EC.ITEMS) do
+            local id = SetConfig.getSetIdForTemplate(tpl) or "none"
+            if not selectedSets[id] then
+                selectedSets[id] = true
+                setTemplate = tid
+                check(deepEqual(grids.getSetCounts(), unselected), "setChecked never restricts count rows: " .. id)
+            end
+        end
+        setTemplate = "unknown_template"
+        check(#grids.getEquipList() == 0 and deepEqual(grids.getSetCounts(), unselected),
+            "even setChecked rejecting every item leaves base counts unchanged")
+        setTemplate = nil
+        fake.inventory["100001"] = { templateId = "unknown_template", quality = 2, slot = "weapon", type = "sword", grip = "onehand" }
+        fake.inventory[100002] = { templateId = "another_unknown", quality = 2, affixes = { { value = "9" } } }
+        check(deepEqual(grids.getSetCounts(), unselected), "unknown templates skipped even with matching fields or slim data")
+        fake.inventory["100003"] = deepCopy(fake.inventory[tostring(sword)] or fake.inventory[sword])
+        local swordSet = SetConfig.getSetIdForTemplate(EC.ITEMS.W1) or "none"
+        local added = grids.getSetCounts()
+        check(added[swordSet] == unselected[swordSet] + 1, "inventory insertion refreshes instance count without rebinding")
+        fake.inventory["100003"] = nil
+        check(deepEqual(grids.getSetCounts(), unselected), "inventory removal refreshes counts without reopening")
+        local finalSource, finalHeroes = deepCopy(fake), deepCopy(heroes)
+        grids.getSetCounts(); grids.getEquipList(); grids.getSetCounts()
+        local slim = true
+        for key, equip in pairs(fake.inventory) do
+            if key ~= "100001" and (equip.slot ~= nil or equip.type ~= nil or equip.grip ~= nil) then slim = false end
+        end
+        check(slim and deepEqual(fake, finalSource) and deepEqual(heroes, finalHeroes)
+            and deepEqual(EC.ITEMS, templatesBefore), "repeated counting/list projection never hydrates slim equipment or mutates snapshots/templates")
+    end)
+    fake.inventory, fake.equipped, heroes.roster = savedInventory, savedEquipped, savedRoster
+    filterSlot, filterHero, quality, setTemplate = savedSlot, savedHero, savedQuality, savedSet
+    check(deepEqual(fake, original) and deepEqual(heroes, originalHeroes), "set-count fixture restores original filter/source parity state")
+    if not ok then error(err) end
+end
+
 local function runSourceParity()
     context(1, "armor", nil)
     setTemplate = "A31"
@@ -547,7 +675,7 @@ local function runSourceParity()
 end
 
 function Start()
-    local ok, err = pcall(function() runLifecycle(); runFilter(); runSourceParity() end)
+    local ok, err = pcall(function() runLifecycle(); runFilter(); runSetCounts(); runSourceParity() end)
     if not ok then failures = failures + 1; print("[FAIL] exception: " .. tostring(err)) end
     print("[backpack_equip_link_test] " .. (failures == 0 and "ALL PASS" or "FAILURES=" .. failures) .. " (" .. passes .. " assertions)")
     engine:Exit()

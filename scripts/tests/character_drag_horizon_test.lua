@@ -33,7 +33,8 @@ function Start()
     RT.logicalW, RT.logicalH, RT.dpr, RT.bootReady_ = 1920, 1080, 1, true
     require = function(name)
         if name == "boot.StandaloneRT" then return RT end
-        if name == "core.Viewport" then return originalRequire(name) end
+        if name == "core.Viewport" or name == "boot.StandaloneHorizonInput"
+            or name == "boot.OfflineRewardOverlay" then return originalRequire(name) end
         if not mods[name] then mods[name] = mock() end
         return mods[name]
     end
@@ -66,5 +67,6 @@ function Start()
     input, time = originalInput, originalTime
     for k in pairs(RT) do RT[k] = nil end
     for k, v in pairs(savedRT) do RT[k] = v end
-    print("[character_drag_horizon_test] PASS: outside cancel, right drop")
+    print("[character_drag_horizon_test] ALL PASS: outside cancel, right drop")
+    engine:Exit()
 end

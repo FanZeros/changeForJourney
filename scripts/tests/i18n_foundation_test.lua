@@ -100,6 +100,23 @@ function Start()
     check(I18n.t("level_not_enough_equip", "50% {0}") == "Level too low. Reach Lv.50% {0} to equip", "语义键参数原样替换")
     check(I18n.t("missing_key") == "missing_key", "未知语义键契约保持")
     check(I18n.format("套装 · %d", 3) == "Sets · 3", "printf模板先翻译再格式化")
+    -- 富文本已经对完整串本地化，分段后必须绕过短词hook，绘制和度量仍完全同串。
+    local rawSource = "资源加载中"
+    local rawReturn = I18n.displayText(nil, 7, 8, rawSource, nil)
+    check(calls.text == rawSource and rawReturn == 17, "displayText原样透传且保留返回值")
+    local rawAdvance, rawBounds = I18n.displayBounds(nil, 7, 8, rawSource, nil, bounds)
+    check(calls.measure == rawSource and rawAdvance == #rawSource and rawBounds == bounds,
+        "displayBounds原样透传且保留多返回值")
+    check(calls.measureArgs.n == 2 and calls.measureArgs[2] == bounds,
+        "displayBounds边界重载尾参透传")
+    nvgText(nil, 7, 8, rawSource, nil)
+    check(calls.text == I18n.lookup(rawSource), "原样显示API不影响普通hook翻译")
+    I18n.displayTextBox(nil, 7, 8, 230, rawSource, nil)
+    local rawBoxBounds = I18n.displayTextBoxBounds(nil, 7, 8, 230, rawSource, nil, bounds)
+    check(calls.box == rawSource and calls.boxMeasure == rawSource and calls.width == 230
+        and calls.measureWidth == 230 and rawBoxBounds == bounds, "原样文本框绘制测量同串同宽")
+    check(calls.boxMeasureArgs.n == 2 and calls.boxMeasureArgs[2] == bounds,
+        "原样文本框边界重载尾参透传")
 
     local KeywordText = require("ui.widget.KeywordText")
     local kt = KeywordText.new()

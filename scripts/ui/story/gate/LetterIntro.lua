@@ -15,6 +15,9 @@
 ---@field update fun(dt: number)
 ---@field draw fun(vg: userdata, w: number, h: number)
 local LetterIntro = {}
+local I18n = require("core.I18n")
+local Story = require("core.I18nStory")
+local Display = require("ui.story.StoryDisplay")
 
 -- ======================== 信件内容（blocks × lines） ========================
 local BLOCKS = {
@@ -63,6 +66,33 @@ local SEAL_DUR    = 0.9
 local FADE_DUR    = 0.6
 
 local function lineCount(b) return #BLOCKS[b] end
+
+-- 构造显示单元，不改 BLOCKS。第 5/6 行合成一句，等原两行都揭示后显示完整译句。
+---@class LetterDisplayUnit
+---@field text string
+---@field block integer
+---@field first integer
+---@field last integer
+---@field gold boolean|nil
+---@field dim boolean|nil
+local function displayUnits()
+    local units = {} ---@type LetterDisplayUnit[]
+    for b, block in ipairs(BLOCKS) do
+        for i, line in ipairs(block) do
+            if not (b == 2 and i == 3) then
+                local source = line.t
+                local last = i
+                if b == 2 and i == 2 then
+                    source = source .. block[3].t
+                    last = 3
+                end
+                units[#units + 1] = { text = Display.text(source), block = b, first = i,
+                    last = last, gold = line.gold, dim = line.dim }
+            end
+        end
+    end
+    return units
+end
 
 --- 16:9 图 cover 铺满窗口（与 DarkTitleScreen 同一套算法）
 local function coverRect(w, h, imgAR)
@@ -244,41 +274,50 @@ local function drawLetter(vg, w, h)
     nvgStrokeWidth(vg, 1.5)
     nvgStroke(vg)
 
-    -- 4) 正文逐行显墨（四段横信，字号按窗口收，避免撑出信笺）
-    local fsHead = math.max(20, math.min(w * 0.022, h * 0.034))
-    local fsBody = math.max(16, math.min(w * 0.016, h * 0.026))
-    local lineH  = fsBody * 1.38
-    local lineY  = lineY0 + lineH * 1.35
-    nvgFontFace(vg, "sans")
-    for b = 1, blockIdx do
-        local maxLine = lineCount(b)
-        if b == blockIdx then
-            maxLine = math.min(maxLine, math.floor(revealT / LINE_REVEAL))
+    -- 4) 先翻译完整句，再按实测宽度折行。整封信决定字号，逐段揭示不会跳版。
+    local units = displayUnits()
+    local preferredBody = math.max(16, math.min(w * 0.016, h * 0.026))
+    local preferredHead = math.max(20, math.min(w * 0.022, h * 0.034))
+    local fsBody = preferredBody
+    local layouts = {} ---@type StoryDisplayRow[][]
+    local sizes = {} ---@type number[]
+    local bodyY = lineY0 + panelH * 0.035
+    local availableH = panelY + panelH * 0.94 - bodyY
+    while true do
+        local totalH = fsBody * 1.38 * 0.45 * (#BLOCKS - 1)
+        for index, unit in ipairs(units) do
+            local fs = index == 1 and fsBody * preferredHead / preferredBody or fsBody
+            sizes[index] = fs
+            layouts[index] = Display.layoutText(vg, unit.text, textW, fs)
+            totalH = totalH + #layouts[index] * fs * 1.38
         end
-        for i = 1, maxLine do
-            local L = BLOCKS[b][i]
-            local isHead = (b == 1 and i == 1)
-            local fs = isHead and fsHead or fsBody
-            local col = L.gold and C_GOLD or (L.dim and C_DIM or C_INK)
+        if totalH <= availableH or fsBody <= 7 then break end
+        fsBody = fsBody - 0.5
+    end
+    local lineY = bodyY
+    local previousBlock = 1
+    for index, unit in ipairs(units) do
+        if unit.block ~= previousBlock then
+            lineY = lineY + fsBody * 1.38 * 0.45
+            previousBlock = unit.block
+        end
+        local rows, fs = layouts[index], sizes[index]
+        local visible = unit.block < blockIdx or (unit.block == blockIdx
+            and unit.last <= math.floor(revealT / LINE_REVEAL))
+        if visible then
+            local col = unit.gold and C_GOLD or (unit.dim and C_DIM or C_INK)
             local a = 255
-            if b == blockIdx then
-                local phase = revealT - (i - 1) * LINE_REVEAL
-                if phase < 0.4 then a = 255 * math.max(0, phase / 0.4) end
+            if unit.block == blockIdx then
+                local elapsed = revealT - (unit.last - 1) * LINE_REVEAL
+                a = 255 * math.min(1, math.max(0, elapsed / 0.4))
             end
-            a = a * flicker * fade
             nvgFontSize(vg, fs)
-            if L.dim then
-                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BASELINE)
-            else
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_BASELINE)
-            end
-            nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], a))
-            nvgText(vg, L.dim and (textX + textW) or textX, lineY, L.t, nil)
-            lineY = lineY + lineH
+            nvgTextAlign(vg, (unit.dim and NVG_ALIGN_RIGHT or NVG_ALIGN_LEFT) + NVG_ALIGN_TOP)
+            nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], a * flicker * fade))
+            Display.drawRows(vg, unit.dim and (textX + textW) or textX, lineY,
+                rows, Story.length(unit.text), fs * 1.38)
         end
-        if b < blockIdx then
-            lineY = lineY + lineH * 0.45
-        end
+        lineY = lineY + #rows * fs * 1.38
     end
 
     -- 5) 底部提示
@@ -288,9 +327,9 @@ local function drawLetter(vg, w, h)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 180 * hintA))
     if state == "reveal" then
-        nvgText(vg, w * 0.5, panelY + panelH + h * 0.045, "· 轻 触 翻 阅 ·", nil)
+        Display.draw(vg, w * 0.5, panelY + panelH + h * 0.045, "· 轻 触 翻 阅 ·")
     elseif state == "sealed" then
-        nvgText(vg, w * 0.5, panelY + panelH + h * 0.045, "· 火 漆 已 落 ·", nil)
+        Display.draw(vg, w * 0.5, panelY + panelH + h * 0.045, "· 火 漆 已 落 ·")
     end
 
     -- 6) 四角金饰（全窗口）

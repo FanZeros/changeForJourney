@@ -11,6 +11,7 @@ local EquipmentSystem = require("systems.EquipmentSystem")
 local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 local DetailAttrs = require("ui.character.detail.CharacterDetailAttrs")
 local Stats = require("ui.character.detail.CharacterEquipStats")
+local I18n = require("core.I18n")
 
 local M = {}
 local CACHE_SECONDS = 0.2
@@ -171,6 +172,13 @@ local function refreshData(heroId, slot)
         tostring(selection and selection.pinned), panelState.attributeMode }, "|")
     local elapsed = now()
     local signature = nil
+    local language = I18n.get()
+    if panelState.language ~= language then
+        panelState.language = language
+        panelState.dirty = true
+        panelState.attrHits = {}
+        clearTip()
+    end
     if not panelState.dirty and panelState.cacheKey == key then
         if elapsed >= panelState.cacheTime and elapsed - panelState.cacheTime < CACHE_SECONDS then
             return panelState.data

@@ -6,6 +6,9 @@
 
 local I18n = {}
 local StageText = require("core.I18nStages")
+local TalentText = require("core.I18nTalentText")
+local EquipmentText = require("core.I18nEquipmentText")
+local StoryText = require("core.I18nStory")
 
 I18n.LANGS = {
     { id = "zh_CN", label = "简体" },
@@ -61,6 +64,24 @@ local function dict()
     else
         print("[I18n] 扩展词典加载失败: " .. tostring(extra))
     end
+    local ok3, talents = pcall(require, "core.I18nTalents")
+    if ok3 and type(talents) == "table" then
+        mergeLang(dict_, talents)
+    else
+        print("[I18n] 天赋词典加载失败: " .. tostring(talents))
+    end
+    local ok4, equipment = pcall(require, "core.I18nEquipment")
+    if ok4 and type(equipment) == "table" then
+        mergeLang(dict_, equipment)
+    else
+        print("[I18n] 装备词典加载失败: " .. tostring(equipment))
+    end
+    local ok5, keywords = pcall(require, "core.I18nKeywords")
+    if ok5 and type(keywords) == "table" then
+        mergeLang(dict_, keywords)
+    else
+        print("[I18n] 关键词词典加载失败: " .. tostring(keywords))
+    end
     return dict_
 end
 
@@ -76,7 +97,8 @@ function I18n.lookup(text)
     local hit = pack and pack[text]
     -- 韩文序数前缀「第」的空串是既有排版规则，其余空译文回退原文。
     if type(hit) ~= "string" or (hit == "" and not (current_ == "ko" and text == "第")) then
-        hit = StageText.lookup(text, current_) or text
+        hit = StoryText.lookup(text, current_) or StageText.lookup(text, current_)
+            or TalentText.lookup(text, current_) or EquipmentText.lookup(text, current_) or text
     end
     if not cache or (lookupCacheSizes_[current_] or 0) >= LOOKUP_CACHE_LIMIT then
         cache = {}
@@ -433,6 +455,55 @@ function I18n.cycle()
     local nextItem = I18n.LANGS[idx % #I18n.LANGS + 1]
     I18n.set(nextItem.id)
     return nextItem.id
+end
+
+--- 已完成本地化和分段的显示串原样绘制，避免富文本片段被 hook 再次翻译。
+---@param vg any
+---@param x number
+---@param y number
+---@param text string
+---@param endp any
+---@return any
+function I18n.displayText(vg, x, y, text, endp)
+    local draw = rawNvgText_ or nvgText
+    return draw(vg, x, y, text, endp)
+end
+
+--- 与 displayText 配对的原样测量；完整透传边界参数和返回值。
+---@param vg any
+---@param x number
+---@param y number
+---@param text string
+---@param ... any
+---@return any
+function I18n.displayBounds(vg, x, y, text, ...)
+    local measure = rawNvgTextBounds_ or nvgTextBounds
+    return measure(vg, x, y, text, ...)
+end
+
+--- 已本地化或截取的剧情串原样换行绘制，不再查片段词典。
+---@param vg any
+---@param x number
+---@param y number
+---@param width number
+---@param text string
+---@param endp any
+function I18n.displayTextBox(vg, x, y, width, text, endp)
+    local draw = rawNvgTextBox_ or nvgTextBox
+    return draw(vg, x, y, width, text, endp)
+end
+
+--- 与 displayTextBox 配对的原样边界测量。
+---@param vg any
+---@param x number
+---@param y number
+---@param width number
+---@param text string
+---@param ... any
+---@return any
+function I18n.displayTextBoxBounds(vg, x, y, width, text, ...)
+    local measure = rawNvgTextBoxBounds_ or nvgTextBoxBounds
+    return measure(vg, x, y, width, text, ...)
 end
 
 --- 拦截文字绘制和边界测量，保证两者收到同一译文。

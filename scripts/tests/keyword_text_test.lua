@@ -20,7 +20,7 @@ local function check(cond, msg)
     end
 end
 
-function Start()
+local function runTests()
     local KW = require("config.KeywordConfig")
     local KeywordText = require("ui.widget.KeywordText")
 
@@ -147,4 +147,10 @@ function Start()
     else
         print("KEYWORD TESTS: " .. #failures .. " FAILURES")
     end
+end
+
+function Start()
+    local ok, err = pcall(runTests)
+    if not ok then log:Write(LOG_ERROR, "[keyword_text_test] " .. tostring(err)) end
+    engine:Exit()
 end

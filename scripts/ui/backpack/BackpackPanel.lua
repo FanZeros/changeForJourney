@@ -874,6 +874,11 @@ local equipLink = BackpackEquipLink.bind({
     getHostMode = function() return hostMode_ end,
     setLeftMode = function() hostMode_ = "left"; applyLayout(true) end,
     openPage = openPage, closePage = closePage,
+    clearTutorialFilters = function()
+        local changed = next(decomposeState.qualitySet) ~= nil or next(decomposeState.setFilter) ~= nil
+        if changed then decomposeState.qualitySet, decomposeState.setFilter = {}, {} end
+        return changed
+    end,
     selectEquipTab = function()
         if state.tab == "equip" then return end
         state.tab, state.tabFrom, state.tabSwitchTime = "equip", "equip", 0
@@ -907,6 +912,13 @@ end
 function Panel.releaseWarehouse(owner) equipLink.releaseWarehouse(owner) end
 function Panel.acquireForEquipment(heroId, slotOrNil)
     return Panel.acquireWarehouse("equipment", heroId, slotOrNil)
+end
+--- 仅教程显式恢复左栏配装仓库；普通 acquire 保持不自动重开契约。
+---@param heroId number|string|nil
+---@param slot string|nil
+---@return boolean changed
+function Panel.ensureTutorialEquipment(heroId, slot)
+    return equipLink.ensureTutorialEquipment(heroId, slot)
 end
 function Panel.releaseForEquipment() Panel.releaseWarehouse("equipment") end
 function Panel.setEquipmentSlotFilter(slotOrNil, heroId)

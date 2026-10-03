@@ -18,6 +18,14 @@ function Start()
         ["ui.character.panel.CharacterPanel"] = { prepareTutorial = function() end },
         ["ui.tavern.TavernPage"] = { open = function() calls.tavern = true end },
         ["ui.blacksmith.BlacksmithPage"] = { open = function() calls.smith = true end },
+        ["ui.tutorial.TutorialPageRecovery"] = { isBlocked = function() return false end,
+            prepare = function(_, _, target)
+                calls.target = target
+                if target == "tavern_btn_gacha10" then calls.tavern = true end
+                if target == "smith_btn_enhance" then calls.smith = true end
+                if target == "dungeon_gold_mine" then calls.tab = 5 end
+                return false
+            end },
     }
     require = function(name) return mocks[name] or nativeRequire(name) end
     local TM = nativeRequire("systems.TutorialManager")

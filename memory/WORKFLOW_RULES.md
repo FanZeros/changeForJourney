@@ -129,6 +129,16 @@
 - 用户随后选择“创建时机调整PR”，已创建 **PR #32**：https://github.com/FanZeros/changeForJourney/pull/32，`fix/tutorial-trigger-timing-20261003` → `workspace930`，open、未合并，功能提交`df6ef136`。创建时ahead1/behind0，共12文件；附完整验证及未覆盖边界。交付记忆仅推任务分支，创建授权不延伸为合并授权，完成后以 **AskUserQuestion** 继续。
 - 只任务代码/测试/meta与记忆提交，新分支push，不推workspace系列、不自动创建或合并PR。持续推进已授权任务，完成后先真实简报，再真正调用 **AskUserQuestion** 提供下一步选项；凭据不持久化。
 
+### 锻炉显示层级协作要求（2026-10-03）
+
+- 用户在 **AskUserQuestion** 指定新任务：“锻炉的显示层级应该在背包之下”。从最新 `workspace930@3913d5f` 创建 `fix/forge-below-backpack-20261003`，与神器宝箱 PR #34 独立，不擅自合并上一项 PR。
+- 已授权任务持续推进；仅向新开发分支提交推送，不推送 workspace/workspace930，不自动创建或合并 PR。完成后真实简报，再真正调用 **AskUserQuestion** 让用户决定下一步；尊重后续停止要求与权限拒绝。
+- 仅调整显示与对应输入优先级，不修改锻造费用、装备规则或玩家存档。凭据和本地构建身份不提交。
+- 实际范围为左栏 `BackpackPanel`：锻炉打开期间仓库/遗匣/任务既有链后置到锻炉本体之后，仍保持遗匣/任务高于仓库；锻炉垫底不移层，普通布局侧栏遮罩最后补画，奖励/全局弹窗保留高层。三行锻炉每帧只绘制一次，局部裁剪改为 intersect，开合动画不得覆盖左栏；输入分栏与持有生命周期不改。旧 `EquipmentBag` 覆盖链未扩改。
+- 新专项46断言通过；配装手势44、仓库快速手势78、离线覆盖487、引导输入356、仓库持有268断言及真实仓库穿戴、角色装备生命周期回归均 ALL PASS；规范校验器36单元测试通过。真实宿主锻炉/仓库同开160帧报告PASS，Lua/资源/引擎错误0、无缺图，截图已查看；启动完成18/18，不声称性能或全设备手势验收。首轮截图仅加载标题不作证据，修正验收回调后随机非组首图标样本触发16项已有缺图，改有效样本后复跑通过，不混修资源逻辑。独立只读复核未发现本轮新增问题；专项使用spy，完整模态/拖放由相关既有回归补充而非全路径覆盖。修改Lua无LSP Error，全工作区基线有54个Error，不宣称全仓清洁。临时验收入口/meta已清理，截图与本地.project不提交。
+
+- 用户随后在 **AskUserQuestion** 选择“创建锻炉修复 PR（推荐）”。已创建 **PR #37**：https://github.com/FanZeros/changeForJourney/pull/37，head=`fix/forge-below-backpack-20261003`、base=`workspace930`，返回 open、merged=false；功能提交 `2508228`。首次API超时后先只读核查无PR才重新创建，未重复创建。创建许可不包含合并；交付记忆仅推修复分支，最后继续真正调用 **AskUserQuestion**。
+
 ### 三阶查询修复交接（2026-10-03）
 
 - 用户先选择只读核对三阶觉醒，再在 AskUserQuestion 明确选择“修复三阶查询”。从已推送塞拉提交 `cb85275` 新建 `fix1003/awakening-stage-query`，是叠加分支，未混入期间前进的workspace930；禁止推workspace*，完成后真实简报并用 **AskUserQuestion** 给下一步选项，不自行创建或合并PR。

@@ -268,12 +268,16 @@ function Start()
         { affixId = 1001, quality = 0, value = 5, key = "finalPhysAtkBonus", name = "最终物攻" },
         { affixId = 2, quality = 3, value = 20, key = "agi", name = "敏捷", ascBonus = 11 },
     }
+    local mixedBefore = eMixed.affixes
     local okMixed = BS.RefineEquip(UID, eMixed.seq, nil)
     check(okMixed, "混合词条可普通洗练")
     check(BS.RefineReplace(UID, eMixed.seq), "混合词条可替换洗练结果")
-    eq(eMixed.affixes[1].ascBonus, 7, "混合槽1保留升阶投入")
+    for _, i in ipairs({ 1, 3 }) do
+        local expected = EquipmentSystem.convertAscBonusForRefine(mixedBefore[i], eMixed.affixes[i])
+        check(math.abs((eMixed.affixes[i].ascBonus or 0) - (expected or 0)) < 1e-9,
+            "混合槽" .. i .. "按价值保留升阶投入")
+    end
     eq(eMixed.affixes[2].ascBonus, nil, "混合槽2魔化不获得普通投入")
-    eq(eMixed.affixes[3].ascBonus, 11, "混合槽3保留升阶投入")
 
     -- 旧品质魔化纠错与无数值旧档仍按模板修复。
     local oldCorrupt = { affixId = 1001, quality = 5, value = 999999 }

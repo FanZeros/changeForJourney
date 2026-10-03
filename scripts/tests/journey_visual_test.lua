@@ -71,6 +71,8 @@ local paints, texts, paths = {}, {}, {}
 local currentColor = {}
 local handle = 0
 local imagePaths = {}
+local deletedImages = {}
+local failImagePath = ""
 for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgScissor", "nvgResetScissor",
     "nvgIntersectScissor", "nvgTranslate", "nvgScale", "nvgBeginPath", "nvgRect",
     "nvgRoundedRect", "nvgFill", "nvgStroke", "nvgStrokeWidth", "nvgFontFace",
@@ -78,12 +80,15 @@ for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgScissor", "nvgResetScissor"
     _G[name] = noop
 end
 nvgCreateImage = function(_, path)
-    handle = handle + 1
     paths[#paths + 1] = path
+    if path == failImagePath then return -1 end
+    handle = handle + 1
     imagePaths[handle] = path
     return handle
 end
+nvgDeleteImage = function(_, image) deletedImages[image] = true end
 rawset(_G, "nvgImagePattern", function(_, x, y, w, h, _, image, alpha)
+    assert(not deletedImages[image], "不能使用被删除的共享背景句柄")
     local paint = { x = x, y = y, w = w, h = h, image = image, alpha = alpha }
     paints[#paints + 1] = paint
     return nil
@@ -205,6 +210,64 @@ local function testPage()
     paints = {}
     Page.drawL1Underlay({}, 1920, 1080)
     check(imagePaths[paints[2].image]:find("forest", 1, true), "解锁后切回实际关卡背景")
+
+    local SC = require("config.StageConfig")
+    local chapterBg = Page.resolveBackgroundPath(101)
+    for diff = 0, 14 do
+        check(Page.resolveBackgroundPath((diff * 23 + 1) * 100 + 1) == chapterBg,
+            "难度" .. diff .. "的章节背景循环不变")
+    end
+    for diff = 0, 13 do
+        check(Page.resolveBackgroundPath(diff * 1000 + 999) == "image/战斗背景/终焉神殿.png",
+            "终焉" .. diff .. "解析为专用背景")
+    end
+    check(Page.resolveBackgroundPath(2305) == "image/战斗背景/烛龙之巢.png",
+        "第23章仍保留烛龙之巢")
+    check(Page.resolveBackgroundPath(nil) == chapterBg
+        and Page.resolveBackgroundPath("无效") == chapterBg, "无效关卡背景安全回退")
+
+    local starts = { drivers[1].starts, drivers[2].starts, drivers[3].starts }
+    local stageIds = { drivers[1].stageId, drivers[2].stageId, drivers[3].stageId }
+    local dispatcher = mocks["runtime.ClientDispatcher"]
+    local originalGet, originalStage = dispatcher.get, Page.getTeamStageId
+    local originalMarch = drivers[1].getMarchBackground
+    dispatcher.get = function() error("固定塔背景不能读取主线解锁状态") end
+    Page.getTeamStageId = function() error("固定塔背景不能读取主线关卡") end
+    drivers[1].getMarchBackground = function() error("固定塔背景不能读取主线行进") end
+    paints, paths = {}, {}
+    Page.drawL1Underlay({}, 1920, 1080, "image/战斗背景/通天塔.png")
+    check(#paints == 3 and #paths == 1, "塔三行共用一次加载的专用图")
+    for row, paint in ipairs(paints) do
+        check(imagePaths[paint.image] == "image/战斗背景/通天塔.png"
+            and paint.alpha == 1, "塔行" .. row .. "专用图不受主线动画影响")
+        check(drivers[row].starts == starts[row] and drivers[row].stageId == stageIds[row],
+            "塔行" .. row .. "绘制不改变主线进度")
+    end
+    failImagePath = "image/战斗背景/失败测试.png"
+    paints, paths = {}, {}
+    Page.drawL1Underlay({}, 1920, 1080, failImagePath)
+    check(#paints == 0, "塔图失败不偷用主线背景")
+    failImagePath = ""
+    paints, paths = {}, {}
+    Page.drawL1Underlay({}, 1920, 1080, "image/战斗背景/失败测试.png")
+    check(#paints == 3 and #paths == 1, "图片失败后仍可恢复加载")
+    dispatcher.get, Page.getTeamStageId = originalGet, originalStage
+    drivers[1].getMarchBackground = originalMarch
+
+    Page.getTeamStageId = function() return SC.TERMINAL_NORMAL end
+    paints, paths = {}, {}
+    Page.drawL1Underlay({}, 1920, 1080)
+    check(#paths == 1, "三行终焉共用一张专用图")
+    for row, paint in ipairs(paints) do
+        check(imagePaths[paint.image] == "image/战斗背景/终焉神殿.png",
+            "终焉行" .. row .. "实际绘制专用图")
+    end
+    Page.getTeamStageId = originalStage
+    paints, paths = {}, {}
+    Page.drawL1Underlay({}, 1920, 1080)
+    check(#paths == 0 and imagePaths[paints[1].image] == chapterBg,
+        "从终焉和塔返回主线复用有效旧图")
+    check(next(deletedImages) == nil, "背景切换不删除其他场景共用句柄")
     Driver.new = newDriver
 end
 

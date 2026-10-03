@@ -44,8 +44,8 @@ local isOpen_ = false
 local inited = false
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
 local terminalRaid = nil
-local l1Img = {}          -- [row] = nvg image handle
-local l1Chapter = {}      -- [row] = 已加载的地图章 1..23
+local l1Images = {}       -- 同一路径共用句柄，切场景不删除其他行仍在使用的贴图
+local l1Failures = {}     -- 加载失败只提示一次，后续帧仍允许重试
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local triOnStageClear = nil -- function(teamIdx, clearedStageId)
@@ -293,28 +293,44 @@ local CHAPTER_BG = {
     [23] = "image/战斗背景/烛龙之巢.png",
 }
 
-local function mapChapterOf(stageId)
-    local entry = stageId and StageConfig.getStage(tonumber(stageId) or 0)
+local TERMINAL_BG = "image/战斗背景/终焉神殿.png"
+
+--- 只解析展示资源，不改变关卡或战斗状态。
+---@param stageId number|string|nil
+---@return string
+function BattleTriPage.resolveBackgroundPath(stageId)
+    local id = tonumber(stageId) or 0
+    if StageConfig.isTerminalTemple(id) then return TERMINAL_BG end
+    local entry = StageConfig.getStage(id)
     local chapter = (entry and entry.chapter) or 1
-    return ((chapter - 1) % 23) + 1
+    return CHAPTER_BG[((chapter - 1) % 23) + 1] or CHAPTER_BG[1]
+end
+
+local function getBackgroundImage(vg, path)
+    local cached = l1Images[path]
+    if cached then return cached end
+    local img = nvgCreateImage(vg, path, 0) or -1
+    if img >= 0 then
+        l1Images[path] = img
+        l1Failures[path] = nil
+        print(string.format("[BattleTriPage] 背景加载 -> %s (%d)", path, img))
+    elseif not l1Failures[path] then
+        l1Failures[path] = true
+        print("[BattleTriPage] 背景加载失败 -> " .. path)
+    end
+    return img
 end
 
 local function ensureRowBg(vg, row, unlocked)
     -- 锁定队展示待解锁章节；解锁后按各队实际战斗进度切回背景。
-    local chapter = row > unlocked and ((row == 2) and 10 or 20)
-        or mapChapterOf(BattleTriPage.getTeamStageId(row))
-    if l1Img[row] and l1Chapter[row] == chapter then
-        return l1Img[row]
+    ---@type string
+    local path
+    if row > unlocked then
+        path = CHAPTER_BG[row == 2 and 10 or 20]
+    else
+        path = BattleTriPage.resolveBackgroundPath(BattleTriPage.getTeamStageId(row))
     end
-    if l1Img[row] and l1Img[row] >= 0 then
-        nvgDeleteImage(vg, l1Img[row])
-    end
-    local path = CHAPTER_BG[chapter] or CHAPTER_BG[1]
-    local img = nvgCreateImage(vg, path, 0) or -1
-    l1Img[row] = img
-    l1Chapter[row] = chapter
-    print(string.format("[BattleTriPage] row %d bg chapter %d -> %s (%d)", row, chapter, path, img))
-    return img
+    return getBackgroundImage(vg, path)
 end
 
 function BattleTriPage.init(vg)
@@ -418,9 +434,13 @@ function BattleTriPage.drawL0(vg, logicalW, logicalH)
 end
 
 --- L1 行内容背景垫底层（clip 到框内矩形; 锁定行加暗罩）——绘制于 L0 之前
-function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
+---@param fixedBgPath string|nil 塔等独立场景使用固定背景，不读取主线行状态
+function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, fixedBgPath)
     BattleTriPage.init(vg)
-    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
+    local unlocked = COL_COUNT
+    if not fixedBgPath then
+        unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
+    end
     for row = 1, COL_COUNT do
         local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
         nvgSave(vg)
@@ -428,9 +448,10 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
         -- L1 cover-fit
         local s = math.max(iw / 1896, ih / 720)
         local dw, dh = 1896 * s, 720 * s
-        local bg = ensureRowBg(vg, row, unlocked)
+        local bg = fixedBgPath and getBackgroundImage(vg, fixedBgPath)
+            or ensureRowBg(vg, row, unlocked)
         local zoom, alpha = 1, 1
-        local drv = row <= unlocked and drivers[row] or nil
+        local drv = not fixedBgPath and row <= unlocked and drivers[row] or nil
         if drv then zoom, alpha = drv:getMarchBackground() end
         -- 以可见战场的右侧中心为锚点，不按 cover 图片被裁掉的边缘定位。
         local pivotX, pivotY = ix + iw, iy + ih * 0.5

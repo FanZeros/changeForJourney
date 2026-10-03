@@ -4,6 +4,44 @@
 
 | 版本 | 日期 | 摘要 |
 |------|------|------|
+| feat-workspace930-ui-reincarnation-20261003 | 2026-10-03 | 按用户选择局部迁移三组UI（语言两列三行/玩家信息增高及远征时间/城镇两名牌）并补轮回两图及原meta，不整支合并或回退最新觉醒CG。新增525断言与已有回归全过，9组真实离屏原始PASS，官方Build成功；仅推新功能分支。 |
+| v3.21-refine-essence-option-cleanup | 2026-09-30 | 洗练页大清理：腐化状态行下移7.5%页高（940→1120）；魔化词条数值/名称改亮紫，被腐化弱化的魔化词条暗紫（scaleByIndex 判色），删除[腐化强化/削弱/魔化词条]标签与旧→新数值对比行；删除"洗练需求/累计洗练次数"整行文字；点金石弹窗不再显示"提品"小字；精粹改为可选资源入列（弹窗第一项，含拥有数），原左侧固定精粹图标+数量删除，未选/选精粹时资源槽显示精粹拥有/消耗；服务端计费改为 chargesEssence：仅普通洗练与选精粹收精粹，选四种石头只耗石头不耗精粹（腐化×2/锁定阶梯仍作用于精粹路径）。KeywordConfig/gameplay 文档同步。三回归 ALL PASS。 |
+| v3.20-set-filter-warehouse-lootbox | 2026-09-30 | 仓库/遗匣装备新增套装筛选：共用弹窗组件 ui/widget/SetFilterDialog（12 套装+无套装，套装色圆点+多选勾选+清空/完成，模态消费全部输入）；入口按钮「套装·N」位于品质勾选条左侧（仓库装备 tab 与遗匣页同款位置）。筛选语义与品质勾选一致（空=全部、AND 组合）；遗匣批量领取/回收透传套装集合（LootBoxSystem.claimAll/decomposeAll 新增 setFilter 参数，旧签名兼容），确认弹窗/状态行/空态文案随组合范围联动；仓库装备网格经 BackpackGrids setChecked 过滤。EquipmentSetConfig 新增 SET_ORDER 固定展示顺序；I18nDictExtra 补 7 条五语词条。新增 tests/lootbox_set_filter_test（模板归属自检+弹窗交互+系统层过滤 24 断言全过）；lootbox_page/overflow/horizon、backpack_grid_scroll 回归全过；LSP 0 Error；build 通过。 |
+| v3.19-stats-duration-integer | 2026-09-30 | 战斗统计副标题时长只显示整秒（%.1f→%d 取整），并上移半行（SUB_Y 800→760）贴近标题。 |
+| v3.18-smith-underlay-workbench-empty | 2026-09-30 | 穿帮修复：锻炉打开时左栏仓库下垫同款不透明背景（BlacksmithPage.drawUnderlay，插在城镇组之上/仓库之下，两条横屏绘制路径都接），半透明仓库不再透出城镇；工作台槽右移/下移 2% 竖屏页（540,431→562,479）落入新背景熔炉门前平台；打开锻炉默认空工作台（清空 selectedEquip/Seq/Slot），仅教程激活期保留自动选件（"点击强化"步骤依赖非空）。三回归 ALL PASS。 |
+| v3.17-refine-frame-shift | 2026-09-30 | 洗练页隐藏"洗练装备/提品"标题文字；属性单框+箭头整体下移 8% 页高（FRAME_CY/ARROW_CY 1240→1432），腐化结果标题改相对 FRAME_CY 定位自动跟随；提品展示 centerY 派生自 FRAME_CY 同步下移。 |
+| v3.16-smith-full-bg-art | 2026-09-30 | 狱火锻炉整页背景换成用户提供原画（归档为 assets/image/界面底板/狱火锻炉/UI_SMITH_BG_FULL.png）：上半熔炉场景+下半暗金框暗板一体图，按设计分辨率对齐拉伸（图比例0.457 vs 设计0.45，差1.6%可忽略，保证暗板框与UI坐标对齐）；替换 v3.09 的石墙 cover 方案。 |
+| v3.15-team-color-rows | 2026-09-30 | 右栏角色面板三队行加队伍配色：队1蓝/队2绿/队3紫（未解锁灰），行底条填队伍色暗调+描边、"小队N"标题用队伍色、当前出战队描边加粗；队伍页签加同色圆点（锁定让位锁图标）。TEAM_COLORS 集中在 CharacterPanelDraw2。 |
+| v3.14-hero-rename-unowned-name | 2026-09-30 | 角色 #21「闪电卖鸡」全量改名「雷电麦坤」：HeroConfig/Dialogue/Gacha/Tavern/ResourceDefs/I18nDictExtra/公告/天赋注释等 22 处文本 + 立绘文件重命名（角色立绘/雷电麦坤_透明立绘.png，HeroAssetUtil 按 cfg.name 拼路径）；角色详情轮播卡未获得角色现在也显示名字（drawCardName 抽出，未获得分支不再 early-return，底部仍标"未获得"）。 |
+| v3.13-equip-drag-from-character-decompose-hover | 2026-09-30 | 配装页装备可跨栏拖到锻炉：右栏按下 arm EquipCrossDrag（source=rightpanel），含角色六装备槽已装备（CharacterDetailEquip.peekSlotEquipAt/peekItemAt，双手武器占副手同绘制规则）；move 门控加 rightpanel 源；分解 tab 支持悬停浮选装备详情（BlacksmithDecompose.handleHover/peekCellAt，与仓库装备 tab 同 0.3s 语义，BackpackPanel.handleHover 分流，点击勾选仍由 handleInput 优先让浮选面板处理）。equip_detail_drag_horizon_test PASS。 |
+| v3.12-awaken-shard-10-30-50 | 2026-09-30 | 角色觉醒三阶碎片消耗从 60/90/130（合计280）改为 10/30/50（合计90），AwakeningConfig.SHARD_COST 单点修改，UI/服务端/详情全走 getShardCost 自动生效。 |
+| v3.11-smith-nameplate-center-scenario-freeze-guard | 2026-09-30 | 锻炉名牌水平居中（drawNamePlate 新增 bgCX/bgCY 参数，其余页面不受影响）；修角色详情页播剧情卡死的两条真卡死路径：HeroScenario.drainPending 在 showScenario 持续失败时 enqueue→drain 无限递归爆栈（加深度封顶8+丢请求）、markClaimed 的同步状态更新/落盘异常中断打开流程（pcall 包裹仅记日志）。scenario_flow 模拟 show→advance→dismiss→onFinish 全链路 ALL PASS。 |
+| v3.10-smith-corrupt-display-cleanup | 2026-09-30 | 魔化词条显示精简：洗练/强化页魔化词条名称+数值改紫色 #ef79ff（评级标不变），去掉 [魔化词条]/[魔化转换] 标签与旧→新百分比对比行；删除状态行诅咒百分比提示与腐化结果"基础属性 ×a→×b"行（只留"诅咒 N/3 层"）；删除升阶页"每升5阶必得词条/词条已满倍率"常驻小字及其测试 ascend_hint_test.lua（一键升阶弹窗内的新增预览保留）；》双箭头从深色位图改程序化亮金 chevron（DrawUtil.drawDoubleChevron，洗练/强化/占位行三处）。 |
+| v3.09-smith-single-bg | 2026-09-30 | 锻炉页上下合并为单一背景：删除下半独立背景板绘制与 imgLowerBg/BG_* 尺寸常量，整页用 UI_JSXQ_BJ_dark 全屏等比 cover（drawImageCover，无形变）；下半内容 clip 区域保持不变。 |
+| v3.08-smith-dark-theme | 2026-09-30 | 锻炉页整体暗黑化：上半背景与下半面板弃用亮色 UI_TJP_CH_1/米色 UI_TJP_1，统一换暗黑石墙 UI_JSXQ_BJ_dark（纹理拉伸无形变）；洗练/强化属性文字提亮（名称米金 #d8c9a3、数值亮白 #e8e4da，原来深色字在暗框上不可见）；洗练需求框压暗 25% 形成区域感。 |
+| v3.07-stone-floor-and-toast-fix | 2026-09-30 | 洗练石加保底只升不降（逐条取新旧较高者）；点金石品质达进度上限后不再拒绝，转为随机一条普通词缀品级+1（最高S，回包 affixGradeUp 并弹展示）；修复洗练拒绝原因提示被抽卡页消息队列静默丢弃导致「点洗练完全无反应」的 bug（showRefineToast 在非抽卡页回退全局 UiToast）。corrupt_convert_test 扩至7组全 PASS。 |
+| v3.06-corrupt-build-model | 2026-09-30 | 腐化构筑模型大改：腐化石废弃随机7效果，改为一条普通词缀转同类型魔化词条（数值×1.8，AffixConfig.NORMAL_TO_CORRUPT_KEY 19组映射）并叠加一层诅咒（基础×0.9/层，最多3层）；神圣石从全量回滚改为逐层洗除最上层诅咒（魔化词条保留，3层需3颗）；解除腐化硬禁——腐化后普通洗练/洗练石可用但精粹×2，魔化词条在重随中固定；旧档快照走一次性全清兼容。新增 tests/corrupt_convert_test.lua；KeywordConfig/背包/洗练页文案同步。 |
+| v3.05-refine-lock-tier | 2026-09-30 | 洗练锁定词缀精粹消耗从「锁任意条一律×1.5」改为按锁定条数阶梯累乘：1条×1.5 / 2条×2.25 / 3条×3.375（BlacksmithConfig.applyRefineLockCostMult）；UI 费用展示与服务端扣费共用同一函数。refine_cost_fixed_test 断言更新为三档全 PASS。 |
+| v3.04-smith-ascend-badge-topright | 2026-09-30 | 锻炉工作台槽升阶等阶角标「+N」从左上移到右上，样式对齐仓库格子（右/顶对齐、字号36、亮绿+黑描边）；删除无用常量 EQUIP_LV_FONT_SIZE。 |
+| v3.03-merit-tab-clearance | 2026-09-29 | 功绩名牌缩小，通关、远征、队员选项下移，避免被名牌挡住。 |
+| v3.02-backpack-owner-clip | 2026-09-29 | 仓库已装备角色头像改为与装备格子同一裁剪层，滚出列表后不再盖住底栏。 |
+| v3.01-smith-label-below | 2026-09-29 | 狱火锻炉名牌从建筑上方移到下方，点击热区同步下移。 |
+| v3.00-equip-detail-level | 2026-09-29 | 装备详情把等级接到名字后面，战力数字改为与属性数值同号。 |
+| v2.99-tree-bg-fade | 2026-09-29 | 古树背景四周外圈 7.5% 全透，7.5% 到 15% 过渡到不透明，中间 70% 保持原图。 |
+| v2.98-hide-awaken-quality | 2026-09-29 | 觉醒页去掉称号上方的品质铭牌，不再显示「普通」。 |
+| v2.97-restore-epic-frame | 2026-09-29 | 恢复误删的史诗品质框 UI_icon_ZBBJ_4。离线奖励里紫色装备因此没有底框。 |
+| v2.96-runtime-cg-gray | 2026-09-29 | 觉醒未解锁影画改为绘制时把彩色 CG 染灰。删除 45 张预生成灰度图和离线生成脚本。 |
+| v2.95-remove-arena-score | 2026-09-29 | 删除竞技场排行目录。标题底和竞技分不再使用；胜负底板在横屏里被裁切，结算改为遮罩加信息框。 |
+| v2.94-fix-spine-placement | 2026-09-29 | 修正剩余 Spine 的横屏位置。战力提升跟左栏顶栏，升级光效收到卡片内，锻造结果按槽位缩放，卡面特效按骨架边界居中。 |
+| v2.93-remove-recruit-spine | 2026-09-29 | 招募不再播放开场 Spine。删除 UI_SPINE_JGZM 全套，结果卡直接展示。升级、卡面、锻造和战力 spine 保留。 |
+| v2.92-remove-unused-plates | 2026-09-29 | 删除脚本未引用的旧底板和图标：竞技场、服务器、商店装饰、进度条、方按钮、角色槽框、转职页、品质框 4、备用底板和若干货币图标。招募 spine 分页保留。 |
+| v2.91-remove-old-dialogue-plates | 2026-09-29 | 删除旧竖屏情景底板 UI_QJDH_1、UI_QJDH_BJ1 和继续箭头 ICON_SJX。情景对话只保留横屏矢量对话条。 |
+| v2.90-remove-reward-glow | 2026-09-29 | 删除未使用的奖励底板 UI_GXHD_1、UI_GXHD_2、UI_GXHD_2_dark、UI_GXHD_3 和箭头 UI_HSJT。结算不再转光效，奖励弹窗继续用 UI_GXHD_1_dark。 |
+| v2.89-remove-wax-seal | 2026-09-29 | 删除已停用的火漆特写 GF_KF07。先祖来信只保留书斋桌案。 |
+| v2.88-remove-shop-card-bg | 2026-09-29 | 删除未绘制的商店品质底 UI_SDICONBJ_1-6，并去掉黑市与酒馆商店的加载。 |
+| v2.87-story-desk-avatar | 2026-09-29 | 先祖来信全程保持书斋桌案 GF_KF06，不再切到火漆特写 GF_KF07。含 CG 的横屏对话框在有说话人时也显示角色头像。 |
+| v2.86-fix-stage-flow-load | 2026-09-29 | 修复战斗卡面预载把 local 写进表构造器，导致 BattleStageFlow 无法加载、主入口起不来。 |
+| v2.85-card-name-scroll | 2026-09-29 | 替换角色详情底板 UI_JSJM_0，顶部饰条露出。角色名从底板下方改到卡面顶部，超出饰条宽度时横向滚动。 |
 | v2.84-remove-world-town-bg | 2026-09-29 | 去掉横屏世界大底 UI_WORLD_BG 和城镇大图 UI_CZ_BJ 的加载与绘制，露出处改纯色。可见画面仍由三行石框、关卡图和各页底板覆盖。 |
 | v2.83-remove-church-frames | 2026-09-29 | 删除未绘制的转职彩框 UI_TFWBK 五色、标题底 UI_ZBT1、天赋背景 UI_JTTF_BJ/BJGY。光晕和滑块保留。 |
 | v2.82-remove-town-tag | 2026-09-29 | 删除未引用的城镇标签底 UI_CZ_BQ。UI_WORLD_BG 与 UI_CZ_BJ 仍作横屏和城镇背景。 |

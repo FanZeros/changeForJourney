@@ -17,7 +17,6 @@ local HeroFrame = require("ui.widget.HeroFrame")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 
 local DamageStatsPanel = {}
 
@@ -46,8 +45,8 @@ local D = {
     TT_Y    = 705,  TT_FONT = 60,  TT_SW = 6,
     TT_SR   = 0x46, TT_SG  = 0x2f, TT_SB = 0x20,
 
-    -- 副标题（时长 / DPS）
-    SUB_Y   = 800,  SUB_FONT = 34,
+    -- 副标题（时长 / DPS）；2026-09-30 上移半行（800→760）贴近标题
+    SUB_Y   = 760,  SUB_FONT = 34,
     SUB_R   = 0xb6, SUB_G  = 0xb0, SUB_B = 0x9d,
 
     -- Tab 行
@@ -96,7 +95,6 @@ local COLOR_MAG  = { 113, 253, 255 }   -- 魔法：青
 -- ======================== 图片句柄 ========================
 
 local imgBtn = -1          -- UI_ICON_TJ.png（入口按钮图标）
-local imgBg  = -1          -- UI_TY_EJQRK.png（弹窗九宫格背景）
 local heroIconCache = {}   -- [heroId] = nvgImage handle
 local cachedVg = nil
 
@@ -152,7 +150,6 @@ end
 function DamageStatsPanel.init(vg)
     cachedVg = vg
     imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_TJ.png", 0)
-    imgBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     print("[DamageStatsPanel] init OK")
 end
 
@@ -206,7 +203,7 @@ local function drawTab(vg, tab, cx, selected)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 38)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
         nvgText(vg, cx, D.TAB_Y, tab.label, nil)
     end
 end
@@ -340,9 +337,7 @@ function DamageStatsPanel.draw(vg)
     nvgTranslate(vg, -D.BG_CX, -D.BG_CY)
 
     -- 3) 九宫格背景
-    if imgBg >= 0 then
-        DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
-    end
+    DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
 
     -- 4) 标题
     drawTextStroke(vg, D.BG_CX, D.TT_Y, "战斗统计",
@@ -355,7 +350,7 @@ function DamageStatsPanel.draw(vg)
     nvgFontSize(vg, D.SUB_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(D.SUB_R, D.SUB_G, D.SUB_B, 255))
-    nvgText(vg, D.BG_CX, D.SUB_Y, string.format("累计 · 时长 %.1f 秒", dur), nil)
+    nvgText(vg, D.BG_CX, D.SUB_Y, string.format("累计 · 时长 %d 秒", math.floor(dur)), nil)
 
     -- 6) Tab 行
     for i, tab in ipairs(TABS) do
@@ -375,7 +370,7 @@ function DamageStatsPanel.draw(vg)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, D.EMPTY_FONT)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 220))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 220))
         nvgText(vg, D.BG_CX, D.EMPTY_Y, "暂无数据", nil)
     else
         local maxVal = rows[1][tab.sortKey] or 0

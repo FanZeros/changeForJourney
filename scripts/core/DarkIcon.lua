@@ -1097,48 +1097,175 @@ local TALENT_COLORS = {
     无 = { 150, 138, 110 },
 }
 
---- 金属铭牌底座（圆形，暗铁渐变 + 系色饰环 + 黑描边）
-local function drawTalentMedal(vg, colorKey, cx, cy, size, a)
-    local r = size * 0.5
-    local col = TALENT_COLORS[colorKey] or TALENT_COLORS["无"]
-    -- 外黑描边
-    nvgBeginPath(vg); nvgCircle(vg, cx, cy, r)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(a * 255)))
-    nvgFill(vg)
-    -- 主体暗铁渐变
-    nvgBeginPath(vg); nvgCircle(vg, cx, cy, r * 0.92)
-    nvgFillPaint(vg, vGrad(vg, cy - r, cy + r, { 44, 38, 30 }, { 18, 15, 11 }, a))
-    nvgFill(vg)
-    -- 系色饰环
-    nvgBeginPath(vg); nvgCircle(vg, cx, cy, r * 0.78)
-    strokeC(vg, a, col[1], col[2], col[3], 0.85)
-    nvgStrokeWidth(vg, math.max(1.2, size * 0.035))
-    nvgStroke(vg)
-    -- 内圈细线（精细层次）
-    nvgBeginPath(vg); nvgCircle(vg, cx, cy, r * 0.60)
-    strokeC(vg, a, col[1], col[2], col[3], 0.35)
-    nvgStrokeWidth(vg, math.max(1, size * 0.018))
-    nvgStroke(vg)
-    -- 顶缘高光
-    nvgBeginPath(vg)
-    nvgArc(vg, cx, cy, r * 0.88, -2.6, -0.6, NVG_CW)
-    strokeC(vg, a, 150, 134, 111, 0.5)
-    nvgStrokeWidth(vg, math.max(1, size * 0.02))
-    nvgStroke(vg)
+--- 系色压暗 / 提亮（条纹与底色共用同一色相）
+local function shadeCol(col, mul, add)
+    local function ch(v)
+        local n = math.floor(v * mul + add + 0.5)
+        if n < 0 then return 0 end
+        if n > 255 then return 255 end
+        return n
+    end
+    return { ch(col[1]), ch(col[2]), ch(col[3]) }
 end
 
--- 各符号 painter：在 (cx,cy) 中心、半径 s 内绘制系色符号（粗黑描边+系色填充+高光）
+--- 中盘路径。shape: circle / diamond / hex。r 为外接半径。
+local function talentShapePath(vg, shape, cx, cy, r)
+    nvgBeginPath(vg)
+    if shape == "diamond" then
+        nvgMoveTo(vg, cx, cy - r)
+        nvgLineTo(vg, cx + r, cy)
+        nvgLineTo(vg, cx, cy + r)
+        nvgLineTo(vg, cx - r, cy)
+        nvgClosePath(vg)
+    elseif shape == "hex" then
+        for i = 0, 5 do
+            local ang = i * math.pi / 3
+            local px = cx + math.cos(ang) * r
+            local py = cy + math.sin(ang) * r
+            if i == 0 then nvgMoveTo(vg, px, py) else nvgLineTo(vg, px, py) end
+        end
+        nvgClosePath(vg)
+    else
+        nvgCircle(vg, cx, cy, r)
+    end
+end
+
+--- 点是否落在中盘内（条纹裁切用，引擎无路径裁剪）
+local function pointInTalentShape(shape, cx, cy, r, px, py)
+    local x = px - cx
+    local y = py - cy
+    if shape == "diamond" then
+        return math.abs(x) + math.abs(y) <= r
+    end
+    if shape == "hex" then
+        local ax = math.abs(x)
+        local ay = math.abs(y)
+        if ax > r then return false end
+        if ax <= r * 0.5 then
+            return ay <= r * 0.8660254
+        end
+        return ay <= 1.7320508 * (r - ax)
+    end
+    return x * x + y * y <= r * r
+end
+
+--- 斜向单色条纹。按中盘边界截断，不依赖路径裁剪。
+local function drawTalentStripes(vg, shape, cx, cy, r, ink, a)
+    local ang = -0.62
+    local dx = math.cos(ang)
+    local dy = math.sin(ang)
+    local nx = -dy
+    local ny = dx
+    local insetR = r * 0.82
+    local spacing = math.max(3.5, r * 0.28)
+    local span = r * 1.6
+    local steps = 28
+    nvgLineCap(vg, NVG_BUTT)
+    strokeC(vg, a, ink[1], ink[2], ink[3], 0.72)
+    nvgStrokeWidth(vg, math.max(1.4, r * 0.075))
+    for i = -7, 7 do
+        local dist = i * spacing
+        local ox = cx + nx * dist
+        local oy = cy + ny * dist
+        local drawing = false
+        for s = 0, steps do
+            local t = -span + (2 * span) * s / steps
+            local qx = ox + dx * t
+            local qy = oy + dy * t
+            local inside = pointInTalentShape(shape, cx, cy, insetR, qx, qy)
+            if inside and not drawing then
+                nvgBeginPath(vg)
+                nvgMoveTo(vg, qx, qy)
+                drawing = true
+            elseif inside and drawing then
+                nvgLineTo(vg, qx, qy)
+            elseif drawing then
+                nvgStroke(vg)
+                drawing = false
+            end
+        end
+        if drawing then nvgStroke(vg) end
+    end
+end
+
+--- 方框底 + 系色渐变 + 中盘条纹 + 黑描边 + 四角骨色块
+--- shape: circle(小) / diamond(中) / hex(大)
+local function drawTalentFrame(vg, colorKey, shape, cx, cy, size, a)
+    local col = TALENT_COLORS[colorKey] or TALENT_COLORS["无"]
+    local half = size * 0.5
+    local x0 = cx - half
+    local y0 = cy - half
+    local rad = math.max(1, size * 0.035)
+    local inset = math.max(2, size * 0.055)
+    -- 外黑方框
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, x0, y0, size, size, rad)
+    nvgFillColor(vg, nvgRGBA(10, 8, 6, math.floor(a * 255)))
+    nvgFill(vg)
+    -- 系色底（上亮下暗）
+    local top = shadeCol(col, 0.42, 16)
+    local bot = shadeCol(col, 0.14, 6)
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, x0 + inset, y0 + inset, size - inset * 2, size - inset * 2, math.max(1, rad * 0.6))
+    nvgFillPaint(vg, vGrad(vg, y0 + inset, y0 + size - inset, top, bot, a))
+    nvgFill(vg)
+    -- 中盘：小圆 / 中菱 / 大六边
+    local rr
+    if shape == "diamond" then
+        rr = size * 0.44
+    elseif shape == "hex" then
+        rr = size * 0.46
+    else
+        rr = size * 0.40
+    end
+    local stop = shadeCol(col, 0.86, 28)
+    local sbot = shadeCol(col, 0.32, 4)
+    talentShapePath(vg, shape, cx, cy, rr)
+    nvgFillPaint(vg, vGrad(vg, cy - rr, cy + rr, stop, sbot, a))
+    nvgFill(vg)
+    drawTalentStripes(vg, shape, cx, cy, rr, shadeCol(col, 0.22, 0), a)
+    talentShapePath(vg, shape, cx, cy, rr)
+    nvgStrokeColor(vg, nvgRGBA(8, 6, 4, math.floor(a * 255)))
+    nvgStrokeWidth(vg, math.max(1.6, size * 0.048))
+    nvgStroke(vg)
+    -- 四角骨色块压在中盘之上
+    local cs = math.max(3, size * 0.17)
+    local gap = math.max(1.5, size * 0.05)
+    local boneA = math.floor(a * 245)
+    local corners = {
+        { x0 + gap, y0 + gap },
+        { x0 + size - gap - cs, y0 + gap },
+        { x0 + gap, y0 + size - gap - cs },
+        { x0 + size - gap - cs, y0 + size - gap - cs },
+    }
+    for i = 1, 4 do
+        local px = corners[i][1]
+        local py = corners[i][2]
+        nvgBeginPath(vg)
+        nvgRect(vg, px, py, cs, cs)
+        nvgFillColor(vg, nvgRGBA(232, 222, 204, boneA))
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgRect(vg, px, py, cs, cs)
+        nvgStrokeColor(vg, nvgRGBA(40, 34, 26, math.floor(a * 220)))
+        nvgStrokeWidth(vg, math.max(1, size * 0.012))
+        nvgStroke(vg)
+    end
+end
+
+--- 旧圆形铭牌。详情等仍可单独调用；星图已改用 drawTalentFrame。
+local function drawTalentMedal(vg, colorKey, cx, cy, size, a)
+    drawTalentFrame(vg, colorKey, "circle", cx, cy, size, a)
+end
+
+-- 各符号 painter：骨白实心符号，叠在条纹中盘上
 local glyphPainters
 
-local function glyphPath(vg, col, a)
-    nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], math.floor(a * 235)))
-    -- [fix] 描边改系色亮调（原黑色描边导致线描类符号——剑刃/法杖杆/风弧/弓——暗底上不可见）
-    local hl = {
-        math.floor(col[1] + (255 - col[1]) * 0.45),
-        math.floor(col[2] + (255 - col[2]) * 0.45),
-        math.floor(col[3] + (255 - col[3]) * 0.45),
-    }
-    nvgStrokeColor(vg, nvgRGBA(hl[1], hl[2], hl[3], math.floor(a * 255)))
+local BONE_GLYPH = { 236, 230, 214 }
+
+local function glyphPath(vg, _col, a)
+    nvgFillColor(vg, nvgRGBA(BONE_GLYPH[1], BONE_GLYPH[2], BONE_GLYPH[3], math.floor(a * 245)))
+    nvgStrokeColor(vg, nvgRGBA(BONE_GLYPH[1], BONE_GLYPH[2], BONE_GLYPH[3], math.floor(a * 255)))
 end
 
 glyphPainters = {
@@ -1183,7 +1310,7 @@ glyphPainters = {
         -- 瓶塞
         nvgBeginPath(vg)
         nvgRect(vg, cx - s * 0.13, cy - s * 0.46, s * 0.26, s * 0.12)
-        nvgFillColor(vg, nvgRGBA(150, 134, 111, math.floor(a * 235)))
+        nvgFillColor(vg, nvgRGBA(BONE_GLYPH[1], BONE_GLYPH[2], BONE_GLYPH[3], math.floor(a * 245)))
         nvgFill(vg)
     end,
     -- 法杖（奥术）：斜杆 + 顶端宝珠（杆加粗、珠放大提升辨识度）
@@ -1197,7 +1324,7 @@ glyphPainters = {
         nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.30, cy - s * 0.32, s * 0.18)
         nvgFill(vg); nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
         nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.30, cy - s * 0.32, s * 0.30)
-        strokeC(vg, a, col[1], col[2], col[3], 0.4)
+        strokeC(vg, a, BONE_GLYPH[1], BONE_GLYPH[2], BONE_GLYPH[3], 0.45)
         nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
     end,
     -- 星（暴击/终极）
@@ -1266,11 +1393,11 @@ glyphPainters = {
         -- 书脊
         nvgBeginPath(vg)
         nvgRect(vg, cx - s * 0.42, cy - s * 0.34, s * 0.10, s * 0.68)
-        nvgFillColor(vg, nvgRGBA(150, 134, 111, math.floor(a * 235)))
+        nvgFillColor(vg, nvgRGBA(BONE_GLYPH[1], BONE_GLYPH[2], BONE_GLYPH[3], math.floor(a * 245)))
         nvgFill(vg)
         -- 封面符文星
         nvgBeginPath(vg); nvgCircle(vg, cx + s * 0.0, cy + s * 0.0, s * 0.14)
-        strokeC(vg, a, 230, 215, 180, 0.9)
+        strokeC(vg, a, BONE_GLYPH[1], BONE_GLYPH[2], BONE_GLYPH[3], 0.9)
         nvgStrokeWidth(vg, s * 0.03); nvgStroke(vg)
     end,
     -- 拳（体魄/力量）
@@ -1309,7 +1436,7 @@ glyphPainters = {
         -- 顶脊
         nvgBeginPath(vg)
         nvgMoveTo(vg, cx, cy - s * 0.40); nvgLineTo(vg, cx, cy - s * 0.16)
-        strokeC(vg, a, 230, 215, 180, 0.7)
+        strokeC(vg, a, BONE_GLYPH[1], BONE_GLYPH[2], BONE_GLYPH[3], 0.85)
         nvgStrokeWidth(vg, s * 0.035); nvgStroke(vg)
     end,
     -- 指环（印记/徽记）
@@ -1398,34 +1525,45 @@ function DarkIcon.matchTalentKind(name)
     return "star"
 end
 
---- 按语义名直接绘制天赋符号（铭牌 + 符号）
+--- 节点尺寸 → 中盘形状（对齐天赋图标贴图：小圆 / 中菱 / 大六边）
+local TALENT_SHAPES = {
+    small = "circle",
+    medium = "diamond",
+    large = "hex",
+}
+
+--- 按语义名直接绘制天赋符号（方框条纹底 + 骨白符号）
 ---@param vg any
 ---@param name string 天赋节点名
 ---@param colorKey string 系别: 红/绿/黄/蓝/紫/无
 ---@param cx number 中心 X
 ---@param cy number 中心 Y
----@param size number 直径
+---@param size number 边长
 ---@param alpha number|nil 透明度 0-1
-function DarkIcon.drawTalentGlyphByName(vg, name, colorKey, cx, cy, size, alpha)
-    DarkIcon.drawTalentGlyph(vg, DarkIcon.matchTalentKind(name), colorKey, cx, cy, size, alpha)
+---@param sizeType string|nil small/medium/large，缺省 small
+function DarkIcon.drawTalentGlyphByName(vg, name, colorKey, cx, cy, size, alpha, sizeType)
+    local shape = TALENT_SHAPES[sizeType or "small"] or "circle"
+    DarkIcon.drawTalentGlyph(vg, DarkIcon.matchTalentKind(name), colorKey, cx, cy, size, alpha, shape)
 end
 
---- 天赋矢量符号图标（P2-10 试点）：铭牌底座 + 效果类型符号 + 系色
+--- 天赋矢量图标：黑方框 + 系色底 + 中盘单色条纹 + 四角骨块 + 骨白符号
 ---@param vg any
 ---@param kind string 符号类型: sword/shield/potion/staff/star/crosshair/wind/bow
 ---@param colorKey string 系别: 红/绿/黄/蓝/紫/无
 ---@param cx number 中心 X
 ---@param cy number 中心 Y
----@param size number 直径
+---@param size number 边长
 ---@param alpha number|nil 透明度 0-1
-function DarkIcon.drawTalentGlyph(vg, kind, colorKey, cx, cy, size, alpha)
+---@param shape string|nil circle / diamond / hex
+function DarkIcon.drawTalentGlyph(vg, kind, colorKey, cx, cy, size, alpha, shape)
     local a = alpha or 1
     if a <= 0.01 then return end
     local col = TALENT_COLORS[colorKey] or TALENT_COLORS["无"]
     local painter = glyphPainters[kind] or glyphPainters.star
-    drawTalentMedal(vg, colorKey, cx, cy, size, a)
+    local useShape = shape or "circle"
+    drawTalentFrame(vg, colorKey, useShape, cx, cy, size, a)
     nvgSave(vg)
-    painter(vg, cx, cy, size * 0.92, col, a)
+    painter(vg, cx, cy, size * 0.78, col, a)
     nvgRestore(vg)
 end
 

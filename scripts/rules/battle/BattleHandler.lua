@@ -47,7 +47,9 @@ handlers[Protocol.ACTION_TYPES.CLAIM_SCENARIO_REWARD] = function(uid, params)
     if not scenarioId or type(scenarioId) ~= "number" then
         return { success = false, reason = "参数错误" }
     end
-    local ok, err, result = BattleService.ClaimScenarioReward(uid, scenarioId)
+    -- preClaimed：单机客户端播放前已预写 claimedScenarios（防中途退出重播），
+    -- 透传给 Service 走"奖励已发放"账本防刷而非 claimed 拦截
+    local ok, err, result = BattleService.ClaimScenarioReward(uid, scenarioId, params.preClaimed == true)
     if not ok then return { success = false, reason = err } end
     result.success = true
     result.action = Protocol.ACTION_TYPES.CLAIM_SCENARIO_REWARD

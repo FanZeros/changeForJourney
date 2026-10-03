@@ -2,11 +2,39 @@
 -- ScenarioDialogueConfig.lua — 情景对话数据配置（玩梗版 v2.2 · 横屏开场）
 -- 开场第一幕在 LetterIntro；第二幕为 OPENING（门厅点卯），不再使用情景 1 点将。
 -- 对应文档: docs/剧情总表.md
--- characterId: HeroConfig 英雄ID（立绘 = image/角色立绘/{角色名}_透明立绘.png）
+-- characterId: 历史剧情角色编号；显示资源通过 getAppearance() 解析，职位不直接占用英雄ID。
 -- mode: "large" = 大情景(全屏覆盖), "small" = 小情景(底部横条)
 -- ============================================================================
 
 local ScenarioDialogueConfig = {}
+
+-- 剧情职位只复用美术，不改变英雄身份、职业或奖励编号。
+-- 按说话人原名匹配，避免同一旧编号用于其他英雄时也被换图。
+local APPEARANCES = {
+    ["圣女"] = { heroId = 15 },                  -- 白金修女：复活吧爱人
+    ["神秘少女"] = { heroId = 15 },              -- 复活场景沿用修女形象
+    ["卫兵"] = { heroId = 10 },                  -- 扛门守卫：铁憨憨
+    ["老板娘"] = { heroId = 13 },                -- 保留原女性形象作为剧情复用
+    ["？？？"] = { heroId = 14 },                -- 黑衣神秘人，保留匿名称呼
+    ["大狗嚼？"] = { heroId = 1 },
+    ["黄桃龙？"] = { heroId = 2 },
+    ["叮咚鸡？"] = { heroId = 3 },
+}
+local BLACKSMITH = {
+    portraitPath = "image/怪物卡牌/KP_GW_1004.png",
+    iconPath = "image/怪物卡牌/KP_GW_1004.png",
+    contain = true,                            -- 昆吾已有卡图，不冒充透明立绘
+}
+APPEARANCES["铁匠"] = BLACKSMITH
+APPEARANCES["愤怒的铁匠"] = BLACKSMITH
+
+--- 获取当前说话人的美术来源；旁白不借用角色，普通英雄仍用自己的资源。
+---@param step table|nil
+---@return table
+function ScenarioDialogueConfig.getAppearance(step)
+    if not step or not step.characterId then return {} end
+    return APPEARANCES[step.name] or { heroId = step.characterId }
+end
 
 --- 开场第二幕：信件结束后、进游戏前。横屏全屏，不点将。
 ScenarioDialogueConfig.OPENING = {
@@ -888,7 +916,7 @@ ScenarioDialogueConfig.SCENARIO_77 = {
 }
 
 --- 情景 78：老六闲聊
---- 出现条件: 已看过入队后，本局第一次打开或切换到老六
+--- 出现条件: 已看过入队后，第一次打开或切换到老六（终身一次，落档 claimedScenarios，2026-09-30 起）
 ScenarioDialogueConfig.SCENARIO_78 = {
     mode = "small",
     steps = {
@@ -898,7 +926,7 @@ ScenarioDialogueConfig.SCENARIO_78 = {
 }
 
 --- 情景 79：哈基米闲聊
---- 出现条件: 已看过入队后，本局第一次打开或切换到哈基米
+--- 出现条件: 已看过入队后，第一次打开或切换到哈基米（终身一次，落档 claimedScenarios，2026-09-30 起）
 ScenarioDialogueConfig.SCENARIO_79 = {
     mode = "small",
     steps = {
@@ -908,7 +936,7 @@ ScenarioDialogueConfig.SCENARIO_79 = {
 }
 
 --- 情景 80：加载中闲聊
---- 出现条件: 已看过入队后，本局第一次打开或切换到加载中
+--- 出现条件: 已看过入队后，第一次打开或切换到加载中（终身一次，落档 claimedScenarios，2026-09-30 起）
 ScenarioDialogueConfig.SCENARIO_80 = {
     mode = "small",
     steps = {
@@ -918,7 +946,7 @@ ScenarioDialogueConfig.SCENARIO_80 = {
 }
 
 --- 情景 81：高ping战士闲聊
---- 出现条件: 已看过入队后，本局第一次打开或切换到高ping战士
+--- 出现条件: 已看过入队后，第一次打开或切换到高ping战士（终身一次，落档 claimedScenarios，2026-09-30 起）
 ScenarioDialogueConfig.SCENARIO_81 = {
     mode = "small",
     steps = {
@@ -927,17 +955,17 @@ ScenarioDialogueConfig.SCENARIO_81 = {
     },
 }
 
---- 情景 82：第二章通关·大狗嚼潜能引导（发放大狗嚼碎片×60，引导升潜能/觉醒）
+--- 情景 82：第二章通关·大狗嚼潜能引导（发放大狗嚼碎片×10，足够首次觉醒）
 --- 出现条件: 首通 205（普通难度第二章收尾），不限初始角色
 ScenarioDialogueConfig.SCENARIO_82 = {
     mode = "small",
     steps = {
         { characterId = 1, name = "大狗嚼", text = "叫！第二章啃完了！本狗的牙口还没尽兴，骨头缝里都在冒火星子！" },
-        { characterId = 1, name = "大狗嚼", text = "远征长看好了——这 60 块碎片是本狗从怪堆里嚼出来的！塞进「潜能」里，就能再嵌合一阶！" },
+        { characterId = 1, name = "大狗嚼", text = "远征长看好了——这 10 块碎片是本狗从怪堆里嚼出来的！塞进「潜能」里，就能嵌合第一阶！" },
         { characterId = 1, name = "大狗嚼", text = "角色详情、觉醒页、嵌合！三步走！嵌完下一口，本狗直接啃boss的脑袋！叫！" },
     },
     rewards = {
-        { type = "shard", heroId = 1, amount = 60 },
+        { type = "shard", heroId = 1, amount = 10 },
     },
 }
 

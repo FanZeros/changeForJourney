@@ -8,18 +8,24 @@ local ImageCache      = require("ui.widget.ImageCache")
 local NumberUtil      = require("core.NumberUtil")
 local PlayerStore     = require("core.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
+local EquipmentSetConfig = require("config.EquipmentSetConfig")
+local EquipmentWearability = require("ui.character.detail.EquipmentWearability")
+local AdvancementConfig = require("config.AdvancementConfig")
 local HeroConfig      = require("config.HeroConfig")
 local CharacterPanel  = require("ui.character.panel.CharacterPanel")
 local HeroFrame = require("ui.widget.HeroFrame")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 local M = {}
 
 function M.bind(deps)
     local GRID = deps.GRID
     local CELL_COL_CX = deps.CELL_COL_CX
-    local CLIP_TOP = deps.CLIP_TOP
-    local CLIP_H = deps.CLIP_H
     local DESIGN_W = deps.DESIGN_W
+    -- 裁剪常量从 GRID 表取活值：宿主 applyLayout 切换 inline/left 布局时会改写
+    -- GRID.FIRST_ROW_TOP / GRID.CLIP_BOTTOM，bind 时按值快照会拿到过期布局。
+    local function clipTop() return GRID.FIRST_ROW_TOP end
+    local function clipH() return GRID.CLIP_BOTTOM - GRID.FIRST_ROW_TOP end
     local DarkIcon = deps.DarkIcon or DarkIcon
     local DrawUtil = deps.DrawUtil or DrawUtil
     local state = deps.state
@@ -29,9 +35,56 @@ function M.bind(deps)
     local getImgCheckmark = deps.getImgCheckmark
     local getImgLock = deps.getImgLock
     local qualityChecked = deps.qualityChecked or function() return true end
+    -- 套装筛选（装备 tab 显示过滤）：空集合=不限制
+    local setChecked = deps.setChecked or function() return true end
     local getImgHeroIcons = deps.getImgHeroIcons
     local calcScrollMax = deps.calcScrollMax
     local clampScroll = deps.clampScroll
+    local getEquipmentSlotFilter = deps.getEquipmentSlotFilter or function() return nil, nil end
+    local function isLeftMode()
+        if deps.isLeftMode then return deps.isLeftMode() end
+        return require("ui.backpack.BackpackPanel").isLeftMode()
+    end
+
+    local function filterContext()
+        local slotFilter, filterHeroId = getEquipmentSlotFilter()
+        local heroes = filterHeroId ~= nil and PlayerStore.Get("heroes") or nil
+        local hero = heroes and heroes.roster
+            and (heroes.roster[filterHeroId] or heroes.roster[tostring(filterHeroId)])
+        local dualMode = AdvancementConfig.getDualWieldMode(hero and hero.advBranch)
+        return slotFilter, filterHeroId, heroes, dualMode
+    end
+
+    -- 列表与数量共用品质/部位规则；可穿戴状态只灰显，不改变候选数量。
+    local function matchesBaseFilter(equip, slotFilter, dualMode)
+        local tpl = EquipmentConfig.ITEMS[equip.templateId]
+        local naturalSlot, equipType, grip, level = EquipmentWearability.getFields(equip)
+        local quality = equip.quality or (tpl and tpl.quality) or 1
+        local slotOk = not slotFilter or naturalSlot == slotFilter
+        if slotFilter == "offhand" and dualMode and naturalSlot == "weapon" and grip == "onehand" then
+            slotOk = true
+        end
+        return tpl ~= nil and qualityChecked(quality) and slotOk,
+            tpl, naturalSlot, equipType, grip, level, quality
+    end
+
+    --- 按当前品质/部位统计套装实例，忽略套装勾选，避免其他可选行被计成零。
+    ---@return table<string, integer>
+    local function getSetCounts()
+        local counts = { none = 0 }
+        for _, setId in ipairs(EquipmentSetConfig.orderedSetIds()) do counts[setId] = 0 end
+        local equipData = PlayerStore.Get("equipment")
+        if not equipData or not equipData.inventory then return counts end
+        local slotFilter, _, _, dualMode = filterContext()
+        for _, equip in pairs(equipData.inventory) do
+            local matches, tpl = matchesBaseFilter(equip, slotFilter, dualMode)
+            if matches then
+                local setId = EquipmentSetConfig.getSetIdForTemplate(tpl) or "none"
+                counts[setId] = (counts[setId] or 0) + 1
+            end
+        end
+        return counts
+    end
 
     local function getEquipList()
         local equipData = PlayerStore.Get("equipment")
@@ -49,21 +102,31 @@ function M.bind(deps)
         end
 
         local list = {}
+        local slotFilter, filterHeroId, heroes, dualMode = filterContext()
+        -- 可穿戴状态只决定灰显，不再过滤掉装备；实际穿戴仍由 applyEquip 校验。
+        local canEquip = filterHeroId ~= nil and EquipmentWearability.createChecker(
+            equipData, filterHeroId, heroes) or nil
         for seqStr, equip in pairs(equipData.inventory) do
-            local tpl = EquipmentConfig.ITEMS[equip.templateId]
-            local quality = (equip and (equip.quality or (tpl and tpl.quality))) or 1
-            -- 常驻勾选筛选：勾选集合非空时只列出勾选档位的装备（全不勾=全部）
-            if tpl and qualityChecked(quality) then
+            local matches, tpl, naturalSlot, equipType, grip, level, quality =
+                matchesBaseFilter(equip, slotFilter, dualMode)
+            -- 部位、品质与套装决定列表；不能穿的保留在同一绘制/点击/hover/peek真源内。
+            if matches and setChecked(equip.templateId) then
+                local canWear, cannotEquipReason = true, nil
+                if canEquip then canWear, cannotEquipReason = canEquip(seqStr, slotFilter) end
                 list[#list + 1] = {
                     seq = tonumber(seqStr) or 0,
                     templateId = equip.templateId,
-                    level = equip.level or 1,
+                    level = level,
                     quality = quality,
                     name = tpl.name or "",
-                    type = equip.type or tpl.type or "",
+                    type = equipType or "",
+                    slot = naturalSlot,
+                    grip = grip,
                     enhanceLevel = equip.enhanceLevel or 0,
-                    equippedByHeroId = equippedByHero[seqStr] or nil,
+                    equippedByHeroId = equippedByHero[tostring(seqStr)] or nil,
                     locked = equip.locked or nil,
+                    canWear = canWear,
+                    cannotEquipReason = cannotEquipReason,
                 }
             end
         end
@@ -81,9 +144,14 @@ function M.bind(deps)
         local totalSlots = math.max(#equipList, 35)
         state.scrollMax = calcScrollMax(totalSlots)
         clampScroll()
+        local tutorial = require("systems.TutorialManager")
+        local slotFilter, filterHeroId = getEquipmentSlotFilter()
+        local canGuideWeapon = tutorial.isActive() and slotFilter == "weapon"
+            and filterHeroId ~= nil and not state.closing and isLeftMode()
+        local guidedWeapon = false
 
         nvgSave(vg)
-        nvgScissor(vg, 0, CLIP_TOP, DESIGN_W, CLIP_H)
+        nvgScissor(vg, 0, clipTop(), DESIGN_W, clipH())
         nvgTranslate(vg, 0, -state.scrollY)
 
         for idx = 1, totalSlots do
@@ -94,32 +162,29 @@ function M.bind(deps)
 
             local screenY = cy - state.scrollY
 
-            if idx == 1 then
-                local _TM = require("systems.TutorialManager")
-                if _TM.isActive() then
-                    _TM.registerHotspot("equip_item_gifted", cx, screenY, GRID.CELL_SIZE, GRID.CELL_SIZE, "right")
-                end
-            end
-
-            if screenY < CLIP_TOP - GRID.CELL_SIZE then
+            if screenY < clipTop() - GRID.CELL_SIZE then
                 goto continue_equip
             end
             if screenY > GRID.CLIP_BOTTOM + GRID.CELL_SIZE then
                 break
             end
 
-            local cellTop = cy - GRID.CELL_SIZE * 0.5
-            local cellBottom = cy + GRID.CELL_SIZE * 0.5
-            local clipCell = cellTop < CLIP_TOP or cellBottom > GRID.CLIP_BOTTOM
-            if clipCell then
-                nvgSave(vg)
-                local visTop = math.max(cellTop, CLIP_TOP)
-                local visBot = math.min(cellBottom, GRID.CLIP_BOTTOM)
-                nvgIntersectScissor(vg, cx - GRID.CELL_SIZE * 0.5, visTop, GRID.CELL_SIZE, math.max(0, visBot - visTop))
-            end
+            -- 边缘半格裁剪由外层 nvgScissor（屏幕坐标，translate 之前设置）统一负责。
+            -- ⚠️ 不要在这里加逐格 nvgIntersectScissor：cy 是 translate 后的内容坐标，
+            -- 与屏幕坐标 CLIP_TOP/CLIP_BOTTOM 比较必然错位，滚动后会把可见格子裁空
+            -- （历史 bug：仓库只显示第一页，下滑全空白）。
 
             local equip = equipList[idx]
             if equip then
+                -- 教程只指向真实可穿武器；首个完整可见格优先，热点不伸出裁剪区。
+                local halfCell = GRID.CELL_SIZE * 0.5
+                if canGuideWeapon and not guidedWeapon and equip.slot == "weapon" and equip.canWear == true
+                    and screenY - halfCell >= clipTop() and screenY + halfCell <= GRID.CLIP_BOTTOM
+                    and cx - halfCell >= 0 and cx + halfCell <= DESIGN_W then
+                    tutorial.registerHotspot("equip_item_gifted", cx, screenY,
+                        GRID.CELL_SIZE, GRID.CELL_SIZE, "left")
+                    guidedWeapon = true
+                end
                 DarkIcon.drawQualityBg(vg, equip.quality, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
 
                 local icon = ImageCache.getEquipIcon(equip.templateId)
@@ -129,11 +194,18 @@ function M.bind(deps)
 
                 do
                     local lvlText = "Lv." .. (equip.level or 1)
-                    local lvlX = cx + GRID.CELL_SIZE * 0.5 - 8
-                    local lvlY = cy + GRID.CELL_SIZE * 0.5 - 6
+                    local lvl = EquipmentSetIcon.levelLayout(equip, cx, cy, GRID.CELL_SIZE)
+                    local lvlX, lvlY = lvl.x, lvl.y
                     nvgFontFace(vg, "sans")
-                    nvgFontSize(vg, 40)
-                    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
+                    nvgFontSize(vg, lvl.fontSize)
+                    -- 固定预留左下角标位，显示开关不让等级移位或忽大忽小。
+                    local badge = EquipmentSetIcon.badgeLayout(cx, cy, GRID.CELL_SIZE)
+                    local availableW = lvlX - (badge.x + badge.size) - 8
+                    local textW = nvgTextBounds(vg, 0, 0, lvlText)
+                    if textW > availableW then
+                        nvgFontSize(vg, lvl.fontSize * availableW / textW)
+                    end
+                    nvgTextAlign(vg, lvl.align)
                     nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                     local sStep = math.pi * 2 / 16
                     for si = 0, 15 do
@@ -181,25 +253,34 @@ function M.bind(deps)
                     end
                 end
 
-                if decomposeState.active and decomposeState.selectedItems[idx] then
-                    nvgBeginPath(vg)
-                    nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
-                        GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS)
-                    nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))
-                    nvgFill(vg)
-                    DrawUtil.drawImageCentered(vg, getImgCheckmark(), cx, cy, 80, 80, 1.0)
-                end
+                -- [分解入仓 0929] 旧"批量分解模式"选中遮罩已移除（分解迁移到独立 tab）
 
                 if equip.locked and getImgLock() >= 0 then
-                    local lockSize = 56
+                    local hasSetBadge = equip.equippedByHeroId and EquipmentSetIcon.hasBadge(equip)
+                    -- 三角标同存时缩小锁，放于头像与左下套装徽记之间。
+                    local lockSize = hasSetBadge and 32 or 56
                     local lockX = cx - GRID.CELL_SIZE * 0.5 + lockSize * 0.5 + 4
                     local lockY
-                    if equip.equippedByHeroId then
+                    if hasSetBadge then
+                        lockY = cy + GRID.CELL_SIZE * (10 / 160)
+                    elseif equip.equippedByHeroId then
                         lockY = cy + GRID.CELL_SIZE * 0.5 - lockSize * 0.5 - 4
                     else
                         lockY = cy - GRID.CELL_SIZE * 0.5 + lockSize * 0.5 + 4
                     end
                     DrawUtil.drawImageCentered(vg, getImgLock(), lockX, lockY, lockSize, lockSize, 1.0)
+                end
+
+                -- 套装角标在数值/归属/锁之后，不可穿戴灰罩之前绘制。
+                EquipmentSetIcon.drawBadge(vg, equip, cx, cy, GRID.CELL_SIZE, 1.0)
+
+                -- 最后覆盖整格，品质、图标和角标一起灰显，但仍可查看详情。
+                if equip.canWear == false then
+                    nvgBeginPath(vg)
+                    nvgRoundedRect(vg, cx - GRID.CELL_SIZE * 0.5, cy - GRID.CELL_SIZE * 0.5,
+                        GRID.CELL_SIZE, GRID.CELL_SIZE, GRID.CELL_RADIUS + 6)
+                    nvgFillColor(vg, nvgRGBA(38, 38, 38, 175))
+                    nvgFill(vg)
                 end
             else
                 nvgBeginPath(vg)
@@ -211,9 +292,6 @@ function M.bind(deps)
                 nvgStrokeColor(vg, nvgRGBA(232, 204, 140, 210))
                 nvgStrokeWidth(vg, 3)
                 nvgStroke(vg)
-            end
-            if clipCell then
-                nvgRestore(vg)
             end
             ::continue_equip::
         end
@@ -261,7 +339,7 @@ function M.bind(deps)
         clampScroll()
 
         nvgSave(vg)
-        nvgScissor(vg, 0, CLIP_TOP, DESIGN_W, CLIP_H)
+        nvgScissor(vg, 0, clipTop(), DESIGN_W, clipH())
         nvgTranslate(vg, 0, -state.scrollY)
 
         for idx, def in ipairs(itemList) do
@@ -305,6 +383,7 @@ function M.bind(deps)
 
     return {
         getEquipList = getEquipList,
+        getSetCounts = getSetCounts,
         drawEquipGrid = drawEquipGrid,
         buildItemList = buildItemList,
         drawItemGrid = drawItemGrid,

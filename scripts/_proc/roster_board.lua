@@ -20,7 +20,7 @@ local HEROES = {
     { id = 15, meme = "复活吧爱人",   q = "SSR", qc = {255,237,0},   job = "牧师", orig = "伊丽莎白", title = "急救复活甲", art = false },
     { id = 16, meme = "万剑归宗",     q = "UR",  qc = {255,106,0},   job = "战士", orig = "洛星绘",   title = "御剑飞行家", art = false },
     { id = 20, meme = "摘星星星人",   q = "UR",  qc = {255,106,0},   job = "法师", orig = "梅丽莎",   title = "太空出差人",   art = true  },
-    { id = 21, meme = "闪电卖鸡",     q = "SSR", qc = {255,237,0},   job = "战士", orig = "亚历克斯", title = "赛道之王", art = true  },
+    { id = 21, meme = "雷电麦坤",     q = "SSR", qc = {255,237,0},   job = "战士", orig = "亚历克斯", title = "赛道之王", art = true  },
     { id = 22, meme = "小黑子",   q = "SSR", qc = {255,237,0},   job = "法师", orig = "赛拉",     title = "两年半练习生", art = false },
     { id = 23, meme = "真布诗人", q = "SSR", qc = {255,237,0},  job = "牧师", orig = "艾尔温",   title = "即兴说唱王", art = false },
 }

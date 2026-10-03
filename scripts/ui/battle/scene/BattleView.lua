@@ -19,7 +19,7 @@ local STRIP_W = BattleLayout.STRIP_W   -- 948
 local STRIP_H = BattleLayout.STRIP_H   -- 360
 
 -- ---- 贴图（幂等）----
-local img = { loaded = false, map = -1, shadow = -1, enemyTag = -1 }
+local img = { loaded = false, map = -1, enemyTag = -1 }
 
 --- 初始化贴图（幂等）
 ---@param vg any
@@ -27,7 +27,6 @@ function BattleView.init(vg)
     if img.loaded then return end
     img.loaded   = true
     img.map      = nvgCreateImage(vg, "image/关卡地图/MAP_1.png", 0)
-    img.shadow   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY.png", 0)
     img.enemyTag = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
 end
 

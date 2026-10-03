@@ -10,6 +10,7 @@ local StageProvider    = require("shared.StageProvider")
 local ExpTable         = require("config.ExpTable")
 local HeroConfig       = require("config.HeroConfig")
 local LootBoxSystem    = require("systems.LootBoxSystem")
+local BlacksmithConfig = require("config.BlacksmithConfig")
 local EquipmentSystem  = require("systems.EquipmentSystem")
 local CurrencyService  = require("rules.currency.CurrencyService")
 local HeroService      = require("rules.hero.HeroService")
@@ -62,23 +63,20 @@ local function appendEquipPreviewItems(list, equips)
             quality    = equip.quality,
             level      = equip.level,
             slot       = equip.slot,
+            -- [奖励可点击] 附带完整装备实例，供弹窗点击查看只读详情（纯 table，可序列化）
+            equip      = equip,
         }
     end
 end
 
---- 构建出战队员的升级预览（只读，不改数据；领取时才真正发经验）
---- 经验与 ClaimRewards 一致：总量平分给出战队员，各自套用自己的等级曲线。
---- 弹窗按队伍分行：有 teams 时按队1..3 的槽位顺序排，并带上 teamIdx；
---- 没有 teams 的旧数据全部归到队1。
+--- 收集当前已解锁队伍的真实出战英雄；锁队脏档不参与人数倍率、预览或发奖。
 ---@param heroesData table|nil
----@param totalHeroExp number 队员经验总合
----@return table[] { heroId, name, quality, teamIdx, startLevel, startExp, level, exp, maxExp, levelGain, expGain, capped }
-local function buildHeroExpPreview(heroesData, totalHeroExp)
-    local preview = {}
-    if not heroesData then return preview end
-
-    -- 先收集 (heroId, teamIdx)，保持队伍顺序
+---@param battleProgress table|nil
+---@return table[] { id, team }
+local function collectUnlockedHeroes(heroesData, battleProgress)
     local entries = {}
+    if not heroesData then return entries end
+    local unlockedTeams = ExpTable.getUnlockedTeamCount(battleProgress)
     local seen = {}
     local function addHero(heroId, teamIdx)
         local id = tonumber(heroId)
@@ -92,17 +90,17 @@ local function buildHeroExpPreview(heroesData, totalHeroExp)
     local okPanel, CharacterPanel = pcall(require, "ui.character.panel.CharacterPanel")
     if okPanel and CharacterPanel.getTeamSlotIds then
         liveTeams = CharacterPanel.getTeamSlotIds() or {}
-        for _, team in ipairs(liveTeams) do
-            liveCount = liveCount + #(team.slots or {})
+        for t = 1, unlockedTeams do
+            local team = liveTeams[t]
+            liveCount = liveCount + #(team and team.slots or {})
         end
     end
     -- 面板还停在默认开局阵容时，不用它，改用存档里的队伍。
     local heroesReady = okPanel and CharacterPanel.isHeroesDataApplied
         and CharacterPanel.isHeroesDataApplied()
     local teams = (heroesReady and liveCount > 0) and liveTeams or heroesData.teams
-    local hasTeams = type(teams) == "table"
-    if hasTeams then
-        for t = 1, ExpTable.TEAM_COUNT do
+    if type(teams) == "table" then
+        for t = 1, unlockedTeams do
             local slots = teams[t] and teams[t].slots
             if type(slots) == "table" then
                 for _, heroId in ipairs(slots) do
@@ -116,6 +114,18 @@ local function buildHeroExpPreview(heroesData, totalHeroExp)
             addHero(heroId, 1)
         end
     end
+    return entries
+end
+
+--- 构建出战队员的升级预览（只读，不改数据；领取时才真正发经验）
+--- 经验与 ClaimRewards 一致：总量平分给已解锁队伍的出战队员。
+---@param heroesData table|nil
+---@param totalHeroExp number 队员经验总合
+---@param battleProgress table|nil
+---@return table[] { heroId, name, quality, teamIdx, startLevel, startExp, level, exp, maxExp, levelGain, expGain, capped }
+local function buildHeroExpPreview(heroesData, totalHeroExp, battleProgress)
+    local preview = {}
+    local entries = collectUnlockedHeroes(heroesData, battleProgress)
     if #entries == 0 then return preview end
 
     local total = math.floor(totalHeroExp or 0)
@@ -178,7 +188,8 @@ function OfflineService.RebuildHeroPreview(uid)
     if not pending or not pending.rewards then return nil end
     local heroesData = PDM.GetModule(uid, "heroes")
     if not heroesData then return nil end
-    local preview = buildHeroExpPreview(heroesData, pending.rewards.adventurerExp)
+    local battleProgress = PDM.GetModule(uid, "battle")
+    local preview = buildHeroExpPreview(heroesData, pending.rewards.adventurerExp, battleProgress)
     if #preview == 0 then return nil end
     pending.panelData.heroExpPreview = preview
     return preview
@@ -261,13 +272,10 @@ function OfflineService.CalcOnEnter(uid)
         return
     end
 
-    -- 使用断线时快照的英雄数（离线期间阵容不变）
-    local heroCount = battleData.idleHeroCount or 0
-    if heroCount <= 0 then
-        -- 兼容旧存档：没有快照时用当前出战数
-        local deployed = heroesData.deployed or {}
-        heroCount = #deployed
-    end
+    -- 断线快照可能来自旧版或含锁队/空槽；上限必须是当前已解锁的真实出战人数。
+    local eligibleCount = #collectUnlockedHeroes(heroesData, battleData)
+    local snapshotCount = math.max(0, math.floor(tonumber(battleData.idleHeroCount) or 0))
+    local heroCount = snapshotCount > 0 and math.min(snapshotCount, eligibleCount) or eligibleCount
 
     -- 调用统一挂机计算（入口 A：有 MIN/MAX 门槛）
     local rewards = OfflineCalc.calcOfflineIdleRewards(offlineSeconds, incomeStageId, heroCount, dropStageId, stageConfig)
@@ -283,8 +291,13 @@ function OfflineService.CalcOnEnter(uid)
         totalKills     = rewards.kills,
         adventureExp   = rewards.adventureExp,
         adventurerExp  = rewards.adventurerExp,
-        heroExpPreview = buildHeroExpPreview(heroesData, rewards.adventurerExp),
+        heroExpPreview = buildHeroExpPreview(heroesData, rewards.adventurerExp, battleData),
         rewards        = {},
+        -- [7日硬顶] 面板展示封顶信息
+        hardCapSeconds  = rewards.hardCapSeconds or OfflineCalc.HARD_CAP_SECONDS,
+        cappedByHardCap = rewards.cappedByHardCap or false,
+        tailRatio       = rewards.tailRatio or OfflineCalc.TAIL_RATIO,
+        rawSeconds      = rewards.rawSeconds,
     }
 
     -- 金币
@@ -348,28 +361,27 @@ function OfflineService.ClaimRewards(uid)
     currency.gold = (currency.gold or 0) + goldAmount
     PDM.MarkDirty(uid, "currency")
 
-    -- 2) 英雄经验（平分给全部队伍的出战英雄，与预览同一份名单）
+    -- 2) 英雄经验（平分给已解锁队伍的出战英雄；领取时重新校验，拒绝过期/脏预览）
+    local battleProgress = PDM.GetModule(uid, "battle")
+    local eligible = collectUnlockedHeroes(heroesData, battleProgress)
+    local allowed = {}
+    for _, entry in ipairs(eligible) do allowed[entry.id] = entry.team end
     local recipients = {}
     local preview = pending.panelData and pending.panelData.heroExpPreview
     if type(preview) == "table" and #preview > 0 then
         local seen = {}
         for _, item in ipairs(preview) do
-            local numId = tonumber(item.heroId) or item.heroId
-            if numId and not seen[numId] then
+            local numId = tonumber(item.heroId)
+            local teamIdx = tonumber(item.teamIdx) or 1
+            if numId and allowed[numId] == teamIdx and not seen[numId] then
                 seen[numId] = true
                 recipients[#recipients + 1] = numId
             end
         end
     end
     if #recipients == 0 then
-        local seen = {}
-        for _, heroId in ipairs(heroesData.deployed or {}) do
-            local numId = tonumber(heroId)
-            if numId and numId > 0 and not seen[numId]
-                and heroesData.roster and heroesData.roster[numId] then
-                seen[numId] = true
-                recipients[#recipients + 1] = numId
-            end
+        for _, entry in ipairs(eligible) do
+            recipients[#recipients + 1] = entry.id
         end
     end
     local heroCount = #recipients
@@ -509,7 +521,8 @@ function OfflineService.OnPlayerDisconnect(uid)
         -- 1. 最终结算剩余 idleAccumSec
         local accumSec = battleData.idleAccumSec or 0
         if accumSec > 0 then
-            local heroCount = heroesData and heroesData.deployed and #heroesData.deployed or 0
+            local entries = collectUnlockedHeroes(heroesData, battleData)
+            local heroCount = #entries
             local stageConfig = StageProvider.Get()
             local incomeStageId, dropStageId = OfflineCalc.resolveIdleStageAnchors(battleData, stageConfig)
             if incomeStageId > 0 and heroCount > 0 then
@@ -527,12 +540,10 @@ function OfflineService.OnPlayerDisconnect(uid)
                         PDM.MarkDirty(uid, "currency")
 
                         -- 英雄经验
-                        local deployed = heroesData.deployed or {}
-                        if #deployed > 0 then
-                            local perHeroExp = math.floor(rewards.adventurerExp / #deployed + 0.5)
-                            for _, heroId in ipairs(deployed) do
-                                local numId = tonumber(heroId) or heroId
-                                local heroData = heroesData.roster and heroesData.roster[numId]
+                        if #entries > 0 then
+                            local perHeroExp = math.floor(rewards.adventurerExp / #entries + 0.5)
+                            for _, entry in ipairs(entries) do
+                                local heroData = heroesData.roster and heroesData.roster[entry.id]
                                 if heroData then
                                     heroData.exp = (heroData.exp or 0) + perHeroExp
                                     ExpTable.autoLevelUpHero(heroData)
@@ -551,14 +562,28 @@ function OfflineService.OnPlayerDisconnect(uid)
                             HeroService.SyncHeroLevelsToPlayerLevel(uid, playerData.level)
                         end
 
-                        -- 装备种子
+                        -- 装备种子（符合自动分解条件的直接转精粹，与击杀掉落同一语义）
+                        local equipData = PDM.GetModule(uid, "equipment")
+                        local autoSettings = (equipData and equipData.settings) or nil
+                        local autoEssence = 0
                         for _, seed in ipairs(rewards.equipSeeds or {}) do
                             local count = seed.count or 1
                             for _ = 1, count do
-                                LootBoxSystem.addSeed(lootbox, seed.stageId, seed.quality, seed.level)
+                                local q, lv = seed.quality or 1, seed.level or 1
+                                if BlacksmithConfig.shouldAutoDecompose(autoSettings, q, lv) then
+                                    local essence = BlacksmithConfig.calcAutoDecomposeEssence(q, lv)
+                                    autoEssence = autoEssence + essence
+                                    BlacksmithConfig.recordAutoDecompose(lootbox, q, lv, essence)
+                                else
+                                    LootBoxSystem.addSeed(lootbox, seed.stageId, q, lv)
+                                end
                             end
                         end
                         PDM.MarkDirty(uid, "lootbox")
+                        if autoEssence > 0 then
+                            CurrencyService.Add(uid, "essence", autoEssence)
+                            print("[Offline] auto-decompose essence=+" .. autoEssence .. " uid=" .. tostring(uid))
+                        end
 
                         -- 卷轴
                         for scrollField, count in pairs(rewards.scrollDrops or {}) do
@@ -585,9 +610,8 @@ function OfflineService.OnPlayerDisconnect(uid)
             end
         end
 
-        -- 2. 快照出战英雄数（离线结算用）
-        local deployed = heroesData and heroesData.deployed or {}
-        battleData.idleHeroCount = #deployed
+        -- 2. 快照已解锁队伍的真实出战人数（排除空槽 0 与锁队）
+        battleData.idleHeroCount = #collectUnlockedHeroes(heroesData, battleData)
 
         -- 3. 设置模式为离线（阻止 Update handler 继续累加）
         battleData.battleMode = "offline"

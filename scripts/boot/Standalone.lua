@@ -33,6 +33,7 @@ local BackpackPanel      = require("ui.backpack.BackpackPanel")
 local LootBox           = require("ui.loot.LootBox")
 local LootBoxPage       = require("ui.loot.LootBoxPage")
 local LevelUpPopup      = require("ui.hud.popup.LevelUpPopup")
+local UpdateNoticePopup = require("ui.hud.popup.UpdateNoticePopup")
 local BattleCombat      = require("ui.battle.combat.BattleCombat")
 local OfflineRewardPanel = require("ui.hud.popup.OfflineRewardPanel")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
@@ -90,6 +91,7 @@ local vg = nil
 local sceneRef_ = nil  -- 保存 scene 引用，供 requestResetToStartScreen 使用
 local startScreenWasOpen_ = false
 local postStartFlowDone_ = false  -- [LetterIntro] 开场/离线收益只触发一次（等标题关闭）
+local storyBackfilled_ = false    -- [旧档补播] 已首通关卡的未领情景只补排队一次
 local startFlowBegun_ = false     -- 标题已关，BGM 已起；离线结算可能还在等角色刷新
 local fontNormal = -1
 local bootQueue_ = nil
@@ -363,9 +365,15 @@ function Standalone.Start()
         { "RewardPopup", function() RewardPopup.init(vg) end },
         { "OfflineRewardPanel", function() OfflineRewardPanel.init(vg) end },
         { "LevelUpPopup", function() LevelUpPopup.init(vg) end },
+        { "UpdateNoticePopup", function() UpdateNoticePopup.init(vg) end },
         { "PlayerInfoPanel", function() PlayerInfoPanel.init(vg) end },
         { "SpinePowerUp", function() SpinePowerUpEffect.init() end },
-        { "TutorialManager", function() TutorialManager.init(vg, PlayerStore) end },
+        { "TutorialManager", function()
+            TutorialManager.init(vg, PlayerStore, function(progress)
+                local session = ClientDispatcher.get("session")
+                if session then session.tutorialProgress = progress end
+            end)
+        end },
         { "bootWiring", function() Standalone._bootWiring() end },
         { "firstStage", function()
             -- [启动优化] 初始阵容同步 + 关卡重载：独立一帧执行
@@ -475,6 +483,10 @@ local function showOfflineRewardPanel_()
         adventurerExp  = panelData.adventurerExp,
         heroExpPreview = panelData.heroExpPreview,
         rewards        = panelData.rewards,
+        -- [7日硬顶] 封顶提示
+        hardCapSeconds  = panelData.hardCapSeconds,
+        cappedByHardCap = panelData.cappedByHardCap,
+        tailRatio       = panelData.tailRatio,
         onClaim = function()
             local handled = localSendAction("claim_offline_rewards", {})
             if handled and not OfflineService.HasPendingRewards(1) then
@@ -585,6 +597,7 @@ end
 
 --- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
 local function tryPlayPendingStory_()
+    if not TutorialManager.canPlayPendingStory() then return end
     if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then
         return
     end
@@ -625,7 +638,10 @@ local function tryPlayPendingStory_()
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
                 -- [横屏接线 0928] 恢复引导触发链: claim 结果处理时 fireTutorial → onScenarioClaimed
                 ClientMsgHandler.setPendingTutorialNotify(scenarioId)
-                localSendAction("claim_scenario_reward", { scenarioId = scenarioId })
+                -- [预标记冲突修复 2026-10-01] 播放前已预写 claimedScenarios（13df6a95 防中途退出重播），
+                -- 单机 PDM 与 ClientDispatcher 共享同一张 session 表 → 不跳过防重复会拒发奖励。
+                -- preClaimed=true 告知服务端"这是播完后的首次真实领取"。
+                localSendAction("claim_scenario_reward", { scenarioId = scenarioId, preClaimed = true })
                 local followId = require("systems.StoryPlayer").followOf(scenarioId)
                 if followId then
                     print("[Standalone] enqueue follow scenario " .. tostring(followId))
@@ -662,7 +678,9 @@ function Standalone.requestResetToStartScreen()
     -- 2. 关闭所有打开的面板/弹窗
     if MarketPage.isOpen()          then MarketPage.close()          end
     if TavernPage.isOpen()          then TavernPage.close()          end
-    if BlacksmithPage.isOpen()      then BlacksmithPage.close()      end
+    -- [锻炉双页 0929] 锻炉强制关闭（联动仓库由其 closeAutoWarehouse 处理，这里再兜底关仓库）
+    if BlacksmithPage.isOpen()      then BlacksmithPage.forceClose() end
+    if BackpackPanel.isOpen()       then BackpackPanel.close()       end
     if ChurchPage.isOpen()          then ChurchPage.close()          end
     if TalentPage.isOpen()          then TalentPage.close()          end
     if HeroRosterPanel.isVisible()  then HeroRosterPanel.hide()      end
@@ -725,6 +743,7 @@ function Standalone.requestResetToStartScreen()
     -- 11. 设置标志：重新进入开始界面流程（等标题关闭后再走开场链）
     startScreenWasOpen_ = true
     postStartFlowDone_ = false
+    storyBackfilled_ = false
     startFlowBegun_ = false
     print(string.format("%s step11: startScreenWasOpen_=true clock=%.4f", TAG, os.clock()))
 
@@ -891,8 +910,7 @@ function HandleUpdate(eventType, eventData)
     BottomNav.update(dt)
 
     -- [横屏接线 0928] 新手引导每帧驱动（原 ClientUpdate 接线，重构时丢失）
-    -- clearHotspots: 每帧清空热点缓存，本帧渲染时各 UI 模块重新注册
-    TutorialManager.clearHotspots()
+    -- 热点在绘制帧开始时清空，输入始终可读取最近一次实际渲染的坐标。
     TutorialManager.update(dt)
     -- 通知引导当前所在面板（enter_panel_* 类步骤推进；tab2 日志页已移除不再通知）
     do
@@ -944,6 +962,17 @@ function HandleUpdate(eventType, eventData)
     if ScenarioDialogue.isActive() then
         ScenarioDialogue.update(dt)
     else
+        -- [旧档补播] 进游戏后一次性把已首通但未领取的情景补入队（如情景82）；
+        -- 等数据齐（battle/session 恢复）再扫，随后由 tryPlayPendingStory_ 自然播出
+        if postStartFlowDone_ and not storyBackfilled_ and ClientDispatcher.hasData() then
+            storyBackfilled_ = true
+            local okBf, errBf = pcall(function()
+                require("systems.StoryPlayer").backfillCleared()
+            end)
+            if not okBf then
+                print("[Standalone] story backfill failed: " .. tostring(errBf))
+            end
+        end
         tryPlayPendingStory_()
     end
 

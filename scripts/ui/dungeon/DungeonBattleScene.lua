@@ -462,6 +462,21 @@ local CLASS_NAMES = {
     priest   = "司仪", debt = "司仪",
 }
 
+-- 每次死亡的天赋事件与副本结算分离；必须在清状态、丢旧敌人、胜利早返前扫描。
+local function reportDefeatedEnemies()
+    for _, unit in ipairs(state.enemies) do
+        if unit.hp <= 0 then
+            TAL.onEnemyDeath(unit, state.allies, state.enemies)
+        else
+            TAL.resetEnemyDeath(unit)
+            if unit.reviveTimer then
+                unit.reviveTimer = nil
+                BattleCombat.clearCardAnim(unit)
+            end
+        end
+    end
+end
+
 --- 补充后备队列中的敌人到场上
 local function refillEnemies()
     while #state.enemies < MAX_FIELD and #state.enemyQueue > 0 do
@@ -485,7 +500,8 @@ function DungeonScene.init(vg)
     imgMapGoldMine   = nvgCreateImage(vg, "image/关卡地图/MAP_FB1.png", 0)
     imgMapAncientRuin = nvgCreateImage(vg, "image/关卡地图/MAP_FB2.png", 0)
     imgMapBabelTower = nvgCreateImage(vg, "image/关卡地图/MAP_FB3.png", 0)
-    imgShadow        = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY.png", 0)
+    -- 阴影板绘制为 1080x556（源图 1080x610 压扁），使用 SHADOW 副本，调整原图不影响其他用法
+    imgShadow        = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY_SHADOW.png", 0)
     imgRetreatBtn    = nvgCreateImage(vg, "image/按钮/UI_AN_HONG.png", 0)
     imgSpeedIcon     = nvgCreateImage(vg, "image/通用图标/UI_ICON_kong.png", 0)
     imgEnemyTag      = nvgCreateImage(vg, "image/通用图标/ICON_ZY_XG.png", 0)
@@ -494,7 +510,6 @@ function DungeonScene.init(vg)
     end
 
     -- 确认弹窗图片
-    imgConfirmBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgBtnRed    = nvgCreateImage(vg, "image/按钮/UI_AN_FANG_hong.png", 0)
     imgBtnGray   = nvgCreateImage(vg, "image/按钮/UI_AN_FANG.png", 0)
     BattleEffects.init(vg)
@@ -901,8 +916,6 @@ function DungeonScene.update(dt)
                     elapsedSecs = elapsedSecs,
                     heroStats   = heroStats,
                     rewards     = rewards,
-                    arenaMode   = false,
-                    scoreChange = 0,
                     onClose     = function()
                         if state.onClose then state.onClose() end
                         DungeonScene.close()
@@ -969,6 +982,7 @@ function DungeonScene.update(dt)
     end
 
     -- ---- 胜负检测 ----
+    reportDefeatedEnemies()
     local allyAlive = BattleCombat.getAliveUnits(state.allies)
     local enemyAlive = BattleCombat.getAliveUnits(state.enemies)
 
@@ -1056,6 +1070,7 @@ function DungeonScene.update(dt)
                 if unit.hp <= 0 and unit.attrs then
                     unit.attrs:fillHp()
                     syncUnitHp(unit)
+                    TAL.resetEnemyDeath(unit)
                     unit.atkProgress = 0
                     BattleCombat.clearCardAnim(unit)
                     BattleCombat.clearHitFlash(unit)
@@ -1205,6 +1220,7 @@ function DungeonScene.update(dt)
     TM.update(logicDt)
 
     -- ---- 状态效果（DOT/HOT） ----
+    reportDefeatedEnemies()
     local okSem, semErr = pcall(SEM.update, logicDt, {
         onDot = function(unit, source, dmg)
             local isUnitAlly = false

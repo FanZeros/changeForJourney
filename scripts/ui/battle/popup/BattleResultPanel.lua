@@ -4,7 +4,7 @@
 --
 -- 【使用说明】
 -- 通用结算面板，可用于竞技场、副本等任何战斗结束后的结算展示。
--- 竞技场专用元素（竞技分变动）通过 arenaMode 标志控制显示。
+-- 副本和通天塔共用的战斗结算。
 --
 --   local BattleResultPanel = require("ui.battle.popup.BattleResultPanel")
 --
@@ -17,9 +17,6 @@
 --       elapsedSecs  = 51,
 --       heroStats    = { { heroId=1, quality=3, totalDamage=12345 }, ... },
 --       rewards      = { { type="tavern_coin", amount=20 } },
---       -- 竞技场专用（可选）
---       arenaMode    = true,
---       scoreChange  = 15,
 --   })
 --
 --   -- draw / update / handleInput 在渲染循环中调用
@@ -42,14 +39,6 @@ local DESIGN_W = 1080
 local DESIGN_H = 2400
 
 -- ======================== 布局常量（基于用户规格） ========================
-
--- 1. 结算背景
-local BG_CX, BG_CY = 540, 1192
-local BG_W, BG_H   = 1080, 1017
-
--- 2. 闪光动态背景（旋转）
-local GLOW_CX, GLOW_CY = 540, 876
-local GLOW_W, GLOW_H   = 908, 909
 
 -- 3. 消耗时间
 local TIME_CX, TIME_CY = 540, 827
@@ -79,14 +68,6 @@ local HERO_DMG_FONT = 40
 local OBTAIN_LABEL_X, OBTAIN_LABEL_Y = 93, 1270
 local OBTAIN_LABEL_FONT = 40
 
--- 10. 竞技分图标（竞技场专用）
-local SCORE_ICON_CX, SCORE_ICON_CY = 903, 1263
-local SCORE_ICON_W, SCORE_ICON_H   = 70, 70
-
--- 11. 竞技分增减文本（竞技场专用）
-local SCORE_TEXT_X, SCORE_TEXT_Y = 977, 1263
-local SCORE_TEXT_FONT = 40
-
 -- 12. 获得奖励背景框
 local REWARD_BG_CX, REWARD_BG_CY = 540, 1462
 local REWARD_BG_W, REWARD_BG_H   = 968, 310
@@ -105,19 +86,10 @@ local HINT_FONT = 50
 local BADGE_FONT   = 40
 local BADGE_STROKE = 4
 
--- 光晕旋转速度（弧度/秒）
-local GLOW_ROTATE_SPEED = 0.5
-
 -- ======================== 资源定义表（统一引用中央注册表） ========================
 local RESOURCE_DEFS = ResourceDefs.DEFS
 
 -- ======================== 图片句柄 ========================
-
-local imgWinBg   = -1   -- UI_JJCJS_ZDSL.png
-local imgLoseBg  = -1   -- UI_JJCJS_ZDSB.png
-local imgWinGlow = -1   -- UI_GXHD_2.png
-local imgLoseGlow = -1  -- UI_GXHD_3.png
-local imgScoreIcon = -1 -- UI_icon_JJCFS_X.png
 
 -- 英雄头像缓存: heroId → nvgImage
 local heroIconCache = {}
@@ -134,10 +106,6 @@ local state = {
     elapsedSecs = 0,
     heroStats   = {},     -- { heroId, quality, totalDamage }[]
     rewards     = {},     -- { type, amount }[]
-    arenaMode   = false,
-    scoreChange = 0,
-    -- 动画
-    glowAngle   = 0,
     -- 关闭回调
     onClose     = nil,
 }
@@ -153,22 +121,6 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
     nvgFill(vg)
-end
-
---- 绘制旋转图片
-local function drawImageRotated(vg, img, cx, cy, w, h, angle, alpha)
-    if img < 0 or alpha <= 0.01 then return end
-    nvgSave(vg)
-    nvgTranslate(vg, cx, cy)
-    nvgRotate(vg, angle)
-    local x = -w * 0.5
-    local y = -h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
-    nvgBeginPath(vg)
-    nvgRect(vg, x, y, w, h)
-    nvgFillPaint(vg, paint)
-    nvgFill(vg)
-    nvgRestore(vg)
 end
 
 --- 获取英雄头像（懒加载）
@@ -219,16 +171,11 @@ end
 ---@param vg any NanoVG 上下文
 function BRP.init(vg)
     cachedVg = vg
-    imgWinBg    = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJS_ZDSL.png", 0)
-    imgLoseBg   = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJCJS_ZDSB.png", 0)
-    imgWinGlow  = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_2.png", 0)
-    imgLoseGlow = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_GXHD_3.png", 0)
-    imgScoreIcon = nvgCreateImage(vg, "image/货币道具/UI_icon_JJCFS_X.png", 0)
     print("[BattleResultPanel] init OK")
 end
 
 --- 展示结算面板
----@param opts table { isWin, elapsedSecs, heroStats, rewards, arenaMode, scoreChange, onClose }
+---@param opts table { isWin, elapsedSecs, heroStats, rewards, onClose }
 function BRP.show(opts)
     opts = opts or {}
     state.open        = true
@@ -236,14 +183,10 @@ function BRP.show(opts)
     state.elapsedSecs = opts.elapsedSecs or 0
     state.heroStats   = opts.heroStats or {}
     state.rewards     = opts.rewards or {}
-    state.arenaMode   = opts.arenaMode or false
-    state.scoreChange = opts.scoreChange or 0
     state.onClose     = opts.onClose
-    state.glowAngle   = 0
     print("[BattleResultPanel] show: " .. (state.isWin and "WIN" or "LOSE")
         .. " heroes=" .. #state.heroStats
-        .. " rewards=" .. #state.rewards
-        .. " arena=" .. tostring(state.arenaMode))
+        .. " rewards=" .. #state.rewards)
 end
 
 --- 关闭结算面板
@@ -262,11 +205,9 @@ function BRP.isOpen()
     return state.open
 end
 
---- 更新（光晕旋转动画）
----@param dt number
-function BRP.update(dt)
-    if not state.open then return end
-    state.glowAngle = state.glowAngle + GLOW_ROTATE_SPEED * dt
+--- 更新（结算面板不再播旋转光效）
+---@param _dt number
+function BRP.update(_dt)
 end
 
 --- 处理点击（点击任意位置关闭）
@@ -291,15 +232,7 @@ function BRP.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 128))  -- 50% = 255*0.5 ≈ 128
     nvgFill(vg)
 
-    -- === 1. 闪光动态背景（旋转，在结算背景后面） ===
-    local glowImg = state.isWin and imgWinGlow or imgLoseGlow
-    drawImageRotated(vg, glowImg, GLOW_CX, GLOW_CY, GLOW_W, GLOW_H, state.glowAngle, 1.0)
-
-    -- === 2. 结算背景 ===
-    local bgImg = state.isWin and imgWinBg or imgLoseBg
-    drawImageCentered(vg, bgImg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
-
-    -- === 3. 消耗时间 ===
+    -- === 3. 消耗时间（结算底板已移除） ===
     local totalSecs = math.floor(state.elapsedSecs)
     local mins = math.floor(totalSecs / 60)
     local secs = totalSecs % 60
@@ -358,29 +291,6 @@ function BRP.draw(vg)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xb1, 0xb1, 0xb1, 255))
     nvgText(vg, OBTAIN_LABEL_X, OBTAIN_LABEL_Y, "获得", nil)
-
-    -- === 10~11. 竞技分变动（竞技场专用） ===
-    if state.arenaMode then
-        -- 10. 竞技分图标
-        drawImageCentered(vg, imgScoreIcon, SCORE_ICON_CX, SCORE_ICON_CY,
-            SCORE_ICON_W, SCORE_ICON_H, 1.0)
-
-        -- 11. 竞技分增减文本
-        local sc = state.scoreChange
-        local scoreText, scoreR, scoreG, scoreB
-        if sc >= 0 then
-            scoreText = "+" .. tostring(sc)
-            scoreR, scoreG, scoreB = 0x90, 0xff, 0x8a  -- 绿色
-        else
-            scoreText = tostring(sc)
-            scoreR, scoreG, scoreB = 0xff, 0x78, 0x78  -- 红色
-        end
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, SCORE_TEXT_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(scoreR, scoreG, scoreB, 255))
-        nvgText(vg, SCORE_TEXT_X, SCORE_TEXT_Y, scoreText, nil)
-    end
 
     -- === 12. 获得奖励背景框（纯黑20%不透明度） ===
     nvgBeginPath(vg)

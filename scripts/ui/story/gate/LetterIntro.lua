@@ -3,19 +3,21 @@
 -- 玩法：暗色横信逐行显墨（4 段）→ 火漆印「终」→ 交给门厅点卯（ScenarioDialogue.OPENING）。
 -- 绘制：全窗口逻辑坐标。横屏信笺偏左、矮而宽，右边留出书斋桌案。
 -- 素材（本地路径，不走 URL）：
---   image/界面底板/剧情日记/GF_KF06.png  书斋桌案（信封+帽）
---   image/界面底板/剧情日记/GF_KF07.png     火漆特写「终」
+--   image/界面底板/剧情日记/GF_KF06.png  书斋桌案（信封+帽），全程不切火漆特写
 -- ============================================================================
 
 ---@class LetterIntro
----@field init fun(vg: userdata)
+---@field init fun(vg: NVGContextWrapper?)
 ---@field start fun(onFinish: function|nil)
 ---@field isOpen fun(): boolean
 ---@field reset fun()
 ---@field handleTap fun()
 ---@field update fun(dt: number)
----@field draw fun(vg: userdata, w: number, h: number)
+---@field draw fun(vg: NVGContextWrapper?, w: number, h: number)
 local LetterIntro = {}
+local I18n = require("core.I18n")
+local Story = require("core.I18nStory")
+local Display = require("ui.story.StoryDisplay")
 
 -- ======================== 信件内容（blocks × lines） ========================
 local BLOCKS = {
@@ -49,7 +51,6 @@ local C_BG   = { 4, 4, 7 }
 -- ======================== 状态 ========================
 local vg_       = nil
 local imgDesk_  = -1
-local imgSeal_  = -1
 local active    = false
 local state     = "reveal"   -- reveal | sealed | fading
 local blockIdx  = 1
@@ -66,6 +67,83 @@ local FADE_DUR    = 0.6
 
 local function lineCount(b) return #BLOCKS[b] end
 
+-- 构造显示单元，不改 BLOCKS。第 5/6 行合成一句，等原两行都揭示后显示完整译句。
+---@class LetterDisplayUnit
+---@field text string
+---@field block integer
+---@field first integer
+---@field last integer
+---@field gold boolean|nil
+---@field dim boolean|nil
+local function displayUnits()
+    local units = {} ---@type LetterDisplayUnit[]
+    for b, block in ipairs(BLOCKS) do
+        for i, line in ipairs(block) do
+            if not (b == 2 and i == 3) then
+                local source = line.t
+                local last = i
+                if b == 2 and i == 2 then
+                    source = source .. block[3].t
+                    last = 3
+                end
+                units[#units + 1] = { text = Display.text(source), block = b, first = i,
+                    last = last, gold = line.gold, dim = line.dim }
+            end
+        end
+    end
+    return units
+end
+
+-- 先尝试原单栏信笺；只有14px仍装不下才扩板并按完整段分组双栏。
+-- 没有滚动/新输入坐标：全文和末尾翻阅提示均在窗口内，保留全局tap契约。
+local function letterLayout(vg, w, h, units)
+    local preferredBody = math.max(16, math.min(w * 0.016, h * 0.026))
+    local preferredHead = math.max(20, math.min(w * 0.022, h * 0.034))
+    local function arrange(panelX, panelY, panelW, panelH, columns)
+        local padX = panelW * (columns == 1 and 0.08 or 0.045)
+        local textX = panelX + padX
+        local textW = panelW - padX * 2
+        local gap = columns == 2 and 24 or 0
+        local columnW = (textW - gap) / columns
+        local lineY0 = panelY + panelH * (columns == 1 and 0.14 or 0.06)
+        local bodyY = lineY0 + math.max(8, panelH * 0.035)
+        local availableH = panelY + panelH * 0.94 - bodyY
+        local font = preferredBody
+        local entries = {} ---@type table[]
+        local fits = false
+        while true do
+            local heights = { 0, 0 }
+            local previousBlocks = { 1, 3 }
+            for index, unit in ipairs(units) do
+                local column = columns == 2 and unit.block > 2 and 2 or 1
+                local fs = index == 1 and font * preferredHead / preferredBody or font
+                if unit.block ~= previousBlocks[column] then
+                    heights[column] = heights[column] + font * 1.38 * 0.45
+                    previousBlocks[column] = unit.block
+                end
+                local rows = Display.layoutText(vg, unit.text, columnW, fs)
+                entries[index] = { rows = rows, font = fs,
+                    x = textX + (column - 1) * (columnW + gap),
+                    y = bodyY + heights[column], width = columnW }
+                heights[column] = heights[column] + #rows * fs * 1.38
+            end
+            fits = math.max(heights[1], heights[2]) <= availableH
+            if fits or font <= 14 then break end
+            font = math.max(14, font - 0.5)
+        end
+        return { x = panelX, y = panelY, width = panelW, height = panelH,
+            textX = textX, textW = textW, lineY = lineY0, entries = entries, fits = fits,
+            footerY = math.min(h - 24, panelY + panelH + h * 0.045) }
+    end
+    local panelW, panelH = math.min(w * 0.70, 1320), math.min(h * 0.62, 680)
+    local layout = arrange(w * 0.06, (h - panelH) * 0.46, panelW, panelH, 1)
+    if not layout.fits then
+        local marginX, marginY = math.max(18, w * 0.03), math.max(18, h * 0.04)
+        layout = arrange(marginX, marginY, w - marginX * 2, h - marginY * 2 - 44, 2)
+    end
+    return layout
+end
+
 --- 16:9 图 cover 铺满窗口（与 DarkTitleScreen 同一套算法）
 local function coverRect(w, h, imgAR)
     local winAR = w / h
@@ -79,7 +157,7 @@ local function coverRect(w, h, imgAR)
 end
 
 -- ======================== 生命周期 ========================
----@param vg userdata
+---@param vg NVGContextWrapper?
 function LetterIntro.init(vg)
     vg_ = vg
 end
@@ -92,14 +170,6 @@ local function ensureLetterImages()
             print("[LetterIntro] WARN: GF_KF06 load failed")
         else
             print("[LetterIntro] desk relics loaded")
-        end
-    end
-    if imgSeal_ < 0 then
-        imgSeal_ = nvgCreateImage(vg_, "image/界面底板/剧情日记/GF_KF07.png", 0)
-        if imgSeal_ < 0 then
-            print("[LetterIntro] WARN: GF_KF07 load failed")
-        else
-            print("[LetterIntro] wax seal loaded")
         end
     end
 end
@@ -192,7 +262,7 @@ function LetterIntro.update(dt)
 end
 
 -- ======================== 绘制（全窗口逻辑坐标） ========================
----@param vg userdata
+---@param vg NVGContextWrapper?
 ---@param w number
 ---@param h number
 local function drawLetter(vg, w, h)
@@ -210,23 +280,11 @@ local function drawLetter(vg, w, h)
     nvgFillColor(vg, nvgRGBA(C_BG[1], C_BG[2], C_BG[3], 255 * fade))
     nvgFill(vg)
 
-    -- 2) 背景：reveal 用书斋桌案，sealed 叠火漆特写（16:9 cover 铺满）
+    -- 2) 背景：全程书斋桌案，不切火漆特写
     local imgAR = 16 / 9
     local dx, dy, dw, dh = coverRect(w, h, imgAR)
     local bgImg = imgDesk_
     local bgA = fade * flicker
-    if state == "sealed" and imgSeal_ >= 0 then
-        local p = math.min(1, sealedT / SEAL_DUR)
-        if imgDesk_ >= 0 then
-            local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, imgDesk_, bgA * (1 - p))
-            nvgBeginPath(vg)
-            nvgRect(vg, 0, 0, w, h)
-            nvgFillPaint(vg, paint)
-            nvgFill(vg)
-        end
-        bgImg = imgSeal_
-        bgA = fade * (0.85 + 0.15 * p)
-    end
     if bgImg >= 0 then
         local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, bgImg, bgA)
         nvgBeginPath(vg)
@@ -235,11 +293,11 @@ local function drawLetter(vg, w, h)
         nvgFill(vg)
     end
 
-    -- 3) 横屏信笺：宽而矮，略偏左，右边留出桌案/火漆
-    local panelW = math.min(w * 0.70, 1320)
-    local panelH = math.min(h * 0.62, 680)
-    local panelX = w * 0.06
-    local panelY = (h - panelH) * 0.46
+    -- 3) 整封译文决定布局；逐段揭示不跳版，小屏优先扩板而非缩成微字。
+    local units = displayUnits()
+    local layout = letterLayout(vg, w, h, units)
+    local panelX, panelY = layout.x, layout.y
+    local panelW, panelH = layout.width, layout.height
     nvgBeginPath(vg)
     nvgRoundedRect(vg, panelX, panelY, panelW, panelH, math.max(10, h * 0.012))
     nvgFillColor(vg, nvgRGBA(12, 10, 8, 210 * fade))
@@ -251,10 +309,7 @@ local function drawLetter(vg, w, h)
     nvgStroke(vg)
 
     -- 幕标与分隔金线
-    local padX = panelW * 0.08
-    local textX = panelX + padX
-    local textW = panelW - padX * 2
-    local lineY0 = panelY + panelH * 0.14
+    local textX, textW, lineY0 = layout.textX, layout.textW, layout.lineY
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, math.max(14, math.min(w * 0.014, 22)))
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_BASELINE)
@@ -266,40 +321,24 @@ local function drawLetter(vg, w, h)
     nvgStrokeWidth(vg, 1.5)
     nvgStroke(vg)
 
-    -- 4) 正文逐行显墨（四段横信，字号按窗口收，避免撑出信笺）
-    local fsHead = math.max(20, math.min(w * 0.022, h * 0.034))
-    local fsBody = math.max(16, math.min(w * 0.016, h * 0.026))
-    local lineH  = fsBody * 1.38
-    local lineY  = lineY0 + lineH * 1.35
-    nvgFontFace(vg, "sans")
-    for b = 1, blockIdx do
-        local maxLine = lineCount(b)
-        if b == blockIdx then
-            maxLine = math.min(maxLine, math.floor(revealT / LINE_REVEAL))
-        end
-        for i = 1, maxLine do
-            local L = BLOCKS[b][i]
-            local isHead = (b == 1 and i == 1)
-            local fs = isHead and fsHead or fsBody
-            local col = L.gold and C_GOLD or (L.dim and C_DIM or C_INK)
+    -- 4) 预折行布局保持全文/段落顺序；右栏仅放完整的第三、四段。
+    for index, unit in ipairs(units) do
+        local entry = layout.entries[index]
+        local rows, fs = entry.rows, entry.font
+        local visible = unit.block < blockIdx or (unit.block == blockIdx
+            and unit.last <= math.floor(revealT / LINE_REVEAL))
+        if visible then
+            local col = unit.gold and C_GOLD or (unit.dim and C_DIM or C_INK)
             local a = 255
-            if b == blockIdx then
-                local phase = revealT - (i - 1) * LINE_REVEAL
-                if phase < 0.4 then a = 255 * math.max(0, phase / 0.4) end
+            if unit.block == blockIdx then
+                local elapsed = revealT - (unit.last - 1) * LINE_REVEAL
+                a = 255 * math.min(1, math.max(0, elapsed / 0.4))
             end
-            a = a * flicker * fade
             nvgFontSize(vg, fs)
-            if L.dim then
-                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BASELINE)
-            else
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_BASELINE)
-            end
-            nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], a))
-            nvgText(vg, L.dim and (textX + textW) or textX, lineY, L.t, nil)
-            lineY = lineY + lineH
-        end
-        if b < blockIdx then
-            lineY = lineY + lineH * 0.45
+            nvgTextAlign(vg, (unit.dim and NVG_ALIGN_RIGHT or NVG_ALIGN_LEFT) + NVG_ALIGN_TOP)
+            nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], a * flicker * fade))
+            Display.drawRows(vg, unit.dim and (entry.x + entry.width) or entry.x, entry.y,
+                rows, Story.length(unit.text), fs * 1.38)
         end
     end
 
@@ -310,9 +349,9 @@ local function drawLetter(vg, w, h)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(C_GOLD[1], C_GOLD[2], C_GOLD[3], 180 * hintA))
     if state == "reveal" then
-        nvgText(vg, w * 0.5, panelY + panelH + h * 0.045, "· 轻 触 翻 阅 ·", nil)
+        Display.draw(vg, w * 0.5, layout.footerY, "· 轻 触 翻 阅 ·")
     elseif state == "sealed" then
-        nvgText(vg, w * 0.5, panelY + panelH + h * 0.045, "· 火 漆 已 落 ·", nil)
+        Display.draw(vg, w * 0.5, layout.footerY, "· 火 漆 已 落 ·")
     end
 
     -- 6) 四角金饰（全窗口）

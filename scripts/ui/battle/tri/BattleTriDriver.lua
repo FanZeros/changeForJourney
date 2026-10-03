@@ -36,6 +36,8 @@ local ENTER_STAGGER = 0.06
 local REWARD_INTERVAL = 0.05
 local REINFORCE_INTERVAL = 0.4
 local MARCH_DURATION = 2.0
+local MARCH_ZOOM = 1.06
+local MARCH_ZOOM_END = 0.65
 local MARCH_STEP = 7
 
 --- 单位攻击间隔（魔改 buff 感知的最小实现：直接取 attrs 的实际间隔）
@@ -103,6 +105,7 @@ function BattleTriDriver.new(teamIdx, options)
         rewardTimer = 0,
         introTimer = 0,
         marchTimer = 0,
+        marchNotice = false,
         active   = false,
         -- [多实例] 各子系统状态
         combatState = BattleCombat.newState("tri" .. teamIdx),
@@ -167,6 +170,10 @@ function BattleTriDriver.new(teamIdx, options)
 
     --- 全灭退回上一关。第一关没有上一关，就在原地重开。
     function drv:retreatStage()
+        if self.terminalRaid then
+            self.terminalRaid:onTeamDefeated(self.teamIdx)
+            return
+        end
         local prevId = SC.getPrevStageId(self.stageId) or self.stageId
         print(string.format("[TriDriver] 队%d 全灭，从 %s 退回 %s",
             self.teamIdx, tostring(self.stageId), tostring(prevId)))
@@ -205,6 +212,8 @@ function BattleTriDriver.new(teamIdx, options)
             self:queuePendingKills()
         end
         self.stageId = stageId
+        self.marchTimer = 0
+        self.marchNotice = false
         self.kills = 0
         self._clearReported = false
         self._labDefeated = false
@@ -227,7 +236,19 @@ function BattleTriDriver.new(teamIdx, options)
         end
         -- 敌方：首通实验使用正式首通敌人列表，其余沿用当前三行战斗的出怪规则
         local entry = SC.getStage(stageId)
-        local allEnemies = entry and BattleEnemySpawn.generateEnemyList(entry, self.battleLab and self.firstClear) or {}
+        local isTerminal = not self.battleLab and SC.isTerminalTemple(stageId)
+        local allEnemies
+        if isTerminal then
+            local boss = MC.createMonster(entry.monsters[self.teamIdx], entry.monsterLevel)
+            if boss then
+                boss.isBoss = true
+                allEnemies = { boss }
+            else
+                allEnemies = {}
+            end
+        else
+            allEnemies = entry and BattleEnemySpawn.generateEnemyList(entry, self.battleLab and self.firstClear) or {}
+        end
         if self.battleLab and self.firstClear and entry then
             -- 生成顺序为普通怪后接附加怪；首/末附加怪使用正式出场阶段标记。
             local bonusIds = BattleEnemySpawn.getFirstClearBonusMonsterIds(entry)
@@ -365,15 +386,27 @@ function BattleTriDriver.new(teamIdx, options)
 
     function drv:reportDefeatedEnemies()
         for _, u in ipairs(self.enemies) do
-            if u.hp <= 0 and not u._triKillReported then
-                u._triKillReported = true
-                self:reportKill(u)
+            if u.hp <= 0 then
+                TAL.onEnemyDeath(u, self.allies, self.enemies)
+                -- 终焉共享池的奖励仍由协同宿主结算，天赋事件不跟奖励锁绑定。
+                if not self.terminalRaid and not u._triKillReported then
+                    u._triKillReported = true
+                    self:reportKill(u)
+                end
+            else
+                TAL.resetEnemyDeath(u)
+                u._triKillReported = nil
+                if u.reviveTimer then
+                    u.reviveTimer = nil
+                    BattleCombat.clearCardAnim(u)
+                end
             end
         end
     end
 
     --- 死亡后按原战斗补位：后方敌人前移，队列里的下一只从队尾进入。
     function drv:reinforceDeadEnemies()
+        if self.terminalRaid then return end
         local enemies = self.enemies
         local queue = self.enemyQueue
         for i = #enemies, 1, -1 do
@@ -411,35 +444,55 @@ function BattleTriDriver.new(teamIdx, options)
         end
     end
 
-    --- 奖励关掉后再走一段路，然后切下一关
+    --- 通关后前进；提示由行内底部持续展示，不进入浮字或弹窗。
     function drv:beginMarch()
         if (self.marchTimer or 0) > 0 then return end
         self.marchTimer = MARCH_DURATION
+        self.marchNotice = true
         for _, unit in ipairs(self.allies) do
             if unit.hp > 0 then
                 BattleCombat.setCardAnim(unit, { state = "march", timer = 0, lungeDir = -1 })
             end
         end
-        BattleCombat.addFloatingText("正在前进中", BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY - 80,
-            { 255, 230, 160 }, false)
+        print(string.format("[TriDriver] 队%d 前进开始 stage=%s duration=%.1f",
+            self.teamIdx, tostring(self.stageId), MARCH_DURATION))
+    end
+
+    --- 背景单向放大后保持峰值并淡出；第三个返回值是下层背景的目标关卡。
+    --- 终焉仍等玩家确认，无下一关则原地重开，均用当前背景承接。
+    function drv:getMarchBackground()
+        local remaining = self.marchTimer or 0
+        if remaining <= 0 then return 1, 1 end
+        local progress = math.max(0, math.min(1, 1 - remaining / MARCH_DURATION))
+        local zoomProgress = math.min(1, progress / MARCH_ZOOM_END)
+        local zoomEase = zoomProgress * zoomProgress * (3 - 2 * zoomProgress)
+        local fadeProgress = math.max(0, (progress - MARCH_ZOOM_END) / (1 - MARCH_ZOOM_END))
+        local fadeEase = fadeProgress * fadeProgress * (3 - 2 * fadeProgress)
+        local nextId = SC.getNextStageId(self.stageId)
+        local backgroundStageId = nextId and not SC.isTerminalTemple(nextId) and nextId or self.stageId
+        return 1 + (MARCH_ZOOM - 1) * zoomEase, 1 - fadeEase, backgroundStageId
     end
 
     --- 通关推进
     function drv:advanceStage()
         self.marchTimer = 0
+        self.marchNotice = false
         local nextId = SC.getNextStageId(self.stageId)
         if not nextId then
             self:start(self.stageId)
             return
         end
-        -- 终焉神殿要先确认。第一队走主线前进，否则会直接跳过确认框。
         if self.teamIdx == 1 and SC.isTerminalTemple(nextId) then
             local BattleScene = require("ui.battle.scene.BattleScene")
-            print(string.format("[TriDriver] 队1 通关 %s，等待确认进入终焉 %s",
-                tostring(self.stageId), tostring(nextId)))
             self._syncedMainStage = self.stageId
-            if BattleScene.nextStage then BattleScene.nextStage() end
-            self:start(self.stageId)
+            self.active = false
+            if BattleScene.getStageId() == self.stageId then BattleScene.nextStage() end
+            print(string.format("[TriDriver] 队1 通关 %s，等待玩家在选关页进入终焉 %s",
+                tostring(self.stageId), tostring(nextId)))
+            return
+        end
+        if SC.isTerminalTemple(nextId) then
+            self.active = false
             return
         end
         local clearedId = self.stageId
@@ -448,9 +501,9 @@ function BattleTriDriver.new(teamIdx, options)
         self._syncedMainStage = nextId
         self._clearReported = false
         self._skipAllyEnter = true
-        local BattleScene = require("ui.battle.scene.BattleScene")
-        if BattleScene.beginMapMarch then BattleScene.beginMapMarch(MARCH_DURATION) end
         self:start(nextId)
+        -- 下一关敌人入场完成之前仍显示前进提示；空编队不进入提示状态。
+        self.marchNotice = #self.allies > 0
     end
 
     --- 战斗 tick（须已 mount）
@@ -459,15 +512,25 @@ function BattleTriDriver.new(teamIdx, options)
         self._tickDt = dt
         self._timeoutElapsed = (self._timeoutElapsed or 0) + dt   -- 超时增伤计时
         self:tickRewards(dt)
+        -- 共享池可以由另一条战线打空：先分发本线死亡，再走失守/胜利早返。
+        self:reportDefeatedEnemies()
+        if self.terminalRaid and self.terminalRaid.defeated[self.teamIdx] then return end
         local allies, enemies = self.allies, self.enemies
-        if #allies == 0 then return end
+        if self.terminalRaid and self.terminalRaid.finished then return end
+        if #allies == 0 then
+            self.marchTimer = 0
+            self.marchNotice = false
+            return
+        end
         if (self.introTimer or 0) > 0 then
             self.introTimer = self.introTimer - dt
             BattleCombat.updateCardAnims(dt)
             BattleCombat.updateFloatingTexts(dt)
             BattleCombat.updateHitFlashes(dt)
+            if self.introTimer <= 0 then self.marchNotice = false end
             return
         end
+        if (self.marchTimer or 0) <= 0 then self.marchNotice = false end
         if self.battleLab then
             self._labElapsed = self._labElapsed + dt
             if self._labElapsed >= self._labTimeLimit then
@@ -531,6 +594,16 @@ function BattleTriDriver.new(teamIdx, options)
         for _, u in ipairs(allies) do
             if u.hp > 0 then hasAliveAlly = true break end
         end
+        if self.terminalRaid then
+            if self.terminalRaid.hp <= 0 then
+                self.terminalRaid:finish(true)
+                return
+            end
+            if not hasAliveAlly then
+                self:retreatStage()
+                return
+            end
+        end
         if self.battleLab and not hasAliveAlly then
             self._labDefeated = true
             self.active = false
@@ -538,7 +611,7 @@ function BattleTriDriver.new(teamIdx, options)
         end
 
         -- 通关奖励只做展示，不挡住前进和下一关。
-        if not hasAliveEnemy and #self.enemyQueue == 0 and #self.enemies == 0 then
+        if not self.terminalRaid and not hasAliveEnemy and #self.enemyQueue == 0 and #self.enemies == 0 then
             self:reportDefeatedEnemies()
             if self.battleLab then
                 self._clearReported = true
@@ -583,6 +656,7 @@ function BattleTriDriver.new(teamIdx, options)
 
         -- 攻击推进
         for _, unit in ipairs(allies) do
+            if self.terminalRaid and self.terminalRaid.hp <= 0 then break end
             if unit.hp > 0 and not SEM.isFrozen(unit) then
                 local interval = getLiveAttackInterval(unit, DEFAULT_ALLY_INTERVAL)
                 BattleCombat.advanceAttackProgress(unit, dt, interval, hasAliveEnemy, function()
@@ -591,6 +665,7 @@ function BattleTriDriver.new(teamIdx, options)
             end
         end
         for _, unit in ipairs(enemies) do
+            if self.terminalRaid and self.terminalRaid.hp <= 0 then break end
             if unit.hp > 0 and not SEM.isFrozen(unit) then
                 local interval = getLiveAttackInterval(unit, DEFAULT_ENEMY_INTERVAL)
                 BattleCombat.advanceAttackProgress(unit, dt, interval, hasAliveAlly, function()
@@ -616,6 +691,8 @@ function BattleTriDriver.new(teamIdx, options)
         BattleCombat.updateHpBuffers(allies, dt)
         BattleCombat.updateHpBuffers(enemies, dt)
         TM.update(dt)
+        -- 攻击/神器等本帧新死亡必须早于 SEM.update 的死人状态清理。
+        self:reportDefeatedEnemies()
         SEM.update(dt, {
             onDot = function(unit, source, dmg)
                 local isUnitAlly = BattleLayout.detectGroup({ unit }) == "ally"
@@ -669,6 +746,7 @@ function BattleTriDriver.new(teamIdx, options)
         -- 投射物 / 连击
         ProjectileSystem.update(dt)
         BattleCombat.updateComboQueue(dt)
+        self:reportDefeatedEnemies()
 
         -- 纯视觉层
         BattleEffects.update(dt)
@@ -685,7 +763,7 @@ function BattleTriDriver.new(teamIdx, options)
                 self._sigTick = 0
                 local CharacterPanel = require("ui.character.panel.CharacterPanel")
                 local signature = CharacterPanel.getTeamSignature(self.teamIdx)
-                if signature ~= self.teamSignature then
+                if signature ~= self.teamSignature and (self.marchTimer or 0) <= 0 then
                     self:start(self.stageId)
                     return
                 end

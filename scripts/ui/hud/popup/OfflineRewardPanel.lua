@@ -42,6 +42,7 @@ local RewardCascade = require("ui.widget.RewardCascade")  -- 奖励逐件弹出�
 ---@class RewardCascadeTimeline : table  逐件弹出时间轴（定义见 ui/widget/RewardCascade.lua）
 local GameSFX       = require("systems.GameSFX")
 local HeroFrame = require("ui.widget.HeroFrame")
+local EquipmentDetail = require("ui.character.equip.EquipmentDetail")  -- [奖励可点击] 装备只读详情（遗匣同款）
 
 local Panel = {}
 
@@ -73,9 +74,9 @@ local BG = {
     IT = 180, IL = 40, IR = 40, IB = 50,  -- 九宫格切割
 }
 
--- 3. 标题 "欢迎回来"（贴着面板顶栏装饰线，字号收一档）
+-- 3. 标题 "欢迎回来"（顶栏装饰线上一行，字号收一档）
 local TTL = {
-    X = CENTER_X, Y = 372, FONT = 46,
+    X = CENTER_X, Y = 312, FONT = 46,
     FR = 255, FG = 255, FB = 255,            -- 纯白
     SR = 0x59, SG = 0x32, SB = 0x19, SW = 6, -- 描边 #593219
 }
@@ -199,12 +200,17 @@ local state = {
     offlineSeconds  = 0,
     maxSeconds      = 86400,  -- 满额 24 小时
     tailRatio       = 0.5,
+    hardCapSeconds  = 86400 * 7,  -- [7日硬顶] 离线收益最多累积 7 日
+    cappedByHardCap = false,      -- [7日硬顶] 本次是否触顶
     multiplier      = 1.0,
     adventureExp    = 0,
     adventurerExp   = 0,
     rewards         = {},
     heroExpPreview  = {},   -- 出战队员升级预览（服务端下发）
     onClaim         = nil,
+    -- [奖励可点击] 点击查看的物品详情
+    detailItem      = nil,  -- 当前查看的奖励 item
+    detailIdx       = 0,    -- 当前查看的奖励索引
     -- 滚动
     scrollY    = 0,
     scrollMax  = 0,
@@ -215,7 +221,7 @@ local state = {
     -- 队员升级动画
     heroAnim   = {},   -- [i] = { level = 动画等级, exp = 动画内经验, remain = 剩余待发放经验 }
     heroTime   = 0,    -- 动画已播放秒数
-    -- 奖励逐件弹出（与关卡奖励同款；队员经验发完后才开始）
+    -- 奖励逐件弹出（与队员经验动画同时开始，大批量时尾段加速）
     cascade    = nil,  ---@type any
     cascadeSfx = 0,    -- 已播放入场音的件数
     -- 动画
@@ -236,14 +242,14 @@ local HERO_ANIM_DELAY = 0.55   -- 弹窗开完后停顿多久开始发放
 local HERO_ANIM_STAGGER = 0.1  -- 相邻队员错开的秒数
 local HERO_EXP_PER_SEC = 0.34  -- 经验发放速度（占总经验比例/秒），1/0.34 ≈ 2.9 秒发完
 
--- 奖励逐件弹出参数（关卡奖励同款节奏）
-local CASCADE_LEAD   = 0.15    -- 队员经验发完后再停顿多久开始发奖励
+-- 奖励逐件弹出参数：前段保留仪式感，后段按总件数加速。
 local CASCADE_INTERVAL = 0.14  -- 前 10 件间隔
-local CASCADE_INTERVAL_TAIL = 0.10  -- 超过 10 件后的间隔
-local CASCADE_INTERVAL_FASTER = 0.05  -- 超过 20 件后的间隔
+local CASCADE_INTERVAL_TAIL = 0.06  -- 第 11~20 件间隔
+local CASCADE_INTERVAL_FASTER = 0.02  -- 第 21 件起的最大间隔
 local CASCADE_FAST_AFTER = 10
 local CASCADE_FASTER_AFTER = 20
-local CASCADE_POP_DUR  = 0.24  -- 单件弹出时长
+local CASCADE_TAIL_BUDGET = 2.0  -- 第 20 件之后最多再排队 2 秒
+local CASCADE_POP_DUR  = 0.24  -- 单件弹出时长不变
 
 local cachedVg = nil
 
@@ -413,6 +419,116 @@ local function getHeroIcon(heroId)
     return h
 end
 
+-- ======================== [奖励可点击] 详情查看 ========================
+
+--- 命中检测：设计坐标 → 奖励网格索引（仅已弹出的奖励可点）
+---@param dx number
+---@param dy number
+---@return integer|nil
+local function hitRewardCell(dx, dy)
+    if #state.rewards == 0 then return nil end
+    -- 逐件弹出未开始/未出场的奖励不可点
+    local cascade = state.cascade
+    if not cascade or cascade.revealStart == 0 then return nil end
+
+    local saved = layoutNow()  -- 第一个返回值 = 奖励网格整体上移量
+    local clipTop = CLIP.TOP - saved
+    if dx < CLIP.LEFT or dx > CLIP.RIGHT or dy < clipTop or dy > clipTop + CLIP.H then
+        return nil
+    end
+
+    local totalRows = math.ceil(#state.rewards / COLS)
+    for row = 1, totalRows do
+        for col = 1, COLS do
+            local idx = (row - 1) * COLS + col
+            if state.rewards[idx] then
+                local cx, rawCY = getCellCenter(row, col)
+                local cy = rawCY - saved - state.scrollY
+                local half = ICON_SIZE * 0.5
+                if dx >= cx - half and dx <= cx + half and dy >= cy - half and dy <= cy + half then
+                    local popT = cascade:t(idx)
+                    if popT and popT >= 1 then return idx end
+                    return nil
+                end
+            end
+        end
+    end
+    return nil
+end
+
+--- 详情浮层尺寸/位置（装备=遗匣同款只读详情；资源=信息卡）
+---@return number x, number y, number w, number h
+local function detailBounds()
+    local item = state.detailItem
+    if item and item.type == "equip" and item.equip then
+        local w, h = EquipmentDetail.readOnlySize(item.equip)
+        local x = CENTER_X - w * 0.5
+        local y = math.max(PANEL_TOP + 120, 900 - h * 0.5)
+        return x, y, w, h
+    end
+    local w, h = 560, 300
+    return CENTER_X - w * 0.5, 900 - h * 0.5, w, h
+end
+
+--- 绘制详情浮层（在面板内容之后、动画变换之内）
+---@param vg any
+local function drawDetailOverlay(vg)
+    local item = state.detailItem
+    if not item then return end
+
+    -- 半透明遮罩压暗弹窗其余部分，突出详情
+    local _, panelH = layoutNow()
+    nvgSave(vg)
+    nvgBeginPath(vg)
+    nvgRect(vg, BG.CX - BG.W * 0.5, PANEL_TOP, BG.W, panelH)
+    nvgFillColor(vg, nvgRGBA(0, 0, 0, 150))
+    nvgFill(vg)
+
+    if item.type == "equip" and item.equip then
+        -- 装备：遗匣同款只读详情（无穿戴/分解按钮）
+        local x, y = detailBounds()
+        EquipmentDetail.drawReadOnly(vg, item.equip, x, y)
+    else
+        -- 资源：信息卡（图标 + 名称 + 数量）
+        local x, y, w, h = detailBounds()
+        local cx, cy = x + w * 0.5, y + h * 0.5
+        DrawUtil.drawRoundedRectCentered(vg, cx, cy, w, h, 20, 24, 20, 18, 245)
+        DrawUtil.drawRoundedRectCentered(vg, cx, cy, w - 8, h - 8, 16, 40, 33, 28, 255)
+
+        local def = RESOURCE_DEFS[item.type]
+        local q = (def and def.quality) or 2
+        -- 品质底 + 图标
+        local qBgImg = ImageCache.getQualityBg(q)
+        local iconCY = cy - 40
+        if qBgImg >= 0 then
+            DrawUtil.drawImageCentered(vg, qBgImg, cx, iconCY, 150, 150, 1.0)
+        end
+        local resImg = getResourceIcon(item.type)
+        if resImg >= 0 then
+            DrawUtil.drawImageCentered(vg, resImg, cx, iconCY, 120, 120, 1.0)
+        end
+        -- 名称
+        local name = (def and def.name) or item.type
+        DrawUtil.drawTextStroke(vg, cx, cy + 66, name, 40,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 231, 210, 161, 4,
+            { strokeColor = { 0x31, 0x24, 0x24 } })
+        -- 数量
+        if item.amount and item.amount > 0 then
+            DrawUtil.drawTextStroke(vg, cx, cy + 116, "x" .. NumberUtil.format(item.amount), 36,
+                NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0x63, 0xff, 0x84, 4,
+                { strokeColor = { 0x31, 0x24, 0x24 } })
+        end
+    end
+
+    -- 关闭提示
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 28)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 220))
+    nvgText(vg, BG.CX, PANEL_TOP + panelH - 40, "点击任意处返回", nil)
+    nvgRestore(vg)
+end
+
 --- 初始化队员升级动画状态（把每条预览的经验从 0 逐级累积到最终等级）
 --- 动画口径与服务端一致：在「原始等级/原始经验」上逐级消耗待发放经验。
 local function resetHeroAnim()
@@ -482,14 +598,13 @@ end
 ---@param vg any NanoVG 上下文
 function Panel.init(vg)
     cachedVg = vg
-    img.bg            = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    -- [清理 0929] UI_TY_EJQRK.png 加载已移除：背景改由 DarkIcon.drawNine 矢量绘制，贴图从未使用
     img.progBg        = nvgCreateImage(vg, "image/进度条/UI_LXSYJDT_2.png", 0)
     img.progFill      = nvgCreateImage(vg, "image/进度条/UI_XDZJDT.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnGreen      = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
 
-    if img.bg < 0 then print("[OfflineRewardPanel] WARN: UI_TY_EJQRK.png load failed") end
     print("[OfflineRewardPanel] init OK")
 end
 
@@ -499,11 +614,15 @@ function Panel.show(data)
     state.offlineSeconds = data.offlineSeconds or 0
     state.maxSeconds     = data.maxSeconds or 86400
     state.tailRatio      = data.tailRatio or 0.5
+    state.hardCapSeconds = data.hardCapSeconds or 86400 * 7
+    state.cappedByHardCap = data.cappedByHardCap or false
     state.multiplier     = data.multiplier or 1.0
     state.adventureExp   = data.adventureExp or 0
     state.adventurerExp  = data.adventurerExp or 0
     state.heroExpPreview = data.heroExpPreview or {}
     state.onClaim        = data.onClaim
+    state.detailItem     = nil
+    state.detailIdx      = 0
 
     -- 排序奖励：资源在前，装备在后
     local resources = {}
@@ -538,11 +657,13 @@ function Panel.show(data)
     state.animPhase = "opening"
     state.animStart = time.elapsedTime
     resetHeroAnim()
+    local tailCount = math.max(1, #state.rewards - CASCADE_FASTER_AFTER)
+    local fasterInterval = math.min(CASCADE_INTERVAL_FASTER, CASCADE_TAIL_BUDGET / tailCount)
     state.cascade = RewardCascade.new(#state.rewards, {
         interval       = CASCADE_INTERVAL,
         intervalTail   = CASCADE_INTERVAL_TAIL,
         fastAfter      = CASCADE_FAST_AFTER,
-        intervalFaster = CASCADE_INTERVAL_FASTER,
+        intervalFaster = fasterInterval,
         fasterAfter    = CASCADE_FASTER_AFTER,
         popDur         = CASCADE_POP_DUR,
         lead           = HERO_ANIM_DELAY,
@@ -552,12 +673,16 @@ function Panel.show(data)
         state.cascade:start(time.elapsedTime)
     end
     print("[OfflineRewardPanel] show: offline=" .. state.offlineSeconds .. "s, rewards=" .. #state.rewards
-        .. ", heroPreview=" .. #state.heroExpPreview)
+        .. ", heroPreview=" .. #state.heroExpPreview
+        .. string.format(", tailGap=%.4fs, reveal=%.2fs", fasterInterval,
+            HERO_ANIM_DELAY + state.cascade:startAt(#state.rewards) + CASCADE_POP_DUR))
 end
 
 --- 关闭
 function Panel.close()
     if state.animPhase == "closing" then return end
+    state.detailItem = nil
+    state.detailIdx = 0
     state.animPhase = "closing"
     state.animStart = time.elapsedTime
 end
@@ -600,11 +725,11 @@ function Panel.update(dt)
     -- 奖励逐件弹出与队员升级同时开始（show 里已 start）
     if state.cascade then
         if state.cascade.revealStart ~= 0 then
-            -- 逐件入场音
+            -- 同帧弹出的奖励共用一次入场音，避免尾段加速或掉帧后音效集中重播。
             local due = state.cascade:shownCount()
-            while state.cascadeSfx < due do
-                state.cascadeSfx = state.cascadeSfx + 1
-                local item = state.rewards[state.cascadeSfx]
+            if state.cascadeSfx < due then
+                state.cascadeSfx = due
+                local item = state.rewards[due]
                 if item and item.type == "equip" then
                     GameSFX.play("install")
                 else
@@ -703,21 +828,28 @@ function Panel.draw(vg)
         255, 255, 255, PROG.TIME_SW,
         { strokeColor = { PROG.TIME_SR, PROG.TIME_SG, PROG.TIME_SB } })
 
-    -- 10. 提示：24 小时内满额，超出部分减半，不封顶
+    -- 10. 提示：24 小时内满额，超出部分减半，7 日硬顶
     do
         local fullHours = formatMaxHours(state.maxSeconds)
         local tailPct = math.floor((state.tailRatio or 0.5) * 100 + 0.5)
+        local capDays = math.floor((state.hardCapSeconds or 604800) / 86400)
         local parts
-        if state.offlineSeconds > state.maxSeconds then
+        if state.cappedByHardCap then
+            parts = {
+                { "离线超过", false },
+                { capDays .. "日", true },
+                { "，已按上限结算", false },
+            }
+        elseif state.offlineSeconds > state.maxSeconds then
             parts = {
                 { "离线超过", false },
                 { fullHours .. "小时", true },
-                { "，超出部分按" .. tailPct .. "%计算", false },
+                { "，超出部分按" .. tailPct .. "%计算，" .. capDays .. "日封顶", false },
             }
         else
             parts = {
                 { fullHours .. "小时", true },
-                { "内全额，超出按" .. tailPct .. "%", false },
+                { "内全额，超出按" .. tailPct .. "%，" .. capDays .. "日封顶", false },
             }
         end
         nvgFontFace(vg, "sans")
@@ -763,6 +895,9 @@ function Panel.draw(vg)
     nvgFillColor(vg, nvgRGBA(BTN_CLAIM.TR, BTN_CLAIM.TG, BTN_CLAIM.TB, BTN_CLAIM.TA))
     nvgText(vg, BG.CX, claimCY, "领取", nil)
     BF.finish(vg, _bf2)
+
+    -- [奖励可点击] 详情浮层（盖在弹窗内容最上层）
+    drawDetailOverlay(vg)
 
     -- 恢复变换
     nvgGlobalAlpha(vg, 1.0)
@@ -1087,7 +1222,28 @@ end
 function Panel.handleInput(dx, dy)
     if not state.open then return false end
 
+    -- [奖励可点击] 详情打开时：任意点击先关闭详情（不触发领取/其他交互）
+    if state.detailItem then
+        state.detailItem = nil
+        state.detailIdx = 0
+        GameSFX.play("ui_click_3")
+        return true
+    end
+
     local _, panelH, panelCY, _, claimCY = layoutNow()
+
+    -- [奖励可点击] 奖励图标命中 → 打开详情浮层
+    local hitIdx = hitRewardCell(dx, dy)
+    if hitIdx then
+        local item = state.rewards[hitIdx]
+        -- 装备必须带完整实例才能开只读详情；资源都可查看
+        if item and (item.type ~= "equip" or item.equip) then
+            state.detailItem = item
+            state.detailIdx = hitIdx
+            GameSFX.play("ui_click_3")
+            return true
+        end
+    end
 
     -- 领取按钮（居中，随空队上移）
     if DrawUtil.hitTest(dx, dy, BG.CX, claimCY, BTN_CLAIM.W, BTN_CLAIM.H) then

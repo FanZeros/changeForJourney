@@ -24,30 +24,29 @@ M.kwText = KeywordText.new({ textColor = { 255, 255, 255 } })
 -- 全屏背景 / 顶栏
 local BG_CX, BG_CY = 540, 1200
 local BG_W, BG_H   = 1080, 2400
-local BADGE_CX, BADGE_CY = 540, 269
-local BADGE_W, BADGE_H   = 107, 49
-local TITLE_BG_CX, TITLE_BG_CY = 595, 319
+-- 称号行固定在页顶（阶段代号之上）
+local TITLE_BG_CX, TITLE_BG_CY = 595, 200
 local TITLE_BG_W, TITLE_BG_H   = 480, 90
-local CLASS_ICON_CX, CLASS_ICON_CY = 353, 319
+local CLASS_ICON_CX, CLASS_ICON_CY = 353, 200
 local CLASS_ICON_SIZE              = 120
-local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 319
+local TITLE_TEXT_CX, TITLE_TEXT_CY = 540, 200
 local TITLE_FONT_SIZE              = 50
 
 local NODE_COUNT = AKC.NODE_COUNT
 local NODE_NAMES  = { "初醒", "共鸣", "蜕变" }
 local NODE_ROMANS = { "Ⅰ", "Ⅱ", "Ⅲ" }
 
--- 影画切片：CG 三竖条直角对齐，无缝拼合
--- 面板为 1080x2400 设计页；切片区拉高让竖版 CG 尽量少裁
+-- 影画切片：上条向右下斜、下条向左下斜（Z 形分割）
+-- 切片只限定显示区域；CG 等比铺满高度，横向共用居中裁切。
 local SLICES = {
-    W     = 336,     -- 单条宽
-    H     = 1150,    -- 单条高
-    GAP   = 0,       -- 条间距（三栏无缝拼合）
-    SX    = 36,      -- 左缘（(1080-3*336-0)/2）
-    SY    = 396,     -- 基准顶（标题栏 y~384 之下）
-    SLANT = 0,       -- 直角矩形，三栏顶底齐平
-    STAG  = { 0, 0, 0 }, -- 三栏纵向对齐，不再错位
-    V_BIAS = 0.18,   -- CG 纵向取窗偏上（保脸）
+    W      = 336,    -- 单条垂直跨度（三栏顶底对齐的列宽）
+    H      = 1512,   -- 单条高（大狗 CG 完整高度）
+    GAP    = 0,
+    SX     = 36,     -- 左缘（(1080-3*336)/2）
+    SY     = 300,    -- 基准顶：阶段代号(y~222)紧贴其下
+    SLANT  = 48,     -- 底部中片保留 336-2*48=240 宽，斜切不挤成尖条
+    STAG   = { 0, 0, 0 },
+    V_BIAS = 0.0,
 }
 
 local NODE_FILL = {
@@ -56,17 +55,18 @@ local NODE_FILL = {
     { 0xe0, 0x72, 0xff },
 }
 
--- 底栏
-local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1690
-local EFFECT_CX, EFFECT_CY = 540, 1830
+-- 底栏（切片底 = SY+H = 1812，文字区紧跟其下）
+local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1860
+-- 效果说明下移约 2/3 行（36 字号默认行高 49，取整为 33），避免首行压住阶段标题。
+local EFFECT_CX, EFFECT_CY = 540, 1963
 local EFFECT_W, EFFECT_H   = 910, 139
 local EFFECT_FONT           = 36
 -- 底栏操作：碎片标识在左、嵌合按钮在右（放大）
 local SHARD_ICON_SIZE = 114
 local SHARD_ICON_CX   = 196
-local SHARD_ROW_CY    = 2110
-local BTN_CX, BTN_CY = 720, 2110
-local BTN_W, BTN_H   = 520, 128
+local SHARD_ROW_CY    = 2160
+local BTN_CX, BTN_CY = 720, 2160
+local BTN_W, BTN_H   = 520, 100
 local BTN_TEXT_FONT  = 46
 
 M.BTN_CX = BTN_CX
@@ -89,7 +89,7 @@ local imgActivateBtn   = -1
 local imgSelectArrow   = -1
 local imgClassIcons    = {}
 
----@type table<number, table>
+---@type table<number, integer>
 local cgCache = {}
 
 local selectedNode = 1
@@ -111,19 +111,34 @@ local function sliceY(i)
     return SLICES.SY + (SLICES.STAG[i] or 0)
 end
 
---- 平行四边形路径：顶边相对底边右移 SLANT
+--- 第 i 条在进度 t（0=顶，1=底）处的左右缘
+--- 相邻切片共用分割线，避免选中后覆盖邻片而改变显示范围。
+local function sliceEdges(i, t)
+    local x = sliceX(i)
+    local s = SLICES.SLANT * t
+    local left, right
+    if i == 1 then
+        left, right = x, x + SLICES.W + s
+    elseif i == NODE_COUNT then
+        left, right = x - s, x + SLICES.W
+    else
+        left, right = x + s, x + SLICES.W - s
+    end
+    return left, right
+end
+
+--- 斜切条路径
 local function slicePath(vg, i, expand)
     local e = expand or 0
-    local x0 = sliceX(i) - e
-    local x1 = sliceX(i) + SLICES.W + e
     local y0 = sliceY(i) - e
     local y1 = sliceY(i) + SLICES.H + e
-    local s = SLICES.SLANT
+    local l0, r0 = sliceEdges(i, 0)
+    local l1, r1 = sliceEdges(i, 1)
     nvgBeginPath(vg)
-    nvgMoveTo(vg, x0 + s, y0)
-    nvgLineTo(vg, x1 + s, y0)
-    nvgLineTo(vg, x1, y1)
-    nvgLineTo(vg, x0, y1)
+    nvgMoveTo(vg, l0 - e, y0)
+    nvgLineTo(vg, r0 + e, y0)
+    nvgLineTo(vg, r1 + e, y1)
+    nvgLineTo(vg, l1 - e, y1)
     nvgClosePath(vg)
 end
 
@@ -131,61 +146,60 @@ end
 ---@param py number
 ---@return boolean
 local function pointInSlice(px, py, i)
-    local x0 = sliceX(i)
-    local x1 = x0 + SLICES.W
     local y0 = sliceY(i)
     local y1 = y0 + SLICES.H
     if py < y0 or py > y1 then return false end
     local t = (py - y0) / SLICES.H
-    local s = SLICES.SLANT * (1 - t)
-    local pad = 8
-    return px >= x0 + s - pad and px <= x1 + s + pad
+    local left, right = sliceEdges(i, t)
+    -- 分割线归右侧切片；外缘闭合，不扩张热区造成重复命中。
+    return px >= left and (px < right or (i == NODE_COUNT and px <= right))
 end
 
 -- ======================== CG 资源 ========================
 
---- 解析角色 CG：正式 CG -> 立绘 -> 卡牌；同时取对应灰度版
+--- 解析角色 CG：正式 CG -> 立绘 -> 卡牌。未解锁态绘制时染色，不再加载灰度图。
 ---@return integer colorHandle 彩色句柄，缺失为 -1
----@return integer grayHandle 灰度句柄，缺失为 -1
 local function resolveCG(vg, heroId)
     local cached = cgCache[heroId]
-    if cached then return cached.color, cached.gray end
+    if cached then return cached end
     local color = nvgCreateImage(vg, string.format("image/角色CG/CG_H%d.png", heroId), 0) or -1
-    local gray = -1
-    if color >= 0 then
-        gray = nvgCreateImage(vg, string.format("image/角色CG/CG_H%d_gray.png", heroId), 0) or -1
-    else
+    if color < 0 then
         color = nvgCreateImage(vg, HeroAssetUtil.getPortraitPath(heroId), 0) or -1
-        if color >= 0 then
-            gray = nvgCreateImage(vg, string.format("image/角色CG/FALLBACK_H%d_gray.png", heroId), 0) or -1
-        else
-            color = nvgCreateImage(vg, HeroAssetUtil.getCardPath(heroId), 0) or -1
-        end
     end
-    cgCache[heroId] = { color = color, gray = gray }
-    return color, gray
+    if color < 0 then
+        color = nvgCreateImage(vg, HeroAssetUtil.getCardPath(heroId), 0) or -1
+    end
+    cgCache[heroId] = color
+    return color
 end
 
---- CG cover 到切片总幅，返回 (dw, dh, v0)
+--- CG 等比铺满 1512 高度，返回 (dw, dh, v0, sw)，保留完整源图高度
 ---@return number|nil dw
 ---@return number|nil dh
 ---@return number|nil v0
+---@return number|nil sw
 local function cgLayout(vg, img)
     local sw, sh = nvgImageSize(vg, img)
     if not sw or sw <= 0 or not sh or sh <= 0 then return nil end
-    local totalW = SLICES.W * NODE_COUNT + SLICES.GAP * (NODE_COUNT - 1)
-    local scale = math.max(totalW / sw, SLICES.H / sh)
+    local scale = SLICES.H / sh
     local dw, dh = sw * scale, sh * scale
     local v0 = (dh - SLICES.H) * SLICES.V_BIAS
-    if v0 < 0 then v0 = (dh - SLICES.H) * 0.5 end
-    return dw, dh, v0
+    if v0 < 0 then v0 = 0 end
+    return dw, dh, v0, sw
 end
 
---- 第 i 条的取样 paint：显示 CG 第 i 列，竖向公共窗 v0
-local function slicePaint(vg, img, i, dw, dh, v0, alpha)
-    if not img or img < 0 or alpha <= 0.01 then return nil end
-    local ox = sliceX(i) - dw * (i - 1) / NODE_COUNT
-    local oy = sliceY(i) - v0
+--- ImagePattern 展开整张 CG，不是源裁剪；所有切片及灰/彩态共用同一变换。
+local function slicePaint(vg, img, i, dw, dh, v0, sw, alpha, gray)
+    if not img or img < 0 or alpha <= 0.01 or not sw then return nil end
+    local totalSliceWidth = NODE_COUNT * SLICES.W + (NODE_COUNT - 1) * SLICES.GAP
+    local ox = SLICES.SX + (totalSliceWidth - dw) * 0.5
+    local oy = SLICES.SY - v0
+    if gray then
+        local tone = math.floor(168 * alpha)
+        local tint = nvgRGBA(tone, tone, tone, 255)
+        ---@cast tint NVGcolor
+        return nvgImagePatternTinted(vg, ox, oy, dw, dh, 0, img, tint)
+    end
     return nvgImagePattern(vg, ox, oy, dw, dh, 0, img, alpha)
 end
 
@@ -257,7 +271,7 @@ end
 ---@param i number 1~3
 ---@param state string "active" 已嵌合 | "next" 可嵌合 | "locked" 未解锁
 ---@param isSelected boolean
-local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
+local function drawSlice(vg, i, state, isSelected, cgImg, dw, dh, v0, sw)
     local col = NODE_FILL[i] or { 180, 180, 180 }
     local t = time.elapsedTime
     local breathe = (math.sin(t * 2.4 + i * 0.9) + 1.0) * 0.5
@@ -267,9 +281,8 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
     nvgFillColor(vg, nvgRGBA(8, 10, 18, 235))
     nvgFill(vg)
 
-    -- 2) CG 片：解锁=彩色，未解锁=灰度
-    local img = (state == "active") and cgImg or (grayImg >= 0 and grayImg or cgImg)
-    local paint = slicePaint(vg, img, i, dw, dh, v0, 1.0)
+    -- 2) CG 片：解锁=彩色，未解锁=绘制时染灰（两态共用斜切取样几何）
+    local paint = slicePaint(vg, cgImg, i, dw, dh, v0, sw, 1.0, state ~= "active")
     if paint then
         slicePath(vg, i)
         nvgFillPaint(vg, paint)
@@ -283,7 +296,7 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
     else
         -- 未解锁：压暗 + 轻灰罩，保证灰片可读
         slicePath(vg, i)
-        if grayImg >= 0 then
+        if cgImg and cgImg >= 0 then
             nvgFillColor(vg, nvgRGBA(8, 10, 20, 110))
         else
             nvgFillColor(vg, nvgRGBA(14, 14, 18, 200))
@@ -301,7 +314,7 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
                 nvgStroke(vg)
             end
         end
-        slicePath(vg, i, 4)
+        slicePath(vg, i)
         nvgStrokeColor(vg, nvgRGBA(0xff, 0xef, 0x67, 235))
         nvgStrokeWidth(vg, 4)
         nvgStroke(vg)
@@ -326,9 +339,10 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
         nvgStroke(vg)
     end
 
-    -- 4) 顶部阶段铭牌：罗马数字 + 名称
-    local cx = sliceX(i) + SLICES.W * 0.5 + SLICES.SLANT * 0.5
-    local topY = sliceY(i)
+    -- 4) 顶部阶段铭牌：罗马数字 + 名称（上移到切片上方，不压 CG）
+    local l0, r0 = sliceEdges(i, 0)
+    local cx = (l0 + r0) * 0.5
+    local topY = sliceY(i) - 78
     local nr, ng, nb = 150, 156, 172
     if state == "active" then
         nr, ng, nb = 255, 255, 255
@@ -344,12 +358,14 @@ local function drawSlice(vg, i, state, isSelected, cgImg, grayImg, dw, dh, v0)
         nr, ng, nb, 4,
         { strokeColor = { 0x10, 0x0c, 0x18 } })
 
-    -- 5) 底部状态
+    -- 5) 底部状态（居中于斜切条底部）
+    local bl, br = sliceEdges(i, 1)
+    local cx = (bl + br) * 0.5
     local by = sliceY(i) + SLICES.H - 30
     if state == "active" then
         drawTextStroke(vg, cx, by, "已嵌合",
             22, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            col[1], col[2], col[3], 3)
+            244, 237, 224, 3)
     elseif state == "next" then
         drawTextStroke(vg, cx, by, "可嵌合",
             22, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -383,22 +399,6 @@ function M.draw(vg, heroId)
 
     drawImageCentered(vg, imgBg, BG_CX, BG_CY, BG_W, BG_H, 1.0)
 
-    -- [统一角色框] 品质徽章：贴图（旧名R/SR/SSR且缺UR）→ 品质色矢量铭牌
-    local qualityInfo = HC.QUALITY_INFO[heroCfg.quality]
-    local qualityName = qualityInfo and qualityInfo.name or "?"
-    local qr, qg, qb = HeroFrame.qualityColor(heroCfg.quality)
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, BADGE_CX - BADGE_W * 0.5, BADGE_CY - BADGE_H * 0.5, BADGE_W, BADGE_H, 10)
-    nvgFillColor(vg, nvgRGBA(12, 10, 8, 210))
-    nvgFill(vg)
-    nvgStrokeColor(vg, nvgRGBA(qr, qg, qb, 230))
-    nvgStrokeWidth(vg, 3)
-    nvgStroke(vg)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 30)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(qr, qg, qb, 255))
-    nvgText(vg, BADGE_CX, BADGE_CY, qualityName, nil)
     drawImageCentered(vg, imgTitleBg, TITLE_BG_CX, TITLE_BG_CY, TITLE_BG_W, TITLE_BG_H, 1.0)
 
     local classIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -413,28 +413,26 @@ function M.draw(vg, heroId)
         { strokeColor = { 0x31, 0x24, 0x24 } })
 
     -- 影画切片
-    local cgImg, grayImg = resolveCG(vg, heroId)
-    local dw, dh, v0
+    local cgImg = resolveCG(vg, heroId)
+    local dw, dh, v0, sw
     if cgImg and cgImg >= 0 then
-        dw, dh, v0 = cgLayout(vg, cgImg)
+        dw, dh, v0, sw = cgLayout(vg, cgImg)
     end
 
+    -- 固定绘制顺序；选中只改变描边，不改变任何切片的图片覆盖范围。
     for i = 1, NODE_COUNT do
         local state = activated[i] and "active" or (i == nextNode and "next" or "locked")
-        if i ~= selectedNode then
-            drawSlice(vg, i, state, false, cgImg, grayImg, dw, dh, v0)
-        end
+        drawSlice(vg, i, state, i == selectedNode, cgImg, dw, dh, v0, sw)
     end
-    local selState = activated[selectedNode] and "active"
-        or (selectedNode == nextNode and "next" or "locked")
-    drawSlice(vg, selectedNode, selState, true, cgImg, grayImg, dw, dh, v0)
 
-    -- 选中切片上浮箭头
-    local selX = sliceX(selectedNode) + SLICES.W * 0.5 + SLICES.SLANT * 0.5
+    -- 选中切片上浮箭头（居中于斜切条顶部）
+    local selL, selR = sliceEdges(selectedNode, 0)
+    local selX = (selL + selR) * 0.5
     local selTop = sliceY(selectedNode)
     if imgSelectArrow >= 0 then
         local arrowFloatY = math.sin(time.elapsedTime * ARROW_FLOAT_SPEED) * ARROW_FLOAT_AMP
-        drawImageCentered(vg, imgSelectArrow, selX, selTop - ARROW_H * 0.3 - 6 + arrowFloatY,
+        -- 阶段代号已占切片上方，箭头改放到切片内部顶部
+        drawImageCentered(vg, imgSelectArrow, selX, selTop + ARROW_H * 0.5 + 8 + arrowFloatY,
             ARROW_W, ARROW_H, 1.0)
     end
 
@@ -457,8 +455,8 @@ function M.draw(vg, heroId)
     local costText = selectedCost > 0 and ("/" .. selectedCost) or ""
     local fullText = shardNumText .. costText
     DrawUtil.drawShardIcon(vg, heroId, SHARD_ICON_CX, SHARD_ROW_CY, SHARD_ICON_SIZE, 1.0)
-    -- 碎片数量：够=亮青，不够=棕色
-    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8d, 0x5f, 0x41 }
+    -- 碎片数量：够=亮青，不够=灰蓝色
+    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8b, 0x95, 0xa5 }
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 66)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -486,10 +484,10 @@ function M.draw(vg, heroId)
     end
     local _bfAct = BF.begin(vg, "awp_activate", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, imgActivateBtn, BTN_CX, BTN_CY, BTN_W, BTN_H, btnAlpha)
-    -- 按钮文字：可嵌合=亮骨白，禁用=棕色
+    -- 按钮文字：可嵌合/已嵌合=亮骨白；条件未满足才用灰蓝色。
     local tr, tg, tb = 244, 237, 224
-    if btnDisabled then
-        tr, tg, tb = 0x8d, 0x5f, 0x41
+    if btnDisabled and not currentNodeActive then
+        tr, tg, tb = 0x8b, 0x95, 0xa5
     end
     drawTextStroke(vg, BTN_CX, BTN_CY, btnText, BTN_TEXT_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4,
@@ -503,26 +501,15 @@ function M.handleInput(dx, dy, heroId)
         return true
     end
 
-    -- 切片命中（斜切平行四边形），重叠处优先当前选中
-    local hits = {}
+    -- 点击与固定切片范围一致，不随当前选中阶段变化。
     for i = 1, NODE_COUNT do
         if pointInSlice(dx, dy, i) then
-            hits[#hits + 1] = i
-        end
-    end
-    if #hits > 0 then
-        local pick = hits[1]
-        for _, i in ipairs(hits) do
-            if i == selectedNode then
-                pick = i
-                break
+            if selectedNode ~= i then
+                selectedNode = i
+                print("[AwakeningPanel] 选中切片 " .. i)
             end
+            return true
         end
-        if selectedNode ~= pick then
-            selectedNode = pick
-            print("[AwakeningPanel] 选中切片 " .. pick)
-        end
-        return true
     end
 
     if DrawUtil.hitTest(dx, dy, BTN_CX, BTN_CY, BTN_W, BTN_H) then

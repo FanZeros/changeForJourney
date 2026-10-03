@@ -35,7 +35,7 @@ AG.CONDITIONS = {
     shocked   = function(c) return c.hasStatus(c.deadEnemy, "shocked") end,
     --- 击杀被标记的敌人
     marked    = function(c) return c.hasStatus(c.deadEnemy, "marked") end,
-    --- 氮气冲刺击杀（#21 闪电卖鸡）
+    --- 氮气冲刺击杀（#21 雷电麦坤）
     nitroKill = function(c) return c.killer ~= nil and c.killer._nitroKill == true end,
     --- 暴击击杀（#14 内鬼 / #18 老六）——死亡敌人身上由击杀归因写 _killedByCrit
     critKill  = function(c) return c.deadEnemy ~= nil and c.deadEnemy._killedByCrit == true end,
@@ -116,7 +116,7 @@ AG.ATTR_MAP = {
 
 --- 按配置叠一次觉醒1成长层（调用方保证已点 n1）。
 ---@param heroId number
----@param extra ExtraTalentData 归一化后的追加技存档表（就地修改；定义见 systems.ExtraTalentSystem）
+---@param extra table 归一化后的追加技存档表（就地修改；结构见 systems.ExtraTalentSystem 的 ExtraTalentData）
 ---@param ctx table { deadEnemy, killer, enemies, hasStatus }
 ---@return boolean applied 是否命中触发条件并叠层
 function AG.applyGrowth(heroId, extra, ctx)
@@ -136,7 +136,7 @@ end
 
 --- 把已叠的成长字段换算成永久属性 modifier 条目（等价旧 bruteEntries）。
 ---@param heroId number
----@param data ExtraTalentData
+---@param data table 结构见 systems.ExtraTalentSystem 的 ExtraTalentData
 ---@return table[] entries { { key=..., flat=... }, ... }
 function AG.buildAttrEntries(heroId, data)
     local entries = {}

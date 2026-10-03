@@ -26,10 +26,7 @@ function M.bind(deps)
         img.tabBg    = nvgCreateImage(vg, "image/按钮/UI_AN_1.png", 0)
         img.slider   = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
-        -- 商品卡片
-        for i = 1, 6 do
-            img.cardBg[i] = nvgCreateImage(vg, "image/界面底板/商店/UI_SDICONBJ_" .. i .. ".png", 0)
-        end
+        -- 商品品质底已改矢量，不再加载 UI_SDICONBJ。
         img.buyBtn = nvgCreateImage(vg, "image/界面底板/商店/UI_SD_AN.png", 0)
         for idx, item in ipairs(SHOP_ITEMS) do
             img.itemIcons[idx] = nvgCreateImage(vg, item.icon, 0)
@@ -37,7 +34,7 @@ function M.bind(deps)
         end
 
         -- 弹窗
-        img.dialogBg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+        -- [清理 0929] UI_TY_EJQRK.png 加载已移除：弹窗背景改由 DarkIcon.drawNine 矢量绘制，贴图从未使用
         img.buyBtnYellow = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
         img.btnMinus = nvgCreateImage(vg, "image/按钮/UI_AN_JIAN.png", 0)
         img.btnPlus = nvgCreateImage(vg, "image/按钮/UI_AN_JIA.png", 0)

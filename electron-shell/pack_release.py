@@ -60,6 +60,24 @@ CSS_HIDE = """    .fab-main, .fab-icon { display: none !important; }
     #eruda, .eruda-entry-btn, .eruda-icon-tool { display: none !important; }
 """
 
+# 加载状态文案统一「初始化中」：运行时 updateStatus 会覆写为 加载中/Loading...，
+# 用 MutationObserver 监听整棵文档改回（与 index.template.html 内联脚本同一份）
+LOADING_STATUS_FIX = """<script id="loading-status-fix">
+(function () {
+  var MAP = { '加载中': '初始化中', 'Loading...': '初始化中', 'Initializing...': '初始化中' };
+  function fix() {
+    var el = document.getElementById('loading-status');
+    if (!el) return;
+    var t = MAP[el.textContent];
+    if (t) el.textContent = t;
+  }
+  fix();
+  new MutationObserver(fix).observe(document.documentElement,
+    { childList: true, characterData: true, subtree: true });
+})();
+</script>
+"""
+
 HEAD_SCRIPTS = """<script>
 (function () {
   var obs = new MutationObserver(function (muts) {
@@ -219,11 +237,16 @@ def patch_index_html(html: str) -> str:
                 continue
         out.append(line)
     html = "".join(out)
-    # loading-logo 走 CDN，COEP credentialless 下必须带 crossorigin 才能加载
-    html = html.replace(
-        '<img id="loading-logo" src=',
-        '<img id="loading-logo" crossorigin="anonymous" src=',
-    )
+    # 加载页去 TapTap Maker logo 图（用户要求打包版不显示）
+    out = []
+    for line in html.splitlines(True):
+        if 'id="loading-logo"' in line:
+            continue
+        out.append(line)
+    html = "".join(out)
+    # 加载状态文案统一「初始化中」（运行时 updateStatus 会覆写为 加载中/Loading...）
+    if "loading-status-fix" not in html:
+        html = html.replace("</head>", LOADING_STATUS_FIX + "</head>", 1)
     if "fab-main" not in html:
         html = html.replace("  </style>", CSS_HIDE + "  </style>", 1)
     if "PatchedWS" not in html:
@@ -247,8 +270,10 @@ def patch_index_html(html: str) -> str:
         problems.append("</head> 丢失（去桥误删）")
     if "PatchedWS" not in html:
         problems.append("免登录 WS shim 未注入（</head> 锚失配）")
-    if 'id="loading-logo" crossorigin' not in html:
-        problems.append("loading-logo crossorigin 未加（模板变了）")
+    if 'id="loading-logo"' in html:
+        problems.append("loading-logo 未移除（模板变了）")
+    if "loading-status-fix" not in html:
+        problems.append("初始化中状态脚本未注入（</head> 锚失配）")
     if "https://tapcode-sce.spark.xd.com/src/web/src/index.min.js" in html:
         problems.append("index.min.js 仍指向 CDN（未本地化）")
     if problems:

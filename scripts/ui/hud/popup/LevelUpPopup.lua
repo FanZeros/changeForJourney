@@ -15,7 +15,6 @@
 --   1. Spine 全屏背景 UI_SPINE_DJTS（播完停留最后一帧）
 --   2. "远征等级提升" 标题 (X540 Y575, size 70)
 --   3. 等级数字 (X540 Y723, size 120)
---   4. 文本背景框 UI_JJC_BTBJ (X540 Y1036, 660×60)
 --   5. "天赋点" 文本 (X540 Y1035, size 70)
 --   6. "+1" 文本 (X540 Y1122, size 60)
 --   7. 分割线 (X540 Y1200, 990×4)
@@ -137,9 +136,6 @@ local state = {
     spineLoaded = false,
     spineFinished = false,  -- 动画是否已播完
     spineLastTime = 0,
-    -- 图片
-    imgTextBg  = -1,      -- UI_JJC_BTBJ.png
-    imgArrow   = -1,      -- UI_HSJT.png
     -- 缓存
     cachedVg   = nil,
     -- 闪烁效果
@@ -241,10 +237,6 @@ end
 ---@param vg any NanoVG 上下文
 function LevelUpPopup.init(vg)
     state.cachedVg = vg
-    state.imgTextBg = nvgCreateImage(vg, "image/界面底板/竞技场排行/UI_JJC_BTBJ.png", 0)
-    state.imgArrow  = nvgCreateImage(vg, "image/界面底板/弹窗奖励/UI_HSJT.png", 0)
-    if state.imgTextBg < 0 then print("[LevelUpPopup] WARN: UI_JJC_BTBJ.png load failed") end
-    if state.imgArrow  < 0 then print("[LevelUpPopup] WARN: UI_HSJT.png load failed") end
 end
 
 --- 展示等级提升弹窗
@@ -448,14 +440,17 @@ function LevelUpPopup.draw(vg)
 
     -- 1) Spine 全屏背景
     if ensureSpineLoaded(vg) then
-        local dataCenterX = SPINE_DATA_X + SPINE_DATA_W * 0.5  -- 0
-        local dataCenterY = SPINE_DATA_Y + SPINE_DATA_H * 0.5  -- 0
-        local cx = DESIGN_W * 0.5   -- 540
-        local cy = DESIGN_H * 0.5   -- 1200
-
-        state.spineInst:SetScale(1.0, -1.0)
-        local posX = cx - dataCenterX   -- 540
-        local posY = cy + dataCenterY   -- 1200
+        local cardW, cardH = 1500, 760
+        local cardX = (DESIGN_W - cardW) * 0.5
+        local cardY = (DESIGN_H - cardH) * 0.5
+        local scale = math.min(cardW / SPINE_DATA_W, cardH / SPINE_DATA_H)
+        local drawW = SPINE_DATA_W * scale
+        local drawH = SPINE_DATA_H * scale
+        local boxX = cardX + (cardW - drawW) * 0.5
+        local boxY = cardY + (cardH - drawH) * 0.5
+        state.spineInst:SetScale(scale, -scale)
+        local posX = boxX - SPINE_DATA_X * scale
+        local posY = boxY + (SPINE_DATA_H + SPINE_DATA_Y) * scale
         state.spineInst:SetPosition(posX, posY)
 
         -- 出场时 Spine 也淡出

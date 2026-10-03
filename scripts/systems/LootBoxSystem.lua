@@ -4,6 +4,12 @@
 ------------------------------------------------------------------------
 local EquipmentSystem = require("systems.EquipmentSystem")
 local BlacksmithConfig = require("config.BlacksmithConfig")
+local EquipmentConfig = require("config.EquipmentConfig")
+local EquipmentSetConfig = require("config.EquipmentSetConfig")
+
+-- 「无套装」筛选键（与 ui.widget.SetFilterDialog.NONE_KEY 一致；
+-- systems 层不 require UI 模块，避免无头测试拉起渲染依赖，此处写死同值）。
+local SET_NONE_KEY = "none"
 
 local LootBoxSystem = {}
 -- 只用于旧版种子迁移，不影响已经确定的装备。
@@ -139,11 +145,22 @@ local function matchesQuality(entry, quality)
     return not quality or quality == 0 or entry.equip.quality == quality
 end
 
---- 可选品质只处理筛选范围，未显示品质不会被领取。
-function LootBoxSystem.claimAll(lootboxData, equipData, quality)
+--- 套装筛选：[setId]=true / ["none"]=无套装；空集合或 nil=不限制。
+local function matchesSet(entry, setFilter)
+    if not entry.equip then return false end
+    if type(setFilter) ~= "table" or not next(setFilter) then return true end
+    local tpl = EquipmentConfig.ITEMS[entry.equip.templateId]
+        or EquipmentConfig.ITEMS[tostring(entry.equip.templateId)]
+    local setId = EquipmentSetConfig.getSetIdForTemplate(tpl) or SET_NONE_KEY
+    return setFilter[setId] == true
+end
+
+--- 可选品质+套装只处理筛选范围，未显示条目不会被领取。
+function LootBoxSystem.claimAll(lootboxData, equipData, quality, setFilter)
     local claimed = {}
     for index = #lootboxData.seeds, 1, -1 do
-        if matchesQuality(lootboxData.seeds[index], quality) then
+        local entry = lootboxData.seeds[index]
+        if matchesQuality(entry, quality) and matchesSet(entry, setFilter) then
             local group, bagFull = LootBoxSystem.claimGroup(lootboxData, index, equipData)
             for _, equip in ipairs(group) do claimed[#claimed + 1] = equip end
             if bagFull then return claimed, true end
@@ -169,11 +186,11 @@ function LootBoxSystem.decomposeOne(lootboxData, index)
     return essence, pieces
 end
 
-function LootBoxSystem.decomposeAll(lootboxData, quality)
+function LootBoxSystem.decomposeAll(lootboxData, quality, setFilter)
     local essence, pieces = 0, 0
     for index = #lootboxData.seeds, 1, -1 do
         local entry = lootboxData.seeds[index]
-        if matchesQuality(entry, quality) then
+        if matchesQuality(entry, quality) and matchesSet(entry, setFilter) then
             local value, count = decomposeValue(entry)
             if count > 0 then
                 essence = essence + value

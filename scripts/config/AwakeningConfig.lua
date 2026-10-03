@@ -118,7 +118,7 @@ AC.DATA = {
         "星门基础伤害提升至400%，开战时开启2扇门；星门成长每累计40层额外增加1扇，总数最多3扇。角色阵亡后星门仍可攻击。",
         "星象共鸣效果提升50%。",
     },
-    -- 21) SSR 拾骸者 闪电卖鸡
+    -- 21) SSR 拾骸者 雷电麦坤
     [21] = {
         "【氮气赛道】：氮气击杀永久提高触发概率0.05%；命中+30，额外伤害由150%提升至180%。",
         "氮气触发后，下次攻击进度+15%；每80点命中额外获得5点护甲。",
@@ -216,6 +216,16 @@ function AC.hasNode(awakening, nodeIndex)
     return AC.migrateAwakening(awakening)[mapped] == true
 end
 
+--- 是否已点指定新阶段（1=初醒，2=共鸣，3=蜕变；不映射查询编号）
+---@param awakening table|nil
+---@param stageIndex number
+---@param alreadyMigrated boolean|nil 英雄级迁移标记
+---@return boolean
+function AC.hasStage(awakening, stageIndex, alreadyMigrated)
+    if stageIndex ~= 1 and stageIndex ~= 2 and stageIndex ~= 3 then return false end
+    return AC.migrateAwakening(awakening, alreadyMigrated)[stageIndex] == true
+end
+
 --- 已点亮的新 3 阶数量（忽略 `_awk3Migrated` 标记）
 ---@param awakening table|nil
 ---@return number
@@ -257,8 +267,8 @@ function AC.getNodeEffect(heroId, nodeIndex)
 end
 
 -- ======================== 觉醒碎片消耗 ========================
--- 3 阶合计仍为 280（原 10+20+30+40+50+60+70）
-AC.SHARD_COST = { 60, 90, 130 }
+-- 3 阶合计 90（2026-09-30 用户拍板：10/30/50，原 60/90/130）
+AC.SHARD_COST = { 10, 30, 50 }
 
 --- 获取指定节点的碎片消耗
 ---@param nodeIndex number 1~3

@@ -8,6 +8,13 @@ local BlacksmithConfig = {}
 
 --- 最大强化等级
 BlacksmithConfig.MAX_ENHANCE_LEVEL = 100
+BlacksmithConfig.ASCEND_AFFIX_INTERVAL = 5
+BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT = 4
+--- 普通词条满员后，每个升阶里程碑的栏位倍率增量（+10%/层）
+BlacksmithConfig.ASCEND_AFFIX_MULT_STEP = 0.10
+--- 升阶副属性递增：每升 1 阶按词条顺序轮转 1 条普通词条，追加其当前 value 的该比例加成
+--- （独立 ascBonus 字段，洗练不丢；整数属性每次至少 +1）
+BlacksmithConfig.ASCEND_SUB_STAT_RATIO = 0.05
 
 --- 槽位强化配置（100 级）
 --- 每行: { goldCost, scrollCost, attrBoostPct }
@@ -217,6 +224,22 @@ function BlacksmithConfig.formatScrollRefund(scrollRewards)
     return "返还卷轴 " .. table.concat(parts, " ")
 end
 
+--- 把部位卷轴返还整理成有序图标条目列表（供 UI 绘制图标行）
+---@param scrollRewards table|nil
+---@return table[] { type: string, amount: number }
+function BlacksmithConfig.collectScrollRefundEntries(scrollRewards)
+    local entries = {}
+    if not scrollRewards then return entries end
+    for _, field in ipairs(ASCEND_SCROLL_ORDER) do
+        local n = math.floor(tonumber(scrollRewards[field]) or 0)
+        local popupType = BlacksmithConfig.SCROLL_POPUP_TYPE[field]
+        if n > 0 and popupType then
+            entries[#entries + 1] = { type = popupType, amount = n }
+        end
+    end
+    return entries
+end
+
 --- 把部位卷轴返还追加进奖励弹窗列表
 ---@param rewards table
 ---@param scrollRewards table|nil
@@ -247,29 +270,21 @@ end
 
 --- 装备品质消耗配置（用于洗练/分解）
 --- decBase/decScale: 分解精粹奖励基础与等级缩放
---- refBase/refInc/refLvScale: 洗练精粹消耗基础、递增、等级缩放
+--- refBase/refLvScale: 洗练精粹固定单价的基础与等级缩放（不随洗练次数变化）
 BlacksmithConfig.QUALITY_COST = {
-    [1] = { decBase =  5, decScale = 0.1, refBase = 10, refInc = 1, refLvScale = 0.05 },
-    [2] = { decBase = 10, decScale = 0.1, refBase = 20, refInc = 2, refLvScale = 0.05 },
-    [3] = { decBase = 15, decScale = 0.1, refBase = 30, refInc = 3, refLvScale = 0.05 },
-    [4] = { decBase = 20, decScale = 0.1, refBase = 40, refInc = 4, refLvScale = 0.05 },
-    [5] = { decBase = 25, decScale = 0.1, refBase = 50, refInc = 5, refLvScale = 0.05 },
-    [6] = { decBase = 30, decScale = 0.1, refBase = 60, refInc = 6, refLvScale = 0.05 },
+    [1] = { decBase =  5, decScale = 0.1, refBase = 10, refLvScale = 0.05 },
+    [2] = { decBase = 10, decScale = 0.1, refBase = 20, refLvScale = 0.05 },
+    [3] = { decBase = 15, decScale = 0.1, refBase = 30, refLvScale = 0.05 },
+    [4] = { decBase = 20, decScale = 0.1, refBase = 40, refLvScale = 0.05 },
+    [5] = { decBase = 25, decScale = 0.1, refBase = 50, refLvScale = 0.05 },
+    [6] = { decBase = 30, decScale = 0.1, refBase = 60, refLvScale = 0.05 },
 }
 
---- 单件装备洗练次数上限（用于精粹计费；达到后仍可继续洗练，但次数与消耗不再上涨）
+--- 单件装备洗练次数统计上限（仅计数展示与存档封顶，不影响费用）
 BlacksmithConfig.REFINE_COUNT_CAP = 20
 
---- 洗练时锁定词缀：精粹消耗倍率（锁定任意一条即整体 ×1.5）
+--- 洗练时锁定词缀：每条锁定词缀的精粹消耗倍率（按锁定条数累乘：1条×1.5 / 2条×2.25 / 3条×3.375）
 BlacksmithConfig.REFINE_LOCK_COST_MULT = 1.5
-
---- 计费用洗练次数（不超过 CAP-1，保证第 20 次后消耗不再上涨）
----@param refineCount number|nil
----@return number
-function BlacksmithConfig.getRefineBillCount(refineCount)
-    local n = math.floor(tonumber(refineCount) or 0)
-    return math.min(n, BlacksmithConfig.REFINE_COUNT_CAP - 1)
-end
 
 --- 洗练后写入的累计次数（不超过上限）
 ---@param refineCount number|nil
@@ -286,53 +301,90 @@ function BlacksmithConfig.nextRefineCount(refineCount)
     return BlacksmithConfig.clampRefineCount((tonumber(refineCount) or 0) + 1)
 end
 
---- 计算单次洗练精粹消耗
+--- 计算单次洗练精粹消耗（固定单价，与已洗练次数无关）
 ---@param quality number
 ---@param equipLv number|nil
----@param refineCount number|nil 当前累计次数（计费时内部封顶）
 ---@param grip string|nil "twohand" 时翻倍
 ---@return number
-function BlacksmithConfig.calcRefineEssenceCost(quality, equipLv, refineCount, grip)
+function BlacksmithConfig.calcRefineEssenceCost(quality, equipLv, grip)
     local q = quality or 1
     local qCost = BlacksmithConfig.QUALITY_COST[q] or BlacksmithConfig.QUALITY_COST[1]
-    local billCount = BlacksmithConfig.getRefineBillCount(refineCount)
     local lv = equipLv or 1
-    local cost = math.floor((qCost.refBase + billCount * qCost.refInc) * (1 + lv * qCost.refLvScale))
+    local cost = math.floor(qCost.refBase * (1 + lv * qCost.refLvScale))
     if grip == "twohand" then
         cost = cost * 2
     end
     return cost
 end
 
---- 锁定词缀后的洗练精粹消耗（lockedCount > 0 时整体 ×REFINE_LOCK_COST_MULT）
+--- 锁定词缀后的洗练精粹消耗（每锁定一条累乘一次 REFINE_LOCK_COST_MULT）
 ---@param cost number
 ---@param lockedCount number|nil
 ---@return number
 function BlacksmithConfig.applyRefineLockCostMult(cost, lockedCount)
-    if lockedCount and lockedCount > 0 then
-        return math.floor(cost * BlacksmithConfig.REFINE_LOCK_COST_MULT + 0.5)
+    local n = math.floor(tonumber(lockedCount) or 0)
+    if n <= 0 then
+        return cost
     end
-    return cost
+    return math.floor(cost * (BlacksmithConfig.REFINE_LOCK_COST_MULT ^ n) + 0.5)
 end
 
---- 分解时累计洗练精粹消耗（用于 50% 返还，次数同样封顶）
+--- 分解时累计洗练精粹消耗（用于 50% 返还；固定单价 × 次数）
 ---@param quality number
 ---@param equipLv number|nil
 ---@param refineCount number|nil
 ---@param grip string|nil
 ---@return number
 function BlacksmithConfig.calcTotalRefineSpent(quality, equipLv, refineCount, grip)
-    local q = quality or 1
-    local qCost = BlacksmithConfig.QUALITY_COST[q] or BlacksmithConfig.QUALITY_COST[1]
     local paidCount = BlacksmithConfig.clampRefineCount(refineCount)
     if paidCount <= 0 then return 0 end
-    local lvMult = 1 + (equipLv or 1) * qCost.refLvScale
-    local gripMult = (grip == "twohand") and 2 or 1
-    local totalSpent = 0
-    for i = 0, paidCount - 1 do
-        totalSpent = totalSpent + math.floor((qCost.refBase + i * qCost.refInc) * lvMult) * gripMult
-    end
-    return totalSpent
+    return BlacksmithConfig.calcRefineEssenceCost(quality, equipLv, grip) * paidCount
+end
+
+-- ======================== 自动分解共享判定 ========================
+-- 掉落入口（击杀/在线挂机/离线/单机）统一走这里，保证行为一致。
+-- 语义与 UI 文案一致：至少启用一个维度；已启用维度全部满足才分解；0 = 该维度不限制。
+
+--- 是否应对该掉落执行自动分解
+---@param settings table|nil 装备模块 settings（autoQuality/autoLevel）
+---@param quality number 掉落品质
+---@param level number 掉落等级
+---@return boolean
+function BlacksmithConfig.shouldAutoDecompose(settings, quality, level)
+    if not settings then return false end
+    local autoQuality = tonumber(settings.autoQuality) or 0
+    local autoLevel = tonumber(settings.autoLevel) or 0
+    if autoQuality <= 0 and autoLevel <= 0 then return false end
+    local q = tonumber(quality) or 1
+    local lv = tonumber(level) or 1
+    local qualityMatch = autoQuality <= 0 or q <= autoQuality
+    local levelMatch = autoLevel <= 0 or lv <= autoLevel
+    return qualityMatch and levelMatch
+end
+
+--- 自动分解单件精粹产出（与手动分解基础公式一致）
+---@param quality number
+---@param level number
+---@return integer
+function BlacksmithConfig.calcAutoDecomposeEssence(quality, level)
+    local qCost = BlacksmithConfig.QUALITY_COST[quality] or BlacksmithConfig.QUALITY_COST[1]
+    return math.floor(qCost.decBase * (1 + (level or 1) * qCost.decScale))
+end
+
+--- 在 lootbox 模块上记录自动分解瞬态通知（随下次 MarkDirty 推送给客户端展示）
+---@param lootboxData table lootbox 模块数据引用
+---@param quality number
+---@param level number
+---@param essence integer
+function BlacksmithConfig.recordAutoDecompose(lootboxData, quality, level, essence)
+    lootboxData.autoDecomposeNotice = lootboxData.autoDecomposeNotice or { seq = 0, count = 0, essence = 0 }
+    local notice = lootboxData.autoDecomposeNotice
+    notice.seq = (notice.seq or 0) + 1
+    notice.count = (notice.count or 0) + 1
+    notice.essence = (notice.essence or 0) + essence
+    notice.quality = quality
+    notice.level = level
+    notice.time = os.time()  -- 客户端据此忽略登录时读到的过期通知
 end
 
 return BlacksmithConfig

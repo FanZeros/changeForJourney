@@ -2,7 +2,7 @@
 -- ============================================================================
 -- KeywordText - 可点击关键词富文本组件（NanoVG）
 -- ----------------------------------------------------------------------------
--- 把描述文本按 KeywordConfig 词表拆段：普通文本用常规色，关键词用金色+下划线，
+-- 把描述文本按 KeywordConfig 词表拆段：普通文本用常规色，关键词用金色高亮（无下划线），
 -- 点击关键词弹出解释气泡（风格与属性说明气泡 attrTip 一致）。
 --
 -- 用法：
@@ -17,13 +17,16 @@
 --   kt:clear()           -- 面板关闭/切角色时清状态
 --
 -- 说明：
---   * 排版结果按 text+width+fontSize 缓存，同一段文本只测量一次。
---   * 换行规则与 attrTip 一致：逐字符测量；关键词作为整体不拆行。
---   * 测量依赖全局 nvgTextBounds；无引擎环境（回归测试）时退化为等宽估算。
+--   * 完整句子先本地化再分段，所有片段用raw绘制/测量，未知整句不局部翻译。
+--   * 英文普通词和关键词尽量整体折行；超宽关键词按UTF-8拆行且片段共用原key。
+--   * 缓存包含语言/源文/宽度/字号；切换语言或测量上下文使缓存与交互失效。
+--   * 无绘制上下文（回归测试）时只布局/生成热区，使用确定性宽度估算。
 -- ============================================================================
 
 local KW = require("config.KeywordConfig")
 local GameConfig = require("config.GameConfig")
+local I18n = require("core.I18n")
+local KeywordLocale = require("core.I18nKeywords")
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
@@ -36,7 +39,6 @@ KeywordText.__index = KeywordText
 local KEYWORD_COLOR   = { 0xFF, 0xD7, 0x6E }           -- 金色（与 attrTip 标题一致）
 local KEYWORD_HOVER   = { 0xFF, 0xEF, 0x9E }           -- 悬停更亮
 local DEFAULT_TEXT    = { 0xE8, 0xDC, 0xC8 }           -- 常规描述色
-local UNDERLINE_W     = 2
 
 local POP_PAD_X       = 24
 local POP_PAD_TOP     = 16
@@ -55,21 +57,19 @@ local CACHE_LIMIT     = 16   -- 布局缓存条数上限
 
 -- ======================== 测量工具 ========================
 
---- 单行文本宽度测量；无引擎环境（测试）时用等宽估算兜底
+--- 单行显示文本测量；必须绕过I18n全局hook，避免分段后发生二次翻译。
 ---@param vg any
 ---@param fontSize number
 ---@param s string
 ---@return number
 local function measure(vg, fontSize, s)
     if vg and nvgTextBounds then
+        nvgFontFace(vg, "sans")
         nvgFontSize(vg, fontSize)
-        ---@diagnostic disable-next-line: missing-parameter
-        local w = nvgTextBounds(vg, 0, 0, s)
-        ---@type number
-        local result = tonumber(w) or 0
-        return result
+        local w = I18n.displayBounds(vg, 0, 0, s, nil)
+        return tonumber(w) or 0
     end
-    -- 测试兜底：CJK 约 1em，ASCII 约 0.55em
+    -- 无绘制上下文时的确定性估算；不调用任何引擎绘制API。
     local w = 0
     for _, c in utf8.codes(s) do
         w = w + (c > 0x7F and fontSize or fontSize * 0.55)
@@ -79,21 +79,42 @@ end
 
 -- ======================== 文本拆段 ========================
 
---- 把文本拆成 { text=..., keyword=bool } 段序列；关键词长词优先
----@param text string
----@return table[]
-local function splitSegments(text)
-    local keys = KW.sortedKeys()
-    local segs = {}
-    local plain = {}
+--- 英文匹配使用完整词边界，不能把Echoist/echoing/前缀变量认成Echo。
+--- Latin扩展、连字符和下划线视为单词组成部分；日/韩助词不阻挡机制名。
+local function isLatinWord(c)
+    if not c then return false end
+    return (c >= 48 and c <= 57) or (c >= 65 and c <= 90)
+        or (c >= 97 and c <= 122) or c == 95 or c == 45
+        or (c >= 0xC0 and c <= 0x2AF) or (c >= 0x300 and c <= 0x36F)
+end
+
+local function hasWordBoundary(text, at, count, term)
+    if not term:find("[A-Za-z]", 1) then return true end
+    local before = utf8.offset(text, -1, at)
+    local left = before and utf8.codepoint(text, before) or nil
+    local after = at + count
+    local right = after <= #text and utf8.codepoint(text, after) or nil
+    return not isLatinWord(left) and not isLatinWord(right)
+end
+
+--- 先翻完整句子再拆显示段；未知全文保持原文，绝不逐子串翻译。
+--- 原key仅保存在key字段；text始终是实际显示文本，不反推翻译后的业务key。
+---@param source string
+---@return table[], string
+local function splitSegments(source)
+    local lang = I18n.get()
+    local text = KeywordLocale.lookup(source, lang) or I18n.lookup(source)
+    local terms = KeywordLocale.terms(lang)
+    local lowered = text:lower()
+    local segs, plain = {}, {}
     local i = 1
-    local n = #text
-    while i <= n do
-        local matched = nil
-        for _, k in ipairs(keys) do
-            local kl = #k
-            if i + kl - 1 <= n and text:sub(i, i + kl - 1) == k then
-                matched = k
+    while i <= #text do
+        local matched = nil ---@type table|nil
+        for _, term in ipairs(terms) do
+            local count = #term.text
+            if lowered:sub(i, i + count - 1) == term.text:lower()
+                and hasWordBoundary(text, i, count, term.text) then
+                matched = term
                 break
             end
         end
@@ -102,119 +123,153 @@ local function splitSegments(text)
                 segs[#segs + 1] = { text = table.concat(plain), keyword = false }
                 plain = {}
             end
-            segs[#segs + 1] = { text = matched, keyword = true }
-            i = i + #matched
+            local count = #matched.text
+            segs[#segs + 1] = { text = text:sub(i, i + count - 1), keyword = true, key = matched.key }
+            i = i + count
         else
-            -- 逐 codepoint 推进，避免半个汉字
-            local c = utf8.codepoint(text, i) --[[@as integer?]]
-            if not c then
-                i = i + 1
-            else
-                local ch = utf8.char(c)
-                plain[#plain + 1] = ch
-                i = i + #ch  -- 按 UTF-8 字节数推进
-            end
+            local nextIndex = utf8.offset(text, 2, i) or (#text + 1)
+            plain[#plain + 1] = text:sub(i, nextIndex - 1)
+            i = nextIndex
         end
     end
-    if #plain > 0 then
-        segs[#segs + 1] = { text = table.concat(plain), keyword = false }
-    end
-    return segs
+    if #plain > 0 then segs[#segs + 1] = { text = table.concat(plain), keyword = false } end
+    return segs, text
 end
 
 -- ======================== 排版（缓存） ========================
 
---- 排版为行列表：lines[i] = { pieces = { {text, keyword, w} }, width }
+--- UTF-8安全折行：英文普通词尽量整体换行，超宽词/关键词才逐codepoint拆行。
+--- 显式换行、空行和全部显示字符保持；拆开的关键词片段共享原业务key。
 ---@param vg any
----@param text string
+---@param segs table[]
 ---@param width number
 ---@param fontSize number
 ---@return table
-local function layoutText(vg, text, width, fontSize)
-    local segs = splitSegments(text)
+local function layoutSegments(vg, segs, width, fontSize)
+    width = math.max(1, width)
     local lines = {}
     local cur = { pieces = {}, width = 0 }
-    lines[#lines + 1] = cur
-
+    lines[1] = cur
     local function pushLine()
         cur = { pieces = {}, width = 0 }
         lines[#lines + 1] = cur
     end
-
-    local function addPiece(s, isKw)
+    local function addPiece(s, key)
+        if s == "" then return end
         local w = measure(vg, fontSize, s)
-        cur.pieces[#cur.pieces + 1] = { text = s, keyword = isKw, w = w }
+        cur.pieces[#cur.pieces + 1] = { text = s, keyword = key ~= nil, key = key, w = w }
         cur.width = cur.width + w
     end
-
+    local function addToken(token, key)
+        local w = measure(vg, fontSize, token)
+        if cur.width > 0 and cur.width + w > width then pushLine() end
+        if w <= width then
+            addPiece(token, key)
+            return
+        end
+        -- 超宽token只沿UTF-8边界拆分；单个字形大于width时仍保留该字形。
+        local buf = ""
+        for _, code in utf8.codes(token) do
+            local ch = utf8.char(code)
+            local candidate = buf .. ch
+            if buf ~= "" and cur.width + measure(vg, fontSize, candidate) > width then
+                addPiece(buf, key)
+                pushLine()
+                buf = ch
+            else
+                buf = candidate
+            end
+        end
+        addPiece(buf, key)
+    end
     for _, seg in ipairs(segs) do
         if seg.keyword then
-            local kwW = measure(vg, fontSize, seg.text)
-            if cur.width > 0 and cur.width + kwW > width then
-                pushLine()
-            end
-            addPiece(seg.text, true)
+            addToken(seg.text, seg.key)
         else
-            -- 普通段逐字符折行；支持显式 \n
-            -- ⚠️ bufW 单独累计：addPiece 会把整段测量宽度并入 cur.width，
-            --    若累计期就写 cur.width 会双重计入 → 提前折行且行宽虚高
-            local s = seg.text
-            local i, n = 1, #s
-            local buf = {}
-            local bufW = 0
-            local function flushBuf()
-                if #buf > 0 then
-                    addPiece(table.concat(buf), false)
-                    buf = {}
-                    bufW = 0
-                end
+            local word = ""
+            local function flushWord()
+                if word ~= "" then addToken(word, nil); word = "" end
             end
-            while i <= n do
-                local c = utf8.codepoint(s, i) --[[@as integer?]]
-                if not c then break end
-                local ch = utf8.char(c)
-                i = i + #ch
-                if ch == "\n" then
-                    flushBuf()
-                    pushLine()
+            for _, code in utf8.codes(seg.text) do
+                local ch = utf8.char(code)
+                if isLatinWord(code) or ch == "'" then
+                    word = word .. ch
                 else
-                    local chW = measure(vg, fontSize, ch)
-                    if cur.width + bufW + chW > width and (cur.width > 0 or bufW > 0) then
-                        flushBuf()
-                        pushLine()
-                    end
-                    buf[#buf + 1] = ch
-                    bufW = bufW + chW
+                    flushWord()
+                    if ch == "\n" then pushLine() else addToken(ch, nil) end
                 end
             end
-            flushBuf()
+            flushWord()
         end
     end
+    -- 合并相邻同类型片段，以完整实际绘制片段重新测宽，避免kerning造成热区漂移。
+    for _, line in ipairs(lines) do
+        local pieces = {}
+        for _, piece in ipairs(line.pieces) do
+            local previous = pieces[#pieces]
+            if previous and not previous.keyword and not piece.keyword then
+                -- 普通文字可以合并，关键词不合并（相邻不同出现次数仍有独立热区）。
+                local combined = previous.text .. piece.text
+                local combinedW = measure(vg, fontSize, combined)
+                if line.width - previous.w - piece.w + combinedW <= width then
+                    line.width = line.width - previous.w - piece.w + combinedW
+                    previous.text, previous.w = combined, combinedW
+                else
+                    pieces[#pieces + 1] = piece
+                end
+            else
+                pieces[#pieces + 1] = piece
+            end
+        end
+        line.pieces = pieces
+    end
     return { lines = lines, fontSize = fontSize }
+end
+
+local function layoutText(vg, text, width, fontSize)
+    local segs, display = splitSegments(text)
+    local layout = layoutSegments(vg, segs, width, fontSize)
+    layout.displayText = display
+    return layout
 end
 
 -- ======================== 实例 ========================
 
 ---@class KeywordTextInstance
----@field popup table|nil { name, desc, cx, topY }
+---@field popup table|nil { key, name, desc, cx, topY }
 ---@field hoverIdx integer|nil
----@field hotspots table[] 当前帧的关键词热区 { x1, y1, x2, y2, name }
+---@field hotspots table[] 当前显示帧热区 { x1,y1,x2,y2,name=原key,text=显示片段 }
 
 --- 创建实例
 ---@param opts table|nil { textColor = {r,g,b}, popupMaxW = number }
 ---@return KeywordTextInstance
 function KeywordText.new(opts)
     local self = setmetatable({}, KeywordText)
-    opts = opts or {}
-    self.textColor  = opts.textColor or DEFAULT_TEXT
-    self.popupMaxW  = opts.popupMaxW or POP_MAX_W
-    self.popup      = nil
-    self.hoverIdx   = nil
-    self.hotspots   = {}
-    self._cache     = {}
-    self._cacheKeys = {}
-    self._lastLayoutH = 0
+    self:init(opts or {})
     return self --[[@as KeywordTextInstance]]
+end
+
+function KeywordText:init(opts)
+    self.textColor = opts.textColor or DEFAULT_TEXT
+    self.popupMaxW = opts.popupMaxW or POP_MAX_W
+    self.popup = nil ---@type table|nil
+    self.hoverIdx = nil ---@type integer|nil
+    self.hotspots = {}
+    self._cache = {} ---@type table<string, table>
+    self._cacheKeys = {} ---@type string[]
+    self._lastLayoutH = 0
+    self._layoutLanguage = ""
+    self._layoutContext = nil ---@type any
+    self._drawIndex = 0
+    self._drawIdentities = {} ---@type string[]
+end
+
+function KeywordText:_syncLanguage()
+    local language = I18n.get()
+    if self._layoutLanguage ~= language then
+        self._layoutLanguage = language
+        self:clear()
+    end
 end
 
 --- 取（或构建）排版缓存
@@ -224,7 +279,16 @@ end
 ---@param fontSize number
 ---@return table
 function KeywordText:_layout(vg, text, width, fontSize)
-    local key = text .. "\0" .. width .. "\0" .. fontSize
+    self:_syncLanguage()
+    -- nil估算布局不能污染后续真实NanoVG字体测量；切换上下文时也必须失效。
+    if self._layoutContext ~= vg then
+        self._layoutContext = vg
+        self._cache, self._cacheKeys = {}, {}
+        self.hotspots, self.hoverIdx, self.popup = {}, nil, nil
+        self._drawIndex = 0
+        self._drawIdentities = {}
+    end
+    local key = I18n.get() .. "\0" .. text .. "\0" .. width .. "\0" .. fontSize
     local hit = self._cache[key]
     if hit then return hit end
     local layout = layoutText(vg, text, width, fontSize)
@@ -246,14 +310,28 @@ end
 ---@param fontSize number
 ---@param lineHeight number|nil 行高（默认 fontSize*1.35）
 ---@param centerCX number|nil 传入则每行以该 X 居中（x 仅参与折行宽度计算）
+---@param keepHotspots boolean|nil 为 true 时追加热区（同一帧多段文本共用一个实例）
 ---@return number 总高度
-function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX)
+function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX, keepHotspots)
     local layout = self:_layout(vg, text, width, fontSize)
     local lh = lineHeight or math.floor(fontSize * 1.35 + 0.5)
 
-    self.hotspots = {}
-    nvgFontFace(vg, "sans")
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+    if not keepHotspots then
+        self.hotspots = {}
+        self._drawIndex = 0
+    end
+    -- 同帧多段各自保存身份，避免总览首尾段每帧互相清掉弹窗。
+    self._drawIndex = self._drawIndex + 1
+    local identity = table.concat({ text, tostring(x), tostring(y), tostring(width),
+        tostring(fontSize), tostring(lh), tostring(centerCX) }, "\0")
+    if identity ~= self._drawIdentities[self._drawIndex] then
+        self._drawIdentities[self._drawIndex] = identity
+        self.popup, self.hoverIdx = nil, nil
+    end
+    if vg then
+        nvgFontFace(vg, "sans")
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+    end
 
     for li, line in ipairs(layout.lines) do
         local ly = y + (li - 1) * lh
@@ -264,25 +342,19 @@ function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX)
         for _, p in ipairs(line.pieces) do
             if p.keyword then
                 local idx = #self.hotspots + 1
-                self.hotspots[idx] = { x1 = cx, y1 = ly, x2 = cx + p.w, y2 = ly + fontSize, name = p.text }
-                local hovered = (self.hoverIdx == idx)
-                local col = hovered and KEYWORD_HOVER or KEYWORD_COLOR
-                nvgFontSize(vg, fontSize)
-                nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
-                nvgText(vg, cx, ly, p.text, nil)
-                -- 下划线
-                local uy = ly + fontSize - 2
-                nvgBeginPath(vg)
-                nvgMoveTo(vg, cx, uy)
-                nvgLineTo(vg, cx + p.w, uy)
-                nvgStrokeColor(vg, nvgRGBA(col[1], col[2], col[3], hovered and 255 or 190))
-                nvgStrokeWidth(vg, UNDERLINE_W)
-                nvgStroke(vg)
-            else
+                self.hotspots[idx] = { x1 = cx, y1 = ly, x2 = cx + p.w, y2 = ly + fontSize,
+                    name = p.key, key = p.key, text = p.text }
+                if vg then
+                    local col = self.hoverIdx == idx and KEYWORD_HOVER or KEYWORD_COLOR
+                    nvgFontSize(vg, fontSize)
+                    nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
+                    I18n.displayText(vg, cx, ly, p.text, nil)
+                end
+            elseif vg then
                 nvgFontSize(vg, fontSize)
                 local tc = self.textColor
                 nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], tc[4] or 255))
-                nvgText(vg, cx, ly, p.text, nil)
+                I18n.displayText(vg, cx, ly, p.text, nil)
             end
             cx = cx + p.w
         end
@@ -290,6 +362,16 @@ function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX)
 
     self._lastLayoutH = #layout.lines * lh
     return self._lastLayoutH
+end
+
+--- 帧末移除已经不再绘制的尾段，防止旧热区对应的弹窗继续显示。
+function KeywordText:_finishDraw()
+    if #self._drawIdentities > self._drawIndex then
+        for i = #self._drawIdentities, self._drawIndex + 1, -1 do
+            self._drawIdentities[i] = nil
+        end
+        self.popup, self.hoverIdx = nil, nil
+    end
 end
 
 --- 最近一次 draw 的总高度
@@ -340,6 +422,7 @@ end
 ---@param dx number
 ---@param dy number
 function KeywordText:setHover(dx, dy)
+    self:_syncLanguage()
     local mx, my = self:_map(dx, dy)
     local hitIdx = nil
     for i, h in ipairs(self.hotspots) do
@@ -354,6 +437,7 @@ end
 --- 弹窗是否打开
 ---@return boolean
 function KeywordText:isOpen()
+    self:_syncLanguage()
     return self.popup ~= nil
 end
 
@@ -367,6 +451,11 @@ function KeywordText:clear()
     self.popup = nil
     self.hoverIdx = nil
     self.hotspots = {}
+    self._cache = {}
+    self._cacheKeys = {}
+    self._lastLayoutH = 0
+    self._drawIndex = 0
+    self._drawIdentities = {} ---@type string[]
 end
 
 --- 点击输入。返回 true 表示消费事件。
@@ -375,6 +464,7 @@ end
 ---@param dy number
 ---@return boolean
 function KeywordText:handleInput(dx, dy)
+    self:_syncLanguage()
     if self.popup then
         self.popup = nil
         return true
@@ -382,7 +472,7 @@ function KeywordText:handleInput(dx, dy)
     local mx, my = self:_map(dx, dy)
     for _, h in ipairs(self.hotspots) do
         if mx >= h.x1 and mx <= h.x2 and my >= h.y1 - 4 and my <= h.y2 + 4 then
-            local def = KW.get(h.name)
+            local def = KeywordLocale.get(h.name, I18n.get())
             if def then
                 local anchorCX = (h.x1 + h.x2) * 0.5
                 local anchorY  = h.y1
@@ -390,6 +480,7 @@ function KeywordText:handleInput(dx, dy)
                     anchorCX, anchorY = self._popupXform(anchorCX, anchorY)
                 end
                 self.popup = {
+                    key   = h.name,
                     name  = def.title,
                     desc  = def.desc,
                     cx    = anchorCX,
@@ -408,40 +499,20 @@ end
 --- 帧末最上层绘制弹窗（风格与 attrTip 一致）
 ---@param vg any
 function KeywordText:drawPopup(vg)
+    self:_syncLanguage()
+    self:_finishDraw()
     local tip = self.popup
-    if not tip then return end
+    if not tip or not vg then return end
 
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, POP_NAME_FONT)
-    ---@diagnostic disable-next-line: missing-parameter
-    local nameW = nvgTextBounds(vg, 0, 0, tip.name)
-
-    -- 说明文本折行（弹窗内不再嵌套关键词，纯文本渲染）
-    nvgFontSize(vg, POP_DESC_FONT)
-    local descWrapW = self.popupMaxW - POP_PAD_X * 2
-    local descRows = {}
-    for para in (tip.desc .. "\n"):gmatch("([^\n]*)\n") do
-        local cur = ""
-        if para == "" then
-            descRows[#descRows + 1] = ""
-        else
-            for _, codepoint in utf8.codes(para) do
-                local ch = utf8.char(codepoint)
-                local testLine = cur .. ch
-                if measure(vg, POP_DESC_FONT, testLine) > descWrapW and cur ~= "" then
-                    descRows[#descRows + 1] = cur
-                    cur = ch
-                else
-                    cur = testLine
-                end
-            end
-            if cur ~= "" then descRows[#descRows + 1] = cur end
-        end
-    end
-
-    local descH = #descRows * POP_LINE_H
-    local tipW = math.min(math.max(nameW + POP_PAD_X * 2, self.popupMaxW), self.popupMaxW)
-    local tipH = POP_PAD_TOP + POP_NAME_FONT + 8 + descH + POP_PAD_BOT
+    local tipW = math.max(POP_PAD_X * 2 + 1, math.min(self.popupMaxW, DESIGN_W - 32))
+    local wrapW = tipW - POP_PAD_X * 2
+    -- 标题和正文都按显示文本排版，不再走全局lookup，也不嵌套关键词。
+    local titleLayout = layoutSegments(vg, { { text = tip.name } }, wrapW, POP_NAME_FONT)
+    local descLayout = layoutSegments(vg, { { text = tip.desc } }, wrapW, POP_DESC_FONT)
+    local titleH = #titleLayout.lines * (POP_NAME_FONT + 4)
+    local descH = #descLayout.lines * POP_LINE_H
+    local tipH = POP_PAD_TOP + titleH + 8 + descH + POP_PAD_BOT
 
     -- 默认弹在热区上方；空间不够翻到下方
     local arrowTipY = tip.topY - POP_GAP
@@ -495,13 +566,23 @@ function KeywordText:drawPopup(vg)
     nvgFontSize(vg, POP_NAME_FONT)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
     nvgFillColor(vg, nvgRGBA(0xFF, 0xD7, 0x6E, 255))
-    nvgText(vg, tipLeft + POP_PAD_X, tipTopY + POP_PAD_TOP, tip.name, nil)
+    for i, line in ipairs(titleLayout.lines) do
+        local cx = tipLeft + POP_PAD_X
+        for _, piece in ipairs(line.pieces) do
+            I18n.displayText(vg, cx, tipTopY + POP_PAD_TOP + (i - 1) * (POP_NAME_FONT + 4), piece.text, nil)
+            cx = cx + piece.w
+        end
+    end
 
     nvgFontSize(vg, POP_DESC_FONT)
     nvgFillColor(vg, nvgRGBA(0xE8, 0xE0, 0xD4, 255))
-    local textY = tipTopY + POP_PAD_TOP + POP_NAME_FONT + 8
-    for i, line in ipairs(descRows) do
-        nvgText(vg, tipLeft + POP_PAD_X, textY + (i - 1) * POP_LINE_H, line, nil)
+    local textY = tipTopY + POP_PAD_TOP + titleH + 8
+    for i, line in ipairs(descLayout.lines) do
+        local cx = tipLeft + POP_PAD_X
+        for _, piece in ipairs(line.pieces) do
+            I18n.displayText(vg, cx, textY + (i - 1) * POP_LINE_H, piece.text, nil)
+            cx = cx + piece.w
+        end
     end
 end
 

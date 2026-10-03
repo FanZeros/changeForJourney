@@ -5,8 +5,20 @@
 
 local DarkIcon = require("core.DarkIcon")
 local BattleDraw = require("ui.battle.scene.BattleDraw")
+local I18n = require("core.I18n")
 
 local M = {}
+
+-- 译文在既有单行槽位内缩字号，避免改动弹窗布局或按钮命中区域。
+local function fittedFontSize(vg, text, fontSize, maxWidth)
+    nvgSave(vg)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, fontSize)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    local width = nvgTextBounds(vg, 0, 0, text)
+    nvgRestore(vg)
+    return width > maxWidth and (fontSize * maxWidth / width) or fontSize
+end
 
 local DESIGN_W = 1080
 
@@ -107,36 +119,47 @@ function M.draw(vg, currentStageId, getStageConfig)
 
     DarkIcon.drawNine(vg, "panel", CDL.BG_CX - CDL.BG_W * 0.5, CDL.BG_CY - CDL.BG_H * 0.5, CDL.BG_W, CDL.BG_H, { titleH = 40 })
 
-    BattleDraw.drawTextStroke(vg, CDL.BG_CX, CDL.TITLE_CY, "⚠ 终焉神殿", CDL.TITLE_FONT,
+    -- 标记不参与原名匹配；所有译文都是本帧显示变量。
+    local titleText = "\u{26a0} " .. I18n.lookup("终焉神殿")
+    local textWidth = CDL.BG_W - 120
+    BattleDraw.drawTextStroke(vg, CDL.BG_CX, CDL.TITLE_CY, titleText,
+        fittedFontSize(vg, titleText, CDL.TITLE_FONT, textWidth),
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 255, 255, CDL.TITLE_SW,
         { strokeColor = { CDL.TITLE_SR, CDL.TITLE_SG, CDL.TITLE_SB } })
 
+    local subText = I18n.lookup("确认进入终焉神殿？")
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, CDL.SUB_FONT)
+    nvgFontSize(vg, fittedFontSize(vg, subText, CDL.SUB_FONT, textWidth))
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
-    nvgText(vg, CDL.BG_CX, CDL.SUB_CY, "确认进入终焉神殿？", nil)
+    nvgText(vg, CDL.BG_CX, CDL.SUB_CY, subText, nil)
 
-    nvgFontSize(vg, CDL.LINE_FONT)
+    local line1Text = I18n.lookup("进入后将无法退出")
+    local line2Text = I18n.format("通关后进入「%s」轮回", I18n.difficulty(nextDiffName))
+    nvgFontSize(vg, fittedFontSize(vg, line1Text, CDL.LINE_FONT, textWidth))
     nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-    nvgText(vg, CDL.BG_CX, CDL.LINE1_CY, "进入后将无法退出", nil)
-    nvgText(vg, CDL.BG_CX, CDL.LINE2_CY, "通关后进入「" .. nextDiffName .. "」轮回", nil)
+    nvgText(vg, CDL.BG_CX, CDL.LINE1_CY, line1Text, nil)
+    nvgFontSize(vg, fittedFontSize(vg, line2Text, CDL.LINE_FONT, textWidth))
+    nvgText(vg, CDL.BG_CX, CDL.LINE2_CY, line2Text, nil)
 
-    nvgFontSize(vg, CDL.LINE3_FONT)
+    local line3Text = I18n.lookup("（挑战失败将回退到上一关）")
+    nvgFontSize(vg, fittedFontSize(vg, line3Text, CDL.LINE3_FONT, textWidth))
     nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 200))
-    nvgText(vg, CDL.BG_CX, CDL.LINE3_CY, "（挑战失败将回退到上一关）", nil)
+    nvgText(vg, CDL.BG_CX, CDL.LINE3_CY, line3Text, nil)
 
+    local okText = I18n.lookup("进入")
     DarkIcon.drawNine(vg, "btn", CDL.OK_CX - CDL.OK_W * 0.5, CDL.OK_CY - CDL.OK_H * 0.5, CDL.OK_W, CDL.OK_H, { accent = "green" })
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, CDL.OK_FONT)
+    nvgFontFace(vg, "sans"); nvgFontSize(vg, fittedFontSize(vg, okText, CDL.OK_FONT, CDL.OK_W - 60))
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(CDL.OK_TR, CDL.OK_TG, CDL.OK_TB, 255))
-    nvgText(vg, CDL.OK_CX, CDL.OK_CY, "进入", nil)
+    nvgText(vg, CDL.OK_CX, CDL.OK_CY, okText, nil)
 
+    local cancelText = I18n.lookup("取消")
     DarkIcon.drawNine(vg, "btn", CDL.CANCEL_CX - CDL.CANCEL_W * 0.5, CDL.CANCEL_CY - CDL.CANCEL_H * 0.5, CDL.CANCEL_W, CDL.CANCEL_H, { accent = "green" })
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, CDL.CANCEL_FONT)
+    nvgFontFace(vg, "sans"); nvgFontSize(vg, fittedFontSize(vg, cancelText, CDL.CANCEL_FONT, CDL.CANCEL_W - 60))
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(CDL.CANCEL_TR, CDL.CANCEL_TG, CDL.CANCEL_TB, 255))
-    nvgText(vg, CDL.CANCEL_CX, CDL.CANCEL_CY, "取消", nil)
+    nvgText(vg, CDL.CANCEL_CX, CDL.CANCEL_CY, cancelText, nil)
 
     nvgRestore(vg)
 end

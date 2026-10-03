@@ -11,7 +11,7 @@ local Protocol      = require("shared.Protocol")
 local DungeonIdleConfig = require("config.DungeonIdleConfig")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local ExpTable      = require("config.ExpTable")
-local GameState     = require("core.GameState")
+local ClientDispatcher = require("runtime.ClientDispatcher")
 
 local DungeonPage = {}
 
@@ -454,10 +454,9 @@ end
 ---@return string|nil err
 local function collectTowerTeams()
     local CharacterPanel = require("ui.character.panel.CharacterPanel")
-    local needLv = ExpTable.getTeamUnlockLevel(3) or 20
-    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     if unlocked < 3 then
-        return nil, "三军攻坚需远征等级" .. tostring(needLv) .. "解锁三队"
+        return nil, "三军攻坚需三队解锁（" .. ExpTable.getTeamUnlockText(3) .. "队伍3）"
     end
     local teams = {}
     for t = 1, 3 do
@@ -492,7 +491,6 @@ function DungeonPage.init(vg)
     end
 
     -- 详情面板图片
-    imgDetailBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgFloorBg1  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_1.png", 0)
     imgFloorBg2  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_2.png", 0)
     imgFloorBg3  = nvgCreateImage(vg, "image/通用图标/ICON_LXBJ_3.png", 0)
@@ -854,7 +852,7 @@ function DungeonPage.drawDetailPanel(vg)
     local dailyText = "今日次数:" .. dailyRemain .. "/" .. dailyMax
     local dtR, dtG, dtB = DT.DAILY_R, DT.DAILY_G, DT.DAILY_B
     if dailyRemain <= 0 then
-        dtR, dtG, dtB = 0x8d, 0x5f, 0x41  -- 耗尽=棕色
+        dtR, dtG, dtB = 0x8b, 0x95, 0xa5  -- 耗尽=灰蓝色
     end
     DrawUtil.drawTextStroke(vg, DT.DAILY_X, DT.DAILY_Y, dailyText,
         DT.DAILY_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -873,7 +871,7 @@ function DungeonPage.drawDetailPanel(vg)
     nvgFontSize(vg, DT.SWEEP_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     if sweepDisabled then
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
     else
         nvgFillColor(vg, nvgRGBA(0, 0, 0, 191))
     end
@@ -912,9 +910,10 @@ function DungeonPage.drawDetailPanel(vg)
         accumSec = accumSec or 0
         local timeTxt
         local maxHourText = getIdleMaxHourText()
+        local capDays = math.floor((DungeonIdleConfig.HARD_CAP_SEC or 604800) / 86400)
         if DungeonIdleConfig.getFillRatio(accumSec) >= 1 then
             local tailPct = math.floor((DungeonIdleConfig.TAIL_RATIO or 0.5) * 100 + 0.5)
-            timeTxt = "超过" .. maxHourText .. "，超出按" .. tailPct .. "%"
+            timeTxt = "超过" .. maxHourText .. "按" .. tailPct .. "%，" .. capDays .. "日封顶"
         else
             timeTxt = "挂机 " .. formatIdleDuration(accumSec) .. "/" .. maxHourText
         end

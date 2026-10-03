@@ -1,818 +1,414 @@
--- ============================================================================
--- TutorialManager.lua — 新手引导状态管理 + 蒙层渲染
--- 职责:
---   1. 跟踪当前激活的引导组和步骤
---   2. 提供 registerHotspot() 供各 UI 模块每帧注册热点坐标
---   3. 渲染半透明蒙层 + 高亮镂空 + 引导气泡文字
---   4. 检查advanceOn 事件（click_highlight / enter_panel_*），推进步骤
---   5. 提供 isBuildingUnlocked(key) 替代 ExpTable.isBuildingUnlocked
--- ============================================================================
-
-local TutorialConfig     = require("config.TutorialConfig")
-local DrawUtil           = require("core.DrawUtil")
-local GameConfig         = require("config.GameConfig")
-local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
-
+-- 新手引导：流程与真实动作完成解耦，热点保留面板坐标，横屏覆盖层使用屏幕逻辑坐标。
+local Config = require("config.TutorialConfig")
+local DrawUtil = require("core.DrawUtil")
+local GameConfig = require("config.GameConfig")
+local Scenario = require("ui.story.ScenarioDialogue")
 local TutorialManager = {}
 
--- ======================== 设计常量 ========================
-local DW = GameConfig.Design.WIDTH   -- 1080
-local DH = GameConfig.Design.HEIGHT  -- 2400
-
--- ======================== 蒙层/气泡 UI 参数 ========================
-local MASK_ALPHA       = 180      -- 蒙层不透明度 0-255
-local HIGHLIGHT_PAD    = 20       -- 高亮区域外扩像素
-local HIGHLIGHT_RADIUS = 16       -- 高亮圆角半径
-local BUBBLE_W         = 760      -- 气泡宽度
-local BUBBLE_H         = 140      -- 气泡高度（最小，随文本增长）
-local BUBBLE_RADIUS    = 24       -- 气泡圆角半径
-local BUBBLE_BG        = { 255, 248, 220, 255 } -- 暖米白色 RGBA（完全不透明，避免蒙层透出导致偏暗）
-local BUBBLE_TEXT_COLOR = { 0x28, 0x14, 0x08 }  -- 深棕色（加深以保证对比度）
-local BUBBLE_FONT_SIZE = 40
-local BUBBLE_LINE_HEIGHT = 1.4
-local BUBBLE_PADDING   = 40      -- 气泡内边距
-local ARROW_SIZE       = 28      -- 气泡小三角尺寸
-
--- 高亮闪烁参数
-local PULSE_SPEED   = 2.0    -- Hz
-local PULSE_MIN_A   = 80     -- 最小不透明度 0-255
-local PULSE_MAX_A   = 200    -- 最大不透明度 0-255
-
--- 跳过按钮参数
-local SKIP_BTN_W       = 300     -- 跳过按钮宽度
-local SKIP_BTN_H       = 96      -- 跳过按钮高度
-local SKIP_BTN_RADIUS  = 20      -- 跳过按钮圆角半径
-local SKIP_BTN_CX      = 540     -- 跳过按钮中心 X（屏幕底部居中）
-local SKIP_BTN_CY      = 2100    -- 跳过按钮中心 Y（底部留出游戏区域）
-local SKIP_BTN_FONT    = 40      -- 跳过按钮字体大小
-local SKIP_BTN_DELAY   = 1.0     -- 引导开始后延迟显示跳过按钮（秒）
-
--- 入场/离场动画时长（秒）
-local ANIM_IN_DUR      = 0.25    -- 引导蒙层入场动画时长
-local ANIM_OUT_DUR     = 0.2     -- 引导蒙层离场动画时长
--- ======================== 内部状态========================
 ---@type any
-local vg_           = nil   -- NanoVG context
-
---- 当前激活的引导组ID（nil = 无引导）
----@type number|nil
-local activeGroup_  = nil
-
---- 当前步骤索引（1-based）
----@type number
-local activeStep_   = 1
-
---- 入场/离场动画状态
---- "in" | "out" | "idle"
----@type string
-local animState_    = "idle"
-
----@type number
-local animT_        = 0
-
---- 离场完成后要启动的下一组（nil=引导结束）
----@type number|nil
-local nextGroup_    = nil
-
---- 全局计时（用于闪烁动画）
----@type number
-local elapsed_      = 0
-
---- 当前引导组启动后经过的时间（用于跳过按钮延迟显示）
----@type number
-local groupElapsed_ = 0
-
---- 本帧注册的热点表: key →{ cx, cy, w, h }
---- 每帧开始时清空，由各 UI 模块的 draw() 时调用 registerHotspot 填充
----@type table<string, {cx:number, cy:number, w:number, h:number}>
-local hotspots_     = {}
-
---- PlayerStore 引用（由 init 注入，避免循环依赖）
----@type table|nil
-local playerStore_  = nil
-
---- 上次各建筑面板解锁状态（用于变化检测，防止每帧刷屏）
----@type table<string, boolean>
+local vg_ = nil
+---@type any
+local store_ = nil
+---@type function|nil
+local persist_ = nil
+local activeGroup_ = nil ---@type number|nil
+local activeStep_ = 1
+local elapsed_, groupElapsed_, animT_ = 0, 0, 0
+local animState_ = "idle"
+local hotspots_ = {}
+local completed_ = {}
+local queue_ = {}
+local queuedRecruitStarted_ = false
+local newHeroId_ = nil ---@type number|nil
+local restored_ = false
+local resumePending_ = false
 local lastUnlockState_ = {}
+local overlay_ = { w = GameConfig.Design.WIDTH, h = GameConfig.Design.HEIGHT, hs = nil }
+local overlayLayout_ = nil ---@type any
+local stepElapsed_ = 0
+local recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
+local RECOVERY_INTERVAL, PAGE_SETTLE_TIME = 0.5, 0.45
+local triggerQuiet_ = 0
+local TRIGGER_QUIET_TIME = 0.25
+---@type fun()?
+local prepareResume
 
--- ======================== 内部工具 ========================
-
-local function easeOutCubic(t)
-    t = math.max(0, math.min(1, t))
-    return 1 - (1 - t) ^ 3
+local function resetTarget()
+    resumePending_ = true
+    recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
+    overlayLayout_, overlay_.hs = nil, nil
 end
 
---- 检查指定情景ID 是否已被领取
----@param scenarioId number
----@return boolean
-local function isScenarioClaimed(scenarioId)
-    if not playerStore_ then return false end
-    local sessionData = playerStore_.Get("session")
-    if not sessionData then return false end
-    local claimed = sessionData.claimedScenarios
-    if not claimed then return false end
-    -- 同时检查字符串 key 和数字 key（防止 cjson 反序列化后 key 类型不一致）
-    local byStr = claimed[tostring(scenarioId)] == true
-    local byNum = claimed[scenarioId] == true
-    return byStr or byNum
+local function step()
+    local group = activeGroup_ and Config[activeGroup_]
+    return group and group.steps and group.steps[activeStep_]
 end
-
---- 检查引导组是否已完成（任意一个 triggerScenario 已领取）
----@param groupId number
----@return boolean
--- excludeScenarioId: 排除的 id 在 claimed 检查（用于 startGroup 时避免把触发 id 误判为已完成）
-local function isGroupCompleted(groupId, excludeScenarioId)
-    local group = TutorialConfig[groupId]
-    if not group or not group.triggerScenarios then return true end
-    for _, sid in ipairs(group.triggerScenarios) do
-        if sid ~= excludeScenarioId and isScenarioClaimed(sid) then
-            return true
-        end
-    end
-    return false
+local function snapshot()
+    local done, pending = {}, {}
+    for k, v in pairs(completed_) do done[tostring(k)] = v end
+    for i, v in ipairs(queue_) do pending[i] = v end
+    return { version = 1, completed = done, queue = pending,
+        group = activeGroup_, step = activeStep_, newHeroId = newHeroId_ }
 end
-
---- 获取当前步骤配置
----@return table|nil
-local function getCurrentStep()
-    if not activeGroup_ then return nil end
-    local group = TutorialConfig[activeGroup_]
-    if not group or not group.steps then return nil end
-    return group.steps[activeStep_]
+local function save()
+    if persist_ then persist_(snapshot()) end
 end
-
---- 处理引导组完成时的解锁逻辑（面板 Tab 解锁）
----@param groupId number
-local function applyGroupUnlocks(groupId)
-    local group = TutorialConfig[groupId]
+local function claimed(sid)
+    local session = store_ and store_.Get("session")
+    local claims = session and session.claimedScenarios
+    return claims and (claims[sid] == true or claims[tostring(sid)] == true) or false
+end
+local function isGroupCompleted(id)
+    return completed_[tostring(id)] == true or not Config[id] or Config[id].disabled == true
+end
+local function applyUnlocks(id)
+    local group = Config[id]
     if not group or not group.unlocks then return end
-
-    local ok, BN = pcall(require, "ui.hud.BottomNav")
-    if not ok then return end
-
-    local PANEL_TO_TAB = {
-        character_panel = 1,
-        town_panel      = 4,
-        dungeon_panel   = 5,
-    }
-    for _, uk in ipairs(group.unlocks) do
-        local tabIdx = PANEL_TO_TAB[uk]
-        if tabIdx then
-            BN.setTabLocked(tabIdx, false)
-            print("[TutorialManager] unlocked panel " .. uk .. " → tab " .. tabIdx)
-        end
+    local BN = require("ui.hud.BottomNav")
+    local tabs = { character_panel = 1, town_panel = 4, dungeon_panel = 5 }
+    for _, key in ipairs(group.unlocks) do
+        if tabs[key] then BN.setTabLocked(tabs[key], false) end
     end
 end
-
---- 内部：推进到下一步；若已是最后一步则触发离场动画
-local function advanceStep()
-    if not activeGroup_ then return end
-    local group = TutorialConfig[activeGroup_]
-    if not group then return end
-
-    activeStep_ = activeStep_ + 1
-    if activeStep_ > #group.steps then
-        -- 本组全部步骤完成 → 离场动画
-        animState_ = "out"
-        animT_     = 0
-        nextGroup_ = nil
-        print("[TutorialManager] group " .. activeGroup_ .. " completed, fading out")
-    else
-        print("[TutorialManager] advance to step " .. activeStep_)
-    end
-end
-
--- ======================== 公开接口 ========================
-
---- 初始化（在 Client Start() 中调用一次）
----@param vg any NanoVG context
----@param playerStoreRef table  PlayerStore 模块引用（注入，避免循环 require）
-function TutorialManager.init(vg, playerStoreRef)
-    vg_ = vg
-    playerStore_ = playerStoreRef
-    -- 重置解锁状态变化检测缓存，确保本局首次调用时总能打出日志
-    lastUnlockState_ = {}
-    print("[TM][init] playerStore_=" .. tostring(playerStoreRef ~= nil)
-        .. " battleData=" .. tostring(playerStoreRef and playerStoreRef.Get("battle") ~= nil)
-        .. " maxStageId=" .. tostring(playerStoreRef and playerStoreRef.Get("battle") and playerStoreRef.Get("battle").maxStageId or "N/A"))
-
-    -- playerStore 注入后，重新刷新 BottomNav 的解锁状态
-    -- （BottomNav.init 先于 TutorialManager.init 执行，所以需要在此补刷一次）
-    local okBN, BN = pcall(require, "ui.hud.BottomNav")
-    if okBN then
-        print("[TM][init] calling refreshUnlockState...")
-        BN.refreshUnlockState()
-        print("[TM][init] refreshUnlockState done")
-    end
-end
-
---- 检查引导组是否已完成（供外部查询）
----@param groupId number
----@return boolean
-function TutorialManager.isGroupCompleted(groupId)
-    return isGroupCompleted(groupId)
-end
-
--- ======================== maxStageId 解锁阈值========================
--- stageId 格式：chapter * 100 + stage，如 101=1-1，204=2-4
--- "大于阈值"意为玩家已通关对应关卡，该功能即可解锁
--- maxStageId 记录的是通关后进入的【下一关】ID（见 BattleService.lua）
--- 例：通关 1-1 → nextId=102 → maxStageId=102；通关 1-4 → maxStageId=105
-local PANEL_UNLOCK_THRESHOLDS = {
-    character_panel = 101,   -- 通关 1-1 后解锁（maxStageId 变为 102 > 101）
-    town_panel      = 105,   -- 通关 1-5 后解锁（maxStageId 变为下章首关 > 105）
-}
-
-local BUILDING_UNLOCK_THRESHOLDS = {
-    -- church 和 tavern 默认开放，不设阈值
-    -- 解锁判定：maxStageId > threshold（maxStageId = 下一个 stageId）
-    smith   = 204,   -- 首通 2-4 后解锁（通 2-4 → maxStageId=205 > 204）
-}
-
---- 获取当前最远通关 stageId（0 表示未通关任何关卡）
----@return number
-local function getMaxStageId()
-    if not playerStore_ then return 0 end
-    local battleData = playerStore_.Get("battle")
-    return battleData and tonumber(battleData.maxStageId) or 0
-end
-
---- 获取建筑的关卡解锁阈值（stageId = chapter*100+stage）
---- 未配置阈值的建筑（church/tavern 等引导解锁）返回 nil
----@param buildingKey string  如 "smith"
----@return number|nil
-function TutorialManager.getBuildingUnlockStageId(buildingKey)
-    return BUILDING_UNLOCK_THRESHOLDS[buildingKey]
-end
-
---- 检查某建筑是否已被解锁（基于 maxStageId 和 clearedStages 判断）
---- 解锁条件（满足任一即可）：
----   1. maxStageId > threshold（玩家已前进到下一关）
----   2. clearedStages[threshold] == true（玩家已通关阈值关卡，但尚未点击前进）
----@param buildingKey string  如 "church" / "tavern" / "smith"
----@return boolean
-function TutorialManager.isBuildingUnlocked(buildingKey)
-    local threshold = BUILDING_UNLOCK_THRESHOLDS[buildingKey]
-    if not threshold then
-        -- 未配置阈值的建筑默认解锁
-        return true
-    end
-
-    local battleData = playerStore_ and playerStore_.Get("battle")
-    if not battleData then return false end
-
-    local maxSId = tonumber(battleData.maxStageId) or 0
-    local result = maxSId > threshold
-
-    -- 补充判定：阈值关卡已被标记通关（解决玩家通关后未点前进按钮的情况）
-    if not result then
-        local clearedStages = battleData.clearedStages
-        if clearedStages and clearedStages[tostring(threshold)] then
-            result = true
-        end
-    end
-
-    -- 变化检测：只在状态改变时打日志
-    local stateKey = "building:" .. buildingKey
-    if lastUnlockState_[stateKey] ~= result then
-        lastUnlockState_[stateKey] = result
-        if result then
-            print("[TM][isBuildingUnlocked] →" .. buildingKey
-                .. " -> UNLOCKED maxStageId=" .. maxSId .. " threshold=" .. threshold)
-        else
-            print("[TM][isBuildingUnlocked] →" .. buildingKey
-                .. " -> LOCKED maxStageId=" .. maxSId .. " threshold=" .. threshold)
-        end
-    end
-
-    return result
-end
-
---- 检查某面板 key 是否已解锁（基于 maxStageId 和 clearedStages 判断）
----@param panelKey string  如 "character_panel" / "town_panel"
----@return boolean
-function TutorialManager.isPanelUnlocked(panelKey)
-    local threshold = PANEL_UNLOCK_THRESHOLDS[panelKey]
-    if not threshold then
-        return false
-    end
-
-    local battleData = playerStore_ and playerStore_.Get("battle")
-    if not battleData then return false end
-
-    local maxSId = tonumber(battleData.maxStageId) or 0
-    local result = maxSId > threshold
-
-    -- 补充判定：阈值关卡已被标记通关（与 isBuildingUnlocked 保持一致）
-    if not result then
-        local clearedStages = battleData.clearedStages
-        if clearedStages and clearedStages[tostring(threshold)] then
-            result = true
-        end
-    end
-
-    -- 变化检测：只在状态改变时打日志
-    local stateKey = "panel:" .. panelKey
-    if lastUnlockState_[stateKey] ~= result then
-        lastUnlockState_[stateKey] = result
-        if result then
-            print("[TM][isPanelUnlocked] →" .. panelKey
-                .. " -> UNLOCKED maxStageId=" .. maxSId .. " threshold=" .. threshold)
-        else
-            print("[TM][isPanelUnlocked] →" .. panelKey
-                .. " -> LOCKED maxStageId=" .. maxSId .. " threshold=" .. threshold)
-        end
-    end
-
-    return result
-end
-
---- 注册热点坐标（UI 模块的 draw() 时调用）
---- 本帧注册的坐标供蒙层渲染和点击检测使用
----@param key string 热点标识 key（与 TutorialConfig 中的 highlight 对应）
----@param cx number  中心 X（设计坐标）
----@param cy number  中心 Y（设计坐标）
----@param w  number  宽度
----@param h  number  高度
----@param panelId? string 注册方所在面板 'left'|'right'|'modal'|nil(=center)
----   绘制时 boot 按此选择 Viewport 变换，热点坐标与面板内容自动对齐
-function TutorialManager.registerHotspot(key, cx, cy, w, h, panelId)
-    -- [横屏接线 0928] 存原始 design 坐标 + 所属面板；绘制时由 boot 用对应面板的
-    -- Viewport 变换包裹，热点坐标即与该面板内容对齐（修复此前 base 单位偏移混入 design 坐标的错位）
-    -- panel: 'left'/'right'=侧栏面板 viewport；'center'=中栏面板 viewport；
-    --        'modal'=全窗 letterbox（副本页等 HorizonDrawPageModal 绘制的元素）
-    local panel = panelId
-    if panel ~= 'left' and panel ~= 'right' and panel ~= 'modal' then panel = 'center' end
-    hotspots_[key] = { cx = cx, cy = cy, w = w, h = h, panel = panel }
-end
-
---- 清空本帧热点缓存（在每帧 update 开始时调用，确保热点数据是最新帧注册的）
-function TutorialManager.clearHotspots()
-    hotspots_ = {}
-end
-
---- 判断当前是否有引导激活
----@return boolean
-function TutorialManager.isActive()
-    return activeGroup_ ~= nil
-end
-
---- 获取当前引导步骤的高亮 key（供 UI 判断是否禁止特定交互）
----@return string|nil
-function TutorialManager.getCurrentHighlight()
-    if not activeGroup_ then return nil end
-    local group = TutorialConfig[activeGroup_]
-    if not group or not group.steps then return nil end
-    local step = group.steps[activeStep_]
-    return step and step.highlight or nil
-end
-
---- 获取当前步骤高亮热点所属面板（'left'|'right'|'center'）
---- boot 据此选择 Viewport 变换绘制引导层，使 design 坐标热点与面板内容对齐
----@return string panelId
-function TutorialManager.getHotspotPanel()
-    local step = getCurrentStep()
-    if not step or not step.highlight then return 'center' end
-    local hs = hotspots_[step.highlight]
-    if hs and hs.panel then return hs.panel end
-    return 'center'
-end
-
---- 设置新获得英雄的 ID（用于 character_new_hero 热点定位）
-local newHeroId_ = nil
----@param heroId number|nil
-function TutorialManager.setNewHeroId(heroId)
-    newHeroId_ = heroId
-end
-
---- 获取新获得英雄的 ID
----@return number|nil
-function TutorialManager.getNewHeroId()
-    return newHeroId_
-end
-
---- 启动指定引导组
----@param groupId number
--- triggerScenarioId: 触发本次启动的情景 ID（排除在完成检查之外，避免"刚 claim 就被认为已完成"）
-local function startGroupInternal(groupId, triggerScenarioId)
-    local group = TutorialConfig[groupId]
-    if not group then return end
-    -- [横屏接线 0928] 跳过已禁用引导组（依赖的 UI 在去多人化重构中删除，触发会永久卡屏）
-    if group.disabled then
-        print("[TutorialManager] group " .. tostring(groupId) .. " disabled, skip")
-        return
-    end
-    -- 排除触发 id 本身，检查是否还有其他 triggerScenario 被 claimed（说明真的完成过了）
-    if isGroupCompleted(groupId, triggerScenarioId) then
-        return
-    end
-    if activeGroup_ == groupId then return end
-
-    activeGroup_ = groupId
-    activeStep_  = 1
-    animState_   = "in"
-    animT_       = 0
-    groupElapsed_ = 0
-    applyGroupUnlocks(groupId)
-end
-
---- 启动指定引导组（外部直接调用，不排除任何 scenario）
----@param groupId number
-function TutorialManager.startGroup(groupId)
-    startGroupInternal(groupId, nil)
-end
-
---- 在情景对话 claim 后调用，检查是否需要启动对应引导组
----@param scenarioId number 刚被领取的情景 ID
-function TutorialManager.onScenarioClaimed(scenarioId)
-    local groupId = TutorialConfig.SCENARIO_TO_GROUP[scenarioId]
-    if not groupId then return end
-    if activeGroup_ == groupId then return end
-    startGroupInternal(groupId, scenarioId)
-end
-
---- 通知引导事件（用于 enter_panel_* 类型的步骤推进）
----@param eventName string  如 "enter_panel_character" / "enter_panel_town" 等
-function TutorialManager.notifyEvent(eventName)
+local function finish()
     if not activeGroup_ or animState_ == "out" then return end
-    local step = getCurrentStep()
-    if not step then return end
-    if step.advanceOn == eventName then
-        advanceStep()
+    local finishedGroup = activeGroup_
+    completed_[tostring(finishedGroup)] = true
+    print("[TutorialManager] 引导完成: " .. finishedGroup)
+    animState_, animT_, triggerQuiet_ = "out", 0, 0
+    save()
+    if finishedGroup == 6 then
+        -- 古树教学已自动收起教堂；完成后接离场对话，再触发酒馆教学，避免丢失入口。
+        require("systems.StoryPlayer").onPlace("church", "leave")
     end
 end
-
---- 强制跳过当前引导组（跳过按钮触发）
-function TutorialManager.skipCurrentGroup()
-    if not activeGroup_ then return end
-    print("[TutorialManager] force skipping group " .. activeGroup_)
-    -- 触发离场动画
-    animState_ = "out"
-    animT_     = 0
-    nextGroup_ = nil
+local function advance()
+    local current = step()
+    if not current or animState_ == "out" then return end
+    activeStep_, stepElapsed_ = activeStep_ + 1, 0
+    resetTarget()
+    if not step() then finish()
+    else print("[TutorialManager] 步骤: " .. activeGroup_ .. "/" .. activeStep_); save() end
 end
 
---- 处理点击事件（由 ClientInput 的 dispatchDragEndAndTap 中调用）
---- 返回 true 表示点击已被引导层消费（外部应阻止穿透）
---- 返回 false 表示引导层未消费（正常透传）
----@param dx number 设计坐标 X
----@param dy number 设计坐标 Y
----@return boolean consumed
-function TutorialManager.handleClick(dx, dy, pid)
-    if not activeGroup_ or animState_ == "out" then return false end
+function TutorialManager.getPreferredCharacterTab()
+    if activeGroup_ == 1 or activeGroup_ == 2 then return "equip" end
+    return nil
+end
+function TutorialManager.getCurrentGroup() return activeGroup_ end
+function TutorialManager.getCurrentHighlight()
+    local current = step()
+    return current and current.highlight or nil
+end
+function TutorialManager.isActive() return activeGroup_ ~= nil end
+function TutorialManager.isGroupCompleted(id) return isGroupCompleted(id) end
+function TutorialManager.setNewHeroId(id)
+    newHeroId_ = tonumber(id)
+    save()
+end
+function TutorialManager.getNewHeroId() return newHeroId_ end
+function TutorialManager.getProgress() return snapshot() end
+function TutorialManager.clearHotspots() hotspots_ = {} end
+function TutorialManager.registerHotspot(key, cx, cy, w, h, panel)
+    if w <= 0 or h <= 0 then return end
+    hotspots_[key] = { cx = cx, cy = cy, w = w, h = h,
+        panel = (panel == "left" or panel == "right" or panel == "modal") and panel or "center" }
+end
+function TutorialManager.getCurrentHotspot()
+    local current = step()
+    return current and current.highlight and hotspots_[current.highlight] or nil
+end
+function TutorialManager.getHotspotPanel()
+    local hs = TutorialManager.getCurrentHotspot()
+    return hs and hs.panel or "center"
+end
 
-    -- [横屏接线 0928] 计算当前高亮热点所属面板
-    local step0 = getCurrentStep()
-    local hsPanel = 'center'
-    if step0 and step0.highlight then
-        local hs0 = hotspots_[step0.highlight]
-        if hs0 and hs0.panel then hsPanel = hs0.panel end
+local function validNewHero()
+    local heroes = store_ and store_.Get("heroes")
+    local roster = heroes and heroes.roster
+    return newHeroId_ and roster and (roster[newHeroId_] or roster[tostring(newHeroId_)]) ~= nil
+end
+local function start(id)
+    if isGroupCompleted(id) then return end
+    if id == 9 and not validNewHero() then
+        -- 全重复招募/旧档无目标时，不要求玩家拖一个不存在的角色。
+        completed_[tostring(id)] = true
+        print("[TutorialManager] 无新增角色，略过上阵教学")
+        save()
+        return
     end
-    -- 面板门控仅对 click_highlight 步骤生效：
-    -- enter_panel_*/drag/gacha 类步骤必须放行（玩家要点页签/拖角色才能触发事件）
-    local gatePanel = step0 and step0.advanceOn == "click_highlight" and not step0.invisible
-    if gatePanel and pid and pid ~= hsPanel and pid ~= 'modal' then
-        return true
-    end
-
-    -- 跳过按钮点击检测：目标面板内或 letterbox 上下文（tri/modal，坐标由 boot 转换）
-    local skipCtxOk = (not pid) or pid == hsPanel or pid == 'tri' or pid == 'modal'
-    if skipCtxOk and groupElapsed_ >= SKIP_BTN_DELAY then
-        if DrawUtil.hitTest(dx, dy, SKIP_BTN_CX, SKIP_BTN_CY, SKIP_BTN_W, SKIP_BTN_H) then
-            print("[TutorialManager] skip button clicked, skipping group " .. tostring(activeGroup_))
-            TutorialManager.skipCurrentGroup()
-            return true
+    if id == 9 and validNewHero() then
+        local panel = require("ui.character.panel.CharacterPanel")
+        local layout = panel.getTeamSlotLayout and panel.getTeamSlotLayout(1)
+        if layout and tonumber(layout[3]) == newHeroId_ then
+            completed_["9"] = true
+            print("[TutorialManager] 新角色已在队一槽位3，免重复上阵教学")
+            save()
+            return
         end
     end
+    activeGroup_, activeStep_ = id, 1
+    animState_, animT_, groupElapsed_, stepElapsed_ = "in", 0, 0, 0
+    resetTarget()
+    applyUnlocks(id)
+    print("[TutorialManager] 启动引导: " .. id)
+    save()
+end
+local function queueGroup(id)
+    if isGroupCompleted(id) or activeGroup_ == id then return end
+    for _, queued in ipairs(queue_) do if queued == id then return end end
+    queue_[#queue_ + 1] = id
+    triggerQuiet_ = 0
+    save()
+end
+function TutorialManager.startGroup(id)
+    if isGroupCompleted(id) or activeGroup_ == id then return end
+    if activeGroup_ then queueGroup(id)
+    else start(id) end
+end
+function TutorialManager.onScenarioClaimed(sid)
+    if sid == 23 then
+        local follow = require("systems.StoryPlayer").followOf(sid)
+        -- 城镇23尚有本角色分支对话时，等24/25/26真实播完领奖；旧档已播仍兼容。
+        if follow and not claimed(follow) then return end
+    end
+    local id = Config.SCENARIO_TO_GROUP[sid]
+    if id then queueGroup(id) end
+end
 
-    local step = getCurrentStep()
-    if not step then return false end
-
-    -- invisible 步骤：不绘制 UI 也不拦截点击，仅等待 notifyEvent 触发
-    if step.invisible then return false end
-
-    -- click_highlight 类型：点击高亮区域推进，点击其他区域拦截
-    if step.advanceOn == "click_highlight" then
-        local hs = hotspots_[step.highlight]
-        if hs then
-            local padW = hs.w + HIGHLIGHT_PAD * 2
-            local padH = hs.h + HIGHLIGHT_PAD * 2
-            if DrawUtil.hitTest(dx, dy, hs.cx, hs.cy, padW, padH) then
-                advanceStep()
-                return false  -- 允许点击穿透到实际 UI（让按钮正常响应）
+--- 未消费的新剧情不能抢正在进行的操作教学；组结束后按原队列继续。
+function TutorialManager.canPlayPendingStory()
+    return activeGroup_ == nil or animState_ == "out"
+end
+function TutorialManager.notifyEvent(name)
+    if activeGroup_ ~= 8 then
+        local queuedRecruit = false
+        for _, id in ipairs(queue_) do if id == 8 then queuedRecruit = true; break end end
+        if queuedRecruit then
+            if name == "gacha10_started" then queuedRecruitStarted_ = true
+            elseif name == "gacha10_failed" then queuedRecruitStarted_ = false
+            elseif name == "gacha10_complete" and queuedRecruitStarted_ then
+                queuedRecruitStarted_ = false
+                completed_["8"] = true
+                for i = #queue_, 1, -1 do if queue_[i] == 8 then table.remove(queue_, i) end end
+                print("[TutorialManager] 待触发阶段已完成真实十连，免重复教学")
+                save()
             end
         end
-        -- 点击非高亮区域 → 拦截，不穿透
+    end
+    if not activeGroup_ or animState_ == "out" then return end
+    if name == "gacha10_failed" and activeGroup_ == 8 then
+        activeStep_, stepElapsed_ = 1, 0
+        resetTarget()
+        save()
+        print("[TutorialManager] 招募未完成，恢复可重试步骤")
+        return
+    end
+    local current = step()
+    if current and current.advanceOn == name then advance() end
+end
+function TutorialManager.skipCurrentGroup() finish() end
+
+-- 当前覆盖层被更高优先级窗口挡住时，输入同样让位，不能只隐藏绘制。
+function TutorialManager.isInputActive()
+    if not activeGroup_ or animState_ == "out" or Scenario.isActive() then return false end
+    local RP = require("ui.hud.popup.RewardPopup")
+    if RP.isOpen and RP.isOpen() then return false end
+    return not require("ui.tutorial.TutorialPageRecovery").isBlocked()
+end
+function TutorialManager.setOverlayRect(w, h, hs)
+    local target = hs
+    if settleRemaining_ > 0 then target = nil end
+    overlay_ = { w = w, h = h, hs = target }
+    local Overlay = require("ui.tutorial.TutorialOverlay")
+    overlayLayout_ = Overlay.layout(w, h, target)
+end
+local function hit(rect, x, y)
+    return rect and DrawUtil.hitTest(x, y, rect.cx, rect.cy, rect.w, rect.h)
+end
+function TutorialManager.canPointerStart(x, y)
+    if not TutorialManager.isInputActive() then return true end
+    if groupElapsed_ >= 1 and overlayLayout_ and hit(overlayLayout_.skip, x, y) then return false end
+    if prepareResume then prepareResume() end
+    if settleRemaining_ > 0 then return false end
+    local current = step()
+    if not current or current.invisible or current.advanceOn ~= "click_highlight" then return true end
+    -- 真正按钮边界才放行；光环外扩不是按钮可点击区域。
+    return hit(overlay_.hs, x, y) == true
+end
+function TutorialManager.handleScreenClick(x, y, blockedPress)
+    if not TutorialManager.isInputActive() then return false end
+    if groupElapsed_ >= 1 and overlayLayout_ and hit(overlayLayout_.skip, x, y) then
+        finish()
         return true
     end
-
-    -- enter_panel_* 类型：不拦截点击（等 notifyEvent 触发）
+    if blockedPress then return true end
+    local current = step()
+    if not current or current.invisible then return false end
+    if settleRemaining_ > 0 then return true end
+    if current.advanceOn == "click_highlight" then
+        if hit(overlay_.hs, x, y) then advance(); return false end
+        return true
+    end
+    return false
+end
+-- 兼容面板设计坐标入口，横屏宿主使用 handleScreenClick。
+function TutorialManager.handleClick(x, y, pid)
+    if not TutorialManager.isInputActive() then return false end
+    local current = step()
+    local hs = TutorialManager.getCurrentHotspot()
+    if current and current.advanceOn == "click_highlight" and hs and pid and pid ~= hs.panel then return true end
+    if current and current.advanceOn == "click_highlight" then
+        if hit(hs, x, y) then advance(); return false end
+        return true
+    end
     return false
 end
 
---- 每帧更新
----@param dt number 帧间隔
+function TutorialManager.init(vg, playerStore, persist)
+    vg_, store_, persist_ = vg, playerStore, persist
+    activeGroup_, activeStep_, newHeroId_ = nil, 1, nil
+    completed_, queue_, hotspots_, lastUnlockState_ = {}, {}, {}, {}
+    queuedRecruitStarted_ = false
+    animState_, animT_, groupElapsed_, stepElapsed_ = "idle", 0, 0, 0
+    overlayLayout_, restored_, resumePending_ = nil, false, false
+    overlay_.hs = nil
+    recoveryElapsed_, settleRemaining_, missingElapsed_, triggerQuiet_ = 0, 0, 0, 0
+    print("[TutorialManager] 初始化，等待会话数据恢复")
+end
+local function restore()
+    if activeGroup_ then restored_ = true; return end
+    local session = store_ and store_.Get("session")
+    if not session then return end
+    restored_ = true
+    local progress = session.tutorialProgress
+    if type(progress) == "table" and progress.version == 1 then
+        for k, v in pairs(progress.completed or {}) do completed_[tostring(k)] = v == true end
+        for _, id in ipairs(progress.queue or {}) do if Config[id] then queue_[#queue_ + 1] = id end end
+        newHeroId_ = tonumber(progress.newHeroId)
+        local id = tonumber(progress.group)
+        if completed_["6"] and not isGroupCompleted(7) then
+            -- 上次完成古树后可能尚未来得及消费内存离场剧情；去重补回，不重复发奖。
+            require("systems.StoryPlayer").onPlace("church", "leave")
+        end
+        if id and not isGroupCompleted(id) then
+            -- 重启后目标页面已关闭，重新走本组入口；不重播剧情或重复发奖励。
+            start(id)
+            resumePending_ = true
+        end
+    else
+        -- 旧存档迁移：已有剧情视为历史完成；首轮装备教学没有武器时补回，避免旧断线永久丢失。
+        for id, group in pairs(Config) do
+            if type(id) == "number" and group.triggerScenarios then
+                for _, sid in ipairs(group.triggerScenarios) do
+                    if claimed(sid) then completed_[tostring(id)] = true; break end
+                end
+            end
+        end
+        local equipment = store_.Get("equipment")
+        local hasWeapon = false
+        for _, slots in pairs(equipment and equipment.equipped or {}) do
+            if type(slots) == "table" and slots.weapon then hasWeapon = true end
+        end
+        if completed_["1"] and not hasWeapon then
+            completed_["1"] = nil
+            start(1)
+            resumePending_ = true
+        end
+        save()
+    end
+end
+prepareResume = function()
+    local current = step()
+    if not current or current.invisible then resumePending_ = false; return end
+    local Recovery = require("ui.tutorial.TutorialPageRecovery")
+    if Recovery.isBlocked() then return end
+    local initial = resumePending_
+    resumePending_, recoveryElapsed_ = false, 0
+    if activeGroup_ == 15 and activeStep_ == 1 then
+        -- 横屏已移除旧页签，沿用直接打开副本列表的恢复契约。
+        activeStep_, stepElapsed_ = 2, 0
+        current = step()
+        save()
+    end
+    if current and Recovery.prepare(vg_, store_, current.highlight, newHeroId_, initial) then
+        settleRemaining_, missingElapsed_ = PAGE_SETTLE_TIME, 0
+        hotspots_, overlay_.hs, overlayLayout_ = {}, nil, nil
+    end
+end
 function TutorialManager.update(dt)
     elapsed_ = elapsed_ + dt
-
-    if not activeGroup_ then return end
-
-    -- 跳过按钮延迟计时
-    groupElapsed_ = groupElapsed_ + dt
-
-    -- 动画推进
-    if animState_ ~= "idle" then
-        animT_ = animT_ + dt
-        local dur = animState_ == "in" and ANIM_IN_DUR or ANIM_OUT_DUR
-        if animT_ >= dur then
-            animT_ = dur
-            if animState_ == "out" then
-                -- 离场完成，清除状态
-                activeGroup_ = nil
-                activeStep_  = 1
-                animState_   = "idle"
-                animT_       = 0
-                if nextGroup_ then
-                    TutorialManager.startGroup(nextGroup_)
-                    nextGroup_ = nil
-                end
-            else
-                animState_ = "idle"
-                animT_     = 0
+    if not restored_ then restore() end
+    if not activeGroup_ then
+        local Recovery = require("ui.tutorial.TutorialPageRecovery")
+        local reward = require("ui.hud.popup.RewardPopup")
+        local tavern = require("ui.tavern.TavernPage")
+        local blocked = Scenario.isActive() or reward.isOpen() or Recovery.isBlocked()
+            or (tavern.isRecruitBusy and tavern.isRecruitBusy())
+        if #queue_ == 0 or blocked then triggerQuiet_ = 0
+        else
+            triggerQuiet_ = triggerQuiet_ + dt
+            if triggerQuiet_ >= TRIGGER_QUIET_TIME then
+                triggerQuiet_ = 0
+                start(table.remove(queue_, 1))
             end
         end
-    end
-end
-
--- ======================== 渲染 ========================
-
---- 绘制半透明蒙层，带高亮镂空（偶奇规则）
----@param hs {cx:number, cy:number, w:number, h:number}|nil 高亮热点（nil = 无镂空）
----@param alpha number 蒙层整体透明度 0~1
-local function drawMask(hs, alpha)
-    local maskA = math.floor(MASK_ALPHA * alpha + 0.5)
-    if maskA <= 0 then return end
-
-    nvgSave(vg_)
-    -- 使用偶奇填充规则实现镂空
-    nvgBeginPath(vg_)
-    -- 外层：全屏矩形（顺时针）
-    nvgRect(vg_, 0, 0, DW, DH)
-
-    -- 内层镂空：高亮区域圆角矩形（逆时针，偶奇规则下会镂空）
-    if hs then
-        local hx = hs.cx - hs.w * 0.5 - HIGHLIGHT_PAD
-        local hy = hs.cy - hs.h * 0.5 - HIGHLIGHT_PAD
-        local hw = hs.w + HIGHLIGHT_PAD * 2
-        local hh = hs.h + HIGHLIGHT_PAD * 2
-        -- 逆时针方向绘制圆角矩形（顺时针 + pathWinding 逆向）
-        nvgPathWinding(vg_, NVG_HOLE)
-        nvgRoundedRect(vg_, hx, hy, hw, hh, HIGHLIGHT_RADIUS)
-    end
-
-    nvgFillColor(vg_, nvgRGBA(0, 0, 0, maskA))
-    nvgFill(vg_)
-    nvgRestore(vg_)
-end
-
---- 绘制高亮区域边框（闪烁脉冲效果）
----@param hs {cx:number, cy:number, w:number, h:number}
----@param alpha number 整体透明度 0~1
-local function drawHighlightBorder(hs, alpha)
-    local pulse = PULSE_MIN_A + (PULSE_MAX_A - PULSE_MIN_A)
-        * (0.5 + 0.5 * math.sin(elapsed_ * PULSE_SPEED * math.pi * 2))
-    local borderA = math.floor(pulse * alpha + 0.5)
-    if borderA <= 0 then return end
-
-    local hx = hs.cx - hs.w * 0.5 - HIGHLIGHT_PAD
-    local hy = hs.cy - hs.h * 0.5 - HIGHLIGHT_PAD
-    local hw = hs.w + HIGHLIGHT_PAD * 2
-    local hh = hs.h + HIGHLIGHT_PAD * 2
-
-    nvgBeginPath(vg_)
-    nvgRoundedRect(vg_, hx, hy, hw, hh, HIGHLIGHT_RADIUS)
-    nvgStrokeColor(vg_, nvgRGBA(255, 220, 60, borderA))
-    nvgStrokeWidth(vg_, 4)
-    nvgStroke(vg_)
-end
-
---- 绘制引导气泡（文字 + 背景 + 小三角指向高亮区域）
----@param text string
----@param hs {cx:number, cy:number, w:number, h:number}|nil
----@param alpha number 整体透明度 0~1
-local function drawBubble(text, hs, alpha)
-    if not text or text == "" then return end
-    if alpha <= 0.01 then return end
-
-    -- 计算气泡位置：优先在高亮区域上方，空间不足则在下方
-    -- 同时避免与跳过按钮区域重叠
-    local bubbleCX = DW * 0.5
-    local bubbleCY
-
-    local MARGIN = 20  -- 气泡与高亮区域间距
-    -- 跳过按钮占用区域（需要避开）
-    local skipBtnTop = SKIP_BTN_CY - SKIP_BTN_H * 0.5 - 20
-    local skipBtnBot = SKIP_BTN_CY + SKIP_BTN_H * 0.5 + 20
-
-    if hs then
-        local hsTop = hs.cy - hs.h * 0.5 - HIGHLIGHT_PAD
-        local hsBot = hs.cy + hs.h * 0.5 + HIGHLIGHT_PAD
-
-        -- 计算上方和下方候选位置
-        local aboveCY = hsTop - ARROW_SIZE - BUBBLE_H * 0.5 - MARGIN
-        local belowCY = hsBot + ARROW_SIZE + BUBBLE_H * 0.5 + MARGIN
-
-        -- 检查各方向是否可行
-        local aboveOk = aboveCY - BUBBLE_H * 0.5 > 60
-        local belowOk = belowCY + BUBBLE_H * 0.5 < skipBtnTop
-
-        if aboveOk then
-            bubbleCY = aboveCY
-        elseif belowOk then
-            bubbleCY = belowCY
-        else
-            -- 上下都有冲突，选择上方并贴近顶部安全区
-            bubbleCY = math.max(BUBBLE_H * 0.5 + 60, aboveCY)
-        end
-    else
-        -- 无高亮热点：显示在屏幕中部偏上（避开跳过按钮）
-        bubbleCY = math.min(DH * 0.5, skipBtnTop - BUBBLE_H * 0.5 - MARGIN)
-    end
-
-    -- 确保气泡在设计区域内且不与跳过按钮重叠
-    bubbleCY = math.max(BUBBLE_H * 0.5 + 20, math.min(skipBtnTop - BUBBLE_H * 0.5 - 10, bubbleCY))
-    bubbleCX = math.max(BUBBLE_W * 0.5 + 20, math.min(DW - BUBBLE_W * 0.5 - 20, bubbleCX))
-
-    local bgR  = BUBBLE_BG[1]
-    local bgG  = BUBBLE_BG[2]
-    local bgB  = BUBBLE_BG[3]
-    local bgA  = math.floor(BUBBLE_BG[4] * alpha + 0.5)
-
-    nvgSave(vg_)
-
-    -- 气泡背景圆角矩形
-    nvgBeginPath(vg_)
-    nvgRoundedRect(vg_, bubbleCX - BUBBLE_W * 0.5, bubbleCY - BUBBLE_H * 0.5,
-        BUBBLE_W, BUBBLE_H, BUBBLE_RADIUS)
-    nvgFillColor(vg_, nvgRGBA(bgR, bgG, bgB, bgA))
-    nvgFill(vg_)
-
-    -- 气泡边框
-    nvgBeginPath(vg_)
-    nvgRoundedRect(vg_, bubbleCX - BUBBLE_W * 0.5, bubbleCY - BUBBLE_H * 0.5,
-        BUBBLE_W, BUBBLE_H, BUBBLE_RADIUS)
-    nvgStrokeColor(vg_, nvgRGBA(200, 160, 80, math.floor(200 * alpha)))
-    nvgStrokeWidth(vg_, 3)
-    nvgStroke(vg_)
-
-    -- 小三角（指向高亮区域方向）
-    if hs then
-        local hsTop = hs.cy - hs.h * 0.5 - HIGHLIGHT_PAD
-        local hsBot = hs.cy + hs.h * 0.5 + HIGHLIGHT_PAD
-        local arrowX = math.max(bubbleCX - BUBBLE_W * 0.5 + BUBBLE_RADIUS * 2,
-                          math.min(bubbleCX + BUBBLE_W * 0.5 - BUBBLE_RADIUS * 2,
-                            hs.cx))
-        local triA = math.floor(bgA)
-        if bubbleCY < hs.cy then
-            -- 气泡在上方 → 三角在气泡底部朝下
-            local ty = bubbleCY + BUBBLE_H * 0.5
-            nvgBeginPath(vg_)
-            nvgMoveTo(vg_, arrowX - ARROW_SIZE, ty)
-            nvgLineTo(vg_, arrowX + ARROW_SIZE, ty)
-            nvgLineTo(vg_, arrowX, ty + ARROW_SIZE)
-            nvgClosePath(vg_)
-            nvgFillColor(vg_, nvgRGBA(bgR, bgG, bgB, triA))
-            nvgFill(vg_)
-        else
-            -- 气泡在下方 → 三角在气泡顶部朝上
-            local ty = bubbleCY - BUBBLE_H * 0.5
-            nvgBeginPath(vg_)
-            nvgMoveTo(vg_, arrowX - ARROW_SIZE, ty)
-            nvgLineTo(vg_, arrowX + ARROW_SIZE, ty)
-            nvgLineTo(vg_, arrowX, ty - ARROW_SIZE)
-            nvgClosePath(vg_)
-            nvgFillColor(vg_, nvgRGBA(bgR, bgG, bgB, triA))
-            nvgFill(vg_)
-        end
-    end
-
-    -- 文本（描边用气泡背景色，确保文字在不透明背景上清晰可读）
-    DrawUtil.drawTextStroke(vg_,
-        bubbleCX, bubbleCY,
-        text, BUBBLE_FONT_SIZE,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        BUBBLE_TEXT_COLOR[1], BUBBLE_TEXT_COLOR[2], BUBBLE_TEXT_COLOR[3],
-        3,
-        { alpha = alpha, strokeColor = { BUBBLE_BG[1], BUBBLE_BG[2], BUBBLE_BG[3] } })
-
-    nvgRestore(vg_)
-end
-
---- 绘制跳过按钮（右上角半透明胶囊按钮）
----@param alpha number 整体透明度 0~1
-local function drawSkipButton(alpha)
-    if groupElapsed_ < SKIP_BTN_DELAY then return end
-    local skipAlpha = math.min(1.0, (groupElapsed_ - SKIP_BTN_DELAY) / 0.3) * alpha
-    if skipAlpha <= 0.01 then return end
-
-    local btnX = SKIP_BTN_CX - SKIP_BTN_W * 0.5
-    local btnY = SKIP_BTN_CY - SKIP_BTN_H * 0.5
-
-    nvgSave(vg_)
-
-    -- 悬浮动画：让跳过按钮微微上下浮动，吸引注意
-    local floatOffset = math.sin(elapsed_ * 3.0) * 6.0
-
-    -- 外发光圈（金色光晕）
-    local glowAlpha = math.floor(60 * skipAlpha * (0.5 + 0.5 * math.sin(elapsed_ * 2.0)))
-    if glowAlpha > 5 then
-        nvgBeginPath(vg_)
-        nvgRoundedRect(vg_, btnX - 4, btnY - 4 + floatOffset, SKIP_BTN_W + 8, SKIP_BTN_H + 8, SKIP_BTN_RADIUS + 4)
-        nvgFillColor(vg_, nvgRGBA(255, 200, 50, glowAlpha))
-        nvgFill(vg_)
-    end
-
-    -- 按钮主体填充（金色/橙色）
-    nvgBeginPath(vg_)
-    nvgRoundedRect(vg_, btnX, btnY + floatOffset, SKIP_BTN_W, SKIP_BTN_H, SKIP_BTN_RADIUS)
-    nvgFillColor(vg_, nvgRGBA(255, 180, 50, math.floor(210 * skipAlpha)))
-    nvgFill(vg_)
-
-    -- 按钮内高光条（高光效果，居中对齐）
-    nvgBeginPath(vg_)
-    nvgRoundedRect(vg_, btnX + 6, btnY + 4 + floatOffset, SKIP_BTN_W - 12, SKIP_BTN_H * 0.45, 10)
-    nvgFillColor(vg_, nvgRGBA(255, 220, 120, math.floor(80 * skipAlpha)))
-    nvgFill(vg_)
-
-    -- 按钮边框（金色）
-    nvgBeginPath(vg_)
-    nvgRoundedRect(vg_, btnX, btnY + floatOffset, SKIP_BTN_W, SKIP_BTN_H, SKIP_BTN_RADIUS)
-    nvgStrokeColor(vg_, nvgRGBA(220, 140, 20, math.floor(200 * skipAlpha)))
-    nvgStrokeWidth(vg_, 3)
-    nvgStroke(vg_)
-
-    -- 按钮文字（深色，高对比度）
-    nvgFontFace(vg_, "sans")
-    nvgFontSize(vg_, SKIP_BTN_FONT)
-    nvgTextAlign(vg_, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg_, nvgRGBA(60, 30, 0, math.floor(240 * skipAlpha)))
-    nvgText(vg_, btnX + SKIP_BTN_W * 0.5 - 20, btnY + SKIP_BTN_H * 0.5 + floatOffset, "跳过", nil)
-
-    -- 右侧小箭头指示
-    nvgFontSize(vg_, 36)
-    nvgFillColor(vg_, nvgRGBA(60, 30, 0, math.floor(200 * skipAlpha)))
-    nvgText(vg_, btnX + SKIP_BTN_W * 0.5 + 100, btnY + SKIP_BTN_H * 0.5 + floatOffset, ">", nil)
-
-    nvgRestore(vg_)
-end
-
---- 绘制引导蒙层（在 NanoVGRender 回调中调用）
---- 应在 ScenarioDialogue.draw() 之后调用
-function TutorialManager.draw()
-    if not activeGroup_ then return end
-    -- 情景对话播放时隐藏教程遮罩，避免与对话框同时出现产生冲突
-    if ScenarioDialogue.isActive() then return end
-    -- 奖励弹窗打开时隐藏教程遮罩，等玩家领完奖励再显示
-    local okRP, RewardPopup = pcall(require, "ui.hud.popup.RewardPopup")
-    if okRP and RewardPopup.isOpen and RewardPopup.isOpen() then return end
-
-    -- 计算整体透明度（入场/离场动画）
-    local alpha = 1.0
-    if animState_ == "in" then
-        alpha = easeOutCubic(animT_ / ANIM_IN_DUR)
-    elseif animState_ == "out" then
-        alpha = 1.0 - (animT_ / ANIM_OUT_DUR)
-    end
-    alpha = math.max(0, math.min(1, alpha))
-    if alpha <= 0.01 then return end
-
-    local step = getCurrentStep()
-    if not step then return end
-
-    -- invisible 步骤：不绘制蒙层/高亮/气泡，但仍显示跳过按钮（防止卡住）
-    if step.invisible then
-        drawSkipButton(alpha)
         return
     end
-
-    -- 获取当前步骤的高亮热点
-    local hs = hotspots_[step.highlight]
-
-    -- 绘制蒙层（带镂空）
-    drawMask(hs, alpha)
-
-    -- 绘制高亮边框闪烁
-    if hs then
-        drawHighlightBorder(hs, alpha)
+    if TutorialManager.isInputActive() then
+        groupElapsed_, stepElapsed_ = groupElapsed_ + dt, stepElapsed_ + dt
+        recoveryElapsed_ = recoveryElapsed_ + dt
+        settleRemaining_ = math.max(0, settleRemaining_ - dt)
+        if overlay_.hs and settleRemaining_ == 0 then missingElapsed_ = 0
+        else missingElapsed_ = missingElapsed_ + dt end
+        if resumePending_ or recoveryElapsed_ >= RECOVERY_INTERVAL then prepareResume() end
     end
-
-    -- 绘制引导气泡
-    if step.text then
-        drawBubble(step.text, hs, alpha)
+    if activeGroup_ == 8 and step() and step().invisible and stepElapsed_ > 12 then
+        TutorialManager.notifyEvent("gacha10_failed")
     end
-
-    -- 绘制跳过按钮（延迟显示，避免误触）
-    drawSkipButton(alpha)
+    if animState_ ~= "idle" then
+        animT_ = animT_ + dt
+        local duration = animState_ == "in" and 0.25 or 0.2
+        if animT_ >= duration then
+            if animState_ == "out" then
+                activeGroup_, activeStep_, animState_, animT_ = nil, 1, "idle", 0
+                save()
+            else animState_, animT_ = "idle", 0 end
+        end
+    end
 end
 
+local PANEL_UNLOCK_THRESHOLDS = { character_panel = 101, town_panel = 105 }
+local BUILDING_UNLOCK_THRESHOLDS = { smith = 204 }
+local function unlocked(key, thresholds, default)
+    local threshold = thresholds[key]
+    if not threshold then return default end
+    local battle = store_ and store_.Get("battle")
+    if not battle then return false end
+    local maxStage = tonumber(battle.maxStageId) or 0
+    local cleared = battle.clearedStages or {}
+    local result = maxStage > threshold or cleared[threshold] == true or cleared[tostring(threshold)] == true
+    if lastUnlockState_[key] ~= result then
+        lastUnlockState_[key] = result
+        print("[TutorialManager] 解锁 " .. key .. "=" .. tostring(result))
+    end
+    return result
+end
+function TutorialManager.getBuildingUnlockStageId(key) return BUILDING_UNLOCK_THRESHOLDS[key] end
+function TutorialManager.isBuildingUnlocked(key) return unlocked(key, BUILDING_UNLOCK_THRESHOLDS, true) end
+function TutorialManager.isPanelUnlocked(key) return unlocked(key, PANEL_UNLOCK_THRESHOLDS, false) end
+function TutorialManager.draw()
+    if not TutorialManager.isInputActive() then return end
+    local current = step()
+    if not current then return end
+    local Overlay = require("ui.tutorial.TutorialOverlay")
+    local alpha = animState_ == "in" and math.min(1, animT_ / 0.25) or 1
+    local text = current.invisible and "" or current.text
+    if not current.invisible and not overlay_.hs and missingElapsed_ < 2 then
+        text = "正在准备引导页面，请稍候…"
+    end
+    local hs = current.invisible and nil or overlay_.hs
+    overlayLayout_ = Overlay.draw(vg_, overlay_.w, overlay_.h, hs, text, elapsed_, groupElapsed_, alpha,
+        current.invisible == true, activeGroup_ == 9, missingElapsed_ < 2)
+end
 return TutorialManager

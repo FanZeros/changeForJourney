@@ -5,6 +5,10 @@
 -- ============================================================================
 
 local I18n = {}
+local StageText = require("core.I18nStages")
+local TalentText = require("core.I18nTalentText")
+local EquipmentText = require("core.I18nEquipmentText")
+local StoryText = require("core.I18nStory")
 
 I18n.LANGS = {
     { id = "zh_CN", label = "简体" },
@@ -28,6 +32,10 @@ local hooked_ = false
 local rawNvgText_ = nil
 local rawNvgTextBox_ = nil
 local rawNvgTextBounds_ = nil
+local rawNvgTextBoxBounds_ = nil
+local lookupCache_ = {} ---@type table<string, table<string, string>>
+local LOOKUP_CACHE_LIMIT = 512
+local lookupCacheSizes_ = {} ---@type table<string, number>
 
 local function mergeLang(dst, src)
     if type(src) ~= "table" then return end
@@ -45,23 +53,76 @@ local function dict()
     if dict_ then return dict_ end
     dict_ = { zh_TW = {}, en = {}, ja = {}, ko = {} }
     local ok, d = pcall(require, "core.I18nDict")
-    if ok then mergeLang(dict_, d) end
+    if ok and type(d) == "table" then
+        mergeLang(dict_, d)
+    else
+        print("[I18n] 基础词典加载失败: " .. tostring(d))
+    end
     local ok2, extra = pcall(require, "core.I18nDictExtra")
-    if ok2 then mergeLang(dict_, extra) end
+    if ok2 and type(extra) == "table" then
+        mergeLang(dict_, extra)
+    else
+        print("[I18n] 扩展词典加载失败: " .. tostring(extra))
+    end
+    local ok3, talents = pcall(require, "core.I18nTalents")
+    if ok3 and type(talents) == "table" then
+        mergeLang(dict_, talents)
+    else
+        print("[I18n] 天赋词典加载失败: " .. tostring(talents))
+    end
+    local ok4, equipment = pcall(require, "core.I18nEquipment")
+    if ok4 and type(equipment) == "table" then
+        mergeLang(dict_, equipment)
+    else
+        print("[I18n] 装备词典加载失败: " .. tostring(equipment))
+    end
+    local ok5, keywords = pcall(require, "core.I18nKeywords")
+    if ok5 and type(keywords) == "table" then
+        mergeLang(dict_, keywords)
+    else
+        print("[I18n] 关键词词典加载失败: " .. tostring(keywords))
+    end
     return dict_
 end
 
---- 按中文原文查表；无条目则原样返回（梗名/剧情不翻）
+--- 按完整原文或已登记的关卡模板翻译；不修改业务数据，不猜测任意子串。
 ---@param text any
 ---@return any
 function I18n.lookup(text)
     if current_ == "zh_CN" then return text end
     if type(text) ~= "string" or text == "" then return text end
+    local cache = lookupCache_[current_]
+    if cache and cache[text] ~= nil then return cache[text] end
     local pack = dict()[current_]
-    if not pack then return text end
-    local hit = pack[text]
-    if hit then return hit end
-    return text
+    local hit = pack and pack[text]
+    -- 韩文序数前缀「第」的空串是既有排版规则，其余空译文回退原文。
+    if type(hit) ~= "string" or (hit == "" and not (current_ == "ko" and text == "第")) then
+        hit = StoryText.lookup(text, current_) or StageText.lookup(text, current_)
+            or TalentText.lookup(text, current_) or EquipmentText.lookup(text, current_) or text
+    end
+    if not cache or (lookupCacheSizes_[current_] or 0) >= LOOKUP_CACHE_LIMIT then
+        cache = {}
+        lookupCache_[current_] = cache
+        lookupCacheSizes_[current_] = 0
+    end
+    cache[text] = hit
+    lookupCacheSizes_[current_] = (lookupCacheSizes_[current_] or 0) + 1
+    return hit
+end
+
+--- printf 模板先翻译再格式化；字符串参数由显示调用方明确本地化。
+---@param source string
+---@param ... any
+---@return string
+function I18n.format(source, ...)
+    return string.format(I18n.lookup(source), ...)
+end
+
+--- 关卡难度专用入口，避免「普通」与装备品质 Common 共用译法。
+---@param source string
+---@return string
+function I18n.difficulty(source)
+    return StageText.difficulty(source, current_) or source
 end
 
 local T = {
@@ -114,6 +175,7 @@ local T = {
         slot_accessory    = "饰品",
         slot_all          = "全部装备",
         cannot_wear       = "无法穿戴",
+        level_not_enough_equip = "角色等级不足，需达到 Lv.{0} 才能装备",
         equipped          = "已装备",
         unequipped        = "已卸下",
         equipped_ok       = "已装备",
@@ -167,6 +229,7 @@ local T = {
         slot_accessory    = "飾品",
         slot_all          = "全部裝備",
         cannot_wear       = "無法穿戴",
+        level_not_enough_equip = "角色等級不足，需達到 Lv.{0} 才能裝備",
         equipped          = "已裝備",
         unequipped        = "已卸下",
         equipped_ok       = "已裝備",
@@ -220,6 +283,7 @@ local T = {
         slot_accessory    = "Accessory",
         slot_all          = "All Gear",
         cannot_wear       = "Can't equip",
+        level_not_enough_equip = "Level too low. Reach Lv.{0} to equip",
         equipped          = "Equipped",
         unequipped        = "Unequipped",
         equipped_ok       = "Equipped",
@@ -273,6 +337,7 @@ local T = {
         slot_accessory    = "装飾品",
         slot_all          = "全装備",
         cannot_wear       = "装備できない",
+        level_not_enough_equip = "レベル不足です。Lv.{0} で装備可能",
         equipped          = "装備済み",
         unequipped        = "外しました",
         equipped_ok       = "装備しました",
@@ -326,6 +391,7 @@ local T = {
         slot_accessory    = "장신구",
         slot_all          = "전체 장비",
         cannot_wear       = "장착 불가",
+        level_not_enough_equip = "레벨 부족, Lv.{0} 도달 시 장착 가능",
         equipped          = "장착됨",
         unequipped        = "해제됨",
         equipped_ok       = "장착됨",
@@ -345,18 +411,27 @@ function I18n.displayName(id)
     return I18n.DISPLAY[id] or id
 end
 
+--- 一次遍历原模板；参数里的百分号和占位符不参与二次替换。
+---@param template string
+---@param ... any
+---@return string
+function I18n.interpolate(template, ...)
+    local args = table.pack(...)
+    return (template:gsub("%{(%d+)%}", function(index)
+        local position = tonumber(index) + 1
+        if position > args.n then return "{" .. index .. "}" end
+        return tostring(args[position])
+    end))
+end
+
 ---@param key string
 ---@param ... string|number
 ---@return string
 function I18n.t(key, ...)
     local pack = T[current_] or T.zh_CN
-    local s = pack[key] or (T.zh_CN[key] or key)
-    local n = select("#", ...)
-    if n <= 0 then return s end
-    for i = 1, n do
-        s = s:gsub("%{" .. (i - 1) .. "%}", tostring(select(i, ...)))
-    end
-    return s
+    local s = pack[key]
+    if type(s) ~= "string" or s == "" then s = T.zh_CN[key] or key end
+    return I18n.interpolate(s, ...)
 end
 
 ---@param lang string
@@ -382,13 +457,63 @@ function I18n.cycle()
     return nextItem.id
 end
 
---- 拦截 nvgText / nvgTextBox / nvgTextBounds，绘制时按原文查表
+--- 已完成本地化和分段的显示串原样绘制，避免富文本片段被 hook 再次翻译。
+---@param vg any
+---@param x number
+---@param y number
+---@param text string
+---@param endp any
+---@return any
+function I18n.displayText(vg, x, y, text, endp)
+    local draw = rawNvgText_ or nvgText
+    return draw(vg, x, y, text, endp)
+end
+
+--- 与 displayText 配对的原样测量；完整透传边界参数和返回值。
+---@param vg any
+---@param x number
+---@param y number
+---@param text string
+---@param ... any
+---@return any
+function I18n.displayBounds(vg, x, y, text, ...)
+    local measure = rawNvgTextBounds_ or nvgTextBounds
+    return measure(vg, x, y, text, ...)
+end
+
+--- 已本地化或截取的剧情串原样换行绘制，不再查片段词典。
+---@param vg any
+---@param x number
+---@param y number
+---@param width number
+---@param text string
+---@param endp any
+function I18n.displayTextBox(vg, x, y, width, text, endp)
+    local draw = rawNvgTextBox_ or nvgTextBox
+    return draw(vg, x, y, width, text, endp)
+end
+
+--- 与 displayTextBox 配对的原样边界测量。
+---@param vg any
+---@param x number
+---@param y number
+---@param width number
+---@param text string
+---@param ... any
+---@return any
+function I18n.displayTextBoxBounds(vg, x, y, width, text, ...)
+    local measure = rawNvgTextBoxBounds_ or nvgTextBoxBounds
+    return measure(vg, x, y, width, text, ...)
+end
+
+--- 拦截文字绘制和边界测量，保证两者收到同一译文。
 function I18n.installDrawHook()
     if hooked_ then return end
     if type(nvgText) ~= "function" then return end
     rawNvgText_ = nvgText
     rawNvgTextBox_ = nvgTextBox
     rawNvgTextBounds_ = nvgTextBounds
+    rawNvgTextBoxBounds_ = nvgTextBoxBounds
     nvgText = function(vg, x, y, text, endp)
         return rawNvgText_(vg, x, y, I18n.lookup(text), endp)
     end
@@ -398,12 +523,17 @@ function I18n.installDrawHook()
         end
     end
     if type(rawNvgTextBounds_) == "function" then
-        nvgTextBounds = function(vg, x, y, text, endp)
-            return rawNvgTextBounds_(vg, x, y, I18n.lookup(text), endp)
+        nvgTextBounds = function(vg, x, y, text, ...)
+            return rawNvgTextBounds_(vg, x, y, I18n.lookup(text), ...)
+        end
+    end
+    if type(rawNvgTextBoxBounds_) == "function" then
+        nvgTextBoxBounds = function(vg, x, y, breakRowWidth, text, ...)
+            return rawNvgTextBoxBounds_(vg, x, y, breakRowWidth, I18n.lookup(text), ...)
         end
     end
     hooked_ = true
-    print("[I18n] nvgText draw hook installed")
+    print("[I18n] 文字绘制与测量翻译已安装")
 end
 
 return I18n

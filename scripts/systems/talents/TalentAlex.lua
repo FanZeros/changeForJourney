@@ -39,6 +39,8 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
     end
 
     if bonusDmg > 0 then
+        -- 即时氮气/贯穿伤害会同步分发死亡，先写既有击杀条件。
+        attacker._nitroKill = true
         dealDmgFn(target, bonusDmg, not isAlly, "氮气", { 200, 230, 255 }, {
             silverFlashVfx = true,
             instantDamage = true,
@@ -82,11 +84,10 @@ local function tryAlexSilverFlash(attacker, s, target, isAlly, dealDmgFn, result
             { key = AD.ATK_SPEED, flat = nitroSpd },
         })
         attacker.atkInterval = attacker.attrs:getActualInterval()
-        talentLog(string.format("[Talent] 闪电卖鸡 氮气叠速 ×%d (+%d%%)", stacks, nitroSpd))
-        attacker._nitroKill = true
+        talentLog(string.format("[Talent] 雷电麦坤 氮气叠速 ×%d (+%d%%)", stacks, nitroSpd))
     end
 
-    talentLog(string.format("[Talent] 闪电卖鸡 氮气 → %s (%.0f伤害, 麻痹%.1fs)",
+    talentLog(string.format("[Talent] 雷电麦坤 氮气 → %s (%.0f伤害, 麻痹%.1fs)",
         target.name or "?", bonusDmg, paralyzeDur))
 end
 

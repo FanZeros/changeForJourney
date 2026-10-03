@@ -5,11 +5,89 @@
 ## 🔴 协作铁律（每个会话、每次完成任务都必须遵守）
 
 1. **不能取消/退出任务**：任何情况下不得中途放弃用户交付的任务，必须推进到完成。
-2. **每次任务完成后，必须用 `AskUserQuestion` 工具以选项形式向用户提问下一步做什么**。
+2. **每次任务完成、规划完成、提交完成以及任何对话收尾，都必须用 `AskUserQuestion` 工具以选项形式向用户提问下一步做什么**。
    - ❌ 禁止用纯文本、开放式问题、或任何非 `AskUserQuestion` 的形式中断对话等待用户。
    - ✅ 必须调用 `AskUserQuestion`，给出 2–4 个明确的下一步选项。
 3. **在本记忆中持续强化此规则**：每轮结束更新「上次做了什么」，并保留本节铁律不被覆盖。
-4. **分支纪律**：以新分支继续开发，完成后 push 到新分支；**绝不推送到 `workspace926`**（或任何基线分支）。
+4. **分支纪律**：以当轮指定基线新建任务分支，完成后只 push 新分支；本轮基线为 `feat930/equipment-attribute-preview`，**绝不推送到任何 `workspace` 系列或原基线分支**，通过 PR 交由用户审阅合入。
+
+## 上次做了什么（2026-10-03，暗铁骨白代码图标正式接入）
+
+- 用户审核通过85编号图标、124间隙及正六边形后明确授权“实装下，然后提PR”；基于最新 `workspace930@9e0777f5` 新建 `feat930/dark-talent-glyphs-1003`，仅导入审核绘制代码，不带旧连线编辑器或旧关键词提交。
+- 新正式模块 `ui/widget/TalentGlyph.lua` + Contours/Extra：星图节点和详情按icon编号/st/color选择符号，不靠名称分类；移除审核绘制器对StarMap的反向依赖，避免循环加载。保留暗铁骨白、无底盘星纹、四层正六边形和124爱心加号间隙。
+- alpha乘入所有颜色/渐变，不修改NanoVG全局alpha，外层页面/弹窗动画继续生效；零alpha不绘制。最新209节点位置、名称、效果、icon和邻接与930逐字节一致，最新关键词国际化完全未改。
+- 验证：官方Build成功；85编号/209节点/6配色/3形状1254次绘制覆盖、四层实际路径等边、名称解耦、真实详情接线和alpha回归ALL PASS；关键词、天赋国际化、战斗切关均ALL PASS。真实古树＋详情＋124小尺寸＋正六边形页面150帧PASS，Lua/资源/引擎错误0；已读实际截图，截图仅本地 `assets/image/_review/talent-icons-1003/installed-star-map.png`，临时视觉入口及meta已清理并重建。
+- 独立只读复核无新增明确阻塞。LSP接口缓存仍引用编辑中已替换的旧DarkIcon/rgba代码，官方Build与Runtime确认执行新代码；不宣称全仓缓存静态清洁。仍需用户在实际设备验收鼠标交互/动画和观感。
+- 已推送 `feat930/dark-talent-glyphs-1003`，功能提交 `b23be33f`；正式 **PR #41** 已创建：https://github.com/FanZeros/changeForJourney/pull/41，base=`workspace930`、draft=false、open、merged=false。未推基线、未自动合并，PR不包含旧编辑器；凭据仅即时请求/子进程环境使用，不落配置，每次实际交付后以AskUserQuestion询问下一步。
+
+## 上次做了什么（2026-10-03，4个特殊场景背景实装）
+
+- 用户授权实装终焉神殿、黄金矿洞、上古遗迹、通天塔4张候选；从已包含23章重绘的 `646bb1cf` 新建本地 `feat930/special-background-preview-20261003`。23章背景分支已推送，PR #35：https://github.com/FanZeros/changeForJourney/pull/35；本轮不自动推送或合并。
+- 矿洞/遗迹替换 `MAP_FB1/2.png`（1080×2400），原meta不动；终焉/塔新增 `image/战斗背景/终焉神殿.png`、`通天塔.png`（1896×720）及独立meta，候选图只供审阅不入包。MAP999剧情、旧MAP_FB3、L0石框、23章正式PNG保持原样。
+- `BattleTriPage.resolveBackgroundPath` 用 `StageConfig.isTerminalTemple` 识别14座终焉，不再把chapter0映射为23；`drawL1Underlay` 可选固定路径供 `TowerTriBattle.draw` 使用，固定图不读取主线解锁/进度/行进状态。背景按路径缓存有效句柄，切章/终焉/塔时不删除其他行和全局缓存仍共享的句柄，失败不缓存且只日志一次、允许后续恢复。未改driver、胜负、奖励、队伍规则或存档。
+- 官方Build成功（manifest-origin.b169，416 Lua），4张正式背景与候选逐字节入包一致，3个改动Lua与部署产物一致；LSP接口汇总0 Error。官方Build的LSP daemon不可用、守卫跳过，不宣称守卫通过；旧1080×2400地图仍有平台压缩超限警告，原始PNG入包已核验，不宣称移动端压缩全绿。
+- 回归：`journey_visual_test` 扩展到73断言ALL PASS（15难度映射/14终焉/固定塔图隔离/失败恢复/返回主线/共享句柄），终焉52、切关74、解锁115均退出0；主入口headless135帧原始PASS、Lua/资源/引擎错误均0。测试为逻辑与绘制记录器验证，不代替真实视觉；预览应完全重启，检查矿洞/遗迹二次压暗、终焉门顶裁切与塔内叠卡。
+- 用户随后授权提交独立分支并开PR；本轮另新增 `docs/游戏背景画风与提示词规范.md`，单独记录GPT Clean组织顺序、重黑而非整体压暗、简洁色面与杂色清理、参考图分工、可复用模板、27个主题辨识点及尺寸/入包/实机验收规则。23章提交已在远端workspace930，特殊背景PR面向该分支，不重复提交候选或本地配置。
+- 仅改2个正式Lua、1个现有测试及4张图；本地构建配置和身份不提交。尊重当轮授权，不推workspace系列或自动合并PR；每次交付先简报，再AskUserQuestion等用户决定。凭据不进源码或记忆。
+
+## 上次做了什么（2026-10-03，23章背景重绘与预览部署）
+
+- 本轮用户指定 `workspace930@8d3e62fe` 为基准；已建立本地任务分支 `feat930/chapter-background-preview-20261003`。源码、资源与 Git 位于 `/workspace` 根。未推送或合并基线。
+- 用户确认画风为重黑墨线，后续确认减少斑驳碎色、保留简洁色面与少量大块阴影；使用 `model="gpt"` 并按 `gpt-image-clean-prompt` 制作23章1896×720不透明PNG。完整候选、总览和ZIP位于 `assets/image/关卡背景候选_重黑简洁_23章*`，游戏实装保留原23个背景路径与全部 `.meta`，仅替换PNG；Lua、L0石框、MAP剧情/副本图未改。
+- 官方最终Build成功，manifest-origin.b168含416 Lua；23张正式背景与候选逐字节一致，候选/总览/ZIP未入包。仅本地 `.project/settings.json` 添加样稿忽略规则；本环境匹配实际需要 `../assets/image/...` 前缀，单用 `assets/image/...` 或 `image/...` 未生效。构建身份与设置不提交。
+- 验证：LSP接口汇总0 Error，但官方Build的LSP守卫因daemon不可用被跳过，不能混称守卫通过；主入口headless135帧原始PASS、退出0、Lua/资源/引擎错误均0；战斗切关回归ALL PASS。真实三行截图与叠卡视觉未完成，应让用户完全重启预览验收，不能用标题页启动PASS代替战场视觉验收。
+- 23张正式PNG合计39.68MiB降至25.84MiB。特殊主题终焉/矿洞/遗迹副本/塔未单独重绘；三行塔仍复用主线背景，终焉仍沿基线映射第23章。原有全局图片缓存删除句柄风险仅静态发现、未修复。
+- 流程：不改玩法与存档，不推workspace系列或原基线；交付后先简报，再以AskUserQuestion等待用户的下一项决定。候选授权不等于自动发布或合并授权。
+## 上次做了什么（2026-10-03，右侧角色栏单人战力与碎片避让）
+
+- 基于教程时机已推送`cc0ec0cf`新建`feat/character-roster-power-layout-20261003`（远端workspace930仍212b38d3，当前叠加尚未合入PR32，不擅自丢前序改动）。每个已拥有名册角色在名字下方显示正式战力；三队占用头像下方显示该队槽位实际战力，未拥有不伪造0/预览战力。
+- 取消角色栏54px右移，绘制/命中/教程热点/拖放目标共享偏移；队行新增32px战力区，名册首行1186、行距238、clipTop1108避免盖队三；scrollBottom2256扣掉144px下移，滚到底新文字完整。名册战力使用原列表索引缓存，天赋/神器/升级刷新同步更新所有owned；官方公式、队伍总战力、预估、排序不变。
+- HeroFrame碎片条移到左侧占位，右侧独立职业区；数字独立宽度约束，大量碎片缩写/缩字号，独立复核指出1000/10撞碎片图标的新增边界已修。普通5/10、9/10保持原比例/可合成语义。
+- 布局18断言、战力缓存28断言、编队/跨栏拖拽、教程恢复59与真实配装冒烟均通过；两次真实角色栏135帧PASS，读图确认顶部单人战力和滚动边界。初版测试误读未导出DESIGN_H导致失败，改用实际设计高度复跑过。临时视觉入口及meta已清理，官方Build成功，LSP汇总0Error（有Warning）。本地截图/存档/配置不提交，持续强化完成后真正AskUserQuestion选项交接、只push新分支、不自动创建/合并PR。
+
+## 上次做了什么（2026-10-03，教程触发时机与连续教学调整）
+
+- 从最新 `workspace930@212b38d3`（已含PR31）建立 `fix/tutorial-trigger-timing-20261003`，仅推新分支，不自动创建/合并PR、不推workspace系列。
+- 成功情景领奖回执立即去重记录待触发队列并持久化，实际启动等奖励/剧情/高优先级窗口/招募业务结束后连续0.25秒；活动操作教程不消费新的普通剧情，结束/跳过后恢复剧情队列。城镇23有未播放24/25/26分支时不提前触发去教堂，旧档已播放分支仍兼容。
+- 古树组6完成或跳过后只补一次教堂离场剧情，组7等奖励真实领取再触发；读档completed6但7未完成补回尚未消费的离场剧情。等待期已开始且成功完成的真实十连标组8完成，孤完成/失败不算；组9新角色已在队一槽3时免重复拖放，不伪造操作/发奖。
+- 七套Runtime最终全过：触发31、真实CMH领奖241、管理50、页面恢复59、横屏55场景356、目标63、离线487断言；正式main135帧PASS、boot18/18、Lua/资源/引擎错误0，官方Build成功、LSP汇总0Error（有Warning）。首轮输入skip失败源于fixture仍把启动计时当活动时长，按新安静期分两次update后复跑过；领奖测试首轮收尾number误用#已修并复跑，不隐藏失败。
+- 独立反证指出等待期提前十连事件丢失、提前槽3上阵、组6结束后退出丢内存剧情三个边界，均补回归；最终只读复核无剩余确认新增阻塞。剧情播放中预claimed后退出的更早奖励恢复窗口、酒馆KCLH_20缺图等原有问题未扩改。本地配置/存档/截图不提交；完成后真正调用AskUserQuestion选项继续，尊重用户停止/权限边界。
+
+## 上次做了什么（2026-10-03，技能树关键词、图标与编辑器草稿迁移）
+
+- 用户指定最新 `workspace930` 为目标，基于 `origin/workspace930@b24cad7c` 新建 `feat930/talent-keywords-editor-1003`；从本地 `wip928/talent-migration-1003` cherry-pick 三项提交：技能树关键词、程序图标、连线编辑器草稿。目标是创建指向 `workspace930` 的 **Draft PR**，不直接推送或自动合并基线。
+- 图标迁移唯一冲突在 `TalentStarMap.drawNode`：同时保留 930 的边缘渐隐 `fade` 与圆/菱/六边 `node.st`，现有209节点邻接数据完全不变；保留930的无下划线关键词、灰蓝禁用色及最新锻造关键词文案。
+- 验证：官方 Build 成功；官方 Runtime 关键词31断言 ALL PASS、战斗切关 ALL PASS；编辑器 Python 语法与两文件无操作文本替换通过。图标和关键词真人视觉未验收，编辑器浏览器交互未验收。
+- **编辑器仅作草稿收录**：`tools/talent-editor/{server.py,index.html}` 已显式纳入Git（tools默认忽略）；保存校验会自动补8条基线单向边，双文件覆盖无失败回滚/并发锁，HTTP输入验证及撤销脏状态仍需补齐。不得宣称可安全用于正式改线，不启动服务、不据此修改游戏拓扑。
+- 无关本地改动保留于 `stash@{0}`（名称 `preserve-unrelated-workspace928-before-talent930-1003`），额外备份位于 `/home/Maker/migration-backup-talent930-1003`；未将本地配置、技能目录删除及上传文件纳入提交。
+- 用户补充即时GitHub授权后，已无冲突合并最新 `workspace930@a567e758`（10个后续提交，合并提交 `be77aaa8`），仅推送任务分支，并创建 **Draft PR #29**：https://github.com/FanZeros/changeForJourney/pull/29，base=`workspace930`、head=`feat930/talent-keywords-editor-1003`，open、draft=true、merged=false；未推基线、未自动合并。关键词31、战斗74、觉醒布局66断言通过；角色详情214断言有2项超长文本失败，纯930隔离副本完全同样复现，已在PR披露。当前LSP缓存1项Error位于未改的生命周期测试require赋值，未宣称全仓清洁。凭据只用于子进程/请求即时鉴权，不落Git配置；提醒用户撤销并更换聊天中已公开的令牌。
+- 每次交付或遇到用户需决定的阻塞，先简报再调用 `AskUserQuestion` 提供明确选项；不将凭据写入仓库、配置、日志或记忆。
+## 上次做了什么（2026-10-03，新手引导目标页面自动恢复）
+
+- 基于已合入 PR #27 的 `workspace930@fadf0c18` 新建 `fix/tutorial-target-page-recovery-20261003`，只推新修复分支，不推 workspace 系列、不自动创建或合并 PR。
+- 根因是组启动/换步仅部分一次性准备、页面关闭/切页后不恢复；城镇热点可被仓库等覆盖；古树延迟打开期间即时显示失效提示。新增按 highlight 的 `TutorialPageRecovery`，启动/换步、每0.5秒和目标按下前幂等整理页面；恢复后0.45秒不放行目标，前2秒缺目标显示准备提示，真正无数据仍可跳过且不伪造完成。
+- 教程专用仓库恢复解除手动关仓抑制并清品质/套装筛选，普通acquire契约保留；酒馆恢复首池招募页，pending/动画/补券确认不重置；锻炉选有效未满阶装备；城镇关闭无关页，古树换步主动打开并取消旧延迟回调。剧情/奖励/离线/更新/标题/副本塔战让位，不关闭领奖或消费确认。
+- 独立反证发现准备期非法down延迟up误推进、补券确认被清场两条新回归，均修复并加回归。8套Runtime回归通过（管理49、页面恢复59、横屏55场景356、布局1189、目标63、仓库268、离线487以及真实配装冒烟）；LSP汇总0 Error，官方Build成功。真实页面150帧验收配装/古树/升阶PASS、十连高亮正常但酒馆既有KCLH_20.png缺失使报告FAIL（Lua0），未扩改素材。首次主入口截图夹具误用非模块main、资源require回调上下文未跑boot的问题已披露并换真实页面独立夹具，不能把标题截图称为教程验收。
+- 临时视觉入口及meta清理后再构建；本地配置、存档、截图与凭据不提交。**每次完成先简报再真正调用AskUserQuestion选项交接，不自行取消任务，同时尊重用户后续停止及权限边界。**
+
+## 上次做了什么（2026-10-02，套装筛选数量与六槽对称微调）
+
+- 基于 `feat930/equipment-attribute-preview@ec1d1940` 新建 `feat1002/equipment-filter-count-symmetric-slots`，源码及资源直接部署到 `/workspace` 根，不推 `workspace` 系列分支；功能提交 `1890577a` 已推送，PR #15 已创建：https://github.com/FanZeros/changeForJourney/pull/15（base=`feat930/equipment-attribute-preview`），未自动合并。
+- 仓库套装弹窗增加逐行数量：品质/部位/双持副手基础条件与列表共用，按库存实例统计，忽略套装勾选；锁定、已装备、不可穿戴灰显项仍计入，未知模板跳过，none 为无套装。遗匣共用弹窗亦接数量，按品质统计已确定 equip，待整理项不计入 none。getter 每帧一次，关闭/重开清理，名称/数量分列、长数缩字。
+- 六槽统一坐标表：头盔 y185→165，两侧上排316→336、下排578→598，鞋790不动；左右 x325/755 关于540镜像。绘制、点击、peek及跨栏拖放共用，无单独偏移。
+- 验证：官方 Build 成功；7套官方 Runtime 回归均退出0，无 FAIL（backpack259、set_icon92、gesture38、scroll10，另lootbox/lifecycle/真实集成冒烟）；本轮 Lua 文件 LSP 0 Error。全工作区48 Error属于基线未改文件（雷达跨文件类型、颜色测试桩污染、ScenarioDialogue mode_作用域），本轮不混修。
+- 真实离屏截图确认数量不遮挡名称/勾选框、六槽镜像对齐；本地视觉夹具用完已删除，不入包/PR。部署构建初次旧 TapTap 身份冲突，仅本地移除旧 developer_id 后由官方工具获取当前可信绑定；构建生成的 `.project` 身份/设置不提交。
+- **用户流程再次强化：已授权任务持续推进，不擅自取消/退出；每次完成或确需用户决定的阻塞，先简报，再真正调用 AskUserQuestion 提供2–4个下一步选项；尊重用户当前取消指令、权限拒绝与安全边界。凭据不进源码、配置、日志或记忆，任务后提醒撤销轮换。**
+
+## 本轮交接（2026-09-30，`feat930/equipment-set-coverage-plan-0930`）
+
+- 用户指定基线 `workspace930`，本轮从该分支新建独立规划分支；游戏已部署在 `/workspace` 根，官方 Build 成功（380 个 Lua 入包）。不把 PAT 写入仓库、记忆或 Git 配置；用户提供的 PAT 应在任务后撤销并更换。
+- 用户请求核实套装归属与六槽覆盖；`workspace930` 基线 318 个装备模板、12 套，171 个有归属、147 个无归属。2026-09-30 在独立分支分两轮给 9 套补 35 件模板：当前 353 个模板，206 个有归属；原 318 件 ID 和归属不变。高压水脉／赛道硝烟／帝国铁壁在 65–80 和 81+ 可凑六件，其余六套在 81+ 可凑六件，巡林用单手弩＋轻盾六实体件，万剑双手五实体件算六。所有新增件按同档数值且复用已有图标。测试配装见 `scripts/tests/battle_lab_boundary_test.lua`。
+- **三处正确性修复已落地（本地提交 `ec0eb5d`，未推送）**：① `UnitAttributes:clone` 复制 `_setFour`/`_setSix` 并深拷贝 `_setRows`（战斗快照/恢复不再丢高阶套装标记）；② `countSets` 收紧双手五算六（仅主手同套且副手空置生效；脏档数字/字符串重复序号按 tostring 归一不虚增）；③ `applyEquip` 统一穿戴校验（职业可穿戴类型、双持 same/different 主副手互验、双持角色拒常规副手、双手互斥卸副手、失败不改原槽）；④ `EquipmentDetail` compact 档位亮灯改用 `summarize` 互斥结果（四件并列不再双亮）。回归：battle_stage_switch_test 新增快照保留+穿戴校验两节 ALL PASS；battle_lab_boundary_test 整份 ALL PASS——原两条「力量/智力戒官方战力严格相等」断言改为 ±2 容差（探针证实差 1 点源于六围→派生职业转换不对称，str 走物攻/护甲、int 走护盾/魔攻，严格相等本就不成立，属基线已知口径问题）。LSP 全工作区 0 Error；官方 Build 成功 380 Lua 入包；`.project` 本地生成配置已还原。git 身份已配置仓库级 `Maker <maker@local>`（沙箱重建后需重配）。分支仍在本地，未推送。
+- **PR #2 已由用户手动合并入 workspace930（远端 `09da066c`）**；随后新需求「转职树当前职业路径连线金色」已落地并推送（`d7a2d5be` + `04af0e20`），**PR #3 已开**（https://github.com/FanZeros/changeForJourney/pull/3，head=feat930 任务分支 → base=workspace930，2 提交 2 文件 +113/-73，mergeable clean），等用户 review 合并。改动明细：`ChurchClassChange.drawBranchLineVector` 重构为 `drawBranchLine`（中干/横杆左右半/左右腿分段着色，金色 0xffc42e 与节点 PATH_GLOW 光晕同色）；`branchLineParts` 三态规则=未转职整条白亮/已转中干金+选中腿金+另一腿暗 0.3/非路径整条暗；一转接 advBranch.first、二转接 advBranch.second（含左右子分支判定）；等级锁定遮罩灰度补画走 drawBranchLineSolid；移除旧三段 scissor 裁切 hack。验证：headless stub-nvg 探针三态 goldFills=0/3/6 与设计吻合，LSP 无新增 Error，官方 Build 成功。**LSP 全工作区现有 4 个 param-type-mismatch Error 均为基线遗留（UpdateNoticePopup:154 ×2 + ChurchClassChange:444-445 drawPathGlow nvgRadialGradient，nvgRGBA 返回 number vs NVGcolor 类型定义问题），不阻塞 Build，未修**。视觉效果待真人预览验收。
+- **已合入最新 workspace930 并推送任务分支（`840bdcba`，2026-09-30）**：用户授权合入 `workspace930` 基线后推送任务分支。fetch 发现远端 `workspace930` 已领先我旧基线 `2d423b8` **1203 提交**（净 36 文件：offline-cap 离线7日硬顶、audit929 死模块清理删 AssetManifest/SaveManager/VersionConfig/DamageGlyph、**装备等级穿戴门槛 `checkLevelGate`**、浮选装备详情拖拽修复等）。合并 exit 0 **无冲突**（仅 EquipmentSystem/EquipmentDetail 2 文件重叠，git 三方合并自动处理：远端等级门槛在 `seqStr` 之前、我的职业/双持校验在之后，逻辑互补共存）。**合并引入的测试适配**：远端等级门槛在 applyEquip 中位于职业校验之前，testEquipGuards 双持组 roster 原只写 advBranch 无 level（默认1级）、装备85级 → 被门槛先拦下；给 sameHeroes/diffHeroes 补 level=100 修复（warrior 组不传 heroesData 自动跳过门槛，覆盖「无 heroesData 不做门槛」分支，保持不变）。回归全绿：切关 ALL PASS / 边界 ALL PASS / 滚动 10 断言 ALL PASS / 远端新增拖拽 PASS；官方 Build 成功 378 Lua 入包。**遗留 2 个 LSP Error 在 `UpdateNoticePopup.lua:154`（nvgLinearGradient 的 nvgRGBA 返回 number vs 期望 NVGcolor），是远端基线提交 `3c920ab7` 自带、与我 diff 为空、不阻塞 Build，未擅改他人文件**。PAT 走一次性 URL 推送，零残留（remote/配置/工作区文件均搜不到），远端 workspace930 仍 ebdd4084 未动。⚠️ 用户提供的 PAT 应在任务后撤销更换。备份分支 `backup-feat930-premerge`（合并前 HEAD 5820217）保留。
+- **仓库滚动全空白 bug 已修（`be4dd2a`）**：用户报「仓库只显示第一页装备，下面都是空显示」。根因是 `BackpackGrids.drawEquipGrid` 在 `nvgTranslate(0,-scrollY)` 内做逐格 `nvgIntersectScissor`，用**内容坐标** cy 与**屏幕坐标** CLIP_TOP/CLIP_BOTTOM 比较判定 clipCell，且裁剪矩形又被 transform 再平移——双重错位；scrollY=0 时两套坐标重合（第一页正常），下滑后可见格被错位/空交集裁剪框整格裁掉。修复=删除逐格 clipCell 块（外层屏幕 scissor 已足够）+ CLIP_TOP/CLIP_H 从 bind 按值快照改为 GRID 表活值（顺带修 applyLayout 切布局后用过期常量的隐患，道具网格同享）。新增 `scripts/tests/backpack_grid_scroll_test.lua`（stub nvg 模拟 scissor+transform 语义）：修复前 6 FAIL 复现、修复后 10 断言 ALL PASS、stash 二分确认敏感性。**教训：NanoVG 里 nvgScissor/nvgIntersectScissor 的矩形按设置时的 transform 变换——在 translate 内调用就必须传内容坐标；绘制路径混用屏幕/内容坐标是这类"滚动后空白"bug 的固定根因。输入命中（如 BlacksmithDecompose 的 visTop/visBot）用已减 scrollY 的屏幕坐标是对的，勿抄进绘制。**
+- **交付、规划、提交或任何对话结束前，都必须先简报，再真正调用 `AskUserQuestion` 给 2–4 个选项询问下一步；不能用普通文字结尾。**
 
 ## 恢复指令
 
@@ -25,6 +103,189 @@
 - 入口 `scripts/main.lua` → 只加载 `boot/Standalone.lua`（`network/` 目录已删除，无多人 Client/Server 入口）
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
+
+## 上次做了什么（2026-09-30 续10，升阶占位词条行 》??? +?，已 merge 回 930）
+
+- **任务**：用户要求升阶面板「随机词条不用小字显示，而是直接显示个》然后后面接上属性 ??? +?」（截图黄框位置=词条区下一行）。AskUserQuestion 三选项均选推荐：词条行同格式、移除里程碑小字、一键升阶弹窗不改。
+- **实现**：`BlacksmithEnhance.lua` 新增纯函数 `M.buildAffixPreview`（下一阶为里程碑且普通词条未满员 → `{name="???",val="+?"}`，否则 nil）+ `drawAffixPreviewRow` 最终形态：??? 名称列（与上方词条名同位同号、不透明棕）→ 中间 `imgArrow` 箭头图（同属性行提升箭头同列同尺寸）→ 升阶后绿色半透明值框内 +?（不透明深灰）；`drawPanel` 词缀循环后按 `affixY` 续行绘制；`buildAffixHint` 删除里程碑分支（小字仅保留满员/常规两态）。一键升阶弹窗 `EMDLG` 文案未动。
+- **验证**：`ascend_hint_test.lua` 改写为 hint+preview 双函数回归 23 断言 ALL PASS；`equip_ascend_affix_test` ALL PASS；LSP 两文件 0 Error；官方 Build 成功；主入口 headless 70s 0 Lua 错（boot 18/18 + 存档落盘）。沙箱首次装 `.cli/UrhoXRuntime`（install 脚本一次 502 重试即全）。
+- **流程**：基线 workspace930（tip db378463）→ 任务分支 `feat930/ascend-affix-preview-row` 推送 `168e1057`/`5634437d`；用户授权后 merge 回 930——930 先前进到 `156541bb`（并行会话洗练锁定阶梯计费+古树透明等 10 提交），代码零重叠、仅 CLAUDE.md 记忆块冲突（对方续9 vs 我方续9，我方改编号续10 双保留；amend 修掉一处漏删的 `>>>>>>>` 残留）；推送前再 fetch 又撞 `e2f33fc0`（星图渐隐带加宽），二次 merge 无冲突，最终 ff 推 930 至 `72229687`。合并态回归 4 套 ALL PASS（ascend_hint 23 / equip_ascend_affix / refine_cost_fixed / auto_decompose）；Build 成功；主入口冒烟 0 Lua 错。**视觉两轮纠偏**：初版 》画文字在等级图标列被否——用户要的是「中间升级效果」位的**箭头图**（`imgArrow`，同属性行提升箭头同列同尺寸），??? 留在名称列（与上方词条名同位同号、不透明棕），+? 在升阶后绿色值框；最终形态 `3da2376e` 已 ff 入 930（`91199760`，中途又 merge 并行会话 `0b2975ae` 补 meta，零冲突）。部署：repo 代码 cp 到 /workspace 根（scripts/assets 313M/i18n）。PAT 走一次性 URL，origin 已 set-url 清洗为零残留。⚠️ 用户提供的 PAT 应在任务后撤销更换。
+
+## 上次做了什么（2026-09-30 续9，分解页品质筛选补第 6 档至臻红）
+
+- **用户反馈**：「分解页面为啥和前面的装备页面不一样少了红色稀有度？」——分解页筛选行绘制与点击两处 `for i = 1, 5`，缺第 6 档至臻（红）；装备 tab 是 `1..6`。
+- **修复**：两循环改 `1..6`（布局自检：warehouse 第 6 图标右缘 565+5×82+35=1010 ≤1080 不越界、与标题行不撞；smith profile 为死布局不影响）。自动分解弹窗本就是 `POP_QBOX_COUNT=6` 六档，无需改；服务端 shouldAutoDecompose 支持 6 档（测试有断言）。
+- **验证**：LSP 0 Error；auto_decompose ALL PASS；官方 Build 成功。改完按用户既定流程提交推送 + ff merge 回 workspace930。
+- **并行会话两撞**：推 930 两次被拒（另一会话在推：`1d44562e` 升阶后洗练不刷新修复、`98fd7413` 工作台槽等阶角标）——每次 fetch+merge 再推；三方合并保留我方 `1..6`（对方分支点早于我修复、未真回退）；930 tip=`4e84ae8d` 与 dev 分支同指。合并态回归 auto_decompose ALL PASS、LSP 0 Error、Build 成功。**多会话并行推 930：每推前必 fetch-merge**（对方记忆条目亦如此告诫）。
+
+## 上次做了什么（2026-09-30 续8，分解预览加「当前分解可获得」字样，改完直接 merge 回 930）
+
+- **任务**：用户要求选中装备后图标行显示「当前分解可获得」字样，改完直接 merge。
+- **实现**：`drawRewardIconRow` 增 `showLabel` 参数——选中预览（selCount>0）画金色 26 号字样于 RW_LABEL_CY=2000；**回落上次结果不画**（避免「当前」误导）；空状态提示改 RW_EMPTY_CY=2045 居中。条带两行化：图标 88→80、RW_ICON_CY 2040→2056、数量角标 30→28（自检：标签底 2013 / 图标顶 2016 / 图标底 2096 / 角标底 ~2098 / 按钮顶 2110 均不撞）。
+- **验证**：LSP 0 Error；auto_decompose ALL PASS；官方 Build 成功。
+- **流程**：dev 分支提交推送后 ff merge 回 workspace930 并推送（930 未前进，ff 零冲突）。
+
+## 上次做了什么（2026-09-30 续7，合入 workspace930，已 push）
+
+- **任务**：用户要求「拉取 930 并且合入」当前分支 `feat/decompose-reward-icon-row`。930 tip=e2108b93（终焉神殿三队协同战 TerminalRaid PR#4 + nvgImagePatternTinted cast 修复），8 提交全在 battle/tri 区，与分解图标行零文件重叠。
+- **冲突**：仅 CLAUDE.md 记忆快照一块（我方续6 vs 930 方三条），双保留手工解决。
+- **验证**：terminal_raid(52)/auto_decompose/refine_cost/battle_stage_switch 四回归 ALL PASS；LSP 全工作区 0 Error；官方 Build 成功；主入口 headless 70s 0 Lua 错。
+- **🔴 教训（再犯）**：worktree 合并/改码后**必须先 rsync 到 /workspace 根再跑测试**——首跑 terminal_raid 报 `Could not find resource` 因新文件只在 worktree。顺序=改/合 → rsync → 测试/Build。
+- **续（同日，用户授权 merge 回 930）**：930 tip 未再前进（e2108b93 是本分支祖先）→ `checkout -B workspace930 origin/workspace930` 后 merge feat 分支为**纯 fast-forward**（零冲突），push `e2108b93..9e8fff74`。930 现含分解图标行+终焉协同战全部；feat/decompose-reward-icon-row 与 930 同指 9e8fff74（+本记忆提交）。
+
+## 上次做了什么（2026-09-30 续6，分解页奖励预览图标行，已 push `f3514839`）
+
+- **任务**：用户附截图要求「分解页面做成原本锻炉那样，图标显示会获得的精粹及其他资源」。截图左栏=仓库分解 tab（warehouse 布局），原预览仅「精粹 +N」单行文本。
+- **环境排查**：/workspace 根**不是 git 仓库**——仓库在 `.tmp/changeForJourney/`（worktree，此前 feat928 双页分支的开发地）；截图 UI 属已合入 refine 线的 warehouse 布局（远端 refine 已前进到 ea4e659f，含 Decompose 433 行重构，预览区文本与我方旧基线逐字相同）。
+- **实现**（新分支 `feat/decompose-reward-icon-row`，基于 origin/feat/refine...）：`calcRewardPreview` 增第 4 返回值 entries（精粹+金币+`collectScrollRefundEntries` 部位卷轴；未选中回落 `fjState.lastScrolls`/lastReward* 显示上次分解结果）；新增 `drawRewardIconRow`（DarkIcon 品质框+ResourceDefs 图标+右下黑描边数量角标，最多 8 个居中一行，`RW_ICON_CY=2040` 落在网格底 1980 与按钮顶 2110 间隙）；`drawUpperSlot` warehouse 分支改画图标行；init 存 vgHandle、onActionResult/onOpen 存/清 lastScrolls；删死常量 REWARD_TEXT_Y。图标句柄按路径懒加载缓存（rewardIconCache）。
+- **注意**：续4 合并时旧 smith 布局图标链（drawRewardIcons/REWARD_ROW*/scrollIconCache）已作死码删除——本实现是基于 ResourceDefs 的新图标行，非恢复旧码。
+- **同步**：worktree 改完后 `rsync -a --exclude=.git --exclude=.project .tmp/changeForJourney/ /workspace/`（根非 git，build/预览只认根；root 独有的教堂转职 2 图与 1 个 meta 保留不删）。
+- **验证**：LSP 2 文件 0 Error；auto_decompose/refine_cost/battle_stage_switch 全 ALL PASS；主入口 headless 75s 0 Lua 错（4 条 headless shader ERROR 为基线噪音）；官方 Build 成功；push f3514839 后 remote URL 已去 PAT。
+- **待真人验收**：图标行视觉效果（88px 图标+角标在左栏的可读性、分解后回落展示上次结果）。
+
+## 上次做了什么（2026-09-30 续，终焉协同战提交 + 合并远端 + PR 推进中）
+
+- **"领先1203"是浅克隆假象**：本地是 shallow clone（`.git/shallow` 只有基点 `2d423b8`），fetch 拉全远端历史后 merge-base 无法穿透浅边界，把 1192 个共同祖先误算成领先；实际真实新提交仅 11 个（后变 36 个，含远端 PR #2/#3 合入）。`git fetch --unshallow` 后已补全（深度 1199，非浅仓库）。
+- **已提交**：`f5485ee1 feat: 终焉神殿三队协同战（共享生命池）`（11 文件 +667/-23，含 TerminalRaid.lua、terminal_raid_test.lua、CLAUDE.md 记忆）。
+- **已合并远端**：`433fa171 Merge origin/workspace930 into feat/final-boss-three-teams-0930`。唯一冲突 `StageSelectDialog.lua` 3 块，全部采用远端 `4b43cd36` 实现（subLabel 难度名副标题 + getDifficultyDisplayName），保留本轮两处终焉协同逻辑（ensureCache 的 terminalUnlocked 缓存失效、handleInput 终焉关走 `gotoTeamStage(1,id)` 开协同战）。合并后领先远端 2 提交、落后 0。
+- **合并后回归全绿**：terminal_raid ALL PASS、battle_stage_switch ALL PASS、battle_ally_compaction ALL PASS、boss_affix_test ALL PASS、shield_scaling ALL PASS、character_team_sync PASS、battle_lab_boundary ALL PASS、远端新增 backpack_grid_scroll 10 断言 ALL PASS、equip_detail_drag_horizon PASS；官方 Build 成功；主入口 60 帧无 Lua 逻辑错误。
+- **LSP 4 Error 为远端基线自带**（ChurchClassChange 444/445 + UpdateNoticePopup 154，nvgRGBA number vs NVGcolor param-type-mismatch），两文件与远端逐字节一致，非本轮引入，不阻塞 Build，未擅改。
+- **🔴 `chapter_team_offline_test` 失败是远端基线自带**：用 git worktree 在纯 `origin/workspace930` 上实跑同样失败（`当前关不切换: 1/0`），与本轮合并无关。该测试 mock BattleScene 但远端 handleInput 改动后 mock 口径不匹配。**不要在 feat 分支上修它**（属远端问题），可在 PR 描述中注明。
+- **远端删除的模块**（AssetManifest/SaveManager/VersionConfig/DamageGlyph）已确认与本轮文件零引用。
+- **已推送 + PR 已开（2026-09-30）**：`feat/final-boss-three-teams-0930` 已推远端（3 提交：f5485ee1 功能 / 433fa171 合并 / a3743bc7 记忆）；**PR #4** https://github.com/FanZeros/changeForJourney/pull/4 （base=workspace930，open）。PAT 走一次性 URL + API 创建，验证零残留（remote URL 干净、临时文件已删）。⚠️ 用户提供的 PAT 应提醒撤销更换。备份：合并前 HEAD = f5485ee1。
+- **下一步**：等 PR #4 审阅/合并；共享血条/倒计时/失守灰字真人预览验收。
+
+## 上次做了什么（2026-09-30，`feat/final-boss-three-teams-0930` 终焉三队协同战，已提交 `f5485ee1` 并合并远端 `433fa171`）
+
+- **背景**：分支基点 `workspace930@2d423b8`（浅克隆）。功能实现已提交 `f5485ee1`、已合并远端 `433fa171`，详见上方「续」条目（"领先1203"系浅克隆假象，真实新提交 36 个）。
+- **已实现（上一轮遗留 + 本轮补齐）**：终焉神殿（999/1999/…）三队协同战——`ui/battle/tri/TerminalRaid.lua` 三 Boss 共享生命池（包装 `attrs.takeDamage/heal`，任一路受击→池扣血→`sync()` 回写三路显示 HP，池空即全队胜利）；`BattleTriPage` 的 `startTerminalRaid/finishTerminalRaid/clearTerminalRaid` 接线；`BattleTriDriver` raid 模式分支（单队全灭=`onTeamDefeated` 停摆不退关、关逐tick击杀上报/补位/自动推进、池空break攻击推进）；胜→`BattleScene.completeTriTerminal`（轮回目标+存档+首通回调），败→退终焉前关。
+- **本轮补齐三项待办**：① **共享血条 UI**——`BattleTriPage.draw` raid 期间三行底部进度条换绯红共享池血条，行1 显示「共享生命 X/Y」+「限时 M:SS」倒计时（≤30s 转红），行标签追加失守态；② **胜利奖励去重**——`completeTriTerminal` 仅 `wasFirstClear`（该终焉此前未通关）时触发 `onFirstClearCallback`，重打不再重复发 fcExp；`battleMode` 按轮回目标关是否已通关决定 idle/firstClear；③ **击杀奖励结算**——`settleRaidKillRewards` 胜利时按 `raid.lines[row]` 逐战线上报 Boss exp/gold（终焉 Boss `dropRate=0` 无掉落、`fcEquip=0`，不与首通回调重复发装备）。
+- **额外修的 bug**：失败分支补 `BottomNav.setAllLocked(false)`（进终焉时 NavLogic 锁了导航，否则失败后底部导航永久锁死）；`ensureDrivers` 加终焉接管兜底（主线经单队路径停终焉关、打开三行页时自动 `startTerminalRaid`，队一绝不单独 start(终焉) 否则按普通规则清关闭环循环）——为此 `startTerminalRaid` 改**前向声明**（`local startTerminalRaid` + 下方 `startTerminalRaid = function(...)`，已验证未泄漏 `_G`）。
+- **读档恢复结论**：`BattleSchema` 的 `terminalFallback` 已保证存档层不持久化终焉关（重登回退该难度末关），无需额外字段；运行时兜底由 `ensureDrivers` 接管。队二/三 stageId 仍不持久化（本就不入库），重登后回 101。
+- **测试**：新增 `scripts/tests/terminal_raid_test.lua`（**ALL PASS**，含 `engine:Exit()` 不挂起）：池=三Boss HP和/三路同步/takeDamage-heal 回池/release 还原/单队失守停摆不退关/失守队 tick 停摆/池空任一路判胜/finish 幂等/全员失守判败/终焉每队仅1 Boss/completeTriTerminal 轮回推进+奖励去重(首通回调恰好1次)。**踩坑**：终焉 Boss 自带能量护盾全额吸收小额伤害，测试需先清 `energyShield/tempEnergyShield` 再断言 takeDamage>0。
+- **回归**：battle_stage_switch ALL PASS、battle_ally_compaction ALL PASS、boss_affix_test(37断言) ALL PASS、boss_affix_smoke ALL PASS、shield_scaling ALL PASS、character_team_sync PASS；LSP 全工作区 275 文件 Error=0；官方 Build 成功（382 Lua 入包，含 TerminalRaid + terminal_raid_test）；主入口 60 帧无 Lua 逻辑错误（仅既有 UI 品质框贴图缺失，非本轮）。
+- **⚠️ 遗留未修（非本轮范围，rebase 时处理）**：`chapter_team_offline_test` 失败——工作区 `StageSelectDialog` 把终焉从单组 `"T"` 拆成 14 个逐难度独立组（与远端 `4b43cd36` **同源但不同实现**：远端带 `subLabel` 难度名 + `TT_Y=732/ROW_Y0=790` 布局，工作区无 subLabel + `TT_Y=690/ROW_Y0=756`），但该测试断言还停在旧 `TOTAL_CHAPTERS+1` 与旧坐标。已 `git checkout` 还原测试文件，**不留半成品**；rebase 远端时应整体采用远端 StageSelectDialog + 远端测试版本（两套拆分二选一），否则断言无法干净通过。
+- **视觉验收待办**：共享血条/倒计时/失守灰字的真人预览验收（本机 surfaceless 无法截图）。
+## 上次做了什么（2026-09-30 续9，古树边缘透明语义再纠正，已 push `b7d35803`）
+
+- **用户再纠正**：续8 又做反了——要的是**上层技能树节点/连线在边缘透明**，背景保持全不透明；续8 的素材中心烘焙 alpha 撤销（从 `026aac7d^` 恢复 RGB + alpha=255 满幅）。
+- **正确实现**：`TalentStarMap.edgeFade(sx, sy)`——星图区边缘 `max(64, min(w,h)*10%)` 带内 alpha 线性渐隐到 0；节点 `drawTalentGlyphByName` alpha×fade、fade≤0.01 直接 return；连线取两端更靠边者 alpha×fade 并 skip。`ChurchTalentPanel` 删 `drawMapEdgeFade` 色块渐隐（那会盖住背景）及调用、删其 cast。
+- **并行会话第五次插队**：推送前远端 930 前进到 d8f3c6d6，含 `7dd0f376` 洗练锁定词缀**阶梯累乘计费**（每条×1.5，最多 3 条×3.375，`applyRefineLockCostMult` 改 `1.5^n`）——与我的固定单价正交（固定单价指不随**次数**涨；锁定倍率是另一维度），对方已同步更新 `refine_cost_fixed_test`，合并后 ALL PASS。
+- **验证**：LSP 0 Error；refine_cost ALL PASS；官方 Build 成功；dist 素材哈希更新为全不透明版。
+- **续9 追加（用户反馈"带应该更宽、边缘10%内应完全透明"，已 push `3489c08b`）**：`edgeFade` 改为双段——外圈 `min(w,h)×10%` 带内返回 0（节点/连线完全不画），其后 `×12%` 过渡带线性渐显到 1（原单段从 0 起渐隐改为平台+斜坡）。
+
+## 上次做了什么（2026-09-30 续8，古树背景节点区透明，已 push `6f7a9400`）
+
+- **用户纠正意图**：之前两版渐隐（35009423/f9ee9ef7）做反了——用户要的是**节点显示周围透明**（星图中心区透出下层），不是背景四周变透明。
+- **修法（素材烘焙替代运行时混合）**：PIL 给 `UI_GS_TFBJ_dark.png` 直接写 alpha——外圈 210px 藤边带不透明 + 80px 向内过渡到 0、中心 alpha=0（几何遮罩 `min(x,y,w-x,h-y)`）；删除 `ChurchTalentPanel.fadeTreeBgEdge`（`NVG_DESTINATION_IN` box-gradient 四周渐隐，语义相反）与调用。dist 烘焙校验 corner/band=255、center=0。
+- **顺修**：`drawMapEdgeFade` 的 8 个 LSP Error（4 处 `nvgLinearGradient(edge, clear)` 受测试桩 nvgRGBA 覆写影响）加 cast。
+- **并行会话第三次插队**：推送前远端 930 又前进（分解品质筛选第 6 档至臻等，`feat/decompose-reward-icon-row` 续推）；fetch-merge（自动无冲突）后推 `6f7a9400`。
+- **验证**：LSP 295 文件 0 Error；官方 Build 成功；主入口 headless 零 Lua 错。**待真人预览**：节点区透明后星图与下层（城镇/页面底）的叠观感。
+
+## 上次做了什么（2026-09-30 续7，升阶后洗练不刷新修复 + 并行会话双推送，已 push `db378463`）
+
+- **用户报**：强化（升阶）后洗练页属性显示没刷新。
+- **根因两处**：①锻炉双页重构把 `BlacksmithPage.onEquipmentDataUpdate` 的调用方删光了（API 零调用方）——服务端装备推送落地后洗练/升阶展示永不重建；②锻炉版 Input 切 tab 无子模块数据刷新。`Enhance.onActionResult` 只升 `updateEnhanceData` 不碰 Refine；`onActionResult` 里 Refine 的 `hasPreview` 分支只 `refreshCostOnly` 也是同症。
+- **修复**：①`BlacksmithPage.init` 的 `PlayerStore.Subscribe("equipment")` 回调里补接 `BlacksmithPage.onEquipmentDataUpdate(data)`（Results 的 hasPreview 保护仍在：有预览仅重算消耗）；②Input 切 tab 时按目标 tab 调 `updateRefineData/updateEnhanceData(state.selectedEquip)`。拖放路径 `applySelectedEquip` 本就双刷新未动。
+- **并行会话注意**：推送时远端 930 两次前进（另一会话推了分解预览图标行 `f3514839`+选中态金字 `ef35113e`）——两次 fetch+merge 再推，均无代码冲突（对方新图标行 `drawRewardIconRow` 与我删的旧死码 `drawRewardIcons` 是两套实现不冲突）。**多会话并行推 930 时每推前必 fetch-merge**。
+- **验证**：auto_decompose 两次 ALL PASS、refine_cost 12 ALL PASS、切关 75 ALL PASS、terminal_raid 52 ALL PASS；LSP 0 Error；官方 Build 成功。
+
+## 上次做了什么（2026-09-30 续6，功能分支合入 workspace930，已 push `02d8c254`）
+
+- **任务（用户本轮明确授权推 930）**：把 `feat/refine-fixed-cost-side-by-side`（洗练三调整+单框化+死加载清理+锻炉双页+双 tip）合入 `workspace930`。
+- **930 又前进**：fetch 发现 `c8c393e9 → 33e86578`（PR #4 终焉神殿三队协同战 `TerminalRaid`，改动全在 battle/tri 区与铁匠铺零重叠）。本地 930 先 ff 对齐 tip 再合并功能分支，冲突仅 CLAUDE.md 记忆双保留。
+- **顺手修 2 个同类 LSP Error**（测试桩 `backpack_grid_scroll_test.lua:90` 覆写全局 nvgRGBA 致联合类型）：我的亮色箭头 tint 与 930 新增 `TownScene.drawImageDarkTint` 均改中间变量 + `---@cast ... NVGcolor`。
+- **验证**：终焉协同战 `terminal_raid_test` 52 断言 ALL PASS（930 新功能在合并态不回归）；切关 75 ALL PASS；LSP 295 文件 0 Error；官方 Build 成功。
+- **推送**：`workspace930` 33e86578..02d8c254（合并提交 + cast 修复）；功能分支停 `ea4e659f` 不再动；PAT 一次性 URL、零残留、remote 已还原。
+
+## 上次做了什么（2026-09-30 续5，双 tip 合入 + 基线 LSP 修复，已 push `38a69ef7`）
+
+- **任务**：用户问 `0d62a09e`（升阶页词条预告+满员文案右移，在 `feat930/equip-ascend-random-affixes`）是否已合入 → 未合入（我方今早合的是它的前驱 dd6599df）；且 `workspace930` 也前进到 c8c393e9（套装覆盖规划 PR#2/#3 + 转职树金线）。用户选「两个 tip 都合入」。
+- **合并**：930 tip 冲突仅 `preferences.json`（同一规则两种措辞→手工合并为更完整版）；升阶 tip 冲突仅 CLAUDE.md 记忆双保留，Enhance 自动并入（里程碑预告 + ascend_hint_test 15 断言 ALL PASS）。
+- **顺手修 930 基线 LSP 2 Error**：`ChurchClassChange.lua:444` 金色光晕 `nvgFillPaint(nvgRadialGradient(nvgRGBA(...)))` 报 param-type-mismatch——根因 `tests/backpack_grid_scroll_test.lua:90` 全局覆写 `nvgRGBA = function(...) return number end`（测试桩污染工作区类型推断，BattleEffects 同用法未报错是缓存/推断差异）。修：中间变量 + `---@cast glowIn/glowOut NVGcolor` 独立行（`---@type NVGcolor` 赋值方向报错，cast 方向才收窄）。官方 Build 本来就不拦这两个 Error。
+- **验证**：ascend_hint 15 ALL PASS；LSP 单文件+全工作区 0 Error；官方 Build 成功；切关/boundary/图标 fallback 回归后台复跑中。
+
+## 上次做了什么（2026-09-30 续4，合入锻炉双页分支，已 push `c449a59d`）
+
+- **任务**：用户要求排查洗练/锻炉相关分支后合入 `feat928/furnace-warehouse-dual-page`（今天 14:17，锻炉双页架构：分解 tab 迁仓库、中栏锻炉+左栏仓库双页、工作台槽拖拽选装、右缘滑入）。排查结论：fix928 三条分解修复内容已随 930 在本分支；**锻炉双页是唯一未并入的今日分支**。
+- **合并策略（31 冲突块）**：Draw/Input 取对方全文（新架构 owner；我方对其无独有功能——Spine 特效对方已移植 WORKBENCH 版）；Decompose 块1/2 取对方（calcRewardPreview 抽出+仓库文本模式为超集）+ 删我方旧布局图标链死码（drawRewardIcons/fitRewardBadgeFont/getScrollIcon/scrollIconCache/REWARD_ROW* 常量，新架构零调用）；块3 门控锁**双防线合一**：`wasPending = pendingDecompose and isDecomposeResp`（我方防无关响应提前解锁 + 对方防他入口广播双重弹奖）。
+- **Page 取对方全文后补三补丁**：①图标缓存委托 `ImageCache.getEquipIcon`（组首图 fallback，e1aa9f49 修复防回归——注意加 `---@param templateId string|number|nil` 注解会触发 LSP param-type-mismatch，因 ImageCache 声明无注解，故委托函数不写注解）；②归属显示补回（getEquipOwnerHeroId + 归属行 + HeroFrame 头像角标 + HeroAssetUtil.preloadIcons——对方重构时静默删除的 925 功能）；③imgXlAfter 死句柄清理。
+- **验证**：LSP 291 文件 0 Error；auto_decompose/equip_ascend(74)/refine_cost(12)/equip_detail_drag/lootbox(18) 全 ALL PASS；官方 Build 成功；主入口 headless 70s boot complete 零 Lua 错。
+- **教训**：大架构合并后必须检查**静默丢失**——对方全文覆盖会丢掉我方非冲突功能（归属显示），需对照 HEAD 版 grep 关键功能链补回。
+
+## 上次做了什么（2026-09-30 续3，EquipmentDetail 死加载清理，已 push `26f576b5`）
+
+- **用户问**：基线问题（`EquipmentDetail.lua` 加载已删除的 `UI_ZBTS_1~6.png`，validate 18 处贴图失败）是否在其他分支已解决？
+- **排查**：`git grep UI_ZBTS_` 逐远端分支查——近基线分支 workspace926/928/929/930、audit929/dead-module-scan、feat930/equip-ascend **全部未修**（各 1 处命中）；assets/品质框/ 只有 `UI_PZBZ_*` 与 `UI_icon_ZBBJ_1~6`，确实无此素材。
+- **修复**：死代码整链删除（-101 行）——init 加载循环、`imgBg` 声明、`NS_TOP/RIGHT/BOTTOM/LEFT` 常量、私有 `drawNineSlice` 函数（全链零使用点，`DrawUtil.drawNineSlice` 才是活的那个）。
+- **验证**：LSP 该文件 0 Error；`equip_detail_drag_horizon_test` PASS；官方 Build 成功。
+- **教训**：删死代码前先 grep 使用点链（声明→加载→绘制→insets 常量），确认 DrawUtil 同名函数非本文件这份。
+
+## 上次做了什么（2026-09-30 续2，洗练单框化，已 push `914cc689`）
+
+- **用户反馈三点**：①要一个框显示内容而非两个框背景；②中间箭头改亮色；③「洗练前/洗练后」六字标题删除。
+- **实现**：`XL` 双框常量合并为单框 `FRAME 970×560`（cy1240）+ `LEFT/RIGHT_PANEL_LEFT=55/555`（框内左右两半相对左缘）+ `LEFT/RIGHT_HALF_CX=313/786`（空状态/结果展示中心）；行内坐标改半幅相对（图标34/名60/值330/锁366，NAME_MAX_W 210）——自检：左半可用 110..516、右半 610..1009，锁 476 不撞箭头 516..564；箭头改 `nvgImagePatternTinted` 亮金 `(255,214,102)` 且**最后绘制**（滑行动画行从箭头下穿过）；提品/腐化结果/空状态全部改 RIGHT_HALF_CX；`imgXlAfter` 死句柄三处清理（Refine 声明/ctx、Page 加载/传递）。
+- **验证**：LSP 291 文件 0 Error；refine_cost_fixed + equip_ascend_affix 全 ALL PASS；官方 Build 成功。
+- **教训**：半幅行内坐标必须以「框内缘 + 箭头分隔带」为边界重新推算，不能沿用上一版半框口径（锁图标会出框/撞箭头）。
+
+## 上次做了什么（2026-09-30 续，合入 930 + equip-ascend，已 push `f69d12c2`）
+
+- **任务**：用户要求把 `workspace930` 与 `feat930/equip-ascend-random-affixes` 合入 `feat/refine-fixed-cost-side-by-side`。930 已是祖先（Already up to date）；升阶分支 dd6599df 真合并。
+- **冲突取舍（BlacksmithRefine 9 块 + CLAUDE.md 1 块）**：保留对方**功能**改动——`effectiveAffixValue`/`getAffixMult` 生效值显示（4 处）、腐化对比 before 值 ×mult；丢弃对方**旧竖版布局**改动（168 压缩 step、scissor 裁剪、lockStep）与 `ratioText`（用户要求②已删）；布局一律我的左右排布。CLAUDE.md 记忆快照双保留。
+- **自动合并暗坑**：对方的 `step`/`nvgIntersectScissor(55, firstY-24, 970, 216)`/`nvgRestore` 被 git 自动并进我重写的 `drawRefineAttrRows` 而未产生冲突标记——216px 裁剪会切掉新布局第 4/5 行，手动移除恢复 `XL.ATTR_ROW_STEP`。**教训：合并后必须 diff 全文找"静默混入"的对方代码，不能只看冲突标记。**
+- **`refineRowFirstY` 升级**：N 行整体垂直居中（`BEFORE_BG_CY - (n-1)*step*0.5`），升阶带来的 4~5 词条在新 560 高面板自然排开，替代对方旧压缩方案。
+- **验证**：`equip_ascend_affix` 74 ALL PASS + `refine_cost_fixed` 12 ALL PASS + `auto_decompose` ALL PASS；LSP 291 文件 0 Error；官方 Build 成功。`.project/project.json` 已还原。
+
+## 上次做了什么（2026-09-30，`feat/refine-fixed-cost-side-by-side` 洗练三调整，已 push `66fdbc25`）
+
+- **任务（用户三点）**：①洗练不随次数变贵；②洗练不再显示百分比；③洗练前后改横屏左右排布。基于 `workspace930` 开新分支。
+- **①固定单价**：`BlacksmithConfig` 删 `refInc` 字段与 `getRefineBillCount`；`calcRefineEssenceCost(quality, equipLv, grip)` 三参固定价 = `refBase×(1+lv×refLvScale)`（×2 双手保留）；`calcTotalRefineSpent` = 单价×次数（封顶 20，分解 50% 返还语义不变）；服务端 `BlacksmithService` 与 UI `recalcRefineEssenceCost` 调用点同步；次数文案删「费用已满，可继续洗练」；KeywordConfig「洗练」词条与 gameplay 文档同步口径。
+- **②去百分比**：删 `formatRefineRatio`/`getAffixRefineRatioText` 及 4 处 `ratioText` 赋值与绘制块（洗练页不再显示「（xx.x%）」；神器页 ArtifactDetailPanel 自有同名函数未动）。
+- **③左右排布**：`BlacksmithRefine` XL 常量改半幅双面板（洗练前 cx282 / 洗练后 cx798，各 464×560，素材原 970×260 九宫格式直接拉伸不变形）；箭头去 90° 旋转指向右；`drawRefineAttrRows` 增 panelLeft 参数改面板相对坐标（图标 62/名 90/值右对齐 376/锁 428），词缀名超 250px 缩 28→24 号；单行垂直居中、两行起 firstY=1082；替换动画改左移 -516、refine 滑入改面板内 ±260；腐化 compareText 改数值下第二行小字；锁命中坐标同步 panelLeft。
+- **验证**：新增 `tests/refine_cost_fixed_test.lua` 12 断言 ALL PASS（固定价/双手×2/锁×1.5/累计=单价×次数/封顶）；`auto_decompose_regress` ALL PASS；LSP 全工作区 0 Error；官方 Build 成功；主入口 headless 75s 无 Lua 错。
+- **流程**：push 用一次性 PAT URL，推完 `git remote set-url` 还原 + 清分支 remote 配置，仓库无令牌残留；`.project/project.json` build 改写已 `git checkout` 还原。
+- **待验收**：洗练页左右布局视觉效果（半幅面板字密度）需真人预览确认。
+## 上次做了什么（2026-09-30 傍晚，同分支：升阶页词条预告+满员文案右移，已 push `37d442e6`）
+
+- **需求（用户原话）**：①「词条在五级的升级时候显示升级后的效果（新词条）」→ AskUserQuestion 拍板选**仅模糊提示（不锁定随机结果）**；②「词条满的文字改成右侧显示不要一行显示」→ 拍板放**词条区右侧**。
+- **实现** `ui/blacksmith/BlacksmithEnhance.lua`：文案逻辑抽成纯函数 `M.buildAffixHint(data, equip)` 返回 `{text,r,g,b}`。三分支：满员→「词条已满 · 每升5阶倍率+10%（洗练不丢）」金棕；下一阶是 +5 里程碑且未满员→「升至 +N 将新增 1 条随机词条」亮绿 0x7ac86e；否则常规规则文案。绘制从居中(540,y1710,23号)改**右对齐**(x=1000,y=1712,22号)，不独占整行、不与词条行/「升阶需求」标题(y1737)重叠。魔化词条不占满员计数（复用 isCorruptAffix）。
+- **未做**（用户拍板不做）：预 roll 锁定式精确预览（洗练 pendingRefines 范式）——词条仍真随机，提示只是预告数量。
+- **验证**：新增 `tests/ascend_hint_test.lua` 15 断言 ALL PASS（含满级/nil 装备/0词条/3普通+1魔化边界）；升阶词条回归 74 断言仍 ALL PASS；validate lua_errors=0（UI_ZBTS 18 处为基线既有死加载）；官方 Build 380 Lua，buildAffixHint 进 dist。project.json 已还原。
+
+## 上次做了什么（2026-09-30 下午，同分支：合入远端930 + 铁匠铺图标空白修复，已 push `e1aa9f49`）
+
+- **任务1（合并）**：用户要求把远端 `workspace930` 领先的 18 提交（离线7日硬顶/装备等级门槛/4死模块清理/浮选拖拽修复等）合入 `feat930/equip-ascend-random-affixes`。4 代码文件自动合并，唯一冲突 `docs/memory-index.md`（双方追加条目）手工双保留。合并提交 `3ea9c556`。回归全绿（升阶词条74/分解38/战力10/切关53/遗匣18/浮选拖拽 PASS）；`chapter_team_offline_test` FAIL 经 **worktree 对照实跑证明是远端基线自带 headless 环境性失败**（文件与 origin 逐字节一致、StageSelectDialog 不依赖装备模块、纯净基线报同错），与合并无关。官方 Build 378 Lua、死模块已移除、affixMult 进包。
+- **任务2（图标修复）**：用户反馈"分解页装备图片看不到"。**根因**：装备图标为组首图制——318 模板 ID（W1~W72/O1~O30/A,H,S各60/C1~C36）共用 **53 张组首 png**（每 6 个一组 W1/W7/W13…）；`ImageCache.getEquipIcon`（背包/角色详情用）有组首 fallback `floor((num-1)/6)*6+1` 所以正常；**铁匠铺 `BlacksmithPage.getEquipIconCached` 私有缓存无 fallback**→265 个非组首 ID `nvgCreateImage` 失败返回≤0→被 `if eqIcon > 0` 跳过→分解/升阶/洗练页格子只剩品质底框。**修复**：`getEquipIconCached` 改为委托 `ImageCache.getEquipIcon`（删私有 equipIconCache/equipIconVg，init 处补 `ImageCache.init(vg)` 幂等），公开 API 名不变下游零改动。新增 `tests/equipment_icon_fallback_test.lua` 6 断言 ALL PASS（318 ID 全解析/W2 触达 W1/缓存幂等）；validate lua_errors=0；Build 成功。提交 `e1aa9f49` 已 push（一次性 PAT URL，token 未进配置/记忆）。
+- **已知基线问题（未修，与本轮无关）**：`EquipmentDetail.lua:1164` 加载已删除的 `UI_ZBTS_1~5.png`（品质框九宫格），validate 每次 18 处贴图失败——死加载可顺手清理但用户未选。
+- **环境技巧**：headless 测试进程不自退出且 timeout 会吞命令输出——用 `setsid ... &` 后台跑写日志再单独读；`grep -c` 无匹配时 exit 1 会截断 && 链，统计命令用 `|| true` 兜底。
+
+## 上次做了什么（2026-09-30，`feat930/equip-ascend-random-affixes` 装备升阶随机词条，已 push `91ba3952`）
+
+- **任务**：用户要求「装备升阶时多出随机词条」，拍板规则=**所有品质可参与；每跨过 +5 的倍数阶必得 1 条普通词条；普通词条总数上限 4；魔化词条不占普通上限**。基于 `workspace930` 新建 `feat930/equip-ascend-random-affixes`。
+- **核心实现** `rules/blacksmith/BlacksmithService.lua`：新增 `rollAscendAffixes(equip, fromLevel, toLevel)`，单阶 `AscendEquip` 与一键 `AscendEquipToLevel` **共用同一逐阶抽取逻辑**（按 `level % ASCEND_AFFIX_INTERVAL == 0` 判里程碑，复用 `EquipmentSystem.rollAffixes` 排除已有 key）。配置 `config/BlacksmithConfig.lua` 加 `ASCEND_AFFIX_INTERVAL=5`/`ASCEND_NORMAL_AFFIX_LIMIT=4`。
+- **腐化兼容（关键）**：腐化态升阶时新词条**插入 `corruptRevert.affixCount` 保留段内**并同步平移 `"s"` patch 索引、`affixCount+1`——确保神圣石净化只删腐化新增、**保留升阶所得词条**；旧版 `corruptOriginalAffixes` 快照先 `migrateLegacyCorruptSnapshot` 迁移。升阶成功清 `pendingRefines[uid][seq]`（防旧洗练预览覆盖新词条）。
+- **洗练门槛放开**：普通品质(q1,affixCount=0)升阶后有词条即可洗练——`RefineEquip` 校验从「按品质 `qDef.affixCount`」改为「按装备实际 `#equip.affixes`」；点金石补条排除已有 key（原传空表会重复）。洗练石/普通洗练 `maxAffixQuality` 对 q1 用 `math.max(1,...)` 兜底（q1 的 maxAffixQuality=0 会让 rollAffixQuality 退化）。
+- **UI**：`BlacksmithEnhance` 升阶页词条行距压缩（4 行收进固定区）+ 满员/规则提示文案 + 一键弹窗「将新增 N 条」；`BlacksmithRefine` 洗练页词条行 step 自适应（≤5 行）+ scissor 裁剪防溢出 + 锁定图标行距同步；文案「强化」→「升阶」。成功 toast「升阶获得：xxx」。
+- **验证全绿**：新增 `tests/equip_ascend_affix_test.lua` **48 断言 ALL PASS**（里程碑必得/满员封顶/单阶=一键同种子逐条一致/key 互斥/魔化不占额/腐化净化保留升阶词条+patch 索引正确/脱水JSON水合往返/computeModifierEntries 生效/q1 升阶后可洗练/+4→+5 得 +5→+9 不得）；既有回归 auto_decompose/lootbox_overflow(18)/battle_stage_switch/character_power_estimate 全 ALL PASS；主入口 validate **lua_errors=0、engine_errors=19、total=25 与基线逐项一致**（首跑 22 为冷启动波动，复跑=19）；官方 Build 成功 381 Lua 入包；LSP 我改的 6 文件 0 Error（全仓唯一 error 是基线既有 `Standalone.lua:806` 跨文件全局，未动）。
+- **环境**：headless 运行时用 `python3 .cli/install-urhox-runtime.py --dest /workspace/.cli` 安装（sh 无执行权限、py 默认 dest 推导到根 /.cli 无权限，必须显式 --dest）；测试跑法 `cd /workspace && ./.cli/UrhoXRuntime tests/xxx.lua -tapcode_dir=. -tool_mode -graphicsheadless`（EXIT=124 是测试不退出进程的已知行为，看 ALL PASS）。
+- **待实机验收**（headless 测不了渲染）：升阶页 4 词条+提示排版、洗练页 5 词条（4普通+1魔化）不溢出、一键弹窗「将新增 N 条」、升阶成功 toast、q1 装备升阶后洗练入口可用。
+- **本轮续（同日，词条满员后改倍率升级，已 push `9462c2d4`）**：用户拍板「满了后改为词条倍率升级（栏位倍率，不会随洗练丢失）」。装备实例新增 `affixMult` 字段（默认 nil=1）：满 4 条后每个 +5 里程碑 `affixMult += ASCEND_AFFIX_MULT_STEP(0.10)`，四舍五入到千分位防浮点漂移。**核心设计=倍率与词条 value 解耦**：词条 `value` 永远是基础 roll 值（洗练重随/腐化改值/净化恢复都不碰倍率），生效值经 `EquipmentSystem.effectiveAffixValue(equip,affix)`（普通词条 ×affixMult，魔化不乘）统一计算。接入点=属性管线 `computeModifierEntries` + 战力 `EquipmentService.calcEquipPower`/`EquipmentDetail.calcEquipPower` + 显示 `EquipmentDetail`×2/`CharacterDetailEquip` 汇总/`BlacksmithEnhance`/`BlacksmithRefine`（含腐化对比 before 值同乘倍率保持口径一致；`getAffixRefineRatioText` 品质比例仍基于基础 value——倍率不写入 value 故无需除回）。持久化：dehydrate 写 `affixMult`（=1 省略）/hydrate 规范化（≤1 清 nil）；`rollAscendAffixes` 返回 `gained, multUps`，回包带 `multUps/affixMult`；UI 满员提示改「每升5阶词条倍率+10%（当前 ×N，洗练不丢）」、一键弹窗预览「N 条词条、倍率 ×a→×b」、toast 合并显示。测试扩到 **74 断言 ALL PASS**（新增第10节：满员转倍率/生效值=value×1.2/魔化不乘/computeModifierEntries 含放大值/洗练+洗练石+替换不丢倍率/脱水JSON往返/倍率=1省略字段/18层累加=2.8无漂移/腐化态倍率累加+净化不丢）。既有回归 lootbox18/分解/切关/战力全 ALL PASS；validate lua_errors=0（engine_errors 19↔21 为 headless shader 编译非确定性波动，两次错误行相同均环境性，与 Lua 改动无关）；官方 Build 381 Lua，dist 含 getAffixMult。
+
+## 上次做了什么（2026-09-29 续，古树背景重绘，已 push `4559fd8`）
+
+- **任务**：`UI_GS_TFBJ_dark.png`（终焉古树天赋页背景）横向拉伸。根因：绘制框 `pageW×TF.bgH = 1080×1.8(HORIZON_WIDTH_SCALE)×2400 = 1944×2400`，原图 1080×2400 → 横向拉 1.8 倍。
+- **方法**：该素材是**无 alpha 满幅 RGB**（中心纯黑即页面内容区），无需抠图——示意图法（PIL 画黑心+藤边+四角结 810×1000）→ generate_image 按 4:5 出稿（工具实出 1944×2916，归一 1944×2400 纵向压 18% 可接受）→ 直接覆盖。
+- **教训**：重绘前先确认素材有无 alpha——无 alpha 满幅背景跳过黑白抠图，省一轮 edit+差分。
+- 推送前远端多一个提交 `900c9df`（chore: 删除旧竖屏情景底板），rebase 无冲突后推送。
+
+## 上次做了什么（2026-09-29，`workspace928` 通用面板底板重绘，已 push）
+
+- **任务**：9 张通用面板底板（XYGB/XYGA/XYG/MAPYY/HS/EJQRK/TJP_XL_1/TJP_XL_2/EJBB）全部用黑白抠图法重绘；用户两轮反馈：①"只给参考、明确不要旧拉伸图"②"做最简示意图然后直接出稿，不再参考已有"。
+- **最终方法（示意图直接出稿法）**：PIL 程序化画 6 张最简平面示意图（色块锚定外框/填充/铆钉/标题带/菱形/缺口位置比例，存 `.tmp/sketches/`，引用前必须 cp 到 `assets/image/_sketch/` 否则 generate_image 报路径无效）→ AI 按示意图渲染材质出白底 → 黑白差分抠图；**popup/ground 两例黑底替换失败（背景没换黑→差分全不透明→白角烤入）改白底亮度阈值抠图+反预乘去白边+口袋填洞**。归一到运行时尺寸。
+- **11 文件 = 6 画稿 + 5 派生**：XYGA=btn 去饱和35%、XYG=btn 去饱和25%+压暗85%、XL2=XL1 去饱和45%+压暗80%、EJQRK_POP=EJQRK 同稿 950×647、MAPYY_SHADOW=ground 同稿 1080×556。运行时尺寸：按钮232×226、弹窗827×569、横条970×260、背包996×1590、地面1080×610、竖板158×226（HS 无 live 加载备用）。
+- **复用结论**：MAPYY/HS 原图零 live 加载（只有 SHADOW 副本在用）是死素材；旧 SHADOW 顶部有白残片瑕疵已随重绘消失。是否删文件改引用未落地（用户未选）。
+- **推送**：rebase 时 BattleStageFlow.lua 冲突（远端 hoist require vs 本地内联，保留 hoist）；沙箱 git 身份未配置报 128 → 仓库级 `git config user.name/email` 沿用历史作者 `Maker <maker@local>`；push 用用户 PAT 一次性 URL（不进配置/记忆）。提交 `88d24ce`（素材）+ `8395cc2`（Lua WIP 死加载清理），已推 `workspace928`。
+- **教训**：edit_image 换黑底不保证生效，管线必须校验黑底图四角像素是否近黑，否则差分产物 alpha 全 255 白角烤入；从已抠透明图不能再做阈值抠图（白底检测失效），派生副本必须从白底原图抠。
 
 ## 上次做了什么（2026-09-28，`feat/talent-more-paths-0928` 及文档整理）
 

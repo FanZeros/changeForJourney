@@ -8,12 +8,13 @@ local GameConfig        = require("config.GameConfig")
 local GameState         = require("core.GameState")
 local PlayerStore       = require("core.PlayerStore")
 local SC                = require("config.StageConfig")
+local ExpTable          = require("config.ExpTable")
+local ClientDispatcher  = require("runtime.ClientDispatcher")
 local ImageCache        = require("ui.widget.ImageCache")
 local DrawUtil          = require("core.DrawUtil")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
-local drawNineSlice     = DrawUtil.drawNineSlice
 
 local BF = require("systems.ButtonFeedback")
 local SweepDialog = {}
@@ -56,7 +57,7 @@ local D = {
     -- "当前关卡" 标签（左对齐）
     CUR_LBL_X = 169, CUR_LBL_Y = 900,
     CUR_LBL_FONT = 40,
-    CUR_LBL_R = 0x8d, CUR_LBL_G = 0x5f, CUR_LBL_B = 0x41,
+    CUR_LBL_R = 0x8b, CUR_LBL_G = 0x95, CUR_LBL_B = 0xa5,
 
     -- 关卡名（右对齐）
     CUR_VAL_X = 904, CUR_VAL_Y = 900,
@@ -86,7 +87,7 @@ local D = {
     INF_LBL_X  = 169,
     INF_VAL_X  = 904,
     INF_BG_W   = 800, INF_BG_H = 80, INF_BG_R = 16, INF_BG_A = 13,
-    INF_LBL_R  = 0x8d, INF_LBL_G = 0x5f, INF_LBL_B = 0x41,
+    INF_LBL_R  = 0x8b, INF_LBL_G = 0x95, INF_LBL_B = 0xa5,
 
     -- 扫荡次数（沿用购买道具弹窗的数量控件）
     QTY_CX = 540, QTY_CY = 1440, QTY_FONT = 40,
@@ -125,7 +126,6 @@ local SWEEP_COST = 1   -- 每次扫荡消耗扫荡券数
 -- ======================== 图片句柄 ========================
 
 local imgBtnSweep   = -1   -- UI_ICON_SD.png（入口按钮图标）
-local imgBg         = -1   -- UI_TY_EJQRK.png（弹窗九宫格背景）
 local imgTicketIcon = -1   -- UI_icon_SDQ_X.png（扫荡券图标）
 local imgMinus     = -1   -- UI_AN_JIAN.png
 local imgPlus      = -1   -- UI_AN_JIA.png
@@ -151,8 +151,7 @@ local state = {
 
 --- 已解锁小队数（未解锁的不可选）
 local function unlockedTeams()
-    local ExpTable = require("config.ExpTable")
-    return math.min(3, ExpTable.getUnlockedTeamCount(GameState.getLevel()))
+    return math.min(3, ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle")))
 end
 
 --- 所选小队的出战人数（排除空槽，与 SweepService 口径一致）
@@ -289,7 +288,6 @@ end
 function SweepDialog.init(vg)
     cachedVg = vg
     imgBtnSweep = nvgCreateImage(vg, "image/通用图标/UI_ICON_SD.png", 0)
-    imgBg       = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
 
     -- 预加载奖励图标（装备用 "?" 文字绘制，无需加载图片）
     for i, item in ipairs(REWARD_ITEMS) do
@@ -404,8 +402,8 @@ local function getStageRewardStr(field)
     local v = rewards[field]
     if not v or v <= 0 then return "---" end
     v = v * (state.count or 1)
-    if v >= 10000 then return string.format("%.1f万", v / 10000) end
-    return tostring(math.floor(v))
+    -- [万→k/M/B 0930] 大数统一走 NumberUtil（10k/1.2M/3.4B），不再用"万"单位
+    return require("core.NumberUtil").format(v)
 end
 
 --- 绘制单个奖励图标（品质背景 + 内容图标 + 文字标签）
@@ -463,9 +461,7 @@ function SweepDialog.draw(vg)
     nvgTranslate(vg, -D.BG_CX, -D.BG_CY)
 
     -- 2) 弹窗背景框（九宫格）
-    if imgBg >= 0 then
-        DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
-    end
+    DarkIcon.drawNine(vg, "panel", D.BG_CX - D.BG_W * 0.5, D.BG_CY - D.BG_H * 0.5, D.BG_W, D.BG_H, { titleH = D.BG_IT })
 
     -- 3) 标题 "主线扫荡"
     drawTextStroke(vg, D.TT_X, D.TT_Y, "主线扫荡",
@@ -623,11 +619,11 @@ function SweepDialog.draw(vg)
     local costStartX = D.BG_CX - costTotalW * 0.5
     drawImageCentered(vg, imgTicketIcon, costStartX + D.TKT_ICON_SZ * 0.5,
         D.TKT_ICON_CY, D.TKT_ICON_SZ, D.TKT_ICON_SZ, 1.0)
-    -- 消耗文字：券够=亮白，不够=棕色
+    -- 消耗文字：券够=亮白，不够=灰蓝色
     drawTextStroke(vg, costStartX + D.TKT_ICON_SZ + 4, D.TKT_ICON_CY, costStr,
         D.TKT_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        owned >= cost and 255 or 0x8d, owned >= cost and 255 or 0x5f,
-        owned >= cost and 255 or 0x41, 5, { strokeColor = { 0, 0, 0 } })
+        owned >= cost and 255 or 0x8b, owned >= cost and 255 or 0x95,
+        owned >= cost and 255 or 0xa5, 5, { strokeColor = { 0, 0, 0 } })
 
     -- 确认按钮（无券时禁用）
     local canSweep = maxCount >= 1
@@ -641,7 +637,7 @@ function SweepDialog.draw(vg)
     if canSweep then
         nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
     else
-        nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))
+        nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))
     end
     nvgText(vg, D.ACT_CX, D.ACT_CY,
         canSweep and "扫荡" or (canSweepStage() and "扫荡券不足" or "尚无可扫荡关卡"), nil)
@@ -690,11 +686,17 @@ function SweepDialog.handleInput(x, y)
                 state.teamIdx = t
                 _sweepRewardCache = nil
                 print("[SweepDialog] team=" .. t)
+            else
+                print("[SweepDialog] " .. ExpTable.getTeamUnlockText(t) .. "队伍" .. t)
             end
             return true
         end
     end
     if hitTestRect(x, y, D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H) then
+        if state.teamIdx > unlockedTeams() then
+            print("[SweepDialog] sweep blocked: " .. ExpTable.getTeamUnlockText(state.teamIdx))
+            return true
+        end
         if maxCount < 1 then
             print("[SweepDialog] sweep blocked: " .. (canSweepStage() and "扫荡券不足" or "当前关卡无法扫荡"))
             return true

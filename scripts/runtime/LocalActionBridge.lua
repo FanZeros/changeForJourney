@@ -388,11 +388,11 @@ function M.setTeams(teamLayouts)
     if not inited_ then M.init() end
     local heroes = ClientDispatcher.get("heroes")
     if not heroes then return false, "英雄数据未加载" end
-    local player = ClientDispatcher.get("player")
-    local playerLevel = player and (player.level or 1) or 1
+    local battleProgress = PDM.GetModule(LOCAL_UID, "battle")
     local teamCount = ExpTable.TEAM_COUNT
     for teamIdx, ids in pairs(teamLayouts) do
-        if type(teamIdx) ~= "number" or teamIdx < 1 or teamIdx > teamCount or type(ids) ~= "table" then
+        if type(teamIdx) ~= "number" or teamIdx ~= math.floor(teamIdx)
+            or teamIdx < 1 or teamIdx > teamCount or type(ids) ~= "table" then
             return false, "无效的队伍编号或阵容"
         end
     end
@@ -419,7 +419,7 @@ function M.setTeams(teamLayouts)
     end
     if teamLayouts[1] then copy.deployed = {} end
     for teamIdx, ids in pairs(teamLayouts) do
-        local ok, reason = TeamSlots.validate(copy, teamIdx, ids, playerLevel)
+        local ok, reason = TeamSlots.validate(copy, teamIdx, ids, battleProgress)
         if not ok then return false, reason end
     end
     for teamIdx, ids in pairs(teamLayouts) do

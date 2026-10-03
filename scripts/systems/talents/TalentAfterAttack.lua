@@ -236,17 +236,9 @@ function M.bind(deps)
                         dealDmgFn(target, target.hp, not isAlly, "斩杀 ", { 255, 0, 50 })
                         talentLog("[Talent] 愤怒的小雀 觉醒7：斩杀 " .. target.name .. "!")
                     end
-                    -- 斩杀后立即转移标记（不依赖延迟的 onEnemyDeath）
-                    if targetList then
-                        local aliveEnemies = getAliveEnemies(targetList)
-                        if #aliveEnemies > 0 then
-                            local newTarget = aliveEnemies[math.random(#aliveEnemies)]
-                            applyAyaneMark(attacker, newTarget, targetList)
-                            talentLog("[Talent] 愤怒的小雀 觉醒7: 斩杀后标记转移→" .. (newTarget.name or "?"))
-                        else
-                            clearAyaneMarks(targetList)
-                        end
-                    end
+                    -- 死亡消费先读取原标记再统一转标；异步伤害仍由落地死亡钩处理。
+                    -- 不能在同步额伤排队后清掉死亡目标标记，否则击杀成长丢失。
+
                 end
             end
         end
@@ -457,7 +449,7 @@ function M.bind(deps)
 
         -- #20 摘星星星人 星之守护：星门已改为固定间隔自动发射；其他魔法角色不再立即触发星门，避免回到攻速/连击协同
 
-        -- #21 闪电卖鸡 银光（每轮攻击仅判定一次，避免多目标重复触发）
+        -- #21 雷电麦坤 银光（每轮攻击仅判定一次，避免多目标重复触发）
         if heroId == 21 and dealDmgFn and target and not result.isMiss and result.category ~= "healing" then
             if not s.silverFlashChecked then
                 s.silverFlashChecked = true

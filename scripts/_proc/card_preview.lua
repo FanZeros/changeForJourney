@@ -5,8 +5,8 @@ local CARDS = {
       img = "image/_drafts/卡皮巴拉_立绘_双参考版_20260912113427.png" },
     { id = 11, name = "熬夜冠军",   orig = "素华",     title = "熬夜修仙党",   q = "SSR", qc = {255, 237, 0},
       img = "image/_drafts/熬夜冠军_立绘_双参考版_20260912113554.png" },
-    { id = 21, name = "闪电卖鸡",   orig = "亚历克斯", title = "赛道之王", q = "SSR", qc = {255, 237, 0},
-      img = "image/_drafts/闪电卖鸡_立绘_双参考版_20260912113646.png" },
+    { id = 21, name = "雷电麦坤",   orig = "亚历克斯", title = "赛道之王", q = "SSR", qc = {255, 237, 0},
+      img = "image/_drafts/雷电麦坤_立绘_双参考版_20260912113646.png" },
 }
 
 local W, H = 1200, 1600

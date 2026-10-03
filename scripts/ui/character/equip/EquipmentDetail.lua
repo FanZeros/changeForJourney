@@ -15,12 +15,14 @@ local GameConfig       = require("config.GameConfig")
 local PlayerStore      = require("core.PlayerStore")
 local HC               = require("config.HeroConfig")
 local ImageCache       = require("ui.widget.ImageCache")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 local BF               = require("systems.ButtonFeedback")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1-B5] 矢量九宫格
 local ExpTable         = require("config.ExpTable")
 local GameState        = require("core.GameState")
 local TutorialManager  = require("systems.TutorialManager")
 local I18n             = require("core.I18n")
+local EquipmentDetailDraw = require("ui.character.equip.EquipmentDetailDraw")
 
 local BlacksmithConfig = require("config.BlacksmithConfig")
 local KeywordText      = require("ui.widget.KeywordText")
@@ -59,7 +61,7 @@ local detState = {
     descDragging = false,
     descDragLastY = 0,
     -- 关闭动画快照（close() 时冻结，防止 server 推送导致面板内容跳变）
-    snapshot  = nil,    -- { newEquip, isEquipped, curEquip, hasCurrent, btnText, powerDiff }
+    snapshot  = nil,    -- { newEquip, isEquipped, curEquip, hasCurrent, btnKey, powerDiff }
 }
 
 -- ======================== 动画常量 ========================
@@ -81,13 +83,6 @@ local function easeInCubic(t)
     return t * t * t
 end
 
--- ======================== 九宫格 insets (UI_ZBTS) ========================
-
-local NS_TOP    = 400
-local NS_RIGHT  = 93
-local NS_BOTTOM = 93
-local NS_LEFT   = 93
-
 -- ======================== 品质边框/文本颜色 ========================
 -- [B-方案] 统一引用 DarkIcon.QUALITY_TRIM 古卷色表
 local QUALITY_COLOR = DarkIcon.QUALITY_TRIM
@@ -97,7 +92,6 @@ local AFFIX_BADGE_KEY = { "D", "C", "B", "A", "S" }
 
 -- ======================== 图片资源 ========================
 
-local imgBg          = {}   -- [1..5] 品质背景九宫格
 local imgPowerIcon   = -1
 local imgArrowUp     = -1
 local imgArrowDown   = -1
@@ -153,96 +147,6 @@ end
 --- 描边文字（16方向采样）
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
 
--- ======================== 九宫格绘制 ========================
-
---- 绘制九宫格拉伸图片
----@param vg any NanoVG 上下文
----@param img number 图片句柄
----@param dx number 目标区域左上角 X
----@param dy number 目标区域左上角 Y
----@param dw number 目标区域宽
----@param dh number 目标区域高
----@param iTop number 上边距 inset
----@param iRight number 右边距 inset
----@param iBottom number 下边距 inset
----@param iLeft number 左边距 inset
-local function drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, iLeft)
-    if img < 0 then return end
-
-    local srcW, srcH = nvgImageSize(vg, img)
-    if srcW <= 0 or srcH <= 0 then return end
-
-    local sL = iLeft
-    local sR = iRight
-    local sT = iTop
-    local sB = iBottom
-    local sMW = srcW - sL - sR
-    local sMH = srcH - sT - sB
-
-    local dL = math.min(iLeft, dw * 0.5)
-    local dR = math.min(iRight, dw * 0.5)
-    local dT = math.min(iTop, dh * 0.5)
-    local dB = math.min(iBottom, dh * 0.5)
-
-    if sMW <= 0 or sMH <= 0 then
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, img, 1.0)
-        nvgBeginPath(vg)
-        nvgRect(vg, dx, dy, dw, dh)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-        return
-    end
-
-    -- 整数分界点
-    local ix0 = math.floor(dx + 0.5)
-    local iy0 = math.floor(dy + 0.5)
-    local ix1 = math.floor(dx + dL + 0.5)
-    local iy1 = math.floor(dy + dT + 0.5)
-    local ix2 = math.floor(dx + dw - dR + 0.5)
-    local iy2 = math.floor(dy + dh - dB + 0.5)
-    local ix3 = math.floor(dx + dw + 0.5)
-    local iy3 = math.floor(dy + dh + 0.5)
-
-    -- 9个patch: {destX, destY, destW, destH, srcX, srcY, srcW, srcH}
-    -- 绘制顺序：中心→边→角，后画的覆盖先画的，用1px重叠消除缝隙
-    local OV = 1  -- 重叠像素
-    local patches = {
-        -- 中心（四向各扩1px）
-        { ix1 - OV, iy1 - OV, ix2 - ix1 + OV * 2, iy2 - iy1 + OV * 2, sL, sT, sMW, sMH },
-        -- 四条边（朝中心方向扩1px）
-        { ix1 - OV, iy0,      ix2 - ix1 + OV * 2, iy1 - iy0 + OV,     sL,       0,        sMW, sT  }, -- 上
-        { ix1 - OV, iy2 - OV, ix2 - ix1 + OV * 2, iy3 - iy2 + OV,     sL,       sT + sMH, sMW, sB  }, -- 下
-        { ix0,      iy1 - OV, ix1 - ix0 + OV,     iy2 - iy1 + OV * 2, 0,        sT,       sL,  sMH }, -- 左
-        { ix2 - OV, iy1 - OV, ix3 - ix2 + OV,     iy2 - iy1 + OV * 2, sL + sMW, sT,       sR,  sMH }, -- 右
-        -- 四个角（朝中心方向扩1px，最后绘制覆盖边的重叠区）
-        { ix0,      iy0,      ix1 - ix0 + OV, iy1 - iy0 + OV, 0,        0,        sL, sT  }, -- 左上
-        { ix2 - OV, iy0,      ix3 - ix2 + OV, iy1 - iy0 + OV, sL + sMW, 0,        sR, sT  }, -- 右上
-        { ix0,      iy2 - OV, ix1 - ix0 + OV, iy3 - iy2 + OV, 0,        sT + sMH, sL, sB  }, -- 左下
-        { ix2 - OV, iy2 - OV, ix3 - ix2 + OV, iy3 - iy2 + OV, sL + sMW, sT + sMH, sR, sB  }, -- 右下
-    }
-
-    nvgShapeAntiAlias(vg, 0)
-    for _, p in ipairs(patches) do
-        local px, py, pw, ph = p[1], p[2], p[3], p[4]
-        local sx, sy, sw, sh = p[5], p[6], p[7], p[8]
-        if pw > 0 and ph > 0 and sw > 0 and sh > 0 then
-            local scaleX = pw / sw
-            local scaleY = ph / sh
-            local paint = nvgImagePattern(vg,
-                px - sx * scaleX,
-                py - sy * scaleY,
-                srcW * scaleX,
-                srcH * scaleY,
-                0, img, 1.0)
-            nvgBeginPath(vg)
-            nvgRect(vg, px, py, pw, ph)
-            nvgFillPaint(vg, paint)
-            nvgFill(vg)
-        end
-    end
-    nvgShapeAntiAlias(vg, 1)
-end
-
 -- ======================== 战斗力计算 ========================
 
 -- [临时背包战斗力优化] 按角色伤害类型过滤不生效的"攻击向"派生属性
@@ -274,18 +178,22 @@ local BASE_STAT_SET = {}
 for _, k in ipairs(AD.BASE_STATS) do BASE_STAT_SET[k] = true end
 
 --- 计算单个属性贡献的战斗力值
+--- [fix 930] 六围一律按派生表折算（有 excluded 时排除异系派生）。
+---   旧逻辑仅在 heroId 非 nil 时走派生表，导致背包/战利品/铁匠铺视角
+---   （heroId=nil）六围按 valueModel=5 满额计价——戒指/吊坠等六围饰品
+---   战力虚高 3.3 倍（设计调平值 ≈1.5/点，见模板 4.28×1.5≈6.43）。
 ---@param key string 属性 key
 ---@param value number 属性数值
 ---@param excluded table|nil 排除集合
 ---@return number 战斗力贡献
 local function calcStatPower(key, value, excluded)
-    -- 六围属性且存在排除规则 → 按派生表部分计算
-    if excluded and BASE_STAT_SET[key] then
+    -- 六围属性 → 恒按派生表折算有效战斗力
+    if BASE_STAT_SET[key] then
         local derivatives = AD.DERIVATIVES and AD.DERIVATIVES[key]
         if derivatives then
             local effectiveVM = 0
             for _, d in ipairs(derivatives) do
-                if not excluded[d.attr] then
+                if not (excluded and excluded[d.attr]) then
                     local dMeta = AD.META[d.attr]
                     if dMeta and dMeta.valueModel and dMeta.valueModel > 0 then
                         -- perPoint 是每点六围增加的派生属性量
@@ -341,7 +249,7 @@ local function calcEquipPower(equip, heroId)
     end
 
     for _, affix in ipairs(equip.affixes or {}) do
-        power = power + calcStatPower(affix.key, affix.value, excluded)
+        power = power + calcStatPower(affix.key, EquipmentSystem.effectiveAffixValue(equip, affix), excluded)
     end
 
     return math.floor(power)
@@ -371,7 +279,7 @@ end
 ---@return string
 local function getStatName(key)
     local meta = AD.META[key]
-    return meta and meta.name or key
+    return I18n.lookup(meta and meta.name or key)
 end
 
 -- ======================== 新装备面板参考坐标（绝对值） ========================
@@ -387,7 +295,7 @@ local REF_BG_H   = 1380
 local COMPACT_BG_W = 600
 local COMPACT_BTN_H = 64
 local COMPACT_BTN_GAP = 14
-local COMPACT_BTN_W = COMPACT_BG_W - 56
+local COMPACT_BTN_W = 300   -- [UI 0930] 按钮收窄（原 COMPACT_BG_W - 56 过宽）
 
 -- 装备名称（左对齐）
 local REF_NAME_X = 470    -- 左对齐基准
@@ -465,9 +373,9 @@ local REF_BTN_W   = 410
 local REF_BTN_H   = 100
 local REF_BTN_FONT = 40
 
--- 前往洗练按钮（装备详情背景底边下方 18px）
+-- 强化按钮（装备详情背景底边下方 18px）[UI 0930] 宽度收窄
 local REF_ENH_BTN_GAP  = 18   -- 与背景底边间距
-local REF_ENH_BTN_W    = 410
+local REF_ENH_BTN_W    = 300
 local REF_ENH_BTN_H    = 100
 local REF_ENH_BTN_FONT = 40
 
@@ -502,7 +410,8 @@ local COMPACT_CONTENT_BOTTOM_PAD = 24
 ---@param equip table|nil
 ---@return number
 local function compactContentBottom(equip)
-    local bottom = COMPACT_QUALITY_Y + 18
+    -- [UI 0930] 稀有度下方新增 Lv 行（中心 +40，字号 28），底部随之下移
+    local bottom = COMPACT_QUALITY_Y + 58
     local statCount = equip and equip.baseStats and #equip.baseStats or 0
     if statCount > 0 then
         bottom = COMPACT_STAT_Y0 + (statCount - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
@@ -521,8 +430,7 @@ local SET_ROW_H = 36
 local SET_GAP = 10
 
 local function compactSetRowHeight(line)
-    local desc = line.text:match("^%d件%s+(.*)$") or ""
-    local chars = utf8.len(desc) or 0
+    local chars = utf8.len(I18n.lookup(line.desc or "")) or 0
     local lines = math.max(1, math.ceil(chars / 16))
     return 8 + lines * 32
 end
@@ -534,6 +442,7 @@ local function compactSetLines(equip)
     local def = setId and EquipmentSetConfig.get(setId) or nil
     if not def then return nil, {} end
     local count = 0
+    local twoActive, fourActive, sixActive = false, false, false
     local eqData = PlayerStore.Get("equipment")
     if eqData and detState.heroId then
         local counts = EquipmentSetSystem.countSets(
@@ -541,12 +450,20 @@ local function compactSetLines(equip)
             EquipmentSystem.getFromInventory,
             function(data, hid) return EquipmentSystem.getHeroSlots(data, hid) end)
         count = counts[setId] or 0
+        local rows = EquipmentSetSystem.summarize(counts)
+        for i = 1, #rows do
+            local row = rows[i]
+            if row.setId == setId then
+                twoActive, fourActive, sixActive = row.twoActive, row.fourActive, row.sixActive
+                break
+            end
+        end
     end
     local lines = {
-        { text = string.format("%s  %d/6", def.name, count), active = true },
-        { text = "2件  " .. (def.desc2 or ""), active = count >= 2 },
-        { text = "4件  " .. (def.desc4 or ""), active = count >= 4 },
-        { text = "6件  " .. (def.desc6 or ""), active = count >= 6 },
+        { text = I18n.format("%s  %d/6", I18n.lookup(def.name), count), active = true },
+        { tier = 2, desc = def.desc2 or "", active = twoActive },
+        { tier = 4, desc = def.desc4 or "", active = fourActive },
+        { tier = 6, desc = def.desc6 or "", active = sixActive },
     }
     return def, lines
 end
@@ -660,520 +577,93 @@ local function getEquipIcon(templateId)
     return ImageCache.getEquipIcon(templateId)
 end
 
---- 绘制单个装备面板（新装备或当前装备）
----@param vg any NanoVG 上下文
----@param equip table 装备实例
----@param offsetX number X轴偏移（相对于新装备面板参考坐标）
----@param bgCX number 背景中心X
----@param bgCY number 背景中心Y
----@param bgW number 背景宽
----@param bgH number 背景高
----@param powerDiff number|nil 战斗力差值（nil=不显示）
----@param showButton boolean 是否显示穿戴按钮
----@param btnText string 按钮文本
----@param showEnhanceOnly boolean|nil 仅显示前往洗练按钮（隐藏穿戴按钮）
----@param showLock boolean|nil 是否在名称右侧显示锁定图标（仅背包装备）
----@param showDecompose boolean|nil 是否在前往洗练按钮下方显示「立即分解」按钮（仅背包未穿戴装备）
-local function drawEquipPanel(vg, equip, offsetX, bgCX, bgCY, bgW, bgH, powerDiff, showButton, btnText, showEnhanceOnly, showLock, showDecompose)
-    if not equip then return end
-
-    local q = equip.quality or 1
-    local qColor = QUALITY_COLOR[q] or QUALITY_COLOR[1]
-
-    -- 1) 背景（坐标取整避免缝隙）[暗黑化 P1-B5] 矢量纯底板 + 品质语义描边
-    local bgX = math.floor(bgCX - bgW * 0.5 + 0.5)
-    local bgY = math.floor(bgCY - bgH * 0.5 + 0.5)
-    DarkIcon.drawNine(vg, "plain",
-        bgX, bgY, bgW, bgH,
-        { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
-
-    -- 2) 装备名称 - 左对齐 X578 Y625 字号40 纯白 描边4；等级直接接在名字后面
-    local nameStr = equip.name or "???"
-    if EquipmentSystem.getAscendLevel(equip) > 0 then
-        nameStr = nameStr .. " +" .. EquipmentSystem.getAscendLevel(equip)
-    end
-    nameStr = nameStr .. "  Lv." .. (equip.level or 1)
-    drawTextStroke(vg, REF_NAME_X + offsetX, REF_NAME_Y, nameStr,
-        REF_NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        255, 255, 255, 4)
-
-    -- 2.1) 锁定图标 - 名称右侧（仅背包装备显示，可点击）
-    if showLock and imgLock >= 0 then
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, REF_NAME_FONT)
-        local nameW = nvgTextBounds(vg, 0, 0, nameStr)
-        local LOCK_SIZE = 64
-        local LOCK_GAP  = 14
-        local lockCX = REF_NAME_X + offsetX + nameW + LOCK_GAP + LOCK_SIZE * 0.5
-        local locked = (equip.locked == true)
-        drawImageCentered(vg, imgLock, lockCX, REF_NAME_Y, LOCK_SIZE, LOCK_SIZE,
-            locked and 1.0 or 0.4)
-        -- 记录点击热区（最终位置，触摸区域略放大方便点按）
-        detState.lockHotspot = {
-            cx = lockCX, cy = REF_NAME_Y,
-            w  = LOCK_SIZE + 24, h = LOCK_SIZE + 24,
+-- 绘制分区：共用活状态和 KeywordText；图片 getter 保证 init 之后的句柄可见。
+local panelDraw = EquipmentDetailDraw.create({
+    detState = detState, setKw = setKw,
+    qualityColor = QUALITY_COLOR, affixBadgeKey = AFFIX_BADGE_KEY,
+    ---@return EquipmentDetailDrawImages
+    getImages = function()
+        return {
+            powerIcon = imgPowerIcon, arrowUp = imgArrowUp, arrowDown = imgArrowDown,
+            btnGreen = imgBtnGreen, btnYellow = imgBtnYellow, btnRed = imgBtnRed,
+            lock = imgLock, affixBadge = imgAffixBadge,
         }
-    end
-
-    -- 3) 装备类型 - 左对齐 X578 Y706 字号30 纯白
-    local typeName = equip.type or EquipmentConfig.SLOT_NAME[equip.slot] or ""
-    local tpl = EquipmentConfig.ITEMS[equip.templateId]
-        or EquipmentConfig.ITEMS[tostring(equip.templateId)]
-    local setId = EquipmentSetConfig.getSetIdForTemplate(tpl)
-    local setDef = setId and EquipmentSetConfig.get(setId) or nil
-    if setDef then
-        typeName = typeName .. " · " .. setDef.name
-    end
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, REF_TYPE_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, REF_TYPE_X + offsetX, REF_TYPE_Y, typeName, nil)
-
-    -- 4) 品质文本 - 左对齐 X578 Y861 字号30 品质色 描边4
-    local qualityDef = EquipmentConfig.QUALITY[q]
-    local qualityName = qualityDef and qualityDef.name or "普通"
-    drawTextStroke(vg, REF_QUALITY_X + offsetX, REF_QUALITY_Y, qualityName,
-        REF_QUALITY_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        qColor[1], qColor[2], qColor[3], 4)
-
-    -- 5-7) 战斗力 - 右上角，字号与属性行一致
-    local equipPower = calcEquipPower(equip, detState.heroId)
-    local powerStr = require("core.NumberUtil").format(equipPower)
-    local powerFont = REF_STAT_FONT
-    local powerRight = REF_BG_CX + COMPACT_BG_W * 0.5 - 24 + offsetX
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, powerFont)
-    local pwTextW = nvgTextBounds(vg, 0, 0, powerStr)
-    local powerIconSize = 44
-    local arrowExtra = (powerDiff and powerDiff ~= 0) and (REF_ARROW_GAP + REF_ARROW_SIZE) or 0
-    local powerValX = powerRight - arrowExtra - pwTextW
-    drawImageCentered(vg, imgPowerIcon,
-        powerValX - 10 - powerIconSize * 0.5, REF_NAME_Y,
-        powerIconSize, powerIconSize, 1.0)
-    drawTextStroke(vg, powerValX, REF_NAME_Y, powerStr,
-        powerFont, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-        0xf7, 0xfe, 0x77, 4)
-    if powerDiff and powerDiff ~= 0 then
-        local arrowCX = powerValX + pwTextW + REF_ARROW_GAP + REF_ARROW_SIZE * 0.5
-        if powerDiff > 0 then
-            drawImageCentered(vg, imgArrowUp, arrowCX, REF_NAME_Y,
-                REF_ARROW_SIZE, REF_ARROW_SIZE, 1.0)
-        else
-            drawImageCentered(vg, imgArrowDown, arrowCX, REF_NAME_Y,
-                REF_ARROW_SIZE, REF_ARROW_SIZE, 1.0)
-        end
-    end
-
-    -- 8) 装备图标 - X903 Y809 290*290
-    local iconCX = REF_ICON_CX + offsetX
-    local iconCY = REF_ICON_CY
-    local equipIconImg = getEquipIcon(equip.templateId)
-    if equipIconImg >= 0 then
-        DarkIcon.drawIconDark(vg, equipIconImg, iconCX, iconCY, REF_ICON_SIZE, REF_ICON_SIZE, 1.0)  -- [暗黑化 P2-B]
-    else
-        -- 无图标时回退为占位框+文字
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, iconCX - REF_ICON_SIZE * 0.5, iconCY - REF_ICON_SIZE * 0.5,
-            REF_ICON_SIZE, REF_ICON_SIZE, 20)
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 25))
-        nvgFill(vg)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 48)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(qColor[1], qColor[2], qColor[3], 180))
-        local shortName = string.sub(equip.name or "?", 1, 6)
-        nvgText(vg, iconCX, iconCY, shortName, nil)
-    end
-
-    -- 8.5) 升阶角标（右上角，跟着这件装备）
-    local slotLv = EquipmentSystem.getAscendLevel(equip)
-    if slotLv > 0 then
-        local enhText = "+" .. slotLv
-        local enhX = iconCX + REF_ICON_SIZE * 0.5 - 12
-        local enhY = iconCY - REF_ICON_SIZE * 0.5 + 12
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 48)
-        nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
-        -- 黑色描边 16方向
-        nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
-        local sStep = math.pi * 2 / 16
-        for si = 0, 15 do
-            local sa = si * sStep
-            nvgText(vg, enhX + math.cos(sa) * 4, enhY + math.sin(sa) * 4, enhText, nil)
-        end
-        -- 绿色填充
-        nvgFillColor(vg, nvgRGBA(0x00, 0xff, 0x60, 255))
-        nvgText(vg, enhX, enhY, enhText, nil)
-    end
-
-    -- 11-14) 基础属性 + 词缀：超出框内可视区时下滚
-    local pinnedCY, scrollMax = layoutButtons(equip)
-    detState.descScrollMax = scrollMax
-    clampDescScroll()
-    local descH = math.max(80, pinnedCY - 56 - DESC_TOP)
-    nvgSave(vg)
-    nvgIntersectScissor(vg, bgX, DESC_TOP, bgW, descH)
-    nvgTranslate(vg, 0, -detState.descScrollY)
-
-    if equip.baseStats and #equip.baseStats > 0 then
-        local ascendBoost = EquipmentSystem.getAscendBoost(equip)
-        for i, s in ipairs(equip.baseStats) do
-            local statCY = REF_STAT_BG_Y0 + (i - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
-
-            -- 11) 属性行：不要底色阴影，只留文字
-            local sName = getStatName(s[1])
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, REF_STAT_FONT)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-            nvgText(vg, REF_STAT_TEXT_X + offsetX, statCY, sName, nil)
-
-            -- 属性值含装备升阶加成
-            local rawVal = s[2]
-            if i == 1 then rawVal = rawVal * (1 + ascendBoost) end
-            local sVal = formatStatValue(s[1], rawVal)
-            drawTextStroke(vg, REF_STAT_VAL_X + offsetX, statCY, sVal,
-                REF_STAT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                255, 255, 255, 4)
-        end
-    end
-
-    -- 15-18) 随机属性（词缀）
-    if equip.affixes and #equip.affixes > 0 then
-        -- 15) "随机属性" 标题 - 左对齐 X578 Y1206 字号30 颜色918f88
-        -- 标题Y根据基础属性数量动态偏移
-        local baseStatCount = equip.baseStats and #equip.baseStats or 0
-        local affixTitleY = REF_AFFIX_TITLE_Y
-        -- 如果基础属性数量不同，调整Y位置（以2条为基准）
-        if baseStatCount ~= 0 then
-            local baseStatEndY = REF_STAT_BG_Y0 + (baseStatCount - 1) * (REF_STAT_BG_H + REF_STAT_GAP) + REF_STAT_BG_H * 0.5
-            -- 标题在最后一条基础属性下方留一定间距
-            local minGap = 30
-            if affixTitleY < baseStatEndY + minGap then
-                affixTitleY = baseStatEndY + minGap
-            end
-        end
-
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, REF_AFFIX_TITLE_FONT)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0x91, 0x8f, 0x88, 255))
-        nvgText(vg, REF_AFFIX_TITLE_X + offsetX, affixTitleY, "随机属性", nil)
-
-        -- 词缀行起始Y：标题底部 + 15px + 行高一半
-        local firstAffixY = affixTitleY + REF_AFFIX_TITLE_FONT * 0.5 + REF_AFFIX_GAP_TOP + REF_AFFIX_ROW_H * 0.5
-
-        for i, affix in ipairs(equip.affixes) do
-            local affixY = firstAffixY + (i - 1) * (REF_AFFIX_ROW_H + REF_AFFIX_GAP)
-            local isCorrupt = AffixConfig.isCorruptAffix(affix)
-            local aq = affix.quality or 1
-            local badgeKey = AFFIX_BADGE_KEY[aq] or "D"
-            local badgeImg = imgAffixBadge[badgeKey] or -1
-
-            -- 词缀行不铺底色阴影
-            if isCorrupt then
-                local r = math.min(REF_BADGE_W, REF_BADGE_H) * 0.28
-                nvgBeginPath(vg)
-                nvgCircle(vg, REF_BADGE_CX + offsetX, affixY, r)
-                nvgFillColor(vg, nvgRGBA(0x9B, 0x4D, 0xFF, 255))
-                nvgFill(vg)
-                nvgBeginPath(vg)
-                nvgCircle(vg, REF_BADGE_CX + offsetX, affixY, r)
-                nvgStrokeWidth(vg, 2)
-                nvgStrokeColor(vg, nvgRGBA(0xE0, 0xB0, 0xFF, 220))
-                nvgStroke(vg)
-            elseif badgeImg >= 0 then
-                drawImageCentered(vg, badgeImg,
-                    REF_BADGE_CX + offsetX, affixY,
-                    REF_BADGE_W, REF_BADGE_H, 1.0)
-            end
-
-            -- 16) 词缀名称 - 左对齐 X636 字号34 颜色725850（与基础属性相同）
-            local affName = affix.name or "?"
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, REF_STAT_FONT)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
-            nvgText(vg, REF_AFFIX_TEXT_X + offsetX, affixY, affName, nil)
-
-            -- 词缀数值 - 右对齐 X1016 字号34 白色 描边4（与基础属性相同）
-            local affVal = "+" .. formatStatValue(affix.key, affix.value)
-            drawTextStroke(vg, REF_STAT_VAL_X + offsetX, affixY, affVal,
-                REF_STAT_FONT, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                255, 255, 255, 4)
-        end
-    end
-
-    nvgRestore(vg)
-
-    -- 19-20) 穿戴按钮钉在框内，说明超出部分用滚动看
-    if showButton then
-        local btnCY = pinnedCY
-        if not showEnhanceOnly then
-            -- 19) 按钮背景 UI_AN_LV.png - X807 Y1461 410*100
-            local _bf1 = BF.begin(vg, "ed_equip", REF_BTN_CX + offsetX, btnCY, REF_BTN_W, REF_BTN_H)
-            drawImageCentered(vg, imgBtnGreen,
-                REF_BTN_CX + offsetX, btnCY,
-                REF_BTN_W, REF_BTN_H, 1.0)
-
-            -- 20) 穿戴按钮文字 - 正中央 字号40 金黄
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, REF_BTN_FONT)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-            nvgText(vg, REF_BTN_CX + offsetX, btnCY, btnText, nil)
-            BF.finish(vg, _bf1)
-            local _TM = require("systems.TutorialManager")
-            if _TM.isActive() then _TM.registerHotspot("equip_btn_equip", REF_BTN_CX + offsetX, btnCY, REF_BTN_W, REF_BTN_H, "right") end
-        end
-
-        -- 21-22) 前往洗练按钮（仅铁匠铺已解锁时显示）
-        if TutorialManager.isBuildingUnlocked("smith") then
-            local enhBtnCY
-            if showEnhanceOnly then
-                -- 背包模式：前往洗练按钮顶替穿戴按钮的位置
-                enhBtnCY = btnCY
-            else
-                enhBtnCY = bgCY + bgH * 0.5 + REF_ENH_BTN_GAP + REF_ENH_BTN_H * 0.5
-            end
-            local _bf2 = BF.begin(vg, "ed_enhance", REF_BTN_CX + offsetX, enhBtnCY, REF_BTN_W, REF_BTN_H)
-            drawImageCentered(vg, imgBtnYellow,
-                REF_BTN_CX + offsetX, enhBtnCY,
-                REF_ENH_BTN_W, REF_ENH_BTN_H, 1.0)
-
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, REF_ENH_BTN_FONT)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-            nvgText(vg, REF_BTN_CX + offsetX, enhBtnCY, "前往洗练", nil)
-            BF.finish(vg, _bf2)
-
-            -- 23-24) 立即分解按钮（背包未穿戴装备，前往洗练下方）
-            if showDecompose then
-                local decBtnCY = enhBtnCY + REF_ENH_BTN_H * 0.5 + REF_DEC_BTN_GAP + REF_ENH_BTN_H * 0.5
-                local _bf3 = BF.begin(vg, "ed_decompose", REF_BTN_CX + offsetX, decBtnCY, REF_ENH_BTN_W, REF_ENH_BTN_H)
-                drawImageCentered(vg, imgBtnRed,
-                    REF_BTN_CX + offsetX, decBtnCY,
-                    REF_ENH_BTN_W, REF_ENH_BTN_H, 1.0)
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, REF_ENH_BTN_FONT)
-                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-                nvgText(vg, REF_BTN_CX + offsetX, decBtnCY, "立即分解", nil)
-                BF.finish(vg, _bf3)
-                local slot = equip.slot
-                local field = slot and BlacksmithConfig.SLOT_SCROLL_MAP[slot]
-                local refund = field and BlacksmithConfig.calcAscendScrollRefund(
-                    EquipmentSystem.getAscendLevel(equip)) or 0
-                if refund > 0 and field then
-                    local hint = BlacksmithConfig.formatScrollRefund({ [field] = refund })
-                    if hint then
-                        drawTextStroke(vg, REF_BTN_CX + offsetX,
-                            decBtnCY + REF_ENH_BTN_H * 0.5 + 28, hint,
-                            28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-                            255, 214, 102, 3)
-                    end
-                end
-            end
-        end
-    end
-end
-
---- 配装小窗：套装说明独立于属性和词条，按钮贴在套装区后方。
----@param vg any
----@param equip table
----@param btnText string
----@param showActions boolean|nil
-local function drawCompactPanel(vg, equip, btnText, showActions)
-    local q = equip.quality or 1
-    local qColor = QUALITY_COLOR[q] or QUALITY_COLOR[1]
-    local panelW = COMPACT_BG_W
-    local panelH = compactViewHeight(equip, showActions ~= false)
-    local panelX = REF_BG_CX - panelW * 0.5
-    local leftX = panelX + COMPACT_PAD_TOP
-    local rightX = panelX + panelW - COMPACT_PAD_TOP
-    DarkIcon.drawNine(vg, "plain", panelX, 0, panelW, panelH,
-        { accent = DarkIcon.QUALITY_TRIM[math.min(6, math.max(1, q))] })
-    if showActions ~= false then detState.lockHotspot = nil end
-
-    local nameStr = equip.name or "???"
-    if EquipmentSystem.getAscendLevel(equip) > 0 then
-        nameStr = nameStr .. " +" .. EquipmentSystem.getAscendLevel(equip)
-    end
-    drawTextStroke(vg, leftX, COMPACT_NAME_Y, nameStr, 44,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-    if imgLock >= 0 then
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 44)
-        local nameW = nvgTextBounds(vg, 0, 0, nameStr)
-        local lockSize = 36
-        local lockCX = leftX + nameW + 14 + lockSize * 0.5
-        drawImageCentered(vg, imgLock, lockCX, COMPACT_NAME_Y, lockSize, lockSize,
-            equip.locked and 1.0 or 0.4)
-        if showActions ~= false then
-            detState.lockHotspot = { cx = lockCX, cy = COMPACT_NAME_Y, w = lockSize + 20, h = lockSize + 20 }
-        end
-    end
-
-    local typeName = equip.type or EquipmentConfig.SLOT_NAME[equip.slot] or ""
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 26)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-    nvgText(vg, leftX, COMPACT_TYPE_Y, typeName, nil)
-
-    local qualityDef = EquipmentConfig.QUALITY[q]
-    drawTextStroke(vg, leftX, COMPACT_QUALITY_Y, qualityDef and qualityDef.name or "普通", 28,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, qColor[1], qColor[2], qColor[3], 3)
-
-    local iconCX = panelX + panelW - 96
-    local icon = getEquipIcon(equip.templateId)
-    if icon >= 0 then
-        DarkIcon.drawIconDark(vg, icon, iconCX, COMPACT_ICON_CY, COMPACT_ICON_SIZE, COMPACT_ICON_SIZE, 1.0)
-    end
-    local ascend = EquipmentSystem.getAscendLevel(equip)
-    if ascend > 0 then
-        drawTextStroke(vg, iconCX + 48, COMPACT_ICON_CY - 52, "+" .. ascend, 28,
-            NVG_ALIGN_RIGHT + NVG_ALIGN_TOP, 0, 255, 96, 3)
-    end
-
-    local powerStr = require("core.NumberUtil").format(calcEquipPower(equip, detState.heroId))
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 22)
-    local powerW = nvgTextBounds(vg, 0, 0, powerStr)
-    local lvStr = "LV " .. tostring(equip.level or 1)
-    nvgFontSize(vg, 20)
-    local lvW = nvgTextBounds(vg, 0, 0, lvStr)
-    local badgeW = 28 + powerW + 18 + lvW + 22
-    local badgeX = rightX - badgeW
-    local badgeY = COMPACT_NAME_Y
-    nvgBeginPath(vg)
-    nvgRoundedRect(vg, badgeX, badgeY - 18, badgeW, 36, 18)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 120))
-    nvgFill(vg)
-    drawImageCentered(vg, imgPowerIcon, badgeX + 18, badgeY, 22, 22, 1.0)
-    drawTextStroke(vg, badgeX + 34, badgeY, powerStr, 22,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 0xf7, 0xfe, 0x77, 2)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 20)
-    nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(220, 214, 200, 255))
-    nvgText(vg, rightX - 10, badgeY, lvStr, nil)
-
-    local bottom = COMPACT_QUALITY_Y + 18
-    if equip.baseStats and #equip.baseStats > 0 then
-        local boost = EquipmentSystem.getAscendBoost(equip)
-        for i, stat in ipairs(equip.baseStats) do
-            local y = COMPACT_STAT_Y0 + (i - 1) * (REF_STAT_BG_H + REF_STAT_GAP)
-            local raw = stat[2]
-            if i == 1 then raw = raw * (1 + boost) end
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 36)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0x72, 0x58, 0x50, 255))
-            nvgText(vg, leftX, y, getStatName(stat[1]), nil)
-            drawTextStroke(vg, rightX, y, formatStatValue(stat[1], raw), 36,
-                NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-            bottom = y + REF_STAT_BG_H * 0.5
-        end
-    end
-    if equip.affixes and #equip.affixes > 0 then
-        local firstY = bottom + 16 + REF_AFFIX_ROW_H * 0.5
-        for i, affix in ipairs(equip.affixes) do
-            local y = firstY + (i - 1) * (REF_AFFIX_ROW_H + 8)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 36)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0xE8, 0xC8, 0x6A, 255))
-            nvgText(vg, leftX, y, affix.name or "?", nil)
-            drawTextStroke(vg, rightX, y, "+" .. formatStatValue(affix.key, affix.value), 36,
-                NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, 255, 255, 255, 3)
-            bottom = y + REF_AFFIX_ROW_H * 0.5
-        end
-    end
-
-    local setDef, setLines = compactSetLines(equip)
-    if #setLines > 0 then
-        local sectionTop = compactContentBottom(equip) + SET_GAP
-        local col = setDef.color or { 232, 208, 122, 255 }
-        local sectionH = SET_TITLE_H + 4
-        for i = 2, #setLines do
-            sectionH = sectionH + compactSetRowHeight(setLines[i])
-        end
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, leftX - 10, sectionTop, panelW - 36, sectionH, 12)
-        nvgFillColor(vg, nvgRGBA(12, 10, 8, 200))
-        nvgFill(vg)
-        nvgStrokeColor(vg, nvgRGBA(col[1], col[2], col[3], 110))
-        nvgStrokeWidth(vg, 2)
-        nvgStroke(vg)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 30)
-        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], 255))
-        nvgText(vg, leftX + 8, sectionTop + 22, setLines[1].text, nil)
-        local rowTop = sectionTop + SET_TITLE_H
-        local mainPanel = (showActions ~= false)  -- 仅主面板关键词可点（对比/只读预览不交互）
-        for i = 2, #setLines do
-            local line = setLines[i]
-            local tier, desc = line.text:match("^(%d件%s+)(.*)$")
-            nvgFillColor(vg, nvgRGBA(col[1], col[2], col[3], line.active and 255 or 185))
-            nvgFontSize(vg, 26)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-            nvgText(vg, leftX + 8, rowTop + 2, tier or "", nil)
-            if mainPanel then
-                local kw = setKw[i - 1]
-                if line.active then
-                    kw.textColor = { 244, 237, 224, 255 }
-                else
-                    kw.textColor = { 170, 158, 140, 210 }
-                end
-                kw:draw(vg, desc or line.text, leftX + 78, rowTop + 2, panelW - 130, 26, 32)
-            else
-                nvgFillColor(vg, line.active and nvgRGBA(244, 237, 224, 255)
-                    or nvgRGBA(170, 158, 140, 210))
-                nvgFontSize(vg, 26)
-                nvgTextBox(vg, leftX + 78, rowTop + 2, panelW - 130, desc or line.text, nil)
-            end
-            rowTop = rowTop + compactSetRowHeight(line)
-        end
-    end
-
-    if showActions == false then return end
-    local smithOn = TutorialManager.isBuildingUnlocked("smith")
-    local showWear = detState.slot ~= nil
-    local wearCY, refineCY, cx, bw, bh = compactButtonRow()
-    if showWear then
-        local feedback = BF.begin(vg, "ed_equip", cx, wearCY, bw, bh)
-        drawImageCentered(vg, imgBtnGreen, cx, wearCY, bw, bh, 1.0)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 30)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-        nvgText(vg, cx, wearCY, btnText, nil)
-        BF.finish(vg, feedback)
-    end
-    if smithOn then
-        local feedback = BF.begin(vg, "ed_enhance", cx, refineCY, bw, bh)
-        drawImageCentered(vg, imgBtnYellow, cx, refineCY, bw, bh, 1.0)
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 30)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(255, 214, 102, 255))
-        nvgText(vg, cx, refineCY, "前往洗练", nil)
-        BF.finish(vg, feedback)
-    end
-end
+    end,
+    drawImageCentered = drawImageCentered,
+    drawTextStroke = drawTextStroke,
+    calcEquipPower = calcEquipPower,
+    getEquipIcon = getEquipIcon,
+    getStatName = getStatName,
+    formatStatValue = formatStatValue,
+    layoutButtons = layoutButtons,
+    clampDescScroll = clampDescScroll,
+    compactViewHeight = compactViewHeight,
+    compactSetLines = compactSetLines,
+    compactSetRowHeight = compactSetRowHeight,
+    compactContentBottom = compactContentBottom,
+    compactButtonRow = compactButtonRow,
+    layout = {
+        COMPACT_BG_W = COMPACT_BG_W,
+        COMPACT_ICON_CY = COMPACT_ICON_CY,
+        COMPACT_ICON_SIZE = COMPACT_ICON_SIZE,
+        COMPACT_NAME_Y = COMPACT_NAME_Y,
+        COMPACT_PAD_TOP = COMPACT_PAD_TOP,
+        COMPACT_QUALITY_Y = COMPACT_QUALITY_Y,
+        COMPACT_STAT_Y0 = COMPACT_STAT_Y0,
+        COMPACT_TYPE_Y = COMPACT_TYPE_Y,
+        DESC_TOP = DESC_TOP,
+        REF_AFFIX_GAP = REF_AFFIX_GAP,
+        REF_AFFIX_GAP_TOP = REF_AFFIX_GAP_TOP,
+        REF_AFFIX_ROW_H = REF_AFFIX_ROW_H,
+        REF_AFFIX_TEXT_X = REF_AFFIX_TEXT_X,
+        REF_AFFIX_TITLE_FONT = REF_AFFIX_TITLE_FONT,
+        REF_AFFIX_TITLE_X = REF_AFFIX_TITLE_X,
+        REF_AFFIX_TITLE_Y = REF_AFFIX_TITLE_Y,
+        REF_ARROW_GAP = REF_ARROW_GAP,
+        REF_ARROW_SIZE = REF_ARROW_SIZE,
+        REF_BADGE_CX = REF_BADGE_CX,
+        REF_BADGE_H = REF_BADGE_H,
+        REF_BADGE_W = REF_BADGE_W,
+        REF_BG_CX = REF_BG_CX,
+        REF_BTN_CX = REF_BTN_CX,
+        REF_BTN_FONT = REF_BTN_FONT,
+        REF_BTN_H = REF_BTN_H,
+        REF_BTN_W = REF_BTN_W,
+        REF_DEC_BTN_GAP = REF_DEC_BTN_GAP,
+        REF_ENH_BTN_FONT = REF_ENH_BTN_FONT,
+        REF_ENH_BTN_GAP = REF_ENH_BTN_GAP,
+        REF_ENH_BTN_H = REF_ENH_BTN_H,
+        REF_ENH_BTN_W = REF_ENH_BTN_W,
+        REF_ICON_CX = REF_ICON_CX,
+        REF_ICON_CY = REF_ICON_CY,
+        REF_ICON_SIZE = REF_ICON_SIZE,
+        REF_NAME_FONT = REF_NAME_FONT,
+        REF_NAME_X = REF_NAME_X,
+        REF_NAME_Y = REF_NAME_Y,
+        REF_QUALITY_FONT = REF_QUALITY_FONT,
+        REF_QUALITY_X = REF_QUALITY_X,
+        REF_QUALITY_Y = REF_QUALITY_Y,
+        REF_STAT_BG_H = REF_STAT_BG_H,
+        REF_STAT_BG_Y0 = REF_STAT_BG_Y0,
+        REF_STAT_FONT = REF_STAT_FONT,
+        REF_STAT_GAP = REF_STAT_GAP,
+        REF_STAT_TEXT_X = REF_STAT_TEXT_X,
+        REF_STAT_VAL_X = REF_STAT_VAL_X,
+        REF_TYPE_FONT = REF_TYPE_FONT,
+        REF_TYPE_X = REF_TYPE_X,
+        REF_TYPE_Y = REF_TYPE_Y,
+        SET_GAP = SET_GAP,
+        SET_TITLE_H = SET_TITLE_H,
+    },
+})
+local drawEquipPanel = panelDraw.drawEquipPanel
+local drawCompactPanel = panelDraw.drawCompactPanel
 
 -- ======================== Public API ========================
 
 --- 初始化（加载图片资源）
 ---@param vg any NanoVG 上下文
 function EquipmentDetail.init(vg)
-    for i = 1, 6 do
-        imgBg[i] = nvgCreateImage(vg, "image/品质框/UI_ZBTS_" .. i .. ".png", 0)
-    end
     imgPowerIcon = nvgCreateImage(vg, "image/通用图标/ICON_ZDL.png", 0)
     imgArrowUp   = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     imgArrowDown = nvgCreateImage(vg, "image/通用图标/ICON_down.png", 0)
@@ -1256,7 +746,7 @@ function EquipmentDetail.close()
     local isEquipped = isClickedEquipEquipped()
     local curEquip = getComparisonEquip()
     local hasCurrent = (not isEquipped) and (curEquip ~= nil)
-    local btnText = isEquipped and I18n.t("unequip") or (hasCurrent and I18n.t("replace") or I18n.t("wear"))
+    local btnKey = isEquipped and "unequip" or (hasCurrent and "replace" or "wear")
     local newPower = newEquip and calcEquipPower(newEquip, detState.heroId) or 0
     local curPower = curEquip and calcEquipPower(curEquip, detState.heroId) or 0
     detState.snapshot = {
@@ -1264,7 +754,7 @@ function EquipmentDetail.close()
         isEquipped = isEquipped,
         curEquip   = curEquip,
         hasCurrent = hasCurrent,
-        btnText    = btnText,
+        btnKey     = btnKey,
         powerDiff  = newPower - curPower,
     }
     detState.closing   = true
@@ -1307,6 +797,37 @@ isClickedEquipEquipped = function()
     end
 
     return false, nil
+end
+
+--- 等级穿戴门槛：角色等级低于装备等级时不可穿戴
+---@return boolean ok true=可穿戴
+---@return number|nil requiredLevel 装备需求等级（仅等级不足时）
+local function checkDetailLevelGate()
+    if not detState.heroId or not detState.equipSeq then return true, nil end
+    local equipData = PlayerStore.Get("equipment")
+    local equip = equipData and equipData.inventory and equipData.inventory[detState.equipSeq]
+    if not equip then return true, nil end
+    if not equip.type or not equip.slot then
+        EquipmentSystem.hydrate(equip)
+    end
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, detState.heroId)
+    local ok, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+    return ok, requiredLevel
+end
+
+--- 穿戴前统一拦截：等级不足时提示并拒绝
+---@return boolean blocked true=已拦截（调用方应中止穿戴）
+local function blockIfLevelLocked()
+    local ok, requiredLevel = checkDetailLevelGate()
+    if ok then return false end
+    local Toast = require("core.UiToast")
+    Toast.show(I18n.t("level_not_enough_equip", tostring(requiredLevel or 1)))
+    require("systems.GameSFX").playUIClick(1)
+    BF.trigger("equip_deny")
+    print("[EquipmentDetail] 等级不足拒绝穿戴 seq=" .. tostring(detState.equipSeq)
+        .. " 需Lv." .. tostring(requiredLevel))
+    return true
 end
 
 --- 获取用于对比的"当前装备"（处理副手对比双手武器场景）
@@ -1430,9 +951,9 @@ function EquipmentDetail.handleInput(dx, dy)
             detState.closing = false
             detState.snapshot = nil
             if EquipmentBag.isOpen() then EquipmentBag.close() end
-            local BackpackPanel = require("ui.backpack.BackpackPanel")
-            if BackpackPanel.isOpen() then BackpackPanel.close() end
+            -- [锻炉双页 0929] 仓库保持打开（作为锻炉左栏）；未开时由 BlacksmithPage.open 自动联动打开
             if CharacterDetail.isOpen() then CharacterDetail.forceClose() end
+            newEquip.seq = tonumber(detState.equipSeq)  -- inventory 项不带 seq，工作台需要
             BlacksmithPage.open(newEquip, "xilian")
             print("[EquipmentDetail] 小窗前往洗练 seq=" .. tostring(detState.equipSeq))
             return true
@@ -1447,6 +968,9 @@ function EquipmentDetail.handleInput(dx, dy)
                         heroId = detState.heroId,
                         slot = equippedSlot or detState.slot,
                     })
+                elseif blockIfLevelLocked() then
+                    -- 等级穿戴门槛：等级不足，已提示，中止穿戴且不关闭面板
+                    return true
                 else
                     Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {
                         seq = tonumber(detState.equipSeq),
@@ -1477,13 +1001,10 @@ function EquipmentDetail.handleInput(dx, dy)
         detState.closing = false
         detState.snapshot = nil
 
-        -- 2) 关闭背包（EquipmentBag 或 BackpackPanel）
+        -- 2) 关闭 EquipmentBag（[锻炉双页 0929] 仓库保持打开作为锻炉左栏，
+        --    未开时由 BlacksmithPage.open 自动联动打开）
         if EquipmentBag.isOpen() then
             EquipmentBag.close()
-        end
-        local BackpackPanel = require("ui.backpack.BackpackPanel")
-        if BackpackPanel.isOpen() then
-            BackpackPanel.close()
         end
 
         -- 3) 强制关闭角色详情（跳过动画，否则 isDetailOpen()=true 会阻止 BottomNav 绘制）
@@ -1491,7 +1012,8 @@ function EquipmentDetail.handleInput(dx, dy)
             CharacterDetail.forceClose()
         end
 
-        -- 4) 打开铁匠铺洗练面板并预选装备（铁匠铺常驻左栏，无需切换中栏页）
+        -- 4) 打开铁匠铺洗练面板并预选装备（锻炉在中栏、仓库在左栏）
+        newEquip.seq = tonumber(detState.equipSeq)  -- inventory 项不带 seq，工作台需要
         BlacksmithPage.open(newEquip, "xilian")
         print("[EquipmentDetail] 前往洗练 → 打开铁匠铺洗练面板，装备: " .. (newEquip.name or "?"))
         return true
@@ -1530,6 +1052,9 @@ function EquipmentDetail.handleInput(dx, dy)
                     slot   = equippedSlot or detState.slot,
                 })
                 print("[EquipmentDetail] 发送卸下请求 slot=" .. tostring(equippedSlot or detState.slot))
+            elseif blockIfLevelLocked() then
+                -- 等级穿戴门槛：等级不足，已提示，中止穿戴且不关闭面板
+                return true
             else
                 -- 穿戴/更换装备
                 Client.sendAction(Protocol.ACTION_TYPES.EQUIP_ITEM, {
@@ -1669,7 +1194,12 @@ function EquipmentDetail.draw(vg)
         curEquip   = s.curEquip
         hasCurrent = s.hasCurrent
         powerDiff  = s.powerDiff
-        btnText    = s.btnText
+        -- 新快照按当前语言取 key；旧快照从冻结状态推导，未知 btnText 仍原样兜底。
+        local btnKey = s.btnKey
+        if not btnKey and s.isEquipped ~= nil then
+            btnKey = s.isEquipped and "unequip" or (s.hasCurrent and "replace" or "wear")
+        end
+        btnText = btnKey and I18n.t(btnKey) or I18n.lookup(s.btnText or "")
     else
         local equipData = PlayerStore.Get("equipment")
         if not equipData or not equipData.inventory then return end
@@ -1835,6 +1365,16 @@ end
 
 function EquipmentDetail.getOwner()
     return detState.owner
+end
+
+--- 只读选择快照：悬停与钉住共用同一真源，不暴露装备或可变面板状态。
+---@return table|nil
+function EquipmentDetail.getSelection()
+    if not detState.open or detState.closing then return nil end
+    return {
+        seq = detState.equipSeq, slot = detState.slot, heroId = detState.heroId,
+        owner = detState.owner, pinned = detState.pinned == true,
+    }
 end
 
 function EquipmentDetail.drawIf(vg, owner)

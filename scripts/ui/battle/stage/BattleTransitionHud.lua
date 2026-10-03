@@ -3,7 +3,20 @@
 -- 从 BattleScene.draw 抽出，不拥有计时状态
 -- ============================================================================
 
+local I18n = require("core.I18n")
+
 local M = {}
+
+-- 按最终译文缩字号，保持原过渡层位置与单行布局。
+local function fittedFontSize(vg, text, fontSize, maxWidth)
+    nvgSave(vg)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, fontSize)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    local width = nvgTextBounds(vg, 0, 0, text)
+    nvgRestore(vg)
+    return width > maxWidth and (fontSize * maxWidth / width) or fontSize
+end
 
 local SEARCH_ENEMY_DURATION = 3.0
 local REINCARNATION_DELAY = 2.0
@@ -50,7 +63,10 @@ function M.draw(vg, ctx)
         local nextTargetId = stageConfig.getReincarnationTarget(stageConfig.getDifficulty(ctx.currentStageId))
         local nextDiff = nextTargetId and stageConfig.getDifficulty(nextTargetId) or nil
         local diffName = nextDiff and stageConfig.getDifficultyDisplayName(nextDiff) or "未知"
-        drawTextStroke(vg, 540, BAR_Y + BAR_H + 20, "即将进入" .. diffName .. "难度...", 30,
+        local displayDiffName = nextDiff and I18n.difficulty(diffName) or I18n.lookup(diffName)
+        local transitionText = I18n.format("即将进入%s难度...", displayDiffName)
+        drawTextStroke(vg, 540, BAR_Y + BAR_H + 20, transitionText,
+            fittedFontSize(vg, transitionText, 30, 900),
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 200, 255, 3)
     elseif ctx.searchingTimer ~= nil then
         local progress = math.min(1, ctx.searchingTimer / SEARCH_ENEMY_DURATION)
@@ -73,12 +89,14 @@ function M.draw(vg, ctx)
         local failText = ctx.defeatByTimeout and "时间到!" or "失败..."
         drawTextStroke(vg, 540, 1190, failText, 72,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 200, 80, 80, 6)
-        drawTextStroke(vg, 540, 1250, ctx.stageName, 36,
+        local stageText = I18n.lookup(ctx.stageName)
+        drawTextStroke(vg, 540, 1250, stageText, fittedFontSize(vg, stageText, 36, 900),
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 220, 220, 220, 4)
     else
         drawTextStroke(vg, 540, 1190, "胜利!", 72,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 220, 50, 6)
-        drawTextStroke(vg, 540, 1250, ctx.stageName, 36,
+        local stageText = I18n.lookup(ctx.stageName)
+        drawTextStroke(vg, 540, 1250, stageText, fittedFontSize(vg, stageText, 36, 900),
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 220, 220, 220, 4)
     end
 end

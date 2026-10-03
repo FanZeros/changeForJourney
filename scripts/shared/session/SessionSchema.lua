@@ -19,6 +19,7 @@ SessionSchema.Fields = {
                 offlineBonusCount = 0,       -- 今日已领取额外离线收益次数
                 offlineBonusDate  = "",      -- 上次重置日期（YYYY-MM-DD UTC+8）
                 claimedScenarios  = {},      -- 已领取情景奖励记录（防重复，key=tostring(scenarioId)）
+                tutorialProgress  = nil,     -- 教程独立进度；不把剧情领取当成操作完成
                 initialHeroId     = nil,     -- 玩家初始选择的英雄 ID（由 HeroService.SelectInitialHero 写入）
             }
         end,

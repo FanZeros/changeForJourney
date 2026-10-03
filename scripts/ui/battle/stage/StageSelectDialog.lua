@@ -1,8 +1,8 @@
 -- ============================================================================
 -- StageSelectDialog - 主线选关弹窗（v2 章节两栏版）
 -- 布局（参考暗黑地牢选关图）:
---   左栏: 大关卡（章节）竖排列表，各章色调横幅 + 章名，>9 章上下滚动
---   中栏: 章节地图预览（MAP_{rel}.png cover）+ 该章小关卡网格（5 列）
+--   左栏: 章节战斗背景圆角卡片 + 章名/章号，超出可视区上下滚动
+--   中栏: 该章关卡竖排行 + 敌人卡面
 --         当前关金框 / Boss 关红字 / 终焉神殿独立章组
 --   点击空白关闭
 -- 入口：战斗界面 HUD「选关」按钮（与扫荡/统计同套图标按钮）
@@ -24,6 +24,68 @@ local drawImageCentered = DrawUtil.drawImageCentered
 local drawNineSlice     = DrawUtil.drawNineSlice
 local drawImageCover    = DrawUtil.drawImageCover
 
+-- 章名先翻译再测量；长专名最多两行，避免挤入相邻列或无限缩小字号。
+local titleLayoutCache = {}
+local titleLayoutKeys = {}
+local TITLE_CACHE_LIMIT = 256
+local function titleLines(vg, source, width, fontSize)
+    local caption = I18n.lookup(source)
+    local key = I18n.get() .. "\0" .. caption .. "\0" .. width .. "\0" .. fontSize
+    local cached = titleLayoutCache[key]
+    if cached then return cached end
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, fontSize)
+    local lines, line = {}, ""
+    local tokens = {}
+    if I18n.get() == "en" then
+        for token in caption:gmatch("%S+%s*") do tokens[#tokens + 1] = token end
+    else
+        for _, code in utf8.codes(caption) do tokens[#tokens + 1] = utf8.char(code) end
+    end
+    for _, token in ipairs(tokens) do
+        local candidate = line .. token
+        if line ~= "" and nvgTextBounds(vg, 0, 0, candidate) > width then
+            lines[#lines + 1] = line:gsub("%s+$", "")
+            line = token
+        else
+            line = candidate
+        end
+    end
+    if line ~= "" then lines[#lines + 1] = line:gsub("%s+$", "") end
+    if #lines == 0 then lines[1] = caption end
+    titleLayoutCache[key] = lines
+    titleLayoutKeys[#titleLayoutKeys + 1] = key
+    if #titleLayoutKeys > TITLE_CACHE_LIMIT then
+        local oldest = table.remove(titleLayoutKeys, 1)
+        if oldest then titleLayoutCache[oldest] = nil end
+    end
+    return lines
+end
+
+local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, align, r, g, b, stroke)
+    local size = fontSize
+    local lines = titleLines(vg, source, width, size)
+    local function tooLarge()
+        if #lines > maxLines then return true end
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, size)
+        for _, line in ipairs(lines) do
+            if nvgTextBounds(vg, 0, 0, line) > width then return true end
+        end
+        return false
+    end
+    while tooLarge() and size > 18 do
+        size = size - 1
+        lines = titleLines(vg, source, width, size)
+    end
+    local lineHeight = size + 2
+    local topY = y - (#lines - 1) * lineHeight * 0.5
+    for index, line in ipairs(lines) do
+        drawTextStroke(vg, x, topY + (index - 1) * lineHeight, line, size,
+            align, r, g, b, stroke)
+    end
+end
+
 local StageSelectDialog = {}
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
@@ -42,9 +104,12 @@ local D = {
 
     BG_CX   = 540,  BG_CY  = 1195,
     BG_W    = 950,  BG_H   = 1117,
-    BG_IT   = 180,  BG_IR  = 40,  BG_IB = 50,  BG_IL = 40,
+    -- 九宫格边距必须完整包住源图(827x569)四角铜铆钉(铆钉延伸至 ~x68 / ~y500)，
+    -- 否则铆钉被切进中块随面板拉伸变形
+    BG_IT   = 180,  BG_IR  = 72,  BG_IB = 72,  BG_IL = 72,
 
-    TT_Y    = 690,  TT_FONT = 50,  TT_SW = 6,
+    TT_Y    = 732,  -- 标题下移半行（章节行高 84 的一半；原 690）
+    TT_FONT = 50,  TT_SW = 6,
     TT_SR   = 0x00, TT_SG  = 0x00, TT_SB = 0x00,
 
     -- 左栏: 章节列表
@@ -58,7 +123,7 @@ local D = {
     -- 中栏：关卡竖排（5-1 在上，5-5 在下），每行直接展示敌人卡面
     MID_X     = 315,
     MID_W     = 580,
-    ROW_Y0    = 756,     -- 第一行顶边
+    ROW_Y0    = 790,     -- 第一行顶边（整体下移 20% 行高 ≈34；原 756）
     ROW_H     = 168,     -- 一行高度
     ROW_GAP   = 10,
     CARD_W    = 92,      -- 敌人卡面宽
@@ -84,7 +149,7 @@ local imgLock = -1
 local state = {
     open      = false,
     openTime  = 0,
-    selKey    = nil,   -- 选中章节 key（chapter number 或 "T"=终焉神殿组）
+    selKey    = nil,   -- 选中章节 key（chapter number 或 "T<神殿id>"=单难度终焉组）
     chScroll  = 0,     -- 左栏滚动起点（0-based）
     chDragY   = nil,   -- 左栏按下位置
     chDragScroll = 0, -- 按下时滚动起点
@@ -133,30 +198,32 @@ local function collectAllIds()
     return ids, order
 end
 
---- 章节组：{{ key=chapter|"T", name=, ids={} } 按进度顺序}
+--- 章节组：{{ key=chapter|"T<神殿id>", name=, subLabel=, ids={} } 按进度顺序}
+--- [单难度终焉] 终焉神殿不再合并成一个 "T" 组，每座神殿独立成组，
+--- 沿关卡链自然追加在对应难度第 23 章之后（如困难 23 章 → 困难终焉 → 噩梦 1 章）
 local function collectChapterGroups()
     local ids, order = collectAllIds()
     local groups = {}
     ---@type table<any, number>
     local indexOf = {}
     for _, id in ipairs(ids) do
-        local key
+        local key, name, subLabel
         if SC.isTerminalTemple(id) then
-            key = "T"
+            key = "T" .. tostring(id)
+            name = "终焉"
+            subLabel = SC.getDifficultyDisplayName(SC.getDifficulty(id))
         else
-            key = math.floor(id / 100)
+            local chapter = math.floor(id / 100)
+            key = chapter
+            name = SC.getChapterName(chapter)
+            -- 绝对章号（困难从 24 章起显示 24 章，而非相对 1 章）
+            subLabel = tostring(chapter) .. " 章"
         end
         local gi = indexOf[key]
         if not gi then
             gi = #groups + 1
             indexOf[key] = gi
-            local name
-            if key == "T" then
-                name = "终焉"
-            else
-                name = SC.getChapterName(key)
-            end
-            groups[gi] = { key = key, name = name, ids = {} }
+            groups[gi] = { key = key, name = name, subLabel = subLabel, ids = {} }
         end
         local g = groups[gi]
         g.ids[#g.ids + 1] = id
@@ -178,20 +245,40 @@ local function ensureCache()
     if not maxStage or maxStage < 1 then
         maxStage = SC.NORMAL_FIRST_STAGE or 101
     end
-    if not state.cacheGroups or state.cacheMaxStage ~= maxStage then
+    local nextId = SC.getNextStageId(maxStage)
+    local cleared = BS.getClearedStages()
+    local terminalUnlocked = nextId and SC.isTerminalTemple(nextId)
+        and (cleared[maxStage] or cleared[tostring(maxStage)])
+    if not state.cacheGroups or state.cacheMaxStage ~= maxStage
+        or state.cacheTerminalUnlocked ~= terminalUnlocked then
         local groups, order = collectChapterGroups()
         state.cacheGroups = groups
         state.cacheOrder = order
         state.cacheMaxStage = maxStage
-        -- 解锁基准: maxStage 的链序; 链上找不到(如转生后 id)则视为全解锁
+        state.cacheTerminalUnlocked = terminalUnlocked
         state.cacheMaxOrder = (maxStage and order[maxStage]) or ids_of(groups)
+        if terminalUnlocked then
+            state.cacheMaxOrder = order[nextId] or state.cacheMaxOrder
+        end
     end
     return state.cacheGroups, state.cacheMaxOrder
 end
 
 local function chapterHue(key)
-    local n = (type(key) == "number") and key or 23
+    -- 终焉组 key 形如 "T999"，提取神殿 id 参与取色，让各难度终焉色调互异
+    local n = key
+    if type(key) == "string" then
+        n = tonumber(key:match("^T(%d+)$")) or 23
+    end
     return CH_HUES[((n - 1) % #CH_HUES) + 1]
+end
+
+--- 选关显示的章号：绝对章号（困难第 24 章显示 24-1，与普通 1-23 连续）；
+--- 普通难度相对章与绝对章相同，显示不变
+---@param id number
+---@return number
+local function displayChapter(id)
+    return math.floor(id / 100)
 end
 
 local function shortStageLabel(id)
@@ -201,7 +288,7 @@ local function shortStageLabel(id)
     end
     local entry = SC.getStage(id)
     if not entry then return tostring(id) end
-    local rel = SC.getRelativeChapter(entry.chapter)
+    local rel = displayChapter(id)
     return string.format("%d-%d", rel, entry.stage)
 end
 
@@ -287,9 +374,59 @@ end
 
 -- ======================== Public API ========================
 
+-- 按资源路径缓存，跨难度复用背景；失败限频重试，不永久缓存缺图。
+---@type table<string, integer>
+local chapterBackgrounds = {}
+---@type table<string, number>
+local chapterBackgroundRetry = {}
+local function ensureChapterBackground(vg, stageId)
+    local path = SC.getBattleBackground(stageId)
+    local image = chapterBackgrounds[path]
+    if image and image >= 0 then return image end
+    local now = time.elapsedTime
+    if chapterBackgroundRetry[path] and now < chapterBackgroundRetry[path] then return -1 end
+    local loaded = nvgCreateImage(vg, path, 0) or -1
+    if loaded >= 0 then
+        chapterBackgrounds[path] = loaded
+        chapterBackgroundRetry[path] = nil
+        print("[StageSelectDialog] 章节背景已加载: " .. path)
+    else
+        chapterBackgroundRetry[path] = now + 2
+        print("[StageSelectDialog] 章节背景暂不可用，稍后重试: " .. path)
+    end
+    return loaded
+end
+
+local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked)
+    local image = ensureChapterBackground(vg, stageId)
+    local srcW, srcH = 0, 0
+    if image >= 0 then srcW, srcH = nvgImageSize(vg, image) end
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
+    if srcW and srcH and srcW > 0 and srcH > 0 then
+        -- 等比cover并居中裁切，圆角路径保持现有卡片热区与动画变换。
+        local scale = math.max(D.CH_W / srcW, D.CH_BTN_H / srcH)
+        local w, h = srcW * scale, srcH * scale
+        nvgFillPaint(vg, nvgImagePattern(vg, x + (D.CH_W - w) * 0.5,
+            y + (D.CH_BTN_H - h) * 0.5, w, h, 0, image, 1.0))
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
+        nvgFillColor(vg, nvgRGBA(8, 8, 14, locked and 150 or (isSel and 65 or 90)))
+    elseif isSel then
+        nvgFillColor(vg, nvgRGBA(hue[1] + 24, hue[2] + 24, hue[3] + 18, 235))
+    else
+        nvgFillColor(vg, nvgRGBA(hue[1], hue[2], hue[3], 170))
+    end
+    nvgFill(vg)
+end
+
 ---@param vg any
 function StageSelectDialog.init(vg)
+    for _, image in pairs(chapterBackgrounds) do nvgDeleteImage(vg, image) end
+    chapterBackgrounds, chapterBackgroundRetry = {}, {}
     imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_XG.png", 0)
+    -- 九宫格拉伸用法（950x1117），保留原图；整图拉伸用法（950x647）走 UI_TY_EJQRK_POP 副本
     imgBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     imgAct = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     imgLock = nvgCreateImage(vg, "image/通用图标/UI_ICON_SUO.png", 0)
@@ -310,10 +447,10 @@ function StageSelectDialog.open(teamIdx)
         local BattleTriPage = require("ui.battle.tri.BattleTriPage")
         curStage = BattleTriPage.getTeamStageId(state.targetTeam) or curStage
     end
-    -- 定位到当前关所在章节
+    -- 定位到当前关所在章节（终焉神殿 → 对应单难度终焉组 "T<id>"）
     local curKey
     if curStage and SC.isTerminalTemple(curStage) then
-        curKey = "T"
+        curKey = "T" .. tostring(curStage)
     elseif curStage then
         curKey = math.floor(curStage / 100)
     end
@@ -467,14 +604,7 @@ function StageSelectDialog.draw(vg)
         local firstOrder = firstId and state.cacheOrder and state.cacheOrder[firstId]
         local chapterLocked = (firstOrder == nil) or (maxOrder == nil) or (firstOrder > maxOrder)
 
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
-        if isSel then
-            nvgFillColor(vg, nvgRGBA(hue[1] + 24, hue[2] + 24, hue[3] + 18, 235))
-        else
-            nvgFillColor(vg, nvgRGBA(hue[1], hue[2], hue[3], 170))
-        end
-        nvgFill(vg)
+        drawChapterBackground(vg, firstId, x, y, hue, isSel, chapterLocked)
         if isSel then
             nvgBeginPath(vg)
             nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
@@ -484,19 +614,20 @@ function StageSelectDialog.draw(vg)
         end
 
         local cx = x + D.CH_W * 0.5
-        -- 章节按钮文字：解锁=亮色，锁定=棕色
+        -- 章节按钮文字：解锁=亮色，锁定=灰蓝色
         local chR, chG, chB = 235, 230, 210
-        if chapterLocked then chR, chG, chB = 0x8d, 0x5f, 0x41 end
-        drawTextStroke(vg, cx, y + D.CH_BTN_H * 0.36, g.name, 28,
+        if chapterLocked then chR, chG, chB = 0x8b, 0x95, 0xa5 end
+        drawFittedTitle(vg, cx, y + D.CH_BTN_H * 0.34, g.name, D.CH_W - 18, 26, 2,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, chR, chG, chB, 3)
         if chapterLocked and imgLock >= 0 then
             drawImageCentered(vg, imgLock, x + D.CH_W - 22, y + 22, 30, 30, 0.9)
         end
-        local rel
-        if g.key == "T" then
-            rel = "终焉"
+        -- 副标题：普通章节 = "N 章"；单难度终焉 = 难度名（如 "困难"/"噩梦"）
+        local rel = g.subLabel or tostring(SC.getRelativeChapter(g.key)) .. " 章"
+        if type(g.key) == "string" then
+            rel = I18n.difficulty(rel)
         else
-            rel = tostring(SC.getRelativeChapter(g.key)) .. " 章"
+            rel = I18n.lookup(rel)
         end
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 20)
@@ -543,10 +674,14 @@ function StageSelectDialog.draw(vg)
         -- 关卡号（行左上）：解锁=亮色（Boss红），锁定=棕色
         local fr, fg, fb = 255, 255, 255
         if isBoss then fr, fg, fb = 0xE0, 0x5A, 0x5A end
-        if locked then fr, fg, fb = 0x8d, 0x5f, 0x41 end
-        drawTextStroke(vg, x + 16, y + 34, shortStageLabel(id), 30,
-            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            fr, fg, fb, 2)
+        if locked then fr, fg, fb = 0x8b, 0x95, 0xa5 end
+        if SC.isTerminalTemple(id) then
+            drawFittedTitle(vg, x + 16, y + 50, shortStageLabel(id), D.CARD_X - x - 28, 24, 4,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, fr, fg, fb, 2)
+        else
+            drawTextStroke(vg, x + 16, y + 34, shortStageLabel(id), 30,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, fr, fg, fb, 2)
+        end
 
         -- 状态（行左下）
         local sub
@@ -559,7 +694,7 @@ function StageSelectDialog.draw(vg)
         elseif isBoss then
             sub = "首领"
         else
-            sub = SC.getDifficultyDisplayName(SC.getDifficulty(id))
+            sub = I18n.difficulty(SC.getDifficultyDisplayName(SC.getDifficulty(id)))
         end
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 22)
@@ -567,11 +702,21 @@ function StageSelectDialog.draw(vg)
         if isCur then
             nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, 255))
         elseif locked then
-            nvgFillColor(vg, nvgRGBA(0x8d, 0x5f, 0x41, 255))  -- 未解锁=棕色
+            nvgFillColor(vg, nvgRGBA(0x8b, 0x95, 0xa5, 255))  -- 未解锁=灰蓝色
         else
             nvgFillColor(vg, nvgRGBA(0xb6, 0xb0, 0x9d, 255))
         end
         nvgText(vg, x + 16, y + D.ROW_H - 34, sub, nil)
+
+        -- 终焉神殿额外说明：三队协同战（TerminalRaid 三队共池机制）
+        -- 单独一行放在 sub 下方：卡面与 xN 计数占满行右侧，同行放不下
+        if SC.isTerminalTemple(id) then
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, 18)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, locked and 140 or 220))
+            nvgText(vg, x + 16, y + D.ROW_H - 14, "可三队一起上场", nil)
+        end
 
         -- 推荐战力（行左中，v2.61 接线 / v2.63 图标化）：
         -- 口径 = battle-lab 开荒三人组无养成实测阈值（ml≤46 实测 / ml≤92 保守外推），
@@ -709,7 +854,9 @@ function StageSelectDialog.handleInput(x, y)
                 end
                 if id == currentStageId() then return true end
                 local ok
-                if state.targetTeam then
+                if SC.isTerminalTemple(id) then
+                    ok = require("ui.battle.tri.BattleTriPage").gotoTeamStage(1, id)
+                elseif state.targetTeam then
                     local BattleTriPage = require("ui.battle.tri.BattleTriPage")
                     ok = BattleTriPage.gotoTeamStage(state.targetTeam, id)
                 else

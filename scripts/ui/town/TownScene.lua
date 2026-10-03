@@ -72,11 +72,11 @@ local LABEL_INSET_LEFT   = 100
 -- 铁匠铺（上移，给古树让出中轴）
 local SMITH_CX,  SMITH_CY  = 525,  390
 local SMITH_W,   SMITH_H   = 330,  365
-local SMITH_LBL_CX, SMITH_LBL_CY = 534, 285
+local SMITH_LBL_CX, SMITH_LBL_CY = 534, 560
 local SMITH_LBL_W,  SMITH_LBL_H  = 361, 113
-local SMITH_ICON_CX, SMITH_ICON_CY = 444, 279
+local SMITH_ICON_CX, SMITH_ICON_CY = 444, 554
 local SMITH_ICON_SZ = 64
-local SMITH_TEXT_X,  SMITH_TEXT_Y  = 569, 279
+local SMITH_TEXT_X,  SMITH_TEXT_Y  = 569, 554
 
 -- 终焉古树（天赋入口，画面中轴；尺寸避开仓库/酒馆热区）
 local TREE_CX,  TREE_CY  = 540,  1040
@@ -170,6 +170,11 @@ end
 local CLICK_CALLBACK_DELAY = 0.15  -- 回调延迟（秒），让闪白+缩放可见
 local deferredActions = {}         -- { { fireAt=number, fn=function }, ... }
 
+--- 引导换步接管页面时，取消尚未执行的旧建筑打开回调，避免延迟重开覆盖目标。
+function TownScene.cancelPendingPageOpen()
+    deferredActions = {}
+end
+
 local function deferAction(delay, fn)
     table.insert(deferredActions, { fireAt = time.elapsedTime + delay, fn = fn })
 end
@@ -238,8 +243,10 @@ local function drawImageDarkTint(vg, img, cx, cy, w, h, alpha)
     if img < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img,
-        nvgRGBA(222, 211, 196, math.floor(255 * alpha)))
+    -- 测试桩覆写全局 nvgRGBA 返回 number，LSP 推联合类型；cast 收窄
+    local tint = nvgRGBA(222, 211, 196, math.floor(255 * alpha))
+    ---@cast tint NVGcolor
+    local paint = nvgImagePatternTinted(vg, x, y, w, h, 0, img, tint)
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -470,12 +477,7 @@ function TownScene.draw(vg)
         -- [关卡门控] 铁匠铺按"通关 2-4"解锁，锁标显示具体条件（原先只有锁图标）
         drawBuildingLockOverlay(vg, SMITH_CX, SMITH_CY, "smith", true, nil, getStageUnlockLabel("smith"))
     end
-    -- 铁匠铺红点（背包满→提示去分解）
-    if not smithLocked and smithDecomposeRedDot then
-        local rdSz = 40
-        local rdX = SMITH_LBL_CX + SMITH_LBL_W * 0.5 - rdSz * 0.3
-        local rdY = SMITH_LBL_CY - SMITH_LBL_H * 0.5 + rdSz * 0.3
-        DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)end
+    -- [分解入仓 0929] 背包满红点已迁到仓库建筑（分解入口在仓库），铁匠铺不再显示
     -- 铁匠铺可强化角标（任意槽位满足强化消耗条件）
     if not smithLocked and not smithDecomposeRedDot and imgIconUp >= 0 then
         local ok, canEnh = pcall(function() return getBlacksmithPage().canEnhanceAny() end)
@@ -548,6 +550,13 @@ function TownScene.draw(vg)
         WAREHOUSE_LBL_CX, WAREHOUSE_LBL_CY, WAREHOUSE_LBL_W, WAREHOUSE_LBL_H,
         WAREHOUSE_ICON_CX, WAREHOUSE_ICON_CY, WAREHOUSE_ICON_SZ, imgIconWarehouse,
         WAREHOUSE_TEXT_X, WAREHOUSE_TEXT_Y, "尘封仓库")
+    -- [分解入仓 0929] 背包满红点（分解入口在仓库"分解"tab）
+    if smithDecomposeRedDot then
+        local rdSz = 40
+        local rdX = WAREHOUSE_LBL_CX + WAREHOUSE_LBL_W * 0.5 - rdSz * 0.3
+        local rdY = WAREHOUSE_LBL_CY - WAREHOUSE_LBL_H * 0.5 + rdSz * 0.3
+        DarkIcon.draw(vg, "reddot", rdX, rdY, rdSz, 1.0)
+    end
     BF.finish(vg, _bfWarehouse)
 
     -- 6) 教堂建筑（30级开放 + 引导豁免）
@@ -601,12 +610,11 @@ function TownScene.draw(vg)
 
     -- 第7个地点：遗匣（没有等级/引导门槛）。立绘与名牌图标分开，名牌沿用地点图标尺寸。
     local lootFeedback = BF.begin(vg, "town_lootbox", LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H)
-    DarkIcon.drawNine(vg, "plain", 390 + LOOT_SHIFT_X, 2010, 300, 64)
     drawImageDarkTint(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, 1.0)
     drawFlashOverlay(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, getClickFlashAlpha("lootbox"))
     drawBuildingLabel(vg, 540 + LOOT_SHIFT_X, LOOT_LBL_CY, 361, 113,
-        450 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, 64, -1, 585 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, "遗匣")
-    DarkIcon.draw(vg, "relicbox", 450 + LOOT_SHIFT_X + 32, LOOT_LBL_CY - 6, 64, 1.0)
+        467 + LOOT_SHIFT_X, LOOT_LBL_CY, 64, -1, 574 + LOOT_SHIFT_X, LOOT_LBL_CY, "遗匣")
+    DarkIcon.draw(vg, "relicbox", 467 + LOOT_SHIFT_X, LOOT_LBL_CY, 64, 1.0)
     local count = LootBox.getCount()
     if count > 0 then
         -- 数量文字已经说明有待领取，不再额外画红点
@@ -620,8 +628,8 @@ function TownScene.draw(vg)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
     drawBuildingLabel(vg, TASK_CX, TASK_LBL_CY, 361, 113,
-        TASK_CX - 90, TASK_LBL_CY - 6, 64, -1, TASK_CX + 45, TASK_LBL_CY - 6, "功绩")
-    DarkIcon.draw(vg, "merit", TASK_CX - 58, TASK_LBL_CY - 6, 64, 1.0)
+        TASK_CX - 73, TASK_LBL_CY, 64, -1, TASK_CX + 34, TASK_LBL_CY, "功绩")
+    DarkIcon.draw(vg, "merit", TASK_CX - 73, TASK_LBL_CY, 64, 1.0)
     local taskOk, TaskPage = pcall(require, "ui.story.task.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
         DarkIcon.draw(vg, "reddot", TASK_CX + 169, TASK_LBL_CY - 45, 36, 1.0)
@@ -704,7 +712,8 @@ function TownScene.handleInput(dx, dy)
     local _TM = require("systems.TutorialManager")
     -- 铁匠铺点击检测
     if dx >= SMITH_CX - SMITH_W * 0.5 and dx <= SMITH_CX + SMITH_W * 0.5
-       and dy >= SMITH_CY - SMITH_H * 0.5 and dy <= SMITH_CY + SMITH_H * 0.5 then
+       and dy >= SMITH_CY - SMITH_H * 0.5
+       and dy <= SMITH_LBL_CY + SMITH_LBL_H * 0.5 then
         if not _TM.isBuildingUnlocked("smith") then
             print("[TownScene] 铁匠铺未被引导解锁")
             return true

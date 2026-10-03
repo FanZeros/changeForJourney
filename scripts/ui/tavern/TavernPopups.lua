@@ -626,7 +626,8 @@ end
 
 --- 初始化弹窗资源
 function M.init(vg)
-    img.confirmBg     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
+    -- 整图拉伸绘制（950x647），使用 POP 副本，调整原图不影响九宫格用法
+    img.confirmBg     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK_POP.png", 0)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_HUANG.png 贴图加载已移除（矢量绘制替代）
     img.confirmBtnBuy = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.diamondBig    = nvgCreateImage(vg, "image/货币道具/UI_icon_SJ_X.png", 0)
@@ -675,6 +676,11 @@ function M.checkAndShowConfirm(count)
     popupState.confirmIsStellar   = isStellar
     print("[TavernPopups] 招募券不足，弹出确认框: 需" .. shortfall .. "张券, 花费" .. diamondCost .. "钻石")
     return false
+end
+
+--- 补券确认属于招募业务流程，教程恢复不能清掉此窗口。
+function M.isRecruitConfirmOpen()
+    return popupState.confirmVisible
 end
 
 --- 是否有弹窗正在阻塞输入
@@ -782,7 +788,7 @@ function M.drawAll(vg)
         local diamondEnough = GameState.getGems() >= popupState.confirmDiamondCost
         local dBadgeR, dBadgeG, dBadgeB = 255, 255, 255
         if not diamondEnough then
-            dBadgeR, dBadgeG, dBadgeB = 0x8d, 0x5f, 0x41
+            dBadgeR, dBadgeG, dBadgeB = 0x8b, 0x95, 0xa5
         end
         drawTextStroke(vg,
             CF.DIAMOND_CX + CF.BADGE_OX,

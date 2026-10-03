@@ -30,14 +30,14 @@ local DATA_Y = -73.59
 local DATA_W = 691
 local DATA_H = 228.54
 
--- 布局坐标（设计分辨率）
-local SPINE_X = 571          -- Spine 动画中心 X
-local SPINE_Y = 1949         -- Spine 动画中心 Y
+-- 横屏顶栏战力在 (197, 175)。特效跟着数字，不再用旧竖屏底部坐标。
+local SPINE_X = 430
+local SPINE_Y = 175
 
-local TEXT_POWER_X  = 503    -- 当前战斗力 X
-local TEXT_POWER_Y  = 1992   -- 当前战斗力 Y
-local TEXT_DELTA_X  = 627    -- 提升数值 X
-local TEXT_DELTA_Y  = 1992   -- 提升数值 Y
+local TEXT_POWER_X  = 250
+local TEXT_POWER_Y  = 175
+local TEXT_DELTA_X  = 470
+local TEXT_DELTA_Y  = 175
 local TEXT_SIZE     = 47     -- 字号
 local TEXT_STROKE   = 4      -- 描边宽度
 
@@ -87,9 +87,17 @@ local function ensureLoaded(vg)
     if loaded and spineInstance then return true end
     if not vg then return false end
 
+    -- 旧版 TapTap 客户端无 Spine 扩展（全局函数缺失）→ 提醒更新（进程内仅弹一次）
+    if type(nvgSpineCreate) ~= "function" then
+        print("[SpinePowerUpEffect] nvgSpineCreate unavailable (old client?)")
+        require("ui.hud.popup.UpdateNoticePopup").notifyOnce()
+        return false
+    end
+
     spineInstance = nvgSpineCreate(vg)
     if not spineInstance then
         print("[SpinePowerUpEffect] nvgSpineCreate failed")
+        require("ui.hud.popup.UpdateNoticePopup").notifyOnce()
         return false
     end
 
@@ -183,7 +191,8 @@ end
 
 --- 每帧绘制（在 NanoVGRender 中调用）
 ---@param vg any NanoVG 上下文
-function SpinePowerUpEffect.draw(vg)
+---@param offsetY number|nil 与 TopBar.draw 的纵向偏移一致
+function SpinePowerUpEffect.draw(vg, offsetY)
     -- 稳定化计时：等待服务端数据全部到达后才开始响应战斗力变化
     if stabilizing then
         local frameDt = time.timeStep or 0.016
@@ -228,8 +237,9 @@ function SpinePowerUpEffect.draw(vg)
         spineInstance:SetScale(1.0, -1.0)
         local dataCenterX = DATA_X + DATA_W * 0.5
         local dataCenterY = DATA_Y + DATA_H * 0.5
+        local shiftY = offsetY or 0
         local posX = SPINE_X - dataCenterX
-        local posY = SPINE_Y + dataCenterY
+        local posY = SPINE_Y + shiftY + dataCenterY
         spineInstance:SetPosition(posX, posY)
         nvgSpineRender(vg, spineInstance)
     end
@@ -255,8 +265,9 @@ function SpinePowerUpEffect.draw(vg)
         local textOpts = { alpha = textAlpha }
 
         -- 当前战斗力（纯白，左对齐）
+        local textY = TEXT_POWER_Y + (offsetY or 0)
         DrawUtil.drawTextStroke(vg,
-            TEXT_POWER_X, TEXT_POWER_Y,
+            TEXT_POWER_X, textY,
             tostring(displayPower),
             TEXT_SIZE, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE,
             COLOR_WHITE[1], COLOR_WHITE[2], COLOR_WHITE[3],
@@ -264,7 +275,7 @@ function SpinePowerUpEffect.draw(vg)
 
         -- 提升数值（金黄，左对齐）
         DrawUtil.drawTextStroke(vg,
-            TEXT_DELTA_X, TEXT_DELTA_Y,
+            TEXT_DELTA_X, textY,
             "+" .. tostring(displayDelta),
             TEXT_SIZE, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE,
             COLOR_GOLD[1], COLOR_GOLD[2], COLOR_GOLD[3],

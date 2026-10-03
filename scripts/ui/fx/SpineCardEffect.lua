@@ -39,6 +39,11 @@ local DATA_H = 1209
 local activeInstances = {}
 local MAX_IDLE_TIME = 2.0  -- 页面不再绘制后丢弃旧特效，防止返回页面时补播
 
+--- Spine 扩展不可用（旧版 TapTap 客户端）→ 提醒更新（进程内仅弹一次）
+local function notifyUpdateOnce()
+    require("ui.hud.popup.UpdateNoticePopup").notifyOnce()
+end
+
 --- 内部：创建并播放一个 Spine 实例
 ---@param vg any NanoVG 上下文（可为 nil，延迟到 draw 时加载）
 ---@param animName string 动画名称 "1"/"2"/"3"
@@ -62,7 +67,8 @@ local function playAnim(vg, animName, scope, cx, cy, onComplete)
 
     -- 如果已有 vg 上下文，立刻加载
     if vg then
-        local inst = nvgSpineCreate(vg)
+        if type(nvgSpineCreate) ~= "function" then notifyUpdateOnce() end
+        local inst = nvgSpineCreate and nvgSpineCreate(vg) or nil
         if inst and inst:Load(SPINE_JSON) then
             inst:SetPremultipliedAlpha(true)
             inst:SetSpeed(1.0)
@@ -120,10 +126,6 @@ function SpineCardEffect.draw(vg, scope)
 
     local now = time.elapsedTime
 
-    -- 1:1 缩放下的数据中心偏移
-    local dataCenterX = DATA_X + DATA_W * 0.5
-    local dataCenterY = DATA_Y + DATA_H * 0.5
-
     -- 从后往前遍历，方便安全删除
     for i = #activeInstances, 1, -1 do
         local e = activeInstances[i]
@@ -138,7 +140,8 @@ function SpineCardEffect.draw(vg, scope)
 
         -- 懒加载：首次 draw 时创建实例
         if not e.loaded then
-            local inst = nvgSpineCreate(vg)
+            if type(nvgSpineCreate) ~= "function" then notifyUpdateOnce() end
+            local inst = nvgSpineCreate and nvgSpineCreate(vg) or nil
             if inst and inst:Load(SPINE_JSON) then
                 inst:SetPremultipliedAlpha(true)
                 inst:SetSpeed(1.0)
@@ -175,9 +178,10 @@ function SpineCardEffect.draw(vg, scope)
         local inst = e.inst
         inst:Update(dt)
         inst:SetScale(1.0, -1.0)
-
-        local posX = e.cx - dataCenterX
-        local posY = e.cy + dataCenterY
+        local boxX = e.cx - DATA_W * 0.5
+        local boxY = e.cy - DATA_H * 0.5
+        local posX = boxX - DATA_X
+        local posY = boxY + DATA_H + DATA_Y
         inst:SetPosition(posX, posY)
 
         nvgSpineRender(vg, inst)

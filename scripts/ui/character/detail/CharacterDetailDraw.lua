@@ -12,6 +12,8 @@ local EquipmentBag      = require("ui.character.equip.EquipmentBag")
 local PlayerStore       = require("core.PlayerStore")
 local EquipmentConfig   = require("config.EquipmentConfig")
 local DetailAttrs       = require("ui.character.detail.CharacterDetailAttrs")
+local EquipStats        = require("ui.character.detail.CharacterEquipStats")
+local AttributeView     = require("ui.character.detail.CharacterAttributeView")
 local DrawUtil          = require("core.DrawUtil")
 local HeroFrame         = require("ui.widget.HeroFrame")
 local HeroAssetUtil     = require("config.HeroAssetUtil")
@@ -23,6 +25,7 @@ local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫�
 local ETS = require("systems.ExtraTalentSystem")
 local I18n = require("core.I18n")
 local KeywordText = require("ui.widget.KeywordText")
+local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
 
 local drawTextStroke = DrawUtil.drawTextStroke
 
@@ -51,14 +54,14 @@ local DT_CARD_CX, DT_CARD_CY = 540, 447
 -- 装备槽位
 local DT_SLOT_SIZE = 160
 M.DT_SLOT_SIZE = DT_SLOT_SIZE  -- handleInput 需要
--- 六边形围立绘（中心 540,447，垂直半径 262/水平 ±215，顶点朝上；立绘缩至 362 高避开上下槽）
+-- 六槽围立绘：头盔上移20，两侧同排下移20，左右关于x=540镜像；绘制/命中共用此表。
 local DT_SLOTS = {
-    { name = "头盔",   cx = 540, cy = 185, img = "helmet",    slot = "helmet" },
-    { name = "饰品",   cx = 755, cy = 316, img = "accessory", slot = "accessory" },
-    { name = "副武器", cx = 755, cy = 578, img = "offhand",   slot = "offhand" },
+    { name = "头盔",   cx = 540, cy = 165, img = "helmet",    slot = "helmet" },
+    { name = "饰品",   cx = 755, cy = 336, img = "accessory", slot = "accessory" },
+    { name = "副武器", cx = 755, cy = 598, img = "offhand",   slot = "offhand" },
     { name = "鞋子",   cx = 540, cy = 790, img = "shoes",     slot = "shoes" },
-    { name = "主武器", cx = 325, cy = 578, img = "weapon",    slot = "weapon" },
-    { name = "护甲",   cx = 325, cy = 316, img = "armor",     slot = "armor" },
+    { name = "主武器", cx = 325, cy = 598, img = "weapon",    slot = "weapon" },
+    { name = "护甲",   cx = 325, cy = 336, img = "armor",     slot = "armor" },
 }
 M.DT_SLOTS = DT_SLOTS  -- handleInput 需要
 
@@ -71,8 +74,9 @@ local MID_BG_CY = DESIGN_H - MID_BG_H * 0.5
 local MID_TITLE_CX, MID_TITLE_CY = 540, 860
 local MID_NAME_CX, MID_NAME_CY = 540, 995
 
-local MID_EXP_CX, MID_EXP_CY = 536, 1083
-local MID_EXP_W, MID_EXP_H   = 910, 54
+-- 职业与经验同排，压缩标题下方留白，把高度让给属性区域。
+local MID_EXP_CX, MID_EXP_CY = 710, 990
+local MID_EXP_W, MID_EXP_H   = 590, 54
 local MID_EXP_PADDING         = 5
 
 local MID_QUALITY_BOX_CX, MID_QUALITY_BOX_CY = 310, 1175
@@ -81,48 +85,39 @@ local MID_QUALITY_LABEL_X  = 121
 local MID_QUALITY_LABEL_Y  = 1175
 local MID_QUALITY_ICON_RIGHT_X = 509
 
-local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 540, 1175
-local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 900, 60
+local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 244, 990
+local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 300, 64
 M.MID_CLASS_BOX_CX = MID_CLASS_BOX_CX
 M.MID_CLASS_BOX_CY = MID_CLASS_BOX_CY
 M.MID_CLASS_BOX_W = MID_CLASS_BOX_W
 M.MID_CLASS_BOX_H = MID_CLASS_BOX_H
 local MID_CLASS_LABEL_X  = 580
-local MID_CLASS_LABEL_Y  = 1175
+local MID_CLASS_LABEL_Y  = MID_CLASS_BOX_CY
 local MID_CLASS_COMBO_RIGHT_X = 967
-local MID_CLASS_ICON_SIZE     = 64
+local MID_CLASS_ICON_SIZE     = 56
 
-local MID_DIV1_CX, MID_DIV1_CY = 540, 1238
+local MID_DIV1_CX, MID_DIV1_CY = 540, 1044
 local MID_DIV1_W, MID_DIV1_H   = 1010, 37
 
 -- ======================== 属性区域布局常量 ========================
 
-local ATTR_BOX_W, ATTR_BOX_H = 440, 60
-local ATTR_BOX_RADIUS        = 20
-
-local ATTR_COL1_CX = 310
+local ATTR_BOX_W, ATTR_BOX_H = AttributeView.ATTRIBUTE_STYLE.boxW, AttributeView.ATTRIBUTE_STYLE.rowH
+local ATTR_COL1_CX = AttributeView.ATTRIBUTE_STYLE.boxCX
 local ATTR_COL2_CX = 770
-local ATTR_ROW_GAP = 9
-local ATTR_FIRST_ROW_Y = 1294
+local ATTR_ROW_GAP = AttributeView.ATTRIBUTE_STYLE.rowStep - ATTR_BOX_H
+local ATTR_FIRST_ROW_Y = AttributeView.ATTRIBUTE_LAYOUT.firstY
 
-local ATTR_DECO_X    = 137
-local ATTR_DECO_SIZE = 20
-local ATTR_DECO_DX   = ATTR_COL2_CX - ATTR_COL1_CX  -- 460
+-- 两页共用绘制API，属性页使用独立大字号；输入坐标跟随同一布局源。
+M.drawAttributeRows = AttributeView.drawAttributeRows
+M.ATTRIBUTE_STYLE = AttributeView.ATTRIBUTE_STYLE
+M.rowAt = AttributeView.rowAt
 
-local ATTR_NAME_LEFT_X = 167
-local ATTR_VAL_RIGHT_X = 510
-
-local ATTR_FONT_SIZE     = 35
-local ATTR_FONT_SIZE_MIN = 22
-local ATTR_NAME_VAL_GAP  = 15
-
--- 左列单列，右侧留给雷达图。可见 8 行，超出继续滚动。
-local ATTR_VISIBLE_ROWS = 8
+-- 左列单列，右侧留给雷达图；超出可见行继续滚动。
 local ATTR_SCROLL_FRICTION = 0.90
 local ATTR_SCROLL_MIN_VEL  = 0.3
 local ATTR_SCROLL_WHEEL_STEP = 60
-local ATTR_CLIP_TOP    = ATTR_FIRST_ROW_Y - ATTR_BOX_H * 0.5
-local ATTR_CLIP_HEIGHT = 1840 - 24 - ATTR_CLIP_TOP
+local ATTR_CLIP_TOP    = AttributeView.ATTRIBUTE_LAYOUT.y
+local ATTR_CLIP_HEIGHT = AttributeView.ATTRIBUTE_LAYOUT.h
 
 -- 导出给 handleInput 使用
 M.ATTR_BOX_W        = ATTR_BOX_W
@@ -135,75 +130,24 @@ M.ATTR_CLIP_TOP     = ATTR_CLIP_TOP
 M.ATTR_CLIP_HEIGHT  = ATTR_CLIP_HEIGHT
 M.ATTR_SCROLL_WHEEL_STEP = ATTR_SCROLL_WHEEL_STEP
 
-local MID_DIV2_CX, MID_DIV2_CY = 540, 1840
+local MID_DIV2_CX, MID_DIV2_CY = 540, 1968
 local MID_DIV2_W, MID_DIV2_H   = 1010, 37
 
--- ======================== 六围区域布局常量 ========================
--- 雷达图占位仍按旧的 2 列 × 3 行盒子算高度，避免把下面的天赋区顶开。
-
-local STAT_BOX_W, STAT_BOX_H = 437, 95
-local STAT_BOX_RADIUS        = 20
-local STAT_COL1_CX           = 308.5
-local STAT_ROW1_CY           = 1641
-local STAT_COL_GAP           = 26
-local STAT_ROW_GAP_STAT      = 16
-local STAT_COL2_CX           = STAT_COL1_CX + STAT_BOX_W + STAT_COL_GAP
-local STAT_ROW_STEP          = STAT_BOX_H + STAT_ROW_GAP_STAT
-
--- 雷达图放在右列，高度对齐分割线以上的属性区
-local HEX_CX = 800
-local HEX_CY = ATTR_FIRST_ROW_Y + (ATTR_VISIBLE_ROWS - 1) * (ATTR_BOX_H + ATTR_ROW_GAP) * 0.5
-local HEX_R  = 175
-local HEX_LABEL_R = 230
--- 顶点顺序：上起顺时针。力量在上，其余按战斗直觉绕圈。
-local HEX_NAMES = { "力量", "敏捷", "体质", "魂火", "命数", "秘识" }
-local HEX_KEYS = { ["力量"] = "str", ["敏捷"] = "agi", ["体质"] = "vit", ["魂火"] = "spi", ["命数"] = "luk", ["秘识"] = "int" }
--- 六维各自的颜色：力量赤、敏捷绿、体质褐、魂火紫、命数金、秘识青
-local HEX_COLORS = {
-    ["力量"] = { 0xE2, 0x4A, 0x3B },
-    ["敏捷"] = { 0x3D, 0xDC, 0x6E },
-    ["体质"] = { 0xC4, 0x8A, 0x3A },
-    ["魂火"] = { 0xC0, 0x58, 0xE8 },
-    ["命数"] = { 0xFF, 0xD2, 0x3A },
-    ["秘识"] = { 0x3E, 0xC6, 0xE0 },
-}
-
-local STAT_ICON_BG_DX   = 132 - 301
-local STAT_ICON_BG_DY   = 0
-local STAT_ICON_BG_SIZE = 69
-local STAT_ICON_BG_R    = 14
-
-local STAT_ICON_DX   = 132 - 301
-local STAT_ICON_DY   = 1
-local STAT_ICON_SIZE = 60
-
-local STAT_NAME_DX = 190 - 301
-local STAT_NAME_DY = 1623 - 1641
-
-local STAT_VAL_DY = 1663 - 1641
-
-local STAT_LAYOUT = DetailAttrs.STAT_LAYOUT
-
--- 导出给 handleInput 使用
-M.STAT_BOX_W    = STAT_BOX_W
-M.STAT_BOX_H    = STAT_BOX_H
-M.STAT_COL1_CX  = STAT_COL1_CX
-M.STAT_COL2_CX  = STAT_COL2_CX
-M.STAT_ROW1_CY  = STAT_ROW1_CY
-M.STAT_ROW_STEP = STAT_ROW_STEP
-M.STAT_LAYOUT   = STAT_LAYOUT
-M.HEX_CX        = HEX_CX
-M.HEX_CY        = HEX_CY
-M.HEX_LABEL_R   = HEX_LABEL_R
-M.HEX_NAMES     = HEX_NAMES
+-- 雷达绘图/布局由共享模块提供，属性页公开命中坐标同步放大布局。
+M.STAT_BOX_W, M.STAT_BOX_H = EquipStats.LEGACY.STAT_BOX_W, EquipStats.LEGACY.STAT_BOX_H
+M.STAT_COL1_CX, M.STAT_COL2_CX = EquipStats.LEGACY.STAT_COL1_CX, EquipStats.LEGACY.STAT_COL2_CX
+M.STAT_ROW1_CY, M.STAT_ROW_STEP = EquipStats.LEGACY.STAT_ROW1_CY, EquipStats.LEGACY.STAT_ROW_STEP
+M.STAT_LAYOUT = EquipStats.LEGACY.STAT_LAYOUT
+M.HEX_CX, M.HEX_CY = EquipStats.LEGACY.HEX_CX, EquipStats.LEGACY.HEX_CY
+M.HEX_LABEL_R, M.HEX_NAMES = EquipStats.LEGACY.HEX_LABEL_R, EquipStats.LEGACY.HEX_NAMES
 
 -- ======================== 天赋技能区域布局常量 ========================
 
-local TALENT_BG_CX, TALENT_BG_CY = 540, 2045
-local TALENT_BG_W, TALENT_BG_H   = 903, 210
+local TALENT_BG_CX, TALENT_BG_CY = 540, 2118
+local TALENT_BG_W, TALENT_BG_H   = 936, 220
 local TALENT_BG_RADIUS            = 20
 
-local TALENT_NAME_Y = 1918
+local TALENT_NAME_Y = 2012
 local TALENT_TEXT_LEFT   = TALENT_BG_CX - TALENT_BG_W * 0.5 + 33
 local TALENT_TEXT_TOP    = TALENT_NAME_Y + 36
 local TALENT_TEXT_RIGHT  = TALENT_BG_CX + TALENT_BG_W * 0.5 - 33
@@ -214,7 +158,6 @@ local TALENT_TEXT_WIDTH  = TALENT_TEXT_RIGHT - TALENT_TEXT_LEFT
 local BTN_UNEQUIP_CX, BTN_UNEQUIP_CY = 211, 105
 local BTN_EQUIP_CX,   BTN_EQUIP_CY   = 869, 105
 local BTN_BATCH_W,     BTN_BATCH_H    = 304, 100
-local EQUIP_LOWER_OFFSET = 160 -- 配装页底板下移，给装备词条预留空间
 
 -- 九宫格参数（左右60，上下15）打包为 table，节省 local 变量槽位
 local NP = { hongT=15, hongR=60, hongB=15, hongL=60, lvT=15, lvR=60, lvB=15, lvL=60 }
@@ -231,6 +174,8 @@ M.BTN_BATCH_H    = BTN_BATCH_H
 
 local BTN_BACK_CX, BTN_BACK_CY = 122, 1150
 local BTN_BACK_W, BTN_BACK_H   = 184, 143
+-- 属性列表上移后，非三栏模式的返回键放入标题左侧空位，不覆盖属性/职业。
+M.ATTR_BACK = { cx = 122, cy = 885, w = 144, h = 100 }
 
 local BTN_TAB_BG_CX, BTN_TAB_BG_CY = 540, 2308
 local BTN_TAB_BG_W, BTN_TAB_BG_H   = 810, 143
@@ -286,6 +231,7 @@ local CARD = {
     TAG_SIZE=60, TAG_DX=63,  -- 职业标识右下角，与等级徽章(-63)左右对应
     POWER_BOTTOM_UP=83, POWER_ICON_SIZE=36,
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BOTTOM_UP=38,
+    NAME_TOP=26, NAME_FONT=22, NAME_MAX_W=150,
 }
 M.ARROW_BG_LEFT_CX  = DT_CARD_CX - CARD.SIDE_DX
 M.ARROW_BG_RIGHT_CX = DT_CARD_CX + CARD.SIDE_DX
@@ -373,7 +319,6 @@ local img = {
     tabSlider     = -1,
     btnHong       = -1,
     btnLv         = -1,
-    arrowBg       = -1,   -- 切换箭头背景 UI_YWJM_HS
     arrowIcon     = -1,   -- 切换箭头图标 UI_YWJM_XYG2（默认向右）
 }
 
@@ -511,6 +456,7 @@ function M.initImages(vg)
     img.attrDeco = nvgCreateImage(vg, "image/通用图标/ICON_XX.png", 0)
     -- [图标统一 0928] midDiv2 与 midDiv1 同贴图，复用句柄避免重复加载（无 delete，复用安全）
     img.midDiv2  = img.midDiv1
+    AttributeView.setSharedImages({ background = img.midBg, divider = img.midDiv1, deco = img.attrDeco })
 
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_LV.png 贴图加载已移除（矢量绘制替代）
     img.btnLv     = nvgCreateImage(vg, "image/按钮/UI_AN_LV.png", 0)
@@ -518,7 +464,6 @@ function M.initImages(vg)
     -- [暗黑化 P1-B5] 原 image/按钮/UI_AN_2.png 贴图加载已移除（矢量绘制替代）
     img.tabSlider = nvgCreateImage(vg, "image/按钮/UI_AN_2.png", 0)
 
-    img.arrowBg   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_HS.png", 0)
     img.arrowIcon = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG2.png", 0)
     img.slotSelected = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TJPXZTBBJ.png", 0)
 end
@@ -634,7 +579,34 @@ function M.draw(vg)
         return true
     end
 
-    --- 卡面底部信息：等级徽章、战力、职业标。未获得只写文字并压灰。
+    --- 卡面顶部名字（超出饰条宽度时横向滚动）；未获得角色也显示名字
+    ---@param id number 英雄 id
+    local function drawCardName(id)
+        local cfg = HC.get(id)
+        if not cfg then return end
+        local heroName = cfg.name or ""
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, CARD.NAME_FONT)
+        local nameW = nvgTextBounds(vg, 0, 0, heroName)
+        local nameY = -CARD.H * 0.5 + CARD.NAME_TOP
+        if nameW <= CARD.NAME_MAX_W then
+            drawTextStroke(vg, 0, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+        else
+            local gap = 28
+            local cycle = nameW + gap
+            local shift = (time.elapsedTime * 28) % cycle
+            nvgSave(vg)
+            nvgIntersectScissor(vg, -CARD.NAME_MAX_W * 0.5, nameY - 16, CARD.NAME_MAX_W, 32)
+            drawTextStroke(vg, -shift, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+            drawTextStroke(vg, -shift + cycle, nameY, heroName,
+                CARD.NAME_FONT, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
+            nvgRestore(vg)
+        end
+    end
+
+    --- 卡面底部信息：等级徽章、战力、职业标。未获得写"未获得"但仍显示名字。
     ---@param id number 英雄 id
     local function drawCardBadges(id)
         local cfg = HC.get(id)
@@ -642,6 +614,7 @@ function M.draw(vg)
         if not heroOwned(id) then
             drawTextStroke(vg, 0, CARD.H * 0.5 - CARD.LVL_BOTTOM_UP, "未获得",
                 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 190, 190, 190, 4)
+            drawCardName(id)
             return
         end
         local level = heroLevel
@@ -668,6 +641,8 @@ function M.draw(vg)
             CARD.POWER_ICON_SIZE, CARD.POWER_ICON_SIZE, 1.0)
         drawTextStroke(vg, pcX + CARD.POWER_ICON_SIZE + POWER_GAP, powerY, powerStr,
             30, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 247, 254, 119, 4)
+        -- 名字放在卡面顶部饰条内。超出饰条宽度时横向滚动。
+        drawCardName(id)
         -- 实战预估副行（默认关闭，M.setEstimateVisible(true) 验收后开启）：
         -- 分项计价原型口径，按英雄伤害类别区别计价物攻/魔攻/治疗属性
         if SHOW_ESTIMATE then
@@ -856,11 +831,17 @@ function M.draw(vg)
 
             do
                 local lvlText = "Lv." .. tostring(equippedEquip.level)
-                local lvlX = scx + DT_SLOT_SIZE * 0.5 - 8
-                local lvlY = scy + DT_SLOT_SIZE * 0.5 - 8
+                local lvl = EquipmentSetIcon.levelLayout(equippedEquip, scx, scy, DT_SLOT_SIZE)
+                local lvlX, lvlY = lvl.x, lvl.y
                 nvgFontFace(vg, "sans")
-                nvgFontSize(vg, 40)
-                nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_BOTTOM)
+                nvgFontSize(vg, lvl.fontSize)
+                local badge = EquipmentSetIcon.badgeLayout(scx, scy, DT_SLOT_SIZE)
+                local availableW = lvlX - (badge.x + badge.size) - 8
+                local textW = nvgTextBounds(vg, 0, 0, lvlText)
+                if textW > availableW then
+                    nvgFontSize(vg, lvl.fontSize * availableW / textW)
+                end
+                nvgTextAlign(vg, lvl.align)
                 nvgFillColor(vg, nvgRGBA(0, 0, 0, 255))
                 local sStep = math.pi * 2 / 16
                 for si = 0, 15 do
@@ -888,6 +869,9 @@ function M.draw(vg)
                 nvgFillColor(vg, nvgRGBA(0x00, 0xff, 0x60, 255))
                 nvgText(vg, enhX, enhY, enhText, nil)
             end
+
+            -- 套装角标最后叠加于所有数值之上，双手占位灰罩仍覆盖整格。
+            EquipmentSetIcon.drawBadge(vg, equippedEquip, scx, scy, DT_SLOT_SIZE, 1.0)
 
             if isTwohandOccupied then
                 nvgBeginPath(vg)
@@ -964,51 +948,13 @@ function M.draw(vg)
     nvgSave(vg)
     nvgTranslate(vg, lowerOX, 0)
 
-    if not isAwakenTab and not isClassTab then
-    -- === 6) 角色详情属性背景图（静态，不参与切换动画） ===
-    -- 配装页底板及标题整体下移，给上半部装备词条留位置
     if detailState.tab == "equip" then
-        nvgTranslate(vg, 0, EQUIP_LOWER_OFFSET)
-    end
-    -- 配装页分段画底板：保留顶部金属外框 + 下方皮革，跳过图内菱形金饰小横条
-    if detailState.tab == "equip" and img.midBg and img.midBg >= 0 then
-        local midTop = MID_BG_CY - MID_BG_H * 0.5
-        local frameH = 100
-        local barEnd = 125
-        nvgSave(vg)
-        nvgIntersectScissor(vg, 0, midTop, DESIGN_W, frameH)
-        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
-        nvgRestore(vg)
-        nvgSave(vg)
-        nvgIntersectScissor(vg, 0, midTop + barEnd, DESIGN_W, MID_BG_H - barEnd)
-        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
-        nvgRestore(vg)
-    else
-        drawImageCentered(vg, img.midBg, MID_BG_CX, MID_BG_CY, MID_BG_W, MID_BG_H, 1.0)
-    end
-
-    -- === 7) 标题：属性页「角色详情」，配装页显示当前部位名 ===
-    local titleText = I18n.t("hero_detail")
-    if detailState.tab == "equip" then
-        local slotKey = "slot_" .. tostring(detailState.equipSlot or "weapon")
-        local slotName = I18n.t(slotKey)
-        titleText = (slotName ~= slotKey) and slotName or "主武器"
-    end
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 30)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    local titleSW = 4
-    nvgFillColor(vg, nvgRGBA(0x23, 0x23, 0x23, 255))
-    for i = 0, 15 do
-        local a = i * stepAngle
-        nvgText(vg, MID_TITLE_CX + math.cos(a) * titleSW, MID_TITLE_CY + math.sin(a) * titleSW, titleText, nil)
-    end
-    nvgFillColor(vg, nvgRGBA(0xf7, 0xfe, 0x77, 255))
-    nvgText(vg, MID_TITLE_CX, MID_TITLE_CY, titleText, nil)
-    end  -- if not isAwakenTab and not isClassTab（6b~7 节）
-
-    if detailState.tab == "equip" then
-        nvgTranslate(vg, 0, -EQUIP_LOWER_OFFSET)
+        -- 配装下部上移：鞋槽底 870 / 面板顶 890，标题由下部模块绘制。
+        EquipStats.drawBackground(vg)
+    elseif detailState.tab == "attr" then
+        -- 属性页原底板/标题位置与视觉不变。
+        AttributeView.drawBackground(vg, AttributeView.BACKGROUND.originalTop)
+        EquipStats.drawLegacyTitle(vg, MID_TITLE_CX, MID_TITLE_CY, I18n.t("hero_detail"))
     end
 
     -- 转职页背景不参与角色切换淡入，换角色时保持不动
@@ -1022,13 +968,6 @@ function M.draw(vg)
     local textBlur = detailState.switchDir and (1 - progress) or 0
     nvgSave(vg)
     nvgGlobalAlpha(vg, 1 - textBlur * 0.55)
-    if not isAwakenTab and not isClassTab and detailState.tab ~= "equip" then
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 42)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 255))
-    nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name, nil)
-    end
 
     -- === 9~17) 经验/品质/职业/分割线：属性页专属 ===
     if detailState.tab == "attr" then
@@ -1047,7 +986,7 @@ function M.draw(vg)
         nvgScissor(vg, meFillX, meFillY, meClipW, meFillH)
         -- [配色] 经验条填充=金色竖向渐变（暗金主题；原青色贴图 tint 为乘法会偏绿，弃用）
         local grad = nvgLinearGradient(vg, meFillX, meFillY, meFillX, meFillY + meFillH,
-            nvgRGBA(255, 226, 140, 255), nvgRGBA(196, 148, 44, 255))
+            nvgRGBA(255, 226, 140, 255) --[[@as NVGcolor]], nvgRGBA(196, 148, 44, 255) --[[@as NVGcolor]])
         nvgBeginPath(vg)
         nvgRect(vg, meFillX, meFillY, meFillW, meFillH)
         nvgFillPaint(vg, grad)
@@ -1062,6 +1001,9 @@ function M.draw(vg)
     local lvlText = "Lv." .. tostring(heroLevel) .. "  " .. tostring(curExp) .. "/" .. tostring(needExp)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 28)
+    local lvlWidth = nvgTextBounds(vg, 0, 0, lvlText) or 0
+    local lvlFont = lvlWidth > MID_EXP_W - 24 and 28 * (MID_EXP_W - 24) / lvlWidth or 28
+    nvgFontSize(vg, lvlFont)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     local lvlSW = 5
     nvgFillColor(vg, nvgRGBA(0x31, 0x24, 0x24, 255))
@@ -1072,7 +1014,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, MID_EXP_CX, MID_EXP_CY, lvlText, nil)
 
-    -- === 14) 职业内容背景框（品质行已去掉，职业条居中拉满） ===
+    -- === 14) 左侧职业背景框，与右侧经验条同排 ===
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
         MID_CLASS_BOX_CX - MID_CLASS_BOX_W * 0.5,
@@ -1081,7 +1023,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
     nvgFill(vg)
 
-    -- === 15) 职业图标 + 名称，整条居中 ===
+    -- === 15) 职业图标 + 名称，按左侧可用宽度缩放 ===
     local classCfg = CC.get(heroCfg.classId)
     local className = classCfg and classCfg.name or "未知"
     local classIconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -1089,9 +1031,12 @@ function M.draw(vg)
 
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 34)
-    local classTextW = nvgTextBounds(vg, 0, 0, className)
+    local classTextW = nvgTextBounds(vg, 0, 0, className) or 0
     local classGap = 8
     local iconW = classIcon >= 0 and MID_CLASS_ICON_SIZE or 0
+    local maxClassW = MID_CLASS_BOX_W - 20 - iconW - (iconW > 0 and classGap or 0)
+    local classFont = classTextW > maxClassW and 34 * maxClassW / classTextW or 34
+    classTextW = math.min(classTextW, maxClassW)
     local comboW = iconW + (iconW > 0 and classGap or 0) + classTextW
     local comboLeftX = MID_CLASS_BOX_CX - comboW * 0.5
     local classIconCX = comboLeftX + iconW * 0.5
@@ -1102,11 +1047,11 @@ function M.draw(vg)
             MID_CLASS_ICON_SIZE, MID_CLASS_ICON_SIZE, 1.0)
     end
     drawTextStroke(vg, classTextX, MID_CLASS_LABEL_Y, className,
-        34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        classFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
 
     -- === 17) 分割线1 ===
-    drawImageCentered(vg, img.midDiv1, MID_DIV1_CX, MID_DIV1_CY, MID_DIV1_W, MID_DIV1_H, 1.0)
+    AttributeView.drawDivider(vg, MID_DIV1_CY)
 
     end -- if tab ~= "equip"（隐藏 8~17: 名称/经验/品质/职业/分割线）
 
@@ -1134,7 +1079,7 @@ function M.draw(vg)
     else -- detailState.tab == "attr"
 
     -- ================================================================
-    -- ===                  属性区域（2列×N行）                      ===
+    -- ===                  属性区域（左列列表 / 右侧雷达）          ===
     -- ================================================================
 
     local attrData = collectAttributes(heroId, heroCfg, heroLevel)
@@ -1158,191 +1103,18 @@ function M.draw(vg)
         return (a._origIdx or 0) < (b._origIdx or 0)
     end)
     for _, row in ipairs(attrRows) do row._origIdx = nil end
-    local totalRows = #attrRows
-
-    detailState.cachedLeft  = attrRows
+    detailState.cachedLeft = attrRows
     detailState.cachedRight = {}
-
-    local attrClipY = ATTR_CLIP_TOP
-    local attrClipH = ATTR_CLIP_HEIGHT
-
-    local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
-    local contentBottom = ATTR_FIRST_ROW_Y + math.max(0, totalRows - 1) * rowStep + ATTR_BOX_H * 0.5
-    local viewBottom = attrClipY + attrClipH
-    detailState.attrScrollMax = math.max(0, contentBottom - viewBottom)
-
-    nvgSave(vg)
-    nvgScissor(vg, 40, attrClipY, 500, attrClipH)
-
-    for row = 1, totalRows do
-        local rowY = ATTR_FIRST_ROW_Y + (row - 1) * rowStep - detailState.attrScrollY
-
-        if rowY >= attrClipY - ATTR_BOX_H and rowY <= attrClipY + attrClipH + ATTR_BOX_H then
-
-            local attr = attrRows[row]
-            if attr then
-                local colCX = ATTR_COL1_CX
-
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg,
-                    colCX - ATTR_BOX_W * 0.5, rowY - ATTR_BOX_H * 0.5,
-                    ATTR_BOX_W, ATTR_BOX_H, ATTR_BOX_RADIUS)
-                nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-                nvgFill(vg)
-
-                drawImageCentered(vg, img.attrDeco, ATTR_DECO_X, rowY,
-                    ATTR_DECO_SIZE, ATTR_DECO_SIZE, 1.0)
-
-                nvgFontFace(vg, "sans")
-                nvgFontSize(vg, ATTR_FONT_SIZE)
-                local nameW = nvgTextBounds(vg, 0, 0, attr.name)
-                local valW  = nvgTextBounds(vg, 0, 0, attr.value)
-                local maxNameW = ATTR_VAL_RIGHT_X - ATTR_NAME_LEFT_X - valW - ATTR_NAME_VAL_GAP
-                local nameFontSize = ATTR_FONT_SIZE
-                if maxNameW > 0 and nameW > maxNameW then
-                    nameFontSize = math.max(ATTR_FONT_SIZE_MIN,
-                        math.floor(ATTR_FONT_SIZE * maxNameW / nameW))
-                    nvgFontSize(vg, nameFontSize)
-                end
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 255))
-                nvgText(vg, ATTR_NAME_LEFT_X, rowY, attr.name, nil)
-
-                drawTextStroke(vg, ATTR_VAL_RIGHT_X, rowY, attr.value,
-                    ATTR_FONT_SIZE, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE,
-                    255, 255, 255, 4)
-            end
-
-        end
-    end
-
-    nvgResetScissor(vg)
-    nvgRestore(vg)
+    local maxScroll, hits = M.drawAttributeRows(vg, attrRows,
+        detailState.attrScrollY, AttributeView.ATTRIBUTE_LAYOUT, { style = M.ATTRIBUTE_STYLE })
+    detailState.attrHits = hits
+    detailState.attrScrollMax = maxScroll
 
     -- === 18) 分割线2 ===
-    drawImageCentered(vg, img.midDiv2, MID_DIV2_CX, MID_DIV2_CY, MID_DIV2_W, MID_DIV2_H, 1.0)
+    AttributeView.drawDivider(vg, MID_DIV2_CY)
 
-    -- ================================================================
-    -- ===                  六围雷达图                                ===
-    -- ================================================================
-
-    local statValues = attrData.stats
-    local statByKey = {}
-    for _, st in ipairs(STAT_LAYOUT) do
-        statByKey[st.key] = st
-    end
-
-    local function hexPoint(i, radius)
-        local ang = -math.pi * 0.5 + (i - 1) * (math.pi / 3)
-        return HEX_CX + math.cos(ang) * radius, HEX_CY + math.sin(ang) * radius
-    end
-
-    local function strokeDashed(x1, y1, x2, y2, dash, gap)
-        local dx, dy = x2 - x1, y2 - y1
-        local len = math.sqrt(dx * dx + dy * dy)
-        if len <= 0 then return end
-        local ux, uy = dx / len, dy / len
-        local pos = 0
-        while pos < len do
-            local seg = math.min(dash, len - pos)
-            nvgBeginPath(vg)
-            nvgMoveTo(vg, x1 + ux * pos, y1 + uy * pos)
-            nvgLineTo(vg, x1 + ux * (pos + seg), y1 + uy * (pos + seg))
-            nvgStroke(vg)
-            pos = pos + dash + gap
-        end
-    end
-
-    -- 满格跟当前六维走：取六项最大值再留 25% 空，主属性接近外圈，弱项明显内收。
-    local hexPeak = 1
-    for _, item in pairs(statByKey) do
-        local val = statValues[item.key] or 0
-        if val > hexPeak then hexPeak = val end
-    end
-    local hexMax = math.max(8, hexPeak / 0.82)
-
-    nvgBeginPath(vg)
-    nvgCircle(vg, HEX_CX, HEX_CY, HEX_LABEL_R + 28)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
-    nvgFill(vg)
-
-    -- 外圈实线，内两圈虚线
-    for ring = 1, 3 do
-        local rr = HEX_R * ring / 3
-        nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, ring == 3 and 170 or 110))
-        nvgStrokeWidth(vg, ring == 3 and 2 or 1.5)
-        local pts = {}
-        for i = 1, 6 do
-            pts[i] = { hexPoint(i, rr) }
-        end
-        for i = 1, 6 do
-            local a = pts[i]
-            local b = pts[i % 6 + 1]
-            if ring == 3 then
-                nvgBeginPath(vg)
-                nvgMoveTo(vg, a[1], a[2])
-                nvgLineTo(vg, b[1], b[2])
-                nvgStroke(vg)
-            else
-                strokeDashed(a[1], a[2], b[1], b[2], 7, 5)
-            end
-        end
-    end
-
-    -- 六条轴线用虚线
-    nvgStrokeColor(vg, nvgRGBA(0xA9, 0xA0, 0x8F, 120))
-    nvgStrokeWidth(vg, 1.5)
-    for i = 1, 6 do
-        local x, y = hexPoint(i, HEX_R)
-        strokeDashed(HEX_CX, HEX_CY, x, y, 6, 5)
-    end
-
-    nvgBeginPath(vg)
-    for i, name in ipairs(HEX_NAMES) do
-        local stFill = nil
-        for _, item in pairs(statByKey) do
-            if item.name == name then stFill = item break end
-        end
-        local val = stFill and statValues[stFill.key] or 0
-        local ratio = val / hexMax
-        if ratio < 0.08 then ratio = 0.08 end
-        if ratio > 1 then ratio = 1 end
-        local x, y = hexPoint(i, HEX_R * ratio)
-        if i == 1 then nvgMoveTo(vg, x, y) else nvgLineTo(vg, x, y) end
-    end
-    nvgClosePath(vg)
-    nvgFillColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 70))
-    nvgFill(vg)
-    nvgStrokeColor(vg, nvgRGBA(0xE8, 0xDC, 0xC8, 200))
-    nvgStrokeWidth(vg, 2)
-    nvgStroke(vg)
-
-    nvgBeginPath(vg)
-    nvgCircle(vg, HEX_CX, HEX_CY, 5)
-    nvgFillColor(vg, nvgRGBA(0xFF, 0xF4, 0xD6, 255))
-    nvgFill(vg)
-    nvgBeginPath(vg)
-    nvgCircle(vg, HEX_CX, HEX_CY, 5)
-    nvgStrokeColor(vg, nvgRGBA(0xC4, 0x8A, 0x3A, 255))
-    nvgStrokeWidth(vg, 2)
-    nvgStroke(vg)
-
-    nvgFontFace(vg, "sans")
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    for i, name in ipairs(HEX_NAMES) do
-        local st = nil
-        for _, item in pairs(statByKey) do
-            if item.name == name then st = item break end
-        end
-        local color = HEX_COLORS[name] or { 0xE8, 0xDC, 0xC8 }
-        local lx, ly = hexPoint(i, HEX_LABEL_R)
-        nvgFontSize(vg, 26)
-        nvgFillColor(vg, nvgRGBA(color[1], color[2], color[3], 255))
-        nvgText(vg, lx, ly - 24, st and st.name or "", nil)
-        drawTextStroke(vg, lx, ly + 16, tostring(st and statValues[st.key] or 0),
-            34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            color[1], color[2], color[3], 3)
-    end
+    -- 属性页六围：共享绘图但保留原视觉、布局与点击 API。
+    EquipStats.drawLegacy(vg, attrData.stats)
 
     -- ================================================================
     -- ===                    天赋技能区域                            ===
@@ -1365,10 +1137,16 @@ function M.draw(vg)
     if extraLine ~= "" then
         talentDesc = talentDesc .. "\n" .. extraLine
     end
-    -- 关键词富文本：可点击的机制词（如「回响」）弹解释气泡；热区写入 talentKwText
+    -- 短描述紧凑显示，长描述/成长说明按可用高度适配，不侵入底部页签。
+    local talentFont = extraLine ~= "" and 28 or 34
+    local availableH = TALENT_BG_CY + TALENT_BG_H * 0.5 - 8 - TALENT_TEXT_TOP
+    while talentFont > 18
+        and M.talentKwText:measureHeight(vg, talentDesc, TALENT_TEXT_WIDTH, talentFont) > availableH do
+        talentFont = talentFont - 1
+    end
+    -- 关键词热区随最终字号布局，保留点击解释。
     M.talentKwText:draw(vg, talentDesc,
-        TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH,
-        extraLine ~= "" and 28 or 34)
+        TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH, talentFont)
 
     end -- if detailState.tab == "awaken" / "attr"
 
@@ -1391,10 +1169,6 @@ function M.draw(vg)
             nvgTranslate(vg, pass * 3 * textBlur, 0)
             nvgGlobalAlpha(vg, textBlur * 0.16)
             nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 42)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(244, 237, 224, 255))
-            nvgText(vg, MID_NAME_CX, MID_NAME_CY, heroCfg.name or "", nil)
             nvgFontSize(vg, 28)
             nvgText(vg, MID_EXP_CX, MID_EXP_CY, "Lv." .. tostring(heroLevel), nil)
             nvgRestore(vg)
@@ -1414,7 +1188,12 @@ function M.draw(vg)
     -- 三行模式返回键由中缝层绘制，页面内不再重复画
     ---@diagnostic disable-next-line: undefined-global
     if not H_SEAM_BACK then
-        DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "right")
+        if detailState.tab == "attr" then
+            local back = M.ATTR_BACK
+            DrawUtil.drawBackChevron(vg, back.cx, back.cy, back.w, back.h, "right")
+        else
+            DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "right")
+        end
     end
 
     drawImageCentered(vg, img.tabBg, BTN_TAB_BG_CX, BTN_TAB_BG_CY, BTN_TAB_BG_W, BTN_TAB_BG_H, 1.0)
@@ -1443,7 +1222,7 @@ function M.draw(vg)
     nvgText(vg, TEXT_ATTR_CX, TEXT_ATTR_CY, I18n.t("tab_attr"), nil)
 
     local ownedHero = getOwnedData and getOwnedData(heroId) ~= nil
-    local lockedColor = nvgRGBA(0x8d, 0x5f, 0x41, 255)  -- 未拥有=棕色禁用色
+    local lockedColor = nvgRGBA(0x8b, 0x95, 0xa5, 255)  -- 未拥有=灰蓝色禁用色
     nvgFillColor(vg, not ownedHero and lockedColor or (curTab == "equip" and activeColor or inactiveColor))
     nvgText(vg, TEXT_EQUIP_CX, TEXT_EQUIP_CY, I18n.t("tab_equip"), nil)
 
@@ -1676,15 +1455,6 @@ function M.draw(vg)
         if EquipmentDetail.isOpen() then
             EquipmentDetail.drawIf(vg, "character")
         end
-    end
-
-    -- 配装页角色名画在详情之上，随下方界面一同下移
-    if not isAwakenTab and detailState.tab == "equip" and heroCfg and heroCfg.name then
-        nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 42)
-        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        nvgFillColor(vg, nvgRGBA(0xF4, 0xED, 0xE0, 255))
-        nvgText(vg, MID_NAME_CX, MID_NAME_CY + EQUIP_LOWER_OFFSET, heroCfg.name, nil)
     end
 
     -- === 关键词解释弹窗（最上层，盖住页签与装备浮层）===

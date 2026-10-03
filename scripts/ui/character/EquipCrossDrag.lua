@@ -73,6 +73,39 @@ local function rightDesign(sx, sy)
     return dx, dy
 end
 
+--- [锻炉双页 0929] 中栏设计坐标（锻炉工作台所在面板）
+---@param sx number
+---@param sy number
+---@return number|nil dx
+---@return number|nil dy
+local function centerDesign(sx, sy)
+    local note = Viewport.getNote("center")
+    if not note then return nil, nil end
+    local panel = Viewport.PANELS.center
+    local cs = note.s * Viewport.DS
+    if cs == 0 then return nil, nil end
+    local dx = (sx - (note.ox + panel.bx * note.s)) / cs
+    local dy = (sy - (note.oy + panel.by * note.s)) / cs
+    return dx, dy
+end
+
+--- [锻炉双页 0929] 拖拽是否落在锻炉工作台槽上（锻炉页打开时）
+---@return boolean overWorkbench 指针在锻炉工作台命中区
+---@return boolean smithOpen 锻炉页是否打开
+local function overBlacksmithWorkbench(sx, sy)
+    local ok, BlacksmithPage = pcall(require, "ui.blacksmith.BlacksmithPage")
+    if not ok or not BlacksmithPage.isOpen or not BlacksmithPage.isOpen() then
+        return false, false
+    end
+    local wb = BlacksmithPage.WORKBENCH
+    if not wb then return false, true end
+    local dx, dy = centerDesign(sx, sy)
+    if not dx or not dy then return false, true end
+    local half = wb.size * 0.5
+    local hit = math.abs(dx - wb.cx) <= half and math.abs(dy - wb.cy) <= half
+    return hit, true
+end
+
 ---@param equipSlot string|nil
 ---@param grip string|nil
 ---@param target string
@@ -83,6 +116,23 @@ local function slotAccepts(equipSlot, grip, target)
     return target == "offhand" and equipSlot == "weapon" and grip == "onehand"
 end
 
+--- 等级穿戴门槛：角色等级低于装备等级不可拖入穿戴
+---@param heroId number|string
+---@return boolean ok
+---@return number|nil requiredLevel
+local function checkDropLevelGate(heroId)
+    local seq = tonumber(session.seq)
+    if not seq then return true, nil end
+    local equipData = PlayerStore.Get("equipment")
+    local equip = equipData and equipData.inventory
+        and (equipData.inventory[tostring(seq)] or equipData.inventory[seq])
+    if not equip then return true, nil end
+    local heroesData = PlayerStore.Get("heroes")
+    local heroLevel = EquipmentSystem.getHeroLevel(heroesData, heroId)
+    local ok, requiredLevel = EquipmentSystem.checkLevelGate(heroLevel, equip)
+    return ok, requiredLevel
+end
+
 ---@param heroId number|string
 ---@param equipType string|nil
 ---@param equipSlot string|nil
@@ -91,6 +141,7 @@ end
 ---@return boolean
 local function canDrop(heroId, equipType, equipSlot, grip, target)
     if not slotAccepts(equipSlot, grip, target) then return false end
+    if not (checkDropLevelGate(heroId)) then return false end
     if target == "offhand" and equipSlot == "weapon" and grip == "onehand" then
         local heroes = PlayerStore.Get("heroes")
         local roster = heroes and heroes.roster
@@ -185,9 +236,25 @@ local function reject(reason)
 end
 
 local function tryDrop()
+    -- [锻炉双页 0929] 锻炉工作台优先：拖到中栏锻炉工作台槽 → 放入工作台（强化/洗练）
+    local overWB, smithOpen = overBlacksmithWorkbench(session.sx, session.sy)
+    if smithOpen and overWB then
+        local BlacksmithPage = require("ui.blacksmith.BlacksmithPage")
+        if BlacksmithPage.setEquipBySeq(session.seq) then
+            require("systems.GameSFX").playUIClick(1)
+            print("[EquipCrossDrag] 放入锻炉工作台 seq=" .. tostring(session.seq))
+        end
+        return
+    end
     local CharacterDetail = require("ui.character.detail.CharacterDetail")
     local heroId = CharacterDetail.getHeroId and CharacterDetail.getHeroId() or nil
     if not heroId then
+        -- [锻炉双页 0929] 锻炉开着但没投中工作台：给明确提示而不是"请先打开角色"
+        if smithOpen then
+            require("core.UiToast").show("拖到锻炉工作台或角色装备槽")
+            print("[EquipCrossDrag] 锻炉打开但未命中工作台")
+            return
+        end
         reject("请先打开角色")
         return
     end
@@ -207,7 +274,13 @@ local function tryDrop()
         return
     end
     if not canDrop(heroId, session.equipType, session.slot, session.grip, target) then
-        reject(require("core.I18n").t("cannot_wear"))
+        -- 等级穿戴门槛：等级不足时给出专用提示
+        local levelOk, requiredLevel = checkDropLevelGate(heroId)
+        if not levelOk then
+            reject(require("core.I18n").t("level_not_enough_equip", tostring(requiredLevel or 1)))
+        else
+            reject(require("core.I18n").t("cannot_wear"))
+        end
         return
     end
     local Client = require("runtime.GameAction")
@@ -224,6 +297,11 @@ local function tryDrop()
     if EquipPanel.markDirty then EquipPanel.markDirty() end
     print("[EquipCrossDrag] 穿戴 seq=" .. tostring(session.seq)
         .. " hero=" .. tostring(heroId) .. " slot=" .. tostring(target))
+end
+
+--- 全窗模态出现时取消拖拽，不尝试穿戴或落入工作台。
+function EquipCrossDrag.cancel()
+    clearSession()
 end
 
 ---@param sx number
@@ -249,6 +327,32 @@ function EquipCrossDrag.draw(vg)
     nvgSave(vg)
     nvgResetScissor(vg)
 
+    -- [锻炉双页 0929] 锻炉工作台高亮：拖拽经过中栏工作台槽时画金色呼吸框
+    local overWB, smithOpen = overBlacksmithWorkbench(session.sx, session.sy)
+    if smithOpen then
+        local note = Viewport.getNote("center")
+        local okBS, BlacksmithPage = pcall(require, "ui.blacksmith.BlacksmithPage")
+        local wb = okBS and BlacksmithPage.WORKBENCH or nil
+        if note and wb then
+            local panel = Viewport.PANELS.center
+            local cs = note.s * Viewport.DS
+            nvgSave(vg)
+            nvgTranslate(vg, note.ox + panel.bx * note.s, note.oy + panel.by * note.s)
+            nvgScale(vg, note.scaleX or cs, cs)
+            local half = wb.size * 0.5
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, wb.cx - half - 10, wb.cy - half - 10, wb.size + 20, wb.size + 20, 28)
+            nvgStrokeWidth(vg, overWB and 9 or 5)
+            if overWB then
+                nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 235))
+            else
+                nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 110))
+            end
+            nvgStroke(vg)
+            nvgRestore(vg)
+        end
+    end
+
     local dx, dy = rightDesign(session.sx, session.sy)
     local note = Viewport.getNote("right")
     if dx and dy and note then
@@ -261,10 +365,15 @@ function EquipCrossDrag.draw(vg)
             nvgSave(vg)
             nvgTranslate(vg, note.ox + panel.bx * note.s, note.oy + panel.by * note.s)
             nvgScale(vg, note.s * Viewport.DS, note.s * Viewport.DS)
+            local targetSize = Draw.DT_SLOT_SIZE + 16
+            local targetHalf = targetSize * 0.5
             for _, s in ipairs(Draw.DT_SLOTS) do
                 if canDrop(heroId, session.equipType, session.slot, session.grip, s.slot) then
                     nvgBeginPath(vg)
-                    nvgCircle(vg, s.cx, s.cy, Draw.DT_SLOT_SIZE * 0.5 + 8)
+                    nvgRoundedRect(vg, s.cx - targetHalf, s.cy - targetHalf, targetSize, targetSize, 20)
+                    -- 拖拽层位于装备上方，淡填充保留图标可读性，底板每边外扩8。
+                    nvgFillColor(vg, nvgRGBA(255, 214, 102, 28))
+                    nvgFill(vg)
                     nvgStrokeWidth(vg, 7)
                     nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 235))
                     nvgStroke(vg)
@@ -274,7 +383,9 @@ function EquipCrossDrag.draw(vg)
                 if s.slot == target
                     and not canDrop(heroId, session.equipType, session.slot, session.grip, target) then
                     nvgBeginPath(vg)
-                    nvgRoundedRect(vg, s.cx - 88, s.cy - 88, 176, 176, 20)
+                    nvgRoundedRect(vg, s.cx - targetHalf, s.cy - targetHalf, targetSize, targetSize, 20)
+                    nvgFillColor(vg, nvgRGBA(180, 70, 70, 28))
+                    nvgFill(vg)
                     nvgStrokeWidth(vg, 6)
                     nvgStrokeColor(vg, nvgRGBA(180, 70, 70, 220))
                     nvgStroke(vg)

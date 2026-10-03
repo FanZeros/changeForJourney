@@ -39,7 +39,6 @@ local state = {
 -- ======================== 图片资源句柄 ========================
 
 local img = {
-    bg           = -1,   -- UI_TY_EJQRK.png 九宫格弹窗背景
     heroIcons    = {},    -- [heroId] 角色头像图标
     wearBtn      = -1,   -- UI_AN_LV.png 穿戴按钮
     lockIcon     = -1,   -- UI_ICON_SUO.png 上锁图标
@@ -153,7 +152,6 @@ local onAvatarConfirmed = nil
 --- 初始化（加载图片资源，仅调用一次）
 function AvatarSelectPanel.init(vg)
     -- 弹窗背景
-    img.bg = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
     -- 角色头像图标
     HeroAssetUtil.preloadIcons(vg, img.heroIcons)
     -- 穿戴按钮

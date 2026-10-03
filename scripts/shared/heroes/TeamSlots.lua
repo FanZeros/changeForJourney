@@ -109,19 +109,18 @@ end
 ---@param heroes table heroes 模块数据
 ---@param teamIdx number 目标队伍（1~3）
 ---@param heroIds table|nil 目标槽位（允许 nil/空 = 清空队2/3；队1 不允许空）
----@param playerLevel number 远征等级（用于解锁校验）
+---@param battleProgress table|nil battle 模块数据（队伍通关解锁校验）
 ---@return boolean ok
 ---@return string? err
-function TeamSlots.validate(heroes, teamIdx, heroIds, playerLevel)
+function TeamSlots.validate(heroes, teamIdx, heroIds, battleProgress)
     teamIdx = tonumber(teamIdx)
-    if not teamIdx or teamIdx < 1 or teamIdx > TEAM_COUNT then
+    if not teamIdx or teamIdx ~= math.floor(teamIdx) or teamIdx < 1 or teamIdx > TEAM_COUNT then
         return false, "无效的队伍编号: " .. tostring(teamIdx)
     end
 
-    local unlockedTeams = ExpTable.getUnlockedTeamCount(playerLevel or 1)
+    local unlockedTeams = ExpTable.getUnlockedTeamCount(battleProgress)
     if teamIdx > unlockedTeams then
-        local needLv = ExpTable.getTeamUnlockLevel(teamIdx)
-        return false, string.format("队伍%d尚未解锁（需要远征等级%d）", teamIdx, needLv or 0)
+        return false, string.format("队伍%d尚未解锁（%s）", teamIdx, ExpTable.getTeamUnlockText(teamIdx))
     end
 
     if type(heroIds) ~= "table" or #heroIds == 0 then

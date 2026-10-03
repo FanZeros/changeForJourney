@@ -19,7 +19,7 @@
 -- highlight key 对照表（由各 UI 模块调用 TutorialOverlay.registerHotspot() 注册）：
 --   "character_slot_1"       — 角色面板第一个槽位中的角色
 --   "equip_slot_weapon"      — 角色详情武器槽位
---   "equip_btn_equip"        — 装备详情「装备」按钮
+--   "equip_item_gifted"      — 左栏仓库首个可见、可穿戴的武器候选
 --   "equip_btn_auto"         — 角色详情「一键装备」按钮
 --   "building_church"        — 城镇教堂建筑
 --   "building_tavern"        — 城镇酒馆建筑
@@ -52,14 +52,9 @@ TutorialConfig[1] = {
             advanceOn = "click_highlight",
         },
         {
-            text      = "点击武器来查看属性",
+            text      = "双击或右键点击左侧仓库中的武器，为角色快捷穿戴",
             highlight = "equip_item_gifted",
-            advanceOn = "click_highlight",
-        },
-        {
-            text      = "点击装备按钮进行装备",
-            highlight = "equip_btn_equip",
-            advanceOn = "click_highlight",
+            advanceOn = "equipment_equipped",
         },
     },
 }
@@ -77,7 +72,7 @@ TutorialConfig[2] = {
         {
             text      = "这次试试一键装备吧！",
             highlight = "equip_btn_auto",
-            advanceOn = "click_highlight",
+            advanceOn = "equipment_equipped",
         },
     },
 }
@@ -154,7 +149,7 @@ TutorialConfig[8] = {
         {
             text      = "来试试能否招募到其他远征伙伴吧",
             highlight = "tavern_btn_gacha10",
-            advanceOn = "click_highlight",
+            advanceOn = "gacha10_started",
         },
         {
             -- 无界面步骤：等待招募结果返回后结束引导，确保 newHeroId 已设置

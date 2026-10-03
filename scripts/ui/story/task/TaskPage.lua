@@ -7,6 +7,8 @@ local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")
 local TownPageChrome = require("ui.town.TownPageChrome")
 local TaskConfig = require("config.TaskConfig")
+local StageConfig = require("config.StageConfig")
+local I18n = require("core.I18n")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local GameAction = require("runtime.GameAction")
 local Protocol = require("shared.Protocol")
@@ -15,14 +17,14 @@ local TaskPage = {}
 local W, H = 1080, 2400
 local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
-local LIST = { x = 48, y = 430, w = 984, h = 1760, rowH = 200, gap = 36 }
+local LIST = { x = 48, y = 470, w = 984, h = 1720, rowH = 200, gap = 36 }
 local TABS = {
     { key = "clear", name = "通关", cx = 270, w = 280 },
     { key = "level", name = "远征", cx = 540, w = 280 },
     { key = "hero", name = "队员", cx = 810, w = 280 },
 }
 local DIFF_MARK = { normal = "普通", hard = "困难", nightmare = "噩梦" }
-local CLAIM_ALL = { cx = 820, cy = 250, w = 240, h = 64 }
+local CLAIM_ALL = { cx = 860, cy = 300, w = 240, h = 64 }
 
 local state = {
     open = false, closing = false, openTime = 0, closeTime = 0,
@@ -189,6 +191,11 @@ local function finishClose()
     state.dragging = false
 end
 
+--- 安全恢复时立即关页，不等待关闭动画，也不触发任务操作。
+function TaskPage.forceClose()
+    finishClose()
+end
+
 function TaskPage.update(_dt)
     if not state.open then return end
     if state.closing and time.elapsedTime - state.closeTime >= CLOSE_DUR then
@@ -216,15 +223,52 @@ local function drawRow(vg, task, y)
         nvgFillColor(vg, nvgRGBA(32, 28, 24, 230))
     end
     nvgFill(vg)
-    local title = task.name or "远征委托"
-    if task.difficulty and DIFF_MARK[task.difficulty] then
-        title = "[" .. DIFF_MARK[task.difficulty] .. "] " .. title
+    -- 只生成本帧显示串；业务 task.name/desc、stageId 和领取条件不变。
+    local title = I18n.lookup(task.name or "远征委托")
+    local description = I18n.lookup(task.desc or "")
+    if task.stageId then
+        local stageProgress = I18n.lookup(StageConfig.formatProgressDisplay(task.stageId))
+        description = I18n.format("通关%s", stageProgress)
     end
-    text(vg, LIST.x + 28, y - 58, title, 36,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, nameR, nameG, nameB, 2)
-    text(vg, LIST.x + 28, y - 8, task.desc or "", 28,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, descR, descG, descB, 2)
-    text(vg, LIST.x + 28, y + 46, "进度 " .. shown .. "/" .. task.target, 26,
+    if task.difficulty and DIFF_MARK[task.difficulty] then
+        title = I18n.format("[%s] %s", I18n.difficulty(DIFF_MARK[task.difficulty]), title)
+    end
+    -- 给奖励图标/领取按钮保留原空间，按最终译文测宽，不修改列表行高。
+    local titleW = LIST.w - 400
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 36)
+    local titleTextW = nvgTextBounds(vg, 0, 0, title, nil)
+    local titleFont = titleTextW > titleW and math.max(24, 36 * titleW / titleTextW) or 36
+    nvgSave(vg)
+    nvgIntersectScissor(vg, LIST.x + 26, y - 96, titleW, 64)
+    if titleTextW * titleFont / 36 > titleW then
+        nvgFontSize(vg, titleFont)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+        nvgFillColor(vg, nvgRGBA(nameR, nameG, nameB, 255))
+        nvgTextBox(vg, LIST.x + 28, y - 90, titleW - 4, title, nil)
+    else
+        text(vg, LIST.x + 28, y - 58, title, titleFont,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, nameR, nameG, nameB, 2)
+    end
+    nvgRestore(vg)
+    local descW = LIST.w - 400
+    nvgFontSize(vg, 28)
+    local descTextW = nvgTextBounds(vg, 0, 0, description, nil)
+    local descFont = descTextW > descW and math.max(20, 28 * descW / descTextW) or 28
+    nvgSave(vg)
+    nvgIntersectScissor(vg, LIST.x + 26, y - 34, descW, 62)
+    if descTextW * descFont / 28 > descW then
+        -- 只有最小字号仍超宽才用 NanoVG 安全折行，避免挤入奖励/按钮区域。
+        nvgFontSize(vg, descFont)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+        nvgFillColor(vg, nvgRGBA(descR, descG, descB, 255))
+        nvgTextBox(vg, LIST.x + 28, y - 28, descW - 4, description, nil)
+    else
+        text(vg, LIST.x + 28, y - 8, description, descFont,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, descR, descG, descB, 2)
+    end
+    nvgRestore(vg)
+    text(vg, LIST.x + 28, y + 46, I18n.format("进度 %d/%d", shown, task.target), 26,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 150, 176, 138, 2)
     local reward = task.reward
     if reward then
@@ -252,7 +296,7 @@ local function drawRow(vg, task, y)
     -- 按钮文字：可领取=亮色，不可领=棕色
     local lr, lg, lb = 255, 244, 220
     if status ~= TaskConfig.STATUS.CLAIMABLE then
-        lr, lg, lb = 0x8d, 0x5f, 0x41
+        lr, lg, lb = 0x8b, 0x95, 0xa5
     end
     text(vg, LIST.x + LIST.w - 120, y, label, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, lr, lg, lb, 2)
 end
@@ -270,32 +314,37 @@ function TaskPage.draw(vg)
     nvgRect(vg, 0, 0, W, H)
     nvgFillColor(vg, nvgRGBA(18, 16, 22, 255))
     nvgFill(vg)
-    TownPageChrome.drawNamePlate(vg, imgName, "功绩")
-    text(vg, 360, 250, "终焉功绩", 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
+    TownPageChrome.drawNamePlate(vg, imgName, "功绩", { scale = 0.72 })
+    text(vg, 300, 300, "终焉功绩", 40, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
     local claimCount = claimableInTab()
     nvgBeginPath(vg)
     nvgRoundedRect(vg, CLAIM_ALL.cx - CLAIM_ALL.w * 0.5, CLAIM_ALL.cy - CLAIM_ALL.h * 0.5,
         CLAIM_ALL.w, CLAIM_ALL.h, 10)
     nvgFillColor(vg, claimCount > 0 and nvgRGBA(176, 132, 48, 230) or nvgRGBA(62, 56, 48, 200))
     nvgFill(vg)
-    local claimLabel = claimCount > 0 and ("一键领取 " .. claimCount) or "一键领取"
-    -- 按钮文字：有可领=亮色，无可领=棕色
+    local claimLabel = claimCount > 0 and I18n.format("一键领取 %d", claimCount) or I18n.lookup("一键领取")
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 28)
+    local claimTextW = nvgTextBounds(vg, 0, 0, claimLabel, nil)
+    local claimTextWidth = CLAIM_ALL.w - 20
+    local claimFont = claimTextW > claimTextWidth and math.max(20, 28 * claimTextWidth / claimTextW) or 28
+    -- 按钮文字：有可领=亮色，无可领=灰蓝色
     local caR, caG, caB = 255, 244, 220
-    if claimCount <= 0 then caR, caG, caB = 0x8d, 0x5f, 0x41 end
-    text(vg, CLAIM_ALL.cx, CLAIM_ALL.cy, claimLabel, 28,
+    if claimCount <= 0 then caR, caG, caB = 0x8b, 0x95, 0xa5 end
+    text(vg, CLAIM_ALL.cx, CLAIM_ALL.cy, claimLabel, claimFont,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, caR, caG, caB, 2)
     for _, tab in ipairs(TABS) do
         local on = state.tab == tab.key
         local half = (tab.w or 168) * 0.5
         nvgBeginPath(vg)
-        nvgRoundedRect(vg, tab.cx - half, 304, tab.w or 168, 72, 10)
+        nvgRoundedRect(vg, tab.cx - half, 360, tab.w or 168, 72, 10)
         nvgFillColor(vg, on and nvgRGBA(176, 132, 48, 230) or nvgRGBA(42, 36, 28, 220))
         nvgFill(vg)
-        text(vg, tab.cx, 340, tab.name, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 245, 232, 200, 2)
+        text(vg, tab.cx, 396, tab.name, 30, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 245, 232, 200, 2)
         local badgeCount = claimableForKey(tab.key)
         if badgeCount > 0 then
             local badgeX = tab.cx + half - 8
-            local badgeY = 312
+            local badgeY = 368
             DarkIcon.draw(vg, "reddot", badgeX, badgeY, 42, 1)
             text(vg, badgeX, badgeY, badgeCount > 99 and "99+" or tostring(badgeCount), 24,
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 244, 220, 2)
@@ -339,7 +388,7 @@ function TaskPage.handleInput(dx, dy)
         return true
     end
     for _, tab in ipairs(TABS) do
-        if math.abs(dx - tab.cx) <= (tab.w or 168) * 0.5 and math.abs(dy - 340) <= 36 then
+        if math.abs(dx - tab.cx) <= (tab.w or 168) * 0.5 and math.abs(dy - 396) <= 36 then
             state.tab = tab.key
             state.scrollY = 0
             print("[TaskPage] tab " .. tab.key)

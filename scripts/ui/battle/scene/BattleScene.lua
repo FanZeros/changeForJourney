@@ -617,7 +617,8 @@ function BattleScene.init(vg)
     vg_ = vg  -- 缓存，供 loadStage 切换地图背景
     -- 地图背景延后到 loadStage / 首次绘制，避免启动解码 1MB+ MAP_1
     currentChapter = 1
-    imgShadow   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY.png", 0)
+    -- 阴影板绘制为 1080x556（源图 1080x610 压扁），使用 SHADOW 副本，调整原图不影响其他用法
+    imgShadow   = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_MAPYY_SHADOW.png", 0)
     -- [卡牌惰性加载] 英雄卡/怪物卡大图改为首次进战斗时加载（ensureBattleCards）
     -- ⚠️ 新增怪物 ID 时必须补充到 ensureBattleCards 的加载清单！
     -- 否则 BattleDraw 会 fallback 到 imgMonsterCards[1]（怪物1的贴图）。
@@ -1305,6 +1306,37 @@ function BattleScene.adoptStageProgress(stageId)
     end
     currentStageId = stageId
     isFirstClear = not clearedStages[stageId]
+end
+
+--- [终焉协同] 三队共享生命池打空后调用：等价主线「终焉胜利 → 轮回」。
+--- 奖励去重：只有该终焉关此前未通关时才触发首通回调（重打已通关的终焉
+--- 不再重复发 fcExp/首通奖励，与主线 BattleCasualty 的 isFirstClear 门槛一致）。
+function BattleScene.completeTriTerminal(stageId)
+    if not SC.isTerminalTemple(stageId) or currentStageId ~= stageId then return false end
+    local targetId = SC.getReincarnationTarget(SC.getDifficulty(stageId))
+    if not targetId then return false end
+    local wasFirstClear = not (clearedStages[stageId] or clearedStages[tostring(stageId)])
+    clearedStages[stageId] = true
+    maxStageId_ = math.max(maxStageId_, targetId)
+    loadStage(targetId, true)
+    for _, u in ipairs(allies) do resetAllyUnit(u) end
+    startBattleTalents()
+    BottomNav.setAllLocked(false)
+    require("systems.GameBGM").setScene("battle")
+    if onStageChangedCallback then onStageChangedCallback(targetId) end
+    local ClientDispatcher = require("runtime.ClientDispatcher")
+    local battle = ClientDispatcher.get("battle")
+    if type(battle) == "table" then
+        battle.currentStageId = targetId
+        battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, targetId)
+        battle.clearedStages = battle.clearedStages or {}
+        battle.clearedStages[tostring(stageId)] = true
+        local targetCleared = battle.clearedStages[tostring(targetId)] == true
+        battle.battleMode = targetCleared and "idle" or "firstClear"
+        require("boot.StandaloneSave").Flush()
+    end
+    if wasFirstClear and onFirstClearCallback then onFirstClearCallback(stageId) end
+    return true
 end
 
 --- 触发敌方击杀回调 [修复] BattleTriPage 三队战斗驱动依赖（与主战斗内部调用同构）

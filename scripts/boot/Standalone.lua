@@ -368,7 +368,12 @@ function Standalone.Start()
         { "UpdateNoticePopup", function() UpdateNoticePopup.init(vg) end },
         { "PlayerInfoPanel", function() PlayerInfoPanel.init(vg) end },
         { "SpinePowerUp", function() SpinePowerUpEffect.init() end },
-        { "TutorialManager", function() TutorialManager.init(vg, PlayerStore) end },
+        { "TutorialManager", function()
+            TutorialManager.init(vg, PlayerStore, function(progress)
+                local session = ClientDispatcher.get("session")
+                if session then session.tutorialProgress = progress end
+            end)
+        end },
         { "bootWiring", function() Standalone._bootWiring() end },
         { "firstStage", function()
             -- [启动优化] 初始阵容同步 + 关卡重载：独立一帧执行
@@ -904,8 +909,7 @@ function HandleUpdate(eventType, eventData)
     BottomNav.update(dt)
 
     -- [横屏接线 0928] 新手引导每帧驱动（原 ClientUpdate 接线，重构时丢失）
-    -- clearHotspots: 每帧清空热点缓存，本帧渲染时各 UI 模块重新注册
-    TutorialManager.clearHotspots()
+    -- 热点在绘制帧开始时清空，输入始终可读取最近一次实际渲染的坐标。
     TutorialManager.update(dt)
     -- 通知引导当前所在面板（enter_panel_* 类步骤推进；tab2 日志页已移除不再通知）
     do

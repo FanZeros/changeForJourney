@@ -436,7 +436,7 @@ function CharacterPanel.init(vg)
         getHeroDeployTeams  = function(h) return CharacterPanel.getHeroDeployTeams(h) end,
         getUpgradeBadgeCache = function() return upgradeBadgeCache end,
         getActiveTeamIdx     = function() return activeTeamIdx end,
-        getUnlockedTeamCount = function() return ExpTable.getUnlockedTeamCount(GameState.getLevel()) end,
+        getUnlockedTeamCount = function() return ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle")) end,
         getTeamOccupiedCounts = function() return CharacterPanel.getTeamOccupiedCounts() end,
         getTeams = function() return teams end,
         getTeamPowerCaches = function() return teamPowerCaches end,
@@ -1061,7 +1061,7 @@ end
 --- 已解锁的队伍数量
 ---@return number
 function CharacterPanel.getUnlockedTeamCount()
-    return ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    return ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
 end
 
 --- 各队上阵人数（供页签角标显示）
@@ -1086,13 +1086,12 @@ end
 ---@return boolean 是否切换成功
 function CharacterPanel.setActiveTeam(idx)
     idx = tonumber(idx)
-    if not idx or idx < 1 or idx > TEAM_COUNT then return false end
-    if idx == activeTeamIdx then return true end
-    if idx > ExpTable.getUnlockedTeamCount(GameState.getLevel()) then
-        local needLv = ExpTable.getTeamUnlockLevel(idx)
-        print(string.format("[CharacterPanel] 队伍%d未解锁（需要远征等级%s）", idx, tostring(needLv)))
+    if not idx or idx ~= math.floor(idx) or idx < 1 or idx > TEAM_COUNT then return false end
+    if idx > ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle")) then
+        print(string.format("[CharacterPanel] 队伍%d未解锁（%s）", idx, ExpTable.getTeamUnlockText(idx)))
         return false
     end
+    if idx == activeTeamIdx then return true end
     activeTeamIdx = idx
     teamSlots = teams[activeTeamIdx].slots
     slotPowerCache = teamPowerCaches[activeTeamIdx]
@@ -1109,6 +1108,22 @@ function CharacterPanel.setActiveTeam(idx)
     refreshNavBadge()
     print("[CharacterPanel] 切换到队伍 " .. idx)
     return true
+end
+
+--- 教程定位只改变名册视图，不改阵容或发送动作。
+function CharacterPanel.prepareTutorial(heroId)
+    CharacterPanel.setActiveTeam(1)
+    scrollY, scrollVelocity, isDragging = 0, 0, false
+    if heroId then
+        for i, entry in ipairs(heroRoster) do
+            if tonumber(entry.heroId) == tonumber(heroId) then
+                local row = math.ceil(i / MAX_PER_ROW)
+                scrollY = math.max(0, ROW1_CY + (row - 1) * ROW_SPACING - SCROLL_TOP - Draw.ROSTER_ICON * 0.5)
+                clampScroll()
+                break
+            end
+        end
+    end
 end
 
 --- 查询详情界面是否打开（供外部判断是否需要隐藏 TopBar/BottomNav）

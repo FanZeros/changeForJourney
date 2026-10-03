@@ -299,6 +299,11 @@ local function tryDrop()
         .. " hero=" .. tostring(heroId) .. " slot=" .. tostring(target))
 end
 
+--- 全窗模态出现时取消拖拽，不尝试穿戴或落入工作台。
+function EquipCrossDrag.cancel()
+    clearSession()
+end
+
 ---@param sx number
 ---@param sy number
 ---@return boolean consumed

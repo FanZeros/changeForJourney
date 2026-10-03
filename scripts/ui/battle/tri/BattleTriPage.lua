@@ -4,7 +4,7 @@
 --       保持原样），纵向堆叠三行战斗（行高 = rh/3 ≈ 360）:
 --   行1/2/3 = 同一套 BattleTriDriver（各自独立状态）
 --   行1 的关卡进度仍跟随 BattleScene（首通/存档/掉落不另起一套）
---   未解锁行: 暗罩 + 解锁等级 + 该队编队预览；返回按钮退出战斗区
+--   未解锁行: 暗罩 + 通关解锁条件 + 该队编队预览；返回按钮退出战斗区
 -- 每行内 8 卡单线: 我方 4 张在左半段、敌方 4 张在右半段（BattleLayout strip 模式）
 -- ============================================================================
 local BattleLayout = require("core.BattleLayout")
@@ -16,7 +16,7 @@ local TAL              = require("systems.TalentManager")
 local BattleEffects    = require("ui.battle.combat.BattleEffects")
 local SEM              = require("systems.StatusEffectManager")
 local ExpTable     = require("config.ExpTable")
-local GameState    = require("core.GameState")
+local ClientDispatcher = require("runtime.ClientDispatcher")
 local RewardPopup  = require("ui.hud.popup.RewardPopup")
 local SweepDialog       = require("ui.battle.stage.SweepDialog")
 local DamageStatsPanel  = require("ui.battle.popup.DamageStatsPanel")
@@ -81,7 +81,7 @@ local startTerminalRaid
 --- 创建新解锁队伍的战斗驱动；已存在的驱动保留关卡进度。
 --- 小队1跟主线 BattleScene 的当前关，避免共用驱动后从第一关重开。
 local function ensureDrivers()
-    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     local BattleScene = require("ui.battle.scene.BattleScene")
     for t = 1, COL_COUNT do
         if unlocked >= t and not drivers[t] then
@@ -128,7 +128,8 @@ local function ensureDrivers()
         return unlocked
     end
     if teamOne and mainStage and teamOne.stageId ~= mainStage
-        and teamOne.stageId == teamOne._syncedMainStage then
+        and teamOne.stageId == teamOne._syncedMainStage
+        and (teamOne.marchTimer or 0) <= 0 then
         teamOne._syncedMainStage = mainStage
         teamOne:start(mainStage)
     elseif teamOne then
@@ -139,6 +140,17 @@ end
 
 local function clearTerminalRaid()
     if not terminalRaid then return end
+    -- 共享池打空可能发生在最后一条更新的战线；未命中的 Boss 尚未来得及 tick。
+    -- 必须在解绑共享池/重开驱动前按各线状态分发，奖励仍只走 settleRaidKillRewards。
+    if terminalRaid.hp <= 0 then
+        for row = 1, COL_COUNT do
+            local drv = drivers[row]
+            if drv and drv.terminalRaid == terminalRaid then
+                drv:activate()
+                drv:reportDefeatedEnemies()
+            end
+        end
+    end
     terminalRaid:release()
     for row = 1, COL_COUNT do
         if drivers[row] then drivers[row].terminalRaid = nil end
@@ -148,7 +160,7 @@ end
 
 startTerminalRaid = function(stageId)
     clearTerminalRaid()
-    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     for row = 1, math.min(COL_COUNT, unlocked) do
         drivers[row]:start(stageId)
         drivers[row]._syncedMainStage = stageId
@@ -287,9 +299,10 @@ local function mapChapterOf(stageId)
     return ((chapter - 1) % 23) + 1
 end
 
-local function ensureRowBg(vg, row)
-    -- 三行都取各自驱动的当前关卡，不能用主线全局替代队一进度。
-    local chapter = mapChapterOf(BattleTriPage.getTeamStageId(row))
+local function ensureRowBg(vg, row, unlocked)
+    -- 锁定队展示待解锁章节；解锁后按各队实际战斗进度切回背景。
+    local chapter = row > unlocked and ((row == 2) and 10 or 20)
+        or mapChapterOf(BattleTriPage.getTeamStageId(row))
     if l1Img[row] and l1Chapter[row] == chapter then
         return l1Img[row]
     end
@@ -326,8 +339,8 @@ function BattleTriPage.update(dt)
     end
     BattleLayout.setMode("strip")
     require("ui.battle.scene.BattleScene").pumpBattleCards()
-    ensureDrivers()
-    for t = 1, COL_COUNT do
+    local unlocked = ensureDrivers()
+    for t = 1, math.min(COL_COUNT, unlocked) do
         local drv = drivers[t]
         if drv then drv:update(dt) end
     end
@@ -407,8 +420,7 @@ end
 --- L1 行内容背景垫底层（clip 到框内矩形; 锁定行加暗罩）——绘制于 L0 之前
 function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
     BattleTriPage.init(vg)
-    local BattleScene = require("ui.battle.scene.BattleScene")
-    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     for row = 1, COL_COUNT do
         local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
         nvgSave(vg)
@@ -416,13 +428,21 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
         -- L1 cover-fit
         local s = math.max(iw / 1896, ih / 720)
         local dw, dh = 1896 * s, 720 * s
-        local bg = ensureRowBg(vg, row)
-        local paint = nvgImagePattern(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5,
-            dw, dh, 0, bg, 1.0)
-        nvgBeginPath(vg)
-        nvgRect(vg, ix, iy, iw, ih)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
+        local bg = ensureRowBg(vg, row, unlocked)
+        local zoom, alpha = 1, 1
+        local drv = row <= unlocked and drivers[row] or nil
+        if drv then zoom, alpha = drv:getMarchBackground() end
+        -- 以可见战场的右侧中心为锚点，不按 cover 图片被裁掉的边缘定位。
+        local pivotX, pivotY = ix + iw, iy + ih * 0.5
+        local bgX = pivotX + (ix + (iw - dw) * 0.5 - pivotX) * zoom
+        local bgY = pivotY + (iy + (ih - dh) * 0.5 - pivotY) * zoom
+        if bg and bg >= 0 then
+            local paint = nvgImagePattern(vg, bgX, bgY, dw * zoom, dh * zoom, 0, bg, alpha)
+            nvgBeginPath(vg)
+            nvgRect(vg, ix, iy, iw, ih)
+            nvgFillPaint(vg, paint)
+            nvgFill(vg)
+        end
         if row > unlocked then
             nvgBeginPath(vg)
             nvgRect(vg, ix, iy, iw, ih)
@@ -441,7 +461,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
     region = { x = 0, y = 0, w = logicalW, h = logicalH }
 
     local BattleScene = require("ui.battle.scene.BattleScene")
-    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
 
     -- 统一战斗缩放: 取三个内矩形中最小可容缩放, 保证三行卡牌等大
     local contentScale = 1.0
@@ -487,7 +507,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 raidStageText = I18n.format("%s（已失守）", raidStageText)
             end
             stageText = I18n.format("【小队%d】%s", row, raidStageText)
-        elseif drivers[row] then
+        elseif row <= unlocked and drivers[row] then
             stageText = I18n.format("【小队%d】%s", row, stageDisplayName(drivers[row].stageId))
         elseif row <= unlocked then
             stageText = I18n.format("【小队%d】%s", row, I18n.lookup("准备中"))
@@ -517,6 +537,11 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgText(vg, ix + 28, iy + 25, stageText, nil)
         end
         nvgRestore(vg)
+        -- 前进提示独占顶部第二行，避开右上速度/扫荡等按钮。
+        if not terminalRaid and row <= unlocked and drivers[row] and drivers[row].marchNotice then
+            nvgFillColor(vg, nvgRGBA(255, 230, 160, 255))
+            nvgText(vg, ix + 28, iy + 55, "正在前进中", nil)
+        end
 
         -- [终焉协同] 每行底部进度条替换为共享生命池（绯红），行1 附加数值与倒计时
         if terminalRaid and row <= unlocked and terminalRaid.maxHp > 0 then
@@ -593,11 +618,10 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         -- 未解锁提示（行内居中）
         if row > unlocked then
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            local needLv = ExpTable.getTeamUnlockLevel(row)
             nvgFontSize(vg, 44)
             nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
             nvgText(vg, ix + iw * 0.5, iy + ih * 0.5,
-                I18n.format("远征等级达到 %s 解锁", tostring(needLv or "?")), nil)
+                I18n.lookup(ExpTable.getTeamUnlockText(row)), nil)
         end
     end
 
@@ -647,6 +671,8 @@ end
 ---@param stageId number
 ---@return boolean
 function BattleTriPage.gotoTeamStage(teamIdx, stageId)
+    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
+    if teamIdx < 1 or teamIdx > unlocked then return false end
     local BattleScene = require("ui.battle.scene.BattleScene")
     if StageConfig.isTerminalTemple(stageId) then
         if terminalRaid then return false end
@@ -746,7 +772,7 @@ function BattleTriPage.drawHud(vg, logicalW, logicalH)
     end
 
     -- 其余已解锁队伍与第一行使用同一组按钮。
-    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     for row = 2, math.min(COL_COUNT, unlocked) do
         local ix, iy, iw = interiorRect(row, logicalW, logicalH)
         local rowY = iy + hudHalf + 2
@@ -901,7 +927,7 @@ function BattleTriPage.handleInput(wx, wy)
     end
 
     -- 其余已解锁队伍与第一行使用同一组按钮。
-    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     for row = 2, math.min(COL_COUNT, unlocked) do
         local ix, iy, iw = interiorRect(row, logicalW, logicalH)
         local rowY = iy + hudHalf + 2

@@ -57,7 +57,8 @@ function Start()
     for key, value in pairs(RT) do originalRT[key] = value end
     for key, value in pairs(mods["boot.StandaloneRT"]) do RT[key] = value end
     require = function(name)
-        if name == "core.Viewport" then return originalRequire(name) end
+        if name == "core.Viewport" or name == "boot.StandaloneHorizonInput"
+            or name == "boot.OfflineRewardOverlay" then return originalRequire(name) end
         if name == "boot.StandaloneRT" then return RT end
         if not mods[name] then mods[name] = mock() end
         return mods[name]

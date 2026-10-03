@@ -1405,6 +1405,7 @@ function Panel.handleInput(dx, dy)
         if DrawUtil.hitTest(dx, dy, SET_BTN.CX, SET_BTN.CY, SET_BTN.W, SET_BTN.H) then
             BF.trigger("bp_set_filter")
             SetFilterDialog.open(decomposeState.setFilter, {
+                getCounts = ensureGrids().getSetCounts,
                 onChange = function() state.scrollY = 0 end,
             })
             print("[BackpackPanel] 打开套装筛选弹窗")

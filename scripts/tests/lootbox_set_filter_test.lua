@@ -5,13 +5,24 @@ local function eq(actual, expected, message)
     assert(actual == expected, message .. ": " .. tostring(actual) .. " / " .. tostring(expected))
 end
 
+local restore = function() end
+
 local function runTests()
     local oldTime = time
-    time = { elapsedTime = 10 }
     local oldSfx = package.loaded["systems.GameSFX"]
     local oldFeedback = package.loaded["systems.ButtonFeedback"]
     local oldIcons = package.loaded["core.DarkIcon"]
     local oldDetail = package.loaded["ui.character.equip.EquipmentDetail"]
+    local restoreDialog = function() end
+    restore = function()
+        restoreDialog()
+        package.loaded["systems.GameSFX"] = oldSfx
+        package.loaded["systems.ButtonFeedback"] = oldFeedback
+        package.loaded["core.DarkIcon"] = oldIcons
+        package.loaded["ui.character.equip.EquipmentDetail"] = oldDetail
+        time = oldTime
+    end
+    time = { elapsedTime = 10 }
     package.loaded["ui.character.equip.EquipmentDetail"] = {
         init = function() end,
         readOnlySize = function() return 720, 440 end,
@@ -30,6 +41,16 @@ local function runTests()
 
     local Page = require("ui.loot.LootBoxPage")
     local Dialog = require("ui.widget.SetFilterDialog")
+    local originalOpen = Dialog.open
+    restoreDialog = function()
+        Dialog.open = originalOpen
+    end
+    ---@type (fun(): table<string, integer>)|nil
+    local countGetter = nil
+    Dialog.open = function(sel, opts)
+        countGetter = opts and opts.getCounts or nil
+        originalOpen(sel, opts)
+    end
     local claimed = {}
     ---@type table<number, boolean>
     local claimQuality = {}
@@ -61,6 +82,11 @@ local function runTests()
     Page.handleInput(190, 286)
     eq(Dialog.isOpen(), true, "点击套装按钮打开弹窗")
     eq(Dialog.countSelected(nil), 0, "初始未勾选")
+    assert(countGetter, "遗匣必须接入套装数量 getter")
+    local counts = countGetter()
+    eq(counts.carapace, 2, "套装数量按两个已确定装备实例计数")
+    eq(counts.none, 1, "待整理数量不计入无套装")
+    eq(counts.faceless, 0, "无匹配套装也显式返回零")
 
     -- 2) 弹窗模态：打开时列表点击被消费，不触发领取
     local before = #claimed
@@ -71,6 +97,7 @@ local function runTests()
     -- 3) 勾选叠甲虫壳（行1，cy=610）→ onChange 实时重建列表
     Page.handleInput(540, 610)
     eq(Dialog.countSelected(nil), 1, "勾选一套")
+    eq(countGetter().none, 1, "勾选套装后其他行数量不被套装筛选清零")
     -- 弹窗关闭后列表只剩 carapace 两条
     Page.handleInput(750, 1836) -- 完成
     eq(Dialog.isOpen(), false, "完成关闭弹窗")
@@ -151,19 +178,35 @@ local function runTests()
     eq(allClaims, 2, "重开后一键领取可用")
     eq(next(claimSetFilter), nil, "重开后套装筛选已重置")
 
+    -- 9) 数量跟随品质与最新来源刷新，不重开弹窗，也不生成待整理装备。
+    Page.handleInput(565 + 4 * 82, 286) -- 仅品质5
+    Page.handleInput(190, 286)
+    assert(countGetter, "重开套装弹窗必须重新绑定数量")
+    counts = countGetter()
+    eq(counts.carapace, 2, "品质5保留两件叠甲虫壳")
+    eq(counts.none, 0, "品质5排除品质1无套装")
+    Page.refresh({ entries[1], entries[3], entries[4] })
+    counts = countGetter()
+    eq(counts.carapace, 1, "弹窗打开期间来源刷新立即减少套装数量")
+    eq(counts.none, 0, "来源刷新保留当前品质筛选")
+    eq(entries[4].equip, nil, "计数不会生成或迁移待整理条目")
+    Page.handleInput(750, 1836)
+    Page.handleInput(565 + 4 * 82, 286) -- 清掉品质5恢复全部
+    Page.handleInput(190, 286)
+    eq(countGetter().none, 1, "取消品质后无套装数量恢复")
+
     Page.forceClose()
-    package.loaded["systems.GameSFX"] = oldSfx
-    package.loaded["systems.ButtonFeedback"] = oldFeedback
-    package.loaded["core.DarkIcon"] = oldIcons
-    package.loaded["ui.character.equip.EquipmentDetail"] = oldDetail
-    time = oldTime
-    print("[lootbox_set_filter_test] ALL PASS：套装筛选全部通过")
 end
 
 function Start()
     local ok, err = pcall(runTests)
+    local cleanupOK, cleanupErr = pcall(restore)
     if not ok then
         print("[lootbox_set_filter_test] [FAIL] " .. tostring(err))
+    elseif not cleanupOK then
+        print("[lootbox_set_filter_test] [FAIL] cleanup: " .. tostring(cleanupErr))
+    else
+        print("[lootbox_set_filter_test] ALL PASS：套装筛选全部通过")
     end
     engine:Exit()
 end

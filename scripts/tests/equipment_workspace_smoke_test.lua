@@ -27,8 +27,55 @@ function Start()
         Backpack.init(vg)
         Detail.open(1, "equip")
         assert(Backpack.isOpen() and Backpack.isLeftMode(), "配装入口未自动开启左仓库")
-        Detail.handleEquipmentSlotTap(540, 185)
+        local Draw = require("ui.character.detail.CharacterDetailDraw")
+        local slots = {}
+        for _, slot in ipairs(Draw.DT_SLOTS) do slots[slot.slot] = slot end
+        Detail.handleEquipmentSlotTap(slots.helmet.cx, slots.helmet.cy)
         assert(Backpack.getEquipmentSlotFilter() == "helmet", "头盔筛选未同步")
+        -- 所有点击仅走部位UI联动，绝不调用装备/卸下action。
+        local expected = {
+            helmet = { cx = 540, cy = 165, oldCY = 185 },
+            armor = { cx = 325, cy = 336, oldCY = 316 },
+            accessory = { cx = 755, cy = 336, oldCY = 316 },
+            weapon = { cx = 325, cy = 598, oldCY = 578 },
+            offhand = { cx = 755, cy = 598, oldCY = 578 },
+            shoes = { cx = 540, cy = 790, oldCY = 790 },
+        }
+        assert(#Draw.DT_SLOTS == 6 and Draw.DT_SLOT_SIZE == 160, "六槽尺寸/数量异常")
+        local half = Draw.DT_SLOT_SIZE * 0.5
+        local function tapAt(slot, y, hit, label)
+            assert(Detail.handleEquipmentSlotTap(slot.cx, y) == hit, label .. "命中异常: " .. slot.slot)
+            local selected = Backpack.getEquipmentSlotFilter()
+            assert(selected == (hit and slot.slot or nil), label .. "仓库过滤不同步: " .. slot.slot)
+        end
+        for _, slot in ipairs(Draw.DT_SLOTS) do
+            local target = expected[slot.slot]
+            assert(target and slot.cx == target.cx and slot.cy == target.cy, "六槽新中心异常: " .. slot.slot)
+            tapAt(slot, slot.cy, true, "新中心")
+            tapAt(slot, slot.cy - half, true, "新上边界")
+            tapAt(slot, slot.cy + half, true, "新下边界")
+            tapAt(slot, slot.cy - half - 0.5, false, "新上边界外")
+            tapAt(slot, slot.cy + half + 0.5, false, "新下边界外")
+            local delta = slot.cy - target.oldCY
+            if delta ~= 0 then
+                -- 20px位移的上下差集各取中点，避免仅新旧中心都落在重叠区而漏掉旧命中表。
+                local newOnly = slot.cy + (delta > 0 and half - delta * 0.5 or -half - delta * 0.5)
+                local oldOnly = target.oldCY + (delta > 0 and -half + delta * 0.5 or half + delta * 0.5)
+                assert(math.abs(newOnly - target.oldCY) > half and math.abs(oldOnly - slot.cy) > half,
+                    "新旧边界差集夹具异常: " .. slot.slot)
+                tapAt(slot, newOnly, true, "新区域独有点")
+                tapAt(slot, oldOnly, false, "旧区域独有点")
+            end
+        end
+        -- 初始化后的真实装备映射，主副手分别读取不同的合法装备实例。
+        local main = EquipPanel.peekSlotEquipAt(slots.weapon.cx, slots.weapon.cy)
+        local offhand = EquipPanel.peekSlotEquipAt(slots.offhand.cx, slots.offhand.cy)
+        assert(main and tostring(main.seq) == "1" and main.templateId == "W1" and main.slot == "weapon",
+            "主手新中心peek未读取已装备实例")
+        assert(offhand and tostring(offhand.seq) == "3" and offhand.templateId == "O1" and offhand.slot == "offhand",
+            "副手新中心peek未读取已装备实例")
+        assert(Dispatcher.get("equipment").equipped[1].weapon == 1
+            and Dispatcher.get("equipment").equipped[1].offhand == 3, "部位命中/peek意外改写穿戴映射")
         Detail.clearEquipmentSlot()
         assert(Backpack.getEquipmentSlotFilter() == nil, "取消部位不同步")
         ED.open(2, nil, nil, true, "backpack", 500, 900)
@@ -42,6 +89,24 @@ function Start()
         EquipPanel.drawSetCodex(vg)
         nvgEndFrame(vg)
         assert(EquipPanel.peekItemAt(150, 1304) == nil, "隐藏网格仍可命中")
+        Detail.handleEquipmentSlotTap(755, 578)
+        local preservedSlot = Backpack.getEquipmentSlotFilter()
+        assert(preservedSlot == "offhand", "副手筛选必须先建立")
+        ED.open(2, nil, nil, true, "backpack", 500, 900)
+        ED.pin()
+        Detail.handleInput(540, 930)
+        assert(EquipPanel.getAttributeMode() == "equipment", "标题首击未切换装备加成")
+        assert(Backpack.getEquipmentSlotFilter() == preservedSlot, "切换标题意外取消副手筛选")
+        assert(ED.getSelection().pinned and ED.getSelection().seq == "2", "切换标题丢失钉住候选")
+        local bonusOptions = { includeEquipmentBonuses = true }
+        local bonusData = Preview.build(1, 60, nil, nil, bonusOptions)
+        assert(bonusData.equipmentBonuses and #bonusData.equipmentBonuses.rows > 0, "装备净增益未构建")
+        nvgBeginFrame(vg, 1080, 2400, 1)
+        EquipPanel.draw(vg, 1, { equipSlot = preservedSlot })
+        nvgEndFrame(vg)
+        Detail.handleInput(540, 930)
+        assert(EquipPanel.getAttributeMode() == "character", "标题再次点击未恢复角色属性")
+        assert(Dispatcher.get("equipment").equipped[1].weapon == 1, "显示切换意外穿装")
         Detail.handleDragBegin(80, 1800)
         Detail.handleDragMove(80, 1720)
         Detail.handleDragEnd(80, 1720)

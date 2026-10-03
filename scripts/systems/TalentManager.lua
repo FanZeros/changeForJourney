@@ -49,7 +49,7 @@ end
 local TAL = {}
 -- [多实例] 战斗双方列表引用（随战斗 mount 切换）; state/unitStates 为 unit-keyed 全局共享
 local function newBattleRefs()
-    return { bAllies = {}, bEnemies = {} }
+    return { bAllies = {}, bEnemies = {}, deathHookDepth = 0, pendingDeaths = {}, pendingDeathSet = {} }
 end
 local TAL_DEFAULT = newBattleRefs()
 local TAL_BCS = TAL_DEFAULT
@@ -438,6 +438,8 @@ end
 
 -- 英雄专属辅助（从本文件抽出，bind 后保持原 local 名）
 local _ayane = TalentAyane.bind({
+    AD = AD,
+    SEM = SEM,
     hasAwaken = hasAwaken,
     getState = getState,
     ensureState = ensureState,
@@ -1006,6 +1008,24 @@ function TAL.getLockedTarget(attacker, targetList)
     return nil
 end
 
+-- 同一轮后攻击可以同步触发多次额伤：先完成本轮条件/消耗，再统一消费死亡。
+-- 队列属于已挂载战线，不能把队2的死亡留给队1的后攻击回调。
+local function runAfterAttackWithDeaths(fn, ...)
+    local refs = TAL_BCS
+    refs.deathHookDepth = (refs.deathHookDepth or 0) + 1
+    local result = table.pack(pcall(fn, ...))
+    refs.deathHookDepth = refs.deathHookDepth - 1
+    if refs.deathHookDepth == 0 then
+        local pending = refs.pendingDeaths
+        refs.pendingDeaths, refs.pendingDeathSet = {}, {}
+        for _, death in ipairs(pending) do
+            TAL.onEnemyDeath(death.unit, death.allies, death.enemies)
+        end
+    end
+    if not result[1] then error(result[2], 0) end
+    return table.unpack(result, 2, result.n)
+end
+
 --- 连击额外攻击的天赋钩子。熬夜冠军「夜华斩」、小黑子「法术机关枪」：连击同样推进攻击计数并可触发被动。
 --- 由 BattleCombat.performComboAttack 在连击命中后调用。
 ---@param attacker table 攻击方单位
@@ -1014,7 +1034,7 @@ end
 ---@param targetList table 被攻击方的单位列表
 ---@param dealDmgFn function 伤害回调
 function TAL.onComboAttack(attacker, target, isAlly, targetList, dealDmgFn, comboMeta)
-    return _combo.onComboAttack(attacker, target, isAlly, targetList, dealDmgFn, comboMeta)
+    return runAfterAttackWithDeaths(_combo.onComboAttack, attacker, target, isAlly, targetList, dealDmgFn, comboMeta)
 end
 
 --- 攻击后钩子
@@ -1026,13 +1046,15 @@ end
 ---@param dealDmgFn function dealDamageToUnit(target, damage, isTargetAlly, prefix, color)
 ---@param attackerAllies table|nil 攻击方所属队伍列表（可选，星图128共鸣之歌需要）
 function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
-    local r = _after.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
-    ClassGateRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, attackerAllies)
-    EquipmentSetRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, targetList)
-    if result and result.totalDamage then
-        EquipmentSetRuntime.addSwordWindowDamage(attacker, result.totalDamage)
-    end
-    return r
+    return runAfterAttackWithDeaths(function()
+        local r = _after.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
+        ClassGateRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, attackerAllies)
+        EquipmentSetRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, targetList)
+        if result and result.totalDamage then
+            EquipmentSetRuntime.addSwordWindowDamage(attacker, result.totalDamage)
+        end
+        return r
+    end)
 end
 
 function TAL.modifyDamageForTarget(target, damage, isTargetAlly, syncHpFn, dmgCategory)
@@ -1052,11 +1074,43 @@ function TAL.onAllyDeath(dyingUnit, allies, syncHpFn)
     return _allyDeath.onAllyDeath(dyingUnit, allies, syncHpFn)
 end
 
---- 敌人死亡钩子（敌方HP≤0时调用）
+--- 存活/重新入场后恢复敌死钩子；不碰经验、掉落等宿主奖励账本。
+--- 伤害入口应在扣血前调用，避免复活后同帧再死沿用上一条击杀归因。
+---@param unit table
+function TAL.resetEnemyDeath(unit)
+    if not unit or (unit.hp or 0) <= 0 then return end
+    if unit._talEnemyDeathReported then
+        unit._talEnemyDeathReported = nil
+        unit._killedBy = nil
+        unit._killedByCrit = nil
+        unit._killedByRicochet = nil
+        unit._killedByNightSlash = nil
+    end
+end
+
+--- 敌人死亡钩子（每次死亡仅分发一次，必须早于清状态/补位/胜利早返）
 ---@param deadEnemy table 死亡的敌方单位
 ---@param allies table 己方单位列表
 ---@param enemies table 敌方单位列表
 function TAL.onEnemyDeath(deadEnemy, allies, enemies)
+    if not deadEnemy then return end
+    if (deadEnemy.hp or 0) > 0 then
+        TAL.resetEnemyDeath(deadEnemy)
+        return
+    end
+    if deadEnemy._talEnemyDeathReported then return end
+    if (TAL_BCS.deathHookDepth or 0) > 0 then
+        if not TAL_BCS.pendingDeathSet[deadEnemy] then
+            TAL_BCS.pendingDeathSet[deadEnemy] = true
+            TAL_BCS.pendingDeaths[#TAL_BCS.pendingDeaths + 1] = {
+                unit = deadEnemy, allies = allies, enemies = enemies,
+            }
+        end
+        return
+    end
+    -- 先置位：死亡钩子可以触发额伤/扫描重入，但不能重复永久成长。
+    -- _killedBy* 和 SEM 状态此时仍可见；由宿主随后负责清理。
+    deadEnemy._talEnemyDeathReported = true
     local r = _enemyDeath.onEnemyDeath(deadEnemy, allies, enemies)
     ClassGateRuntime.onEnemyDeath(deadEnemy, allies)
     EquipmentSetRuntime.onEnemyDeath(deadEnemy, allies, enemies)

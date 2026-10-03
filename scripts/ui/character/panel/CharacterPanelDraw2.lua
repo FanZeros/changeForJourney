@@ -706,7 +706,8 @@ function M.draw(vg, scrollY, detailOpen)
         -- 新手引导热点：槽位3（引导组9目标槽位）
         if i == 3 then
             if TutorialManager.isActive() then
-                TutorialManager.registerHotspot("character_slot_3", cx, CARD_CY, CARD_W, CARD_H, "right")
+                TutorialManager.registerHotspot("character_slot_3", cx + contentShiftX,
+                    CARD_CY + DESIGN_H * 0.06, CARD_W, CARD_H, "right")
             end
         end
 
@@ -785,11 +786,14 @@ function M.draw(vg, scrollY, detailOpen)
         local draggingThis = dragState and dragState.active and dragState.heroId == entry.heroId
         -- [统一角色框] 名册网格：品质描边 + 全套角标（等级/职业/队伍/碎片/可提升）+ 名字
         local deployTeams = getHeroDeployTeams and getHeroDeployTeams(entry.heroId) or nil
-        local teamTag = nil
-        if deployTeams and #deployTeams > 0 then
-            local labels = {}
-            for i, t in ipairs(deployTeams) do labels[i] = tostring(t) end
-            teamTag = table.concat(labels, "·")
+        local teamTags = {}
+        local unlockedCnt = getUnlockedTeamCount and getUnlockedTeamCount() or 1
+        if deployTeams then
+            for _, t in ipairs(deployTeams) do
+                if t <= unlockedCnt then
+                    teamTags[#teamTags + 1] = { text = tostring(t), color = teamColor(t, false) }
+                end
+            end
         end
         HeroFrame.draw(vg, {
             cx = cx, cy = cy, size = ROSTER_ICON,
@@ -801,8 +805,8 @@ function M.draw(vg, scrollY, detailOpen)
             showClass = true,
             showShards = (not isOwned) or nil,
             shards = entry.shards or 0,
-            showTeamTag = teamTag and true or nil,
-            teamTag = teamTag,
+            showTeamTag = #teamTags > 0,
+            teamTags = teamTags,
             showUpgrade = (isOwned and getUpgradeBadgeCache()[entry.heroId]) and true or nil,
             dragSource = draggingThis or nil,
             nameLabel = heroCfg.name,
@@ -811,11 +815,13 @@ function M.draw(vg, scrollY, detailOpen)
         -- 新手引导热点：第一个 roster 卡片槽 / 新获得英雄卡片
         if TutorialManager.isActive() then
             if idx == 1 then
-                TutorialManager.registerHotspot("character_slot_1", cx, cy, ROSTER_ICON, ROSTER_ICON, "right")
+                TutorialManager.registerHotspot("character_slot_1", cx + contentShiftX,
+                    cy + DESIGN_H * 0.06, ROSTER_ICON, ROSTER_ICON, "right")
             end
             local _newId = TutorialManager.getNewHeroId()
             if _newId and entry.heroId == _newId then
-                TutorialManager.registerHotspot("character_new_hero", cx, cy, ROSTER_ICON, ROSTER_ICON, "right")
+                TutorialManager.registerHotspot("character_new_hero", cx + contentShiftX,
+                    cy + DESIGN_H * 0.06, ROSTER_ICON, ROSTER_ICON, "right")
             end
         end
 

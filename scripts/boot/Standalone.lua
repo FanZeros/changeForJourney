@@ -597,6 +597,7 @@ end
 
 --- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
 local function tryPlayPendingStory_()
+    if not TutorialManager.canPlayPendingStory() then return end
     if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then
         return
     end

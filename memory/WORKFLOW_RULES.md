@@ -2,6 +2,13 @@
 
 > 强化记忆：以下规则在每轮任务中必须遵守。**每轮开始工作前先重读本节。**
 
+### 选关章节背景未合入核查（2026-10-03）
+
+- 用户在 **AskUserQuestion** 要求核查之前选关背景分支是否未合入，本轮只读、不合并候选、不改业务。从 `workspace930@4c8fef0` 建立 `audit/stage-select-background-20261003`，提交交付记忆仅推审查分支，最后继续 **AskUserQuestion** 询问下一步。
+- 已确认候选 `feat930/stage-select-chapter-background-1003@48a6cf3`（“选关章节卡片使用对应战斗背景”）未合入：GitHub compare 为diverged/ahead1/behind92，唯一ahead提交是实际功能而非交付文档；按head精确查询PR返回空。当前 `StageSelectDialog.lua` 章节卡片仍为圆角纯色块（558–565），没有 `ensureChapterBackground`/`drawChapterBackground`；`StageConfig.getBattleBackground` 和新增 `stage_chapter_background_test.lua` 也不存在于主线快照，排除了“已择取功能仅记忆未合入”的情况。
+- 候选改动共6文件：StageConfig集中背景映射、StageSelectDialog章节卡片图片cover/缓存/重试、BattleTriPage复用映射、新专项及meta、记忆。与当前源码差异不代表可整支覆盖，若用户授权整合应从最新主线新建分支融合，不回退后续国际化/选关修复，不直接推workspace系列。
+- 区分其他已合入项：`dev/level-select-hard-24-0930` 的选关背景铆钉拉伸修复已由PR #5合入（后续分支也无ahead提交）；`feat928/stage-select-layout`无ahead提交；23章战斗背景重绘PR #35已合入，但不会让选关纯色卡片自动显示对应背景。此次只读核查未运行候选代码或候选测试，不声明候选功能/合并可行性已验证，不自动创建或合并PR。
+
 ### 国际化整合 PR 交接（2026-10-03）
 
 - 用户在 **AskUserQuestion** 明确选择“创建整合 PR（推荐）”，已创建 **PR #36**：https://github.com/FanZeros/changeForJourney/pull/36 ，head=`integrate930/i18n-continuation-20261003`、base=`workspace930`，标题“整合国际化续作修复与离线奖励加速”。创建返回open、draft=false、merged=false；mergeable初始null/unknown，最终检查状态以GitHub实际结果为准，不声称CI或合并完成。

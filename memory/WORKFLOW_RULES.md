@@ -2,6 +2,13 @@
 
 > 强化记忆：以下规则在每轮任务中必须遵守。**每轮开始工作前先重读本节。**
 
+### 国际化整合 PR 交接（2026-10-03）
+
+- 用户在 **AskUserQuestion** 明确选择“创建整合 PR（推荐）”，已创建 **PR #36**：https://github.com/FanZeros/changeForJourney/pull/36 ，head=`integrate930/i18n-continuation-20261003`、base=`workspace930`，标题“整合国际化续作修复与离线奖励加速”。创建返回open、draft=false、merged=false；mergeable初始null/unknown，最终检查状态以GitHub实际结果为准，不声称CI或合并完成。
+- PR包含国际化1002/1003续作、关键词/长名/小屏兼容修复及此前离线奖励加速；已附官方build、16套Runtime、真实主字体测宽、词典2036赋值等价及规范36测试结果。
+- 说明明确披露剧情未全量翻译、既有LSP诊断、真实角色布局两项纯3913基线可复现失败及主入口只16/18初始化观察；不把spy/无头运行称为设备截图或完整真人验收。只提交推送新分支，不推workspace系列，创建授权不延伸为自动合并。
+- 本次创建时head=`eb4f3ffb`、目标=`3913d5f3`；后续交接仅更新本记忆，不改Lua、不重复构建、不提交本地.project生成配置或凭据。每次真实简报后继续真正调用 **AskUserQuestion** 给下一步选项。
+
 ### 国际化续作修复后整合（2026-10-03，当前授权）
 
 - 用户在 **AskUserQuestion** 选择“修复后整合（推荐）”。从已验证离线加速及审查记录新建 `integrate930/i18n-continuation-20261003`，同步目标 `workspace930@3913d5f3`，合入 `dev/i18n-audit-20261003@fccce33e`（包含1002基础），保留离线加速整合。只推新整合分支，不推workspace系列、不自动创建或合并PR；源码与资源直接在/workspace根。

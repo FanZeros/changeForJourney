@@ -785,11 +785,14 @@ function M.draw(vg, scrollY, detailOpen)
         local draggingThis = dragState and dragState.active and dragState.heroId == entry.heroId
         -- [统一角色框] 名册网格：品质描边 + 全套角标（等级/职业/队伍/碎片/可提升）+ 名字
         local deployTeams = getHeroDeployTeams and getHeroDeployTeams(entry.heroId) or nil
-        local teamTag = nil
-        if deployTeams and #deployTeams > 0 then
-            local labels = {}
-            for i, t in ipairs(deployTeams) do labels[i] = tostring(t) end
-            teamTag = table.concat(labels, "·")
+        local teamTags = {}
+        local unlockedCnt = getUnlockedTeamCount and getUnlockedTeamCount() or 1
+        if deployTeams then
+            for _, t in ipairs(deployTeams) do
+                if t <= unlockedCnt then
+                    teamTags[#teamTags + 1] = { text = tostring(t), color = teamColor(t, false) }
+                end
+            end
         end
         HeroFrame.draw(vg, {
             cx = cx, cy = cy, size = ROSTER_ICON,
@@ -801,8 +804,8 @@ function M.draw(vg, scrollY, detailOpen)
             showClass = true,
             showShards = (not isOwned) or nil,
             shards = entry.shards or 0,
-            showTeamTag = teamTag and true or nil,
-            teamTag = teamTag,
+            showTeamTag = #teamTags > 0,
+            teamTags = teamTags,
             showUpgrade = (isOwned and getUpgradeBadgeCache()[entry.heroId]) and true or nil,
             dragSource = draggingThis or nil,
             nameLabel = heroCfg.name,

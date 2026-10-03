@@ -5,6 +5,7 @@
 local PDM             = require("rules.character.PlayerDataManager")
 local ArtifactDefs    = require("shared.artifact.ArtifactDefs")
 local ArtifactSchema  = require("shared.artifact.ArtifactSchema")
+local ExpTable        = require("config.ExpTable")
 local StageConfig     = require("config.StageConfig")
 local TaskService     = require("rules.task.TaskService")
 local CurrencyService = require("rules.currency.CurrencyService")
@@ -397,6 +398,11 @@ function ArtifactService.Equip(uid, artifactId, slot, subSlot, teamIdx)
         return false, "无效的神器格子"
     end
 
+    -- 队伍通关门槛与下面的神器子格等级门槛独立，规则层不能只依赖 UI 禁点。
+    local battleProgress = PDM.GetModule(uid, "battle")
+    if teamIdx > ExpTable.getUnlockedTeamCount(battleProgress) then
+        return false, string.format("队伍%d尚未解锁（%s）", teamIdx, ExpTable.getTeamUnlockText(teamIdx))
+    end
     local playerLevel = getPlayerLevel(uid)
     if subSlot > ArtifactSchema.getUnlockedSubSlotCount(playerLevel) then
         local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)

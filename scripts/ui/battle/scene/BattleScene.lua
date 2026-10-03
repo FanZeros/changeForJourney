@@ -89,7 +89,7 @@ local ALLY_LVL_OFFSET_Y  = 215
 -- 关卡名 / 按钮坐标（合并到 table 减少 local 占用）
 local NAV = BattleStageNav.NAV
 
--- (职业标签 TAG_SIZE / HP_BAR / ATK_BAR 已移至 BattleDraw)
+-- (职业标签 TAG_SIZE / HP_BAR 已移至 BattleDraw)
 
 -- 死亡即补位：退场+空位总时长（秒），期满新怪从右补入
 local RESPAWN_DELAY = 1.0
@@ -114,8 +114,6 @@ local imgMonsterCards = {}  -- imgMonsterCards[monsterId] = nvg image handle
 local imgHpBg     = -1
 local imgHpFill   = -1
 local imgEsFill   = -1
-local imgAtkBg    = -1
-local imgAtkFill  = -1
 local imgBtnBack  = -1
 local imgBtnFwd   = -1
 local imgBtnIcon  = -1
@@ -291,7 +289,7 @@ local waveKillCount = 0        -- 本波次击杀数
 local waveGoldEarned = 0       -- 本波次获得金币
 local waveExpEarned = 0        -- 本波次获得经验
 
--- (工具绘制函数 drawImageCentered/drawImageMirrored/drawTextStroke/drawProgressBar 已移至 BattleDraw)
+-- (工具绘制函数 drawImageCentered/drawImageMirrored/drawTextStroke 已移至 BattleDraw)
 ---@type fun(vg, img, cx, cy, w, h, alpha)
 local drawImageCentered = BattleDraw.drawImageCentered
 ---@type fun(vg, img, cx, cy, w, h, alpha)
@@ -380,8 +378,6 @@ end
 local drawCardGroup       = BattleDraw.drawCardGroup
 ---@type fun(vg)
 local drawFloatingTexts   = BattleDraw.drawFloatingTexts
----@type fun(vg, imgBg, imgFill, cx, cy, bgW, bgH, padding, progress)
-local drawProgressBar     = BattleDraw.drawProgressBar
 
 -- ======================== 关卡系统 ========================
 
@@ -626,8 +622,6 @@ function BattleScene.init(vg)
     imgHpBg     = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HP1.png", 0)
     imgHpFill   = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HPT2.png", 0)
     imgEsFill   = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HPT3.png", 0)
-    imgAtkBg    = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_GJT1.png", 0)
-    imgAtkFill  = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_GJT2.png", 0)
     imgBtnBack  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYGA.png", 0)
     imgBtnFwd     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYGB.png", 0)
     imgBtnFwdGrey = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG.png", 0)
@@ -666,8 +660,6 @@ function BattleScene.init(vg)
         imgHpBg         = imgHpBg,
         imgHpFill       = imgHpFill,
         imgEsFill       = imgEsFill,
-        imgAtkBg        = imgAtkBg,
-        imgAtkFill      = imgAtkFill,
         imgAllyTags     = imgAllyTags,
     })
 

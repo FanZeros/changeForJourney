@@ -11,6 +11,7 @@
 - 新 `tests/chest_reward_horizon_test.lua` 用真实Horizon/Viewport/RewardPopup/ChurchResults/DrawPanel及真实cascade，仅旁页/底层NanoVG/神器图标绘图为spy，完整仿射矩阵与clip冻结模拟。官方build后45用例1168断言ALL PASS、exit0：真实来源1/10件tri/ordinary/tower早期/末尾、默认focuscenter显式left、标题/实例/数目、非零动画、实际可见交集、首击skip后二击close、共享left/right/center/nil/frame/DPR1/2/3 callback投射、row配对隔离。可选callback用独立共享API测试，不冒称教堂原有详情。
 - 最终12套Runtime全部exit0+ALL PASS：新专项1168、锻炉层级46、神器直接开放438、离线覆盖487、离线加速1194、教程横屏356/触发31/领取241、装备手势44/快装78、关键词7071、切关。现有forge层级test仅spy入口改drawContent，原断言意义保持。新test修前未运行，未声称修前FAIL；本轮无截图/真设备帧率音频验收，不能把绘图spy当真像素。
 - 官方最终build成功，4份变更Lua与构建产物逐字节匹配，新test meta由官方生成，原UUID/图片/共享配置/神器业务服务未改。修改Lua文件LSP无Error；全工作区既有诊断不混修。源码/资源直接在/workspace根，本地.project身份/设置及平台skills未暂存删除不提交。
+- 修复提交 `cebc29480f07969a7e5a0cd8c6a49063e3a04015` 已推至 `fix930/chest-reward-display-20261003`；远端930仍4c8fef0e，当前快照可干净合并。规范2605路径0错误0警告及检查器36测试通过；当前预览使用已重建修复代码。未自动创建/合并PR。
 - 完成后仅提交推送新修复分支，不推workspace系列、不自动创建/合并PR；凭据不写入文件/远端/配置/记忆。实际简报后真正调用 **AskUserQuestion** 提供下一步选项，持续推进授权任务、尊重用户后续停止及权限拒绝。
 
 

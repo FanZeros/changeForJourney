@@ -376,7 +376,7 @@ local function drawSetFilterButton(vg)
     local feedback = BF.begin(vg, "lbp_set_filter", SET_BTN.cx, SET_BTN.cy, SET_BTN.w, SET_BTN.h)
     DarkIcon.drawNine(vg, "btn", SET_BTN.cx - SET_BTN.w * 0.5, SET_BTN.cy - SET_BTN.h * 0.5,
         SET_BTN.w, SET_BTN.h, { accent = selected > 0 and "green" or "gold" })
-    local label = selected > 0 and ("套装 · " .. selected) or "套装"
+    local label = selected > 0 and I18n.format("套装 · %d", selected) or I18n.lookup("套装")
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 34)
     text(vg, SET_BTN.cx, SET_BTN.cy, label, 34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,

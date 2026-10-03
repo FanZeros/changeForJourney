@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>天赋星图连线编辑器</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #14110e; color: #e8dcc8; font: 14px/1.4 "Segoe UI", "Microsoft YaHei", sans-serif; }
+  #bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #221c16; border-bottom: 1px solid #3a3026; flex-wrap: wrap; }
+  button { background: #3a2e22; color: #ffd76e; border: 1px solid #6a5438; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  button:hover { background: #4a3b2c; }
+  button.danger { color: #e07a6a; }
+  #status { margin-left: auto; color: #b6a48c; }
+  #wrap { position: relative; height: calc(100% - 49px); }
+  canvas { display: block; width: 100%; height: 100%; cursor: grab; }
+  canvas.linking { cursor: crosshair; }
+  #tip { position: absolute; pointer-events: none; background: rgba(42,31,24,.95); border: 1px solid #c48a3a; border-radius: 8px; padding: 6px 10px; display: none; white-space: nowrap; }
+  #help { color: #8d7b68; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button id="reload">重新读取</button>
+  <button id="undo">撤销</button>
+  <button id="save">保存到 Lua</button>
+  <button id="fit">回到全图</button>
+  <span id="help">点节点再点另一个：有边就断开，没边就连上。拖空白处平移，滚轮缩放。不改位置和效果。</span>
+  <span id="status">未加载</span>
+</div>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+  <div id="tip"></div>
+</div>
+<script>
+const COLORS = {
+  "绿": "#4CAF50", "红": "#F44336", "黄": "#FFC107",
+  "蓝": "#2196F3", "紫": "#9C27B0", "无": "#AAAAAA"
+};
+const SIZE = { small: 7, medium: 10, large: 14 };
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const tip = document.getElementById("tip");
+const statusEl = document.getElementById("status");
+
+let nodes = [];
+let byId = new Map();
+let undoStack = [];
+let cam = { x: 0, y: 0, z: 1 };
+let drag = null;
+let hoverId = null;
+let pickId = null;
+let dirty = 0;
+
+function resize() {
+  const r = cv.parentElement.getBoundingClientRect();
+  cv.width = Math.max(1, r.width);
+  cv.height = Math.max(1, r.height);
+  draw();
+}
+window.addEventListener("resize", resize);
+
+function worldOf(n) { return { x: n.gx * 100, y: -n.gy * 100 }; }
+function toScreen(wx, wy) {
+  return { x: (wx - cam.x) * cam.z + cv.width * 0.5, y: (wy - cam.y) * cam.z + cv.height * 0.5 };
+}
+function toWorld(sx, sy) {
+  return { x: (sx - cv.width * 0.5) / cam.z + cam.x, y: (sy - cv.height * 0.5) / cam.z + cam.y };
+}
+
+function fit() {
+  if (!nodes.length) return;
+  let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+  for (const n of nodes) {
+    const w = worldOf(n);
+    minX = Math.min(minX, w.x); maxX = Math.max(maxX, w.x);
+    minY = Math.min(minY, w.y); maxY = Math.max(maxY, w.y);
+  }
+  cam.x = (minX + maxX) * 0.5;
+  cam.y = (minY + maxY) * 0.5;
+  const z = Math.min(cv.width / (maxX - minX + 200), cv.height / (maxY - minY + 200));
+  cam.z = Math.max(0.15, Math.min(4, z));
+}
+
+function hitNode(sx, sy) {
+  let best = null, bestD = 1e9;
+  for (const n of nodes) {
+    const w = worldOf(n);
+    const p = toScreen(w.x, w.y);
+    const r = (SIZE[n.st] || 7) + 6;
+    const d = Math.hypot(p.x - sx, p.y - sy);
+    if (d <= r && d < bestD) { best = n; bestD = d; }
+  }
+  return best;
+}
+
+function hasEdge(a, b) {
+  return byId.get(a).adj.includes(b);
+}
+function snapshot() {
+  const adj = {};
+  for (const n of nodes) adj[n.id] = n.adj.slice();
+  undoStack.push(adj);
+  if (undoStack.length > 40) undoStack.shift();
+}
+function toggleEdge(a, b) {
+  if (a === b) return;
+  snapshot();
+  const A = byId.get(a), B = byId.get(b);
+  if (A.adj.includes(b)) {
+    A.adj = A.adj.filter(x => x !== b);
+    B.adj = B.adj.filter(x => x !== a);
+    dirty--;
+  } else {
+    A.adj.push(b);
+    B.adj.push(a);
+    dirty++;
+  }
+  setStatus();
+}
+
+function connectedCount() {
+  if (!nodes.length) return 0;
+  const seen = new Set([nodes[0].id]);
+  const q = [nodes[0].id];
+  while (q.length) {
+    const id = q.pop();
+    for (const nb of byId.get(id).adj) {
+      if (!seen.has(nb) && byId.has(nb)) { seen.add(nb); q.push(nb); }
+    }
+  }
+  return seen.size;
+}
+
+function setStatus(extra) {
+  const cc = connectedCount();
+  const ok = cc === nodes.length;
+  statusEl.textContent = (extra ? extra + " · " : "")
+    + nodes.length + " 节点 · 连通 " + cc + "/" + nodes.length
+    + (ok ? "" : "（已断开，保存会被拒绝）")
+    + (dirty ? " · 未保存 " + (dirty > 0 ? "+" : "") + dirty : "");
+  statusEl.style.color = ok ? "#b6a48c" : "#e07a6a";
+}
+
+function draw() {
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = "#14110e";
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  const drawn = new Set();
+  ctx.lineWidth = Math.max(1, 2.2 * Math.min(1, cam.z));
+  for (const n of nodes) {
+    const w = worldOf(n);
+    const p = toScreen(w.x, w.y);
+    for (const nb of n.adj) {
+      const key = n.id < nb ? n.id + "-" + nb : nb + "-" + n.id;
+      if (drawn.has(key) || !byId.has(nb)) continue;
+      drawn.add(key);
+      const ww = worldOf(byId.get(nb));
+      const qq = toScreen(ww.x, ww.y);
+      ctx.strokeStyle = "rgba(180,150,110,0.55)";
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(qq.x, qq.y);
+      ctx.stroke();
+    }
+  }
+  if (pickId != null) {
+    const w = worldOf(byId.get(pickId));
+    const p = toScreen(w.x, w.y);
+    ctx.strokeStyle = "#ffd76e";
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.lineTo(mouse.x, mouse.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  for (const n of nodes) {
+    const w = worldOf(n);
+    const p = toScreen(w.x, w.y);
+    const r = SIZE[n.st] || 7;
+    ctx.beginPath();
+    ctx.fillStyle = COLORS[n.color] || "#aaa";
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    if (n.id === hoverId || n.id === pickId) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#fff6d8";
+      ctx.stroke();
+    }
+    if (cam.z > 0.85) {
+      ctx.fillStyle = "#e8dcc8";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(n.id + " " + n.name, p.x + r + 3, p.y + 4);
+    }
+  }
+}
+
+const mouse = { x: 0, y: 0 };
+cv.addEventListener("mousemove", e => {
+  const b = cv.getBoundingClientRect();
+  mouse.x = e.clientX - b.left;
+  mouse.y = e.clientY - b.top;
+  if (drag) {
+    cam.x -= (mouse.x - drag.x) / cam.z;
+    cam.y -= (mouse.y - drag.y) / cam.z;
+    drag.x = mouse.x; drag.y = mouse.y;
+    draw();
+    return;
+  }
+  const hit = hitNode(mouse.x, mouse.y);
+  hoverId = hit ? hit.id : null;
+  cv.classList.toggle("linking", pickId != null);
+  if (hit) {
+    tip.style.display = "block";
+    tip.style.left = (mouse.x + 14) + "px";
+    tip.style.top = (mouse.y + 14) + "px";
+    tip.textContent = hit.id + " " + hit.name + " · " + hit.color + " · " + hit.st + " · 连 " + hit.adj.length;
+  } else tip.style.display = "none";
+  if (pickId != null || hoverId != null) draw();
+});
+cv.addEventListener("mousedown", e => {
+  if (e.button !== 0) return;
+  const hit = hitNode(mouse.x, mouse.y);
+  if (!hit) { drag = { x: mouse.x, y: mouse.y }; cv.style.cursor = "grabbing"; return; }
+  if (pickId == null) { pickId = hit.id; draw(); return; }
+  if (pickId !== hit.id) toggleEdge(pickId, hit.id);
+  pickId = null;
+  draw();
+});
+window.addEventListener("mouseup", () => { drag = null; cv.style.cursor = ""; });
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  const before = toWorld(mouse.x, mouse.y);
+  cam.z *= e.deltaY < 0 ? 1.1 : 0.9;
+  cam.z = Math.max(0.12, Math.min(6, cam.z));
+  const after = toWorld(mouse.x, mouse.y);
+  cam.x += before.x - after.x;
+  cam.y += before.y - after.y;
+  draw();
+}, { passive: false });
+window.addEventListener("keydown", e => {
+  if (e.key === "Escape") { pickId = null; draw(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === "z") { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); save(); }
+});
+
+function undo() {
+  const prev = undoStack.pop();
+  if (!prev) return;
+  for (const n of nodes) if (prev[n.id]) n.adj = prev[n.id].slice();
+  dirty = 0;
+  setStatus("已撤销");
+  draw();
+}
+
+async function load() {
+  const res = await fetch("/api/graph");
+  const data = await res.json();
+  nodes = data.nodes;
+  byId = new Map(nodes.map(n => [n.id, n]));
+  undoStack = [];
+  dirty = 0;
+  fit();
+  setStatus("已读取");
+  draw();
+}
+async function save() {
+  const cc = connectedCount();
+  if (cc !== nodes.length) {
+    setStatus("未保存：全图必须连通");
+    return;
+  }
+  const edges = [];
+  const adj = {};
+  for (const n of nodes) {
+    adj[n.id] = n.adj.slice().sort((a, b) => a - b);
+    for (const b of n.adj) if (n.id < b) edges.push([n.id, b]);
+  }
+  const res = await fetch("/api/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ adj })
+  });
+  const data = await res.json();
+  if (!res.ok) { setStatus(data.error || "保存失败"); return; }
+  dirty = 0;
+  setStatus("已写入 " + data.files.join(" , "));
+}
+
+document.getElementById("reload").onclick = () => { if (!dirty || confirm("有未保存的连线，重新读取会丢掉。继续？")) load(); };
+document.getElementById("undo").onclick = undo;
+document.getElementById("save").onclick = save;
+document.getElementById("fit").onclick = () => { fit(); draw(); };
+
+resize();
+load().catch(err => { statusEl.textContent = "打不开数据：" + err; });
+</script>
+</body>
+</html>

@@ -52,7 +52,9 @@ end
 ---@field count number 奖励件数
 ---@field interval number 常规间隔
 ---@field intervalTail number 件数多时的间隔
----@field fastAfter number 从第几件起切换间隔
+---@field fastAfter number 前多少件使用常规间隔
+---@field fasterAfter number|nil 前多少件之后使用最快间隔
+---@field intervalFaster number|nil 最快间隔
 ---@field popDur number 单件弹出时长
 ---@field lead number 首件之前的停顿
 ---@field revealStart number 时间轴起点（time.elapsedTime）
@@ -61,7 +63,7 @@ Timeline.__index = Timeline
 
 --- 新建时间轴
 ---@param count number 奖励件数
----@param opts table|nil { interval, intervalTail, fastAfter, popDur, lead }
+---@param opts table|nil { interval, intervalTail, fastAfter, intervalFaster, fasterAfter, popDur, lead }
 ---@return RewardCascadeTimeline
 function RewardCascade.new(count, opts)
     opts = opts or {}
@@ -95,11 +97,17 @@ end
 ---@return number
 function Timeline:startAt(idx)
     if idx <= 1 then return 0 end
-    local t = 0
-    for i = 2, idx do
-        t = t + self:gap(i)
+    -- 按三个间隔区段直接求和，避免网格逐件查询时反复遍历前面的奖励。
+    local normalEnd = math.max(1, math.floor(self.fastAfter))
+    if self.fasterAfter then
+        normalEnd = math.min(normalEnd, math.max(1, math.floor(self.fasterAfter)))
     end
-    return t
+    local normalCount = math.max(0, math.min(idx, normalEnd) - 1)
+    local tailEnd = self.fasterAfter and math.max(1, math.floor(self.fasterAfter)) or idx
+    local tailCount = math.max(0, math.min(idx, tailEnd) - normalEnd)
+    local fasterCount = self.fasterAfter and math.max(0, idx - tailEnd) or 0
+    return normalCount * self.interval + tailCount * self.intervalTail
+        + fasterCount * (self.intervalFaster or self.intervalTail)
 end
 
 --- 开始播放（now 传 time.elapsedTime）
@@ -131,12 +139,16 @@ end
 function Timeline:shownCount(elapsed)
     local e = elapsed or self:elapsed()
     if e < 0 or self.count <= 0 then return 0 end
+    -- 时间轴单调，二分定位最新出场项；保留原来的浮点边界容差。
+    local low, high = 1, self.count
     local shown = 0
-    for i = 1, self.count do
-        if e + 0.0001 >= self:startAt(i) then
-            shown = i
+    while low <= high do
+        local mid = math.floor((low + high) * 0.5)
+        if e + 0.0001 >= self:startAt(mid) then
+            shown = mid
+            low = mid + 1
         else
-            break
+            high = mid - 1
         end
     end
     return shown
@@ -168,8 +180,11 @@ end
 function RewardCascade.burst(vg, cx, cy, t, size, r, g, b)
     local glowR = size * (0.28 + t * 0.95)
     local glowA = math.floor(150 * (1 - t) + 28)
-    local glow = nvgRadialGradient(vg, cx, cy, 6, glowR,
-        nvgRGBA(r, g, b, glowA), nvgRGBA(r, g, b, 0))
+    local glowInner = nvgRGBA(r, g, b, glowA)
+    local glowOuter = nvgRGBA(r, g, b, 0)
+    ---@cast glowInner NVGcolor
+    ---@cast glowOuter NVGcolor
+    local glow = nvgRadialGradient(vg, cx, cy, 6, glowR, glowInner, glowOuter)
     nvgBeginPath(vg)
     nvgCircle(vg, cx, cy, glowR)
     nvgFillPaint(vg, glow)
@@ -185,8 +200,11 @@ function RewardCascade.burst(vg, cx, cy, t, size, r, g, b)
         nvgLineTo(vg, cx + 26, cy + 6)
         nvgLineTo(vg, cx - 26, cy + 6)
         nvgClosePath(vg)
-        local beam = nvgLinearGradient(vg, cx, cy - beamH, cx, cy,
-            nvgRGBA(255, 248, 210, 0), nvgRGBA(255, 228, 120, beamA))
+        local beamInner = nvgRGBA(255, 248, 210, 0)
+        local beamOuter = nvgRGBA(255, 228, 120, beamA)
+        ---@cast beamInner NVGcolor
+        ---@cast beamOuter NVGcolor
+        local beam = nvgLinearGradient(vg, cx, cy - beamH, cx, cy, beamInner, beamOuter)
         nvgFillPaint(vg, beam)
         nvgFill(vg)
     end
@@ -251,8 +269,11 @@ function RewardCascade.burst(vg, cx, cy, t, size, r, g, b)
     if t < 0.26 then
         local fa = math.floor(210 * (1 - t / 0.26))
         local fr = 18 + (t / 0.26) * 40
-        local flash = nvgRadialGradient(vg, cx, cy, 2, fr,
-            nvgRGBA(255, 255, 245, fa), nvgRGBA(255, 220, 120, 0))
+        local flashInner = nvgRGBA(255, 255, 245, fa)
+        local flashOuter = nvgRGBA(255, 220, 120, 0)
+        ---@cast flashInner NVGcolor
+        ---@cast flashOuter NVGcolor
+        local flash = nvgRadialGradient(vg, cx, cy, 2, fr, flashInner, flashOuter)
         nvgBeginPath(vg)
         nvgCircle(vg, cx, cy, fr)
         nvgFillPaint(vg, flash)

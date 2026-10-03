@@ -185,6 +185,7 @@ function Start()
             TM.init(RT.vg, Store, function(progress) data.session.tutorialProgress = progress; record("persist") end)
             TM.update(0)
             TM.onScenarioClaimed(5)
+            TM.update(0.3) -- 情景回执后的安静窗口先启动教程
             TM.update(1.2)
             InputModule.bind(captured)
             H_SEAM_BACK = true

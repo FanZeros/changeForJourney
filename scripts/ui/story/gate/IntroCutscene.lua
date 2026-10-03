@@ -5,6 +5,9 @@
 
 local DrawUtil = require("core.DrawUtil")
 local GameConfig = require("config.GameConfig")
+local I18n = require("core.I18n")
+local Story = require("core.I18nStory")
+local Display = require("ui.story.StoryDisplay")
 
 local IntroCutscene = {}
 
@@ -173,50 +176,32 @@ local TEXT_FADE_DUR  = 0.5
 
 --- 绘制打字机文本（逐字出现 → 短暂停留 → 淡出消失）
 --- 持续时间 = 打字时间 + 停留 + 淡出，自动计算
---- @param text string 完整文本
+--- @param source string 完整源文
 --- @param x number 绘制坐标X
 --- @param y number 绘制坐标Y
 --- @param fontSize number|nil 字号
 --- @param elapsed number 从文本开始出现算起经过的时间
 --- @param maxDur number|nil 可用的最大时间窗口（超出则压缩停留时间）
-local function drawTextTyped(text, x, y, fontSize, elapsed, maxDur)
+local function drawTextTyped(source, x, y, fontSize, elapsed, maxDur)
     if elapsed <= 0 then return end
+    local text = Display.text(source)
+    local visibleText, count, _, totalDur = Story.typed(text, elapsed, TYPEWRITER_CPS, maxDur)
+    if count == 0 or elapsed >= totalDur then return end
 
-    local totalChars = utf8.len(text) or 0
-    if totalChars == 0 then return end
-
-    -- 计算各阶段时长
-    local typingDur = totalChars / TYPEWRITER_CPS
-    local totalDur  = typingDur + TEXT_HOLD_DUR + TEXT_FADE_DUR
-
-    -- 如果可用时间不够，压缩停留时间（保证至少淡出）
-    if maxDur and totalDur > maxDur then
-        totalDur = maxDur
+    local alpha = math.min(1, elapsed / 0.15)
+    local fadeDur = math.min(TEXT_FADE_DUR, totalDur * 0.3)
+    local fadeStart = totalDur - fadeDur
+    if elapsed > fadeStart then
+        alpha = alpha * (1 - easeInOut((elapsed - fadeStart) / fadeDur))
     end
-
-    -- 超出总时长后不再绘制
-    if elapsed >= totalDur then return end
-
-    -- 打字机：已显示字符数
-    local charsToShow = math.floor(elapsed * TYPEWRITER_CPS)
-    if charsToShow > totalChars then charsToShow = totalChars end
-    if charsToShow <= 0 then return end
-
-    local visibleText = utf8sub(text, 1, charsToShow)
-
-    -- 透明度
-    local alpha = 1.0
-    -- 开头渐显（前 0.15s）
-    if elapsed < 0.15 then
-        alpha = elapsed / 0.15
-    end
-    -- 末尾淡出
-    local fadeStart = totalDur - TEXT_FADE_DUR
-    if fadeStart > 0 and elapsed > fadeStart then
-        alpha = alpha * (1.0 - easeInOut((elapsed - fadeStart) / TEXT_FADE_DUR))
-    end
-
-    drawTextAlpha(visibleText, x, y, fontSize, alpha)
+    nvgFontFace(vg_, "sans")
+    nvgTextAlign(vg_, NVG_ALIGN_CENTER + NVG_ALIGN_TOP)
+    local font, rows = Display.fitLayout(vg_, text, DW * 0.88, 88,
+        fontSize or 58, 24, 1.25)
+    nvgFontSize(vg_, font)
+    nvgFillColor(vg_, nvgRGBA(255, 255, 255, math.floor(alpha * 255)))
+    Display.drawRows(vg_, x, y - #rows * font * 1.25 * 0.5, rows,
+        Story.length(visibleText), font * 1.25)
 end
 
 -- ======================== 音效辅助 ========================
@@ -389,9 +374,10 @@ local function drawPhase2()
 
     local line1 = "这就是……宿命吗？"
     local line2 = "我终究……还是倒在这里了吗"
-    local line1TypingDur = (utf8.len(line1) or 0) / TYPEWRITER_CPS
-    -- 第二行在第一行打完后 0.3s 开始
-    local line2Delay = line1TypingDur + 0.3
+    local translatedLine1 = Display.text(line1)
+    local _, _, line1TypingDur = Story.typed(translatedLine1, 0, TYPEWRITER_CPS, AVAIL)
+    -- 为第二句保留时间窗；依据最终译文，而不是简中字数排字幕。
+    local line2Delay = math.min(line1TypingDur + 0.3, AVAIL * 0.45)
 
     if phaseT >= TEXT_START then
         local textElapsed = phaseT - TEXT_START
@@ -536,9 +522,11 @@ local function drawVignette(intensity)
     local radius = math.max(DW, DH) * 0.6
     local innerR = radius * (1.0 - intensity * 0.6)
 
-    local paint = nvgRadialGradient(vg_, cx, cy, innerR, radius,
-        nvgRGBA(0, 0, 0, 0),
-        nvgRGBA(0, 0, 0, math.floor(intensity * 220)))
+    local innerColor = nvgRGBA(0, 0, 0, 0)
+    local outerColor = nvgRGBA(0, 0, 0, math.floor(intensity * 220))
+    ---@cast innerColor NVGcolor
+    ---@cast outerColor NVGcolor
+    local paint = nvgRadialGradient(vg_, cx, cy, innerR, radius, innerColor, outerColor)
     nvgBeginPath(vg_)
     nvgRect(vg_, 0, 0, DW, DH)
     nvgFillPaint(vg_, paint)
@@ -606,18 +594,22 @@ end
 local bgFadeAlpha5 = 1.0
 local phase5PrevChars_ = 0   -- 上一帧已显示字符数，用于检测新字符触发 blip
 local PHASE5_TEXT = "远征长！远征长！"
-local PHASE5_TEXT_LEN = utf8.len(PHASE5_TEXT) or 0
+local phase5Language_ = ""
 
 local function updatePhase5(dt)
     local t = phaseT
+    if phase5Language_ ~= I18n.get() then
+        phase5Language_ = I18n.get()
+        phase5PrevChars_ = 0
+    end
 
-    -- 打字机 blip 音效：仅中文字符触发
+    -- blip 的字符区间与最终译文打字窗口一致。
     if t >= 1.0 then
         local textElapsed = t - 1.0
-        local charsNow = math.floor(textElapsed * TYPEWRITER_CPS)
-        if charsNow > PHASE5_TEXT_LEN then charsNow = PHASE5_TEXT_LEN end
+        local text = Display.text(PHASE5_TEXT)
+        local _, charsNow = Story.typed(text, textElapsed, TYPEWRITER_CPS, PHASE_DURATIONS[5] - 1.0)
         if charsNow > phase5PrevChars_ then
-            local ch = utf8sub(PHASE5_TEXT, charsNow, charsNow)
+            local ch = Story.sub(text, charsNow, charsNow)
             if isChinese(ch) then
                 playBlip()
             end

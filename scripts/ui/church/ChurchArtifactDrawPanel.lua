@@ -13,6 +13,8 @@ local DarkIcon      = require("core.DarkIcon")
 local DrawUtil      = require("core.DrawUtil")
 local GameState     = require("core.GameState")
 local PlayerStore   = require("core.PlayerStore")
+local StageConfig   = require("config.StageConfig")
+local I18n          = require("core.I18n")
 local ArtifactDefs  = require("shared.artifact.ArtifactDefs")
 local RewardPopup   = require("ui.hud.popup.RewardPopup")
 local BF            = require("systems.ButtonFeedback")
@@ -243,6 +245,33 @@ local function drawPityText(vg, x, y, leftCount, qualityText, qualityColor)
         { text = qualityText, color = qualityColor },
         { text = "神器", color = { 255, 255, 255 } },
     })
+end
+
+local function drawCollectionLockedContent(vg)
+    nvgFontFace(vg, "sans"); nvgFontSize(vg, COL.TITLE_FONT)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(COL.TITLE_R, COL.TITLE_G, COL.TITLE_B, 255))
+    nvgText(vg, COL.TITLE_CX, COL.TITLE_CY, "神器宝箱", nil)
+
+    drawImageCentered(vg, img.collectionChestBg, COL.CHEST_CX, COL.CHEST_CY, COL.CHEST_W, COL.CHEST_H, 0.45)
+    drawTextStroke(vg, COL.NAME_X, COL.NAME_Y, "神器宝箱", COL.NAME_FONT,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        180, 180, 180, 6, { strokeColor = { 0, 0, 0 }, italic = true })
+
+    nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg, nvgRGBA(139, 149, 165, 255))
+    nvgText(vg, 540, 1320 + CONTENT_OY,
+        I18n.format("抵达%s难度后开放", I18n.difficulty("噩梦")), nil)
+
+    local progress = I18n.lookup(StageConfig.formatProgressDisplay(
+        (PlayerStore.Get("battle") or {}).maxStageId or 0))
+    local progressText = I18n.format("当前进度：%s", progress)
+    nvgFontSize(vg, 32)
+    local progressW = nvgTextBounds(vg, 0, 0, progressText, nil)
+    if progressW > 920 then nvgFontSize(vg, math.max(24, 32 * 920 / progressW)) end
+    nvgFillColor(vg, nvgRGBA(150, 150, 150, 220))
+    nvgText(vg, 540, 1380 + CONTENT_OY, progressText, nil)
 end
 
 local function drawCollectionDrawButton(vg, id, cx, countText, keyCost)

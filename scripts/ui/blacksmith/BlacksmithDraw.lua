@@ -79,7 +79,7 @@ function M.bind(deps)
         -- === 整页单一背景（UI_SMITH_BG_FULL 按设计分辨率对齐拉伸：比例差仅1.6%，
         --    保证背景暗板框与 UI 元素坐标精确对齐）+ 名牌 + 工作台槽 ===
         nvgSave(vg)
-        nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
+        nvgIntersectScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
         DrawUtil.drawImageCentered(vg, imgBg, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
         nvgResetScissor(vg)
         nvgRestore(vg)
@@ -100,7 +100,8 @@ function M.bind(deps)
         local clipTop = LOWER_BG_CY - LOWER_BG_H * 0.5
         local clipBottom = TAB_BG_CY - TAB_BG_H * 0.5
         nvgSave(vg)
-        nvgScissor(vg, 0, clipTop, DESIGN_W, clipBottom - clipTop)
+        -- 与宿主视口取交集，开合平移时不能把裁剪范围替换到左栏背包。
+        nvgIntersectScissor(vg, 0, clipTop, DESIGN_W, clipBottom - clipTop)
         drawTabContent(vg, state.tab)
         nvgResetScissor(vg)
         nvgRestore(vg)
@@ -146,7 +147,7 @@ function M.bind(deps)
         nvgFillColor(vg, nvgRGBA(0x14, 0x12, 0x10, 255))
         nvgFill(vg)
         nvgSave(vg)
-        nvgScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
+        nvgIntersectScissor(vg, 0, 0, DESIGN_W, DESIGN_H)
         DrawUtil.drawImageCentered(vg, imgBg, DESIGN_W * 0.5, DESIGN_H * 0.5, DESIGN_W, DESIGN_H, 1.0)
         nvgResetScissor(vg)
         nvgRestore(vg)

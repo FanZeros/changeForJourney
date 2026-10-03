@@ -7,6 +7,8 @@ local DrawUtil = require("core.DrawUtil")
 local DarkIcon = require("core.DarkIcon")
 local TownPageChrome = require("ui.town.TownPageChrome")
 local TaskConfig = require("config.TaskConfig")
+local StageConfig = require("config.StageConfig")
+local I18n = require("core.I18n")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local GameAction = require("runtime.GameAction")
 local Protocol = require("shared.Protocol")
@@ -221,15 +223,52 @@ local function drawRow(vg, task, y)
         nvgFillColor(vg, nvgRGBA(32, 28, 24, 230))
     end
     nvgFill(vg)
-    local title = task.name or "远征委托"
-    if task.difficulty and DIFF_MARK[task.difficulty] then
-        title = "[" .. DIFF_MARK[task.difficulty] .. "] " .. title
+    -- 只生成本帧显示串；业务 task.name/desc、stageId 和领取条件不变。
+    local title = I18n.lookup(task.name or "远征委托")
+    local description = I18n.lookup(task.desc or "")
+    if task.stageId then
+        local stageProgress = I18n.lookup(StageConfig.formatProgressDisplay(task.stageId))
+        description = I18n.format("通关%s", stageProgress)
     end
-    text(vg, LIST.x + 28, y - 58, title, 36,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, nameR, nameG, nameB, 2)
-    text(vg, LIST.x + 28, y - 8, task.desc or "", 28,
-        NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, descR, descG, descB, 2)
-    text(vg, LIST.x + 28, y + 46, "进度 " .. shown .. "/" .. task.target, 26,
+    if task.difficulty and DIFF_MARK[task.difficulty] then
+        title = I18n.format("[%s] %s", I18n.difficulty(DIFF_MARK[task.difficulty]), title)
+    end
+    -- 给奖励图标/领取按钮保留原空间，按最终译文测宽，不修改列表行高。
+    local titleW = LIST.w - 400
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 36)
+    local titleTextW = nvgTextBounds(vg, 0, 0, title, nil)
+    local titleFont = titleTextW > titleW and math.max(24, 36 * titleW / titleTextW) or 36
+    nvgSave(vg)
+    nvgIntersectScissor(vg, LIST.x + 26, y - 96, titleW, 64)
+    if titleTextW * titleFont / 36 > titleW then
+        nvgFontSize(vg, titleFont)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+        nvgFillColor(vg, nvgRGBA(nameR, nameG, nameB, 255))
+        nvgTextBox(vg, LIST.x + 28, y - 90, titleW - 4, title, nil)
+    else
+        text(vg, LIST.x + 28, y - 58, title, titleFont,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, nameR, nameG, nameB, 2)
+    end
+    nvgRestore(vg)
+    local descW = LIST.w - 400
+    nvgFontSize(vg, 28)
+    local descTextW = nvgTextBounds(vg, 0, 0, description, nil)
+    local descFont = descTextW > descW and math.max(20, 28 * descW / descTextW) or 28
+    nvgSave(vg)
+    nvgIntersectScissor(vg, LIST.x + 26, y - 34, descW, 62)
+    if descTextW * descFont / 28 > descW then
+        -- 只有最小字号仍超宽才用 NanoVG 安全折行，避免挤入奖励/按钮区域。
+        nvgFontSize(vg, descFont)
+        nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+        nvgFillColor(vg, nvgRGBA(descR, descG, descB, 255))
+        nvgTextBox(vg, LIST.x + 28, y - 28, descW - 4, description, nil)
+    else
+        text(vg, LIST.x + 28, y - 8, description, descFont,
+            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, descR, descG, descB, 2)
+    end
+    nvgRestore(vg)
+    text(vg, LIST.x + 28, y + 46, I18n.format("进度 %d/%d", shown, task.target), 26,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 150, 176, 138, 2)
     local reward = task.reward
     if reward then
@@ -283,11 +322,16 @@ function TaskPage.draw(vg)
         CLAIM_ALL.w, CLAIM_ALL.h, 10)
     nvgFillColor(vg, claimCount > 0 and nvgRGBA(176, 132, 48, 230) or nvgRGBA(62, 56, 48, 200))
     nvgFill(vg)
-    local claimLabel = claimCount > 0 and ("一键领取 " .. claimCount) or "一键领取"
+    local claimLabel = claimCount > 0 and I18n.format("一键领取 %d", claimCount) or I18n.lookup("一键领取")
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, 28)
+    local claimTextW = nvgTextBounds(vg, 0, 0, claimLabel, nil)
+    local claimTextWidth = CLAIM_ALL.w - 20
+    local claimFont = claimTextW > claimTextWidth and math.max(20, 28 * claimTextWidth / claimTextW) or 28
     -- 按钮文字：有可领=亮色，无可领=灰蓝色
     local caR, caG, caB = 255, 244, 220
     if claimCount <= 0 then caR, caG, caB = 0x8b, 0x95, 0xa5 end
-    text(vg, CLAIM_ALL.cx, CLAIM_ALL.cy, claimLabel, 28,
+    text(vg, CLAIM_ALL.cx, CLAIM_ALL.cy, claimLabel, claimFont,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, caR, caG, caB, 2)
     for _, tab in ipairs(TABS) do
         local on = state.tab == tab.key

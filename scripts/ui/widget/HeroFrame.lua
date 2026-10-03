@@ -320,8 +320,9 @@ function M.draw(vg, opts)
             if shards > 0 then
                 local shardMax = opts.shardMax or HC.SHARD_SYNTHESIZE_COST or 10
                 local canSynth = shards >= shardMax
-                local barW, barH = side * 0.62, side * 0.12
-                local barCX = cx + side * 0.095
+                -- 左侧碎片区截止于职业图标左缘之前，避免两者叠在右下。
+                local barW, barH = side * 0.56, side * 0.12
+                local barCX = x + side * 0.39
                 local barCY = y + h - side * 0.11
                 nvgBeginPath(vg)
                 nvgRoundedRect(vg, barCX - barW * 0.5, barCY - barH * 0.5, barW, barH, barH * 0.33)
@@ -342,8 +343,19 @@ function M.draw(vg, opts)
                 if img.shardSp >= 0 then
                     drawImageCentered(vg, img.shardSp, x + side * 0.11, barCY, side * 0.175, side * 0.175, alpha)
                 end
-                drawTextStroke(vg, barCX, barCY, shards .. "/" .. shardMax,
-                    math.floor(side * 0.11), NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                local shardText = shards .. "/" .. shardMax
+                local shardFont = math.floor(side * 0.11)
+                local textWidth = side * 0.42
+                nvgFontFace(vg, "sans")
+                nvgFontSize(vg, shardFont)
+                local measured = nvgTextBounds(vg, 0, 0, shardText)
+                if measured > textWidth then
+                    shardText = require("core.NumberUtil").format(shards) .. "/" .. shardMax
+                    measured = nvgTextBounds(vg, 0, 0, shardText)
+                    if measured > textWidth then shardFont = math.floor(shardFont * textWidth / measured) end
+                end
+                drawTextStroke(vg, x + side * 0.44, barCY, shardText,
+                    shardFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
                     255, 255, 255, 2, { alpha = alpha })
                 if canSynth then
                     drawTextStroke(vg, cx, y + side * 0.135, "可合成",

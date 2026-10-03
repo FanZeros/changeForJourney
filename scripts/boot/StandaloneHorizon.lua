@@ -540,6 +540,9 @@ function HandleNanoVGRenderHorizon()
         return
     end
 
+    -- 锻炉与左栏仓库同时打开时，仓库延后到锻炉之上绘制。
+    -- 记录本帧状态，关闭动画在 draw 内结束后仍只绘制仓库一次。
+    local backpackAboveForge = BlacksmithPage.isOpen()
     if not BattleTriPage.isOpen() then
         -- 左面板：功能页组（城镇 + 二级页）
         -- [锻炉双页 0929] BlacksmithPage 已移至中面板绘制（左栏让给仓库）
@@ -551,10 +554,12 @@ function HandleNanoVGRenderHorizon()
         MarketPage.draw(vg())
         -- [0930 穿帮修复] 锻炉打开时仓库下铺锻炉背景垫底（城镇组之上、仓库之下）
         BlacksmithPage.drawUnderlay(vg())
-        BackpackPanel.draw(vg())
-        LootBox.drawPage(vg())
-        TaskPage.draw(vg())
-        drawRewardInPanel('left')
+        if not backpackAboveForge then
+            BackpackPanel.draw(vg())
+            LootBox.drawPage(vg())
+            TaskPage.draw(vg())
+            drawRewardInPanel('left')
+        end
         Viewport.finish(vg())
 
         -- 右面板：角色固定（先于中面板绘制，便于弹窗时统一压暗侧栏）
@@ -562,9 +567,6 @@ function HandleNanoVGRenderHorizon()
         CharacterPanel.draw(vg())
         drawRewardInPanel('right')
         Viewport.finish(vg())
-
-        -- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（在侧栏之上、中面板之下）
-        HorizonDimSidePanels()
     end
 
     -- 中面板：BottomNav 主视图 + 全屏战斗页
@@ -589,8 +591,8 @@ function HandleNanoVGRenderHorizon()
         else
             TownScene.draw(vg())
         end
-        -- [锻炉双页 0929] 锻炉页绘制在中面板（盖在主视图之上；左栏同时开着仓库）
-        BlacksmithPage.draw(vg())
+        -- 三行模式锻炉由下方独立绘制；此处只处理普通横屏，避免每帧画两次。
+        if not BattleTriPage.isOpen() then BlacksmithPage.draw(vg()) end
         -- [底栏移除] 三行布局 TopBar 只画左栏；非三行旧布局仍画中栏顶部
         local detailOpen = CharacterPanel.isDetailOpen()
         if not detailOpen and not BattleTriPage.isOpen() and not BlacksmithPage.isOpen() then
@@ -601,6 +603,16 @@ function HandleNanoVGRenderHorizon()
 
     -- [锻炉双页 0929] 非三行模式的中缝返回条（锻炉右缘 ›；三行模式见 BattleTriPage 分支）
     if not BattleTriPage.isOpen() then
+        if backpackAboveForge then
+            Viewport.begin(vg(), Viewport.PANELS.left, H_ox, H_oy, H_s)
+            BackpackPanel.draw(vg())
+            LootBox.drawPage(vg())
+            TaskPage.draw(vg())
+            drawRewardInPanel('left')
+            Viewport.finish(vg())
+        end
+        -- 背包上层补画后再压暗侧栏，保持全局弹窗的遮罩在背包之上。
+        HorizonDimSidePanels()
         for _, seamBtn in ipairs(seamBackList()) do
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
@@ -652,9 +664,11 @@ function HandleNanoVGRenderHorizon()
         MarketPage.draw(vg())
         -- [0930 穿帮修复] 锻炉打开时仓库下铺锻炉背景垫底（城镇组之上、仓库之下）
         BlacksmithPage.drawUnderlay(vg())
-        BackpackPanel.draw(vg())
-        LootBox.drawPage(vg())
-        TaskPage.draw(vg())
+        if not backpackAboveForge then
+            BackpackPanel.draw(vg())
+            LootBox.drawPage(vg())
+            TaskPage.draw(vg())
+        end
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
         -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
         if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TalentPage.isOpen() or TavernPage.isOpen()
@@ -676,6 +690,13 @@ function HandleNanoVGRenderHorizon()
         if BlacksmithPage.isOpen() then
             Viewport.begin(vg(), Viewport.PANELS.center, oxL, 0, ps)
             BlacksmithPage.draw(vg())
+            Viewport.finish(vg())
+        end
+        if backpackAboveForge then
+            Viewport.begin(vg(), Viewport.PANELS.left, oxL, 0, ps)
+            BackpackPanel.draw(vg())
+            LootBox.drawPage(vg())
+            TaskPage.draw(vg())
             Viewport.finish(vg())
         end
         drawWideTalentPage(0, 0, logicalH() / 1080)

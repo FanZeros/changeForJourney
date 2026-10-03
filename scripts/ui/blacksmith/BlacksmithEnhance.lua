@@ -19,6 +19,8 @@ local ClientDispatcher  = require("runtime.ClientDispatcher")
 local PlayerStore       = require("core.PlayerStore")
 local BF                = require("systems.ButtonFeedback")
 local EquipmentSystem   = require("systems.EquipmentSystem")
+local I18n              = require("core.I18n")
+local EquipmentText     = require("core.I18nEquipmentText")
 
 local drawImageCentered = DrawUtil.drawImageCentered
 local hitTest           = DrawUtil.hitTest
@@ -360,10 +362,18 @@ local function drawAttrRow(vg, rowY, name, curVal, nextVal, curGradeIcon, nextGr
 
     -- 属性名称（右对齐）
     nvgFontFace(vg, "sans")
-    nvgFontSize(vg, (curGradeIcon or isCorrupt) and 30 or ATTR_FONT_SIZE)
+    local displayName = I18n.lookup(name)
+    local nameFont = (curGradeIcon or isCorrupt) and 30 or ATTR_FONT_SIZE
+    nvgFontSize(vg, nameFont)
+    local nameWidth = nvgTextBounds(vg, 0, 0, displayName)
+    while nameWidth > ATTR_NAME_X - 70 and nameFont > 16 do
+        nameFont = nameFont - 1
+        nvgFontSize(vg, nameFont)
+        nameWidth = nvgTextBounds(vg, 0, 0, displayName)
+    end
     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(nameR, nameG, nameB, 255))
-    nvgText(vg, ATTR_NAME_X, rowY, name, nil)
+    nvgText(vg, ATTR_NAME_X, rowY, displayName, nil)
 
     -- 当前属性值背景框
     local curBgX = ATTR_CUR_BG_CX - ATTR_BG_W * 0.5
@@ -473,9 +483,14 @@ function M.drawPanel(vg)
     local data = enhanceData
 
     -- 1. 动态标题："角色栏N>XX栏强化"
-    local titleStr = (state.selectedEquip and state.selectedEquip.name or "装备") .. " 升阶"
+    local titleStr = I18n.format("%s 升阶", I18n.lookup(state.selectedEquip and state.selectedEquip.name or "装备"))
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, ENH_TITLE_FONT_SIZE)
+    local titleFont = ENH_TITLE_FONT_SIZE
+    while nvgTextBounds(vg, 0, 0, titleStr) > 920 and titleFont > 22 do
+        titleFont = titleFont - 1
+        nvgFontSize(vg, titleFont)
+    end
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(ATTR_TEXT_COLOR_R, ATTR_TEXT_COLOR_G, ATTR_TEXT_COLOR_B, 255))
     nvgText(vg, ENH_TITLE_CX, ENH_TITLE_CY, titleStr, nil)
@@ -844,23 +859,23 @@ function M.drawConfirmDialog(vg)
         local room = math.max(0, BlacksmithConfig.ASCEND_NORMAL_AFFIX_LIMIT - normalCount)
         local gained = math.min(milestoneCount, room)
         local multUps = milestoneCount - gained
-        if gained > 0 then previewParts[#previewParts + 1] = gained .. " 条随机词条" end
+        if gained > 0 then previewParts[#previewParts + 1] = I18n.format("%d 条随机词条", gained) end
         if multUps > 0 then
             local curMult = EquipmentSystem.getAffixMult(state.selectedEquip)
             local step = BlacksmithConfig.ASCEND_AFFIX_MULT_STEP or 0.10
             local nextMult = math.floor((curMult + step * multUps) * 1000 + 0.5) / 1000
-            previewParts[#previewParts + 1] = string.format("词条倍率 ×%.2f → ×%.2f", curMult, nextMult)
+            previewParts[#previewParts + 1] = I18n.format("词条倍率 ×%.2f → ×%.2f", curMult, nextMult)
         end
     end
     -- 升阶副属性递增预览：每阶轮转 1 条普通词条强化
     if ascendLevels > 0 and normalCount > 0
         and (BlacksmithConfig.ASCEND_SUB_STAT_RATIO or 0) > 0 then
-        previewParts[#previewParts + 1] = string.format("副属性轮转强化 %d 次", ascendLevels)
+        previewParts[#previewParts + 1] = I18n.format("副属性轮转强化 %d 次", ascendLevels)
     end
     if #previewParts > 0 then
         nvgFontSize(vg, 26)
         nvgFillColor(vg, nvgRGBA(0xbc, 0x9b, 0x58, 255))
-        nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY - 55, "将新增 " .. table.concat(previewParts, "、"), nil)
+        nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY - 55, I18n.format("将新增 %s", table.concat(previewParts, EquipmentText.separator(I18n.get()))), nil)
     end
 
     -- 减按钮
@@ -1197,14 +1212,14 @@ function M.onActionResult(data)
         do
             local parts = {}
             for _, affix in ipairs(data.gainedAffixes or {}) do
-                parts[#parts + 1] = affix.name or affix.key or "随机词条"
+                parts[#parts + 1] = I18n.lookup(affix.name or affix.key or "随机词条")
             end
             if (data.multUps or 0) > 0 then
-                parts[#parts + 1] = string.format("词条倍率 ×%.2f",
+                parts[#parts + 1] = I18n.format("词条倍率 ×%.2f",
                     tonumber(data.affixMult) or EquipmentSystem.getAffixMult(state.selectedEquip))
             end
             if #parts > 0 then
-                require("core.UiToast").show("升阶获得：" .. table.concat(parts, "、"))
+                require("core.UiToast").show(I18n.format("升阶获得：%s", table.concat(parts, EquipmentText.separator(I18n.get()))))
             end
         end
         M.updateEnhanceData(state.selectedEquip)

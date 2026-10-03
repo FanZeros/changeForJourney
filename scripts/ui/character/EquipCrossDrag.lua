@@ -365,10 +365,15 @@ function EquipCrossDrag.draw(vg)
             nvgSave(vg)
             nvgTranslate(vg, note.ox + panel.bx * note.s, note.oy + panel.by * note.s)
             nvgScale(vg, note.s * Viewport.DS, note.s * Viewport.DS)
+            local targetSize = Draw.DT_SLOT_SIZE + 16
+            local targetHalf = targetSize * 0.5
             for _, s in ipairs(Draw.DT_SLOTS) do
                 if canDrop(heroId, session.equipType, session.slot, session.grip, s.slot) then
                     nvgBeginPath(vg)
-                    nvgCircle(vg, s.cx, s.cy, Draw.DT_SLOT_SIZE * 0.5 + 8)
+                    nvgRoundedRect(vg, s.cx - targetHalf, s.cy - targetHalf, targetSize, targetSize, 20)
+                    -- 拖拽层位于装备上方，淡填充保留图标可读性，底板每边外扩8。
+                    nvgFillColor(vg, nvgRGBA(255, 214, 102, 28))
+                    nvgFill(vg)
                     nvgStrokeWidth(vg, 7)
                     nvgStrokeColor(vg, nvgRGBA(255, 214, 102, 235))
                     nvgStroke(vg)
@@ -378,7 +383,9 @@ function EquipCrossDrag.draw(vg)
                 if s.slot == target
                     and not canDrop(heroId, session.equipType, session.slot, session.grip, target) then
                     nvgBeginPath(vg)
-                    nvgRoundedRect(vg, s.cx - 88, s.cy - 88, 176, 176, 20)
+                    nvgRoundedRect(vg, s.cx - targetHalf, s.cy - targetHalf, targetSize, targetSize, 20)
+                    nvgFillColor(vg, nvgRGBA(180, 70, 70, 28))
+                    nvgFill(vg)
                     nvgStrokeWidth(vg, 6)
                     nvgStrokeColor(vg, nvgRGBA(180, 70, 70, 220))
                     nvgStroke(vg)

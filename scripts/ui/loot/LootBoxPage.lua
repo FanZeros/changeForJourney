@@ -1,6 +1,6 @@
 -- ============================================================================
 -- LootBoxPage - 城镇遗匣左栏页。模式 A：1080×2400，沿用 TownPageChrome。
--- sourceSummary 保留 seeds 原顺序；summary 仅作筛选显示，动作转发 sourceIndex。
+-- sourceSummary 保留 seeds 原顺序；summary 仅作筛选/战力降序显示，动作转发 sourceIndex。
 -- ============================================================================
 local DrawUtil = require("core.DrawUtil")
 local TownPageChrome = require("ui.town.TownPageChrome")
@@ -211,6 +211,9 @@ local function rebuildSummary()
             local display = {}
             for key, value in pairs(entry) do display[key] = value end
             display.sourceIndex = entry.sourceIndex or sourceIndex
+            display.displayOrder = sourceIndex
+            -- 与行内战力同口径，重建时计算一次；不改装备实例或 seeds 顺序。
+            display.power = equip and EquipmentDetail.calcEquipPower(equip, nil) or 0
             state.summary[#state.summary + 1] = display
             if equip then
                 state.count = state.count + 1
@@ -219,6 +222,12 @@ local function rebuildSummary()
             end
         end
     end
+    -- 确定装备按战力降序；同战力与待整理项保持原相对顺序，避免刷新抖动。
+    table.sort(state.summary, function(a, b)
+        if (a.equip ~= nil) ~= (b.equip ~= nil) then return a.equip ~= nil end
+        if a.power ~= b.power then return a.power > b.power end
+        return a.displayOrder < b.displayOrder
+    end)
     local height = #state.summary * (LIST.rowH + LIST.gap) - LIST.gap
     state.maxScrollY = math.max(0, height - LIST.h)
     clampScroll()
@@ -367,7 +376,7 @@ local function drawSetFilterButton(vg)
     local feedback = BF.begin(vg, "lbp_set_filter", SET_BTN.cx, SET_BTN.cy, SET_BTN.w, SET_BTN.h)
     DarkIcon.drawNine(vg, "btn", SET_BTN.cx - SET_BTN.w * 0.5, SET_BTN.cy - SET_BTN.h * 0.5,
         SET_BTN.w, SET_BTN.h, { accent = selected > 0 and "green" or "gold" })
-    local label = selected > 0 and ("套装 · " .. selected) or "套装"
+    local label = selected > 0 and I18n.format("套装 · %d", selected) or I18n.lookup("套装")
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 34)
     text(vg, SET_BTN.cx, SET_BTN.cy, label, 34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -446,7 +455,7 @@ local function drawEntry(vg, entry, index, cy)
     end
     -- 第三行：确定装备显示战力（与装备详情同口径）；待整理条目保留不可操作提示。
     if equip then
-        local powerStr = NumberUtil.format(EquipmentDetail.calcEquipPower(equip, nil))
+        local powerStr = NumberUtil.format(entry.power)
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 30)
         DrawUtil.drawImageCentered(vg, imgPower, 294 + 15, cy + 59, 30, 30, 1)

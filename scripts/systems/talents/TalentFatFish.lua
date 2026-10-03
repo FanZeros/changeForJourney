@@ -8,24 +8,24 @@ local SEM = require("systems.StatusEffectManager")
 local M = {}
 
 function M.bind(deps)
-    local hasAwaken = deps.hasAwaken
+    local hasAwakenStage = deps.hasAwakenStage
     local getState = deps.getState
     local talentLog = deps.talentLog
     local getAliveEnemies = deps.getAliveEnemies
     local calcTalentFixedDamage = deps.calcTalentFixedDamage
 
     local function getWetMult(unit)
-        if hasAwaken(unit, 1) then return 0.30 end
+        if hasAwakenStage(unit, 1) then return 0.30 end
         return 0.20
     end
 
     local function getWetDuration(unit)
-        if hasAwaken(unit, 1) then return 3.0 end
+        if hasAwakenStage(unit, 1) then return 3.0 end
         return 2.0
     end
 
     local function getSplashMult(unit)
-        if hasAwaken(unit, 2) then return 0.55 end
+        if hasAwakenStage(unit, 2) then return 0.55 end
         return 0.40
     end
 
@@ -35,10 +35,10 @@ function M.bind(deps)
             mult = getWetMult(attacker),
             fromFatFish = true,
         }
-        if hasAwaken(attacker, 2) then
+        if hasAwakenStage(attacker, 2) then
             data.atkSpeedDebuff = 10
         end
-        if hasAwaken(attacker, 3) then
+        if hasAwakenStage(attacker, 3) then
             data.critVuln = 10
         end
         SEM.apply(target, SEM.VULNERABLE, getWetDuration(attacker), attacker, data)
@@ -64,7 +64,7 @@ function M.bind(deps)
 
         local alive = getAliveEnemies(targetList or {})
         local splashTargets = {}
-        if hasAwaken(attacker, 3) then
+        if hasAwakenStage(attacker, 3) then
             local wetCount = 0
             for _, u in ipairs(alive) do
                 local eff = SEM.get(u, SEM.VULNERABLE)

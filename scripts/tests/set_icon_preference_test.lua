@@ -76,6 +76,11 @@ function Start()
         check(not Icon.hasBadge({ templateId = template }), "关闭时装备角标隐藏")
         check(not Icon.hasBadge(nil) and not Icon.hasBadge({ templateId = "missing" }), "空装备与无套装不画角标")
         native.createImage = nvgCreateImage
+        for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgBeginPath", "nvgRoundedRect",
+            "nvgFillColor", "nvgFill", "nvgStrokeWidth", "nvgStrokeColor", "nvgStroke" }) do
+            native[name] = _G[name]
+            _G[name] = noop
+        end
         nvgCreateImage = function(_, path) loaded[#loaded + 1] = path; return #loaded end
         check(Icon.draw({}, "carapace", 100, 100, 46, 1), "套装正文图标不受角标关闭影响")
         Icon.draw({}, "carapace", 100, 100, 46, 1)
@@ -123,6 +128,9 @@ function Start()
     end)
     require, File, fileSystem, audio = originalRequire, originalFile, originalFs, originalAudio
     if native.createImage then nvgCreateImage = native.createImage end
+    for name, value in pairs(native) do
+        if name ~= "createImage" then _G[name] = value end
+    end
     if ok then print("[set_icon_preference_test] ALL PASS: " .. count .. " assertions")
     else print("[set_icon_preference_test] FAIL: " .. tostring(err)) end
     engine:Exit()

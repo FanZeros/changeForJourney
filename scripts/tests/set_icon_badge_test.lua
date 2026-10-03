@@ -47,10 +47,12 @@ for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgScissor", "nvgIntersectScis
 end
 _G["nvgBeginPath"] = function() path = {} end
 _G["nvgRect"] = function(_, x, y, w, h) path = { x = x, y = y, w = w, h = h } end
-_G["nvgRoundedRect"] = _G["nvgRect"]
+_G["nvgRoundedRect"] = function(_, x, y, w, h, radius)
+    path = { x = x, y = y, w = w, h = h, radius = radius }
+end
 _G["nvgFillColor"] = noop
 _G["nvgFill"] = function()
-    log("fill", { x = path.x, y = path.y, w = path.w, h = path.h,
+    log("fill", { x = path.x, y = path.y, w = path.w, h = path.h, radius = path.radius,
         r = color.r, g = color.g, b = color.b, a = color.a })
 end
 _G["nvgFontSize"] = function(_, size) fontSize = size end
@@ -130,7 +132,8 @@ preload("ui.character.detail.CharacterDetailAttrs", {})
 preload("ui.character.detail.CharacterEquipStats", { LEGACY = {}, drawBackground = noop })
 preload("ui.character.detail.CharacterAttributeView", {
     STYLE = { boxW = 400, rowH = 60, boxCX = 300, rowStep = 70 },
-    ATTRIBUTE_LAYOUT = { firstY = 1300 },
+    ATTRIBUTE_STYLE = { boxW = 460, rowH = 78, boxCX = 300, rowStep = 88 },
+    ATTRIBUTE_LAYOUT = { x = 40, y = 1070, w = 500, h = 874, firstY = 1109 },
 })
 preload("ui.character.hero.AwakeningPanel", {})
 preload("runtime.ClientDispatcher", {})
@@ -224,9 +227,35 @@ local function testHelper()
     check(sameLevel(level, SetIcon.levelLayout(plainEquip, 160, 550, 160))
         and sameLevel(level, SetIcon.levelLayout(nil, 160, 550, 160)),
         "无套装/空装备不影响等级布局")
+    enabled = true
+    for _, size in ipairs({ 132, 160, 174, 220, 290 }) do
+        reset()
+        check(SetIcon.drawBadge(vg, setEquip, 160, 550, size), "圆角底板角标可绘制: " .. size)
+        local bg, bgIndex = find("fill", function(call)
+            return call.r == 26 and call.g == 24 and call.b == 30
+        end)
+        local badge, badgeIndex = find("badge")
+        local cellLeft, cellBottom = 160 - size * 0.5, 550 + size * 0.5
+        check(bg and bg.w == bg.h and bg.radius > 0 and bg.radius < bg.w * 0.5
+            and near(bg.x + bg.w * 0.5, badge.cx) and near(bg.y + bg.h * 0.5, badge.cy),
+            "圆角方底与左下徽记同心，非圆形: " .. size)
+        check(bg and bg.x >= cellLeft and bg.y + bg.h <= cellBottom and bg.a == 230
+            and bgIndex < badgeIndex, "底板位于原占位内且先于徽记绘制: " .. size)
+    end
     reset()
-    check(not SetIcon.drawBadge(vg, setEquip, 160, 550, 160) and count("badge") == 0,
-        "关闭后drawBadge不绘制")
+    SetIcon.drawBadge(vg, setEquip, 160, 550, 160, 0.5)
+    check(find("fill", function(call) return call.r == 26 and call.a == 115 end) ~= nil,
+        "圆角底板透明度跟随徽记")
+    reset()
+    check(not SetIcon.drawBadge(vg, setEquip, 160, 550, 160, 0) and #calls == 0,
+        "透明徽记不残留底板")
+    reset()
+    check(not SetIcon.drawBadge(vg, plainEquip, 160, 550, 160) and #calls == 0,
+        "无套装不留下圆角底板")
+    enabled = false
+    reset()
+    check(not SetIcon.drawBadge(vg, setEquip, 160, 550, 160) and #calls == 0,
+        "关闭后drawBadge不绘制徽记或底板")
     check(SetIcon.draw(vg, SetIcon.setId(setEquip), 100, 100, 44), "套装列表draw不受开关影响")
 end
 
@@ -650,11 +679,95 @@ local function testLootBoxCounts()
     if not ok then error(err) end
 end
 
+local function testCrossDragTargets()
+    local saved = {}
+    local function override(name, value) saved[name] = { value = mocks[name] }; mocks[name] = value end
+    local oldStroke, oldCircle = nvgStroke, nvgCircle
+    _G["nvgStroke"] = function()
+        log("targetBorder", { x = path.x, y = path.y, w = path.w, h = path.h,
+            radius = path.radius, r = color.r, g = color.g, b = color.b, a = color.a })
+    end
+    _G["nvgCircle"] = function() log("circle", {}) end
+    local equipTab, actions = true, {}
+    local Draw = require("ui.character.detail.CharacterDetailDraw")
+    override("core.Viewport", { DS = 1, PANELS = { right = { bx = 0, by = 0 } },
+        getNote = function(key) return key == "right" and { s = 1, ox = 0, oy = 0 } or nil end })
+    override("ui.blacksmith.BlacksmithPage", { isOpen = function() return false end })
+    override("ui.character.detail.CharacterDetail", { getHeroId = function() return 1 end,
+        isEquipTab = function() return equipTab end })
+    override("systems.EquipmentSystem", { getHeroLevel = function() return 100 end,
+        checkLevelGate = function() return true end, getWearableTypeSet = function() return nil end })
+    override("ui.character.detail.CharacterDetailEquip", { markDirty = noop })
+    override("systems.GameSFX", { playUIClick = noop, play = noop })
+    override("runtime.GameAction", { sendAction = function(_, data) actions[#actions + 1] = data end })
+    override("core.UiToast", { show = noop })
+    local Drag = originalRequire("ui.character.EquipCrossDrag")
+    local function begin(slot, x, y)
+        Drag.arm({ seq = 1, templateId = setId, quality = 5, slot = slot, grip = "twohand" }, 0, 0, "test")
+        Drag.move(x, y)
+    end
+    local ok, err = pcall(function()
+        for _, slot in ipairs(Draw.DT_SLOTS) do
+            begin(slot.slot, slot.cx, slot.cy)
+            reset(); Drag.draw(vg)
+            local border = find("targetBorder")
+            local fill = find("fill", function(call) return call.r == 255 and call.g == 214 end)
+            check(count("circle") == 0 and count("targetBorder") == 1,
+                "拖拽目标全部改为圆角方框: " .. slot.slot)
+            check(border and border.w == 176 and border.h == 176 and border.radius == 20
+                and border.x == slot.cx - 88 and border.y == slot.cy - 88
+                and border.r == 255 and border.g == 214 and border.a == 235,
+                "金色目标底比160装备框每边外扩8: " .. slot.slot)
+            check(fill and fill.w == 176 and fill.h == 176 and fill.a == 28,
+                "目标底有淡填充且保持装备可读: " .. slot.slot)
+            local before = #actions
+            check(Drag.finish(slot.cx, slot.cy) and #actions == before + 1
+                and actions[#actions].slot == slot.slot, "新方框中心仍穿戴到正确槽: " .. slot.slot)
+        end
+        local weapon, armor
+        for _, slot in ipairs(Draw.DT_SLOTS) do
+            if slot.slot == "weapon" then weapon = slot end
+            if slot.slot == "armor" then armor = slot end
+        end
+        begin("weapon", armor.cx, armor.cy)
+        reset(); Drag.draw(vg)
+        local denied = find("targetBorder", function(call) return call.r == 180 and call.g == 70 end)
+        check(denied and denied.w == 176 and denied.h == 176 and denied.radius == 20,
+            "不可穿戴红色提示与金色目标采用同一圆角方形")
+        local before = #actions
+        Drag.finish(armor.cx, armor.cy)
+        check(#actions == before, "错误部位仅提示，不发送穿戴")
+        equipTab = false
+        begin("weapon", weapon.cx, weapon.cy)
+        reset(); Drag.draw(vg)
+        check(count("targetBorder") == 0, "非配装页不显示目标方底")
+        Drag.finish(weapon.cx, weapon.cy)
+        check(#actions == before, "隐藏配装页仍拒绝不可见穿装")
+        equipTab = true
+        begin("weapon", weapon.cx + 80, weapon.cy)
+        Drag.finish(weapon.cx + 80, weapon.cy)
+        check(#actions == before + 1, "原160槽边界仍可投放")
+        before = #actions
+        begin("weapon", weapon.cx + 84, weapon.cy)
+        Drag.finish(weapon.cx + 84, weapon.cy)
+        check(#actions == before, "外扩底板仅作提示，不扩大原投放热区")
+        begin("weapon", weapon.cx, weapon.cy)
+        Drag.cancel()
+        reset(); Drag.draw(vg)
+        check(#calls == 0 and not Drag.finish(weapon.cx, weapon.cy) and #actions == before,
+            "取消拖拽后不残留方底，不发送穿戴")
+    end)
+    Drag.cancel()
+    _G["nvgStroke"], _G["nvgCircle"] = oldStroke, oldCircle
+    for name, entry in pairs(saved) do mocks[name] = entry.value end
+    if not ok then error(err) end
+end
+
 function Start()
     print("[set_icon_badge_test] start")
     local ok, err = pcall(function()
         testHelper(); testBackpack(); testSixSlots(); testDecompose(); testLootBox(); testWorkbench(); testDetailsBadge()
-        testSetFilterCounts(); testLootBoxCounts()
+        testSetFilterCounts(); testLootBoxCounts(); testCrossDragTargets()
     end)
     if not ok then check(false, "exception: " .. tostring(err)) end
     print("[set_icon_badge_test] " .. (#failures == 0 and "ALL PASS" or "FAILURES=" .. #failures)

@@ -712,6 +712,21 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         return false, "至少保留1条词缀未锁定"
     end
 
+    -- 普通洗练可能换到任一普通属性；缺失价值配置必须在扣费/累计次数之前拒绝。
+    if not extraDef then
+        for i, oldAff in ipairs(equip.affixes or {}) do
+            if not lockedSet[i] and not AffixConfig.isCorruptAffix(oldAff)
+                and (tonumber(oldAff.ascBonus) or 0) > 0 then
+                for _, candidate in ipairs(AffixConfig.AFFIXES) do
+                    if not AffixConfig.isCorruptAffix(candidate) then
+                        local valid, reason = pcall(EquipmentSystem.convertAscBonusForRefine, oldAff, candidate)
+                        if not valid then return false, tostring(reason) end
+                    end
+                end
+            end
+        end
+    end
+
     -- 精粹消耗：仅普通洗练/选精粹路径（石头路径不再需要精粹）
     local essenceCost = 0
     if chargesEssence then
@@ -847,16 +862,23 @@ function BlacksmithService.RefineEquip(uid, seq, extraResource, lockedIndices)
         end
     end
 
-    -- 升阶副属性加成按位置跟随（洗练重随/替换不丢玩家投入；魔化槽位不持有）
+    -- 固定升阶投入按位置跟随；更换属性时换算价值，旧装仅预览不改写，魔化槽位不持有。
+    local convertedAscSlots = 0
     if newAffixes and oldAffixList then
         for i, newAff in ipairs(newAffixes) do
             local oldAff = oldAffixList[i]
             if oldAff and newAff
                 and not AffixConfig.isCorruptAffix(oldAff)
                 and not AffixConfig.isCorruptAffix(newAff) then
-                newAff.ascBonus = oldAff.ascBonus
+                newAff.ascBonus = EquipmentSystem.convertAscBonusForRefine(oldAff, newAff)
+                if newAff.ascBonus and oldAff.key ~= newAff.key then
+                    convertedAscSlots = convertedAscSlots + 1
+                end
             end
         end
+    end
+    if convertedAscSlots > 0 then
+        extraLog = extraLog .. " ascendValueConverted=" .. convertedAscSlots
     end
 
     -- 点金石：直接应用结果（无需手动点替换；后期出口仅改词缀品级，不动品质）

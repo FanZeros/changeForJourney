@@ -225,6 +225,8 @@ local function bindPower()
             elseif k == "teamSlots" then return teamSlots
             elseif k == "teams" then return teams
             elseif k == "teamPowerCaches" then return teamPowerCaches
+            elseif k == "heroRoster" then return heroRoster
+            elseif k == "rosterPowerCache" then return rosterPowerCache
             end
             return nil
         end,
@@ -378,10 +380,9 @@ recalcScrollMax = function()
         scrollMaxY = 0
         return
     end
-    -- 最后一行的名字背景底边 + 底部留白
+    -- 图标、名字和战力都纳入滚动底边，最后一行不被截断。
     local lastRowCY = ROW1_CY + (numRows - 1) * ROW_SPACING
-    -- 名字在图标下方 22，保证滚到底名字完整
-    local contentBottom = lastRowCY + 148 * 0.5 + 50
+    local contentBottom = lastRowCY + Draw.ROSTER_BOTTOM_DY
     scrollMaxY = math.max(0, contentBottom - SCROLL_BOTTOM)
 end
 
@@ -395,9 +396,9 @@ end
 ---@param dy number 设计空间 Y
 ---@return number|nil roster 索引
 local function hitTestRosterCard(dx, dy)
-    -- 名册右移 5%、下移 6%，命中换算回未偏移坐标。
-    dx = dx - DESIGN_W * 0.05
-    dy = dy - DESIGN_H * 0.06
+    -- 命中与绘制共用内容偏移；角色栏水平居中。
+    dx = dx - (Draw.CONTENT_SHIFT_X or 0)
+    dy = dy - (Draw.CONTENT_SHIFT_Y or DESIGN_H * 0.06)
     local rosterCount = #heroRoster
     for idx = 1, rosterCount do
         local row = math.ceil(idx / MAX_PER_ROW)
@@ -413,7 +414,7 @@ local function hitTestRosterCard(dx, dy)
         local cx = startCX + (col - 1) * (iconSize + iconGap)
         local cy = rowCY
         if dx >= cx - iconSize * 0.5 and dx <= cx + iconSize * 0.5
-           and dy >= cy - iconSize * 0.5 and dy <= cy + iconSize * 0.5 + 28
+           and dy >= cy - iconSize * 0.5 and dy <= cy + Draw.ROSTER_BOTTOM_DY
            and dy >= SCROLL_TOP and dy <= SCROLL_BOTTOM then
             return idx
         end
@@ -601,8 +602,8 @@ end
 -- ======================== 输入处理 ========================
 
 local function isInScrollArea(dx, dy)
-    dx = dx - DESIGN_W * 0.05
-    dy = dy - DESIGN_H * 0.06
+    dx = dx - (Draw.CONTENT_SHIFT_X or 0)
+    dy = dy - (Draw.CONTENT_SHIFT_Y or DESIGN_H * 0.06)
     return dx >= SCROLL_LEFT and dx <= SCROLL_RIGHT
        and dy >= SCROLL_TOP  and dy <= SCROLL_BOTTOM
 end
@@ -1108,6 +1109,22 @@ function CharacterPanel.setActiveTeam(idx)
     refreshNavBadge()
     print("[CharacterPanel] 切换到队伍 " .. idx)
     return true
+end
+
+--- 教程定位只改变名册视图，不改阵容或发送动作。
+function CharacterPanel.prepareTutorial(heroId)
+    CharacterPanel.setActiveTeam(1)
+    scrollY, scrollVelocity, isDragging = 0, 0, false
+    if heroId then
+        for i, entry in ipairs(heroRoster) do
+            if tonumber(entry.heroId) == tonumber(heroId) then
+                local row = math.ceil(i / MAX_PER_ROW)
+                scrollY = math.max(0, ROW1_CY + (row - 1) * ROW_SPACING - SCROLL_TOP - Draw.ROSTER_ICON * 0.5)
+                clampScroll()
+                break
+            end
+        end
+    end
 end
 
 --- 查询详情界面是否打开（供外部判断是否需要隐藏 TopBar/BottomNav）

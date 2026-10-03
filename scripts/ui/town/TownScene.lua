@@ -170,6 +170,11 @@ end
 local CLICK_CALLBACK_DELAY = 0.15  -- 回调延迟（秒），让闪白+缩放可见
 local deferredActions = {}         -- { { fireAt=number, fn=function }, ... }
 
+--- 引导换步接管页面时，取消尚未执行的旧建筑打开回调，避免延迟重开覆盖目标。
+function TownScene.cancelPendingPageOpen()
+    deferredActions = {}
+end
+
 local function deferAction(delay, fn)
     table.insert(deferredActions, { fireAt = time.elapsedTime + delay, fn = fn })
 end

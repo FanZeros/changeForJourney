@@ -8,6 +8,7 @@ local GameConfig       = require("config.GameConfig")
 local EquipmentConfig  = require("config.EquipmentConfig")
 local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local DrawUtil         = require("core.DrawUtil")
+local I18n             = require("core.I18n")
 local TownPageChrome   = require("ui.town.TownPageChrome")
 local DarkIcon         = require("core.DarkIcon")  -- [暗黑化 P1] 矢量九宫格
 local GameState        = require("core.GameState")
@@ -874,6 +875,11 @@ local equipLink = BackpackEquipLink.bind({
     getHostMode = function() return hostMode_ end,
     setLeftMode = function() hostMode_ = "left"; applyLayout(true) end,
     openPage = openPage, closePage = closePage,
+    clearTutorialFilters = function()
+        local changed = next(decomposeState.qualitySet) ~= nil or next(decomposeState.setFilter) ~= nil
+        if changed then decomposeState.qualitySet, decomposeState.setFilter = {}, {} end
+        return changed
+    end,
     selectEquipTab = function()
         if state.tab == "equip" then return end
         state.tab, state.tabFrom, state.tabSwitchTime = "equip", "equip", 0
@@ -907,6 +913,13 @@ end
 function Panel.releaseWarehouse(owner) equipLink.releaseWarehouse(owner) end
 function Panel.acquireForEquipment(heroId, slotOrNil)
     return Panel.acquireWarehouse("equipment", heroId, slotOrNil)
+end
+--- 仅教程显式恢复左栏配装仓库；普通 acquire 保持不自动重开契约。
+---@param heroId number|string|nil
+---@param slot string|nil
+---@return boolean changed
+function Panel.ensureTutorialEquipment(heroId, slot)
+    return equipLink.ensureTutorialEquipment(heroId, slot)
 end
 function Panel.releaseForEquipment() Panel.releaseWarehouse("equipment") end
 function Panel.setEquipmentSlotFilter(slotOrNil, heroId)
@@ -1058,7 +1071,7 @@ local function drawBody(vg)
             local didScale = BF.begin(vg, "bp_set_filter", SET_BTN.CX, SET_BTN.CY, SET_BTN.W, SET_BTN.H)
             DarkIcon.drawNine(vg, "btn", SET_BTN.CX - SET_BTN.W * 0.5, SET_BTN.CY - SET_BTN.H * 0.5,
                 SET_BTN.W, SET_BTN.H, { accent = selected > 0 and "green" or "gold" })
-            local label = selected > 0 and ("套装 · " .. selected) or "套装"
+            local label = selected > 0 and I18n.format("套装 · %d", selected) or I18n.lookup("套装")
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 34)
             nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)

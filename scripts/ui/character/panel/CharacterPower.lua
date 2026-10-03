@@ -157,6 +157,20 @@ function M.bind(deps)
             HC.setDefaultLitNodes(litNodes)
         end
 
+        -- 名册缓存与列表索引一致；订阅刷新也覆盖未出战的已拥有英雄。
+        -- 沿用 rebuildRoster 的正式战力缺省队口径，不受当前视图影响。
+        local heroRoster = get("heroRoster")
+        local rosterPowerCache = get("rosterPowerCache")
+        if heroRoster and rosterPowerCache then
+            for i, entry in ipairs(heroRoster) do
+                if entry.owned then
+                    rosterPowerCache[i] = calcHeroPower(entry.heroId)
+                else
+                    rosterPowerCache[i] = 0
+                end
+            end
+        end
+
         local teams = get("teams")
         local teamPowerCaches = get("teamPowerCaches")
         local deployedCount = 0

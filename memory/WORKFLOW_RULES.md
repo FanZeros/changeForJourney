@@ -42,6 +42,12 @@
 
 **已反证并撤回的疑点**：塔中栏奖励输入/draw条件虽分别用note/letterbox，但固定1920×1080下note.ox231+bx486=717，fit=.45，与全窗letterbox完全一致。`tests/chest_reward_horizon_test.lua:226-236,330-350`真实Horizon回调通过，不能报告当前错位；只作日后去重复变换建议。
 
+**补充的分阶段清理边界**：
+- `ui/battle/scene/BattleScene.lua:694-914` 旧整页仍有Horizon602–604条件备用入口，865的LootBox.setRates是独占业务副作用；`tests/i18n_display_boundary_test.lua:45,52,58`还用Nav/Transition。先迁副作用与测试，再撤旧draw，绝不能整删BattleScene。
+- 旧单队塔`DungeonBattleScene.lua:431-452,611-616,779-795,956-1066`被enemy_death_lifecycle_test390–396/427–439使用；IntroCutscene旧cover、boot轮回回调及国际化生命周期测试也仍有备用/测试活性。先迁测试和回调，不把它们列为直接删除模块。
+- 酒馆历史窗`TavernPopups.lua:644-645,882-1071`已无开启链，但273–310/320的历史读写仍被TavernPage678/1348调用；古树总览ChurchTalentPanel294–303/599–748无入口，但buildOverviewDisplay242–283仍被i18n_talents_test120/155调用。只删旧窗口，业务数据和现用星图保留。
+- 字面false块/未引用local helper可先清；StartScreen等断链UI其次；EquipmentBag、非compact详情、旧仓库宿主、旧塔/过场/旧BattleScene等有测试或初始化依赖最后清。非三行not H_SEAM_BACK内部返回与切页背景仍有活性，不能批量删。
+
 **验证边界**：以上缺陷为静态调用链及坐标推演确认，未新增运行复现用例，未修改生产Lua；既有六套回归通过不代表这些未覆盖缺陷已修复。孤立row奖励输入兜底、过场cover与Electron小屏窗口等扩展问题仅留后续专项，不把未知触发条件泛化为竖屏故障。
 
 

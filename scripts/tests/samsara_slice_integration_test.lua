@@ -1,6 +1,6 @@
--- N02 集成回归：原样执行真实 Player/Playback/Dialogue/Save/Dispatcher/Input 源码。
+-- N02 主体与N12–N14集成回归：原样执行真实 Player/Playback/Dialogue/Save/Dispatcher/Input 源码。
 -- 所有边界替身仅在私有 load 环境；不改 package.loaded/全局、不读真实玩家档、
--- 不领奖/写真实文件、不访问 debug/upvalue、不复制业务实现。仅覆盖 N02/E01。
+-- 不领奖/写真实文件、不访问 debug/upvalue、不复制业务实现；保留N02/E01主体并追加串行核验。
 -- 作者不运行 Runtime/build；本文件由主会话按需执行。
 local PREFIX = "[samsara_slice_integration] "
 local assertions, failures, cases, passed = 0, 0, 0, 0
@@ -252,6 +252,7 @@ local function fixture(rawBattle, suppliedSession)
         ["core.DrawUtil"] = f.DrawUtil,
         ["core.DarkIcon"] = { draw = function() end, drawNine = function() end },
         ["systems.SamsaraSlicePlayer"] = f.Player,
+        ["config.SamsaraSliceConfig"] = f.Config,
     }, f.graphicsBoundary)
     return f
 end
@@ -521,7 +522,7 @@ local function schemaCases()
             local f = fixture()
             local session = freshSession()
             session.samsaraStory = {
-                schemaVersion = 1, historyCaptured = true, customStory = { keep = "yes" },
+                schemaVersion = 1, historyCaptured = true, cargoHistoryCaptured = false, customStory = { keep = "yes" },
                 nodes = {
                     [f.Config.NODE_KEY] = { eligible = true, contentVersion = 1, resolution = "skipped",
                         eligibilitySource = "live_clear", legacyContext = "live_skipped", customNode = { x = 8 } },
@@ -1066,6 +1067,233 @@ local function keyboardAndTerminalCases()
         .. " failures=" .. (failures - beforeFailures))
 end
 
+-- 新增征用链只复用上方真实模块fixture；不替换Player/Playback/Dialogue业务流程。
+local CARGO, GRAY, PEOPLE = "samsara.cargo_match", "samsara.gray_order", "samsara.people_record"
+local function cargoFixture(source)
+    local session = freshSession()
+    session.claimedScenarios = {} -- 无N02/旧73处理记录，仍可独立核验。
+    return fixture({ maxStageId = 9999, currentStageId = 4905,
+        clearedStages = source == "player_record" and { [4905] = true, [204] = true } or { [4905] = true } }, session)
+end
+local function cargoEvidence(f, key, id)
+    for _, item in ipairs(f.Player.getRecord(key).evidences) do if item.id == id then return item end end
+    return nil
+end
+local function cargoContent(f, key)
+    f.drawings = {}
+    f.Panel.selectRecord(key)
+    f.Panel.open()
+    f.Panel.draw({}, 1920, 1080)
+    return table.concat(f.drawings, "\n")
+end
+local function includes(text, needle)
+    return type(text) == "string" and text:find(needle, 1, true) ~= nil
+end
+local function cargoCases()
+    local beforeAssertions, beforeFailures = assertions, failures
+    for _, source in ipairs({ "player_record", "case_archive" }) do
+        runCase("真实Playback/Dialogue三段串行/证据分层 source=" .. source, function()
+            local f = cargoFixture(source); f.init()
+            local old, shows, cfgs = legacySession(f.session()), 0, {}
+            local show = f.Dialogue.show
+            f.Dialogue.show = function(cfg)
+                shows = shows + 1; cfgs[#cfgs + 1] = cfg
+                eq(cfg.onFinish, nil, "征用链不安装领奖onFinish")
+                eq(cfg.mode, "small", "真实征用切片small")
+                check(type(cfg.onResult) == "function", "征用链只绑定精确结果回调")
+                return show(cfg)
+            end
+            eq(f.Player.getRecord().status, "locked", "无raw104不借高max解锁N02")
+            eq(f.Player.getRecord(CARGO).status, "pending", "raw4905成立但无旧73也可进入")
+            eq(cargoEvidence(f, CARGO, "E02") ~= nil, source == "player_record", "case_archive不在init抢先造原件")
+            eq(f.Playback.tryPlay(gates()), true, "后帧仲裁开始N12")
+            eq(cfgs[1].completionToken.nodeKey, CARGO, "真实展示token为N12")
+            local opening = {}
+            for _, step in ipairs(cfgs[1].steps) do opening[#opening + 1] = step.text end
+            check(includes(table.concat(opening, "\n"), source == "player_record" and "你带来的货牌" or "铁匠保存的货牌副本"), "真正送入Dialogue的是来源适配正文")
+            eq(cargoEvidence(f, CARGO, "E02").source, source, "begin建立/保留正确来源")
+            eq(cargoEvidence(f, CARGO, "E02").annotation, nil, "N12未处理无核验")
+            finishDialogue(f.Dialogue)
+            eq(f.Player.getRecord(CARGO).status, "pending", "dismiss动画完成前N12未处理")
+            eq(f.Player.getRecord(GRAY).status, "locked", "动画完成前N13仍锁定")
+            f.Dialogue.update(0.31)
+            eq(f.Player.getRecord(CARGO).status, "finished", "真实dismissed映射finished")
+            eq(f.Player.getRecord(GRAY).status, "pending", "N12释放N13")
+            eq(shows, 1, "N12结果回调不递归show后段")
+            eq(cargoEvidence(f, CARGO, "E02").annotation, f.Config.get(CARGO).evidence.annotation, "N12核验批注公开")
+            eq(cargoEvidence(f, GRAY, "E05"), nil, "N12处理仍不公开E05")
+            eq(f.Playback.tryPlay(gates()), true, "下一次宿主仲裁开始N13")
+            eq(cfgs[2].completionToken.nodeKey, GRAY, "N13真实token")
+            f.Dialogue.skip()
+            eq(f.Player.getRecord(GRAY).status, "skipped", "真实skip不写finished")
+            eq(f.Player.getRecord(PEOPLE).status, "pending", "N13skip释放N14")
+            eq(shows, 2, "N13结果不递归showN14")
+            local e05 = assert(cargoEvidence(f, PEOPLE, "E05"))
+            eq(e05.text, f.Config.get(GRAY).evidence.text, "N13公开初始抄件")
+            eq(e05.continuation, nil, "N13之后未处理N14不公开续令")
+            eq(e05.people, nil, "N13之后不公开人员卷")
+            eq(f.Playback.tryPlay(gates()), true, "后帧仲裁开始N14")
+            eq(cfgs[3].completionToken.nodeKey, PEOPLE, "N14真实token")
+            finishDialogue(f.Dialogue); f.Dialogue.update(0.31)
+            eq(f.Player.getRecord(PEOPLE).status, "finished", "N14自然结束")
+            eq(shows, 3, "精确三次首读展示")
+            e05 = assert(cargoEvidence(f, PEOPLE, "E05"))
+            eq(e05.continuation, f.Config.get(PEOPLE).evidence.continuation, "N14续令开放")
+            eq(e05.people, f.Config.get(PEOPLE).evidence.people, "N14人员卷开放")
+            check(not includes(e05.text .. e05.continuation .. e05.people, "本人承认一致"), "未接N17不提前定罪")
+            eq(f.Playback.tryPlay(gates()), false, "全部处理后不自动重播")
+            eq(f.Player.hasPendingRecords(), false, "全部处理无待阅红点")
+            local saved = cjson.decode(assert(f.disk))
+            eq(saved.modules.session.samsaraStory.cargoHistoryCaptured, true, "真实Save保留独立捕获标记")
+            for _, key in ipairs({ CARGO, GRAY, PEOPLE }) do
+                eq(saved.modules.session.samsaraStory.nodes[key].resolution, f.Player.getRecord(key).status, "真实磁盘保留首次结果 " .. key)
+                local before, flushes = copy(f.session().samsaraStory), f.n("flush")
+                eq(f.Player.requestRead(key), true, "三记录均可显式回看 " .. key)
+                eq(f.Playback.tryPlay(gates()), true, "回看也走真实Playback " .. key)
+                eq(cfgs[#cfgs].completionToken.kind, "samsara_replay", "回看kind不变首次")
+                f.Dialogue.skip()
+                check(same(f.session().samsaraStory, before), "回看不改原始结果/物证/来源 " .. key)
+                eq(f.n("flush"), flushes, "回看不保存 " .. key)
+            end
+            noRewards(f, old, "征用三段/回看 " .. source)
+        end)
+    end
+    for _, ending in ipairs({ "reset", "replaced", "failed" }) do
+        runCase("真实N13中断不释放N14 " .. ending, function()
+            local f = cargoFixture("player_record"); f.init()
+            local old = legacySession(f.session())
+            f.Playback.tryPlay(gates()); f.Dialogue.skip()
+            local show, count = f.Dialogue.show, 0
+            f.Dialogue.show = function(cfg)
+                count = count + 1
+                if ending == "failed" then return show({ steps = {} }) end
+                return show(cfg)
+            end
+            eq(f.Playback.tryPlay(gates()), ending ~= "failed", "实际N13展示/失败")
+            if ending == "reset" then f.Dialogue.reset()
+            elseif ending == "replaced" then show({ mode = "small", steps = f.Config.get(CARGO).steps }) end
+            eq(f.Player.getRecord(GRAY).status, "pending", "中断不写首次结果")
+            eq(f.Player.getRecord(PEOPLE).status, "locked", "中断不解锁N14")
+            eq(cargoEvidence(f, PEOPLE, "E05"), nil, "中断不公开E05初始或附页")
+            eq(f.Player.requestRead(PEOPLE), false, "N14不可越过依赖")
+            eq(count, 1, "失败/中断没有同步补播")
+            show({ mode = "small", steps = f.Config.get(CARGO).steps })
+            eq(f.Playback.tryPlay(gates()), false, "其他合法旧闲聊占用下一帧，新链等待")
+            eq(f.Player.getRecord(GRAY).status, "pending", "旧show/broadcast不得误完成N13")
+            f.Dialogue.skip() -- 无token旧段的广播不能释放新链。
+            eq(f.Player.getRecord(PEOPLE).status, "locked", "旧完成广播不能解锁N14")
+            f.Dialogue.show = show
+            eq(f.Playback.tryPlay(gates()), true, "空闲下一帧从N13重新开始")
+            f.Dialogue.skip()
+            eq(f.Player.getRecord(PEOPLE).status, "pending", "只有真实N13重试skip才释放")
+            noRewards(f, old, "中断恢复 " .. ending)
+        end)
+    end
+    for _, fault in ipairs({ "open", "write", "encode" }) do
+        runCase("征用N13真实Save失败/重启/节流恢复 " .. fault, function()
+            local f = cargoFixture("player_record"); f.init()
+            local old = legacySession(f.session())
+            f.Playback.tryPlay(gates()); f.Dialogue.skip()
+            local beforeDisk = assert(f.disk)
+            f.Playback.tryPlay(gates()); f.fail = fault; f.Dialogue.skip()
+            eq(f.Player.getRecord(GRAY).status, "skipped", "失败仍保留内存首次skip")
+            eq(f.Player.getRecord(PEOPLE).status, "pending", "失败内存结果仍释放下一段")
+            eq(f.Player.isSavePending(), true, "真实底层故障待保存")
+            eq(f.disk, beforeDisk, "失败不改旧磁盘bytes")
+            local lost = cjson.decode(beforeDisk).modules.session
+            local reboot = cargoFixture("player_record")
+            reboot.Dispatcher.set("session", lost); reboot.init({ clearedStages = {} })
+            eq(reboot.Player.getRecord(CARGO).status, "skipped", "重启保留已成功保存N12")
+            eq(reboot.Player.getRecord(GRAY).status, "pending", "失败重启从N13补读，不伪造已存")
+            eq(reboot.Player.getRecord(PEOPLE).status, "locked", "失败重启不越过未保存N13")
+            local attempts = f.n("flush")
+            f.Player.update(1.99)
+            eq(f.n("flush"), attempts, "节流阈值前无写盘轰炸")
+            f.fail = ""; f.Player.update(0.02)
+            eq(f.n("flush"), attempts + 1, "恢复后实际Flush一次")
+            eq(f.Player.isSavePending(), false, "只有真实落盘成功清pending")
+            local saved = cjson.decode(assert(f.disk))
+            eq(saved.modules.session.samsaraStory.nodes[GRAY].resolution, "skipped", "恢复磁盘首次skip")
+            eq(saved.modules.session.samsaraStory.cargoHistoryCaptured, true, "恢复保留新独立标记")
+            eq(f.Save.RestoreData(), true, "经真实File/cjson/Dispatcher恢复")
+            f.init({ clearedStages = {} })
+            eq(f.Player.getRecord(GRAY).status, "skipped", "恢复成功后不重播N13")
+            eq(f.Player.peekReady(), PEOPLE, "恢复成功后从N14继续")
+            noRewards(f, old, "cargo真实保存恢复 " .. fault)
+        end)
+    end
+    runCase("记录四标签KEY选择只展示不播/批注分层/显式N12优先", function()
+        local session = freshSession()
+        local f = fixture({ clearedStages = { [104] = true, [4905] = true, [204] = true } }, session); f.init()
+        local old, readCalls, before = legacySession(f.session()), 0, copy(f.session())
+        local request = f.Player.requestRead
+        f.Player.requestRead = function(key) readCalls = readCalls + 1; return request(key) end
+        local keys = { f.Config.NODE_KEY, CARGO, GRAY, PEOPLE }
+        for _, key in ipairs(keys) do
+            local text = cargoContent(f, key)
+            check(includes(text, f.Config.get(key).title), "KEY选中正确标题 " .. key)
+            eq(readCalls, 0, "选择标签不调用requestRead " .. key)
+            eq(f.Dialogue.isActive(), false, "选择标签不触show " .. key)
+            check(same(f.session(), before), "选择标签不写状态 " .. key)
+        end
+        local text = cargoContent(f, CARGO)
+        check(includes(text, f.Config.get(CARGO).evidence.text), "待阅N12已取得raw204原件可读")
+        check(not includes(text, f.Config.get(CARGO).evidence.annotation), "待阅N12批注未公开")
+        -- 新布局仍在同一右下action位置；标签选择不依赖布局私有字段。
+        eq(f.Panel.handleInput(1588, 928, 1920, 1080), true, "点击N12待阅只排请求")
+        eq(readCalls, 1, "action才调用一次requestRead")
+        eq(f.Dialogue.isActive(), false, "Panel action不在回调内播")
+        eq(f.Playback.tryPlay(gates()), true, "已解锁N12显式请求优先于自动N02")
+        f.Dialogue.skip()
+        eq(f.Player.getRecord().status, "pending", "读N12不代读N02")
+        text = cargoContent(f, CARGO)
+        check(includes(text, f.Config.get(CARGO).evidence.annotation), "N12处理后分区显示批注")
+        f.Panel.close(); f.Player.requestRead(GRAY); f.Playback.tryPlay(gates()); f.Dialogue.skip()
+        text = cargoContent(f, PEOPLE)
+        check(includes(text, f.Config.get(GRAY).evidence.text), "N14待阅能看E05初始")
+        check(not includes(text, f.Config.get(PEOPLE).evidence.continuation), "N14待阅续令不泄露")
+        check(not includes(text, f.Config.get(PEOPLE).evidence.people), "N14待阅人员卷不泄露")
+        f.Panel.close(); f.Player.requestRead(PEOPLE); f.Playback.tryPlay(gates()); f.fail = "write"; f.Dialogue.skip()
+        text = cargoContent(f, PEOPLE)
+        check(includes(text, f.Config.get(PEOPLE).evidence.continuation), "N14处理后续令显示")
+        check(includes(text, f.Config.get(PEOPLE).evidence.people), "N14处理后人员卷显示")
+        check(includes(text, "保存中"), "保存中Panel禁用回看")
+        local queued = readCalls
+        f.Panel.handleInput(1588, 928, 1920, 1080)
+        eq(readCalls, queued, "保存中按钮不排回看")
+        eq(f.Player.takeRequest(), nil, "保存中没有新请求")
+        f.fail = ""; f.Player.update(2)
+        eq(f.Player.isSavePending(), false, "成功后恢复回看")
+        noRewards(f, old, "四标签展示/读取/保存中")
+    end)
+    runCase("N12显式请求在所有门禁保留，JSON合法重附不重扫", function()
+        local f = cargoFixture("case_archive"); f.init()
+        local old = legacySession(f.session())
+        eq(f.Player.requestRead(CARGO), true, "N12请求排队")
+        local take, takes = f.Player.takeRequest, 0
+        f.Player.takeRequest = function() takes = takes + 1; return take() end
+        for _, name in ipairs({ "ready", "legacyPending", "blocked", "pointerBusy" }) do
+            local gate = gates(); gate[name] = name ~= "ready"
+            eq(f.Playback.tryPlay(gate), false, "征用门禁不开始 " .. name)
+            eq(takes, 0, "征用门禁不取请求 " .. name)
+        end
+        eq(f.Playback.tryPlay(gates()), true, "释放门禁只取原N12请求")
+        eq(takes, 1, "放行一次取请求")
+        local replacement = copy(f.session())
+        f.Dispatcher.handleStateUpdate(cjson.encode({ modules = { session = replacement } }))
+        f.Dialogue.skip()
+        eq(f.Player.getRecord(CARGO).status, "skipped", "合法JSON重附精确租约结果写入新表")
+        eq(f.Player.peekReady(), GRAY, "JSON重附保持串行下一段")
+        eq(cargoEvidence(f, CARGO, "E02").source, "case_archive", "JSON往返保持首次来源")
+        f.init({ clearedStages = { [204] = true, [104] = true } })
+        eq(cargoEvidence(f, CARGO, "E02").source, "case_archive", "后续补true不反扫改来源")
+        eq(f.Player.getRecord().status, "locked", "后续补true不反扫解锁N02")
+        noRewards(f, old, "征用门禁/JSON重附")
+    end)
+    print(PREFIX .. "新增征用集成 assertions=" .. (assertions - beforeAssertions)
+        .. " failures=" .. (failures - beforeFailures))
+end
+
 function Start()
     local ok, err = pcall(function()
         runCase("N02 real configuration only / independent return copies", function()
@@ -1091,6 +1319,7 @@ function Start()
         saveCases()
         inputCases()
         keyboardAndTerminalCases()
+        cargoCases()
     end)
     if not ok then check(false, "Start exception: " .. tostring(err)) end
     print(PREFIX .. "RESULT cases=" .. passed .. "/" .. cases .. " assertions=" .. assertions .. " failures=" .. failures)

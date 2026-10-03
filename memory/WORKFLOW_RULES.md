@@ -5,8 +5,19 @@
 1. **不能取消/退出任务**：必须持续推进直到完成。
 2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。这是硬性收尾动作，任何任务（包括纯调研）完成后都必须调用 AskUserQuestion。
    ⚠️ 强化记忆（用户多次重申）：任何一次任务完成（含 commit+push 之后）的最后一个动作必须是调用 AskUserQuestion 工具向用户提问下一步做什么。绝对不允许以普通文本消息结束回合。即使构建失败、测试失败、遇到阻塞，也要用 AskUserQuestion 给出处理选项。
-3. **以用户当轮指定的分支继续开发**：本轮（2026-10-03，N02日志夹页）明确在 `feat1003/samsara-story-wiring-plan` 继续开发，完成后 commit + push 回同名分支；不另建分支、不推任何 `workspace` 系列、不强推、不擅自合并PR。其他轮次遵循用户当轮授权，历史“必须新建分支”不覆盖新的明确要求。
+3. **以用户当轮指定基线继续开发**：当前轮（2026-10-03）从 `feat1003/samsara-story-wiring-plan@35af331` 新建 `feat1003/samsara-n12-n14-20261003`，仅commit与push该新续作分支；不推任何workspace系列、不强推、不擅自创建或合并PR。上一轮N02的“推回同名分支”是历史授权，不覆盖本轮新分支纪律。
 4. **部署位置**：当前仓库和游戏项目直接位于 `/workspace` 根目录，scripts/assets/.project 等不再嵌套子目录；保护引擎提供的只读目录，修改代码后调用官方 build 工具构建。
+
+### N12–N14征用调查续作（2026-10-03）
+
+- 用户指定检查 `feat1003/samsara-story-wiring-plan` 的N02并继续N12–N14；远端head `35af331` 确实包含N02。N02条目历史并未显式写官方Build，故本轮先实际build成功、复跑N02数据496/集成49用例763全过，再实现续作，不用历史口径推测构建。
+- 从该基线新建 `feat1003/samsara-n12-n14-20261003`，项目直接部署在/workspace根，仅推新续作分支，不推workspace系列或原基线，不擅自创建/合并PR。当前基线较最新930更早，未混入配装/护盾短名/最新图标或未授权其他分支功能。
+- 配置新增N12货牌核验/N13灰印征用令/N14人员卷，small无奖文本，原N02七步与E01保持。ID映射1狗/2龙/3鸡/10铁匠/21圣女核实；N14用接线方案独立台词“不只是箱子，还有护送的人”，不依赖旧72或未实现N03/N11，不新增可招募NPC/模型/视频。
+- `cargoHistoryCaptured`独立于旧N02 historyCaptured，在既有RestoreData后/max补齐前挂点一次性捕raw204/4905精确true，阴性也保存；已有N02档只新增此捕获，不重扫104。真实首通204开放E02原件、4905开放N12；N12处理释放N13、N13处理释放N14，finished/dismissed与skipped分记，reset/replaced/failed不完成。自动及手动读取都校验依赖、未来版本，租约token/epoch保持进程内，JSON同档显式重附、迟到回调拒绝。
+- E02原件只204历史或N12 begin准备case_archive，来源一旦确定不因后补204改写回看持有史；N12处理才开放核验批注，N13处理E05初始，N14处理续令/人员卷。记录四标签只切展示，待阅/回看仍下一帧由原唯一仲裁启动；城镇红点汇总，模态/旧pending/FOLLOW/FIFO/教程/奖励门禁原样。无reward/claimed/granted/tutorial/FOLLOW/onPlace，旧ScenarioDialogueConfig/ScenarioDialogue/StoryPlayer/BattleService/Standalone/StandaloneBoot逐字节未改。
+- 官方最终build成功，9份变更Lua与部署产物逐字节一致，逐文件LSP无Error；全仓缓存52条其他Error，不宣称全仓干净。三套关键Runtime全部exit0且ALL PASS：N02兼容510、三节点45/45用例880断言、真实Playback/Dialogue/Save/Panel集成59/59用例1108断言；原N02基线496/763已单独跑过。保存测试为真实Save代码＋File/cjson边界替身，不冒称真实磁盘故障或完整战斗胜利。
+- 八套旧回归全过：无过场256、剧情82、教程管理49/横屏54用例355、终焉协同、离线边界/覆盖487、切关。规范检查器36测试通过。主入口无头冒烟25秒只见16/17，exit124外部限时；第一次捕获没处理Timeout异常产生exit1，复跑捕获后如实记录，不称完整启动。无头音频/shader环境错误、实机新剧情视觉/可读性尚未验收，既有I18nDict2044行提示不混拆。
+- 最终独立静态复核未发现正常用户路径确定新增阻塞或越级泄露；只读复核不冒称另一轮Runtime。续作功能提交 `e8ede34`，规范2534路径0错误0警告。持续强化：完成先实际简报、最后真正调用 **AskUserQuestion** 给2–4个选项继续，尊重后续停止/权限拒绝；凭据、本地.project身份/配置、截图/运行存档不提交。
 
 ### N02日志夹页落地（2026-10-03）
 

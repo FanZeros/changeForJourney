@@ -24,6 +24,12 @@ function M.tryPlay(gates)
     end
     local lease = Player.begin(kind, key)
     if not lease then return false end
+    -- 首次准备可能刚挂案件副本，使用持久来源选择N12旁白，不伪造玩家持有史。
+    if key == "samsara.cargo_match" then
+        local record = Player.getRecord(key)
+        local source = record.evidences and record.evidences[1] and record.evidences[1].source
+        cfg = Config.get(key, source) or cfg
+    end
     local ok, shown = pcall(Dialogue.show, {
         mode = cfg.mode, title = cfg.title, steps = cfg.steps,
         completionToken = lease,

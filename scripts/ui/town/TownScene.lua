@@ -645,8 +645,7 @@ function TownScene.draw(vg)
     DarkIcon.draw(vg, STORY_ICON, STORY_CX - 112, STORY_CY, 48, 1.0)
     drawTextStroke(vg, STORY_CX + 18, STORY_CY, "剧情记录", 34,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 238, 216, 161, 3)
-    local storyRecord = SamsaraSlicePlayer.getRecord()
-    if storyRecord.status == "pending" then
+    if SamsaraSlicePlayer.hasPendingRecords() then
         DarkIcon.draw(vg, STORY_DOT_ICON, STORY_CX + STORY_W * 0.5 - 10,
             STORY_CY - STORY_H * 0.5 + 10, 28, 1.0)
     end

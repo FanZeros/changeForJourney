@@ -1,4 +1,4 @@
--- samsara_slice_player_test.lua — 真实 N02 模块隔离回归；不复制数据层实现、不污染全局 require。
+-- samsara_slice_player_test.lua — 真实 N02 主体与四节点兼容契约隔离回归；不复制数据层实现、不污染全局 require。
 -- 后续由主会话执行：UrhoXRuntime tests/samsara_slice_player_test.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless
 -- 此测试只用内存 session/Flush 替身，不访问玩家真实存档或发任何经济协议。
 local PREFIX = "[samsara_slice_player] "
@@ -127,7 +127,15 @@ function Start()
         eq(Config.NODE_KEY, KEY, "N02 字符串命名空间")
         eq(Config.CONTENT_VERSION, 1, "内容版本为1")
         eq(Config.get("N02"), nil, "不注册策划编号")
-        eq(Config.get("samsara.cargo_match"), nil, "不实现N12")
+        local compatibilityStart = assertions
+        check(equalTables(Config.KEYS, { KEY, "samsara.cargo_match", "samsara.gray_order", "samsara.people_record" }), "四节点固定顺序不改N02兼容KEY")
+        for _, item in ipairs({ { "samsara.cargo_match", "E02" }, { "samsara.gray_order", "E05" }, { "samsara.people_record", "E05" } }) do
+            local added = assert(Config.get(item[1]))
+            eq(added.mode, "small", item[1] .. "新增小情景")
+            eq(added.evidence.id, item[2], item[1] .. "新增物证定义")
+            eq(added.rewards, nil, item[1] .. "新增定义无奖")
+        end
+        print(PREFIX .. "新增四节点兼容 assertions=" .. (assertions - compatibilityStart))
         local cfg = assert(Config.get(KEY))
         eq(cfg.mode, "small", "小情景")
         eq(#cfg.steps, 7, "一行开场旁白与六句正文")
@@ -163,6 +171,9 @@ function Start()
         eq(uninitialized.requestRead(KEY), false, "未init不能排请求")
         eq(uninitialized.begin(FIRST, KEY), nil, "未init不展示")
         eq(uninitialized.getRecord().status, "unsupported", "未init档案安全默认")
+        eq(uninitialized.getRecord("samsara.cargo_match").status, "unsupported", "未init新增档案安全默认")
+        eq(#uninitialized.getRecords(), 4, "未init四档案均安全返回")
+        eq(uninitialized.hasPendingRecords(), false, "未init无待阅档案")
         eq(uninitialized.isSavePending(), false, "未init没有待存")
         uninitialized.cancel()
         uninitialized.update(2)
@@ -171,6 +182,7 @@ function Start()
         local a, b = Schema.new(), Schema.new()
         eq(a.schemaVersion, 1, "默认schema版本")
         eq(a.historyCaptured, false, "默认尚未捕获历史")
+        eq(a.cargoHistoryCaptured, false, "默认cargo历史独立未捕获")
         check(a.nodes ~= b.nodes and a.evidence ~= b.evidence, "默认子表相互独立")
         local session = oldSession()
         local old = outsideStory(session)
@@ -213,7 +225,7 @@ function Start()
             { label = "字符串true值", battle = { clearedStages = { [104] = "true" } } },
             { label = "数字1值", battle = { clearedStages = { [104] = 1 } } },
             { label = "max-only", battle = { currentStageId = 4905, maxStageId = 9999 } },
-            { label = "其他通关键", battle = { clearedStages = { [105] = true, [4905] = true } } },
+            { label = "其他通关键", battle = { clearedStages = { [105] = true, [4905] = true } }, cargoReady = true },
             { label = "非法104键", battle = { clearedStages = { ["0104"] = true, ["104x"] = true } } },
             { label = "无快照" },
         }
@@ -221,7 +233,7 @@ function Start()
             local originalSession = oldSession()
             local originalFields = outsideStory(originalSession)
             local p, state = fixture(originalSession, case.battle)
-            eq(p.peekReady(), case.ready and KEY or nil, case.label .. "资格")
+            eq(p.peekReady(), case.ready and KEY or (case.cargoReady and "samsara.cargo_match" or nil), case.label .. "资格（N02不借4905，新增N12可独立待阅）")
             eq(p.getRecord().status, case.ready and "pending" or "locked", case.label .. "档案状态")
             eq(originalSession.samsaraStory.historyCaptured, true, case.label .. "历史扫描已持久化")
             eq(state.flushes, 1, case.label .. "没有资格也立即Flush一次")

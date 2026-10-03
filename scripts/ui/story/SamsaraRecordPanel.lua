@@ -1,5 +1,5 @@
 -- ============================================================================
--- SamsaraRecordPanel - N02 / E01 轻量剧情记录（普通原件，无奖励与新选择）
+-- SamsaraRecordPanel - N02与征用三段的轻量剧情记录，无奖励与新选择
 -- 基于 scaffold-2d 的生命周期分离；复用项目 raw NanoVG 管线，不创建上下文/帧。
 -- draw / handleInput / drag 的 x,y,w,h 均为主渲染器的窗口逻辑坐标。
 -- 1920×1080 CONTAIN 字号 + 全窗响应式布局；字体 sans 由主初始化创建。
@@ -27,6 +27,8 @@ local BLOCK_GAP = 26
 ---@field evidenceVisible boolean
 ---@field evidence SamsaraRecordViewEvidence|nil
 ---@field legacyContext string|nil
+---@field evidences table[]
+---@field unlockText string|nil
 
 ---@type NVGContextWrapper|nil
 local context_ = nil
@@ -44,6 +46,7 @@ local context_ = nil
 ---@field startScroll number
 ---@field requestFailed boolean
 ---@field contentSignature string
+---@field selectedKey string
 ---@type SamsaraRecordPanelState
 local state = {
     open = false,
@@ -59,6 +62,7 @@ local state = {
     startScroll = 0,
     requestFailed = false,
     contentSignature = "",
+    selectedKey = "samsara.log_leaf",
 }
 
 -- 均以“扩展设计屏幕”定位，宽高比变化时不拉伸文字/图标。
@@ -74,8 +78,9 @@ local function layout(w, h)
         scale = scale, sw = sw, sh = sh,
         x = px, y = py, w = pw, h = ph,
         closeX = px + pw - 220, closeY = py + 36, closeW = 176, closeH = 84,
-        contentX = px + 64, contentY = py + 272,
-        contentW = pw - 148, contentH = ph - 426,
+        contentX = px + 64, contentY = py + 352,
+        contentW = pw - 148, contentH = ph - 506,
+        tabsY = py + 150, tabsW = (pw - 148) / 4,
         actionX = px + pw - 360, actionY = py + ph - 120, actionW = 296, actionH = 84,
     }
 end
@@ -90,7 +95,21 @@ end
 
 ---@return SamsaraRecordView
 local function getRecord()
-    return SamsaraSlicePlayer.getRecord() --[[@as SamsaraRecordView]]
+    return SamsaraSlicePlayer.getRecord(state.selectedKey) --[[@as SamsaraRecordView]]
+end
+
+--- 只切换档案展示，不排首读或回看，不触碰完成记录。
+function Panel.selectRecord(key)
+    for _, record in ipairs(SamsaraSlicePlayer.getRecords()) do
+        if record.key == key then
+            state.selectedKey = key
+            state.scroll, state.maxScroll = 0, 0
+            state.contentSignature = ""
+            state.requestFailed = false
+            return true
+        end
+    end
+    return false
 end
 
 ---@param record SamsaraRecordView
@@ -98,7 +117,7 @@ local function statusText(record)
     if record.status == "pending" then return "待阅" end
     if record.status == "finished" then return "已读" end
     if record.status == "skipped" then return "已跳过" end
-    if record.status == "locked" then return "通关普通1-4后开放" end
+    if record.status == "locked" then return record.unlockText or "暂未开放" end
     return "暂未开放"
 end
 
@@ -126,7 +145,7 @@ local function contentBlocks(record)
     if record.status == "unsupported" then
         add("这份剧情记录尚未开放。", BODY_FONT)
     elseif record.status == "locked" then
-        add("通关普通1-4后开放。", BODY_FONT)
+        add((record.unlockText or "暂未开放") .. "。", BODY_FONT)
         add("尚未处理剧情，原件正文暂不公开。", 32, true)
     elseif record.status == "pending" then
         add("有一段剧情待阅。点击下方“待阅”进入。", BODY_FONT)
@@ -146,7 +165,23 @@ local function contentBlocks(record)
         end
     end
 
-    -- 正文只服从当前切片的公开标志；不查旧日志、不补读后续节点或高难度批注。
+    if record.key ~= "samsara.log_leaf" then
+        -- 原件、核验与人员卷各服从数据层公开标记，未处理的后段不泄露正文。
+        for _, item in ipairs(record.evidences or {}) do
+            add(item.id .. " · " .. item.title, 40)
+            local source = item.source == "player_record" and "普通2-4 · 货牌记录"
+                or (item.source == "case_archive" and "铁匠保存的案件副本" or "征用签发底档")
+            add("来源：" .. source, 32, true)
+            add(item.text)
+            if item.annotation then add("N12 · 来源核验", 38); add(item.annotation) end
+            if item.continuation then add("N14 · 第二次续令", 38); add(item.continuation) end
+            if item.people then add("N14 · 人员卷", 38); add(item.people) end
+        end
+        if #(record.evidences or {}) == 0 then add("原件正文暂不公开。", 32, true) end
+        add("后续核验未开放。", 32, true)
+        return blocks
+    end
+    -- N02原件保持既有公开规则，回看不会补读高难度批注。
     local evidence = record.evidence
     if (record.status == "finished" or record.status == "skipped")
         and record.evidenceVisible == true and evidence and evidence.id == "E01" then
@@ -217,10 +252,19 @@ function Panel.draw(vg, w, h)
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
     drawButton(ctx, l.closeX, l.closeY, l.closeW, l.closeH, "关闭", true)
 
-    local title = record.status == "unsupported" and "普通剧情记录" or record.title
-    DrawUtil.drawTextStroke(ctx, l.contentX, l.y + 186, title or "普通剧情记录", 40,
+    local labels = { "日志夹页", "货牌核验", "灰印征用令", "人员卷" }
+    for index, item in ipairs(SamsaraSlicePlayer.getRecords()) do
+        local tabX = l.contentX + (index - 1) * l.tabsW
+        drawButton(ctx, tabX, l.tabsY, l.tabsW - 12, 64, labels[index] or item.title,
+            item.key == state.selectedKey)
+        if item.status == "pending" then
+            DarkIcon.draw(ctx, DOT_ICON, tabX + l.tabsW - 30, l.tabsY + 10, 18, 1)
+        end
+    end
+    local title = record.status == "unsupported" and "剧情记录" or record.title
+    DrawUtil.drawTextStroke(ctx, l.contentX, l.y + 266, title or "剧情记录", 40,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 238, 216, 161, 2)
-    DrawUtil.drawTextStroke(ctx, l.contentX, l.y + 240, statusText(record), 32,
+    DrawUtil.drawTextStroke(ctx, l.contentX, l.y + 320, statusText(record), 32,
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 216, 201, 163, 2)
     if record.status == "pending" then
         DarkIcon.draw(ctx, DOT_ICON, l.x + l.w - 84, l.y + 226, 28, 1)
@@ -294,6 +338,13 @@ function Panel.handleInput(x, y, w, h)
     if inRect(dx, dy, l.closeX, l.closeY, l.closeW, l.closeH) then
         Panel.close()
         return true
+    end
+    for index, record in ipairs(SamsaraSlicePlayer.getRecords()) do
+        local tabX = l.contentX + (index - 1) * l.tabsW
+        if inRect(dx, dy, tabX, l.tabsY, l.tabsW - 12, 64) then
+            Panel.selectRecord(record.key)
+            return true
+        end
     end
     if inRect(dx, dy, l.actionX, l.actionY, l.actionW, l.actionH) then
         local record = getRecord()

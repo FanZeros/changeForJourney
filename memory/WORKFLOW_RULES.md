@@ -8,6 +8,8 @@
 - 当前章节卡片使用对应关卡背景，资源路径缓存、2秒失败重试、等比cover、圆角与选中金框；保留后续多语言标题测宽、绝对章节号、解锁/终焉链及点击/滚动。映射集中到StageConfig，三行锁队仍查询1001/2001保留图10/20，已解锁队取自身驱动进度，终焉chapter0沿用图23。不改23图内容、地图mapBg、经济或存档。合法图片句柄0支持缓存/绘制/释放。
 - 专项扩展417断言ALL PASS（全章节映射、14终焉、缓存/缺图恢复/尺寸回退/句柄0、真实五语词典及原点击路径），使用绘图spy不当成设备验收。首跑五语失败因spy未模拟生产翻译出口，修正测试边界后通过，生产翻译逻辑未改。行军42（含锁队10/20和各队前进）、队伍解锁115、切关与多语言显示20回归ALL PASS；规范检查器36测试通过。真实选关面板150帧PASS，Lua/资源/引擎错误0、无缺图，七章背景截图已查看；仅简中直绘面板，不声称全设备/五语视觉验收或性能通过。独立只读复核未发现新增问题；临时验收入口/meta已清理，原专项UUID保留。本地.project重绑定配置、截图不提交。
 
+- 用户随后在 **AskUserQuestion** 选择创建PR，首次多次创建请求超时且只读核查均无PR；用户明确要求重新尝试后，先查重再创建成功。**PR #40**：https://github.com/FanZeros/changeForJourney/pull/40，head=`integrate/stage-select-background-20261003`、base=`workspace930`，返回open、merged_at=null；功能提交 `1f09ce8`。未自动合并，创建授权不延伸为合并授权，交付后仍真正调用 **AskUserQuestion**。凭据不持久化。
+
 ### 国际化整合 PR 交接（2026-10-03）
 
 - 用户在 **AskUserQuestion** 明确选择“创建整合 PR（推荐）”，已创建 **PR #36**：https://github.com/FanZeros/changeForJourney/pull/36 ，head=`integrate930/i18n-continuation-20261003`、base=`workspace930`，标题“整合国际化续作修复与离线奖励加速”。创建返回open、draft=false、merged=false；mergeable初始null/unknown，最终检查状态以GitHub实际结果为准，不声称CI或合并完成。

@@ -1,0 +1,45 @@
+{
+  "official_build": "success",
+  "entry": "main.lua",
+  "multiplayer_enabled": false,
+  "latest": {
+    "format": 1,
+    "version": "1.0.7",
+    "build": 1,
+    "client": "5923d60f",
+    "server": "041409cf",
+    "generated_at": "2026-10-03T13:01:39.539251Z",
+    "engine": "ef9e23e2"
+  },
+  "lua_source_modified": false,
+  "runtime_visual_test": "not_performed",
+  "lsp_prebuild_summary": {
+    "files": 352,
+    "errors": 41,
+    "warnings": 5363,
+    "info": 0,
+    "hints": 908
+  },
+  "manifests": [
+    {
+      "role": "client",
+      "relative_path": "dist/1.0.7/manifest-5923d60f.json",
+      "file_count": 1252,
+      "lua_entries": 461,
+      "missing_assets": [],
+      "source_identical_lua_count": 461,
+      "source_mismatched_lua": [],
+      "main_entry_verified": true
+    },
+    {
+      "role": "server",
+      "relative_path": "dist/1.0.7/manifest-041409cf.json",
+      "file_count": 1252,
+      "lua_entries": 461,
+      "missing_assets": [],
+      "source_identical_lua_count": 461,
+      "source_mismatched_lua": [],
+      "main_entry_verified": true
+    }
+  ]
+}

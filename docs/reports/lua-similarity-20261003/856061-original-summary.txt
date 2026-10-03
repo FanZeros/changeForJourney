@@ -1,0 +1,33 @@
+published: 300 lua / 145556 lines
+local: 461 lua / 162904 lines
+same path: 103  exact: 10
+only published: 197  only local: 358
+symmetric similarity: 14.0%
+published covered by local: 14.6%
+local covered by published: 13.5%
+paired-file similarity: 69.5%
+exact line share: published 1.5% / local 1.3%
+
+dir similarity:
+  systems: files=23 exact=2 sim=65.1% lines~13731
+  config: files=42 exact=1 sim=68.0% lines~13660
+  shared: files=32 exact=5 sim=85.8% lines~4267
+  core: files=4 exact=1 sim=78.2% lines~1295
+  (root): files=2 exact=1 sim=62.2% lines~67
+
+most divergent:
+     1.7%  pub=  117 loc=  117  config/StageConfig_Annihilation.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Annihilation2.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Annihilation3.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Annihilation4.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Annihilation5.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Hard.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Hell.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Nightmare.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Normal.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Purgatory.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Torment.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Torment2.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Torment3.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Torment4.lua
+     1.7%  pub=  117 loc=  117  config/StageConfig_Torment5.lua

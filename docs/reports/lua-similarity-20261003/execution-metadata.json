@@ -1,0 +1,147 @@
+{
+  "game_repository": "https://github.com/FanZeros/changeForJourney",
+  "baseline_branch": "workspace930",
+  "baseline_commit": "9e0777f5e5ba9496266997ea95a5c745670ce491",
+  "report_branch": "audit/lua-similarity-20261003",
+  "checker_repository": "https://github.com/FanZeros/tempGame",
+  "checker_commit": "4c6dd616313fdfcdc3dfbcb6afd2dfd09749c257",
+  "checker_path": "skills/source-similarity/scripts/compare_lua_similarity.py",
+  "checker_sha256": "c7a8ea35bb0cd5fd11e1a732cd4eddf4513ee221eec98552cda22e1d1f0b61c4",
+  "python_version": "3.12.3",
+  "scope": "/workspace/scripts 中全部 .lua 文本文件，原检查器不修改；对比 tempGame 中全部七个游戏镜像。",
+  "executions": [
+    {
+      "game_id": "818989",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/reference-repos/tempGame/skills/source-similarity/scripts/compare_lua_similarity.py",
+        "--game",
+        "/workspace/reference-repos/tempGame/818989",
+        "--scripts",
+        "/workspace/scripts",
+        "--format",
+        "json",
+        "--out",
+        "/workspace/docs/reports/lua-similarity-20261003/818989.json"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 1.37,
+      "stderr": "",
+      "output": "docs/reports/lua-similarity-20261003/818989.json"
+    },
+    {
+      "game_id": "856061",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/reference-repos/tempGame/skills/source-similarity/scripts/compare_lua_similarity.py",
+        "--game",
+        "/workspace/reference-repos/tempGame/856061",
+        "--scripts",
+        "/workspace/scripts",
+        "--format",
+        "json",
+        "--out",
+        "/workspace/docs/reports/lua-similarity-20261003/856061.json"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 2.03,
+      "stderr": "",
+      "output": "docs/reports/lua-similarity-20261003/856061.json"
+    },
+    {
+      "game_id": "874832",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/reference-repos/tempGame/skills/source-similarity/scripts/compare_lua_similarity.py",
+        "--game",
+        "/workspace/reference-repos/tempGame/874832",
+        "--scripts",
+        "/workspace/scripts",
+        "--format",
+        "json",
+        "--out",
+        "/workspace/docs/reports/lua-similarity-20261003/874832.json"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.7,
+      "stderr": "",
+      "output": "docs/reports/lua-similarity-20261003/874832.json"
+    },
+    {
+      "game_id": "877169",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/reference-repos/tempGame/skills/source-similarity/scripts/compare_lua_similarity.py",
+        "--game",
+        "/workspace/reference-repos/tempGame/877169",
+        "--scripts",
+        "/workspace/scripts",
+        "--format",
+        "json",
+        "--out",
+        "/workspace/docs/reports/lua-similarity-20261003/877169.json"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.78,
+      "stderr": "",
+      "output": "docs/reports/lua-similarity-20261003/877169.json"
+    },
+    {
+      "game_id": "881958",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/reference-repos/tempGame/skills/source-similarity/scripts/compare_lua_similarity.py",
+        "--game",
+        "/workspace/reference-repos/tempGame/881958",
+        "--scripts",
+        "/workspace/scripts",
+        "--format",
+        "json",
+        "--out",
+        "/workspace/docs/reports/lua-similarity-20261003/881958.json"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.65,
+      "stderr": "",
+      "output": "docs/reports/lua-similarity-20261003/881958.json"
+    },
+    {
+      "game_id": "908468",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/reference-repos/tempGame/skills/source-similarity/scripts/compare_lua_similarity.py",
+        "--game",
+        "/workspace/reference-repos/tempGame/908468",
+        "--scripts",
+        "/workspace/scripts",
+        "--format",
+        "json",
+        "--out",
+        "/workspace/docs/reports/lua-similarity-20261003/908468.json"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.71,
+      "stderr": "",
+      "output": "docs/reports/lua-similarity-20261003/908468.json"
+    },
+    {
+      "game_id": "917648",
+      "command": [
+        "/usr/bin/python3",
+        "/workspace/reference-repos/tempGame/skills/source-similarity/scripts/compare_lua_similarity.py",
+        "--game",
+        "/workspace/reference-repos/tempGame/917648",
+        "--scripts",
+        "/workspace/scripts",
+        "--format",
+        "json",
+        "--out",
+        "/workspace/docs/reports/lua-similarity-20261003/917648.json"
+      ],
+      "exit_code": 0,
+      "elapsed_seconds": 0.72,
+      "stderr": "",
+      "output": "docs/reports/lua-similarity-20261003/917648.json"
+    }
+  ]
+}

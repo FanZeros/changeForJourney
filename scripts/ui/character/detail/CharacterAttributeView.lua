@@ -5,7 +5,7 @@ local M = {}
 
 M.STYLE = {
     boxW = 440, rowH = 78, rowStep = 88, radius = 20,
-    deltaOffset = 44,
+    deltaOffset = 37,
     boxCX = 310, decoX = 137, decoSize = 20, nameX = 167, valueX = 510,
     fontSize = 35, minFontSize = 22, nameValueGap = 15,
     nameColor = { 0xE8, 0xDC, 0xC8, 255 }, valueColor = { 255, 255, 255, 255 },

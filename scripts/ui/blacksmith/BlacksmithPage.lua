@@ -405,7 +405,7 @@ local function drawWorkbenchSlot(vg)
         local enhLv = EquipmentSystem.getAscendLevel(equip) or 0
         if enhLv > 0 then
             local lvX = slotCX + slotSize * 0.5 - 8
-            local lvY = slotCY - slotSize * 0.5 + 8
+            local lvY = slotCY - slotSize * 0.5 - 4
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 36)
             nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)

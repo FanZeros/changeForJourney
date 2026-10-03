@@ -219,7 +219,7 @@ function M.bind(deps)
                 if equip.enhanceLevel and equip.enhanceLevel > 0 then
                     local enhText = "+" .. equip.enhanceLevel
                     local enhX = cx + GRID.CELL_SIZE * 0.5 - 8
-                    local enhY = cy - GRID.CELL_SIZE * 0.5 + 8
+                    local enhY = cy - GRID.CELL_SIZE * 0.5 - 4
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, 36)
                     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)

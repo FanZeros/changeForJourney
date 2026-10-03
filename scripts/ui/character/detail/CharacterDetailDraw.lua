@@ -856,7 +856,7 @@ function M.draw(vg)
             if slotEnhLv > 0 then
                 local enhText = "+" .. slotEnhLv
                 local enhX = scx + DT_SLOT_SIZE * 0.5 - 8
-                local enhY = scy - DT_SLOT_SIZE * 0.5 + 8
+                local enhY = scy - DT_SLOT_SIZE * 0.5 - 4
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 36)
                 nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)

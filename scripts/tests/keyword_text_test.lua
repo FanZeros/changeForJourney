@@ -20,7 +20,7 @@ local function check(cond, msg)
     end
 end
 
-function Start()
+local function runTests()
     local KW = require("config.KeywordConfig")
     local KeywordText = require("ui.widget.KeywordText")
 
@@ -142,9 +142,61 @@ function Start()
     -- 变换生效性：偏移出热区容差的屏幕坐标应不命中
     check(not kt4:handleInput(screenX + 200, screenY), "热区外屏幕坐标不命中")
 
+    -- ── 星图属性：长词优先，不把「物理暴击伤害」拆成「暴击伤害」──
+    check(KW.get("物理暴击伤害") ~= nil, "词表包含「物理暴击伤害」")
+    check(KW.get("护盾伤害减免") ~= nil and KW.get("护盾伤害减免").title == "护盾减伤",
+        "护盾关键词保留原key并使用短标题")
+    local shortShield = KeywordText.new()
+    shortShield:draw(nil, "全体护盾减伤+12%", 0, 0, 900, 30)
+    check(#shortShield.hotspots == 1 and shortShield.hotspots[1].name == "护盾伤害减免",
+        "新护盾减伤短名命中原关键词而不拆为护盾")
+    local shortSpot = shortShield.hotspots[1]
+    check(shortShield:handleInput(shortSpot.x1 + 1, shortSpot.y1 + 1)
+        and shortShield.popup.key == "护盾伤害减免", "短名点击仍打开原关键词机制")
+    local kt5 = KeywordText.new()
+    kt5:draw(nil, "全体物理暴击伤害+32%，暴击伤害+20%，护盾伤害减免+6%", 0, 0, 900, 30)
+    local nPhys, nCrit, nShield = 0, 0, 0
+    for _, spot in ipairs(kt5.hotspots) do
+        if spot.name == "物理暴击伤害" then nPhys = nPhys + 1 end
+        if spot.name == "暴击伤害" then nCrit = nCrit + 1 end
+        if spot.name == "护盾伤害减免" then nShield = nShield + 1 end
+    end
+    check(nPhys == 1 and nCrit == 1 and nShield == 1,
+        "星图长词各命中 1 次（物理暴击伤害=" .. nPhys .. " 暴击伤害=" .. nCrit .. " 护盾伤害减免=" .. nShield .. "）")
+
+    -- 同一实例连续 draw：默认清热区；keepHotspots 追加
+    local kt6 = KeywordText.new()
+    kt6:draw(nil, "连击概率+8%", 0, 0, 400, 30)
+    kt6:draw(nil, "攻击速度+10%", 0, 40, 400, 30)
+    check(#kt6.hotspots == 1, "第二次 draw 默认替换热区（实际 " .. #kt6.hotspots .. "）")
+    kt6:draw(nil, "连击概率+8%", 0, 0, 400, 30)
+    kt6:draw(nil, "攻击速度+10%", 0, 40, 400, 30, nil, nil, true)
+    check(#kt6.hotspots == 2, "keepHotspots 追加第二段热区（实际 " .. #kt6.hotspots .. "）")
+    local tail = kt6.hotspots[2]
+    kt6:setHover(tail.x1 + 1, tail.y1 + 1)
+    check(kt6:handleInput(tail.x1 + 1, tail.y1 + 1), "追加段关键词可以点击")
+    kt6:draw(nil, "连击概率+8%", 0, 0, 400, 30)
+    kt6:draw(nil, "攻击速度+10%", 0, 40, 400, 30, nil, nil, true)
+    kt6:drawPopup(nil)
+    check(kt6:isOpen() and kt6.popup.key == "攻击速度", "下一帧多段绘制保留原关键词弹窗")
+    check(kt6.hoverIdx == 2 and #kt6.hotspots == 2, "下一帧追加段悬停与热区不丢失")
+    kt6:draw(nil, "连击概率+8%", 0, 0, 400, 30)
+    kt6:drawPopup(nil)
+    check(not kt6:isOpen() and #kt6.hotspots == 1, "移除尾段后清理旧弹窗与热区")
+    local first = kt6.hotspots[1]
+    kt6:handleInput(first.x1 + 1, first.y1 + 1)
+    kt6:draw(nil, "连击概率+9%", 0, 0, 400, 30)
+    check(not kt6:isOpen(), "同一段内容改变时清理旧弹窗")
+
     if #failures == 0 then
         print("KEYWORD TESTS: ALL PASS (" .. "ok" .. ")")
     else
         print("KEYWORD TESTS: " .. #failures .. " FAILURES")
     end
+end
+
+function Start()
+    local ok, err = pcall(runTests)
+    if not ok then log:Write(LOG_ERROR, "[keyword_text_test] " .. tostring(err)) end
+    engine:Exit()
 end

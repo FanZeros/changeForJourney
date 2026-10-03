@@ -4,15 +4,25 @@ local AD = require("systems.AttributeDef")
 local M = {}
 
 M.STYLE = {
-    boxW = 440, rowH = 60, rowStep = 69, radius = 20,
+    boxW = 440, rowH = 78, rowStep = 88, radius = 20,
+    deltaOffset = 44,
     boxCX = 310, decoX = 137, decoSize = 20, nameX = 167, valueX = 510,
     fontSize = 35, minFontSize = 22, nameValueGap = 15,
     nameColor = { 0xE8, 0xDC, 0xC8, 255 }, valueColor = { 255, 255, 255, 255 },
     rowColor = { 0, 0, 0, 26 }, stroke = 4,
     green = { 115, 218, 135, 255 }, red = { 235, 110, 100, 255 },
 }
-M.ATTRIBUTE_LAYOUT = { x = 40, y = 1264, w = 500, h = 552, firstY = 1294 }
+-- 两页共用78高/88行距，属性页保留独立大字号与列宽，配装保留差值区。
+---@type table<string, any>
+M.ATTRIBUTE_STYLE = {}
+for key, value in pairs(M.STYLE) do M.ATTRIBUTE_STYLE[key] = value end
+M.ATTRIBUTE_STYLE.rowH, M.ATTRIBUTE_STYLE.rowStep = 78, 88
+M.ATTRIBUTE_STYLE.fontSize = 40
+M.ATTRIBUTE_STYLE.boxW, M.ATTRIBUTE_STYLE.boxCX = 460, 300
+M.ATTRIBUTE_STYLE.decoX, M.ATTRIBUTE_STYLE.nameX, M.ATTRIBUTE_STYLE.valueX = 120, 150, 520
+M.ATTRIBUTE_LAYOUT = { x = 40, y = 1070, w = 500, h = 874, firstY = 1109 }
 M.RADAR = { r = 175, labelR = 230 }
+M.ATTRIBUTE_RADAR = { cx = 800, cy = 1507, r = 195, labelR = 238 }
 M.BACKGROUND = { w = 1080, h = 1579, originalTop = 821 }
 M.DIVIDER = { cx = 540, w = 1010, h = 37 }
 local images = { background = -1, divider = -1, deco = -1 }
@@ -79,12 +89,11 @@ local function deltaLabel(row)
     return tostring(label), beneficial and M.STYLE.green or M.STYLE.red
 end
 
---- 共用60px行/69px步长、名称左数值右、底色/装饰/字体/描边和可见行命中。
---- 差值叠加在数值上方；名称、当前值、字号和原有行高均保持不变。
+--- 共用绘制/测量/命中逻辑，属性页可传独立大字号风格；配装差值不改原基线。
 function M.drawAttributeRows(vg, rows, scroll, layout, options)
-    local style = M.STYLE
-    local rect = layout or M.ATTRIBUTE_LAYOUT
     local opts = options or {}
+    local style = opts.style or M.STYLE
+    local rect = layout or M.ATTRIBUTE_LAYOUT
     local firstY = rect.firstY or (rect.y + style.rowH * 0.5)
     local bottom = firstY + math.max(0, #rows - 1) * style.rowStep + style.rowH * 0.5
     local maxScroll = math.max(0, bottom - rect.y - rect.h)
@@ -111,9 +120,16 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
             local name = tostring(row.name or row.key or "")
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, style.fontSize)
-            local nameW = nvgTextBounds(vg, 0, 0, name)
+            local nameW = nvgTextBounds(vg, 0, 0, name) or 0
             nvgFontSize(vg, valueFont)
-            local valW = nvgTextBounds(vg, 0, 0, value)
+            local valW = nvgTextBounds(vg, 0, 0, value) or 0
+            -- 大字号下仍给名称留空间；极长数值先缩放，避免数值压住属性名。
+            local nameMinW = math.min(nameW, utf8.len(name) * style.minFontSize)
+            local maxValueW = math.max(40, style.valueX - style.nameX - nameMinW - style.nameValueGap)
+            if valW > maxValueW then
+                valueFont = valueFont * maxValueW / valW
+                valW = maxValueW
+            end
             nvgFontSize(vg, style.fontSize)
             local maxNameW = style.valueX - style.nameX - valW - style.nameValueGap
             if maxNameW > 0 and nameW > maxNameW then
@@ -128,7 +144,7 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
             DrawUtil.drawTextStroke(vg, style.valueX, baseline, value, valueFont,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, vc[1], vc[2], vc[3], style.stroke)
             if delta ~= "" then
-                changes[#changes + 1] = { y = cy - 35, text = delta, color = deltaColor }
+                changes[#changes + 1] = { y = cy - style.deltaOffset, text = delta, color = deltaColor }
             end
             ---@type table
             local meta = AD.META[row.key]
@@ -156,7 +172,7 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
     return maxScroll, hits
 end
 
--- 与绘图返回的可见片段共用命中，9px行距没有幽灵说明热区。
+-- 与绘图返回的可见片段共用命中，行间留白没有幽灵说明热区。
 function M.rowAt(hits, x, y)
     for _, hit in ipairs(hits or {}) do
         if x >= hit.x and x <= hit.x + hit.w and y >= hit.y and y < hit.y + hit.h then

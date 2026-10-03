@@ -467,6 +467,9 @@ function Start()
                 and close(shield.currentValue, worn.current.attrs:getUncapped(AD.ES_DMG_REDUCE)
                     - added.current.attrs:getUncapped(AD.ES_DMG_REDUCE)),
                 "护盾减伤净贡献取uncapped来源90，不误取封顶有效值80")
+            check(shield and shield.name == "护盾减伤" and AD.ES_DMG_REDUCE == "esDmgReduce"
+                and AD.META[AD.ES_DMG_REDUCE].cap == 80 and AD.META[AD.ES_DMG_REDUCE].default == 0,
+                "护盾减伤短名用于真实配装净贡献，属性key/上限/默认值不变")
             check(shield and shield.value == "+90.0%" and shield.value:find("(", 1, true) == nil,
                 "封顶护盾减伤净值显示+90.0%，不附绝对值溢出(+10%)")
             local increased = Preview.build(1, 70, 3, nil, tiny).equipmentBonuses

@@ -21,6 +21,7 @@ function M.bind(deps)
     local clearedPages = {}
     local serial = 0
     local manualHeld, autoSession, suppressed = false, false, false
+    local tutorialPrepared = false
     ---@type table|nil
     local manualView = nil
     ---@type string|nil
@@ -96,6 +97,7 @@ function M.bind(deps)
         local slots = equipped and (equipped[heroId] or equipped[tostring(heroId)])
         if slots and slots[slot] ~= nil and tostring(slots[slot]) == tostring(equip.seq) then
             toast("已装备")
+            require("systems.TutorialManager").notifyEvent("equipment_equipped")
             return true -- 快捷穿戴永远不是卸装/切换按钮。
         end
         if not slot then toast("参数缺失"); return false end
@@ -132,6 +134,7 @@ function M.bind(deps)
                 if detail and detail.markPowerDirty then detail.markPowerDirty() end
             end
             toast("已装备")
+            require("systems.TutorialManager").notifyEvent("equipment_equipped")
             if deps.GameSFX then deps.GameSFX.play("install")
             else require("systems.GameSFX").play("install") end
         else
@@ -235,8 +238,57 @@ function M.bind(deps)
         return true
     end
 
+    -- 教程显式恢复与普通 acquire 分离：只有此入口可解除同会话手动关仓抑制。
+    -- 重复 ensure 不重新 open、不重置滚动，也不持续关闭玩家刚钉住的候选。
+    ---@param heroId number|string|nil
+    ---@param slot string|nil
+    ---@return boolean changed
+    function api.ensureTutorialEquipment(heroId, slot)
+        local hero = tonumber(heroId)
+        local normalized = SLOT_NAMES[slot] and slot or nil
+        local changed = not tutorialPrepared or suppressed or not owners.equipment
+            or not state.open or state.closing or deps.getHostMode() ~= "left"
+            or state.tab ~= "equip" or (state.tabFrom ~= nil and state.tabFrom ~= "equip")
+            or filterSlot ~= normalized or filterHero ~= hero
+        if deps.clearTutorialFilters and deps.clearTutorialFilters() then changed = true end
+        if SetFilterDialog.isOpen() or (deps.itemDetState and deps.itemDetState.open) then changed = true end
+        for _, path in ipairs(LEFT_PAGES) do
+            local page = getLeftPage(path, false)
+            if page and page.isOpen and page.isOpen() then changed = true; break end
+        end
+        if not changed then return false end
+
+        if not owners.equipment then
+            if not next(owners) and state.open and not state.closing and manualHeld then
+                manualView = captureView()
+            end
+            serial = serial + 1
+            owners.equipment = { order = serial, heroId = hero, slot = normalized }
+        else
+            owners.equipment.heroId, owners.equipment.slot = hero, normalized
+        end
+        suppressed = false
+        closeOtherLeftPages()
+        if not state.open or state.closing then
+            deps.openPage("left", "equip")
+            autoSession = true
+        elseif deps.getHostMode() ~= "left" and deps.setLeftMode then
+            deps.setLeftMode()
+        end
+        if state.tab ~= "equip" then deps.selectEquipTab() end
+        state.tabFrom, state.tabSwitchTime = "equip", 0
+        SetFilterDialog.close()
+        state.scrollY, state.scrollVel, state.dragging = 0, 0, false
+        if deps.itemDetState then deps.itemDetState.open, deps.itemDetState.def = false, nil end
+        api.clearCandidate(true)
+        applyFilter(normalized, hero)
+        tutorialPrepared = true
+        return true
+    end
+
     function api.releaseWarehouse(owner)
         api.clearQuickClick()
+        if owner == "equipment" then tutorialPrepared = false end
         if not owners[owner] then return end
         owners[owner] = nil
         local nextHolder = latestOwner()

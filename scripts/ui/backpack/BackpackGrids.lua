@@ -41,6 +41,10 @@ function M.bind(deps)
     local calcScrollMax = deps.calcScrollMax
     local clampScroll = deps.clampScroll
     local getEquipmentSlotFilter = deps.getEquipmentSlotFilter or function() return nil, nil end
+    local function isLeftMode()
+        if deps.isLeftMode then return deps.isLeftMode() end
+        return require("ui.backpack.BackpackPanel").isLeftMode()
+    end
 
     local function filterContext()
         local slotFilter, filterHeroId = getEquipmentSlotFilter()
@@ -140,6 +144,11 @@ function M.bind(deps)
         local totalSlots = math.max(#equipList, 35)
         state.scrollMax = calcScrollMax(totalSlots)
         clampScroll()
+        local tutorial = require("systems.TutorialManager")
+        local slotFilter, filterHeroId = getEquipmentSlotFilter()
+        local canGuideWeapon = tutorial.isActive() and slotFilter == "weapon"
+            and filterHeroId ~= nil and not state.closing and isLeftMode()
+        local guidedWeapon = false
 
         nvgSave(vg)
         nvgScissor(vg, 0, clipTop(), DESIGN_W, clipH())
@@ -152,13 +161,6 @@ function M.bind(deps)
             local cy = GRID.FIRST_ROW_TOP + row * (GRID.CELL_SIZE + GRID.GAP) + GRID.CELL_SIZE * 0.5
 
             local screenY = cy - state.scrollY
-
-            if idx == 1 then
-                local _TM = require("systems.TutorialManager")
-                if _TM.isActive() then
-                    _TM.registerHotspot("equip_item_gifted", cx, screenY, GRID.CELL_SIZE, GRID.CELL_SIZE, "right")
-                end
-            end
 
             if screenY < clipTop() - GRID.CELL_SIZE then
                 goto continue_equip
@@ -174,6 +176,15 @@ function M.bind(deps)
 
             local equip = equipList[idx]
             if equip then
+                -- 教程只指向真实可穿武器；首个完整可见格优先，热点不伸出裁剪区。
+                local halfCell = GRID.CELL_SIZE * 0.5
+                if canGuideWeapon and not guidedWeapon and equip.slot == "weapon" and equip.canWear == true
+                    and screenY - halfCell >= clipTop() and screenY + halfCell <= GRID.CLIP_BOTTOM
+                    and cx - halfCell >= 0 and cx + halfCell <= DESIGN_W then
+                    tutorial.registerHotspot("equip_item_gifted", cx, screenY,
+                        GRID.CELL_SIZE, GRID.CELL_SIZE, "left")
+                    guidedWeapon = true
+                end
                 DarkIcon.drawQualityBg(vg, equip.quality, cx, cy, GRID.CELL_SIZE, GRID.CELL_SIZE, 1.0)
 
                 local icon = ImageCache.getEquipIcon(equip.templateId)

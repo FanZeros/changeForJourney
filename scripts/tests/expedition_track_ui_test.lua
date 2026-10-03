@@ -60,6 +60,11 @@ local function runTests()
                 draws[#draws + 1] = { root = root, x = transform.x, y = transform.y, w = w, h = h }
             end,
         },
+        ["core.I18n"] = {
+            lookup = function(value) return value end,
+            format = function(value, ...) return string.format(value, ...) end,
+            difficulty = function(value) return value end,
+        },
         ["core.DrawUtil"] = {
             drawTextStroke = function(_, _, _, value) texts[#texts + 1] = value end,
             seamSlideX = function() return 0 end, drawImageCentered = noop,
@@ -101,7 +106,8 @@ local function runTests()
     replaceGlobal("require", isolatedRequire)
     replaceGlobal("time", { elapsedTime = 100 })
     for _, name in ipairs({ "nvgBeginPath", "nvgRoundedRect", "nvgRect", "nvgFillColor",
-        "nvgFill", "nvgGlobalAlpha" }) do replaceGlobal(name, noop) end
+        "nvgFill", "nvgGlobalAlpha", "nvgFontFace", "nvgFontSize" }) do replaceGlobal(name, noop) end
+    replaceGlobal("nvgTextBounds", function(_, _, _, value) return #value * 5 end)
     replaceGlobal("nvgSave", function() stack[#stack + 1] = { x = transform.x, y = transform.y } end)
     replaceGlobal("nvgRestore", function() transform = table.remove(stack) or { x = 0, y = 0 } end)
     replaceGlobal("nvgTranslate", function(_, x, y) transform.x = transform.x + x transform.y = transform.y + y end)

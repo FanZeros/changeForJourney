@@ -10,6 +10,9 @@ local TalentStarMap = require("ui.church.talent.TalentStarMap")
 local TalentEffect  = require("systems.TalentEffect")
 local BF            = require("systems.ButtonFeedback")
 local DarkIcon      = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
+local KeywordText   = require("ui.widget.KeywordText")
+local I18n          = require("core.I18n")
+local TalentText    = require("core.I18nTalentText")
 
 -- 天赋系颜色 → 暗黑语义 accent（配合 DarkIcon.drawNine "plain" 样式）
 local TF_ACCENT = { ["红"] = "red", ["绿"] = "green", ["黄"] = "gold", ["蓝"] = "blue", ["紫"] = "purple" }
@@ -23,6 +26,10 @@ local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
 local DESIGN_H = GameConfig.Design.HEIGHT  -- 2400
 
 local M = {}
+
+-- 详情效果与总览长句共用：金色下划线可点，解释气泡在弹窗缩放外绘制
+M.detailKw = KeywordText.new({ textColor = { 0x72, 0x58, 0x50 } })
+M.overviewKw = KeywordText.new({ textColor = { 0x72, 0x58, 0x50 } })
 
 -- ======================== 天赋面板布局常量 ========================
 
@@ -183,6 +190,7 @@ end
 
 --- 打开天赋详情面板
 local function openDetail(nodeId)
+    M.detailKw:clear()
     state.tfDetailOpen = true
     state.tfDetailNodeId = nodeId
     state.tfDetailClosing = false
@@ -194,20 +202,47 @@ end
 local function closeDetail()
     if not state.tfDetailOpen then return end
     if state.tfDetailClosing then return end  -- 已在关闭中
+    M.detailKw:clear()
     state.tfDetailClosing = true
     state.tfDetailAnimT = time.elapsedTime
     print("[ChurchTalentPanel] 关闭天赋详情（动画）")
 end
 
---- 重建效果总览展示行
-local function rebuildOverviewLines()
-    local talentsData = getDispatcher().get("talents")
-    local litNodes = (talentsData and talentsData.litNodes) or { 0 }
+-- 根据最终译文测量文字框，缩小字号而不截断机制、数值或改变交互区域。
+---@param vg any
+---@param text string
+---@param width number
+---@param height number
+---@return number
+function M.fitDetailFont(vg, text, width, height)
+    local font = TFD.infoFont
+    while font > 22 do
+        local measured = M.detailKw:measureHeight(vg, text, width, font)
+        if measured <= height then return font end
+        font = font - 1
+    end
+    return font
+end
+
+-- 显示边界只返回译文，不改变供 TalentEffect / DarkIcon 使用的源节点。
+---@param node table
+---@return table {name=string,effect=string}
+function M.getDetailDisplay(node)
+    return {
+        name = I18n.lookup(node.name or "未知"),
+        effect = I18n.lookup(node.effect or "暂无描述"),
+    }
+end
+
+-- 总览先在业务层解析中文原文，再分别翻译名称、职业、属性和机制；不能翻整条拼接串。
+---@param litNodes table
+---@return table[]
+function M.buildOverviewDisplay(litNodes)
     local overview = TalentEffect.buildOverview(litNodes)
     local lines = {}
 
     local function pushHeader(text)
-        lines[#lines + 1] = { kind = "header", text = text }
+        lines[#lines + 1] = { kind = "header", text = I18n.lookup(text) }
     end
     local function pushText(text, muted)
         lines[#lines + 1] = { kind = "text", text = text, muted = muted or false }
@@ -218,36 +253,46 @@ local function rebuildOverviewLines()
 
     local hasAny = (#overview.stats > 0) or (#overview.classBonuses > 0) or (#overview.specials > 0)
     if not hasAny then
-        pushText("暂无已点亮天赋效果", true)
-        state.tfOverviewLines = lines
-        return
+        pushText(I18n.lookup("暂无已点亮天赋效果"), true)
+        return lines
     end
 
     if #overview.stats > 0 then
         pushHeader("属性加成")
         for _, row in ipairs(overview.stats) do
-            pushStat(row.label, row.text)
+            local label = TalentText.label(row.label, I18n.get()) or I18n.lookup(row.label)
+            pushStat(label, row.text)
         end
     end
 
     if #overview.classBonuses > 0 then
         pushHeader("职业专属")
         for _, row in ipairs(overview.classBonuses) do
-            pushStat("[" .. row.className .. "]", row.text)
+            local bonus = TalentText.stat(row.text, I18n.get()) or I18n.lookup(row.text)
+            pushStat("[" .. I18n.lookup(row.className) .. "]", bonus)
         end
     end
 
     if #overview.specials > 0 then
         pushHeader("特殊效果")
         for _, row in ipairs(overview.specials) do
-            pushText("· " .. row.name .. "：" .. row.text)
+            pushText(I18n.format("· %s：%s", I18n.lookup(row.name), I18n.lookup(row.text)))
         end
     end
+    return lines
+end
 
-    state.tfOverviewLines = lines
+--- 重建效果总览展示行；缓存语言同时失效测量，切语后不会继续显示旧文本或旧滚动高度。
+local function rebuildOverviewLines()
+    local talentsData = getDispatcher().get("talents")
+    local litNodes = (talentsData and talentsData.litNodes) or { 0 }
+    state.tfOverviewLines = M.buildOverviewDisplay(litNodes)
+    state.tfOverviewLang = I18n.get()
+    state.tfOverviewMeasuredH = nil
 end
 
 local function openOverview()
+    M.overviewKw:clear()
     rebuildOverviewLines()
     state.tfOverviewOpen = true
     state.tfOverviewClosing = false
@@ -260,6 +305,7 @@ end
 local function closeOverview()
     if not state.tfOverviewOpen then return end
     if state.tfOverviewClosing then return end
+    M.overviewKw:clear()
     state.tfOverviewClosing = true
     state.tfOverviewAnimT = time.elapsedTime
     print("[ChurchTalentPanel] 关闭天赋效果总览（动画）")
@@ -470,9 +516,16 @@ function M.drawDetailPanel(vg)
         TFD.bgW, TFD.bgH,
         { accent = TF_ACCENT[color] or "purple" })
 
-    -- 3. 天赋名（白色 + 描边 #282828）
-    drawTextStroke(vg, TFD.nameCX, TFD.nameCY, node.name or "未知",
-        TFD.nameFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+    local display = M.getDetailDisplay(node)
+    -- 3. 天赋名（白色 + 描边 #282828）；按最终译文宽度缩字，源名仍是图标键。
+    nvgFontFace(vg, "sans")
+    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    nvgFontSize(vg, TFD.nameFont)
+    local nameW = nvgTextBounds(vg, 0, 0, display.name)
+    local nameFont = TFD.nameFont
+    if nameW > TFD.bgW - 90 then nameFont = TFD.nameFont * (TFD.bgW - 90) / nameW end
+    drawTextStroke(vg, TFD.nameCX, TFD.nameCY, display.name,
+        nameFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, TFD.nameStroke,
         { strokeColor = { 0x28, 0x28, 0x28 } })
 
@@ -488,18 +541,26 @@ function M.drawDetailPanel(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 13))  -- 5% ≈ 13/255
     nvgFill(vg)
 
-    -- 6. 信息文本（左居上，内边距35）
-    local infoText = node.effect or "暂无描述"
+    -- 6. 最终译文按关键词排版测量，保留可点击机制说明。
+    local infoText = display.effect
     local textBoxX = TFD.infoBgCX - TFD.infoBgW * 0.5 + TFD.infopad
     local textBoxY = TFD.infoBgCY - TFD.infoBgH * 0.5 + TFD.infopad
     local textBoxW = TFD.infoBgW - TFD.infopad * 2
 
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, TFD.infoFont)
-    nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
-    nvgFillColor(vg, nvgRGBA(TFD.infoR, TFD.infoG, TFD.infoB, 255))
-    -- 使用 textBox 自动换行
-    nvgTextBox(vg, textBoxX, textBoxY, textBoxW, infoText, nil)
+    local kt = M.detailKw
+    local popScale = scale
+    kt:setTransform(function(sx, sy)
+        local lx = (sx - TFD.bgCX) / popScale + TFD.bgCX
+        local ly = (sy - TFD.bgCY) / popScale + TFD.bgCY
+        return lx, ly
+    end)
+    kt:setPopupTransform(function(lx, ly)
+        local sx = (lx - TFD.bgCX) * popScale + TFD.bgCX
+        local sy = (ly - TFD.bgCY) * popScale + TFD.bgCY
+        return sx, sy
+    end)
+    local infoFont = M.fitDetailFont(vg, infoText, textBoxW, TFD.infoBgH - TFD.infopad * 2)
+    kt:draw(vg, infoText, textBoxX, textBoxY, textBoxW, infoFont)
 
     -- 7. 按钮：末尾已点亮节点显示红色"重置"，未点亮节点显示绿色"激活"
     local isLit = TalentStarMap.isNodeLit(state.tfDetailNodeId)
@@ -529,11 +590,15 @@ function M.drawDetailPanel(vg)
     BF.finish(vg, _bf2)
 
     nvgRestore(vg)  -- 恢复缩放变换
+
+    -- 解释气泡在缩放外绘制，避免被详情面板缩小
+    M.detailKw:drawPopup(vg)
 end
 
 --- 绘制天赋效果总览弹窗
 function M.drawOverviewPanel(vg)
     if not state.tfOverviewOpen then return end
+    if state.tfOverviewLang ~= I18n.get() then rebuildOverviewLines() end
 
     local elapsed = time.elapsedTime - state.tfOverviewAnimT
     local rawT = math.min(1.0, elapsed / POPUP_ANIM_DUR)
@@ -586,7 +651,21 @@ function M.drawOverviewPanel(vg)
     nvgIntersectScissor(vg, listLeft, listTop, TOV.listW, TOV.listH)
     nvgTranslate(vg, 0, -state.tfOverviewScrollY)
 
+    local okt = M.overviewKw
+    local popScale = scale
+    local scrollY = state.tfOverviewScrollY or 0
+    okt:setTransform(function(sx, sy)
+        local lx = (sx - TOV.bgCX) / popScale + TOV.bgCX
+        local ly = (sy - TOV.bgCY) / popScale + TOV.bgCY
+        return lx, ly + scrollY
+    end)
+    okt:setPopupTransform(function(lx, ly)
+        local sx = (lx - TOV.bgCX) * popScale + TOV.bgCX
+        local sy = (ly - scrollY - TOV.bgCY) * popScale + TOV.bgCY
+        return sx, sy
+    end)
     local y = listTop
+    local overviewFirstText = true
     for _, line in ipairs(state.tfOverviewLines or {}) do
         if line.kind == "header" then
             -- 分类标题
@@ -617,28 +696,27 @@ function M.drawOverviewPanel(vg)
                 255, 255, 255, 4)
             y = y + rowH + 6
         else
-            -- 普通文本行（特殊效果等长文本，自动换行）
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, TOV.textFont)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+            -- 普通文本行（特殊效果等长文本；机制词可点）
             if line.muted then
-                nvgFillColor(vg, nvgRGBA(TOV.textR, TOV.textG, TOV.textB, 160))
+                okt.textColor = { TOV.textR, TOV.textG, TOV.textB, 160 }
             else
-                nvgFillColor(vg, nvgRGBA(TOV.textR, TOV.textG, TOV.textB, 255))
+                okt.textColor = { TOV.textR, TOV.textG, TOV.textB, 255 }
             end
-            -- 测量实际文本高度（nvgTextBoxBounds 返回 bounds 表 {xmin,ymin,xmax,ymax}，非多返回值）
-            local bounds = nvgTextBoxBounds(vg, contentLeft, y, contentW, line.text, nil)
-            local textH = (bounds and bounds[4] or (y + TOV.lineH)) - y
-            nvgTextBox(vg, contentLeft, y, contentW, line.text, nil)
+            local textH = okt:measureHeight(vg, line.text, contentW, TOV.textFont, TOV.lineH)
+            okt:draw(vg, line.text, contentLeft, y, contentW, TOV.textFont, TOV.lineH, nil, not overviewFirstText)
+            overviewFirstText = false
             y = y + math.max(TOV.lineH, textH) + 10
         end
     end
 
+    if overviewFirstText then okt:clear() end
     -- 缓存实际内容高度（供滚动 clamp 使用）
     state.tfOverviewMeasuredH = y - listTop
 
     nvgRestore(vg)
     nvgRestore(vg)
+
+    M.overviewKw:drawPopup(vg)
 end
 
 -- ======================== 输入处理 ========================
@@ -648,6 +726,15 @@ end
 function M.handleOverviewInput(dx, dy)
     if not state.tfOverviewOpen then return false end
     if state.tfOverviewClosing then return true end
+
+    local okt = M.overviewKw
+    if okt:isOpen() then
+        okt:closePopup()
+        return true
+    end
+    if okt:handleInput(dx, dy) then
+        return true
+    end
 
     if time.elapsedTime - state.tfOverviewAnimT < 0.05 then return true end
 
@@ -664,6 +751,16 @@ end
 function M.handleDetailInput(dx, dy)
     if not state.tfDetailOpen then return false end
     if state.tfDetailClosing then return true end  -- 关闭动画中：消费触摸，不响应
+
+    -- 关键词解释优先于激活按钮：开着先关，点到词条则弹解释
+    local kt = M.detailKw
+    if kt:isOpen() then
+        kt:closePopup()
+        return true
+    end
+    if kt:handleInput(dx, dy) then
+        return true
+    end
 
     -- 按钮点击（激活 / 重置）
     if hitTest(dx, dy, TFD.btnCX, TFD.btnCY, TFD.btnW, TFD.btnH) then

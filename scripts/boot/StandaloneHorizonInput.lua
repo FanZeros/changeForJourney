@@ -62,6 +62,10 @@ function Input.bind(ctx)
     local pressStartDX = 0
     local pressStartDY = 0
     local pressValid = false
+    local touchPosition = nil ---@type any
+    local function pointerPosition()
+        return touchPosition or input:GetMousePosition()
+    end
     -- 遗匣按压由左栏捕获；移出左栏后不再把同次拖拽转交右栏/战斗。
     local lootPress = false
 
@@ -111,7 +115,7 @@ function Input.bind(ctx)
 
     -- 事件坐标 -> 面板命中；全局模态返回 ('modal', dx, dy)
     local function HorizonResolveMouse()
-        local mousePos = input:GetMousePosition()
+        local mousePos = pointerPosition()
         local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
         -- 离线收益始终全窗居中，优先于下层面板和装备详情路由。
         if OfflineRewardPanel.isOpen() then
@@ -314,12 +318,24 @@ function Input.bind(ctx)
         return true
     end
 
+    local function tutorialInputActive()
+        return TutorialManager.isActive() and TutorialManager.isInputActive()
+            and not LevelUpPopup.isOpen() and not OfflineRewardPanel.isOpen() and not UpdateNoticePopup.isOpen()
+            and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
+            and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
+            and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive()
+    end
+    local tutorialPress = false
+    local tutorialBlockedPress = false
+    local tutorialStartX, tutorialStartY = 0, 0
+
     function HandleMouseButtonDownHorizon(eventType, eventData)
+        tutorialPress, tutorialBlockedPress = false, false
         if OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then cancelUnderlyingPress() end
         equipmentPressPanel = nil
         detailDismissPress = false  -- [浮选详情修复] 每次按下先复位，防早退路径残留误抑制下次 tap
         if vg() then
-            local mousePos = input:GetMousePosition()
+            local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             if CEPanel.handleDown(sx, sy, logicalH()) then
                 levelPress, levelMoved = false, false
@@ -343,11 +359,26 @@ function Input.bind(ctx)
             return
         end
         local button = eventData["Button"]:GetInt()
+        if tutorialInputActive() then
+            local mp = pointerPosition()
+            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            if button == MOUSEB_LEFT then
+                tutorialPress = true
+                tutorialStartX, tutorialStartY = sx, sy
+                if not TutorialManager.canPointerStart(sx, sy) then
+                    tutorialBlockedPress = true
+                    cancelUnderlyingPress()
+                    return
+                end
+            elseif not TutorialManager.canPointerStart(sx, sy) then
+                return
+            end
+        end
         if OfflineRewardPanel.isOpen() then
             levelPress, levelMoved = false, false
             if offlineTouchId ~= nil then return end
             cancelUnderlyingPress()
-            local mousePos = input:GetMousePosition()
+            local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             OfflineRewardOverlay.handleDown(sx, sy, button)
             return
@@ -361,7 +392,7 @@ function Input.bind(ctx)
         end
         if button == MOUSEB_LEFT then
             detailDismissPress = false
-            local mousePos = input:GetMousePosition()
+            local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             local dx, dy, ED = equipOverlayDesign(sx, sy)
             if dx then
@@ -497,7 +528,7 @@ function Input.bind(ctx)
                 return
             end
             if BackpackPanel.isOpen() and BackpackPanel.isLeftMode() then
-                local mousePos = input:GetMousePosition()
+                local mousePos = pointerPosition()
                 local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
                 local peek = BackpackPanel.peekEquipAt(dx, dy)
                 if peek then
@@ -520,7 +551,7 @@ function Input.bind(ctx)
             -- [0930] 配装页装备（含角色六装备槽已装备）可跨栏拖到锻炉工作台/换槽
             local CharacterDetail = require("ui.character.detail.CharacterDetail")
             if CharacterDetail.isOpen() and CharacterDetail.isEquipTab and CharacterDetail.isEquipTab() then
-                local mousePos = input:GetMousePosition()
+                local mousePos = pointerPosition()
                 local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
                 local EquipPanel = require("ui.character.detail.CharacterDetailEquip")
                 local peek = EquipPanel.peekSlotEquipAt(dx, dy) or EquipPanel.peekItemAt(dx, dy)
@@ -541,7 +572,7 @@ function Input.bind(ctx)
             levelPress, levelMoved = false, false
             if offlineTouchId ~= nil then return end
             cancelUnderlyingPress()
-            local mousePos = input:GetMousePosition()
+            local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             OfflineRewardOverlay.handleMove(sx, sy)
             return
@@ -564,7 +595,7 @@ function Input.bind(ctx)
             return
         end
         if EquipCrossDrag.isArmed() then
-            local mousePos = input:GetMousePosition()
+            local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             if EquipCrossDrag.move(sx, sy) then
                 return
@@ -611,7 +642,7 @@ function Input.bind(ctx)
             return
         end
         if equipOverlayPress then
-            local mousePos = input:GetMousePosition()
+            local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             local odx, ody, ED = equipOverlayDesign(sx, sy)
             if odx and ED then ED.handleDragMove(odx, ody) end
@@ -619,7 +650,7 @@ function Input.bind(ctx)
         end
         if not pressValid then
             -- 鼠标进浮选详情后保持候选，不让来源仓库的离开事件立即关闭它。
-            local mp = input:GetMousePosition()
+            local mp = pointerPosition()
             local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
             if equipOverlayDesign(sx, sy) then return end
             if SweepDialog.isOpen() and pid == 'tri' then
@@ -687,7 +718,7 @@ function Input.bind(ctx)
         if DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
             or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
             or EquipCrossDrag.isArmed() then return end
-        local mp = input:GetMousePosition()
+        local mp = pointerPosition()
         local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
         if equipOverlayDesign(sx, sy) then return end
         local pid, dx, dy = HorizonResolveMouse()
@@ -715,6 +746,22 @@ function Input.bind(ctx)
     end
 
     function HandleMouseButtonUpHorizon(eventType, eventData)
+        if tutorialPress then
+            tutorialPress = false
+            local mp = pointerPosition()
+            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local moved = math.abs(sx - tutorialStartX) + math.abs(sy - tutorialStartY)
+            if eventData["Button"]:GetInt() == MOUSEB_LEFT and moved < TAP_THRESHOLD
+                and tutorialInputActive() and TutorialManager.handleScreenClick(sx, sy, tutorialBlockedPress) then
+                cancelUnderlyingPress()
+                return
+            end
+            if tutorialBlockedPress then
+                tutorialBlockedPress = false
+                cancelUnderlyingPress()
+                return
+            end
+        end
         if not OfflineRewardPanel.isOpen() and OfflineRewardOverlay.hasPress() then
             OfflineRewardOverlay.cancel()
             cancelUnderlyingPress()
@@ -728,7 +775,7 @@ function Input.bind(ctx)
             levelPress, levelMoved = false, false
             if offlineTouchId ~= nil then return end
             cancelUnderlyingPress()
-            local mousePos = input:GetMousePosition()
+            local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             if vg() and CEPanel.handleUp(sx, sy, logicalH()) then
                 OfflineRewardOverlay.cancel()
@@ -773,7 +820,7 @@ function Input.bind(ctx)
         end
         if equipOverlayPress then
             equipOverlayPress = false
-            local mousePos = input:GetMousePosition()
+            local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             local dx, dy, ED = equipOverlayDesign(sx, sy)
             local detail = ED or require("ui.character.equip.EquipmentDetail")
@@ -794,7 +841,7 @@ function Input.bind(ctx)
             LootBox.handleDragEnd(0, 0)
             lootPress = false
             if EquipCrossDrag.isArmed() then
-                local mousePos = input:GetMousePosition()
+                local mousePos = pointerPosition()
                 local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
                 local dragged = EquipCrossDrag.finish(sx, sy)
                 if dragged then
@@ -825,7 +872,7 @@ function Input.bind(ctx)
         if not bootReady_() then return end
         -- [DarkTitleScreen] 标题期任意释放 = 点击继续
         if DarkTitleScreen.isOpen() then
-            local mousePos = input:GetMousePosition()
+            local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             if DarkTitleScreen.handleLanguageTap(sx, sy) then
                 return
@@ -841,7 +888,7 @@ function Input.bind(ctx)
             return
         end
         if button ~= MOUSEB_LEFT then return end
-        local mousePos = input:GetMousePosition()
+        local mousePos = pointerPosition()
         local seamX, seamY = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
         local seamBtn = not PlayerInfoPanel.isOpen()
             and not (TowerBattleScene.isActive() and TaskPage.isOpen()) and seamHitAt(seamX, seamY)
@@ -887,7 +934,8 @@ function Input.bind(ctx)
             if isTap and not RewardPopup.isOpen() and not TutorialManager.isActive()
                 and (pid == 'right' or (pid == 'center' and BottomNav.getSelectedIndex() == 1)) then
                 CharacterDetail.handleNavigationTap(dx, dy)
-            elseif isTap and not RewardPopup.isOpen() and not TutorialManager.isActive()
+            elseif isTap and not RewardPopup.isOpen()
+                and (not TutorialManager.isActive() or TutorialManager.getCurrentHighlight() == "equip_item_gifted")
                 and pid == 'left' and BackpackPanel.isOpen() and BackpackPanel.isLeftMode()
                 and BackpackPanel.peekEquipAt(dx, dy) then
                 -- 悬停关闭后的装备格仍走单击/双击时间窗，不重复派发其他按钮。
@@ -957,21 +1005,6 @@ function Input.bind(ctx)
                 ScenarioDialogue.advance()
             end
             return
-        end
-        -- [横屏接线 0928] 新手引导激活时接管 tap：高亮区域推进并穿透，非目标区域/面板吞掉
-        if TutorialManager.isActive() and isTap then
-            local tdx, tdy = dx, dy
-            if pid == 'tri' or pid == 'none' then
-                -- 引导层在 tri 模式下走全窗 letterbox 绘制：把窗口坐标转为 letterbox design 坐标，
-                -- 保证跳过按钮在战斗三栏期间也可点（防卡死）
-                local mp = input:GetMousePosition()
-                local sx2, sy2 = toDesign(mp.x / dpr(), mp.y / dpr())
-                tdx, tdy = playerInfoDesignCoords(sx2, sy2)
-            end
-            if TutorialManager.handleClick(tdx, tdy, pid) then
-                pressValid = false
-                return
-            end
         end
         if wasLootPress and pid ~= 'left' then return end
         if pid == 'none' then return end
@@ -1169,6 +1202,15 @@ function Input.bind(ctx)
         return true
     end
 
+    local activeTouchId = nil ---@type integer|nil
+    local function dispatchTouch(eventType, eventData, handler)
+        touchPosition = { x = eventData["X"]:GetInt(), y = eventData["Y"]:GetInt() }
+        local proxy = { Button = { GetInt = function() return MOUSEB_LEFT end } }
+        local ok, err = pcall(handler, eventType, proxy)
+        touchPosition = nil
+        if not ok then error(err) end
+    end
+
     function HandleTouchBeginHorizon(eventType, eventData)
         if handleTopTouch(eventData, false) then return end
         if levelUpInputActive() then
@@ -1191,7 +1233,9 @@ function Input.bind(ctx)
             end
             return
         end
-        HandleMouseButtonDownHorizon(eventType, eventData)
+        if activeTouchId ~= nil then return end
+        activeTouchId = eventData["TouchID"]:GetInt()
+        dispatchTouch(eventType, eventData, HandleMouseButtonDownHorizon)
     end
 
     function HandleTouchEndHorizon(eventType, eventData)
@@ -1231,7 +1275,9 @@ function Input.bind(ctx)
             end
             return
         end
-        HandleMouseButtonUpHorizon(eventType, eventData)
+        if eventData["TouchID"]:GetInt() ~= activeTouchId then return end
+        activeTouchId = nil
+        dispatchTouch(eventType, eventData, HandleMouseButtonUpHorizon)
     end
 
     function HandleTouchMoveHorizon(eventType, eventData)
@@ -1252,7 +1298,8 @@ function Input.bind(ctx)
             end
             return
         end
-        HandleMouseMoveHorizon(eventType, eventData)
+        if eventData["TouchID"]:GetInt() ~= activeTouchId then return end
+        dispatchTouch(eventType, eventData, HandleMouseMoveHorizon)
     end
 
     function HandleMouseWheelHorizon(eventType, eventData)
@@ -1263,7 +1310,7 @@ function Input.bind(ctx)
         if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
         local wheel = eventData["Wheel"]:GetInt()
         if wheel == 0 then return end
-        local mousePos = input:GetMousePosition()
+        local mousePos = pointerPosition()
         local sx = mousePos.x / dpr()
         local sy = mousePos.y / dpr()
         local csx, csy = toDesign(sx, sy)

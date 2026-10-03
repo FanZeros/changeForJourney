@@ -27,10 +27,12 @@ local SoundToggle       = require("ui.widget.SoundToggle")  -- [音效开关] �
 local EquipmentBag      = require("ui.character.equip.EquipmentBag")
 local StageConfig       = require("config.StageConfig")
 local BattleStats       = require("systems.BattleStats")
+local I18n              = require("core.I18n")
 
+-- 只在显示边界翻译；驱动进度、源关卡名和地图缓存仍使用原始配置。
 local function stageDisplayName(stageId)
     local entry = stageId and StageConfig.getStage(tonumber(stageId))
-    return (entry and entry.name) or tostring(stageId or "?")
+    return I18n.lookup((entry and entry.name) or tostring(stageId or "?"))
 end
 
 local BattleTriPage = {}
@@ -42,8 +44,9 @@ local isOpen_ = false
 local inited = false
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
 local terminalRaid = nil
-local l1Img = {}          -- [row] = nvg image handle
-local l1Chapter = {}      -- [row] = 已加载的地图章 1..23
+local l1Images = {}       -- 同一路径共用句柄，切场景不删除其他行仍在使用的贴图
+local l1Failures = {}     -- 加载失败只提示一次，后续帧仍允许重试
+local l1RowImages = {}    -- 跨章图尚未就绪时保留本行最近成功加载的背景
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local triOnStageClear = nil -- function(teamIdx, clearedStageId)
@@ -138,6 +141,17 @@ end
 
 local function clearTerminalRaid()
     if not terminalRaid then return end
+    -- 共享池打空可能发生在最后一条更新的战线；未命中的 Boss 尚未来得及 tick。
+    -- 必须在解绑共享池/重开驱动前按各线状态分发，奖励仍只走 settleRaidKillRewards。
+    if terminalRaid.hp <= 0 then
+        for row = 1, COL_COUNT do
+            local drv = drivers[row]
+            if drv and drv.terminalRaid == terminalRaid then
+                drv:activate()
+                drv:reportDefeatedEnemies()
+            end
+        end
+    end
     terminalRaid:release()
     for row = 1, COL_COUNT do
         if drivers[row] then drivers[row].terminalRaid = nil end
@@ -280,28 +294,49 @@ local CHAPTER_BG = {
     [23] = "image/战斗背景/烛龙之巢.png",
 }
 
-local function mapChapterOf(stageId)
-    local entry = stageId and StageConfig.getStage(tonumber(stageId) or 0)
+local TERMINAL_BG = "image/战斗背景/终焉神殿.png"
+
+--- 只解析展示资源，不改变关卡或战斗状态。
+---@param stageId number|string|nil
+---@return string
+function BattleTriPage.resolveBackgroundPath(stageId)
+    local id = tonumber(stageId) or 0
+    if StageConfig.isTerminalTemple(id) then return TERMINAL_BG end
+    local entry = StageConfig.getStage(id)
     local chapter = (entry and entry.chapter) or 1
-    return ((chapter - 1) % 23) + 1
+    return CHAPTER_BG[((chapter - 1) % 23) + 1] or CHAPTER_BG[1]
+end
+
+local function getBackgroundImage(vg, path)
+    local cached = l1Images[path]
+    if cached then return cached end
+    local img = nvgCreateImage(vg, path, 0) or -1
+    if img >= 0 then
+        l1Images[path] = img
+        l1Failures[path] = nil
+        print(string.format("[BattleTriPage] 背景加载 -> %s (%d)", path, img))
+    elseif not l1Failures[path] then
+        l1Failures[path] = true
+        print("[BattleTriPage] 背景加载失败 -> " .. path)
+    end
+    return img
 end
 
 local function ensureRowBg(vg, row, unlocked)
     -- 锁定队展示待解锁章节；解锁后按各队实际战斗进度切回背景。
-    local chapter = row > unlocked and ((row == 2) and 10 or 20)
-        or mapChapterOf(BattleTriPage.getTeamStageId(row))
-    if l1Img[row] and l1Chapter[row] == chapter then
-        return l1Img[row]
+    ---@type string
+    local path
+    if row > unlocked then
+        path = CHAPTER_BG[row == 2 and 10 or 20]
+    else
+        path = BattleTriPage.resolveBackgroundPath(BattleTriPage.getTeamStageId(row))
     end
-    if l1Img[row] and l1Img[row] >= 0 then
-        nvgDeleteImage(vg, l1Img[row])
+    local image = getBackgroundImage(vg, path)
+    if image >= 0 then
+        l1RowImages[row] = image
+        return image
     end
-    local path = CHAPTER_BG[chapter] or CHAPTER_BG[1]
-    local img = nvgCreateImage(vg, path, 0) or -1
-    l1Img[row] = img
-    l1Chapter[row] = chapter
-    print(string.format("[BattleTriPage] row %d bg chapter %d -> %s (%d)", row, chapter, path, img))
-    return img
+    return l1RowImages[row] or image
 end
 
 function BattleTriPage.init(vg)
@@ -405,9 +440,13 @@ function BattleTriPage.drawL0(vg, logicalW, logicalH)
 end
 
 --- L1 行内容背景垫底层（clip 到框内矩形; 锁定行加暗罩）——绘制于 L0 之前
-function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
+---@param fixedBgPath string|nil 塔等独立场景使用固定背景，不读取主线行状态
+function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, fixedBgPath)
     BattleTriPage.init(vg)
-    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
+    local unlocked = COL_COUNT
+    if not fixedBgPath then
+        unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
+    end
     for row = 1, COL_COUNT do
         local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
         nvgSave(vg)
@@ -415,10 +454,26 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
         -- L1 cover-fit
         local s = math.max(iw / 1896, ih / 720)
         local dw, dh = 1896 * s, 720 * s
-        local bg = ensureRowBg(vg, row, unlocked)
-        local zoom, alpha = 1, 1
-        local drv = row <= unlocked and drivers[row] or nil
-        if drv then zoom, alpha = drv:getMarchBackground() end
+        local bg = fixedBgPath and getBackgroundImage(vg, fixedBgPath)
+            or ensureRowBg(vg, row, unlocked)
+        local zoom, alpha, nextBgStageId = 1, 1, nil
+        local drv = not fixedBgPath and row <= unlocked and drivers[row] or nil
+        if drv then zoom, alpha, nextBgStageId = drv:getMarchBackground() end
+        -- 先铺不透明的新背景，再画放大淡出的旧背景；同章复用同一有效句柄。
+        if nextBgStageId then
+            local nextBg = getBackgroundImage(vg, BattleTriPage.resolveBackgroundPath(nextBgStageId))
+            if nextBg and nextBg >= 0 then
+                local paint = nvgImagePattern(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5,
+                    dw, dh, 0, nextBg, 1)
+                nvgBeginPath(vg)
+                nvgRect(vg, ix, iy, iw, ih)
+                nvgFillPaint(vg, paint)
+                nvgFill(vg)
+            else
+                -- 下层未就绪时旧图保持原尺寸和不透明，切关回退也不会缩闪。
+                zoom, alpha = 1, 1
+            end
+        end
         -- 以可见战场的右侧中心为锚点，不按 cover 图片被裁掉的边缘定位。
         local pivotX, pivotY = ix + iw, iy + ih * 0.5
         local bgX = pivotX + (ix + (iw - dw) * 0.5 - pivotX) * zoom
@@ -488,26 +543,53 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
         nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
         local stageText
         if terminalRaid and row <= unlocked then
-            -- [终焉协同] 行标签追加失守状态；共享池进度替代普通关卡进度
-            local raidTag = (terminalRaid.defeated[row]) and "（已失守）" or ""
-            stageText = string.format("【小队%d】终焉神殿%s", row, raidTag)
+            -- [终焉协同] 先翻译关卡，再组装小队/失守文案，不写回 raid 或驱动。
+            local raidStageText = stageDisplayName(terminalRaid.stageId)
+            if terminalRaid.defeated[row] then
+                raidStageText = I18n.format("%s（已失守）", raidStageText)
+            end
+            stageText = I18n.format("【小队%d】%s", row, raidStageText)
         elseif row <= unlocked and drivers[row] then
-            stageText = string.format("【小队%d】%s", row, stageDisplayName(drivers[row].stageId))
+            stageText = I18n.format("【小队%d】%s", row, stageDisplayName(drivers[row].stageId))
         elseif row <= unlocked then
-            stageText = string.format("【小队%d】准备中", row)
+            stageText = I18n.format("【小队%d】%s", row, I18n.lookup("准备中"))
         else
-            stageText = string.format("【小队%d】待解锁", row)
+            stageText = I18n.format("【小队%d】%s", row, I18n.lookup("待解锁"))
         end
         -- [暗黑化] 不再画行标签底条，文字直接浮在战斗场景上
         nvgFillColor(vg, nvgRGBA(215, 222, 240, 255))
         if terminalRaid and terminalRaid.defeated[row] then
             nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
         end
-        nvgText(vg, ix + 28, iy + 25, stageText, nil)
-        -- 前进提示独占顶部第二行，避开右上速度/扫荡等按钮。
-        if not terminalRaid and row <= unlocked and drivers[row] and drivers[row].marchNotice then
+        -- 普通战斗给右上 HUD 留空；按最终译文测宽，不改行高/按钮热区。
+        local labelW = iw - 56
+        if not terminalRaid and row <= unlocked then
+            local hudCount = BattleScene.isSpeedButtonVisible() and 5 or 4
+            labelW = math.max(1, iw - 116 - (hudCount - 1) * 58)
+        end
+        local labelTextW = nvgTextBounds(vg, 0, 0, stageText, nil)
+        local labelFont = labelTextW > labelW and math.max(16, 22 * labelW / labelTextW) or 22
+        nvgSave(vg)
+        nvgIntersectScissor(vg, ix + 26, iy + 5, labelW + 4, 48)
+        nvgFontSize(vg, labelFont)
+        if labelTextW * labelFont / 22 > labelW then
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+            nvgTextBox(vg, ix + 28, iy + 9, labelW, stageText, nil)
+        else
+            nvgText(vg, ix + 28, iy + 25, stageText, nil)
+        end
+        nvgRestore(vg)
+        -- 前进提示复用底部进度说明位置，字号和留白随战斗行高度缩放。
+        local marching = not terminalRaid and row <= unlocked and drivers[row] and drivers[row].marchNotice
+        if marching then
+            local noticeScale = math.min(1, ih / 360)
+            nvgSave(vg)
+            nvgIntersectScissor(vg, ix, iy, iw, ih)
+            nvgFontSize(vg, 22 * noticeScale)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 230, 160, 255))
-            nvgText(vg, ix + 28, iy + 55, "正在前进中", nil)
+            nvgText(vg, ix + iw * 0.5, iy + ih - 26 * noticeScale, "正在前进中", nil)
+            nvgRestore(vg)
         end
 
         -- [终焉协同] 每行底部进度条替换为共享生命池（绯红），行1 附加数值与倒计时
@@ -534,7 +616,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
                 nvgFillColor(vg, nvgRGBA(255, 205, 195, 255))
                 nvgText(vg, ix + iw * 0.5, barY - 12,
-                    string.format("共享生命 %s / %s",
+                    I18n.format("共享生命 %s / %s",
                         NumberUtil.format(terminalRaid.hp), NumberUtil.format(terminalRaid.maxHp)), nil)
                 local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
                 local left = math.max(0, math.ceil(timeLimit - terminalRaid.elapsed))
@@ -543,7 +625,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 nvgFillColor(vg, left <= 30 and nvgRGBA(255, 120, 110, 255)
                     or nvgRGBA(236, 226, 198, 255))
                 nvgText(vg, ix + 28, iy + 55,
-                    string.format("限时 %d:%02d", left // 60, left % 60), nil)
+                    I18n.format("限时 %d:%02d", left // 60, left % 60), nil)
             end
         end
 
@@ -556,9 +638,10 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             local pctShown = math.floor(ratio * 100 + 0.5)
             local pctText = string.format("%d%%", pctShown)
             local barW = math.min(iw * 0.62, 280)
-            local barH = 10
+            local progressScale = marching and math.min(1, ih / 360) or 1
+            local barH = 10 * progressScale
             local barX = ix + (iw - barW) * 0.5
-            local barY = iy + ih - 8
+            local barY = iy + ih - 8 * progressScale
             nvgBeginPath(vg)
             nvgRoundedRect(vg, barX, barY, barW, barH, 5)
             nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
@@ -569,10 +652,12 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 nvgFillColor(vg, nvgRGBA(196, 148, 72, 230))
                 nvgFill(vg)
             end
-            nvgFontSize(vg, 16)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
-            nvgText(vg, ix + iw * 0.5, barY - 12, "关卡进度 " .. pctText, nil)
+            if not marching then
+                nvgFontSize(vg, 16)
+                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+                nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+                nvgText(vg, ix + iw * 0.5, barY - 12, I18n.format("关卡进度 %s", pctText), nil)
+            end
         end
 
         if row <= unlocked and drivers[row] and #drivers[row].allies == 0 then
@@ -588,7 +673,7 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgFontSize(vg, 44)
             nvgFillColor(vg, nvgRGBA(165, 170, 190, 255))
             nvgText(vg, ix + iw * 0.5, iy + ih * 0.5,
-                ExpTable.getTeamUnlockText(row), nil)
+                I18n.lookup(ExpTable.getTeamUnlockText(row)), nil)
         end
     end
 

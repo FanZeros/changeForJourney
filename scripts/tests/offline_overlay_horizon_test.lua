@@ -71,6 +71,7 @@ function Start()
             draggingCard = false, closeOnClaim = false, notice = false, story = false,
             title = false, letter = false, ce = false, pip = false, talent = false,
             task = false, towerTri = false, reward = false, dungeon = false, towerFloor = 7,
+            tutorial = false,
         }
         local cursor = { x = 0, y = 0 }
         local clock = { elapsedTime = 100 }
@@ -333,6 +334,12 @@ function Start()
                 close = function() count("tower.close"); state.mode = "ordinary"; state.towerFloor = 0 end,
             }),
             ["ui.hud.BottomNav"] = mock({ getSelectedIndex = function() return 3 end }),
+            ["systems.TutorialManager"] = mock({
+                isActive = function() return state.tutorial end,
+                isInputActive = function() return state.tutorial end,
+                canPointerStart = function() count("tutorial.down"); return false end,
+                handleScreenClick = function() count("tutorial.up"); return true end,
+            }),
             ["core.BattleLayout"] = mock({ CARD_SCALE = 1 }),
             ["core.DarkIcon"] = mock({ SHOWCASE = false }),
             ["core.DrawUtil"] = mock({ SEAMBAR_ASPECT = 0.04, SEAMBAR_ARROW_Y = 0.469,
@@ -419,6 +426,7 @@ function Start()
             state.notice, state.story, state.title, state.letter, state.ce = false, false, false, false, false
             state.pip, state.talent = false, false
             state.task, state.towerTri, state.reward, state.dungeon, state.towerFloor = false, false, false, false, 7
+            state.tutorial = false
             restoreTable(RT, {
                 logicalW = 1920, logicalH = 1080, windowW = 1920, windowH = 1080,
                 DESIGN_W = 1080, DESIGN_H = 2400, dpr = dpr or 1,
@@ -488,6 +496,32 @@ function Start()
             checkDraw("level", "tri LevelUp-only")
             check(n("level.draw") == 1 and n("offline.draw") == 0, "LevelUp 不依赖 offline/reward/playerinfo 开启")
             checkNoLowerInput("LevelUp-only")
+        end)
+
+        runCase("升级与教程同时打开：升级独占鼠标，教程不能吞掉升级按钮", function()
+            fixture("tri", 1, false, false)
+            state.level, state.tutorial = true, true
+            clearCalls()
+            positionWindow(960, 506)
+            click(left)
+            check(n("level.handleInput") == 1 and n("tutorial.down") == 0 and n("tutorial.up") == 0,
+                "升级优先于底层活动教程并仅派发一次点击")
+        end)
+        runCase("教程按下后升级出现：旧Up不领取，下一次升级点按有效", function()
+            fixture("tri", 1, false, false)
+            state.tutorial = true
+            clearCalls()
+            positionWindow(960, 506)
+            invoke("HandleMouseButtonDownHorizon", left)
+            check(n("tutorial.down") == 1, "旧按压确实由教程捕获")
+            state.level = true
+            invoke("HandleMouseButtonUpHorizon", left)
+            check(n("level.handleInput") == 0 and n("tutorial.up") == 0,
+                "后来出现的升级层不消费旧Down为点击，也不推进旧教程")
+            clearCalls()
+            click(left)
+            check(n("level.handleInput") == 1 and n("tutorial.down") == 0 and n("tutorial.up") == 0,
+                "下一次完整升级手势可点击且不被教程拦截")
         end)
 
         for _, mode in ipairs({ "ordinary", "tri", "tower" }) do

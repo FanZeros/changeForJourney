@@ -175,6 +175,8 @@ function M.bind(deps)
             if i then
                 local newTab = TAB_KEYS[i]
                 if state.tab ~= newTab then
+                    ArtifactPanel.cancelPointer()
+                    require("ui.character.hero.ArtifactDetailPanel").closeImmediate()
                     state.tabFrom = state.tab
                     state.tabSwitchTime = time.elapsedTime
                     state.tab = newTab

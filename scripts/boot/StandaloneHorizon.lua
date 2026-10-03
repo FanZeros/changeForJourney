@@ -62,6 +62,12 @@ local function logicalH() return RT.logicalH or 0 end
 local function windowW() return RT.windowW or logicalW() end
 local function windowH() return RT.windowH or logicalH() end
 
+local artifactModule = require("boot.ArtifactGesture")
+local artifactOverlay = artifactModule.bind({
+    RT = RT, Viewport = Viewport, logicalW = logicalW, logicalH = logicalH,
+    dpr = function() return RT.dpr or 1 end,
+}) or artifactModule
+
 local function applyFrame()
     nvgTranslate(vg(), RT.frameOx or 0, RT.frameOy or 0)
     local frameScale = RT.frameScale or 1
@@ -138,6 +144,7 @@ local function finishFrame()
     nvgResetScissor(vg())
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     drawOrphanRowReward()
+    artifactOverlay.draw(vg())
     -- 升级弹窗由宿主逻辑空间布局：不再借中栏 Viewport 或 1080×2400 letterbox。
     -- 所有业务/PlayerInfo/三行/通天塔绘制都已完成，Offline/Update/CE 保持原上层优先级。
     if LevelUpPopup.isOpen() then
@@ -846,5 +853,6 @@ require('boot.StandaloneHorizonInput').bind({
     seamHitAt = seamHitAt,
     RT = RT,
     Viewport = Viewport,
+    artifactGesture = artifactOverlay,
     OfflineRewardOverlay = OfflineRewardOverlay,
 })

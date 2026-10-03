@@ -143,7 +143,7 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
             DrawUtil.drawTextStroke(vg, style.valueX, baseline, value, valueFont,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, vc[1], vc[2], vc[3], style.stroke)
             if delta ~= "" then
-                changes[#changes + 1] = { y = cy - 35, text = delta, color = deltaColor }
+                changes[#changes + 1] = { y = cy - 28, text = delta, color = deltaColor }
             end
             ---@type table
             local meta = AD.META[row.key]

@@ -18,7 +18,6 @@ M.LAYOUT = {
     panel = { x = 24, y = 890, w = 1032, h = 1334 },
     titleY = 930,
     title = { x = 390, y = 894, w = 300, h = 68 },
-    status = { x = 54, y = 956, w = 972, h = 54 },
     attrs = { x = AttributeView.ATTRIBUTE_LAYOUT.x, y = 1050,
         w = AttributeView.ATTRIBUTE_LAYOUT.w, h = 718 },
     radar = { x = 550, y = 1050, w = 530, h = 718, cx = 800, cy = 1403,
@@ -36,7 +35,6 @@ local COLOR = {
     muted = { 139, 132, 119, 210 },
     green = { 115, 218, 135, 255 },
     red = { 235, 110, 100, 255 },
-    cyan = { 73, 218, 230, 245 },
     current = { 193, 187, 175, 220 },
 }
 
@@ -233,30 +231,23 @@ end
 -- 属性页原标题绘图同一实现，字体/frame仍由外层管理。
 M.drawLegacyTitle = AttributeView.drawTitle
 
-function M.drawHeader(vg, candidate, errorMessage, attributeMode)
+function M.drawHeader(vg, attributeMode)
     AttributeView.drawTitle(vg, 540, M.LAYOUT.titleY,
         attributeMode == "equipment" and "装备加成" or "角色属性")
-    text(vg, 428, M.LAYOUT.titleY, "‹", 28, COLOR.gold, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    text(vg, 652, M.LAYOUT.titleY, "›", 28, COLOR.gold, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    ink(vg, COLOR.gold)
+    for _, arrow in ipairs({ { x = 420, dir = -1 }, { x = 660, dir = 1 } }) do
+        nvgBeginPath(vg)
+        nvgMoveTo(vg, arrow.x + arrow.dir * 6, M.LAYOUT.titleY)
+        nvgLineTo(vg, arrow.x - arrow.dir * 5, M.LAYOUT.titleY - 7)
+        nvgLineTo(vg, arrow.x - arrow.dir * 5, M.LAYOUT.titleY + 7)
+        nvgClosePath(vg)
+        nvgFill(vg)
+    end
     AttributeView.drawDivider(vg, M.LAYOUT.attrs.y - 20)
     AttributeView.drawDivider(vg, M.LAYOUT.setTitleY - 28)
     drawTextStroke(vg, M.LAYOUT.sets.x + 20, M.LAYOUT.setTitleY + 4,
         "套装效果", 31, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         0x66, 0xf8, 0x62, 4)
-    -- 默认不再显示冗余的“当前已穿戴属性”描述，仅保留候选/失败提示。
-    local status, color = "", COLOR.muted
-    if candidate then
-        status = "试穿 · 未穿戴：" .. tostring(candidate.name or candidate.seq)
-        color = COLOR.cyan
-    end
-    if errorMessage then
-        status = (candidate and "试穿失败：" or "预览提示：") .. tostring(errorMessage)
-        color = COLOR.red
-    end
-    if status ~= "" then
-        local rect = M.LAYOUT.status
-        fitText(vg, rect.x, rect.y + rect.h * 0.5, status, 28, 22, rect.w, color)
-    end
 end
 
 function M.drawEmptyBonuses(vg, available)
@@ -506,7 +497,7 @@ function M.drawRadar(vg, current, preview, equipmentMode)
                 amount = string.format("%.1f", delta)
             end
             local deltaText = (delta > 0 and "+" or "") .. amount
-            fitText(vg, lx, ly - 58, deltaText, 25, 19, 110,
+            fitText(vg, lx, ly - 51, deltaText, 25, 19, 110,
                 delta > 0 and COLOR.green or COLOR.red, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         end
     end

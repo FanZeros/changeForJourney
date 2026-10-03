@@ -126,6 +126,7 @@ function Start()
         "ui.character.equip.EquipmentBag", "config.EquipmentConfig", "ui.widget.HeroFrame",
         "ui.character.hero.AwakeningPanel", "systems.ButtonFeedback", "core.DarkIcon",
         "systems.ExtraTalentSystem", "core.I18n" }) do mods[name] = {} end
+    mods["core.I18n"] = { get = function() return "zh_CN" end, lookup = function(s) return s end, format = string.format }
     mods["config.GameConfig"] = { Design = { WIDTH = 1080, HEIGHT = 2400 } }
     mods["ui.widget.KeywordText"] = { new = function() return {} end }
     local Draw = originalRequire("ui.character.detail.CharacterDetailDraw")
@@ -239,7 +240,7 @@ function Start()
     check(#imageCalls == 1 and sharedPaths[imageCalls[1].image]:find("UI_JSJM_0.png", 1, true)
         and imageCalls[1].y == Stats.LAYOUT.panel.y and imageCalls[1].w == 1080
         and imageCalls[1].h == 1579, "配装复用原底板句柄1080x1579等比平移至890")
-    clearDraw(); Stats.drawHeader({}, nil, nil)
+    clearDraw(); Stats.drawHeader({}, "character")
     local dividerImages = 0
     for _, call in ipairs(imageCalls) do
         if sharedPaths[call.image]:find("UI_JSXQ_FGXJ.png", 1, true) then dividerImages = dividerImages + 1 end
@@ -257,10 +258,28 @@ function Start()
         if call.value:find("当前已穿戴属性", 1, true) then defaultStatus = true end
     end
     check(not defaultStatus, "无候选header不画当前已穿戴属性冗余文本")
-    clearDraw(); Stats.drawHeader({}, { name = "测试候选" }, "职业不符")
-    check(rendered("试穿失败：职业不符") ~= nil, "有候选失败仍显示错误提示")
-    clearDraw(); Stats.drawHeader({}, nil, "暂不可用")
-    check(rendered("预览提示：暂不可用") ~= nil, "无候选错误仍显示预览提示")
+    clearDraw(); Stats.drawHeader({}, "character")
+    check(rendered("试穿失败：职业不符") == nil, "配装标题不再绘制试穿失败行")
+    clearDraw(); Stats.drawHeader({}, "character")
+    check(rendered("预览提示：暂不可用") == nil, "配装标题不再绘制预览提示行")
+    local function toggleTriangles()
+        local count = 0
+        for _, p in ipairs(paths) do
+            if #p == 3 and p.closed and p.fill then
+                local first = p[1]
+                if first[2] == Stats.LAYOUT.titleY and (first[1] == 414 or first[1] == 666) then
+                    count = count + 1
+                end
+            end
+        end
+        return count
+    end
+    clearDraw(); Stats.drawHeader({}, "character")
+    check(rendered("角色属性") and toggleTriangles() == 2 and not rendered("‹") and not rendered("›"),
+        "角色属性标题左右显示实心切换三角，不依赖文字箭头")
+    clearDraw(); Stats.drawHeader({}, "equipment")
+    check(rendered("装备加成") and toggleTriangles() == 2,
+        "装备加成标题左右同样显示实心切换三角")
     local sample = { { key = "a", name = "同样属性", value = "42" } }
     clearDraw(); Draw.drawAttributeRows({}, sample, 0, Shared.ATTRIBUTE_LAYOUT, { style = Draw.ATTRIBUTE_STYLE })
     local originalName, originalValue = requiredText("同样属性"), requiredText("42")
@@ -386,9 +405,9 @@ function Start()
         and deltaName.fontSize == 35 and deltaValue.fontSize == 35
         and deltaValue.y == attrs.y + Shared.STYLE.rowH * 0.5,
         "delta不移动名称或当前值baseline、不缩原35号内容，与无delta坐标完全一致")
-    check(deltaLabel.x == deltaValue.x and deltaLabel.y == deltaValue.y - 35
+    check(deltaLabel.x == deltaValue.x and deltaLabel.y == deltaValue.y - 28
         and deltaLabel.fontSize == 20 and rects[1].h == Shared.STYLE.rowH,
-        "20号delta单独叠在当前数值cy-35上方，原60高属性行不变")
+        "20号delta下移7px至当前数值cy-28，原60高属性行不变")
     check(#scissorCalls == 2 and scissorCalls[1].y == attrs.y and scissorCalls[1].h == attrs.h
         and scissorCalls[2].x == attrs.x and scissorCalls[2].w == attrs.w
         and scissorCalls[2].y == attrs.y - 20 and scissorCalls[2].h == attrs.h + 20,
@@ -433,8 +452,8 @@ function Start()
     check(rendered("力量").x == layout.cx and rendered("力量").y == layout.cy - layout.labelR - 24
         and rendered("力量").fontSize == 26 and rendered("10").x == layout.cx
         and rendered("10").y == layout.cy - layout.labelR + 16 and rendered("10").fontSize == 34
-        and rendered("+10").y == layout.cy - layout.labelR - 58,
-        "六围差值在ly-58，不移动原名称ly-24和34号当前值ly+16")
+        and rendered("+10").y == layout.cy - layout.labelR - 51,
+        "六围差值下移7px至ly-51，不移动原名称ly-24和34号当前值ly+16")
     check(#scissorCalls == 0, "雷达不另设474宽scissor裁掉左右标签")
 
     clearDraw(); Stats.drawRadar({}, current.stats, current.stats)
@@ -502,7 +521,7 @@ function Start()
     clearDraw(); Stats.drawRadar({}, { str = 0.04, agi = 1 }, { str = 0.05, agi = 1 })
     local tinyDelta = rendered("+0.01")
     check(tinyDelta and not rendered("+0.0") and rendered("0").fontSize == 34
-        and tinyDelta.y == layout.cy - layout.labelR - 58,
+        and tinyDelta.y == layout.cy - layout.labelR - 51,
         "低值使用raw差值+0.01且保留原整数当前值字号/坐标，不预言visualfloor几何")
 
     local union = Stats.unionSets(summaries, previewSummaries)
@@ -589,7 +608,7 @@ function Start()
     selection = { seq = 7, slot = "weapon", heroId = 1, owner = "backpack", pinned = true }
     requestedSlot = "offhand"; draw()
     check(requestedSeq == 7 and requestedSlot == "offhand", "显式副手保留weapon候选")
-    check(rendered("试穿 · 未穿戴：测试候选") ~= nil, "候选标题明确试穿未穿戴")
+    check(rendered("试穿 · 未穿戴：测试候选") == nil, "选中候选保留预览但不绘制试穿提示行")
     selection.owner = "smith"; draw(); check(requestedSeq == nil, "排除smith选中来源")
     selection.owner = "bag"; requestedSlot = nil; draw(); check(requestedSeq == 7 and requestedSlot == nil, "bag来源与自然槽nil支持")
     selection.owner = "character"; draw(); check(requestedSeq == 7, "character来源候选支持")

@@ -18,6 +18,7 @@ local animState_ = "idle"
 local hotspots_ = {}
 local completed_ = {}
 local queue_ = {}
+local queuedRecruitStarted_ = false
 local newHeroId_ = nil ---@type number|nil
 local restored_ = false
 local resumePending_ = false
@@ -27,6 +28,8 @@ local overlayLayout_ = nil ---@type any
 local stepElapsed_ = 0
 local recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
 local RECOVERY_INTERVAL, PAGE_SETTLE_TIME = 0.5, 0.45
+local triggerQuiet_ = 0
+local TRIGGER_QUIET_TIME = 0.25
 ---@type fun()?
 local prepareResume
 
@@ -68,11 +71,16 @@ local function applyUnlocks(id)
     end
 end
 local function finish()
-    if not activeGroup_ then return end
-    completed_[tostring(activeGroup_)] = true
-    print("[TutorialManager] 引导完成: " .. activeGroup_)
-    animState_, animT_ = "out", 0
+    if not activeGroup_ or animState_ == "out" then return end
+    local finishedGroup = activeGroup_
+    completed_[tostring(finishedGroup)] = true
+    print("[TutorialManager] 引导完成: " .. finishedGroup)
+    animState_, animT_, triggerQuiet_ = "out", 0, 0
     save()
+    if finishedGroup == 6 then
+        -- 古树教学已自动收起教堂；完成后接离场对话，再触发酒馆教学，避免丢失入口。
+        require("systems.StoryPlayer").onPlace("church", "leave")
+    end
 end
 local function advance()
     local current = step()
@@ -129,6 +137,16 @@ local function start(id)
         save()
         return
     end
+    if id == 9 and validNewHero() then
+        local panel = require("ui.character.panel.CharacterPanel")
+        local layout = panel.getTeamSlotLayout and panel.getTeamSlotLayout(1)
+        if layout and tonumber(layout[3]) == newHeroId_ then
+            completed_["9"] = true
+            print("[TutorialManager] 新角色已在队一槽位3，免重复上阵教学")
+            save()
+            return
+        end
+    end
     activeGroup_, activeStep_ = id, 1
     animState_, animT_, groupElapsed_, stepElapsed_ = "in", 0, 0, 0
     resetTarget()
@@ -136,19 +154,48 @@ local function start(id)
     print("[TutorialManager] 启动引导: " .. id)
     save()
 end
+local function queueGroup(id)
+    if isGroupCompleted(id) or activeGroup_ == id then return end
+    for _, queued in ipairs(queue_) do if queued == id then return end end
+    queue_[#queue_ + 1] = id
+    triggerQuiet_ = 0
+    save()
+end
 function TutorialManager.startGroup(id)
     if isGroupCompleted(id) or activeGroup_ == id then return end
-    if activeGroup_ then
-        for _, queued in ipairs(queue_) do if queued == id then return end end
-        queue_[#queue_ + 1] = id
-        save()
+    if activeGroup_ then queueGroup(id)
     else start(id) end
 end
 function TutorialManager.onScenarioClaimed(sid)
+    if sid == 23 then
+        local follow = require("systems.StoryPlayer").followOf(sid)
+        -- 城镇23尚有本角色分支对话时，等24/25/26真实播完领奖；旧档已播仍兼容。
+        if follow and not claimed(follow) then return end
+    end
     local id = Config.SCENARIO_TO_GROUP[sid]
-    if id then TutorialManager.startGroup(id) end
+    if id then queueGroup(id) end
+end
+
+--- 未消费的新剧情不能抢正在进行的操作教学；组结束后按原队列继续。
+function TutorialManager.canPlayPendingStory()
+    return activeGroup_ == nil or animState_ == "out"
 end
 function TutorialManager.notifyEvent(name)
+    if activeGroup_ ~= 8 then
+        local queuedRecruit = false
+        for _, id in ipairs(queue_) do if id == 8 then queuedRecruit = true; break end end
+        if queuedRecruit then
+            if name == "gacha10_started" then queuedRecruitStarted_ = true
+            elseif name == "gacha10_failed" then queuedRecruitStarted_ = false
+            elseif name == "gacha10_complete" and queuedRecruitStarted_ then
+                queuedRecruitStarted_ = false
+                completed_["8"] = true
+                for i = #queue_, 1, -1 do if queue_[i] == 8 then table.remove(queue_, i) end end
+                print("[TutorialManager] 待触发阶段已完成真实十连，免重复教学")
+                save()
+            end
+        end
+    end
     if not activeGroup_ or animState_ == "out" then return end
     if name == "gacha10_failed" and activeGroup_ == 8 then
         activeStep_, stepElapsed_ = 1, 0
@@ -222,10 +269,11 @@ function TutorialManager.init(vg, playerStore, persist)
     vg_, store_, persist_ = vg, playerStore, persist
     activeGroup_, activeStep_, newHeroId_ = nil, 1, nil
     completed_, queue_, hotspots_, lastUnlockState_ = {}, {}, {}, {}
+    queuedRecruitStarted_ = false
     animState_, animT_, groupElapsed_, stepElapsed_ = "idle", 0, 0, 0
     overlayLayout_, restored_, resumePending_ = nil, false, false
     overlay_.hs = nil
-    recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
+    recoveryElapsed_, settleRemaining_, missingElapsed_, triggerQuiet_ = 0, 0, 0, 0
     print("[TutorialManager] 初始化，等待会话数据恢复")
 end
 local function restore()
@@ -239,6 +287,10 @@ local function restore()
         for _, id in ipairs(progress.queue or {}) do if Config[id] then queue_[#queue_ + 1] = id end end
         newHeroId_ = tonumber(progress.newHeroId)
         local id = tonumber(progress.group)
+        if completed_["6"] and not isGroupCompleted(7) then
+            -- 上次完成古树后可能尚未来得及消费内存离场剧情；去重补回，不重复发奖。
+            require("systems.StoryPlayer").onPlace("church", "leave")
+        end
         if id and not isGroupCompleted(id) then
             -- 重启后目标页面已关闭，重新走本组入口；不重播剧情或重复发奖励。
             start(id)
@@ -288,7 +340,19 @@ function TutorialManager.update(dt)
     elapsed_ = elapsed_ + dt
     if not restored_ then restore() end
     if not activeGroup_ then
-        if #queue_ > 0 and not Scenario.isActive() then start(table.remove(queue_, 1)) end
+        local Recovery = require("ui.tutorial.TutorialPageRecovery")
+        local reward = require("ui.hud.popup.RewardPopup")
+        local tavern = require("ui.tavern.TavernPage")
+        local blocked = Scenario.isActive() or reward.isOpen() or Recovery.isBlocked()
+            or (tavern.isRecruitBusy and tavern.isRecruitBusy())
+        if #queue_ == 0 or blocked then triggerQuiet_ = 0
+        else
+            triggerQuiet_ = triggerQuiet_ + dt
+            if triggerQuiet_ >= TRIGGER_QUIET_TIME then
+                triggerQuiet_ = 0
+                start(table.remove(queue_, 1))
+            end
+        end
         return
     end
     if TutorialManager.isInputActive() then

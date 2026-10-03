@@ -35,6 +35,7 @@ function Start()
     mods["ui.tower.TowerBattleScene"].isActive = mods["ui.tower.TowerBattleScene"].isOpen
     local story, busy, team, nav, hero, filter = false, false, 1, 3, nil, nil
     mods["ui.story.ScenarioDialogue"] = { isActive = function() return story end }
+    mods["systems.StoryPlayer"] = { onPlace = function() end }
     mods["ui.hud.BottomNav"] = { setTabLocked = function() end,
         setSelectedIndex = function(index) nav = index end, getSelectedIndex = function() return nav end }
     mods["ui.town.TownScene"] = { cancelPendingPageOpen = function() pendingCancelled = pendingCancelled + 1 end }

@@ -413,11 +413,7 @@ local function clampRosterScroll()
 end
 
 local function isRosterVisible()
-    return state.open and not state.closing
-       and false  -- 转职选人已迁出，教堂不再展开角色列表
-       and state.slotExpanded
-       and state.slotLiftProgress > 0.9
-       and state.rosterSlideProgress > 0.5
+    return false  -- 转职选人已迁出，教堂不再展开角色列表
 end
 
 local function isInRosterScrollArea(dx, dy)

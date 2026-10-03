@@ -1,3 +1,14 @@
+## 低风险竖屏死码清理（2026-10-03，用户已授权实施）
+
+- 用户通过 **AskUserQuestion** 明确选择“先清低风险死码”。从已审查 `04db1e3a` 建新分支 `cleanup930/portrait-dead-code-20261003`，不混入远端并行改动；只推此新分支，不推workspace系列、不自动创建或合并PR。
+- 仅8份Lua清理，+4/-327、净减323行：CharacterPanelDraw2字面恒false整卡槽绘制；ChurchDraw恒false列表浮层；ChurchInput三个恒false选人/展开/点击上方块；ChurchPage保留isRosterVisible接口，返回直接false；BattleDraw无调用攻击条helper/常量/注释；BattleScene未用攻击条别名、两句柄、两图初始化及context字段；Standalone未读取的旧布局变量和计算；Viewport未读取ENABLED。
+- 未删模块或资源文件、未改meta UUID、测试和存档；角色共享getTeamSlots/slotPower读取和图片初始化保留。1080×2400栏内坐标、frame逆投影、classic/strip兼容、头像/名册/正式教程热点、教堂神器/宝箱/切tab背景以及正式战斗进度逻辑原样保留。旧隐形tab热区、副本错配、Toast/显示开关/模态问题本轮未修，不冒称整个竖屏残留清理完成。
+- 官方build成功，8份改动Lua与dist最新manifest对应产物逐字节一致，git diff --check通过。12套Runtime均exit0及ALL PASS：角色栏18、角色拖拽、装备手势44、教程输入356/目标63/布局1189、宝箱1168、神器直接开放438、锻炉仓库层级46、离线覆盖990、战斗切关、行军324。无头环境有audio初始化与UI shader编译ERROR，不能据脚本ALL PASS宣称图形/音频总验收通过；总输出检查exit1如实保留。
+- 真实main无头验收完成150帧，load/init/scene PASS、Lua与resource错误0；run及整体FAIL，启动尖峰134.341ms、274.322ms超过默认100ms，engine_errors2，exit1。正常存档落盘3720字节；不把无头帧率当实机性能，不改阈值掩盖失败。
+- LSP在改前已存在BattleDraw三项和ChurchDraw一项NVGpaint|0参数Error，改后缓存仍引用已删行；其余6份改动Lua单文件无Error，全仓缓存81Error。未改不相关类型逻辑，不宣称全仓/全部修改文件静态清零。两次独立只读复核确认恒false边界、无活else/跨块变量、无调用与测试断链，本轮差异无确认新增问题。
+- 第一轮ChurchInput exact替换因旧串一处字段拼写不匹配被拒，未应用任何修改；随后按已读原文整块删除。产物cmp首轮文件连接符用错导致失败，改用实际uuid-hash.lua后8文件全部一致；检查结果按最终实测记录，未隐藏初次失败。
+- 继续遵守：推进已授权范围，每次完成先真实简报，再实际调用 **AskUserQuestion** 选项交接，尊重后续停止和权限拒绝。只提交本轮Lua与此记忆，本地.project生成身份/配置不提交；凭据只即时鉴权，不落文件/配置/日志/记忆。完成后正常push新分支并核验远端SHA。
+
 ## 竖屏残留审查协作要求（2026-10-03）
 
 - 用户指定从 `workspace930` 拉取、部署，源码与资源已直接放在 `/workspace` 根目录；基线固定为 `0ec423f8d72adfc393953299a72ebb388d56ba6c`，任务分支为 `audit930/portrait-layout-20261003`。

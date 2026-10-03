@@ -231,7 +231,6 @@ local function SyncBattleState(dt)
 end
 
 local physW, physH, dpr, logicalW, logicalH
-local scale, screenDesignW, screenDesignH, designOffsetX, designOffsetY
 
 local function RecalcLayout()
     physW  = graphics:GetWidth()
@@ -265,11 +264,6 @@ local function RecalcLayout()
     StandaloneRT.DESIGN_H = DESIGN_H
     StandaloneRT.DrawPreloadOverlay = DrawPreloadOverlay
     StandaloneRT.preload_ = preload_
-    scale = math.min(logicalW / DESIGN_W, logicalH / DESIGN_H)
-    screenDesignW = logicalW / scale
-    screenDesignH = logicalH / scale
-    designOffsetX = (screenDesignW - DESIGN_W) / 2
-    designOffsetY = (screenDesignH - DESIGN_H) / 2
 end
 
 -- ============================================================================

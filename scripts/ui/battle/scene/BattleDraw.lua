@@ -28,10 +28,6 @@ local TAG_SIZE = 64
 local HP_BAR_W, HP_BAR_H = 168, 28
 local HP_BAR_PADDING = 4
 
--- 攻击进度条
-local ATK_BAR_W, ATK_BAR_H = 168, 14
-local ATK_BAR_PADDING = 4
-
 -- 浮动文字
 local FLOAT_TOTAL_FRAMES = 20
 local FLOAT_MOVE_DIST    = 240
@@ -53,7 +49,7 @@ local imgCtx = {}   -- 图片句柄
 -- ======================== 注入上下文 ========================
 
 --- 注入依赖
----@param context table { combat, imgHeroCards, imgMonsterCards, imgHpBg, imgHpFill, imgAtkBg, imgAtkFill, imgAllyTags }
+---@param context table { combat, imgHeroCards, imgMonsterCards, imgHpBg, imgHpFill, imgAllyTags }
 function BattleDraw.setContext(context)
     combat = context.combat
     imgCtx = context
@@ -120,27 +116,6 @@ BattleDraw.drawImageMirrored = drawImageMirrored
 --- 16 向描边文字
 local drawTextStroke = require("core.DrawUtil").drawTextStroke
 BattleDraw.drawTextStroke = drawTextStroke
-
---- 绘制进度条
-local function drawProgressBar(vg, imgBg, imgFill, cx, cy, bgW, bgH, padding, progress)
-    drawImageCentered(vg, imgBg, cx, cy, bgW, bgH, 1.0)
-    local fillW = bgW - padding * 2
-    local fillH = bgH - padding * 2
-    local fillX = cx - bgW * 0.5 + padding
-    local fillY = cy - bgH * 0.5 + padding
-    local clipW = fillW * math.max(0, math.min(1, progress))
-    if clipW > 0 and imgFill >= 0 then
-        nvgSave(vg)
-        nvgScissor(vg, fillX, fillY, clipW, fillH)
-        local paint = nvgImagePattern(vg, fillX, fillY, fillW, fillH, 0, imgFill, 1.0)
-        nvgBeginPath(vg)
-        nvgRect(vg, fillX, fillY, fillW, fillH)
-        nvgFillPaint(vg, paint)
-        nvgFill(vg)
-        nvgRestore(vg)
-    end
-end
-BattleDraw.drawProgressBar = drawProgressBar
 
 -- ======================== 卡片组渲染 ========================
 
@@ -353,12 +328,6 @@ function BattleDraw.drawCardGroup(vg, units, baseCY,
                 drawTextStroke(vg, cx, cy + hpValOffY, hpText,
                     28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0x66, 0xf8, 0x62, 4)
             end
-
-            -- [已隐藏] 攻击/行动进度条按需求不再显示（单位仍有 atkProgress 逻辑，仅不渲染）
-            -- local attackProg = unit.atkProgressVisual
-            -- if attackProg == nil then attackProg = unit.atkProgress end
-            -- drawProgressBar(vg, imgCtx.imgAtkBg, imgCtx.imgAtkFill, cx, cy + atkBgOffY,
-            --     ATK_BAR_W, ATK_BAR_H, ATK_BAR_PADDING, attackProg)
 
             -- 9) 等级文本
             drawTextStroke(vg, cx, cy + lvlOffY, "Lv." .. tostring(unit.level),

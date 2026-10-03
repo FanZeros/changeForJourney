@@ -1142,7 +1142,7 @@ local function cargoCases()
             eq(e05.people, f.Config.get(PEOPLE).evidence.people, "N14人员卷开放")
             check(not includes(e05.text .. e05.continuation .. e05.people, "本人承认一致"), "未接N17不提前定罪")
             eq(f.Playback.tryPlay(gates()), false, "全部处理后不自动重播")
-            eq(f.Player.hasPendingRecords(), false, "全部处理无待阅红点")
+            eq(f.Player.hasPendingRecords(), source == "player_record", "原cargo全处理后仅可信E02留下独立N03待阅")
             local saved = cjson.decode(assert(f.disk))
             eq(saved.modules.session.samsaraStory.cargoHistoryCaptured, true, "真实Save保留独立捕获标记")
             for _, key in ipairs({ CARGO, GRAY, PEOPLE }) do
@@ -1222,13 +1222,13 @@ local function cargoCases()
             noRewards(f, old, "cargo真实保存恢复 " .. fault)
         end)
     end
-    runCase("记录四标签KEY选择只展示不播/批注分层/显式N12优先", function()
+    runCase("记录五标签KEY选择只展示不播/批注分层/显式N12优先", function()
         local session = freshSession()
         local f = fixture({ clearedStages = { [104] = true, [4905] = true, [204] = true } }, session); f.init()
         local old, readCalls, before = legacySession(f.session()), 0, copy(f.session())
         local request = f.Player.requestRead
         f.Player.requestRead = function(key) readCalls = readCalls + 1; return request(key) end
-        local keys = { f.Config.NODE_KEY, CARGO, GRAY, PEOPLE }
+        local keys = { f.Config.NODE_KEY, CARGO, GRAY, PEOPLE, f.Config.MANIFEST_KEY }
         for _, key in ipairs(keys) do
             local text = cargoContent(f, key)
             check(includes(text, f.Config.get(key).title), "KEY选中正确标题 " .. key)
@@ -1264,7 +1264,7 @@ local function cargoCases()
         eq(f.Player.takeRequest(), nil, "保存中没有新请求")
         f.fail = ""; f.Player.update(2)
         eq(f.Player.isSavePending(), false, "成功后恢复回看")
-        noRewards(f, old, "四标签展示/读取/保存中")
+        noRewards(f, old, "五标签展示/读取/保存中")
     end)
     runCase("N12显式请求在所有门禁保留，JSON合法重附不重扫", function()
         local f = cargoFixture("case_archive"); f.init()

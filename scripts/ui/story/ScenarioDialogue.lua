@@ -8,6 +8,9 @@ local DrawUtil = require("core.DrawUtil")
 local GameConfig = require("config.GameConfig")
 local HeroFrame = require("ui.widget.HeroFrame")
 local EventBus = require("core.EventBus")
+local I18n = require("core.I18n")
+local Story = require("core.I18nStory")
+local Display = require("ui.story.StoryDisplay")
 
 local ScenarioDialogue = {}
 
@@ -58,6 +61,26 @@ local textElapsed_ = 0
 local typingDone_  = false
 local totalChars_  = 0
 local prevCharsShown_ = 0  -- 上一帧已显示字符数，用于检测新字符触发 blip
+local displayText_ = ""
+local displaySource_ = ""
+local displayLanguage_ = ""
+local displayStep_ = 0
+
+-- 当前句全文先翻译；语言变化清显示缓存，不推进步骤或触发奖励。
+local function syncDisplay()
+    local step = steps_[stepIndex_]
+    local source = step and step.text or ""
+    local lang = I18n.get()
+    if displayStep_ ~= stepIndex_ or displaySource_ ~= source or displayLanguage_ ~= lang then
+        local sameStep = displayStep_ == stepIndex_ and displaySource_ == source
+        local wasDone = sameStep and typingDone_
+        displayText_ = Display.text(source)
+        displaySource_, displayLanguage_, displayStep_ = source, lang, stepIndex_
+        totalChars_ = Story.length(displayText_)
+        textElapsed_ = wasDone and (totalChars_ / TYPEWRITER_CPS + 1) or 0
+        typingDone_, prevCharsShown_ = wasDone, wasDone and totalChars_ or 0
+    end
+end
 
 -- 图片句柄
 local imgBG_      = -1   -- 大情景全屏背景图
@@ -223,8 +246,10 @@ function ScenarioDialogue.show(config)
     stepIndex_      = 1
     textElapsed_    = 0
     typingDone_     = false
-    totalChars_     = utf8.len(steps_[1].text) or 0
+    totalChars_     = 0
     prevCharsShown_ = 0
+    displayStep_    = 0
+    syncDisplay()
     active_         = true
 
     -- 睁眼入场：眼皮从全闭缓缓打开，背后是完整的情景画面
@@ -257,6 +282,7 @@ end
 ---@param dt number 帧间隔
 function ScenarioDialogue.update(dt)
     if not active_ then return end
+    syncDisplay()
 
     -- 消失动画推进
     if dismissing_ then
@@ -323,7 +349,7 @@ function ScenarioDialogue.update(dt)
         if charsShown > prevCharsShown_ then
             local step = steps_[stepIndex_]
             if step and step.text then
-                local ch = utf8sub(step.text, charsShown, charsShown)
+                local ch = utf8sub(displayText_, charsShown, charsShown)
                 if isChinese(ch) then
                     playBlip()
                 end
@@ -356,6 +382,7 @@ end
 ---@param h number
 local function drawLandscape(w, h)
     if not active_ or stepIndex_ < 1 or stepIndex_ > #steps_ then return end
+    syncDisplay()
     local step = steps_[stepIndex_]
 
     local dismissAlpha = 1.0
@@ -466,8 +493,14 @@ local function drawLandscape(w, h)
     nvgStrokeWidth(vg_, 1.5)
     nvgStroke(vg_)
     if step.name then
-        DrawUtil.drawTextStroke(vg_, chipX + chipW * 0.5, chipY + chipH * 0.52, step.name,
-            math.max(20, h * 0.028),
+        local name = Display.text(step.name)
+        local nameSize = math.max(20, h * 0.028)
+        nvgFontFace(vg_, "sans")
+        nvgFontSize(vg_, nameSize)
+        local nameWidth = I18n.displayBounds(vg_, 0, 0, name)
+        if nameWidth > chipW - 16 then nameSize = nameSize * (chipW - 16) / nameWidth end
+        DrawUtil.drawTextStroke(vg_, chipX + chipW * 0.5, chipY + chipH * 0.52, name,
+            nameSize,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 236, 196, 3,
             { alpha = dismissAlpha, strokeColor = { 0x31, 0x24, 0x24 } })
@@ -477,15 +510,17 @@ local function drawLandscape(w, h)
     local textY = barY + barH * 0.22
     local textW = barW - w * 0.07
     if step.text and textElapsed_ > 0 and dismissAlpha > 0.01 then
-        local charCount = utf8.len(step.text) or 0
-        local charsToShow = math.min(charCount, math.floor(textElapsed_ * TYPEWRITER_CPS))
+        local charsToShow = math.min(totalChars_, math.floor(textElapsed_ * TYPEWRITER_CPS))
         if charsToShow > 0 then
             nvgFontFace(vg_, "sans")
-            nvgFontSize(vg_, math.max(20, h * 0.030))
             nvgTextLineHeight(vg_, 1.35)
             nvgTextAlign(vg_, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
+            local availableH = barY + barH - h * 0.055 - textY
+            local font, rows = Display.fitLayout(vg_, displayText_, textW, availableH,
+                math.max(20, h * 0.030), math.max(12, h * 0.018), 1.35)
+            nvgFontSize(vg_, font)
             nvgFillColor(vg_, nvgRGBA(232, 220, 196, math.floor(255 * dismissAlpha)))
-            nvgTextBox(vg_, textX, textY, textW, utf8sub(step.text, 1, charsToShow), nil)
+            Display.drawRows(vg_, textX, textY, rows, charsToShow, font * 1.35)
         end
     end
 
@@ -494,7 +529,7 @@ local function drawLandscape(w, h)
     nvgTextAlign(vg_, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(170 * dismissAlpha)))
     local chapter = title_ or (mode_ == "large" and "情景" or "闲谈")
-    nvgText(vg_, w * 0.04, h * 0.055, chapter, nil)
+    Display.draw(vg_, w * 0.04, h * 0.055, chapter)
     nvgTextAlign(vg_, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
     nvgText(vg_, w * 0.96, h * 0.055, string.format("%d / %d", stepIndex_, #steps_), nil)
 
@@ -503,7 +538,7 @@ local function drawLandscape(w, h)
         nvgFontSize(vg_, math.max(16, h * 0.022))
         nvgTextAlign(vg_, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
         nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(220 * blink)))
-        nvgText(vg_, barX + barW - w * 0.02, barY + barH - h * 0.028, "轻触继续", nil)
+        Display.draw(vg_, barX + barW - w * 0.02, barY + barH - h * 0.028, "轻触继续")
     end
     end
 
@@ -529,6 +564,7 @@ end
 ---@param frameW number|nil
 ---@param frameH number|nil
 function ScenarioDialogue.draw(frameW, frameH)
+    if active_ then syncDisplay() end
     local w = frameW
     local h = frameH
     if type(w) ~= "number" or type(h) ~= "number" or w <= 0 or h <= 0 then
@@ -543,6 +579,7 @@ end
 --- 打字已完成：进入下一步
 function ScenarioDialogue.advance()
     if not active_ then return end
+    syncDisplay()
 
     -- 睁眼期间点击 → 跳过睁眼，直接进入对话
     if eyeOpenActive_ or eyeHoldActive_ then
@@ -591,7 +628,7 @@ function ScenarioDialogue.advance()
         -- 重置为新步骤
         textElapsed_    = 0
         typingDone_     = false
-        totalChars_     = utf8.len(steps_[stepIndex_].text) or 0
+        syncDisplay()
         prevCharsShown_ = 0
 
         -- 立绘动画：角色变化时触发退出→进入
@@ -660,6 +697,7 @@ function ScenarioDialogue.reset()
     dismissing_        = false
     dismissT_          = 0
     title_             = nil
+    displayText_, displaySource_, displayLanguage_, displayStep_ = "", "", "", 0
 end
 
 return ScenarioDialogue

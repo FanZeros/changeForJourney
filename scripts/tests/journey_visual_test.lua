@@ -177,6 +177,27 @@ local function testPage()
         if text.text:find("正在前进中", 1, true) then found = text.y == iy + 55 end
     end
     check(found, "前进提示固定于战斗行上方")
+    -- 合并 i18n 后仍按普通关卡通关解锁，不恢复旧等级解锁文案。
+    local I18n = require("core.I18n")
+    local ExpTable = require("config.ExpTable")
+    I18n.installDrawHook()
+    for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+        I18n.set(lang)
+        texts = {}
+        Page.draw({}, 1920, 1080)
+        local unlockTwo, unlockThree, marching, label = false, false, false, false
+        for _, text in ipairs(texts) do
+            if text.text == I18n.lookup(ExpTable.getTeamUnlockText(2)) then unlockTwo = true end
+            if text.text == I18n.lookup(ExpTable.getTeamUnlockText(3)) then unlockThree = true end
+            if text.text == I18n.lookup("正在前进中") then marching = text.y == iy + 55 end
+            if text.text == I18n.format("【小队%d】%s", 1, I18n.lookup("黑棘林道1-1")) then label = true end
+        end
+        check(unlockTwo and unlockThree, lang .. "两条按关卡解锁提示保持且翻译")
+        check(marching and label, lang .. "行军与小队标题在显示边界翻译")
+        check(battle.maxStageId == 101 and next(battle.clearedStages) == nil,
+            lang .. "绘制不修改通关解锁进度")
+    end
+    I18n.set("zh_CN")
     battle.clearedStages = { ["905"] = true, ["1905"] = true }
     drivers[1].marchTimer = 0
     Page.update(0.1)

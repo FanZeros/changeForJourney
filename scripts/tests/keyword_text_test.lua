@@ -20,7 +20,7 @@ local function check(cond, msg)
     end
 end
 
-function Start()
+local function runTests()
     local KW = require("config.KeywordConfig")
     local KeywordText = require("ui.widget.KeywordText")
 
@@ -164,10 +164,31 @@ function Start()
     kt6:draw(nil, "连击概率+8%", 0, 0, 400, 30)
     kt6:draw(nil, "攻击速度+10%", 0, 40, 400, 30, nil, nil, true)
     check(#kt6.hotspots == 2, "keepHotspots 追加第二段热区（实际 " .. #kt6.hotspots .. "）")
+    local tail = kt6.hotspots[2]
+    kt6:setHover(tail.x1 + 1, tail.y1 + 1)
+    check(kt6:handleInput(tail.x1 + 1, tail.y1 + 1), "追加段关键词可以点击")
+    kt6:draw(nil, "连击概率+8%", 0, 0, 400, 30)
+    kt6:draw(nil, "攻击速度+10%", 0, 40, 400, 30, nil, nil, true)
+    kt6:drawPopup(nil)
+    check(kt6:isOpen() and kt6.popup.key == "攻击速度", "下一帧多段绘制保留原关键词弹窗")
+    check(kt6.hoverIdx == 2 and #kt6.hotspots == 2, "下一帧追加段悬停与热区不丢失")
+    kt6:draw(nil, "连击概率+8%", 0, 0, 400, 30)
+    kt6:drawPopup(nil)
+    check(not kt6:isOpen() and #kt6.hotspots == 1, "移除尾段后清理旧弹窗与热区")
+    local first = kt6.hotspots[1]
+    kt6:handleInput(first.x1 + 1, first.y1 + 1)
+    kt6:draw(nil, "连击概率+9%", 0, 0, 400, 30)
+    check(not kt6:isOpen(), "同一段内容改变时清理旧弹窗")
 
     if #failures == 0 then
         print("KEYWORD TESTS: ALL PASS (" .. "ok" .. ")")
     else
         print("KEYWORD TESTS: " .. #failures .. " FAILURES")
     end
+end
+
+function Start()
+    local ok, err = pcall(runTests)
+    if not ok then log:Write(LOG_ERROR, "[keyword_text_test] " .. tostring(err)) end
+    engine:Exit()
 end

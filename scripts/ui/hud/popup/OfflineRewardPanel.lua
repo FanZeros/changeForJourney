@@ -221,7 +221,7 @@ local state = {
     -- 队员升级动画
     heroAnim   = {},   -- [i] = { level = 动画等级, exp = 动画内经验, remain = 剩余待发放经验 }
     heroTime   = 0,    -- 动画已播放秒数
-    -- 奖励逐件弹出（与关卡奖励同款；队员经验发完后才开始）
+    -- 奖励逐件弹出（与队员经验动画同时开始，大批量时尾段加速）
     cascade    = nil,  ---@type any
     cascadeSfx = 0,    -- 已播放入场音的件数
     -- 动画
@@ -242,14 +242,14 @@ local HERO_ANIM_DELAY = 0.55   -- 弹窗开完后停顿多久开始发放
 local HERO_ANIM_STAGGER = 0.1  -- 相邻队员错开的秒数
 local HERO_EXP_PER_SEC = 0.34  -- 经验发放速度（占总经验比例/秒），1/0.34 ≈ 2.9 秒发完
 
--- 奖励逐件弹出参数（关卡奖励同款节奏）
-local CASCADE_LEAD   = 0.15    -- 队员经验发完后再停顿多久开始发奖励
+-- 奖励逐件弹出参数：前段保留仪式感，后段按总件数加速。
 local CASCADE_INTERVAL = 0.14  -- 前 10 件间隔
-local CASCADE_INTERVAL_TAIL = 0.10  -- 超过 10 件后的间隔
-local CASCADE_INTERVAL_FASTER = 0.05  -- 超过 20 件后的间隔
+local CASCADE_INTERVAL_TAIL = 0.06  -- 第 11~20 件间隔
+local CASCADE_INTERVAL_FASTER = 0.02  -- 第 21 件起的最大间隔
 local CASCADE_FAST_AFTER = 10
 local CASCADE_FASTER_AFTER = 20
-local CASCADE_POP_DUR  = 0.24  -- 单件弹出时长
+local CASCADE_TAIL_BUDGET = 2.0  -- 第 20 件之后最多再排队 2 秒
+local CASCADE_POP_DUR  = 0.24  -- 单件弹出时长不变
 
 local cachedVg = nil
 
@@ -657,11 +657,13 @@ function Panel.show(data)
     state.animPhase = "opening"
     state.animStart = time.elapsedTime
     resetHeroAnim()
+    local tailCount = math.max(1, #state.rewards - CASCADE_FASTER_AFTER)
+    local fasterInterval = math.min(CASCADE_INTERVAL_FASTER, CASCADE_TAIL_BUDGET / tailCount)
     state.cascade = RewardCascade.new(#state.rewards, {
         interval       = CASCADE_INTERVAL,
         intervalTail   = CASCADE_INTERVAL_TAIL,
         fastAfter      = CASCADE_FAST_AFTER,
-        intervalFaster = CASCADE_INTERVAL_FASTER,
+        intervalFaster = fasterInterval,
         fasterAfter    = CASCADE_FASTER_AFTER,
         popDur         = CASCADE_POP_DUR,
         lead           = HERO_ANIM_DELAY,
@@ -671,7 +673,9 @@ function Panel.show(data)
         state.cascade:start(time.elapsedTime)
     end
     print("[OfflineRewardPanel] show: offline=" .. state.offlineSeconds .. "s, rewards=" .. #state.rewards
-        .. ", heroPreview=" .. #state.heroExpPreview)
+        .. ", heroPreview=" .. #state.heroExpPreview
+        .. string.format(", tailGap=%.4fs, reveal=%.2fs", fasterInterval,
+            HERO_ANIM_DELAY + state.cascade:startAt(#state.rewards) + CASCADE_POP_DUR))
 end
 
 --- 关闭
@@ -721,11 +725,11 @@ function Panel.update(dt)
     -- 奖励逐件弹出与队员升级同时开始（show 里已 start）
     if state.cascade then
         if state.cascade.revealStart ~= 0 then
-            -- 逐件入场音
+            -- 同帧弹出的奖励共用一次入场音，避免尾段加速或掉帧后音效集中重播。
             local due = state.cascade:shownCount()
-            while state.cascadeSfx < due do
-                state.cascadeSfx = state.cascadeSfx + 1
-                local item = state.rewards[state.cascadeSfx]
+            if state.cascadeSfx < due then
+                state.cascadeSfx = due
+                local item = state.rewards[due]
                 if item and item.type == "equip" then
                     GameSFX.play("install")
                 else

@@ -17,7 +17,8 @@
 - 图标迁移唯一冲突在 `TalentStarMap.drawNode`：同时保留 930 的边缘渐隐 `fade` 与圆/菱/六边 `node.st`，现有209节点邻接数据完全不变；保留930的无下划线关键词、灰蓝禁用色及最新锻造关键词文案。
 - 验证：官方 Build 成功；官方 Runtime 关键词31断言 ALL PASS、战斗切关 ALL PASS；编辑器 Python 语法与两文件无操作文本替换通过。图标和关键词真人视觉未验收，编辑器浏览器交互未验收。
 - **编辑器仅作草稿收录**：`tools/talent-editor/{server.py,index.html}` 已显式纳入Git（tools默认忽略）；保存校验会自动补8条基线单向边，双文件覆盖无失败回滚/并发锁，HTTP输入验证及撤销脏状态仍需补齐。不得宣称可安全用于正式改线，不启动服务、不据此修改游戏拓扑。
-- 无关本地改动保留于 `stash@{0}`（名称 `preserve-unrelated-workspace928-before-talent930-1003`），额外备份位于 `/home/Maker/migration-backup-talent930-1003`；未将本地配置、技能目录删除及上传文件纳入提交。GitHub无登录凭据，推送预检被拒；当前仍是本地任务分支，**未推送、未创建PR**，待用户补充授权。
+- 无关本地改动保留于 `stash@{0}`（名称 `preserve-unrelated-workspace928-before-talent930-1003`），额外备份位于 `/home/Maker/migration-backup-talent930-1003`；未将本地配置、技能目录删除及上传文件纳入提交。
+- 用户补充即时GitHub授权后，已无冲突合并最新 `workspace930@a567e758`（10个后续提交，合并提交 `be77aaa8`），仅推送任务分支，并创建 **Draft PR #29**：https://github.com/FanZeros/changeForJourney/pull/29，base=`workspace930`、head=`feat930/talent-keywords-editor-1003`，open、draft=true、merged=false；未推基线、未自动合并。关键词31、战斗74、觉醒布局66断言通过；角色详情214断言有2项超长文本失败，纯930隔离副本完全同样复现，已在PR披露。当前LSP缓存1项Error位于未改的生命周期测试require赋值，未宣称全仓清洁。凭据只用于子进程/请求即时鉴权，不落Git配置；提醒用户撤销并更换聊天中已公开的令牌。
 - 每次交付或遇到用户需决定的阻塞，先简报再调用 `AskUserQuestion` 提供明确选项；不将凭据写入仓库、配置、日志或记忆。
 
 ## 上次做了什么（2026-10-02，套装筛选数量与六槽对称微调）

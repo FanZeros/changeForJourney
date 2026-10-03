@@ -9,6 +9,12 @@ end
 
 local function runTests()
     local originalRequire = require
+    local I18n = originalRequire("core.I18n")
+    local originalLanguage = I18n.get()
+    -- 先加载真实词典，后面的隔离require仍禁止误入业务服务。
+    I18n.set("en")
+    I18n.lookup("远征勋记")
+    I18n.set("zh_CN")
     local savedGlobals, globalNames = {}, {}
     local savedModules = {
         ["ui.story.task.TaskPage"] = package.loaded["ui.story.task.TaskPage"],
@@ -60,11 +66,7 @@ local function runTests()
                 draws[#draws + 1] = { root = root, x = transform.x, y = transform.y, w = w, h = h }
             end,
         },
-        ["core.I18n"] = {
-            lookup = function(value) return value end,
-            format = function(value, ...) return string.format(value, ...) end,
-            difficulty = function(value) return value end,
-        },
+        ["core.I18n"] = I18n,
         ["core.DrawUtil"] = {
             drawTextStroke = function(_, _, _, value) texts[#texts + 1] = value end,
             seamSlideX = function() return 0 end, drawImageCentered = noop,
@@ -294,6 +296,26 @@ local function runTests()
         Page.handleInput(540, 396)
         summary, content = draw()
         check(content and summary, "手工tab切换进入level专用轨道")
+        modules.player = { level = 30, exp = 42 }
+        modules.task = { achProg = {}, achClaimed = { a_plv_5 = true } }
+        Page.openExpedition()
+        local sourceUnlock = Progress.getRangeUnlocks(1, 60)[1].unlockName
+        for _, language in ipairs({ "zh_TW", "en", "ja", "ko", "zh_CN" }) do
+            I18n.set(language)
+            summary, content = draw()
+            check(summary.root:FindById("level").props.text == I18n.format("远征等级 Lv.%d", 30),
+                language .. "打开期间切语言刷新摘要")
+            check(content.root.children[1]:FindById("title").props.text == I18n.lookup("远征勋记"),
+                language .. "切语言刷新缓存行标题")
+            check(content.root.children[2]:FindById("reward").props.text == Progress.rewardLabel(TaskConfig.findById("a_plv_10").reward),
+                language .. "奖励名和数量同步翻译")
+            check(summary.root:FindById("stages").props.text:find(Progress.unlockLabel(Progress.build(modules.player, modules.task, modules.battle).stageUnlocks[1]), 1, true),
+                language .. "小队通关条件模板翻译")
+            check(Progress.getRangeUnlocks(1, 60)[1].unlockName == sourceUnlock, language .. "不改写缓存规则原文")
+            local calls = setterCalls
+            draw()
+            check(setterCalls == calls, language .. "同语言数据不变不重复刷新")
+        end
         Page.close()
         noActionAt(300, 950, "关闭动画期间不接收领取")
         check(not Page.handleDragBegin(300, 950) and not Page.handleScroll(-1), "关闭期间不再滚动")
@@ -303,6 +325,7 @@ local function runTests()
         check(uiInits > 0 and modules.currency.gold == 123 and modules.currency.gems == 456, "全程只读测试数据无实际发奖")
     end)
 
+    I18n.set(originalLanguage)
     package.loaded["ui.story.task.TaskPage"] = savedModules["ui.story.task.TaskPage"]
     package.loaded["ui.story.task.ExpeditionTrackView"] = savedModules["ui.story.task.ExpeditionTrackView"]
     for _, name in ipairs(globalNames) do rawset(_G, name, savedGlobals[name]) end

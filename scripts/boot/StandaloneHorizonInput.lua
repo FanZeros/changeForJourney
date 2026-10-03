@@ -265,7 +265,8 @@ function Input.bind(ctx)
     end
 
     local function levelUpInputActive()
-        return LevelUpPopup.isOpen() and not OfflineRewardPanel.isOpen()
+        return LevelUpPopup.isOpen() and not LevelUpPopup.isPresentationBlocked()
+            and not OfflineRewardPanel.isOpen()
             and not UpdateNoticePopup.isOpen() and not DarkTitleScreen.isOpen()
             and not LetterIntro.isOpen() and not IntroCutscene.isActive()
             and not ScenarioDialogue.isActive()
@@ -276,6 +277,7 @@ function Input.bind(ctx)
     local levelPress, levelMoved = false, false
     local levelStartX, levelStartY = 0, 0
     local levelWidth, levelHeight, levelScale, levelOx, levelOy, levelDpr = 0, 0, 1, 0, 0, 1
+    local levelPresentationVersion = nil ---@type number|nil
     ---@type integer|nil
     local levelTouchId = nil
     -- 同一模态下开始的副指也要吃掉其结束；主指关闭弹窗后不能把副指 Up 下放。
@@ -288,6 +290,7 @@ function Input.bind(ctx)
             levelPress, levelMoved = true, false
             levelStartX, levelStartY = sx, sy
             levelWidth, levelHeight = logicalW(), logicalH()
+            levelPresentationVersion = LevelUpPopup.getPresentationVersion()
             levelScale, levelOx, levelOy, levelDpr = RT.frameScale or 1,
                 RT.frameOx or 0, RT.frameOy or 0, dpr()
         end
@@ -308,6 +311,7 @@ function Input.bind(ctx)
         cancelUnderlyingPress()
         if button == MOUSEB_LEFT then
             local isTap = levelUpInputActive() and levelPress and not levelMoved
+                and LevelUpPopup.getPresentationVersion() == levelPresentationVersion
                 and logicalW() == levelWidth and logicalH() == levelHeight
                 and (RT.frameScale or 1) == levelScale and (RT.frameOx or 0) == levelOx
                 and (RT.frameOy or 0) == levelOy and dpr() == levelDpr

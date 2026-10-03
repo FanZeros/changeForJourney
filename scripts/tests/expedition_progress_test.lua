@@ -64,6 +64,33 @@ function Start()
         check(byId.church.level == Exp.CHURCH_UNLOCK_LEVEL, "礼拜堂门槛同源")
         check(Progress.rewardLabel(Config.findById("a_plv_100").reward) == "黑晶 × 840", "黑晶未改币种")
         check(#Progress.getRangeUnlocks(60,30) == 0, "降级不庆祝解锁")
+        local I18n = require("core.I18n")
+        local dictionary = require("core.I18nExpedition")
+        local function formatKinds(value)
+            local kinds = {}
+            for kind in value:gmatch("%%([ds])") do kinds[#kinds + 1] = kind end
+            return table.concat(kinds)
+        end
+        for language, pack in pairs(dictionary) do
+            I18n.set(language)
+            for source, translated in pairs(pack) do
+                check(type(translated) == "string" and translated ~= "", language .. "每条译文完整")
+                check(formatKinds(source) == formatKinds(translated), language .. "参数类型及顺序保持")
+                if language == "en" or language == "ko" then
+                    check(not translated:find("[\228-\233]"), language .. "非汉字语言不残留中文")
+                end
+            end
+            for _, row in ipairs(model.rows) do
+                local label = Progress.rewardLabel(row.reward)
+                check(label:find(" × ", 1, true) ~= nil, language .. "奖励数量保留")
+            end
+            local range = Progress.getRangeUnlocks(1,60)
+            for _, entry in ipairs(range) do
+                check(Progress.unlockLabel(entry) ~= "", language .. "每种真实解锁有译文")
+                check(entry.unlockName == byId[entry.id].unlockName, language .. "语言不改缓存规则")
+            end
+        end
+        I18n.set("zh_CN")
     end)
     if not ok then print("[FAIL] expedition_progress_test: " .. tostring(err)) end
     if ok then print("[expedition_progress_test] ALL PASS assertions=" .. assertions) end

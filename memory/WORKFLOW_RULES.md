@@ -139,6 +139,15 @@
 
 - 用户随后在 **AskUserQuestion** 选择“创建锻炉修复 PR（推荐）”。已创建 **PR #37**：https://github.com/FanZeros/changeForJourney/pull/37，head=`fix/forge-below-backpack-20261003`、base=`workspace930`，返回 open、merged=false；功能提交 `2508228`。首次API超时后先只读核查无PR才重新创建，未重复创建。创建许可不包含合并；交付记忆仅推修复分支，最后继续真正调用 **AskUserQuestion**。
 
+### 神器宝箱直接解锁协作要求（2026-10-03）
+
+- 用户本轮要求从 `workspace930` 拉取到 `/workspace` 根目录，创建 `fix/artifact-chest-direct-unlock-20261003` 开发分支，仅向该新分支提交和推送，不推送 `workspace` 或 `workspace930`，不自动创建或合并 PR。
+- 已授权的部署、修改、检查、构建和推送持续推进；每轮完成后先如实汇报，再真正调用 **AskUserQuestion** 提供具体下一步选项，不以普通结束语替代。尊重用户后续停止要求与权限拒绝。
+- PAT 不写入项目、Git 远端地址、配置、日志或记忆。本轮只调整神器宝箱解锁，普通装备宝箱和未授权的经济规则保持原样。
+- 本轮具体边界：移除神器宝箱 UI 和抽取服务的噩梦进度锁，旧低进度档直接生效，不伪造关卡进度；教堂 Lv30 入口、神器装配 Lv30/Lv60 和锁队保护、费用、每日免费、保底、背包上限不改。
+- 已验证专项438断言、队伍门槛115断言、普通遗匣筛选51断言与切关/旧神器装配迁移回归全部通过；仓库规范36单元测试通过。真实宝箱面板150帧报告PASS、Lua/资源/引擎错误0，普通1-1进度截图已查看；这是直接面板验收，不声称正常入口低等级开放或完整设备流程通过。主入口160帧完成18/18初始化，Lua/资源错误0，原始FAIL仅两条启动帧尖刺。修改Lua无LSP Error，新增专项无诊断；全工作区47条Error在未改文件，不混修、不宣称全仓清洁。临时预览脚本及meta已清理，截图和本地.project重绑定配置不提交。
+- 功能提交 `92f0329` 已推送到独立开发分支。用户随后在 **AskUserQuestion** 选择“创建修复 PR（推荐）”，已创建 **PR #34**：https://github.com/FanZeros/changeForJourney/pull/34，head=`fix/artifact-chest-direct-unlock-20261003`、base=`workspace930`，返回 open、merged=false；创建授权不包含合并。完成后仍真实简报并调用 **AskUserQuestion** 交接下一步。
+
 ### 三阶查询修复交接（2026-10-03）
 
 - 用户先选择只读核对三阶觉醒，再在 AskUserQuestion 明确选择“修复三阶查询”。从已推送塞拉提交 `cb85275` 新建 `fix1003/awakening-stage-query`，是叠加分支，未混入期间前进的workspace930；禁止推workspace*，完成后真实简报并用 **AskUserQuestion** 给下一步选项，不自行创建或合并PR。

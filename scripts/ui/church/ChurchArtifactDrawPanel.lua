@@ -139,9 +139,9 @@ local function hasArtifactFreeDraw()
     return usedDayId ~= getDayId()
 end
 
+-- 保留查询接口兼容现有调用；宝箱直接开放，不再依赖噩梦进度。
 function M.isArtifactChestUnlocked()
-    local battle = PlayerStore.Get("battle")
-    return StageConfig.hasReachedNightmare(battle)
+    return true
 end
 
 local function getCollectionPityLeft()
@@ -312,11 +312,6 @@ function M.drawBg(vg)
 end
 
 function M.drawContent(vg)
-    if not M.isArtifactChestUnlocked() then
-        drawCollectionLockedContent(vg)
-        return
-    end
-
     nvgFontFace(vg, "sans"); nvgFontSize(vg, COL.TITLE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(COL.TITLE_R, COL.TITLE_G, COL.TITLE_B, 255))
@@ -455,10 +450,6 @@ function M.handleTabInput(dx, dy)
         if not hitTest(dx, dy, KEY_CF.CX, KEY_CF.CY, KEY_CF.W, KEY_CF.H) then
             closeKeyConfirm()
         end
-        return true
-    end
-
-    if not M.isArtifactChestUnlocked() then
         return true
     end
 

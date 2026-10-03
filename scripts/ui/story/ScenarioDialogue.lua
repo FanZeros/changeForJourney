@@ -11,6 +11,8 @@ local EventBus = require("core.EventBus")
 local I18n = require("core.I18n")
 local Story = require("core.I18nStory")
 local Display = require("ui.story.StoryDisplay")
+local ScenarioConfig = require("config.ScenarioDialogueConfig")
+local HeroAssetUtil = require("config.HeroAssetUtil")
 
 local ScenarioDialogue = {}
 
@@ -91,7 +93,8 @@ local portraitCache_ = {}
 -- 立绘动画状态
 local portraitAnimState_ = "idle"    -- "idle" | "exiting" | "entering"
 local portraitAnimT_     = 0
-local exitCharId_        = nil       -- 正在退出的角色 ID
+---@type table|nil
+local exitStep_ = nil           -- 固定持有退出步骤，快速连点不能替换正在退出的立绘
 
 -- 睁眼入场状态
 local eyeOpenActive_   = false
@@ -175,9 +178,10 @@ local function getCachedImage(cache, key, path)
     return cache[key]
 end
 
-local function getAvatarImage(characterId)
-    return getCachedImage(avatarCache_, characterId,
-        require("config.HeroAssetUtil").getIconPath(characterId))
+local function getAvatarImage(step)
+    local appearance = ScenarioConfig.getAppearance(step)
+    local path = appearance.iconPath or (appearance.heroId and HeroAssetUtil.getIconPath(appearance.heroId))
+    return getCachedImage(avatarCache_, path, path)
 end
 
 local function getCgImage(step)
@@ -191,16 +195,14 @@ local function getCgImage(step)
     return getCachedImage(cgCache_, path, path)
 end
 
-local function getPortraitImage(characterId)
-    if not characterId then return -1 end
-    local cached = portraitCache_[characterId]
-    if cached then return cached end
-
-    local path = require("config.HeroAssetUtil").getPortraitPath(characterId) or ""
-    local handle = nvgCreateImage(vg_, path, 0)
-    portraitCache_[characterId] = handle
-    print("[ScenarioDialogue] loadPortrait: id=" .. characterId .. " handle=" .. handle)
-    return handle or -1
+local function getPortraitImage(step)
+    local appearance = ScenarioConfig.getAppearance(step)
+    local path = appearance.portraitPath or (appearance.heroId and HeroAssetUtil.getPortraitPath(appearance.heroId))
+    if not path then return -1 end
+    if portraitCache_[path] ~= nil then return portraitCache_[path] end
+    local handle = getCachedImage(portraitCache_, path, path)
+    print("[ScenarioDialogue] loadPortrait: name=" .. tostring(step.name) .. " path=" .. path .. " handle=" .. handle)
+    return handle
 end
 
 -- ======================== 公开接口 ========================
@@ -272,8 +274,7 @@ function ScenarioDialogue.show(config)
         portraitAnimT_     = 0
     end
 
-    exitCharId_ = nil
-
+    exitStep_ = nil
     print("[ScenarioDialogue] show: mode=" .. mode_ .. " steps=" .. #steps_
         .. " title=" .. tostring(title_))
 end
@@ -363,17 +364,26 @@ function ScenarioDialogue.update(dt)
 end
 
 --- 横屏立绘（逻辑坐标，不走 1080×2400）
----@param characterId number|nil
+---@param step table|nil
 ---@param alpha number
 ---@param cx number
 ---@param cy number
 ---@param pw number
 ---@param ph number
 ---@param offsetX number|nil
-local function drawPortraitAt(characterId, alpha, cx, cy, pw, ph, offsetX)
-    if not characterId or alpha <= 0.01 then return end
-    local img = getPortraitImage(characterId)
+local function drawPortraitAt(step, alpha, cx, cy, pw, ph, offsetX)
+    if not step or alpha <= 0.01 then return end
+    local img = getPortraitImage(step)
     if img < 0 then return end
+    local appearance = ScenarioConfig.getAppearance(step)
+    if appearance.contain then
+        local srcW, srcH = nvgImageSize(vg_, img)
+        if srcW > 0 and srcH > 0 then
+            local scale = math.min(pw / srcW, ph / srcH)
+            DrawUtil.drawImageCentered(vg_, img, cx + (offsetX or 0), cy, srcW * scale, srcH * scale, alpha)
+            return
+        end
+    end
     DrawUtil.drawImageCover(vg_, img, cx + (offsetX or 0), cy, pw, ph, alpha)
 end
 
@@ -431,20 +441,20 @@ local function drawLandscape(w, h)
         local slide = w * 0.045
         local offsetX = 0
         local alpha = dismissAlpha
-        local drawId = step.characterId
+        local drawStep = step
         if not dismissing_ and portraitAnimState_ == "exiting" then
             local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
             local ease = easeInCubic(prog)
             alpha = dismissAlpha * (1.0 - ease)
             offsetX = -slide * ease
-            drawId = exitCharId_ or step.characterId
+            drawStep = exitStep_ or step
         elseif not dismissing_ and portraitAnimState_ == "entering" then
             local prog = math.min(1, portraitAnimT_ / PORTRAIT_ANIM_DUR)
             local ease = easeOutCubic(prog)
             alpha = dismissAlpha * ease
             offsetX = slide * (1.0 - ease)
         end
-        drawPortraitAt(drawId, alpha, portraitCx, portraitCy, portraitW, portraitH, offsetX)
+        drawPortraitAt(drawStep, alpha, portraitCx, portraitCy, portraitW, portraitH, offsetX)
     end
 
     if showDialogue then
@@ -464,17 +474,18 @@ local function drawLandscape(w, h)
     nvgStrokeWidth(vg_, math.max(1.5, h * 0.002))
     nvgStroke(vg_)
 
-    local showAvatar = step.characterId ~= nil
+    local appearance = ScenarioConfig.getAppearance(step)
+    local showAvatar = appearance.heroId ~= nil or appearance.iconPath ~= nil
     local avatarSize = showAvatar and math.max(54, h * 0.078) or 0
     local avatarX = barX + w * 0.018
     local avatarY = barY - avatarSize * 0.34
-    local avatarImg = showAvatar and getAvatarImage(step.characterId) or -1
-    -- [统一角色框] 剧情头像：CG 句也保留角色头像，不再只留名字。旁白没有角色则不画空框。
+    local avatarImg = showAvatar and getAvatarImage(step) or -1
+    -- [统一角色框] 头像与立绘共用剧情美术映射；独立NPC卡图不伪造英雄ID。
     if showAvatar then
         HeroFrame.draw(vg_, {
             cx = avatarX + avatarSize * 0.5, cy = avatarY + avatarSize * 0.5,
             size = avatarSize, radius = (avatarSize + 6) * 0.18,
-            heroId = step.characterId,
+            heroId = appearance.heroId,
             iconHandle = avatarImg,
             state = "owned",
             alpha = dismissAlpha,
@@ -526,11 +537,8 @@ local function drawLandscape(w, h)
 
     nvgFontFace(vg_, "sans")
     nvgFontSize(vg_, math.max(14, h * 0.020))
-    nvgTextAlign(vg_, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(170 * dismissAlpha)))
-    local chapter = title_ or (mode_ == "large" and "情景" or "闲谈")
-    Display.draw(vg_, w * 0.04, h * 0.055, chapter)
     nvgTextAlign(vg_, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
+    nvgFillColor(vg_, nvgRGBA(232, 200, 120, math.floor(170 * dismissAlpha)))
     nvgText(vg_, w * 0.96, h * 0.055, string.format("%d / %d", stepIndex_, #steps_), nil)
 
     if typingDone_ and not dismissing_ then
@@ -598,8 +606,9 @@ function ScenarioDialogue.advance()
         return
     end
 
-    -- 保存当前角色 ID
-    local prevCharId = steps_[stepIndex_] and steps_[stepIndex_].characterId
+    -- 保存当前美术来源；旧剧情编号相同，也可能是不同的说话人。
+    local prevStep = steps_[stepIndex_]
+    local prevAppearance = ScenarioConfig.getAppearance(prevStep)
 
     -- 消失动画期间忽略点击
     if dismissing_ then return end
@@ -631,12 +640,12 @@ function ScenarioDialogue.advance()
         syncDisplay()
         prevCharsShown_ = 0
 
-        -- 立绘动画：角色变化时触发退出→进入
-        local newCharId = steps_[stepIndex_].characterId
-        if prevCharId and newCharId and prevCharId ~= newCharId then
-            exitCharId_        = prevCharId
-            portraitAnimState_  = "exiting"
-            portraitAnimT_      = 0
+        -- 立绘动画按实际美术来源切换，不把镜像和本体误判为其他英雄。
+        local newAppearance = ScenarioConfig.getAppearance(steps_[stepIndex_])
+        if prevAppearance.heroId ~= newAppearance.heroId or prevAppearance.portraitPath ~= newAppearance.portraitPath then
+            exitStep_ = prevStep
+            portraitAnimState_ = "exiting"
+            portraitAnimT_ = 0
         end
 
         print("[ScenarioDialogue] step " .. stepIndex_ .. "/" .. #steps_)
@@ -690,7 +699,7 @@ function ScenarioDialogue.reset()
     imgBG_       = -1
     portraitAnimState_ = "idle"
     portraitAnimT_     = 0
-    exitCharId_        = nil
+    exitStep_          = nil
     eyeOpenActive_     = false
     eyeOpenT_          = 0
     eyeOpenness_       = 0

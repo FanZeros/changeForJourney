@@ -2,11 +2,39 @@
 -- ScenarioDialogueConfig.lua — 情景对话数据配置（玩梗版 v2.2 · 横屏开场）
 -- 开场第一幕在 LetterIntro；第二幕为 OPENING（门厅点卯），不再使用情景 1 点将。
 -- 对应文档: docs/剧情总表.md
--- characterId: HeroConfig 英雄ID（立绘 = image/角色立绘/{角色名}_透明立绘.png）
+-- characterId: 历史剧情角色编号；显示资源通过 getAppearance() 解析，职位不直接占用英雄ID。
 -- mode: "large" = 大情景(全屏覆盖), "small" = 小情景(底部横条)
 -- ============================================================================
 
 local ScenarioDialogueConfig = {}
+
+-- 剧情职位只复用美术，不改变英雄身份、职业或奖励编号。
+-- 按说话人原名匹配，避免同一旧编号用于其他英雄时也被换图。
+local APPEARANCES = {
+    ["圣女"] = { heroId = 15 },                  -- 白金修女：复活吧爱人
+    ["神秘少女"] = { heroId = 15 },              -- 复活场景沿用修女形象
+    ["卫兵"] = { heroId = 10 },                  -- 扛门守卫：铁憨憨
+    ["老板娘"] = { heroId = 13 },                -- 保留原女性形象作为剧情复用
+    ["？？？"] = { heroId = 14 },                -- 黑衣神秘人，保留匿名称呼
+    ["大狗嚼？"] = { heroId = 1 },
+    ["黄桃龙？"] = { heroId = 2 },
+    ["叮咚鸡？"] = { heroId = 3 },
+}
+local BLACKSMITH = {
+    portraitPath = "image/怪物卡牌/KP_GW_1004.png",
+    iconPath = "image/怪物卡牌/KP_GW_1004.png",
+    contain = true,                            -- 昆吾已有卡图，不冒充透明立绘
+}
+APPEARANCES["铁匠"] = BLACKSMITH
+APPEARANCES["愤怒的铁匠"] = BLACKSMITH
+
+--- 获取当前说话人的美术来源；旁白不借用角色，普通英雄仍用自己的资源。
+---@param step table|nil
+---@return table
+function ScenarioDialogueConfig.getAppearance(step)
+    if not step or not step.characterId then return {} end
+    return APPEARANCES[step.name] or { heroId = step.characterId }
+end
 
 --- 开场第二幕：信件结束后、进游戏前。横屏全屏，不点将。
 ScenarioDialogueConfig.OPENING = {

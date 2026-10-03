@@ -215,9 +215,9 @@ function M.draw(vg, opts)
         nvgFill(vg)
 
         -- ③ 头像 / 空位符号
-        if occupied and heroId then
+        if occupied and (heroId or opts.iconHandle) then
             local icon = opts.iconHandle
-            if (not icon or icon < 0) then
+            if heroId and (not icon or icon < 0) then
                 icon = HeroAssetUtil.ensureIcon(img.vg or vg, M._iconCache, heroId)
             end
             if icon and icon >= 0 then

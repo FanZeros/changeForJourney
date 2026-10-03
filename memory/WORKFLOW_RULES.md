@@ -69,6 +69,7 @@ python3 .github/scripts/repository_policy.py --base origin/workspace930
 - session增加独立tutorialProgress，真实完成/跳过才记completed；后续组排队，不覆盖当前组。重启未完成组恢复合法入口，不重复发剧情奖励。招募取消/不足不提前等待，失败/超时/未处理/缺结果回退，清旧newHeroId；全重复招募无新角色不死等拖拽。横屏隐藏旧副本页签时直接打开副本教学入口。
 - 验证：官方Build成功，修改Lua无LSP Error（全仓44条既有Error未混修）；13套Runtime回归通过，新增目标39、布局1189、横屏54案例355断言，流程恢复49断言；另快装78、手势38、滚动10、离线覆盖487及剧情/切关/终焉等通过。屏幕覆盖层已在1280×720与844×390真实离屏截图确认目标镂空、气泡和skip位置；完整新档全流程仍需用户实机验收，不能把mock/夹具说成真人通关。
 - 临时截图脚本和测试生成招募历史清理，不提交；新增Lua保留官方生成meta，原UUID未变。本地构建身份不提交，凭据不进Git/配置/日志/记忆。
+- 已创建 **PR #25**：https://github.com/FanZeros/changeForJourney/pull/25，head=`fix930/tutorial-horizon-flow-1003`，base=`workspace930`，未自动合并。创建时最新基线`8d3e62fe`已包含PR21/22/23，本分支尚未同步；merge-tree仅本记忆文件文本冲突，其余玩法重叠可自动合并。处理冲突后需合并态重新验证，不以源分支回归代替并行功能验收。
 - 每次完成必须先如实简报，再真正调用 **AskUserQuestion** 提供2–4个下一步选项；持续推进已授权任务，尊重用户后续停止要求及权限拒绝。
 
 ## 装备套装徽记去框（2026-10-03）

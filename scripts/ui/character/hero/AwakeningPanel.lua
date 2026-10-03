@@ -44,7 +44,7 @@ local SLICES = {
     GAP    = 0,
     SX     = 36,     -- 左缘（(1080-3*336)/2）
     SY     = 300,    -- 基准顶：阶段代号(y~222)紧贴其下
-    SLANT  = 154,    -- 斜边横向偏移：上条向右下，下条向左下
+    SLANT  = 48,     -- 底部中片保留 336-2*48=240 宽，斜切不挤成尖条
     STAG   = { 0, 0, 0 },
     V_BIAS = 0.0,
 }
@@ -63,8 +63,8 @@ local EFFECT_FONT           = 36
 -- 底栏操作：碎片标识在左、嵌合按钮在右（放大）
 local SHARD_ICON_SIZE = 114
 local SHARD_ICON_CX   = 196
-local SHARD_ROW_CY    = 2040
-local BTN_CX, BTN_CY = 720, 2040
+local SHARD_ROW_CY    = 2160
+local BTN_CX, BTN_CY = 720, 2160
 local BTN_W, BTN_H   = 520, 100
 local BTN_TEXT_FONT  = 46
 
@@ -364,7 +364,7 @@ local function drawSlice(vg, i, state, isSelected, cgImg, dw, dh, v0, sw)
     if state == "active" then
         drawTextStroke(vg, cx, by, "已嵌合",
             22, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-            col[1], col[2], col[3], 3)
+            244, 237, 224, 3)
     elseif state == "next" then
         drawTextStroke(vg, cx, by, "可嵌合",
             22, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
@@ -454,8 +454,8 @@ function M.draw(vg, heroId)
     local costText = selectedCost > 0 and ("/" .. selectedCost) or ""
     local fullText = shardNumText .. costText
     DrawUtil.drawShardIcon(vg, heroId, SHARD_ICON_CX, SHARD_ROW_CY, SHARD_ICON_SIZE, 1.0)
-    -- 碎片数量：够=亮青，不够=棕色
-    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8d, 0x5f, 0x41 }
+    -- 碎片数量：够=亮青，不够=灰蓝色
+    local shardColor = shardSufficient and { 0x72, 0xe9, 0xff } or { 0x8b, 0x95, 0xa5 }
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 66)
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
@@ -483,10 +483,10 @@ function M.draw(vg, heroId)
     end
     local _bfAct = BF.begin(vg, "awp_activate", BTN_CX, BTN_CY, BTN_W, BTN_H)
     drawImageCentered(vg, imgActivateBtn, BTN_CX, BTN_CY, BTN_W, BTN_H, btnAlpha)
-    -- 按钮文字：可嵌合=亮骨白，禁用=棕色
+    -- 按钮文字：可嵌合/已嵌合=亮骨白；条件未满足才用灰蓝色。
     local tr, tg, tb = 244, 237, 224
-    if btnDisabled then
-        tr, tg, tb = 0x8d, 0x5f, 0x41
+    if btnDisabled and not currentNodeActive then
+        tr, tg, tb = 0x8b, 0x95, 0xa5
     end
     drawTextStroke(vg, BTN_CX, BTN_CY, btnText, BTN_TEXT_FONT,
         NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, tr, tg, tb, 4,

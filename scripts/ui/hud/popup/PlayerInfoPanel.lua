@@ -70,7 +70,7 @@ local MASK_ALPHA = 0
 
 -- 弹窗背景（九宫格）
 local BG = {
-    CX = 540, CY = 1067, W = 950, H = 1747,
+    CX = 540, CY = 1132, W = 950, H = 1877,
     IT = 180, IL = 40, IR = 40, IB = 50,
 }
 
@@ -311,15 +311,15 @@ local function formatPlayTime(secs)
     local hours = math.floor((total % 86400) / 3600)
     local mins = math.floor((total % 3600) / 60)
     if days > 0 then
-        return string.format("游玩时间 %d天%d小时", days, hours)
+        return string.format("远征时间 %d天%d小时", days, hours)
     end
     if hours > 0 then
-        return string.format("游玩时间 %d小时%d分", hours, mins)
+        return string.format("远征时间 %d小时%d分", hours, mins)
     end
     if mins > 0 then
-        return string.format("游玩时间 %d分", mins)
+        return string.format("远征时间 %d分", mins)
     end
-    return "游玩时间 不足1分"
+    return "远征时间 不足1分"
 end
 
 --- 判断当前玩家是否为 GM（完全由服务端鉴权，客户端无白名单）

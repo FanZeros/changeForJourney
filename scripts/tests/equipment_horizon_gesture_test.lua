@@ -176,6 +176,9 @@ function Start()
             }),
         }
         require = function(name)
+            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay" then
+                return originalRequire(name)
+            end
             if not mods[name] then mods[name] = mock() end
             return mods[name]
         end

@@ -209,5 +209,6 @@ function Start()
     pdm.GetModule, pdm.MarkDirty = oldPdmGet, oldDirty
     heroService.ApplyResonanceSync = oldResonance
     File, fileSystem = oldFile, oldSystem
-    print("[offline_boundary_test] PASS: startup freeze, old save, pending, claim, online, crash, short, clock rollback")
+    print("[offline_boundary_test] ALL PASS: startup freeze, old save, pending, claim, online, crash, short, clock rollback")
+    engine:Exit()
 end

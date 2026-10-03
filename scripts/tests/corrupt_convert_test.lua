@@ -234,6 +234,56 @@ function Start()
     local okD3, errD3 = BS.RefineEquip(UID, e6.seq, "destroyStone")
     check(not okD3, "全S品且品质上限后点金石被拒绝: " .. tostring(errD3))
 
+    -- ========== 8) 升阶投入经过腐化、读档、净化后保真 ==========
+    newModules()
+    local eRound = putEquip(makeWeapon(5))
+    eRound.affixes = {
+        { affixId = 1, quality = 3, value = 10, key = "str", name = "力量", ascBonus = 7 },
+        { affixId = 2, quality = 3, value = 20, key = "agi", name = "敏捷", ascBonus = 11 },
+    }
+    local okRound = BS.RefineEquip(UID, eRound.seq, "corruptStone")
+    check(okRound, "带升阶投入的词条可腐化")
+    local roundPatch = eRound.corruptRevert.patches[1]
+    local roundIdx = roundPatch[2]
+    local roundBefore = roundPatch[3]
+    local roundValue = eRound.affixes[roundIdx].value
+    eq(eRound.affixes[roundIdx].ascBonus, nil, "转换后魔化槽不持有普通加成")
+    check((tonumber(roundBefore.ascBonus) or 0) > 0, "转换快照保留原普通升阶投入")
+    local roundRestored = cjson.decode(cjson.encode(EquipmentSystem.dehydrate(eRound)))
+    EquipmentSystem.hydrate(roundRestored)
+    eq(roundRestored.affixes[roundIdx].value, roundValue, "读档不重算魔化转换增幅")
+    check(roundRestored.corruptRevert.patches[1][1] == "c", "JSON 往返恢复转换 patch 数字索引")
+    eRound.affixes = roundRestored.affixes
+    eRound.corruptRevert = roundRestored.corruptRevert
+    local okWash = BS.RefineEquip(UID, eRound.seq, "sacredStone")
+    check(okWash, "读档后神圣石可净化")
+    eq(eRound.affixes[roundIdx].affixId, roundBefore.affixId, "净化恢复原词条类型")
+    eq(eRound.affixes[roundIdx].ascBonus, roundBefore.ascBonus, "净化恢复原升阶投入")
+
+    -- ========== 9) 魔化夹在普通槽之间时，洗练替换仍按原槽保留投入 ==========
+    newModules()
+    local eMixed = putEquip(makeWeapon(5))
+    eMixed.affixes = {
+        { affixId = 1, quality = 3, value = 10, key = "str", name = "力量", ascBonus = 7 },
+        { affixId = 1001, quality = 0, value = 5, key = "finalPhysAtkBonus", name = "最终物攻" },
+        { affixId = 2, quality = 3, value = 20, key = "agi", name = "敏捷", ascBonus = 11 },
+    }
+    local okMixed = BS.RefineEquip(UID, eMixed.seq, nil)
+    check(okMixed, "混合词条可普通洗练")
+    check(BS.RefineReplace(UID, eMixed.seq), "混合词条可替换洗练结果")
+    eq(eMixed.affixes[1].ascBonus, 7, "混合槽1保留升阶投入")
+    eq(eMixed.affixes[2].ascBonus, nil, "混合槽2魔化不获得普通投入")
+    eq(eMixed.affixes[3].ascBonus, 11, "混合槽3保留升阶投入")
+
+    -- 旧品质魔化纠错与无数值旧档仍按模板修复。
+    local oldCorrupt = { affixId = 1001, quality = 5, value = 999999 }
+    EquipmentSystem.ensureAffixValue(oldCorrupt, eMixed)
+    eq(oldCorrupt.quality, 0, "旧魔化品质增幅清零")
+    check(oldCorrupt.value < 999999, "旧魔化错误高值仍按模板纠正")
+    oldCorrupt.value = nil
+    EquipmentSystem.ensureAffixValue(oldCorrupt, eMixed)
+    check((tonumber(oldCorrupt.value) or 0) > 0, "旧魔化缺失数值可补齐")
+
     if #failures == 0 then
         print(PREFIX .. "RESULT ALL PASS")
     else

@@ -4,6 +4,7 @@ local EquipmentConfig = require("config.EquipmentConfig")
 local DrawUtil = require("core.DrawUtil")
 local M = {}
 local cache = {}
+local badgeCache = {}
 
 function M.setId(equip)
     if not equip then return nil end
@@ -30,6 +31,18 @@ function M.get(vg, setId)
     cache[setId] = image or -1
     if not image or image < 0 then print("[EquipmentSetIcon] 加载失败：" .. path) end
     return cache[setId]
+end
+
+-- 仅装备角标使用透明主体图；失败时跳过，不回退到带框V3。
+local function getBadge(vg, setId)
+    if not vg or not SetConfig.get(setId) then return -1 end
+    local cached = badgeCache[setId]
+    if cached ~= nil then return cached end
+    local path = "image/套装图标/badge/SET_" .. setId .. ".png"
+    local image = nvgCreateImage(vg, path, 0)
+    badgeCache[setId] = image or -1
+    if not image or image < 0 then print("[EquipmentSetIcon] 无框徽记加载失败：" .. path) end
+    return badgeCache[setId]
 end
 
 -- 完整套装列表/筛选图标不受装备角标开关影响。
@@ -59,8 +72,11 @@ end
 
 function M.drawBadge(vg, equip, cx, cy, cellSize, alpha)
     if not M.hasBadge(equip) then return false end
+    local image = getBadge(vg, M.setId(equip))
+    if image < 0 then return false end
     local layout = M.badgeLayout(cx, cy, cellSize)
-    return M.draw(vg, M.setId(equip), layout.cx, layout.cy, layout.size, alpha)
+    DrawUtil.drawImageCentered(vg, image, layout.cx, layout.cy, layout.size, layout.size, alpha or 1)
+    return true
 end
 
 return M

@@ -5,13 +5,24 @@ local function eq(actual, expected, message)
     assert(actual == expected, message .. ": " .. tostring(actual) .. " / " .. tostring(expected))
 end
 
-function Start()
+local restore = function() end
+
+local function runTests()
     local oldTime = time
-    time = { elapsedTime = 10 }
     local oldSfx = package.loaded["systems.GameSFX"]
     local oldFeedback = package.loaded["systems.ButtonFeedback"]
     local oldIcons = package.loaded["core.DarkIcon"]
     local oldDetail = package.loaded["ui.character.equip.EquipmentDetail"]
+    local restoreDialog = function() end
+    restore = function()
+        restoreDialog()
+        package.loaded["systems.GameSFX"] = oldSfx
+        package.loaded["systems.ButtonFeedback"] = oldFeedback
+        package.loaded["core.DarkIcon"] = oldIcons
+        package.loaded["ui.character.equip.EquipmentDetail"] = oldDetail
+        time = oldTime
+    end
+    time = { elapsedTime = 10 }
     package.loaded["ui.character.equip.EquipmentDetail"] = {
         init = function() end,
         readOnlySize = function() return 720, 440 end,
@@ -31,6 +42,9 @@ function Start()
     local Page = require("ui.loot.LootBoxPage")
     local Dialog = require("ui.widget.SetFilterDialog")
     local originalOpen = Dialog.open
+    restoreDialog = function()
+        Dialog.open = originalOpen
+    end
     ---@type (fun(): table<string, integer>)|nil
     local countGetter = nil
     Dialog.open = function(sel, opts)
@@ -182,12 +196,17 @@ function Start()
     eq(countGetter().none, 1, "取消品质后无套装数量恢复")
 
     Page.forceClose()
-    Dialog.open = originalOpen
-    package.loaded["systems.GameSFX"] = oldSfx
-    package.loaded["systems.ButtonFeedback"] = oldFeedback
-    package.loaded["core.DarkIcon"] = oldIcons
-    package.loaded["ui.character.equip.EquipmentDetail"] = oldDetail
-    time = oldTime
-    print("[lootbox_set_filter_test] 套装筛选全部通过")
+end
+
+function Start()
+    local ok, err = pcall(runTests)
+    local cleanupOK, cleanupErr = pcall(restore)
+    if not ok then
+        print("[lootbox_set_filter_test] [FAIL] " .. tostring(err))
+    elseif not cleanupOK then
+        print("[lootbox_set_filter_test] [FAIL] cleanup: " .. tostring(cleanupErr))
+    else
+        print("[lootbox_set_filter_test] ALL PASS：套装筛选全部通过")
+    end
     engine:Exit()
 end

@@ -783,7 +783,7 @@ function M.drawAll(vg)
         local diamondEnough = GameState.getGems() >= popupState.confirmDiamondCost
         local dBadgeR, dBadgeG, dBadgeB = 255, 255, 255
         if not diamondEnough then
-            dBadgeR, dBadgeG, dBadgeB = 0x8d, 0x5f, 0x41
+            dBadgeR, dBadgeG, dBadgeB = 0x8b, 0x95, 0xa5
         end
         drawTextStroke(vg,
             CF.DIAMOND_CX + CF.BADGE_OX,

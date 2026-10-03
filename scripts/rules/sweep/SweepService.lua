@@ -51,6 +51,14 @@ function SweepService.Sweep(uid, count, teamIdx)
     if not currency or not battleData or not heroesData or not playerData or not equipData then
         return false, "数据未加载"
     end
+    -- 请求门禁必须先于队伍归一化、扣券与发奖；不得把无效/锁定队伍偷偷改扫队1。
+    teamIdx = teamIdx == nil and 1 or math.tointeger(tonumber(teamIdx) or 0)
+    if not teamIdx or teamIdx < 1 or teamIdx > ExpTable.TEAM_COUNT then
+        return false, "无效的队伍编号"
+    end
+    if teamIdx > ExpTable.getUnlockedTeamCount(battleData) then
+        return false, string.format("队伍%d尚未解锁（%s）", teamIdx, ExpTable.getTeamUnlockText(teamIdx))
+    end
     if not equipData.inventory then
         equipData.inventory = {}
     end
@@ -91,8 +99,6 @@ function SweepService.Sweep(uid, count, teamIdx)
     local sweepStages = { sweepEntry }
 
     -- 出战英雄：按指定队伍取槽位（排除空槽 0）；队1 无 teams 结构时回退 deployed 镜像
-    teamIdx = math.tointeger(teamIdx or 1) or 1
-    if teamIdx < 1 or teamIdx > 3 then teamIdx = 1 end
     local TeamSlots = require("shared.heroes.TeamSlots")
     TeamSlots.normalize(heroesData)
     local teamSlots = heroesData.teams and heroesData.teams[teamIdx]

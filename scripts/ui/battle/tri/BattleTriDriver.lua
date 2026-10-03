@@ -103,6 +103,7 @@ function BattleTriDriver.new(teamIdx, options)
         rewardTimer = 0,
         introTimer = 0,
         marchTimer = 0,
+        marchNotice = false,
         active   = false,
         -- [多实例] 各子系统状态
         combatState = BattleCombat.newState("tri" .. teamIdx),
@@ -209,6 +210,8 @@ function BattleTriDriver.new(teamIdx, options)
             self:queuePendingKills()
         end
         self.stageId = stageId
+        self.marchTimer = 0
+        self.marchNotice = false
         self.kills = 0
         self._clearReported = false
         self._labDefeated = false
@@ -429,22 +432,33 @@ function BattleTriDriver.new(teamIdx, options)
         end
     end
 
-    --- 奖励关掉后再走一段路，然后切下一关
+    --- 通关后前进；提示由顶部行标签持续展示，不进入浮字或弹窗。
     function drv:beginMarch()
         if (self.marchTimer or 0) > 0 then return end
         self.marchTimer = MARCH_DURATION
+        self.marchNotice = true
         for _, unit in ipairs(self.allies) do
             if unit.hp > 0 then
                 BattleCombat.setCardAnim(unit, { state = "march", timer = 0, lungeDir = -1 })
             end
         end
-        BattleCombat.addFloatingText("正在前进中", BattleLayout.STRIP_W * 0.5, BattleLayout.STRIP_CY - 80,
-            { 255, 230, 160 }, false)
+        print(string.format("[TriDriver] 队%d 前进开始 stage=%s duration=%.1f",
+            self.teamIdx, tostring(self.stageId), MARCH_DURATION))
+    end
+
+    --- 只变换背景：前进时轻微放大并淡化，切关前恢复原状。
+    function drv:getMarchBackground()
+        local remaining = self.marchTimer or 0
+        if remaining <= 0 then return 1, 1 end
+        local progress = math.max(0, math.min(1, 1 - remaining / MARCH_DURATION))
+        local pulse = math.sin(progress * math.pi) ^ 2
+        return 1 + 0.06 * pulse, 1 - 0.25 * pulse
     end
 
     --- 通关推进
     function drv:advanceStage()
         self.marchTimer = 0
+        self.marchNotice = false
         local nextId = SC.getNextStageId(self.stageId)
         if not nextId then
             self:start(self.stageId)
@@ -469,9 +483,9 @@ function BattleTriDriver.new(teamIdx, options)
         self._syncedMainStage = nextId
         self._clearReported = false
         self._skipAllyEnter = true
-        local BattleScene = require("ui.battle.scene.BattleScene")
-        if BattleScene.beginMapMarch then BattleScene.beginMapMarch(MARCH_DURATION) end
         self:start(nextId)
+        -- 下一关敌人入场完成之前仍显示前进提示；空编队不进入提示状态。
+        self.marchNotice = #self.allies > 0
     end
 
     --- 战斗 tick（须已 mount）
@@ -483,14 +497,20 @@ function BattleTriDriver.new(teamIdx, options)
         if self.terminalRaid and self.terminalRaid.defeated[self.teamIdx] then return end
         local allies, enemies = self.allies, self.enemies
         if self.terminalRaid and self.terminalRaid.finished then return end
-        if #allies == 0 then return end
+        if #allies == 0 then
+            self.marchTimer = 0
+            self.marchNotice = false
+            return
+        end
         if (self.introTimer or 0) > 0 then
             self.introTimer = self.introTimer - dt
             BattleCombat.updateCardAnims(dt)
             BattleCombat.updateFloatingTexts(dt)
             BattleCombat.updateHitFlashes(dt)
+            if self.introTimer <= 0 then self.marchNotice = false end
             return
         end
+        if (self.marchTimer or 0) <= 0 then self.marchNotice = false end
         if self.battleLab then
             self._labElapsed = self._labElapsed + dt
             if self._labElapsed >= self._labTimeLimit then
@@ -720,7 +740,7 @@ function BattleTriDriver.new(teamIdx, options)
                 self._sigTick = 0
                 local CharacterPanel = require("ui.character.panel.CharacterPanel")
                 local signature = CharacterPanel.getTeamSignature(self.teamIdx)
-                if signature ~= self.teamSignature then
+                if signature ~= self.teamSignature and (self.marchTimer or 0) <= 0 then
                     self:start(self.stageId)
                     return
                 end

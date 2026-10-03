@@ -139,6 +139,9 @@ function Start()
         }
         -- Runtime require 可忽略 package.loaded；全程包装 _G.require 拦截动态依赖。
         _G.require = function(name)
+            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay" then
+                return originalRequire(name)
+            end
             if not mods[name] then mods[name] = mock() end
             return mods[name]
         end

@@ -974,8 +974,8 @@ local SCENARIO_REWARDS = {
     [59] = { type = "none", requiredHeroId = 2, requiredStageId = 305 },
     [60] = { type = "none", requiredHeroId = 3, requiredStageId = 305 },
 
-    -- 第二章通关·大狗嚼潜能引导（首通 205）：大狗嚼碎片×60，引导升潜能/觉醒
-    [82] = { type = "shard", heroId = 1, amount = 60, requiredStageId = 205 },
+    -- 第二章通关·大狗嚼潜能引导（首通 205）：大狗嚼碎片×10，足够首次觉醒
+    [82] = { type = "shard", heroId = 1, amount = 10, requiredStageId = 205 },
 }
 
 --- 领取情景对话奖励

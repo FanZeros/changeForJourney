@@ -927,17 +927,17 @@ ScenarioDialogueConfig.SCENARIO_81 = {
     },
 }
 
---- 情景 82：第二章通关·大狗嚼潜能引导（发放大狗嚼碎片×60，引导升潜能/觉醒）
+--- 情景 82：第二章通关·大狗嚼潜能引导（发放大狗嚼碎片×10，足够首次觉醒）
 --- 出现条件: 首通 205（普通难度第二章收尾），不限初始角色
 ScenarioDialogueConfig.SCENARIO_82 = {
     mode = "small",
     steps = {
         { characterId = 1, name = "大狗嚼", text = "叫！第二章啃完了！本狗的牙口还没尽兴，骨头缝里都在冒火星子！" },
-        { characterId = 1, name = "大狗嚼", text = "远征长看好了——这 60 块碎片是本狗从怪堆里嚼出来的！塞进「潜能」里，就能再嵌合一阶！" },
+        { characterId = 1, name = "大狗嚼", text = "远征长看好了——这 10 块碎片是本狗从怪堆里嚼出来的！塞进「潜能」里，就能嵌合第一阶！" },
         { characterId = 1, name = "大狗嚼", text = "角色详情、觉醒页、嵌合！三步走！嵌完下一口，本狗直接啃boss的脑袋！叫！" },
     },
     rewards = {
-        { type = "shard", heroId = 1, amount = 60 },
+        { type = "shard", heroId = 1, amount = 10 },
     },
 }
 

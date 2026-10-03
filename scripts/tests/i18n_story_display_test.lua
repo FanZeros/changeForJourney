@@ -287,6 +287,155 @@ function Start()
         Intro.skip()
         check(introFinishes == 1 and Intro.isFinished(), "过场skip仅一次")
         Intro.reset()
+        -- 剧情职位的头像/立绘来源一致；不把历史角色编号直接当作英雄身份。
+        local HeroAssets = require("config.HeroAssetUtil")
+        local HC = require("config.HeroConfig")
+        local expectedIds = {
+            ["圣女"] = 15, ["神秘少女"] = 15, ["卫兵"] = 10,
+            ["老板娘"] = 13, ["？？？"] = 14,
+            ["大狗嚼？"] = 1, ["黄桃龙？"] = 2, ["叮咚鸡？"] = 3,
+        }
+        local blacksmithPath = "image/怪物卡牌/KP_GW_1004.png"
+        local configs = { Config.OPENING }
+        for _, config in ipairs(Config.OPENING_JOINS) do configs[#configs + 1] = config end
+        for id = 1, 82 do
+            local config = Config["SCENARIO_" .. id] --[[@as table?]]
+            if config then configs[#configs + 1] = config end
+        end
+        local allSteps, specialSteps = 0, 0
+        for _, config in ipairs(configs) do
+            for _, step in ipairs(config.steps) do
+                local appearance = Config.getAppearance(step)
+                if step.name == "铁匠" or step.name == "愤怒的铁匠" then
+                    check(appearance.heroId == nil and appearance.portraitPath == blacksmithPath
+                        and appearance.iconPath == blacksmithPath and appearance.contain,
+                        "铁匠两种称呼共用昆吾且不伪造英雄ID")
+                    specialSteps = specialSteps + 1
+                else
+                    check(appearance.heroId == (expectedIds[step.name] or step.characterId),
+                        "说话人映射 " .. step.name)
+                    if expectedIds[step.name] then specialSteps = specialSteps + 1 end
+                end
+                allSteps = allSteps + 1
+            end
+        end
+        check(#configs == 84 and allSteps == 196, "开场和全部80编号情景共196句已核对")
+        check(specialSteps > 50, "所有特殊说话人覆盖")
+        check(HC.get(21).name == "雷电麦坤" and HC.get(4).name == "接化发掌门"
+            and HC.get(6).name == "阿姨压" and HC.get(7).name == "信光机兵"
+            and HC.get(8).name == "愤怒的小雀", "英雄本体名字及编号未被剧情映射改写")
+        check(Config.getAppearance(nil).heroId == nil
+            and Config.getAppearance({ name = "旁白" }).heroId == nil, "旁白不借用头像/立绘")
+
+        -- 绘制spy捕获最终图片路径，包含真实HeroFrame的无英雄ID自定义头像分支。
+        local imagePaths, imageDraws = {}, {} ---@type table[], table[]
+        local nextImage = 0
+        replace("nvgCreateImage", function(_, path)
+            nextImage = nextImage + 1
+            imagePaths[nextImage] = path
+            return nextImage
+        end)
+        replace("nvgImageSize", function(_, image)
+            if imagePaths[image] == blacksmithPath then return 572, 1024 end
+            return 832, 1248
+        end)
+        replace("nvgImagePattern", function(_, x, y, width, height, _, image, alpha)
+            imageDraws[#imageDraws + 1] = { path = imagePaths[image], width = width, height = height, alpha = alpha }
+            local color = nvgRGBA(255, 255, 255, 255) --[[@as NVGcolor]]
+            return nvgLinearGradient(metricContext, 0, 0, 1, 1, color, color)
+        end)
+        local function hasImage(path)
+            for _, draw in ipairs(imageDraws) do
+                if draw.path == path then return true end
+            end
+            return false
+        end
+        local function drawStep(step, mode, width, height, title)
+            Scenario.reset()
+            Scenario.show({ mode = mode, title = title, steps = { step } })
+            Scenario.update(0.6)
+            Scenario.advance() -- 补全文，不推进或领奖。
+            captures, drawCalls, imageDraws = {}, {}, {}
+            Scenario.draw(width, height)
+        end
+        I18n.set("zh_CN")
+        for _, sample in ipairs({ Config.SCENARIO_27.steps[1], Config.SCENARIO_23.steps[1],
+            Config.SCENARIO_31.steps[1], Config.SCENARIO_38.steps[2], Config.SCENARIO_61.steps[1],
+            Config.SCENARIO_64.steps[1], Config.SCENARIO_65.steps[1], Config.SCENARIO_67.steps[1],
+            Config.SCENARIO_35.steps[1], Config.SCENARIO_41.steps[1],
+            { characterId = 21, name = "雷电麦坤", text = "发车！" } }) do
+            drawStep(sample, "small", 1920, 1080)
+            local appearance = Config.getAppearance(sample)
+            check(hasImage(appearance.portraitPath or HeroAssets.getPortraitPath(appearance.heroId)),
+                sample.name .. "最终立绘路径")
+            check(hasImage(appearance.iconPath or HeroAssets.getIconPath(appearance.heroId)),
+                sample.name .. "最终头像路径")
+            check(contains(sample.name) and contains(sample.text), sample.name .. "原称呼和全文保留")
+            if sample.name == "铁匠" or sample.name == "愤怒的铁匠" then
+                local card = imageDraws[1]
+                check(math.abs(card.width / card.height - 572 / 1024) < 0.001,
+                    "昆吾卡图等比contain，不按透明立绘裁切")
+                check(#imageDraws == 2, "无英雄ID时昆吾立绘和头像都实际绘制")
+            end
+        end
+        -- 圣女和雷电麦坤旧编号同为21：按路径缓存，不能互相污染。
+        drawStep(Config.SCENARIO_27.steps[1], "small", 844, 390)
+        check(hasImage(HeroAssets.getPortraitPath(15)) and not hasImage(HeroAssets.getPortraitPath(21)),
+            "同编号再播圣女仍为修女，不命中赛车手缓存")
+        -- 三位镜像与正主形象相同，保留问号名，不借用6/7/8。
+        for _, id in ipairs({ 64, 65, 67 }) do
+            local config = Config["SCENARIO_" .. id] --[[@as table?]]
+            Scenario.reset()
+            Scenario.show(config)
+            Scenario.update(0.6)
+            Scenario.advance()
+            Scenario.advance()
+            Scenario.update(0.1)
+            captures, imageDraws = {}, {}
+            Scenario.draw(1920, 1080)
+            local realHero = config.steps[2].characterId
+            check(hasImage(HeroAssets.getPortraitPath(realHero)), "镜像切正主立绘来源保持一致")
+        end
+        -- 退出动画内快速连点：固定保留正在退出的狗，不提前换成神秘少女。
+        Scenario.reset()
+        Scenario.show(Config.SCENARIO_38)
+        Scenario.update(0.6)
+        Scenario.advance()
+        Scenario.advance()
+        Scenario.update(0.1)
+        Scenario.advance()
+        Scenario.advance()
+        captures, imageDraws = {}, {}
+        Scenario.draw(1920, 1080)
+        check(imageDraws[2].path == HeroAssets.getPortraitPath(1), "快速连点仍绘制固定退出步骤")
+        check(hasImage(HeroAssets.getIconPath(15)), "快速连点头像跟随当前神秘少女")
+        Scenario.update(0.2)
+        Scenario.update(0.1)
+        captures, imageDraws = {}, {}
+        Scenario.draw(1920, 1080)
+        check(imageDraws[2].path == HeroAssets.getPortraitPath(15), "退出后新修女按动画入场")
+        for _, lang in ipairs({ "zh_CN", "en" }) do
+            I18n.set(lang)
+            for _, mode in ipairs({ "small", "large" }) do
+                for _, title in ipairs({ false, "", "闲聊 · 回合标题" }) do
+                    for _, size in ipairs({ { 844, 390 }, { 1920, 1080 } }) do
+                        drawStep(Config.SCENARIO_27.steps[1], mode, size[1], size[2], title or nil)
+                        local topLeftCount = 0
+                        for _, call in ipairs(drawCalls) do
+                            if call.x < size[1] * 0.5 and call.y < size[2] * 0.15 then
+                                topLeftCount = topLeftCount + 1
+                            end
+                        end
+                        check(topLeftCount == 0, "大小情景各标题/语言/尺寸均不显示左上标签")
+                        check(contains("1 / 1") and contains(Display.text("轻触继续")), "右上句数和继续提示保留")
+                        local progress, total = Scenario.getProgress()
+                        check(progress == 1 and total == 1 and Scenario.isActive(), "删除标签不改内部进度")
+                    end
+                end
+            end
+        end
+        Scenario.reset()
+        print(string.format("STORY APPEARANCE: %d configs / %d steps / %d special steps", #configs, allSteps, specialSteps))
         print(string.format("I18N STORY DISPLAY: ALL PASS (%d checks)", passed_))
     end)
     if originalFunctions.__displayText then I18n.displayText = originalFunctions.__displayText end

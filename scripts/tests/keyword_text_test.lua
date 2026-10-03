@@ -144,7 +144,15 @@ local function runTests()
 
     -- ── 星图属性：长词优先，不把「物理暴击伤害」拆成「暴击伤害」──
     check(KW.get("物理暴击伤害") ~= nil, "词表包含「物理暴击伤害」")
-    check(KW.get("护盾伤害减免") ~= nil, "词表包含「护盾伤害减免」")
+    check(KW.get("护盾伤害减免") ~= nil and KW.get("护盾伤害减免").title == "护盾减伤",
+        "护盾关键词保留原key并使用短标题")
+    local shortShield = KeywordText.new()
+    shortShield:draw(nil, "全体护盾减伤+12%", 0, 0, 900, 30)
+    check(#shortShield.hotspots == 1 and shortShield.hotspots[1].name == "护盾伤害减免",
+        "新护盾减伤短名命中原关键词而不拆为护盾")
+    local shortSpot = shortShield.hotspots[1]
+    check(shortShield:handleInput(shortSpot.x1 + 1, shortSpot.y1 + 1)
+        and shortShield.popup.key == "护盾伤害减免", "短名点击仍打开原关键词机制")
     local kt5 = KeywordText.new()
     kt5:draw(nil, "全体物理暴击伤害+32%，暴击伤害+20%，护盾伤害减免+6%", 0, 0, 900, 30)
     local nPhys, nCrit, nShield = 0, 0, 0

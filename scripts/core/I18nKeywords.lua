@@ -483,7 +483,11 @@ end
 
 -- 只对已显示的词做高亮匹配。旧/其他分区的确切译词作为显式别名，不用于句子改写。
 local function aliases(lang)
-    if lang == "en" then
+    if lang == "zh_CN" then
+        return { { "护盾减伤", "护盾伤害减免" } }
+    elseif lang == "zh_TW" then
+        return { { "護盾減傷", "护盾伤害减免" }, { "護盾傷害減免", "护盾伤害减免" } }
+    elseif lang == "en" then
         return { { "Sacred Stone", "神圣石" }, { "Alchemy Stone", "点金石" },
             { "Corruption Stone", "腐化石" }, { "Bones", "骸骨" }, { "Gate-gap", "门缝" },
             { "ASPD", "攻击速度" }, { "Phys Crit Rate", "物理暴击率" },

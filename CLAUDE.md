@@ -19,7 +19,8 @@
 - 删除CharacterEquipStats的候选/错误整行文本及status布局，预览计算、校验与实际穿装规则不改；两个标题左右使用几何实心三角，热区不变。属性列表delta cy-35→cy-28，六围delta ly-58→ly-51，仅新增数字下移7px，当前值/名称不动。
 - 回归已验证配装210、角标146、预览117、生命周期、真实装备集成、拖拽、滚动10、切关、装备国际化均ALL PASS。测试夹具缺I18n get/format/display出口与旧角标坐标先失败，补接口/坐标后通过；真实集成首失败因CP.init清空此前注入拥有列表，按生产顺序CP.setHeroesData后通过，未放宽生产拥有门控。
 - 真仓库/配装与出战英雄切换、独立列表/雷达差值两张渲染各150帧PASS、Lua/资源/引擎错误0，已查看角标无裁切及数字间距。截图留本地screenshots/equipment-adjustments，不入提交；两临时入口及meta已清理后须最终build。角色详情超长文本2项既有失败仍保留（前轮纯基线已复现），不宣称全仓/全设备视觉验收。
-- 已提交并推送 `87d020c8` 到 `fix930/equipment-badges-tab-toggle-1003`，本轮未创建PR、未推workspace930。临时入口清理后最终官方Build成功，最后九套回归再次全部ALL PASS；提交命令首轮超时未生成提交，分步暂存/提交完成，未重复或丢代码。凭据不落Git配置。
+- 用户随后选择创建PR：已创建正式 **PR #47** https://github.com/FanZeros/changeForJourney/pull/47，base=workspace930、head=fix930/equipment-badges-tab-toggle-1003，未自动合并。创建时930前进12提交至71f635f3，包含配装78高88距与deltaOffset44；两处冲突人工融合，保留新行距和样式配置，列表差值从新cy-44下移7px到cy-37，雷达ly-51不变，不退回旧行距。融合后配装216、角标146、预览118、生命周期、真集成、装备国际化与切关回归均ALL PASS，实际融合布局150帧PASS/错误0，临时入口meta已清理。
+- 前阶段已提交并推送 `87d020c8` 到 `fix930/equipment-badges-tab-toggle-1003`，当时未创建PR、未推workspace930。临时入口清理后最终官方Build成功，最后九套回归再次全部ALL PASS；提交命令首轮超时未生成提交，分步暂存/提交完成，未重复或丢代码。凭据不落Git配置。
 
 ## 上次做了什么（2026-10-03，暗铁骨白代码图标正式接入）
 

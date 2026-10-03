@@ -18,7 +18,7 @@ local ROWS = {
     { "护甲加成", "護甲加成", "Armor Bonus", "防御補正", "방어력 보너스", "%" },
     { "护盾", "護盾", "Shield", "シールド", "보호막", "" },
     { "护盾加成", "護盾加成", "Shield Bonus", "シールド補正", "보호막 보너스", "%" },
-    { "护盾伤害减免", "護盾傷害減免", "Shield DMG Reduction", "シールド被ダメージ軽減", "보호막 피해 감소", "%" },
+    { "护盾减伤", "護盾減傷", "Shield DMG Reduction", "シールド被ダメージ軽減", "보호막 피해 감소", "%" },
     { "闪避值", "閃避值", "Dodge", "回避値", "회피 수치", "" },
     { "闪避加成", "閃避加成", "Dodge Bonus", "回避補正", "회피 보너스", "%" },
     { "怨引值", "怨引值", "Threat", "ヘイト値", "어그로 수치", "%" },
@@ -53,6 +53,8 @@ local ROWS = {
 ---@type table<string, string[]>
 local attributes = {}
 for _, row in ipairs(ROWS) do attributes[row[1]] = row end
+-- 兼容已有天赋原文和关键词标识，不改业务 key。
+attributes["护盾伤害减免"] = attributes["护盾减伤"]
 
 ---@type table<string, integer>
 local COLUMNS = { zh_CN = 1, zh_TW = 2, en = 3, ja = 4, ko = 5 }

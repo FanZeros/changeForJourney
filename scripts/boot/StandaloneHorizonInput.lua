@@ -687,7 +687,7 @@ function Input.bind(ctx)
             local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
             local moved = math.abs(sx - tutorialStartX) + math.abs(sy - tutorialStartY)
             if eventData["Button"]:GetInt() == MOUSEB_LEFT and moved < TAP_THRESHOLD
-                and tutorialInputActive() and TutorialManager.handleScreenClick(sx, sy) then
+                and tutorialInputActive() and TutorialManager.handleScreenClick(sx, sy, tutorialBlockedPress) then
                 cancelUnderlyingPress()
                 return
             end

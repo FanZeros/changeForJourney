@@ -178,6 +178,7 @@ function TalentPage.open()
     end
     state.open = true
     state.closing = false
+    state.closeTime = 0
     state.openTime = time.elapsedTime
     require("systems.GameSFX").playUIMove(1)
     state.tab = "tianfu"

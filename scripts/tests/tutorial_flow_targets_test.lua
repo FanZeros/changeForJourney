@@ -222,32 +222,67 @@ end
 local function testRecruitEvents()
     stub("config.GachaConfig", { Pity = { SSR_THRESHOLD = 100 } })
     stub("config.UrGachaConfig", {
+        POOL_NAME = "Test stellar",
         UI = { poolTabCx = 700, poolTabCy = 340 }, Pity = { UR_THRESHOLD = 100 },
         getTimeDisplayText = function() return "test" end, isPoolEnabled = function() return true end,
         checkPoolUnlocked = function() return true end, getUpPortraitPath = function() return "test.png" end,
     })
-    stub("core.GameState", { getRecruitTicket = function() return 20 end, getGems = function() return 1000 end })
+    stub("core.GameState", { getRecruitTicket = function() return 20 end, getGems = function() return 1000 end,
+        getStellarRecruitTicket = function() return 20 end })
     stub("core.I18n", {})
     stub("runtime.ClientDispatcher", { get = function() return nil end, subscribe = noop })
+    local chromeState = { nextTab = nil }
     stub("ui.town.TownPageChrome", { easeOutCubic = function(t) return t end,
-        easeInCubic = function(t) return t end, hitBack = function() return false end, hitTab = function() return nil end })
-    local recruitState = { canPull = true, confirm = true, sendCount = 0, mode = "pending" }
+        easeInCubic = function(t) return t end, hitBack = function() return false end,
+        hitTab = function() local tab = chromeState.nextTab; chromeState.nextTab = nil; return tab end })
+    local recruitState = { canPull = true, confirm = true, sendCount = 0, mode = "pending",
+        playing = false, popup = false, purchaseConfirm = false, target = false, resetCount = 0 }
     stub("systems.GachaSystem", { canPull = function() return recruitState.canPull, "ticket" end,
         getSSRPityRemain = function() return 100 end, setPityCounts = noop })
     local popupContext = {}
     stub("ui.tavern.TavernPopups", { init = noop, setContext = function(ctx)
         for k, v in pairs(ctx) do popupContext[k] = v end
     end, checkAndShowConfirm = function() return recruitState.confirm end,
-        isBlocking = function() return false end, showFloatText = noop, recordHistory = noop,
-        resetAll = noop, update = noop, formatGachaFailReason = function() return "failed" end })
-    stub("ui.tavern.RecruitAnim", { init = noop, setOnAgain = noop, isPlaying = function() return false end,
+        isRecruitConfirmOpen = function() return recruitState.purchaseConfirm end,
+        isBlocking = function() return recruitState.popup end, showFloatText = noop, recordHistory = noop,
+        resetAll = function() recruitState.popup = false; recruitState.resetCount = recruitState.resetCount + 1 end,
+        update = noop, formatGachaFailReason = function() return "failed" end })
+    stub("ui.tavern.RecruitAnim", { init = noop, setOnAgain = noop,
+        isPlaying = function() return recruitState.playing end,
         start = function(_, callback) callback() end, update = noop })
     stub("ui.tavern.TavernShopPage", { init = noop, resetScroll = noop, syncPurchasedFromStore = noop,
-        isPendingBuy = function() return false end, update = noop })
-    stub("ui.tavern.TargetRecruitPanel", { init = noop, isOpen = function() return false end })
+        isPendingBuy = function() return false end, update = noop, handleInput = function() return false end })
+    stub("ui.tavern.TargetRecruitPanel", { init = noop, isOpen = function() return recruitState.target end,
+        close = function() recruitState.target = false end })
     nvgCreateImage = function() return -1 end
     local tavern = require("ui.tavern.TavernPage")
-    tavern.init({}); tavern.open()
+    check(tavern.prepareTutorial(nil) == false and not tavern.isOpen(), "tutorial tavern waits safely for initialization context")
+    check(tavern.prepareTutorial({}) == true and tavern.isOpen() and popupContext.getSelectedPoolId() == "standard",
+        "tutorial tavern initializes and opens recruit first pool")
+    local ot = tavern.getSeamAnim()
+    clock.elapsedTime = clock.elapsedTime + 1
+    check(tavern.prepareTutorial() == false and tavern.getSeamAnim() == ot and recruitState.sendCount == 0,
+        "stable tavern prepare preserves open time and never sends recruit")
+    tavern.handleInput(700, 340)
+    check(popupContext.getSelectedPoolId() == "stellar", "fixture selects second pool before recovery")
+    check(tavern.prepareTutorial() == true and popupContext.getSelectedPoolId() == "standard"
+        and tavern.prepareTutorial() == false, "tutorial tavern restores first pool once")
+    chromeState.nextTab = 2; tavern.handleInput(0, 0)
+    check(tavern.prepareTutorial() == true and tavern.prepareTutorial() == false,
+        "tutorial tavern restores recruit tab once without reopening")
+    recruitState.popup, recruitState.target = true, true
+    check(tavern.prepareTutorial() == true and not recruitState.popup and not recruitState.target
+        and tavern.prepareTutorial() == false, "tutorial tavern closes interfering local popups once")
+    recruitState.purchaseConfirm = true
+    local confirmReset = recruitState.resetCount
+    check(tavern.isRecruitConfirmOpen() and tavern.isRecruitBusy() and not tavern.prepareTutorial()
+        and recruitState.purchaseConfirm and recruitState.resetCount == confirmReset,
+        "真实补券确认处于业务等待，不被教程清掉")
+    recruitState.purchaseConfirm = false
+    stub("systems.StoryPlayer", { onPlace = noop })
+    tavern.close()
+    check(tavern.prepareTutorial() == true and tavern.isOpen() and tavern.prepareTutorial() == false,
+        "tutorial tavern restores during close animation, then is stable")
     local action = require("shared.Protocol").ACTION_TYPES.GACHA_PULL
     tavern.setSendAction(function()
         recruitState.sendCount = recruitState.sendCount + 1
@@ -271,6 +306,13 @@ local function testRecruitEvents()
     check(eventCount("gacha10_failed") == 1 and eventCount("gacha10_complete") == 0, "unhandled request emits failure immediately")
     resetEvents(); recruitState.mode = "pending"
     tavern.handleInput(766, 1902)
+    local pendingTime, sendsBefore = tavern.getSeamAnim(), recruitState.sendCount
+    check(tavern.isRecruitBusy() and tavern.prepareTutorial() == false
+        and tavern.getSeamAnim() == pendingTime and recruitState.sendCount == sendsBefore,
+        "pending recruit blocks tutorial preparation without resetting time or sending")
+    clock.elapsedTime = clock.elapsedTime + 9
+    check(tavern.prepareTutorial() == false and tavern.isRecruitBusy() and eventCount("gacha10_failed") == 0,
+        "prepare never times out/releases even an aged pending request")
     tavern.onActionResult({ action = action, success = false, reason = "test" })
     check(eventCount("gacha10_failed") == 1, "failed receipt rolls tutorial back")
     resetEvents(); tavern.handleInput(766, 1902)
@@ -294,11 +336,101 @@ local function testRecruitEvents()
     tavern.onActionResult({ action = action, success = true, gachaResults = { { type = "hero", heroId = 7 } } })
     check(eventCount("gacha10_started") == 0 and eventCount("gacha10_complete") == 0,
         "single pull does not masquerade as ten-pull tutorial event")
+    recruitState.playing = true
+    recruitState.popup, recruitState.target = true, true
+    local resetBefore = recruitState.resetCount
+    check(tavern.isRecruitBusy() and tavern.prepareTutorial() == false and recruitState.playing
+        and recruitState.popup and recruitState.target and recruitState.resetCount == resetBefore,
+        "playing animation blocks tutorial preparation without closing its UI")
+    recruitState.playing = false
+    check(not tavern.isRecruitBusy() and tavern.prepareTutorial() == true
+        and tavern.prepareTutorial() == false, "animation finish allows one cleanup then stable prepare")
+end
+
+local function testBlacksmithPreparation()
+    stub("config.AffixConfig", {})
+    stub("systems.AttributeDef", {})
+    stub("config.ExpTable", {})
+    stub("config.HeroAssetUtil", { preloadIcons = noop })
+    stub("ui.fx.SpineResultEffect", {})
+    stub("ui.widget.ImageCache", { init = noop, getEquipIcon = function() return -1 end })
+    stub("ui.blacksmith.BlacksmithEnhanceCache", {})
+    local smithState = {}
+    local counts = { enhance = 0, refine = 0, opens = 0, holds = 0, releases = 0, sent = 0 }
+    stub("ui.blacksmith.BlacksmithEnhance", {
+        setContext = function(ctx) smithState = ctx.state end, init = noop,
+        updateEnhanceData = function() counts.enhance = counts.enhance + 1 end,
+        onOpen = function() counts.opens = counts.opens + 1 end,
+    })
+    stub("ui.blacksmith.BlacksmithRefine", { setContext = noop, init = noop,
+        updateRefineData = function() counts.refine = counts.refine + 1 end })
+    local smithInventory = { inventory = {
+        ["1"] = { templateId = "missing", ascendLevel = 0 },
+        ["2"] = { templateId = "W1", enhanceLevel = 100 },
+        [3] = { templateId = "A1", ascendLevel = 99 },
+        ["4"] = { templateId = "W1", ascendLevel = 3 },
+    } }
+    stub("runtime.ClientDispatcher", { get = function(key) if key == "equipment" then return smithInventory end end })
+    stub("core.PlayerStore", { Get = function() return nil end, Subscribe = noop })
+    stub("runtime.GameAction", { sendAction = function() counts.sent = counts.sent + 1 end })
+    stub("systems.EquipmentSystem", { hydrate = function(equip)
+        equip.slot = equip.templateId == "A1" and "armor" or "weapon"
+    end, getAscendLevel = function(equip) return equip.ascendLevel or equip.enhanceLevel or 0 end })
+    stub("ui.backpack.BackpackPanel", {
+        acquireWarehouse = function() counts.holds = counts.holds + 1 end,
+        releaseWarehouse = function() counts.releases = counts.releases + 1 end,
+    })
+    for _, path in ipairs({ "ui.loot.LootBoxPage", "ui.church.talent.TalentPage", "ui.church.ChurchPage",
+        "ui.tavern.TavernPage", "ui.market.MarketPage", "ui.story.task.TaskPage" }) do
+        stub(path, { isOpen = function() return false end, resetHorizonLayout = noop })
+    end
+    local smith = require("ui.blacksmith.BlacksmithPage")
+    check(smith.prepareTutorial(nil) == false and not smith.isOpen(), "tutorial smith waits safely for initialization context")
+    check(smith.prepareTutorial({}) == true and smith.isOpen() and smithState.tab == "qianghua"
+        and smithState.selectedSeq == 3 and smithState.selectedEquip == smithInventory.inventory[3],
+        "tutorial smith skips invalid templates/full legacy enhance and selects numeric-key valid equipment")
+    local enhanceBefore, openTime = counts.enhance, smithState.openTime
+    clock.elapsedTime = clock.elapsedTime + 1
+    check(smith.prepareTutorial() == false and counts.enhance == enhanceBefore
+        and smithState.openTime == openTime and counts.holds == 1 and counts.sent == 0,
+        "stable smith prepare retains selection/open time without reset or action")
+    smithInventory.inventory["4"].seq = 4
+    smith.setSelectedEquip(smithInventory.inventory["4"])
+    check(smith.prepareTutorial() == false and smithState.selectedSeq == 4,
+        "tutorial smith retains legal player-selected item rather than smallest seq")
+    smithState.tab, smithState.tabFrom, smithState.tabSwitchTime = "xilian", "qianghua", clock.elapsedTime
+    check(smith.prepareTutorial() == true and smithState.tab == "qianghua"
+        and smithState.selectedSeq == 4 and smith.prepareTutorial() == false,
+        "tutorial smith switches to enhance without replacing legal selection")
+    smithInventory.inventory["4"].ascendLevel = 100
+    check(smith.prepareTutorial() == true and smithState.selectedSeq == 3,
+        "tutorial smith replaces selected item once it reaches max ascend level")
+    smith.close()
+    check(smith.prepareTutorial() == true and not smithState.closing and smithState.selectedSeq == 3
+        and smith.prepareTutorial() == false, "tutorial smith recovers close animation and retains legal selection")
+    smithInventory.inventory[3] = nil
+    check(smith.prepareTutorial() == true and smithState.selectedEquip == nil and smithState.selectedSeq == nil
+        and smith.prepareTutorial() == false and counts.sent == 0,
+        "no valid nonmax smith item clears stale selection once and never sends action")
+end
+
+local function testTaskForceClose()
+    testStubs["ui.story.task.TaskPage"], package.loaded["ui.story.task.TaskPage"] = nil, nil
+    package.preload["ui.story.task.TaskPage"] = nil
+    local task = require("ui.story.task.TaskPage")
+    task.forceClose()
+    check(not task.isOpen(), "task force close is safe before opening")
+    task.open(); task.handleDragBegin(100, 600); task.close(); task.forceClose()
+    check(not task.isOpen() and not task.handleDragMove(100, 800),
+        "task force close cancels open/closing/drag state immediately")
+    task.forceClose()
+    check(not task.isOpen(), "task force close is idempotent")
 end
 
 function Start()
     local ok, err = pcall(function()
         testConfig(); testCharacterTab(); testGridTargets(); testEquipEvents(); testRecruitEvents()
+        testBlacksmithPreparation(); testTaskForceClose()
     end)
     if not ok then failures = failures + 1; print("[FAIL] exception: " .. tostring(err)) end
     print("[tutorial_flow_targets_test] " .. (failures == 0 and "ALL PASS" or "FAILURES=" .. failures)

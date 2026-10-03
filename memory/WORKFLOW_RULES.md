@@ -8,6 +8,31 @@
 3. **以新分支继续开发**：以用户当轮指定分支为基线创建独立开发分支，每次完成后 commit + push 到该开发分支；通常基于 `workspace930` 开发并通过 PR 合入。**禁止 push 到 workspace 或 workspace930 分支本身**，显式指定推送目标，不强推、不擅自合并 PR。用户明确要求修复既有 PR 冲突时，可在新修复分支验证后快进更新该 PR 的开发分支，不将该许可延伸到其他分支。
 4. **部署位置**：当前仓库和游戏项目直接位于 `/workspace` 根目录，scripts/assets/.project 等不再嵌套子目录；保护引擎提供的只读目录，修改代码后调用官方 build 工具构建。
 
+### 三阶查询修复交接（2026-10-03）
+
+- 用户先选择只读核对三阶觉醒，再在 AskUserQuestion 明确选择“修复三阶查询”。从已推送塞拉提交 `cb85275` 新建 `fix1003/awakening-stage-query`，是叠加分支，未混入期间前进的workspace930；禁止推workspace*，完成后真实简报并用 **AskUserQuestion** 给下一步选项，不自行创建或合并PR。
+- 确认的单一根因：旧`AC.hasNode`查询参数1–3统一映射I，但`TalentFatFish`和`TalentFourNew`把新II/III写成2/3，涉及5角色15定位点，不是15个独立bug。新增`AC.hasStage`（仅数值1/2/3，复用迁移、支持英雄级标记参数），TAL新增明确新阶段查询，仅两模块注入`hasAwakenStage`；旧hasNode/mapLegacyNode/migrateAwakening均逐字未变，其他旧角色保持七节点兼容。
+- 新专项`awakening_stage_query_test.lua`最终579断言 ALL PASS、exit0：全部8种原生阶段组合、128种旧节点组合、新阶段范围/迁移标记/非连续数据/输入不变、五角色helper门槛、正式TAL老六/大肥鱼/加载中/高ping路径、目标血量下降分支现有系数不变。塞拉54断言、关键角色战斗20断言、旧永久成长等价和切关回归全部通过。官方Build最终成功427Lua资源含新专项；主入口35秒18/18初始化完成，exit124为外部限时结束，不声称实机视觉通过。修改文件LSP无Error，有测试类型推导warning；全仓缓存47既有Error未混修。
+- 保留范围边界：哈基米正式治疗分发仍被AfterAttack非healing外层挡住，本轮仅改其潜伏阶段查询、helper验证，不宣称恢复功德闭环；老六0.08档位与偷克制字段消费未修；高ping生命比例下降50%现阶段仍属I，虽DATA列II，本轮保留不调平衡；潮湿critVuln实际暴击公式消费未扩查。旧碎片迁移、丢标记及非连续UI候选不混修。旧技能探针对`AC.hasNode(I,2/3)`返回true的观察仍是兼容语义，不作为本批修复失败。
+- `.project`生成身份/设置变化只留本地，不入提交；凭据不进入Git远端/配置/文件/记忆。提交推送结果以实际Git输出为准。
+- 已推送功能提交 `64605df`（上一批塞拉为`cb85275`）。用户随后明确选择“创建修复PR”，已创建 **PR #30**：https://github.com/FanZeros/changeForJourney/pull/30 ，head=`fix1003/awakening-stage-query`、base=`workspace930`，open且未合并。创建时比较为ahead2/behind10，包含两修复提交，不擅自同步或推基线。下一步仍真实简报后调用 **AskUserQuestion** 决定；创建许可不扩展为自动合并许可。
+
+### 塞拉连射任务交接（2026-10-03）
+
+- 本轮用户在 AskUserQuestion 选择“部署并修复塞拉”，从 `workspace930@b24cad7cf60e` 创建 `fix1003/sera-machinegun-progress`；指定的 `audit1003/expedition-level-reward-page` 在本轮远程查询中不存在。项目和 Git 已部署到 `/workspace` 根；只修塞拉连射计数及专项回归，不涉及远征弹窗/奖励页面、ETS 修改、复活概率或平衡倍率。
+- 用户工作流再次强化：持续推进已授权任务，每轮完成或需要用户决定的阻塞先如实简报，再真正调用 **AskUserQuestion** 给出2–4个具体下一步选项；尊重用户后续停止指令与权限拒绝。仅提交、推送独立工作分支，禁止推送 `workspace*`；不据推送授权自动创建或合并 PR，凭据不得进入文件、Git 配置、提交或记忆。
+- 实现：`machineGunNormalCount` 保持整数累计，新增 `machineGunProgress` 记录未消耗进度；每次有效计数+1，跨门槛后扣除已跨轮次并保留余量，最多启动/刷新一轮10/12发，不追加弹药。保留20/18/15基础门槛、最低8次、原普攻/连击计数及连射弹排除；没有修改 ETS 或觉醒映射。小数运算加1e-9比较容差，防刚好达到门槛时浮点晚触发。
+- 验证：新增 `sera_machinegun_progress_test.lua` 最终54断言 ALL PASS、exit0，含三档×241成长档×400攻击的整数判据扫测、动态降门槛、0.05余量累计、真实觉醒与减免计算、增益清除、未发完弹药重置；既有关键角色战斗20断言、觉醒成长等价性、切关回归均 ALL PASS。扩展测试首跑两条失败源于用 `extraTalent=false` 创建了禁用成长的夹具，已纠正后复跑通过，不隐藏测试失败过程。TAL出弹测试仍以计数回调替代真正伤害/投射物，不声称完整实机战斗或视觉验收通过。
+- 官方 Build 最终成功，426个Lua资源含新测试已入包；主入口35秒无头冒烟18/18初始化完成、无Lua异常，exit124是外部限时结束持续游戏。修改Lua无LSP Error；全仓缓存329文件47个Error位于未改的雷达类型与NVGcolor相关文件，这些文件与基线逐字节一致，不声称全仓诊断干净、不混修。旧技能探针为confirmed=11 healthy=6 harnessErrors=0，小数门槛观察已恢复正常；其余观察不在本轮修复范围。
+- 构建生成的 `.project` 变化仅留本地、不纳入提交。远端workspace930在本轮期间前进到 `fadf0c1831e1`，本分支仍以最初 `b24cad7cf60e` 为基线，不擅自混入其他并行改动；推送和PR状态以真实Git操作结果为准。
+### 引导页面恢复本轮记录（2026-10-03）
+
+- 用户要求排查“暂时找不到引导目标”，并自动关无关页面/打开对应页；从最新 `workspace930@fadf0c18` 创建 `fix/tutorial-target-page-recovery-20261003`。自动恢复仅作用于引导活动期，纯UI、不发送业务操作；没装备/全部满阶等真实无目标仍保留等待及跳过，不把它记为操作成功。
+- 启动/换步、0.5秒周期及按下前幂等恢复；0.45秒等待页面动画、2秒缺目标宽限。准备期非法按下延迟松开不能推进；招募补券确认必须让位，不被resetAll清除。剧情/奖励/离线/更新/战斗不强制关闭；普通仓库手动close不自动重开的契约保留，仅教程恢复允许重开。
+- 8套回归通过；配装/古树/升阶真实页面150帧PASS，招募按钮高亮已读图确认但原有酒馆立绘KCLH_20.png缺失导致报告FAIL，Lua0。独立反证的两条新增问题已修；初始化回调上下文不等同主入口视觉验收，临时夹具已清理。仅任务源码/测试/meta与交付记忆提交，不提交本地配置、存档或截图。
+- 用户随后选择“创建修复PR”，已创建 **PR #31**：https://github.com/FanZeros/changeForJourney/pull/31，`fix/tutorial-target-page-recovery-20261003` → `workspace930`，open、未合并，功能提交 `3ec74c42`；附验证与KCLH_20缺图边界。创建授权不包含合并，交付记录仍仅推任务分支，完成后以 **AskUserQuestion** 选项继续。
+- 持续强化：已授权任务不擅自取消；完成后真正调用 **AskUserQuestion** 交接下一步；只push新分支，不推workspace系列、不自动创建/合并PR，凭据不持久化。
+
 ### 遗匣排序、套装文案与属性页布局（2026-10-03）
 
 - 本轮基于 `workspace930@b24cad7c` 新建 `fix/relic-sort-character-layout-20261003`，项目直接部署到 `/workspace` 根；仅提交推送该新分支，不推 `workspace`／`workspace930`，不擅自合并或创建 PR。

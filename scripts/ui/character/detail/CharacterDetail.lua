@@ -370,6 +370,7 @@ end
 function CharacterDetail.open(heroId, tab)
     detailState.open = true
     detailState.closing = false
+    detailState.closeTime = 0
     detailState.heroId = heroId
     local preferredTab = tab
     if preferredTab == nil then

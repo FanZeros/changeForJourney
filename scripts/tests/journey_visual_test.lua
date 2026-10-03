@@ -69,6 +69,9 @@ mocks["ui.character.equip.EquipmentBag"] = { shouldBattleOverlay = function() re
 
 local paints, texts, paths = {}, {}, {}
 local currentColor = {}
+local currentAlign = 0
+local currentFontSize = 22
+local renderStack = {}
 local handle = 0
 local imagePaths = {}
 local deletedImages = {}
@@ -79,6 +82,16 @@ for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgScissor", "nvgResetScissor"
     "nvgFontSize", "nvgTextAlign", "nvgFillPaint", "nvgGlobalAlpha", "nvgDeleteImage" }) do
     _G[name] = noop
 end
+nvgSave = function()
+    renderStack[#renderStack + 1] = { color = currentColor, align = currentAlign, fontSize = currentFontSize }
+end
+nvgRestore = function()
+    local state = table.remove(renderStack)
+    assert(state, "绘制状态必须成对保存恢复")
+    currentColor, currentAlign, currentFontSize = state.color, state.align, state.fontSize
+end
+nvgTextAlign = function(_, align) currentAlign = align end
+nvgFontSize = function(_, size) currentFontSize = size end
 nvgCreateImage = function(_, path)
     paths[#paths + 1] = path
     if path == failImagePath then return -1 end
@@ -98,7 +111,12 @@ nvgFillColor = function(_, color) currentColor = color end
 nvgStrokeColor = noop
 nvgTextBounds = function(_, _, _, text) return #text * 10 end
 nvgText = function(_, x, y, text)
-    texts[#texts + 1] = { text = text, x = x, y = y, color = currentColor }
+    texts[#texts + 1] = { text = text, x = x, y = y, color = currentColor,
+        align = currentAlign, fontSize = currentFontSize }
+end
+nvgTextBox = function(_, x, y, width, text)
+    texts[#texts + 1] = { text = text, x = x, y = y, width = width, color = currentColor,
+        align = currentAlign, fontSize = currentFontSize }
 end
 
 local function testMarch()
@@ -108,16 +126,45 @@ local function testMarch()
     drv.active = true
     drv:beginMarch()
     check(drv.marchNotice and drv.marchTimer == 2, "前进持续两秒且无中央浮字")
-    local zoom, alpha = drv:getMarchBackground()
-    check(near(zoom, 1) and near(alpha, 1), "前进起点背景原状")
+    local zoom, alpha, target = drv:getMarchBackground()
+    check(near(zoom, 1) and near(alpha, 1) and target == 102, "前进起点原状并预备下一关背景")
     drv.marchTimer = 1
     zoom, alpha = drv:getMarchBackground()
-    check(near(zoom, 1.06) and near(alpha, 0.75), "前进中点放大6%并淡化25%")
+    check(zoom > 1 and zoom < 1.06 and near(alpha, 1), "前进中点继续放大而不提前淡出")
+    drv.marchTimer = 0.7
+    zoom, alpha = drv:getMarchBackground()
+    check(near(zoom, 1.06) and near(alpha, 1), "1.3秒达到最大尺寸后开始淡出")
+    drv.marchTimer = 0.35
+    zoom, alpha = drv:getMarchBackground()
+    check(near(zoom, 1.06) and near(alpha, 0.5), "淡出中点保持最大尺寸且半透明")
+    local previousZoom, previousAlpha = 1, 1
+    for sample = 0, 199 do
+        drv.marchTimer = 2 - sample * 0.01
+        zoom, alpha, target = drv:getMarchBackground()
+        check(zoom >= previousZoom - 0.00001 and zoom <= 1.06001
+            and alpha <= previousAlpha + 0.00001 and alpha >= 0 and target == 102,
+            "采样" .. sample .. "缩放不回退且透明度不回升")
+        previousZoom, previousAlpha = zoom, alpha
+    end
+    check(near(zoom, 1.06) and alpha < 0.001, "切关前旧图接近完全透明且不缩回")
+    drv.marchTimer = 1
     drv:tick(0.25)
     check(drv.marchNotice and near(drv.marchTimer, 0.75), "前进跨帧提示不消失")
-    drv.marchTimer = 0
-    zoom, alpha = drv:getMarchBackground()
-    check(near(zoom, 1) and near(alpha, 1), "前进终点背景恢复")
+    drv.stageId, drv.marchTimer = 105, 1
+    zoom, alpha, target = drv:getMarchBackground()
+    check(target == 201 and drv.stageId == 105, "跨章目标由本队当前关卡只读推导")
+    drv.stageId = 2305
+    zoom, alpha, target = drv:getMarchBackground()
+    check(target == 2305, "终焉确认前仍以当前背景承接")
+    local SC = require("config.StageConfig")
+    local originalNext = SC.getNextStageId
+    SC.getNextStageId = function() return nil end
+    zoom, alpha, target = drv:getMarchBackground()
+    check(target == 2305, "没有下一关使用当前背景承接")
+    SC.getNextStageId = originalNext
+    drv.stageId, drv.marchTimer = 101, 0
+    zoom, alpha, target = drv:getMarchBackground()
+    check(near(zoom, 1) and near(alpha, 1) and target == nil, "停止行军不残留背景双层状态")
     local originalStart = drv.start
     drv.start = function(self, id)
         self.stageId, self.marchTimer, self.marchNotice, self.introTimer = id, 0, false, 0.3
@@ -128,6 +175,12 @@ local function testMarch()
     check(drv.marchNotice, "入场未结束仍显示提示")
     drv:tick(0.21)
     check(not drv.marchNotice, "下一战斗开始清除提示")
+    drv.stageId, drv.marchTimer, drv.marchNotice, drv.introTimer = 105, 0.01, true, 0
+    drv:tick(0.02)
+    zoom, alpha, target = drv:getMarchBackground()
+    check(drv.stageId == 201 and drv.marchTimer == 0 and drv.marchNotice
+        and zoom == 1 and alpha == 1 and target == nil,
+        "真实tick跨过终帧直接接下一关背景并延续入场提示")
     drv.start = originalStart
     drv.marchTimer, drv.marchNotice = 1, true
     drv:start(103)
@@ -146,12 +199,12 @@ local function testPage()
     local newDriver = Driver.new
     local drivers = {}
     Driver.new = function(idx)
-        local drv = { teamIdx = idx, allies = {}, enemies = {}, starts = 0,
-            stageId = 101, marchTimer = 0, marchNotice = false }
+        local drv = { teamIdx = idx, allies = { { hp = 100 } }, enemies = {}, starts = 0,
+            kills = 3, stageTotal = 10, stageId = 101, marchTimer = 0, marchNotice = false }
         function drv:start(id) self.stageId = id self.starts = self.starts + 1 end
         function drv:update() end
         function drv:activate() end
-        function drv:getMarchBackground() return self.zoom or 1, self.alpha or 1 end
+        function drv:getMarchBackground() return self.zoom or 1, self.alpha or 1, self.nextBgStageId end
         drivers[idx] = drv
         return drv
     end
@@ -162,15 +215,47 @@ local function testPage()
     check(imagePaths[paints[2].image]:find("悬魂瀑布", 1, true), "锁定队2使用图10")
     check(imagePaths[paints[3].image]:find("恶灵岔路", 1, true), "锁定队3使用图20")
     local original = paints[1]
-    drivers[1].zoom, drivers[1].alpha = 1.06, 0.75
-    paints = {}
+    drivers[1].zoom, drivers[1].alpha, drivers[1].nextBgStageId = 1.06, 0.75, 102
+    paints, paths = {}, {}
     Page.drawL1Underlay({}, 1920, 1080)
-    local changed = paints[1]
+    local underlay, changed = paints[1], paints[2]
+    check(#paints == 4 and #paths == 0 and underlay.image == changed.image,
+        "同章双层共用缓存句柄且锁定行仍为单层")
+    check(near(underlay.x, original.x) and near(underlay.y, original.y)
+        and near(underlay.w, original.w) and underlay.alpha == 1,
+        "不透明的新背景先画且保持原始cover尺寸")
     local ix, iy, iw, ih = Page.getInteriorRectFor(1, 1920, 1080)
     local px, py = ix + iw, iy + ih * 0.5
     check(near(changed.x, px + (original.x - px) * 1.06)
         and near(changed.y, py + (original.y - py) * 1.06), "背景以可见行右侧中心缩放")
     check(near(changed.w, original.w * 1.06) and near(changed.alpha, 0.75), "绘制使用实际缩放与透明度")
+    local SC = require("config.StageConfig")
+    drivers[1].stageId, drivers[1].nextBgStageId = 105, 201
+    local nextPath = Page.resolveBackgroundPath(201)
+    failImagePath = nextPath
+    paints = {}
+    Page.drawL1Underlay({}, 1920, 1080)
+    check(#paints == 3 and paints[1].alpha == 1 and paints[1].image == original.image,
+        "跨章下层图加载失败保留不透明旧图")
+    failImagePath = ""
+    paints, paths = {}, {}
+    Page.drawL1Underlay({}, 1920, 1080)
+    check(#paints == 4 and #paths == 1 and imagePaths[paints[1].image] == nextPath
+        and paints[2].image == original.image, "跨章新图恢复后先铺下一章再叠旧图")
+    drivers[1].alpha = 0
+    paints = {}
+    Page.drawL1Underlay({}, 1920, 1080)
+    check(paints[1].alpha == 1 and paints[2].alpha == 0
+        and near(paints[2].w, original.w * 1.06), "完全淡出时旧图保持最大尺寸")
+    local revealed = paints[1]
+    drivers[1].stageId = 201
+    drivers[1].zoom, drivers[1].alpha, drivers[1].nextBgStageId = 1, 1, nil
+    paints = {}
+    Page.drawL1Underlay({}, 1920, 1080)
+    check(#paints == 3 and paints[1].image == revealed.image and paints[1].alpha == 1
+        and near(paints[1].x, revealed.x) and near(paints[1].w, revealed.w),
+        "切关后背景与已露出的下层相同且无旧图缩回复位")
+    drivers[1].stageId = 101
     drivers[1].marchTimer, drivers[1].marchNotice = 2, true
     drivers[1].onStageCleared(1, 101)
     Page.update(0.1)
@@ -179,9 +264,51 @@ local function testPage()
     Page.draw({}, 1920, 1080)
     local found = false
     for _, text in ipairs(texts) do
-        if text.text:find("正在前进中", 1, true) then found = text.y == iy + 55 end
+        if text.text:find("正在前进中", 1, true) then
+            found = near(text.x, ix + iw * 0.5) and near(text.y, iy + ih - 26 * math.min(1, ih / 360))
+                and text.align == NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE
+        end
     end
-    check(found, "前进提示固定于战斗行上方")
+    check(found, "前进提示固定于战斗行下方且真正水平居中")
+    for _, size in ipairs({ { 1280, 720 }, { 844, 390 }, { 2560, 1440 } }) do
+        texts = {}
+        Page.draw({}, size[1], size[2])
+        local sx, sy, sw, sh = Page.getInteriorRectFor(1, size[1], size[2])
+        local marchText, progressText
+        for _, text in ipairs(texts) do
+            if text.text == "正在前进中" then marchText = text end
+            if text.text:find("关卡进度", 1, true) then progressText = text end
+        end
+        local noticeScale = math.min(1, sh / 360)
+        check(marchText and near(marchText.x, sx + sw * 0.5)
+            and near(marchText.y, sy + sh - 26 * noticeScale)
+            and near(marchText.fontSize, 22 * noticeScale)
+            and marchText.align == NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+            size[1] .. "x" .. size[2] .. "下方居中随行矩形定位")
+        check(marchText and not progressText, size[1] .. "x" .. size[2] .. "前进替代进度文字且不叠字")
+        local Layout = require("core.BattleLayout")
+        local contentScale = 1
+        for row = 1, 3 do
+            local _, _, rw, rh = Page.getInteriorRectFor(row, size[1], size[2])
+            contentScale = math.min(contentScale, rw / Layout.STRIP_W, rh / Layout.STRIP_H)
+        end
+        local cardBottom = sy + sh * 0.5 + sh * 0.06 + Layout.CARD_H * Layout.CARD_SCALE * contentScale * 0.5
+        check(marchText.y - marchText.fontSize * 0.5 > cardBottom,
+            size[1] .. "x" .. size[2] .. "前进文字墨迹区域位于卡面下方")
+        check(marchText.y + marchText.fontSize * 0.5 < sy + sh - 8 * noticeScale,
+            size[1] .. "x" .. size[2] .. "前进文字位于进度条上方")
+        drivers[1].marchNotice = false
+        texts = {}
+        Page.draw({}, size[1], size[2])
+        local restoredProgress, leftoverMarch = false, false
+        for _, text in ipairs(texts) do
+            if text.text:find("关卡进度", 1, true) then restoredProgress = true end
+            if text.text == "正在前进中" then leftoverMarch = true end
+        end
+        check(restoredProgress and not leftoverMarch,
+            size[1] .. "x" .. size[2] .. "行军结束恢复真实进度说明")
+        drivers[1].marchNotice = true
+    end
     -- 合并 i18n 后仍按普通关卡通关解锁，不恢复旧等级解锁文案。
     local I18n = require("core.I18n")
     local ExpTable = require("config.ExpTable")
@@ -194,7 +321,10 @@ local function testPage()
         for _, text in ipairs(texts) do
             if text.text == I18n.lookup(ExpTable.getTeamUnlockText(2)) then unlockTwo = true end
             if text.text == I18n.lookup(ExpTable.getTeamUnlockText(3)) then unlockThree = true end
-            if text.text == I18n.lookup("正在前进中") then marching = text.y == iy + 55 end
+            if text.text == I18n.lookup("正在前进中") then
+                marching = near(text.x, ix + iw * 0.5) and near(text.y, iy + ih - 26 * math.min(1, ih / 360))
+                    and text.align == NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE
+            end
             if text.text == I18n.format("【小队%d】%s", 1, I18n.lookup("黑棘林道1-1")) then label = true end
         end
         check(unlockTwo and unlockThree, lang .. "两条按关卡解锁提示保持且翻译")
@@ -210,8 +340,52 @@ local function testPage()
     paints = {}
     Page.drawL1Underlay({}, 1920, 1080)
     check(imagePaths[paints[2].image]:find("forest", 1, true), "解锁后切回实际关卡背景")
+    drivers[1].stageId = 205
+    paints = {}
+    Page.drawL1Underlay({}, 1920, 1080)
+    local oldImage = paints[1].image
+    local missingPath = Page.resolveBackgroundPath(301)
+    failImagePath = missingPath
+    drivers[1].stageId, drivers[1].nextBgStageId = 205, 301
+    drivers[1].zoom, drivers[1].alpha = 1.06, 0.01
+    paints = {}
+    Page.drawL1Underlay({}, 1920, 1080)
+    check(#paints == 3 and paints[1].image == oldImage and paints[1].alpha == 1,
+        "行军末尾下层持续失败仍保留有效旧背景")
+    local heldBackground = paints[1]
+    drivers[1].stageId, drivers[1].nextBgStageId = 301, nil
+    drivers[1].zoom, drivers[1].alpha = 1, 1
+    paints = {}
+    Page.drawL1Underlay({}, 1920, 1080)
+    check(#paints == 3 and paints[1].image == oldImage and paints[1].alpha == 1,
+        "切关后目标图仍失败时本行背景不留白")
+    check(near(paints[1].x, heldBackground.x) and near(paints[1].y, heldBackground.y)
+        and near(paints[1].w, heldBackground.w) and near(paints[1].h, heldBackground.h),
+        "持续失败跨切关保持旧图尺寸和锚点且不缩闪")
+    failImagePath = ""
+    paints = {}
+    Page.drawL1Underlay({}, 1920, 1080)
+    check(#paints == 3 and imagePaths[paints[1].image] == missingPath,
+        "切关后图片恢复自动改用实际目标背景")
+    drivers[1].stageId = 102
+    for row = 1, 3 do
+        drivers[row].marchNotice = true
+    end
+    texts = {}
+    Page.draw({}, 1920, 1080)
+    local marchCount = 0
+    for _, text in ipairs(texts) do
+        if text.text == "正在前进中" then
+            marchCount = marchCount + 1
+            local rx, ry, rw, rh = Page.getInteriorRectFor(marchCount, 1920, 1080)
+            check(near(text.x, rx + rw * 0.5) and near(text.y, ry + rh - 26 * math.min(1, rh / 360))
+                and text.align == NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+                "行" .. marchCount .. "独立下方居中前进提示")
+        end
+    end
+    check(marchCount == 3 and #renderStack == 0, "三队同时行军各有提示且状态成对恢复")
+    for row = 1, 3 do drivers[row].marchNotice = false end
 
-    local SC = require("config.StageConfig")
     local chapterBg = Page.resolveBackgroundPath(101)
     for diff = 0, 14 do
         check(Page.resolveBackgroundPath((diff * 23 + 1) * 100 + 1) == chapterBg,

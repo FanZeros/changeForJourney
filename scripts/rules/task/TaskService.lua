@@ -10,11 +10,118 @@ local CurrencyService = require("rules.currency.CurrencyService")
 
 local TaskService = {}
 
+---@type fun(uid: number): boolean|nil
+local persist_ = nil
+---@type table
+local claimHooks_ = {}
+
+--- 单机桥注入真正的 Flush；hooks 只负责延后本地推送，不承担发奖逻辑。
+---@param callback fun(uid: number): boolean|nil
+---@param hooks table|nil { begin=function, finish=function(uid,success) }
+function TaskService.SetPersistCallback(callback, hooks)
+    persist_ = callback
+    claimHooks_ = hooks or {}
+end
+
+local function copyTable(value)
+    if type(value) ~= "table" then return value end
+    local copy = {}
+    for key, item in pairs(value) do copy[key] = copyTable(item) end
+    return copy
+end
+
+--- 保持模块及已有领取表的引用，失败只还原本次修改，不清历史台账。
+local function restoreTable(target, snapshot)
+    for key in pairs(target) do
+        if snapshot[key] == nil then target[key] = nil end
+    end
+    for key, value in pairs(snapshot) do
+        if type(value) == "table" and type(target[key]) == "table" then
+            restoreTable(target[key], value)
+        else
+            target[key] = copyTable(value)
+        end
+    end
+end
+
+--- 与 CurrencyService 相同的类型映射，不以 UI 的窄映射判断发奖。
+local function validateReward(uid, reward)
+    if type(reward) ~= "table" or type(reward.type) ~= "string"
+        or type(reward.amount) ~= "number" or reward.amount ~= reward.amount
+        or reward.amount <= 0 or reward.amount == math.huge
+        or reward.amount ~= math.floor(reward.amount) then
+        return false
+    end
+    local legacyId = require("config.ResourceDefs").SHARD_ID_TO_HERO[reward.type]
+    if reward.type == "shard" or legacyId then
+        local heroId = legacyId or tonumber(reward.heroId)
+        return heroId ~= nil and heroId > 0 and heroId == math.floor(heroId)
+            and PDM.GetModule(uid, "heroes") ~= nil
+    end
+    return CurrencyService.REWARD_TO_CURRENCY[reward.type] ~= nil
+        and PDM.GetModule(uid, "currency") ~= nil
+end
+
+local function persistClaim(uid)
+    if persist_ then return persist_(uid) == true end
+    if PDM.IsLocalMode(uid) then
+        local GameState = require("core.GameState")
+        GameState.syncFromCurrency(PDM.GetModule(uid, "currency"), { silent = true })
+        return require("boot.StandaloneSave").Flush() == true
+    end
+    return true
+end
+
+--- 同页奖励整体提交：先全量校验，再发奖，成功后记账，真实落盘后才回成功。
+local function commitClaims(uid, entries)
+    for _, entry in ipairs(entries) do
+        if not validateReward(uid, entry.task.reward) then return false, "invalid_reward" end
+    end
+    local snapshots = {}
+    for _, name in ipairs({ "task", "currency", "heroes" }) do
+        local data = PDM.GetModule(uid, name)
+        if data then snapshots[name] = { data = data, before = copyTable(data) } end
+    end
+    local reason = "reward_failed"
+    local ok, success = pcall(function()
+        if claimHooks_.begin then claimHooks_.begin(uid) end
+        for _, entry in ipairs(entries) do
+            if CurrencyService.GrantReward(uid, entry.task.reward) ~= true then return false end
+        end
+        for _, entry in ipairs(entries) do entry.claimed[entry.task.id] = true end
+        PDM.MarkDirty(uid, "task")
+        reason = "save_failed"
+        return persistClaim(uid)
+    end)
+    local committed = ok and success == true
+    if not committed then
+        for _, snapshot in pairs(snapshots) do restoreTable(snapshot.data, snapshot.before) end
+        -- 默认持久化路径也可能已镜像新余额，失败必须同时还原 GameState。
+        if PDM.IsLocalMode(uid) then
+            require("core.GameState").syncFromCurrency(PDM.GetModule(uid, "currency"), { silent = true })
+        end
+        print("[TaskService] claim rollback uid=" .. tostring(uid) .. " reason=" .. reason
+            .. (not ok and " error=" .. tostring(success) or ""))
+    end
+    if claimHooks_.finish then
+        local notified, err = pcall(claimHooks_.finish, uid, committed)
+        if not notified then print("[TaskService] claim notify failed: " .. tostring(err)) end
+    elseif not committed then
+        for name in pairs(snapshots) do PDM.MarkDirty(uid, name) end
+    end
+    if not committed then return false, reason end
+    return true
+end
+
 -- ======================== 内部工具 ========================
 
 --- 检查并重置过期的日/周任务进度
 ---@param taskData table task 模块数据
 local function ensurePeriods(taskData)
+    -- 老档只补缺省表，不覆盖永久领取历史。
+    for _, key in ipairs({ "dailyProg", "dailyClaimed", "weeklyProg", "weeklyClaimed", "achProg", "achClaimed" }) do
+        if type(taskData[key]) ~= "table" then taskData[key] = {} end
+    end
     local curDay  = TaskConfig.getDayNumber()
     local curWeek = TaskConfig.getWeekNumber()
 
@@ -59,6 +166,8 @@ function TaskService.ClaimTask(uid, taskId)
     end
 
     ensurePeriods(taskData)
+    -- 状态型任务领取校验也读取规则层当前玩家，而非依赖页面刷新。
+    if category == "achievement" then TaskService.RefreshAchievements(uid) end
 
     -- 选择对应的进度表和领取表
     local progTable, claimedTable
@@ -82,12 +191,8 @@ function TaskService.ClaimTask(uid, taskId)
         return false, "not_complete"
     end
 
-    -- 标记已领取
-    claimedTable[taskId] = true
-    PDM.MarkDirty(uid, "task")
-
-    -- 发放奖励
-    CurrencyService.GrantReward(uid, taskDef.reward)
+    local ok, reason = commitClaims(uid, { { task = taskDef, claimed = claimedTable } })
+    if not ok then return false, reason end
 
     print("[TaskService] ClaimTask uid=" .. tostring(uid)
         .. " taskId=" .. taskId
@@ -125,20 +230,22 @@ function TaskService.ClaimAll(uid, scope)
         return false, "invalid_scope"
     end
     TaskService.RefreshAchievements(uid)
-    local claimed = {}
-    local rewards = {}
+    local taskData = PDM.GetModule(uid, "task")
+    if not taskData then return false, "no_data" end
+    local entries, claimed, rewards = {}, {}, {}
     for _, task in ipairs(achievementsInScope(scope)) do
-        local ok, _, result = TaskService.ClaimTask(uid, task.id)
-        if ok and result then
-            claimed[#claimed + 1] = result.taskId
-            rewards[#rewards + 1] = result.reward
+        if not taskData.achClaimed[task.id]
+            and (taskData.achProg[task.condKey] or 0) >= task.target then
+            entries[#entries + 1] = { task = task, claimed = taskData.achClaimed }
+            claimed[#claimed + 1] = task.id
+            rewards[#rewards + 1] = task.reward
         end
     end
+    if #entries == 0 then return false, "nothing_to_claim" end
+    local ok, reason = commitClaims(uid, entries)
+    if not ok then return false, reason end
     print("[TaskService] ClaimAll uid=" .. tostring(uid)
         .. " scope=" .. scope .. " count=" .. tostring(#claimed))
-    if #claimed == 0 then
-        return false, "nothing_to_claim"
-    end
     return true, nil, { scope = scope, claimed = claimed, rewards = rewards }
 end
 
@@ -216,13 +323,12 @@ function TaskService.RefreshAchievements(uid)
     local heroes = PDM.GetModule(uid, "heroes")
     local player = PDM.GetModule(uid, "player")
 
-    if not heroes or not player then
+    -- 远征等级不依赖 heroes 模块到齐（新档/精简测试同样可刷新）。
+    if player then taskData.achProg["player_level"] = player.level or 1 end
+    if not heroes then
         PDM.MarkDirty(uid, "task")
         return
     end
-
-    -- 远征等级
-    taskData.achProg["player_level"] = player.level or 1
 
     -- SR / SSR 拥有数, 觉醒最大次数, 转职统计
     local srCount  = 0

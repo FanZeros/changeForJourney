@@ -231,6 +231,22 @@ function M.run(rt)
         TaskPage.init(vg)
         TaskPage.open()
     end)
+    -- 两个直达入口共用同一页签与左栏互斥，不新建领奖页面。
+    local function openExpeditionRewards()
+        if PlayerInfoPanel.isOpen() then PlayerInfoPanel.close() end
+        if BlacksmithPage.isOpen() then BlacksmithPage.close() end
+        if ChurchPage.isOpen() then ChurchPage.close() end
+        if TavernPage.isOpen() then TavernPage.close() end
+        if MarketPage.isOpen() then MarketPage.close() end
+        local TalentPage = require("ui.church.talent.TalentPage")
+        if TalentPage.isOpen() then TalentPage.close() end
+        if LootBoxPage.isOpen() then LootBoxPage.close() end
+        TaskPage.init(vg)
+        TaskPage.open("level")
+        print("[Standalone] 直达功绩→远征奖励")
+    end
+    PlayerInfoPanel.setOnExpeditionRewards(openExpeditionRewards)
+    require("ui.hud.popup.LevelUpPopup").setOnViewRewards(openExpeditionRewards)
 
     -- 5.24 装备数据初始化（Standalone 模式下 ClientDispatcher 不会收到 Server 推送）
     if not ClientDispatcher.get("equipment") then

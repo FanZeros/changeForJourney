@@ -242,6 +242,308 @@ function Start()
         local leanBefore = copy(leanArt)
         Preview.build(1, 70, nil, nil, leanArt)
         check(equal(leanArt, leanBefore), "空神器存档不会被读取补 equippedByTeam")
+
+        -- 7) 装备净增益是同人物穿戴/裸装之差，不含固有值或神器。
+        do
+            local naked = fixture(4, 70)
+            naked.includeEquipmentBonuses = true
+            local bare = Preview.build(4, 70, nil, nil, naked)
+            check(bare.equipmentBonuses ~= nil and bare.equipmentBonuses.preview == nil
+                and #bare.equipmentBonuses.rows == 0, "空装备净增益为空，不把人物生命/攻击/护甲当装备")
+            check(bare.current.attrs:get(AD.PHYS_BLOCK_RATE) >= 8
+                and row(bare.equipmentBonuses, AD.PHYS_BLOCK_RATE) == nil,
+                "人物固有格挡概率不进入装备净贡献")
+            check(close(bare.current.attrs:get(AD.PHYS_BLOCK_RATIO), 60)
+                and close(bare.current.attrs:get(AD.MAG_BLOCK_RATIO), 60)
+                and row(bare.equipmentBonuses, AD.PHYS_BLOCK_RATIO) == nil
+                and row(bare.equipmentBonuses, AD.MAG_BLOCK_RATIO) == nil,
+                "默认物理/魔法格挡比例60不冒充装备加成")
+            for _, key in ipairs(AD.BASE_STATS) do
+                check(close(bare.equipmentBonuses.current.stats[key], 0), "空装备六围净增益为0: " .. key)
+            end
+        end
+
+        -- 8) 六围/派生保留小数；普通词条倍率、魔化乘区和装备升阶均计入净贡献。
+        do
+            local bonus = fixture(1, 70)
+            put(bonus, 1, "C1", {
+                { affixId = 1, value = 0.75 }, { affixId = 2, value = 1.25 },
+                { affixId = 3, value = 0.625 }, { affixId = 4, value = 1.125 },
+                { affixId = 5, value = 0.875 }, { affixId = 6, value = 0.375 },
+                { affixId = 18, value = 12.5 }, { affixId = 25, value = 7.25 },
+                { affixId = 1005, value = 10 }, { affixId = 1003, value = 8 },
+            }, { { AD.STR, 2.25 }, { AD.AGI, 0.5 } })
+            bonus.equipment.inventory["1"].affixMult = "2"
+            bonus.equipment.inventory["1"].ascendLevel = "10"
+            bonus.equipment.equipped["1"].accessory = 1
+            local plain = Preview.build(1, 70, nil, nil, bonus)
+            check(plain.equipmentBonuses == nil, "未启用 includeEquipmentBonuses 时旧接口不额外返回净增益")
+            bonus.includeEquipmentBonuses = true
+            local bonusBefore, reads = copy(bonus), globalReads
+            local dressed = Preview.build(1, 70, nil, nil, bonus)
+            local naked = copy(bonus)
+            naked.equipment.equipped["1"] = {}
+            local bare = Preview.build(1, 70, nil, nil, naked)
+            local net = dressed.equipmentBonuses
+            check(equal(dressed.rows, plain.rows) and equal(dressed.current.stats, plain.current.stats),
+                "启用净增益不改变原总属性 rows/六围接口")
+            check(globalReads == reads and equal(bonus, bonusBefore), "净增益独立重建不回读存档、不水合写真档")
+            local strGain = (bare.current.stats[AD.STR] + 2.25 * 1.5 + 0.75 * 2) * 1.017
+                - bare.current.stats[AD.STR]
+            local expected = {
+                [AD.STR] = strGain, [AD.AGI] = 0.5 + 1.25 * 2, [AD.INT] = 0.625 * 2,
+                [AD.VIT] = 1.125 * 2, [AD.LUK] = 0.875 * 2, [AD.SPI] = 0.375 * 2,
+            }
+            for _, key in ipairs(AD.BASE_STATS) do
+                check(close(net.current.stats[key], expected[key])
+                    and close(net.current.stats[key], dressed.current.stats[key] - bare.current.stats[key]),
+                    "装备六围净增益精确且不含底板: " .. key)
+            end
+            local speedBonus, penBonus = row(net, AD.ATK_SPEED), row(net, AD.PHYS_PEN)
+            check(speedBonus and close(speedBonus.currentValue, 25 + expected[AD.AGI] * 0.4)
+                and penBonus and close(penBonus.currentValue, 14.5) and penBonus.value == "+14.5",
+                "净贡献含普通词条倍率与敏捷派生，value 带正号")
+            local finalStr, finalHp = row(net, AD.FINAL_STR_BONUS), row(net, AD.FINAL_HP_BONUS)
+            check(finalStr and close(finalStr.currentValue, 1.7) and finalStr.value == "+1.7%"
+                and finalHp and close(finalHp.currentValue, 1.7),
+                "魔化词条 hydrate 回正且不吃普通倍率，最终力量/生命乘区计入")
+            local phys, hp = row(net, AD.PHYS_ATK), row(net, AD.MAX_HP)
+            check(phys and close(phys.currentValue, strGain + expected[AD.AGI] * 0.5 + expected[AD.LUK] * 0.5)
+                and close(phys.currentValue, dressed.current.attrs:get(AD.PHYS_ATK) - bare.current.attrs:get(AD.PHYS_ATK)),
+                "力量/敏捷/命数重新派生物攻，currentValue 为装备净值不是总物攻")
+            check(hp and hp.currentValue > expected[AD.VIT] * 33
+                and close(hp.currentValue, dressed.current.attrs:get(AD.MAX_HP) - bare.current.attrs:get(AD.MAX_HP)),
+                "六围派生生命及魔化最终生命共同进入装备净贡献")
+            check(row(net, AD.PHYS_BLOCK_RATIO) == nil and row(net, AD.MAG_BLOCK_RATIO) == nil
+                and row(net, "_atkType") == nil and row(net, "_atkTargets") == nil,
+                "已穿装备也不显示默认格挡比例或固有攻击信息")
+            local unascended = copy(bonus)
+            unascended.equipment.inventory["1"].ascendLevel = 0
+            local lower = Preview.build(1, 70, nil, nil, unascended).equipmentBonuses
+            check(close(net.current.stats[AD.STR] - lower.current.stats[AD.STR], 2.25 * 0.5 * 1.017)
+                and close(net.current.stats[AD.AGI], lower.current.stats[AD.AGI]),
+                "升阶只增强第一条基础属性，额外贡献也吃最终力量乘区")
+            local penalized = copy(bonus)
+            put(penalized, 2, "C1", nil, { { AD.STR, -2 } })
+            local penalty = Preview.build(1, 70, 2, nil, penalized).equipmentBonuses
+            check(close(penalty.preview.stats[AD.STR], 0)
+                and penalty.preview.stats[AD.AGI] == 0 and #penalty.rows > 0,
+                "试穿负六围的雷达净增益夹到0，当前正贡献对比仍保留")
+            penalized.equipment.equipped["1"] = {}
+            local negativeOnly = Preview.build(1, 70, 2, nil, penalized).equipmentBonuses
+            check(#negativeOnly.rows == 0 and close(negativeOnly.preview.stats[AD.STR], 0),
+                "两侧均无正贡献时不展示负增益或默认值行")
+
+            -- 同一配装/候选只改变神器，装备净贡献 current/preview/rows 均不能改变。
+            local artifactOptions = copy(bonus)
+            put(artifactOptions, 2, "W1", { { affixId = 19, value = 20 } }, {})
+            artifactOptions.artifacts = {
+                bag = { { id = "blood", artifactId = 9, value = 100 } },
+                equippedByTeam = { [1] = { [1] = { "blood" } } },
+            }
+            local withArtifact = Preview.build(1, 70, 2, nil, artifactOptions)
+            artifactOptions.artifacts.bag[1].value = 300
+            local artifactBefore = copy(artifactOptions)
+            local changedArtifact = Preview.build(1, 70, 2, nil, artifactOptions)
+            local withoutArtifact = copy(artifactOptions)
+            withoutArtifact.artifacts = {}
+            local noArtifact = Preview.build(1, 70, 2, nil, withoutArtifact)
+            check(equal(withArtifact.equipmentBonuses, changedArtifact.equipmentBonuses)
+                and equal(changedArtifact.equipmentBonuses, noArtifact.equipmentBonuses),
+                "神器装备/数值变化不改变当前和试穿装备净贡献")
+            check(changedArtifact.current.attrs:get(AD.MAX_HP) > withArtifact.current.attrs:get(AD.MAX_HP)
+                and changedArtifact.preview.attrs:get(AD.MAX_HP) > withArtifact.preview.attrs:get(AD.MAX_HP)
+                and withArtifact.current.attrs:get(AD.MAX_HP) > noArtifact.current.attrs:get(AD.MAX_HP),
+                "排除神器只作用于净贡献，总属性 current/preview 仍受神器变化影响")
+            check(row(changedArtifact.equipmentBonuses, "_artifactNoHeal") == nil
+                and row(changedArtifact.equipmentBonuses, AD.HP_BONUS) == nil
+                and equal(artifactOptions, artifactBefore), "神器特殊行/生命加成不泄漏进净增益且来源快照不变")
+        end
+
+        -- 9) 候选新增正贡献从0比较；卸掉后为0仍保留；攻击间隔负差为增益。
+        do
+            local swap = fixture(1, 70)
+            swap.includeEquipmentBonuses = true
+            put(swap, 1, "W1", {
+                { affixId = 1, value = 0.75 }, { affixId = 18, value = 12.5 },
+                { affixId = 25, value = 7.25 },
+            }, {})
+            swap.equipment.inventory["1"].affixMult = 2
+            put(swap, 2, "W1", nil, {})
+            local added = Preview.build(1, 70, 1, nil, swap)
+            local addedPen = row(added.equipmentBonuses, AD.PHYS_PEN)
+            check(addedPen and close(addedPen.currentValue, 0) and addedPen.value == "+0.0"
+                and close(addedPen.previewValue, 14.5) and close(addedPen.delta, 14.5)
+                and addedPen.deltaText == "+14.5" and addedPen.beneficial == true,
+                "候选新增正穿透从0贡献比较，当前value不冒充试穿贡献")
+            check(close(added.equipmentBonuses.current.stats[AD.STR], 0)
+                and close(added.equipmentBonuses.preview.stats[AD.STR], 1.5), "新增六围分别返回当前0与试穿正贡献")
+            local faster = row(added.equipmentBonuses, AD.ATK_INTERVAL)
+            check(faster and close(faster.currentValue, 0) and faster.previewValue < 0
+                and close(faster.previewValue, added.preview.attrs:getActualInterval() - added.current.attrs:getActualInterval())
+                and faster.delta < 0 and faster.deltaText:sub(1, 1) == "-" and faster.beneficial == true,
+                "攻击间隔负数净贡献也显示，缩短间隔的试穿delta为增益")
+            swap.equipment.equipped["1"].weapon = 1
+            local worn = Preview.build(1, 70, nil, nil, swap)
+            local wornInterval = row(worn.equipmentBonuses, AD.ATK_INTERVAL)
+            check(wornInterval and wornInterval.currentValue < 0 and wornInterval.value:sub(1, 1) == "-"
+                and wornInterval.previewValue == nil and wornInterval.delta == nil,
+                "无候选攻击间隔value带负号，仅当前净贡献不伪造preview/delta")
+            local removedBonus = Preview.build(1, 70, 2, nil, swap).equipmentBonuses
+            local lostPen, slower = row(removedBonus, AD.PHYS_PEN), row(removedBonus, AD.ATK_INTERVAL)
+            check(lostPen and close(lostPen.currentValue, 14.5) and lostPen.value == "+14.5"
+                and close(lostPen.previewValue, 0) and close(lostPen.delta, -14.5)
+                and lostPen.deltaText == "-14.5" and lostPen.beneficial == false,
+                "卸掉穿透贡献变0仍保留对比，delta只表示试穿变化")
+            check(slower and close(slower.previewValue, 0) and slower.delta > 0
+                and slower.deltaText:sub(1, 1) == "+" and slower.beneficial == false
+                and close(removedBonus.preview.stats[AD.STR], 0), "卸掉攻速后负间隔贡献回0为减益，六围贡献也归0")
+            local rejected = Preview.build(1, 70, 9999, nil, swap)
+            check(rejected.error == "装备不存在" and rejected.preview == nil
+                and equal(rejected.equipmentBonuses, worn.equipmentBonuses), "失败候选完整保留当前bonus，不生成试穿净增益")
+            swap.equipment.inventory["2"].level = 71
+            local overlevel = Preview.build(1, 70, 2, nil, swap)
+            check(overlevel.error:find("等级") ~= nil and equal(overlevel.equipmentBonuses, worn.equipmentBonuses),
+                "真实穿戴校验失败也保留当前bonus")
+        end
+
+        -- 10) 两件套属于装备来源；套装触发/丢失及其派生属性都进入净贡献。
+        do
+            local setBonus = fixture(1, 70)
+            setBonus.includeEquipmentBonuses = true
+            put(setBonus, 1, findTemplate("carapace", "weapon", 1), nil, {})
+            put(setBonus, 2, findTemplate("carapace", "armor", 1), nil, {})
+            put(setBonus, 3, "W1", nil, {})
+            setBonus.equipment.equipped["1"].weapon = 1
+            local gained = Preview.build(1, 70, 2, nil, setBonus)
+            local hp, armor = row(gained.equipmentBonuses, AD.HP_BONUS), row(gained.equipmentBonuses, AD.ARMOR_BONUS)
+            check(hp and close(hp.currentValue, 0) and close(hp.previewValue, 6) and close(hp.delta, 6)
+                and armor and close(armor.currentValue, 0) and close(armor.previewValue, 4),
+                "空基础装备由1件到2件，仅套装生命+6/护甲+4进入净贡献")
+            local hpDerived = row(gained.equipmentBonuses, AD.MAX_HP)
+            check(hpDerived and close(hpDerived.currentValue, 0) and hpDerived.previewValue > 0
+                and close(hpDerived.previewValue, gained.preview.attrs:get(AD.MAX_HP) - gained.current.attrs:get(AD.MAX_HP)),
+                "套装两件生命乘区派生的生命净增益来自完整重建")
+            setBonus.equipment.equipped["1"].armor = 2
+            local lost = Preview.build(1, 70, 3, nil, setBonus).equipmentBonuses
+            local lostHp, lostArmor = row(lost, AD.HP_BONUS), row(lost, AD.ARMOR_BONUS)
+            check(lostHp and close(lostHp.currentValue, 6) and lostHp.value == "+6.0%"
+                and close(lostHp.previewValue, 0) and close(lostHp.delta, -6)
+                and lostArmor and close(lostArmor.currentValue, 4) and close(lostArmor.previewValue, 0),
+                "拆掉两件套贡献归0仍保留旧正增益与负试穿差值")
+        end
+        -- 11) 微小贡献不格式化成0；封顶来源取 uncapped 净值，不重复套绝对值 cap 文案。
+        do
+            local tiny = fixture(1, 70)
+            tiny.includeEquipmentBonuses = true
+            put(tiny, 1, "W1", nil, {
+                { AD.ATK_SPEED, 0.01 }, { AD.PHYS_PEN, 0.01 }, { AD.ES_DMG_REDUCE, 90 },
+            })
+            put(tiny, 2, "W1", nil, {})
+            put(tiny, 3, "W1", nil, {
+                { AD.ATK_SPEED, 0.02 }, { AD.PHYS_PEN, 0.02 }, { AD.ES_DMG_REDUCE, 100 },
+            })
+            local tinyBefore = copy(tiny)
+            local added = Preview.build(1, 70, 1, nil, tiny)
+            local addedInterval = row(added.equipmentBonuses, AD.ATK_INTERVAL)
+            check(addedInterval and addedInterval.previewValue < 0 and math.abs(addedInterval.previewValue) < 0.005
+                and addedInterval.deltaText:sub(1, 1) == "-" and addedInterval.deltaText:find("[1-9]") ~= nil
+                and addedInterval.beneficial == true,
+                "微小攻速试穿的负间隔deltaText保留非零数字，不显示-0.00s")
+            tiny.equipment.equipped["1"].weapon = 1
+            local worn = Preview.build(1, 70, nil, nil, tiny)
+            local net = worn.equipmentBonuses
+            local speed, pen, interval = row(net, AD.ATK_SPEED), row(net, AD.PHYS_PEN), row(net, AD.ATK_INTERVAL)
+            check(speed and close(speed.currentValue, 0.01) and speed.value == "+0.01%"
+                and pen and close(pen.currentValue, 0.01) and pen.value == "+0.01",
+                "0.01攻速/穿透净贡献value保留非零精度，不显示+0.0")
+            check(interval and interval.currentValue < 0 and math.abs(interval.currentValue) < 0.005
+                and close(interval.currentValue, addedInterval.previewValue)
+                and interval.value:sub(1, 1) == "-" and interval.value:find("[1-9]") ~= nil,
+                "当前微小负攻击间隔value不舍入为-0.00s")
+            local shield = row(net, AD.ES_DMG_REDUCE)
+            check(shield and close(shield.currentValue, 90)
+                and close(worn.current.attrs:get(AD.ES_DMG_REDUCE), 80)
+                and close(shield.currentValue, worn.current.attrs:getUncapped(AD.ES_DMG_REDUCE)
+                    - added.current.attrs:getUncapped(AD.ES_DMG_REDUCE)),
+                "护盾减伤净贡献取uncapped来源90，不误取封顶有效值80")
+            check(shield and shield.value == "+90.0%" and shield.value:find("(", 1, true) == nil,
+                "封顶护盾减伤净值显示+90.0%，不附绝对值溢出(+10%)")
+            local increased = Preview.build(1, 70, 3, nil, tiny).equipmentBonuses
+            local moreShield, moreSpeed, morePen = row(increased, AD.ES_DMG_REDUCE),
+                row(increased, AD.ATK_SPEED), row(increased, AD.PHYS_PEN)
+            check(moreShield and close(moreShield.currentValue, 90) and close(moreShield.previewValue, 100)
+                and close(moreShield.delta, 10) and moreShield.deltaText == "+10.0%"
+                and moreShield.beneficial == true,
+                "两侧护盾减伤均已封顶仍比较uncapped净值90到100，差值不重新套cap")
+            check(moreSpeed and close(moreSpeed.delta, 0.01) and moreSpeed.deltaText == "+0.01%"
+                and morePen and close(morePen.delta, 0.01) and morePen.deltaText == "+0.01",
+                "已有贡献微增0.01时deltaText也保留精度")
+            local removed = Preview.build(1, 70, 2, nil, tiny).equipmentBonuses
+            local lostSpeed, lostPen, slower = row(removed, AD.ATK_SPEED), row(removed, AD.PHYS_PEN),
+                row(removed, AD.ATK_INTERVAL)
+            check(lostSpeed and close(lostSpeed.previewValue, 0) and lostSpeed.deltaText == "-0.01%"
+                and lostPen and close(lostPen.previewValue, 0) and lostPen.deltaText == "-0.01",
+                "卸除微小正贡献后负deltaText不显示-0.0")
+            check(slower and close(slower.previewValue, 0) and slower.delta > 0
+                and slower.deltaText:sub(1, 1) == "+" and slower.deltaText:find("[1-9]") ~= nil
+                and slower.beneficial == false,
+                "卸除微小攻速后的正间隔delta仍非零且判定减益")
+            local lostShield = row(removed, AD.ES_DMG_REDUCE)
+            check(lostShield and close(lostShield.previewValue, 0) and close(lostShield.delta, -90)
+                and lostShield.deltaText == "-90.0%", "卸除护盾减伤的差值按uncapped贡献-90，不附cap溢出提示")
+            tinyBefore.equipment.equipped["1"].weapon = 1
+            check(equal(tiny, tinyBefore), "微小贡献/护盾减伤重建均不水合改写测试来源")
+        end
+        -- 12) 同队装备转移：试穿裸装底板必须来自转移后的世界，不能残留原持有者贡献。
+        do
+            local transfer = fixture(20, 70)
+            transfer.includeEquipmentBonuses = true
+            transfer.heroes.deployed = { 20, 2 }
+            transfer.heroes.roster["2"] = { level = 70 }
+            transfer.equipment.equipped["2"] = { weapon = 1 }
+            put(transfer, 1, "W25")
+            local transferBefore = copy(transfer)
+            local bare = Preview.build(20, 70, nil, nil, transfer)
+            check(row(bare, "_melissaStarGateResonance").currentValue > 1
+                and row(bare, "_melissaStarGatePen").currentValue > 0
+                and #bare.equipmentBonuses.rows == 0,
+                "hero20空装时可继承同队法师W25共鸣，但队友装备不冒充自身净贡献")
+            local simulated = Preview.build(20, 70, 1, "weapon", transfer)
+            check(simulated.error == nil and simulated.preview ~= nil
+                and simulated.equipmentBonuses.preview ~= nil,
+                "hero20预览同队hero2持有的W25成功")
+            local wornOptions = copy(transfer)
+            local equipped, equipErr = Eq.applyEquip(wornOptions.equipment, 1, 20, "weapon", wornOptions.heroes)
+            check(equipped == true and equipErr == nil, "副本真实applyEquip可将同队法杖转给hero20")
+            check(Eq.getHeroSlots(wornOptions.equipment, 20).weapon == 1
+                and Eq.getHeroSlots(wornOptions.equipment, 2).weapon == nil,
+                "实际转移副本卸掉hero2武器，仅hero20持有W25")
+            local wornBefore = copy(wornOptions)
+            local actual = Preview.build(20, 70, nil, nil, wornOptions)
+            for _, key in ipairs({ "_melissaStarGateResonance", "_melissaStarGatePen", AD.MAG_PEN }) do
+                local predicted, actualBonus = row(simulated.equipmentBonuses, key), row(actual.equipmentBonuses, key)
+                check(predicted and actualBonus and close(predicted.currentValue, 0)
+                    and predicted.previewValue > 0 and close(predicted.previewValue, actualBonus.currentValue)
+                    and close(predicted.delta, actualBonus.currentValue) and predicted.beneficial == true,
+                    "转移试穿净贡献previewValue等于实际穿后currentValue: " .. key)
+            end
+            check(close(row(actual.equipmentBonuses, "_melissaStarGateResonance").currentValue, 4.3 * 1.5 / 100)
+                and close(row(actual.equipmentBonuses, "_melissaStarGatePen").currentValue, 2.57 * 1.5),
+                "转移后的星门净贡献包含W25魔伤/魔穿，不因旧队友底板抵消为0")
+            check(equal(simulated.equipmentBonuses.preview.stats, actual.equipmentBonuses.current.stats),
+                "同队转移试穿六围净增益与实际穿后一致")
+            check(equal(simulated.preview.stats, actual.current.stats)
+                and close(row(simulated, "_melissaStarGateResonance").previewValue,
+                    row(actual, "_melissaStarGateResonance").currentValue)
+                and close(row(simulated, "_melissaStarGatePen").previewValue,
+                    row(actual, "_melissaStarGatePen").currentValue),
+                "同队转移预览总属性/星门机制仍与真实穿戴一致")
+            check(equal(transfer, transferBefore) and equal(wornOptions, wornBefore),
+                "同队装备转移预览和实际当前重建均不水合改写输入来源")
+        end
+        check(equal(owned, ownedBefore) and ownedReads == 0 and equal(HC.HEROES, configBefore),
+            "净增益全部重建完成后原Owned mock与HeroConfig仍未被修改")
     end)
     Dispatcher.get, Store.Get = oldGet, oldStoreGet
     package.loaded["ui.character.panel.CharacterPanel"] = oldPanel

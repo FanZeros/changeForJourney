@@ -7,6 +7,7 @@
 
 local PDM         = require("rules.character.PlayerDataManager")
 local TowerConfig = require("config.TowerConfig")
+local ExpTable    = require("config.ExpTable")
 local CurrencyService = require("rules.currency.CurrencyService")
 
 local TowerService = {}
@@ -39,6 +40,17 @@ local function resetDailyIfNeeded(bt)
     end
 end
 
+-- 三军攻坚的队伍门禁：挑战/推进/结算均需普通通关解锁三队。
+-- 不影响已有通天塔扫荡（扫荡只读已通关层数，不使用编队）。
+---@param uid number
+---@return boolean, string|nil
+local function checkTeamUnlocks(uid)
+    if ExpTable.getUnlockedTeamCount(PDM.GetModule(uid, "battle")) < ExpTable.TEAM_COUNT then
+        return false, "三军攻坚需三队解锁（" .. ExpTable.getTeamUnlockText(3) .. "队伍3）"
+    end
+    return true, nil
+end
+
 -- ======================== 挑战（进入通天塔战斗） ========================
 
 --- 发起通天塔挑战，返回当前层+第一波的战斗配置
@@ -47,6 +59,8 @@ end
 ---@return string|nil err
 ---@return table|nil result { floor, wave, monsterLevel, monsters, rageTime, superRageTime, buffs }
 function TowerService.Challenge(uid)
+    local unlocked, unlockErr = checkTeamUnlocks(uid)
+    if not unlocked then return false, unlockErr end
     local dungeon = PDM.GetModule(uid, "dungeon")
     if not dungeon then
         return false, "数据未加载"
@@ -97,6 +111,8 @@ end
 ---@return string|nil err
 ---@return table|nil result { nextWave, monsters, monsterLevel, floorCleared, buffChoices }
 function TowerService.WaveWin(uid, floor, wave)
+    local unlocked, unlockErr = checkTeamUnlocks(uid)
+    if not unlocked then return false, unlockErr end
     local dungeon = PDM.GetModule(uid, "dungeon")
     if not dungeon then
         return false, "数据未加载"
@@ -160,6 +176,8 @@ end
 ---@return string|nil err
 ---@return table|nil result { floor, firstClear, diamondReward, rewards, nextFloor }
 function TowerService.FloorWin(uid, floor)
+    local unlocked, unlockErr = checkTeamUnlocks(uid)
+    if not unlocked then return false, unlockErr end
     local dungeon  = PDM.GetModule(uid, "dungeon")
     local currency = PDM.GetModule(uid, "currency")
     if not dungeon or not currency then
@@ -217,6 +235,8 @@ end
 ---@return string|nil err
 ---@return table|nil result { buffId, buffName, totalBuffs }
 function TowerService.PickBuff(uid, buffId)
+    local unlocked, unlockErr = checkTeamUnlocks(uid)
+    if not unlocked then return false, unlockErr end
     local dungeon = PDM.GetModule(uid, "dungeon")
     if not dungeon then
         return false, "数据未加载"

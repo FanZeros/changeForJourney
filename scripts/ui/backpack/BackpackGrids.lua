@@ -8,6 +8,7 @@ local ImageCache      = require("ui.widget.ImageCache")
 local NumberUtil      = require("core.NumberUtil")
 local PlayerStore     = require("core.PlayerStore")
 local EquipmentConfig = require("config.EquipmentConfig")
+local EquipmentSetConfig = require("config.EquipmentSetConfig")
 local EquipmentWearability = require("ui.character.detail.EquipmentWearability")
 local AdvancementConfig = require("config.AdvancementConfig")
 local HeroConfig      = require("config.HeroConfig")
@@ -41,6 +42,46 @@ function M.bind(deps)
     local clampScroll = deps.clampScroll
     local getEquipmentSlotFilter = deps.getEquipmentSlotFilter or function() return nil, nil end
 
+    local function filterContext()
+        local slotFilter, filterHeroId = getEquipmentSlotFilter()
+        local heroes = filterHeroId ~= nil and PlayerStore.Get("heroes") or nil
+        local hero = heroes and heroes.roster
+            and (heroes.roster[filterHeroId] or heroes.roster[tostring(filterHeroId)])
+        local dualMode = AdvancementConfig.getDualWieldMode(hero and hero.advBranch)
+        return slotFilter, filterHeroId, heroes, dualMode
+    end
+
+    -- 列表与数量共用品质/部位规则；可穿戴状态只灰显，不改变候选数量。
+    local function matchesBaseFilter(equip, slotFilter, dualMode)
+        local tpl = EquipmentConfig.ITEMS[equip.templateId]
+        local naturalSlot, equipType, grip, level = EquipmentWearability.getFields(equip)
+        local quality = equip.quality or (tpl and tpl.quality) or 1
+        local slotOk = not slotFilter or naturalSlot == slotFilter
+        if slotFilter == "offhand" and dualMode and naturalSlot == "weapon" and grip == "onehand" then
+            slotOk = true
+        end
+        return tpl ~= nil and qualityChecked(quality) and slotOk,
+            tpl, naturalSlot, equipType, grip, level, quality
+    end
+
+    --- 按当前品质/部位统计套装实例，忽略套装勾选，避免其他可选行被计成零。
+    ---@return table<string, integer>
+    local function getSetCounts()
+        local counts = { none = 0 }
+        for _, setId in ipairs(EquipmentSetConfig.orderedSetIds()) do counts[setId] = 0 end
+        local equipData = PlayerStore.Get("equipment")
+        if not equipData or not equipData.inventory then return counts end
+        local slotFilter, _, _, dualMode = filterContext()
+        for _, equip in pairs(equipData.inventory) do
+            local matches, tpl = matchesBaseFilter(equip, slotFilter, dualMode)
+            if matches then
+                local setId = EquipmentSetConfig.getSetIdForTemplate(tpl) or "none"
+                counts[setId] = (counts[setId] or 0) + 1
+            end
+        end
+        return counts
+    end
+
     local function getEquipList()
         local equipData = PlayerStore.Get("equipment")
         if not equipData or not equipData.inventory then return {} end
@@ -57,24 +98,15 @@ function M.bind(deps)
         end
 
         local list = {}
-        local slotFilter, filterHeroId = getEquipmentSlotFilter()
+        local slotFilter, filterHeroId, heroes, dualMode = filterContext()
         -- 可穿戴状态只决定灰显，不再过滤掉装备；实际穿戴仍由 applyEquip 校验。
-        local heroes = filterHeroId ~= nil and PlayerStore.Get("heroes") or nil
-        local hero = heroes and heroes.roster
-            and (heroes.roster[filterHeroId] or heroes.roster[tostring(filterHeroId)])
-        local dualMode = AdvancementConfig.getDualWieldMode(hero and hero.advBranch)
         local canEquip = filterHeroId ~= nil and EquipmentWearability.createChecker(
             equipData, filterHeroId, heroes) or nil
         for seqStr, equip in pairs(equipData.inventory) do
-            local tpl = EquipmentConfig.ITEMS[equip.templateId]
-            local naturalSlot, equipType, grip, level = EquipmentWearability.getFields(equip)
-            local quality = (equip and (equip.quality or (tpl and tpl.quality))) or 1
-            local slotOk = not slotFilter or naturalSlot == slotFilter
-            if slotFilter == "offhand" and dualMode and naturalSlot == "weapon" and grip == "onehand" then
-                slotOk = true
-            end
+            local matches, tpl, naturalSlot, equipType, grip, level, quality =
+                matchesBaseFilter(equip, slotFilter, dualMode)
             -- 部位、品质与套装决定列表；不能穿的保留在同一绘制/点击/hover/peek真源内。
-            if tpl and qualityChecked(quality) and setChecked(equip.templateId) and slotOk then
+            if matches and setChecked(equip.templateId) then
                 local canWear, cannotEquipReason = true, nil
                 if canEquip then canWear, cannotEquipReason = canEquip(seqStr, slotFilter) end
                 list[#list + 1] = {
@@ -340,6 +372,7 @@ function M.bind(deps)
 
     return {
         getEquipList = getEquipList,
+        getSetCounts = getSetCounts,
         drawEquipGrid = drawEquipGrid,
         buildItemList = buildItemList,
         drawItemGrid = drawItemGrid,

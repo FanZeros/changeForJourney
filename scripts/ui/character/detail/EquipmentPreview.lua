@@ -119,13 +119,94 @@ local function mergeRows(current, preview)
     return rows
 end
 
+-- 装备加成独立重建：同一人物底板相减，两侧都不带神器。
+-- 保留职业/养成对装备的真实派生和乘区；不把人物固有值当成装备来源。
+local function collectBonusSource(heroId, heroCfg, level, heroes, equipment)
+    local source = Attrs.collectAttributes(heroId, heroCfg, level,
+        { heroes = heroes, equipment = equipment, artifacts = {} })
+    -- 现有总属性页未列护盾减伤，装备模式仍须覆盖这个装备来源。
+    local key = AD.ES_DMG_REDUCE
+    local meta = AD.getMeta(key)
+    if meta and source.attrs then
+        source.left[#source.left + 1] = { key = key, name = meta.name,
+            numericValue = source.attrs:getUncapped(key), value = "", desc = AD.getDesc(key) }
+    end
+    return source
+end
+
+local function positiveBonus(key, value)
+    return key == AD.ATK_INTERVAL and value < -0.0000001
+        or key ~= AD.ATK_INTERVAL and value > 0.0000001
+end
+
+local function bonusText(key, value)
+    local formatted = deltaText(key, value)
+    if value ~= 0 and not formatted:find("[1-9]") then
+        local amount = string.format("%.6f", math.abs(value)):gsub("0+$", ""):gsub("%.$", "")
+        local meta = AD.getMeta(key)
+        local suffix = key == AD.ATK_INTERVAL and "s"
+            or (PCT_KEYS[key] or (meta and meta.dataType == AD.TYPE_PCT)) and "%" or ""
+        return (value < 0 and "-" or "+") .. amount .. suffix
+    end
+    return formatted
+end
+
+local function bonusStats(source, baseline)
+    local stats = {}
+    for _, key in ipairs(AD.BASE_STATS) do
+        stats[key] = math.max(0, (source.stats[key] or 0) - (baseline.stats[key] or 0))
+    end
+    return stats
+end
+
+local function equipmentBonuses(heroId, heroCfg, level, heroes, equipment, previewEq)
+    local function bareSource(eqData)
+        local bareEq = deepCopy(eqData)
+        bareEq.equipped = bareEq.equipped or {}
+        bareEq.equipped[heroId] = nil
+        bareEq.equipped[tostring(heroId)] = nil
+        return collectBonusSource(heroId, heroCfg, level, heroes, bareEq)
+    end
+    local baseline = bareSource(equipment)
+    local current = collectBonusSource(heroId, heroCfg, level, heroes, equipment)
+    local preview = previewEq and collectBonusSource(heroId, heroCfg, level, heroes, previewEq) or nil
+    -- 候选可来自同队其它角色；试穿会卸下原持有者装备，裸装底板也必须在试穿世界重建。
+    local previewBaseline = previewEq and bareSource(previewEq) or baseline
+    local currentDiff = mergeRows(baseline, current)
+    local previewDiff = preview and mergeRows(previewBaseline, preview) or {}
+    local nextByKey = {}
+    for _, row in ipairs(previewDiff) do nextByKey[row.key] = row end
+    local rows = {}
+    for _, row in ipairs(currentDiff) do
+        local after = nextByKey[row.key]
+        local beforeValue, afterValue = row.delta, after and after.delta or nil
+        if type(beforeValue) == "number" and
+            (positiveBonus(row.key, beforeValue) or (afterValue and positiveBonus(row.key, afterValue))) then
+            local entry = { key = row.key, name = row.name,
+                currentValue = beforeValue, value = bonusText(row.key, beforeValue),
+                desc = "仅显示装备引起的增益：同一角色穿戴装备后减去无装备时的数值，两侧均不计神器。百分比为百分点差值，攻击间隔缩短属于增益。\n"
+                    .. (AD.getDesc(row.key) ~= "" and AD.getDesc(row.key) or row.desc or "") }
+            if afterValue ~= nil then
+                entry.previewValue = afterValue
+                entry.delta = afterValue - beforeValue
+                if math.abs(entry.delta) < 0.0000001 then entry.delta = 0 end
+                entry.deltaText = bonusText(row.key, entry.delta)
+                entry.beneficial = positiveBonus(row.key, entry.delta)
+            end
+            rows[#rows + 1] = entry
+        end
+    end
+    return { rows = rows, current = { stats = bonusStats(current, baseline) },
+        preview = preview and { stats = bonusStats(preview, previewBaseline) } or nil }
+end
+
 --- 构建只读装备预览；不传 seq 时只返回当前属性。
 ---@param heroId number|string
 ---@param level number
 ---@param seqOrNil? number|string
 ---@param targetSlotOrNil? string 默认候选装备自身槽位；副手双持需显式指定 offhand
----@param optionsOrNil? table 测试可显式提供 heroes/equipment/artifacts
----@return table { current, preview, rows, currentSets, previewSets, candidate, error }
+---@param optionsOrNil? table 测试可显式提供 heroes/equipment/artifacts；includeEquipmentBonuses 按需启用装备净增益
+---@return table { current, preview, rows, equipmentBonuses, currentSets, previewSets, candidate, error }
 function M.build(heroId, level, seqOrNil, targetSlotOrNil, optionsOrNil)
     local result = {
         current = { left = {}, right = {}, stats = {} }, preview = nil,
@@ -148,25 +229,31 @@ function M.build(heroId, level, seqOrNil, targetSlotOrNil, optionsOrNil)
     result.current = Attrs.collectAttributes(heroN, heroCfg, heroLevel, options)
     result.currentSets = setSummary(equipment, heroN)
     result.rows = mergeRows(result.current, nil)
-    if seqOrNil == nil then return result end
+    local function finish(previewEq)
+        if optionsOrNil and optionsOrNil.includeEquipmentBonuses then
+            result.equipmentBonuses = equipmentBonuses(heroN, heroCfg, heroLevel, heroes, equipment, previewEq)
+        end
+        return result
+    end
+    if seqOrNil == nil then return finish() end
 
     local previewEq = deepCopy(equipment)
     local seq = tonumber(seqOrNil)
     local candidate = seq and Eq.getFromInventory(previewEq, seq)
-    if not seq or not candidate then result.error = "装备不存在"; return result end
+    if not seq or not candidate then result.error = "装备不存在"; return finish() end
     ---@cast seq number
     Eq.hydrate(candidate)
     local slot = targetSlotOrNil or candidate.slot
     result.candidate = { seq = seq, slot = slot, name = candidate.name or "未知装备" }
     ---@cast heroN number
     local ok, err = Eq.applyEquip(previewEq, seq, heroN, slot, heroes)
-    if not ok then result.error = err or "无法穿戴"; return result end
+    if not ok then result.error = err or "无法穿戴"; return finish() end
 
     result.preview = Attrs.collectAttributes(heroN, heroCfg, heroLevel,
         { heroes = heroes, equipment = previewEq, artifacts = artifacts })
     result.previewSets = setSummary(previewEq, heroN)
     result.rows = mergeRows(result.current, result.preview)
-    return result
+    return finish(previewEq)
 end
 
 return M

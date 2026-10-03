@@ -403,29 +403,44 @@ function ExpTable.getUnlockedSlotCount(playerLevel)
 end
 
 -- ======================== 多队伍（三队并行战斗）解锁规则 ========================
--- 队1 开局解锁；队2/队3 达到远征等级阈值解锁（阈值可调）
+-- 队1 开局解锁；普通 9-5 / 19-5 通关后分别解锁队2 / 队3。
+-- 队伍数量只读 battle 进度；每队槽位仍独立按远征等级解锁。
 ExpTable.TEAM_COUNT = 3
-ExpTable.TEAM_UNLOCK_LEVELS = { 10, 20 }  -- [i] = 解锁第 (i+1) 队所需等级
-ExpTable.TEAM_MAX_SLOTS = 4               -- 每队最多上阵人数（左4角色 vs 右4敌人）
+ExpTable.TEAM_UNLOCK_STAGES = { 905, 1905 } -- [i] = 解锁第 (i+1) 队的普通关卡 ID
+ExpTable.TEAM_MAX_SLOTS = 4                -- 每队最多上阵人数（左4角色 vs 右4敌人）
 
---- 根据远征等级计算已解锁的队伍数量
----@param playerLevel number 当前远征等级
+--- 根据普通通关进度计算已解锁的队伍数量（不接收玩家等级）
+--- clearedStages 兼容数字/字符串键；旧档只有 maxStageId 时必须严格越过目标。
+--- 刚抵达目标关卡（maxStageId == 目标且未通关）不会解锁。
+---@param battleProgress table|nil battle 模块数据
 ---@return number 已解锁队伍数（1~TEAM_COUNT）
-function ExpTable.getUnlockedTeamCount(playerLevel)
+function ExpTable.getUnlockedTeamCount(battleProgress)
+    if type(battleProgress) ~= "table" then return 1 end
+    local cleared = type(battleProgress.clearedStages) == "table" and battleProgress.clearedStages or {}
+    local maxStageId = tonumber(battleProgress.maxStageId) or 0
     local count = 1
-    for i, lv in ipairs(ExpTable.TEAM_UNLOCK_LEVELS) do
-        if playerLevel >= lv then
+    for i, stageId in ipairs(ExpTable.TEAM_UNLOCK_STAGES) do
+        if cleared[stageId] == true or cleared[tostring(stageId)] == true or maxStageId > stageId then
             count = i + 1
         end
     end
     return math.min(count, ExpTable.TEAM_COUNT)
 end
 
---- 获取解锁指定队伍所需的远征等级
+--- 获取解锁指定队伍所需通关的普通关卡 ID
 ---@param teamIdx number 队伍索引（1~TEAM_COUNT）
----@return number|nil 解锁等级；队1 无需解锁返回 nil
-function ExpTable.getTeamUnlockLevel(teamIdx)
-    return ExpTable.TEAM_UNLOCK_LEVELS[teamIdx - 1]
+---@return number|nil 队1 无需解锁返回 nil
+function ExpTable.getTeamUnlockStage(teamIdx)
+    return ExpTable.TEAM_UNLOCK_STAGES[teamIdx - 1]
+end
+
+--- 队伍锁定文案（统一用于页签、弹窗与规则层拒绝原因）
+---@param teamIdx number
+---@return string 队1/无效队伍返回空串
+function ExpTable.getTeamUnlockText(teamIdx)
+    local stageId = ExpTable.getTeamUnlockStage(teamIdx)
+    if not stageId then return "" end
+    return string.format("通关%d-%d解锁", math.floor(stageId / 100), stageId % 100)
 end
 
 --- 每队出战槽位数（复用"出战槽位+1"节奏 Lv2/Lv6/Lv10，上限 4）

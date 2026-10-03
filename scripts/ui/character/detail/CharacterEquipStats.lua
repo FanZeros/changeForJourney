@@ -17,6 +17,7 @@ local drawTextStroke = DrawUtil.drawTextStroke
 M.LAYOUT = {
     panel = { x = 24, y = 890, w = 1032, h = 1334 },
     titleY = 930,
+    title = { x = 390, y = 894, w = 300, h = 68 },
     status = { x = 54, y = 956, w = 972, h = 54 },
     attrs = { x = AttributeView.ATTRIBUTE_LAYOUT.x, y = 1050,
         w = AttributeView.ATTRIBUTE_LAYOUT.w, h = math.floor(AttributeView.ATTRIBUTE_LAYOUT.h * 1.30 + 0.5) },
@@ -232,8 +233,11 @@ end
 -- 属性页原标题绘图同一实现，字体/frame仍由外层管理。
 M.drawLegacyTitle = AttributeView.drawTitle
 
-function M.drawHeader(vg, candidate, errorMessage)
-    AttributeView.drawTitle(vg, 540, M.LAYOUT.titleY, "角色属性")
+function M.drawHeader(vg, candidate, errorMessage, attributeMode)
+    AttributeView.drawTitle(vg, 540, M.LAYOUT.titleY,
+        attributeMode == "equipment" and "装备加成" or "角色属性")
+    text(vg, 428, M.LAYOUT.titleY, "‹", 28, COLOR.gold, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    text(vg, 652, M.LAYOUT.titleY, "›", 28, COLOR.gold, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     AttributeView.drawDivider(vg, M.LAYOUT.attrs.y - 20)
     AttributeView.drawDivider(vg, M.LAYOUT.setTitleY - 28)
     drawTextStroke(vg, M.LAYOUT.sets.x + 20, M.LAYOUT.setTitleY + 4,
@@ -253,6 +257,12 @@ function M.drawHeader(vg, candidate, errorMessage)
         local rect = M.LAYOUT.status
         fitText(vg, rect.x, rect.y + rect.h * 0.5, status, 28, 22, rect.w, color)
     end
+end
+
+function M.drawEmptyBonuses(vg, available)
+    local rect = M.LAYOUT.attrs
+    local message = available and "暂无装备增益" or "装备加成暂不可用"
+    text(vg, rect.x + 20, rect.y + 34, message, 28, COLOR.muted)
 end
 
 --- 共用属性页归一化；有候选仅把并集peak放入同一尺度，不分别归一化。
@@ -416,16 +426,17 @@ local function radarPolygon(vg, vertices)
 end
 
 --- 淡金当前图不重染共享内区；仅增减面积/真正移动的试穿边分别用绿/红。
-function M.drawRadar(vg, current, preview)
+function M.drawRadar(vg, current, preview, equipmentMode)
     local layout = M.LAYOUT.radar
     local values = current or {}
     local maxValue = M.radarScale(values, preview)
-    -- 底图沿用属性页的 8% 视觉下限；差集比较同一对可见顶点，文本仍用原始数值。
+    -- 总属性沿用8%视觉下限；装备净增益允许0落在中心，避免空装虚构六围。
+    local visualFloor = equipmentMode and 0 or maxValue * 0.08
     local visualCurrent, visualPreview = {}, preview and {} or nil
     for _, key in ipairs(HEX_KEYS) do
-        visualCurrent[key] = math.max(maxValue * 0.08, tonumber(values[key]) or 0)
+        visualCurrent[key] = math.max(visualFloor, tonumber(values[key]) or 0)
         if visualPreview then
-            visualPreview[key] = math.max(maxValue * 0.08, tonumber(preview[key]) or 0)
+            visualPreview[key] = math.max(visualFloor, tonumber(preview[key]) or 0)
         end
     end
     local comparison = RadarDiff.compare(visualCurrent, visualPreview,
@@ -461,8 +472,23 @@ function M.drawRadar(vg, current, preview)
         local nextValue = preview and tonumber(preview[key]) or currentValue
         local color = HEX_COLORS[i]
         text(vg, lx, ly - 24, name, 26, color, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        drawTextStroke(vg, lx, ly + 16, tostring(math.floor(currentValue)),
-            34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
+        local valueText = tostring(math.floor(currentValue))
+        if equipmentMode then
+            local amount = math.abs(currentValue) < 0.1 and string.format("%.6f", currentValue)
+                or string.format("%.1f", currentValue)
+            valueText = amount:gsub("0+$", ""):gsub("%.$", "")
+            if currentValue > 0 then valueText = "+" .. valueText end
+        end
+        local valueFont = 34
+        if equipmentMode then
+            nvgFontFace(vg, "sans")
+            nvgFontSize(vg, valueFont)
+            local width = nvgTextBounds(vg, 0, 0, valueText) or 0
+            local maxWidth = math.min(150, (1080 - lx - 5) * 2)
+            if width > maxWidth then valueFont = valueFont * maxWidth / width end
+        end
+        drawTextStroke(vg, lx, ly + 16, valueText,
+            valueFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
         local delta = nextValue - currentValue
         if preview and math.abs(delta) > 0.000001 then
             local amount

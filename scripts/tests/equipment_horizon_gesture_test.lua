@@ -67,8 +67,18 @@ function Start()
             -- 无装备候选，不 arm EquipCrossDrag：测的是普通属性/仓库滚动跨栏释放。
             peekSlotEquipAt = function() return nil end,
             peekItemAt = function() return nil end,
+            isAttributeTogglePoint = function(x, y)
+                return x >= 390 and x <= 690 and y >= 894 and y <= 962
+            end,
             containsComparisonPoint = function(x, y)
-                return x >= 54 and x <= 532 and y >= 1068 and y <= 1688
+                return (x >= 54 and x <= 532 and y >= 1068 and y <= 1688)
+                    or (x >= 390 and x <= 690 and y >= 894 and y <= 962)
+            end,
+            handleInput = function(x, y)
+                if x >= 390 and x <= 690 and y >= 894 and y <= 962 then
+                    count("attributeToggle"); return true
+                end
+                return false
             end,
             handleDragBegin = function(x, y)
                 return x >= 54 and x <= 532 and y >= 1068 and y <= 1688
@@ -316,6 +326,19 @@ function Start()
         down("left", 300, 1060)
         up("left", 300, 1060)
         check(n("detailClose") == 1 and n("warehouseInput") == 0 and n("pin") == 0, "D2: 无装备格命中的 dismiss 首击不放行仓库按钮")
+
+        -- F：标题首击属于比较内容，浮选保留、部位不清、没有实际穿装操作。
+        for _, tri in ipairs({ true, false }) do
+            fixture(tri)
+            state.detailOpen = true
+            down("right", 540, 930)
+            up("right", 540, 930)
+            check(n("attributeToggle") == 1 and n("characterInput") == 1,
+                "F: 两种横屏布局标题首击均派发一次切换")
+            check(state.detailOpen and n("detailClose") == 0 and state.slot == "helmet"
+                and n("filter") == 0, "F: 标题切换保留钉住详情与装备部位")
+            check(n("action") == 0, "F: 显示切换不发送穿戴操作")
+        end
 
         -- 正常点击正向控制：右栏非槽 clear，左仓库点击保留右栏部位。
         fixture(true)

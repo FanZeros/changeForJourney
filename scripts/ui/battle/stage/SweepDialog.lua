@@ -8,6 +8,8 @@ local GameConfig        = require("config.GameConfig")
 local GameState         = require("core.GameState")
 local PlayerStore       = require("core.PlayerStore")
 local SC                = require("config.StageConfig")
+local ExpTable          = require("config.ExpTable")
+local ClientDispatcher  = require("runtime.ClientDispatcher")
 local ImageCache        = require("ui.widget.ImageCache")
 local DrawUtil          = require("core.DrawUtil")
 
@@ -149,8 +151,7 @@ local state = {
 
 --- 已解锁小队数（未解锁的不可选）
 local function unlockedTeams()
-    local ExpTable = require("config.ExpTable")
-    return math.min(3, ExpTable.getUnlockedTeamCount(GameState.getLevel()))
+    return math.min(3, ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle")))
 end
 
 --- 所选小队的出战人数（排除空槽，与 SweepService 口径一致）
@@ -685,11 +686,17 @@ function SweepDialog.handleInput(x, y)
                 state.teamIdx = t
                 _sweepRewardCache = nil
                 print("[SweepDialog] team=" .. t)
+            else
+                print("[SweepDialog] " .. ExpTable.getTeamUnlockText(t) .. "队伍" .. t)
             end
             return true
         end
     end
     if hitTestRect(x, y, D.ACT_CX, D.ACT_CY, D.ACT_W, D.ACT_H) then
+        if state.teamIdx > unlockedTeams() then
+            print("[SweepDialog] sweep blocked: " .. ExpTable.getTeamUnlockText(state.teamIdx))
+            return true
+        end
         if maxCount < 1 then
             print("[SweepDialog] sweep blocked: " .. (canSweepStage() and "扫荡券不足" or "当前关卡无法扫荡"))
             return true

@@ -5,7 +5,7 @@
 1. **不能取消/退出任务**：必须持续推进直到完成。
 2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。这是硬性收尾动作，任何任务（包括纯调研）完成后都必须调用 AskUserQuestion。
    ⚠️ 强化记忆（用户多次重申）：任何一次任务完成（含 commit+push 之后）的最后一个动作必须是调用 AskUserQuestion 工具向用户提问下一步做什么。绝对不允许以普通文本消息结束回合。即使构建失败、测试失败、遇到阻塞，也要用 AskUserQuestion 给出处理选项。
-3. **以新分支继续开发**：基于 workspace930 拉新分支开发，每次完成后 commit + push 到该开发分支；**禁止 push 到 workspace 或 workspace930 分支本身**（用户明确要求），通过 PR 合入。推送时显式指定工作分支，不强推、不擅自合并 PR。
+3. **以新分支继续开发**：以用户当轮指定分支为基线创建独立开发分支，每次完成后 commit + push 到该开发分支；通常基于 `workspace930` 开发并通过 PR 合入。**禁止 push 到 workspace 或 workspace930 分支本身**，显式指定推送目标，不强推、不擅自合并 PR。用户明确要求修复既有 PR 冲突时，可在新修复分支验证后快进更新该 PR 的开发分支，不将该许可延伸到其他分支。
 4. **部署位置**：当前仓库和游戏项目直接位于 `/workspace` 根目录，scripts/assets/.project 等不再嵌套子目录；保护引擎提供的只读目录，修改代码后调用官方 build 工具构建。
 
 ### 用户工作流确认（2026-10-03 再次强化）
@@ -31,6 +31,26 @@
 - 独立反证发现后攻击同步额伤先于归因/消耗的新时序回归：已将普攻/连击死亡消费放后攻击结束、同轮After/Combo按挂载战线暂存后消费；斩击/氮气旗标前置，小雀斩杀转标交死亡消费者。飞回全盾记池/转火追加效果、三阶/治疗功德/连射/概率/套装/计价剩余不在本批，塔旧onEnemyKill双入口不扩改。
 - 首批功能提交`cffbc616`已推送到`fix1003/character-critical-lifecycle`，远端`workspace930`仍为`eec2a976`。用户随后明确选择“创建修复PR”，已创建PR #24：https://github.com/FanZeros/changeForJourney/pull/24，目标`workspace930`，open且未合并；附112断言/14套回归、构建和剩余边界，不据创建授权自动合入。最终独立只读复核未发现剩余可确认新增阻塞；死亡消费回调自身抛错、切战线不恢复、真正嵌套After/Combo仍列未覆盖边界，不据此捏造生产故障。
 - 测试禁止只靠package.loaded预注入：托管Runtime会绕过它，必须验证真实替身命中；成长测试首轮harness失败已披露并改为全局require拦截后成功。每轮真实结果报告之后仍以 **AskUserQuestion** 提供下一步决定。
+## 本轮协作要求强化（2026-10-02，历史指定基线）
+
+- 用户再次要求：持续推进直到完成；每次完成后必须真正调用 **AskUserQuestion**，提供 2–4 个下一步选项，不用普通文本问题代替，不以非 AskUserQuestion 的形式中断对话。
+- 当轮基线：`feat930/equipment-attribute-preview`；开发分支：`feat930/equipment-bonus-toggle-1002`。当轮完成后只推开发分支并向当轮基线提交 PR，绝不推 workspace；此历史授权不覆盖后续任务。
+- 凭据仅用于即时鉴权，不写入项目、Git 配置、提交或记忆；若遇到失败/阻塞，必须如实报告，并用选项询问处理方向，不绕过权限。
+
+### 本轮实现与验证（2026-10-02）
+
+- 配装下部标题可单击切换「角色属性 / 装备加成」；装备模式只显示装备引起的正增益，实际攻击间隔缩短按增益保留。六围雷达同步显示装备净增益，无增益显示空态，普通属性页不变。
+- `EquipmentPreview.build` 的 `includeEquipmentBonuses` 按需启用同人物穿装/裸装完整差分；两侧神器为空，排除神器来源；保留六围派生、普通词条倍率、魔化最终乘区、升阶和两件套面板属性。套装四/六件条件效果仍在摘要说明，不提前执行战斗触发。
+- 原试穿差值保留；标题归比较保留热区，不关闭钉住候选，不取消副手筛选，不发穿戴操作。显示模式进入缓存键，切换重置属性滚动和说明，后续帧继续命中缓存。同队转移装备时，当前和试穿世界分别构建裸装基准，星门共鸣净贡献与实际穿后保持一致。
+- 回归：装备预览 117 断言、配装绘图/缓存 97 断言、横屏手势 44 断言、稳定属性列表 55 断言、真实模块集成冒烟均通过。装备雷达小数保留有效精度并限制栏内宽度，避免长数值越界。主入口运行一分钟，初始化 18/18 完成，未出现 Lua 运行错误。修改文件 LSP 无 Error；官方 Build 成功，410 个 Lua 入包。首次集成测试失败因先选副手按既有筛选逻辑清了候选，修正 fixture（先选副手，再 open/pin）后通过，非显示切换缺陷。
+- 已交付：功能提交 `923f547a` 已推送到 `feat930/equipment-bonus-toggle-1002`；PR #16（https://github.com/FanZeros/changeForJourney/pull/16）已创建，base 为 `feat930/equipment-attribute-preview`。未推 workspace 或原分支，未自动合并 PR。构建生成的 `.project` 改动仅留本地、不提交。视觉与设备触控等待人工预览验收；完成简报后仍必须真正调用 **AskUserQuestion** 询问下一步。
+
+
+### 用户工作流再次确认（2026-10-03）
+
+- 本轮从 `workspace930` 拉取至 `/workspace` 根目录，在新的开发分支推进；每轮完成后显式推送该开发分支，绝不推送 `workspace` 或 `workspace930`。
+- 完成或遇到阻塞时，先报告实际结果，再以 **AskUserQuestion** 的具体选项询问下一步；不以普通文本结束回合。持续推进已授权任务，同时尊重用户后续明确的停止要求和权限拒绝。
+- 本轮 PAT 不持久化，不进入项目、Git 远端地址、日志或记忆；提醒用户撤销已公开的凭据。
 
 ### 用户工作流确认（2026-10-02）
 
@@ -83,6 +103,38 @@ python3 .github/scripts/repository_policy.py --base origin/workspace930
 - Actions 仅 `contents: read`，不持久化 checkout 凭据，不给 PR 检查传 PAT，不用 `pull_request_target` 检出并执行 PR 代码。
 - 本轮只增加 workflow，不修改 GitHub 分支保护。因此检查会显示结果，但尚不强制阻止管理员合并；保护规则需要另行授权。
 - 不默认强制他人审批：单协作者不能批准自己的 PR。持续保留已有 GitHub secret scanning 和 push protection。
+
+## PR24 冲突修复（2026-10-03）
+
+- 用户明确要求解决PR24冲突，并另行排查升级白图、规划升级奖励页。PR24源=`fix1003/character-critical-lifecycle@765dc22c`，最新目标=`workspace930@8d3e62f`（PR21由外部操作合入）；新建`fix/pr24-conflicts-20261003`，只同步目标并解冲突，不混入升级UI或经济奖励实现。
+- 唯一文本冲突是本文件中的角色审计/关键修复记录与目标协作记录，全部保留；BattleTriDriver/BattleTriPage自动合并。回归验证保留当前行军、小队通关解锁、PR21装备净加成与PR24死亡消费/成长生命修复，不调平衡。
+- 14套Runtime退出0且ALL PASS：新critical20、成长39、敌死生命周期、行军27、小队解锁115、终焉/切关、装备预览117/真实冒烟、套装筛选、升阶、腐化、离线487和UI525；官方Build成功。自动合并两文件逐文件LSP无Error，不宣称全仓零Error；真实离屏启动160帧原始PASS，Lua/资源/引擎错误0、缺图为空；仓库规范2521路径0错误0警告、36单元测试全过。
+- 完成后只推新修复分支及非强推快进PR24源分支以消除其冲突，不push workspace/workspace930、不自动合并PR。本地.project身份与生成配置不提交。升级白图/奖励页另开范围，奖励数值与发放逻辑未经确认不实施。报告真实结果后以AskUserQuestion继续。
+
+## PR21 冲突修复（2026-10-03）
+
+- 用户明确要求“看看解决下21的conflict”。PR21 源为 `feat930/equipment-attribute-preview@4f6737d6`、目标为 `workspace930`；拉取后目标已前进至 `a89e3fda`（PR22与PR23已由外部操作合入，不是本会话自动合并）。新建 `fix/pr21-conflicts-20261003` 从PR源开发分支起步，合入最新目标，保留双方功能。
+- 仅两处文本冲突：`memory/WORKFLOW_RULES.md` 双保留协作记录并注明历史指定基线；`tests/lootbox_set_filter_test.lua` 保留PR21套装数量getter/刷新/品质筛选全部用例，以及目标 `runTests + pcall + engine:Exit` 包装。测试cleanup改为无论断言是否失败都恢复Dialog.open、time和package替身，成功标记只在测试与cleanup都成功时输出。
+- 自动合并独立只读审查未确认业务回归：净加成/套装计数核心保留，六槽共享坐标保留；最新无框徽记、Horizon输入拆分、首通/升阶腐化兼容、PR22语言与轮回补图、PR23行军与按关卡解锁小队全部保留。三处交叉业务UI变化仅禁用色更新。不能因合并暂存区包含目标既有文件就误认新增开发范围。
+- 验证：18套独立Runtime回归退出0且成功标记均核实（装备预览117、配装97、手势44、仓库259、徽记92、属性55、滚动10、离线487、本轮UI525、小队解锁115、行军27，以及套装筛选/装备冒烟/雷达/升阶/腐化/战力/小队同步）。小队同步成功标记为 `PASS: atomic swap...`，不是ALL PASS，已单跑确认；不得把解析器未匹配标记写为测试失败。
+- 冲突文件逐文件LSP无Error；全仓LSP仍有既有跨文件雷达类型和HeroService等诊断，未混入无关重构，不宣称全仓零Error。官方Build成功；真实离屏启动160帧原始PASS、Lua/资源/引擎错误0、无缺图；仓库规范2513路径0错误0警告、36单元测试全过。
+- 推送授权只用于新修复分支，以及通过非强推快进更新 PR21 的源开发分支以实际消除冲突；不push `workspace` / `workspace930`、不合并PR21、不改其他PR。本地.project身份与自动生成配置不提交。普通词条ascBonus与净加成组合、行军中切换属性及设备触控没有新增专项验收，不把分别通过的测试当成组合覆盖。完成后继续以AskUserQuestion提供下一步。
+
+## 本地美术迁移 PR 交接（2026-10-03）
+
+- 用户通过 AskUserQuestion 选择“创建PR”；已创建 **PR #22**：https://github.com/FanZeros/changeForJourney/pull/22，head=`feat/workspace930-ui-reincarnation-20261003`，base=`workspace930`。功能提交42cfb0e、迁移交接1e36319；本轮PR说明包含最小范围、保留内容与真实验证边界。
+- 创建后查询：PR open、未合并，mergeable=true（无文本合并冲突）；repository-policy CI 当时为 in_progress，不虚称已通过。此记录之后的交接提交会重新触发检查，最终状态以远端最新head为准。
+- 本轮只更新交接记忆并push同一新功能分支，未改Lua，不重复构建；前轮官方最终Build已成功。本地.project配置不提交。创建授权不包含合并，等待用户后续明确选择；报告后继续用AskUserQuestion提供下一步。
+
+## 本地美术选择性迁移完成（2026-10-03）
+
+- 用户通过 **AskUserQuestion** 选择“UI＋轮回补图”；基于最新 `workspace930@eec2a976` 新建 `feat/workspace930-ui-reincarnation-20261003`，不整支合并候选 `integrate/workspace930-local-art-20261001@6e94b7bc`。前序只读审查及详细资源分类已推到 `review/workspace930-local-art-audit-20261003@68e9a14`，本轮不将那个分支当作功能遗漏或强行合入。
+- 只迁三组局部 UI：语言五枚按2+2+1、末枚右对齐（行中心1480/1534/1588，默认嵌入偏移40）；兑换码中心1768/嵌入1808，独立背景保持顶785.5、底扩展到1918，绘制与点击同源。玩家信息背景保持顶193.5、底扩展到2070.5（向下增高130）；四种“远征时间”文案保留原计时/存档口径。城镇仅遗匣与功绩名牌对齐及删除遗匣300×64额外底板，其余地点、门控、奖励、红点和点击热区不变。
+- 恢复当前有轮回引用但缺失的 `assets/image/界面底板/剧情日记/JQBJ_1.png`、`JQBJ_2.png` 与原 `.meta`；两图共2,971,190字节，SHA与候选原图一致，UUID保持，最终 manifest 及正式打包PNG已核实存在。未恢复其它旧资源、旧方CG、Spine或BGM。
+- 回退保护：觉醒、Standalone、Horizon及输入模块、EquipmentSetIcon、BattleTriPage与基线逐字节相同；73张现有CG/套装PNG哈希全部不变。`showSetIcons` 开关及其持久化字段保留。已有偏好测试的 I18n 桩补齐真实五语列表；首次回归失败因旧桩无LANGS，不是生产语言数据缺失，补齐后26断言全过。
+- 新持久回归 `tests/local_art_ui_migration_test.lua`：真实三模块公开 draw/input/init/update + 内存File与NanoVG spy，22用例/525断言全部通过；涵盖语言/点击边角/缝隙/兑换码/背景边界/false偏好保存、PIP四格式及dt区间/20秒保存、Town两名牌及六个原地点布局。Runtime有额外require缓存，测试读真实资源源码并用load隔离实例，不改源码、不使用debug窥私有状态，所有存档写入仅内存。
+- 验证：修改/新增Lua逐文件LSP无Error；官方最终Build成功。旧套装偏好26、角标66、离线覆盖487、剧情82首通、真实装备预览冒烟均Runtime exit0且ALL PASS。9组真实离屏渲染（玩家信息、独立设置五语、城镇、轮回两阶段）均135帧原始PASS、Lua/资源/引擎错误0，图片像素已查看。只验收静态布局与代表性阶段，不宣称GM/头像子面板、完整动画、真实设备全流程已测。临时 `_local_art_preview.lua` 及sidecar已删除，最终Build不含临时入口。
+- 本轮结束仍必须先如实报告，再以 **AskUserQuestion** 提供下一步选项。只commit/push新功能分支，不push `workspace`/`workspace930`、不强推、不自动合并PR；PAT、本地预览身份与生成配置、验收截图不提交。全局记忆目录在本环境未挂载，要求已强化到本项目现有记忆，不虚称已写全局记忆。
 
 ## 装备套装徽记去框（2026-10-03）
 

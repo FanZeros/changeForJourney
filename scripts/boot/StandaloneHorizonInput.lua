@@ -55,6 +55,8 @@ function Input.bind(ctx)
     local equipOverlayDesign = ctx.equipOverlayDesign
     local seamHitAt = ctx.seamHitAt
     local RT, Viewport, OfflineRewardOverlay = ctx.RT, ctx.Viewport, ctx.OfflineRewardOverlay
+    local artifactModule = require("boot.ArtifactGesture")
+    local artifactGesture = ctx.artifactGesture or artifactModule.bind(ctx) or artifactModule
 
     local TAP_THRESHOLD = 15
     local MIN_TAP_INTERVAL = 0.12
@@ -237,6 +239,7 @@ function Input.bind(ctx)
 
     --- 离线弹窗接管时仅释放下层按压，不派发点击或装备落点。
     local function cancelUnderlyingPress()
+        artifactGesture.cancel()
         if EquipCrossDrag.isArmed() then EquipCrossDrag.cancel() end
         if equipOverlayPress then
             require("ui.character.equip.EquipmentDetail").handleDragEnd()
@@ -342,6 +345,7 @@ function Input.bind(ctx)
             local mousePos = pointerPosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             if CEPanel.handleDown(sx, sy, logicalH()) then
+                artifactGesture.cancel()
                 levelPress, levelMoved = false, false
                 if OfflineRewardPanel.isOpen() then OfflineRewardOverlay.cancel() end
                 return
@@ -459,6 +463,12 @@ function Input.bind(ctx)
         lootPress = false
         LootBox.handleDragEnd(0, 0)
         local pid, dx, dy = HorizonResolveMouse()
+        local artifactPos = pointerPosition()
+        local artifactX, artifactY = toDesign(artifactPos.x / dpr(), artifactPos.y / dpr())
+        if not seamHitAt(artifactX, artifactY) and artifactGesture.down(pid, artifactX, artifactY) then
+            pressValid = false
+            return
+        end
         equipmentPressPanel = pid
         -- 玩家信息全窗模态：按下也走设计坐标，避免抬起位移判定串栏
         if pid == 'playerinfo' then
@@ -588,7 +598,11 @@ function Input.bind(ctx)
             levelMove(sx, sy)
             return
         end
+        local artifactPos = pointerPosition()
+        local artifactX, artifactY = toDesign(artifactPos.x / dpr(), artifactPos.y / dpr())
+        if artifactGesture.move(artifactX, artifactY) then return end
         local pid, dx, dy = HorizonResolveMouse()
+        if not pressValid then artifactGesture.hover(pid, artifactX, artifactY) end
         if lootPress then
             if pid == 'left' and pressValid then
                 LootBox.handleDragMove(dx, dy)
@@ -726,6 +740,7 @@ function Input.bind(ctx)
         local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
         if equipOverlayDesign(sx, sy) then return end
         local pid, dx, dy = HorizonResolveMouse()
+        artifactGesture.hover(pid, sx, sy)
         if pid == 'right'
             or (pid == 'center' and BottomNav.getSelectedIndex() == 1 and not BlacksmithPage.isOpen()) then
             if CharacterPanel.handleHover then CharacterPanel.handleHover(dx, dy) end
@@ -793,6 +808,7 @@ function Input.bind(ctx)
             local mousePos = input:GetMousePosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             if CEPanel.handleUp(sx, sy, logicalH()) then
+                artifactGesture.cancel()
                 levelPress, levelMoved = false, false
                 if LevelUpPopup.isOpen() then cancelUnderlyingPress() end
                 return
@@ -821,6 +837,11 @@ function Input.bind(ctx)
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             levelUp(sx, sy, eventData["Button"]:GetInt())
             return
+        end
+        if eventData["Button"]:GetInt() == MOUSEB_LEFT then
+            local mp = pointerPosition()
+            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            if artifactGesture.up(sx, sy) then pressValid = false return end
         end
         if equipOverlayPress then
             equipOverlayPress = false
@@ -1243,6 +1264,9 @@ function Input.bind(ctx)
     end
 
     function HandleTouchEndHorizon(eventType, eventData)
+        -- 模态可能在拖拽中途出现；主指结束时即释放所有权，早退分支也不得锁住下一指。
+        local releasedActive = eventData["TouchID"]:GetInt() == activeTouchId
+        if releasedActive then activeTouchId = nil end
         if handleTopTouch(eventData, true) then
             if eventData["TouchID"]:GetInt() == offlineTouchId then offlineTouchId = nil end
             if eventData["TouchID"]:GetInt() == levelTouchId then levelTouchId = nil end
@@ -1279,8 +1303,7 @@ function Input.bind(ctx)
             end
             return
         end
-        if eventData["TouchID"]:GetInt() ~= activeTouchId then return end
-        activeTouchId = nil
+        if not releasedActive then return end
         dispatchTouch(eventType, eventData, HandleMouseButtonUpHorizon)
     end
 

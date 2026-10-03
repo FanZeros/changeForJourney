@@ -1,7 +1,7 @@
 -- ============================================================================
 -- ArtifactDetailPanel - 神器详情弹窗
 -- 复用遗物详情弹窗的布局和交互风格，展示神器信息与装备/取下操作
--- 坐标系: 设计分辨率 1080x2400
+-- 坐标系: 设计分辨率 1080x2400；悬停/钉住浮层复用同一套详情与操作
 -- ============================================================================
 
 local DrawUtil          = require("core.DrawUtil")
@@ -30,6 +30,9 @@ local function easeInCubic(t)
 end
 
 -- ======================== 布局常量 ========================
+
+local DESIGN_W, DESIGN_H = 1080, 2400
+local FLOAT_MARGIN, FLOAT_GAP = 16, 12
 
 local BG = {
     CX = 540, CY = 1146,
@@ -82,7 +85,8 @@ local DESC_TEXT = {
     PADDING = 30,
     FONT = 28,
     LINE_H = 36,
-    R = 0x72, G = 0x58, B = 0x50,
+    -- 深色矢量底上的暖灰正文，提高对比度；效果文本与比例格式仍沿用原真源。
+    R = 0xb7, G = 0xa5, B = 0x94,
     HIGHLIGHT_R = 0xf6, HIGHLIGHT_G = 0x85, HIGHLIGHT_B = 0x00,
     RATIO_R = 0x99, RATIO_G = 0x92, RATIO_B = 0x8a,
 }
@@ -120,6 +124,22 @@ local imgPowerIcon = -1
 
 -- ======================== 状态 ========================
 
+---@class ArtifactDetailAnchor
+---@field x number 格子左上角，1080x2400 设计坐标
+---@field y number
+---@field w number
+---@field h number
+
+---@class ArtifactDetailOptions
+---@field hover? boolean true=悬停，false=钉住；省略 opts 保留居中弹窗
+---@field anchor? ArtifactDetailAnchor
+
+---@class ArtifactDetailState
+---@field artifact table|nil
+---@field slot number|nil
+---@field subSlot number|nil
+---@field teamIdx number|nil
+---@type ArtifactDetailState
 local state = {
     visible   = false,
     opening   = false,
@@ -131,13 +151,102 @@ local state = {
     slot      = nil,
     subSlot   = nil,
     teamIdx   = nil,   -- [三队行式布局] 装配所在队伍（卸下时回传）
+    floating  = false, -- 带 anchor 或 hover 的非模态浮层
+    hover     = false,
+    pinned    = false,
+    panelCX   = BG.CX,
+    panelCY   = BG.CY,
 }
 
+---@type function|nil
 local onEquipCallback_ = nil
+---@type function|nil
 local onRefineCallback_ = nil
+---@type function|nil
 local onCloseCallback_ = nil
 
 -- ======================== 辅助 ========================
+
+--- 优先贴在格子右侧，右侧不足改左侧；两侧都不足时取较宽侧再夹紧。
+--- 只平移原 530x894 面板，不缩小字号或删减效果/比例。
+---@param anchor ArtifactDetailAnchor|nil
+---@return number cx, number cy
+local function anchorCenter(anchor)
+    if not anchor then return BG.CX, BG.CY end
+    local x, y = tonumber(anchor.x) or 0, tonumber(anchor.y) or 0
+    local w, h = math.max(0, tonumber(anchor.w) or 0), math.max(0, tonumber(anchor.h) or 0)
+    local right = x + w + FLOAT_GAP
+    local left = x - FLOAT_GAP - BG.W
+    local targetX = right
+    if right + BG.W > DESIGN_W - FLOAT_MARGIN then
+        if left >= FLOAT_MARGIN or x > DESIGN_W - x - w then
+            targetX = left
+        end
+    end
+    targetX = math.max(FLOAT_MARGIN, math.min(targetX, DESIGN_W - FLOAT_MARGIN - BG.W))
+    local targetY = math.max(FLOAT_MARGIN, math.min(y + h * 0.5 - BG.H * 0.5,
+        DESIGN_H - FLOAT_MARGIN - BG.H))
+    return targetX + BG.W * 0.5, targetY + BG.H * 0.5
+end
+
+--- 渲染和命中共享变换；浮层立即显示，避免移动到详情时热区随开合缩放漂移。
+---@return number progress, number scale, number cx, number cy
+local function renderTransform()
+    local progress = 1.0
+    if not state.floating then
+        local now = time.elapsedTime
+        if state.opening then
+            local t = math.max(0, math.min((now - state.openTime) / ANIM_OPEN_DUR, 1.0))
+            progress = easeOutCubic(t)
+        elseif state.closing then
+            local t = math.max(0, math.min((now - state.closeTime) / ANIM_CLOSE_DUR, 1.0))
+            progress = 1.0 - easeInCubic(t)
+        end
+    end
+    return progress, 0.8 + 0.2 * progress, state.panelCX, state.panelCY
+end
+
+---@param dx number
+---@param dy number
+---@return number lx, number ly
+local function toPanelPoint(dx, dy)
+    local _, scale, cx, cy = renderTransform()
+    return BG.CX + (dx - cx) / scale, BG.CY + (dy - cy) / scale
+end
+
+--- 同物品同来源刷新不重启动画；同模板不同实例不能被误认为同一个神器。
+local function sameSelection(artifact, location, slot, subSlot, teamIdx)
+    local selected = state.artifact
+    if not selected then return false end
+    local sameArtifact = selected == artifact
+    if selected.id ~= nil and artifact.id ~= nil then
+        sameArtifact = tostring(selected.id) == tostring(artifact.id)
+    end
+    return sameArtifact and state.location == location and state.slot == slot
+        and state.subSlot == subSlot and state.teamIdx == teamIdx
+end
+
+local function clearSelection(reason)
+    if not state.visible then return end
+    local artifactId = state.artifact and state.artifact.id
+    state.visible = false
+    state.opening = false
+    state.closing = false
+    state.openTime = 0
+    state.closeTime = 0
+    state.artifact = nil
+    state.location = "bag"
+    state.slot = nil
+    state.subSlot = nil
+    state.teamIdx = nil
+    state.floating = false
+    state.hover = false
+    state.pinned = false
+    state.panelCX = BG.CX
+    state.panelCY = BG.CY
+    print("[ArtifactDetailPanel] close id=" .. tostring(artifactId) .. " reason=" .. reason)
+    if onCloseCallback_ then onCloseCallback_() end
+end
 
 local function getArtifactPower(artifact)
     if not artifact then return 0 end
@@ -365,14 +474,7 @@ local function internalUpdate()
     elseif state.closing then
         local elapsed = now - state.closeTime
         if elapsed >= ANIM_CLOSE_DUR then
-            state.closing = false
-            state.visible = false
-            state.artifact = nil
-            state.location = "bag"
-            state.slot = nil
-            state.subSlot = nil
-            state.teamIdx = nil
-            if onCloseCallback_ then onCloseCallback_() end
+            clearSelection("animation")
         end
     end
 end
@@ -391,28 +493,98 @@ end
 ---@param slot? number 已装配槽位
 ---@param subSlot? number 已装配子格
 ---@param teamIdx? number 装配所在队伍
-function ArtifactDetailPanel.show(artifact, location, slot, subSlot, teamIdx)
+---@param opts? ArtifactDetailOptions 悬停/锚定浮层；旧五参保持居中模态
+function ArtifactDetailPanel.show(artifact, location, slot, subSlot, teamIdx, opts)
     if not artifact then return end
+    local selectedLocation = location or "bag"
+    local hover = opts ~= nil and opts.hover == true
+    local floating = opts ~= nil and (hover or opts.anchor ~= nil)
+    local same = state.visible and not state.closing and state.floating == floating
+        and sameSelection(artifact, selectedLocation, slot, subSlot, teamIdx)
+    if same then
+        state.artifact = artifact
+        -- 已钉住的窗口不被同格子的逐次 hover 解钉或挪动。
+        if not (state.pinned and hover) then
+            state.panelCX, state.panelCY = anchorCenter(opts and opts.anchor)
+        end
+        if not hover then ArtifactDetailPanel.pin() end
+        return
+    end
+
     state.artifact = artifact
-    state.location = location or "bag"
+    state.location = selectedLocation
     state.slot = slot
     state.subSlot = subSlot
     state.teamIdx = teamIdx
+    state.floating = floating
+    state.hover = hover
+    state.pinned = not hover
+    state.panelCX, state.panelCY = anchorCenter(opts and opts.anchor)
     state.visible = true
-    state.opening = true
+    state.opening = not floating
     state.closing = false
     state.openTime = time.elapsedTime
+    state.closeTime = 0
+    print("[ArtifactDetailPanel] show id=" .. tostring(artifact.id)
+        .. " location=" .. state.location .. " slot=" .. tostring(slot)
+        .. " subSlot=" .. tostring(subSlot) .. " teamIdx=" .. tostring(teamIdx)
+        .. " hover=" .. tostring(hover) .. " floating=" .. tostring(floating)
+        .. " center=" .. tostring(state.panelCX) .. "," .. tostring(state.panelCY))
 end
 
 function ArtifactDetailPanel.hide()
-    if not state.visible then return end
+    if not state.visible or state.closing then return end
+    if state.floating then
+        ArtifactDetailPanel.closeImmediate()
+        return
+    end
     state.closing = true
     state.opening = false
     state.closeTime = time.elapsedTime
+    print("[ArtifactDetailPanel] hide begin")
+end
+
+--- 强制清理浮层/弹窗，不等关闭动画；回调至多执行一次。
+function ArtifactDetailPanel.closeImmediate()
+    clearSelection("immediate")
+end
+
+--- 仅移除未钉住的悬停窗，不影响点击打开的详情。
+function ArtifactDetailPanel.dismissHover()
+    if state.visible and state.hover and not state.pinned then
+        clearSelection("hover-leave")
+    end
+end
+
+function ArtifactDetailPanel.pin()
+    if not state.visible or state.closing or state.pinned then return end
+    state.pinned = true
+    state.hover = false
+    print("[ArtifactDetailPanel] pin id=" .. tostring(state.artifact and state.artifact.id))
+end
+
+---@return boolean
+function ArtifactDetailPanel.isPinned()
+    internalUpdate()
+    return state.visible and not state.closing and state.pinned == true
 end
 
 function ArtifactDetailPanel.isVisible()
+    internalUpdate()
     return state.visible
+end
+
+--- 新选择表供宿主比较同物品；artifact 为原实例的只读引用，不复制/改写业务数据。
+---@return table|nil
+function ArtifactDetailPanel.getSelection()
+    internalUpdate()
+    if not state.visible or state.closing or not state.artifact then return nil end
+    return {
+        artifact = state.artifact,
+        artifactId = state.artifact.id ~= nil and tostring(state.artifact.id) or nil,
+        location = state.location, slot = state.slot, subSlot = state.subSlot, teamIdx = state.teamIdx,
+        pinned = state.pinned, hover = state.hover,
+    }
 end
 
 function ArtifactDetailPanel.refreshArtifact(artifact)
@@ -434,33 +606,26 @@ function ArtifactDetailPanel.setOnClose(fn)
 end
 
 function ArtifactDetailPanel.update(_dt)
+    internalUpdate()
 end
 
 function ArtifactDetailPanel.draw(vg)
-    if not state.visible or not state.artifact then return end
-
     internalUpdate()
     if not state.visible or not state.artifact then return end
 
     local artifact = state.artifact
-    local now = time.elapsedTime
-    local progress = 1.0
-    if state.opening then
-        local t = math.min((now - state.openTime) / ANIM_OPEN_DUR, 1.0)
-        progress = easeOutCubic(t)
-    elseif state.closing then
-        local t = math.min((now - state.closeTime) / ANIM_CLOSE_DUR, 1.0)
-        progress = 1.0 - easeInCubic(t)
+    local progress, scale, cx, cy = renderTransform()
+
+    -- 锚定悬停/钉住均为非模态；只有旧五参居中弹窗保留遮罩。
+    if not state.floating then
+        nvgBeginPath(vg)
+        nvgRect(vg, 0, 0, DESIGN_W, DESIGN_H)
+        nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(128 * progress)))
+        nvgFill(vg)
     end
 
-    nvgBeginPath(vg)
-    nvgRect(vg, 0, 0, 1080, 2400)
-    nvgFillColor(vg, nvgRGBA(0, 0, 0, math.floor(128 * progress)))
-    nvgFill(vg)
-
-    local scale = 0.8 + 0.2 * progress
     nvgSave(vg)
-    nvgTranslate(vg, BG.CX, BG.CY)
+    nvgTranslate(vg, cx, cy)
     nvgScale(vg, scale, scale)
     nvgTranslate(vg, -BG.CX, -BG.CY)
     nvgGlobalAlpha(vg, progress)
@@ -599,47 +764,61 @@ function ArtifactDetailPanel.draw(vg)
     nvgRestore(vg)
 end
 
+---@param tx number 1080x2400 设计坐标
+---@param ty number
 ---@return boolean consumed
 function ArtifactDetailPanel.handleTap(tx, ty)
-    if not state.visible then return false end
-    if state.opening or state.closing then return true end
+    internalUpdate()
+    if not state.visible or not state.artifact then return false end
+    local lx, ly = toPanelPoint(tx, ty)
+    local inside = hitTest(lx, ly, BG.CX, BG.CY, BG.W, BG.H)
 
+    -- 开合动画只拦可见本体，不吞无关格子的点击/拖拽。
+    if state.closing or state.opening then return inside end
+    if not inside then
+        if state.floating then
+            ArtifactDetailPanel.closeImmediate()
+            return false -- 非模态浮层让宿主继续处理外部格子
+        end
+        ArtifactDetailPanel.hide()
+        return true -- 兼容旧居中弹窗：点击遮罩关闭且不穿透
+    end
+
+    -- 点击本体（包括操作按钮）钉住；之后移出详情不自动关闭。
+    ArtifactDetailPanel.pin()
     local artifact = state.artifact
-    if not artifact then return true end
-
-    if hitTest(tx, ty, BTN_EQUIP.CX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H) then
+    if hitTest(lx, ly, BTN_EQUIP.CX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H) then
         BF.trigger("artifact_detail_equip")
+        print("[ArtifactDetailPanel] equip id=" .. tostring(artifact.id) .. " location=" .. state.location)
         if onEquipCallback_ then
             onEquipCallback_(artifact, state.location, state.slot, state.subSlot, state.teamIdx)
         end
         return true
     end
 
-    if hitTest(tx, ty, BTN_REFINE.CX, BTN_REFINE.CY, BTN_REFINE.W, BTN_REFINE.H) then
+    if hitTest(lx, ly, BTN_REFINE.CX, BTN_REFINE.CY, BTN_REFINE.W, BTN_REFINE.H) then
         if not canRefineArtifact(artifact) then
             return true
         end
         BF.trigger("artifact_detail_refine_value")
+        print("[ArtifactDetailPanel] refine id=" .. tostring(artifact.id))
         if onRefineCallback_ then
             onRefineCallback_(artifact, state.location, state.slot, state.subSlot)
         end
         return true
     end
 
-    if not hitTest(tx, ty, BG.CX, BG.CY, BG.W, BG.H) then
-        ArtifactDetailPanel.hide()
-        return true
-    end
-
     return true
 end
 
----@param dx number|nil
+---@param dx number|nil 1080x2400 设计坐标
 ---@param dy number|nil
 ---@return boolean
 function ArtifactDetailPanel.containsPoint(dx, dy)
-    if not state.visible or dx == nil or dy == nil then return false end
-    return hitTest(dx, dy, BG.CX, BG.CY, BG.W, BG.H)
+    internalUpdate()
+    if not state.visible or not state.artifact or dx == nil or dy == nil then return false end
+    local lx, ly = toPanelPoint(dx, dy)
+    return hitTest(lx, ly, BG.CX, BG.CY, BG.W, BG.H)
 end
 
 return ArtifactDetailPanel

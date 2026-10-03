@@ -559,6 +559,8 @@ end
 
 --- 关闭教堂（启动关闭动画）
 function ChurchPage.close()
+    ArtifactPanel.cancelPointer()
+    require("ui.character.hero.ArtifactDetailPanel").closeImmediate()
     if not _life then bindChurchLifecycle() end
     require("systems.StoryPlayer").onPlace("church", "leave")
     return _life.close()
@@ -585,6 +587,8 @@ end
 
 --- 强制关闭（跳过动画，用于安全恢复 — 离开 tab4 时调用）
 function ChurchPage.forceClose()
+    ArtifactPanel.cancelPointer()
+    require("ui.character.hero.ArtifactDetailPanel").closeImmediate()
     if not _life then bindChurchLifecycle() end
     return _life.forceClose()
 end
@@ -690,6 +694,19 @@ end
 function ChurchPage.handleDragEnd(dx, dy)
     if not _input then bindInput() end
     return _input.handleDragEnd(dx, dy)
+end
+
+function ChurchPage.isArtifactInputActive()
+    return state.open and not state.closing and state.tab == "shenqi"
+        and (state.tabFrom == state.tab or time.elapsedTime - state.tabSwitchTime >= TAB.ANIM_DUR)
+        and ChurchPage.getAnimProgress() >= 1
+        and DrawUtil.seamSlideX(-1, state.openTime, state.closeTime,
+            ANIM.OPEN_DUR, ANIM.CLOSE_DUR, 1080) == 0
+end
+
+function ChurchPage.handleHover(dx, dy)
+    if ChurchPage.isArtifactInputActive() then ArtifactPanel.handleHover(dx, dy)
+    else ArtifactPanel.handleHover(-1, -1) end
 end
 
 function ChurchPage.handleScroll(wheel, msx, msy)

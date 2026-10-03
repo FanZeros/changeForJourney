@@ -135,6 +135,83 @@
 
 **简单归纳：高相似部分集中在地图词缀、通天塔强化、挂机收益和旧存档兼容逻辑；不是只集中于 UI 外观或小型公共工具。** 这些仍是同路径文本比较结果，不包含跨路径重构后的文件，也不作版权或作者归属判断。
 
+### 4.5 全部严格大于80%的同路径文件（完整筛选）
+
+本节不是前八项代表文件的扩展抽样，而是对全部 103 个可读同路径配对逐项计算后进行完整筛选。使用与原检查器相同的含空行行级相似度，以未舍入结果严格 `> 0.8` 为准；不采用去空行分数，不以目录平均数代替文件分数，不包含恰好80%的文件，不限制返回条数。
+
+范围保持为 `changeForJourney@9e0777f5` 的 `scripts/` 与《宿命旅途》856061的1.0.188镜像。后续外部更新的 workspace930 不进入本次比较，以确保与前文结果一致。文件相似度显示为百分比；相对路径以 `scripts/` 为根。百分比舍入只影响显示，不影响是否入选。
+
+**完整结果：62 个文件严格大于80%。** 其中100%有10个，`90% < 相似度 < 100%` 有39个，`80% < 相似度 ≤ 90%` 有13个；恰好80%为0个，低于80%为41个。计数核对：`10 + 39 + 13 + 41 = 103`。全部62个文件的九位小数百分比、两侧行数与哈希相同标记另见 `856061-over80.csv`。
+
+按顶层目录计数：`systems` 18项、`shared` 27项、`config` 13项、`core` 3项、根目录类型声明1项，总计62项。对应文件本地合计16,856行、镜像合计16,407行；这些是入选文件的完整行数，并非相同代码行数。
+
+| 序号 | 文件（相对 scripts/） | 相似度 | 本地 / 镜像行数 | 简单用途 |
+|---:|---|---:|---:|---|
+| 1 | `systems/MapAffixSystem.lua` | 100.0000% | 577 / 577 | 地图词缀属性修改与战斗中的周期、命中、击杀效果。 |
+| 2 | `systems/BattleDiag.lua` | 100.0000% | 331 / 331 | 战斗属性丢失、血量与治疗异常诊断及写入哨兵。 |
+| 3 | `shared/dungeon/DungeonCompat.lua` | 100.0000% | 131 / 131 | 副本旧存档补全、每日次数重置与层数迁移。 |
+| 4 | `shared/heroes/HeroResonance.lua` | 100.0000% | 61 / 61 | 计算共鸣等级并提升低等级已拥有英雄。 |
+| 5 | `shared/task/TaskCompat.lua` | 100.0000% | 49 / 49 | 任务存档补全与奖励升级后的领取标记迁移。 |
+| 6 | `config/GameEvents.lua` | 100.0000% | 45 / 45 | 模块间通信事件名称常量。 |
+| 7 | `core/EventBus.lua` | 100.0000% | 42 / 42 | 事件订阅、退订、触发和清空监听。 |
+| 8 | `shared/StageUtils.lua` | 100.0000% | 39 / 39 | 跨难度向前收集关卡，供扫荡与挂机使用。 |
+| 9 | `shared/market/StellarDiamondQuota.lua` | 100.0000% | 29 / 29 | 星辉招募券每日限购剩余次数计算。 |
+| 10 | `nvg_overrides.d.lua` | 100.0000% | 17 / 17 | 回调类型与 NanoVG 文本测量接口类型补充，不是玩法逻辑。 |
+| 11 | `config/IdleIncomeConfig.lua` | 99.9439% | 1782 / 1782 | 每关挂机金币、经验收益表及缺失关卡回退查询。 |
+| 12 | `systems/TowerBuffRuntime.lua` | 99.8423% | 634 / 634 | 通天塔强化属性与职业机制的战斗运行时。 |
+| 13 | `config/MapAffixConfig.lua` | 99.3958% | 662 / 662 | 地图词缀参数、章节组合及说明文本配置。 |
+| 14 | `shared/battle/BattleSchema.lua` | 99.0654% | 107 / 107 | 关卡进度、通关记录和挂机结算字段的存档定义。 |
+| 15 | `config/StageConfig.lua` | 98.7875% | 786 / 781 | 多难度关卡配置、关卡链查询与首通奖励接口。 |
+| 16 | `systems/GachaSystem.lua` | 98.7611% | 283 / 282 | 抽卡概率、保底、消耗扣除与奖励发放。 |
+| 17 | `shared/equipment/EquipmentSchema.lua` | 98.5915% | 71 / 71 | 装备背包、穿戴存档及精简存储转换。 |
+| 18 | `shared/profile/ProfileSchema.lua` | 98.5915% | 71 / 71 | 跨服玩家档案、选服记录与封禁信息存档定义。 |
+| 19 | `systems/ButtonFeedback.lua` | 98.3607% | 154 / 151 | 按钮按下缩小、松开恢复的点击反馈。 |
+| 20 | `shared/artifact/ArtifactDefs.lua` | 98.2609% | 460 / 460 | 神器定义、抽取概率、数值范围及效果说明。 |
+| 21 | `shared/dungeon/DungeonSchema.lua` | 98.0000% | 50 / 50 | 三类副本楼层、首通、次数与挂机进度存档定义。 |
+| 22 | `shared/signin/SigninSchema.lua` | 98.0000% | 50 / 50 | 每周、每日签到领取记录与版本字段存档定义。 |
+| 23 | `shared/signin/SignInConfig.lua` | 97.8166% | 228 / 230 | 签到奖励、补签消耗与签到周期计算。 |
+| 24 | `shared/tavern/TavernSchema.lua` | 97.6190% | 42 / 42 | 酒馆商店购买记录及日周重置字段存档定义。 |
+| 25 | `systems/DropSystem.lua` | 97.1554% | 233 / 224 | 击杀装备掉落、品质随机与首通奖励生成。 |
+| 26 | `shared/task/TaskSchema.lua` | 96.9697% | 33 / 33 | 日任务、周任务和成就进度与领取记录存档定义。 |
+| 27 | `systems/GameBGM.lua` | 96.9432% | 230 / 228 | 背景音乐场景切换、进度同步与交叉淡入淡出。 |
+| 28 | `shared/talents/TalentsSchema.lua` | 96.7033% | 46 / 45 | 天赋星图已点亮节点存档定义与数组规范化。 |
+| 29 | `config/UrGachaConfig.lua` | 96.6667% | 243 / 237 | UR 星辉卡池开放条件、消耗、卡池分组与 UP 配置。 |
+| 30 | `systems/CombatFormula.lua` | 96.5585% | 524 / 493 | 命中、伤害、暴击、连击、格挡、治疗与选敌公式。 |
+| 31 | `shared/session/SessionSchema.lua` | 96.1039% | 39 / 38 | 在线、首登、开场与离线领取等会话存档字段。 |
+| 32 | `config/ArtifactAssetUtil.lua` | 96.0630% | 126 / 128 | 神器图标路径解析、预加载与图标绘制。 |
+| 33 | `shared/redeem/RedeemSchema.lua` | 95.8333% | 24 / 24 | 已使用兑换码记录存档定义。 |
+| 34 | `shared/currency/CurrencySchema.lua` | 95.8140% | 106 / 109 | 货币、道具、保底与抽卡统计字段存档定义。 |
+| 35 | `systems/ArtifactBridge.lua` | 95.6012% | 172 / 169 | 将已装备神器的属性与运行时效果挂入单位。 |
+| 36 | `shared/schemas/CharacterSchema.lua` | 94.9153% | 172 / 182 | 集中注册子系统字段及持久化、作用域元数据。 |
+| 37 | `shared/slotenhance/SlotEnhanceSchema.lua` | 94.5946% | 37 / 37 | 出战槽位各装备槽强化等级存档定义。 |
+| 38 | `config/TowerConfig.lua` | 94.5652% | 276 / 276 | 通天塔楼层、波次、强化词条和怪物抽取配置。 |
+| 39 | `core/NumberUtil.lua` | 94.3662% | 71 / 71 | 大数短格式显示与安全数值累加。 |
+| 40 | `shared/quota/QuotaConsts.lua` | 94.2857% | 67 / 73 | 限额键、上限、刷新周期定义与查找。 |
+| 41 | `shared/quota/QuotaSchema.lua` | 93.9394% | 33 / 33 | 限额子系统字段与默认存档结构。 |
+| 42 | `systems/TalentEffect.lua` | 93.2642% | 397 / 375 | 解析天赋效果文本并生成属性加成与总览。 |
+| 43 | `systems/AttributeDef.lua` | 92.0510% | 520 / 499 | 属性键、元数据、默认值、上限与攻击类型定义。 |
+| 44 | `systems/UnitAttributes.lua` | 91.4582% | 618 / 541 | 单位属性分层计算、修改器、血量与护盾处理。 |
+| 45 | `shared/player/PlayerSchema.lua` | 91.1392% | 39 / 40 | 玩家名称、等级、经验、战力和头像存档定义。 |
+| 46 | `shared/Protocol.lua` | 90.9492% | 217 / 236 | 客户端与服务端远程事件、消息字段协议常量。 |
+| 47 | `systems/OfflineCalc.lua` | 90.9253% | 573 / 551 | 在线挂机与离线收益、装备和卷轴掉落计算。 |
+| 48 | `systems/GameSFX.lua` | 90.3766% | 251 / 227 | 音效资源加载、播放、音量与队伍静音管理。 |
+| 49 | `config/MonsterConfig.lua` | 90.2687% | 843 / 832 | 怪物模板、等级与品质曲线及怪物实例工厂。 |
+| 50 | `config/AffixConfig.lua` | 89.9441% | 191 / 167 | 装备词缀模板、品质倍率与随机权重配置。 |
+| 51 | `shared/lootbox/LootboxSchema.lua` | 89.8551% | 35 / 34 | 暂存装备数据定义及旧版种子兼容迁移。 |
+| 52 | `systems/ArtifactRuntime.lua` | 89.6785% | 308 / 283 | 神器战斗效果的初始化、事件触发与清理。 |
+| 53 | `shared/ModuleRegistry.lua` | 89.5934% | 701 / 750 | 业务模块名称、存档键、默认值与加载修正注册表。 |
+| 54 | `systems/StatusEffectManager.lua` | 88.5400% | 323 / 314 | 持续伤害、治疗、冰冻等战斗状态管理。 |
+| 55 | `core/GameState.lua` | 87.9473% | 556 / 506 | PlayerStore 代理与单机本地游戏状态兼容层。 |
+| 56 | `config/GameConfig.lua` | 87.8661% | 124 / 115 | 设计尺寸、棋盘、玩家初值等全局常量。 |
+| 57 | `shared/AnnouncementConfig.lua` | 87.6777% | 211 / 211 | 系统公告标题、正文、类型与日期配置。 |
+| 58 | `config/ExpTable.lua` | 86.9643% | 601 / 519 | 玩家与英雄经验表、成长及功能解锁查询。 |
+| 59 | `systems/RelicConditionHandler.lua` | 86.1809% | 439 / 357 | 战斗条件词条与天赋免疫、增伤实时触发。 |
+| 60 | `config/ResourceDefs.lua` | 84.6761% | 314 / 319 | 奖励资源名称、图标、ID 映射与邮件奖励规范化。 |
+| 61 | `systems/ThreatManager.lua` | 80.7927% | 328 / 328 | 团队共享仇恨产生、衰减与加权选敌。 |
+| 62 | `config/DungeonIdleConfig.lua` | 80.6584% | 134 / 109 | 副本挂机资源类型、收益效率与离线时长上限。 |
+
+用途按本地实际源码表头、字段或导出函数核实，仅为功能摘要，不代表两侧每个实现细节一致。原检查器的函数调用重算及 CSV 逐字段对照均退出码0，62项的路径、排序、九位小数百分比、两侧行数和哈希标记完全一致。
+
 ## 5. 工具算法与统计局限
 
 1. **读取与规范化**：文本按 UTF-8 解码；CRLF 和 CR 统一为 LF；不能解码的字节用替代字符；Lua 字节码跳过。行级比较去掉每行尾部空白，不去注释、不替换变量名、不做 AST 或 token 分析。
@@ -177,6 +254,7 @@ python3 /workspace/reference-repos/tempGame/skills/source-similarity/scripts/com
 
 - `REPORT.md`：本中文报告。
 - `summary.csv`：7 个镜像汇总，UTF-8 BOM 编码，可用表格软件打开。
+- `856061-over80.csv`：《宿命旅途》对比中严格大于80%的全部62项，包含九位小数百分比、两侧行数和规范化文本哈希相同标记。
 - `summary.json`：汇总原始精度数值、镜像版本与 manifest SHA-256。
 - `818989.json`、`856061.json`、`874832.json`、`877169.json`、`881958.json`、`908468.json`、`917648.json`：原工具的 7 份 JSON 输出。
 - `856061-original-summary.txt`：对最相似对象额外执行原检查器的文本输出，退出码为 0；工具只显示一位小数，精确结果以 JSON 为准。

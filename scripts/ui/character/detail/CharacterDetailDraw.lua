@@ -74,8 +74,9 @@ local MID_BG_CY = DESIGN_H - MID_BG_H * 0.5
 local MID_TITLE_CX, MID_TITLE_CY = 540, 860
 local MID_NAME_CX, MID_NAME_CY = 540, 995
 
-local MID_EXP_CX, MID_EXP_CY = 536, 1083
-local MID_EXP_W, MID_EXP_H   = 910, 54
+-- 职业与经验同排，压缩标题下方留白，把高度让给属性区域。
+local MID_EXP_CX, MID_EXP_CY = 710, 990
+local MID_EXP_W, MID_EXP_H   = 590, 54
 local MID_EXP_PADDING         = 5
 
 local MID_QUALITY_BOX_CX, MID_QUALITY_BOX_CY = 310, 1175
@@ -84,38 +85,39 @@ local MID_QUALITY_LABEL_X  = 121
 local MID_QUALITY_LABEL_Y  = 1175
 local MID_QUALITY_ICON_RIGHT_X = 509
 
-local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 540, 1175
-local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 900, 60
+local MID_CLASS_BOX_CX, MID_CLASS_BOX_CY = 244, 990
+local MID_CLASS_BOX_W, MID_CLASS_BOX_H   = 300, 64
 M.MID_CLASS_BOX_CX = MID_CLASS_BOX_CX
 M.MID_CLASS_BOX_CY = MID_CLASS_BOX_CY
 M.MID_CLASS_BOX_W = MID_CLASS_BOX_W
 M.MID_CLASS_BOX_H = MID_CLASS_BOX_H
 local MID_CLASS_LABEL_X  = 580
-local MID_CLASS_LABEL_Y  = 1175
+local MID_CLASS_LABEL_Y  = MID_CLASS_BOX_CY
 local MID_CLASS_COMBO_RIGHT_X = 967
-local MID_CLASS_ICON_SIZE     = 64
+local MID_CLASS_ICON_SIZE     = 56
 
-local MID_DIV1_CX, MID_DIV1_CY = 540, 1238
+local MID_DIV1_CX, MID_DIV1_CY = 540, 1044
 local MID_DIV1_W, MID_DIV1_H   = 1010, 37
 
 -- ======================== 属性区域布局常量 ========================
 
-local ATTR_BOX_W, ATTR_BOX_H = AttributeView.STYLE.boxW, AttributeView.STYLE.rowH
-local ATTR_COL1_CX = AttributeView.STYLE.boxCX
+local ATTR_BOX_W, ATTR_BOX_H = AttributeView.ATTRIBUTE_STYLE.boxW, AttributeView.ATTRIBUTE_STYLE.rowH
+local ATTR_COL1_CX = AttributeView.ATTRIBUTE_STYLE.boxCX
 local ATTR_COL2_CX = 770
-local ATTR_ROW_GAP = AttributeView.STYLE.rowStep - ATTR_BOX_H
+local ATTR_ROW_GAP = AttributeView.ATTRIBUTE_STYLE.rowStep - ATTR_BOX_H
 local ATTR_FIRST_ROW_Y = AttributeView.ATTRIBUTE_LAYOUT.firstY
 
--- 两页同一绘图API，输入仍使用原 M.ATTR* 公开坐标。
+-- 两页共用绘制API，属性页使用独立大字号；输入坐标跟随同一布局源。
 M.drawAttributeRows = AttributeView.drawAttributeRows
-M.ATTRIBUTE_STYLE = AttributeView.STYLE
+M.ATTRIBUTE_STYLE = AttributeView.ATTRIBUTE_STYLE
+M.rowAt = AttributeView.rowAt
 
 -- 左列单列，右侧留给雷达图；超出可见行继续滚动。
 local ATTR_SCROLL_FRICTION = 0.90
 local ATTR_SCROLL_MIN_VEL  = 0.3
 local ATTR_SCROLL_WHEEL_STEP = 60
-local ATTR_CLIP_TOP    = ATTR_FIRST_ROW_Y - ATTR_BOX_H * 0.5
-local ATTR_CLIP_HEIGHT = 1840 - 24 - ATTR_CLIP_TOP
+local ATTR_CLIP_TOP    = AttributeView.ATTRIBUTE_LAYOUT.y
+local ATTR_CLIP_HEIGHT = AttributeView.ATTRIBUTE_LAYOUT.h
 
 -- 导出给 handleInput 使用
 M.ATTR_BOX_W        = ATTR_BOX_W
@@ -128,10 +130,10 @@ M.ATTR_CLIP_TOP     = ATTR_CLIP_TOP
 M.ATTR_CLIP_HEIGHT  = ATTR_CLIP_HEIGHT
 M.ATTR_SCROLL_WHEEL_STEP = ATTR_SCROLL_WHEEL_STEP
 
-local MID_DIV2_CX, MID_DIV2_CY = 540, 1840
+local MID_DIV2_CX, MID_DIV2_CY = 540, 1968
 local MID_DIV2_W, MID_DIV2_H   = 1010, 37
 
--- 雷达绘图/布局移入共享模块；属性页公开命中坐标不变。
+-- 雷达绘图/布局由共享模块提供，属性页公开命中坐标同步放大布局。
 M.STAT_BOX_W, M.STAT_BOX_H = EquipStats.LEGACY.STAT_BOX_W, EquipStats.LEGACY.STAT_BOX_H
 M.STAT_COL1_CX, M.STAT_COL2_CX = EquipStats.LEGACY.STAT_COL1_CX, EquipStats.LEGACY.STAT_COL2_CX
 M.STAT_ROW1_CY, M.STAT_ROW_STEP = EquipStats.LEGACY.STAT_ROW1_CY, EquipStats.LEGACY.STAT_ROW_STEP
@@ -141,11 +143,11 @@ M.HEX_LABEL_R, M.HEX_NAMES = EquipStats.LEGACY.HEX_LABEL_R, EquipStats.LEGACY.HE
 
 -- ======================== 天赋技能区域布局常量 ========================
 
-local TALENT_BG_CX, TALENT_BG_CY = 540, 2045
-local TALENT_BG_W, TALENT_BG_H   = 903, 210
+local TALENT_BG_CX, TALENT_BG_CY = 540, 2118
+local TALENT_BG_W, TALENT_BG_H   = 936, 220
 local TALENT_BG_RADIUS            = 20
 
-local TALENT_NAME_Y = 1918
+local TALENT_NAME_Y = 2012
 local TALENT_TEXT_LEFT   = TALENT_BG_CX - TALENT_BG_W * 0.5 + 33
 local TALENT_TEXT_TOP    = TALENT_NAME_Y + 36
 local TALENT_TEXT_RIGHT  = TALENT_BG_CX + TALENT_BG_W * 0.5 - 33
@@ -172,6 +174,8 @@ M.BTN_BATCH_H    = BTN_BATCH_H
 
 local BTN_BACK_CX, BTN_BACK_CY = 122, 1150
 local BTN_BACK_W, BTN_BACK_H   = 184, 143
+-- 属性列表上移后，非三栏模式的返回键放入标题左侧空位，不覆盖属性/职业。
+M.ATTR_BACK = { cx = 122, cy = 885, w = 144, h = 100 }
 
 local BTN_TAB_BG_CX, BTN_TAB_BG_CY = 540, 2308
 local BTN_TAB_BG_W, BTN_TAB_BG_H   = 810, 143
@@ -997,6 +1001,9 @@ function M.draw(vg)
     local lvlText = "Lv." .. tostring(heroLevel) .. "  " .. tostring(curExp) .. "/" .. tostring(needExp)
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 28)
+    local lvlWidth = nvgTextBounds(vg, 0, 0, lvlText) or 0
+    local lvlFont = lvlWidth > MID_EXP_W - 24 and 28 * (MID_EXP_W - 24) / lvlWidth or 28
+    nvgFontSize(vg, lvlFont)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     local lvlSW = 5
     nvgFillColor(vg, nvgRGBA(0x31, 0x24, 0x24, 255))
@@ -1007,7 +1014,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
     nvgText(vg, MID_EXP_CX, MID_EXP_CY, lvlText, nil)
 
-    -- === 14) 职业内容背景框（品质行已去掉，职业条居中拉满） ===
+    -- === 14) 左侧职业背景框，与右侧经验条同排 ===
     nvgBeginPath(vg)
     nvgRoundedRect(vg,
         MID_CLASS_BOX_CX - MID_CLASS_BOX_W * 0.5,
@@ -1016,7 +1023,7 @@ function M.draw(vg)
     nvgFillColor(vg, nvgRGBA(0, 0, 0, 26))
     nvgFill(vg)
 
-    -- === 15) 职业图标 + 名称，整条居中 ===
+    -- === 15) 职业图标 + 名称，按左侧可用宽度缩放 ===
     local classCfg = CC.get(heroCfg.classId)
     local className = classCfg and classCfg.name or "未知"
     local classIconIdx = CLASS_ICON_MAP[heroCfg.classId]
@@ -1024,9 +1031,12 @@ function M.draw(vg)
 
     nvgFontFace(vg, "sans")
     nvgFontSize(vg, 34)
-    local classTextW = nvgTextBounds(vg, 0, 0, className)
+    local classTextW = nvgTextBounds(vg, 0, 0, className) or 0
     local classGap = 8
     local iconW = classIcon >= 0 and MID_CLASS_ICON_SIZE or 0
+    local maxClassW = MID_CLASS_BOX_W - 20 - iconW - (iconW > 0 and classGap or 0)
+    local classFont = classTextW > maxClassW and 34 * maxClassW / classTextW or 34
+    classTextW = math.min(classTextW, maxClassW)
     local comboW = iconW + (iconW > 0 and classGap or 0) + classTextW
     local comboLeftX = MID_CLASS_BOX_CX - comboW * 0.5
     local classIconCX = comboLeftX + iconW * 0.5
@@ -1037,7 +1047,7 @@ function M.draw(vg)
             MID_CLASS_ICON_SIZE, MID_CLASS_ICON_SIZE, 1.0)
     end
     drawTextStroke(vg, classTextX, MID_CLASS_LABEL_Y, className,
-        34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        classFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
 
     -- === 17) 分割线1 ===
@@ -1069,7 +1079,7 @@ function M.draw(vg)
     else -- detailState.tab == "attr"
 
     -- ================================================================
-    -- ===                  属性区域（2列×N行）                      ===
+    -- ===                  属性区域（左列列表 / 右侧雷达）          ===
     -- ================================================================
 
     local attrData = collectAttributes(heroId, heroCfg, heroLevel)
@@ -1096,7 +1106,7 @@ function M.draw(vg)
     detailState.cachedLeft = attrRows
     detailState.cachedRight = {}
     local maxScroll, hits = M.drawAttributeRows(vg, attrRows,
-        detailState.attrScrollY, AttributeView.ATTRIBUTE_LAYOUT)
+        detailState.attrScrollY, AttributeView.ATTRIBUTE_LAYOUT, { style = M.ATTRIBUTE_STYLE })
     detailState.attrHits = hits
     detailState.attrScrollMax = maxScroll
 
@@ -1127,10 +1137,16 @@ function M.draw(vg)
     if extraLine ~= "" then
         talentDesc = talentDesc .. "\n" .. extraLine
     end
-    -- 关键词富文本：可点击的机制词（如「回响」）弹解释气泡；热区写入 talentKwText
+    -- 短描述紧凑显示，长描述/成长说明按可用高度适配，不侵入底部页签。
+    local talentFont = extraLine ~= "" and 28 or 34
+    local availableH = TALENT_BG_CY + TALENT_BG_H * 0.5 - 8 - TALENT_TEXT_TOP
+    while talentFont > 18
+        and M.talentKwText:measureHeight(vg, talentDesc, TALENT_TEXT_WIDTH, talentFont) > availableH do
+        talentFont = talentFont - 1
+    end
+    -- 关键词热区随最终字号布局，保留点击解释。
     M.talentKwText:draw(vg, talentDesc,
-        TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH,
-        extraLine ~= "" and 28 or 34)
+        TALENT_TEXT_LEFT, TALENT_TEXT_TOP, TALENT_TEXT_WIDTH, talentFont)
 
     end -- if detailState.tab == "awaken" / "attr"
 
@@ -1172,7 +1188,12 @@ function M.draw(vg)
     -- 三行模式返回键由中缝层绘制，页面内不再重复画
     ---@diagnostic disable-next-line: undefined-global
     if not H_SEAM_BACK then
-        DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "right")
+        if detailState.tab == "attr" then
+            local back = M.ATTR_BACK
+            DrawUtil.drawBackChevron(vg, back.cx, back.cy, back.w, back.h, "right")
+        else
+            DrawUtil.drawBackChevron(vg, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H, "right")
+        end
     end
 
     drawImageCentered(vg, img.tabBg, BTN_TAB_BG_CX, BTN_TAB_BG_CY, BTN_TAB_BG_W, BTN_TAB_BG_H, 1.0)

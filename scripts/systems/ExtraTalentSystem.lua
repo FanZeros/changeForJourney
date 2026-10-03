@@ -350,9 +350,12 @@ function ETS.applyToAttrs(heroId, attrs, extra, awakening)
         data = ETS.normalize(raw)
     end
     local entries = bruteEntries(heroId, data)
-    attrs:removeModifier("extra_talent_" .. tostring(heroId))
+    local modifierId = "extra_talent_" .. tostring(heroId)
     if #entries > 0 then
-        attrs:addModifier("extra_talent_" .. tostring(heroId), entries)
+        -- 同 ID 原位覆盖，只重算一次，避免先移除存量成长时被临时上限夹血。
+        attrs:addModifier(modifierId, entries)
+    else
+        attrs:removeModifier(modifierId)
     end
 end
 
@@ -471,6 +474,8 @@ local function markDirty(heroId, extra)
     battle.dirty[heroId] = extra
 end
 
+---@param unit table|nil
+---@param extra ExtraTalentData
 local function commit(unit, extra)
     local heroId = toHeroId(unit and unit.heroId)
     local ok, CP = pcall(require, "ui.character.panel.CharacterPanel")
@@ -478,14 +483,24 @@ local function commit(unit, extra)
         CP.patchExtraTalent(heroId, extra)
     end
     if ETS.hasNode(unit, 1) and unit and unit.attrs then
-        ETS.applyToAttrs(heroId, unit.attrs, extra, unit.awakeningNodes)
-        local newMax = unit.attrs.final[AD.MAX_HP]
-        if newMax and newMax > (unit.maxHp or 0) then
-            local gained = newMax - (unit.maxHp or newMax)
+        local attrs = unit.attrs
+        -- attrs 是战斗血量的来源；不要用尚未同步的 unit.maxHp 计算成长差额。
+        local oldHp = attrs.final[AD.HP] or unit.hp or 0
+        local oldMax = attrs.final[AD.MAX_HP] or unit.maxHp or 0
+        -- 两份血量任一已记录死亡都不补血，避免死亡同步窗口里的陈旧活血复活。
+        local wasAlive = oldHp > 0 and (unit.hp == nil or unit.hp > 0)
+        ETS.applyToAttrs(heroId, attrs, extra, unit.awakeningNodes)
+        local newMax = attrs.final[AD.MAX_HP]
+        if newMax then
+            -- 成长不是复活：活单位补实际新增上限，下降时只夹到最终上限。
+            local gained = math.max(0, newMax - oldMax)
+            local newHp = wasAlive and math.min(newMax, oldHp + gained) or 0
+            attrs.final[AD.HP] = newHp
+            unit.hp = newHp
             unit.maxHp = newMax
-            if unit.attrs.final[AD.HP] then
-                unit.attrs.final[AD.HP] = math.min(unit.maxHp, (unit.attrs.final[AD.HP] or 0) + gained)
-                unit.hp = unit.attrs.final[AD.HP]
+            if not wasAlive and gained > 0 then
+                print(string.format("[ExtraTalent] hero=%d 阵亡成长仅更新上限 %s→%s，生命保持0",
+                    heroId, tostring(oldMax), tostring(newMax)))
             end
         end
     end

@@ -148,8 +148,9 @@ local function runSuhuaNightSlash(attacker, s, target, isAlly, targetList, dealD
         if allSame then
             opts.bezierSide = sides[si] or (si % 2 == 1 and 1 or -1)
         end
-        dealDmgFn(st, dmg, not isAlly, "通宵斩", { 255, 50, 80 }, opts)
+        -- 同步伤害可能立即分发死亡，必须先提供本次斩击归因。
         attacker._nightSlashKill = true
+        dealDmgFn(st, dmg, not isAlly, "通宵斩", { 255, 50, 80 }, opts)
     end
 
     talentLog("[Talent] 熬夜冠军 通宵斩：" .. slashCount .. "道斩击(基础=" .. math.floor(baseSlashDmg) .. ")")

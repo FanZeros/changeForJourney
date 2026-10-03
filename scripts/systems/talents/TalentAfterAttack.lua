@@ -236,17 +236,9 @@ function M.bind(deps)
                         dealDmgFn(target, target.hp, not isAlly, "斩杀 ", { 255, 0, 50 })
                         talentLog("[Talent] 愤怒的小雀 觉醒7：斩杀 " .. target.name .. "!")
                     end
-                    -- 斩杀后立即转移标记（不依赖延迟的 onEnemyDeath）
-                    if targetList then
-                        local aliveEnemies = getAliveEnemies(targetList)
-                        if #aliveEnemies > 0 then
-                            local newTarget = aliveEnemies[math.random(#aliveEnemies)]
-                            applyAyaneMark(attacker, newTarget, targetList)
-                            talentLog("[Talent] 愤怒的小雀 觉醒7: 斩杀后标记转移→" .. (newTarget.name or "?"))
-                        else
-                            clearAyaneMarks(targetList)
-                        end
-                    end
+                    -- 死亡消费先读取原标记再统一转标；异步伤害仍由落地死亡钩处理。
+                    -- 不能在同步额伤排队后清掉死亡目标标记，否则击杀成长丢失。
+
                 end
             end
         end

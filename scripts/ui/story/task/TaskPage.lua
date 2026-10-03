@@ -189,6 +189,11 @@ local function finishClose()
     state.dragging = false
 end
 
+--- 安全恢复时立即关页，不等待关闭动画，也不触发任务操作。
+function TaskPage.forceClose()
+    finishClose()
+end
+
 function TaskPage.update(_dt)
     if not state.open then return end
     if state.closing and time.elapsedTime - state.closeTime >= CLOSE_DUR then

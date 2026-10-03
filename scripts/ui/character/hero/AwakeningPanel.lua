@@ -57,7 +57,8 @@ local NODE_FILL = {
 
 -- 底栏（切片底 = SY+H = 1812，文字区紧跟其下）
 local SUB_TITLE_CX, SUB_TITLE_CY = 540, 1860
-local EFFECT_CX, EFFECT_CY = 540, 1930
+-- 效果说明下移约 2/3 行（36 字号默认行高 49，取整为 33），避免首行压住阶段标题。
+local EFFECT_CX, EFFECT_CY = 540, 1963
 local EFFECT_W, EFFECT_H   = 910, 139
 local EFFECT_FONT           = 36
 -- 底栏操作：碎片标识在左、嵌合按钮在右（放大）

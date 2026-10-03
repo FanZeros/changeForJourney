@@ -25,6 +25,16 @@ local lastUnlockState_ = {}
 local overlay_ = { w = GameConfig.Design.WIDTH, h = GameConfig.Design.HEIGHT, hs = nil }
 local overlayLayout_ = nil ---@type any
 local stepElapsed_ = 0
+local recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
+local RECOVERY_INTERVAL, PAGE_SETTLE_TIME = 0.5, 0.45
+---@type fun()?
+local prepareResume
+
+local function resetTarget()
+    resumePending_ = true
+    recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
+    overlayLayout_, overlay_.hs = nil, nil
+end
 
 local function step()
     local group = activeGroup_ and Config[activeGroup_]
@@ -68,7 +78,7 @@ local function advance()
     local current = step()
     if not current or animState_ == "out" then return end
     activeStep_, stepElapsed_ = activeStep_ + 1, 0
-    overlayLayout_ = nil
+    resetTarget()
     if not step() then finish()
     else print("[TutorialManager] 步骤: " .. activeGroup_ .. "/" .. activeStep_); save() end
 end
@@ -121,8 +131,7 @@ local function start(id)
     end
     activeGroup_, activeStep_ = id, 1
     animState_, animT_, groupElapsed_, stepElapsed_ = "in", 0, 0, 0
-    overlayLayout_ = nil
-    if id == 1 or id == 2 or id == 6 or id == 9 or id == 15 then resumePending_ = true end
+    resetTarget()
     applyUnlocks(id)
     print("[TutorialManager] 启动引导: " .. id)
     save()
@@ -143,7 +152,7 @@ function TutorialManager.notifyEvent(name)
     if not activeGroup_ or animState_ == "out" then return end
     if name == "gacha10_failed" and activeGroup_ == 8 then
         activeStep_, stepElapsed_ = 1, 0
-        overlayLayout_ = nil
+        resetTarget()
         save()
         print("[TutorialManager] 招募未完成，恢复可重试步骤")
         return
@@ -157,12 +166,15 @@ function TutorialManager.skipCurrentGroup() finish() end
 function TutorialManager.isInputActive()
     if not activeGroup_ or animState_ == "out" or Scenario.isActive() then return false end
     local RP = require("ui.hud.popup.RewardPopup")
-    return not (RP.isOpen and RP.isOpen())
+    if RP.isOpen and RP.isOpen() then return false end
+    return not require("ui.tutorial.TutorialPageRecovery").isBlocked()
 end
 function TutorialManager.setOverlayRect(w, h, hs)
-    overlay_ = { w = w, h = h, hs = hs }
+    local target = hs
+    if settleRemaining_ > 0 then target = nil end
+    overlay_ = { w = w, h = h, hs = target }
     local Overlay = require("ui.tutorial.TutorialOverlay")
-    overlayLayout_ = Overlay.layout(w, h, hs)
+    overlayLayout_ = Overlay.layout(w, h, target)
 end
 local function hit(rect, x, y)
     return rect and DrawUtil.hitTest(x, y, rect.cx, rect.cy, rect.w, rect.h)
@@ -170,19 +182,23 @@ end
 function TutorialManager.canPointerStart(x, y)
     if not TutorialManager.isInputActive() then return true end
     if groupElapsed_ >= 1 and overlayLayout_ and hit(overlayLayout_.skip, x, y) then return false end
+    if prepareResume then prepareResume() end
+    if settleRemaining_ > 0 then return false end
     local current = step()
     if not current or current.invisible or current.advanceOn ~= "click_highlight" then return true end
     -- 真正按钮边界才放行；光环外扩不是按钮可点击区域。
     return hit(overlay_.hs, x, y) == true
 end
-function TutorialManager.handleScreenClick(x, y)
+function TutorialManager.handleScreenClick(x, y, blockedPress)
     if not TutorialManager.isInputActive() then return false end
     if groupElapsed_ >= 1 and overlayLayout_ and hit(overlayLayout_.skip, x, y) then
         finish()
         return true
     end
+    if blockedPress then return true end
     local current = step()
     if not current or current.invisible then return false end
+    if settleRemaining_ > 0 then return true end
     if current.advanceOn == "click_highlight" then
         if hit(overlay_.hs, x, y) then advance(); return false end
         return true
@@ -208,6 +224,8 @@ function TutorialManager.init(vg, playerStore, persist)
     completed_, queue_, hotspots_, lastUnlockState_ = {}, {}, {}, {}
     animState_, animT_, groupElapsed_, stepElapsed_ = "idle", 0, 0, 0
     overlayLayout_, restored_, resumePending_ = nil, false, false
+    overlay_.hs = nil
+    recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
     print("[TutorialManager] 初始化，等待会话数据恢复")
 end
 local function restore()
@@ -248,26 +266,22 @@ local function restore()
         save()
     end
 end
-local function prepareResume()
-    if not resumePending_ then return end
-    resumePending_ = false
-    if activeGroup_ == 1 or activeGroup_ == 2 or activeGroup_ == 9 then
-        require("ui.character.detail.CharacterDetail").forceClose()
-        local panel = require("ui.character.panel.CharacterPanel")
-        if panel.prepareTutorial then panel.prepareTutorial(newHeroId_) end
-    elseif activeGroup_ == 5 or activeGroup_ == 6 or activeGroup_ == 7 or activeGroup_ == 10 then
-        require("ui.church.ChurchPage").forceClose()
-        local page = require("ui.church.talent.TalentPage")
-        if page.forceClose then page.forceClose() end
-    elseif activeGroup_ == 15 then
-        -- 横屏常驻布局隐藏旧副本页签，恢复/启动时直接打开合法副本面板入口。
-        require("ui.hud.BottomNav").setSelectedIndex(5)
-        activeStep_ = math.max(2, activeStep_)
+prepareResume = function()
+    local current = step()
+    if not current or current.invisible then resumePending_ = false; return end
+    local Recovery = require("ui.tutorial.TutorialPageRecovery")
+    if Recovery.isBlocked() then return end
+    local initial = resumePending_
+    resumePending_, recoveryElapsed_ = false, 0
+    if activeGroup_ == 15 and activeStep_ == 1 then
+        -- 横屏已移除旧页签，沿用直接打开副本列表的恢复契约。
+        activeStep_, stepElapsed_ = 2, 0
+        current = step()
         save()
-    elseif activeGroup_ == 8 then
-        require("ui.tavern.TavernPage").open()
-    elseif activeGroup_ == 11 then
-        require("ui.blacksmith.BlacksmithPage").open()
+    end
+    if current and Recovery.prepare(vg_, store_, current.highlight, newHeroId_, initial) then
+        settleRemaining_, missingElapsed_ = PAGE_SETTLE_TIME, 0
+        hotspots_, overlay_.hs, overlayLayout_ = {}, nil, nil
     end
 end
 function TutorialManager.update(dt)
@@ -279,7 +293,11 @@ function TutorialManager.update(dt)
     end
     if TutorialManager.isInputActive() then
         groupElapsed_, stepElapsed_ = groupElapsed_ + dt, stepElapsed_ + dt
-        prepareResume()
+        recoveryElapsed_ = recoveryElapsed_ + dt
+        settleRemaining_ = math.max(0, settleRemaining_ - dt)
+        if overlay_.hs and settleRemaining_ == 0 then missingElapsed_ = 0
+        else missingElapsed_ = missingElapsed_ + dt end
+        if resumePending_ or recoveryElapsed_ >= RECOVERY_INTERVAL then prepareResume() end
     end
     if activeGroup_ == 8 and step() and step().invisible and stepElapsed_ > 12 then
         TutorialManager.notifyEvent("gacha10_failed")
@@ -322,8 +340,11 @@ function TutorialManager.draw()
     local Overlay = require("ui.tutorial.TutorialOverlay")
     local alpha = animState_ == "in" and math.min(1, animT_ / 0.25) or 1
     local text = current.invisible and "" or current.text
+    if not current.invisible and not overlay_.hs and missingElapsed_ < 2 then
+        text = "正在准备引导页面，请稍候…"
+    end
     local hs = current.invisible and nil or overlay_.hs
     overlayLayout_ = Overlay.draw(vg_, overlay_.w, overlay_.h, hs, text, elapsed_, groupElapsed_, alpha,
-        current.invisible == true, activeGroup_ == 9)
+        current.invisible == true, activeGroup_ == 9, missingElapsed_ < 2)
 end
 return TutorialManager

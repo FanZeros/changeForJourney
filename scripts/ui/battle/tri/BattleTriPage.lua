@@ -46,6 +46,7 @@ local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
 local terminalRaid = nil
 local l1Images = {}       -- 同一路径共用句柄，切场景不删除其他行仍在使用的贴图
 local l1Failures = {}     -- 加载失败只提示一次，后续帧仍允许重试
+local l1RowImages = {}    -- 跨章图尚未就绪时保留本行最近成功加载的背景
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local triOnStageClear = nil -- function(teamIdx, clearedStageId)
@@ -330,7 +331,12 @@ local function ensureRowBg(vg, row, unlocked)
     else
         path = BattleTriPage.resolveBackgroundPath(BattleTriPage.getTeamStageId(row))
     end
-    return getBackgroundImage(vg, path)
+    local image = getBackgroundImage(vg, path)
+    if image >= 0 then
+        l1RowImages[row] = image
+        return image
+    end
+    return l1RowImages[row] or image
 end
 
 function BattleTriPage.init(vg)
@@ -450,9 +456,24 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, fixedBgPath)
         local dw, dh = 1896 * s, 720 * s
         local bg = fixedBgPath and getBackgroundImage(vg, fixedBgPath)
             or ensureRowBg(vg, row, unlocked)
-        local zoom, alpha = 1, 1
+        local zoom, alpha, nextBgStageId = 1, 1, nil
         local drv = not fixedBgPath and row <= unlocked and drivers[row] or nil
-        if drv then zoom, alpha = drv:getMarchBackground() end
+        if drv then zoom, alpha, nextBgStageId = drv:getMarchBackground() end
+        -- 先铺不透明的新背景，再画放大淡出的旧背景；同章复用同一有效句柄。
+        if nextBgStageId then
+            local nextBg = getBackgroundImage(vg, BattleTriPage.resolveBackgroundPath(nextBgStageId))
+            if nextBg and nextBg >= 0 then
+                local paint = nvgImagePattern(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5,
+                    dw, dh, 0, nextBg, 1)
+                nvgBeginPath(vg)
+                nvgRect(vg, ix, iy, iw, ih)
+                nvgFillPaint(vg, paint)
+                nvgFill(vg)
+            else
+                -- 下层未就绪时旧图保持原尺寸和不透明，切关回退也不会缩闪。
+                zoom, alpha = 1, 1
+            end
+        end
         -- 以可见战场的右侧中心为锚点，不按 cover 图片被裁掉的边缘定位。
         local pivotX, pivotY = ix + iw, iy + ih * 0.5
         local bgX = pivotX + (ix + (iw - dw) * 0.5 - pivotX) * zoom
@@ -558,10 +579,17 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgText(vg, ix + 28, iy + 25, stageText, nil)
         end
         nvgRestore(vg)
-        -- 前进提示独占顶部第二行，避开右上速度/扫荡等按钮。
-        if not terminalRaid and row <= unlocked and drivers[row] and drivers[row].marchNotice then
+        -- 前进提示复用底部进度说明位置，字号和留白随战斗行高度缩放。
+        local marching = not terminalRaid and row <= unlocked and drivers[row] and drivers[row].marchNotice
+        if marching then
+            local noticeScale = math.min(1, ih / 360)
+            nvgSave(vg)
+            nvgIntersectScissor(vg, ix, iy, iw, ih)
+            nvgFontSize(vg, 22 * noticeScale)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 230, 160, 255))
-            nvgText(vg, ix + 28, iy + 55, "正在前进中", nil)
+            nvgText(vg, ix + iw * 0.5, iy + ih - 26 * noticeScale, "正在前进中", nil)
+            nvgRestore(vg)
         end
 
         -- [终焉协同] 每行底部进度条替换为共享生命池（绯红），行1 附加数值与倒计时
@@ -610,9 +638,10 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             local pctShown = math.floor(ratio * 100 + 0.5)
             local pctText = string.format("%d%%", pctShown)
             local barW = math.min(iw * 0.62, 280)
-            local barH = 10
+            local progressScale = marching and math.min(1, ih / 360) or 1
+            local barH = 10 * progressScale
             local barX = ix + (iw - barW) * 0.5
-            local barY = iy + ih - 8
+            local barY = iy + ih - 8 * progressScale
             nvgBeginPath(vg)
             nvgRoundedRect(vg, barX, barY, barW, barH, 5)
             nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
@@ -623,10 +652,12 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 nvgFillColor(vg, nvgRGBA(196, 148, 72, 230))
                 nvgFill(vg)
             end
-            nvgFontSize(vg, 16)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
-            nvgText(vg, ix + iw * 0.5, barY - 12, I18n.format("关卡进度 %s", pctText), nil)
+            if not marching then
+                nvgFontSize(vg, 16)
+                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+                nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+                nvgText(vg, ix + iw * 0.5, barY - 12, I18n.format("关卡进度 %s", pctText), nil)
+            end
         end
 
         if row <= unlocked and drivers[row] and #drivers[row].allies == 0 then

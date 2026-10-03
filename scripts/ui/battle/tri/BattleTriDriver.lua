@@ -36,6 +36,8 @@ local ENTER_STAGGER = 0.06
 local REWARD_INTERVAL = 0.05
 local REINFORCE_INTERVAL = 0.4
 local MARCH_DURATION = 2.0
+local MARCH_ZOOM = 1.06
+local MARCH_ZOOM_END = 0.65
 local MARCH_STEP = 7
 
 --- 单位攻击间隔（魔改 buff 感知的最小实现：直接取 attrs 的实际间隔）
@@ -442,7 +444,7 @@ function BattleTriDriver.new(teamIdx, options)
         end
     end
 
-    --- 通关后前进；提示由顶部行标签持续展示，不进入浮字或弹窗。
+    --- 通关后前进；提示由行内底部持续展示，不进入浮字或弹窗。
     function drv:beginMarch()
         if (self.marchTimer or 0) > 0 then return end
         self.marchTimer = MARCH_DURATION
@@ -456,13 +458,19 @@ function BattleTriDriver.new(teamIdx, options)
             self.teamIdx, tostring(self.stageId), MARCH_DURATION))
     end
 
-    --- 只变换背景：前进时轻微放大并淡化，切关前恢复原状。
+    --- 背景单向放大后保持峰值并淡出；第三个返回值是下层背景的目标关卡。
+    --- 终焉仍等玩家确认，无下一关则原地重开，均用当前背景承接。
     function drv:getMarchBackground()
         local remaining = self.marchTimer or 0
         if remaining <= 0 then return 1, 1 end
         local progress = math.max(0, math.min(1, 1 - remaining / MARCH_DURATION))
-        local pulse = math.sin(progress * math.pi) ^ 2
-        return 1 + 0.06 * pulse, 1 - 0.25 * pulse
+        local zoomProgress = math.min(1, progress / MARCH_ZOOM_END)
+        local zoomEase = zoomProgress * zoomProgress * (3 - 2 * zoomProgress)
+        local fadeProgress = math.max(0, (progress - MARCH_ZOOM_END) / (1 - MARCH_ZOOM_END))
+        local fadeEase = fadeProgress * fadeProgress * (3 - 2 * fadeProgress)
+        local nextId = SC.getNextStageId(self.stageId)
+        local backgroundStageId = nextId and not SC.isTerminalTemple(nextId) and nextId or self.stageId
+        return 1 + (MARCH_ZOOM - 1) * zoomEase, 1 - fadeEase, backgroundStageId
     end
 
     --- 通关推进

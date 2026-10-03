@@ -1111,6 +1111,22 @@ function CharacterPanel.setActiveTeam(idx)
     return true
 end
 
+--- 教程定位只改变名册视图，不改阵容或发送动作。
+function CharacterPanel.prepareTutorial(heroId)
+    CharacterPanel.setActiveTeam(1)
+    scrollY, scrollVelocity, isDragging = 0, 0, false
+    if heroId then
+        for i, entry in ipairs(heroRoster) do
+            if tonumber(entry.heroId) == tonumber(heroId) then
+                local row = math.ceil(i / MAX_PER_ROW)
+                scrollY = math.max(0, ROW1_CY + (row - 1) * ROW_SPACING - SCROLL_TOP - Draw.ROSTER_ICON * 0.5)
+                clampScroll()
+                break
+            end
+        end
+    end
+end
+
 --- 查询详情界面是否打开（供外部判断是否需要隐藏 TopBar/BottomNav）
 ---@return boolean
 function CharacterPanel.isDetailOpen()

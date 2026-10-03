@@ -469,6 +469,11 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
          return
      end
 
+     -- 实际一键穿戴成功后才结束教程，不把按钮点击等同于业务完成。
+     if data.action == Protocol.ACTION_TYPES.EQUIP_ALL_BEST and data.success == true then
+         TutorialManager.notifyEvent("equipment_equipped")
+     end
+
      -- 各页面 onActionResult 分发
      if BlacksmithPage.onActionResult then pcall(BlacksmithPage.onActionResult, data) end
      if BackpackPanel.onActionResult then pcall(BackpackPanel.onActionResult, data) end

@@ -96,6 +96,7 @@ function M.bind(deps)
         local slots = equipped and (equipped[heroId] or equipped[tostring(heroId)])
         if slots and slots[slot] ~= nil and tostring(slots[slot]) == tostring(equip.seq) then
             toast("已装备")
+            require("systems.TutorialManager").notifyEvent("equipment_equipped")
             return true -- 快捷穿戴永远不是卸装/切换按钮。
         end
         if not slot then toast("参数缺失"); return false end
@@ -132,6 +133,7 @@ function M.bind(deps)
                 if detail and detail.markPowerDirty then detail.markPowerDirty() end
             end
             toast("已装备")
+            require("systems.TutorialManager").notifyEvent("equipment_equipped")
             if deps.GameSFX then deps.GameSFX.play("install")
             else require("systems.GameSFX").play("install") end
         else

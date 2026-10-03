@@ -263,38 +263,38 @@ local function HorizonDrawIntroOverlay()
     nvgRestore(vg())
 end
 
---- [横屏接线 0928] 新手引导蒙层：按当前高亮热点所属面板的 Viewport 变换绘制，
---- 热点 design 坐标即与该面板内容精确对齐（'modal' 上下文走全窗 letterbox，同副本页模态）
+--- 教程使用全屏逻辑空间；仅将目标矩形按所属面板最近一帧变换投影。
+--- 绘制与输入共用屏幕坐标，不借用下层tri/modal路由的坐标系。
 local function HorizonDrawTutorialOverlay()
     if not TutorialManager.isActive() then return end
     if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then return end
-    if DarkTitleScreen.isOpen() then return end
-    -- 全屏战斗期间不绘制（与旧 ClientRender 的 towerBattleOpen 守卫一致）
-    if DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
-    local panel = TutorialManager.getHotspotPanel()
+    if DarkTitleScreen.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
+    local hs = TutorialManager.getCurrentHotspot()
+    local screen = nil
+    if hs then
+        if hs.panel == "modal" then
+            local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
+            screen = { cx = (logicalW() - DESIGN_W() * fit) * 0.5 + hs.cx * fit,
+                cy = (logicalH() - DESIGN_H() * fit) * 0.5 + hs.cy * fit,
+                w = hs.w * fit, h = hs.h * fit }
+        else
+            local note, panel = Viewport.getNote(hs.panel), Viewport.PANELS[hs.panel]
+            if note and panel then
+                local cs = note.s * Viewport.DS
+                local sx = note.scaleX or cs
+                screen = { cx = note.ox + panel.bx * note.s + hs.cx * sx,
+                    cy = note.oy + panel.by * note.s + hs.cy * cs,
+                    w = hs.w * sx, h = hs.h * cs }
+            end
+        end
+    end
+    TutorialManager.setOverlayRect(logicalW(), logicalH(), screen)
     nvgSave(vg())
     nvgResetTransform(vg())
     applyFrame()
-    local function drawLetterboxed()
-        local fit = math.min(logicalW() / DESIGN_W(), logicalH() / DESIGN_H())
-        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
-        nvgTranslate(vg(), (logicalW() - DESIGN_W() * fit) * 0.5, (logicalH() - DESIGN_H() * fit) * 0.5)
-        nvgScale(vg(), fit, fit)
-        TutorialManager.draw()
-    end
-    if panel == 'modal' then
-        drawLetterboxed()
-    elseif Viewport.beginFromNote(vg(), panel) then
-        -- 蒙层矩形精确等于面板区域不会溢出；解除面板裁剪让高亮/气泡可越出栏外
-        -- （装备详情 compactCorner 浮层画在栏外，其按钮高亮须同样不被裁切）
-        nvgResetScissor(vg())
-        TutorialManager.draw()
-        Viewport.finish(vg())
-    else
-        -- 面板无 note（如 tri 三行模式下的 center）：回退全窗 letterbox，
-        -- 保证 invisible 步骤的跳过按钮始终可见可点（防卡死）
-        drawLetterboxed()
-    end
+    nvgResetScissor(vg())
+    nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+    TutorialManager.draw()
     nvgRestore(vg())
 end
 
@@ -417,14 +417,18 @@ local function seamHitAt(sx, sy)
     return nil
 end
 
+local function equipmentOwnerPanel(owner)
+    if owner == "character" or owner == "bag" then return "right" end
+    if owner == "smith" then return "center" end
+    return "left"
+end
+
 drawEquipDetailOverlay = function()
     -- 配装详情画在栏外，不被左右栏裁切
     local ok, EquipmentDetail = pcall(require, "ui.character.equip.EquipmentDetail")
     if not ok or not EquipmentDetail.isCompactCorner or not EquipmentDetail.isCompactCorner() then return end
     local owner = EquipmentDetail.getOwner and EquipmentDetail.getOwner() or "character"
-    -- [锻炉双页 0929] smith owner（锻炉工作台详情）挂中栏；其余非 character 挂左栏
-    local panelId = (owner == "character") and "right"
-        or (owner == "smith") and "center" or "left"
+    local panelId = equipmentOwnerPanel(owner)
     local note = Viewport.getNote(panelId)
     if not note then return end
     local panel = Viewport.PANELS[panelId]
@@ -440,9 +444,7 @@ equipOverlayDesign = function(sx, sy)
     local ok, EquipmentDetail = pcall(require, "ui.character.equip.EquipmentDetail")
     if not ok or not EquipmentDetail.isCompactCorner or not EquipmentDetail.isCompactCorner() then return nil end
     local owner = EquipmentDetail.getOwner and EquipmentDetail.getOwner() or "character"
-    -- [锻炉双页 0929] smith owner（锻炉工作台详情）挂中栏；其余非 character 挂左栏
-    local panelId = (owner == "character") and "right"
-        or (owner == "smith") and "center" or "left"
+    local panelId = equipmentOwnerPanel(owner)
     local note = Viewport.getNote(panelId)
     if not note then return nil end
     local panel = Viewport.PANELS[panelId]
@@ -458,6 +460,7 @@ end
 
 function HandleNanoVGRenderHorizon()
     if not vg() then return end
+    TutorialManager.clearHotspots()
     HorizonUpdateTransform()
     nvgBeginFrame(vg(), windowW(), windowH(), dpr())
     nvgBeginPath(vg())

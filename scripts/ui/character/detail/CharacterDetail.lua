@@ -364,12 +364,16 @@ end
 
 --- 打开详情界面
 ---@param heroId number
----@param tab string|nil 初始页签 "attr"|"equip"|"awaken"，默认 "attr"
+---@param tab string|nil 初始页签 "attr"|"equip"|"awaken"，未指定时由教程选择，否则默认 "attr"
 function CharacterDetail.open(heroId, tab)
     detailState.open = true
     detailState.closing = false
     detailState.heroId = heroId
-    local initTab = (tab == "equip" or tab == "awaken") and tab or "attr"
+    local preferredTab = tab
+    if preferredTab == nil then
+        preferredTab = require("systems.TutorialManager").getPreferredCharacterTab()
+    end
+    local initTab = (preferredTab == "equip" or preferredTab == "awaken") and preferredTab or "attr"
     detailState.tab = initTab
     detailState.tabFrom = initTab
     detailState.tabSwitchTime = 0

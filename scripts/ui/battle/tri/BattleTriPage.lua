@@ -266,50 +266,17 @@ function BattleTriPage.mountEmpty()
     SEM.mount(emptyStates.sem)
 end
 
--- 章 1 用现有林景；2–23 用按章重出的满幅背景。难度章按 23 循环。
-local CHAPTER_BG = {
-    [1]  = "image/暗黑/L1_row1_forest.png",
-    [2]  = "image/战斗背景/幽烬林地.png",
-    [3]  = "image/战斗背景/哑雾沼泽.png",
-    [4]  = "image/战斗背景/巨木之冢.png",
-    [5]  = "image/战斗背景/哀嚎沙丘.png",
-    [6]  = "image/战斗背景/蚀骨荒漠.png",
-    [7]  = "image/战斗背景/焦土平原.png",
-    [8]  = "image/战斗背景/断魂裂谷.png",
-    [9]  = "image/战斗背景/蛊语山洞.png",
-    [10] = "image/战斗背景/悬魂瀑布.png",
-    [11] = "image/战斗背景/霜噬雪岭.png",
-    [12] = "image/战斗背景/沉眠冰原.png",
-    [13] = "image/战斗背景/血晶溶洞.png",
-    [14] = "image/战斗背景/枯枫遗迹.png",
-    [15] = "image/战斗背景/烬暮湖畔.png",
-    [16] = "image/战斗背景/废弃营地.png",
-    [17] = "image/战斗背景/古代遗迹.png",
-    [18] = "image/战斗背景/沉没神殿.png",
-    [19] = "image/战斗背景/哭泣峭壁.png",
-    [20] = "image/战斗背景/恶灵岔路.png",
-    [21] = "image/战斗背景/遗忘墓穴.png",
-    [22] = "image/战斗背景/亡灵墓穴.png",
-    [23] = "image/战斗背景/烛龙之巢.png",
-}
-
-local function mapChapterOf(stageId)
-    local entry = stageId and StageConfig.getStage(tonumber(stageId) or 0)
-    local chapter = (entry and entry.chapter) or 1
-    return ((chapter - 1) % 23) + 1
-end
-
 local function ensureRowBg(vg, row, unlocked)
-    -- 锁定队展示待解锁章节；解锁后按各队实际战斗进度切回背景。
-    local chapter = row > unlocked and ((row == 2) and 10 or 20)
-        or mapChapterOf(BattleTriPage.getTeamStageId(row))
+    -- 保留锁队第10/20章预览；已解锁行仍取自己的驱动关卡，不被主线前进覆盖。
+    local stageId = row > unlocked and ((row == 2) and 1001 or 2001)
+        or BattleTriPage.getTeamStageId(row)
+    local path, chapter = StageConfig.getBattleBackground(stageId)
     if l1Img[row] and l1Chapter[row] == chapter then
         return l1Img[row]
     end
     if l1Img[row] and l1Img[row] >= 0 then
         nvgDeleteImage(vg, l1Img[row])
     end
-    local path = CHAPTER_BG[chapter] or CHAPTER_BG[1]
     local img = nvgCreateImage(vg, path, 0) or -1
     l1Img[row] = img
     l1Chapter[row] = chapter

@@ -216,6 +216,16 @@ function AC.hasNode(awakening, nodeIndex)
     return AC.migrateAwakening(awakening)[mapped] == true
 end
 
+--- 是否已点指定新阶段（1=初醒，2=共鸣，3=蜕变；不映射查询编号）
+---@param awakening table|nil
+---@param stageIndex number
+---@param alreadyMigrated boolean|nil 英雄级迁移标记
+---@return boolean
+function AC.hasStage(awakening, stageIndex, alreadyMigrated)
+    if stageIndex ~= 1 and stageIndex ~= 2 and stageIndex ~= 3 then return false end
+    return AC.migrateAwakening(awakening, alreadyMigrated)[stageIndex] == true
+end
+
 --- 已点亮的新 3 阶数量（忽略 `_awk3Migrated` 标记）
 ---@param awakening table|nil
 ---@return number

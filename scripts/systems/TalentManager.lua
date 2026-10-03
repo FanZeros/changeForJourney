@@ -237,6 +237,15 @@ local function hasAwaken(unit, nodeIndex)
     return require("config.AwakeningConfig").hasNode(unit.awakeningNodes, nodeIndex)
 end
 
+--- 检查单位是否已激活指定新阶段（1=初醒，2=共鸣，3=蜕变）
+---@param unit table|nil
+---@param stageIndex number 1~3
+---@return boolean
+local function hasAwakenStage(unit, stageIndex)
+    if not unit then return false end
+    return require("config.AwakeningConfig").hasStage(unit.awakeningNodes, stageIndex)
+end
+
 --- 检查单位所属队伍是否已点亮指定天赋星图节点
 ---@param unit table
 ---@param nodeId number 星图节点ID
@@ -555,7 +564,7 @@ local _xin = TalentXin.bind({
 local onXinAfterAttack = _xin.onXinAfterAttack
 
 local _fatFish = TalentFatFish.bind({
-    hasAwaken = hasAwaken,
+    hasAwakenStage = hasAwakenStage,
     getState = getState,
     talentLog = talentLog,
     getAliveEnemies = getAliveEnemies,
@@ -564,7 +573,7 @@ local _fatFish = TalentFatFish.bind({
 local onFatFishAfterAttack = _fatFish.onAfterAttack
 
 local _fourNew = TalentFourNew.bind({
-    hasAwaken = hasAwaken,
+    hasAwakenStage = hasAwakenStage,
     getState = getState,
     talentLog = talentLog,
     getTAL_BCS = function() return TAL_BCS end,

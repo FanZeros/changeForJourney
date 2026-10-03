@@ -8,6 +8,14 @@
 3. **以新分支继续开发**：以用户当轮指定分支为基线创建独立开发分支，每次完成后 commit + push 到该开发分支；通常基于 `workspace930` 开发并通过 PR 合入。**禁止 push 到 workspace 或 workspace930 分支本身**，显式指定推送目标，不强推、不擅自合并 PR。用户明确要求修复既有 PR 冲突时，可在新修复分支验证后快进更新该 PR 的开发分支，不将该许可延伸到其他分支。
 4. **部署位置**：当前仓库和游戏项目直接位于 `/workspace` 根目录，scripts/assets/.project 等不再嵌套子目录；保护引擎提供的只读目录，修改代码后调用官方 build 工具构建。
 
+### 三阶查询修复交接（2026-10-03）
+
+- 用户先选择只读核对三阶觉醒，再在 AskUserQuestion 明确选择“修复三阶查询”。从已推送塞拉提交 `cb85275` 新建 `fix1003/awakening-stage-query`，是叠加分支，未混入期间前进的workspace930；禁止推workspace*，完成后真实简报并用 **AskUserQuestion** 给下一步选项，不自行创建或合并PR。
+- 确认的单一根因：旧`AC.hasNode`查询参数1–3统一映射I，但`TalentFatFish`和`TalentFourNew`把新II/III写成2/3，涉及5角色15定位点，不是15个独立bug。新增`AC.hasStage`（仅数值1/2/3，复用迁移、支持英雄级标记参数），TAL新增明确新阶段查询，仅两模块注入`hasAwakenStage`；旧hasNode/mapLegacyNode/migrateAwakening均逐字未变，其他旧角色保持七节点兼容。
+- 新专项`awakening_stage_query_test.lua`最终579断言 ALL PASS、exit0：全部8种原生阶段组合、128种旧节点组合、新阶段范围/迁移标记/非连续数据/输入不变、五角色helper门槛、正式TAL老六/大肥鱼/加载中/高ping路径、目标血量下降分支现有系数不变。塞拉54断言、关键角色战斗20断言、旧永久成长等价和切关回归全部通过。官方Build最终成功427Lua资源含新专项；主入口35秒18/18初始化完成，exit124为外部限时结束，不声称实机视觉通过。修改文件LSP无Error，有测试类型推导warning；全仓缓存47既有Error未混修。
+- 保留范围边界：哈基米正式治疗分发仍被AfterAttack非healing外层挡住，本轮仅改其潜伏阶段查询、helper验证，不宣称恢复功德闭环；老六0.08档位与偷克制字段消费未修；高ping生命比例下降50%现阶段仍属I，虽DATA列II，本轮保留不调平衡；潮湿critVuln实际暴击公式消费未扩查。旧碎片迁移、丢标记及非连续UI候选不混修。旧技能探针对`AC.hasNode(I,2/3)`返回true的观察仍是兼容语义，不作为本批修复失败。
+- `.project`生成身份/设置变化只留本地，不入提交；凭据不进入Git远端/配置/文件/记忆。提交推送结果以实际Git输出为准。
+
 ### 塞拉连射任务交接（2026-10-03）
 
 - 本轮用户在 AskUserQuestion 选择“部署并修复塞拉”，从 `workspace930@b24cad7cf60e` 创建 `fix1003/sera-machinegun-progress`；指定的 `audit1003/expedition-level-reward-page` 在本轮远程查询中不存在。项目和 Git 已部署到 `/workspace` 根；只修塞拉连射计数及专项回归，不涉及远征弹窗/奖励页面、ETS 修改、复活概率或平衡倍率。

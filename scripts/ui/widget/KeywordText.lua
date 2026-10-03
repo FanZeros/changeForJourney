@@ -245,12 +245,15 @@ end
 ---@param fontSize number
 ---@param lineHeight number|nil 行高（默认 fontSize*1.35）
 ---@param centerCX number|nil 传入则每行以该 X 居中（x 仅参与折行宽度计算）
+---@param keepHotspots boolean|nil 为 true 时追加热区（同一帧多段文本共用一个实例）
 ---@return number 总高度
-function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX)
+function KeywordText:draw(vg, text, x, y, width, fontSize, lineHeight, centerCX, keepHotspots)
     local layout = self:_layout(vg, text, width, fontSize)
     local lh = lineHeight or math.floor(fontSize * 1.35 + 0.5)
 
-    self.hotspots = {}
+    if not keepHotspots then
+        self.hotspots = {}
+    end
     nvgFontFace(vg, "sans")
     nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_TOP)
 

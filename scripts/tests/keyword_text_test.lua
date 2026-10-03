@@ -142,6 +142,29 @@ function Start()
     -- 变换生效性：偏移出热区容差的屏幕坐标应不命中
     check(not kt4:handleInput(screenX + 200, screenY), "热区外屏幕坐标不命中")
 
+    -- ── 星图属性：长词优先，不把「物理暴击伤害」拆成「暴击伤害」──
+    check(KW.get("物理暴击伤害") ~= nil, "词表包含「物理暴击伤害」")
+    check(KW.get("护盾伤害减免") ~= nil, "词表包含「护盾伤害减免」")
+    local kt5 = KeywordText.new()
+    kt5:draw(nil, "全体物理暴击伤害+32%，暴击伤害+20%，护盾伤害减免+6%", 0, 0, 900, 30)
+    local nPhys, nCrit, nShield = 0, 0, 0
+    for _, spot in ipairs(kt5.hotspots) do
+        if spot.name == "物理暴击伤害" then nPhys = nPhys + 1 end
+        if spot.name == "暴击伤害" then nCrit = nCrit + 1 end
+        if spot.name == "护盾伤害减免" then nShield = nShield + 1 end
+    end
+    check(nPhys == 1 and nCrit == 1 and nShield == 1,
+        "星图长词各命中 1 次（物理暴击伤害=" .. nPhys .. " 暴击伤害=" .. nCrit .. " 护盾伤害减免=" .. nShield .. "）")
+
+    -- 同一实例连续 draw：默认清热区；keepHotspots 追加
+    local kt6 = KeywordText.new()
+    kt6:draw(nil, "连击概率+8%", 0, 0, 400, 30)
+    kt6:draw(nil, "攻击速度+10%", 0, 40, 400, 30)
+    check(#kt6.hotspots == 1, "第二次 draw 默认替换热区（实际 " .. #kt6.hotspots .. "）")
+    kt6:draw(nil, "连击概率+8%", 0, 0, 400, 30)
+    kt6:draw(nil, "攻击速度+10%", 0, 40, 400, 30, nil, nil, true)
+    check(#kt6.hotspots == 2, "keepHotspots 追加第二段热区（实际 " .. #kt6.hotspots .. "）")
+
     if #failures == 0 then
         print("KEYWORD TESTS: ALL PASS (" .. "ok" .. ")")
     else

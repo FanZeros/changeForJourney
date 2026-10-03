@@ -383,21 +383,25 @@ function Start()
         end
         check(sameAsc, "单阶与一键 ascBonus 逐条一致")
 
-        -- 11d) 洗练重随/替换不丢 ascBonus（按位置转移）
+        -- 11d) 洗练换属性按价值保留投入，同属性洗练石保留固定量
         newModules()
         local s2 = putEquip(makeWeapon(4))
         BS.AscendEquipToLevel(UID, s2.seq, 4)
-        local bonusBefore = { s2.affixes[1].ascBonus, s2.affixes[2].ascBonus }
+        local oldAffixes = s2.affixes
         local okR2a = BS.RefineEquip(UID, s2.seq, nil)
         check(okR2a, "带 ascBonus 可洗练")
         local okR2b = BS.RefineReplace(UID, s2.seq)
         check(okR2b, "洗练替换成功")
-        eq(s2.affixes[1].ascBonus, bonusBefore[1], "替换后槽1 ascBonus 保留")
-        eq(s2.affixes[2].ascBonus, bonusBefore[2], "替换后槽2 ascBonus 保留")
+        for i = 1, 2 do
+            local expected = EquipmentSystem.convertAscBonusForRefine(oldAffixes[i], s2.affixes[i])
+            check(math.abs((s2.affixes[i].ascBonus or 0) - (expected or 0)) < 1e-9,
+                "替换后槽" .. i .. "升阶投入按价值换算")
+        end
+        local bonusAfter = s2.affixes[1].ascBonus
         local okR2c = BS.RefineEquip(UID, s2.seq, "enhanceStone")
         check(okR2c, "洗练石可用")
         BS.RefineReplace(UID, s2.seq)
-        eq(s2.affixes[1].ascBonus, bonusBefore[1], "洗练石路径 ascBonus 保留")
+        eq(s2.affixes[1].ascBonus, bonusAfter, "同属性洗练石路径 ascBonus 保留")
 
         -- 11e) 魔化词条不轮转不持有；净化后普通槽位保留
         newModules()

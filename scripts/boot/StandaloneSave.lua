@@ -24,6 +24,7 @@ local OfflineService   = require("rules.offline.OfflineService")
 local StandaloneSave = {}
 
 local SAVE_FILE         = "standalone_save.json"
+local TEMP_SAVE_FILE    = "standalone_save.pending.json"
 local SAVE_VERSION      = 1
 local SNAPSHOT_INTERVAL = 1.0   -- 快照对比周期（秒）
 local FLUSH_DEBOUNCE    = 2.0   -- 变更后写盘防抖（秒）
@@ -83,29 +84,37 @@ local function encodeSave()
     return json
 end
 
---- 离线收益还没领时，不推进在线时间，避免把待领时长清掉。
---- 角色、关卡和首通标记仍要落盘，否则重启就像丢档，首通也能再领一次。
+--- 临时文件完整写入且原子替换成功才承认提交；失败不触碰玩家旧档。
 local function writeFile()
+    local previousSavedAt = lastSavedAt
+    local session = ClientDispatcher.get("session")
+    local previousOnline = session and session.lastOnlineTime
     if offlineChecked and not OfflineService.HasPendingRewards(1) then
         OfflineService.MarkOnline(1)
         lastSavedAt = os.time()
     end
+    local function failed(reason)
+        lastSavedAt = previousSavedAt
+        if session then session.lastOnlineTime = previousOnline end
+        flushTimer = FLUSH_DEBOUNCE
+        if fileSystem and fileSystem.Delete then fileSystem:Delete(TEMP_SAVE_FILE) end
+        print("[StandaloneSave] 写档失败(" .. reason .. "): " .. SAVE_FILE)
+        return false
+    end
     local json = encodeSave()
-    if not json then return false end
-    local file = File(SAVE_FILE, FILE_WRITE)
-    if not file or not file:IsOpen() then
-        flushTimer = FLUSH_DEBOUNCE
-        print("[StandaloneSave] 写档失败(无法打开): " .. SAVE_FILE)
-        return false
+    if not json then return failed("编码") end
+    if not fileSystem or not fileSystem.Rename then return failed("无安全替换接口") end
+    local opened, file = pcall(File, TEMP_SAVE_FILE, FILE_WRITE)
+    if not opened or not file or not file:IsOpen() then
+        return failed("无法打开临时文件")
     end
-    if not file:WriteString(json) then
-        file:Close()
-        flushTimer = FLUSH_DEBOUNCE
-        print("[StandaloneSave] 写档失败(写入未完成): " .. SAVE_FILE)
-        return false
-    end
+    local wrote, complete = pcall(file.WriteString, file, json)
     file:Close()
+    if not wrote or complete ~= true then return failed("写入未完成") end
+    local renamed, replaced = pcall(fileSystem.Rename, fileSystem, TEMP_SAVE_FILE, SAVE_FILE)
+    if not renamed or replaced ~= true then return failed("替换未完成") end
     lastSnapshot = json
+    flushTimer = nil
     print("[StandaloneSave] 存档落盘 bytes=" .. #json)
     return true
 end
@@ -143,6 +152,16 @@ function StandaloneSave.RestoreData()
     -- 1. 恢复 GameState（单机货币/等级真实源）
     GameState.importSave(saveData.gameState)
 
+    -- 旧档 player 镜像可能停在Lv1；GameState 保存的单机等级/经验优先，保留头像等字段。
+    local savedState = saveData.gameState
+    local player = saveData.modules.player or {}
+    if type(savedState) == "table" then
+        for _, field in ipairs({ "name", "level", "exp", "maxExp", "power" }) do
+            if savedState[field] ~= nil then player[field] = savedState[field] end
+        end
+    end
+    saveData.modules.player = player
+
     -- 2. 恢复各模块（经 handleStateUpdate 统一走 onLoad 修正 + 订阅通知）
     local names = {}
     for name, data in pairs(saveData.modules) do
@@ -150,6 +169,7 @@ function StandaloneSave.RestoreData()
         names[#names + 1] = name
     end
 
+    GameState.syncPlayerData(ClientDispatcher.get("player"), { silent = true })
     restoredSavedAt = tonumber(saveData.savedAt) or 0
     lastSavedAt = restoredSavedAt
     restoredSave = true
@@ -246,7 +266,7 @@ function StandaloneSave.Wipe()
 end
 
 function StandaloneSave.Flush()
-    writeFile()
+    return writeFile()
 end
 
 return StandaloneSave

@@ -5,10 +5,8 @@
 
 local GameState  = require("core.GameState")
 
--- [教堂30级开放] 缄默礼拜堂/终焉古树 需远征等级 30 才可进入；
--- 引导豁免：新手引导组5-7 发生在低等级（点击教堂/古树推进），
--- 因此引导进行中、或引导组5 已领取（早期玩家已走过该引导）时不受等级限制。
-local CHURCH_UNLOCK_LEVEL = 30
+-- 礼拜堂正式 Lv30 开放，仅引导进行中豁免；古树仍使用独立引导门控。
+local CHURCH_UNLOCK_LEVEL = require("config.ExpTable").CHURCH_UNLOCK_LEVEL
 local function isChurchAccessible()
     -- 豁免仅限引导进行中（组5-7 连续链：点教堂→入堂→离堂，全程 isActive）；
     -- 引导链结束后恢复等级门控，30 级正式开放。

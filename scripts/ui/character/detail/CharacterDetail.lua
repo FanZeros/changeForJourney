@@ -503,6 +503,7 @@ end
 ---@return boolean 命中了装备槽
 function CharacterDetail.handleEquipmentSlotTap(dx, dy)
     if not CharacterDetail.isEquipTab() then return false end
+    if CharacterDetail._EquipPanel.isAttributeTogglePoint(dx, dy) then return false end
     local selectedSlot = nil
     for _, s in ipairs(DT_SLOTS) do
         if math.abs(dx - s.cx) <= DT_SLOT_SIZE * 0.5

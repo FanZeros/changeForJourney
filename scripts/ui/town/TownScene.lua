@@ -605,12 +605,11 @@ function TownScene.draw(vg)
 
     -- 第7个地点：遗匣（没有等级/引导门槛）。立绘与名牌图标分开，名牌沿用地点图标尺寸。
     local lootFeedback = BF.begin(vg, "town_lootbox", LOOT_HIT_CX, LOOT_HIT_CY, LOOT_HIT_W, LOOT_HIT_H)
-    DarkIcon.drawNine(vg, "plain", 390 + LOOT_SHIFT_X, 2010, 300, 64)
     drawImageDarkTint(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, 1.0)
     drawFlashOverlay(vg, imgLootBox, LOOT_CX, LOOT_CY, LOOT_W, LOOT_H, getClickFlashAlpha("lootbox"))
     drawBuildingLabel(vg, 540 + LOOT_SHIFT_X, LOOT_LBL_CY, 361, 113,
-        450 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, 64, -1, 585 + LOOT_SHIFT_X, LOOT_LBL_CY - 6, "遗匣")
-    DarkIcon.draw(vg, "relicbox", 450 + LOOT_SHIFT_X + 32, LOOT_LBL_CY - 6, 64, 1.0)
+        467 + LOOT_SHIFT_X, LOOT_LBL_CY, 64, -1, 574 + LOOT_SHIFT_X, LOOT_LBL_CY, "遗匣")
+    DarkIcon.draw(vg, "relicbox", 467 + LOOT_SHIFT_X, LOOT_LBL_CY, 64, 1.0)
     local count = LootBox.getCount()
     if count > 0 then
         -- 数量文字已经说明有待领取，不再额外画红点
@@ -624,8 +623,8 @@ function TownScene.draw(vg)
     drawImageDarkTint(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, 1.0)
     drawFlashOverlay(vg, imgTask, TASK_CX, TASK_CY, TASK_W, TASK_H, getClickFlashAlpha("task"))
     drawBuildingLabel(vg, TASK_CX, TASK_LBL_CY, 361, 113,
-        TASK_CX - 90, TASK_LBL_CY - 6, 64, -1, TASK_CX + 45, TASK_LBL_CY - 6, "功绩")
-    DarkIcon.draw(vg, "merit", TASK_CX - 58, TASK_LBL_CY - 6, 64, 1.0)
+        TASK_CX - 73, TASK_LBL_CY, 64, -1, TASK_CX + 34, TASK_LBL_CY, "功绩")
+    DarkIcon.draw(vg, "merit", TASK_CX - 73, TASK_LBL_CY, 64, 1.0)
     local taskOk, TaskPage = pcall(require, "ui.story.task.TaskPage")
     if taskOk and TaskPage.hasClaimable and TaskPage.hasClaimable() then
         DarkIcon.draw(vg, "reddot", TASK_CX + 169, TASK_LBL_CY - 45, 36, 1.0)

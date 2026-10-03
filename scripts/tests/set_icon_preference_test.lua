@@ -7,7 +7,10 @@ function Start()
     local changes = 0
     local iconDraws, loaded = {}, {}
     local mods = {
-        ["core.I18n"] = { get = function() return "zh_CN" end, set = noop, lookup = function(s) return s end },
+        ["core.I18n"] = { LANGS = {
+            { id = "zh_CN", label = "简体" }, { id = "zh_TW", label = "繁體" },
+            { id = "en", label = "EN" }, { id = "ja", label = "日本語" }, { id = "ko", label = "한국어" },
+        }, get = function() return "zh_CN" end, set = noop, lookup = function(s) return s end },
         ["systems.GameBGM"] = { setMasterGain = noop },
         ["ui.hud.popup.RedeemCodePanel"] = { init = noop },
         ["systems.GameSFX"] = { playUIMove = noop },

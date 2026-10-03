@@ -289,6 +289,25 @@ end
 local function testSixSlots()
     enabled = true
     local Draw = require("ui.character.detail.CharacterDetailDraw")
+    local slots = {}
+    for _, slot in ipairs(Draw.DT_SLOTS) do slots[slot.slot] = slot end
+    local offhand, slotSize = slots.offhand, Draw.DT_SLOT_SIZE
+    local offLayout = SetIcon.levelLayout(setEquip, offhand.cx, offhand.cy, slotSize)
+    local expected = {
+        helmet = { cx = 540, cy = 165 }, shoes = { cx = 540, cy = 790 },
+        armor = { cx = 325, cy = 336 }, accessory = { cx = 755, cy = 336 },
+        weapon = { cx = 325, cy = 598 }, offhand = { cx = 755, cy = 598 },
+    }
+    check(#Draw.DT_SLOTS == 6 and slotSize == 160, "真实六槽表保留六项与160格尺寸")
+    for key, center in pairs(expected) do
+        local actual = slots[key]
+        check(actual and actual.cx == center.cx and actual.cy == center.cy,
+            "真实六槽精确中心及不变x: " .. key)
+    end
+    check(slots.armor.cx + slots.accessory.cx == 2 * slots.helmet.cx
+        and slots.weapon.cx + offhand.cx == 2 * slots.shoes.cx
+        and slots.armor.cy == slots.accessory.cy and slots.weapon.cy == offhand.cy
+        and slots.helmet.cx == slots.shoes.cx, "真实六槽两侧同排围绕x540镜像，上下槽居中")
     putInventory(setEquip, true)
     setEquip.grip = "twohand"
     Draw.setContext({ detailState = { open = true, heroId = 1, tab = "equip", openTime = 0,
@@ -298,44 +317,51 @@ local function testSixSlots()
             _hasUpgradeForSlot = function() return false end }, clampAttrScroll = noop,
     })
     reset(); Draw.draw(vg)
-    local badge, badgeIndex = find("badge", function(call) return call.cx > 700 end)
+    local badge, badgeIndex = find("badge", function(call) return badgeAt(call, offhand.cx, offhand.cy, slotSize) end)
     local mask, maskIndex = find("fill", function(call)
-        return call.x == 675 and call.y == 498 and call.w == 160 and call.a == 128
+        return call.x == offhand.cx - slotSize * 0.5 and call.y == offhand.cy - slotSize * 0.5
+            and call.w == slotSize and call.h == slotSize and call.a == 128
     end)
     check(count("badge") == 2, "角色主手和双手占用副手都有角标，四空槽无角标")
     check(badge and mask and maskIndex > badgeIndex, "角色双手占位灰罩在角标后")
-    local level = find("text", function(call) return levelText(call) and call.x == 827 end)
-    check(level and level.y == 652 and fitsRight(level, 755, 578, 160),
+    local level = find("text", function(call) return levelText(call) and call.x == offLayout.x end)
+    check(level and level.y == offLayout.y and fitsRight(level, offhand.cx, offhand.cy, slotSize),
         "角色sixslot等级右下基础40号，长字按右侧区缩")
-    check(badgeAt(badge, 755, 578, 160), "角色双手占位角标也在左下")
+    check(badgeAt(badge, offhand.cx, offhand.cy, slotSize), "角色双手占位角标也在左下")
     enabled = false
     reset(); Draw.draw(vg)
     check(count("badge") == 0, "角色关闭开关不画角标")
-    local offLevel = find("text", function(call) return levelText(call) and call.x == 827 end)
+    local offLevel = find("text", function(call) return levelText(call) and call.x == offLayout.x end)
     check(sameLevel(level, offLevel), "角色同装备开关前后等级位置/字号/对齐不变")
     enabled = true
     setEquip.level = 9999
     reset(); Draw.draw(vg)
-    local longLevel = find("text", function(call) return call.text == "Lv.9999" and call.x == 827 and call.r ~= 0 end)
-    check(longLevel and longLevel.fontSize < 40 and fitsRight(longLevel, 755, 578, 160),
+    local longLevel = find("text", function(call) return call.text == "Lv.9999" and call.x == offLayout.x and call.r ~= 0 end)
+    check(longLevel and longLevel.fontSize < 40 and fitsRight(longLevel, offhand.cx, offhand.cy, slotSize),
         "角色长Lv.9999不撞左下角标")
     setEquip.level = 85
     setEquip.grip = nil
     equipData.equipped[1] = { weapon = 1, offhand = 1, armor = 1, helmet = 1, shoes = 1, accessory = 1 }
     reset(); Draw.draw(vg)
     check(count("badge") == 6, "角色六个非空套装槽全部绘制角标")
-    local allLeft = true
+    local allLeft, allCenters = true, true
     for _, slot in ipairs(Draw.DT_SLOTS) do
-        local expected = SetIcon.badgeLayout(slot.cx, slot.cy, 160)
+        local expected = SetIcon.badgeLayout(slot.cx, slot.cy, slotSize)
         local cellBadge = find("badge", function(call) return near(call.cx, expected.cx) and near(call.cy, expected.cy) end)
-        allLeft = allLeft and badgeAt(cellBadge, slot.cx, slot.cy, 160)
+        allLeft = allLeft and badgeAt(cellBadge, slot.cx, slot.cy, slotSize)
+        local cell = find("cell", function(call)
+            return call.cx == slot.cx and call.cy == slot.cy and call.w == slotSize and call.h == slotSize
+        end)
+        local icon = find("equipIcon", function(call) return call.cx == slot.cx and call.cy == slot.cy end)
+        allCenters = allCenters and cell ~= nil and icon ~= nil
     end
     check(allLeft, "角色六槽全部左下角标")
+    check(allCenters and count("cell") == 6, "真实六槽绘制底框与装备图标均落在新槽表中心")
     equipData.inventory["1"] = plainEquip
     reset(); Draw.draw(vg)
     check(count("badge") == 0, "角色六个无套装槽均不画角标")
     check(sameLevel(level, find("text", function(call)
-        return levelText(call) and call.x == 827 and call.y == 652
+        return levelText(call) and call.x == offLayout.x and call.y == offLayout.y
     end)), "角色同等级无套装不改变等级布局")
 end
 
@@ -504,10 +530,131 @@ local function testDetailsBadge()
         "详情普通面板开关也不改变等级文本")
 end
 
+local function testSetFilterCounts()
+    -- 绕过同名 stub；仅补圆圈/命中桩，沿用已有真实模板/helper与nvg记录器。
+    local Dialog = originalRequire("ui.widget.SetFilterDialog")
+    local oldHitTest, oldCircle = DrawUtil.hitTest, nvgCircle
+    DrawUtil.hitTest = function(x, y, cx, cy, w, h)
+        return math.abs(x - cx) <= w * 0.5 and math.abs(y - cy) <= h * 0.5
+    end
+    _G["nvgCircle"] = noop
+    local ok, err = pcall(function()
+        local counts, selected, getterCalls, changes = {}, {}, 0, 0
+        local order = SetConfig.orderedSetIds()
+        for index, id in ipairs(order) do counts[id] = index * 7 end
+        counts[order[1]], counts[order[2]], counts.none = 0, 123456789012, 0
+        local function rowCY(index) return 566 + (index - 1) * 88 + 44 end
+        local function isCount(call) return call.x == 879 end
+        local function countTexts()
+            local n = 0
+            for _, call in ipairs(calls) do if call.kind == "text" and isCount(call) then n = n + 1 end end
+            return n
+        end
+        Dialog.open(selected, { getCounts = function()
+            getterCalls = getterCalls + 1
+            return counts
+        end, onChange = function() changes = changes + 1 end })
+        reset(); Dialog.draw(vg)
+        check(getterCalls == 1 and countTexts() == 13, "真实套装弹窗每帧getter恰一次，绘制13个数量文本")
+        local everyRow = true
+        for index = 1, #order + 1 do
+            local key = order[index] or "none"
+            local call = find("text", function(item) return isCount(item) and item.y == rowCY(index) end)
+            everyRow = everyRow and call ~= nil and call.text == tostring(counts[key])
+                and call.align == NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE
+        end
+        check(everyRow, "13行套装及none数量在x879按真实顺序逐行右对齐，含0")
+        local zero = find("text", function(call) return isCount(call) and call.y == rowCY(1) end)
+        local none = find("text", function(call) return isCount(call) and call.y == rowCY(13) end)
+        check(zero and none and zero.text == "0" and none.text == "0" and zero.fontSize == 34,
+            "数量为0与无套装0不省略，普通数量保持34号")
+        local long = find("text", function(call) return isCount(call) and call.y == rowCY(2) end)
+        check(long and long.fontSize > 0 and long.fontSize < 34
+            and #long.text * long.fontSize * 0.5 <= 164 + 0.001,
+            "长数量缩字号装入164px数量区，不碰名称/勾选框")
+        counts[order[3]] = 0
+        reset(); Dialog.draw(vg)
+        local refreshed = find("text", function(call) return isCount(call) and call.y == rowCY(3) end)
+        check(getterCalls == 2 and countTexts() == 13 and refreshed and refreshed.text == "0",
+            "下一帧getter仍恰一次，库存数量变化立即刷新")
+        check(Dialog.handleInput(938, rowCY(1)) and selected[order[1]] == true and changes == 1,
+            "0数量套装行仍可勾选，不作为禁用条件")
+        check(Dialog.handleInput(938, rowCY(13)) and selected.none == true and changes == 2,
+            "none为0也可正常选择")
+        check(Dialog.handleInput(938, rowCY(1)) and selected[order[1]] == nil and changes == 3,
+            "0数量已选行仍可取消")
+        -- 不先close而直接重开，也必须覆盖旧getter。
+        Dialog.open({}, {})
+        reset(); Dialog.draw(vg)
+        check(getterCalls == 2 and countTexts() == 0, "重开无getter不残留前次数量或调用")
+        Dialog.close()
+        Dialog.open({})
+        reset(); Dialog.draw(vg)
+        check(getterCalls == 2 and countTexts() == 0, "关闭后不传opts重开同样不残留getter")
+        Dialog.close()
+        reset(); Dialog.draw(vg)
+        check(getterCalls == 2 and #calls == 0, "关闭弹窗不绘制也不求数量")
+    end)
+    Dialog.close()
+    DrawUtil.hitTest, _G["nvgCircle"] = oldHitTest, oldCircle
+    if not ok then error(err) end
+end
+
+local function testLootBoxCounts()
+    -- 独立接入回归，不改原testLootBox：只捕获原有同名stub的open参数。
+    local Loot = require("ui.loot.LootBoxPage")
+    local stub, chrome = mocks["ui.widget.SetFilterDialog"], mocks["ui.town.TownPageChrome"]
+    local oldOpen, oldBack, oldHitTest, oldTime = stub.open, chrome.hitBack, DrawUtil.hitTest, time
+    local captured = {}
+    stub.open = function(sel, opts) captured = { sel = sel, opts = opts } end
+    chrome.hitBack = function() return false end
+    DrawUtil.hitTest = function(x, y, cx, cy, w, h)
+        return math.abs(x - cx) <= w * 0.5 and math.abs(y - cy) <= h * 0.5
+    end
+    time = { elapsedTime = oldTime.elapsedTime + 10 }
+    local ok, err = pcall(function()
+        local secondId
+        local firstSet = SetIcon.setId(setEquip)
+        for id, tpl in pairs(EC.ITEMS) do
+            local set = SetConfig.getSetIdForTemplate(tpl)
+            if set and set ~= firstSet then secondId = id; break end
+        end
+        check(secondId ~= nil, "遗匣计数夹具包含不同套装")
+        local second = { templateId = secondId, quality = 1, level = 85 }
+        Loot.open({ { equip = setEquip }, { equip = setEquip }, { equip = plainEquip },
+            { equip = second }, { count = 17 } })
+        time.elapsedTime = time.elapsedTime + 1
+        check(Loot.handleInput(190, 286) and type(captured.opts.getCounts) == "function",
+            "遗匣套装入口传入真实getCounts getter")
+        local counts = captured.opts.getCounts()
+        local secondSet = SetConfig.getSetIdForTemplate(EC.ITEMS[secondId])
+        local total = 0
+        for _, value in pairs(counts) do total = total + value end
+        check(counts[firstSet] == 2 and counts[secondSet] == 1 and counts.none == 1 and total == 4,
+            "遗匣按确定装备实例计数，待整理17件不冒充none")
+        captured.sel[firstSet] = true
+        captured.opts.onChange()
+        counts = captured.opts.getCounts()
+        check(counts[firstSet] == 2 and counts[secondSet] == 1 and counts.none == 1,
+            "遗匣套装勾选不限制其他行数量")
+        Loot.handleInput(565 + 4 * 82, 286) -- 选用品质5，保留两件套装与一件none。
+        counts = captured.opts.getCounts()
+        check(counts[firstSet] == 2 and counts[secondSet] == 0 and counts.none == 1,
+            "遗匣品质筛选限制计数，仍忽略套装勾选")
+        Loot.refresh({ { equip = plainEquip }, { count = 9 } })
+        counts = captured.opts.getCounts()
+        check(counts[firstSet] == 0 and counts.none == 1, "遗匣refresh无需重开即可更新数量")
+    end)
+    Loot.forceClose()
+    stub.open, chrome.hitBack, DrawUtil.hitTest, time = oldOpen, oldBack, oldHitTest, oldTime
+    if not ok then error(err) end
+end
+
 function Start()
     print("[set_icon_badge_test] start")
     local ok, err = pcall(function()
         testHelper(); testBackpack(); testSixSlots(); testDecompose(); testLootBox(); testWorkbench(); testDetailsBadge()
+        testSetFilterCounts(); testLootBoxCounts()
     end)
     if not ok then check(false, "exception: " .. tostring(err)) end
     print("[set_icon_badge_test] " .. (#failures == 0 and "ALL PASS" or "FAILURES=" .. #failures)

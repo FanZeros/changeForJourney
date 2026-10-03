@@ -13,7 +13,6 @@ local DarkIcon      = require("core.DarkIcon")
 local DrawUtil      = require("core.DrawUtil")
 local GameState     = require("core.GameState")
 local PlayerStore   = require("core.PlayerStore")
-local StageConfig   = require("config.StageConfig")
 local ArtifactDefs  = require("shared.artifact.ArtifactDefs")
 local RewardPopup   = require("ui.hud.popup.RewardPopup")
 local BF            = require("systems.ButtonFeedback")
@@ -138,9 +137,9 @@ local function hasArtifactFreeDraw()
     return usedDayId ~= getDayId()
 end
 
+-- 保留查询接口兼容现有调用；宝箱直接开放，不再依赖噩梦进度。
 function M.isArtifactChestUnlocked()
-    local battle = PlayerStore.Get("battle")
-    return StageConfig.hasReachedNightmare(battle)
+    return true
 end
 
 local function getCollectionPityLeft()
@@ -246,29 +245,6 @@ local function drawPityText(vg, x, y, leftCount, qualityText, qualityColor)
     })
 end
 
-local function drawCollectionLockedContent(vg)
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, COL.TITLE_FONT)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(COL.TITLE_R, COL.TITLE_G, COL.TITLE_B, 255))
-    nvgText(vg, COL.TITLE_CX, COL.TITLE_CY, "神器宝箱", nil)
-
-    drawImageCentered(vg, img.collectionChestBg, COL.CHEST_CX, COL.CHEST_CY, COL.CHEST_W, COL.CHEST_H, 0.45)
-    drawTextStroke(vg, COL.NAME_X, COL.NAME_Y, "神器宝箱", COL.NAME_FONT,
-        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
-        180, 180, 180, 6, { strokeColor = { 0, 0, 0 }, italic = true })
-
-    nvgFontFace(vg, "sans"); nvgFontSize(vg, 40)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(139, 149, 165, 255))
-    nvgText(vg, 540, 1320 + CONTENT_OY, "抵达噩梦难度后开放", nil)
-
-    local progress = StageConfig.formatProgressDisplay(
-        (PlayerStore.Get("battle") or {}).maxStageId or 0)
-    nvgFontSize(vg, 32)
-    nvgFillColor(vg, nvgRGBA(150, 150, 150, 220))
-    nvgText(vg, 540, 1380 + CONTENT_OY, "当前进度：" .. progress, nil)
-end
-
 local function drawCollectionDrawButton(vg, id, cx, countText, keyCost)
     local bf = BF.begin(vg, id, cx, COL.BTN_Y, COL.BTN_W, COL.BTN_H)
     drawImageCentered(vg, img.collectionDrawBtn, cx, COL.BTN_Y, COL.BTN_W, COL.BTN_H, 1.0)
@@ -307,11 +283,6 @@ function M.drawBg(vg)
 end
 
 function M.drawContent(vg)
-    if not M.isArtifactChestUnlocked() then
-        drawCollectionLockedContent(vg)
-        return
-    end
-
     nvgFontFace(vg, "sans"); nvgFontSize(vg, COL.TITLE_FONT)
     nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
     nvgFillColor(vg, nvgRGBA(COL.TITLE_R, COL.TITLE_G, COL.TITLE_B, 255))
@@ -450,10 +421,6 @@ function M.handleTabInput(dx, dy)
         if not hitTest(dx, dy, KEY_CF.CX, KEY_CF.CY, KEY_CF.W, KEY_CF.H) then
             closeKeyConfirm()
         end
-        return true
-    end
-
-    if not M.isArtifactChestUnlocked() then
         return true
     end
 

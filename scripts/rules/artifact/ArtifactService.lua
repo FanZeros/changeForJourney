@@ -6,7 +6,6 @@ local PDM             = require("rules.character.PlayerDataManager")
 local ArtifactDefs    = require("shared.artifact.ArtifactDefs")
 local ArtifactSchema  = require("shared.artifact.ArtifactSchema")
 local ExpTable        = require("config.ExpTable")
-local StageConfig     = require("config.StageConfig")
 local TaskService     = require("rules.task.TaskService")
 local CurrencyService = require("rules.currency.CurrencyService")
 
@@ -275,10 +274,7 @@ function ArtifactService.Draw(uid, count, payType)
     local data = ensureData(uid)
     if not data then return false, "神器数据未加载" end
 
-    local battle = PDM.GetModule(uid, "battle")
-    if not StageConfig.hasReachedNightmare(battle) then
-        return false, "抵达噩梦难度后开放神器宝箱"
-    end
+    -- 宝箱直接开放，不以战斗进度解锁；费用、容量与装配门槛仍独立校验。
 
     if #data.bag + count > ArtifactDefs.MAX_BAG then
         return false, "神器背包已满"

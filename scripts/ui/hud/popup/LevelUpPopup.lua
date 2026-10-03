@@ -6,6 +6,7 @@ local Progress = require("config.ExpeditionProgress")
 local ExpTable = require("config.ExpTable")
 local ClientDispatcher = require("runtime.ClientDispatcher")
 local GameState = require("core.GameState")
+local I18n = require("core.I18n")
 
 local Popup = {}
 local ENTER_DURATION, EXIT_DURATION, AUTO_CLOSE_SEC = 0.4, 0.3, 5
@@ -26,6 +27,8 @@ local state = {
 ---@type Panel?
 local card = nil
 ---@type Label?
+local titleLabel = nil
+---@type Label?
 local levelLabel = nil
 ---@type Label?
 local pointsLabel = nil
@@ -40,6 +43,31 @@ local hintLabel = nil
 ---@type fun()?
 local onViewRewards = nil
 local contentDirty = true
+local contentLanguage = ""
+local presentationVersion = 0
+local wasBlocked = false
+
+function Popup.getPresentationVersion()
+    Popup.isPresentationBlocked()
+    return presentationVersion
+end
+
+-- 与宿主最终层级和输入共用阻塞条件，遮挡时连进入/退出动画也不偷跑。
+-- 绘制与输入查询也记录切换，开场分支提前返回Update时仍会作废旧按压。
+function Popup.isPresentationBlocked()
+    local blocked = require("ui.hud.popup.OfflineRewardPanel").isOpen()
+        or require("ui.hud.popup.UpdateNoticePopup").isOpen()
+        or require("ui.story.gate.DarkTitleScreenGate").isOpen()
+        or require("ui.story.gate.LetterIntro").isOpen()
+        or require("ui.story.gate.IntroCutscene").isActive()
+        or require("ui.story.ScenarioDialogue").isActive()
+        or require("ui.dev.CEPanel").isOpen()
+    if blocked ~= wasBlocked then
+        presentationVersion = presentationVersion + 1
+        wasBlocked = blocked
+    end
+    return blocked
+end
 
 local function normalizedLevel(value)
     local number = tonumber(value) or 1
@@ -50,6 +78,10 @@ end
 local function ensureCard()
     Surface.init()
     if card then return end
+    titleLabel = UI.Label {
+        text = "", fontSize = 23, height = 42, width = "100%",
+        textAlign = "center", fontColor = {244, 232, 204, 255},
+    }
     levelLabel = UI.Label {
         text = "Lv.1", fontSize = 48, height = 82, width = "100%",
         textAlign = "center", fontColor = {240, 199, 94, 255},
@@ -67,7 +99,7 @@ local function ensureCard()
         pointerEvents = "none",
     }
     rewardsButton = UI.Button {
-        text = "查看远征奖励", fontSize = 15, fontWeight = "normal", width = 230, height = 46,
+        text = "查看远征奖励", fontSize = 15, fontWeight = "normal", width = 320, height = 46,
         backgroundColor = {110, 78, 24, 255}, borderColor = {201, 151, 59, 255},
         borderWidth = 1, borderRadius = 6, textColor = {244, 232, 204, 255},
         pointerEvents = "none",
@@ -82,9 +114,7 @@ local function ensureCard()
         borderWidth = 1.5, borderColor = {201, 151, 59, 255}, borderRadius = 12,
         pointerEvents = "none", overflow = "hidden",
         children = {
-            UI.Label { text = "远征等级提升", fontSize = 23, height = 42, width = "100%",
-                textAlign = "center", fontColor = {244, 232, 204, 255} },
-            levelLabel, pointsLabel, summaryLabel,
+            titleLabel, levelLabel, pointsLabel, summaryLabel,
             UI.Divider { color = {110, 78, 24, 255}, thickness = 1, spacing = 0, width = "100%", height = 2 },
             unlockPanel, rewardsButton, hintLabel,
         },
@@ -93,11 +123,13 @@ local function ensureCard()
 end
 
 local function updateContent()
-    if not contentDirty or not card or not levelLabel or not pointsLabel
+    if contentLanguage ~= I18n.get() then contentDirty = true end
+    if not contentDirty or not card or not titleLabel or not levelLabel or not pointsLabel
         or not summaryLabel or not rewardsButton or not unlockPanel then return end
+    titleLabel:SetText(I18n.lookup("远征等级提升"))
     levelLabel:SetText("Lv." .. state.level)
-    pointsLabel:SetText("Lv." .. state.fromLevel .. " → Lv." .. state.level
-        .. "    远征点上限 +" .. math.max(0, state.level - state.fromLevel))
+    pointsLabel:SetText(I18n.format("Lv.%d → Lv.%d    远征点上限 +%d", state.fromLevel, state.level,
+        math.max(0, state.level - state.fromLevel)))
     local snapshot = Progress.build({ level = GameState.getLevel(), exp = GameState.getExp() },
         ClientDispatcher.get("task"), ClientDispatcher.get("battle"))
     local reached = {}
@@ -107,28 +139,29 @@ local function updateContent()
         end
     end
     local milestoneText = table.concat(reached, " / ", 1, math.min(4, #reached))
-    if #reached > 4 then milestoneText = milestoneText .. " 等 " .. #reached .. " 项" end
-    summaryLabel:SetText(#reached > 0 and ("到达奖励里程碑 " .. milestoneText)
-        or "每次成长都将记入远征勋记")
+    if #reached > 4 then milestoneText = I18n.format("%s 等 %d 项", milestoneText, #reached) end
+    summaryLabel:SetText(#reached > 0 and I18n.format("到达奖励里程碑 %s", milestoneText)
+        or I18n.lookup("每次成长都将记入远征勋记"))
     rewardsButton:SetText(snapshot.claimableCount > 0
-        and ("查看奖励 · " .. snapshot.claimableCount .. " 项可领") or "查看远征奖励")
+        and I18n.format("查看奖励 · %d 项可领", snapshot.claimableCount) or I18n.lookup("查看远征奖励"))
     unlockPanel:ClearChildren()
     -- 固定三行，超出时摘要计数；完整明细始终在常驻奖励页查看。
     for index = 1, math.min(3, #state.unlocks) do
         local entry = state.unlocks[index]
         unlockPanel:AddChild(UI.Label {
-            text = entry.unlockName or "", fontSize = 14, height = 28, width = "100%",
+            text = Progress.unlockLabel(entry), fontSize = 14, height = 28, width = "100%",
             textAlign = "center", fontColor = {216, 201, 163, 255},
         })
     end
     if #state.unlocks > 3 then
         unlockPanel:AddChild(UI.Label {
-            text = "另有 " .. (#state.unlocks - 3) .. " 项解锁，可前往奖励页查看",
+            text = I18n.format("另有 %d 项解锁，可前往奖励页查看", #state.unlocks - 3),
             fontSize = 11, height = 22, width = "100%", textAlign = "center",
             fontColor = {150, 138, 110, 255},
         })
     end
     contentDirty = false
+    contentLanguage = I18n.get()
 end
 
 -- 宿主逻辑坐标与输入同源；默认设计空间兼容旧调用。
@@ -162,6 +195,8 @@ function Popup.show(newLevel, _unlocks, fromLevel)
     state.unlocks = Progress.getRangeUnlocks(from, target)
     state.open, state.phase, state.timer, state.elapsed = true, "enter", 0, 0
     state.remaining = AUTO_CLOSE_SEC
+    presentationVersion = presentationVersion + 1
+    wasBlocked = Popup.isPresentationBlocked()
     contentDirty = true
     ensureCard()
     updateContent()
@@ -179,6 +214,7 @@ end
 
 function Popup.update(dt)
     if not state.open then return end
+    if Popup.isPresentationBlocked() then return end
     dt = math.max(0, tonumber(dt) or 0)
     state.timer, state.elapsed = state.timer + dt, state.elapsed + dt
     if state.phase == "enter" and state.timer >= ENTER_DURATION then
@@ -194,6 +230,7 @@ end
 
 function Popup.handleInput(x, y, width, height)
     if not state.open then return false end
+    if Popup.isPresentationBlocked() then return true end
     if state.phase ~= "idle" then return true end
     local left, top, scale = geometry(width, height)
     local localX, localY = (x - left) / scale, (y - top) / scale
@@ -215,8 +252,11 @@ local function drawGlow(vg, x, y, scale, alpha)
     local radius = 300 * scale
     nvgBeginPath(vg)
     nvgRect(vg, cx - radius * 1.5, cy - radius, radius * 3, radius * 2)
-    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, 60 * scale, radius,
-        nvgRGBA(201, 151, 59, math.floor(alpha * 30)), nvgRGBA(201, 151, 59, 0)))
+    local glowInner = nvgRGBA(201, 151, 59, math.floor(alpha * 30))
+    local glowOuter = nvgRGBA(201, 151, 59, 0)
+    ---@cast glowInner NVGcolor
+    ---@cast glowOuter NVGcolor
+    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, 60 * scale, radius, glowInner, glowOuter))
     nvgFill(vg)
     -- 固定数量余烬，不分配粒子对象、不使用 additive/白色背景。
     for index = 1, 14 do
@@ -231,7 +271,7 @@ local function drawGlow(vg, x, y, scale, alpha)
 end
 
 function Popup.draw(vg, width, height)
-    if not state.open or not vg then return end
+    if not state.open or not vg or Popup.isPresentationBlocked() then return end
     ensureCard()
     updateContent()
     local currentCard = card --[[@as Panel?]]
@@ -247,7 +287,7 @@ function Popup.draw(vg, width, height)
         local progress = math.min(1, state.timer / EXIT_DURATION)
         alpha, slide = 1 - progress, -16 * progress
     end
-    currentHint:SetText(math.ceil(state.remaining) .. " 秒后自动关闭 · 点击空白继续")
+    currentHint:SetText(I18n.format("%d 秒后自动关闭 · 点击空白继续", math.ceil(state.remaining)))
     nvgSave(vg)
     drawGlow(vg, left, top, scale, alpha)
     nvgTranslate(vg, left, top + slide * scale)
@@ -260,7 +300,9 @@ end
 function Popup.destroy()
     state.open, state.phase = false, "closed"
     if card then card:Destroy() end
-    card, levelLabel, pointsLabel, summaryLabel, unlockPanel, rewardsButton, hintLabel = nil, nil, nil, nil, nil, nil, nil
+    card, titleLabel, levelLabel, pointsLabel, summaryLabel = nil, nil, nil, nil, nil
+    unlockPanel, rewardsButton, hintLabel = nil, nil, nil
+    contentLanguage = ""
     contentDirty = true
 end
 

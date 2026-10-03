@@ -5,6 +5,7 @@ local TaskConfig = require("config.TaskConfig")
 local ArtifactSchema = require("shared.artifact.ArtifactSchema")
 local ResourceDefs = require("config.ResourceDefs")
 local NumberUtil = require("core.NumberUtil")
+local I18n = require("core.I18n")
 
 local Progress = {}
 local rangeCache = {}
@@ -16,9 +17,28 @@ local function levelValue(value)
 end
 
 function Progress.rewardLabel(reward)
-    if type(reward) ~= "table" then return "奖励配置不可用" end
+    if type(reward) ~= "table" then return I18n.lookup("奖励配置不可用") end
     local def = ResourceDefs.DEFS[reward.type]
-    return (def and def.name or tostring(reward.type or "奖励")) .. " × " .. NumberUtil.format(reward.amount or 0)
+    local name = def and def.name or tostring(reward.type or "奖励")
+    return I18n.lookup(name) .. " × " .. NumberUtil.format(reward.amount or 0)
+end
+
+-- 缓存仅保存原始规则数据；在显示边界按当前语言组装，不污染共享解锁缓存。
+function Progress.unlockLabel(entry)
+    if entry.id == "team_slots" then
+        return I18n.format("每队可出战 %d 人", ExpTable.getUnlockedSlotCountForTeam(entry.level))
+    elseif entry.id == "enhance_cap" then
+        return I18n.format("装备强化上限 Lv.%d", ExpTable.getEnhanceLevelCap(entry.level))
+    elseif entry.id:match("^artifact_slot_") then
+        return I18n.format("神器第 %d 格", ArtifactSchema.getUnlockedSubSlotCount(entry.level))
+    elseif entry.id == "church" then
+        return I18n.lookup("礼拜堂正式开放（引导门控另计）")
+    elseif entry.kind == "stage" and entry.stageId then
+        local team = tonumber(entry.id:match("^team_(%d+)$")) or 1
+        return I18n.format("小队 %d · 通关%d-%d解锁", team,
+            math.floor(entry.stageId / 100), entry.stageId % 100)
+    end
+    return I18n.lookup(entry.unlockName or "")
 end
 
 function Progress.getLevelUnlocks(level)

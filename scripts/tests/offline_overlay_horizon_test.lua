@@ -71,7 +71,7 @@ function Start()
             draggingCard = false, closeOnClaim = false, notice = false, story = false,
             title = false, letter = false, ce = false, pip = false, talent = false,
             task = false, towerTri = false, reward = false, dungeon = false, towerFloor = 7,
-            tutorial = false,
+            tutorial = false, levelVersion = 1,
         }
         local cursor = { x = 0, y = 0 }
         local clock = { elapsedTime = 100 }
@@ -264,6 +264,7 @@ function Start()
             }),
             ["ui.hud.popup.LevelUpPopup"] = page("level", {
                 isOpen = function() return state.level end,
+                getPresentationVersion = function() return state.levelVersion end,
                 draw = function(_, width, height)
                     if state.level then count("level.draw"); snapshot("level", width, height) end
                     return false
@@ -426,7 +427,7 @@ function Start()
             state.notice, state.story, state.title, state.letter, state.ce = false, false, false, false, false
             state.pip, state.talent = false, false
             state.task, state.towerTri, state.reward, state.dungeon, state.towerFloor = false, false, false, false, 7
-            state.tutorial = false
+            state.tutorial, state.levelVersion = false, 1
             restoreTable(RT, {
                 logicalW = 1920, logicalH = 1080, windowW = 1920, windowH = 1080,
                 DESIGN_W = 1080, DESIGN_H = 2400, dpr = dpr or 1,
@@ -506,6 +507,19 @@ function Start()
             click(left)
             check(n("level.handleInput") == 1 and n("tutorial.down") == 0 and n("tutorial.up") == 0,
                 "升级优先于底层活动教程并仅派发一次点击")
+        end)
+        runCase("升级按下后遮挡再恢复：旧Up不能触发恢复后的奖励按钮", function()
+            fixture("tri", 1, false, false)
+            state.level = true
+            clearCalls()
+            positionWindow(960, 506)
+            invoke("HandleMouseButtonDownHorizon", left)
+            -- 与真实Popup.update检测遮挡切换的版本契约一致。
+            state.levelVersion = state.levelVersion + 2
+            invoke("HandleMouseButtonUpHorizon", left)
+            check(n("level.handleInput") == 0, "跨遮挡旧按压不当作恢复后的升级点按")
+            click(left)
+            check(n("level.handleInput") == 1, "恢复后完整新手势仍正常点击")
         end)
         runCase("教程按下后升级出现：旧Up不领取，下一次升级点按有效", function()
             fixture("tri", 1, false, false)

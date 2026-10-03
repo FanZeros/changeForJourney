@@ -1,3 +1,12 @@
+## PR46 遗留问题修复（2026-10-03，五语与可见停留时间）
+
+- 用户选定继续修PR46原有问题，从源最新692e1d2e建 `fix/pr46-locale-visible-timer-20261003`，只更新任务分支及PR46源，不推workspace系列、不自动合并。
+- 新I18nExpedition词典补38条完整源串四语译文；I18n仅补缺失键，不覆盖已有通用领取/加载译法。Progress缓存仍保存中文规则，新增unlockLabel/rewardLabel显示边界模板；轨道summary/row签名含语言，打开期间切语言立即刷新。奖励ID/数量/解锁门槛不变。
+- LevelUpPopup的update/draw/input共用isPresentationBlocked，Offline/Update/标题/信件/CG/情景/CE遮挡时进入、5秒停留、退出都暂停；查询记录presentationVersion，Horizon旧Down跨遮挡或新show后Up不能点按钮，开场Update早返由每帧draw仍作废旧按压。无需改变全游戏计时或更高层优先级。
+- 独立复核指出英文按钮247–268px超原230px裁剪，按钮加宽320px，实际字体测宽+真实按钮clip余量五语断言通过。未改卡片总尺寸。默认UI自动缩字关闭，不能把“完整字串传nvgText”当视觉不截断证明。
+- Runtime最终11套相关回归通过：popup104、轨道294、模型及词典547、奖励803、离线覆盖84场景994、教程356、I18n基础/显示边界/剧情1672、离线边界、战斗切关；main150帧原始PASS、Lua/资源/引擎错误0（spike阈值1000ms）。Popup版本测试首跑按新查询契约先切blocker再读旧version导致断言失败，顺序修正后104全过。官方最终Build成功，改动Lua LSP无Error（glow颜色cast规避基线测试桩联合类型）；仓库规范2639路径0错误0警告。
+- 本地.project、原图标stash、截图/日志及凭据均不提交。新五语控件真实像素未另逐语言截图，设备交互需用户验收；本轮不宣称完整掉电事务或全项目UI翻译覆盖。鉴权仅即时环境使用，提醒撤销聊天公开的PAT；交付先简报再真正AskUserQuestion选项继续。
+
 ## PR46 冲突修复（2026-10-03）
 
 - 用户明确要求给二队解锁修复创建PR并“顺带修复46pr的conflict”。二队修复已推新分支并创建 **PR #48**：https://github.com/FanZeros/changeForJourney/pull/48（功能f9085e50，交接b015b354），目标workspace930，未自动合并。

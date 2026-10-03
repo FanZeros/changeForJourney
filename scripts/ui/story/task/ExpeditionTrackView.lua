@@ -6,6 +6,7 @@ local Progress = require("config.ExpeditionProgress")
 local TaskConfig = require("config.TaskConfig")
 local ResourceDefs = require("config.ResourceDefs")
 local NumberUtil = require("core.NumberUtil")
+local I18n = require("core.I18n")
 
 local View = {}
 local COLOR = {
@@ -109,21 +110,22 @@ local function unlockText(row)
     for _, unlock in ipairs(row.unlocks or {}) do
         -- 等级行只展示该等级真正变动的规则，通关开放队伍单独列于顶部。
         if unlock.kind == "level" and unlock.level == row.level then
-            names[#names + 1] = unlock.unlockName
+            names[#names + 1] = Progress.unlockLabel(unlock)
         end
     end
-    if #names == 0 then return "该等级无新增功能解锁" end
-    return "等级成长 · " .. table.concat(names, "；")
+    if #names == 0 then return I18n.lookup("该等级无新增功能解锁") end
+    local separator = (I18n.get() == "zh_CN" or I18n.get() == "zh_TW") and "；" or "; "
+    return I18n.format("等级成长 · %s", table.concat(names, separator))
 end
 
 local function updateSummary(snapshot)
     if not summaryRoot then return end
     local stageLines = {}
     for _, unlock in ipairs(snapshot.stageUnlocks or {}) do
-        stageLines[#stageLines + 1] = (unlock.unlocked and "已开放 · " or "通关开放 · ") .. unlock.unlockName
+        stageLines[#stageLines + 1] = I18n.format(unlock.unlocked and "已开放 · %s" or "通关开放 · %s", Progress.unlockLabel(unlock))
     end
     local stageText = table.concat(stageLines, "\n")
-    local key = table.concat({ tostring(snapshot.loading), tostring(snapshot.level), tostring(snapshot.exp),
+    local key = table.concat({ I18n.get(), tostring(snapshot.loading), tostring(snapshot.level), tostring(snapshot.exp),
         tostring(snapshot.maxExp), tostring(snapshot.ratio), tostring(snapshot.claimableCount),
         tostring(snapshot.nextLevel), tostring(snapshot.slotCount), tostring(snapshot.enhanceCap),
         tostring(snapshot.artifactSlotCount), stageText }, "|")
@@ -138,24 +140,25 @@ local function updateSummary(snapshot)
     local stages = summaryRoot:FindById("stages") --[[@as Label?]]
     local bar = summaryRoot:FindById("progress") --[[@as ProgressBar?]]
     local loading = snapshot.loading == true
-    if level then level:SetText(loading and "远征等级 · 加载中" or ("远征等级 Lv." .. snapshot.level)) end
-    if claimable then claimable:SetText(loading and "可领 —" or ("可领 " .. snapshot.claimableCount .. " 项")) end
+    if level then level:SetText(loading and I18n.lookup("远征等级 · 加载中") or I18n.format("远征等级 Lv.%d", snapshot.level)) end
+    if claimable then claimable:SetText(loading and I18n.lookup("可领 —") or I18n.format("可领 %d 项", snapshot.claimableCount)) end
     if exp then
-        exp:SetText(loading and "经验进度加载中"
-            or (snapshot.maxExp > 0 and ("经验 " .. NumberUtil.format(snapshot.exp)
-                .. " / " .. NumberUtil.format(snapshot.maxExp)) or "经验进度 · 已达等级上限"))
+        exp:SetText(loading and I18n.lookup("经验进度加载中")
+            or (snapshot.maxExp > 0 and I18n.format("经验 %s / %s", NumberUtil.format(snapshot.exp),
+                NumberUtil.format(snapshot.maxExp)) or I18n.lookup("经验进度 · 已达等级上限")))
     end
     if bar then bar:SetValue(loading and 0 or snapshot.ratio) end
     if nextLevel then
-        nextLevel:SetText(loading and "下一里程碑 · 加载中"
-            or (snapshot.nextLevel and ("下一里程碑 · Lv." .. snapshot.nextLevel) or "全部里程碑已达成"))
+        nextLevel:SetText(loading and I18n.lookup("下一里程碑 · 加载中")
+            or (snapshot.nextLevel and I18n.format("下一里程碑 · Lv.%d", snapshot.nextLevel)
+                or I18n.lookup("全部里程碑已达成")))
     end
     if current then
-        current:SetText(loading and "当前成长 · 加载中" or ("每队 " .. tostring(snapshot.slotCount or "—")
-            .. " 人 · 强化上限 Lv." .. tostring(snapshot.enhanceCap or "—")
-            .. " · 神器 " .. tostring(snapshot.artifactSlotCount or "—") .. " 格"))
+        current:SetText(loading and I18n.lookup("当前成长 · 加载中")
+            or I18n.format("每队 %s 人 · 强化上限 Lv.%s · 神器 %s 格", tostring(snapshot.slotCount or "—"),
+                tostring(snapshot.enhanceCap or "—"), tostring(snapshot.artifactSlotCount or "—")))
     end
-    if ledger then ledger:SetText("永久勋记 · 等级顺序固定，已领取奖励保留记录") end
+    if ledger then ledger:SetText(I18n.lookup("永久勋记 · 等级顺序固定，已领取奖励保留记录")) end
     if stages then stages:SetText(stageText) end
 end
 
@@ -166,7 +169,7 @@ local function updateRow(widgets, row, loading)
     local def = row.reward and ResourceDefs.DEFS[row.reward.type]
     local iconPath = def and def.iconPath or (row.reward and row.reward.icon)
     local rewardText, unlocksText = Progress.rewardLabel(row.reward), unlockText(row)
-    local signature = table.concat({ row.taskId, tostring(row.level), row.status, tostring(loading),
+    local signature = table.concat({ I18n.get(), row.taskId, tostring(row.level), row.status, tostring(loading),
         tostring(iconPath), rewardText, unlocksText }, "|")
     if widgets.signature == signature then return end
     widgets.signature = signature
@@ -178,7 +181,7 @@ local function updateRow(widgets, row, loading)
         borderColor = claimable and { 192, 151, 70, 255 } or { 72, 63, 49, 255 },
     })
     widgets.level:SetText("Lv." .. row.level)
-    widgets.title:SetText("远征勋记")
+    widgets.title:SetText(I18n.lookup("远征勋记"))
     widgets.title:SetFontColor(textColor)
     widgets.reward:SetText(rewardText)
     widgets.reward:SetFontColor(claimed and COLOR.green or COLOR.gold)
@@ -186,7 +189,7 @@ local function updateRow(widgets, row, loading)
         imageTint = claimed and { 170, 185, 172, 255 } or { 255, 255, 255, 255 } })
     widgets.unlocks:SetText(unlocksText)
     widgets.unlocks:SetFontColor(claimed and COLOR.green or COLOR.muted)
-    widgets.button:SetText(loading and "加载中" or (claimed and "已领取" or (claimable and "领取" or "未达成")))
+    widgets.button:SetText(I18n.lookup(loading and "加载中" or (claimed and "已领取" or (claimable and "领取" or "未达成"))))
     widgets.button:SetDisabled(not claimable)
     widgets.button:SetStyle({ disabledBackgroundColor = claimed and { 55, 74, 60, 255 } or { 51, 47, 42, 255 },
         disabledTextColor = claimed and COLOR.green or COLOR.muted })

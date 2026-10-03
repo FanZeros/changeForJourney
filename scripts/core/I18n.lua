@@ -82,6 +82,18 @@ local function dict()
     else
         print("[I18n] 关键词词典加载失败: " .. tostring(keywords))
     end
+    local ok6, expedition = pcall(require, "core.I18nExpedition")
+    if ok6 and type(expedition) == "table" then
+        -- 通用领取/加载词沿用已有译文，新模块只补远征专用或此前缺失的原文。
+        for language, entries in pairs(expedition) do
+            dict_[language] = dict_[language] or {}
+            for source, translated in pairs(entries) do
+                if dict_[language][source] == nil then dict_[language][source] = translated end
+            end
+        end
+    else
+        print("[I18n] 远征词典加载失败: " .. tostring(expedition))
+    end
     return dict_
 end
 

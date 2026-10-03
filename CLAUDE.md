@@ -26,6 +26,13 @@
 - GitHub：`FanZeros/changeForJourney`
 - **当前基线**：`workspace926`。2026-09-27 用户要求新建此分支，合入 `workspace925` 与全部 `feat926/`（`character-drag-save`、`cleanup-unused-panels`、`remove-unused-diary`、`artifact-audit`、`battle-lab`），并只推 `workspace926`。不推 `workspace` / `workspace925`。
 
+## 上次做了什么（2026-10-03，奖励弹窗框重绘+环外透明，已 push `218e005`）
+
+- **任务**：`UI_GXHD_1_dark.png`（RewardPopup 奖励弹窗框）重绘，要求**边框外透明**。原图 RGB 无 alpha（环外是黑底烤入）。
+- **方法**：绘制框 1080×685 与原图 1:1（无拉伸）→ 示意图法（1080×685 白底、金环+四角刺饰+顶尖饰+暗 interior、环外留白边距）→ generate_image 3:2 出稿（实出 1080×720）→ **白底亮度阈值抠图**（min 通道 200~250 线性 AA）+ 反预乘去白边 + 口袋填洞（154px）+ **不重裁保留边距** → 归一 1080×685 覆盖。
+- **验收**：trans=33.3%（环外边距）、角(5,5) alpha=0、环与 interior alpha=255。
+- **要点**：需要"边框外透明"的 RGB 素材走阈值抠图而非黑白差分（省一轮 edit 黑底）；保留边距时**不要**按 alpha 内容框重裁（边距就是设计的一部分）。
+
 ## 上次做了什么（2026-09-29 续，古树背景重绘，已 push `4559fd8`）
 
 - **任务**：`UI_GS_TFBJ_dark.png`（终焉古树天赋页背景）横向拉伸。根因：绘制框 `pageW×TF.bgH = 1080×1.8(HORIZON_WIDTH_SCALE)×2400 = 1944×2400`，原图 1080×2400 → 横向拉 1.8 倍。

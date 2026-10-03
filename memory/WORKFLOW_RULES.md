@@ -60,6 +60,12 @@ python3 .github/scripts/repository_policy.py --base origin/workspace930
 - 本轮只增加 workflow，不修改 GitHub 分支保护。因此检查会显示结果，但尚不强制阻止管理员合并；保护规则需要另行授权。
 - 不默认强制他人审批：单协作者不能批准自己的 PR。持续保留已有 GitHub secret scanning 和 push protection。
 
+## 本地美术迁移 PR 交接（2026-10-03）
+
+- 用户通过 AskUserQuestion 选择“创建PR”；已创建 **PR #22**：https://github.com/FanZeros/changeForJourney/pull/22，head=`feat/workspace930-ui-reincarnation-20261003`，base=`workspace930`。功能提交42cfb0e、迁移交接1e36319；本轮PR说明包含最小范围、保留内容与真实验证边界。
+- 创建后查询：PR open、未合并，mergeable=true（无文本合并冲突）；repository-policy CI 当时为 in_progress，不虚称已通过。此记录之后的交接提交会重新触发检查，最终状态以远端最新head为准。
+- 本轮只更新交接记忆并push同一新功能分支，未改Lua，不重复构建；前轮官方最终Build已成功。本地.project配置不提交。创建授权不包含合并，等待用户后续明确选择；报告后继续用AskUserQuestion提供下一步。
+
 ## 本地美术选择性迁移完成（2026-10-03）
 
 - 用户通过 **AskUserQuestion** 选择“UI＋轮回补图”；基于最新 `workspace930@eec2a976` 新建 `feat/workspace930-ui-reincarnation-20261003`，不整支合并候选 `integrate/workspace930-local-art-20261001@6e94b7bc`。前序只读审查及详细资源分类已推到 `review/workspace930-local-art-audit-20261003@68e9a14`，本轮不将那个分支当作功能遗漏或强行合入。

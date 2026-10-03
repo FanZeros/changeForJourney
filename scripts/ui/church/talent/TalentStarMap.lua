@@ -7,7 +7,7 @@
 
 local TalentStarMap = {}
 
-local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P2-10] 矢量天赋符号系统
+local TalentGlyph = require("ui.widget.TalentGlyph")
 
 -- [暗黑化 P3-调整] 星图节点图标压暗档（与 DarkIcon.ICON_TINT_DARK 同档，独立常量避免反向依赖 ui 模块）
 local ICON_TINT_DARK = { 72, 64, 54 }
@@ -741,7 +741,7 @@ local function drawNode(vg, node)
     local fade = edgeFade(sx, sy)
     if fade <= 0.01 then return end
 
-    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, sx, sy, iconSize * 0.92, (isLit and 1.0 or 0.55) * fade, node.st)
+    TalentGlyph.draw(vg, TalentGlyph.getSample(node), sx, sy, iconSize * 0.92, (isLit and 1.0 or 0.55) * fade)
 end
 
 --- 绘制所有节点
@@ -976,7 +976,7 @@ end
 function TalentStarMap.drawTalentIcon(vg, id, cx, cy, size, alpha)
     local node = NODES[id]
     if not node then return end
-    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, cx, cy, size, alpha, node.st)
+    TalentGlyph.draw(vg, TalentGlyph.getSample(node), cx, cy, size, alpha)
 end
 
 --- 拖拽事件处理 (返回是否消费)

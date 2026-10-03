@@ -321,7 +321,7 @@ function EquipmentDetailDraw.create(ctx)
         if slotLv > 0 then
             local enhText = "+" .. slotLv
             local enhX = iconCX + REF_ICON_SIZE * 0.5 - 12
-            local enhY = iconCY - REF_ICON_SIZE * 0.5 + 12
+            local enhY = iconCY - REF_ICON_SIZE * 0.5 - 4
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 48)
             nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
@@ -591,7 +591,7 @@ function EquipmentDetailDraw.create(ctx)
         end
         local ascend = EquipmentSystem.getAscendLevel(equip)
         if ascend > 0 then
-            drawTextStroke(vg, iconCX + 48, COMPACT_ICON_CY - 52, "+" .. ascend, 28,
+            drawTextStroke(vg, iconCX + 48, COMPACT_ICON_CY - 52 - 28 / 3, "+" .. ascend, 28,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_TOP, 0, 255, 96, 3)
         end
 

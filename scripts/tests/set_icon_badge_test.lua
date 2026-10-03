@@ -138,7 +138,12 @@ preload("ui.character.detail.CharacterAttributeView", {
 preload("ui.character.hero.AwakeningPanel", {})
 preload("runtime.ClientDispatcher", {})
 preload("systems.ExtraTalentSystem", {})
-preload("core.I18n", { lookup = function(text) return text end, t = function(text) return text end })
+preload("core.I18n", {
+    lookup = function(text) return text end, t = function(text) return text end,
+    format = string.format, get = function() return "zh_CN" end,
+    displayBounds = function(...) return nvgTextBounds(...) end,
+    displayText = function(...) return nvgText(...) end,
+})
 preload("ui.widget.KeywordText", { new = function()
     return { drawPopup = noop, clear = noop, draw = noop }
 end })
@@ -275,7 +280,7 @@ local function testBackpack()
         "仓库套装等级右下，按固定右侧宽度缩字")
     local enabledLevel = level
     check(badgeAt(badge, 160, 550, 160), "仓库套装角标位于左下")
-    check(enhancement and enhancement.x == 232 and enhancement.y == 478, "仓库升阶仍在右上")
+    check(enhancement and enhancement.x == 232 and enhancement.y == 466, "仓库升阶右上角标上移12px")
     check(badge and badgeIndex > levelIndex and badgeIndex > enhancementIndex,
         "仓库角标在全部数值后")
     check(mask and maskIndex > badgeIndex, "不可穿戴灰罩最后覆盖套装角标")
@@ -357,6 +362,8 @@ local function testSixSlots()
     check(level and level.y == offLayout.y and fitsRight(level, offhand.cx, offhand.cy, slotSize),
         "角色sixslot等级右下基础40号，长字按右侧区缩")
     check(badgeAt(badge, offhand.cx, offhand.cy, slotSize), "角色双手占位角标也在左下")
+    local raisedAscend = find("text", function(call) return call.text == "+7" and call.x == offhand.cx + 72 and call.g == 255 end)
+    check(raisedAscend and raisedAscend.y == offhand.cy - 84, "配装槽升阶角标上移12px，双手占位也同步")
     enabled = false
     reset(); Draw.draw(vg)
     check(count("badge") == 0, "角色关闭开关不画角标")
@@ -408,6 +415,8 @@ local function testDecompose()
     check(level and fitsRight(level, 160, 550, 160) and level.x == 232 and badgeIndex > levelIndex,
         "分解等级右下并先于角标")
     check(badgeAt(badge, 160, 550, 160), "分解角标左下")
+    local ascend = find("text", function(call) return call.text == "+7" and call.g == 255 end)
+    check(ascend and ascend.x == 232 and ascend.y == 466, "仓库分解升阶角标上移12px")
     enabled = false
     reset(); Decompose.drawPanel(vg)
     local offLevel = find("text", levelText)
@@ -493,6 +502,8 @@ local function testWorkbench()
         "工作台等级保持原右下40号")
     local badge = find("badge")
     check(badgeAt(badge, 562, 479, 220), "工作台徽记左下")
+    local ascend = find("text", function(call) return call.text == "+7" and call.g == 255 end)
+    check(ascend and ascend.x == 664 and ascend.y == 365, "升阶洗练共用工作台角标上移12px")
     check(separate(ownerRect(owner), imageRect(badge))
         and separate(textRect(level), imageRect(badge)), "工作台归属/等级均不撞徽记")
     enabled = false
@@ -529,6 +540,7 @@ local function testDetailsBadge()
     check(count("badge") == 1 and icon and badgeAt(badge, icon.cx, icon.cy, icon.w),
         "详情compact只读图标徽记左下")
     check(enhancement and badgeIndex > enhancementIndex, "详情compact徽记在右上升阶数值之后")
+    check(enhancement and near(enhancement.y, icon.cy - 52 - 28 / 3), "小详情升阶角标上移三分之一字号")
     local compactLevel = find("text", levelText)
     local lock = find("image", function(call)
         return images[call.image] and images[call.image]:find("UI_ICON_SUO", 1, true)
@@ -552,6 +564,8 @@ local function testDetailsBadge()
     icon = find("equipIcon")
     check(count("badge") == 1 and icon and badgeAt(badge, icon.cx, icon.cy, icon.w),
         "详情普通面板图标徽记左下")
+    local regularAscend = find("text", function(call) return call.text == "+7" and call.fontSize == 48 end)
+    check(regularAscend and regularAscend.y == icon.cy - icon.h * 0.5 - 4, "大详情升阶角标上移16px")
     local regularLevel = find("text", levelText)
     enabled = false
     reset(); Detail.draw(vg)

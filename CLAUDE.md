@@ -19,6 +19,15 @@
 - 七套Runtime最终全过：触发31、真实CMH领奖241、管理50、页面恢复59、横屏55场景356、目标63、离线487断言；正式main135帧PASS、boot18/18、Lua/资源/引擎错误0，官方Build成功、LSP汇总0Error（有Warning）。首轮输入skip失败源于fixture仍把启动计时当活动时长，按新安静期分两次update后复跑过；领奖测试首轮收尾number误用#已修并复跑，不隐藏失败。
 - 独立反证指出等待期提前十连事件丢失、提前槽3上阵、组6结束后退出丢内存剧情三个边界，均补回归；最终只读复核无剩余确认新增阻塞。剧情播放中预claimed后退出的更早奖励恢复窗口、酒馆KCLH_20缺图等原有问题未扩改。本地配置/存档/截图不提交；完成后真正调用AskUserQuestion选项继续，尊重用户停止/权限边界。
 
+## 上次做了什么（2026-10-03，技能树关键词、图标与编辑器草稿迁移）
+
+- 用户指定最新 `workspace930` 为目标，基于 `origin/workspace930@b24cad7c` 新建 `feat930/talent-keywords-editor-1003`；从本地 `wip928/talent-migration-1003` cherry-pick 三项提交：技能树关键词、程序图标、连线编辑器草稿。目标是创建指向 `workspace930` 的 **Draft PR**，不直接推送或自动合并基线。
+- 图标迁移唯一冲突在 `TalentStarMap.drawNode`：同时保留 930 的边缘渐隐 `fade` 与圆/菱/六边 `node.st`，现有209节点邻接数据完全不变；保留930的无下划线关键词、灰蓝禁用色及最新锻造关键词文案。
+- 验证：官方 Build 成功；官方 Runtime 关键词31断言 ALL PASS、战斗切关 ALL PASS；编辑器 Python 语法与两文件无操作文本替换通过。图标和关键词真人视觉未验收，编辑器浏览器交互未验收。
+- **编辑器仅作草稿收录**：`tools/talent-editor/{server.py,index.html}` 已显式纳入Git（tools默认忽略）；保存校验会自动补8条基线单向边，双文件覆盖无失败回滚/并发锁，HTTP输入验证及撤销脏状态仍需补齐。不得宣称可安全用于正式改线，不启动服务、不据此修改游戏拓扑。
+- 无关本地改动保留于 `stash@{0}`（名称 `preserve-unrelated-workspace928-before-talent930-1003`），额外备份位于 `/home/Maker/migration-backup-talent930-1003`；未将本地配置、技能目录删除及上传文件纳入提交。
+- 用户补充即时GitHub授权后，已无冲突合并最新 `workspace930@a567e758`（10个后续提交，合并提交 `be77aaa8`），仅推送任务分支，并创建 **Draft PR #29**：https://github.com/FanZeros/changeForJourney/pull/29，base=`workspace930`、head=`feat930/talent-keywords-editor-1003`，open、draft=true、merged=false；未推基线、未自动合并。关键词31、战斗74、觉醒布局66断言通过；角色详情214断言有2项超长文本失败，纯930隔离副本完全同样复现，已在PR披露。当前LSP缓存1项Error位于未改的生命周期测试require赋值，未宣称全仓清洁。凭据只用于子进程/请求即时鉴权，不落Git配置；提醒用户撤销并更换聊天中已公开的令牌。
+- 每次交付或遇到用户需决定的阻塞，先简报再调用 `AskUserQuestion` 提供明确选项；不将凭据写入仓库、配置、日志或记忆。
 ## 上次做了什么（2026-10-03，新手引导目标页面自动恢复）
 
 - 基于已合入 PR #27 的 `workspace930@fadf0c18` 新建 `fix/tutorial-target-page-recovery-20261003`，只推新修复分支，不推 workspace 系列、不自动创建或合并 PR。

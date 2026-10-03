@@ -181,6 +181,7 @@ local function ensureState(unit)
             nitroStacks = 0,
             -- Hero22 小黑子: 法术机关枪
             machineGunNormalCount = 0,   -- 普攻与连击计入，连射弹不计入
+            machineGunProgress = 0,      -- 未消耗攻击进度，保留小数门槛余量
             machineGunBurstShot = false,   -- 本帧 performAttack 是否为连射弹
             lastAttackWasBurst = false,  -- 上一击是否为连射（供 onAfterAttack 判定）
             machineGunShotsLeft = 0,

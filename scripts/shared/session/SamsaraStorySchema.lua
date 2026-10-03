@@ -7,6 +7,7 @@
 ---@field contentVersion number?
 ---@field resolution string?
 ---@field legacyContext string?
+---@field manualOnly boolean?
 
 ---@class SamsaraStoryEvidenceState
 ---@field unlocked boolean?
@@ -23,7 +24,7 @@
 ---@field evidence table<string, SamsaraStoryEvidenceState>
 
 local Schema = {}
-local NODE_KEYS = { "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record" }
+local NODE_KEYS = { "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record", "samsara.returned_manifest" }
 
 ---@return SamsaraStoryState
 function Schema.new()
@@ -57,6 +58,7 @@ function Schema.normalize(session)
             if not contentVersion or contentVersion <= 1 then
                 node.contentVersion = 1
                 if node.eligible ~= nil then node.eligible = node.eligible == true end
+                if node.manualOnly ~= nil then node.manualOnly = node.manualOnly == true end
                 if node.resolution ~= "finished" and node.resolution ~= "skipped" then node.resolution = nil end
                 if type(node.eligibilitySource) ~= "string" then node.eligibilitySource = nil end
                 if type(node.legacyContext) ~= "string" then node.legacyContext = nil end

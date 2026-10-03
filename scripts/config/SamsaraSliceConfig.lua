@@ -1,4 +1,4 @@
--- SamsaraSliceConfig.lua — N02与N12–N14无奖切片；不注册旧情景编号或经济奖励。
+-- SamsaraSliceConfig.lua — N02/N03与N12–N14无奖切片；不注册旧情景编号或经济奖励。
 -- 正文来源：未寄出的撤离令-剧情正文普通至炼狱-1003.md；N14采用接线方案独立语境。
 -- 已核对人物映射：1=大狗嚼，2=黄桃龙，3=叮咚鸡，10=铁匠，21=圣女。
 
@@ -29,9 +29,10 @@ local Config = {
     CARGO_KEY = "samsara.cargo_match",
     ORDER_KEY = "samsara.gray_order",
     PEOPLE_KEY = "samsara.people_record",
+    MANIFEST_KEY = "samsara.returned_manifest",
     CONTENT_VERSION = 1,
 }
-Config.KEYS = { Config.NODE_KEY, Config.CARGO_KEY, Config.ORDER_KEY, Config.PEOPLE_KEY }
+Config.KEYS = { Config.NODE_KEY, Config.CARGO_KEY, Config.ORDER_KEY, Config.PEOPLE_KEY, Config.MANIFEST_KEY }
 
 local E02_TEXT = "商队药箱十二。\n内装药、夹板、干粮。箱底补铆一次。\n押运：城镇医所支队。\n遇截地点：林道路标外。\n截取方口令：“先救人。”\n回收：货牌。箱体未回。\n\n铁匠手注：\n图中歪铆是箱底修补位置，不是货牌铆钉。货能认，人别再认错。"
 local E02_ANNOTATION = "货牌位置与保全库十二号箱底拓片吻合。同物件跨两次交接有完整编号，未发现复制箱体。受害押运者另记人员卷，不并入“物资损失”。"
@@ -121,6 +122,24 @@ function Config.get(key, source)
                 { characterId = 21, name = "圣女", text = "这几件遗物有主人。别把所有战利品都算到这案子里，也别把这案子漏掉。" },
             },
             evidence = assert(Config.getEvidence("E05")),
+        }
+    elseif key == Config.MANIFEST_KEY then
+        local evidence = assert(Config.getEvidence("E02"))
+        evidence.annotation = nil
+        return {
+            title = "十二号箱", mode = "small", requiredStage = 204,
+            unlockText = "普通2-4货牌交接记录未确认",
+            steps = {
+                { name = "旁白", text = "铁匠整理被砸坏的货牌。焦黑的一片上还能辨认“药箱十二”，下角画着箱底补铆的位置图，其中一枚打歪。" },
+                { characterId = 10, name = "铁匠", text = "认错你们，我道歉。丢了什么，我记得。" },
+                { name = "远征长", text = "药箱？" },
+                { characterId = 10, name = "铁匠", text = "药、夹板，还有给伤员留的干粮。不是兵器。" },
+                { characterId = 2, name = "黄桃龙", text = "干粮也抢？这不行。" },
+                { characterId = 10, name = "铁匠", text = "他们说“先救人”。押车的人问救谁，没等到回答。" },
+                { characterId = 1, name = "大狗嚼", text = "叫！下次遇见，我替你问。" },
+                { characterId = 10, name = "铁匠", text = "货牌拿着。别只看它烧黑了。图上这处歪铆，是我给箱底补的。" },
+            },
+            evidence = evidence,
         }
     end
     return nil

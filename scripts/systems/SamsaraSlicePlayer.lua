@@ -1,4 +1,4 @@
--- SamsaraSlicePlayer.lua — 四段无奖切片数据层；由主仲裁器决定何时开始展示。
+-- SamsaraSlicePlayer.lua — 五段无奖切片数据层；由主仲裁器决定何时开始展示。
 -- 不show、不订阅无ID完成广播、不调用任何领奖/教程/经济协议。
 local Config = require("config.SamsaraSliceConfig")
 local Schema = require("shared.session.SamsaraStorySchema")
@@ -32,6 +32,9 @@ local Player = {}
 ---@field evidences table[]
 ---@field unlockText string?
 ---@field legacyContext string?
+---@field referenceOnly boolean?
+---@field referenceSteps SamsaraSliceStep[]?
+---@field manualOnly boolean?
 
 ---@type SamsaraSliceOptions?
 local options_ = nil
@@ -43,12 +46,15 @@ local story_ = nil
 local lease_ = nil
 ---@type SamsaraSliceRequest?
 local request_ = nil
+---@type string?
+local takenKey_ = nil
 local epoch_, token_ = 0, 0
 local savePending_ = false
 ---@type number
 local retryElapsed_ = 0
 local FIRST_READ, REPLAY = "samsara_first_read", "samsara_replay"
 local CARGO, ORDER, PEOPLE = "samsara.cargo_match", "samsara.gray_order", "samsara.people_record"
+local MANIFEST = "samsara.returned_manifest"
 
 local function keys()
     return Config.KEYS or { Config.NODE_KEY }
@@ -57,7 +63,7 @@ end
 --- 取消只失效进程租约，不清待存结果、不标完成、不递归播放。
 function Player.cancel()
     epoch_ = epoch_ + 1
-    lease_, request_ = nil, nil
+    lease_, request_, takenKey_ = nil, nil, nil
 end
 
 ---@param key string?
@@ -144,36 +150,39 @@ local function persist()
     flushPending()
 end
 
-local function selectedLegacyId()
+local function selectedLegacyId(key)
     local initialId = session_ and tonumber(session_.initialHeroId)
-    return (initialId == 2 and 18) or (initialId == 3 and 19) or 17
+    local firstId = key == MANIFEST and 44 or 17
+    return firstId + ((initialId == 2 and 1) or (initialId == 3 and 2) or 0)
 end
 
-local function legacyConfigAvailable()
-    local cfg = LegacyConfig["SCENARIO_" .. tostring(selectedLegacyId())]
+local function legacyConfigAvailable(key)
+    local cfg = LegacyConfig["SCENARIO_" .. tostring(selectedLegacyId(key))]
     return type(cfg) == "table" and type(cfg.steps) == "table" and #cfg.steps > 0
 end
 
-local function legacyClaimed()
+local function legacyClaimed(key)
     local claimed = session_ and session_.claimedScenarios
-    local id = selectedLegacyId()
+    local id = selectedLegacyId(key)
     return type(claimed) == "table" and (claimed[id] == true or claimed[tostring(id)] == true)
 end
 
-local function captureLegacyContext(node)
-    if node.legacyContext == "live_finished" or node.legacyContext == "live_skipped" then return false end
-    local context = legacyClaimed() and "legacy_claimed_unknown" or (not legacyConfigAvailable() and "unavailable" or nil)
+local function captureLegacyContext(node, key)
+    if node.legacyContext == "live_finished" or node.legacyContext == "live_skipped"
+        or (key == MANIFEST and node.legacyContext == "live_interrupted") then return false end
+    local context = legacyClaimed(key) and "legacy_claimed_unknown" or (not legacyConfigAvailable(key) and "unavailable" or nil)
     if node.legacyContext == context then return false end
     node.legacyContext = context
     if context == "unavailable" then
-        print("[SamsaraSlicePlayer] 旧日志配置不可用，允许独立无奖补读: " .. tostring(selectedLegacyId()))
+        print("[SamsaraSlicePlayer] 旧剧情配置不可用，允许独立无奖补读: " .. tostring(selectedLegacyId(key)))
     end
     return true
 end
 
-local function legacyReady(node)
+local function legacyReady(node, key)
+    if key == MANIFEST and node.legacyContext == "live_interrupted" then return false end
     return node.legacyContext == "live_finished" or node.legacyContext == "live_skipped"
-        or legacyClaimed() or not legacyConfigAvailable()
+        or legacyClaimed(key) or not legacyConfigAvailable(key)
 end
 
 local function unlockEvidence(story, id, source)
@@ -207,6 +216,22 @@ local function releaseChain(story)
             if makeEligible(story, pair[2], "previous_processed") then changed = true end
         end
     end
+    return changed
+end
+
+local function prepareManifest(story, source)
+    if not definition(MANIFEST) then return false end
+    local changed = makeEligible(story, MANIFEST, source)
+    local node, supported = nodeState(story, MANIFEST)
+    if not supported or not node or node.eligible ~= true then return changed end
+    if changed or (source ~= "live_clear_204" and not processed(node)) then
+        local cargo = nodeState(story, CARGO)
+        if processed(cargo) and node.manualOnly ~= true then
+            node.manualOnly = true
+            changed = true
+        end
+    end
+    if captureLegacyContext(node, MANIFEST) then changed = true end
     return changed
 end
 
@@ -244,10 +269,27 @@ function Player.init(options, rawBattle)
     end
     -- N02存量档已捕获104，不代表捕获过204/4905；单独迁移且绝不重置旧标记。
     if not story.cargoHistoryCaptured then
-        if strictClear(rawBattle, 204) and unlockEvidence(story, "E02", "player_record") then changed = true end
+        if strictClear(rawBattle, 204) then
+            if unlockEvidence(story, "E02", "player_record") then changed = true end
+            if prepareManifest(story, "clear_204_legacy") then changed = true end
+        end
         if strictClear(rawBattle, 4905) and makeEligible(story, CARGO, "clear_4905_legacy") then changed = true end
         story.cargoHistoryCaptured, changed = true, true
         print("[SamsaraSlicePlayer] 征用案件历史捕获完成")
+    end
+    local manifestNode, manifestSupported = nodeState(story, MANIFEST)
+    if not sameSession and manifestSupported and manifestNode and manifestNode.legacyContext == "live_interrupted" then
+        -- 重启不能把旧preclaim称为已读，仅恢复“历史阅读未知”的独立补读政策。
+        manifestNode.legacyContext = nil
+        changed = true
+    end
+    local manifestEvidence = story.evidence.E02
+    if type(manifestEvidence) == "table" and manifestEvidence.unlocked == true
+        and manifestEvidence.source == "player_record" then
+        if prepareManifest(story, "e02_history") then changed = true end
+    elseif manifestSupported and manifestNode and manifestNode.eligible == true
+        and prepareManifest(story, "e02_history") then
+        changed = true
     end
     if nodeSupported and node and node.eligible == true and captureLegacyContext(node) then changed = true end
     if releaseChain(story) then changed = true end
@@ -273,6 +315,8 @@ function Player.onStageCleared(id)
     local changed
     if id == 204 or id == "204" then
         changed = unlockEvidence(story, "E02", "player_record")
+        -- E02案件副本已存在时仍记录本次真实首通，不覆盖旧N12资料来源。
+        if prepareManifest(story, "live_clear_204") then changed = true end
     else
         local key = (id == 104 or id == "104") and Config.NODE_KEY or CARGO
         changed = makeEligible(story, key, "live_clear")
@@ -282,18 +326,26 @@ function Player.onStageCleared(id)
     return changed == true
 end
 
---- 只有N02保留初始旧日志依赖；征用三段独立语境不要求旧73或N02完成。
+--- N02与N03分别保留旧日志/铁匠道歉依赖；征用三段仍独立于它们。
 ---@param id number|string
 ---@param reason string
 ---@return boolean changed
 function Player.noteLegacyResult(id, reason)
-    if id ~= selectedLegacyId() and id ~= tostring(selectedLegacyId()) then return false end
+    local key = Config.NODE_KEY
+    if id == selectedLegacyId(MANIFEST) or id == tostring(selectedLegacyId(MANIFEST)) then
+        key = MANIFEST
+    elseif id ~= selectedLegacyId() and id ~= tostring(selectedLegacyId()) then
+        return false
+    end
     local context = (reason == "finished" or reason == "dismissed") and "live_finished"
         or (reason == "skipped" and "live_skipped" or nil)
+    if key == MANIFEST and (reason == "reset" or reason == "replaced" or reason == "failed") then
+        context = "live_interrupted"
+    end
     if not context then return false end
     local story = currentStory()
     if not story then return false end
-    local node, supported = nodeState(story)
+    local node, supported = nodeState(story, key)
     if not supported or not node or node.eligible ~= true or node.legacyContext == context then return false end
     node.legacyContext = context
     persist()
@@ -301,7 +353,8 @@ function Player.noteLegacyResult(id, reason)
 end
 
 local function readyFor(story, key, node)
-    return dependencyReady(story, key) and (key ~= Config.NODE_KEY or legacyReady(node))
+    local requiresLegacy = key == Config.NODE_KEY or key == MANIFEST
+    return dependencyReady(story, key) and (not requiresLegacy or legacyReady(node, key))
 end
 
 ---@return string?
@@ -309,9 +362,10 @@ function Player.peekReady()
     if lease_ then return nil end
     local story = currentStory()
     if not story then return nil end
-    for _, key in ipairs(keys()) do
+    local autoKeys = { Config.NODE_KEY, MANIFEST, CARGO, ORDER, PEOPLE }
+    for _, key in ipairs(autoKeys) do
         local node, supported = nodeState(story, key)
-        if supported and node and node.eligible == true and not processed(node)
+        if supported and node and node.eligible == true and not processed(node) and node.manualOnly ~= true
             and definition(key) and readyFor(story, key, node) then return key end
     end
     return nil
@@ -339,7 +393,12 @@ function Player.begin(kind, key)
     local story = currentStory()
     if not story then return nil end
     local node = nodeState(story, key)
-    if kind == FIRST_READ and (not node or not readyFor(story, key, node)) then return nil end
+    if kind == FIRST_READ and (not node or not readyFor(story, key, node)) then
+        -- 显式记录页补读可处理已知旧道歉中断，但不伪装其完整结束，也不自动抢播。
+        local explicitInterrupted = key == MANIFEST and node and node.legacyContext == "live_interrupted"
+            and takenKey_ == key
+        if not explicitInterrupted then return nil end
+    end
     if key == CARGO and unlockEvidence(story, "E02", "case_archive") then
         local epoch = epoch_
         persist()
@@ -347,7 +406,7 @@ function Player.begin(kind, key)
     end
     token_ = token_ + 1
     lease_ = { playToken = token_, contextEpoch = epoch_, nodeKey = key, kind = kind, contentVersion = Config.CONTENT_VERSION }
-    request_ = nil
+    request_, takenKey_ = nil, nil
     return { playToken = token_, contextEpoch = epoch_, nodeKey = key, kind = kind, contentVersion = Config.CONTENT_VERSION }
 end
 
@@ -376,7 +435,7 @@ function Player.onResult(result)
     if reason == "reset" or reason == "replaced" or reason == "failed" then Player.cancel(); return true end
     if reason ~= "finished" and reason ~= "dismissed" and reason ~= "skipped" then return false end
     local kind, key = lease_.kind, lease_.nodeKey
-    lease_, request_ = nil, nil
+    lease_, request_, takenKey_ = nil, nil, nil
     if kind == FIRST_READ and not processed(node) then
         node.resolution = reason == "skipped" and "skipped" or "finished"
         node.contentVersion = Config.CONTENT_VERSION
@@ -397,6 +456,7 @@ function Player.requestRead(key)
     local kind = processed(node) and REPLAY or FIRST_READ
     if not allowed(kind, key) then return false end
     request_ = { key = key, kind = kind }
+    takenKey_ = nil
     return true
 end
 
@@ -405,7 +465,7 @@ function Player.takeRequest()
     if not request_ or lease_ then return nil end
     local requested = request_
     if not allowed(requested.kind, requested.key) then request_ = nil; return nil end
-    request_ = nil
+    request_, takenKey_ = nil, requested.key
     return { key = requested.key, kind = requested.kind }
 end
 
@@ -439,6 +499,7 @@ function Player.getRecord(key)
     record.status = "locked"
     if node then
         record.legacyContext = node.legacyContext
+        record.manualOnly = node.manualOnly
         if node.eligible == true and dependencyReady(story, key) then
             record.status = processed(node) and node.resolution or "pending"
         end
@@ -451,12 +512,17 @@ function Player.getRecord(key)
             record.evidences[1] = { id = "E01", title = cfg.evidence.title, text = cfg.evidence.text, source = saved.source }
         end
     else
-        for _, id in ipairs({ "E02", "E05" }) do
+        local evidenceIds = key == MANIFEST and { "E02" } or { "E02", "E05" }
+        for _, id in ipairs(evidenceIds) do
             local evidence = evidenceFor(story, id)
             if evidence then record.evidences[#record.evidences + 1] = evidence end
         end
         record.evidenceVisible = #record.evidences > 0
         if processed(node) then record.evidence = evidenceFor(story, cfg.evidence.id) end
+    end
+    if key == MANIFEST and record.status == "locked" and (not node or node.eligible ~= true) then
+        record.referenceOnly = true
+        record.referenceSteps = cfg.steps
     end
     return record
 end

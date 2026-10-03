@@ -6,7 +6,8 @@ local PREFIX = "[samsara_cargo_chain] "
 local assertions, failures, cases, passed = 0, 0, 0, 0
 local N02, N12, N13, N14 = "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record"
 local FIRST, REPLAY = "samsara_first_read", "samsara_replay"
-local KEYS = { N02, N12, N13, N14 }
+local N03 = "samsara.returned_manifest"
+local KEYS = { N02, N12, N13, N14, N03 }
 
 local function check(ok, label)
     assertions = assertions + 1
@@ -124,9 +125,9 @@ local function expectDialogue(cfg, lines, label)
 end
 
 local function configCases()
-    runCase("四KEY/独立配置/精修原文及最小语境适配", function()
+    runCase("原四KEY索引保留/末尾N03/独立配置/精修原文及最小语境适配", function()
         local f = fixture()
-        check(same(f.Config.KEYS, KEYS), "Config.KEYS固定N02,N12,N13,N14顺序")
+        check(same(f.Config.KEYS, KEYS), "Config.KEYS保留N02,N12,N13,N14顺序并末尾追加N03")
         eq(f.Config.NODE_KEY, N02, "NODE_KEY保留N02兼容")
         for _, key in ipairs(KEYS) do
             local cfg = assert(f.Config.get(key))
@@ -227,7 +228,7 @@ local function captureCases()
             eq(session.samsaraStory.cargoHistoryCaptured, true, "cargo历史即使无资格也捕获")
             eq(session.samsaraStory.historyCaptured, true, "N02历史独立捕获")
             eq(f.flushes, 1, "两历史在一次init合并持久化")
-            eq(f.Player.hasPendingRecords(), item.cargo == true, "待阅查询不把纯E02误当自动剧情")
+            eq(f.Player.hasPendingRecords(), item.cargo == true or item.e02 == true, "raw204 E02资格增加N03待阅，旧cargo资格不变")
             eq(evidence(f, N12, "E02") ~= nil, item.e02 == true, "只有raw204 true才提前原件可见")
             if item.e02 then
                 eq(evidence(f, N12, "E02").source, "player_record", "原件来源player_record")
@@ -258,13 +259,14 @@ local function captureCases()
         eq(restarted.Player.getRecord(N12).status, "locked", "重载后仍不反推4905")
         eq(evidence(restarted, N12, "E02"), nil, "重载后仍不反推204")
     end)
-    runCase("实时204仅资料，实时4905只解锁N12，无N02/73完成门槛", function()
+    runCase("实时204开放E02与独立N03，实时4905只解锁N12，无N02/73完成门槛", function()
         local f = fixture(nil, { maxStageId = 9999 })
         for _, id in ipairs({ 4904, "04905", "4905x", 203, "0204", "204x", 73 }) do
             eq(f.Player.onStageCleared(id), false, "无关/非法live id " .. tostring(id))
         end
         eq(f.Player.onStageCleared("204"), true, "live204开放原件")
-        eq(f.Player.peekReady(), nil, "204不新增自动N03/N12剧情")
+        eq(f.Player.peekReady(), nil, "204 N03仍等对应旧44–46，N12不借204解锁")
+        eq(f.Player.getRecord(N03).status, "pending", "live204独立产生N03待阅")
         eq(evidence(f, N12, "E02").source, "player_record", "live204来源player_record")
         eq(f.Player.onStageCleared(204), false, "live204重复幂等")
         eq(f.Player.onStageCleared("4905"), true, "live4905解锁N12")
@@ -286,7 +288,7 @@ local function chainCases()
         local before = copy(f.session)
         eq(f.Player.hasPendingRecords(), true, "有待阅")
         local records = f.Player.getRecords()
-        eq(#records, 4, "记录固定四条")
+        eq(#records, 5, "记录末尾追加第五条，原四索引不变")
         for i, record in ipairs(records) do eq(record.key, KEYS[i], "getRecords顺序" .. i) end
         records[1].title = "覆盖"
         check(same(f.session, before), "peek/getRecords不写入或取消待阅")
@@ -368,7 +370,7 @@ local function chainCases()
         eq(f.Player.onResult(result(lease, "finished")), true, "N12完成")
         eq(evidence(f, N12, "E02").annotation, f.Config.get(N12).evidence.annotation, "完成后核验独立附加")
         local originalText = evidence(f, N12, "E02").text
-        eq(f.Player.onStageCleared(204), false, "已有E02首次来源，后来204不重复解锁")
+        eq(f.Player.onStageCleared(204), true, "已有E02案件来源仍由真实204独立解锁N03")
         eq(evidence(f, N12, "E02").source, "case_archive", "后来204不倒推首次调查时玩家持有原件")
         eq(evidence(f, N12, "E02").text, originalText, "后来204不替换既有货单正文")
         eq(evidence(f, N12, "E02").annotation, f.Config.get(N12).evidence.annotation, "首次来源保留核验")
@@ -455,7 +457,7 @@ local function preservationCases()
             eq(f.supported, false, "未来schema不兼容")
             eq(f.Player.peekReady(), nil, "未来schema无待播")
             eq(f.Player.hasPendingRecords(), false, "未来schema无可处理待阅")
-            eq(#f.Player.getRecords(), 4, "不兼容仍安全返回四记录")
+            eq(#f.Player.getRecords(), 5, "不兼容仍安全返回五记录")
             for _, key in ipairs(KEYS) do
                 eq(f.Player.getRecord(key).status, "unsupported", "未来schema记录不兼容 " .. key)
                 eq(f.Player.requestRead(key), false, "未来schema不排请求 " .. key)

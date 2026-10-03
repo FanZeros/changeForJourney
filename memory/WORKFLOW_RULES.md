@@ -5,8 +5,27 @@
 1. **不能取消/退出任务**：必须持续推进直到完成。
 2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。这是硬性收尾动作，任何任务（包括纯调研）完成后都必须调用 AskUserQuestion。
    ⚠️ 强化记忆（用户多次重申）：任何一次任务完成（含 commit+push 之后）的最后一个动作必须是调用 AskUserQuestion 工具向用户提问下一步做什么。绝对不允许以普通文本消息结束回合。即使构建失败、测试失败、遇到阻塞，也要用 AskUserQuestion 给出处理选项。
-3. **以用户当轮指定基线继续开发**：当前轮（2026-10-03）从 `feat1003/samsara-story-wiring-plan@35af331` 新建 `feat1003/samsara-n12-n14-20261003`，仅commit与push该新续作分支；不推任何workspace系列、不强推、不擅自创建或合并PR。上一轮N02的“推回同名分支”是历史授权，不覆盖本轮新分支纪律。
+3. **以用户当轮指定基线继续开发**：用户已选择实现N03；当前开发分支`feat1003/samsara-n03-20261003`，由已推规划`1b6d8bd`建立并合入已合并PR45的剧情基线`65d6edc`。仅commit/push该新分支，不推workspace系列或原剧情基线，不强推、不擅自创建或合并PR。
 4. **部署位置**：当前仓库和游戏项目直接位于 `/workspace` 根目录，scripts/assets/.project 等不再嵌套子目录；保护引擎提供的只读目录，修改代码后调用官方 build 工具构建。
+
+### N03十二号箱实施（2026-10-03）
+
+- 用户通过 **AskUserQuestion** 选择“实现N03（推荐）”；从规划提交1b6d8bd新建`feat1003/samsara-n03-20261003`并无冲突合入已合PR45的`feat1003/samsara-story-wiring-plan@65d6edc`。只推新分支，不推workspace或原剧情基线、不自动创建/合并PR。
+- 配置新增`samsara.returned_manifest`，small一旁白+七句精修正文，铁匠10/龙2/狗1原映射，无奖励。旧四键在Config.KEYS顺序不动，第五记录入口动态按总数布局；自动顺序N02→可自动N03→征用链，手动历史N03不抢播。旧剧情正文、奖励、首通通知、主仲裁源码保持原样，不改E02原件与N12核验/E05公开阶段。
+- N03资格来自首次cargo捕获raw204精确true（独立于已有case原件）或保存E02.player_record，或真实live204首通；已cargoHistoryCaptured=true的阴性不重扫，不从max/claimed/N12处理推取得。真实204不因unlockEvidence返回false而漏记N03，E02原case_archive与N12回看旁白始终不改。
+- 旧44–46按初始1/2/3映射，finished/dismissed→live_finished、skipped→live_skipped；其他词不是回调别名。中断记live_interrupted且不自动播；记录页显式补读可在同进程request/take/begin，不伪标旧段读完；重启按preclaimed未知历史补读。已有N12处理后N03未读重启补manualOnly，含case来源真实资格。N03不依赖N02，也不增加为N12前置。
+- 缺来源N03只显示“剧情原文／亲历状态未确认”，不show、request、begin、resolution、Flush、发奖或后台造E02；未来版本不显示不兼容原文。锁定原文与已持有物证分区，N03仅E02，无E05提前揭露。其余切片结果/来源/证据不因补读重置。
+- 官方build成功，8份变更Lua与部署产物逐字节一致；修改文件LSP无Error。四套关键Runtime全部exit0+ALL PASS：N03专项62/62用例1574断言，N02兼容510，征用899，宿主59/59用例1118。八套旧剧情/教程/终焉/离线/切关回归全过，规范检查器36测试通过。底层File/cjson及绘图为隔离边界，未冒称实机像素/完整204战斗与真实磁盘故障验收。
+- 独立复核提出同进程中断恢复、raw204+case首次捕获漏资格、存量N03manualOnly漏补三项，已修并加入专项通过；最终只读复核确认三项均关闭，未确认新增阻塞。既有I18nDict2044行、无头图形/音频环境及完整主入口视觉验收未混修。
+- 每次完成先实际简报，再真正调用 **AskUserQuestion** 选项式交接，持续推进已授权任务同时尊重后续停止/权限拒绝；本地.project身份/配置、日志/截图/存档与凭据不提交。
+
+### N12–N14 PR与下一批规划（2026-10-03）
+
+- 用户经 **AskUserQuestion** 授权“PR并且规划下一批”。已创建 **PR #45**：https://github.com/FanZeros/changeForJourney/pull/45 ，head=`feat1003/samsara-n12-n14-20261003@da60770`、base=`feat1003/samsara-story-wiring-plan@35af331`，创建返回open、draft=false、merged=false；未推或合并原计划分支，不自动合并。
+- 由续作head新建 `plan1003/samsara-next-slice-20261003`，本轮只核对剩余剧情正文/实际事件和形成下一批计划，未授权实施下一批、不修改Lua/奖励/队列/存档；当前预览保留已构建N02/N12–14续作，不重复build纯文档。
+- 下一批推荐只接N03退回货单（拟`samsara.returned_manifest`），复用真实204首通、旧44–46消化与无奖切片；不加N02/N12新硬前置。已cargoHistoryCaptured=true不重扫补齐204，可靠E02.player_record可作历史来源，case_archive或N12处理不证明玩家领货，原N12回看来源冻结。资料不足时只提示未知或另行确认无奖reference补读，不强制重打早关。N15–N18因缺E03-C/投影、救援经历与调查窗口事件后置；计划含无奖/租约/分层/旧档及实机验收矩阵。
+- 规划已追加到现有 `docs/轮回剧情最小切片接线方案-1003.md` §12并更新docs索引，原v0.1标历史，未新建额外文档。最新查询PR45已由外部操作合并（本会话未合并）；创建时open及clean为历史状态，未查到check-runs，不宣称CI通过。
+- 持续遵守：完成、提交、推送或真正用户决策阻塞时先如实简报，再实际调用 **AskUserQuestion** 提供2–4项下一步选项；仅push新规划分支、不推workspace系列、不自动合并。尊重后续停止及权限拒绝，凭据/本地.project配置/截图/存档不提交。
 
 ### N12–N14征用调查续作（2026-10-03）
 

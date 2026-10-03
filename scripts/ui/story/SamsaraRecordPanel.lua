@@ -1,5 +1,5 @@
 -- ============================================================================
--- SamsaraRecordPanel - N02与征用三段的轻量剧情记录，无奖励与新选择
+-- SamsaraRecordPanel - 日志/货牌与征用三段的轻量剧情记录，无奖励与新选择
 -- 基于 scaffold-2d 的生命周期分离；复用项目 raw NanoVG 管线，不创建上下文/帧。
 -- draw / handleInput / drag 的 x,y,w,h 均为主渲染器的窗口逻辑坐标。
 -- 1920×1080 CONTAIN 字号 + 全窗响应式布局；字体 sans 由主初始化创建。
@@ -29,6 +29,9 @@ local BLOCK_GAP = 26
 ---@field legacyContext string|nil
 ---@field evidences table[]
 ---@field unlockText string|nil
+---@field referenceOnly boolean|nil
+---@field referenceSteps SamsaraSliceStep[]|nil
+---@field manualOnly boolean|nil
 
 ---@type NVGContextWrapper|nil
 local context_ = nil
@@ -80,7 +83,7 @@ local function layout(w, h)
         closeX = px + pw - 220, closeY = py + 36, closeW = 176, closeH = 84,
         contentX = px + 64, contentY = py + 352,
         contentW = pw - 148, contentH = ph - 506,
-        tabsY = py + 150, tabsW = (pw - 148) / 4,
+        tabsY = py + 150, tabsW = (pw - 148) / math.max(1, #SamsaraSlicePlayer.getRecords()),
         actionX = px + pw - 360, actionY = py + ph - 120, actionW = 296, actionH = 84,
     }
 end
@@ -158,13 +161,28 @@ local function contentBlocks(record)
     end
     if record.status ~= "unsupported" then
         -- legacyContext只描述旧日志来源，不能据此冒充N02已读或封锁独立切片。
+        local oldSource = record.key == "samsara.returned_manifest" and "旧铁匠道歉" or "旧日志"
         if record.legacyContext == "legacy_claimed_unknown" then
-            add("旧日志阅读状态未知；夹页可独立核对。", 32, true)
+            add(oldSource .. "阅读状态未知；当前记录可独立补读。", 32, true)
         elseif record.legacyContext == "unavailable" then
-            add("旧日志来源暂不可用；当前记录可独立阅读。", 32, true)
+            add(oldSource .. "来源暂不可用；当前记录可独立阅读。", 32, true)
+        elseif record.legacyContext == "live_interrupted" then
+            add("旧铁匠道歉曾中断；可从下方手动补读本段，不补写旧段已读。", 32, true)
         end
     end
 
+    if record.key == "samsara.returned_manifest" then
+        if record.manualOnly and record.status == "pending" then
+            add("普通2-4事件补读；不会重新播放已处理的征用调查。", 32, true)
+        end
+        if record.referenceOnly then
+            add("剧情原文／亲历状态未确认", 40)
+            add("现有档案不足以确认本队曾取得货牌。以下仅供查阅，不标已读、不领取奖励。", 32, true)
+            for _, step in ipairs(record.referenceSteps or {}) do
+                add(step.name .. "：" .. step.text)
+            end
+        end
+    end
     if record.key ~= "samsara.log_leaf" then
         -- 原件、核验与人员卷各服从数据层公开标记，未处理的后段不泄露正文。
         for _, item in ipairs(record.evidences or {}) do
@@ -252,7 +270,7 @@ function Panel.draw(vg, w, h)
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
     drawButton(ctx, l.closeX, l.closeY, l.closeW, l.closeH, "关闭", true)
 
-    local labels = { "日志夹页", "货牌核验", "灰印征用令", "人员卷" }
+    local labels = { "日志夹页", "货牌核验", "灰印征用令", "人员卷", "十二号箱" }
     for index, item in ipairs(SamsaraSlicePlayer.getRecords()) do
         local tabX = l.contentX + (index - 1) * l.tabsW
         drawButton(ctx, tabX, l.tabsY, l.tabsW - 12, 64, labels[index] or item.title,

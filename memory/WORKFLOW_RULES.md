@@ -5,8 +5,17 @@
 1. **不能取消/退出任务**：必须持续推进直到完成。
 2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。这是硬性收尾动作，任何任务（包括纯调研）完成后都必须调用 AskUserQuestion。
    ⚠️ 强化记忆（用户多次重申）：任何一次任务完成（含 commit+push 之后）的最后一个动作必须是调用 AskUserQuestion 工具向用户提问下一步做什么。绝对不允许以普通文本消息结束回合。即使构建失败、测试失败、遇到阻塞，也要用 AskUserQuestion 给出处理选项。
-3. **以用户当轮指定基线继续开发**：用户已选择实现N03；当前开发分支`feat1003/samsara-n03-20261003`，由已推规划`1b6d8bd`建立并合入已合并PR45的剧情基线`65d6edc`。仅commit/push该新分支，不推workspace系列或原剧情基线，不强推、不擅自创建或合并PR。
+3. **以用户当轮指定基线继续开发**：用户已选择“PR并规划镜像批”，在N03提交`3421acf`上新建纯规划分支`plan1003/samsara-mirror-slices-20261003`。只commit/push新规划分支，不推workspace系列或原剧情基线，不强推、不自动合并PR；本轮未授权实施镜像批。
 4. **部署位置**：当前仓库和游戏项目直接位于 `/workspace` 根目录，scripts/assets/.project 等不再嵌套子目录；保护引擎提供的只读目录，修改代码后调用官方 build 工具构建。
+
+### N03 PR与镜像批规划（2026-10-03）
+
+- 用户经 **AskUserQuestion** 明确“PR并规划镜像批（推荐）”。已创建 **PR #49**：https://github.com/FanZeros/changeForJourney/pull/49 ，head=`feat1003/samsara-n03-20261003@3421acf`、base=`feat1003/samsara-story-wiring-plan@65d6edc`，创建返回open、draft=false、merged=false；没有推/合原基线，不自动合并。
+- 由N03头新建`plan1003/samsara-mirror-slices-20261003`，本轮仅核对镜像正文/真实stage与事件、证据公开与旧档来源，追加现有接线方案，不实施新节点、不改Lua/奖励/存档，不生成图/视频/音频，当前预览仍N03构建。
+- 最新查询PR49已由外部操作合并（本会话未合并），未查到check-runs，不宣称CI全绿；创建时open/clean为历史状态。规划期间N03四份核心源码与HEAD/官方部署产物逐字节一致，不把N03已有测试称为镜像批已验收。
+- 镜像初批推荐N07＋N09：2505/2905正式成功CLEAR建立待阅，旧64/67是ENTER，不把claimed、max/current、地图打开当胜利。只公开E03-A/C初片，不补造B或后续执行/救援核验。N08因N01罐头铺垫未实现需另选语境，N05–06因三队轮回先loadStage后onFirstClear的旧顺序另批，N10等待真实团灭/超时/失守/救援兑现来源事件。
+- 新镜像捕获须恢复后/max补齐前独立版本/标记，保留N02/cargo历史且阴性不重扫；旧已落盘true来源不明只作手动历史参考，不称真实胜利或申请执行。无奖/租约/证据分层/旧档/未来版本/多记录UI与现有四套回归均列后续验收，不把规划写成已实现。已追加现有接线方案§13和docs索引，纯文档不重复构建。
+- 持续推进授权任务；每阶段交付如实简报后，最终实际调用 **AskUserQuestion** 选项式交接。仅push新规划分支、不推workspace系列或原剧情基线、不强推、不擅自合并；尊重用户后续停止/权限拒绝。PAT与本地.project身份/配置、截图/存档不提交。
 
 ### N03十二号箱实施（2026-10-03）
 

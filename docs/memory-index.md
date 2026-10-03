@@ -1,5 +1,7 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+> **最新（2026-10-03，N03 PR与镜像规划）**：已创建[N03 PR #49](https://github.com/FanZeros/changeForJourney/pull/49)，head=`feat1003/samsara-n03-20261003@3421acf`、base=`feat1003/samsara-story-wiring-plan`；最新查询已由外部操作合并，本会话未合并。用户仅授权“PR并规划镜像批”，新纯规划分支`plan1003/samsara-mirror-slices-20261003`；镜像初批推荐N07＋N09，分别以2505/2905真正CLEAR而非旧64/67 ENTER对白建立初片来源，N08罐头前段和N05/N06回程顺序另批，N10救援事件仍需明确来源。详见[接线方案第13节](轮回剧情最小切片接线方案-1003.md)。未改Lua/资源/存档，预览仍N03构建；只push新规划分支，完成后真正AskUserQuestion。
+
 > **最新（2026-10-03，N03已实施）**：用户选择实现N03，分支`feat1003/samsara-n03-20261003`保留规划并同步已合PR45的剧情基线。新增“十二号箱”一旁白＋七句无奖切片、真实204与可信E02历史资格、旧44–46对应语境、手动历史补读、缺来源静态原文、第五记录入口；不重扫已捕获阴性、不改N12案件副本来源、不加N02/N12硬前置。官方build成功、8Lua与产物一致，N03专项62用例1574断言，N02兼容510、征用899、宿主1118及八套旧回归全过；最终独立复核未确认新增阻塞。实机排版/完整通关未验收，详情见memory/WORKFLOW_RULES.md。只push新分支、不推workspace或原剧情基线，完成后真正AskUserQuestion。
 
 > **最新（2026-10-03，续作PR与下一批规划）**：N12–N14已创建[PR #45](https://github.com/FanZeros/changeForJourney/pull/45)，head=`feat1003/samsara-n12-n14-20261003`、base=`feat1003/samsara-story-wiring-plan`，创建时open/mergeable clean，收尾查询已由外部操作合并，本会话未执行合并。用户仅授权“PR并且规划下一批”；新纯规划分支`plan1003/samsara-next-slice-20261003`，推荐先补N03退回货单，不把N03强加为N12前置，也不改写已有案件副本来源。N15–N18因缺投影/救援经历/地狱批注和调查触发暂后置；详细计划追加在[接线方案](轮回剧情最小切片接线方案-1003.md)。本轮不改Lua/资源/存档，不重复build，完成后只push新规划分支并真正AskUserQuestion。

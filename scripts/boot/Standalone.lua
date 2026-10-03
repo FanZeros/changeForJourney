@@ -53,7 +53,6 @@ local GameBGM           = require("systems.GameBGM")
 local GameSFX           = require("systems.GameSFX")
 local BattleEffects     = require("ui.battle.combat.BattleEffects")    -- [三行并行] 渲染缩放
 local SpinePowerUpEffect = require("ui.fx.SpinePowerUpEffect")
-local IntroCutscene      = require("ui.story.gate.IntroCutscene")
 local LetterIntro        = require("ui.story.gate.LetterIntro")          -- [LetterIntro] 先祖来信（新档开场）
 local CharacterDetail    = require("ui.character.detail.CharacterDetail")  -- [三队并行] 中缝返回键目标
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")     -- [LetterIntro] 情景对话
@@ -357,7 +356,6 @@ function Standalone.Start()
         { "TopBar", function() TopBar.init(vg) end },
         { "BottomNav", function() BottomNav.init(vg) end },
         { "BattleScene", function() BattleScene.init(vg) end },
-        { "IntroCutscene", function() IntroCutscene.init(vg, scene) end },
         { "ScenarioDialogue", function() ScenarioDialogue.init(vg, scene) end },
         { "CharacterPanel", function() CharacterPanel.init(vg) end },
         { "BackpackPanel", function() BackpackPanel.init(vg) end },
@@ -597,7 +595,7 @@ end
 
 --- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
 local function tryPlayPendingStory_()
-    if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then
+    if ScenarioDialogue.isActive() or LetterIntro.isOpen() then
         return
     end
     if RewardPopup.isOpen() or OfflineRewardPanel.isOpen() then
@@ -734,10 +732,9 @@ function Standalone.requestResetToStartScreen()
     print(string.format("%s step9: BattleScene.setAllies/reloadStage done teamSize=%d clock=%.4f",
         TAG, #initialTeam, os.clock()))
 
-    -- 10. 重置开场动画状态（让清档后可以重新播放）
-    IntroCutscene.reset()
+    -- 10. 重置先祖来信状态（让清档后可以重新播放）
     LetterIntro.reset()
-    print(string.format("%s step10: IntroCutscene.reset done clock=%.4f", TAG, os.clock()))
+    print(string.format("%s step10: LetterIntro.reset done clock=%.4f", TAG, os.clock()))
 
     -- 11. 设置标志：重新进入开始界面流程（等标题关闭后再走开场链）
     startScreenWasOpen_ = true
@@ -921,8 +918,8 @@ function HandleUpdate(eventType, eventData)
     end
 
     -- ── BGM 轨道切换（优先级：城镇建筑 > 标签页）──
-    -- [LetterIntro] 开场链（信/过场/情景1）期间不自动切轨，轨道由开场链自控
-    if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
+    -- [LetterIntro] 开场链（信件/情景对话）期间不自动切轨，轨道由开场链自控
+    if not (LetterIntro.isOpen() or ScenarioDialogue.isActive()) then
     do
         local tabIndex = BottomNav.getSelectedIndex()
         local bgmScene
@@ -948,12 +945,6 @@ function HandleUpdate(eventType, eventData)
     -- [LetterIntro] 先祖来信更新（信件期间独占，阻止其他 UI 更新）
     if LetterIntro.isOpen() then
         LetterIntro.update(dt)
-        return
-    end
-
-    -- 轮回开场动画更新（播放期间阻止其他 UI 更新和 BGM 切换）
-    if IntroCutscene.isActive() then
-        IntroCutscene.update(dt)
         return
     end
 

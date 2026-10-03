@@ -480,7 +480,6 @@ function Start()
             patch(BattleScene, "getStageId", function() return SC.TERMINAL_NORMAL end)
             patch(BattleScene, "pumpBattleCards", function() end)
             patch(require("ui.story.gate.LetterIntro"), "isOpen", function() return false end)
-            patch(require("ui.story.gate.IntroCutscene"), "isActive", function() return false end)
             patch(require("ui.story.ScenarioDialogue"), "isActive", function() return false end)
             local oldNew = Driver.new
             patch(Driver, "new", function(i, opts)

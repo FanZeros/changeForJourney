@@ -28,7 +28,6 @@ local TaskPage          = require("ui.story.task.TaskPage")
 local PlayerInfoPanel   = require("ui.hud.popup.PlayerInfoPanel")
 local BattleTriPage     = require("ui.battle.tri.BattleTriPage")
 local PlayerStore       = require("core.PlayerStore")
-local IntroCutscene     = require("ui.story.gate.IntroCutscene")
 local LocalActionBridge = require("runtime.LocalActionBridge")
 local BackpackPanel     = require("ui.backpack.BackpackPanel")
 
@@ -448,17 +447,6 @@ function M.run(rt)
         BackpackPanel.open("left", "decompose")
         local BlacksmithDecompose = require("ui.blacksmith.BlacksmithDecompose")
         BlacksmithDecompose.openAutoPopup()
-    end)
-
-    -- 5.24 轮回回调：倒计时结束 → 播放开场动画 → 完成关卡加载
-    BattleScene.setOnReincarnate(function(data)
-        print("[Standalone] reincarnation triggered, starting intro cutscene (difficulty "
-            .. tostring(data.fromDifficulty) .. " → " .. tostring(data.toDifficulty) .. ")")
-        IntroCutscene.reset()
-        IntroCutscene.start(function()
-            print("[Standalone] reincarnation intro finished, completing stage load")
-            BattleScene.completeReincarnation()
-        end)
     end)
 
     -- 5.25 首通奖励回调：本地计算首通金币+装备，弹出 RewardPopup

@@ -32,7 +32,6 @@ function M.process(ctx, dt)
     local enemies = ctx.enemies
     local enemyQueue = ctx.enemyQueue
     local allies = ctx.allies
-    local clearedStages = ctx.clearedStages
     local stageName = ctx.stageName
     local pendingReincarnation = ctx.pendingReincarnation
     local bgTransAnim = ctx.bgTransAnim
@@ -41,7 +40,6 @@ function M.process(ctx, dt)
     local REINCARNATION_DELAY = ctx.REINCARNATION_DELAY
     local SEARCH_ENEMY_DURATION = ctx.SEARCH_ENEMY_DURATION
     local BG_ZOOM_BACK_TARGET = ctx.BG_ZOOM_BACK_TARGET
-    local BG_ZOOM_FWD_TARGET = ctx.BG_ZOOM_FWD_TARGET
     local updateCardAnims = ctx.updateCardAnims
     local updateFloatingTexts = ctx.updateFloatingTexts
     local updateHitFlashes = ctx.updateHitFlashes
@@ -51,8 +49,6 @@ function M.process(ctx, dt)
     local resetAllyUnit = ctx.resetAllyUnit
     local startBattleTalents = ctx.startBattleTalents
     local onStageChangedCallback = ctx.onStageChangedCallback
-    local onReincarnateCallback = ctx.onReincarnateCallback
-    local recalcIdleIncome = ctx.recalcIdleIncome
     local generateIdleEnemyList = ctx.generateIdleEnemyList
     local assignEnemiesToField = ctx.assignEnemiesToField
     local BattleScene = ctx.BattleScene
@@ -174,39 +170,16 @@ function M.process(ctx, dt)
             end
             local targetDiff = getStageConfig().getDifficulty(targetStageId)
 
-            if onReincarnateCallback then
-                -- 有外部回调（Client/Standalone）：先播放开场动画，延迟加载关卡
-                ---@diagnostic disable-next-line: assign-type-mismatch
-                pendingReincarnation = {
-                    targetStageId = targetStageId,
-                    terminalStageId = currentStageId,
-                    fromDifficulty = currentDiff,
-                    toDifficulty = targetDiff,
-                }
-                print("[BattleScene] 轮回倒计时结束，等待外部动画完成后调用 completeReincarnation")
-                onReincarnateCallback({
-                    fromDifficulty = currentDiff,
-                    toDifficulty = targetDiff,
-                    newStageId = targetStageId,
-                })
-            else
-                -- 无回调（安全回退）：直接加载关卡
-                clearedStages[currentStageId] = true
-                if targetStageId > maxStageId_ then
-                    maxStageId_ = targetStageId
-                    recalcIdleIncome()
-                end
-                require("systems.GameBGM").setScene("battle")
-                bgTransAnim = { timer = 0, zoomTarget = BG_ZOOM_FWD_TARGET }
-                loadStage(targetStageId, true)
-                regenAccum = 0
-                for _, u in ipairs(allies) do resetAllyUnit(u) end
-                startBattleTalents()
-                if onStageChangedCallback then
-                    onStageChangedCallback(targetStageId)
-                end
-                print("[BattleScene] 轮回完成（无回调）→ " .. stageName .. " (难度: " .. tostring(targetDiff) .. ")")
-            end
+            -- 这里只准备轮回数据，不回调、不加载。宿主回灌全部状态后再完成，
+            -- 避免同步回调读不到 pending，或新关卡被本帧旧状态覆盖。
+            pendingReincarnation = {
+                targetStageId = targetStageId,
+                terminalStageId = currentStageId,
+                fromDifficulty = currentDiff,
+                toDifficulty = targetDiff,
+            }
+            ctx.reincarnationReady = true
+            print("[BattleScene] 轮回倒计时结束，状态回灌后进入 " .. tostring(targetStageId))
         end
         writeback(); return true
     end

@@ -44,7 +44,6 @@ local BattleLayout      = require("core.BattleLayout")
 local ProjectileSystem  = require("ui.battle.combat.ProjectileSystem")
 local BattleEffects     = require("ui.battle.combat.BattleEffects")
 local SpinePowerUpEffect = require("ui.fx.SpinePowerUpEffect")
-local IntroCutscene      = require("ui.story.gate.IntroCutscene")
 local LetterIntro        = require("ui.story.gate.LetterIntro")
 local CharacterDetail    = require("ui.character.detail.CharacterDetail")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
@@ -127,7 +126,7 @@ local function finishFrame()
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     drawOrphanRowReward()
     if not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
-        and not IntroCutscene.isActive() and not ScenarioDialogue.isActive() then
+        and not ScenarioDialogue.isActive() then
         OfflineRewardOverlay.draw()
     end
     drawUpdateNotice()
@@ -239,9 +238,9 @@ local function HorizonDrawPageModal(_unused_vg)
     nvgRestore(vg())
 end
 
---- [LetterIntro] 开场链全窗口覆盖：信件与情景都用逻辑分辨率横屏绘制；旧过场用 cover 裁切避免竖条
+--- [LetterIntro] 开场链全窗口覆盖：信件与情景都用逻辑分辨率横屏绘制
 local function HorizonDrawIntroOverlay()
-    if not (LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then
+    if not (LetterIntro.isOpen() or ScenarioDialogue.isActive()) then
         return
     end
     nvgSave(vg())
@@ -253,12 +252,6 @@ local function HorizonDrawIntroOverlay()
         LetterIntro.draw(vg(), logicalW(), logicalH())
     elseif ScenarioDialogue.isActive() then
         ScenarioDialogue.draw(logicalW(), logicalH())
-    elseif IntroCutscene.isActive() then
-        local lw, lh = logicalW(), logicalH()
-        local ss = math.max(lw / 1080, lh / 2400)
-        nvgTranslate(vg(), (lw - 1080 * ss) * 0.5, (lh - 2400 * ss) * 0.5)
-        nvgScale(vg(), ss, ss)
-        IntroCutscene.draw(vg())
     end
     nvgRestore(vg())
 end
@@ -267,7 +260,7 @@ end
 --- 绘制与输入共用屏幕坐标，不借用下层tri/modal路由的坐标系。
 local function HorizonDrawTutorialOverlay()
     if not TutorialManager.isActive() then return end
-    if ScenarioDialogue.isActive() or LetterIntro.isOpen() or IntroCutscene.isActive() then return end
+    if ScenarioDialogue.isActive() or LetterIntro.isOpen() then return end
     if DarkTitleScreen.isOpen() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive() then return end
     local hs = TutorialManager.getCurrentHotspot()
     local screen = nil
@@ -304,7 +297,7 @@ local function HorizonDimSidePanels()
         HeroRosterPanel.isVisible() or PlayerInfoPanel.isOpen() or
         RewardPopup.isOpen() or
         OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() or
-        SpinePowerUpEffect.isPlaying() or IntroCutscene.isActive()
+        SpinePowerUpEffect.isPlaying()
     if not modalOpen then return end
 
     local w = Viewport.PW * H_s

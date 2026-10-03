@@ -295,8 +295,8 @@ function BattleService.NextStage(uid, clearedId, nextId)
             -- 标记终焉神殿为已通关
             if not battle.clearedStages then battle.clearedStages = {} end
             battle.clearedStages[tostring(battle.currentStageId)] = true
-            -- 入场动画由客户端轮回回调（CG → IntroCutscene）播放，不在此处设置 hasReincarnated，
-            -- 否则重启后会误判为“尚未播放”而重复弹出
+            -- 轮回直接推进关卡，不设置旧 hasReincarnated 标记，
+            -- 避免重启后恢复已退役的过场流程。
             print("[BattleService] Reincarnation detected: " .. tostring(battle.currentStageId) .. " → " .. tostring(nextIdNum))
         end
 

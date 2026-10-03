@@ -59,7 +59,7 @@ mocks["ui.battle.tri.TerminalRaid"] = {}
 mocks["ui.hud.popup.RewardPopup"] = { drawRegion = noop, currentRowTag = function() return nil end }
 for _, name in ipairs({ "ui.battle.stage.SweepDialog", "ui.battle.popup.DamageStatsPanel",
     "ui.battle.stage.StageSelectDialog", "ui.battle.popup.TerminalConfirmDialog",
-    "ui.story.gate.LetterIntro", "ui.story.gate.IntroCutscene", "ui.story.ScenarioDialogue" }) do
+    "ui.story.gate.LetterIntro", "ui.story.ScenarioDialogue" }) do
     mocks[name] = { init = noop, update = noop, isOpen = function() return false end,
         isActive = function() return false end }
 end

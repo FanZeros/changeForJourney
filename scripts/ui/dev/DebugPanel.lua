@@ -60,24 +60,6 @@ local function getDungeonBattleScene()
     return DungeonBattleScene_
 end
 
--- IntroCutscene / ScenarioDialogue 延迟加载
----@type table
-local IntroCutscene_
-local function getIntroCutscene()
-    if not IntroCutscene_ then IntroCutscene_ = require("ui.story.gate.IntroCutscene") end
-    return IntroCutscene_
-end
-local ScenarioDialogue_
-local function getScenarioDialogue()
-    if not ScenarioDialogue_ then ScenarioDialogue_ = require("ui.story.ScenarioDialogue") end
-    return ScenarioDialogue_
-end
-local ScenarioDialogueConfig_
-local function getScenarioDialogueConfig()
-    if not ScenarioDialogueConfig_ then ScenarioDialogueConfig_ = require("config.ScenarioDialogueConfig") end
-    return ScenarioDialogueConfig_
-end
-
 
 local DebugPanel = {}
 
@@ -283,8 +265,6 @@ function DebugPanel.draw(vg, designOffsetX, screenDesignW)
         + 20 + BTN_H * 3 + BTN_GAP * 2        -- 受击特效测试（标签 + 3行按钮：2+2+1）
         + SECTION_GAP
         + BTN_H                                -- 清除存档按钮
-        + BTN_GAP
-        + BTN_H                                -- 测试开场剧情按钮
         + BTN_GAP
         + BTN_H                                -- 测试角色选择按钮
         + PANEL_PAD
@@ -698,13 +678,6 @@ function DebugPanel.draw(vg, designOffsetX, screenDesignW)
     registerBtn("reset_save", btnX, curY, btnW, BTN_H)
     curY = curY + BTN_H + BTN_GAP
 
-    -- ==================== 测试开场剧情 ====================
-    drawRoundedBtn(vg, btnX, curY, btnW, BTN_H,
-        60, 120, 200, 255,
-        "测试开场剧情")
-    registerBtn("test_intro_cutscene", btnX, curY, btnW, BTN_H)
-    curY = curY + BTN_H + BTN_GAP
-
     -- ==================== 测试角色选择 ====================
     drawRoundedBtn(vg, btnX, curY, btnW, BTN_H,
         160, 100, 200, 255,
@@ -986,30 +959,12 @@ function DebugPanel.handleInput(sx, sy)
                     standalone.Start()
                 end
                 print(string.format("[Debug][DIAG-RESET] step3: requestResetToTitleScreen done clock=%.4f", os.clock()))
-                -- 4. 重置 Client 一次性标志（让开场动画等可重新触发）
+                -- 4. 重置 Client 一次性标志（让新档开场链等可重新触发）
                 getClient().resetForNewSession()
                 print(string.format("[Debug][DIAG-RESET] step4: resetForNewSession done clock=%.4f", os.clock()))
                 -- 5. 单机无大厅，GameAction.requestReturnToLobby 为空操作
                 getClient().requestReturnToLobby()
                 print(string.format("[Debug][DIAG-RESET] step5: requestReturnToLobby done clock=%.4f — COMPLETE", os.clock()))
-            elseif btn.id == "test_intro_cutscene" then
-                local ic = getIntroCutscene()
-                if not ic.isActive() then
-                    local GameBGM_ = require("systems.GameBGM")
-                    GameBGM_.start()
-                    ic.start(function()
-                        -- 过场结束 → 衔接情景对话 1（与正式流程一致）
-                        print("[Debug] 开场剧情结束，启动情景对话 1")
-                        local cfg = getScenarioDialogueConfig().SCENARIO_1
-                        cfg.onFinish = function()
-                            print("[Debug] 情景对话1结束")
-                        end
-                        getScenarioDialogue().show(cfg)
-                    end)
-                    print("[Debug] 开始测试开场剧情，BGM 已切换")
-                else
-                    print("[Debug] 开场剧情已在播放中")
-                end
             else
                 -- 动态匹配 4 个槽位的 dec/inc/gen 按钮
                 for _, slot in ipairs(EQUIP_SLOTS) do

@@ -124,11 +124,6 @@ local function handleEscape()
         print("[KeyboardShortcuts] 关闭说明")
         return
     end
-    local IntroCutscene = require("ui.story.gate.IntroCutscene")
-    if IntroCutscene.isActive() then
-        IntroCutscene.skip()
-        return
-    end
     local ScenarioDialogue = require("ui.story.ScenarioDialogue")
     if ScenarioDialogue.isActive() then
         ScenarioDialogue.skip()

@@ -33,7 +33,6 @@ local BattleTriPage     = require("ui.battle.tri.BattleTriPage")
 local SweepDialog       = require("ui.battle.stage.SweepDialog")
 local DamageStatsPanel  = require("ui.battle.popup.DamageStatsPanel")
 local StageSelectDialog = require("ui.battle.stage.StageSelectDialog")
-local IntroCutscene      = require("ui.story.gate.IntroCutscene")
 local LetterIntro        = require("ui.story.gate.LetterIntro")
 local CharacterDetail    = require("ui.character.detail.CharacterDetail")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
@@ -260,14 +259,14 @@ function Input.bind(ctx)
     local function offlineInputActive()
         return OfflineRewardPanel.isOpen() and not UpdateNoticePopup.isOpen()
             and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
-            and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
+            and not ScenarioDialogue.isActive()
     end
 
     local function tutorialInputActive()
         return TutorialManager.isActive() and TutorialManager.isInputActive()
             and not OfflineRewardPanel.isOpen() and not UpdateNoticePopup.isOpen()
             and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
-            and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
+            and not ScenarioDialogue.isActive()
             and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive()
     end
     local tutorialPress = false
@@ -297,7 +296,7 @@ function Input.bind(ctx)
         -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
         if DarkTitleScreen.isOpen() then return end
         -- [LetterIntro] 开场期也要记 pressValid，否则抬起被当成无效点击
-        if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then
+        if LetterIntro.isOpen() or ScenarioDialogue.isActive() then
             pressValid = true
             pressStartDX, pressStartDY = 0, 0
             return
@@ -506,7 +505,7 @@ function Input.bind(ctx)
     function HandleMouseMoveHorizon(eventType, eventData)
         if UpdateNoticePopup.isOpen() then return end  -- 全窗模态：屏蔽下层 hover
         if DarkTitleScreen.isOpen() then return end
-        if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
+        if LetterIntro.isOpen() or ScenarioDialogue.isActive() then return end
         if OfflineRewardPanel.isOpen() then
             if offlineTouchId ~= nil then return end
             cancelUnderlyingPress()
@@ -650,7 +649,7 @@ function Input.bind(ctx)
     -- 移到其他格子由命中检测立即收起旧说明。
     function HandleEquipmentHoverTickHorizon()
         if OfflineRewardPanel.isOpen() or UpdateNoticePopup.isOpen() then return end
-        if DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
+        if DarkTitleScreen.isOpen() or LetterIntro.isOpen()
             or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
             or EquipCrossDrag.isArmed() then return end
         local mp = pointerPosition()
@@ -914,9 +913,6 @@ function Input.bind(ctx)
         -- [LetterIntro] 开场链输入：信件任意释放即翻段（不依赖 isTap，避免 pressValid 丢失）
         if LetterIntro.isOpen() then
             LetterIntro.handleTap()
-            return
-        end
-        if IntroCutscene.isActive() then
             return
         end
         -- 剧情不依赖 isTap：横屏覆盖层里 pressValid 容易丢，丢了就点不下去
@@ -1190,7 +1186,7 @@ function Input.bind(ctx)
         if UpdateNoticePopup.isOpen() then return end
         -- [DarkTitleScreen] 标题期吞掉滚轮
         if DarkTitleScreen.isOpen() then return end
-        if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
+        if LetterIntro.isOpen() or ScenarioDialogue.isActive() then return end
         local wheel = eventData["Wheel"]:GetInt()
         if wheel == 0 then return end
         local mousePos = pointerPosition()

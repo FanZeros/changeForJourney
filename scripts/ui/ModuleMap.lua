@@ -77,7 +77,6 @@ local MAP = {
     ["HeroRosterPanel"] = "ui.character.hero.HeroRosterPanel",
     ["HeroScenario"] = "ui.character.hero.HeroScenario",
     ["ImageCache"] = "ui.widget.ImageCache",
-    ["IntroCutscene"] = "ui.story.gate.IntroCutscene",
     ["KeyboardShortcuts"] = "ui.dev.KeyboardShortcuts",
     ["LetterIntro"] = "ui.story.gate.LetterIntro",
     ["LevelUpPopup"] = "ui.hud.popup.LevelUpPopup",

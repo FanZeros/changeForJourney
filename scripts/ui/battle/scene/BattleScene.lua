@@ -252,8 +252,8 @@ local onReincarnateCallback = nil
 -- 全体阵亡回调: function() — 非终焉神殿战斗失败（全员阵亡）时触发
 local onAllDeadCallback = nil
 
--- 待完成的轮回（用于延迟加载，等外部动画结束后调用 completeReincarnation）
----@type {targetStageId:number, fromDifficulty:number, toDifficulty:number}|nil
+-- 待完成的轮回（阶段处理回灌后消费；外部回调可延后完成）
+---@type {targetStageId:number, terminalStageId:number, fromDifficulty:string, toDifficulty:string}|nil
 local pendingReincarnation = nil
 
 -- (战斗动画状态: floatingTexts/cardAnims/hitFlashes/hpBuffers 已移至 BattleCombat)
@@ -976,6 +976,20 @@ function BattleScene.update(dt)
         stageName = _phCtx.stageName
         isFirstClear = _phCtx.isFirstClear
         currentStageId = _phCtx.currentStageId
+        if _phCtx.reincarnationReady then
+            local pending = pendingReincarnation
+            if pending then
+                if onReincarnateCallback then
+                    onReincarnateCallback({
+                        fromDifficulty = pending.fromDifficulty,
+                        toDifficulty = pending.toDifficulty,
+                        newStageId = pending.targetStageId,
+                    })
+                else
+                    BattleScene.completeReincarnation()
+                end
+            end
+        end
         return
     end
     defeatTimer = _phCtx.defeatTimer
@@ -1526,7 +1540,7 @@ function BattleScene.setOnAllDead(callback)
     onAllDeadCallback = callback
 end
 
---- 完成轮回：外部动画（IntroCutscene）播放结束后调用，执行实际的关卡加载
+--- 完成轮回：默认在阶段状态回灌后调用，执行实际的关卡加载
 function BattleScene.completeReincarnation()
     if not _navLogic then bindBattleExtracts() end
     return _navLogic.completeReincarnation()

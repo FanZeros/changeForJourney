@@ -329,9 +329,8 @@ end
 --- 每帧更新：三行使用同一套 BattleTriDriver，只切换各自的状态实例。
 function BattleTriPage.update(dt)
     if not isOpen_ then return end
-    -- 初始剧情（信件/过场/情景对话）点完之前不推进战斗，避免开场期间自动开战。
+    -- 初始剧情（信件/情景对话）点完之前不推进战斗，避免开场期间自动开战。
     if require("ui.story.gate.LetterIntro").isOpen()
-        or require("ui.story.gate.IntroCutscene").isActive()
         or require("ui.story.ScenarioDialogue").isActive() then
         return
     end

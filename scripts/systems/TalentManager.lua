@@ -181,6 +181,7 @@ local function ensureState(unit)
             nitroStacks = 0,
             -- Hero22 小黑子: 法术机关枪
             machineGunNormalCount = 0,   -- 普攻与连击计入，连射弹不计入
+            machineGunProgress = 0,      -- 未消耗攻击进度，保留小数门槛余量
             machineGunBurstShot = false,   -- 本帧 performAttack 是否为连射弹
             lastAttackWasBurst = false,  -- 上一击是否为连射（供 onAfterAttack 判定）
             machineGunShotsLeft = 0,
@@ -234,6 +235,15 @@ end
 local function hasAwaken(unit, nodeIndex)
     if not unit then return false end
     return require("config.AwakeningConfig").hasNode(unit.awakeningNodes, nodeIndex)
+end
+
+--- 检查单位是否已激活指定新阶段（1=初醒，2=共鸣，3=蜕变）
+---@param unit table|nil
+---@param stageIndex number 1~3
+---@return boolean
+local function hasAwakenStage(unit, stageIndex)
+    if not unit then return false end
+    return require("config.AwakeningConfig").hasStage(unit.awakeningNodes, stageIndex)
 end
 
 --- 检查单位所属队伍是否已点亮指定天赋星图节点
@@ -554,7 +564,7 @@ local _xin = TalentXin.bind({
 local onXinAfterAttack = _xin.onXinAfterAttack
 
 local _fatFish = TalentFatFish.bind({
-    hasAwaken = hasAwaken,
+    hasAwakenStage = hasAwakenStage,
     getState = getState,
     talentLog = talentLog,
     getAliveEnemies = getAliveEnemies,
@@ -563,7 +573,7 @@ local _fatFish = TalentFatFish.bind({
 local onFatFishAfterAttack = _fatFish.onAfterAttack
 
 local _fourNew = TalentFourNew.bind({
-    hasAwaken = hasAwaken,
+    hasAwakenStage = hasAwakenStage,
     getState = getState,
     talentLog = talentLog,
     getTAL_BCS = function() return TAL_BCS end,

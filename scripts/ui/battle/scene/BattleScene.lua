@@ -1308,6 +1308,52 @@ function BattleScene.adoptStageProgress(stageId)
     isFirstClear = not clearedStages[stageId]
 end
 
+--- 三行普通关通关：三队共享解锁与首通账本，各队保留独立的当前关卡。
+--- 一队追赶已被其他队通关的节点时仍要同步当前关，不能被奖励去重拦住。
+---@param stageId number
+---@param teamIdx number
+---@return boolean firstClear
+function BattleScene.completeTriStageClear(stageId, teamIdx)
+    local id = tonumber(stageId)
+    if not id or id % 1 ~= 0 or not SC.getStage(id) or SC.isTerminalTemple(id)
+        or not teamIdx or teamIdx % 1 ~= 0 or teamIdx < 1 or teamIdx > 3 then
+        return false
+    end
+    local ClientDispatcher = require("runtime.ClientDispatcher")
+    local battle = ClientDispatcher.get("battle")
+    local savedCleared = type(battle) == "table" and battle.clearedStages or {}
+    savedCleared = savedCleared or {}
+    local wasCleared = clearedStages[id] == true or clearedStages[tostring(id)] == true
+        or savedCleared[id] == true or savedCleared[tostring(id)] == true
+    clearedStages[id] = true
+    -- 末关仅解锁终焉入口，不能把终焉当普通下一关或直接跳到轮回目标。
+    local nextId = SC.getNextStageId(id)
+    local progressId = nextId and not SC.isTerminalTemple(nextId) and nextId or id
+    local savedMax = type(battle) == "table" and tonumber(battle.maxStageId) or 0
+    maxStageId_ = math.max(maxStageId_, savedMax or 0, progressId)
+    if teamIdx == 1 then
+        BattleScene.adoptStageProgress(progressId)
+    end
+    if type(battle) == "table" then
+        battle.clearedStages = savedCleared
+        savedCleared[tostring(id)] = true
+        battle.maxStageId = maxStageId_
+        if teamIdx == 1 then
+            battle.currentStageId = currentStageId
+            battle.battleMode = isFirstClear and "firstClear" or "idle"
+        end
+    end
+    print(string.format("[BattleScene] 队%d 通关 stage=%d first=%s current=%s max=%s",
+        teamIdx, id, tostring(not wasCleared), tostring(currentStageId), tostring(maxStageId_)))
+    if not wasCleared then BattleScene.onFirstClear(id, teamIdx) end
+    -- 直接通知镜像/UI，不通过整表回灌重载其他正在战斗的队伍。
+    if type(battle) == "table" then
+        ClientDispatcher.notifySubscribers("battle")
+        require("boot.StandaloneSave").Flush()
+    end
+    return not wasCleared
+end
+
 --- [终焉协同] 三队共享生命池打空后调用：等价主线「终焉胜利 → 轮回」。
 --- 奖励去重：只有该终焉关此前未通关时才触发首通回调（重打已通关的终焉
 --- 不再重复发 fcExp/首通奖励，与主线 BattleCasualty 的 isFirstClear 门槛一致）。
@@ -1488,9 +1534,10 @@ end
 
 --- 三行战斗通关后复用首通奖励弹窗。
 ---@param clearedStageId number
-function BattleScene.onFirstClear(clearedStageId)
+---@param teamIdx number|nil 缺省为一队；其他队只推进共享解锁，不切一队当前关
+function BattleScene.onFirstClear(clearedStageId, teamIdx)
     if onFirstClearCallback then
-        onFirstClearCallback(clearedStageId)
+        onFirstClearCallback(clearedStageId, teamIdx)
     end
 end
 

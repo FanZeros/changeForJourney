@@ -8,6 +8,15 @@
 3. **以新分支继续开发**：以用户当轮指定分支为基线创建独立开发分支，每次完成后 commit + push 到该开发分支；通常基于 `workspace930` 开发并通过 PR 合入。**禁止 push 到 workspace 或 workspace930 分支本身**，显式指定推送目标，不强推、不擅自合并 PR。用户明确要求修复既有 PR 冲突时，可在新修复分支验证后快进更新该 PR 的开发分支，不将该许可延伸到其他分支。
 4. **部署位置**：当前仓库和游戏项目直接位于 `/workspace` 根目录，scripts/assets/.project 等不再嵌套子目录；保护引擎提供的只读目录，修改代码后调用官方 build 工具构建。
 
+### 轮回最小剧情切片接线规划（2026-10-03，纯文档）
+
+- 用户选择“制定接线方案”：由精修提交 `bc85ac6b` 新建 `feat1003/samsara-story-wiring-plan`，仅规划不改Lua/队列/存档，不推workspace系列，不自动建PR/合入。
+- 方案 `docs/轮回剧情最小切片接线方案-1003.md`：两单元四新节点（N02日志，N12–14征用核验）用独立字符串命名空间，不塞旧数字FIFO；旧播放源先消化，教程/奖励/开场/重要模态空闲后才新层peek/begin，token+epoch+reason结果下一帧排播，回看独立无奖。
+- 源码事实：claimed在show前预写，granted为结算账本，均不能当完整阅读；73是4905入场，旧backfill只CLEAR不补ENTER；新资格严格cleared=true不看max猜；session未知字段虽可保存，旧表不自动补默认；真实磁盘写入是StandaloneSave.Flush，PDM.FlushImmediate仅日志。新方案明确schema共用迁移、保全旧字段、失败重试和reset取消租约。
+- 首批N03未实现但N12引用E02，方案提供204静态货单支持；缺204历史时以铁匠案件副本标独立来源，不伪造玩家持有史。旧档缺73不设硬门槛，新调查自成语境，原70–73仅主动无奖补读。新证据/回看claim/tutorial/FOLLOW调用必须为0，不改旧奖励服务。
+- 独立方案复核五项已补正：旧take=nil还要非破坏性检查pending/FOLLOW；资格不直接公开E05/批注；最小N14用独立语境不引用旧72“送走”；新结果helper只碰新槽不顺手改旧onFinish同步清理；实际Flush未来转发boolean、底层编码/开档/写失败注入和节流重试均列验收。两个session onLoad与重复normalize分别测试。当前源码路径与文档链接核实存在，纯文档diff/仓库规范通过；未实施、未重复构建。
+- 本轮纯文档，所有候选API/模块/字段明确未实现。完成后只commit/push方案分支并真正AskUserQuestion给2–4项继续，尊重用户后续停止/权限拒绝，不提交PAT、本地.project、截图/日志/存档。
+
 ### 轮回剧情正文精修（2026-10-03，纯文档）
 
 - 用户在AskUserQuestion选择“精修现有正文”：由正文提交 `8f8d1e92` 新建 `feat1003/samsara-story-polish`，只精修现有25场，不扩后半段、不接游戏，不推workspace系列。

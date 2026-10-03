@@ -100,9 +100,18 @@ function Start()
             "关闭偏好drawBadge安全跳过")
         Settings.setSetIconsEnabled(true)
         check(Icon.drawBadge({}, equip, 80, 80, 160), "开启偏好drawBadge可绘制真实装备")
+        local setId = Icon.setId(equip)
+        local badgePath = "image/套装图标/badge/SET_" .. setId .. ".png"
+        check(loaded[#loaded] == badgePath, "装备角标加载独立透明无框素材")
+        local loadCount = #loaded
         local actual = iconDraws[#iconDraws]
         check(actual.cx == badge.cx and actual.cy == badge.cy and actual.w == 44,
             "drawBadge实际使用左下布局")
+        Icon.drawBadge({}, equip, 80, 80, 160)
+        check(#loaded == loadCount, "无框装备徽记缓存复用，不逐帧加载")
+        Icon.draw({}, "carapace", 100, 100, 46, 1)
+        check(#loaded == loadCount and iconDraws[#iconDraws].image == 1,
+            "装备角标缓存与完整V3缓存隔离，套装正文仍用原图")
         local Filter = originalRequire("ui.widget.SetFilterDialog")
         Filter.open({}, { onChange = function() changes = changes + 1 end })
         Filter.handleInput(540, 610)

@@ -155,7 +155,7 @@ AD.META = {
     [AD.HP_BONUS]         = { name = "生命加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.DODGE_BONUS]      = { name = "闪避加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
     [AD.ES_BONUS]         = { name = "护盾加成",   valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
-    [AD.ES_DMG_REDUCE]    = { name = "护盾伤害减免", valueModel = 60, dataType = AD.TYPE_PCT,   default = 0, cap = 80 },
+    [AD.ES_DMG_REDUCE]    = { name = "护盾减伤", valueModel = 60, dataType = AD.TYPE_PCT,   default = 0, cap = 80 },
     [AD.ARMOR_BONUS]      = { name = "护甲加成",       valueModel = 60,   dataType = AD.TYPE_PCT,   default = 0 },
 
     -- 攻击属性

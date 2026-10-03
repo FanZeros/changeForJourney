@@ -230,6 +230,9 @@ function M.run(rt)
         TaskPage.init(vg)
         TaskPage.open()
     end)
+    TownScene.setOnStoryRecordClick(function()
+        require("ui.story.SamsaraRecordPanel").open()
+    end)
 
     -- 5.24 装备数据初始化（Standalone 模式下 ClientDispatcher 不会收到 Server 推送）
     if not ClientDispatcher.get("equipment") then
@@ -487,6 +490,7 @@ function M.run(rt)
         -- 在单机永不入队。这里直接调 StoryPlayer.onStage(id,"clear") 补回接线：
         -- 情景先入队，等首通奖励弹窗关闭后由 tryPlayPendingStory_ 逐段播出并领奖。
         require("systems.StoryPlayer").onStage(clearedStageId, "clear")
+        require("systems.SamsaraSlicePlayer").onStageCleared(clearedStageId)
         local stageEntry = StageConfig.getStage(clearedStageId)
         if not stageEntry then return end
 

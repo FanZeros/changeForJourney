@@ -511,6 +511,7 @@ ModuleRegistry.modules = {
                 lastOnlineTime = 0,  -- 上次在线时间戳（os.time()）
                 firstLoginTime = 0,  -- 首次登录时间戳（os.time()）
                 introCompleted = false,  -- 是否已完成开场剧情（客户端播完后标记）
+                samsaraStory = require("shared.session.SamsaraStorySchema").new(),
             }
         end,
         onLoad = function(data)
@@ -535,6 +536,7 @@ ModuleRegistry.modules = {
                 end
                 data.scenarioRewardsGranted = fixedGranted
             end
+            require("shared.session.SamsaraStorySchema").normalize(data)
         end,
     },
 

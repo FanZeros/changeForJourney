@@ -88,6 +88,15 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      M.pendingTutorialNotify_ = { scenarioId = scenarioId }
  end
 
+ --- 只读查询；新故事仲裁不能通过第二次 consume 探测旧播放源。
+ function M.hasPendingScenarioDialogue()
+     return M.pendingScenarioDialogue_ ~= nil
+ end
+
+ function M.hasPendingFollowUpDialogue()
+     return M.pendingFollowUpDialogue_ ~= nil
+ end
+
  --- 消费 pendingScenarioDialogue_（延迟播放的情景对话）
  function M.consumePendingScenarioDialogue()
      local v = M.pendingScenarioDialogue_

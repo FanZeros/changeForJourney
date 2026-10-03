@@ -8,11 +8,11 @@
   "never_cancel_task": true,
   "never_end_without_askuserquestion": true,
   "askuserquestion_rule": "不能擅自取消或退出任务；完成任务后、给出规划后、提交后，以及所有对话收尾（含受阻时），均先简要报告已核实的结果，再真正调用 AskUserQuestion 工具提供 2–4 个明确选项询问下一步并等待选择；严禁仅以普通文字或开放式问题结尾。记忆不等同于自动 hook。",
-  "dev_branch": "按当前轮次指定的基线新建独立任务分支",
-  "base_branch": "feat930/equipment-attribute-preview",
-  "collaboration_reconfirmed_at": "2026-10-02",
-  "collaboration_reminder": "已授权任务持续推进，不擅自取消或退出；任务完成、提交后或确需用户决定的阻塞时，先简报结果，再实际调用 AskUserQuestion 提供下一步选项。当前从 feat930/equipment-attribute-preview 新建功能分支，完成后推新分支并向该原分支提交 PR，不推 workspace 系列分支，不强推。用户明确取消、权限拒绝或安全边界仍须尊重，不绕过。",
-  "push_policy": "当前轮次优先：基于指定基线新建独立分支；有提交时只推该新分支，绝不推 workspace 系列基线（除非用户当轮明确授权），不强推、不覆盖并发改动。历史：2026-09-28 已授权并合入 workspace926：feat926/shield-scaling-0928（merge 3fafff54）、feat928/rarity-unify-multi-filter（merge 392bcdc）、feat926/awakening-skill-review、feat/talent-more-paths-0928（三分支合并+死亡补位+投掷物抛物线）。每次交付或受阻先简报，再调用 AskUserQuestion 提供下一步选项；不把 PAT 写入仓库、远端 URL、日志或记忆（用户对话中贴出的 PAT 应提示撤销轮换；推送用内联凭据，推完 set-url 还原并 grep ghp_ .git/config 验证 0）。",
+  "dev_branch": "feat1003/samsara-story-wiring-plan（本轮用户明确继续当前分支，不另建）",
+  "base_branch": "feat1003/samsara-story-wiring-plan",
+  "collaboration_reconfirmed_at": "2026-10-03",
+  "collaboration_reminder": "已授权任务持续推进，不擅自取消或退出；每次完成、提交或需用户决定的阻塞，先简报真实结果，最后实际调用 AskUserQuestion 提供2–4个下一步选项。2026-10-03本轮用户明确在 feat1003/samsara-story-wiring-plan 继续并推回同名分支，不另建，不推任何workspace系列，不强推。后续以当轮新指令为准；尊重停止指令、权限拒绝及安全边界。",
+  "push_policy": "以用户当轮指定分支为准；2026-10-03本轮明确继续 feat1003/samsara-story-wiring-plan，完成后只commit/push同名分支，不新建、不推workspace系列、不强推、不擅自合并PR。历史新建分支偏好不覆盖新授权。每次完成或受阻先简报，再实际调用AskUserQuestion给2–4个选项。PAT不写源码/Git配置/远端URL/日志/记忆，任务后提醒撤销轮换。",
   "scoped_preferences": {
     "gamedev": {
       "image_model": "gpt(GPT Image 2);黑白抠图黑底图用 nanobanana;transparent=true 弃用",

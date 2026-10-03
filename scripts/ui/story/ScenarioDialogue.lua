@@ -53,6 +53,22 @@ local stepIndex_  = 0
 local onFinishCb_ = nil
 local title_      = nil         -- 横屏章节标题（可选）
 
+-- 新无奖故事的结果槽与旧 onFinish 分离；先捕获身份，再允许旧回调/广播链播。
+---@type table|nil
+local resultSlot_ = nil
+local function takeResult_(reason)
+    local slot = resultSlot_
+    resultSlot_ = nil
+    if not slot then return function() end end
+    return function()
+        local ok, err = pcall(slot.callback, {
+            playToken = slot.playToken, contextEpoch = slot.contextEpoch,
+            nodeKey = slot.nodeKey, reason = reason, mode = slot.mode,
+        })
+        if not ok then print("[ScenarioDialogue] result callback failed: " .. tostring(err)) end
+    end
+end
+
 -- 当前步骤的打字机状态
 local textElapsed_ = 0
 local typingDone_  = false
@@ -199,12 +215,24 @@ end
 ---   config.steps      table  对话步骤列表:
 ---       { characterId = 1, name = "角色名", text = "对话内容" }
 ---   config.onFinish   function|nil 全部对话结束后的回调
+---   config.completionToken table|nil 新故事租约（不调用旧领奖链）
+---   config.onResult function|nil 捕获的租约身份及结束原因
+---@return boolean 是否成功开始展示
 function ScenarioDialogue.show(config)
     if not config or not config.steps or #config.steps == 0 then
         print("[ScenarioDialogue] show: no steps provided")
-        return
+        return false
     end
 
+    local reportReplaced = takeResult_("replaced")
+    reportReplaced()
+    if type(config.onResult) == "function" and type(config.completionToken) == "table" then
+        local token = config.completionToken
+        resultSlot_ = { callback = config.onResult, mode = config.mode or "large",
+            playToken = token.playToken, contextEpoch = token.contextEpoch, nodeKey = token.nodeKey,
+            kind = token.kind }
+    end
+    dismissing_, dismissT_ = false, 0
     mode_       = config.mode or "large"
     steps_      = config.steps
     onFinishCb_ = config.onFinish
@@ -251,6 +279,7 @@ function ScenarioDialogue.show(config)
 
     print("[ScenarioDialogue] show: mode=" .. mode_ .. " steps=" .. #steps_
         .. " title=" .. tostring(title_))
+    return true
 end
 
 --- 每帧更新
@@ -265,12 +294,14 @@ function ScenarioDialogue.update(dt)
             dismissing_ = false
             active_     = false
             print("[ScenarioDialogue] dismiss animation finished")
+            local report = takeResult_("dismissed")
             if onFinishCb_ then
                 onFinishCb_()
                 onFinishCb_ = nil
             end
             -- 先跑 onFinish（可能链播下一段），再广播结束供排队方消化
             emitFinished_("dismissed")
+            report()
         end
         return
     end
@@ -497,6 +528,11 @@ local function drawLandscape(w, h)
     nvgText(vg_, w * 0.04, h * 0.055, chapter, nil)
     nvgTextAlign(vg_, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
     nvgText(vg_, w * 0.96, h * 0.055, string.format("%d / %d", stepIndex_, #steps_), nil)
+    if resultSlot_ and (resultSlot_.kind == "samsara_first_read" or resultSlot_.kind == "samsara_replay") then
+        -- 只有无奖切片展示跳过入口；旧情景的视觉和输入保持原样。
+        nvgFontSize(vg_, math.max(18, h * 0.024))
+        nvgText(vg_, w * 0.96, h * 0.12, "跳过 · 保留夹页", nil)
+    end
 
     if typingDone_ and not dismissing_ then
         local blink = 0.55 + 0.45 * math.sin(textElapsed_ * ARROW_BLINK_SPEED * math.pi * 2)
@@ -581,11 +617,13 @@ function ScenarioDialogue.advance()
             -- 大情景：直接结束
             active_ = false
             print("[ScenarioDialogue] finished all steps")
+            local report = takeResult_("finished")
             if onFinishCb_ then
                 onFinishCb_()
                 onFinishCb_ = nil
             end
             emitFinished_("finished")
+            report()
         end
     else
         -- 重置为新步骤
@@ -626,11 +664,29 @@ function ScenarioDialogue.skip()
     active_    = false
     stepIndex_ = 0
     print("[ScenarioDialogue] skipped")
+    local report = takeResult_("skipped")
     if onFinishCb_ then
         onFinishCb_()
         onFinishCb_ = nil
     end
     emitFinished_("skipped")
+    report()
+end
+
+--- 新无奖切片专用输入，旧情景不走此分支。
+function ScenarioDialogue.isSliceActive()
+    return active_ and resultSlot_ ~= nil
+        and (resultSlot_.kind == "samsara_first_read" or resultSlot_.kind == "samsara_replay")
+end
+
+function ScenarioDialogue.handleSliceInput(x, y, w, h)
+    if not ScenarioDialogue.isSliceActive() then return false end
+    if x >= w * 0.76 and x <= w * 0.98 and y >= h * 0.085 and y <= h * 0.155 then
+        ScenarioDialogue.skip()
+    else
+        ScenarioDialogue.advance()
+    end
+    return true
 end
 
 --- 获取当前进度
@@ -642,6 +698,7 @@ end
 
 --- 重置状态（不释放图片缓存）
 function ScenarioDialogue.reset()
+    local report = takeResult_("reset")
     active_         = false
     stepIndex_      = 0
     steps_          = {}
@@ -660,6 +717,7 @@ function ScenarioDialogue.reset()
     dismissing_        = false
     dismissT_          = 0
     title_             = nil
+    report()
 end
 
 return ScenarioDialogue

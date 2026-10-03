@@ -23,6 +23,7 @@ local HorizonBg      = require("core.HorizonBg")  -- [横屏三联] 左右共享
 local ExpTable   = require("config.ExpTable")
 local BF         = require("systems.ButtonFeedback")
 local LootBox    = require("ui.loot.LootBox")
+local SamsaraSlicePlayer = require("systems.SamsaraSlicePlayer") -- 仅查询剧情记录待阅红点
 
 local TownScene = {}
 
@@ -136,6 +137,12 @@ local TASK_SHIFT_X = 50
 local TASK_CX, TASK_CY, TASK_W, TASK_H = 180 + TASK_SHIFT_X, 2050, 245, 245
 local TASK_LBL_CY = 2240
 local TASK_HIT_CX, TASK_HIT_CY, TASK_HIT_W, TASK_HIT_H = 180 + TASK_SHIFT_X, 2100, 361, 400
+
+-- 剧情记录小入口：功绩右侧下方的独立空白区，仍使用城镇1080×2400设计坐标。
+-- TASK热区 x49.5..410.5/y1900..2300；LOOT热区 x420..800/y1790..2230。
+-- 此入口 x460..760/y2245..2335，不侵入上述两区；遗匣经验行2214/字号28/描边3下缘约2231。
+local STORY_CX, STORY_CY, STORY_W, STORY_H = 610, 2290, 300, 90
+local STORY_ICON, STORY_DOT_ICON = "nav_log", "reddot" -- DarkIcon中已定义的典籍与红点
 
 -- 文字
 local LABEL_FONT_SIZE   = 38
@@ -630,6 +637,20 @@ function TownScene.draw(vg)
         DarkIcon.draw(vg, "reddot", TASK_CX + 169, TASK_LBL_CY - 45, 36, 1.0)
     end
     BF.finish(vg, taskFeedback)
+
+    -- 独立于旧功绩/遗匣地点绘制，不共用它们的反馈缩放或命中。
+    local storyFeedback = BF.begin(vg, "town_story_record", STORY_CX, STORY_CY, STORY_W, STORY_H)
+    DarkIcon.drawNine(vg, "btn", STORY_CX - STORY_W * 0.5, STORY_CY - STORY_H * 0.5,
+        STORY_W, STORY_H, { accent = "gold" })
+    DarkIcon.draw(vg, STORY_ICON, STORY_CX - 112, STORY_CY, 48, 1.0)
+    drawTextStroke(vg, STORY_CX + 18, STORY_CY, "剧情记录", 34,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 238, 216, 161, 3)
+    local storyRecord = SamsaraSlicePlayer.getRecord()
+    if storyRecord.status == "pending" then
+        DarkIcon.draw(vg, STORY_DOT_ICON, STORY_CX + STORY_W * 0.5 - 10,
+            STORY_CY - STORY_H * 0.5 + 10, 28, 1.0)
+    end
+    BF.finish(vg, storyFeedback)
 end
 
 --- 回调：点击铁匠铺
@@ -687,7 +708,22 @@ function TownScene.setOnTaskClick(fn)
     onTaskClick = fn
 end
 
+---@type fun()|nil
+local onStoryRecordClick = nil
+
+---@param fn fun()|nil
+function TownScene.setOnStoryRecordClick(fn)
+    onStoryRecordClick = fn
+end
+
 function TownScene.handleInput(dx, dy)
+    -- 先判独立剧情记录入口，旧功绩/遗匣和建筑判断保持原样。
+    if math.abs(dx - STORY_CX) <= STORY_W * 0.5
+        and math.abs(dy - STORY_CY) <= STORY_H * 0.5 then
+        BF.trigger("town_story_record")
+        if onStoryRecordClick then onStoryRecordClick() end
+        return true
+    end
     -- 整个地点含名牌与收益文字；不再保留左下角全局箱子热区。
     if math.abs(dx - LOOT_HIT_CX) <= LOOT_HIT_W * 0.5
         and math.abs(dy - LOOT_HIT_CY) <= LOOT_HIT_H * 0.5 then

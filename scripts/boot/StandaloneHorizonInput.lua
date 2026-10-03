@@ -38,9 +38,13 @@ local CharacterDetail    = require("ui.character.detail.CharacterDetail")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
 local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
+local SamsaraRecordPanel = require("ui.story.SamsaraRecordPanel")
 local TutorialManager    = require("systems.TutorialManager")
 
 local Input = {}
+
+-- bind 前没有用户按压；bind 后查询真实鼠标/触摸及拖拽租约，不消费事件。
+function Input.isPointerBusy() return false end
 
 ---@param ctx table
 function Input.bind(ctx)
@@ -67,6 +71,16 @@ function Input.bind(ctx)
     end
     -- 遗匣按压由左栏捕获；移出左栏后不再把同次拖拽转交右栏/战斗。
     local lootPress = false
+    local recordPress, slicePress = false, false
+    local sliceDragged = false
+    local storyPressX, storyPressY = 0, 0
+
+    local function recordInputActive()
+        return SamsaraRecordPanel.isOpen() and not UpdateNoticePopup.isOpen()
+            and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
+            and not ScenarioDialogue.isActive() and not RewardPopup.isOpen()
+            and not OfflineRewardPanel.isOpen() and not StartScreen.isOpen()
+    end
 
     -- [底栏移除] 横屏副本(5)页全窗竖版模态是否激活（全屏弹窗打开时让位）
     local function HorizonPageModalActive()
@@ -266,7 +280,7 @@ function Input.bind(ctx)
         return TutorialManager.isActive() and TutorialManager.isInputActive()
             and not OfflineRewardPanel.isOpen() and not UpdateNoticePopup.isOpen()
             and not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
-            and not ScenarioDialogue.isActive()
+            and not ScenarioDialogue.isActive() and not SamsaraRecordPanel.isOpen()
             and not DungeonBattleScene.isOpen() and not TowerBattleScene.isActive()
     end
     local tutorialPress = false
@@ -295,6 +309,17 @@ function Input.bind(ctx)
         end
         -- [DarkTitleScreen] 标题期吞掉按下（继续由 ButtonUp 触发）
         if DarkTitleScreen.isOpen() then return end
+        if recordInputActive() or ScenarioDialogue.isSliceActive() then
+            cancelUnderlyingPress()
+            local mp = pointerPosition()
+            storyPressX, storyPressY = toDesign(mp.x / dpr(), mp.y / dpr())
+            local primary = eventData["Button"]:GetInt() == MOUSEB_LEFT
+            recordPress = primary and recordInputActive()
+            slicePress = primary and ScenarioDialogue.isSliceActive()
+            sliceDragged = false
+            if recordPress then SamsaraRecordPanel.handleDragBegin(storyPressX, storyPressY) end
+            return
+        end
         -- [LetterIntro] 开场期也要记 pressValid，否则抬起被当成无效点击
         if LetterIntro.isOpen() or ScenarioDialogue.isActive() then
             pressValid = true
@@ -505,6 +530,20 @@ function Input.bind(ctx)
     function HandleMouseMoveHorizon(eventType, eventData)
         if UpdateNoticePopup.isOpen() then return end  -- 全窗模态：屏蔽下层 hover
         if DarkTitleScreen.isOpen() then return end
+        if recordInputActive() then
+            local mp = pointerPosition()
+            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            if recordPress then SamsaraRecordPanel.handleDragMove(sx, sy) end
+            return
+        end
+        if ScenarioDialogue.isSliceActive() then
+            local mp = pointerPosition()
+            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            if slicePress and math.abs(sx - storyPressX) + math.abs(sy - storyPressY) >= TAP_THRESHOLD then
+                sliceDragged = true
+            end
+            return
+        end
         if LetterIntro.isOpen() or ScenarioDialogue.isActive() then return end
         if OfflineRewardPanel.isOpen() then
             if offlineTouchId ~= nil then return end
@@ -648,7 +687,7 @@ function Input.bind(ctx)
     -- 鼠标静止时也推进装备悬停计时（Standalone.HandleUpdate 每帧调用）。
     -- 移到其他格子由命中检测立即收起旧说明。
     function HandleEquipmentHoverTickHorizon()
-        if OfflineRewardPanel.isOpen() or UpdateNoticePopup.isOpen() then return end
+        if OfflineRewardPanel.isOpen() or UpdateNoticePopup.isOpen() or SamsaraRecordPanel.isOpen() then return end
         if DarkTitleScreen.isOpen() or LetterIntro.isOpen()
             or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
             or EquipCrossDrag.isArmed() then return end
@@ -680,6 +719,30 @@ function Input.bind(ctx)
     end
 
     function HandleMouseButtonUpHorizon(eventType, eventData)
+        local wasRecord, wasSlice = recordPress, slicePress
+        recordPress, slicePress = false, false
+        if recordInputActive() or ScenarioDialogue.isSliceActive() then
+            cancelUnderlyingPress()
+            local mp = pointerPosition()
+            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            local primary = eventData["Button"]:GetInt() == MOUSEB_LEFT
+            local moved = math.abs(sx - storyPressX) + math.abs(sy - storyPressY)
+            if recordInputActive() then
+                local dragged = SamsaraRecordPanel.handleDragEnd()
+                if wasRecord and primary and not dragged and moved < TAP_THRESHOLD then
+                    SamsaraRecordPanel.handleInput(sx, sy, logicalW(), logicalH())
+                end
+            elseif wasSlice and primary and not sliceDragged and moved < TAP_THRESHOLD then
+                ScenarioDialogue.handleSliceInput(sx, sy, logicalW(), logicalH())
+            end
+            return
+        end
+        if wasRecord or wasSlice then
+            SamsaraRecordPanel.handleDragEnd()
+            cancelUnderlyingPress()
+            -- 按下时属于故事覆盖层，关闭后释放不得穿透到旧页面。
+            if not UpdateNoticePopup.isOpen() and not OfflineRewardPanel.isOpen() then return end
+        end
         if tutorialPress then
             tutorialPress = false
             local mp = pointerPosition()
@@ -1104,6 +1167,7 @@ function Input.bind(ctx)
     end
 
     local function handleTopTouch(eventData, released)
+        if ScenarioDialogue.isSliceActive() then return false end
         if not OfflineRewardPanel.isOpen() or offlineInputActive() then return false end
         cancelUnderlyingPress()
         OfflineRewardOverlay.cancel()
@@ -1123,6 +1187,12 @@ function Input.bind(ctx)
     end
 
     local activeTouchId = nil ---@type integer|nil
+    function Input.isPointerBusy()
+        return activeTouchId ~= nil or offlineTouchId ~= nil or recordPress or slicePress
+            or EquipCrossDrag.isArmed() or CharacterPanel.isDraggingCard()
+            or input:GetMouseButtonDown(MOUSEB_LEFT) or input:GetMouseButtonDown(MOUSEB_RIGHT)
+            or input:GetMouseButtonDown(MOUSEB_MIDDLE)
+    end
     local function dispatchTouch(eventType, eventData, handler)
         touchPosition = { x = eventData["X"]:GetInt(), y = eventData["Y"]:GetInt() }
         local proxy = { Button = { GetInt = function() return MOUSEB_LEFT end } }
@@ -1133,7 +1203,7 @@ function Input.bind(ctx)
 
     function HandleTouchBeginHorizon(eventType, eventData)
         if handleTopTouch(eventData, false) then return end
-        if OfflineRewardPanel.isOpen() then
+        if OfflineRewardPanel.isOpen() and not ScenarioDialogue.isSliceActive() then
             if offlineTouchId == nil then
                 offlineTouchId = eventData["TouchID"]:GetInt()
                 cancelUnderlyingPress()
@@ -1152,7 +1222,7 @@ function Input.bind(ctx)
             if eventData["TouchID"]:GetInt() == offlineTouchId then offlineTouchId = nil end
             return
         end
-        if OfflineRewardPanel.isOpen() or offlineTouchId ~= nil then
+        if (OfflineRewardPanel.isOpen() or offlineTouchId ~= nil) and not ScenarioDialogue.isSliceActive() then
             if eventData["TouchID"]:GetInt() == offlineTouchId then
                 if offlineInputActive() then
                     local sx, sy = offlineTouchPosition(eventData)
@@ -1170,7 +1240,7 @@ function Input.bind(ctx)
     end
 
     function HandleTouchMoveHorizon(eventType, eventData)
-        if OfflineRewardPanel.isOpen() or offlineTouchId ~= nil then
+        if (OfflineRewardPanel.isOpen() or offlineTouchId ~= nil) and not ScenarioDialogue.isSliceActive() then
             if eventData["TouchID"]:GetInt() == offlineTouchId and offlineInputActive() then
                 local sx, sy = offlineTouchPosition(eventData)
                 OfflineRewardOverlay.handleMove(sx, sy)
@@ -1189,6 +1259,10 @@ function Input.bind(ctx)
         if LetterIntro.isOpen() or ScenarioDialogue.isActive() then return end
         local wheel = eventData["Wheel"]:GetInt()
         if wheel == 0 then return end
+        if recordInputActive() then
+            SamsaraRecordPanel.handleWheel(wheel)
+            return
+        end
         local mousePos = pointerPosition()
         local sx = mousePos.x / dpr()
         local sy = mousePos.y / dpr()

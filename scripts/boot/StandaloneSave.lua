@@ -245,8 +245,9 @@ function StandaloneSave.Wipe()
     print("[StandaloneSave] wiped " .. SAVE_FILE)
 end
 
+---@return boolean 本次快照是否实际写入成功
 function StandaloneSave.Flush()
-    writeFile()
+    return writeFile()
 end
 
 return StandaloneSave

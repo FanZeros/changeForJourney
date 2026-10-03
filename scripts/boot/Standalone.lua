@@ -65,6 +65,21 @@ local TutorialManager    = require("systems.TutorialManager")  -- [横屏接线 
 local LocalActionBridge  = require("runtime.LocalActionBridge")
 local StandaloneBoot     = require("boot.StandaloneBoot")
 local StandaloneRT       = require("boot.StandaloneRT")
+local SamsaraSlicePlayer = require("systems.SamsaraSlicePlayer")
+local SamsaraSlicePlayback = require("systems.SamsaraSlicePlayback")
+local SamsaraRecordPanel = require("ui.story.SamsaraRecordPanel")
+local introChainActive_ = false
+---@type fun()|nil
+local introNext_ = nil
+
+local function storySession_()
+    local data = ClientDispatcher.get("session")
+    if not data then
+        data = require("shared.session.SessionSchema").Fields.session.getDefault()
+        ClientDispatcher.set("session", data)
+    end
+    return data
+end
 
 local Standalone = {}
 
@@ -345,6 +360,14 @@ function Standalone.Start()
     -- 4.8 [单机存档] 恢复本地存档（GameState + Dispatcher 各模块）
     -- ⚠️ 须在一切 UI/数据初始化之前：各系统初始化均为 "if not get(x)" 守卫
     StandaloneSave.RestoreData()
+    -- 必须早于 setBattleData/SyncBattleState 的最高关推断；无资格也保存捕获标记。
+    SamsaraSlicePlayer.init({
+        getSession = storySession_,
+        setSession = function(data) ClientDispatcher.set("session", data) end,
+        flush = function() return StandaloneSave.Flush() end,
+    }, ClientDispatcher.get("battle"))
+    SamsaraRecordPanel.init(vg)
+    ClientDispatcher.subscribe("session", SamsaraSlicePlayer.onSessionUpdated)
 
     -- 5. 先出标题：只加载标题必要贴图，其余模块分帧补 init，避免预览首帧卡死
     StartScreen.init(vg, scene)
@@ -440,6 +463,7 @@ function Standalone.Start()
 end
 
 function Standalone.Stop()
+    SamsaraSlicePlayer.cancel()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
     if vg then
@@ -530,6 +554,7 @@ end
 
 --- 信件结束后的门厅点卯（横屏第二幕），再接三人入队
 local function finishIntro_()
+    introChainActive_ = false
     print("[Standalone] intro chain finished, unlock game")
     GameBGM.setScene("battle", { fromStart = true })
     markIntroCompleted_()
@@ -558,7 +583,7 @@ local function playJoinAt_(index)
         steps = cfg.steps,
         onFinish = function()
             print("[Standalone] starter join finished index=" .. tostring(index))
-            playJoinAt_(index + 1)
+            introNext_ = function() playJoinAt_(index + 1) end
         end,
     })
 end
@@ -588,7 +613,7 @@ local function startOpeningBriefing_()
         steps = openingSteps,
         onFinish = function()
             print("[Standalone] opening briefing finished, start joins")
-            startStarterJoins_()
+            introNext_ = startStarterJoins_
         end,
     })
 end
@@ -609,6 +634,23 @@ local function tryPlayPendingStory_()
         pending = require("systems.StoryPlayer").take()
     end
     if not pending or not pending.config or not pending.config.steps or #pending.config.steps == 0 then
+        local inputBusy = require("boot.StandaloneHorizonInput").isPointerBusy()
+        SamsaraSlicePlayback.tryPlay({
+            ready = postStartFlowDone_ and bootQueue_ == nil and storyBackfilled_ and not introChainActive_,
+            legacyPending = ClientMsgHandler.hasPendingScenarioDialogue()
+                or ClientMsgHandler.hasPendingFollowUpDialogue(),
+            pointerBusy = inputBusy,
+            blocked = DarkTitleScreen.isOpen() or StartScreen.isOpen() or TutorialManager.isActive()
+                or SamsaraRecordPanel.isOpen() or UpdateNoticePopup.isOpen() or LevelUpPopup.isOpen()
+                or PlayerInfoPanel.isOpen() or RedeemCodePanel.isOpen() or HeroRosterPanel.isVisible()
+                or SweepDialog.isOpen() or StageSelectDialog.isOpen() or DamageStatsPanel.isOpen()
+                or require("ui.battle.popup.TerminalConfirmDialog").isOpen()
+                or require("ui.dev.CEPanel").isOpen()
+                or SpinePowerUpEffect.isPlaying() or TowerBuffPick.isOpen()
+                or DungeonBattleScene.isOpen() or TowerBattleScene.isActive() or BattleScene.isStoryTransitionBusy()
+                or require("ui.character.equip.EquipmentDetail").isOpen()
+                or require("rules.offline.OfflineService").HasPendingRewards(1),
+        })
         return
     end
     local cfg = pending.config
@@ -630,6 +672,10 @@ local function tryPlayPendingStory_()
         title = cfg.title,
         eyeOpen = cfg.eyeOpen,
         steps = cfg.steps,
+        completionToken = { nodeKey = "legacy." .. tostring(scenarioId) },
+        onResult = function(result)
+            SamsaraSlicePlayer.noteLegacyResult(scenarioId, result.reason)
+        end,
         onFinish = function()
             if scenarioId then
                 print("[Standalone] claim scenario reward id=" .. tostring(scenarioId))
@@ -651,6 +697,7 @@ end
 
 --- [LetterIntro] 新档开场链：先祖来信 → 门厅点卯 → 进游戏
 local function startIntroChain_()
+    introChainActive_ = true
     -- 一开始就落盘，避免标题关闭后重进或存档回写把同一段开场再播一遍。
     -- 三人也在这时入队。若只等对话结束，中途存档会把默认的一个人写死。
     markIntroCompleted_()
@@ -666,6 +713,13 @@ function Standalone.requestResetToStartScreen()
     local TAG = "[Standalone][DIAG-RESET]"
     local t0 = os.clock()
     print(string.format("%s requestResetToStartScreen START clock=%.4f", TAG, t0))
+
+    -- 取消旧存档租约后才清对话；reset 不得把夹页误记为读完。
+    SamsaraSlicePlayer.cancel()
+    SamsaraRecordPanel.close()
+    ScenarioDialogue.reset()
+    introChainActive_ = false
+    introNext_ = nil
 
     -- 1. 停止 BGM & SFX
     GameBGM.stop()
@@ -714,6 +768,11 @@ function Standalone.requestResetToStartScreen()
         }
     }))
     print(string.format("%s step6: ClientDispatcher.handleStateUpdate (equip/lootbox/session reset) done clock=%.4f", TAG, os.clock()))
+    SamsaraSlicePlayer.init({
+        getSession = storySession_,
+        setSession = function(data) ClientDispatcher.set("session", data) end,
+        flush = function() return StandaloneSave.Flush() end,
+    }, ClientDispatcher.get("battle"))
 
     -- 7. 重置 BottomNav 回到战斗标签（第 3 个）
     BottomNav.setSelectedIndex(3)
@@ -826,6 +885,7 @@ function HandleUpdate(eventType, eventData)
 
     -- [单机存档] 变更检测 + 防抖落盘
     StandaloneSave.Update(dt)
+    SamsaraSlicePlayer.update(dt)
 
     -- 开始界面打开时只更新它
     if StartScreen.isOpen() then
@@ -946,6 +1006,14 @@ function HandleUpdate(eventType, eventData)
     if LetterIntro.isOpen() then
         LetterIntro.update(dt)
         return
+    end
+
+    -- 开场接续放下一帧，避免旧 onFinish 在同步 show 后清掉新段回调。
+    -- 只改宿主调度，不改开场正文、奖励或底层旧结束清理顺序。
+    if introNext_ and not ScenarioDialogue.isActive() and not LetterIntro.isOpen() then
+        local nextIntro = introNext_
+        introNext_ = nil
+        nextIntro()
     end
 
     -- [LetterIntro] 情景对话更新（large 全屏期间阻止其他 UI 更新）

@@ -205,6 +205,24 @@ function KeyboardShortcuts.update()
     if blockedByTitle() then return end
     if ctrlDown() then return end
 
+    -- 故事记录/无奖切片独占快捷键，不能在其遮罩下打开背包或玩家信息。
+    local Record = require("ui.story.SamsaraRecordPanel")
+    local Dialogue = require("ui.story.ScenarioDialogue")
+    if not require("ui.story.gate.LetterIntro").isOpen()
+        and not require("ui.hud.popup.UpdateNoticePopup").isOpen()
+        and not require("ui.hud.popup.OfflineRewardPanel").isOpen()
+        and not require("ui.hud.popup.RewardPopup").isOpen() then
+        if Record.isOpen() and not Dialogue.isActive() then
+            if pressed(KEY_ESCAPE) then Record.close() end
+            return
+        end
+    end
+    if Dialogue.isSliceActive() then
+        if pressed(KEY_ESCAPE) then Dialogue.skip()
+        elseif pressed(KEY_SPACE) or pressed(KEY_RETURN) or pressed(KEY_RETURN2) then Dialogue.advance() end
+        return
+    end
+
     if pressed(KEY_ESCAPE) then
         handleEscape()
         return

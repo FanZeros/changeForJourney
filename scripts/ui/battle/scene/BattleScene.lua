@@ -1753,6 +1753,12 @@ function BattleScene.restoreContext()
     print("[BattleScene] restoreContext - 主战斗上下文已恢复 (allies=" .. #allies .. " enemies=" .. #enemies .. ")")
 end
 
+--- 只读故事门禁：不改变战斗计时/暂停，不在结算或轮回换关期间弹新切片。
+function BattleScene.isStoryTransitionBusy()
+    return defeatTimer ~= nil or reincarnationTimer ~= nil or pendingReincarnation ~= nil
+        or bgTransAnim ~= nil
+end
+
 --- 查询暂停状态
 function BattleScene.isPaused()
     return isPaused

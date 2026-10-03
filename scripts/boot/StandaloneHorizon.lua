@@ -49,6 +49,7 @@ local CharacterDetail    = require("ui.character.detail.CharacterDetail")
 local EquipmentBag       = require("ui.character.equip.EquipmentBag")
 local EquipCrossDrag     = require("ui.character.EquipCrossDrag")
 local ScenarioDialogue   = require("ui.story.ScenarioDialogue")
+local SamsaraRecordPanel = require("ui.story.SamsaraRecordPanel")
 local TutorialManager    = require("systems.TutorialManager")  -- [横屏接线 0928] 新手引导
 local DrawUtil           = require("core.DrawUtil")
 local DarkIcon           = require("core.DarkIcon")
@@ -130,6 +131,11 @@ local function finishFrame()
         OfflineRewardOverlay.draw()
     end
     drawUpdateNotice()
+    if not DarkTitleScreen.isOpen() and not StartScreen.isOpen() and not LetterIntro.isOpen()
+        and not ScenarioDialogue.isActive() and not UpdateNoticePopup.isOpen()
+        and not OfflineRewardPanel.isOpen() and not RewardPopup.isOpen() then
+        SamsaraRecordPanel.draw(vg(), logicalW(), logicalH())
+    end
     CEPanel.draw(vg(), logicalW(), logicalH())
     nvgRestore(vg())
     nvgEndFrame(vg())

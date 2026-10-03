@@ -126,7 +126,10 @@ end
 
 local function ensureModule(name, fallback)
     local data = ClientDispatcher.get(name)
-    if data then return data end
+    if data then
+        if name == "session" then require("shared.session.SamsaraStorySchema").normalize(data) end
+        return data
+    end
     if type(fallback) == "function" then
         data = fallback()
     else

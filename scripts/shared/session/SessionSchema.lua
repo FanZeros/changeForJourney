@@ -1,6 +1,7 @@
 -- SessionSchema.lua — session 模块 Schema
 -- 会话信息（在线时间、首登时间、开场完成标记）
 
+local SamsaraStorySchema = require("shared.session.SamsaraStorySchema")
 local SessionSchema = {}
 
 SessionSchema.Fields = {
@@ -21,6 +22,7 @@ SessionSchema.Fields = {
                 claimedScenarios  = {},      -- 已领取情景奖励记录（防重复，key=tostring(scenarioId)）
                 tutorialProgress  = nil,     -- 教程独立进度；不把剧情领取当成操作完成
                 initialHeroId     = nil,     -- 玩家初始选择的英雄 ID（由 HeroService.SelectInitialHero 写入）
+                samsaraStory      = SamsaraStorySchema.new(),
             }
         end,
         onLoad = function(data)
@@ -31,6 +33,7 @@ SessionSchema.Fields = {
             if data.firstGachaTenDone == nil then data.firstGachaTenDone = false end
             data.offlineBonusCount = tonumber(data.offlineBonusCount) or 0
             data.offlineBonusDate  = data.offlineBonusDate or ""
+            SamsaraStorySchema.normalize(data)
         end,
         desc = "会话信息",
     },

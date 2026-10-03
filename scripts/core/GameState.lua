@@ -54,6 +54,44 @@ local playerStore_ = nil
 --- 是否已绑定到 PlayerStore（多人模式标志）
 local bound_ = false
 
+--- 单机提交钩子：先镜像 Dispatcher/PDM，再广播升级（不启用 PlayerStore 代理）。
+---@type fun(player: table)|nil
+local localPlayerSync_ = nil
+
+---@param fn fun(player: table)|nil
+function GameState.setLocalPlayerSync(fn)
+    localPlayerSync_ = fn
+end
+
+local function playerSnapshot()
+    return { name = state.name, level = state.level, exp = state.exp,
+        maxExp = state.maxExp, power = state.power }
+end
+
+local function publishLocalPlayer()
+    local player = playerSnapshot()
+    if localPlayerSync_ then
+        localPlayerSync_(player)
+    else
+        -- addExp/setLevel 也可在桥 init 前调用；只接内存数据，不加载全部 Handler。
+        require("runtime.LocalActionBridge").syncPlayerIntoPdm(player)
+    end
+    return player
+end
+
+local function emitPlayerChange(fromLevel, silent)
+    local player = publishLocalPlayer()
+    if silent then return end
+    if state.level > fromLevel then
+        EventBus.emit(GameEvents.PLAYER_LEVEL_UP, {
+            level = state.level, fromLevel = fromLevel, toLevel = state.level, player = player,
+        })
+    end
+    EventBus.emit(GameEvents.PLAYER_EXP_CHANGED, {
+        exp = state.exp, maxExp = state.maxExp, player = player,
+    })
+end
+
 --- 获取 PlayerStore（延迟 require）
 local function getPS()
     if not playerStore_ then
@@ -405,9 +443,12 @@ function GameState.setPower(v)
     end
 end
 
---- 增加经验（仅单机模式有效，多人模式由服务端处理）
+--- 增加经验（仅单机模式有效，多人模式由服务端处理）。
+--- 跨级一次提交，事件观察者读取到的 PDM/player 已是最终等级。
 function GameState.addExp(amount)
     if isMultiplayer() then return end
+    if type(amount) ~= "number" or amount ~= amount or amount == math.huge or amount <= 0 then return end
+    local fromLevel = state.level
     state.exp = state.exp + amount
     while true do
         if ExpTable.isPlayerMaxLevel(state.level) then
@@ -420,28 +461,42 @@ function GameState.addExp(amount)
         if state.exp >= needed then
             state.exp = state.exp - needed
             state.level = state.level + 1
-            EventBus.emit(GameEvents.PLAYER_LEVEL_UP, { level = state.level })
         else
             break
         end
     end
-    EventBus.emit(GameEvents.PLAYER_EXP_CHANGED, {
-        exp = state.exp, maxExp = state.maxExp,
-    })
+    emitPlayerChange(fromLevel, false)
 end
 
---- 从服务端同步玩家基础数据（仅单机模式使用，多人模式通过 PlayerStore 自动同步）
-function GameState.syncPlayerData(data)
-    if isMultiplayer() then return end
-    if data.level  then state.level  = data.level end
-    if data.exp    then state.exp    = data.exp end
-    if data.maxExp then state.maxExp = data.maxExp end
-    if data.name   then state.name   = data.name end
+--- 直接等级/经验写入仍经过同一单机提交路径（开发工具可用）。
+function GameState.setLevel(level)
+    GameState.syncPlayerData({ level = level, exp = 0 })
+end
+
+function GameState.setExp(exp)
+    GameState.syncPlayerData({ exp = exp })
+end
+
+--- 规则层反向同步；重复推送不重复升级，初次读档通过 silent 恢复。
+---@param data table
+---@param opts table|nil { silent=boolean }
+function GameState.syncPlayerData(data, opts)
+    if isMultiplayer() or type(data) ~= "table" then return end
+    local fromLevel = state.level
+    if data.level ~= nil then
+        state.level = math.max(1, math.min(math.floor(tonumber(data.level) or 1), ExpTable.PLAYER_MAX_LEVEL))
+    end
+    if data.exp ~= nil then state.exp = math.max(0, tonumber(data.exp) or 0) end
+    state.maxExp = ExpTable.getPlayerExpForLevel(state.level) or 0
+    if ExpTable.isPlayerMaxLevel(state.level) then state.exp = 0 end
+    if data.name ~= nil then state.name = data.name end
+    emitPlayerChange(fromLevel, opts and opts.silent)
 end
 
 --- 把 currency 模块同步回单机本地 state（本地桥 MarkDirty 后调用）
 ---@param data table
-function GameState.syncFromCurrency(data)
+---@param opts table|nil { silent=boolean } 领奖事务内只同步余额，不提前通知
+function GameState.syncFromCurrency(data, opts)
     if isMultiplayer() or type(data) ~= "table" then return end
     local map = {
         gold = "setGold",
@@ -468,7 +523,11 @@ function GameState.syncFromCurrency(data)
     }
     for field, setterName in pairs(map) do
         if data[field] ~= nil and type(GameState[setterName]) == "function" then
-            GameState[setterName](data[field])
+            if opts and opts.silent then
+                state[field] = data[field]
+            else
+                GameState[setterName](data[field])
+            end
         end
     end
     if data.speedCardExpireAt ~= nil then

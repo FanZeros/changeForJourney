@@ -410,9 +410,10 @@ function Standalone.Start()
 
     -- 5.05 远征等级提升弹窗：监听 PLAYER_LEVEL_UP 事件，并刷新解锁状态
     EventBus.on(GameEvents.PLAYER_LEVEL_UP, function(data)
-        local newLevel = data.level
-        local unlocks = ExpTable.getLevelUnlocks(newLevel)
-        LevelUpPopup.show(newLevel, unlocks)
+        local newLevel = data.toLevel or data.level
+        local fromLevel = data.fromLevel or math.max(1, newLevel - 1)
+        local unlocks = require("config.ExpeditionProgress").getRangeUnlocks(fromLevel, newLevel)
+        LevelUpPopup.show(newLevel, unlocks, fromLevel)
         -- 刷新各模块解锁状态
         CharacterPanel.refreshSlotUnlocks()
         BottomNav.refreshUnlockState(vg)
@@ -444,6 +445,8 @@ end
 function Standalone.Stop()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
+    LevelUpPopup.destroy()
+    require("ui.widget.DesignWidgetSurface").shutdown()
     if vg then
         nvgDelete(vg)
         vg = nil

@@ -21,6 +21,12 @@
 - 真仓库/配装与出战英雄切换、独立列表/雷达差值两张渲染各150帧PASS、Lua/资源/引擎错误0，已查看角标无裁切及数字间距。截图留本地screenshots/equipment-adjustments，不入提交；两临时入口及meta已清理后须最终build。角色详情超长文本2项既有失败仍保留（前轮纯基线已复现），不宣称全仓/全设备视觉验收。
 - 用户随后选择创建PR：已创建正式 **PR #47** https://github.com/FanZeros/changeForJourney/pull/47，base=workspace930、head=fix930/equipment-badges-tab-toggle-1003，未自动合并。创建时930前进12提交至71f635f3，包含配装78高88距与deltaOffset44；两处冲突人工融合，保留新行距和样式配置，列表差值从新cy-44下移7px到cy-37，雷达ly-51不变，不退回旧行距。融合后配装216、角标146、预览118、生命周期、真集成、装备国际化与切关回归均ALL PASS，实际融合布局150帧PASS/错误0，临时入口meta已清理。
 - 前阶段已提交并推送 `87d020c8` 到 `fix930/equipment-badges-tab-toggle-1003`，当时未创建PR、未推workspace930。临时入口清理后最终官方Build成功，最后九套回归再次全部ALL PASS；提交命令首轮超时未生成提交，分步暂存/提交完成，未重复或丢代码。凭据不落Git配置。
+## 上次做了什么（2026-10-03，二队解锁PR48与PR46冲突修复）
+
+- 二队解锁修复已按用户授权推送并创建 **PR #48**：https://github.com/FanZeros/changeForJourney/pull/48，head=`fix/workspace930-team-clear-unlocks-20261003`，base=workspace930，提交f9085e50/b015b354；没有自动合并。
+- 用户追加要求修PR46 conflict：从其源 `feat/expedition-level-track-20261003@e41d994f` 建 `fix/pr46-conflicts-20261003`，合入目标71f635f3，4文件冲突已融合（记忆双留/Horizon仓库层级和升级唯一绘制/Input教程与升级双捕获/TaskPage国际化与轨道layout），合并提交abb9b403；未将PR48未合入内容混进PR46。
+- 15套合并态Runtime全部成功，新增升级与教程同时出现/旧教程Down后升级出现组合回归；轨道253、离线覆盖83场景990、远征奖励803、教程356、领奖241、宝箱1168、剧情五语1672等断言通过。首跑轨道测试缺I18n替身，修夹具后全过。官方Build成功，改动文件LSP无Error；真实main150帧原始PASS（spike阈值1000ms），Lua/资源/引擎错误0。独立只读复核自动合并无静默丢失；PR46源原有新动态串未完整国际化/升级遮挡期间倒计时，未混入冲突修复。
+- 只推新修复分支并以非强推快进更新PR46源，不推workspace系列、不合并PR。本地.project与原角标修改（命名stash）不提交。凭据仅即时鉴权，不存源码/日志/配置，完成后提醒撤销公开令牌；交付先简报再真正AskUserQuestion选项。
 
 ## 上次做了什么（2026-10-03，暗铁骨白代码图标正式接入）
 

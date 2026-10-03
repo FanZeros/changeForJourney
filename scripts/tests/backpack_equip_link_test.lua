@@ -29,7 +29,9 @@ local Draw = { hitTest = function(x, y, cx, cy, w, h)
 end }
 package.loaded["core.DrawUtil"] = Draw
 package.loaded["core.DarkIcon"] = { QUALITY_TRIM = {}, drawNine = function() end }
-local filterDialog = { NONE_KEY = "none", isOpen = function() return false end, close = function() end }
+local filterDialogState = { open = false, closes = 0 }
+local filterDialog = { NONE_KEY = "none", isOpen = function() return filterDialogState.open end,
+    close = function() filterDialogState.open = false; filterDialogState.closes = filterDialogState.closes + 1 end }
 package.loaded["ui.widget.SetFilterDialog"] = filterDialog
 local leftPages = {}
 for _, path in ipairs({ "ui.loot.LootBoxPage", "ui.story.task.TaskPage", "ui.church.talent.TalentPage",
@@ -156,6 +158,68 @@ local function runLifecycle()
     api.setEquipmentSlotFilter("offhand", 2)
     check(api.handleFilterInput(890, GRID.FIRST_ROW_TOP - 54) and slotClearCount == 1,
         "filter cancel notifies right detail slot cancellation")
+end
+
+local function runTutorialEnsure()
+    local s = { open = false, closing = false, tab = "item", scrollY = 0, scrollVel = 0,
+        qualitySet = { [6] = true }, setFilter = { none = true } }
+    local c = { opens = 0, closes = 0, mode = "window" }
+    local item = { open = true }
+    local api = Link.bind({ state = s, GRID = GRID, CELL_COL_CX = cells,
+        EquipmentDetail = Detail, DrawUtil = Draw, SetFilterDialog = filterDialog, itemDetState = item,
+        getLeftPage = function(path) return leftPages[path] end,
+        getHostMode = function() return c.mode end,
+        setLeftMode = function() c.mode = "left" end,
+        clearTutorialFilters = function()
+            local changed = next(s.qualitySet) ~= nil or next(s.setFilter) ~= nil
+            if changed then s.qualitySet, s.setFilter = {}, {} end
+            return changed
+        end,
+        openPage = function(mode, tab)
+            c.opens = c.opens + 1; c.mode = mode
+            s.open, s.closing, s.tab, s.scrollY = true, false, tab, 0
+        end,
+        closePage = function() c.closes = c.closes + 1; s.closing = true end,
+        selectEquipTab = function() s.tab = "equip" end,
+    })
+    local otherPage = leftPages["ui.market.MarketPage"]
+    otherPage.open, filterDialogState.open = true, true
+    Detail.open(1, nil, nil, true, "backpack"); Detail.pin()
+    check(api.ensureTutorialEquipment("1", "weapon") == true and c.opens == 1
+        and c.mode == "left" and s.tab == "equip" and not otherPage.open,
+        "tutorial ensure explicitly opens left equip and clears unrelated left page")
+    local slot, hero = api.getEquipmentSlotFilter()
+    check(slot == "weapon" and hero == 1 and not next(s.qualitySet) and not next(s.setFilter)
+        and not filterDialogState.open and not item.open and not Detail.isOpen(),
+        "tutorial initial ensure clears restrictive filters, filter layer and candidate")
+    s.scrollY = 600
+    Detail.open(1, nil, nil, true, "backpack"); Detail.pin()
+    local closed = filterDialogState.closes
+    check(api.ensureTutorialEquipment(1, "weapon") == false and s.scrollY == 600
+        and Detail.isPinned() and c.opens == 1 and filterDialogState.closes == closed,
+        "stable tutorial ensure preserves scroll and candidate without repeated cleanup")
+    check(api.ensureTutorialEquipment(2, "helmet") == true and s.scrollY == 0
+        and not Detail.isOpen() and c.opens == 1,
+        "tutorial changed hero/slot refreshes filter and clears candidate, never reopens")
+    api.onManualClose(); s.open, s.closing = false, false
+    check(api.acquireWarehouse("equipment", 2, "helmet") == false and c.opens == 1,
+        "normal acquire still cannot reopen a tutorial-held manually closed warehouse")
+    check(api.ensureTutorialEquipment(2, "helmet") == true and c.opens == 2 and s.open,
+        "only tutorial ensure releases manual-close suppression and reopens")
+    api.onManualClose(); s.closing = true
+    check(api.ensureTutorialEquipment(2, "helmet") == true and c.opens == 3 and not s.closing,
+        "tutorial ensure safely restores warehouse during manual close animation")
+    s.qualitySet[1], s.setFilter.none = true, true
+    filterDialogState.open = true
+    check(api.ensureTutorialEquipment(2, "helmet") == true and c.opens == 3
+        and not next(s.qualitySet) and not next(s.setFilter) and not filterDialogState.open,
+        "changed tutorial filters/layer are cleared without reopening page")
+    api.releaseWarehouse("equipment")
+    s.open, s.closing = false, false
+    check(api.ensureTutorialEquipment(2, "helmet") == true and c.opens == 4,
+        "new tutorial equipment session restores after release")
+    Detail.close()
+    filterDialogState.open = false
 end
 
 -- 真实模板+双持分支规则，持有测试 mock 不修改任何装备穿戴数据。
@@ -675,7 +739,7 @@ local function runSourceParity()
 end
 
 function Start()
-    local ok, err = pcall(function() runLifecycle(); runFilter(); runSetCounts(); runSourceParity() end)
+    local ok, err = pcall(function() runLifecycle(); runTutorialEnsure(); runFilter(); runSetCounts(); runSourceParity() end)
     if not ok then failures = failures + 1; print("[FAIL] exception: " .. tostring(err)) end
     print("[backpack_equip_link_test] " .. (failures == 0 and "ALL PASS" or "FAILURES=" .. failures) .. " (" .. passes .. " assertions)")
     engine:Exit()

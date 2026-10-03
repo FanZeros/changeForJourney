@@ -210,10 +210,11 @@ end
 ---@param alpha number
 ---@param invisible? boolean 等待动画/事件的步骤只显示跳过按钮。
 ---@param allowDrag? boolean 拖拽教学不压暗整个屏幕，以便同时看到源卡与目标槽。
+---@param preparing? boolean 缺热点的短暂页面准备期显示等待，不误报目标失效。
 ---@return TutorialOverlayLayout
-function TutorialOverlay.draw(vg, width, height, hs, text, elapsed, groupElapsed, alpha, invisible, allowDrag)
+function TutorialOverlay.draw(vg, width, height, hs, text, elapsed, groupElapsed, alpha, invisible, allowDrag, preparing)
     local initial = TutorialOverlay.layout(width, height, hs)
-    local displayText = initial.hs and (text or "") or RECOVERY_TEXT
+    local displayText = (initial.hs or preparing) and (text or "") or RECOVERY_TEXT
     nvgSave(vg)
     -- 保留宿主的屏幕逻辑帧变换，只清除之前残留的面板裁剪。
     nvgResetScissor(vg)

@@ -678,6 +678,11 @@ function M.checkAndShowConfirm(count)
     return false
 end
 
+--- 补券确认属于招募业务流程，教程恢复不能清掉此窗口。
+function M.isRecruitConfirmOpen()
+    return popupState.confirmVisible
+end
+
 --- 是否有弹窗正在阻塞输入
 ---@return boolean
 function M.isBlocking()

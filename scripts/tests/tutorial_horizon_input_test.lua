@@ -63,6 +63,9 @@ function Start()
         end
         local mods = {
             ["boot.StandaloneRT"] = RT, ["core.Viewport"] = VP,
+            -- 本套只验证投影/输入；页面恢复另用真实Recovery专项，避免无状态spy反复报changed。
+            ["ui.tutorial.TutorialPageRecovery"] = { isBlocked = function() return false end,
+                prepare = function() return false end },
             ["boot.OfflineRewardOverlay"] = { bind = function() return mock() end },
             ["ui.hud.BottomNav"] = mock({ getSelectedIndex = function() return 3 end }),
             ["ui.story.ScenarioDialogue"] = mock(),
@@ -270,12 +273,31 @@ function Start()
                 end
             end
         end
+        runCase("准备期非法按下延迟松开不能推进", function()
+            fixture(true, false, 1)
+            local x, y = panelPosition("right", 540, 600)
+            local before = TM.getProgress().step
+            local allow = false
+            mods["ui.tutorial.TutorialPageRecovery"].prepare = function()
+                if not allow then allow = true; return true end
+                return false
+            end
+            screenPosition(x, y)
+            invoke("HandleMouseButtonDownHorizon")
+            TM.update(0.5)
+            invoke("HandleNanoVGRenderHorizon", {})
+            invoke("HandleMouseButtonUpHorizon")
+            check(TM.getProgress().step == before and n("character.handleInput") == 0,
+                "准备期被挡down不可在就绪up伪造一次点击")
+            mods["ui.tutorial.TutorialPageRecovery"].prepare = function() return false end
+        end)
         runCase("Gifted 事件步骤同仓库格双击仍派发两次", function()
             for _, tri in ipairs({ false, true }) do
                 fixture(tri, true, 2)
                 local targetX, targetY = panelPosition("right", 540, 600)
                 -- 用真实 TM 的点击步骤进入 gifted 等待装备回执步骤，而非改内部配置/状态。
                 TM.handleScreenClick(targetX, targetY)
+                invoke("HandleNanoVGRenderHorizon", {})
                 TM.handleScreenClick(targetX, targetY)
                 check(TM.getCurrentHighlight() == "equip_item_gifted", "真实TM已进入gifted事件步骤")
                 state.warehouse = true

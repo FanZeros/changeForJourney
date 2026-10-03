@@ -212,6 +212,97 @@
 
 用途按本地实际源码表头、字段或导出函数核实，仅为功能摘要，不代表两侧每个实现细节一致。原检查器的函数调用重算及 CSV 逐字段对照均退出码0，62项的路径、排序、九位小数百分比、两侧行数和哈希标记完全一致。
 
+### 4.6 逐项用途详解：玩法、配置与数据结构的区别
+
+以下按实际本地源码解释上述62项，不重新计算相似度，也不把“存在某文件”当成它必然被当前启动链调用的证据。当前项目为单机版，遗留协议和跨服档案字段的存在不意味着正在联网。
+
+先区分三类职责：
+
+- **数值配置**：回答“有哪些关卡、怪物、奖励，数值是多少”。例如挂机收益表不直接发奖励。
+- **玩法运行时**：回答“发生攻击、抽卡、挂机等操作时，怎样计算并改变状态”。例如战斗公式计算伤害，神器运行时响应战斗事件。
+- **存档结构与兼容**：回答“哪些数据需要保存，旧存档怎么补齐”。`Schema`通常注册字段和默认值，不等于实现抽卡、签到或战斗结算；`Compat`负责旧数据迁移。
+
+此外还有事件、音频、数值显示、状态代理、调试诊断和类型声明等支撑模块。每项说明对应 `scripts/` 下的本地文件，功能核查为静态读取，不冒充运行时覆盖或完整安全审计。
+
+#### A. 战斗、玩法运行时与声音反馈（18项）
+
+| 文件 | 实际职责与边界 | 源码依据（本文件行号） |
+|---|---|---|
+| `systems/MapAffixSystem.lua` | 读取关卡章节和模式对应的地图词缀，给怪物增加护盾、护甲或调整攻速；战斗中按时间、命中及击杀事件施加迷雾、腐蚀等效果。负责让词缀参与战斗，而不只是提供词缀说明。 | `onStageLoad:105`、`applyStaticAffixes:139`、`tick:231` |
+| `systems/BattleDiag.lua` | 检查单位属性丢失、血量不同步、治疗异常，记录异常现场；写入哨兵能追踪谁清空了属性。属于调试诊断，不是正常伤害或奖励算法。 | `onAttrsNil:119`、`update:178`、`installSentinel:246` |
+| `systems/TowerBuffRuntime.lua` | 将通天塔所选强化按职业条件应用到队员，随后根据血量、击杀、时间等触发增伤、冻结、免疫。与 `TowerConfig` 的区别是这里真正执行强化效果。 | `applyStatBuffs:63`、`update:304`、`getDamageMultiplier:362` |
+| `systems/GachaSystem.lua` | 检查抽卡次数及所需券、钻石，处理概率和软硬保底、扣除消耗并发放结果；更新保底计数，单机路径可直接解锁英雄。不是仅定义卡池概率的配置表。 | `getEffectiveSSRRate:45`、`canPull:68`、`pull:247` |
+| `systems/ButtonFeedback.lua` | 判断按下坐标是否命中按钮，绘制时让按钮缩小，松开后恢复并播放点击音。只改善操作反馈，不决定点击后购买、抽卡等业务是否成功。 | `onPress:39`、`trigger:53`、`begin:79` |
+| `systems/DropSystem.lua` | 根据关卡、难度和怪物品质决定击杀是否掉装备及品质，再生成装备实例；另按首通数量和最低品质生成奖励，并处理卷轴、扫荡券掉落。它生成掉落结果，不等于背包界面。 | `rollKillDrop:113`、`generateFirstClearEquips:150`、`rollScrollDrop:200` |
+| `systems/GameBGM.lua` | 根据城镇、战斗、角色页等场景切换音乐，通过两个通道交叉淡入淡出，并支持播放进度同步和音量设置。负责持续背景音乐，不处理单次击打音效。 | `setScene:109`、`update:166`、`setMasterGain:201` |
+| `systems/CombatFormula.lua` | 用攻防双方现成属性算命中、暴击、格挡、连击、伤害和治疗，返回单次攻击结果；护甲抗性还交给实际扣血环节处理。它既不是属性存档，也不长期维护当前血量。 | `calcAttack:204`、`result.resistance:405`、`calcHealAttack:418` |
+| `systems/ArtifactBridge.lua` | 从队伍和出战位置读取已装备神器，把常驻属性、特殊标记及相邻队员加成接入单位；需事件触发的效果整理为列表交给运行时。桥接不直接逐次执行反击或复活。 | `makeRuntimeEffect:48`、`applyArtifactToTarget:67`、`applyToUnit:146` |
+| `systems/TalentEffect.lua` | 将已点亮天赋节点的文字说明解析为属性加成，按职业应用常驻加成、生成总览并估算特殊节点战力；需要战斗事件触发的描述会跳过。不是完整的所有天赋事件执行器。 | `parseEffect:189`、`applyToUnit:269`、`calcRuntimeOnlyPower:280` |
+| `systems/AttributeDef.lua` | 统一属性名称、元数据、默认值、上限和攻击类型，规定力量等六围的基础换算规则。属于属性规则字典，不是某个单位的实时属性对象。 | `META:131`、`TYPE_MULT:435`、`getMeta:452` |
+| `systems/UnitAttributes.lua` | 保存单位基础属性，将装备、天赋和临时加成合并并重算最终面板；同时维护当前生命、护盾、受伤与治疗。与规则字典和单次攻击公式是三个不同层次。 | `addModifier:131`、`recalc:257`、`takeDamage:444` |
+| `systems/OfflineCalc.lua` | 根据时长、通关进度和出战人数，计算金币经验及模拟击杀的装备、卷轴奖励，返回清单而非直接发放。本地离线金币经验前24小时满额、之后半额，收益及掉落最多计7日。 | `effectiveOfflineSeconds:41`、`calcOfflineIdleRewards:526`、`calcIdleRewardsForBattle:565` |
+| `systems/GameSFX.lua` | 根据点击、攻击、受伤、升级等名字播放音效，多版本可随机选取，并复用声音组件；支持总音量及各队静音。与背景音乐模块分开管理。 | `start:142`、`setTeamMuted:182`、`play:197` |
+| `systems/ArtifactRuntime.lua` | 在闪避、破盾、受伤、死亡、命中等事件发生时执行神器效果，维护触发次数和持续时间，实现反击、复活、幽灵状态、叠层。是神器桥接之后的实际战斗执行层。 | `initBattle:101`、`onBeforeTakeDamage:195`、`onAllyDeath:235` |
+| `systems/StatusEffectManager.lua` | 登记燃烧、冻结、感电、标记及持续治疗，结合异常抗性和持续时间更新状态；到期清理，并通过回调产生伤害或治疗，供停攻和受伤倍率查询。 | `apply:56`、`getDamageTakenMult:187`、`update:255` |
+| `systems/RelicConditionHandler.lua` | 名称是历史遗留，当前属于天赋免疫、增伤等条件效果的共用设施，不应直接理解成独立遗物玩法。读取血量及战斗事件，添加或撤销临时加成、消费免疫次数，并处理过量治疗转护盾。 | 文件说明`:2`、`addImmunityCharges:69`、`onBeforeTakeDamage:287` |
+| `systems/ThreatManager.lua` | 按伤害、治疗量和职业系数累积并衰减团队仇恨；敌人结合仇恨、属性和站位加权选目标，支持强制嘲讽。决定怪物更倾向攻击谁，而不是决定攻击伤害多少。 | `onDamageDealt:187`、`update:250`、`selectTarget:273` |
+
+#### B. 数值配置与基础工具（17项）
+
+| 文件 | 实际职责与边界 | 源码依据（本文件行号） |
+|---|---|---|
+| `config/GameEvents.lua` | 定义状态加载、卡牌、货币变化、玩家升级和副本事件的名称字符串，规定通知叫什么。实际监听和发送由 `EventBus`完成，不是网络连接或消息执行器。 | `STATE_LOADED:7`、`CARD_DRAWN:11`、`DUNGEON_ENTER_BATTLE:42` |
+| `config/IdleIncomeConfig.lua` | 按关卡列出每分钟金币和远征经验，供在线挂机及离线结算使用；查询缺失关卡时回退到不超过该编号的最近配置。提供收益基数，不负责实际发奖，也不同于副本扫荡收益。 | `STAGES:16`、`get:1759` |
+| `config/MapAffixConfig.lua` | 定义地图词缀名称、效果参数、章节组合、高阶湮灭参数及挑战者S1分配。查询按章节返回词缀；不是装备词缀，也不亲自执行冻结、减疗。 | `AFFIXES:129`、`getAffixesForChallengerS1:545`、`getAffixesForChapter:572` |
+| `config/StageConfig.lua` | 汇总15档难度及14座终焉神殿，提供怪物名单、等级、数量、掉落和首通奖励；支持查关卡和下一关、下一难度编号。定义关卡组织，不运行战斗，也不同于单只怪物的属性定义。 | `STAGES:178`、`getStage:362`、`getNextStageId:590` |
+| `config/UrGachaConfig.lua` | 配置星辉招募开放进度、券和钻石消耗、品质概率、保底、重复分解、UR整卡及UP规则。只提供专用卡池参数，本文件不实际抽卡或扣款。 | `Cost:22`、`Pity:50`、`TargetUp:164` |
+| `config/ArtifactAssetUtil.lua` | 将神器类型或实例字段解析为图标路径，预加载并绘制品质底框、图标、名称、选中框。属于展示工具，不决定神器属性、概率或战斗效果。 | `getIconPath:14`、`resolveTypeId:23`、`drawIcon:82` |
+| `config/TowerConfig.lua` | 提供112层通天塔的等级、首通及扫荡钻石、每层10波怪物品质数量和35个强化选项；包含怪物抽取及不重复加权强化抽取。实际强化生效由运行时处理。 | `FLOORS:42`、`WAVES:61`、`rollBuffs:239` |
+| `config/MonsterConfig.lua` | 提供怪物模板、1至345级成长、品质倍率、掉落权重、远程及攻击特效标志；组合配置可生成带属性、奖励和唯一ID的怪物实例。是配置加单位工厂，不负责战斗循环或关卡阵容选择。 | `QUALITY:21`、`MONSTERS:386`、`createMonster:707` |
+| `config/AffixConfig.lua` | 定义装备属性词缀、基础值、数据类型、随机权重、品质倍率，另有腐化石专用魔化词缀池和映射。与地图词缀、塔内强化是不同系统；实际普通词缀44条，头部旧注释的38条已过时。 | `QUALITY:14`、`AFFIXES:29`、`CORRUPT_AFFIXES:87` |
+| `config/GameConfig.lua` | 集中设置设计尺寸、棋盘和手牌、初始货币、玩家默认值、功能开关、战斗限时、拖场增伤与首通狂暴参数。属于跨系统默认配置，不替代关卡、怪物和经验专表，也不直接执行效果。 | `Design:8`、`Battle:98`、`StageBerserk:114` |
+| `config/ExpTable.lua` | 提供玩家和英雄至200级经验需求、英雄生命及攻击成长，并有连续升级与预演函数；还提供出战槽位、强化上限和9-5、19-5通关增加队伍的查询。与挂机收益表的区别是升一级需要多少，而非一分钟获得多少。 | `hero:18`、`player:64`、`getUnlockedTeamCount:417`、`autoLevelUpHero:562` |
+| `config/ResourceDefs.lua` | 统一奖励资源名称、图标、品质、编号及英雄碎片ID映射，把邮件和GM不同格式规范为统一奖励并合并同类项。提供识别、展示及格式转换，不直接增加货币余额。 | `DEFS:13`、`normalizeMailReward:161`、`mergeMailRewardLists:243` |
+| `config/DungeonIdleConfig.lua` | 按黄金矿洞、上古遗迹、通天塔已通关层的扫荡奖励推算金币、奥术粉尘或钻石挂机收益；计算累积时长和可领数量。含24小时后半额、最多计7日规则，区别于主线按关固定每分钟收益表。 | `FULL_RATE_SEC:17`、`effectiveSeconds:97`、`calcReward:113` |
+| `core/EventBus.lua` | 保存事件监听函数，提供订阅、退订、触发、清空，同步把数据传给回调。它实际分发游戏内部通知，不是网络同步；事件名字来自 `GameEvents` 等定义。 | `on:9`、`off:17`、`emit:29` |
+| `core/NumberUtil.lua` | 将大数转换成k/M/B/T等短文本，处理舍入跨单位及多余小数；安全累加将结果限制在0至2⁵³。属于通用数值显示和运算辅助，不定义货币奖励或经验曲线。 | `format:16`、`safeAdd:56`、`getMaxSafe:67` |
+| `core/GameState.lua` | 兼容旧玩家和货币接口：PlayerStore绑定且就绪时多数读取委托给它，否则使用单机本地状态；转发部分旧事件。是过渡代理而非当前权威存档，普通货币setter在代理模式不写入。 | `bindToPlayerStore:80`、`getGold:158`、`makeSetter:358` |
+| `nvg_overrides.d.lua` | 补充Spine回调类型及NanoVG文本测量可省略末尾参数的静态声明，服务编辑器和LSP。末尾空函数是类型占位，不是游戏绘制或文本测量的实际实现。 | `lua_Function:4`、重载声明`:7-9`、`nvgTextBounds:17` |
+
+#### C. 存档结构、兼容迁移与共享定义（27项）
+
+| 文件 | 实际职责与边界 | 源码依据（本文件行号） |
+|---|---|---|
+| `shared/dungeon/DungeonCompat.lua` | 补齐旧副本的层数、首通、每日次数；另有难度加强后一次性回退层数的迁移，保留首通记录，普通加载不默认执行回退。不负责战斗或奖励结算。 | `rollbackFloorForBuffV1:9`、`migrateMonsterBuffV1:49`、`onLoad:77` |
+| `shared/heroes/HeroResonance.lua` | 取已拥有英雄中最高5人的最低等级为共鸣基准，不足5人按实际人数；把低等级英雄实际升到共鸣等级并清零经验。不负责招募、技能伤害或升级扣费。 | `RESONANCE_TOP_N:11`、`computeResonanceLevel:30`、`syncRosterToResonance:43` |
+| `shared/task/TaskCompat.lua` | 补旧任务数据，奖励加强迁移时一次性清空当前日周领取标记，让原进度可重新领奖；不清进度和成就领取记录，也不直接发奖。 | `migrateRewardBuffV1:8`、`dailyClaimed:23`、`onLoad:36` |
+| `shared/StageUtils.lua` | 从当前关卡向前收集指定数量的关卡，支持跨难度，供挂机或扫荡选择参考范围。只返回列表，不推进进度、不算收益或发奖。 | `collectPrevStages:17`、`getLastStageOfPrevDifficulty:23` |
+| `shared/market/StellarDiamondQuota.lua` | 用市场商品18的购买记录和UTC+8日期算当天星辉招募券剩余限购数，默认每日30次。只读计数，不执行购买、扣钻石或写入购买记录。 | `ITEM_ID:7`、`DAILY_LIMIT:8`、`getRemaining:17` |
+| `shared/battle/BattleSchema.lua` | 定义当前和最远关卡、通关记录、挂机计时和效率统计，加载时修补旧字段及终焉挑战进度。不是伤害公式、胜负判定或收益结算。 | `currentStageId:16`、`idleAccumSec:22`、`onLoad:31` |
+| `shared/equipment/EquipmentSchema.lua` | 定义背包、穿戴关系、装备序号和自动分解设置；加载时修失效穿戴引用、恢复派生字段，保存时压缩。不是掉落、强化、分解或属性计算器。 | `inventory:16`、`hydrateInventory:55`、`onSave:58` |
+| `shared/profile/ProfileSchema.lua` | 保留创角区服、上次区服、特权卡转移和封禁档案，补齐规范旧数据；配置为本地持久化。遗留字段不证明当前单机联网，也不执行转区或封禁。 | `persist.via="local":11`、`lastServerId:15`、`pendingPrivilegeCardTransfer:17` |
+| `shared/artifact/ArtifactDefs.lua` | 定义神器种类、品质、数值范围和概率，并支持随机选型、数值换算、说明和战力估算；置换倾向背包较少类型。不扣钥匙、不写背包、不执行战斗触发。 | `ARTIFACTS:50`、`getPower:321`、`rollArtifactIdForReroll:402` |
+| `shared/dungeon/DungeonSchema.lua` | 保存矿洞、遗迹、通天塔的挑战层数、首通、每日次数、挂机时间与塔内强化，挂接加载修正。不是挑战或扫荡结算，`onServerLoad`只是保留的迁移钩子名。 | `gold_mine:14`、`babel_tower:28`、`onServerLoad:42` |
+| `shared/signin/SigninSchema.lua` | 保存签到周期、每日和每周领取记录、奖励版本，修正记录键类型和缺字段。奖励多少由配置决定，发奖及补签扣费不在这里执行。 | `REWARD_VERSION:6`、`weeklyClaimed:17`、`dailyClaimed:19` |
+| `shared/signin/SignInConfig.lua` | 配置7天、30天奖励和120钻石补签价，映射奖励钱包字段，并算UTC+8周期、天数及剩余时间。不保存领取记录，也不实际扣款发奖。 | `RETRO_COST:11`、`DAILY_REWARDS:25`、`getServerPeriodId:193` |
+| `shared/tavern/TavernSchema.lua` | 保存酒馆商店商品购买数量、日周重置标记，加载时修数字键并调用周期重置。不是酒馆抽卡、支付或商品发放逻辑。 | `shopPurchased:16`、`shopWeekId:17`、`applyShopPeriodReset:36` |
+| `shared/task/TaskSchema.lua` | 定义日周任务和永久成就进度、领取状态、周期编号，加载修正交给兼容模块。不决定哪个行为增加进度，也不算任务奖励。 | `dailyProg:17`、`weeklyClaimed:21`、`achProg:22` |
+| `shared/talents/TalentsSchema.lua` | 保存已点亮天赋节点，加载时去重、排序成连续数组，保证起始节点0存在。不检查点亮条件、不扣天赋点、不计算属性加成。 | `normalizeModule:8`、起始节点处理`:24`、`litNodes:36` |
+| `shared/session/SessionSchema.lua` | 保存在线时间、首次进入、开场轮回、新手十连、额外离线次数、剧情领奖、教程和初始英雄记录。不建立连接、不播放剧情、不计算离线奖励。 | `lastOnlineTime:14`、`claimedScenarios:21`、`tutorialProgress:22` |
+| `shared/redeem/RedeemSchema.lua` | 保存用过的兑换码，旧档缺记录时补空表。不是兑换码合法性验证或奖励定义与发放。 | `usedCodes:14`、`onLoad:17` |
+| `shared/currency/CurrencySchema.lua` | 定义金币钻石、材料票券、加速和特权状态、保底及抽卡统计，并规范字段格式。保存余额计数，但不执行支付、发奖或概率抽取。 | `normalizeGachaDrawStats:29`、`gems:44`、`speedCardExpireAt:64` |
+| `shared/schemas/CharacterSchema.lua` | 汇总子系统字段、作用域、持久化方式和内部键，提供统一加载修正入口。这里是注册元数据，不是英雄实例；`cloudKey`仅作模块分组名，不再对应云变量。 | 本地分组说明`:21-27`、`Fields:34`、`RegisterSubsystemFields:44`、`GetCloudKeyGroups:160` |
+| `shared/slotenhance/SlotEnhanceSchema.lua` | 按出战位置和装备槽保存强化等级，加载时转换位置键为数字。是位置强化记录，不是单件装备等级，也不负责强化扣费或属性换算。 | `levels[partySlot][equipSlot]:14`、`levels:18`、`onLoad:21` |
+| `shared/quota/QuotaConsts.lua` | 定义限额键、上限和刷新规则，目前列每日签到1次、每周签到7次，并提供查找。不保存玩家已用次数，也不消费或刷新额度。 | `DAILY_SIGNIN:21`、`WEEKLY_SIGNIN:27`、`FindByKey:61` |
+| `shared/quota/QuotaSchema.lua` | 注册统一限额模块，默认空表；单机限额由内存修改后随本地存档落盘。不定义具体限额、不自行消费或刷新，保留的服务端措辞不表示联网。 | 单机落盘说明`:6-8`、`persist.via="quota":25`、`getDefault:26` |
+| `shared/player/PlayerSchema.lua` | 定义玩家名称、远征等级、经验、战力和头像；加载时限制等级、重算升级经验并处理满级经验。不是各英雄升级表或整队战力计算器。 | `level:15`、`power:18`、`getPlayerExpForLevel:29` |
+| `shared/Protocol.lua` | 定义请求响应名、动作字符串、状态和消息大小阈值，供模块统一识别操作。没有连接、发送接收实现，保留区服或远程事件名不代表单机在联网。 | `REQ_ACTION:14`、`MSG_SAFE_SIZE:33`、`ACTION_TYPES:41` |
+| `shared/lootbox/LootboxSchema.lua` | 保存待领装备暂存数据，保留种子字段，加载时修品质、等级、数量并迁移旧种子。不是神器宝箱抽取，也不负责领取入背包或分解结算。 | `seeds:16`、`consolidateSeeds:28`、`revealLegacy:29` |
+| `shared/ModuleRegistry.lua` | 注册模块名、存档键、默认值和加载保存钩子，统一查找及执行加载修正，部分与Schema重叠。是存档目录与初始化规则，不实现各玩法的支付或结算。 | `modules:52`、`find:636`、`applyOnLoad:678` |
+| `shared/AnnouncementConfig.lua` | 保存公告和新手说明的标题、正文、类型、日期，并按基准时间生成带日期副本。公告文字不等于实施所描述的玩法，也不负责公告界面或网络推送。 | `ANNOUNCEMENTS:15`、`buildWithDates:197`、`date:205` |
+
+**职责关系示例**：地图词缀由配置选择规则、运行时落实效果；英雄属性由定义字典统一规则、单位属性对象合并加成、攻击公式计算单次结果；神器由定义提供类型与数值、桥接挂接装备、运行时处理触发；挂机由收益配置提供基数、计算器按时长和进度算清单、其他发奖逻辑负责落账；Schema和Compat负责记录与迁移，而不是取代这些业务处理。
+
 ## 5. 工具算法与统计局限
 
 1. **读取与规范化**：文本按 UTF-8 解码；CRLF 和 CR 统一为 LF；不能解码的字节用替代字符；Lua 字节码跳过。行级比较去掉每行尾部空白，不去注释、不替换变量名、不做 AST 或 token 分析。

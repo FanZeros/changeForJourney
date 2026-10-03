@@ -11,7 +11,7 @@ local Protocol      = require("shared.Protocol")
 local DungeonIdleConfig = require("config.DungeonIdleConfig")
 local DarkIcon = require("core.DarkIcon")  -- [暗黑化 P1-B3/B5] 矢量九宫格
 local ExpTable      = require("config.ExpTable")
-local GameState     = require("core.GameState")
+local ClientDispatcher = require("runtime.ClientDispatcher")
 
 local DungeonPage = {}
 
@@ -454,10 +454,9 @@ end
 ---@return string|nil err
 local function collectTowerTeams()
     local CharacterPanel = require("ui.character.panel.CharacterPanel")
-    local needLv = ExpTable.getTeamUnlockLevel(3) or 20
-    local unlocked = ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     if unlocked < 3 then
-        return nil, "三军攻坚需远征等级" .. tostring(needLv) .. "解锁三队"
+        return nil, "三军攻坚需三队解锁（" .. ExpTable.getTeamUnlockText(3) .. "队伍3）"
     end
     local teams = {}
     for t = 1, 3 do

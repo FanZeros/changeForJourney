@@ -5,7 +5,7 @@ function Start()
     local pdm = require("rules.character.PlayerDataManager")
     local oldGet, oldMarkDirty = pdm.GetModule, pdm.MarkDirty
     local oldModules = dispatcher.getAll()
-    local oldHeroes, oldPlayer = oldModules.heroes, oldModules.player
+    local oldHeroes, oldPlayer, oldBattle = oldModules.heroes, oldModules.player, oldModules.battle
     local pushes = 0
     local heroes = {
         roster = { [1] = { level = 2 }, [2] = { level = 3 }, [25] = { level = 7 } },
@@ -13,7 +13,8 @@ function Start()
         teams = { { slots = { 1, 0, 0, 0 } }, { slots = { 2, 0, 0, 0 } }, { slots = {} } },
     }
     oldModules.heroes = heroes
-    oldModules.player = { level = 100 }
+    oldModules.player = { level = 1 } -- 低等级也可编队；只由普通通关进度解锁队伍。
+    oldModules.battle = { maxStageId = 905, clearedStages = { ["905"] = true } }
     pdm.MarkDirty = function(_, key)
         assert(key == "heroes", "仅同步英雄模块")
         pushes = pushes + 1
@@ -34,6 +35,7 @@ function Start()
     assert(heroes.deployed[1] == 2 and heroes.teams[2].slots[1] == 1,
         "失败事务不得污染原编队")
     pdm.GetModule, pdm.MarkDirty = oldGet, oldMarkDirty
-    oldModules.heroes, oldModules.player = oldHeroes, oldPlayer
+    oldModules.heroes, oldModules.player, oldModules.battle = oldHeroes, oldPlayer, oldBattle
     print("[character_team_sync_test] PASS: atomic swap, roster, empty slot, reject")
+    engine:Exit()
 end

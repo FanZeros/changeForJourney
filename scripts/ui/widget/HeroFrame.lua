@@ -99,6 +99,10 @@ end
 
 -- ======================== opts 类型 ========================
 
+---@class HeroFrameTeamTag
+---@field text string 队伍编号
+---@field color number[] 队伍 RGB 色
+
 ---@class HeroFrameOpts
 ---@field cx number 中心 X
 ---@field cy number 中心 Y
@@ -120,6 +124,7 @@ end
 ---@field shardMax number|nil 合成所需碎片（默认 10）
 ---@field showTeamTag boolean|nil 左上队伍标签
 ---@field teamTag string|nil 标签文字（默认 "队"）
+---@field teamTags HeroFrameTeamTag[]|nil 多队分别着色，优先于旧标签文字
 ---@field showUpgrade boolean|nil 右上可提升角标
 ---@field selected boolean|nil 金色选中高亮
 ---@field dragSource boolean|nil 拖拽源：半透明头像 + 金高亮
@@ -348,24 +353,32 @@ function M.draw(vg, opts)
             end
         end
 
-        -- 队伍标签（左上）
+        -- 队伍标签（左上）：每个队号独立用队伍色，旧调用仍保留金色标签。
         if opts.showTeamTag then
-            local tag = opts.teamTag or "队"
+            local tags = opts.teamTags
+            if not tags or #tags == 0 then
+                tags = { { text = opts.teamTag or "队", color = M.GOLD_HI } }
+            end
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, math.floor(side * 0.13))
-            local tw = nvgTextBounds(vg, 0, 0, tag)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
             local th = side * 0.19
             local tx, ty = x + 4, y + 4
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, tx, ty, tw + 12, th, 7)
-            nvgFillColor(vg, nvgRGBA(18, 14, 10, math.floor(alpha * 220)))
-            nvgFill(vg)
-            nvgStrokeColor(vg, nvgRGBA(M.GOLD_HI[1], M.GOLD_HI[2], M.GOLD_HI[3], math.floor(alpha * 230)))
-            nvgStrokeWidth(vg, 2)
-            nvgStroke(vg)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(255, 214, 102, math.floor(alpha * 255)))
-            nvgText(vg, tx + 6, ty + th * 0.5, tag, nil)
+            for _, tag in ipairs(tags) do
+                local tw = nvgTextBounds(vg, 0, 0, tag.text)
+                local tc = tag.color
+                nvgBeginPath(vg)
+                nvgRoundedRect(vg, tx, ty, tw + 12, th, 7)
+                nvgFillColor(vg, nvgRGBA(math.floor(tc[1] * 0.16), math.floor(tc[2] * 0.16),
+                    math.floor(tc[3] * 0.16), math.floor(alpha * 220)))
+                nvgFill(vg)
+                nvgStrokeColor(vg, nvgRGBA(tc[1], tc[2], tc[3], math.floor(alpha * 230)))
+                nvgStrokeWidth(vg, 2)
+                nvgStroke(vg)
+                nvgFillColor(vg, nvgRGBA(tc[1], tc[2], tc[3], math.floor(alpha * 255)))
+                nvgText(vg, tx + 6, ty + th * 0.5, tag.text, nil)
+                tx = tx + tw + 16
+            end
         end
 
         -- 可提升角标（右上）

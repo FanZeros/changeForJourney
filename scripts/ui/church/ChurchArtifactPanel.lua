@@ -5,8 +5,8 @@
 ---@diagnostic disable: undefined-global
 
 local GameConfig          = require("config.GameConfig")
-local GameState           = require("core.GameState")
 local ExpTable            = require("config.ExpTable")
+local ClientDispatcher    = require("runtime.ClientDispatcher")
 local DrawUtil            = require("core.DrawUtil")
 local PlayerStore         = require("core.PlayerStore")
 local ArtifactDefs        = require("shared.artifact.ArtifactDefs")
@@ -178,9 +178,9 @@ end
 
 local isArtifactEquippedId = isArtifactEquippedAnyTeam
 
---- 已解锁队伍数（远征等级门槛）
+--- 已解锁队伍数（普通通关门槛，与神器子格等级门槛独立）
 local function getUnlockedTeamCount()
-    return ExpTable.getUnlockedTeamCount(GameState.getLevel())
+    return ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
 end
 
 local function getVisibleBag()
@@ -584,10 +584,13 @@ function M.drawContent(vg)
                 nvgFontSize(vg, TEAM_ROW.LABEL_FONT)
                 nvgFillColor(vg, nvgRGBA(190, 190, 190, 255))
                 nvgText(vg, lx, rowCy - 24, "队伍" .. t, nil)
-                local lv = ExpTable.getTeamUnlockLevel(t)
                 nvgFontSize(vg, TEAM_ROW.LOCK_FONT)
                 nvgFillColor(vg, nvgRGBA(160, 160, 160, 255))
-                nvgText(vg, lx, rowCy + 20, tostring(lv) .. "级解锁", nil)
+                -- 竖标签宽 100：把统一文案拆两行，避免 19-5 文本横向溢出。
+                local unlockText = ExpTable.getTeamUnlockText(t)
+                local stageText = unlockText:gsub("解锁$", "")
+                nvgText(vg, lx, rowCy + 12, stageText, nil)
+                nvgText(vg, lx, rowCy + 40, "解锁", nil)
             else
                 nvgFontSize(vg, TEAM_ROW.LABEL_FONT + 6)
                 nvgFillColor(vg, nvgRGBA(255, 240, 200, 255))
@@ -810,8 +813,7 @@ function M.handleTabInput(dx, dy)
                 local cx, cy, size = getSlotCell(i, subSlot, t)
                 if hitTest(dx, dy, cx, cy, size, size) then
                     if t > unlockedTeams then
-                        local lv = ExpTable.getTeamUnlockLevel(t)
-                        showFloat("远征等级达到" .. tostring(lv) .. "级解锁队伍" .. t, cx, cy - 70)
+                        showFloat(ExpTable.getTeamUnlockText(t) .. "队伍" .. t, cx, cy - 70)
                         return true
                     end
                     local pendingArtifact = getPendingEquipArtifact()

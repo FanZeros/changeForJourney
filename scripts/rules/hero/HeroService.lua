@@ -124,10 +124,9 @@ function HeroService.SetTeam(uid, teamIdx, heroIds)
     local heroes = PDM.GetModule(uid, "heroes")
     if not heroes then return false, "数据未加载" end
 
-    local player = PDM.GetModule(uid, "player")
-    local playerLevel = player and (player.level or 1) or 1
-
-    local ok, err = TeamSlots.validate(heroes, teamIdx, heroIds, playerLevel)
+    teamIdx = tonumber(teamIdx)
+    local battleProgress = PDM.GetModule(uid, "battle")
+    local ok, err = TeamSlots.validate(heroes, teamIdx, heroIds, battleProgress)
     if not ok then return false, err end
 
     local slots = TeamSlots.setTeam(heroes, teamIdx, heroIds or {})

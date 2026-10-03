@@ -75,6 +75,26 @@ function T.run()
         assert(condition, "[keyword locale] " .. label)
     end
     local originalLang = I18n.get()
+    local TalentText = require("core.I18nTalentText")
+    check(KW.get("护盾伤害减免").title == "护盾减伤", "shield stable key has short title")
+    for _, lang in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+        I18n.set(lang)
+        local expected = lang == "zh_CN" and "护盾减伤"
+            or require("core.I18nEquipment")[lang]["护盾减伤"]
+        check(I18n.lookup("护盾减伤") == expected, lang .. " shield short label translated")
+        check(Locale.get("护盾伤害减免", lang).title == expected,
+            lang .. " shield popup uses matching short title")
+        local found = false
+        for _, term in ipairs(Locale.terms(lang)) do
+            if term.text == expected and term.key == "护盾伤害减免" then found = true end
+        end
+        check(found, lang .. " short label maps back to stable keyword")
+        check(TalentText.label("护盾减伤", lang) == TalentText.label("护盾伤害减免", lang),
+            lang .. " old and short talent atoms retain same translation")
+        check(TalentText.lookup("全体护盾减伤+12%", lang) ~= nil,
+            lang .. " short talent sentence remains fully translatable")
+    end
+    I18n.set(originalLang)
     local expectedKeys, statKeys = {}, {}
     check(#ORIGINAL_KEYS == 25 and #STAT_KEYS == 40, "explicit original25 + new40 sets")
     for _, key in ipairs(ORIGINAL_KEYS) do

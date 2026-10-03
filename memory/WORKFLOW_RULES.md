@@ -2,6 +2,23 @@
 
 > 强化记忆：以下规则在每轮任务中必须遵守。**每轮开始工作前先重读本节。**
 
+### 配装 PR 与护盾减伤短名（2026-10-03）
+
+- 用户通过 **AskUserQuestion** 授权“提PR，顺带修改下：护盾伤害减免改成护盾减伤”。从已推配装提交 `e249c8c` 新建 `fix/equipment-shield-label-20261003`，包含配装行距调整；只推新修正分支，不推workspace系列，不自动合并PR。查询发现PR42已由外部操作合入930，本会话未执行该合并。
+- 显示元数据改为“护盾减伤”，关键词原标识“护盾伤害减免”保留、弹窗标题改短，简/繁短名显式别名仍指向原机制。装备词典新增短名完整映射且保留旧原文，天赋白名单兼容旧/新原子，星图81/101/203文案及203完整译文同步。英文/日文/韩文原译义保持；esDmgReduce、default0、cap80、公式、存档键和实际数值未改。
+- 官方build成功；五套Runtime exit0+ALL PASS：配装214、真实试穿118（短名/key/cap/default断言）、关键词五语7101（65机制520字段）、关键词点击、天赋翻译。测试记录器不冒称实机视觉；本地.project绑定及生成配置不提交。配装独立复核结束，未发现新增阻塞。
+- 已无冲突合入 `workspace930@d204d22`（合并提交 `2805a3f`）；最新天赋图标模块和接线全部保留，节点拓扑/机制未动。合并态官方build成功，12份PR变更Lua与产物逐字节一致；八套Runtime全部exit0+ALL PASS：配装214、试穿118、关键词五语7101、关键词点击、天赋翻译、横屏手势44、行军324、图标85/209节点/1254绘制。规范2620路径0错误0警告。
+- 已提交推送新修正分支并创建 **PR #43**：https://github.com/FanZeros/changeForJourney/pull/43 ，head=`fix/equipment-shield-label-20261003@6a7ee04`、base=`workspace930@d204d22`，创建返回open、draft=false、merged=false；未自动合并、未推基线。当前预览已构建配装行距、护盾短名及最新图标的整合代码。
+- 继续强化用户流程：持续推进授权任务，每次完成先真实简报，再实际调用 **AskUserQuestion** 选项式交接；尊重后续停止及权限拒绝。凭据不进文件、配置或记忆，创建PR不等于授权自动合并。
+
+### 战斗 PR 与配装属性行距调整（2026-10-03）
+
+- 用户通过 **AskUserQuestion** 明确选择“创建pr。然后是配装的属性显示间隔参考下属性那里的，变大点”。已创建战斗动效 **PR #42**：https://github.com/FanZeros/changeForJourney/pull/42 ，head=`feat/battle-travel-crossfade-20261003`、base=`workspace930`，open、draft=false、merged=false；未合并、未推基线。
+- 从战斗动效提交 `5e28b47` 新建 `feat/equipment-stats-spacing-20261003`，保留当前已部署行军效果；本轮只推配装新分支。该分支包含尚未合入的PR42前序提交；后续若为配装开PR需确认目标基线，不能误称只含间距一项。
+- 配装下部“角色属性／装备加成”两种列表共用 `CharacterAttributeView.STYLE`：rowH60→78、rowStep69→88，对齐属性页，仍保留35号、440宽及名称/数值锚点；属性页78/88/40和460宽不变。试穿20号差值偏移35→44，避免相邻行主数值/描边重叠。视口仍1050顶、718高，12测试行滚动上限328，首屏8完整+第9行14px，滚底第12行完整。套装区、雷达、六槽、属性派生/试穿/穿戴/存档均未改。
+- 官方build成功，两变更Lua与产物逐字节一致，修改文件LSP无Error。Runtime五套均exit0及ALL PASS：配装214断言、配装生命周期、横屏装备手势44、真实试穿117、行军324。测试覆盖行高/行距、clip与点击片段、滚动末行、长数值、相邻差值、标题切换、说明与独立套装滚动；绘图spy不代替真实设备视觉验收。
+- 配装测试修改前原本152断言后失败于 `CharacterDetailEquip.refreshData` 调用I18n.get，旧mock为空；本轮只补get返回zh_CN，更新新行距预期，所有现有功能断言保留且完整复跑通过。无头音频/shader环境错误不宣称通过，全仓其他既有诊断不混修。本地.project生成身份/配置不进入提交。
+- 流程持续强化：推进已授权任务，不擅自取消；每阶段实际简报后真正调用 **AskUserQuestion** 给下一步选项，不以普通问题收尾。只显式push新分支、不强推、不擅自创建本次配装PR或合并；尊重用户后续停止和权限拒绝，凭据绝不持久化。
 ### 剧情职位修复 PR 交接（2026-10-03）
 
 - 用户在 **AskUserQuestion** 明确选择“创建修复 PR（推荐）”，已创建 **PR #44**：https://github.com/FanZeros/changeForJourney/pull/44 ，head=`fix/story-speaker-roles-20261003`、base=`workspace930`，标题“修复剧情职位美术对应与左上闲谈标签”。创建返回open、draft=false、merged=false、mergeable=null/unknown，不声称CI或合并完成。

@@ -126,6 +126,7 @@ function Start()
         "ui.character.equip.EquipmentBag", "config.EquipmentConfig", "ui.widget.HeroFrame",
         "ui.character.hero.AwakeningPanel", "systems.ButtonFeedback", "core.DarkIcon",
         "systems.ExtraTalentSystem", "core.I18n" }) do mods[name] = {} end
+    mods["core.I18n"] = { get = function() return "zh_CN" end }
     mods["config.GameConfig"] = { Design = { WIDTH = 1080, HEIGHT = 2400 } }
     mods["ui.widget.KeywordText"] = { new = function() return {} end }
     local Draw = originalRequire("ui.character.detail.CharacterDetailDraw")
@@ -208,8 +209,8 @@ function Start()
         "两页调用同一个drawAttributeRows而非复制属性行")
     check(Draw.ATTRIBUTE_STYLE == Shared.ATTRIBUTE_STYLE
         and Stats.ATTRIBUTE_STYLE == Shared.STYLE and Draw.ATTRIBUTE_STYLE ~= Stats.ATTRIBUTE_STYLE
-        and Shared.STYLE.rowH == 60 and Shared.STYLE.rowStep == 69 and Shared.STYLE.fontSize == 35,
-        "同绘图API分离独立属性风格与默认60高69步长35号配装风格")
+        and Shared.STYLE.rowH == 78 and Shared.STYLE.rowStep == 88 and Shared.STYLE.fontSize == 35,
+        "同绘图API分离字号与列宽，配装行距跟随属性页78高88步长")
     check(Shared.ATTRIBUTE_STYLE.rowH == 78 and Shared.ATTRIBUTE_STYLE.rowStep == 88
         and Shared.ATTRIBUTE_STYLE.fontSize == 40 and Shared.ATTRIBUTE_STYLE.boxW == 460
         and Shared.ATTRIBUTE_STYLE.boxCX == 300 and Shared.ATTRIBUTE_STYLE.nameX == 150
@@ -224,8 +225,8 @@ function Start()
         "属性页输入坐标同源更新为x40宽500顶1070高874首行1109")
     check(Draw.ATTR_BOX_W == 460 and Draw.ATTR_BOX_H == 78 and Draw.ATTR_COL1_CX == 300
         and Draw.ATTR_ROW_GAP == 10, "属性页导出行尺寸与新风格同步")
-    check(attrs.y == 1050 and attrs.h == 718 and Stats.LAYOUT.rowH == 60 and Stats.LAYOUT.rowStep == 69,
-        "配装属性区固定718高度顶1050，独立保留60高69步长")
+    check(attrs.y == 1050 and attrs.h == 718 and Stats.LAYOUT.rowH == 78 and Stats.LAYOUT.rowStep == 88,
+        "配装属性区保持718高度顶1050，行尺寸扩大为78高88步长")
     check(radar.y == attrs.y and radar.h == attrs.h and radar.cy == 1403,
         "雷达区同步718高度且中心1403")
     check(sets.y == 1866 and sets.h == 348 and Stats.LAYOUT.setTitleY == 1818
@@ -269,7 +270,7 @@ function Start()
     local equipName, equipValue = requiredText("同样属性"), requiredText("42")
     check(originalName.x == 150 and originalValue.x == 520
         and originalName.y == originalValue.y and originalName.y == 1109
-        and equipName.y == equipValue.y and equipName.y == attrs.y + 30
+        and equipName.y == equipValue.y and equipName.y == attrs.y + 39
         and equipName.x == 167 and equipValue.x == 510,
         "同API通过opts.style采用属性页新坐标，默认配装名称左数值右坐标不变")
     check(originalName.fontSize == 40 and originalValue.fontSize == 40
@@ -278,17 +279,17 @@ function Start()
         and sameColor(originalName.color, 0xE8, 0xDC, 0xC8) and sameColor(equipName.color, 0xE8, 0xDC, 0xC8),
         "属性页独立40号、配装仍35号，白数字/E8DCC8名称配色不变")
     check(originalRow.x == 70 and originalRow.y == 1070 and originalRow.w == 460 and originalRow.h == 78
-        and rects[1].x == 90 and rects[1].y == attrs.y and rects[1].w == 440 and rects[1].h == 60
+        and rects[1].x == 90 and rects[1].y == attrs.y and rects[1].w == 440 and rects[1].h == 78
         and rects[1].radius == originalRow.radius and rects[1].radius == 20,
-        "属性460x78与配装440x60独立，共用圆角20与绘图实现")
+        "两页共用78行高，属性460宽与配装440宽独立，圆角20不变")
     check(scissorCalls[1].x == 40 and scissorCalls[1].w == 500,
         "配装属性clip同属性页x40宽500")
     check(#imageCalls == 1 and sharedPaths[imageCalls[1].image]:find("ICON_XX.png", 1, true),
         "属性行装饰复用ICON_XX句柄")
     local _, hits = Stats.drawRows({}, sample, 0)
-    check(Shared.rowAt(hits, ax, attrs.y + 30) == sample[1]
+    check(Shared.rowAt(hits, ax, attrs.y + 39) == sample[1]
         and Shared.rowAt(hits, ax, attrs.y + Stats.LAYOUT.rowH + 4) == nil,
-        "可见行hit匹配60高且行距不出现幽灵hit")
+        "可见行hit匹配78高且10像素行距不出现幽灵hit")
 
     -- 同API交替调用：opts.style只控制本次绘制，绝不污染后续默认配装。
     local attributeLayout, attributeStyle = Shared.ATTRIBUTE_LAYOUT, Draw.ATTRIBUTE_STYLE
@@ -341,24 +342,24 @@ function Start()
     check(requiredText("属性1").y == 1109, "属性页负scroll钳制为零")
     clearDraw()
     local equipMax, equipHits = Draw.drawAttributeRows({}, rows, 0, attrs)
-    check(equipMax == 101 and #equipHits == 11 and requiredText("属性1").fontSize == 35
-        and requiredText("属性2").y - requiredText("属性1").y == 69
-        and rects[1].w == 440 and rects[1].h == 60,
-        "属性大字号调用后默认API仍为配装35号60高69距，上限101不被污染")
-    check(equipHits[1].index == 1 and equipHits[1].y == 1050 and equipHits[1].h == 60
-        and equipHits[#equipHits].index == 11 and equipHits[#equipHits].h == 28
-        and Stats.rowAt(equipHits, ax, 1767) == rows[11] and Stats.rowAt(equipHits, ax, 1768) == nil,
-        "配装原首行完整、末行11只28px可见，clip底不命中")
-    check(Stats.rowAt(equipHits, ax, 1109) == rows[1]
-        and Stats.rowAt(equipHits, ax, 1110) == nil and Stats.rowAt(equipHits, ax, 1118) == nil
-        and Stats.rowAt(equipHits, ax, 1119) == rows[2], "配装原9px间隙仍无幽灵命中")
+    check(equipMax == 328 and #equipHits == 9 and requiredText("属性1").fontSize == 35
+        and requiredText("属性2").y - requiredText("属性1").y == 88
+        and rects[1].w == 440 and rects[1].h == 78,
+        "配装35号78高88距，上限328与属性页相同行距而独立视口")
+    check(equipHits[1].index == 1 and equipHits[1].y == 1050 and equipHits[1].h == 78
+        and equipHits[#equipHits].index == 9 and equipHits[#equipHits].h == 14
+        and Stats.rowAt(equipHits, ax, 1767) == rows[9] and Stats.rowAt(equipHits, ax, 1768) == nil,
+        "配装首行完整、末行9仅14px可见，clip底不命中")
+    check(Stats.rowAt(equipHits, ax, 1127) == rows[1]
+        and Stats.rowAt(equipHits, ax, 1128) == nil and Stats.rowAt(equipHits, ax, 1137) == nil
+        and Stats.rowAt(equipHits, ax, 1138) == rows[2], "配装10px行距无幽灵命中")
     clearDraw()
     local _, lastEquipHits = Stats.drawRows({}, rows, 10000)
-    check(lastEquipHits[1].index == 2 and lastEquipHits[1].y == 1050 and lastEquipHits[1].h == 28
-        and lastEquipHits[#lastEquipHits].index == 12 and lastEquipHits[#lastEquipHits].h == 60
-        and Stats.rowAt(lastEquipHits, ax, 1050) == rows[2]
+    check(lastEquipHits[1].index == 4 and lastEquipHits[1].y == 1050 and lastEquipHits[1].h == 14
+        and lastEquipHits[#lastEquipHits].index == 12 and lastEquipHits[#lastEquipHits].h == 78
+        and Stats.rowAt(lastEquipHits, ax, 1050) == rows[4]
         and Stats.rowAt(lastEquipHits, ax, 1767) == rows[12],
-        "配装滚底仍首行2裁剪28px、末行12完整60px，不使用属性页scroll")
+        "配装滚底首行4裁剪14px、末行12完整78px，不使用属性页scroll")
     local longValue = "123456789012345678901234567890"
     local longRow = { { key = "long", name = "最长属性名称", value = longValue } }
     for _, mode in ipairs({ { style = attributeStyle, layout = attributeLayout },
@@ -374,7 +375,7 @@ function Start()
             and longNumber.x - longNumber.width >= longName.x
             and longName.y == longNumber.y, "两页长数字完整保留，右锚点/基线及clip边界不变")
     end
-    check(Shared.STYLE.fontSize == 35 and Shared.STYLE.rowH == 60 and Shared.STYLE.rowStep == 69
+    check(Shared.STYLE.fontSize == 35 and Shared.STYLE.rowH == 78 and Shared.STYLE.rowStep == 88
         and Stats.LAYOUT.attrs.h == 718 and Shared.ATTRIBUTE_STYLE.fontSize == 40,
         "交替大字号/长数字绘制不修改两页风格对象或配装固定高度")
 
@@ -386,9 +387,15 @@ function Start()
         and deltaName.fontSize == 35 and deltaValue.fontSize == 35
         and deltaValue.y == attrs.y + Shared.STYLE.rowH * 0.5,
         "delta不移动名称或当前值baseline、不缩原35号内容，与无delta坐标完全一致")
-    check(deltaLabel.x == deltaValue.x and deltaLabel.y == deltaValue.y - 35
+    check(deltaLabel.x == deltaValue.x and deltaLabel.y == deltaValue.y - 44
         and deltaLabel.fontSize == 20 and rects[1].h == Shared.STYLE.rowH,
-        "20号delta单独叠在当前数值cy-35上方，原60高属性行不变")
+        "20号delta上移到cy-44，扩大78行高后仍与主数值分离")
+    clearDraw(); Stats.drawRows({}, rows, 0)
+    local firstDelta, secondValue = requiredText("+5"), requiredText("2")
+    check(firstDelta.y + firstDelta.fontSize * 0.5 < requiredText("1").y - 35 * 0.5 - 4
+        and requiredText("-3").y - 10 > requiredText("1").y + 35 * 0.5 + 4
+        and secondValue.y == attrs.y + 39 + 88,
+        "相邻配装差值与上下一行主数值含描边仍不重叠")
     check(#scissorCalls == 2 and scissorCalls[1].y == attrs.y and scissorCalls[1].h == attrs.h
         and scissorCalls[2].x == attrs.x and scissorCalls[2].w == attrs.w
         and scissorCalls[2].y == attrs.y - 20 and scissorCalls[2].h == attrs.h + 20,

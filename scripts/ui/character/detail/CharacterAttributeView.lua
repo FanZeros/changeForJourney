@@ -4,14 +4,15 @@ local AD = require("systems.AttributeDef")
 local M = {}
 
 M.STYLE = {
-    boxW = 440, rowH = 60, rowStep = 69, radius = 20,
+    boxW = 440, rowH = 78, rowStep = 88, radius = 20,
+    deltaOffset = 44,
     boxCX = 310, decoX = 137, decoSize = 20, nameX = 167, valueX = 510,
     fontSize = 35, minFontSize = 22, nameValueGap = 15,
     nameColor = { 0xE8, 0xDC, 0xC8, 255 }, valueColor = { 255, 255, 255, 255 },
     rowColor = { 0, 0, 0, 26 }, stroke = 4,
     green = { 115, 218, 135, 255 }, red = { 235, 110, 100, 255 },
 }
--- 属性页扩大可读字号/行距，配装页保留原风格，避免挤占套装区与差值标签。
+-- 两页共用78高/88行距，属性页保留独立大字号与列宽，配装保留差值区。
 ---@type table<string, any>
 M.ATTRIBUTE_STYLE = {}
 for key, value in pairs(M.STYLE) do M.ATTRIBUTE_STYLE[key] = value end
@@ -143,7 +144,7 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
             DrawUtil.drawTextStroke(vg, style.valueX, baseline, value, valueFont,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, vc[1], vc[2], vc[3], style.stroke)
             if delta ~= "" then
-                changes[#changes + 1] = { y = cy - 35, text = delta, color = deltaColor }
+                changes[#changes + 1] = { y = cy - style.deltaOffset, text = delta, color = deltaColor }
             end
             ---@type table
             local meta = AD.META[row.key]
@@ -171,7 +172,7 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
     return maxScroll, hits
 end
 
--- 与绘图返回的可见片段共用命中，9px行距没有幽灵说明热区。
+-- 与绘图返回的可见片段共用命中，行间留白没有幽灵说明热区。
 function M.rowAt(hits, x, y)
     for _, hit in ipairs(hits or {}) do
         if x >= hit.x and x <= hit.x + hit.w and y >= hit.y and y < hit.y + hit.h then

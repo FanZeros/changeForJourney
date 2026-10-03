@@ -18,7 +18,7 @@
 - alpha乘入所有颜色/渐变，不修改NanoVG全局alpha，外层页面/弹窗动画继续生效；零alpha不绘制。最新209节点位置、名称、效果、icon和邻接与930逐字节一致，最新关键词国际化完全未改。
 - 验证：官方Build成功；85编号/209节点/6配色/3形状1254次绘制覆盖、四层实际路径等边、名称解耦、真实详情接线和alpha回归ALL PASS；关键词、天赋国际化、战斗切关均ALL PASS。真实古树＋详情＋124小尺寸＋正六边形页面150帧PASS，Lua/资源/引擎错误0；已读实际截图，截图仅本地 `assets/image/_review/talent-icons-1003/installed-star-map.png`，临时视觉入口及meta已清理并重建。
 - 独立只读复核无新增明确阻塞。LSP接口缓存仍引用编辑中已替换的旧DarkIcon/rgba代码，官方Build与Runtime确认执行新代码；不宣称全仓缓存静态清洁。仍需用户在实际设备验收鼠标交互/动画和观感。
-- 当前功能已准备提交独立PR，不直接push或自动合并workspace930；凭据不落配置、源码或记忆，每次实际交付后以AskUserQuestion询问下一步。
+- 已推送 `feat930/dark-talent-glyphs-1003`，功能提交 `b23be33f`；正式 **PR #41** 已创建：https://github.com/FanZeros/changeForJourney/pull/41，base=`workspace930`、draft=false、open、merged=false。未推基线、未自动合并，PR不包含旧编辑器；凭据仅即时请求/子进程环境使用，不落配置，每次实际交付后以AskUserQuestion询问下一步。
 
 ## 上次做了什么（2026-10-03，4个特殊场景背景实装）
 

@@ -2,6 +2,12 @@
 
 > 强化记忆：以下规则在每轮任务中必须遵守。**每轮开始工作前先重读本节。**
 
+### 剧情职位修复 PR 交接（2026-10-03）
+
+- 用户在 **AskUserQuestion** 明确选择“创建修复 PR（推荐）”，已创建 **PR #44**：https://github.com/FanZeros/changeForJourney/pull/44 ，head=`fix/story-speaker-roles-20261003`、base=`workspace930`，标题“修复剧情职位美术对应与左上闲谈标签”。创建返回open、draft=false、merged=false、mergeable=null/unknown，不声称CI或合并完成。
+- 创建时head=`cb56e0f7`，base=`d204d227`，ahead2/behind5、6文件差异。PR附原数据逐字不变、1672剧情检查／9套兼容回归、官方build／4Lua产物一致／规范36测试及真实修女昆吾画面说明；明确其他静态诊断、音频环境、有限视觉与未覆盖动画／翻译／旧链播边界。
+- 创建许可不包含合并，不推workspace系列、不擅自同步新基线；交接仅更新记忆并推同一任务分支，本地.project生成配置与凭据不提交。交付后继续真正调用 **AskUserQuestion** 选择下一步。
+
 ### 当前剧情称呼检查协作要求（2026-10-03）
 
 - 用户再次明确：持续推进已授权任务，不擅自取消或退出；每轮完成（含提交推送）先如实简报，再真正调用 **AskUserQuestion** 给出下一步选项，不以普通文字问题或总结代替。尊重用户后续明确停止要求、权限拒绝与安全边界。

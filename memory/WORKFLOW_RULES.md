@@ -5,8 +5,16 @@
 1. **不能取消/退出任务**：必须持续推进直到完成。
 2. **每轮完成后必须用 AskUserQuestion 提问下一步**：禁止以纯文本、总结或其他任何非 AskUserQuestion 的形式中断对话。这是硬性收尾动作，任何任务（包括纯调研）完成后都必须调用 AskUserQuestion。
    ⚠️ 强化记忆（用户多次重申）：任何一次任务完成（含 commit+push 之后）的最后一个动作必须是调用 AskUserQuestion 工具向用户提问下一步做什么。绝对不允许以普通文本消息结束回合。即使构建失败、测试失败、遇到阻塞，也要用 AskUserQuestion 给出处理选项。
-3. **以用户当轮指定基线继续开发**：当前轮（2026-10-03）从 `feat1003/samsara-story-wiring-plan@35af331` 新建 `feat1003/samsara-n12-n14-20261003`，仅commit与push该新续作分支；不推任何workspace系列、不强推、不擅自创建或合并PR。上一轮N02的“推回同名分支”是历史授权，不覆盖本轮新分支纪律。
+3. **以用户当轮指定基线继续开发**：当前轮（2026-10-03）在N12–N14提交 `da60770` 上新建纯规划分支 `plan1003/samsara-next-slice-20261003`，仅commit与push此新分支；不推任何workspace系列、不强推、不擅自合并PR。N12–N14续作PR已获用户明确创建授权，规划不等于授权实施下一批节点。
 4. **部署位置**：当前仓库和游戏项目直接位于 `/workspace` 根目录，scripts/assets/.project 等不再嵌套子目录；保护引擎提供的只读目录，修改代码后调用官方 build 工具构建。
+
+### N12–N14 PR与下一批规划（2026-10-03）
+
+- 用户经 **AskUserQuestion** 授权“PR并且规划下一批”。已创建 **PR #45**：https://github.com/FanZeros/changeForJourney/pull/45 ，head=`feat1003/samsara-n12-n14-20261003@da60770`、base=`feat1003/samsara-story-wiring-plan@35af331`，创建返回open、draft=false、merged=false；未推或合并原计划分支，不自动合并。
+- 由续作head新建 `plan1003/samsara-next-slice-20261003`，本轮只核对剩余剧情正文/实际事件和形成下一批计划，未授权实施下一批、不修改Lua/奖励/队列/存档；当前预览保留已构建N02/N12–14续作，不重复build纯文档。
+- 下一批推荐只接N03退回货单（拟`samsara.returned_manifest`），复用真实204首通、旧44–46消化与无奖切片；不加N02/N12新硬前置。已cargoHistoryCaptured=true不重扫补齐204，可靠E02.player_record可作历史来源，case_archive或N12处理不证明玩家领货，原N12回看来源冻结。资料不足时只提示未知或另行确认无奖reference补读，不强制重打早关。N15–N18因缺E03-C/投影、救援经历与调查窗口事件后置；计划含无奖/租约/分层/旧档及实机验收矩阵。
+- 规划已追加到现有 `docs/轮回剧情最小切片接线方案-1003.md` §12并更新docs索引，原v0.1标历史，未新建额外文档。最新查询PR45已由外部操作合并（本会话未合并）；创建时open及clean为历史状态，未查到check-runs，不宣称CI通过。
+- 持续遵守：完成、提交、推送或真正用户决策阻塞时先如实简报，再实际调用 **AskUserQuestion** 提供2–4项下一步选项；仅push新规划分支、不推workspace系列、不自动合并。尊重后续停止及权限拒绝，凭据/本地.project配置/截图/存档不提交。
 
 ### N12–N14征用调查续作（2026-10-03）
 

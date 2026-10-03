@@ -1,5 +1,7 @@
 # memory-index — 《终焉之门》改造完整交接文档
 
+> **最新（2026-10-03，续作PR与下一批规划）**：N12–N14已创建[PR #45](https://github.com/FanZeros/changeForJourney/pull/45)，head=`feat1003/samsara-n12-n14-20261003`、base=`feat1003/samsara-story-wiring-plan`，创建时open/mergeable clean，收尾查询已由外部操作合并，本会话未执行合并。用户仅授权“PR并且规划下一批”；新纯规划分支`plan1003/samsara-next-slice-20261003`，推荐先补N03退回货单，不把N03强加为N12前置，也不改写已有案件副本来源。N15–N18因缺投影/救援经历/地狱批注和调查触发暂后置；详细计划追加在[接线方案](轮回剧情最小切片接线方案-1003.md)。本轮不改Lua/资源/存档，不重复build，完成后只push新规划分支并真正AskUserQuestion。
+
 > **最新（2026-10-03，N12–N14续作）**：从用户指定 `feat1003/samsara-story-wiring-plan@35af331` 新建 `feat1003/samsara-n12-n14-20261003`，追加货牌核验／灰印征用令／人员卷三段无奖切片，独立cargoHistoryCaptured防N02旧标记漏迁移，严格raw204/4905与真实首通，三段串行、证据分层、四标签回看及原仲裁门禁保留。N02基线本轮官方build成功并复跑496/763通过；续作三套510＋880＋1108断言/0失败及八套旧回归全过，9Lua与部署产物一致。主入口限时只观察16/17，不称实机完整启动/新剧情视觉通过。具体状态见 `memory/WORKFLOW_RULES.md`；只推新分支，不混最新930功能、不推原基线或workspace系列，完成后真正AskUserQuestion，凭据与本地配置不提交。
 
 > **最新（2026-10-03，N02已实施）**：用户明确继续当前 `feat1003/samsara-story-wiring-plan`，从 `b8645c20` 落地N02及功绩旁轻量“剧情记录”。独立无奖节点`samsara.log_leaf`、E01普通原件、待阅/已读/已跳过/回看、token+epoch中断恢复、严格104原始资格捕获、session双迁移与显式换表附着、真实Flush返回/节流重试均接通；旧正文/奖励/FIFO不改，N12–14仍未实施。新增专项1259断言/0失败，八套原回归通过；真实宿主开场→Boot首通回调→旧日志→N02跳过→下帧回看及记录页截图验收通过（战斗触发/文件为边界替身，不证明完整战斗胜利）。详细范围与已知旧battle getter缺口见 `memory/WORKFLOW_RULES.md` 本轮条目。仅推当前同名分支，不推workspace；完成后最后实际AskUserQuestion，凭据/本地身份/截图不提交。

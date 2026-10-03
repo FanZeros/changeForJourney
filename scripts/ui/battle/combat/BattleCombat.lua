@@ -396,6 +396,7 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
     damage = ClassGateRuntime.absorbIncoming(target, damage)
     damage = EquipmentSetRuntime.onIncoming(target, damage)
     if damage <= 0 then return 0 end
+    TAL.resetEnemyDeath(target)
     local hpBefore = target.hp
     local actual
     local takenForStats
@@ -439,6 +440,10 @@ local function dealDamageToUnit(target, damage, isTargetAlly, prefix, color, sou
         end
         if source and isTargetAlly == false then
             DungeonBattle.onEnemyKill(source)
+        end
+        if isTargetAlly == false then
+            -- 死亡状态尚未被宿主清理时分发，冻结/标记击杀成长可读原状态。
+            TAL.onEnemyDeath(target, BCS.ctx.getAllies(), BCS.ctx.getEnemies())
         end
     end
     -- 战斗统计：己方英雄对敌方输出（弹射/飞剑/奥术飞弹/DOT 等非普攻路径）
@@ -513,20 +518,21 @@ local function applyFlyingSwordDamageWithRetarget(attacker, primaryTarget, damag
 
     local pool = isTargetAlly and (allyList or BCS.ctx.getAllies()) or (enemyList or BCS.ctx.getEnemies())
     local function tryHit(unit)
-        if not unit or unit.hp <= 0 then return 0 end
+        if not unit or (unit.hp or 0) <= 0 then return 0 end
         return dealDamageToUnit(unit, damage, isTargetAlly, prefix or "", color or { 255, 238, 96 }, attacker, meta)
     end
 
-    local actual = tryHit(primaryTarget)
-    if actual > 0 then return actual end
+    -- 扣血为0也可能是全额吸盾或减伤：活目标只结算一次，不能据此转火。
+    if primaryTarget and (primaryTarget.hp or 0) > 0 then
+        return tryHit(primaryTarget)
+    end
 
     local alive = getAliveUnits(pool)
     if #alive == 0 then return 0 end
-    for _ = 1, #alive do
-        actual = tryHit(alive[math.random(#alive)])
-        if actual > 0 then return actual end
-    end
-    return 0
+    ---@type table
+    local replacement = alive[math.random(#alive)].unit
+    print("[BattleCombat] 飞剑死目标转火 target=" .. tostring(replacement.name or replacement.heroId or "?"))
+    return tryHit(replacement)
 end
 
 --- 灵月飞剑 inbound 方向（圆环点 → 目标，用于飞回穿透/折返）
@@ -1281,6 +1287,7 @@ local function performAttack(attacker, targetList, isAlly)
                         finalDmg = TAL.modifyDamageForTarget(curTgt, finalDmg, tgtIsAllyForAbsorb, syncUnitHp, result.category)
                         finalDmg = ART.onBeforeTakeDamage(curTgt, attacker, finalDmg, tgtIsAllyForAbsorb)
                         result.damageDealt = finalDmg
+                        TAL.resetEnemyDeath(curTgt)
                         local shieldBefore = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
                         local actual = curTgt.attrs:takeDamage(finalDmg, result.resistance)
                         local shieldAfter = (curTgt.attrs.energyShield or 0) + (curTgt.attrs.tempEnergyShield or 0)
@@ -1461,6 +1468,11 @@ local function performAttack(attacker, targetList, isAlly)
                                 doTalentDamage()
                             end
                         end, allyList)
+
+                        -- 攻击后天赋先写本次征服/斩击条件，再分发同一命中的死亡。
+                        if isAlly and curTgt.hp <= 0 and hpBefore > 0 then
+                            TAL.onEnemyDeath(curTgt, allies, enemies)
+                        end
 
                         -- 主伤害与弹射天赋处理完毕后再排连击（弹射本身不 roll 连击）
                         if result.comboCount and result.comboCount > 0 and not result.isMiss then

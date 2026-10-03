@@ -35,6 +35,20 @@ function M.process(ctx, logicDt)
     local stageName = ctx.stageName
     local getStageConfig = ctx.getStageConfig
 
+    -- 先扫描整条战线，避免同帧多死补位/收缩跳过后一个死亡对象。
+    -- 命中端已即时分发时 TAL 内部幂等；奖励仍按 reviveTimer 独立记账。
+    for _, unit in ipairs(enemies) do
+        if unit.hp <= 0 then
+            TAL.onEnemyDeath(unit, allies, enemies)
+        else
+            TAL.resetEnemyDeath(unit)
+            if unit.reviveTimer then
+                unit.reviveTimer = nil
+                BattleCombat.clearCardAnim(unit)
+            end
+        end
+    end
+
     -- ---- 敌人死亡处理（死亡即补位：怪物池有剩余立刻替换新怪） ----
     -- [补位节流] 多只敌人同帧死亡时，补位/收缩按 0.4s 间隔逐只进行
     --（首只按 RESPAWN_DELAY 1s，其后每只 +0.4s：AOE 杀 3 只 ≈1.8s 补全
@@ -49,8 +63,7 @@ function M.process(ctx, logicDt)
             unit.reviveTimer = 0  -- 标记已处理
             unit.atkProgress = 0
             TM.removeUnit(unit)   -- 清除仇恨记录（仅一次）
-            TAL.onEnemyDeath(unit, allies, enemies)  -- 转职天赋: 敌人死亡钩子（影袭等）
-            SEM.removeUnit(unit)  -- 清除状态效果
+            SEM.removeUnit(unit)  -- 死亡钩子已在整组扫描分发，之后再清状态
 
             -- 波次效率累计（本地 UI 统计）
             ctx.waveKillCount = ctx.waveKillCount + 1

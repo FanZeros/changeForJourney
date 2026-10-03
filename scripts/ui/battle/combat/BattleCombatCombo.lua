@@ -108,6 +108,7 @@ function M.bind(deps)
         curTgt = resolved
         curTgtCX, curTgtCY = getCardPos(liveTargetList, resolvedIdx)
         if not result.hits or not result.hits[1] then return end
+        TAL.resetEnemyDeath(curTgt)
         local semMult = SEM.getDamageTakenMult(curTgt)
         local hpBefore = curTgt.hp
         local hit = result.hits[1]
@@ -152,6 +153,8 @@ function M.bind(deps)
         if curTgt.hp <= 0 and hpBefore > 0 then
             local overkill = math.max(0, finalDmg - hpBefore)
             curTgt._overkillRatio = math.min(1.0, overkill / (curTgt.maxHp or hpBefore))
+            curTgt._killedBy = attacker
+            if hit.isCrit then curTgt._killedByCrit = true end
         end
 
         setRecoil(curTgt, isAlly and -1 or 1)
@@ -210,6 +213,10 @@ function M.bind(deps)
             category = result.category,
             isCrit = hit.isCrit,
         })
+        -- 本次连击天赋条件生成后分发；使用实际目标阵营，不把杀友当敌死。
+        if not tgtIsAlly and curTgt.hp <= 0 and hpBefore > 0 then
+            TAL.onEnemyDeath(curTgt, getBCS().ctx.getAllies(), getBCS().ctx.getEnemies())
+        end
     end
 
     -- 通知 BattleScene（投射物/受击特效�?

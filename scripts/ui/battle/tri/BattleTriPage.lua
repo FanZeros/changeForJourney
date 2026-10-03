@@ -137,6 +137,17 @@ end
 
 local function clearTerminalRaid()
     if not terminalRaid then return end
+    -- 共享池打空可能发生在最后一条更新的战线；未命中的 Boss 尚未来得及 tick。
+    -- 必须在解绑共享池/重开驱动前按各线状态分发，奖励仍只走 settleRaidKillRewards。
+    if terminalRaid.hp <= 0 then
+        for row = 1, COL_COUNT do
+            local drv = drivers[row]
+            if drv and drv.terminalRaid == terminalRaid then
+                drv:activate()
+                drv:reportDefeatedEnemies()
+            end
+        end
+    end
     terminalRaid:release()
     for row = 1, COL_COUNT do
         if drivers[row] then drivers[row].terminalRaid = nil end

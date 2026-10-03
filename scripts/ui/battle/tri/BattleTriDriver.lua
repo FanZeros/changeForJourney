@@ -380,11 +380,21 @@ function BattleTriDriver.new(teamIdx, options)
     end
 
     function drv:reportDefeatedEnemies()
-        if self.terminalRaid then return end
         for _, u in ipairs(self.enemies) do
-            if u.hp <= 0 and not u._triKillReported then
-                u._triKillReported = true
-                self:reportKill(u)
+            if u.hp <= 0 then
+                TAL.onEnemyDeath(u, self.allies, self.enemies)
+                -- 终焉共享池的奖励仍由协同宿主结算，天赋事件不跟奖励锁绑定。
+                if not self.terminalRaid and not u._triKillReported then
+                    u._triKillReported = true
+                    self:reportKill(u)
+                end
+            else
+                TAL.resetEnemyDeath(u)
+                u._triKillReported = nil
+                if u.reviveTimer then
+                    u.reviveTimer = nil
+                    BattleCombat.clearCardAnim(u)
+                end
             end
         end
     end
@@ -480,6 +490,8 @@ function BattleTriDriver.new(teamIdx, options)
         self._tickDt = dt
         self._timeoutElapsed = (self._timeoutElapsed or 0) + dt   -- 超时增伤计时
         self:tickRewards(dt)
+        -- 共享池可以由另一条战线打空：先分发本线死亡，再走失守/胜利早返。
+        self:reportDefeatedEnemies()
         if self.terminalRaid and self.terminalRaid.defeated[self.teamIdx] then return end
         local allies, enemies = self.allies, self.enemies
         if self.terminalRaid and self.terminalRaid.finished then return end
@@ -651,6 +663,8 @@ function BattleTriDriver.new(teamIdx, options)
         BattleCombat.updateHpBuffers(allies, dt)
         BattleCombat.updateHpBuffers(enemies, dt)
         TM.update(dt)
+        -- 攻击/神器等本帧新死亡必须早于 SEM.update 的死人状态清理。
+        self:reportDefeatedEnemies()
         SEM.update(dt, {
             onDot = function(unit, source, dmg)
                 local isUnitAlly = BattleLayout.detectGroup({ unit }) == "ally"
@@ -704,6 +718,7 @@ function BattleTriDriver.new(teamIdx, options)
         -- 投射物 / 连击
         ProjectileSystem.update(dt)
         BattleCombat.updateComboQueue(dt)
+        self:reportDefeatedEnemies()
 
         -- 纯视觉层
         BattleEffects.update(dt)

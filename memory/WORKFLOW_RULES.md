@@ -4,6 +4,7 @@
 - PR46源 `feat/expedition-level-track-20261003@e41d994f`，目标 `workspace930@71f635f3`；在新分支 `fix/pr46-conflicts-20261003` 合入目标，合并提交 `abb9b403`。4冲突文件：协作记忆双保留；Horizon合并仓库锻炉层级+塔内功绩+升级finishFrame唯一绘制+按归属奖励避免双画；Input保留升级整次手势捕获与新版教程canPointerStart，教程向更高升级层让位，保留CE/Update前置、不重复旧位置；TaskPage保留轨道共享layout及930最终译文/长文裁剪、难度名。
 - 专项测试补齐I18n与字体度量替身（首跑轨道测试因新依赖未mock失败，补后253断言全过），新增升级与教程同开/教程Down后升级出现2组回归；合并态15套Runtime全部成功（远征模型91、奖励803、弹窗28、轨道253、离线覆盖83场景990断言、离线边界、教程55场景356、目标63、领奖241、仓库层级46、宝箱45场景1168、剧情五语1672、本地UI525、切关、小队解锁115）。官方Build成功；冲突Lua与新增测试逐文件LSP无Error；真实main150帧原始PASS、Lua/资源/引擎错误0（软渲染spike阈值1000ms），不代替设备交互验收。
 - 独立只读复核未发现自动合并静默丢失。GameState/Save/Bridge/TaskService与PR源一致，最新I18n/TutorialManager/Recovery与目标一致；新轨道动态中文未完整接国际化、升级遮挡期间5秒计时仍属PR46源既有问题，非冲突修复引入，本轮不扩改。暂存规范2637路径0错误0警告。
+- **远端已交付**：修复分支与PR46源均以非强推快进更新到 `4db43573`；GitHub核验PR46 open/merged=false/mergeable=true（文本冲突已消失，repository-policy尚在运行），PR48 open/merged=false/mergeable=true，repository-policy成功。未推workspace930或合并PR；后续记忆提交会再次触发CI，以最新head状态为准。
 - 本轮许可仅推新修复分支并非强推快进更新PR46源以消除冲突，不推workspace系列、不合并PR，不把PR48未合入内容塞进PR46。本地.project与原有图标修改不提交；图标修改保留在命名stash（PR46冲突修复前）。鉴权仅即时请求/子进程环境，不进入源码、Git配置、日志或记忆；提醒撤销聊天已公开令牌。完成后先简报，再真正AskUserQuestion提供下一步。
 
 # changeForJourney（终焉之门）项目工作铁律

@@ -1,3 +1,50 @@
+## 竖屏残留审查协作要求（2026-10-03）
+
+- 用户指定从 `workspace930` 拉取、部署，源码与资源已直接放在 `/workspace` 根目录；基线固定为 `0ec423f8d72adfc393953299a72ebb388d56ba6c`，任务分支为 `audit930/portrait-layout-20261003`。
+- 本轮范围是只读核实竖屏专用代码及横屏迁移残留，列出位置并给出调整、删除方案；未经下一轮明确授权，不改动玩法、布局、资源与存档。官方 build 用于部署当前基线，本地生成 `.project` 身份与运行配置不提交。
+- 持续推进已授权任务，不擅自取消或退出；每次完成（含调研与提交推送）先如实简报，再实际调用 **AskUserQuestion** 提供 2–4 个下一步选项，不以普通文字问题结束等待。尊重用户后续明确停止指令、权限拒绝与安全边界。
+- 每轮从指定基线创建独立任务分支，完成后仅正常 commit/push 到新分支；**禁止推送 `workspace` 或 `workspace930`，不强推，不擅自创建或合并 PR**。使用显式目标 ref；凭据不进入文件、源码、Git 地址、配置、日志或记忆。
+- 本环境全局记忆目录写入失败，协作要求已强化在此项目已有记忆中；不声称全局记忆保存成功。
+- 部署验证：官方 build 成功；六套既有横屏 Runtime 回归均退出 0 且 ALL PASS：装备手势 44、教程 55 用例/356、离线覆盖 83 用例/990、宝箱 45 用例/1168，以及遗匣横屏、角色跨栏拖拽。上述逻辑/绘图记录器测试不代替实机视觉验收。
+- 真实 `main.lua`、1920×1080、surfaceless 默认验收：加载/初始化 PASS，完成 boot 18/18、标题解锁；总体 TIMEOUT，30 秒只完成 92/150 帧，运行阶段多次超过默认 100ms 帧尖峰阈值，退出 1。Lua 逻辑报错未观察到，不宣称该次运行/性能验收通过。后续全仓 LSP 扫描发现 81 条当前未改代码的 Error，本轮不混修、不宣称全仓静态通过。
+- 审查期间远端 `workspace930` 已由外部更新，本轮不自动合并并行改动；结论以固定 `0ec423f8` 快照为准。
+
+### 本轮竖屏残留审查结论（只读，尚未实施）
+
+**必须保留的坐标契约**：`boot/Standalone.lua:243-263` 固定 1920×1080 外帧；`core/Viewport.lua:11-14,46-54` 的 1080×2400、DS=.45 是横屏栏内坐标。不能全局替换 2400/1080，也不能把所有非三行分支删成“旧竖屏”。
+
+**当前可达的迁移问题，建议先修再清理**：
+1. 普通副本旧上下排外壳：`ui/dungeon/DungeonPage.lua:1167-1191` 正常挑战进入，`boot/StandaloneHorizon.lua:595-597` 在中栏绘制；`ui/dungeon/DungeonBattleScene.lua:56-86,718-857` 保留敌804/我1760，731/814调用共享卡组。`boot/Standalone.lua:983`、`StandaloneHorizon.lua:224` 固定strip；`ui/battle/scene/BattleDraw.lua:164-175` strip时忽略baseCY，双方都落cy180，与旧阴影/标题错配。迁到条带BattleView并同步战斗/特效/输入投影，保留生命周期、结算与奖励；不临时切共享全局classic。
+2. 角色旧页签隐形热区：`ui/character/panel/CharacterPanelDraw2.lua:275-276,487-548` 的drawTeamTabs只有定义、无调用；`CharacterInput.lua:118-122` 仍先命中。旧tab矩形X330–462/474–606/618–750、Y258–312，当前头像加144偏移后从Y258起，(636,270)点队一第二头像会先被旧Tab3消费。删旧页签绘制、命中和输入分发，保留新头像切队124–141。
+3. 滚轮漏外帧变换：`boot/StandaloneHorizonInput.lua:1314-1316,1388-1393` 算出csx/csy却给BattleTriPage传sx/sy；`ui/battle/tri/BattleTriPage.lua:1121-1140` 与选关/装备覆盖层期望宿主坐标。两处改传csx/csy，保留各弹窗自身的局部逆变换。装备覆盖袋目前无生产open调用，该支需清理或接线后验证，选关路径当前可达。
+4. 终焉确认全窗漏输入阻断：`ui/battle/tri/BattleTriPage.lua:680-695,886-892` 画/消费终焉确认；`boot/StandaloneHorizonInput.lua:178-181` 仅列扫荡/统计/选关。应把终焉加入全窗模态并同步禁止中缝返回越层；`TerminalConfirmDialog.lua:110` 的局部1080遮罩也需移到宿主全窗。
+5. 全局UiToast漏绘：`boot/StandaloneHorizon.lua:677,788` 提前返回，唯一draw在821；`ui/blacksmith/BlacksmithRefine.lua:63-72` 等活调用会创建不可见提示。移到共用收尾层，明确与升级/离线/更新提醒层级，不改业务或反馈时间。
+6. 特效/伤害数字设置仅留旧路径：`ui/battle/scene/BattleScene.lua:830-846` 有守卫，但当前`BattleView.lua:70-76` 无条件绘制。给当前横屏视图恢复对应设置守卫，不停止伤害计算/状态推进。
+7. 塔异常页旧全窗坐标：`ui/tower/TowerBattleScene.lua:315-332,354-389` fallback直接画1080×2400，说明Y1160/1240/1330超出宿主1080高。改成接受logicalW/H的横屏错误卡，保留异常记录和点击退出。
+8. 设置嵌入后旧独立open守卫：`ui/hud/popup/PlayerInfoPanel.lua:758-767,984` 走嵌入设置；`SettingsPanel.lua:508-510` 却只在自身open时更新兑换码。导致`RedeemCodePanel.lua:282-320` 键盘/光标/提示/超时更新漏执行。先解耦更新，再删独立设置壳；保留文本事件、持久化和滑块拖拽。
+
+**仍活跃，但属于布局优化，不应直接删功能**：
+- `ui/tower/TowerBuffPick.lua:22-58,133-141` 三张强化卡仍纵排，经`TowerBattleScene.lua:335-344,379-381,440-444` letterbox后只占486宽；draw/input一致，不报点击错位。建议宿主全窗遮罩＋横向三卡并同步关键词/命中。
+- 玩家信息`PlayerInfoPanel.lua:82` 950×1877长板、更新提醒`UpdateNoticePopup.lua:21-32` 720×440卡仍借2400高画布；可以横卡化，但需同步子窗和输入。更新提醒现有横屏尺寸约324×198，不是不可达。
+- `OfflineRewardPanel.lua:60-73` 已有1760宽面板且`boot/OfflineRewardOverlay.lua`统一投影，不能列作纯竖屏窄窗。
+
+**可分批删除的旧链（先清调用，再删模块/meta）**：
+- `ui/story/gate/StartScreen.lua:1-10` 永久false空壳；连同Standalone/Horizon/Input对应require、init、draw、skip条件清理，真正标题DarkTitleScreenGate保留。
+- `core/BattleLayout.lua:76-91,112-137` classic位置分支与`BattleDraw.lua:170-175`旧动画轴；先解决副本混用、迁依赖，再收敛strip。`BattleTriDriver.lua:137-138`仍用FIELD_CY，不能机械删除共享常量。
+- `CharacterPanelDraw2.lua:585-747` 恒false整卡槽绘制；保留名册、头像、当前教程热点与新命中。
+- 教堂旧选人`ui/church/ChurchDraw.lua:457-472`、`ChurchInput.lua:82-168`恒false链；当前ChurchPage96–101只有shenqi/baoxiang，旧转职选人与非神器页内容可清，不能删角色详情的正式转职/天赋模块。
+- `BattleDraw.lua:125-143,360-361` 攻击条helper仅注释调用；清对应ATK_BAR常量和BattleScene攻击条图片加载，不删除unit.atkProgress。
+- `ui/battle/popup/MonsterInfoPopup.lua:37-84` 旧长按命中Y804，`BattleScene.lua:1750-1756`包装无上游调用。选择删旧长按全链，或按当前战斗行投影正式接线；保留怪物数据。
+- `boot/Standalone.lua:234,268-272` 无读取的旧scale/screenDesign/offset计算、`core/Viewport.lua:9` 无读取ENABLED，可删；保留frameScale/Ox/Oy和整个Viewport。
+- `ui/backpack/BackpackPanel.lua:825-832,1181,1208` window/inline旧宿主无普通入口，`ui/character/equip/EquipmentBag.lua:316` 无生产open；均有残存宿主/开发钩子或测试需先迁，不能先整文件删除。当前正式仓库与配装使用BackpackPanel左栏链。
+- `EquipmentDetail.lua:1255-1261` 非compact完整面板生产调用均选compact，但`tests/set_icon_badge_test.lua:549-557`仍覆盖非compact；先迁测试和接口再删除，不动drawReadOnly。
+- `SettingsPanel.lua:243-264,396-460,623-701` 独立弹窗壳无生产open，先修兑换码更新再清；BottomNav空绘制接口可清，页码/锁定/角标状态模块不能删。
+
+**已反证并撤回的疑点**：塔中栏奖励输入/draw条件虽分别用note/letterbox，但固定1920×1080下note.ox231+bx486=717，fit=.45，与全窗letterbox完全一致。`tests/chest_reward_horizon_test.lua:226-236,330-350`真实Horizon回调通过，不能报告当前错位；只作日后去重复变换建议。
+
+**验证边界**：以上缺陷为静态调用链及坐标推演确认，未新增运行复现用例，未修改生产Lua；既有六套回归通过不代表这些未覆盖缺陷已修复。孤立row奖励输入兜底、过场cover与Electron小屏窗口等扩展问题仅留后续专项，不把未知触发条件泛化为竖屏故障。
+
+
 ## PR46 冲突修复（2026-10-03）
 
 - 用户明确要求给二队解锁修复创建PR并“顺带修复46pr的conflict”。二队修复已推新分支并创建 **PR #48**：https://github.com/FanZeros/changeForJourney/pull/48（功能f9085e50，交接b015b354），目标workspace930，未自动合并。

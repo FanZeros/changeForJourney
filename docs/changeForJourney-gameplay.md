@@ -413,3 +413,61 @@
 7. **按钮禁用色**：条件不满足时文字统一棕色 `0x8d5f41`，满足时亮色（2026-09-27 全局统一，23 个文件）。
 8. **教堂文案**：剧情中「领祝福」全部改为「神器登记/嵌槽」（情景 24-30/41）；教堂 UI 只有神器页。
 9. **测试木桩**：旧「战斗页左侧测试木桩按钮」入口已不存在；`DungeonBattleScene` 内 `training_dummy` 分支为无调用方的残留死代码。DPS 测试改走独立战斗实验室（`scripts/tests/battle_lab_ui.lua` / `battle_lab.lua`，独立进程运行，勿在游戏主进程并行）。
+
+---
+
+## 21. 角色逻辑修复复查（2026-10-03）
+
+### 21.1 基线、范围与结论
+
+- 最新基线：`workspace930@eec2a976`；本轮工作分支：`fix1003/character-awakening-audit`。
+- 对照：`audit930/character-awakening-sets-1002@35c9cb07`。该分支是只读审计，增加说明和探针，不是角色技能修复分支；旧完整25角色/12套审计和差异化建议可从该分支第21节读取。
+- 本轮以四组独立审查核对角色技能/死亡事件、觉醒/永久成长、套装生命周期，以及后续属性/战力/装备读档修复；各组结论再由另一位审查者尝试反证。
+- `TalentManager`、`ExtraTalentSystem`、`EquipmentSetRuntime`、`AwakeningConfig`、`BattleTriDriver`、`UnitAttributes`、`CombatFormula` 与旧审计快照逐字节一致。最新装备/属性页修复不能当作这些战斗问题已修复。
+- 本轮不修改角色技能、伤害倍率、复活概率或套装设计。恢复原审计探针及原UUID，只澄清观察含义；不把探针完成当成健康行为通过。
+
+### 21.2 实际复测
+
+```text
+./.cli/UrhoXRuntime tests/skill_balance_audit_test.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless
+[Audit][SUMMARY] confirmed=17 healthy=0 harnessErrors=0
+```
+
+上述结果与旧审计相同，且最终注释澄清版再次复测一致，exit=0。**17是观察数，不是17个独立缺陷，更不是17个已修复问题。** 旧节点兼容查询本身合法，问题是新三阶调用端误用；晶蚀四件独立收益属于设计缺口，当前文案没有承诺每层易伤。
+
+| 观察组 | 最新实跑结果 |
+|---|---|
+| 小雀开战 | `TalentAyane` 的 `SEM` upvalue 为nil，开战异常 |
+| 新三阶/老六 | 仅Ⅰ，旧查询2/3均true，隐身已延长至6秒 |
+| 永久成长 | HP200→100，而新上限201；分摊致死后HP0→3 |
+| 复活共鸣 | 随机0.99仍满血复活，未兑现描述的60% |
+| 感电易伤 | 暴击率1.755，未计入10受暴率，应为11.755 |
+| 飞剑全盾 | 扣盾10000→9999之后发生nil与number比较异常 |
+| 三行死亡 | 敌死1名，`onEnemyDeath`调用0次 |
+| 晶蚀 | 五层受击仍100；开战清错字段，实际`_crystal`仍5 |
+| 余烬/治疗 | 敌方10秒后仍余烬2秒；治疗给友军余烬标记 |
+| 套装临时池/阵亡 | 旧单位重置后剑池1000/晶蚀4保留；阵亡门剑仍输出1次 |
+| 司仪转盾 | 常规盾1100被无关属性重算夹回908 |
+| 连射成长 | 60次计数，cut0有12弹，cut0.05无弹 |
+
+以下16套独立Runtime回归均exit=0、ALL PASS：
+
+- `awakening_growth_equivalence_test`、`character_attribute_stability_test`（55断言）、`character_power_estimate_test`、`character_equip_lifecycle_test`。
+- `character_radar_diff_test`（49断言）、`character_equip_panel_test`（83断言）、`equip_ascend_affix_test`、`corrupt_convert_test`。
+- `battle_stage_switch_test`、`battle_lab_boundary_test`、`shield_scaling_test`、`terminal_raid_test`。
+- `backpack_quick_equip_test`（86断言）、`backpack_equip_link_test`（212断言）、`scenario82_firstclear_test`、`hero_scenario_claim_test`。
+
+此外单独直接执行 `boss_affix_test`（37断言）和 `equipment_preview_test`（54断言）也exit=0、ALL PASS。补充批处理曾提前退出，不据此声称未运行用例通过；这里仅计独立实际完成的回归。**既有回归通过与专项审计异常同时成立，前者并未覆盖后者所有实际触发路径。**
+
+主入口30秒无头冒烟：`Module.Start()`返回，启动队列18/18及`title unlocked`均出现，没有Lua traceback/attempt-to错误；游戏持续运行由外部30秒超时结束（exit=124），不把超时当游戏逻辑失败，也不算完整交互验证。无头环境存在`MiSans`字体缺失、shader缓存编译等警告/错误，不宣称视觉验收通过。
+
+官方Build成功，产物414个Lua资源，已核验包含审计探针。审计脚本单文件LSP零诊断；截至320文件的工作区缓存汇总有16个既有Error，集中在`Standalone.lua`跨文件全局、`CharacterRadarPoint/Comparison`类型解析及相关引用，三个涉及文件与最新基线逐字节一致。缓存汇总不等于全仓干净，也不等于完整全仓错误数；不为本次只读复查擅改无关类型定义。仓库规范校验器36个回归通过，本地构建身份/生成配置不进入提交。
+
+### 21.3 修复批次与验证边界
+
+1. **先修运行异常和漏事件**：小雀依赖、飞剑全盾命中语义、三行及副本/塔敌死分发。死亡事件需每次死亡幂等、保留击杀来源，并明确成长/复活/清状态/补位顺序。
+2. **再修觉醒和成长契约**：原生3阶与旧7节点查询分离，替换成长modifier时避免临时低上限夹血，永久生命成长不自行救活死人，连射采用整数可达门槛；复活描述与实装差异单独确认。
+3. **统一伤害事件**：普攻/连击/分摊/额伤的受击与格挡钩、实际挡伤/盾吸收、source/阵营/opts分别传递，避免修一个入口而其他入口仍旁路。
+4. **最后修套装生命周期**：敌方减益计时、healing过滤、每次开战/换波临时资源清理、死亡存活判断、转盾稳定生命周期。晶蚀四件新增收益属于设计选择，不在无确认情况下添加易伤数值。
+
+特别收窄：跨波剑池残留应按复用单位的旧`BattleScene`路径描述，三行每关新建单位不能据同一探针判其跨波污染；死人周期输出要求其他队友仍活着且宿主继续tick，不是全队已灭仍开火。回调第6参把opts当source会丢统计归因/noCounter，并不代表原本扣敌人血变成扣友军血。完整强度采样、25角色/12套真实驱动端到端用例和视觉操作均未完成，不报告平衡已通过。

@@ -1,8 +1,8 @@
 -- ============================================================================
 -- StageSelectDialog - 主线选关弹窗（v2 章节两栏版）
 -- 布局（参考暗黑地牢选关图）:
---   左栏: 大关卡（章节）竖排列表，各章色调横幅 + 章名，>9 章上下滚动
---   中栏: 章节地图预览（MAP_{rel}.png cover）+ 该章小关卡网格（5 列）
+--   左栏: 章节战斗背景圆角卡片 + 章名/章号，超出可视区上下滚动
+--   中栏: 该章关卡竖排行 + 敌人卡面
 --         当前关金框 / Boss 关红字 / 终焉神殿独立章组
 --   点击空白关闭
 -- 入口：战斗界面 HUD「选关」按钮（与扫荡/统计同套图标按钮）
@@ -374,8 +374,57 @@ end
 
 -- ======================== Public API ========================
 
+-- 按资源路径缓存，跨难度复用背景；失败限频重试，不永久缓存缺图。
+---@type table<string, integer>
+local chapterBackgrounds = {}
+---@type table<string, number>
+local chapterBackgroundRetry = {}
+local function ensureChapterBackground(vg, stageId)
+    local path = SC.getBattleBackground(stageId)
+    local image = chapterBackgrounds[path]
+    if image and image >= 0 then return image end
+    local now = time.elapsedTime
+    if chapterBackgroundRetry[path] and now < chapterBackgroundRetry[path] then return -1 end
+    local loaded = nvgCreateImage(vg, path, 0) or -1
+    if loaded >= 0 then
+        chapterBackgrounds[path] = loaded
+        chapterBackgroundRetry[path] = nil
+        print("[StageSelectDialog] 章节背景已加载: " .. path)
+    else
+        chapterBackgroundRetry[path] = now + 2
+        print("[StageSelectDialog] 章节背景暂不可用，稍后重试: " .. path)
+    end
+    return loaded
+end
+
+local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked)
+    local image = ensureChapterBackground(vg, stageId)
+    local srcW, srcH = 0, 0
+    if image >= 0 then srcW, srcH = nvgImageSize(vg, image) end
+    nvgBeginPath(vg)
+    nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
+    if srcW and srcH and srcW > 0 and srcH > 0 then
+        -- 等比cover并居中裁切，圆角路径保持现有卡片热区与动画变换。
+        local scale = math.max(D.CH_W / srcW, D.CH_BTN_H / srcH)
+        local w, h = srcW * scale, srcH * scale
+        nvgFillPaint(vg, nvgImagePattern(vg, x + (D.CH_W - w) * 0.5,
+            y + (D.CH_BTN_H - h) * 0.5, w, h, 0, image, 1.0))
+        nvgFill(vg)
+        nvgBeginPath(vg)
+        nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
+        nvgFillColor(vg, nvgRGBA(8, 8, 14, locked and 150 or (isSel and 65 or 90)))
+    elseif isSel then
+        nvgFillColor(vg, nvgRGBA(hue[1] + 24, hue[2] + 24, hue[3] + 18, 235))
+    else
+        nvgFillColor(vg, nvgRGBA(hue[1], hue[2], hue[3], 170))
+    end
+    nvgFill(vg)
+end
+
 ---@param vg any
 function StageSelectDialog.init(vg)
+    for _, image in pairs(chapterBackgrounds) do nvgDeleteImage(vg, image) end
+    chapterBackgrounds, chapterBackgroundRetry = {}, {}
     imgBtn = nvgCreateImage(vg, "image/通用图标/UI_ICON_XG.png", 0)
     -- 九宫格拉伸用法（950x1117），保留原图；整图拉伸用法（950x647）走 UI_TY_EJQRK_POP 副本
     imgBg  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_TY_EJQRK.png", 0)
@@ -555,14 +604,7 @@ function StageSelectDialog.draw(vg)
         local firstOrder = firstId and state.cacheOrder and state.cacheOrder[firstId]
         local chapterLocked = (firstOrder == nil) or (maxOrder == nil) or (firstOrder > maxOrder)
 
-        nvgBeginPath(vg)
-        nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
-        if isSel then
-            nvgFillColor(vg, nvgRGBA(hue[1] + 24, hue[2] + 24, hue[3] + 18, 235))
-        else
-            nvgFillColor(vg, nvgRGBA(hue[1], hue[2], hue[3], 170))
-        end
-        nvgFill(vg)
+        drawChapterBackground(vg, firstId, x, y, hue, isSel, chapterLocked)
         if isSel then
             nvgBeginPath(vg)
             nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)

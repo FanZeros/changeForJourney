@@ -19,6 +19,7 @@ local SCROLL_MIN_VEL = 0.5
 
 -- 独立滚动区：上左属性、下方完整套装。绝不复用旧侧栏命中表。
 local panelState = {
+    attributeMode = "character",
     heroId = nil,
     slot = nil,
     dirty = true,
@@ -167,7 +168,7 @@ local function refreshData(heroId, slot)
     local key = table.concat({ tostring(heroId), tostring(level), tostring(slot),
         tostring(selection and selection.seq), tostring(selection and selection.slot),
         tostring(selection and selection.owner), tostring(selection and selection.heroId),
-        tostring(selection and selection.pinned) }, "|")
+        tostring(selection and selection.pinned), panelState.attributeMode }, "|")
     local elapsed = now()
     local signature = nil
     if not panelState.dirty and panelState.cacheKey == key then
@@ -183,7 +184,8 @@ local function refreshData(heroId, slot)
     local failure = nil
     if ok and type(preview.build) == "function" then
         -- 仅调用公共 API；不写 eqData、不发送穿戴动作、不复制预览公式。
-        local built, value = pcall(preview.build, heroId, level, selection and selection.seq or nil, slot, {})
+        local built, value = pcall(preview.build, heroId, level, selection and selection.seq or nil, slot,
+            { includeEquipmentBonuses = panelState.attributeMode == "equipment" })
         if built then
             result = value
         else
@@ -237,17 +239,25 @@ function M.draw(vg, heroId, detailState)
             state.velocity = 0
         end
     end
-    local current = data.current or {}
     local preview = data.preview
+    local equipmentMode = panelState.attributeMode == "equipment"
+    local display = equipmentMode and data.equipmentBonuses or data
+    if equipmentMode and not data.equipmentBonuses then display = { rows = {}, current = { stats = {} } } end
     local sets = Stats.unionSets(data.currentSets, preview and data.previewSets or nil)
-    Stats.drawHeader(vg, data.candidate, data.error)
-    local maxAttrs, hits = Stats.drawRows(vg, data.rows or {}, panelState.scroll.attrs.y)
+    Stats.drawHeader(vg, data.candidate, data.error, panelState.attributeMode)
+    local displayRows = display.rows or {}
+    local maxAttrs, hits = Stats.drawRows(vg, displayRows, panelState.scroll.attrs.y)
+    if equipmentMode and #displayRows == 0 then
+        Stats.drawEmptyBonuses(vg, data.equipmentBonuses ~= nil)
+    end
     panelState.scroll.attrs.max = maxAttrs
     panelState.attrHits = hits
     panelState.scroll.sets.max = Stats.drawSets(vg, sets, panelState.scroll.sets.y, preview ~= nil)
     clampScroll("attrs")
     clampScroll("sets")
-    Stats.drawRadar(vg, current.stats, preview and preview.stats or nil)
+    local displayCurrent = display.current or {}
+    local displayPreview = display.preview
+    Stats.drawRadar(vg, displayCurrent.stats, displayPreview and displayPreview.stats or nil, equipmentMode)
 end
 
 function M.onSlotChanged(slot, heroId)
@@ -284,13 +294,35 @@ function M.reset(heroId, slot)
     panelState.slot = slot
 end
 
+--- 两种显示共用标题热区，外层槽筛选/钉住候选必须先排除此点击。
+function M.isAttributeTogglePoint(dx, dy)
+    return Stats.contains(Stats.LAYOUT.title, dx, dy)
+end
+
+function M.getAttributeMode() return panelState.attributeMode end
+
+function M.toggleAttributeMode()
+    panelState.attributeMode = panelState.attributeMode == "character" and "equipment" or "character"
+    panelState.scroll.attrs = { y = 0, max = 0, velocity = 0 }
+    panelState.attrHits = {}
+    panelState.scrollTarget = nil
+    panelState.dragging = false
+    M.markDirty()
+    print("[EquipPanel] 属性显示切换 mode=" .. panelState.attributeMode)
+end
+
 --- 只标识可见比较内容，供外层保留候选详情。上部六槽与页签不属于它。
 function M.containsComparisonPoint(dx, dy)
-    return scrollAt(dx, dy) ~= nil or Stats.contains(Stats.LAYOUT.radar, dx, dy)
+    return M.isAttributeTogglePoint(dx, dy) or scrollAt(dx, dy) ~= nil
+        or Stats.contains(Stats.LAYOUT.radar, dx, dy)
 end
 
 function M.handleInput(dx, dy, heroId, detailState)
     if not Stats.contains(Stats.LAYOUT.panel, dx, dy) then return false end
+    if M.isAttributeTogglePoint(dx, dy) then
+        M.toggleAttributeMode()
+        return true
+    end
     local row = rowAt(dx, dy)
     if row then
         if panelState.tooltip and panelState.hoverPinned and panelState.tooltip.key == row.key then

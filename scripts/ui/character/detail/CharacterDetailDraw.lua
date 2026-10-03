@@ -54,14 +54,14 @@ local DT_CARD_CX, DT_CARD_CY = 540, 447
 -- 装备槽位
 local DT_SLOT_SIZE = 160
 M.DT_SLOT_SIZE = DT_SLOT_SIZE  -- handleInput 需要
--- 六边形围立绘（中心 540,447，垂直半径 262/水平 ±215，顶点朝上；立绘缩至 362 高避开上下槽）
+-- 六槽围立绘：头盔上移20，两侧同排下移20，左右关于x=540镜像；绘制/命中共用此表。
 local DT_SLOTS = {
-    { name = "头盔",   cx = 540, cy = 185, img = "helmet",    slot = "helmet" },
-    { name = "饰品",   cx = 755, cy = 316, img = "accessory", slot = "accessory" },
-    { name = "副武器", cx = 755, cy = 578, img = "offhand",   slot = "offhand" },
+    { name = "头盔",   cx = 540, cy = 165, img = "helmet",    slot = "helmet" },
+    { name = "饰品",   cx = 755, cy = 336, img = "accessory", slot = "accessory" },
+    { name = "副武器", cx = 755, cy = 598, img = "offhand",   slot = "offhand" },
     { name = "鞋子",   cx = 540, cy = 790, img = "shoes",     slot = "shoes" },
-    { name = "主武器", cx = 325, cy = 578, img = "weapon",    slot = "weapon" },
-    { name = "护甲",   cx = 325, cy = 316, img = "armor",     slot = "armor" },
+    { name = "主武器", cx = 325, cy = 598, img = "weapon",    slot = "weapon" },
+    { name = "护甲",   cx = 325, cy = 336, img = "armor",     slot = "armor" },
 }
 M.DT_SLOTS = DT_SLOTS  -- handleInput 需要
 

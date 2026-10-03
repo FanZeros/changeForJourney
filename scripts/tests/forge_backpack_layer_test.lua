@@ -86,7 +86,7 @@ function Start()
         local reward = mock({
             isOpen = function() return state.reward end,
             currentPanel = function() return "left" end,
-            drawRegion = function() record("reward.draw") end,
+            drawContent = function() record("reward.draw") end,
         })
         local mods = {
             ["boot.StandaloneRT"] = RT, ["core.Viewport"] = VP,

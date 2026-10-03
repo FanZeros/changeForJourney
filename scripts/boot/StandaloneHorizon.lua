@@ -86,15 +86,16 @@ local function drawOrphanRowReward()
     nvgRestore(vg())
 end
 
---- [三面板] 在指定面板视口内绘制归属该面板的奖励弹窗（须在 Viewport.begin/finish 之间调用）
-local function drawRewardInPanel(pid)
+--- 非行内奖励使用面板设计空间；外部覆盖层按本帧 note 重建同一变换。
+local function drawRewardInPanel(pid, outsideViewport)
     if not pid then return end
     if not (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then return end
     if RewardPopup.currentPanel() ~= pid then return end
-    -- 三行模式的中栏不走 Viewport：直接全窗 letterbox 居中绘制
-    if pid == 'center' and BattleTriPage.isOpen() then
+    if TowerBattleScene.isActive() and not outsideViewport then return end
+    if pid == 'center' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
         local fit = math.min(logicalW() / 1080, logicalH() / 2400)
         nvgSave(vg())
+        nvgResetScissor(vg())
         nvgScissor(vg(), 0, 0, logicalW(), logicalH())
         nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
         nvgScale(vg(), fit, fit)
@@ -102,7 +103,18 @@ local function drawRewardInPanel(pid)
         nvgRestore(vg())
         return
     end
-    RewardPopup.drawRegion(vg(), 0, 0, 1080, 2400, nil)
+    if outsideViewport then
+        nvgSave(vg())
+        nvgResetScissor(vg())
+        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+        if Viewport.beginFromNote(vg(), pid) then
+            RewardPopup.drawContent(vg())
+            Viewport.finish(vg())
+        end
+        nvgRestore(vg())
+        return
+    end
+    RewardPopup.drawContent(vg())
 end
 
 --- [UpdateNoticePopup] 更新提醒全窗模态（1080×2400 设计稿 letterbox 居中，同 PlayerInfoPanel）。
@@ -632,7 +644,8 @@ function HandleNanoVGRenderHorizon()
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
             nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
             nvgScale(vg(), fit, fit)
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
+                and not RewardPopup.currentPanel() then
                 RewardPopup.draw(vg())
             end
             if LevelUpPopup.isOpen() then
@@ -640,6 +653,7 @@ function HandleNanoVGRenderHorizon()
             end
             nvgRestore(vg())
         end
+        drawRewardInPanel(RewardPopup.currentPanel(), true)
         drawEquipDetailOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
@@ -741,8 +755,8 @@ function HandleNanoVGRenderHorizon()
         HorizonDrawPageModal(vg())
         -- [三面板] 三行模式：归属面板的奖励弹窗随触发面板绘制（左/中/右）；
         -- 非三行模式左/右已在各自视口内绘制、中栏由全局弹窗层绘制，此处不重复
-        if BattleTriPage.isOpen() then
-            drawRewardInPanel(RewardPopup.currentPanel())
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            drawRewardInPanel(RewardPopup.currentPanel(), true)
         end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面

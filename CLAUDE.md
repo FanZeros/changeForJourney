@@ -11,6 +11,15 @@
 3. **在本记忆中持续强化此规则**：每轮结束更新「上次做了什么」，并保留本节铁律不被覆盖。
 4. **分支纪律**：以当轮指定基线新建任务分支，完成后只 push 新分支；本轮基线为 `feat930/equipment-attribute-preview`，**绝不推送到任何 `workspace` 系列或原基线分支**，通过 PR 交由用户审阅合入。
 
+## 上次做了什么（2026-10-03，技能树关键词、图标与编辑器草稿迁移）
+
+- 用户指定最新 `workspace930` 为目标，基于 `origin/workspace930@b24cad7c` 新建 `feat930/talent-keywords-editor-1003`；从本地 `wip928/talent-migration-1003` cherry-pick 三项提交：技能树关键词、程序图标、连线编辑器草稿。目标是创建指向 `workspace930` 的 **Draft PR**，不直接推送或自动合并基线。
+- 图标迁移唯一冲突在 `TalentStarMap.drawNode`：同时保留 930 的边缘渐隐 `fade` 与圆/菱/六边 `node.st`，现有209节点邻接数据完全不变；保留930的无下划线关键词、灰蓝禁用色及最新锻造关键词文案。
+- 验证：官方 Build 成功；官方 Runtime 关键词31断言 ALL PASS、战斗切关 ALL PASS；编辑器 Python 语法与两文件无操作文本替换通过。图标和关键词真人视觉未验收，编辑器浏览器交互未验收。
+- **编辑器仅作草稿收录**：`tools/talent-editor/{server.py,index.html}` 已显式纳入Git（tools默认忽略）；保存校验会自动补8条基线单向边，双文件覆盖无失败回滚/并发锁，HTTP输入验证及撤销脏状态仍需补齐。不得宣称可安全用于正式改线，不启动服务、不据此修改游戏拓扑。
+- 无关本地改动保留于 `stash@{0}`（名称 `preserve-unrelated-workspace928-before-talent930-1003`），额外备份位于 `/home/Maker/migration-backup-talent930-1003`；未将本地配置、技能目录删除及上传文件纳入提交。GitHub无登录凭据，推送预检被拒；当前仍是本地任务分支，**未推送、未创建PR**，待用户补充授权。
+- 每次交付或遇到用户需决定的阻塞，先简报再调用 `AskUserQuestion` 提供明确选项；不将凭据写入仓库、配置、日志或记忆。
+
 ## 上次做了什么（2026-10-02，套装筛选数量与六槽对称微调）
 
 - 基于 `feat930/equipment-attribute-preview@ec1d1940` 新建 `feat1002/equipment-filter-count-symmetric-slots`，源码及资源直接部署到 `/workspace` 根，不推 `workspace` 系列分支；功能提交 `1890577a` 已推送，PR #15 已创建：https://github.com/FanZeros/changeForJourney/pull/15（base=`feat930/equipment-attribute-preview`），未自动合并。

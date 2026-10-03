@@ -2,6 +2,13 @@
 
 > 强化记忆：以下规则在每轮任务中必须遵守。**每轮开始工作前先重读本节。**
 
+### 宝箱修复 PR 交接（2026-10-03）
+
+- 用户通过 **AskUserQuestion** 选择“创建修复 PR（推荐）”，已创建 **PR #39**：https://github.com/FanZeros/changeForJourney/pull/39 ，head=`fix930/chest-reward-display-20261003`、base=`workspace930`，标题“修复神器宝箱开启动画与横屏获得结果展示”。创建返回open、draft=false、merged=false，mergeable尚未计算；创建时来源1848f65d、目标已由外部更新至1f5ba88e，未擅自推/合基线。
+- PR说明附成功回包/坐标/逐件动画修复、12套回归/1168专项、官方build、规范36测试、独立复核无新增阻塞，并明确披露无实机像素/音频验收、修前新test未跑、原onItemClick未接入以及旧面板外关闭等边界。
+- 独立只读复核已完成：主入口与全部输入始终Horizon，固定设计frame使panel=left不走旧竖屏漏绘，回包字段正确，tri/tower side单次变换与分层成立，未确认新缺note阻塞。未把独立只读核查称为另一次Runtime测试。
+- 本次仅更新记忆交接，不改Lua，不重复build；只push新修复分支，不自动合并PR，实际CI/冲突状态以最新GitHub结果为准。交付后真正调用 **AskUserQuestion** 继续，凭据和本地.project生成配置不提交。
+
 ### 宝箱开启动画与获得结果显示修复（2026-10-03）
 
 - 用户反馈“宝箱开启没有任何动画没有任何结果显示”，明确本轮修开启后的获得动画/结果，不擅自增加神器详情交互。新分支 `fix930/chest-reward-display-20261003` 已快进到最新 `workspace930@4c8fef0e`；PR36、32及角色栏、章节背景、锻炉层级、神器宝箱开放等已由外部操作合入930，本会话未执行这些合并。

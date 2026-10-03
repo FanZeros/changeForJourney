@@ -60,6 +60,16 @@ python3 .github/scripts/repository_policy.py --base origin/workspace930
 - 本轮只增加 workflow，不修改 GitHub 分支保护。因此检查会显示结果，但尚不强制阻止管理员合并；保护规则需要另行授权。
 - 不默认强制他人审批：单协作者不能批准自己的 PR。持续保留已有 GitHub secret scanning 和 push protection。
 
+## 本地美术选择性迁移完成（2026-10-03）
+
+- 用户通过 **AskUserQuestion** 选择“UI＋轮回补图”；基于最新 `workspace930@eec2a976` 新建 `feat/workspace930-ui-reincarnation-20261003`，不整支合并候选 `integrate/workspace930-local-art-20261001@6e94b7bc`。前序只读审查及详细资源分类已推到 `review/workspace930-local-art-audit-20261003@68e9a14`，本轮不将那个分支当作功能遗漏或强行合入。
+- 只迁三组局部 UI：语言五枚按2+2+1、末枚右对齐（行中心1480/1534/1588，默认嵌入偏移40）；兑换码中心1768/嵌入1808，独立背景保持顶785.5、底扩展到1918，绘制与点击同源。玩家信息背景保持顶193.5、底扩展到2070.5（向下增高130）；四种“远征时间”文案保留原计时/存档口径。城镇仅遗匣与功绩名牌对齐及删除遗匣300×64额外底板，其余地点、门控、奖励、红点和点击热区不变。
+- 恢复当前有轮回引用但缺失的 `assets/image/界面底板/剧情日记/JQBJ_1.png`、`JQBJ_2.png` 与原 `.meta`；两图共2,971,190字节，SHA与候选原图一致，UUID保持，最终 manifest 及正式打包PNG已核实存在。未恢复其它旧资源、旧方CG、Spine或BGM。
+- 回退保护：觉醒、Standalone、Horizon及输入模块、EquipmentSetIcon、BattleTriPage与基线逐字节相同；73张现有CG/套装PNG哈希全部不变。`showSetIcons` 开关及其持久化字段保留。已有偏好测试的 I18n 桩补齐真实五语列表；首次回归失败因旧桩无LANGS，不是生产语言数据缺失，补齐后26断言全过。
+- 新持久回归 `tests/local_art_ui_migration_test.lua`：真实三模块公开 draw/input/init/update + 内存File与NanoVG spy，22用例/525断言全部通过；涵盖语言/点击边角/缝隙/兑换码/背景边界/false偏好保存、PIP四格式及dt区间/20秒保存、Town两名牌及六个原地点布局。Runtime有额外require缓存，测试读真实资源源码并用load隔离实例，不改源码、不使用debug窥私有状态，所有存档写入仅内存。
+- 验证：修改/新增Lua逐文件LSP无Error；官方最终Build成功。旧套装偏好26、角标66、离线覆盖487、剧情82首通、真实装备预览冒烟均Runtime exit0且ALL PASS。9组真实离屏渲染（玩家信息、独立设置五语、城镇、轮回两阶段）均135帧原始PASS、Lua/资源/引擎错误0，图片像素已查看。只验收静态布局与代表性阶段，不宣称GM/头像子面板、完整动画、真实设备全流程已测。临时 `_local_art_preview.lua` 及sidecar已删除，最终Build不含临时入口。
+- 本轮结束仍必须先如实报告，再以 **AskUserQuestion** 提供下一步选项。只commit/push新功能分支，不push `workspace`/`workspace930`、不强推、不自动合并PR；PAT、本地预览身份与生成配置、验收截图不提交。全局记忆目录在本环境未挂载，要求已强化到本项目现有记忆，不虚称已写全局记忆。
+
 ## 装备套装徽记去框（2026-10-03）
 
 - 用户已自行处理 PR #19（远端确认已合并）；基于 `workspace930@c7cff542` 新建 `feat1003/equipment-set-badge-frameless`，功能提交 `61c63244` 已推送，PR #20：https://github.com/FanZeros/changeForJourney/pull/20，目标 `workspace930`，未自动合并，不推基线。

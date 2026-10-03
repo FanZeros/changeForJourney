@@ -20,7 +20,7 @@ M.LAYOUT = {
     title = { x = 390, y = 894, w = 300, h = 68 },
     status = { x = 54, y = 956, w = 972, h = 54 },
     attrs = { x = AttributeView.ATTRIBUTE_LAYOUT.x, y = 1050,
-        w = AttributeView.ATTRIBUTE_LAYOUT.w, h = math.floor(AttributeView.ATTRIBUTE_LAYOUT.h * 1.30 + 0.5) },
+        w = AttributeView.ATTRIBUTE_LAYOUT.w, h = 718 },
     radar = { x = 550, y = 1050, w = 530, h = 718, cx = 800, cy = 1403,
         r = AttributeView.RADAR.r, labelR = AttributeView.RADAR.labelR },
     sets = { x = 54, y = 1866, w = 972, h = 348 },
@@ -173,9 +173,9 @@ function M.drawSets(vg, sets, scroll, hasPreview)
             local active = hasPreview and set.preview and set.preview[piece.active] == true
                 or (not hasPreview and wasActive)
             local color = active and COLOR.green or (wasActive and hasPreview and COLOR.red or COLOR.muted)
-            local status = active and "激活" or (wasActive and hasPreview and "失效" or "未激活")
+            local status = active and "激活  " or (wasActive and hasPreview and "失效  " or "")
             local description = def and def[piece.desc] or "暂无效果说明"
-            local lines = M.wrapText(vg, tostring(piece.n) .. "件 · " .. status .. "  " .. description,
+            local lines = M.wrapText(vg, tostring(piece.n) .. "件 · " .. status .. description,
                 27, rect.w - 60)
             block.lines[#block.lines + 1] = { text = lines, color = color }
             block.h = block.h + #lines * 36 + 12
@@ -241,7 +241,7 @@ function M.drawHeader(vg, candidate, errorMessage, attributeMode)
     AttributeView.drawDivider(vg, M.LAYOUT.attrs.y - 20)
     AttributeView.drawDivider(vg, M.LAYOUT.setTitleY - 28)
     drawTextStroke(vg, M.LAYOUT.sets.x + 20, M.LAYOUT.setTitleY + 4,
-        "套装效果 · 2 / 4 / 6 件", 31, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+        "套装效果", 31, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
         0x66, 0xf8, 0x62, 4)
     -- 默认不再显示冗余的“当前已穿戴属性”描述，仅保留候选/失败提示。
     local status, color = "", COLOR.muted
@@ -297,14 +297,14 @@ function M.drawTooltip(vg, tip)
     nvgRestore(vg)
 end
 
--- 属性页公开布局与命中坐标原样保留，只把绘图从 Draw 大文件搬出。
+-- 属性页雷达使用独立放大布局，导出的点击坐标与绘图始终同源。
 M.LEGACY = {
     STAT_BOX_W = 437, STAT_BOX_H = 95,
     STAT_COL1_CX = 308.5, STAT_COL2_CX = 771.5,
     STAT_ROW1_CY = 1641, STAT_ROW_STEP = 111,
     STAT_LAYOUT = DetailAttrs.STAT_LAYOUT,
-    HEX_CX = 800, HEX_CY = 1294 + 7 * 69 * 0.5,
-    HEX_R = AttributeView.RADAR.r, HEX_LABEL_R = AttributeView.RADAR.labelR,
+    HEX_CX = AttributeView.ATTRIBUTE_RADAR.cx, HEX_CY = AttributeView.ATTRIBUTE_RADAR.cy,
+    HEX_R = AttributeView.ATTRIBUTE_RADAR.r, HEX_LABEL_R = AttributeView.ATTRIBUTE_RADAR.labelR,
     HEX_NAMES = { "力量", "敏捷", "体质", "魂火", "命数", "秘识" },
 }
 
@@ -393,7 +393,7 @@ local function radarCenter(vg, cx, cy)
     nvgStroke(vg)
 end
 
---- 属性页视觉/比例/标签和输入坐标保持原样；不接收或读取预览。
+--- 属性页独立放大雷达；归一化与数据口径不变，不接收或读取预览。
 function M.drawLegacy(vg, statValues)
     local layout = M.LEGACY
     local values = statValues or {}
@@ -407,9 +407,14 @@ function M.drawLegacy(vg, statValues)
     for i, name in ipairs(layout.HEX_NAMES) do
         local color = HEX_COLORS[i]
         local lx, ly = hexPoint(layout.HEX_CX, layout.HEX_CY, i, layout.HEX_LABEL_R)
-        text(vg, lx, ly - 24, name, 26, color, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-        drawTextStroke(vg, lx, ly + 16, tostring(values[HEX_KEYS[i]] or 0),
-            34, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
+        text(vg, lx, ly - 26, name, 30, color, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        local valueText = tostring(values[HEX_KEYS[i]] or 0)
+        nvgFontSize(vg, 38)
+        local valueW = nvgTextBounds(vg, 0, 0, valueText) or 0
+        local maxW = math.min(160, (1080 - lx - 12) * 2, (lx - 540 - 12) * 2)
+        local font = valueW > maxW and 38 * maxW / valueW or 38
+        drawTextStroke(vg, lx, ly + 18, valueText,
+            font, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
     end
 end
 

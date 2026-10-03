@@ -132,7 +132,8 @@ preload("ui.character.detail.CharacterDetailAttrs", {})
 preload("ui.character.detail.CharacterEquipStats", { LEGACY = {}, drawBackground = noop })
 preload("ui.character.detail.CharacterAttributeView", {
     STYLE = { boxW = 400, rowH = 60, boxCX = 300, rowStep = 70 },
-    ATTRIBUTE_LAYOUT = { firstY = 1300 },
+    ATTRIBUTE_STYLE = { boxW = 460, rowH = 78, boxCX = 300, rowStep = 88 },
+    ATTRIBUTE_LAYOUT = { x = 40, y = 1070, w = 500, h = 874, firstY = 1109 },
 })
 preload("ui.character.hero.AwakeningPanel", {})
 preload("runtime.ClientDispatcher", {})

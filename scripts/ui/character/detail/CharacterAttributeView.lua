@@ -11,8 +11,17 @@ M.STYLE = {
     rowColor = { 0, 0, 0, 26 }, stroke = 4,
     green = { 115, 218, 135, 255 }, red = { 235, 110, 100, 255 },
 }
-M.ATTRIBUTE_LAYOUT = { x = 40, y = 1264, w = 500, h = 552, firstY = 1294 }
+-- 属性页扩大可读字号/行距，配装页保留原风格，避免挤占套装区与差值标签。
+---@type table<string, any>
+M.ATTRIBUTE_STYLE = {}
+for key, value in pairs(M.STYLE) do M.ATTRIBUTE_STYLE[key] = value end
+M.ATTRIBUTE_STYLE.rowH, M.ATTRIBUTE_STYLE.rowStep = 78, 88
+M.ATTRIBUTE_STYLE.fontSize = 40
+M.ATTRIBUTE_STYLE.boxW, M.ATTRIBUTE_STYLE.boxCX = 460, 300
+M.ATTRIBUTE_STYLE.decoX, M.ATTRIBUTE_STYLE.nameX, M.ATTRIBUTE_STYLE.valueX = 120, 150, 520
+M.ATTRIBUTE_LAYOUT = { x = 40, y = 1070, w = 500, h = 874, firstY = 1109 }
 M.RADAR = { r = 175, labelR = 230 }
+M.ATTRIBUTE_RADAR = { cx = 800, cy = 1507, r = 195, labelR = 238 }
 M.BACKGROUND = { w = 1080, h = 1579, originalTop = 821 }
 M.DIVIDER = { cx = 540, w = 1010, h = 37 }
 local images = { background = -1, divider = -1, deco = -1 }
@@ -79,12 +88,11 @@ local function deltaLabel(row)
     return tostring(label), beneficial and M.STYLE.green or M.STYLE.red
 end
 
---- 共用60px行/69px步长、名称左数值右、底色/装饰/字体/描边和可见行命中。
---- 差值叠加在数值上方；名称、当前值、字号和原有行高均保持不变。
+--- 共用绘制/测量/命中逻辑，属性页可传独立大字号风格；配装差值不改原基线。
 function M.drawAttributeRows(vg, rows, scroll, layout, options)
-    local style = M.STYLE
-    local rect = layout or M.ATTRIBUTE_LAYOUT
     local opts = options or {}
+    local style = opts.style or M.STYLE
+    local rect = layout or M.ATTRIBUTE_LAYOUT
     local firstY = rect.firstY or (rect.y + style.rowH * 0.5)
     local bottom = firstY + math.max(0, #rows - 1) * style.rowStep + style.rowH * 0.5
     local maxScroll = math.max(0, bottom - rect.y - rect.h)
@@ -111,9 +119,16 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
             local name = tostring(row.name or row.key or "")
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, style.fontSize)
-            local nameW = nvgTextBounds(vg, 0, 0, name)
+            local nameW = nvgTextBounds(vg, 0, 0, name) or 0
             nvgFontSize(vg, valueFont)
-            local valW = nvgTextBounds(vg, 0, 0, value)
+            local valW = nvgTextBounds(vg, 0, 0, value) or 0
+            -- 大字号下仍给名称留空间；极长数值先缩放，避免数值压住属性名。
+            local nameMinW = math.min(nameW, utf8.len(name) * style.minFontSize)
+            local maxValueW = math.max(40, style.valueX - style.nameX - nameMinW - style.nameValueGap)
+            if valW > maxValueW then
+                valueFont = valueFont * maxValueW / valW
+                valW = maxValueW
+            end
             nvgFontSize(vg, style.fontSize)
             local maxNameW = style.valueX - style.nameX - valW - style.nameValueGap
             if maxNameW > 0 and nameW > maxNameW then

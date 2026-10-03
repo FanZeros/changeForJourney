@@ -98,6 +98,7 @@ local detailState = {
     -- 属性说明气泡
     attrTip       = nil,      -- { boxCX, boxCY, desc, area } or nil; area="attr"|"stat"
     -- 属性缓存（handleInput 使用）
+    attrHits      = {},       -- 当前绘图的可见行命中片段
     cachedLeft    = nil,
     cachedRight   = nil,
 }
@@ -358,6 +359,7 @@ end
 
 --- 清空关键词组件的交互状态（弹窗/悬停/热区）
 local function clearKeywordUi()
+    detailState.attrHits = {}
     if Draw.talentKwText then Draw.talentKwText:clear() end
     if AwakeningPanel.kwText then AwakeningPanel.kwText:clear() end
 end
@@ -640,7 +642,10 @@ function CharacterDetail.handleInput(dx, dy)
 
     -- 返回按钮（三行模式由中缝层接管）
     ---@diagnostic disable-next-line: undefined-global
-    if not H_SEAM_BACK and hitTest(dx, dy, BTN_BACK_CX, BTN_BACK_CY, BTN_BACK_W, BTN_BACK_H) then
+    local attrBack = detailState.tab == "attr" and Draw.ATTR_BACK or nil
+    if not H_SEAM_BACK and hitTest(dx, dy,
+        attrBack and attrBack.cx or BTN_BACK_CX, attrBack and attrBack.cy or BTN_BACK_CY,
+        attrBack and attrBack.w or BTN_BACK_W, attrBack and attrBack.h or BTN_BACK_H) then
         CharacterDetail.close()
         return true
     end
@@ -742,31 +747,19 @@ function CharacterDetail.handleInput(dx, dy)
             return true
         end
 
-        local rowStep = ATTR_BOX_H + ATTR_ROW_GAP
-        local cachedL = detailState.cachedLeft or {}
-        local totalRows = #cachedL
-
-        -- 杂项属性区域（可滚动）
-        if dx >= 40 and dx <= 540
-           and dy >= ATTR_CLIP_TOP and dy <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT then
-            for row = 1, totalRows do
-                local rowY = ATTR_FIRST_ROW_Y + (row - 1) * rowStep - detailState.attrScrollY
-                if rowY >= ATTR_CLIP_TOP and rowY <= ATTR_CLIP_TOP + ATTR_CLIP_HEIGHT then
-                    -- 左列
-                    if row <= #cachedL and math.abs(dx - ATTR_COL1_CX) <= ATTR_BOX_W * 0.5
-                       and math.abs(dy - rowY) <= ATTR_BOX_H * 0.5 then
-                        local attr = cachedL[row]
-                        local desc = attr.desc or AD.getDesc(attr.key)
-                        if desc and desc ~= "" then
-                            detailState.attrTip = {
-                                boxCX = ATTR_COL1_CX, boxTopY = rowY - ATTR_BOX_H * 0.5,
-                                desc = desc, name = attr.name, area = "attr",
-                            }
-                        end
-                        return true
-                    end
-                end
+        -- 直接使用绘图记录的可见行片段，字号/滚动调整后点击仍与画面一致。
+        local attr, row = Draw.rowAt(detailState.attrHits, dx, dy)
+        if attr then
+            local desc = attr.desc or AD.getDesc(attr.key)
+            if desc and desc ~= "" then
+                local rowY = ATTR_FIRST_ROW_Y + (row - 1) * (ATTR_BOX_H + ATTR_ROW_GAP)
+                    - detailState.attrScrollY
+                detailState.attrTip = {
+                    boxCX = ATTR_COL1_CX, boxTopY = math.max(ATTR_CLIP_TOP, rowY - ATTR_BOX_H * 0.5),
+                    desc = desc, name = attr.name, area = "attr",
+                }
             end
+            return true
         end
 
         -- 职业框：和六围一样弹出说明浮窗

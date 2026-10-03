@@ -2,6 +2,18 @@
 
 > 强化记忆：以下规则在每轮任务中必须遵守。**每轮开始工作前先重读本节。**
 
+### 宝箱开启动画与获得结果显示修复（2026-10-03）
+
+- 用户反馈“宝箱开启没有任何动画没有任何结果显示”，明确本轮修开启后的获得动画/结果，不擅自增加神器详情交互。新分支 `fix930/chest-reward-display-20261003` 已快进到最新 `workspace930@4c8fef0e`；PR36、32及角色栏、章节背景、锻炉层级、神器宝箱开放等已由外部操作合入930，本会话未执行这些合并。
+- 真实成功链ChurchResults→ChurchArtifactDrawPanel→RewardPopup仍在；PR34仅取消噩梦门槛，PR36未删奖励回包。旧面板归属奖励helper在三行末尾离开Viewport后仍对left/right裸调用drawRegion，图标可画到1080窗外；普通侧栏drawRegion另加regionTransform而输入只逆Viewport，显示/点击错位。这是旧基线已有问题，不能称国际化引入。
+- 修复非row奖励统一使用设计坐标drawContent：普通side保持所属Viewport；三行/tower外绘按本帧beginFromNote恢复同面板变换，保留父frame/DPR和clip，center保持全窗letterbox；tower跳过被下层覆盖的前绘并收尾一次。row奖励仍drawRegion/handleInputRegion配对不改。
+- 神器宝箱成功明确opts.panel=left、cascade=true，不依赖三行旧focus中心状态，单抽/十连启用共享逐件获得动画并保留提示。首次动画未完点击只skip、后续点击close，未增加onItemClick/改神器名/数值/抽取概率/支付/发奖/存档；不存在原有详情callback，不虚称恢复它。
+- 新 `tests/chest_reward_horizon_test.lua` 用真实Horizon/Viewport/RewardPopup/ChurchResults/DrawPanel及真实cascade，仅旁页/底层NanoVG/神器图标绘图为spy，完整仿射矩阵与clip冻结模拟。官方build后45用例1168断言ALL PASS、exit0：真实来源1/10件tri/ordinary/tower早期/末尾、默认focuscenter显式left、标题/实例/数目、非零动画、实际可见交集、首击skip后二击close、共享left/right/center/nil/frame/DPR1/2/3 callback投射、row配对隔离。可选callback用独立共享API测试，不冒称教堂原有详情。
+- 最终12套Runtime全部exit0+ALL PASS：新专项1168、锻炉层级46、神器直接开放438、离线覆盖487、离线加速1194、教程横屏356/触发31/领取241、装备手势44/快装78、关键词7071、切关。现有forge层级test仅spy入口改drawContent，原断言意义保持。新test修前未运行，未声称修前FAIL；本轮无截图/真设备帧率音频验收，不能把绘图spy当真像素。
+- 官方最终build成功，4份变更Lua与构建产物逐字节匹配，新test meta由官方生成，原UUID/图片/共享配置/神器业务服务未改。修改Lua文件LSP无Error；全工作区既有诊断不混修。源码/资源直接在/workspace根，本地.project身份/设置及平台skills未暂存删除不提交。
+- 完成后仅提交推送新修复分支，不推workspace系列、不自动创建/合并PR；凭据不写入文件/远端/配置/记忆。实际简报后真正调用 **AskUserQuestion** 提供下一步选项，持续推进授权任务、尊重用户后续停止及权限拒绝。
+
+
 ### 国际化整合 PR 交接（2026-10-03）
 
 - 用户在 **AskUserQuestion** 明确选择“创建整合 PR（推荐）”，已创建 **PR #36**：https://github.com/FanZeros/changeForJourney/pull/36 ，head=`integrate930/i18n-continuation-20261003`、base=`workspace930`，标题“整合国际化续作修复与离线奖励加速”。创建返回open、draft=false、merged=false；mergeable初始null/unknown，最终检查状态以GitHub实际结果为准，不声称CI或合并完成。

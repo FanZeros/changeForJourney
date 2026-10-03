@@ -497,7 +497,8 @@ function M.onArtifactDrawSuccess(data)
         }
     end
     if #rewards > 0 then
-        RewardPopup.show("神器宝箱", rewards)
+        RewardPopup.show("神器宝箱", rewards, { panel = "left", cascade = true })
+        print("[ChurchArtifactDrawPanel] 宝箱获得动画: count=" .. #rewards .. ", panel=left")
     end
     return rewards
 end

@@ -252,7 +252,7 @@ function M.draw(vg, heroId, detailState)
     local display = equipmentMode and data.equipmentBonuses or data
     if equipmentMode and not data.equipmentBonuses then display = { rows = {}, current = { stats = {} } } end
     local sets = Stats.unionSets(data.currentSets, preview and data.previewSets or nil)
-    Stats.drawHeader(vg, data.candidate, data.error, panelState.attributeMode)
+    Stats.drawHeader(vg, panelState.attributeMode)
     local displayRows = display.rows or {}
     local maxAttrs, hits = Stats.drawRows(vg, displayRows, panelState.scroll.attrs.y)
     if equipmentMode and #displayRows == 0 then

@@ -368,11 +368,16 @@ end
 ---@param heroId number
 ---@param tab string|nil 初始页签 "attr"|"equip"|"awaken"，未指定时由教程选择，否则默认 "attr"
 function CharacterDetail.open(heroId, tab)
+    local keepEquipTab = tab == nil and detailState.open and not detailState.closing and detailState.tab == "equip"
+    if keepEquipTab then
+        keepEquipTab = require("ui.character.panel.CharacterPanel").getOwnedHero(heroId) ~= nil
+    end
+    if keepEquipTab and detailState.heroId == heroId then return end
     detailState.open = true
     detailState.closing = false
     detailState.closeTime = 0
     detailState.heroId = heroId
-    local preferredTab = tab
+    local preferredTab = keepEquipTab and "equip" or tab
     if preferredTab == nil then
         preferredTab = require("systems.TutorialManager").getPreferredCharacterTab()
     end
@@ -380,10 +385,10 @@ function CharacterDetail.open(heroId, tab)
     detailState.tab = initTab
     detailState.tabFrom = initTab
     detailState.tabSwitchTime = 0
-    detailState.openTime = time.elapsedTime
+    if not keepEquipTab then detailState.openTime = time.elapsedTime end
     detailState.sideDragging = false
     CharacterDetail._EquipPanel.endSideDrag()
-    detailState.seamOpenTime = time.elapsedTime  -- [水平滑入] 页面滑入基准(切换英雄不重置)
+    if not keepEquipTab then detailState.seamOpenTime = time.elapsedTime end
     detailState.switchDir = nil  -- 普通打开：使用垂直滑入动画
     detailState.attrScrollY   = 0
     detailState.attrScrollMax = 0

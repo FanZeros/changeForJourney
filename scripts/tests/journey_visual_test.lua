@@ -49,6 +49,12 @@ local scene = {
     getMaxStageId = function() return mainMax end,
     getClearedStages = function() return cleared end,
     adoptStageProgress = function(id) mainStage = id end,
+    completeTriStageClear = function(id, teamIdx)
+        if teamIdx == 1 then mainStage = require("config.StageConfig").getNextStageId(id) or id end
+        local first = not cleared[id]
+        cleared[id] = true
+        return first
+    end,
     onFirstClear = noop,
     isSpeedButtonVisible = function() return false end,
 }

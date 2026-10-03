@@ -80,16 +80,10 @@ function M.bind(deps)
                 .. "已标记通关但未推进(currentStageId==maxStageId)，恢复为首通模式")
         end
 
-        -- 首次加载兜底：如果 currentStageId 落后于 maxStageId，
-        -- 说明上次存档异常或版本更新导致进度不同步，以 maxStageId 为准恢复到最新进度
+        -- currentStageId 是一队当前关，maxStageId 是所有队共享的解锁上限。
+        -- 二三队可以在前方推关，一队也可以主动选择旧关；读档时保留有效的
+        -- 当前关，不能把这种合法落后误当成坏档并强制跳到其他队的最高进度。
         local initialBattleDataLoaded = get("initialBattleDataLoaded")
-        if not initialBattleDataLoaded and savedStageId and maxSId then
-            if maxSId > savedStageId then
-                print("[BattleScene] 检测到进度落后: currentStageId=" .. tostring(savedStageId)
-                    .. " 但 maxStageId=" .. tostring(maxSId) .. "，使用 maxStageId 恢复")
-                savedStageId = maxSId
-            end
-        end
 
         local currentStageId = get("currentStageId")
         local battleActive = get("battleActive")

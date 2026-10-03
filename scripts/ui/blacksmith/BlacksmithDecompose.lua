@@ -603,7 +603,7 @@ function M.drawPanel(vg)
             if enhLv > 0 then
                 local enhText = "+" .. enhLv
                 local enhX = cx + FJ.GRID_CELL * 0.5 - 8
-                local enhY = cy - FJ.GRID_CELL * 0.5 + 8
+                local enhY = cy - FJ.GRID_CELL * 0.5 - 4
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 36)
                 nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)

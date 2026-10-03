@@ -1,36 +1,38 @@
 
 -- 套装筛选回归：遗匣页弹窗交互 + 批量领取/回收按套装过滤 + 无套装分类。
 -- 模板归属（EquipmentSetConfig 名字规则）：W5「叠甲战神之剑」→ carapace；W1「练习用剑」→ 无套装。
+local assertions = 0
+local function check(condition, message)
+    assertions = assertions + 1
+    assert(condition, message)
+end
 local function eq(actual, expected, message)
-    assert(actual == expected, message .. ": " .. tostring(actual) .. " / " .. tostring(expected))
+    check(actual == expected, message .. ": " .. tostring(actual) .. " / " .. tostring(expected))
 end
 
-local restore = function() end
+local restorers = {}
+local function replace(target, key, value)
+    local original = target[key]
+    restorers[#restorers + 1] = function()
+        target[key] = original
+        eq(target[key], original, "恢复替换 " .. key)
+    end
+    target[key] = value
+end
+local closePage = function() end
 
 local function runTests()
-    local oldTime = time
-    local oldSfx = package.loaded["systems.GameSFX"]
-    local oldFeedback = package.loaded["systems.ButtonFeedback"]
-    local oldIcons = package.loaded["core.DarkIcon"]
-    local oldDetail = package.loaded["ui.character.equip.EquipmentDetail"]
-    local restoreDialog = function() end
-    restore = function()
-        restoreDialog()
-        package.loaded["systems.GameSFX"] = oldSfx
-        package.loaded["systems.ButtonFeedback"] = oldFeedback
-        package.loaded["core.DarkIcon"] = oldIcons
-        package.loaded["ui.character.equip.EquipmentDetail"] = oldDetail
-        time = oldTime
-    end
-    time = { elapsedTime = 10 }
-    package.loaded["ui.character.equip.EquipmentDetail"] = {
-        init = function() end,
-        readOnlySize = function() return 720, 440 end,
-        drawReadOnly = function() end,
-    }
-    package.loaded["core.DarkIcon"] = {} -- 只测输入与数据，不调用渲染器。
-    package.loaded["systems.GameSFX"] = { playUIMove = function() end }
-    package.loaded["systems.ButtonFeedback"] = { trigger = function() end }
+    replace(_G, "time", { elapsedTime = 10 })
+    -- 托管 require 忽略 package.loaded 预注入；替换真实方法并验证页面实际命中。
+    local Detail = require("ui.character.equip.EquipmentDetail")
+    local originalPower = Detail.calcEquipPower
+    local powerCalls, sfxCalls, feedbackCalls = 0, 0, 0
+    replace(Detail, "calcEquipPower", function(equip, heroId)
+        powerCalls = powerCalls + 1
+        return originalPower(equip, heroId)
+    end)
+    replace(require("systems.GameSFX"), "playUIMove", function() sfxCalls = sfxCalls + 1 end)
+    replace(require("systems.ButtonFeedback"), "trigger", function() feedbackCalls = feedbackCalls + 1 end)
 
     -- 模板归属自检（名字规则变动时本测试第一时间报警）
     local ESC = require("config.EquipmentSetConfig")
@@ -42,15 +44,19 @@ local function runTests()
     local Page = require("ui.loot.LootBoxPage")
     local Dialog = require("ui.widget.SetFilterDialog")
     local originalOpen = Dialog.open
-    restoreDialog = function()
-        Dialog.open = originalOpen
+    closePage = function()
+        Page.forceClose()
+        Page.setOnClaimOne(nil)
+        Page.setOnClaimAll(nil)
+        Page.setOnDecomposeOne(nil)
+        Page.setOnDecomposeAll(nil)
     end
     ---@type (fun(): table<string, integer>)|nil
     local countGetter = nil
-    Dialog.open = function(sel, opts)
+    replace(Dialog, "open", function(sel, opts)
         countGetter = opts and opts.getCounts or nil
         originalOpen(sel, opts)
-    end
+    end)
     local claimed = {}
     ---@type table<number, boolean>
     local claimQuality = {}
@@ -75,14 +81,19 @@ local function runTests()
           equip = { templateId = "W1", name = "练习用剑", quality = 1, level = 10 } },
         { quality = 6, level = 80, count = 2 }, -- 待整理（无 equip）
     }
+    for index = 1, 3 do
+        eq(originalPower(entries[index].equip, nil), 0, "套装 fixture 无基础属性保持同战力 " .. index)
+    end
     Page.open(entries)
+    eq(powerCalls, 3, "Page.open 实际命中战力包装且忽略待整理")
+    eq(sfxCalls, 1, "Page.open 实际命中音效替身")
     time.elapsedTime = 11
 
     -- 1) 打开套装筛选弹窗（入口按钮 cx=190 cy=286）
     Page.handleInput(190, 286)
     eq(Dialog.isOpen(), true, "点击套装按钮打开弹窗")
     eq(Dialog.countSelected(nil), 0, "初始未勾选")
-    assert(countGetter, "遗匣必须接入套装数量 getter")
+    check(countGetter, "遗匣必须接入套装数量 getter")
     local counts = countGetter()
     eq(counts.carapace, 2, "套装数量按两个已确定装备实例计数")
     eq(counts.none, 1, "待整理数量不计入无套装")
@@ -181,7 +192,7 @@ local function runTests()
     -- 9) 数量跟随品质与最新来源刷新，不重开弹窗，也不生成待整理装备。
     Page.handleInput(565 + 4 * 82, 286) -- 仅品质5
     Page.handleInput(190, 286)
-    assert(countGetter, "重开套装弹窗必须重新绑定数量")
+    check(countGetter, "重开套装弹窗必须重新绑定数量")
     counts = countGetter()
     eq(counts.carapace, 2, "品质5保留两件叠甲虫壳")
     eq(counts.none, 0, "品质5排除品质1无套装")
@@ -195,18 +206,26 @@ local function runTests()
     Page.handleInput(190, 286)
     eq(countGetter().none, 1, "取消品质后无套装数量恢复")
 
+    check(feedbackCalls > 0, "页面及套装弹窗实际命中反馈替身")
     Page.forceClose()
 end
 
 function Start()
     local ok, err = pcall(runTests)
-    local cleanupOK, cleanupErr = pcall(restore)
+    local cleanupErrors = {}
+    local closed, closeErr = pcall(closePage)
+    if not closed then cleanupErrors[#cleanupErrors + 1] = tostring(closeErr) end
+    for index = #restorers, 1, -1 do
+        local restored, restoreErr = pcall(restorers[index])
+        if not restored then cleanupErrors[#cleanupErrors + 1] = tostring(restoreErr) end
+    end
     if not ok then
-        print("[lootbox_set_filter_test] [FAIL] " .. tostring(err))
-    elseif not cleanupOK then
-        print("[lootbox_set_filter_test] [FAIL] cleanup: " .. tostring(cleanupErr))
-    else
-        print("[lootbox_set_filter_test] ALL PASS：套装筛选全部通过")
+        log:Write(LOG_ERROR, "[lootbox_set_filter_test] [FAIL] " .. tostring(err))
+    end
+    if #cleanupErrors > 0 then
+        log:Write(LOG_ERROR, "[lootbox_set_filter_test] [FAIL] cleanup: " .. table.concat(cleanupErrors, "; "))
+    elseif ok then
+        print("[lootbox_set_filter_test] ALL PASS assertions=" .. assertions)
     end
     engine:Exit()
 end

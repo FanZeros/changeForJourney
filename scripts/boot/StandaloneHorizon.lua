@@ -126,6 +126,11 @@ local function finishFrame()
     nvgResetScissor(vg())
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     drawOrphanRowReward()
+    -- 升级弹窗由宿主逻辑空间布局：不再借中栏 Viewport 或 1080×2400 letterbox。
+    -- 所有业务/PlayerInfo/三行/通天塔绘制都已完成，Offline/Update/CE 保持原上层优先级。
+    if LevelUpPopup.isOpen() then
+        LevelUpPopup.draw(vg(), logicalW(), logicalH())
+    end
     if not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
         and not IntroCutscene.isActive() and not ScenarioDialogue.isActive() then
         OfflineRewardOverlay.draw()
@@ -209,7 +214,8 @@ local function HorizonUpdateTransform()
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]
-    H_SEAM_BACK = BattleTriPage.isOpen()  -- [三队并行] 中缝返回键层开关
+    H_SEAM_BACK = BattleTriPage.isOpen() and not TowerBattleScene.isActive()
+        -- 塔路径提前返回，不画三行中缝条；塔内功绩页使用 TownPageChrome 自带返回。
     -- [三队并行] TopBar 战力跟随当前编辑队伍（页签切换无回调，逐帧比对刷新）
     local curPower = CharacterPanel.getTotalPower()
     if curPower ~= H_lastTopBarPower then
@@ -550,7 +556,7 @@ function HandleNanoVGRenderHorizon()
         BlacksmithPage.drawUnderlay(vg())
         BackpackPanel.draw(vg())
         LootBox.drawPage(vg())
-        TaskPage.draw(vg())
+        if not TowerBattleScene.isActive() then TaskPage.draw(vg()) end
         drawRewardInPanel('left')
         Viewport.finish(vg())
 
@@ -610,19 +616,28 @@ function HandleNanoVGRenderHorizon()
 
     if towerBattleOpen then
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
-        if LevelUpPopup.isOpen()
-            or (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then
+        -- 查看等级奖励只叠功绩左栏，不退出塔；关闭后继续原塔场景。
+        if TaskPage.isOpen() then
+            Viewport.begin(vg(), Viewport.PANELS.left, 0, 0, logicalH() / 1080)
+            TaskPage.draw(vg())
+            Viewport.finish(vg())
+        end
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
             nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
             nvgScale(vg(), fit, fit)
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
-                RewardPopup.draw(vg())
-            end
-            if LevelUpPopup.isOpen() then
-                LevelUpPopup.draw(vg())
-            end
+            RewardPopup.draw(vg())
+            nvgRestore(vg())
+        end
+        if PlayerInfoPanel.isOpen() then
+            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+            nvgSave(vg())
+            nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+            nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+            nvgScale(vg(), fit, fit)
+            PlayerInfoPanel.draw(vg())
             nvgRestore(vg())
         end
         drawEquipDetailOverlay()
@@ -697,19 +712,15 @@ function HandleNanoVGRenderHorizon()
             PlayerInfoPanel.draw(vg())
             nvgRestore(vg())
         end
-        -- 离线收益由 finishFrame 全窗绘制；三行升级窗即使单独打开也必须显示。
-        if (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) or LevelUpPopup.isOpen() then
+        -- 离线收益与升级窗由 finishFrame 全窗绘制；奖励仍保留原归属路由。
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
             nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
             nvgScale(vg(), fit, fit)
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
-                and not RewardPopup.currentPanel() then
+            if not RewardPopup.currentPanel() then
                 RewardPopup.draw(vg())
-            end
-            if LevelUpPopup.isOpen() then
-                LevelUpPopup.draw(vg())
             end
             nvgRestore(vg())
         end
@@ -744,7 +755,6 @@ function HandleNanoVGRenderHorizon()
     PlayerInfoPanel.draw(vg())
     RewardPopup.draw(vg())
     SpinePowerUpEffect.draw(vg())
-    LevelUpPopup.draw(vg())
     Viewport.finish(vg())
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）

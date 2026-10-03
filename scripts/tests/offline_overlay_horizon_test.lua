@@ -69,7 +69,8 @@ function Start()
             mode = "ordinary", offline = true, level = false, warehouse = true,
             detail = false, detailHit = false, grid = false, armed = false,
             draggingCard = false, closeOnClaim = false, notice = false, story = false,
-            title = false, letter = false, ce = false,
+            title = false, letter = false, ce = false, pip = false, talent = false,
+            task = false, towerTri = false, reward = false, dungeon = false, towerFloor = 7,
         }
         local cursor = { x = 0, y = 0 }
         local clock = { elapsedTime = 100 }
@@ -109,9 +110,10 @@ function Start()
             return { x = x, y = y, w = math.max(0, math.min(a.x + a.w, b.x + b.w) - x),
                 h = math.max(0, math.min(a.y + a.h, b.y + b.h) - y) }
         end
-        local function snapshot(name)
+        local function snapshot(name, width, height)
             drawings[#drawings + 1] = {
-                name = name, sx = vgState.sx, sy = vgState.sy, tx = vgState.tx, ty = vgState.ty,
+                name = name, width = width, height = height,
+                sx = vgState.sx, sy = vgState.sy, tx = vgState.tx, ty = vgState.ty,
                 clip = copyRect(vgState.clip), viewportDepth = viewportDepth,
                 -- 真实 OfflineRewardPanel 的 1760 宽背景，超出 1080 设计稿但不应被面板 clip 切掉。
                 widePanel = transformRect(-340, 220, 1760, 1400),
@@ -239,6 +241,7 @@ function Start()
             ["ui.hud.popup.UpdateNoticePopup"] = mock({
                 isOpen = function() return state.notice end,
                 handleInput = function() count("notice.input"); return true end,
+                draw = function() if state.notice then snapshot("notice") end end,
             }),
             ["ui.story.ScenarioDialogue"] = mock({
                 isActive = function() return state.story end,
@@ -255,18 +258,53 @@ function Start()
             ["ui.dev.CEPanel"] = mock({
                 handleDown = function() return state.ce end,
                 handleUp = function() if state.ce then count("ce.up") end; return state.ce end,
+                handleWheel = function() if state.ce then count("ce.wheel") end; return state.ce end,
+                draw = function() snapshot("ce") end,
             }),
             ["ui.hud.popup.LevelUpPopup"] = page("level", {
                 isOpen = function() return state.level end,
-                draw = function()
-                    if state.level then count("level.draw"); snapshot("level") end
+                draw = function(_, width, height)
+                    if state.level then count("level.draw"); snapshot("level", width, height) end
                     return false
                 end,
+                handleInput = function(x, y, width, height)
+                    record("level.handleInput", x, y)
+                    check(width == RT.logicalW and height == RT.logicalH, "升级输入透传宿主逻辑宽高")
+                    return true
+                end,
+            }),
+            ["ui.hud.popup.PlayerInfoPanel"] = page("pip", {
+                isOpen = function() return state.pip end,
+                draw = function() if state.pip then snapshot("pip") end end,
+            }),
+            ["ui.church.talent.TalentPage"] = page("talent", {
+                isOpen = function() return state.talent end,
+                getHorizonWidthScale = function() return 1 end,
             }),
             ["ui.hud.popup.RewardPopup"] = page("reward", {
-                isOpen = function() return false end,
+                isOpen = function() return state.reward end,
                 currentPanel = function() return nil end,
                 currentRowTag = function() return nil end,
+                draw = function() if state.reward then snapshot("reward") end end,
+                hitPanel = function() return state.reward end,
+            }),
+            ["ui.story.task.TaskPage"] = page("task", {
+                isOpen = function() return state.task end,
+                getSeamAnim = function() return 1, 0, 0.45, 0.38 end,
+                draw = function() if state.task then snapshot("task") end end,
+                close = function() state.task = false; count("task.close") end,
+                handleInput = function(x, y)
+                    record("task.handleInput", x, y)
+                    -- 沿用真实 TownPageChrome 的返回热区与 H_SEAM_BACK 条件。
+                    if not H_SEAM_BACK and math.abs(x - 958) <= 92 and math.abs(y - 1150) <= 71.5 then
+                        state.task = false
+                        count("task.close")
+                    end
+                    return true
+                end,
+            }),
+            ["ui.dungeon.DungeonBattleScene"] = page("dungeon", {
+                isOpen = function() return state.dungeon end,
             }),
             ["ui.backpack.BackpackPanel"] = backpack,
             ["ui.character.equip.EquipmentDetail"] = detail,
@@ -287,10 +325,12 @@ function Start()
                 close = function() count("seam.close"); state.detailHit = false; return false end,
             }),
             ["ui.battle.tri.BattleTriPage"] = page("tri", {
-                isOpen = function() return state.mode == "tri" end,
+                isOpen = function() return state.mode == "tri" or state.towerTri end,
             }),
             ["ui.tower.TowerBattleScene"] = page("tower", {
                 isActive = function() return state.mode == "tower" end,
+                draw = function() if state.task then snapshot("tower") end end,
+                close = function() count("tower.close"); state.mode = "ordinary"; state.towerFloor = 0 end,
             }),
             ["ui.hud.BottomNav"] = mock({ getSelectedIndex = function() return 3 end }),
             ["core.BattleLayout"] = mock({ CARD_SCALE = 1 }),
@@ -377,6 +417,8 @@ function Start()
             state.detail, state.detailHit, state.armed = false, false, false
             state.draggingCard, state.closeOnClaim = false, false
             state.notice, state.story, state.title, state.letter, state.ce = false, false, false, false, false
+            state.pip, state.talent = false, false
+            state.task, state.towerTri, state.reward, state.dungeon, state.towerFloor = false, false, false, false, 7
             restoreTable(RT, {
                 logicalW = 1920, logicalH = 1080, windowW = 1920, windowH = 1080,
                 DESIGN_W = 1080, DESIGN_H = 2400, dpr = dpr or 1,
@@ -401,9 +443,9 @@ function Start()
             check(#found == 1, label .. " 绘制恰好一次，actual=" .. #found)
             if #found ~= 1 then return end
             local draw = found[1]
-            local fit = math.min(RT.logicalW / 1080, RT.logicalH / 2400)
-            local ox = (RT.logicalW - 1080 * fit) * 0.5
-            local oy = (RT.logicalH - 2400 * fit) * 0.5
+            local fit = name == "level" and 1 or math.min(RT.logicalW / 1080, RT.logicalH / 2400)
+            local ox = name == "level" and 0 or (RT.logicalW - 1080 * fit) * 0.5
+            local oy = name == "level" and 0 or (RT.logicalH - 2400 * fit) * 0.5
             check(closeEnough(draw.sx, RT.frameScale * fit) and closeEnough(draw.sy, RT.frameScale * fit)
                 and closeEnough(draw.tx, RT.frameOx + ox * RT.frameScale)
                 and closeEnough(draw.ty, RT.frameOy + oy * RT.frameScale), label .. " 累计父 frame + 全窗 letterbox matrix")
@@ -412,10 +454,15 @@ function Start()
                 and closeEnough(clip.w, RT.logicalW * RT.frameScale)
                 and closeEnough(clip.h, RT.logicalH * RT.frameScale), label .. " 全窗 clip，不是1080面板 clip")
             check(draw.viewportDepth == 0, label .. " 绘制不处于面板 Viewport 内")
-            check(draw.widePanel.w > 1080 * fit * RT.frameScale
-                and clip and draw.widePanel.x > clip.x
-                and draw.widePanel.x + draw.widePanel.w < clip.x + clip.w,
-                label .. " 1760宽奖励背景完整包含于全窗裁剪")
+            if name == "level" then
+                check(draw.width == RT.logicalW and draw.height == RT.logicalH,
+                    label .. " 升级 draw 使用宿主逻辑宽高，不由宿主 letterbox")
+            else
+                check(draw.widePanel.w > 1080 * fit * RT.frameScale
+                    and clip and draw.widePanel.x > clip.x
+                    and draw.widePanel.x + draw.widePanel.w < clip.x + clip.w,
+                    label .. " 1760宽奖励背景完整包含于全窗裁剪")
+            end
         end
         local function click(button)
             invoke("HandleMouseButtonDownHorizon", button or left)
@@ -640,6 +687,322 @@ function Start()
             click()
             check(n("ce.up") == 1, "CE Down/Up 优先级一致")
             checkNoClaim("CE")
+        end)
+
+        -- 升级回归只验证宿主的真实 render/input 链；Popup 以 spy 实现新宽高接口，
+        -- 不在这里复制它的 widget/动画/领取逻辑，不将 mock pass 当成真实像素验收。
+        local levelAllowed = { ["level.handleInput"] = true }
+        for _, mode in ipairs({ "ordinary", "tri", "tower" }) do
+            for _, dpr in ipairs({ 1, 2, 3 }) do
+                runCase(mode .. " LevelUp 全窗+DPR=" .. dpr .. " 唯一绘制与左右中输入", function()
+                    fixture(mode, dpr, true, false)
+                    state.level, state.pip, state.talent = true, true, true
+                    clearCalls()
+                    for key in pairs(drawings) do drawings[key] = nil end
+                    invoke("HandleNanoVGRenderHorizon")
+                    checkDraw("level", mode .. " level frame/DPR")
+                    local levelIndex, ceIndex, pipIndex = 0, 0, 0
+                    for index, draw in ipairs(drawings) do
+                        if draw.name == "level" then levelIndex = index end
+                        if draw.name == "ce" then ceIndex = index end
+                        if draw.name == "pip" then pipIndex = index end
+                    end
+                    check(ceIndex > levelIndex and levelIndex > pipIndex, "升级位于PIP/业务之上、CE之下")
+                    clearCalls()
+                    for _, x in ipairs({ 250, 960, 1680 }) do
+                        positionWindow(x, 505)
+                        invoke("HandleMouseMoveHorizon")
+                        invoke("HandleEquipmentHoverTickHorizon")
+                        click()
+                        click(right)
+                        invoke("HandleMouseWheelHorizon", wheel)
+                        checkXY("level.handleInput", x, 505, "宿主frame逆变换")
+                        -- 每轮清空事件，保证 checkXY 不拿上一区的点作比较。
+                        for key in pairs(events) do events[key] = nil end
+                    end
+                    check(n("level.handleInput") == 3, "仅左键三次tap，右键/wheel/hover不触发升级")
+                    checkNoLowerInput("LevelUp 全窗输入", levelAllowed)
+                end)
+            end
+        end
+        for _, mode in ipairs({ "ordinary", "tri", "tower" }) do
+            runCase(mode .. " LevelUp/Offline/Update/CE 模态顺序保留", function()
+                fixture(mode)
+                state.level, state.pip, state.notice = true, true, true
+                clearCalls()
+                for key in pairs(drawings) do drawings[key] = nil end
+                invoke("HandleNanoVGRenderHorizon")
+                local order = {}
+                for index, draw in ipairs(drawings) do order[draw.name] = index end
+                check(order.level < order.offline and order.offline < order.notice and order.notice < order.ce,
+                    "draw升级<离线<更新<CE")
+                positionWindow(505.6, 1080 * 0.469)
+                click()
+                check(n("notice.input") == 1 and n("level.handleInput") == 0 and n("offline.input") == 0,
+                    "Update先消费，不向离线/升级派tap")
+                state.notice = false
+                clearCalls()
+                click()
+                check(n("offline.input") == 1 and n("level.handleInput") == 0, "Offline先于升级")
+                state.offline, state.ce = false, true
+                clearCalls()
+                click()
+                invoke("HandleMouseWheelHorizon", wheel)
+                check(n("ce.up") == 1 and n("ce.wheel") == 1 and n("level.handleInput") == 0, "CE先于升级")
+                checkNoLowerInput("top chain")
+            end)
+        end
+        for _, seam in ipairs({ { name = "left", x = 505.6 }, { name = "right", x = 1414.4 } }) do
+            for _, modal in ipairs({ "level", "pip" }) do
+                runCase(seam.name .. " seam " .. modal .. " 不点穿", function()
+                    fixture("tri", 2, true, false)
+                    state[modal], state.detailHit = true, true
+                    clearCalls()
+                    positionWindow(seam.x, 1080 * 0.469)
+                    click()
+                    check(n("seam.close") == 0 and state.warehouse and state.detailHit, "模态不关闭仓库/角色详情")
+                    if modal == "level" then
+                        check(n("level.handleInput") == 1 and n("pip.handleInput") == 0, "升级先于PIP/seam")
+                        checkNoLowerInput("level seam", levelAllowed)
+                    else
+                        check(n("pip.handleInput") == 1, "PIP用自身坐标消费seam点")
+                    end
+                end)
+            end
+        end
+        runCase("PIP滚轮优先于Talent/Battle", function()
+            fixture("tri", 2, true, false)
+            state.pip, state.talent = true, true
+            clearCalls()
+            positionWindow(250, 505)
+            invoke("HandleMouseWheelHorizon", wheel)
+            check(n("pip.handleScroll") == 1 and n("talent.handleScroll") == 0 and n("tri.handleScroll") == 0,
+                "PIP在古树缩放/战斗装备袋之前接滚轮")
+        end)
+        for _, source in ipairs({ "cross", "detail", "card", "tri" }) do
+            runCase(source .. " 旧按压中途升级：cancel不finish/tap", function()
+                fixture("tri", 2, true, false)
+                if source == "cross" then state.grid = true
+                elseif source == "detail" then state.detail, state.detailHit = true, true end
+                clearCalls()
+                if source == "card" then positionPanel("right", 140, 1060)
+                elseif source == "tri" then positionWindow(960, 505)
+                else positionPanel("left", 140, 1060) end
+                invoke("HandleMouseButtonDownHorizon", left)
+                if source == "card" then state.draggingCard = true end
+                check(source ~= "cross" or state.armed, "cross来自真实Horizon down")
+                clearCalls()
+                state.level = true
+                positionWindow(505.6, 1080 * 0.469)
+                invoke("HandleMouseButtonUpHorizon", left)
+                check(n("cross.finish") == 0 and n("seam.close") == 0 and n("level.handleInput") == 0,
+                    "旧来源Up不落点/点seam/误触升级按钮")
+                if source == "cross" then
+                    check(n("cross.cancel") == 1 and n("backpack.handleDragEnd") == 1 and not state.armed,
+                        "cross取消并释放来源")
+                elseif source == "detail" then
+                    check(n("detail.handleDragEnd") == 1 and n("detail.handleInput") == 0, "只释放浮选，不点击/关闭它")
+                elseif source == "card" then
+                    check(n("character.handleDragEnd") == 1 and n("character.handleInput") == 0 and not state.draggingCard,
+                        "只取消角色拖拽，不交换卡片")
+                else
+                    check(n("tri.handleDragEnd") == 1 and n("tri.handleInput") == 0, "只释放三行来源拖拽")
+                end
+            end)
+        end
+        for _, kind in ipairs({ "mouse", "touch" }) do
+            for _, cancelled in ipairs({ "closed", "moved", "resized" }) do
+                runCase("LevelUp " .. kind .. " " .. cancelled .. " 消费但不tap", function()
+                    fixture("tri", 2, true, false)
+                    state.level = true
+                    clearCalls()
+                    local x, y = framePosition(505, 505)
+                    if kind == "mouse" then
+                        positionWindow(505, 505)
+                        invoke("HandleMouseButtonDownHorizon", left)
+                    else
+                        invoke("HandleTouchBeginHorizon", touch(51, x, y))
+                    end
+                    if cancelled == "closed" then state.level = false
+                    elseif cancelled == "resized" then RT.logicalW = 2000
+                    elseif kind == "mouse" then
+                        positionWindow(550, 505)
+                        invoke("HandleMouseMoveHorizon")
+                        positionWindow(505, 505)
+                        invoke("HandleMouseMoveHorizon")
+                    else
+                        local ox, oy = framePosition(550, 505)
+                        invoke("HandleTouchMoveHorizon", touch(51, ox, oy))
+                        invoke("HandleTouchMoveHorizon", touch(51, x, y))
+                    end
+                    if kind == "mouse" then invoke("HandleMouseButtonUpHorizon", left)
+                    else invoke("HandleTouchEndHorizon", touch(51, x, y)) end
+                    check(n("level.handleInput") == 0 and n("seam.close") == 0, "旧/移动/尺寸变更Up不派tap")
+                    checkNoLowerInput("level cancel")
+                end)
+            end
+        end
+        for _, dpr in ipairs({ 1, 2, 3 }) do
+            runCase("LevelUp TouchID/X/Y-only DPR=" .. dpr .. " 主副指/mouse分离", function()
+                fixture("tri", dpr, true, false)
+                state.level, state.pip = true, true
+                clearCalls()
+                positionWindow(250, 100)
+                local x, y = framePosition(960, 505)
+                local primary, secondary = touch(61, x, y), touch(62, x, y)
+                invoke("HandleTouchBeginHorizon", primary)
+                invoke("HandleTouchBeginHorizon", secondary)
+                invoke("HandleTouchMoveHorizon", secondary)
+                invoke("HandleTouchEndHorizon", secondary)
+                check(n("level.handleInput") == 0, "副指不能结束主指升级tap")
+                invoke("HandleTouchMoveHorizon", primary)
+                invoke("HandleTouchEndHorizon", primary)
+                checkXY("level.handleInput", 960, 505, "touch frame+DPR")
+                check(n("level.handleInput") == 1, "只有主指派一次tap")
+                checkNoLowerInput("level touch", levelAllowed)
+                -- 主指先结束并关闭后，已捕获的副指结束仍不得走无Button鼠标/seam链。
+                invoke("HandleTouchBeginHorizon", primary)
+                invoke("HandleTouchBeginHorizon", secondary)
+                invoke("HandleTouchEndHorizon", primary)
+                state.level = false
+                invoke("HandleTouchEndHorizon", secondary)
+                check(n("level.handleInput") == 2 and n("seam.close") == 0, "关闭后副指Up仍消费")
+            end)
+        end
+
+        runCase("LevelUp已打开：Down不碰浮选详情", function()
+            fixture("tri", 2, true, false)
+            state.level, state.detail, state.detailHit = true, true, true
+            clearCalls()
+            positionPanel("left", 140, 1060)
+            click()
+            check(n("level.handleInput") == 1 and n("detail.handleDragBegin") == 0
+                and n("detail.close") == 0 and n("detail.handleInput") == 0,
+                "升级Down早于装备浮选命中和空白关闭")
+            check(state.detail and n("cross.arm") == 0, "下层候选保持，不启动跨栏装备手势")
+            checkNoLowerInput("level before detail", levelAllowed)
+        end)
+        for _, property in ipairs({ "frameScale", "frameOx", "frameOy", "dpr" }) do
+            runCase("LevelUp按压后 " .. property .. " 变更不tap", function()
+                fixture("tri", 2, true, false)
+                state.level = true
+                clearCalls()
+                positionWindow(960, 505)
+                invoke("HandleMouseButtonDownHorizon", left)
+                RT[property] = RT[property] + 1
+                positionWindow(960, 505)
+                invoke("HandleMouseButtonUpHorizon", left)
+                check(n("level.handleInput") == 0 and n("seam.close") == 0, "frame/DPR变化不能误投升级按钮")
+                checkNoLowerInput("level frame changed")
+            end)
+        end
+        for _, kind in ipairs({ "mouse", "touch" }) do
+            runCase("LevelUp旧" .. kind .. "按压后Update接管", function()
+                fixture("tri", 2, true, false)
+                state.level = true
+                clearCalls()
+                positionWindow(960, 505)
+                local x, y = framePosition(960, 505)
+                if kind == "mouse" then invoke("HandleMouseButtonDownHorizon", left)
+                else invoke("HandleTouchBeginHorizon", touch(91, x, y)) end
+                state.notice = true
+                if kind == "mouse" then invoke("HandleMouseButtonUpHorizon", left)
+                else invoke("HandleTouchEndHorizon", touch(91, x, y)) end
+                check(n("notice.input") == 1 and n("level.handleInput") == 0, "后出现的Update仍高于升级捕获")
+                checkNoLowerInput("update interrupt level")
+            end)
+        end
+
+        for _, towerTri in ipairs({ false, true }) do
+            for _, dpr in ipairs({ 1, 2, 3 }) do
+                runCase("Tower Task tri=" .. tostring(towerTri) .. " DPR=" .. dpr .. " 覆盖/输入/返回保留塔", function()
+                    fixture("tower", dpr, true, false)
+                    state.task, state.towerTri, state.talent, state.dungeon = true, towerTri, true, true
+                    clearCalls()
+                    for key in pairs(drawings) do drawings[key] = nil end
+                    invoke("HandleNanoVGRenderHorizon")
+                    local taskDraw = nil ---@type any
+                    local towerIndex = nil ---@type integer?
+                    local taskIndex = nil ---@type integer?
+                    local taskCount = 0
+                    for index, draw in ipairs(drawings) do
+                        if draw.name == "tower" then towerIndex = index end
+                        if draw.name == "task" then taskDraw, taskIndex, taskCount = draw, index, taskCount + 1 end
+                    end
+                    check(taskCount == 1 and towerIndex < taskIndex, "Task唯一绘制且高于塔")
+                    check(taskDraw and taskDraw.viewportDepth == 1 and closeEnough(taskDraw.sx, RT.frameScale * 0.45)
+                        and closeEnough(taskDraw.tx, RT.frameOx) and closeEnough(taskDraw.ty, RT.frameOy),
+                        "Task使用0,0左栏Viewport与frame变换")
+                    check(taskDraw and taskDraw.clip and closeEnough(taskDraw.clip.w, 486 * RT.frameScale)
+                        and closeEnough(taskDraw.clip.h, 1080 * RT.frameScale), "Task clip只覆盖左栏")
+                    check(H_SEAM_BACK == false, "塔早退无seam条，自带返回可画可点")
+                    clearCalls()
+                    positionPanel("left", 540, 396)
+                    click()
+                    checkXY("task.handleDragBegin", 540, 396, "塔Task down")
+                    checkXY("task.handleDragEnd", 540, 396, "塔Task up")
+                    checkXY("task.handleInput", 540, 396, "塔Task tab")
+                    check(n("tower.handleClick") == 0 and n("tri.handleInput") == 0, "左栏tap不交塔/tri")
+                    clearCalls()
+                    positionPanel("left", 540, 1200)
+                    invoke("HandleMouseButtonDownHorizon", left)
+                    positionPanel("left", 540, 1000)
+                    invoke("HandleMouseMoveHorizon")
+                    invoke("HandleMouseButtonUpHorizon", left)
+                    checkXY("task.handleDragMove", 540, 1000, "塔Task drag")
+                    check(n("task.handleInput") == 0 and n("task.handleDragEnd") == 1, "拖动不领取但结束Task拖拽")
+                    clearCalls()
+                    positionWindow(486, 505)
+                    click()
+                    checkXY("task.handleInput", 1080, 505 / 0.45, "左栏边界包含")
+                    clearCalls()
+                    positionWindow(250, 505)
+                    invoke("HandleMouseWheelHorizon", wheel)
+                    check(n("task.handleScroll") == 1 and n("talent.handleScroll") == 0
+                        and n("tri.handleScroll") == 0 and n("dungeon.handleScroll") == 0,
+                        "Task滚轮先于Talent/Battle/Dungeon")
+                    clearCalls()
+                    for _, x in ipairs({ 505.6, 960, 1680 }) do
+                        positionWindow(x, 1080 * 0.469)
+                        click()
+                        invoke("HandleMouseWheelHorizon", wheel)
+                    end
+                    check(n("task.handleInput") == 0 and n("task.handleScroll") == 0 and n("tower.handleClick") == 0
+                        and n("tri.handleInput") == 0 and n("tri.handleScroll") == 0 and n("seam.close") == 0,
+                        "非左栏输入/wheel/seam全部消费")
+                    clearCalls()
+                    positionPanel("left", 958, 1150)
+                    click()
+                    check(n("task.close") == 1 and not state.task and state.mode == "tower" and state.towerFloor == 7,
+                        "页面自带返回仅关Task，塔楼层仍保留")
+                    state.dungeon = false
+                    clearCalls()
+                    positionWindow(960, 505)
+                    click()
+                    check(n("tower.handleClick") == 1 and n("tri.handleInput") == 0 and n("tower.close") == 0,
+                        "关闭Task后恢复塔点击，即使tri仍open")
+                end)
+            end
+        end
+        runCase("Tower Task低于Reward/PIP/LevelUp", function()
+            fixture("tower", 2, true, false)
+            state.task, state.towerTri, state.reward, state.pip, state.level = true, true, true, true, true
+            clearCalls()
+            for key in pairs(drawings) do drawings[key] = nil end
+            invoke("HandleNanoVGRenderHorizon")
+            local order = {}
+            for index, draw in ipairs(drawings) do order[draw.name] = index end
+            check(order.tower < order.task and order.task < order.reward and order.reward < order.pip
+                and order.pip < order.level, "塔<Task<Reward<PIP<LevelUp")
+            positionWindow(250, 505)
+            click()
+            check(n("level.handleInput") == 1 and n("task.handleInput") == 0, "升级保持最高业务输入")
+            state.level, state.reward = false, false
+            clearCalls()
+            positionOverlay(540, 1375)
+            click()
+            checkXY("pip.handleInput", 540, 1375, "塔PIP draw/input letterbox一致")
+            check(n("task.handleInput") == 0 and n("tower.handleClick") == 0, "PIP不下放Task/塔")
         end)
 
         for _, kind in ipairs({ "mouse", "touch" }) do

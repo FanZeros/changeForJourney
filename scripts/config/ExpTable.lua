@@ -154,6 +154,8 @@ ExpTable.heroCountExpMult = {
     [5] = 3.00,
 }
 
+ExpTable.CHURCH_UNLOCK_LEVEL = 30
+
 --- 远征等级解锁内容表（按等级）
 --- 仅保留槽位解锁；建筑解锁由新手引导系统管理，不再在此处配置
 --- unlockName = 解锁内容名称

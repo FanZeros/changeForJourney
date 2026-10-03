@@ -344,6 +344,19 @@ local ClientDispatcher = require("runtime.ClientDispatcher")
      if not data.success then
          print("[Client] action failed: action=" .. tostring(data.action)
              .. " reason=" .. tostring(data.reason))
+         if data.action == Protocol.ACTION_TYPES.CLAIM_TASK
+             or data.action == Protocol.ACTION_TYPES.CLAIM_ALL_TASKS then
+             local reasons = {
+                 save_failed = "存档失败，奖励未领取，请重试",
+                 invalid_reward = "奖励配置异常，本次未发放",
+                 reward_failed = "奖励发放失败，请重试",
+                 already_claimed = "该奖励已经领取",
+                 not_complete = "尚未达到领奖条件",
+                 nothing_to_claim = "当前没有可领取奖励",
+             }
+             require("core.UiToast").show(reasons[data.reason] or "领取失败，请重试")
+             return
+         end
          if data.action == Protocol.ACTION_TYPES.SELECT_INITIAL_HERO then
              print("[Client][SAVE-BROKEN] initial hero selection blocked: " .. tostring(data.reason))
              if LootBoxPage and LootBoxPage.showToast then LootBoxPage.showToast(data.reason or "存档异常，请联系客服") end

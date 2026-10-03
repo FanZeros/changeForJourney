@@ -78,7 +78,7 @@ function Input.bind(ctx)
 
     --- 玩家信息面板坐标。三行战斗里面板是全窗居中重画的，点击必须用同一套 letterbox。
     local function playerInfoDesignCoords(sx, sy)
-        if BattleTriPage.isOpen() then
+        if BattleTriPage.isOpen() or TowerBattleScene.isActive() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             return (sx - (logicalW() - 1080 * fit) * 0.5) / fit,
                    (sy - (logicalH() - 2400 * fit) * 0.5) / fit
@@ -118,16 +118,13 @@ function Input.bind(ctx)
             local dx, dy = OfflineRewardOverlay.toDesign(sx, sy)
             return 'offline', dx, dy
         end
+        -- 升级层与 finishFrame 共用宿主逻辑坐标，三行/塔/普通模式不得各算一次 letterbox。
+        -- 位于 PlayerInfo/奖励/装备浮层之上，Offline 保持原上层优先级。
+        if LevelUpPopup.isOpen() then return 'levelup', sx, sy end
         -- 玩家信息是全窗 letterbox，不能走左/中/右栏换算，否则点面板中部会被当成点外面
         if PlayerInfoPanel.isOpen() then
             local pdx, pdy = playerInfoDesignCoords(sx, sy)
             return 'playerinfo', pdx, pdy
-        end
-        -- 三行全局奖励 / 离线收益 / 通天塔离线收益使用居中的 1080×2400 letterbox。
-        if (OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen())
-            and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
-            local pdx, pdy = playerInfoDesignCoords(sx, sy)
-            return 'modal', pdx, pdy
         end
         -- 全局奖励弹窗：归属面板时点击路由到该面板（面板内任意点击可交互/关闭，
         -- 面板外点击 rp_out 关闭）；无归属时所有点击都路由给它（任意点击可关闭）
@@ -154,6 +151,13 @@ function Input.bind(ctx)
             local pdx, pdy = playerInfoDesignCoords(sx, sy)
             return 'modal', pdx, pdy
         end
+        -- 塔可能保留三行页打开态；功绩覆盖必须先于 tri/tower 路由。
+        if TowerBattleScene.isActive() and TaskPage.isOpen() then
+            local ps = logicalH() / 1080
+            local cs = ps * Viewport.DS
+            if sx >= 0 and sx <= 486 * ps then return 'left', sx / cs, sy / cs end
+            return 'none', 0, 0 -- 左栏之外仍消费，不操作被覆盖的塔/其它业务页。
+        end
         -- [底栏移除] 横屏副本(5)页全窗竖版模态：中段命中映射到设计坐标；
         -- 左右栏让出（TopBar 页签/角色面板仍可点），全屏弹窗打开时让位
         if HorizonPageModalActive() then
@@ -165,6 +169,7 @@ function Input.bind(ctx)
                                 (sy - (logicalH() - DESIGN_H() * fit) * 0.5) / fit
             end
         end
+        if TowerBattleScene.isActive() then return 'modal', sx, sy end
         -- [三行并行] 战斗模式命中: 面板按战斗布局定位，中段为三行战斗区
         if BattleTriPage.isOpen() then
             -- [全窗模态] 选关/扫荡/统计弹窗打开时，全窗口点击直通三行页弹窗层（含左右面板区）
@@ -198,9 +203,6 @@ function Input.bind(ctx)
             end
             return 'tri', sx, sy
         end
-        if TowerBattleScene.isActive() then
-            return 'modal', sx, sy
-        end
         if talentPageUsesWideLayout() then
             local rightEdge = talentPageRightEdge(H_ox, H_s)
             if sx >= H_ox and sx < rightEdge then
@@ -210,8 +212,7 @@ function Input.bind(ctx)
         end
         local pid, dx, dy = Viewport.hit(sx, sy, H_ox, H_oy, H_s)
         if StartScreen.isOpen() and not H_SKIP_START then return 'none', dx, dy end
-        if DungeonBattleScene.isOpen()
-            or LevelUpPopup.isOpen() or PlayerInfoPanel.isOpen()
+        if DungeonBattleScene.isOpen() or PlayerInfoPanel.isOpen()
             or OfflineRewardPanel.isOpen() then
             return 'modal', dx or 0, dy or 0
         end
@@ -259,14 +260,69 @@ function Input.bind(ctx)
             and not IntroCutscene.isActive() and not ScenarioDialogue.isActive()
     end
 
+    local function levelUpInputActive()
+        return LevelUpPopup.isOpen() and not OfflineRewardPanel.isOpen()
+            and not UpdateNoticePopup.isOpen() and not DarkTitleScreen.isOpen()
+            and not LetterIntro.isOpen() and not IntroCutscene.isActive()
+            and not ScenarioDialogue.isActive()
+    end
+
+    -- 升级独占整次手势；出现时只取消下层按压，不把旧拖拽 Up 派成新按钮点击。
+    -- Popup 自管进入/退出动画的 consume；这里不判断动画阶段、不复刻它的按钮布局。
+    local levelPress, levelMoved = false, false
+    local levelStartX, levelStartY = 0, 0
+    local levelWidth, levelHeight, levelScale, levelOx, levelOy, levelDpr = 0, 0, 1, 0, 0, 1
+    ---@type integer|nil
+    local levelTouchId = nil
+    -- 同一模态下开始的副指也要吃掉其结束；主指关闭弹窗后不能把副指 Up 下放。
+    local levelTouches = {} ---@type table<number, boolean>
+
+    local function levelDown(sx, sy, button)
+        if not levelUpInputActive() then return false end
+        cancelUnderlyingPress()
+        if button == MOUSEB_LEFT then
+            levelPress, levelMoved = true, false
+            levelStartX, levelStartY = sx, sy
+            levelWidth, levelHeight = logicalW(), logicalH()
+            levelScale, levelOx, levelOy, levelDpr = RT.frameScale or 1,
+                RT.frameOx or 0, RT.frameOy or 0, dpr()
+        end
+        return true
+    end
+
+    local function levelMove(sx, sy)
+        if not levelUpInputActive() and not levelPress then return false end
+        cancelUnderlyingPress()
+        if levelPress and math.abs(sx - levelStartX) + math.abs(sy - levelStartY) >= TAP_THRESHOLD then
+            levelMoved = true
+        end
+        return true
+    end
+
+    local function levelUp(sx, sy, button)
+        if not levelUpInputActive() and not levelPress then return false end
+        cancelUnderlyingPress()
+        if button == MOUSEB_LEFT then
+            local isTap = levelUpInputActive() and levelPress and not levelMoved
+                and logicalW() == levelWidth and logicalH() == levelHeight
+                and (RT.frameScale or 1) == levelScale and (RT.frameOx or 0) == levelOx
+                and (RT.frameOy or 0) == levelOy and dpr() == levelDpr
+                and math.abs(sx - levelStartX) + math.abs(sy - levelStartY) < TAP_THRESHOLD
+            levelPress, levelMoved = false, false
+            if isTap then LevelUpPopup.handleInput(sx, sy, logicalW(), logicalH()) end
+        end
+        return true
+    end
+
     function HandleMouseButtonDownHorizon(eventType, eventData)
-        if OfflineRewardPanel.isOpen() then cancelUnderlyingPress() end
+        if OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then cancelUnderlyingPress() end
         equipmentPressPanel = nil
         detailDismissPress = false  -- [浮选详情修复] 每次按下先复位，防早退路径残留误抑制下次 tap
         if vg() then
             local mousePos = input:GetMousePosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             if CEPanel.handleDown(sx, sy, logicalH()) then
+                levelPress, levelMoved = false, false
                 if OfflineRewardPanel.isOpen() then OfflineRewardOverlay.cancel() end
                 return
             end
@@ -288,11 +344,19 @@ function Input.bind(ctx)
         end
         local button = eventData["Button"]:GetInt()
         if OfflineRewardPanel.isOpen() then
+            levelPress, levelMoved = false, false
             if offlineTouchId ~= nil then return end
             cancelUnderlyingPress()
             local mousePos = input:GetMousePosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             OfflineRewardOverlay.handleDown(sx, sy, button)
+            return
+        end
+        if levelUpInputActive() or levelPress then
+            if levelTouchId ~= nil then return end
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            levelDown(sx, sy, button)
             return
         end
         if button == MOUSEB_LEFT then
@@ -406,9 +470,6 @@ function Input.bind(ctx)
                 OfflineRewardPanel.handleDragBegin(dx, dy)
                 return
             end
-            if LevelUpPopup.isOpen() then
-                return
-            end
             if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
                 RewardPopup.handleDragBegin(dx, dy)
                 return
@@ -477,11 +538,19 @@ function Input.bind(ctx)
         if DarkTitleScreen.isOpen() then return end
         if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
         if OfflineRewardPanel.isOpen() then
+            levelPress, levelMoved = false, false
             if offlineTouchId ~= nil then return end
             cancelUnderlyingPress()
             local mousePos = input:GetMousePosition()
             local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
             OfflineRewardOverlay.handleMove(sx, sy)
+            return
+        end
+        if levelUpInputActive() or levelPress then
+            if levelTouchId ~= nil then return end
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            levelMove(sx, sy)
             return
         end
         local pid, dx, dy = HorizonResolveMouse()
@@ -526,9 +595,6 @@ function Input.bind(ctx)
                 OfflineRewardPanel.handleDragMove(dx, dy)
                 return
             end
-            if LevelUpPopup.isOpen() then
-                return
-            end
             if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
                 RewardPopup.handleDragMove(dx, dy)
                 return
@@ -539,7 +605,6 @@ function Input.bind(ctx)
         end
         if pid == 'modal' then
             if DungeonBattleScene.isOpen() then DungeonBattleScene.handleDragMove(dx, dy) return end
-            if LevelUpPopup.isOpen() then return end
             if PlayerInfoPanel.isOpen() then PlayerInfoPanel.handleDragMove(dx, dy) return end
             if OfflineRewardPanel.isOpen() then OfflineRewardPanel.handleDragMove(dx, dy) return end
             if RewardPopup.handleDragMove(dx, dy) then return end
@@ -618,7 +683,7 @@ function Input.bind(ctx)
     -- 鼠标静止时也推进装备悬停计时（Standalone.HandleUpdate 每帧调用）。
     -- 移到其他格子由命中检测立即收起旧说明。
     function HandleEquipmentHoverTickHorizon()
-        if OfflineRewardPanel.isOpen() or UpdateNoticePopup.isOpen() then return end
+        if OfflineRewardPanel.isOpen() or UpdateNoticePopup.isOpen() or LevelUpPopup.isOpen() or levelPress then return end
         if DarkTitleScreen.isOpen() or LetterIntro.isOpen() or IntroCutscene.isActive()
             or ScenarioDialogue.isActive() or pressValid or equipOverlayPress
             or EquipCrossDrag.isArmed() then return end
@@ -660,6 +725,7 @@ function Input.bind(ctx)
             OfflineRewardOverlay.cancel()
         end
         if offlineInputActive() then
+            levelPress, levelMoved = false, false
             if offlineTouchId ~= nil then return end
             cancelUnderlyingPress()
             local mousePos = input:GetMousePosition()
@@ -669,6 +735,40 @@ function Input.bind(ctx)
                 return
             end
             OfflineRewardOverlay.handleUp(sx, sy, eventData["Button"]:GetInt())
+            return
+        end
+        -- 最高模态链必须先于装备浮选/拖放/seam：CE、Update 保留原有优先级。
+        if vg() then
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            if CEPanel.handleUp(sx, sy, logicalH()) then
+                levelPress, levelMoved = false, false
+                if LevelUpPopup.isOpen() then cancelUnderlyingPress() end
+                return
+            end
+        end
+        if bootReady_() and UpdateNoticePopup.isOpen() then
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+            if fit <= 0 then fit = 1 end
+            local dx = (sx - (logicalW() - 1080 * fit) * 0.5) / fit
+            local dy = (sy - (logicalH() - 2400 * fit) * 0.5) / fit
+            UpdateNoticePopup.handleInput(dx, dy)
+            levelPress, levelMoved = false, false
+            pressValid = false
+            return
+        end
+        if LevelUpPopup.isOpen() and not levelUpInputActive() then
+            -- 标题/开场仍保留原优先级；升级捕获不得抢掉后来出现的更高层继续事件。
+            cancelUnderlyingPress()
+            levelPress, levelMoved = false, false
+        end
+        if levelUpInputActive() or levelPress then
+            if levelTouchId ~= nil then return end
+            local mousePos = input:GetMousePosition()
+            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
+            levelUp(sx, sy, eventData["Button"]:GetInt())
             return
         end
         if equipOverlayPress then
@@ -686,13 +786,6 @@ function Input.bind(ctx)
             end
             pressValid = false
             return
-        end
-        if vg() then
-            local mousePos = input:GetMousePosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
-            if CEPanel.handleUp(sx, sy, logicalH()) then
-                return
-            end
         end
         local button = eventData["Button"]:GetInt()
         local wasLootPress = lootPress
@@ -730,19 +823,6 @@ function Input.bind(ctx)
             end
         end
         if not bootReady_() then return end
-        -- [UpdateNoticePopup] 全窗模态：任意释放 = 关闭弹窗并消费事件（优先于标题/业务层）
-        if UpdateNoticePopup.isOpen() then
-            local mousePos = input:GetMousePosition()
-            local sx, sy = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
-            -- 还原 letterbox 设计坐标（同 drawUpdateNotice 的逆变换），点击任意处均可关闭
-            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
-            if fit <= 0 then fit = 1 end
-            local dx = (sx - (logicalW() - 1080 * fit) * 0.5) / fit
-            local dy = (sy - (logicalH() - 2400 * fit) * 0.5) / fit
-            UpdateNoticePopup.handleInput(dx, dy)
-            pressValid = false
-            return
-        end
         -- [DarkTitleScreen] 标题期任意释放 = 点击继续
         if DarkTitleScreen.isOpen() then
             local mousePos = input:GetMousePosition()
@@ -763,7 +843,8 @@ function Input.bind(ctx)
         if button ~= MOUSEB_LEFT then return end
         local mousePos = input:GetMousePosition()
         local seamX, seamY = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
-        local seamBtn = seamHitAt(seamX, seamY)
+        local seamBtn = not PlayerInfoPanel.isOpen()
+            and not (TowerBattleScene.isActive() and TaskPage.isOpen()) and seamHitAt(seamX, seamY)
         if seamBtn and not OfflineRewardPanel.isOpen() then
             local now = time.elapsedTime
             if now - lastTapTime >= MIN_TAP_INTERVAL then
@@ -847,10 +928,6 @@ function Input.bind(ctx)
                 if isTap then OfflineRewardPanel.handleInput(dx, dy) end
                 return
             end
-            if LevelUpPopup.isOpen() then
-                if isTap then LevelUpPopup.handleInput(dx, dy) end
-                return
-            end
             if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
                 RewardPopup.handleDragEnd(dx, dy)
                 if isTap then RewardPopup.handleInput(dx, dy) end
@@ -916,10 +993,6 @@ function Input.bind(ctx)
             if DungeonBattleScene.isOpen() then
                 DungeonBattleScene.handleDragEnd(dx, dy)
                 if isTap then DungeonBattleScene.handleInput(dx, dy) end
-                return
-            end
-            if LevelUpPopup.isOpen() then
-                if isTap then LevelUpPopup.handleInput(dx, dy) end
                 return
             end
             if PlayerInfoPanel.isOpen() then
@@ -1075,8 +1148,11 @@ function Input.bind(ctx)
     end
 
     local function handleTopTouch(eventData, released)
-        if not OfflineRewardPanel.isOpen() or offlineInputActive() then return false end
+        if not (OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() or levelTouchId ~= nil)
+            or not (UpdateNoticePopup.isOpen() or DarkTitleScreen.isOpen() or LetterIntro.isOpen()
+                or IntroCutscene.isActive() or ScenarioDialogue.isActive()) then return false end
         cancelUnderlyingPress()
+        levelPress, levelMoved = false, false
         OfflineRewardOverlay.cancel()
         if not released then return true end
         local sx, sy = offlineTouchPosition(eventData)
@@ -1095,6 +1171,17 @@ function Input.bind(ctx)
 
     function HandleTouchBeginHorizon(eventType, eventData)
         if handleTopTouch(eventData, false) then return end
+        if levelUpInputActive() then
+            cancelUnderlyingPress()
+            levelTouches[eventData["TouchID"]:GetInt()] = true
+            if levelTouchId == nil then
+                local sx, sy = offlineTouchPosition(eventData)
+                levelTouchId = eventData["TouchID"]:GetInt()
+                if vg() and CEPanel.handleDown(sx, sy, logicalH()) then return end
+                levelDown(sx, sy, MOUSEB_LEFT)
+            end
+            return
+        end
         if OfflineRewardPanel.isOpen() then
             if offlineTouchId == nil then
                 offlineTouchId = eventData["TouchID"]:GetInt()
@@ -1110,9 +1197,29 @@ function Input.bind(ctx)
     function HandleTouchEndHorizon(eventType, eventData)
         if handleTopTouch(eventData, true) then
             if eventData["TouchID"]:GetInt() == offlineTouchId then offlineTouchId = nil end
+            if eventData["TouchID"]:GetInt() == levelTouchId then levelTouchId = nil end
+            levelTouches[eventData["TouchID"]:GetInt()] = nil
+            return
+        end
+        if not OfflineRewardPanel.isOpen()
+            and (levelUpInputActive() or levelTouchId ~= nil or levelTouches[eventData["TouchID"]:GetInt()]) then
+            cancelUnderlyingPress()
+            if eventData["TouchID"]:GetInt() == levelTouchId then
+                local sx, sy = offlineTouchPosition(eventData)
+                if vg() and CEPanel.handleUp(sx, sy, logicalH()) then
+                    levelPress, levelMoved = false, false
+                else
+                    levelUp(sx, sy, MOUSEB_LEFT)
+                end
+                levelTouchId = nil
+            end
+            levelTouches[eventData["TouchID"]:GetInt()] = nil
             return
         end
         if OfflineRewardPanel.isOpen() or offlineTouchId ~= nil then
+            levelPress, levelMoved = false, false
+            if eventData["TouchID"]:GetInt() == levelTouchId then levelTouchId = nil end
+            levelTouches[eventData["TouchID"]:GetInt()] = nil
             if eventData["TouchID"]:GetInt() == offlineTouchId then
                 if offlineInputActive() then
                     local sx, sy = offlineTouchPosition(eventData)
@@ -1128,6 +1235,16 @@ function Input.bind(ctx)
     end
 
     function HandleTouchMoveHorizon(eventType, eventData)
+        if handleTopTouch(eventData, false) then return end
+        if not OfflineRewardPanel.isOpen()
+            and (levelUpInputActive() or levelTouchId ~= nil or levelTouches[eventData["TouchID"]:GetInt()]) then
+            cancelUnderlyingPress()
+            if eventData["TouchID"]:GetInt() == levelTouchId then
+                local sx, sy = offlineTouchPosition(eventData)
+                levelMove(sx, sy)
+            end
+            return
+        end
         if OfflineRewardPanel.isOpen() or offlineTouchId ~= nil then
             if eventData["TouchID"]:GetInt() == offlineTouchId and offlineInputActive() then
                 local sx, sy = offlineTouchPosition(eventData)
@@ -1152,6 +1269,16 @@ function Input.bind(ctx)
         local csx, csy = toDesign(sx, sy)
         if CEPanel.handleWheel(csx, csy, wheel, logicalH()) then return end
         if OfflineRewardOverlay.handleWheel(wheel) then return end
+        if LevelUpPopup.isOpen() or levelPress then
+            cancelUnderlyingPress()
+            return
+        end
+        -- 玩家信息高于经营/战斗页面：滚轮不能先缩放古树或命中战斗装备袋。
+        if PlayerInfoPanel.isOpen() then
+            local msx, msy = playerInfoDesignCoords(csx, csy)
+            PlayerInfoPanel.handleScroll(wheel, msx, msy)
+            return
+        end
         -- 归属面板的奖励弹窗：指针在其面板内且命中面板时滚轮滚弹窗列表
         if RewardPopup.isOpen() and not RewardPopup.currentRowTag() and RewardPopup.currentPanel() then
             local pid2
@@ -1180,6 +1307,12 @@ function Input.bind(ctx)
             end
         end
 
+        -- 塔内功绩覆盖阻断其它业务滚轮；只有左栏可滚奖励轨道。
+        if TowerBattleScene.isActive() and TaskPage.isOpen() then
+            if csx >= 0 and csx <= 486 * (logicalH() / 1080) then TaskPage.handleScroll(wheel) end
+            return
+        end
+
         -- 古树打开且指针在页面上时，滚轮只做星图缩放，不交给战斗区
         if TalentPage.isOpen() then
             syncTalentPageLayout()
@@ -1194,9 +1327,6 @@ function Input.bind(ctx)
         -- 全局领奖 / 离线收益覆盖三栏时先消费滚轮，不能被中栏装备袋抢走。
         if OfflineRewardPanel.isOpen() then
             OfflineRewardPanel.handleScroll(wheel)
-            return
-        end
-        if LevelUpPopup.isOpen() and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
             return
         end
         if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
@@ -1218,7 +1348,6 @@ function Input.bind(ctx)
         -- 全屏战斗场景
         if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end
         -- 全屏弹窗
-        if LevelUpPopup.isOpen() then return end
         if OfflineRewardPanel.isOpen() then OfflineRewardPanel.handleScroll(wheel) return end
 
         -- [按鼠标位置路由] 滚轮作用于鼠标所在的面板（左右面板可同开二级页，

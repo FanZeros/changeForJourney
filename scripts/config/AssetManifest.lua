@@ -544,7 +544,7 @@ return {
     { "image/角色卡牌/KP_YX_7.png", 452561 },
     { "image/角色卡牌/KP_YX_8.png", 470941 },
     { "image/spine/UI_SPINE_KPTX.png", 361691 },
-    { "image/角色卡牌/KP_YX_11.png", 480246 },
+    { "image/角色卡牌/KP_YX_11.png", 739901 },
     { "image/角色卡牌/KP_YX_9.png", 446086 },
     { "image/角色卡牌/KP_YX_21.png", 437536 },
     { "image/界面底板/通用面板/UI_BB_BJ.png", 872683 },

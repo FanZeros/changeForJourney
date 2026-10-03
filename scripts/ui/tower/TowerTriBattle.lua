@@ -693,7 +693,7 @@ function TowerTriBattle.draw(vg, logicalW, logicalH)
     TowerTriBattle.init(vg)
     BattleLayout.setMode("strip")
 
-    BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
+    BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, "image/战斗背景/通天塔.png")
     BattleTriPage.drawL0(vg, logicalW, logicalH)
 
     local contentScale = 1.0

@@ -44,8 +44,9 @@ local isOpen_ = false
 local inited = false
 local drivers = {}        -- [1]/[2]/[3] = BattleTriDriver
 local terminalRaid = nil
-local l1Img = {}          -- [row] = nvg image handle
-local l1Chapter = {}      -- [row] = 已加载的地图章 1..23
+local l1Images = {}       -- 同一路径共用句柄，切场景不删除其他行仍在使用的贴图
+local l1Failures = {}     -- 加载失败只提示一次，后续帧仍允许重试
+local l1RowImages = {}    -- 跨章图尚未就绪时保留本行最近成功加载的背景
 local triOnKill = nil     -- function(data)（由宿主注入，与 BattleScene.onEnemyKill 同构）
 local triOnDrop = nil     -- function(data)（击杀掉落，与 BattleScene.onEnemyDrop 同构）
 local triOnStageClear = nil -- function(teamIdx, clearedStageId)
@@ -266,22 +267,76 @@ function BattleTriPage.mountEmpty()
     SEM.mount(emptyStates.sem)
 end
 
-local function ensureRowBg(vg, row, unlocked)
-    -- 保留锁队第10/20章预览；已解锁行仍取自己的驱动关卡，不被主线前进覆盖。
-    local stageId = row > unlocked and ((row == 2) and 1001 or 2001)
-        or BattleTriPage.getTeamStageId(row)
-    local path, chapter = StageConfig.getBattleBackground(stageId)
-    if l1Img[row] and l1Chapter[row] == chapter then
-        return l1Img[row]
-    end
-    if l1Img[row] and l1Img[row] >= 0 then
-        nvgDeleteImage(vg, l1Img[row])
-    end
+-- 章 1 用现有林景；2–23 用按章重出的满幅背景。难度章按 23 循环。
+local CHAPTER_BG = {
+    [1]  = "image/暗黑/L1_row1_forest.png",
+    [2]  = "image/战斗背景/幽烬林地.png",
+    [3]  = "image/战斗背景/哑雾沼泽.png",
+    [4]  = "image/战斗背景/巨木之冢.png",
+    [5]  = "image/战斗背景/哀嚎沙丘.png",
+    [6]  = "image/战斗背景/蚀骨荒漠.png",
+    [7]  = "image/战斗背景/焦土平原.png",
+    [8]  = "image/战斗背景/断魂裂谷.png",
+    [9]  = "image/战斗背景/蛊语山洞.png",
+    [10] = "image/战斗背景/悬魂瀑布.png",
+    [11] = "image/战斗背景/霜噬雪岭.png",
+    [12] = "image/战斗背景/沉眠冰原.png",
+    [13] = "image/战斗背景/血晶溶洞.png",
+    [14] = "image/战斗背景/枯枫遗迹.png",
+    [15] = "image/战斗背景/烬暮湖畔.png",
+    [16] = "image/战斗背景/废弃营地.png",
+    [17] = "image/战斗背景/古代遗迹.png",
+    [18] = "image/战斗背景/沉没神殿.png",
+    [19] = "image/战斗背景/哭泣峭壁.png",
+    [20] = "image/战斗背景/恶灵岔路.png",
+    [21] = "image/战斗背景/遗忘墓穴.png",
+    [22] = "image/战斗背景/亡灵墓穴.png",
+    [23] = "image/战斗背景/烛龙之巢.png",
+}
+
+local TERMINAL_BG = "image/战斗背景/终焉神殿.png"
+
+--- 只解析展示资源，不改变关卡或战斗状态。
+---@param stageId number|string|nil
+---@return string
+function BattleTriPage.resolveBackgroundPath(stageId)
+    local id = tonumber(stageId) or 0
+    if StageConfig.isTerminalTemple(id) then return TERMINAL_BG end
+    local entry = StageConfig.getStage(id)
+    local chapter = (entry and entry.chapter) or 1
+    return CHAPTER_BG[((chapter - 1) % 23) + 1] or CHAPTER_BG[1]
+end
+
+local function getBackgroundImage(vg, path)
+    local cached = l1Images[path]
+    if cached then return cached end
     local img = nvgCreateImage(vg, path, 0) or -1
-    l1Img[row] = img
-    l1Chapter[row] = chapter
-    print(string.format("[BattleTriPage] row %d bg chapter %d -> %s (%d)", row, chapter, path, img))
+    if img >= 0 then
+        l1Images[path] = img
+        l1Failures[path] = nil
+        print(string.format("[BattleTriPage] 背景加载 -> %s (%d)", path, img))
+    elseif not l1Failures[path] then
+        l1Failures[path] = true
+        print("[BattleTriPage] 背景加载失败 -> " .. path)
+    end
     return img
+end
+
+local function ensureRowBg(vg, row, unlocked)
+    -- 锁定队展示待解锁章节；解锁后按各队实际战斗进度切回背景。
+    ---@type string
+    local path
+    if row > unlocked then
+        path = CHAPTER_BG[row == 2 and 10 or 20]
+    else
+        path = BattleTriPage.resolveBackgroundPath(BattleTriPage.getTeamStageId(row))
+    end
+    local image = getBackgroundImage(vg, path)
+    if image >= 0 then
+        l1RowImages[row] = image
+        return image
+    end
+    return l1RowImages[row] or image
 end
 
 function BattleTriPage.init(vg)
@@ -385,9 +440,13 @@ function BattleTriPage.drawL0(vg, logicalW, logicalH)
 end
 
 --- L1 行内容背景垫底层（clip 到框内矩形; 锁定行加暗罩）——绘制于 L0 之前
-function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
+---@param fixedBgPath string|nil 塔等独立场景使用固定背景，不读取主线行状态
+function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, fixedBgPath)
     BattleTriPage.init(vg)
-    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
+    local unlocked = COL_COUNT
+    if not fixedBgPath then
+        unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
+    end
     for row = 1, COL_COUNT do
         local ix, iy, iw, ih = interiorRect(row, logicalW, logicalH)
         nvgSave(vg)
@@ -395,10 +454,26 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH)
         -- L1 cover-fit
         local s = math.max(iw / 1896, ih / 720)
         local dw, dh = 1896 * s, 720 * s
-        local bg = ensureRowBg(vg, row, unlocked)
-        local zoom, alpha = 1, 1
-        local drv = row <= unlocked and drivers[row] or nil
-        if drv then zoom, alpha = drv:getMarchBackground() end
+        local bg = fixedBgPath and getBackgroundImage(vg, fixedBgPath)
+            or ensureRowBg(vg, row, unlocked)
+        local zoom, alpha, nextBgStageId = 1, 1, nil
+        local drv = not fixedBgPath and row <= unlocked and drivers[row] or nil
+        if drv then zoom, alpha, nextBgStageId = drv:getMarchBackground() end
+        -- 先铺不透明的新背景，再画放大淡出的旧背景；同章复用同一有效句柄。
+        if nextBgStageId then
+            local nextBg = getBackgroundImage(vg, BattleTriPage.resolveBackgroundPath(nextBgStageId))
+            if nextBg and nextBg >= 0 then
+                local paint = nvgImagePattern(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5,
+                    dw, dh, 0, nextBg, 1)
+                nvgBeginPath(vg)
+                nvgRect(vg, ix, iy, iw, ih)
+                nvgFillPaint(vg, paint)
+                nvgFill(vg)
+            else
+                -- 下层未就绪时旧图保持原尺寸和不透明，切关回退也不会缩闪。
+                zoom, alpha = 1, 1
+            end
+        end
         -- 以可见战场的右侧中心为锚点，不按 cover 图片被裁掉的边缘定位。
         local pivotX, pivotY = ix + iw, iy + ih * 0.5
         local bgX = pivotX + (ix + (iw - dw) * 0.5 - pivotX) * zoom
@@ -504,10 +579,17 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgText(vg, ix + 28, iy + 25, stageText, nil)
         end
         nvgRestore(vg)
-        -- 前进提示独占顶部第二行，避开右上速度/扫荡等按钮。
-        if not terminalRaid and row <= unlocked and drivers[row] and drivers[row].marchNotice then
+        -- 前进提示复用底部进度说明位置，字号和留白随战斗行高度缩放。
+        local marching = not terminalRaid and row <= unlocked and drivers[row] and drivers[row].marchNotice
+        if marching then
+            local noticeScale = math.min(1, ih / 360)
+            nvgSave(vg)
+            nvgIntersectScissor(vg, ix, iy, iw, ih)
+            nvgFontSize(vg, 22 * noticeScale)
+            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
             nvgFillColor(vg, nvgRGBA(255, 230, 160, 255))
-            nvgText(vg, ix + 28, iy + 55, "正在前进中", nil)
+            nvgText(vg, ix + iw * 0.5, iy + ih - 26 * noticeScale, "正在前进中", nil)
+            nvgRestore(vg)
         end
 
         -- [终焉协同] 每行底部进度条替换为共享生命池（绯红），行1 附加数值与倒计时
@@ -556,9 +638,10 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             local pctShown = math.floor(ratio * 100 + 0.5)
             local pctText = string.format("%d%%", pctShown)
             local barW = math.min(iw * 0.62, 280)
-            local barH = 10
+            local progressScale = marching and math.min(1, ih / 360) or 1
+            local barH = 10 * progressScale
             local barX = ix + (iw - barW) * 0.5
-            local barY = iy + ih - 8
+            local barY = iy + ih - 8 * progressScale
             nvgBeginPath(vg)
             nvgRoundedRect(vg, barX, barY, barW, barH, 5)
             nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
@@ -569,10 +652,12 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
                 nvgFillColor(vg, nvgRGBA(196, 148, 72, 230))
                 nvgFill(vg)
             end
-            nvgFontSize(vg, 16)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
-            nvgText(vg, ix + iw * 0.5, barY - 12, I18n.format("关卡进度 %s", pctText), nil)
+            if not marching then
+                nvgFontSize(vg, 16)
+                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+                nvgFillColor(vg, nvgRGBA(236, 226, 198, 255))
+                nvgText(vg, ix + iw * 0.5, barY - 12, I18n.format("关卡进度 %s", pctText), nil)
+            end
         end
 
         if row <= unlocked and drivers[row] and #drivers[row].allies == 0 then

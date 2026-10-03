@@ -2,6 +2,13 @@
 
 > 强化记忆：以下规则在每轮任务中必须遵守。**每轮开始工作前先重读本节。**
 
+### PR40冲突修复（2026-10-03）
+
+- 用户明确要求处理PR #40冲突；从其来源 `integrate/stage-select-background-20261003@827d0157` 新建 `fix/pr40-stage-background-conflicts-1003`，合入最新目标 `workspace930@d204d227`，不直接推目标或合并PR。
+- 两处冲突：本文件记录双保留；BattleTriPage整文件保留最新目标，共享路径缓存/终焉及通天塔独立背景/单向放大淡出/加载失败跨切关恢复完全不变。PR40的StageConfig23章映射继续供选关卡片使用，避免恢复旧逐行删图缓存；当前三行绘制与目标逐字节一致。
+- 回归：选关背景417、行军324、队伍解锁115、切关、终焉、多语言显示均ALL PASS；独立只读核验无新增阻塞。真实选关七章背景150帧PASS、Lua/资源/引擎错误0，截图已查看，临时入口/meta已删除；仅简中直接面板视觉，非设备完整操作或性能验收。
+- 完成后仅快进推送至PR40原来源分支，保留修复分支；本地.project身份/运行设置、截图、平台技能目录删除不提交。先实际简报，再真正调用AskUserQuestion，凭据不进入配置或记忆。
+
 ### 选关章节背景接入（2026-10-03）
 
 - 用户在 **AskUserQuestion** 选择“接入选关背景（推荐）”，从最新 `workspace930@4c8fef0` 新建 `integrate/stage-select-background-20261003`，接入旧候选 `48a6cf3` 功能而不整文件覆盖、不合并旧记忆冲突。仅提交推送新分支，不推workspace系列、不自动创建或合并PR，完成后真实简报并真正调用 **AskUserQuestion**。
@@ -9,6 +16,36 @@
 - 专项扩展417断言ALL PASS（全章节映射、14终焉、缓存/缺图恢复/尺寸回退/句柄0、真实五语词典及原点击路径），使用绘图spy不当成设备验收。首跑五语失败因spy未模拟生产翻译出口，修正测试边界后通过，生产翻译逻辑未改。行军42（含锁队10/20和各队前进）、队伍解锁115、切关与多语言显示20回归ALL PASS；规范检查器36测试通过。真实选关面板150帧PASS，Lua/资源/引擎错误0、无缺图，七章背景截图已查看；仅简中直绘面板，不声称全设备/五语视觉验收或性能通过。独立只读复核未发现新增问题；临时验收入口/meta已清理，原专项UUID保留。本地.project重绑定配置、截图不提交。
 
 - 用户随后在 **AskUserQuestion** 选择创建PR，首次多次创建请求超时且只读核查均无PR；用户明确要求重新尝试后，先查重再创建成功。**PR #40**：https://github.com/FanZeros/changeForJourney/pull/40，head=`integrate/stage-select-background-20261003`、base=`workspace930`，返回open、merged_at=null；功能提交 `1f09ce8`。未自动合并，创建授权不延伸为合并授权，交付后仍真正调用 **AskUserQuestion**。凭据不持久化。
+
+### 战斗行军背景与下方居中提示（2026-10-03）
+
+- 本轮基线 `workspace930@9e0777f5`，项目直接检出到 `/workspace` 根，新建 `feat/battle-travel-crossfade-20261003`。仅提交推送本任务分支，不推 workspace 系列，不擅自创建或合并 PR；本地官方 build 生成的 `.project` 身份与运行配置不提交。
+- 用户流程再次强化：持续推进已授权任务，不擅自取消或放弃；每阶段完成或确需用户决定的阻塞，先如实简报，再真正调用 **AskUserQuestion** 给 2–4 个明确下一步选项。尊重用户后续停止指令、权限拒绝与安全边界。PAT 仅即时鉴权，不持久化到文件、源码、Git 配置或记忆。
+- 三行主战斗显示层改动：原 `sin(progress*pi)^2` 放大后缩回，改为两秒行军前65% smoothstep 单向放大到106%、后35%保持峰值并透明淡出；先绘不透明的目标背景下层，再叠旧图。同章复用图片句柄、跨章按本队 stageId 推导，不读已提前同步的主线下一关；终焉等待确认与无下一关都用当前背景承接。固定通天塔路径仍完全隔离主线行军，未改变推进、战斗、奖励、存档或国际化词条。
+- “正在前进中”在每行下方居中，行军期间替代底部百分比说明但保留进度条，入场结束恢复百分比文字；字号/底距及行军条高度按行高缩放，避开卡面。下一张图未就绪时保持旧图原尺寸且不透明（不进行该次缩放淡出），切关后仍失败时保留本行最近有效背景，恢复后再用实际目标图；不删除共享句柄。
+- 官方最终 build 成功，三个修改 Lua 与 dist 产物逐字节相同，逐文件 LSP 无 Error；全工作区汇总另有41条Error，均位于本轮未改文件，不宣称全仓静态检查干净。最终四套 Runtime 均 exit0 且 ALL PASS：行军专项324断言（曲线200采样、同图/跨章双层、失败跨切关恢复、三行文字/多尺寸/五语、真实tick跨章边界）、切关、终焉协同、解锁115。仓库规范检查器36测试通过，暂存树2610路径0错误0警告。
+- 验证边界：绘图记录器与几何检查不等于真实设备像素/可读性验收；无头 Runtime 有音频输出初始化与显式跳过shader编译的环境错误，未称图形音频通过。真实 main 无头限时25秒观察到boot18/18并解锁标题，外部限时exit124，不称完整实机流程通过。补测首轮持续失败断言用错前章旧图，修正fixture先绘205后全套复跑通过，不隐瞒该失败。
+- 独立复核指出的小尺寸压卡、测试空通过及加载失败跨切关缩闪已修并补回归；折行文字改为完整记录器桩。尚未把队一主线同步全两秒与实际图片加载失败场景当成实机联合验证。交付完成后简报真实结果并以 **AskUserQuestion** 选项交接，不能用普通文本问题收尾。
+
+### 宝箱修复 PR 交接（2026-10-03）
+
+- 用户通过 **AskUserQuestion** 选择“创建修复 PR（推荐）”，已创建 **PR #39**：https://github.com/FanZeros/changeForJourney/pull/39 ，head=`fix930/chest-reward-display-20261003`、base=`workspace930`，标题“修复神器宝箱开启动画与横屏获得结果展示”。创建返回open、draft=false、merged=false，mergeable尚未计算；创建时来源1848f65d、目标已由外部更新至1f5ba88e，未擅自推/合基线。
+- PR说明附成功回包/坐标/逐件动画修复、12套回归/1168专项、官方build、规范36测试、独立复核无新增阻塞，并明确披露无实机像素/音频验收、修前新test未跑、原onItemClick未接入以及旧面板外关闭等边界。
+- 独立只读复核已完成：主入口与全部输入始终Horizon，固定设计frame使panel=left不走旧竖屏漏绘，回包字段正确，tri/tower side单次变换与分层成立，未确认新缺note阻塞。未把独立只读核查称为另一次Runtime测试。
+- 本次仅更新记忆交接，不改Lua，不重复build；只push新修复分支，不自动合并PR，实际CI/冲突状态以最新GitHub结果为准。交付后真正调用 **AskUserQuestion** 继续，凭据和本地.project生成配置不提交。
+
+### 宝箱开启动画与获得结果显示修复（2026-10-03）
+
+- 用户反馈“宝箱开启没有任何动画没有任何结果显示”，明确本轮修开启后的获得动画/结果，不擅自增加神器详情交互。新分支 `fix930/chest-reward-display-20261003` 已快进到最新 `workspace930@4c8fef0e`；PR36、32及角色栏、章节背景、锻炉层级、神器宝箱开放等已由外部操作合入930，本会话未执行这些合并。
+- 真实成功链ChurchResults→ChurchArtifactDrawPanel→RewardPopup仍在；PR34仅取消噩梦门槛，PR36未删奖励回包。旧面板归属奖励helper在三行末尾离开Viewport后仍对left/right裸调用drawRegion，图标可画到1080窗外；普通侧栏drawRegion另加regionTransform而输入只逆Viewport，显示/点击错位。这是旧基线已有问题，不能称国际化引入。
+- 修复非row奖励统一使用设计坐标drawContent：普通side保持所属Viewport；三行/tower外绘按本帧beginFromNote恢复同面板变换，保留父frame/DPR和clip，center保持全窗letterbox；tower跳过被下层覆盖的前绘并收尾一次。row奖励仍drawRegion/handleInputRegion配对不改。
+- 神器宝箱成功明确opts.panel=left、cascade=true，不依赖三行旧focus中心状态，单抽/十连启用共享逐件获得动画并保留提示。首次动画未完点击只skip、后续点击close，未增加onItemClick/改神器名/数值/抽取概率/支付/发奖/存档；不存在原有详情callback，不虚称恢复它。
+- 新 `tests/chest_reward_horizon_test.lua` 用真实Horizon/Viewport/RewardPopup/ChurchResults/DrawPanel及真实cascade，仅旁页/底层NanoVG/神器图标绘图为spy，完整仿射矩阵与clip冻结模拟。官方build后45用例1168断言ALL PASS、exit0：真实来源1/10件tri/ordinary/tower早期/末尾、默认focuscenter显式left、标题/实例/数目、非零动画、实际可见交集、首击skip后二击close、共享left/right/center/nil/frame/DPR1/2/3 callback投射、row配对隔离。可选callback用独立共享API测试，不冒称教堂原有详情。
+- 最终12套Runtime全部exit0+ALL PASS：新专项1168、锻炉层级46、神器直接开放438、离线覆盖487、离线加速1194、教程横屏356/触发31/领取241、装备手势44/快装78、关键词7071、切关。现有forge层级test仅spy入口改drawContent，原断言意义保持。新test修前未运行，未声称修前FAIL；本轮无截图/真设备帧率音频验收，不能把绘图spy当真像素。
+- 官方最终build成功，4份变更Lua与构建产物逐字节匹配，新test meta由官方生成，原UUID/图片/共享配置/神器业务服务未改。修改Lua文件LSP无Error；全工作区既有诊断不混修。源码/资源直接在/workspace根，本地.project身份/设置及平台skills未暂存删除不提交。
+- 修复提交 `cebc29480f07969a7e5a0cd8c6a49063e3a04015` 已推至 `fix930/chest-reward-display-20261003`；远端930仍4c8fef0e，当前快照可干净合并。规范2605路径0错误0警告及检查器36测试通过；当前预览使用已重建修复代码。未自动创建/合并PR。
+- 完成后仅提交推送新修复分支，不推workspace系列、不自动创建/合并PR；凭据不写入文件/远端/配置/记忆。实际简报后真正调用 **AskUserQuestion** 提供下一步选项，持续推进授权任务、尊重用户后续停止及权限拒绝。
+
 
 ### 国际化整合 PR 交接（2026-10-03）
 

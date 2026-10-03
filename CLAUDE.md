@@ -11,6 +11,25 @@
 3. **在本记忆中持续强化此规则**：每轮结束更新「上次做了什么」，并保留本节铁律不被覆盖。
 4. **分支纪律**：以当轮指定基线新建任务分支，完成后只 push 新分支；本轮基线为 `feat930/equipment-attribute-preview`，**绝不推送到任何 `workspace` 系列或原基线分支**，通过 PR 交由用户审阅合入。
 
+## 上次做了什么（2026-10-03，暗铁骨白代码图标正式接入）
+
+- 用户审核通过85编号图标、124间隙及正六边形后明确授权“实装下，然后提PR”；基于最新 `workspace930@9e0777f5` 新建 `feat930/dark-talent-glyphs-1003`，仅导入审核绘制代码，不带旧连线编辑器或旧关键词提交。
+- 新正式模块 `ui/widget/TalentGlyph.lua` + Contours/Extra：星图节点和详情按icon编号/st/color选择符号，不靠名称分类；移除审核绘制器对StarMap的反向依赖，避免循环加载。保留暗铁骨白、无底盘星纹、四层正六边形和124爱心加号间隙。
+- alpha乘入所有颜色/渐变，不修改NanoVG全局alpha，外层页面/弹窗动画继续生效；零alpha不绘制。最新209节点位置、名称、效果、icon和邻接与930逐字节一致，最新关键词国际化完全未改。
+- 验证：官方Build成功；85编号/209节点/6配色/3形状1254次绘制覆盖、四层实际路径等边、名称解耦、真实详情接线和alpha回归ALL PASS；关键词、天赋国际化、战斗切关均ALL PASS。真实古树＋详情＋124小尺寸＋正六边形页面150帧PASS，Lua/资源/引擎错误0；已读实际截图，截图仅本地 `assets/image/_review/talent-icons-1003/installed-star-map.png`，临时视觉入口及meta已清理并重建。
+- 独立只读复核无新增明确阻塞。LSP接口缓存仍引用编辑中已替换的旧DarkIcon/rgba代码，官方Build与Runtime确认执行新代码；不宣称全仓缓存静态清洁。仍需用户在实际设备验收鼠标交互/动画和观感。
+- 已推送 `feat930/dark-talent-glyphs-1003`，功能提交 `b23be33f`；正式 **PR #41** 已创建：https://github.com/FanZeros/changeForJourney/pull/41，base=`workspace930`、draft=false、open、merged=false。未推基线、未自动合并，PR不包含旧编辑器；凭据仅即时请求/子进程环境使用，不落配置，每次实际交付后以AskUserQuestion询问下一步。
+
+## 上次做了什么（2026-10-03，4个特殊场景背景实装）
+
+- 用户授权实装终焉神殿、黄金矿洞、上古遗迹、通天塔4张候选；从已包含23章重绘的 `646bb1cf` 新建本地 `feat930/special-background-preview-20261003`。23章背景分支已推送，PR #35：https://github.com/FanZeros/changeForJourney/pull/35；本轮不自动推送或合并。
+- 矿洞/遗迹替换 `MAP_FB1/2.png`（1080×2400），原meta不动；终焉/塔新增 `image/战斗背景/终焉神殿.png`、`通天塔.png`（1896×720）及独立meta，候选图只供审阅不入包。MAP999剧情、旧MAP_FB3、L0石框、23章正式PNG保持原样。
+- `BattleTriPage.resolveBackgroundPath` 用 `StageConfig.isTerminalTemple` 识别14座终焉，不再把chapter0映射为23；`drawL1Underlay` 可选固定路径供 `TowerTriBattle.draw` 使用，固定图不读取主线解锁/进度/行进状态。背景按路径缓存有效句柄，切章/终焉/塔时不删除其他行和全局缓存仍共享的句柄，失败不缓存且只日志一次、允许后续恢复。未改driver、胜负、奖励、队伍规则或存档。
+- 官方Build成功（manifest-origin.b169，416 Lua），4张正式背景与候选逐字节入包一致，3个改动Lua与部署产物一致；LSP接口汇总0 Error。官方Build的LSP daemon不可用、守卫跳过，不宣称守卫通过；旧1080×2400地图仍有平台压缩超限警告，原始PNG入包已核验，不宣称移动端压缩全绿。
+- 回归：`journey_visual_test` 扩展到73断言ALL PASS（15难度映射/14终焉/固定塔图隔离/失败恢复/返回主线/共享句柄），终焉52、切关74、解锁115均退出0；主入口headless135帧原始PASS、Lua/资源/引擎错误均0。测试为逻辑与绘制记录器验证，不代替真实视觉；预览应完全重启，检查矿洞/遗迹二次压暗、终焉门顶裁切与塔内叠卡。
+- 用户随后授权提交独立分支并开PR；本轮另新增 `docs/游戏背景画风与提示词规范.md`，单独记录GPT Clean组织顺序、重黑而非整体压暗、简洁色面与杂色清理、参考图分工、可复用模板、27个主题辨识点及尺寸/入包/实机验收规则。23章提交已在远端workspace930，特殊背景PR面向该分支，不重复提交候选或本地配置。
+- 仅改2个正式Lua、1个现有测试及4张图；本地构建配置和身份不提交。尊重当轮授权，不推workspace系列或自动合并PR；每次交付先简报，再AskUserQuestion等用户决定。凭据不进源码或记忆。
+
 ## 上次做了什么（2026-10-03，23章背景重绘与预览部署）
 
 - 本轮用户指定 `workspace930@8d3e62fe` 为基准；已建立本地任务分支 `feat930/chapter-background-preview-20261003`。源码、资源与 Git 位于 `/workspace` 根。未推送或合并基线。

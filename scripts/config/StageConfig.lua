@@ -363,7 +363,7 @@ function SC.getStage(id)
     return idIndex[id]
 end
 
--- 三行战斗与选关卡片共用现有23章背景，资源路径不随显示语言变化。
+-- 选关卡片的23章背景映射，资源路径不随显示语言变化。
 local CHAPTER_BG = {
     [1]  = "image/暗黑/L1_row1_forest.png",
     [2]  = "image/战斗背景/幽烬林地.png",

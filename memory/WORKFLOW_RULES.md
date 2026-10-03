@@ -15,6 +15,7 @@
 - 新专项`awakening_stage_query_test.lua`最终579断言 ALL PASS、exit0：全部8种原生阶段组合、128种旧节点组合、新阶段范围/迁移标记/非连续数据/输入不变、五角色helper门槛、正式TAL老六/大肥鱼/加载中/高ping路径、目标血量下降分支现有系数不变。塞拉54断言、关键角色战斗20断言、旧永久成长等价和切关回归全部通过。官方Build最终成功427Lua资源含新专项；主入口35秒18/18初始化完成，exit124为外部限时结束，不声称实机视觉通过。修改文件LSP无Error，有测试类型推导warning；全仓缓存47既有Error未混修。
 - 保留范围边界：哈基米正式治疗分发仍被AfterAttack非healing外层挡住，本轮仅改其潜伏阶段查询、helper验证，不宣称恢复功德闭环；老六0.08档位与偷克制字段消费未修；高ping生命比例下降50%现阶段仍属I，虽DATA列II，本轮保留不调平衡；潮湿critVuln实际暴击公式消费未扩查。旧碎片迁移、丢标记及非连续UI候选不混修。旧技能探针对`AC.hasNode(I,2/3)`返回true的观察仍是兼容语义，不作为本批修复失败。
 - `.project`生成身份/设置变化只留本地，不入提交；凭据不进入Git远端/配置/文件/记忆。提交推送结果以实际Git输出为准。
+- 已推送功能提交 `64605df`（上一批塞拉为`cb85275`）。用户随后明确选择“创建修复PR”，已创建 **PR #30**：https://github.com/FanZeros/changeForJourney/pull/30 ，head=`fix1003/awakening-stage-query`、base=`workspace930`，open且未合并。创建时比较为ahead2/behind10，包含两修复提交，不擅自同步或推基线。下一步仍真实简报后调用 **AskUserQuestion** 决定；创建许可不扩展为自动合并许可。
 
 ### 塞拉连射任务交接（2026-10-03）
 

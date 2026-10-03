@@ -60,6 +60,14 @@ python3 .github/scripts/repository_policy.py --base origin/workspace930
 - 本轮只增加 workflow，不修改 GitHub 分支保护。因此检查会显示结果，但尚不强制阻止管理员合并；保护规则需要另行授权。
 - 不默认强制他人审批：单协作者不能批准自己的 PR。持续保留已有 GitHub secret scanning 和 push protection。
 
+## 选关章节卡片使用实际关卡背景（2026-10-03）
+
+- 用户要求「地名＋第几章」卡片背景改为该章实际关卡背景，不改整个弹窗底板。基于 `workspace930@eec2a976` 新建 `feat930/stage-select-chapter-background-1003`，本轮只推独立分支，不推 workspace 系列，不默认合并 PR。
+- `StageConfig.getBattleBackground` 提取原三行页23章映射，三行与选关共用；高难度继续23章循环，终焉保持既有三行第23章背景，不擅改战斗画面。章节图等比cover居中填入原190×84圆角卡片，保留章名/绝对章号、锁定图标/灰蓝文字、金色选中框及原点击/滚动逻辑。
+- 图片按路径缓存，跨难度复用；失败底色兜底并2秒限频重试，初始化清理缓存句柄。新回归覆盖345章、14终焉、圆角/比例/居中、图片失败恢复及原跳关，402断言通过；切关、终焉协同、推荐战力、横屏离线覆盖层4项回归均ALL PASS（离线覆盖层487断言）。修改Lua的LSP无Error，官方Build成功。
+- 已用真实字体/素材离屏截图检查：七张章节卡片各显示对应景色，圆角和金框正常，标题/章号清晰；临时视觉脚本清理后不提交、不入最终包。源资源只复用，不新增美术文件或改既有UUID。
+- 用户协作要求持续强化：已授权任务持续推进，遇到权限拒绝或后来停止要求应尊重；每次完成先简报，再真正调用 **AskUserQuestion** 提供2–4个下一步选项，禁止普通文字问题收尾。凭据与当前工作区构建身份仅本地即时使用，不进提交或长期记忆。
+
 ## 装备套装徽记去框（2026-10-03）
 
 - 用户已自行处理 PR #19（远端确认已合并）；基于 `workspace930@c7cff542` 新建 `feat1003/equipment-set-badge-frameless`，功能提交 `61c63244` 已推送，PR #20：https://github.com/FanZeros/changeForJourney/pull/20，目标 `workspace930`，未自动合并，不推基线。

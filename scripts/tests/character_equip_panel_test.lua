@@ -1,17 +1,18 @@
--- 配装下部回归：纯 NanoVG 绘图探针，不依赖字体/贴图或存档。
+-- 属性页/配装下部回归：真实共享模块 + 纯 NanoVG 绘图探针，不依赖字体/贴图或存档。
 function Start()
     local originalRequire, originalTime = require, time
     local savedGlobals, textCalls, paths, rects, scissorCalls, imageCalls = {}, {}, {}, {}, {}, {}
-    local function run()
-    local color, fillColor, strokeColor, path = {}, {}, {}, {}
-    local fontSize, strokeWidth = 0, 0
     local count = 0
     local function check(value, message)
         assert(value, message)
         count = count + 1
     end
+    local function run()
+    local color, fillColor, strokeColor, path = {}, {}, {}, {}
+    local fontSize, strokeWidth, textAlign = 0, 0, 0
     local function hook(name, fn)
-        if savedGlobals[name] == nil then savedGlobals[name] = _G[name] end
+        -- 用包装表保留原本为nil的全局，重复hook也不能覆盖最初快照。
+        if savedGlobals[name] == nil then savedGlobals[name] = { value = _G[name] } end
         _G[name] = fn
     end
     local function noop() end
@@ -41,9 +42,13 @@ function Start()
     hook("nvgFill", function() path.fill = fillColor end)
     hook("nvgStroke", function() path.stroke = strokeColor; path.strokeWidth = strokeWidth end)
     hook("nvgClosePath", function() path.closed = true end)
-    hook("nvgTextBounds", function(vg, x, y, value) return utf8.len(tostring(value)) * 16 end)
+    -- 测量随字号缩放，长雷达数值检查才能验证实际拟合后的边界。
+    local function textWidth(value, size) return (utf8.len(tostring(value)) or 0) * 16 * size / 27 end
+    hook("nvgTextBounds", function(vg, x, y, value) return textWidth(value, fontSize) end)
+    hook("nvgTextAlign", function(vg, align) textAlign = align end)
     hook("nvgText", function(vg, x, y, value)
-        textCalls[#textCalls + 1] = { x = x, y = y, value = tostring(value), color = color, fontSize = fontSize }
+        textCalls[#textCalls + 1] = { x = x, y = y, value = tostring(value), color = fillColor,
+            fontSize = fontSize, align = textAlign, width = textWidth(value, fontSize) }
     end)
     hook("nvgBeginPath", function() path = {}; paths[#paths + 1] = path end)
     hook("nvgMoveTo", function(vg, x, y) path[#path + 1] = { x, y } end)
@@ -84,6 +89,7 @@ function Start()
         ["ui.widget.EquipmentSetIcon"] = { draw = function() return false end },
         ["core.DrawUtil"] = { drawTextStroke = function(vg, x, y, value, size, align, r, g, b)
             nvgFontSize(vg, size)
+            nvgTextAlign(vg, align)
             nvgFillColor(vg, nvgRGBA(r or 255, g or 255, b or 255, 255))
             nvgText(vg, x, y, value)
         end },
@@ -137,6 +143,11 @@ function Start()
     local function rendered(value)
         for _, call in ipairs(textCalls) do if call.value == value then return call end end
         return nil
+    end
+    local function requiredText(value)
+        local call = rendered(value)
+        check(call ~= nil, "绘图文本存在：" .. value)
+        return call or error("绘图文本缺失：" .. value)
     end
     local function clearDraw() textCalls, paths, rects, scissorCalls, imageCalls = {}, {}, {}, {}, {} end
     local function draw() clearDraw(); Panel.draw({}, 1, { equipSlot = requestedSlot }) end
@@ -195,21 +206,35 @@ function Start()
 
     check(Draw.drawAttributeRows == Stats.drawAttributeRows and Stats.drawAttributeRows == Shared.drawAttributeRows,
         "两页调用同一个drawAttributeRows而非复制属性行")
-    check(Draw.ATTRIBUTE_STYLE == Stats.ATTRIBUTE_STYLE and Shared.STYLE.rowH == 60
-        and Shared.STYLE.rowStep == 69, "共用属性行风格对象60高69步长")
+    check(Draw.ATTRIBUTE_STYLE == Shared.ATTRIBUTE_STYLE
+        and Stats.ATTRIBUTE_STYLE == Shared.STYLE and Draw.ATTRIBUTE_STYLE ~= Stats.ATTRIBUTE_STYLE
+        and Shared.STYLE.rowH == 60 and Shared.STYLE.rowStep == 69 and Shared.STYLE.fontSize == 35,
+        "同绘图API分离独立属性风格与默认60高69步长35号配装风格")
+    check(Shared.ATTRIBUTE_STYLE.rowH == 78 and Shared.ATTRIBUTE_STYLE.rowStep == 88
+        and Shared.ATTRIBUTE_STYLE.fontSize == 40 and Shared.ATTRIBUTE_STYLE.boxW == 460
+        and Shared.ATTRIBUTE_STYLE.boxCX == 300 and Shared.ATTRIBUTE_STYLE.nameX == 150
+        and Shared.ATTRIBUTE_STYLE.valueX == 520, "属性页独立78高88步长40号与460宽新坐标")
+    check(Draw.rowAt == Shared.rowAt and Stats.rowAt == Shared.rowAt,
+        "两页导出同一可见行命中API，不另算固定行高")
     check(Draw.ATTR_FIRST_ROW_Y == Shared.ATTRIBUTE_LAYOUT.firstY
         and Draw.ATTR_CLIP_TOP == Shared.ATTRIBUTE_LAYOUT.y
-        and Draw.ATTR_CLIP_HEIGHT == Shared.ATTRIBUTE_LAYOUT.h,
-        "属性页M.ATTR原输入坐标完全不变")
-    check(attrs.y == 1050 and attrs.h == math.floor(552 * 1.3 + 0.5) and attrs.h == 718,
-        "属性区原552高度放大30%取整718且顶边1050")
+        and Draw.ATTR_CLIP_HEIGHT == Shared.ATTRIBUTE_LAYOUT.h
+        and Shared.ATTRIBUTE_LAYOUT.x == 40 and Shared.ATTRIBUTE_LAYOUT.w == 500
+        and Draw.ATTR_FIRST_ROW_Y == 1109 and Draw.ATTR_CLIP_TOP == 1070 and Draw.ATTR_CLIP_HEIGHT == 874,
+        "属性页输入坐标同源更新为x40宽500顶1070高874首行1109")
+    check(Draw.ATTR_BOX_W == 460 and Draw.ATTR_BOX_H == 78 and Draw.ATTR_COL1_CX == 300
+        and Draw.ATTR_ROW_GAP == 10, "属性页导出行尺寸与新风格同步")
+    check(attrs.y == 1050 and attrs.h == 718 and Stats.LAYOUT.rowH == 60 and Stats.LAYOUT.rowStep == 69,
+        "配装属性区固定718高度顶1050，独立保留60高69步长")
     check(radar.y == attrs.y and radar.h == attrs.h and radar.cy == 1403,
         "雷达区同步718高度且中心1403")
     check(sets.y == 1866 and sets.h == 348 and Stats.LAYOUT.setTitleY == 1818
         and attrs.y + attrs.h < Stats.LAYOUT.setTitleY and Stats.LAYOUT.setTitleY < sets.y,
         "套装区缩至348高从1866开始且标题1818不侵入属性区")
-    check(radar.r == Stats.LEGACY.HEX_R and radar.labelR == Stats.LEGACY.HEX_LABEL_R
-        and radar.r == 175 and radar.labelR == 230, "共用175雷达半径和230标签半径")
+    check(radar.r == Shared.RADAR.r and radar.labelR == Shared.RADAR.labelR
+        and radar.r == 175 and radar.labelR == 230
+        and Stats.LEGACY.HEX_R == 195 and Stats.LEGACY.HEX_LABEL_R == 238,
+        "配装雷达175/230固定，与属性页独立195/238分离")
     clearDraw(); Stats.drawBackground({})
     check(#imageCalls == 1 and sharedPaths[imageCalls[1].image]:find("UI_JSJM_0.png", 1, true)
         and imageCalls[1].y == Stats.LAYOUT.panel.y and imageCalls[1].w == 1080
@@ -220,6 +245,13 @@ function Start()
         if sharedPaths[call.image]:find("UI_JSXQ_FGXJ.png", 1, true) then dividerImages = dividerImages + 1 end
     end
     check(dividerImages == 2, "配装标题和套装之间复用属性页同一分隔线句柄")
+    local setHeader, staleSetHeader = rendered("套装效果"), false
+    for _, call in ipairs(textCalls) do
+        if call.value:find("套装效果", 1, true) and call.value ~= "套装效果" then staleSetHeader = true end
+    end
+    check(setHeader and setHeader.x == sets.x + 20 and setHeader.y == Stats.LAYOUT.setTitleY + 4
+        and setHeader.fontSize == 31 and not staleSetHeader,
+        "套装header仅套装效果，无完整说明等冗余后缀")
     local defaultStatus = false
     for _, call in ipairs(textCalls) do
         if call.value:find("当前已穿戴属性", 1, true) then defaultStatus = true end
@@ -230,20 +262,25 @@ function Start()
     clearDraw(); Stats.drawHeader({}, nil, "暂不可用")
     check(rendered("预览提示：暂不可用") ~= nil, "无候选错误仍显示预览提示")
     local sample = { { key = "a", name = "同样属性", value = "42" } }
-    clearDraw(); Draw.drawAttributeRows({}, sample, 0, Shared.ATTRIBUTE_LAYOUT)
-    local originalName, originalValue = rendered("同样属性"), rendered("42")
+    clearDraw(); Draw.drawAttributeRows({}, sample, 0, Shared.ATTRIBUTE_LAYOUT, { style = Draw.ATTRIBUTE_STYLE })
+    local originalName, originalValue = requiredText("同样属性"), requiredText("42")
     local originalRow = rects[1]
     clearDraw(); Stats.drawRows({}, sample, 0)
-    local equipName, equipValue = rendered("同样属性"), rendered("42")
-    check(originalName.x == equipName.x and originalValue.x == equipValue.x
-        and originalName.y == originalValue.y and equipName.y == equipValue.y
-        and equipName.x == 167 and equipValue.x == 510, "同一行名称左数值右坐标完全复用")
-    check(originalValue.fontSize == 35 and equipValue.fontSize == 35
-        and equipValue.color[1] == 255 and equipName.color[1] == 0xE8,
-        "无delta同35号白数字和E8DCC8名称")
-    check(rects[1].w == originalRow.w and rects[1].h == originalRow.h
+    local equipName, equipValue = requiredText("同样属性"), requiredText("42")
+    check(originalName.x == 150 and originalValue.x == 520
+        and originalName.y == originalValue.y and originalName.y == 1109
+        and equipName.y == equipValue.y and equipName.y == attrs.y + 30
+        and equipName.x == 167 and equipValue.x == 510,
+        "同API通过opts.style采用属性页新坐标，默认配装名称左数值右坐标不变")
+    check(originalName.fontSize == 40 and originalValue.fontSize == 40
+        and equipName.fontSize == 35 and equipValue.fontSize == 35
+        and sameColor(originalValue.color, 255, 255, 255) and sameColor(equipValue.color, 255, 255, 255)
+        and sameColor(originalName.color, 0xE8, 0xDC, 0xC8) and sameColor(equipName.color, 0xE8, 0xDC, 0xC8),
+        "属性页独立40号、配装仍35号，白数字/E8DCC8名称配色不变")
+    check(originalRow.x == 70 and originalRow.y == 1070 and originalRow.w == 460 and originalRow.h == 78
+        and rects[1].x == 90 and rects[1].y == attrs.y and rects[1].w == 440 and rects[1].h == 60
         and rects[1].radius == originalRow.radius and rects[1].radius == 20,
-        "两页440x60圆角20行底完全同款")
+        "属性460x78与配装440x60独立，共用圆角20与绘图实现")
     check(scissorCalls[1].x == 40 and scissorCalls[1].w == 500,
         "配装属性clip同属性页x40宽500")
     check(#imageCalls == 1 and sharedPaths[imageCalls[1].image]:find("ICON_XX.png", 1, true),
@@ -252,8 +289,97 @@ function Start()
     check(Shared.rowAt(hits, ax, attrs.y + 30) == sample[1]
         and Shared.rowAt(hits, ax, attrs.y + Stats.LAYOUT.rowH + 4) == nil,
         "可见行hit匹配60高且行距不出现幽灵hit")
+
+    -- 同API交替调用：opts.style只控制本次绘制，绝不污染后续默认配装。
+    local attributeLayout, attributeStyle = Shared.ATTRIBUTE_LAYOUT, Draw.ATTRIBUTE_STYLE
+    clearDraw()
+    local attributeMax, attributeHits = Draw.drawAttributeRows({}, rows, 0, attributeLayout,
+        { style = attributeStyle })
+    check(attributeMax == 172 and #attributeHits == 10 and #rects == 10,
+        "属性页12行78高88步长总内容1046、874视口可见10行且scroll上限172")
+    check(requiredText("属性1").y == 1109 and requiredText("属性2").y == 1197
+        and requiredText("属性10").y == 1901 and not rendered("属性11") and not rendered("属性12"),
+        "属性页首行与第10末可见行位置正确、88行距且隐藏后两行")
+    check(#scissorCalls == 1 and scissorCalls[1].x == 40 and scissorCalls[1].y == 1070
+        and scissorCalls[1].w == 500 and scissorCalls[1].h == 874 and not rendered("+5"),
+        "属性页独立874裁剪，默认不显示配装delta")
+    local attributeFirst, attributeFirstIndex = Draw.rowAt(attributeHits, ax, 1070)
+    local attributeLast, attributeLastIndex = Draw.rowAt(attributeHits, ax, 1939)
+    check(attributeFirst == rows[1] and attributeFirstIndex == 1
+        and attributeLast == rows[10] and attributeLastIndex == 10
+        and Draw.rowAt(attributeHits, ax, 1069) == nil and Draw.rowAt(attributeHits, ax, 1940) == nil,
+        "属性页首末可见行准确命中，视口外与末行底边不命中")
+    check(Draw.rowAt(attributeHits, ax, 1147) == rows[1]
+        and Draw.rowAt(attributeHits, ax, 1148) == nil and Draw.rowAt(attributeHits, ax, 1153) == nil
+        and Draw.rowAt(attributeHits, ax, 1158) == rows[2]
+        and Draw.rowAt(attributeHits, 39, 1109) == nil and Draw.rowAt(attributeHits, 541, 1109) == nil,
+        "属性页78高行与10px间隙半开命中，左右clip外无幽灵热区")
+    clearDraw()
+    local clampedAttributeMax, lastAttributeHits = Draw.drawAttributeRows({}, rows, 10000, attributeLayout,
+        { style = attributeStyle })
+    check(clampedAttributeMax == attributeMax and #lastAttributeHits == 10
+        and lastAttributeHits[1].index == 3 and lastAttributeHits[1].y == 1074
+        and lastAttributeHits[1].h == 78 and lastAttributeHits[#lastAttributeHits].index == 12
+        and lastAttributeHits[#lastAttributeHits].y + lastAttributeHits[#lastAttributeHits].h == 1944,
+        "属性页过大scroll钳制至末行12贴视口底，首可见行3保留完整78高")
+    check(Draw.rowAt(lastAttributeHits, ax, 1070) == nil
+        and Draw.rowAt(lastAttributeHits, ax, 1074) == rows[3]
+        and Draw.rowAt(lastAttributeHits, ax, 1943) == rows[12]
+        and Draw.rowAt(lastAttributeHits, ax, 1944) == nil,
+        "属性页滚底首行前留白不命中、末行可见末像素命中但clip底外排除")
+    clearDraw()
+    local _, partialAttributeHits = Draw.drawAttributeRows({}, rows, 40, attributeLayout,
+        { style = attributeStyle })
+    check(partialAttributeHits[1].index == 1 and partialAttributeHits[1].y == 1070
+        and partialAttributeHits[1].h == 38
+        and Draw.rowAt(partialAttributeHits, ax, 1069) == nil
+        and Draw.rowAt(partialAttributeHits, ax, 1107) == rows[1]
+        and Draw.rowAt(partialAttributeHits, ax, 1108) == nil,
+        "属性页中途scroll首行只按实际可见38px命中，不保留被裁切部分")
+    clearDraw()
+    Draw.drawAttributeRows({}, rows, -100, attributeLayout, { style = attributeStyle })
+    check(requiredText("属性1").y == 1109, "属性页负scroll钳制为零")
+    clearDraw()
+    local equipMax, equipHits = Draw.drawAttributeRows({}, rows, 0, attrs)
+    check(equipMax == 101 and #equipHits == 11 and requiredText("属性1").fontSize == 35
+        and requiredText("属性2").y - requiredText("属性1").y == 69
+        and rects[1].w == 440 and rects[1].h == 60,
+        "属性大字号调用后默认API仍为配装35号60高69距，上限101不被污染")
+    check(equipHits[1].index == 1 and equipHits[1].y == 1050 and equipHits[1].h == 60
+        and equipHits[#equipHits].index == 11 and equipHits[#equipHits].h == 28
+        and Stats.rowAt(equipHits, ax, 1767) == rows[11] and Stats.rowAt(equipHits, ax, 1768) == nil,
+        "配装原首行完整、末行11只28px可见，clip底不命中")
+    check(Stats.rowAt(equipHits, ax, 1109) == rows[1]
+        and Stats.rowAt(equipHits, ax, 1110) == nil and Stats.rowAt(equipHits, ax, 1118) == nil
+        and Stats.rowAt(equipHits, ax, 1119) == rows[2], "配装原9px间隙仍无幽灵命中")
+    clearDraw()
+    local _, lastEquipHits = Stats.drawRows({}, rows, 10000)
+    check(lastEquipHits[1].index == 2 and lastEquipHits[1].y == 1050 and lastEquipHits[1].h == 28
+        and lastEquipHits[#lastEquipHits].index == 12 and lastEquipHits[#lastEquipHits].h == 60
+        and Stats.rowAt(lastEquipHits, ax, 1050) == rows[2]
+        and Stats.rowAt(lastEquipHits, ax, 1767) == rows[12],
+        "配装滚底仍首行2裁剪28px、末行12完整60px，不使用属性页scroll")
+    local longValue = "123456789012345678901234567890"
+    local longRow = { { key = "long", name = "最长属性名称", value = longValue } }
+    for _, mode in ipairs({ { style = attributeStyle, layout = attributeLayout },
+        { style = Shared.STYLE, layout = attrs } }) do
+        clearDraw()
+        Draw.drawAttributeRows({}, longRow, 0, mode.layout, { style = mode.style })
+        local longName, longNumber = requiredText("最长属性名称"), requiredText(longValue)
+        check(longNumber.fontSize < mode.style.fontSize and longName.fontSize >= mode.style.minFontSize
+            and longName.x + longName.width + mode.style.nameValueGap <= longNumber.x - longNumber.width + 1,
+            "长数值优先缩数字并保留名称最小字号与分隔，不互相挤压")
+        check(longNumber.align == NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE
+            and longNumber.x == mode.style.valueX and longNumber.x <= mode.layout.x + mode.layout.w
+            and longNumber.x - longNumber.width >= longName.x
+            and longName.y == longNumber.y, "两页长数字完整保留，右锚点/基线及clip边界不变")
+    end
+    check(Shared.STYLE.fontSize == 35 and Shared.STYLE.rowH == 60 and Shared.STYLE.rowStep == 69
+        and Stats.LAYOUT.attrs.h == 718 and Shared.ATTRIBUTE_STYLE.fontSize == 40,
+        "交替大字号/长数字绘制不修改两页风格对象或配装固定高度")
+
     clearDraw(); Stats.drawRows({}, { { key = "d", name = "同样属性", value = "42", delta = 5 } }, 0)
-    local deltaName, deltaValue, deltaLabel = rendered("同样属性"), rendered("42"), rendered("+5.0")
+    local deltaName, deltaValue, deltaLabel = requiredText("同样属性"), requiredText("42"), requiredText("+5.0")
     check(deltaName.x == equipName.x and deltaName.y == equipName.y
         and deltaValue.x == equipValue.x and deltaValue.y == equipValue.y
         and deltaName.fontSize == equipName.fontSize and deltaValue.fontSize == equipValue.fontSize
@@ -270,7 +396,11 @@ function Start()
 
     check(math.abs(Stats.radarScale(current.stats, preview.stats) - 20 / 0.82) < 0.000001, "新旧几何共用最大值尺度")
     check(Stats.radarScale({}, {}) == 8, "无候选与属性页同样采用max(8,peak/.82)尺度")
-    check(Stats.LEGACY.HEX_CY == 1535.5 and Stats.LEGACY.HEX_LABEL_R == 230, "属性页原雷达布局不变")
+    check(Stats.LEGACY.HEX_CX == Shared.ATTRIBUTE_RADAR.cx
+        and Stats.LEGACY.HEX_CY == Shared.ATTRIBUTE_RADAR.cy and Stats.LEGACY.HEX_CY == 1507
+        and Shared.ATTRIBUTE_RADAR.cx == 800 and Shared.ATTRIBUTE_RADAR.r == 195
+        and Shared.ATTRIBUTE_RADAR.labelR == 238 and Draw.HEX_CX == 800 and Draw.HEX_CY == 1507
+        and Draw.HEX_LABEL_R == 238, "属性页雷达与导出输入坐标同源独立800/1507/195/238")
     local layout = Stats.LAYOUT.radar
     local mixed = RadarDiff.compare(current.stats, preview.stats, layout.cx, layout.cy,
         layout.r, Stats.radarScale(current.stats, preview.stats))
@@ -331,11 +461,41 @@ function Start()
     clearDraw(); Stats.drawLegacy({}, current.stats)
     local legacyPolygons = radarPaths()
     local legacyOutline = legacyPolygons[1]
+    local legacyName, legacyValue = requiredText("力量"), requiredText("10")
+    check(legacyName.x == 800 and legacyName.y == 1507 - 238 - 26 and legacyName.fontSize == 30
+        and legacyValue.x == 800 and legacyValue.y == 1507 - 238 + 18 and legacyValue.fontSize == 38,
+        "属性页雷达独立30号名称38号数值、ly-26/ly+18基线")
+    check(#legacyPolygons == 1 and #legacyOutline == 6 and #scissorCalls == 0,
+        "属性页只绘当前六边形，不引入配装预览差集或标签scissor")
     clearDraw(); Stats.drawRadar({}, current.stats, nil)
     local equipPolygons, noPreviewRegions, noPreviewEdges = radarPaths()
+    local sameNormalizedOutline = #legacyOutline == #equipPolygons[1]
+    for i, point in ipairs(legacyOutline) do
+        local equipPoint = equipPolygons[1][i]
+        local legacyDX, legacyDY = point[1] - Stats.LEGACY.HEX_CX, point[2] - Stats.LEGACY.HEX_CY
+        local equipDX, equipDY = equipPoint[1] - radar.cx, equipPoint[2] - radar.cy
+        if not near(math.sqrt(legacyDX * legacyDX + legacyDY * legacyDY) / Stats.LEGACY.HEX_R,
+            math.sqrt(equipDX * equipDX + equipDY * equipDY) / radar.r) then sameNormalizedOutline = false end
+    end
     check(#equipPolygons == 1 and #noPreviewRegions == 0 and #noPreviewEdges == 0
-        and near(Stats.LEGACY.HEX_CY - legacyOutline[1][2],
-            radar.cy - equipPolygons[1][1][2]), "无候选普通值轮廓尺度与原属性页完全一致")
+        and sameNormalizedOutline, "无候选六轴归一化半径与属性页一致，不要求195/175物理半径相等")
+    check(requiredText("力量").fontSize == 26 and requiredText("10").fontSize == 34
+        and requiredText("10").y == radar.cy - 230 + 16,
+        "放大属性雷达调用后配装名称26数值34及原基线不被污染")
+    clearDraw(); Stats.drawLegacy({}, { agi = 12345678901234567890, vit = 0.12345678901234567 })
+    local legacyRightValues = 0
+    local legacyInside = true
+    for _, call in ipairs(textCalls) do
+        if call.y > 1507 and call.x > 800 and tonumber(call.value) then
+            legacyRightValues = legacyRightValues + 1
+            if call.fontSize >= 38 or call.x + call.width * 0.5 + 3 > 1080
+                or call.x - call.width * 0.5 < 550 then legacyInside = false end
+        end
+    end
+    check(legacyRightValues == 1 and legacyInside, "属性页右下长小数按38号缩放后含描边仍在1080画布内")
+    local legacyLongTop = requiredText(tostring(12345678901234567890))
+    check(legacyLongTop.fontSize < 38 and legacyLongTop.x + legacyLongTop.width * 0.5 + 3 <= 1080,
+        "属性页右上超长数值保持完整文本并按实际标签可用宽缩放")
     clearDraw(); Stats.drawRadar({}, { str = 38.745624, agi = 8 }, nil)
     check(rendered("38") and not rendered("38.745624"), "雷达只显示整数避免raw六围长小数越出画布")
     -- legacy基图允许0.08视觉下限；纯差集比较允许0，低值UI不锁死两者半径相等。
@@ -353,6 +513,44 @@ function Start()
         if call.value:find("失效", 1, true) and math.abs(call.color[1] - 235) < 1 then invalid = true end
     end
     check(invalid, "原激活后失效的套装效果标红")
+    -- 短描述隔离三档状态文案；随后还原长描述，保留原滚动/完整换行回归。
+    local longDescriptions = { cfg.desc2, cfg.desc4, cfg.desc6 }
+    cfg.desc2, cfg.desc4, cfg.desc6 = "二件测试效果", "四件测试效果", "六件测试效果"
+    local effectDescriptions = { cfg.desc2, cfg.desc4, cfg.desc6 }
+    clearDraw(); Stats.drawSets({}, Stats.unionSets({ summaries[2] }, nil), 0, false)
+    local hasInactiveText = false
+    for _, call in ipairs(textCalls) do
+        if call.value:find("未激活", 1, true) then hasInactiveText = true end
+    end
+    check(not hasInactiveText, "未激活套装不输出未激活文字")
+    for i, descriptionText in ipairs(effectDescriptions) do
+        local inactive = requiredText(tostring(i * 2) .. "件 · " .. descriptionText)
+        check(sameColor(inactive.color, 139, 132, 119, 210)
+            and inactive.fontSize == 27, "未激活档位省略状态但保留完整描述与灰色")
+    end
+    clearDraw(); Stats.drawSets({}, Stats.unionSets({ summaries[1] }, nil), 0, false)
+    for i, descriptionText in ipairs(effectDescriptions) do
+        local active = requiredText(tostring(i * 2) .. "件 · 激活  " .. descriptionText)
+        check(sameColor(active.color, 115, 218, 135, 255), "当前套装已激活档位保留激活文字与绿色")
+    end
+    clearDraw(); Stats.drawSets({}, Stats.unionSets({ summaries[1] }, { previewSummaries[1] }), 0, true)
+    for i, descriptionText in ipairs(effectDescriptions) do
+        local lost = requiredText(tostring(i * 2) .. "件 · 失效  " .. descriptionText)
+        check(sameColor(lost.color, 235, 110, 100, 255), "试穿使旧激活档位失效时保留失效文字与红色")
+    end
+    clearDraw(); Stats.drawSets({}, Stats.unionSets(nil, { previewSummaries[2] }), 0, true)
+    for i, descriptionText in ipairs(effectDescriptions) do
+        local activated = requiredText(tostring(i * 2) .. "件 · 激活  " .. descriptionText)
+        check(sameColor(activated.color, 115, 218, 135, 255), "试穿新激活档位仍显示激活文字与绿色")
+    end
+    clearDraw(); Stats.drawSets({}, Stats.unionSets({ summaries[2] }, { summaries[2] }), 0, true)
+    for i, descriptionText in ipairs(effectDescriptions) do
+        local inactivePreview = requiredText(tostring(i * 2) .. "件 · " .. descriptionText)
+        check(sameColor(inactivePreview.color, 139, 132, 119, 210)
+            and not inactivePreview.value:find("未激活", 1, true),
+            "试穿前后均未激活档位省略状态且不误标失效红色")
+    end
+    cfg.desc2, cfg.desc4, cfg.desc6 = longDescriptions[1], longDescriptions[2], longDescriptions[3]
     clearDraw(); Stats.drawRows({}, rows, 0)
     check(math.abs(rendered("+5").color[2] - 218) < 1 and math.abs(rendered("-3").color[1] - 235) < 1, "属性变化绿增红减")
     clearDraw(); Stats.drawRows({}, { { key = "new", name = "新属性", value = "0", currentValue = 0,
@@ -470,18 +668,34 @@ function Start()
     check(allCentered, "空装六围落中心而不是8%视觉下限虚构增益")
     clearDraw(); Stats.drawRadar({}, { str = 2.8597845, agi = 0.012345 }, nil, true)
     check(rendered("+2.9") and not rendered("+2.859785"), "装备六围正常值保留一位小数，不以长raw小数撑出栏外")
-    local narrow = rendered("+0.012345")
-    check(narrow and narrow.fontSize == 34, "微小六围增益不显示成+0或+0.0")
+    local narrow = requiredText("+0.012345")
+    check(narrow.fontSize > 0 and narrow.fontSize <= 34
+        and narrow.x + narrow.width * 0.5 + 3 <= 1080,
+        "微小六围增益不显示成+0或+0.0，仅在宽度需要时缩字号保留完整文本")
     clearDraw(); Stats.drawRadar({}, { agi = 1234567890123 }, nil, true)
-    check(rendered("+1234567890123").fontSize < 34, "超长装备六围数值按栏内可用宽度缩放")
-
-    print("[character_equip_panel_test] ALL PASS: " .. count .. " 个断言")
+    local longEquipRadar = requiredText("+1234567890123")
+    check(longEquipRadar.fontSize < 34, "超长装备六围数值按栏内可用宽度缩放")
+    check(longEquipRadar.align == NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE
+        and longEquipRadar.x + longEquipRadar.width * 0.5 + 3 <= 1080
+        and longEquipRadar.x - longEquipRadar.width * 0.5 >= 550,
+        "超长配装雷达数字按缩后字号测量、含描边仍在栏内不越1080画布")
     end
 
     local ok, failure = pcall(run)
     require, time = originalRequire, originalTime
-    for name, value in pairs(savedGlobals) do _G[name] = value end
-    if not ok then print("[character_equip_panel_test] FAIL: " .. tostring(failure)) end
+    for name, snapshot in pairs(savedGlobals) do _G[name] = snapshot.value end
+    local restored, restoreFailure = pcall(function()
+        check(require == originalRequire and time == originalTime, "成功失败均恢复真实require/time")
+        for name, snapshot in pairs(savedGlobals) do
+            check(_G[name] == snapshot.value, "成功失败均恢复NanoVG全局：" .. name)
+        end
+    end)
+    if ok and restored then
+        print("[character_equip_panel_test] ALL PASS: " .. count .. " 个断言（含恢复校验）")
+    else
+        print("[character_equip_panel_test] FAIL: " .. tostring(failure or restoreFailure)
+            .. "；已通过 " .. count .. " 个断言")
+    end
     -- 失败也恢复mock并显式退出，不让断言异常变成挂起/timeout。
     engine:Exit()
 end

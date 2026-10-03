@@ -75,7 +75,22 @@ function M.drawBadge(vg, equip, cx, cy, cellSize, alpha)
     local image = getBadge(vg, M.setId(equip))
     if image < 0 then return false end
     local layout = M.badgeLayout(cx, cy, cellSize)
-    DrawUtil.drawImageCentered(vg, image, layout.cx, layout.cy, layout.size, layout.size, alpha or 1)
+    local opacity = alpha or 1
+    if opacity <= 0.01 then return false end
+    -- 底板保持在原角标占位内，不挤占等级、锁标或归属头像。
+    nvgSave(vg)
+    nvgBeginPath(vg)
+    ---@type number
+    local border = math.max(1, layout.size * 0.025)
+    nvgRoundedRect(vg, layout.x + border * 0.5, layout.y + border * 0.5,
+        layout.size - border, layout.size - border, layout.size * 0.18)
+    nvgFillColor(vg, nvgRGBA(26, 24, 30, math.floor(230 * opacity)))
+    nvgFill(vg)
+    nvgStrokeWidth(vg, border)
+    nvgStrokeColor(vg, nvgRGBA(117, 101, 76, math.floor(200 * opacity)))
+    nvgStroke(vg)
+    DrawUtil.drawImageCentered(vg, image, layout.cx, layout.cy, layout.size, layout.size, opacity)
+    nvgRestore(vg)
     return true
 end
 

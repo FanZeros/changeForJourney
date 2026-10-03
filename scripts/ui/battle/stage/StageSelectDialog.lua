@@ -24,6 +24,68 @@ local drawImageCentered = DrawUtil.drawImageCentered
 local drawNineSlice     = DrawUtil.drawNineSlice
 local drawImageCover    = DrawUtil.drawImageCover
 
+-- 章名先翻译再测量；长专名最多两行，避免挤入相邻列或无限缩小字号。
+local titleLayoutCache = {}
+local titleLayoutKeys = {}
+local TITLE_CACHE_LIMIT = 256
+local function titleLines(vg, source, width, fontSize)
+    local caption = I18n.lookup(source)
+    local key = I18n.get() .. "\0" .. caption .. "\0" .. width .. "\0" .. fontSize
+    local cached = titleLayoutCache[key]
+    if cached then return cached end
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, fontSize)
+    local lines, line = {}, ""
+    local tokens = {}
+    if I18n.get() == "en" then
+        for token in caption:gmatch("%S+%s*") do tokens[#tokens + 1] = token end
+    else
+        for _, code in utf8.codes(caption) do tokens[#tokens + 1] = utf8.char(code) end
+    end
+    for _, token in ipairs(tokens) do
+        local candidate = line .. token
+        if line ~= "" and nvgTextBounds(vg, 0, 0, candidate) > width then
+            lines[#lines + 1] = line:gsub("%s+$", "")
+            line = token
+        else
+            line = candidate
+        end
+    end
+    if line ~= "" then lines[#lines + 1] = line:gsub("%s+$", "") end
+    if #lines == 0 then lines[1] = caption end
+    titleLayoutCache[key] = lines
+    titleLayoutKeys[#titleLayoutKeys + 1] = key
+    if #titleLayoutKeys > TITLE_CACHE_LIMIT then
+        local oldest = table.remove(titleLayoutKeys, 1)
+        if oldest then titleLayoutCache[oldest] = nil end
+    end
+    return lines
+end
+
+local function drawFittedTitle(vg, x, y, source, width, fontSize, maxLines, align, r, g, b, stroke)
+    local size = fontSize
+    local lines = titleLines(vg, source, width, size)
+    local function tooLarge()
+        if #lines > maxLines then return true end
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, size)
+        for _, line in ipairs(lines) do
+            if nvgTextBounds(vg, 0, 0, line) > width then return true end
+        end
+        return false
+    end
+    while tooLarge() and size > 18 do
+        size = size - 1
+        lines = titleLines(vg, source, width, size)
+    end
+    local lineHeight = size + 2
+    local topY = y - (#lines - 1) * lineHeight * 0.5
+    for index, line in ipairs(lines) do
+        drawTextStroke(vg, x, topY + (index - 1) * lineHeight, line, size,
+            align, r, g, b, stroke)
+    end
+end
+
 local StageSelectDialog = {}
 
 local DESIGN_W = GameConfig.Design.WIDTH   -- 1080
@@ -513,13 +575,18 @@ function StageSelectDialog.draw(vg)
         -- 章节按钮文字：解锁=亮色，锁定=灰蓝色
         local chR, chG, chB = 235, 230, 210
         if chapterLocked then chR, chG, chB = 0x8b, 0x95, 0xa5 end
-        drawTextStroke(vg, cx, y + D.CH_BTN_H * 0.36, g.name, 28,
+        drawFittedTitle(vg, cx, y + D.CH_BTN_H * 0.34, g.name, D.CH_W - 18, 26, 2,
             NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, chR, chG, chB, 3)
         if chapterLocked and imgLock >= 0 then
             drawImageCentered(vg, imgLock, x + D.CH_W - 22, y + 22, 30, 30, 0.9)
         end
         -- 副标题：普通章节 = "N 章"；单难度终焉 = 难度名（如 "困难"/"噩梦"）
         local rel = g.subLabel or tostring(SC.getRelativeChapter(g.key)) .. " 章"
+        if type(g.key) == "string" then
+            rel = I18n.difficulty(rel)
+        else
+            rel = I18n.lookup(rel)
+        end
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 20)
         nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
@@ -566,9 +633,13 @@ function StageSelectDialog.draw(vg)
         local fr, fg, fb = 255, 255, 255
         if isBoss then fr, fg, fb = 0xE0, 0x5A, 0x5A end
         if locked then fr, fg, fb = 0x8b, 0x95, 0xa5 end
-        drawTextStroke(vg, x + 16, y + 34, shortStageLabel(id), 30,
-            NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
-            fr, fg, fb, 2)
+        if SC.isTerminalTemple(id) then
+            drawFittedTitle(vg, x + 16, y + 50, shortStageLabel(id), D.CARD_X - x - 28, 24, 4,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, fr, fg, fb, 2)
+        else
+            drawTextStroke(vg, x + 16, y + 34, shortStageLabel(id), 30,
+                NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, fr, fg, fb, 2)
+        end
 
         -- 状态（行左下）
         local sub
@@ -581,7 +652,7 @@ function StageSelectDialog.draw(vg)
         elseif isBoss then
             sub = "首领"
         else
-            sub = SC.getDifficultyDisplayName(SC.getDifficulty(id))
+            sub = I18n.difficulty(SC.getDifficultyDisplayName(SC.getDifficulty(id)))
         end
         nvgFontFace(vg, "sans")
         nvgFontSize(vg, 22)

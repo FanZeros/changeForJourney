@@ -2,6 +2,17 @@
 
 > 强化记忆：以下规则在每轮任务中必须遵守。**每轮开始工作前先重读本节。**
 
+### 恐怖游轮式轮回剧情合入核查（2026-10-03，当前授权）
+
+- 用户在 **AskUserQuestion** 新要求“继续看看，是否有一个修改整个剧情逻辑的分支（做成类似恐怖游轮的），是否合入了”。本轮仅只读核查，不擅自合并候选或部署新剧情；当前预览仍保持已验证剧情职位修复，不改Lua、不重复build。
+- 新建 `audit/story-horror-cruise-merge-20261003`，从已推送剧情修复／PR44交接状态起步；查询目标为远端 `workspace930@d204d227`。持续推进已授权检查，完成后如实简报并真正调用 **AskUserQuestion**；仅向新审查分支提交推送记录，不推workspace系列，尊重后续停止和权限拒绝。
+- 已定位四候选：`feat1003/samsara-loop-story-plan@faf5129d`、`samsara-story-script@8f8d1e92`、`samsara-story-polish@bc85ac6b`、`samsara-story-wiring-plan@35af3314`。GitHub按精确head查询四者所有状态PR均为空。
+- 独立Git核查确认：四tip均不是 `workspace930@d204d227bcf7dc86486e829860660b120c684dea` 祖先，共同merge-base为b24cad7cf60e829300aeec7ca8fd15bfa64e9dab；独有提交依次2／3／4／6，git cherry全为+，六独有提交无单提交patch等价。线性链dbd15caf→faf5129d→8f8d1e92→bc85ac6b→b8645c20→35af3314；最后一项才是N02日志夹页及无奖回看实现。
+- 目标树仍保留旧IntroCutscene.require/start，未出现新SamsaraSlicePlayer／SamsaraStorySchema／SamsaraRecordPanel接线符号，候选循环剧情规划/正文文档也未入目标树。不是“只剩记忆未合”：这条剧情改造核心与文档均未合。
+- 独立接线核查确认最新候选是《未寄出的撤离令》循环悬疑方案：灰印者与先行记录页为同一登记身份，救援征用令延长旧伙伴囚留，？？？为规划中的契约执行者；不简化为“玩家自己追杀自己／玩家就是魔王”。候选已实现真实N02/E01脚本、main→Standalone→首通/仲裁/记录入口接线，配置只认 `samsara.log_leaf`。N12–14／E02／E05未实现，普通至炼狱25场仍仅正文，不能称整套剧情已改好。
+- 目标930既无N02切片也无 `samsaraStory` 字段，104仍排17/18/19旧剧情，StoryPlayer旧噩梦线止于4905入场73；候选新增SamsaraSliceConfig／SamsaraStorySchema／SamsaraSlicePlayer／SamsaraSlicePlayback／SamsaraRecordPanel均不存在。ScenarioDialogueConfig在共同基线、目标及候选blob相同，候选并未全替换原正文。当前轮只读Git/API核查，没有运行候选测试或游戏，不把源历史测试当本轮验证。
+- 合入建议：若用户下一步希望迁移，先在新的整合分支评估最新版 `feat1003/samsara-story-wiring-plan` 与最新930的冲突及N02试点回归，保留已合入最新玩法与PR44人物修复；全量剧情需另行授权分阶段接线，不应直接把四旧分支全merge并称已上线。
+
 ### 剧情职位修复 PR 交接（2026-10-03）
 
 - 用户在 **AskUserQuestion** 明确选择“创建修复 PR（推荐）”，已创建 **PR #44**：https://github.com/FanZeros/changeForJourney/pull/44 ，head=`fix/story-speaker-roles-20261003`、base=`workspace930`，标题“修复剧情职位美术对应与左上闲谈标签”。创建返回open、draft=false、merged=false、mergeable=null/unknown，不声称CI或合并完成。

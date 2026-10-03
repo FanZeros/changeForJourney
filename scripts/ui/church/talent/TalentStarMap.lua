@@ -738,13 +738,10 @@ local function drawNode(vg, node)
 
     local isLit = litNodes[node.id] or false
 
-    -- 边缘淡出：靠近星图区边缘的节点整体渐隐
     local fade = edgeFade(sx, sy)
     if fade <= 0.01 then return end
 
-    -- [暗黑化 P2-10] 矢量天赋符号（金属铭牌 + 系色效果符号），替代 85 张 KTX 贴图
-    -- 点亮态全亮；未点亮态整体 55% 透明（铭牌自带暗铁底，无需原遮罩 blend）
-    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, sx, sy, iconSize * 0.70, (isLit and 1.0 or 0.55) * fade)
+    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, sx, sy, iconSize * 0.92, (isLit and 1.0 or 0.55) * fade, node.st)
 end
 
 --- 绘制所有节点
@@ -969,17 +966,17 @@ function TalentStarMap.getIconHandle(id)
     return h or -1
 end
 
---- [暗黑化 P2-10] 按节点ID绘制矢量天赋符号（铭牌+系色符号）——详情面板等场景用
+--- 按节点ID绘制程序天赋图标（方框条纹底 + 骨白符号）——详情面板等场景用
 ---@param vg any
 ---@param id number 节点ID
 ---@param cx number 中心 X
 ---@param cy number 中心 Y
----@param size number 直径
+---@param size number 边长
 ---@param alpha number|nil 透明度 0-1
 function TalentStarMap.drawTalentIcon(vg, id, cx, cy, size, alpha)
     local node = NODES[id]
     if not node then return end
-    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, cx, cy, size, alpha)
+    DarkIcon.drawTalentGlyphByName(vg, node.name, node.color, cx, cy, size, alpha, node.st)
 end
 
 --- 拖拽事件处理 (返回是否消费)

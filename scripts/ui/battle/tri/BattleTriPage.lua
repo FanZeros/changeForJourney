@@ -95,21 +95,9 @@ local function ensureDrivers()
                 if triOnDrop then triOnDrop(data) end
             end
             drv.onStageCleared = function(teamIdx, clearedStageId)
-                if teamIdx ~= 1 then return end
-                local cleared = BattleScene.getClearedStages()
-                if cleared[clearedStageId] then return end
-                cleared[clearedStageId] = true
-                -- 先把主线关卡切到下一关，再发首通。否则存档已是 1-2，
-                -- BattleScene 仍停在 1-1，下一帧同步会把第一队拉回去。
-                local nextId = StageConfig.getNextStageId(clearedStageId)
-                if nextId and not StageConfig.isTerminalTemple(nextId)
-                    and BattleScene.getStageId() ~= nextId then
-                    BattleScene.adoptStageProgress(nextId)
-                end
-                if BattleScene.onFirstClear then
-                    BattleScene.onFirstClear(clearedStageId)
-                else
-                    if triOnStageClear then triOnStageClear(teamIdx, clearedStageId) end
+                local firstClear = BattleScene.completeTriStageClear(clearedStageId, teamIdx)
+                if not firstClear and triOnStageClear then
+                    triOnStageClear(teamIdx, clearedStageId)
                 end
             end
             local startStage = (t == 1) and BattleScene.getStageId()

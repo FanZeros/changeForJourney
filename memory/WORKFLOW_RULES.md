@@ -8,6 +8,16 @@
 3. **以新分支继续开发**：以用户当轮指定分支为基线创建独立开发分支，每次完成后 commit + push 到该开发分支；**禁止 push 到 workspace 或其他基线分支**，通过 PR 向当轮指定原分支合入。
 4. **部署位置**：游戏项目及 Git 仓库直接部署在 `/workspace` 根目录，`scripts/assets/.project` 不嵌套子目录；修改代码后调用官方 build 工具构建。
 
+## 本轮协作要求强化（2026-10-03，装备属性预览 PR）
+
+- 用户再次明确：已授权的任务持续推进，不擅自取消或退出；每次完成或遇到必须由用户决定的阻塞，先如实简报，再真正调用 **AskUserQuestion** 提供 2–4 个下一步选项，不用纯文本问题代替。尊重用户当前取消指令、权限拒绝与安全边界。
+- 本轮在 `/workspace` 根部署项目，基于 `feat930/equipment-attribute-preview` 新建独立分支 `chore930/equipment-preview-pr-1003`；新增提交只推该独立分支，不推任何 `workspace` 系列或原功能分支。
+- 用户本轮授权的是创建 `feat930/equipment-attribute-preview` → `workspace930` 的 PR，而非直接合并。发现冲突应在 PR 和简报中如实说明，后续解决或合并须按用户选项继续。
+- PAT 仅作即时鉴权，不写入仓库、Git 配置、日志或记忆；部署所需的官方构建身份变更只保留本地，不随提交推送。
+- 已创建 **PR #21**：https://github.com/FanZeros/changeForJourney/pull/21，head=`feat930/equipment-attribute-preview`，base=`workspace930`，尚未合并。源提交 `4f6737d6`，目标检查提交 `eec2a976`；两处文本冲突为本文件及 `scripts/tests/lootbox_set_filter_test.lua`，已在 PR 说明，解冲突须保留目标测试退出包装与源数量用例后重新验证。
+- 官方 build 成功；10 项 Runtime 回归全部退出 0 且有完整成功标记，无 Lua 错误/失败断言：预览117、配装97、手势44、仓库联动259、角标92、稳定属性55、滚动10，另遗匣筛选、雷达差集和真实模块冒烟均通过。全工作区 LSP 仍有48条既有诊断；构建内置 LSP daemon 不可用而跳过 gate，不将 build 成功等同于全仓零 Error。新增装备说明多语言与人工视觉/触控验收仍待补齐。
+- 完成后的最后一步仍必须真正调用 **AskUserQuestion**，由用户选择解决合并冲突、补齐验收或继续其他独立分支任务，禁止默认自动合并。
+
 ## 本轮协作要求强化（2026-10-02）
 
 - 用户再次要求：持续推进直到完成；每次完成后必须真正调用 **AskUserQuestion**，提供 2–4 个下一步选项，不用普通文本问题代替，不以非 AskUserQuestion 的形式中断对话。

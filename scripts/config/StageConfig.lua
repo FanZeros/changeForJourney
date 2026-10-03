@@ -363,6 +363,43 @@ function SC.getStage(id)
     return idIndex[id]
 end
 
+-- 选关卡片的23章背景映射，资源路径不随显示语言变化。
+local CHAPTER_BG = {
+    [1]  = "image/暗黑/L1_row1_forest.png",
+    [2]  = "image/战斗背景/幽烬林地.png",
+    [3]  = "image/战斗背景/哑雾沼泽.png",
+    [4]  = "image/战斗背景/巨木之冢.png",
+    [5]  = "image/战斗背景/哀嚎沙丘.png",
+    [6]  = "image/战斗背景/蚀骨荒漠.png",
+    [7]  = "image/战斗背景/焦土平原.png",
+    [8]  = "image/战斗背景/断魂裂谷.png",
+    [9]  = "image/战斗背景/蛊语山洞.png",
+    [10] = "image/战斗背景/悬魂瀑布.png",
+    [11] = "image/战斗背景/霜噬雪岭.png",
+    [12] = "image/战斗背景/沉眠冰原.png",
+    [13] = "image/战斗背景/血晶溶洞.png",
+    [14] = "image/战斗背景/枯枫遗迹.png",
+    [15] = "image/战斗背景/烬暮湖畔.png",
+    [16] = "image/战斗背景/废弃营地.png",
+    [17] = "image/战斗背景/古代遗迹.png",
+    [18] = "image/战斗背景/沉没神殿.png",
+    [19] = "image/战斗背景/哭泣峭壁.png",
+    [20] = "image/战斗背景/恶灵岔路.png",
+    [21] = "image/战斗背景/遗忘墓穴.png",
+    [22] = "image/战斗背景/亡灵墓穴.png",
+    [23] = "image/战斗背景/烛龙之巢.png",
+}
+
+--- 按每23章循环；终焉chapter=0沿用既有第23章背景。
+---@param stageId number|string|nil
+---@return string path
+---@return number chapter
+function SC.getBattleBackground(stageId)
+    local entry = stageId and idIndex[tonumber(stageId) or 0]
+    local chapter = ((entry and entry.chapter or 1) - 1) % 23 + 1
+    return CHAPTER_BG[chapter] or CHAPTER_BG[1], chapter
+end
+
 ---@param chapter number
 ---@param stage number
 ---@return StageEntry|nil

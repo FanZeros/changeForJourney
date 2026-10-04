@@ -221,6 +221,7 @@ function BattleTriDriver.new(teamIdx, options)
         self._labElapsed = 0
         self._labTimeLimit = options.timeLimit or 300
         self._timeoutElapsed = 0   -- 战斗超时增伤计时（每场重开清零）
+        self._terminalStopped = false
         self:activate()
         if self.battleLab then TAL.reset() end
         -- 清理旧战线单位的临时效果，不触碰其他队的神器状态
@@ -239,12 +240,13 @@ function BattleTriDriver.new(teamIdx, options)
         local isTerminal = not self.battleLab and SC.isTerminalTemple(stageId)
         local allEnemies
         if isTerminal then
-            local boss = MC.createMonster(entry.monsters[self.teamIdx], entry.monsterLevel)
-            if boss then
-                boss.isBoss = true
-                allEnemies = { boss }
-            else
-                allEnemies = {}
+            allEnemies = {}
+            for _, monsterId in ipairs(entry.monsters) do
+                local boss = MC.createMonster(monsterId, entry.monsterLevel)
+                if boss then
+                    boss.isBoss = true
+                    allEnemies[#allEnemies + 1] = boss
+                end
             end
         else
             allEnemies = entry and BattleEnemySpawn.generateEnemyList(entry, self.battleLab and self.firstClear) or {}
@@ -388,6 +390,13 @@ function BattleTriDriver.new(teamIdx, options)
         for _, u in ipairs(self.enemies) do
             if u.hp <= 0 then
                 TAL.onEnemyDeath(u, self.allies, self.enemies)
+                if self.terminalRaid and not u._terminalDeathVisual then
+                    u._terminalDeathVisual = true
+                    u.atkProgress = 0
+                    TM.removeUnit(u)
+                    SEM.removeUnit(u)
+                    BattleCombat.setCardAnim(u, { state = "dying", timer = 0, lungeDir = -1, noTombstone = true })
+                end
                 -- 终焉共享池的奖励仍由协同宿主结算，天赋事件不跟奖励锁绑定。
                 if not self.terminalRaid and not u._triKillReported then
                     u._triKillReported = true
@@ -506,6 +515,26 @@ function BattleTriDriver.new(teamIdx, options)
         self.marchNotice = #self.allies > 0
     end
 
+    --- 失守只停业务，死亡动画/生命拖尾仍推进；取消未落地攻击，不能借视觉收尾回血或伤害。
+    function drv:tickTerminalStopped(dt)
+        if not self._terminalStopped then
+            self._terminalStopped = true
+            self.psState.projectiles = {}
+            self.combatState.comboQueue = {}
+            for _, unit in ipairs(self.enemies) do
+                unit.atkProgress = 0
+                if unit.hp > 0 then BattleCombat.clearCardAnim(unit) end
+            end
+        end
+        BattleCombat.updateHpBuffers(self.allies, dt)
+        BattleCombat.updateHpBuffers(self.enemies, dt)
+        BattleEffects.update(dt)
+        BattleCombat.updateCardAnims(dt)
+        BattleCombat.updateFloatingTexts(dt)
+        BattleCombat.updateHitFlashes(dt)
+        require("ui.battle.scene.BattleAllyReset").compactFallen(self.allies, time.elapsedTime)
+    end
+
     --- 战斗 tick（须已 mount）
     function drv:tick(dt)
         if not self.active then return end
@@ -513,10 +542,17 @@ function BattleTriDriver.new(teamIdx, options)
         self._timeoutElapsed = (self._timeoutElapsed or 0) + dt   -- 超时增伤计时
         self:tickRewards(dt)
         -- 共享池可以由另一条战线打空：先分发本线死亡，再走失守/胜利早返。
+        if self.terminalRaid then self.terminalRaid:sync() end
         self:reportDefeatedEnemies()
-        if self.terminalRaid and self.terminalRaid.defeated[self.teamIdx] then return end
         local allies, enemies = self.allies, self.enemies
-        if self.terminalRaid and self.terminalRaid.finished then return end
+        if self.terminalRaid and self.terminalRaid.defeated[self.teamIdx] then
+            self:tickTerminalStopped(dt)
+            return
+        end
+        if self.terminalRaid and self.terminalRaid.finished and self.terminalRaid.won then
+            self:tickTerminalStopped(dt)
+            return
+        end
         if #allies == 0 then
             self.marchTimer = 0
             self.marchNotice = false
@@ -597,10 +633,16 @@ function BattleTriDriver.new(teamIdx, options)
         if self.terminalRaid then
             if self.terminalRaid.hp <= 0 then
                 self.terminalRaid:finish(true)
+                self:tickTerminalStopped(dt)
                 return
             end
             if not hasAliveAlly then
                 self:retreatStage()
+                self:tickTerminalStopped(dt)
+                return
+            end
+            if self.terminalRaid.finished then
+                self:tickTerminalStopped(dt)
                 return
             end
         end
@@ -757,7 +799,7 @@ function BattleTriDriver.new(teamIdx, options)
 
     --- 便捷: mount + tick
     function drv:update(dt)
-        if not self.battleLab then
+        if not self.battleLab and not self.terminalRaid then
             self._sigTick = (self._sigTick or 0) + 1
             if self._sigTick >= 15 then
                 self._sigTick = 0

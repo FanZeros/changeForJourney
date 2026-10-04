@@ -382,7 +382,7 @@ function ArtifactService.Draw(uid, count, payType)
     }
 end
 
---- [三队适配] 装配到指定队伍（teamIdx 缺省 1；同一实例可同时装到多支队伍）
+--- 装配到指定队伍：同实例全队唯一，跨队必须先明确卸下
 function ArtifactService.Equip(uid, artifactId, slot, subSlot, teamIdx)
     slot = tonumber(slot)
     subSlot = tonumber(subSlot) or 1
@@ -405,6 +405,12 @@ function ArtifactService.Equip(uid, artifactId, slot, subSlot, teamIdx)
         return false, "远征等级达到" .. tostring(unlockLevel) .. "级后解锁第" .. tostring(subSlot) .. "神器格"
     end
 
+    -- 跨队拒绝必须在normalize前：不能因失败重建旧档、卸原队或覆盖目标。
+    local rawData = PDM.GetModule(uid, "artifacts")
+    local occupiedTeam = findEquippedAnyTeam(rawData, artifactId)
+    if occupiedTeam and occupiedTeam ~= teamIdx then
+        return false, "神器已安装在队伍" .. tostring(occupiedTeam) .. "，请先卸下再安装到其他队伍"
+    end
     local data = ensureData(uid)
     if not data then return false, "神器数据未加载" end
 
@@ -415,7 +421,7 @@ function ArtifactService.Equip(uid, artifactId, slot, subSlot, teamIdx)
         return false, "同一槽位不能佩戴相同类型神器"
     end
 
-    -- 只在目标队伍内移动：该实例若已装在本队其他位置，先卸下（其他队伍的装配不受影响）
+    -- 同队换槽照常移动；跨队占用已拒绝，不用setter偷偷转移来源。
     local currentSlot, currentSubSlot = ArtifactSchema.findEquippedSlot(data, artifact.id, teamIdx)
     if currentSlot then
         ArtifactSchema.setEquippedId(data, currentSlot, currentSubSlot or 1, nil, teamIdx)
@@ -527,7 +533,7 @@ function ArtifactService.Reroll(uid, artifactIds)
         used[idStr] = true
         local idx, artifact = findBagIndex(data, idStr)
         if not artifact then return false, "神器不在背包中: " .. idStr end
-        -- [三队适配] 任一队伍已装配的实例都不能置换（实例可跨队复用，装配中受保护）
+        -- 任一队伍已装配实例都受保护，不能置换
         if findEquippedAnyTeam(data, artifact.id) then return false, "已安装神器不能置换" end
         artifacts[#artifacts + 1] = artifact
         bagIndices[#bagIndices + 1] = idx

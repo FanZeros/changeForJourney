@@ -112,6 +112,7 @@ local SCROLL_WHEEL_STEP = 60
 -- 背包至少显示的空格数
 local BAG_DISPLAY_SLOTS = 20
 
+---@type table|nil
 local ctx_ = nil
 local HOVER_DELAY = 0.3
 local DRAG_THRESHOLD = 15
@@ -320,6 +321,10 @@ local function canInstall(artifact, target)
     if target.subSlot > getUnlockedSubSlotCount() then
         return false, "远征等级达到" .. tostring(ArtifactSchema.getSubSlotUnlockLevel(target.subSlot)) .. "级解锁"
     end
+    local occupiedTeam = ArtifactSchema.findEquippedSlotAnyTeam(getArtifactData(), artifact.id)
+    if occupiedTeam and occupiedTeam ~= target.teamIdx then
+        return false, "神器已安装在队伍" .. tostring(occupiedTeam) .. "，请先卸下再安装到其他队伍"
+    end
     if hasSameTypeInSlot(target.slot, artifact, target.subSlot, target.teamIdx) then
         return false, "同一槽位不能佩戴相同类型神器"
     end
@@ -413,11 +418,27 @@ function M.getArtifactBadgeInfo()
     return false, nil
 end
 
+---@type function
 local showFloat
+---@type function|nil
+local cancelEquipWait_ = nil
+local EQUIP_TIMEOUT = 5.0
+local equipRequestSeq_ = 0 -- reset不归零，迟到回执不能命中新页面请求
+---@type table|nil
+local equipRequest_ = nil
+
+local function finishEquipRequest()
+    state.equipRequestPending = false
+    equipRequest_ = nil
+    if cancelEquipWait_ then
+        cancelEquipWait_()
+        cancelEquipWait_ = nil
+    end
+end
 
 local function clearPendingEquip()
     state.pendingEquipArtifactId = nil
-    state.equipRequestPending = false
+    finishEquipRequest()
 end
 
 local function clearRerollSelection()
@@ -493,15 +514,36 @@ end
 
 local function sendAction(action, params)
     if ctx_ and ctx_.getClient then
-        local client = ctx_.getClient()
-        if client and client.sendAction then
-            local ok, err = pcall(client.sendAction, action, params or {})
-            if ok then return true end
-            print("[ChurchArtifactPanel] 操作发送失败: " .. tostring(err))
-        end
+        local ok, sent = pcall(function()
+            local client = ctx_.getClient()
+            if not client or not client.sendAction then return false end
+            return client.sendAction(action, params or {})
+        end)
+        if ok and sent ~= false then return true end
+        print("[ChurchArtifactPanel] send failed action=" .. tostring(action) .. " result=" .. tostring(sent))
+        showFloat("神器操作发送失败，请重试")
+        return false
     end
-    showFloat("神器操作未发送")
+    showFloat("网络未连接")
     return false
+end
+
+local function getEquipActionState(artifact, location, slot, subSlot, teamIdx)
+    local team, currentSlot, currentSub = ArtifactSchema.findEquippedSlotAnyTeam(getArtifactData(), artifact.id)
+    if location == "slot" then
+        local unchanged = team == (teamIdx or 1) and currentSlot == slot and currentSub == (subSlot or 1)
+        return {
+            label = unchanged and "取下" or "位置已变",
+            enabled = unchanged and not state.equipRequestPending,
+            hint = unchanged and ("队伍" .. team .. " · " .. currentSlot .. "号位 · 第" .. currentSub .. "格")
+                or "装配位置已变，请重新打开详情",
+        }
+    end
+    return {
+        label = team and "已安装" or "安装",
+        enabled = not team and not state.equipRequestPending,
+        hint = team and ("已安装在队伍" .. team .. "，请先卸下") or nil,
+    }
 end
 
 local function installArtifact(artifact, target)
@@ -521,13 +563,28 @@ local function installArtifact(artifact, target)
     state.equipRequestPending = true
     state.selectedTeam, state.selectedSlot, state.selectedSubSlot = target.teamIdx, target.slot, target.subSlot
     state.selectedBagIdx = findBagIndexById(artifact.id)
+    equipRequestSeq_ = equipRequestSeq_ + 1
+    local request = { artifactId = tostring(artifact.id), teamIdx = target.teamIdx,
+        slot = target.slot, subSlot = target.subSlot, requestId = tostring(equipRequestSeq_) }
+    equipRequest_ = request
+    cancelEquipWait_ = PlayerStore.WaitForChange("artifacts", {
+        timeout = EQUIP_TIMEOUT,
+        -- 数据推送不等于业务回执，只能由该请求回执或自己的timer释放。
+        compare = function() return false end,
+        onTimeout = function()
+            if equipRequest_ ~= request then return end
+            finishEquipRequest()
+            if not ctx_ or not ctx_.state or ctx_.state.open ~= false then
+                showFloat("神器安装超时，请重试", target.x + target.w * 0.5, target.y - 20)
+            end
+        end,
+    })
     showFloat("正在安装神器", target.x + target.w * 0.5, target.y - 20)
     print("[ChurchArtifactPanel] 请求安装 id=" .. tostring(artifact.id)
-        .. " team=" .. target.teamIdx .. " slot=" .. target.slot .. ":" .. target.subSlot)
-    if not sendAction(Protocol.ACTION_TYPES.ARTIFACT_EQUIP, {
-        artifactId = artifact.id, slot = target.slot, subSlot = target.subSlot, teamIdx = target.teamIdx,
-    }) then
-        state.equipRequestPending = false
+        .. " team=" .. target.teamIdx .. " slot=" .. target.slot .. ":" .. target.subSlot
+        .. " request=" .. request.requestId)
+    if not sendAction(Protocol.ACTION_TYPES.ARTIFACT_EQUIP, request) then
+        if equipRequest_ == request then finishEquipRequest() end
         return false
     end
     return true
@@ -567,7 +624,13 @@ function M.init(vg)
     img.rerollBtn = nvgCreateImage(vg, "image/按钮/UI_AN_HUANG.png", 0)
     img.iconUp    = nvgCreateImage(vg, "image/通用图标/ICON_UP.png", 0)
     ArtifactDetailPanel.init(vg)
+    ArtifactDetailPanel.setEquipActionStateGetter(getEquipActionState)
     ArtifactDetailPanel.setOnEquip(function(artifact, location, slot, subSlot, teamIdx)
+        local actionState = getEquipActionState(artifact, location, slot, subSlot, teamIdx)
+        if not actionState.enabled then
+            showFloat(actionState.hint or "正在安装神器", 540, 1430)
+            return
+        end
         if location == "slot" then
             local Protocol = ctx_ and ctx_.getProtocol and ctx_.getProtocol() or nil
             if Protocol and slot then
@@ -933,6 +996,7 @@ function M.handleTabInput(dx, dy)
                         return true
                     end
                     local pendingArtifact = getPendingEquipArtifact()
+                    local occupiedTeam = pendingArtifact and ArtifactSchema.findEquippedSlotAnyTeam(getArtifactData(), pendingArtifact.id)
                     local equipped = getEquippedArtifact(i, subSlot, t)
                     local locked = subSlot > unlockedSubSlots
                     if locked and pendingArtifact then
@@ -941,6 +1005,8 @@ function M.handleTabInput(dx, dy)
                     elseif locked and not equipped then
                         local unlockLevel = ArtifactSchema.getSubSlotUnlockLevel(subSlot)
                         showFloat("远征等级达到" .. tostring(unlockLevel) .. "级解锁", cx, cy - 70)
+                    elseif pendingArtifact and occupiedTeam and occupiedTeam ~= t then
+                        showFloat("神器已安装在队伍" .. tostring(occupiedTeam) .. "，请先卸下", cx, cy - 70)
                     elseif pendingArtifact and hasSameTypeInSlot(i, pendingArtifact, subSlot, t) then
                         showFloat("同一槽位不能佩戴相同类型神器", cx, cy - 70)
                     elseif pendingArtifact and Protocol then
@@ -1016,12 +1082,24 @@ function M.handleTabInput(dx, dy)
     return false
 end
 
-function M.onArtifactEquipResult(success)
-    state.equipRequestPending = false
+--- 按请求身份/目标收尾；旧无requestId回执兼容，明确不匹配的迟到回执不解锁。
+---@return boolean accepted
+function M.onArtifactEquipResult(success, response)
+    local request = equipRequest_
+    if not request then return false end
+    if response then
+        for _, key in ipairs({ "requestId", "artifactId", "teamIdx", "slot", "subSlot" }) do
+            if response[key] ~= nil and tostring(response[key]) ~= tostring(request[key]) then
+                return false
+            end
+        end
+    end
+    finishEquipRequest()
     if success then
         clearPendingEquip()
         state.selectedBagIdx = nil
     end
+    return true
 end
 
 function M.onArtifactRerollResult(success)

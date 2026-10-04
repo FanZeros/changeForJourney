@@ -164,6 +164,15 @@ local onEquipCallback_ = nil
 local onRefineCallback_ = nil
 ---@type function|nil
 local onCloseCallback_ = nil
+---@type function|nil
+local equipActionStateGetter_ = nil
+
+-- 实际占用可能在hover/钉住期间变化；绘制和点击都实时读同一状态。
+local function getEquipActionState()
+    local fallback = { label = state.location == "slot" and "取下" or "安装", enabled = true }
+    if not equipActionStateGetter_ or not state.artifact then return fallback end
+    return equipActionStateGetter_(state.artifact, state.location, state.slot, state.subSlot, state.teamIdx) or fallback
+end
 
 -- ======================== 辅助 ========================
 
@@ -597,6 +606,10 @@ function ArtifactDetailPanel.setOnEquip(fn)
     onEquipCallback_ = fn
 end
 
+function ArtifactDetailPanel.setEquipActionStateGetter(fn)
+    equipActionStateGetter_ = fn
+end
+
 function ArtifactDetailPanel.setOnRefine(fn)
     onRefineCallback_ = fn
 end
@@ -712,13 +725,24 @@ function ArtifactDetailPanel.draw(vg)
         nvgText(vg, DESC_BG.CX, DESC_BG.CY, "暂无神器效果", nil)
     end
 
-    local buttonLabel = state.location == "slot" and "取下" or "安装"
+    local equipAction = getEquipActionState()
+    local buttonLabel = equipAction.label
+    if equipAction.hint then
+        nvgFontFace(vg, "sans")
+        nvgFontSize(vg, 22)
+        nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+        nvgFillColor(vg, nvgRGBA(210, 190, 150, 230))
+        nvgText(vg, BG.CX, 1430, equipAction.hint, nil)
+    end
     local _bfEq = BF.begin(vg, "artifact_detail_equip", BTN_EQUIP.CX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H)
+    nvgSave(vg)
+    if not equipAction.enabled then nvgGlobalAlpha(vg, 0.45) end
     DarkIcon.drawNine(vg, "btn",
         BTN_EQUIP.CX - BTN_EQUIP.W * 0.5,
         BTN_EQUIP.CY - BTN_EQUIP.H * 0.5,
         BTN_EQUIP.W, BTN_EQUIP.H,
         { accent = "green", radius = BTN_EQUIP.H * 0.3 })
+    nvgRestore(vg)
     BF.finish(vg, _bfEq)
 
     nvgFontFace(vg, "sans")
@@ -788,6 +812,7 @@ function ArtifactDetailPanel.handleTap(tx, ty)
     ArtifactDetailPanel.pin()
     local artifact = state.artifact
     if hitTest(lx, ly, BTN_EQUIP.CX, BTN_EQUIP.CY, BTN_EQUIP.W, BTN_EQUIP.H) then
+        if not getEquipActionState().enabled then return true end
         BF.trigger("artifact_detail_equip")
         print("[ArtifactDetailPanel] equip id=" .. tostring(artifact.id) .. " location=" .. state.location)
         if onEquipCallback_ then

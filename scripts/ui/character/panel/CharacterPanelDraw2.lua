@@ -187,6 +187,7 @@ local getUnlockedTeamCount -- [三队并行] function() return unlockedCount end
 local getTeamOccupiedCounts -- [三队并行] function() return counts[] end
 local getTeams             -- function() return teams end
 local getTeamPowerCaches   -- function() return teamPowerCaches end
+local getTeamTotalPower    -- function(teamIdx) return totalPower end
 
 --- 注入来自 CharacterPanel 的共享状态
 function M.setContext(ctx)
@@ -204,6 +205,7 @@ function M.setContext(ctx)
     getTeamOccupiedCounts = ctx.getTeamOccupiedCounts
     getTeams             = ctx.getTeams
     getTeamPowerCaches   = ctx.getTeamPowerCaches
+    getTeamTotalPower    = ctx.getTeamTotalPower
 end
 
 -- ======================== 图片初始化 ========================
@@ -445,6 +447,7 @@ function M.drawTeamAvatars(vg)
                 teamPower = teamPower + (cache[i] or 0)
             end
         end
+        if getTeamTotalPower then teamPower = getTeamTotalPower(t) end
         local powerStr = require("core.NumberUtil").format(teamPower)
         local labelCY = frameY + AV_LABEL_H * 0.5
         nvgFontSize(vg, 26)

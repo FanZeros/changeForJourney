@@ -332,4 +332,126 @@ function DungeonConfig.getFirstClearGold(floor)
     return data.firstGold
 end
 
+-- ======================== 三类资源副本 ========================
+
+local StageConfig = require("config.StageConfig")
+
+DungeonConfig.RESOURCE_IDS = { "gold_mine", "equipment_vault", "black_diamond" }
+DungeonConfig.EXTRA_ENEMIES = 2
+DungeonConfig.DEFINITIONS = {
+    gold_mine = {
+        name = "金币副本", unlockStage = 305, maxFloor = 115,
+        cardImage = "image/界面底板/副本秘境/UI_FBRK_1.png",
+        rewardType = "gold", rewardIcon = "image/货币道具/UI_icon_JB_X.png", quality = 2,
+    },
+    equipment_vault = {
+        name = "装备副本", unlockStage = 1305, maxFloor = 109,
+        cardImage = "image/界面底板/副本秘境/UI_FBRK_2.png",
+        rewardType = "equip", rewardIcon = "image/货币道具/UI_icon_FBBX.png", quality = 4,
+    },
+    black_diamond = {
+        name = "黑钻副本", unlockStage = 605, maxFloor = 115,
+        cardImage = "image/界面底板/副本秘境/UI_FBRK_3.png",
+        rewardType = "diamond", rewardIcon = "image/货币道具/UI_icon_SJ_X.png", quality = 5,
+    },
+}
+for _, id in ipairs(DungeonConfig.RESOURCE_IDS) do
+    local def = DungeonConfig.DEFINITIONS[id]
+    DungeonConfig.UNLOCK_CONDITIONS[id] = def.unlockStage
+    DungeonConfig.MAX_FLOOR[id] = def.maxFloor
+    DungeonConfig.DAILY_SWEEP_LIMIT[id] = 2
+end
+
+function DungeonConfig.isResourceDungeon(id)
+    return DungeonConfig.DEFINITIONS[id] ~= nil
+end
+
+-- 各层沿主线普通关卡顺序前进，跳过终焉神殿，不把副本写进主线关卡链。
+local sourceStages = {} ---@type table<string, number[]>
+local function getSourceStage(id, floor)
+    local def = DungeonConfig.DEFINITIONS[id]
+    if not def then return nil end
+    if not sourceStages[id] then
+        local ids = {}
+        ---@type number|nil
+        local stageId = def.unlockStage
+        while #ids < def.maxFloor and stageId do
+            if not StageConfig.isTerminalTemple(stageId) then ids[#ids + 1] = stageId end
+            local nextId = StageConfig.getNextStageId(stageId)
+            if not nextId and StageConfig.isTerminalTemple(stageId) then
+                nextId = StageConfig.getReincarnationTarget(StageConfig.getDifficulty(stageId))
+            end
+            stageId = nextId
+        end
+        sourceStages[id] = ids
+    end
+    return StageConfig.getStage(sourceStages[id][floor])
+end
+
+--- 资源副本与预览共用的完整主线型出怪配置；复制后修改，不污染 StageConfig。
+---@return table|nil
+function DungeonConfig.getCombatEntry(id, floor)
+    floor = math.tointeger(tonumber(floor) or 0)
+    local def = DungeonConfig.DEFINITIONS[id]
+    if not def or not floor or floor < 1 or floor > def.maxFloor then return nil end
+    local source = getSourceStage(id, floor)
+    if not source then return nil end
+    ---@type table<string, any>
+    local entry = {}
+    for key, value in pairs(source) do
+        if type(value) == "table" then
+            local copy = {}
+            for k, v in pairs(value) do copy[k] = v end
+            entry[key] = copy
+        else
+            entry[key] = value
+        end
+    end
+    entry.name = def.name
+    entry.firstCount = (source.firstCount or source.idleCount or 4) + DungeonConfig.EXTRA_ENEMIES
+    entry.idleCount = entry.firstCount
+    entry.maxFieldEnemies = 4
+    entry.mode = "resource_dungeon"
+    entry.dropRate, entry.scrollDropRate = 0, 0
+    entry.fcGold, entry.fcExp, entry.fcDiamond, entry.fcEssence = 0, 0, 0, 0
+    entry.fcArcaneDust, entry.fcEquip, entry.fcScroll = 0, 0, 0
+    return entry
+end
+
+--- 获取层配置，旧遗迹仍能按原规则结清旧数据，不挪用为新装备副本。
+---@return table|nil
+function DungeonConfig.getFloor(id, floor)
+    floor = math.tointeger(tonumber(floor) or 0)
+    if not floor or floor < 1 or floor > (DungeonConfig.MAX_FLOOR[id] or 0) then return nil end
+    if id == "ancient_ruin" then return DungeonConfig.getAncientRuinFloor(floor) end
+    local combat = DungeonConfig.getCombatEntry(id, floor)
+    if not combat then return nil end
+    local result = { floor = floor, monsterLevel = combat.monsterLevel, monsters = combat.monsters }
+    if id == "gold_mine" then
+        local old = DungeonConfig.getGoldMineFloor(floor)
+        if not old then return nil end
+        result.firstGold, result.sweepGold = old.firstGold, old.sweepGold
+    elseif id == "equipment_vault" then
+        local cap = StageConfig.getMaxDropQuality(combat)
+        result.firstEquip, result.sweepEquip = 6, 3
+        result.equipLevel = combat.monsterLevel
+        result.equipMinQuality, result.equipMaxQuality = math.min(3, cap), cap
+    elseif id == "black_diamond" then
+        result.firstDiamond = 150 + (floor - 1) * 50
+        result.sweepDiamond = math.floor(result.firstDiamond / 2)
+    end
+    return result
+end
+
+--- 含终层的最高已通层；旧档没有账本时沿用 floor-1。
+function DungeonConfig.getHighestClearedFloor(sub, id)
+    local maxFloor = DungeonConfig.MAX_FLOOR[id] or 0
+    local highest = math.min(maxFloor, math.max(0, math.floor(tonumber(sub and sub.floor) or 1) - 1))
+    for key, cleared in pairs(sub and sub.cleared or {}) do
+        local floor = math.tointeger(tonumber(key) or 0)
+        if cleared == true and floor and floor > highest and floor <= maxFloor then highest = floor end
+    end
+    return highest
+end
+
 return DungeonConfig

@@ -31,8 +31,7 @@ local I18n              = require("core.I18n")
 
 -- 只在显示边界翻译；驱动进度、源关卡名和地图缓存仍使用原始配置。
 local function stageDisplayName(stageId)
-    local entry = stageId and StageConfig.getStage(tonumber(stageId))
-    return I18n.lookup((entry and entry.name) or tostring(stageId or "?"))
+    return I18n.lookup(StageConfig.getStageDisplayName(stageId))
 end
 
 local BattleTriPage = {}

@@ -46,17 +46,52 @@ function Start()
     end
     local langs = { "zh_TW", "en", "ja", "ko" }
     local checked = 0
+    check(SC.getStageDisplayName(104) == "黑棘林道1-4", "普通关卡编号保持1-4")
+    check(SC.getStageDisplayName(2404) == "困难·黑棘林道24-4", "困难全名显示连续24-4")
+    check(SC.formatProgressDisplay(2404) == "困难24-4", "困难进度显示连续24-4")
+    check(SC.getStageDisplayName("2404") == SC.getStageDisplayName(2404), "字符串关卡ID显示一致")
+    check(SC.getStageDisplayName(nil) == "?" and SC.getStageDisplayName("无效") == "无效",
+        "未知关卡全名安全回退")
+    check(SC.formatProgressDisplay(0) == "普通1-1" and SC.formatProgressDisplay(-1) == "普通1-1",
+        "未知进度沿用原回退")
+    check(SC.getRelativeChapter(24) == 1 and SC.getRelativeChapter(27) == 4,
+        "显示调整不改变业务相对章数")
+    check(SC.getFirstClearSacredStone(2405) == 0 and SC.getFirstClearSacredStone(2705) == 1,
+        "困难神圣石仍按难度内每四章发放")
+    local Tasks = require("config.TaskConfig")
+    local hardTask
+    for _, task in ipairs(Tasks.ACHIEVEMENT) do
+        if task.id == "a_clear_2405" then hardTask = task; break end
+    end
+    check(hardTask and hardTask.desc == "通关困难24-5" and hardTask.stageId == 2405
+        and hardTask.condKey == "clear_2405" and hardTask.target == 1,
+        "功绩显示连续编号且任务条件不变")
     for _, lang in ipairs(langs) do
         I18n.set(lang)
-        local missing, wrong = 0, 0
+        local missing, wrong, displayWrong = 0, 0, 0
         for _, entry in ipairs(SC.STAGES) do
             local expected = StageText.lookup(entry.name, lang)
             local actual = tostring(I18n.lookup(entry.name))
             if not expected or expected == "" then missing = missing + 1 end
             if actual ~= expected or string.find(actual, "{", 1, true) then wrong = wrong + 1 end
+            local name = SC.getStageDisplayName(entry.id)
+            local progress = SC.formatProgressDisplay(entry.id)
+            if SC.isTerminalTemple(entry.id) then
+                if name ~= entry.name or progress ~= entry.name then displayWrong = displayWrong + 1 end
+            else
+                local suffix = tostring(entry.chapter) .. "-" .. tostring(entry.stage)
+                local baseName = entry.name:match("^(.-)%d+%-%d+$")
+                local prefix = SC.getDifficultyDisplayName(SC.getDifficulty(entry.id))
+                if name ~= baseName .. suffix or progress ~= prefix .. suffix
+                    or I18n.lookup(name) ~= StageText.lookup(name, lang)
+                    or I18n.lookup(progress) ~= StageText.lookup(progress, lang) then
+                    displayWrong = displayWrong + 1
+                end
+            end
             checked = checked + 1
         end
         check(missing == 0 and wrong == 0, lang .. "全部1739关名模板与显示入口一致")
+        check(displayWrong == 0, lang .. "全部1739关显示连续章号、翻译与终焉名称一致")
         for _, region in ipairs(StageText.REGIONS) do
             local translated = StageText.lookup(region, lang)
             check(type(translated) == "string" and translated ~= "", lang .. "地名完整: " .. region)

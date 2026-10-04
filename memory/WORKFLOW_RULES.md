@@ -32,6 +32,8 @@
 - 完整源码Page→GameAction→Bridge→TaskHandler/Service→真Flush→CMH.setup/handle→真RewardPopup第一轮加强23用例24051断言通过，旧18用例17325门禁保留。连续2/3点击同级+940一次写盘/一次popup，200级209项+20840、真Popup42行滚7200，主动领奖不3秒自关；clear旧单领分支、rename失败保已有popup/Toast、冷新实例只JSON恢复先于初始化/重领拒绝均覆盖。阶段测试提交 `bea36b61` 已push远端一致，仅改现有test，生产代码不改。
 - 独立反证发现测试仍需加强实际nvgText而非format调用、全pcall异常捕获、show入口瞬间余额/账本快照三点；正在补强，不把首轮结果说成最终全链完备。设计坐标输入/叶子绘图spy不等于真实硬件或宿主全路由验收。最终结果与推送待实际完成后补记。
 
+- PR65已由外部在 `6e2cb79b` 时合入workspace930为 `3105093`，非本会话合并；后续满包修复PR66又合入至 `e1e2dab`。已新建后续验收分支 `feat1004a/expedition-claim-validation`，三方整合最新基线，完整保留PR66生产修改/测试及双方记忆，任务领奖相关CMH分支无回退。此阶段后续只push新验收分支，绝不推workspace930；原PR65不再说成open，额外严格测试需另开PR。
+
 ## 选关敌人横向拖动与终焉说明协作要求（2026-10-04）
 
 - 用户本轮指定从 `workspace930` 拉取到 `/workspace` 根；基线为 `5678b740d4d40e9501c734a2ae64e4e07e9ad18e`，新任务分支为 `fix/workspace930-stage-enemy-scroll-temple-help`。只正常提交并 push 当前任务分支，不推任何 `workspace` 系列或原基线，不强推，不自动创建或合并 PR。

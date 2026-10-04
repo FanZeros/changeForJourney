@@ -5,6 +5,7 @@
 
 local AD = require("systems.AttributeDef")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
+local EquipmentSetRuntime = require("systems.EquipmentSetRuntime")
 
 local M = {}
 
@@ -116,12 +117,14 @@ function M.resetAllyUnit(u, allies, syncUnitHp)
             end
             M.createSnapshot(u)
         end
+        EquipmentSetRuntime.resetBattleState(u)
         u.attrs:fillHp()
         u.maxHp       = u.attrs.final[AD.MAX_HP]
         u.hp          = u.attrs.final[AD.HP]
         u.atkInterval = u.attrs:getActualInterval()
         u._lastAttrInterval = u.atkInterval
     else
+        EquipmentSetRuntime.resetBattleState(u)
         print("[BattleDiag] RESET_NO_ATTRS name=" .. tostring(u.name)
             .. " id=" .. tostring(u.heroId or u.instanceId or "?")
             .. " hp=" .. tostring(u.hp) .. "/" .. tostring(u.maxHp)

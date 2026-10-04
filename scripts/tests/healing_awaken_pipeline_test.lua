@@ -179,6 +179,7 @@ local function testHealingSets()
         healer._setShell = 8
         healer._setFacelessT = 4
         healer._setSwordDmgWin = 321
+        local crystalBefore = target._crystal
         local extraDamage = 0
         local oldDamage = BC.dealDamageToUnit
         -- 套装正式回调使用宿主闭包；通过攻击后包装观察回调，不替换被测套装实现。
@@ -192,7 +193,7 @@ local function testHealingSets()
         heal(driver, healer)
         TAL.onAfterAttack = oldAfter
         check(target._setEmber == nil and target._setEmberSrc == nil, "治疗不写余烬／来源 set=" .. setId)
-        check(target._crystal == nil, "治疗不积晶蚀 set=" .. setId)
+        check(target._crystal == crystalBefore, "治疗不积晶蚀 set=" .. setId)
         check(extraDamage == 0, "治疗不触发攻击套装额伤 set=" .. setId)
         check(healer._setGamble == 0 and healer.attrs.modifiers.set4_gamble == nil,
             "治疗不改变赌徒攻击计数 set=" .. setId)

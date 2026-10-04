@@ -1,54 +1,71 @@
--- ============================================================================
--- verify_stage_select.lua — 选关弹窗 v2 布局验证（headless 截图）
--- mock BattleScene 进度（maxStage=305, current=203）→ 打开选关 → 每帧绘制
--- 跑法: ./.cli/UrhoXRuntime scripts/_proc/verify_stage_select.lua -tool_mode \
---   -graphicssurfaceless -screenshot=/abs/xxx.png -screenshot-frame=30 -x 1080 -y 1400
--- ============================================================================
+-- 选关真实离屏验收：使用正式字体/卡面/章节图，不修改存档或战斗规则。
+-- -review-stage=32301 -review-offset=160 -review-lang=en 可冻结要验收的页面状态。
+local Dialog = require("ui.battle.stage.StageSelectDialog")
+local I18n = require("core.I18n")
 
-package.loaded["ui.battle.scene.BattleScene"] = {
-    getMaxStageId = function() return 305 end,
-    getStageId = function() return 203 end,
-    gotoStage = function(id) print("[mock] gotoStage " .. tostring(id)) return true end,
-}
-
-local StageSelectDialog = require("ui.battle.stage.StageSelectDialog")
-
-local nvg = nil
-local vgOk = false
-
-local function onRender(evt, data)
-    if not nvg then
-        nvg = nvgCreate(1)
-        if not nvg then
-            print("[verify] ERROR nvgCreate failed")
-            return
-        end
-        nvgCreateFont(nvg, "sans", "Fonts/ResourceHanRoundedCN-Heavy.ttf")
-        StageSelectDialog.init(nvg)
-        StageSelectDialog.open()
-        vgOk = true
-        print("[verify] nvg ready, dialog opened")
-    end
-    if not vgOk then return end
-    local W, H = 1080, 1400
-    nvgBeginFrame(nvg, W, H, 1.0)
-    nvgBeginPath(nvg)
-    nvgRect(nvg, 0, 0, W, H)
-    nvgFillColor(nvg, nvgRGBA(16, 16, 22, 255))
-    nvgFill(nvg)
-    -- 模拟三行页弹窗变换：设计锚点 (540,1195) 对齐窗口中心
-    local fit = math.min(W / 1080, H / 1200)
-    nvgSave(nvg)
-    nvgScissor(nvg, 0, 0, W, H)
-    nvgTranslate(nvg, W * 0.5, H * 0.5)
-    nvgScale(nvg, fit, fit)
-    nvgTranslate(nvg, -540, -1195)
-    StageSelectDialog.draw(nvg)
-    nvgRestore(nvg)
-    nvgEndFrame(nvg)
-end
+---@type NVGContextWrapper|nil
+local vg = nil
+local stageId, offset, language = 32301, 0, "zh_CN"
+local opened = false
 
 function Start()
-    print("[verify_stage_select] start")
-    SubscribeToEvent("NanoVGRender", "onRender")
+    for _, argument in ipairs(GetArguments()) do
+        stageId = tonumber(argument:match("^%-review%-stage=(%d+)$")) or stageId
+        offset = tonumber(argument:match("^%-review%-offset=(%d+)$")) or offset
+        language = argument:match("^%-review%-lang=(.+)$") or language
+    end
+    local originalRequire = require
+    local battle = {
+        getMaxStageId = function() return 32305 end,
+        getStageId = function() return stageId end,
+        getClearedStages = function() return {} end,
+        gotoStage = function(id) print("[verify_stage_select] 意外切关: " .. tostring(id)); return false end,
+    }
+    require = function(name)
+        if name == "ui.battle.scene.BattleScene" then return battle end
+        return originalRequire(name)
+    end
+    I18n.set(language)
+    vg = nvgCreate(1)
+    assert(vg, "选关验收图形上下文创建失败")
+    local font = nvgCreateFont(vg, "sans", "Fonts/ResourceHanRoundedCN-Heavy.ttf")
+    assert(font >= 0, "选关验收字体加载失败")
+    I18n.installDrawHook()
+    Dialog.init(vg)
+    Dialog.open()
+    if offset > 0 then
+        local rowY = 790 + 4 * 178 + 62
+        Dialog.handleDragBegin(700, rowY)
+        Dialog.handleDragMove(700 - offset, rowY)
+        Dialog.handleDragEnd()
+    end
+    opened = true
+    SubscribeToEvent("NanoVGRender", "HandleStageSelectReviewRender")
+    print(string.format("[verify_stage_select] 页面=%d 偏移=%d 语言=%s", stageId, offset, language))
+end
+
+function HandleStageSelectReviewRender()
+    if not vg or not opened then return end
+    local dpr = graphics:GetDPR()
+    local width, height = graphics:GetWidth() / dpr, graphics:GetHeight() / dpr
+    nvgBeginFrame(vg, width, height, dpr)
+    nvgBeginPath(vg)
+    nvgRect(vg, 0, 0, width, height)
+    nvgFillColor(vg, nvgRGBA(16, 16, 22, 255))
+    nvgFill(vg)
+    -- 与三行页同一设计空间和中心锚点；保留父窗口DPR，使用contain缩放。
+    local fit = math.min(width / 1080, height / 1200)
+    nvgSave(vg)
+    nvgScissor(vg, 0, 0, width, height)
+    nvgTranslate(vg, width * 0.5, height * 0.5)
+    nvgScale(vg, fit, fit)
+    nvgTranslate(vg, -540, -1195)
+    Dialog.draw(vg)
+    nvgRestore(vg)
+    nvgEndFrame(vg)
+end
+
+function Stop()
+    Dialog.close()
+    if vg then nvgDelete(vg); vg = nil end
 end

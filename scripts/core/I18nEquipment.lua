@@ -20,6 +20,12 @@ local function add(zh, tw, en, ja, ko)
     D.zh_TW[zh], D.en[zh], D.ja[zh], D.ko[zh] = tw, en, ja, ko
 end
 
+-- 81+套装追加装备：只补充新原文键，沿用虫壳/无面套装的四语用语。
+add("虫壳战刃", "蟲殼戰刃", "Carapace Warblade", "虫殻の戦刃", "벌레껍질 전투검")
+add("虫壳巨刃", "蟲殼巨刃", "Carapace Greatblade", "虫殻の巨刃", "벌레껍질 거검")
+add("虫壳重盾", "蟲殼重盾", "Carapace Heavy Shield", "虫殻の重盾", "벌레껍질 중량 방패")
+add("无面影刃", "無面影刃", "Faceless Shadowblade", "無面の影刃", "무면의 그림자 칼날")
+
 -- AffixConfig 的57项：16项译文沿用原词典，新增41项（含13个魔化词缀）。
 add("力量", "力量", "STR", "力", "힘")
 add("敏捷", "敏捷", "AGI", "敏捷", "민첩")

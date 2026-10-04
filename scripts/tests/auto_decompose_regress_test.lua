@@ -23,6 +23,389 @@ end
 
 local BC = require("config.BlacksmithConfig")
 
+-- 顶部六档为手动分解多选；只替换数据/发送/绘图边界，不访问真实玩家存档。
+local function testRarityMultiselect()
+    local patches, globals = {}, {}
+    local globalKeys = {}
+    local function patch(target, key, value)
+        patches[#patches + 1] = { target = target, key = key, value = target[key] }
+        target[key] = value
+    end
+    local function patchGlobal(key, value)
+        globals[key] = _G[key]
+        globalKeys[#globalKeys + 1] = key
+        _G[key] = value
+    end
+    local function copy(value)
+        if type(value) ~= "table" then return value end
+        local result = {}
+        for key, child in pairs(value) do result[key] = copy(child) end
+        return result
+    end
+    local function signature(values)
+        local result = {}
+        for _, value in ipairs(values) do result[#result + 1] = tostring(value) end
+        table.sort(result)
+        return table.concat(result, ",")
+    end
+    local ok, err = pcall(function()
+        local PlayerStore = require("core.PlayerStore")
+        local GameAction = require("runtime.GameAction")
+        local Protocol = require("shared.Protocol")
+        local PDM = require("rules.character.PlayerDataManager")
+        local TaskService = require("rules.task.TaskService")
+        local EquipmentSystem = require("systems.EquipmentSystem")
+        local BS = require("rules.blacksmith.BlacksmithService")
+        local Detail = require("ui.character.equip.EquipmentDetail")
+        local RewardPopup = require("ui.hud.popup.RewardPopup")
+        local BF = require("systems.ButtonFeedback")
+        local QualityMark = require("ui.widget.QualityMark")
+        local SetIcon = require("ui.widget.EquipmentSetIcon")
+        local actions, rewards, dirty, progress = {}, {}, {}, {}
+        local testPDM = { equipment = {}, currency = { essence = 0 } }
+        patch(PlayerStore, "Get", function(name) return testPDM[name] end)
+        patch(PDM, "GetModule", function(_, name) return testPDM[name] end)
+        patch(PDM, "MarkDirty", function(_, name) dirty[name] = (dirty[name] or 0) + 1 end)
+        patch(TaskService, "UpdateProgress", function(_, name, count)
+            progress[name] = (progress[name] or 0) + count
+        end)
+        patch(GameAction, "sendAction", function(action, params)
+            actions[#actions + 1] = { action = action, params = copy(params) }
+            return true
+        end)
+        patch(Detail, "isOpen", function() return false end)
+        patch(RewardPopup, "show", function(title, items)
+            rewards[#rewards + 1] = { title = title, items = copy(items) }
+        end)
+        -- 不播放音效/启动按钮动画，保留真实 drawPanel、DrawUtil 与品质图绘制。
+        patch(BF, "trigger", function() end)
+        patch(BF, "begin", function() return false end)
+        patch(BF, "finish", function() end)
+        patch(SetIcon, "isEnabled", function() return false end)
+        patch(QualityMark, "get", function(quality) return 72000 + math.floor(quality) end)
+        patchGlobal("time", { elapsedTime = 100 })
+        local checkImage = 73000
+        local paints = {}
+        local function noop() end
+        for _, name in ipairs({ "nvgBeginPath", "nvgRect", "nvgRoundedRect", "nvgRoundedRectVarying",
+            "nvgFill", "nvgStroke", "nvgStrokeColor", "nvgStrokeWidth", "nvgMoveTo", "nvgLineTo",
+            "nvgClosePath", "nvgCircle", "nvgEllipse", "nvgBezierTo", "nvgQuadTo", "nvgArc",
+            "nvgSave", "nvgRestore", "nvgIntersectScissor", "nvgTranslate", "nvgScale", "nvgRotate",
+            "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgFillColor", "nvgText", "nvgLineCap" }) do
+            patchGlobal(name, noop)
+        end
+        patchGlobal("nvgRGBA", function(r, g, b, a) return { r = r, g = g, b = b, a = a } end)
+        patchGlobal("nvgLinearGradient", function() return {} end)
+        patchGlobal("nvgRadialGradient", function() return {} end)
+        patchGlobal("nvgTextBounds", function(_, _, _, text) return #text * 14 end)
+        patchGlobal("nvgImagePattern", function(_, x, y, w, h, _, image, alpha)
+            return { image = image, cx = x + w * 0.5, cy = y + h * 0.5, alpha = alpha }
+        end)
+        patchGlobal("nvgFillPaint", function(_, paint)
+            if paint.image then paints[#paints + 1] = paint end
+        end)
+        -- 同一真实模块实例通过 onOpen/resetFixture 重置，不依赖加载缓存隔离。
+        local M = require("ui.blacksmith.BlacksmithDecompose")
+        M.setContext({
+            imgGoldQBg = 74001, imgEssenceIcon = 74002, imgEnhBtn = 74003,
+            imgReplaceBtn = 74004, imgCheckmark = checkImage, imgQualityBg = {},
+            getEquipIconCached = function() return -1 end,
+            QUALITY_COST = BC.QUALITY_COST, ENHANCE_TABLE = BC.ENHANCE_TABLE,
+            SLOT_BG_ALPHA = 1, EQUIP_NAME_CX = 540, EQUIP_NAME_CY = 650,
+            EQUIP_NAME_FONT_SIZE = 36, EQUIP_NAME_STROKE = 4,
+            getClient = function() return GameAction end, getProtocol = function() return Protocol end,
+        })
+        local function equip(seq, quality, locked)
+            local item = assert(EquipmentSystem.generate("W1", 10, quality), "测试装备生成失败")
+            item.seq, item.locked = seq, locked or nil
+            return item
+        end
+        local function resetFixture()
+            testPDM.equipment = { inventory = {}, equipped = {
+                [1] = { weapon = 9701 }, [2] = { weapon = "9702" },
+            }, settings = { autoQuality = 4, autoLevel = 30 } }
+            for _, row in ipairs({ { 9101, 1 }, { 9102, 1 }, { 9103, 1, true },
+                { 9201, 2 }, { 9202, 2 }, { 9203, 2, true }, { 9301, 3 }, { 9302, 3 },
+                { 9401, 4 }, { 9501, 5 }, { 9601, 6 }, { 9602, 6, true },
+                { 9701, 1 }, { 9702, 2 } }) do
+                testPDM.equipment.inventory[tostring(row[1])] = equip(row[1], row[2], row[3])
+            end
+            testPDM.currency = { essence = 0 }
+            M.onOpen()
+        end
+        local allEligible = { 9101, 9102, 9201, 9202, 9301, 9302, 9401, 9501, 9601 }
+        for _, profile in ipairs({ "warehouse", "smith" }) do
+            local label = "手动多品质[" .. profile .. "] "
+            local layout = profile == "warehouse"
+                and { qx = 565, qy = 328, qs = 82, gx = 160, gy = 550, gs = 190, by = 2160 }
+                or { qx = 558, qy = 900, qs = 103, gx = 150, gy = 1060, gs = 195, by = 2129 }
+            M.applyProfile(profile)
+            local function click(x, y, text)
+                check(M.handleInput(x, y) == true, label .. text .. " 消费点击")
+            end
+            local function quality(q) click(layout.qx + (q - 1) * layout.qs, layout.qy, "顶部品质" .. q) end
+            local function cell(seq)
+                for index = 1, 25 do
+                    local x = layout.gx + ((index - 1) % 5) * layout.gs
+                    local y = layout.gy + math.floor((index - 1) / 5) * layout.gs
+                    local item = M.peekCellAt(x, y)
+                    if item and tostring(item.seq) == tostring(seq) then
+                        click(x, y, "装备格子" .. seq)
+                        return
+                    end
+                end
+                error(label .. "找不到可见测试格子 seq=" .. tostring(seq))
+            end
+            local function equippedSet()
+                local result = {}
+                for _, slots in pairs(testPDM.equipment.equipped or {}) do
+                    for _, seq in pairs(slots) do
+                        local numeric = tonumber(seq)
+                        result[tostring(numeric and (math.tointeger(numeric) or numeric) or seq)] = true
+                    end
+                end
+                return result
+            end
+            -- 顶部六坐标与格子坐标分别捕获，不把格子对勾误算为顶部品质对勾。
+            local function selected(expected, text)
+                paints = {}
+                M.drawPanel({})
+                local top, icons, actual, seen = {}, {}, {}, {}
+                for _, paint in ipairs(paints) do
+                    for q = 1, 6 do
+                        if math.abs(paint.cx - (layout.qx + (q - 1) * layout.qs)) < 0.001
+                            and math.abs(paint.cy - layout.qy) < 0.001 then
+                            if paint.image == checkImage then top[q] = (top[q] or 0) + 1 end
+                            if paint.image == 72000 + q then icons[q] = (icons[q] or 0) + 1 end
+                        end
+                    end
+                    if paint.image == checkImage and paint.cy ~= layout.qy then
+                        local item = M.peekCellAt(paint.cx, paint.cy)
+                        check(item ~= nil, label .. text .. " 对勾落在真实装备格子")
+                        if item then
+                            local seq = tostring(item.seq)
+                            check(not seen[seq], label .. text .. " 格子对勾不重复 seq=" .. seq)
+                            seen[seq], actual[#actual + 1] = true, seq
+                        end
+                    end
+                end
+                eq(signature(actual), signature(expected), label .. text .. " 格子选择")
+                local wanted, equipped = {}, equippedSet()
+                for _, seq in ipairs(expected) do wanted[tostring(seq)] = true end
+                for q = 1, 6 do
+                    local eligible, complete = 0, true
+                    for seq, item in pairs(testPDM.equipment.inventory) do
+                        if item.quality == q and not item.locked and not equipped[tostring(seq)] then
+                            eligible = eligible + 1
+                            if not wanted[tostring(seq)] then complete = false end
+                        end
+                    end
+                    eq(icons[q] or 0, 1, label .. text .. " 顶部品质图" .. q .. "含红档且坐标准确")
+                    eq(top[q] or 0, eligible > 0 and complete and 1 or 0,
+                        label .. text .. " 顶部对勾" .. q .. "由全选可分解项派生")
+                end
+            end
+            local function request(expected, text)
+                local before = #actions
+                click(773, layout.by, "分解按钮")
+                eq(#actions, before + (#expected > 0 and 1 or 0), label .. text .. " 请求数量")
+                if #expected == 0 then return nil end
+                local action = actions[before + 1]
+                check(action ~= nil, label .. text .. " 捕获GameAction")
+                if not action then return nil end
+                eq(action.action, Protocol.ACTION_TYPES.DECOMPOSE_EQUIP, label .. text .. " 分解动作")
+                local seqs = action.params.seqs or {}
+                eq(signature(seqs), signature(expected), label .. text .. " payload多品质并集")
+                eq(#seqs, #expected, label .. text .. " payload长度准确")
+                local seen, equipped = {}, equippedSet()
+                for _, seq in ipairs(seqs) do
+                    local key = tostring(seq)
+                    check(not seen[key], label .. text .. " payload不重复 seq=" .. key)
+                    seen[key] = true
+                    local item = testPDM.equipment.inventory[key]
+                    check(item ~= nil and not item.locked and not equipped[key],
+                        label .. text .. " payload排除最新锁定/穿戴 seq=" .. key)
+                end
+                return action
+            end
+            local function failure()
+                M.onActionResult({ action = Protocol.ACTION_TYPES.DECOMPOSE_EQUIP, success = false })
+            end
+            resetFixture()
+            selected({}, "打开清空")
+            local rewardBefore = #rewards
+            quality(1); selected({ 9101, 9102 }, "q1选择全部未锁未装")
+            quality(2); selected({ 9101, 9102, 9201, 9202 }, "q2保留q1")
+            local union = { 9101, 9102, 9201, 9202 }
+            request(union, "首次并集发送")
+            local pendingCount = #actions
+            click(773, layout.by, "pending重复分解")
+            eq(#actions, pendingCount, label .. "pending阻止重复请求")
+            M.onActionResult({ action = Protocol.ACTION_TYPES.TOGGLE_EQUIP_LOCK,
+                decomposed = true, essenceReward = 99 })
+            selected(union, "无关成功回执保留")
+            eq(#rewards, rewardBefore, label .. "无关回执不弹分解奖励")
+            click(773, layout.by, "无关回执后重复分解")
+            eq(#actions, pendingCount, label .. "无关回执不提前释放pending")
+            failure(); selected(union, "失败回执保留勾选")
+            eq(#rewards, rewardBefore, label .. "失败回执不弹奖励")
+            local retry = request(union, "失败释放pending可重试")
+            check(retry ~= nil, label .. "服务端使用真实多品质payload")
+            if retry then
+                local inventoryBefore = {}
+                for key, item in pairs(testPDM.equipment.inventory) do inventoryBefore[key] = item end
+                local essence = 0
+                for _, seq in ipairs(union) do
+                    local item = inventoryBefore[tostring(seq)]
+                    essence = essence + BC.calcAutoDecomposeEssence(item.quality, item.level)
+                end
+                local equipDirty, currencyDirty = dirty.equipment or 0, dirty.currency or 0
+                local taskBefore = progress.decompose or 0
+                local serviceOk, serviceErr, result = BS.DecomposeEquip(1, retry.params.seqs)
+                check(serviceOk == true, label .. "真实BS.DecomposeEquip多品质成功 " .. tostring(serviceErr))
+                if serviceOk and result then
+                    eq(result.decomposeCount, 4, label .. "真实服务分解数量")
+                    eq(testPDM.currency.essence, essence, label .. "真实服务精粹并集奖励")
+                    eq(result.essenceReward, essence, label .. "真实服务返回奖励")
+                    eq(dirty.equipment, equipDirty + 1, label .. "真实服务装备标脏")
+                    eq(dirty.currency, currencyDirty + 1, label .. "真实服务货币标脏")
+                    eq(progress.decompose, taskBefore + 4, label .. "真实服务任务数量")
+                    local removed = {}
+                    for _, seq in ipairs(union) do removed[tostring(seq)] = true end
+                    for key, item in pairs(inventoryBefore) do
+                        if not removed[key] then
+                            eq(testPDM.equipment.inventory[key], item,
+                                label .. "真实服务保留未选/锁定/穿戴 seq=" .. key)
+                        end
+                    end
+                    for _, seq in ipairs(union) do
+                        eq(testPDM.equipment.inventory[tostring(seq)], nil, label .. "库存删除并集 seq=" .. seq)
+                    end
+                    eq(testPDM.equipment.equipped[1].weapon, 9701, label .. "数字穿戴关系保留")
+                    eq(testPDM.equipment.equipped[2].weapon, "9702", label .. "字符串穿戴关系保留")
+                    result.action = Protocol.ACTION_TYPES.DECOMPOSE_EQUIP
+                    M.onActionResult(result)
+                    selected({}, "成功回执清所有品质勾选")
+                    eq(#rewards, rewardBefore + 1, label .. "成功奖励仅弹一次")
+                    cell(9301); selected({ 9301 }, "成功后可手选其他品质")
+                    M.onActionResult(result)
+                    selected({ 9301 }, "非pending重复成功不误清新选择")
+                    eq(#rewards, rewardBefore + 1, label .. "重复回执不重复弹奖")
+                end
+            end
+            resetFixture()
+            cell(9301); cell(9101)
+            selected({ 9101, 9301 }, "手选两种品质但各自部分选不亮")
+            quality(1); selected({ 9101, 9102, 9301 }, "部分选补选缺失项")
+            quality(2); selected({ 9101, 9102, 9201, 9202, 9301 }, "异品质手选保持")
+            quality(1); selected({ 9201, 9202, 9301 }, "二次点击仅取消q1")
+            quality(1); cell(9101)
+            selected({ 9102, 9201, 9202, 9301 }, "手动取消一项顶部q1熄灭")
+            quality(1); selected({ 9101, 9102, 9201, 9202, 9301 }, "部分取消后q1回补")
+            cell(9302); selected({ 9101, 9102, 9201, 9202, 9301, 9302 }, "手动全选q3自动亮勾")
+            cell(9301); quality(3)
+            quality(4); quality(5); quality(6)
+            selected(allEligible, "六档含至臻红全部选中")
+            request(allEligible, "六档含红payload")
+            failure(); selected(allEligible, "六档失败保持")
+            quality(6)
+            selected({ 9101, 9102, 9201, 9202, 9301, 9302, 9401, 9501 }, "二次点击红档取消")
+            quality(6); cell(9602); selected(allEligible, "锁定红装格子不可选")
+            M.onTabSwitch(); selected({}, "切tab清勾选")
+            request({}, "切tab后空选不发送")
+            quality(1); M.onOpen(); selected({}, "重新打开清勾选")
+
+            -- 新增排序前插项不继承旧索引；删除/全量新引用后仍按seq保持选择。
+            quality(1); quality(2); cell(9301)
+            testPDM.equipment.inventory["9000"] = equip(9000, 1)
+            testPDM.equipment.inventory["9001"] = equip(9001, 5)
+            M.onEquipmentDataUpdate()
+            selected({ 9101, 9102, 9201, 9202, 9301 }, "排序前插不误选且q1部分选熄灭")
+            quality(1); selected({ 9000, 9101, 9102, 9201, 9202, 9301 }, "新增同品质仅补缺")
+            testPDM.equipment.inventory["9101"] = nil
+            M.onEquipmentDataUpdate()
+            selected({ 9000, 9102, 9201, 9202, 9301 }, "删除后seq重映射稳定")
+            testPDM.equipment = copy(testPDM.equipment)
+            testPDM.equipment.inventory["8988"] = equip(8988, 6)
+            testPDM.equipment.inventory["9000"].locked = true
+            testPDM.equipment.inventory["9201"].locked = true
+            testPDM.equipment.equipped[3] = { weapon = "9102", offhand = 9301 }
+            -- 刻意不调用数据更新，发送前必须主动刷新最新锁定/数字及字符串穿戴。
+            request({ 9202 }, "发送前全量更新安全过滤并重映射")
+            selected({ 9202 }, "发送前刷新不丢剩余安全项")
+            failure(); selected({ 9202 }, "安全过滤后失败保留剩余项")
+            testPDM.equipment.inventory["9000"].locked = nil
+            testPDM.equipment.inventory["9201"].locked = nil
+            testPDM.equipment.equipped[3] = nil
+            M.onOpen(); quality(1); quality(2); cell(9301)
+            testPDM.equipment = copy(testPDM.equipment)
+            testPDM.equipment.inventory["9102"].locked = true
+            testPDM.equipment.equipped[3] = { weapon = "9202" }
+            M.onEquipmentDataUpdate()
+            selected({ 9000, 9201, 9301 }, "推送刷新排除新锁定/字符串穿戴仍保留其他")
+
+            testPDM.equipment = { inventory = { ["9901"] = equip(9901, 1),
+                ["9902"] = equip(9902, 6, true), ["9903"] = equip(9903, 6) },
+                equipped = { [1] = { weapon = "9903" } }, settings = {} }
+            M.onOpen(); cell(9901)
+            quality(6); selected({ 9901 }, "红档仅锁装/穿戴视为空不亮不改选择")
+            quality(2); selected({ 9901 }, "完全空品质不亮不改其他手选")
+            request({ 9901 }, "空品质不会混入payload")
+            failure()
+            testPDM.equipment.inventory["9901"].locked = true
+            request({}, "全部新锁定发送前清空且不发送")
+            selected({}, "无可分解项全部顶部不亮")
+            testPDM.equipment.inventory["9901"].locked = nil
+            M.onEquipmentDataUpdate(); cell(9901)
+            request({ 9901 }, "空请求不遗留pending")
+            failure()
+
+            -- JSON数字可能为浮点；9101.0/"9101.0"与整数序号必须视为同一装备。
+            resetFixture()
+            testPDM.equipment.equipped[1].weapon = 9701.0
+            testPDM.equipment.equipped[2].weapon = "9702.0"
+            M.onEquipmentDataUpdate()
+            quality(1); quality(2)
+            selected(union, "浮点与小数字符串穿戴排除且不误亮")
+            request(union, "浮点穿戴不混入多品质payload")
+            failure()
+            testPDM.equipment.equipped[3] = { weapon = 9101.0, offhand = "9201.0" }
+            request({ 9102, 9202 }, "发送前新增浮点穿戴再次安全排除")
+            failure()
+
+            -- 自动分解弹窗仍是单阈值，与顶部手动多选互不干扰。
+            resetFixture(); quality(1); quality(2)
+            click(310, layout.by, "自动分解按钮")
+            check(M.isPopupOpen(), label .. "自动弹窗打开")
+            check(M.handlePopupInput(230, 1060), label .. "自动阈值选择q1")
+            check(M.handlePopupInput(354, 1060), label .. "自动阈值q2替换q1")
+            local autoBefore = #actions
+            check(M.handlePopupInput(540, 1330), label .. "自动弹窗保存")
+            eq(#actions, autoBefore + 1, label .. "自动设置仅发送一次")
+            local auto = actions[#actions]
+            eq(auto.action, Protocol.ACTION_TYPES.SET_AUTO_DECOMPOSE, label .. "自动设置独立动作")
+            eq(auto.params.autoQuality, 2, label .. "autoQuality保持单数字阈值")
+            eq(auto.params.autoLevel, 30, label .. "autoLevel仍为原阈值")
+            eq(auto.params.seqs, nil, label .. "自动设置不发送手动多选seq")
+            check(not M.isPopupOpen(), label .. "保存后关闭自动弹窗")
+            selected(union, "自动阈值保存不改变手动并集")
+            click(310, layout.by, "再次打开自动分解")
+            check(M.handlePopupInput(850, 1060), label .. "自动红档单阈值可选")
+            check(M.handlePopupInput(850, 1060), label .. "自动红档再次点击关闭阈值")
+            check(M.handlePopupInput(540, 1330), label .. "保存关闭自动阈值")
+            eq(actions[#actions].params.autoQuality, 0, label .. "自动同阈值二次点击仍归零")
+            selected(union, "自动阈值取消不清手动选择")
+        end
+    end)
+    -- 无论断言或真实模块抛错，先恢复全部替身，沿用原PDM恢复方式。
+    for index = #patches, 1, -1 do
+        local saved = patches[index]
+        saved.target[saved.key] = saved.value
+    end
+    for _, key in ipairs(globalKeys) do _G[key] = globals[key] end
+    check(ok, "手动分解六品质并集/状态/真实服务回归: " .. tostring(err))
+end
+
 function Start()
     print(PREFIX .. "start")
 
@@ -234,6 +617,9 @@ function Start()
     PDM.GetModule, PDM.MarkDirty = oldGetModule, oldMarkDirty
     check(upgradeOk, "点金石真实红装获取回归: " .. tostring(upgradeErr))
 
+    -- ========== 8) 仓库/铁匠手动分解顶部六品质多选 ==========
+    testRarityMultiselect()
+
     -- ========== 汇总 ==========
     if #failures > 0 then
         print(PREFIX .. "RESULT FAIL " .. #failures)
@@ -241,4 +627,5 @@ function Start()
         error(PREFIX .. #failures .. " assertions failed")
     end
     print(PREFIX .. "RESULT ALL PASS")
+    engine:Exit()
 end

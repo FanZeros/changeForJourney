@@ -8,7 +8,7 @@ local N02, N12, N13, N14 = "samsara.log_leaf", "samsara.cargo_match", "samsara.g
 local FIRST, REPLAY = "samsara_first_read", "samsara_replay"
 local N03 = "samsara.returned_manifest"
 local KEYS = { N02, N12, N13, N14, N03 }
-local INDEX_KEYS = { N02, N12, N13, N14, N03, "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster" }
+local INDEX_KEYS = { N02, N12, N13, N14, N03, "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster", "samsara.dragon_mirror" }
 
 local function check(ok, label)
     assertions = assertions + 1
@@ -126,10 +126,12 @@ local function expectDialogue(cfg, lines, label)
 end
 
 local function configCases()
-    runCase("旧七KEY严格前缀/末尾N01/独立配置/精修原文及最小语境适配", function()
+    runCase("旧八KEY严格前缀/末尾N08/独立配置/精修原文及最小语境适配", function()
         local f = fixture()
-        check(same(f.Config.KEYS, INDEX_KEYS), "Config.KEYS保留旧七KEY顺序为严格前缀，末尾仅追加N01")
+        check(same(f.Config.KEYS, INDEX_KEYS), "Config.KEYS保留旧八KEY顺序为严格前缀，末尾仅追加N08")
         eq(f.Config.NODE_KEY, N02, "NODE_KEY保留N02兼容")
+        eq(assert(f.Config.getEvidence("E03-B")).id, "E03-B", "B为合法静态初片，原调查链不授予B")
+        eq(f.session.samsaraStory.evidence["E03-B"], nil, "本原链夹具未取得B")
         for _, key in ipairs(KEYS) do
             local cfg = assert(f.Config.get(key))
             eq(cfg.mode, "small", key .. "均为small")
@@ -228,7 +230,10 @@ local function captureCases()
             eq(f.Player.getRecord(N14).status, "locked", "N14初始锁定")
             eq(session.samsaraStory.cargoHistoryCaptured, true, "cargo历史即使无资格也捕获")
             eq(session.samsaraStory.historyCaptured, true, "N02历史独立捕获")
-            eq(f.flushes, 1, "两历史在一次init合并持久化")
+            eq(session.samsaraStory.dragonHistoryCaptured, true, "龙域阴性亦由init独立捕获")
+            eq(session.samsaraStory.nodes["samsara.dragon_mirror"], nil, "旧调查raw不创造N08资格或亲历")
+            eq(session.samsaraStory.evidence["E03-B"], nil, "旧调查raw不授予B")
+            eq(f.flushes, 1, "N02/cargo与镜像/龙域历史在一次init合并持久化")
             eq(f.Player.hasPendingRecords(), item.cargo == true or item.e02 == true, "raw204 E02资格增加N03待阅，旧cargo资格不变")
             eq(evidence(f, N12, "E02") ~= nil, item.e02 == true, "只有raw204 true才提前原件可见")
             if item.e02 then
@@ -289,7 +294,7 @@ local function chainCases()
         local before = copy(f.session)
         eq(f.Player.hasPendingRecords(), true, "有待阅")
         local records = f.Player.getRecords()
-        eq(#records, 8, "八记录保留旧七索引，末尾仅追加N01")
+        eq(#records, 9, "九记录保留旧八索引，末尾仅追加N08")
         for i, record in ipairs(records) do eq(record.key, INDEX_KEYS[i], "getRecords顺序" .. i) end
         records[1].title = "覆盖"
         check(same(f.session, before), "peek/getRecords不写入或取消待阅")
@@ -310,6 +315,7 @@ local function chainCases()
         complete(f, N14)
         eq(f.Player.peekReady(), nil, "所有首次处理后无自动重播")
         eq(f.Player.hasPendingRecords(), false, "所有处理完无待阅")
+        eq(f.session.samsaraStory.evidence["E03-B"], nil, "完成原调查链仍不授予B")
     end)
     for _, key in ipairs({ N12, N13, N14 }) do
         for _, reason in ipairs({ "finished", "dismissed", "skipped", "reset", "replaced", "failed" }) do
@@ -458,7 +464,7 @@ local function preservationCases()
             eq(f.supported, false, "未来schema不兼容")
             eq(f.Player.peekReady(), nil, "未来schema无待播")
             eq(f.Player.hasPendingRecords(), false, "未来schema无可处理待阅")
-            eq(#f.Player.getRecords(), 8, "不兼容仍安全返回八记录")
+            eq(#f.Player.getRecords(), 9, "不兼容仍安全返回九记录")
             for _, key in ipairs(KEYS) do
                 eq(f.Player.getRecord(key).status, "unsupported", "未来schema记录不兼容 " .. key)
                 eq(f.Player.requestRead(key), false, "未来schema不排请求 " .. key)

@@ -22,17 +22,21 @@
 ---@field cargoHistoryCaptured boolean
 ---@field mirrorHistoryCaptured boolean
 ---@field mirrorHistoryVersion number
+---@field dragonHistoryCaptured boolean
+---@field dragonHistoryVersion number
 ---@field nodes table<string, SamsaraStoryNode>
 ---@field evidence table<string, SamsaraStoryEvidenceState>
 
 local Schema = {}
-local NODE_KEYS = { "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record", "samsara.returned_manifest", "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster" }
+local NODE_KEYS = { "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record", "samsara.returned_manifest", "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster", "samsara.dragon_mirror" }
+local DRAGON_KEY = "samsara.dragon_mirror"
 local MIRROR_KEYS = { ["samsara.dog_mirror"] = true, ["samsara.bell_mirror"] = true }
 
 ---@return SamsaraStoryState
 function Schema.new()
     return { schemaVersion = 1, historyCaptured = false, cargoHistoryCaptured = false,
-        mirrorHistoryCaptured = false, mirrorHistoryVersion = 1, nodes = {}, evidence = {} }
+        mirrorHistoryCaptured = false, mirrorHistoryVersion = 1,
+        dragonHistoryCaptured = false, dragonHistoryVersion = 1, nodes = {}, evidence = {} }
 end
 
 --- 不对字符串布尔值做宽松转换；既有N02捕获标记不因新增节点而重置。
@@ -55,12 +59,17 @@ function Schema.normalize(session)
         story.mirrorHistoryVersion = 1
         story.mirrorHistoryCaptured = story.mirrorHistoryCaptured == true
     end
+    local dragonSupported = not tonumber(story.dragonHistoryVersion) or tonumber(story.dragonHistoryVersion) <= 1
+    if dragonSupported then
+        story.dragonHistoryVersion = 1
+        story.dragonHistoryCaptured = story.dragonHistoryCaptured == true
+    end
     if type(story.nodes) ~= "table" then story.nodes = {} end
     if type(story.evidence) ~= "table" then story.evidence = {} end
 
     for _, key in ipairs(NODE_KEYS) do
         local node = story.nodes[key] --[[@as SamsaraStoryNode?]]
-        if MIRROR_KEYS[key] and not mirrorSupported then
+        if (MIRROR_KEYS[key] and not mirrorSupported) or (key == DRAGON_KEY and not dragonSupported) then
             -- 新版镜像来源格式未知，只保全该域，仍允许已有五段工作。
         elseif node ~= nil and type(node) ~= "table" then
             story.nodes[key] = nil
@@ -76,12 +85,14 @@ function Schema.normalize(session)
             end
         end
     end
-    for _, id in ipairs({ "E01", "E02", "E05", "E03-A", "E03-C" }) do
+    for _, id in ipairs({ "E01", "E02", "E05", "E03-A", "E03-C", "E03-B" }) do
         local evidence = story.evidence[id] --[[@as SamsaraStoryEvidenceState?]]
-        local mirrorKey = id == "E03-A" and "samsara.dog_mirror" or (id == "E03-C" and "samsara.bell_mirror" or nil)
+        local mirrorKey = id == "E03-A" and "samsara.dog_mirror"
+            or (id == "E03-C" and "samsara.bell_mirror" or (id == "E03-B" and DRAGON_KEY or nil))
         local mirrorNode = mirrorKey and story.nodes[mirrorKey] --[[@as SamsaraStoryNode?]]
         local futureContent = type(mirrorNode) == "table" and (tonumber(mirrorNode.contentVersion) or 1) > 1
-        if mirrorKey and (not mirrorSupported or futureContent) then
+        local historySupported = mirrorKey == DRAGON_KEY and dragonSupported or (mirrorKey ~= DRAGON_KEY and mirrorSupported)
+        if mirrorKey and (not historySupported or futureContent) then
             -- 对应来源域或内容未来版本未知，节点与其证据一起原样保全。
         elseif evidence ~= nil and type(evidence) ~= "table" then
             story.evidence[id] = nil

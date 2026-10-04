@@ -1,6 +1,6 @@
--- SamsaraSliceConfig.lua — 八段无奖切片；不注册旧情景编号或经济奖励。
+-- SamsaraSliceConfig.lua — 九段无奖切片；不注册旧情景编号或经济奖励。
 -- 正文来源：未寄出的撤离令-剧情正文普通至炼狱-1003.md；N14采用接线方案独立语境。
--- N01仅建立当前队名册/纪念罐前史；N07/N09仍不补造E03-B或后续核验。
+-- N01建立名册/纪念罐前史；N07/N08/N09分别提供E03-A/B/C初片，不开放后续核验。
 -- 已核对人物映射：1=大狗嚼，2=黄桃龙，3=叮咚鸡，10=铁匠，21=圣女。
 
 ---@class SamsaraSliceStep
@@ -34,11 +34,12 @@ local Config = {
     DOG_MIRROR_KEY = "samsara.dog_mirror",
     BELL_MIRROR_KEY = "samsara.bell_mirror",
     OPENING_KEY = "samsara.opening_roster",
+    DRAGON_MIRROR_KEY = "samsara.dragon_mirror",
     CONTENT_VERSION = 1,
 }
--- 旧七项顺序不变；N01追加，其他事件的前置仍不变。
+-- 旧八项顺序不变；龙的初片追加，其他事件的前置仍不变。
 Config.KEYS = { Config.NODE_KEY, Config.CARGO_KEY, Config.ORDER_KEY, Config.PEOPLE_KEY, Config.MANIFEST_KEY,
-    Config.DOG_MIRROR_KEY, Config.BELL_MIRROR_KEY, Config.OPENING_KEY }
+    Config.DOG_MIRROR_KEY, Config.BELL_MIRROR_KEY, Config.OPENING_KEY, Config.DRAGON_MIRROR_KEY }
 
 local E02_TEXT = "商队药箱十二。\n内装药、夹板、干粮。箱底补铆一次。\n押运：城镇医所支队。\n遇截地点：林道路标外。\n截取方口令：“先救人。”\n回收：货牌。箱体未回。\n\n铁匠手注：\n图中歪铆是箱底修补位置，不是货牌铆钉。货能认，人别再认错。"
 local E02_ANNOTATION = "货牌位置与保全库十二号箱底拓片吻合。同物件跨两次交接有完整编号，未发现复制箱体。受害押运者另记人员卷，不并入“物资损失”。"
@@ -46,6 +47,7 @@ local E05_TEXT = "急救物资征用令。\n调取：商队药箱十二。\n送�
 local E05_CONTINUATION = "先期物资不足。允许拦截护送支队，缴械接驳。\n遇阻待签发方答复。\n〔“停止拦截”栏：空白〕"
 local E05_PEOPLE = "物资卷与人员卷分列。\n旧远征护送支队失踪：有登记名单。\n找回胸牌、外衣标识及两封未送达的家书。\n幸存者证言已保存；遗物不得换算成可交付的救援配额。"
 local E03_A_TEXT = "请先护送远征长离开。\n若他还没到，就让我守在接驳处。\n到了，请告诉我下一次该守谁。\n申请人：大狗嚼〔旧登记页〕。\n答复：任务续征。撤离未结。"
+local E03_B_TEXT = "我们说好胜利以后一起庆祝。\n留给三人的罐头，先别开。\n人不齐，我先等。\n申请人：黄桃龙〔旧登记页〕。\n答复：庆祝待交接。撤离未结。"
 local E03_C_TEXT = "出征通知：已发。\n死亡通知：已发。\n请求结束通知。\n撤离收件人：〔空白〕。\n答复：收到。下一任务续征。"
 
 --- 静态原件返回副本；没有首次处理标记时展示方不得公开后续核验/续令。
@@ -59,6 +61,8 @@ function Config.getEvidence(id)
             continuation = E05_CONTINUATION, people = E05_PEOPLE }
     elseif id == "E03-A" then
         return { id = id, title = "大狗嚼的申请", text = E03_A_TEXT }
+    elseif id == "E03-B" then
+        return { id = id, title = "黄桃龙的申请", text = E03_B_TEXT }
     elseif id == "E03-C" then
         return { id = id, title = "叮咚鸡的申请", text = E03_C_TEXT }
     end
@@ -184,6 +188,24 @@ function Config.get(key, source)
                 { name = "远征长", text = "我也没说。先让它把话留下。" },
             },
             evidence = assert(Config.getEvidence("E03-A")),
+        }
+    elseif key == Config.DRAGON_MIRROR_KEY then
+        return {
+            title = "龙没有打开的罐头", mode = "small", requiredStage = 2705,
+            dependency = Config.OPENING_KEY,
+            unlockText = "处理名册前史、通关2705并处理旧遭遇后开放",
+            steps = {
+                -- 叙事前夜是本次遭遇的前夜，不是最初启程，也不要求现实等待一天。
+                { name = "旁白", text = "回忆·本次镜像遭遇的前夜。黄桃龙把名册旁那只罐头拿出来，将第三道浅刻痕补完。罐头仍未打开。" },
+                { name = "旁白", text = "回到当前。镜像投影败退，当前页既有登记载体根据回声生成本地凭片。画中是一只未开罐的盒子，盖子同样有三道刻痕。图旁写着“胜利以后再开”，下方日期早于当前队出发。" },
+                { characterId = 2, name = "黄桃龙", text = "我也有这样的盒子。" },
+                { characterId = 1, name = "大狗嚼", text = "盒子能偷。叫！" },
+                { characterId = 2, name = "黄桃龙", text = "可我昨天才把第三道划完。……我记得。" },
+                { name = "远征长", text = "你昨天划的这只还在。先别拿那幅画改你的记性。" },
+                { characterId = 3, name = "叮咚鸡", text = "你的盒子，留在你手里。她那只，先记在纸上。" },
+                { characterId = 2, name = "黄桃龙", text = "她说“刚刚”拯救了世界。她会不会一直没等到庆祝？" },
+            },
+            evidence = assert(Config.getEvidence("E03-B")),
         }
     elseif key == Config.BELL_MIRROR_KEY then
         return {

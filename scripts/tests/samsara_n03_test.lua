@@ -7,7 +7,7 @@ local assertions, failures, cases, passed = 0, 0, 0, 0
 local N02, N03 = "samsara.log_leaf", "samsara.returned_manifest"
 local N12, N13, N14 = "samsara.cargo_match", "samsara.gray_order", "samsara.people_record"
 local FIRST, REPLAY = "samsara_first_read", "samsara_replay"
-local KEYS = { N02, N12, N13, N14, N03, "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster" }
+local KEYS = { N02, N12, N13, N14, N03, "samsara.dog_mirror", "samsara.bell_mirror", "samsara.opening_roster", "samsara.dragon_mirror" }
 local ORIGINALS = {
     { "旁白", "铁匠整理被砸坏的货牌。焦黑的一片上还能辨认“药箱十二”，下角画着箱底补铆的位置图，其中一枚打歪。" },
     { "铁匠", "认错你们，我道歉。丢了什么，我记得。", 10 },
@@ -173,13 +173,13 @@ local function expectOriginal(steps, label)
 end
 
 local function configAndSourceCases()
-    runCase("旧七KEY严格前缀/八记录末尾N01/八步正文/E02无附页/默认getRecord不变", function()
+    runCase("旧八KEY严格前缀/九记录末尾N08/八步正文/E02无附页/默认getRecord不变", function()
         local f = fixture()
         eq(f.Config.MANIFEST_KEY, N03, "MANIFEST_KEY命名空间")
-        check(same(f.Config.KEYS, KEYS), "旧七索引严格前缀，末尾仅追加N01")
+        check(same(f.Config.KEYS, KEYS), "旧八索引严格前缀，末尾仅追加N08")
         eq(f.Player.getRecord().key, N02, "省参仍N02")
         local records = f.Player.getRecords()
-        eq(#records, 8, "八条记录")
+        eq(#records, 9, "九条记录")
         for index, key in ipairs(KEYS) do eq(records[index].key, key, "稳定索引" .. index) end
         local cfg = assert(f.Config.get(N03))
         eq(cfg.title, "十二号箱", "不另编标题")
@@ -246,7 +246,7 @@ local function configAndSourceCases()
             eq(f.Player.getRecord(N03).status, "pending", "首次raw204 E02可派生资格")
             eq(f.session.samsaraStory.nodes[N03].eligibilitySource, "clear_204_legacy", "首次真实raw捕获来源不标实时")
             eq(f.session.samsaraStory.evidence.E02.source, "player_record", "原件可信来源")
-            eq(f.flushes, 1, "两个历史和N03一次保存")
+            eq(f.flushes, 1, "各独立历史和N03一次保存")
         end)
     end
     runCase("raw204历史与既有case_archive独立资格，原来源冻结", function()
@@ -710,7 +710,7 @@ local function noRewards(f, before)
 end
 
 local function integrationCases()
-    runCase("locked N03静态原文Panel仅展示/八列响应式/不request-lease-save", function()
+    runCase("locked N03静态原文Panel仅展示/九列响应式/不request-lease-save", function()
         local f = integration(); f.init()
         local old, before, flushes = outsideStory(f.session()), copy(f.session()), f.n("flush")
         local read, begin, show = f.Player.requestRead, f.Player.begin, f.Dialogue.show
@@ -726,14 +726,19 @@ local function integrationCases()
             check(not includes(text, "回看"), "locked无回看action")
             local centers, tabY = {}, 0
             local labels = { ["日志夹页"] = true, ["货牌核验"] = true, ["灰印令"] = true, ["人员卷"] = true, ["十二号箱"] = true,
-                ["狗的绳结"] = true, ["第三声铃"] = true, ["名册末页"] = true }
+                ["狗的绳结"] = true, ["第三声铃"] = true, ["名册末页"] = true, ["龙的罐头"] = true }
+            local dragonLabel = false
             for _, button in ipairs(f.buttons) do
-                if labels[button.text] and button.y < 300 then centers[#centers + 1] = button.x; tabY = button.y end
+                if labels[button.text] and button.y < 300 then
+                    centers[#centers + 1] = button.x; tabY = button.y
+                    if button.text == "龙的罐头" then dragonLabel = true end
+                end
             end
-            eq(#centers, 8, "真实绘制八个标签")
+            check(dragonLabel, "新增第九标签为龙的罐头")
+            eq(#centers, 9, "真实绘制九个标签")
             for index = 2, #centers do
-                check(centers[index] > centers[index - 1], "八标签中心递增")
-                if index > 2 then check(math.abs((centers[index] - centers[index - 1]) - (centers[2] - centers[1])) < 0.001, "八列等宽") end
+                check(centers[index] > centers[index - 1], "九标签中心递增")
+                if index > 2 then check(math.abs((centers[index] - centers[index - 1]) - (centers[2] - centers[1])) < 0.001, "九列等宽") end
             end
             local scale = math.min(w / 1920, h / 1080)
             local action = {}
@@ -742,7 +747,7 @@ local function integrationCases()
             f.Panel.handleInput(action.x * scale, action.y * scale, w, h)
             eq(f.Panel.isOpen(), true, "locked点action不关闭不读完成")
             eq(f.n("request"), 0, "locked action不request")
-            -- 点击旧第五项N03验证真实handleInput使用同一动态八列，而非私有状态检查。
+            -- 点击旧第五项N03验证真实handleInput使用同一动态九列，而非私有状态检查。
             f.Panel.selectRecord(N02)
             f.Panel.handleInput(centers[5] * scale, tabY * scale, w, h)
             f.drawings = {}; f.Panel.draw({}, w, h)

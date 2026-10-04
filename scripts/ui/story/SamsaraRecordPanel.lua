@@ -1,5 +1,5 @@
 -- ============================================================================
--- SamsaraRecordPanel - 八项轻量剧情记录：既有七项与名册前史，无奖励与新选择
+-- SamsaraRecordPanel - 九项轻量剧情记录：既有八项与龙的初片，无奖励与新选择
 -- 基于 scaffold-2d 的生命周期分离；复用项目 raw NanoVG 管线，不创建上下文/帧。
 -- draw / handleInput / drag 的 x,y,w,h 均为主渲染器的窗口逻辑坐标。
 -- 1920×1080 CONTAIN 字号 + 全窗响应式布局；字体 sans 由主初始化创建。
@@ -25,8 +25,10 @@ local TAB_LABELS = {
     ["samsara.dog_mirror"] = "狗的绳结",
     ["samsara.bell_mirror"] = "第三声铃",
     ["samsara.opening_roster"] = "名册末页",
+    ["samsara.dragon_mirror"] = "龙的罐头",
 }
 local OPENING_KEY = "samsara.opening_roster"
+local DRAGON_KEY = "samsara.dragon_mirror"
 ---@class SamsaraMirrorRecordSpec
 ---@field evidenceId string
 ---@field stage string
@@ -36,6 +38,7 @@ local OPENING_KEY = "samsara.opening_roster"
 local MIRROR_RECORDS = {
     ["samsara.dog_mirror"] = { evidenceId = "E03-A", stage = "2505", liveSource = "live_clear_2505", legacyName = "旧64遭遇" },
     ["samsara.bell_mirror"] = { evidenceId = "E03-C", stage = "2905", liveSource = "live_clear_2905", legacyName = "旧67遭遇" },
+    ["samsara.dragon_mirror"] = { evidenceId = "E03-B", stage = "2705", liveSource = "live_clear_2705", legacyName = "旧65遭遇" },
 }
 
 ---@class SamsaraRecordViewEvidence
@@ -55,6 +58,7 @@ local MIRROR_RECORDS = {
 ---@field legacyContext string|nil
 ---@field eligibilitySource string|nil
 ---@field eventTrusted boolean|nil
+---@field historyReady boolean|nil
 ---@field evidences SamsaraRecordViewEvidence[]
 ---@field unlockText string|nil
 ---@field referenceOnly boolean|nil
@@ -201,7 +205,7 @@ local function contentBlocks(record)
         end
         if record.eventTrusted then add("来源：当前开场链逐段完成记录。", 32, true) end
         add("名册与罐头是当前队纪念物；本段不授予物证编号或镜像凭片。", 32, true)
-        add("后续龙的罐头剧情与刻痕核验尚未开放。", 32, true)
+        add("龙的罐头初片另见对应记录；本段不证明镜像胜利、申请执行或撤离获批。", 32, true)
         return blocks
     end
 
@@ -230,6 +234,11 @@ local function contentBlocks(record)
             add((record.unlockText or "暂未开放") .. "。")
         end
 
+        if record.key == DRAGON_KEY then
+            add(record.historyReady and "名册前史已处理；已读与跳过仍按原记录区分。"
+                or "名册前史尚未可信处理；静态参考不替代纪念罐经历。", 32, true)
+            add("开头的前夜是本次镜像遭遇的前夜，不是最初启程，也不要求现实等待一天。", 32, true)
+        end
         if record.eligibilitySource == "legacy_raw_clear_unknown" then
             add("来源：原始旧档通关标记；实际战斗来源未知，不能据此取得事件凭片。", 32, true)
         elseif record.eligibilitySource == mirror.liveSource then
@@ -272,7 +281,7 @@ local function contentBlocks(record)
             end
             if ownCount == 0 then add("本段初片正文暂不公开。", 32, true) end
         end
-        add("仅本段初片，不表示三份申请齐全，也不证明撤离获批或申请已执行。", 32, true)
+        add("仅本段初片；即使三份初片齐全，也不证明撤离获批或申请已执行。", 32, true)
         add("后续核验未开放。", 32, true)
         return blocks
     end
@@ -403,7 +412,7 @@ function Panel.draw(vg, w, h)
         NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE, 244, 237, 224, 3)
     drawButton(ctx, l.closeX, l.closeY, l.closeW, l.closeH, "关闭", true)
 
-    -- 标签按key绑定，八项最窄时四字×30px仍留有边距；点击和绘制同用layout。
+    -- 标签按key绑定，九项最窄时四字×30px仍留有边距；点击和绘制同用layout。
     for index, item in ipairs(records) do
         local tabX = l.contentX + (index - 1) * l.tabsW
         drawButton(ctx, tabX, l.tabsY, l.tabsW - l.tabsGap, l.tabsH, TAB_LABELS[item.key] or "剧情记录",

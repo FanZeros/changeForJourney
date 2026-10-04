@@ -1,4 +1,4 @@
--- SamsaraSlicePlayer.lua — 八段无奖切片数据层；由主仲裁器决定何时开始展示。
+-- SamsaraSlicePlayer.lua — 九段无奖切片数据层；由主仲裁器决定何时开始展示。
 -- 不show、不订阅无ID完成广播、不调用任何领奖/教程/经济协议。
 local Config = require("config.SamsaraSliceConfig")
 local Schema = require("shared.session.SamsaraStorySchema")
@@ -37,6 +37,7 @@ local Player = {}
 ---@field manualOnly boolean?
 ---@field eligibilitySource string?
 ---@field eventTrusted boolean?
+---@field historyReady boolean?
 
 ---@type SamsaraSliceOptions?
 local options_ = nil
@@ -59,6 +60,7 @@ local CARGO, ORDER, PEOPLE = "samsara.cargo_match", "samsara.gray_order", "samsa
 local MANIFEST = "samsara.returned_manifest"
 local DOG_MIRROR, BELL_MIRROR = "samsara.dog_mirror", "samsara.bell_mirror"
 local OPENING = "samsara.opening_roster"
+local DRAGON_MIRROR = "samsara.dragon_mirror"
 local OPENING_STEPS = { "letter", "opening", "join.1", "join.2", "join.3" }
 ---@type number?
 local openingIndex_ = nil
@@ -68,7 +70,13 @@ end
 local MIRRORS = {
     [DOG_MIRROR] = { stage = 2505, legacyId = 64, source = "live_clear_2505", evidenceId = "E03-A" },
     [BELL_MIRROR] = { stage = 2905, legacyId = 67, source = "live_clear_2905", evidenceId = "E03-C" },
+    [DRAGON_MIRROR] = { stage = 2705, legacyId = 65, source = "live_clear_2705", evidenceId = "E03-B" },
 }
+
+local function dragonHistorySupported(story)
+    local version = tonumber(story.dragonHistoryVersion)
+    return not version or version <= 1
+end
 
 local function mirrorHistorySupported(story)
     local version = tonumber(story.mirrorHistoryVersion)
@@ -139,7 +147,11 @@ end
 ---@return SamsaraStoryNode?
 ---@return boolean supported
 local function nodeState(story, key)
-    if MIRRORS[key] and not mirrorHistorySupported(story) then return nil, false end
+    if key == DRAGON_MIRROR then
+        if not dragonHistorySupported(story) then return nil, false end
+    elseif MIRRORS[key] and not mirrorHistorySupported(story) then
+        return nil, false
+    end
     local node = story.nodes[key or Config.NODE_KEY] --[[@as SamsaraStoryNode?]]
     if node == nil then return nil, true end
     if type(node) ~= "table" then return nil, false end
@@ -155,6 +167,10 @@ local function processed(node)
 end
 
 local function dependencyReady(story, key)
+    if key == DRAGON_MIRROR then
+        local opening, supported = nodeState(story, OPENING)
+        return supported and openingEventTrusted(opening) and processed(opening)
+    end
     local previous = key == ORDER and CARGO or (key == PEOPLE and ORDER or nil)
     if not previous then return true end
     local node, supported = nodeState(story, previous)
@@ -336,7 +352,21 @@ function Player.init(options, rawBattle)
         story.mirrorHistoryCaptured, story.mirrorHistoryVersion, changed = true, 1, true
         print("[SamsaraSlicePlayer] 镜像历史一次性捕获完成，raw仅作亲历未知参考")
     end
-    for _, key in ipairs({ DOG_MIRROR, BELL_MIRROR }) do
+    -- N08独立捕获阴性：A/C已迁移不能替代尚未登记的2705来源。
+    if dragonHistorySupported(story) and story.dragonHistoryCaptured ~= true then
+        local dragon, dragonSupported = nodeState(story, DRAGON_MIRROR)
+        if dragonSupported and strictClear(rawBattle, 2705) then
+            if not dragon then
+                story.nodes[DRAGON_MIRROR] = { contentVersion = Config.CONTENT_VERSION,
+                    eligibilitySource = "legacy_raw_clear_unknown" }
+            elseif not dragon.eligibilitySource then
+                dragon.eligibilitySource = "legacy_raw_clear_unknown"
+            end
+        end
+        story.dragonHistoryCaptured, story.dragonHistoryVersion, changed = true, 1, true
+        print("[SamsaraSlicePlayer] 龙镜像历史一次性捕获，raw仅作亲历未知参考")
+    end
+    for _, key in ipairs({ DOG_MIRROR, BELL_MIRROR, DRAGON_MIRROR }) do
         local mirror, mirrorSupported = nodeState(story, key)
         if mirrorSupported and mirror and captureLegacyContext(mirror, key) then changed = true end
     end
@@ -423,7 +453,8 @@ end
 ---@return boolean changed
 function Player.onStageCleared(id)
     local mirrorKey = (id == 2505 or id == "2505") and DOG_MIRROR
-        or ((id == 2905 or id == "2905") and BELL_MIRROR or nil)
+        or ((id == 2905 or id == "2905") and BELL_MIRROR
+            or ((id == 2705 or id == "2705") and DRAGON_MIRROR or nil))
     if mirrorKey then
         local story = currentStory()
         if not story or not definition(mirrorKey) then return false end
@@ -463,7 +494,9 @@ end
 ---@return boolean changed
 function Player.noteLegacyResult(id, reason, contextEpoch)
     if contextEpoch ~= nil and contextEpoch ~= epoch_ then return false end
-    local mirrorKey = (id == 64 or id == "64") and DOG_MIRROR or ((id == 67 or id == "67") and BELL_MIRROR or nil)
+    local mirrorKey = (id == 64 or id == "64") and DOG_MIRROR
+        or ((id == 67 or id == "67") and BELL_MIRROR
+            or ((id == 65 or id == "65") and DRAGON_MIRROR or nil))
     if mirrorKey then
         local context = (reason == "finished" or reason == "dismissed") and "live_finished"
             or (reason == "skipped" and "live_skipped"
@@ -513,7 +546,7 @@ function Player.peekReady()
     if lease_ then return nil end
     local story = currentStory()
     if not story then return nil end
-    local autoKeys = { OPENING, Config.NODE_KEY, MANIFEST, DOG_MIRROR, BELL_MIRROR, CARGO, ORDER, PEOPLE }
+    local autoKeys = { OPENING, Config.NODE_KEY, MANIFEST, DOG_MIRROR, DRAGON_MIRROR, BELL_MIRROR, CARGO, ORDER, PEOPLE }
     for _, key in ipairs(autoKeys) do
         local node, supported = nodeState(story, key)
         if supported and node and node.eligible == true and not processed(node) and node.manualOnly ~= true
@@ -630,11 +663,13 @@ function Player.takeRequest()
 end
 
 local function evidenceFor(story, id)
-    local mirrorKey = id == "E03-A" and DOG_MIRROR or (id == "E03-C" and BELL_MIRROR or nil)
+    local mirrorKey = id == "E03-A" and DOG_MIRROR
+        or (id == "E03-C" and BELL_MIRROR or (id == "E03-B" and DRAGON_MIRROR or nil))
     if mirrorKey then
         local node, supported = nodeState(story, mirrorKey)
         local saved = story.evidence[id] --[[@as SamsaraStoryEvidenceState?]]
         if not supported or not mirrorEventTrusted(node, mirrorKey) or not processed(node)
+            or not dependencyReady(story, mirrorKey)
             or type(saved) ~= "table" or saved.unlocked ~= true or saved.source ~= MIRRORS[mirrorKey].source then return nil end
         local cfg = Config.getEvidence(id)
         if not cfg then return nil end
@@ -685,7 +720,11 @@ function Player.getRecord(key)
         return record
     end
     if MIRRORS[key] then
-        record.eventTrusted = mirrorEventTrusted(node, key) == true
+        record.eventTrusted = mirrorEventTrusted(node, key) == true and dependencyReady(story, key)
+        if key == DRAGON_MIRROR then
+            record.historyReady = dependencyReady(story, key)
+            if not record.eventTrusted then record.status = "locked" end
+        end
         if not record.eventTrusted then
             record.referenceOnly, record.referenceSteps = true, cfg.steps
         end

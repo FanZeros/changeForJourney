@@ -90,7 +90,9 @@ local function capturedSession(node)
     local session = oldSession()
     session.samsaraStory = {
         schemaVersion = 1, historyCaptured = true, cargoHistoryCaptured = true,
-        mirrorHistoryCaptured = true, mirrorHistoryVersion = 1, nodes = {}, evidence = {},
+        mirrorHistoryCaptured = true, mirrorHistoryVersion = 1,
+        -- 此夹具只测N01；预先捕获龙域阴性，init不得因无关迁移改变全表/Flush计数。
+        dragonHistoryCaptured = true, dragonHistoryVersion = 1, nodes = {}, evidence = {},
         unknownStory = { keep = "unchanged" },
     }
     if node then session.samsaraStory.nodes[KEY] = copy(node) end
@@ -292,6 +294,8 @@ local function noEvidence(f, before, label)
     eq(f.Player.getRecord(KEY).evidence, nil, label .. " no E-number awarded")
     eq(#f.Player.getRecord(KEY).evidences, 0, label .. " evidence list empty")
     check(same(f.session().samsaraStory.evidence, before), label .. " evidence state unchanged")
+    eq(assert(f.Config.getEvidence("E03-B")).id, "E03-B", label .. " supported B static definition is legal")
+    eq(f.session().samsaraStory.evidence["E03-B"], nil, label .. " N01 never unlocks B")
 end
 local function reference(f, label)
     local record = f.Player.getRecord(KEY)
@@ -316,11 +320,11 @@ local function finishDialogue(dialogue)
 end
 
 local function configurationCases()
-    runCase("N01 exact config and seven-key prefix", function()
+    runCase("N01 exact config and eight-key prefix", function()
         local cfg = isolated("config/SamsaraSliceConfig.lua", {})
         eq(cfg.OPENING_KEY, KEY, "OPENING_KEY string namespace")
         check(same(cfg.KEYS, { "samsara.log_leaf", "samsara.cargo_match", "samsara.gray_order", "samsara.people_record",
-            "samsara.returned_manifest", "samsara.dog_mirror", "samsara.bell_mirror", KEY }), "old seven keys exact prefix; N01 only appended eighth")
+            "samsara.returned_manifest", "samsara.dog_mirror", "samsara.bell_mirror", KEY, "samsara.dragon_mirror" }), "old eight keys exact prefix; N01 remains eighth and N08 only appended ninth")
         eq(cfg.get("N01"), nil, "planner ID is not registered")
         local node = assert(cfg.get(KEY))
         eq(node.title, "名册最末页", "N01 title")
@@ -349,7 +353,7 @@ local function configurationCases()
         eq(f.Player.beginOpening(), nil, "uninitialized cannot start opening tracking")
         eq(f.Player.noteOpeningResult("letter", "finished", 0), false, "uninitialized ignores opening result")
         eq(f.Player.getRecord(KEY).status, "unsupported", "uninitialized record unsupported")
-        eq(#f.Player.getRecords(), 8, "all eight records safe before init")
+        eq(#f.Player.getRecords(), 9, "all nine records safe before init")
         eq(f.Player.requestRead(KEY), false, "uninitialized cannot queue")
         eq(f.Player.begin(FIRST, KEY), nil, "uninitialized cannot first-read")
         f.Player.cancel(); f.Player.update(2)

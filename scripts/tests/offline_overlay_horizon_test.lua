@@ -53,7 +53,8 @@ function Start()
         -- cache:GetFile 只读源码；load 创建独立实例，避免 Runtime require 缓存导致假重载。
         local sources, compiled, realLoads = {}, {}, {}
         local realModules = { ["boot.StandaloneHorizonInput"] = true,
-            ["boot.OfflineRewardOverlay"] = true, ["boot.SeamBackGesture"] = true }
+            ["boot.OfflineRewardOverlay"] = true, ["boot.SeamBackGesture"] = true,
+            ["boot.TerminalInput"] = true }
         local function source(name)
             if sources[name] then return sources[name] end
             local path = name:gsub("%.", "/") .. ".lua"

@@ -127,10 +127,12 @@ function Start()
             ["ui.tavern.TargetRecruitPanel"] = mock({ isOpen = noop }),
             ["ui.story.task.TaskPage"] = mock({
                 isOpen = function() return state.task end,
+                getSeamAnim = function() return 1, 0, 0.45, 0.38 end,
                 handleInput = function() count("taskInput"); return true end,
             }),
             ["ui.loot.LootBoxPage"] = mock({
                 isOpen = function() return state.loot end,
+                getSeamAnim = function() return 1, 0, 0.45, 0.38 end,
                 handleRightClick = function() count("lootRight"); return true end,
             }),
             ["ui.loot.LootBox"] = mock({ handleInput = function() count("lootInput"); return true end }),
@@ -278,6 +280,7 @@ function Start()
     if ok and failures == 0 then
         print("[backpack_quick_horizon_test] ALL PASS: " .. assertions .. " assertions")
     else
+        print("[backpack_quick_horizon_test] FAIL: " .. tostring(err or failures .. " assertions failed"))
         log:Write(LOG_ERROR, "[backpack_quick_horizon_test] FAIL: " .. tostring(err or failures .. " assertions failed"))
     end
     engine:Exit()

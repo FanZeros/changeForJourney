@@ -196,32 +196,55 @@ local DESIGN_H = GameConfig.Design.HEIGHT
 -- [Standalone] battle 状态本地同步：无 Server 推送时，把 BattleScene 本地进度
 -- （maxStageId_/clearedStages）每秒比对一次，变化才经 handleStateUpdate 写入，
 -- 供 TutorialManager / BottomNav / DungeonBattleScene 的建筑与页签解锁判定使用
-local battleSync = { lastMax = -1, lastCleared = -1, acc = 0 }
+local battleSync = { lastMax = -1, lastCleared = "", acc = 0 }
+local function clearedSnapshot(entries)
+    local normalized, ids = {}, {}
+    if type(entries) == "table" then
+        for key, value in pairs(entries) do
+            local id = math.tointeger(tonumber(key) or 0)
+            if value == true and id and id > 0 then
+                local savedKey = tostring(id)
+                if not normalized[savedKey] then
+                    normalized[savedKey] = true
+                    ids[#ids + 1] = id
+                end
+            end
+        end
+    end
+    table.sort(ids)
+    local keys = {}
+    for i, id in ipairs(ids) do keys[i] = tostring(id) end
+    return normalized, table.concat(keys, ","), #ids
+end
+
 local function SyncBattleState(dt)
     battleSync.acc = battleSync.acc + (dt or 0)
     if battleSync.acc < 1.0 then return end
     battleSync.acc = 0
-    local maxId = BattleScene.getMaxStageId()
-    local cleared = BattleScene.getClearedStages()
-    local clearedN = 0
-    for _ in pairs(cleared) do clearedN = clearedN + 1 end
-    if maxId == battleSync.lastMax and clearedN == battleSync.lastCleared then return end
-    if battleSync.lastMax == -1 then
-        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(maxId) .. ", cleared=" .. clearedN)
-    end
-    battleSync.lastMax = maxId
-    battleSync.lastCleared = clearedN
-    local clearedStr = {}
-    for k in pairs(cleared) do clearedStr[tostring(k)] = true end
-    -- 模块更新是整表替换。只带这两个字段会把 currentStageId 清掉，
-    -- 读档时被补回 1-1，首通奖励就能重复领，进度也像丢了。
+    local maxId = tonumber(BattleScene.getMaxStageId()) or 0
+    local clearedStr, liveSignature = clearedSnapshot(BattleScene.getClearedStages())
+    -- 模块更新是整表替换。合并双源永久账本，不能把场景缺项回写成删档。
+    -- 显式清档入口会同时重置两源；这里不缓存旧账本，也不阻止合法清档。
     local battle = ClientDispatcher.get("battle")
     if type(battle) ~= "table" then battle = {} end
+    local savedCleared, savedSignature = clearedSnapshot(battle.clearedStages)
+    for key in pairs(savedCleared) do clearedStr[key] = true end
+    local mergedCleared, signature, clearedN = clearedSnapshot(clearedStr)
+    local savedMax = tonumber(battle.maxStageId) or 0
+    local mergedMax = math.max(maxId, savedMax)
+    if mergedMax == battleSync.lastMax and signature == battleSync.lastCleared
+        and liveSignature == signature and savedSignature == signature then return end
+    if battleSync.lastMax == -1 then
+        print("[Standalone] battle 状态首次同步: maxStageId=" .. tostring(mergedMax) .. ", cleared=" .. clearedN)
+    elseif liveSignature ~= savedSignature then
+        print("[Standalone] battle 通关账本合并: cleared=" .. clearedN)
+    end
+    battleSync.lastMax = mergedMax
+    battleSync.lastCleared = signature
     local liveStage = tonumber(BattleScene.getStageId()) or 0
     local savedStage = tonumber(battle.currentStageId) or 0
-    local savedMax = tonumber(battle.maxStageId) or 0
-    battle.maxStageId = math.max(maxId or 0, savedMax)
-    battle.clearedStages = clearedStr
+    battle.maxStageId = mergedMax
+    battle.clearedStages = mergedCleared
     if liveStage > savedStage then
         battle.currentStageId = liveStage
     end

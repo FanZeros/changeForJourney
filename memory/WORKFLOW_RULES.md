@@ -1,3 +1,10 @@
+## 经济P1首通账本与塔强化修复（2026-10-04）
+
+- 用户通过实际 `AskUserQuestion` 选择“修经济类P1（推荐）”，授权本批仅B01最高关重复首通、B04塔强化单击双写。由清单分支 `8135ae7` 创建 `feat1004a/economic-firstclear-tower-singlewrite`，不推任何workspace系列、不强推、不自动创建或合并PR；继续遵守阶段完成简报后真正AskUserQuestion选项交接。
+- B01已移除Restore因current=max而删合法通关标记的分支；普通已通当前关保持idle，不自动强跳下一关。Sync只按双源当前永久账本合并、规范整数关号true键、按排序内容签名检测；保留其他battle字段，两源显式清档后不从内部缓存复活旧标记。不补发历史奖励、不读玩家档，不扩展稀疏推断任务。
+- 增强现有tri_clear_unlock_test：原28＋新增8case41断言。固定d618旧生产纯内存41断言20失败，修复后41/0；最终官方Runtime69/0，最高关两次Sync再胜利仍只首通1次、金币86300/经验2299210/钻石600。覆盖真实Dispatcher.set数字键、JSON回灌、decimal唯一键、false/非法/nil、普通已通当前、终焉入口、一队旧关、双源独有与同数量换键、显式清空。
+- B01三份Lua LSP无Error，官方build成功；六套Runtime均exit0与ALL PASS：首通69、三队227、终焉211、切关、剧情82 1050、奖励队列32case3036。仅逻辑夹具，不称设备/性能验收。B04仍由并行实现者开发，B01单独白名单提交保存进度，不把塔WIP记为已修。
+
 ## 战斗与通天塔问题复核协作要求（2026-10-04）
 
 - 用户要求先检查 GitHub 已有修复分支，再复核历史问题是否仍在并整理修复任务文档。本轮固定基线 `workspace930@d618ee25620e4b2ca40aa86ad4249e2ffa0f665e`，项目直接部署到 `/workspace` 根，新分支 `feat1004a/battle-tower-fix-plan`；本轮仅复核、文档与部署，不擅自实施生产代码修复。

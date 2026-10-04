@@ -5,7 +5,7 @@ local M = {}
 
 M.STYLE = {
     boxW = 440, rowH = 78, rowStep = 88, radius = 20,
-    deltaOffset = 37,
+    deltaOffset = 37, deltaFontSize = 28,
     boxCX = 310, decoX = 137, decoSize = 20, nameX = 167, valueX = 510,
     fontSize = 35, minFontSize = 22, nameValueGap = 15,
     nameColor = { 0xE8, 0xDC, 0xC8, 255 }, valueColor = { 255, 255, 255, 255 },
@@ -37,7 +37,9 @@ function M.drawImage(vg, image, cx, cy, w, h)
     local x, y = cx - w * 0.5, cy - h * 0.5
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
-    nvgFillPaint(vg, nvgImagePattern(vg, x, y, w, h, 0, image, 1.0))
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, image, 1.0)
+    ---@cast paint NVGpaint
+    nvgFillPaint(vg, paint)
     nvgFill(vg)
 end
 
@@ -76,17 +78,25 @@ local function formattedValue(row)
     return value ~= nil and tostring(value) or "—"
 end
 
-local function deltaLabel(row)
+--- 显示排序与颜色共用增益判断；攻击间隔下降等改善项按绿色优先。
+function M.changePriority(row)
     local delta = tonumber(row.delta) or 0
-    if math.abs(delta) < 0.000001 then return "", M.STYLE.green end
+    if math.abs(delta) < 0.000001 then return 3 end
+    local beneficial = row.beneficial
+    if beneficial == nil then beneficial = delta > 0 end
+    return beneficial and 1 or 2
+end
+
+local function deltaLabel(row)
+    local priority = M.changePriority(row)
+    if priority == 3 then return "", M.STYLE.green end
+    local delta = tonumber(row.delta) or 0
     local label = row.deltaText
     if not label or label == "" then
         label = (delta > 0 and "+" or "") .. (math.abs(delta) >= 100
             and string.format("%.0f", delta) or string.format("%.1f", delta))
     end
-    local beneficial = row.beneficial
-    if beneficial == nil then beneficial = delta > 0 end
-    return tostring(label), beneficial and M.STYLE.green or M.STYLE.red
+    return tostring(label), priority == 1 and M.STYLE.green or M.STYLE.red
 end
 
 --- 共用绘制/测量/命中逻辑，属性页可传独立大字号风格；配装差值不改原基线。
@@ -160,9 +170,13 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
         nvgSave(vg)
         nvgIntersectScissor(vg, rect.x, rect.y - 20, rect.w, rect.h + 20)
         nvgFontFace(vg, "sans")
-        nvgFontSize(vg, 20)
         nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE)
         for _, change in ipairs(changes) do
+            local deltaFont = style.deltaFontSize or 28
+            nvgFontSize(vg, deltaFont)
+            local width = nvgTextBounds(vg, 0, 0, change.text) or 0
+            local maxWidth = math.min(style.boxW - 20, style.valueX - rect.x - 12)
+            if width > maxWidth then nvgFontSize(vg, deltaFont * maxWidth / width) end
             local color = change.color
             nvgFillColor(vg, nvgRGBA(color[1], color[2], color[3], color[4]))
             nvgText(vg, style.valueX, change.y, change.text, nil)

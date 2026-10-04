@@ -15,6 +15,7 @@
 
 - 用户通过实际AskUserQuestion选择“加强领奖验收”。下一阶段继续同一功能分支与PR65，只补完整Page→GameAction→Bridge→Service→Save→ClientMessageHandler→RewardPopup链路测试，不改真实玩家档、不扩大经济/玩法范围；覆盖连续点击、满级209奖励展示、失败Toast不假成功、重建隔离会话只从JSON恢复后不重领。执行结果完成后补记。
 - 继续验收前只读查PR65仍open/未合并，GitHub返回mergeable=true/clean，当前`be9e7fd0`的repository-policy检查completed/success；仅此仓库规范CI通过，不冒称游戏设备验收。每次完成测试/文档阶段正常push同一feat1004a分支，完成后继续实际AskUserQuestion。
+- 加强验收的三份真实领奖弹窗截图已内部查看：Lv100原840与bonus100两格完整；全200批领209项/42行/scrollMax7200，顶部原九项+首份bonus完整，末端九项含最后四格居中完整。视觉夹具只喂正式配置用于绘图，不执行真实发奖/落档；三份90帧报告Lua/资源0、无缺图，原始FAIL各仅1条100ms阈值帧尖峰。临时入口及meta已移入.git，正式包需最后重建排除；完整真实发奖链回归仍由后续实际结果补记。
 
 ## 选关敌人横向拖动与终焉说明协作要求（2026-10-04）
 

@@ -443,6 +443,29 @@ function Start()
             check(TM.getProgress().step == before + 1 and n("character.handleInput") == 1,
                 "取消后新指tap恢复，不遗留capture")
         end)
+        for _, transformed in ipairs({ false, true }) do
+            for _, ratio in ipairs({ 1, 2, 3 }) do
+                runCase("选关滚轮 frame=" .. tostring(transformed) .. " DPR=" .. ratio, function()
+                    fixture(true, transformed, ratio)
+                    TM.skipCurrentGroup()
+                    TM.update(1)
+                    mods["ui.battle.stage.StageSelectDialog"].isOpen = function() return true end
+                    mods["ui.battle.tri.BattleTriPage"].handleScroll = function(wheel, x, y)
+                        record("stageWheel", x, y)
+                        check(wheel == -1, "滚轮增量保持不变")
+                        return true
+                    end
+                    screenPosition(650, 350)
+                    invoke("HandleMouseWheelHorizon", { Wheel = { GetInt = function() return -1 end } })
+                    local event = events[#events]
+                    check(n("stageWheel") == 1 and event.name == "stageWheel"
+                        and math.abs(event.x - 650) < 0.00001 and math.abs(event.y - 350) < 0.00001,
+                        "选关滚轮与点击共用逆外帧及DPR坐标，不传屏幕逻辑坐标")
+                    mods["ui.battle.stage.StageSelectDialog"].isOpen = function() return false end
+                    mods["ui.battle.tri.BattleTriPage"].handleScroll = noop
+                end)
+            end
+        end
     end)
     if not ok then check(false, "Start exception: " .. tostring(err)) end
     require, input, time = nativeRequire, originalInput, originalTime

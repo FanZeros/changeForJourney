@@ -1,3 +1,13 @@
+## 三队后续可疑缺陷只读排查（2026-10-04，待用户选修复批次）
+
+- 用户在PR54创建后通过AskUserQuestion追加“继续看看还有什么可疑bug”。从PR54源 `6f6540b6` 新建 `audit930/three-team-followup-20261004`，保持生产Lua、素材及PR54范围不变。本轮只读审查与内存验证，只有本节交接记忆提交；不自动创建/合并PR、不推workspace系列。未修改Lua，故不重复build，部署仍为前轮已构建修复版。
+- 确认5项P1：①`BattleTriDriver.lua:252` 正式非Lab首通使用挂机敌表；实际204配置firstCount19+附加1004，生成10且无1004，仍登记共享首通。②`RelicConditionHandler.initBattle`全局清unitStates，Driver.mount未隔离RCH，后一队start使前队内鬼觉醒开场10免疫丢失；update不补回。③终焉期间右侧实质改槽位/顺序，Driver每15次update重建Boss，而raid.lines/enemies/originalDamage仍旧对象；新Boss受伤不扣共享池，其他线路足够强仍可救回，不泛称必定卡死。④`BattleDataRestore.lua:76-78` 将最高34505合法已通判中间态删标；每秒Sync随后擦dispatcher通关账本，再通首通callback1→2，fcGold86300可重复领。⑤塔Challenge的buffs与PDM同表，Panel先同步Service.PickBuff追加、Scene.onPick又追加，正常单击20号形成20,20，间隔1→0.5625而单份应0.75。
+- 确认7项P2：①清关先取pending、后tickRewards才roll随机装备/卷轴进Boot非持久化pendingFc；所有队最后停未通终焉前末关、未触发下一clear/真正load/确认便退出会丢最后暂存掉落，不说全掉落永久丢。②剧情82开始提前claimed=true，未点完退出Flush后granted仍nil、实际10碎片未发；重启backfill按claimed跳过，无法补播领奖。③塔Scene仅给活者heal10%，但每次下一波TowerTriBattle.open无条件fillHp并清fallen，300/1000→先400→1000，死者0→1000；与明确“不复活”及10%恢复链冲突。④终焉确认框漏HorizonInput全窗捕获及seam先行守卫，左右栏/返回条穿透，遮罩1920窗只罩x474..1446；进入/取消按钮本身可点。⑤UiToast唯一draw在Horizon普通路径尾部，三行/塔提前return，M键/锻炉/装备等真实反馈按截止时间过期丢失。⑥BattleView无条件画浮字/粒子/投射物/星门，关闭伤害数字/特效仍显示；卡片攻击动画/闪烁已有guard，不能说所有特效完全失效。⑦首次999胜利先load2401排63，后firstclear排62，实际63→62，与62轮回前的配置语义倒序。
+- 动态证据为隔离 `lupa.lua54` **纯内存执行真实源码**，外围引擎/动作/存档API使用替身，无脚本文件或玩家档写入：RCH1免疫→另一队init后0；终焉新Boss扣100池仍2900、旧Boss扣100才2800；真实View关闭设置仍floating1/effects1/projectiles1/star2；真实鼠标路由确认打开左点仍left；Boot清关后roll1装备+1卷轴pending=(1,1)、实际inventory0/scroll0；最高关complete/Sync/Schema/Restore链callback1→2；塔真实Service/Handler/Scene/Panel/TBR同表双写及真实Tri.open波间满血。没有把内存验证宣称官方Runtime或设备视觉验收。
+- 对正式三行敌表、RCH、终焉脱池、末关随机掉落做独立反证复核，均CONFIRMED并收窄可达边界。撤回不可达/未证疑点：稀疏cleared自动补齐无合法非GM断点；一队行军早存目标不会丢41（恢复load会enter）；普通副本5怪卡片钳制正式配置只有3怪，无可达第五怪；普通攻击绘图与target均strip，不泛报全部错位；副本与三行重叠下一Update有关闭守卫。未继续扩展塔击杀机制等未验证问题。
+- 已有前轮回归未覆盖上述交错生命周期，ALL PASS不意味着不存在这些缺陷；本轮未修复，不把审查发现归为PR54新引入。后续建议先P1战斗状态/门槛/重复发奖，再修P2掉落和剧情事务，最后UI与低影响剧情顺序。
+- **协作要求再次强化**：已授权工作持续推进，不擅自退出；交付先如实简报，再实际AskUserQuestion给2–4选项。只push独立审查分支；用户后续停止、权限拒绝和安全边界优先。凭据仅即时鉴权，不进源码、配置、日志或记忆；不自动merge原基线，不把创建PR授权扩大为继续改码授权。
+
 ## 三队进度、副本选队和入关剧情修复（2026-10-04）
 
 - 用户本轮指定从 `workspace930` 拉取并部署到 `/workspace` 根；基线为 `c47c2ec3`，新任务分支 `fix930/three-team-progression-20261004`。功能提交 `8b3636fa` 已正常push，远端SHA核验一致；远端 `workspace930` 仍为原基线 `c47c2ec3`，没有推送或修改。只推新分支，禁止推 `workspace` 系列或原基线；不自动创建或合并 PR。

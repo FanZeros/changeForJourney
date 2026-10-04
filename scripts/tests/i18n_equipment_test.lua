@@ -80,6 +80,9 @@ local function run()
         check(tpl ~= nil and tpl.id == id and tpl.name == expected.name and tpl.type == expected.type
             and tpl.slot == expected.slot and tpl.setId == expected.setId and tpl.levelRange[1] == 81,
             id .. "追加模板ID/原名/类型/81+等级/套装归属保持")
+        local image = nvgCreateImage(metricContext, EC.getIconPath(id), 0)
+        check(image >= 0, id .. "复用的正式装备图标实际加载成功")
+        if image >= 0 then nvgDeleteImage(metricContext, image) end
     end
 
     local calls = {} ---@type table

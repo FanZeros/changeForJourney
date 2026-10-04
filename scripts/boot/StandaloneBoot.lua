@@ -233,6 +233,22 @@ function M.run(rt)
     TownScene.setOnStoryRecordClick(function()
         require("ui.story.SamsaraRecordPanel").open()
     end)
+    -- 两个直达入口共用同一页签与左栏互斥，不新建领奖页面。
+    local function openExpeditionRewards()
+        if PlayerInfoPanel.isOpen() then PlayerInfoPanel.close() end
+        if BlacksmithPage.isOpen() then BlacksmithPage.close() end
+        if ChurchPage.isOpen() then ChurchPage.close() end
+        if TavernPage.isOpen() then TavernPage.close() end
+        if MarketPage.isOpen() then MarketPage.close() end
+        local TalentPage = require("ui.church.talent.TalentPage")
+        if TalentPage.isOpen() then TalentPage.close() end
+        if LootBoxPage.isOpen() then LootBoxPage.close() end
+        TaskPage.init(vg)
+        TaskPage.open("level")
+        print("[Standalone] 直达功绩→远征奖励")
+    end
+    PlayerInfoPanel.setOnExpeditionRewards(openExpeditionRewards)
+    require("ui.hud.popup.LevelUpPopup").setOnViewRewards(openExpeditionRewards)
 
     -- 5.24 装备数据初始化（Standalone 模式下 ClientDispatcher 不会收到 Server 推送）
     if not ClientDispatcher.get("equipment") then
@@ -453,9 +469,9 @@ function M.run(rt)
     end)
 
     -- 5.25 首通奖励回调：本地计算首通金币+装备，弹出 RewardPopup
-    BattleScene.setOnFirstClear(function(clearedStageId)
-        -- 先落盘通关进度，再发奖励。否则本地已切到下一关，存档 currentStageId
-        -- 仍停在旧关；随后 onBattleDataUpdate 会把战斗拉回旧关，表现为打完卡住。
+    BattleScene.setOnFirstClear(function(clearedStageId, teamIdx)
+        teamIdx = teamIdx or 1
+        -- 首通账本三队共用；只有一队通关改变一队当前关，二三队不能拉走一队。
         local battle = ClientDispatcher.get("battle")
         if type(battle) == "table" then
             local clearedNum = tonumber(clearedStageId)
@@ -463,7 +479,11 @@ function M.run(rt)
                 if not battle.clearedStages then battle.clearedStages = {} end
                 battle.clearedStages[tostring(clearedNum)] = true
                 local nextId = StageConfig.getNextStageId(clearedNum)
-                if StageConfig.isTerminalTemple(clearedNum) then
+                if teamIdx ~= 1 then
+                    local progressId = nextId and not StageConfig.isTerminalTemple(nextId)
+                        and nextId or clearedNum
+                    battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, progressId)
+                elseif StageConfig.isTerminalTemple(clearedNum) then
                     local reincarnationStage = StageConfig.getReincarnationTarget(StageConfig.getDifficulty(clearedNum))
                     battle.currentStageId = reincarnationStage
                     battle.maxStageId = math.max(tonumber(battle.maxStageId) or 0, reincarnationStage)

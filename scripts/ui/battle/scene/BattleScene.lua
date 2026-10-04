@@ -89,7 +89,7 @@ local ALLY_LVL_OFFSET_Y  = 215
 -- 关卡名 / 按钮坐标（合并到 table 减少 local 占用）
 local NAV = BattleStageNav.NAV
 
--- (职业标签 TAG_SIZE / HP_BAR / ATK_BAR 已移至 BattleDraw)
+-- (职业标签 TAG_SIZE / HP_BAR 已移至 BattleDraw)
 
 -- 死亡即补位：退场+空位总时长（秒），期满新怪从右补入
 local RESPAWN_DELAY = 1.0
@@ -114,8 +114,6 @@ local imgMonsterCards = {}  -- imgMonsterCards[monsterId] = nvg image handle
 local imgHpBg     = -1
 local imgHpFill   = -1
 local imgEsFill   = -1
-local imgAtkBg    = -1
-local imgAtkFill  = -1
 local imgBtnBack  = -1
 local imgBtnFwd   = -1
 local imgBtnIcon  = -1
@@ -291,7 +289,7 @@ local waveKillCount = 0        -- 本波次击杀数
 local waveGoldEarned = 0       -- 本波次获得金币
 local waveExpEarned = 0        -- 本波次获得经验
 
--- (工具绘制函数 drawImageCentered/drawImageMirrored/drawTextStroke/drawProgressBar 已移至 BattleDraw)
+-- (工具绘制函数 drawImageCentered/drawImageMirrored/drawTextStroke 已移至 BattleDraw)
 ---@type fun(vg, img, cx, cy, w, h, alpha)
 local drawImageCentered = BattleDraw.drawImageCentered
 ---@type fun(vg, img, cx, cy, w, h, alpha)
@@ -380,8 +378,6 @@ end
 local drawCardGroup       = BattleDraw.drawCardGroup
 ---@type fun(vg)
 local drawFloatingTexts   = BattleDraw.drawFloatingTexts
----@type fun(vg, imgBg, imgFill, cx, cy, bgW, bgH, padding, progress)
-local drawProgressBar     = BattleDraw.drawProgressBar
 
 -- ======================== 关卡系统 ========================
 
@@ -626,8 +622,6 @@ function BattleScene.init(vg)
     imgHpBg     = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HP1.png", 0)
     imgHpFill   = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HPT2.png", 0)
     imgEsFill   = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_HPT3.png", 0)
-    imgAtkBg    = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_GJT1.png", 0)
-    imgAtkFill  = nvgCreateImage(vg, "image/界面底板/战斗/UI_ZD_GJT2.png", 0)
     imgBtnBack  = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYGA.png", 0)
     imgBtnFwd     = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYGB.png", 0)
     imgBtnFwdGrey = nvgCreateImage(vg, "image/界面底板/通用面板/UI_YWJM_XYG.png", 0)
@@ -666,8 +660,6 @@ function BattleScene.init(vg)
         imgHpBg         = imgHpBg,
         imgHpFill       = imgHpFill,
         imgEsFill       = imgEsFill,
-        imgAtkBg        = imgAtkBg,
-        imgAtkFill      = imgAtkFill,
         imgAllyTags     = imgAllyTags,
     })
 
@@ -1322,6 +1314,52 @@ function BattleScene.adoptStageProgress(stageId)
     isFirstClear = not clearedStages[stageId]
 end
 
+--- 三行普通关通关：三队共享解锁与首通账本，各队保留独立的当前关卡。
+--- 一队追赶已被其他队通关的节点时仍要同步当前关，不能被奖励去重拦住。
+---@param stageId number
+---@param teamIdx number
+---@return boolean firstClear
+function BattleScene.completeTriStageClear(stageId, teamIdx)
+    local id = tonumber(stageId)
+    if not id or id % 1 ~= 0 or not SC.getStage(id) or SC.isTerminalTemple(id)
+        or not teamIdx or teamIdx % 1 ~= 0 or teamIdx < 1 or teamIdx > 3 then
+        return false
+    end
+    local ClientDispatcher = require("runtime.ClientDispatcher")
+    local battle = ClientDispatcher.get("battle")
+    local savedCleared = type(battle) == "table" and battle.clearedStages or {}
+    savedCleared = savedCleared or {}
+    local wasCleared = clearedStages[id] == true or clearedStages[tostring(id)] == true
+        or savedCleared[id] == true or savedCleared[tostring(id)] == true
+    clearedStages[id] = true
+    -- 末关仅解锁终焉入口，不能把终焉当普通下一关或直接跳到轮回目标。
+    local nextId = SC.getNextStageId(id)
+    local progressId = nextId and not SC.isTerminalTemple(nextId) and nextId or id
+    local savedMax = type(battle) == "table" and tonumber(battle.maxStageId) or 0
+    maxStageId_ = math.max(maxStageId_, savedMax or 0, progressId)
+    if teamIdx == 1 then
+        BattleScene.adoptStageProgress(progressId)
+    end
+    if type(battle) == "table" then
+        battle.clearedStages = savedCleared
+        savedCleared[tostring(id)] = true
+        battle.maxStageId = maxStageId_
+        if teamIdx == 1 then
+            battle.currentStageId = currentStageId
+            battle.battleMode = isFirstClear and "firstClear" or "idle"
+        end
+    end
+    print(string.format("[BattleScene] 队%d 通关 stage=%d first=%s current=%s max=%s",
+        teamIdx, id, tostring(not wasCleared), tostring(currentStageId), tostring(maxStageId_)))
+    if not wasCleared then BattleScene.onFirstClear(id, teamIdx) end
+    -- 直接通知镜像/UI，不通过整表回灌重载其他正在战斗的队伍。
+    if type(battle) == "table" then
+        ClientDispatcher.notifySubscribers("battle")
+        require("boot.StandaloneSave").Flush()
+    end
+    return not wasCleared
+end
+
 --- [终焉协同] 三队共享生命池打空后调用：等价主线「终焉胜利 → 轮回」。
 --- 奖励去重：只有该终焉关此前未通关时才触发首通回调（重打已通关的终焉
 --- 不再重复发 fcExp/首通奖励，与主线 BattleCasualty 的 isFirstClear 门槛一致）。
@@ -1502,9 +1540,10 @@ end
 
 --- 三行战斗通关后复用首通奖励弹窗。
 ---@param clearedStageId number
-function BattleScene.onFirstClear(clearedStageId)
+---@param teamIdx number|nil 缺省为一队；其他队只推进共享解锁，不切一队当前关
+function BattleScene.onFirstClear(clearedStageId, teamIdx)
     if onFirstClearCallback then
-        onFirstClearCallback(clearedStageId)
+        onFirstClearCallback(clearedStageId, teamIdx)
     end
 end
 

@@ -111,6 +111,34 @@ local function isolated(path, overrides, globals)
     setmetatable(env, { __index = _G })
     return assert(load(table.concat(lines, "\n"), "@" .. path, "t", env))()
 end
+-- 中文显示边界只替代语言选择/原样测量与GPU输出；UTF-8/折行/适配仍加载真实模块。
+local function storyBoundary(f, graphics, scenarioConfig)
+    f.displayed = {}
+    local i18n = {
+        get = function() return "zh_CN" end,
+        lookup = function(text) return text end,
+        displayBounds = function(_, _, _, text)
+            f.count("display.bounds")
+            return (utf8.len(text) or 0) * f.font
+        end,
+        displayText = function(vg, x, y, text, last)
+            f.count("display.text")
+            f.displayed[#f.displayed + 1] = text
+            return graphics.nvgText(vg, x, y, text, last)
+        end,
+    }
+    f.Story = isolated("core/I18nStory.lua", {})
+    f.Display = isolated("ui/story/StoryDisplay.lua", {
+        ["core.I18n"] = i18n, ["core.I18nStory"] = f.Story,
+    }, graphics)
+    local assets = isolated("config/HeroAssetUtil.lua", {
+        ["config.HeroConfig"] = { get = function() return nil end },
+    }, graphics)
+    return { ["core.I18n"] = i18n, ["core.I18nStory"] = f.Story,
+        ["ui.story.StoryDisplay"] = f.Display, ["config.ScenarioDialogueConfig"] = scenarioConfig,
+        ["config.HeroAssetUtil"] = assets }
+end
+
 local function fresh(claimed)
     -- 保留独立旧账本字符串键，真实cjson可编码数字64/67键而不触发稀疏数组限制。
     local claimedMap = copy(claimed or {})
@@ -737,11 +765,12 @@ local function presentation(f)
         nvgText = function(_, _, _, text) f.drawings[#f.drawings + 1] = text end,
     }
     for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgIntersectScissor", "nvgScale", "nvgFontFace", "nvgTextAlign", "nvgTextLineHeight", "nvgFillColor", "nvgScissor", "nvgTranslate", "nvgBeginPath", "nvgRect", "nvgFill", "nvgRoundedRect", "nvgStrokeColor", "nvgStrokeWidth", "nvgStroke", "nvgResetScissor" }) do graphics[name] = function() end end
-    f.Dialogue = isolated("ui/story/ScenarioDialogue.lua", {
-        ["core.DrawUtil"] = draw, ["config.GameConfig"] = { Design = { WIDTH = 1080, HEIGHT = 2400 } },
-        ["ui.widget.HeroFrame"] = { draw = function() end }, ["core.EventBus"] = { emit = function() f.count("legacy.broadcast") end },
-        ["config.HeroAssetUtil"] = { getIconPath = function() return "" end, getPortraitPath = function() return "" end },
-    }, graphics)
+    local dialogueDependencies = storyBoundary(f, graphics, isolated("config/ScenarioDialogueConfig.lua", {}))
+    dialogueDependencies["core.DrawUtil"] = draw
+    dialogueDependencies["config.GameConfig"] = { Design = { WIDTH = 1080, HEIGHT = 2400 } }
+    dialogueDependencies["ui.widget.HeroFrame"] = { draw = function() end }
+    dialogueDependencies["core.EventBus"] = { emit = function() f.count("legacy.broadcast") end }
+    f.Dialogue = isolated("ui/story/ScenarioDialogue.lua", dialogueDependencies, graphics)
     f.Panel = isolated("ui/story/SamsaraRecordPanel.lua", { ["core.DrawUtil"] = draw,
         ["core.DarkIcon"] = { draw = function() end, drawNine = function(_, name, x, y, w, h)
             if name == "btn" and h == 64 then f.tabs[#f.tabs + 1] = { x = x + w * 0.5, y = y + h * 0.5, width = w } end
@@ -841,6 +870,10 @@ local function presentationCases()
                     eq(f.shown.reward, nil, "无奖励")
                     eq(f.shown.completionToken.nodeKey, item.key, "准确镜像租约")
                     original(f.shown.steps, item, "真实送入Dialogue")
+                    f.Dialogue.update(100); f.Dialogue.draw(1920, 1080)
+                    eq(f.Display.text(f.shown.steps[1].text), f.shown.steps[1].text, "中文显示全文原样")
+                    eq(f.Story.length(f.shown.steps[1].text), utf8.len(f.shown.steps[1].text), "真实长度按UTF-8码点")
+                    check(includes(table.concat(f.displayed), f.shown.steps[1].text), "真实fitLayout/drawRows完整绘制中文首句")
                 end
                 if ending == "dismissed" then finishDialogue(f.Dialogue); eq(record(f, item).status, "pending", "动画未完不授片"); f.Dialogue.update(0.31)
                 elseif ending == "skipped" then eq(f.Dialogue.handleSliceInput(1800, 130, 1920, 1080), true, "依旧横屏触摸skip")

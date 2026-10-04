@@ -515,6 +515,51 @@ function TavernPage.open()
     print("[TavernPage] 打开酒馆")
 end
 
+--- 招募业务在途（只读查询，不处理超时、不释放请求锁）。
+---@return boolean
+function TavernPage.isRecruitConfirmOpen()
+    return TavernPopups.isRecruitConfirmOpen and TavernPopups.isRecruitConfirmOpen() or false
+end
+
+function TavernPage.isRecruitBusy()
+    return pendingGachaPull or RecruitAnim.isPlaying() or TavernPage.isRecruitConfirmOpen()
+end
+
+--- 教程恢复招募页/首池；业务在途时绝不重开或中断招募动画。
+---@param vg any|nil 未初始化时可提供 NanoVG 上下文
+---@return boolean changed
+function TavernPage.prepareTutorial(vg)
+    if TavernPage.isRecruitBusy() then return false end
+    local changed = false
+    if not tavernInited_ then
+        local context = vg or vg_
+        if not context then return false end
+        TavernPage.init(context)
+        changed = true
+    end
+    if not state.open or state.closing then
+        TavernPage.open()
+        state.tabSwitchTime = 0
+        changed = true
+    elseif state.tab ~= "recruit" or state.selectedPool ~= 1 or state.tabFrom ~= "recruit"
+        or state.tabSwitchTime ~= 0 then
+        state.tab, state.tabFrom, state.tabSwitchTime = "recruit", "recruit", 0
+        state.selectedPool = 1
+        refreshPoolMeta()
+        syncDisplayData()
+        changed = true
+    end
+    if TargetRecruitPanel.isOpen() then
+        TargetRecruitPanel.close()
+        changed = true
+    end
+    if TavernPopups.isBlocking() then
+        TavernPopups.resetAll()
+        changed = true
+    end
+    return changed
+end
+
 --- 关闭酒馆（启动关闭动画）
 function TavernPage.close()
     if state.closing then return end

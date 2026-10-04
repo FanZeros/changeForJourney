@@ -1,486 +1,309 @@
--- ============================================================================
--- LevelUpPopup - 远征等级提升全屏弹窗
--- ============================================================================
---
--- 【使用说明】
---   local LevelUpPopup = require("ui.hud.popup.LevelUpPopup")
---   LevelUpPopup.init(vg)                      -- 初始化（仅一次）
---   LevelUpPopup.show(newLevel, unlocks)        -- 展示弹窗
---   LevelUpPopup.update(dt)                     -- 每帧更新
---   LevelUpPopup.draw(vg)                       -- NanoVGRender 中绘制
---   LevelUpPopup.handleInput(dx, dy)            -- 点击处理
---   LevelUpPopup.isOpen()                       -- 是否打开
---
--- 【布局设计】（设计分辨率 1080×2400）
---   1. Spine 全屏背景 UI_SPINE_DJTS（播完停留最后一帧）
---   2. "远征等级提升" 标题 (X540 Y575, size 70)
---   3. 等级数字 (X540 Y723, size 120)
---   5. "天赋点" 文本 (X540 Y1035, size 70)
---   6. "+1" 文本 (X540 Y1122, size 60)
---   7. 分割线 (X540 Y1200, 990×4)
---   8. 解锁内容列表（动态）
---   9. "-点击继续-" (X540 Y2040, size 60)
--- ============================================================================
-
----@diagnostic disable: undefined-global
-
+-- 远征升级暗金横卡：无旧 Spine、无白色光条，首次与再次展示共用状态机。
+-- UI 组件复用宿主帧；只在自定义图形层绘制轻量金色光晕和余烬。
+local UI = require("urhox-libs/UI")
+local Surface = require("ui.widget.DesignWidgetSurface")
+local Progress = require("config.ExpeditionProgress")
 local ExpTable = require("config.ExpTable")
+local ClientDispatcher = require("runtime.ClientDispatcher")
+local GameState = require("core.GameState")
+local I18n = require("core.I18n")
 
-local LevelUpPopup = {}
-
--- ======================== 设计常量 ========================
-
-local DESIGN_W = 1080
-local DESIGN_H = 2400
-
--- Spine 资源
-local SPINE_JSON = "image/spine/UI_SPINE_DJTS.json"
-local SPINE_ANIM = "1"
-
--- Spine 骨架原始数据（从 JSON skeleton 字段）
-local SPINE_DATA_X = -540
-local SPINE_DATA_Y = -1200
-local SPINE_DATA_W = 1080
-local SPINE_DATA_H = 2400
-
--- 标题 "远征等级提升"
-local TITLE_X, TITLE_Y = 540, 575
-local TITLE_SIZE = 70
--- 标题描边
-local TITLE_STROKE = 6
-local TITLE_STROKE_SAMPLES = 16
-
--- 等级数字
-local LEVEL_X, LEVEL_Y = 540, 723
-local LEVEL_SIZE = 120
-local LEVEL_STROKE = 8
-local LEVEL_STROKE_SAMPLES = 16
-
--- 文本背景框
-local TEXT_BG_X, TEXT_BG_Y = 540, 1036
-local TEXT_BG_W, TEXT_BG_H = 660, 60
-
--- "天赋点" 文本
-local TALENT_X, TALENT_Y = 540, 1035
-local TALENT_SIZE = 70
-
--- "+1" 文本
-local PLUS_X, PLUS_Y = 540, 1122
-local PLUS_SIZE = 60
-
--- 分割线
-local DIVIDER_X, DIVIDER_Y = 540, 1200
-local DIVIDER_W, DIVIDER_H = 990, 4
-
--- 解锁内容
-local UNLOCK_START_Y = 1312    -- 第一个解锁项的中心 Y
-local UNLOCK_ITEM_H  = 80     -- 每项高度
-local UNLOCK_ITEM_GAP = 23    -- 项间距
-local UNLOCK_BG_W, UNLOCK_BG_H = 732, 80
-local UNLOCK_BG_RADIUS = 40
-local UNLOCK_BG_ALPHA = 25     -- 白色 10% 不透明度 = 255 * 0.1 ≈ 25
-
--- 解锁文本 "解锁" — X 右居中 473
-local UNLOCK_TEXT_X = 473
-local UNLOCK_TEXT_SIZE = 40
-
--- 箭头图片
-local ARROW_X = 540
-local ARROW_W, ARROW_H = 89, 82
-
--- "已开放" 文本
-local OPENED_X = 666
-local OPENED_SIZE = 40
-
--- "-点击继续-"
-local HINT_X, HINT_Y = 540, 2040
-local HINT_SIZE = 60
-
--- ======================== 动画常量 ========================
-
-local ENTER_DELAY    = 0.3   -- 入场延迟（等 Spine 背景先渐显）
-local ENTER_DURATION = 0.4   -- 内容从左侧滑入时长
-local EXIT_DURATION  = 0.3   -- 出场动画时长
-local AUTO_CLOSE_SEC = 5     -- idle 阶段自动关闭倒计时（秒）
-
--- ======================== 颜色常量 ========================
-
-local COLOR_WHITE     = { 255, 255, 255, 255 }
-local COLOR_STROKE_BK = { 0, 0, 0, 255 }
-local COLOR_YELLOW    = { 0xff, 0xeb, 0x65, 255 }   -- #ffeb65
-local COLOR_LV_STROKE = { 0x3d, 0x32, 0x24, 255 }   -- #3d3224
-local COLOR_GREEN     = { 0x8d, 0xff, 0x88, 255 }   -- #8dff88
-local COLOR_DIVIDER   = { 0xa1, 0x81, 0x58, 255 }   -- #a18158
-
--- ======================== 缓动函数 ========================
-
---- ease-out cubic: 快速减速到位
-local function easeOutCubic(t)
-    local t1 = t - 1
-    return t1 * t1 * t1 + 1
-end
-
---- ease-in cubic: 缓慢加速离开
-local function easeInCubic(t)
-    return t * t * t
-end
-
--- ======================== 状态 ========================
-
+local Popup = {}
+local ENTER_DURATION, EXIT_DURATION, AUTO_CLOSE_SEC = 0.4, 0.3, 5
+---@class ExpeditionPopupState
+---@field open boolean
+---@field phase string
+---@field timer number
+---@field elapsed number
+---@field remaining number
+---@field fromLevel number
+---@field level number
+---@field unlocks table[]
+---@type ExpeditionPopupState
 local state = {
-    open       = false,
-    newLevel   = 1,
-    unlocks    = nil,     -- { { unlockName = "教堂" }, ... } 或 nil
-    -- Spine
-    spineInst  = nil,
-    spineLoaded = false,
-    spineFinished = false,  -- 动画是否已播完
-    spineLastTime = 0,
-    -- 缓存
-    cachedVg   = nil,
-    -- 闪烁效果
-    hintTimer  = 0,
-    -- 动画
-    animPhase  = nil,      -- "enter" | "idle" | "exit"
-    animTimer  = 0,
-    -- 自动关闭倒计时
-    autoCloseTimer = 0,
+    open = false, phase = "closed", timer = 0, elapsed = 0, remaining = AUTO_CLOSE_SEC,
+    fromLevel = 1, level = 1, unlocks = {},
 }
+---@type Panel?
+local card = nil
+---@type Label?
+local titleLabel = nil
+---@type Label?
+local levelLabel = nil
+---@type Label?
+local pointsLabel = nil
+---@type Label?
+local summaryLabel = nil
+---@type Panel?
+local unlockPanel = nil
+---@type Button?
+local rewardsButton = nil
+---@type Label?
+local hintLabel = nil
+---@type fun()?
+local onViewRewards = nil
+local contentDirty = true
+local contentLanguage = ""
+local presentationVersion = 0
+local wasBlocked = false
 
--- ======================== 工具函数 ========================
+function Popup.getPresentationVersion()
+    Popup.isPresentationBlocked()
+    return presentationVersion
+end
 
---- 绘制描边文本（16 点圆形采样描边 + 填充）
----@param vg any
----@param x number 文本 X
----@param y number 文本 Y
----@param text string
----@param fontSize number
----@param fillColor table {r,g,b,a}
----@param strokeColor table {r,g,b,a}
----@param strokeWidth number
-local function drawStrokedText(vg, x, y, text, fontSize, fillColor, strokeColor, strokeWidth)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, fontSize)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+-- 与宿主最终层级和输入共用阻塞条件，遮挡时连进入/退出动画也不偷跑。
+-- 绘制与输入查询也记录切换，开场分支提前返回Update时仍会作废旧按压。
+function Popup.isPresentationBlocked()
+    local blocked = require("ui.hud.popup.OfflineRewardPanel").isOpen()
+        or require("ui.hud.popup.UpdateNoticePopup").isOpen()
+        or require("ui.story.gate.DarkTitleScreenGate").isOpen()
+        or require("ui.story.gate.LetterIntro").isOpen()
+        or require("ui.story.ScenarioDialogue").isActive()
+        or require("ui.story.SamsaraRecordPanel").isOpen()
+        or require("ui.dev.CEPanel").isOpen()
+    if blocked ~= wasBlocked then
+        presentationVersion = presentationVersion + 1
+        wasBlocked = blocked
+    end
+    return blocked
+end
 
-    -- 描边层
-    if strokeWidth > 0 then
-        nvgFillColor(vg, nvgRGBA(strokeColor[1], strokeColor[2], strokeColor[3], strokeColor[4]))
-        local step = math.pi * 2 / TITLE_STROKE_SAMPLES
-        for i = 0, TITLE_STROKE_SAMPLES - 1 do
-            local angle = i * step
-            nvgText(vg, x + math.cos(angle) * strokeWidth, y + math.sin(angle) * strokeWidth, text, nil)
+local function normalizedLevel(value)
+    local number = tonumber(value) or 1
+    if number ~= number or math.abs(number) == math.huge then number = 1 end
+    return math.max(1, math.min(ExpTable.PLAYER_MAX_LEVEL, math.floor(number)))
+end
+
+local function ensureCard()
+    Surface.init()
+    if card then return end
+    titleLabel = UI.Label {
+        text = "", fontSize = 23, height = 42, width = "100%",
+        textAlign = "center", fontColor = {244, 232, 204, 255},
+    }
+    levelLabel = UI.Label {
+        text = "Lv.1", fontSize = 48, height = 82, width = "100%",
+        textAlign = "center", fontColor = {240, 199, 94, 255},
+    }
+    pointsLabel = UI.Label {
+        text = "", fontSize = 17, height = 32, width = "100%", textAlign = "center",
+        fontColor = {168, 208, 153, 255},
+    }
+    summaryLabel = UI.Label {
+        text = "", fontSize = 14, height = 28, width = "100%", textAlign = "center",
+        fontColor = {216, 201, 163, 255},
+    }
+    unlockPanel = UI.Panel {
+        width = "100%", height = 126, gap = 6, justifyContent = "center",
+        pointerEvents = "none",
+    }
+    rewardsButton = UI.Button {
+        text = "查看远征奖励", fontSize = 15, fontWeight = "normal", width = 320, height = 46,
+        backgroundColor = {110, 78, 24, 255}, borderColor = {201, 151, 59, 255},
+        borderWidth = 1, borderRadius = 6, textColor = {244, 232, 204, 255},
+        pointerEvents = "none",
+    }
+    hintLabel = UI.Label {
+        text = "", fontSize = 12, height = 24, width = "100%", textAlign = "center",
+        fontColor = {150, 138, 110, 255},
+    }
+    card = UI.Panel {
+        width = 780, height = 466, padding = 22, gap = 6, alignItems = "center",
+        backgroundGradient = { direction = "to-bottom", from = {30, 26, 21, 255}, to = {13, 11, 9, 255} },
+        borderWidth = 1.5, borderColor = {201, 151, 59, 255}, borderRadius = 12,
+        pointerEvents = "none", overflow = "hidden",
+        children = {
+            titleLabel, levelLabel, pointsLabel, summaryLabel,
+            UI.Divider { color = {110, 78, 24, 255}, thickness = 1, spacing = 0, width = "100%", height = 2 },
+            unlockPanel, rewardsButton, hintLabel,
+        },
+    }
+    print("[LevelUpPopup] 暗金横卡组件已就绪")
+end
+
+local function updateContent()
+    if contentLanguage ~= I18n.get() then contentDirty = true end
+    if not contentDirty or not card or not titleLabel or not levelLabel or not pointsLabel
+        or not summaryLabel or not rewardsButton or not unlockPanel then return end
+    titleLabel:SetText(I18n.lookup("远征等级提升"))
+    levelLabel:SetText("Lv." .. state.level)
+    pointsLabel:SetText(I18n.format("Lv.%d → Lv.%d    远征点上限 +%d", state.fromLevel, state.level,
+        math.max(0, state.level - state.fromLevel)))
+    local snapshot = Progress.build({ level = GameState.getLevel(), exp = GameState.getExp() },
+        ClientDispatcher.get("task"), ClientDispatcher.get("battle"))
+    local reached = {}
+    for _, row in ipairs(snapshot.rows) do
+        if row.level > state.fromLevel and row.level <= state.level then
+            reached[#reached + 1] = "Lv." .. row.level
         end
     end
-
-    -- 填充层
-    nvgFillColor(vg, nvgRGBA(fillColor[1], fillColor[2], fillColor[3], fillColor[4]))
-    nvgText(vg, x, y, text, nil)
-end
-
---- 绘制图片居中
-local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
-    if img < 0 then return end
-    local ix = cx - w * 0.5
-    local iy = cy - h * 0.5
-    local paint = nvgImagePattern(vg, ix, iy, w, h, 0, img, alpha or 1.0)
-    nvgBeginPath(vg)
-    nvgRect(vg, ix, iy, w, h)
-    nvgFillPaint(vg, paint)
-    nvgFill(vg)
-end
-
--- ======================== Spine 管理 ========================
-
-local function ensureSpineLoaded(vg)
-    if state.spineLoaded and state.spineInst then return true end
-    if not vg then return false end
-
-    state.spineInst = nvgSpineCreate(vg)
-    if not state.spineInst then
-        print("[LevelUpPopup] nvgSpineCreate failed")
-        return false
+    local milestoneText = table.concat(reached, " / ", 1, math.min(4, #reached))
+    if #reached > 4 then milestoneText = I18n.format("%s 等 %d 项", milestoneText, #reached) end
+    summaryLabel:SetText(#reached > 0 and I18n.format("到达奖励里程碑 %s", milestoneText)
+        or I18n.lookup("每次成长都将记入远征勋记"))
+    rewardsButton:SetText(snapshot.claimableCount > 0
+        and I18n.format("查看奖励 · %d 项可领", snapshot.claimableCount) or I18n.lookup("查看远征奖励"))
+    unlockPanel:ClearChildren()
+    -- 固定三行，超出时摘要计数；完整明细始终在常驻奖励页查看。
+    for index = 1, math.min(3, #state.unlocks) do
+        local entry = state.unlocks[index]
+        unlockPanel:AddChild(UI.Label {
+            text = Progress.unlockLabel(entry), fontSize = 14, height = 28, width = "100%",
+            textAlign = "center", fontColor = {216, 201, 163, 255},
+        })
     end
-
-    if not state.spineInst:Load(SPINE_JSON) then
-        print("[LevelUpPopup] Failed to load: " .. SPINE_JSON)
-        state.spineInst = nil
-        return false
+    if #state.unlocks > 3 then
+        unlockPanel:AddChild(UI.Label {
+            text = I18n.format("另有 %d 项解锁，可前往奖励页查看", #state.unlocks - 3),
+            fontSize = 11, height = 22, width = "100%", textAlign = "center",
+            fontColor = {150, 138, 110, 255},
+        })
     end
-
-    -- 使用 normal 混合模式（关闭预乘 Alpha）
-    state.spineInst:SetPremultipliedAlpha(false)
-    state.spineInst:SetSpeed(1.0)
-
-    -- 动画完成回调：标记停止更新（停留最后一帧）
-    state.spineInst:SetCompleteListener(function(track, anim)
-        state.spineFinished = true
-        print("[LevelUpPopup] Spine animation complete, paused on last frame")
-    end)
-
-    state.spineLoaded = true
-    print("[LevelUpPopup] Spine loaded OK")
-    return true
+    contentDirty = false
+    contentLanguage = I18n.get()
 end
 
--- ======================== Public API ========================
-
---- 预加载 Spine 资源（启动时调用，提前解析 JSON/atlas + 上传 GPU 纹理）
----@param vg any NanoVG 上下文
-function LevelUpPopup.preload(vg)
-    if state.spineLoaded then return end
-    if not vg then return end
-    ensureSpineLoaded(vg)
+-- 宿主逻辑坐标与输入同源；默认设计空间兼容旧调用。
+local function geometry(width, height)
+    width, height = width or 1080, height or 2400
+    local scale = math.min(1, math.max(0.01, (width - 36) / 780), math.max(0.01, (height - 36) / 466))
+    return (width - 780 * scale) * 0.5, (height - 466 * scale) * 0.5, scale
 end
 
---- 初始化（加载图片资源，仅调用一次）
----@param vg any NanoVG 上下文
-function LevelUpPopup.init(vg)
-    state.cachedVg = vg
+function Popup.init(_vg)
+    ensureCard()
 end
 
---- 展示等级提升弹窗
----@param newLevel number 新等级
----@param unlocks table[]|nil 解锁内容列表（来自 ExpTable.getLevelUnlocks）
-function LevelUpPopup.show(newLevel, unlocks)
+-- 保留旧接口：新横卡不需要异步资源预加载。
+function Popup.preload(_vg)
+    ensureCard()
+end
+
+function Popup.setOnViewRewards(callback)
+    onViewRewards = callback
+end
+
+function Popup.show(newLevel, _unlocks, fromLevel)
+    local target = normalizedLevel(newLevel)
+    local from = normalizedLevel(fromLevel or math.max(1, target - 1))
+    if state.open then
+        from = math.min(from, state.fromLevel)
+        target = math.max(target, state.level)
+    end
+    state.fromLevel, state.level = from, target
+    state.unlocks = Progress.getRangeUnlocks(from, target)
+    state.open, state.phase, state.timer, state.elapsed = true, "enter", 0, 0
+    state.remaining = AUTO_CLOSE_SEC
+    presentationVersion = presentationVersion + 1
+    wasBlocked = Popup.isPresentationBlocked()
+    contentDirty = true
+    ensureCard()
+    updateContent()
     require("systems.GameSFX").play("level_up")
-    state.newLevel = newLevel
-    state.unlocks = unlocks
-    state.open = true
-    state.spineFinished = false
-    state.hintTimer = 0
-    state.spineLastTime = time.elapsedTime
-
-    -- 入场动画
-    state.animPhase = "enter"
-    state.animTimer = 0
-    state.autoCloseTimer = AUTO_CLOSE_SEC
-
-    -- 启动 Spine 动画
-    if state.spineLoaded and state.spineInst then
-        state.spineInst:SetAnimation(0, SPINE_ANIM, false)
-        state.spineFinished = false
-    end
-
-    print("[LevelUpPopup] show: level=" .. newLevel
-        .. " unlocks=" .. (unlocks and #unlocks or 0))
+    print("[LevelUpPopup] 升级摘要 " .. from .. "→" .. target .. " 解锁=" .. #state.unlocks)
 end
 
---- 关闭弹窗（内部调用，动画结束后执行）
-local function doClose()
-    state.open = false
-    state.animPhase = nil
-    if state.spineInst then
-        state.spineInst:ClearTracks()
-    end
-    print("[LevelUpPopup] closed")
-end
-
---- 是否打开
----@return boolean
-function LevelUpPopup.isOpen()
+function Popup.isOpen()
     return state.open
 end
 
---- 每帧更新
----@param dt number
-function LevelUpPopup.update(dt)
+local function startExit()
+    state.phase, state.timer = "exit", 0
+end
+
+function Popup.update(dt)
     if not state.open then return end
-
-    -- idle 阶段：闪烁计时 + 自动关闭倒计时
-    if state.animPhase == "idle" then
-        state.hintTimer = state.hintTimer + dt
-        state.autoCloseTimer = state.autoCloseTimer - dt
-        if state.autoCloseTimer <= 0 then
-            state.animPhase = "exit"
-            state.animTimer = 0
-            return
-        end
-    end
-
-    -- 动画计时
-    if state.animPhase == "enter" then
-        state.animTimer = state.animTimer + dt
-        if state.animTimer >= ENTER_DELAY + ENTER_DURATION then
-            state.animPhase = "idle"
-            state.animTimer = 0
-        end
-    elseif state.animPhase == "exit" then
-        state.animTimer = state.animTimer + dt
-        if state.animTimer >= EXIT_DURATION then
-            doClose()
-            return
-        end
-    end
-
-    -- Spine 动画更新（播完后不再更新，停留最后一帧）
-    if state.spineLoaded and state.spineInst and not state.spineFinished then
-        local now = time.elapsedTime
-        local spineDt = now - state.spineLastTime
-        if spineDt > 0.1 then spineDt = 0.016 end
-        state.spineLastTime = now
-        state.spineInst:Update(spineDt)
+    if Popup.isPresentationBlocked() then return end
+    dt = math.max(0, tonumber(dt) or 0)
+    state.timer, state.elapsed = state.timer + dt, state.elapsed + dt
+    if state.phase == "enter" and state.timer >= ENTER_DURATION then
+        state.phase, state.timer = "idle", 0
+    elseif state.phase == "idle" then
+        state.remaining = math.max(0, state.remaining - dt)
+        if state.remaining <= 0 then startExit() end
+    elseif state.phase == "exit" and state.timer >= EXIT_DURATION then
+        state.open, state.phase = false, "closed"
+        print("[LevelUpPopup] 已关闭")
     end
 end
 
---- 处理点击（点击任意位置关闭）
----@param dx number 设计空间 X
----@param dy number 设计空间 Y
----@return boolean 是否消费事件
-function LevelUpPopup.handleInput(dx, dy)
+function Popup.handleInput(x, y, width, height)
     if not state.open then return false end
-    -- 入场/出场动画中拦截但不响应
-    if state.animPhase == "enter" or state.animPhase == "exit" then return true end
-    -- 触发出场动画
-    state.animPhase = "exit"
-    state.animTimer = 0
+    if Popup.isPresentationBlocked() then return true end
+    if state.phase ~= "idle" then return true end
+    local left, top, scale = geometry(width, height)
+    local localX, localY = (x - left) / scale, (y - top) / scale
+    -- Yoga 已完成布局时按按钮实际矩形命中；首次尚未绘制也不透传底层。
+    local bounds = rewardsButton and rewardsButton:GetAbsoluteLayout()
+    if onViewRewards and bounds and localX >= bounds.x and localX <= bounds.x + bounds.w
+        and localY >= bounds.y and localY <= bounds.y + bounds.h then
+        state.open, state.phase = false, "closed"
+        print("[LevelUpPopup] 前往远征奖励")
+        onViewRewards()
+        return true
+    end
+    startExit()
     return true
 end
 
--- ======================== 动画计算 ========================
-
---- 计算当前帧的内容偏移和透明度
----@return number offsetX, number contentAlpha, number spineAlpha
-local function calcAnimValues()
-    if state.animPhase == "enter" then
-        -- 入场：延迟后从左侧滑入
-        local elapsed = state.animTimer - ENTER_DELAY
-        if elapsed <= 0 then
-            -- 延迟期间内容完全在左侧屏幕外
-            return -DESIGN_W, 0, 1.0
-        end
-        local t = math.min(elapsed / ENTER_DURATION, 1.0)
-        local eased = easeOutCubic(t)
-        return -DESIGN_W * (1 - eased), eased, 1.0
-
-    elseif state.animPhase == "exit" then
-        -- 出场：向右滑出 + 淡出
-        local t = math.min(state.animTimer / EXIT_DURATION, 1.0)
-        local eased = easeInCubic(t)
-        local alpha = 1.0 - t
-        return DESIGN_W * eased, alpha, alpha
-
-    else
-        -- idle：正常显示
-        return 0, 1.0, 1.0
-    end
-end
-
--- ======================== 绘制 ========================
-
---- 横屏卡片：把竖屏长页收成居中宽面板
-local function drawLandscapeCard(vg, contentAlpha)
-    local cardW, cardH = 1500, 760
-    local cardX, cardY = (DESIGN_W - cardW) * 0.5, (DESIGN_H - cardH) * 0.5
+local function drawGlow(vg, x, y, scale, alpha)
+    local cx, cy = x + 390 * scale, y + 233 * scale
+    local radius = 300 * scale
     nvgBeginPath(vg)
-    nvgRoundedRect(vg, cardX, cardY, cardW, cardH, 28)
-    nvgFillColor(vg, nvgRGBA(18, 14, 10, math.floor(230 * contentAlpha)))
+    nvgRect(vg, cx - radius * 1.5, cy - radius, radius * 3, radius * 2)
+    local glowInner = nvgRGBA(201, 151, 59, math.floor(alpha * 30))
+    local glowOuter = nvgRGBA(201, 151, 59, 0)
+    ---@cast glowInner NVGcolor
+    ---@cast glowOuter NVGcolor
+    nvgFillPaint(vg, nvgRadialGradient(vg, cx, cy, 60 * scale, radius, glowInner, glowOuter))
     nvgFill(vg)
-    nvgStrokeColor(vg, nvgRGBA(196, 160, 90, math.floor(230 * contentAlpha)))
-    nvgStrokeWidth(vg, 3)
-    nvgStroke(vg)
-
-    drawStrokedText(vg, DESIGN_W * 0.5, cardY + 78, "远征等级提升",
-        52, COLOR_WHITE, COLOR_STROKE_BK, 4)
-    drawStrokedText(vg, DESIGN_W * 0.5, cardY + 168, "Lv." .. tostring(state.newLevel),
-        84, COLOR_YELLOW, COLOR_LV_STROKE, 6)
-
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 36)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(COLOR_YELLOW[1], COLOR_YELLOW[2], COLOR_YELLOW[3], 255))
-    nvgText(vg, DESIGN_W * 0.5 - 80, cardY + 250, "远征点", nil)
-    nvgFillColor(vg, nvgRGBA(COLOR_GREEN[1], COLOR_GREEN[2], COLOR_GREEN[3], 255))
-    nvgText(vg, DESIGN_W * 0.5 + 90, cardY + 250, "+1", nil)
-
-    local unlocks = state.unlocks or {}
-    local count = #unlocks
-    if count > 0 then
-        local cols = math.min(count, 3)
-        local itemW, itemH, gap = 420, 72, 18
-        local rows = math.ceil(count / cols)
-        local gridW = cols * itemW + (cols - 1) * gap
-        local startX = DESIGN_W * 0.5 - gridW * 0.5
-        local startY = cardY + 330
-        for i, unlock in ipairs(unlocks) do
-            local col = (i - 1) % cols
-            local row = math.floor((i - 1) / cols)
-            local x = startX + col * (itemW + gap)
-            local y = startY + row * (itemH + gap)
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, x, y, itemW, itemH, 14)
-            nvgFillColor(vg, nvgRGBA(255, 255, 255, 28))
-            nvgFill(vg)
-            nvgFontSize(vg, 28)
-            nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(255, 255, 255, 255))
-            nvgText(vg, x + itemW * 0.5, y + itemH * 0.5, (unlock.unlockName or "") .. "  已开放", nil)
-        end
-        if rows > 2 then
-            nvgFontSize(vg, 22)
-            nvgFillColor(vg, nvgRGBA(216, 201, 163, 200))
-            nvgText(vg, DESIGN_W * 0.5, cardY + cardH - 92, "还有更多解锁", nil)
-        end
+    -- 固定数量余烬，不分配粒子对象、不使用 additive/白色背景。
+    for index = 1, 14 do
+        local phase = (state.elapsed * 0.16 + index * 0.071) % 1
+        local px = x + ((index * 137) % 780) * scale
+        local py = y + (466 - phase * 520) * scale
+        nvgBeginPath(vg)
+        nvgCircle(vg, px, py, (index % 2 + 1) * scale)
+        nvgFillColor(vg, nvgRGBA(201, 151, 59, math.floor((1 - phase) * alpha * 88)))
+        nvgFill(vg)
     end
-
-    local remaining = math.ceil(math.max(state.autoCloseTimer, 0))
-    local hintText = remaining .. "秒后自动关闭  点击跳过"
-    nvgFontSize(vg, 28)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-    nvgFillColor(vg, nvgRGBA(255, 255, 255, 210))
-    nvgText(vg, DESIGN_W * 0.5, cardY + cardH - 48, hintText, nil)
 end
 
---- 绘制弹窗（在设计空间内调用）
----@param vg any NanoVG 上下文
-function LevelUpPopup.draw(vg)
-    if not state.open then return end
-
-    local offsetX, contentAlpha, spineAlpha = calcAnimValues()
-
-    -- 1) Spine 全屏背景
-    if ensureSpineLoaded(vg) then
-        local cardW, cardH = 1500, 760
-        local cardX = (DESIGN_W - cardW) * 0.5
-        local cardY = (DESIGN_H - cardH) * 0.5
-        local scale = math.min(cardW / SPINE_DATA_W, cardH / SPINE_DATA_H)
-        local drawW = SPINE_DATA_W * scale
-        local drawH = SPINE_DATA_H * scale
-        local boxX = cardX + (cardW - drawW) * 0.5
-        local boxY = cardY + (cardH - drawH) * 0.5
-        state.spineInst:SetScale(scale, -scale)
-        local posX = boxX - SPINE_DATA_X * scale
-        local posY = boxY + (SPINE_DATA_H + SPINE_DATA_Y) * scale
-        state.spineInst:SetPosition(posX, posY)
-
-        -- 出场时 Spine 也淡出
-        if spineAlpha < 1.0 then
-            nvgSave(vg)
-            nvgGlobalAlpha(vg, math.max(spineAlpha, 0))
-            nvgSpineRender(vg, state.spineInst)
-            nvgRestore(vg)
-        else
-            nvgSpineRender(vg, state.spineInst)
-        end
+function Popup.draw(vg, width, height)
+    if not state.open or not vg or Popup.isPresentationBlocked() then return end
+    ensureCard()
+    updateContent()
+    local currentCard = card --[[@as Panel?]]
+    local currentHint = hintLabel --[[@as Label?]]
+    if not currentCard or not currentHint then return end
+    local left, top, scale = geometry(width, height)
+    local alpha, slide = 1.0, 0.0
+    if state.phase == "enter" then
+        local progress = math.min(1, state.timer / ENTER_DURATION)
+        local eased = 1 - (1 - progress) ^ 3
+        alpha, slide = 0.72 + 0.28 * eased, 22 * (1 - eased)
+    elseif state.phase == "exit" then
+        local progress = math.min(1, state.timer / EXIT_DURATION)
+        alpha, slide = 1 - progress, -16 * progress
     end
-
-    -- 入场延迟期间不绘制内容
-    if contentAlpha <= 0 then return end
-
-    -- 横屏宿主把 1080×2400 画布居中缩放，内容改成宽卡片，避免竖屏长页被裁切
-    -- （旧竖屏长页绘制已移除；Lua 的 return 后不能跟语句，遗留死代码会导致模块加载失败黑屏）
-    drawLandscapeCard(vg, contentAlpha)
+    currentHint:SetText(I18n.format("%d 秒后自动关闭 · 点击空白继续", math.ceil(state.remaining)))
+    nvgSave(vg)
+    drawGlow(vg, left, top, scale, alpha)
+    nvgTranslate(vg, left, top + slide * scale)
+    nvgScale(vg, scale, scale)
+    nvgGlobalAlpha(vg, alpha)
+    Surface.draw(currentCard, vg, 780, 466)
+    nvgRestore(vg)
 end
 
---- 释放资源
-function LevelUpPopup.destroy()
-    if state.spineInst then
-        state.spineInst:Unload()
-        state.spineInst = nil
-    end
-    state.spineLoaded = false
-    state.open = false
-    state.animPhase = nil
+function Popup.destroy()
+    state.open, state.phase = false, "closed"
+    if card then card:Destroy() end
+    card, titleLabel, levelLabel, pointsLabel, summaryLabel = nil, nil, nil, nil, nil
+    unlockPanel, rewardsButton, hintLabel = nil, nil, nil
+    contentLanguage = ""
+    contentDirty = true
 end
 
-return LevelUpPopup
+return Popup

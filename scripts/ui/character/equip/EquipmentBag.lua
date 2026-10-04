@@ -1174,7 +1174,7 @@ function EquipmentBag.draw(vg, opts)
                 if equip.enhanceLevel and equip.enhanceLevel > 0 then
                     local enhText = "+" .. equip.enhanceLevel
                     local enhX = cx + CELL_SIZE * 0.5 - 8
-                    local enhY = cy - CELL_SIZE * 0.5 + 8
+                    local enhY = cy - CELL_SIZE * 0.5 - 4
                     nvgFontFace(vg, "sans")
                     nvgFontSize(vg, 36)
                     nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)

@@ -47,14 +47,25 @@ function Start()
         return { seconds = seconds, maxSeconds = 43200, kills = 0,
             adventureExp = 0, adventurerExp = calcHeroExp, gold = 7, equipSeeds = {}, scrollDrops = {} }
     end
-    fileSystem = { FileExists = function() return disk ~= nil end }
-    File = function(_, mode)
+    local temporaryFiles = {}
+    fileSystem = {
+        FileExists = function(_, path)
+            return path == "standalone_save.json" and disk ~= nil or temporaryFiles[path] ~= nil
+        end,
+        Rename = function(_, source, destination)
+            if destination ~= "standalone_save.json" or type(temporaryFiles[source]) ~= "string" then return false end
+            disk = temporaryFiles[source]
+            temporaryFiles[source] = nil
+            return true
+        end,
+    }
+    File = function(path, mode)
         local file = {}
         function file:IsOpen() return not (mode == FILE_WRITE and failOpen) end
-        function file:ReadString() return disk end
+        function file:ReadString() return path == "standalone_save.json" and disk or temporaryFiles[path] end
         function file:WriteString(data)
             if failWrite then return false end
-            disk = data
+            if path == "standalone_save.json" then disk = data else temporaryFiles[path] = data end
             return true
         end
         function file:Close() end

@@ -20,6 +20,8 @@ local RewardPopup      = require("ui.hud.popup.RewardPopup")
 local EquipmentDetail  = require("ui.character.equip.EquipmentDetail")
 local QualityMark      = require("ui.widget.QualityMark")
 local EquipmentSetIcon = require("ui.widget.EquipmentSetIcon")
+local I18n             = require("core.I18n")
+local EquipmentText    = require("core.I18nEquipmentText")
 
 local drawTextStroke    = DrawUtil.drawTextStroke
 local drawImageCentered = DrawUtil.drawImageCentered
@@ -495,9 +497,9 @@ function M.drawUpperSlot(vg)
     -- 显示文本
     local rewardText
     if selCount > 0 then
-        rewardText = "精粹 +" .. previewEssence
+        rewardText = I18n.format("精粹 +%s", tostring(previewEssence))
     elseif fjState.lastRewardEssence then
-        rewardText = "精粹 +" .. fjState.lastRewardEssence
+        rewardText = I18n.format("精粹 +%s", tostring(fjState.lastRewardEssence))
     else
         rewardText = "分解奖励"
     end
@@ -522,7 +524,8 @@ function M.drawUpperSlot(vg)
         36, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
         255, 255, 255, 4)
     if scrollHint then
-        drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 72, scrollHint,
+        local displayHint = EquipmentText.lookup(scrollHint, I18n.get()) or scrollHint
+        drawTextStroke(vg, FJ.REWARD_CX, FJ.REWARD_CY + FJ.REWARD_SIZE * 0.5 + 72, displayHint,
             32, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
             255, 214, 102, 3)
     end
@@ -600,7 +603,7 @@ function M.drawPanel(vg)
             if enhLv > 0 then
                 local enhText = "+" .. enhLv
                 local enhX = cx + FJ.GRID_CELL * 0.5 - 8
-                local enhY = cy - FJ.GRID_CELL * 0.5 + 8
+                local enhY = cy - FJ.GRID_CELL * 0.5 - 4
                 nvgFontFace(vg, "sans")
                 nvgFontSize(vg, 36)
                 nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
@@ -733,13 +736,13 @@ local function buildConditionSegments()
         if qCfg then
             segs[#segs + 1] = { text = qCfg.name, r = qCfg.r, g = qCfg.g, b = qCfg.b }
         end
-        addGray("级及以下")
+        addGray(I18n.get() == "zh_CN" and "级及以下" or I18n.format("%s品质及以下", ""))
     end
     if fjState.autoQuality > 0 and fjState.autoLevel > 0 then
         addGray("且")
     end
     if fjState.autoLevel > 0 then
-        addGray(tostring(fjState.autoLevel) .. "级及以下")
+        addGray(I18n.format("%s级及以下", tostring(fjState.autoLevel)))
     end
     if #segs == 0 then
         addGray("未设置条件，掉落装备不会自动分解")

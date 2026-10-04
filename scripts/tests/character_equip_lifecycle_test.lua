@@ -21,6 +21,7 @@ function Start()
         BTN_TAB_CLASS_CX = 635, BTN_TAB_CLASS_CY = 2308,
         BTN_TAB_AWAKEN_CX = 825, BTN_TAB_AWAKEN_CY = 2308,
         BTN_BACK_CX = 122, BTN_BACK_CY = 1150, BTN_BACK_W = 184, BTN_BACK_H = 143,
+        ATTR_BACK = { cx = 122, cy = 885, w = 144, h = 100 },
         BTN_UNEQUIP_CX = 211, BTN_UNEQUIP_CY = 105,
         BTN_EQUIP_CX = 869, BTN_EQUIP_CY = 105, BTN_BATCH_W = 304, BTN_BATCH_H = 100,
         SIDE_CARD_W = 180, SIDE_CARD_H = 300, ARROW_CY = 500,
@@ -106,13 +107,34 @@ function Start()
         detail._switchHero(1)
         assert(calls.release == 2 and not detail.isEquipTab(), "未获得角色退属性并释放仓库")
         detail.open(1, "equip")
+        detail.open(3)
+        assert(not detail.isEquipTab(), "未获得英雄点击入口不得保留配装页")
+        detail.open(1, "equip")
+        local beforeAcquire, beforeRelease, beforeReset = calls.acquire, calls.release, calls.reset
+        local seamBefore = detail.getSeamAnim()
+        time.elapsedTime = time.elapsedTime + 1
+        detail.open(2)
+        assert(detail.getSeamAnim() == seamBefore, "点击出战角色不能重新播放整页滑入")
+        assert(detail.isEquipTab() and detail.getHeroId() == 2 and linkedHero == 2,
+            "点击另一出战角色保持配装页，只切换角色上下文")
+        assert(calls.acquire == beforeAcquire and calls.release == beforeRelease and calls.reset == beforeReset + 1,
+            "点击出战角色不关闭或重新申请仓库")
+        local sameReset, sameSlot = calls.reset, calls.slot
+        detail.open(2)
+        assert(calls.reset == sameReset and calls.slot == sameSlot and detail.isEquipTab(),
+            "重复点击当前出战角色不重置配装缓存或筛选")
+        detail.open(2, "attr")
+        assert(not detail.isEquipTab() and calls.release == beforeRelease + 1,
+            "显式属性入口仍允许切属性并释放仓库")
+        local releaseBeforeClose = calls.release
+        detail.open(1, "equip")
         detail.close()
-        assert(calls.release == 3 and not detail.isEquipTab(), "关闭动画起始即释放仓库")
+        assert(calls.release == releaseBeforeClose + 1 and not detail.isEquipTab(), "关闭动画起始即释放仓库")
         detail.forceClose()
-        assert(calls.release == 3, "关闭后 forceClose 不重复释放")
+        assert(calls.release == releaseBeforeClose + 1, "关闭后 forceClose 不重复释放")
         detail.open(1, "equip")
         detail.forceClose()
-        assert(calls.release == 4 and detail.getHeroId() == nil, "跨页强制关闭释放自动仓库")
+        assert(calls.release == releaseBeforeClose + 2 and detail.getHeroId() == nil, "跨页强制关闭释放自动仓库")
     end)
     require, time = originalRequire, originalTime
     if ok then print("[character_equip_lifecycle_test] ALL PASS")

@@ -62,6 +62,12 @@ local function logicalH() return RT.logicalH or 0 end
 local function windowW() return RT.windowW or logicalW() end
 local function windowH() return RT.windowH or logicalH() end
 
+local artifactModule = require("boot.ArtifactGesture")
+local artifactOverlay = artifactModule.bind({
+    RT = RT, Viewport = Viewport, logicalW = logicalW, logicalH = logicalH,
+    dpr = function() return RT.dpr or 1 end,
+}) or artifactModule
+
 local function applyFrame()
     nvgTranslate(vg(), RT.frameOx or 0, RT.frameOy or 0)
     local frameScale = RT.frameScale or 1
@@ -86,15 +92,16 @@ local function drawOrphanRowReward()
     nvgRestore(vg())
 end
 
---- [三面板] 在指定面板视口内绘制归属该面板的奖励弹窗（须在 Viewport.begin/finish 之间调用）
-local function drawRewardInPanel(pid)
+--- 非行内奖励使用面板设计空间；外部覆盖层按本帧 note 重建同一变换。
+local function drawRewardInPanel(pid, outsideViewport)
     if not pid then return end
     if not (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then return end
     if RewardPopup.currentPanel() ~= pid then return end
-    -- 三行模式的中栏不走 Viewport：直接全窗 letterbox 居中绘制
-    if pid == 'center' and BattleTriPage.isOpen() then
+    if TowerBattleScene.isActive() and not outsideViewport then return end
+    if pid == 'center' and (BattleTriPage.isOpen() or TowerBattleScene.isActive()) then
         local fit = math.min(logicalW() / 1080, logicalH() / 2400)
         nvgSave(vg())
+        nvgResetScissor(vg())
         nvgScissor(vg(), 0, 0, logicalW(), logicalH())
         nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
         nvgScale(vg(), fit, fit)
@@ -102,7 +109,18 @@ local function drawRewardInPanel(pid)
         nvgRestore(vg())
         return
     end
-    RewardPopup.drawRegion(vg(), 0, 0, 1080, 2400, nil)
+    if outsideViewport then
+        nvgSave(vg())
+        nvgResetScissor(vg())
+        nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+        if Viewport.beginFromNote(vg(), pid) then
+            RewardPopup.drawContent(vg())
+            Viewport.finish(vg())
+        end
+        nvgRestore(vg())
+        return
+    end
+    RewardPopup.drawContent(vg())
 end
 
 --- [UpdateNoticePopup] 更新提醒全窗模态（1080×2400 设计稿 letterbox 居中，同 PlayerInfoPanel）。
@@ -126,6 +144,12 @@ local function finishFrame()
     nvgResetScissor(vg())
     nvgScissor(vg(), 0, 0, logicalW(), logicalH())
     drawOrphanRowReward()
+    artifactOverlay.draw(vg())
+    -- 升级弹窗由宿主逻辑空间布局：不再借中栏 Viewport 或 1080×2400 letterbox。
+    -- 所有业务/PlayerInfo/三行/通天塔绘制都已完成，Offline/Update/CE 保持原上层优先级。
+    if LevelUpPopup.isOpen() then
+        LevelUpPopup.draw(vg(), logicalW(), logicalH())
+    end
     if not DarkTitleScreen.isOpen() and not LetterIntro.isOpen()
         and not ScenarioDialogue.isActive() then
         OfflineRewardOverlay.draw()
@@ -214,7 +238,8 @@ local function HorizonUpdateTransform()
     local triRenderScale = BattleTriPage.isOpen() and BattleLayout.CARD_SCALE or 1.0
     ProjectileSystem.setRenderScale(triRenderScale)
     BattleEffects.setRenderScale(triRenderScale)  -- [三行并行]
-    H_SEAM_BACK = BattleTriPage.isOpen()  -- [三队并行] 中缝返回键层开关
+    H_SEAM_BACK = BattleTriPage.isOpen() and not TowerBattleScene.isActive()
+        -- 塔路径提前返回，不画三行中缝条；塔内功绩页使用 TownPageChrome 自带返回。
     -- [三队并行] TopBar 战力跟随当前编辑队伍（页签切换无回调，逐帧比对刷新）
     local curPower = CharacterPanel.getTotalPower()
     if curPower ~= H_lastTopBarPower then
@@ -539,6 +564,9 @@ function HandleNanoVGRenderHorizon()
         return
     end
 
+    -- 锻炉与左栏仓库同时打开时，仓库延后到锻炉之上绘制。
+    -- 记录本帧状态，关闭动画在 draw 内结束后仍只绘制仓库一次。
+    local backpackAboveForge = BlacksmithPage.isOpen()
     if not BattleTriPage.isOpen() then
         -- 左面板：功能页组（城镇 + 二级页）
         -- [锻炉双页 0929] BlacksmithPage 已移至中面板绘制（左栏让给仓库）
@@ -550,10 +578,12 @@ function HandleNanoVGRenderHorizon()
         MarketPage.draw(vg())
         -- [0930 穿帮修复] 锻炉打开时仓库下铺锻炉背景垫底（城镇组之上、仓库之下）
         BlacksmithPage.drawUnderlay(vg())
-        BackpackPanel.draw(vg())
-        LootBox.drawPage(vg())
-        TaskPage.draw(vg())
-        drawRewardInPanel('left')
+        if not backpackAboveForge then
+            BackpackPanel.draw(vg())
+            LootBox.drawPage(vg())
+            if not TowerBattleScene.isActive() then TaskPage.draw(vg()) end
+            drawRewardInPanel('left')
+        end
         Viewport.finish(vg())
 
         -- 右面板：角色固定（先于中面板绘制，便于弹窗时统一压暗侧栏）
@@ -561,9 +591,6 @@ function HandleNanoVGRenderHorizon()
         CharacterPanel.draw(vg())
         drawRewardInPanel('right')
         Viewport.finish(vg())
-
-        -- [弹窗聚焦] 中面板有模态弹窗时，压暗左右面板（在侧栏之上、中面板之下）
-        HorizonDimSidePanels()
     end
 
     -- 中面板：BottomNav 主视图 + 全屏战斗页
@@ -588,8 +615,8 @@ function HandleNanoVGRenderHorizon()
         else
             TownScene.draw(vg())
         end
-        -- [锻炉双页 0929] 锻炉页绘制在中面板（盖在主视图之上；左栏同时开着仓库）
-        BlacksmithPage.draw(vg())
+        -- 三行模式锻炉由下方独立绘制；此处只处理普通横屏，避免每帧画两次。
+        if not BattleTriPage.isOpen() then BlacksmithPage.draw(vg()) end
         -- [底栏移除] 三行布局 TopBar 只画左栏；非三行旧布局仍画中栏顶部
         local detailOpen = CharacterPanel.isDetailOpen()
         if not detailOpen and not BattleTriPage.isOpen() and not BlacksmithPage.isOpen() then
@@ -600,6 +627,16 @@ function HandleNanoVGRenderHorizon()
 
     -- [锻炉双页 0929] 非三行模式的中缝返回条（锻炉右缘 ›；三行模式见 BattleTriPage 分支）
     if not BattleTriPage.isOpen() then
+        if backpackAboveForge then
+            Viewport.begin(vg(), Viewport.PANELS.left, H_ox, H_oy, H_s)
+            BackpackPanel.draw(vg())
+            LootBox.drawPage(vg())
+            if not TowerBattleScene.isActive() then TaskPage.draw(vg()) end
+            drawRewardInPanel('left')
+            Viewport.finish(vg())
+        end
+        -- 背包上层补画后再压暗侧栏，保持全局弹窗的遮罩在背包之上。
+        HorizonDimSidePanels()
         for _, seamBtn in ipairs(seamBackList()) do
             DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
@@ -612,21 +649,33 @@ function HandleNanoVGRenderHorizon()
 
     if towerBattleOpen then
         TowerBattleScene.draw(vg(), logicalW(), logicalH())
-        if LevelUpPopup.isOpen()
-            or (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) then
+        -- 查看等级奖励只叠功绩左栏，不退出塔；关闭后继续原塔场景。
+        if TaskPage.isOpen() then
+            Viewport.begin(vg(), Viewport.PANELS.left, 0, 0, logicalH() / 1080)
+            TaskPage.draw(vg())
+            Viewport.finish(vg())
+        end
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
             nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
             nvgScale(vg(), fit, fit)
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            if not RewardPopup.currentPanel() then
                 RewardPopup.draw(vg())
-            end
-            if LevelUpPopup.isOpen() then
-                LevelUpPopup.draw(vg())
             end
             nvgRestore(vg())
         end
+        if PlayerInfoPanel.isOpen() then
+            local fit = math.min(logicalW() / 1080, logicalH() / 2400)
+            nvgSave(vg())
+            nvgScissor(vg(), 0, 0, logicalW(), logicalH())
+            nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
+            nvgScale(vg(), fit, fit)
+            PlayerInfoPanel.draw(vg())
+            nvgRestore(vg())
+        end
+        drawRewardInPanel(RewardPopup.currentPanel(), true)
         drawEquipDetailOverlay()
         EquipCrossDrag.draw(vg())
     KeyboardShortcuts.draw(vg(), logicalW(), logicalH())
@@ -651,9 +700,11 @@ function HandleNanoVGRenderHorizon()
         MarketPage.draw(vg())
         -- [0930 穿帮修复] 锻炉打开时仓库下铺锻炉背景垫底（城镇组之上、仓库之下）
         BlacksmithPage.drawUnderlay(vg())
-        BackpackPanel.draw(vg())
-        LootBox.drawPage(vg())
-        TaskPage.draw(vg())
+        if not backpackAboveForge then
+            BackpackPanel.draw(vg())
+            LootBox.drawPage(vg())
+            TaskPage.draw(vg())
+        end
         -- [三行并行] 头像/金币/宝石 显示到左侧面板（城镇主视图时顶层绘制，优先级高于场景）
         -- oy=-30：头像框/名字组稍上移（点击热区见 MouseButtonUpHorizon left 段 hitTestAvatar -30）
         if not (BlacksmithPage.isOpen() or ChurchPage.isOpen() or TalentPage.isOpen() or TavernPage.isOpen()
@@ -675,6 +726,13 @@ function HandleNanoVGRenderHorizon()
         if BlacksmithPage.isOpen() then
             Viewport.begin(vg(), Viewport.PANELS.center, oxL, 0, ps)
             BlacksmithPage.draw(vg())
+            Viewport.finish(vg())
+        end
+        if backpackAboveForge then
+            Viewport.begin(vg(), Viewport.PANELS.left, oxL, 0, ps)
+            BackpackPanel.draw(vg())
+            LootBox.drawPage(vg())
+            TaskPage.draw(vg())
             Viewport.finish(vg())
         end
         drawWideTalentPage(0, 0, logicalH() / 1080)
@@ -699,19 +757,15 @@ function HandleNanoVGRenderHorizon()
             PlayerInfoPanel.draw(vg())
             nvgRestore(vg())
         end
-        -- 离线收益由 finishFrame 全窗绘制；三行升级窗即使单独打开也必须显示。
-        if (RewardPopup.isOpen() and not RewardPopup.currentRowTag()) or LevelUpPopup.isOpen() then
+        -- 离线收益与升级窗由 finishFrame 全窗绘制；奖励仍保留原归属路由。
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
             local fit = math.min(logicalW() / 1080, logicalH() / 2400)
             nvgSave(vg())
             nvgScissor(vg(), 0, 0, logicalW(), logicalH())
             nvgTranslate(vg(), (logicalW() - 1080 * fit) * 0.5, (logicalH() - 2400 * fit) * 0.5)
             nvgScale(vg(), fit, fit)
-            if RewardPopup.isOpen() and not RewardPopup.currentRowTag()
-                and not RewardPopup.currentPanel() then
+            if not RewardPopup.currentPanel() then
                 RewardPopup.draw(vg())
-            end
-            if LevelUpPopup.isOpen() then
-                LevelUpPopup.draw(vg())
             end
             nvgRestore(vg())
         end
@@ -719,8 +773,8 @@ function HandleNanoVGRenderHorizon()
         HorizonDrawPageModal(vg())
         -- [三面板] 三行模式：归属面板的奖励弹窗随触发面板绘制（左/中/右）；
         -- 非三行模式左/右已在各自视口内绘制、中栏由全局弹窗层绘制，此处不重复
-        if BattleTriPage.isOpen() then
-            drawRewardInPanel(RewardPopup.currentPanel())
+        if RewardPopup.isOpen() and not RewardPopup.currentRowTag() then
+            drawRewardInPanel(RewardPopup.currentPanel(), true)
         end
         -- [DarkTitleScreen] 横屏标题（基屏幕空间，覆盖一切直至点击淡出）
         -- 资源未就绪时标题自带进度条，不允许点进空背景界面
@@ -746,7 +800,6 @@ function HandleNanoVGRenderHorizon()
     PlayerInfoPanel.draw(vg())
     RewardPopup.draw(vg())
     SpinePowerUpEffect.draw(vg())
-    LevelUpPopup.draw(vg())
     Viewport.finish(vg())
 
     -- [暗黑化 P0] 图标画廊验收页（基屏幕空间全窗口适配，便于验收；通过后置 SHOWCASE=false）
@@ -799,5 +852,6 @@ require('boot.StandaloneHorizonInput').bind({
     seamHitAt = seamHitAt,
     RT = RT,
     Viewport = Viewport,
+    artifactGesture = artifactOverlay,
     OfflineRewardOverlay = OfflineRewardOverlay,
 })

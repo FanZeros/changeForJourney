@@ -81,6 +81,34 @@ local function isolated(path, overrides, globals, fallback)
     setmetatable(env, { __index = _G })
     return assert(load(table.concat(lines, "\n"), "@" .. path, "t", env))()
 end
+-- 中文显示边界只替代语言选择/原样测量与GPU输出；UTF-8/折行/适配仍加载真实模块。
+local function storyBoundary(f, graphics, scenarioConfig)
+    f.displayed = {}
+    local i18n = {
+        get = function() return "zh_CN" end,
+        lookup = function(text) return text end,
+        displayBounds = function(_, _, _, text)
+            f.count("display.bounds")
+            return (utf8.len(text) or 0) * f.font
+        end,
+        displayText = function(vg, x, y, text, last)
+            f.count("display.text")
+            f.displayed[#f.displayed + 1] = text
+            return graphics.nvgText(vg, x, y, text, last)
+        end,
+    }
+    f.Story = isolated("core/I18nStory.lua", {})
+    f.Display = isolated("ui/story/StoryDisplay.lua", {
+        ["core.I18n"] = i18n, ["core.I18nStory"] = f.Story,
+    }, graphics)
+    local assets = isolated("config/HeroAssetUtil.lua", {
+        ["config.HeroConfig"] = { get = function() return nil end },
+    }, graphics)
+    return { ["core.I18n"] = i18n, ["core.I18nStory"] = f.Story,
+        ["ui.story.StoryDisplay"] = f.Display, ["config.ScenarioDialogueConfig"] = scenarioConfig,
+        ["config.HeroAssetUtil"] = assets }
+end
+
 local function fresh(heroId, claimed)
     return {
         initialHeroId = heroId or 1, introCompleted = true, hasReincarnated = true,
@@ -549,7 +577,12 @@ local function integration(session, battle)
     f.gameState = { gold = 123, exp = 11, unknown = { keep = true } }
     f.Save = isolated("boot/StandaloneSave.lua", {
         ["runtime.ClientDispatcher"] = f.Dispatcher,
-        ["core.GameState"] = { exportSave = function() return f.gameState end, importSave = function(value) f.gameState = value end },
+        ["core.GameState"] = { exportSave = function() return f.gameState end, importSave = function(value) f.gameState = value end,
+            syncPlayerData = function(player, options)
+                f.count("player.sync")
+                eq(player, f.Dispatcher.get("player"), "Restore同步已发布player")
+                eq(options.silent, true, "Restore仅静默同步")
+            end },
         ["ui.battle.scene.BattleScene"] = { setBattleData = function() f.count("battle.apply") end },
         ["rules.offline.OfflineService"] = {
             HasPendingRewards = function() f.count("offline.pending"); return false end,
@@ -561,19 +594,44 @@ local function integration(session, battle)
             if f.fail == "encode" then error("injected encoding failure") end
             return cjson.encode(value)
         end, decode = function(value) return cjson.decode(value) end },
-        fileSystem = { FileExists = function() return f.disk ~= "" end },
+        fileSystem = {
+            FileExists = function(_, path)
+                eq(path, "standalone_save.json", "恢复只查询已提交文件")
+                return f.disk ~= ""
+            end,
+            Rename = function(_, from, to)
+                f.count("rename")
+                eq(from, "standalone_save.pending.json", "原子替换来源为临时文件")
+                eq(to, "standalone_save.json", "原子替换目标为正式文件")
+                if f.fail == "rename" or not f.tempWritten or not f.tempClosed then return false end
+                f.disk, f.temp, f.tempClosed, f.tempWritten = f.temp, nil, false, false
+                return true
+            end,
+            Delete = function(_, path)
+                f.count("temp.delete")
+                eq(path, "standalone_save.pending.json", "失败只清临时文件不删旧档")
+                f.temp, f.tempClosed, f.tempWritten = nil, false, false
+                return true
+            end,
+        },
         File = function(path, mode)
-            eq(path, "standalone_save.json", "真实Save只到内存File")
+            eq(path, mode == FILE_WRITE and "standalone_save.pending.json" or "standalone_save.json", "真实Save写临时/读正式")
             f.count(mode == FILE_WRITE and "write.open" or "read.open")
+            local opened = not (mode == FILE_WRITE and f.fail == "open")
+            if mode == FILE_WRITE and opened then f.temp, f.tempClosed, f.tempWritten = "", false, false end
             return {
-                IsOpen = function() return not (mode == FILE_WRITE and f.fail == "open") end,
+                IsOpen = function() return opened end,
                 WriteString = function(_, value)
                     f.count("write")
-                    if f.fail == "write" then return false end
-                    f.disk = value; return true
+                    if not opened then return false end
+                    if f.fail == "write" then f.temp = value:sub(1, math.floor(#value / 2)); return false end
+                    f.temp, f.tempWritten = value, true; return true
                 end,
                 ReadString = function() return f.disk end,
-                Close = function() f.count("file.close") end,
+                Close = function()
+                    f.count("file.close")
+                    if mode == FILE_WRITE and opened then f.tempClosed = true end
+                end,
             }
         end,
     })
@@ -610,13 +668,18 @@ local function integration(session, battle)
             return { 0, 0, width, lines * f.font * 1.5 }
         end,
         nvgTextBox = function(_, _, _, _, text) f.drawings[#f.drawings + 1] = text end,
+        nvgText = function(_, _, _, text) f.drawings[#f.drawings + 1] = text end,
+        nvgRGBA = function() return {} end,
     }
     for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgIntersectScissor", "nvgScale", "nvgFontFace",
-        "nvgTextAlign", "nvgTextLineHeight", "nvgFillColor" }) do graphics[name] = function() end end
-    f.Dialogue = isolated("ui/story/ScenarioDialogue.lua", {
-        ["core.DrawUtil"] = draw, ["config.GameConfig"] = isolated("config/GameConfig.lua", {}),
-        ["ui.widget.HeroFrame"] = { draw = function() f.count("draw.hero") end }, ["core.EventBus"] = f.Bus,
-    }, graphics)
+        "nvgTextAlign", "nvgTextLineHeight", "nvgFillColor", "nvgScissor", "nvgTranslate", "nvgBeginPath",
+        "nvgRect", "nvgFill", "nvgRoundedRect", "nvgStrokeColor", "nvgStrokeWidth", "nvgStroke", "nvgResetScissor" }) do graphics[name] = function() end end
+    local dialogueDependencies = storyBoundary(f, graphics, dependencies["config.ScenarioDialogueConfig"])
+    dialogueDependencies["core.DrawUtil"] = draw
+    dialogueDependencies["config.GameConfig"] = isolated("config/GameConfig.lua", {})
+    dialogueDependencies["ui.widget.HeroFrame"] = { draw = function() f.count("draw.hero") end }
+    dialogueDependencies["core.EventBus"] = f.Bus
+    f.Dialogue = isolated("ui/story/ScenarioDialogue.lua", dialogueDependencies, graphics)
     dependencies["systems.SamsaraSlicePlayer"], dependencies["ui.story.ScenarioDialogue"] = f.Player, f.Dialogue
     f.Playback = isolated("systems/SamsaraSlicePlayback.lua", dependencies)
     f.Panel = isolated("ui/story/SamsaraRecordPanel.lua", { ["core.DrawUtil"] = draw,
@@ -718,6 +781,12 @@ local function integrationCases()
                 eq(f.Playback.tryPlay(gate), false, "真实门禁不消费请求 " .. name)
             end
             eq(f.Playback.tryPlay(gates()), ending ~= "failed", "后帧真实Playback展示或失败")
+            if ending ~= "failed" then
+                f.Dialogue.update(100); f.Dialogue.draw(1920, 1080)
+                eq(f.Display.text(ORIGINALS[1][2]), ORIGINALS[1][2], "中文显示全文原样")
+                eq(f.Story.length(ORIGINALS[1][2]), utf8.len(ORIGINALS[1][2]), "真实长度按UTF-8码点")
+                check(includes(table.concat(f.displayed), ORIGINALS[1][2]), "真实fitLayout/drawRows完整绘制中文首句")
+            end
             if ending == "dismissed" then
                 finishDialogue(f.Dialogue)
                 eq(f.Player.getRecord(N03).status, "pending", "dismiss动画前无假完成")
@@ -772,12 +841,14 @@ local function integrationCases()
         eq(f.Playback.tryPlay(gates()), false, "自动全处理不重播")
         noRewards(f, old)
     end)
-    for _, fault in ipairs({ "open", "write", "encode" }) do
+    for _, fault in ipairs({ "open", "write", "encode", "rename" }) do
         runCase("真实N03 Save失败/Panel保存中/节流与重启 " .. fault, function()
             local f = integration(nil, { clearedStages = { [204] = true } }); f.init()
             local old = outsideStory(f.session())
-            local before = f.disk
+            local before, renames = f.disk, f.n("rename")
             f.Playback.tryPlay(gates()); f.fail = fault; f.Dialogue.skip()
+            eq(f.n("rename"), renames + (fault == "rename" and 1 or 0), "仅完整临时写入后尝试Rename")
+            eq(f.temp, nil, "故障清理临时缓冲")
             eq(f.Player.getRecord(N03).status, "skipped", "写失败保内存结果")
             eq(f.Player.isSavePending(), true, "写失败明确待存")
             eq(f.disk, before, "写失败磁盘bytes不变")

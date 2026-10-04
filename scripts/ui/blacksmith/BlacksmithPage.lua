@@ -405,7 +405,7 @@ local function drawWorkbenchSlot(vg)
         local enhLv = EquipmentSystem.getAscendLevel(equip) or 0
         if enhLv > 0 then
             local lvX = slotCX + slotSize * 0.5 - 8
-            local lvY = slotCY - slotSize * 0.5 + 8
+            local lvY = slotCY - slotSize * 0.5 - 4
             nvgFontFace(vg, "sans")
             nvgFontSize(vg, 36)
             nvgTextAlign(vg, NVG_ALIGN_RIGHT + NVG_ALIGN_TOP)
@@ -692,6 +692,64 @@ function BlacksmithPage.open(preSelectEquip, initialTab)
 
     -- 仅打开边沿持有，已开的仓库不反复 open/reset；配装与锻炉可无缝交接。
     require("ui.backpack.BackpackPanel").acquireWarehouse("blacksmith")
+end
+
+--- 教程恢复强化页，只选择库存内模板有效且未满阶的装备，不发送强化/穿戴操作。
+---@param vg any|nil 未初始化时提供 NanoVG 上下文
+---@return boolean changed
+function BlacksmithPage.prepareTutorial(vg)
+    local changed = false
+    if not blacksmithInited_ then
+        local context = vg or blacksmithVg_
+        if not context then return false end
+        BlacksmithPage.init(context)
+        changed = true
+    end
+    local config = require("config.BlacksmithConfig")
+    local eqData = ClientDispatcher.get("equipment") or PlayerStore.Get("equipment")
+    local inventory = eqData and eqData.inventory or {}
+    local function isValid(equip)
+        return type(equip) == "table" and equip.templateId ~= nil
+            and EquipmentConfig.ITEMS[equip.templateId] ~= nil
+            and EquipmentSystem.getAscendLevel(equip) < config.MAX_ENHANCE_LEVEL
+    end
+    local seq = tonumber(state.selectedSeq or (state.selectedEquip and state.selectedEquip.seq))
+    local selected = seq and (inventory[tostring(seq)] or inventory[seq]) or nil
+    if not isValid(selected) then
+        seq, selected = nil, nil
+        for key, equip in pairs(inventory) do
+            local candidateSeq = tonumber(key)
+            if candidateSeq and isValid(equip) and (not seq or candidateSeq < seq) then
+                seq, selected = candidateSeq, equip
+            end
+        end
+    end
+
+    local opening = not state.open or state.closing
+    local switching = state.tab ~= "qianghua" or state.tabFrom ~= "qianghua" or state.tabSwitchTime ~= 0
+    if opening then
+        closeOtherLeftPages()
+        state.open, state.closing, state.closeTime = true, false, 0
+        state.openTime = time.elapsedTime
+        _enhanceCache.dirty = true
+        require("systems.GameSFX").playUIMove(1)
+        BlacksmithEnhance.onOpen()
+        require("ui.backpack.BackpackPanel").acquireWarehouse("blacksmith")
+        changed = true
+    end
+    if opening or switching then
+        state.tab, state.tabFrom, state.tabSwitchTime = "qianghua", "qianghua", 0
+        changed = true
+    end
+    if selected ~= state.selectedEquip or seq ~= state.selectedSeq then
+        if selected then selected.seq = seq end
+        applySelectedEquip(selected)
+        if not selected then state.selectedEquipSlot = nil end
+        changed = true
+    elseif switching and selected then
+        BlacksmithEnhance.updateEnhanceData(selected)
+    end
+    return changed
 end
 
 --- [锻炉双页 0929] 联动关闭自动打开的仓库

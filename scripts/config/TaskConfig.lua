@@ -116,8 +116,23 @@ local function addRecord(id, name, desc, condKey, target, group, reward)
     }
 end
 
+-- 固定为本分支既有九项奖励；不随前置通关条目增删发生轮换。
+-- 仍占用原来的轮换序号，保证后续队员功绩奖励完全不变。
+local LEVEL_REWARDS = {
+    [5] = { type = "essence", amount = 150, icon = "image/货币道具/UI_icon_JC.png", quality = 2 },
+    [10] = { type = "adventure_ticket", amount = 2, icon = "image/货币道具/UI_icon_ZMQ_1.png", quality = 5 },
+    [20] = { type = "enhance_star", amount = 2, icon = "image/货币道具/UI_icon_QH_1.png", quality = 3 },
+    [30] = { type = "arcane_dust", amount = 600, icon = "image/货币道具/UI_icon_ASFC.png", quality = 3 },
+    [50] = { type = "sweep_ticket", amount = 1, icon = "image/货币道具/UI_icon_SDQ.png", quality = 4 },
+    [80] = { type = "stellar_ticket", amount = 1, icon = "image/货币道具/UI_icon_ZMQ_2.png", quality = 6 },
+    [100] = { type = "diamond", amount = 840, icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5 },
+    [150] = { type = "gold", amount = 120000, icon = "image/货币道具/UI_icon_JB_X.png", quality = 2 },
+    [200] = { type = "essence", amount = 6000, icon = "image/货币道具/UI_icon_JC.png", quality = 2 },
+}
+
 for _, lv in ipairs({ 5, 10, 20, 30, 50, 80, 100, 150, 200 }) do
-    addRecord("a_plv_" .. lv, "远征勋记", "远征等级达到" .. lv, "player_level", lv, "level", nextReward(lv))
+    rewardSeq = rewardSeq + 1
+    addRecord("a_plv_" .. lv, "远征勋记", "远征等级达到" .. lv, "player_level", lv, "level", LEVEL_REWARDS[lv])
 end
 
 for _, n in ipairs({ 4, 6, 10, 16, 20 }) do

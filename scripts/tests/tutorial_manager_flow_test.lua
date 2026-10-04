@@ -1,5 +1,6 @@
 -- 真实TutorialManager状态回归，存档/页面使用内存替身，不写玩家存档。
 function Start()
+    ---@type fun(name: string): any
     local nativeRequire = require
     local data = { session = { claimedScenarios = {} }, heroes = { roster = { [1] = { level = 1 } } },
         equipment = { equipped = {} }, battle = { maxStageId = 102 } }
@@ -7,6 +8,7 @@ function Start()
     local calls = {}
     local mocks = {
         ["ui.story.ScenarioDialogue"] = { isActive = function() return story end },
+        ["systems.StoryPlayer"] = { onPlace = function(place, phase) calls.place = place .. ":" .. phase end },
         ["ui.hud.popup.RewardPopup"] = { isOpen = function() return reward end },
         ["ui.hud.BottomNav"] = {
             setTabLocked = function() end,
@@ -18,6 +20,14 @@ function Start()
         ["ui.character.panel.CharacterPanel"] = { prepareTutorial = function() end },
         ["ui.tavern.TavernPage"] = { open = function() calls.tavern = true end },
         ["ui.blacksmith.BlacksmithPage"] = { open = function() calls.smith = true end },
+        ["ui.tutorial.TutorialPageRecovery"] = { isBlocked = function() return false end,
+            prepare = function(_, _, target)
+                calls.target = target
+                if target == "tavern_btn_gacha10" then calls.tavern = true end
+                if target == "smith_btn_enhance" then calls.smith = true end
+                if target == "dungeon_gold_mine" then calls.tab = 5 end
+                return false
+            end },
     }
     require = function(name) return mocks[name] or nativeRequire(name) end
     local TM = nativeRequire("systems.TutorialManager")
@@ -36,6 +46,8 @@ function Start()
         init()
         data.session.claimedScenarios["5"] = true
         TM.onScenarioClaimed(5)
+        check(not TM.isActive() and #TM.getProgress().queue == 1, "剧情领取只排队，不在回调当帧弹引导")
+        TM.update(0.25)
         check(TM.isActive() and not TM.isGroupCompleted(1), "剧情领取不是操作完成")
         check(TM.getPreferredCharacterTab() == "equip", "教程打开详情优先配装")
         hs("character_slot_1")
@@ -76,7 +88,7 @@ function Start()
         TM.notifyEvent("gacha10_complete")
         TM.onScenarioClaimed(32)
         TM.update(0.3)
-        TM.update(0.1)
+        TM.update(0.25)
         check(TM.isGroupCompleted(9) and not TM.isActive(), "全重复招募无新角色不死等拖拽")
 
         TM.startGroup(10)

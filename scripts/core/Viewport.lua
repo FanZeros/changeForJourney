@@ -6,7 +6,6 @@
 -- ============================================================================
 
 local Viewport = {}
-Viewport.ENABLED = true
 
 Viewport.BASE_W, Viewport.BASE_H = 1458, 1080  -- 3 x 486 面板无缝拼接
 Viewport.PW, Viewport.PH = 486, 1080  -- 面板视口（base 坐标，1080x2400 * DS）

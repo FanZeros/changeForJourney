@@ -78,95 +78,6 @@ function M.bind(deps)
             return true
         end
 
-        -- 转职选人已迁出，教堂不再展开角色列表
-        if false and state.slotExpanded and state.slotLiftProgress > 0.9 then
-            local ownedList = getOwnedHeroList()
-            local rosterCount = #ownedList
-            local scrollOff = state.rosterScrollY
-            for idx, entry in ipairs(ownedList) do
-                -- 与 drawRosterList 完全一致的居中分布计算
-                local row = math.ceil(idx / ROSTER.MAX_PER_ROW)
-                local col = idx - (row - 1) * ROSTER.MAX_PER_ROW    -- 1~5
-
-                local rowStart = (row - 1) * ROSTER.MAX_PER_ROW + 1
-                local rowEnd   = math.min(row * ROSTER.MAX_PER_ROW, rosterCount)
-                local rowCount = rowEnd - rowStart + 1
-
-                local rowCY = ROSTER.ROW1_CY + (row - 1) * ROSTER.ROW_SPACING - scrollOff
-                local totalW = rowCount * ROSTER.CARD_W + (rowCount - 1) * ROSTER.CARD_SPACING
-                local startCX = (DESIGN_W - totalW) * 0.5 + ROSTER.CARD_W * 0.5
-                local cx = startCX + (col - 1) * (ROSTER.CARD_W + ROSTER.CARD_SPACING)
-                local cy = rowCY
-
-                if hitTest(dx, dy, cx, cy, ROSTER.CARD_W, ROSTER.CARD_H) then
-                    selectHero(entry.heroId, cx, cy)
-                    return true
-                end
-            end
-        end
-
-        -- 角色选择框已随转职页迁出
-        if false then
-            local slotOY = -ANIM.SLOT_LIFT * state.slotLiftProgress
-            local slotCY = CHAR_SLOT.CY + slotOY
-            if hitTest(dx, dy, CHAR_SLOT.CX, slotCY, CHAR_SLOT.W, CHAR_SLOT.H) then
-                if state.slotExpanded then
-                    -- 已展开时点击槽位 → 收起
-                    collapseSlot()
-                elseif state.slotLiftProgress >= 1.0 then
-                    -- 槽位已在上移位置（之前选过角色）→ 列表从下方滑入
-                    state.slotExpanded = true
-                    state.slotAnimDir = 0
-                    state.rosterScrollY = 0
-                    resetRosterScrollState()
-                    state.rosterSlideDir = 1
-                    state.rosterSlideTime = time.elapsedTime
-                    state.rosterSlideProgress = 0
-                    print("[ChurchPage] 重新展开角色列表（从下方滑入）")
-                else
-                    -- 未展开且未上移 → 展开角色列表（播放上移动画）
-                    state.selectedHeroId = nil  -- 清除已选角色
-                    expandSlot()
-                end
-                return true
-            end
-        end
-
-        -- 转职角色列表面板已迁出
-        if false and not state.selectAnim then
-            local listTopY = ROSTER.LIST_BG_CY - ROSTER.LIST_BG_H * 0.5
-            if state.slotExpanded and state.rosterSlideProgress > 0.5 then
-                -- 列表展开时，点击列表背景上方区域 → 列表向下滑出
-                if dy < listTopY then
-                    if state.selectedHeroId then
-                        -- 已选过角色：仅滑出列表，保持槽位上移
-                        state.rosterSlideDir = -1
-                        state.rosterSlideTime = time.elapsedTime
-                        state.rosterSlideProgress = 1.0
-                        print("[ChurchPage] 点击上方区域，滑出角色列表")
-                    else
-                        -- 未选过角色：完全收起（槽位下移回原位）
-                        collapseSlot()
-                        print("[ChurchPage] 点击上方区域，收起角色列表")
-                    end
-                    return true
-                end
-            elseif not state.slotExpanded and state.slotLiftProgress >= 1.0 and state.selectedHeroId then
-                -- 已选角色、转职树显示时，点击上方空白区域 → 重新展开角色列表
-                if dy < listTopY then
-                    state.slotExpanded = true
-                    state.slotAnimDir = 0
-                    state.rosterScrollY = 0
-                    resetRosterScrollState()
-                    state.rosterSlideDir = 1
-                    state.rosterSlideTime = time.elapsedTime
-                    state.rosterSlideProgress = 0
-                    print("[ChurchPage] 点击上方区域，重新展开角色列表")
-                    return true
-                end
-            end
-        end
-
         -- 转职分支点击已随转职页迁到右侧栏角色详情
 
         -- Tab 切换检测
@@ -175,6 +86,8 @@ function M.bind(deps)
             if i then
                 local newTab = TAB_KEYS[i]
                 if state.tab ~= newTab then
+                    ArtifactPanel.cancelPointer()
+                    require("ui.character.hero.ArtifactDetailPanel").closeImmediate()
                     state.tabFrom = state.tab
                     state.tabSwitchTime = time.elapsedTime
                     state.tab = newTab

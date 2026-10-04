@@ -18,6 +18,7 @@ local animState_ = "idle"
 local hotspots_ = {}
 local completed_ = {}
 local queue_ = {}
+local queuedRecruitStarted_ = false
 local newHeroId_ = nil ---@type number|nil
 local restored_ = false
 local resumePending_ = false
@@ -25,6 +26,18 @@ local lastUnlockState_ = {}
 local overlay_ = { w = GameConfig.Design.WIDTH, h = GameConfig.Design.HEIGHT, hs = nil }
 local overlayLayout_ = nil ---@type any
 local stepElapsed_ = 0
+local recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
+local RECOVERY_INTERVAL, PAGE_SETTLE_TIME = 0.5, 0.45
+local triggerQuiet_ = 0
+local TRIGGER_QUIET_TIME = 0.25
+---@type fun()?
+local prepareResume
+
+local function resetTarget()
+    resumePending_ = true
+    recoveryElapsed_, settleRemaining_, missingElapsed_ = 0, 0, 0
+    overlayLayout_, overlay_.hs = nil, nil
+end
 
 local function step()
     local group = activeGroup_ and Config[activeGroup_]
@@ -58,17 +71,22 @@ local function applyUnlocks(id)
     end
 end
 local function finish()
-    if not activeGroup_ then return end
-    completed_[tostring(activeGroup_)] = true
-    print("[TutorialManager] 引导完成: " .. activeGroup_)
-    animState_, animT_ = "out", 0
+    if not activeGroup_ or animState_ == "out" then return end
+    local finishedGroup = activeGroup_
+    completed_[tostring(finishedGroup)] = true
+    print("[TutorialManager] 引导完成: " .. finishedGroup)
+    animState_, animT_, triggerQuiet_ = "out", 0, 0
     save()
+    if finishedGroup == 6 then
+        -- 古树教学已自动收起教堂；完成后接离场对话，再触发酒馆教学，避免丢失入口。
+        require("systems.StoryPlayer").onPlace("church", "leave")
+    end
 end
 local function advance()
     local current = step()
     if not current or animState_ == "out" then return end
     activeStep_, stepElapsed_ = activeStep_ + 1, 0
-    overlayLayout_ = nil
+    resetTarget()
     if not step() then finish()
     else print("[TutorialManager] 步骤: " .. activeGroup_ .. "/" .. activeStep_); save() end
 end
@@ -119,31 +137,69 @@ local function start(id)
         save()
         return
     end
+    if id == 9 and validNewHero() then
+        local panel = require("ui.character.panel.CharacterPanel")
+        local layout = panel.getTeamSlotLayout and panel.getTeamSlotLayout(1)
+        if layout and tonumber(layout[3]) == newHeroId_ then
+            completed_["9"] = true
+            print("[TutorialManager] 新角色已在队一槽位3，免重复上阵教学")
+            save()
+            return
+        end
+    end
     activeGroup_, activeStep_ = id, 1
     animState_, animT_, groupElapsed_, stepElapsed_ = "in", 0, 0, 0
-    overlayLayout_ = nil
-    if id == 1 or id == 2 or id == 6 or id == 9 or id == 15 then resumePending_ = true end
+    resetTarget()
     applyUnlocks(id)
     print("[TutorialManager] 启动引导: " .. id)
     save()
 end
+local function queueGroup(id)
+    if isGroupCompleted(id) or activeGroup_ == id then return end
+    for _, queued in ipairs(queue_) do if queued == id then return end end
+    queue_[#queue_ + 1] = id
+    triggerQuiet_ = 0
+    save()
+end
 function TutorialManager.startGroup(id)
     if isGroupCompleted(id) or activeGroup_ == id then return end
-    if activeGroup_ then
-        for _, queued in ipairs(queue_) do if queued == id then return end end
-        queue_[#queue_ + 1] = id
-        save()
+    if activeGroup_ then queueGroup(id)
     else start(id) end
 end
 function TutorialManager.onScenarioClaimed(sid)
+    if sid == 23 then
+        local follow = require("systems.StoryPlayer").followOf(sid)
+        -- 城镇23尚有本角色分支对话时，等24/25/26真实播完领奖；旧档已播仍兼容。
+        if follow and not claimed(follow) then return end
+    end
     local id = Config.SCENARIO_TO_GROUP[sid]
-    if id then TutorialManager.startGroup(id) end
+    if id then queueGroup(id) end
+end
+
+--- 未消费的新剧情不能抢正在进行的操作教学；组结束后按原队列继续。
+function TutorialManager.canPlayPendingStory()
+    return activeGroup_ == nil or animState_ == "out"
 end
 function TutorialManager.notifyEvent(name)
+    if activeGroup_ ~= 8 then
+        local queuedRecruit = false
+        for _, id in ipairs(queue_) do if id == 8 then queuedRecruit = true; break end end
+        if queuedRecruit then
+            if name == "gacha10_started" then queuedRecruitStarted_ = true
+            elseif name == "gacha10_failed" then queuedRecruitStarted_ = false
+            elseif name == "gacha10_complete" and queuedRecruitStarted_ then
+                queuedRecruitStarted_ = false
+                completed_["8"] = true
+                for i = #queue_, 1, -1 do if queue_[i] == 8 then table.remove(queue_, i) end end
+                print("[TutorialManager] 待触发阶段已完成真实十连，免重复教学")
+                save()
+            end
+        end
+    end
     if not activeGroup_ or animState_ == "out" then return end
     if name == "gacha10_failed" and activeGroup_ == 8 then
         activeStep_, stepElapsed_ = 1, 0
-        overlayLayout_ = nil
+        resetTarget()
         save()
         print("[TutorialManager] 招募未完成，恢复可重试步骤")
         return
@@ -157,12 +213,15 @@ function TutorialManager.skipCurrentGroup() finish() end
 function TutorialManager.isInputActive()
     if not activeGroup_ or animState_ == "out" or Scenario.isActive() then return false end
     local RP = require("ui.hud.popup.RewardPopup")
-    return not (RP.isOpen and RP.isOpen())
+    if RP.isOpen and RP.isOpen() then return false end
+    return not require("ui.tutorial.TutorialPageRecovery").isBlocked()
 end
 function TutorialManager.setOverlayRect(w, h, hs)
-    overlay_ = { w = w, h = h, hs = hs }
+    local target = hs
+    if settleRemaining_ > 0 then target = nil end
+    overlay_ = { w = w, h = h, hs = target }
     local Overlay = require("ui.tutorial.TutorialOverlay")
-    overlayLayout_ = Overlay.layout(w, h, hs)
+    overlayLayout_ = Overlay.layout(w, h, target)
 end
 local function hit(rect, x, y)
     return rect and DrawUtil.hitTest(x, y, rect.cx, rect.cy, rect.w, rect.h)
@@ -170,19 +229,23 @@ end
 function TutorialManager.canPointerStart(x, y)
     if not TutorialManager.isInputActive() then return true end
     if groupElapsed_ >= 1 and overlayLayout_ and hit(overlayLayout_.skip, x, y) then return false end
+    if prepareResume then prepareResume() end
+    if settleRemaining_ > 0 then return false end
     local current = step()
     if not current or current.invisible or current.advanceOn ~= "click_highlight" then return true end
     -- 真正按钮边界才放行；光环外扩不是按钮可点击区域。
     return hit(overlay_.hs, x, y) == true
 end
-function TutorialManager.handleScreenClick(x, y)
+function TutorialManager.handleScreenClick(x, y, blockedPress)
     if not TutorialManager.isInputActive() then return false end
     if groupElapsed_ >= 1 and overlayLayout_ and hit(overlayLayout_.skip, x, y) then
         finish()
         return true
     end
+    if blockedPress then return true end
     local current = step()
     if not current or current.invisible then return false end
+    if settleRemaining_ > 0 then return true end
     if current.advanceOn == "click_highlight" then
         if hit(overlay_.hs, x, y) then advance(); return false end
         return true
@@ -206,8 +269,11 @@ function TutorialManager.init(vg, playerStore, persist)
     vg_, store_, persist_ = vg, playerStore, persist
     activeGroup_, activeStep_, newHeroId_ = nil, 1, nil
     completed_, queue_, hotspots_, lastUnlockState_ = {}, {}, {}, {}
+    queuedRecruitStarted_ = false
     animState_, animT_, groupElapsed_, stepElapsed_ = "idle", 0, 0, 0
     overlayLayout_, restored_, resumePending_ = nil, false, false
+    overlay_.hs = nil
+    recoveryElapsed_, settleRemaining_, missingElapsed_, triggerQuiet_ = 0, 0, 0, 0
     print("[TutorialManager] 初始化，等待会话数据恢复")
 end
 local function restore()
@@ -221,6 +287,10 @@ local function restore()
         for _, id in ipairs(progress.queue or {}) do if Config[id] then queue_[#queue_ + 1] = id end end
         newHeroId_ = tonumber(progress.newHeroId)
         local id = tonumber(progress.group)
+        if completed_["6"] and not isGroupCompleted(7) then
+            -- 上次完成古树后可能尚未来得及消费内存离场剧情；去重补回，不重复发奖。
+            require("systems.StoryPlayer").onPlace("church", "leave")
+        end
         if id and not isGroupCompleted(id) then
             -- 重启后目标页面已关闭，重新走本组入口；不重播剧情或重复发奖励。
             start(id)
@@ -248,38 +318,50 @@ local function restore()
         save()
     end
 end
-local function prepareResume()
-    if not resumePending_ then return end
-    resumePending_ = false
-    if activeGroup_ == 1 or activeGroup_ == 2 or activeGroup_ == 9 then
-        require("ui.character.detail.CharacterDetail").forceClose()
-        local panel = require("ui.character.panel.CharacterPanel")
-        if panel.prepareTutorial then panel.prepareTutorial(newHeroId_) end
-    elseif activeGroup_ == 5 or activeGroup_ == 6 or activeGroup_ == 7 or activeGroup_ == 10 then
-        require("ui.church.ChurchPage").forceClose()
-        local page = require("ui.church.talent.TalentPage")
-        if page.forceClose then page.forceClose() end
-    elseif activeGroup_ == 15 then
-        -- 横屏常驻布局隐藏旧副本页签，恢复/启动时直接打开合法副本面板入口。
-        require("ui.hud.BottomNav").setSelectedIndex(5)
-        activeStep_ = math.max(2, activeStep_)
+prepareResume = function()
+    local current = step()
+    if not current or current.invisible then resumePending_ = false; return end
+    local Recovery = require("ui.tutorial.TutorialPageRecovery")
+    if Recovery.isBlocked() then return end
+    local initial = resumePending_
+    resumePending_, recoveryElapsed_ = false, 0
+    if activeGroup_ == 15 and activeStep_ == 1 then
+        -- 横屏已移除旧页签，沿用直接打开副本列表的恢复契约。
+        activeStep_, stepElapsed_ = 2, 0
+        current = step()
         save()
-    elseif activeGroup_ == 8 then
-        require("ui.tavern.TavernPage").open()
-    elseif activeGroup_ == 11 then
-        require("ui.blacksmith.BlacksmithPage").open()
+    end
+    if current and Recovery.prepare(vg_, store_, current.highlight, newHeroId_, initial) then
+        settleRemaining_, missingElapsed_ = PAGE_SETTLE_TIME, 0
+        hotspots_, overlay_.hs, overlayLayout_ = {}, nil, nil
     end
 end
 function TutorialManager.update(dt)
     elapsed_ = elapsed_ + dt
     if not restored_ then restore() end
     if not activeGroup_ then
-        if #queue_ > 0 and not Scenario.isActive() then start(table.remove(queue_, 1)) end
+        local Recovery = require("ui.tutorial.TutorialPageRecovery")
+        local reward = require("ui.hud.popup.RewardPopup")
+        local tavern = require("ui.tavern.TavernPage")
+        local blocked = Scenario.isActive() or reward.isOpen() or Recovery.isBlocked()
+            or (tavern.isRecruitBusy and tavern.isRecruitBusy())
+        if #queue_ == 0 or blocked then triggerQuiet_ = 0
+        else
+            triggerQuiet_ = triggerQuiet_ + dt
+            if triggerQuiet_ >= TRIGGER_QUIET_TIME then
+                triggerQuiet_ = 0
+                start(table.remove(queue_, 1))
+            end
+        end
         return
     end
     if TutorialManager.isInputActive() then
         groupElapsed_, stepElapsed_ = groupElapsed_ + dt, stepElapsed_ + dt
-        prepareResume()
+        recoveryElapsed_ = recoveryElapsed_ + dt
+        settleRemaining_ = math.max(0, settleRemaining_ - dt)
+        if overlay_.hs and settleRemaining_ == 0 then missingElapsed_ = 0
+        else missingElapsed_ = missingElapsed_ + dt end
+        if resumePending_ or recoveryElapsed_ >= RECOVERY_INTERVAL then prepareResume() end
     end
     if activeGroup_ == 8 and step() and step().invisible and stepElapsed_ > 12 then
         TutorialManager.notifyEvent("gacha10_failed")
@@ -322,8 +404,11 @@ function TutorialManager.draw()
     local Overlay = require("ui.tutorial.TutorialOverlay")
     local alpha = animState_ == "in" and math.min(1, animT_ / 0.25) or 1
     local text = current.invisible and "" or current.text
+    if not current.invisible and not overlay_.hs and missingElapsed_ < 2 then
+        text = "正在准备引导页面，请稍候…"
+    end
     local hs = current.invisible and nil or overlay_.hs
     overlayLayout_ = Overlay.draw(vg_, overlay_.w, overlay_.h, hs, text, elapsed_, groupElapsed_, alpha,
-        current.invisible == true, activeGroup_ == 9)
+        current.invisible == true, activeGroup_ == 9, missingElapsed_ < 2)
 end
 return TutorialManager

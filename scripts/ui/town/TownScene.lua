@@ -5,10 +5,8 @@
 
 local GameState  = require("core.GameState")
 
--- [教堂30级开放] 缄默礼拜堂/终焉古树 需远征等级 30 才可进入；
--- 引导豁免：新手引导组5-7 发生在低等级（点击教堂/古树推进），
--- 因此引导进行中、或引导组5 已领取（早期玩家已走过该引导）时不受等级限制。
-local CHURCH_UNLOCK_LEVEL = 30
+-- 礼拜堂正式 Lv30 开放，仅引导进行中豁免；古树仍使用独立引导门控。
+local CHURCH_UNLOCK_LEVEL = require("config.ExpTable").CHURCH_UNLOCK_LEVEL
 local function isChurchAccessible()
     -- 豁免仅限引导进行中（组5-7 连续链：点教堂→入堂→离堂，全程 isActive）；
     -- 引导链结束后恢复等级门控，30 级正式开放。
@@ -176,6 +174,11 @@ end
 --- 延迟回调队列：点击动画播放一段后再触发页面打开
 local CLICK_CALLBACK_DELAY = 0.15  -- 回调延迟（秒），让闪白+缩放可见
 local deferredActions = {}         -- { { fireAt=number, fn=function }, ... }
+
+--- 引导换步接管页面时，取消尚未执行的旧建筑打开回调，避免延迟重开覆盖目标。
+function TownScene.cancelPendingPageOpen()
+    deferredActions = {}
+end
 
 local function deferAction(delay, fn)
     table.insert(deferredActions, { fireAt = time.elapsedTime + delay, fn = fn })

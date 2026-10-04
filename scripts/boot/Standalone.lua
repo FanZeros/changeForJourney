@@ -245,7 +245,6 @@ local function SyncBattleState(dt)
 end
 
 local physW, physH, dpr, logicalW, logicalH
-local scale, screenDesignW, screenDesignH, designOffsetX, designOffsetY
 
 local function RecalcLayout()
     physW  = graphics:GetWidth()
@@ -279,11 +278,6 @@ local function RecalcLayout()
     StandaloneRT.DESIGN_H = DESIGN_H
     StandaloneRT.DrawPreloadOverlay = DrawPreloadOverlay
     StandaloneRT.preload_ = preload_
-    scale = math.min(logicalW / DESIGN_W, logicalH / DESIGN_H)
-    screenDesignW = logicalW / scale
-    screenDesignH = logicalH / scale
-    designOffsetX = (screenDesignW - DESIGN_W) / 2
-    designOffsetY = (screenDesignH - DESIGN_H) / 2
 end
 
 -- ============================================================================
@@ -431,9 +425,10 @@ function Standalone.Start()
 
     -- 5.05 远征等级提升弹窗：监听 PLAYER_LEVEL_UP 事件，并刷新解锁状态
     EventBus.on(GameEvents.PLAYER_LEVEL_UP, function(data)
-        local newLevel = data.level
-        local unlocks = ExpTable.getLevelUnlocks(newLevel)
-        LevelUpPopup.show(newLevel, unlocks)
+        local newLevel = data.toLevel or data.level
+        local fromLevel = data.fromLevel or math.max(1, newLevel - 1)
+        local unlocks = require("config.ExpeditionProgress").getRangeUnlocks(fromLevel, newLevel)
+        LevelUpPopup.show(newLevel, unlocks, fromLevel)
         -- 刷新各模块解锁状态
         CharacterPanel.refreshSlotUnlocks()
         BottomNav.refreshUnlockState(vg)
@@ -466,6 +461,8 @@ function Standalone.Stop()
     SamsaraSlicePlayer.cancel()
     StandaloneSave.Flush()  -- [单机存档] 退出前立即落盘
     SpinePowerUpEffect.destroy()
+    LevelUpPopup.destroy()
+    require("ui.widget.DesignWidgetSurface").shutdown()
     if vg then
         nvgDelete(vg)
         vg = nil
@@ -620,6 +617,7 @@ end
 
 --- 首通/入场排队的情景，等奖励弹窗关掉后再用横屏对话条播放
 local function tryPlayPendingStory_()
+    if not TutorialManager.canPlayPendingStory() then return end
     if ScenarioDialogue.isActive() or LetterIntro.isOpen() then
         return
     end

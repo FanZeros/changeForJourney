@@ -11,6 +11,7 @@ local EquipmentSystem = require("systems.EquipmentSystem")
 local EquipmentSetSystem = require("systems.EquipmentSetSystem")
 local DetailAttrs = require("ui.character.detail.CharacterDetailAttrs")
 local Stats = require("ui.character.detail.CharacterEquipStats")
+local I18n = require("core.I18n")
 
 local M = {}
 local CACHE_SECONDS = 0.2
@@ -171,6 +172,13 @@ local function refreshData(heroId, slot)
         tostring(selection and selection.pinned), panelState.attributeMode }, "|")
     local elapsed = now()
     local signature = nil
+    local language = I18n.get()
+    if panelState.language ~= language then
+        panelState.language = language
+        panelState.dirty = true
+        panelState.attrHits = {}
+        clearTip()
+    end
     if not panelState.dirty and panelState.cacheKey == key then
         if elapsed >= panelState.cacheTime and elapsed - panelState.cacheTime < CACHE_SECONDS then
             return panelState.data
@@ -244,7 +252,7 @@ function M.draw(vg, heroId, detailState)
     local display = equipmentMode and data.equipmentBonuses or data
     if equipmentMode and not data.equipmentBonuses then display = { rows = {}, current = { stats = {} } } end
     local sets = Stats.unionSets(data.currentSets, preview and data.previewSets or nil)
-    Stats.drawHeader(vg, data.candidate, data.error, panelState.attributeMode)
+    Stats.drawHeader(vg, panelState.attributeMode)
     local displayRows = display.rows or {}
     local maxAttrs, hits = Stats.drawRows(vg, displayRows, panelState.scroll.attrs.y)
     if equipmentMode and #displayRows == 0 then

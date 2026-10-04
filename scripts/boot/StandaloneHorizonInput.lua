@@ -230,15 +230,21 @@ function Input.bind(ctx)
 
     local equipOverlayPress = false
     local equipOverlayStartX, equipOverlayStartY = 0, 0
-    -- [浮选详情修复] 本次按下刚顺手关掉了浮选详情：按下继续下放给底层页面（恢复拖拽），
-    -- 但松开时不按 tap 派发点击，避免"点空白关详情"误触页面按钮。
+    -- 关浮选详情后按下可继续拖拽，但同次松开不派发按钮点击。
     local detailDismissPress = false
     local equipmentPressPanel = nil
+    local seamGesture = require("boot.SeamBackGesture").bind({
+        RT = RT, width = logicalW, height = logicalH, dpr = dpr, hit = seamHitAt,
+        threshold = TAP_THRESHOLD, bootReady = bootReady_, pageModal = HorizonPageModalActive,
+        tapInterval = MIN_TAP_INTERVAL, getLastTap = function() return lastTapTime end,
+        setLastTap = function(t) lastTapTime = t end,
+    })
     ---@type integer|nil
     local offlineTouchId = nil
 
     --- 离线弹窗接管时仅释放下层按压，不派发点击或装备落点。
     local function cancelUnderlyingPress()
+        seamGesture.cancel()
         artifactGesture.cancel()
         if EquipCrossDrag.isArmed() then EquipCrossDrag.cancel() end
         if equipOverlayPress then
@@ -337,6 +343,7 @@ function Input.bind(ctx)
     local tutorialStartX, tutorialStartY = 0, 0
 
     function HandleMouseButtonDownHorizon(eventType, eventData)
+        seamGesture.cancel()
         tutorialPress, tutorialBlockedPress = false, false
         if OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen() then cancelUnderlyingPress() end
         equipmentPressPanel = nil
@@ -465,6 +472,11 @@ function Input.bind(ctx)
         local pid, dx, dy = HorizonResolveMouse()
         local artifactPos = pointerPosition()
         local artifactX, artifactY = toDesign(artifactPos.x / dpr(), artifactPos.y / dpr())
+        if not detailDismissPress and seamGesture.down(artifactX, artifactY) then
+            cancelUnderlyingPress()
+            seamGesture.down(artifactX, artifactY)
+            return
+        end
         if not seamHitAt(artifactX, artifactY) and artifactGesture.down(pid, artifactX, artifactY) then
             pressValid = false
             return
@@ -579,6 +591,12 @@ function Input.bind(ctx)
     end
 
     function HandleMouseMoveHorizon(eventType, eventData)
+        if seamGesture.hasPress() then
+            local mp = pointerPosition()
+            local sx, sy = toDesign(mp.x / dpr(), mp.y / dpr())
+            seamGesture.move(sx, sy)
+            return
+        end
         if UpdateNoticePopup.isOpen() then return end  -- 全窗模态：屏蔽下层 hover
         if DarkTitleScreen.isOpen() then return end
         if LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive() then return end
@@ -765,6 +783,7 @@ function Input.bind(ctx)
     end
 
     function HandleMouseButtonUpHorizon(eventType, eventData)
+        seamGesture.cancelIfBlocked()
         if tutorialPress then
             tutorialPress = false
             local mp = pointerPosition()
@@ -915,29 +934,14 @@ function Input.bind(ctx)
         if button ~= MOUSEB_LEFT then return end
         local mousePos = pointerPosition()
         local seamX, seamY = toDesign(mousePos.x / dpr(), mousePos.y / dpr())
-        local seamBtn = not PlayerInfoPanel.isOpen()
-            and not (TowerBattleScene.isActive() and TaskPage.isOpen()) and seamHitAt(seamX, seamY)
-        if seamBtn and not OfflineRewardPanel.isOpen() then
-            if equipmentPressPanel == 'tri' then
-                BattleTriPage.handleDragEnd(-1, -1)
-                equipmentPressPanel, pressValid = nil, false
-                return -- 中栏起点的松手不应变成侧栏返回点击
-            end
-            equipmentPressPanel = nil
-            local now = time.elapsedTime
-            if now - lastTapTime >= MIN_TAP_INTERVAL then
-                lastTapTime = now
-                local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
-                if EquipmentDetail.isCompactCorner() then
-                    EquipmentDetail.close()
-                    print("[SeamBack] 返回同时关闭装备详情")
-                end
-                print("[SeamBack] close dir=" .. tostring(seamBtn.dir)
-                    .. string.format(" at %.0f,%.0f", seamX, seamY))
-                seamBtn.close()
-            end
-            pressValid = false
+        if seamGesture.up(seamX, seamY) then
+            equipmentPressPanel, pressValid = nil, false
             return
+        end
+        if seamHitAt(seamX, seamY) and equipmentPressPanel == 'tri' then
+            BattleTriPage.handleDragEnd(-1, -1)
+            equipmentPressPanel, pressValid = nil, false
+            return -- 真正从战斗起点拖到返回条，只释放拖拽，不关闭侧页。
         end
         local pid, dx, dy = HorizonResolveMouse()
         local isTap = false

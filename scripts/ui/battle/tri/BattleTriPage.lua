@@ -639,41 +639,16 @@ function BattleTriPage.draw(vg, logicalW, logicalH)
             nvgRestore(vg)
         end
 
-        -- [终焉协同] 每行底部进度条替换为共享生命池（绯红），行1 附加数值与倒计时
-        if terminalRaid and row <= unlocked and terminalRaid.maxHp > 0 then
-            local ratio = math.max(0, math.min(1, terminalRaid.hp / terminalRaid.maxHp))
-            local barW = math.min(iw * 0.62, 280)
-            local barH = 10
-            local barX = ix + (iw - barW) * 0.5
-            local barY = iy + ih - 8
-            nvgBeginPath(vg)
-            nvgRoundedRect(vg, barX, barY, barW, barH, 5)
-            nvgFillColor(vg, nvgRGBA(8, 8, 14, 170))
-            nvgFill(vg)
-            if ratio > 0 then
-                nvgBeginPath(vg)
-                nvgRoundedRect(vg, barX, barY, math.max(barH, barW * ratio), barH, 5)
-                nvgFillColor(vg, nvgRGBA(196, 62, 62, 235))
-                nvgFill(vg)
-            end
-            if row == 1 then
-                -- 行1 显示共享池数值 + 剩余时限（行2/3 只显示同步血条，避免文字堆叠）
-                local NumberUtil = require("core.NumberUtil")
-                nvgFontSize(vg, 16)
-                nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, nvgRGBA(255, 205, 195, 255))
-                nvgText(vg, ix + iw * 0.5, barY - 12,
-                    I18n.format("共享生命 %s / %s",
-                        NumberUtil.format(terminalRaid.hp), NumberUtil.format(terminalRaid.maxHp)), nil)
-                local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
-                local left = math.max(0, math.ceil(timeLimit - terminalRaid.elapsed))
-                nvgFontSize(vg, 22)
-                nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-                nvgFillColor(vg, left <= 30 and nvgRGBA(255, 120, 110, 255)
-                    or nvgRGBA(236, 226, 198, 255))
-                nvgText(vg, ix + 28, iy + 55,
-                    I18n.format("限时 %d:%02d", left // 60, left % 60), nil)
-            end
+        -- [终焉协同] 生命由各 Boss 卡牌血条展示，行1 只保留协同倒计时。
+        if terminalRaid and row == 1 and row <= unlocked then
+            local timeLimit = require("config.GameConfig").Battle.TIME_LIMIT_SEC
+            local left = math.max(0, math.ceil(timeLimit - terminalRaid.elapsed))
+            nvgFontSize(vg, 22)
+            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
+            nvgFillColor(vg, left <= 30 and nvgRGBA(255, 120, 110, 255)
+                or nvgRGBA(236, 226, 198, 255))
+            nvgText(vg, ix + 28, iy + 55,
+                I18n.format("限时 %d:%02d", left // 60, left % 60), nil)
         end
 
         local killed, total
@@ -941,7 +916,6 @@ function BattleTriPage.handleInput(wx, wy)
         end)
         return true
     end
-    if terminalRaid then return true end
 
     -- 全窗扫荡弹窗优先于装备背包覆盖层处理
     if SweepDialog.isOpen() then
@@ -986,6 +960,9 @@ function BattleTriPage.handleInput(wx, wy)
         if StageSelectDialog.isOpen() then StageSelectDialog.handleInput(dx, dy) end
         return true
     end
+
+    -- 终焉只锁战斗操作；上方覆盖层和行1 奖励仍沿用各自的输入保护。
+    if terminalRaid then return true end
 
     local hudScale = 0.44  -- 与 drawHud 一致，约原尺寸 80%
     local hudPad = 4

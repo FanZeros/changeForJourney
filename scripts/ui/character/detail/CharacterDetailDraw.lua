@@ -291,7 +291,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     if img < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -999,12 +999,8 @@ function M.draw(vg)
     local curExp = math.floor(exp or 0)
     local needExp = math.floor(maxExp or 0)
     local lvlText = "Lv." .. tostring(heroLevel) .. "  " .. tostring(curExp) .. "/" .. tostring(needExp)
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 28)
-    local lvlWidth = nvgTextBounds(vg, 0, 0, lvlText) or 0
-    local lvlFont = lvlWidth > MID_EXP_W - 24 and 28 * (MID_EXP_W - 24) / lvlWidth or 28
-    nvgFontSize(vg, lvlFont)
-    nvgTextAlign(vg, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
+    AttributeView.fitText(vg, lvlText, 28, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        MID_EXP_CX, MID_EXP_CY, MID_EXP_CX - MID_EXP_W * 0.5, MID_EXP_CX + MID_EXP_W * 0.5, 7)
     local lvlSW = 5
     nvgFillColor(vg, nvgRGBA(0x31, 0x24, 0x24, 255))
     for i = 0, 15 do
@@ -1029,14 +1025,12 @@ function M.draw(vg)
     local classIconIdx = CLASS_ICON_MAP[heroCfg.classId]
     local classIcon = classIconIdx and imgClassIcons[classIconIdx] or -1
 
-    nvgFontFace(vg, "sans")
-    nvgFontSize(vg, 34)
-    local classTextW = nvgTextBounds(vg, 0, 0, className) or 0
     local classGap = 8
     local iconW = classIcon >= 0 and MID_CLASS_ICON_SIZE or 0
     local maxClassW = MID_CLASS_BOX_W - 20 - iconW - (iconW > 0 and classGap or 0)
-    local classFont = classTextW > maxClassW and 34 * maxClassW / classTextW or 34
-    classTextW = math.min(classTextW, maxClassW)
+    local classFont, classTextW = AttributeView.fitText(vg, className, 34,
+        NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 0, MID_CLASS_LABEL_Y,
+        -maxClassW * 0.5, maxClassW * 0.5, 4)
     local comboW = iconW + (iconW > 0 and classGap or 0) + classTextW
     local comboLeftX = MID_CLASS_BOX_CX - comboW * 0.5
     local classIconCX = comboLeftX + iconW * 0.5

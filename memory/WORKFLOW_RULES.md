@@ -6,6 +6,7 @@
 - **再次强化用户交接要求**：持续推进已授权任务，不擅自放弃；阶段完成或确需用户决策时，先如实简报，再实际调用 `AskUserQuestion` 提供2–4个明确下一步选项，不用普通结束语中断交接。尊重用户后续停止指令、权限拒绝与安全边界。
 - 最终去重清单及36条逐分支处置记录已写入已有 `docs/memory-index.md` 顶部：优先选择性整合 `feat1004a/team-parity-fixes`；条件候选为最新剧情mirror、25卡面及奖励框二选一；原报告归档可选，不当功能更新。PR69／70已进主线；三队PR68及剧情PR45／49只合侧线，不能误标进入930。当前未实施候选、未合PR。
 - 剧情融合树保留了主线Overlay对已被mirror删除Intro模块的require，必须先修依赖；旧档参考政策与四语正文仍待确认／补齐。卡面锚定有不透明矩形相邻遮挡风险，需视觉适配。clean文本合并不能当功能验收。
+- 交付报告提交 `806986bfe6c38f1fe7b55c6d040e5fc739d1e465` 已正常push并核验远端一致，完整表36／36无遗漏。已按本轮允许提交PR的范围创建 **PR #71**：https://github.com/FanZeros/changeForJourney/pull/71，head=`feat1004b/unmerged-branch-audit`、base=`workspace930@9725abb`，返回open、merged=false。仅2份现有文档／记忆，无玩法修改；未合并PR、不pushworkspace系列。下一步须通过实际AskUserQuestion选择三队小修复、剧情融合、美术对比或报告归档。
 - 每完成代码或文档阶段及时正常commit/push本轮功能分支，显式目标ref；不push任何workspace系列、不强推、不删除远端分支。用户允许完成后提交PR，但没有实际合并授权。只读审核不为制造提交改游戏。
 - 仓库公开读取无需PAT；如推送需认证，仅临时进程环境使用，不进入源码、文件、remote、Git持久配置、文档或记忆。用户在对话提供的PAT已提示撤销更换。全局记忆工具返回Internal error，本轮偏好实际保存于本仓库已有记忆，不宣称全局成功。本地构建身份、工具配置、验证日志与截图不提交。
 

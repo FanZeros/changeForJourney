@@ -383,6 +383,14 @@ local function radarCenter(vg, cx, cy)
     nvgStroke(vg)
 end
 
+-- 数字在真实字体/缩放下复测，描边也留在右列内；普通值保留原字号。
+local function radarNumberFont(vg, label, size, x, y, maxWidth, margin, stroke)
+    local left = math.max(540 + margin, x - maxWidth * 0.5)
+    local right = math.min(1080 - margin, x + maxWidth * 0.5)
+    return AttributeView.fitText(vg, label, size, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE,
+        x, y, left, right, stroke or 0)
+end
+
 --- 属性页独立放大雷达；归一化与数据口径不变，不接收或读取预览。
 function M.drawLegacy(vg, statValues)
     local layout = M.LEGACY
@@ -399,10 +407,7 @@ function M.drawLegacy(vg, statValues)
         local lx, ly = hexPoint(layout.HEX_CX, layout.HEX_CY, i, layout.HEX_LABEL_R)
         text(vg, lx, ly - 26, name, 30, color, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         local valueText = tostring(values[HEX_KEYS[i]] or 0)
-        nvgFontSize(vg, 38)
-        local valueW = nvgTextBounds(vg, 0, 0, valueText) or 0
-        local maxW = math.min(160, (1080 - lx - 12) * 2, (lx - 540 - 12) * 2)
-        local font = valueW > maxW and 38 * maxW / valueW or 38
+        local font = radarNumberFont(vg, valueText, 38, lx, ly + 18, 160, 12, 3)
         drawTextStroke(vg, lx, ly + 18, valueText,
             font, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
     end
@@ -474,14 +479,7 @@ function M.drawRadar(vg, current, preview, equipmentMode)
             valueText = amount:gsub("0+$", ""):gsub("%.$", "")
             if currentValue > 0 then valueText = "+" .. valueText end
         end
-        local valueFont = 34
-        if equipmentMode then
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, valueFont)
-            local width = nvgTextBounds(vg, 0, 0, valueText) or 0
-            local maxWidth = math.min(150, (1080 - lx - 5) * 2)
-            if width > maxWidth then valueFont = valueFont * maxWidth / width end
-        end
+        local valueFont = radarNumberFont(vg, valueText, 34, lx, ly + 16, 150, 5, 3)
         drawTextStroke(vg, lx, ly + 16, valueText,
             valueFont, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, color[1], color[2], color[3], 3)
         local delta = nextValue - currentValue
@@ -496,12 +494,8 @@ function M.drawRadar(vg, current, preview, equipmentMode)
                 amount = string.format("%.1f", delta)
             end
             local deltaText = (delta > 0 and "+" or "") .. amount
-            local deltaWidth = math.min(150, (1080 - lx - 5) * 2, (lx - 540 - 5) * 2)
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, layout.deltaFontSize)
-            local measured = nvgTextBounds(vg, 0, 0, deltaText) or 0
-            local deltaFont = measured > deltaWidth and layout.deltaFontSize * deltaWidth / measured
-                or layout.deltaFontSize
+            local deltaFont = radarNumberFont(vg, deltaText, layout.deltaFontSize,
+                lx, ly - layout.deltaOffset, 150, 5, 0)
             text(vg, lx, ly - layout.deltaOffset, deltaText, deltaFont,
                 delta > 0 and COLOR.green or COLOR.red, NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE)
         end

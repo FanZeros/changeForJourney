@@ -224,9 +224,9 @@ M.SWITCH_SLIDE_DIST    = 180                 -- 水平滑动距离（适中，�
 
 -- 卡片渲染常量（打包为 table，节省 local 变量槽位）
 local CARD = {
-    -- 可见卡框统一按538:955，卡底信息随高度联动；中心/侧卡宽度与缩放不变。
+    -- 可见卡框统一按538:955，中心与侧卡只做等比大小变化，卡底信息随高度联动。
     W=BattleLayout.CARD_W, H=BattleLayout.CARD_H, CY=544,
-    SIDE_SCALE=0.92, SIDE_DX=250, CENTER_SCALE=1.18, YAW_SQUASH=0.86,
+    SIDE_SCALE=0.92, SIDE_DX=250, CENTER_SCALE=1.18,
     TAG_SIZE=60, TAG_DX=63,  -- 职业标识右下角，与等级徽章(-63)左右对应
     POWER_BOTTOM_UP=83, POWER_ICON_SIZE=36,
     LVL_BADGE_SIZE=56, LVL_BADGE_DX=477-540, LVL_BOTTOM_UP=38,
@@ -234,7 +234,7 @@ local CARD = {
 }
 M.ARROW_BG_LEFT_CX  = DT_CARD_CX - CARD.SIDE_DX
 M.ARROW_BG_RIGHT_CX = DT_CARD_CX + CARD.SIDE_DX
-M.SIDE_CARD_W = CARD.W * CARD.SIDE_SCALE * CARD.YAW_SQUASH
+M.SIDE_CARD_W = CARD.W * CARD.SIDE_SCALE
 M.SIDE_CARD_H = CARD.H * CARD.SIDE_SCALE
 M.SIDE_CARD_STEP = CARD.SIDE_DX
 M.CARD_TOP_CY = CARD.CY
@@ -673,7 +673,7 @@ function M.draw(vg)
     nvgGlobalAlpha(vg, 1)
 
     if not isAwakenTab and not isClassTab then
-    -- === 4) 角色卡片：X 轴排列，绕竖直 Y 轴转向，不做画面旋转 ===
+    -- === 4) 角色卡片：横向轮播始终等比缩放，不挤窄卡面和徽章 ===
     local function neighborId(dir)
         local roster = CharacterDetailRef and CharacterDetailRef._getHeroRoster and CharacterDetailRef._getHeroRoster()
         if not roster then return nil end
@@ -708,11 +708,10 @@ function M.draw(vg)
         local pos = slot + slide
         local ax = math.min(1, math.abs(pos))
         local scale = CARD.CENTER_SCALE - (CARD.CENTER_SCALE - CARD.SIDE_SCALE) * ax
-        local yaw = 1 - (1 - CARD.YAW_SQUASH) * ax
         nvgSave(vg)
         local cardY = CARD.CY - ((detailState.tab == "equip") and 70 or 0)
         nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, cardY)
-        nvgScale(vg, scale * yaw, scale)
+        nvgScale(vg, scale, scale)
         nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
         local owned = heroOwned(id)
         DrawUtil.drawCardImage(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)
@@ -1370,10 +1369,9 @@ function M.draw(vg)
             local pos = slot + slide
             local ax = math.min(1, math.abs(pos))
             local scale = CARD.CENTER_SCALE - (CARD.CENTER_SCALE - CARD.SIDE_SCALE) * ax
-            local yaw = 1 - (1 - CARD.YAW_SQUASH) * ax
             nvgSave(vg)
             nvgTranslate(vg, DT_CARD_CX + pos * CARD.SIDE_DX, CARD.CY)
-            nvgScale(vg, scale * yaw, scale)
+            nvgScale(vg, scale, scale)
             nvgGlobalAlpha(vg, alpha * (ax > 0.85 and 0.82 or 1))
             local owned = heroOwned(id)
             DrawUtil.drawCardImage(vg, imgCard, 0, 0, CARD.W, CARD.H, owned and 1.0 or 0.45)

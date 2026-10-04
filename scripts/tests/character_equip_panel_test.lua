@@ -69,6 +69,7 @@ function Start()
         desc = "装备来源说明", delta = 2, deltaText = "+2.0" } }
     local bonuses = { rows = bonusRows, current = { stats = { str = 5.5 } }, preview = { stats = { str = 7.5 } } }
     local buildCount, requestedSeq, requestedSlot, requestedBonuses = 0, nil, nil, false
+    local latestResult = {}
     local summaries = {
         { setId = "A", name = "旧套装", count = 6, twoActive = true, fourActive = true, sixActive = true },
         { setId = "B", name = "第二套装", count = 1 },
@@ -109,10 +110,11 @@ function Start()
                 buildCount = buildCount + 1
                 requestedSeq, requestedSlot = seq, slot
                 requestedBonuses = options and options.includeEquipmentBonuses == true
-                return { current = current, preview = seq and preview or nil, rows = rows,
+                latestResult = { current = current, preview = seq and preview or nil, rows = rows,
                     equipmentBonuses = requestedBonuses and bonuses or nil,
                     currentSets = summaries, previewSets = previewSummaries,
                     candidate = seq and { seq = seq, slot = slot, name = "测试候选" } or nil }
+                return latestResult
             end,
         },
     }
@@ -120,7 +122,14 @@ function Start()
     -- 差集几何使用真实纯模块，只有数据/资源依赖被 mock。
     local RadarDiff = originalRequire("ui.character.detail.CharacterRadarDiff")
     local Stats = originalRequire("ui.character.detail.CharacterEquipStats")
-    mods["ui.character.detail.CharacterEquipStats"] = Stats
+    local sortCount = 0
+    -- 只包依赖入口计数，仍调用真实排序函数，不改共享模块方法。
+    mods["ui.character.detail.CharacterEquipStats"] = setmetatable({
+        sortComparisonRows = function(input)
+            sortCount = sortCount + 1
+            return Stats.sortComparisonRows(input)
+        end,
+    }, { __index = Stats })
     local Shared = originalRequire("ui.character.detail.CharacterAttributeView")
     for _, name in ipairs({ "config.HeroAssetUtil", "config.ClassConfig", "config.ExpTable",
         "ui.character.equip.EquipmentBag", "config.EquipmentConfig", "ui.widget.HeroFrame",
@@ -275,11 +284,11 @@ function Start()
         return count
     end
     clearDraw(); Stats.drawHeader({}, "character")
-    check(rendered("角色属性") and toggleTriangles() == 2 and not rendered("‹") and not rendered("›"),
-        "角色属性标题左右显示实心切换三角，不依赖文字箭头")
+    check(rendered("【角色属性▼】") and toggleTriangles() == 0 and not rendered("‹") and not rendered("›"),
+        "角色属性标题包含括号与向下箭头，不叠加旧左右三角")
     clearDraw(); Stats.drawHeader({}, "equipment")
-    check(rendered("装备加成") and toggleTriangles() == 2,
-        "装备加成标题左右同样显示实心切换三角")
+    check(rendered("【装备加成▲】") and toggleTriangles() == 0,
+        "装备加成标题包含括号与向上箭头，不叠加旧左右三角")
     local sample = { { key = "a", name = "同样属性", value = "42" } }
     clearDraw(); Draw.drawAttributeRows({}, sample, 0, Shared.ATTRIBUTE_LAYOUT, { style = Draw.ATTRIBUTE_STYLE })
     local originalName, originalValue = requiredText("同样属性"), requiredText("42")
@@ -406,18 +415,84 @@ function Start()
         and deltaValue.y == attrs.y + Shared.STYLE.rowH * 0.5,
         "delta不移动名称或当前值baseline、不缩原35号内容，与无delta坐标完全一致")
     check(deltaLabel.x == deltaValue.x and deltaLabel.y == deltaValue.y - 37
-        and deltaLabel.fontSize == 20 and rects[1].h == Shared.STYLE.rowH,
-        "78高88距配装行保留，20号delta从cy-44下移7px到cy-37")
+        and Shared.STYLE.deltaFontSize == 28 and deltaLabel.fontSize == 28 and rects[1].h == Shared.STYLE.rowH,
+        "配装delta放大28号，保留78高88距与cy-37基线")
     clearDraw(); Stats.drawRows({}, rows, 0)
-    local firstDelta, secondValue = requiredText("+5"), requiredText("2")
-    check(firstDelta.y + firstDelta.fontSize * 0.5 < requiredText("1").y - 35 * 0.5 - 4
-        and requiredText("-3").y - 10 > requiredText("1").y + 35 * 0.5 + 4
+    local firstDelta, secondDelta, firstValue, secondValue = requiredText("+5"), requiredText("-3"),
+        requiredText("1"), requiredText("2")
+    check(firstDelta.fontSize == 28 and secondDelta.fontSize == 28
+        and firstDelta.y + firstDelta.fontSize * 0.5 < firstValue.y - 35 * 0.5 - 4
+        and secondDelta.y - secondDelta.fontSize * 0.5 > firstValue.y + 35 * 0.5 + 4
         and secondValue.y == attrs.y + 39 + 88,
-        "相邻配装差值下移后仍与上下一行主数值含描边不重叠")
+        "放大红绿差值仍与本行及上行35号主数值含描边不重叠")
     check(#scissorCalls == 2 and scissorCalls[1].y == attrs.y and scissorCalls[1].h == attrs.h
         and scissorCalls[2].x == attrs.x and scissorCalls[2].w == attrs.w
-        and scissorCalls[2].y == attrs.y - 20 and scissorCalls[2].h == attrs.h + 20,
-        "delta独立上扩20px裁剪，首行上方差值不被原属性行clip切掉")
+        and scissorCalls[2].y == attrs.y - 20 and scissorCalls[2].h == attrs.h + 20
+        and firstDelta.y - firstDelta.fontSize * 0.5 >= scissorCalls[2].y
+        and firstDelta.y + firstDelta.fontSize * 0.5 <= scissorCalls[2].y + scissorCalls[2].h,
+        "delta独立上扩20px裁剪覆盖完整28号首行，属性clip不变")
+    for _, sign in ipairs({ 1, -1 }) do
+        local longDeltaText = (sign > 0 and "+" or "-") .. string.rep("1234567890", 8)
+        clearDraw(); Stats.drawRows({}, { { key = "longDelta", name = "同样属性", value = "42",
+            delta = sign * 100, deltaText = longDeltaText } }, 0)
+        local longDelta = requiredText(longDeltaText)
+        local maxWidth = math.min(Shared.STYLE.boxW - 20, Shared.STYLE.valueX - attrs.x - 12)
+        check(longDelta.fontSize > 0 and longDelta.fontSize < 28 and longDelta.width <= maxWidth + 0.000001
+            and longDelta.x - longDelta.width >= attrs.x + 12 and longDelta.x <= attrs.x + attrs.w
+            and longDelta.align == NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE
+            and longDelta.y == attrs.y + 39 - 37 and deltaSign(longDelta.color) == sign,
+            "超长红绿列表差值保留全文并按可用宽缩字，右锚点/颜色/基线不变")
+        check(requiredText("同样属性").fontSize == 35 and requiredText("42").fontSize == 35,
+            "长delta缩字不影响名称和当前值")
+    end
+
+    -- 打乱源序且同key不同增减：颜色优先级来自beneficial，而不是delta符号或属性名。
+    local comparisonRows = {
+        { key = "none", deltaText = "+幽灵", beneficial = true },
+        { key = "loss", delta = -4 },
+        { key = "zero", delta = 0, beneficial = false },
+        { key = "atkInterval", delta = -0.2, beneficial = true },
+        { key = "tinyPlus", delta = 0.0000005, beneficial = true },
+        { key = "atkInterval", delta = 0.3, beneficial = false },
+        { key = "gain", delta = 3 },
+        { key = "tinyMinus", delta = -0.0000005, beneficial = false },
+        { key = "zGain", delta = -2, beneficial = true },
+        { key = "aLoss", delta = 9, beneficial = false },
+        { key = "aGain", delta = 6, beneficial = true },
+        { key = "zLoss", delta = -1, beneficial = false },
+    }
+    local order = { 4, 7, 9, 11, 2, 6, 10, 12, 1, 3, 5, 8 }
+    local sourceSnapshot = {}
+    for i, row in ipairs(comparisonRows) do
+        row.name, row.value, row.desc = "排序属性" .. i, tostring(i), "排序说明" .. i
+        if row.delta and math.abs(row.delta) >= 0.000001 then row.deltaText = tostring(row.delta) end
+        sourceSnapshot[i] = { row = row, fields = {} }
+        for key, value in pairs(row) do sourceSnapshot[i].fields[key] = value end
+    end
+    local sortedRows = Stats.sortComparisonRows(comparisonRows)
+    check(sortedRows ~= comparisonRows and #sortedRows == #comparisonRows
+        and #Stats.sortComparisonRows(nil) == 0, "排序仅复制数组，nil安全且不丢行")
+    for i, sourceIndex in ipairs(order) do
+        check(sortedRows[i] == comparisonRows[sourceIndex]
+            and Shared.changePriority(sortedRows[i]) == (i <= 4 and 1 or (i <= 8 and 2 or 3)),
+            "绿/红/无变化组保持原行引用和源序：" .. i)
+    end
+    local sourceUnchanged = true
+    for i, snapshot in ipairs(sourceSnapshot) do
+        local row = comparisonRows[i] or error("排序丢失源行：" .. i)
+        if row ~= snapshot.row then sourceUnchanged = false end
+        for key, value in pairs(snapshot.fields) do
+            if row[key] ~= value then sourceUnchanged = false end
+        end
+        for key, value in pairs(row) do
+            if snapshot.fields[key] ~= value then sourceUnchanged = false end
+        end
+    end
+    check(sourceUnchanged, "排序不改源数组顺序或行内容，不添加排序字段")
+    clearDraw(); Stats.drawRows({}, sortedRows, 0)
+    check(deltaSign(requiredText("-0.2").color) == 1 and deltaSign(requiredText("0.3").color) == -1
+        and not rendered("+幽灵") and not rendered("0.0000005") and not rendered("-0.0000005"),
+        "负攻击间隔绿色、正攻击间隔红色，nil/zero/tiny不显示变化字")
 
     check(math.abs(Stats.radarScale(current.stats, preview.stats) - 20 / 0.82) < 0.000001, "新旧几何共用最大值尺度")
     check(Stats.radarScale({}, {}) == 8, "无候选与属性页同样采用max(8,peak/.82)尺度")
@@ -455,12 +530,39 @@ function Start()
     end
     check(commonUntinted, "新旧共有中心内区只保留淡金底，不重复涂绿红")
     check(rendered("+10") and rendered("-3"), "六围标签显示正负numeric delta")
-    check(rendered("力量").x == layout.cx and rendered("力量").y == layout.cy - layout.labelR - 24
-        and rendered("力量").fontSize == 26 and rendered("10").x == layout.cx
-        and rendered("10").y == layout.cy - layout.labelR + 16 and rendered("10").fontSize == 34
-        and rendered("+10").y == layout.cy - layout.labelR - 51,
-        "六围差值下移7px至ly-51，不移动原名称ly-24和34号当前值ly+16")
+    local radarName, radarValue, radarDelta = requiredText("力量"), requiredText("10"), requiredText("+10")
+    check(radarName.x == layout.cx and radarName.y == layout.cy - layout.labelR - 24
+        and radarName.fontSize == 26 and radarValue.x == layout.cx
+        and radarValue.y == layout.cy - layout.labelR + 16 and radarValue.fontSize == 34
+        and layout.deltaFontSize == 32 and layout.deltaOffset == 58
+        and radarDelta.fontSize == 32 and requiredText("-3").fontSize == 32
+        and radarDelta.y == layout.cy - layout.labelR - 58,
+        "六围红绿delta放大32号移至ly-58，原26号名称和34号当前值基线不动")
+    check(radarDelta.y + radarDelta.fontSize * 0.5 + 4 < radarName.y - radarName.fontSize * 0.5
+        and radarName.y + radarName.fontSize * 0.5 + 3 < radarValue.y - radarValue.fontSize * 0.5
+        and radarDelta.y - radarDelta.fontSize * 0.5 >= attrs.y,
+        "雷达delta/名称/当前值含描边间距不重叠，顶部大字不越属性区")
     check(#scissorCalls == 0, "雷达不另设474宽scissor裁掉左右标签")
+    for _, sign in ipairs({ 1, -1 }) do
+        local longStats = {}
+        for _, key in ipairs({ "str", "agi", "vit", "spi", "luk", "int" }) do
+            longStats[key] = sign * 123456789012345
+        end
+        clearDraw(); Stats.drawRadar({}, {}, longStats)
+        local expectedDelta, deltaCount = (sign > 0 and "+" or "-") .. "123456789012345", 0
+        for _, call in ipairs(textCalls) do
+            if deltaSign(call.color) ~= 0 then
+                deltaCount = deltaCount + 1
+                local maxWidth = math.min(150, (1080 - call.x - 5) * 2, (call.x - 540 - 5) * 2)
+                check(call.value == expectedDelta and call.fontSize > 0 and call.fontSize < 32
+                    and call.width <= maxWidth + 0.000001 and call.x - call.width * 0.5 >= 545 - 0.000001
+                    and call.x + call.width * 0.5 <= 1075 + 0.000001
+                    and call.align == NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE and deltaSign(call.color) == sign,
+                    "六轴超长红绿delta全文缩放，按左右画布可用宽不越界")
+            end
+        end
+        check(deltaCount == 6, "六轴长delta全部保留，不裁掉左右标签")
+    end
 
     clearDraw(); Stats.drawRadar({}, current.stats, current.stats)
     polygons, regions, edges = radarPaths()
@@ -527,7 +629,7 @@ function Start()
     clearDraw(); Stats.drawRadar({}, { str = 0.04, agi = 1 }, { str = 0.05, agi = 1 })
     local tinyDelta = rendered("+0.01")
     check(tinyDelta and not rendered("+0.0") and rendered("0").fontSize == 34
-        and tinyDelta.y == layout.cy - layout.labelR - 51,
+        and tinyDelta.fontSize == 32 and tinyDelta.y == layout.cy - layout.labelR - 58,
         "低值使用raw差值+0.01且保留原整数当前值字号/坐标，不预言visualfloor几何")
 
     local union = Stats.unionSets(summaries, previewSummaries)
@@ -665,7 +767,7 @@ function Start()
     draw()
     check(Panel.getAttributeMode() == "equipment" and requestedBonuses and buildCount == toggleBuilds + 1,
         "切换装备加成触发一次按需重建")
-    check(rendered("装备加成") and rendered("装备净增益") and rendered("+5.5") and not rendered("属性1"),
+    check(rendered("【装备加成▲】") and rendered("装备净增益") and rendered("+5.5") and not rendered("属性1"),
         "装备模式标题/列表/雷达只显示净贡献，不回退角色总属性")
     local cachedBuilds = buildCount
     draw(); check(buildCount == cachedBuilds, "装备模式后续帧继续命中缓存")
@@ -675,7 +777,7 @@ function Start()
     Panel.handleInput(toggleX, toggleY, 1, {})
     clearDraw(); Panel.drawSetCodex({})
     check(#textCalls == 0 and Panel.getAttributeMode() == "character", "切回角色属性清理旧说明和热区")
-    draw(); check(rendered("角色属性") and rendered("属性1") and not requestedBonuses,
+    draw(); check(rendered("【角色属性▼】") and rendered("属性1") and not requestedBonuses,
         "切回后恢复总属性且滚动归顶")
     Panel.handleInput(toggleX, toggleY, 1, {})
     local oldBonusRows = bonuses.rows
@@ -704,6 +806,125 @@ function Start()
         and longEquipRadar.x + longEquipRadar.width * 0.5 + 3 <= 1080
         and longEquipRadar.x - longEquipRadar.width * 0.5 >= 550,
         "超长配装雷达数字按缩后字号测量、含描边仍在栏内不越1080画布")
+
+    -- 真实Panel消费打乱的两种来源：排序只在刷新做，滚动/说明使用显示行而非源索引。
+    local savedRows, savedBonusRows = rows, bonuses.rows
+    rows = comparisonRows
+    local equipmentRows = {}
+    for i = #comparisonRows, 1, -1 do
+        local row = {}
+        for key, value in pairs(comparisonRows[i]) do row[key] = value end
+        row.name, row.desc = "装备排序" .. i, "装备排序说明" .. i
+        equipmentRows[#equipmentRows + 1] = row
+    end
+    bonuses.rows = equipmentRows
+    equipment.inventory["8"] = { enhanceLevel = 1 }
+    heroes.roster[2] = { level = 1 }
+    for _, mode in ipairs({ "character", "equipment" }) do
+        if Panel.getAttributeMode() ~= mode then Panel.toggleAttributeMode() end
+        selection = { seq = 7, slot = "weapon", heroId = 1, owner = "bag", pinned = true }
+        requestedSlot = nil
+        Panel.reset(1, nil)
+        local source = mode == "equipment" and equipmentRows or comparisonRows
+        local indices = mode == "equipment" and { 2, 4, 6, 9, 1, 3, 7, 11, 5, 8, 10, 12 } or order
+        local beforeBuild, beforeSort = buildCount, sortCount
+        draw()
+        local display = mode == "equipment" and latestResult.equipmentBonuses or latestResult
+        local cachedRows = display.displayRows
+        check(buildCount == beforeBuild + 1 and sortCount == beforeSort + (mode == "equipment" and 2 or 1)
+            and display.rows == source and cachedRows ~= source and #cachedRows == #source,
+            mode .. "首次刷新缓存独立显示数组，角色/装备排序次数准确且不改源数组")
+        for i, sourceIndex in ipairs(indices) do
+            check(cachedRows[i] == source[sourceIndex], mode .. "真实Panel首次稳定绿/红/无变化分组：" .. i)
+        end
+        local first = cachedRows[1]
+        check(requiredText(first.name).y == firstRowY and not rendered(cachedRows[12].name),
+            mode .. "首次显示变化优先首行，未滚动就不显示末行")
+        local cachedBuild, cachedSort = buildCount, sortCount
+        draw()
+        check(buildCount == cachedBuild and sortCount == cachedSort and display.displayRows == cachedRows,
+            mode .. "同key后续帧复用已排序数组，不重复sort")
+        Panel.handleInput(ax, firstRowY, 1, {})
+        clearDraw(); Panel.drawSetCodex({})
+        check(rendered(first.desc) and not rendered(source[1].desc),
+            mode .. "首行tooltip取真实排序行说明，不取源首行")
+        Panel.handleSideScroll(-1000, ax, ay); draw()
+        local lastY = requiredText(cachedRows[12].name).y
+        check(not rendered(first.name), mode .. "排序列表可滚到底且首条改善项已离开视口")
+        draw()
+        check(requiredText(cachedRows[12].name).y == lastY and not rendered(first.name)
+            and buildCount == cachedBuild and sortCount == cachedSort,
+            mode .. "每帧命中缓存不重置滚动也不排序")
+        time.elapsedTime = time.elapsedTime + 0.31; draw()
+        check(requiredText(cachedRows[12].name).y == lastY and not rendered(first.name)
+            and buildCount == cachedBuild and sortCount == cachedSort and display.displayRows == cachedRows,
+            mode .. "超缓存检查间隔签名不变仍复用排序并保持滚底")
+        -- 滚底首行4只剩14px：按真实可见片段点击，说明必须对应displayRows[4]。
+        Panel.handleInput(ax, attrs.y + 1, 1, {})
+        clearDraw(); Panel.drawSetCodex({})
+        check(rendered(cachedRows[4].desc) and not rendered(source[4].desc),
+            mode .. "滚底裁剪行tooltip与排序后的真实行对应")
+        selection.seq = 8; draw()
+        check(buildCount == cachedBuild + 1 and sortCount == cachedSort + (mode == "equipment" and 2 or 1)
+            and requiredText(first.name).y == firstRowY and not rendered(cachedRows[12].name),
+            mode .. "换候选立即刷新排序并滚动归顶")
+        clearDraw(); Panel.drawSetCodex({})
+        check(#textCalls == 0, mode .. "换候选清旧排序行tooltip")
+        Panel.handleSideScroll(-1000, ax, ay); draw()
+        local bottomY = requiredText(cachedRows[12].name).y
+        for _, reason in ipairs({ "markDirty", "selfLevel", "otherLevel", "enhance" }) do
+            Panel.handleInput(ax, attrs.y + 1, 1, {})
+            beforeBuild, beforeSort = buildCount, sortCount
+            if reason == "markDirty" then
+                first.value = "同序数值更新" .. mode
+                Panel.markDirty()
+            elseif reason == "selfLevel" then
+                heroes.roster[1].level = heroes.roster[1].level + 1
+            elseif reason == "otherLevel" then
+                heroes.roster[2].level = heroes.roster[2].level + 1
+                time.elapsedTime = time.elapsedTime + 0.31
+            else
+                equipment.inventory["8"].enhanceLevel = equipment.inventory["8"].enhanceLevel + 1
+                time.elapsedTime = time.elapsedTime + 0.31
+            end
+            draw()
+            check(buildCount == beforeBuild + 1 and sortCount == beforeSort + (mode == "equipment" and 2 or 1)
+                and requiredText(cachedRows[12].name).y == bottomY and not rendered(first.name),
+                mode .. "同序刷新保留滚底，仅重建/排序一次：" .. reason)
+            clearDraw(); Panel.drawSetCodex({})
+            check(#textCalls == 0, mode .. "同序刷新也清旧tooltip：" .. reason)
+        end
+        -- 5px拖动保留惯性；重建只换数值/签名不应抹掉velocity或本帧继续移动。
+        Panel.handleSideScroll(1000, ax, ay)
+        Panel.handleDragBegin(ax, ay); Panel.handleDragMove(ax, ay - 5); Panel.handleDragEnd(ax, ay - 5)
+        draw()
+        check(near(requiredText(first.name).y, firstRowY - 10), mode .. "拖动结束首帧应用5px惯性")
+        Panel.markDirty(); draw()
+        check(near(requiredText(first.name).y, firstRowY - 14.5), mode .. "markDirty同序刷新保留滚动及0.9衰减惯性")
+        heroes.roster[2].level = heroes.roster[2].level + 1
+        time.elapsedTime = time.elapsedTime + 0.31; draw()
+        check(near(requiredText(first.name).y, firstRowY - 18.55), mode .. "另一英雄level签名刷新仍保留惯性而非归顶")
+        Panel.handleSideScroll(-1000, ax, ay); draw()
+        Panel.handleInput(ax, attrs.y + 1, 1, {})
+        -- 同一候选原地更新数据并改变改善项：缓存失效后新首行不能沿用旧hit/tip。
+        first.beneficial = false
+        equipment.inventory["8"].enhanceLevel = equipment.inventory["8"].enhanceLevel + 1
+        beforeBuild, beforeSort = buildCount, sortCount
+        time.elapsedTime = time.elapsedTime + 0.31; draw()
+        local refreshed = mode == "equipment" and latestResult.equipmentBonuses or latestResult
+        check(buildCount == beforeBuild + 1 and sortCount == beforeSort + (mode == "equipment" and 2 or 1)
+            and refreshed.displayRows ~= cachedRows and refreshed.displayRows[1] == cachedRows[2]
+            and requiredText(cachedRows[2].name).y == firstRowY and not rendered(cachedRows[12].name),
+            mode .. "原地数据签名刷新重排一次且归顶，新改善项成为首行")
+        clearDraw(); Panel.drawSetCodex({})
+        check(#textCalls == 0, mode .. "原地数据刷新清旧tooltip")
+        Panel.handleInput(ax, firstRowY, 1, {})
+        clearDraw(); Panel.drawSetCodex({})
+        check(rendered(cachedRows[2].desc) and not rendered(first.desc),
+            mode .. "刷新后首行tooltip对应新排序，不遗留旧hit")
+    end
+    rows, bonuses.rows = savedRows, savedBonusRows
+    Panel.clear()
     end
 
     local ok, failure = pcall(run)

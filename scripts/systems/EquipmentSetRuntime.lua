@@ -94,7 +94,7 @@ end
 ---@param dealDmgFn function|nil
 ---@param targetList table[]|nil
 function ESR.onAfterAttack(attacker, defender, result, isAlly, dealDmgFn, targetList)
-    if not attacker or not result or result.isMiss then return end
+    if not attacker or not result or result.isMiss or result.category == "healing" then return end
     local f, s = four(attacker), six(attacker)
 
     if f == "faceless" and defender and defender.maxHp and defender.hp then

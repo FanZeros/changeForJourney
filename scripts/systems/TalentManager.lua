@@ -1060,7 +1060,7 @@ function TAL.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmg
         local r = _after.onAfterAttack(attacker, target, result, isAlly, targetList, dealDmgFn, attackerAllies)
         ClassGateRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, attackerAllies)
         EquipmentSetRuntime.onAfterAttack(attacker, target, result, isAlly, dealDmgFn, targetList)
-        if result and result.totalDamage then
+        if result and result.category ~= "healing" and result.totalDamage then
             EquipmentSetRuntime.addSwordWindowDamage(attacker, result.totalDamage)
         end
         return r

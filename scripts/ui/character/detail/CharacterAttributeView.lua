@@ -159,16 +159,17 @@ function M.drawAttributeRows(vg, rows, scroll, layout, options)
             nvgTextBounds(vg, style.nameX, baseline, name, nameBounds)
             local nameReserve = math.min(math.max(0, nameBounds[3] - style.nameX),
                 (style.valueX - style.nameX) * 0.5)
+            local valueX = style.valueX - style.stroke - 2
             local valueFont, _, valueBounds = M.fitText(vg, value, style.fontSize,
-                NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, style.valueX, baseline,
-                style.nameX + nameReserve + style.nameValueGap, rect.x + rect.w, style.stroke)
+                NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, valueX, baseline,
+                style.nameX + nameReserve + style.nameValueGap, style.valueX, style.stroke)
             M.fitText(vg, name, style.fontSize, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
                 style.nameX, baseline, rect.x, valueBounds[1] - style.stroke - style.nameValueGap, 0)
             local nc = style.nameColor
             nvgFillColor(vg, nvgRGBA(nc[1], nc[2], nc[3], nc[4]))
             nvgText(vg, style.nameX, baseline, name, nil)
             local vc = style.valueColor
-            DrawUtil.drawTextStroke(vg, style.valueX, baseline, value, valueFont,
+            DrawUtil.drawTextStroke(vg, valueX, baseline, value, valueFont,
                 NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE, vc[1], vc[2], vc[3], style.stroke)
             if delta ~= "" then
                 changes[#changes + 1] = { y = cy - style.deltaOffset, text = delta, color = deltaColor }

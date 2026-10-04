@@ -44,7 +44,17 @@ function Start()
     hook("nvgClosePath", function() path.closed = true end)
     -- 测量随字号缩放，长雷达数值检查才能验证实际拟合后的边界。
     local function textWidth(value, size) return (utf8.len(tostring(value)) or 0) * 16 * size / 27 end
-    hook("nvgTextBounds", function(vg, x, y, value) return textWidth(value, fontSize) end)
+    hook("nvgTextLetterSpacing", noop)
+    hook("nvgTextBounds", function(vg, x, y, value, bounds)
+        local width = textWidth(value, fontSize)
+        if bounds then
+            local offset = textAlign & NVG_ALIGN_RIGHT ~= 0 and width
+                or (textAlign & NVG_ALIGN_CENTER ~= 0 and width * 0.5 or 0)
+            bounds[1], bounds[2], bounds[3], bounds[4] = x - offset, y - fontSize * 0.5,
+                x - offset + width, y + fontSize * 0.5
+        end
+        return width, bounds
+    end)
     hook("nvgTextAlign", function(vg, align) textAlign = align end)
     hook("nvgText", function(vg, x, y, value)
         textCalls[#textCalls + 1] = { x = x, y = y, value = tostring(value), color = fillColor,
@@ -295,11 +305,11 @@ function Start()
     local originalRow = rects[1]
     clearDraw(); Stats.drawRows({}, sample, 0)
     local equipName, equipValue = requiredText("同样属性"), requiredText("42")
-    check(originalName.x == 150 and originalValue.x == 520
+    check(originalName.x == 150 and originalValue.x == 514
         and originalName.y == originalValue.y and originalName.y == 1109
         and equipName.y == equipValue.y and equipName.y == attrs.y + 39
-        and equipName.x == 167 and equipValue.x == 510,
-        "同API通过opts.style采用属性页新坐标，默认配装名称左数值右坐标不变")
+        and equipName.x == 167 and equipValue.x == 504,
+        "属性与配装保留名称坐标，数值内收6像素给描边留空间")
     check(originalName.fontSize == 40 and originalValue.fontSize == 40
         and equipName.fontSize == 35 and equipValue.fontSize == 35
         and sameColor(originalValue.color, 255, 255, 255) and sameColor(equipValue.color, 255, 255, 255)
@@ -398,7 +408,7 @@ function Start()
             and longName.x + longName.width + mode.style.nameValueGap <= longNumber.x - longNumber.width + 1,
             "长数值优先缩数字并保留名称最小字号与分隔，不互相挤压")
         check(longNumber.align == NVG_ALIGN_RIGHT + NVG_ALIGN_MIDDLE
-            and longNumber.x == mode.style.valueX and longNumber.x <= mode.layout.x + mode.layout.w
+            and longNumber.x == mode.style.valueX - mode.style.stroke - 2 and longNumber.x <= mode.layout.x + mode.layout.w
             and longNumber.x - longNumber.width >= longName.x
             and longName.y == longNumber.y, "两页长数字完整保留，右锚点/基线及clip边界不变")
     end
@@ -414,9 +424,9 @@ function Start()
         and deltaName.fontSize == 35 and deltaValue.fontSize == 35
         and deltaValue.y == attrs.y + Shared.STYLE.rowH * 0.5,
         "delta不移动名称或当前值baseline、不缩原35号内容，与无delta坐标完全一致")
-    check(deltaLabel.x == deltaValue.x and deltaLabel.y == deltaValue.y - 37
+    check(deltaLabel.x == Shared.STYLE.valueX and deltaLabel.y == deltaValue.y - 37
         and Shared.STYLE.deltaFontSize == 28 and deltaLabel.fontSize == 28 and rects[1].h == Shared.STYLE.rowH,
-        "配装delta放大28号，保留78高88距与cy-37基线")
+        "配装delta保留原右锚点和28号，当前值内收描边不改变78高88距与cy-37基线")
     clearDraw(); Stats.drawRows({}, rows, 0)
     local firstDelta, secondDelta, firstValue, secondValue = requiredText("+5"), requiredText("-3"),
         requiredText("1"), requiredText("2")

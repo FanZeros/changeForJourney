@@ -10,6 +10,7 @@
 - 专项初跑夹具把CalcOnEnter已发生的session推送误算为领取拒绝推送；201旧超容量腾一格需删两件；情景缺initialHeroId/字符串cleared前置；均仅修夹具后复跑通过。初次抛错未退出超时如实保留，随后保证退出且同时检查Lua错误和ALL PASS，不把exit0当断言通过。独立复核指出路由shown复用假阳性，已逐次清空并断言新popupCount+1，补离线转存提示和断言。
 - 最新官方Build成功，六份本轮Lua与正式清单产物逐字节6/6一致。主入口60帧、boot18/18完成、标题解锁、Lua/资源错误0、missing_resources空；原始验收exit1，四条默认100ms帧尖峰（最大274.738ms），无头音频/Shader错误另存在，不宣称图形、性能或设备触控全通过。验证日志与运行器只在本地忽略路径；仅提交五生产Lua、专项与meta、本记忆，.project/环境配置不提交。
 - 功能提交 `b475b21f099120c2cbe8cabcdb9039cafc74b6c9` 已正常push到 `feat1004a/fix-full-bag-equipment`，远端SHA与本地一致；核验时 `workspace930` 仍为原基线d618ee25，本会话未推workspace系列、未创建或合并PR。提交树相对原基线2669路径规范0错误0警告，最终部署源码6/6一致。交接补记仅正常push当前新分支，完成后真正AskUserQuestion下一步。
+- 用户随后通过AskUserQuestion明确选择创建修复PR。查重同源open为0、核对源e18aea2f与目标d618ee25后，正式创建 **PR #66**：https://github.com/FanZeros/changeForJourney/pull/66，head=`feat1004a/fix-full-bag-equipment`、base=`workspace930`，返回open、draft=false、merged=false、mergeable=null/unknown（尚未计算）。说明包含162327专项、八套回归、36规范单测、真实构建/部署一致及无头帧尖峰/音频Shader/替身验收限制；不声称CI通过，不自动合并。交接记录仅push当前新分支，不推workspace系列，创建授权不延伸为合并授权。
 
 ## 选关敌人横向拖动与终焉说明协作要求（2026-10-04）
 

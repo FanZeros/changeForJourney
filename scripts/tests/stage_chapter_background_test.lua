@@ -3,6 +3,7 @@
 function Start()
     local originalRequire, originalTime = require, time
     local savedGlobals = {}
+    local restoreStageConfig = function() end
     local assertions = 0
     local function check(ok, label)
         assertions = assertions + 1
@@ -58,13 +59,19 @@ function Start()
         local shape, paint = {}, nil
         local nextImage = 0
         local failPath, zeroSizePath, zeroHandlePath = nil, nil, nil
-        local texts = {}
+        local texts, textRecords, enemyDraws, enemyClips = {}, {}, {}, {}
+        local fontSize = 20
         fixtures["core.DrawUtil"] = {
-            drawImageCentered = noop, drawImageCover = noop, drawNineSlice = noop,
-            drawTextStroke = function(_, _, _, text)
+            drawImageCentered = noop,
+            drawImageCover = function(_, image, cx, cy, w, h)
+                enemyDraws[#enemyDraws + 1] = { path = images[image], cx = cx, cy = cy, w = w, h = h }
+            end,
+            drawNineSlice = noop,
+            drawTextStroke = function(_, x, y, text, size)
                 -- 绘图spy模拟生产文字出口的翻译hook；标题排版仍走真实I18n接口。
                 local caption = I18n.lookup(text)
                 texts[#texts + 1] = caption
+                textRecords[#textRecords + 1] = { x = x, y = y, text = caption, size = size }
                 events[#events + 1] = { text = caption }
             end,
         }
@@ -72,7 +79,11 @@ function Start()
         time = { elapsedTime = 20 }
         for _, name in ipairs({ "nvgSave", "nvgRestore", "nvgTranslate", "nvgScale", "nvgIntersectScissor",
             "nvgFontFace", "nvgFontSize", "nvgTextAlign", "nvgStrokeColor", "nvgStrokeWidth" }) do hook(name, noop) end
-        hook("nvgTextBounds", function(_, _, _, text) return utf8.len(text) * 12 end)
+        hook("nvgFontSize", function(_, size) fontSize = size end)
+        hook("nvgTextBounds", function(_, _, _, text) return utf8.len(text) * fontSize * 0.6 end)
+        hook("nvgIntersectScissor", function(_, x, y, w, h)
+            if x == 455 and w == 428 then enemyClips[#enemyClips + 1] = { x = x, y = y, w = w, h = h } end
+        end)
         hook("nvgCreateImage", function(_, path)
             loads[path] = (loads[path] or 0) + 1
             if path == failPath then return -1 end
@@ -101,7 +112,7 @@ function Start()
         hook("nvgText", function(_, _, _, text) texts[#texts + 1] = text end)
         local Dialog = originalRequire("ui.battle.stage.StageSelectDialog")
         local function draw()
-            events, texts = {}, {}
+            events, texts, textRecords, enemyDraws, enemyClips = {}, {}, {}, {}, {}
             Dialog.draw({})
             local banners = {}
             for _, e in ipairs(events) do
@@ -191,9 +202,137 @@ function Start()
         Dialog.close()
         Dialog.init({})
         check(deleted[0] == true, "重新初始化也释放句柄0")
+
+        -- 在真实关卡配置上临时增加敌人种类，覆盖超宽列表，测试后恢复原数据。
+        local savedEntries = {}
+        for _, id in ipairs({ 101, 102, 103, 201 }) do
+            local entry = SC.getStage(id)
+            savedEntries[id] = { entry = entry, monsters = entry.monsters, firstCount = entry.firstCount }
+            entry.monsters = id == 103 and { 1, 2, 3, 4 } or { 1, 2, 3, 4, 5, 6, 7 }
+            entry.firstCount = #entry.monsters
+        end
+        restoreStageConfig = function()
+            for _, saved in pairs(savedEntries) do
+                saved.entry.monsters, saved.entry.firstCount = saved.monsters, saved.firstCount
+            end
+        end
+        zeroHandlePath = nil
+        currentStage, maxStage, jumps = 101, 305, 0
+        Dialog.open()
+        time.elapsedTime = 27
+        local function firstCardX(row)
+            for _, card in ipairs(enemyDraws) do
+                if card.cy == 852 + (row - 1) * 178 and card.path == "image/怪物卡牌/KP_GW_1.png" then
+                    return card.cx
+                end
+            end
+            return nil
+        end
+        draw()
+        check(firstCardX(1) == 501 and firstCardX(2) == 501, "两行敌人初始偏移为零")
+        Dialog.handleDragBegin(700, 850)
+        Dialog.handleScroll(-1, 700, 850)
+        Dialog.handleDragMove(680, 850)
+        draw()
+        check(firstCardX(1) == 381, "按住期间滚轮与左拖累加，不跳回旧起点")
+        Dialog.handleDragEnd()
+        Dialog.close()
+        Dialog.open()
+        time.elapsedTime = 28
+        draw()
+        check(#enemyClips == 5 and enemyClips[1].h == 152, "敌人裁剪限定各行卡面与计数，不覆盖标签")
+        Dialog.handleDragBegin(700, 850)
+        Dialog.handleDragMove(690, 850)
+        draw()
+        check(firstCardX(1) == 501, "微小抖动不滚动")
+        Dialog.handleDragMove(600, 850)
+        draw()
+        check(firstCardX(1) == 401 and firstCardX(2) == 501, "左拖按像素滚动且不影响其他行")
+        Dialog.handleDragMove(-2000, 850)
+        draw()
+        check(firstCardX(1) == 237, "滚到底按内容宽减视口宽钳制")
+        local lastCard
+        for _, card in ipairs(enemyDraws) do
+            if card.cy == 852 and card.path == "image/怪物卡牌/KP_GW_7.png" then lastCard = card end
+        end
+        check(lastCard and lastCard.cx + lastCard.w * 0.5 == 883, "末张敌人卡完整到达可视区右边界")
+        Dialog.handleDragEnd()
+        Dialog.handleInput(20, 20)
+        check(Dialog.isOpen() and jumps == 0, "拖动后在面板外释放不误关闭或进关")
+        Dialog.handleScroll(1, 700, 850)
+        draw()
+        check(firstCardX(1) == 337, "鼠标滚轮在敌人视口内横向回滚")
+        Dialog.handleScroll(-99, 400, 850)
+        draw()
+        check(firstCardX(1) == 337, "关卡标签滚轮不改变敌人列表")
+        Dialog.handleDragBegin(700, 850)
+        Dialog.handleDragMove(2500, 1800)
+        Dialog.handleDragEnd()
+        draw()
+        check(firstCardX(1) == 501, "右拖越界回到起点，纵向位移不改滚动轴")
+        Dialog.handleDragBegin(700, 1028)
+        Dialog.handleDragMove(600, 1028)
+        Dialog.handleDragEnd()
+        Dialog.handleInput(600, 1028)
+        check(Dialog.isOpen() and jumps == 0, "未选关卡横拖后不误触前往")
+        draw()
+        check(firstCardX(2) == 401 and firstCardX(1) == 501, "各关卡独立保留偏移")
+        Dialog.handleDragBegin(700, 1206)
+        Dialog.handleDragMove(600, 1206)
+        Dialog.handleDragEnd()
+        draw()
+        check(firstCardX(3) == 501, "四张敌人无需滚动，不制造空白偏移")
+        Dialog.handleInput(175, 970)
+        draw()
+        check(firstCardX(1) == 501, "切换章节不继承其他关卡偏移")
+        Dialog.handleInput(175, 880)
+        draw()
+        check(firstCardX(2) == 401, "返回章节保留该关自己的偏移")
+        Dialog.close()
+        Dialog.open()
+        time.elapsedTime = time.elapsedTime + 1
+        draw()
+        check(firstCardX(2) == 501, "重新打开弹窗重置敌人偏移")
+        Dialog.handleDragBegin(700, 1028)
+        Dialog.handleDragEnd()
+        Dialog.handleInput(700, 1028)
+        check(currentStage == 102 and jumps == 1 and not Dialog.isOpen(), "无拖动的点击仍正常前往关卡")
+        restoreStageConfig()
+
+        local rules = {
+            "可三队一起上场", "每队面对三名首领，同编号首领共享生命。",
+            "攻击、护盾和状态各队独立。", "击败全部敌人即可通关，无需三队都存活。",
+            "单队失守，其余队伍仍可继续战斗。", "全队失守或超时则失败，回退至上一关。",
+        }
+        currentStage = SC.TERMINAL_NORMAL
+        Dialog.open()
+        time.elapsedTime = time.elapsedTime + 1
+        for _, language in ipairs({ "zh_CN", "zh_TW", "en", "ja", "ko" }) do
+            I18n.set(language)
+            draw()
+            local chunks, lastY = {}, 0
+            for _, record in ipairs(textRecords) do
+                if record.y >= 1000 and record.x == 331 then
+                    chunks[#chunks + 1] = record.text:gsub("%s", "")
+                    check(record.y > lastY and record.y < 1650, language .. "说明位于敌人行下且不越面板")
+                    check(utf8.len(record.text) * record.size * 0.6 <= 548,
+                        language .. "说明各行完整位于可用宽度")
+                    lastY = record.y
+                end
+            end
+            local expected = {}
+            for _, source in ipairs(rules) do
+                local translated = I18n.lookup(source)
+                check(language == "zh_CN" or translated ~= source, language .. "终焉规则有完整译文")
+                expected[#expected + 1] = translated:gsub("%s", "")
+            end
+            check(table.concat(chunks) == table.concat(expected), language .. "终焉说明无缺失或截断")
+        end
+        Dialog.close()
         I18n.set(initialLanguage)
         print("[stage_chapter_background_test] ALL PASS: " .. assertions .. " assertions")
     end)
+    restoreStageConfig()
     require, time = originalRequire, originalTime
     for name, value in pairs(savedGlobals) do _G[name] = value end
     if not ok then print("[stage_chapter_background_test] FAIL: " .. tostring(err)) end

@@ -154,6 +154,11 @@ local state = {
     chDragY   = nil,   -- 左栏按下位置
     chDragScroll = 0, -- 按下时滚动起点
     chDragMoved = false,
+    enemyScroll = {},  -- 各关卡独立的敌人预览横向偏移（设计像素）
+    enemyDragId = nil, ---@type number|nil
+    enemyDragX = nil,  ---@type number|nil
+    enemyDragScroll = 0,
+    enemyDragMoved = false,
 
     -- [选关 v3] 全链数据缓存（ensureCache 维护, 随 maxStage 变化重建）
     cacheGroups   = nil,  ---@type table[] 章节组列表
@@ -315,7 +320,7 @@ end
 
 --- 一关实际出场的敌人 id：常规怪 + 首领 + 首通附加怪
 ---@param entry table|nil
----@return number[]
+---@return {id: number, count: number}[]
 local function stageMonsterCards(entry)
     local cards = {}
     local counts = {}
@@ -372,6 +377,40 @@ local function chapterListBounds(groups)
     return top, bottom
 end
 
+-- 绘制裁剪、拖动热区与滚动边界共用同一块卡面视口；关卡标签不随卡面移动。
+local function enemyViewport(rowY)
+    return D.CARD_X, rowY + 8, D.MID_X + D.MID_W - D.CARD_X - 12, D.ROW_H - 16
+end
+
+local function enemyMaxScroll(id)
+    local cards = stageMonsterCards(SC.getStage(id))
+    local _, _, width = enemyViewport(0)
+    local contentWidth = math.max(0, #cards * (D.CARD_W + D.CARD_GAP) - D.CARD_GAP)
+    return math.max(0, contentWidth - width)
+end
+
+local function setEnemyScroll(id, value)
+    local offset = math.max(0, math.min(enemyMaxScroll(id), value))
+    state.enemyScroll[id] = offset
+    return offset
+end
+
+local function enemyRowAt(groups, x, y)
+    local sel = selectedGroup(groups)
+    if not sel then return nil end
+    for row, id in ipairs(sel.ids) do
+        local rowY = D.ROW_Y0 + (row - 1) * (D.ROW_H + D.ROW_GAP)
+        local vx, vy, vw, vh = enemyViewport(rowY)
+        if x >= vx and x <= vx + vw and y >= vy and y <= vy + vh then return id end
+    end
+    return nil
+end
+
+local function resetEnemyDrag()
+    state.enemyDragId, state.enemyDragX = nil, nil
+    state.enemyDragScroll, state.enemyDragMoved = 0, false
+end
+
 -- ======================== Public API ========================
 
 -- 按资源路径缓存，跨难度复用背景；失败限频重试，不永久缓存缺图。
@@ -407,8 +446,9 @@ local function drawChapterBackground(vg, stageId, x, y, hue, isSel, locked)
         -- 等比cover并居中裁切，圆角路径保持现有卡片热区与动画变换。
         local scale = math.max(D.CH_W / srcW, D.CH_BTN_H / srcH)
         local w, h = srcW * scale, srcH * scale
-        nvgFillPaint(vg, nvgImagePattern(vg, x + (D.CH_W - w) * 0.5,
-            y + (D.CH_BTN_H - h) * 0.5, w, h, 0, image, 1.0))
+        local paint = nvgImagePattern(vg, x + (D.CH_W - w) * 0.5,
+            y + (D.CH_BTN_H - h) * 0.5, w, h, 0, image, 1.0) --[[@as NVGpaint]]
+        nvgFillPaint(vg, paint)
         nvgFill(vg)
         nvgBeginPath(vg)
         nvgRoundedRect(vg, x, y, D.CH_W, D.CH_BTN_H, 12)
@@ -440,6 +480,8 @@ function StageSelectDialog.open(teamIdx)
     state.openTime = time.elapsedTime
     state.chDragY = nil
     state.chDragMoved = false
+    state.enemyScroll = {}
+    resetEnemyDrag()
     state.targetTeam = teamIdx
     local BS = require("ui.battle.scene.BattleScene")
     local curStage = BS.getStageId()
@@ -469,6 +511,7 @@ end
 function StageSelectDialog.close()
     state.open = false
     state.chDragY = nil
+    resetEnemyDrag()
 end
 
 function StageSelectDialog.isOpen()
@@ -492,14 +535,32 @@ function StageSelectDialog.handleScroll(wheel, x, y)
         and y >= top - 70 and y <= bottom + 70 then
         local maxScroll = math.max(0, #groups - D.CH_VISIBLE)
         state.chScroll = math.max(0, math.min(maxScroll, state.chScroll - wheel))
+    else
+        local id = enemyRowAt(groups, x, y)
+        if id then
+            local before = state.enemyScroll[id] or 0
+            local offset = setEnemyScroll(id, before - wheel * (D.CARD_W + D.CARD_GAP))
+            if state.enemyDragId == id then
+                -- 按住鼠标时滚轮也可能发生：同步拖动起点，后续移动不跳回旧偏移。
+                state.enemyDragScroll = state.enemyDragScroll + offset - before
+            end
+        end
     end
     return true
 end
 
 function StageSelectDialog.handleDragBegin(x, y)
     if not state.open then return false end
+    state.chDragY = nil
     state.chDragMoved = false
+    resetEnemyDrag()
     local groups = ensureCache()
+    local id = enemyRowAt(groups, x, y)
+    if id and enemyMaxScroll(id) > 0 then
+        state.enemyDragId, state.enemyDragX = id, x
+        state.enemyDragScroll = setEnemyScroll(id, state.enemyScroll[id] or 0)
+        return true
+    end
     local top, bottom = chapterListBounds(groups)
     if x >= D.CH_X and x <= D.CH_X + D.CH_W and y >= top and y <= bottom then
         state.chDragY = y
@@ -509,8 +570,14 @@ function StageSelectDialog.handleDragBegin(x, y)
     return true
 end
 
-function StageSelectDialog.handleDragMove(_, y)
+function StageSelectDialog.handleDragMove(x, y)
     if not state.open then return false end
+    if state.enemyDragId and state.enemyDragX then
+        local delta = state.enemyDragX - x
+        if math.abs(delta) >= 15 then state.enemyDragMoved = true end
+        if state.enemyDragMoved then setEnemyScroll(state.enemyDragId, state.enemyDragScroll + delta) end
+        return true
+    end
     if state.chDragY then
         local delta = state.chDragY - y
         if math.abs(delta) >= 15 then state.chDragMoved = true end
@@ -526,6 +593,8 @@ end
 function StageSelectDialog.handleDragEnd()
     if not state.open then return false end
     state.chDragY = nil
+    -- 保留 moved 到本次释放后的 handleInput；下一次按下会清理，防止滚动误进关。
+    state.enemyDragId, state.enemyDragX = nil, nil
     return true
 end
 
@@ -708,16 +777,6 @@ function StageSelectDialog.draw(vg)
         end
         nvgText(vg, x + 16, y + D.ROW_H - 34, sub, nil)
 
-        -- 终焉神殿额外说明：三队协同战（TerminalRaid 三队共池机制）
-        -- 单独一行放在 sub 下方：卡面与 xN 计数占满行右侧，同行放不下
-        if SC.isTerminalTemple(id) then
-            nvgFontFace(vg, "sans")
-            nvgFontSize(vg, 18)
-            nvgTextAlign(vg, NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE)
-            nvgFillColor(vg, nvgRGBA(0xC9, 0x97, 0x3B, locked and 140 or 220))
-            nvgText(vg, x + 16, y + D.ROW_H - 14, "可三队一起上场", nil)
-        end
-
         -- 推荐战力（行左中，v2.61 接线 / v2.63 图标化）：
         -- 口径 = battle-lab 开荒三人组无养成实测阈值（ml≤46 实测 / ml≤92 保守外推），
         -- 带装备养成的玩家实际需求更低，因此只做「达标提示」不做硬性门槛。
@@ -753,10 +812,15 @@ function StageSelectDialog.draw(vg)
 
         -- 敌人卡面（行右侧横排）
         local mids = stageMonsterCards(entry)
+        local vx, vy, vw, vh = enemyViewport(y)
+        local offset = setEnemyScroll(id, state.enemyScroll[id] or 0)
+        local maxEnemyScroll = enemyMaxScroll(id)
         local cardCY = y + 62
+        nvgSave(vg)
+        nvgIntersectScissor(vg, vx, vy, vw, vh)
         for ci, info in ipairs(mids) do
             local monsterId = info.id
-            local cardCX = D.CARD_X + (ci - 1) * (D.CARD_W + D.CARD_GAP) + D.CARD_W * 0.5
+            local cardCX = D.CARD_X + (ci - 1) * (D.CARD_W + D.CARD_GAP) + D.CARD_W * 0.5 - offset
             local card = ensureMonsterCard(vg, monsterId)
             if card >= 0 then
                 drawImageCover(vg, card, cardCX, cardCY, D.CARD_W, D.CARD_H, locked and 0.4 or 1.0)
@@ -786,8 +850,54 @@ function StageSelectDialog.draw(vg)
                 NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 255, 214, 120, 2,
                 { alpha = locked and 0.55 or 1 })
         end
+        nvgRestore(vg)
+        if maxEnemyScroll > 0 then
+            -- 横向轨道只在溢出时显示；位置与卡片偏移共用同一边界。
+            local trackY = y + D.ROW_H - 14
+            local contentWidth = vw + maxEnemyScroll
+            local thumbWidth = math.max(32, vw * vw / contentWidth)
+            local thumbX = vx + (vw - thumbWidth) * offset / maxEnemyScroll
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, vx, trackY, vw, 4, 2)
+            nvgFillColor(vg, nvgRGBA(201, 151, 59, 55))
+            nvgFill(vg)
+            nvgBeginPath(vg)
+            nvgRoundedRect(vg, thumbX, trackY, thumbWidth, 4, 2)
+            nvgFillColor(vg, nvgRGBA(201, 151, 59, locked and 110 or 210))
+            nvgFill(vg)
+        end
     end
     nvgRestore(vg)
+
+    if sel.ids[1] and SC.isTerminalTemple(sel.ids[1]) then
+        -- 终焉独立章只有一行：使用其下方空白，避免说明与卡面、计数挤在同行。
+        local left, width = D.MID_X + 16, D.MID_W - 32
+        local textY = D.ROW_Y0 + D.ROW_H + 42
+        local rules = {
+            "可三队一起上场",
+            "每队面对三名首领，同编号首领共享生命。",
+            "攻击、护盾和状态各队独立。",
+            "击败全部敌人即可通关，无需三队都存活。",
+            "单队失守，其余队伍仍可继续战斗。",
+            "全队失守或超时则失败，回退至上一关。",
+        }
+        for index, source in ipairs(rules) do
+            local fontSize = index == 1 and 26 or 22
+            local lines = titleLines(vg, source, width, fontSize)
+            for _, line in ipairs(lines) do
+                drawTextStroke(vg, left, textY, line, fontSize,
+                    NVG_ALIGN_LEFT + NVG_ALIGN_MIDDLE,
+                    index == 1 and 201 or 235, index == 1 and 151 or 230,
+                    index == 1 and 59 or 210, 2)
+                textY = textY + fontSize + 8
+            end
+            textY = textY + 10
+        end
+    else
+        drawFittedTitle(vg, D.MID_X + D.MID_W * 0.5, D.ROW_Y0 + 5 * (D.ROW_H + D.ROW_GAP) + 8,
+            "敌人较多时，可左右拖动查看", D.MID_W - 24, 20, 1,
+            NVG_ALIGN_CENTER + NVG_ALIGN_MIDDLE, 201, 151, 59, 2)
+    end
 
     nvgRestore(vg)
 end
@@ -802,8 +912,8 @@ function StageSelectDialog.handleInput(x, y)
 
     local BS = require("ui.battle.scene.BattleScene")
     local groups, maxOrder = ensureCache()
-    if state.chDragMoved then
-        state.chDragMoved = false
+    if state.chDragMoved or state.enemyDragMoved then
+        state.chDragMoved, state.enemyDragMoved = false, false
         return true
     end
     local maxScroll = math.max(0, #groups - D.CH_VISIBLE)

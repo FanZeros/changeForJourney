@@ -314,6 +314,23 @@ add("通关%s", "通關%s", "Clear %s", "%sをクリア", "%s 클리어")
 add("进度 %d/%d", "進度 %d/%d", "Progress %d/%d", "進行 %d/%d", "진행 %d/%d")
 add("一键领取 %d", "一鍵領取 %d", "Claim all %d", "%d件を一括受取", "%d개 일괄 수령")
 add("可三队一起上场", "可三隊一起上場", "All 3 squads can join", "3小隊で参加可能", "소대 3개 동시 참가 가능")
+add("每队面对三名首领，同编号首领共享生命。", "每隊面對三名首領，同編號首領共享生命。",
+    "Each squad faces all three bosses. Matching bosses share HP.",
+    "各小隊は3体のボスと戦い、同じ番号のボスはHPを共有。", "각 소대는 보스 3명과 싸우며, 같은 번호의 보스는 생명을 공유합니다.")
+add("攻击、护盾和状态各队独立。", "攻擊、護盾和狀態各隊獨立。",
+    "Attacks, shields and status effects are separate for each squad.",
+    "攻撃・シールド・状態効果は小隊ごとに独立。", "공격, 보호막, 상태 효과는 소대별로 독립적입니다.")
+add("击败全部敌人即可通关，无需三队都存活。", "擊敗全部敵人即可通關，無需三隊都存活。",
+    "Defeat all enemies to win. All three squads need not survive.",
+    "全ての敵を倒せばクリア。3小隊全ての生存は不要。", "모든 적을 쓰러뜨리면 승리합니다. 세 소대 모두 생존할 필요는 없습니다.")
+add("单队失守，其余队伍仍可继续战斗。", "單隊失守，其餘隊伍仍可繼續戰鬥。",
+    "If one squad falls, the others can keep fighting.",
+    "1小隊が全滅しても、他の小隊は戦闘を継続。", "한 소대가 전멸해도 나머지 소대는 계속 싸울 수 있습니다.")
+add("全队失守或超时则失败，回退至上一关。", "全隊失守或超時則失敗，回退至上一關。",
+    "If all squads fall or time runs out, you lose and return to the previous stage.",
+    "全小隊の全滅か時間切れで敗北し、前のステージに戻る。", "모든 소대가 전멸하거나 시간이 초과되면 패배하여 이전 스테이지로 돌아갑니다.")
+add("敌人较多时，可左右拖动查看", "敵人較多時，可左右拖動查看", "Drag left or right to view more enemies",
+    "敵が多い時は左右にドラッグして確認", "적이 많으면 좌우로 드래그해 확인하세요")
 add("未编队，请在右侧部署队员", "未編隊，請在右側部署隊員", "No squad. Deploy heroes on the right.", "未編成です。右側で隊員を配置してください", "미편성 상태입니다. 오른쪽에서 영웅을 배치하세요")
 
 add("%s %s 至 %s", "%s %s 至 %s", "%s %s to %s", "%s %s ～ %s", "%s %s ~ %s")

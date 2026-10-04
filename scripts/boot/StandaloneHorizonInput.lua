@@ -1413,11 +1413,11 @@ function Input.bind(ctx)
 
         -- 弹窗横跨三栏；任何位置的滚轮都交给选关，避免误滚角色列表。
         if BattleTriPage.isOpen() and StageSelectDialog.isOpen() then
-            BattleTriPage.handleScroll(wheel, sx, sy)
+            BattleTriPage.handleScroll(wheel, csx, csy)
             return
         end
         -- 装备袋只吃覆盖矩形内的滚轮，左右栏仍滚自己的列表
-        if BattleTriPage.handleScroll(wheel, sx, sy) then return end
+        if BattleTriPage.handleScroll(wheel, csx, csy) then return end
 
         -- 全屏战斗场景
         if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end

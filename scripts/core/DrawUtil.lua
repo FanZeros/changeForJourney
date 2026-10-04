@@ -3,6 +3,7 @@
 -- 统一 drawTextStroke，避免各 UI 模块重复定义
 -- ============================================================================
 
+local BattleLayout = require("core.BattleLayout")
 local DrawUtil = {}
 
 -- ============================================================================
@@ -101,11 +102,36 @@ function DrawUtil.drawImageCentered(vg, img, cx, cy, w, h, alpha)
     if img < 0 or alpha <= 0.01 then return end
     local x = cx - w * 0.5
     local y = cy - h * 0.5
-    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
     nvgFill(vg)
+end
+
+--- 完整卡面映射到可见框槽位，不用cover裁掉上下框。
+--- 930满幅卡面完整缩高；70%源图按已知框位置映射，出框元素保留。
+---@param vg any
+---@param img number
+---@param cx number
+---@param cy number
+---@param w number
+---@param h number
+---@param alpha number|nil
+function DrawUtil.drawCardImage(vg, img, cx, cy, w, h, alpha)
+    alpha = alpha or 1.0
+    if img < 0 or alpha <= 0.01 or w <= 0 or h <= 0 then return end
+    local srcW, srcH = nvgImageSize(vg, img)
+    if srcW == BattleLayout.CARD_SOURCE_W and srcH == BattleLayout.CARD_SOURCE_H then
+        local sx = w / BattleLayout.FRAME_REFERENCE_W
+        local sy = h / BattleLayout.FRAME_REFERENCE_H
+        local dw, dh = srcW * sx, srcH * sy
+        local x = cx - w * 0.5 - BattleLayout.FRAME_SOURCE_X * sx
+        local y = cy - h * 0.5 - BattleLayout.FRAME_SOURCE_Y * sy
+        DrawUtil.drawImageCentered(vg, img, x + dw * 0.5, y + dh * 0.5, dw, dh, alpha)
+        return
+    end
+    DrawUtil.drawImageCentered(vg, img, cx, cy, w, h, alpha)
 end
 
 --- 程序化双 chevron 箭头「》」：替代深色位图箭头（nvgImagePatternTinted 为相乘混合，
@@ -167,7 +193,7 @@ function DrawUtil.drawImageCover(vg, img, cx, cy, w, h, alpha)
     local y = cy - dh * 0.5
     nvgSave(vg)
     nvgIntersectScissor(vg, cx - w * 0.5, cy - h * 0.5, w, h)
-    local paint = nvgImagePattern(vg, x, y, dw, dh, 0, img, alpha)
+    local paint = nvgImagePattern(vg, x, y, dw, dh, 0, img, alpha) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, x, y, dw, dh)
     nvgFillPaint(vg, paint)
@@ -224,7 +250,7 @@ function DrawUtil.drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, 
     local dB = math.min(iBottom, dh * 0.5)
 
     if sMW <= 0 or sMH <= 0 then
-        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, img, 1.0)
+        local paint = nvgImagePattern(vg, dx, dy, dw, dh, 0, img, 1.0) --[[@as NVGpaint]]
         nvgBeginPath(vg)
         nvgRect(vg, dx, dy, dw, dh)
         nvgFillPaint(vg, paint)
@@ -266,7 +292,7 @@ function DrawUtil.drawNineSlice(vg, img, dx, dy, dw, dh, iTop, iRight, iBottom, 
                 py - sy * scaleY,
                 srcW * scaleX,
                 srcH * scaleY,
-                0, img, 1.0)
+                0, img, 1.0) --[[@as NVGpaint]]
             nvgBeginPath(vg)
             nvgRect(vg, px, py, pw, ph)
             nvgFillPaint(vg, paint)
@@ -535,7 +561,7 @@ function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
             nvgScale(vg, -1, 1)
             nvgTranslate(vg, -cx, -cy)
         end
-        local paint = nvgImagePattern(vg, cx - halfW, cy - h * 0.5, w, h, 0, seamBarImg, 1.0)
+        local paint = nvgImagePattern(vg, cx - halfW, cy - h * 0.5, w, h, 0, seamBarImg, 1.0) --[[@as NVGpaint]]
         nvgBeginPath(vg)
         nvgRect(vg, cx - halfW, cy - h * 0.5, w, h)
         nvgFillPaint(vg, paint)
@@ -548,8 +574,10 @@ function DrawUtil.drawBackSeamBar(vg, cx, cy, barW, h, dir, btnW, btnH)
     local halfW = barW * 0.5
 
     -- 1) 条体：垂直渐变深铁（上亮下暗），两端到屏幕边
+    local topColor = nvgRGBA(72, 52, 37, 255) --[[@as NVGcolor]]
+    local bottomColor = nvgRGBA(28, 20, 14, 255) --[[@as NVGcolor]]
     local paint = nvgLinearGradient(vg, cx, cy - h * 0.5, cx, cy + h * 0.5,
-        nvgRGBA(72, 52, 37, 255), nvgRGBA(28, 20, 14, 255))
+        topColor, bottomColor) --[[@as NVGpaint]]
     nvgBeginPath(vg)
     nvgRect(vg, cx - halfW, cy - h * 0.5, barW, h)
     nvgFillPaint(vg, paint)

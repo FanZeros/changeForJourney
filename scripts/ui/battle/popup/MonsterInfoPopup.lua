@@ -5,12 +5,13 @@
 
 local AD = require("systems.AttributeDef")
 local MC = require("config.MonsterConfig")
+local BattleLayout = require("core.BattleLayout")
 local BattleCombat = require("ui.battle.combat.BattleCombat")
 
 local M = {}
 
 local LONG_PRESS_THRESHOLD = 0.4
-local CARD_W, CARD_H = 198, 438
+local CARD_W, CARD_H = BattleLayout.CARD_W, BattleLayout.CARD_H
 local ENEMY_CARD_CY = 804
 
 local ATK_TYPE_NAMES = {

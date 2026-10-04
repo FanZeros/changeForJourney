@@ -8,6 +8,7 @@ local ART = require("systems.ArtifactRuntime")
 local MAS = require("systems.MapAffixSystem")
 local SC  = require("config.StageConfig")
 
+local BattleLayout      = require("core.BattleLayout")
 local BattleCombat      = require("ui.battle.combat.BattleCombat")
 local StageBerserk     = require("ui.battle.stage.StageBerserk")
 local BattleDraw        = require("ui.battle.scene.BattleDraw")
@@ -54,8 +55,8 @@ local DESIGN_W = 1080
 local MAP_W, MAP_H = 1080, 2400
 local MAP_CX, MAP_CY = 540, 1200
 
--- 卡片尺寸（BattleDraw/BattleCombat 各自有副本，此处仅供本文件布局引用）
-local CARD_W, CARD_H = 198, 438
+-- 卡片尺寸与敌我绘制共用同一事实源
+local CARD_W, CARD_H = BattleLayout.CARD_W, BattleLayout.CARD_H
 
 -- 敌方战场阴影
 local ENEMY_SHADOW_CX, ENEMY_SHADOW_CY = 540, 804
@@ -67,21 +68,21 @@ local ALLY_SHADOW_W, ALLY_SHADOW_H   = 1080, 556
 
 -- 敌方卡片组 基准坐标（单卡时的 X=540）
 local ENEMY_CARD_CY      = 804
-local ENEMY_TAG_OFFSET_Y  = -215
-local ENEMY_NAME_OFFSET_Y = 102
-local ENEMY_HP_BG_OFFSET_Y = 165
-local ENEMY_HP_VAL_OFFSET_Y = 147
+local ENEMY_TAG_OFFSET_Y  = -CARD_H * 0.5 + 4
+local ENEMY_NAME_OFFSET_Y = CARD_H * 0.5 - 117
+local ENEMY_HP_BG_OFFSET_Y = CARD_H * 0.5 - 54
+local ENEMY_HP_VAL_OFFSET_Y = CARD_H * 0.5 - 72
 local ENEMY_ATK_BG_OFFSET_Y = 181
-local ENEMY_LVL_OFFSET_Y = 215
+local ENEMY_LVL_OFFSET_Y = CARD_H * 0.5 - 4
 
 -- 己方卡片组 基准坐标
 local ALLY_CARD_CY       = 1760
-local ALLY_TAG_OFFSET_Y   = -215
-local ALLY_NAME_OFFSET_Y  = 85
-local ALLY_HP_BG_OFFSET_Y = 153
-local ALLY_HP_VAL_OFFSET_Y = 135
+local ALLY_TAG_OFFSET_Y   = -CARD_H * 0.5 + 4
+local ALLY_NAME_OFFSET_Y  = CARD_H * 0.5 - 134
+local ALLY_HP_BG_OFFSET_Y = CARD_H * 0.5 - 66
+local ALLY_HP_VAL_OFFSET_Y = CARD_H * 0.5 - 84
 local ALLY_ATK_BG_OFFSET_Y = 181
-local ALLY_LVL_OFFSET_Y  = 215
+local ALLY_LVL_OFFSET_Y  = CARD_H * 0.5 - 4
 
 -- 关卡名 / 按钮坐标（合并到 table 减少 local 占用）
 local NAV = BattleStageNav.NAV

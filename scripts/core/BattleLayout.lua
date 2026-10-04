@@ -21,15 +21,29 @@ function BattleLayout.setMode(m)
     end
 end
 
--- ---- 卡片原始尺寸（两模式通用；strip 渲染时乘 CARD_SCALE）----
+-- ---- 可见卡框比例：宽度不变，高度统一按70%制作参考框538x955计算 ----
+BattleLayout.FRAME_REFERENCE_W = 538
+BattleLayout.FRAME_REFERENCE_H = 955
+
+---@param width number
+---@return number
+function BattleLayout.cardHeightForWidth(width)
+    return width * BattleLayout.FRAME_REFERENCE_H / BattleLayout.FRAME_REFERENCE_W
+end
+
+-- 卡片原始尺寸（敌我、两模式通用；strip 渲染时乘 CARD_SCALE）
 BattleLayout.CARD_W = 198
-BattleLayout.CARD_H = 438
+BattleLayout.CARD_H = BattleLayout.cardHeightForWidth(BattleLayout.CARD_W)
+
+-- 70%整卡源图的可见框；外围透明留白和出框元素不计入槽位尺寸。
+BattleLayout.CARD_SOURCE_W, BattleLayout.CARD_SOURCE_H = 768, 1365
+BattleLayout.FRAME_SOURCE_X, BattleLayout.FRAME_SOURCE_Y = 115, 205
 
 -- ======================== strip 模式（三行并行战斗条带） ========================
 -- 条带设计空间 = 948x360（窗口像素 1:1，由 BattleTriPage 逐行平移/裁剪）
 BattleLayout.STRIP_W     = 948
 BattleLayout.STRIP_H     = 360
-BattleLayout.CARD_SCALE  = 0.48                       -- 条带内卡牌缩放(95x210)
+BattleLayout.CARD_SCALE  = 0.48                       -- 条带内卡牌缩放(约95x169，宽度不变)
 BattleLayout.STRIP_CY    = BattleLayout.STRIP_H * 0.5         -- 180
 BattleLayout.STRIP_MARGIN = 30                            -- 两端留白
 BattleLayout.STRIP_PITCH  = 100                     -- 同阵营卡间距（中心距）

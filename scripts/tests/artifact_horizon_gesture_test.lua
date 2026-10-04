@@ -497,6 +497,7 @@ function Start()
     if ok then
         print("[artifact_horizon_gesture_test] ALL PASS: " .. assertions .. " assertions")
     else
+        print("[artifact_horizon_gesture_test] FAIL after " .. assertions .. " assertions: " .. tostring(err))
         log:Write(LOG_ERROR, "[artifact_horizon_gesture_test] FAIL after " .. assertions .. " assertions: " .. tostring(err))
     end
     engine:Exit()

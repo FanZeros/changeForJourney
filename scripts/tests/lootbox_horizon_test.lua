@@ -1,5 +1,6 @@
 -- 横屏遗匣路由回归：用内存窗口/输入替身驱动真实宿主事件函数。
 function Start()
+    print("[lootbox_horizon_test] 开始隔离输入回归")
     local originalRequire = require
     local originalInput, originalTime = input, time
     local cursor = { x = 180, y = 400 }
@@ -62,7 +63,6 @@ function Start()
     end
     package.loaded["boot.StandaloneHorizon"] = nil
     originalRequire("boot.StandaloneHorizon")
-    require = originalRequire
     local wheel = { Wheel = { GetInt = function() return -1 end } }
     HandleMouseWheelHorizon("MouseWheel", wheel)
     assert(counters.loot == 1 and counters.bag == 0, "左栏滚轮不能被装备袋抢走")
@@ -102,6 +102,7 @@ function Start()
     time.elapsedTime = 103
     HandleMouseButtonUpHorizon("MouseButtonUp", button)
     assert(counters.close == 1 and not pageOpen, "中缝返回按窗口坐标正确关闭")
+    require = originalRequire
     input, time = originalInput, originalTime
     for key in pairs(RT) do RT[key] = nil end
     for key, value in pairs(originalRT) do RT[key] = value end

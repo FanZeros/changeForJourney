@@ -234,8 +234,8 @@ function Start()
                         for sx = 0, RT.logicalW do
                             if captured.seamHitAt(sx, seamY) then seamX = sx; break end
                         end
-                        check(seamX ~= nil, "真实返回条命中存在")
-                        if seamX then click(seamX, seamY) end
+                        check(seamX == nil, "教程期间下层返回条不绘制也不命中")
+                        click(RT.logicalW * 0.5, seamY)
                         noBusiness("非目标返回条")
                         check(TM.getProgress().step == before and state.detail, "返回条 down/up 不推进或dismiss")
                     end)

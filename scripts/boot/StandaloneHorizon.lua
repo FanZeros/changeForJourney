@@ -40,6 +40,7 @@ local BattleTriPage     = require("ui.battle.tri.BattleTriPage")
 local SweepDialog       = require("ui.battle.stage.SweepDialog")
 local DamageStatsPanel  = require("ui.battle.popup.DamageStatsPanel")
 local StageSelectDialog = require("ui.battle.stage.StageSelectDialog")
+local TerminalConfirmDialog = require("ui.battle.popup.TerminalConfirmDialog")
 local BattleLayout      = require("core.BattleLayout")
 local ProjectileSystem  = require("ui.battle.combat.ProjectileSystem")
 local BattleEffects     = require("ui.battle.combat.BattleEffects")
@@ -344,12 +345,27 @@ end
 --- [三队并行] 中缝返回键列表：左页‹（左框柱）/ 详情›（右框柱），两级二级页可同时存在
 --- 各占一个框柱位，互不竞争（此前 if/else 单按钮，左右同开时只能活一个）
 --- [锻炉双页 0929] 锻炉页移中栏：其返回条挂在锻炉右缘（中栏右分界线），三行/非三行都绘制
+-- 与绘制层级共用：全窗覆盖期间不显示、也不命中下层返回条。
+local function seamInputBlocked()
+    return not bootReady_() or CEPanel.isOpen() or HeroRosterPanel.isVisible()
+        or PlayerInfoPanel.isOpen() or OfflineRewardPanel.isOpen() or LevelUpPopup.isOpen()
+        or UpdateNoticePopup.isOpen() or DarkTitleScreen.isOpen() or StartScreen.isOpen()
+        or LetterIntro.isOpen() or IntroCutscene.isActive() or ScenarioDialogue.isActive()
+        or TutorialManager.isActive() or DungeonBattleScene.isOpen() or TowerBattleScene.isActive()
+        or (RewardPopup.isOpen() and not RewardPopup.currentRowTag())
+        or SweepDialog.isOpen() or DamageStatsPanel.isOpen() or StageSelectDialog.isOpen()
+        or TerminalConfirmDialog.isOpen()
+end
+
 local function seamBackList()
     local list = {}
+    if seamInputBlocked() then return list end
     local tri = BattleTriPage.isOpen()
-    local psL = logicalH() / 1080
-    local cs = psL * 0.45                    -- 面板内容缩放(设计→窗口),与 Viewport.DS 一致
-    local barW = logicalH() * DrawUtil.SEAMBAR_ASPECT  -- 素材实际等比,与绘制共用;条中心骑在页面分界线上
+    local psL = tri and (logicalH() / 1080) or H_s
+    local cs = psL * Viewport.DS
+    local barH = Viewport.PH * psL
+    local barY = tri and 0 or H_oy
+    local barW = barH * DrawUtil.SEAMBAR_ASPECT
     local DIST = 1080                         -- 页面设计宽:滑入全程
 
     if tri then
@@ -358,8 +374,9 @@ local function seamBackList()
             local ot, ct, od, cd = CharacterDetail.getSeamAnim()
             local oxWin = DrawUtil.seamSlideX(1, ot, ct, od, cd, DIST) * cs
             list[#list + 1] = {
+                id = "character", generation = ot, closing = ct > 0 and ct >= ot,
                 cx = (logicalW() - 486 * psL) - barW * 0.5 + oxWin,
-                sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "right",
+                sw = barW, sh = barH, top = barY, bw = 0, bh = 0, dir = "right",
                 close = function() CharacterDetail.close() end,
             }
         end
@@ -374,34 +391,48 @@ local function seamBackList()
         -- 中/右栏分界线窗口坐标：三行 = 972*ps；非三行 = H_ox + 972*H_s
         local seamX = tri and (972 * psL) or (H_ox + 972 * H_s)
         list[#list + 1] = {
+            id = "smith", generation = ot, closing = ct > 0 and ct >= ot,
             cx = seamX + barW * 0.5 + oxWin,
-            sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
+            sw = barW, sh = barH, top = barY, bw = 0, bh = 0, dir = "left",
             close = function() BlacksmithPage.close() end,
         }
     end
 
     -- 左框柱 ‹：左栏二级页（仓库/教堂/酒馆/市场）——条贴页面右缘(前缘),同步推进
     -- [锻炉双页 0929] 锻炉打开时仓库左栏条不画（双页整体由锻炉右侧竖栏一键关闭）
-    if tri then
-        local leftClose, leftAnim, leftScale
-        if LootBoxPage.isOpen() then
+    if tri or (BackpackPanel.isOpen() and BackpackPanel.isLeftMode() and not BlacksmithPage.isOpen()) then
+        local leftClose, leftAnim, leftScale, leftId
+        if tri and LootBoxPage.isOpen() then
+            leftId = "loot"
             leftClose = function() LootBoxPage.close() end
             leftAnim = { LootBoxPage.getSeamAnim() }
-        elseif TaskPage.isOpen() then
+        elseif tri and TaskPage.isOpen() then
+            leftId = "task"
             leftClose = function() TaskPage.close() end
             leftAnim = { TaskPage.getSeamAnim() }
         elseif BackpackPanel.isOpen() and BackpackPanel.isLeftMode()
             and not BlacksmithPage.isOpen() then
+            leftId = "backpack"
             leftClose = function() BackpackPanel.close() end
             leftAnim = { BackpackPanel.getSeamAnim() }
-        elseif TalentPage.isOpen()     then leftClose = function() TalentPage.close() end
+        elseif tri and TalentPage.isOpen() then
+            leftId = "talent"
+            leftClose = function() TalentPage.close() end
             leftAnim = { TalentPage.getSeamAnim() }
             leftScale = TalentPage.getHorizonWidthScale()
-        elseif ChurchPage.isOpen()     then leftClose = function() ChurchPage.close() end
+        elseif tri and ChurchPage.isOpen() then
+            leftId = "church"
+            leftClose = function() ChurchPage.close() end
             leftAnim = { ChurchPage.getSeamAnim() }
-        elseif TavernPage.isOpen()      then leftClose = function() TavernPage.close() end
+        elseif tri and TavernPage.isOpen() then
+            leftId = "tavern"
+            leftClose = function()
+                if not TavernPage.isRecruitBusy() then TavernPage.close() end
+            end
             leftAnim = { TavernPage.getSeamAnim() }
-        elseif MarketPage.isOpen()      then leftClose = function() MarketPage.close() end
+        elseif tri and MarketPage.isOpen() then
+            leftId = "market"
+            leftClose = function() MarketPage.close() end
             leftAnim = { MarketPage.getSeamAnim() }
         end
         if leftClose then
@@ -412,8 +443,10 @@ local function seamBackList()
             -- 左面板右缘窗口坐标：三行 = 486*ps*scale；非三行 = H_ox + 486*H_s*scale
             local leftEdge = tri and (486 * psL * scale) or (H_ox + 486 * H_s * scale)
             list[#list + 1] = {
+                id = leftId, generation = leftAnim[1],
+                closing = leftAnim[2] > 0 and leftAnim[2] >= leftAnim[1],
                 cx = leftEdge + barW * 0.5 + oxWin,
-                sw = barW, sh = logicalH(), bw = 0, bh = 0, dir = "left",
+                sw = barW, sh = barH, top = barY, bw = 0, bh = 0, dir = "left",
                 close = leftClose,
             }
         end
@@ -432,7 +465,7 @@ end
 ---@return table|nil
 local function seamHitAt(sx, sy)
     for _, seamBtn in ipairs(seamBackList()) do
-        local arrowY = seamBtn.sh * DrawUtil.SEAMBAR_ARROW_Y
+        local arrowY = seamBtn.top + seamBtn.sh * DrawUtil.SEAMBAR_ARROW_Y
         local arrowH = seamBtn.sh * 0.16
         if math.abs(sx - seamBtn.cx) <= seamBtn.sw * 0.5
             and math.abs(sy - arrowY) <= arrowH * 0.5 then
@@ -441,6 +474,57 @@ local function seamHitAt(sx, sy)
     end
     return nil
 end
+
+-- 返回条独占从箭头开始的手势；从其它栏拖到箭头的释放不算返回。
+local seamPress = nil ---@type table|nil
+local seamGesture = {}
+local function seamFrame()
+    return { logicalW(), logicalH(), dpr(), RT.frameScale or 1, RT.frameOx or 0,
+        RT.frameOy or 0, BattleTriPage.isOpen(), H_ox, H_oy, H_s, windowW(), windowH() }
+end
+local function seamPressValid(sx, sy, blocked)
+    if not seamPress or blocked then return false end
+    local hit = seamHitAt(sx, sy)
+    if not hit or hit.closing or hit.id ~= seamPress.id or hit.generation ~= seamPress.generation then
+        return false
+    end
+    local frame = seamFrame()
+    for i, value in ipairs(seamPress.frame) do
+        if frame[i] ~= value then return false end
+    end
+    return math.abs(sx - seamPress.x) + math.abs(sy - seamPress.y) < 15
+end
+function seamGesture.down(sx, sy, blocked)
+    seamPress = nil
+    if blocked then return false end
+    local hit = seamHitAt(sx, sy)
+    if not hit then return false end
+    seamPress = { id = hit.id, generation = hit.generation, x = sx, y = sy,
+        frame = seamFrame(), cancelled = hit.closing }
+    return true
+end
+function seamGesture.move(sx, sy, blocked)
+    if not seamPress then return false end
+    if not seamPressValid(sx, sy, blocked) then seamPress.cancelled = true end
+    return true
+end
+function seamGesture.up(sx, sy, blocked)
+    if not seamPress then return false end
+    local close = not seamPress.cancelled and seamPressValid(sx, sy, blocked)
+    local hit = close and seamHitAt(sx, sy)
+    seamPress = nil
+    if hit then
+        local EquipmentDetail = require("ui.character.equip.EquipmentDetail")
+        if EquipmentDetail.isCompactCorner() then EquipmentDetail.close() end
+        print("[SeamBack] close id=" .. tostring(hit.id))
+        hit.close()
+    end
+    return true
+end
+function seamGesture.cancel()
+    if seamPress then seamPress.cancelled = true end -- 保留所有权，直到旧手势释放。
+end
+function seamGesture.hasPress() return seamPress ~= nil end
 
 local function equipmentOwnerPanel(owner)
     if owner == "character" or owner == "bag" then return "right" end
@@ -485,6 +569,7 @@ end
 
 function HandleNanoVGRenderHorizon()
     if not vg() then return end
+    if seamPress and seamInputBlocked() then seamGesture.cancel() end
     TutorialManager.clearHotspots()
     HorizonUpdateTransform()
     nvgBeginFrame(vg(), windowW(), windowH(), dpr())
@@ -639,7 +724,7 @@ function HandleNanoVGRenderHorizon()
         -- 背包上层补画后再压暗侧栏，保持全局弹窗的遮罩在背包之上。
         HorizonDimSidePanels()
         for _, seamBtn in ipairs(seamBackList()) do
-            DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
+            DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, seamBtn.top + seamBtn.sh * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
     end
@@ -739,7 +824,7 @@ function HandleNanoVGRenderHorizon()
         drawWideTalentPage(0, 0, logicalH() / 1080)
         -- [三队并行] 中缝返回条（窗口坐标，页面视口之外）：全高门柱边条，左页‹ / 详情›，两级并存各自绘制
         for _, seamBtn in ipairs(seamBackList()) do
-            DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, logicalH() * 0.5,
+            DrawUtil.drawBackSeamBar(vg(), seamBtn.cx, seamBtn.top + seamBtn.sh * 0.5,
                 seamBtn.sw, seamBtn.sh, seamBtn.dir, seamBtn.bw, seamBtn.bh)
         end
         -- 玩家信息已画在左栏视口内。三行路径会提前 return，必须在这里再画一层全窗居中，
@@ -851,6 +936,8 @@ require('boot.StandaloneHorizonInput').bind({
     talentPageRightEdge = talentPageRightEdge,
     equipOverlayDesign = equipOverlayDesign,
     seamHitAt = seamHitAt,
+    seamGesture = seamGesture,
+    seamInputBlocked = seamInputBlocked,
     RT = RT,
     Viewport = Viewport,
     artifactGesture = artifactOverlay,

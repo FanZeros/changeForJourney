@@ -1,13 +1,333 @@
 -- 三队共享首通链回归：真实 Page/Scene/Boot/Driver/StoryPlayer/SyncBattleState。
 -- 页面和奖励出口使用内存替身，不读取或覆盖玩家存档，不运行随机战斗。
-local assertions = 0
+local assertions, failures = 0, 0
 local function check(value, label)
     assertions = assertions + 1
-    assert(value, label)
-    print("[tri_clear_unlock] PASS " .. label)
+    if not value then failures = failures + 1 end
+    print("[tri_clear_unlock] " .. (value and "PASS " or "FAIL ") .. label)
+end
+
+local function runCase(label, fn)
+    local before = assertions
+    local ok, err = pcall(fn)
+    if not ok then check(false, label .. " 异常: " .. tostring(err)) end
+    print(string.format("[tri_clear_unlock] CASE %s assertions=%d", label, assertions - before))
+end
+
+-- 每个子例独立编译业务模块：真实结算/奖励/镜像/分发/消息桥/恢复，
+-- 只替换战斗资源、UI、钱包及存档出口，不复用生产模块的私有状态。
+local function runBattleLedgerCases(nativeRequire)
+    local function noop() end
+    local function stub(fields)
+        return setmetatable(fields or {}, { __index = function() return noop end })
+    end
+    local function source(name)
+        local f = assert(cache:GetFile(name:gsub("%.", "/") .. ".lua"))
+        local lines = {}
+        while not f:IsEof() do lines[#lines + 1] = f:ReadLine() end
+        f:Dispose()
+        return table.concat(lines, "\n")
+    end
+    local SC = nativeRequire("config.StageConfig")
+    local AD = nativeRequire("systems.AttributeDef")
+    local schema = nativeRequire("shared.battle.BattleSchema")
+    local real = {
+        ["ui.battle.scene.BattleScene"] = true,
+        ["ui.battle.scene.BattleDataRestore"] = true,
+        ["ui.battle.tri.BattleTriDriver"] = true,
+        ["ui.battle.tri.BattleTriPage"] = true,
+        ["ui.battle.tri.TerminalRaid"] = true,
+        ["ui.battle.stage.BattleEnemySpawn"] = true,
+        ["boot.StandaloneBoot"] = true,
+        ["runtime.ClientDispatcher"] = true,
+        ["runtime.ClientMessageHandler"] = true,
+    }
+    local function fixture(stageId, maxId, cleared, preserveNumericKeys)
+        local env = setmetatable({}, { __index = _G })
+        env._G = env
+        env.time = { elapsedTime = 0 }
+        local modules = {}
+        local wallet = { gold = 0, gems = 0, essence = 0, arcaneDust = 0,
+            goldenKey = 0, corruptStone = 0, sacredStone = 0, exp = 0 }
+        local firstCalls, updates, restores, saves = 0, 0, 0, 0
+        local outgoing = {}
+        local lastRestoreData
+        local function unit(id, hero)
+            return { hp = 1000, maxHp = 1000, monsterId = id, heroId = hero and id or nil,
+                attrs = { final = { [AD.HP] = 1000, [AD.MAX_HP] = 1000 }, tickEnergyShield = noop },
+                goldReward = 0, expReward = 0 }
+        end
+        local ally = unit(1, true)
+        local gameState = stub({ getName = function() return "账本测试" end,
+            addExp = function(amount) wallet.exp = wallet.exp + amount end })
+        for _, field in ipairs({ "gold", "gems", "essence", "arcaneDust", "goldenKey", "corruptStone", "sacredStone" }) do
+            local suffix = field:sub(1, 1):upper() .. field:sub(2)
+            gameState["get" .. suffix] = function() return wallet[field] end
+            gameState["set" .. suffix] = function(value) wallet[field] = value end
+        end
+        modules["config.StageConfig"] = SC
+        modules["systems.AttributeDef"] = AD
+        modules["config.ExpTable"] = stub({ TEAM_COUNT = 3, getUnlockedTeamCount = function() return 1 end })
+        modules["shared.StageProvider"] = { Get = function() return SC end }
+        modules["shared.ModuleRegistry"] = { applyOnLoad = function(name, data)
+            if name == "battle" then schema.Fields.battle.onLoad(data) end
+        end }
+        modules["shared.schemas.CharacterSchema"] = { applyOnLoad = noop }
+        modules["core.GameState"] = gameState
+        modules["core.I18n"] = { lookup = function(text) return text end }
+        modules["core.BattleLayout"] = stub({ MAX_PER_SIDE = 4, FIELD_CY = 180, STRIP_W = 948, STRIP_CY = 180 })
+        modules["config.MonsterConfig"] = { createMonster = function(id) return unit(id, false) end }
+        modules["ui.character.panel.CharacterPanel"] = stub({
+            getTeamSignature = function() return "ledger-team-1" end,
+            getDeployedTeam = function() return { ally } end })
+        modules["ui.battle.stage.BattleStageNav"] = { NAV = {} }
+        modules["ui.battle.stage.BattleSpeed"] = { MAX_SPEED = 1 }
+        modules["ui.battle.stage.BattleStageLoad"] = { load = function(ctx, id)
+            ctx.currentStageId = id
+            ctx.isFirstClear = not ctx.clearedStages[id]
+        end }
+        modules["ui.battle.stage.BattleStageNavLogic"] = { bind = function() return stub() end }
+        modules["ui.battle.scene.BattleAllyLifecycle"] = { bind = function() return stub() end }
+        modules["systems.OfflineCalc"] = { resolveIdleStageAnchors = function() return stageId, stageId end,
+            calcOnlineIdleRewards = function() return {} end }
+        modules["systems.BattleTimeout"] = { calcMult = function() return 1 end }
+        modules["systems.DropSystem"] = stub({ generateFirstClearEquips = function() return {} end,
+            generateFirstClearScrolls = function() return nil end,
+            rollKillDrop = function() return nil end, rollScrollDrop = function() return nil end })
+        modules["systems.LootBoxSystem"] = stub({ getTotalCount = function() return 0 end })
+        modules["boot.StandaloneSave"] = { Flush = function() saves = saves + 1 end }
+        modules["ui.story.gate.LetterIntro"] = { isOpen = function() return false end }
+        modules["ui.story.gate.IntroCutscene"] = { isActive = function() return false end }
+        modules["ui.story.ScenarioDialogue"] = { isActive = function() return false end }
+        for _, name in ipairs({ "ui.battle.combat.BattleCombat", "ui.battle.combat.ProjectileSystem",
+            "systems.ThreatManager", "systems.TalentManager", "ui.battle.combat.BattleEffects",
+            "systems.StatusEffectManager" }) do
+            modules[name] = stub({ newState = function() return {} end,
+                newBattleRefs = function() return {} end, newFxState = function() return {} end,
+                newSemState = function() return {} end })
+        end
+        env.require = function(name)
+            if modules[name] then return modules[name] end
+            local module
+            if real[name] then
+                module = assert(load(source(name), "@" .. name, "t", env))()
+            else
+                module = stub()
+            end
+            modules[name] = module
+            return module
+        end
+        local Scene = env.require("ui.battle.scene.BattleScene")
+        local Dispatcher = env.require("runtime.ClientDispatcher")
+        local Msg = env.require("runtime.ClientMessageHandler")
+        local setData = Scene.setBattleData
+        Scene.setBattleData = function(data)
+            restores = restores + 1
+            lastRestoreData = data
+            return setData(data)
+        end
+        Msg.setup({ sendAction = noop })
+        Msg.setupDataSubscriptions()
+        local update = Dispatcher.handleStateUpdate
+        Dispatcher.handleStateUpdate = function(json)
+            local decoded = cjson.decode(json)
+            if decoded.modules and decoded.modules.battle then
+                updates = updates + 1
+                outgoing[#outgoing + 1] = decoded.modules.battle
+            end
+            return update(json)
+        end
+        -- 测试模块仅在独立 Dispatcher 中注入；不经玩家存档 RestoreData。
+        Dispatcher.set("equipment", { inventory = {}, equipped = {}, nextSeq = 1 })
+        Dispatcher.set("lootbox", { seeds = {} })
+        Dispatcher.set("session", { introCompleted = true, claimedScenarios = {} })
+        local battle = {
+            currentStageId = stageId, maxStageId = maxId, clearedStages = cleared or {},
+            teamStageIds = { ["1"] = stageId }, battleMode = "idle", idleAccumSec = 17,
+        }
+        if preserveNumericKeys then
+            -- 真实set保留数字键，仍经真实onAnyUpdate→Msg→Restore；后续Sync走JSON。
+            Dispatcher.set("battle", battle)
+        else
+            Dispatcher.handleStateUpdate(cjson.encode({ modules = { battle = battle } }))
+        end
+        env.require("boot.StandaloneBoot").run({ vg = {}, localSendAction = noop })
+        local forward = Scene.onFirstClear
+        Scene.onFirstClear = function(id, team)
+            firstCalls = firstCalls + 1
+            return forward(id, team)
+        end
+        local syncSource = assert(source("boot.Standalone"):match("(local battleSync =.-)\nlocal physW"))
+        env.BattleScene, env.ClientDispatcher, env.cjson = Scene, Dispatcher, cjson
+        local sync = assert(load(syncSource .. "\nreturn SyncBattleState", "@正式SyncBattleState", "t", env))()
+        local Driver = env.require("ui.battle.tri.BattleTriDriver")
+        local makeDriver = Driver.new
+        local drivers = {}
+        Driver.new = function(team, options)
+            local driver = makeDriver(team, options)
+            drivers[team] = driver
+            return driver
+        end
+        return { scene = Scene, dispatcher = Dispatcher, wallet = wallet, env = env, drivers = drivers,
+            page = env.require("ui.battle.tri.BattleTriPage"), sync = sync,
+            firstCalls = function() return firstCalls end,
+            counters = function() return updates, restores, saves end,
+            outgoing = outgoing, lastRestoreData = function() return lastRestoreData end }
+    end
+    local function marked(data, id)
+        local cleared = data.clearedStages or {}
+        return cleared[id] == true or cleared[tostring(id)] == true
+    end
+    local function victory(f)
+        if not f.page.isOpen() then f.page.open() end
+        local driver = assert(f.drivers[1])
+        -- 仅设置敌方死亡边界；真实Page回调、Driver补位、胜利及行军均不替换。
+        driver.introTimer = 0
+        for frame = 1, 40 do
+            for _, enemy in ipairs(driver.enemies) do
+                enemy.hp = 0
+                enemy.attrs.final[AD.HP] = 0
+            end
+            f.env.time.elapsedTime = f.env.time.elapsedTime + 1
+            f.page.update(1)
+            if driver._clearReported then return driver end
+        end
+        error("真实 Driver 未触发胜利")
+    end
+    runCase("B01 最高关真实胜利→两Sync→再次胜利", function()
+        local f = fixture(34505, 34505, {})
+        check(SC.getNextStageId(34505) == nil, "最高关确实没有下一节点")
+        local firstDriver = victory(f)
+        check(f.firstCalls() == 1 and marked(f.dispatcher.get("battle"), 34505)
+            and f.scene.getClearedStages()[34505], "第一次真实胜利写入双源且回调一次")
+        local gold = SC.getStage(34505).fcGold
+        check(f.wallet.gold == gold, "第一次真实Boot金币到账86300")
+        f.sync(1.1)
+        check(f.scene.getClearedStages()[34505] and marked(f.dispatcher.get("battle"), 34505),
+            "第一次同步恢复保持最高关双源首通")
+        f.sync(1.1)
+        check(f.scene.getClearedStages()[34505] and marked(f.dispatcher.get("battle"), 34505),
+            "第二次同步恢复不能把丢标传播到永久账本")
+        local updates, restored = f.counters()
+        check(updates >= 2 and restored >= 2 and f.lastRestoreData() == f.dispatcher.get("battle"),
+            "真实Dispatcher→Msg→Scene Restore确已执行而非手工回灌")
+        firstDriver:update(1)
+        check(firstDriver.stageId == 34505 and not firstDriver._clearReported, "无下一关经真实advanceStage重开")
+        victory(f)
+        check(f.firstCalls() == 1 and f.wallet.gold == gold, "再次真实胜利首通回调仍一次且金币不重复")
+        check(f.wallet.exp == SC.getStage(34505).fcExp and f.wallet.gems == SC.getStage(34505).fcDiamond,
+            "再次胜利经验与钻石也只有一份")
+        f.page.close()
+    end)
+    for _, keyKind in ipairs({ "number", "string" }) do
+        runCase("B01 最高关已通恢复 " .. keyKind, function()
+            local key = keyKind == "number" and 34505 or "34505"
+            local f = fixture(34505, 34505, { [key] = true }, keyKind == "number")
+            check(f.scene.getClearedStages()[34505] and marked(f.dispatcher.get("battle"), 34505),
+                keyKind .. "最高关恢复保留双源标记")
+            f.sync(1.1)
+            f.sync(1.1)
+            check(f.scene.getClearedStages()[34505] and marked(f.dispatcher.get("battle"), 34505),
+                keyKind .. "最高关两次同步保持标记")
+            victory(f)
+            check(f.firstCalls() == 0 and f.wallet.gold == 0, keyKind .. "已通最高关再胜利不发首通")
+            check(f.scene.getStageId() == 34505 and f.dispatcher.get("battle").currentStageId == 34505,
+                keyKind .. "最高关不伪造下一关")
+            f.page.close()
+        end)
+    end
+    for _, keyKind in ipairs({ "number", "string" }) do
+        runCase("B01 普通中断推进 " .. keyKind, function()
+            local key = keyKind == "number" and 1305 or "1305"
+            local f = fixture(1305, 1305, { [key] = true }, keyKind == "number")
+            check(f.scene.getStageId() == 1305 and f.scene.getClearedStages()[1305],
+                keyKind .. "普通已通当前关恢复不删首通且不自动推进")
+            f.sync(1.1)
+            f.sync(1.1)
+            check(marked(f.dispatcher.get("battle"), 1305) and f.scene.getClearedStages()[1305],
+                keyKind .. "普通中断两次同步保留双源首通")
+            check(f.scene.getStageId() == 1305 and f.dispatcher.get("battle").currentStageId == 1305
+                and f.dispatcher.get("battle").battleMode == "idle", keyKind .. "已通普通关保留合法当前位置与idle")
+            victory(f)
+            check(f.firstCalls() == 0 and f.wallet.gold == 0, keyKind .. "中断恢复后再胜利不重复首通")
+            f.page.close()
+        end)
+    end
+    runCase("B01 终焉入口与一队旧关", function()
+        local f = fixture(2305, 2305, { ["2305"] = true })
+        f.sync(1.1)
+        f.sync(1.1)
+        check(f.scene.getStageId() == 2305 and f.scene.getClearedStages()[2305]
+            and marked(f.dispatcher.get("battle"), 2305), "终焉前末关双源标记稳定")
+        check(not marked(f.dispatcher.get("battle"), SC.TERMINAL_NORMAL)
+            and f.scene.getMaxStageId() == 2305, "终焉入口不伪造终焉首通或轮回")
+        local old = fixture(1001, 2305, { ["1001"] = true, ["1905"] = true, ["2305"] = true })
+        old.sync(1.1)
+        old.sync(1.1)
+        check(old.scene.getStageId() == 1001 and old.dispatcher.get("battle").currentStageId == 1001,
+            "一队旧关恢复不拉到共享最高关")
+        check(old.scene.getMaxStageId() == 2305 and marked(old.dispatcher.get("battle"), 1905)
+            and marked(old.dispatcher.get("battle"), 2305), "一队旧关不回退其他队共享解锁")
+        check(old.dispatcher.get("battle").idleAccumSec == 17, "账本同步保留其他存档字段")
+    end)
+    runCase("B01 Sync双源合并与同数量换键", function()
+        local f = fixture(101, 101, {})
+        f.scene.getClearedStages()[102] = true
+        f.dispatcher.get("battle").clearedStages["103.0"] = true
+        f.dispatcher.get("battle").clearedStages["106"] = false
+        f.dispatcher.get("battle").clearedStages["not-a-stage"] = true
+        f.sync(1.1)
+        local sent = f.outgoing[#f.outgoing]
+        check(marked(sent, 102) and marked(sent, 103), "正式Sync合并本地独有与镜像独有首通")
+        check(sent.clearedStages["102"] == true and sent.clearedStages["103"] == true,
+            "Sync双源数字键统一为字符串永久键")
+        check(sent.clearedStages["103.0"] == nil and not marked(sent, 106)
+            and sent.clearedStages["not-a-stage"] == nil, "decimal关号规范为唯一整数键且false/非法键不标通")
+        local before = #f.outgoing
+        -- 固定两份输入都为两条，隔离内容比较和数量比较；不是显式reset入口。
+        f.scene.getClearedStages()[102], f.scene.getClearedStages()[103] = nil, nil
+        f.scene.getClearedStages()[104], f.scene.getClearedStages()[105] = true, true
+        f.dispatcher.get("battle").clearedStages = { ["102"] = true, ["103"] = true }
+        f.sync(1.1)
+        sent = f.outgoing[#f.outgoing]
+        check(#f.outgoing == before + 1 and marked(sent, 104) and marked(sent, 105),
+            "同数量换键仍按内容变化触发真实同步")
+        check(marked(sent, 102) and marked(sent, 103), "同数量换键不删除已有永久首通事实")
+        local after = #f.outgoing
+        f.sync(1.1)
+        check(#f.outgoing == after, "双源合并稳定后不每秒重复发送")
+    end)
+    runCase("B01 同数量内容变化与显式空账本", function()
+        local f = fixture(101, 101, {})
+        f.scene.getClearedStages()[102], f.scene.getClearedStages()[103] = true, true
+        f.dispatcher.get("battle").clearedStages = { ["102"] = true, ["103"] = true }
+        f.sync(1.1)
+        local before = #f.outgoing
+        f.scene.getClearedStages()[102], f.scene.getClearedStages()[103] = nil, nil
+        f.scene.getClearedStages()[104], f.scene.getClearedStages()[105] = true, true
+        f.sync(1.1)
+        local sent = f.outgoing[#f.outgoing]
+        check(#f.outgoing == before + 1 and marked(sent, 104) and marked(sent, 105),
+            "已缓存数量2后换成另外两键不能被数量相等跳过")
+        check(marked(sent, 102) and marked(sent, 103), "同数量内容变更保留镜像已通事实")
+        -- 两份账本同时清空模拟真实reset的结果；Sync不能从内部缓存复活旧通关。
+        f.scene.setBattleData({ currentStageId = 101, maxStageId = 101, clearedStages = {} })
+        f.dispatcher.get("battle").clearedStages = {}
+        f.sync(1.1)
+        check(next(f.scene.getClearedStages()) == nil
+            and next(f.dispatcher.get("battle").clearedStages) == nil, "双源显式清空后不复活旧标记")
+        check(f.firstCalls() == 0 and f.wallet.gold == 0, "同步和reset结果验证本身不发奖励")
+        f.scene.setBattleData(nil)
+        f.scene.setBattleData({ currentStageId = 101, maxStageId = 101, clearedStages = {} })
+        f.dispatcher.get("battle").clearedStages = nil
+        local nilOk = pcall(function() f.sync(1.1) end)
+        check(nilOk and next(f.scene.getClearedStages()) == nil,
+            "nil恢复输入和缺失镜像账本不报错不误标")
+    end)
 end
 
 function Start()
+    assertions, failures = 0, 0
     local nativeRequire = require
     local nativeTime = time
     local restores = {}
@@ -214,10 +534,19 @@ function Start()
         check(values.clearedStages[1905] and values.clearedStages[2305], "读档后三队与终焉入口仍解锁")
         Page.close()
     end)
-    for i = #restores, 1, -1 do restores[i]() end
+    for i = #restores, 1, -1 do
+        local cleaned, cleanupErr = pcall(restores[i])
+        if not cleaned then check(false, "退出清理异常: " .. tostring(cleanupErr)) end
+    end
     rawset(_G, "require", nativeRequire)
     rawset(_G, "time", nativeTime)
-    if not ok then log:Write(LOG_ERROR, "[tri_clear_unlock_test] " .. tostring(err))
-    else print("[tri_clear_unlock_test] ALL PASS: " .. assertions .. " assertions") end
+    if not ok then check(false, "原共享首通用例异常: " .. tostring(err)) end
+    runCase("B01账本闭环用例组", function() runBattleLedgerCases(nativeRequire) end)
+    print(string.format("[tri_clear_unlock_test] SUMMARY: %d assertions, %d failures", assertions, failures))
+    if failures > 0 then
+        log:Write(LOG_ERROR, "[tri_clear_unlock_test] FAILED: " .. failures .. " failures")
+    else
+        print("[tri_clear_unlock_test] ALL PASS: " .. assertions .. " assertions")
+    end
     engine:Exit()
 end

@@ -53,6 +53,150 @@ function Start()
         local shapes = { small = "circle", medium = "diamond", large = "hex" }
         local covered = 0
         local drawOk, drawErr = pcall(function()
+            -- 捕获星图实际投递给 NanoVG 的线段，按当前节点邻接表构建独立预期集合。
+            local edgeSegments = {}
+            local actualBeginPath = _G.nvgBeginPath
+            local actualMoveTo = _G.nvgMoveTo
+            local actualLineTo = _G.nvgLineTo
+            local actualStroke = _G.nvgStroke
+            local actualRGBA = _G.nvgRGBA
+            local actualStrokeColor = _G.nvgStrokeColor
+            local pathPoints = {}
+            local lastColorAlpha = 255
+            local currentStrokeAlpha = 255
+            local edgeAlphas = {}
+            local edgeDrawCalls = 0
+            local recordEdges = true
+            local actualGlyphDraw = Glyph.draw
+            Glyph.draw = function(...)
+                recordEdges = false
+                local drawOk, drawResult = pcall(actualGlyphDraw, ...)
+                recordEdges = true
+                if not drawOk then error(drawResult) end
+                return drawResult
+            end
+            _G.nvgBeginPath = function(...)
+                pathPoints = {}
+                actualBeginPath(...)
+            end
+            _G.nvgMoveTo = function(_, x, y)
+                pathPoints[#pathPoints + 1] = { x = x, y = y }
+                calls = calls + 1
+            end
+            _G.nvgLineTo = function(_, x, y)
+                pathPoints[#pathPoints + 1] = { x = x, y = y }
+                calls = calls + 1
+            end
+            _G.nvgRGBA = function(r, g, b, alpha)
+                lastColorAlpha = alpha
+                return actualRGBA(r, g, b, alpha)
+            end
+            _G.nvgStrokeColor = function(context, color)
+                currentStrokeAlpha = lastColorAlpha
+                actualStrokeColor(context, color)
+            end
+            _G.nvgStroke = function(...)
+                if recordEdges and #pathPoints == 2 then
+                    edgeDrawCalls = edgeDrawCalls + 1
+                    local a, b = pathPoints[1], pathPoints[2]
+                    local aKey = string.format("%.6f,%.6f", a.x, a.y)
+                    local bKey = string.format("%.6f,%.6f", b.x, b.y)
+                    local key = aKey < bKey and (aKey .. "|" .. bKey) or (bKey .. "|" .. aKey)
+                    edgeSegments[key] = (edgeSegments[key] or 0) + 1
+                    edgeAlphas[key] = currentStrokeAlpha
+                end
+                actualStroke(...)
+            end
+
+            local function expectedEdges(ox, oy, width, height, zoomValue, camX, camY)
+                local expected = {}
+                local zeroBand = math.min(width, height) * 0.10
+                local ramp = math.min(width, height) * 0.12
+                local function fadeAt(x, y)
+                    local d = math.min(x - ox, ox + width - x, y - oy, oy + height - y)
+                    if d <= zeroBand then return 0 end
+                    if d >= zeroBand + ramp then return 1 end
+                    return (d - zeroBand) / ramp
+                end
+                for nodeId = 0, 208 do
+                    local node = assert(StarMap.getNode(nodeId), "缺少连线起点节点 " .. nodeId)
+                    for _, adjacentId in ipairs(node.adj) do
+                        if nodeId < adjacentId then
+                            local adjacent = assert(StarMap.getNode(adjacentId), "缺少连线终点节点 " .. adjacentId)
+                            local ax = (node.gx * 100 - camX) * zoomValue + width * 0.5 + ox
+                            local ay = (-node.gy * 100 - camY) * zoomValue + height * 0.5 + oy
+                            local bx = (adjacent.gx * 100 - camX) * zoomValue + width * 0.5 + ox
+                            local by = (-adjacent.gy * 100 - camY) * zoomValue + height * 0.5 + oy
+                            local f = math.min(fadeAt(ax, ay), fadeAt(bx, by))
+                            -- 原有表现会跳过整条完全淡出边；剪枝修复只保证恢复区内的边都绘制。
+                            if f > 0.01 then
+                                local aKey = string.format("%.6f,%.6f", ax, ay)
+                                local bKey = string.format("%.6f,%.6f", bx, by)
+                                local key = aKey < bKey and (aKey .. "|" .. bKey) or (bKey .. "|" .. aKey)
+                                expected[key] = (expected[key] or 0) + 1
+                            end
+                        end
+                    end
+                end
+                return expected
+            end
+
+            local function checkAllVisibleEdges(ox, oy, width, height, zoomValue, camX, camY, label)
+                edgeSegments = {}
+                edgeDrawCalls = 0
+                StarMap.init(nil)
+                StarMap.resetCamera()
+                StarMap.setZoom((2.4 - zoomValue) / (2.4 - 0.4))
+                StarMap.pan(-camX * zoomValue, -camY * zoomValue)
+                StarMap.draw(nil, ox, oy, width, height)
+
+                local expected = expectedEdges(ox, oy, width, height, zoomValue, camX, camY)
+                local expectedCount = 0
+                for key, count in pairs(expected) do
+                    expectedCount = expectedCount + count
+                    assert(count == 1, label .. " 邻接表中存在重复定义边 " .. key)
+                end
+                local observedCount = 0
+                local edgeAlphaMin, edgeAlphaMax
+                for key, count in pairs(edgeSegments) do
+                    assert(expected[key], label .. " 绘制了邻接表之外的连线")
+                    assert(count == expected[key], label .. " 同一条边的绘制次数与邻接表不一致")
+                    local alpha = edgeAlphas[key]
+                    assert(alpha ~= nil, label .. " 连线颜色透明度未记录")
+                    edgeAlphaMin = edgeAlphaMin and math.min(edgeAlphaMin, alpha) or alpha
+                    edgeAlphaMax = edgeAlphaMax and math.max(edgeAlphaMax, alpha) or alpha
+                    observedCount = observedCount + count
+                end
+                assert(edgeDrawCalls == expectedCount,
+                    label .. " 实际送入NanoVG的边段必须与视口内邻接边数量一致: " .. edgeDrawCalls .. "/" .. expectedCount)
+                assert(observedCount == expectedCount,
+                    label .. " 视口内每条既有连线必须显示: " .. observedCount .. "/" .. expectedCount)
+                if label == "缩小全景" then
+                    assert(edgeAlphaMin < edgeAlphaMax and edgeAlphaMin > 0,
+                        "全景下仍须保留边缘渐隐：内侧与边缘alpha应不同且渐隐边不应被剪掉")
+                elseif label == "默认视口" then
+                    assert(edgeAlphaMin < edgeAlphaMax,
+                        "默认视口内的连线应保留边缘透明度渐变")
+                end
+                return expectedCount
+            end
+
+            local allVisible = checkAllVisibleEdges(0, 0, 6000, 6000, 0.4, 0, 0, "缩小全景")
+            assert(allVisible == 272, "总览应显示TalentStarMap全部272条唯一既有连线: " .. allVisible)
+            assert(checkAllVisibleEdges(0, 350, 1080, 1800, 1.0, 0, 0, "默认视口") > 0,
+                "默认视口应显示可见既有连线")
+            assert(checkAllVisibleEdges(0, 350, 1080, 1800, 2.4, -1400, -300, "放大平移") > 0,
+                "放大平移后应显示视口内既有连线")
+            assert(checkAllVisibleEdges(0, 350, 1080, 1800, 0.4, 1200, 1000, "缩小平移") > 0,
+                "缩小平移后应显示视口内既有连线")
+            _G.nvgBeginPath = actualBeginPath
+            _G.nvgMoveTo = actualMoveTo
+            _G.nvgLineTo = actualLineTo
+            _G.nvgStroke = actualStroke
+            _G.nvgRGBA = actualRGBA
+            _G.nvgStrokeColor = actualStrokeColor
+            print("[talent_glyph_coverage_test] PASS 现有邻接边绘制/272唯一边/多缩放与平移/视口裁剪；边缘渐隐保留")
+
             local hexPaths = {}
             local currentPath = {}
             _G.nvgBeginPath = function(...)

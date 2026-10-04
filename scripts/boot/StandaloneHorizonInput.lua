@@ -918,6 +918,12 @@ function Input.bind(ctx)
         local seamBtn = not PlayerInfoPanel.isOpen()
             and not (TowerBattleScene.isActive() and TaskPage.isOpen()) and seamHitAt(seamX, seamY)
         if seamBtn and not OfflineRewardPanel.isOpen() then
+            if equipmentPressPanel == 'tri' then
+                BattleTriPage.handleDragEnd(-1, -1)
+                equipmentPressPanel, pressValid = nil, false
+                return -- 中栏起点的松手不应变成侧栏返回点击
+            end
+            equipmentPressPanel = nil
             local now = time.elapsedTime
             if now - lastTapTime >= MIN_TAP_INTERVAL then
                 lastTapTime = now
@@ -944,6 +950,11 @@ function Input.bind(ctx)
             CharacterPanel.handleDragEnd(-1, -1)
         elseif equipmentPressPanel == 'left' and BackpackPanel.isOpen() then
             BackpackPanel.handleDragEnd(-1, -1)
+        end
+        if equipmentPressPanel == 'tri' and pid ~= 'tri' then
+            -- 战斗掉落从中栏拖到侧栏松手：释放起点滚动，禁止误点目标栏。
+            BattleTriPage.handleDragEnd(-1, -1)
+            isTap = false
         end
         equipmentPressPanel = nil
         -- 配装部位属于纯 UI 操作，详情外第一击也可立即选槽/取消；
@@ -1413,11 +1424,11 @@ function Input.bind(ctx)
 
         -- 弹窗横跨三栏；任何位置的滚轮都交给选关，避免误滚角色列表。
         if BattleTriPage.isOpen() and StageSelectDialog.isOpen() then
-            BattleTriPage.handleScroll(wheel, sx, sy)
+            BattleTriPage.handleScroll(wheel, csx, csy)
             return
         end
         -- 装备袋只吃覆盖矩形内的滚轮，左右栏仍滚自己的列表
-        if BattleTriPage.handleScroll(wheel, sx, sy) then return end
+        if BattleTriPage.handleScroll(wheel, csx, csy) then return end
 
         -- 全屏战斗场景
         if DungeonBattleScene.isOpen() then DungeonBattleScene.handleScroll(wheel) return end

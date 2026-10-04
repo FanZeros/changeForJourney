@@ -47,6 +47,7 @@ TaskConfig.WEEKLY = {}
 TaskConfig.ACHIEVEMENT = {}
 
 local StageConfig = require("config.StageConfig")
+local ExpTable = require("config.ExpTable")
 
 local rewardSeq = 0
 local function nextReward(scale)
@@ -146,6 +147,22 @@ for _, n in ipairs({ 1, 2, 3, 5 }) do
 end
 for _, n in ipairs({ 1, 2, 3 }) do
     addRecord("a_awk_" .. n, "觉醒印", "任意队员觉醒至" .. n .. "阶", "awk_max", n, "hero", nextReward(n * 4))
+end
+
+-- 每级额外100黑晶使用独立永久ID；旧里程碑台账不清空、不重复发奖。
+-- 新档Lv.1也有一份等级奖励；不推进轮换序号，队员功绩保持原奖励。
+TaskConfig.LEVEL_TASKS = {}
+for lv = 1, ExpTable.PLAYER_MAX_LEVEL do
+    local reward = { type = "diamond", amount = 100, icon = "image/货币道具/UI_icon_SJ_X.png", quality = 5 }
+    local id = "a_plv_bonus_v1_" .. lv
+    addRecord(id, "远征勋记", "远征等级达到" .. lv, "player_level", lv, "level", reward)
+end
+for _, task in ipairs(TaskConfig.ACHIEVEMENT) do
+    if task.group == "level" then
+        local tasks = TaskConfig.LEVEL_TASKS[task.target] or {}
+        TaskConfig.LEVEL_TASKS[task.target] = tasks
+        tasks[#tasks + 1] = task
+    end
 end
 
 -- ======================== 按 ID 快速查找 ========================

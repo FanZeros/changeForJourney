@@ -1,5 +1,5 @@
--- 远征里程碑视图：只读快照；领取与滚动全部由 TaskPage 宿主处理。
--- 新界面只使用 UI 组件，借设计坐标桥绘制到宿主已有 NanoVG 帧。
+-- 远征奖励轨道：每级一个圆球，当前等级发光；只读快照，不发奖、不写台账。
+-- 使用 UI 组件与设计坐标桥，复用宿主已有 NanoVG 帧，只创建可见节点。
 local UI = require("urhox-libs/UI")
 local Surface = require("ui.widget.DesignWidgetSurface")
 local Progress = require("config.ExpeditionProgress")
@@ -12,18 +12,25 @@ local View = {}
 local COLOR = {
     text = { 244, 232, 204, 255 }, muted = { 164, 159, 145, 255 },
     gold = { 255, 226, 150, 255 }, border = { 105, 80, 44, 255 },
-    active = { 65, 47, 24, 255 }, locked = { 32, 28, 26, 255 },
-    claimed = { 30, 40, 35, 255 }, green = { 156, 190, 161, 255 },
+    active = { 53, 41, 27, 255 }, locked = { 29, 26, 25, 255 },
+    claimed = { 28, 34, 30, 255 }, green = { 156, 190, 161, 255 },
 }
 
+---@class ExpeditionRewardWidgets
+---@field icon Panel
+---@field text Label
+---@field state Label
 ---@class ExpeditionTrackRowWidgets
 ---@field panel Panel
+---@field sphere Panel
+---@field halo Panel
 ---@field level Label
 ---@field title Label
----@field reward Label
----@field icon Panel
----@field unlocks Label
+---@field card Panel
+---@field current Label
+---@field line Panel
 ---@field button Button
+---@field rewards ExpeditionRewardWidgets[]
 ---@field signature string?
 ---@type ExpeditionTrackRowWidgets[]
 local rowWidgets = {}
@@ -31,10 +38,9 @@ local rowWidgets = {}
 local summaryRoot = nil
 ---@type Panel?
 local contentRoot = nil
-local contentKey = ""
-local summaryKey = ""
+local contentKey, summaryKey = "", ""
+local firstVisible, lastVisible = 1, 1
 
--- 字号沿用宿主设计稿，UI 的 pt 在桥中换算为原字号像素。
 local function label(id, x, y, width, height, size, color)
     return UI.Label {
         id = id, text = "", position = "absolute", left = x, top = y,
@@ -50,94 +56,97 @@ local function createSummary(width, height)
         backgroundColor = { 38, 31, 26, 255 }, borderRadius = 16,
         borderWidth = 2, borderColor = COLOR.border,
     }
-    root:AddChild(label("level", 28, 18, 420, 48, 44, COLOR.gold))
+    root:AddChild(label("level", 28, 16, 540, 48, 44, COLOR.gold))
     local claimable = label("claimable", width - 330, 20, 300, 44, 30, COLOR.gold)
     claimable:SetStyle({ textAlign = "right" })
     root:AddChild(claimable)
-    root:AddChild(label("exp", 28, 66, width - 56, 38, 28, COLOR.muted))
+    root:AddChild(label("exp", 28, 66, width - 56, 34, 28, COLOR.muted))
     root:AddChild(UI.ProgressBar {
-        id = "progress", position = "absolute", left = 28, top = 110,
-        width = width - 56, height = 22, value = 0, max = 1, showLabel = false,
+        id = "progress", position = "absolute", left = 28, top = 112,
+        width = width - 56, height = 18, value = 0, max = 1, showLabel = false,
         fillColor = { 192, 151, 70, 255 }, borderColor = COLOR.border,
-        borderWidth = 2, borderRadius = 10, pointerEvents = "none",
+        borderWidth = 1, borderRadius = 9, pointerEvents = "none",
     })
-    root:AddChild(label("next", 28, 142, width - 56, 44, 30, COLOR.text))
-    root:AddChild(label("current", 28, 188, width - 56, 32, 26, COLOR.gold))
-    root:AddChild(label("ledger", 28, 220, width - 56, 24, 20, COLOR.muted))
-    local stages = label("stages", 28, 248, width - 56, 68, 23, COLOR.muted)
-    stages:SetStyle({ whiteSpace = "normal", maxLines = 2, lineHeight = 1.35 })
-    root:AddChild(stages)
     return root
 end
 
-local function createRow(taskId, width, rowHeight, top)
+local function createRow(row, width, rowHeight, step, top)
     local panel = UI.Panel {
-        id = taskId, position = "absolute", left = 0, top = top,
-        width = width, height = rowHeight, pointerEvents = "none",
-        backgroundColor = COLOR.locked, borderRadius = 14,
-        borderWidth = 2, borderColor = { 72, 63, 49, 255 },
+        id = row.taskId, position = "absolute", left = 0, top = top,
+        width = width, height = step, pointerEvents = "none",
     }
-    local level = label("level", 16, 24, 108, 86, 34, COLOR.gold)
-    level:SetStyle({ textAlign = "center", backgroundColor = { 46, 39, 30, 255 }, borderRadius = 12 })
-    local icon = UI.Panel {
-        position = "absolute", left = 140, top = 26, width = 92, height = 92,
-        backgroundFit = "contain", pointerEvents = "none",
+    -- 连接线先画，圆球和光晕后画；首尾不延伸出虚构等级。
+    local line = UI.Panel {
+        id = "line", position = "absolute", left = 94, top = row.level == 1 and 92 or 0,
+        width = 4, height = row.level == #TaskConfig.LEVEL_TASKS and 92 or (row.level == 1 and step - 92 or step),
+        backgroundColor = COLOR.border, pointerEvents = "none",
     }
-    local title = label("title", 256, 22, width - 498, 46, 34)
-    local reward = label("reward", 256, 70, width - 498, 42, 29, COLOR.gold)
-    local unlocks = label("unlocks", 140, 132, width - 168, rowHeight - 146, 28, COLOR.muted)
-    unlocks:SetStyle({ whiteSpace = "normal", maxLines = 2, lineHeight = 1.4 })
+    local halo = UI.Panel {
+        id = "halo", position = "absolute", left = 16, top = 12, width = 160, height = 160,
+        borderRadius = 80, opacity = 0, pointerEvents = "none",
+        backgroundGradient = { type = "radial", innerRadius = 28, outerRadius = 80,
+            from = { 225, 171, 67, 110 }, to = { 225, 171, 67, 0 } },
+    }
+    local sphere = UI.Panel {
+        id = "sphere", position = "absolute", left = 48, top = 44, width = 96, height = 96,
+        borderRadius = 48, borderWidth = 2, borderColor = COLOR.border, pointerEvents = "none",
+        backgroundGradient = { direction = "to-bottom-right", from = { 66, 55, 40, 255 }, to = { 23, 21, 20, 255 } },
+    }
+    local level = label("level", 0, 0, 96, 96, 42, COLOR.gold)
+    level:SetStyle({ textAlign = "center" })
+    sphere:AddChild(level)
+    local card = UI.Panel {
+        id = "card", position = "absolute", left = 190, top = 8, width = width - 190, height = rowHeight - 16,
+        backgroundColor = COLOR.locked, borderRadius = 12, borderWidth = 1,
+        borderColor = { 72, 63, 49, 255 }, pointerEvents = "none",
+    }
+    local title = label("title", 20, 10, 350, 40, 30, COLOR.text)
+    local current = label("current", width - 404, 10, 192, 40, 23, COLOR.gold)
+    current:SetStyle({ textAlign = "right" })
+    local rewards = {}
+    for index = 1, #row.tasks do
+        local x = 20 + (index - 1) * 230
+        local icon = UI.Panel {
+            id = "icon_" .. index, position = "absolute", left = x, top = 62,
+            width = 62, height = 62, backgroundFit = "contain", pointerEvents = "none",
+        }
+        local rewardText = label("reward_" .. index, x + 72, 56, 154, 52, 25, COLOR.gold)
+        rewardText:SetStyle({ whiteSpace = "normal", maxLines = 2, lineHeight = 1.1 })
+        local rewardState = label("state_" .. index, x + 72, 110, 154, 42, 18, COLOR.muted)
+        rewardState:SetStyle({ whiteSpace = "normal", maxLines = 2, lineHeight = 1.1 })
+        card:AddChild(icon)
+        card:AddChild(rewardText)
+        card:AddChild(rewardState)
+        rewards[index] = { icon = icon, text = rewardText, state = rewardState }
+    end
     local button = UI.Button {
-        position = "absolute", left = width - 216, top = 42, width = 188, height = 72,
+        id = "claim", position = "absolute", left = width - 380, top = 88, width = 164, height = 58,
         text = "未达成", disabled = true, fontFamily = "sans", fontWeight = "normal",
-        fontSize = 30 * 0.75, borderRadius = 10, pointerEvents = "none",
+        fontSize = 25 * 0.75, borderRadius = 8, pointerEvents = "none",
         backgroundColor = { 176, 132, 48, 255 }, textColor = COLOR.text,
         disabledBackgroundColor = { 51, 47, 42, 255 }, disabledTextColor = COLOR.muted,
         borderWidth = 0, padding = 0, boxShadow = false,
     }
-    panel:AddChild(level)
-    panel:AddChild(icon)
-    panel:AddChild(title)
-    panel:AddChild(reward)
-    panel:AddChild(unlocks)
-    panel:AddChild(button)
-    return { panel = panel, level = level, title = title, reward = reward,
-        icon = icon, unlocks = unlocks, button = button }
-end
-
-local function unlockText(row)
-    local names = {}
-    for _, unlock in ipairs(row.unlocks or {}) do
-        -- 等级行只展示该等级真正变动的规则，通关开放队伍单独列于顶部。
-        if unlock.kind == "level" and unlock.level == row.level then
-            names[#names + 1] = Progress.unlockLabel(unlock)
-        end
-    end
-    if #names == 0 then return I18n.lookup("该等级无新增功能解锁") end
-    local separator = (I18n.get() == "zh_CN" or I18n.get() == "zh_TW") and "；" or "; "
-    return I18n.format("等级成长 · %s", table.concat(names, separator))
+    card:AddChild(title)
+    card:AddChild(current)
+    card:AddChild(button)
+    panel:AddChild(line)
+    panel:AddChild(halo)
+    panel:AddChild(sphere)
+    panel:AddChild(card)
+    return { panel = panel, sphere = sphere, halo = halo, level = level, title = title,
+        card = card, current = current, line = line, button = button, rewards = rewards }
 end
 
 local function updateSummary(snapshot)
     if not summaryRoot then return end
-    local stageLines = {}
-    for _, unlock in ipairs(snapshot.stageUnlocks or {}) do
-        stageLines[#stageLines + 1] = I18n.format(unlock.unlocked and "已开放 · %s" or "通关开放 · %s", Progress.unlockLabel(unlock))
-    end
-    local stageText = table.concat(stageLines, "\n")
     local key = table.concat({ I18n.get(), tostring(snapshot.loading), tostring(snapshot.level), tostring(snapshot.exp),
-        tostring(snapshot.maxExp), tostring(snapshot.ratio), tostring(snapshot.claimableCount),
-        tostring(snapshot.nextLevel), tostring(snapshot.slotCount), tostring(snapshot.enhanceCap),
-        tostring(snapshot.artifactSlotCount), stageText }, "|")
+        tostring(snapshot.maxExp), tostring(snapshot.ratio), tostring(snapshot.claimableCount) }, "|")
     if key == summaryKey then return end
     summaryKey = key
     local level = summaryRoot:FindById("level") --[[@as Label?]]
     local claimable = summaryRoot:FindById("claimable") --[[@as Label?]]
     local exp = summaryRoot:FindById("exp") --[[@as Label?]]
-    local nextLevel = summaryRoot:FindById("next") --[[@as Label?]]
-    local current = summaryRoot:FindById("current") --[[@as Label?]]
-    local ledger = summaryRoot:FindById("ledger") --[[@as Label?]]
-    local stages = summaryRoot:FindById("stages") --[[@as Label?]]
     local bar = summaryRoot:FindById("progress") --[[@as ProgressBar?]]
     local loading = snapshot.loading == true
     if level then level:SetText(loading and I18n.lookup("远征等级 · 加载中") or I18n.format("远征等级 Lv.%d", snapshot.level)) end
@@ -148,87 +157,80 @@ local function updateSummary(snapshot)
                 NumberUtil.format(snapshot.maxExp)) or I18n.lookup("经验进度 · 已达等级上限")))
     end
     if bar then bar:SetValue(loading and 0 or snapshot.ratio) end
-    if nextLevel then
-        nextLevel:SetText(loading and I18n.lookup("下一里程碑 · 加载中")
-            or (snapshot.nextLevel and I18n.format("下一里程碑 · Lv.%d", snapshot.nextLevel)
-                or I18n.lookup("全部里程碑已达成")))
-    end
-    if current then
-        current:SetText(loading and I18n.lookup("当前成长 · 加载中")
-            or I18n.format("每队 %s 人 · 强化上限 Lv.%s · 神器 %s 格", tostring(snapshot.slotCount or "—"),
-                tostring(snapshot.enhanceCap or "—"), tostring(snapshot.artifactSlotCount or "—")))
-    end
-    if ledger then ledger:SetText(I18n.lookup("永久勋记 · 等级顺序固定，已领取奖励保留记录")) end
-    if stages then stages:SetText(stageText) end
 end
 
 ---@param widgets ExpeditionTrackRowWidgets
 ---@param row table
 ---@param loading boolean
 local function updateRow(widgets, row, loading)
-    local def = row.reward and ResourceDefs.DEFS[row.reward.type]
-    local iconPath = def and def.iconPath or (row.reward and row.reward.icon)
-    local rewardText, unlocksText = Progress.rewardLabel(row.reward), unlockText(row)
-    local signature = table.concat({ I18n.get(), row.taskId, tostring(row.level), row.status, tostring(loading),
-        tostring(iconPath), rewardText, unlocksText }, "|")
+    local parts = { I18n.get(), row.taskId, row.status, tostring(row.current), tostring(loading) }
+    for _, task in ipairs(row.tasks) do
+        parts[#parts + 1] = task.status .. Progress.rewardLabel(task.reward)
+    end
+    local signature = table.concat(parts, "|")
     if widgets.signature == signature then return end
     widgets.signature = signature
     local claimable = not loading and row.status == TaskConfig.STATUS.CLAIMABLE
     local claimed = row.status == TaskConfig.STATUS.CLAIMED
-    local textColor = claimed and COLOR.green or (claimable and COLOR.gold or COLOR.text)
-    widgets.panel:SetStyle({
-        backgroundColor = claimed and COLOR.claimed or (claimable and COLOR.active or COLOR.locked),
-        borderColor = claimable and { 192, 151, 70, 255 } or { 72, 63, 49, 255 },
-    })
-    widgets.level:SetText("Lv." .. row.level)
-    widgets.title:SetText(I18n.lookup("远征勋记"))
-    widgets.title:SetFontColor(textColor)
-    widgets.reward:SetText(rewardText)
-    widgets.reward:SetFontColor(claimed and COLOR.green or COLOR.gold)
-    widgets.icon:SetStyle({ backgroundImage = iconPath,
-        imageTint = claimed and { 170, 185, 172, 255 } or { 255, 255, 255, 255 } })
-    widgets.unlocks:SetText(unlocksText)
-    widgets.unlocks:SetFontColor(claimed and COLOR.green or COLOR.muted)
+    local current = not loading and row.current
+    widgets.card:SetStyle({ backgroundColor = claimed and COLOR.claimed or (claimable and COLOR.active or COLOR.locked),
+        borderColor = current and COLOR.gold or (claimable and COLOR.border or { 72, 63, 49, 255 }),
+        borderWidth = current and 2 or 1 })
+    widgets.sphere:SetStyle({ borderColor = current and COLOR.gold or COLOR.border,
+        backgroundGradient = { direction = "to-bottom-right",
+            from = current and { 218, 172, 81, 255 } or (claimable and { 107, 82, 42, 255 } or { 66, 55, 40, 255 }),
+            to = current and { 103, 68, 25, 255 } or { 23, 21, 20, 255 } } })
+    widgets.line:SetStyle({ backgroundColor = (claimable or claimed or current) and { 148, 112, 52, 255 } or COLOR.border })
+    widgets.level:SetText(tostring(row.level))
+    widgets.level:SetFontColor(current and { 255, 246, 214, 255 } or (claimed and COLOR.green or COLOR.gold))
+    widgets.title:SetText("Lv." .. row.level .. " · " .. I18n.lookup("等级奖励"))
+    widgets.current:SetText(current and I18n.lookup("当前等级") or "")
+    for index, task in ipairs(row.tasks) do
+        local rewardWidgets = widgets.rewards[index]
+        local def = ResourceDefs.DEFS[task.reward.type]
+        local done = task.status == TaskConfig.STATUS.CLAIMED
+        rewardWidgets.icon:SetStyle({ backgroundImage = def and def.iconPath or task.reward.icon,
+            imageTint = done and { 165, 175, 165, 255 } or { 255, 255, 255, 255 } })
+        rewardWidgets.text:SetText(Progress.rewardLabel(task.reward))
+        rewardWidgets.text:SetFontColor(done and COLOR.green or COLOR.gold)
+        rewardWidgets.state:SetText(done and I18n.lookup("已领取")
+            or (task.taskId == row.taskId and I18n.lookup("每级额外奖励") or I18n.lookup("远征勋记")))
+    end
     widgets.button:SetText(I18n.lookup(loading and "加载中" or (claimed and "已领取" or (claimable and "领取" or "未达成"))))
     widgets.button:SetDisabled(not claimable)
-    widgets.button:SetStyle({ disabledBackgroundColor = claimed and { 55, 74, 60, 255 } or { 51, 47, 42, 255 },
-        disabledTextColor = claimed and COLOR.green or COLOR.muted })
 end
 
----@param snapshot table 远征展示模型，不改写任何玩家数据。
----@param layout table 宿主设计区域，包含固定摘要与列表滚动偏移。
 function View.update(snapshot, layout)
     Surface.init()
     if not summaryRoot then summaryRoot = createSummary(layout.w, layout.summaryH) end
-    summaryRoot:SetStyle({ width = layout.w, height = layout.summaryH })
     updateSummary(snapshot)
-    local ids = {}
-    for _, row in ipairs(snapshot.rows) do ids[#ids + 1] = row.taskId end
-    local key = table.concat(ids, "|") .. ":" .. layout.w .. ":" .. layout.rowH .. ":" .. layout.gap
+    local step = layout.rowH + layout.gap
+    firstVisible = math.max(1, math.floor((layout.scrollY or 0) / step) + 1)
+    lastVisible = math.min(#snapshot.rows, math.ceil(((layout.scrollY or 0) + layout.h) / step) + 1)
+    local key = layout.w .. ":" .. step .. ":" .. firstVisible .. ":" .. lastVisible
     if not contentRoot or key ~= contentKey then
         if contentRoot then contentRoot:Destroy() end
-        contentKey = key
-        rowWidgets = {}
-        contentRoot = UI.Panel {
-            width = layout.w, height = #snapshot.rows * (layout.rowH + layout.gap),
-            pointerEvents = "none",
-        }
-        for index, row in ipairs(snapshot.rows) do
-            local widgets = createRow(row.taskId, layout.w, layout.rowH, (index - 1) * (layout.rowH + layout.gap))
-            rowWidgets[index] = widgets
+        contentKey, rowWidgets = key, {}
+        contentRoot = UI.Panel { width = layout.w, height = #snapshot.rows * step, pointerEvents = "none" }
+        for index = firstVisible, lastVisible do
+            local widgets = createRow(snapshot.rows[index], layout.w, layout.rowH, step, (index - 1) * step)
+            rowWidgets[#rowWidgets + 1] = widgets
             contentRoot:AddChild(widgets.panel)
         end
     end
-    for index, row in ipairs(snapshot.rows) do updateRow(rowWidgets[index], row, snapshot.loading == true) end
+    for index = firstVisible, lastVisible do
+        local widgets = rowWidgets[index - firstVisible + 1]
+        local row = snapshot.rows[index]
+        updateRow(widgets, row, snapshot.loading == true)
+        -- 只更新当前可见圆球的轻呼吸透明度，不重复创建字体、贴图或控件。
+        widgets.halo:SetStyle({ opacity = not snapshot.loading and row.current
+            and (0.78 + math.sin(time.elapsedTime * 2.4) * 0.18) or 0 })
+    end
 end
 
----@param vg NVGContextWrapper
----@param snapshot table
----@param layout table 包含 x/y/w/h/rowH/gap/summaryY/summaryH/scrollY。
 function View.draw(vg, snapshot, layout)
     if not vg then return end
     View.update(snapshot, layout)
-    -- 仅变换与裁剪子树，不能新建 NanoVG 帧或重置宿主的全局缩放。
     nvgSave(vg)
     nvgIntersectScissor(vg, layout.x, layout.summaryY, layout.w, layout.summaryH)
     nvgTranslate(vg, layout.x, layout.summaryY)

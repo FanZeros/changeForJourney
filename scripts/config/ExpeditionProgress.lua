@@ -111,28 +111,30 @@ function Progress.build(player, taskData, battle)
         currentUnlocks = Progress.getRangeUnlocks(1, level),
         rows = {}, stageUnlocks = {},
     }
-    for _, task in ipairs(TaskConfig.ACHIEVEMENT) do
-        if task.group == "level" then
-            snapshot.rows[#snapshot.rows + 1] = {
-                taskId = task.id, level = task.target, reward = task.reward,
-                status = claimed[task.id] and TaskConfig.STATUS.CLAIMED
-                    or (level >= task.target and TaskConfig.STATUS.CLAIMABLE or TaskConfig.STATUS.LOCKED),
-                unlocks = Progress.getLevelUnlocks(task.target),
-            }
+    -- 每级只有一个节点；原里程碑与新增奖励分别保留永久台账。
+    for target = 1, ExpTable.PLAYER_MAX_LEVEL do
+        local row = {
+            taskId = "a_plv_bonus_v1_" .. target, level = target,
+            status = TaskConfig.STATUS.LOCKED, current = target == level,
+            rewards = {}, tasks = {}, unlocks = Progress.getLevelUnlocks(target),
+        }
+        local allClaimed, anyClaimable = true, false
+        for _, task in ipairs(TaskConfig.LEVEL_TASKS[target] or {}) do
+            local status = claimed[task.id] and TaskConfig.STATUS.CLAIMED
+                or (level >= target and TaskConfig.STATUS.CLAIMABLE or TaskConfig.STATUS.LOCKED)
+            row.tasks[#row.tasks + 1] = { taskId = task.id, reward = task.reward, status = status }
+            row.rewards[#row.rewards + 1] = task.reward
+            allClaimed = allClaimed and status == TaskConfig.STATUS.CLAIMED
+            anyClaimable = anyClaimable or status == TaskConfig.STATUS.CLAIMABLE
         end
+        row.reward = row.rewards[#row.rewards]
+        row.status = allClaimed and TaskConfig.STATUS.CLAIMED
+            or (anyClaimable and TaskConfig.STATUS.CLAIMABLE or TaskConfig.STATUS.LOCKED)
+        snapshot.rows[#snapshot.rows + 1] = row
+        if anyClaimable then snapshot.claimableCount = snapshot.claimableCount + 1 end
     end
-    table.sort(snapshot.rows, function(a, b) return a.level < b.level end)
-    local firstClaimable, firstLocked = nil, nil
-    for index, row in ipairs(snapshot.rows) do
-        if row.status == TaskConfig.STATUS.CLAIMABLE then
-            snapshot.claimableCount = snapshot.claimableCount + 1
-            firstClaimable = firstClaimable or index
-        elseif row.status == TaskConfig.STATUS.LOCKED then
-            firstLocked = firstLocked or index
-        end
-        if row.level > level and not snapshot.nextLevel then snapshot.nextLevel = row.level end
-    end
-    snapshot.focusIndex = firstClaimable or firstLocked or math.max(1, #snapshot.rows)
+    snapshot.nextLevel = level < ExpTable.PLAYER_MAX_LEVEL and level + 1 or nil
+    snapshot.focusIndex = level
     local teamCount = ExpTable.getUnlockedTeamCount(battle)
     for team = 2, ExpTable.TEAM_COUNT do
         local stage = ExpTable.getTeamUnlockStage(team)

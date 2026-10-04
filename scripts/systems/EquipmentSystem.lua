@@ -623,6 +623,53 @@ function EquipmentSystem.getAscendBoost(equip)
     return BlacksmithConfig.getEnhanceBoost(EquipmentSystem.getAscendLevel(equip))
 end
 
+--- 固定副词条按模板顺序轮转，每阶仅提升一条；数值由升阶等级派生，不写回模板。
+---@param equip table|nil
+---@param index number baseStats索引；1为主词条
+---@param level number|nil 预览时可覆盖升阶等级
+---@return number
+function EquipmentSystem.getSecondaryAscendCount(equip, index, level)
+    local count = math.max(0, #(equip and equip.baseStats or {}) - 1)
+    local position = index - 1
+    local ascend = level or EquipmentSystem.getAscendLevel(equip)
+    if count == 0 or position < 1 or position > count or ascend < position then return 0 end
+    return math.floor((ascend - position) / count) + 1
+end
+
+--- 基础主/副词条统一生效值；升阶预览、属性管线与详情/战力共用。
+---@param equip table
+---@param index number
+---@param mainBoost number|nil 兼容属性管线的显式主词条倍率
+---@param level number|nil 预览目标升阶等级
+---@return number
+function EquipmentSystem.effectiveBaseStatValue(equip, index, mainBoost, level)
+    local stat = (equip.baseStats or {})[index]
+    if not stat then return 0 end
+    local raw = tonumber(stat[2]) or 0
+    if index == 1 then
+        local boost = mainBoost
+        if boost == nil then
+            boost = BlacksmithConfig.getEnhanceBoost(level or EquipmentSystem.getAscendLevel(equip))
+        end
+        return raw * (1 + boost)
+    end
+    local steps = EquipmentSystem.getSecondaryAscendCount(equip, index, level)
+    return raw * (1 + steps * (BlacksmithConfig.ASCEND_SUB_STAT_RATIO or 0))
+end
+
+--- 装备属性保留小数，避免升阶增量被整数类型显示掩盖；仅格式化，不改实际值。
+---@param key string
+---@param value number
+---@param decimals number|nil 预览可提高精度，确保相邻两阶可辨
+---@return string
+function EquipmentSystem.formatBaseStatValue(key, value, decimals)
+    local meta = AD.META[key]
+    local precision = decimals or 2
+    local text = string.format("%." .. precision .. "f", value)
+    if precision > 1 then text = text:gsub("0+$", ""):gsub("%.$", ".0") end
+    return text .. ((meta and meta.dataType == AD.TYPE_PCT) and "%" or "")
+end
+
 --- 词条栏位倍率（升阶满员后里程碑累加；跟装备走，洗练不丢）。
 ---@param equip table|nil
 ---@return number mult >= 1
@@ -692,16 +739,11 @@ function EquipmentSystem.computeModifierEntries(equip, slotBoost)
     local entries = {}
     local boost = slotBoost or 0
 
-    -- 基础属性（仅第一条受槽位强化加成：val * (1 + boost)）
+    -- 主词条吃主倍率，固定副词条按升阶次数轮转提升；均保留小数。
     local baseStats = equip.baseStats or {}
     for i, s in ipairs(baseStats) do
         local key = s[1]
-        local val = s[2]
-
-        -- 只有第一条基础属性受强化加成
-        if i == 1 and boost > 0 then
-            val = val * (1 + boost)
-        end
+        local val = EquipmentSystem.effectiveBaseStatValue(equip, i, boost)
 
         -- 特殊处理：攻击间隔取负（降低间隔 = 增益）
         if key == "atkInterval" then

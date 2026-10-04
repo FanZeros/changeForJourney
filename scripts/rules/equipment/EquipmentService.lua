@@ -83,8 +83,7 @@ local function calcEquipPower(equip, heroId)
     local power = 0
     local ascendBoost = EquipmentSystem.getAscendBoost(equip)
     for i, s in ipairs(equip.baseStats or {}) do
-        local val = s[2]
-        if i == 1 then val = val * (1 + ascendBoost) end
+        local val = EquipmentSystem.effectiveBaseStatValue(equip, i, ascendBoost)
         power = power + calcStatPower(s[1], val, excluded)
     end
     for _, affix in ipairs(equip.affixes or {}) do

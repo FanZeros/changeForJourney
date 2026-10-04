@@ -18,6 +18,8 @@ local DungeonPage = {}
 -- ======================== 网络请求状态 ========================
 local pendingSweep     = false
 local pendingChallenge = false
+---@type number|nil
+local pendingChallengeTeam = nil
 local pendingIdleClaim     = false
 local pendingIdleClaimTime = 0
 local pendingChallengeTime = 0  -- 超时安全阀（秒）
@@ -358,6 +360,7 @@ local function drawImageCentered(vg, img, cx, cy, w, h, alpha)
     local x = cx - w * 0.5
     local y = cy - h * 0.5
     local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    ---@cast paint NVGpaint
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -369,6 +372,7 @@ local function drawImageTopLeft(vg, img, x, y, w, h, alpha)
     if img < 0 then return end
     alpha = alpha or 1.0
     local paint = nvgImagePattern(vg, x, y, w, h, 0, img, alpha)
+    ---@cast paint NVGpaint
     nvgBeginPath(vg)
     nvgRect(vg, x, y, w, h)
     nvgFillPaint(vg, paint)
@@ -942,6 +946,7 @@ function DungeonPage.update(dt)
             print("[DungeonPage] pendingChallenge timeout, force reset")
             pendingChallenge = false
             pendingChallengeTime = 0
+            pendingChallengeTeam = nil
         end
     end
 
@@ -1044,7 +1049,25 @@ function DungeonPage.handleInput(dx, dy)
                         Protocol.ACTION_TYPES.TOWER_CHALLENGE, {}
                     )
                 else
-                    print("[DungeonPage] sending DUNGEON_CHALLENGE dungeon=" .. dId .. " floor=" .. currentFloor)
+                    local CharacterPanel = require("ui.character.panel.CharacterPanel")
+                    local teamIdx = CharacterPanel.getActiveTeamIdx()
+                    local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
+                    if teamIdx < 1 or teamIdx > unlocked then
+                        pendingChallenge = false
+                        pendingChallengeTeam = nil
+                        toast(ExpTable.getTeamUnlockText(teamIdx))
+                        return true
+                    end
+                    if #(CharacterPanel.getDeployedTeam(teamIdx) or {}) == 0 then
+                        pendingChallenge = false
+                        pendingChallengeTeam = nil
+                        toast("未编队，请在右侧部署队员")
+                        return true
+                    end
+                    -- 本地桥同步回调：必须在 sendAction 前锁定本次挑战的队伍。
+                    pendingChallengeTeam = teamIdx
+                    print("[DungeonPage] sending DUNGEON_CHALLENGE dungeon=" .. dId
+                        .. " floor=" .. currentFloor .. " team=" .. teamIdx)
                     require("runtime.GameAction").sendAction(
                         Protocol.ACTION_TYPES.DUNGEON_CHALLENGE,
                         { dungeonId = dId, floor = currentFloor }
@@ -1165,7 +1188,10 @@ function DungeonPage.onActionResult(data)
 
     -- 挑战结果（服务端返回战斗配置，进入副本战斗场景）
     if action == Protocol.ACTION_TYPES.DUNGEON_CHALLENGE then
+        local teamIdx = pendingChallengeTeam or 1
         pendingChallenge = false
+        pendingChallengeTime = 0
+        pendingChallengeTeam = nil
         if data.success then
             print("[DungeonPage] CHALLENGE OK: dungeon=" .. tostring(data.dungeonId)
                 .. " floor=" .. tostring(data.floor)
@@ -1178,8 +1204,9 @@ function DungeonPage.onActionResult(data)
             local DungeonBattleScene = require("ui.dungeon.DungeonBattleScene")
             local CharacterPanel = require("ui.character.panel.CharacterPanel")
             if dungeonVg_ then DungeonBattleScene.init(dungeonVg_) end
-            local allies = CharacterPanel.getDeployedTeam()
-            print("[DungeonPage] opening DungeonBattleScene with " .. #allies .. " allies, dungeon=" .. tostring(openedDungeonId))
+            local allies = CharacterPanel.getDeployedTeam(teamIdx)
+            print("[DungeonPage] opening DungeonBattleScene with " .. #allies
+                .. " allies, team=" .. teamIdx .. " dungeon=" .. tostring(openedDungeonId))
             DungeonBattleScene.open({
                 allies    = allies,
                 data      = data,

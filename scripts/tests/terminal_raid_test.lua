@@ -462,6 +462,8 @@ local function openTestPage()
     patch(CP, "getTeamSignature", function(row) return "terminal-test-" .. row end)
     patch(require("config.ExpTable"), "getUnlockedTeamCount", function() return 3 end)
     patch(BS, "getStageId", function() return stage end)
+    -- 合并后的选关有共享最高关门禁，夹具终焉资格须包含已通末关。
+    patch(BS, "getMaxStageId", function() return SC.getTerminalPrevStageId(TERMINAL) end)
     patch(BS, "pumpBattleCards", function() end)
     patch(BS, "adoptStageProgress", function(id) stage = id; observations.retreats = observations.retreats + 1 end)
     patch(BS, "gotoStage", function(id) stage = id; return true end)

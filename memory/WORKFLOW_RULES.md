@@ -1,3 +1,17 @@
+## 三队进度、副本选队和入关剧情修复（2026-10-04）
+
+- 用户本轮指定从 `workspace930` 拉取并部署到 `/workspace` 根；基线为 `c47c2ec3`，新任务分支 `fix930/three-team-progression-20261004`。功能提交 `8b3636fa` 已正常push，远端SHA核验一致；远端 `workspace930` 仍为原基线 `c47c2ec3`，没有推送或修改。只推新分支，禁止推 `workspace` 系列或原基线；不自动创建或合并 PR。
+- 五项任务中，共享首通/全局解锁已由基线合入 `f9085e50`，本轮真实28断言回归再次通过，未另造发奖逻辑。普通副本捕获挑战点击时的编辑队伍，发送前写入 pending（兼容同步本地桥），回包显式组建该队并带正确神器；锁队/空队拒绝、失败/超时清理，主线缺省队1和三队通天塔不变。
+- `BattleTriDriver` 统一换关通知，首次启动/真正换关触发，改编队/同关重开不重复；页面写 `battle.teamStageIds` 并接真实 `StoryPlayer.onStage(...,"enter")`，自动推进三行、手动二三队、退关均覆盖，Lab不触发。Schema兼容旧档、数字/字符串队键、无效关卡，终焉重登仍退对应末关。旧档从未保存过的二三队历史无法还原，不虚构为最高关。
+- 自动推进及行军背景共用现有 `SC.shouldSkipTerminal`：共享账本已通或最高关已跨难度才跳下一难度；全部14座终焉未通仍停末关等手动协同，最高难度无终焉则原地重开。不改变首通金币/装备规则、不重打终焉或重复发奖。
+- 终焉进入时运行 Scene 保持终焉ID，持久化一队 current 与三队 teamStageIds 使用末关回退点；必要写盘检测含 current 差异。主会话和独立复核同时发现“teamStage1已末关但current仍旧关”窗口，已补221专项断言防回归；协同失败/胜利后的三队位置和真实内存原子写档、JSON恢复通过。
+- 新增两套专项 Runtime：三队进度/剧情/恢复221断言、普通副本选队1264断言，均exit0与ALL PASS；共16套实际存在的相关Runtime回归均通过，含共享首通28、队解锁115、行军324、真实敌死53、终焉、切关、离线边界、编队、首通情景、剧情五语1672、远征奖励803及教程50。两个误写的测试文件名不存在未运行，随后用真实存在的测试补齐；不把SKIP当PASS。
+- 初轮三队夹具漏真实 BattleLayout 数字常量、终焉夹具在Page编译后才换依赖，两次失败均按真实栈补齐隔离夹具再通过；未放宽生产逻辑或隐藏失败。独立只读终检未确认剩余本轮新增回归。五处既有NVGpaint联合类型加cast仅注释收窄，本轮六Lua逐文件LSP无Error；全工作区缓存仍70个其他Error。官方Build成功，但其LSP daemon不可用跳过守卫，不能把工具逐文件诊断与守卫混称。
+- 真实主入口surfaceless1920×1080完成150帧，Lua/资源错误0且无缺资源；原始FAIL仅frame2=1555.56ms超过1000ms阈值的软件渲染尖峰。无头150帧原始PASS、Lua/资源/引擎错误0；只是启动验证，不代替真实队伍选择、剧情及设备重启交互验收。六份代码与dist正式产物逐字节一致，未直接写dist。
+- 仓库规范校验器36回归全通过，暂存2651路径0错误0警告。`.project`本地构建身份/设置和Runtime生成存档、日志不提交。凭据仅即时环境鉴权，不进入源码、文件、Git配置/remote或记忆；建议撤销聊天中公开的PAT。
+- 用户通过 `AskUserQuestion` 明确选择“创建修复 PR（推荐）”后，先查重0条再创建正式 **PR #54**：https://github.com/FanZeros/changeForJourney/pull/54，head=`fix930/three-team-progression-20261004`、base=`workspace930`、源tip=`1221bea7`，返回open、draft=false、merged_at=null；创建时mergeable尚未计算，不声称CI已通过。PR完整披露221/1264专项、16套回归、36规范测试、官方构建和真实渲染尖峰/LSP守卫限制。未自动合并或推workspace系列；补交接只push同一新分支，完成后仍真正用AskUserQuestion选项继续。
+- **持续强化协作要求**：推进已授权任务，不擅自取消/退出；每次完成、提交或真实阻塞先如实简报，再实际调用 `AskUserQuestion` 提供2–4个明确下一步选项，不以普通文本问题收尾。尊重用户后续停止指令、权限拒绝和安全边界；每次完成后只正常push当轮新分支并核验远端SHA，不擅自创建/合并PR。
+
 ## 清理整合 PR52 交接（2026-10-04）
 
 - 用户通过AskUserQuestion选择“创建清理 PR（推荐）”。先只读查重0条，再实际创建 **PR #52**：https://github.com/FanZeros/changeForJourney/pull/52，head=`integrate930/portrait-dead-code-20261004`，base=`workspace930`，标题“refactor: 整合低风险竖屏死代码清理，保留930最新修复”。返回open、draft=false、merged_at=null；初始mergeable尚未计算，不能宣称CI已通过或已合并。

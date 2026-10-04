@@ -208,6 +208,8 @@ function BattleTriDriver.new(teamIdx, options)
         if not SC.getStage(stageId) then
             stageId = SC.NORMAL_FIRST_STAGE
         end
+        local previousStageId = self.stageId
+        local wasStarted = self._started == true
         if self.pendingKills and #self.pendingKills > 0 then
             self:queuePendingKills()
         end
@@ -325,8 +327,12 @@ function BattleTriDriver.new(teamIdx, options)
         self.introTimer = ENTER_ANIM_DURATION + math.max(0, enterCount - 1) * ENTER_STAGGER
         self.bindContext()
         self.active = true
+        self._started = true
         print(string.format("[TriDriver] 队%d 开战 stage=%s allies=%d enemies=%d",
             self.teamIdx, tostring(stageId), #self.allies, #self.enemies))
+        if not self.battleLab and self.onStageChanged and (not wasStarted or previousStageId ~= stageId) then
+            self.onStageChanged(self.teamIdx, stageId)
+        end
     end
 
     --- 死亡只记账。经验、金币和掉落等本关结束再一次性结算。
@@ -467,6 +473,18 @@ function BattleTriDriver.new(teamIdx, options)
             self.teamIdx, tostring(self.stageId), MARCH_DURATION))
     end
 
+    --- 行军背景与实际推进共用目标，未通终焉不能仅凭推算上限跳过。
+    function drv:getAdvanceStageId()
+        local nextId = SC.getNextStageId(self.stageId)
+        if nextId and SC.isTerminalTemple(nextId) then
+            local BattleScene = require("ui.battle.scene.BattleScene")
+            local skipToId, shouldSkip = SC.shouldSkipTerminal(
+                self.stageId, BattleScene.getMaxStageId(), BattleScene.getClearedStages())
+            if shouldSkip and skipToId then return skipToId end
+        end
+        return nextId
+    end
+
     --- 背景单向放大后保持峰值并淡出；第三个返回值是下层背景的目标关卡。
     --- 终焉仍等玩家确认，无下一关则原地重开，均用当前背景承接。
     function drv:getMarchBackground()
@@ -477,7 +495,7 @@ function BattleTriDriver.new(teamIdx, options)
         local zoomEase = zoomProgress * zoomProgress * (3 - 2 * zoomProgress)
         local fadeProgress = math.max(0, (progress - MARCH_ZOOM_END) / (1 - MARCH_ZOOM_END))
         local fadeEase = fadeProgress * fadeProgress * (3 - 2 * fadeProgress)
-        local nextId = SC.getNextStageId(self.stageId)
+        local nextId = self:getAdvanceStageId()
         local backgroundStageId = nextId and not SC.isTerminalTemple(nextId) and nextId or self.stageId
         return 1 + (MARCH_ZOOM - 1) * zoomEase, 1 - fadeEase, backgroundStageId
     end
@@ -486,22 +504,20 @@ function BattleTriDriver.new(teamIdx, options)
     function drv:advanceStage()
         self.marchTimer = 0
         self.marchNotice = false
-        local nextId = SC.getNextStageId(self.stageId)
+        local nextId = self:getAdvanceStageId()
         if not nextId then
             self:start(self.stageId)
             return
         end
-        if self.teamIdx == 1 and SC.isTerminalTemple(nextId) then
+        if SC.isTerminalTemple(nextId) then
             local BattleScene = require("ui.battle.scene.BattleScene")
             self._syncedMainStage = self.stageId
             self.active = false
-            if BattleScene.getStageId() == self.stageId then BattleScene.nextStage() end
-            print(string.format("[TriDriver] 队1 通关 %s，等待玩家在选关页进入终焉 %s",
-                tostring(self.stageId), tostring(nextId)))
-            return
-        end
-        if SC.isTerminalTemple(nextId) then
-            self.active = false
+            if self.teamIdx == 1 and BattleScene.getStageId() == self.stageId then
+                BattleScene.nextStage()
+            end
+            print(string.format("[TriDriver] 队%d 通关 %s，等待玩家在选关页进入终焉 %s",
+                self.teamIdx, tostring(self.stageId), tostring(nextId)))
             return
         end
         local clearedId = self.stageId

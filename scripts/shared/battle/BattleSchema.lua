@@ -17,6 +17,7 @@ BattleSchema.Fields = {
                 maxStageId     = 0101,
                 autoBattle     = true,
                 clearedStages  = {},
+                teamStageIds   = { ["1"] = 0101, ["2"] = 0101, ["3"] = 0101 },
                 -- 挂机结算字段
                 battleMode        = "idle",   -- "idle" | "firstClear" | "offline"
                 idleAccumSec      = 0,        -- 在线挂机累积秒数（满60s结算一次）
@@ -61,6 +62,19 @@ BattleSchema.Fields = {
             if fallback then
                 data.currentStageId = fallback
             end
+            -- 三队当前关独立保存；旧档只有一队，不能把共享最高关当二三队当前关。
+            -- 终焉挑战不恢复，三队都按已有规则退回对应难度末关。
+            local savedTeams = type(data.teamStageIds) == "table" and data.teamStageIds or {}
+            local fixedTeams = {}
+            for teamIdx = 1, 3 do
+                local id = teamIdx == 1 and tonumber(data.currentStageId)
+                    or tonumber(savedTeams[tostring(teamIdx)] or savedTeams[teamIdx])
+                if not id or id % 1 ~= 0 or not StageConfig.getStage(id) then
+                    id = StageConfig.NORMAL_FIRST_STAGE
+                end
+                fixedTeams[tostring(teamIdx)] = terminalFallback[id] or id
+            end
+            data.teamStageIds = fixedTeams
             -- 🔴 兜底修复：自动补标终焉神殿为已通关（避免重复挑战）
             -- 仅条件1：maxStageId 已进入下一难度（玩家明确通过了终焉）
             -- 注意：不在此处处理"末关已通关但未推进"的情况（条件2），

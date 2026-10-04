@@ -12,6 +12,14 @@
 4. **分支纪律**：以当轮指定基线新建任务分支，完成后只 push 新分支；本轮基线为 `workspace930@c47c2ec3`，任务分支为 `fix/final-temple-shared-hp-20261004`，**绝不推送到任何 `workspace` 系列或原基线分支**，不自动创建或合并 PR。
 5. **持续推进与交接**：已授权范围不擅自放弃；每次完成先如实简报，再真正调用 `AskUserQuestion` 给 2–4 个下一步选项。尊重用户后续停止指令、权限拒绝和安全边界；凭据不写入源码、Git 配置、日志或记忆。
 
+## 上次做了什么（2026-10-04，PR53 与最新三队进度修复融合）
+
+- 用户通过 AskUserQuestion 明确要求“解决下冲突”。目标workspace930由外部合入PR54前进到 `9d4a51e3`，PR53变dirty；从PR53源 `55b4a177` 新建 `fix/pr53-conflicts-20261004` 合入目标，不推workspace系列、不自动合并PR。
+- 实际文本冲突仅BattleTriPage.drawL0的等价NVGpaint类型标注，采用目标的独立cast；Driver自动合并保持每线全部三Boss、三个编号池、失守纯视觉tick与编队重开保护。完整保留PR54三队teamStageIds持久化/入关剧情、已通终焉跳过与背景目标共用、选关整数/最高关门禁、普通副本选队；BattleSchema/DungeonPage与目标逐字一致。
+- 组合首跑terminal211有3失败（旧夹具最高关101不满足新增退关门禁）、tri_progress旧断言同帧失败退关报错；仅适配测试：terminal夹具补真实末关最高资格，tri_progress断言延迟期间仍终焉且不可重进，满一秒后退关、三个pool归零而非只写汇总raid.hp，不放宽生产校验。
+- 最终十三套Runtime全过：terminal211、三队进度227、副本选队1264、死亡64、背景/行军324，另切关/关键角色/连射/护盾/生命成长/编队/三队首通28/解锁115。官方Build成功，7份合入相关源码与部署产物逐字节一致，修改Page/Driver/两测试单文件LSP无Error。真实main150帧Lua/资源0、无项目缺图，原始FAIL仅2次默认100ms帧尖峰，不宣称性能通过。
+- 新合并提交将正常push独立冲突分支，并非强推快进更新PR53原源，使既有PR保留；不创建重复PR、不推目标、不自动合并。本地.project/环境工具删除状态/存档不提交，凭据仅即时鉴权，完成后真正AskUserQuestion选项继续。
+
 ## 上次做了什么（2026-10-04，终焉修复 PR53 已创建）
 
 - 用户在本轮交付后通过 AskUserQuestion 明确选择“创建修复 PR”。先查询同源 open PR 为0、核对远端源与本地一致，再创建正式 **PR #53**：https://github.com/FanZeros/changeForJourney/pull/53，head=`fix/final-temple-shared-hp-20261004`，base=`workspace930`，源提交41753c31；返回open、draft=false、merged=false，初始mergeable未计算，不声称CI已通过或已合并。

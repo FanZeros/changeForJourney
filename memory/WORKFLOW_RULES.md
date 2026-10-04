@@ -16,6 +16,8 @@
 - 用户通过实际AskUserQuestion选择“加强领奖验收”。下一阶段继续同一功能分支与PR65，只补完整Page→GameAction→Bridge→Service→Save→ClientMessageHandler→RewardPopup链路测试，不改真实玩家档、不扩大经济/玩法范围；覆盖连续点击、满级209奖励展示、失败Toast不假成功、重建隔离会话只从JSON恢复后不重领。执行结果完成后补记。
 - 继续验收前只读查PR65仍open/未合并，GitHub返回mergeable=true/clean，当前`be9e7fd0`的repository-policy检查completed/success；仅此仓库规范CI通过，不冒称游戏设备验收。每次完成测试/文档阶段正常push同一feat1004a分支，完成后继续实际AskUserQuestion。
 - 加强验收的三份真实领奖弹窗截图已内部查看：Lv100原840与bonus100两格完整；全200批领209项/42行/scrollMax7200，顶部原九项+首份bonus完整，末端九项含最后四格居中完整。视觉夹具只喂正式配置用于绘图，不执行真实发奖/落档；三份90帧报告Lua/资源0、无缺图，原始FAIL各仅1条100ms阈值帧尖峰。临时入口及meta已移入.git，正式包需最后重建排除；完整真实发奖链回归仍由后续实际结果补记。
+- 完整源码Page→GameAction→Bridge→TaskHandler/Service→真Flush→CMH.setup/handle→真RewardPopup第一轮加强23用例24051断言通过，旧18用例17325门禁保留。连续2/3点击同级+940一次写盘/一次popup，200级209项+20840、真Popup42行滚7200，主动领奖不3秒自关；clear旧单领分支、rename失败保已有popup/Toast、冷新实例只JSON恢复先于初始化/重领拒绝均覆盖。阶段测试提交 `bea36b61` 已push远端一致，仅改现有test，生产代码不改。
+- 独立反证发现测试仍需加强实际nvgText而非format调用、全pcall异常捕获、show入口瞬间余额/账本快照三点；正在补强，不把首轮结果说成最终全链完备。设计坐标输入/叶子绘图spy不等于真实硬件或宿主全路由验收。最终结果与推送待实际完成后补记。
 
 ## 选关敌人横向拖动与终焉说明协作要求（2026-10-04）
 

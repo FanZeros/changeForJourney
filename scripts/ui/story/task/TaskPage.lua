@@ -133,8 +133,26 @@ local function listForKey(tabKey)
     return out
 end
 
+local function expeditionClaimableCount()
+    local player, data = ClientDispatcher.get("player"), taskData()
+    if type(player) ~= "table" or type(data) ~= "table" then return 0 end
+    local level = tonumber(player.level) or 1
+    if level ~= level or math.abs(level) == math.huge then level = 1 end
+    level = math.max(1, math.min(#TaskConfig.LEVEL_TASKS, math.floor(level)))
+    local claimed = type(data.achClaimed) == "table" and data.achClaimed or {}
+    local count = 0
+    -- 城镇红点每帧查询只计数，不为200级列表反复分配控件展示快照。
+    for target, tasks in ipairs(TaskConfig.LEVEL_TASKS) do
+        if target > level then break end
+        for _, task in ipairs(tasks) do
+            if not claimed[task.id] then count = count + 1 break end
+        end
+    end
+    return count
+end
+
 local function claimableForKey(tabKey)
-    if tabKey == "level" then return expeditionSnapshot().claimableCount end
+    if tabKey == "level" then return expeditionClaimableCount() end
     local count = 0
     for _, task in ipairs(listForKey(tabKey)) do
         if statusOf(task) == TaskConfig.STATUS.CLAIMABLE then

@@ -19,6 +19,7 @@ local COLOR = {
 ---@class ExpeditionRewardWidgets
 ---@field icon Panel
 ---@field text Label
+---@field amount Label
 ---@field state Label
 ---@class ExpeditionTrackRowWidgets
 ---@field panel Panel
@@ -110,14 +111,14 @@ local function createRow(row, width, rowHeight, step, top)
             id = "icon_" .. index, position = "absolute", left = x, top = 62,
             width = 62, height = 62, backgroundFit = "contain", pointerEvents = "none",
         }
-        local rewardText = label("reward_" .. index, x + 72, 56, 154, 52, 25, COLOR.gold)
-        rewardText:SetStyle({ whiteSpace = "normal", maxLines = 2, lineHeight = 1.1 })
-        local rewardState = label("state_" .. index, x + 72, 110, 154, 42, 18, COLOR.muted)
-        rewardState:SetStyle({ whiteSpace = "normal", maxLines = 2, lineHeight = 1.1 })
+        local rewardText = label("reward_" .. index, x + 72, 50, 154, 34, 25, COLOR.gold)
+        local amount = label("amount_" .. index, x + 72, 84, 154, 32, 27, COLOR.gold)
+        local rewardState = label("state_" .. index, x + 72, 116, 154, 32, 18, COLOR.muted)
         card:AddChild(icon)
         card:AddChild(rewardText)
+        card:AddChild(amount)
         card:AddChild(rewardState)
-        rewards[index] = { icon = icon, text = rewardText, state = rewardState }
+        rewards[index] = { icon = icon, text = rewardText, amount = amount, state = rewardState }
     end
     local button = UI.Button {
         id = "claim", position = "absolute", left = width - 380, top = 88, width = 164, height = 58,
@@ -159,10 +160,22 @@ local function updateSummary(snapshot)
     if bar then bar:SetValue(loading and 0 or snapshot.ratio) end
 end
 
+-- 文本按真实宿主字体测宽，显式缩字；名称和数量分行，避免译文挤掉数量。
+---@param widget Label
+local function fittedText(widget, vg, value, size)
+    widget:SetText(value)
+    nvgFontFace(vg, "sans")
+    nvgFontSize(vg, size)
+    local measured = nvgTextBounds(vg, 0, 0, value, nil)
+    local fontSize = measured > 150 and size * 150 / measured or size
+    widget:SetStyle({ fontSize = fontSize * 0.75 })
+end
+
 ---@param widgets ExpeditionTrackRowWidgets
 ---@param row table
 ---@param loading boolean
-local function updateRow(widgets, row, loading)
+---@param vg NVGContextWrapper
+local function updateRow(widgets, row, loading, vg)
     local parts = { I18n.get(), row.taskId, row.status, tostring(row.current), tostring(loading) }
     for _, task in ipairs(row.tasks) do
         parts[#parts + 1] = task.status .. Progress.rewardLabel(task.reward)
@@ -191,16 +204,18 @@ local function updateRow(widgets, row, loading)
         local done = task.status == TaskConfig.STATUS.CLAIMED
         rewardWidgets.icon:SetStyle({ backgroundImage = def and def.iconPath or task.reward.icon,
             imageTint = done and { 165, 175, 165, 255 } or { 255, 255, 255, 255 } })
-        rewardWidgets.text:SetText(Progress.rewardLabel(task.reward))
+        fittedText(rewardWidgets.text, vg, I18n.lookup(def and def.name or task.reward.type), 25)
+        rewardWidgets.amount:SetText("× " .. NumberUtil.format(task.reward.amount))
         rewardWidgets.text:SetFontColor(done and COLOR.green or COLOR.gold)
-        rewardWidgets.state:SetText(done and I18n.lookup("已领取")
-            or (task.taskId == row.taskId and I18n.lookup("每级额外奖励") or I18n.lookup("远征勋记")))
+        rewardWidgets.amount:SetFontColor(done and COLOR.green or COLOR.gold)
+        fittedText(rewardWidgets.state, vg, done and I18n.lookup("已领取")
+            or (task.taskId == row.taskId and I18n.lookup("每级额外奖励") or I18n.lookup("远征勋记")), 18)
     end
     widgets.button:SetText(I18n.lookup(loading and "加载中" or (claimed and "已领取" or (claimable and "领取" or "未达成"))))
     widgets.button:SetDisabled(not claimable)
 end
 
-function View.update(snapshot, layout)
+function View.update(snapshot, layout, vg)
     Surface.init()
     if not summaryRoot then summaryRoot = createSummary(layout.w, layout.summaryH) end
     updateSummary(snapshot)
@@ -221,7 +236,7 @@ function View.update(snapshot, layout)
     for index = firstVisible, lastVisible do
         local widgets = rowWidgets[index - firstVisible + 1]
         local row = snapshot.rows[index]
-        updateRow(widgets, row, snapshot.loading == true)
+        updateRow(widgets, row, snapshot.loading == true, vg)
         -- 只更新当前可见圆球的轻呼吸透明度，不重复创建字体、贴图或控件。
         widgets.halo:SetStyle({ opacity = not snapshot.loading and row.current
             and (0.78 + math.sin(time.elapsedTime * 2.4) * 0.18) or 0 })
@@ -230,7 +245,7 @@ end
 
 function View.draw(vg, snapshot, layout)
     if not vg then return end
-    View.update(snapshot, layout)
+    View.update(snapshot, layout, vg)
     nvgSave(vg)
     nvgIntersectScissor(vg, layout.x, layout.summaryY, layout.w, layout.summaryH)
     nvgTranslate(vg, layout.x, layout.summaryY)

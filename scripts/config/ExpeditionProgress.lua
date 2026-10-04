@@ -8,7 +8,7 @@ local NumberUtil = require("core.NumberUtil")
 local I18n = require("core.I18n")
 
 local Progress = {}
-local rangeCache = {}
+local rangeCache, levelUnlockCache = {}, {}
 
 local function levelValue(value)
     local number = tonumber(value) or 1
@@ -43,7 +43,9 @@ end
 
 function Progress.getLevelUnlocks(level)
     level = levelValue(level)
+    if levelUnlockCache[level] then return levelUnlockCache[level] end
     local entries = {}
+    levelUnlockCache[level] = entries
     if level <= 1 then return entries end
     local previousSlots = ExpTable.getUnlockedSlotCountForTeam(level - 1)
     local currentSlots = ExpTable.getUnlockedSlotCountForTeam(level)

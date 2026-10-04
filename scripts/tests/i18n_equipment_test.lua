@@ -233,6 +233,51 @@ local function run()
         check(contains(string.format(D[lang]["腐化状态：诅咒 %d/%d 层（需神圣石洗除）"], 3, 3)), lang .. "洗练诅咒状态完整模板")
         equip.corruptCount = nil
     end
+    -- 固定副词条数值和下一阶预览实际绘制，不把随机词条当成升阶目标。
+    I18n.set("zh_CN")
+    local codex = ES.generate("O13", 12, 4)
+    codex.ascendLevel = 11
+    state.selectedEquip, state.selectedEquipSlot = codex, "offhand"
+    Enhance.updateEnhanceData(codex)
+    clearCalls()
+    Enhance.drawPanel(nil)
+    local function shownAt(x, value)
+        for _, call in ipairs(calls) do if call.x == x and call.text == value then return true end end
+        return false
+    end
+    check(shownAt(473, ES.formatBaseStatValue("armor", ES.effectiveBaseStatValue(codex, 1))),
+        "主属性升阶前值保留小数")
+    local damageBefore = ES.effectiveBaseStatValue(codex, 3)
+    local damageAfter = ES.effectiveBaseStatValue(codex, 3, nil, 12)
+    check(shownAt(473, ES.formatBaseStatValue("magDmgBonus", damageBefore))
+        and shownAt(856, ES.formatBaseStatValue("magDmgBonus", damageAfter)) and damageAfter > damageBefore,
+        "+11到+12固定魔伤词条在绿色值框预览真实提升")
+    codex.ascendLevel = 12
+    Enhance.updateEnhanceData(codex)
+    clearCalls()
+    Enhance.drawPanel(nil)
+    check(shownAt(856, ES.formatBaseStatValue("magPen", ES.effectiveBaseStatValue(codex, 2, nil, 13))),
+        "+12到+13轮到固定穿透词条且可预览")
+    check(ES.formatBaseStatValue("armor", 14.1) ~= ES.formatBaseStatValue("armor", 14.4),
+        "护甲零头不再显示相同整数")
+    state.selectedEquip, state.selectedEquipSlot = equip, "weapon"
+    Enhance.updateEnhanceData(equip)
+    local bulk = ES.generate("W1", 1, 1)
+    state.selectedEquip, state.selectedEquipSlot = bulk, "weapon"
+    State.getGold = function() return 10 ^ 14 end
+    Enhance.updateEnhanceData(bulk)
+    check(Enhance.handleInput(770, 2129) and Enhance.isDialogOpen(), "无随机词条也可预览固定副一键升阶")
+    I18n.set("en")
+    clearCalls()
+    Enhance.drawConfirmDialog(nil)
+    local bulkSummary
+    for _, call in ipairs(calls) do if call.y == 1223 then bulkSummary = call end end
+    check(bulkSummary and measuredWidth(bulkSummary.text, bulkSummary.font) <= 800,
+        "多里程碑英文一键摘要缩字后不越出弹窗内框")
+    Enhance.onOpen()
+    state.selectedEquip, state.selectedEquipSlot = equip, "weapon"
+    Enhance.updateEnhanceData(equip)
+    I18n.set("zh_CN")
     check(combinations == 1932, "四语1932个全量覆盖组合")
     -- 正图片句柄覆盖锁图标实际绘制和热区；直接调用真实Draw入口，省掉业务输入副作用。
     local DetailDraw = require("ui.character.equip.EquipmentDetailDraw")

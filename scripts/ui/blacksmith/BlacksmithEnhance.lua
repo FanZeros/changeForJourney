@@ -1,7 +1,7 @@
 -- ============================================================================
 -- BlacksmithEnhance.lua
 -- 铁匠铺 - 槽位强化子模块：属性展示、消耗显示、强化触发
--- 新机制：100% 成功率，消耗金币+对应卷轴，仅提升第一条基础属性
+-- 主词条每阶提升，固定副词条按模板顺序轮转提升；随机词条不参与每阶提升。
 -- ============================================================================
 
 ---@diagnostic disable: undefined-global
@@ -120,7 +120,7 @@ local enhanceData = {
     curLevel  = 0,
     nextLevel = 1,
     isMaxLevel = false,
-    -- 基础属性列表（仅第一条有提升）
+    -- 主/固定副词条列表（本阶有提升的行提供前后预览）
     baseAttrs = {},
     -- 随机词缀列表（仅显示，不随强化提升）
     affixes = {},
@@ -267,40 +267,27 @@ function M.updateEnhanceData(equip)
     local curBoost = BlacksmithConfig.getEnhanceBoost(enhLv)
     local nextBoost = isMax and curBoost or BlacksmithConfig.getEnhanceBoost(nextLv)
 
-    -- 基础属性：只有第一条受强化加成
+    -- 主词条与本阶轮到的固定副词条使用同一真实计算，可精确预览。
     local baseAttrs = {}
-    for idx, s in ipairs(equip.baseStats or {}) do
-        local key = s[1]
-        local rawVal = s[2]
+    for idx, stat in ipairs(equip.baseStats or {}) do
+        local key = stat[1]
         local meta = AD.META[key]
-        local attrName = meta and meta.name or key
-
-        local curVal, nextVal
-        if idx == 1 then
-            -- 第一条属性受槽位强化加成
-            curVal  = rawVal * (1 + curBoost)
-            nextVal = rawVal * (1 + nextBoost)
-        else
-            -- 其他属性不受强化影响
-            curVal  = rawVal
-            nextVal = rawVal
+        local curVal = EquipmentSystem.effectiveBaseStatValue(equip, idx, curBoost, enhLv)
+        local nextVal = EquipmentSystem.effectiveBaseStatValue(equip, idx, nextBoost, nextLv)
+        local precision = 2
+        local currentText = EquipmentSystem.formatBaseStatValue(key, curVal, precision)
+        local nextText = EquipmentSystem.formatBaseStatValue(key, nextVal, precision)
+        while nextVal ~= curVal and currentText == nextText and precision < 6 do
+            precision = precision + 1
+            currentText = EquipmentSystem.formatBaseStatValue(key, curVal, precision)
+            nextText = EquipmentSystem.formatBaseStatValue(key, nextVal, precision)
         end
-
-        if meta and meta.dataType == AD.TYPE_PCT then
-            baseAttrs[#baseAttrs + 1] = {
-                name    = attrName,
-                curVal  = string.format("%.1f%%", curVal),
-                nextVal = string.format("%.1f%%", nextVal),
-                boosted = (idx == 1),
-            }
-        else
-            baseAttrs[#baseAttrs + 1] = {
-                name    = attrName,
-                curVal  = string.format("%.0f", curVal),
-                nextVal = string.format("%.0f", nextVal),
-                boosted = (idx == 1),
-            }
-        end
+        baseAttrs[#baseAttrs + 1] = {
+            name = meta and meta.name or key,
+            curVal = currentText,
+            nextVal = nextText,
+            boosted = nextVal ~= curVal,
+        }
     end
 
     -- 词缀（显示生效值：普通词条吃栏位倍率，魔化不吃）
@@ -867,15 +854,26 @@ function M.drawConfirmDialog(vg)
             previewParts[#previewParts + 1] = I18n.format("词条倍率 ×%.2f → ×%.2f", curMult, nextMult)
         end
     end
-    -- 升阶副属性递增预览：每阶轮转 1 条普通词条强化
-    if ascendLevels > 0 and normalCount > 0
+    -- 每阶轮转的是固定副词条，与随机词条数量无关。
+    local fixedCount = #(state.selectedEquip and state.selectedEquip.baseStats or {}) - 1
+    if ascendLevels > 0 and fixedCount > 0
         and (BlacksmithConfig.ASCEND_SUB_STAT_RATIO or 0) > 0 then
         previewParts[#previewParts + 1] = I18n.format("副属性轮转强化 %d 次", ascendLevels)
     end
     if #previewParts > 0 then
-        nvgFontSize(vg, 26)
+        local summary = I18n.format("将新增 %s", table.concat(previewParts, EquipmentText.separator(I18n.get())))
+        local summaryFont = 26
+        nvgFontSize(vg, summaryFont)
+        while nvgTextBounds(vg, 0, 0, summary) > EMDLG.CONTENT_W and summaryFont > 14 do
+            summaryFont = summaryFont - 1
+            nvgFontSize(vg, summaryFont)
+        end
+        nvgSave(vg)
+        nvgIntersectScissor(vg, EMDLG.QTY_CX - EMDLG.CONTENT_W * 0.5,
+            EMDLG.QTY_CY - 76, EMDLG.CONTENT_W, 44)
         nvgFillColor(vg, nvgRGBA(0xbc, 0x9b, 0x58, 255))
-        nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY - 55, I18n.format("将新增 %s", table.concat(previewParts, EquipmentText.separator(I18n.get()))), nil)
+        nvgText(vg, EMDLG.QTY_CX, EMDLG.QTY_CY - 55, summary, nil)
+        nvgRestore(vg)
     end
 
     -- 减按钮

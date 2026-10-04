@@ -1,6 +1,6 @@
 -- ============================================================================
 -- TaskPage - 城镇任务左栏页。模式 A：1080×2400，沿用 TownPageChrome。
--- 通关与队员保留原功绩页；远征使用等级升序的永久里程碑轨道。
+-- 通关与队员保留原功绩页；远征使用逐级圆球连接的永久奖励轨道。
 -- ============================================================================
 
 local DrawUtil = require("core.DrawUtil")
@@ -22,13 +22,13 @@ local OPEN_DUR, CLOSE_DUR = TownPageChrome.OPEN_DUR, TownPageChrome.CLOSE_DUR
 local text = DrawUtil.drawTextStroke
 local LIST = { x = 48, y = 470, w = 984, h = 1720, rowH = 200, gap = 36 }
 local LEVEL_LIST = {
-    x = 48, y = 826, w = 984, h = 1364, rowH = 248, gap = 28,
-    summaryY = 470, summaryH = 328,
+    x = 48, y = 646, w = 984, h = 1544, rowH = 184, gap = 20,
+    summaryY = 470, summaryH = 152,
 }
 local TABS = {
-    { key = "clear", name = "通关", cx = 270, w = 280 },
-    { key = "level", name = "远征", cx = 540, w = 280 },
-    { key = "hero", name = "队员", cx = 810, w = 280 },
+    { key = "clear", name = "通关", cx = 270, w = 244 },
+    { key = "level", name = "远征", cx = 540, w = 244 },
+    { key = "hero", name = "队员", cx = 810, w = 244 },
 }
 local DIFF_MARK = { normal = "普通", hard = "困难", nightmare = "噩梦" }
 local CLAIM_ALL = { cx = 860, cy = 300, w = 240, h = 64 }
@@ -133,8 +133,26 @@ local function listForKey(tabKey)
     return out
 end
 
+local function expeditionClaimableCount()
+    local player, data = ClientDispatcher.get("player"), taskData()
+    if type(player) ~= "table" or type(data) ~= "table" then return 0 end
+    local level = tonumber(player.level) or 1
+    if level ~= level or math.abs(level) == math.huge then level = 1 end
+    level = math.max(1, math.min(#TaskConfig.LEVEL_TASKS, math.floor(level)))
+    local claimed = type(data.achClaimed) == "table" and data.achClaimed or {}
+    local count = 0
+    -- 城镇红点每帧查询只计数，不为200级列表反复分配控件展示快照。
+    for target, tasks in ipairs(TaskConfig.LEVEL_TASKS) do
+        if target > level then break end
+        for _, task in ipairs(tasks) do
+            if not claimed[task.id] then count = count + 1 break end
+        end
+    end
+    return count
+end
+
 local function claimableForKey(tabKey)
-    if tabKey == "level" then return expeditionSnapshot().claimableCount end
+    if tabKey == "level" then return expeditionClaimableCount() end
     local count = 0
     for _, task in ipairs(listForKey(tabKey)) do
         if statusOf(task) == TaskConfig.STATUS.CLAIMABLE then
@@ -171,7 +189,8 @@ local function focusExpedition(snapshot)
     if snapshot.loading then return end
     local layout = getListLayout()
     local index = math.max(1, math.min(#snapshot.rows, snapshot.focusIndex or 1))
-    state.scrollY = (index - 1) * (layout.rowH + layout.gap)
+    -- 打开时将当前发光节点放到上部，保留上一级连接；领取后不跳动。
+    state.scrollY = math.max(0, (index - 1) * (layout.rowH + layout.gap) - (layout.rowH + layout.gap))
     clampScroll()
     state.focusPending = false
 end
@@ -490,8 +509,8 @@ function TaskPage.handleInput(dx, dy)
     if not task then return true end
     if snapshot then
         if not snapshot.loading and task.status == TaskConfig.STATUS.CLAIMABLE then
-            print("[TaskPage] claim " .. task.taskId)
-            GameAction.sendAction(Protocol.ACTION_TYPES.CLAIM_TASK, { taskId = task.taskId })
+            print("[TaskPage] claim level " .. task.level)
+            GameAction.sendAction(Protocol.ACTION_TYPES.CLAIM_ALL_TASKS, { scope = "level", level = task.level })
         end
     elseif statusOf(task) == TaskConfig.STATUS.CLAIMABLE then
         print("[TaskPage] claim " .. task.id)

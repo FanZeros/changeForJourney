@@ -10,6 +10,7 @@ local SC              = require("config.StageConfig")
 local StageProvider   = require("shared.StageProvider")
 local ExpTable        = require("config.ExpTable")
 local EquipmentSystem = require("systems.EquipmentSystem")
+local LootBoxSystem   = require("systems.LootBoxSystem")
 local HeroService     = require("rules.hero.HeroService")
 local IdleIncomeConfig = require("config.IdleIncomeConfig")
 
@@ -68,6 +69,13 @@ function SweepService.Sweep(uid, count, teamIdx)
     local cost = SweepService.SWEEP_COST * count
     if owned < cost then
         return false, "扫荡券不足"
+    end
+    local lootboxData = PDM.GetModule(uid, "lootbox")
+    local totalEquipDrops = SweepService.EQUIP_DROP_COUNT * count
+    -- 满包且遗匣未加载时，在扣券/发奖前拒绝，避免产生无法保存的装备。
+    if not lootboxData and EquipmentSystem.getInventoryCount(equipData) + totalEquipDrops
+        > EquipmentSystem.MAX_INVENTORY then
+        return false, "遗匣数据未加载"
     end
 
     -- 以玩家最高进度关卡为基准，无论挂机在哪一关
@@ -175,14 +183,13 @@ function SweepService.Sweep(uid, count, teamIdx)
 
     -- 3) 扫荡不再增加远征经验
 
-    -- 4) 装备掉落：按次数生成真实装备，直接放入背包
+    -- 4) 装备掉落：生成完整实例，满包时转入遗匣。
     local MC = require("config.MonsterConfig")
-    local totalEquipDrops = SweepService.EQUIP_DROP_COUNT * count
     local equipsPerStage = math.floor(totalEquipDrops / stageCount)
     local remainder = totalEquipDrops - equipsPerStage * stageCount
     local grantedEquips = {}
     local equipByQuality = {}  -- [quality] = count
-    local skippedFull = 0
+    local inventoryCount, lootboxCount = 0, 0
 
     for stageIdx, stageEntry in ipairs(sweepStages) do
         -- 按实际出怪队列构建品质池（与 BattleScene.generateEnemyList 一致）
@@ -227,26 +234,32 @@ function SweepService.Sweep(uid, count, teamIdx)
             if not equip then
                 print("[SweepService][WARN] generateRandom failed level="
                     .. tostring(stageEntry.monsterLevel) .. " quality=" .. tostring(quality))
-            elseif EquipmentSystem.isInventoryFull(equipData) then
-                skippedFull = skippedFull + 1
             else
-                EquipmentSystem.addToInventory(equipData, equip)
+                local destination = LootBoxSystem.deliverEquipment(lootboxData, equipData, equip)
+                if destination == "lootbox" then
+                    lootboxCount = lootboxCount + 1
+                else
+                    inventoryCount = inventoryCount + 1
+                end
                 grantedEquips[#grantedEquips + 1] = {
                     type = "equip",
                     templateId = equip.templateId,
                     quality = equip.quality,
                     level = equip.level,
                     slot = equip.slot,
+                    equip = equip,
+                    destination = destination,
                 }
-                equipByQuality[quality] = (equipByQuality[quality] or 0) + 1
+                equipByQuality[equip.quality] = (equipByQuality[equip.quality] or 0) + 1
             end
         end
     end
-    if #grantedEquips > 0 then
+    if inventoryCount > 0 then
         PDM.MarkDirty(uid, "equipment")
     end
-    if skippedFull > 0 then
-        print("[SweepService][WARN] inventory full, skipped equips=" .. skippedFull
+    if lootboxCount > 0 then
+        PDM.MarkDirty(uid, "lootbox")
+        print("[SweepService] 满包装备已入遗匣=" .. lootboxCount
             .. " uid=" .. tostring(uid))
     end
 

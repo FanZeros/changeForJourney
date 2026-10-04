@@ -107,6 +107,60 @@ function Start()
             "滚动底边扣除内容下移，末行战力可见")
         check(Draw.ROW_SPACING > Draw.ROSTER_BOTTOM_DY + Draw.ROSTER_ICON * 0.5,
             "相邻行战力与下行头像留有间隔")
+        -- 当前25位角色应在零滚动时完整展示，包含末行名字、战力和底框。
+        roster = {}
+        for heroId = 1, 25 do
+            roster[#roster + 1] = { heroId = heroId, owned = true, level = 35 }
+        end
+        records, frames = {}, {}
+        Draw.draw({}, 0, false)
+        local rosterFrames, teamFrames, teamBottom, rosterFrameBottom = {}, {}, 0, 0
+        for _, f in ipairs(frames) do
+            if f.nameLabel then rosterFrames[#rosterFrames + 1] = f
+            else teamFrames[#teamFrames + 1] = f end
+        end
+        check(#rosterFrames == 25, "零滚动绘制全部25位角色，未跳过末行")
+        for _, f in ipairs(rosterFrames) do
+            check(f.cy - f.size * 0.5 >= Draw.SCROLL_TOP
+                and f.cy + Draw.ROSTER_BOTTOM_DY <= Draw.SCROLL_BOTTOM,
+                "头像、名字、战力完整位于首屏裁剪内: " .. f.heroId)
+        end
+        for _, r in ipairs(records) do
+            if r.kind == "rect" and r.w > 790 and r.w < 800 then teamBottom = math.max(teamBottom, r.y + r.h) end
+            if r.kind == "rect" and r.w > 850 and r.w < 880 then rosterFrameBottom = r.y + r.h end
+        end
+        local firstTop = Draw.ROW1_CY - Draw.ROSTER_ICON * 0.5
+        check(firstTop - teamBottom >= 48 and firstTop - teamBottom <= 80,
+            "队三与名册仍留间隙但不再浪费大块空白")
+        check(rosterFrameBottom > 0 and rosterFrameBottom <= Draw.SCROLL_BOTTOM,
+            "五行名册底框同样完整，不只保证头像可见")
+        local fullBottom = Draw.ROW1_CY + 4 * Draw.ROW_SPACING + Draw.ROSTER_BOTTOM_DY
+        check(math.max(0, fullBottom - Draw.SCROLL_BOTTOM) == 0, "25人完整内容无需滚动")
+        check(Draw.ROSTER_ICON == 148 and rosterFrames[1].size == 148 and teamFrames[1].size == 176,
+            "名册与编队头像尺寸没有缩小")
+        check(targets.character_slot_1.cy == Draw.ROW1_CY + Draw.CONTENT_SHIFT_Y,
+            "上移后教程热点仍与首行同位")
+        -- 读取正式名册命中函数，隔离状态但不手抄一份输入公式。
+        local file = assert(cache:GetFile("ui/character/panel/CharacterPanel.lua"))
+        local lines = {}
+        while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+        file:Dispose()
+        local source = table.concat(lines, "\n")
+        local hitSource = assert(source:match("(local function hitTestRosterCard.-)\n%-%- ======================== Public API"))
+        local env = setmetatable({ Draw = Draw, DESIGN_W = 1080, DESIGN_H = 2400,
+            ROW1_CY = Draw.ROW1_CY, ROW_SPACING = Draw.ROW_SPACING, MAX_PER_ROW = Draw.MAX_PER_ROW,
+            SCROLL_TOP = Draw.SCROLL_TOP, SCROLL_BOTTOM = Draw.SCROLL_BOTTOM, heroRoster = roster, scrollY = 0 },
+            { __index = _G })
+        local hit = assert(load(hitSource .. "\nreturn hitTestRosterCard", "@正式名册命中", "t", env))()
+        for _, index in ipairs({ 1, 5, 21, 25 }) do
+            local f = rosterFrames[index]
+            check(hit(f.cx + Draw.CONTENT_SHIFT_X, f.cy + Draw.CONTENT_SHIFT_Y) == index,
+                "首末行头像命中跟随正式绘制: " .. index)
+            check(hit(f.cx, f.cy + Draw.ROSTER_BOTTOM_DY + Draw.CONTENT_SHIFT_Y - 1) == index,
+                "首末行战力区域仍点击同一角色: " .. index)
+        end
+        check(hit(540, Draw.SCROLL_TOP + Draw.CONTENT_SHIFT_Y - 1) == nil,
+            "裁剪上方空隙不会误选名册")
         print("[character_roster_layout_test] ALL PASS: " .. checkCount .. " assertions")
     end)
     require = nativeRequire

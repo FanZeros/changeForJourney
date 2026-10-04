@@ -1013,7 +1013,7 @@ function BattleTriPage.handleInput(wx, wy)
         return true
     end
     if math.abs(wx - hudSweepX) <= hitW and math.abs(wy - hudY) <= hitH then
-        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale)
+        SweepDialog.handleButtonInput(971 + (wx - hudSweepX) / hudScale, 2115 + (wy - hudY) / hudScale, 1)
         return true
     end
     if math.abs(wx - hudStatsX) <= hitW and math.abs(wy - hudY) <= hitH then
@@ -1052,7 +1052,7 @@ function BattleTriPage.handleInput(wx, wy)
             return true
         end
         if math.abs(wx - rowSweepX) <= hitW and math.abs(wy - rowY) <= hitH then
-            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale)
+            SweepDialog.handleButtonInput(971 + (wx - rowSweepX) / hudScale, 2115 + (wy - rowY) / hudScale, row)
             return true
         end
         if math.abs(wx - rowStatsX) <= hitW and math.abs(wy - rowY) <= hitH then

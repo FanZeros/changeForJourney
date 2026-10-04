@@ -9,6 +9,7 @@
 - 专项首跑fixture缺GameState/player同步导致完整往返断言失败，按真实桥同步修测试后全过；双键true/falsefixture在Dispatcher归一后注入，只测Story读取，不伪称Schema冲突合并稳定。三份修改LuaLSP无Error；36仓库规范单测通过，2665路径0错误0警告。
 - 最终官方Build成功，三份修改Lua与最新部署产物逐字节3/3一致；没有直接写dist，没有新增资源/元数据；可选旧源码敏感性对照未执行，不宣称已二分复现。提交只包含两份生产Lua、已有专项测试与本记忆。
 - 已正常push功能提交 `b57d281589dac3f53a3265a1a6972e590d545ebd` 到 `fix/scenario82-interrupted-reward-20261004`，远端SHA与本地一致；远端workspace930仍677af353，未被本会话推送，未创建或合并PR。鉴权只用临时请求头，不写文件/Git配置/remote；交接追加仅push此任务分支。
+- 用户经AskUserQuestion明确选择“创建情景82修复 PR（推荐）”，查重同源open为0、核对源6083106后创建正式 **PR #61**：https://github.com/FanZeros/changeForJourney/pull/61，head=`fix/scenario82-interrupted-reward-20261004`、base=`workspace930`，open、draft=false、merged=false；mergeable尚未计算，不声称CI通过。目标由外部前进到5678b740，验证基线仍677af353+本修复，未擅自混入新基线；PR说明完整披露1050专项、12套周边、旧神器六失败、旧台账歧义与设备验收限制。未自动合并或推workspace系列，交接记忆仅push同一任务分支，完成后仍真正AskUserQuestion。
 - **持续强化**：已授权修复持续推进，尊重后续停止、权限拒绝和安全边界；每次完成先如实简报，再实际用AskUserQuestion给下一步选项。提交仅本轮源码/既有测试/此记忆，本地.project身份/设置、存档、日志和凭据不提交；正常push新分支并核验SHA。
 
 ## 配装变化字放大与绿色优先排序（2026-10-04）

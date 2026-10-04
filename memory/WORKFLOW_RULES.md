@@ -1,3 +1,11 @@
+## 三队免疫隔离与养成刷新首批（2026-10-04，feat1004b）
+
+- 用户通过实际 `AskUserQuestion` 选择“三队修复（Recommended）”，本批范围仅战线RCH免疫状态隔离和转职／重置的真实所属队养成刷新；不混账户收益、倍速、全灭剧情、剧情链或美术调整。
+- 从最新 `workspace930@9725abbee100f07f6185c37b54c8fff1844ba448` 新建 `feat1004b/team-isolation-refresh`。项目仍在 `/workspace` 根；保留PR70首通账本、teamStageIds三队存档、终焉三编号共享池／九Boss与签名重建保护、失败延迟退场、神器全队唯一及partySlot。
+- 先补真实旧实现失败回归，再实现小范围修复；养成回执不提交编队、不清累计统计、不重载旁队战斗。RCH容器只覆盖本批单位免疫／护盾条件状态，不宣称TAL／ETS所有全局池都已隔离。实际测试及构建结果完成后补记，不把旧分支数字冒称本批验收。
+- 官方Runtime已经按代理环境安装到`.cli`，验证缓存与日志仅本地，不提交；本地.project及.gitignore环境变化不提交。前轮审核报告在PR71，open未合；当前新修复分支不为保存记忆合入旧报告分支。
+- **持续强化交接规范**：每个完成代码／文档阶段正常commit/push当前feat1004b功能分支，绝不push任何workspace系列，不强推、不自动合并PR；完成先真实简报，再实际AskUserQuestion给下一步选项。尊重用户后续停止、权限拒绝和安全边界，凭据不入代码／文件／持久配置／记忆。
+
 ## 经济P1首通账本与塔强化修复（2026-10-04）
 
 - 用户通过实际 `AskUserQuestion` 选择“修经济类P1（推荐）”，授权本批仅B01最高关重复首通、B04塔强化单击双写。由清单分支 `8135ae7` 创建 `feat1004a/economic-firstclear-tower-singlewrite`，不推任何workspace系列、不强推、不自动创建或合并PR；继续遵守阶段完成简报后真正AskUserQuestion选项交接。

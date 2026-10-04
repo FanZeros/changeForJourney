@@ -779,6 +779,104 @@ local function testEstimate()
     check(estDirect == wEstA, "estimateUnit 与 estimate 结果一致（" .. estDirect .. "）")
 end
 
+-- ── 12) 敌人等级与掉落来源：实时按关卡，离线按独立锚点 ──
+local function testDropLevelSources()
+    local Stage = require("config.StageConfig")
+    local Spawn = require("ui.battle.stage.BattleEnemySpawn")
+    local Drop = require("systems.DropSystem")
+    local ES = require("systems.EquipmentSystem")
+    local EC = require("config.EquipmentConfig")
+    local Loot = require("systems.LootBoxSystem")
+    local Offline = require("systems.OfflineCalc")
+    local assertions, passCount = 0, 0
+    local function verify(ok, label)
+        assertions = assertions + 1
+        if ok then passCount = passCount + 1 else check(false, label) end
+    end
+
+    for _, stageId in ipairs({ 1201, 1301, 2101, 2401 }) do
+        local stage = assert(Stage.getStage(stageId), "掉落核查关卡缺失")
+        for _, firstClear in ipairs({ false, true }) do
+            local enemies = Spawn.generateEnemyList(stage, firstClear)
+            verify(#enemies > 0, stageId .. " 真实敌人列表非空")
+            for _, enemy in ipairs(enemies) do
+                verify(enemy.level == stage.monsterLevel and enemy.attrs.unitLevel == stage.monsterLevel,
+                    stageId .. " 敌人卡面/属性等级与关卡一致，不乘二")
+            end
+        end
+        -- 只确保命中掉率，怪物/品质/部位/词条仍调用原随机，不改生产函数。
+        local original = math.random
+        math.random = function(...)
+            math.random = original
+            assert(select("#", ...) == 0, "击杀掉率调用顺序改变")
+            return stage.dropRate * 0.5
+        end
+        local ok, equip = pcall(Drop.generateKillDrop, stage)
+        math.random = original
+        assert(ok, tostring(equip))
+        verify(equip and equip.level == stage.monsterLevel,
+            stageId .. " 同关击杀的新装备不降级")
+        local firstRewards = Drop.generateFirstClearEquips(stage)
+        verify(#firstRewards == stage.fcEquip, stageId .. " 首通装备数与配置一致")
+        for _, reward in ipairs(firstRewards) do
+            verify(reward.level == stage.monsterLevel, stageId .. " 首通奖励等级与关卡一致")
+        end
+        for _, slot in ipairs(EC.SLOTS) do
+            for _, quality in ipairs({ 1, 6 }) do
+                local item = ES.generateBySlot(slot, stage.monsterLevel, quality)
+                verify(item and item.level == stage.monsterLevel and item.quality == quality,
+                    stageId .. " " .. slot .. " 品质/模板筛选不降低装备等级")
+            end
+        end
+        print("[掉落等级核查] stage=" .. stageId .. " enemyLv=" .. stage.monsterLevel
+            .. " killEquipLv=" .. tostring(equip and equip.level)
+            .. " firstClearEquipLv=" .. tostring(firstRewards[1] and firstRewards[1].level))
+    end
+
+    -- 新确定装备不受旧种子levelCap降级；领取旧12级装备也不会随进度升级。
+    local originalCap = Loot.levelCap
+    local ok, err = pcall(function()
+        Loot.levelCap = 12
+        for _, level in ipairs({ 12, 24 }) do
+            local box = { seeds = {} }
+            assert(Loot.addSeed(box, level * 100 + 1, 3, level), "真实遗匣入匣失败")
+            local stored = box.seeds[1].equip
+            Loot.revealLegacy(box)
+            local claimed = Loot.claimOne(box, 1)
+            verify(claimed == stored and claimed.level == level and #box.seeds == 0,
+                "完整" .. level .. "级装备在低旧种子上限下领取不重骰/不降级")
+        end
+    end)
+    Loot.levelCap = originalCap
+    assert(ok, tostring(err))
+
+    -- 固定真实进度快照复核，不读取玩家存档，也不把条件复现当成用户实际状态。
+    local battle = { currentStageId = 1301, maxStageId = 2401, battleMode = "firstClear",
+        clearedStages = { ["1205"] = true, ["2305"] = true } }
+    local incomeId, dropId = Offline.resolveIdleStageAnchors(battle)
+    local rewards = assert(Offline.calcIdleRewardsForBattle(3600, battle, 1, true))
+    local lowPieces, onlyTwelve = 0, true
+    for _, seed in ipairs(rewards.equipSeeds) do
+        lowPieces = lowPieces + (seed.count or 1)
+        if seed.level ~= 12 or seed.stageId < 1201 or seed.stageId > 1205 then onlyTwelve = false end
+    end
+    verify(incomeId == 1205 and dropId == 1301 and lowPieces > 0 and onlyTwelve,
+        "一队13-1首通/共享最高24-1：离线锚点取旧关，装备全部12级")
+    print("[掉落等级核查] current=1301 max=2401 mode=firstClear income=" .. incomeId
+        .. " drop=" .. dropId .. " equipLv=12 pieces=" .. lowPieces)
+    battle.battleMode = "idle"
+    local idleIncome, idleDrop = Offline.resolveIdleStageAnchors(battle)
+    local idleRewards = assert(Offline.calcIdleRewardsForBattle(3600, battle, 1, true))
+    local higherPieces = 0
+    for _, seed in ipairs(idleRewards.equipSeeds) do
+        if seed.level > 12 then higherPieces = higherPieces + (seed.count or 1) end
+    end
+    verify(idleIncome == 2401 and idleDrop == 2401 and higherPieces > 0,
+        "相同最高关但非首通时：离线按最高进度，不固定产12级")
+    print("[掉落等级核查] assertions=" .. assertions .. " passed=" .. passCount
+        .. " failed=" .. (assertions - passCount))
+end
+
 function Start()
     print("[battle_lab_boundary_test] start")
     local ok, err = pcall(function()
@@ -793,6 +891,7 @@ function Start()
         testSetCoverage()
         testSetAcquisition()
         testEstimate()
+        testDropLevelSources()
     end)
     if not ok then
         print("[FAIL] 测试抛异常: " .. tostring(err))

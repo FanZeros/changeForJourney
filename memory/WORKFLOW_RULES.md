@@ -28,6 +28,14 @@
 
 - 用户通过实际AskUserQuestion选择“加强领奖验收”。下一阶段继续同一功能分支与PR65，只补完整Page→GameAction→Bridge→Service→Save→ClientMessageHandler→RewardPopup链路测试，不改真实玩家档、不扩大经济/玩法范围；覆盖连续点击、满级209奖励展示、失败Toast不假成功、重建隔离会话只从JSON恢复后不重领。执行结果完成后补记。
 - 继续验收前只读查PR65仍open/未合并，GitHub返回mergeable=true/clean，当前`be9e7fd0`的repository-policy检查completed/success；仅此仓库规范CI通过，不冒称游戏设备验收。每次完成测试/文档阶段正常push同一feat1004a分支，完成后继续实际AskUserQuestion。
+- 加强验收的三份真实领奖弹窗截图已内部查看：Lv100原840与bonus100两格完整；全200批领209项/42行/scrollMax7200，顶部原九项+首份bonus完整，末端九项含最后四格居中完整。视觉夹具只喂正式配置用于绘图，不执行真实发奖/落档；三份90帧报告Lua/资源0、无缺图，原始FAIL各仅1条100ms阈值帧尖峰。临时入口及meta已移入.git，正式包需最后重建排除；完整真实发奖链回归仍由后续实际结果补记。
+- 完整源码Page→GameAction→Bridge→TaskHandler/Service→真Flush→CMH.setup/handle→真RewardPopup第一轮加强23用例24051断言通过，旧18用例17325门禁保留。连续2/3点击同级+940一次写盘/一次popup，200级209项+20840、真Popup42行滚7200，主动领奖不3秒自关；clear旧单领分支、rename失败保已有popup/Toast、冷新实例只JSON恢复先于初始化/重领拒绝均覆盖。阶段测试提交 `bea36b61` 已push远端一致，仅改现有test，生产代码不改。
+- 独立反证发现测试仍需加强实际nvgText而非format调用、全pcall异常捕获、show入口瞬间余额/账本快照三点；正在补强，不把首轮结果说成最终全链完备。设计坐标输入/叶子绘图spy不等于真实硬件或宿主全路由验收。最终结果与推送待实际完成后补记。
+
+- PR65已由外部在 `6e2cb79b` 时合入workspace930为 `3105093`，非本会话合并；后续满包修复PR66又合入至 `e1e2dab`。已新建后续验收分支 `feat1004a/expedition-claim-validation`，三方整合最新基线，完整保留PR66生产修改/测试及双方记忆，任务领奖相关CMH分支无回退。此阶段后续只push新验收分支，绝不推workspace930；原PR65不再说成open，额外严格测试需另开PR。
+- 三项严格补强最终全部通过：实际nvgText白色正文逐项验证文本/设计坐标，排除16笔描边；全部pcall异常记录fail-closed；show入口同期currency/GameState/achClaimed与已提交JSON对账。最新版完整链23用例27724断言ALL PASS，原18例17325门禁保留；1377行，逐文件LSP无Error，官方Build成功。可选负对照未运行，不新增故障模式，不称GPU/实机交互通过；主动engine:Exit无validate JSON，只认可实际终结ALL PASS。
+- 与最新e1e2dab联合回归：满包修复161962断言、轨道7284、升级110、掉落3036、离线覆盖994均ALL PASS/exit0，CMH与新基线逐字一致；最终正式清单强化测试源码与部署产物一致，两个临时视觉入口均已排除。只改既有领奖测试与本记忆，不回退PR66、不提交环境.project/存档/日志/截图。最终push/新PR状态后续实际补记。
+- 最终严格测试提交 `f19b379f` 已正常push后续新分支并核验一致，2669路径规范0错误0警告。已实际创建正式 **PR #67**：https://github.com/FanZeros/changeForJourney/pull/67，head=`feat1004a/expedition-claim-validation@f19b379f`、base=`workspace930@e1e2dab`，返回open、draft=false、merged=false，mergeable尚未计算；未自动合并、不推workspace系列。PR完整披露27724/联合回归/真实截图/spy与帧尖峰限制、负对照跳过。交接补记只push此新分支，完成后实际AskUserQuestion下一步。
 
 ## 选关敌人横向拖动与终焉说明协作要求（2026-10-04）
 

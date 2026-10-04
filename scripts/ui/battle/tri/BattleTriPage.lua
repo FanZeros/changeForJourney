@@ -100,11 +100,46 @@ local function ensureDrivers()
                     triOnStageClear(teamIdx, clearedStageId)
                 end
             end
+            drv.onStageChanged = function(teamIdx, stageId)
+                -- 关卡到达才记录当前关；重开同关/改编队不重复通知。
+                local battle = ClientDispatcher.get("battle")
+                if type(battle) == "table" then
+                    if type(battle.teamStageIds) ~= "table" then battle.teamStageIds = {} end
+                    local savedId = StageConfig.isTerminalTemple(stageId)
+                        and StageConfig.getTerminalPrevStageId(stageId) or stageId
+                    local key = tostring(teamIdx)
+                    local changed = battle.teamStageIds[key] ~= savedId
+                        or (teamIdx == 1 and battle.currentStageId ~= savedId)
+                    battle.teamStageIds[key] = savedId
+                    if teamIdx == 1 then
+                        if not StageConfig.isTerminalTemple(stageId) then
+                            BattleScene.adoptStageProgress(stageId)
+                        end
+                        -- 终焉仍留在运行态，落盘的一队当前关使用同一个末关回退点。
+                        battle.currentStageId = savedId
+                        local cleared = battle.clearedStages or {}
+                        battle.battleMode = (cleared[savedId] or cleared[tostring(savedId)])
+                            and "idle" or "firstClear"
+                    end
+                    if changed then
+                        print(string.format("[BattleTriPage] 队%d 关卡入档 stage=%s", teamIdx, tostring(savedId)))
+                        ClientDispatcher.notifySubscribers("battle")
+                        require("boot.StandaloneSave").Flush()
+                    end
+                end
+                require("systems.StoryPlayer").onStage(stageId, "enter")
+            end
+            local battle = ClientDispatcher.get("battle")
+            local savedTeams = type(battle) == "table" and battle.teamStageIds or {}
+            savedTeams = type(savedTeams) == "table" and savedTeams or {}
             local startStage = (t == 1) and BattleScene.getStageId()
-                or StageConfig.NORMAL_FIRST_STAGE
+                or tonumber(savedTeams[tostring(t)] or savedTeams[t]) or StageConfig.NORMAL_FIRST_STAGE
+            if t ~= 1 and StageConfig.isTerminalTemple(startStage) then
+                startStage = StageConfig.getTerminalPrevStageId(startStage) or StageConfig.NORMAL_FIRST_STAGE
+            end
             drv._syncedMainStage = startStage
-            drv:start(startStage)
             drivers[t] = drv
+            drv:start(startStage)
         end
     end
     local teamOne = drivers[1]
@@ -420,6 +455,7 @@ function BattleTriPage.drawL0(vg, logicalW, logicalH)
     local ox = (logicalW - pw) * 0.5
     if imgL0 and imgL0 >= 0 then
         local paint = nvgImagePattern(vg, ox, 0, pw, ph, 0, imgL0, 1.0)
+        ---@cast paint NVGpaint
         nvgBeginPath(vg)
         nvgRect(vg, ox, 0, pw, ph)
         nvgFillPaint(vg, paint)
@@ -453,6 +489,7 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, fixedBgPath)
             if nextBg and nextBg >= 0 then
                 local paint = nvgImagePattern(vg, ix + (iw - dw) * 0.5, iy + (ih - dh) * 0.5,
                     dw, dh, 0, nextBg, 1)
+                ---@cast paint NVGpaint
                 nvgBeginPath(vg)
                 nvgRect(vg, ix, iy, iw, ih)
                 nvgFillPaint(vg, paint)
@@ -468,6 +505,7 @@ function BattleTriPage.drawL1Underlay(vg, logicalW, logicalH, fixedBgPath)
         local bgY = pivotY + (iy + (ih - dh) * 0.5 - pivotY) * zoom
         if bg and bg >= 0 then
             local paint = nvgImagePattern(vg, bgX, bgY, dw * zoom, dh * zoom, 0, bg, alpha)
+            ---@cast paint NVGpaint
             nvgBeginPath(vg)
             nvgRect(vg, ix, iy, iw, ih)
             nvgFillPaint(vg, paint)
@@ -711,6 +749,10 @@ end
 ---@param stageId number
 ---@return boolean
 function BattleTriPage.gotoTeamStage(teamIdx, stageId)
+    teamIdx = tonumber(teamIdx)
+    stageId = tonumber(stageId)
+    if not teamIdx or teamIdx % 1 ~= 0 or not stageId or stageId % 1 ~= 0
+        or not StageConfig.getStage(stageId) then return false end
     local unlocked = ExpTable.getUnlockedTeamCount(ClientDispatcher.get("battle"))
     if teamIdx < 1 or teamIdx > unlocked then return false end
     local BattleScene = require("ui.battle.scene.BattleScene")
@@ -728,7 +770,7 @@ function BattleTriPage.gotoTeamStage(teamIdx, stageId)
         require("systems.GameBGM").setScene("samsara", { fromStart = true })
         return true
     end
-    if terminalRaid then return false end
+    if terminalRaid or stageId > BattleScene.getMaxStageId() then return false end
     local drv = drivers[teamIdx]
     if not drv then return false end
     if teamIdx == 1 then

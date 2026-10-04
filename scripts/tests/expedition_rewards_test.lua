@@ -770,7 +770,7 @@ function Start()
             ---@type table<string, any>
             local h = { loaded = {}, errors = {}, trace = {}, results = {}, shows = {}, toasts = {},
                 files = {}, writes = 0, renames = 0, grants = 0, fail = "", clock = {elapsedTime = 100},
-                view = {}, amounts = {}, drawing = false, sfx = {}, leafCalls = {} }
+                view = {}, sfx = {}, leafCalls = {} }
             if json then h.files[savePath] = json end
             local function note(kind, data)
                 h.trace[#h.trace + 1] = {kind = kind, data = data}
@@ -783,7 +783,11 @@ function Start()
             local env = {
                 assert = assert, error = error, pairs = pairs, ipairs = ipairs, next = next,
                 type = type, tostring = tostring, tonumber = tonumber, select = select,
-                pcall = pcall, xpcall = xpcall, rawset = rawset, rawget = rawget,
+                pcall = function(fn, ...)
+                    local result = table.pack(pcall(fn, ...))
+                    if not result[1] then h.errors[#h.errors + 1] = "pcall: " .. tostring(result[2]) end
+                    return table.unpack(result, 1, result.n) -- 保留nil/多返回值，不豁免任何异常。
+                end, xpcall = xpcall, rawset = rawset, rawget = rawget,
                 setmetatable = setmetatable, getmetatable = getmetatable,
                 math = math, string = string, table = table, cjson = cjson,
                 os = {time = function() return now end, clock = os.clock, date = os.date},
@@ -852,8 +856,30 @@ function Start()
             env.nvgImagePattern = function() return {} end
             env.nvgRadialGradient = function() return {} end
             env.nvgLinearGradient = function() return {} end
+            -- 跟踪真实nvgText当前颜色和仿射变换，正文与16笔描边分开验收。
+            local paint = {a = 1, b = 0, c = 0, d = 1, x = 0, y = 0, color = {}}
+            local paintStack = {}
+            env.nvgSave = function() paintStack[#paintStack + 1] = copy(paint) end
+            env.nvgRestore = function()
+                if #paintStack == 0 then bad("unbalanced nvgRestore") end
+                paint = table.remove(paintStack)
+            end
+            env.nvgTranslate = function(_, x, y)
+                paint.x, paint.y = paint.x + paint.a * x + paint.c * y, paint.y + paint.b * x + paint.d * y
+            end
+            env.nvgScale = function(_, x, y)
+                paint.a, paint.b, paint.c, paint.d = paint.a * x, paint.b * x, paint.c * y, paint.d * y
+            end
+            env.nvgRotate = function(_, angle)
+                local c, s = math.cos(angle), math.sin(angle)
+                paint.a, paint.b, paint.c, paint.d = paint.a * c + paint.c * s, paint.b * c + paint.d * s,
+                    paint.c * c - paint.a * s, paint.d * c - paint.b * s
+            end
+            env.nvgFillColor = function(_, color) paint.color = copy(color) end
             env.nvgText = function(_, x, y, text)
-                h.texts[#h.texts + 1] = {x = x, y = y, text = text}
+                h.texts[#h.texts + 1] = {x = x, y = y, text = text, color = copy(paint.color),
+                    designX = paint.a * x + paint.c * y + paint.x,
+                    designY = paint.b * x + paint.d * y + paint.y}
             end
             h.texts = {}
             local leaf = {}
@@ -966,7 +992,9 @@ function Start()
             local realShow = h.Popup.show
             h.Popup.show = function(title, rewards, opts)
                 local shown = {title = title, rewards = copy(rewards), opts = copy(opts),
-                    json = h.files[savePath], traceIndex = #h.trace + 1}
+                    json = h.files[savePath], traceIndex = #h.trace + 1,
+                    currency = copy(h.Dispatcher.get("currency")), gameState = copy(h.State.exportSave()),
+                    achClaimed = copy(h.Dispatcher.get("task").achClaimed)} -- 同期复制，不借事后状态证明show入口。
                 h.shows[#h.shows + 1] = shown
                 note("show", shown)
                 return realShow(title, rewards, opts) -- spy必须继续调用完整生产show。
@@ -983,12 +1011,7 @@ function Start()
             h.Bridge.init()
             h.Popup.init({})
             h.Page.init({})
-            local numberUtil = env.require("core.NumberUtil")
-            local realFormat = numberUtil.format
-            numberUtil.format = function(amount)
-                if h.drawing then h.amounts[#h.amounts + 1] = amount end
-                return realFormat(amount)
-            end
+            h.formatAmount = env.require("core.NumberUtil").format -- 原格式器只作期望值，不再以入参冒充绘制。
             h.baseline = copy(h.Dispatcher.get("currency"))
             return h
         end
@@ -1041,15 +1064,20 @@ function Start()
                 local key = h.Currency.REWARD_TO_CURRENCY[reward.type]
                 expected[key] = (expected[key] or 0) + reward.amount
             end
-            same(h.Dispatcher.get("currency"), expected, "show时完整余额与发奖一致")
+            same(show.currency, expected, "show入口同期完整余额与发奖一致")
+            same(show.currency, saved.modules.currency, "show入口余额快照与已保存JSON一致")
+            same(show.gameState, saved.gameState, "show入口完整GameState快照与JSON一致")
+            same(show.achClaimed, saved.modules.task.achClaimed, "show入口完整台账快照与JSON一致")
+            same(h.Dispatcher.get("currency"), expected, "show后完整余额与发奖一致")
             same(saved.modules.currency, expected, "show前完整余额已落盘")
             for key, value in pairs(expected) do
-                if h.State.exportSave()[key] ~= nil then
-                    same(h.State.exportSave()[key], value, "show时GameState " .. key)
+                if show.gameState[key] ~= nil then
+                    same(show.gameState[key], value, "show入口GameState " .. key)
                     same(saved.gameState[key], value, "show前GameState落盘 " .. key)
                 end
             end
             for _, id in ipairs(result.data.claimed) do
+                eq(show.achClaimed[id], true, "show入口该项已记账 " .. id)
                 eq(saved.modules.task.achClaimed[id], true, "show前该项已落盘 " .. id)
             end
             local flushIndex, renameIndex = 0, 0
@@ -1071,12 +1099,45 @@ function Start()
             error("完整Popup必须暴露drawContent内部state供只读验收")
         end
         local function drawPopup(h)
-            h.amounts, h.texts = {}, {}
-            h.drawing = true
+            h.texts = {}
             h.Popup.draw({})
-            h.drawing = false
             audit(h)
-            return h.amounts
+            local state = popupState(h)
+            eq(state.animPhase, "open", "角标验收在打开动画结束后")
+            local rows = math.ceil(#state.items / 5)
+            local scale = rows == 1 and 0.7 or 1
+            local bodies, expected = {}, {}
+            for _, text in ipairs(h.texts) do
+                local c = text.color
+                if c[1] == 255 and c[2] == 255 and c[3] == 255 and c[4] == 255
+                    and text.text:sub(1, #"×") == "×" then bodies[#bodies + 1] = text end
+            end
+            for index, item in ipairs(state.items) do
+                local row, col = math.ceil(index / 5), (index - 1) % 5 + 1
+                local count = math.min(5, #state.items - (row - 1) * 5)
+                local cx = 152 + (col - 1) * 194 + (5 - count) * 97
+                local cy = 918 + (row - 1) * 180 + (rows == 1 and 90 or 0) - state.scrollY
+                if cy + 80 >= 838 and cy - 80 <= 1178 then
+                    expected[#expected + 1] = {index = index, x = cx + 72, y = cy + 72,
+                        text = "×" .. h.formatAmount(item.amount)}
+                end
+            end
+            eq(#bodies, #expected, "实际nvgText白色正文角标数，不计16笔描边")
+            local positions = {}
+            for index, want in ipairs(expected) do
+                local body = bodies[index]
+                eq(body.text, want.text, "角标实际正文对应奖励项 " .. want.index)
+                eq(body.x, want.x, "角标布局X对应行列 " .. want.index)
+                eq(body.y, want.y, "角标布局Y对应scrollY " .. want.index)
+                check(math.abs(body.designX - (540 + (want.x - 540) * scale)) < 0.000001,
+                    "角标变换后设计X " .. want.index)
+                check(math.abs(body.designY - (974 + (want.y - 974) * scale)) < 0.000001,
+                    "角标变换后设计Y " .. want.index)
+                local position = tostring(body.x) .. ":" .. tostring(body.y)
+                eq(positions[position], nil, "每个实际正文坐标唯一 " .. want.index)
+                positions[position], body.index = true, want.index
+            end
+            return bodies -- 返回真实nvgText记录，格式器入参不再是验收证据。
         end
         runCase("真实Page同节点连续2/3次经GameAction持久化后CMH及Popup一次", function()
             for _, clicks in ipairs({2, 3}) do
@@ -1096,8 +1157,9 @@ function Start()
                 eq(items[1].amount + items[2].amount, 940, "真Popup同级940可观察")
                 h.clock.elapsedTime = h.clock.elapsedTime + 0.4; h.Popup.update(0.4)
                 local shown = drawPopup(h)
-                eq(#shown, 2, "真实draw实际走两项数量角标")
-                eq(shown[1] + shown[2], 940, "真实draw同级数量940")
+                eq(#shown, 2, "真实draw实际两项正文角标")
+                eq(shown[1].text, "×840", "旧礼包实际角标正文")
+                eq(shown[2].text, "×100", "bonus实际角标正文且坐标独立")
                 h.clock.elapsedTime = h.clock.elapsedTime + 10; h.Popup.update(10)
                 check(h.Popup.isOpen(), "非战斗主动领奖超过3秒仍打开")
                 eq(popupState(h).animPhase, "open", "非战斗不开始自动关闭")
@@ -1131,31 +1193,30 @@ function Start()
             h.Popup.handleScroll(1000)
             eq(state.scrollY, 0, "真实滚轮回顶并取消自动滚动")
             eq(state.autoScroll, nil, "手动滚动取消autoScroll")
-            local visibleCount = 0
-            -- 每次窗口移动两行，累计验收全部209数量角标（图形叶子spy，不宣称GPU像素）。
+            local visibleCount, covered = 0, {}
+            -- 逐窗口按实际白色正文的行列/scrollY验收；同为100也必须各占独立坐标。
             for start = 1, 201, 10 do
                 if start > 1 then h.Popup.handleScroll(-6) end
-                local amounts = drawPopup(h)
-                -- draw也包含贴边零面积的邻行，按只读state确定当前可见网格。
-                local expected = {}
-                for index, item in ipairs(state.items) do
-                    local row = math.ceil(index / 5)
-                    local cy = 918 + (row - 1) * 180 - state.scrollY
-                    if cy + 80 >= 838 and cy - 80 <= 1178 then expected[#expected + 1] = item.amount end
-                end
-                same(amounts, expected, "真实draw窗口按scrollY裁剪数量 " .. start)
+                local bodies = drawPopup(h)
+                local inWindow = {}
+                for _, body in ipairs(bodies) do inWindow[body.index] = true end
                 local last = math.min(209, start + 9)
                 for index = start, last do
                     local row = math.ceil(index / 5)
                     local cy = 918 + (row - 1) * 180 - state.scrollY
                     check(cy >= 838 and cy <= 1178, "第" .. index .. "项中心确实滚入窗口")
+                    eq(inWindow[index], true, "第" .. index .. "项确实有实际角标正文")
+                    eq(covered[index], nil, "累计209正文不以邻窗口重复代替")
+                    covered[index] = true
                     visibleCount = visibleCount + 1
                 end
             end
-            eq(visibleCount, 209, "完整遍历所有209项而非仅末两行")
+            eq(visibleCount, 209, "完整遍历所有209实际正文而非仅format调用")
+            for index = 1, 209 do eq(covered[index], true, "209项实际正文覆盖 " .. index) end
             eq(state.scrollY, 7200, "滚轮末端精确钳制")
             local tail = drawPopup(h)
-            eq(tail[#tail], state.items[209].amount, "真实draw末项209数量角标")
+            eq(tail[#tail].index, 209, "真实draw末项209对应行列")
+            eq(tail[#tail].text, "×" .. h.formatAmount(state.items[209].amount), "真实draw末项209正文")
             h.clock.elapsedTime = h.clock.elapsedTime + 10; h.Popup.update(10)
             check(h.Popup.isOpen(), "全页主动领奖也不3秒自动关")
             eq(#h.shows, 1, "滚动及update不新增popup")
@@ -1200,12 +1261,19 @@ function Start()
             eq(#h.toasts, 0, "单领成功不Toast")
             local key = h.Currency.REWARD_TO_CURRENCY[def.reward.type]
             eq(h.Dispatcher.get("currency")[key], h.baseline[key] + def.reward.amount, "单领余额真实累计")
-            local saved = cjson.decode(h.shows[1].json)
+            local shown = h.shows[1]
+            local saved = cjson.decode(shown.json)
+            same(shown.currency, saved.modules.currency, "单领show入口余额快照与JSON一致")
+            same(shown.gameState, saved.gameState, "单领show入口GameState快照与JSON一致")
+            same(shown.achClaimed, saved.modules.task.achClaimed, "单领show入口台账快照与JSON一致")
+            eq(shown.achClaimed[def.id], true, "单领show入口已记永久账本")
             eq(saved.modules.task.achClaimed[def.id], true, "单领show前已记永久账本")
             eq(saved.modules.currency[key], h.Dispatcher.get("currency")[key], "单领show前余额落档")
             eq(#popupState(h).items, 1, "真单领Popup一项")
             h.clock.elapsedTime = h.clock.elapsedTime + 0.4; h.Popup.update(0.4)
-            same(drawPopup(h), {def.reward.amount}, "真实单领draw数量")
+            local bodies = drawPopup(h)
+            eq(#bodies, 1, "真实单领draw一项实际正文")
+            eq(bodies[1].text, "×" .. h.formatAmount(def.reward.amount), "真实单领draw数量正文")
             audit(h)
         end)
         runCase("rename失败保留已打开成功Popup与余额台账而不重开", function()

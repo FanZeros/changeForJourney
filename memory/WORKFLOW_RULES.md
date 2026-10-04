@@ -1,3 +1,15 @@
+## 情景82中断退出碎片奖励恢复（2026-10-04）
+
+- 用户提交P2复现：首通205的情景82起播即预写claimed，未播完退出Flush后重启排队仅检查claimed，10大狗嚼碎片永久漏发。本轮基于最新 `workspace930@677af353`（PR59已由外部合入）新建 `fix/scenario82-interrupted-reward-20261004`，只push任务分支、不推workspace系列、不自动创建或合并PR。
+- 82起播不再预写claimed，仅初始化成功台账；有scenarioRewardsGranted表时，StoryPlayer的enqueue/take按82实际成功项判断，旧claimed82=true但granted空的中断档可重播。播完/正常跳过仍走原真实claim动作、preClaimed与205资格/成功台账去重，起播/退出/补排队不直接发碎片。
+- 仅82调整，其他剧情继续起播防重播；完全无成功台账的更早claimed旧档保守不补，不用shards=0推测历史（可能已花掉）。台账表存在本身不是绝对历史未领证明，旧领取早于台账且后来创建空表的理论歧义需明确历史范围/补偿授权，不擅自批量迁移全部剧情。真实Dialogue链播回调清理是独立既有问题，不夹带修复。
+- 周边真实Runtime十套断言全过：普通角色剧情、五语1672、领奖教程241、战斗奖励延迟706、共享首通28、三队进度227、教程50/输入356、离线边界与配装361。旧battle_stage_switch的神器测试六失败要求同一实例同时跨三队，和最新基线神器全队唯一规则失配；该测试/Schema与HEAD逐字一致，本轮不混改，也不宣称全部回归通过。
+- 最新神器全队唯一290断言与战斗神器槽41断言均通过；旧切关测试的六条失配只保留披露，未退回新规则。两份生产改动LSP无Error，独立只读复核无确认新增问题；历史台账缺项歧义仍保留，不宣称所有旧档绝对无重复。
+- 新增既有scenario82_firstclear_test真实链专项1050断言全部通过：完整正式tryPlayPendingStory_闭包、真实StoryPlayer/ScenarioDialogue/Dispatcher/GameState/Save及BattleHandler→Service，44个新隔离实例，24次真实Flush/Restore的内存File/cjson/原子Rename；覆盖第1/2/3句、最后点击后及dismiss0.15秒中断→重启补播→自然三句/dismiss发10、skip、重入防重、旧预claimed空表、旧无表保守、两键与失败后重启补通重试、非82三个来源行为不变。另已通205但首次heroes暂未加载，真实领奖失败后不在同会话自动重试，JSON重启补播后成功一次。不读取或写入真实玩家档，不把直接服务调用冒充中断复现。
+- 专项首跑fixture缺GameState/player同步导致完整往返断言失败，按真实桥同步修测试后全过；双键true/falsefixture在Dispatcher归一后注入，只测Story读取，不伪称Schema冲突合并稳定。三份修改LuaLSP无Error；36仓库规范单测通过，2665路径0错误0警告。
+- 最终官方Build成功，三份修改Lua与最新部署产物逐字节3/3一致；没有直接写dist，没有新增资源/元数据；可选旧源码敏感性对照未执行，不宣称已二分复现。提交只包含两份生产Lua、已有专项测试与本记忆。
+- **持续强化**：已授权修复持续推进，尊重后续停止、权限拒绝和安全边界；每次完成先如实简报，再实际用AskUserQuestion给下一步选项。提交仅本轮源码/既有测试/此记忆，本地.project身份/设置、存档、日志和凭据不提交；正常push新分支并核验SHA。
+
 ## 配装变化字放大与绿色优先排序（2026-10-04）
 
 - 用户通过AskUserQuestion继续要求配装变化红/绿字放大、默认变化项在前且绿色优先。本轮基于最新 `workspace930@c209bd1e`（PR56已由外部合入）新建 `fix/equip-delta-priority-20261004`，源码直接在/workspace根，只push新分支，不推workspace系列，不自动创建或合并PR。

@@ -159,7 +159,10 @@ local function testRarityMultiselect()
             local function equippedSet()
                 local result = {}
                 for _, slots in pairs(testPDM.equipment.equipped or {}) do
-                    for _, seq in pairs(slots) do result[tostring(seq)] = true end
+                    for _, seq in pairs(slots) do
+                        local numeric = tonumber(seq)
+                        result[tostring(numeric and (math.tointeger(numeric) or numeric) or seq)] = true
+                    end
                 end
                 return result
             end
@@ -355,6 +358,19 @@ local function testRarityMultiselect()
             testPDM.equipment.inventory["9901"].locked = nil
             M.onEquipmentDataUpdate(); cell(9901)
             request({ 9901 }, "空请求不遗留pending")
+            failure()
+
+            -- JSON数字可能为浮点；9101.0/"9101.0"与整数序号必须视为同一装备。
+            resetFixture()
+            testPDM.equipment.equipped[1].weapon = 9701.0
+            testPDM.equipment.equipped[2].weapon = "9702.0"
+            M.onEquipmentDataUpdate()
+            quality(1); quality(2)
+            selected(union, "浮点与小数字符串穿戴排除且不误亮")
+            request(union, "浮点穿戴不混入多品质payload")
+            failure()
+            testPDM.equipment.equipped[3] = { weapon = 9101.0, offhand = "9201.0" }
+            request({ 9102, 9202 }, "发送前新增浮点穿戴再次安全排除")
             failure()
 
             -- 自动分解弹窗仍是单阈值，与顶部手动多选互不干扰。

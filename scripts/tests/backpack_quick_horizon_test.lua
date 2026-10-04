@@ -122,6 +122,9 @@ function Start()
                 handleInput = function() count("modalInput"); return true end,
             }),
             ["systems.TutorialManager"] = mock({ isActive = function() return state.tutorial end }),
+            ["ui.battle.popup.TerminalConfirmDialog"] = mock({ isOpen = noop }),
+            ["ui.tavern.TavernPopups"] = mock({ isBlocking = noop }),
+            ["ui.tavern.TargetRecruitPanel"] = mock({ isOpen = noop }),
             ["ui.story.task.TaskPage"] = mock({
                 isOpen = function() return state.task end,
                 handleInput = function() count("taskInput"); return true end,
@@ -139,7 +142,8 @@ function Start()
         }
         -- Runtime require 可忽略 package.loaded；全程包装 _G.require 拦截动态依赖。
         _G.require = function(name)
-            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay" then
+            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay"
+                or name == "boot.SeamBackGesture" then
                 return originalRequire(name)
             end
             if not mods[name] then mods[name] = mock() end

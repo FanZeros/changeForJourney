@@ -1,6 +1,6 @@
--- 无图形集成回归：真实 StandaloneHorizon + OfflineRewardOverlay + Viewport。
--- 页面均为默认返回 false 的 spy；不加载业务存档、不发送 action、不创建图形资源。
--- Runtime: tests/offline_overlay_horizon_test.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless
+-- 无图形集成回归：真实 StandaloneHorizon/Input + SeamBackGesture + OfflineRewardOverlay + Viewport。
+-- 页面均为 spy（酒馆关闭及阻塞出口单独观察）；不加载业务存档、不发送 action、不创建图形资源。
+-- Runtime: tests/offline_overlay_horizon_test.lua -tapcode_dir=/workspace -tool_mode -graphicsheadless -nosound
 -- 弹窗关闭后的 0.08s 仓库快装由 backpack_quick_horizon_test.lua 覆盖，不在这里重复。
 function Start()
     ---@type fun(name: string): any
@@ -35,6 +35,8 @@ function Start()
         if failures == before then
             casePasses = casePasses + 1
             print("[PASS] " .. label)
+        else
+            print("[FAIL CASE] " .. label)
         end
     end
     local function restoreTable(target, saved)
@@ -47,6 +49,28 @@ function Start()
         viewport = originalRequire("core.Viewport")
         -- 直接加载真实模块，绝不替换 bind/输入实现。
         local overlayModule = originalRequire("boot.OfflineRewardOverlay")
+        local drawUtil = originalRequire("core.DrawUtil")
+        -- cache:GetFile 只读源码；load 创建独立实例，避免 Runtime require 缓存导致假重载。
+        local sources, compiled, realLoads = {}, {}, {}
+        local realModules = { ["boot.StandaloneHorizonInput"] = true,
+            ["boot.OfflineRewardOverlay"] = true, ["boot.SeamBackGesture"] = true }
+        local function source(name)
+            if sources[name] then return sources[name] end
+            local path = name:gsub("%.", "/") .. ".lua"
+            local file = assert(cache:GetFile(path), "缺少真实项目源码 " .. path)
+            assert(file:IsOpen(), "不能读取真实项目源码 " .. path)
+            local lines = {}
+            while not file:IsEof() do lines[#lines + 1] = file:ReadLine() end
+            file:Dispose()
+            sources[name] = table.concat(lines, "\n")
+            return sources[name]
+        end
+        local function compile(name)
+            local chunk, why = load(source(name), "@" .. name, "t", _G)
+            assert(chunk, why)
+            realLoads[name] = (realLoads[name] or 0) + 1
+            return chunk()
+        end
         for key, value in pairs(RT) do originalRT[key] = value end
         originalNotes = viewport._notes
         for _, name in ipairs({ "begin", "finish", "beginFromNote" }) do
@@ -72,6 +96,10 @@ function Start()
             title = false, letter = false, ce = false, pip = false, talent = false,
             task = false, towerTri = false, reward = false, dungeon = false, towerFloor = 7,
             tutorial = false, levelVersion = 1,
+            tavern = false, market = false, church = false, smith = false, loot = false,
+            sweep = false, stats = false, stage = false, intro = false, terminal = false,
+            recruitBusy = false, targetRecruit = false, tavernBlocking = false,
+            rewardPanel = nil, rewardRow = nil, seamOpened = {},
         }
         local cursor = { x = 0, y = 0 }
         local clock = { elapsedTime = 100 }
@@ -202,16 +230,21 @@ function Start()
                 return false
             end,
         })
+        local function seamAnim(owner)
+            return state.seamOpened[owner] or 1, 0, 0.45, 0.38
+        end
         local candidate = { seq = 7, slot = "helmet", templateId = "H1" }
         local backpack = page("backpack", {
             isOpen = function() return state.warehouse end,
             isLeftMode = function() return true end,
-            getSeamAnim = function() return 1, 0, 0.45, 0.38 end,
+            getSeamAnim = function() return seamAnim("backpack") end,
             peekEquipAt = function(x, y)
                 if state.grid and x >= 80 and x <= 200 and y >= 1000 and y <= 1120 then return candidate end
                 return nil
             end,
-            close = function() count("seam.close"); state.warehouse = false; return false end,
+            close = function()
+                count("seam.close"); count("backpack.close"); state.warehouse = false; return false
+            end,
         })
         local detail = page("detail", {
             isOpen = function() return state.detail end,
@@ -256,7 +289,41 @@ function Start()
                 isOpen = function() return state.letter end,
                 handleTap = function() count("letter.tap") end,
             }),
+            ["ui.story.gate.IntroCutscene"] = mock({ isActive = function() return state.intro end }),
+            ["ui.tavern.TavernPage"] = page("tavern", {
+                isOpen = function() return state.tavern end,
+                getSeamAnim = function() return seamAnim("tavern") end,
+                isRecruitBusy = function() return state.recruitBusy end,
+                close = function() count("tavern.close"); count("seam.close"); state.tavern = false end,
+            }),
+            ["ui.market.MarketPage"] = page("market", {
+                isOpen = function() return state.market end,
+                getSeamAnim = function() return seamAnim("market") end,
+                close = function() count("market.close"); count("seam.close"); state.market = false end,
+            }),
+            ["ui.church.ChurchPage"] = page("church", {
+                isOpen = function() return state.church end,
+                getSeamAnim = function() return seamAnim("church") end,
+                close = function() count("church.close"); count("seam.close"); state.church = false end,
+            }),
+            ["ui.blacksmith.BlacksmithPage"] = page("smith", {
+                isOpen = function() return state.smith end,
+                getSeamAnim = function() return seamAnim("smith") end,
+                close = function() count("smith.close"); count("seam.close"); state.smith = false end,
+            }),
+            ["ui.loot.LootBoxPage"] = page("lootbox", {
+                isOpen = function() return state.loot end,
+                getSeamAnim = function() return seamAnim("lootbox") end,
+                close = function() count("lootbox.close"); count("seam.close"); state.loot = false end,
+            }),
+            ["ui.battle.stage.SweepDialog"] = mock({ isOpen = function() return state.sweep end }),
+            ["ui.battle.popup.DamageStatsPanel"] = mock({ isOpen = function() return state.stats end }),
+            ["ui.battle.stage.StageSelectDialog"] = mock({ isOpen = function() return state.stage end }),
+            ["ui.tavern.TargetRecruitPanel"] = mock({ isOpen = function() return state.targetRecruit end }),
+            ["ui.tavern.TavernPopups"] = mock({ isBlocking = function() return state.tavernBlocking end }),
+            ["ui.battle.popup.TerminalConfirmDialog"] = mock({ isOpen = function() return state.terminal end }),
             ["ui.dev.CEPanel"] = mock({
+                isOpen = function() return state.ce end,
                 handleDown = function() return state.ce end,
                 handleUp = function() if state.ce then count("ce.up") end; return state.ce end,
                 handleWheel = function() if state.ce then count("ce.wheel") end; return state.ce end,
@@ -282,17 +349,20 @@ function Start()
             ["ui.church.talent.TalentPage"] = page("talent", {
                 isOpen = function() return state.talent end,
                 getHorizonWidthScale = function() return 1 end,
+                getSeamAnim = function() return seamAnim("talent") end,
+                close = function() count("talent.close"); count("seam.close"); state.talent = false end,
             }),
             ["ui.hud.popup.RewardPopup"] = page("reward", {
                 isOpen = function() return state.reward end,
-                currentPanel = function() return nil end,
-                currentRowTag = function() return nil end,
+                currentPanel = function() return state.rewardPanel end,
+                currentRowTag = function() return state.rewardRow end,
+                close = function() count("reward.close"); state.reward = false end,
                 draw = function() if state.reward then snapshot("reward") end end,
                 hitPanel = function() return state.reward end,
             }),
             ["ui.story.task.TaskPage"] = page("task", {
                 isOpen = function() return state.task end,
-                getSeamAnim = function() return 1, 0, 0.45, 0.38 end,
+                getSeamAnim = function() return seamAnim("task") end,
                 draw = function() if state.task then snapshot("task") end end,
                 close = function() state.task = false; count("task.close") end,
                 handleInput = function(x, y)
@@ -323,8 +393,10 @@ function Start()
             ["ui.character.detail.CharacterDetail"] = page("characterDetail", {
                 isOpen = function() return state.detailHit end,
                 isEquipTab = function() return true end,
-                getSeamAnim = function() return 1, 0, 0.45, 0.38 end,
-                close = function() count("seam.close"); state.detailHit = false; return false end,
+                getSeamAnim = function() return seamAnim("character") end,
+                close = function()
+                    count("seam.close"); count("character.close"); state.detailHit = false; return false
+                end,
             }),
             ["ui.battle.tri.BattleTriPage"] = page("tri", {
                 isOpen = function() return state.mode == "tri" or state.towerTri end,
@@ -343,14 +415,22 @@ function Start()
             }),
             ["core.BattleLayout"] = mock({ CARD_SCALE = 1 }),
             ["core.DarkIcon"] = mock({ SHOWCASE = false }),
-            ["core.DrawUtil"] = mock({ SEAMBAR_ASPECT = 0.04, SEAMBAR_ARROW_Y = 0.469,
-                seamSlideX = function() return 0 end }),
+            -- 只复用真实几何常量/动画，绘制仍为 spy；不能用窄条把中心伪装成左栏边界。
+            ["core.DrawUtil"] = mock({ SEAMBAR_ASPECT = drawUtil.SEAMBAR_ASPECT,
+                SEAMBAR_ARROW_Y = drawUtil.SEAMBAR_ARROW_Y, seamSlideX = drawUtil.seamSlideX,
+                drawBackSeamBar = function(_, cx, _, width, height, dir)
+                    record("seam.draw." .. dir, cx, height * drawUtil.SEAMBAR_ARROW_Y, width)
+                end }),
             ["runtime.GameAction"] = mock({ sendAction = function() count("action"); return false end }),
         }
         -- Runtime 的 require 可绕过 package.preload/loaded，所以拦截 _G.require 的动态依赖。
         rawset(_G, "require", function(name)
-            if name == "boot.StandaloneHorizonInput" or name == "boot.OfflineRewardOverlay" then
-                return originalRequire(name)
+            if realModules[name] then
+                if not compiled[name] then compiled[name] = compile(name) end
+                return compiled[name]
+            end
+            if name:match("^boot%.") and name ~= "boot.StandaloneRT" and name ~= "boot.ArtifactGesture" then
+                error("未列入真实编译白名单的 boot helper: " .. name)
             end
             if not mods[name] then mods[name] = page(name) end
             return mods[name]
@@ -428,6 +508,10 @@ function Start()
             state.pip, state.talent = false, false
             state.task, state.towerTri, state.reward, state.dungeon, state.towerFloor = false, false, false, false, 7
             state.tutorial, state.levelVersion = false, 1
+            state.tavern, state.market, state.church, state.smith, state.loot = false, false, false, false, false
+            state.sweep, state.stats, state.stage, state.intro, state.terminal = false, false, false, false, false
+            state.recruitBusy, state.targetRecruit, state.tavernBlocking = false, false, false
+            state.rewardPanel, state.rewardRow, state.seamOpened = nil, nil, {}
             restoreTable(RT, {
                 logicalW = 1920, logicalH = 1080, windowW = 1920, windowH = 1080,
                 DESIGN_W = 1080, DESIGN_H = 2400, dpr = dpr or 1,
@@ -441,9 +525,8 @@ function Start()
             for key in pairs(drawings) do drawings[key] = nil end
             for key in pairs(frames) do frames[key] = nil end
             clock.elapsedTime = clock.elapsedTime + 10
-            -- 每个 case 重载以重置真实 Horizon/Overlay 的局部 press/touch/debounce 状态。
-            package.loaded["boot.StandaloneHorizon"] = nil
-            originalRequire("boot.StandaloneHorizon")
+            -- 每个 case 编译真实 Horizon，bind 重置 Input/Overlay/Seam 的局部手势状态。
+            compile("boot.StandaloneHorizon")
             invoke("HandleNanoVGRenderHorizon")
         end
         local function checkDraw(name, label)
@@ -1081,6 +1164,311 @@ function Start()
                 checkNoLowerInput(kind .. " drag return")
             end)
         end
+        print("[offline_overlay_horizon_test] original coverage: " .. casePasses .. "/" .. caseCount
+            .. " cases, " .. assertions .. " assertions")
+        check(caseCount >= 84 and assertions >= 994, "新增seam之前完整保留原84用例994断言")
+        -- seam 专项仍走真实 Horizon render/input/helper；不复制 helper 判定，不测试酒馆业务门禁。
+        local ownerFields = { tavern = "tavern", backpack = "warehouse", character = "detailHit",
+            smith = "smith", lootbox = "loot", task = "task", talent = "talent", church = "church", market = "market" }
+        local function seamPoint(owner)
+            local half = RT.logicalH * drawUtil.SEAMBAR_ASPECT * 0.5
+            local x = owner == "character" and RT.logicalW - 486 - half + 2
+                or (owner == "smith" and 972 or 486) + half - 2
+            return math.floor(x + 0.5), math.floor(RT.logicalH * drawUtil.SEAMBAR_ARROW_Y + 0.5)
+        end
+        local function seamFixture(owner, dpr, transformed)
+            fixture("tri", dpr, transformed, false)
+            state.warehouse = false
+            state[ownerFields[owner]] = true
+            clearCalls()
+            invoke("HandleNanoVGRenderHorizon")
+            local x, y = seamPoint(owner)
+            local dir = owner == "character" and "right" or "left"
+            local found = false
+            for _, event in ipairs(events) do
+                if event.name == "seam.draw." .. dir and math.abs(event.x - x) < 1
+                    and math.abs(event.y - y) < 1 then found = true end
+            end
+            check(found, owner .. " 输入点为真实渲染条的箭头中心")
+            if owner == "tavern" then
+                check(x == 525 and y == 507 and x > 486 + 15,
+                    "酒馆中心约525,506，明确在tri区域，不是左栏2px重叠边")
+            end
+            clearCalls()
+            return x, y
+        end
+        local function pointer(kind, phase, x, y, id)
+            if kind == "mouse" then
+                positionWindow(x, y)
+                local handler = phase == "down" and "HandleMouseButtonDownHorizon"
+                    or phase == "move" and "HandleMouseMoveHorizon" or "HandleMouseButtonUpHorizon"
+                invoke(handler, phase == "move" and nil or left)
+            else
+                local px, py = framePosition(x, y)
+                px, py = math.floor(px + 0.5), math.floor(py + 0.5)
+                invoke(phase == "down" and "HandleTouchBeginHorizon"
+                    or phase == "move" and "HandleTouchMoveHorizon" or "HandleTouchEndHorizon",
+                    touch(id or 101, px, py))
+            end
+        end
+        local function seamTap(kind, x, y, delay)
+            pointer(kind, "down", x, y)
+            clock.elapsedTime = clock.elapsedTime + (delay or 0.2)
+            pointer(kind, "up", x, y)
+        end
+        local function noSeam(label)
+            check(n("seam.close") == 0 and n("task.close") == 0 and n("tavern.close") == 0
+                and n("action") == 0, label .. " 不关任何seam owner、不发action")
+        end
+        local function noTri(label)
+            check(n("tri.handleDragBegin") == 0 and n("tri.handleDragMove") == 0
+                and n("tri.handleDragEnd") == 0 and n("tri.handleInput") == 0,
+                label .. " seam capture不伪装成tri手势")
+        end
+        for _, kind in ipairs({ "mouse", "touch" }) do
+            for _, dpr in ipairs({ 1, 2, 3 }) do
+                for _, transformed in ipairs({ false, true }) do
+                    runCase("Tavern seam中心 " .. kind .. " DPR=" .. dpr .. " frame=" .. tostring(transformed), function()
+                        local x, y = seamFixture("tavern", dpr, transformed)
+                        positionWindow(1600, 100) -- touch 时鼠标故意离开返回条。
+                        seamTap(kind, x, y)
+                        check(n("tavern.close") == 1 and not state.tavern,
+                            "中心点经真实helper检查阻塞后只关闭酒馆一次")
+                        check(n("seam.close") == 1 and n("action") == 0, "没有其他关闭/业务action")
+                        noTri("tavern中心")
+                        pointer(kind, "up", x, y)
+                        check(n("tavern.close") == 1, "重复Up不复用旧capture")
+                    end)
+                    runCase("Tavern seam往返 " .. kind .. " DPR=" .. dpr .. " frame=" .. tostring(transformed), function()
+                        local x, y = seamFixture("tavern", dpr, transformed)
+                        pointer(kind, "down", x, y)
+                        pointer(kind, "move", x + 16, y)
+                        pointer(kind, "move", x, y)
+                        clock.elapsedTime = clock.elapsedTime + 0.2
+                        pointer(kind, "up", x, y)
+                        noSeam("超过15逻辑px后回原点，moved永久保持")
+                        noTri("往返移动")
+                        check(state.tavern, "往返移动酒馆仍打开")
+                    end)
+                end
+            end
+            runCase("Tavern seam " .. kind .. " 14逻辑px小移动仍可点", function()
+                local x, y = seamFixture("tavern", 3, true)
+                pointer(kind, "down", x, y)
+                pointer(kind, "move", x + 14, y)
+                clock.elapsedTime = clock.elapsedTime + 0.2
+                pointer(kind, "up", x + 14, y)
+                check(n("tavern.close") == 1, "阈值按逻辑px，不按DPR物理px/面板设计px")
+                noTri("小移动")
+            end)
+            for _, owner in ipairs({ "backpack", "character", "smith", "lootbox", "task", "talent", "church", "market" }) do
+                runCase(owner .. " seam中心 " .. kind .. " 关闭正确owner", function()
+                    local x, y = seamFixture(owner, 2, true)
+                    seamTap(kind, x, y)
+                    check(n(owner .. ".close") == 1 and not state[ownerFields[owner]], "真实左右/锻炉条只关对应owner")
+                    check(n("tavern.close") == 0, "其他owner不关酒馆")
+                    noTri(owner)
+                end)
+            end
+            for _, owner in ipairs({ "tavern", "backpack", "character", "smith", "lootbox", "task", "talent", "church", "market" }) do
+                runCase(owner .. " seam " .. kind .. " 同owner重开取消旧Up", function()
+                    local x, y = seamFixture(owner, 2, true)
+                    pointer(kind, "down", x, y)
+                    -- getSeamAnim 第1参已变化，重开动画已结束；几何位置相同，不能只比key/坐标。
+                    state[ownerFields[owner]] = false
+                    state.seamOpened[owner] = clock.elapsedTime - 1
+                    state[ownerFields[owner]] = true
+                    clock.elapsedTime = clock.elapsedTime + 0.2
+                    pointer(kind, "up", x, y)
+                    noSeam("openedAt变化")
+                    check(state[ownerFields[owner]], "重开的页仍开着")
+                    seamTap(kind, x, y)
+                    check(n(owner .. ".close") == 1,
+                        "重开后完整新手势恢复正常")
+                end)
+            end
+            for _, owner in ipairs({ "backpack", "lootbox", "task", "talent", "church", "market" }) do
+                runCase("Tavern切" .. owner .. " seam " .. kind .. " 同几何同openedAt不关新owner", function()
+                    local x, y = seamFixture("tavern", 2, true)
+                    pointer(kind, "down", x, y)
+                    state.tavern, state[ownerFields[owner]] = false, true
+                    clock.elapsedTime = clock.elapsedTime + 0.2
+                    pointer(kind, "up", x, y)
+                    noSeam("key变化但openedAt同为1")
+                    check(state[ownerFields[owner]], "新owner保持打开")
+                end)
+            end
+            for _, property in ipairs({ "logicalW", "logicalH", "frameScale", "frameOx", "frameOy", "dpr" }) do
+                runCase("Tavern seam " .. kind .. " " .. property .. "变化拒绝旧Up", function()
+                    local x, y = seamFixture("tavern", 2, true)
+                    pointer(kind, "down", x, y)
+                    RT[property] = RT[property] + 1
+                    clock.elapsedTime = clock.elapsedTime + 0.2
+                    -- 重投到新frame的同一个逻辑中心，排除仅靠物理坐标偏移避免关闭的假阳性。
+                    pointer(kind, "up", x, y)
+                    noSeam("屏幕布局/DPR变化")
+                    check(state.tavern, "布局变化不关酒馆")
+                end)
+            end
+            for _, top in ipairs({ "offline", "level", "pip", "reward", "tutorial", "notice", "title",
+                "letter", "story", "intro", "ce", "sweep", "stats", "stage", "terminal" }) do
+                for _, moment in ipairs({ "beforeDown", "afterDown" }) do
+                    runCase("Tavern seam " .. kind .. " " .. top .. " " .. moment, function()
+                        local x, y = seamFixture("tavern", 2, true)
+                        if moment == "beforeDown" then state[top] = true end
+                        pointer(kind, "down", x, y)
+                        state[top] = true
+                        clock.elapsedTime = clock.elapsedTime + 0.2
+                        pointer(kind, "up", x, y)
+                        noSeam("覆盖层在Down前/后出现")
+                        check(state.tavern, "覆盖层下的酒馆仍打开")
+                        -- 覆盖层关闭后的裸Up不能让旧capture复活。
+                        state[top] = false
+                        pointer(kind, "up", x, y)
+                        noSeam("关闭覆盖层后的旧Up")
+                    end)
+                end
+            end
+            for _, block in ipairs({ "recruitBusy", "targetRecruit", "tavernBlocking" }) do
+                for _, moment in ipairs({ "beforeDown", "afterDown" }) do
+                    runCase("Tavern seam " .. kind .. " " .. block .. " " .. moment, function()
+                        local x, y = seamFixture("tavern", 2, true)
+                        if moment == "beforeDown" then state[block] = true end
+                        pointer(kind, "down", x, y)
+                        state[block] = true
+                        clock.elapsedTime = clock.elapsedTime + 0.2
+                        pointer(kind, "up", x, y)
+                        noSeam("真实helper在Up前检查酒馆阻塞出口")
+                        check(state.tavern, "酒馆业务阻塞时不关闭")
+                        state[block] = false
+                        pointer(kind, "up", x, y)
+                        noSeam("阻塞解除后旧Up无效")
+                        seamTap(kind, x, y)
+                        check(n("tavern.close") == 1, "阻塞解除后的完整新手势有效")
+                    end)
+                end
+            end
+            for _, panel in ipairs({ "global", "left", "center", "right" }) do
+                runCase("全局Reward优先于seam " .. kind .. " panel=" .. panel, function()
+                    local x, y = seamFixture("tavern", 2, true)
+                    state.reward, state.rewardPanel = true, panel ~= "global" and panel or nil
+                    seamTap(kind, x, y)
+                    noSeam("Reward优先")
+                    if panel == "left" or panel == "right" then
+                        check(n("reward.close") == 1, "seam在奖励所属栏外只关闭奖励")
+                    else
+                        check(n("reward.handleDragBegin") == 1 and n("reward.handleDragEnd") == 1
+                            and n("reward.handleInput") == 1, "全局/center奖励实际收到完整点击")
+                    end
+                    noTri("Reward capture")
+                end)
+            end
+            for _, top in ipairs({ "reward", "pip", "ce", "notice", "title" }) do
+                runCase("Tavern seam " .. kind .. " " .. top .. " 临时出现再消失", function()
+                    local x, y = seamFixture("tavern", 2, true)
+                    pointer(kind, "down", x, y)
+                    state[top] = true
+                    pointer(kind, "move", x, y)
+                    state[top] = false
+                    clock.elapsedTime = clock.elapsedTime + 0.2
+                    pointer(kind, "up", x, y)
+                    noSeam("Move观察到覆盖后不得恢复旧capture")
+                end)
+            end
+            runCase("左右seam同时打开 " .. kind .. " owner互不串关", function()
+                local x, y = seamFixture("tavern", 2, true)
+                state.detailHit = true
+                seamTap(kind, x, y)
+                check(n("tavern.close") == 1 and n("character.close") == 0 and state.detailHit,
+                    "左seam只关酒馆，右详情仍打开")
+                local rx, ry = seamPoint("character")
+                seamTap(kind, rx, ry)
+                check(n("character.close") == 1 and not state.detailHit, "后续右seam独立关闭角色详情")
+            end)
+            runCase("真正tri起点拖到seam " .. kind .. " 不误关", function()
+                local x, y = seamFixture("tavern", 2, true)
+                pointer(kind, "down", 960, y)
+                check(n("tri.handleDragBegin") == 1, "起点确实进入真实tri路由")
+                pointer(kind, "move", 800, y)
+                pointer(kind, "move", x, y)
+                clock.elapsedTime = clock.elapsedTime + 0.2
+                pointer(kind, "up", x, y)
+                noSeam("tri真拖拽落seam")
+                check(n("tri.handleDragMove") >= 1 and n("tri.handleDragEnd") == 1
+                    and n("tri.handleInput") == 0, "tri来源拖拽正常释放，不转seam点击")
+            end)
+            runCase("浮选详情高于seam " .. kind, function()
+                local x, y = seamFixture("tavern", 2, true)
+                state.detail, state.detailHit = true, true
+                seamTap(kind, x, y)
+                noSeam("详情先捕获")
+                check(n("detail.handleDragBegin") == 1 and n("detail.handleDragEnd") == 1,
+                    "中心点的详情优先于seam，而非绕过详情")
+            end)
+            runCase("Tavern seam " .. kind .. " 无Down/外部Up/防抖", function()
+                local x, y = seamFixture("tavern", 2, true)
+                pointer(kind, "up", x, y)
+                noSeam("没有Down")
+                pointer(kind, "down", x, y)
+                clock.elapsedTime = clock.elapsedTime + 0.2
+                pointer(kind, "up", 960, y)
+                noSeam("Up不命中相同返回条")
+                seamTap(kind, x, y)
+                check(n("tavern.close") == 1, "首次有效点击关闭")
+                state.tavern = true
+                seamTap(kind, x, y, 0.05)
+                check(n("tavern.close") == 1 and state.tavern, "距上次tap不足.12拒绝")
+                seamTap(kind, x, y, 0.13)
+                check(n("tavern.close") == 2, "距上次tap超过.12恢复")
+            end)
+        end
+        for _, owner in ipairs({ "mouse", "touch" }) do
+            local other = owner == "mouse" and "touch" or "mouse"
+            for _, moving in ipairs({ false, true }) do
+                for _, dpr in ipairs({ 1, 2, 3 }) do
+                    runCase("seam混合owner=" .. owner .. " foreignMove=" .. tostring(moving) .. " DPR=" .. dpr, function()
+                        local x, y = seamFixture("tavern", dpr, true)
+                        pointer(other, "down", 960, y)
+                        check(n("tri.handleDragBegin") == 1, "非owner先按tri，真实主指/鼠标链已建立")
+                        pointer(owner, "down", x, y)
+                        clearCalls()
+                        if moving then
+                            pointer(other, "move", x + 40, y); pointer(other, "move", x, y)
+                        end
+                        clock.elapsedTime = clock.elapsedTime + 0.2
+                        pointer(other, "up", x, y)
+                        noSeam("非owner Up不结算仍按住的seam捕获")
+                        check(state.tavern, "另一输入结束后酒馆仍打开")
+                        pointer(owner, "up", x, y)
+                        check(n("tavern.close") == 1 and not state.tavern, "owner Up正常关闭，非owner往返不标moved")
+                        noTri("混合捕获后的非owner Move/Up均消费，不下放tri")
+                    end)
+                end
+            end
+        end
+        runCase("Tavern seam副指/右键不夺主指capture", function()
+            local x, y = seamFixture("tavern", 3, true)
+            positionWindow(x, y)
+            click(right)
+            noSeam("右键不捕获")
+            pointer("touch", "down", x, y, 101)
+            pointer("touch", "down", x, y, 102)
+            pointer("touch", "move", x + 40, y, 102)
+            pointer("touch", "up", x, y, 102)
+            noSeam("副指不结束主指")
+            clock.elapsedTime = clock.elapsedTime + 0.2
+            pointer("touch", "up", x, y, 101)
+            check(n("tavern.close") == 1, "只有未移动主指关闭一次")
+            pointer("touch", "up", x, y, 102)
+            check(n("tavern.close") == 1, "主指关闭后的副指Up仍无效")
+        end)
+        runCase("seam真实helper编译加载门禁", function()
+            check((realLoads["boot.StandaloneHorizonInput"] or 0) > 0
+                and (realLoads["boot.SeamBackGesture"] or 0) > 0
+                and (realLoads["boot.StandaloneHorizon"] or 0) >= caseCount - 1,
+                "全部夹具由真实源码编译，SeamBackGesture绝非默认mock")
+            check(assertions >= 994, "保留原994断言覆盖并新增专项")
+        end)
     end)
     if not ok then check(false, "Start exception: " .. tostring(err)) end
 
